@@ -20,6 +20,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat.WinUI/VirtualTranscript.cs` 使用 ItemsRepeater/StackLayout/IElementFactory 按视口创建与释放消息卡；`MessageViewState.cs` 保留非视觉展开状态和执行明细，`ChatWorkspace` 持有稳定数据行。`VirtualTranscriptChecks.cs` 用 1000 条消息验证控件数量受视口约束、离屏更新、实际贴底、消息内锚点以及工具展开状态恢复；单个超长 Turn 内的块仍待虚拟化。
+
 `PuddingChat/ReadingBookmark.cs` 保存会话绑定的轻量阅读书签；`ChatWorkspace` 在角色切换后按需读取历史直到锚点或时间边界，再恢复消息内偏移。`ReadingBookmarkTests` 覆盖会话轮换/缺失目标边界；原生窗口覆盖深层历史恢复、实际滚动偏移和中断恢复后书签保留。
 
 `PuddingChat/ConversationHistory.cs`、`ChatSelection.PrependHistory` 管理历史游标、跨页去重与刷新保留；`ChatWorkspace.LoadOlderAsync` 保持阅读锚点。Core `AgentConversationProjectionService.GetHistoryAsync` 复用消息投影，按时间/行 ID 读取旧页，Composition `InProcessChatClient.History.cs` 直接调用。测试入口为 `ConversationHistoryTests` 与 `NativeChatHistoryTests`（同毫秒排序、并发新消息、完整翻页、canonical 信封去重）。

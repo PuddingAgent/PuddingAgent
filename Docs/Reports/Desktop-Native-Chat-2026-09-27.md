@@ -146,3 +146,13 @@ Core 明细查询现支持从已接受的用户输入定位异常终态，按会
 恢复期间切换角色会取消等待并拒绝晚到页；恢复未完成时不把空视口写回原书签。继续复用已验证的进程内历史读取端口，没有修改 Core 接口或新增网络调用。
 
 验证：BCL 44/44、实际 WinUI 窗口 47 项（`temp/native-bookmark-final.log`）。独立测试覆盖同毫秒边界、目标缺失、会话轮换、最新/活动锚点；窗口以长消息验证角色切换后重新加载旧页和实际 24 DIP 滚动偏移恢复（容差 2 DIP），并验证中途切走、晚到结果拒绝及再次恢复原书签。未重启用户 Desktop，未修改 D:\data。书签尚不跨应用重启持久化；控件虚拟化和大规模长会话性能仍待完成。
+
+## 消息卡控件虚拟化（2026-09-27）
+
+独立 `VirtualTranscript` 采用 WinUI ItemsRepeater、StackLayout 与 IElementFactory，数据行保持身份，视口附近才创建 MessageCard/TurnContentView。离屏更新只修改数据，回收时取消卡片的明细等待并释放控件；非视觉 MessageViewState 保存工具/思考展开状态、完整明细与图片展开状态。已解码图片仍随卸载释放。没有增加 HTTP 或修改 Core 执行状态机。
+
+先通过独立 1000 消息控件验证，再接入 ChatWorkspace。接入回归发现同时调用 StartBringIntoView 和 ChangeView 会覆盖历史消息内偏移，修复为目标行实现/布局后只提交一次 ChangeView。当前真实原生窗口验证包含控件创建数量小于 80、滚动后离屏控件释放、离屏数据更新不创建控件、实际末尾贴底、离屏消息 24 DIP 定位以及工具展开状态恢复；原有历史翻页和角色深层书签回归继续通过。
+
+验证：BCL 44/44、真实 WinUI 窗口 53 项（`temp/native-virtual-final.log`），原生组件构建零警告零错误。Desktop Release 发布成功（`temp/native-virtual-publish.log`，Core 有既存分析器警告）。依据 [Microsoft ItemsRepeater 文档](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/items-repeater) 使用虚拟化布局和自定义元素工厂。此处是重新创建控件而非控件池复用；已加载消息/事件数据仍驻留内存，单 Turn 内行为块尚未虚拟化，未测量真实模型长会话性能。
+
+隔离发布包验证（`temp/native-virtual-smoke.log`）通过：Core DLL 同进程加载、UI 回调、内核重启、数据目录保存及退出后租约释放。没有替换用户正在运行的 Desktop，也未修改 D:\data。

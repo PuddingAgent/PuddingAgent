@@ -16,7 +16,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private string? _followSession;
     private readonly ComboBox _workspaces = new() { Header = "工作空间", HorizontalAlignment = HorizontalAlignment.Stretch, DisplayMemberPath = "Name" };
     private readonly ListView _roles = new() { SelectionMode = ListViewSelectionMode.Single };
-    private readonly StackPanel _messages = new() { Spacing = 8 };
+    private readonly VirtualTranscript _transcript = new();
     private readonly ScrollViewer _scroll;
     private readonly TextBox _search = new() { PlaceholderText = "搜索角色或职责" };
     private readonly TextBlock _searchEmpty = new() { Text = "没有匹配的角色", Visibility = Visibility.Collapsed, Opacity = .65 };
@@ -28,17 +28,18 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private bool _filtering;
     private ActiveRun? _liveSnapshot;
     private readonly Dictionary<string, ProcessItem> _liveEvents = [];
-    private TurnContentView? _livePanel;
+    private TranscriptItem? _livePanel;
     private readonly TextBlock _title = new() { Text = "选择角色，开始工作", FontSize = 24, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _subtitle = new() { FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap };
     private readonly InfoBar _notice = new() { IsOpen = true, IsClosable = false, Title = "正在加载工作空间", Message = "正在读取本机角色与主会话。" };
     private readonly Grid _chat = new() { RowSpacing = 16, Padding = new Thickness(24) };
     private readonly Button _refresh = new() { Content = "刷新角色" };
     private readonly Button _older = new() { Content = "加载更早的消息", HorizontalAlignment = HorizontalAlignment.Center };
+    private readonly TranscriptItem _olderItem;
     private bool _loadingHistory;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly Dictionary<string, RoleAvatarCard> _cards = [];
-    private readonly Dictionary<string, (ChatMessage Message, MessageCard Card)> _messageCards = [];
+    private readonly Dictionary<string, (ChatMessage Message, TranscriptItem Item)> _messageCards = [];
     private readonly ColumnDefinition _navigationColumn = new() { Width = new GridLength(248) };
     private Grid? _navigation;
     private bool _disposed, _busy, _refreshing, _changingDraft, _connected;
@@ -66,6 +67,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     public ChatWorkspace(IChatClient client, Uri? origin = null)
     {
         _client = client; _origin = origin;
+        _olderItem = new("history-loader", _older, _ => _older) { IsAnchor = false };
         var root = new Grid(); root.ColumnDefinitions.Add(_navigationColumn);
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var navigation = Surfaces.Navigation(); navigation.Padding = new Thickness(16); navigation.RowSpacing = 16;
@@ -110,10 +112,10 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var heading = new StackPanel { Spacing = 6 }; heading.Children.Add(_title); heading.Children.Add(_subtitle); _chat.Children.Add(heading);
         Grid.SetRow(_notice, 1); _chat.Children.Add(_notice);
-        _scroll = new ScrollViewer { Content = _messages, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        _scroll = new ScrollViewer { Content = _transcript.View, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         var viewport = new Grid(); viewport.Children.Add(_scroll); viewport.Children.Add(_latest);
         Grid.SetRow(viewport, 2); _chat.Children.Add(viewport);
-        _messages.MaxWidth = 900; _messages.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _transcript.View.MaxWidth = 900; _transcript.View.HorizontalAlignment = HorizontalAlignment.Stretch;
         Composer.MaxWidth = 900; Composer.HorizontalAlignment = HorizontalAlignment.Stretch;
         _latest.Click += (_, _) => ScrollToLatest();
         _older.Click += async (_, _) => await GuardAsync(LoadOlderAsync);
@@ -230,7 +232,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             if (_disposed) return;
             _connected = true;
             _workspaceGeneration++; RememberReading(); _selection?.Cancel(); _state.Select(null); _agent = null; UpdateComposer();
-            _messages.Children.Clear(); _messageCards.Clear(); _roles.Items.Clear(); _cards.Clear(); SetDraft();
+            _transcript.Clear(); _messageCards.Clear(); _roles.Items.Clear(); _cards.Clear(); SetDraft();
             _workspaces.ItemsSource = workspaces;
             _notice.IsOpen = true; _notice.Severity = InfoBarSeverity.Informational; _notice.Title = "选择角色";
             _notice.Message = workspaces.Length == 0 ? "暂无工作空间，请点击左侧“创建工作空间与角色”。" : "角色的主会话、草稿和运行状态会在这里展示。";
@@ -245,7 +247,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     {
         if (!_connected || _workspaces.SelectedItem is not Workspace workspace) return;
         var generation = ++_workspaceGeneration;
-        RememberReading(); _selection?.Cancel(); _state.Select(null); _agent = null; _messages.Children.Clear(); SetDraft(); UpdateComposer();
+        RememberReading(); _selection?.Cancel(); _state.Select(null); _agent = null; _transcript.Clear(); SetDraft(); UpdateComposer();
         _roles.Items.Clear(); _cards.Clear();
         var agents = await _client.GetAgentsAsync(workspace.WorkspaceId, _lifetime.Token);
         if (_disposed || generation != _workspaceGeneration) return;
@@ -267,7 +269,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _state.Select(role); _agent = agent; _livePanel = null; _liveSnapshot = null; _liveEvents.Clear();
         _messageCards.Clear();
         _title.Text = agent.Label; _subtitle.Text = $"{workspace} / {agent.AgentId} · {agent.Description}";
-        _messages.Children.Clear(); SetDraft(); UpdateComposer();
+        _transcript.Clear(); SetDraft(); UpdateComposer();
         _notice.IsOpen = true; _notice.Title = "正在读取主会话"; _notice.Message = "";
         var generation = _state.Generation; var token = _selection.Token;
         try { await RefreshConversationAsync(generation, token); }
@@ -402,8 +404,8 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         // A session rotation cancels the old follower, not the new cards or subscription.
         ct = _selection?.Token ?? ct;
         var position = _restoreReading ?? CaptureReading(); _restoreReading = null;
-        var desired = new List<UIElement>();
-        if (_client is IConversationHistory && snapshot.OlderCursor is not null) desired.Add(_older);
+        var desired = new List<TranscriptItem>();
+        if (_client is IConversationHistory && snapshot.OlderCursor is not null) desired.Add(_olderItem);
         foreach (var message in snapshot.Messages)
         {
             var id = message.MessageId;
@@ -415,11 +417,19 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             _messageCards.TryGetValue(id, out var previous);
             if (!SameMessage(previous.Message, rendered))
             {
-                var card = previous.Card ?? new MessageCard(rendered, () => _client.GetProcessAsync(role, id, ct), _client as IImageAttachmentClient, role.WorkspaceId, ct);
-                if (previous.Card is not null) card.Update(rendered);
-                _messageCards[id] = (rendered, card);
+                var item = previous.Item;
+                if (item is null)
+                {
+                    var state = new MessageViewState();
+                    item = new TranscriptItem(id, rendered,
+                        row => new MessageCard((ChatMessage)row.Data, () => _client.GetProcessAsync(role, id, ct),
+                            _client as IImageAttachmentClient, role.WorkspaceId, ct, state),
+                        (view, data) => ((MessageCard)view).Update((ChatMessage)data));
+                }
+                else item.Update(rendered);
+                _messageCards[id] = (rendered, item);
             }
-            _messageCards[id].Card.Tag = id; desired.Add(_messageCards[id].Card);
+            desired.Add(_messageCards[id].Item);
         }
         foreach (var id in _messageCards.Keys.Except(snapshot.Messages.Select(m => m.MessageId)).ToArray()) _messageCards.Remove(id);
         if (snapshot.ActiveRun is { } run && !snapshot.Messages.Any(m => m.RunId == run.RunId && m.Role != "user"))
@@ -428,20 +438,23 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             {
                 if (_liveSnapshot?.RunId != run.RunId) { _liveEvents.Clear(); _livePanel = null; }
                 foreach (var item in run.OutputSnapshot.ProcessItems) _liveEvents[item.Id] = item;
-                _livePanel ??= new TurnContentView { Padding = new Thickness(20), Tag = $"run:{run.RunId}" };
-                _livePanel.Update(_liveEvents.Values, run.OutputSnapshot.Markdown);
+                var output = new OutputSnapshot(run.OutputSnapshot.Markdown, _liveEvents.Values.ToArray());
+                if (_livePanel is null)
+                {
+                    var expansions = new Dictionary<string, bool>();
+                    _livePanel = new($"run:{run.RunId}", output, row => {
+                        var view = new TurnContentView(expansions) { Padding = new Thickness(20) };
+                        var data = (OutputSnapshot)row.Data; view.Update(data.ProcessItems, data.Markdown); return view;
+                    }, (view, data) => { var value = (OutputSnapshot)data; ((TurnContentView)view).Update(value.ProcessItems, value.Markdown); });
+                }
+                else _livePanel.Update(output);
                 _liveSnapshot = run;
             }
             desired.Add(_livePanel);
 
         }
-        // Preserve unchanged visual instances and text selections; never detach the whole transcript on a commit notification.
-        foreach (var child in _messages.Children.Where(child => !desired.Contains(child)).ToArray()) _messages.Children.Remove(child);
-        for (var i = 0; i < desired.Count; i++)
-        {
-            if (i < _messages.Children.Count && ReferenceEquals(_messages.Children[i], desired[i])) continue;
-            _messages.Children.Remove(desired[i]); _messages.Children.Insert(i, desired[i]);
-        }
+        // Stable data rows keep realized cards; the factory only builds controls near the viewport.
+        _transcript.SetItems(desired);
         _notice.IsOpen = snapshot.Messages.Length == 0 && snapshot.ActiveRun is null;
         _notice.Title = "开始新的工作"; _notice.Message = "向这位角色描述任务，消息将进入其主会话。";
         _subtitle.Text = $"{role.WorkspaceId} / {role.AgentId} · 已加载 {snapshot.Messages.Length} 条消息 · {snapshot.MainSessionId}";
@@ -457,7 +470,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         }
         _scroll.UpdateLayout();
         if (!_disposed && generation == _state.Generation)
-            _scroll.ChangeView(null, position.Restore(MessageGeometry(), _scroll.ScrollableHeight), null, true);
+            _transcript.Restore(_scroll, position);
     }
     private static bool SameMessage(ChatMessage? before, ChatMessage after) => before is not null
         && before == after with { ProcessItems = before.ProcessItems, ContentParts = before.ContentParts }
@@ -554,9 +567,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         }
         finally { _filtering = false; }
     }
-    private MessageBounds[] MessageGeometry() => _messages.Children.OfType<FrameworkElement>()
-        .Where(e => e.Tag is string).Select(e => new MessageBounds((string)e.Tag,
-            e.TransformToVisual(_messages).TransformPoint(new Windows.Foundation.Point()).Y, e.ActualHeight)).ToArray();
+    private MessageBounds[] MessageGeometry() => _transcript.Geometry();
     private ReadingPosition CaptureReading() => ReadingPosition.Capture(MessageGeometry(), _scroll.VerticalOffset, _scroll.ScrollableHeight);
     private void RememberReading()
     {
@@ -570,7 +581,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     }
     public void ScrollToLatest()
     {
-        _scroll.ChangeView(null, _scroll.ScrollableHeight, null, true);
+        _transcript.Restore(_scroll, ReadingPosition.Latest);
         if (_state.Role is { } role && _state.Conversation is { } conversation)
             _reading[role] = new(conversation.MainSessionId, ReadingPosition.Latest, null);
     }

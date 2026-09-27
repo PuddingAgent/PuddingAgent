@@ -16,7 +16,8 @@ public sealed class ImageAttachmentView : UserControl
     private readonly TextBlock _status = new() { Text = "展开查看图片", TextWrapping = TextWrapping.Wrap };
     private readonly Expander _expander;
     public bool PreviewLoaded => _image.Source is not null;
-    public ImageAttachmentView(IImageAttachmentClient client, string workspace, string artifact, string label, CancellationToken ct)
+    public ImageAttachmentView(IImageAttachmentClient client, string workspace, string artifact, string label, CancellationToken ct,
+        bool expanded = false, Action<bool>? expansionChanged = null)
     {
         _client = client; _workspace = workspace; _artifact = artifact; _lifetime = ct;
         var panel = new StackPanel { Spacing = 8 }; panel.Children.Add(_status);
@@ -24,10 +25,11 @@ public sealed class ImageAttachmentView : UserControl
             MinZoomFactor = 1, MaxZoomFactor = 8, MaxHeight = 440, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto });
         _expander = new Expander { Header = label, Content = panel, HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        _expander.Expanding += async (_, _) => await LoadAsync();
-        _expander.Collapsed += (_, _) => Release();
+        _expander.Expanding += async (_, _) => { expansionChanged?.Invoke(true); await LoadAsync(); };
+        _expander.Collapsed += (_, _) => { expansionChanged?.Invoke(false); Release(); };
         Unloaded += (_, _) => Release();
         Content = _expander;
+        _expander.IsExpanded = expanded;
     }
     public async Task LoadAsync()
     {

@@ -108,7 +108,7 @@ public partial class App : Application
                 Check(fixture.HistoryReads > historyReads && control.CurrentConversation!.Messages.Any(m => m.MessageId == "older"),
                     "role switch reloads history to the saved message anchor");
                 await Task.Delay(50);
-                Check(Math.Abs(transcriptScroll.VerticalOffset - 24) < 2, "native scroll restores within-message offset after history recovery");
+                Check(Math.Abs(transcriptScroll.VerticalOffset - 24) < 2, $"native scroll restores within-message offset after history recovery; actual={transcriptScroll.VerticalOffset}");
                 await control.SelectRoleAsync("test", fixture.Reviewer);
                 fixture.DelayHistory = true;
                 var cancelledRestore = control.SelectRoleAsync("test", fixture.Builder);
@@ -169,9 +169,10 @@ public partial class App : Application
                 await control.SelectRoleAsync("test", fixture.Reviewer);
                 fixture.Late.TrySetResult(fixture.Conversation("slow")); await slow;
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
+                await VerifyVirtualTranscriptAsync((Grid)control.Content);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 47, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 53, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }

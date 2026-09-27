@@ -7,7 +7,9 @@ namespace PuddingChat.WinUI;
 public sealed class TurnContentView : StackPanel
 {
     private readonly Dictionary<string, (FlowBlock Value, FrameworkElement View)> _blocks = [];
-    public TurnContentView() { Spacing = 10; }
+    private readonly IDictionary<string, bool> _expansions;
+    public TurnContentView() : this(new Dictionary<string, bool>()) { }
+    public TurnContentView(IDictionary<string, bool> expansions) { _expansions = expansions; Spacing = 10; }
     public void Update(IEnumerable<ProcessItem> items, string fallbackText)
     {
         var desired = new List<FrameworkElement>();
@@ -18,8 +20,13 @@ public sealed class TurnContentView : StackPanel
             if (!_blocks.TryGetValue(block.Key, out var old))
             {
                 FrameworkElement view = block.Kind == "text" ? new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch }
-                    : new Expander { IsExpanded = block.Kind == "thinking", HorizontalAlignment = HorizontalAlignment.Stretch,
+                    : new Expander { IsExpanded = _expansions.TryGetValue(block.Key, out var expanded) ? expanded : block.Kind == "thinking", HorizontalAlignment = HorizontalAlignment.Stretch,
                         HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                if (view is Expander disclosure)
+                {
+                    disclosure.Expanding += (_, _) => _expansions[block.Key] = true;
+                    disclosure.Collapsed += (_, _) => _expansions[block.Key] = false;
+                }
                 old = (null!, view);
             }
             old.View.Margin = new Thickness(Math.Min(block.Depth, 8) * 16, 0, 0, 0);

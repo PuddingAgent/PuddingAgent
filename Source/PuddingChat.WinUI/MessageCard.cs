@@ -5,20 +5,22 @@ using Microsoft.UI.Xaml.Media;
 namespace PuddingChat.WinUI;
 
 /// <summary>Native selectable text/code blocks and canonical process disclosure; never renders HTML.</summary>
-public sealed class MessageCard : UserControl
+public sealed class MessageCard : UserControl, IDisposable
 {
     private Expander? _process;
-    private readonly TurnContentView _flow = new();
+    private readonly TurnContentView _flow;
+    private readonly MessageViewState _state;
+    private readonly CancellationTokenSource _viewLifetime;
     private readonly TextBlock _header = new() { FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap };
     private ChatMessage _message = null!;
     private readonly InfoBar _outcome = new() { IsClosable = false, Severity = InfoBarSeverity.Error };
-    private readonly Dictionary<string, ProcessItem> _events = [];
-    private string? _run;
+    private readonly Dictionary<string, ProcessItem> _events;
     private readonly StackPanel _attachments = new() { Spacing = 8 };
     private readonly IImageAttachmentClient? _imageClient;
     private readonly string? _workspace;
     private readonly CancellationToken _ct;
     private ContentPart[] _parts = [];
+    private bool _disposed;
     public void Update(ChatMessage message)
     {
         _message = message;
@@ -31,12 +33,14 @@ public sealed class MessageCard : UserControl
             {
                 number++;
                 if (part.Type == "image" && part.ArtifactId is { Length: > 0 } id && _imageClient is not null && _workspace is not null)
-                    _attachments.Children.Add(new ImageAttachmentView(_imageClient, _workspace, id, $"图片 {number} · 展开预览", _ct));
+                    _attachments.Children.Add(new ImageAttachmentView(_imageClient, _workspace, id, $"图片 {number} · 展开预览", _ct,
+                        _state.Images.GetValueOrDefault(id), expanded => _state.Images[id] = expanded));
                 else _attachments.Children.Add(new TextBlock { Text = $"附件 {number} · {part.Type}", Opacity = .65 });
             }
         }
         _header.Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {message.Status}";
-        if (_run != message.RunId) { _events.Clear(); _run = message.RunId; }
+        if (_state.RunId != message.RunId)
+        { _events.Clear(); _state.RunId = message.RunId; _state.Details = null; _state.Expansions.Clear(); _state.DetailsExpanded = false; }
         foreach (var item in message.ProcessItems) _events[item.Id] = item;
         _flow.Update(_events.Values, message.Content);
         _outcome.IsOpen = message.TurnOutcome is { Status: not "succeeded" };
@@ -46,9 +50,12 @@ public sealed class MessageCard : UserControl
         if (_process is not null) _process.Visibility = message.Role != "user" || _outcome.IsOpen ? Visibility.Visible : Visibility.Collapsed;
     }
     public bool IsProcessExpanded { get => _process?.IsExpanded ?? false; set { if (_process is not null) _process.IsExpanded = value; } }
-    public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null, IImageAttachmentClient? imageClient = null, string? workspace = null, CancellationToken ct = default)
+    public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null, IImageAttachmentClient? imageClient = null, string? workspace = null, CancellationToken ct = default,
+        MessageViewState? state = null)
     {
-        _imageClient = imageClient; _workspace = workspace; _ct = ct;
+        _state = state ?? new(); _events = _state.Events; _flow = new(_state.Expansions);
+        _viewLifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _imageClient = imageClient; _workspace = workspace; _ct = _viewLifetime.Token;
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(_header); panel.Children.Add(_flow); panel.Children.Add(_attachments); Update(message);
         panel.Children.Add(_outcome);
@@ -62,15 +69,17 @@ public sealed class MessageCard : UserControl
             var loaded = false; var loading = false;
             expander.Expanding += async (_, _) =>
             {
+                _state.DetailsExpanded = true;
                 if (loaded || loading) return; loading = true;
                 try
                 {
-                    var result = loadDetails is null ? new ProcessDetails(message.MessageId, message.ProcessItems) : await loadDetails();
+                    var result = _state.Details ?? (loadDetails is null ? new ProcessDetails(message.MessageId, message.ProcessItems) : await loadDetails().WaitAsync(_ct));
+                    _ct.ThrowIfCancellationRequested(); _state.Details = result;
                     details.Children.Clear();
                     if (_message.Role == "user")
                     {
                         // Execution belongs to Core, not to the user's authored text.
-                        var execution = new TurnContentView();
+                        var execution = new TurnContentView(_state.Expansions);
                         execution.Update(result.ProcessItems, ""); details.Children.Add(execution);
                     }
                     else
@@ -85,6 +94,8 @@ public sealed class MessageCard : UserControl
                 catch (Exception) { details.Children.Clear(); details.Children.Add(new TextBlock { Text = "过程明细加载失败，请收起后重试。" }); }
                 finally { loading = false; }
             };
+            expander.Collapsed += (_, _) => _state.DetailsExpanded = false;
+            expander.IsExpanded = _state.DetailsExpanded;
             panel.Children.Add(expander);
         }
         var copy = new Button { Content = "复制", HorizontalAlignment = HorizontalAlignment.Left };
@@ -97,4 +108,5 @@ public sealed class MessageCard : UserControl
         Content = surface;
     }
     public static UIElement RenderText(string text) => new MarkdownView(text);
+    public void Dispose() { if (_disposed) return; _disposed = true; _viewLifetime.Cancel(); _viewLifetime.Dispose(); }
 }
