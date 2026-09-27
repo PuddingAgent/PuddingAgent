@@ -279,7 +279,7 @@
             ],
             "source": "pages/global-agent-template/index.tsx",
             "task": "DS-04",
-            "status": "待迁移"
+            "status": "已接入"
           },
           {
             "id": "agent-basic",

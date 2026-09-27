@@ -12,4 +12,6 @@
 
 `DesktopVoiceResourceSettings` implements `IVoiceResourceSettings` for the TTS/ASR pages (DS-03) on the same gated path: provider CRUD, TTS/ASR model CRUD and the effective defaults. `ApiKeyChange.Clear` maps to `UpsertVoiceProviderRequest.ClearApiKey`; array fields are submitted as displayed so capability switches round-trip. Core keeps validation, the write lock and default-pointer sync.
 
+`DesktopAgentDirectorySettings` implements `IAgentDirectorySettings` (DS-04 directory slice) on the same gated path: templates, shipped presets, the avatar catalog, workspace role instances and freeze. Template and instance basic edits reload the stored record and submit it back with only the displayed fields replaced, so prompt/Markdown documents and undisplayed policy fields survive.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

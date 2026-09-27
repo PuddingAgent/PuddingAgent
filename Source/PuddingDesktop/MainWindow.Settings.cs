@@ -145,6 +145,15 @@ public sealed partial class MainWindow
         VoiceTtsSettings.Visibility = voiceTts;
         VoiceAsrSettings.Visibility = voiceAsr;
         if (voiceProviders == Visibility.Visible || voiceTts == Visibility.Visible || voiceAsr == Visibility.Visible) LoadVoiceIfNeeded();
+        var agents = VisibilityOf("agents", "directory", tab);
+        AgentDirectorySettings.Visibility = agents;
+        if (agents == Visibility.Visible) LoadAgentDirectoryIfNeeded();
+    }
+
+    private async void LoadAgentDirectoryIfNeeded()
+    {
+        try { await LoadAgentDirectoryAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadVoiceIfNeeded()
@@ -174,6 +183,7 @@ public sealed partial class MainWindow
         ("voice", "providers") => true,
         ("voice", "tts") => true,
         ("voice", "asr") => true,
+        ("agents", "directory") => true,
         _ => false
     };
 

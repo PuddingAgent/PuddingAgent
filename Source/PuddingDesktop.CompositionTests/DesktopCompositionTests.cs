@@ -244,6 +244,96 @@ public sealed class DesktopCompositionTests
         }
     }
 
+    [Fact]
+    public async Task AgentDirectoryAdapter_EditsBasicsWithoutClearingTemplates()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var directory = factory.CreateAgentDirectorySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => directory.ListTemplatesAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+
+            // Create a template, then edit only its basics.
+            await directory.SaveTemplateAsync(new AgentTemplateEdit("ds04-fixture", "Fixture", "Service", "original",
+                true, 7, "pudding"), timeout.Token);
+            var created = Assert.Single(await directory.ListTemplatesAsync(timeout.Token),
+                template => template.TemplateId == "ds04-fixture");
+            Assert.Equal("Fixture", created.Name);
+            Assert.False(string.IsNullOrWhiteSpace(created.AvatarId), "新建模板必须落一个真实头像 ID");
+            Assert.Equal(7, created.SortOrder);
+
+            await directory.SaveTemplateAsync(new AgentTemplateEdit("ds04-fixture", "Fixture renamed", "Coding",
+                "updated", false, 9, "pudding"), timeout.Token);
+            var updated = Assert.Single(await directory.ListTemplatesAsync(timeout.Token),
+                template => template.TemplateId == "ds04-fixture");
+            Assert.Equal("Fixture renamed", updated.Name);
+            Assert.Equal("Coding", updated.Role);
+            Assert.False(updated.IsEnabled);
+
+            // Shipped presets are listed and can be imported into the directory.
+            Assert.NotEmpty(await directory.ListAvatarsAsync(timeout.Token));
+            var presets = await directory.ListPresetsAsync(timeout.Token);
+            Assert.NotEmpty(presets);
+            var preset = presets[0];
+            if (!(await directory.ListTemplatesAsync(timeout.Token)).Any(template => template.TemplateId == preset.TemplateId))
+            {
+                await directory.ImportPresetAsync(preset.TemplateId, timeout.Token);
+                Assert.Contains(await directory.ListTemplatesAsync(timeout.Token),
+                    template => template.TemplateId == preset.TemplateId);
+            }
+
+            // Workspaces come from the platform database; the isolated root has exactly the default one.
+            var workspaces = await directory.ListWorkspacesAsync(timeout.Token);
+            Assert.NotEmpty(workspaces);
+            var workspaceId = workspaces[0].WorkspaceId;
+
+            await directory.CreateInstanceAsync(new AgentInstanceCreate(workspaceId, "DS-04 role", "from fixture",
+                "ds04-fixture"), timeout.Token);
+            var instances = await directory.ListInstancesAsync(workspaceId, timeout.Token);
+            var instance = Assert.Single(instances, candidate => candidate.Name == "DS-04 role");
+            Assert.Equal("ds04-fixture", instance.SourceTemplateId);
+            Assert.True(instance.IsEnabled);
+            Assert.False(instance.IsFrozen);
+
+            // Basic edit keeps the template identity; freeze is a separate state from disable.
+            await directory.SaveInstanceAsync(new AgentInstanceEdit(workspaceId, instance.AgentId, "DS-04 role renamed",
+                "edited", "Coding", true, "pudding"), timeout.Token);
+            var edited = Assert.Single(await directory.ListInstancesAsync(workspaceId, timeout.Token),
+                candidate => candidate.AgentId == instance.AgentId);
+            Assert.Equal("DS-04 role renamed", edited.Name);
+            Assert.Equal("ds04-fixture", edited.SourceTemplateId);
+
+            await directory.SetInstanceFrozenAsync(workspaceId, instance.AgentId, true, timeout.Token);
+            var frozen = Assert.Single(await directory.ListInstancesAsync(workspaceId, timeout.Token),
+                candidate => candidate.AgentId == instance.AgentId);
+            Assert.True(frozen.IsFrozen);
+            Assert.True(frozen.IsEnabled);
+
+            await directory.SetInstanceFrozenAsync(workspaceId, instance.AgentId, false, timeout.Token);
+            await directory.DeleteInstanceAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.DoesNotContain(await directory.ListInstancesAsync(workspaceId, timeout.Token),
+                candidate => candidate.AgentId == instance.AgentId);
+
+            await directory.DeleteTemplateAsync("ds04-fixture", timeout.Token);
+            Assert.DoesNotContain(await directory.ListTemplatesAsync(timeout.Token),
+                template => template.TemplateId == "ds04-fixture");
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => directory.ListTemplatesAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
     // The isolated data root is seeded with the shipped default providers, so target ours explicitly.
     private static PuddingDesktop.Foundation.LlmProviderSummary SinglePool(IReadOnlyList<PuddingDesktop.Foundation.LlmProviderSummary> providers)
         => Assert.Single(providers, provider => provider.ProviderId == "pool");

@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -58,6 +58,7 @@ public sealed partial class MainWindow : Window
         InitializePreferencesSettings();
         BuildLlmPanels();
         BuildVoicePanels();
+        BuildAgentDirectoryPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -454,6 +455,13 @@ public sealed partial class MainWindow : Window
             Check(VoiceAsrSettings.Visibility == Visibility.Visible, "voice asr tab is native");
             Check(!_vaSave.IsEnabled, "voice asr form stays disabled without Core");
             Check(_vaDefaults.Text.Contains("默认 ASR", StringComparison.Ordinal), "voice asr tab shows the effective defaults");
+            // DS-04 directory slice: templates, presets and role instances are native content.
+            OpenSettingsCategory("agents", "directory");
+            await WaitForSettingsUiAsync(() => _agNotice.IsOpen);
+            Check(AgentDirectorySettings.Visibility == Visibility.Visible, "agent directory tab is native");
+            Check(AgentDirectorySettings.Content is StackPanel, "agent directory form is built");
+            Check(!_agTemplateSave.IsEnabled, "agent directory form stays disabled without Core");
+            Check(_agNotice.Title == "Core 未就绪", "agent directory tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);
