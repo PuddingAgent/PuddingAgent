@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingChat;
@@ -7,11 +8,24 @@ using PuddingCode.Configuration;
 using PuddingDesktop.Composition;
 using PuddingDesktop.Foundation;
 using PuddingPlatform.Services;
+using PuddingPlatform.Data;
 
 namespace PuddingNativeChat.IntegrationTests;
 
 public partial class NativeChatIntegrationTests
 {
+    private static async Task VerifyVoiceMetadataAsync(InProcessKernel kernel, string messageId, VoiceInputOrigin expected, CancellationToken ct)
+    {
+        await kernel.RunSettingsAsync("test-voice-metadata", async (scope, token) =>
+        {
+            var message = await scope.Services.GetRequiredService<PlatformDbContext>().ChatMessages.AsNoTracking()
+                .SingleAsync(m => m.MessageId == messageId, token);
+            var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(message.MetadataJson!)!;
+            foreach (var pair in expected.ToMetadata()) Assert.Equal(pair.Value, metadata[pair.Key]);
+            Assert.False(metadata.ContainsKey("language"));
+            return true;
+        }, ct);
+    }
     private static async Task VerifyTranscriptionAsync(InProcessKernel kernel, IChatClient productClient, RoleKey role, string testRoot, CancellationToken ct)
     {
         Assert.IsAssignableFrom<IChatTranscriptionClient>(productClient);
@@ -39,7 +53,9 @@ public partial class NativeChatIntegrationTests
             await Assert.ThrowsAsync<InvalidOperationException>(() => client.TranscribeAsync(role, audio, token));
             Assert.Equal(0, factory.Calls);
             await SaveAsync(config);
-            Assert.Equal("recognized words", await client.TranscribeAsync(role, audio, token));
+            var transcript = await client.TranscribeAsync(role, audio, token);
+            Assert.Equal("recognized words", transcript.Text); Assert.Equal("fixture", transcript.Provider);
+            Assert.Equal("recognition", transcript.Model); Assert.Null(transcript.Language);
             Assert.Equal("fixture", factory.Provider); Assert.Equal("recognition", factory.Model);
             Assert.Equal("wav", factory.Format); Assert.Null(factory.Language); Assert.Equal(audio.Bytes, factory.Bytes);
             await Assert.ThrowsAsync<InvalidOperationException>(() => client.TranscribeAsync(role with { AgentId = "missing" }, audio, token));

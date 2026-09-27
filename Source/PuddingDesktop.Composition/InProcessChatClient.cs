@@ -164,7 +164,7 @@ internal sealed partial class InProcessChatClient(IServiceScopeFactory scopes, C
         var result = await services.GetRequiredService<ISubmitTurnHandler>().HandleAsync(new SubmitTurnCommand(
             send.ConversationId, send.Role.WorkspaceId, LocalUserId, send.ClientRequestId, send.ClientMessageId,
             new RecipientRequest { Type = "agent", AgentIds = [send.Role.AgentId] },
-            parts, null), token);
+            parts, send.VoiceOrigin?.ToMetadata()), token);
         return new Acceptance(result.ConversationId, result.MessageId, result.TurnIds.ToArray(), result.AcceptedSequence);
     }, ct);
     public async Task CancelAsync(string workspace, string conversation, string turn, CancellationToken ct) => await ExecuteAsync(async (services, token) =>

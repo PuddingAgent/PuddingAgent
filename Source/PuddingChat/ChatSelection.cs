@@ -4,6 +4,9 @@ namespace PuddingChat;
 public sealed class ChatSelection
 {
     private readonly Dictionary<RoleKey, string> _drafts = [];
+    private readonly Dictionary<RoleKey, VoiceInputOrigin> _voiceOrigins = [];
+    public VoiceInputOrigin? VoiceOrigin => Role is { } role ? _voiceOrigins.GetValueOrDefault(role) : null;
+    public void SetVoiceOrigin(VoiceInputOrigin origin) { if (Role is { } role && !string.IsNullOrWhiteSpace(Draft)) _voiceOrigins[role] = origin; }
     private readonly Dictionary<RoleKey, PendingSend> _pending = [];
     private readonly Dictionary<RoleKey, List<AttachedImage>> _images = [];
     private readonly Dictionary<RoleKey, List<TextFileContext>> _files = [];
@@ -32,10 +35,10 @@ public sealed class ChatSelection
     public Conversation? Conversation { get; private set; }
     private bool _historyExpanded;
     public string Draft { get => Role is { } role ? _drafts.GetValueOrDefault(role, "") : "";
-        set { if (Role is { } role) _drafts[role] = value; } }
+        set { if (Role is { } role) { _drafts[role] = value; if (string.IsNullOrWhiteSpace(value)) _voiceOrigins.Remove(role); } } }
     public PendingSend? Pending => Role is { } role ? _pending.GetValueOrDefault(role) : null;
     public void Select(RoleKey? role) { Role = role; Generation++; Conversation = null; _historyExpanded = false; }
-    public void Clear() { Select(null); _drafts.Clear(); _pending.Clear(); _images.Clear(); _files.Clear(); }
+    public void Clear() { Select(null); _drafts.Clear(); _voiceOrigins.Clear(); _pending.Clear(); _images.Clear(); _files.Clear(); }
     public bool Apply(long generation, Conversation conversation)
     {
         if (generation != Generation || Role != new RoleKey(conversation.WorkspaceId, conversation.AgentId)) return false;
@@ -62,7 +65,7 @@ public sealed class ChatSelection
     private static ChatMessage[] MergeMessages(IEnumerable<ChatMessage> older, IEnumerable<ChatMessage> current)
         => older.Concat(current).GroupBy(m => m.CanonicalMessageId ?? m.MessageId, StringComparer.Ordinal).Select(g => g.Last())
             .OrderBy(m => m.CreatedAt).ToArray();
-    public PendingSend Prepare(string session, string? capturedDraft = null, IReadOnlyList<AttachedImage>? capturedImages = null, IReadOnlyList<TextFileContext>? capturedFiles = null)
+    public PendingSend Prepare(string session, string? capturedDraft = null, IReadOnlyList<AttachedImage>? capturedImages = null, IReadOnlyList<TextFileContext>? capturedFiles = null, VoiceInputOrigin? capturedVoice = null)
     {
         var role = Role ?? throw new InvalidOperationException("先选择角色。");
         if (_pending.TryGetValue(role, out var retry)) return retry;
@@ -72,7 +75,7 @@ public sealed class ChatSelection
         TextFileContexts.Validate(files);
         TextFileContexts.Compose(text, files);
         if (string.IsNullOrWhiteSpace(text) && images.Count == 0 && files.Count == 0) throw new InvalidOperationException("请输入消息或添加附件。");
-        var send = PendingSend.Create(role, session, text, images, files);
+        var send = PendingSend.Create(role, session, text, images, files, capturedDraft is null ? VoiceOrigin : capturedVoice);
         _pending.Add(role, send); return send;
     }
     public void Accept(PendingSend send)
@@ -89,7 +92,8 @@ public sealed class ChatSelection
             var accepted = (send.Images ?? []).Select(i => i.ArtifactId).ToHashSet(StringComparer.Ordinal);
             images.RemoveAll(i => accepted.Contains(i.ArtifactId));
         }
-        if (_drafts.GetValueOrDefault(send.Role) == send.Text) _drafts[send.Role] = "";
+        if (_drafts.GetValueOrDefault(send.Role) == send.Text && _voiceOrigins.GetValueOrDefault(send.Role) == send.VoiceOrigin)
+        { _drafts[send.Role] = ""; _voiceOrigins.Remove(send.Role); }
     }
     public void Reject(PendingSend send)
     {

@@ -1406,3 +1406,7 @@ ChatComposer/ChatWorkspace 已组合 NativeVoiceCapture、VoiceInputControl 与 
 ## 2026-09-27 Web 语音范围核查
 
 VoiceConversationPanel 源码为手动录音/确认发送/手动朗读，未实现回复后自动循环收音；DashScope 文件 ASR 无中间转写。原生仍缺语音来源元数据等对齐项与真实设备/供应商验收。核查证据及“持续语音”术语澄清见 `Docs/Features/Desktop-Native-Voice-2026-09-27.md`，不将基础流程装配等同完整目标达成。
+
+## 2026-09-27 原生聊天语音来源
+
+PuddingChat/VoiceInput.cs 返回实际 ASR 元信息；ChatSelection 按角色保留来源，PendingSend 固定发送快照。ChatWorkspace 捕获后经 InProcessChatClient 直接提交 Core 元数据，集成测试回读 ChatMessages.MetadataJson。83 逻辑/219 窗口/3 Core 验证通过；首次配置文件替换占用、复验通过的限制及真实设备待验记录在 Docs/Features/Desktop-Native-Voice-2026-09-27.md。

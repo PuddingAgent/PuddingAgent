@@ -199,7 +199,7 @@ public partial class App : Application
                 var visuals = await CaptureVisualPreviewsAsync((Grid)control.Content);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 218, native = true, visuals }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 219, native = true, visuals }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -209,10 +209,10 @@ public partial class App : Application
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
     private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity, IConversationHistory, ISubAgentInspectionClient, IChatSpeechClient, IChatTranscriptionClient
     {
-        public Func<RoleKey, RecordedSpeech, CancellationToken, Task<string>>? Transcription;
+        public Func<RoleKey, RecordedSpeech, CancellationToken, Task<VoiceTranscript>>? Transcription;
         public RoleKey? LastTranscriptionRole;
-        public Task<string> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct)
-        { LastTranscriptionRole = role; return Transcription?.Invoke(role, audio, ct) ?? Task.FromResult("transcribed"); }
+        public Task<VoiceTranscript> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct)
+        { LastTranscriptionRole = role; return Transcription?.Invoke(role, audio, ct) ?? Task.FromResult(new VoiceTranscript("transcribed")); }
         public SpeechRequest? LastSpeech;
         public Task<SpeechAudio> SynthesizeAsync(SpeechRequest request, CancellationToken ct) { LastSpeech = request; return Task.FromResult(SilentWave(100)); }
         public int MaxImagesPerMessage => 600;

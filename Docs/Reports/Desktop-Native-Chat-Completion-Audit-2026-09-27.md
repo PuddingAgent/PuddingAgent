@@ -13,7 +13,7 @@
 | 原 Web 富文本能力 | MarkdownView 原生 GFM、CodeBlockView 通过 ColorCode 渲染原生语法高亮、ImageAttachmentView、MathFormulaView、MarkdownImageContext | 原生行内/块公式与生成图片解析已接入，60 逻辑/171 窗口检查通过；图片经当前工作空间 Core 资源端口读取，涵盖 image 围栏、Markdown 图片、流式复用与回收重载。外部 HTTP(S) 图片已接入点击展开的原生预览（79 逻辑/218 窗口检查）；公式使用预发行库，不承诺完整 KaTeX 等价或完整 DPI/无障碍验收。长代码不着色但保留全文，高对比度实时通知受宿主能力限制 |
 | 图片与一般上下文附件 | 图片：选图/剪贴板/拖放→Core Artifact；文本：选择器或文件拖放/粘贴→不可变快照→角色草稿→既有 Core text 提交 | 文本/源代码预览、移除、发送、源文件删除后重试和混合文件传入已接通；57 逻辑/145 窗口、既有 3 Core 测试通过。原 Web 的一般附件本就未实现；PDF/Office 提取、历史独立附件卡、真实模型及系统选择器/资源管理器拖放人工验收仍缺失 |
 | 审批卡与真实工具恢复 | ApprovalCard、PuddingApproval、SqliteApprovalStore 独立组件；Runtime 保留准入状态 | 未完成：请求生产者、持久暂停/恢复、Core 决定端口及产品待审批区域未接线。不能用独立卡片测试替代闭环 |
-| 子代理与其他聊天富交互 | TurnFlow 保留精确 RunId；原生检查器经 Composition 读取 Core 归档，委派卡入口已接入；窗口 118 项与 Core 3/3 隔离验证 | 真实模型委派交互、超大归档性能待验；基础录音转写/消息朗读已原生接入，语音来源元数据与真实设备/供应商验收待补 |
+| 子代理与其他聊天富交互 | TurnFlow 保留精确 RunId；原生检查器经 Composition 读取 Core 归档，委派卡入口已接入；窗口 118 项与 Core 3/3 隔离验证 | 真实模型委派交互、超大归档性能待验；基础录音转写/消息朗读及语音来源元数据已原生接入，真实设备/供应商验收待补 |
 | 用户实际产品效果 | 独立 WinUI harness；新构建的 PuddingDesktop.exe + Core DLL 隔离 smoke，PID 30028，真实控件 IsLoaded/Visible、角色/附件草稿及重启后重新装配通过 | 已运行测试产品进程并正常退出、释放租约；未替换用户数据目录上的 Desktop。真实模型聊天、完整视觉与 DPI/IME 矩阵仍需验收 |
 
 ## 当前切片：展开活动内容保持
@@ -107,3 +107,11 @@ RemoteImageView 在收起/真实卸载时取消并释放图片，迟到数据不
 - 面板支持 onInterimTranscript 回调，但 DashScope 文件适配器明确没有流式中间结果，stop 后返回一次最终文本；不能将组件支持的回调直接认定为所有服务商已经提供流式 ASR。
 
 此前文档使用“持续语音会话”泛指剩余语音范围，容易被误读为已有自动循环通话待迁移。本核查将既有 Web 等价能力与自动循环通话扩展区分开；自动循环并未因基础组件完成而实现，也不能据此宣布完整语音目标达成。后续优先补来源元数据与真实设备/供应商验证，最新回复入口和中间转写按实际合同补齐；自动循环通话需单独明确交互及执行边界。
+
+## 语音来源随消息保存（2026-09-27）
+
+转写合同返回 VoiceTranscript（正文、实际供应商与模型、可选语言）。VoiceInputOrigin 在确认加入草稿时绑定角色，发送前与正文一起捕获到 PendingSend；重试保留原始来源，旧发送回执不能清掉相同文字的新录音，清空草稿则移除来源。多次追加录音时记录最近一次被接受的录音来源，不声称逐段溯源。
+
+Composition 直接将 inputMode=voice、voiceSessionId、实际 asrProvider/asrModel 交给 SubmitTurnCommand，使用 Core 既有消息元数据持久化流程。Core 当前 ASR 返回值没有语言检测结果，因此不填 language；未提供的字段均省略，不照抄 Web 的 browser/web-speech/zh-CN 常量。
+
+验证：83 项逻辑测试、219 项原生窗口检查、3 项真实 Core 集成测试通过，含实际 ChatMessages.MetadataJson 回读断言。日志为 temp/native-voice-origin-state.log、temp/native-voice-origin-ui.log、temp/native-voice-origin-core-recheck.log。首次 Core 运行在此前的供应商配置测试发生 File.Replace IOException（temp/native-voice-origin-core.log）；同一构建无改动复验通过，文件占用根因未确认、未在本次修复，不能据此声称并发配置写入问题关闭。没有使用真实麦克风、真实供应商或 D:\data；完整目标仍未完成。

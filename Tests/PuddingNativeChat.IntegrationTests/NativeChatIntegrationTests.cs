@@ -121,7 +121,8 @@ public partial class NativeChatIntegrationTests
             var textPath = Path.Combine(root, "fixture.cs");
             await File.WriteAllTextAsync(textPath, "class NativeContext { }\r\n", timeout.Token);
             var textAttachment = await TextFileContexts.ReadAsync(textPath, timeout.Token);
-            var pending = PendingSend.Create(role, session, "Native component admission test. Reply briefly.", [attachment], [textAttachment]);
+            var voiceOrigin = new VoiceInputOrigin("native-recording", "fixture-provider", "fixture-model");
+            var pending = PendingSend.Create(role, session, "Native component admission test. Reply briefly.", [attachment], [textAttachment], voiceOrigin);
             File.Delete(textPath); // Submission and retry must use the snapshot, never re-open the selected path.
             var changes = Assert.IsAssignableFrom<IConversationChanges>(client);
             var beforeSend = await client.GetConversationAsync(role, null, timeout.Token);
@@ -141,6 +142,7 @@ public partial class NativeChatIntegrationTests
             Assert.Contains(conversation.Messages, message => message.MessageId == receipt.MessageId);
             var persisted = Assert.Single(conversation.Messages, m => m.MessageId == receipt.MessageId);
             Assert.Equal(pending.SubmittedText, persisted.Content);
+            await VerifyVoiceMetadataAsync(kernel, receipt.MessageId, voiceOrigin, timeout.Token);
             Assert.Contains(textAttachment.Text, persisted.Content);
             Assert.Contains(persisted.ContentParts!, part => part.Type == "image" && part.ArtifactId == attachment.ArtifactId && part.Detail == "original");
             Assert.DoesNotContain(imagePath, JsonSerializer.Serialize(persisted));

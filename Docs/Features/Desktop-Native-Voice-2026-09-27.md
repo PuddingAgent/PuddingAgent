@@ -91,3 +91,11 @@ ChatWorkspace 增加 IAsyncDisposable，立即取消后等待设备释放；Main
 - 面板支持 onInterimTranscript 回调，但 DashScope 文件适配器明确没有流式中间结果，stop 后返回一次最终文本；不能将组件支持的回调直接认定为所有服务商已经提供流式 ASR。
 
 此前文档使用“持续语音会话”泛指剩余语音范围，容易被误读为已有自动循环通话待迁移。本核查将既有 Web 等价能力与自动循环通话扩展区分开；自动循环并未因基础组件完成而实现，也不能据此宣布完整语音目标达成。后续优先补来源元数据与真实设备/供应商验证，最新回复入口和中间转写按实际合同补齐；自动循环通话需单独明确交互及执行边界。
+
+## 语音来源随消息保存（2026-09-27）
+
+转写合同返回 VoiceTranscript（正文、实际供应商与模型、可选语言）。VoiceInputOrigin 在确认加入草稿时绑定角色，发送前与正文一起捕获到 PendingSend；重试保留原始来源，旧发送回执不能清掉相同文字的新录音，清空草稿则移除来源。多次追加录音时记录最近一次被接受的录音来源，不声称逐段溯源。
+
+Composition 直接将 inputMode=voice、voiceSessionId、实际 asrProvider/asrModel 交给 SubmitTurnCommand，使用 Core 既有消息元数据持久化流程。Core 当前 ASR 返回值没有语言检测结果，因此不填 language；未提供的字段均省略，不照抄 Web 的 browser/web-speech/zh-CN 常量。
+
+验证：83 项逻辑测试、219 项原生窗口检查、3 项真实 Core 集成测试通过，含实际 ChatMessages.MetadataJson 回读断言。日志为 temp/native-voice-origin-state.log、temp/native-voice-origin-ui.log、temp/native-voice-origin-core-recheck.log。首次 Core 运行在此前的供应商配置测试发生 File.Replace IOException（temp/native-voice-origin-core.log）；同一构建无改动复验通过，文件占用根因未确认、未在本次修复，不能据此声称并发配置写入问题关闭。没有使用真实麦克风、真实供应商或 D:\data；完整目标仍未完成。

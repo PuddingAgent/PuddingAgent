@@ -27,6 +27,9 @@ public partial class App
             Check(entry.IsEnabled && fixture.LastTranscriptionRole == new RoleKey("test", "builder") && accepted
                 && view.Composer.Draft.Replace("\r\n", "\n").Replace('\r', '\n') == "draft\nspoken",
                 $"workspace voice routes selected role and explicitly appends transcription: enabled={entry.IsEnabled}, role={fixture.LastTranscriptionRole}, accepted={accepted}, draft={System.Text.Json.JsonSerializer.Serialize(view.Composer.Draft)}");
+            await view.SendAsync();
+            Check(fixture.Sent?.VoiceOrigin is { Provider: "fixture-provider", Model: "fixture-model", Language: null }
+                && !string.IsNullOrEmpty(fixture.Sent.VoiceOrigin.SessionId), "confirmed voice origin travels with the native send snapshot");
             pending = voice.ToggleAsync(); await view.SelectRoleAsync("test", fixture.Reviewer); await pending;
             Check(device.Released && device.Token.IsCancellationRequested && view.Composer.Draft == "", "switching role cancels microphone and preserves separate draft");
             device.Result = new(TaskCreationOptions.RunContinuationsAsynchronously); fixture.LastTranscriptionRole = null;

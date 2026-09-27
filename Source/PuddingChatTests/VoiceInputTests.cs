@@ -28,8 +28,8 @@ public class VoiceInputTests
         public TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public CancellationToken Token;
         public int Calls;
-        public Task<string> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct)
-        { Token = ct; Calls++; Started.TrySetResult(); return Result.Task; }
+        public async Task<VoiceTranscript> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct)
+        { Token = ct; Calls++; Started.TrySetResult(); return new(await Result.Task, "provider", "model"); }
     }
 
     [Fact]
@@ -47,6 +47,8 @@ public class VoiceInputTests
         Assert.Equal("existing", selection.Draft);
         Assert.Equal(VoiceInputPhase.Completed, session.State.Phase);
         Assert.True(session.State.Result!.TryAppendTo(selection));
+        Assert.Equal("provider", selection.VoiceOrigin!.Provider); Assert.Equal("model", selection.VoiceOrigin.Model);
+        Assert.False(selection.VoiceOrigin.ToMetadata().ContainsKey("language"));
         Assert.Equal("existing" + Environment.NewLine + "spoken words", selection.Draft);
         Assert.False(session.State.Result.TryAppendTo(selection));
     }

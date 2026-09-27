@@ -644,6 +644,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
         var capturedDraft = _state.Draft;
         var capturedImages = _state.Images;
         var capturedFiles = _state.Files;
+        var capturedVoice = _state.VoiceOrigin;
         // Sending has a lifetime independent of selection. Its receipt belongs to the captured role.
         try
         {
@@ -652,7 +653,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
             {
                 var session = await _client.EnsureSessionAsync(role, agent, _lifetime.Token);
                 if (_disposed || generation != _state.Generation) return;
-                pending = _state.Prepare(session, capturedDraft, capturedImages, capturedFiles);
+                pending = _state.Prepare(session, capturedDraft, capturedImages, capturedFiles, capturedVoice);
             }
             try { await _client.SendAsync(pending, _lifetime.Token); }
             catch (ArgumentException) { _state.Reject(pending); throw; }

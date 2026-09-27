@@ -8,7 +8,7 @@ namespace PuddingDesktop.Composition;
 
 internal sealed partial class InProcessChatClient : IChatTranscriptionClient
 {
-    public Task<string> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct) => ExecuteAsync(async (services, token) =>
+    public Task<VoiceTranscript> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct) => ExecuteAsync(async (services, token) =>
     {
         ArgumentNullException.ThrowIfNull(role);
         ArgumentNullException.ThrowIfNull(audio);
@@ -23,6 +23,6 @@ internal sealed partial class InProcessChatClient : IChatTranscriptionClient
             Content = audio.Bytes, Format = VoiceAudioFormats.Wav
         }, token);
         token.ThrowIfCancellationRequested();
-        return result.Text;
+        return new VoiceTranscript(result.Text, result.Provider, result.Model);
     }, ct);
 }

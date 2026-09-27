@@ -25,7 +25,20 @@ public interface IVoiceRecording : IAsyncDisposable
 
 public interface IChatTranscriptionClient
 {
-    Task<string> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct);
+    Task<VoiceTranscript> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct);
+}
+
+public sealed record VoiceTranscript(string Text, string? Provider = null, string? Model = null, string? Language = null);
+public sealed record VoiceInputOrigin(string SessionId, string? Provider = null, string? Model = null, string? Language = null)
+{
+    public IReadOnlyDictionary<string, string> ToMetadata()
+    {
+        var values = new Dictionary<string, string> { ["inputMode"] = "voice", ["voiceSessionId"] = SessionId };
+        if (!string.IsNullOrWhiteSpace(Provider)) values["asrProvider"] = Provider;
+        if (!string.IsNullOrWhiteSpace(Model)) values["asrModel"] = Model;
+        if (!string.IsNullOrWhiteSpace(Language)) values["language"] = Language;
+        return values;
+    }
 }
 
 public sealed record VoiceDraftAnchor(RoleKey Role, long SelectionGeneration, string OriginalText)
@@ -34,7 +47,7 @@ public sealed record VoiceDraftAnchor(RoleKey Role, long SelectionGeneration, st
         selection.Role ?? throw new InvalidOperationException("请先选择角色。"), selection.Generation, selection.Draft);
 }
 
-public sealed record VoiceDraftResult(VoiceDraftAnchor Anchor, string Text)
+public sealed record VoiceDraftResult(VoiceDraftAnchor Anchor, string Text, VoiceInputOrigin? Origin = null)
 {
     // The caller can offer Text for explicit insertion when this guard rejects a changed draft.
     public bool TryAppendTo(ChatSelection selection)
@@ -42,6 +55,7 @@ public sealed record VoiceDraftResult(VoiceDraftAnchor Anchor, string Text)
         if (selection.Role != Anchor.Role || selection.Generation != Anchor.SelectionGeneration
             || selection.Draft != Anchor.OriginalText || string.IsNullOrWhiteSpace(Text)) return false;
         selection.Draft = string.IsNullOrEmpty(Anchor.OriginalText) ? Text : Anchor.OriginalText + Environment.NewLine + Text;
+        if (Origin is not null) selection.SetVoiceOrigin(Origin);
         return true;
     }
 }
@@ -85,6 +99,7 @@ public sealed class VoiceInputSession(IVoiceCapture capture, IChatTranscriptionC
 
     private async Task RunAsync(VoiceDraftAnchor anchor, CancellationTokenSource operation, Task finish)
     {
+        var voiceSessionId = Guid.NewGuid().ToString("N");
         try
         {
             SetState(new(VoiceInputPhase.Opening, anchor));
@@ -104,10 +119,11 @@ public sealed class VoiceInputSession(IVoiceCapture capture, IChatTranscriptionC
             operation.Token.ThrowIfCancellationRequested();
             audio.Validate();
             SetState(new(VoiceInputPhase.Transcribing, anchor));
-            var text = await client.TranscribeAsync(anchor.Role, audio, operation.Token).WaitAsync(operation.Token);
+            var transcript = await client.TranscribeAsync(anchor.Role, audio, operation.Token).WaitAsync(operation.Token);
             operation.Token.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(text)) throw new InvalidDataException("未识别到语音。");
-            SetState(new(VoiceInputPhase.Completed, anchor, new(anchor, text.Trim())));
+            if (string.IsNullOrWhiteSpace(transcript.Text)) throw new InvalidDataException("未识别到语音。");
+            var origin = new VoiceInputOrigin(voiceSessionId, transcript.Provider, transcript.Model, transcript.Language);
+            SetState(new(VoiceInputPhase.Completed, anchor, new(anchor, transcript.Text.Trim(), origin)));
         }
         catch (OperationCanceledException) when (operation.IsCancellationRequested)
         { SetState(new(VoiceInputPhase.Idle)); }
