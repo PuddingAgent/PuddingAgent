@@ -234,6 +234,15 @@ public sealed partial class MainWindow
         var teamTab = VisibilityOf("accounts", "teams", tab);
         TeamsSettings.Visibility = teamTab;
         if (teamTab == Visibility.Visible) LoadTeamsIfNeeded();
+        var runtimeNodes = VisibilityOf("runtime", "nodes", tab);
+        RuntimeNodesSettings.Visibility = runtimeNodes;
+        if (runtimeNodes == Visibility.Visible) LoadRuntimeNodesIfNeeded();
+    }
+
+    private async void LoadRuntimeNodesIfNeeded()
+    {
+        try { await LoadRuntimeNodesAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadTeamsIfNeeded()
@@ -466,6 +475,7 @@ public sealed partial class MainWindow
         ("accounts", "roles") => true,
         ("accounts", "users") => true,
         ("accounts", "teams") => true,
+        ("runtime", "nodes") => true,
         _ => false
     };
 

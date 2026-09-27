@@ -465,6 +465,9 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<UserService>();
         builder.Services.AddScoped<TeamService>();
 
+        // ── 运行时节点：冻结/解冻与其审计写入是同一个应用操作（HTTP 与原生共用） ──
+        builder.Services.AddScoped<RuntimeNodeAdminService>();
+
         // ── 文件式 TTS/ASR 语音 Provider/Model 管理 ──
         builder.Services.AddSingleton<VoiceProviderFileService>();
 

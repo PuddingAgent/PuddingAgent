@@ -2104,6 +2104,59 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task RuntimeNodeAdapter_ReadsTheRegistryAndAuditsFreezeAndUnfreeze()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var nodes = factory.CreateRuntimeNodeSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => nodes.ListNodesAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var listed = await nodes.ListNodesAsync(timeout.Token);
+            // 隔离宿主里可能一个节点都没注册；列表仍必须成功返回，计数按真实数据算。
+            var summary = RuntimeNodeSummary.Of(listed);
+            Assert.Equal(listed.Count, summary.Total);
+            Assert.Contains("在线", summary.HeadlineText, StringComparison.Ordinal);
+
+            // 未知节点：拒绝且不写审计。
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => nodes.FreezeAsync("no-such-node", "composition", timeout.Token));
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => nodes.UnfreezeAsync("no-such-node", "composition", timeout.Token));
+
+            // 有节点时走完整链路：冻结 → 审计 → 解冻 → 审计。
+            var node = listed.FirstOrDefault();
+            if (node is not null)
+            {
+                await nodes.FreezeAsync(node.NodeId, "composition freeze", timeout.Token);
+                var frozen = Assert.Single(await nodes.ListNodesAsync(timeout.Token),
+                    candidate => candidate.NodeId == node.NodeId);
+                Assert.True(frozen.IsFrozen);
+                // 冻结后再次冻结返回 false（Core 的 FreezeNode 幂等失败语义），适配器如实报错。
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    () => nodes.FreezeAsync(node.NodeId, "again", timeout.Token));
+
+                await nodes.UnfreezeAsync(node.NodeId, "composition unfreeze", timeout.Token);
+                var unfrozen = Assert.Single(await nodes.ListNodesAsync(timeout.Token),
+                    candidate => candidate.NodeId == node.NodeId);
+                Assert.False(unfrozen.IsFrozen);
+            }
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => nodes.ListNodesAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Json;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Platform;
 using PuddingController.Services;
@@ -15,6 +15,7 @@ public class RuntimeRegistryController : ControllerBase
 {
     private readonly RuntimeRegistryService _registry;
     private readonly InMemoryAuditEventStore _audit;
+    private readonly RuntimeNodeAdminService _nodeAdmin;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<RuntimeRegistryController> _logger;
 
@@ -79,16 +80,10 @@ public class RuntimeRegistryController : ControllerBase
     [HttpPost("{nodeId}/freeze")]
     public async Task<ActionResult> Freeze(string nodeId, [FromBody] EmbeddedNodeFreezeRequest body, CancellationToken ct)
     {
-        if (!_registry.FreezeNode(nodeId))
+        // 冻结与审计在同一个应用操作里完成，原生管理面得到同一条轨迹。
+        if (!await _nodeAdmin.FreezeAsync(nodeId, body.Reason, body.OperatorId ?? "system", ct))
             return NotFound(new { error = $"Node {nodeId} not found" });
 
-        await _audit.RecordAsync(new AuditEventRecord
-        {
-            EventType = AuditEventType.EmbeddedNodeFrozen,
-            Detail = $"Node={nodeId} reason={body.Reason} operator={body.OperatorId ?? "system"}",
-        }, ct);
-
-        _logger.LogWarning("[RuntimeRegistry] Node={NodeId} frozen by operator={Op}", nodeId, body.OperatorId);
         return Ok(new { nodeId, frozen = true });
     }
 
@@ -99,16 +94,9 @@ public class RuntimeRegistryController : ControllerBase
     [HttpPost("{nodeId}/unfreeze")]
     public async Task<ActionResult> Unfreeze(string nodeId, [FromBody] EmbeddedNodeFreezeRequest body, CancellationToken ct)
     {
-        if (!_registry.UnfreezeNode(nodeId))
+        if (!await _nodeAdmin.UnfreezeAsync(nodeId, body.Reason, body.OperatorId ?? "system", ct))
             return NotFound(new { error = $"Node {nodeId} not found" });
 
-        await _audit.RecordAsync(new AuditEventRecord
-        {
-            EventType = AuditEventType.EmbeddedNodeUnfrozen,
-            Detail = $"Node={nodeId} operator={body.OperatorId ?? "system"}",
-        }, ct);
-
-        _logger.LogInformation("[RuntimeRegistry] Node={NodeId} unfrozen by operator={Op}", nodeId, body.OperatorId);
         return Ok(new { nodeId, frozen = false });
     }
 
