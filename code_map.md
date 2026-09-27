@@ -1,3 +1,6 @@
+## 2026-09-27 DS-07 Skill Hub（概览/事件切片）
+
+Foundation 新增 `SkillHubContracts.cs`（`ISkillHubSettings` 只读读模型、概览统计、审计事件、状态与事件类型/来源显示规则），Composition 新增 `DesktopSkillHubSettings`（`ISkillHubService` 是 scoped，按操作从 Core 作用域解析而不是被单例捕获），Shell 新增 `MainWindow.SkillHubSettings.cs`（`skills/overview` 与 `skills/events` 两个页签）。Composition 测试通过产品自身的 HTTP 面（`POST /api/skill-hub/skills` 与 `/versions`）发布一个技能与一个补丁版本，再用设置适配器读回：概览计数、进化动作分布、技能摘要与审计事件全部对齐。顺带修掉一个会让窗口启动即崩的真实缺陷：同一个 `InfoBar` 不能同时挂到两个页签的面板上（`UIElementCollection.Add` 抛 COMException），每个页签现在各有自己的通知条。验证：Foundation 107 项、Composition 11 项、窗口 smoke 156 项通过。
 ## 2026-09-27 DS-06 工具与插件（只读）
 
 Foundation 新增 `ToolPluginContracts.cs`（工具目录条目/参数、插件包/声明/诊断、`IsExecutable` 规则），Composition 新增 `DesktopToolPluginSettings`（工具注册表来自 `IPuddingToolCatalogService`，插件清单来自 `PluginManifestCatalog`，诊断来自 `PluginDiagnosticsReader`；只有 `ReloadPluginsAsync` 会重新读取 `plugin.json`），Shell 新增 `MainWindow.ToolPluginSettings.cs`（`tools/registry` 与 `tools/plugins` 两个页签）。两者都是只读：能力清单由运行时注册表推导，插件由数据目录下的 `plugin.json` 声明，页面不提供安装/启用/执行动作。可执行性只有运行时 `Available` 才算，`ManifestOnly` 与未知状态一律标为不可执行（Composition 测试用真实 manifest-only 与无效清单固件验证计数与校验原因）。验证：Foundation 102 项、Composition 10 项、窗口 smoke 151 项通过。
@@ -37,6 +40,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 `PuddingDesktop.Foundation/SettingsCatalog.json` + `SettingsCatalog.cs` 定义 17 分类、49 页签、64 卡片与搜索；`PuddingDesktop/MainWindow.Settings.cs` 和 XAML 提供居中设置层、应用菜单入口、分类/页签、占位卡片及外观设置。后续直接调用 Core 既有方法，不新增 HTTP/逐接口包装层。完整字段、Core 缺口及 DS-00~17 实施任务见 [DeepSeek 交接任务书](Docs/Tasks/Desktop-Admin-Settings-DeepSeek-2026-09-27.md)，验证见 [实施记录](Docs/Reports/Desktop-Admin-Settings-Skeleton-2026-09-27.md)。
 
 ## 2026-09-27 原生聊天交错消息流
+
+`CodeBlockView` 通过 ColorCode.WinUI 2.0.15 向原生 Inlines 着色，保留独立原始代码供复制；按 ActualTheme 更新颜色，高对比度、未知语言、超过 16K 字符或格式化不保真时完整纯文本回退。`CodeHighlightChecks` 覆盖常见语言、主题、换行、长代码与 CRLF；依赖仅在展示层。
 
 `InProcessChatClient.SubAgents.cs` 直接校验角色/父会话并读取 Core 单次运行归档，映射真实思考/工具预览及截断/降级信息。`FlowBlock.DelegationExecutionId` 经委派卡回调打开原生检查对话框，角色切换取消关闭。`NativeSubAgentInspectionTests` 在真实归档/零 HTTP 组合测试内验证，`SubAgentEntryChecks` 验证实际按钮与角色切换；源码已接入，产品部署验收仍待完成。
 

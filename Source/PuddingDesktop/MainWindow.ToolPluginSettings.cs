@@ -22,6 +22,7 @@ public sealed partial class MainWindow
     private TextBlock _tpToolSummary = null!, _tpToolDetail = null!, _tpPluginSummary = null!, _tpPluginDetail = null!;
     private StackPanel _tpParameters = null!, _tpPluginTools = null!, _tpDiagnostics = null!;
     private InfoBar _tpNotice = null!;
+    private InfoBar _tpPluginNotice = null!;
 
     private void BuildToolPluginPanels()
     {
@@ -63,6 +64,7 @@ public sealed partial class MainWindow
         _tpPluginPicker.SelectionChanged += (_, _) => ShowPluginDetail();
         _tpPluginSummary = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = .7, FontSize = 12 };
         _tpPluginDetail = new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+        _tpPluginNotice = new InfoBar { IsOpen = false, IsClosable = true };
         _tpPluginTools = new StackPanel { Spacing = 4 };
         _tpDiagnostics = new StackPanel { Spacing = 4 };
 
@@ -77,7 +79,8 @@ public sealed partial class MainWindow
                     "无效清单会显示 Core 给出的校验原因；仅清单声明的工具不会被当成可执行。",
                     Row(reloadPlugins), _tpPluginPicker, _tpPluginSummary, _tpPluginDetail,
                     new TextBlock { Text = "该包声明的工具", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }, _tpPluginTools,
-                    new TextBlock { Text = "最近插件诊断", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }, _tpDiagnostics)
+                    new TextBlock { Text = "最近插件诊断", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }, _tpDiagnostics,
+                    _tpPluginNotice)
             }
         };
         SetToolPluginEnabled(false);
@@ -242,6 +245,7 @@ public sealed partial class MainWindow
         };
         SetToolPluginEnabled(!unavailable);
         ShowNotice(_tpNotice, severity, title, message);
+        ShowNotice(_tpPluginNotice, severity, title, message);
     }
 
     private void SetToolPluginEnabled(bool enabled)

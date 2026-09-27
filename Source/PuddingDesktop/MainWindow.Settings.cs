@@ -166,6 +166,24 @@ public sealed partial class MainWindow
         var plugins = VisibilityOf("tools", "plugins", tab);
         ToolsPluginsSettings.Visibility = plugins;
         if (plugins == Visibility.Visible) LoadPluginCatalogIfNeeded();
+        var skillOverview = VisibilityOf("skills", "overview", tab);
+        SkillOverviewSettings.Visibility = skillOverview;
+        if (skillOverview == Visibility.Visible) LoadSkillOverviewIfNeeded();
+        var skillEvents = VisibilityOf("skills", "events", tab);
+        SkillEventsSettings.Visibility = skillEvents;
+        if (skillEvents == Visibility.Visible) LoadSkillEventsIfNeeded();
+    }
+
+    private async void LoadSkillOverviewIfNeeded()
+    {
+        try { await LoadSkillOverviewAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
+    }
+
+    private async void LoadSkillEventsIfNeeded()
+    {
+        try { await LoadSkillEventsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadToolRegistryIfNeeded()
@@ -244,6 +262,8 @@ public sealed partial class MainWindow
         ("agents", "guardrails") => true,
         ("tools", "registry") => true,
         ("tools", "plugins") => true,
+        ("skills", "overview") => true,
+        ("skills", "events") => true,
         _ => false
     };
 

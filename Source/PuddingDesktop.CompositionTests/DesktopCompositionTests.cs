@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingDesktop.Composition;
 using PuddingDesktop.Foundation;
@@ -733,6 +734,98 @@ public sealed class DesktopCompositionTests
         tool.IsExecutable == PuddingDesktop.Foundation.ToolPluginText.IsExecutable(tool.RuntimeStatus)
             ? string.Empty
             : $"{tool.ToolId} disagrees with the executability rule";
+    [Fact]
+    public async Task SkillHubAdapter_ReportsPublishedSkillsAndTheirAuditEvents()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var hub = factory.CreateSkillHubSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => hub.ReadOverviewAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var empty = await hub.ReadOverviewAsync(timeout.Token);
+            Assert.Equal(0, empty.TotalSkills);
+            Assert.Empty(await hub.ListSkillsAsync(null, null, null, 1, 50, timeout.Token));
+            Assert.Empty(await hub.ListEventsAsync(null, 50, timeout.Token));
+
+            // Seed through the product's own HTTP surface, then read it back through the settings adapter.
+            using var client = await CreateAdminClientAsync(root, kernel.Snapshot.WorkbenchAddress!);
+            var publish = await client.PostAsJsonAsync("/api/skill-hub/skills", new
+            {
+                skillId = "pudding-fixture-skill",
+                name = "Fixture Skill",
+                summary = "summary",
+                description = "description",
+                tags = new[] { "fixture" },
+                keywords = new[] { "fixture" },
+                version = "1.0.0",
+                skillMarkdown = "# Fixture\n\nbody",
+                visibility = "global"
+            }, timeout.Token);
+            Assert.True(publish.IsSuccessStatusCode, await publish.Content.ReadAsStringAsync(timeout.Token));
+            var version = await client.PostAsJsonAsync("/api/skill-hub/skills/pudding-fixture-skill/versions", new
+            {
+                skillId = "pudding-fixture-skill",
+                name = "Fixture Skill",
+                version = "1.1.0",
+                skillMarkdown = "# Fixture\n\nsecond",
+                evolutionAction = "patch",
+                parentVersion = "1.0.0",
+                publishNote = "fixture evolution"
+            }, timeout.Token);
+            Assert.True(version.IsSuccessStatusCode, await version.Content.ReadAsStringAsync(timeout.Token));
+
+            var overview = await hub.ReadOverviewAsync(timeout.Token);
+            Assert.Equal(1, overview.TotalSkills);
+            Assert.Equal(1, overview.ActiveSkills);
+            Assert.Equal(0, overview.RetiredSkills);
+            Assert.Equal(2, overview.TotalVersions);
+            Assert.Equal(1, overview.EvolvedSkills);
+            Assert.Contains(overview.EvolutionActionCounts, count => count.Action == "patch" && count.Count == 1);
+
+            var skills = await hub.ListSkillsAsync(null, null, null, 1, 50, timeout.Token);
+            var skill = Assert.Single(skills, candidate => candidate.SkillId == "pudding-fixture-skill");
+            Assert.Equal("1.1.0", skill.LatestVersion);
+            Assert.Equal(2, skill.VersionCount);
+            Assert.Contains("fixture", skill.Tags);
+
+            var events = await hub.ListEventsAsync("pudding-fixture-skill", 50, timeout.Token);
+            Assert.NotEmpty(events);
+            Assert.All(events, entry => Assert.Equal("pudding-fixture-skill", entry.SkillId));
+            Assert.Contains(events, entry => entry.EventType.Length > 0 && entry.ActorKind.Length > 0);
+            Assert.Empty(await hub.ListEventsAsync("no-such-skill", 50, timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => hub.ListEventsAsync(null, 50, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
+    private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(
+            await File.ReadAllTextAsync(Path.Combine(root, "config", "system.json")));
+        var key = document.RootElement.GetProperty("Jwt").GetProperty("Key").GetString()!;
+        var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken("kernel-test", "kernel-test",
+            [new(System.Security.Claims.ClaimTypes.Role, "admin")], expires: DateTime.UtcNow.AddMinutes(2),
+            signingCredentials: new Microsoft.IdentityModel.Tokens.SigningCredentials(
+                new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key)),
+                Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256));
+        var client = new HttpClient { BaseAddress = address, Timeout = TimeSpan.FromMinutes(2) };
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token));
+        return client;
+    }
     // The isolated data root is seeded with the shipped default providers, so target ours explicitly.
     private static PuddingDesktop.Foundation.LlmProviderSummary SinglePool(IReadOnlyList<PuddingDesktop.Foundation.LlmProviderSummary> providers)
         => Assert.Single(providers, provider => provider.ProviderId == "pool");

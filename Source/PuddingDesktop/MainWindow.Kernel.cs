@@ -20,6 +20,7 @@ public sealed partial class MainWindow
     private readonly PuddingDesktop.Foundation.IVoiceResourceSettings _voiceSettings;
     private readonly PuddingDesktop.Foundation.IAgentDirectorySettings _agentDirectory;
     private readonly PuddingDesktop.Foundation.IToolPluginSettings _toolPlugins;
+    private readonly PuddingDesktop.Foundation.ISkillHubSettings _skillHub;
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);

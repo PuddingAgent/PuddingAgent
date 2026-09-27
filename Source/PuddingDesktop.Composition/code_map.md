@@ -24,4 +24,6 @@
 
 `DesktopToolPluginSettings` implements `IToolPluginSettings` (DS-06) on the same gated path: the runtime tool registry (`IPuddingToolCatalogService`) and the plugin catalogue (`PluginManifestCatalog` + `PluginDiagnosticsReader`), both read-only plus an explicit manifest re-read.
 
+`DesktopSkillHubSettings` implements `ISkillHubSettings` (DS-07 overview/events slice) on the same gated path. `ISkillHubService` is registered scoped, so it is resolved from the per-operation Core scope instead of being captured. Write paths (publish/evolve/retire/install) are not exposed yet.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

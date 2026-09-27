@@ -222,6 +222,15 @@
 
 ### DS-07 — Skill Hub 六页签（P1；依赖 DS-00）
 
+状态：**进行中（2026-09-27）**。已交付「概览」与「事件审计」两个页签；`library`/`evolution`/`installs`/`legacy` 四个页签待续。
+
+**概览/事件切片已交付**
+- `ISkillHubSettings`（Foundation）+ `DesktopSkillHubSettings`（Composition，按操作解析 scoped 的 `ISkillHubService`）+ `MainWindow.SkillHubSettings.cs`（`skills/overview`：技能/版本/安装/覆盖 Agent/已进化计数、进化动作分布、安装排行；`skills/events`：技能与条数筛选、事件列表与详情含 PayloadJson）。
+- 显示规则：退役技能一律标为不可用；事件类型与来源按 Core 原始值显示，未知类型原样展示而不是猜一个名字。
+- 集成测试用产品自身 HTTP 面发布技能与补丁版本后读回（概览计数、`patch` 动作分布、技能摘要、审计事件）。
+- 顺带修复：同一 `InfoBar` 被挂到两个页签面板会让窗口在启动时抛 COMException；每个页签现在各有自己的通知条（工具/插件页签也一并修正）。
+- 顺带记录 Core 侧约束：SkillId 只允许 `^[a-z0-9][a-z0-9-]{1,127}$`（不含点号）；`evolutionAction` 白名单为 `create|patch|split|compress|retire|merge|fork`。后续 `library` 切片必须按这套词表做表单校验。
+
 依次完成概览、技能详情/版本、发布与元数据、EVO MAP、安装台账/更新、事件审计、旧文件包。旧包 zip/tar.gz/tgz 上传、下载、版本更新与 Hub 发布区分。原生文件选择后将流交给 Core，UI 不解压写运行目录。验收：版本/父版本/进化动作/内容哈希传递正确，退役可观测，台账不是实际安装成功的替身，包路径校验不回退。
 
 ### DS-08 — 记忆资料库（P1；依赖 DS-04）
@@ -716,4 +725,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-04 模板与角色实例 | 进行中 2026-09-27 | 五个切片已接入（agent-directory / agent-basic / agent-prompts / agent-models / smart-models / guardrails）；仅 agent-grants 待续，被 DS-06、DS-07 目录依赖阻塞 |
 | DS-05 工作区与渠道 | 待实施 | — |
 | DS-06 工具与插件 | 已完成 2026-09-27 | 两张只读卡接入；manifest-only 与无效清单有真实固件测试 |
-| DS-07 … DS-17 | 待实施 | — |
+| DS-07 Skill Hub 六页签 | 进行中 2026-09-27 | 概览与事件审计两页签已接入（含 HTTP 发布后读回的集成测试）；库/EVO MAP/安装台账/旧技能包待续 |
+| DS-08 … DS-17 | 待实施 | — |
