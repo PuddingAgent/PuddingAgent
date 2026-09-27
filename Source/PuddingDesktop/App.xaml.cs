@@ -26,7 +26,8 @@ public partial class App : Application
         _window = new MainWindow(desktop =>
         {
             var factory = new PuddingDesktop.Composition.DesktopKernelFactory(desktop);
-            return (new PuddingDesktop.Foundation.InProcessKernel(factory), factory.CreateChatClient);
+            var kernel = new PuddingDesktop.Foundation.InProcessKernel(factory);
+            return (kernel, factory.CreateChatClient, factory.CreateLlmSettings(kernel));
         });
         instance.Activated += (_, _) => _window.DispatcherQueue.TryEnqueue(() => _window.Activate());
         _window.Activate();

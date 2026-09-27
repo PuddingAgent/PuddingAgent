@@ -131,6 +131,17 @@ public sealed partial class MainWindow
         AppearanceSettings.Visibility = VisibilityOf("general", "appearance", tab);
         PreferencesSettings.Visibility = VisibilityOf("general", "preferences", tab);
         AboutSettings.Visibility = VisibilityOf("about", "product", tab);
+        var providers = VisibilityOf("models", "providers", tab);
+        var models = VisibilityOf("models", "models", tab);
+        LlmProvidersSettings.Visibility = providers;
+        LlmModelsSettings.Visibility = models;
+        if (providers == Visibility.Visible || models == Visibility.Visible) LoadLlmIfNeeded();
+    }
+
+    private async void LoadLlmIfNeeded()
+    {
+        try { await LoadLlmAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private Visibility VisibilityOf(string category, string tab, string current) =>
@@ -142,6 +153,8 @@ public sealed partial class MainWindow
         ("general", "appearance") => true,
         ("general", "preferences") => true,
         ("about", "product") => true,
+        ("models", "providers") => true,
+        ("models", "models") => true,
         _ => false
     };
 

@@ -7,3 +7,7 @@
 `InProcessChatClient` also implements `IWorkspaceSetupClient`, projecting only provider/model identifiers and labels and invoking `LocalWorkspaceSetupService` directly; the lifecycle drain applies to setup writes too.
 
 `IConfigurationClient` uses the same in-process scoped/lifetime-managed adapter. Reads expose HasKey only; provider edits call the Core partial-save method, role edits preserve undisplayed manifest settings. No configuration HTTP or controller invocation.
+
+`DesktopLlmResourceSettings` implements `ILlmResourceSettings` for the native settings pages (DS-02): provider CRUD, provider limits, model definition and model context/pricing. Every call goes through `IDesktopKernel.RunSettingsAsync`, so the DS-00 gate refuses an unready or stopping host instead of faking a save, and each operation gets its own async DI scope. `ApiKeyChange.Clear` maps to `UpsertLlmProviderRequest.ClearApiKey`; `Keep` submits a null key so stored plaintext and vault references survive. Core keeps validation, the write lock and atomic replacement.
+
+`SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

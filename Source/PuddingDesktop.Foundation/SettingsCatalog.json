@@ -86,7 +86,7 @@
             ],
             "source": "pages/llm-resource-pool/index.tsx",
             "task": "DS-02",
-            "status": "部分已有"
+            "status": "已接入"
           },
           {
             "id": "provider-limits",
@@ -99,7 +99,7 @@
             ],
             "source": "pages/llm-resource-pool/index.tsx",
             "task": "DS-02",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },
@@ -124,7 +124,7 @@
             ],
             "source": "pages/llm-resource-pool/index.tsx",
             "task": "DS-02",
-            "status": "部分已有"
+            "status": "已接入"
           },
           {
             "id": "model-limits",
@@ -141,7 +141,7 @@
             ],
             "source": "pages/llm-resource-pool/index.tsx",
             "task": "DS-02",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

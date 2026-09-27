@@ -1,3 +1,7 @@
+## 2026-09-27 DS-02 LLM 服务商与模型（部分完成）
+
+Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形状边界、`ApiKeyChange`、纯表单助手），Composition 新增 `DesktopLlmResourceSettings`（经 `IDesktopKernel.RunSettingsAsync` 调用 `LlmProviderFileService`），Shell 新增 `MainWindow.LlmSettings.cs`（`models/providers` 与 `models/models` 两个页签原生表单）。Core 侧补 `UpsertLlmProviderRequest.ClearApiKey`（保持/替换/清除密钥，替换时清掉遗留 `ApiKeyRef`）与「一个服务商最多一个默认模型」。配额卡仍为占位：Web 的 quota 端点仍是 `NoContent()`，需先在 `llm.providers.json` 侧补齐配额状态与用量并独立测试。验证：Foundation 58 项、Composition 3 项（含真实 Host 端到端写入）、`LlmProviderFileServiceTests` 3 项、窗口 smoke 112 项通过。
+
 ## 2026-09-27 DS-01 通用、语言与关于
 
 `DesktopPreferences`/`DesktopPreferencesStore`（`desktop.preferences.json`）保存外观与语言；`DesktopLanguages` 只列随构建真实提供的语言（本机为简体中文，并说明需补齐资源、重开 Desktop 生效）；`DesktopProductInfo` 从程序集元数据读取真实版本、判定外部帮助入口（沿用 Web 头部 `RightContent` 的 GitHub 链接）并给出只读配置位置。`general/preferences` 与 `about/product` 两个页签去掉占位卡，改为原生卡片。验证：Foundation 47 项、窗口 smoke 104 项通过。
@@ -12,6 +16,8 @@
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat/ConversationActivity.cs` 提供强类型活动页与纯呈现 reducer；WinUI `ChatWorkspace` 按固定游标补齐活动 Turn，再合并增量。Core `AgentConversationProjectionService.Activity.cs` 分页读取 canonical 事件（256 条）、校验会话/根 Run、隔离子代理正文；`InProcessChatClient.Activity.cs` 直接装配，不走 HTTP。`ConversationActivityTests`、原生窗口和 `NativeChatActivityReplayTests` 分别验证状态边界、无全量刷新与 600 条活动的恢复/追赶。
+
 `AgentConversationProjectionService.GetMessageProcessItemsAsync` 支持失败/取消时从用户请求定位 canonical 终态执行明细；`MessageCard` 将其显示在独立展开区。租约丢失为失败状态。回归覆盖 `NativeChatTerminalActivityTests.cs`（真实 Core 中超过 64 条活动恢复、根/子执行边界）与原生窗口测试。
 
 `PuddingChat/ImageAttachments.cs`、`ChatSelection` 保存原生附件合同和角色草稿；`ChatComposer`/`ImageAttachmentView` 提供多选图片与按需预览，`InProcessChatClient.Images.cs` 直接调用 Core VisionArtifact 存储。SubmitTurn 使用 typed image parts，纯图片和重试都保留 Artifact 引用。
@@ -20,7 +26,7 @@
 
 `PuddingChat.WinUI/MarkdownView.cs` 使用 Markdig AST 渲染原生富文本、列表、引用、表格、代码复制与链接，流式追加复用稳定块。包依赖只位于 WinUI 展示组件；BCL 聊天叶组件保持无包依赖。
 
-`PuddingChat/TurnFlow.cs`（BCL 事件顺序/工具配对与通知端口）、`ReadingPosition.cs`（阅读锚点）→ `PuddingChat.WinUI/TurnContentView.cs`（原生思考/正文/工具块）与 `ChatWorkspace.cs`（角色搜索、订阅、滚动）。Composition `InProcessChatClient` 用 `ICommittedEventSignal` 进程内广播合并刷新会话；Core 通知实现位于 `PuddingPlatform/Services/CommittedEventSignal.cs`。设计与验证见 Desktop WinUI3 迁移计划和原生聊天实施记录。
+`PuddingChat/TurnFlow.cs`（BCL 事件顺序/工具配对与通知端口）、`ReadingPosition.cs`（阅读锚点）→ `PuddingChat.WinUI/TurnContentView.cs`（原生思考/正文/工具块）与 `ChatWorkspace.cs`（角色搜索、订阅、滚动）。Composition `InProcessChatClient` 用 `ICommittedEventSignal` 进程内广播触发合并读取，活动走增量、生命周期回到会话投影；Core 通知实现位于 `PuddingPlatform/Services/CommittedEventSignal.cs`。设计与验证见 Desktop WinUI3 迁移计划和原生聊天实施记录。
 
 ## 2026-09-27 Desktop 数据目录
 

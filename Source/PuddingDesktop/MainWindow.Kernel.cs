@@ -16,6 +16,7 @@ public sealed partial class MainWindow
     private bool _exiting;
     private ChatWorkspace? _nativeChat;
     private readonly Func<IChatClient> _createChatClient;
+    private readonly PuddingDesktop.Foundation.ILlmResourceSettings _llmSettings;
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);
@@ -78,6 +79,9 @@ public sealed partial class MainWindow
         }
         if (_loaded) OnStateChanged(this, new PropertyChangedEventArgs(nameof(ShellState.Page)));
         if (_loaded) RefreshAbout();
+        // A settings tab opened before Core was ready reloads as soon as the kernel becomes ready.
+        if (_loaded && (LlmProvidersSettings.Visibility == Visibility.Visible || LlmModelsSettings.Visibility == Visibility.Visible))
+            LoadLlmIfNeeded();
     }
     private async Task<string> SaveDataRootAsync()
     {

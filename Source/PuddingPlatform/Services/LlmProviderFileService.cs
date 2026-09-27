@@ -225,7 +225,8 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             {
                 Name = req.Name,
                 BaseUrl = req.BaseUrl,
-                ApiKey = req.ApiKey ?? p.ApiKey,
+                ApiKey = req.ClearApiKey ? null : req.ApiKey ?? p.ApiKey,
+                ApiKeyRef = req.ClearApiKey || req.ApiKey is not null ? null : p.ApiKeyRef,
                 IsEnabled = req.IsEnabled,
                 Description = req.Description,
                 MaxConcurrentRequests = req.MaxConcurrentRequests,
@@ -282,7 +283,8 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             {
                 Name = providerRequest.Name,
                 BaseUrl = providerRequest.BaseUrl,
-                ApiKey = providerRequest.ApiKey ?? provider.ApiKey,
+                ApiKey = providerRequest.ClearApiKey ? null : providerRequest.ApiKey ?? provider.ApiKey,
+                ApiKeyRef = providerRequest.ClearApiKey || providerRequest.ApiKey is not null ? null : provider.ApiKeyRef,
                 IsEnabled = providerRequest.IsEnabled,
                 Description = providerRequest.Description,
                 MaxConcurrentRequests = providerRequest.MaxConcurrentRequests,
@@ -435,6 +437,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             };
 
             p.Models.Add(newModel);
+            if (newModel.IsDefault) ClearOtherDefaults(p, newModel.ModelId);
             await SaveConfigAsync(config, ct);
 
             return new LlmModelDto(
@@ -510,6 +513,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 PriceWindowSourceUrl = req.PriceWindowSourceUrl ?? m.PriceWindowSourceUrl,
             };
             p.Models.Add(updated);
+            if (updated.IsDefault) ClearOtherDefaults(p, updated.ModelId);
             await SaveConfigAsync(config, ct);
 
             return new LlmModelDto(
@@ -571,6 +575,15 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
     }
 
     // ─── 内部方法 ─────────────────────────────────────────
+
+    /// <summary>一个 Provider 下最多一个默认模型；与 UpsertProviderWithModelsAsync 的既有语义一致。</summary>
+    private static void ClearOtherDefaults(PuddingLlmProviderConfig provider, string keepModelId)
+    {
+        for (var index = 0; index < provider.Models.Count; index++)
+            if (provider.Models[index].IsDefault
+                && !string.Equals(provider.Models[index].ModelId, keepModelId, StringComparison.OrdinalIgnoreCase))
+                provider.Models[index] = provider.Models[index] with { IsDefault = false };
+    }
 
     private static List<PuddingLlmModelConfig> MergeModels(
         List<PuddingLlmModelConfig> existingModels,

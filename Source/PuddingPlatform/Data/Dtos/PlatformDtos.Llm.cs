@@ -63,7 +63,9 @@ public record UpsertLlmProviderRequest(
     int? RequestsPerMinute = null,
     int? RequestTimeoutSeconds = null,
     int? StreamTimeoutSeconds = null,
-    ProviderCompatRequest? Compat = null
+    ProviderCompatRequest? Compat = null,
+    // 显式清除已保存的密钥（明文与 KeyVault 引用一并清除）；不应与 ApiKey 同时提供。
+    bool ClearApiKey = false
 );
 
 // ── LLM Provider Quota 配额 ────────────────────────────────────

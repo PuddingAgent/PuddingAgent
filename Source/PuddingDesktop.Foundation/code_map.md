@@ -13,6 +13,7 @@
 | `LocalDesktopIdentity.cs` | 本机单用户身份常量与序号匹配；不来自输入、命令行或 HTTP，也不等于 Web Admin 角色 |
 | `DesktopPreferences.cs` | 真实桌面偏好（外观 + 语言）与原子保存；`DesktopLanguages` 只列随构建提供的语言，并声明需重启生效 |
 | `DesktopProductInfo.cs` | DS-01 关于卡：版本取自程序集元数据（不写死）、外部帮助入口判定与只读配置位置描述 |
+| `LlmSettingsContracts.cs` | DS-02 LLM 设置边界：`ILlmResourceSettings`（任务形状，非逐接口转发）、provider/model 编辑记录、`ApiKeyChange`（Keep 为默认）与纯表单助手 `LlmSettingsText` |
 | `PuddingDesktop.Foundation.csproj` | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。47 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。58 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。

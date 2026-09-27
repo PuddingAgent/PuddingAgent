@@ -123,4 +123,60 @@ public sealed class LlmProviderFileServiceTests
                 Directory.Delete(root, recursive: true);
         }
     }
+
+    [TestMethod]
+    public async Task ProviderUpdate_KeepReplaceClearKey_AndPreservesUndisplayedSettings()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-llm-key-" + Guid.NewGuid().ToString("N"));
+        var paths = PuddingDataPaths.FromRoot(root);
+        try
+        {
+            await AtomicFileWriter.WriteJsonAsync(paths.SystemConfigFile("llm.providers.json"), new PuddingLlmProvidersConfig
+            {
+                Providers = [new()
+                {
+                    ProviderId = "pool", Name = "Pool", BaseUrl = "https://example.invalid/v1",
+                    ApiKeyRef = "vault:existing", Description = "kept", MaxConcurrentRequests = 3,
+                    TokensPerMinute = 999, RequestsPerMinute = 7, RequestTimeoutSeconds = 42,
+                    Models = [new() { ModelId = "keep", Name = "Keep", Protocol = "openai", PricePer1MInputTokens = 2.5m, MaxInputTokens = 4096 }]
+                }]
+            });
+            var service = new LlmProviderFileService(paths, NullLogger<LlmProviderFileService>.Instance);
+
+            // Keep: a null ApiKey must not erase the existing reference or the undisplayed advanced fields.
+            await service.UpdateProviderAsync("pool", new UpsertLlmProviderRequest(
+                "pool", "Renamed", "https://example.invalid/v1", null, "kept", true, 3, 999, 7), CancellationToken.None);
+            var provider = (await service.LoadAsync()).Providers.Single();
+            Assert.AreEqual("vault:existing", provider.ApiKeyRef);
+            Assert.IsTrue((await service.ListProvidersAsync()).Single().HasApiKey);
+            Assert.AreEqual(42, provider.RequestTimeoutSeconds);
+            Assert.AreEqual(2.5m, provider.Models.Single().PricePer1MInputTokens);
+            Assert.AreEqual(4096, provider.Models.Single().MaxInputTokens);
+
+            // Replace: a plaintext key supersedes the vault reference instead of leaving both behind.
+            await service.UpdateProviderAsync("pool", new UpsertLlmProviderRequest(
+                "pool", "Renamed", "https://example.invalid/v1", "plain-key", "kept", true), CancellationToken.None);
+            provider = (await service.LoadAsync()).Providers.Single();
+            Assert.AreEqual("plain-key", provider.ApiKey);
+            Assert.IsNull(provider.ApiKeyRef);
+
+            // Clear: explicit removal wipes both the plaintext value and the reference.
+            await service.UpdateProviderAsync("pool", new UpsertLlmProviderRequest(
+                "pool", "Renamed", "https://example.invalid/v1", null, "kept", true, ClearApiKey: true), CancellationToken.None);
+            provider = (await service.LoadAsync()).Providers.Single();
+            Assert.IsNull(provider.ApiKey);
+            Assert.IsNull(provider.ApiKeyRef);
+            Assert.IsFalse((await service.ListProvidersAsync()).Single().HasApiKey);
+            Assert.AreEqual(1, provider.Models.Count, "clearing a key must not drop models");
+
+            // The upsert-with-models path shares the same key semantics.
+            await service.UpsertProviderWithModelsAsync(
+                new UpsertLlmProviderRequest("pool", "Pool", "https://example.invalid/v1", null, "kept", true, ClearApiKey: true),
+                [], CancellationToken.None);
+            provider = (await service.LoadAsync()).Providers.Single();
+            Assert.IsNull(provider.ApiKeyRef);
+            Assert.AreEqual(1, provider.Models.Count, "upsert without model requests keeps the existing models");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
 }

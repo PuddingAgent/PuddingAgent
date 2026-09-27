@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -56,6 +56,7 @@ public sealed partial class MainWindow : Window
         SettingsPath.Text = _settingsStore.FilePath;
         DiagnosticPath.Text = Path.Combine(App.StateRoot, "desktop.log");
         InitializePreferencesSettings();
+        BuildLlmPanels();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -417,6 +418,21 @@ public sealed partial class MainWindow : Window
             Check(!AboutVersion.Text.Contains(DesktopProductInfo.UnknownVersion, StringComparison.Ordinal), "build version is not a placeholder");
             Check(AboutConfig.Text.Contains("desktop.preferences.json", StringComparison.Ordinal), "about lists read-only configuration locations");
             Check(AboutKernel.Text.Contains(_kernel.Snapshot.Description, StringComparison.Ordinal), "about reads the real kernel state");
+            // DS-02: the LLM resource pool is native content that refuses to look ready without Core.
+            OpenSettingsCategory("models", "providers");
+            await WaitForSettingsUiAsync(() => _llmProviderNotice.IsOpen);
+            Check(LlmProvidersSettings.Visibility == Visibility.Visible, "llm providers tab is native");
+            Check(LlmProvidersSettings.Content is StackPanel, "llm provider form is built");
+            Check(!_llmProviderSave.IsEnabled, "llm provider form stays disabled without Core");
+            Check(_llmProviderNotice.Title == "Core 未就绪", "llm providers tab reports the real Core state");
+            Check(_llmProviderNotice.Severity == InfoBarSeverity.Informational, "missing Core is not reported as a save failure");
+            OpenSettingsCategory("models", "models");
+            await WaitForSettingsUiAsync(() => _llmModelNotice.IsOpen);
+            Check(LlmModelsSettings.Visibility == Visibility.Visible, "llm models tab is native");
+            Check(!_llmModelSave.IsEnabled, "llm model form stays disabled without Core");
+            OpenSettingsCategory("models", "quota");
+            Check(LlmProvidersSettings.Visibility == Visibility.Collapsed && LlmModelsSettings.Visibility == Visibility.Collapsed,
+                "quota tab remains a registered placeholder until Core quota is implemented");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

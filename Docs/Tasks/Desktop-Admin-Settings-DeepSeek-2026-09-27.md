@@ -135,7 +135,18 @@
 
 ### DS-02 — LLM 服务商与模型（P0；依赖 DS-00）
 
+状态：**部分完成（2026-09-27）**。服务商连接、并发与速率、模型定义、上下文与计费四张卡已接入；配额卡仍为占位，等 Core 配额实现（见下）。
+
 复用原生配置已有局部保存，替换 providers/model-definition 占位；依次补服务商并发、TPM/RPM、协议、能力、上下文与价格。服务商/模型嵌套选择和删除关联影响要明确。最后单独处理配额：先补 Core 配额状态与持久化并独立测试，再启用配额表单。验收：Keep/Replace/Clear 密钥、切换 Provider 的模型校验、保存一个字段后价格/其他模型不丢失、错误保留草稿；空配额端点不能导致“已保存”。
+
+已交付：
+- Core：`UpsertLlmProviderRequest.ClearApiKey`，`UpdateProviderAsync`/`UpsertProviderWithModelsAsync` 明确区分保持/替换/清除（替换时清除遗留 `ApiKeyRef`）；`CreateModelAsync`/`UpdateModelAsync` 落实“一个服务商最多一个默认模型”，与既有 `MergeModels` 语义一致。`LlmProviderFileServiceTests` 覆盖。
+- 边界：`ILlmResourceSettings` + `LlmProviderEdit`/`LlmModelEdit`/`ApiKeyChange` + `LlmSettingsText`（纯表单助手）在 Foundation；`DesktopLlmResourceSettings` 在 Composition，经 `IDesktopKernel.RunSettingsAsync` 调用 `LlmProviderFileService`，无 HTTP/逐接口转发。
+- 原生设置：`models/providers`（服务商连接 + 并发与速率）与 `models/models`（模型定义 + 上下文与计费）两个页签改为原生表单；`LlmProvidersSettings`/`LlmModelsSettings`。删除动作有确认对话框并说明关联影响；Core 未就绪时表单禁用、显示真实原因，绝不假成功。
+
+已登记缺口：
+- 模型 `description`：`PuddingLlmModelConfig` 没有该字段，本页不提供模型描述输入（不造假控件）。
+- 配额（`quota` 卡）：Web 的 quota GET/PUT/reset-daily 仍是 `NoContent()`，且 `LlmProviderQuotaEntity` 挂在旧 DB 表上；按“配置文件优先”需要先在 `llm.providers.json` 侧补齐配额状态、用量与重置语义并独立测试，再启用表单。**未启用配额表单即未完成 DS-02。**
 
 ### DS-03 — 语音服务商、TTS 与 ASR（P1；依赖 DS-00、DS-02 表单经验）
 
@@ -644,4 +655,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 |---|---|---|
 | DS-00 接入基线与生命周期 | 已完成 2026-09-27 | [接入说明](../Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)；Foundation 36 项、Composition 2 项（含真实 Host）、窗口 smoke 93 项通过 |
 | DS-01 通用、语言与关于 | 已完成 2026-09-27 | `language`/`help`/`about` 三卡原生化；Foundation 47 项、窗口 smoke 104 项通过 |
-| DS-02 … DS-17 | 待实施 | — |
+| DS-02 LLM 服务商与模型 | 部分完成 2026-09-27 | 四张卡（providers / provider-limits / model-definition / model-limits）已接入；配额卡待 Core 实现 |
+| DS-03 … DS-17 | 待实施 | — |
