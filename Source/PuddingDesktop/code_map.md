@@ -8,6 +8,7 @@
 | `MainWindow.Kernel.cs` | 内核配置、原生 ChatWorkspace 装配、生命周期按钮、退出协调与真实进程 smoke |
 | `MainWindow.xaml(.cs)` | 原生菜单、角色导航、草稿、五类文档标签、设置与运行中心、窄窗口折叠 |
 | `MainWindow.Settings.cs` | 居中设置层、分类/页签/占位卡片、字段搜索、背景输入隔离、Esc/焦点恢复；DS-00 绑定所选工作区/角色到设置选择代次；DS-01 语言与关于页签改为原生内容；DS-02 决定哪些页签有原生内容 |
+| `MainWindow.VoiceSettings.cs` | DS-03 语音原生表单：TTS/ASR 服务商、TTS 模型（音色/格式/采样率/四种能力）、ASR 模型（语言/采样率/三种能力）；逗号分隔列表编辑、默认项真源展示、Core 未就绪时禁用表单 |
 | `MainWindow.LlmSettings.cs` | DS-02 LLM 资源池原生表单：服务商连接、并发与速率、模型定义、上下文与计费；Keep/Replace/Clear 密钥语义、删除确认、Core 未就绪时禁用表单并显示真实原因 |
 | `Kernel/WinUiDesktopServices.cs` | Core 通过 DI 调用展示端口，DispatcherQueue 调度、取消及关闭处理 |
 | `HostingProbeWindow.cs` | 手动/自检双 WebView2，独立 UDF 与离线页面，Cookie 隔离，原生浮层验证 |

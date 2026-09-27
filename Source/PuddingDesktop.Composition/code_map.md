@@ -10,4 +10,6 @@
 
 `DesktopLlmResourceSettings` implements `ILlmResourceSettings` for the native settings pages (DS-02): provider CRUD, provider limits, model definition, model context/pricing and provider quota. Every call goes through `IDesktopKernel.RunSettingsAsync`, so the DS-00 gate refuses an unready or stopping host instead of faking a save, and each operation gets its own async DI scope. `ApiKeyChange.Clear` maps to `UpsertLlmProviderRequest.ClearApiKey`; `Keep` submits a null key so stored plaintext and vault references survive. Quota reads and writes go to `LlmProviderQuotaService` (limits in the provider file, usage derived from the token ledger, reset moves the window). Core keeps validation, the write lock and atomic replacement.
 
+`DesktopVoiceResourceSettings` implements `IVoiceResourceSettings` for the TTS/ASR pages (DS-03) on the same gated path: provider CRUD, TTS/ASR model CRUD and the effective defaults. `ApiKeyChange.Clear` maps to `UpsertVoiceProviderRequest.ClearApiKey`; array fields are submitted as displayed so capability switches round-trip. Core keeps validation, the write lock and default-pointer sync.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

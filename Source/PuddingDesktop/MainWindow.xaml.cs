@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -57,6 +57,7 @@ public sealed partial class MainWindow : Window
         DiagnosticPath.Text = Path.Combine(App.StateRoot, "desktop.log");
         InitializePreferencesSettings();
         BuildLlmPanels();
+        BuildVoicePanels();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -436,6 +437,23 @@ public sealed partial class MainWindow : Window
             Check(LlmQuotaSettings.Content is StackPanel, "llm quota form is built");
             Check(!_llmQuotaSave.IsEnabled, "llm quota form stays disabled without Core");
             Check(_llmQuotaNotice.Title == "Core 未就绪", "llm quota tab reports the real Core state");
+            // DS-03: voice providers, TTS and ASR are native content that also refuses to look ready without Core.
+            OpenSettingsCategory("voice", "providers");
+            await WaitForSettingsUiAsync(() => _vpNotice.IsOpen);
+            Check(VoiceProvidersSettings.Visibility == Visibility.Visible, "voice providers tab is native");
+            Check(VoiceProvidersSettings.Content is StackPanel, "voice provider form is built");
+            Check(!_vpSave.IsEnabled, "voice provider form stays disabled without Core");
+            Check(_vpNotice.Title == "Core 未就绪", "voice providers tab reports the real Core state");
+            OpenSettingsCategory("voice", "tts");
+            await WaitForSettingsUiAsync(() => _vtNotice.IsOpen);
+            Check(VoiceTtsSettings.Visibility == Visibility.Visible, "voice tts tab is native");
+            Check(!_vtSave.IsEnabled, "voice tts form stays disabled without Core");
+            Check(_vtDefaults.Text.Contains("默认 TTS", StringComparison.Ordinal), "voice tts tab shows the effective defaults");
+            OpenSettingsCategory("voice", "asr");
+            await WaitForSettingsUiAsync(() => _vaNotice.IsOpen);
+            Check(VoiceAsrSettings.Visibility == Visibility.Visible, "voice asr tab is native");
+            Check(!_vaSave.IsEnabled, "voice asr form stays disabled without Core");
+            Check(_vaDefaults.Text.Contains("默认 ASR", StringComparison.Ordinal), "voice asr tab shows the effective defaults");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

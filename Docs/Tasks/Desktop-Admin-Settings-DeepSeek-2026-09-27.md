@@ -154,7 +154,17 @@
 
 ### DS-03 — 语音服务商、TTS 与 ASR（P1；依赖 DS-00、DS-02 表单经验）
 
+状态：**已完成（2026-09-27）**。三张卡（voice-providers / tts / asr）分三次可验接入，Core 侧同时补齐了密钥与默认项语义。
+
 三张卡分三次可验提交。选项按当前 VoiceProviderFileService 的文件结构和校验处理；多值音色/语言/格式/采样率用原生列表编辑。验收：TTS 与 ASR 默认项互不覆盖；新增/编辑/删除持久化，秘密不回显；数组与能力开关来回保存不丢失。
+
+已交付：
+- Core：`UpsertVoiceProviderRequest.ClearApiKey`（保持/替换/清除，且拒绝同时替换与清除）；provider 与模型的字段/采样率校验；**默认项真源同步**——运行时只读根上的 `Default{Tts,Asr}{Provider,Model}Id`，因此 `Create/Update/Delete` 模型与删除 Provider 都会维护根指针，并保证每个列表最多一个默认项，且 TTS 与 ASR 互不影响。
+- 数据修复：`default-data/config/voice/providers.json` 的 `defaultAsrModelId` 原本指向不存在的 `qwen3-asr-flash`（真实模型为 `qwen3-asr-flash-realtime`），且 dashscope 与 xunfei 的 ASR 模型同时标记 `isDefault`；已按运行时真源修正。
+- 边界：`IVoiceResourceSettings` + `Voice*` 编辑记录 + `VoiceSettingsText`/`VoiceDefaults` 在 Foundation；`DesktopVoiceResourceSettings` 在 Composition，经 `IDesktopKernel.RunSettingsAsync` 调用 `VoiceProviderFileService`。
+- 原生设置：`voice/providers`、`voice/tts`、`voice/asr` 三个页签改为原生表单；多值音色/格式/语言/采样率用逗号分隔的原生列表编辑，未提交数组沿用现值、空数组才是清空；TTS/ASR 页签显示运行时真实默认项。
+
+已登记缺口：Core 的语音模型配置没有 `description` 字段，模型卡片按原字段矩阵不含该列；无。
 
 ### DS-04 — 模板与角色实例完整设置（P0；依赖 DS-02、DS-06、DS-07 目录）
 
@@ -660,4 +670,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-00 接入基线与生命周期 | 已完成 2026-09-27 | [接入说明](../Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)；Foundation 36 项、Composition 2 项（含真实 Host）、窗口 smoke 93 项通过 |
 | DS-01 通用、语言与关于 | 已完成 2026-09-27 | `language`/`help`/`about` 三卡原生化；Foundation 47 项、窗口 smoke 104 项通过 |
 | DS-02 LLM 服务商与模型 | 已完成 2026-09-27 | 五张卡接入；Core 补齐配额（限额入配置文件、用量来自账本、reset-daily 只推进窗口）；配额测试 4 项、Composition 真实 Host 端到端通过 |
-| DS-03 … DS-17 | 待实施 | — |
+| DS-03 语音服务商、TTS 与 ASR | 已完成 2026-09-27 | 三卡接入；Core 补密钥保持/替换/清除与默认项真源同步（TTS/ASR 互不覆盖）；语音 Core 测试 4 项 |
+| DS-04 … DS-17 | 待实施 | — |

@@ -15,6 +15,7 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
         ?? throw new InvalidOperationException("Core 尚未就绪。");
     /// <summary>Settings domain adapters are bound to the kernel lifecycle, so readiness is checked per call.</summary>
     public ILlmResourceSettings CreateLlmSettings(IDesktopKernel kernel) => new DesktopLlmResourceSettings(kernel);
+    public IVoiceResourceSettings CreateVoiceSettings(IDesktopKernel kernel) => new DesktopVoiceResourceSettings(kernel);
     public async Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(dataRoot);

@@ -17,6 +17,7 @@ public sealed partial class MainWindow
     private ChatWorkspace? _nativeChat;
     private readonly Func<IChatClient> _createChatClient;
     private readonly PuddingDesktop.Foundation.ILlmResourceSettings _llmSettings;
+    private readonly PuddingDesktop.Foundation.IVoiceResourceSettings _voiceSettings;
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);

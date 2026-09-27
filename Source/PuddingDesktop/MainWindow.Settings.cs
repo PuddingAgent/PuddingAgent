@@ -138,6 +138,19 @@ public sealed partial class MainWindow
         LlmModelsSettings.Visibility = models;
         LlmQuotaSettings.Visibility = quota;
         if (providers == Visibility.Visible || models == Visibility.Visible || quota == Visibility.Visible) LoadLlmIfNeeded();
+        var voiceProviders = VisibilityOf("voice", "providers", tab);
+        var voiceTts = VisibilityOf("voice", "tts", tab);
+        var voiceAsr = VisibilityOf("voice", "asr", tab);
+        VoiceProvidersSettings.Visibility = voiceProviders;
+        VoiceTtsSettings.Visibility = voiceTts;
+        VoiceAsrSettings.Visibility = voiceAsr;
+        if (voiceProviders == Visibility.Visible || voiceTts == Visibility.Visible || voiceAsr == Visibility.Visible) LoadVoiceIfNeeded();
+    }
+
+    private async void LoadVoiceIfNeeded()
+    {
+        try { await LoadVoiceAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadLlmIfNeeded()
@@ -158,6 +171,9 @@ public sealed partial class MainWindow
         ("models", "providers") => true,
         ("models", "models") => true,
         ("models", "quota") => true,
+        ("voice", "providers") => true,
+        ("voice", "tts") => true,
+        ("voice", "asr") => true,
         _ => false
     };
 

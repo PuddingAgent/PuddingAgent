@@ -235,7 +235,7 @@
 | `Controllers/Api/LlmProviderApiController.cs` | Provider CRUD/配额/余额 HTTP 出口；`GET/PUT api/llm/providers/{providerId}/quota` 与 `POST .../quota/reset-daily` 由 `LlmProviderQuotaService` 实现（不再是 NoContent）；`GET api/llm/providers/{providerId}/balance`（KeyNotFound→404 / InvalidOperation→400 / HttpRequestException→502） |
 | `Services/LlmProviderQuotaService.cs` | Provider 自设 token 配额：限额与窗口起点存 `llm.providers.json`（`provider.quota`），已用 token 由 token 账本（`llm_gateway_usage_events` + `TokenUsageEvents`，经 `TokenUsageDailyAggregateService.GetRangeAsync`）按 `OccurredAtUtc ≥ 窗口起点` 实时推导，不重复记账；`reset-daily` 只把日窗口起点推进到“现在”，不删除账本、不影响月计数；`WindowStart` = max(自然周期起点, 重置时间) 且不超过“现在” |
 | `Services/ChannelConfigurationFileService.cs` | 渠道配置（21KB） |
-| `Services/VoiceProviderFileService.cs` | 语音提供商（18KB） |
+| `Services/VoiceProviderFileService.cs` | 语音提供商/模型文件配置（config/voice/providers.json）：provider 字段与采样率校验、密钥保持/替换/清除（`ClearApiKey`）；模型 `IsDefault` 与运行时真源 `Default{Tts,Asr}{Provider,Model}Id` 同步维护（每个列表最多一个默认项，TTS 与 ASR 互不影响），删除模型/Provider 时清理根指针 |
 
 余额链路测试：`PuddingPlatformTests/Services/DeepSeekLlmBalanceProviderTests.cs`（8 用例：解析//v1 剥离/Bearer/非 2xx/网络错误/CanHandle 矩阵）+ `LlmProviderBalanceDispatchTests.cs`（4 用例：暂不支持/委托与密钥/404/400）；扩展步骤见 `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md`。
 

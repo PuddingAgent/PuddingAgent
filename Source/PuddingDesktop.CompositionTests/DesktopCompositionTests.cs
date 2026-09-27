@@ -173,6 +173,77 @@ public sealed class DesktopCompositionTests
         }
     }
 
+    [Fact]
+    public async Task VoiceSettingsAdapter_KeepsSecretsAndSeparatesTtsFromAsrDefaults()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var settings = factory.CreateVoiceSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => settings.ListProvidersAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            await settings.SaveProviderAsync(new VoiceProviderEdit("voice-a", "Voice A", "https://a.invalid", "notes", true,
+                ApiKeyChange.Replace, "fixture-voice-secret"), timeout.Token);
+            var provider = Assert.Single(await settings.ListProvidersAsync(timeout.Token),
+                candidate => candidate.ProviderId == "voice-a");
+            Assert.True(provider.HasApiKey);
+            Assert.Equal("https://a.invalid", provider.Endpoint);
+
+            // Keep must not clear the stored secret.
+            await settings.SaveProviderAsync(new VoiceProviderEdit("voice-a", "Voice A renamed", "https://a.invalid", "notes",
+                true, ApiKeyChange.Keep, null), timeout.Token);
+            var renamed = Assert.Single(await settings.ListProvidersAsync(timeout.Token),
+                candidate => candidate.ProviderId == "voice-a");
+            Assert.Equal("Voice A renamed", renamed.Name);
+            Assert.True(renamed.HasApiKey);
+
+            await settings.SaveTtsModelAsync(new VoiceTtsModel("voice-a", "tts-1", "TTS 1", "/tts",
+                ["longanyang"], ["wav", "mp3"], [24000, 48000], true, true, false, false, false, true, 1), timeout.Token);
+            await settings.SaveAsrModelAsync(new VoiceAsrModel("voice-a", "asr-1", "ASR 1", "/asr",
+                ["zh-CN"], [16000], true, true, false, false, true, 1), timeout.Token);
+            var defaults = await settings.GetDefaultsAsync(timeout.Token);
+            Assert.Equal("voice-a", defaults.TtsProviderId);
+            Assert.Equal("tts-1", defaults.TtsModelId);
+            Assert.Equal("voice-a", defaults.AsrProviderId);
+            Assert.Equal("asr-1", defaults.AsrModelId);
+
+            // Re-saving the TTS model without the default flag clears only the TTS pointer.
+            await settings.SaveTtsModelAsync(new VoiceTtsModel("voice-a", "tts-1", "TTS 1", "/tts",
+                ["longanyang"], ["wav", "mp3"], [24000, 48000], true, true, false, false, false, false, 1), timeout.Token);
+            defaults = await settings.GetDefaultsAsync(timeout.Token);
+            Assert.Null(defaults.TtsModelId);
+            Assert.Equal("asr-1", defaults.AsrModelId);
+
+            var tts = Assert.Single(await settings.ListTtsModelsAsync("voice-a", timeout.Token));
+            Assert.Equal(["longanyang"], tts.Voices);
+            Assert.Equal([24000, 48000], tts.SampleRates);
+            Assert.True(tts.SupportsStreaming && tts.SupportsInstructions);
+            Assert.False(tts.IsDefault);
+
+            await Assert.ThrowsAsync<ArgumentException>(() => settings.SaveProviderAsync(
+                new VoiceProviderEdit("bad id", "X", "https://a.invalid", "", true, ApiKeyChange.Keep, null), timeout.Token));
+
+            await settings.DeleteAsrModelAsync("voice-a", "asr-1", timeout.Token);
+            defaults = await settings.GetDefaultsAsync(timeout.Token);
+            Assert.Null(defaults.AsrModelId);
+            Assert.Null(defaults.AsrProviderId);
+            Assert.Empty(await settings.ListAsrModelsAsync("voice-a", timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => settings.GetDefaultsAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
     // The isolated data root is seeded with the shipped default providers, so target ours explicitly.
     private static PuddingDesktop.Foundation.LlmProviderSummary SinglePool(IReadOnlyList<PuddingDesktop.Foundation.LlmProviderSummary> providers)
         => Assert.Single(providers, provider => provider.ProviderId == "pool");

@@ -183,6 +183,17 @@ public record VoiceProviderDto(
     DateTimeOffset UpdatedAt
 );
 
+/// <summary>
+/// 根配置上的有效默认项（运行时真实读取的字段）。模型的 IsDefault 必须与它保持一致，
+/// 否则设置页的“设为默认”不会生效。
+/// </summary>
+public record VoiceDefaultsDto(
+    string? DefaultTtsProviderId,
+    string? DefaultTtsModelId,
+    string? DefaultAsrProviderId,
+    string? DefaultAsrModelId
+);
+
 public record VoiceProviderDetailDto(
     string ProviderId,
     string Name,
@@ -202,7 +213,9 @@ public record UpsertVoiceProviderRequest(
     string Endpoint,
     string? ApiKey,
     string? Description,
-    bool IsEnabled
+    bool IsEnabled,
+    // 显式清除已保存的密钥（voice/providers.json 只有明文 apiKey）；不应与 ApiKey 同时提供。
+    bool ClearApiKey = false
 );
 
 public record TtsModelDto(

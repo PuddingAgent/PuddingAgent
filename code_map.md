@@ -1,3 +1,7 @@
+## 2026-09-27 DS-03 语音服务商、TTS 与 ASR（已完成）
+
+Foundation 新增 `VoiceSettingsContracts.cs`（`IVoiceResourceSettings`、TTS/ASR 模型记录、`VoiceDefaults`、`VoiceSettingsText`），Composition 新增 `DesktopVoiceResourceSettings`（经 `IDesktopKernel.RunSettingsAsync` 调用 `VoiceProviderFileService`），Shell 新增 `MainWindow.VoiceSettings.cs`（`voice/providers`、`voice/tts`、`voice/asr` 三个页签原生表单，多值音色/格式/语言/采样率用逗号分隔的原生列表编辑）。Core 侧：`UpsertVoiceProviderRequest.ClearApiKey`（保持/替换/清除，拒绝同时替换与清除）、provider 与采样率校验，以及**默认项真源同步**——运行时只读根上的 `Default{Tts,Asr}{Provider,Model}Id`，模型 `IsDefault` 现由 `Create/Update/Delete` 与删除 Provider 共同维护，每个列表最多一个默认项且 TTS 与 ASR 互不影响。数据修复：`default-data/config/voice/providers.json` 的 `defaultAsrModelId` 原指向不存在的 `qwen3-asr-flash`，且 dashscope 与 xunfei 同时标记默认，已按真源修正。验证：Foundation 66 项、Composition 4 项、语音 Core 测试 4 项、窗口 smoke 125 项通过。
+
 ## 2026-09-27 DS-02 LLM 服务商与模型（已完成）
 
 Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形状边界、`ApiKeyChange`、`LlmQuotaStatus`、纯表单助手），Composition 新增 `DesktopLlmResourceSettings`（经 `IDesktopKernel.RunSettingsAsync` 调用 `LlmProviderFileService` 与 `LlmProviderQuotaService`），Shell 新增 `MainWindow.LlmSettings.cs`（`models/providers`、`models/models`、`models/quota` 三个页签原生表单）。Core 侧：`UpsertLlmProviderRequest.ClearApiKey`（保持/替换/清除密钥，替换时清掉遗留 `ApiKeyRef`）、「一个服务商最多一个默认模型」、`PuddingLlmProviderConfig.Quota` + `LlmProviderQuotaService`（限额入 `llm.providers.json`，用量由 token 账本推导，`reset-daily` 只推进窗口起点），quota 三个 HTTP 端点不再是 `NoContent()`。验证：Foundation 60 项、Composition 3 项（含真实 Host 端到端写入与配额往返）、`LlmProvider*Tests` 11 项、窗口 smoke 115 项通过。

@@ -193,7 +193,7 @@
             ],
             "source": "pages/voice-models/index.tsx",
             "task": "DS-03",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },
@@ -222,7 +222,7 @@
             ],
             "source": "pages/voice-models/index.tsx",
             "task": "DS-03",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },
@@ -249,7 +249,7 @@
             ],
             "source": "pages/voice-models/index.tsx",
             "task": "DS-03",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

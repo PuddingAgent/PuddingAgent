@@ -61,7 +61,7 @@
           "languages": ["zh-CN", "en-US"],
           "sampleRates": [16000, 8000],
           "supportsTimestamps": true,
-          "isDefault": true,
+          "isDefault": false,
           "sortOrder": 1
         }
       ]
@@ -70,5 +70,5 @@
   "defaultTtsProviderId": "dashscope",
   "defaultTtsModelId": "cosyvoice-v3-flash",
   "defaultAsrProviderId": "dashscope",
-  "defaultAsrModelId": "qwen3-asr-flash"
+  "defaultAsrModelId": "qwen3-asr-flash-realtime"
 }
