@@ -457,6 +457,9 @@ public static partial class PuddingServiceCollectionExtensions
         // ── 工作区资源（知识库 / 技能 / 工作流）：三个直接使用 DbContext 的 Controller 共用一份应用操作 ──
         builder.Services.AddScoped<WorkspaceResourceService>();
 
+        // ── 工具授权规则：规则变更与其审计写入是同一个应用操作（HTTP 与原生共用） ──
+        builder.Services.AddScoped<ToolApprovalAdminService>();
+
         // ── 文件式 TTS/ASR 语音 Provider/Model 管理 ──
         builder.Services.AddSingleton<VoiceProviderFileService>();
 

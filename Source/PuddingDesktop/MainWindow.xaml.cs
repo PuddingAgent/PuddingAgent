@@ -77,6 +77,7 @@ public sealed partial class MainWindow : Window
         BuildStoragePanel();
         BuildStorageCleanupPanel();
         BuildSecurityPanel();
+        BuildApprovalPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -624,6 +625,12 @@ public sealed partial class MainWindow : Window
             await WaitForSettingsUiAsync(() => _secAuditNotice.IsOpen);
             Check(SecurityAuditSettings.Visibility == Visibility.Visible, "security audit tab is native");
             Check(SecurityAuditSettings.Content is StackPanel, "security audit form is built");
+            OpenSettingsCategory("security", "allowlist");
+            await WaitForSettingsUiAsync(() => _alNotice.IsOpen);
+            Check(AllowlistSettings.Visibility == Visibility.Visible, "allowlist tab is native");
+            Check(AllowlistSettings.Content is StackPanel, "allowlist form is built");
+            Check(!_alToolId.IsEnabled, "allowlist form stays disabled without Core");
+            Check(_alNotice.Title == "Core 未就绪", "allowlist tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

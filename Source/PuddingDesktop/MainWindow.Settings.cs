@@ -219,6 +219,15 @@ public sealed partial class MainWindow
         var securityAudit = VisibilityOf("security", "audit", tab);
         SecurityAuditSettings.Visibility = securityAudit;
         if (securityAudit == Visibility.Visible) LoadSecurityAuditIfNeeded();
+        var allowlist = VisibilityOf("security", "allowlist", tab);
+        AllowlistSettings.Visibility = allowlist;
+        if (allowlist == Visibility.Visible) LoadAllowlistIfNeeded();
+    }
+
+    private async void LoadAllowlistIfNeeded()
+    {
+        try { await LoadApprovalRulesAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadSecurityVaultIfNeeded()
@@ -229,7 +238,7 @@ public sealed partial class MainWindow
 
     private async void LoadSecurityAuditIfNeeded()
     {
-        try { await LoadClassifierHealthAsync(); }
+        try { await LoadClassifierHealthAsync(); await LoadApprovalAuditAsync(); }
         catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
@@ -416,6 +425,7 @@ public sealed partial class MainWindow
         ("storage", "cleanup") => true,
         ("security", "vault") => true,
         ("security", "audit") => true,
+        ("security", "allowlist") => true,
         _ => false
     };
 

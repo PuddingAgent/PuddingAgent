@@ -91,6 +91,83 @@ public sealed class SecurityContractTests
     }
 
     [Fact]
+    public void ApprovalRuleVocabularyAndDescriptionsMatchCore()
+    {
+        Assert.Equal(["built_in", "audit_agent", "human", "classifier"], SecurityText.RuleSources);
+        Assert.Equal(["enabled", "disabled"], SecurityText.RuleStatuses);
+        Assert.Equal(["allow", "deny"], SecurityText.RuleEffects);
+
+        Assert.Contains("内置", SecurityText.DescribeRuleSource("built_in"), StringComparison.Ordinal);
+        Assert.Contains("已下线", SecurityText.DescribeRuleSource("audit_agent"), StringComparison.Ordinal);
+        Assert.Contains("分类器", SecurityText.DescribeRuleSource("classifier"), StringComparison.Ordinal);
+        Assert.Equal("SomethingNew", SecurityText.DescribeRuleSource("SomethingNew"));
+
+        // allow 是 Core 的缺省值：没有 effect 字段的旧记录就是放行规则。
+        Assert.Contains("缺省", SecurityText.DescribeRuleEffect(""), StringComparison.Ordinal);
+        Assert.Contains("优先级更高", SecurityText.DescribeRuleEffect("deny"), StringComparison.Ordinal);
+
+        Assert.Equal("批准", SecurityText.DescribeDecision("approved"));
+        Assert.Equal("依赖不可用（等待）", SecurityText.DescribeDecision("deferreddependency"));
+        Assert.Equal("无裁决", SecurityText.DescribeDecision(null));
+        Assert.Equal("白名单命中", SecurityText.DescribeAuditEventType("allowlist_hit"));
+        Assert.Equal("工单拒绝", SecurityText.DescribeAuditEventType("ticket_denied"));
+        Assert.Equal("SomeFutureEvent", SecurityText.DescribeAuditEventType("SomeFutureEvent"));
+    }
+
+    [Fact]
+    public void ApprovalRuleFormsRequireAnExactMatchKey()
+    {
+        var valid = new ApprovalRuleEdit("", "ws", "shell_exec", "git status", "", "human", "enabled", "allow",
+            "", "", "", "reviewed");
+        Assert.Empty(SecurityText.Validate(valid));
+        // 命令与参数 JSON 至少要有一个，否则规则没有精确匹配键。
+        var noKey = valid with { Command = "", ArgumentsJson = "" };
+        Assert.Contains("至少", SecurityText.Validate(noKey).Single(), StringComparison.Ordinal);
+        Assert.Contains("toolId", SecurityText.Validate(valid with { ToolId = "" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("不是合法 JSON", SecurityText.Validate(valid with { ArgumentsJson = "{oops" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("来源", SecurityText.Validate(valid with { Source = "robot" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("状态", SecurityText.Validate(valid with { Status = "zombie" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("效果", SecurityText.Validate(valid with { Effect = "maybe" }).Single(), StringComparison.Ordinal);
+        Assert.Empty(SecurityText.Validate(valid with { ArgumentsJson = "{\"a\":1}" }));
+    }
+
+    [Fact]
+    public void ApprovalRuleAndAuditDisplaysUseCoreFieldsOnly()
+    {
+        var rule = new ApprovalRule("tal_1", "", "shell", "git status", "", "classifier", "disabled", "deny",
+            "agent-1", "user-1", "ticket-1", "why", 7, DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 3, null);
+        Assert.False(rule.IsEnabled);
+        Assert.True(rule.IsDeny);
+        Assert.Equal("已停用", rule.StatusText);
+        Assert.Contains("拒绝", rule.EffectText, StringComparison.Ordinal);
+        Assert.Contains("用户 user-1", rule.ApproverText, StringComparison.Ordinal);
+        Assert.Contains("Agent agent-1", rule.ApproverText, StringComparison.Ordinal);
+        Assert.Contains("工单 ticket-1", rule.ApproverText, StringComparison.Ordinal);
+        Assert.Contains("命令：git status", rule.MatchText, StringComparison.Ordinal);
+        Assert.Equal("无批准来源", (rule with { ApprovedByUserId = "", ApprovedByAgentInstanceId = "", ApprovalTicketId = "" }).ApproverText);
+
+        var stats = new ApprovalStats(5, 2, 1, 1, 2, 1, 0, 3, 0, 4, 6, 5, 2, 4);
+        Assert.Contains("提交 5", stats.SummaryText, StringComparison.Ordinal);
+        Assert.Contains("白名单命中 4", stats.SummaryText, StringComparison.Ordinal);
+        Assert.Contains("动态 4", stats.SummaryText, StringComparison.Ordinal);
+
+        var entry = new ApprovalAuditEntry("taa_1", "allowlist_hit", "ws", "", "", "", "shell", "ls", "", "",
+            "tal_1", "approved", "classifier", "gpt", "matched", DateTimeOffset.UtcNow);
+        Assert.Equal("白名单命中", entry.EventTypeText);
+        Assert.Equal("批准", entry.DecisionText);
+        Assert.Contains("shell · ls", entry.TargetText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ApprovalNoticesStateDisableAndDenyPrecedence()
+    {
+        Assert.Contains("不是删除", SecurityText.DisableIsNotDelete, StringComparison.Ordinal);
+        Assert.Contains("deny 优先于 allow", SecurityText.DenyBeatsAllow, StringComparison.Ordinal);
+        Assert.Contains("追加写", SecurityText.AuditAppendOnly, StringComparison.Ordinal);
+        Assert.Equal([50, 100, 200, 500], SecurityText.AuditLimits);
+    }
+    [Fact]
     public void NoticesStateTheWriteOnlyBoundary()
     {
         Assert.Contains("不回显明文", SecurityText.WriteOnlyNotice, StringComparison.Ordinal);

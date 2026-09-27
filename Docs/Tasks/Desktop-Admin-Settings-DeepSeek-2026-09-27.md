@@ -343,7 +343,13 @@
 
 ### DS-10 — 密钥、审批与审计（P0/P1；依赖 DS-00）
 
-状态：**进行中（2026-09-27）**。`security/vault`（密钥保管库）与 `security/audit` 的**分类器健康**卡已接入；`security/allowlist`（工具授权白名单）与 `security/audit` 的**审批审计**卡待续。
+状态：**已完成（2026-09-27）**。四张卡全部接入：密钥保管库、工具授权白名单、审批审计、分类器健康。
+
+**授权 / 审批审计切片已交付**
+- 授权规则：toolId、workspaceId（留空=全局）、命令与参数 JSON（Core 的精确匹配键，至少一个）、来源（built_in / audit_agent / human / classifier）、状态、**effect（allow / deny）**、批准者溯源（用户 / Agent / 工单）与理由；工具 ID 由 Core 规范化。
+- **发现并修复真实缺陷**：规则变更的审计事件原先只写在 HTTP 控制器里，任何不经 HTTP 的管理面改规则都不留痕。已按 §3.1 把「规则变更 + 审计写入」下沉为 `ToolApprovalAdminService`（HTTP 与原生共用），并用独立测试钉住「创建/更新/停用各写一条审计」「被拒绝的变更不留审计」。
+- 语义边界：**停用不是删除**（Core 标记 disabled，记录与审计保留，界面无硬删除）；**effect 缺省为 allow**（旧记录兼容），**同键冲突时 deny 优先**（界面不把 deny 显示成放行）。
+- 审批审计：按工作区/工具/事件类型/条数筛选，事件类型用 Core 的 `ToolApprovalWire` wire 名，未知类型原样显示；统计面板显示 Core 的 14 项计数（工单提交/批准/拒绝/转人工/匹配/消费/不匹配、隐式批准/拒绝、白名单命中、规则总数/启用/内置/动态）。
 
 **保管库 / 分类器健康切片已交付**
 - 保管库：密钥列表与元数据（名称/描述/分类 general|api|token/标签）新增、编辑、删除；**密钥值只写**——界面不回显明文，也不提供「显示密钥」，适配器只调用 `ListSecretsAsync` 摘要，从不请求 `includePlainText`。
@@ -653,7 +659,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 审批白名单 (`allowlist`)
 
-- **精确授权规则** — `allowlist` / DS-10 / 待迁移。搜索、创建、编辑、禁用；保留精确匹配语义。
+- **精确授权规则** — `allowlist` / DS-10 / 已接入。搜索、创建、编辑、禁用；保留精确匹配语义。
   - 选项：toolId；workspaceId；status；command；argumentsJson；source；approvedByAgentInstanceId；approvedByUserId；approvalTicketId；reason；hitCount。
   - 来源：`pages/tool-approval/allowlist/index.tsx`。
 
@@ -836,5 +842,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-07 Skill Hub 六页签 | 已完成 2026-09-27 | 六张卡全部接入；旧技能包的校验/对象键构造下沉为可测试的 `SkillPackageService`（含 5 项独立测试），桌面端复用同一操作 |
 | DS-08 记忆资料库 | 已完成 2026-09-27 | 四张卡全部接入；顺带修复 Core 章节标题不落盘的缺陷 |
 | DS-09 存储与清理 | 已完成 2026-09-27 | 三张卡全部接入：盘点、清理（预览/幂等作业/确认/取消/事件）、保留策略（CAS）；「超预算继续」Core 无对应操作，已登记 |
-| DS-10 密钥与审批 | 进行中 2026-09-27 | 保管库与分类器健康已接入；工具授权白名单与审批审计待续 |
+| DS-10 密钥与审批 | 已完成 2026-09-27 | 四张卡全部接入；并修复「规则变更不经 HTTP 就不写审计」的缺陷（下沉为 `ToolApprovalAdminService`） |
 | DS-11 … DS-17 | 待实施 | — |

@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-10 密钥与审批（授权/审批审计切片，DS-10 完成）
+
+`security/allowlist` 与 `security/audit` 的审批审计卡接上 Core。**本轮发现并修复一个真实缺陷**：规则创建/更新/停用的审计事件原先写在 `ToolApprovalAdminApiController` 里，于是任何不经 HTTP 的管理面（原生客户端直接写 store）改规则都**不留审计痕迹**——对一个安全功能来说这是缺陷。已按 §3.1 把规则变更连同审计写入下沉为 `ToolApprovalAdminService`，控制器与桌面端共用同一应用操作。授权页签覆盖 toolId/workspaceId/命令与参数 JSON（精确匹配键至少一个）、来源（built_in/audit_agent/human/classifier）、状态、**effect（allow/deny，冲突时 deny 优先）**、批准者溯源与理由；停用按 Core 语义呈现为标记 disabled（记录与审计保留），界面不提供硬删除。审计卡支持按工作区/工具/事件类型/条数筛选，并显示 Core 的 14 项统计。验证：Core `ToolApprovalAdminServiceTests` 3 项 + 平台全量 1423 项、Foundation 167 项、Composition 24 项、窗口 smoke 213 项通过。
 ## 2026-09-27 DS-10 密钥与审批（保管库 + 分类器健康切片）
 
 `security/vault` 与 `security/audit`（分类器健康卡）接上 Core：密钥列表/元数据增删改 + **只写密钥值** + `{{vault:名称}}` 占位符复制（走系统剪贴板，失败时把占位符显示出来让人手动复制）；分类器健康直接读 `IClassifierHealthReporter.Snapshot()`，**未接线时显示「未知态」而不是「健康」**。两条边界：适配器只请求 `ListSecretsAsync` 摘要，从不请求明文（`GetSecretAsync(includePlainText:true)` 有意不使用）；更新密钥留空值 = 保持原值，与 Core 的 `UpdateKeyVaultSecretCommand` 语义一致。分类器健康的枚举映射到 未知/健康/降级/不可用，未知取值原样显示。验证：Foundation 163 项、Composition 23 项（真实 Host：建密钥→元数据与占位符正确且模型里没有明文→留空更新保留密钥→删除→分类器健康要么已接线要么明确未知）、窗口 smoke 209 项通过。

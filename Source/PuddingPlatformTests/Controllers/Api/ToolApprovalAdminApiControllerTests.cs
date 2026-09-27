@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Tools;
 using PuddingPlatform.Controllers.Api;
+using PuddingPlatform.Services;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingPlatformTests.Controllers.Api;
@@ -21,12 +22,19 @@ public sealed class ToolApprovalAdminApiControllerTests
     private const string ClassifierSource = "classifier";
 
     private static ToolApprovalAdminApiController CreateController()
-        => new(new InMemoryToolApprovalAllowlistStore(), new InMemoryToolApprovalAuditStore());
+    {
+        var allowlist = new InMemoryToolApprovalAllowlistStore();
+        var audit = new InMemoryToolApprovalAuditStore();
+        return new ToolApprovalAdminApiController(allowlist, audit, new ToolApprovalAdminService(allowlist, audit));
+    }
 
     private static (ToolApprovalAdminApiController Controller, InMemoryToolApprovalAuditStore Audit) CreateControllerWithAudit()
     {
+        var allowlist = new InMemoryToolApprovalAllowlistStore();
         var audit = new InMemoryToolApprovalAuditStore();
-        return (new ToolApprovalAdminApiController(new InMemoryToolApprovalAllowlistStore(), audit), audit);
+        // 审计写入现在属于应用操作，所以测试也必须把同一个服务实例接上。
+        return (new ToolApprovalAdminApiController(allowlist, audit,
+            new ToolApprovalAdminService(allowlist, audit)), audit);
     }
 
     private static ToolApprovalAdminApiController.AllowlistRuleMutationDto Mutation(

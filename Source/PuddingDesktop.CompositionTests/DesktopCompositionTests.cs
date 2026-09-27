@@ -1698,6 +1698,83 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task ApprovalAdapter_CreatesDisablesAndAuditsAllowlistRules()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var security = factory.CreateSecuritySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => security.ListApprovalRulesAsync(null, null, null, timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var initial = await security.ListApprovalRulesAsync(null, null, null, timeout.Token);
+            var initialCount = initial.Count;
+
+            // Core normalizes the tool id, and the rule needs an exact-match key.
+            await security.SaveApprovalRuleAsync(new ApprovalRuleEdit("", "composition-space", "Shell_Exec",
+                "git status", "", "human", "enabled", "allow", "", "reviewer-1", "", "composition fixture"),
+                timeout.Token);
+            var rules = await security.ListApprovalRulesAsync(null, null, null, timeout.Token);
+            // 内置规则里可能已有同名命令，所以按本次写入的唯一理由定位自己建的那条。
+            var created = Assert.Single(rules, rule => rule.Reason == "composition fixture");
+            Assert.Equal("shell_exec", created.ToolId);
+            Assert.True(created.IsEnabled);
+            Assert.False(created.IsDeny);
+            Assert.Equal("human", created.Source);
+            Assert.Equal("reviewer-1", created.ApprovedByUserId);
+
+            // Filters answer from Core's own vocabularies.
+            Assert.Contains(await security.ListApprovalRulesAsync("composition-space", null, null, timeout.Token),
+                rule => rule.RuleId == created.RuleId);
+            Assert.Empty(await security.ListApprovalRulesAsync("other-space", null, null, timeout.Token));
+            Assert.Contains(await security.ListApprovalRulesAsync(null, "SHELL_EXEC", "enabled", timeout.Token),
+                rule => rule.RuleId == created.RuleId);
+
+            // A deny rule keeps the deny effect rather than being folded into an allow.
+            await security.SaveApprovalRuleAsync(new ApprovalRuleEdit("", "", "shell_exec", "rm -rf /", "",
+                "classifier", "enabled", "deny", "agent-1", "", "", "blocked"), timeout.Token);
+            var deny = await security.ListApprovalRulesAsync(null, "shell_exec", null, timeout.Token);
+            Assert.Contains(deny, rule => rule.IsDeny && rule.Command == "rm -rf /");
+
+            // Disabling keeps the record.
+            await security.DisableApprovalRuleAsync(created.RuleId, timeout.Token);
+            var afterDisable = await security.ListApprovalRulesAsync(null, null, null, timeout.Token);
+            var disabled = Assert.Single(afterDisable, rule => rule.RuleId == created.RuleId);
+            Assert.False(disabled.IsEnabled);
+            Assert.NotNull(disabled.DisabledAtUtc);
+            Assert.True(afterDisable.Count >= initialCount + 2, "停用不得删除记录");
+
+            // The mutations above wrote audit events, so the audit trail and stats must show them.
+            var audit = await security.ListApprovalAuditAsync(new ApprovalAuditQuery("", "", "", 200), timeout.Token);
+            Assert.NotEmpty(audit);
+            Assert.Contains(audit, entry => entry.EventType == "allowlist_rule_created");
+            Assert.Contains(audit, entry => entry.EventType == "allowlist_rule_disabled");
+            Assert.All(audit, entry => Assert.False(string.IsNullOrWhiteSpace(entry.EventType)));
+
+            var stats = await security.ReadApprovalStatsAsync(timeout.Token);
+            Assert.True(stats.AllowlistRules >= afterDisable.Count);
+            Assert.True(stats.EnabledAllowlistRules <= stats.AllowlistRules);
+            Assert.Contains("规则：", stats.SummaryText, StringComparison.Ordinal);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => security.DisableApprovalRuleAsync("tal_missing", timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => security.ReadApprovalStatsAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

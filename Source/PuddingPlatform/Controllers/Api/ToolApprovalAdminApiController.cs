@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Tools;
+using PuddingCode.Skills;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -10,7 +12,8 @@ namespace PuddingPlatform.Controllers.Api;
 [Route("api/tool-approval")]
 public sealed class ToolApprovalAdminApiController(
     IToolApprovalAllowlistStore allowlistStore,
-    IToolApprovalAuditStore auditStore) : ControllerBase
+    IToolApprovalAuditStore auditStore,
+    ToolApprovalAdminService adminService) : ControllerBase
 {
     [HttpGet("allowlist")]
     public async Task<IActionResult> ListAllowlist(
@@ -39,38 +42,11 @@ public sealed class ToolApprovalAdminApiController(
         [FromBody] AllowlistRuleMutationDto request,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.ToolId))
-            return BadRequest(new { message = "toolId is required." });
-        if (string.IsNullOrWhiteSpace(request.Command) && string.IsNullOrWhiteSpace(request.ArgumentsJson))
-            return BadRequest(new { message = "command or argumentsJson is required." });
-        if (!TryParseSource(request.Source, out var source))
-            return BadRequest(new { message = "source must be one of: built_in, audit_agent, human, classifier." });
-        if (!TryParseStatus(request.Status, out var status))
-            return BadRequest(new { message = "status must be one of: enabled, disabled." });
-
-        var now = DateTimeOffset.UtcNow;
-        var rule = new ToolApprovalAllowlistRule
-        {
-            RuleId = "tal_" + Guid.NewGuid().ToString("N"),
-            WorkspaceId = string.IsNullOrWhiteSpace(request.WorkspaceId) ? null : request.WorkspaceId.Trim(),
-            ToolId = ToolAuthorizationDefaults.NormalizeToolId(request.ToolId),
-            Command = string.IsNullOrWhiteSpace(request.Command) ? null : request.Command.Trim(),
-            ArgumentsJson = string.IsNullOrWhiteSpace(request.ArgumentsJson) ? null : request.ArgumentsJson.Trim(),
-            Source = source,
-            Status = status,
-            ApprovedByAgentInstanceId = request.ApprovedByAgentInstanceId,
-            ApprovedByUserId = request.ApprovedByUserId,
-            ApprovalTicketId = request.ApprovalTicketId,
-            Reason = request.Reason,
-            CreatedAtUtc = now,
-            UpdatedAtUtc = now,
-        };
-        await allowlistStore.SaveAsync(rule, ct);
-        await SaveAuditAsync(ToolApprovalAuditEventType.AllowlistRuleCreated, rule, "Allowlist rule created from admin API.", now, ct);
-
-        return CreatedAtAction(nameof(GetAllowlistRule), new { ruleId = rule.RuleId }, MapRule(rule));
+        var result = await adminService.CreateRuleAsync(Mutation(request), ct);
+        return result.IsOk
+            ? CreatedAtAction(nameof(GetAllowlistRule), new { ruleId = result.Value!.RuleId }, MapRule(result.Value))
+            : Problem(result);
     }
-
     [HttpGet("allowlist/{ruleId}")]
     public async Task<IActionResult> GetAllowlistRule(string ruleId, CancellationToken ct)
     {
@@ -84,62 +60,15 @@ public sealed class ToolApprovalAdminApiController(
         [FromBody] AllowlistRuleMutationDto request,
         CancellationToken ct)
     {
-        var existing = await allowlistStore.GetAsync(ruleId, ct);
-        if (existing is null)
-            return NotFound();
-        if (string.IsNullOrWhiteSpace(request.ToolId))
-            return BadRequest(new { message = "toolId is required." });
-        if (string.IsNullOrWhiteSpace(request.Command) && string.IsNullOrWhiteSpace(request.ArgumentsJson))
-            return BadRequest(new { message = "command or argumentsJson is required." });
-        if (!TryParseSource(request.Source, out var source))
-            return BadRequest(new { message = "source must be one of: built_in, audit_agent, human, classifier." });
-        if (!TryParseStatus(request.Status, out var status))
-            return BadRequest(new { message = "status must be one of: enabled, disabled." });
-
-        var now = DateTimeOffset.UtcNow;
-        var rule = existing with
-        {
-            WorkspaceId = string.IsNullOrWhiteSpace(request.WorkspaceId) ? null : request.WorkspaceId.Trim(),
-            ToolId = ToolAuthorizationDefaults.NormalizeToolId(request.ToolId),
-            Command = string.IsNullOrWhiteSpace(request.Command) ? null : request.Command.Trim(),
-            ArgumentsJson = string.IsNullOrWhiteSpace(request.ArgumentsJson) ? null : request.ArgumentsJson.Trim(),
-            Source = source,
-            Status = status,
-            ApprovedByAgentInstanceId = request.ApprovedByAgentInstanceId,
-            ApprovedByUserId = request.ApprovedByUserId,
-            ApprovalTicketId = request.ApprovalTicketId,
-            Reason = request.Reason,
-            UpdatedAtUtc = now,
-            DisabledAtUtc = status == ToolApprovalAllowlistRuleStatus.Disabled
-                ? existing.DisabledAtUtc ?? now
-                : null,
-        };
-        await allowlistStore.SaveAsync(rule, ct);
-        await SaveAuditAsync(ToolApprovalAuditEventType.AllowlistRuleUpdated, rule, "Allowlist rule updated from admin API.", now, ct);
-
-        return Ok(MapRule(rule));
+        var result = await adminService.UpdateRuleAsync(ruleId, Mutation(request), ct);
+        return result.IsOk ? Ok(MapRule(result.Value!)) : Problem(result);
     }
-
     [HttpDelete("allowlist/{ruleId}")]
     public async Task<IActionResult> DisableAllowlistRule(string ruleId, CancellationToken ct)
     {
-        var existing = await allowlistStore.GetAsync(ruleId, ct);
-        if (existing is null)
-            return NotFound();
-
-        var now = DateTimeOffset.UtcNow;
-        var rule = existing with
-        {
-            Status = ToolApprovalAllowlistRuleStatus.Disabled,
-            UpdatedAtUtc = now,
-            DisabledAtUtc = now,
-        };
-        await allowlistStore.SaveAsync(rule, ct);
-        await SaveAuditAsync(ToolApprovalAuditEventType.AllowlistRuleDisabled, rule, "Allowlist rule disabled from admin API.", now, ct);
-
-        return NoContent();
+        var result = await adminService.DisableRuleAsync(ruleId, ct);
+        return result.IsOk ? NoContent() : Problem(result);
     }
-
     [HttpGet("audit-events")]
     public async Task<IActionResult> ListAuditEvents(
         [FromQuery] string? workspaceId = null,
@@ -188,6 +117,28 @@ public sealed class ToolApprovalAdminApiController(
             dynamicAllowlistRuleCount = rules.LongCount(r => r.Source != ToolApprovalAllowlistRuleSource.BuiltIn),
         });
     }
+
+    private static ApprovalRuleMutation Mutation(AllowlistRuleMutationDto request) => new()
+    {
+        WorkspaceId = request.WorkspaceId,
+        ToolId = request.ToolId,
+        Command = request.Command,
+        ArgumentsJson = request.ArgumentsJson,
+        Source = request.Source,
+        Status = request.Status,
+        ApprovedByAgentInstanceId = request.ApprovedByAgentInstanceId,
+        ApprovedByUserId = request.ApprovedByUserId,
+        ApprovalTicketId = request.ApprovalTicketId,
+        Reason = request.Reason,
+    };
+
+    private ActionResult Problem<T>(SkillHubResult<T> result) where T : class =>
+        result.Status switch
+        {
+            SkillHubStatus.BadRequest => BadRequest(new { message = result.Error }),
+            SkillHubStatus.Conflict => Conflict(new { message = result.Error }),
+            _ => NotFound()
+        };
 
     private async Task SaveAuditAsync(
         ToolApprovalAuditEventType eventType,
