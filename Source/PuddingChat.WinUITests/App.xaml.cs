@@ -12,7 +12,7 @@ public partial class App : Application
     public App() { InitializeComponent(); UnhandledException += (_, e) => File.WriteAllText(Report, e.Exception.ToString()); }
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        var fixture = new Fixture(); var control = new ChatWorkspace(fixture);
+        var fixture = new Fixture(Path.ChangeExtension(Report, ".png")); var control = new ChatWorkspace(fixture);
         _window = new Window { Content = control, SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop() };
         _window.Title = "Pudding · 原生聊天组件测试";
         control.RequestedTheme = ElementTheme.Light;
@@ -56,13 +56,19 @@ public partial class App : Application
                 Check(control.RoleCount == 2, "native role cards loaded");
                 await control.SelectRoleAsync("test", fixture.Builder);
                 control.Composer.Draft = "implement";
+                await control.AddImagesAsync(["fixture.png"]); Check(control.Composer.ImageCount == 1, "native image draft added");
                 await control.SelectRoleAsync("test", fixture.Reviewer);
+                Check(control.Composer.ImageCount == 0, "image draft isolated by role");
                 Check(control.Composer.Draft == "", "draft isolated");
                 await control.SelectRoleAsync("test", fixture.Builder);
                 Check(control.Composer.Draft == "implement", "draft restored");
+                Check(control.Composer.ImageCount == 1, "image draft restored");
                 await control.SendAsync();
                 Check(control.Composer.Draft == "", "receipt clears draft");
                 Check(fixture.Sent?.Role.AgentId == "builder", "send retains role");
+                Check(fixture.Sent?.Images?.Count == 1 && control.Composer.ImageCount == 0, "typed image retained in send and receipt clears image draft");
+                var imagePreview = new ImageAttachmentView(fixture, "test", "vision-fixture", "图片", CancellationToken.None);
+                await imagePreview.LoadAsync(); Check(imagePreview.PreviewLoaded, "native bitmap decodes Core resolved preview");
                 Check(control.CurrentConversation?.Messages.Length == 2, "canonical messages displayed");
                 control.SetRoleFilter("does-not-exist");
                 Check(control.VisibleRoleCount == 0 && control.SelectedRole?.AgentId == "builder", "search preserves active role");
@@ -115,7 +121,7 @@ public partial class App : Application
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 29, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 34, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -123,8 +129,20 @@ public partial class App : Application
         _window.Activate();
     }
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
-    private sealed class Fixture : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges
+    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient
     {
+        public int MaxImagesPerMessage => 600;
+        public Task<AttachedImage> ImportImageAsync(RoleKey role, string path, CancellationToken ct) => Task.FromResult(new AttachedImage("vision-fixture", Path.GetFileName(path), "image/png", 1, 1));
+        public async Task<ImagePreview> GetImagePreviewAsync(string workspace, string artifact, CancellationToken ct)
+        {
+            var folder = await Windows.Storage.StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(imagePath)!);
+            var file = await folder.CreateFileAsync(Path.GetFileName(imagePath), Windows.Storage.CreationCollisionOption.ReplaceExisting);
+            using var stream = await file.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite);
+            var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
+            encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied, 1, 1, 96, 96, [255, 100, 20, 255]);
+            await encoder.FlushAsync();
+            return new(imagePath, "image/png", 1, 1);
+        }
         public RoleSettings? SavedRole;
         public ProviderModelEdit? SavedProvider;
         public Task<ProviderSettings[]> GetProvidersAsync(CancellationToken ct) => Task.FromResult<ProviderSettings[]>([]);

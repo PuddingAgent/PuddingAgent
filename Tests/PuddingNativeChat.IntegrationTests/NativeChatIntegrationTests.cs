@@ -102,7 +102,22 @@ public class NativeChatIntegrationTests
             await config.SaveProviderModelAsync(modelEdit with { KeyChange = SecretChange.Keep, NewKey = null }, timeout.Token);
             var session = await client.EnsureSessionAsync(role, agent, timeout.Token);
             Assert.False(string.IsNullOrWhiteSpace(session));
-            var pending = PendingSend.Create(role, session, "Native component admission test. Reply briefly.");
+            var images = Assert.IsAssignableFrom<IImageAttachmentClient>(client);
+            var imagePath = Path.Combine(root, "fixture.png");
+            using (var bitmap = new SkiaSharp.SKBitmap(4, 3))
+            using (var image = SkiaSharp.SKImage.FromBitmap(bitmap))
+            using (var encoded = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100))
+                await File.WriteAllBytesAsync(imagePath, encoded.ToArray(), timeout.Token);
+            var attachment = await images.ImportImageAsync(role, imagePath, timeout.Token);
+            Assert.Equal("image/png", attachment.MimeType); Assert.Equal(4, attachment.Width); Assert.Equal(3, attachment.Height);
+            var preview = await images.GetImagePreviewAsync(role.WorkspaceId, attachment.ArtifactId, timeout.Token);
+            Assert.True(File.Exists(preview.LocalPath)); Assert.NotEqual(imagePath, preview.LocalPath);
+            await Assert.ThrowsAsync<FileNotFoundException>(() => images.GetImagePreviewAsync("native-new", attachment.ArtifactId, timeout.Token));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => images.ImportImageAsync(role with { AgentId = "missing" }, imagePath, timeout.Token));
+            var invalidPath = Path.Combine(root, "invalid.png"); await File.WriteAllTextAsync(invalidPath, "not an image", timeout.Token);
+            var invalidImage = await Assert.ThrowsAsync<PuddingCode.Core.VisionPipelineException>(() => images.ImportImageAsync(role, invalidPath, timeout.Token));
+            Assert.Equal(PuddingCode.Core.VisionErrorCodes.MediaInvalid, invalidImage.Code);
+            var pending = PendingSend.Create(role, session, "Native component admission test. Reply briefly.", [attachment]);
             var changes = Assert.IsAssignableFrom<IConversationChanges>(client);
             var beforeSend = await client.GetConversationAsync(role, null, timeout.Token);
             var change = changes.WaitForChangeAsync(role, session, beforeSend!.EventCursor, timeout.Token);
@@ -119,6 +134,14 @@ public class NativeChatIntegrationTests
             Assert.NotNull(conversation);
             Assert.Equal(receipt.ConversationId, conversation.MainSessionId);
             Assert.Contains(conversation.Messages, message => message.MessageId == receipt.MessageId);
+            var persisted = Assert.Single(conversation.Messages, m => m.MessageId == receipt.MessageId);
+            Assert.Contains(persisted.ContentParts!, part => part.Type == "image" && part.ArtifactId == attachment.ArtifactId && part.Detail == "original");
+            Assert.DoesNotContain(imagePath, JsonSerializer.Serialize(persisted));
+            var imageOnly = await client.SendAsync(PendingSend.Create(role, session, "", [attachment]), timeout.Token);
+            var imageOnlyView = await client.GetConversationAsync(role, null, timeout.Token);
+            var imageOnlyMessage = Assert.Single(imageOnlyView!.Messages, m => m.MessageId == imageOnly.MessageId);
+            Assert.Equal("", imageOnlyMessage.Content);
+            Assert.Contains(imageOnlyMessage.ContentParts!, p => p.Type == "image" && p.ArtifactId == attachment.ArtifactId);
             Assert.Contains(await client.GetStatusesAsync(workspace.WorkspaceId, timeout.Token), status => status.AgentId == agent.AgentId);
             var process = await client.GetProcessAsync(role, receipt.MessageId, timeout.Token);
             Assert.Equal(receipt.MessageId, process.MessageId);
@@ -132,6 +155,8 @@ public class NativeChatIntegrationTests
             await kernel.StartAsync(root, timeout.Token);
             using var restarted = factory.CreateChatClient();
             Assert.NotEmpty(await restarted.GetWorkspacesAsync(timeout.Token));
+            var restoredPreview = await ((IImageAttachmentClient)restarted).GetImagePreviewAsync(role.WorkspaceId, attachment.ArtifactId, timeout.Token);
+            Assert.True(File.Exists(restoredPreview.LocalPath));
             Assert.NotEmpty(await restarted.GetAgentsAsync(workspace.WorkspaceId, timeout.Token));
             var restartedConfig = Assert.IsAssignableFrom<IConfigurationClient>(restarted);
             Assert.Equal("Edited natively", (await restartedConfig.GetRoleSettingsAsync(role, timeout.Token)).Description);

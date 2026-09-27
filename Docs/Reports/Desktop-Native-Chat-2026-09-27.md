@@ -101,3 +101,14 @@ Core 新增局部保存路径，在既有写锁内合并字段；价格、配额
 
 组件先独立验证再接入 Core。最新 BCL 31 项、原生窗口 29 项，Core 投影定向 2 项（`temp/native-activity-projection.log`）。检查包含同名并行、乱序结果、跨 Turn/循环关系、复用子代理多次执行，以及原生终态更新保留卡片。Core 组合/发布验证结果另记下方。
 `temp/native-activity-final.log` 最终验证：BCL 31/31、原生窗口 29 项、真实 Core 组合 3/3。Release 发布及隔离发布包启停/重启/回调/目录保存/退出验证通过，记录 `temp/native-activity-publish.log`、`temp/native-activity-smoke.log`。没有真实付费模型或子代理任务运行验收。
+
+## 原生图片附件与多模态提交（2026-09-27）
+
+新增 BCL `ImageAttachments` 端口、角色附件草稿和冻结发送引用；WinUI 支持多选图片、移除、角色切换恢复与消息内按需预览。原生选择器按 [Windows App SDK 官方用法](https://learn.microsoft.com/windows/apps/develop/files/using-file-folder-pickers) 绑定 AppWindowId。选择后调用 Core `VisionArtifactStorageService.SaveAsync`，真实字节校验/尺寸检查/Artifact 路径仍由 Core 负责。数量上限来自 Core 的 MaxImagesPerTurn；部分批次失败保留已经添加的图片，不把用户源文件移动或删除。
+
+发送直接构建 text/image parts；图片使用 original detail，纯图片消息没有合成提示词。重试沿用稳定消息 ID 与原附件快照，回执只清除本次发送的图片，新添加图片保留。选择角色变化时不会把导入结果写入另一个角色。预览仅解析当前工作空间的 Artifact，不接受 arbitrary URI；按需加载后在收起/卸载时取消解码并释放图片。未发送后移除的 Artifact 不擅自删除，沿用 Core 存储治理。
+
+独立测试先于 Composition 接入：BCL 34 项、真实 WinUI 窗口 34 项（含图片草稿隔离/恢复、发送引用与 PNG 实际解码），日志 `temp/native-images-components.log`、`temp/native-images-ui-final.log`。真实 Core 组合 3/3（`temp/native-images-core.log`）：导入后 canonical Artifact、跨工作空间拒绝、错误图片 MediaInvalid、不存在角色拒绝、图文/纯图 typed parts 持久化、重启预览与零聊天 HTTP。初次组合构建遇到并行本机身份抽取的临时编译状态，待其完整后复测通过，未覆盖该工作。
+
+当前尚未验证系统选择器实际点击和真实模型视觉理解；本轮不调用付费模型。相机、剪贴板、拖放、Markdown 内生成图与一般文件上下文入口仍是后续工作；不把 PNG 解码测试外推为全部系统图片编解码器验收。
+`temp/native-images-publish.log` 的 Release 发布通过，`temp/native-images-smoke.log` 的隔离发布包启停、重启、UI 回调、目录保存与退出验证通过。未重启用户现有 Desktop，也未改动用户数据目录。

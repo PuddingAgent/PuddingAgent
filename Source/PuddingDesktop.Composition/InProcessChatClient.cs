@@ -11,7 +11,7 @@ using Core = PuddingCode.Platform;
 namespace PuddingDesktop.Composition;
 
 /// <summary>Direct application-service adapter. No HTTP, controller invocation or JSON serialization.</summary>
-internal sealed class InProcessChatClient(IServiceScopeFactory scopes, CancellationToken hostStopping) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges
+internal sealed partial class InProcessChatClient(IServiceScopeFactory scopes, CancellationToken hostStopping) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges
 {
     private readonly CancellationTokenSource _shutdown = CancellationTokenSource.CreateLinkedTokenSource(hostStopping);
     private readonly object _gate = new();
@@ -161,10 +161,13 @@ internal sealed class InProcessChatClient(IServiceScopeFactory scopes, Cancellat
         var session = await services.GetRequiredService<ISessionRepository>().GetAsync(send.ConversationId, token);
         if (session is null || session.WorkspaceId != send.Role.WorkspaceId || (session.PrincipalId ?? session.AgentInstanceId) != send.Role.AgentId)
             throw new InvalidOperationException("消息与角色主会话归属不匹配。");
+        var parts = new List<Core.ContentPart>();
+        if (!string.IsNullOrWhiteSpace(send.Text)) parts.Add(new Core.ContentPart { Type = "text", Text = send.Text });
+        foreach (var image in send.Images ?? []) parts.Add(new Core.ContentPart { Type = "image", ArtifactId = image.ArtifactId, Detail = "original" });
         var result = await services.GetRequiredService<ISubmitTurnHandler>().HandleAsync(new SubmitTurnCommand(
             send.ConversationId, send.Role.WorkspaceId, LocalUserId, send.ClientRequestId, send.ClientMessageId,
             new RecipientRequest { Type = "agent", AgentIds = [send.Role.AgentId] },
-            [new Core.ContentPart { Type = "text", Text = send.Text }], null), token);
+            parts, null), token);
         return new Acceptance(result.ConversationId, result.MessageId, result.TurnIds.ToArray(), result.AcceptedSequence);
     }, ct);
     public async Task CancelAsync(string workspace, string conversation, string turn, CancellationToken ct) => await ExecuteAsync(async (services, token) =>

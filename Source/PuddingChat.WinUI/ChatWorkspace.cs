@@ -40,6 +40,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private Grid? _navigation;
     private bool _disposed, _busy, _refreshing, _changingDraft, _connected;
     private bool _active = true;
+    private bool _addingImages;
     private bool _loadingWorkspaces;
     private Task? _initialization;
     private long _workspaceGeneration;
@@ -126,6 +127,8 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         };
         Composer.DraftChanged += (_, _) => { if (!_changingDraft) _state.Draft = Composer.Draft; UpdateComposer(); };
         Composer.SendRequested += async (_, _) => await GuardAsync(SendAsync);
+        Composer.AttachRequested += async (_, _) => await GuardAsync(PickImagesAsync);
+        Composer.RemoveImageRequested += id => { _state.RemoveImage(id); Composer.SetImages(_state.Images); UpdateComposer(); };
         Composer.CancelRequested += async (_, _) => await GuardAsync(CancelAsync);
         _timer.Tick += async (_, _) => { if (_active && IsLoaded) await GuardAsync(RefreshAsync); };
         Loaded += async (_, _) => { await GuardAsync(InitializeAsync); if (_active && _connected && !_disposed) _timer.Start(); };
@@ -309,7 +312,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             _messageCards.TryGetValue(id, out var previous);
             if (!SameMessage(previous.Message, rendered))
             {
-                var card = previous.Card ?? new MessageCard(rendered, () => _client.GetProcessAsync(role, id, ct));
+                var card = previous.Card ?? new MessageCard(rendered, () => _client.GetProcessAsync(role, id, ct), _client as IImageAttachmentClient, role.WorkspaceId, ct);
                 if (previous.Card is not null) card.Update(rendered);
                 _messageCards[id] = (rendered, card);
             }
@@ -357,12 +360,42 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         && before == after with { ProcessItems = before.ProcessItems, ContentParts = before.ContentParts }
         && before.ProcessItems.SequenceEqual(after.ProcessItems)
         && (before.ContentParts ?? []).SequenceEqual(after.ContentParts ?? []);
+    private async Task PickImagesAsync()
+    {
+        if (_client is not IImageAttachmentClient || _state.Role is null || _addingImages) return;
+        var generation = _state.Generation;
+        var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(XamlRoot.ContentIslandEnvironment.AppWindowId)
+        { CommitButtonText = "添加图片", FileTypeFilter = { ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp" } };
+        var files = await picker.PickMultipleFilesAsync().AsTask(_lifetime.Token);
+        if (_disposed || generation != _state.Generation) return;
+        await AddImagesAsync(files.Select(f => f.Path));
+    }
+    public async Task AddImagesAsync(IEnumerable<string> paths)
+    {
+        if (_client is not IImageAttachmentClient images || _state.Role is not { } role || _addingImages || _busy) return;
+        var files = paths.ToArray();
+        if (files.Length + _state.ImagesFor(role).Count > images.MaxImagesPerMessage)
+            throw new InvalidOperationException($"每条消息最多添加 {images.MaxImagesPerMessage} 张图片。");
+        _addingImages = true; UpdateComposer();
+        try
+        {
+            foreach (var path in files)
+            {
+                var image = await images.ImportImageAsync(role, path, _lifetime.Token);
+                if (_disposed) return;
+                _state.AddImage(role, image);
+                if (_state.Role == role) Composer.SetImages(_state.Images);
+            }
+        }
+        finally { _addingImages = false; if (!_disposed) UpdateComposer(); }
+    }
     public async Task SendAsync()
     {
-        if (_busy || !_connected || _agent is not { IsEnabled: true, IsFrozen: false } agent || _state.Role is not { } role) return;
+        if (_busy || _addingImages || !_connected || _agent is not { IsEnabled: true, IsFrozen: false } agent || _state.Role is not { } role) return;
         _busy = true; UpdateComposer();
         var generation = _state.Generation;
         var capturedDraft = _state.Draft;
+        var capturedImages = _state.Images;
         // Sending has a lifetime independent of selection. Its receipt belongs to the captured role.
         try
         {
@@ -371,7 +404,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             {
                 var session = await _client.EnsureSessionAsync(role, agent, _lifetime.Token);
                 if (_disposed || generation != _state.Generation) return;
-                pending = _state.Prepare(session, capturedDraft);
+                pending = _state.Prepare(session, capturedDraft, capturedImages);
             }
             try { await _client.SendAsync(pending, _lifetime.Token); }
             catch (ArgumentException) { _state.Reject(pending); throw; }
@@ -393,12 +426,13 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         if (_disposed || _state.Role != role) return;
         _notice.IsOpen = true; _notice.Title = "已请求停止"; _notice.Message = "等待 Core 确认取消结果。";
     }
-    private void SetDraft() { _changingDraft = true; try { Composer.Draft = _state.Draft; } finally { _changingDraft = false; } }
+    private void SetDraft() { _changingDraft = true; try { Composer.Draft = _state.Draft; Composer.SetImages(_state.Images); } finally { _changingDraft = false; } }
     private void UpdateComposer()
     {
+        Composer.SetAttachmentAvailability(!_busy && !_addingImages && _client is IImageAttachmentClient && _agent is { IsEnabled: true, IsFrozen: false });
         Composer.SetContext(_agent?.Label, _agent is { IsEnabled: true, IsFrozen: false });
-        Composer.SetAvailability(_connected && !_busy && _agent is { IsEnabled: true, IsFrozen: false }
-        && (_state.Pending is not null || !string.IsNullOrWhiteSpace(_state.Draft)), ChatSelection.ActiveTurn(_state.Conversation) is not null, _state.Pending is not null);
+        Composer.SetAvailability(_connected && !_busy && !_addingImages && _agent is { IsEnabled: true, IsFrozen: false }
+        && (_state.Pending is not null || !string.IsNullOrWhiteSpace(_state.Draft) || _state.Images.Count > 0), ChatSelection.ActiveTurn(_state.Conversation) is not null, _state.Pending is not null);
     }
     public int VisibleRoleCount => _roles.Items.Count;
     public void SetRoleFilter(string text) { _search.Text = text; ApplyRoleFilter(); }

@@ -10,6 +10,24 @@ public sealed class ChatComposer : UserControl
     private readonly TextBox _editor = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 88,
         MaxHeight = 200, PlaceholderText = "描述这位角色需要完成的工作…", BorderThickness = new Thickness(0), Background = null };
     private readonly Button _send = new() { Content = "发送 ↑", HorizontalAlignment = HorizontalAlignment.Right };
+    private readonly Button _attach = new() { Content = "＋ 图片" };
+    private readonly StackPanel _images = new() { Spacing = 4 };
+    public event EventHandler? AttachRequested;
+    public event Action<string>? RemoveImageRequested;
+    public int ImageCount => _images.Children.Count;
+    public void SetImages(IReadOnlyList<AttachedImage> images)
+    {
+        _images.Children.Clear();
+        foreach (var image in images)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var remove = new Button { Content = "移除", Tag = image.ArtifactId };
+            remove.Click += (_, _) => RemoveImageRequested?.Invoke(image.ArtifactId);
+            row.Children.Add(new TextBlock { Text = image.Name, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 500, VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(remove); _images.Children.Add(row);
+        }
+    }
+    public void SetAttachmentAvailability(bool enabled) => _attach.IsEnabled = enabled;
     private readonly Button _cancel = new() { Content = "停止", IsEnabled = false };
     private readonly TextBlock _hint = new() { FontSize = 12, Opacity = .65, Text = "Ctrl+Enter 发送 · Enter 换行", TextWrapping = TextWrapping.Wrap };
     public event EventHandler? SendRequested;
@@ -19,14 +37,15 @@ public sealed class ChatComposer : UserControl
     public ChatComposer()
     {
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(_cancel); buttons.Children.Add(_send);
-        var panel = new StackPanel { Spacing = 12 }; panel.Children.Add(_editor); panel.Children.Add(_hint); panel.Children.Add(buttons);
+        buttons.Children.Add(_attach); buttons.Children.Add(_cancel); buttons.Children.Add(_send);
+        var panel = new StackPanel { Spacing = 12 }; panel.Children.Add(_editor); panel.Children.Add(new ScrollViewer { Content = _images, MaxHeight = 96, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); panel.Children.Add(_hint); panel.Children.Add(buttons);
         var surface = Surfaces.Card("CardBackgroundFillColorDefaultBrush");
         surface.Child = panel; surface.Padding = new Thickness(16); surface.CornerRadius = new CornerRadius(16); surface.BorderThickness = new Thickness(1);
         Content = surface;
         _editor.TextChanging += (_, _) => DraftChanged?.Invoke(this, EventArgs.Empty);
         _editor.KeyDown += OnKeyDown;
         _send.Click += (_, _) => SendRequested?.Invoke(this, EventArgs.Empty);
+        _attach.Click += (_, _) => AttachRequested?.Invoke(this, EventArgs.Empty);
         _cancel.Click += (_, _) => CancelRequested?.Invoke(this, EventArgs.Empty);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_editor, "当前角色的消息草稿");
     }

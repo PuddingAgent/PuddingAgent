@@ -8,6 +8,8 @@
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat/ImageAttachments.cs`、`ChatSelection` 保存原生附件合同和角色草稿；`ChatComposer`/`ImageAttachmentView` 提供多选图片与按需预览，`InProcessChatClient.Images.cs` 直接调用 Core VisionArtifact 存储。SubmitTurn 使用 typed image parts，纯图片和重试都保留 Artifact 引用。
+
 `TurnFlow` 按明确父调用 ID 建树、按委派执行 ID 合并状态；`AgentProjectionDtos.ProcessSummaryItem` 与 `AgentConversationProjectionService` 提供 `ParentToolCallId`/`DelegationExecutionId`/精确委派状态，Composition 直接映射为 Native 卡片。投影字段回归见 `ConversationProcessMetadataTests`。
 
 `PuddingChat.WinUI/MarkdownView.cs` 使用 Markdig AST 渲染原生富文本、列表、引用、表格、代码复制与链接，流式追加复用稳定块。包依赖只位于 WinUI 展示组件；BCL 聊天叶组件保持无包依赖。

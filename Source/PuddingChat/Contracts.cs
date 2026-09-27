@@ -24,10 +24,10 @@ public sealed record Conversation(string WorkspaceId, string AgentId, string Mai
     ActiveRun? ActiveRun, long EventCursor);
 public sealed record ProcessDetails(string MessageId, ProcessItem[] ProcessItems, EventWindow? Window = null);
 public sealed record Acceptance(string ConversationId, string MessageId, string[] TurnIds, long AcceptedSequence);
-public sealed record PendingSend(RoleKey Role, string ConversationId, string Text, string ClientRequestId, string ClientMessageId)
+public sealed record PendingSend(RoleKey Role, string ConversationId, string Text, string ClientRequestId, string ClientMessageId, IReadOnlyList<AttachedImage>? Images = null)
 {
-    public static PendingSend Create(RoleKey role, string conversation, string text) =>
-        new(role, conversation, text, Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
+    public static PendingSend Create(RoleKey role, string conversation, string text, IEnumerable<AttachedImage>? images = null) =>
+        new(role, conversation, text, Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), Array.AsReadOnly(images?.ToArray() ?? []));
 }
 
 public interface IChatClient : IDisposable

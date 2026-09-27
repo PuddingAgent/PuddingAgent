@@ -14,9 +14,27 @@ public sealed class MessageCard : UserControl
     private readonly InfoBar _outcome = new() { IsClosable = false, Severity = InfoBarSeverity.Error };
     private readonly Dictionary<string, ProcessItem> _events = [];
     private string? _run;
+    private readonly StackPanel _attachments = new() { Spacing = 8 };
+    private readonly IImageAttachmentClient? _imageClient;
+    private readonly string? _workspace;
+    private readonly CancellationToken _ct;
+    private ContentPart[] _parts = [];
     public void Update(ChatMessage message)
     {
         _message = message;
+        var parts = message.ContentParts ?? [];
+        if (!_parts.SequenceEqual(parts))
+        {
+            _parts = parts; _attachments.Children.Clear();
+            var number = 0;
+            foreach (var part in parts.Where(p => p.Type != "text"))
+            {
+                number++;
+                if (part.Type == "image" && part.ArtifactId is { Length: > 0 } id && _imageClient is not null && _workspace is not null)
+                    _attachments.Children.Add(new ImageAttachmentView(_imageClient, _workspace, id, $"图片 {number} · 展开预览", _ct));
+                else _attachments.Children.Add(new TextBlock { Text = $"附件 {number} · {part.Type}", Opacity = .65 });
+            }
+        }
         _header.Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {message.Status}";
         if (_run != message.RunId) { _events.Clear(); _run = message.RunId; }
         foreach (var item in message.ProcessItems) _events[item.Id] = item;
@@ -27,12 +45,11 @@ public sealed class MessageCard : UserControl
         if (_process is not null) _process.Header = "加载完整执行明细";
     }
     public bool IsProcessExpanded { get => _process?.IsExpanded ?? false; set { if (_process is not null) _process.IsExpanded = value; } }
-    public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null)
+    public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null, IImageAttachmentClient? imageClient = null, string? workspace = null, CancellationToken ct = default)
     {
+        _imageClient = imageClient; _workspace = workspace; _ct = ct;
         var panel = new StackPanel { Spacing = 12 };
-        panel.Children.Add(_header); panel.Children.Add(_flow); Update(message);
-        if (message.ContentParts?.Any(p => p.Type != "text") == true)
-            panel.Children.Add(new TextBlock { Text = "此消息包含附件；附件预览尚未迁移。", Opacity = .65 });
+        panel.Children.Add(_header); panel.Children.Add(_flow); panel.Children.Add(_attachments); Update(message);
         panel.Children.Add(_outcome);
         if (message.Role != "user")
         {

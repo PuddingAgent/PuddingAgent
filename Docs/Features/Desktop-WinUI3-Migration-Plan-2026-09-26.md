@@ -38,6 +38,8 @@
 
 执行活动补充：工具节点按显式 `ParentToolCallId` 建树，缺失父节点、跨 Turn 引用和循环关系保持为独立根节点；工具结果早于调用时仍保持结果终态，非零退出码不会显示成功。子代理使用 `DelegationExecutionId`（canonical payload 的 `run_id`）聚合创建/完成事件，同一个池化子代理的两次执行保留两张卡；没有执行 ID 时不按名称或会话 ID 猜测合并。原生区分超时、中断、取消与预算耗尽，主消息只显示任务与有界结果摘要。Core 保留原 Web 汇总 `Status`，增加精确委派状态供进程内适配器使用。工具生产者没有提供父调用 ID 时仍显示平铺根调用，不凭 UI 推断关系。
 
+图片消息组件已接入：`IImageAttachmentClient` 定义进程内导入和受控本地预览，`ChatComposer` 提供原生多选图片与移除，`ChatSelection` 保存每个角色的附件草稿并冻结重试引用，`MessageCard` 内的 `ImageAttachmentView` 按需解码、缩放预览。Windows App SDK FileOpenPicker 使用当前 XamlRoot 的 AppWindowId 绑定窗口。Core 复用 VisionArtifactStorageService 验证真实图片、持久化 Artifact；SubmitTurn 传入 text/image typed parts，图片 detail 为 original，不发送本地路径、不自动代读、不伪造纯图片消息正文。UI 解码尺寸上限只影响预览，不改变模型输入原图。数量上限读取 Core 合同；收起或卸载预览释放图片，避免一次解码全部附件。图片选择对话框与真实视觉模型的手工验收仍需执行，当前自动化验证覆盖控件、导入、持久化和 PNG 解码。剪贴板/拖放、Markdown 内生成图片、相机和非图片文件仍待迁移。
+
 性能与迁移边界：当前是通知驱动的合并投影刷新，不是逐 token 的零查询增量 reducer；角色列表状态仍每 15 秒刷新一次，当前会话不再定时轮询。后续应在 Core 提供可复用的强类型增量投影与完整性边界，Native 仅应用呈现差量。完整 Markdown/附件、子代理完整运行检查器、历史分页虚拟化、审批交互及真实模型长会话验收仍须逐项完成，不将本轮视为 Web 全量迁移验收。
 
 ## 1. 布局骨架：将参考图转为 Pudding 的职责分区
