@@ -1,5 +1,7 @@
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat.WinUI/MarkdownView.cs` 使用 Markdig AST 渲染原生富文本、列表、引用、表格、代码复制与链接，流式追加复用稳定块。包依赖只位于 WinUI 展示组件；BCL 聊天叶组件保持无包依赖。
+
 `PuddingChat/TurnFlow.cs`（BCL 事件顺序/工具配对与通知端口）、`ReadingPosition.cs`（阅读锚点）→ `PuddingChat.WinUI/TurnContentView.cs`（原生思考/正文/工具块）与 `ChatWorkspace.cs`（角色搜索、订阅、滚动）。Composition `InProcessChatClient` 用 `ICommittedEventSignal` 进程内广播合并刷新会话；Core 通知实现位于 `PuddingPlatform/Services/CommittedEventSignal.cs`。设计与验证见 Desktop WinUI3 迁移计划和原生聊天实施记录。
 
 ## 2026-09-27 Desktop 数据目录

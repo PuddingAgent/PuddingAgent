@@ -67,29 +67,5 @@ public sealed class MessageCard : UserControl
         if (message.Role == "user") { surface.HorizontalAlignment = HorizontalAlignment.Right; surface.MaxWidth = 680; }
         Content = surface;
     }
-    public static UIElement RenderText(string text)
-    {
-        // Keep unsupported Markdown visible verbatim; code fences and headings get native structure.
-        var panel = new StackPanel { Spacing = 10 };
-        var code = false; var buffer = new List<string>();
-        void Flush()
-        {
-            if (buffer.Count == 0) return;
-            var block = new TextBlock { Text = string.Join('\n', buffer), TextWrapping = TextWrapping.Wrap,
-                IsTextSelectionEnabled = true, FontSize = 14, LineHeight = 23 };
-            if (code) { block.FontFamily = new FontFamily("Cascadia Mono, Consolas"); var surface = Surfaces.Card("SubtleFillColorSecondaryBrush");
-                surface.Child = block; surface.Padding = new Thickness(12); surface.CornerRadius = new CornerRadius(8); panel.Children.Add(surface); }
-            else panel.Children.Add(block);
-            buffer.Clear();
-        }
-        foreach (var line in text.Replace("\r", "").Split('\n'))
-        {
-            if (line.StartsWith("```", StringComparison.Ordinal)) { Flush(); code = !code; continue; }
-            if (!code && line.StartsWith('#') && line.TrimStart('#').StartsWith(' '))
-            { Flush(); panel.Children.Add(new TextBlock { Text = line.TrimStart('#', ' '), FontSize = 19,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true }); }
-            else buffer.Add(line);
-        }
-        Flush(); return panel;
-    }
+    public static UIElement RenderText(string text) => new MarkdownView(text);
 }

@@ -33,8 +33,13 @@ public sealed class TurnContentView : StackPanel
                     if (block.Kind != "tool" || (string.IsNullOrEmpty(block.Arguments) && string.IsNullOrEmpty(block.Output))) content.Children.Add(MessageCard.RenderText(block.Text));
                     if (block.Arguments is { Length: > 0 }) { content.Children.Add(new TextBlock { Text = "输入", Opacity = .6 }); content.Children.Add(MessageCard.RenderText(block.Arguments)); }
                     if (block.Output is { Length: > 0 }) { content.Children.Add(new TextBlock { Text = "输出", Opacity = .6 }); content.Children.Add(MessageCard.RenderText(block.Output)); }
-                    expander.Content = new ScrollViewer { Content = content, MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+                    var scroll = expander.Content as ScrollViewer ?? new ScrollViewer { MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+                    var offset = scroll.VerticalOffset;
+                    var followLatest = scroll.ScrollableHeight - offset < 24;
+                    scroll.Content = content; expander.Content = scroll;
+                    if (scroll.IsLoaded) { scroll.UpdateLayout(); scroll.ChangeView(null, followLatest ? scroll.ScrollableHeight : offset, null, true); }
                 }
+                else if (((ContentControl)old.View).Content is MarkdownView markdown) markdown.Update(block.Text);
                 else ((ContentControl)old.View).Content = MessageCard.RenderText(block.Text);
             }
             _blocks[block.Key] = (block, old.View); desired.Add(old.View);

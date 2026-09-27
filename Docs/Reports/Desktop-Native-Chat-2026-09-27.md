@@ -83,3 +83,12 @@ Core 新增局部保存路径，在既有写锁内合并字段；价格、配额
 验证：组件 26/26；实际 WinUI 窗口 20 项检查（通知更新、角色隔离、搜索、折叠实例保留等）；真实 Core/通知组合 3/3，包含广播、先提交后订阅、取消隔离、非法角色拒绝、停止宿主时取消订阅和零聊天 HTTP。日志 `temp/native-stream-final.log`。组件先独立验证，再接入 Composition；验证使用隔离数据目录，不读取用户模型密钥、不调用付费模型。尚未完成真实模型长时间流式会话与视觉人工验收。
 
 最终控件复核仍为 26/26 + 20 项（`temp/native-stream-ui-final.log`）。整包 Release 发布尝试受工作区并行设置页 WIP 阻塞：`MainWindow.xaml.cs` 的 `Grid.IsEnabled` 产生 CS1061（`temp/native-stream-publish.log`）；未覆盖该 WIP，因此本轮不能宣称整包发布/发布包生命周期通过。真实 Core 组合内的启停与订阅释放验证已通过。
+
+## 原生 Markdown 消息内容（2026-09-27）
+
+新增 `PuddingChat.WinUI/MarkdownView.cs`，替代仅标题/代码围栏的手工拆行。依赖 Markdig 1.4.0，使用其 [AST 接口](https://github.com/xoofx/markdig/blob/56e9c238584a44a169f174c881855c049768634c/site/docs/advanced/ast.md)，不在 BCL 契约中引入依赖。Web 对照源为 `MarkdownBlock.tsx` 与 `IncrementalMarkdown.tsx`。支持原生富文本、代码复制、列表/任务、引用、表格及 http/https 链接；HTML 和不可打开的链接保留可读文字。图片仍为替代文本，未声称完成语法高亮/公式/附件。
+
+流式正文更新复用 MarkdownView 和未变化的块；链接引用定义变化重新解析，思考区滚动容器保留阅读偏移，已在底部时跟随新文本。独立验证为 BCL 26/26，实际 WinUI 窗口 27 项检查，包含富文本结构、表格、未闭合代码围栏、稳定块保留、链接协议、引用更新与任务清单。日志 `temp/native-markdown-final.log`，控件构建零警告零错误。
+
+上一轮并行设置页导致的整包编译阻塞已在当前工作区解除，本轮 Release 发布成功（`temp/native-markdown-publish.log`），未改动或提交他方设置页文件。发布仍有既存 Host/PRI 警告。
+`temp/native-markdown-smoke.log` 与隔离发布包 report 证实启停、重启、UI 回调、数据目录保存和退出检查通过。未重启用户当前 Desktop，未访问用户模型密钥或运行付费模型。

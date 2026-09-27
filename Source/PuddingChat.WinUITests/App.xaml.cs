@@ -79,13 +79,31 @@ public partial class App : Application
                 Check(ReferenceEquals(reasoning, flow.Children[0]) && !reasoning.IsExpanded && ReferenceEquals(answer, flow.Children[1]), "stream retains blocks and disclosure state");
                 await control.CancelAsync(); Check(fixture.Cancelled == "turn", "canonical cancellation");
                 Check(MessageCard.RenderText("# Title\n```cs\nConsole.WriteLine(1);\n```\n正文") is StackPanel { Children.Count: 3 }, "native heading code text");
+                var markdown = new MarkdownView("**粗体** *斜体* ~~删除~~ `code` [文档](https://example.com) [危险](javascript:alert)\n\n> 引用\n\n3. 第一\n4. 第二\n\n|名称|值|\n|---|---|\n|a|b|");
+                var paragraph = (TextBlock)markdown.Children[0];
+                Check(paragraph.Inlines.OfType<Microsoft.UI.Xaml.Documents.Bold>().Count() == 1 && paragraph.Inlines.OfType<Microsoft.UI.Xaml.Documents.Italic>().Count() == 1,
+                    "native emphasis inlines");
+                Check(paragraph.Inlines.OfType<Microsoft.UI.Xaml.Documents.Hyperlink>().Single().NavigateUri.Scheme == "https", "only web schemes become active links");
+                Check(markdown.Children.Count == 4 && markdown.Children[3] is ScrollViewer { Content: Grid { Children.Count: 4 } }, "quote list and native table structure");
+                var stable = new MarkdownView("# 稳定标题\n\n正文"); var title = stable.Children[0];
+                stable.Update("# 稳定标题\n\n正文追加\n\n```cs\nvar x = 1;");
+                Check(ReferenceEquals(title, stable.Children[0]) && stable.Children.Count == 3, "stream preserves stable blocks and renders unfinished code fence");
+                var literal = new MarkdownView("<script>alert(1)</script>");
+                Check(((TextBlock)literal.Children[0]).Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().Any(r => r.Text.Contains("<script>")), "html remains literal text");
+                var reference = new MarkdownView("[链接][id]\n\n[id]: https://one.example");
+                reference.Update("[链接][id]\n\n[id]: https://two.example");
+                Check(((TextBlock)reference.Children[0]).Inlines.OfType<Microsoft.UI.Xaml.Documents.Hyperlink>().Single().NavigateUri.Host == "two.example", "reference definition changes update existing paragraph link");
+                var tasks = new MarkdownView("- [x] 已完成\n- [ ] 待处理");
+                var taskRows = (StackPanel)tasks.Children[0];
+                var taskText = (TextBlock)((StackPanel)((Grid)taskRows.Children[0]).Children[1]).Children[0];
+                Check(taskText.Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().Any(r => r.Text.Contains("☑")), "task list displays canonical checked state");
                 var slow = control.SelectRoleAsync("test", new Agent("slow", "slow"));
                 await control.SelectRoleAsync("test", fixture.Reviewer);
                 fixture.Late.TrySetResult(fixture.Conversation("slow")); await slow;
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 20, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 27, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
