@@ -12,3 +12,4 @@ Core 必须先证明请求是 AwaitingHuman 才能创建记录；DenyPolicy 与 
 此组件不承诺外部副作用 exactly-once；消费后崩溃恢复需要持久派发状态，未知结果进入 DispatchUnknown 并由 Core 对账。生产存储/执行接线验收前保持 S5 未完成。
 
 独立命令：`dotnet test Source/PuddingApprovalTests/PuddingApprovalTests.csproj --artifacts-path temp/build/native-approval --nologo -p:CollectCoverage=false`。
+`ApprovalInbox.cs`: read-only Pending-state query contract with explicit role/session scope and exclusive ID cursor. Expired Pending rows are still facts; consumers must not treat presence as authorization. Core authentication/producer/pause-resume remain outside this component.

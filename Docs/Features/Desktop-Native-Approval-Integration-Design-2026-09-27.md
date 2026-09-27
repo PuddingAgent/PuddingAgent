@@ -110,3 +110,11 @@ Core 决定服务拥有 Pending→Approved/Denied/Expired 的原子转换，禁�
 - IExecutionLeaseStore.ReleaseAsync 的 LeaseLost 会把 command 退回 pending、Turn 退回 accepted；不能冒充人工挂起，否则会重新执行整轮。
 
 下一接线必须先为既有执行 journal/lease 协议增加有持久检查点的人工等待转换，释放 worker 名额，并从同一 invocation 续行；明确审批等待期的取消/超时规则及消费后结果不确定的恢复路径。独立快照组件解决了请求内容可验证/可恢复保存这一项，不等于 A2/A3 已交付。不得把内存 TCS、lease-lost 重跑或用户消息重发写成原生审批闭环。
+
+## A1 读取侧：角色待处理查询（2026-09-27）
+
+新增叶合同 IApprovalInbox、ApprovalInboxScope 与 ApprovalInboxPage；SqliteApprovalStore 实现 ReadPendingAsync。查询必须同时提供 workspace/agent/session，按审批 ID 顺序使用排他 afterId 游标；默认 25、最多 100 项，多读一行判断是否有下一页。SQL 参数化，使用 JSON 表达式复合索引覆盖作用域、Pending 状态和 ID，不为 UI 扫描/反序列化全部审批。
+
+这里的 Pending 是保存状态，不等于“仍可批准”：过期但尚未经过状态转换的记录也返回 ExpiresAt，读取不替用户决定、不写 outbox。UI/应用服务必须据到期时间禁用操作，真正决定仍通过 ApprovalService 的到期检查和 CAS。各页不是跨请求事务快照；已提交状态通知后应从空游标刷新，以看到游标之前新插入的请求。作用域的调用者身份认证仍属于 Core 应用服务，存储过滤不能代替授权。
+
+18 项独立审批逻辑与 9 项 SQLite 测试通过，日志 temp/native-approval-inbox-logic.log、temp/native-approval-inbox.log。覆盖跨角色/会话/工作区隔离、游标无重复、提交决定后移除、重开数据库、参数化筛选、只读不改变过期请求、边界限制和取消。没有登记 Host、没有读取 D:\data、没有创建实际人工等待请求。A2 持久暂停/续行、A3 生产投影及 A5 原生区域接线仍未完成。

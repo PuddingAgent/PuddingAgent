@@ -1447,3 +1447,7 @@ MessageCard 增加执行明细加载进度、数量/显示位置说明、空结�
 ## 2026-09-27 流式 Markdown 控件复用
 
 MarkdownView 跳过相同正文，用引用集合替代旧控件保留判定中的全量嵌套扫描；TurnContentView 同步修改。85 逻辑/250 窗口检查通过；801 块追加样本和性能证据适用范围见原生聊天完成度核对报告。
+
+## 2026-09-27 原生审批读取侧
+
+PuddingApproval/ApprovalInbox.cs 定义按工作空间/角色/会话查询 Pending 的独立端口；PuddingApproval.Sqlite 增加索引与有界游标实现。18 审批逻辑/9 SQLite 测试通过，尚未装配 Host 或聊天待审批区域；读取不能代替决定与执行恢复。

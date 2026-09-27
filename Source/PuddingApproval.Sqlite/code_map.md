@@ -14,3 +14,4 @@
 依赖固定 Microsoft.Data.Sqlite 10.0.9 / SQLitePCLRaw.bundle_e_sqlite3 2.1.13，避免默认传递版本 2.1.11 导致 NU1903（[依赖告警](https://github.com/advisories/GHSA-2m69-gcr7-jv3q)）；未关闭 NuGet 审计。
 
 独立测试：`dotnet test Source/PuddingApproval.SqliteTests/PuddingApproval.SqliteTests.csproj --artifacts-path temp/build/native-approval-sqlite --nologo -p:CollectCoverage=false`。覆盖重新打开、双实例并发、事件故障回滚、重复执行身份、消费后重新打开及程序集边界。断电、进程强杀和真实 Runtime 续行尚未验收。
+`SqliteApprovalStore.Inbox.cs` implements IApprovalInbox: mandatory workspace/agent/session scope, Pending-state JSON expression index, exclusive ID cursor and bounded pages (25 default/100 max). Reads retain expiry facts without transitions/outbox writes; refresh paging after committed changes. InboxTests covers scope, paging, decisions, reopen, cancellation and limits (9 SQLite tests total).

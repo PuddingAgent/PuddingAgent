@@ -6,7 +6,7 @@ namespace PuddingApproval.Sqlite;
 public sealed record ApprovalOutboxItem(long Sequence, ApprovalRecord Record);
 
 /// <summary>Versioned records and at-least-once change outbox share a SQLite transaction.</summary>
-public sealed class SqliteApprovalStore : IApprovalStore
+public sealed partial class SqliteApprovalStore : IApprovalStore, IApprovalInbox
 {
     private readonly string _connectionString;
     private SqliteApprovalStore(string path) => _connectionString = new SqliteConnectionStringBuilder
@@ -23,6 +23,9 @@ public sealed class SqliteApprovalStore : IApprovalStore
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS approvals (
                 id TEXT PRIMARY KEY, invocation TEXT NOT NULL UNIQUE, version INTEGER NOT NULL, body TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS approvals_pending_scope ON approvals(
+                json_extract(body,'$.Binding.WorkspaceId'), json_extract(body,'$.Binding.AgentId'),
+                json_extract(body,'$.Binding.SessionId'), json_extract(body,'$.State'), id);
             CREATE TABLE IF NOT EXISTS approval_outbox (
                 sequence INTEGER PRIMARY KEY AUTOINCREMENT, approval_id TEXT NOT NULL,
                 version INTEGER NOT NULL, body TEXT NOT NULL, UNIQUE(approval_id, version));
