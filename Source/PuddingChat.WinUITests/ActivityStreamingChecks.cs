@@ -43,6 +43,24 @@ public partial class App
             Check(ReferenceEquals(text, thoughtBody.Children.OfType<MarkdownView>().Single())
                 && text.Children.OfType<TextBlock>().Single().Text == "推理第一段继续",
                 "visible reasoning updates its existing markdown view");
+            var large = new string('文', TextPageWindow.LargeTextThreshold * 3);
+            flow.Update([call, result with { Output = large }], "");
+            var largeDisclosure = (Expander)flow.Children.Single(); largeDisclosure.IsExpanded = true;
+            root.UpdateLayout();
+            var largeBody = (StackPanel)((ScrollViewer)largeDisclosure.Content).Content;
+            var pages = largeBody.Children.OfType<PagedTextView>().Single();
+            Check(pages.VisibleText.Length <= TextPageWindow.PageSize + 1
+                && largeBody.Children.OfType<MarkdownView>().Count() == 1,
+                "large tool output bypasses unbounded Markdown while small input keeps rich rendering");
+            pages.Move(1); var pageText = pages.VisibleText;
+            flow.Update([call, result with { Output = large + "后续输出" }], "");
+            Check(ReferenceEquals(pages, largeBody.Children.OfType<PagedTextView>().Single())
+                && pages.Page == 1 && pages.VisibleText == pageText
+                && await pages.CreateCopyData().GetView().GetTextAsync() == large + "后续输出",
+                "streaming large tool retains page and complete copy source");
+            flow.Update([call, result with { Output = "**简短结果**" }], "");
+            Check(!largeBody.Children.OfType<PagedTextView>().Any() && largeBody.Children.OfType<MarkdownView>().Count() == 2,
+                "replaced short tool output returns to rich rendering without stale large payload");
         }
         finally { root.Children.Remove(flow); }
     }

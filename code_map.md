@@ -1421,3 +1421,7 @@ ChatComposer 增加中文组词期间的发送保护、Ctrl+Enter 长按去重�
 ## 2026-09-27 原生角色导航可访问性
 
 RoleAvatarCard 的状态/未读信息同步到 ListView 自动化名称，描述映射 HelpText，回收清除旧标签。冻结角色保留未读数。RoleAccessibilityChecks 覆盖实际自动化树，83 逻辑/228 窗口通过；Narrator 实际播报仍待验收。
+
+## 2026-09-27 大型工具结果分页
+
+TextPageWindow + PagedTextView 将大型工具正文/输入/输出改为原文分页，每页约 16K 字符，保留完整复制与流式阅读页。独立门禁后接入 ActivityContentView，85 逻辑/236 原生窗口检查通过。此项仅约束排版，不裁剪 Core 数据，也不代表总内存有界；验收边界见原生聊天完成度核对报告。

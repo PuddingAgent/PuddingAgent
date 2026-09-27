@@ -127,3 +127,11 @@ ChatComposer 接入 TextBox.TextCompositionStarted/Ended，在组词期间不发
 RoleAvatarCard 与实际 ListView 项的自动化名称现含角色、状态及未读数，描述作为 HelpText；状态刷新同步更新已实现容器，容器回收清除旧标签。搜索框和列表提供明确名称。冻结/停用角色仍显示未读数，不再被状态优先级隐藏；相同状态不重复触发变更。
 
 83 逻辑/228 原生窗口检查通过，零组件警告/错误，日志 temp/native-role-accessibility.log。新增检查读取实际角色容器的 AutomationPeer 名称/描述与更新结果，并从 ListView 的自动化子节点验证 SelectionItem 模式。首次检查错误地从容器 peer 获取选择模式，已改为 WinUI 数据项 peer。此证据验证自动化树语义，不代表已完成 Narrator 实际播报、键盘全路径或高对比度验收。
+
+## 大型工具结果有界排版（2026-09-27）
+
+ActivityContentView 对超过 32,768 个 UTF-16 代码单元的工具正文/输入/输出使用 PagedTextView，较短内容仍用既有 MarkdownView。分页原文明确标注，每页最多 16,385 个代码单元（普通上限 16,384，额外一个用于保留 surrogate pair/CRLF）。上一页/下一页与复制全文均为原生控件；页号在流式追加时保持，输出缩短后可恢复 Markdown。思考与正常回复的渲染策略不变。
+
+TextPageWindow 独立测试先通过，再验证分页窗口，最后接工具活动组件。当前 85 逻辑/236 原生窗口检查通过，零组件构建警告/错误；日志 temp/native-text-pages-state.log、temp/native-text-pages-ui.log、temp/native-text-pages-integration.log。检查涵盖分页无损拼接、emoji/CRLF 边界、追加/替换/空值、真实原生翻页、300 DIP 按钮布局、全文复制数据与工具流式接线。
+
+此变更限制工具输出的 Markdown 解析与可视排版规模，未裁剪 canonical 内容、未改变 Core 提交/事件协议。完整字符串仍在内存中，复制也会复制全文；不能据此宣称整体内存有界或关闭单 Turn 全展开、长期内存及真实模型验收门禁。

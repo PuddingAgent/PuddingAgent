@@ -19,3 +19,4 @@ Consumers own polling, dispatch, rendering and lifetime. Uncertain command compl
 
 `RemoteImages.cs`: HTTP(S)-only reference parsing without embedded credentials, bounded image payload and IRemoteImageSource port; network implementation stays outside this contract assembly.
 `VoiceTranscript` / `VoiceInputOrigin`: actual ASR provenance, per-role draft origin, immutable send/retry snapshot and receipt guards; absent provider/model/language are omitted. VoiceOriginTests covers isolation, clearing, retry and asynchronous capture. Current logic suite: 83 tests; WinRT/UI/Core wiring now implemented, hardware acceptance pending.
+`TextPageWindow`: bounded plain-text pages, preserves UTF-16 pairs/CRLF, full source and reader page on streaming append; replacement clamps the page. TextPageWindowTests verifies lossless reconstruction and page lifecycle (85 logic tests total).

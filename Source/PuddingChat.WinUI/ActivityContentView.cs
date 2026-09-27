@@ -27,11 +27,14 @@ internal sealed class ActivityContentView : StackPanel
         void Add(string key, string text, bool label = false)
         {
             keys.Add(key);
-            if (!_slots.TryGetValue(key, out var current))
-                current = (text, label ? new TextBlock { Text = text, Opacity = .6 } : new MarkdownView(text, _images));
+            var paged = !label && block.Kind == "tool" && text.Length > TextPageWindow.LargeTextThreshold;
+            if (!_slots.TryGetValue(key, out var current) || paged != (current.View is PagedTextView))
+                current = (text, label ? new TextBlock { Text = text, Opacity = .6 }
+                    : paged ? new PagedTextView(text) : new MarkdownView(text, _images));
             else if (current.Text != text)
             {
                 if (current.View is MarkdownView markdown) markdown.Update(text);
+                else if (current.View is PagedTextView pages) pages.Update(text);
                 else ((TextBlock)current.View).Text = text;
                 current = (text, current.View);
             }
