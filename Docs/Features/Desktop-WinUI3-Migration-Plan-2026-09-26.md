@@ -38,7 +38,9 @@
 
 执行活动补充：工具节点按显式 `ParentToolCallId` 建树，缺失父节点、跨 Turn 引用和循环关系保持为独立根节点；工具结果早于调用时仍保持结果终态，非零退出码不会显示成功。子代理使用 `DelegationExecutionId`（canonical payload 的 `run_id`）聚合创建/完成事件，同一个池化子代理的两次执行保留两张卡；没有执行 ID 时不按名称或会话 ID 猜测合并。原生区分超时、中断、取消与预算耗尽，主消息只显示任务与有界结果摘要。Core 保留原 Web 汇总 `Status`，增加精确委派状态供进程内适配器使用。工具生产者没有提供父调用 ID 时仍显示平铺根调用，不凭 UI 推断关系。
 
-图片消息组件已接入：`IImageAttachmentClient` 定义进程内导入和受控本地预览，`ChatComposer` 提供原生多选图片与移除，`ChatSelection` 保存每个角色的附件草稿并冻结重试引用，`MessageCard` 内的 `ImageAttachmentView` 按需解码、缩放预览。Windows App SDK FileOpenPicker 使用当前 XamlRoot 的 AppWindowId 绑定窗口。Core 复用 VisionArtifactStorageService 验证真实图片、持久化 Artifact；SubmitTurn 传入 text/image typed parts，图片 detail 为 original，不发送本地路径、不自动代读、不伪造纯图片消息正文。UI 解码尺寸上限只影响预览，不改变模型输入原图。数量上限读取 Core 合同；收起或卸载预览释放图片，避免一次解码全部附件。图片选择对话框与真实视觉模型的手工验收仍需执行，当前自动化验证覆盖控件、导入、持久化和 PNG 解码。剪贴板/拖放、Markdown 内生成图片、相机和非图片文件仍待迁移。
+图片消息组件已接入：`IImageAttachmentClient` 定义进程内导入和受控本地预览，`ChatComposer` 提供原生多选图片与移除，`ChatSelection` 保存每个角色的附件草稿并冻结重试引用，`MessageCard` 内的 `ImageAttachmentView` 按需解码、缩放预览。Windows App SDK FileOpenPicker 使用当前 XamlRoot 的 AppWindowId 绑定窗口。Core 复用 VisionArtifactStorageService 验证真实图片、持久化 Artifact；SubmitTurn 传入 text/image typed parts，图片 detail 为 original，不发送本地路径、不自动代读、不伪造纯图片消息正文。UI 解码尺寸上限只影响预览，不改变模型输入原图。数量上限读取 Core 合同；收起或卸载预览释放图片，避免一次解码全部附件。图片选择对话框与真实视觉模型的手工验收仍需执行，当前自动化验证覆盖控件、导入、持久化和 PNG 解码。Markdown 内生成图片、相机和非图片文件仍待迁移。
+
+剪贴板与拖放：输入框通过 TextBox.Paste 接收 Ctrl+V 图片，普通文字保持原生粘贴；提供“粘贴图片”按钮以覆盖纯图片时文本右键菜单可能不提供粘贴的场景。拖入文件显示添加到当前角色草稿的提示。`NativeImageTransfer` 读取 Windows DataPackageView 的 StorageItems/Bitmap，图片文件使用原路径，剪贴板编码流暂存于系统 Temp，导入结束（包括失败）后删除暂存文件，不重编码。异步读取开始前捕获角色并占用附件入口，期间切换角色不会误写新角色草稿。格式、数量与 Core 导入失败显示在输入框内，保留已成功的附件与文字；普通文件暂不作为图片接收。自动化覆盖真实 Windows 数据包与延迟提供者；系统剪贴板快捷键和 Explorer 拖放尚待手工验收。
 
 运行中恢复：进入角色后，先将该活动 Turn 按固定快照游标分批补齐，再订阅新增事件，不再只保留最近 64 条活动。重放期间新提交的内容留给随后增量读取，避免持续输出让恢复永不结束。Core 校验会话/角色归属和根 Run，父输出只包含根 Run 的文本与同 Turn 的委派生命周期。BCL `ConversationActivity` 校验会话、Run、Turn、游标连续性并按事件 ID 去重；它不推断业务生命周期。窗口序列化快照/差量读取，角色取消可释放等待，晚到结果由选择代次拒绝。
 

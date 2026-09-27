@@ -156,3 +156,13 @@ Core 明细查询现支持从已接受的用户输入定位异常终态，按会
 验证：BCL 44/44、真实 WinUI 窗口 53 项（`temp/native-virtual-final.log`），原生组件构建零警告零错误。Desktop Release 发布成功（`temp/native-virtual-publish.log`，Core 有既存分析器警告）。依据 [Microsoft ItemsRepeater 文档](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/items-repeater) 使用虚拟化布局和自定义元素工厂。此处是重新创建控件而非控件池复用；已加载消息/事件数据仍驻留内存，单 Turn 内行为块尚未虚拟化，未测量真实模型长会话性能。
 
 隔离发布包验证（`temp/native-virtual-smoke.log`）通过：Core DLL 同进程加载、UI 回调、内核重启、数据目录保存及退出后租约释放。没有替换用户正在运行的 Desktop，也未修改 D:\data。
+
+## 原生图片粘贴与拖放（2026-09-27）
+
+对照 Web IntentConsole 的图片优先粘贴与文件拖放行为，新增 NativeImageTransfer 独立组件。先完成 Windows DataPackageView 的 StorageItems/Bitmap 读取测试，再接入 ChatComposer 的 TextBox.Paste、显式粘贴图片按钮、DragOver/Drop。普通文字粘贴仍由 TextBox 处理；拖放使用 Copy 与异步 deferral，不移动原文件。参考 [Microsoft TextBox.Paste](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.textbox.paste) 与 [拖放文档](https://learn.microsoft.com/en-us/windows/apps/develop/data/drag-and-drop)。
+
+剪贴板编码流先检查 64 MiB 上限，识别格式后按原字节暂存，调用既有 Core 导入端口，并在 finally 清理唯一暂存文件。StorageItems 只接受支持的图片文件，混合不支持文件会在导入前报告错误。原生层不替代 Core 的字节/尺寸校验，不重编码原图。ChatWorkspace 在异步数据读取前捕获角色，整个批次占用附件入口，延迟数据到达后仍归属原角色；已成功的附件和正文不会因后续错误被清空。
+
+验证：独立阶段 BCL 44 项、原生窗口 59 项（`temp/native-transfer-leaf.log`）；接入后 BCL 44/44、原生窗口 63 项（`temp/native-transfer-final.log`），构建零警告零错误。新增检查覆盖原字节一致、源文件保留、成功/失败暂存清理、不支持文件拒绝、Windows 延迟数据提供者期间角色切换、文字草稿保留和禁用入口。自动化没有读写系统剪贴板；实际 Ctrl+V、系统右键菜单和 Explorer 鼠标拖放仍待手工验收。
+
+Desktop Release 发布通过（`temp/native-transfer-publish.log`，Core 有既存警告）。本轮没有替换运行中 Desktop、调用真实模型或改动 D:\data。

@@ -134,6 +134,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         Composer.DraftChanged += (_, _) => { if (!_changingDraft) _state.Draft = Composer.Draft; UpdateComposer(); };
         Composer.SendRequested += async (_, _) => await GuardAsync(SendAsync);
         Composer.AttachRequested += async (_, _) => await GuardAsync(PickImagesAsync);
+        Composer.ImportImagesAsync = data => AddImageBatchAsync((import, ct) => NativeImageTransfer.ReadAsync(data, import, ct));
         Composer.RemoveImageRequested += id => { _state.RemoveImage(id); Composer.SetImages(_state.Images); UpdateComposer(); };
         Composer.CancelRequested += async (_, _) => await GuardAsync(CancelAsync);
         _timer.Tick += async (_, _) => { if (_active && IsLoaded) await GuardAsync(RefreshAsync); };
@@ -486,22 +487,28 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         if (_disposed || generation != _state.Generation) return;
         await AddImagesAsync(files.Select(f => f.Path));
     }
-    public async Task AddImagesAsync(IEnumerable<string> paths)
+    public Task AddImagesAsync(IEnumerable<string> paths) => AddImageBatchAsync((import, _) => import(paths.ToArray()));
+    private async Task AddImageBatchAsync(Func<Func<IReadOnlyList<string>, Task>, CancellationToken, Task> read)
     {
-        if (_client is not IImageAttachmentClient images || _state.Role is not { } role || _addingImages || _busy) return;
-        var files = paths.ToArray();
-        if (files.Length + _state.ImagesFor(role).Count > images.MaxImagesPerMessage)
-            throw new InvalidOperationException($"每条消息最多添加 {images.MaxImagesPerMessage} 张图片。");
+        if (_client is not IImageAttachmentClient images || _state.Role is not { } role || _addingImages || _busy
+            || _agent is not { IsEnabled: true, IsFrozen: false }) return;
         _addingImages = true; UpdateComposer();
         try
         {
-            foreach (var path in files)
+            // Capture the role and reserve the composer before resolving asynchronous clipboard/drop data.
+            await read(async files =>
             {
-                var image = await images.ImportImageAsync(role, path, _lifetime.Token);
-                if (_disposed) return;
-                _state.AddImage(role, image);
-                if (_state.Role == role) Composer.SetImages(_state.Images);
-            }
+                if (files.Count + _state.ImagesFor(role).Count > images.MaxImagesPerMessage)
+                    throw new InvalidOperationException($"每条消息最多添加 {images.MaxImagesPerMessage} 张图片。");
+                foreach (var path in files)
+                {
+                    _lifetime.Token.ThrowIfCancellationRequested();
+                    var image = await images.ImportImageAsync(role, path, _lifetime.Token);
+                    if (_disposed) return;
+                    _state.AddImage(role, image);
+                    if (_state.Role == role) Composer.SetImages(_state.Images);
+                }
+            }, _lifetime.Token);
         }
         finally { _addingImages = false; if (!_disposed) UpdateComposer(); }
     }
