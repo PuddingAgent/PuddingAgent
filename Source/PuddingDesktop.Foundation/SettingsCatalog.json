@@ -322,7 +322,7 @@
             ],
             "source": "pages/agent-template-settings/sections/PromptPersonaSection.tsx",
             "task": "DS-04",
-            "status": "部分已有"
+            "status": "已接入"
           }
         ]
       },

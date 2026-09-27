@@ -14,4 +14,6 @@
 
 `DesktopAgentDirectorySettings` implements `IAgentDirectorySettings` (DS-04 directory slice) on the same gated path: templates, shipped presets, the avatar catalog, workspace role instances and freeze. Template and instance basic edits reload the stored record and submit it back with only the displayed fields replaced, so prompt/Markdown documents and undisplayed policy fields survive.
 
+`DesktopAgentDocumentsSettings` (partial of the directory adapter) covers the DS-04 document slice: template prompt/Markdown fields are saved with a fingerprint of what was read, instance Markdown documents use Core's own SHA-256 token, and a document the instance manifest does not reference is reported as repairable instead of failing the page.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

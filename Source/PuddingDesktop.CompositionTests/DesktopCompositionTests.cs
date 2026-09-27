@@ -334,6 +334,99 @@ public sealed class DesktopCompositionTests
         }
     }
 
+    [Fact]
+    public async Task AgentDocumentAdapter_SeparatesTemplateDefaultsFromInstanceOverrides()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var directory = factory.CreateAgentDirectorySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await kernel.StartAsync(root, timeout.Token);
+
+            await directory.SaveTemplateAsync(new AgentTemplateEdit("ds04-docs", "Docs", "Service", "", true, 0, "pudding"),
+                timeout.Token);
+            var loaded = await directory.ReadTemplateDocumentsAsync("ds04-docs", timeout.Token);
+            Assert.Equal(7, loaded.Documents.Count);
+            Assert.Equal(64, loaded.Fingerprint.Length);
+
+            var edited = new Dictionary<string, string>(loaded.Documents, StringComparer.Ordinal)
+            {
+                ["systemPrompt"] = "you are a fixture",
+                ["personaPrompt"] = "# SOUL fixture",
+                ["userPromptTemplate"] = "{{input}}"
+            };
+            await directory.SaveTemplateDocumentsAsync(
+                new AgentTemplateDocuments("ds04-docs", loaded.Fingerprint, edited), timeout.Token);
+
+            var reread = await directory.ReadTemplateDocumentsAsync("ds04-docs", timeout.Token);
+            Assert.Equal("you are a fixture", reread.Documents["systemPrompt"]);
+            Assert.Equal("# SOUL fixture", reread.Documents["personaPrompt"]);
+            Assert.Equal("{{input}}", reread.Documents["userPromptTemplate"]);
+            // 未编辑的文档保持为空，没有被别的内容顶替。
+            Assert.Equal("", reread.Documents["memoryPrompt"]);
+            Assert.NotEqual(loaded.Fingerprint, reread.Fingerprint);
+
+            // A stale fingerprint must be refused instead of overwriting someone else's edit.
+            await Assert.ThrowsAsync<SettingsConflictException>(() => directory.SaveTemplateDocumentsAsync(
+                new AgentTemplateDocuments("ds04-docs", loaded.Fingerprint, edited), timeout.Token));
+            Assert.Equal("you are a fixture",
+                (await directory.ReadTemplateDocumentsAsync("ds04-docs", timeout.Token)).Documents["systemPrompt"]);
+
+            var workspaces = await directory.ListWorkspacesAsync(timeout.Token);
+            var workspaceId = workspaces[0].WorkspaceId;
+            await directory.CreateInstanceAsync(new AgentInstanceCreate(workspaceId, "Docs role", "", "ds04-docs"), timeout.Token);
+            var instance = Assert.Single(await directory.ListInstancesAsync(workspaceId, timeout.Token),
+                candidate => candidate.Name == "Docs role");
+
+            // Instances are seeded from the template, so nothing is an override until it is edited.
+            var documents = await directory.ReadInstanceDocumentsAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal(6, documents.Count);
+            var soul = Assert.Single(documents, document => document.Key == "soul");
+            Assert.Equal("# SOUL fixture", soul.TemplateDefault);
+            Assert.Equal("# SOUL fixture", soul.Content);
+            Assert.False(soul.OverridesTemplate);
+            Assert.NotEmpty(soul.Sha256);
+            // AGENTS.md had no template default, so the instance manifest does not reference it yet:
+            // the page must say so rather than fail, and a save must create and repair it.
+            var agents = Assert.Single(documents, document => document.Key == "agents");
+            Assert.False(agents.IsHealthy);
+            Assert.Contains("manifest", agents.Issue, StringComparison.Ordinal);
+            await directory.SaveInstanceDocumentAsync(workspaceId, instance.AgentId, "agents", "# AGENTS created", "", timeout.Token);
+            var repaired = Assert.Single(await directory.ReadInstanceDocumentsAsync(workspaceId, instance.AgentId, timeout.Token),
+                document => document.Key == "agents");
+            Assert.True(repaired.IsHealthy);
+            Assert.Equal("# AGENTS created", repaired.Content);
+            Assert.NotEmpty(repaired.Sha256);
+
+            var heartbeat = Assert.Single(documents, document => document.Key == "heartbeat");
+            // 心跳提示词只有实例级文档，没有模板默认值。
+            Assert.Equal("", heartbeat.TemplateDefault);
+
+            // A stale SHA must be refused; the correct one writes and turns the document into an override.
+            await Assert.ThrowsAsync<SettingsConflictException>(() => directory.SaveInstanceDocumentAsync(
+                workspaceId, instance.AgentId, "soul", "# edited", "0000000000000000000000000000000000000000000000000000000000000000", timeout.Token));
+            await directory.SaveInstanceDocumentAsync(workspaceId, instance.AgentId, "soul", "# edited", soul.Sha256, timeout.Token);
+            var updated = Assert.Single(await directory.ReadInstanceDocumentsAsync(workspaceId, instance.AgentId, timeout.Token),
+                document => document.Key == "soul");
+            Assert.Equal("# edited", updated.Content);
+            Assert.True(updated.OverridesTemplate);
+            Assert.NotEqual(soul.Sha256, updated.Sha256);
+
+            await Assert.ThrowsAsync<ArgumentException>(() => directory.SaveInstanceDocumentAsync(
+                workspaceId, instance.AgentId, "not-a-document", "x", "", timeout.Token));
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => directory.ReadTemplateDocumentsAsync("ds04-docs", timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     // The isolated data root is seeded with the shipped default providers, so target ours explicitly.
     private static PuddingDesktop.Foundation.LlmProviderSummary SinglePool(IReadOnlyList<PuddingDesktop.Foundation.LlmProviderSummary> providers)
         => Assert.Single(providers, provider => provider.ProviderId == "pool");

@@ -59,6 +59,7 @@ public sealed partial class MainWindow : Window
         BuildLlmPanels();
         BuildVoicePanels();
         BuildAgentDirectoryPanel();
+        BuildAgentDocumentPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -462,6 +463,13 @@ public sealed partial class MainWindow : Window
             Check(AgentDirectorySettings.Content is StackPanel, "agent directory form is built");
             Check(!_agTemplateSave.IsEnabled, "agent directory form stays disabled without Core");
             Check(_agNotice.Title == "Core 未就绪", "agent directory tab reports the real Core state");
+            // DS-04 document slice: template documents and instance overrides are native content.
+            OpenSettingsCategory("agents", "prompts");
+            await WaitForSettingsUiAsync(() => _adNotice.IsOpen);
+            Check(AgentDocumentsSettings.Visibility == Visibility.Visible, "agent documents tab is native");
+            Check(AgentDocumentsSettings.Content is StackPanel, "agent document form is built");
+            Check(!_adTemplateText.IsEnabled, "agent document form stays disabled without Core");
+            Check(_adNotice.Title == "Core 未就绪", "agent documents tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

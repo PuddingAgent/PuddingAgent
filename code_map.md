@@ -1,3 +1,6 @@
+## 2026-09-27 DS-04 角色与模板（文档切片）
+
+Foundation 新增 `AgentDocumentContracts.cs`（模板/实例文档槽位、文档集指纹、覆盖判定），Composition 的 `DesktopAgentDirectorySettings` 加 `partial` 文档实现：模板文档保存前比对读取指纹，实例文档直接使用 Core 的 SHA-256 冲突令牌（`AgentSelfStateConflictException` → `SettingsConflictException`），Shell 新增 `MainWindow.AgentDocumentSettings.cs`（`agents/prompts` 页签：模板文档与实例文档各自的文档选择器 + 大文本编辑器，草稿跨文档切换保留）。发现并如实呈现一个真实行为：模板没有对应默认值时，新建实例的 manifest 不引用该文档，`ReadDocumentAsync` 会拒绝；页面显示「保存会创建并修复引用」而不是整页失败，保存后引用即被修复。验证：Foundation 74 项、Composition 6 项、窗口 smoke 133 项通过。
 ## 2026-09-27 DS-04 角色与模板（目录/基础切片，进行中）
 
 Foundation 新增 `AgentDirectoryContracts.cs`（`IAgentDirectorySettings`、模板/实例/预设/头像记录、`AgentDirectoryText`），Composition 新增 `DesktopAgentDirectorySettings`（经 `IDesktopKernel.RunSettingsAsync` 调用 `AgentTemplateFileService` / `WorkspaceAgentFileService`，模板与实例的基础信息保存都先读回再整体提交，避免清空 Prompt/Markdown），Shell 新增 `MainWindow.AgentDirectorySettings.cs`（`agents/directory` 页签：工作区、模板列表与预设导入、角色实例新建/编辑/删除/冻结解冻）。头像改为真实头像目录项（`IAgentAvatarCatalog.List()`）：模板 DTO 的 `avatarEmoji` 恒为 null，做成输入框会是不生效的控件。已登记缺口：模板 ID 校验只在表单层、实例无 `sortOrder` 字段。验证：Foundation 70 项、Composition 5 项、窗口 smoke 129 项通过。
@@ -22,6 +25,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 `PuddingDesktop.Foundation/SettingsCatalog.json` + `SettingsCatalog.cs` 定义 17 分类、49 页签、64 卡片与搜索；`PuddingDesktop/MainWindow.Settings.cs` 和 XAML 提供居中设置层、应用菜单入口、分类/页签、占位卡片及外观设置。后续直接调用 Core 既有方法，不新增 HTTP/逐接口包装层。完整字段、Core 缺口及 DS-00~17 实施任务见 [DeepSeek 交接任务书](Docs/Tasks/Desktop-Admin-Settings-DeepSeek-2026-09-27.md)，验证见 [实施记录](Docs/Reports/Desktop-Admin-Settings-Skeleton-2026-09-27.md)。
 
 ## 2026-09-27 原生聊天交错消息流
+
+`Source/PuddingApproval.Sqlite/SqliteApprovalStore.cs` 为独立审批存储适配器：身份唯一、版本 CAS、状态/outbox 同事务提交、未确认事件读取与确认；`PuddingApproval.SqliteTests` 覆盖双实例竞争、重开和故障回滚。未登记 Host/DI，待接请求生产者与执行续行。
 
 `Source/PuddingApproval` 为独立 BCL 人工决定转换组件（尚未接入）：精确身份/操作绑定、版本 CAS、决定幂等、过期、一次许可消费与 DispatchUnknown。`PuddingApprovalTests` 只引用该叶组件；生产事务存储/outbox 与 Runtime 接线仍待实现，不能将内存测试视为审批功能交付。
 

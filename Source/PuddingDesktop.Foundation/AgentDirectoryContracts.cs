@@ -52,6 +52,17 @@ public interface IAgentDirectorySettings
     Task SaveInstanceAsync(AgentInstanceEdit edit, CancellationToken cancellationToken = default);
     Task DeleteInstanceAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
     Task SetInstanceFrozenAsync(string workspaceId, string agentId, bool frozen, CancellationToken cancellationToken = default);
+
+    /// <summary>Template documents plus the fingerprint the editor must send back on save.</summary>
+    Task<AgentTemplateDocuments> ReadTemplateDocumentsAsync(string templateId, CancellationToken cancellationToken = default);
+
+    /// <summary>Throws <see cref="SettingsConflictException"/> when the stored template changed since it was read.</summary>
+    Task SaveTemplateDocumentsAsync(AgentTemplateDocuments documents, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AgentInstanceDocument>> ReadInstanceDocumentsAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
+
+    /// <summary>Throws <see cref="SettingsConflictException"/> when the stored document changed since it was read.</summary>
+    Task SaveInstanceDocumentAsync(string workspaceId, string agentId, string key, string content, string expectedSha256, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

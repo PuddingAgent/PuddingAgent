@@ -168,7 +168,7 @@
 
 ### DS-04 — 模板与角色实例完整设置（P0；依赖 DS-02、DS-06、DS-07 目录）
 
-状态：**进行中（2026-09-27）**。已交付「目录与基础」页签（`agent-directory` + `agent-basic`）；`prompts`/`models`/`smart`/`capabilities`/`guardrails` 五个页签待续。
+状态：**进行中（2026-09-27）**。已交付「目录与基础」与「角色与 Prompt」两个页签（`agent-directory` + `agent-basic` + `agent-prompts`）；`models`/`smart`/`capabilities`/`guardrails` 四个页签待续。
 
 按六页签拆任务：目录/基础（含预设导入）→ 文档 → 模型/记忆 → Smart → 能力/Skill → 护栏。模板与实例保存目标必须可见；已有基础编辑不可回退。Markdown 编辑要保留换行与未修改内容；七种 Smart 子代理路由全部覆盖。验收：模板变更不误写实例覆盖，实例编辑不改全局模板；模型联动有效；授权继承清晰；局部编辑不清空其他 JSON/Markdown；冻结目标与选中目标一致。
 
@@ -178,10 +178,16 @@
 - 原生设置：`agents/directory` 页签原生表单——工作区选择、全局模板列表/新建/删除/基础信息编辑、随产品预设列表与导入、角色实例列表/从模板新建/基础信息编辑/删除/冻结解冻；冻结与停用分开显示（`DescribeState`）。
 - 头像改为真实目录项：模板与实例的 `avatarId` 由 `IAgentAvatarCatalog.List()` 提供下拉，**不再提供 `avatarEmoji` 输入框**——`AgentTemplateFileService` 的 DTO 里 `avatarEmoji` 恒为 null，模板头像实际是目录里的图片项，做成自由文本就是一个不生效的控件。
 
+**文档切片已交付**
+- 模板文档（`systemPrompt` / `userPromptTemplate` / `personaPrompt` / `agentsPrompt` / `toolsDescription` / `bootstrapTemplate` / `memoryPrompt`）与实例文档（SOUL / AGENTS / TOOLS / BOOTSTRAP / MEMORY / HEARTBEAT）按文档分别编辑保存；切换文档不会丢失未保存内容。
+- 并发保护：模板保存前比对读取时的文档集指纹（改动即要求重新读取），实例保存直接使用 Core 的 SHA-256 版本令牌；冲突一律阻止覆盖并提示重新读取。
+- 「区分模板默认值与实例覆盖值」：实例页签显示「与模板默认值一致（未覆盖）／实例已覆盖模板默认值」，并可查看来源模板字段的原文；模板保存绝不写入任何实例。
+- 真实行为登记：模板没有对应默认内容时，新建实例的 manifest 不引用该文档，`ReadDocumentAsync` 会拒绝读取（`EnsureCanonicalManifestReference`）。页面不整页失败，而是标注「保存会创建文件并修复引用」，保存后引用即被 Core 修复（Composition 测试覆盖）。
+
 **本切片登记的缺口**
 - 模板 ID / 名称等格式校验目前只在表单层（`AgentDirectoryText.Validate`）；`AgentTemplateFileService` 不拒绝非法 ID，尚未下沉到 Core。
 - 角色实例没有 `sortOrder` 字段（`WorkspaceAgentDto`/`UpdateWorkspaceAgentRequest` 都没有），因此实例卡片不提供排序输入，排序只在模板上编辑。
-- 模板/实例的 Markdown 文档（SOUL/AGENTS/TOOLS/BOOTSTRAP/MEMORY）属于 `prompts` 页签，本切片明确不触碰。
+- 模板文档的并发保护是「读取指纹」而非 Core 侧版本号：模板契约没有版本字段，指纹由 Desktop 侧计算（已用测试固定顺序无关/空白敏感）。
 
 ### DS-05 — 工作区与渠道（P1；依赖 DS-00、DS-04）
 
@@ -684,5 +690,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-01 通用、语言与关于 | 已完成 2026-09-27 | `language`/`help`/`about` 三卡原生化；Foundation 47 项、窗口 smoke 104 项通过 |
 | DS-02 LLM 服务商与模型 | 已完成 2026-09-27 | 五张卡接入；Core 补齐配额（限额入配置文件、用量来自账本、reset-daily 只推进窗口）；配额测试 4 项、Composition 真实 Host 端到端通过 |
 | DS-03 语音服务商、TTS 与 ASR | 已完成 2026-09-27 | 三卡接入；Core 补密钥保持/替换/清除与默认项真源同步（TTS/ASR 互不覆盖）；语音 Core 测试 4 项 |
-| DS-04 模板与角色实例 | 进行中 2026-09-27 | 目录/基础切片已接入（agent-directory + agent-basic）；文档/模型/Smart/能力/护栏五个页签待续 |
+| DS-04 模板与角色实例 | 进行中 2026-09-27 | 目录/基础 + 文档两切片已接入（agent-directory / agent-basic / agent-prompts）；模型/Smart/能力/护栏四个页签待续 |
 | DS-05 … DS-17 | 待实施 | — |

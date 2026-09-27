@@ -12,7 +12,7 @@ namespace PuddingDesktop.Composition;
 /// stored record first and submit it back with only the displayed fields replaced, so prompt/Markdown
 /// documents and undisplayed policy fields are never cleared by a basic-info save.
 /// </summary>
-internal sealed class DesktopAgentDirectorySettings(IDesktopKernel kernel) : IAgentDirectorySettings
+internal sealed partial class DesktopAgentDirectorySettings(IDesktopKernel kernel) : IAgentDirectorySettings
 {
     private Task<T> Templates<T>(string operationId,
         Func<AgentTemplateFileService, CancellationToken, Task<T>> body, CancellationToken cancellationToken)

@@ -148,6 +148,15 @@ public sealed partial class MainWindow
         var agents = VisibilityOf("agents", "directory", tab);
         AgentDirectorySettings.Visibility = agents;
         if (agents == Visibility.Visible) LoadAgentDirectoryIfNeeded();
+        var documents = VisibilityOf("agents", "prompts", tab);
+        AgentDocumentsSettings.Visibility = documents;
+        if (documents == Visibility.Visible) LoadAgentDocumentsIfNeeded();
+    }
+
+    private async void LoadAgentDocumentsIfNeeded()
+    {
+        try { await LoadAgentDocumentsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadAgentDirectoryIfNeeded()
@@ -184,6 +193,7 @@ public sealed partial class MainWindow
         ("voice", "tts") => true,
         ("voice", "asr") => true,
         ("agents", "directory") => true,
+        ("agents", "prompts") => true,
         _ => false
     };
 
