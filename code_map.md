@@ -1374,3 +1374,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 2026-09-27 原生录音控件
 
 `PuddingChat.WinUI/VoiceInputControl.cs` 提供录音/结束/取消、转写预览、显式加入草稿与冲突提示；`PuddingChat.WinUITests/VoiceInputChecks.cs` 新增 7 项真实窗口检查，总计 77 逻辑/199 窗口检查通过。真实采集/Core ASR 和聊天工作台装配尚未完成，见原生语音方案与完成审计。
+
+## 2026-09-27 Core ASR 原生适配
+
+`PuddingDesktop.Composition/InProcessChatClient.Transcription.cs` 直接调用 IAudioTranscriptionService，复用默认供应商/模型配置与操作取消。`Tests/PuddingNativeChat.IntegrationTests/NativeTranscriptionIntegrationTests.cs` 验证真实配置/应用服务加替身 Provider；Core 集成套件 3 项通过。设备采集与工作台装配待接，见原生语音方案。

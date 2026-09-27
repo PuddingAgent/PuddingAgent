@@ -6,7 +6,7 @@
 
 - Web `pages/chat/hooks/useTtsPlayer.ts`：消息文本→`synthesizeTts`→浏览器 Audio；包含合成、播放、停止和新请求替换。
 - Web `IntentConsole.tsx`：录音结束后 ASR 回填草稿；旧实现通过 200 ms 定时器等最终转写。原生应等待明确完成回执，不移植这个时间假设。
-- Core `VoiceController` 的 TTS 使用 `IVoiceSynthesisService`；ASR 使用 `VoiceProviderFileService` + `IVoiceProviderFactory.CreateAsrProvider`。`IVoiceRecognitionService` 另有流式合同，不能仅凭接口存在认定已装配或可用。
+- Core `VoiceController` 的 TTS 使用 `IVoiceSynthesisService`；旧 ASR Controller 使用 `VoiceProviderFileService` + `IVoiceProviderFactory.CreateAsrProvider`。Desktop ASR 复用已存在的 `IAudioTranscriptionService`，统一默认模型选择与结果校验。`IVoiceRecognitionService` 另有流式合同，不能仅凭接口存在认定已装配或可用。
 - Core `VoiceSynthesisService` 已处理默认服务商/模型选择、provider 适配、URL 音频物化。Desktop 复用应用服务，提供真实 WorkspaceId/MessageId，不照搬 Web Controller 固定 default 工作空间的参数。
 
 原生调用链：消息按钮 → PuddingChat 播放会话 → IChatSpeechClient → Composition → Core IVoiceSynthesisService；音频返回后由原生 ISpeechAudioPlayer 播放。Desktop/Core 间没有 HTTP；Core 向已配置语音服务商发出的网络请求属于供应商调用。
@@ -56,3 +56,11 @@
 `PuddingChat.WinUI/VoiceInputControl.cs` 已独立实现：语音输入/结束录音、取消录音/转写、打开设备/收尾/转写/取消提示、失败重录、可选中文本预览与“加入草稿”。只有显式确认才请求插入，不自动发送；宿主回调拒绝已变化的角色/草稿时保留文本并提示复制粘贴，成功后禁用重复插入。Loaded/Unloaded 管理订阅，卸载与 Dispose 取消当前录音，工作台仍负责异步释放会话。
 
 77 项逻辑测试和 **199 项真实 WinUI 窗口检查通过**，零构建警告/错误，日志 `temp/native-voice-input-control.log`。新增 7 项控件检查覆盖录音标签、设备释放后转写、预览不改草稿、冲突提示、显式插入一次且不发送、失败重录、卸载取消。设备及 ASR 使用替身，未打开真实麦克风；当前控件尚未装入 ChatComposer/ChatWorkspace。下一步为 WinRT 采集组件、Core ASR 直接调用适配，再完成工作台装配；独立控件通过不等于产品语音输入已可用。
+
+## Core ASR 进程内适配（2026-09-27）
+
+`InProcessChatClient.Transcription.cs` 实现 IChatTranscriptionClient：验证录音大小与角色是否存在/启用/冻结，再调用既有 IAudioTranscriptionService，格式为 WAV，供应商和模型保持未指定以使用 Core 配置。调用沿用内核操作跟踪、DI scope 和停止令牌；不创建 Controller/HTTP 路由，也不在 Desktop 复制默认模型选择。Core 到 ASR 供应商的网络调用与 Desktop/Core 之间的传输是两回事。
+
+真实 Host 集成套件 **3 项通过**，日志 `temp/native-transcription-core.log`（构建仍有既有警告）。新增用例路径组合真实 WorkspaceAgentFileService、真实 AudioTranscriptionService、隔离 VoiceProviderFileService 与替身 Provider，覆盖无默认配置、默认模型解析、角色/工作区不存在、空音频、空识别结果、内核停止取消和零 Desktop 聊天 HTTP。没有访问 D:\data 或真实供应商。WinRT 麦克风采集及聊天工作台装配仍未完成。
+
+后续采集实现依据 Microsoft [MediaCapture](https://learn.microsoft.com/uwp/api/windows.media.capture.mediacapture) 与 [StartRecordToStreamAsync](https://learn.microsoft.com/en-us/uwp/api/windows.media.capture.mediacapture.startrecordtostreamasync)：初始化在 UI/STA 上执行，显式用户操作才请求麦克风，采用随机访问内存流并在退出/取消时释放。Firecrawl Developer keyless 查询不可用，本次使用微软官方文档核对；设备权限与解包桌面实际行为仍需原生适配及产品验证，不能以查阅文档代替验收。
