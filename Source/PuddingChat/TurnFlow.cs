@@ -41,7 +41,9 @@ public static class TurnFlow
                 if (item.Id == anchor.Id)
                 {
                     var parent = call?.ParentToolCallId ?? result?.ParentToolCallId;
-                    blocks.Add(new(key, "tool", anchor.Text, result?.ExitCode is not null and not 0 ? "error" : result?.Status ?? anchor.Status,
+                    blocks.Add(new(key, "tool", anchor.Text,
+                        result?.Status is "human_decision_required" or "dependency_wait" ? result.Status :
+                        result?.ExitCode is not null and not 0 ? "error" : result?.Status ?? anchor.Status,
                         call?.Name ?? result?.Name, call?.Arguments ?? result?.Arguments,
                         result?.Output ?? result?.Message ?? result?.Text, result?.ExitCode,
                         parent is null ? null : $"tool:{anchor.TurnId}:{parent}"));
@@ -106,6 +108,8 @@ public static class TurnFlow
         "budget_exhausted" => "预算耗尽",
         "timed_out" or "timeout" => "超时",
         "interrupted" => "已中断",
+        "human_decision_required" => "需人工决定",
+        "dependency_wait" => "等待依赖恢复",
         _ => status
     };
 }

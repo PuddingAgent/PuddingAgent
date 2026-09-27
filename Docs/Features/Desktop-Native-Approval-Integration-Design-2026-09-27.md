@@ -88,3 +88,9 @@ Core 决定服务拥有 Pending→Approved/Denied/Expired 的原子转换，禁�
 提交时冻结决定与理由，禁用重复提交；回执失败后仅重试原决定，decisionId/expectedVersion/理由保持一致。权威快照到来前不乐观批准。过期通过控件加载期间的计时器刷新；DeferredDependency 没有人工按钮。不同角色/会话/审批 ID 的回执被拒绝，旧版本忽略，同版本状态变更拒绝；Dispose 取消等待并忽略晚到回执。布局沿用主题卡片资源。
 
 此卡已完成独立窗口验证，但尚未放入产品 ChatWorkspace，也没有决定服务适配器。等待 A2/A3 完成后再接固定待处理区域；永久授权不在卡片选项中，不假称支持 Web 的 always_allow。
+
+## 8. A2 前置：工具结果状态保真
+
+修复 NeedHuman 在 PuddingToolExecutionService 中被折叠为普通 403 的问题，新增 human_decision_required；DeferredDependency 保持 dependency_wait/428，终局拒绝仍为 403。ToolInvocationResult、Runtime SkillResult 与流式工具结果传递 Status/ExitCode；原生 TurnFlow 优先保留两种准入状态，普通非零退出仍显示失败。
+
+这只是现有执行链的结果保真，不创建持久审批请求、不建立 Run 暂停点、不自动重试工具，也不改变防火墙或错误熔断规则。熔断触发后的结果仍由既有熔断规则决定。A2/A3 尚未闭环，不能把“需人工决定”理解为 Run 已可靠挂起或已经允许继续执行。

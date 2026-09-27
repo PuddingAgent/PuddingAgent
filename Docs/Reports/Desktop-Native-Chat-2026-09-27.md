@@ -204,3 +204,9 @@ Desktop Release 发布通过（`temp/native-transfer-publish.log`，Core 有既�
 新增 PuddingChat 审批展示/提交合同与 WinUI ApprovalCard。卡片只提供 Core 声明的单次允许/拒绝选项，展示参数、描述、有效期和真实风险说明；没有风险信息时显示未提供。提交使用固定 decisionId，失败只重试原决定，不改变决定理由；不提前标记批准。禁用过期、依赖等待及处理中交互，拒绝跨请求回执和同版本状态修改，忽略旧版本，释放控件时取消异步等待。
 
 验证：BCL 47/47、原生窗口 86 项（`temp/native-approval-card-final.log`），构建零警告零错误。新增覆盖真实窗口加载、双击、失败/重试同一提交、权威状态、过期、Core 能力限制、依赖等待、旧版本、跨角色、同版本冲突及 Dispose 后晚到结果。测试使用可控 IChatApprovals 客户端，没有接入生产 Core，没有在产品 ChatWorkspace 显示尚不具备真实执行续行的按钮。固定待处理区域、Core 请求投影和执行恢复仍待完成。
+
+## 工具准入状态保真（2026-09-27）
+
+NeedHuman、DeferredDependency 和终局拒绝现在在执行器出口保持区别；进程内调用合同与 SkillResult 传递原始状态/退出码，流式工具事件增加 status。原生 TurnFlow 不再将人工决定或依赖等待一律覆盖为失败。未改变权限、熔断、Run 调度或工具执行次数，没有新增 HTTP 调用。
+
+验证：Runtime 定向回归 174/174（工具基础设施、调用适配、执行上下文，含新增 3 个准入分类案例及真实 facade 透传断言），BCL 聊天测试 50/50。日志为 temp/native-admission-runtime-final.log 与 temp/native-admission-status.log。构建有既存分析器警告，无编译错误；本轮未运行原生窗口或真实模型端到端审批验收。请求生产者、持久暂停/恢复和产品审批卡接入仍未完成，不能视为审批闭环交付。未改动 D:\data，未重启 Desktop。

@@ -39,6 +39,9 @@ public sealed record ToolInvocationRequest
 /// <summary>工具调用结果。</summary>
 public sealed record ToolInvocationResult
 {
+    /// <summary>执行器的业务状态；不代表 Run 已挂起或获得执行许可。</summary>
+    public string? Status { get; init; }
+    public int? ExitCode { get; init; }
     public required bool Success { get; init; }
     public required string ToolCallId { get; init; }
     public required string ToolName { get; init; }

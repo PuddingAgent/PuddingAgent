@@ -2,6 +2,16 @@ namespace PuddingChatTests;
 
 public sealed class TurnFlowTests
 {
+    [Theory]
+    [InlineData("human_decision_required", 403, "human_decision_required", "需人工决定")]
+    [InlineData("dependency_wait", 428, "dependency_wait", "等待依赖恢复")]
+    [InlineData("done", 1, "error", "失败")]
+    public void PreservesTypedAdmissionOutcomeWithoutMislabelingAsExecutionFailure(string status, int exit, string expected, string label)
+    {
+        var flow = PuddingChat.TurnFlow.Build([new("result", "tool_result", status, "blocked", 1, "terminal", ExitCode: exit, ToolCallId: "call")], "");
+        var block = Assert.Single(flow);
+        Assert.Equal(expected, block.Status); Assert.Equal(label, PuddingChat.TurnFlow.StatusLabel(block.Status));
+    }
     [Fact]
     public void InterleavesSegmentsAndPairsParallelToolsById()
     {

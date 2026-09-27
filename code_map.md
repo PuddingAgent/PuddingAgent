@@ -29,6 +29,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingToolRegistry` 保留 NeedHuman 的 `human_decision_required` 状态；`ToolInvocationResult` 与 Runtime 的 `SkillResult` 透传 Status/ExitCode，流式工具结果携带状态，`PuddingChat/TurnFlow` 区分人工决定、依赖等待与失败。此链路尚不创建审批请求或暂停 Run；执行熔断策略保持原样。
+
 `PuddingChat/Approvals.cs` 与 `PuddingChat.WinUI/ApprovalCard.cs` 提供独立原生审批交互：权威版本快照、Core 允许的选项、稳定决定重试、过期/依赖等待禁用、释放后取消等待。`ApprovalCardChecks` 覆盖原生加载和竞态；尚未接入产品聊天区域与 Core 决定服务，不能视为审批执行闭环完成。
 
 `Source/PuddingApproval.Sqlite/SqliteApprovalStore.cs` 为独立审批存储适配器：身份唯一、版本 CAS、状态/outbox 同事务提交、未确认事件读取与确认；`PuddingApproval.SqliteTests` 覆盖双实例竞争、重开和故障回滚。未登记 Host/DI，待接请求生产者与执行续行。

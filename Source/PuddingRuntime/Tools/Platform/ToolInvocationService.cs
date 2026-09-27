@@ -178,6 +178,8 @@ public sealed class ToolInvocationService : IToolInvocationService
             return new ToolInvocationResult
             {
                 Success = result.Success,
+                Status = result.Status,
+                ExitCode = result.ExitCode,
                 ToolCallId = request.ToolCallId,
                 ToolName = request.ToolName,
                 Output = result.Output,
