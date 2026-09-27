@@ -13,7 +13,7 @@
 | 原 Web 富文本能力 | MarkdownView 原生 GFM、CodeBlockView、ImageAttachmentView | 代码复制/换行、列表表格链接及受控图片已具备；语法高亮、公式、Markdown 生成图片资源解析尚未实现 |
 | 图片与一般上下文附件 | 原生选图/剪贴板/拖放→Core Artifact→typed input parts | 图片合同与解码已测；系统选择器实际操作、真实视觉调用待验，一般文件上下文入口未接入 |
 | 审批卡与真实工具恢复 | ApprovalCard、PuddingApproval、SqliteApprovalStore 独立组件；Runtime 保留准入状态 | 未完成：请求生产者、持久暂停/恢复、Core 决定端口及产品待审批区域未接线。不能用独立卡片测试替代闭环 |
-| 子代理与其他聊天富交互 | TurnFlow 展示委派生命周期/有界摘要 | 子代理完整检查器、语音聊天等尚未迁移；不能把摘要卡等同完整 Web 能力 |
+| 子代理与其他聊天富交互 | TurnFlow 展示委派生命周期/有界摘要；SubAgentInspector 已通过独立窗口验证 | 检查器 Core 归档适配与产品入口未接入，语音聊天尚未迁移；独立组件不等同生产功能 |
 | 用户实际产品效果 | 独立 WinUI harness 与历史部署记录 | 本轮没有发布/替换运行中 Desktop；不能凭组件通过宣称当前产品已加载新代码 |
 
 ## 当前切片：展开活动内容保持

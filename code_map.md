@@ -38,6 +38,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat/SubAgentInspection.cs` + `PuddingChat.WinUI/SubAgentInspector.cs` 为独立子代理检查器合同/控件：绑定角色、父会话与单次 Run，任务/活动/完整结果分区，归档降级提示、刷新去重与关闭取消。`SubAgentInspectorChecks` 已独立验证；Core 适配与委派卡入口待接，边界见 `Docs/Features/Desktop-Native-SubAgent-Inspector-2026-09-27.md`。
+
 当前完成度与剩余门禁见 `Docs/Reports/Desktop-Native-Chat-Completion-Audit-2026-09-27.md`。`ActivityContentView` 为展开的思考/工具/委派保留正文、输入、输出槽位，流式更新复用 MarkdownView 与嵌套代码控件；`ActivityStreamingChecks` 验证实际窗口中的控件身份和最新内容。
 
 `PuddingChat.WinUI/CodeBlockView.cs` 为独立原生代码块控件：语言标签、最新代码复制、自动换行和横向阅读；`MarkdownView` 流式追加时复用同一代码块及滚动容器。`CodeBlockChecks` 验证未闭合围栏、100 DIP 横向偏移、追加后身份/换行状态及最新文本。

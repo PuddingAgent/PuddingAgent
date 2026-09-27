@@ -234,3 +234,9 @@ ChatComposer 原来的单行四按钮在窄聊天区会超出边界；附件名�
 新增 ActivityContentView，替换 RenderDisclosure 每帧重建 StackPanel/MarkdownView 的路径。正文、输入、输出按稳定槽位更新，未变化文本不重新解析；输出移除时清理旧槽位；收起仍释放完整内容，保留既有懒加载规则。嵌套 CodeBlockView 的流式复用和换行选择因此在工具活动中也生效。
 
 BCL 50/50、原生窗口 108 项通过，构建零警告零错误（temp/native-activity-content-final.log）。新增 6 项验证实际窗口的容器/内容身份、代码偏好、终态、失效输出清理及思考正文更新。源码核对、证据范围与剩余功能汇总到 Desktop-Native-Chat-Completion-Audit-2026-09-27.md；未进行 Core 集成复验或产品部署，目标未完成。
+
+## 子代理检查器独立组件（2026-09-27）
+
+核对 Web SubAgentActivityDock、subAgentReducer 与 Core SubAgentRunController 后，新增精确角色/父会话/Run 绑定的只读检查合同和 SubAgentInspector。任务、执行活动和完整结果分区显示；真实状态/时间/统计及归档降级提示保留，刷新失败标示旧快照，关闭取消等待并忽略晚到结果。主消息摘要保持独立，不把子代理内部过程混入父会话。
+
+BCL 50/50、原生窗口 115 项通过，零构建警告/错误（temp/native-subagent-inspector-final.log）。新增 7 项涵盖并发去重、1000 字结果不截断、降级提示、失败回退、跨 Run/角色拒绝、关闭晚到结果。当前只是独立组件完成，未登记生产 Core 归档适配或聊天入口；后续精确接线门禁见 Desktop-Native-SubAgent-Inspector-2026-09-27.md。本轮不修改 Core/Host 或运行数据。
