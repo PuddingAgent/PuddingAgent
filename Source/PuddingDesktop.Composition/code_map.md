@@ -20,4 +20,6 @@
 
 `DesktopAgentSmartRouteSettings` (partial of the directory adapter) covers the DS-04 Smart slice and owns `InstanceRequest`, the single instance-profile builder used by the basic, model-policy and Smart saves. Smart routes are written through `UpdateAgentAsync` because `UpdateAgentProfileAsync` deliberately forces the stored routing back; a basic profile edit therefore cannot clobber routing.
 
+`DesktopAgentGuardrailSettings` (partial of the directory adapter) covers the DS-04 guardrail slice through the shared `TemplateRequest`/`InstanceRequest` builders. An instance guardrail save goes through `UpdateAgentProfileAsync`, so Core keeps the Smart routes intact.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

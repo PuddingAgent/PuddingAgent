@@ -62,6 +62,7 @@ public sealed partial class MainWindow : Window
         BuildAgentDocumentPanel();
         BuildAgentModelPanel();
         BuildAgentSmartPanel();
+        BuildAgentGuardrailPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -486,6 +487,13 @@ public sealed partial class MainWindow : Window
             Check(AgentSmartSettings.Content is StackPanel, "agent smart form is built");
             Check(!_asWorkspace.IsEnabled, "agent smart form stays disabled without Core");
             Check(_asNotice.Title == "Core 未就绪", "agent smart tab reports the real Core state");
+            // DS-04 guardrail slice: execution budgets and the container image override.
+            OpenSettingsCategory("agents", "guardrails");
+            await WaitForSettingsUiAsync(() => _ag2Notice.IsOpen);
+            Check(AgentGuardrailsSettings.Visibility == Visibility.Visible, "agent guardrails tab is native");
+            Check(AgentGuardrailsSettings.Content is StackPanel, "agent guardrail form is built");
+            Check(!_agTemplateRounds.IsEnabled, "agent guardrail form stays disabled without Core");
+            Check(_ag2Notice.Title == "Core 未就绪", "agent guardrails tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

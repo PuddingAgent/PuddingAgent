@@ -1,3 +1,6 @@
+## 2026-09-27 DS-04 角色与模板（执行护栏切片）
+
+Foundation 新增 `AgentGuardrailContracts.cs`（执行预算与容器镜像），Composition 新增 `DesktopAgentGuardrailSettings`（partial，复用 `TemplateRequest`/`InstanceRequest`；实例侧走 `UpdateAgentProfileAsync`，因此 Core 会保留 Smart 路由）。UI 新增 `MainWindow.AgentGuardrailSettings.cs`（`agents/guardrails` 页签：模板与实例各自的轮次/时长/工具调用预算与容器镜像）。发现并纠正一个 Core 内部不一致：DTO 上 `MaxToolCallsTotal` 的默认字面量是 100，而 `AgentTemplateFileService`/`WorkspaceAgentFileService` 实际写入 400；契约按文件服务的真实默认值 400 对齐并在测试中固定。空容器镜像被当作「明确清除覆盖」保存为空串，而不是回退到模板值。验证：Foundation 96 项、Composition 9 项、窗口 smoke 145 项通过。
 ## 2026-09-27 DS-04 角色与模板（Smart 子代理切片）
 
 Foundation 新增 `AgentSmartRouteContracts.cs`（七个 Smart 角色槽位、`{providerId}/{modelId}` 路由解析与校验，规则与 Core `NormalizeSmartRoleModel` 一致），Composition 新增 `DesktopAgentSmartRouteSettings`（partial）：路由写入必须走 `UpdateAgentAsync`，因为 `UpdateAgentProfileAsync` 会把 manifest 里已存的 Smart 字段强制写回（这是 Core 有意为之，防止基础资料编辑清掉路由）；同文件新增 `InstanceRequest` 统一构造实例 profile，基础信息、模型策略、Smart 三处共用。UI 只在实例侧提供 Smart 入口（全局模板没有该字段）。验证：Foundation 92 项、Composition 8 项、窗口 smoke 141 项通过。

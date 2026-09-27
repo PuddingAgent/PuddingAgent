@@ -157,6 +157,15 @@ public sealed partial class MainWindow
         var agentSmart = VisibilityOf("agents", "smart", tab);
         AgentSmartSettings.Visibility = agentSmart;
         if (agentSmart == Visibility.Visible) LoadAgentSmartIfNeeded();
+        var guardrails = VisibilityOf("agents", "guardrails", tab);
+        AgentGuardrailsSettings.Visibility = guardrails;
+        if (guardrails == Visibility.Visible) LoadAgentGuardrailsIfNeeded();
+    }
+
+    private async void LoadAgentGuardrailsIfNeeded()
+    {
+        try { await LoadAgentGuardrailsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadAgentSmartIfNeeded()
@@ -214,6 +223,7 @@ public sealed partial class MainWindow
         ("agents", "prompts") => true,
         ("agents", "models") => true,
         ("agents", "smart") => true,
+        ("agents", "guardrails") => true,
         _ => false
     };
 

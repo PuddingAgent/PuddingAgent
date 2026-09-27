@@ -19,6 +19,7 @@
 | `AgentDocumentContracts.cs` | DS-04 文档切片：模板/实例文档槽位、文档集指纹（模板并发保护）、`IsOverride`（实例覆盖判定） |
 | `AgentModelPolicyContracts.cs` | DS-04 模型/记忆切片：三对服务商-模型选择、目录校验（停用/废弃/embedding 归属）、检索模式与推理强度保留策略 |
 | `AgentSmartRouteContracts.cs` | DS-04 Smart 切片：七个子代理角色槽位、`{providerId}/{modelId}` 解析/格式化/校验（与 Core 的 NormalizeSmartRoleModel 同规则） |
+| `AgentGuardrailContracts.cs` | DS-04 护栏切片：执行预算与容器镜像记录、只拒绝任何预算都无法成立的取值（≤0/空白镜像） |
 | `PuddingDesktop.Foundation.csproj` | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。92 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。96 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。

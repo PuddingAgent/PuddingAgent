@@ -106,7 +106,8 @@ internal sealed partial class DesktopAgentDirectorySettings
         string? memoryPrompt = null, string? preferredProviderId = null, string? preferredModelId = null,
         string? memoryLlmProviderId = null, string? memoryLlmModelId = null,
         string? embeddingProviderId = null, string? embeddingModelId = null,
-        string? memorySearchMode = null, string? reasoningEffort = null)
+        string? memorySearchMode = null, string? reasoningEffort = null,
+        int? maxRounds = null, int? maxElapsedSeconds = null, int? maxToolCallsTotal = null, string? containerImage = null)
         => new(
             current.TemplateId,
             name ?? current.Name,
@@ -117,7 +118,7 @@ internal sealed partial class DesktopAgentDirectorySettings
             preferredProviderId ?? current.PreferredProviderId,
             preferredModelId ?? current.PreferredModelId,
             current.MaxContextTokens,
-            current.ContainerImage,
+            containerImage ?? current.ContainerImage,
             current.SelectedCapabilityIds,
             current.SelectedSkillPackageIds,
             isEnabled ?? current.IsEnabled,
@@ -133,9 +134,9 @@ internal sealed partial class DesktopAgentDirectorySettings
             embeddingModelId ?? current.EmbeddingModelId,
             memorySearchMode ?? current.MemorySearchMode,
             reasoningEffort ?? current.ReasoningEffort,
-            current.MaxRounds,
-            current.MaxElapsedSeconds,
-            current.MaxToolCallsTotal,
+            maxRounds ?? current.MaxRounds,
+            maxElapsedSeconds ?? current.MaxElapsedSeconds,
+            maxToolCallsTotal ?? current.MaxToolCallsTotal,
             current.ConsciousProfileId,
             current.SubconsciousProfileId,
             agentsPrompt ?? current.AgentsPrompt,

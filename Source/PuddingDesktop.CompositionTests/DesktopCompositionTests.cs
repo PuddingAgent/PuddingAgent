@@ -588,6 +588,79 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task AgentGuardrailAdapter_KeepsBudgetsAndContainerOverrideScoped()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var directory = factory.CreateAgentDirectorySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await kernel.StartAsync(root, timeout.Token);
+
+            await directory.SaveTemplateAsync(new AgentTemplateEdit("ds04-guard", "Guard", "Service", "", true, 0, "pudding"), timeout.Token);
+            var initial = await directory.ReadTemplateGuardrailsAsync("ds04-guard", timeout.Token);
+            Assert.Equal(200, initial.MaxRounds);
+            Assert.Equal(86400, initial.MaxElapsedSeconds);
+            Assert.Equal(400, initial.MaxToolCallsTotal);
+            Assert.Equal("", initial.ContainerImage);
+
+            var policy = new AgentGuardrailPolicy(300, 7200, 250, "mcr.microsoft.com/dotnet/sdk:10.0");
+            await directory.SaveTemplateGuardrailsAsync("ds04-guard", policy, timeout.Token);
+            var saved = await directory.ReadTemplateGuardrailsAsync("ds04-guard", timeout.Token);
+            Assert.Equal(policy, saved);
+
+            // A budget no loop could honour is refused and nothing is written.
+            await Assert.ThrowsAsync<ArgumentException>(() => directory.SaveTemplateGuardrailsAsync("ds04-guard",
+                policy with { MaxRounds = 0 }, timeout.Token));
+            Assert.Equal(300, (await directory.ReadTemplateGuardrailsAsync("ds04-guard", timeout.Token)).MaxRounds);
+
+            var workspaces = await directory.ListWorkspacesAsync(timeout.Token);
+            var workspaceId = workspaces[0].WorkspaceId;
+            await directory.CreateInstanceAsync(new AgentInstanceCreate(workspaceId, "Guard role", "", "ds04-guard"), timeout.Token);
+            var instance = Assert.Single(await directory.ListInstancesAsync(workspaceId, timeout.Token),
+                candidate => candidate.Name == "Guard role");
+
+            // A new instance inherits the template budgets at creation time.
+            var inherited = await directory.ReadInstanceGuardrailsAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal(300, inherited.MaxRounds);
+            Assert.Equal("mcr.microsoft.com/dotnet/sdk:10.0", inherited.ContainerImage);
+
+            await directory.SaveInstanceGuardrailsAsync(workspaceId, instance.AgentId,
+                new AgentGuardrailPolicy(50, 600, 20, ""), timeout.Token);
+            var instanceSaved = await directory.ReadInstanceGuardrailsAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal(50, instanceSaved.MaxRounds);
+            Assert.Equal(600, instanceSaved.MaxElapsedSeconds);
+            Assert.Equal(20, instanceSaved.MaxToolCallsTotal);
+            // 清空镜像覆盖必须留在空值上，而不是回退到模板。
+            Assert.Equal("", instanceSaved.ContainerImage);
+
+            // The template is untouched by an instance save, and vice versa.
+            Assert.Equal(300, (await directory.ReadTemplateGuardrailsAsync("ds04-guard", timeout.Token)).MaxRounds);
+            await directory.SaveTemplateGuardrailsAsync("ds04-guard", policy with { MaxRounds = 400 }, timeout.Token);
+            Assert.Equal(50, (await directory.ReadInstanceGuardrailsAsync(workspaceId, instance.AgentId, timeout.Token)).MaxRounds);
+
+            // Smart routing and the description survive a guardrail save.
+            await directory.SaveSmartRoutesAsync(workspaceId, instance.AgentId,
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["explorer"] = "deepseek/deepseek-chat" }, timeout.Token);
+            await directory.SaveInstanceGuardrailsAsync(workspaceId, instance.AgentId,
+                new AgentGuardrailPolicy(60, 900, 30, "alpine"), timeout.Token);
+            Assert.Equal("deepseek/deepseek-chat",
+                (await directory.ReadSmartRoutesAsync(workspaceId, instance.AgentId, timeout.Token))["explorer"]);
+            Assert.Equal(60, (await directory.ReadInstanceGuardrailsAsync(workspaceId, instance.AgentId, timeout.Token)).MaxRounds);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => directory.ReadTemplateGuardrailsAsync("ds04-guard", timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     // The isolated data root is seeded with the shipped default providers, so target ours explicitly.
     private static PuddingDesktop.Foundation.LlmProviderSummary SinglePool(IReadOnlyList<PuddingDesktop.Foundation.LlmProviderSummary> providers)
         => Assert.Single(providers, provider => provider.ProviderId == "pool");

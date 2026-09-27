@@ -75,6 +75,12 @@ public interface IAgentDirectorySettings
     /// <summary>Smart sub-agent routes keyed by role id. Only role instances carry them.</summary>
     Task<IReadOnlyDictionary<string, string>> ReadSmartRoutesAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
     Task SaveSmartRoutesAsync(string workspaceId, string agentId, IReadOnlyDictionary<string, string> routes, CancellationToken cancellationToken = default);
+
+    /// <summary>Execution budgets and container image override, for the template and for an instance.</summary>
+    Task<AgentGuardrailPolicy> ReadTemplateGuardrailsAsync(string templateId, CancellationToken cancellationToken = default);
+    Task SaveTemplateGuardrailsAsync(string templateId, AgentGuardrailPolicy policy, CancellationToken cancellationToken = default);
+    Task<AgentGuardrailPolicy> ReadInstanceGuardrailsAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
+    Task SaveInstanceGuardrailsAsync(string workspaceId, string agentId, AgentGuardrailPolicy policy, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

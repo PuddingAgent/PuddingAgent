@@ -66,7 +66,8 @@ internal sealed partial class DesktopAgentDirectorySettings
         string? memoryLlmProviderId = null, string? memoryLlmModelId = null,
         string? embeddingProviderId = null, string? embeddingModelId = null,
         string? memorySearchMode = null, string? reasoningEffort = null,
-        IReadOnlyDictionary<string, string>? smartRoutes = null)
+        IReadOnlyDictionary<string, string>? smartRoutes = null,
+        int? maxRounds = null, int? maxElapsedSeconds = null, int? maxToolCallsTotal = null, string? containerImage = null)
         => new(
             name ?? current.Name,
             description ?? current.Description,
@@ -84,10 +85,10 @@ internal sealed partial class DesktopAgentDirectorySettings
             current.UserPromptTemplate,
             memorySearchMode ?? current.MemorySearchMode,
             reasoningEffort ?? current.ReasoningEffort,
-            current.MaxRounds,
-            current.MaxElapsedSeconds,
-            current.MaxToolCallsTotal,
-            current.ContainerImage,
+            maxRounds ?? current.MaxRounds,
+            maxElapsedSeconds ?? current.MaxElapsedSeconds,
+            maxToolCallsTotal ?? current.MaxToolCallsTotal,
+            containerImage ?? current.ContainerImage,
             memoryLlmProviderId ?? current.MemoryLlmProviderId,
             memoryLlmModelId ?? current.MemoryLlmModelId,
             embeddingProviderId ?? current.EmbeddingProviderId,

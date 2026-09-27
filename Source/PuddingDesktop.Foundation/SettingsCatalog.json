@@ -412,7 +412,7 @@
             ],
             "source": "pages/agent-template-settings/sections/GuardrailSection.tsx",
             "task": "DS-04",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }
