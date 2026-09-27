@@ -20,6 +20,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat/FlowWindow.cs` 保存长 Turn 的渐进展开范围（默认 40 块，每批 24 块，以 key 保留显式展开范围）；`TurnContentView.RevealEarlier` 保持视口锚点，`MessageViewState`/活动 Run 保存范围以支持消息控件回收。`FlowWindowTests` 与 `FlowWindowChecks` 覆盖分页、追加、范围恢复与真实滚动位置。
+
 `PuddingChat.WinUI/TurnContentView.cs` 在活动卡展开时才创建输入/输出 Markdown，收起后释放内容；折叠期间仍更新 canonical 数据与标题状态。`LazyActivityChecks.cs` 用 500 个工具调用验证隐藏内容不创建控件、收起释放、重新展开显示最新输出及思考默认可见。此项不是整个 Turn 的块级虚拟化。
 
 `PuddingChat.WinUI/NativeImageTransfer.cs` 读取用户粘贴/拖放的 Windows 数据包，保留编码图片字节并清理短期暂存；`ChatComposer` 接入 TextBox.Paste、粘贴图片按钮和拖放反馈，`ChatWorkspace.AddImageBatchAsync` 在异步读取前捕获角色，复用 Core 图片导入端口。`ImageTransferChecks.cs` 覆盖数据包、清理、失败与延迟粘贴时角色切换。

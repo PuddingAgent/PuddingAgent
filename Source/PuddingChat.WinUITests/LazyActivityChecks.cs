@@ -10,6 +10,7 @@ public partial class App
         var events = Enumerable.Range(0, 500).Select(i => new ProcessItem($"tool-{i}", "tool_call", "running", "调用", i,
             "terminal", Arguments: new string('a', 10000), ToolCallId: $"call-{i}")).ToArray();
         var flow = new TurnContentView(); flow.Update(events, "");
+        while (flow.HiddenCount > 0) flow.RevealEarlier();
         Check(flow.Children.Count == 500 && flow.Children.OfType<Expander>().All(e => e.Content is null),
             "collapsed tools do not allocate argument and output views");
         var first = (Expander)flow.Children[0]; first.IsExpanded = true;

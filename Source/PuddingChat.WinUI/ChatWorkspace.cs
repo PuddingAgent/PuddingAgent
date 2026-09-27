@@ -443,8 +443,9 @@ public sealed class ChatWorkspace : UserControl, IDisposable
                 if (_livePanel is null)
                 {
                     var expansions = new Dictionary<string, bool>();
+                    var flowWindow = new FlowWindow();
                     _livePanel = new($"run:{run.RunId}", output, row => {
-                        var view = new TurnContentView(expansions) { Padding = new Thickness(20) };
+                        var view = new TurnContentView(expansions, flowWindow) { Padding = new Thickness(20) };
                         var data = (OutputSnapshot)row.Data; view.Update(data.ProcessItems, data.Markdown); return view;
                     }, (view, data) => { var value = (OutputSnapshot)data; ((TurnContentView)view).Update(value.ProcessItems, value.Markdown); });
                 }

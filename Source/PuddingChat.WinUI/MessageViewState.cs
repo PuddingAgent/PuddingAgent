@@ -9,4 +9,6 @@ public sealed class MessageViewState
     internal readonly Dictionary<string, bool> Images = [];
     internal ProcessDetails? Details;
     internal bool DetailsExpanded;
+    internal readonly FlowWindow FlowWindow = new();
+    internal readonly FlowWindow DetailWindow = new();
 }

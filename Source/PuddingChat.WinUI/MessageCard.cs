@@ -40,7 +40,8 @@ public sealed class MessageCard : UserControl, IDisposable
         }
         _header.Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {message.Status}";
         if (_state.RunId != message.RunId)
-        { _events.Clear(); _state.RunId = message.RunId; _state.Details = null; _state.Expansions.Clear(); _state.DetailsExpanded = false; }
+        { _events.Clear(); _state.RunId = message.RunId; _state.Details = null; _state.Expansions.Clear(); _state.DetailsExpanded = false;
+            _state.FlowWindow.Reset(); _state.DetailWindow.Reset(); }
         foreach (var item in message.ProcessItems) _events[item.Id] = item;
         _flow.Update(_events.Values, message.Content);
         _outcome.IsOpen = message.TurnOutcome is { Status: not "succeeded" };
@@ -53,7 +54,7 @@ public sealed class MessageCard : UserControl, IDisposable
     public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null, IImageAttachmentClient? imageClient = null, string? workspace = null, CancellationToken ct = default,
         MessageViewState? state = null)
     {
-        _state = state ?? new(); _events = _state.Events; _flow = new(_state.Expansions);
+        _state = state ?? new(); _events = _state.Events; _flow = new(_state.Expansions, _state.FlowWindow);
         _viewLifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _imageClient = imageClient; _workspace = workspace; _ct = _viewLifetime.Token;
         var panel = new StackPanel { Spacing = 12 };
@@ -79,7 +80,7 @@ public sealed class MessageCard : UserControl, IDisposable
                     if (_message.Role == "user")
                     {
                         // Execution belongs to Core, not to the user's authored text.
-                        var execution = new TurnContentView(_state.Expansions);
+                        var execution = new TurnContentView(_state.Expansions, _state.DetailWindow);
                         execution.Update(result.ProcessItems, ""); details.Children.Add(execution);
                     }
                     else

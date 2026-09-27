@@ -8,13 +8,46 @@ public sealed class TurnContentView : StackPanel
 {
     private readonly Dictionary<string, (FlowBlock Value, FrameworkElement View)> _blocks = [];
     private readonly IDictionary<string, bool> _expansions;
+    private readonly FlowWindow _window;
+    private FlowBlock[] _snapshot = [];
+    private readonly Button _earlier = new() { HorizontalAlignment = HorizontalAlignment.Left };
+    public int HiddenCount => _window.Start(_snapshot);
     public TurnContentView() : this(new Dictionary<string, bool>()) { }
-    public TurnContentView(IDictionary<string, bool> expansions) { _expansions = expansions; Spacing = 10; }
+    public TurnContentView(IDictionary<string, bool> expansions, FlowWindow? window = null)
+    {
+        _expansions = expansions; _window = window ?? new(); Spacing = 10;
+        _earlier.Click += (_, _) => RevealEarlier();
+    }
     public void Update(IEnumerable<ProcessItem> items, string fallbackText)
+    {
+        _snapshot = TurnFlow.Build(items, fallbackText);
+        Render();
+    }
+    public void RevealEarlier()
+    {
+        var anchor = Children.OfType<FrameworkElement>().FirstOrDefault(c => c != _earlier);
+        DependencyObject? parent = this;
+        while (parent is not null && parent is not ScrollViewer) parent = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(parent);
+        var scroll = parent as ScrollViewer;
+        var top = anchor is not null && scroll is not null ? anchor.TransformToVisual(scroll).TransformPoint(new()).Y : 0;
+        _window.RevealEarlier(_snapshot); Render();
+        if (anchor is not null && scroll is not null)
+        {
+            scroll.UpdateLayout();
+            var delta = anchor.TransformToVisual(scroll).TransformPoint(new()).Y - top;
+            scroll.ChangeView(null, scroll.VerticalOffset + delta, null, true);
+        }
+    }
+    private void Render()
     {
         var desired = new List<FrameworkElement>();
         var keys = new HashSet<string>();
-        foreach (var block in TurnFlow.Build(items, fallbackText))
+        if (HiddenCount > 0)
+        {
+            _earlier.Content = $"显示更早记录（还有 {HiddenCount} 项）";
+            desired.Add(_earlier);
+        }
+        foreach (var block in _snapshot.Skip(HiddenCount))
         {
             keys.Add(block.Key);
             if (!_blocks.TryGetValue(block.Key, out var old))
