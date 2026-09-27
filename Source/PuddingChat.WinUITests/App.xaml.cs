@@ -39,6 +39,20 @@ public partial class App : Application
                 finally { dialog.Hide(); await showing; }
                 var created = await setup.SubmitAsync(CancellationToken.None);
                 Check(created?.AgentId == "builder" && fixture.Setup?.RoleName == "编码助手", "native setup calls application port");
+                var providerForm = new ProviderConfigurationForm(fixture);
+                await providerForm.LoadAsync(CancellationToken.None);
+                Check(!await providerForm.SaveAsync(CancellationToken.None), "invalid provider form rejected without write");
+                var providerPanel = (StackPanel)((ScrollViewer)providerForm.Content).Content;
+                foreach (var input in providerPanel.Children.OfType<TextBox>())
+                    input.Text = input.Header?.ToString() == "API 地址" ? "https://example.invalid/v1" : "fixture";
+                var keyOperation = providerPanel.Children.OfType<ComboBox>().Single(c => c.Header?.ToString() == "密钥操作");
+                keyOperation.SelectedIndex = 1;
+                var keyInput = providerPanel.Children.OfType<PasswordBox>().Single(); keyInput.Password = "fixture-only";
+                Check(await providerForm.SaveAsync(CancellationToken.None) && keyInput.Password == "" && fixture.SavedProvider?.KeyChange == SecretChange.Replace,
+                    "native provider save clears key input");
+                var roleForm = new RoleConfigurationForm(fixture, fixture, new("test", "builder"));
+                await roleForm.LoadAsync(CancellationToken.None);
+                Check(await roleForm.SaveAsync(CancellationToken.None) && fixture.SavedRole?.Name == "Builder", "native role profile save");
                 Check(control.RoleCount == 2, "native role cards loaded");
                 await control.SelectRoleAsync("test", fixture.Builder);
                 control.Composer.Draft = "implement";
@@ -58,7 +72,7 @@ public partial class App : Application
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 13, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 16, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -66,8 +80,14 @@ public partial class App : Application
         _window.Activate();
     }
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
-    private sealed class Fixture : IChatClient, IWorkspaceSetupClient
+    private sealed class Fixture : IChatClient, IWorkspaceSetupClient, IConfigurationClient
     {
+        public RoleSettings? SavedRole;
+        public ProviderModelEdit? SavedProvider;
+        public Task<ProviderSettings[]> GetProvidersAsync(CancellationToken ct) => Task.FromResult<ProviderSettings[]>([]);
+        public Task SaveProviderModelAsync(ProviderModelEdit edit, CancellationToken ct) { SavedProvider = edit; return Task.CompletedTask; }
+        public Task<RoleSettings> GetRoleSettingsAsync(RoleKey role, CancellationToken ct) => Task.FromResult(new RoleSettings(role, "Builder", "Code", true, "Developer", "Build carefully", null, null));
+        public Task SaveRoleSettingsAsync(RoleSettings edit, CancellationToken ct) { SavedRole = edit; return Task.CompletedTask; }
         public WorkspaceSetupRequest? Setup;
         public Task<ModelChoice[]> GetSetupModelsAsync(CancellationToken ct) => Task.FromResult<ModelChoice[]>([]);
         public Task<WorkspaceSetupResult> SetupWorkspaceAsync(WorkspaceSetupRequest request, CancellationToken ct)

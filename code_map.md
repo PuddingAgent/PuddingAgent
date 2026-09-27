@@ -1,6 +1,10 @@
+## 2026-09-27 原生模型、密钥与角色设置
+
+`PuddingChat/Configuration.cs` 定义独立配置端口；WinUI 的 `ProviderConfigurationForm`、`RoleConfigurationForm` 经 Composition 直接调用 Core 局部保存服务。入口为“模型与密钥”“编辑当前角色”。读取不返回已有密钥，保存保留未展示的高级配置。详见 Desktop 原生聊天实施记录。
+
 ## 2026-09-27 原生首次使用流程
 
-`PuddingChat/WorkspaceSetup.cs` → `PuddingChat.WinUI/WorkspaceSetupForm.cs` → Composition → Core `LocalWorkspaceSetupService`：无需账号创建工作空间和首个编码角色，选择已有模型，完成后直接选中角色。已有配置保留；服务商编辑仍在高级 Web 管理。验证见 Desktop 原生聊天实施记录。
+`PuddingChat/WorkspaceSetup.cs` → `PuddingChat.WinUI/WorkspaceSetupForm.cs` → Composition → Core `LocalWorkspaceSetupService`：无需账号创建工作空间和首个编码角色，选择已有模型，完成后直接选中角色。已有配置保留；服务商常用字段已由原生配置入口承接，高级配置仍在 Web 管理。验证见 Desktop 原生聊天实施记录。
 
 ## 2026-09-27 WinUI 3：原生角色聊天与进程内 Core 接入
 

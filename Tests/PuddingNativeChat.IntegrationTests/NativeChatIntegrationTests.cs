@@ -80,6 +80,26 @@ public class NativeChatIntegrationTests
             var agents = await client.GetAgentsAsync(workspace.WorkspaceId, timeout.Token);
             var agent = Assert.Single(agents, a => a.Name == "Native builder" || a.DisplayName == "Native builder");
             var role = new RoleKey(workspace.WorkspaceId, agent.AgentId);
+            var config = Assert.IsAssignableFrom<IConfigurationClient>(client);
+            var modelEdit = new ProviderModelEdit("native-fixture", "Native fixture", "https://example.invalid/v1", false,
+                new("fixture", "Fixture model", "openai", 8192, 1024), SecretChange.Replace, "fixture-only");
+            await config.SaveProviderModelAsync(modelEdit, timeout.Token);
+            var provider = Assert.Single(await config.GetProvidersAsync(timeout.Token), p => p.Id == "native-fixture");
+            Assert.True(provider.HasKey);
+            Assert.DoesNotContain("fixture-only", JsonSerializer.Serialize(provider));
+            await config.SaveProviderModelAsync(modelEdit with { KeyChange = SecretChange.Keep, NewKey = null }, timeout.Token);
+            Assert.True((await config.GetProvidersAsync(timeout.Token)).Single(p => p.Id == "native-fixture").HasKey);
+            await config.SaveProviderModelAsync(modelEdit with { KeyChange = SecretChange.Clear, NewKey = null }, timeout.Token);
+            Assert.False((await config.GetProvidersAsync(timeout.Token)).Single(p => p.Id == "native-fixture").HasKey);
+            var profile = await config.GetRoleSettingsAsync(role, timeout.Token);
+            await config.SaveRoleSettingsAsync(profile with { Description = "Edited natively", SystemPrompt = "Verify code before completion." }, timeout.Token);
+            Assert.Equal("Edited natively", (await config.GetRoleSettingsAsync(role, timeout.Token)).Description);
+            await config.SaveProviderModelAsync(modelEdit with { Enabled = true, KeyChange = SecretChange.Keep, NewKey = null }, timeout.Token);
+            await config.SaveRoleSettingsAsync(profile with { ProviderId = "native-fixture", ModelId = "fixture" }, timeout.Token);
+            Assert.Equal("fixture", (await config.GetRoleSettingsAsync(role, timeout.Token)).ModelId);
+            await config.SaveRoleSettingsAsync(profile with { Description = "Edited natively", ProviderId = "", ModelId = "" }, timeout.Token);
+            Assert.Equal("", (await config.GetRoleSettingsAsync(role, timeout.Token)).ProviderId);
+            await config.SaveProviderModelAsync(modelEdit with { KeyChange = SecretChange.Keep, NewKey = null }, timeout.Token);
             var session = await client.EnsureSessionAsync(role, agent, timeout.Token);
             Assert.False(string.IsNullOrWhiteSpace(session));
             var pending = PendingSend.Create(role, session, "Native component admission test. Reply briefly.");
@@ -104,6 +124,9 @@ public class NativeChatIntegrationTests
             using var restarted = factory.CreateChatClient();
             Assert.NotEmpty(await restarted.GetWorkspacesAsync(timeout.Token));
             Assert.NotEmpty(await restarted.GetAgentsAsync(workspace.WorkspaceId, timeout.Token));
+            var restartedConfig = Assert.IsAssignableFrom<IConfigurationClient>(restarted);
+            Assert.Equal("Edited natively", (await restartedConfig.GetRoleSettingsAsync(role, timeout.Token)).Description);
+            Assert.False((await restartedConfig.GetProvidersAsync(timeout.Token)).Single(p => p.Id == "native-fixture").HasKey);
         }
         finally
         {

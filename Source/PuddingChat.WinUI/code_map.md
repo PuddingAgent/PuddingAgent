@@ -10,3 +10,5 @@ Programmatic native WinUI controls, no WebView/HTML or host dependency.
 The host supplies `IChatClient`, owns this control's disposal, and receives settings/runtime navigation events. Current native formatting retains unsupported Markdown syntax verbatim. Attachments, voice, Live2D, complete historical pagination and admin editing are separate migration items.
 
 `WorkspaceSetupForm`: native workspace/first-role creation with existing model selection, validation and retry feedback. ChatWorkspace hosts the dialog and selects the returned role. Advanced Web management remains explicitly separate.
+
+`ProviderConfigurationForm`: native provider/chat-model create/edit and explicit key retention/replacement/clear, password input cleared on save/unload. `RoleConfigurationForm`: name, description, enabled, main model, role type and system prompt. ChatWorkspace opens modal editors, refreshes role cards after save; advanced settings remain separate.

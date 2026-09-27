@@ -5,3 +5,5 @@
 `InProcessChatClient` implements the BCL `IChatClient` port by invoking Core application services directly. Every operation runs on the thread pool with its own async DI scope and linked cancellation. Native clients use the fixed Core single-user actor (`single-user`) without account lookup, password validation, JWT, cookie, HTTP request or controller invocation. Web authentication remains unchanged. Agent/main-session/Turn/projection services stay in Core. Core stop cancels and drains clients before disposing the host; restarted clients can immediately query their local workspace. Portrait URLs map only to packaged wwwroot assets, with path containment checked.
 
 `InProcessChatClient` also implements `IWorkspaceSetupClient`, projecting only provider/model identifiers and labels and invoking `LocalWorkspaceSetupService` directly; the lifecycle drain applies to setup writes too.
+
+`IConfigurationClient` uses the same in-process scoped/lifetime-managed adapter. Reads expose HasKey only; provider edits call the Core partial-save method, role edits preserve undisplayed manifest settings. No configuration HTTP or controller invocation.

@@ -79,6 +79,14 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             };
             footer.Children.Add(setup);
         }
+        if (_client is IConfigurationClient)
+        {
+            var models = new Button { Content = "模型与密钥", HorizontalAlignment = HorizontalAlignment.Stretch };
+            var editRole = new Button { Content = "编辑当前角色", HorizontalAlignment = HorizontalAlignment.Stretch };
+            models.Click += async (_, _) => { models.IsEnabled = false; try { await GuardAsync(() => OpenConfigurationAsync(false)); } finally { models.IsEnabled = true; } };
+            editRole.Click += async (_, _) => { editRole.IsEnabled = false; try { await GuardAsync(() => OpenConfigurationAsync(true)); } finally { editRole.IsEnabled = true; } };
+            footer.Children.Add(models); footer.Children.Add(editRole);
+        }
         footer.Children.Add(administration); footer.Children.Add(settings); footer.Children.Add(runtime); Grid.SetRow(footer, 2); navigation.Children.Add(footer); root.Children.Add(navigation);
         _chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -104,6 +112,41 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _timer.Tick += async (_, _) => { if (_active && IsLoaded) await GuardAsync(RefreshAsync); };
         Loaded += async (_, _) => { await GuardAsync(InitializeAsync); if (_active && _connected && !_disposed) _timer.Start(); };
         Unloaded += (_, _) => _timer.Stop();
+    }
+    private async Task OpenConfigurationAsync(bool roleEditor)
+    {
+        if (_client is not IConfigurationClient config) return;
+        var selected = _state.Role;
+        UserControl form; Func<CancellationToken, Task<bool>> save;
+        if (roleEditor)
+        {
+            if (selected is null || _client is not IWorkspaceSetupClient models)
+                throw new InvalidOperationException("请先选择要编辑的角色。");
+            var roleForm = new RoleConfigurationForm(config, models, selected);
+            await roleForm.LoadAsync(_lifetime.Token); form = roleForm; save = roleForm.SaveAsync;
+        }
+        else
+        {
+            var providerForm = new ProviderConfigurationForm(config);
+            await providerForm.LoadAsync(_lifetime.Token); form = providerForm; save = providerForm.SaveAsync;
+        }
+        if (_disposed) return;
+        var dialog = new ContentDialog { Title = roleEditor ? "角色设置" : "模型与密钥", Content = form,
+            PrimaryButtonText = "保存", CloseButtonText = "取消", XamlRoot = XamlRoot };
+        var saving = false; var saved = false;
+        dialog.Closing += (_, args) => { if (saving && !_disposed) args.Cancel = true; };
+        dialog.PrimaryButtonClick += async (_, args) =>
+        {
+            var deferral = args.GetDeferral(); saving = true; dialog.IsPrimaryButtonEnabled = false;
+            try { saved = await save(_lifetime.Token); args.Cancel = !saved; }
+            catch (OperationCanceledException) { args.Cancel = true; }
+            finally { saving = false; dialog.IsPrimaryButtonEnabled = true; deferral.Complete(); }
+        };
+        using var registration = _lifetime.Token.Register(() => DispatcherQueue.TryEnqueue(dialog.Hide));
+        await dialog.ShowAsync();
+        if (_disposed || !saved || !roleEditor) return;
+        await RefreshRolesAsync();
+        if (!_disposed && selected is not null && _cards.TryGetValue(selected.AgentId, out var card)) _roles.SelectedItem = card;
     }
     private async Task OpenSetupAsync()
     {

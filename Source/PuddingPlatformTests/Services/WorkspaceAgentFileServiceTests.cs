@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -176,6 +176,19 @@ public sealed class WorkspaceAgentFileServiceTests
             CollectionAssert.AreEqual(new[] { "file_read", "file_write" }, loaded.SelectedCapabilityIds);
             CollectionAssert.AreEqual(new[] { "coding" }, loaded.SkillPackageIds);
             Assert.AreEqual("soul", loaded.SoulMdContent);
+
+            var profile = await service.UpdateAgentProfileAsync("default", created.AgentId, new UpdateWorkspaceAgentRequest(
+                Name: "Native name", Description: "Native description", DisplayName: "Native name", AvatarId: null, AvatarUrl: null,
+                SourceTemplateId: null, SystemPromptOverride: null, PreferredProviderId: "", PreferredModelId: "", IsEnabled: true));
+            Assert.AreEqual("Native name", profile.DisplayName);
+            Assert.AreEqual(created.ExplorerModel, profile.ExplorerModel);
+            Assert.AreEqual(created.TesterModel, profile.TesterModel);
+            Assert.AreEqual(loaded.MaxToolCallsTotal, profile.MaxToolCallsTotal);
+            Assert.AreEqual(loaded.ContainerImage, profile.ContainerImage);
+            var profileReloaded = await service.GetAgentAsync("default", created.AgentId);
+            Assert.AreEqual(loaded.SoulMdContent, profileReloaded!.SoulMdContent);
+            Assert.AreEqual(created.ExplorerModel, profileReloaded.ExplorerModel);
+            CollectionAssert.AreEqual(loaded.SelectedCapabilityIds, profile.SelectedCapabilityIds);
 
             var updated = await service.UpdateAgentAsync(
                 "default",

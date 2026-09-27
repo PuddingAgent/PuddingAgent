@@ -42,6 +42,42 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
 
     private string ConfigPath => _paths.SystemConfigFile("llm.providers.json");
 
+    /// <summary>Patch connection and one chat model under the existing write lock, preserving undisplayed settings.</summary>
+    public async Task SaveChatModelSettingsAsync(string providerId, string name, string baseUrl, bool enabled,
+        string modelId, string modelName, string protocol, int contextTokens, int outputTokens,
+        string? replacementKey, bool clearKey, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(providerId) || providerId.Length > 80 || providerId.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-' && c != '_')
+            || string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(modelId) || string.IsNullOrWhiteSpace(modelName))
+            throw new ArgumentException("服务商或模型标识/名称无效。");
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")
+            || uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0
+            || protocol is not ("openai" or "responses" or "anthropic") || contextTokens <= 0 || outputTokens <= 0 || outputTokens > contextTokens)
+            throw new ArgumentException("地址、协议或 token 上限无效。");
+        if (replacementKey is not null && (clearKey || string.IsNullOrWhiteSpace(replacementKey)))
+            throw new ArgumentException("密钥操作无效。");
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            var config = await LoadAsync(ct);
+            var existing = config.Providers.FirstOrDefault(p => string.Equals(p.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+            var provider = existing ?? new PuddingLlmProviderConfig { ProviderId = providerId };
+            var oldModel = provider.Models.FirstOrDefault(m => string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
+            if (oldModel is { IsEmbedding: true }) throw new InvalidOperationException("请使用 embedding 模型管理入口。");
+            var model = (oldModel ?? new PuddingLlmModelConfig { ModelId = modelId, IsDefault = provider.Models.Count == 0 }) with
+            { Name = modelName, Protocol = protocol, MaxContextTokens = contextTokens, MaxOutputTokens = outputTokens };
+            var models = provider.Models.Where(m => !string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase)).ToList();
+            models.Add(model);
+            var updated = provider with { Name = name, BaseUrl = baseUrl, IsEnabled = enabled, Models = models,
+                ApiKey = clearKey ? null : replacementKey ?? provider.ApiKey,
+                ApiKeyRef = clearKey || replacementKey is not null ? null : provider.ApiKeyRef };
+            if (existing is null) config.Providers.Add(updated);
+            else config.Providers[config.Providers.IndexOf(existing)] = updated;
+            await SaveConfigAsync(config, ct);
+        }
+        finally { _writeLock.Release(); }
+    }
+
     /// <summary>读取完整 LLM 配置。</summary>
     public async Task<PuddingLlmProvidersConfig> LoadAsync(CancellationToken ct = default)
     {

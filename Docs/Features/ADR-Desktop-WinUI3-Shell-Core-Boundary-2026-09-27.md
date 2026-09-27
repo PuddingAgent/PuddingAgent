@@ -58,3 +58,9 @@
 ### 客户端首次使用补充（2026-09-27）
 
 客户端初始化不复用含管理员口令的 Web Bootstrap Controller。独立 `IWorkspaceSetupClient` 端口经 Composition 调用 Core `LocalWorkspaceSetupService`，创建/复用工作空间与首个角色，返回身份供导航。原生表单只选择已配置模型，密钥不出 Core。工作空间 DB 与角色文件采用可重试的分步完成，已有配置不覆盖；Web 账号与认证生命周期保持独立。
+
+### 原生配置补充（2026-09-27）
+
+配置由 BCL `IConfigurationClient` 端口承接，View 不引用 EF、Host 或配置文件类型。读取服务商仅含 HasKey；新密钥单向输入 Core，Keep/Replace/Clear 为显式操作，Clear 同时解除 ApiKey/ApiKeyRef，Keep 保留两者。沿用既有 llm.providers.json 存储方式，不声称已迁移为加密存储或清理外部 Vault 实体。
+
+原生局部编辑不得使用全量请求默认值清空未展示字段。Core 在现有写锁内保留模型价格、限额、能力、其他模型以及角色子代理路由、权限、Skill 和 Markdown。现有 Web 全量保存行为不变。原生角色编辑目前支持名称、职责、启用、主模型、角色类型与系统提示词；权限审批、Skill 编辑、头像上传及完整角色文档编辑另行迁移。

@@ -264,3 +264,7 @@
 ## 测试
 
 `../PuddingPlatformTests/` — 渠道配置、Artifact、消息与通用编排；2026-08-11 Orchestration 定向测试 62/62 ✅，覆盖 Graph/Run 发现、Revision/Layout CAS、Draft validate、Graph 生命周期、冻结 Run Inputs、手动运行、后继 Ready/失败 Skipped 与 Run 原子终态、两节点图片模板、HTTP Hook 映射/幂等冲突；2026-08-22 新增 StatsApiController/TokenUsageDailyAggregate/ContextLayerDailyRollup/TokenUsageRebuild 定向 18/18 ✅（闭日缓存命中、空日完成标记、当天实时不落缓存、按月失效、rollup 跨日精确合并、非对齐边界直查）
+
+## Native configuration application entry points (2026-09-27)
+
+`LlmProviderFileService.SaveChatModelSettingsAsync` updates connection/key state and one chat model inside the existing write lock; preserves prices, quotas, compatibility and other models. `WorkspaceAgentFileService.UpdateAgentProfileAsync` shares the existing update implementation but preserves smart-role models from the locked manifest; the existing Web full-update semantics remain unchanged.

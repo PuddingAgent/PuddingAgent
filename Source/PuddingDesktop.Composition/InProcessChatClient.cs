@@ -10,7 +10,7 @@ using Core = PuddingCode.Platform;
 namespace PuddingDesktop.Composition;
 
 /// <summary>Direct application-service adapter. No HTTP, controller invocation or JSON serialization.</summary>
-internal sealed class InProcessChatClient(IServiceScopeFactory scopes, CancellationToken hostStopping) : IChatClient, IWorkspaceSetupClient
+internal sealed class InProcessChatClient(IServiceScopeFactory scopes, CancellationToken hostStopping) : IChatClient, IWorkspaceSetupClient, IConfigurationClient
 {
     private readonly CancellationTokenSource _shutdown = CancellationTokenSource.CreateLinkedTokenSource(hostStopping);
     private readonly object _gate = new();
@@ -36,6 +36,52 @@ internal sealed class InProcessChatClient(IServiceScopeFactory scopes, Cancellat
             return task;
         }
     }
+    public Task<ProviderSettings[]> GetProvidersAsync(CancellationToken ct) => ExecuteAsync(async (services, token) =>
+    {
+        var store = services.GetRequiredService<LlmProviderFileService>();
+        var result = new List<ProviderSettings>();
+        foreach (var p in await store.ListProvidersAsync(token))
+        {
+            var models = (await store.ListModelsAsync(p.ProviderId, token)).Where(m => !m.IsEmbedding)
+                .Select(m => new ModelSettings(m.ModelId, m.Name, m.Protocol, m.MaxContextTokens, m.MaxOutputTokens)).ToArray();
+            result.Add(new(p.ProviderId, p.Name, p.BaseUrl, p.IsEnabled, p.HasApiKey, models));
+        }
+        return result.ToArray();
+    }, ct);
+    public async Task SaveProviderModelAsync(ProviderModelEdit edit, CancellationToken ct) => await ExecuteAsync(async (services, token) =>
+    {
+        edit.Validate();
+        await services.GetRequiredService<LlmProviderFileService>().SaveChatModelSettingsAsync(edit.ProviderId, edit.ProviderName,
+            edit.BaseUrl, edit.Enabled, edit.Model.Id, edit.Model.Name, edit.Model.Protocol, edit.Model.ContextTokens, edit.Model.OutputTokens,
+            edit.KeyChange == SecretChange.Replace ? edit.NewKey : null, edit.KeyChange == SecretChange.Clear, token);
+        return true;
+    }, ct);
+    public Task<RoleSettings> GetRoleSettingsAsync(RoleKey role, CancellationToken ct) => ExecuteAsync(async (services, token) =>
+    {
+        var agent = await services.GetRequiredService<WorkspaceAgentFileService>().GetAgentAsync(role.WorkspaceId, role.AgentId, token)
+            ?? throw new InvalidOperationException("角色不存在。");
+        return new RoleSettings(role, agent.DisplayName ?? agent.Name, agent.Description ?? "", agent.IsEnabled,
+            agent.Role ?? "", agent.SystemPrompt ?? "", agent.PreferredProviderId, agent.PreferredModelId);
+    }, ct);
+    public async Task SaveRoleSettingsAsync(RoleSettings edit, CancellationToken ct) => await ExecuteAsync(async (services, token) =>
+    {
+        if (string.IsNullOrWhiteSpace(edit.ProviderId) != string.IsNullOrWhiteSpace(edit.ModelId))
+            throw new ArgumentException("服务商与模型必须同时指定，或同时使用默认值。");
+        var store = services.GetRequiredService<WorkspaceAgentFileService>();
+        var current = await store.GetAgentAsync(edit.Key.WorkspaceId, edit.Key.AgentId, token) ?? throw new InvalidOperationException("角色不存在。");
+        if ((edit.ProviderId != current.PreferredProviderId || edit.ModelId != current.PreferredModelId) && !string.IsNullOrWhiteSpace(edit.ProviderId))
+        {
+            var providers = services.GetRequiredService<LlmProviderFileService>();
+            if (!(await providers.ListProvidersAsync(token)).Any(p => p.ProviderId == edit.ProviderId && p.IsEnabled)
+                || !(await providers.ListModelsAsync(edit.ProviderId, token)).Any(m => m.ModelId == edit.ModelId && !m.IsDeprecated && !m.IsEmbedding))
+                throw new InvalidOperationException("模型不可用。");
+        }
+        await store.UpdateAgentProfileAsync(edit.Key.WorkspaceId, edit.Key.AgentId, new PuddingPlatform.Data.Dtos.UpdateWorkspaceAgentRequest(
+            Name: edit.Name, Description: edit.Description, DisplayName: edit.Name, AvatarId: null, AvatarUrl: null,
+            SourceTemplateId: null, SystemPromptOverride: null, PreferredProviderId: edit.ProviderId ?? "", PreferredModelId: edit.ModelId ?? "",
+            IsEnabled: edit.Enabled, Role: edit.Role, SystemPrompt: edit.SystemPrompt), token);
+        return true;
+    }, ct);
     public Task<ModelChoice[]> GetSetupModelsAsync(CancellationToken ct) => ExecuteAsync(async (services, token) =>
     {
         var providers = services.GetRequiredService<LlmProviderFileService>();

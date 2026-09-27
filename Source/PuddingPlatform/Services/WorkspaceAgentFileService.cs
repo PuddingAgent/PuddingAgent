@@ -735,7 +735,14 @@ public sealed class WorkspaceAgentFileService :
     }
 
     /// <summary>更新 Agent 实例。</summary>
-    public async Task<WorkspaceAgentDto> UpdateAgentAsync(string workspaceId, string agentId, UpdateWorkspaceAgentRequest req, CancellationToken ct = default)
+    public Task<WorkspaceAgentDto> UpdateAgentAsync(string workspaceId, string agentId, UpdateWorkspaceAgentRequest req, CancellationToken ct = default)
+        => UpdateAgentCoreAsync(workspaceId, agentId, req, false, ct);
+
+    /// <summary>Basic native profile editing preserves smart-role routing under the same manifest write lock.</summary>
+    public Task<WorkspaceAgentDto> UpdateAgentProfileAsync(string workspaceId, string agentId, UpdateWorkspaceAgentRequest req, CancellationToken ct = default)
+        => UpdateAgentCoreAsync(workspaceId, agentId, req, true, ct);
+
+    private async Task<WorkspaceAgentDto> UpdateAgentCoreAsync(string workspaceId, string agentId, UpdateWorkspaceAgentRequest req, bool preserveSmartModels, CancellationToken ct)
     {
         await _writeLock.WaitAsync(ct);
         try
@@ -748,6 +755,14 @@ public sealed class WorkspaceAgentFileService :
             if (refData is null)
                 throw new KeyNotFoundException($"Agent '{agentId}' in workspace '{workspaceId}' 不存在");
 
+            if (preserveSmartModels)
+            {
+                if (string.IsNullOrWhiteSpace(req.Name) || req.Name.Length > 80 || req.Description?.Length > 512)
+                    throw new ArgumentException("角色名称或职责描述无效。");
+                req = req with { ExplorerModel = instanceManifest.ExplorerModel, ResearcherModel = instanceManifest.ResearcherModel,
+                    PlannerModel = instanceManifest.PlannerModel, ReviewerModel = instanceManifest.ReviewerModel,
+                    DeveloperModel = instanceManifest.DeveloperModel, DeployerModel = instanceManifest.DeployerModel, TesterModel = instanceManifest.TesterModel };
+            }
             var instanceRoot = _paths.AgentInstanceRoot(agentId);
             var requestedTemplateId = string.IsNullOrWhiteSpace(req.SourceTemplateId)
                 ? instanceManifest.TemplateId
