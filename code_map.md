@@ -1,3 +1,9 @@
+## 2026-09-27 WinUI 3：角色优先的 Coding 工作台设计（待实施）
+
+[骨架与迁移方案](Docs/Features/Desktop-WinUI3-Migration-Plan-2026-09-26.md) · [边界 ADR](Docs/Features/ADR-Desktop-WinUI3-Shell-Core-Boundary-2026-09-27.md)：原生角色导航、中间复用 Agent 主会话、右侧代码/Diff/终端/浏览器/产物文档骨架；Core 保持独立子进程。Foundation 与 WPF/WinUI 浏览器适配先独立测试后接入；业务 HTTP/SSE、Browser Bridge、ShellWebBridge 分责。M0–M5 不依赖原生聊天或 Core 进程内化。当前源码仍为 WPF，本次仅修订文档；接口与实机门禁未验收。
+
+代码入口：`Source/PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs`、`Core/CoreProcessSupervisor.cs`、`Browser/BrowserWorkspaceController.cs`（均相对 Desktop 目录）；`Source/PuddingCore/Platform/AgentTemplateDefinition.cs`、`AgentProjectionDtos.cs`；`Source/PuddingPlatformAdmin/src/pages/chat/client/agentChatApi.ts`。新工程、协议和 Coding 文档适配器详见方案 §8，均为拟建。
+
 ## 2026-09-25 文档回改：ADR-089 §8.3 留白已由 S5 关闭（正文同步，**纯文档 14/3**）
 
 **背景**：`Docs/Features/ADR-089-索引服务与库管理-2026-09-24.md` §8.3 仍写「`MinRebuildInterval` 的「索引是否足够新」用**索引根目录 mtime** 粗粒度代理（per-scope 索引目录在组件内且 `internal` ⇒ 宿主观测不到）」—— **该留白已在 S5（`ec7f221`）被关闭**：宿主端口 `IFullTextIndexSupplyComposition.LiveIndexLastWriteUtc(scopeRootPath)` 提供 **per-scope live 索引目录 mtime**（经组件单一真源 `IFullTextIndexRootedEngine.ResolveIndexDirectory` 解析目录，宿主**不复刻**命名哈希）。

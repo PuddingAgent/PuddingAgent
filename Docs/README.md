@@ -1,5 +1,9 @@
 # Pudding Agent Network 文档索引
 
+## 2026-09-27 WinUI 3 角色优先 Coding 工作台（待实施）
+
+[Desktop 骨架与迁移方案](Features/Desktop-WinUI3-Migration-Plan-2026-09-26.md) · [Desktop/Core 边界 ADR](Features/ADR-Desktop-WinUI3-Shell-Core-Boundary-2026-09-27.md)：用户确认角色为一等公民；原生角色导航 + Web 角色主会话 + 代码/Diff/终端/浏览器/产物工作区。Core 继续独立子进程，复用既有身份、业务 API/SSE 与 Browser Bridge；Shell 桥限定展示/导航。主线 M0–M5 完成后退役 WPF，原生聊天另立项目。本次为设计修订，当前产品仍为 WPF，构建与实机验收未完成。
+
 ## 2026-09-17 Goal模式重新规划
 
 [简化设计](Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md) · [ADR-092第二版](07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md)：Goal专属存储、单一状态机与决策入口、Agent回合/证据检查两类工作；移除Goal步骤树与两级Verifier，Task可选适配。Agent自身goal.md独立。设计已更新，产品实现及新构建验收待完成。

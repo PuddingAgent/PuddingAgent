@@ -1,5 +1,9 @@
 # 07架构
 
+## 2026-09-27 WinUI 3 角色工作台边界（待实施）
+
+[专题 ADR：角色优先的 WinUI 3 Coding 工作台与独立 Core](../Features/ADR-Desktop-WinUI3-Shell-Core-Boundary-2026-09-27.md) · [实施规格与 M0–M5 门禁](../Features/Desktop-WinUI3-Migration-Plan-2026-09-26.md)。角色身份沿用模板/Agent/主会话/Run；Desktop 只装配 UI、浏览器与进程监督，Core 继续独立。当前产品仍为 WPF，本次仅设计修订。
+
 ## 2026-09-17 Goal单一状态机与证据驱动续行
 
 [ADR-092第二版](106ADR-092目标驱动执行与分层验证闭环ADR.md)（Proposed）及[简化设计](../Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md)：独立Goal存储、一个决策入口、两类执行工作；移除Goal步骤树与两级Verifier，Task可选适配，等待无模型轮询。Agent goal.md管理独立。整体替代ADR-092第一版，保留[历史任务记录](../Reports/Goal持续执行方案与任务修订-2026-09-15.md)；实现和运行验收待完成。
