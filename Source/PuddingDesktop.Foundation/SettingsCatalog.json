@@ -392,7 +392,7 @@
             ],
             "source": "pages/agent-template-settings/sections/CapabilitySkillSection.tsx",
             "task": "DS-04",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

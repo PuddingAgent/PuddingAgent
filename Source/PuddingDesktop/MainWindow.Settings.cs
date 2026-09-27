@@ -184,6 +184,15 @@ public sealed partial class MainWindow
         var skillLegacy = VisibilityOf("skills", "legacy", tab);
         SkillPackagesSettings.Visibility = skillLegacy;
         if (skillLegacy == Visibility.Visible) LoadSkillPackagesIfNeeded();
+        var capabilities = VisibilityOf("agents", "capabilities", tab);
+        AgentCapabilitiesSettings.Visibility = capabilities;
+        if (capabilities == Visibility.Visible) LoadAgentGrantsIfNeeded();
+    }
+
+    private async void LoadAgentGrantsIfNeeded()
+    {
+        try { await LoadAgentGrantsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadSkillPackagesIfNeeded()
@@ -304,6 +313,7 @@ public sealed partial class MainWindow
         ("skills", "evolution") => true,
         ("skills", "installs") => true,
         ("skills", "legacy") => true,
+        ("agents", "capabilities") => true,
         _ => false
     };
 

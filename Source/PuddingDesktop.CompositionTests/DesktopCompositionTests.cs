@@ -1024,6 +1024,82 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task AgentGrantAdapter_KeepsTemplateGrantsAndInstanceSnapshotSeparate()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var agents = factory.CreateAgentDirectorySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => agents.ListGrantOptionsAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var options = await agents.ListGrantOptionsAsync(timeout.Token);
+            Assert.NotEmpty(options.Capabilities);
+            Assert.Equal(options.Capabilities.Count,
+                options.Capabilities.Select(option => option.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+            Assert.All(options.Capabilities, option => Assert.True(option.IsCapability));
+
+            // Reading grants for something that does not exist must fail rather than return an empty set.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => agents.ReadTemplateGrantsAsync("no-such-template", timeout.Token));
+
+            await agents.SaveTemplateAsync(new AgentTemplateEdit("grant-template", "Grant Template", "developer",
+                "fixture", true, 500, ""), timeout.Token);
+            var granted = options.Capabilities.Take(2).Select(option => option.Id).ToArray();
+            await agents.SaveTemplateGrantsAsync("grant-template", new AgentGrantSet(granted, []), timeout.Token);
+            var templateGrants = await agents.ReadTemplateGrantsAsync("grant-template", timeout.Token);
+            Assert.Equal(AgentGrantText.Normalize(granted), templateGrants.CapabilityIds);
+            Assert.Empty(templateGrants.SkillPackageIds);
+
+            var workspaces = await agents.ListWorkspacesAsync(timeout.Token);
+            Assert.NotEmpty(workspaces);
+            var workspaceId = workspaces[0].WorkspaceId;
+            await agents.CreateInstanceAsync(new AgentInstanceCreate(workspaceId, "grant-agent", "fixture", "grant-template"), timeout.Token);
+            var instance = (await agents.ListInstancesAsync(workspaceId, timeout.Token))
+                .Single(agent => agent.Name == "grant-agent");
+
+            // Creation inherits the template snapshot.
+            var state = await agents.ReadInstanceGrantsAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal(templateGrants.CapabilityIds, state.Grants.CapabilityIds);
+            Assert.True(state.Comparison.IsIdentical);
+            Assert.Equal("与模板授权一致", AgentGrantText.DescribeComparison(state.TemplateGrants, state.Grants));
+
+            // "Explicitly none" writes an empty list; it must not fall back to the template.
+            await agents.SaveInstanceGrantsAsync(workspaceId, instance.AgentId,
+                AgentGrantSelection.None, AgentGrantSelection.None, timeout.Token);
+            state = await agents.ReadInstanceGrantsAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Empty(state.Grants.CapabilityIds);
+            Assert.False(state.Comparison.IsIdentical);
+            Assert.Contains("比模板少", AgentGrantText.DescribeComparison(state.TemplateGrants, state.Grants), StringComparison.Ordinal);
+            Assert.Equal("没有授权（明确不授权）", AgentGrantText.DescribeSet(state.Grants, options));
+
+            // "Unspecified" keeps the stored value; it does not re-inherit the template.
+            await agents.SaveInstanceGrantsAsync(workspaceId, instance.AgentId,
+                AgentGrantSelection.UnspecifiedSelection, AgentGrantSelection.UnspecifiedSelection, timeout.Token);
+            state = await agents.ReadInstanceGrantsAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Empty(state.Grants.CapabilityIds);
+
+            // Adopting the template writes its current value.
+            await agents.SaveInstanceGrantsAsync(workspaceId, instance.AgentId,
+                AgentGrantSelection.Of(state.TemplateGrants.CapabilityIds),
+                AgentGrantSelection.Of(state.TemplateGrants.SkillPackageIds), timeout.Token);
+            state = await agents.ReadInstanceGrantsAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal(templateGrants.CapabilityIds, state.Grants.CapabilityIds);
+            Assert.True(state.Comparison.IsIdentical);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => agents.ReadTemplateGrantsAsync("grant-template", timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

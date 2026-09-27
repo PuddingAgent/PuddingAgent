@@ -67,7 +67,8 @@ internal sealed partial class DesktopAgentDirectorySettings
         string? embeddingProviderId = null, string? embeddingModelId = null,
         string? memorySearchMode = null, string? reasoningEffort = null,
         IReadOnlyDictionary<string, string>? smartRoutes = null,
-        int? maxRounds = null, int? maxElapsedSeconds = null, int? maxToolCallsTotal = null, string? containerImage = null)
+        int? maxRounds = null, int? maxElapsedSeconds = null, int? maxToolCallsTotal = null, string? containerImage = null,
+        AgentGrantSelection? capabilities = null, AgentGrantSelection? skillPackages = null)
         => new(
             name ?? current.Name,
             description ?? current.Description,
@@ -96,8 +97,8 @@ internal sealed partial class DesktopAgentDirectorySettings
             current.AllowFileWrite,
             current.AllowShellExecution,
             current.AllowNetworkAccess,
-            current.SelectedCapabilityIds,
-            current.SkillPackageIds,
+            GrantValue(capabilities, current.SelectedCapabilityIds),
+            GrantValue(skillPackages, current.SkillPackageIds),
             current.AllowedToolNames,
             smartRoutes is null ? current.ExplorerModel : RouteFor(smartRoutes, "explorer"),
             smartRoutes is null ? current.ResearcherModel : RouteFor(smartRoutes, "researcher"),

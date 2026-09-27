@@ -48,6 +48,15 @@ public interface IAgentDirectorySettings
     Task SaveTemplateAsync(AgentTemplateEdit edit, CancellationToken cancellationToken = default);
     Task DeleteTemplateAsync(string templateId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AgentInstanceSummary>> ListInstancesAsync(string workspaceId, CancellationToken cancellationToken = default);
+
+    /// <summary>Grantable options: runtime tool capabilities plus skill packages from the legacy ledger.</summary>
+    Task<AgentGrantOptions> ListGrantOptionsAsync(CancellationToken cancellationToken = default);
+    Task<AgentGrantSet> ReadTemplateGrantsAsync(string templateId, CancellationToken cancellationToken = default);
+    Task SaveTemplateGrantsAsync(string templateId, AgentGrantSet grants, CancellationToken cancellationToken = default);
+    Task<AgentInstanceGrantState> ReadInstanceGrantsAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
+    /// <summary>Unspecified selections send null so Core keeps the stored value; it does not re-inherit the template.</summary>
+    Task SaveInstanceGrantsAsync(string workspaceId, string agentId, AgentGrantSelection capabilities,
+        AgentGrantSelection skillPackages, CancellationToken cancellationToken = default);
     Task CreateInstanceAsync(AgentInstanceCreate create, CancellationToken cancellationToken = default);
     Task SaveInstanceAsync(AgentInstanceEdit edit, CancellationToken cancellationToken = default);
     Task DeleteInstanceAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);

@@ -107,7 +107,8 @@ internal sealed partial class DesktopAgentDirectorySettings
         string? memoryLlmProviderId = null, string? memoryLlmModelId = null,
         string? embeddingProviderId = null, string? embeddingModelId = null,
         string? memorySearchMode = null, string? reasoningEffort = null,
-        int? maxRounds = null, int? maxElapsedSeconds = null, int? maxToolCallsTotal = null, string? containerImage = null)
+        int? maxRounds = null, int? maxElapsedSeconds = null, int? maxToolCallsTotal = null, string? containerImage = null,
+        IReadOnlyList<string>? capabilities = null, IReadOnlyList<string>? skillPackages = null)
         => new(
             current.TemplateId,
             name ?? current.Name,
@@ -119,8 +120,8 @@ internal sealed partial class DesktopAgentDirectorySettings
             preferredModelId ?? current.PreferredModelId,
             current.MaxContextTokens,
             containerImage ?? current.ContainerImage,
-            current.SelectedCapabilityIds,
-            current.SelectedSkillPackageIds,
+            capabilities is null ? current.SelectedCapabilityIds : [.. capabilities],
+            skillPackages is null ? current.SelectedSkillPackageIds : [.. skillPackages],
             isEnabled ?? current.IsEnabled,
             sortOrder ?? current.SortOrder,
             personaPrompt ?? current.PersonaPrompt,

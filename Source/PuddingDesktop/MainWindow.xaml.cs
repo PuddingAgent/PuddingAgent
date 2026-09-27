@@ -68,6 +68,7 @@ public sealed partial class MainWindow : Window
         BuildSkillLibraryPanel();
         BuildSkillEvolutionPanels();
         BuildSkillPackagePanel();
+        BuildAgentGrantPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -544,6 +545,13 @@ public sealed partial class MainWindow : Window
             Check(SkillPackagesSettings.Content is StackPanel, "skill packages form is built");
             Check(!_spPicker.IsEnabled, "skill packages form stays disabled without Core");
             Check(_spNotice.Title == "Core 未就绪", "skill packages tab reports the real Core state");
+            // DS-04 capability/skill grants (unblocked by DS-06 and DS-07).
+            OpenSettingsCategory("agents", "capabilities");
+            await WaitForSettingsUiAsync(() => _grNotice.IsOpen);
+            Check(AgentCapabilitiesSettings.Visibility == Visibility.Visible, "agent capabilities tab is native");
+            Check(AgentCapabilitiesSettings.Content is StackPanel, "agent capabilities form is built");
+            Check(!_grTemplatePicker.IsEnabled, "agent capabilities form stays disabled without Core");
+            Check(_grNotice.Title == "Core 未就绪", "agent capabilities tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);
