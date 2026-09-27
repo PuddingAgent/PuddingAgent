@@ -28,8 +28,6 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/RuntimeNodeAdminService.cs` | 运行时节点冻结/解冻应用操作：把「冻结 + 审计」从 `RuntimeRegistryController` 原位下沉——审计原先只在控制器里写，原生管理面直接调 `RuntimeRegistryService` 冻结节点不留痕，而冻结会拒绝该节点的全部原生能力调用（安全相关）。依赖 `InMemoryAuditEventStore` 具体类型：Controller 的 DI 只注册了具体类型，没有注册 `IAuditEventStore` |
-
-
 | `SessionRouter.cs` | 会话路由（核心，24KB） |
 | `RuntimeDispatcher.cs` | 运行时调度 |
 | `RuntimeRegistryService.cs` | 运行时注册服务 |
