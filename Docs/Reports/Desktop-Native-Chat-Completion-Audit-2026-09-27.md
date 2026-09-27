@@ -4,7 +4,7 @@
 
 | 要求 | 当前证据 | 判定与剩余门禁 |
 |---|---|---|
-| 原生组件、编译期依赖边界 | PuddingChat.WinUI.csproj 仅引用 PuddingChat，并通过 EnforceChatViewBoundary 拒绝其他项目引用 | 已实现；组件窗口构建通过。Core 装配与产品发布需另验 |
+| 原生组件、编译期依赖边界 | PuddingChat.WinUI.csproj 仅引用 PuddingChat，并通过 EnforceChatViewBoundary 拒绝其他项目引用 | 已实现；组件窗口与完整 Desktop 构建通过，隔离产品进程已验证聊天挂载。正式产品发布需另验 |
 | 角色是一等公民 | RoleAvatarCard、ChatWorkspace、ChatSelection，按 RoleKey 保存草稿/选择/阅读位置 | 已接入，窗口 fixture 覆盖角色切换与晚到响应；真实角色日常使用待验 |
 | 同进程调用、客户端免登录 | Composition/InProcessChatClient 直接 DI scope 调用应用服务，固定 LocalDesktopIdentity；没有聊天 HTTP 适配 | 源码已接入；既有 NativeChatIntegrationTests 有 HTTP 探针，本轮未重复运行 Core 集成 |
 | 流式正文、真实思考与工具链 | ConversationActivity、TurnFlow、TurnContentView、ActivityContentView；canonical 顺序、调用 ID 配对、默认展开思考、懒加载工具内容 | 已实现并有组件测试；真实模型长会话及取消仍需验收 |
@@ -14,7 +14,7 @@
 | 图片与一般上下文附件 | 图片：选图/剪贴板/拖放→Core Artifact；文本：选择器或文件拖放/粘贴→不可变快照→角色草稿→既有 Core text 提交 | 文本/源代码预览、移除、发送、源文件删除后重试和混合文件传入已接通；57 逻辑/145 窗口、既有 3 Core 测试通过。原 Web 的一般附件本就未实现；PDF/Office 提取、历史独立附件卡、真实模型及系统选择器/资源管理器拖放人工验收仍缺失 |
 | 审批卡与真实工具恢复 | ApprovalCard、PuddingApproval、SqliteApprovalStore 独立组件；Runtime 保留准入状态 | 未完成：请求生产者、持久暂停/恢复、Core 决定端口及产品待审批区域未接线。不能用独立卡片测试替代闭环 |
 | 子代理与其他聊天富交互 | TurnFlow 保留精确 RunId；原生检查器经 Composition 读取 Core 归档，委派卡入口已接入；窗口 118 项与 Core 3/3 隔离验证 | 真实模型委派交互、超大归档性能待验；语音聊天尚未迁移 |
-| 用户实际产品效果 | 独立 WinUI harness 与历史部署记录 | 本轮没有发布/替换运行中 Desktop；不能凭组件通过宣称当前产品已加载新代码 |
+| 用户实际产品效果 | 独立 WinUI harness；新构建的 PuddingDesktop.exe + Core DLL 隔离 smoke，PID 30028，真实控件 IsLoaded/Visible、角色/附件草稿及重启后重新装配通过 | 已运行测试产品进程并正常退出、释放租约；未替换用户数据目录上的 Desktop。真实模型聊天、完整视觉与 DPI/IME 矩阵仍需验收 |
 
 ## 当前切片：展开活动内容保持
 

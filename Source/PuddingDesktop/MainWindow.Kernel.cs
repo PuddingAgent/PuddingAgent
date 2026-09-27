@@ -207,6 +207,28 @@ public sealed partial class MainWindow
             var address = _kernel.Snapshot.WorkbenchAddress!;
             (await http.GetAsync(new Uri(address, "/health/ready"))).EnsureSuccessStatusCode();
             var runningRoot = DataRootEditor.Text;
+            // Exercise the real product mount with an isolated local role, without credentials or a model call.
+            using (var chat = _createChatClient())
+            {
+                var setup = chat as IWorkspaceSetupClient ?? throw new InvalidOperationException("Native setup is not mounted.");
+                var created = await setup.SetupWorkspaceAsync(new("default", "Native smoke workspace", "Native smoke role", null), CancellationToken.None);
+                var agent = (await chat.GetAgentsAsync(created.WorkspaceId, CancellationToken.None)).Single(a => a.AgentId == created.AgentId);
+                await OpenWorkbenchAsync(runningRoot);
+                _state.Navigate(ShellPage.Workbench);
+                var mountedChat = _nativeChat ?? throw new InvalidOperationException("Native chat is not mounted.");
+                await mountedChat.InitializeAsync();
+                await mountedChat.SelectRoleAsync(created.WorkspaceId, agent);
+                mountedChat.Composer.Draft = "Inspect the attached source.";
+                var fixturePath = Path.Combine(App.StateRoot, "native-chat-smoke.cs");
+                await File.WriteAllTextAsync(fixturePath, "class NativeChatSmoke { }\n");
+                await mountedChat.AddTextFilesAsync([fixturePath]);
+                for (var attempt = 0; attempt < 100 && !mountedChat.IsLoaded; attempt++) await Task.Delay(50);
+                if (!ReferenceEquals(NativeChatPane.Content, mountedChat) || mountedChat.RoleCount < 1
+                    || !mountedChat.IsLoaded || NativeChatPane.Visibility != Visibility.Visible
+                    || mountedChat.SelectedRole != new RoleKey(created.WorkspaceId, created.AgentId)
+                    || mountedChat.Composer.FileCount != 1 || mountedChat.Composer.Draft != "Inspect the attached source.")
+                    throw new InvalidOperationException("Product native chat role/draft/file composition failed.");
+            }
             DataRootEditor.Text = Path.Combine(runningRoot, "saved-next-root");
             var savedWhileRunning = await SaveDataRootAsync();
             if (_kernel.Snapshot.State != DesktopKernelState.Ready
@@ -215,9 +237,14 @@ public sealed partial class MainWindow
             DataRootEditor.Text = runningRoot; await SaveDataRootAsync();
             await Task.Run(() => _desktopServices.ShowAsync(ShellPage.Settings));
             if (_state.Page != ShellPage.Settings) throw new InvalidOperationException("Desktop callback did not reach UI.");
+            var previousChat = _nativeChat;
             await _kernel.StopAsync(CancellationToken.None);
             await StartKernelAsync();
             (await http.GetAsync(new Uri(_kernel.Snapshot.WorkbenchAddress!, "/health/ready"))).EnsureSuccessStatusCode();
+            var restartedChat = _nativeChat ?? throw new InvalidOperationException("Native chat missing after Core restart.");
+            await restartedChat.InitializeAsync();
+            if (ReferenceEquals(previousChat, restartedChat) || restartedChat.RoleCount < 1)
+                throw new InvalidOperationException("Core restart must mount a new chat client and reload the saved role.");
             await _kernel.StopAsync(CancellationToken.None);
             var nextRoot = Path.Combine(DataRootEditor.Text, "next-root");
             DataRootEditor.Text = nextRoot;
@@ -226,7 +253,7 @@ public sealed partial class MainWindow
             if (savedSettings?.DataRoot != nextRoot || _kernel.Snapshot.State != DesktopKernelState.Stopped)
                 throw new InvalidOperationException("DataRoot change must be saved for next launch without reusing the old local context.");
             Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
-            await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new { success = true, processId = Environment.ProcessId, coreAssembly = hostAssembly.Location, uiCallback = true, restart = true, dataRootChangeSaved = true }));
+            await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new { success = true, processId = Environment.ProcessId, coreAssembly = hostAssembly.Location, uiCallback = true, restart = true, dataRootChangeSaved = true, nativeChatMounted = true, nativeRoleAndFileDraft = true, nativeChatRecreatedAfterRestart = true }));
         }
         catch (Exception exception)
         {

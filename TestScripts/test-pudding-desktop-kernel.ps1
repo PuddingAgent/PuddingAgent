@@ -21,6 +21,7 @@ try {
     if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "Kernel smoke failed: $runRoot" }
     $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
     if (-not $result.success -or $result.processId -ne $process.Id) { throw "Invalid smoke result: $report" }
+    if (-not $result.nativeChatMounted -or -not $result.nativeRoleAndFileDraft -or -not $result.nativeChatRecreatedAfterRestart) { throw "Native chat product mount was not verified: $report" }
     # Successful process exit must also release its shared data-directory lease.
     $lease = [IO.File]::Open((Join-Path $runRoot 'data/.pudding-host.lock'), 'Open', 'ReadWrite', 'None')
     $lease.Dispose()

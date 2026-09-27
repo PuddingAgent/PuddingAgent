@@ -284,3 +284,11 @@ ChatWorkspace 在可用宽度不足「宿主偏好侧栏宽度 + 520 DIP」或�
 ChatComposer 的拖放及 Ctrl+V 现接收 StorageItems 中的图片与文本/代码文件；普通文字与位图仍沿用原生文字粘贴及已有图片导入。ChatWorkspace.FileTransfer 在延迟数据源解析前捕获角色，校验数量/文本后导入图片，批次全部成功才更新草稿，失败保留原附件；不递归读文件夹、不把晚到附件写入新角色。草稿原子性不等于 Core Artifact 存储事务，已成功写入但最终未引用的图片生命周期仍归 Core。
 
 验证：57 项逻辑、145 项 WinUI 窗口检查通过，零构建警告/错误（temp/native-file-transfer-final.log）。新增 6 项用真实 WinRT DataPackage/StorageFile 测混合导入、二进制拒绝且不调用图片导入、延迟 provider 的角色隔离与原角色快照归属、文件夹拒绝、禁用状态。没有操作用户系统剪贴板或真实资源管理器鼠标拖动；没有更改 Core 或发布 Desktop。
+
+## 完整产品原生聊天装配通过（2026-09-27）
+
+上次 SkillPackageUpload 重名已由并行设置任务修复。本轮扩充 MainWindow.RunKernelSmokeAsync：在显式隔离 DataRoot 内通过进程内客户端创建工作空间与角色，重新挂载真实 ChatWorkspace，校验 IsLoaded、Visible、角色列表/选择、正文草稿和文本附件。Core 重启后必须换成新聊天客户端并重新读取保存角色；外部脚本要求报告的 nativeChatMounted / nativeRoleAndFileDraft / nativeChatRecreatedAfterRestart 全为 true，且验证 PID 与退出后的数据目录租约释放。
+
+执行 `pwsh -NoProfile -File TestScripts/test-pudding-desktop-kernel.ps1` 成功。最终构建 0 errors / 146 warnings（依赖/既存编译和 PRI 资源警告；不称零警告）。产品进程 PID 30028，加载实际输出目录的 PuddingHost.dll，UI 回调、重启、目录保存、聊天挂载和重建标记全部通过，外部脚本退出码 0。证据：temp/native-chat-product-smoke-final.log；temp/test-out/kernel-winui-8751da31ad504dfc9d445cf211a7625d/report.json。
+
+此次使用共享工作树当时的完整产品构建，包含并行任务的现状，不宣称是单一聊天 commit 的隔离构建。未读写 D:\data、没有模型调用、没有发布替换用户 Desktop；健康探针沿用 /health/ready，角色和草稿路径是直接函数调用。发送/流式真实模型、审批恢复、完整视觉矩阵仍未通过产品验收。

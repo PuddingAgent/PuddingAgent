@@ -1316,3 +1316,7 @@ PuddingChat.WinUI/ChatWorkspace.UpdateNavigationLayout 在消息可用宽度不�
 ## 2026-09-27 原生混合文件传入
 
 PuddingChat.WinUI/ChatWorkspace.FileTransfer.cs 与 ChatComposer.ReceiveAttachmentsAsync 接入拖放/Ctrl+V 的文本和图片批次；导入前捕获角色，成功后原子更新草稿。FileTransferChecks 覆盖真实 WinRT 延迟数据源和失败路径；57 逻辑/145 原生窗口检查通过。文本上下文设计文档记录范围及 Core Artifact 所有权。
+
+## 2026-09-27 原生聊天产品装配门禁
+
+PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建角色并验证真实 ChatWorkspace 的可见挂载、草稿/附件与 Core 重启后的重建和角色重载。TestScripts/test-pudding-desktop-kernel.ps1 强制校验新增报告字段及退出租约释放；PID 30028 实测通过，详见原生聊天实施报告。
