@@ -38,7 +38,9 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
-`PuddingChat/SubAgentInspection.cs` + `PuddingChat.WinUI/SubAgentInspector.cs` 为独立子代理检查器合同/控件：绑定角色、父会话与单次 Run，任务/活动/完整结果分区，归档降级提示、刷新去重与关闭取消。`SubAgentInspectorChecks` 已独立验证；Core 适配与委派卡入口待接，边界见 `Docs/Features/Desktop-Native-SubAgent-Inspector-2026-09-27.md`。
+`InProcessChatClient.SubAgents.cs` 直接校验角色/父会话并读取 Core 单次运行归档，映射真实思考/工具预览及截断/降级信息。`FlowBlock.DelegationExecutionId` 经委派卡回调打开原生检查对话框，角色切换取消关闭。`NativeSubAgentInspectionTests` 在真实归档/零 HTTP 组合测试内验证，`SubAgentEntryChecks` 验证实际按钮与角色切换；源码已接入，产品部署验收仍待完成。
+
+`PuddingChat/SubAgentInspection.cs` + `PuddingChat.WinUI/SubAgentInspector.cs` 为独立子代理检查器合同/控件：绑定角色、父会话与单次 Run，任务/活动/完整结果分区，归档降级提示、刷新去重与关闭取消。`SubAgentInspectorChecks` 已独立验证，Core 适配与委派卡入口随后完成隔离接入验证，边界见 `Docs/Features/Desktop-Native-SubAgent-Inspector-2026-09-27.md`。
 
 当前完成度与剩余门禁见 `Docs/Reports/Desktop-Native-Chat-Completion-Audit-2026-09-27.md`。`ActivityContentView` 为展开的思考/工具/委派保留正文、输入、输出槽位，流式更新复用 MarkdownView 与嵌套代码控件；`ActivityStreamingChecks` 验证实际窗口中的控件身份和最新内容。
 

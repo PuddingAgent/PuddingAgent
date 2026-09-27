@@ -10,6 +10,7 @@ public sealed class MessageCard : UserControl, IDisposable
     private Expander? _process;
     private readonly StackPanel _details = new() { Spacing = 8 };
     private readonly Func<Task<ProcessDetails>>? _loadDetails;
+    private readonly Action<string>? _inspectDelegation;
     private CancellationTokenSource? _detailLoad;
     private bool _detailsLoaded;
     private readonly TurnContentView _flow;
@@ -61,10 +62,11 @@ public sealed class MessageCard : UserControl, IDisposable
     }
     public bool IsProcessExpanded { get => _process?.IsExpanded ?? false; set { if (_process is not null) _process.IsExpanded = value; } }
     public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null, IImageAttachmentClient? imageClient = null, string? workspace = null, CancellationToken ct = default,
-        MessageViewState? state = null)
+        MessageViewState? state = null, Action<string>? inspectDelegation = null)
     {
         _loadDetails = loadDetails;
-        _state = state ?? new(); _events = _state.Events; _flow = new(_state.Expansions, _state.FlowWindow);
+        _inspectDelegation = inspectDelegation;
+        _state = state ?? new(); _events = _state.Events; _flow = new(_state.Expansions, _state.FlowWindow) { InspectDelegation = inspectDelegation };
         _viewLifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _imageClient = imageClient; _workspace = workspace; _ct = _viewLifetime.Token;
         var panel = new StackPanel { Spacing = 12 };
@@ -111,7 +113,7 @@ public sealed class MessageCard : UserControl, IDisposable
             _details.Children.Clear();
             if (_message.Role == "user")
             {
-                var execution = new TurnContentView(_state.Expansions, _state.DetailWindow);
+                var execution = new TurnContentView(_state.Expansions, _state.DetailWindow) { InspectDelegation = _inspectDelegation };
                 execution.Update(result.ProcessItems, ""); _details.Children.Add(execution);
             }
             else

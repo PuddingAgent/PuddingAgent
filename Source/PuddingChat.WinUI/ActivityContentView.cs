@@ -8,10 +8,21 @@ internal sealed class ActivityContentView : StackPanel
 {
     private readonly Dictionary<string, (string Text, UIElement View)> _slots = [];
     public ActivityContentView() { Spacing = 8; }
-    public void Update(FlowBlock block)
+    public void Update(FlowBlock block, Action<string>? inspectDelegation = null)
     {
         var desired = new List<UIElement>();
         var keys = new HashSet<string>();
+        if (block.Kind == "delegation" && block.DelegationExecutionId is { Length: > 0 } runId && inspectDelegation is not null)
+        {
+            const string key = "inspect"; keys.Add(key);
+            if (!_slots.TryGetValue(key, out var slot) || slot.Text != runId)
+            {
+                var open = new Button { Content = "查看子代理详情" };
+                open.Click += (_, _) => inspectDelegation(runId);
+                slot = (runId, open); _slots[key] = slot;
+            }
+            desired.Add(slot.View);
+        }
         void Add(string key, string text, bool label = false)
         {
             keys.Add(key);

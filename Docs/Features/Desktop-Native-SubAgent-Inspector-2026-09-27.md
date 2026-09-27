@@ -23,4 +23,14 @@
 3. 委派卡以 DelegationExecutionId 打开独立检查区域/窗口，携带所选角色与当前父会话；没有精确执行 ID 时不提供猜测入口。关闭取消读操作；切换角色不得把旧回执显示到新角色。
 4. 用真实临时归档验证映射、身份隔离、空/损坏归档、缺失事件提示和零 HTTP，再接产品入口并验证生命周期。Web 详情、事件与输出接口的存在不等于原生检查器已经接入。
 
-当前状态：独立组件完成，Core 适配与产品入口未接入。
+## 进程内接入（2026-09-27 后续）
+
+`InProcessChatClient.SubAgents.cs` 已实现只读端口：通过已有 ExecuteAsync 生命周期直接调用角色文件服务、SessionRepository 与 ISubAgentRunStore。先校验角色/父会话，再核对归档 Manifest 的工作空间/父会话/Run；非法路径形状的 RunId 在读取前拒绝。没有 Controller 调用或聊天 HTTP。
+
+按真实生产归档字段投影 `subagent.llm.completed` 的思考/正文预览、`subagent.tool.started/completed/failed` 的调用、结果和错误；截断字段显示“归档仅保存截断预览”。归档数组顺序映射为稳定显示序列；未知事件保留类型和 payload 文本，不冒充已完成操作。完整结果读取 archive.Output，归档降级单独显示。当前归档服务读取整份文件，本适配不宣称 I/O 分页或大归档性能已经达标。
+
+TurnFlow 保留 DelegationExecutionId，展开的委派卡只有在精确 RunId 和客户端能力都存在时显示详情按钮。MessageCard、失败请求的执行明细和独立活动 Run 均接入回调；ChatWorkspace 打开独立 ContentDialog 并携带捕获的角色/父会话身份。切换角色取消并关闭旧检查器，关闭对话框释放读取；完整子代理内容仍不并入父消息。
+
+验证：原生窗口 118 项、BCL 50/50；真实 Core 组合 3/3（在既有零 HTTP 探针范围新增真实归档创建/完成/读取、工具失败信息、截断/未知事件、跨角色/会话/归档和非法 RunId 断言）。日志 temp/native-subagent-entry-final.log 与 temp/native-subagent-core-final.log。Core 构建保留既存分析器警告；未部署到运行中 Desktop，未调用真实模型。超大归档、主动刷新运行中归档的长期性能和真实委派交互仍待产品验收。
+
+当前状态：组件、直接调用适配与聊天入口已接入并通过隔离验证；真实产品部署验收未完成。

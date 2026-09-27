@@ -3,7 +3,7 @@ namespace PuddingChat;
 /// <summary>Presentation only: canonical order, contiguous text/thinking and explicit activity identity.</summary>
 public sealed record FlowBlock(string Key, string Kind, string Text, string Status,
     string? Name = null, string? Arguments = null, string? Output = null, int? ExitCode = null,
-    string? ParentKey = null, int Depth = 0);
+    string? ParentKey = null, int Depth = 0, string? DelegationExecutionId = null);
 
 public static class TurnFlow
 {
@@ -55,7 +55,8 @@ public static class TurnFlow
                 var first = events[0]; var latest = events[^1];
                 if (item.Id == first.Id)
                     blocks.Add(new(key, "delegation", first.Text, latest.Status, first.Name ?? latest.Name,
-                        Output: first.Id == latest.Id ? latest.Output : latest.Output ?? latest.Text));
+                        Output: first.Id == latest.Id ? latest.Output : latest.Output ?? latest.Text,
+                        DelegationExecutionId: first.DelegationExecutionId));
             }
             else blocks.Add(new(item.Id, item.Kind, item.Text, item.Status, item.Name, item.Arguments, item.Output, item.ExitCode));
             previousKind = item.Kind;

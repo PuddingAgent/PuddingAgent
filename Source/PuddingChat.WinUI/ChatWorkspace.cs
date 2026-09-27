@@ -46,6 +46,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private bool _active = true;
     private bool _addingImages;
     private bool _loadingWorkspaces;
+    private bool _inspectorOpen;
     private Task? _initialization;
     private long _workspaceGeneration;
     private Agent? _agent;
@@ -141,6 +142,23 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         Loaded += async (_, _) => { await GuardAsync(InitializeAsync); if (_active && _connected && !_disposed) _timer.Start(); };
         Unloaded += (_, _) => _timer.Stop();
     }
+    private Action<string>? InspectionHandler(RoleKey role, string parentSession, CancellationToken ct)
+        => _client is not ISubAgentInspectionClient ? null : async runId => await GuardAsync(async () =>
+        {
+            if (_inspectorOpen || _disposed || ct.IsCancellationRequested || SelectedRole != role
+                || CurrentConversation?.MainSessionId != parentSession) return;
+            _inspectorOpen = true;
+            try
+            {
+                using var view = new SubAgentInspector(new(role, parentSession, runId), (ISubAgentInspectionClient)_client)
+                    { Width = 650, Height = 500 };
+                var dialog = new ContentDialog { Title = "子代理运行", Content = view, CloseButtonText = "关闭", XamlRoot = XamlRoot };
+                using var registration = ct.Register(() => DispatcherQueue.TryEnqueue(() => { view.Dispose(); dialog.Hide(); }));
+                dialog.Opened += async (_, _) => await view.LoadAsync();
+                await dialog.ShowAsync();
+            }
+            finally { _inspectorOpen = false; }
+        });
     private async Task OpenConfigurationAsync(bool roleEditor)
     {
         if (_client is not IConfigurationClient config) return;
@@ -424,7 +442,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
                     var state = new MessageViewState();
                     item = new TranscriptItem(id, rendered,
                         row => new MessageCard((ChatMessage)row.Data, () => _client.GetProcessAsync(role, id, ct),
-                            _client as IImageAttachmentClient, role.WorkspaceId, ct, state),
+                            _client as IImageAttachmentClient, role.WorkspaceId, ct, state, InspectionHandler(role, snapshot.MainSessionId, ct)),
                         (view, data) => ((MessageCard)view).Update((ChatMessage)data));
                 }
                 else item.Update(rendered);
@@ -445,7 +463,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
                     var expansions = new Dictionary<string, bool>();
                     var flowWindow = new FlowWindow();
                     _livePanel = new($"run:{run.RunId}", output, row => {
-                        var view = new TurnContentView(expansions, flowWindow) { Padding = new Thickness(20) };
+                        var view = new TurnContentView(expansions, flowWindow) { Padding = new Thickness(20), InspectDelegation = InspectionHandler(role, snapshot.MainSessionId, ct) };
                         var data = (OutputSnapshot)row.Data; view.Update(data.ProcessItems, data.Markdown); return view;
                     }, (view, data) => { var value = (OutputSnapshot)data; ((TurnContentView)view).Update(value.ProcessItems, value.Markdown); });
                 }

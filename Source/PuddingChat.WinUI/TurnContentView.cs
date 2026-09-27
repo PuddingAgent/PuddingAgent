@@ -10,6 +10,7 @@ public sealed class TurnContentView : StackPanel
     private readonly IDictionary<string, bool> _expansions;
     private readonly FlowWindow _window;
     private FlowBlock[] _snapshot = [];
+    public Action<string>? InspectDelegation { get; init; }
     private readonly Button _earlier = new() { HorizontalAlignment = HorizontalAlignment.Left };
     public int HiddenCount => _window.Start(_snapshot);
     public TurnContentView() : this(new Dictionary<string, bool>()) { }
@@ -91,13 +92,13 @@ public sealed class TurnContentView : StackPanel
         for (var i = 0; i < desired.Count; i++)
             if (i >= Children.Count || !ReferenceEquals(Children[i], desired[i])) { Children.Remove(desired[i]); Children.Insert(i, desired[i]); }
     }
-    private static void RenderDisclosure(Expander expander, FlowBlock block)
+    private void RenderDisclosure(Expander expander, FlowBlock block)
     {
         var scroll = expander.Content as ScrollViewer ?? new ScrollViewer { MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         var offset = scroll.VerticalOffset;
         var followLatest = scroll.ScrollableHeight - offset < 24;
         var content = scroll.Content as ActivityContentView ?? new ActivityContentView();
-        content.Update(block);
+        content.Update(block, InspectDelegation);
         scroll.Content = content; expander.Content = scroll;
         if (scroll.IsLoaded) { scroll.UpdateLayout(); scroll.ChangeView(null, followLatest ? scroll.ScrollableHeight : offset, null, true); }
     }

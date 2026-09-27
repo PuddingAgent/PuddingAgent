@@ -240,3 +240,9 @@ BCL 50/50、原生窗口 108 项通过，构建零警告零错误（temp/native-
 核对 Web SubAgentActivityDock、subAgentReducer 与 Core SubAgentRunController 后，新增精确角色/父会话/Run 绑定的只读检查合同和 SubAgentInspector。任务、执行活动和完整结果分区显示；真实状态/时间/统计及归档降级提示保留，刷新失败标示旧快照，关闭取消等待并忽略晚到结果。主消息摘要保持独立，不把子代理内部过程混入父会话。
 
 BCL 50/50、原生窗口 115 项通过，零构建警告/错误（temp/native-subagent-inspector-final.log）。新增 7 项涵盖并发去重、1000 字结果不截断、降级提示、失败回退、跨 Run/角色拒绝、关闭晚到结果。当前只是独立组件完成，未登记生产 Core 归档适配或聊天入口；后续精确接线门禁见 Desktop-Native-SubAgent-Inspector-2026-09-27.md。本轮不修改 Core/Host 或运行数据。
+
+## 子代理详情直接调用接入（2026-09-27）
+
+Composition 的 InProcessChatClient.SubAgents 直接读取 ISubAgentRunStore，前置校验角色/父会话，后置核对 Manifest 的 workspace/parentSession/run；没有 HTTP 或 Controller 转发。原生显示归档真实思考/正文预览、工具输入/结果/错误与未知事件，截断标记显式保留；完整结果取归档 Output。FlowBlock 保留 DelegationExecutionId，委派卡以精确 RunId 打开原生对话框，角色切换关闭并取消旧检查器；缺失精确 ID 或客户端能力时不提供猜测入口。
+
+验证：BCL 50/50、原生窗口 118 项，控件构建零警告零错误；真实 Core 组合 3/3，既有零 HTTP 探针覆盖新增真实归档往返，包含错误结果保留、未知事件、截断提示与跨角色/父会话/运行隔离（temp/native-subagent-entry-final.log、temp/native-subagent-core-final.log）。Core 构建有既存警告。当前实现通过 Core 现有整份归档读取，不宣称磁盘分页或超大归档性能达标；未调用真实模型或替换运行中 Desktop。

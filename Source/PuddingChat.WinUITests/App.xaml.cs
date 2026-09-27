@@ -180,9 +180,10 @@ public partial class App : Application
                 await VerifyCodeBlockAsync((Grid)control.Content);
                 await VerifyActivityStreamingAsync((Grid)control.Content);
                 await VerifySubAgentInspectorAsync((Grid)control.Content);
+                await VerifySubAgentEntryAsync(control, fixture);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 115, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 118, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -190,7 +191,7 @@ public partial class App : Application
         _window.Activate();
     }
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
-    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity, IConversationHistory
+    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity, IConversationHistory, ISubAgentInspectionClient
     {
         public int MaxImagesPerMessage => 600;
         public Task<AttachedImage> ImportImageAsync(RoleKey role, string path, CancellationToken ct) => Task.FromResult(new AttachedImage("vision-fixture", Path.GetFileName(path), "image/png", 1, 1));
@@ -214,6 +215,10 @@ public partial class App : Application
         public Task<ModelChoice[]> GetSetupModelsAsync(CancellationToken ct) => Task.FromResult<ModelChoice[]>([]);
         public Task<WorkspaceSetupResult> SetupWorkspaceAsync(WorkspaceSetupRequest request, CancellationToken ct)
         { Setup = request; return Task.FromResult(new WorkspaceSetupResult(request.WorkspaceId, "builder")); }
+        public bool ShowDelegation;
+        public SubAgentInspectionKey? Inspected;
+        public Task<SubAgentInspection> ReadAsync(SubAgentInspectionKey key, CancellationToken ct)
+        { Inspected = key; return Task.FromResult(new SubAgentInspection(key, "completed", "委派任务", "完整结果", [], DateTimeOffset.UnixEpoch)); }
         public Agent Builder = new("builder", "代码工程师", Description: "实现功能与修复");
         public Agent Reviewer = new("reviewer", "代码审阅者", Description: "检查边界与验证");
         public PendingSend? Sent; public string? Cancelled; public bool Disposed;
@@ -224,7 +229,8 @@ public partial class App : Application
         public Task<AgentStatus[]> GetStatusesAsync(string workspace, CancellationToken ct) => Task.FromResult<AgentStatus[]>([new("builder", "idle", "待命", 0)]);
         public Conversation Conversation(string agent) => new("test", agent, "session",
             Sent is null ? [] : [new("m", null, "user", "用户", DateTimeOffset.UtcNow, "implement", "accepted", []),
-                new("a", "r", "assistant", "代码工程师", DateTimeOffset.UtcNow, "# 进度\n```cs\nvar result = 1;\n```", "running", [])],
+                new("a", "r", "assistant", "代码工程师", DateTimeOffset.UtcNow, "# 进度\n```cs\nvar result = 1;\n```", "running",
+                    ShowDelegation ? [new("child-run", "delegation", "done", "委派摘要", 10, "reviewer", DelegationExecutionId: "exact-child-run")] : [])],
             Sent is null || Terminal ? null : new("r", "running", "执行中", "编译", new(Streaming ? "流式正文" : "输出", [new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn")], new("turn", 2, 2, 2, false))),
             Sent is null ? 0 : Terminal ? 4 : Streaming ? 3 : 2, Sent is null ? null : new(10, 2));
         public int HistoryReads;
