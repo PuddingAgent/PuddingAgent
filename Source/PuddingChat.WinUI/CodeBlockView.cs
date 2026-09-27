@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Documents;
 
 namespace PuddingChat.WinUI;
 
@@ -14,7 +15,11 @@ public sealed class CodeBlockView : UserControl
     private readonly Button _copy = new() { Content = "复制代码" };
     private readonly ToggleButton _wrap = new() { Content = "自动换行" };
     private readonly ScrollViewer _scroll;
-    public string Code => _code.Text;
+    private readonly Windows.UI.ViewManagement.AccessibilitySettings _accessibility = new();
+    private string _source = "", _languageId = "";
+    private bool _accessibilitySubscribed;
+    public string Code => _source;
+    public bool IsSyntaxHighlighted { get; private set; }
     public bool WrapLines { get => _wrap.IsChecked == true; set => _wrap.IsChecked = value; }
     public CodeBlockView(string code, string language)
     {
@@ -31,6 +36,20 @@ public sealed class CodeBlockView : UserControl
         var surface = Surfaces.Card("SubtleFillColorSecondaryBrush"); surface.Padding = new Thickness(12);
         surface.CornerRadius = new CornerRadius(8); surface.Child = panel; Content = surface;
         _wrap.Checked += (_, _) => ApplyWrapping(); _wrap.Unchecked += (_, _) => ApplyWrapping();
+        ActualThemeChanged += (_, _) => RenderCode();
+        Loaded += (_, _) =>
+        {
+            if (!_accessibilitySubscribed)
+            {
+                try { _accessibility.HighContrastChanged += OnHighContrastChanged; _accessibilitySubscribed = true; }
+                catch (System.Runtime.InteropServices.COMException) { /* Some unpackaged hosts cannot register this notification. */ }
+            }
+            RenderCode();
+        };
+        Unloaded += (_, _) =>
+        {
+            if (_accessibilitySubscribed) { _accessibility.HighContrastChanged -= OnHighContrastChanged; _accessibilitySubscribed = false; }
+        };
         _copy.Click += (_, _) =>
         {
             try
@@ -44,11 +63,38 @@ public sealed class CodeBlockView : UserControl
     }
     public void Update(string code, string language)
     {
-        if (_code.Text != code) { _code.Text = code; _copy.Content = "复制代码"; }
+        var languageId = language.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant() ?? "";
+        languageId = languageId switch { "cs" or "csharp" => "c#", "js" => "javascript", "ts" => "typescript", "py" => "python", "ps1" or "pwsh" => "powershell", "c++" => "cpp", "yml" => "yaml", _ => languageId };
+        if (_source != code || _languageId != languageId)
+        { _source = code; _languageId = languageId; _copy.Content = "复制代码"; RenderCode(); }
         _language.Text = string.IsNullOrWhiteSpace(language) ? "代码" : language;
         ToolTipService.SetToolTip(_language, _language.Text);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_code, $"{_language.Text} 代码");
     }
+    private void OnHighContrastChanged(Windows.UI.ViewManagement.AccessibilitySettings sender, object args)
+        => DispatcherQueue.TryEnqueue(RenderCode);
+    private void RenderCode()
+    {
+        IsSyntaxHighlighted = false;
+        _code.Inlines.Clear(); _code.Text = "";
+        // Bound synchronous presentation work; full source remains selectable/copyable in fallback.
+        if (_source.Length <= 16_384 && !_accessibility.HighContrast)
+        {
+            try
+            {
+                var language = ColorCode.Languages.FindById(_languageId);
+                if (language is not null)
+                {
+                    new ColorCode.RichTextBlockFormatter(ActualTheme).FormatInlines(_source, language, _code.Inlines);
+                    if (InlineText(_code.Inlines) == _source) { IsSyntaxHighlighted = true; return; }
+                }
+            }
+            catch (Exception) { /* Unknown syntax or formatter failure must never hide the source. */ }
+        }
+        _code.Inlines.Clear(); _code.Text = _source;
+    }
+    private static string InlineText(IEnumerable<Inline> inlines) => string.Concat(inlines.Select(inline => inline switch
+    { Run run => run.Text, Span span => InlineText(span.Inlines), LineBreak => "\n", _ => "" }));
     private void ApplyWrapping()
     {
         _code.TextWrapping = WrapLines ? TextWrapping.Wrap : TextWrapping.NoWrap;

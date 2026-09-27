@@ -10,7 +10,7 @@
 | 流式正文、真实思考与工具链 | ConversationActivity、TurnFlow、TurnContentView、ActivityContentView；canonical 顺序、调用 ID 配对、默认展开思考、懒加载工具内容 | 已实现并有组件测试；真实模型长会话及取消仍需验收 |
 | 稳定阅读与长记录 | VirtualTranscript、FlowWindow、ReadingBookmark、历史直接调用端口 | 窗口覆盖消息虚拟化、渐进展开、阅读锚点；单 Turn 全展开、巨型文本与长期内存指标待验 |
 | 消息/输入布局 | MessageCard、ChatComposer，用户消息靠右、900 DIP 阅读宽度、窄输入栏两行 | 窗口覆盖 320/360/900 DIP 输入区；整窗主题、DPI、字体缩放、键盘及 IME 尚缺完整矩阵 |
-| 原 Web 富文本能力 | MarkdownView 原生 GFM、CodeBlockView、ImageAttachmentView | 代码复制/换行、列表表格链接及受控图片已具备；语法高亮、公式、Markdown 生成图片资源解析尚未实现 |
+| 原 Web 富文本能力 | MarkdownView 原生 GFM、CodeBlockView 通过 ColorCode 渲染原生语法高亮、ImageAttachmentView | 代码复制/换行/常见语言着色、列表表格链接及受控图片已具备；公式、Markdown 生成图片资源解析未实现。长代码不着色但保留全文，高对比度实时通知受宿主能力限制 |
 | 图片与一般上下文附件 | 原生选图/剪贴板/拖放→Core Artifact→typed input parts | 图片合同与解码已测；系统选择器实际操作、真实视觉调用待验，一般文件上下文入口未接入 |
 | 审批卡与真实工具恢复 | ApprovalCard、PuddingApproval、SqliteApprovalStore 独立组件；Runtime 保留准入状态 | 未完成：请求生产者、持久暂停/恢复、Core 决定端口及产品待审批区域未接线。不能用独立卡片测试替代闭环 |
 | 子代理与其他聊天富交互 | TurnFlow 保留精确 RunId；原生检查器经 Composition 读取 Core 归档，委派卡入口已接入；窗口 118 项与 Core 3/3 隔离验证 | 真实模型委派交互、超大归档性能待验；语音聊天尚未迁移 |

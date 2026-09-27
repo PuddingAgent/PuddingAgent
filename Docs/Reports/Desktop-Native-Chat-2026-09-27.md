@@ -246,3 +246,13 @@ BCL 50/50、原生窗口 115 项通过，零构建警告/错误（temp/native-su
 Composition 的 InProcessChatClient.SubAgents 直接读取 ISubAgentRunStore，前置校验角色/父会话，后置核对 Manifest 的 workspace/parentSession/run；没有 HTTP 或 Controller 转发。原生显示归档真实思考/正文预览、工具输入/结果/错误与未知事件，截断标记显式保留；完整结果取归档 Output。FlowBlock 保留 DelegationExecutionId，委派卡以精确 RunId 打开原生对话框，角色切换关闭并取消旧检查器；缺失精确 ID 或客户端能力时不提供猜测入口。
 
 验证：BCL 50/50、原生窗口 118 项，控件构建零警告零错误；真实 Core 组合 3/3，既有零 HTTP 探针覆盖新增真实归档往返，包含错误结果保留、未知事件、截断提示与跨角色/父会话/运行隔离（temp/native-subagent-entry-final.log、temp/native-subagent-core-final.log）。Core 构建有既存警告。当前实现通过 Core 现有整份归档读取，不宣称磁盘分页或超大归档性能达标；未调用真实模型或替换运行中 Desktop。
+
+## 原生代码语法高亮（2026-09-27）
+
+新增展示层 ColorCode.WinUI 2.0.15（MIT）依赖，使用 RichTextBlockFormatter.FormatInlines 在既有 TextBlock 上着色，不引入 WebView、Roslyn 或 Core 引用。语言别名支持 cs/csharp、js、ts、py、pwsh/ps1 等；实际语法集由库提供。原始代码独立保存供复制，格式化后逐 Inline 对照全文，内容不一致或格式化异常回退完整纯文本。未知语言、高对比度及超过 16,384 字符同样保留全文并跳过着色。该阈值是保守实现上限，不是长期性能验收结论。
+
+按 ActualTheme 选择浅/深色样式；系统支持时订阅高对比度变化。实际非打包测试宿主订阅该 WinRT 事件返回 0x80070490，现捕获此特定 COM 失败以防窗口崩溃，仍在加载、主题或代码变化时重新检查高对比度。不能宣称这个宿主已完成高对比度即时切换验收。
+
+验证：BCL 50/50、原生窗口 125 项，零构建警告/错误（temp/native-code-highlight-final.log）。新增 7 项覆盖 C# 彩色 Inline、实际浅/深主题、追加时换行与原文保留、JSON/JavaScript/Python/PowerShell、未知语言、20K 完整纯文本回退与 CRLF 无损。既有代码横向阅读和活动嵌套测试继续通过。未修改 Core 或部署当前 Desktop。
+
+来源：[官方仓库](https://github.com/CommunityToolkit/ColorCode-Universal)、[WinUI 包与许可](https://www.nuget.org/packages/ColorCode.WinUI/2.0.15)、[格式化器源文件](https://github.com/CommunityToolkit/ColorCode-Universal/blob/e6c2701c365a7a91d74d7ef38a6b60075008ce94/ColorCode.UWP/RichTextBlockFormatter.cs)。采用包元数据所声明的版本和 MIT 许可，未复制上游源码到项目。
