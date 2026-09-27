@@ -1399,3 +1399,7 @@ ChatComposer/ChatWorkspace 已组合 NativeVoiceCapture、VoiceInputControl 与 
 ## 2026-09-27 外部 Markdown 图片原生预览
 
 `PuddingChat/RemoteImages.cs` 定义地址/数据合同，`PuddingChat.WinUI/RemoteImageSource.cs` 与 `RemoteImageView.cs` 实现按需外部图片获取、限流量/时间和原生解码；MarkdownImageContext 已接入正文及活动内容。79 逻辑/218 窗口检查通过（替身 HTTP + 真实解码），没有新增 Desktop/Core HTTP 路由。详见原生聊天完成度核对。
+
+## 2026-09-27 Web 语音范围核查
+
+VoiceConversationPanel 源码为手动录音/确认发送/手动朗读，未实现回复后自动循环收音；DashScope 文件 ASR 无中间转写。原生仍缺语音来源元数据等对齐项与真实设备/供应商验收。核查证据及“持续语音”术语澄清见 `Docs/Features/Desktop-Native-Voice-2026-09-27.md`，不将基础流程装配等同完整目标达成。

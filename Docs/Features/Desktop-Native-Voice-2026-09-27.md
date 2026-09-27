@@ -80,3 +80,14 @@ ChatWorkspace 增加 IAsyncDisposable，立即取消后等待设备释放；Main
 77 逻辑/209 原生窗口检查通过，零组件构建警告/错误，日志 `temp/native-voice-workspace.log`；新增完整工作台的角色绑定、确认追加、角色切换取消、草稿冲突、离开取消和等待设备释放断言。真实 WinUI 控件加替身录音/ASR，未启动真实麦克风或付费供应商；宽/窄/深色截图中已包含语音入口，窄屏截图已检查。完整产品生命周期证据另记，不能以这些组件检查替代实际录音质量或供应商验收。
 
 完整 Desktop 产品隔离生命周期测试通过（PID 45336，报告 temp/test-out/kernel-winui-4fec4db0fdd44982b357ce4256a39f79/report.json）：原生聊天挂载、角色/文件草稿、UI 回调、Core 重启后新建聊天区、数据目录配置保存、退出及锁释放。构建零错误/147 个既有警告，日志 temp/native-voice-product.log；该构建来自共享工作树，不是单独提交的隔离构建。此测试未实际录音，不能代替设备/供应商验收。
+
+## Web 语音会话范围核查（2026-09-27）
+
+源码依据：`Source/PuddingPlatformAdmin/src/pages/chat/components/VoiceConversationPanel.tsx` 的 startCapture、sendVoiceMessage、speakLatestAnswer，以及 `hooks/dashScopeVoiceInput.ts`。
+
+- Web 面板状态为 idle/requesting_permission/recording/transcribing/awaiting_confirmation/sending/failed；收音、发送和朗读均由按钮触发。最终转写进入待确认草稿，发送需要明确操作；源码未实现“回复后自动重开麦克风”的循环。
+- Web 面板可编辑转写草稿，并有最新回复朗读快捷入口。原生目前将结果确认加入标准输入区后编辑/发送，朗读入口在各条消息上；这覆盖基础用户流程，但不等于所有快捷入口、来源元数据和状态观测均已对齐。
+- Web 发送语音消息附 inputMode、voiceSessionId、asrProvider、asrModel、language；当前原生只发送最终文本，这一来源信息仍需真实合同接线，不能照抄旧代码硬编码的 browser/web-speech 供应商信息。
+- 面板支持 onInterimTranscript 回调，但 DashScope 文件适配器明确没有流式中间结果，stop 后返回一次最终文本；不能将组件支持的回调直接认定为所有服务商已经提供流式 ASR。
+
+此前文档使用“持续语音会话”泛指剩余语音范围，容易被误读为已有自动循环通话待迁移。本核查将既有 Web 等价能力与自动循环通话扩展区分开；自动循环并未因基础组件完成而实现，也不能据此宣布完整语音目标达成。后续优先补来源元数据与真实设备/供应商验证，最新回复入口和中间转写按实际合同补齐；自动循环通话需单独明确交互及执行边界。

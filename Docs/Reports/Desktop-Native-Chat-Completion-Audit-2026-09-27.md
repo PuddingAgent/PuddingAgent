@@ -96,3 +96,14 @@ RemoteImageReference 只接受不含用户信息的 HTTP(S) 地址；IRemoteImag
 RemoteImageView 在收起/真实卸载时取消并释放图片，迟到数据不再展示；InlineUIContainer 的短暂布局卸载在队列中确认后再处理。MarkdownImageContext 接通消息正文及思考/工具等既有 Markdown 内容，流式追加保留相同图片控件与已解码内容。失败可收起后重试；网络请求是外部图片获取，不是 Desktop/Core HTTP。
 
 79 逻辑/218 窗口检查通过，零构建警告/错误，日志 temp/native-remote-images.log。新增地址规则、真实 WinRT 图片解码、无自动请求、显式展开、声明长度/无长度超限、凭据重定向拒绝、取消及流式控件复用检查。HTTP 使用替身 Handler，不依赖外网；完整 Desktop 部署与真实网站网络表现不在本轮证据范围内。
+
+## Web 语音会话范围核查（2026-09-27）
+
+源码依据：`Source/PuddingPlatformAdmin/src/pages/chat/components/VoiceConversationPanel.tsx` 的 startCapture、sendVoiceMessage、speakLatestAnswer，以及 `hooks/dashScopeVoiceInput.ts`。
+
+- Web 面板状态为 idle/requesting_permission/recording/transcribing/awaiting_confirmation/sending/failed；收音、发送和朗读均由按钮触发。最终转写进入待确认草稿，发送需要明确操作；源码未实现“回复后自动重开麦克风”的循环。
+- Web 面板可编辑转写草稿，并有最新回复朗读快捷入口。原生目前将结果确认加入标准输入区后编辑/发送，朗读入口在各条消息上；这覆盖基础用户流程，但不等于所有快捷入口、来源元数据和状态观测均已对齐。
+- Web 发送语音消息附 inputMode、voiceSessionId、asrProvider、asrModel、language；当前原生只发送最终文本，这一来源信息仍需真实合同接线，不能照抄旧代码硬编码的 browser/web-speech 供应商信息。
+- 面板支持 onInterimTranscript 回调，但 DashScope 文件适配器明确没有流式中间结果，stop 后返回一次最终文本；不能将组件支持的回调直接认定为所有服务商已经提供流式 ASR。
+
+此前文档使用“持续语音会话”泛指剩余语音范围，容易被误读为已有自动循环通话待迁移。本核查将既有 Web 等价能力与自动循环通话扩展区分开；自动循环并未因基础组件完成而实现，也不能据此宣布完整语音目标达成。后续优先补来源元数据与真实设备/供应商验证，最新回复入口和中间转写按实际合同补齐；自动循环通话需单独明确交互及执行边界。
