@@ -478,6 +478,169 @@ public sealed class SqliteExecutionJournal(
     }
 
     /// <summary>
+    /// NC-01：审批暂停 park —— 把 Turn/Run/Command 收敛为非终态 waiting_approval，
+    /// 把恢复点持久化进命令 metadata_json，并释放租约使执行槽位立即可复用。
+    /// 与 <see cref="ParkForChildrenAsync"/> 同构；差别是本 API 持久化的是「续行所需的恢复点」，
+    /// 而不是「待提交终态」，唤醒后要继续执行而不是只写终态。
+    /// </summary>
+    public async Task<ExecutionApprovalParkResult?> ParkForApprovalAsync(
+        ExecutionLease lease,
+        ApprovalResumePoint resumePoint,
+        IReadOnlyList<NewConversationEvent> pendingEvents,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(resumePoint);
+        // 非法恢复点一律抛错，绝不静默 park 一个无法续行的暂停。
+        resumePoint.Validate();
+        resumePoint.ValidateAgainstLease(lease);
+        if (pendingEvents.Any(e => IsTerminalType(e.Type)))
+            throw new InvalidOperationException(
+                "ParkForApprovalAsync rejects terminal events. Use CommitTerminalAsync.");
+
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var conn = db.Database.GetDbConnection();
+        await OpenConnectionAsync(conn, lease, ct);
+
+        using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
+        try
+        {
+            var runMatches = false;
+            using (var guardCmd = conn.CreateCommand())
+            {
+                guardCmd.Transaction = tx;
+                guardCmd.CommandText = @"
+                    SELECT worker_id, fencing_token, status
+                    FROM execution_runs
+                    WHERE run_id = @runId";
+                AddParam(guardCmd, "@runId", lease.RunId);
+                using var reader = await guardCmd.ExecuteReaderAsync(ct);
+                runMatches = await reader.ReadAsync(ct)
+                    && reader.GetString(0) == lease.WorkerId
+                    && reader.GetInt64(1) == lease.FencingToken
+                    && reader.GetString(2) == "running";
+            }
+
+            if (!runMatches)
+            {
+                await tx.RollbackAsync(ct);
+                logger.LogWarning(
+                    "[Journal] Approval park rejected run={RunId} fence={Fence}",
+                    lease.RunId,
+                    lease.FencingToken);
+                return null;
+            }
+
+            var resumeJson = resumePoint.ToJson();
+
+            long lastSeq = 0;
+            if (pendingEvents.Count > 0)
+            {
+                var pendingResult = await AppendEventsInternalAsync(
+                    conn, tx, lease, pendingEvents, ct);
+                lastSeq = pendingResult.LastSequence;
+            }
+
+            using (var turnCmd = conn.CreateCommand())
+            {
+                turnCmd.Transaction = tx;
+                turnCmd.CommandText = @"
+                    UPDATE conversation_turns
+                    SET status = @status
+                    WHERE turn_id = @turnId
+                      AND status = 'running'
+                      AND terminal_sequence IS NULL";
+                AddParam(turnCmd, "@status", ApprovalResumePoint.WaitingApprovalStatus);
+                AddParam(turnCmd, "@turnId", lease.TurnId);
+                var turnAffected = await turnCmd.ExecuteNonQueryAsync(ct);
+                if (turnAffected != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[Journal] Approval park rejected turn={TurnId} rows={Rows}",
+                        lease.TurnId,
+                        turnAffected);
+                    return null;
+                }
+            }
+
+            using (var runCmd = conn.CreateCommand())
+            {
+                runCmd.Transaction = tx;
+                runCmd.CommandText = @"
+                    UPDATE execution_runs
+                    SET status = @status,
+                        lease_until = NULL
+                    WHERE run_id = @runId
+                      AND fencing_token = @fenceToken
+                      AND worker_id = @workerId
+                      AND status = 'running'";
+                AddParam(runCmd, "@status", ApprovalResumePoint.WaitingApprovalStatus);
+                AddParam(runCmd, "@runId", lease.RunId);
+                AddParam(runCmd, "@fenceToken", lease.FencingToken);
+                AddParam(runCmd, "@workerId", lease.WorkerId);
+                var runAffected = await runCmd.ExecuteNonQueryAsync(ct);
+                if (runAffected != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[Journal] Approval park rejected run update run={RunId} rows={Rows}",
+                        lease.RunId,
+                        runAffected);
+                    return null;
+                }
+            }
+
+            using (var cmdCmd = conn.CreateCommand())
+            {
+                cmdCmd.Transaction = tx;
+                cmdCmd.CommandText = @"
+                    UPDATE chat_execution_commands
+                    SET status = @status,
+                        approval_resume_json = @resumeJson,
+                        lease_owner = NULL,
+                        lease_until = NULL
+                    WHERE command_id = @commandId
+                      AND status IN ('running', 'cancel_requested')";
+                AddParam(cmdCmd, "@status", ApprovalResumePoint.WaitingApprovalStatus);
+                AddParam(cmdCmd, "@resumeJson", resumeJson);
+                AddParam(cmdCmd, "@commandId", lease.CommandId);
+                var cmdAffected = await cmdCmd.ExecuteNonQueryAsync(ct);
+                if (cmdAffected != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[Journal] Approval park rejected command={CommandId} rows={Rows}",
+                        lease.CommandId,
+                        cmdAffected);
+                    return null;
+                }
+            }
+
+            await tx.CommitAsync(ct);
+            if (pendingEvents.Count > 0)
+                signal.Signal(lease.ConversationId, lastSeq);
+
+            logger.LogInformation(
+                "[Journal] Parked for approval run={RunId} turn={TurnId} cmd={CmdId} approval={ApprovalId} invocation={InvocationId} seq={Seq}",
+                lease.RunId,
+                lease.TurnId,
+                lease.CommandId,
+                resumePoint.ApprovalId,
+                resumePoint.InvocationId,
+                lastSeq);
+
+            return new ExecutionApprovalParkResult(lastSeq, pendingEvents.Count);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    /// <summary>
     /// A01-slice-4c：唤醒收口 —— 父 Turn 已无 running 子代理时，把 park 的父 Turn 收敛为终态。
     /// 以 WHERE status = 'waiting_child' 的 CAS 抢占唯一收口权：并发或重复触发只允许一次成功，
     /// 其余调用返回 null（绝不写第二个终态事件）。终态事件与 park 时持久化的待提交终态逐字节一致。

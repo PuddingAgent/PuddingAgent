@@ -17,6 +17,33 @@ public interface IExecutionLeaseStore
         CancellationToken ct);
 
     /// <summary>
+    /// NC-01：领取一次「已批准的人工审批暂停」，从同一 invocation 续行。
+    /// 与 <see cref="TryAcquireAsync"/> 并列为 Worker 扣减执行槽位的两条入口。
+    /// <para>
+    /// 单事务内以 CAS 保证「一次暂停只被恢复一次」：
+    ///   1. 定位 Turn 处于 <see cref="ApprovalResumePoint.WaitingApprovalStatus"/> 的行，
+    ///      读出 command metadata 中的恢复点并严格解析（版本/形状/边界不符即放弃）。
+    ///   2. Command waiting_approval → leased（尝试次数 +1）。这是唯一性闸门，只有一次成功。
+    ///   3. 旧 Run waiting_approval → <see cref="ApprovalResumePoint.ResumedRunStatus"/>，清空租约。
+    ///   4. Turn waiting_approval → running（CAS，terminal_sequence 必须为空）。
+    ///   5. 新建 Run 行取得<b>更高的 fencing token</b>，使旧 worker 的写入被围栏挡下。
+    /// </para>
+    /// <para>
+    /// 返回 null 表示本次没有可恢复的暂停（未 park / 已被他人恢复 / 恢复点不可解析 /
+    /// 冻结截止时间已过）。冻结截止时间已过时不再续行，由超时收口负责终态。
+    /// </para>
+    /// <para>
+    /// 本方法<b>不</b>校验审批是否已批准，也<b>不</b>消费许可：调用方必须先确认权威审批状态为
+    /// Approved 且未消费，再在派发前按一次性语义消费。拿到租约不等于已获得执行许可。
+    /// </para>
+    /// </summary>
+    Task<ApprovalResumeAcquireResult?> TryAcquireApprovalResumeAsync(
+        string workerId,
+        string turnId,
+        TimeSpan duration,
+        CancellationToken ct);
+
+    /// <summary>
     /// 续约。必须传入完整 lease 信息（runId + workerId + fencingToken）。
     /// WHERE run_id = @runId AND worker_id = @workerId AND fencing_token = @fencingToken
     ///   AND status IN ('leased','running','cancel_requested') AND lease_until >= @now。

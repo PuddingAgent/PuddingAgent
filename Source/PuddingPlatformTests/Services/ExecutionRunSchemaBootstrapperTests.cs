@@ -35,6 +35,45 @@ public sealed class ExecutionRunSchemaBootstrapperTests
             "trace_id"));
     }
 
+    /// <summary>
+    /// NC-01：审批暂停恢复点是独立列（metadata_json 上限 4096，装不下恢复点），
+    /// 历史库必须被幂等补列。
+    /// </summary>
+    [TestMethod]
+    public async Task EnsureCreatedAsync_AddsApprovalResumeColumnToLegacyCommandTable()
+    {
+        await using var scope = await CreateLegacyDatabaseAsync();
+        await scope.Db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE "chat_execution_commands" (
+                "id" INTEGER NOT NULL CONSTRAINT "PK_chat_execution_commands" PRIMARY KEY AUTOINCREMENT,
+                "command_id" TEXT NOT NULL
+            );
+            """);
+
+        await ExecutionRunSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
+        await ExecutionRunSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
+
+        Assert.IsTrue(await ColumnExistsAsync(
+            scope.Db,
+            "chat_execution_commands",
+            "approval_resume_json"));
+    }
+
+    /// <summary>缺少 chat_execution_commands 表时跳过补列，不因 ALTER 不存在的表而失败。</summary>
+    [TestMethod]
+    public async Task EnsureCreatedAsync_SkipsMissingTableWithoutFailing()
+    {
+        await using var scope = await CreateLegacyDatabaseAsync();
+
+        await ExecutionRunSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
+
+        Assert.IsFalse(await ColumnExistsAsync(
+            scope.Db,
+            "chat_execution_commands",
+            "approval_resume_json"));
+    }
+
     private static async Task<TestDatabaseScope> CreateLegacyDatabaseAsync()
     {
         var connection = new SqliteConnection("Data Source=:memory:");

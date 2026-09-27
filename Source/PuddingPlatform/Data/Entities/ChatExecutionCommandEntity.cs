@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PuddingPlatform.Data.Entities;
@@ -93,6 +93,14 @@ public class ChatExecutionCommandEntity
     /// <summary>JSON 格式的附加元数据（如 vision_artifact_id）。</summary>
     [MaxLength(4096), Column("metadata_json")]
     public string? MetadataJson { get; set; }
+
+    /// <summary>
+    /// NC-01：人工审批暂停的恢复点（<c>ApprovalResumePoint.ToJson()</c>）。
+    /// 刻意<b>不</b>放进 4096 上限的 metadata_json：恢复点要携带 Runtime 的会话历史与批次状态，
+    /// 量级远超「附加元数据」。非空表示该命令正处于 waiting_approval，且只有一次恢复机会。
+    /// </summary>
+    [Column("approval_resume_json")]
+    public string? ApprovalResumeJson { get; set; }
 
     /// <summary>
     /// Gateway terminal reply 投影已结算的时间。路由永久拒绝时，MetadataJson 中

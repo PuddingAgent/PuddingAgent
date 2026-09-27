@@ -1,3 +1,11 @@
+## 2026-09-27 NC-01 审批暂停恢复点（S1/S2 存储与调度片）
+
+`PuddingCode.Platform.ApprovalResumePoint`（`Source/PuddingCore/Platform/ApprovalResumeContracts.cs`）定义带版本的持久恢复点：身份绑定（workspace/agent/session/run/turn/command/invocation/approvalId）、原操作快照（toolId/args/定义/执行根/policyRevision）、冻结预算（截止时间/轮次/工具调用数/轮次位置）与 Runtime 私有状态 `RuntimeStateJson`（有版本、有 4 MiB 上限、必须是 JSON 对象）。`ToJson`/`TryParse` 是同一份实现，未知版本或任何越界一律拒绝还原。
+
+`SqliteExecutionJournal.ParkForApprovalAsync` 把 Turn/Run/Command 收敛为非终态 `waiting_approval`、flush pending 输出、释放租约且**不写终态**，恢复点写入 `chat_execution_commands.approval_resume_json` 独立列（不并入 4096 上限的 metadata_json；`ExecutionRunSchemaBootstrapper` 幂等补列，表缺失时跳过）。`SqliteExecutionLeaseStore.TryAcquireApprovalResumeAsync` 以五个 CAS 实现「一次暂停只被恢复一次」：定位暂停行 → command 唯一性闸门 → 旧 run 记 `resumed` → Turn 回 `running` → 新建 run 行取得更高 fencing token 使旧租约被围栏挡下。
+
+验证：`ApprovalPauseResumeTests` 14 项 + `ExecutionRunSchemaBootstrapperTests` 4 项通过，日志 `temp/nc01-approval-pause.log`。设计、逐字段来源与未交付边界见 `Docs/Features/Desktop-Native-Approval-Pause-Resume-Design-2026-09-27.md`。**Runtime 尚未产生恢复点、Coordinator/Worker 未接线，因此不能声称 Run 可暂停或审批闭环完成。**
+
 ## 2026-09-27 原生聊天 NC-00 收口：准入等待不计入工具熔断
 
 `ToolInvocationService` 的 `RecordError` 排除列表补上 `HumanDecisionRequired`（原先只排除 428 / `RequestLimitExceeded` / `DependencyWait`）；`FailedToolCallTracker.Observe` 对 `DependencyWait`/`HumanDecisionRequired` 直接早退，既不累计重复失败，也不清除此前真实失败。动机：两种准入等待都走 `ToolExecutionResult.Fail`（`Success=false`），此前会被错误熔断与 `execution_stalled` 误判为失败。语义与 ADR-091 §4.4（typed disposition 不得折叠）及既有 §14.9.1 对 `DependencyWait` 的排除同源；真实拒绝仍计错误，428/限流豁免、硬拒绝与预算不变。验证：`FailedToolCallTrackerTests` + `HumanDecision_ExecutorPreservesTypedDenialWithoutExecuting` 定向 7 项通过（`temp/nc00-runtime-directed.log`）。此项只改计数，不创建审批请求、不暂停 Run、不恢复 invocation，不能据此关闭 NC-01。

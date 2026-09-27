@@ -85,6 +85,33 @@ public interface IExecutionJournal
         CancellationToken ct);
 
     /// <summary>
+    /// NC-01：审批暂停 park —— 手工决定尚未产生时，把 Turn/Run/Command 收敛为非终态
+    /// <c>waiting_approval</c>，把恢复点持久化进命令 metadata，并释放租约使执行槽位立即可复用。
+    /// 同一事务内：
+    ///   1. 校验 Run（runId + workerId + fencingToken + status = running）；不校验 lease_until，
+    ///      因为 park 的语义就是停止续租、改由 waiting_approval 状态承担判活。
+    ///   2. 写入 pending 非终态输出事件。
+    ///   3. Turn running → waiting_approval（CAS）。
+    ///   4. Run running → waiting_approval（释放租约，不写 completedAt / terminalSequence）。
+    ///   5. Command running｜cancel_requested → waiting_approval（释放租约）；
+    ///      恢复点写入 <see cref="ApprovalResumePoint.CommandColumnName"/> 列（独立列，不占用 metadata_json）。
+    /// <para>
+    /// 不写任何 terminal 事件、不写业务 completed；任一 CAS 未命中即整事务回滚并返回 null，
+    /// 调用方必须回退常规终态提交。
+    /// </para>
+    /// <para>
+    /// 恢复点与租约必须身份一致（<see cref="ApprovalResumePoint.ValidateAgainstLease"/>），
+    /// 且必须通过 <see cref="ApprovalResumePoint.Validate"/>；非法恢复点抛
+    /// <see cref="ArgumentException"/> 而不是静默接受。
+    /// </para>
+    /// </summary>
+    Task<ExecutionApprovalParkResult?> ParkForApprovalAsync(
+        ExecutionLease lease,
+        ApprovalResumePoint resumePoint,
+        IReadOnlyList<NewConversationEvent> pendingEvents,
+        CancellationToken ct);
+
+    /// <summary>
     /// A01-slice-4c：唤醒收口 —— 父 Turn 已无 running 子代理时，把 park 的父 Turn 收敛为终态。
     /// 以 <c>WHERE status = 'waiting_child'</c> 的 CAS 抢占唯一收口权：并发或重复触发只允许一次成功，
     /// 其余调用返回 null（绝不写第二个终态事件）。终态事件与 park 时持久化的待提交终态逐字节一致。

@@ -338,6 +338,253 @@ public sealed class SqliteExecutionLeaseStore(
     }
 
     /// <summary>
+    /// NC-01：领取一次「已批准的人工审批暂停」，从同一 invocation 续行。见接口文档。
+    /// 单事务内五步 CAS：定位暂停行 → command 唯一性闸门 → 旧 run 标记 resumed →
+    /// Turn 回到 running → 新建 run 行取得更高 fencing token。
+    /// </summary>
+    public async Task<ApprovalResumeAcquireResult?> TryAcquireApprovalResumeAsync(
+        string workerId, string turnId, TimeSpan duration, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(workerId) || string.IsNullOrWhiteSpace(turnId))
+            return null;
+
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var conn = db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+
+        using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
+
+        try
+        {
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var untilMs = nowMs + (long)duration.TotalMilliseconds;
+
+            // Step 1: 定位处于 waiting_approval 的 Turn/Run/Command 三元组。
+            string commandId;
+            string runId;
+            string conversationId;
+            string workspaceId;
+            string? traceId;
+            string? resumeJson;
+            long oldFencingToken;
+            int attemptCount;
+
+            using (var selCmd = conn.CreateCommand())
+            {
+                selCmd.Transaction = tx;
+                selCmd.CommandText = @"
+                    SELECT r.run_id, r.command_id, r.conversation_id, r.fencing_token, r.attempt,
+                           t.workspace_id, c.approval_resume_json, c.trace_id
+                    FROM execution_runs r
+                    JOIN conversation_turns t ON t.turn_id = r.turn_id
+                    JOIN chat_execution_commands c ON c.command_id = r.command_id
+                    WHERE r.turn_id = @turnId
+                      AND r.status = @waiting
+                      AND t.status = @waiting
+                      AND c.status = @waiting
+                    LIMIT 1";
+                AddParam(selCmd, "@turnId", turnId);
+                AddParam(selCmd, "@waiting", ApprovalResumePoint.WaitingApprovalStatus);
+
+                using var reader = await selCmd.ExecuteReaderAsync(ct);
+                if (!await reader.ReadAsync(ct))
+                {
+                    await tx.RollbackAsync(ct);
+                    return null;
+                }
+
+                runId = reader.GetString(0);
+                commandId = reader.GetString(1);
+                conversationId = reader.GetString(2);
+                oldFencingToken = reader.GetInt64(3);
+                attemptCount = reader.GetInt32(4);
+                workspaceId = reader.GetString(5);
+                resumeJson = reader.IsDBNull(6) ? null : reader.GetString(6);
+                traceId = reader.IsDBNull(7) ? null : reader.GetString(7);
+            }
+
+            // Step 1b: 恢复点必须可严格解析，且与行内身份一致。任何不符都放弃恢复（不猜、不修补）。
+            if (!ApprovalResumePoint.TryParse(resumeJson, out var point, out var parseError)
+                || point is null)
+            {
+                await tx.RollbackAsync(ct);
+                logger.LogWarning(
+                    "[LeaseStore] Approval resume rejected — unreadable resume point turn={TurnId} reason={Reason}",
+                    turnId,
+                    parseError ?? "missing");
+                return null;
+            }
+
+            if (!string.Equals(point.RunId, runId, StringComparison.Ordinal)
+                || !string.Equals(point.CommandId, commandId, StringComparison.Ordinal)
+                || !string.Equals(point.TurnId, turnId, StringComparison.Ordinal)
+                || !string.Equals(point.SessionId, conversationId, StringComparison.Ordinal)
+                || !string.Equals(point.WorkspaceId, workspaceId, StringComparison.Ordinal))
+            {
+                await tx.RollbackAsync(ct);
+                logger.LogWarning(
+                    "[LeaseStore] Approval resume rejected — resume point identity mismatch turn={TurnId} run={RunId}",
+                    turnId,
+                    runId);
+                return null;
+            }
+
+            // 冻结截止时间已过就不续行：由超时收口负责终态，绝不放宽预算。
+            var now = DateTimeOffset.UtcNow;
+            if (!point.CanResumeAt(now))
+            {
+                await tx.RollbackAsync(ct);
+                logger.LogWarning(
+                    "[LeaseStore] Approval resume rejected — frozen deadline passed turn={TurnId} deadline={Deadline:O}",
+                    turnId,
+                    point.DeadlineUtc);
+                return null;
+            }
+
+            var newRunId = Guid.NewGuid().ToString("N");
+            var newAttempt = attemptCount + 1;
+
+            // Step 2: command CAS —— 唯一性闸门。只有一次能把 waiting_approval 换成 leased。
+            using (var cmdUpd = conn.CreateCommand())
+            {
+                cmdUpd.Transaction = tx;
+                cmdUpd.CommandText = @"
+                    UPDATE chat_execution_commands
+                    SET status = 'leased',
+                        lease_owner = @workerId,
+                        lease_until = @leaseUntil,
+                        attempt_count = @attempt,
+                        started_at = @startedAt,
+                        run_id = @newRunId
+                    WHERE command_id = @commandId
+                      AND status = @waiting";
+                AddParam(cmdUpd, "@workerId", workerId);
+                AddParam(cmdUpd, "@leaseUntil", untilMs);
+                AddParam(cmdUpd, "@attempt", newAttempt);
+                AddParam(cmdUpd, "@startedAt", nowMs);
+                AddParam(cmdUpd, "@newRunId", newRunId);
+                AddParam(cmdUpd, "@commandId", commandId);
+                AddParam(cmdUpd, "@waiting", ApprovalResumePoint.WaitingApprovalStatus);
+
+                if (await cmdUpd.ExecuteNonQueryAsync(ct) != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogDebug(
+                        "[LeaseStore] Approval resume CAS lost cmd={CmdId} turn={TurnId}",
+                        commandId,
+                        turnId);
+                    return null;
+                }
+            }
+
+            // Step 3: 旧 run 行标记为已被取代，清空租约；它不再是活跃执行。
+            using (var oldRunUpd = conn.CreateCommand())
+            {
+                oldRunUpd.Transaction = tx;
+                oldRunUpd.CommandText = @"
+                    UPDATE execution_runs
+                    SET status = @resumed,
+                        lease_until = NULL
+                    WHERE run_id = @runId
+                      AND status = @waiting
+                      AND fencing_token = @fenceToken";
+                AddParam(oldRunUpd, "@resumed", ApprovalResumePoint.ResumedRunStatus);
+                AddParam(oldRunUpd, "@runId", runId);
+                AddParam(oldRunUpd, "@waiting", ApprovalResumePoint.WaitingApprovalStatus);
+                AddParam(oldRunUpd, "@fenceToken", oldFencingToken);
+                if (await oldRunUpd.ExecuteNonQueryAsync(ct) != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[LeaseStore] Approval resume rejected — parked run changed run={RunId}",
+                        runId);
+                    return null;
+                }
+            }
+
+            // Step 4: Turn 回到 running（CAS，终态行不可复活）。
+            using (var turnUpd = conn.CreateCommand())
+            {
+                turnUpd.Transaction = tx;
+                turnUpd.CommandText = @"
+                    UPDATE conversation_turns
+                    SET status = 'running'
+                    WHERE turn_id = @turnId
+                      AND status = @waiting
+                      AND terminal_sequence IS NULL";
+                AddParam(turnUpd, "@turnId", turnId);
+                AddParam(turnUpd, "@waiting", ApprovalResumePoint.WaitingApprovalStatus);
+                if (await turnUpd.ExecuteNonQueryAsync(ct) != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[LeaseStore] Approval resume rejected — turn not parked turn={TurnId}",
+                        turnId);
+                    return null;
+                }
+            }
+
+            // Step 5: 新建 run 行取得更高 fencing token，使旧 worker 的写入被围栏挡下。
+            long newFencingToken;
+            using (var runIns = conn.CreateCommand())
+            {
+                runIns.Transaction = tx;
+                runIns.CommandText = @"
+                    INSERT INTO execution_runs
+                    (run_id, command_id, conversation_id, turn_id, attempt,
+                     worker_id, status, lease_until, started_at, trace_id)
+                    VALUES
+                    (@runId, @commandId, @conversationId, @turnId, @attempt,
+                     @workerId, 'leased', @leaseUntil, @startedAt, @traceId);
+                    SELECT last_insert_rowid()";
+                AddParam(runIns, "@runId", newRunId);
+                AddParam(runIns, "@commandId", commandId);
+                AddParam(runIns, "@conversationId", conversationId);
+                AddParam(runIns, "@turnId", turnId);
+                AddParam(runIns, "@attempt", newAttempt);
+                AddParam(runIns, "@workerId", workerId);
+                AddParam(runIns, "@leaseUntil", untilMs);
+                AddParam(runIns, "@startedAt", nowMs);
+                AddParam(runIns, "@traceId", traceId ?? (object)DBNull.Value);
+                newFencingToken = (long)(await runIns.ExecuteScalarAsync(ct))!;
+            }
+
+            await tx.CommitAsync(ct);
+
+            logger.LogInformation(
+                "[LeaseStore] Resumed approval cmd={CmdId} turn={TurnId} newRun={RunId} fence={Fence} supersededRun={OldRun} approval={ApprovalId}",
+                commandId,
+                turnId,
+                newRunId,
+                newFencingToken,
+                runId,
+                point.ApprovalId);
+
+            var lease = new ExecutionLease(
+                CommandId: commandId,
+                WorkerId: workerId,
+                WorkspaceId: workspaceId,
+                ConversationId: conversationId,
+                TurnId: turnId,
+                RunId: newRunId,
+                FencingToken: newFencingToken,
+                ExpiresAt: DateTimeOffset.UtcNow + duration)
+            {
+                TraceId = traceId,
+            };
+
+            return new ApprovalResumeAcquireResult(lease, point);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    /// <summary>
     /// G2：读取同一 (command_id, attempt) 上已存在的 run 行（无则返回 null）。
     /// 调用方必须已持有该 command 的写事务，否则返回值不能作为幂等依据。
     /// </summary>

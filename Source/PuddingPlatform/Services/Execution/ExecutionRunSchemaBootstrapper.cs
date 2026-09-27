@@ -6,14 +6,32 @@ using PuddingPlatform.Data;
 namespace PuddingPlatform.Services.Execution;
 
 /// <summary>
-/// Idempotently upgrades the execution_runs schema for existing SQLite databases.
-/// EF EnsureCreated creates clean databases (with trace_id once the entity declares it),
+/// Idempotently upgrades the execution_runs / chat_execution_commands schemas for existing SQLite databases.
+/// EF EnsureCreated creates clean databases (with the columns once the entities declare them),
 /// but does not add fields to existing tables.
 /// </summary>
 public static class ExecutionRunSchemaBootstrapper
 {
-    private const string TableName = "execution_runs";
-    private const string TraceIdColumn = "trace_id";
+    /// <summary>每项为「表 / 列 / 缺失时执行的 DDL」。顺序稳定，便于日志与测试断言。</summary>
+    private static readonly (string Table, string Column, string Ddl)[] RequiredColumns =
+    [
+        (
+            "execution_runs",
+            "trace_id",
+            """
+            ALTER TABLE "execution_runs"
+            ADD COLUMN "trace_id" TEXT NULL;
+            """),
+        // NC-01：审批暂停恢复点必须独立成列——metadata_json 上限 4096，
+        // 而恢复点携带 Runtime 会话历史与批次状态，量级远超「附加元数据」。
+        (
+            "chat_execution_commands",
+            "approval_resume_json",
+            """
+            ALTER TABLE "chat_execution_commands"
+            ADD COLUMN "approval_resume_json" TEXT NULL;
+            """),
+    ];
 
     public static async Task EnsureCreatedAsync(
         PlatformDbContext db,
@@ -23,19 +41,56 @@ public static class ExecutionRunSchemaBootstrapper
         if (!db.Database.IsSqlite())
             return;
 
-        if (!await ColumnExistsAsync(db, TableName, TraceIdColumn, ct))
+        foreach (var (table, column, ddl) in RequiredColumns)
         {
-            await db.Database.ExecuteSqlRawAsync(
-                """
-                ALTER TABLE "execution_runs"
-                ADD COLUMN "trace_id" TEXT NULL;
-                """,
-                ct);
+            // 表本身缺失时不能 ALTER：EF EnsureCreated 会在本方法之前建表，
+            // 而面向历史库的测试可能只建了其中一张表。缺表不是本方法的职责。
+            if (!await TableExistsAsync(db, table, ct))
+            {
+                logger?.LogDebug(
+                    "[ExecutionRunSchema] Skipped {Table}.{Column} — table is absent",
+                    table,
+                    column);
+                continue;
+            }
+
+            if (await ColumnExistsAsync(db, table, column, ct))
+                continue;
+
+            await db.Database.ExecuteSqlRawAsync(ddl, ct);
 
             logger?.LogInformation(
                 "[ExecutionRunSchema] Added {Table}.{Column}",
-                TableName,
-                TraceIdColumn);
+                table,
+                column);
+        }
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        DbContext db,
+        string tableName,
+        CancellationToken ct)
+    {
+        var connection = db.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+            await connection.OpenAsync(ct);
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = @name LIMIT 1;";
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@name";
+            parameter.Value = tableName;
+            command.Parameters.Add(parameter);
+            return await command.ExecuteScalarAsync(ct) is not null;
+        }
+        finally
+        {
+            if (shouldClose)
+                await connection.CloseAsync();
         }
     }
 
