@@ -75,6 +75,7 @@ public sealed partial class MainWindow : Window
         BuildMemoryLibraryPanel();
         BuildMemorySearchPanel();
         BuildStoragePanel();
+        BuildStorageCleanupPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -605,6 +606,12 @@ public sealed partial class MainWindow : Window
             await WaitForSettingsUiAsync(() => _stNotice.IsOpen);
             Check(StoragePolicySettings.Visibility == Visibility.Visible, "storage policy tab is native");
             Check(!_stTargetPicker.IsEnabled, "storage policy form stays disabled without Core");
+            // DS-09 cleanup slice.
+            OpenSettingsCategory("storage", "cleanup");
+            await WaitForSettingsUiAsync(() => _scNotice.IsOpen);
+            Check(StorageCleanupSettings.Visibility == Visibility.Visible, "storage cleanup tab is native");
+            Check(StorageCleanupSettings.Content is StackPanel, "storage cleanup form is built");
+            Check(!_scTargetPicker.IsEnabled, "storage cleanup form stays disabled without Core");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

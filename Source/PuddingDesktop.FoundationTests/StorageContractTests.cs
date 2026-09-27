@@ -77,6 +77,67 @@ public sealed class StorageContractTests
     }
 
     [Fact]
+    public void CleanupJobStatusesAndEventsAreDescribedVerbatim()
+    {
+        Assert.Equal("需要确认", StorageText.DescribeJobStatus("NeedsConfirmation"));
+        Assert.Equal("部分完成", StorageText.DescribeJobStatus("Partial"));
+        Assert.Equal("取消中", StorageText.DescribeJobStatus("cancelling"));
+        Assert.Equal("状态未知", StorageText.DescribeJobStatus(null));
+        Assert.Equal("SomethingNew", StorageText.DescribeJobStatus("SomethingNew"));
+        Assert.Equal("进度", StorageText.DescribeEventKind("progress"));
+        Assert.Equal("事件", StorageText.DescribeEventKind(""));
+
+        var progress = new StorageCleanupCounters(100, 40, 30, 5, 3, 2, 7, 4096, 60);
+        Assert.Contains("已处理 40/100", progress.SummaryText, StringComparison.Ordinal);
+        Assert.Contains("剩余约 60 行", progress.RemainingText, StringComparison.Ordinal);
+        Assert.Equal("剩余未知", (progress with { RemainingRowsEstimate = null }).RemainingText);
+    }
+
+    [Fact]
+    public void CleanupJobHelpersSayWhatCanBeDone()
+    {
+        var job = new StorageCleanupRun(Guid.NewGuid(), "manual", "NeedsConfirmation", DateTimeOffset.UtcNow,
+            null, null, DateTimeOffset.UtcNow, ["cache"], new StorageCleanupCounters(0, 0, 0, 0, 0, 0, 0, 0, null),
+            [], "", "");
+        Assert.True(job.NeedsConfirmation);
+        Assert.False(job.IsTerminal);
+        Assert.True(job.CanCancel);
+
+        Assert.True((job with { Status = "Running" }).CanCancel);
+        Assert.False((job with { Status = "Cancelling" }).CanCancel);
+        Assert.True((job with { Status = "Completed" }).IsTerminal);
+        Assert.False((job with { Status = "Completed" }).CanCancel);
+        Assert.True((job with { Status = "Failed" }).IsTerminal);
+    }
+
+    [Fact]
+    public void PreviewValidationAndExpiryAreExplicit()
+    {
+        Assert.Empty(StorageText.ValidatePreview(["cache"], "30"));
+        Assert.Empty(StorageText.ValidatePreview(["cache"], ""));
+        Assert.Contains("数据类别", StorageText.ValidatePreview([], "30").Single(), StringComparison.Ordinal);
+        Assert.Contains("整数", StorageText.ValidatePreview(["cache"], "abc").Single(), StringComparison.Ordinal);
+        Assert.Contains("大于 0", StorageText.ValidatePreview(["cache"], "0").Single(), StringComparison.Ordinal);
+
+        var now = DateTimeOffset.UtcNow;
+        var preview = new StorageCleanupEstimate(Guid.NewGuid(), 1, 2, now, now.AddMinutes(5), now, true, [],
+            [new StorageCleanupTargetEstimate("cache", "Cache", "delete rows", 10, false, 2048, now)]);
+        Assert.False(preview.IsExpired(now));
+        Assert.True(preview.IsExpired(now.AddMinutes(6)));
+        Assert.Equal("10 行", preview.Targets[0].CandidatesText);
+        Assert.Contains("实际可能更多", (preview.Targets[0] with { CandidatesTruncated = true }).CandidatesText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BudgetGapIsStatedRatherThanHidden()
+    {
+        // Core 有预算字段与内部停止条件，但没有「超预算继续」操作，作业 DTO 也不暴露预算。
+        Assert.Contains("不暴露预算字段", StorageText.BudgetNotice, StringComparison.Ordinal);
+        Assert.Contains("没有「超预算继续」", StorageText.BudgetNotice, StringComparison.Ordinal);
+        Assert.Contains("会过期", StorageText.PreviewNotice, StringComparison.Ordinal);
+        Assert.Contains("先创建再确认", StorageText.JobNotice, StringComparison.Ordinal);
+    }
+    [Fact]
     public void SnapshotTotalsSplitDatabasesFromClasses()
     {
         var snapshot = new StorageSnapshot(Guid.NewGuid(), 4, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,

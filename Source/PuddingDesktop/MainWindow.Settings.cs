@@ -210,6 +210,15 @@ public sealed partial class MainWindow
         var storagePolicy = VisibilityOf("storage", "policy", tab);
         StoragePolicySettings.Visibility = storagePolicy;
         if (storagePolicy == Visibility.Visible) LoadStoragePolicyIfNeeded();
+        var storageCleanup = VisibilityOf("storage", "cleanup", tab);
+        StorageCleanupSettings.Visibility = storageCleanup;
+        if (storageCleanup == Visibility.Visible) LoadStorageCleanupIfNeeded();
+    }
+
+    private async void LoadStorageCleanupIfNeeded()
+    {
+        try { await LoadStorageCleanupAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadStorageOverviewIfNeeded()
@@ -386,6 +395,7 @@ public sealed partial class MainWindow
         ("memory", "search") => true,
         ("storage", "overview") => true,
         ("storage", "policy") => true,
+        ("storage", "cleanup") => true,
         _ => false
     };
 

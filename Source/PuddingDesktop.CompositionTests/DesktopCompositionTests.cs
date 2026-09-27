@@ -1571,6 +1571,79 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task StorageCleanupAdapter_PreviewsCreatesConfirmsAndCancelsAJob()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var storage = factory.CreateStorageSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => storage.ListCleanupJobsAsync(50, timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            Assert.Empty(await storage.ListCleanupJobsAsync(50, timeout.Token));
+
+            // Only categories Core allows manual cleanup on can be previewed.
+            var classes = await storage.ListDataClassesAsync(timeout.Token);
+            var previewable = classes.Where(item => item.ManualCleanupAllowed).ToArray();
+            Assert.NotEmpty(previewable);
+
+            // A category Core protects from manual cleanup must be refused by the preview.
+            var forbidden = classes.FirstOrDefault(item => !item.ManualCleanupAllowed);
+            if (forbidden is not null)
+                await Assert.ThrowsAnyAsync<Exception>(() => storage.CreateCleanupPreviewAsync(
+                    [forbidden.TargetId], 30, timeout.Token));
+
+            var preview = await storage.CreateCleanupPreviewAsync([previewable[0].TargetId], 30, timeout.Token);
+            Assert.Equal(previewable[0].TargetId, Assert.Single(preview.Targets).TargetId);
+            Assert.True(preview.ExpiresAtUtc > preview.CreatedAtUtc, "预览必须带过期时间");
+            Assert.False(preview.IsExpired(DateTimeOffset.UtcNow));
+
+            // The request id is Core's idempotency key: the same value must not create a second job.
+            var requestId = $"composition-{Guid.NewGuid():N}";
+            var jobId = await storage.CreateCleanupJobAsync(preview.PreviewId, requestId, timeout.Token);
+            var second = await storage.CreateCleanupJobAsync(preview.PreviewId, requestId, timeout.Token);
+            Assert.Equal(jobId, second);
+
+            var job = await storage.ReadCleanupJobAsync(jobId, timeout.Token);
+            Assert.NotNull(job);
+            Assert.Equal([previewable[0].TargetId], job!.TargetIds);
+            Assert.True(job.NeedsConfirmation || job.Status is "Queued" or "Running",
+                $"新建作业应等待确认或已在执行，实际 {job.Status}");
+
+            // A fresh preview cannot create a second job with a different request id and the same preview.
+            await Assert.ThrowsAnyAsync<Exception>(() => storage.CreateCleanupJobAsync(
+                preview.PreviewId, $"composition-{Guid.NewGuid():N}", timeout.Token));
+
+            // Events are readable and the job is listed.
+            var events = await storage.ReadCleanupEventsAsync(jobId, 50, timeout.Token);
+            Assert.NotNull(events);
+            Assert.Contains(await storage.ListCleanupJobsAsync(50, timeout.Token), item => item.JobId == jobId);
+
+            // Confirming moves the job forward; cancelling is a request, so it must be accepted too.
+            if (job.NeedsConfirmation) await storage.ConfirmCleanupJobAsync(jobId, timeout.Token);
+            var confirmed = await storage.ReadCleanupJobAsync(jobId, timeout.Token);
+            Assert.NotNull(confirmed);
+            Assert.NotEqual("NeedsConfirmation", confirmed!.Status);
+
+            var cancellable = confirmed.IsTerminal ? job : confirmed;
+            if (!cancellable.IsTerminal) await storage.CancelCleanupJobAsync(cancellable.JobId, timeout.Token);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => storage.ReadCleanupJobAsync(jobId, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

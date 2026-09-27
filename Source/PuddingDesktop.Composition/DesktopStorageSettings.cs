@@ -54,6 +54,100 @@ internal sealed class DesktopStorageSettings(IDesktopKernel kernel) : IStorageSe
                 status.CompletedAtUtc, status.SnapshotRevision);
         }, cancellationToken);
 
+    public Task<StorageCleanupEstimate> CreateCleanupPreviewAsync(
+        IReadOnlyList<string> targetIds, int? olderThanDays, CancellationToken cancellationToken = default)
+        => kernel.RunSettingsAsync("storage.cleanup.preview", async (scope, token) =>
+        {
+            var policy = scope.Services.GetRequiredService<StorageRetentionPolicyService>();
+            var coordinator = scope.Services.GetRequiredService<StorageMaintenanceCoordinator>();
+            var snapshot = scope.Services.GetRequiredService<StorageInventorySnapshotStore>().Current;
+            var effective = await policy.GetEffectivePolicyAsync(token);
+            // Core fixes the cutoff server-side; the page only chooses the window.
+            var preview = await coordinator.CreatePreviewAsync(new StorageCleanupPreviewRequestDto
+            {
+                TargetIds = [.. targetIds],
+                OlderThanDays = olderThanDays,
+            }, effective.PolicyRevision, snapshot, token);
+            return new StorageCleanupEstimate(preview.PreviewId, preview.CatalogVersion, preview.PolicyRevision,
+                preview.CreatedAtUtc, preview.ExpiresAtUtc, preview.CutoffUtc, preview.HasCandidates,
+                preview.Warnings ?? [],
+                preview.Targets.Select(target => new StorageCleanupTargetEstimate(target.TargetId, target.DisplayName,
+                    target.ActionSummary, target.EstimatedCandidateRows, target.CandidatesTruncated,
+                    target.EstimatedBytes, target.OldestUtc)).ToArray());
+        }, cancellationToken);
+
+    public Task<Guid> CreateCleanupJobAsync(Guid previewId, string requestId, CancellationToken cancellationToken = default)
+        => kernel.RunSettingsAsync("storage.cleanup.job.create", async (scope, token) =>
+        {
+            var job = await scope.Services.GetRequiredService<StorageMaintenanceCoordinator>()
+                .CreateJobFromPreviewAsync(previewId, requestId, "manual", token);
+            return job.JobId;
+        }, cancellationToken);
+
+    public Task<StorageCleanupRun?> ReadCleanupJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+        => kernel.RunSettingsAsync("storage.cleanup.job.read", (scope, _) =>
+        {
+            var job = scope.Services.GetRequiredService<StorageMaintenanceJobStore>().Get(jobId);
+            return Task.FromResult(job is null ? null : Map(job.ToDto()));
+        }, cancellationToken);
+
+    public Task<IReadOnlyList<StorageCleanupRun>> ListCleanupJobsAsync(
+        int limit = 50, CancellationToken cancellationToken = default)
+        => kernel.RunSettingsAsync("storage.cleanup.jobs.list", (scope, _) =>
+        {
+            var jobs = JobStore(scope).ListRecent(limit).Select(job => Map(job.ToDto())).ToArray();
+            return Task.FromResult((IReadOnlyList<StorageCleanupRun>)jobs);
+        }, cancellationToken);
+
+    public Task<IReadOnlyList<StorageCleanupEvent>> ReadCleanupEventsAsync(
+        Guid jobId, int limit = 200, CancellationToken cancellationToken = default)
+        => kernel.RunSettingsAsync("storage.cleanup.job.events", async (scope, token) =>
+        {
+            var events = await JobStore(scope).ReadEventsAsync(jobId, limit, token);
+            return (IReadOnlyList<StorageCleanupEvent>)events.Select(item => new StorageCleanupEvent(
+                item.TimestampUtc, item.Kind, item.TargetId ?? "", item.Message ?? "",
+                item.Counters ?? new Dictionary<string, long>())).ToArray();
+        }, cancellationToken);
+
+    public Task ConfirmCleanupJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+        => kernel.RunSettingsAsync("storage.cleanup.job.confirm", async (scope, token) =>
+        {
+            try
+            {
+                await scope.Services.GetRequiredService<StorageMaintenanceCoordinator>().ConfirmAsync(jobId);
+            }
+            catch (StorageMaintenanceCoordinator.StorageAdminException exception)
+            {
+                throw new InvalidOperationException(exception.Message, exception);
+            }
+            return true;
+        }, cancellationToken);
+
+    public Task CancelCleanupJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+        => kernel.RunSettingsAsync("storage.cleanup.job.cancel", async (scope, token) =>
+        {
+            try
+            {
+                await scope.Services.GetRequiredService<StorageMaintenanceCoordinator>().RequestCancelAsync(jobId);
+            }
+            catch (StorageMaintenanceCoordinator.StorageAdminException exception)
+            {
+                throw new InvalidOperationException(exception.Message, exception);
+            }
+            return true;
+        }, cancellationToken);
+
+    private static StorageMaintenanceJobStore JobStore(ISettingsScope scope) =>
+        scope.Services.GetRequiredService<StorageMaintenanceJobStore>();
+
+    private static StorageCleanupRun Map(StorageCleanupJobDto job) => new(
+        job.JobId, job.Trigger, job.Status.ToString(), job.CreatedAtUtc, job.StartedAtUtc, job.FinishedAtUtc,
+        job.CutoffUtc, job.TargetIds ?? [], new StorageCleanupCounters(
+            job.Progress.DiscoveredRows, job.Progress.ProcessedRows, job.Progress.DeletedRows,
+            job.Progress.ClearedRows, job.Progress.SkippedRows, job.Progress.FailedRows,
+            job.Progress.DeletedFiles, job.Progress.ReusableBytesEstimate, job.Progress.RemainingRowsEstimate),
+        job.Warnings ?? [], job.ErrorCode ?? "", job.ErrorMessage ?? "");
+
     public Task<StorageRetentionPolicy> ReadPolicyAsync(CancellationToken cancellationToken = default)
         => kernel.RunSettingsAsync("storage.policy.read", async (scope, token) =>
         {

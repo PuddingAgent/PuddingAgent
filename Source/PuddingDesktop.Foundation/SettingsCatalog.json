@@ -866,7 +866,7 @@
             ],
             "source": "pages/storage/CleanupPreviewModal.tsx",
             "task": "DS-09",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

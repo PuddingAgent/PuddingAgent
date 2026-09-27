@@ -37,7 +37,7 @@ memory,记忆资料库,library,资料库,memory-books,书籍与章节,已接入,
 memory,记忆资料库,search,检索与来源,memory-search,记忆搜索,已接入,DS-08,搜索词；范围；结果/匹配摘要；定位,pages/memory-library/components/MemorySearchResults.tsx,搜索结果定位到真实页面或章节。
 memory,记忆资料库,search,检索与来源,memory-inspector,来源与引用,已接入,DS-08,元数据；sources；pointers；目标定位,pages/memory-library/components/MemoryInspector.tsx,原生详情区呈现出处和引用关系。
 storage,存储与清理,overview,空间总览,storage-inventory,总览与分类,已接入,DS-09,总占用；分类占比；分类统计；受保护对象；7/30/90 天趋势；刷新,pages/storage/index.tsx,所有统计保留估算标记和采样时间。
-storage,存储与清理,cleanup,清理作业,storage-cleanup,预览与提交,待迁移,DS-09,数据类别；早于天数；预览估算；保护排除；确认提交；作业进度/事件；取消；超预算继续,pages/storage/CleanupPreviewModal.tsx,先预览再确认；原生页面不扫描或删除数据文件。
+storage,存储与清理,cleanup,清理作业,storage-cleanup,预览与提交,已接入,DS-09,数据类别；早于天数；预览估算；保护排除；确认提交；作业进度/事件；取消；超预算继续,pages/storage/CleanupPreviewModal.tsx,先预览再确认；原生页面不扫描或删除数据文件。
 storage,存储与清理,policy,自动清理,storage-policy,保留策略,已接入,DS-09,targetId；enabled；retentionDays；允许范围；策略版本；更新时间,pages/storage/StoragePolicyDrawer.tsx,按 target 更新策略，并处理版本冲突。
 security,密钥与审批,vault,密钥保管箱,keyvault,密钥元数据与轮换,待迁移,DS-10,名称；描述；分类(general/api/token)；标签；新密钥值；引用占位符复制,pages/keyvault/index.tsx,列表不返回明文；新增、编辑元数据、轮换、删除需区分。
 security,密钥与审批,allowlist,审批白名单,allowlist,精确授权规则,待迁移,DS-10,toolId；workspaceId；status；command；argumentsJson；source；approvedByAgentInstanceId；approvedByUserId；approvalTicketId；reason；hitCount,pages/tool-approval/allowlist/index.tsx,搜索、创建、编辑、禁用；保留精确匹配语义。

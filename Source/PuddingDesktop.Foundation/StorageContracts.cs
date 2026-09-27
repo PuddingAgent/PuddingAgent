@@ -64,13 +64,72 @@ public sealed record StorageRetentionTargetEdit(string TargetId, bool Enabled, i
 public sealed record StorageRetentionPolicyUpdate(
     int ExpectedRevision, bool AutomaticCleanupEnabled, IReadOnlyList<StorageRetentionTargetEdit> Targets);
 
+public sealed record StorageCleanupTargetEstimate(
+    string TargetId, string DisplayName, string ActionSummary, long EstimatedCandidateRows,
+    bool CandidatesTruncated, long? EstimatedBytes, DateTimeOffset? OldestUtc)
+{
+    public string CandidatesText => CandidatesTruncated
+        ? $"≥ {EstimatedCandidateRows:N0} 行（已达计数上限，实际可能更多）"
+        : $"{EstimatedCandidateRows:N0} 行";
+}
+
+/// <summary>A preview is Core's bounded estimate and expires; the page must not treat it as a promise.</summary>
+public sealed record StorageCleanupEstimate(
+    Guid PreviewId, int CatalogVersion, int PolicyRevision, DateTimeOffset CreatedAtUtc,
+    DateTimeOffset ExpiresAtUtc, DateTimeOffset CutoffUtc, bool HasCandidates,
+    IReadOnlyList<string> Warnings, IReadOnlyList<StorageCleanupTargetEstimate> Targets)
+{
+    public bool IsExpired(DateTimeOffset now) => now >= ExpiresAtUtc;
+}
+
+public sealed record StorageCleanupCounters(
+    long DiscoveredRows, long ProcessedRows, long DeletedRows, long ClearedRows,
+    long SkippedRows, long FailedRows, long DeletedFiles, long ReusableBytesEstimate,
+    long? RemainingRowsEstimate)
+{
+    public string RemainingText => RemainingRowsEstimate is null ? "剩余未知" : $"剩余约 {RemainingRowsEstimate:N0} 行";
+    public string SummaryText =>
+        $"已处理 {ProcessedRows:N0}/{DiscoveredRows:N0} · 删除 {DeletedRows:N0} · 清空 {ClearedRows:N0} · " +
+        $"跳过 {SkippedRows:N0} · 失败 {FailedRows:N0} · 文件 {DeletedFiles:N0} · 可复用 {StorageText.FormatBytes(ReusableBytesEstimate)}";
+}
+
+public sealed record StorageCleanupRun(
+    Guid JobId, string Trigger, string Status, DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? StartedAtUtc, DateTimeOffset? FinishedAtUtc, DateTimeOffset CutoffUtc,
+    IReadOnlyList<string> TargetIds, StorageCleanupCounters Progress,
+    IReadOnlyList<string> Warnings, string ErrorCode, string ErrorMessage)
+{
+    public string StatusText => StorageText.DescribeJobStatus(Status);
+    public bool IsTerminal => Status is "Completed" or "Partial" or "Failed" or "Cancelled";
+    public bool NeedsConfirmation => Status == "NeedsConfirmation";
+    public bool CanCancel => !IsTerminal && Status is not "Cancelling";
+}
+
+public sealed record StorageCleanupEvent(
+    DateTimeOffset TimestampUtc, string Kind, string TargetId, string Message,
+    IReadOnlyDictionary<string, long> Counters)
+{
+    public string KindText => StorageText.DescribeEventKind(Kind);
+    public string CountersText => Counters.Count == 0
+        ? ""
+        : " · " + string.Join(" ", Counters.Select(pair => $"{pair.Key}={pair.Value:N0}"));
+}
+
 /// <summary>
 /// Task-shaped operations for the storage cards, implemented in Composition against Core's storage
 /// maintenance services.
 /// </summary>
 public interface IStorageSettings
 {
-    Task<StorageSnapshot> ReadSnapshotAsync(CancellationToken cancellationToken = default);
+    Task<StorageCleanupEstimate> CreateCleanupPreviewAsync(
+        IReadOnlyList<string> targetIds, int? olderThanDays, CancellationToken cancellationToken = default);
+    /// <summary>requestId is Core's idempotency key: the same value returns the same job.</summary>
+    Task<Guid> CreateCleanupJobAsync(Guid previewId, string requestId, CancellationToken cancellationToken = default);
+    Task<StorageCleanupRun?> ReadCleanupJobAsync(Guid jobId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<StorageCleanupRun>> ListCleanupJobsAsync(int limit = 50, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<StorageCleanupEvent>> ReadCleanupEventsAsync(Guid jobId, int limit = 200, CancellationToken cancellationToken = default);
+    Task ConfirmCleanupJobAsync(Guid jobId, CancellationToken cancellationToken = default);
+    Task CancelCleanupJobAsync(Guid jobId, CancellationToken cancellationToken = default);    Task<StorageSnapshot> ReadSnapshotAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<StorageTrendPoint>> ReadTrendAsync(int days, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<StorageDataClass>> ListDataClassesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> ListProtectedObjectsAsync(CancellationToken cancellationToken = default);
@@ -157,6 +216,57 @@ public static class StorageText
 
     public static string DescribeShare(long? part, long total) =>
         ShareOf(part, total) is { } share ? $"{share:0.#}%" : "占比未知";
+
+    public const string PreviewNotice =
+        "预览是 Core 的有界估算并会过期：创建作业必须使用同一个 previewId，过期后要重新预览。";
+
+    public const string JobNotice =
+        "清理作业先创建再确认：创建后处于「需要确认」，确认后才会执行；作业由 Core 串行执行，界面只读取进度与事件。";
+
+    public const string BudgetNotice =
+        "Core 的清理执行带有每作业行数预算（MemoryJob 的 Budget），但作业 DTO 不暴露预算字段，也没有「超预算继续」的操作；" +
+        "界面只呈现进度、剩余估算与作业状态，不提供任何绕过预算的按钮。";
+
+    public static string DescribeJobStatus(string? status) => status switch
+    {
+        null or "" => "状态未知",
+        var value when string.Equals(value, "Queued", StringComparison.OrdinalIgnoreCase) => "排队中",
+        var value when string.Equals(value, "Running", StringComparison.OrdinalIgnoreCase) => "执行中",
+        var value when string.Equals(value, "PausedBusy", StringComparison.OrdinalIgnoreCase) => "暂缓（维护繁忙）",
+        var value when string.Equals(value, "NeedsConfirmation", StringComparison.OrdinalIgnoreCase) => "需要确认",
+        var value when string.Equals(value, "Cancelling", StringComparison.OrdinalIgnoreCase) => "取消中",
+        var value when string.Equals(value, "Completed", StringComparison.OrdinalIgnoreCase) => "已完成",
+        var value when string.Equals(value, "Partial", StringComparison.OrdinalIgnoreCase) => "部分完成",
+        var value when string.Equals(value, "Failed", StringComparison.OrdinalIgnoreCase) => "失败",
+        var value when string.Equals(value, "Cancelled", StringComparison.OrdinalIgnoreCase) => "已取消",
+        var value => value
+    };
+
+    public static string DescribeEventKind(string? kind) => kind switch
+    {
+        null or "" => "事件",
+        var value when string.Equals(value, "started", StringComparison.OrdinalIgnoreCase) => "开始",
+        var value when string.Equals(value, "progress", StringComparison.OrdinalIgnoreCase) => "进度",
+        var value when string.Equals(value, "completed", StringComparison.OrdinalIgnoreCase) => "完成",
+        var value when string.Equals(value, "failed", StringComparison.OrdinalIgnoreCase) => "失败",
+        var value when string.Equals(value, "cancelled", StringComparison.OrdinalIgnoreCase) => "已取消",
+        var value when string.Equals(value, "warning", StringComparison.OrdinalIgnoreCase) => "警告",
+        var value => value
+    };
+
+    /// <summary>Preview needs at least one target; days and cutoff are mutually exclusive in Core.</summary>
+    public static IReadOnlyList<string> ValidatePreview(IReadOnlyList<string> targetIds, string? olderThanDays)
+    {
+        var errors = new List<string>();
+        if (targetIds.Count == 0) errors.Add("至少要选择一个数据类别。");
+        if (!string.IsNullOrWhiteSpace(olderThanDays))
+        {
+            // VoiceSettingsText.ParseOptionalInt maps 0 to null, which would misreport "0" as non-numeric.
+            if (!int.TryParse(olderThanDays.Trim(), out var parsed)) errors.Add("「早于天数」必须是整数。");
+            else if (parsed <= 0) errors.Add("「早于天数」必须大于 0。");
+        }
+        return errors;
+    }
 
     public static IReadOnlyList<string> Validate(StorageRetentionPolicyUpdate update)
     {
