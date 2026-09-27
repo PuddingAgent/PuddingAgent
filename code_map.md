@@ -23,6 +23,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`Source/PuddingApproval` 为独立 BCL 人工决定转换组件（尚未接入）：精确身份/操作绑定、版本 CAS、决定幂等、过期、一次许可消费与 DispatchUnknown。`PuddingApprovalTests` 只引用该叶组件；生产事务存储/outbox 与 Runtime 接线仍待实现，不能将内存测试视为审批功能交付。
+
 原生审批接入缺口与 A1–A5 方案见 `Docs/Features/Desktop-Native-Approval-Integration-Design-2026-09-27.md`（Proposed）。`PuddingPlatform/Controllers/Api/ApprovalController` 只写会话审批结果，`SessionApprovalDecideTests` 固化缺少请求生产者的 404；Runtime 自动票据/人工工具授权是不同链路，不能把事件写入当成执行续行完成。
 
 `PuddingChat/FlowWindow.cs` 保存长 Turn 的渐进展开范围（默认 40 块，每批 24 块，以 key 保留显式展开范围）；`TurnContentView.RevealEarlier` 保持视口锚点，`MessageViewState`/活动 Run 保存范围以支持消息控件回收。`FlowWindowTests` 与 `FlowWindowChecks` 覆盖分页、追加、范围恢复与真实滚动位置。

@@ -184,3 +184,11 @@ Desktop Release 发布通过（`temp/native-transfer-publish.log`，Core 有既�
 本轮为源码核查与设计，未新增产品代码、未运行测试或变更运行数据。全仓 C# 审批事件引用核查及 SessionApprovalDecideTests 表明：Web 会话决定端点缺请求生产者，结果写入也没有接到 Runtime 的执行续行；Runtime NeedHuman 指向 /authorize 的人工工具授权路径，DeferredDependency 是不同状态。票据 Save/Get/List 端口不提供人工决定的原子转换保证。
 
 新增 `Docs/Features/Desktop-Native-Approval-Integration-Design-2026-09-27.md`，状态 Proposed。列出真实证据、固定待处理区域、精确身份/操作绑定、Core 唯一决定真源、A1–A5 组件门禁及七项闭环验收。原生审批继续记为未接入；不以控件、事件追加或 404 接口回归冒充工具获准后恰好执行一次。下一步实施必须从 Core 真实暂停/恢复与原子决定边界开始，不能直接包装 Controller。
+
+## A1 审批转换叶组件（2026-09-27）
+
+新增独立 `Source/PuddingApproval` 与 `Source/PuddingApprovalTests`，未登记解决方案、未改 Host/Runtime/Composition。组件通过 BCL 合同表达执行身份与操作/策略指纹，使用 IApprovalStore.CompareExchangeAsync 转换版本；重复 decisionId 只返回原回执，消费仅在硬边界通过、绑定一致、未过期且已批准时生效，重复消费不返回 Applied。DispatchUnknown 明确阻止不确定外部执行的自动重跑。
+
+核对 ADR-091 后修订原生审批方案：原子许可不能保证任意外部副作用 exactly-once，消费后崩溃需持久派发状态与对账。组件没有创建 AwaitingHuman 请求的生产入口，不能把硬拒绝或 DeferredDependency 变成人工放行；Core 接入必须负责这些前置约束。
+
+独立测试 8/8（`temp/native-approval-state-final.log`）通过，包含 32 路竞争决定和消费、回执重放、身份/操作/策略变化、硬边界、到期、拒绝、未知执行以及仅依赖 System 程序集。测试仅使用内存 CAS store；生产事务存储、outbox、故障恢复和真实执行尚未验证，A1 生产门禁与 S5 接入保持未完成。没有读写 D:\data 或重启 Desktop。

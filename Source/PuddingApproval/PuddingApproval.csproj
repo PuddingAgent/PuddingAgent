@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
+  <Target Name="EnforceApprovalBoundary" BeforeTargets="ResolveReferences">
+    <Error Condition="'@(ProjectReference)' != '' Or '@(PackageReference)' != ''" Text="Approval transitions must remain a BCL-only leaf." />
+  </Target>
+</Project>
