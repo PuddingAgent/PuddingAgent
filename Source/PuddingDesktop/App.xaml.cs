@@ -1,108 +1,50 @@
-﻿using System.Windows;
-using Application = System.Windows.Application;
-using MessageBox = System.Windows.MessageBox;
-using PuddingDesktop.Diagnostics;
-using PuddingDesktop.Hosting;
-using PuddingDesktop.Runtime;
+using Microsoft.UI.Xaml;
 
 namespace PuddingDesktop;
 
-/// <summary>
-/// WPF Application entry point for PuddingDesktop.
-/// Windows are created by DesktopApplicationCoordinator.
-/// OnExit is a last-resort fallback; normal shutdown is handled
-/// by MainWindow.Window_Closing → Core stop → window close.
-/// </summary>
-public sealed partial class App : Application
+public partial class App : Application
 {
-    private DesktopApplicationCoordinator? _coordinator;
-    private DesktopSingleInstanceService? _singleInstance;
-    private bool _pendingActivation;
+    private MainWindow? _window;
+    internal static string StateRoot { get; } = ResolveStateRoot();
 
-    protected override async void OnStartup(StartupEventArgs e)
+    public App()
     {
-        base.OnStartup(e);
+        InitializeComponent();
+        UnhandledException += (_, args) => WriteDiagnostic(args.Exception);
+    }
 
-        DispatcherUnhandledException += (_, args) =>
-            DesktopDiagnosticLog.Write("DispatcherUnhandledException", args.Exception);
-        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        var current = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent();
+        var instance = Microsoft.Windows.AppLifecycle.AppInstance.FindOrRegisterForKey("PuddingDesktop.WinUi.Skeleton." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(StateRoot).TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant()))));
+        if (!instance.IsCurrent)
         {
-            if (args.ExceptionObject is Exception exception)
-                DesktopDiagnosticLog.Write("AppDomainUnhandledException", exception);
-        };
+            await instance.RedirectActivationToAsync(current.GetActivatedEventArgs());
+            Exit();
+            return;
+        }
+        _window = new MainWindow(new Kernel.UnconfiguredDesktopKernel());
+        instance.Activated += (_, _) => _window.DispatcherQueue.TryEnqueue(() => _window.Activate());
+        _window.Activate();
+    }
 
+    internal static void WriteDiagnostic(Exception exception)
+    {
         try
         {
-            _singleInstance = new DesktopSingleInstanceService();
-            if (!_singleInstance.TryAcquirePrimary())
-            {
-                using var activationCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                await _singleInstance.SignalPrimaryAsync(activationCts.Token);
-                Shutdown(0);
-                return;
-            }
-
-            _singleInstance.ActivationRequested += OnActivationRequested;
-            _coordinator = new DesktopApplicationCoordinator();
-            await _coordinator.StartAsync(e.Args, CancellationToken.None);
-            if (_pendingActivation)
-            {
-                _pendingActivation = false;
-                _coordinator.ActivateMainWindow();
-            }
+            Directory.CreateDirectory(StateRoot);
+            File.AppendAllText(Path.Combine(StateRoot, "desktop.log"), $"{DateTimeOffset.Now:O} {exception}\n");
         }
-        catch (Exception ex)
-        {
-            DesktopDiagnosticLog.Write("Startup", ex);
-            MessageBox.Show(
-                $"Failed to start Pudding Desktop: {ex.Message}",
-                "Startup Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-            Shutdown(1);
-        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
-    private void OnActivationRequested(object? sender, EventArgs e)
+    private static string ResolveStateRoot()
     {
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (_coordinator is null)
-                _pendingActivation = true;
-            else
-                _coordinator.ActivateMainWindow();
-        });
-    }
-
-    protected override async void OnExit(ExitEventArgs e)
-    {
-        // Best-effort last-resort cleanup — normal exit is through MainWindow
-        if (_coordinator is not null)
-        {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            try
-            {
-                await _coordinator.DisposeAsync();
-            }
-            catch
-            {
-                // Best-effort shutdown
-            }
-        }
-
-        if (_singleInstance is not null)
-        {
-            _singleInstance.ActivationRequested -= OnActivationRequested;
-            try { await _singleInstance.DisposeAsync(); }
-            catch { }
-        }
-
-        base.OnExit(e);
-    }
-
-    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
-    {
-        _coordinator?.RequestExplicitExit();
-        base.OnSessionEnding(e);
+        var args = Environment.GetCommandLineArgs();
+        var index = Array.IndexOf(args, "--state-root");
+        return index >= 0 && index + 1 < args.Length
+            ? Path.GetFullPath(args[index + 1])
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pudding", "WinUiSkeleton");
     }
 }

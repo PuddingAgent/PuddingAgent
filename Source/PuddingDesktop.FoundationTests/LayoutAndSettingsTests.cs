@@ -39,9 +39,10 @@ public sealed class LayoutAndSettingsTests
             await File.WriteAllTextAsync(store.FilePath, "broken{");
             Assert.NotNull((await store.LoadAsync()).Warning);
             Assert.Equal("broken{", await File.ReadAllTextAsync(store.FilePath));
-            await store.SaveAsync(new(new(999, 450, false, true), "Dark"));
+            await store.SaveAsync(new(new(999, 450, false, true), "Dark", "Acrylic"));
             var loaded = await store.LoadAsync();
             Assert.Null(loaded.Warning); Assert.Equal("Dark", loaded.Settings.Theme);
+            Assert.Equal("Acrylic", loaded.Settings.Material);
             Assert.Equal(320, loaded.Settings.Layout.NavigationWidth);
             Assert.False(loaded.Settings.Layout.NavigationVisible);
             Assert.Empty(Directory.GetFiles(root, "*.tmp"));

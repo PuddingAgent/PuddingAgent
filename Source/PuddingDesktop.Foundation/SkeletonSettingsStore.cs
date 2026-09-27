@@ -3,11 +3,12 @@ using System.Text.Json;
 namespace PuddingDesktop.Foundation;
 
 /// <summary>Isolated preview preferences. These are NOT Desktop/Core production configuration.</summary>
-public sealed record SkeletonSettings(ShellLayout Layout, string Theme = "Default")
+public sealed record SkeletonSettings(ShellLayout Layout, string Theme = "Light", string Material = "Mica")
 {
     public static SkeletonSettings Default => new(new ShellLayout());
     public SkeletonSettings Normalize() => new((Layout ?? new()).Normalize(),
-        Theme is "Light" or "Dark" ? Theme : "Default");
+        Theme is "Light" or "Dark" or "Default" ? Theme : "Light",
+        Material is "MicaAlt" or "Acrylic" ? Material : "Mica");
 }
 
 public sealed record SettingsLoadResult(SkeletonSettings Settings, string? Warning);
