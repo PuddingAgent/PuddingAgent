@@ -7,7 +7,8 @@ namespace PuddingChat.WinUI;
 internal sealed class ActivityContentView : StackPanel
 {
     private readonly Dictionary<string, (string Text, UIElement View)> _slots = [];
-    public ActivityContentView() { Spacing = 8; }
+    private readonly MarkdownImageContext? _images;
+    public ActivityContentView(MarkdownImageContext? images = null) { _images = images; Spacing = 8; }
     public void Update(FlowBlock block, Action<string>? inspectDelegation = null)
     {
         var desired = new List<UIElement>();
@@ -27,7 +28,7 @@ internal sealed class ActivityContentView : StackPanel
         {
             keys.Add(key);
             if (!_slots.TryGetValue(key, out var current))
-                current = (text, label ? new TextBlock { Text = text, Opacity = .6 } : new MarkdownView(text));
+                current = (text, label ? new TextBlock { Text = text, Opacity = .6 } : new MarkdownView(text, _images));
             else if (current.Text != text)
             {
                 if (current.View is MarkdownView markdown) markdown.Update(text);

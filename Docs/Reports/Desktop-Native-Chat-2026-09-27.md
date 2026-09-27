@@ -302,3 +302,11 @@ ChatComposer 的拖放及 Ctrl+V 现接收 StorageItems 中的图片与文本/�
 依赖：[CSharpMath](https://github.com/verybadcat/CSharpMath) 的 [1.0.0-pre.1 包](https://www.nuget.org/packages/CSharpMath.SkiaSharp/1.0.0-pre.1) 支持当前 Core 使用的 SkiaSharp 3.119.2；pre.2 要求更高 Skia 版本，未为单个控件扩大升级范围。这是预发行库，保留语法回退，不声称与 KaTeX 全量对等。库内字体有各自许可证，发布时需保留依赖许可。
 
 验证：先独立控件后接入 Markdown，最终 `test-pudding-native-chat.ps1 -SkipCoreIntegration` 通过 57 逻辑/160 原生窗口检查，构建零警告/错误，日志 `temp/native-math-final.log`。新增 15 项覆盖分数/根号/求和渲染、位图尺寸、浅深主题实际字形像素、控件复用/回收、无效语法/深度/长度回退、行内/块/强调公式、流式未闭合转闭合及代码围栏。测试等待真实渲染/卸载结果，不能以 IsLoaded 瞬时值代替事件处理完成。本次未重新执行 Core 集成或产品部署，既有产品 smoke 不证明新公式包已在用户产品加载；真实模型、生成图片资源解析、审批闭环、语音与完整 DPI/IME/视觉验收仍未完成。
+
+## 原生生成图片与 Markdown 资源（2026-09-27）
+
+新增 BCL `MarkdownImageReference`，与原 Web `MarkdownBlock.tsx` 的 vision ID / png、jpeg、webp 文件名形式对齐，并支持当前工作空间的相对 `/api/workspaces/.../vision-artifacts/...` 表示；该字符串仅用来提取 ID，不发起 HTTP。远程 URL、任意普通文件、跨工作空间 API 路由、多行或超长引用不解析。消息里给出的路径只提供资源名，实际读取沿用 Core 的工作空间资源解析端口。
+
+`MarkdownImageContext` 提供原生图片工厂，接入 Markdown image 围栏与标准图片语法，通过 MessageCard、活动 TurnContentView 与 ActivityContentView 传递工作空间/取消生命周期。ImageAttachmentView 自动展开生成图片、延迟到挂载才加载，收起与卸载释放位图，重挂载恢复展开预览。Markdown 按源文本与已解析链接目标共同缓存控件，解决追加正文导致普通 Markdown 图片重建的问题，同时保留引用定义变化时的失效行为。未解析的外部图片仍显示 alt/URL 文本，不声称任意远程 Markdown 图片已迁移。
+
+先运行独立 BCL 引用解析测试，再接原生展示：最终 `test-pudding-native-chat.ps1 -SkipCoreIntegration` 通过 60 逻辑/171 原生窗口检查，构建零警告/错误；日志 `temp/native-markdown-images-final.log`。新增 3 项 BCL 测试与 11 项窗口检查，覆盖引用规范化/工作空间路由/拒绝项、未挂载无读取、当前工作空间端口、流式保持、折叠重载、回收重载、标准图片 alt、引用目标变化、外部链接不读取、MessageCard 与执行活动装配。Core 服务和接口未修改，本轮没有重跑真实 Core 集成或部署用户产品；此前资源端口的真实 Core 测试已覆盖跨工作空间资源拒绝，但不作为本轮部署证明。

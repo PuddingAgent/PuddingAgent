@@ -1330,3 +1330,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 原生公式组件（2026-09-27）
 
 `Source/PuddingChat.WinUI/MathFormulaView.cs` 以 CSharpMath.SkiaSharp + SkiaSharp 后台绘制公式，在 WinUI Image 中显示，提供原文复制/失败回退、主题重绘与卸载取消。`MarkdownView` 将行内公式放入 RichTextBlock，块公式独立显示；`Source/PuddingChat.WinUITests/MathFormulaChecks.cs` 验证字形像素、主题、回收、超限和流式追加。范围及预发行依赖限制见原生聊天实施报告；57 逻辑/160 窗口检查通过。
+
+## 原生聊天生成图片（2026-09-27）
+
+`PuddingChat/MarkdownImageReference` 解析 Web image 围栏及 Markdown 图片资源引用为 vision ID；`PuddingChat.WinUI/MarkdownImageContext` 经当前工作空间的直接 Core 端口创建 ImageAttachmentView。MessageCard、活动 Turn 和展开执行内容均传入资源上下文；图片支持挂载加载、回收重载和流式控件复用。`MarkdownImageReferenceTests` 与 `MarkdownImageChecks` 固定边界及真实原生行为，60 逻辑/171 窗口检查通过；详见原生聊天实施报告。

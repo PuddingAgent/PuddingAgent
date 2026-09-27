@@ -18,7 +18,8 @@ public sealed class MarkdownView : StackPanel
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UsePipeTables().UseEmphasisExtras(Markdig.Extensions.EmphasisExtras.EmphasisExtraOptions.Strikethrough).UseTaskLists().UseAutoLinks().UseMathematics().DisableHtml().Build();
     private readonly List<(string Source, string Kind, UIElement View)> _rendered = [];
-    public MarkdownView(string text) { Spacing = 10; Update(text); }
+    private readonly MarkdownImageContext? _images;
+    public MarkdownView(string text, MarkdownImageContext? images = null) { _images = images; Spacing = 10; Update(text); }
     public void Update(string text)
     {
         var blocks = Markdown.Parse(text, Pipeline);
@@ -26,13 +27,14 @@ public sealed class MarkdownView : StackPanel
         foreach (var block in blocks)
         {
             var source = text.Substring(block.Span.Start, block.Span.Length);
-            // Reference definitions can change link meaning without changing paragraph source.
-            // Keep only blocks whose AST-independent source is safe to reuse across appends.
+            // Include resolved destinations so reference-definition edits invalidate a block,
+            // while ordinary streaming appends retain decoded images and reader state.
+            source += "\0" + System.Text.Json.JsonSerializer.Serialize(LinkTargets(block));
             var kind = block.GetType().Name;
             var index = desired.Count;
-            var reusable = !source.Contains('[') && index < _rendered.Count
+            var reusable = index < _rendered.Count
                 && _rendered[index].Source == source && _rendered[index].Kind == kind;
-            if (block is CodeBlock code && index < _rendered.Count && _rendered[index].Kind == kind
+            if (block is CodeBlock code && (code as FencedCodeBlock)?.Info != "image" && index < _rendered.Count && _rendered[index].Kind == kind
                 && _rendered[index].View is CodeBlockView existingCode)
             {
                 existingCode.Update(code.Lines.ToString(), (code as FencedCodeBlock)?.Info ?? "代码");
@@ -47,19 +49,38 @@ public sealed class MarkdownView : StackPanel
         _rendered.Clear(); _rendered.AddRange(desired);
     }
 
-    private static StackPanel RenderChildren(ContainerBlock block)
+    private static IEnumerable<string?> LinkTargets(Block block)
+    {
+        if (block is LeafBlock { Inline: { } inline })
+            foreach (var value in InlineTargets(inline)) yield return value;
+        if (block is ContainerBlock children)
+            foreach (var child in children)
+                foreach (var value in LinkTargets(child)) yield return value;
+    }
+    private static IEnumerable<string?> InlineTargets(ContainerInline inline)
+    {
+        foreach (var item in inline)
+        {
+            if (item is LinkInline link) yield return link.GetDynamicUrl?.Invoke() ?? link.Url;
+            if (item is ContainerInline nested)
+                foreach (var value in InlineTargets(nested)) yield return value;
+        }
+    }
+
+    private StackPanel RenderChildren(ContainerBlock block)
     {
         var panel = new StackPanel { Spacing = 8 };
         foreach (var child in block) panel.Children.Add(RenderBlock(child));
         return panel;
     }
 
-    private static UIElement RenderBlock(Block block)
+    private UIElement RenderBlock(Block block)
     {
         switch (block)
         {
             case MathBlock math: return new MathFormulaView(math.Lines.ToString());
             case CodeBlock code:
+                if (code is FencedCodeBlock { Info: "image" } && _images?.Create(code.Lines.ToString(), "Agent 生成的图片") is { } image) return image;
                 return new CodeBlockView(code.Lines.ToString(), (code as FencedCodeBlock)?.Info ?? "代码");
             case HeadingBlock heading:
                 return Text(heading.Inline, heading.Level switch { 1 => 25, 2 => 22, 3 => 19, _ => 16 }, true);
@@ -89,7 +110,7 @@ public sealed class MarkdownView : StackPanel
         }
     }
 
-    private static UIElement RenderTable(Table table)
+    private UIElement RenderTable(Table table)
     {
         var grid = new Grid();
         var columns = table.OfType<TableRow>().Select(r => r.Count).DefaultIfEmpty(0).Max();
@@ -127,11 +148,12 @@ public sealed class MarkdownView : StackPanel
             HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollMode = ScrollMode.Disabled };
     }
 
-    private static bool ContainsMath(ContainerInline input) => input.Any(item => item is MathInline
-        || item is ContainerInline container && ContainsMath(container));
-    private static FrameworkElement Text(ContainerInline? input, double size = 14, bool heading = false)
+    private bool ContainsControls(ContainerInline input) => input.Any(item => item is MathInline
+        || _images is not null && item is LinkInline { IsImage: true }
+        || item is ContainerInline container && ContainsControls(container));
+    private FrameworkElement Text(ContainerInline? input, double size = 14, bool heading = false)
     {
-        if (input is not null && ContainsMath(input))
+        if (input is not null && ContainsControls(input))
         {
             var rich = new RichTextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = size };
             if (heading) rich.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
@@ -143,7 +165,7 @@ public sealed class MarkdownView : StackPanel
         if (input is not null) AddInlines(text.Inlines, input);
         return text;
     }
-    private static void AddInlines(InlineCollection target, ContainerInline input, bool allowControls = false)
+    private void AddInlines(InlineCollection target, ContainerInline input, bool allowControls = false)
     {
         foreach (var item in input)
         {
@@ -162,6 +184,8 @@ public sealed class MarkdownView : StackPanel
                     AddInlines(span.Inlines, emphasis, allowControls); target.Add(span); break;
                 case LinkInline link:
                     var url = link.GetDynamicUrl?.Invoke() ?? link.Url;
+                    if (link.IsImage && allowControls && url is not null && _images?.Create(url, ImageLabel(link)) is { } preview)
+                    { target.Add(new InlineUIContainer { Child = preview }); break; }
                     Span label = !link.IsImage && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http"
                         ? new Hyperlink { NavigateUri = uri } : new Span();
                     if (link.IsImage) label.Inlines.Add(new Run { Text = "图片：" });
@@ -178,4 +202,6 @@ public sealed class MarkdownView : StackPanel
             }
         }
     }
+    private static string ImageLabel(ContainerInline content) => string.Concat(content.Select(item => item switch
+    { LiteralInline literal => literal.Content.ToString(), CodeInline code => code.Content, ContainerInline nested => ImageLabel(nested), _ => "" }));
 }

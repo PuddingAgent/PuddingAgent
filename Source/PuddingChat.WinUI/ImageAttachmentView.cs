@@ -25,8 +25,9 @@ public sealed class ImageAttachmentView : UserControl
             MinZoomFactor = 1, MaxZoomFactor = 8, MaxHeight = 440, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto });
         _expander = new Expander { Header = label, Content = panel, HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        _expander.Expanding += async (_, _) => { expansionChanged?.Invoke(true); await LoadAsync(); };
+        _expander.Expanding += async (_, _) => { expansionChanged?.Invoke(true); if (IsLoaded) await LoadAsync(); };
         _expander.Collapsed += (_, _) => { expansionChanged?.Invoke(false); Release(); };
+        Loaded += async (_, _) => { if (_expander.IsExpanded) await LoadAsync(); };
         Unloaded += (_, _) => Release();
         Content = _expander;
         _expander.IsExpanded = expanded;

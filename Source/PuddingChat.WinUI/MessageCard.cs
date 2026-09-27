@@ -66,9 +66,11 @@ public sealed class MessageCard : UserControl, IDisposable
     {
         _loadDetails = loadDetails;
         _inspectDelegation = inspectDelegation;
-        _state = state ?? new(); _events = _state.Events; _flow = new(_state.Expansions, _state.FlowWindow) { InspectDelegation = inspectDelegation };
+        _state = state ?? new(); _events = _state.Events;
         _viewLifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _imageClient = imageClient; _workspace = workspace; _ct = _viewLifetime.Token;
+        _flow = new(_state.Expansions, _state.FlowWindow) { InspectDelegation = inspectDelegation,
+            Images = imageClient is not null && workspace is not null ? new MarkdownImageContext(imageClient, workspace, _ct) : null };
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(_header); panel.Children.Add(_flow); panel.Children.Add(_attachments); Update(message);
         panel.Children.Add(_outcome);
@@ -113,7 +115,7 @@ public sealed class MessageCard : UserControl, IDisposable
             _details.Children.Clear();
             if (_message.Role == "user")
             {
-                var execution = new TurnContentView(_state.Expansions, _state.DetailWindow) { InspectDelegation = _inspectDelegation };
+                var execution = new TurnContentView(_state.Expansions, _state.DetailWindow) { InspectDelegation = _inspectDelegation, Images = _flow.Images };
                 execution.Update(result.ProcessItems, ""); _details.Children.Add(execution);
             }
             else

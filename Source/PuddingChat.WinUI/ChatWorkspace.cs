@@ -513,7 +513,8 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
                     var expansions = new Dictionary<string, bool>();
                     var flowWindow = new FlowWindow();
                     _livePanel = new($"run:{run.RunId}", output, row => {
-                        var view = new TurnContentView(expansions, flowWindow) { Padding = new Thickness(20), InspectDelegation = InspectionHandler(role, snapshot.MainSessionId, ct) };
+                        var view = new TurnContentView(expansions, flowWindow) { Padding = new Thickness(20), InspectDelegation = InspectionHandler(role, snapshot.MainSessionId, ct),
+                            Images = _client is IImageAttachmentClient images ? new MarkdownImageContext(images, role.WorkspaceId, ct) : null };
                         var data = (OutputSnapshot)row.Data; view.Update(data.ProcessItems, data.Markdown); return view;
                     }, (view, data) => { var value = (OutputSnapshot)data; ((TurnContentView)view).Update(value.ProcessItems, value.Markdown); });
                 }

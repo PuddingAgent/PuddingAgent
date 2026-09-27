@@ -187,9 +187,10 @@ public partial class App : Application
                 await VerifyFileTransferAsync(control, fixture);
                 await VerifyMathFormulaAsync((Grid)control.Content);
                 await VerifyMathMarkdownAsync((Grid)control.Content);
+                await VerifyMarkdownImagesAsync((Grid)control.Content, fixture);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 160, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 171, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -203,8 +204,11 @@ public partial class App : Application
         public int ImageImports;
         public Task<AttachedImage> ImportImageAsync(RoleKey role, string path, CancellationToken ct)
         { ImageImports++; return Task.FromResult(new AttachedImage("vision-fixture", Path.GetFileName(path), "image/png", 1, 1)); }
+        public int PreviewReads;
+        public (string Workspace, string Artifact) LastPreview;
         public async Task<ImagePreview> GetImagePreviewAsync(string workspace, string artifact, CancellationToken ct)
         {
+            PreviewReads++; LastPreview = (workspace, artifact);
             var folder = await Windows.Storage.StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(imagePath)!);
             var file = await folder.CreateFileAsync(Path.GetFileName(imagePath), Windows.Storage.CreationCollisionOption.ReplaceExisting);
             using var stream = await file.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite);

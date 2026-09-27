@@ -11,6 +11,7 @@ public sealed class TurnContentView : StackPanel
     private readonly FlowWindow _window;
     private FlowBlock[] _snapshot = [];
     public Action<string>? InspectDelegation { get; init; }
+    public MarkdownImageContext? Images { get; init; }
     private readonly Button _earlier = new() { HorizontalAlignment = HorizontalAlignment.Left };
     public int HiddenCount => _window.Start(_snapshot);
     public TurnContentView() : this(new Dictionary<string, bool>()) { }
@@ -83,7 +84,7 @@ public sealed class TurnContentView : StackPanel
                     if (expander.IsExpanded) RenderDisclosure(expander, block);
                 }
                 else if (((ContentControl)old.View).Content is MarkdownView markdown) markdown.Update(block.Text);
-                else ((ContentControl)old.View).Content = MessageCard.RenderText(block.Text);
+                else ((ContentControl)old.View).Content = new MarkdownView(block.Text, Images);
             }
             _blocks[block.Key] = (block, old.View); desired.Add(old.View);
         }
@@ -97,7 +98,7 @@ public sealed class TurnContentView : StackPanel
         var scroll = expander.Content as ScrollViewer ?? new ScrollViewer { MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         var offset = scroll.VerticalOffset;
         var followLatest = scroll.ScrollableHeight - offset < 24;
-        var content = scroll.Content as ActivityContentView ?? new ActivityContentView();
+        var content = scroll.Content as ActivityContentView ?? new ActivityContentView(Images);
         content.Update(block, InspectDelegation);
         scroll.Content = content; expander.Content = scroll;
         if (scroll.IsLoaded) { scroll.UpdateLayout(); scroll.ChangeView(null, followLatest ? scroll.ScrollableHeight : offset, null, true); }
