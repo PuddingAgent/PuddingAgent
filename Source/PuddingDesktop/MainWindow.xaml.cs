@@ -55,6 +55,7 @@ public sealed partial class MainWindow : Window
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
         _loaded = true;
+        InitializeSettingsNavigation();
         ApplyLayout();
         var arguments = Environment.GetCommandLineArgs();
         if (arguments.Contains("--demo")) LoadDemo();
@@ -104,12 +105,14 @@ public sealed partial class MainWindow : Window
             DraftEditor.IsEnabled = _demo && role is not null;
             DraftHint.Text = role is null ? "先选择角色 · 草稿不会发送" : $"{role.Name}的草稿 · 未连接内核";
             foreach (var button in new[] { FileButton, DiffButton, TerminalButton, BrowserButton, ArtifactButton }) button.IsEnabled = _demo && role is not null;
-            WorkbenchPane.Visibility = _state.Page == ShellPage.Workbench && _kernel.Snapshot.State != DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
-            NativeChatPane.Visibility = _state.Page == ShellPage.Workbench && _kernel.Snapshot.State == DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
-            _nativeChat?.SetActive(NativeChatPane.Visibility == Visibility.Visible);
+            var showWorkbench = _state.Page is ShellPage.Workbench or ShellPage.Settings;
+            WorkbenchPane.Visibility = showWorkbench && _kernel.Snapshot.State != DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
+            NativeChatPane.Visibility = showWorkbench && _kernel.Snapshot.State == DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
+            _nativeChat?.SetActive(_state.Page == ShellPage.Workbench && NativeChatPane.Visibility == Visibility.Visible);
             NavigationPane.Visibility = NativeChatPane.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
             SettingsPane.Visibility = _state.Page == ShellPage.Settings ? Visibility.Visible : Visibility.Collapsed;
             RuntimePane.Visibility = _state.Page == ShellPage.RuntimeCenter ? Visibility.Visible : Visibility.Collapsed;
+            UpdateSettingsOverlay();
         }
         finally { _rendering = false; }
     }
@@ -247,7 +250,7 @@ public sealed partial class MainWindow : Window
         try
         {
             await _settingsStore.SaveAsync(new(_layout, Root.RequestedTheme.ToString(), _material));
-            SettingsNotice.Title = "布局已保存"; SettingsNotice.Message = "仅更新预览程序的外观配置。"; SettingsNotice.Severity = InfoBarSeverity.Success;
+            SettingsNotice.Title = "布局已保存"; SettingsNotice.Message = "外观与布局偏好已保存。"; SettingsNotice.Severity = InfoBarSeverity.Success;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -278,6 +281,30 @@ public sealed partial class MainWindow : Window
             void Check(bool condition, string name) { if (!condition) throw new InvalidOperationException(name); checks.Add(name); }
             Check(!_state.Roles.Any() && !DraftEditor.IsEnabled, "offline shell does not impersonate a connected Agent");
             _state.Navigate(ShellPage.Settings); Check(SettingsPane.Visibility == Visibility.Visible, "settings without Core");
+            Check(!ShellInteractionHost.IsEnabled, "settings overlay isolates background input");
+            foreach (var category in SettingsCatalog.Categories)
+            {
+                OpenSettingsCategory(category.Id);
+                Check(SettingsTabs.TabItems.Count == category.Tabs.Count, "settings category " + category.Id);
+                foreach (var tab in SettingsTabs.TabItems.OfType<TabViewItem>())
+                {
+                    SettingsTabs.SelectedItem = tab; Root.UpdateLayout();
+                    Check(!tab.IsClosable && tab.Content is ScrollViewer, "settings tab " + category.Id + "/" + tab.Tag);
+                }
+            }
+            SettingsSearch.Text = "MAXINPUTTOKENS";
+            await WaitForSettingsUiAsync(() => SettingsCategoryTitle.Text == "模型与服务商" && SettingsTabs.TabItems.Count == 1);
+            await SaveSettingsSmokeImageAsync(Path.ChangeExtension(reportPath, ".search.png"));
+            Check(SettingsCategoryTitle.Text == "模型与服务商" && SettingsTabs.TabItems.Count == 1,
+                $"settings field search: title={SettingsCategoryTitle.Text}, tabs={SettingsTabs.TabItems.Count}, query={SettingsSearch.Text}");
+            SettingsSearch.Text = "不存在的设置-xyz";
+            await WaitForSettingsUiAsync(() => SettingsEmpty.Visibility == Visibility.Visible && SettingsTabs.TabItems.Count == 0);
+            Check(SettingsEmpty.Visibility == Visibility.Visible && SettingsTabs.TabItems.Count == 0, "settings search empty state");
+            OpenSettingsCategory("general", "appearance");
+            Check(AppearanceSettings.Visibility == Visibility.Visible, "existing appearance settings retained");
+            await SaveSettingsSmokeImageAsync(Path.ChangeExtension(reportPath, ".settings.png"));
+            _state.Navigate(ShellPage.Workbench);
+            Check(ShellInteractionHost.IsEnabled, "closing settings restores background input");
             _state.Navigate(ShellPage.RuntimeCenter); Check(RuntimePane.Visibility == Visibility.Visible, "runtime center without Core");
             LoadDemo(); DraftEditor.Text = "builder draft";
             OpenDemoDocument(WorkspaceDocumentKind.File);

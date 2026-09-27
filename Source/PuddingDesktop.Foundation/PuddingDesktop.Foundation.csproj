@@ -8,6 +8,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="SettingsCatalog.json" />
+  </ItemGroup>
   <Target Name="EnforceFoundationBoundary" BeforeTargets="ResolveReferences">
     <Error Condition="'@(ProjectReference)' != '' Or '@(PackageReference)' != ''"
            Text="Desktop Foundation is a BCL-only leaf. Host, UI, browser and package dependencies are forbidden." />

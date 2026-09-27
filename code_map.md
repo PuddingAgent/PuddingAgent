@@ -1,3 +1,7 @@
+## 2026-09-27 Admin 原生设置骨架
+
+`PuddingDesktop.Foundation/SettingsCatalog.json` + `SettingsCatalog.cs` 定义 17 分类、49 页签、64 卡片与搜索；`PuddingDesktop/MainWindow.Settings.cs` 和 XAML 提供居中设置层、应用菜单入口、分类/页签、占位卡片及外观设置。后续直接调用 Core 既有方法，不新增 HTTP/逐接口包装层。完整字段、Core 缺口及 DS-00~17 实施任务见 [DeepSeek 交接任务书](Docs/Tasks/Desktop-Admin-Settings-DeepSeek-2026-09-27.md)，验证见 [实施记录](Docs/Reports/Desktop-Admin-Settings-Skeleton-2026-09-27.md)。
+
 ## 2026-09-27 原生聊天交错消息流
 
 `PuddingChat.WinUI/MarkdownView.cs` 使用 Markdig AST 渲染原生富文本、列表、引用、表格、代码复制与链接，流式追加复用稳定块。包依赖只位于 WinUI 展示组件；BCL 聊天叶组件保持无包依赖。

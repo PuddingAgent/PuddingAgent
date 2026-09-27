@@ -1,5 +1,9 @@
 # Pudding Agent Network 文档索引
 
+## 2026-09-27 Admin 设置原生迁移（骨架已完成）
+
+[DeepSeek 任务书](Tasks/Desktop-Admin-Settings-DeepSeek-2026-09-27.md) · [72 源文件字段证据](Tasks/Desktop-Admin-Settings-Source-Inventory-2026-09-27.md) · [64 卡片清单](Tasks/Desktop-Admin-Settings-Cards-2026-09-27.csv) · [验证记录](Reports/Desktop-Admin-Settings-Skeleton-2026-09-27.md)。17 分类、49 页签已接入 WinUI 设置面板，保留已有外观与运行中心。后续直接调用进程内 Core，不新增 HTTP/逐 API 包装器；占位业务由 DeepSeek 分批完成。
+
 ## 2026-09-27 WinUI 3 角色优先 Coding 工作台（待实施）
 
 2026-09-27 最新裁定：原地重建 `Source/PuddingDesktop` 为 WinUI 3，角色为一等公民；Core 已作为进程内 DLL 接入。Foundation 生命周期、Composition 真实 Host、WinUI 工作台/后台回调/重启与退出 smoke 已通过；原生角色导航和 Agent 浏览器仍待迁移。旧 WPF 仅保留归档测试基线。详见 [迁移规格](Features/Desktop-WinUI3-Migration-Plan-2026-09-26.md)。

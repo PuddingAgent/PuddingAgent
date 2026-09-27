@@ -64,3 +64,9 @@
 配置由 BCL `IConfigurationClient` 端口承接，View 不引用 EF、Host 或配置文件类型。读取服务商仅含 HasKey；新密钥单向输入 Core，Keep/Replace/Clear 为显式操作，Clear 同时解除 ApiKey/ApiKeyRef，Keep 保留两者。沿用既有 llm.providers.json 存储方式，不声称已迁移为加密存储或清理外部 Vault 实体。
 
 原生局部编辑不得使用全量请求默认值清空未展示字段。Core 在现有写锁内保留模型价格、限额、能力、其他模型以及角色子代理路由、权限、Skill 和 Markdown。现有 Web 全量保存行为不变。原生角色编辑目前支持名称、职责、启用、主模型、角色类型与系统提示词；权限审批、Skill 编辑、头像上传及完整角色文档编辑另行迁移。
+
+### Admin 设置迁移补充（2026-09-27，用户后续裁定）
+
+Admin 管理配置逐项迁入原生设置中心；参考 WorkBuddy 的弹出面板、分类导航与卡片组织，不复制其套餐/积分等业务。首批交付为 17 分类、49 页签、64 卡片的可导航骨架，保留已有外观设置和运行中心；业务占位不等于迁移完成。
+
+客户端直接调用进程内 Core 现有服务方法，**不新增 HTTP 调用或逐 API 转发函数/包装层**。既有 Shell/Foundation/Composition 编译期边界继续有效，装配负责生命周期和既有方法绑定；业务仍在 Controller 内时先下沉真实 Core 应用操作，Web 与 Desktop 共用，不让 WinUI 接 DbContext。Foundation 只存展示目录。后续任务、全部字段与 Core 缺口以[DeepSeek 交接任务书](../Tasks/Desktop-Admin-Settings-DeepSeek-2026-09-27.md)为准。

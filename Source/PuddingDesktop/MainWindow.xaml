@@ -5,11 +5,20 @@
     Title="Pudding · 角色工作台">
   <Grid x:Name="Root" Background="{ThemeResource ShellBackground}" Loaded="OnLoaded" SizeChanged="OnRootSizeChanged">
     <Grid.RowDefinitions><RowDefinition Height="48" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+    <ContentControl x:Name="ShellInteractionHost" Grid.RowSpan="2" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+      <Grid><Grid.RowDefinitions><RowDefinition Height="48" /><RowDefinition Height="*" /></Grid.RowDefinitions>
     <Grid x:Name="TitleBar" Background="{ThemeResource NavigationBackground}">
       <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="148" /></Grid.ColumnDefinitions>
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0">
         <Button Click="OnToggleNavigation" Style="{StaticResource QuietButton}" AutomationProperties.Name="切换角色导航" ToolTipService.ToolTip="角色导航"><FontIcon Glyph="&#xE700;" FontSize="16" /></Button>
-        <TextBlock Text="Pudding" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,16,0" />
+        <Button Content="Pudding ⌄" Style="{StaticResource QuietButton}" Margin="6,0" AutomationProperties.Name="Pudding 应用菜单">
+          <Button.Flyout><MenuFlyout>
+            <MenuFlyoutItem Text="设置" Click="OnSettings" />
+            <MenuFlyoutItem Text="外观与布局" Click="OnAppearanceSettings" />
+            <MenuFlyoutItem Text="记忆资料库" Click="OnMemorySettings" />
+            <MenuFlyoutSeparator /><MenuFlyoutItem Text="运行中心" Click="OnRuntime" />
+          </MenuFlyout></Button.Flyout>
+        </Button>
       </StackPanel>
       <MenuBar Grid.Column="1" VerticalAlignment="Center">
         <MenuBarItem Title="文件"><MenuFlyoutItem Text="新工作" Click="OnNewWork" /><MenuFlyoutItem Text="设置" Click="OnSettings" /><MenuFlyoutSeparator /><MenuFlyoutItem Text="退出" Click="OnExit" /></MenuBarItem>
@@ -103,23 +112,6 @@
         </Border>
       </Grid>
       <ContentControl Grid.ColumnSpan="2" x:Name="NativeChatPane" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-      <Grid Grid.Column="1" x:Name="SettingsPane" Visibility="Collapsed" Padding="36,28">
-        <ScrollViewer>
-          <StackPanel Spacing="22" MaxWidth="680" HorizontalAlignment="Stretch">
-            <Button Content="← 返回工作台" Click="OnWorkbench" HorizontalAlignment="Left" />
-            <TextBlock Text="设置" FontSize="28" FontWeight="SemiBold" />
-            <TextBlock Text="外观与布局" FontSize="18" FontWeight="SemiBold" />
-            <ComboBox x:Name="ThemePicker" Header="应用主题" SelectionChanged="OnThemeChanged" HorizontalAlignment="Stretch"><ComboBoxItem Content="跟随系统" Tag="Default" /><ComboBoxItem Content="浅色" Tag="Light" /><ComboBoxItem Content="深色" Tag="Dark" /></ComboBox>
-            <Slider x:Name="NavigationWidthSlider" Header="角色导航宽度" Minimum="200" Maximum="320" Value="248" ValueChanged="OnLayoutSliderChanged" />
-            <Slider x:Name="WorkspaceWidthSlider" Header="编码工作区宽度" Minimum="360" Maximum="900" Value="520" ValueChanged="OnLayoutSliderChanged" />
-            <ComboBox x:Name="MaterialPicker" Header="窗口材质" SelectionChanged="OnMaterialChanged" HorizontalAlignment="Stretch"><ComboBoxItem Content="云母 · 柔和壁纸色调" Tag="Mica" /><ComboBoxItem Content="云母 Alt · 更鲜明的层次" Tag="MicaAlt" /><ComboBoxItem Content="桌面亚克力 · 磨砂玻璃" Tag="Acrylic" /></ComboBox>
-            <TextBlock Text="云母融入桌面壁纸色调；亚克力实时模糊窗口背后的内容。效果随系统透明效果、节能和窗口激活状态调整。" TextWrapping="Wrap" Opacity="0.65" FontSize="12" />
-            <Button Content="保存布局" Click="OnSaveSettings" HorizontalAlignment="Left" />
-            <InfoBar x:Name="SettingsNotice" IsOpen="True" IsClosable="False" Title="独立配置" Message="这里只保存外观与布局；不会读取或更改现有 Core / Desktop 配置。" />
-            <TextBlock x:Name="SettingsPath" TextWrapping="Wrap" FontSize="12" Opacity="0.6" IsTextSelectionEnabled="True" />
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
       <Grid Grid.Column="1" x:Name="RuntimePane" Visibility="Collapsed" Padding="36,28">
         <ScrollViewer>
           <StackPanel Spacing="22" MaxWidth="680" HorizontalAlignment="Stretch">
@@ -158,6 +150,56 @@
         </StackPanel>
         <Border Grid.Row="2" Padding="16,12" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerBrush}"><TextBlock x:Name="DocumentSource" Text="没有活动文档" FontSize="11" Opacity="0.6" TextWrapping="Wrap" /></Border>
       </Grid>
+    </Grid>
+      </Grid>
+    </ContentControl>
+    <Grid x:Name="SettingsPane" Grid.RowSpan="2" Visibility="Collapsed" Background="#66000000"
+          Padding="24" KeyDown="OnSettingsKeyDown" XYFocusKeyboardNavigation="Enabled" TabFocusNavigation="Cycle">
+      <Border MaxWidth="1180" MaxHeight="820" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+              BorderBrush="{ThemeResource DividerBrush}" BorderThickness="1" CornerRadius="14">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+          <Grid Padding="24,16">
+            <StackPanel Spacing="3"><TextBlock Text="设置" FontSize="24" FontWeight="SemiBold" />
+              <TextBlock Text="让 Pudding 按你的方式工作" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></StackPanel>
+            <Button x:Name="CloseSettingsButton" Content="×" HorizontalAlignment="Right" VerticalAlignment="Center" Click="OnWorkbench"
+                    AutomationProperties.Name="关闭设置" ToolTipService.ToolTip="关闭设置 (Esc)" />
+          </Grid>
+          <NavigationView Grid.Row="1" x:Name="SettingsNavigation" PaneDisplayMode="Auto" OpenPaneLength="224"
+                          CompactModeThresholdWidth="600" ExpandedModeThresholdWidth="900" IsSettingsVisible="False"
+                          IsBackButtonVisible="Collapsed" SelectionChanged="OnSettingsCategoryChanged">
+            <NavigationView.PaneHeader>
+              <TextBox x:Name="SettingsSearch" PlaceholderText="搜索设置" Margin="12,8,12,12"
+                       TextChanged="OnSettingsSearchChanged" AutomationProperties.Name="搜索设置选项" />
+            </NavigationView.PaneHeader>
+            <Grid Padding="20,8,20,20">
+              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+              <StackPanel Spacing="6" Margin="0,0,0,14">
+                <TextBlock x:Name="SettingsCategoryTitle" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock x:Name="SettingsCategoryDescription" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              </StackPanel>
+              <TextBlock x:Name="SettingsEmpty" Grid.Row="1" Text="没有匹配的设置，请尝试其他关键词。" Visibility="Collapsed" TextWrapping="Wrap" />
+              <TabView x:Name="SettingsTabs" Grid.Row="2" IsAddTabButtonVisible="False" CanDragTabs="False" CanReorderTabs="False"
+                       TabWidthMode="SizeToContent" SelectionChanged="OnSettingsTabChanged" />
+              <ScrollViewer x:Name="AppearanceSettings" Grid.Row="2" Margin="0,48,0,0" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <Border Background="{ThemeResource CardBackground}" CornerRadius="12" Padding="24" Margin="0,12,8,0">
+                  <StackPanel Spacing="20">
+            <ComboBox x:Name="ThemePicker" Header="应用主题" SelectionChanged="OnThemeChanged" HorizontalAlignment="Stretch"><ComboBoxItem Content="跟随系统" Tag="Default" /><ComboBoxItem Content="浅色" Tag="Light" /><ComboBoxItem Content="深色" Tag="Dark" /></ComboBox>
+            <Slider x:Name="NavigationWidthSlider" Header="角色导航宽度" Minimum="200" Maximum="320" Value="248" ValueChanged="OnLayoutSliderChanged" />
+            <Slider x:Name="WorkspaceWidthSlider" Header="编码工作区宽度" Minimum="360" Maximum="900" Value="520" ValueChanged="OnLayoutSliderChanged" />
+            <ComboBox x:Name="MaterialPicker" Header="窗口材质" SelectionChanged="OnMaterialChanged" HorizontalAlignment="Stretch"><ComboBoxItem Content="云母 · 柔和壁纸色调" Tag="Mica" /><ComboBoxItem Content="云母 Alt · 更鲜明的层次" Tag="MicaAlt" /><ComboBoxItem Content="桌面亚克力 · 磨砂玻璃" Tag="Acrylic" /></ComboBox>
+            <TextBlock Text="云母融入桌面壁纸色调；亚克力实时模糊窗口背后的内容。效果随系统透明效果、节能和窗口激活状态调整。" TextWrapping="Wrap" Opacity="0.65" FontSize="12" />
+            <Button Content="保存布局" Click="OnSaveSettings" HorizontalAlignment="Left" />
+            <InfoBar x:Name="SettingsNotice" IsOpen="True" IsClosable="False" Title="独立配置" Message="外观与布局已可使用；其他分类的卡片将分批接入。" />
+            <TextBlock x:Name="SettingsPath" TextWrapping="Wrap" FontSize="12" Opacity="0.6" IsTextSelectionEnabled="True" />
+
+                  </StackPanel>
+                </Border>
+              </ScrollViewer>
+            </Grid>
+          </NavigationView>
+        </Grid>
+      </Border>
     </Grid>
   </Grid>
 </Window>

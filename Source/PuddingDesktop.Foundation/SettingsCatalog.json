@@ -1,0 +1,1482 @@
+[
+  {
+    "id": "general",
+    "title": "通用",
+    "group": "桌面",
+    "glyph": "E713",
+    "description": "管理桌面偏好与常用入口。",
+    "tabs": [
+      {
+        "id": "preferences",
+        "title": "常规",
+        "cards": [
+          {
+            "id": "language",
+            "title": "界面语言",
+            "description": "将网页语言选择迁移为桌面本地偏好。",
+            "fields": [
+              "当前语言",
+              "可用语言",
+              "重启或即时生效提示"
+            ],
+            "source": "components/GlobalActions/index.tsx",
+            "task": "DS-01",
+            "status": "待迁移"
+          },
+          {
+            "id": "help",
+            "title": "帮助与使用说明",
+            "description": "承接网页帮助入口，使用原生入口打开说明。",
+            "fields": [
+              "帮助入口",
+              "外部链接明确标识"
+            ],
+            "source": "components/RightContent/index.tsx",
+            "task": "DS-01",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "appearance",
+        "title": "外观与布局",
+        "cards": [
+          {
+            "id": "appearance",
+            "title": "主题、材质与面板",
+            "description": "沿用 Desktop 已实现的外观与布局设置。",
+            "fields": [
+              "跟随系统/浅色/深色",
+              "Mica/Mica Alt/Acrylic",
+              "角色导航宽度",
+              "编码工作区宽度",
+              "保存布局"
+            ],
+            "source": "Source/PuddingDesktop/MainWindow.xaml",
+            "task": "DS-00",
+            "status": "已接入"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "models",
+    "title": "模型与服务商",
+    "group": "智能能力",
+    "glyph": "E8F1",
+    "description": "配置文本模型、服务商与配额。基础编辑已在聊天入口可用。",
+    "tabs": [
+      {
+        "id": "providers",
+        "title": "服务商",
+        "cards": [
+          {
+            "id": "providers",
+            "title": "服务商连接",
+            "description": "新增、编辑、启停和删除服务商；删除前说明关联模型。",
+            "fields": [
+              "模板",
+              "providerId",
+              "name",
+              "baseUrl",
+              "API Key 保持/替换/清除",
+              "description",
+              "isEnabled"
+            ],
+            "source": "pages/llm-resource-pool/index.tsx",
+            "task": "DS-02",
+            "status": "部分已有"
+          },
+          {
+            "id": "provider-limits",
+            "title": "并发与速率",
+            "description": "编辑服务商限流；保存时保留未展示参数。",
+            "fields": [
+              "maxConcurrentRequests",
+              "tokensPerMinute",
+              "requestsPerMinute"
+            ],
+            "source": "pages/llm-resource-pool/index.tsx",
+            "task": "DS-02",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "models",
+        "title": "模型目录",
+        "cards": [
+          {
+            "id": "model-definition",
+            "title": "模型定义",
+            "description": "模型列表、新增、编辑、删除；按服务商筛选。",
+            "fields": [
+              "modelId",
+              "name",
+              "protocol(openai/responses/anthropic)",
+              "description",
+              "capabilityTags",
+              "isDefault",
+              "isDeprecated",
+              "isEmbedding",
+              "sortOrder"
+            ],
+            "source": "pages/llm-resource-pool/index.tsx",
+            "task": "DS-02",
+            "status": "部分已有"
+          },
+          {
+            "id": "model-limits",
+            "title": "上下文与计费",
+            "description": "保留原有单位和范围校验。",
+            "fields": [
+              "maxContextTokens",
+              "maxInputTokens",
+              "maxOutputTokens",
+              "maxConcurrentRequests",
+              "inputPricePer1MTokens",
+              "outputPricePer1MTokens",
+              "cacheHitPricePer1MTokens"
+            ],
+            "source": "pages/llm-resource-pool/index.tsx",
+            "task": "DS-02",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "quota",
+        "title": "配额",
+        "cards": [
+          {
+            "id": "quota",
+            "title": "限额与用量",
+            "description": "Web 已有表单，但当前 Core 配额端点为空实现；须先补齐业务能力。",
+            "fields": [
+              "dailyTokenLimit",
+              "monthlyTokenLimit",
+              "今日已用 tokens",
+              "本月已用 tokens",
+              "配额状态"
+            ],
+            "source": "pages/llm-resource-pool/index.tsx",
+            "task": "DS-02",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "voice",
+    "title": "语音模型",
+    "group": "智能能力",
+    "glyph": "E720",
+    "description": "配置语音服务商、语音合成与识别。",
+    "tabs": [
+      {
+        "id": "providers",
+        "title": "服务商",
+        "cards": [
+          {
+            "id": "voice-providers",
+            "title": "语音服务商",
+            "description": "服务商模板、新增、编辑、启停、删除。",
+            "fields": [
+              "providerId",
+              "name",
+              "endpoint",
+              "apiKey",
+              "description",
+              "isEnabled"
+            ],
+            "source": "pages/voice-models/index.tsx",
+            "task": "DS-03",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "tts",
+        "title": "语音合成",
+        "cards": [
+          {
+            "id": "tts",
+            "title": "TTS 模型",
+            "description": "模型管理与默认模型设置。",
+            "fields": [
+              "modelId",
+              "name",
+              "path",
+              "voices",
+              "audioFormats",
+              "sampleRates",
+              "supportsStreaming",
+              "supportsInstructions",
+              "supportsVoiceCloning",
+              "supportsVoiceDesign",
+              "isDeprecated",
+              "isDefault",
+              "sortOrder"
+            ],
+            "source": "pages/voice-models/index.tsx",
+            "task": "DS-03",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "asr",
+        "title": "语音识别",
+        "cards": [
+          {
+            "id": "asr",
+            "title": "ASR 模型",
+            "description": "识别模型能力与语言配置。",
+            "fields": [
+              "modelId",
+              "name",
+              "path",
+              "languages",
+              "sampleRates",
+              "supportsEmotion",
+              "supportsTimestamps",
+              "supportsHotWords",
+              "isDeprecated",
+              "isDefault",
+              "sortOrder"
+            ],
+            "source": "pages/voice-models/index.tsx",
+            "task": "DS-03",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "agents",
+    "title": "角色与模板",
+    "group": "智能能力",
+    "glyph": "E77B",
+    "description": "区分全局模板与工作区角色实例，编辑前明确目标。",
+    "tabs": [
+      {
+        "id": "directory",
+        "title": "目录与基础",
+        "cards": [
+          {
+            "id": "agent-directory",
+            "title": "全局模板与角色目录",
+            "description": "分别提供模板/实例列表、新建、编辑、删除及实例冻结/解冻。",
+            "fields": [
+              "工作区选择",
+              "模板或实例选择",
+              "来源模板",
+              "预设列表与导入",
+              "启用与冻结状态"
+            ],
+            "source": "pages/global-agent-template/index.tsx",
+            "task": "DS-04",
+            "status": "待迁移"
+          },
+          {
+            "id": "agent-basic",
+            "title": "基础信息",
+            "description": "复用已有角色编辑，补齐头像与来源；模板 ID 创建后按现有契约处理。",
+            "fields": [
+              "workspaceId",
+              "baseGlobalTemplateId/sourceTemplateId",
+              "templateId",
+              "name",
+              "role",
+              "description",
+              "avatarId/avatarEmoji",
+              "isEnabled",
+              "sortOrder"
+            ],
+            "source": "pages/agent-template-settings/sections/BasicSection.tsx",
+            "task": "DS-04",
+            "status": "部分已有"
+          }
+        ]
+      },
+      {
+        "id": "prompts",
+        "title": "角色与 Prompt",
+        "cards": [
+          {
+            "id": "agent-prompts",
+            "title": "角色定义与文档",
+            "description": "按文档分别编辑、保存；区分模板默认值与实例覆盖值。",
+            "fields": [
+              "systemPrompt",
+              "personaPrompt/soulMdContent",
+              "agentsPrompt/agentsMdContent",
+              "toolsDescription/toolsMdContent",
+              "bootstrapTemplate/bootstrapMdContent",
+              "memoryPrompt/memoryMdContent",
+              "userPromptTemplate",
+              "heartbeatPrompt（实例）"
+            ],
+            "source": "pages/agent-template-settings/sections/PromptPersonaSection.tsx",
+            "task": "DS-04",
+            "status": "部分已有"
+          }
+        ]
+      },
+      {
+        "id": "models",
+        "title": "模型与记忆",
+        "cards": [
+          {
+            "id": "agent-models",
+            "title": "默认模型与记忆策略",
+            "description": "依赖服务商目录；服务商变化时校验模型归属。",
+            "fields": [
+              "preferredProviderId",
+              "preferredModelId",
+              "memoryLlmProviderId",
+              "memoryLlmModelId",
+              "embeddingProviderId",
+              "embeddingModelId",
+              "memorySearchMode(off/instant/deep)",
+              "reasoningEffort"
+            ],
+            "source": "pages/agent-template-settings/sections/ModelMemorySection.tsx",
+            "task": "DS-04",
+            "status": "部分已有"
+          }
+        ]
+      },
+      {
+        "id": "smart",
+        "title": "Smart 子代理",
+        "cards": [
+          {
+            "id": "smart-models",
+            "title": "子代理模型路由",
+            "description": "仅角色实例具有当前 Web 的 Smart 配置入口。",
+            "fields": [
+              "explorerModel",
+              "researcherModel",
+              "plannerModel",
+              "reviewerModel",
+              "developerModel",
+              "deployerModel",
+              "testerModel",
+              "每项服务商/模型选择"
+            ],
+            "source": "pages/workspace/[id]/SmartRoleModelFields.tsx",
+            "task": "DS-04",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "capabilities",
+        "title": "能力与 Skill",
+        "cards": [
+          {
+            "id": "agent-grants",
+            "title": "工具与技能授权",
+            "description": "显示有效授权及继承来源；不要把空选择误作删除全部授权。",
+            "fields": [
+              "selectedCapabilityIds",
+              "selectedSkillPackageIds（模板）",
+              "skillPackageIds（实例）",
+              "搜索",
+              "添加/移除授权",
+              "继承/有效授权"
+            ],
+            "source": "pages/agent-template-settings/sections/CapabilitySkillSection.tsx",
+            "task": "DS-04",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "guardrails",
+        "title": "执行护栏",
+        "cards": [
+          {
+            "id": "guardrails",
+            "title": "预算与运行环境",
+            "description": "原样保留 Core 的校验与运行语义。",
+            "fields": [
+              "maxRounds",
+              "maxElapsedSeconds",
+              "maxToolCallsTotal",
+              "containerImage"
+            ],
+            "source": "pages/agent-template-settings/sections/GuardrailSection.tsx",
+            "task": "DS-04",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "workspaces",
+    "title": "工作区与渠道",
+    "group": "智能能力",
+    "glyph": "E8B7",
+    "description": "管理项目归属、连接渠道、知识库和成员。",
+    "tabs": [
+      {
+        "id": "basic",
+        "title": "工作区",
+        "cards": [
+          {
+            "id": "workspace-basic",
+            "title": "工作区信息",
+            "description": "列表、创建、编辑、删除；本机首次使用流程保持独立。",
+            "fields": [
+              "workspaceId",
+              "name",
+              "description",
+              "userProfile",
+              "isEnabled",
+              "团队归属/访问策略"
+            ],
+            "source": "pages/workspace/index.tsx",
+            "task": "DS-05",
+            "status": "待迁移"
+          },
+          {
+            "id": "workspace-members",
+            "title": "工作区成员",
+            "description": "成员列表、添加/移除和权限展示。",
+            "fields": [
+              "userId",
+              "accessLevel(ReadOnly/Write/Manage)",
+              "成员来源"
+            ],
+            "source": "pages/workspace/[id]/index.tsx",
+            "task": "DS-05",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "channels",
+        "title": "渠道",
+        "cards": [
+          {
+            "id": "channel-providers",
+            "title": "渠道服务商",
+            "description": "编辑已支持服务商的展示信息与启用状态。",
+            "fields": [
+              "providerId",
+              "name",
+              "description",
+              "isEnabled"
+            ],
+            "source": "pages/workspace/[id]/index.tsx",
+            "task": "DS-05",
+            "status": "待迁移"
+          },
+          {
+            "id": "channels",
+            "title": "渠道绑定与凭据",
+            "description": "新增/编辑/删除渠道；敏感值单向输入。",
+            "fields": [
+              "name",
+              "providerId",
+              "description",
+              "boundAgentId",
+              "appId",
+              "appSecret",
+              "privilegedUserOpenIds",
+              "streamingRepliesEnabled",
+              "ttsRepliesEnabled",
+              "ttsVoice",
+              "isEnabled"
+            ],
+            "source": "pages/workspace/[id]/index.tsx",
+            "task": "DS-05",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "resources",
+        "title": "工作区资源",
+        "cards": [
+          {
+            "id": "workspace-knowledge",
+            "title": "知识库",
+            "description": "知识库列表、新增、编辑、删除。",
+            "fields": [
+              "name",
+              "kbType(VectorStore/Graph/FileIndex)",
+              "description",
+              "isEnabled"
+            ],
+            "source": "pages/workspace/[id]/index.tsx",
+            "task": "DS-05",
+            "status": "待迁移"
+          },
+          {
+            "id": "workspace-skills",
+            "title": "工作区技能配置",
+            "description": "此处是工作区资源配置，不与 Skill Hub 安装台账混同。",
+            "fields": [
+              "name",
+              "skillType(MCP/BuiltIn/CustomScript/HttpTool)",
+              "description",
+              "configJson",
+              "isEnabled"
+            ],
+            "source": "pages/workspace/[id]/index.tsx",
+            "task": "DS-05",
+            "status": "待迁移"
+          },
+          {
+            "id": "workspace-workflows",
+            "title": "工作流定义",
+            "description": "列表、创建、编辑、删除工作流。",
+            "fields": [
+              "name",
+              "status(Draft/Active/Paused)",
+              "description",
+              "definitionJson",
+              "isEnabled"
+            ],
+            "source": "pages/workspace/[id]/index.tsx",
+            "task": "DS-05",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "tools",
+    "title": "工具与插件",
+    "group": "智能能力",
+    "glyph": "E90F",
+    "description": "查看实际可用工具及插件声明。",
+    "tabs": [
+      {
+        "id": "registry",
+        "title": "工具注册表",
+        "cards": [
+          {
+            "id": "tool-registry",
+            "title": "工具目录",
+            "description": "搜索/筛选、查看工具定义与当前可用状态。",
+            "fields": [
+              "工具名称/ID",
+              "分类",
+              "来源",
+              "说明",
+              "参数 Schema",
+              "启用/可用状态"
+            ],
+            "source": "pages/capability-management/index.tsx",
+            "task": "DS-06",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "plugins",
+        "title": "插件包",
+        "cards": [
+          {
+            "id": "plugin-catalog",
+            "title": "插件清单与诊断",
+            "description": "区分已注册工具、仅 Manifest 声明和无效插件。",
+            "fields": [
+              "插件/工具统计",
+              "包 ID/版本/来源",
+              "工具声明",
+              "ManifestOnly",
+              "校验问题",
+              "详情与刷新"
+            ],
+            "source": "pages/capability-management/index.tsx",
+            "task": "DS-06",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "skills",
+    "title": "技能与进化",
+    "group": "智能能力",
+    "glyph": "E8D2",
+    "description": "迁移 Skill Hub 的六个页签。",
+    "tabs": [
+      {
+        "id": "overview",
+        "title": "概览",
+        "cards": [
+          {
+            "id": "skill-overview",
+            "title": "概览",
+            "description": "保留 Web 的实际查询、写入和错误语义。",
+            "fields": [
+              "技能总量/版本/安装统计",
+              "分布与最近事件"
+            ],
+            "source": "pages/skill-management/OverviewTab.tsx",
+            "task": "DS-07",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "library",
+        "title": "技能库",
+        "cards": [
+          {
+            "id": "skill-library",
+            "title": "技能库",
+            "description": "保留 Web 的实际查询、写入和错误语义。",
+            "fields": [
+              "搜索/标签/状态筛选",
+              "skillId/name/summary/tags",
+              "version/skillMarkdown",
+              "evolutionAction/parentVersion/publishNote",
+              "版本详情",
+              "编辑元数据",
+              "退役",
+              "安装登记"
+            ],
+            "source": "pages/skill-management/SkillsTab.tsx",
+            "task": "DS-07",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "evolution",
+        "title": "EVO MAP",
+        "cards": [
+          {
+            "id": "skill-evolution",
+            "title": "EVO MAP",
+            "description": "保留 Web 的实际查询、写入和错误语义。",
+            "fields": [
+              "技能选择",
+              "谱系节点/边",
+              "版本关系",
+              "详情定位"
+            ],
+            "source": "pages/skill-management/EvoMapTab.tsx",
+            "task": "DS-07",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "installs",
+        "title": "安装台账",
+        "cards": [
+          {
+            "id": "skill-installs",
+            "title": "安装台账",
+            "description": "保留 Web 的实际查询、写入和错误语义。",
+            "fields": [
+              "agentInstanceId",
+              "skillId",
+              "installedVersion",
+              "contentHash",
+              "安装台账",
+              "更新检查"
+            ],
+            "source": "pages/skill-management/InstallsTab.tsx",
+            "task": "DS-07",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "events",
+        "title": "事件审计",
+        "cards": [
+          {
+            "id": "skill-events",
+            "title": "事件审计",
+            "description": "保留 Web 的实际查询、写入和错误语义。",
+            "fields": [
+              "技能/事件/时间筛选",
+              "分页",
+              "事件详情"
+            ],
+            "source": "pages/skill-management/EventsTab.tsx",
+            "task": "DS-07",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "legacy",
+        "title": "技能包（旧）",
+        "cards": [
+          {
+            "id": "skill-legacy",
+            "title": "技能包（旧）",
+            "description": "保留 Web 的实际查询、写入和错误语义。",
+            "fields": [
+              "skillPackageId/name/description/version",
+              "sortOrder/isEnabled",
+              "zip/tar.gz/tgz 文件",
+              "创建/编辑/删除",
+              "上传新版本/下载"
+            ],
+            "source": "pages/skill-management/LegacySkillPackages.tsx",
+            "task": "DS-07",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "memory",
+    "title": "记忆资料库",
+    "group": "数据与安全",
+    "glyph": "E8F1",
+    "description": "按工作区和角色浏览、搜索与维护记忆。",
+    "tabs": [
+      {
+        "id": "library",
+        "title": "资料库",
+        "cards": [
+          {
+            "id": "memory-tree",
+            "title": "图书馆与页面树",
+            "description": "工作区 → Agent → 图书馆选择，刷新与默认库初始化。",
+            "fields": [
+              "libraryId",
+              "页面树",
+              "节点 name/summary/nodeType",
+              "父节点",
+              "创建 Page/Book"
+            ],
+            "source": "pages/memory-library/index.tsx",
+            "task": "DS-08",
+            "status": "待迁移"
+          },
+          {
+            "id": "memory-books",
+            "title": "书籍与章节",
+            "description": "阅读、编辑与归档；保留来源关联。",
+            "fields": [
+              "Book title/summary",
+              "章节 title/content/importance",
+              "章节分页",
+              "归档 Book/章节"
+            ],
+            "source": "pages/memory-library/index.tsx",
+            "task": "DS-08",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "search",
+        "title": "检索与来源",
+        "cards": [
+          {
+            "id": "memory-search",
+            "title": "记忆搜索",
+            "description": "搜索结果定位到真实页面或章节。",
+            "fields": [
+              "搜索词",
+              "范围",
+              "结果/匹配摘要",
+              "定位"
+            ],
+            "source": "pages/memory-library/components/MemorySearchResults.tsx",
+            "task": "DS-08",
+            "status": "待迁移"
+          },
+          {
+            "id": "memory-inspector",
+            "title": "来源与引用",
+            "description": "原生详情区呈现出处和引用关系。",
+            "fields": [
+              "元数据",
+              "sources",
+              "pointers",
+              "目标定位"
+            ],
+            "source": "pages/memory-library/components/MemoryInspector.tsx",
+            "task": "DS-08",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "storage",
+    "title": "存储与清理",
+    "group": "数据与安全",
+    "glyph": "EDA2",
+    "description": "展示存储估算，交由 Core 执行清理与策略。",
+    "tabs": [
+      {
+        "id": "overview",
+        "title": "空间总览",
+        "cards": [
+          {
+            "id": "storage-inventory",
+            "title": "总览与分类",
+            "description": "所有统计保留估算标记和采样时间。",
+            "fields": [
+              "总占用",
+              "分类占比",
+              "分类统计",
+              "受保护对象",
+              "7/30/90 天趋势",
+              "刷新"
+            ],
+            "source": "pages/storage/index.tsx",
+            "task": "DS-09",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "cleanup",
+        "title": "清理作业",
+        "cards": [
+          {
+            "id": "storage-cleanup",
+            "title": "预览与提交",
+            "description": "先预览再确认；原生页面不扫描或删除数据文件。",
+            "fields": [
+              "数据类别",
+              "早于天数",
+              "预览估算",
+              "保护排除",
+              "确认提交",
+              "作业进度/事件",
+              "取消",
+              "超预算继续"
+            ],
+            "source": "pages/storage/CleanupPreviewModal.tsx",
+            "task": "DS-09",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "policy",
+        "title": "自动清理",
+        "cards": [
+          {
+            "id": "storage-policy",
+            "title": "保留策略",
+            "description": "按 target 更新策略，并处理版本冲突。",
+            "fields": [
+              "targetId",
+              "enabled",
+              "retentionDays",
+              "允许范围",
+              "策略版本",
+              "更新时间"
+            ],
+            "source": "pages/storage/StoragePolicyDrawer.tsx",
+            "task": "DS-09",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "security",
+    "title": "密钥与审批",
+    "group": "数据与安全",
+    "glyph": "E72E",
+    "description": "保管凭据、管理工具授权并查看审批审计。",
+    "tabs": [
+      {
+        "id": "vault",
+        "title": "密钥保管箱",
+        "cards": [
+          {
+            "id": "keyvault",
+            "title": "密钥元数据与轮换",
+            "description": "列表不返回明文；新增、编辑元数据、轮换、删除需区分。",
+            "fields": [
+              "名称",
+              "描述",
+              "分类(general/api/token)",
+              "标签",
+              "新密钥值",
+              "引用占位符复制"
+            ],
+            "source": "pages/keyvault/index.tsx",
+            "task": "DS-10",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "allowlist",
+        "title": "审批白名单",
+        "cards": [
+          {
+            "id": "allowlist",
+            "title": "精确授权规则",
+            "description": "搜索、创建、编辑、禁用；保留精确匹配语义。",
+            "fields": [
+              "toolId",
+              "workspaceId",
+              "status",
+              "command",
+              "argumentsJson",
+              "source",
+              "approvedByAgentInstanceId",
+              "approvedByUserId",
+              "approvalTicketId",
+              "reason",
+              "hitCount"
+            ],
+            "source": "pages/tool-approval/allowlist/index.tsx",
+            "task": "DS-10",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "audit",
+        "title": "审批审计",
+        "cards": [
+          {
+            "id": "approval-audit",
+            "title": "事件与统计",
+            "description": "只读筛选、分页与详情，展示工单及权限事件。",
+            "fields": [
+              "事件类型",
+              "工具/工作区/时间筛选",
+              "事件明细",
+              "提交/批准/拒绝统计"
+            ],
+            "source": "pages/tool-approval/audit/index.tsx",
+            "task": "DS-10",
+            "status": "待迁移"
+          },
+          {
+            "id": "classifier-health",
+            "title": "分类器健康",
+            "description": "显示可用性、失败原因与健康明细。",
+            "fields": [
+              "分类器状态",
+              "版本/就绪",
+              "调用/失败",
+              "诊断明细"
+            ],
+            "source": "pages/tool-approval/components/ClassifierHealthBanner.tsx",
+            "task": "DS-10",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "access",
+    "title": "外部访问",
+    "group": "数据与安全",
+    "glyph": "E72E",
+    "description": "管理外部 API 授权，保持远程认证边界。",
+    "tabs": [
+      {
+        "id": "tokens",
+        "title": "Access Token",
+        "cards": [
+          {
+            "id": "access-tokens",
+            "title": "令牌管理",
+            "description": "列表/详情/创建/重命名/撤销；新令牌仅显示一次。",
+            "fields": [
+              "名称",
+              "Workspace 允许清单",
+              "Scope 八种现有权限",
+              "有效期",
+              "Owner",
+              "状态",
+              "最后使用",
+              "版本",
+              "撤销原因"
+            ],
+            "source": "pages/access-token-management/index.tsx",
+            "task": "DS-11",
+            "status": "待迁移"
+          },
+          {
+            "id": "external-api-status",
+            "title": "API 状态与限制",
+            "description": "显示服务端准入状态和创建限制。",
+            "fields": [
+              "API 可用性",
+              "最长有效期",
+              "每人 Active 上限",
+              "创建错误/版本冲突"
+            ],
+            "source": "pages/access-token-management/components/SecretOnceModal.tsx",
+            "task": "DS-11",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "accounts",
+    "title": "用户与权限",
+    "group": "数据与安全",
+    "glyph": "E716",
+    "description": "管理 Web/远程用户、团队和 RBAC；本机聊天保持免登录。",
+    "tabs": [
+      {
+        "id": "users",
+        "title": "用户",
+        "cards": [
+          {
+            "id": "users",
+            "title": "账号与头像",
+            "description": "新增/编辑/启停/删除、修改密码、分配角色。",
+            "fields": [
+              "userId",
+              "username",
+              "email",
+              "displayName",
+              "userType(Admin/SimpleUser)",
+              "isEnabled",
+              "avatar",
+              "初始/新密码",
+              "确认密码",
+              "角色集合"
+            ],
+            "source": "pages/user-management/index.tsx",
+            "task": "DS-12",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "teams",
+        "title": "团队",
+        "cards": [
+          {
+            "id": "teams",
+            "title": "团队与成员",
+            "description": "团队 CRUD、成员管理、团队工作区与访问策略。",
+            "fields": [
+              "teamId",
+              "name",
+              "description",
+              "成员 userId/role",
+              "workspaceId/name/description/isEnabled",
+              "teamAccessPolicy/companyAccessPolicy",
+              "工作区成员 userId/accessLevel"
+            ],
+            "source": "pages/team-management/index.tsx",
+            "task": "DS-12",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "roles",
+        "title": "权限角色",
+        "cards": [
+          {
+            "id": "rbac",
+            "title": "RBAC 角色",
+            "description": "平台权限角色与智能体角色分别命名。",
+            "fields": [
+              "roleId",
+              "name",
+              "description",
+              "workspace read/write/manage",
+              "team read/manage",
+              "user read/manage",
+              "agent run/manage",
+              "template read/manage",
+              "llm read/manage"
+            ],
+            "source": "pages/role-management/index.tsx",
+            "task": "DS-12",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "runtime",
+    "title": "运行与节点",
+    "group": "运行与诊断",
+    "glyph": "E9D9",
+    "description": "本机内核管理与远程运行节点分开呈现。",
+    "tabs": [
+      {
+        "id": "local",
+        "title": "本机内核",
+        "cards": [
+          {
+            "id": "local-kernel",
+            "title": "数据目录与生命周期",
+            "description": "现有功能位于运行中心；从本页进入。",
+            "fields": [
+              "DataRoot 保存/恢复默认",
+              "重开生效",
+              "启动/停止/重启",
+              "PID/状态",
+              "独立诊断路径"
+            ],
+            "source": "Source/PuddingDesktop/MainWindow.Kernel.cs",
+            "task": "DS-00",
+            "status": "已有入口"
+          }
+        ]
+      },
+      {
+        "id": "nodes",
+        "title": "运行节点",
+        "cards": [
+          {
+            "id": "runtime-nodes",
+            "title": "节点目录与详情",
+            "description": "显示嵌入式/独立节点、能力；支持冻结/解冻的节点沿用现有准入。",
+            "fields": [
+              "总数/在线/降级/离线/活跃会话",
+              "nodeId",
+              "endpoint",
+              "host/IP",
+              "heartbeat",
+              "mode",
+              "hostType",
+              "capabilities",
+              "冻结原因"
+            ],
+            "source": "pages/runtime-management/index.tsx",
+            "task": "DS-13",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "diagnostics",
+    "title": "会话与诊断",
+    "group": "运行与诊断",
+    "glyph": "E9D9",
+    "description": "迁移只读运维视图与现有显式操作。",
+    "tabs": [
+      {
+        "id": "sessions",
+        "title": "会话",
+        "cards": [
+          {
+            "id": "session-directory",
+            "title": "会话管理",
+            "description": "查询/筛选会话、详情及页面已有操作。",
+            "fields": [
+              "sessionId",
+              "场景",
+              "Agent 模板",
+              "渠道",
+              "类型",
+              "状态",
+              "用户",
+              "创建/最近活跃",
+              "表格/时间线",
+              "工作区/Agent/状态筛选"
+            ],
+            "source": "pages/session/index.tsx",
+            "task": "DS-14",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "overview",
+        "title": "诊断概览",
+        "cards": [
+          {
+            "id": "diagnostics-overview",
+            "title": "运行诊断",
+            "description": "汇总状态、失败原因与查询条件。",
+            "fields": [
+              "Agent/会话/Run 筛选",
+              "运行状态",
+              "诊断指标",
+              "刷新/详情"
+            ],
+            "source": "pages/diagnostics/DiagnosticsPage.tsx",
+            "task": "DS-14",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "timeline",
+        "title": "事件时间线",
+        "cards": [
+          {
+            "id": "runtime-timeline",
+            "title": "运行时间线",
+            "description": "按 canonical 事件显示时间、关联 ID 和详情。",
+            "fields": [
+              "时间窗",
+              "事件类型",
+              "Agent/Session/Run",
+              "分页/游标",
+              "事件详情"
+            ],
+            "source": "pages/diagnostics/RuntimeTimelinePage.tsx",
+            "task": "DS-14",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "subagents",
+        "title": "子代理运行",
+        "cards": [
+          {
+            "id": "subagent-runs",
+            "title": "运行归档与输出",
+            "description": "区分复用的子会话身份和本次 Run。",
+            "fields": [
+              "parentRunId",
+              "runId",
+              "subSessionId",
+              "状态",
+              "输入/输出",
+              "工具事件",
+              "错误与时间"
+            ],
+            "source": "pages/diagnostics/SubAgentRunsPage.tsx",
+            "task": "DS-14",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "usage",
+    "title": "用量与概览",
+    "group": "运行与诊断",
+    "glyph": "E9D2",
+    "description": "按现有统计口径展示 Token、费用和首页汇总。",
+    "tabs": [
+      {
+        "id": "tokens",
+        "title": "Token 统计",
+        "cards": [
+          {
+            "id": "token-summary",
+            "title": "用量与费用",
+            "description": "继承 Web 日期、服务商、模型等筛选及 RMB/Token 单位。",
+            "fields": [
+              "月份/时间范围",
+              "服务商/模型",
+              "输入/输出/缓存命中",
+              "金额",
+              "趋势",
+              "月度汇总"
+            ],
+            "source": "pages/stats/tokens/index.tsx",
+            "task": "DS-15",
+            "status": "待迁移"
+          },
+          {
+            "id": "token-details",
+            "title": "上下文层分析",
+            "description": "迁移当前上下文层分析表；不能将不同账本重复相加。",
+            "fields": [
+              "层",
+              "职责",
+              "影响",
+              "Token 压力",
+              "缓存表现",
+              "变化",
+              "主要原因"
+            ],
+            "source": "pages/stats/tokens/index.tsx",
+            "task": "DS-15",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "dashboard",
+        "title": "管理概览",
+        "cards": [
+          {
+            "id": "admin-home",
+            "title": "管理首页卡片",
+            "description": "承接首页摘要和快捷入口，不在设置中心复制完整工作台。",
+            "fields": [
+              "工作空间",
+              "可用空间",
+              "协作团队",
+              "Core 状态",
+              "开始对话/工作空间/模型服务/系统诊断快捷入口"
+            ],
+            "source": "pages/home/index.tsx",
+            "task": "DS-15",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "automation",
+    "title": "任务与编排",
+    "group": "运行与诊断",
+    "glyph": "E823",
+    "description": "承接调度策略与编排配置；复杂编辑器后续独立原生页面。",
+    "tabs": [
+      {
+        "id": "scheduler",
+        "title": "任务调度",
+        "cards": [
+          {
+            "id": "scheduler-policy",
+            "title": "自动调度策略",
+            "description": "先只读状态，再接入保存和调度操作。",
+            "fields": [
+              "enabled",
+              "eventDrivenEnabled",
+              "mode(shadow/authoritative)",
+              "scanIntervalSeconds",
+              "candidateLimit",
+              "maxStartsPerScan",
+              "版本冲突"
+            ],
+            "source": "pages/workspace-tasks/SchedulerDrawer.tsx",
+            "task": "DS-16",
+            "status": "待迁移"
+          },
+          {
+            "id": "scheduler-status",
+            "title": "调度状态与判定",
+            "description": "展示本轮扫描和候选判定，确认已执行而非仅派发。",
+            "fields": [
+              "Idle/Busy/Unknown",
+              "候选/可派发",
+              "启动/修复",
+              "Tracked/Cleanup",
+              "最近/下次扫描",
+              "决策原因",
+              "手动动作"
+            ],
+            "source": "pages/workspace-tasks/SchedulerDrawer.tsx",
+            "task": "DS-16",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "tasks",
+        "title": "任务看板",
+        "cards": [
+          {
+            "id": "tasks",
+            "title": "任务列表与详情入口",
+            "description": "列表/看板、编辑、评论、评价、事件及执行命令另建原生工作页。",
+            "fields": [
+              "workspaceId",
+              "任务内容/负责人/优先级/状态",
+              "执行链接",
+              "创建/编辑/分派/运行/取消/恢复/重排/归档",
+              "版本/ETag"
+            ],
+            "source": "pages/workspace-tasks/index.tsx",
+            "task": "DS-16",
+            "status": "待迁移"
+          }
+        ]
+      },
+      {
+        "id": "orchestration",
+        "title": "编排配置",
+        "cards": [
+          {
+            "id": "orchestration",
+            "title": "图定义与版本",
+            "description": "原生设置提供管理入口；画布与运行详情按独立工作页实施。",
+            "fields": [
+              "图列表/创建/更新",
+              "节点组件与设置",
+              "边",
+              "Graph Inputs",
+              "修订/校验/发布",
+              "布局",
+              "手动运行",
+              "Run 控制"
+            ],
+            "source": "pages/orchestration/index.tsx",
+            "task": "DS-17",
+            "status": "待迁移"
+          },
+          {
+            "id": "http-hooks",
+            "title": "HTTP Hook",
+            "description": "触发器配置与凭据保持服务端授权和版本语义。",
+            "fields": [
+              "Hook 列表/创建/启停",
+              "图/修订",
+              "输入映射",
+              "密钥",
+              "调用信息"
+            ],
+            "source": "pages/orchestration/HttpHookPanel.tsx",
+            "task": "DS-17",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "about",
+    "title": "关于",
+    "group": "桌面",
+    "glyph": "E946",
+    "description": "版本、配置位置与迁移状态。",
+    "tabs": [
+      {
+        "id": "product",
+        "title": "产品信息",
+        "cards": [
+          {
+            "id": "about",
+            "title": "Pudding Desktop",
+            "description": "提供真实构建版本与帮助入口；不添加截图产品专有功能。",
+            "fields": [
+              "产品版本",
+              "WinUI 3",
+              "进程内 Core",
+              "配置位置",
+              "开源/帮助信息"
+            ],
+            "source": "Source/PuddingDesktop/MainWindow.xaml.cs",
+            "task": "DS-01",
+            "status": "待迁移"
+          }
+        ]
+      }
+    ]
+  }
+]
