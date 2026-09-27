@@ -1014,7 +1014,7 @@
             ],
             "source": "pages/access-token-management/index.tsx",
             "task": "DS-11",
-            "status": "待迁移"
+            "status": "已接入"
           },
           {
             "id": "external-api-status",
@@ -1028,7 +1028,7 @@
             ],
             "source": "pages/access-token-management/components/SecretOnceModal.tsx",
             "task": "DS-11",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

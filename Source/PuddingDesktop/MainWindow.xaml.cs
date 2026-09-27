@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security, IAccessTokenSettings AccessTokens)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -78,6 +78,7 @@ public sealed partial class MainWindow : Window
         BuildStorageCleanupPanel();
         BuildSecurityPanel();
         BuildApprovalPanel();
+        BuildAccessTokenPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -631,6 +632,13 @@ public sealed partial class MainWindow : Window
             Check(AllowlistSettings.Content is StackPanel, "allowlist form is built");
             Check(!_alToolId.IsEnabled, "allowlist form stays disabled without Core");
             Check(_alNotice.Title == "Core 未就绪", "allowlist tab reports the real Core state");
+            // DS-11 access token slice.
+            OpenSettingsCategory("access", "tokens");
+            await WaitForSettingsUiAsync(() => _atNotice.IsOpen);
+            Check(AccessTokensSettings.Visibility == Visibility.Visible, "access tokens tab is native");
+            Check(AccessTokensSettings.Content is StackPanel, "access tokens form is built");
+            Check(!_atNewName.IsEnabled, "access tokens form stays disabled without Core");
+            Check(_atNotice.Title == "Core 未就绪", "access tokens tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

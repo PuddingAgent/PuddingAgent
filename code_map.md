@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-11 外部访问（访问令牌）
+
+`access/tokens` 两张卡接上 Core 的 `ExternalAccessTokenService` 与 `ExternalTaskApiOptionsProvider`：External API 策略（启用/HTTPS/默认与上限有效期/每 Owner 上限/公开基地址）、令牌列表与筛选（状态/Owner/工作区/scope/分页）、创建（**明文只出现一次**，可一键复制）、重命名与撤销（都带 `expectedVersion`）。三条边界按 Core 实现：**明文只在创建响应出现一次**，模型里既没有明文也没有 `SecretHash`（结构上无法把哈希带进界面）；**撤销不可逆**且没有 unrevoke/硬删除/扩大 scope 的端点；**scope 白名单固定 8 项且无通配符**——`tasks.write` 不隐含 `tasks.command`、`tasks.evaluate` 不改状态，未知 scope 创建即被拒。踩坑登记：Core 的撤销原因只拒绝 >500 字符，空原因在 Core 侧允许——界面自己要求填写以便溯源，并在提示里写明这个差异，而不是假装 Core 强制。验证：Foundation 172 项、Composition 25 项（真实 Host：创建→列表无明文→改名→过期版本冲突被拒→撤销→按状态筛选→未知 scope 被拒）、窗口 smoke 217 项通过。
 ## 2026-09-27 DS-10 密钥与审批（授权/审批审计切片，DS-10 完成）
 
 `security/allowlist` 与 `security/audit` 的审批审计卡接上 Core。**本轮发现并修复一个真实缺陷**：规则创建/更新/停用的审计事件原先写在 `ToolApprovalAdminApiController` 里，于是任何不经 HTTP 的管理面（原生客户端直接写 store）改规则都**不留审计痕迹**——对一个安全功能来说这是缺陷。已按 §3.1 把规则变更连同审计写入下沉为 `ToolApprovalAdminService`，控制器与桌面端共用同一应用操作。授权页签覆盖 toolId/workspaceId/命令与参数 JSON（精确匹配键至少一个）、来源（built_in/audit_agent/human/classifier）、状态、**effect（allow/deny，冲突时 deny 优先）**、批准者溯源与理由；停用按 Core 语义呈现为标记 disabled（记录与审计保留），界面不提供硬删除。审计卡支持按工作区/工具/事件类型/条数筛选，并显示 Core 的 14 项统计。验证：Core `ToolApprovalAdminServiceTests` 3 项 + 平台全量 1423 项、Foundation 167 项、Composition 24 项、窗口 smoke 213 项通过。

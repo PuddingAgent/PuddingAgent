@@ -246,6 +246,7 @@
               <ScrollViewer x:Name="SecurityVaultSettings" Grid.Row="2" Margin="0,48,0,0" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" />
               <ScrollViewer x:Name="SecurityAuditSettings" Grid.Row="2" Margin="0,48,0,0" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" />
               <ScrollViewer x:Name="AllowlistSettings" Grid.Row="2" Margin="0,48,0,0" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" />
+              <ScrollViewer x:Name="AccessTokensSettings" Grid.Row="2" Margin="0,48,0,0" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" />
               <ScrollViewer x:Name="AboutSettings" Grid.Row="2" Margin="0,48,0,0" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                 <Border Background="{ThemeResource CardBackground}" CornerRadius="12" Padding="24" Margin="0,12,8,0">
                   <StackPanel Spacing="12">

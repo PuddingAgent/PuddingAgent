@@ -30,6 +30,7 @@ public sealed partial class MainWindow
     private readonly PuddingDesktop.Foundation.IMemoryLibrarySettings _memoryLibrary;
     private readonly PuddingDesktop.Foundation.IStorageSettings _storage;
     private readonly PuddingDesktop.Foundation.ISecuritySettings _security;
+    private readonly PuddingDesktop.Foundation.IAccessTokenSettings _accessTokens;
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);

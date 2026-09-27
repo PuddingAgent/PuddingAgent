@@ -43,8 +43,8 @@ security,密钥与审批,vault,密钥保管箱,keyvault,密钥元数据与轮换
 security,密钥与审批,allowlist,审批白名单,allowlist,精确授权规则,已接入,DS-10,toolId；workspaceId；status；command；argumentsJson；source；approvedByAgentInstanceId；approvedByUserId；approvalTicketId；reason；hitCount,pages/tool-approval/allowlist/index.tsx,搜索、创建、编辑、禁用；保留精确匹配语义。
 security,密钥与审批,audit,审批审计,approval-audit,事件与统计,已接入,DS-10,事件类型；工具/工作区/时间筛选；事件明细；提交/批准/拒绝统计,pages/tool-approval/audit/index.tsx,只读筛选、分页与详情，展示工单及权限事件。
 security,密钥与审批,audit,审批审计,classifier-health,分类器健康,已接入,DS-10,分类器状态；版本/就绪；调用/失败；诊断明细,pages/tool-approval/components/ClassifierHealthBanner.tsx,显示可用性、失败原因与健康明细。
-access,外部访问,tokens,Access Token,access-tokens,令牌管理,待迁移,DS-11,名称；Workspace 允许清单；Scope 八种现有权限；有效期；Owner；状态；最后使用；版本；撤销原因,pages/access-token-management/index.tsx,列表/详情/创建/重命名/撤销；新令牌仅显示一次。
-access,外部访问,tokens,Access Token,external-api-status,API 状态与限制,待迁移,DS-11,API 可用性；最长有效期；每人 Active 上限；创建错误/版本冲突,pages/access-token-management/components/SecretOnceModal.tsx,显示服务端准入状态和创建限制。
+access,外部访问,tokens,Access Token,access-tokens,令牌管理,已接入,DS-11,名称；Workspace 允许清单；Scope 八种现有权限；有效期；Owner；状态；最后使用；版本；撤销原因,pages/access-token-management/index.tsx,列表/详情/创建/重命名/撤销；新令牌仅显示一次。
+access,外部访问,tokens,Access Token,external-api-status,API 状态与限制,已接入,DS-11,API 可用性；最长有效期；每人 Active 上限；创建错误/版本冲突,pages/access-token-management/components/SecretOnceModal.tsx,显示服务端准入状态和创建限制。
 accounts,用户与权限,users,用户,users,账号与头像,待迁移,DS-12,userId；username；email；displayName；userType(Admin/SimpleUser)；isEnabled；avatar；初始/新密码；确认密码；角色集合,pages/user-management/index.tsx,新增/编辑/启停/删除、修改密码、分配角色。
 accounts,用户与权限,teams,团队,teams,团队与成员,待迁移,DS-12,teamId；name；description；成员 userId/role；workspaceId/name/description/isEnabled；teamAccessPolicy/companyAccessPolicy；工作区成员 userId/accessLevel,pages/team-management/index.tsx,团队 CRUD、成员管理、团队工作区与访问策略。
 accounts,用户与权限,roles,权限角色,rbac,RBAC 角色,待迁移,DS-12,roleId；name；description；workspace read/write/manage；team read/manage；user read/manage；agent run/manage；template read/manage；llm read/manage,pages/role-management/index.tsx,平台权限角色与智能体角色分别命名。

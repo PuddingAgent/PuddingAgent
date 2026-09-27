@@ -1775,6 +1775,81 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task AccessTokenAdapter_CreatesListsRenamesAndRevokesWithCas()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var tokens = factory.CreateAccessTokenSettings(kernel);
+        var workspaces = factory.CreateWorkspaceSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => tokens.ReadStatusAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var status = await tokens.ReadStatusAsync(timeout.Token);
+            Assert.True(status.MaxTokenLifetimeDays >= 1);
+            Assert.True(status.DefaultTokenLifetimeDays <= status.MaxTokenLifetimeDays);
+
+            Assert.Empty((await tokens.ListAsync(new AccessTokenFilter("", "", "", "", 1, 20), timeout.Token)).Items);
+
+            var workspaceId = (await workspaces.ListAsync(timeout.Token)).Single().WorkspaceId;
+            var created = await tokens.CreateAsync(new AccessTokenCreateRequest("composition-token", [workspaceId],
+                ["tasks.read", "tasks.write"], null), timeout.Token);
+            // 明文只在创建结果里出现一次。
+            Assert.StartsWith("pdt_v1_", created.AccessToken, StringComparison.Ordinal);
+            Assert.Equal("composition-token", created.Token.Name);
+            Assert.True(created.Token.IsActive);
+            Assert.Equal(["tasks.read", "tasks.write"], created.Token.Scopes.OrderBy(scope => scope));
+
+            var page = await tokens.ListAsync(new AccessTokenFilter("", "", "", "", 1, 20), timeout.Token);
+            var listed = Assert.Single(page.Items);
+            Assert.Equal(created.Token.TokenId, listed.TokenId);
+            Assert.Equal(1, page.Total);
+            // 摘要里有显示前缀（Core 用来识别令牌的非秘密片段），但绝不能含完整明文。
+            Assert.StartsWith("pdt_v1_", listed.DisplayPrefix, StringComparison.Ordinal);
+            Assert.True(listed.DisplayPrefix.Length < created.AccessToken.Length, "显示前缀必须短于明文");
+            Assert.DoesNotContain(created.AccessToken, listed.ToString(), StringComparison.Ordinal);
+
+            var detail = await tokens.ReadAsync(created.Token.TokenId, timeout.Token);
+            Assert.NotNull(detail);
+            Assert.Null(await tokens.ReadAsync("tok_missing", timeout.Token));
+
+            // 过期版本必须冲突，不能覆盖。
+            await Assert.ThrowsAsync<SettingsConflictException>(() => tokens.RenameAsync(
+                created.Token.TokenId, created.Token.Version + 5, "renamed", timeout.Token));
+            await tokens.RenameAsync(created.Token.TokenId, created.Token.Version, "renamed", timeout.Token);
+            var renamed = await tokens.ReadAsync(created.Token.TokenId, timeout.Token);
+            Assert.Equal("renamed", renamed!.Name);
+            Assert.True(renamed.Version > created.Token.Version, "重命名后版本应递增");
+
+            // Core 只拒绝超长原因（>500）；空原因在 Core 侧是允许的，界面自己要求填写以便溯源。
+            await Assert.ThrowsAsync<ArgumentException>(() => tokens.RevokeAsync(
+                created.Token.TokenId, renamed.Version, new string('x', 501), timeout.Token));
+            await tokens.RevokeAsync(created.Token.TokenId, renamed.Version, "composition fixture", timeout.Token);
+            var revoked = await tokens.ReadAsync(created.Token.TokenId, timeout.Token);
+            Assert.False(revoked!.IsActive);
+            Assert.Contains("composition fixture", revoked.RevocationText, StringComparison.Ordinal);
+            Assert.Contains(await tokens.ListAsync(new AccessTokenFilter("Revoked", "", "", "", 1, 20), timeout.Token) is { } page2
+                ? page2.Items : [], item => item.TokenId == created.Token.TokenId);
+            Assert.Empty((await tokens.ListAsync(new AccessTokenFilter("Active", "", "", "", 1, 20), timeout.Token)).Items);
+
+            // Core 不接受未知 scope，适配器把它作为真实错误抛出。
+            await Assert.ThrowsAsync<InvalidOperationException>(() => tokens.CreateAsync(
+                new AccessTokenCreateRequest("bad", [workspaceId], ["tasks.admin"], null), timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => tokens.ReadStatusAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

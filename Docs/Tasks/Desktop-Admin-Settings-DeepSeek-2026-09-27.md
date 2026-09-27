@@ -361,6 +361,16 @@
 
 ### DS-11 — 外部 AccessToken（P1；依赖 DS-00 的本机管理身份结论）
 
+状态：**已完成（2026-09-27）**。两张卡全部接入：访问令牌、External API 状态。
+
+**访问令牌切片已交付**
+- `access/tokens`：External API 策略（启用/HTTPS 要求/默认与上限有效期/每 Owner 有效令牌上限/公开基地址）、令牌列表与筛选（状态、Owner、工作区、scope、分页）、创建、重命名、撤销。
+- **明文只出现一次**：仅创建响应返回 `pdt_v1_…` 明文，界面提示立刻复制（可一键复制），此后无 reveal；Foundation 模型里既没有明文也没有 `SecretHash` 字段，结构上无法把存储哈希带进界面（有测试断言）。
+- **撤销不可逆**：无 unrevoke、无硬删除、无扩大 scope/工作区的端点；界面在撤销后显示为不可恢复状态。
+- **scope 白名单固定 8 项且无通配符**：`tasks.write` 不隐含 `tasks.command`、`tasks.evaluate` 不改变状态；未知 scope 由 Core 在创建时拒绝（运行时 fail closed），表单也先拦。
+- **CAS**：重命名与撤销都携带读到的 `expectedVersion`；版本冲突映射为 `SettingsConflictException`，界面提示「令牌版本冲突，已阻止覆盖」。
+- 差异登记：Core 的撤销原因只拒绝超过 500 字符，**空原因在 Core 侧是允许的**；界面仍要求填写以便审计溯源，并在提示里说明这是界面规则而非 Core 强制。
+
 先运行策略与元数据只读，再创建/一次性秘密显示/重命名/撤销。八类 scope：tasks.read/write/comment/evaluate/command、workspaces.read、agents.read、messages.send；Workspace 清单至少一项。验收：过期上限/Active 上限、版本冲突、秘密二次读取不可得、撤销不可恢复、名称修改不扩大授权。不得新造“查看令牌明文”或“硬删除”按钮。
 
 ### DS-12 — 用户、团队与 RBAC（P2；依赖 DS-00、DS-05）
@@ -679,7 +689,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### Access Token (`tokens`)
 
-- **令牌管理** — `access-tokens` / DS-11 / 待迁移。列表/详情/创建/重命名/撤销；新令牌仅显示一次。
+- **令牌管理** — `access-tokens` / DS-11 / 已接入。列表/详情/创建/重命名/撤销；新令牌仅显示一次。
   - 选项：名称；Workspace 允许清单；Scope 八种现有权限；有效期；Owner；状态；最后使用；版本；撤销原因。
   - 来源：`pages/access-token-management/index.tsx`。
 
@@ -843,4 +853,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-08 记忆资料库 | 已完成 2026-09-27 | 四张卡全部接入；顺带修复 Core 章节标题不落盘的缺陷 |
 | DS-09 存储与清理 | 已完成 2026-09-27 | 三张卡全部接入：盘点、清理（预览/幂等作业/确认/取消/事件）、保留策略（CAS）；「超预算继续」Core 无对应操作，已登记 |
 | DS-10 密钥与审批 | 已完成 2026-09-27 | 四张卡全部接入；并修复「规则变更不经 HTTP 就不写审计」的缺陷（下沉为 `ToolApprovalAdminService`） |
-| DS-11 … DS-17 | 待实施 | — |
+| DS-11 外部访问 | 已完成 2026-09-27 | 访问令牌与 External API 状态两张卡已接入（明文一次、撤销不可逆、8 项 scope 无通配符、CAS 冲突映射） |
+| DS-12 … DS-17 | 待实施 | — |

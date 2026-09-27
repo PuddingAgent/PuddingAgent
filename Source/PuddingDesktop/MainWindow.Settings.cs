@@ -222,6 +222,15 @@ public sealed partial class MainWindow
         var allowlist = VisibilityOf("security", "allowlist", tab);
         AllowlistSettings.Visibility = allowlist;
         if (allowlist == Visibility.Visible) LoadAllowlistIfNeeded();
+        var accessTokens = VisibilityOf("access", "tokens", tab);
+        AccessTokensSettings.Visibility = accessTokens;
+        if (accessTokens == Visibility.Visible) LoadAccessTokensIfNeeded();
+    }
+
+    private async void LoadAccessTokensIfNeeded()
+    {
+        try { await LoadAccessTokensAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadAllowlistIfNeeded()
@@ -426,6 +435,7 @@ public sealed partial class MainWindow
         ("security", "vault") => true,
         ("security", "audit") => true,
         ("security", "allowlist") => true,
+        ("access", "tokens") => true,
         _ => false
     };
 
