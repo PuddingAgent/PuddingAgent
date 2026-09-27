@@ -89,7 +89,8 @@ public sealed class TurnContentView : StackPanel
             _blocks[block.Key] = (block, old.View); desired.Add(old.View);
         }
         foreach (var key in _blocks.Keys.Except(keys).ToArray()) _blocks.Remove(key);
-        foreach (var child in Children.Where(c => !desired.Contains(c)).ToArray()) Children.Remove(child);
+        var retained = desired.ToHashSet(ReferenceEqualityComparer.Instance);
+        foreach (var child in Children.Where(c => !retained.Contains(c)).ToArray()) Children.Remove(child);
         for (var i = 0; i < desired.Count; i++)
             if (i >= Children.Count || !ReferenceEquals(Children[i], desired[i])) { Children.Remove(desired[i]); Children.Insert(i, desired[i]); }
     }

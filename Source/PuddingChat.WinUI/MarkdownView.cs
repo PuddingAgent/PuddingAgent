@@ -19,9 +19,11 @@ public sealed class MarkdownView : StackPanel
         .UsePipeTables().UseEmphasisExtras(Markdig.Extensions.EmphasisExtras.EmphasisExtraOptions.Strikethrough).UseTaskLists().UseAutoLinks().UseMathematics().DisableHtml().Build();
     private readonly List<(string Source, string Kind, UIElement View)> _rendered = [];
     private readonly MarkdownImageContext? _images;
+    private string? _source;
     public MarkdownView(string text, MarkdownImageContext? images = null) { _images = images; Spacing = 10; Update(text); }
     public void Update(string text)
     {
+        if (_source == text) return;
         var blocks = Markdown.Parse(text, Pipeline);
         var desired = new List<(string Source, string Kind, UIElement View)>();
         foreach (var block in blocks)
@@ -42,11 +44,12 @@ public sealed class MarkdownView : StackPanel
             }
             else desired.Add((source, kind, reusable ? _rendered[index].View : RenderBlock(block)));
         }
-        foreach (var child in Children.Where(c => !desired.Any(d => ReferenceEquals(d.View, c))).ToArray()) Children.Remove(child);
+        var retained = desired.Select(block => block.View).ToHashSet(ReferenceEqualityComparer.Instance);
+        foreach (var child in Children.Where(c => !retained.Contains(c)).ToArray()) Children.Remove(child);
         for (var i = 0; i < desired.Count; i++)
             if (i >= Children.Count || !ReferenceEquals(Children[i], desired[i].View))
             { Children.Remove(desired[i].View); Children.Insert(i, desired[i].View); }
-        _rendered.Clear(); _rendered.AddRange(desired);
+        _rendered.Clear(); _rendered.AddRange(desired); _source = text;
     }
 
     private static IEnumerable<string?> LinkTargets(Block block)
