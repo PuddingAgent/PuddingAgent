@@ -905,7 +905,7 @@ public sealed class AgentConversationProjectionService(
         }
     }
 
-    private static bool TryBuildEventProcessItem(
+    internal static bool TryBuildEventProcessItem(
         ConversationEventEntity evt,
         out ProcessSummaryItem item)
     {
@@ -981,7 +981,15 @@ public sealed class AgentConversationProjectionService(
             toolCallId,
             delegationRunId,
             string.IsNullOrWhiteSpace(evt.TurnId) ? null : evt.TurnId,
-            evt.RunId);
+            evt.RunId,
+            ReadString(evt.Payload, "parentToolCallId") ?? ReadString(evt.Payload, "parent_tool_call_id"),
+            kind == "delegation" ? ReadString(evt.Payload, "run_id") : null,
+            kind != "delegation" ? null : evt.Type switch
+            {
+                ConversationEventTypes.SubAgentRunTimedOut => "timed_out",
+                ConversationEventTypes.SubAgentRunInterrupted => "interrupted",
+                _ => status
+            });
         return true;
     }
 

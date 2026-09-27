@@ -97,13 +97,25 @@ public partial class App : Application
                 var taskRows = (StackPanel)tasks.Children[0];
                 var taskText = (TextBlock)((StackPanel)((Grid)taskRows.Children[0]).Children[1]).Children[0];
                 Check(taskText.Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().Any(r => r.Text.Contains("☑")), "task list displays canonical checked state");
+                var activity = new TurnContentView();
+                activity.Update([new("root", "tool_call", "running", "", 1, "terminal", ToolCallId: "root"),
+                    new("child", "tool_call", "running", "", 2, "read", ToolCallId: "child", ParentToolCallId: "root"),
+                    new("spawn", "delegation", "running", "review code", 3, "reviewer", DelegationExecutionId: "run")], "");
+                var childTool = (Expander)activity.Children[1]; childTool.IsExpanded = true;
+                var delegation = (Expander)activity.Children[2]; delegation.IsExpanded = true;
+                Check(childTool.Margin.Left == 16 && delegation.Header.ToString()!.Contains("子代理"), "native nested tool and delegation identity");
+                activity.Update([new("root", "tool_call", "running", "", 1, "terminal", ToolCallId: "root"),
+                    new("child", "tool_call", "running", "", 2, "read", ToolCallId: "child", ParentToolCallId: "root"),
+                    new("spawn", "delegation", "running", "review code", 3, "reviewer", DelegationExecutionId: "run"),
+                    new("done", "delegation", "success", "reviewed", 4, DelegationExecutionId: "run")], "");
+                Check(ReferenceEquals(delegation, activity.Children[2]) && delegation.IsExpanded && delegation.Header.ToString()!.Contains("已完成"), "delegation terminal update preserves card and expansion");
                 var slow = control.SelectRoleAsync("test", new Agent("slow", "slow"));
                 await control.SelectRoleAsync("test", fixture.Reviewer);
                 fixture.Late.TrySetResult(fixture.Conversation("slow")); await slow;
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 27, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 29, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }

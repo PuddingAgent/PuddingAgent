@@ -180,7 +180,7 @@ internal sealed class InProcessChatClient(IServiceScopeFactory scopes, Cancellat
             role.WorkspaceId, LocalUserId, role.AgentId, message, token);
         return detail is null ? new ProcessDetails(message, []) : new ProcessDetails(detail.MessageId, detail.ProcessItems.Select(Map).ToArray(), Map(detail.Window));
     }, ct);
-    private static ProcessItem Map(ProcessSummaryItem p) => new(p.Id, p.Kind, p.Status, p.Text, p.Sequence, p.Name, p.Arguments, p.Output, p.ExitCode, p.Message, p.ToolCallId, p.TurnId, p.DelegationRunId);
+    private static ProcessItem Map(ProcessSummaryItem p) => new(p.Id, p.Kind, p.DelegationStatus ?? p.Status, p.Text, p.Sequence, p.Name, p.Arguments, p.Output, p.ExitCode, p.Message, p.ToolCallId, p.TurnId, p.DelegationRunId, p.ParentToolCallId, p.DelegationExecutionId);
     private static EventWindow? Map(TurnEventWindow? w) => w is null ? null : new(w.TurnId, w.ThroughSequence, w.MinSequence, w.MaxSequence, w.HasMoreBefore);
     private static string? LocalAvatar(string? path)
     {

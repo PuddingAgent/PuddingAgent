@@ -92,3 +92,12 @@ Core 新增局部保存路径，在既有写锁内合并字段；价格、配额
 
 上一轮并行设置页导致的整包编译阻塞已在当前工作区解除，本轮 Release 发布成功（`temp/native-markdown-publish.log`），未改动或提交他方设置页文件。发布仍有既存 Host/PRI 警告。
 `temp/native-markdown-smoke.log` 与隔离发布包 report 证实启停、重启、UI 回调、数据目录保存和退出检查通过。未重启用户当前 Desktop，未访问用户模型密钥或运行付费模型。
+
+## 原生工具树与子代理执行卡（2026-09-27）
+
+对照 Web `ToolCallTree.tsx`、`DelegationRow.tsx`，扩展 BCL `TurnFlow`。工具先按调用 ID 配对，再按同 Turn 的显式父调用 ID 建树；结果先到不被后续 running 覆盖，非零退出码判为失败，无父/跨 Turn/循环关系保留可见根节点，遍历不递归。WinUI 按深度缩进（视觉缩进最多八层），保留节点展开状态。
+
+委派按真实执行 `run_id` 分组，独立于可复用的 `sub_agent_id`；创建与终态复用卡片，多次执行不合并。主消息展示任务、精确状态和最多 300 字的结果摘要，不复制子代理内部完整轨迹；完整运行检查器仍待接入。Core `ProcessSummaryItem` 新增父调用 ID、委派执行 ID 和精确委派状态，保留 Web 原有汇总状态语义。无父 ID 的真实调用保持平铺；测试能力不等于所有生产者都已发出嵌套关系。
+
+组件先独立验证再接入 Core。最新 BCL 31 项、原生窗口 29 项，Core 投影定向 2 项（`temp/native-activity-projection.log`）。检查包含同名并行、乱序结果、跨 Turn/循环关系、复用子代理多次执行，以及原生终态更新保留卡片。Core 组合/发布验证结果另记下方。
+`temp/native-activity-final.log` 最终验证：BCL 31/31、原生窗口 29 项、真实 Core 组合 3/3。Release 发布及隔离发布包启停/重启/回调/目录保存/退出验证通过，记录 `temp/native-activity-publish.log`、`temp/native-activity-smoke.log`。没有真实付费模型或子代理任务运行验收。

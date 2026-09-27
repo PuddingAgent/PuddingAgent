@@ -10,7 +10,7 @@ public sealed record RoleKey(string WorkspaceId, string AgentId);
 public sealed record AgentStatus(string AgentId, string Status, string Summary, int UnreadCount);
 public sealed record ProcessItem(string Id, string Kind, string Status, string Text, long Sequence,
     string? Name = null, string? Arguments = null, string? Output = null, int? ExitCode = null,
-    string? Message = null, string? ToolCallId = null, string? TurnId = null, string? DelegationRunId = null);
+    string? Message = null, string? ToolCallId = null, string? TurnId = null, string? DelegationRunId = null, string? ParentToolCallId = null, string? DelegationExecutionId = null);
 public sealed record ProcessSummary(int TotalItems, int ToolCalls, int FailedTools, bool HasDetails);
 public sealed record TurnOutcome(string Status, string? ErrorCode, string? ErrorMessage);
 public sealed record ContentPart(string Type, string? ArtifactId, string? Detail);

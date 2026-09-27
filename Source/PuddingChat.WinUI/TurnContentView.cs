@@ -22,17 +22,23 @@ public sealed class TurnContentView : StackPanel
                         HorizontalContentAlignment = HorizontalAlignment.Stretch };
                 old = (null!, view);
             }
+            old.View.Margin = new Thickness(Math.Min(block.Depth, 8) * 16, 0, 0, 0);
             if (old.Value != block)
             {
                 if (old.View is Expander expander)
                 {
                     expander.Header = block.Kind == "thinking" ? "思考过程" :
-                        $"{(block.Kind == "tool" ? "工具" : "活动")} · {block.Name ?? block.Kind} · {block.Status}" +
+                        $"{(block.Kind == "tool" ? "工具" : block.Kind == "delegation" ? "子代理" : "活动")} · {block.Name ?? block.Kind} · {TurnFlow.StatusLabel(block.Status)}" +
                         (block.ExitCode is { } exit ? $" · exit {exit}" : "");
                     var content = new StackPanel { Spacing = 8 };
                     if (block.Kind != "tool" || (string.IsNullOrEmpty(block.Arguments) && string.IsNullOrEmpty(block.Output))) content.Children.Add(MessageCard.RenderText(block.Text));
                     if (block.Arguments is { Length: > 0 }) { content.Children.Add(new TextBlock { Text = "输入", Opacity = .6 }); content.Children.Add(MessageCard.RenderText(block.Arguments)); }
-                    if (block.Output is { Length: > 0 }) { content.Children.Add(new TextBlock { Text = "输出", Opacity = .6 }); content.Children.Add(MessageCard.RenderText(block.Output)); }
+                    if (block.Output is { Length: > 0 })
+                    {
+                        content.Children.Add(new TextBlock { Text = block.Kind == "delegation" ? "结果摘要" : "输出", Opacity = .6 });
+                        var output = block.Kind == "delegation" && block.Output.Length > 300 ? block.Output[..300] + "…（摘要）" : block.Output;
+                        content.Children.Add(MessageCard.RenderText(output));
+                    }
                     var scroll = expander.Content as ScrollViewer ?? new ScrollViewer { MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
                     var offset = scroll.VerticalOffset;
                     var followLatest = scroll.ScrollableHeight - offset < 24;
