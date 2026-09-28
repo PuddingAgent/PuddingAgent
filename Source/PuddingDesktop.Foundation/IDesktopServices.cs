@@ -17,5 +17,7 @@ public interface IKernelSession : IAsyncDisposable
 public interface IKernelSessionFactory
 {
     // A failing factory must dispose its partially constructed host before throwing.
-    Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken);
+    // When a startup attempt is supplied, the factory records the phases it owns into it; a null
+    // attempt means "no evidence requested" and must not change startup behavior.
+    Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken, IStartupAttempt? startup = null);
 }

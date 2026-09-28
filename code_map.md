@@ -1,3 +1,15 @@
+## 2026-09-28：D1 启动证据（启动阶段可归因，分支 `feature/dsh-startup-evidence`）
+
+设计依据 [Desktop 聊天式角色列表与启动体验](Docs/Features/Desktop-Chat-List-Startup-Audit-Design-2026-09-28.md) §5.1/§6 D1：**先测量再优化**，把"启动慢"拆成有名字、有耗时、有顺序的阶段，而不是笼统的 Starting 状态或"加超时即修好"。
+
+落地：`PuddingDesktop.Foundation.StartupEvidence.cs`（合同+记录器）与 `StartupEvidenceSink.cs`（JSONL 落盘）；`PuddingHost.Hosting.StartupPhaseSink.cs`（Host 端口与词表）；`PuddingApplicationInitializer` 把 25 个 schema 组**逐组**记为一阶段（外加 Goal 对账/External API 校验/Event Store/Memory core+library/Catalog/jieba）；`DesktopKernelFactory` 记租约/Builder/Build(DI)/Initialize/Start(HostedServices)；`InProcessKernel` 记 `kernel.gate`/`kernel.core-start` 并在宿主 Ready 时记 `ExecutionReady`；Desktop 外壳每次启动建一个 attempt（锚点=进程启动），记 `ShellVisible`/`DirectoryReadable`/`ConversationReadable` 与 `desktop.chat.mount`/`desktop.directory.read`/`desktop.conversation.read`。证据写在 `<StateRoot>\startup\startup-evidence.jsonl`，每次启动一行；汇总工具 `TestScripts/summarize-startup-evidence.ps1`；读法与语义见 `How-Debuge.md` 顶部。
+
+三条诚实边界：①**attempt 起点在 `StartKernelAsync`**（DataRoot 已知处），所以偏好读取与 ~30 个面板构建**不是独立阶段**，这段空档只能用 `sinceProcessStartMs` 与 `ShellVisible`（回填真实墙钟，`atMs` 可为负）界定；②`ConversationReadable` 在启动窗口内**通常不成立**（产品启动不自动选中角色），是否落在窗口内由 `conversation.first-read` 指标显式说明；③**不是基准**，5 次样本只报 min/mean/max，不包装成 p95，且换构建即不可比。`violations` 非空表示**埋点有 bug**，不是启动失败；`Aborted`=未报告完成就结束，`Skipped`=故意跳过（原 catch 后继续的步骤现在留痕）。
+
+验证（实测，未含 WinUI 窗口 smoke）：`PuddingDesktop.FoundationTests` 全绿（顺序/嵌套/失败/取消/重复结算/定稿后上报/上限/200 并发/JSONL 往返/写失败不抛）；`PuddingDesktop.CompositionTests.StartupEvidenceCompositionTests` 用**真实进程内 Host + 隔离 DataRoot** 断言 kernel 与 host 阶段同处一个 attempt、`ExecutionReady` 与 `DirectoryReadable` 达成、证据 JSONL 可往返，另一项以反射把 Host 词表钉在报告词表上（Host 新增名字而报告不认时取红）。
+
+未做与事故登记：**`D:\data` 冷/热采样未执行**——用户裁定"等无并行在途改动后再采样"，且实测 master 当前不自洽（本轮埋点被 6a8 按路径提交带入 `fb0d370`；master 自 `e9bba17` 起缺 6a8 的 4 个未跟踪文件；另有 `WorkspaceEdit` 二义性由其未提交改动收敛）。本批按协议 §7 走独立 worktree，**未在 master 上施工**；编译验证时临时借用了 6a8 的在途文件（只读、未暂存、未提交）。
+
 ## 2026-09-27 修复：Desktop 内核因缺 appsettings.json 无法启动
 
 症状：真实 DataRoot（`D:\data`）下 Desktop 永远停在「正在初始化进程内 Core…」骨架，外壳读不到角色。异常为 `Microsoft.Extensions.Options.OptionsValidationException: Invalid TaskAutoDispatch configuration or disabled Goal prerequisite.`，抛在 `TaskAutoDispatchEvaluator..ctor`（`ValidateOnStart`）。

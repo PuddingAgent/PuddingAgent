@@ -336,10 +336,11 @@ public static class PuddingApplicationHost
     /// </summary>
     public static async Task InitializeAsync(
         WebApplication application,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IStartupPhaseSink? startupSink = null)
     {
         Console.WriteLine("[Startup] DB migration skipped — using pre-built database");
-        await PuddingApplicationInitializer.InitializeAsync(application, cancellationToken);
+        await PuddingApplicationInitializer.InitializeAsync(application, startupSink, cancellationToken);
     }
 
     /// <summary>

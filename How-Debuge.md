@@ -1,3 +1,15 @@
+### 启动慢怎么归因：启动证据 JSONL（D1，2026-09-28）
+
+- **先取证再优化**。启动阶段耗时写在 `<StateRoot>\startup\startup-evidence.jsonl`（StateRoot 默认 `%LOCALAPPDATA%\Pudding\WinUiSkeleton`，`--state-root` 可改），**每次 Kernel 启动追加一行 JSON**；`<StateRoot>\desktop.log` 仍是异常日志。汇总：`pwsh TestScripts/summarize-startup-evidence.ps1 -Path <该文件>`。
+- **一行一条 attempt**：`attemptId` / `processId` / `buildVersion` / `dataRoot` / `outcome`(Succeeded|Failed|Cancelled) / `failureType` / `totalMs` / `sinceProcessStartMs` / `phases[]` / `milestones[]` / `metrics[]` / `violations[]`。**没有会话正文、密钥或连接串**，只有阶段名、耗时、计数。
+- **时间轴口径**：`phases[].atMs` 与 `milestones[].atMs` 相对 attempt 起点；**相对进程启动**要加 `sinceProcessStartMs`。`ShellVisible` 常用 `occurredAt` 回填窗口激活那一刻，所以它的 `atMs` 可能是负数、或小于其它里程碑——那不是缺陷，是"这次尝试开始前外壳就已可见"。
+- **四个里程碑**：`ShellVisible`（窗口激活）→ `DirectoryReadable`（角色目录渲染完成）→ `ConversationReadable`（首个会话读取完成）→ `ExecutionReady`（宿主服务已启动，可执行）。**未达成就不写**，不写"0 未读"式假数据；启动期间外壳只显示**已结算阶段**的中文标签，不显示百分比。
+- **阶段名**：`kernel.gate` / `kernel.core-start`（Foundation，`InProcessKernel`）；`host.data-root-lease` / `host.builder` / `host.build` / `host.initialize.*`（每 25 个 schema 组一个）/ `host.start`（Composition + `PuddingApplicationInitializer`）；`desktop.chat.mount` / `desktop.directory.read` / `desktop.conversation.read`（Desktop 外壳）。Host 侧词表在 `PuddingHost.Hosting.StartupPhaseNames`，报告侧在 `PuddingDesktop.Foundation.StartupPhases`，两者由 `StartupEvidenceCompositionTests.HostPhaseVocabularyIsPartOfTheReportedNames` 绑定。
+- **`violations[]` 不是崩溃**：它记录证据本身的损坏，例如同一阶段被结算两次、里程碑重复上报、attempt 定稿后仍上报（定稿后一律忽略）。**出现 violations 说明埋点有 bug，不代表启动失败**；`Aborted` 阶段表示该步未报告完成就结束（抛异常，或 attempt 先定稿）。
+- **`Skipped` 是故意的**：Goal 对账、Event Store 建表、目录加载、jieba 回填原本就 catch 后继续，现在会以 `Skipped` + 异常类型名留痕，而不是静默。
+- **不要把它当基准**：5 次样本只能报 min/mean/max 与分布，**不得包装成 p95**；`D:\data` 采样前必须确认无并行在途未提交改动（协议 §11），否则测的是别人半成品。`conversation.first-read` 指标说明首个会话是否落在启动窗口内（当前产品不在启动时自动选中角色，通常为 0）。
+- 现有 `[Startup] …` 控制台行仍在，是可读的对照；两者不一致时以 JSONL 为准（它带 PID、构建版本与顺序）。
+
 ### WinUI / Core DLL 调试（2026-09-27）
 
 - 原生聊天入口为 `PuddingChat.WinUI.ChatWorkspace`，调用 `InProcessChatClient`；聊天操作不产生 HTTP 请求。`test-pudding-native-chat.ps1` 分别验证 BCL 状态、独立 WinUI 窗口与真实 Core 直接调用（含零 HTTP 断言）。先确认选择代次、workspaceId/agentId/MainSessionId，再核查 Core canonical 消息与 Turn，不能把受理当完成。

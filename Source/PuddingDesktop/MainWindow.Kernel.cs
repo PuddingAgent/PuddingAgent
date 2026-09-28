@@ -40,6 +40,25 @@ public sealed partial class MainWindow
     private readonly PuddingDesktop.Foundation.ISubAgentRunSettings _subAgentRuns;
     private readonly PuddingDesktop.Foundation.ITokenUsageSettings _usage;
     private string? _chatDataRoot;
+    private IStartupAttempt? _startup;
+    private bool _conversationReadable;
+    private DateTimeOffset? _shellVisibleAtUtc;
+
+    /// <summary>
+    /// The process anchor for startup evidence. Read once at type load; when the runtime refuses the
+    /// process start time the anchor is "now" and the attempt records that instead of pretending.
+    /// </summary>
+    private static readonly (DateTimeOffset AtUtc, bool Known) ProcessStart = ReadProcessStart();
+
+    private static (DateTimeOffset AtUtc, bool Known) ReadProcessStart()
+    {
+        try { return (System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime(), true); }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            return (DateTimeOffset.UtcNow, false);
+        }
+    }
+
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);
     private const string DefaultDataRoot = @"D:\data";
@@ -149,11 +168,90 @@ public sealed partial class MainWindow
             KernelStatus.Severity = InfoBarSeverity.Informational;
             return;
         }
-        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-        await _kernel.StartAsync(root, timeout.Token);
-        if (_kernel.Snapshot.State != DesktopKernelState.Ready) return;
-        RefreshKernel();
-        await OpenWorkbenchAsync(root);
+        // One attempt per start: it owns the phases and milestones this window can observe, and it is
+        // persisted even when the start fails, because a failed start is what most needs evidence.
+        var attempt = StartupAttempts.Begin(root, StartupAttemptOrigin.Capture(ProcessStart.AtUtc));
+        if (!ProcessStart.Known) attempt.Metric(StartupPhases.MetricProcessStartUnknown, 1);
+        _conversationReadable = false;
+        _startup = attempt;
+        attempt.PhaseRecorded += OnStartupPhaseRecorded;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+            await _kernel.StartAsync(root, timeout.Token, attempt);
+            // The window is normally activated before this attempt exists, so the milestone carries
+            // the observed wall clock: it lands on the process timeline, not at zero.
+            if (_shellVisibleAtUtc is { } shellVisible)
+                attempt.Milestone(StartupMilestone.ShellVisible, "窗口已激活", shellVisible);
+            if (_kernel.Snapshot.State != DesktopKernelState.Ready) { attempt.Fail("KernelNotReady"); return; }
+            RefreshKernel();
+            await OpenWorkbenchAsync(root);
+            // Stated explicitly rather than left to be inferred from a missing milestone: the artifact
+            // says whether a conversation was readable inside the startup window.
+            attempt.Metric(StartupPhases.MetricConversationFirstRead, _conversationReadable ? 1 : 0);
+            attempt.Complete();
+        }
+        catch (OperationCanceledException)
+        {
+            attempt.Cancel();
+            throw;
+        }
+        catch (Exception exception)
+        {
+            attempt.Fail(exception.GetType().Name);
+            throw;
+        }
+        finally
+        {
+            attempt.PhaseRecorded -= OnStartupPhaseRecorded;
+            if (ReferenceEquals(_startup, attempt)) _startup = null;
+            PersistStartupEvidence(attempt);
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_kernel.Snapshot.State == DesktopKernelState.Ready) KernelStatus.Message = string.Empty;
+            });
+        }
+    }
+
+    private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
+    {
+        _shellVisibleAtUtc ??= DateTimeOffset.UtcNow;
+        _startup?.Milestone(StartupMilestone.ShellVisible, "窗口已激活", _shellVisibleAtUtc);
+    }
+
+    /// <summary>
+    /// Shows the stage Core is in without claiming progress: the label comes from the phase that
+    /// actually settled, and an unknown phase falls back to a neutral description.
+    /// </summary>
+    private void OnStartupPhaseRecorded(object? sender, StartupPhaseRecord record)
+        => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_kernel.Snapshot.State != DesktopKernelState.Starting) return;
+            KernelStatus.Message = $"正在准备：{DescribeStartupPhase(record.Name)}（{record.DurationMs:F0} ms）";
+        });
+
+    private static string DescribeStartupPhase(string name) => name switch
+    {
+        var value when value.StartsWith(StartupPhases.HostPlatformSchema, StringComparison.Ordinal) => "数据存储结构",
+        var value when value.StartsWith("host.initialize.memory-db", StringComparison.Ordinal) => "记忆库",
+        StartupPhases.HostWorkspaceCatalog => "工作空间目录",
+        StartupPhases.HostJiebaBackfill => "记忆索引回填",
+        StartupPhases.HostGoalReconcile => "目标恢复状态",
+        StartupPhases.HostEventStore => "会话事件存储",
+        StartupPhases.HostExternalApiConfig => "外部接口配置",
+        StartupPhases.HostBuilder or StartupPhases.HostBuild => "Core 组件装配",
+        StartupPhases.HostDataRootLease => "数据目录占用",
+        StartupPhases.HostStart => "后台服务",
+        StartupPhases.HostInitialize => "Core 初始化",
+        _ => "Core",
+    };
+
+    private void PersistStartupEvidence(IStartupAttempt attempt)
+    {
+        if (attempt.Evidence is not { } evidence) return;
+        var sink = new StartupEvidenceFileSink(Path.Combine(App.StateRoot, "startup"));
+        if (!sink.TryWrite(evidence, out var error))
+            App.WriteDiagnostic(new IOException($"启动证据未写入 {sink.FilePath}：{error}"));
     }
     private async Task OpenWorkbenchAsync(string dataRoot)
     {
@@ -163,6 +261,7 @@ public sealed partial class MainWindow
         var generation = _chatMountGeneration;
         await _nativeChatRelease;
         if (_exiting || generation != _chatMountGeneration || _kernel.Snapshot.State != DesktopKernelState.Ready) return;
+        var mountPhase = _startup?.Phase(StartupPhases.DesktopChatMount);
         _nativeChat = new ChatWorkspace(_createChatClient(), address);
         _nativeChat.SettingsRequested += (_, _) => _state.Navigate(ShellPage.Settings);
         _nativeChat.RuntimeRequested += (_, _) => _state.Navigate(ShellPage.RuntimeCenter);
@@ -182,9 +281,12 @@ public sealed partial class MainWindow
         EmptyRoles.Text = "正在读取角色…";
         EmptyRoles.Visibility = Visibility.Visible;
         ApplyLayout();
+        mountPhase?.Complete();
         // The shell sidebar is the only role list; the chat is told not to draw its own column.
         _nativeChat.SetNavigationWidth(0);
+        var directoryPhase = _startup?.Phase(StartupPhases.DesktopDirectoryRead);
         await LoadRoleSidebarAsync(dataRoot);
+        directoryPhase?.Complete();
     }
     private void ReleaseNativeChat()
     {

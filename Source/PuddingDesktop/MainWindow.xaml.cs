@@ -31,6 +31,9 @@ public sealed partial class MainWindow : Window
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
         (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens, _roles, _users, _teams, _runtimeNodes, _diagnostics, _sessions, _subAgentRuns, _usage) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
+        // ShellVisible is observed here, not asserted at the start of a later attempt: activation is
+        // the moment the user can actually see and navigate the product.
+        Activated += OnWindowActivated;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(DragRegion);

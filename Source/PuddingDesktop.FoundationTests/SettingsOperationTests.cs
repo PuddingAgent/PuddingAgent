@@ -191,7 +191,7 @@ public sealed class SettingsOperationTests
     private sealed class LifecycleFactory : IKernelSessionFactory
     {
         public FakeHost? Host;
-        public Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken)
+        public Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken, IStartupAttempt? startup = null)
         {
             IKernelSession session = Host is null ? new PlainSession() : Host.Session;
             return Task.FromResult(session);

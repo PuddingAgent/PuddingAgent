@@ -202,3 +202,38 @@ D2 的真实未读与摘要接通前，可以先交付 D3 的占位/降级视觉
 本设计补充 [剩余任务书](../Tasks/Desktop-Native-Chat-Remaining-Tasks-2026-09-27.md) 的 NC-05/NC-06，并为当前用户提出的启动/列表体验明确实施范围。NC-01～03 审批恢复仍是独立依赖；列表的 PendingDecisionCount 在真实审批端口未接通前为未知，不伪造审批入口。
 
 本轮交付仅为源码/只读日志审计、设计及静态草案。没有执行启动基准、产品功能测试、运行数据修改或功能实施。
+
+## 8. D1 实装记录（2026-09-28）
+
+状态：**已实现、已独立测试；分支 `feature/dsh-startup-evidence`，未合并**。依据协议 §7（worktree 每线一个）与 §11（重型动作排期），本批不在 master 上施工；`D:\data` 自然启动采样**尚未执行**（见 §8.4）。
+
+### 8.1 落地内容
+
+| 组件 | 文件 | 职责 |
+|---|---|---|
+| Foundation | `StartupEvidence.cs` | `IStartupAttempt` / `IStartupPhase` 合同、`StartupMilestone`（4 项）、`StartupAttemptOutcome`（Succeeded/Failed/Cancelled）、阶段记录器（顺序、耗时、`Aborted`/`Skipped`、有界、线程安全、证据不自欺：重复结算/定稿后上报写进 `violations`） |
+| Foundation | `StartupEvidenceSink.cs` | `StartupEvidenceFileSink`：每次尝试追加一行 JSON 到 `<StateRoot>\startup\startup-evidence.jsonl`；写失败返回原因，**不抛异常**（丢诊断不能变成启动失败） |
+| Host | `Hosting/StartupPhaseSink.cs` | `IStartupPhaseSink` 端口 + `StartupPhaseNames`/`StartupMetrics` 词表（Core 不引用 Desktop 程序集） |
+| Host | `Hosting/PuddingApplicationInitializer.cs` | 25 个 schema 组**逐组**为一阶段 + Goal 对账 / External API 校验 / Event Store / Memory（core+library）/ Catalog / jieba；原本 catch 后继续的步骤现在留 `Skipped` + 异常类型名 |
+| Composition | `HostStartupPhaseSink.cs`、`DesktopKernelFactory.cs` | 唯一同时认识两边的适配点；租约 / Builder / Build(DI) / Initialize / Start(HostedServices) 五阶段 |
+| Foundation | `InProcessKernel.cs` | `kernel.gate`、`kernel.core-start`，并在宿主 `Ready` 时记录 `ExecutionReady`（失败路径不记录） |
+| Desktop | `MainWindow.Kernel.cs`、`MainWindow.xaml.cs`、`MainWindow.RoleNavigation.cs` | 每次启动一个 attempt（起点=进程启动，`ProcessStart` 读不到时记 `clock.process-start-unknown`）；`ShellVisible`（窗口激活）/ `DirectoryReadable`（目录渲染完成）/ `ConversationReadable`（会话读取完成）；`desktop.chat.mount`、`desktop.directory.read`、`desktop.conversation.read` 阶段；启动中只显示**已结算阶段**的中文标签，不显示百分比 |
+| 工具 | `TestScripts/summarize-startup-evidence.ps1` | 读 JSONL：逐 attempt 里程碑/最慢阶段 + 跨 attempt 每阶段 count/min/mean/max（**不报 p95**） |
+| 诊断 | `How-Debuge.md` | 文件位置、字段口径、阶段词汇、`violations`/`Skipped` 语义、采样纪律 |
+
+### 8.2 诚实边界（不得当卖点）
+
+1. **attempt 起点在 `StartKernelAsync`**（DataRoot 已知处），因此 `desktop.settings.load`（偏好 JSON）与 `desktop.panels.build`（~30 个面板构建）**不是独立阶段**：这段空档只能用 `sinceProcessStartMs` 与 `ShellVisible`（回填真实墙钟，`atMs` 可能为负）界定。补齐需要把 attempt 提前到 `OnLoaded` 之前，属于 D3 外壳重排的一部分。
+2. **`ConversationReadable` 在启动窗口内通常不成立**：当前产品启动后不自动选中角色，因此它只在"外壳自身在启动期间打开了会话"（例如恢复上次选中）时才记录；是否落在窗口内由 `conversation.first-read` 指标显式说明（0/1），不靠"少一个里程碑"让人猜。
+3. **不是基准**：单次运行只说明这一次的分布；5 次样本报 min/mean/max 与分布，不包装成 p95。所有数值都带 `buildVersion` 与 `processId`，换构建即不可比。
+4. **`violations` 非空 = 埋点 bug，不是启动失败**；`Aborted` = 该步未报告完成就结束。
+
+### 8.3 验证（本批实测）
+
+- `PuddingDesktop.FoundationTests`：**全绿**（含顺序、嵌套、失败、取消、重复结算、定稿后上报、上限、200 并发、JSONL 往返与写失败不抛、真实 Host 阶段落盘）。
+- `PuddingDesktop.CompositionTests.StartupEvidenceCompositionTests`：**真实进程内 Host + 隔离 DataRoot**，断言 kernel/host 阶段同处一个 attempt、`ExecutionReady` 与 `DirectoryReadable` 达成、`metrics` 含 schema 步数与 workspace 数、证据 JSONL 可往返；另一项用反射绑定 Host 词表 ⊆ 报告词表（Host 新增名字而报告不认时**取红**）。
+- **未跑**：WinUI 窗口 smoke、Desktop 发布 smoke、`D:\data` 冷/热采样。
+
+### 8.4 采样为何仍未做
+
+用户裁定"等无并行在途改动后再采样"，且实测 master 当前**不自洽**：本轮我的 `DesktopKernelFactory` 埋点被 6a8 按路径提交带入 `fb0d370`（其任务书已登记为第二次共享文件事故），而 master 自 `e9bba17` 起另缺 6a8 的 4 个未跟踪文件（`FullTextIndexMaintenanceOptions` 等）。在这两个缺口补齐前，任何采样测的都是"两个半成品拼起来的构建"。采样门禁：**master 能独立编译 + 无在途未提交改动**。

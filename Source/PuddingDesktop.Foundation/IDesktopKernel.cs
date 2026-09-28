@@ -12,7 +12,12 @@ public interface IDesktopKernel : IAsyncDisposable
 {
     DesktopKernelSnapshot Snapshot { get; }
     event EventHandler? StateChanged;
-    Task StartAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>
+    /// Starts the in-process Core and records the phases it owns into <paramref name="startup"/>.
+    /// The caller owns that attempt: it decides the outcome (complete/fail/cancel) and persists the
+    /// evidence, because only the caller sees the shell-side milestones around the kernel.
+    /// </summary>
+    Task StartAsync(string dataRoot, CancellationToken cancellationToken, IStartupAttempt? startup = null);
     Task StopAsync(CancellationToken cancellationToken);
 
     /// <summary>

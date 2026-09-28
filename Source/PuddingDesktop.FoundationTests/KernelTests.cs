@@ -47,10 +47,56 @@ public sealed class KernelTests
         Assert.Equal(1, factory.Starts); factory.Session.FailStop = false; await kernel.DisposeAsync();
         await Assert.ThrowsAsync<ObjectDisposedException>(() => kernel.StartAsync("test-root", default));
     }
+    [Fact]
+    public async Task StartupAttemptReceivesKernelPhasesAndExecutionMilestone()
+    {
+        var factory = new Factory();
+        await using var kernel = new InProcessKernel(factory);
+        var attempt = StartupAttempts.Begin("test-root", new StartupAttemptOrigin("kernel-1", 1, "test", DateTimeOffset.UtcNow));
+
+        await kernel.StartAsync("test-root", default, attempt);
+
+        var evidence = attempt.Complete();
+        // A successful start must not look aborted: the first real evidence run showed this exact
+        // mistake (phase disposed without reporting completion) and it was fixed here.
+        Assert.All(evidence.Phases, phase => Assert.Equal(StartupPhaseOutcome.Completed, phase.Outcome));
+        Assert.Contains(evidence.Phases, phase => phase.Name == StartupPhases.KernelGate);
+        Assert.Contains(evidence.Phases, phase => phase.Name == StartupPhases.KernelCoreStart);
+        Assert.Equal([StartupMilestone.ExecutionReady], evidence.Milestones.Select(item => item.Milestone));
+        Assert.Equal("test-root", evidence.DataRoot);
+        Assert.Empty(evidence.Violations);
+    }
+
+    [Fact]
+    public async Task FailedKernelStartLeavesItsPhaseAbortedAndNoExecutionMilestone()
+    {
+        var factory = new Factory { BeforeStart = _ => throw new InvalidOperationException("core refused") };
+        await using var kernel = new InProcessKernel(factory);
+        var attempt = StartupAttempts.Begin("test-root", new StartupAttemptOrigin("kernel-2", 1, "test", DateTimeOffset.UtcNow));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => kernel.StartAsync("test-root", default, attempt));
+
+        var evidence = attempt.Fail("InvalidOperationException");
+        Assert.Equal(StartupPhaseOutcome.Completed, Assert.Single(evidence.Phases, phase => phase.Name == StartupPhases.KernelGate).Outcome);
+        Assert.Equal(StartupPhaseOutcome.Aborted, Assert.Single(evidence.Phases, phase => phase.Name == StartupPhases.KernelCoreStart).Outcome);
+        Assert.Empty(evidence.Milestones);
+    }
+
+    [Fact]
+    public async Task KernelWithoutAnAttemptStartsAndStopsTheSameWay()
+    {
+        var factory = new Factory();
+        await using var kernel = new InProcessKernel(factory);
+        await kernel.StartAsync("test-root", default);
+        Assert.Equal(DesktopKernelState.Ready, kernel.Snapshot.State);
+        await kernel.StopAsync(default);
+        Assert.Equal(1, factory.Starts);
+    }
+
     private sealed class Factory : IKernelSessionFactory
     {
         public int Starts; public Session Session = new(); public Func<CancellationToken, Task>? BeforeStart;
-        public async Task<IKernelSession> StartAsync(string root, CancellationToken ct)
+        public async Task<IKernelSession> StartAsync(string root, CancellationToken ct, IStartupAttempt? startup = null)
         { Interlocked.Increment(ref Starts); if (BeforeStart != null) await BeforeStart(ct); return Session = new(); }
     }
     private sealed class Session : IKernelSession

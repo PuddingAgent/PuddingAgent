@@ -27,10 +27,15 @@ namespace PuddingHost.Hosting;
 /// <summary>
 /// Idempotent database/schema initialization, workspace catalog loading,
 /// and jieba token backfill. Extracted from PuddingApplicationInitializationExtensions.
+/// <para>
+/// Every step reports a phase to the optional <see cref="IStartupPhaseSink"/> so a slow start can be
+/// attributed to a named step instead of to "startup". Step order, exception behavior and the
+/// console lines are unchanged by this instrumentation.
+/// </para>
 /// </summary>
 public static class PuddingApplicationInitializer
 {
-    public static async Task InitializeAsync(WebApplication app, CancellationToken cancellationToken)
+    public static async Task InitializeAsync(WebApplication app, IStartupPhaseSink? sink, CancellationToken cancellationToken)
     {
         // ── Platform DB ───────────────────────────────────
         Console.WriteLine("[Startup] Ensuring Platform DB tables...");
@@ -42,35 +47,43 @@ public static class PuddingApplicationInitializer
                 .GetRequiredService<ILoggerFactory>()
                 .CreateLogger("PlatformSchema");
 
-            await platformDb.Database.EnsureCreatedAsync(cancellationToken);
-            await AppUserSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await ChatMessageSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await SessionSteeringSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await ExecutionRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await ConnectorStreamProjectionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await TaskDispatchSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await WorkspaceTaskSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await TaskPlanningSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await GoalSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await TodoSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await TaskSchedulingSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await TaskSchedulerIntentSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await TaskSchedulerIntentOutcomeSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await TaskSchedulerDecisionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await TaskSchedulerScanRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await ExternalAccessTokenSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await ExternalTaskApiSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await ProviderFileRefSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            // SKILL Hub 中央技能库（4 张 Hub* 表 + 索引）；EF 迁移快照漂移，故走同一幂等模式
-            await SkillHubSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            // Each schema group is its own phase: a slow or failing group must be identifiable.
+            var schemaSteps = new (string Name, Func<Task> Run)[]
+            {
+                ("database", () => platformDb.Database.EnsureCreatedAsync(cancellationToken)),
+                ("app-user", () => AppUserSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("token-usage", () => TokenUsageSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("conversation-command", () => ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("chat-message", () => ChatMessageSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("session-steering", () => SessionSteeringSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("execution-run", () => ExecutionRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("sub-agent-run", () => SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("message-fabric", () => MessageFabricSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("connector-stream-projection", () => ConnectorStreamProjectionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("agent-orchestration", () => AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("task-dispatch", () => TaskDispatchSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("workspace-task", () => WorkspaceTaskSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("task-planning", () => TaskPlanningSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("goal", () => GoalSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("todo", () => TodoSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("task-scheduling", () => TaskSchedulingSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("task-scheduler-intent", () => TaskSchedulerIntentSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("task-scheduler-intent-outcome", () => TaskSchedulerIntentOutcomeSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("task-scheduler-decision", () => TaskSchedulerDecisionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("task-scheduler-scan-run", () => TaskSchedulerScanRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("external-access-token", () => ExternalAccessTokenSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("external-task-api", () => ExternalTaskApiSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                ("provider-file-ref", () => ProviderFileRefSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+                // SKILL Hub 中央技能库（4 张 Hub* 表 + 索引）；EF 迁移快照漂移，故走同一幂等模式
+                ("skill-hub", () => SkillHubSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken)),
+            };
+            sink?.Metric(StartupMetrics.SchemaStepCount, schemaSteps.Length);
+            foreach (var (name, run) in schemaSteps)
+                await StepAsync(sink, StartupPhaseNames.PlatformSchemaStepPrefix + name, run).ConfigureAwait(false);
 
             // ── ADR-074 §12 / ADR-092：Core 重启后按 resume_policy 分流：默认 disarm 为 paused，
             //    auto_resume_on_restart 保持 Active 并换发 fence；显式 /goal resume 始终可用 ──
+            var goalPhase = sink?.Phase(StartupPhaseNames.GoalReconcile);
             try
             {
                 var goalReconciler = scope.ServiceProvider.GetRequiredService<GoalRestartReconciler>();
@@ -82,37 +95,48 @@ public static class PuddingApplicationInitializer
                         $"[Startup] Goal restart reconcile: {reconcile.DisarmedCount} disarmed -> paused," +
                         $" {reconcile.AutoResumedCount} auto-resumed");
                 }
+                goalPhase?.Complete($"{reconcile.DisarmedCount} disarmed / {reconcile.AutoResumedCount} auto-resumed");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Startup] Goal restart disarm failed: {ex.Message}");
+                goalPhase?.Skip($"跳过：{ex.GetType().Name}");
             }
+            finally { goalPhase?.Dispose(); }
 
             // ── ADR-075: ExternalTaskApi 显式配置校验（越界即启动错误，不静默回默认）──
-            var externalApiOptions = scope.ServiceProvider.GetRequiredService<ExternalTaskApiOptionsProvider>();
-            var configErrors = ExternalTaskApiOptionsProvider.Validate(externalApiOptions.Current);
-            if (configErrors.Count > 0)
+            using (var configPhase = sink?.Phase(StartupPhaseNames.ExternalApiConfig))
             {
-                foreach (var error in configErrors)
-                    Console.WriteLine($"[Startup] ExternalTaskApi config error: {error}");
-                throw new InvalidOperationException(
-                    "Invalid ExternalTaskApi configuration in system.json: " + string.Join("; ", configErrors));
+                var externalApiOptions = scope.ServiceProvider.GetRequiredService<ExternalTaskApiOptionsProvider>();
+                var configErrors = ExternalTaskApiOptionsProvider.Validate(externalApiOptions.Current);
+                if (configErrors.Count > 0)
+                {
+                    foreach (var error in configErrors)
+                        Console.WriteLine($"[Startup] ExternalTaskApi config error: {error}");
+                    throw new InvalidOperationException(
+                        "Invalid ExternalTaskApi configuration in system.json: " + string.Join("; ", configErrors));
+                }
+                configPhase?.Complete();
             }
 
             Console.WriteLine("[Startup] Platform DB tables and schema upgrades ensured");
 
             // ── Conversation Event Store ──────────────────
+            var eventStorePhase = sink?.Phase(StartupPhaseNames.EventStore);
             try
             {
                 using var scope2 = app.Services.CreateScope();
                 var eventStore = scope2.ServiceProvider.GetRequiredService<IConversationEventStore>();
                 await eventStore.EnsureTablesAsync(cancellationToken);
                 Console.WriteLine("[Startup] Conversation Event Store tables ensured");
+                eventStorePhase?.Complete();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Startup] Event Store table ensure failed: {ex.Message}");
+                eventStorePhase?.Skip($"跳过：{ex.GetType().Name}");
             }
+            finally { eventStorePhase?.Dispose(); }
         }
         catch (Exception ex)
         {
@@ -132,13 +156,14 @@ public static class PuddingApplicationInitializer
                 .GetRequiredService<ILoggerFactory>()
                 .CreateLogger("MemoryDatabaseInitialization");
 
-            await MemoryDbInitializer.InitializeAsync(coreMemoryFactory);
-            await MemoryLibraryDbInitializer.InitializeAsync(libraryMemoryFactory, memoryLogger);
+            await StepAsync(sink, StartupPhaseNames.MemoryDbCore, () => MemoryDbInitializer.InitializeAsync(coreMemoryFactory)).ConfigureAwait(false);
+            await StepAsync(sink, StartupPhaseNames.MemoryDbLibrary, () => MemoryLibraryDbInitializer.InitializeAsync(libraryMemoryFactory, memoryLogger)).ConfigureAwait(false);
         }
         Console.WriteLine("[Startup] Memory DB tables ensured");
 
         // ── Workspace Catalog ─────────────────────────────
         Console.WriteLine("[Startup] Initializing Workspace Catalog...");
+        var catalogPhase = sink?.Phase(StartupPhaseNames.WorkspaceCatalog);
         try
         {
             var catalog = app.Services.GetRequiredService<InMemoryWorkspaceCatalog>();
@@ -146,15 +171,21 @@ public static class PuddingApplicationInitializer
             var db = scope.ServiceProvider.GetRequiredService<ControllerDbContext>();
             await db.Database.EnsureCreatedAsync(cancellationToken);
             await catalog.LoadAsync();
-            Console.WriteLine($"[Startup] Workspace Catalog loaded, {catalog.GetAll().Count} workspace(s)");
+            var workspaceCount = catalog.GetAll().Count;
+            Console.WriteLine($"[Startup] Workspace Catalog loaded, {workspaceCount} workspace(s)");
+            sink?.Metric(StartupMetrics.WorkspaceCount, workspaceCount);
+            catalogPhase?.Complete($"{workspaceCount} workspace(s)");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Startup] Workspace Catalog init failed: {ex.Message}");
+            catalogPhase?.Skip($"跳过：{ex.GetType().Name}");
         }
+        finally { catalogPhase?.Dispose(); }
 
         // ── jieba backfill ───────────────────────────────
         Console.WriteLine("[Startup] Starting jieba backfill...");
+        var jiebaPhase = sink?.Phase(StartupPhaseNames.JiebaBackfill);
         try
         {
             var library = app.Services.GetRequiredService<IMemoryLibrary>();
@@ -162,11 +193,26 @@ public static class PuddingApplicationInitializer
             {
                 await memLib.BackfillTokensAsync();
                 Console.WriteLine("[startup] jieba tokens backfill completed.");
+                jiebaPhase?.Complete();
+            }
+            else
+            {
+                jiebaPhase?.Skip("跳过：IMemoryLibrary 不是 MemoryLibrary 实现");
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[startup] jieba tokens backfill skipped: {ex.Message}");
+            jiebaPhase?.Skip($"跳过：{ex.GetType().Name}");
         }
+        finally { jiebaPhase?.Dispose(); }
+    }
+
+    /// <summary>Runs one step as a phase. A throwing step disposes its scope, which records Aborted.</summary>
+    private static async Task StepAsync(IStartupPhaseSink? sink, string phase, Func<Task> body)
+    {
+        using var scope = sink?.Phase(phase);
+        await body().ConfigureAwait(false);
+        scope?.Complete();
     }
 }

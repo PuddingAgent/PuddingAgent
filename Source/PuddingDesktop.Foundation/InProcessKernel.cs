@@ -38,11 +38,15 @@ public sealed class InProcessKernel(IKernelSessionFactory factory) : IDesktopKer
     }
 
 
-    public async Task StartAsync(string dataRoot, CancellationToken cancellationToken)
+    public async Task StartAsync(string dataRoot, CancellationToken cancellationToken, IStartupAttempt? startup = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataRoot);
         var root = Path.GetFullPath(dataRoot);
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using (var gatePhase = startup?.Phase(StartupPhases.KernelGate))
+        {
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gatePhase?.Complete();
+        }
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -51,17 +55,26 @@ public sealed class InProcessKernel(IKernelSessionFactory factory) : IDesktopKer
                 if (Snapshot.State == DesktopKernelState.Ready && string.Equals(_dataRoot, root, StringComparison.OrdinalIgnoreCase)) return;
                 throw new InvalidOperationException("请先停止当前内核并完成资源释放。");
             }
-            using var startup = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            lock (_sync) _startup = startup;
+            using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            lock (_sync) _startup = startupCts;
             try
             {
                 // A new generation invalidates every stamp and selection captured from the previous session.
                 _settings.KernelChanged(DesktopKernelState.Starting);
                 Set(DesktopKernelState.Starting, "正在初始化进程内 Core…");
-                _session = await Task.Run(() => factory.StartAsync(root, startup.Token), CancellationToken.None).ConfigureAwait(false);
+                // Completion is explicit: a disposed-but-not-completed phase would report Aborted even
+                // though the host started, which the very first real evidence run showed is misleading.
+                using (var coreStartPhase = startup?.Phase(StartupPhases.KernelCoreStart))
+                {
+                    _session = await Task.Run(() => factory.StartAsync(root, startupCts.Token, startup), CancellationToken.None).ConfigureAwait(false);
+                    coreStartPhase?.Complete();
+                }
                 _dataRoot = root;
-                startup.Token.ThrowIfCancellationRequested();
+                startupCts.Token.ThrowIfCancellationRequested();
                 Set(DesktopKernelState.Ready, "Core 已就绪 · 与 Desktop 同进程", _session.WorkbenchAddress);
+                // Hosted services are running only once the host reports Ready; the milestone is not
+                // recorded earlier, and a failed start never reaches it.
+                startup?.Milestone(StartupMilestone.ExecutionReady, "宿主服务已启动");
                 var observedSession = _session;
                 _stoppingRegistration = observedSession.Stopping.Register(() =>
                 {

@@ -10,6 +10,8 @@
 | `SettingsCatalog.cs` / `SettingsCatalog.json` | 原生设置的 17 分类 / 49 页签 / 64 卡片、字段搜索与迁移任务来源；纯静态目录，无业务调用 |
 | （已删除）`SkeletonSettingsStore.cs` | 由 `DesktopPreferences.cs` 取代 |
 | `SettingsOperations.cs` | DS-00 接入边界：`ISettingsScope`/`ISettingsOperationHost` 端口、`SettingsOperationGate`（未就绪/停止拒绝、取消排空、内核与选择代次）、`SettingsVersionGuard` 版本冲突；纯 BCL，无 DI/Host 引用 |
+| `StartupEvidence.cs` | D1 启动证据合同与记录器：`IStartupAttempt`/`IStartupPhase`、`StartupMilestone`（ShellVisible→DirectoryReadable→ConversationReadable→ExecutionReady，**未达成就不写**）、`StartupAttemptOutcome`（Succeeded/Failed/Cancelled 三者分开）、`StartupPhases` 阶段词汇与 `StartupMetrics`；阶段按结算顺序记录耗时、`Aborted`/`Skipped` 区分"抛异常"与"故意跳过"、上限 512 阶段/64 指标、`violations` 记录**证据自身**的损坏（重复结算、里程碑重复、定稿后上报一律忽略）。只记名称/耗时/计数，**没有会话正文、密钥或连接串** |
+| `StartupEvidenceSink.cs` | `StartupEvidenceFileSink`：每次尝试追加一行 JSON 到 `<dir>/startup-evidence.jsonl`；`TryWrite` 返回失败原因而**不抛异常**（丢诊断不得变成启动失败） |
 | `LocalDesktopIdentity.cs` | 本机单用户身份常量与序号匹配；不来自输入、命令行或 HTTP，也不等于 Web Admin 角色 |
 | `DesktopPreferences.cs` | 真实桌面偏好（外观 + 语言）与原子保存；`DesktopLanguages` 只列随构建提供的语言，并声明需重启生效 |
 | `DesktopProductInfo.cs` | DS-01 关于卡：版本取自程序集元数据（不写死）、外部帮助入口判定与只读配置位置描述 |
@@ -44,4 +46,4 @@
 | `WorkspaceContracts.cs` | DS-05 工作区/成员切片：`IWorkspaceSettings`、状态显示（停用/冻结分开）、Core 的访问策略词表、UserProfile 必须是合法 JSON、内置默认工作区不可停用 |
 | `PuddingDesktop.Foundation.csproj | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。237 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost；`IStartupAttempt` 由调用方（Desktop 外壳）创建与定稿，内核只往里记自己拥有的阶段，因此**没有 attempt 时行为不变**。**238 项独立测试通过**。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)；启动证据读法见根目录 `How-Debuge.md`。

@@ -59,7 +59,10 @@ public sealed partial class MainWindow
 
             // A Core restart or data-root switch owns a new client; a late reply must not overwrite it.
             if (_exiting || !ReferenceEquals(_roleSidebarClient, client)) return;
-            RenderRoleSidebar(RoleNavigation.Build(workspaces, agentsByWorkspace, statusesByWorkspace));
+            var snapshot = RoleNavigation.Build(workspaces, agentsByWorkspace, statusesByWorkspace);
+            RenderRoleSidebar(snapshot);
+            // Only a rendered directory counts as readable; a failure path never reaches this line.
+            _startup?.Milestone(StartupMilestone.DirectoryReadable, $"{snapshot.Items.Count} 个角色 / {workspaces.Length} 个工作空间");
         }
         catch (Exception exception)
         {
@@ -166,18 +169,25 @@ public sealed partial class MainWindow
 
         EmptyRoles.Visibility = Visibility.Collapsed;
         _state.Navigate(ShellPage.Workbench);
+        var readPhase = _startup?.Phase(StartupPhases.DesktopConversationRead);
         try
         {
             _nativeChat.SetActive(true);
             await _nativeChat.InitializeAsync();
             await _nativeChat.SelectRoleAsync(item.Workspace.WorkspaceId, item.Agent);
+            // Listing a role is not reading it: the milestone follows the completed conversation read.
+            _startup?.Milestone(StartupMilestone.ConversationReadable, item.Label);
+            _conversationReadable = true;
+            readPhase?.Complete(item.Label);
         }
         catch (Exception exception)
         {
             App.WriteDiagnostic(exception);
             EmptyRoles.Text = $"切换角色失败：{exception.Message}";
             EmptyRoles.Visibility = Visibility.Visible;
+            readPhase?.Skip($"失败：{exception.GetType().Name}");
         }
+        finally { readPhase?.Dispose(); }
     }
 
     private void ReleaseRoleSidebarClient()
