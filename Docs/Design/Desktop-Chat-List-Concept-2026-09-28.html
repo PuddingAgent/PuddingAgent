@@ -6,8 +6,26 @@
 <style>
 :root{font-family:"Segoe UI Variable","Microsoft YaHei",sans-serif;color:#243431;background:#eaf1f0;font-size:14px}*{box-sizing:border-box}body{margin:0;padding:24px;background:radial-gradient(at 80% 0%,#e0f5fb,transparent 55%),radial-gradient(at 0% 80%,#dceee4,transparent 60%),#f4f6f5}button,input,textarea{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #277364;outline-offset:3px}.note{max-width:1480px;margin:0 auto 14px;color:#576d64;font-size:12px}.app{max-width:1480px;margin:auto;min-height:800px;height:calc(100vh - 90px);display:grid;grid-template-rows:44px 1fr;border:1px solid #fff;border-radius:14px;overflow:hidden;box-shadow:0 20px 65px #345b4b1c;background:#f9fbfad9}.title{display:flex;align-items:center;gap:28px;padding:0 20px;background:#ffffff72;font-size:12px;border-bottom:1px solid #304a3c0d}.title strong{font-size:14px}.title span:last-child{margin-left:auto;color:#72837d}.layout{display:grid;grid-template-columns:288px minmax(420px,1fr) 320px;min-height:0}.sidebar{background:#eef5f0b3;display:flex;flex-direction:column;padding:20px 12px 12px;border-right:1px solid #304a3c0d}.sectionhead{display:flex;align-items:center;justify-content:space-between;margin:0 8px 16px;font-size:19px;font-weight:600}.icon{background:transparent;border:0;border-radius:8px;padding:6px 9px;color:inherit}.icon:hover{background:#e1eae5}.search{background:#ffffffae;border:1px solid #35534414;border-radius:8px;padding:9px 12px;width:100%;margin-bottom:12px}.workspace{display:flex;justify-content:space-between;color:#697b73;padding:4px 8px 14px;font-size:12px}.rows{overflow:auto;flex:1}.group{font-size:11px;color:#7c8c84;padding:12px 10px 8px}.row{position:relative;display:flex;gap:12px;width:100%;border:0;background:none;border-radius:10px;padding:14px 10px;text-align:left;color:inherit;min-height:76px;align-items:center;margin-bottom:3px}.row:hover{background:#ffffff85}.row.selected{background:#dfeee5}.row.selected:before{content:"";position:absolute;left:0;top:22px;bottom:22px;width:3px;border-radius:3px;background:#3d8069}.avatar{width:44px;height:44px;flex:none;display:grid;place-items:center;border-radius:50%;background:linear-gradient(140deg,#e3ddff,#b6c8dd);color:#494761;font-weight:600;border:2px solid #ffffffd0;font-size:16px;position:relative}.mint{background:linear-gradient(140deg,#daf1e6,#9bc6b6);color:#386255}.rose{background:linear-gradient(140deg,#fae4e7,#d5b8d2);color:#785b72}.avatar.running:after{content:"";position:absolute;width:10px;height:10px;border-radius:50%;background:#458d70;border:2px solid #eef5f0;right:-1px;bottom:0}.body{flex:1;min-width:0}.line{display:flex;align-items:center;justify-content:space-between;gap:8px}.name{font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.time{font-size:11px;color:#7a8882;white-space:nowrap}.preview{font-size:12px;color:#75837c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:5px}.badge{background:#418369;color:#fff;font-size:10px;min-width:18px;height:18px;border-radius:10px;display:grid;place-items:center}.attention{color:#9b7127}.foot{display:flex;justify-content:space-between;border-top:1px solid #344b3d12;padding:14px 8px 0;color:#738279;font-size:12px}.chat{display:flex;flex-direction:column;min-height:0;background:#fbfcfbe6}.chathead{height:76px;display:flex;align-items:center;gap:12px;padding:14px 28px;border-bottom:1px solid #344b3d0e}.chathead .avatar{width:36px;height:36px;font-size:13px}.muted{font-size:12px;color:#839188;margin-top:4px}.state{margin-left:auto;font-size:12px;color:#6e8477}.messages{overflow:auto;flex:1;padding:34px 32px}.message{max-width:820px;margin:auto}.user{display:flex;justify-content:flex-end;margin-bottom:28px}.bubble{padding:13px 18px;background:#e7f1eb;border-radius:16px 16px 4px 16px;line-height:1.7;max-width:82%}.agentlabel{font-size:12px;color:#75877c;margin-bottom:16px;display:flex;align-items:center;gap:8px}.dot{width:7px;height:7px;background:#6f9d88;border-radius:50%}.flow{border-left:2px solid #dfebe3;padding:0 0 4px 16px;margin-bottom:22px}.flow details{margin:12px 0;color:#6c7e72;font-size:12px}.flow summary{cursor:pointer}.flow p{line-height:1.7}.tool{border:1px solid #e4ebe6;background:white;border-radius:9px;padding:11px 14px;margin:10px 0;display:flex;gap:12px}.tool strong{font-weight:500;color:#405c4c}.tool span:last-child{margin-left:auto;color:#7a8b80}.answer{line-height:1.9;font-size:14px}.answer h2{font-size:18px;color:#2d4537}.answer ul{padding-left:22px}.code{padding:14px 16px;background:#f0f4f1;border-radius:10px;color:#4e6858;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap}.actions{font-size:12px;color:#8b978f;margin-top:18px}.composerarea{padding:12px 28px 22px}.composer{max-width:860px;margin:auto;border:1px solid #dce8e0;border-radius:16px;background:#fff;box-shadow:0 4px 16px #38574108;padding:14px}.composer textarea{display:block;border:0;resize:none;background:none;width:100%;height:64px;padding:2px 2px 12px;outline:none;color:#344e40}.composer textarea::placeholder{color:#a2aaa5}.toolbar{display:flex;align-items:center;gap:6px;font-size:12px;color:#7d8a81}.toolbar button{border:0;background:transparent;border-radius:8px;padding:8px;color:inherit}.toolbar .spacer{flex:1}.toolbar .send{background:#45856a;color:white;padding:8px 13px}.inspector{border-left:1px solid #344b3d12;padding:23px 22px;background:#ffffffa8;overflow:auto}.inspecthead{display:flex;justify-content:space-between;align-items:center;font-weight:600;margin-bottom:26px}.profile{text-align:center}.profile .avatar{margin:0 auto 12px;width:64px;height:64px;font-size:22px}.profile h2{font-size:17px;margin:10px 0}.profile p{font-size:12px;line-height:1.8;color:#819087}.tabs{display:flex;justify-content:space-between;margin:26px 0;border-bottom:1px solid #e7eee8;padding-bottom:10px;font-size:12px;color:#8d9991}.tabs strong{color:#46775c}.field{margin:20px 0;font-size:13px}.field label{display:block;font-size:11px;color:#96a198;margin-bottom:8px}.chip{display:inline-block;font-size:11px;background:#edf4ee;border:1px solid #e6eee7;padding:5px 8px;margin:3px 4px 3px 0;border-radius:6px;color:#668471}.settings{border:1px solid #dfe9e1;background:#fff;border-radius:8px;padding:9px;width:100%;color:#698470;font-size:12px;margin-top:20px}.legend{font-size:11px;color:#99a59d;line-height:1.7;margin-top:25px}.layout.hide-inspector{grid-template-columns:288px minmax(420px,1fr)}.hide-inspector .inspector{display:none}@media(max-width:1100px){body{padding:12px}.layout{grid-template-columns:260px minmax(0,1fr)}.inspector{display:none}.app{height:calc(100vh - 90px)}.messages{padding:24px}.chathead,.composerarea{padding-left:20px;padding-right:20px}}@media(max-width:700px){.layout,.layout.hide-inspector{grid-template-columns:1fr}.sidebar{display:none}.app{min-height:720px}.state{display:none}.messages{padding:20px}.chathead{padding:12px 18px}.composerarea{padding:12px}.note{line-height:1.6}}
 </style>
-<style>.row[hidden]{display:none}</style>
-<p class="note">设计草案 · 示例数据 · HTML 仅用于评审视觉层级，产品实现仍为原生 WinUI 3。此画面展示主动打开的角色详情，日常默认收起。</p>
+<style>
+.row[hidden],.workpanel[hidden]{display:none}
+.layout{grid-template-columns:288px minmax(420px,1fr) 460px}
+.workarea{padding:0;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.workhead{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e5ece7;font-weight:600}
+.worktabs{display:flex;padding:10px 12px 0;gap:6px;border-bottom:1px solid #e5ece7;background:#f3f7f4}
+.worktab{border:1px solid transparent;border-radius:8px 8px 0 0;padding:10px 12px;background:none;color:#7b8d80;font-size:12px}
+.worktab[aria-selected=true]{background:white;color:#326f53;border-color:#dce7df;border-bottom-color:white;font-weight:600}
+.workpanel{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;background:#fff}
+.browserbar{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #e9eeeb;font-size:12px;color:#6d7f73}
+.address{padding:8px 12px;border-radius:7px;background:#f2f5f3;flex:1;color:#7b8d81;font-family:Consolas,monospace}
+.browserstate{padding:9px 16px;background:#eef6f1;color:#5a7d66;font-size:11px}
+.webpreview{margin:20px 16px;padding:26px 22px;background:linear-gradient(145deg,#edf7f1,#f3f8fd);border:1px solid #e3eee7;border-radius:12px;min-height:350px}
+.webpreview h2{font-size:24px;line-height:1.4;margin:18px 0;color:#37674e}.webpreview p{font-size:13px;color:#759080;line-height:1.9}.pagecard{background:#ffffffbd;border:1px solid #e6eee7;padding:14px;border-radius:8px;margin-top:12px;color:#587761;font-size:12px}
+.artifact{margin:18px;padding:20px;border:1px solid #e5ebe7;border-radius:10px;line-height:1.8}.artifact h2{font-size:20px}.artifact small{color:#8a988f}.worksource{padding:13px 16px;border-top:1px solid #e5ece7;font-size:11px;color:#86988b;display:flex;gap:12px;align-items:center}.worksource button{margin-left:auto}
+.linkaction{background:none;border:0;color:#438367;padding:6px 0;font-size:12px;text-align:left}.tracefocus{outline:2px solid #81ad94;outline-offset:4px;border-radius:4px}.hide-inspector .workarea{display:none}
+@media(max-width:1250px){.layout{grid-template-columns:248px minmax(420px,1fr)}.workarea{display:none}.layout.show-workarea{grid-template-columns:248px minmax(420px,1fr)}.show-workarea .chat{display:none}.show-workarea .workarea{display:flex}.workarea .inspector{display:flex}}
+@media(max-width:700px){.layout,.layout.show-workarea,.layout.hide-inspector{grid-template-columns:minmax(0,1fr)}.sidebar{display:none}.webpreview{margin:12px}.worktabs{overflow:auto}.worktab{white-space:nowrap}}
+</style>
+<p class="note">设计草案 · 示例数据 · 右侧为制品、Agent 浏览器与交互工作区；可切换标签或从消息定位。浏览器内容为静态示意，不访问外部网页、不执行工具。产品聊天仍为原生 WinUI 3。</p>
 <main class="app">
  <header class="title"><strong>◈ Pudding</strong><span>文件</span><span>窗口</span><span>帮助</span><span>角色优先的编码工作台</span></header>
  <div class="layout" id="layout">
@@ -26,33 +44,44 @@
   <div class="foot"><span>⚙ 设置</span><span>◉ 内核就绪</span></div>
  </aside>
  <section class="chat" aria-label="示例会话">
-  <header class="chathead"><div class="avatar mint">助</div><div><strong>默认助手</strong><div class="muted">默认工作区 · PuddingAgent</div></div><span class="state">任务已完成</span><button class="icon" id="toggle" aria-label="切换设计草案中的角色详情" aria-expanded="true">☷</button></header>
+  <header class="chathead"><div class="avatar mint">助</div><div><strong>默认助手</strong><div class="muted">默认工作区 · PuddingAgent</div></div><span class="state">任务已完成</span><button class="icon" id="toggle" aria-label="切换制品与交互工作区" aria-expanded="true">◫ 工作区</button></header>
   <div class="messages"><div class="message">
    <div class="user"><div class="bubble">检查一下角色列表的加载流程，给出改进建议。</div></div>
    <div class="agentlabel"><span class="dot"></span>默认助手 <span>· 12 秒</span></div>
-   <div class="flow"><details open><summary>思考过程 · 示例</summary><p>先核对数据来源，再检查角色列表与聊天区域是否重复读取相同目录。</p></details><div class="tool"><strong>✓ 读取源文件</strong><span>RoleNavigation.cs</span></div><div class="tool"><strong>✓ 检索调用路径</strong><span>2 个入口</span></div></div>
+   <div class="flow" id="source-browser"><details open><summary>思考过程 · 示例</summary><p>先核对数据来源，再检查角色列表与聊天区域是否重复读取相同目录。</p></details><div class="tool"><strong>✓ 读取源文件</strong><span>RoleNavigation.cs</span></div><div class="tool"><strong>✓ 浏览器查看设计</strong><button class="linkaction" data-open="browser">查看浏览器 →</button></div></div>
    <div class="answer"><h2>角色目录可以共用一份展示状态</h2><p>当前聊天已采用进程内调用。下一步把外壳列表与紧凑导航接到同一个目录来源，让角色切换和状态提示保持一致。</p><ul><li>最近消息作为第二行，职责说明放到角色详情。</li><li>保留真实的运行状态、未读和待处理事项。</li><li>按角色更新列表行，避免每次清空全部头像卡片。</li></ul><div class="code">RoleDirectoryStore → Composition → Core application service</div></div>
+   <div id="source-artifact"><button class="linkaction" data-open="artifact">▤ 制品：角色列表设计.md　打开预览 →</button></div>
    <div class="actions">复制　 ·　 朗读　 ·　 查看执行明细</div>
   </div></div>
   <footer class="composerarea"><div class="composer"><textarea placeholder="给默认助手发消息…" aria-label="设计草案输入框，不会发送"></textarea><div class="toolbar"><span>＋ 添加上下文</span><span class="spacer"></span><span>模型设置</span><span>　♩　</span><button class="send" disabled title="视觉草案不发送消息">发送 ↑</button></div></div></footer>
  </section>
- <aside class="inspector" aria-label="角色详情草案">
-  <div class="inspecthead">角色详情 <button class="icon" id="close" aria-label="收起角色详情">×</button></div>
-  <div class="profile"><div class="avatar mint">助</div><h2>默认助手</h2><p>负责日常编码、问题分析与项目协作。<br>角色有自己的会话、能力和上下文。</p></div>
-  <div class="tabs"><strong>概览</strong><span>能力</span><span>运行</span><span>资料</span></div>
-  <div class="field"><label>工作空间</label>默认工作区 / PuddingAgent</div>
-  <div class="field"><label>模型</label>遵循角色配置</div>
-  <div class="field"><label>运行状态</label>可接收新任务</div>
-  <div class="field"><label>能力示意</label><span class="chip">代码读写</span><span class="chip">终端</span><span class="chip">子代理协作</span></div>
-  <button class="settings" disabled>打开角色设置（草案）</button>
-  <p class="legend">详情随所选角色更新。代码、Diff、终端和产物在需要时使用右侧文档模式；不常驻空白工作面板。</p>
+ <aside class="inspector workarea" aria-label="制品与 Agent 交互工作区">
+  <div class="workhead">制品与交互 <button class="icon" id="close" aria-label="收起工作区并返回聊天">×</button></div>
+  <div class="worktabs" role="tablist" aria-label="工作区标签">
+   <button class="worktab" id="tab-browser" role="tab" aria-selected="true" aria-controls="panel-browser" data-open="browser">◎ Agent 浏览器</button>
+   <button class="worktab" id="tab-artifact" role="tab" aria-selected="false" aria-controls="panel-artifact" data-open="artifact">▤ 设计.md</button>
+  </div>
+  <section class="workpanel" id="panel-browser" role="tabpanel" aria-labelledby="tab-browser">
+   <div class="browserbar"><span aria-hidden="true">←　→　↻</span><span class="address">示例页面 / design-preview</span></div>
+   <div class="browserstate">默认助手 · 页面快照示意 · 只读预览</div>
+   <div class="webpreview"><small>DESIGN WORKSPACE</small><h2>工作有上下文，<br>结果可以直接查看。</h2><p>这里展示 Agent 浏览器中的网页。实际产品可观察页面变化，并通过明确的接管入口参与交互。</p><div class="pagecard">01　查看页面与工具执行进度</div><div class="pagecard">02　打开生成的文件、报告与图片</div><div class="pagecard">03　回到触发这次操作的消息</div></div>
+   <p class="legend" style="margin:0 20px 20px">本草案不提供真实浏览器控制。代码、Diff 和终端可作为同一工作区内的其他文档类型。</p>
+  </section>
+  <section class="workpanel" id="panel-artifact" role="tabpanel" aria-labelledby="tab-artifact" hidden>
+   <div class="browserbar">▤ 角色列表设计.md <span style="margin-left:auto">版本 1 · 示例制品</span></div>
+   <article class="artifact"><small>默认助手生成 · 来自当前会话</small><h2>角色列表设计</h2><p>使用头像、名称、最近消息与时间构成紧凑的聊天列表。</p><h3>布局职责</h3><p>左侧：选择聊天角色。<br>中间：会话、思考过程与工具调用。<br>右侧：制品、Agent 浏览器和交互。</p><h3>交互原则</h3><p>点击消息里的制品卡打开本预览；从工作区可以返回来源消息。角色资料与配置由独立设置入口管理。</p></article>
+  </section>
+  <div class="worksource"><span id="source-label">默认助手 · 浏览器调用</span><button class="linkaction" id="reveal">回到来源 ↗</button></div>
  </aside>
  </div>
 </main>
 <script>
-const layout=document.getElementById('layout'),toggle=document.getElementById('toggle');
-function setPanel(open){layout.classList.toggle('hide-inspector',!open);toggle.setAttribute('aria-expanded',String(open));}
-toggle.onclick=()=>setPanel(layout.classList.contains('hide-inspector'));document.getElementById('close').onclick=()=>setPanel(false);
+const layout=document.getElementById('layout'),toggle=document.getElementById('toggle');let active='browser';
+function setPanel(open){layout.classList.toggle('hide-inspector',!open);layout.classList.toggle('show-workarea',open);toggle.setAttribute('aria-expanded',String(open));}
+function openDocument(id){active=id;setPanel(true);for(const key of ['browser','artifact']){document.getElementById('panel-'+key).hidden=key!==id;document.getElementById('tab-'+key).setAttribute('aria-selected',String(key===id));}document.getElementById('source-label').textContent=id==='browser'?'默认助手 · 浏览器调用':'默认助手 · 制品版本 1';}
+document.querySelectorAll('[data-open]').forEach(button=>button.onclick=()=>openDocument(button.dataset.open));
+toggle.onclick=()=>setPanel(matchMedia('(max-width:1250px)').matches?!layout.classList.contains('show-workarea'):layout.classList.contains('hide-inspector'));document.getElementById('close').onclick=()=>setPanel(false);
+document.getElementById('reveal').onclick=()=>{if(matchMedia('(max-width:1250px)').matches)setPanel(false);const source=document.getElementById('source-'+active);source.scrollIntoView({block:'center',behavior:'smooth'});source.classList.add('tracefocus');setTimeout(()=>source.classList.remove('tracefocus'),1400);};
 document.getElementById('search').oninput=e=>{document.querySelectorAll('.row').forEach(row=>row.hidden=!row.dataset.name.toLowerCase().includes(e.target.value.toLowerCase()));};
 </script>
 </html>

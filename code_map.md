@@ -1518,4 +1518,4 @@ PuddingChat.WinUI/PagedTextView.cs 为大输出页增加最高 360 DIP 的原生
 
 ## 2026-09-28 聊天式头像列表与启动审计设计
 
-设计入口：Docs/Features/Desktop-Chat-List-Startup-Audit-Design-2026-09-28.md；视觉草案：Docs/Design/Desktop-Chat-List-Concept-2026-09-28.html。审计确认聊天已直调 Core，当前问题为 Shell/ChatWorkspace 重复目录读取、外壳卡片重建及状态不同步、摘要与真实未读缺失。方案提出单一目录 Store、Core 摘要投影、聊天式头像行、按需 Agent 详情栏与紧凑 Composer；启动分阶段计时后再优化。仅设计，未实施、未执行启动基准。
+设计入口：Docs/Features/Desktop-Chat-List-Startup-Audit-Design-2026-09-28.md；视觉草案：Docs/Design/Desktop-Chat-List-Concept-2026-09-28.html。审计确认聊天已直调 Core，当前问题为 Shell/ChatWorkspace 重复目录读取、外壳卡片重建及状态不同步、摘要与真实未读缺失。方案提出单一目录 Store、Core 摘要投影、聊天式头像行、制品/Agent 浏览器交互工作区与紧凑 Composer；启动分阶段计时后再优化。仅设计，未实施、未执行启动基准。
