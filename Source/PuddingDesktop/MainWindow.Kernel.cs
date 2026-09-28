@@ -39,6 +39,9 @@ public sealed partial class MainWindow
     private readonly PuddingDesktop.Foundation.ISessionDirectorySettings _sessions;
     private readonly PuddingDesktop.Foundation.ISubAgentRunSettings _subAgentRuns;
     private readonly PuddingDesktop.Foundation.ITokenUsageSettings _usage;
+    private readonly PuddingDesktop.Foundation.ISchedulerSettings _scheduler;
+    private readonly PuddingDesktop.Foundation.ITaskSettings _tasks;
+    private readonly PuddingDesktop.Foundation.IOrchestrationSettings _orchestration;
     private string? _chatDataRoot;
     private IStartupAttempt? _startup;
     private bool _conversationReadable;

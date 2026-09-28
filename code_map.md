@@ -49,6 +49,15 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-17 编排与 Hook（编排/HTTP Hook 切片，DS-17 完成）
+
+`automation/orchestration` 两张卡接入 Core 的 `IAgentOrchestrationQueryStore` + `AgentOrchestrationAuthoringService` + `AgentOrchestrationManualRunService`：**图列表与修订结构**（节点/边/输入）、**修订历史**、修订 JSON 的**校验**（只编译不落盘）与**CAS 发布**、以及**手动运行**。**HTTP Hook 卡有一条结构性事实**：触发器是**图修订的一部分**，Core **没有**独立的 Hook 增删改/启停接口（`/api/orchestrations/hooks/{graphId}/{triggerId}` 只提供外部调用入口）——所以「启停/改输入映射」= **发布一个新修订**，界面把这条写在卡片上而不是伪造一个开关。**凭据边界**：触发器 `Configuration` 里可能引用凭据，界面**只显示配置键名**、绝不回显配置值或任何密钥。**范围登记**：画布编辑与运行详情按卡片行为说明属于**独立原生工作页**，尚未实现。踩坑记录：①`AgentOrchestrationGraphDefinition` **没有** `ContentHash`（哈希属于修订摘要），界面据此显示「哈希见修订列表」；②定义若连 `required` 字段都不全，**反序列化阶段**就会失败——界面把「缺哪些属性」直接报出来，而不是让 Core 回一句泛泛的「定义无效」；③`AgentOrchestrationStoreResult` 用 `Success`/`ErrorMessage`、手动运行结果用 `Kind`+`Receipt` 包装，按真实模型对齐。验证：Foundation 235 项、Composition 38 项（真实 Host：空图列表、未知图无修订、非法 JSON 在调用 Core 前被拦、校验结论自洽、发布由 Core 决定成败、未知图的运行被拒）、窗口 smoke 264 项通过。**至此 64 张卡片全部接入**（63 已接入 + 1 已有入口）。
+## 2026-09-27 DS-16 任务与编排调度（任务管理切片，DS-16 完成）
+
+`automation/tasks` 接入 Core 的 `SqliteWorkspaceTaskStore` + `TaskCommandService`（与 HTTP 控制器同一对服务）：工作区/状态/优先级/Agent 筛选 + **keyset 游标**翻页、任务详情（版本、看板列、允许迁移、阻塞与失败原因）、创建，以及八种生命周期命令（指派/立即执行/取消/重开/归档/标记失败/恢复/重排队），每个写操作都带读到的版本。**按卡片行为说明，本卡只是任务管理的入口**：完整看板/列表、详情编辑、评论、评价、事件流与执行命令属于**独立原生工作页**，目前尚未实现——界面把这条范围写在卡片上，不假装已有工作页。**本轮抓到两个真实问题**：①`TaskStateMachine.ProjectBoardColumn` 对 `Cancelled`/`Archived` **直接抛异常**（这两种状态进入历史筛选、不占五列），适配器若照直调用，**只要列表里有一个已取消任务就会崩**——集成测试在取消任务后立刻暴露；现按 HTTP 控制器的口径回退为状态名。②任务面板原先**没有填充工作区选择器**（Core 的任务查询按工作区必填），导致界面只能报「筛选条件无效」；现已从 Core 载入工作区并在 Core 未就绪时如实报「Core 未就绪」。另登记：`task.reason_required` 由 **Runtime 的任务工具**按 disposition（blocked/rejected/needs_approval/progress）判定，**命令服务层不强制原因**——取消/归档可以不带原因，界面因此不强制。本轮还顺带修复了一次构建：他方已把 `IStartupAttempt` 从接口移除，而我此前提交的 `DesktopKernelFactory.StartAsync` 仍带该参数（引用已不存在的类型），已恢复为接口要求的二参形态。验证：Foundation 230 项、Composition 37 项（真实 Host：列表/创建/过期版本冲突/取消后状态与版本前进/状态筛选）、窗口 smoke 260 项通过。
+## 2026-09-27 DS-16 任务与编排调度（调度策略/状态切片）
+
+`automation/scheduler` 两张卡接入 Core 的 `TaskSchedulerControlService`（**与 HTTP 控制器同一个单例**，因此策略 CAS、暂停、手动扫描/修复在两个管理面行为一致）。**策略卡**：启用/暂停/事件驱动、模式、扫描间隔、候选上限、单轮启动上限，保存带 `ExpectedRevision`；**状态卡**：本轮状态、最近扫描的判定与实际启动、跟踪器计数、决策/修复码、下次扫描、最近错误，以及手动扫描与修复。**四条诚实边界**：①卡片只提到 shadow/authoritative，Core **实际接受五个模式**（含 disabled 与两个 authoritative 变体），界面按真实的五个提供；②`authoritative-single` 会把单轮启动**强制为 1**，所以界面同时显示「配置值」与「当前模式实际用值」；③authoritative 系要求三个前置开关（TaskBoundGoals / GoalRuns / GoalRuns.Continuation），界面先拦并列出观察值，与 Core 的拒绝理由一致；④卡片要求「确认已执行而非仅派发」——界面把**候选/可派发**与**已启动**分开展示，并明确「候选只是判定结果」。**本轮抓到我自己的一个真实缺陷**：我曾把 `ExpectedRevision` 规范化时 `Math.Max(0, …)` 夹紧，这会把**过期令牌变成有效令牌**，从而悄悄绕过 CAS——集成测试里「过期 revision 必须冲突」这条断言直接失败暴露了它，现已改为原样传递（并有 Foundation 测试固定该行为）。另外踩坑记录：`_sc` 前缀已被存储清理面板占用，调度面板改用 `_sch`；又因为我自己的测试失败后宿主未干净释放，紧接着的无关测试（存储清理）跟着失败——**这套单宿主约束下，一个测试失败会级联到后面的测试**，排查时先看第一个失败。验证：Foundation 243 项、Composition 36 项（真实 Host：状态可读、过期 revision 冲突、同值保存 revision 前进、非法模式被 Core 拒绝、暂停下手动扫描仍可执行）、窗口 smoke 256 项通过。
 ## 2026-09-27 DS-15 用量（管理首页切片，DS-15 完成）
 
 `usage/dashboard` 接入管理首页卡片：**摘要 + 快捷入口**，按卡片要求**不复制完整工作台**。摘要把已经接好的四个设置面组合起来（工作区 `IWorkspaceSettings`、团队 `ITeamSettings`、运行时节点 `IRuntimeNodeSettings`、存储快照 `IStorageSettings`）加上内核状态，因此**没有新增数据通道、没有改 `DesktopKernelFactory`**——这也顺带避开了本轮之前两次踩到的共享文件竞争。**两条诚实边界**：①卡片要求「可用空间」，但 Core 的存储快照只有 Pudding 自身的数据库/分类占用，**没有磁盘剩余字段**——界面改为由**桌面进程**读取数据目录所在卷（`DiskSpaceProbe`，BCL），并把来源写在卡片上；卷不存在返回 null、存在但未就绪单列为「磁盘不可用」，都**不显示 0**。②每个来源独立 try/catch：一个来源失败不影响其余摘要，失败原因进入警告行。验证：Foundation 237 项（含纯组合、容量格式、未知不显示 0、卷字母动态挑选的不存在卷）、窗口 smoke 252 项通过。本切片未新增 Composition 测试：没有新增数据通道，四个来源各自的真实 Host 集成测试此前已存在。
@@ -1536,6 +1545,10 @@ PuddingChat.WinUI/PagedTextView.cs 为大输出页增加最高 360 DIP 的原生
 ## 2026-09-27 原生聊天暂停交接
 
 剩余实施与验收入口：Docs/Tasks/Desktop-Native-Chat-Remaining-Tasks-2026-09-27.md。按 NC-00～08 列明暂停现场、审批闭环、真实模型、UI/UX、性能、语音及发布门禁；开发保持暂停。暂停前 Runtime 定向测试最终 7 项通过，四份源码/测试改动仍待复核提交。
+
+## 2026-09-29 Web Chat 原生迁移规划
+
+主设计：[Desktop-Native-Chat-Web-Parity-Plan-2026-09-29.md](Docs/Features/Desktop-Native-Chat-Web-Parity-Plan-2026-09-29.md)。按现有 Web Chat 与 PuddingChat/WinUI/Composition 源码对照，定义 Native 功能矩阵、消息/工具卡、定制上下文环与执行环、紧凑 Composer、直接函数与 canonical 事件交互、右侧制品/Agent 浏览器，以及 R1 可用闭环与 R2 完整对齐验收。本次仅文档，未改产品源码、未做产品功能或性能验收；原 NC 任务书专项门禁保留并归并。
 
 ## 2026-09-28 聊天式头像列表与启动审计设计
 

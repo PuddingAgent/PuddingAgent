@@ -475,9 +475,38 @@
 
 ### DS-16 — 任务调度与看板入口（P1/P2；依赖 DS-04、DS-00）
 
+状态：**已完成（2026-09-27）**。三张卡全部接入：调度策略、调度状态、任务管理入口。
+
+**任务管理切片已交付**
+- 列表：工作区（Core 必填）/状态/优先级/Agent 筛选 + **keyset 游标**翻页（TotalCount 与游标无关）；任务详情含版本、看板列、**允许迁移**（均来自 Core 的状态机投影）、阻塞与失败原因。
+- 创建：标题/描述/优先级（留空由 Core 用 p3）。
+- 生命周期命令：指派、立即执行、取消、重新打开、归档、标记失败、恢复、重新排队；全部带 `ExpectedVersion`（CAS），版本冲突映射为 `SettingsConflictException` 并提示「已阻止覆盖」。
+- **范围登记（按卡片行为说明）**：完整看板/列表、任务详情编辑、评论、评价、事件流与执行命令属于**独立原生工作页**，尚未实现；本卡只提供列表/创建/命令，不假装工作页已存在。
+- **本轮抓到两个真实问题**：①`TaskStateMachine.ProjectBoardColumn` 对 `Cancelled`/`Archived` **抛异常**（这两种状态进历史、不占五列），照直调用会让「列表里存在已取消任务」直接崩溃——已按 HTTP 控制器口径回退为状态名；②任务面板原先**未填充工作区选择器**，导致只能报「筛选条件无效」——现已从 Core 载入工作区，Core 未就绪时如实报「Core 未就绪」。
+- 差异登记：`task.reason_required` 由 **Runtime 任务工具**按 disposition 判定，**命令服务层不强制原因**，因此取消/归档可不带原因。
+- 构建修复：他方已从接口移除 `IStartupAttempt`，而此前提交的 `DesktopKernelFactory.StartAsync` 仍引用该类型；已恢复为接口要求的二参形态（不影响启动语义）。
+
+**调度切片已交付**
+- 策略：启用/暂停/事件驱动、模式、扫描间隔、候选上限、单轮启动上限；保存带 `ExpectedRevision`（CAS），冲突映射为 `SettingsConflictException` 并提示「已阻止覆盖」。
+- 状态：本轮状态、最近扫描的判定与实际启动、跟踪器计数（跟踪/健康/等待/停滞/不一致）、需清理与已修复、决策码/修复码、下次扫描估算、最近错误；手动扫描与手动修复按钮。
+- **四条诚实边界**：①卡片只提到 shadow/authoritative，Core **实际接受五个模式**，界面按真实的五个提供并逐个说明；②`authoritative-single` 强制单轮启动为 1，界面同时显示配置值与实际生效值；③authoritative 系需要三个前置开关，界面先拦并列出观察到的取值（与 Core 的拒绝理由一致）；④**确认已执行而非仅派发**——候选/可派发与已启动分开展示，并写明「候选只是判定结果」。
+- **本轮修复我自己的一个真实缺陷**：规范化时对 `ExpectedRevision` 做 `Math.Max(0, …)` 夹紧，会把过期令牌变成有效令牌、悄悄绕过 CAS；集成测试「过期 revision 必须冲突」暴露后改为原样传递，并有 Foundation 测试固定。
+- 踩坑：`_sc` 字段前缀已被存储清理面板占用（改用 `_sch`）；这套 Composition 测试受「一进程一 Core 宿主」约束，**一个测试失败会级联到后面的测试**，排查时先看第一个失败。
+
 P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表、详情、编辑、评论、评价、事件、执行链接及命令。遵循任务版本/ETag、终态约束和执行语义；同一任务不重复派发。验收：Assigned/Delivery ACK 不冒充执行成功；候选/窗口/Availability/Execution 都可追踪；冲突重新读取；取消/恢复/重排/归档走现有 Core 命令。
 
 ### DS-17 — 编排管理及独立原生编辑器（P2；依赖 DS-00、DS-04、DS-06）
+
+状态：**已完成（2026-09-27）**。两张卡全部接入：编排（管理入口）与人工 HTTP Hook。
+
+**编排与 Hook 切片已交付**
+- 编排图：工作区筛选、图列表（修订号/运行数/进行中数）、当前修订结构（节点、边、图输入、最大并发、是否需显式激活）、修订历史（含内容哈希）。
+- 修订校验与发布：粘贴修订 JSON → **先校验（只编译不落盘，给出问题与拓扑顺序）→ 再 CAS 发布**（`ExpectedCurrentRevision`，冲突映射为「已阻止覆盖」）。
+- 手动运行：对选中修订创建并激活一次运行，返回 RunId；运行详情与画布属独立工作页。
+- 人工 HTTP Hook：列出该修订的触发器（类型/版本/启用状态/输入映射/外部调用路径）。
+- **结构性事实**：触发器是**图修订的一部分**，Core **没有独立的 Hook 增删改/启停接口**（hooks 路由只提供外部调用）——启停或改映射都要**发布新修订**，界面照实说明，不伪造开关。
+- **凭据边界**：触发器配置可能引用凭据，界面**只显示配置键名**，不回显配置值或密钥。
+- 范围登记：画布编辑与运行详情属**独立原生工作页**（尚未实现）。
 
 先图目录、修订、Graph Inputs、Hook 管理，再节点/边/布局编辑、组件设置、手动运行与运行控制。沿用 schema、revision 和 authoring 校验；画布不硬塞进设置卡片。验收：未发布草稿不变成活动修订；输入绑定/必填校验/非法边阻止发布；Hook 凭据不回显；运行取消经真实 Core；同图不同版本与并行 Run 可区分。
 
@@ -491,11 +520,11 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 常规 (`preferences`)
 
-- **界面语言** — `language` / DS-01 / 待迁移。将网页语言选择迁移为桌面本地偏好。
+- **界面语言** — `language` / DS-01 / 已接入。将网页语言选择迁移为桌面本地偏好。
   - 选项：当前语言；可用语言；重启或即时生效提示。
   - 来源：`components/GlobalActions/index.tsx`。
 
-- **帮助与使用说明** — `help` / DS-01 / 待迁移。承接网页帮助入口，使用原生入口打开说明。
+- **帮助与使用说明** — `help` / DS-01 / 已接入。承接网页帮助入口，使用原生入口打开说明。
   - 选项：帮助入口；外部链接明确标识。
   - 来源：`components/RightContent/index.tsx`。
 
@@ -515,7 +544,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
   - 选项：模板；providerId；name；baseUrl；API Key 保持/替换/清除；description；isEnabled。
   - 来源：`pages/llm-resource-pool/index.tsx`。
 
-- **并发与速率** — `provider-limits` / DS-02 / 待迁移。编辑服务商限流；保存时保留未展示参数。
+- **并发与速率** — `provider-limits` / DS-02 / 已接入。编辑服务商限流；保存时保留未展示参数。
   - 选项：maxConcurrentRequests；tokensPerMinute；requestsPerMinute。
   - 来源：`pages/llm-resource-pool/index.tsx`。
 
@@ -525,13 +554,13 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
   - 选项：modelId；name；protocol(openai/responses/anthropic)；description；capabilityTags；isDefault；isDeprecated；isEmbedding；sortOrder。
   - 来源：`pages/llm-resource-pool/index.tsx`。
 
-- **上下文与计费** — `model-limits` / DS-02 / 待迁移。保留原有单位和范围校验。
+- **上下文与计费** — `model-limits` / DS-02 / 已接入。保留原有单位和范围校验。
   - 选项：maxContextTokens；maxInputTokens；maxOutputTokens；maxConcurrentRequests；inputPricePer1MTokens；outputPricePer1MTokens；cacheHitPricePer1MTokens。
   - 来源：`pages/llm-resource-pool/index.tsx`。
 
 #### 配额 (`quota`)
 
-- **限额与用量** — `quota` / DS-02 / 待迁移。Web 已有表单，但当前 Core 配额端点为空实现；须先补齐业务能力。
+- **限额与用量** — `quota` / DS-02 / 已接入。Web 已有表单，但当前 Core 配额端点为空实现；须先补齐业务能力。
   - 选项：dailyTokenLimit；monthlyTokenLimit；今日已用 tokens；本月已用 tokens；配额状态。
   - 来源：`pages/llm-resource-pool/index.tsx`。
 
@@ -541,19 +570,19 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 服务商 (`providers`)
 
-- **语音服务商** — `voice-providers` / DS-03 / 待迁移。服务商模板、新增、编辑、启停、删除。
+- **语音服务商** — `voice-providers` / DS-03 / 已接入。服务商模板、新增、编辑、启停、删除。
   - 选项：providerId；name；endpoint；apiKey；description；isEnabled。
   - 来源：`pages/voice-models/index.tsx`。
 
 #### 语音合成 (`tts`)
 
-- **TTS 模型** — `tts` / DS-03 / 待迁移。模型管理与默认模型设置。
+- **TTS 模型** — `tts` / DS-03 / 已接入。模型管理与默认模型设置。
   - 选项：modelId；name；path；voices；audioFormats；sampleRates；supportsStreaming；supportsInstructions；supportsVoiceCloning；supportsVoiceDesign；isDeprecated；isDefault；sortOrder。
   - 来源：`pages/voice-models/index.tsx`。
 
 #### 语音识别 (`asr`)
 
-- **ASR 模型** — `asr` / DS-03 / 待迁移。识别模型能力与语言配置。
+- **ASR 模型** — `asr` / DS-03 / 已接入。识别模型能力与语言配置。
   - 选项：modelId；name；path；languages；sampleRates；supportsEmotion；supportsTimestamps；supportsHotWords；isDeprecated；isDefault；sortOrder。
   - 来源：`pages/voice-models/index.tsx`。
 
@@ -563,7 +592,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 目录与基础 (`directory`)
 
-- **全局模板与角色目录** — `agent-directory` / DS-04 / 待迁移。分别提供模板/实例列表、新建、编辑、删除及实例冻结/解冻。
+- **全局模板与角色目录** — `agent-directory` / DS-04 / 已接入。分别提供模板/实例列表、新建、编辑、删除及实例冻结/解冻。
   - 选项：工作区选择；模板或实例选择；来源模板；预设列表与导入；启用与冻结状态。
   - 来源：`pages/global-agent-template/index.tsx`。
 
@@ -585,7 +614,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### Smart 子代理 (`smart`)
 
-- **子代理模型路由** — `smart-models` / DS-04 / 待迁移。仅角色实例具有当前 Web 的 Smart 配置入口。
+- **子代理模型路由** — `smart-models` / DS-04 / 已接入。仅角色实例具有当前 Web 的 Smart 配置入口。
   - 选项：explorerModel；researcherModel；plannerModel；reviewerModel；developerModel；deployerModel；testerModel；每项服务商/模型选择。
   - 来源：`pages/workspace/[id]/SmartRoleModelFields.tsx`。
 
@@ -597,7 +626,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 执行护栏 (`guardrails`)
 
-- **预算与运行环境** — `guardrails` / DS-04 / 待迁移。原样保留 Core 的校验与运行语义。
+- **预算与运行环境** — `guardrails` / DS-04 / 已接入。原样保留 Core 的校验与运行语义。
   - 选项：maxRounds；maxElapsedSeconds；maxToolCallsTotal；containerImage。
   - 来源：`pages/agent-template-settings/sections/GuardrailSection.tsx`。
 
@@ -607,35 +636,35 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 工作区 (`basic`)
 
-- **工作区信息** — `workspace-basic` / DS-05 / 待迁移。列表、创建、编辑、删除；本机首次使用流程保持独立。
+- **工作区信息** — `workspace-basic` / DS-05 / 已接入。列表、创建、编辑、删除；本机首次使用流程保持独立。
   - 选项：workspaceId；name；description；userProfile；isEnabled；团队归属/访问策略。
   - 来源：`pages/workspace/index.tsx`。
 
-- **工作区成员** — `workspace-members` / DS-05 / 待迁移。成员列表、添加/移除和权限展示。
+- **工作区成员** — `workspace-members` / DS-05 / 已接入。成员列表、添加/移除和权限展示。
   - 选项：userId；accessLevel(ReadOnly/Write/Manage)；成员来源。
   - 来源：`pages/workspace/[id]/index.tsx`。
 
 #### 渠道 (`channels`)
 
-- **渠道服务商** — `channel-providers` / DS-05 / 待迁移。编辑已支持服务商的展示信息与启用状态。
+- **渠道服务商** — `channel-providers` / DS-05 / 已接入。编辑已支持服务商的展示信息与启用状态。
   - 选项：providerId；name；description；isEnabled。
   - 来源：`pages/workspace/[id]/index.tsx`。
 
-- **渠道绑定与凭据** — `channels` / DS-05 / 待迁移。新增/编辑/删除渠道；敏感值单向输入。
+- **渠道绑定与凭据** — `channels` / DS-05 / 已接入。新增/编辑/删除渠道；敏感值单向输入。
   - 选项：name；providerId；description；boundAgentId；appId；appSecret；privilegedUserOpenIds；streamingRepliesEnabled；ttsRepliesEnabled；ttsVoice；isEnabled。
   - 来源：`pages/workspace/[id]/index.tsx`。
 
 #### 工作区资源 (`resources`)
 
-- **知识库** — `workspace-knowledge` / DS-05 / 待迁移。知识库列表、新增、编辑、删除。
+- **知识库** — `workspace-knowledge` / DS-05 / 已接入。知识库列表、新增、编辑、删除。
   - 选项：name；kbType(VectorStore/Graph/FileIndex)；description；isEnabled。
   - 来源：`pages/workspace/[id]/index.tsx`。
 
-- **工作区技能配置** — `workspace-skills` / DS-05 / 待迁移。此处是工作区资源配置，不与 Skill Hub 安装台账混同。
+- **工作区技能配置** — `workspace-skills` / DS-05 / 已接入。此处是工作区资源配置，不与 Skill Hub 安装台账混同。
   - 选项：name；skillType(MCP/BuiltIn/CustomScript/HttpTool)；description；configJson；isEnabled。
   - 来源：`pages/workspace/[id]/index.tsx`。
 
-- **工作流定义** — `workspace-workflows` / DS-05 / 待迁移。列表、创建、编辑、删除工作流。
+- **工作流定义** — `workspace-workflows` / DS-05 / 已接入。列表、创建、编辑、删除工作流。
   - 选项：name；status(Draft/Active/Paused)；description；definitionJson；isEnabled。
   - 来源：`pages/workspace/[id]/index.tsx`。
 
@@ -645,13 +674,13 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 工具注册表 (`registry`)
 
-- **工具目录** — `tool-registry` / DS-06 / 待迁移。搜索/筛选、查看工具定义与当前可用状态。
+- **工具目录** — `tool-registry` / DS-06 / 已接入。搜索/筛选、查看工具定义与当前可用状态。
   - 选项：工具名称/ID；分类；来源；说明；参数 Schema；启用/可用状态。
   - 来源：`pages/capability-management/index.tsx`。
 
 #### 插件包 (`plugins`)
 
-- **插件清单与诊断** — `plugin-catalog` / DS-06 / 待迁移。区分已注册工具、仅 Manifest 声明和无效插件。
+- **插件清单与诊断** — `plugin-catalog` / DS-06 / 已接入。区分已注册工具、仅 Manifest 声明和无效插件。
   - 选项：插件/工具统计；包 ID/版本/来源；工具声明；ManifestOnly；校验问题；详情与刷新。
   - 来源：`pages/capability-management/index.tsx`。
 
@@ -661,37 +690,37 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 概览 (`overview`)
 
-- **概览** — `skill-overview` / DS-07 / 待迁移。保留 Web 的实际查询、写入和错误语义。
+- **概览** — `skill-overview` / DS-07 / 已接入。保留 Web 的实际查询、写入和错误语义。
   - 选项：技能总量/版本/安装统计；分布与最近事件。
   - 来源：`pages/skill-management/OverviewTab.tsx`。
 
 #### 技能库 (`library`)
 
-- **技能库** — `skill-library` / DS-07 / 待迁移。保留 Web 的实际查询、写入和错误语义。
+- **技能库** — `skill-library` / DS-07 / 已接入。保留 Web 的实际查询、写入和错误语义。
   - 选项：搜索/标签/状态筛选；skillId/name/summary/tags；version/skillMarkdown；evolutionAction/parentVersion/publishNote；版本详情；编辑元数据；退役；安装登记。
   - 来源：`pages/skill-management/SkillsTab.tsx`。
 
 #### EVO MAP (`evolution`)
 
-- **EVO MAP** — `skill-evolution` / DS-07 / 待迁移。保留 Web 的实际查询、写入和错误语义。
+- **EVO MAP** — `skill-evolution` / DS-07 / 已接入。保留 Web 的实际查询、写入和错误语义。
   - 选项：技能选择；谱系节点/边；版本关系；详情定位。
   - 来源：`pages/skill-management/EvoMapTab.tsx`。
 
 #### 安装台账 (`installs`)
 
-- **安装台账** — `skill-installs` / DS-07 / 待迁移。保留 Web 的实际查询、写入和错误语义。
+- **安装台账** — `skill-installs` / DS-07 / 已接入。保留 Web 的实际查询、写入和错误语义。
   - 选项：agentInstanceId；skillId；installedVersion；contentHash；安装台账；更新检查。
   - 来源：`pages/skill-management/InstallsTab.tsx`。
 
 #### 事件审计 (`events`)
 
-- **事件审计** — `skill-events` / DS-07 / 待迁移。保留 Web 的实际查询、写入和错误语义。
+- **事件审计** — `skill-events` / DS-07 / 已接入。保留 Web 的实际查询、写入和错误语义。
   - 选项：技能/事件/时间筛选；分页；事件详情。
   - 来源：`pages/skill-management/EventsTab.tsx`。
 
 #### 技能包（旧） (`legacy`)
 
-- **技能包（旧）** — `skill-legacy` / DS-07 / 待迁移。保留 Web 的实际查询、写入和错误语义。
+- **技能包（旧）** — `skill-legacy` / DS-07 / 已接入。保留 Web 的实际查询、写入和错误语义。
   - 选项：skillPackageId/name/description/version；sortOrder/isEnabled；zip/tar.gz/tgz 文件；创建/编辑/删除；上传新版本/下载。
   - 来源：`pages/skill-management/LegacySkillPackages.tsx`。
 
@@ -701,21 +730,21 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 资料库 (`library`)
 
-- **图书馆与页面树** — `memory-tree` / DS-08 / 待迁移。工作区 → Agent → 图书馆选择，刷新与默认库初始化。
+- **图书馆与页面树** — `memory-tree` / DS-08 / 已接入。工作区 → Agent → 图书馆选择，刷新与默认库初始化。
   - 选项：libraryId；页面树；节点 name/summary/nodeType；父节点；创建 Page/Book。
   - 来源：`pages/memory-library/index.tsx`。
 
-- **书籍与章节** — `memory-books` / DS-08 / 待迁移。阅读、编辑与归档；保留来源关联。
+- **书籍与章节** — `memory-books` / DS-08 / 已接入。阅读、编辑与归档；保留来源关联。
   - 选项：Book title/summary；章节 title/content/importance；章节分页；归档 Book/章节。
   - 来源：`pages/memory-library/index.tsx`。
 
 #### 检索与来源 (`search`)
 
-- **记忆搜索** — `memory-search` / DS-08 / 待迁移。搜索结果定位到真实页面或章节。
+- **记忆搜索** — `memory-search` / DS-08 / 已接入。搜索结果定位到真实页面或章节。
   - 选项：搜索词；范围；结果/匹配摘要；定位。
   - 来源：`pages/memory-library/components/MemorySearchResults.tsx`。
 
-- **来源与引用** — `memory-inspector` / DS-08 / 待迁移。原生详情区呈现出处和引用关系。
+- **来源与引用** — `memory-inspector` / DS-08 / 已接入。原生详情区呈现出处和引用关系。
   - 选项：元数据；sources；pointers；目标定位。
   - 来源：`pages/memory-library/components/MemoryInspector.tsx`。
 
@@ -759,11 +788,11 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 审批审计 (`audit`)
 
-- **事件与统计** — `approval-audit` / DS-10 / 待迁移。只读筛选、分页与详情，展示工单及权限事件。
+- **事件与统计** — `approval-audit` / DS-10 / 已接入。只读筛选、分页与详情，展示工单及权限事件。
   - 选项：事件类型；工具/工作区/时间筛选；事件明细；提交/批准/拒绝统计。
   - 来源：`pages/tool-approval/audit/index.tsx`。
 
-- **分类器健康** — `classifier-health` / DS-10 / 待迁移。显示可用性、失败原因与健康明细。
+- **分类器健康** — `classifier-health` / DS-10 / 已接入。显示可用性、失败原因与健康明细。
   - 选项：分类器状态；版本/就绪；调用/失败；诊断明细。
   - 来源：`pages/tool-approval/components/ClassifierHealthBanner.tsx`。
 
@@ -777,7 +806,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
   - 选项：名称；Workspace 允许清单；Scope 八种现有权限；有效期；Owner；状态；最后使用；版本；撤销原因。
   - 来源：`pages/access-token-management/index.tsx`。
 
-- **API 状态与限制** — `external-api-status` / DS-11 / 待迁移。显示服务端准入状态和创建限制。
+- **API 状态与限制** — `external-api-status` / DS-11 / 已接入。显示服务端准入状态和创建限制。
   - 选项：API 可用性；最长有效期；每人 Active 上限；创建错误/版本冲突。
   - 来源：`pages/access-token-management/components/SecretOnceModal.tsx`。
 
@@ -787,19 +816,19 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 用户 (`users`)
 
-- **账号与头像** — `users` / DS-12 / 待迁移（下一轮）。新增/编辑/启停/删除、修改密码、分配角色。
+- **账号与头像** — `users` / DS-12 / 已接入（下一轮）。新增/编辑/启停/删除、修改密码、分配角色。
   - 选项：userId；username；email；displayName；userType(Admin/SimpleUser)；isEnabled；avatar；初始/新密码；确认密码；角色集合。
   - 来源：`pages/user-management/index.tsx`。
 
 #### 团队 (`teams`)
 
-- **团队与成员** — `teams` / DS-12 / 待迁移。团队 CRUD、成员管理、团队工作区与访问策略。
+- **团队与成员** — `teams` / DS-12 / 已接入。团队 CRUD、成员管理、团队工作区与访问策略。
   - 选项：teamId；name；description；成员 userId/role；workspaceId/name/description/isEnabled；teamAccessPolicy/companyAccessPolicy；工作区成员 userId/accessLevel。
   - 来源：`pages/team-management/index.tsx`。
 
 #### 权限角色 (`roles`)
 
-- **RBAC 角色** — `rbac` / DS-12 / 待迁移。平台权限角色与智能体角色分别命名。
+- **RBAC 角色** — `rbac` / DS-12 / 已接入。平台权限角色与智能体角色分别命名。
   - 选项：roleId；name；description；workspace read/write/manage；team read/manage；user read/manage；agent run/manage；template read/manage；llm read/manage。
   - 来源：`pages/role-management/index.tsx`。
 
@@ -825,25 +854,25 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 会话 (`sessions`)
 
-- **会话管理** — `session-directory` / DS-14 / 待迁移。查询/筛选会话、详情及页面已有操作。
+- **会话管理** — `session-directory` / DS-14 / 已接入。查询/筛选会话、详情及页面已有操作。
   - 选项：sessionId；场景；Agent 模板；渠道；类型；状态；用户；创建/最近活跃；表格/时间线；工作区/Agent/状态筛选。
   - 来源：`pages/session/index.tsx`。
 
 #### 诊断概览 (`overview`)
 
-- **运行诊断** — `diagnostics-overview` / DS-14 / 待迁移。汇总状态、失败原因与查询条件。
+- **运行诊断** — `diagnostics-overview` / DS-14 / 已接入。汇总状态、失败原因与查询条件。
   - 选项：Agent/会话/Run 筛选；运行状态；诊断指标；刷新/详情。
   - 来源：`pages/diagnostics/DiagnosticsPage.tsx`。
 
 #### 事件时间线 (`timeline`)
 
-- **运行时间线** — `runtime-timeline` / DS-14 / 待迁移。按 canonical 事件显示时间、关联 ID 和详情。
+- **运行时间线** — `runtime-timeline` / DS-14 / 已接入。按 canonical 事件显示时间、关联 ID 和详情。
   - 选项：时间窗；事件类型；Agent/Session/Run；分页/游标；事件详情。
   - 来源：`pages/diagnostics/RuntimeTimelinePage.tsx`。
 
 #### 子代理运行 (`subagents`)
 
-- **运行归档与输出** — `subagent-runs` / DS-14 / 待迁移。区分复用的子会话身份和本次 Run。
+- **运行归档与输出** — `subagent-runs` / DS-14 / 已接入。区分复用的子会话身份和本次 Run。
   - 选项：parentRunId；runId；subSessionId；状态；输入/输出；工具事件；错误与时间。
   - 来源：`pages/diagnostics/SubAgentRunsPage.tsx`。
 
@@ -853,17 +882,17 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### Token 统计 (`tokens`)
 
-- **用量与费用** — `token-summary` / DS-15 / 待迁移。继承 Web 日期、服务商、模型等筛选及 RMB/Token 单位。
+- **用量与费用** — `token-summary` / DS-15 / 已接入。继承 Web 日期、服务商、模型等筛选及 RMB/Token 单位。
   - 选项：月份/时间范围；服务商/模型；输入/输出/缓存命中；金额；趋势；月度汇总。
   - 来源：`pages/stats/tokens/index.tsx`。
 
-- **上下文层分析** — `token-details` / DS-15 / 待迁移。迁移当前上下文层分析表；不能将不同账本重复相加。
+- **上下文层分析** — `token-details` / DS-15 / 已接入。迁移当前上下文层分析表；不能将不同账本重复相加。
   - 选项：层；职责；影响；Token 压力；缓存表现；变化；主要原因。
   - 来源：`pages/stats/tokens/index.tsx`。
 
 #### 管理概览 (`dashboard`)
 
-- **管理首页卡片** — `admin-home` / DS-15 / 待迁移。承接首页摘要和快捷入口，不在设置中心复制完整工作台。
+- **管理首页卡片** — `admin-home` / DS-15 / 已接入。承接首页摘要和快捷入口，不在设置中心复制完整工作台。
   - 选项：工作空间；可用空间；协作团队；Core 状态；开始对话/工作空间/模型服务/系统诊断快捷入口。
   - 来源：`pages/home/index.tsx`。
 
@@ -873,27 +902,27 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 任务调度 (`scheduler`)
 
-- **自动调度策略** — `scheduler-policy` / DS-16 / 待迁移。先只读状态，再接入保存和调度操作。
+- **自动调度策略** — `scheduler-policy` / DS-16 / 已接入。先只读状态，再接入保存和调度操作。
   - 选项：enabled；eventDrivenEnabled；mode(shadow/authoritative)；scanIntervalSeconds；candidateLimit；maxStartsPerScan；版本冲突。
   - 来源：`pages/workspace-tasks/SchedulerDrawer.tsx`。
 
-- **调度状态与判定** — `scheduler-status` / DS-16 / 待迁移。展示本轮扫描和候选判定，确认已执行而非仅派发。
+- **调度状态与判定** — `scheduler-status` / DS-16 / 已接入。展示本轮扫描和候选判定，确认已执行而非仅派发。
   - 选项：Idle/Busy/Unknown；候选/可派发；启动/修复；Tracked/Cleanup；最近/下次扫描；决策原因；手动动作。
   - 来源：`pages/workspace-tasks/SchedulerDrawer.tsx`。
 
 #### 任务看板 (`tasks`)
 
-- **任务列表与详情入口** — `tasks` / DS-16 / 待迁移。列表/看板、编辑、评论、评价、事件及执行命令另建原生工作页。
+- **任务列表与详情入口** — `tasks` / DS-16 / 已接入。列表/看板、编辑、评论、评价、事件及执行命令另建原生工作页。
   - 选项：workspaceId；任务内容/负责人/优先级/状态；执行链接；创建/编辑/分派/运行/取消/恢复/重排/归档；版本/ETag。
   - 来源：`pages/workspace-tasks/index.tsx`。
 
 #### 编排配置 (`orchestration`)
 
-- **图定义与版本** — `orchestration` / DS-17 / 待迁移。原生设置提供管理入口；画布与运行详情按独立工作页实施。
+- **图定义与版本** — `orchestration` / DS-17 / 已接入（管理入口）。原生设置提供管理入口；画布与运行详情按独立工作页实施。
   - 选项：图列表/创建/更新；节点组件与设置；边；Graph Inputs；修订/校验/发布；布局；手动运行；Run 控制。
   - 来源：`pages/orchestration/index.tsx`。
 
-- **HTTP Hook** — `http-hooks` / DS-17 / 待迁移。触发器配置与凭据保持服务端授权和版本语义。
+- **HTTP Hook** — `http-hooks` / DS-17 / 已接入（触发器随修订发布）。触发器配置与凭据保持服务端授权和版本语义。
   - 选项：Hook 列表/创建/启停；图/修订；输入映射；密钥；调用信息。
   - 来源：`pages/orchestration/HttpHookPanel.tsx`。
 
@@ -903,7 +932,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 
 #### 产品信息 (`product`)
 
-- **Pudding Desktop** — `about` / DS-01 / 待迁移。提供真实构建版本与帮助入口；不添加截图产品专有功能。
+- **Pudding Desktop** — `about` / DS-01 / 已接入。提供真实构建版本与帮助入口；不添加截图产品专有功能。
   - 选项：产品版本；WinUI 3；进程内 Core；配置位置；开源/帮助信息。
   - 来源：`Source/PuddingDesktop/MainWindow.xaml.cs`。
 
@@ -942,4 +971,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-13 运行与节点 | 已完成 2026-09-27 | `runtime/nodes` 已接入；冻结/解冻下沉为 `RuntimeNodeAdminService` 并补上审计 |
 | DS-14 会话与诊断 | 已完成 2026-09-27 | 四张卡全部接入（下沉 `RuntimeDiagnosticsQueryService`/`SubAgentRunQueryService`，修掉脱敏旁路与测试并行冲突） |
 | DS-15 用量 | 已完成 2026-09-27 | 三张卡全部接入；登记了用量事件查询不支持时间窗、Core 无磁盘剩余字段两条边界 |
-| DS-16 … DS-17 | 待实施 | — |
+| DS-16 任务调度与看板入口 | 已完成 2026-09-27 | 三张卡全部接入；修复看板列对已取消任务抛异常、工作区选择器未填充、CAS 令牌被夹紧三处问题 |
+| DS-17 编排与 Hook | 已完成 2026-09-27 | 编排管理入口与人工 HTTP Hook 已接入（触发器随修订发布、配置只显示键名） |

@@ -2368,6 +2368,188 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task SchedulerAdapter_ReadsStatusAndRefusesAStalePolicyRevision()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var scheduler = factory.CreateSchedulerSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => scheduler.GetStatusAsync("default", timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var status = await scheduler.GetStatusAsync("default", timeout.Token);
+            Assert.Equal("default", status.WorkspaceId);
+            // 隔离数据根的 revision 从 0 起步（CAS 仍以读到的值为准）。
+            Assert.True(status.Policy.Revision >= 0);
+            Assert.Contains(status.Policy.Mode, SchedulerText.Modes);
+            // 状态与前置始终可读，LastScan 允许为空（还没扫描过）。
+            Assert.False(string.IsNullOrWhiteSpace(status.StateText));
+
+            // 过期的 revision 必须被拒绝为 CAS 冲突（不覆盖别人的修改）。
+            var stale = status.Policy.Revision - 1;
+            await Assert.ThrowsAsync<SettingsConflictException>(() => scheduler.SavePolicyAsync("default",
+                new SchedulerPolicyEdit(stale, true, false, "shadow", 60, 50, 3, false), timeout.Token));
+
+            // 用当前 revision 保存同值策略：应当成功并让 revision 前进。
+            var saved = await scheduler.SavePolicyAsync("default", new SchedulerPolicyEdit(
+                status.Policy.Revision, status.Policy.Enabled, status.Policy.Paused, status.Policy.Mode,
+                status.Policy.ScanIntervalSeconds, status.Policy.CandidateLimit, status.Policy.MaxStartsPerScan,
+                status.Policy.EventDrivenEnabled), timeout.Token);
+            Assert.True(saved.Policy.Revision > status.Policy.Revision, "revision 必须前进");
+
+            // 非法取值由 Core 拒绝（不是适配器猜测）。
+            await Assert.ThrowsAsync<ArgumentException>(() => scheduler.SavePolicyAsync("default",
+                new SchedulerPolicyEdit(saved.Policy.Revision, true, false, "turbo", 60, 50, 3, false), timeout.Token));
+
+            // 手动扫描在暂停状态下也允许（与 Core 控制器一致）。
+            await scheduler.SetPausedAsync("default", true, saved.Policy.Revision, timeout.Token);
+            var scan = await scheduler.RunScanAsync("default", timeout.Token);
+            Assert.Equal("default", scan.WorkspaceId);
+            Assert.Equal("管理员手动扫描", scan.TriggerText);
+            var repaired = await scheduler.RunRepairAsync("default", timeout.Token);
+            Assert.Equal("管理员手动修复", repaired.TriggerText);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => scheduler.GetStatusAsync("default", timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+    [Fact]
+    public async Task TaskAdapter_ListsCreatesAndRefusesAStaleVersion()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var tasks = factory.CreateTaskSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var before = await tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token);
+            Assert.True(before.TotalCount >= 0);
+
+            await tasks.CreateAsync(new TaskCreate("default", "Composition task", "created by the adapter", "p2"), timeout.Token);
+            var page = await tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token);
+            var created = Assert.Single(page.Items, task => task.Title == "Composition task");
+            // 创建本身产生第一个版本（不是 0）。
+            Assert.True(created.Version >= 1, $"创建后的版本应 >= 1，实际 {created.Version}");
+            // 看板列与允许迁移都由 Core 的状态机投影，不是页面猜的。
+            Assert.False(string.IsNullOrWhiteSpace(created.BoardColumn));
+            Assert.NotEmpty(created.AllowedTransitions);
+            Assert.Contains("p2", created.Priority, StringComparison.Ordinal);
+
+            // 过期版本必须冲突（不覆盖别人的修改）。
+            await Assert.ThrowsAsync<SettingsConflictException>(() => tasks.RunCommandAsync(
+                TaskCommandKind.Cancel,
+                new TaskCommandRequest("default", created.TaskId, created.Version + 5, "", "stale"), timeout.Token));
+
+            // 命令层**不**强制原因：task.reason_required 由 Runtime 的任务工具按 disposition 判定
+            // （blocked/rejected/needs_approval/progress），命令服务对空原因是接受的。
+            await tasks.RunCommandAsync(TaskCommandKind.Cancel,
+                new TaskCommandRequest("default", created.TaskId, created.Version, "", ""), timeout.Token);
+            var cancelled = Assert.Single(
+                (await tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token)).Items,
+                task => task.TaskId == created.TaskId);
+            Assert.Equal("Cancelled", cancelled.Status);
+            Assert.True(cancelled.Version > created.Version, "版本必须前进");
+
+            // 状态筛选在 Core 侧生效。
+            var onlyCancelled = await tasks.ListAsync(
+                TaskFilter.Default with { WorkspaceId = "default", Status = "Cancelled" }, timeout.Token);
+            Assert.Contains(onlyCancelled.Items, task => task.TaskId == created.TaskId);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+    [Fact]
+    public async Task OrchestrationAdapter_ListsGraphsValidatesDraftsAndRejectsMalformedJson()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var orchestration = factory.CreateOrchestrationSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => orchestration.ListGraphsAsync("default", timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            // 空数据根：图列表为空，未知图没有修订。
+            var graphs = await orchestration.ListGraphsAsync("default", timeout.Token);
+            Assert.NotNull(graphs);
+            Assert.Null(await orchestration.GetLatestAsync("no-such-graph", timeout.Token));
+            Assert.Empty(await orchestration.ListRevisionsAsync("no-such-graph", timeout.Token));
+
+            // 非法 JSON 是表单错误（不是 Core 拒绝），且必须在调用 Core 之前被拦下。
+            await Assert.ThrowsAsync<ArgumentException>(() => orchestration.ValidateAsync(
+                new OrchestrationRevisionDraft("graph-1", 0, "{ not json"), timeout.Token));
+
+            // 连反序列化都过不去的定义（缺 required 字段）同样是表单错误：在调用 Core 之前被拦下，
+            // 并点名缺了哪些属性——这比让 Core 报一句泛泛的「定义无效」更有用。
+            var incomplete = await Assert.ThrowsAsync<ArgumentException>(() => orchestration.ValidateAsync(
+                new OrchestrationRevisionDraft("graph-1", 0, """{"graphId":"graph-1","revisionId":"rev-1"}"""),
+                timeout.Token));
+            Assert.Contains("workspaceId", incomplete.Message, StringComparison.Ordinal);
+
+            // 字段齐全但语义可能有问题的定义：交给 Core 编译，页面只消费结论。
+            const string complete = """
+                {"graphId":"graph-1","revisionId":"rev-1","workspaceId":"default","rootSessionId":"s-1",
+                 "createdByAgentId":"agent-1","objective":"composition draft"}
+                """;
+            var validation = await orchestration.ValidateAsync(
+                new OrchestrationRevisionDraft("graph-1", 0, complete), timeout.Token);
+            // 不臆造 Core 的判定：只要求结论自洽（无效必须给出原因）。
+            Assert.True(validation.IsValid || validation.Issues.Count > 0,
+                "无效的校验结果必须带具体问题");
+
+            // 发布由 Core 决定成败：成功或明确拒绝，适配器不允许假装成功。
+            try
+            {
+                await orchestration.PublishAsync(new OrchestrationRevisionDraft("graph-1", 0, complete), timeout.Token);
+            }
+            catch (ArgumentException)
+            {
+                // Core 以 InvalidState 拒绝了这份草稿——这同样是可接受的结果。
+            }
+
+            // 对不存在的图启动运行：Core 返回 NotFound 之类的失败，适配器如实报错。
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => orchestration.StartManualRunAsync("no-such-graph", "no-such-revision", timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => orchestration.ListGraphsAsync("default", timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {
