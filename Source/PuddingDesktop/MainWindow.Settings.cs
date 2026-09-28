@@ -252,6 +252,15 @@ public sealed partial class MainWindow
         var tokens = VisibilityOf("usage", "tokens", tab);
         TokenUsageSettings.Visibility = tokens;
         if (tokens == Visibility.Visible) LoadTokenUsageIfNeeded();
+        var dashboard = VisibilityOf("usage", "dashboard", tab);
+        AdminHomeSettings.Visibility = dashboard;
+        if (dashboard == Visibility.Visible) LoadAdminHomeIfNeeded();
+    }
+
+    private async void LoadAdminHomeIfNeeded()
+    {
+        try { await LoadAdminHomeAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadTokenUsageIfNeeded()
@@ -530,6 +539,7 @@ public sealed partial class MainWindow
         ("diagnostics", "sessions") => true,
         ("diagnostics", "subagents") => true,
         ("usage", "tokens") => true,
+        ("usage", "dashboard") => true,
         _ => false
     };
 

@@ -56,7 +56,7 @@ diagnostics,会话与诊断,timeline,事件时间线,runtime-timeline,运行时�
 diagnostics,会话与诊断,subagents,子代理运行,subagent-runs,运行归档与输出,已接入,DS-14,parentRunId；runId；subSessionId；状态；输入/输出；工具事件；错误与时间,pages/diagnostics/SubAgentRunsPage.tsx,区分复用的子会话身份和本次 Run。
 usage,用量与概览,tokens,Token 统计,token-summary,用量与费用,已接入,DS-15,月份/时间范围；服务商/模型；输入/输出/缓存命中；金额；趋势；月度汇总,pages/stats/tokens/index.tsx,继承 Web 日期、服务商、模型等筛选及 RMB/Token 单位。
 usage,用量与概览,tokens,Token 统计,token-details,上下文层分析,已接入,DS-15,层；职责；影响；Token 压力；缓存表现；变化；主要原因,pages/stats/tokens/index.tsx,迁移当前上下文层分析表；不能将不同账本重复相加。
-usage,用量与概览,dashboard,管理概览,admin-home,管理首页卡片,待迁移,DS-15,工作空间；可用空间；协作团队；Core 状态；开始对话/工作空间/模型服务/系统诊断快捷入口,pages/home/index.tsx,承接首页摘要和快捷入口，不在设置中心复制完整工作台。
+usage,用量与概览,dashboard,管理概览,admin-home,管理首页卡片,已接入,DS-15,工作空间；可用空间；协作团队；Core 状态；开始对话/工作空间/模型服务/系统诊断快捷入口,pages/home/index.tsx,承接首页摘要和快捷入口，不在设置中心复制完整工作台。
 automation,任务与编排,scheduler,任务调度,scheduler-policy,自动调度策略,待迁移,DS-16,enabled；eventDrivenEnabled；mode(shadow/authoritative)；scanIntervalSeconds；candidateLimit；maxStartsPerScan；版本冲突,pages/workspace-tasks/SchedulerDrawer.tsx,先只读状态，再接入保存和调度操作。
 automation,任务与编排,scheduler,任务调度,scheduler-status,调度状态与判定,待迁移,DS-16,Idle/Busy/Unknown；候选/可派发；启动/修复；Tracked/Cleanup；最近/下次扫描；决策原因；手动动作,pages/workspace-tasks/SchedulerDrawer.tsx,展示本轮扫描和候选判定，确认已执行而非仅派发。
 automation,任务与编排,tasks,任务看板,tasks,任务列表与详情入口,待迁移,DS-16,workspaceId；任务内容/负责人/优先级/状态；执行链接；创建/编辑/分派/运行/取消/恢复/重排/归档；版本/ETag,pages/workspace-tasks/index.tsx,列表/看板、编辑、评论、评价、事件及执行命令另建原生工作页。

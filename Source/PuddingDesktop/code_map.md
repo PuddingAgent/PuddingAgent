@@ -25,6 +25,7 @@
 | `MainWindow.MemoryLibrarySettings.cs` | DS-08 资料库切片：工作区/Agent/资料库选择（含确保默认库）、页面树只读渲染、节点创建、Book 打开/编辑/新建/归档、章节分页/编辑/新建/归档 |
 | `MainWindow.MemorySearchSettings.cs` | DS-08 搜索与检查器：全文搜索（条数选择、结果与分数按 Core 原样显示）、章节元数据、来源引用与图谱指针（出边/反链分开）、「在资料库中打开」定位 |
 | `MainWindow.ApprovalSettings.cs` | DS-10 授权与审批审计：规则增删改（含 effect allow/deny 与来源）、停用而非删除、审计事件筛选与统计；两张卡共用 security/audit 页签 |
+| `MainWindow.AdminHomeSettings.cs` | DS-15 管理首页卡片：摘要（Core 状态/工作区/团队/节点/数据占用/磁盘可用）+ 四个导航快捷入口；**不复制工作台**，且每个来源独立失败并写进警告行 |
 | `MainWindow.TokenUsageSettings.cs` | DS-15 用量两张卡：Token 汇总（窗口选择、按日汇总、明细展开）与用量事件列表（工作区/会话/服务商/模型筛选 + 分页，**无时间窗**并说明原因） |
 | `MainWindow.SubAgentRunSettings.cs` | DS-14 子代理运行：运行列表（父会话/工作区/Agent/状态筛选 + Core 分页）、详情（任务/输出/LLM profile/trace/计数/降级标记）与事件预览 |
 | `MainWindow.SessionDirectorySettings.cs` | DS-14 会话目录：工作区/渠道/用户（Core 侧）+ 模板/状态/角色/关键字（页侧）筛选、本地分页、会话详情（类型/角色/状态/主体/血缘） |

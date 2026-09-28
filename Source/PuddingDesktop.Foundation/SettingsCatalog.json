@@ -1334,7 +1334,7 @@
             ],
             "source": "pages/home/index.tsx",
             "task": "DS-15",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

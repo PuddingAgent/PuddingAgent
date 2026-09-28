@@ -89,6 +89,7 @@ public sealed partial class MainWindow : Window
         BuildSessionDirectoryPanel();
         BuildSubAgentRunPanel();
         BuildTokenUsagePanel();
+        BuildAdminHomePanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -756,6 +757,12 @@ public sealed partial class MainWindow : Window
             Check(TokenUsageSettings.Content is StackPanel, "usage tokens form is built");
             Check(!_tuProvider.IsEnabled, "usage filters stay disabled without Core");
             Check(_tuNotice.Title == "Core 未就绪", "usage tab reports the real Core state");
+            // DS-15 admin home card.
+            OpenSettingsCategory("usage", "dashboard");
+            await WaitForSettingsUiAsync(() => AdminHomeSettings.Visibility == Visibility.Visible);
+            Check(AdminHomeSettings.Visibility == Visibility.Visible, "admin home tab is native");
+            Check(AdminHomeSettings.Content is StackPanel, "admin home form is built");
+            Check(_ahCore.Text.Contains("Core 状态", StringComparison.Ordinal), "admin home shows the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

@@ -37,6 +37,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-15 用量（管理首页切片，DS-15 完成）
+
+`usage/dashboard` 接入管理首页卡片：**摘要 + 快捷入口**，按卡片要求**不复制完整工作台**。摘要把已经接好的四个设置面组合起来（工作区 `IWorkspaceSettings`、团队 `ITeamSettings`、运行时节点 `IRuntimeNodeSettings`、存储快照 `IStorageSettings`）加上内核状态，因此**没有新增数据通道、没有改 `DesktopKernelFactory`**——这也顺带避开了本轮之前两次踩到的共享文件竞争。**两条诚实边界**：①卡片要求「可用空间」，但 Core 的存储快照只有 Pudding 自身的数据库/分类占用，**没有磁盘剩余字段**——界面改为由**桌面进程**读取数据目录所在卷（`DiskSpaceProbe`，BCL），并把来源写在卡片上；卷不存在返回 null、存在但未就绪单列为「磁盘不可用」，都**不显示 0**。②每个来源独立 try/catch：一个来源失败不影响其余摘要，失败原因进入警告行。验证：Foundation 237 项（含纯组合、容量格式、未知不显示 0、卷字母动态挑选的不存在卷）、窗口 smoke 252 项通过。本切片未新增 Composition 测试：没有新增数据通道，四个来源各自的真实 Host 集成测试此前已存在。
 ## 2026-09-27 DS-15 用量（汇总/明细切片）
 
 `usage/tokens` 两张卡接入：**Token 用量汇总**（时间窗：今天/最近 7/30 天/本月，按日汇总与明细展开、缓存命中率、成本）与**用量明细（事件）**（工作区/会话/服务商/模型筛选 + 分页）。数据来自 Core 的 `TokenUsageDailyAggregateService`（闭日走日聚合缓存、**今日实时聚合**）与 `ITokenUsageEventRepository`。**本轮最有价值的发现是一条已存在的 Core 限制**：`TokenUsageEventRepository.GetFilteredAsync` 的 `from`/`to` 参数**一旦传入就抛异常**——SQLite 无法翻译 `DateTimeOffset` 的**比较**（不只是排序），该方法因此长期没有调用方（其源码注释已写明，并要求「落一个数值型时间列再比较」）。处置：界面**不提供时间窗**，把原因写在卡片上，汇总卡片的窗口统计走日聚合（按 UTC 文本比较）不受影响——不假装有这个能力，也不为了界面去改数据库结构。另外两条登记：统计口径同时覆盖**两个账本**（`llm_gateway_usage_events` 与 `TokenUsageEvents`），只算一个会漏量；成本是账本按模型单价算好的金额，不是界面按当前价目表重算。踩坑记录：①宿主只注册了接口 `ITokenUsageEventRepository`（具体类型未注册），适配器必须按接口解析；②Foundation 的 `TokenUsageEventPage/Row` 与 `PuddingCode.Platform` 撞名，按既有先例改名为 `TokenUsageLedgerPage`。验证：Foundation 233 项、Composition 35 项（真实 Host：窗口统计零值成功返回且含今日实时标记、本月窗口起点为 1 日、事件筛选与分页收敛、停止后不可用）、窗口 smoke 249 项通过。
