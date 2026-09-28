@@ -1,3 +1,17 @@
+## 2026-09-27 修复：Desktop 内核因缺 appsettings.json 无法启动
+
+症状：真实 DataRoot（`D:\data`）下 Desktop 永远停在「正在初始化进程内 Core…」骨架，外壳读不到角色。异常为 `Microsoft.Extensions.Options.OptionsValidationException: Invalid TaskAutoDispatch configuration or disabled Goal prerequisite.`，抛在 `TaskAutoDispatchEvaluator..ctor`（`ValidateOnStart`）。
+
+根因：两个宿主（Console `PuddingAgent` 与 Desktop）共享同一 DataRoot，但只有 Console 的输出带 `appsettings.json`（`Microsoft.NET.Sdk.Web` 自动包含）。Desktop 输出没有这个文件，于是 `TaskBoundGoals:Enabled`/`GoalRuns:Enabled`/`GoalRuns:ContinuationEnabled` 回落到默认 `false`；而操作者的 `<DataRoot>/config/system.json` 里 `taskAutoDispatch`（camelCase，配置键大小写不敏感）是 `Enabled=true, Mode=authoritative`。前者的前置校验因此失败，`Host.StartAsync` 直接抛异常，Core 起不来。Console 之所以正常，是因为它自己的 appsettings 把三个前置都设为 true。
+
+修复：
+- `PuddingHost/Build/PuddingHostContent.props` 增加共享 `appsettings.json` 内容项（`Link="appsettings.json"`，`Condition="'$(MSBuildProjectName)' != 'PuddingAgent'"` 避免与 Web SDK 自动包含项重复）。Desktop 与 CompositionTests 均由该 props 取得同一份程序配置，单一来源。
+- 校验失败信息现在带上**实际观测值**（`TaskAutoDispatchEvaluator.Validate` 增加 observed 三元组，宿主注册点把它并入 `OptionsValidationException`），否则只有一句泛化的前置缺失提示，无法从启动失败定位是哪个宿主少了哪节配置。
+
+验证：`DesktopHostStartupConfigTests` 2 项通过（真实进程内宿主 + 操作者 system.json 启用 authoritative 派发；以及断言打包默认值确实到达宿主内容根）。变异检查：把 `appsettings.json` 从宿主输出移走后该测试以**原始异常**失败（`observed TaskBoundGoals:Enabled=False, GoalRuns:Enabled=False, GoalRuns:ContinuationEnabled=False`），移回即通过；日志 `temp/nc-autodispatch-boot.log`、`temp/nc-autodispatch-mutation-red.log`。Desktop 产品 smoke 复跑通过（PID 15556，`temp/nc-autodispatch-smoke.log`）。**未验证**：真实 `D:\data` 上的启动（按约定只用隔离 DataRoot 验证）。
+
+附带发现（未修，属他方并发现场）：`PuddingHost.Tests` 的 `S5bFullTextIndexMaintenanceHostWiringTests.I1_*` 在当前共享工作树上失败（未跟踪的 FullTextIndex WIP 文件），与本次改动无关；`StorageCleanupAdapter_PreviewsCreatesConfirmsAndCancelsAJob` 有既有的 check-then-act 竞态（单跑 3/3 通过，全套并发跑偶发失败）。
+
 ## 2026-09-27 外壳拥有角色侧边栏（头像列表，直连 DataRoot）
 
 裁定：角色导航由 **PuddingDesktop 外壳**拥有，聊天组件不再自己画导航列。`MainWindow.xaml` 的 `NativeChatPane` 从 `Grid.ColumnSpan=2` 改为 `Grid.Column=1`，`ApplyLayout` 恒以 `SetNavigationWidth(0)` 通知聊天进入 compact；`ChatWorkspace.HostOwnsNavigation` 暴露该状态供验收断言，窄布局回退仍是聊天自带的角色 Flyout。

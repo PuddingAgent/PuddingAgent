@@ -36,6 +36,21 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
 
+    <!-- Core program configuration (packaged system defaults). PuddingAgent is
+         Microsoft.NET.Sdk.Web and the Web SDK already auto-includes its own
+         appsettings.json, so only the other hosts (Desktop) link it here —
+         one source of truth, no duplicate content item.
+         Without this, a Desktop host starts with no appsettings.json content root file:
+         GoalRuns/TaskBoundGoals fall back to disabled defaults while the operator's
+         <DataRoot>/config/system.json can still enable authoritative TaskAutoDispatch,
+         which fails OptionsValidationException on start and leaves Core unable to boot. -->
+    <Content Include="$(MSBuildThisFileDirectory)..\..\PuddingAgent\appsettings.json"
+             Link="appsettings.json"
+             Condition="'$(MSBuildProjectName)' != 'PuddingAgent'">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+
     <!-- Admin SPA (Workbench) — PuddingPlatformAdmin/dist/** → wwwroot/admin/** -->
     <Content Include="$(PuddingAdminDistPath)\**\*"
              Link="wwwroot\admin\%(RecursiveDir)%(Filename)%(Extension)"

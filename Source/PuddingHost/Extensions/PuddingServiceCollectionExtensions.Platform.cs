@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
@@ -226,10 +227,22 @@ public static partial class PuddingServiceCollectionExtensions
             .ValidateOnStart();
         builder.Services.AddOptions<TaskAutoDispatchOptions>()
             .Bind(builder.Configuration.GetSection(TaskAutoDispatchOptions.SectionName))
-            .Validate(
-                options => TaskAutoDispatchOptions.Validate(
-                    options, taskBoundGoalConfig, goalRunConfig).Count == 0,
-                "Invalid TaskAutoDispatch configuration or disabled Goal prerequisite.")
+            .Validate(options =>
+            {
+                var errors = TaskAutoDispatchOptions.Validate(options, taskBoundGoalConfig, goalRunConfig);
+                if (errors.Count == 0)
+                    return true;
+                // Surface the concrete errors: the generic prerequisite message alone does not say
+                // which section is missing, so a host-specific config gap (for example a Desktop
+                // output without appsettings.json) could not be diagnosed from the startup failure.
+                throw new OptionsValidationException(
+                    TaskAutoDispatchOptions.SectionName,
+                    typeof(TaskAutoDispatchOptions),
+                    [
+                        "Invalid TaskAutoDispatch configuration or disabled Goal prerequisite. " +
+                        string.Join(" ", errors),
+                    ]);
+            })
             .ValidateOnStart();
         builder.Services.AddSingleton<TaskGoalDispatchTransactionStore>();
         builder.Services.AddSingleton<ITaskGoalDispatchTransactionStore>(sp =>

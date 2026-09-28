@@ -143,9 +143,14 @@ public sealed class TaskAutoDispatchOptions
             && IsAuthoritativeMode(options.Mode)
             && (!taskBoundGoals.Enabled || !goalRuns.Enabled || !goalRuns.ContinuationEnabled))
         {
+            // Name the observed values: a host whose program config lacks the Goal sections
+            // (so they default to disabled) used to fail with only a generic prerequisite message.
             errors.Add(
                 "Authoritative TaskAutoDispatch requires TaskBoundGoals:Enabled, " +
-                "GoalRuns:Enabled and GoalRuns:ContinuationEnabled.");
+                "GoalRuns:Enabled and GoalRuns:ContinuationEnabled; observed " +
+                $"TaskBoundGoals:Enabled={taskBoundGoals.Enabled}, " +
+                $"GoalRuns:Enabled={goalRuns.Enabled}, " +
+                $"GoalRuns:ContinuationEnabled={goalRuns.ContinuationEnabled}.");
         }
         return errors;
     }
