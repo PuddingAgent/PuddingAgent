@@ -414,7 +414,20 @@
 迁移节点汇总、在线/离线/降级、详情、能力、嵌入式冻结/解冻和原因。现有本机生命周期直接用运行中心，不另外实现第二份状态机。验收：过期心跳不会显示在线，冻结只影响目标节点；断线错误可重试；关闭页停止轮询；真实启动/退出仍需进程外验收。
 
 ### DS-14 — 会话与诊断（P1；依赖 DS-04、DS-00）
-状态：**进行中（2026-09-27）**。`diagnostics-overview`、`runtime-timeline` 与 `session-directory` 已接入；`subagent-runs`（子代理运行）待续。
+状态：**已完成（2026-09-27）**。四张卡全部接入：会话目录、诊断概览、运行时间线、子代理运行。
+
+**子代理运行切片已交付**
+- 运行列表：Core 的四个过滤条件（父会话/工作区/Agent 实例/状态）+ Core 的 offset/limit 分页（1–500，界面同步收敛）。
+- 详情：任务、输出、LLM profile、trace、事件/工具计数、**归档降级标记**（非空表示曾丢弃事件、时间线不完整，计数可能少于实际）。
+- 事件列表：payload 大小 + 200 字符预览（完整 payload 在 Core 侧为回放保留）。
+- 三条诚实边界：**子会话是身份复用单位、runId 才是本次运行**（不要用子会话数代替运行数）；**降级必须显示**而不是当作完整；Core 按字符串筛状态，界面不臆造枚举限制。
+- 实现方式：运行列表原先直接读 DbContext，已下沉为 `SubAgentRunQueryService`，HTTP 与原生共用同一套过滤/分页与事件投影。
+
+**测试基础设施缺陷（已修，非产品问题）**
+- 症状：Composition 测试偶发失败，报 `Only one Core host can be loaded in a Desktop process.`，且失败点在不同适配器之间跳（前两轮被记成 flake）。
+- 根因：该项目默认并行执行测试，而产品强制「一个 Desktop 进程只能有一个 Core 宿主」——两个测试同时 `StartAsync` 必然冲突。
+- 处置：新增 `Source/PuddingDesktop.CompositionTests/AssemblyInfo.cs` 关闭该程序集并行（`DisableTestParallelization = true`），两轮连续 34 项全绿。**修的是测试基础设施，产品单宿主规则保持不变。**
+- 另登记：窗口 smoke 的 `WaitForSettingsUiAsync` 固定 3 秒超时，冷启动首次运行偶发超时（重跑 245 项通过）。
 
 **会话目录切片已交付**
 - 数据来自**进程内 `ISessionRepository`**（与 Core 会话主线服务同一个单例），不是第二份会话存储。
@@ -906,5 +919,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-11 外部访问 | 已完成 2026-09-27 | 访问令牌与 External API 状态两张卡已接入（明文一次、撤销不可逆、8 项 scope 无通配符、CAS 冲突映射） |
 | DS-12 用户与权限 | 已完成 2026-09-27 | 三张卡全部接入（`RoleService`/`UserService`/`TeamService`）；修复了 AsNoTracking 变更失效、roleIds 回退成数字 ID、团队页可删默认工作区等问题 |
 | DS-13 运行与节点 | 已完成 2026-09-27 | `runtime/nodes` 已接入；冻结/解冻下沉为 `RuntimeNodeAdminService` 并补上审计 |
-| DS-14 会话与诊断 | 进行中 2026-09-27 | 时间线、诊断概览与会话目录已接入（下沉 `RuntimeDiagnosticsQueryService` 并修掉脱敏旁路；会话目录用进程内 `ISessionRepository`）；子代理运行待续 |
+| DS-14 会话与诊断 | 已完成 2026-09-27 | 四张卡全部接入（下沉 `RuntimeDiagnosticsQueryService`/`SubAgentRunQueryService`，修掉脱敏旁路与测试并行冲突） |
 | DS-15 … DS-17 | 待实施 | — |

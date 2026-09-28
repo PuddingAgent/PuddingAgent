@@ -25,6 +25,7 @@
 | `MainWindow.MemoryLibrarySettings.cs` | DS-08 资料库切片：工作区/Agent/资料库选择（含确保默认库）、页面树只读渲染、节点创建、Book 打开/编辑/新建/归档、章节分页/编辑/新建/归档 |
 | `MainWindow.MemorySearchSettings.cs` | DS-08 搜索与检查器：全文搜索（条数选择、结果与分数按 Core 原样显示）、章节元数据、来源引用与图谱指针（出边/反链分开）、「在资料库中打开」定位 |
 | `MainWindow.ApprovalSettings.cs` | DS-10 授权与审批审计：规则增删改（含 effect allow/deny 与来源）、停用而非删除、审计事件筛选与统计；两张卡共用 security/audit 页签 |
+| `MainWindow.SubAgentRunSettings.cs` | DS-14 子代理运行：运行列表（父会话/工作区/Agent/状态筛选 + Core 分页）、详情（任务/输出/LLM profile/trace/计数/降级标记）与事件预览 |
 | `MainWindow.SessionDirectorySettings.cs` | DS-14 会话目录：工作区/渠道/用户（Core 侧）+ 模板/状态/角色/关键字（页侧）筛选、本地分页、会话详情（类型/角色/状态/主体/血缘） |
 | `MainWindow.DiagnosticsSettings.cs` | DS-14 诊断两张卡：运行时间线（会话/Run/Trace/Agent/组件/状态筛选、排序、展示模式、分页、事件详情）与运行诊断概览（组件健康计数 + 近期失败事件） |
 | `MainWindow.RuntimeNodeSettings.cs` | DS-13 运行时节点：节点与能力列表、状态/心跳/主机展示、冻结与解冻（必填原因，写入审计）；冻结拒绝该节点全部原生能力调用 |

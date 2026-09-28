@@ -742,6 +742,12 @@ public sealed partial class MainWindow : Window
             Check(SessionDirectorySettings.Visibility == Visibility.Visible, "session directory tab is native");
             Check(SessionDirectorySettings.Content is StackPanel, "session directory form is built");
             Check(!_sdWorkspace.IsEnabled, "session directory filters stay disabled without Core");
+            // DS-14 subagent runs card.
+            OpenSettingsCategory("diagnostics", "subagents");
+            await WaitForSettingsUiAsync(() => _saNotice.IsOpen);
+            Check(SubAgentRunsSettings.Visibility == Visibility.Visible, "subagent runs tab is native");
+            Check(SubAgentRunsSettings.Content is StackPanel, "subagent runs form is built");
+            Check(!_saParentSession.IsEnabled, "subagent runs filters stay disabled without Core");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

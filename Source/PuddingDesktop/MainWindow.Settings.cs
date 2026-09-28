@@ -246,6 +246,15 @@ public sealed partial class MainWindow
         var sessions = VisibilityOf("diagnostics", "sessions", tab);
         SessionDirectorySettings.Visibility = sessions;
         if (sessions == Visibility.Visible) QuerySessionsIfNeeded();
+        var subAgentRuns = VisibilityOf("diagnostics", "subagents", tab);
+        SubAgentRunsSettings.Visibility = subAgentRuns;
+        if (subAgentRuns == Visibility.Visible) QuerySubAgentRunsIfNeeded();
+    }
+
+    private async void QuerySubAgentRunsIfNeeded()
+    {
+        try { await QuerySubAgentRunsAsync(resetPage: true); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void QuerySessionsIfNeeded()
@@ -506,6 +515,7 @@ public sealed partial class MainWindow
         ("diagnostics", "timeline") => true,
         ("diagnostics", "overview") => true,
         ("diagnostics", "sessions") => true,
+        ("diagnostics", "subagents") => true,
         _ => false
     };
 

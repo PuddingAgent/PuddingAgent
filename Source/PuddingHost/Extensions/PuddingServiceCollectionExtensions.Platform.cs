@@ -337,6 +337,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<SubAgentManager>();
         builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
         builder.Services.AddSingleton<ISubAgentRunStore, FileSubAgentRunStore>();
+        // 运行列表原先直接读 DbContext；下沉为应用操作，HTTP 与原生共用同一套过滤/分页。
+        builder.Services.AddScoped<SubAgentRunQueryService>();
         builder.Services.AddSingleton<ISubAgentDiagnosticsService, SubAgentDiagnosticsService>();
         builder.Services.AddHostedService<SubAgentConversationProjectionWorker>();
         builder.Services.TryAddSingleton<IRuntimeExecutionConfigService, RuntimeExecutionConfigService>();

@@ -6,6 +6,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.SubAgents;
 using PuddingPlatform.Controllers.Api;
 using PuddingPlatform.Data;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests.Controllers;
 
@@ -17,9 +18,7 @@ public sealed class SubAgentRunControllerTests
     {
         await using var db = await CreateDatabaseAsync();
         var archive = CreateArchive();
-        var controller = new SubAgentRunController(
-            new TestDbContextFactory(db.Options),
-            new StubRunStore(archive));
+        var controller = new SubAgentRunController(QueryService(db, archive));
 
         var result = await controller.Get("run-archive", CancellationToken.None);
 
@@ -35,9 +34,7 @@ public sealed class SubAgentRunControllerTests
     {
         await using var db = await CreateDatabaseAsync();
         var archive = CreateArchive();
-        var controller = new SubAgentRunController(
-            new TestDbContextFactory(db.Options),
-            new StubRunStore(archive));
+        var controller = new SubAgentRunController(QueryService(db, archive));
 
         var result = await controller.Events("run-archive", 100, 0, CancellationToken.None);
 
@@ -110,6 +107,10 @@ public sealed class SubAgentRunControllerTests
         await db.Database.EnsureCreatedAsync();
         return new TestDatabase(dbPath, options);
     }
+
+    /// <summary>控制器现在委托给下沉后的应用操作（与生产装配同形）。</summary>
+    private static SubAgentRunQueryService QueryService(TestDatabase db, SubAgentRunArchive? archive) =>
+        new(new TestDbContextFactory(db.Options), new StubRunStore(archive));
 
     private sealed class TestDatabase(
         string dbPath,

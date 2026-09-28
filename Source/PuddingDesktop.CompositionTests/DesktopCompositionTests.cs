@@ -2277,6 +2277,46 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task SubAgentRunAdapter_ListsEmptyRootAndReportsMissingArchivesAsNull()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var runs = factory.CreateSubAgentRunSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => runs.ListAsync(SubAgentRunFilter.Default, timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var page = await runs.ListAsync(SubAgentRunFilter.Default, timeout.Token);
+            Assert.Equal(page.Items.Count, page.Total);
+            Assert.Equal(0, page.Offset);
+            // 分页参数被收敛到 Core 的 1–500。
+            var clamped = await runs.ListAsync(SubAgentRunFilter.Default with { Limit = 9_999, Offset = -5 }, timeout.Token);
+            Assert.Equal(500, clamped.Limit);
+            Assert.Equal(0, clamped.Offset);
+
+            // 未知运行的归档缺失：详情为 null、事件为空，而不是抛异常或伪造内容。
+            Assert.Null(await runs.GetAsync("no-such-run", timeout.Token));
+            Assert.Empty(await runs.ListEventsAsync("no-such-run", 100, 0, timeout.Token));
+
+            // Core 侧状态筛选是字符串等值；不存在的状态返回空集。
+            Assert.Empty((await runs.ListAsync(SubAgentRunFilter.Default with { Status = "no-such-status" }, timeout.Token)).Items);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => runs.ListAsync(SubAgentRunFilter.Default, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

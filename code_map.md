@@ -37,6 +37,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-14 会话与诊断（子代理运行切片，DS-14 完成）
+
+`diagnostics/subagents` 接上新的 `SubAgentRunQueryService`（把运行列表从直接读 DbContext 的 `SubAgentRunController` 原位下沉，并把详情/事件/工具的事件投影集中到一处）：运行列表（父会话/工作区/Agent 实例/状态四个 Core 过滤条件 + Core 的 offset/limit 分页）、详情（任务、输出、LLM profile、trace、事件/工具计数、**归档降级标记**）与事件列表（payload 大小 + 200 字符预览）。三条诚实边界：①**子会话 ≠ 本次运行**——`subSessionId` 是子代理身份的复用单位，`runId` 才是本次运行，卡片上写明「不要用子会话数代替运行数」；②**归档降级必须显示**，非空表示该运行曾丢弃事件、时间线不完整，计数可能少于实际；③Core 按**字符串**筛状态，界面不限制取值。**另外修掉一个测试基础设施缺陷（本轮最有价值的发现）**：Composition 测试项目默认并行执行，而产品强制「一个 Desktop 进程只能有一个 Core 宿主」，于是两个测试同时启动宿主时随机抛 `Only one Core host can be loaded in a Desktop process.`，表现为**互不相关的适配器测试偶发失败**（前两轮我把它记成 flake）；已加 `AssemblyInfo.cs` 关闭该程序集并行，两轮连续 34 项全绿——修的是测试基础设施，没有削弱产品规则。另登记：窗口 smoke 的 `WaitForSettingsUiAsync` 固定 3 秒超时，冷启动首次运行偶发超时（重跑 245 项通过），不是产品缺陷。验证：Core `SubAgentRunQueryServiceTests` 5 项 + `SubAgentRunControllerTests` 复用同一应用操作、Foundation 209 项、Composition 34 项、窗口 smoke 245 项通过。DS-14 四张卡全部接入。
 ## 2026-09-27 DS-14 会话与诊断（会话目录切片）
 
 `diagnostics/sessions` 接上进程内 `ISessionRepository`（与 Core 会话主线服务同一个单例，不是第二份存储）：会话列表、详情（类型/角色/状态/主体/血缘/创建与最近活跃）与筛选。**三条口径必须写清楚，因为 Core 的能力比卡片要求窄**：①Core 的会话仓库只支持按**渠道/用户/工作区**查询，**没有**分页、状态或模板筛选——本页的状态/角色/模板/关键字筛选与分页是在**已返回集合上做的**，卡片上写明「不是 Core 侧的过滤条件」，并用纯函数 `Apply` 让这部分可独立测试；②**Frozen 会话一律不列出**，与 `/api/sessions` 列表同一口径，并把被排除的数量显示出来；③时间线事件与「最近失败」等文本仍可能带自由文本密钥（见 DS-14 时间线切片的登记）。踩坑记录：Foundation 的 `SessionSummary` 与 `PuddingCode.Platform.SessionSummary` 撞名，按既有先例改名为 `SessionDirectoryEntry`。验证：Foundation 204 项、Composition 31 项（真实 Host：经宿主仓库写入两个会话→按 Core 条件读回→Frozen 被排除并计数→关键字命中/不命中）、窗口 smoke 242 项通过。

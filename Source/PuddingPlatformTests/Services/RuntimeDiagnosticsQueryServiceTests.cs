@@ -107,7 +107,7 @@ public sealed class RuntimeDiagnosticsQueryServiceTests
             await db.SaveChangesAsync();
 
             var timeline = new RuntimeTimelineQueryService(
-                new SingleContextFactory(db), new ConversationDiagnosticEventProjector());
+                new SingleContextFactory(connection), new ConversationDiagnosticEventProjector());
             return new Scope(db, new RuntimeDiagnosticsQueryService(timeline, new DiagnosticRedactor()));
         }
 
@@ -117,11 +117,17 @@ public sealed class RuntimeDiagnosticsQueryServiceTests
             SqliteConnection.ClearAllPools();
         }
 
-        /// <summary>Minimal factory shape over the test connection (the host uses a pooled factory).</summary>
-        private sealed class SingleContextFactory(PlatformDbContext db) : IDbContextFactory<PlatformDbContext>
+        /// <summary>
+        /// A fresh context per call, like the host's pooled factory: the query services dispose what they
+        /// create, so handing out a shared instance would dispose the fixture's own context.
+        /// </summary>
+        private sealed class SingleContextFactory(SqliteConnection connection) : IDbContextFactory<PlatformDbContext>
         {
-            public PlatformDbContext CreateDbContext() => db;
-            public Task<PlatformDbContext> CreateDbContextAsync(CancellationToken ct = default) => Task.FromResult(db);
+            public PlatformDbContext CreateDbContext() => new(
+                new DbContextOptionsBuilder<PlatformDbContext>().UseSqlite(connection).Options);
+
+            public Task<PlatformDbContext> CreateDbContextAsync(CancellationToken ct = default) =>
+                Task.FromResult(CreateDbContext());
         }
     }
 }
