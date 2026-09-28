@@ -2425,6 +2425,64 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task TaskAdapter_ListsCreatesAndRefusesAStaleVersion()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var tasks = factory.CreateTaskSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var before = await tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token);
+            Assert.True(before.TotalCount >= 0);
+
+            await tasks.CreateAsync(new TaskCreate("default", "Composition task", "created by the adapter", "p2"), timeout.Token);
+            var page = await tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token);
+            var created = Assert.Single(page.Items, task => task.Title == "Composition task");
+            // 创建本身产生第一个版本（不是 0）。
+            Assert.True(created.Version >= 1, $"创建后的版本应 >= 1，实际 {created.Version}");
+            // 看板列与允许迁移都由 Core 的状态机投影，不是页面猜的。
+            Assert.False(string.IsNullOrWhiteSpace(created.BoardColumn));
+            Assert.NotEmpty(created.AllowedTransitions);
+            Assert.Contains("p2", created.Priority, StringComparison.Ordinal);
+
+            // 过期版本必须冲突（不覆盖别人的修改）。
+            await Assert.ThrowsAsync<SettingsConflictException>(() => tasks.RunCommandAsync(
+                TaskCommandKind.Cancel,
+                new TaskCommandRequest("default", created.TaskId, created.Version + 5, "", "stale"), timeout.Token));
+
+            // 命令层**不**强制原因：task.reason_required 由 Runtime 的任务工具按 disposition 判定
+            // （blocked/rejected/needs_approval/progress），命令服务对空原因是接受的。
+            await tasks.RunCommandAsync(TaskCommandKind.Cancel,
+                new TaskCommandRequest("default", created.TaskId, created.Version, "", ""), timeout.Token);
+            var cancelled = Assert.Single(
+                (await tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token)).Items,
+                task => task.TaskId == created.TaskId);
+            Assert.Equal("Cancelled", cancelled.Status);
+            Assert.True(cancelled.Version > created.Version, "版本必须前进");
+
+            // 状态筛选在 Core 侧生效。
+            var onlyCancelled = await tasks.ListAsync(
+                TaskFilter.Default with { WorkspaceId = "default", Status = "Cancelled" }, timeout.Token);
+            Assert.Contains(onlyCancelled.Items, task => task.TaskId == created.TaskId);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => tasks.ListAsync(TaskFilter.Default with { WorkspaceId = "default" }, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

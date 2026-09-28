@@ -25,6 +25,7 @@
 | `MainWindow.MemoryLibrarySettings.cs` | DS-08 资料库切片：工作区/Agent/资料库选择（含确保默认库）、页面树只读渲染、节点创建、Book 打开/编辑/新建/归档、章节分页/编辑/新建/归档 |
 | `MainWindow.MemorySearchSettings.cs` | DS-08 搜索与检查器：全文搜索（条数选择、结果与分数按 Core 原样显示）、章节元数据、来源引用与图谱指针（出边/反链分开）、「在资料库中打开」定位 |
 | `MainWindow.ApprovalSettings.cs` | DS-10 授权与审批审计：规则增删改（含 effect allow/deny 与来源）、停用而非删除、审计事件筛选与统计；两张卡共用 security/audit 页签 |
+| `MainWindow.TaskSettings.cs` | DS-16 任务管理入口：工作区/状态/优先级/Agent 筛选 + keyset 翻页、任务详情（版本/看板列/允许迁移/阻塞与失败原因）、生命周期命令与创建；看板/编辑/评论属独立工作页 |
 | `MainWindow.SchedulerSettings.cs` | DS-16 调度两张卡：策略编辑（CAS revision/五模式/间隔/上限/前置校验）+ 暂停恢复 + 状态卡（本轮扫描的判定与**实际启动**、跟踪器、决策码、下次扫描、最近错误）+ 手动扫描与修复 |
 | `MainWindow.AdminHomeSettings.cs` | DS-15 管理首页卡片：摘要（Core 状态/工作区/团队/节点/数据占用/磁盘可用）+ 四个导航快捷入口；**不复制工作台**，且每个来源独立失败并写进警告行 |
 | `MainWindow.TokenUsageSettings.cs` | DS-15 用量两张卡：Token 汇总（窗口选择、按日汇总、明细展开）与用量事件列表（工作区/会话/服务商/模型筛选 + 分页，**无时间窗**并说明原因） |

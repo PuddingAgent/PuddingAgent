@@ -24,6 +24,7 @@
 | `SkillHubContracts.cs` | DS-07 全部分片：`ISkillHubSettings` 读模型与写入记录、概览统计与审计事件、Core 真实词表（SkillId 正则、进化动作/状态/可见性白名单）、技能库与版本发布、EVO MAP 谱系（`RenderLineage` 显式呈现无根组件与环、`DescribeLineage` 计数悬空边/缺失父节点）、安装台账语义与更新落后判定 |
 | `SkillPackageContracts.cs` | DS-07 旧技能包切片：`ISkillPackageSettings`（列表/元数据/删除/上传/替换/下载链接）、`SkillPackageText`（扩展名与 Core 一致、id 与排序校验、字节数显示） |
 | `AgentGrantContracts.cs` | DS-04 授权切片：可选授权项（能力/技能包）、`AgentGrantSet`、`AgentGrantSelection`（未指定 ≠ 明确不授权）、模板与实例的快照对比、目录外授权项校验 |
+| `TaskContracts.cs` | DS-16 任务切片：`ITaskSettings`（keyset 游标列表/创建/八种生命周期命令）、12 个状态与 p0–p3 词表、版本 CAS 与母卡保护说明、工作页范围登记 |
 | `SchedulerContracts.cs` | DS-16 调度切片：`ISchedulerSettings`（状态/策略 CAS/暂停/手动扫描/修复）、Core 的**五个**模式（卡片只提两个）、前置开关、扫描摘要（判定 vs 实际启动分开）、沿用 Core 的取值区间 |
 | `AdminHomeContracts.cs` | DS-15 管理首页：`AdminHomeSummary.Compose`（纯组合，可在无宿主下断言）、`DiskSpaceProbe`（桌面进程读卷，不存在→null、未就绪→单列）、人类可读的容量与内核状态文案 |
 | `TokenUsageContracts.cs` | DS-15 用量切片：`ITokenUsageSettings`、日聚合行/窗口（解析成具体 UTC 日边界）、按日与总计派生、用量事件分页；**时间窗缺失**与两个账本口径说明 |
@@ -45,4 +46,4 @@
 | `WorkspaceContracts.cs` | DS-05 工作区/成员切片：`IWorkspaceSettings`、状态显示（停用/冻结分开）、Core 的访问策略词表、UserProfile 必须是合法 JSON、内置默认工作区不可停用 |
 | `PuddingDesktop.Foundation.csproj | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。243 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。230 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。

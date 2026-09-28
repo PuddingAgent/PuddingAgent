@@ -258,6 +258,15 @@ public sealed partial class MainWindow
         var scheduler = VisibilityOf("automation", "scheduler", tab);
         SchedulerSettings.Visibility = scheduler;
         if (scheduler == Visibility.Visible) LoadSchedulerIfNeeded();
+        var tasks = VisibilityOf("automation", "tasks", tab);
+        TasksSettings.Visibility = tasks;
+        if (tasks == Visibility.Visible) LoadTasksIfNeeded();
+    }
+
+    private async void LoadTasksIfNeeded()
+    {
+        try { await QueryTasksAsync(resetPage: true); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadSchedulerIfNeeded()
@@ -550,6 +559,7 @@ public sealed partial class MainWindow
         ("usage", "tokens") => true,
         ("usage", "dashboard") => true,
         ("automation", "scheduler") => true,
+        ("automation", "tasks") => true,
         _ => false
     };
 

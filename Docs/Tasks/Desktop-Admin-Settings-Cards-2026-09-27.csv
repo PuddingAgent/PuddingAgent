@@ -59,7 +59,7 @@ usage,用量与概览,tokens,Token 统计,token-details,上下文层分析,已�
 usage,用量与概览,dashboard,管理概览,admin-home,管理首页卡片,已接入,DS-15,工作空间；可用空间；协作团队；Core 状态；开始对话/工作空间/模型服务/系统诊断快捷入口,pages/home/index.tsx,承接首页摘要和快捷入口，不在设置中心复制完整工作台。
 automation,任务与编排,scheduler,任务调度,scheduler-policy,自动调度策略,已接入,DS-16,enabled；eventDrivenEnabled；mode(shadow/authoritative)；scanIntervalSeconds；candidateLimit；maxStartsPerScan；版本冲突,pages/workspace-tasks/SchedulerDrawer.tsx,先只读状态，再接入保存和调度操作。
 automation,任务与编排,scheduler,任务调度,scheduler-status,调度状态与判定,已接入,DS-16,Idle/Busy/Unknown；候选/可派发；启动/修复；Tracked/Cleanup；最近/下次扫描；决策原因；手动动作,pages/workspace-tasks/SchedulerDrawer.tsx,展示本轮扫描和候选判定，确认已执行而非仅派发。
-automation,任务与编排,tasks,任务看板,tasks,任务列表与详情入口,待迁移,DS-16,workspaceId；任务内容/负责人/优先级/状态；执行链接；创建/编辑/分派/运行/取消/恢复/重排/归档；版本/ETag,pages/workspace-tasks/index.tsx,列表/看板、编辑、评论、评价、事件及执行命令另建原生工作页。
+automation,任务与编排,tasks,任务看板,tasks,任务列表与详情入口,已接入,DS-16,workspaceId；任务内容/负责人/优先级/状态；执行链接；创建/编辑/分派/运行/取消/恢复/重排/归档；版本/ETag,pages/workspace-tasks/index.tsx,列表/看板、编辑、评论、评价、事件及执行命令另建原生工作页。
 automation,任务与编排,orchestration,编排配置,orchestration,图定义与版本,待迁移,DS-17,图列表/创建/更新；节点组件与设置；边；Graph Inputs；修订/校验/发布；布局；手动运行；Run 控制,pages/orchestration/index.tsx,原生设置提供管理入口；画布与运行详情按独立工作页实施。
 automation,任务与编排,orchestration,编排配置,http-hooks,HTTP Hook,待迁移,DS-17,Hook 列表/创建/启停；图/修订；输入映射；密钥；调用信息,pages/orchestration/HttpHookPanel.tsx,触发器配置与凭据保持服务端授权和版本语义。
 about,关于,product,产品信息,about,Pudding Desktop,已接入,DS-01,产品版本；WinUI 3；进程内 Core；配置位置；开源/帮助信息,Source/PuddingDesktop/MainWindow.xaml.cs,提供真实构建版本与帮助入口；不添加截图产品专有功能。
