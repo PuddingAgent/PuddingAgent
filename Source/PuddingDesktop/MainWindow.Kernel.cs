@@ -41,6 +41,7 @@ public sealed partial class MainWindow
     private readonly PuddingDesktop.Foundation.ITokenUsageSettings _usage;
     private readonly PuddingDesktop.Foundation.ISchedulerSettings _scheduler;
     private readonly PuddingDesktop.Foundation.ITaskSettings _tasks;
+    private readonly PuddingDesktop.Foundation.IOrchestrationSettings _orchestration;
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);

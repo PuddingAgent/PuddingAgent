@@ -2483,6 +2483,73 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task OrchestrationAdapter_ListsGraphsValidatesDraftsAndRejectsMalformedJson()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var orchestration = factory.CreateOrchestrationSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => orchestration.ListGraphsAsync("default", timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            // 空数据根：图列表为空，未知图没有修订。
+            var graphs = await orchestration.ListGraphsAsync("default", timeout.Token);
+            Assert.NotNull(graphs);
+            Assert.Null(await orchestration.GetLatestAsync("no-such-graph", timeout.Token));
+            Assert.Empty(await orchestration.ListRevisionsAsync("no-such-graph", timeout.Token));
+
+            // 非法 JSON 是表单错误（不是 Core 拒绝），且必须在调用 Core 之前被拦下。
+            await Assert.ThrowsAsync<ArgumentException>(() => orchestration.ValidateAsync(
+                new OrchestrationRevisionDraft("graph-1", 0, "{ not json"), timeout.Token));
+
+            // 连反序列化都过不去的定义（缺 required 字段）同样是表单错误：在调用 Core 之前被拦下，
+            // 并点名缺了哪些属性——这比让 Core 报一句泛泛的「定义无效」更有用。
+            var incomplete = await Assert.ThrowsAsync<ArgumentException>(() => orchestration.ValidateAsync(
+                new OrchestrationRevisionDraft("graph-1", 0, """{"graphId":"graph-1","revisionId":"rev-1"}"""),
+                timeout.Token));
+            Assert.Contains("workspaceId", incomplete.Message, StringComparison.Ordinal);
+
+            // 字段齐全但语义可能有问题的定义：交给 Core 编译，页面只消费结论。
+            const string complete = """
+                {"graphId":"graph-1","revisionId":"rev-1","workspaceId":"default","rootSessionId":"s-1",
+                 "createdByAgentId":"agent-1","objective":"composition draft"}
+                """;
+            var validation = await orchestration.ValidateAsync(
+                new OrchestrationRevisionDraft("graph-1", 0, complete), timeout.Token);
+            // 不臆造 Core 的判定：只要求结论自洽（无效必须给出原因）。
+            Assert.True(validation.IsValid || validation.Issues.Count > 0,
+                "无效的校验结果必须带具体问题");
+
+            // 发布由 Core 决定成败：成功或明确拒绝，适配器不允许假装成功。
+            try
+            {
+                await orchestration.PublishAsync(new OrchestrationRevisionDraft("graph-1", 0, complete), timeout.Token);
+            }
+            catch (ArgumentException)
+            {
+                // Core 以 InvalidState 拒绝了这份草稿——这同样是可接受的结果。
+            }
+
+            // 对不存在的图启动运行：Core 返回 NotFound 之类的失败，适配器如实报错。
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => orchestration.StartManualRunAsync("no-such-graph", "no-such-revision", timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => orchestration.ListGraphsAsync("default", timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

@@ -261,6 +261,15 @@ public sealed partial class MainWindow
         var tasks = VisibilityOf("automation", "tasks", tab);
         TasksSettings.Visibility = tasks;
         if (tasks == Visibility.Visible) LoadTasksIfNeeded();
+        var orchestration = VisibilityOf("automation", "orchestration", tab);
+        OrchestrationSettings.Visibility = orchestration;
+        if (orchestration == Visibility.Visible) LoadOrchestrationIfNeeded();
+    }
+
+    private async void LoadOrchestrationIfNeeded()
+    {
+        try { await LoadOrchestrationGraphsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadTasksIfNeeded()
@@ -560,6 +569,7 @@ public sealed partial class MainWindow
         ("usage", "dashboard") => true,
         ("automation", "scheduler") => true,
         ("automation", "tasks") => true,
+        ("automation", "orchestration") => true,
         _ => false
     };
 
