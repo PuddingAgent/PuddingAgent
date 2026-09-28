@@ -457,6 +457,11 @@
 - 口径：闭日走日聚合缓存、**今日走实时聚合**；统计同时覆盖**两个账本**（`llm_gateway_usage_events` 与 `TokenUsageEvents`），只算一个会漏量；成本是账本按模型单价算好的金额（含缓存命中价），不是界面重算。
 - **登记一条真实的 Core 限制**：`TokenUsageEventRepository.GetFilteredAsync` 的 `from`/`to` 参数一旦传入即抛异常——SQLite 无法翻译 `DateTimeOffset` 的**比较**（其源码注释已写明并要求先落数值型时间列）。因此界面**不提供时间窗**并说明原因；汇总的窗口统计走日聚合（UTC 文本比较）不受影响。
 - 命名冲突登记：Foundation 的 `TokenUsageEventPage/Row` 与 `PuddingCode.Platform` 撞名，改名为 `TokenUsageLedgerPage/TokenUsageEvent`。
+**共享文件事故（第二次，已登记；比第一次更严重）**
+- 事实：`Source/PuddingDesktop.Composition/DesktopKernelFactory.cs` 在本轮开工时是**干净**的，我只加了 1 行工厂方法；但提交 `fb0d370` 的该文件 diff 是 **57 行**——他方在同一轮内为满足新接口而并发改写了同一个文件（新增 `IStartupAttempt? startup` 参数与启动阶段埋点），被我的按路径提交一并带入。
+- 更严重的一点：**`fb0d370` 单独检出无法编译**。它提交的 `DesktopKernelFactory` 引用了 `IStartupAttempt`、`StartupPhases`、`HostStartupPhaseSink`，而 `IDesktopKernel.cs`/`InProcessKernel.cs` 的接口改动**仍未提交**，`StartupEvidence.cs`/`StartupEvidenceSink.cs` 仍是未跟踪文件。工作树（含他方 WIP）可以编译，但该提交本身不自洽。
+- 未采取的补救：**没有**代提交他方的接口与新增文件（那是他们的收尾；代提交等于把未完成改动署上我的提交信息）。建议他们尽快提交接口改动与两个新文件，`fb0d370` 即恢复自洽。
+- 纪律升级（下一轮起执行）：开工时的「脏文件清单」无法覆盖**开工后才被并发修改**的共享文件。因此提交前必须逐个核对暂存文件的 `git diff --cached --stat`，确认改动规模与我的预期一致（本轮的 57 行 vs 1 行就是漏检）；对 `DesktopKernelFactory.cs`、`MainWindow.xaml.cs`、`MainWindow.Settings.cs`、`SettingsCatalog.json`、`code_map.md`、本任务书这类双方都会改的文件，改完**立即单独提交**，把并发窗口压到最小。
 
 迁移 Token/费用/缓存命中率/计量请求四个汇总、消耗构成、按日/月趋势、模型表、上下文层表及原筛选；不把 api.ts 未被该页面使用的服务函数算作必做 UI。首页四类摘要与四个快捷导航分别处理，Core 状态读真实快照。验收：未知 Provider/模型保留、无数据不等于零费用、加权命中率正确、RMB/1M token 单位不变、各账本不重计。
 
