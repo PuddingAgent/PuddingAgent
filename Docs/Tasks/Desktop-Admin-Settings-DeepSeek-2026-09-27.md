@@ -449,6 +449,14 @@
 会话表格/时间线、诊断概览、事件时间线、子代理 Run 四页签分别交付。补 Web Agent 选项空列表问题。精确保留过滤器、列、分页和错误详情，数据来自 canonical 事件/Run 投影。验收：相同 subSessionId 的多次 Run 分开；快速切选择不串数据；大列表分页/取消；内核不可用时保留错误原因，不显示假“就绪”。
 
 ### DS-15 — 用量与管理概览（P2；依赖 DS-00、DS-02）
+状态：**进行中（2026-09-27）**。`usage/token-summary`（Token 用量汇总）与 `usage/token-details`（用量明细）已接入；`usage/admin-home`（管理首页）待续。
+
+**汇总与明细切片已交付**
+- 汇总：时间窗（今天 / 最近 7 / 30 个 UTC 日 / 本月，由页面解析成具体 UTC 日边界）、Token 合计（输入/输出）、请求数、成本、缓存命中率、按日汇总与明细展开。
+- 明细：按工作区/会话/服务商/模型筛选 + 分页（1–500）。
+- 口径：闭日走日聚合缓存、**今日走实时聚合**；统计同时覆盖**两个账本**（`llm_gateway_usage_events` 与 `TokenUsageEvents`），只算一个会漏量；成本是账本按模型单价算好的金额（含缓存命中价），不是界面重算。
+- **登记一条真实的 Core 限制**：`TokenUsageEventRepository.GetFilteredAsync` 的 `from`/`to` 参数一旦传入即抛异常——SQLite 无法翻译 `DateTimeOffset` 的**比较**（其源码注释已写明并要求先落数值型时间列）。因此界面**不提供时间窗**并说明原因；汇总的窗口统计走日聚合（UTC 文本比较）不受影响。
+- 命名冲突登记：Foundation 的 `TokenUsageEventPage/Row` 与 `PuddingCode.Platform` 撞名，改名为 `TokenUsageLedgerPage/TokenUsageEvent`。
 
 迁移 Token/费用/缓存命中率/计量请求四个汇总、消耗构成、按日/月趋势、模型表、上下文层表及原筛选；不把 api.ts 未被该页面使用的服务函数算作必做 UI。首页四类摘要与四个快捷导航分别处理，Core 状态读真实快照。验收：未知 Provider/模型保留、无数据不等于零费用、加权命中率正确、RMB/1M token 单位不变、各账本不重计。
 
@@ -920,4 +928,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-12 用户与权限 | 已完成 2026-09-27 | 三张卡全部接入（`RoleService`/`UserService`/`TeamService`）；修复了 AsNoTracking 变更失效、roleIds 回退成数字 ID、团队页可删默认工作区等问题 |
 | DS-13 运行与节点 | 已完成 2026-09-27 | `runtime/nodes` 已接入；冻结/解冻下沉为 `RuntimeNodeAdminService` 并补上审计 |
 | DS-14 会话与诊断 | 已完成 2026-09-27 | 四张卡全部接入（下沉 `RuntimeDiagnosticsQueryService`/`SubAgentRunQueryService`，修掉脱敏旁路与测试并行冲突） |
-| DS-15 … DS-17 | 待实施 | — |
+| DS-15 用量 | 进行中 2026-09-27 | 汇总与明细已接入（并登记用量事件查询不支持时间窗的 Core 限制）；管理首页待续 |
+| DS-16 … DS-17 | 待实施 | — |

@@ -249,6 +249,19 @@ public sealed partial class MainWindow
         var subAgentRuns = VisibilityOf("diagnostics", "subagents", tab);
         SubAgentRunsSettings.Visibility = subAgentRuns;
         if (subAgentRuns == Visibility.Visible) QuerySubAgentRunsIfNeeded();
+        var tokens = VisibilityOf("usage", "tokens", tab);
+        TokenUsageSettings.Visibility = tokens;
+        if (tokens == Visibility.Visible) LoadTokenUsageIfNeeded();
+    }
+
+    private async void LoadTokenUsageIfNeeded()
+    {
+        try
+        {
+            await LoadTokenUsageSummaryAsync();
+            await QueryTokenUsageEventsAsync(resetPage: true);
+        }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void QuerySubAgentRunsIfNeeded()
@@ -516,6 +529,7 @@ public sealed partial class MainWindow
         ("diagnostics", "overview") => true,
         ("diagnostics", "sessions") => true,
         ("diagnostics", "subagents") => true,
+        ("usage", "tokens") => true,
         _ => false
     };
 

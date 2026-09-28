@@ -1296,7 +1296,7 @@
             ],
             "source": "pages/stats/tokens/index.tsx",
             "task": "DS-15",
-            "status": "待迁移"
+            "status": "已接入"
           },
           {
             "id": "token-details",
@@ -1313,7 +1313,7 @@
             ],
             "source": "pages/stats/tokens/index.tsx",
             "task": "DS-15",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

@@ -2317,6 +2317,57 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task TokenUsageAdapter_SummarisesWindowsAndListsEventsWithoutADateRange()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var usage = factory.CreateTokenUsageSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => usage.LoadSummaryAsync(TokenUsageWindow.Last7Days, timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+
+            // 空数据根：窗口统计成功返回零值，不伪造数据。
+            var summary = await usage.LoadSummaryAsync(TokenUsageWindow.Last7Days, timeout.Token);
+            Assert.Equal(0, summary.TotalTokens);
+            Assert.Equal(0, summary.RequestCount);
+            Assert.Equal(0m, summary.TotalCost);
+            Assert.Equal(0, summary.CacheHitRatio);
+            Assert.True(summary.IncludesLiveToday, "最近 7 天窗口包含今天，今日走实时聚合");
+            Assert.Contains("最近 7 个 UTC 日", summary.Window.DescribeText, StringComparison.Ordinal);
+
+            // 本月窗口同样可用；窗口边界由页面解析成具体 UTC 日。
+            var month = await usage.LoadSummaryAsync(TokenUsageWindow.For(TokenUsageWindowKind.ThisMonth, DateTime.UtcNow), timeout.Token);
+            Assert.Equal(TokenUsageWindowKind.ThisMonth, month.Window.Kind);
+            Assert.Equal(1, month.Window.StartUtcDate.Day);
+
+            // 事件列表：不带时间窗（Core 无法在 SQLite 上翻译 DateTimeOffset 比较）。
+            var events = await usage.ListEventsAsync(TokenUsageEventFilter.Default, timeout.Token);
+            Assert.Equal(0, events.TotalCount);
+            Assert.Equal(1, events.Page);
+            var filtered = await usage.ListEventsAsync(TokenUsageEventFilter.Default with
+            {
+                WorkspaceId = "no-such-workspace", PageSize = 500,
+            }, timeout.Token);
+            Assert.Equal(0, filtered.TotalCount);
+            Assert.Equal(500, filtered.PageSize);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => usage.LoadSummaryAsync(TokenUsageWindow.Today, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

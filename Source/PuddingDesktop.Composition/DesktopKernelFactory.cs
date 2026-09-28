@@ -34,33 +34,58 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
     public IDiagnosticsSettings CreateDiagnosticsSettings(IDesktopKernel kernel) => new DesktopDiagnosticsSettings(kernel);
     public ISessionDirectorySettings CreateSessionDirectorySettings(IDesktopKernel kernel) => new DesktopSessionDirectorySettings(kernel);
     public ISubAgentRunSettings CreateSubAgentRunSettings(IDesktopKernel kernel) => new DesktopSubAgentRunSettings(kernel);
-    public async Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken)
+    public ITokenUsageSettings CreateTokenUsageSettings(IDesktopKernel kernel) => new DesktopTokenUsageSettings(kernel);
+    public async Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken, IStartupAttempt? startup = null)
     {
         Directory.CreateDirectory(dataRoot);
         // Prevent different preview profiles from loading the same databases concurrently.
         var lease = new PuddingDataRootLease(dataRoot);
-        bool entered;
-        try { entered = await ProcessHost.WaitAsync(0, cancellationToken).ConfigureAwait(false); }
-        catch { lease.Dispose(); throw; }
-        if (!entered)
+        var leasePhase = startup?.Phase(StartupPhases.HostDataRootLease);
+        var sink = startup is { } attempt ? new HostStartupPhaseSink(attempt) : null;
+        try
         {
-            lease.Dispose();
-            throw new InvalidOperationException("Only one Core host can be loaded in a Desktop process.");
+            if (!await ProcessHost.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+                throw new InvalidOperationException("Only one Core host can be loaded in a Desktop process.");
+            leasePhase?.Complete();
         }
+        catch
+        {
+            // Refusing a second host is a refusal, not a slow startup: record which one it was.
+            leasePhase?.Skip("跳过：数据目录租约未取得（已有宿主或已取消）");
+            lease.Dispose();
+            throw;
+        }
+        finally { leasePhase?.Dispose(); }
         WebApplication? app = null;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var options = PuddingHostOptionsFactory.ForDesktop(dataRoot) with { BrowserAutomationEnabled = false };
-            var builder = PuddingApplicationHost.CreateBuilder([], options);
-            builder.Services.AddSingleton(desktop);
-            builder.Services.AddControllers().AddApplicationPart(typeof(DesktopPresentationController).Assembly);
-            builder.Services.AddSingleton<IHostLifetime, DesktopHostLifetime>();
-            builder.Services.AddScoped<PuddingPlatform.Services.AgentChat.AgentMainSessionService>();
-            builder.Services.AddScoped<PuddingPlatform.Services.AgentChat.LocalWorkspaceSetupService>();
-            app = PuddingApplicationHost.Build(builder);
-            await PuddingApplicationHost.InitializeAsync(app, cancellationToken).ConfigureAwait(false);
-            await app.StartAsync(cancellationToken).ConfigureAwait(false);
+            using (var builderPhase = startup?.Phase(StartupPhases.HostBuilder))
+            {
+                var options = PuddingHostOptionsFactory.ForDesktop(dataRoot) with { BrowserAutomationEnabled = false };
+                var builder = PuddingApplicationHost.CreateBuilder([], options);
+                builder.Services.AddSingleton(desktop);
+                builder.Services.AddControllers().AddApplicationPart(typeof(DesktopPresentationController).Assembly);
+                builder.Services.AddSingleton<IHostLifetime, DesktopHostLifetime>();
+                builder.Services.AddScoped<PuddingPlatform.Services.AgentChat.AgentMainSessionService>();
+                builder.Services.AddScoped<PuddingPlatform.Services.AgentChat.LocalWorkspaceSetupService>();
+                builderPhase?.Complete();
+                using (var buildPhase = startup?.Phase(StartupPhases.HostBuild))
+                {
+                    app = PuddingApplicationHost.Build(builder);
+                    buildPhase?.Complete();
+                }
+            }
+            using (var initializePhase = startup?.Phase(StartupPhases.HostInitialize))
+            {
+                await PuddingApplicationHost.InitializeAsync(app, cancellationToken, sink).ConfigureAwait(false);
+                initializePhase?.Complete();
+            }
+            using (var startPhase = startup?.Phase(StartupPhases.HostStart))
+            {
+                await app.StartAsync(cancellationToken).ConfigureAwait(false);
+                startPhase?.Complete();
+            }
             var address = PuddingApplicationHost.CaptureBoundAddresses(app);
             _active = new Session(app, lease, address);
             return _active;
