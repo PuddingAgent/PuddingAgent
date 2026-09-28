@@ -255,6 +255,15 @@ public sealed partial class MainWindow
         var dashboard = VisibilityOf("usage", "dashboard", tab);
         AdminHomeSettings.Visibility = dashboard;
         if (dashboard == Visibility.Visible) LoadAdminHomeIfNeeded();
+        var scheduler = VisibilityOf("automation", "scheduler", tab);
+        SchedulerSettings.Visibility = scheduler;
+        if (scheduler == Visibility.Visible) LoadSchedulerIfNeeded();
+    }
+
+    private async void LoadSchedulerIfNeeded()
+    {
+        try { await LoadSchedulerStatusAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadAdminHomeIfNeeded()
@@ -540,6 +549,7 @@ public sealed partial class MainWindow
         ("diagnostics", "subagents") => true,
         ("usage", "tokens") => true,
         ("usage", "dashboard") => true,
+        ("automation", "scheduler") => true,
         _ => false
     };
 

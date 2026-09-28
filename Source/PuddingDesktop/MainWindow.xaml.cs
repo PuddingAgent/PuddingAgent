@@ -25,11 +25,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security, IAccessTokenSettings AccessTokens, IRoleSettings Roles, IUserSettings Users, ITeamSettings Teams, IRuntimeNodeSettings RuntimeNodes, IDiagnosticsSettings Diagnostics, ISessionDirectorySettings Sessions, ISubAgentRunSettings SubAgentRuns, ITokenUsageSettings Usage)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security, IAccessTokenSettings AccessTokens, IRoleSettings Roles, IUserSettings Users, ITeamSettings Teams, IRuntimeNodeSettings RuntimeNodes, IDiagnosticsSettings Diagnostics, ISessionDirectorySettings Sessions, ISubAgentRunSettings SubAgentRuns, ITokenUsageSettings Usage, ISchedulerSettings Scheduler)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens, _roles, _users, _teams, _runtimeNodes, _diagnostics, _sessions, _subAgentRuns, _usage) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens, _roles, _users, _teams, _runtimeNodes, _diagnostics, _sessions, _subAgentRuns, _usage, _scheduler) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -90,6 +90,7 @@ public sealed partial class MainWindow : Window
         BuildSubAgentRunPanel();
         BuildTokenUsagePanel();
         BuildAdminHomePanel();
+        BuildSchedulerPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -763,6 +764,13 @@ public sealed partial class MainWindow : Window
             Check(AdminHomeSettings.Visibility == Visibility.Visible, "admin home tab is native");
             Check(AdminHomeSettings.Content is StackPanel, "admin home form is built");
             Check(_ahCore.Text.Contains("Core 状态", StringComparison.Ordinal), "admin home shows the real Core state");
+            // DS-16 scheduler tab (two cards).
+            OpenSettingsCategory("automation", "scheduler");
+            await WaitForSettingsUiAsync(() => _schNotice.IsOpen);
+            Check(SchedulerSettings.Visibility == Visibility.Visible, "scheduler tab is native");
+            Check(SchedulerSettings.Content is StackPanel, "scheduler form is built");
+            Check(!_schInterval.IsEnabled, "scheduler form stays disabled without Core");
+            Check(_schNotice.Title == "Core 未就绪", "scheduler tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

@@ -1366,7 +1366,7 @@
             ],
             "source": "pages/workspace-tasks/SchedulerDrawer.tsx",
             "task": "DS-16",
-            "status": "待迁移"
+            "status": "已接入"
           },
           {
             "id": "scheduler-status",
@@ -1383,7 +1383,7 @@
             ],
             "source": "pages/workspace-tasks/SchedulerDrawer.tsx",
             "task": "DS-16",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

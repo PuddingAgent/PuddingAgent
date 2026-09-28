@@ -2368,6 +2368,63 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task SchedulerAdapter_ReadsStatusAndRefusesAStalePolicyRevision()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var scheduler = factory.CreateSchedulerSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => scheduler.GetStatusAsync("default", timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var status = await scheduler.GetStatusAsync("default", timeout.Token);
+            Assert.Equal("default", status.WorkspaceId);
+            // 隔离数据根的 revision 从 0 起步（CAS 仍以读到的值为准）。
+            Assert.True(status.Policy.Revision >= 0);
+            Assert.Contains(status.Policy.Mode, SchedulerText.Modes);
+            // 状态与前置始终可读，LastScan 允许为空（还没扫描过）。
+            Assert.False(string.IsNullOrWhiteSpace(status.StateText));
+
+            // 过期的 revision 必须被拒绝为 CAS 冲突（不覆盖别人的修改）。
+            var stale = status.Policy.Revision - 1;
+            await Assert.ThrowsAsync<SettingsConflictException>(() => scheduler.SavePolicyAsync("default",
+                new SchedulerPolicyEdit(stale, true, false, "shadow", 60, 50, 3, false), timeout.Token));
+
+            // 用当前 revision 保存同值策略：应当成功并让 revision 前进。
+            var saved = await scheduler.SavePolicyAsync("default", new SchedulerPolicyEdit(
+                status.Policy.Revision, status.Policy.Enabled, status.Policy.Paused, status.Policy.Mode,
+                status.Policy.ScanIntervalSeconds, status.Policy.CandidateLimit, status.Policy.MaxStartsPerScan,
+                status.Policy.EventDrivenEnabled), timeout.Token);
+            Assert.True(saved.Policy.Revision > status.Policy.Revision, "revision 必须前进");
+
+            // 非法取值由 Core 拒绝（不是适配器猜测）。
+            await Assert.ThrowsAsync<ArgumentException>(() => scheduler.SavePolicyAsync("default",
+                new SchedulerPolicyEdit(saved.Policy.Revision, true, false, "turbo", 60, 50, 3, false), timeout.Token));
+
+            // 手动扫描在暂停状态下也允许（与 Core 控制器一致）。
+            await scheduler.SetPausedAsync("default", true, saved.Policy.Revision, timeout.Token);
+            var scan = await scheduler.RunScanAsync("default", timeout.Token);
+            Assert.Equal("default", scan.WorkspaceId);
+            Assert.Equal("管理员手动扫描", scan.TriggerText);
+            var repaired = await scheduler.RunRepairAsync("default", timeout.Token);
+            Assert.Equal("管理员手动修复", repaired.TriggerText);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => scheduler.GetStatusAsync("default", timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

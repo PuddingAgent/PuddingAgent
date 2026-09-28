@@ -35,6 +35,7 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
     public ISessionDirectorySettings CreateSessionDirectorySettings(IDesktopKernel kernel) => new DesktopSessionDirectorySettings(kernel);
     public ISubAgentRunSettings CreateSubAgentRunSettings(IDesktopKernel kernel) => new DesktopSubAgentRunSettings(kernel);
     public ITokenUsageSettings CreateTokenUsageSettings(IDesktopKernel kernel) => new DesktopTokenUsageSettings(kernel);
+    public ISchedulerSettings CreateSchedulerSettings(IDesktopKernel kernel) => new DesktopSchedulerSettings(kernel);
     public async Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken, IStartupAttempt? startup = null)
     {
         Directory.CreateDirectory(dataRoot);
