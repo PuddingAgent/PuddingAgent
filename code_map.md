@@ -1,3 +1,15 @@
+## 2026-09-29：优化第一刀——schema 阶梯快速路径（附两处成本归因修正）
+
+用户裁定「开始优化」。第一刀选最大单笔且最安全的：**幂等 schema 阶梯的跳过**。用 SQLite 原生 `PRAGMA user_version` 做修订标记（零 schema 改动），命中标记 + 哨兵表齐就跳过 25 个 schema 组，成功后写标记。判定抽成纯函数 `PlatformSchemaRevision`（13 项单测 + fail-open：读不到/非 SQLite/哨兵缺失/版本不符一律回落全量），运维逃生门 `PUDDING_SCHEMA_LADDER=full`。
+
+实测（同构建同库三连跑）：A2 跑阶梯 total 6,179 / schema 段 1,341 ms / skipped=0；B2、C2 跳过 total 5,959、6,098 / schema 段 936、909 ms / skipped=1。⇒ **阶梯自身 ≈400 ms**（workspace-task 229 + message-fabric 138 + 其余），跑间噪声 ±200 ms，属"0.2–0.4 s"级收益。
+
+**两处此前归因被实测打掉并修正**：① `marker` 那 ~910 ms 不是探测也不是磁盘——原生 SQLite 打开这个 9 GB 库 **0.0 ms**、读 `user_version` 1 ms、哨兵扫描 2 ms，它其实是 **.NET/EF 首次触碰 `PlatformDbContext` 的固定代价**（无编译模型，88 个实体现场构建）；第一版两个 helper 各开一次连接确实白付一次（已修成一次开合），但把它记在"阶梯"上是错的：成本只是从 `database` 移到了 `marker`，总账不变。② `platform-schema.database`（EF `EnsureCreated`）热态真实成本是 **18 ms**，不是 900 ms。
+
+**修正后的优先级**：① `host.start` 2.6 s（先补子阶段）；② **EF 首次触碰 ~910 ms**（`dotnet ef dbcontext optimize` 编译模型，最大单笔，需漂移门禁）；③ DI builder+build ~690 ms（`ValidateOnBuild` 是护栏，只能移到 CI/Debug）；④ `jieba-backfill` ~577 ms（后台化 + warming 门）；⑤ schema 阶梯 ~400 ms（本刀已做）。
+
+另修一真缺陷：证据 sink 的 UTF-8 **BOM** 让严格 JSONL 解析器读不了第一行（PowerShell 容忍所以没暴露）→ 改为无 BOM。证据、口径与复现步骤在 [How-Debuge.md](How-Debuge.md)。
+
 ## 2026-09-29：启动慢的实测归因（**`D:\data` 在机械盘上**；D1 证据第一次派上用场）
 
 用户报告「初始化 Core 的时间很长」。用刚并进 master 的 D1 埋点跑了一次**真实 `D:\data`** 启动，第一次就指名到阶段：`host.initialize.platform-schema.message-fabric` = **73,254 ms**，`ExecutionReady` 落在 **+128 s**；随后 `wal_checkpoint(TRUNCATE)`（1.2 s）+ 立刻复跑，同一构建同一库变成 **5,990 ms**、`ExecutionReady` **+7.1 s**。

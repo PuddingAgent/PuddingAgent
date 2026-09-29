@@ -1,3 +1,27 @@
+### 优化第一刀：schema 阶梯快速路径（2026-09-29，分支 `feature/dsh-startup-fastpath`）
+
+**改了什么**：`PUDDING_SCHEMA_LADDER` 之外，用 SQLite 原生 `PRAGMA user_version` 做**幂等阶梯的修订标记**——命中标记 + 哨兵表齐 ⇒ 跳过 25 个 schema 组；否则跑全量并在成功后写标记。判定抽成纯函数 `PlatformSchemaRevision`（13 项单测），规则 **fail-open**：读不到/非 SQLite/哨兵缺失/版本不符一律回落全量，绝不"假设已完成"。运维逃生门 `PUDDING_SCHEMA_LADDER=full` 强制全量。
+
+**实测（同一构建、同一 `D:\data`，连跑三次，优雅关闭）**：
+
+| | 跑阶梯 A2 | 跳过 B2 | 跳过 C2 |
+|---|---|---|---|
+| attempt total | 6,179 ms | 5,959 ms | 6,098 ms |
+| ExecutionReady | 7,128 ms | 6,901 ms | 6,921 ms |
+| `platform-schema.marker` | 906 ms | 936 ms | 909 ms |
+| schema 段合计 | 1,341 ms | 936 ms | 909 ms |
+| `ladder-skipped` | 0 | 1 | 1 |
+
+⇒ **阶梯自身的工作量 ≈ 400 ms**（1,341−936：`workspace-task` 229 + `message-fabric` 138 + 其余几十毫秒），跳过即省下它；跑间噪声 ±200 ms，所以这是"~0.2–0.4 s"级别的收益，不是数量级。
+
+**同时修正两个此前的错误归因（都是被这次测量打掉的）**：
+1. **`marker` 那 ~910 ms 不是探测逻辑，也不是磁盘**：原生 SQLite 打开这个 9 GB 库是 **0.0 ms**、读 `user_version` 1 ms、哨兵扫描 2 ms（Python 实测）。它是 **.NET/EF 首次触碰 `PlatformDbContext` 的固定代价**（模型构建 + provider/原生库初始化）——谁先碰谁付。所以第一版"两个 helper 各开一次连接"确实白付一次（已修成一次开合），但我上一轮把 900 ms 记在"阶梯"头上是错的：那时它被记在 `database`，现在被记在 `marker`，**总账不变**。
+2. 因此 `platform-schema.database`（EF `EnsureCreated`）的真实成本在热态只有 **18 ms**，不是 900 ms。
+
+**顺带修掉一个真缺陷**：`StartupEvidenceFileSink` 用 `Encoding.UTF8` 建文件会写 **UTF-8 BOM**，导致严格 JSONL 解析器（Python `json`）读不了第一行（PowerShell 容忍，所以一直没暴露）。已改为 `UTF8Encoding(encoderShouldEmitUTF8Identifier: false)`。
+
+**修正后的优化优先级**（热态 5,990 ms 基准）：① `host.start` 2.6 s（需先补子阶段）；② **EF 首次触碰 ~910 ms**（`PlatformDbContext` 无编译模型，88 个实体现场构建 ⇒ `dotnet ef dbcontext optimize` 编译模型是最大单笔，但需要漂移门禁）；③ `host.builder`+`host.build` ~690 ms（`ValidateOnBuild` 是护栏，只能移到 CI/Debug）；④ `jieba-backfill` ~577 ms（后台化 + warming 门）；⑤ schema 阶梯 ~400 ms（**本刀已做**）。
+
 ### 启动卡在「正在初始化进程内 Core…」：先看 D1 证据，再查残留 WAL（2026-09-29）
 
 **症状**：Desktop 长时间停在「正在初始化进程内 Core…」，外壳显示「Core DLL 尚未接入」，`desktop.log` 无异常，`D:\data\logs` 里**这一次启动一行日志都没有**。
