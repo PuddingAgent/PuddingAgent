@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -415,17 +416,67 @@ public sealed class McpWorkspaceSkillHostedService(
     IMcpConnectionManager manager,
     ILogger<McpWorkspaceSkillHostedService> logger) : IHostedService
 {
-    public async Task StartAsync(CancellationToken ct)
+    /// <summary>停止时等待在途对账收敛的上界；超时只记 Warning，不把停止路径挂死。</summary>
+    public static readonly TimeSpan DefaultStopConvergenceTimeout = TimeSpan.FromSeconds(3);
+
+    private readonly CancellationTokenSource _stopping = new();
+    private Task? _reconcile;
+    private int _stopped;
+
+    /// <summary>等待在途对账收敛的上界（可调，测试用）。</summary>
+    public TimeSpan StopConvergenceTimeout { get; init; } = DefaultStopConvergenceTimeout;
+
+    /// <summary>测试接缝：在途对账任务。</summary>
+    internal Task? Reconciliation => _reconcile;
+
+    public Task StartAsync(CancellationToken ct)
     {
-        try
+        // 客户端化后这里必须是后台：MCP 是**外部集成**，首次对账要连远端服务器
+        // （实测本机 2.15 秒，服务器不可达时更久），而"内核就绪"并不依赖它。
+        // 接通前工具清单为空、状态经 IMcpConnectionManager.ListStatuses 暴露
+        // （界面应显示"正在连接"而不是"没有工具"）。
+        var startedAt = Stopwatch.GetTimestamp();
+        _reconcile = Task.Run(async () =>
         {
-            await manager.RefreshAllAsync(ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogError(ex, "[MCP] Initial workspace MCP reconciliation failed.");
-        }
+            var token = _stopping.Token;
+            try
+            {
+                await manager.RefreshAllAsync(token).ConfigureAwait(false);
+                logger.LogInformation(
+                    "[MCP] Workspace MCP reconciliation completed in {ElapsedMs:N0} ms (background).",
+                    Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                logger.LogInformation("[MCP] Workspace MCP reconciliation cancelled by host shutdown.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[MCP] Initial workspace MCP reconciliation failed (background; retried on next refresh).");
+            }
+        }, CancellationToken.None);
+        return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+    public async Task StopAsync(CancellationToken ct)
+    {
+        if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
+        try
+        {
+            await _stopping.CancelAsync().ConfigureAwait(false);
+            if (_reconcile is not { } reconcile) return;
+            try
+            {
+                await reconcile.WaitAsync(StopConvergenceTimeout, ct).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                logger.LogWarning(
+                    "[MCP] Reconciliation did not converge within {TimeoutMs:N0} ms; continuing shutdown.",
+                    StopConvergenceTimeout.TotalMilliseconds);
+            }
+            catch (OperationCanceledException) { /* 宿主正在停止：在途任务已收到取消 */ }
+        }
+        finally { _stopping.Dispose(); }
+    }
 }
