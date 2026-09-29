@@ -43,9 +43,12 @@ public sealed class WebView2BrowserRuntime : IBrowserRuntime
 
         var environment = await _dispatcher.InvokeAsync(async () =>
         {
+#if WINUI_BROWSER
+            return await CoreWebView2Environment.CreateWithOptionsAsync(
+#else
             return await CoreWebView2Environment.CreateAsync(
-                userDataFolder: userDataDir,
-                options: new CoreWebView2EnvironmentOptions());
+#endif
+                null, userDataDir, new CoreWebView2EnvironmentOptions());
         }, ct);
 
         var context = new WebView2BrowserContext(id, options, environment, _dispatcher, _surfaceHost);

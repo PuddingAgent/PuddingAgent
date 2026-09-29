@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <UseWinUI>true</UseWinUI>
+    <DisableTransitiveProjectReferences>true</DisableTransitiveProjectReferences>
+    <WindowsPackageType>None</WindowsPackageType>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <DefineConstants>$(DefineConstants);WINUI_BROWSER</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+    <!-- Same browser driver, different surface. No fork of navigation/tool logic. -->
+    <Compile Include="../PuddingBrowser.WebView2/WebView2BrowserRuntime.cs;../PuddingBrowser.WebView2/WebView2BrowserContext.cs;../PuddingBrowser.WebView2/WebView2BrowserPage.cs;../PuddingBrowser.WebView2/WebView2DomClient.cs;../PuddingBrowser.WebView2/WebView2ElementHandle.cs" Link="Driver/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <Target Name="EnforceBrowserBoundary" BeforeTargets="ResolveReferences">
+    <ItemGroup><Forbidden Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingBrowser.Abstractions'" /></ItemGroup>
+    <Error Condition="'@(Forbidden)' != ''" Text="Browser surface may reference only browser abstractions." />
+  </Target>
+</Project>

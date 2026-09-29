@@ -138,7 +138,11 @@ public sealed class WebView2BrowserPage : IBrowserPage
                 var tcs = new TaskCompletionSource<NavigationResult>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
 
+#if WINUI_BROWSER
+                Windows.Foundation.TypedEventHandler<CoreWebView2, CoreWebView2NavigationCompletedEventArgs>? handler = null;
+#else
                 EventHandler<CoreWebView2NavigationCompletedEventArgs>? handler = null;
+#endif
                 handler = (s, e) =>
                 {
                     _coreWebView!.NavigationCompleted -= handler;

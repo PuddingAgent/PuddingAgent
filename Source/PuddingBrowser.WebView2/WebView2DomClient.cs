@@ -157,7 +157,11 @@ internal static partial class WebView2DomClient
         ct.ThrowIfCancellationRequested();
         var inputJson = JsonSerializer.Serialize(input, s_jsonOptions);
         var script = template.Replace("__PUDDING_INPUT__", inputJson, StringComparison.Ordinal);
+#if WINUI_BROWSER
+        var raw = await webView.ExecuteScriptAsync(script).AsTask(ct);
+#else
         var raw = await webView.ExecuteScriptAsync(script).WaitAsync(ct);
+#endif
         try
         {
             return JsonSerializer.Deserialize<T>(raw, s_jsonOptions)
