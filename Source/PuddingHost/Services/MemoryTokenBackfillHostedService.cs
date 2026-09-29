@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Core;
 
 namespace PuddingHost.Services;
 
@@ -35,60 +36,21 @@ public sealed class MemoryTokenBackfillHostedService(
     /// <summary>停止时等待在途回填收敛的上界；超时只记 Warning，不把停止路径挂死。</summary>
     public static readonly TimeSpan DefaultStopConvergenceTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly CancellationTokenSource _stopping = new();
-    private Task? _run;
-    private int _stopped;
+    private BackgroundWork? _run;
 
     /// <summary>等待在途回填收敛的上界（可调，测试用）。</summary>
     public TimeSpan StopConvergenceTimeout { get; init; } = DefaultStopConvergenceTimeout;
 
     /// <summary>测试接缝：在途回填任务。</summary>
-    internal Task? Run => _run;
+    internal Task? Run => _run?.Completion;
 
     public Task StartAsync(CancellationToken ct)
     {
-        var startedAt = Stopwatch.GetTimestamp();
-        _run = Task.Run(async () =>
-        {
-            var token = _stopping.Token;
-            try
-            {
-                await backfill.RunAsync(token).ConfigureAwait(false);
-                logger.LogInformation(
-                    "[MemoryTokenBackfill] completed in {ElapsedMs:N0} ms (background).",
-                    Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                logger.LogInformation("[MemoryTokenBackfill] cancelled by host shutdown.");
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "[MemoryTokenBackfill] failed (background; memory recall may stay incomplete).");
-            }
-        }, CancellationToken.None);
+        // 统一形制（低优先级线程 + 有界停止 + 带耗时日志）见 PuddingCode.Core.BackgroundWork。
+        _run = BackgroundWork.Start("memory.token-backfill", backfill.RunAsync, logger);
         return Task.CompletedTask;
     }
 
-    public async Task StopAsync(CancellationToken ct)
-    {
-        if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
-        try
-        {
-            await _stopping.CancelAsync().ConfigureAwait(false);
-            if (_run is not { } run) return;
-            try
-            {
-                await run.WaitAsync(StopConvergenceTimeout, ct).ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                logger.LogWarning(
-                    "[MemoryTokenBackfill] did not converge within {TimeoutMs:N0} ms; continuing shutdown.",
-                    StopConvergenceTimeout.TotalMilliseconds);
-            }
-            catch (OperationCanceledException) { /* 宿主正在停止：在途任务已收到取消 */ }
-        }
-        finally { _stopping.Dispose(); }
-    }
+    public Task StopAsync(CancellationToken ct) =>
+        _run is { } work ? work.StopAsync(StopConvergenceTimeout, ct) : Task.CompletedTask;
 }
