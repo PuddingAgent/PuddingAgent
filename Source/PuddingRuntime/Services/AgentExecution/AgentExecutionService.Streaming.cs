@@ -1455,7 +1455,8 @@ public sealed partial class AgentExecutionService
                             Success = toolResult.Success,
                             Output = toolResult.Output ?? "",
                             Error = toolResult.Error,
-                            ExitCode = toolResult.Success ? 0 : 1,
+                            Status = toolResult.Status,
+                            ExitCode = toolResult.ExitCode ?? (toolResult.Success ? 0 : 1),
                             ContentParts = toolResult.ToolContentParts,
                         };
                         delegatedUsage = toolResult.DelegatedUsage;
@@ -1522,6 +1523,7 @@ public sealed partial class AgentExecutionService
                     {
                         name = tc.Name,
                         toolCallId = tc.Id,
+                        status = result.Status,
                         exitCode = result.ExitCode,
                         output = result.Output,
                         error = result.Error,
@@ -1533,7 +1535,7 @@ public sealed partial class AgentExecutionService
                     _ = _eventBus?.EmitAsync(new StreamingEvent
                     {
                         Type = StreamingEventTypes.AgentToolResult,
-                        Data = new { name = tc.Name, toolCallId = tc.Id, exitCode = result.ExitCode, output = result.Output, error = result.Error }
+                        Data = new { name = tc.Name, toolCallId = tc.Id, status = result.Status, exitCode = result.ExitCode, output = result.Output, error = result.Error }
                     }, ct);
 
                     var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(

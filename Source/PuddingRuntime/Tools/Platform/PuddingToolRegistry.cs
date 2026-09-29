@@ -681,7 +681,8 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
             var deniedResult = ToolExecutionResult.Fail(
                 fwDecision.DenyReason!,
                 exitCode,
-                dependencyWait ? ToolResultStatuses.DependencyWait : null);
+                dependencyWait ? ToolResultStatuses.DependencyWait :
+                    fwDecision.Disposition == ToolApprovalDecision.NeedHuman ? ToolResultStatuses.HumanDecisionRequired : null);
             await RecordTelemetryAsync(toolId, argumentsJson, context, startedAt, deniedResult, stage, ct);
             return deniedResult;
         }

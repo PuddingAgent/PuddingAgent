@@ -268,6 +268,8 @@ public static class ToolResultStatuses
 {
     /// <summary>ADR-091 §4.4：依赖等待（非拒绝、非工具失败），不参与熔断。与普通失败严格区分。</summary>
     public const string DependencyWait = "dependency_wait";
+    /// <summary>当前调用需要人工业务决定；不表示已创建持久审批请求或已暂停 Run。</summary>
+    public const string HumanDecisionRequired = "human_decision_required";
 
     /// <summary>普通成功（无特殊分类）。</summary>
     public const string Ok = "ok";

@@ -1070,7 +1070,8 @@ public sealed partial class AgentExecutionService
                                         Success = toolResult.Success,
                                         Output = toolResult.Output ?? "",
                                         Error = toolResult.Error,
-                                        ExitCode = toolResult.Success ? 0 : 1,
+                                        Status = toolResult.Status,
+                                        ExitCode = toolResult.ExitCode ?? (toolResult.Success ? 0 : 1),
                                         ContentParts = toolResult.ToolContentParts,
                                     };
                                     delegatedUsage = toolResult.DelegatedUsage;
@@ -1769,7 +1770,8 @@ public sealed partial class AgentExecutionService
                                 Success = toolResult.Success,
                                 Output = toolResult.Output ?? "",
                                 Error = toolResult.Error,
-                                ExitCode = toolResult.Success ? 0 : 1,
+                                Status = toolResult.Status,
+                                ExitCode = toolResult.ExitCode ?? (toolResult.Success ? 0 : 1),
                             };
                             delegatedUsage = toolResult.DelegatedUsage;
                         }

@@ -153,6 +153,7 @@ public sealed class ToolInvocationService : IToolInvocationService
             }
             else if (!(result.ExitCode == 428
                        || string.Equals(result.Status, VisionErrorCodes.RequestLimitExceeded, StringComparison.Ordinal)
+                       || string.Equals(result.Status, ToolResultStatuses.HumanDecisionRequired, StringComparison.Ordinal)
                        || string.Equals(result.Status, ToolResultStatuses.DependencyWait, StringComparison.Ordinal)))
             {
                 var fuse = _runtimeControl?.RecordError(
@@ -178,6 +179,8 @@ public sealed class ToolInvocationService : IToolInvocationService
             return new ToolInvocationResult
             {
                 Success = result.Success,
+                Status = result.Status,
+                ExitCode = result.ExitCode,
                 ToolCallId = request.ToolCallId,
                 ToolName = request.ToolName,
                 Output = result.Output,

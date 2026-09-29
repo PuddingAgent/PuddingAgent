@@ -36,6 +36,7 @@ public sealed record SkillInvokeRequest
 
 public sealed record SkillResult
 {
+    public string? Status { get; init; }
     public required bool Success { get; init; }
     public required string Output { get; init; }
     public string? Error { get; init; }
