@@ -15,6 +15,13 @@
 `S5bFullTextIndexMaintenanceHostBindingTests`（真实组合根：`system.json` → 绑定 + `Assert.Same(engine, composition.LiveEngine)` + hosted 恰好注册一次 + 全程不触碰索引根）、
 `S5bMaintenanceTestDoubles.cs`（替身）、`S5SupplyTestDoubles.cs`（补 `ProbeDocuments` —— 此前遗漏导致测试工程 **CS0535**）。
 
+**2026-09-29 追加（对齐仓库后台重活统一入口）**：`FullTextIndexMaintenanceHostedService` 的启动作业从 `Task.Run`
+改走 `PuddingCode.Core.BackgroundWork`（专用 `BelowNormal` 线程 + 送取消有界收敛 + 带耗时日志）—— 维护启动路径
+本身要做语料校准扫描，属「后台重活」，不得与首屏 / 交互抢 CPU（用户 09-29 方向，范本见 `b96ae88` 的 MCP 与 jieba 两处）。
+行为契约不变（首句 `Enabled` 门控 / 启动停止幂等 / 未装配则不调用组件 `StopAsync`）；新增 **I7** 断言把线程事实钉住
+（名字 `pudding-bg-fulltext.maintenance` / `BelowNormal` / `IsBackground`），宿主测试 **163 → 164**。
+M3 变异（把作业体改道 `Task.Run`）⇒ 恰好 I7 变红、零连带；复原后 blob 逐位相同。
+
 ⚠️ **本刀顺带修复一处主干缺陷**：`Platform.cs` 的 4 处注册/装配行曾被提交，但**对应的 4 个生产类型文件当时未入库** ⇒ 干净检出 `CS0246`、HEAD 不可编译。由 `c76c613` 补齐后宿主编译恢复 **0 错误**。
 
 ⚠️ **未做 / 未证实**：① 「维护与供给共用同一引擎实例」在**真实运行期并发**下的可见性（多 reader / 跨进程租约）未做运行态验证（仅静态装配 + 单测层面的引用相等）；② 「变更后自动更新」**尚未在生产索引根上实跑** —— 需用户显式开启 `FullTextIndex:Maintenance:Enabled=true` 并重启 Core。
