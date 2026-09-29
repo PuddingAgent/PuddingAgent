@@ -34,6 +34,8 @@ public static class StartupPhaseNames
 {
     public const string PlatformSchema = "host.initialize.platform-schema";
     public const string PlatformSchemaStepPrefix = "host.initialize.platform-schema.";
+    public const string PlatformSchemaMarker = "host.initialize.platform-schema.marker";
+    public const string PlatformSchemaStamp = "host.initialize.platform-schema.stamp";
     public const string GoalReconcile = "host.initialize.goal-reconcile";
     public const string ExternalApiConfig = "host.initialize.external-api-config";
     public const string EventStore = "host.initialize.event-store";
@@ -47,5 +49,7 @@ public static class StartupPhaseNames
 public static class StartupMetrics
 {
     public const string SchemaStepCount = "platform-schema.step-count";
+    public const string SchemaRevision = "platform-schema.revision";
+    public const string SchemaLadderSkipped = "platform-schema.ladder-skipped";
     public const string WorkspaceCount = "workspace.count";
 }

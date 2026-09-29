@@ -16,6 +16,10 @@ public interface IStartupEvidenceSink
 /// <summary>One JSON object per attempt, appended to a single file so repeated runs stay comparable.</summary>
 public sealed class StartupEvidenceFileSink : IStartupEvidenceSink
 {
+    // No BOM: a byte-order mark makes the first line unreadable for strict JSONL parsers
+    // (measured: Python's json rejected the artifact while PowerShell tolerated it).
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
     public StartupEvidenceFileSink(string directory, string fileName = "startup-evidence.jsonl")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
@@ -33,7 +37,7 @@ public sealed class StartupEvidenceFileSink : IStartupEvidenceSink
         try
         {
             System.IO.Directory.CreateDirectory(Directory);
-            File.AppendAllText(FilePath, StartupEvidenceJson.Serialize(evidence) + Environment.NewLine, Encoding.UTF8);
+            File.AppendAllText(FilePath, StartupEvidenceJson.Serialize(evidence) + Environment.NewLine, Utf8NoBom);
             error = null;
             return true;
         }

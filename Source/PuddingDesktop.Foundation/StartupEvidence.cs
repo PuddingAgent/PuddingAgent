@@ -62,6 +62,8 @@ public static class StartupPhases
 
     public const string HostPlatformSchema = "host.initialize.platform-schema";
     public const string HostPlatformSchemaStepPrefix = "host.initialize.platform-schema.";
+    public const string HostPlatformSchemaMarker = "host.initialize.platform-schema.marker";
+    public const string HostPlatformSchemaStamp = "host.initialize.platform-schema.stamp";
     public const string HostEventStore = "host.initialize.event-store";
     public const string HostGoalReconcile = "host.initialize.goal-reconcile";
     public const string HostExternalApiConfig = "host.initialize.external-api-config";
@@ -73,6 +75,8 @@ public static class StartupPhases
     /// <summary>Data-scale metrics the report correlates with duration; never content.</summary>
     public const string MetricWorkspaceCount = "workspace.count";
     public const string MetricSchemaStepCount = "platform-schema.step-count";
+    public const string MetricSchemaRevision = "platform-schema.revision";
+    public const string MetricSchemaLadderSkipped = "platform-schema.ladder-skipped";
 
     /// <summary>1 when a conversation was readable inside the startup window, 0 when it was not.</summary>
     public const string MetricConversationFirstRead = "conversation.first-read";
