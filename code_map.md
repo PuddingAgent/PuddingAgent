@@ -1,3 +1,15 @@
+## 2026-09-29：启动慢的实测归因（**`D:\data` 在机械盘上**；D1 证据第一次派上用场）
+
+用户报告「初始化 Core 的时间很长」。用刚并进 master 的 D1 埋点跑了一次**真实 `D:\data`** 启动，第一次就指名到阶段：`host.initialize.platform-schema.message-fabric` = **73,254 ms**，`ExecutionReady` 落在 **+128 s**；随后 `wal_checkpoint(TRUNCATE)`（1.2 s）+ 立刻复跑，同一构建同一库变成 **5,990 ms**、`ExecutionReady` **+7.1 s**。
+
+**根因（实测）：`D:\data` 落在一块 7200 转机械盘上**（`WDC WD10EZEX-08WN4A0`，MediaType=**HDD**，SATA；同机另有 NVMe SSD）。该盘**顺序读 174 MB/s，但随机 4 KB 读只有 162 IOPS ≈ 0.63 MB/s**——SQLite 的 schema/索引访问正是被寻道支配的随机小页读。旁证三条同源：两张大表 `count(*)` 各 65–71 s；`ANALYZE` 跑到 252 秒仍只走完极小部分（全库按 162 IOPS 需数小时，**这块盘上不可行**）；`SessionChunkBackfill` 每批 2.3 s → 48 s。**不是 SQL/索引问题**：message-fabric 的 DDL/DML 全是幂等空操作，谓词单独只读跑 0.1 s——它只是启动路径里第一个**无条件写库**的语句（前面各步都有幂等守卫），首写的页代价全落在它头上。
+
+**归因边界（诚实）**：129 s → 6 s 里，`wal_checkpoint(TRUNCATE)` 清掉的残留 WAL/`-shm` 与「第二次是热页缓存」是**两个混淆因素**，不能全记在 WAL 上；可靠说法是「HDD + 冷启动 + 残留 WAL」叠加。要拆分需在 SSD 上或清空文件缓存后各测一次。
+
+**建议（按性价比）**：① 把 `D:\data\databases` 迁到 NVMe SSD（唯一量级改善）；② 对 telemetry/runtime_activity/conversation_events 三张大表做归档+裁剪缩库；③ 别在 HDD 上跑 ANALYZE；④ 用窗口关闭而非杀进程。**未实施**，等用户裁决。次要缺陷：`StorageDataClassCatalog` 声明了 `IX_telemetry_metric_events_occurred_at_utc`，但该索引不存在且无代码创建它。
+
+取证路径、复现步骤与「为什么以前看不见」（`[Startup]` 是 `Console.WriteLine`，WinUI 无控制台 ⇒ 全丢）写入 [How-Debuge.md](How-Debuge.md) 顶部。
+
 ## 2026-09-28：D1 启动证据（启动阶段可归因，分支 `feature/dsh-startup-evidence`）
 
 设计依据 [Desktop 聊天式角色列表与启动体验](Docs/Features/Desktop-Chat-List-Startup-Audit-Design-2026-09-28.md) §5.1/§6 D1：**先测量再优化**，把"启动慢"拆成有名字、有耗时、有顺序的阶段，而不是笼统的 Starting 状态或"加超时即修好"。

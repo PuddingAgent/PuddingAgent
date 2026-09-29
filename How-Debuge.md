@@ -1,3 +1,37 @@
+### 启动卡在「正在初始化进程内 Core…」：先看 D1 证据，再查残留 WAL（2026-09-29）
+
+**症状**：Desktop 长时间停在「正在初始化进程内 Core…」，外壳显示「Core DLL 尚未接入」，`desktop.log` 无异常，`D:\data\logs` 里**这一次启动一行日志都没有**。
+
+**取证**：D1 埋点写在 `<StateRoot>\startup\startup-evidence.jsonl`（每次尝试一行）。同机、同库、**同一个带埋点构建**，两次启动对照：
+
+| 阶段（ms） | 第一次（有残留 WAL） | `wal_checkpoint(TRUNCATE)` 之后 |
+|---|---|---|
+| attempt total | **129,368** | **5,990** |
+| kernel.core-start | 105,004 | 5,790 |
+| host.initialize | 83,921 | 2,488 |
+| **host.initialize.platform-schema.message-fabric** | **73,254** | 毫秒级 |
+| host.start | 10,254 | 2,599 |
+| desktop.directory.read | 15,664 | 毫秒级 |
+| 里程碑 ExecutionReady | +128,266 | **+7,086** |
+
+**结论：慢的不是 SQL，是磁盘。`D:\data` 落在一块 7200 转机械盘上**（`WDC WD10EZEX-08WN4A0`，MediaType=**HDD**，SATA；机器上另有 NVMe SSD）。这块盘实测：**顺序读 174 MB/s，但随机 4 KB 读只有 162 IOPS ≈ 0.63 MB/s**。SQLite 的 schema/索引访问正是被寻道支配的随机小页读，于是一个 9.18 GB 的库在启动路径上每碰一批分散页就是几十秒——`message-fabric` 那 73 秒由此而来（它的 DDL/DML 全是幂等空操作、谓词单独只读跑只要 0.1 s，但它是启动路径里**第一个无条件写库**的语句：前面各步都有幂等守卫、不写，于是首写要付的页代价全落在它头上）。同一块盘上可复现的三条旁证：两张大表 `count(*)` 各 65–71 s；`ANALYZE` 跑到 252 秒仍在推进但只走完极小一部分（按 162 IOPS 估算全库需数小时）**⇒ 在这块盘上不要跑 ANALYZE**；`SessionChunkBackfill` 每批从 2.3 s 退化到 48 s。
+
+**第二次 6 s 的归因要诚实（重要）**：它同时具备两个有利条件——① 先做了 `wal_checkpoint(TRUNCATE)`（1.2 s，清掉上次被杀留下的 333 MB WAL 高水位与陈旧 `-shm`）；② 紧接着又跑了一次，schema 页还在 OS 页缓存里（机械盘上冷/热差异极大）。**所以不能把 129 s → 6 s 全记在 WAL 上**；可靠的说法是「这块盘 + 冷启动 + 残留 WAL 三者叠加」。要拆分验证，需要在 SSD 上或清空文件缓存后各测一次。
+
+**复现与避免（按性价比排序）**：
+- **把 `D:\data`（至少 `databases\`）迁到 NVMe SSD**——这是唯一能把 162 IOPS 变成数万 IOPS 的动作，其余都是缓解。迁完再跑一次 D1 证据即可量化收益。
+- **缩库**：`telemetry_metric_events`(278万) / `runtime_activity`(227万) / `conversation_events`(296万) 的保留与归档（先归档后裁剪）能直接减少要寻道的页数。
+- **别在这块盘上跑 `ANALYZE`**（数小时且占写锁，会把并发启动拖死）；迁到 SSD 后再跑，或用 `PRAGMA optimize`。
+- **别杀进程**：被 `Stop-Process`/崩溃打断会留下大 WAL 与陈旧 `-shm`，冷启动首写因此更慢。用窗口关闭（`WM_CLOSE`）走优雅退出；已经杀过就先 `wal_checkpoint(TRUNCATE)`（1.2 s）。
+- 观察点：`pudding_platform.db-wal` 的大小、主库 `LastWriteTime` 是否停在中途某个 schema 阶段、以及 `Get-PhysicalDisk` 里 D: 所在盘的 MediaType。
+- **机制上仍未被单独隔离的**：WAL 残留、`-shm` 重建、9 GB 主库的冷首写，三者各占多少。已确定的是「同一 SQL 冷热/状态之间差 700 倍」这件事本身是 I/O 属性，**不要据此去改 SQL 或加索引**。
+
+**为什么以前查不出来**：`PuddingApplicationInitializer` 的阶段提示全是 `Console.WriteLine`，**WinUI 进程没有控制台** ⇒ 全部丢失（`D:\data\logs` 的第一行往往已经是第 10 个 schema 组）。D1 的 JSONL 是目前唯一能把耗时指名到阶段的证据；证据里 `violations` 出现 "ShellVisible was reported more than once" 属埋点噪音，不影响阶段结论。
+
+**库与盘的体量事实（本次实测）**：`pudding_platform.db` 9.18 GB / 约 1060 万行；`conversation_events` 296 万、`telemetry_metric_events` 278 万、`runtime_activity` 227 万、`context_layer_metric_events` 144 万、`conversation_projection_checkpoints` 84 万。**盘是 HDD（见上）**：顺序读 174 MB/s、随机 4 KB 读 162 IOPS；`SELECT count(*)` 这两张大表要 **65–71 s**（全扫）；**`ANALYZE` 从未跑过**（`sqlite_stat1` 缺失），本次尝试后确认在 HDD 上不可行。顺手实证：`wal_checkpoint(TRUNCATE)` 只要 1.2 s，且它报告的待检查点帧数是 **0**——WAL 文件 333 MB 只是高水位预分配，不是 333 MB 待写数据。
+
+**次要缺陷（待修）**：`StorageDataClassCatalog` 把 `IX_telemetry_metric_events_occurred_at_utc` 声明为保留策略索引，但**库里不存在、全仓也没有任何代码创建它**——对该表做保留清理会退化成全扫。
+
 ### 启动慢怎么归因：启动证据 JSONL（D1，2026-09-28）
 
 - **先取证再优化**。启动阶段耗时写在 `<StateRoot>\startup\startup-evidence.jsonl`（StateRoot 默认 `%LOCALAPPDATA%\Pudding\WinUiSkeleton`，`--state-root` 可改），**每次 Kernel 启动追加一行 JSON**；`<StateRoot>\desktop.log` 仍是异常日志。汇总：`pwsh TestScripts/summarize-startup-evidence.ps1 -Path <该文件>`。
