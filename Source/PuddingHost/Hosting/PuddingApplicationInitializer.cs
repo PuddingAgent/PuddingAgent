@@ -228,28 +228,9 @@ public static class PuddingApplicationInitializer
         finally { catalogPhase?.Dispose(); }
 
         // ── jieba backfill ───────────────────────────────
-        Console.WriteLine("[Startup] Starting jieba backfill...");
-        var jiebaPhase = sink?.Phase(StartupPhaseNames.JiebaBackfill);
-        try
-        {
-            var library = app.Services.GetRequiredService<IMemoryLibrary>();
-            if (library is MemoryLibrary memLib)
-            {
-                await memLib.BackfillTokensAsync();
-                Console.WriteLine("[startup] jieba tokens backfill completed.");
-                jiebaPhase?.Complete();
-            }
-            else
-            {
-                jiebaPhase?.Skip("跳过：IMemoryLibrary 不是 MemoryLibrary 实现");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[startup] jieba tokens backfill skipped: {ex.Message}");
-            jiebaPhase?.Skip($"跳过：{ex.GetType().Name}");
-        }
-        finally { jiebaPhase?.Dispose(); }
+        // 已移出同步路径：改由 MemoryTokenBackfillHostedService 在 app.StartAsync 之后后台执行
+        // （它只影响记忆检索的召回质量，不影响"内核就绪"）。后台实际耗时看该服务的日志行。
+        Console.WriteLine("[Startup] jieba backfill delegated to the background hosted service.");
     }
 
     /// <summary>Runs one step as a phase. A throwing step disposes its scope, which records Aborted.</summary>

@@ -79,6 +79,10 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IMemoryEngine>(sp => sp.GetRequiredService<MemoryEngine>());
         builder.Services.AddSingleton<IMemoryIndexer, TagTreeIndexer>();
         builder.Services.AddSingleton<IMemoryLibrary, MemoryLibrary>();
+        // jieba 词元回填：原先在 PuddingApplicationInitializer 里同步 await（实测热态 577 ms），
+        // 现在由宿主自己的窄端口 + 后台 hosted service 执行；内核就绪不再等它。
+        builder.Services.AddSingleton<PuddingHost.Services.IMemoryTokenBackfill, PuddingHost.Services.MemoryLibraryTokenBackfill>();
+        builder.Services.AddHostedService<PuddingHost.Services.MemoryTokenBackfillHostedService>();
         builder.Services.AddSingleton<IMemoryLibraryConvenience>(sp =>
             new MemoryLibraryConvenience(
                 sp.GetRequiredService<IMemoryLibrary>(),
