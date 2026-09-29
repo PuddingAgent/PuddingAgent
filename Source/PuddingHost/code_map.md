@@ -1,150 +1,141 @@
-## S5b（2026-09-27）— 全文索引「局部维护循环」接入宿主（**默认关闭 ⇒ 零副作用**）
-
-供给侧只解决**启动时预建**；本刀把组件已交付的**运行期局部维护循环**（watcher + mtime 补偿扫描 + 低频体检 → 同一份按路径变更集 → 局部写引擎）接进宿主，使「语料变更 → 索引自动跟进」成为可开可关的能力。
-
-| 文件 | 用途 |
+## S5b锛?026-09-27锛夆€?鍏ㄦ枃绱㈠紩銆屽眬閮ㄧ淮鎶ゅ惊鐜€嶆帴鍏ュ涓伙紙**榛樿鍏抽棴 鈬?闆跺壇浣滅敤**锛?
+渚涚粰渚у彧瑙ｅ喅**鍚姩鏃堕寤?*锛涙湰鍒€鎶婄粍浠跺凡浜や粯鐨?*杩愯鏈熷眬閮ㄧ淮鎶ゅ惊鐜?*锛坵atcher + mtime 琛ュ伩鎵弿 + 浣庨浣撴 鈫?鍚屼竴浠芥寜璺緞鍙樻洿闆?鈫?灞€閮ㄥ啓寮曟搸锛夋帴杩涘涓伙紝浣裤€岃鏂欏彉鏇?鈫?绱㈠紩鑷姩璺熻繘銆嶆垚涓哄彲寮€鍙叧鐨勮兘鍔涖€?
+| 鏂囦欢 | 鐢ㄩ€?|
 |------|------|
-| `Hosting/IFullTextIndexMaintenanceComposition.cs` | 🔑 宿主侧维护端口：`IFullTextIndexMaintenanceComposition`（`Maintenance` / `Scopes` / `ComponentOptions` / `IndexOptions` / `LiveEngine`）+ **惰性**工厂 `IFullTextIndexMaintenanceCompositionFactory`。默认关闭时工厂**永不被调用**（组合实例化推迟到真正进入维护路径之后）。 |
-| `Hosting/FullTextIndexMaintenanceOptions.cs` | 配置节名 `FullTextIndex:Maintenance`（唯一）+ 纯函数 `ApplySingleSource`（**单一真源**：`Scopes`/`WorkspaceRoot`/`MaxIndexBytes` 取自供给节，`IndexRootDirectory` 取自查询侧 `FullTextIndexOptions`；其余旋钮逐字保留绑定值，**不做默认值兜底**）+ `BuildScopes`（规范键走组件真源 `FullTextChangeCoalescer.NormalizeComparisonKey`，宿主**不复刻**规则；`IndexDirectory` 留 null 由组件自推）。 |
-| `Hosting/LuceneFullTextIndexMaintenanceCompositionFactory.cs` | 生产装配：`LuceneFullTextIndexMaintenanceEngine`（局部写内核 = **查询侧同一 `LuceneSearchEngine` 实例**，否则 `InvalidateScope` 打在别的实例上等于没失效）+ `FileSupplyLease` + `SearchEngineScopeReaderInvalidation` + `LuceneFullTextIndexMaintenance`。租约等待上界逐字取 `MaintenanceOptions.LeaseWaitUpperBound`，预算不写第二遍字面量。 |
-| `Services/FullTextIndexMaintenanceHostedService.cs` | 生命周期壳（形态照 `IndexPrebuildService`）：`Enabled=false` ⇒ **首句返回**（不构造组合、不解析 scope、不碰索引根、0 watcher/线程/Error）；开启但**供给未开启**或维护配置非法 ⇒ fail-closed 记 Error 且什么都不做（不静默取默认值）；`StartAsync` 永不阻塞宿主；启动/停止**幂等**；`StopAsync` 先等在途启动收尾（上界 `StartCompletionTimeout`，默认 30s）。 |
-| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 注册：`Configure<MaintenanceOptions>(GetSection(FullTextIndexMaintenanceOptions.SectionName))` + `AddSingleton<IFullTextIndexMaintenanceCompositionFactory>` + `AddHostedService<FullTextIndexMaintenanceHostedService>()`。 |
+| `Hosting/IFullTextIndexMaintenanceComposition.cs` | 馃攽 瀹夸富渚х淮鎶ょ鍙ｏ細`IFullTextIndexMaintenanceComposition`锛坄Maintenance` / `Scopes` / `ComponentOptions` / `IndexOptions` / `LiveEngine`锛? **鎯版€?*宸ュ巶 `IFullTextIndexMaintenanceCompositionFactory`銆傞粯璁ゅ叧闂椂宸ュ巶**姘镐笉琚皟鐢?*锛堢粍鍚堝疄渚嬪寲鎺ㄨ繜鍒扮湡姝ｈ繘鍏ョ淮鎶よ矾寰勪箣鍚庯級銆?|
+| `Hosting/FullTextIndexMaintenanceOptions.cs` | 閰嶇疆鑺傚悕 `FullTextIndex:Maintenance`锛堝敮涓€锛? 绾嚱鏁?`ApplySingleSource`锛?*鍗曚竴鐪熸簮**锛歚Scopes`/`WorkspaceRoot`/`MaxIndexBytes` 鍙栬嚜渚涚粰鑺傦紝`IndexRootDirectory` 鍙栬嚜鏌ヨ渚?`FullTextIndexOptions`锛涘叾浣欐棆閽€愬瓧淇濈暀缁戝畾鍊硷紝**涓嶅仛榛樿鍊煎厹搴?*锛? `BuildScopes`锛堣鑼冮敭璧扮粍浠剁湡婧?`FullTextChangeCoalescer.NormalizeComparisonKey`锛屽涓?*涓嶅鍒?*瑙勫垯锛沗IndexDirectory` 鐣?null 鐢辩粍浠惰嚜鎺級銆?|
+| `Hosting/LuceneFullTextIndexMaintenanceCompositionFactory.cs` | 鐢熶骇瑁呴厤锛歚LuceneFullTextIndexMaintenanceEngine`锛堝眬閮ㄥ啓鍐呮牳 = **鏌ヨ渚у悓涓€ `LuceneSearchEngine` 瀹炰緥**锛屽惁鍒?`InvalidateScope` 鎵撳湪鍒殑瀹炰緥涓婄瓑浜庢病澶辨晥锛? `FileSupplyLease` + `SearchEngineScopeReaderInvalidation` + `LuceneFullTextIndexMaintenance`銆傜绾︾瓑寰呬笂鐣岄€愬瓧鍙?`MaintenanceOptions.LeaseWaitUpperBound`锛岄绠椾笉鍐欑浜岄亶瀛楅潰閲忋€?|
+| `Services/FullTextIndexMaintenanceHostedService.cs` | 鐢熷懡鍛ㄦ湡澹筹紙褰㈡€佺収 `IndexPrebuildService`锛夛細`Enabled=false` 鈬?**棣栧彞杩斿洖**锛堜笉鏋勯€犵粍鍚堛€佷笉瑙ｆ瀽 scope銆佷笉纰扮储寮曟牴銆? watcher/绾跨▼/Error锛夛紱寮€鍚絾**渚涚粰鏈紑鍚?*鎴栫淮鎶ら厤缃潪娉?鈬?fail-closed 璁?Error 涓斾粈涔堥兘涓嶅仛锛堜笉闈欓粯鍙栭粯璁ゅ€硷級锛沗StartAsync` 姘镐笉闃诲瀹夸富锛涘惎鍔?鍋滄**骞傜瓑**锛沗StopAsync` 鍏堢瓑鍦ㄩ€斿惎鍔ㄦ敹灏撅紙涓婄晫 `StartCompletionTimeout`锛岄粯璁?30s锛夈€?|
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 娉ㄥ唽锛歚Configure<MaintenanceOptions>(GetSection(FullTextIndexMaintenanceOptions.SectionName))` + `AddSingleton<IFullTextIndexMaintenanceCompositionFactory>` + `AddHostedService<FullTextIndexMaintenanceHostedService>()`銆?|
 
-测试（`../Tests/PuddingHost.Tests/Hosting/`，**宿主 154 → 163 用例**；S5b 新增 9 条）：
-`S5bFullTextIndexMaintenanceHostWiringTests`（I1 默认关闭零副作用：组合 0 构造 / 维护器 0 Start / 引擎 0 调用 / 索引根连目录都不建 / 0 Error；I2 `StartAsync` 恰好 1 次且 scope 键与**真实供给协调器**逐字符相同；I3 引擎与索引选项**引用相等**；I4 `StopAsync` 恰好 1 次；I5 配置流入 + **诱饵预算**被供给节覆盖；I6 非法配置 fail-closed 且如实记违规项；附加：供给未开启 ⇒ 拒绝而不猜 scope）、
-`S5bFullTextIndexMaintenanceHostBindingTests`（真实组合根：`system.json` → 绑定 + `Assert.Same(engine, composition.LiveEngine)` + hosted 恰好注册一次 + 全程不触碰索引根）、
-`S5bMaintenanceTestDoubles.cs`（替身）、`S5SupplyTestDoubles.cs`（补 `ProbeDocuments` —— 此前遗漏导致测试工程 **CS0535**）。
-
-**2026-09-29 追加（对齐仓库后台重活统一入口）**：`FullTextIndexMaintenanceHostedService` 的启动作业从 `Task.Run`
-改走 `PuddingCode.Core.BackgroundWork`（专用 `BelowNormal` 线程 + 送取消有界收敛 + 带耗时日志）—— 维护启动路径
-本身要做语料校准扫描，属「后台重活」，不得与首屏 / 交互抢 CPU（用户 09-29 方向，范本见 `b96ae88` 的 MCP 与 jieba 两处）。
-行为契约不变（首句 `Enabled` 门控 / 启动停止幂等 / 未装配则不调用组件 `StopAsync`）；新增 **I7** 断言把线程事实钉住
-（名字 `pudding-bg-fulltext.maintenance` / `BelowNormal` / `IsBackground`），宿主测试 **163 → 164**。
-M3 变异（把作业体改道 `Task.Run`）⇒ 恰好 I7 变红、零连带；复原后 blob 逐位相同。
-
-⚠️ **本刀顺带修复一处主干缺陷**：`Platform.cs` 的 4 处注册/装配行曾被提交，但**对应的 4 个生产类型文件当时未入库** ⇒ 干净检出 `CS0246`、HEAD 不可编译。由 `c76c613` 补齐后宿主编译恢复 **0 错误**。
-
-⚠️ **未做 / 未证实**：① 「维护与供给共用同一引擎实例」在**真实运行期并发**下的可见性（多 reader / 跨进程租约）未做运行态验证（仅静态装配 + 单测层面的引用相等）；② 「变更后自动更新」**尚未在生产索引根上实跑** —— 需用户显式开启 `FullTextIndex:Maintenance:Enabled=true` 并重启 Core。
+娴嬭瘯锛坄../Tests/PuddingHost.Tests/Hosting/`锛?*瀹夸富 154 鈫?163 鐢ㄤ緥**锛汼5b 鏂板 9 鏉★級锛?`S5bFullTextIndexMaintenanceHostWiringTests`锛圛1 榛樿鍏抽棴闆跺壇浣滅敤锛氱粍鍚?0 鏋勯€?/ 缁存姢鍣?0 Start / 寮曟搸 0 璋冪敤 / 绱㈠紩鏍硅繛鐩綍閮戒笉寤?/ 0 Error锛汭2 `StartAsync` 鎭板ソ 1 娆′笖 scope 閿笌**鐪熷疄渚涚粰鍗忚皟鍣?*閫愬瓧绗︾浉鍚岋紱I3 寮曟搸涓庣储寮曢€夐」**寮曠敤鐩哥瓑**锛汭4 `StopAsync` 鎭板ソ 1 娆★紱I5 閰嶇疆娴佸叆 + **璇遍サ棰勭畻**琚緵缁欒妭瑕嗙洊锛汭6 闈炴硶閰嶇疆 fail-closed 涓斿瀹炶杩濊椤癸紱闄勫姞锛氫緵缁欐湭寮€鍚?鈬?鎷掔粷鑰屼笉鐚?scope锛夈€?`S5bFullTextIndexMaintenanceHostBindingTests`锛堢湡瀹炵粍鍚堟牴锛歚system.json` 鈫?缁戝畾 + `Assert.Same(engine, composition.LiveEngine)` + hosted 鎭板ソ娉ㄥ唽涓€娆?+ 鍏ㄧ▼涓嶈Е纰扮储寮曟牴锛夈€?`S5bMaintenanceTestDoubles.cs`锛堟浛韬級銆乣S5SupplyTestDoubles.cs`锛堣ˉ `ProbeDocuments` 鈥斺€?姝ゅ墠閬楁紡瀵艰嚧娴嬭瘯宸ョ▼ **CS0535**锛夈€?
+**2026-09-29 杩藉姞锛堝榻愪粨搴撳悗鍙伴噸娲荤粺涓€鍏ュ彛锛?*锛歚FullTextIndexMaintenanceHostedService` 鐨勫惎鍔ㄤ綔涓氫粠 `Task.Run`
+鏀硅蛋 `PuddingCode.Core.BackgroundWork`锛堜笓鐢?`BelowNormal` 绾跨▼ + 閫佸彇娑堟湁鐣屾敹鏁?+ 甯﹁€楁椂鏃ュ織锛夆€斺€?缁存姢鍚姩璺緞
+鏈韩瑕佸仛璇枡鏍″噯鎵弿锛屽睘銆屽悗鍙伴噸娲汇€嶏紝涓嶅緱涓庨灞?/ 浜や簰鎶?CPU锛堢敤鎴?09-29 鏂瑰悜锛岃寖鏈 `b96ae88` 鐨?MCP 涓?jieba 涓ゅ锛夈€?琛屼负濂戠害涓嶅彉锛堥鍙?`Enabled` 闂ㄦ帶 / 鍚姩鍋滄骞傜瓑 / 鏈閰嶅垯涓嶈皟鐢ㄧ粍浠?`StopAsync`锛夛紱鏂板 **I7** 鏂█鎶婄嚎绋嬩簨瀹為拤浣?锛堝悕瀛?`pudding-bg-fulltext.maintenance` / `BelowNormal` / `IsBackground`锛夛紝瀹夸富娴嬭瘯 **163 鈫?164**銆?M3 鍙樺紓锛堟妸浣滀笟浣撴敼閬?`Task.Run`锛夆噿 鎭板ソ I7 鍙樼孩銆侀浂杩炲甫锛涘鍘熷悗 blob 閫愪綅鐩稿悓銆?
+鈿狅笍 **鏈垁椤哄甫淇涓€澶勪富骞茬己闄?*锛歚Platform.cs` 鐨?4 澶勬敞鍐?瑁呴厤琛屾浘琚彁浜わ紝浣?*瀵瑰簲鐨?4 涓敓浜х被鍨嬫枃浠跺綋鏃舵湭鍏ュ簱** 鈬?骞插噣妫€鍑?`CS0246`銆丠EAD 涓嶅彲缂栬瘧銆傜敱 `c76c613` 琛ラ綈鍚庡涓荤紪璇戞仮澶?**0 閿欒**銆?
+鈿狅笍 **鏈仛 / 鏈瘉瀹?*锛氣憼 銆岀淮鎶や笌渚涚粰鍏辩敤鍚屼竴寮曟搸瀹炰緥銆嶅湪**鐪熷疄杩愯鏈熷苟鍙?*涓嬬殑鍙鎬э紙澶?reader / 璺ㄨ繘绋嬬绾︼級鏈仛杩愯鎬侀獙璇侊紙浠呴潤鎬佽閰?+ 鍗曟祴灞傞潰鐨勫紩鐢ㄧ浉绛夛級锛涒憽 銆屽彉鏇村悗鑷姩鏇存柊銆?*灏氭湭鍦ㄧ敓浜х储寮曟牴涓婂疄璺?* 鈥斺€?闇€鐢ㄦ埛鏄惧紡寮€鍚?`FullTextIndex:Maintenance:Enabled=true` 骞堕噸鍚?Core銆?
 
 
-
-`Hosting/PuddingApplicationHost.cs` 的 Desktop 模式使用明确 Host ApplicationName 与程序目录，避免 WinUI 入口或工作目录污染 MVC/资源发现。`PuddingDataRootLease` 由 Desktop Composition 与 Console/历史 Child 入口共同持有，禁止新版入口并发使用同一 DataRoot。Desktop 不再启动 PuddingAgent.exe；Host 生命周期由 Composition 驱动。
-
+`Hosting/PuddingApplicationHost.cs` 鐨?Desktop 妯″紡浣跨敤鏄庣‘ Host ApplicationName 涓庣▼搴忕洰褰曪紝閬垮厤 WinUI 鍏ュ彛鎴栧伐浣滅洰褰曟薄鏌?MVC/璧勬簮鍙戠幇銆俙PuddingDataRootLease` 鐢?Desktop Composition 涓?Console/鍘嗗彶 Child 鍏ュ彛鍏卞悓鎸佹湁锛岀姝㈡柊鐗堝叆鍙ｅ苟鍙戜娇鐢ㄥ悓涓€ DataRoot銆侱esktop 涓嶅啀鍚姩 PuddingAgent.exe锛汬ost 鐢熷懡鍛ㄦ湡鐢?Composition 椹卞姩銆?
 # PuddingHost CodeMAP
 
-> 唯一 Host 组合根 | Console 与 Desktop 共用 DI · Browser Bridge · 飞书连接器
-
-## 组合根
-
-| 文件 | 用途 |
+> 鍞竴 Host 缁勫悎鏍?| Console 涓?Desktop 鍏辩敤 DI 路 Browser Bridge 路 椋炰功杩炴帴鍣?
+## 缁勫悎鏍?
+| 鏂囦欢 | 鐢ㄩ€?|
 |------|------|
-| `PuddingHostAssemblyMarker.cs` | 程序集标记 |
-| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册；内置 Agent 模板直接使用 PuddingCore 唯一权威源；包含 MOA、V2 component registry/compiler、SQLite store/signal、Admin 手动 Run/HTTP Hook command service、SubAgent/图片生成/展示 executor、临时子代理目录两阶段 GC、hosted worker 与 replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工具同生命周期，服务内部每次调用通过 DbContextFactory 创建独立 DbContext；不能只在未被产品入口调用的 Runtime 扩展里注册 worker |
-| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；assembly scan 自动发现的新工具，其构造依赖也必须在这里注册（例如 `SavePreferenceTool` → `IUserPreferenceService`、`SkillEnforcerService` 的可选 `ISkillUsageTelemetrySink`：注册缺失时该可选参数**静默为 null**，不报错也不抛异常） |
-| `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生阅读与预处理：metadata/read/prepare，四档 detail，缩略图、裁剪、90度旋转、灰度、Gaussian降噪、jpeg/png/webp编码；源支持本地/URL/聊天artifact；复用 Platform ImagePreprocessing 和派生缓存，不调用模型/Agent，无 helper 路由。低权限只读源文件，URL每跳SSRF校验；输出源/派生引用供多次区域读取 |
-| `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库初始化；包含 AppUsers、WorkspaceTask、TaskPlanning/WorkUnit/AwaitHandle、Goal 及通用编排 SQLite schema bootstrap，已有数据库也必须幂等升级；GoalSchemaBootstrapper 后执行 GoalRestartReconciler 启动 reconcile（按 `goal_runs.resume_policy` 分流：默认 disarm 为 paused；`auto_resume_on_restart` 则保持 Active 并换发 activation fence；输出 disarmed / auto-resumed 计数） |
-| `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM |
-| `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
-| `Hosting/StorageManagementAuthorization.cs` | 平台 admin JWT，或 DesktopChild Loopback + ControlToken 的管理策略 |
+| `PuddingHostAssemblyMarker.cs` | 绋嬪簭闆嗘爣璁?|
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 鎴愬搧 Host 鐨?Platform/Runtime 缁勫悎娉ㄥ唽锛涘唴缃?Agent 妯℃澘鐩存帴浣跨敤 PuddingCore 鍞竴鏉冨▉婧愶紱鍖呭惈 MOA銆乂2 component registry/compiler銆丼QLite store/signal銆丄dmin 鎵嬪姩 Run/HTTP Hook command service銆丼ubAgent/鍥剧墖鐢熸垚/灞曠ず executor銆佷复鏃跺瓙浠ｇ悊鐩綍涓ら樁娈?GC銆乭osted worker 涓?replay-to-live follower锛沗TaskAgentCommandService` 涓?Singleton `task_*` 宸ュ叿鍚岀敓鍛藉懆鏈燂紝鏈嶅姟鍐呴儴姣忔璋冪敤閫氳繃 DbContextFactory 鍒涘缓鐙珛 DbContext锛涗笉鑳藉彧鍦ㄦ湭琚骇鍝佸叆鍙ｈ皟鐢ㄧ殑 Runtime 鎵╁睍閲屾敞鍐?worker |
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 鎴愬搧 Host 鐨?Runtime/Tool 缁勫悎娉ㄥ唽锛沘ssembly scan 鑷姩鍙戠幇鐨勬柊宸ュ叿锛屽叾鏋勯€犱緷璧栦篃蹇呴』鍦ㄨ繖閲屾敞鍐岋紙渚嬪 `SavePreferenceTool` 鈫?`IUserPreferenceService`銆乣SkillEnforcerService` 鐨勫彲閫?`ISkillUsageTelemetrySink`锛氭敞鍐岀己澶辨椂璇ュ彲閫夊弬鏁?*闈欓粯涓?null**锛屼笉鎶ラ敊涔熶笉鎶涘紓甯革級 |
+| `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 鍘熺敓闃呰涓庨澶勭悊锛歮etadata/read/prepare锛屽洓妗?detail锛岀缉鐣ュ浘銆佽鍓€?0搴︽棆杞€佺伆搴︺€丟aussian闄嶅櫔銆乯peg/png/webp缂栫爜锛涙簮鏀寔鏈湴/URL/鑱婂ぉartifact锛涘鐢?Platform ImagePreprocessing 鍜屾淳鐢熺紦瀛橈紝涓嶈皟鐢ㄦā鍨?Agent锛屾棤 helper 璺敱銆備綆鏉冮檺鍙婧愭枃浠讹紝URL姣忚烦SSRF鏍￠獙锛涜緭鍑烘簮/娲剧敓寮曠敤渚涘娆″尯鍩熻鍙?|
+| `Hosting/PuddingApplicationInitializer.cs` | 鍚姩鏈熸暟鎹簱鍒濆鍖栵紱鍖呭惈 AppUsers銆乄orkspaceTask銆乀askPlanning/WorkUnit/AwaitHandle銆丟oal 鍙婇€氱敤缂栨帓 SQLite schema bootstrap锛屽凡鏈夋暟鎹簱涔熷繀椤诲箓绛夊崌绾э紱GoalSchemaBootstrapper 鍚庢墽琛?GoalRestartReconciler 鍚姩 reconcile锛堟寜 `goal_runs.resume_policy` 鍒嗘祦锛氶粯璁?disarm 涓?paused锛沗auto_resume_on_restart` 鍒欎繚鎸?Active 骞舵崲鍙?activation fence锛涜緭鍑?disarmed / auto-resumed 璁℃暟锛?|
+| `Storage/StorageMaintenanceService.cs` | 馃攽 Core 鎵€鏈夌殑 SQLite/浠ｇ爜绱㈠紩鏄庣粏涓庡畨鍏ㄦ竻鐞嗭紱鍥哄畾璇箟鐧藉悕鍗曘€佹湇鍔＄棰勮銆佹壒閲忓垹闄ゃ€乧heckpoint/VACUUM |
+| `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 鍒嗘瀽銆佹竻鐞嗛瑙堜笌鎵ц API |
+| `Hosting/StorageManagementAuthorization.cs` | 骞冲彴 admin JWT锛屾垨 DesktopChild Loopback + ControlToken 鐨勭鐞嗙瓥鐣?|
 
-## Browser Bridge（Phase 2A）
-
-| 文件 | 用途 |
+## Browser Bridge锛圥hase 2A锛?
+| 鏂囦欢 | 鐢ㄩ€?|
 |------|------|
-| `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge） |
-| `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 代理 |
-| `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理 |
-| `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（仅 DesktopChild + BrowserAutomationEnabled） |
+| `BrowserBridge/RemoteBrowserRuntime.cs` | Core 渚?Browser 浠ｇ悊锛堚啋 璁よ瘉 Bridge锛?|
+| `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 浠ｇ悊 |
+| `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 浠ｇ悊 |
+| `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 鏉′欢娉ㄥ唽锛堜粎 DesktopChild + BrowserAutomationEnabled锛?|
 
-## 飞书连接器
-
-| 文件 | 用途 |
+## 椋炰功杩炴帴鍣?
+| 鏂囦欢 | 鐢ㄩ€?|
 |------|------|
-| `Services/FeishuConnectorFactory.cs` | 飞书连接器工厂 |
-| `Services/FeishuStreamingProjectionWorker.cs` | 飞书流式投影（31KB） |
-| `Services/FeishuImageUploadPreparationService.cs` | 飞书图片上传准备 |
-| `Services/FeishuTtsDeliveryService.cs` | 飞书 TTS 投递 |
-| `Services/FeishuConnectorIdentity.cs` | 飞书身份标识 |
+| `Services/FeishuConnectorFactory.cs` | 椋炰功杩炴帴鍣ㄥ伐鍘?|
+| `Services/FeishuStreamingProjectionWorker.cs` | 椋炰功娴佸紡鎶曞奖锛?1KB锛?|
+| `Services/FeishuImageUploadPreparationService.cs` | 椋炰功鍥剧墖涓婁紶鍑嗗 |
+| `Services/FeishuTtsDeliveryService.cs` | 椋炰功 TTS 鎶曢€?|
+| `Services/FeishuConnectorIdentity.cs` | 椋炰功韬唤鏍囪瘑 |
 
-## 连接器 & 消息
+## 杩炴帴鍣?& 娑堟伅
 
-| 文件 | 用途 |
+| 鏂囦欢 | 鐢ㄩ€?|
 |------|------|
-| `Connectors/` | 连接器实现 |
-| `Services/ConnectorHost.cs` | 连接器宿主 |
-| `Hosting/ConnectorHostLifecycleService.cs` | 连接器生命周期 hosted service：本地注册同步、`StartAllAsync` 后台执行（ApplicationStopping 绑定），Ready 不被 Feishu WS 握手阻塞；单连接器失败隔离进 Faulted |
-| `Services/ConnectorDeliveryDispatcher.cs` | 投递分发 |
-| `Services/MessageGatewayIngress.cs` | 消息网关入口（19KB） |
-| `Extensions/` | 扩展注册 |
+| `Connectors/` | 杩炴帴鍣ㄥ疄鐜?|
+| `Services/ConnectorHost.cs` | 杩炴帴鍣ㄥ涓?|
+| `Hosting/ConnectorHostLifecycleService.cs` | 杩炴帴鍣ㄧ敓鍛藉懆鏈?hosted service锛氭湰鍦版敞鍐屽悓姝ャ€乣StartAllAsync` 鍚庡彴鎵ц锛圓pplicationStopping 缁戝畾锛夛紝Ready 涓嶈 Feishu WS 鎻℃墜闃诲锛涘崟杩炴帴鍣ㄥけ璐ラ殧绂昏繘 Faulted |
+| `Services/ConnectorDeliveryDispatcher.cs` | 鎶曢€掑垎鍙?|
+| `Services/MessageGatewayIngress.cs` | 娑堟伅缃戝叧鍏ュ彛锛?9KB锛?|
+| `Extensions/` | 鎵╁睍娉ㄥ唽 |
 
-飞书 WS 底座在 `../../src/HarnessAgent/Core/Connectors/Feishu/FeishuWebSocket.cs`：端点发现
-HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 Starting 100s。
+椋炰功 WS 搴曞骇鍦?`../../src/HarnessAgent/Core/Connectors/Feishu/FeishuWebSocket.cs`锛氱鐐瑰彂鐜?HttpClient 涓?WS 鎻℃墜鍚?15s 涓婇檺锛岄伩鍏嶅缃戦粦娲炴妸杩炴帴鍣ㄥ崱鍦?Starting 100s銆?
+## 鏈嶅姟娌荤悊
 
-## 服务治理
-
-| 文件 | 用途 |
+| 鏂囦欢 | 鐢ㄩ€?|
 |------|------|
-| `Services/HeartbeatService.cs` | 当前 Agent 心跳编排（类名 `HeartbeatOrchestrator`，与文件名不一致；日志分类字符串亦为 `[HeartbeatOrchestrator]`）。启动时 + 每次空闲 tick 对**全部**「启用 + 未冻结 + 已绑定主会话」的 Agent 幂等补全登记（2026-09-20；此前只登记单个“默认 Agent”，且“队列为空才补全”不可达，导致其余 Agent 永远没有心跳）；实例提示词后追加自主执行契约；2026-08-26 增加持久 Availability gate，等待 SubAgent/Task/Goal、消息排队、Reservation、Unknown 或重建失败均跳过并重新排队，避免把 runtime 暂停误判为空闲 |
-| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 组合 Goal outbox/settlement workers、Task-bound 原子 Store、Availability/Reservation/Dependency/Window/Auto Worker；authoritative flag 前置条件 ValidateOnStart |
-| `Services/CronSchedulerService.cs` | Cron 调度 |
-| `Services/ConfigHotReloadService.cs` | 配置热重载 |
-| `Services/IndexPrebuildService.cs` | 索引预构建 |
-| `Hosting/PuddingHostOptionsFactory.cs` | DesktopChild 固定 `0.0.0.0:<port>` 启动约束 |
-| `Hosting/PuddingServerAddressAccessor.cs` | 全网卡监听地址投影为同端口 Loopback 控制地址 |
-| `Hosting/PuddingApplicationHost.cs` | 组合根、Kestrel 地址绑定与本机控制地址捕获；在发布包 appsettings 默认之上加载 `<DataRoot>/config/system.json` 并支持 hot reload，环境变量/命令行仍为最高优先级；注册 ADR-075/082 External Token 的 tasks/workspaces/agents/messages scope+workspace Policies |
-| `Config/` | 默认配置 |
-| `Prompts/` | 系统提示模板 |
-| `P2P/` | P2P 通信 |
+| `Services/HeartbeatService.cs` | 褰撳墠 Agent 蹇冭烦缂栨帓锛堢被鍚?`HeartbeatOrchestrator`锛屼笌鏂囦欢鍚嶄笉涓€鑷达紱鏃ュ織鍒嗙被瀛楃涓蹭害涓?`[HeartbeatOrchestrator]`锛夈€傚惎鍔ㄦ椂 + 姣忔绌洪棽 tick 瀵?*鍏ㄩ儴**銆屽惎鐢?+ 鏈喕缁?+ 宸茬粦瀹氫富浼氳瘽銆嶇殑 Agent 骞傜瓑琛ュ叏鐧昏锛?026-09-20锛涙鍓嶅彧鐧昏鍗曚釜鈥滈粯璁?Agent鈥濓紝涓斺€滈槦鍒椾负绌烘墠琛ュ叏鈥濅笉鍙揪锛屽鑷村叾浣?Agent 姘歌繙娌℃湁蹇冭烦锛夛紱瀹炰緥鎻愮ず璇嶅悗杩藉姞鑷富鎵ц濂戠害锛?026-08-26 澧炲姞鎸佷箙 Availability gate锛岀瓑寰?SubAgent/Task/Goal銆佹秷鎭帓闃熴€丷eservation銆乁nknown 鎴栭噸寤哄け璐ュ潎璺宠繃骞堕噸鏂版帓闃燂紝閬垮厤鎶?runtime 鏆傚仠璇垽涓虹┖闂?|
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 缁勫悎 Goal outbox/settlement workers銆乀ask-bound 鍘熷瓙 Store銆丄vailability/Reservation/Dependency/Window/Auto Worker锛沘uthoritative flag 鍓嶇疆鏉′欢 ValidateOnStart |
+| `Services/CronSchedulerService.cs` | Cron 璋冨害 |
+| `Services/ConfigHotReloadService.cs` | 閰嶇疆鐑噸杞?|
+| `Services/IndexPrebuildService.cs` | 绱㈠紩棰勬瀯寤?|
+| `Hosting/PuddingHostOptionsFactory.cs` | DesktopChild 鍥哄畾 `0.0.0.0:<port>` 鍚姩绾︽潫 |
+| `Hosting/PuddingServerAddressAccessor.cs` | 鍏ㄧ綉鍗＄洃鍚湴鍧€鎶曞奖涓哄悓绔彛 Loopback 鎺у埗鍦板潃 |
+| `Hosting/PuddingApplicationHost.cs` | 缁勫悎鏍广€並estrel 鍦板潃缁戝畾涓庢湰鏈烘帶鍒跺湴鍧€鎹曡幏锛涘湪鍙戝竷鍖?appsettings 榛樿涔嬩笂鍔犺浇 `<DataRoot>/config/system.json` 骞舵敮鎸?hot reload锛岀幆澧冨彉閲?鍛戒护琛屼粛涓烘渶楂樹紭鍏堢骇锛涙敞鍐?ADR-075/082 External Token 鐨?tasks/workspaces/agents/messages scope+workspace Policies |
+| `Config/` | 榛樿閰嶇疆 |
+| `Prompts/` | 绯荤粺鎻愮ず妯℃澘 |
+| `P2P/` | P2P 閫氫俊 |
 
-## 测试
+## 娴嬭瘯
 
-`../Tests/PuddingHost.Tests/` — Browser Bridge、Remote proxy、Storage 管理与 DesktopChild 产品组合根构建验证；组合根测试显式验证 Singleton `task_*` 工具及其命令服务生命周期；Storage 定向测试 4/4 ✅
-
-## U3-B2a（2026-09-23）— 代码索引维护的宿主生命周期驱动
-
-| 文件 | 用途 |
+`../Tests/PuddingHost.Tests/` 鈥?Browser Bridge銆丷emote proxy銆丼torage 绠＄悊涓?DesktopChild 浜у搧缁勫悎鏍规瀯寤洪獙璇侊紱缁勫悎鏍规祴璇曟樉寮忛獙璇?Singleton `task_*` 宸ュ叿鍙婂叾鍛戒护鏈嶅姟鐢熷懡鍛ㄦ湡锛汼torage 瀹氬悜娴嬭瘯 4/4 鉁?
+## U3-B2a锛?026-09-23锛夆€?浠ｇ爜绱㈠紩缁存姢鐨勫涓荤敓鍛藉懆鏈熼┍鍔?
+| 鏂囦欢 | 鐢ㄩ€?|
 |------|------|
-| `Hosting/CodeIndexMaintenanceHostedService.cs` | 🔑 U3-B2a：索引维护组件的**唯一生命周期驱动**。`StartAsync` 非阻塞启动组件驱动（`ICodeIndexMaintenance`），并把「已注册 scope」挂上变更源 —— 附着在启动路径之外（`ScopeAttachmentCompleted` 可观测），失败只记日志，无 scope 时安全 no-op；`StopAsync` 有界（外层 10s 上限）且不抛异常逃逸、不丢已入队请求。**本身不含任何循环 / 队列 / 索引逻辑**：泵与变更捕获留在 `PuddingCodeIndex`（ADR-089 §2 驱动归属）。注册点：`PuddingServiceCollectionExtensions.Platform.cs` 紧邻 `AddPuddingCodeIntelligence()`。 |
+| `Hosting/CodeIndexMaintenanceHostedService.cs` | 馃攽 U3-B2a锛氱储寮曠淮鎶ょ粍浠剁殑**鍞竴鐢熷懡鍛ㄦ湡椹卞姩**銆俙StartAsync` 闈為樆濉炲惎鍔ㄧ粍浠堕┍鍔紙`ICodeIndexMaintenance`锛夛紝骞舵妸銆屽凡娉ㄥ唽 scope銆嶆寕涓婂彉鏇存簮 鈥斺€?闄勭潃鍦ㄥ惎鍔ㄨ矾寰勪箣澶栵紙`ScopeAttachmentCompleted` 鍙娴嬶級锛屽け璐ュ彧璁版棩蹇楋紝鏃?scope 鏃跺畨鍏?no-op锛沗StopAsync` 鏈夌晫锛堝灞?10s 涓婇檺锛変笖涓嶆姏寮傚父閫冮€搞€佷笉涓㈠凡鍏ラ槦璇锋眰銆?*鏈韩涓嶅惈浠讳綍寰幆 / 闃熷垪 / 绱㈠紩閫昏緫**锛氭车涓庡彉鏇存崟鑾风暀鍦?`PuddingCodeIndex`锛圓DR-089 搂2 椹卞姩褰掑睘锛夈€傛敞鍐岀偣锛歚PuddingServiceCollectionExtensions.Platform.cs` 绱ч偦 `AddPuddingCodeIntelligence()`銆?|
 
-组合根同时新增 `../Tests/PuddingHost.Tests/Hosting/CodeIndexMaintenanceHostCompositionTests.cs`（3 用例）：驱动可解析、泵端口与 `ICodeIndexScheduler` 同实例、驱动已注册且持有同一实例、无 scope 时安全 no-op、`Enqueue → 泵 → ICodeIndexer`（替身计数）闭合、已注册 scope 被挂上变更源。
-
-顺带修复：`Storage/StorageMaintenanceServiceTests.cs` 与 `Storage/StorageManagementAdministrationTests.cs` 各补 1 行 `using PuddingCodeIndex.Contracts;` —— 此前 `ICodeIndexScheduler` 已迁出 `PuddingCodeIntelligence.Contracts`，整个 `PuddingHost.Tests` 编排期编译不过。
-
-## U4-7（2026-09-25）— 全文索引「供给参数」配置化 + fail-closed 校验（**默认关闭**）
-
-用户裁定（2026-09-25）：「1GB 请使用配置文件确定参数，方便后期替换为 XXGB……用**项目目录统计 json** 或 **Data 目录配置文件**决定，而不是选择一个固定值。」
-⇒ 本刀取 **Data 目录配置文件**：`<DataRoot>/config/system.json` 的 `FullTextIndex` 节（宿主 `PuddingApplicationHost.CreateBuilder` 已加载它并支持 hot reload）。
-
-| 文件 | 用途 |
+缁勫悎鏍瑰悓鏃舵柊澧?`../Tests/PuddingHost.Tests/Hosting/CodeIndexMaintenanceHostCompositionTests.cs`锛? 鐢ㄤ緥锛夛細椹卞姩鍙В鏋愩€佹车绔彛涓?`ICodeIndexScheduler` 鍚屽疄渚嬨€侀┍鍔ㄥ凡娉ㄥ唽涓旀寔鏈夊悓涓€瀹炰緥銆佹棤 scope 鏃跺畨鍏?no-op銆乣Enqueue 鈫?娉?鈫?ICodeIndexer`锛堟浛韬鏁帮級闂悎銆佸凡娉ㄥ唽 scope 琚寕涓婂彉鏇存簮銆?
+椤哄甫淇锛歚Storage/StorageMaintenanceServiceTests.cs` 涓?`Storage/StorageManagementAdministrationTests.cs` 鍚勮ˉ 1 琛?`using PuddingCodeIndex.Contracts;` 鈥斺€?姝ゅ墠 `ICodeIndexScheduler` 宸茶縼鍑?`PuddingCodeIntelligence.Contracts`锛屾暣涓?`PuddingHost.Tests` 缂栨帓鏈熺紪璇戜笉杩囥€?
+## U4-7锛?026-09-25锛夆€?鍏ㄦ枃绱㈠紩銆屼緵缁欏弬鏁般€嶉厤缃寲 + fail-closed 鏍￠獙锛?*榛樿鍏抽棴**锛?
+鐢ㄦ埛瑁佸畾锛?026-09-25锛夛細銆?GB 璇蜂娇鐢ㄩ厤缃枃浠剁‘瀹氬弬鏁帮紝鏂逛究鍚庢湡鏇挎崲涓?XXGB鈥︹€︾敤**椤圭洰鐩綍缁熻 json** 鎴?**Data 鐩綍閰嶇疆鏂囦欢**鍐冲畾锛岃€屼笉鏄€夋嫨涓€涓浐瀹氬€笺€傘€?鈬?鏈垁鍙?**Data 鐩綍閰嶇疆鏂囦欢**锛歚<DataRoot>/config/system.json` 鐨?`FullTextIndex` 鑺傦紙瀹夸富 `PuddingApplicationHost.CreateBuilder` 宸插姞杞藉畠骞舵敮鎸?hot reload锛夈€?
+| 鏂囦欢 | 鐢ㄩ€?|
 |------|------|
-| `Hosting/FullTextIndexSupplyOptions.cs` | 🔑 供给参数类型（节名 `FullTextIndex`）：`Enabled`（**默认 `false`**）/ `Scopes`（目标目录，可为绝对或相对 `WorkspaceRoot`）/ `WorkspaceRoot`（相对项的**显式绝对基准**，**禁用进程 CWD**）/ `MaxIndexBytes`（**默认 `1_073_741_824` = 1 GiB = 2^30**；硬天花板 `1L << 40` = 1 TiB）/ `MinRebuildInterval`（默认 12h，JSON 写 `"hh:mm:ss"`）。**单一真源**：1 GiB 字面量全仓生产代码只在此出现一次。 |
-| `Hosting/FullTextIndexSupplyResolver.cs` | 🔑 fail-closed **纯函数**校验（不依赖 DI / 文件系统 / 网络）：关闭 ⇒ 成功且空动作、**连 scope 探针都不调用**；开启而 `Scopes` 为空 / 含空串·不存在·非目录·重复项 / 相对项无绝对基准 / `MaxIndexBytes <= 0` 或超 1 TiB / `MinRebuildInterval < 0` ⇒ **结构化拒绝**（`ParameterName` + `Value` + 原因枚举 + 可读消息），且 accepted / rejected **分别列出**。scope 探针是三态委托（`Missing`/`NotDirectory`/`Directory`），可注入替身 ⇒ 单测零文件系统访问。 |
-| `Hosting/IndexPrebuildFreshness.cs` | `MinRebuildInterval` 的消费点（纯函数、注入时钟）：无索引 / 索引过旧 / 间隔 ≤ 0 ⇒ 重建；索引足够新 ⇒ 跳过。⚠️ 仪器口径 = **索引根目录 mtime**（per-scope 索引目录在 `PuddingFullTextIndex` 内且 `internal`）⇒ 粗粒度代理，已在交付报告登记留白。 |
-| `Services/IndexPrebuildService.cs` | 由配置门控的预建服务（此前是 `HOSTED-DISABLED`）。`StartAsync` **永不阻塞宿主**；**默认配置下不建索引、零索引 I/O、不记 Error**；校验不过 ⇒ 记 Error 且什么都不做（fail-closed，不部分生效）；通过 ⇒ 启动路径之外按 `Scopes` 逐个预建 —— **目标来自配置，不再是 `Directory.GetCurrentDirectory()`**（历史缺陷）。 |
-| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 接线：`Configure<FullTextIndexSupplyOptions>(builder.Configuration.GetSection(FullTextIndexSupplyOptions.SectionName))`。**必须是 `builder.Configuration`**：`bootstrapConfiguration` 只含 appsettings/环境变量，`system.json` 只加在 `builder.Configuration` 上。同处把 `IndexPrebuildService` 从 `HOSTED-DISABLED` 注释改为常驻注册（默认配置下等价 no-op，现网行为不变）。 |
+| `Hosting/FullTextIndexSupplyOptions.cs` | 馃攽 渚涚粰鍙傛暟绫诲瀷锛堣妭鍚?`FullTextIndex`锛夛細`Enabled`锛?*榛樿 `false`**锛? `Scopes`锛堢洰鏍囩洰褰曪紝鍙负缁濆鎴栫浉瀵?`WorkspaceRoot`锛? `WorkspaceRoot`锛堢浉瀵归」鐨?*鏄惧紡缁濆鍩哄噯**锛?*绂佺敤杩涚▼ CWD**锛? `MaxIndexBytes`锛?*榛樿 `1_073_741_824` = 1 GiB = 2^30**锛涚‖澶╄姳鏉?`1L << 40` = 1 TiB锛? `MinRebuildInterval`锛堥粯璁?12h锛孞SON 鍐?`"hh:mm:ss"`锛夈€?*鍗曚竴鐪熸簮**锛? GiB 瀛楅潰閲忓叏浠撶敓浜т唬鐮佸彧鍦ㄦ鍑虹幇涓€娆°€?|
+| `Hosting/FullTextIndexSupplyResolver.cs` | 馃攽 fail-closed **绾嚱鏁?*鏍￠獙锛堜笉渚濊禆 DI / 鏂囦欢绯荤粺 / 缃戠粶锛夛細鍏抽棴 鈬?鎴愬姛涓旂┖鍔ㄤ綔銆?*杩?scope 鎺㈤拡閮戒笉璋冪敤**锛涘紑鍚€?`Scopes` 涓虹┖ / 鍚┖涓猜蜂笉瀛樺湪路闈炵洰褰暵烽噸澶嶉」 / 鐩稿椤规棤缁濆鍩哄噯 / `MaxIndexBytes <= 0` 鎴栬秴 1 TiB / `MinRebuildInterval < 0` 鈬?**缁撴瀯鍖栨嫆缁?*锛坄ParameterName` + `Value` + 鍘熷洜鏋氫妇 + 鍙娑堟伅锛夛紝涓?accepted / rejected **鍒嗗埆鍒楀嚭**銆俿cope 鎺㈤拡鏄笁鎬佸鎵橈紙`Missing`/`NotDirectory`/`Directory`锛夛紝鍙敞鍏ユ浛韬?鈬?鍗曟祴闆舵枃浠剁郴缁熻闂€?|
+| `Hosting/IndexPrebuildFreshness.cs` | `MinRebuildInterval` 鐨勬秷璐圭偣锛堢函鍑芥暟銆佹敞鍏ユ椂閽燂級锛氭棤绱㈠紩 / 绱㈠紩杩囨棫 / 闂撮殧 鈮?0 鈬?閲嶅缓锛涚储寮曡冻澶熸柊 鈬?璺宠繃銆傗殸锔?浠櫒鍙ｅ緞 = **绱㈠紩鏍圭洰褰?mtime**锛坧er-scope 绱㈠紩鐩綍鍦?`PuddingFullTextIndex` 鍐呬笖 `internal`锛夆噿 绮楃矑搴︿唬鐞嗭紝宸插湪浜や粯鎶ュ憡鐧昏鐣欑櫧銆?|
+| `Services/IndexPrebuildService.cs` | 鐢遍厤缃棬鎺х殑棰勫缓鏈嶅姟锛堟鍓嶆槸 `HOSTED-DISABLED`锛夈€俙StartAsync` **姘镐笉闃诲瀹夸富**锛?*榛樿閰嶇疆涓嬩笉寤虹储寮曘€侀浂绱㈠紩 I/O銆佷笉璁?Error**锛涙牎楠屼笉杩?鈬?璁?Error 涓斾粈涔堥兘涓嶅仛锛坒ail-closed锛屼笉閮ㄥ垎鐢熸晥锛夛紱閫氳繃 鈬?鍚姩璺緞涔嬪鎸?`Scopes` 閫愪釜棰勫缓 鈥斺€?**鐩爣鏉ヨ嚜閰嶇疆锛屼笉鍐嶆槸 `Directory.GetCurrentDirectory()`**锛堝巻鍙茬己闄凤級銆?|
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 鎺ョ嚎锛歚Configure<FullTextIndexSupplyOptions>(builder.Configuration.GetSection(FullTextIndexSupplyOptions.SectionName))`銆?*蹇呴』鏄?`builder.Configuration`**锛歚bootstrapConfiguration` 鍙惈 appsettings/鐜鍙橀噺锛宍system.json` 鍙姞鍦?`builder.Configuration` 涓娿€傚悓澶勬妸 `IndexPrebuildService` 浠?`HOSTED-DISABLED` 娉ㄩ噴鏀逛负甯搁┗娉ㄥ唽锛堥粯璁ら厤缃笅绛変环 no-op锛岀幇缃戣涓轰笉鍙橈級銆?|
 
-测试（`../Tests/PuddingHost.Tests/Hosting/`，**20 用例**）：`FullTextIndexSupplyResolverTests`（A1~A5 + 相对/绝对基准 + 零间隔边界，10 条）、`IndexPrebuildServiceTests`（A6 + 开启路径 + 拒绝可观测，3 条）、`IndexPrebuildFreshnessTests`（5 条）、`FullTextIndexSupplyHostBindingTests`（system.json → IOptions 绑定 + hosted 注册 + 无该节即默认关闭，2 条）。证据与变异输出见 `temp/U4-7-REPORT.md`、`temp/u4-7-evidence/`。
-
-⚠️ **留白（R5）**：体积护栏的**执行**行为（达 `MaxIndexBytes` 时告警 / 拒写 / GC）**未实现**，属后续切片（ADR-089 §7.2「触发 GC 留到后续切片」）。本刀只提供参数与校验。
-
-## S5（2026-09-25）— 预建索引改走「协调器 + 暂存供给」（**默认关闭 ⇒ 零 I/O**）
-
-U4-7 的预建**直写** `IFullTextSearchEngine.BuildIndexAsync`，且用**索引根 mtime** 判所有 scope 的新鲜度。
-S5 把两条都换掉：写路径统一进组件协调器（跨进程租约 / 幂等合并 / 预算硬限 / staging / 原子切换），
-新鲜度改为 **per-scope**（该 scope **自己**的 live 索引目录）。
-
-| 文件 | 用途 |
+娴嬭瘯锛坄../Tests/PuddingHost.Tests/Hosting/`锛?*20 鐢ㄤ緥**锛夛細`FullTextIndexSupplyResolverTests`锛圓1~A5 + 鐩稿/缁濆鍩哄噯 + 闆堕棿闅旇竟鐣岋紝10 鏉★級銆乣IndexPrebuildServiceTests`锛圓6 + 寮€鍚矾寰?+ 鎷掔粷鍙娴嬶紝3 鏉★級銆乣IndexPrebuildFreshnessTests`锛? 鏉★級銆乣FullTextIndexSupplyHostBindingTests`锛坰ystem.json 鈫?IOptions 缁戝畾 + hosted 娉ㄥ唽 + 鏃犺鑺傚嵆榛樿鍏抽棴锛? 鏉★級銆傝瘉鎹笌鍙樺紓杈撳嚭瑙?`temp/U4-7-REPORT.md`銆乣temp/u4-7-evidence/`銆?
+鈿狅笍 **鐣欑櫧锛圧5锛?*锛氫綋绉姢鏍忕殑**鎵ц**琛屼负锛堣揪 `MaxIndexBytes` 鏃跺憡璀?/ 鎷掑啓 / GC锛?*鏈疄鐜?*锛屽睘鍚庣画鍒囩墖锛圓DR-089 搂7.2銆岃Е鍙?GC 鐣欏埌鍚庣画鍒囩墖銆嶏級銆傛湰鍒€鍙彁渚涘弬鏁颁笌鏍￠獙銆?
+## S5锛?026-09-25锛夆€?棰勫缓绱㈠紩鏀硅蛋銆屽崗璋冨櫒 + 鏆傚瓨渚涚粰銆嶏紙**榛樿鍏抽棴 鈬?闆?I/O**锛?
+U4-7 鐨勯寤?*鐩村啓** `IFullTextSearchEngine.BuildIndexAsync`锛屼笖鐢?*绱㈠紩鏍?mtime** 鍒ゆ墍鏈?scope 鐨勬柊椴滃害銆?S5 鎶婁袱鏉￠兘鎹㈡帀锛氬啓璺緞缁熶竴杩涚粍浠跺崗璋冨櫒锛堣法杩涚▼绉熺害 / 骞傜瓑鍚堝苟 / 棰勭畻纭檺 / staging / 鍘熷瓙鍒囨崲锛夛紝
+鏂伴矞搴︽敼涓?**per-scope**锛堣 scope **鑷繁**鐨?live 绱㈠紩鐩綍锛夈€?
+| 鏂囦欢 | 鐢ㄩ€?|
 |------|------|
-| `Hosting/IFullTextIndexSupplyComposition.cs` | 🔑 宿主侧供给端口：`IFullTextIndexSupplyComposition`（`Coordinator` / `ComponentOptions` / `LiveIndexLastWriteUtc`）+ `IFullTextIndexSupplyCompositionFactory`。**为什么用工厂**：R4 要求 `Enabled=false` 时「不解析 scope、**不构造协调器组合**、不 touch 索引根」—— 协调器 / staged builder / 清点 / 租约的实例化被推迟到真正进入供给路径之后（默认关闭时永不发生）。 |
-| `Hosting/LuceneFullTextIndexSupplyCompositionFactory.cs` | 生产装配：`FileSystemSupplyInventory` + `StagedFullTextIndexBuilder`（live 引擎 = **查询侧同一实例**，否则 reader 失效打空）+ `FileSupplyLease` + `FullTextIndexSupplyCoordinator`；**配置流入组件**（R2）：`DefaultBudgetBytes = FullTextIndexSupplyOptions.MaxIndexBytes`、`MinRebuildInterval = MinRebuildInterval` —— 宿主侧「1 GiB」仍只有 `FullTextIndexSupplyOptions.DefaultMaxIndexBytes` 一处真源，组件常量退化为未接线时的兜底。**per-scope 新鲜度**（R3）= `IFullTextIndexRootedEngine.ResolveIndexDirectory(scope)` 指向的 **live 索引目录** mtime（组件内的映射单一真源；`SupplyIndexDirectoryLayout` 仍是 internal，宿主**不复刻**哈希规则）。 |
-| `Services/IndexPrebuildService.cs` | 写路径改为「提交 `SupplyScopeRequest` → 轮询 `GetStatusAsync` 到终态」（`StartupDelay` / `StatusPollInterval`(默认 250ms) / `BuildWaitTimeout`(默认 **30min 上限**) 可注入；**超时只停止观测、不取消 job、不重试**）；`Busy` / `Rejected`(含 OverBudget) / `Failed`(含 RolledBack / 切换失败，原因原文照登) / 超时**逐类如实记录**（带 jobId）；**每个 scope 最多提交一次**。引擎只剩**只读**用途（`HasIndex`）。 |
-| `Hosting/IndexPrebuildFreshness.cs` | 注释口径修正：新鲜度输入从「索引根 mtime」改为**该 scope 自己的 live 索引目录 mtime** —— U4-7 登记的「粗粒度代理」留白就此关闭（旧口径下建出任一 scope 就会把其余 scope 集体误判为新鲜）。 |
-| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 新增 `AddSingleton<IFullTextIndexSupplyCompositionFactory>(…)`：取 `FullTextIndexOptions` + 断言引擎实现 `IFullTextIndexRootedEngine`（staged 切换需要「语料根 → 索引目录」映射与 reader 缓存失效两个接缝），staging 引擎工厂 = `new LuceneSearchEngine(stagingOptions)`。 |
+| `Hosting/IFullTextIndexSupplyComposition.cs` | 馃攽 瀹夸富渚т緵缁欑鍙ｏ細`IFullTextIndexSupplyComposition`锛坄Coordinator` / `ComponentOptions` / `LiveIndexLastWriteUtc`锛? `IFullTextIndexSupplyCompositionFactory`銆?*涓轰粈涔堢敤宸ュ巶**锛歊4 瑕佹眰 `Enabled=false` 鏃躲€屼笉瑙ｆ瀽 scope銆?*涓嶆瀯閫犲崗璋冨櫒缁勫悎**銆佷笉 touch 绱㈠紩鏍广€嶁€斺€?鍗忚皟鍣?/ staged builder / 娓呯偣 / 绉熺害鐨勫疄渚嬪寲琚帹杩熷埌鐪熸杩涘叆渚涚粰璺緞涔嬪悗锛堥粯璁ゅ叧闂椂姘镐笉鍙戠敓锛夈€?|
+| `Hosting/LuceneFullTextIndexSupplyCompositionFactory.cs` | 鐢熶骇瑁呴厤锛歚FileSystemSupplyInventory` + `StagedFullTextIndexBuilder`锛坙ive 寮曟搸 = **鏌ヨ渚у悓涓€瀹炰緥**锛屽惁鍒?reader 澶辨晥鎵撶┖锛? `FileSupplyLease` + `FullTextIndexSupplyCoordinator`锛?*閰嶇疆娴佸叆缁勪欢**锛圧2锛夛細`DefaultBudgetBytes = FullTextIndexSupplyOptions.MaxIndexBytes`銆乣MinRebuildInterval = MinRebuildInterval` 鈥斺€?瀹夸富渚с€? GiB銆嶄粛鍙湁 `FullTextIndexSupplyOptions.DefaultMaxIndexBytes` 涓€澶勭湡婧愶紝缁勪欢甯搁噺閫€鍖栦负鏈帴绾挎椂鐨勫厹搴曘€?*per-scope 鏂伴矞搴?*锛圧3锛? `IFullTextIndexRootedEngine.ResolveIndexDirectory(scope)` 鎸囧悜鐨?**live 绱㈠紩鐩綍** mtime锛堢粍浠跺唴鐨勬槧灏勫崟涓€鐪熸簮锛沗SupplyIndexDirectoryLayout` 浠嶆槸 internal锛屽涓?*涓嶅鍒?*鍝堝笇瑙勫垯锛夈€?|
+| `Services/IndexPrebuildService.cs` | 鍐欒矾寰勬敼涓恒€屾彁浜?`SupplyScopeRequest` 鈫?杞 `GetStatusAsync` 鍒扮粓鎬併€嶏紙`StartupDelay` / `StatusPollInterval`(榛樿 250ms) / `BuildWaitTimeout`(榛樿 **30min 涓婇檺**) 鍙敞鍏ワ紱**瓒呮椂鍙仠姝㈣娴嬨€佷笉鍙栨秷 job銆佷笉閲嶈瘯**锛夛紱`Busy` / `Rejected`(鍚?OverBudget) / `Failed`(鍚?RolledBack / 鍒囨崲澶辫触锛屽師鍥犲師鏂囩収鐧? / 瓒呮椂**閫愮被濡傚疄璁板綍**锛堝甫 jobId锛夛紱**姣忎釜 scope 鏈€澶氭彁浜や竴娆?*銆傚紩鎿庡彧鍓?*鍙**鐢ㄩ€旓紙`HasIndex`锛夈€?|
+| `Hosting/IndexPrebuildFreshness.cs` | 娉ㄩ噴鍙ｅ緞淇锛氭柊椴滃害杈撳叆浠庛€岀储寮曟牴 mtime銆嶆敼涓?*璇?scope 鑷繁鐨?live 绱㈠紩鐩綍 mtime** 鈥斺€?U4-7 鐧昏鐨勩€岀矖绮掑害浠ｇ悊銆嶇暀鐧藉氨姝ゅ叧闂紙鏃у彛寰勪笅寤哄嚭浠讳竴 scope 灏变細鎶婂叾浣?scope 闆嗕綋璇垽涓烘柊椴滐級銆?|
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 鏂板 `AddSingleton<IFullTextIndexSupplyCompositionFactory>(鈥?`锛氬彇 `FullTextIndexOptions` + 鏂█寮曟搸瀹炵幇 `IFullTextIndexRootedEngine`锛坰taged 鍒囨崲闇€瑕併€岃鏂欐牴 鈫?绱㈠紩鐩綍銆嶆槧灏勪笌 reader 缂撳瓨澶辨晥涓や釜鎺ョ紳锛夛紝staging 寮曟搸宸ュ巶 = `new LuceneSearchEngine(stagingOptions)`銆?|
 
-测试（`../Tests/PuddingHost.Tests/Hosting/`，宿主 **154 用例**；S5 新增 8 条）：
-`S5IndexSupplyHostWiringTests`（A1 默认关闭零 I/O・工厂/协调器/引擎 0 调用・索引根不建；A2 **真实 Lucene** 端到端可查询 + live 引擎**零直写**；A3 OverBudget 如实记录且 live 逐字节不变、旧索引仍可查；A4 **真实跨进程文件租约** Busy ⇒ 只提交一次、记录 owner/PID、继续下一 scope；A5 per-scope 新鲜度只提交陈旧者（A 新鲜只跳 A）；A6 配置流入组件；轮询超时有界）、
-`S5FullTextIndexSupplyHostCompositionTests`（组合根：`system.json` → 组件策略 + `IFullTextIndexRootedEngine` 接缝成立，全程零索引写入）、
-`S5SupplyTestDoubles.cs`（夹具与替身）、`IndexPrebuildServiceTests`（U4-7 三条按 S5 语义适配）。
-证据：`temp/S5-REPORT.md`、`temp/s5-evidence/`。
+娴嬭瘯锛坄../Tests/PuddingHost.Tests/Hosting/`锛屽涓?**154 鐢ㄤ緥**锛汼5 鏂板 8 鏉★級锛?`S5IndexSupplyHostWiringTests`锛圓1 榛樿鍏抽棴闆?I/O銉诲伐鍘?鍗忚皟鍣?寮曟搸 0 璋冪敤銉荤储寮曟牴涓嶅缓锛汚2 **鐪熷疄 Lucene** 绔埌绔彲鏌ヨ + live 寮曟搸**闆剁洿鍐?*锛汚3 OverBudget 濡傚疄璁板綍涓?live 閫愬瓧鑺備笉鍙樸€佹棫绱㈠紩浠嶅彲鏌ワ紱A4 **鐪熷疄璺ㄨ繘绋嬫枃浠剁绾?* Busy 鈬?鍙彁浜や竴娆°€佽褰?owner/PID銆佺户缁笅涓€ scope锛汚5 per-scope 鏂伴矞搴﹀彧鎻愪氦闄堟棫鑰咃紙A 鏂伴矞鍙烦 A锛夛紱A6 閰嶇疆娴佸叆缁勪欢锛涜疆璇㈣秴鏃舵湁鐣岋級銆?`S5FullTextIndexSupplyHostCompositionTests`锛堢粍鍚堟牴锛歚system.json` 鈫?缁勪欢绛栫暐 + `IFullTextIndexRootedEngine` 鎺ョ紳鎴愮珛锛屽叏绋嬮浂绱㈠紩鍐欏叆锛夈€?`S5SupplyTestDoubles.cs`锛堝す鍏蜂笌鏇胯韩锛夈€乣IndexPrebuildServiceTests`锛圲4-7 涓夋潯鎸?S5 璇箟閫傞厤锛夈€?璇佹嵁锛歚temp/S5-REPORT.md`銆乣temp/s5-evidence/`銆?
+鈿狅笍 **杈圭晫**锛欳LI 涓庡叾瀹冨伐绋嬩竴寰嬫湭鏀癸紙缁勪欢闆舵敼鍔級锛?*閲嶅惎鍚庣殑杩愯鎬侀獙璇佺敱鐖剁骇鎵ц**锛堟湰鍒€绂佹閲嶅惎浠讳綍杩涚▼锛夈€?
+## 变更（2026-09-30，启动阶段埋点 `StartupPhaseTracker`：让「启动耗时」可归因 · 组件 + 宿主入口）
 
-⚠️ **边界**：CLI 与其它工程一律未改（组件零改动）；**重启后的运行态验证由父级执行**（本刀禁止重启任何进程）。
+**动机（实测）**：Core 启动耗时 **21.5 s**（Desktop 显示口径 = Core 进程 `ReadyAt − StartedAt`，见 `Source/PuddingDesktop/MainWindow.xaml.cs:123`），
+而系统日志文件 `D:\data\logs\system\pudding-*.log` 的**第一行**出现在进程启动后 **17.5 s**（07:00:31 进程启动 vs 07:00:48.460 首行）
+⇒ **日志管线建立之前的那段启动时间无法从任何日志归因**。
+
+**新增**：`Hosting/StartupPhaseTracker.cs` —— 纯逻辑（时钟与输出通道可注入；无文件 IO / 无静态可变状态 / 无线程）
++ `StartupPhases` 阶段名常量（唯一真源，调用点与测试都引用它）。每个阶段点输出一行
+`[StartupPhase] <name> total=<N>ms delta=<N>ms`，同时进入 **stdout**（Desktop 捕获；日志管线就绪前唯一可用通道）
+与 **Serilog**（落系统日志文件，供事后取证）。
+
+**打点位置（11 处，已用 grep 复核）**：
+- `Source/PuddingAgent/Program.cs` 6 处：`process-start` / `options-resolved` / `data-root-lease` / `initialized` / `server-started` / `ready`
+- `PuddingApplicationHost.CreateBuilder` 3 处：`data-root-bootstrapped` / `logging-ready` / `services-registered`（后者 = DI 注册完成）
+- `PuddingApplicationHost.Build` 2 处：`host-built` / `middleware-mapped`
+
+`CreateBuilder` / `Build` / `InitializeAsync` 新增**可选**参数 `StartupPhaseTracker? phases = null` ⇒ 既有调用点零改动。
+
+**验证**：`Tests/PuddingHost.Tests/Hosting/StartupPhaseTrackerTests.cs`（xUnit，4 用例）全绿；宿主全量 **159/159**（failed 0）；
+**M1**（`Format` 去掉 delta）⇒ 红点**恰好** `Mark_WritesExactlyOneLinePerMark_InOrder_ThroughTheSink`；
+**M2**（删掉单调兜底）⇒ 红点**恰好** `Mark_ClampsNegativeDelta_WhenClockMovesBackwards`（Expected 500 / Actual 100）；
+`MUTATION` 残留 **0**（活对照 `StartupPhaseTracker` 14 / `StartupPhases.` 20）。
+
+**未证实（如实登记）**：
+- 埋点**真实触发**只能在下次 Core 启动后才可见。本次 Core 一直在运行，且 `Source/PuddingAgent/bin/Debug/net10.0` 被 PID 26676 锁定
+  ⇒ `dotnet build PuddingAgent` 报 **30×MSB3021 + 30×MSB3027，CS 错误 0**（编译通过、仅输出复制失败）。
+- 变异复原后宿主 DLL 哈希**未**回到变异前基线（`57E70653…` → `F1D19D2F…`），原因**未证实** ⇒ 本片**不声称**逐位复原，只声称「源码语义正确 + 全量绿」。

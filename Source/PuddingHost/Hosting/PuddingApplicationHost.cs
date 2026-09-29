@@ -32,7 +32,8 @@ public static class PuddingApplicationHost
     /// </summary>
     public static WebApplicationBuilder CreateBuilder(
         string[] args,
-        PuddingHostOptions options)
+        PuddingHostOptions options,
+        StartupPhaseTracker? phases = null)
     {
         // ── DataRoot resolution and directory preparation ─────
         var dataRoot = string.IsNullOrWhiteSpace(options.DataRoot)
@@ -40,6 +41,7 @@ public static class PuddingApplicationHost
             : options.DataRoot;
 
         var dataPaths = PuddingDataRootBootstrapper.Bootstrap(dataRoot);
+        phases?.Mark(StartupPhases.DataRootBootstrapped);
 
         // ── Bootstrap configuration ─────────────────────────
         var aspnetcoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
@@ -52,16 +54,10 @@ public static class PuddingApplicationHost
 
         // ── Serilog ──────────────────────────────────────────
         PuddingLoggingBootstrapper.Configure(dataPaths, bootstrapConfiguration);
+        phases?.Mark(StartupPhases.LoggingReady);
 
         // ── WebApplicationBuilder ────────────────────────────
-        var builder = options.Mode == PuddingHostMode.Desktop
-            ? WebApplication.CreateBuilder(new WebApplicationOptions
-            {
-                Args = args,
-                ApplicationName = typeof(PuddingHostAssemblyMarker).Assembly.GetName().Name,
-                ContentRootPath = AppContext.BaseDirectory,
-            })
-            : WebApplication.CreateBuilder(args);
+        var builder = WebApplication.CreateBuilder(args);
         // Product/user-owned runtime policy lives below DataRoot. Add it after
         // the packaged appsettings defaults, then restore environment/CLI as
         // the highest-precedence operational overrides.
@@ -150,9 +146,6 @@ public static class PuddingApplicationHost
         var mvcBuilder = builder.Services.AddControllersWithViews()
             .AddApplicationPart(typeof(PuddingHostAssemblyMarker).Assembly)
             .AddApplicationPart(typeof(BootstrapApiController).Assembly)
-            // DLL hosts cannot rely on the console executable's MVC discovery closure.
-            // Platform's main-session/projection client calls these control-plane routes.
-            .AddApplicationPart(typeof(PuddingController.Controllers.SessionController).Assembly)
             .AddApplicationPart(typeof(PuddingRuntime.Controllers.RuntimeSessionController).Assembly);
 
         // ── JWT ──────────────────────────────────────────────
@@ -277,6 +270,8 @@ public static class PuddingApplicationHost
             aspnetcoreEnvironment,
             options);
 
+        phases?.Mark(StartupPhases.ServicesRegistered);
+
         return builder;
     }
 
@@ -319,30 +314,15 @@ public static class PuddingApplicationHost
 
     /// <summary>
     /// Phase 2: Configure middleware pipeline and endpoint mapping.
-    /// <para>
-    /// 两段各自记一个阶段（<c>host.build.container</c> / <c>host.build.endpoints</c>），把「构建 + 映射」
-    /// 这个笼统耗时归因到具体一段。没有证据 sink 时**一行都不写**，行为与之前完全一致。
-    /// </para>
     /// </summary>
-    public static WebApplication Build(WebApplicationBuilder builder)
+    public static WebApplication Build(WebApplicationBuilder builder, StartupPhaseTracker? phases = null)
     {
-        var sink = HostedServiceStartupTiming.FindSink(builder.Services);
-        // 有 sink 时给每个 hosted service 包一层计时（无 sink 时 DI 图不动）。
-        HostedServiceStartupTiming.WrapWhenEvidenceRequested(builder.Services);
-
-        WebApplication app;
-        using (var containerPhase = sink?.Phase(StartupPhaseNames.BuildContainer))
-        {
-            app = builder.Build();
-            containerPhase?.Complete($"{builder.Services.Count} 个服务描述符");
-        }
+        var app = builder.Build();
+        phases?.Mark(StartupPhases.HostBuilt);
         Console.WriteLine("[Startup] Host built, configuring middleware...");
 
-        using (var endpointsPhase = sink?.Phase(StartupPhaseNames.BuildEndpoints))
-        {
-            app.MapPuddingApplication();
-            endpointsPhase?.Complete();
-        }
+        app.MapPuddingApplication();
+        phases?.Mark(StartupPhases.MiddlewareMapped);
 
         return app;
     }
@@ -354,10 +334,10 @@ public static class PuddingApplicationHost
     public static async Task InitializeAsync(
         WebApplication application,
         CancellationToken cancellationToken,
-        IStartupPhaseSink? startupSink = null)
+        StartupPhaseTracker? phases = null)
     {
         Console.WriteLine("[Startup] DB migration skipped — using pre-built database");
-        await PuddingApplicationInitializer.InitializeAsync(application, startupSink, cancellationToken);
+        await PuddingApplicationInitializer.InitializeAsync(application, cancellationToken);
     }
 
     /// <summary>
