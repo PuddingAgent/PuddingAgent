@@ -35,23 +35,36 @@ public sealed class SqliteExecutionLeaseStore(
             // Step 0: Reclaim expired runs (crashed workers)
             await ReclaimExpiredRunsAsync(conn, tx, nowMs, ct);
 
-            // Step 1: Find pending command with no active run on its conversation
+            // Step 1: Prefer foreground input over queued internal work in the same
+            // conversation. Never preempt an active run; other conversations retain FIFO.
+            // Fabric ingress/from-kind are reserved metadata rebuilt by trusted admission.
             using var selCmd = conn.CreateCommand();
             selCmd.Transaction = tx;
             selCmd.CommandText = @"
+                WITH pending_commands AS (
+                    SELECT *, CASE WHEN json_valid(metadata_json) THEN
+                        CASE WHEN json_extract(metadata_json, '$.message_fabric_ingress') = 'true'
+                              AND json_extract(metadata_json, '$.message_fabric_from_kind') IN ('agent', 'system')
+                             THEN 1 ELSE 0 END
+                        ELSE 0 END AS is_background
+                    FROM chat_execution_commands WHERE status = 'pending'
+                )
                 SELECT c.command_id, c.workspace_id, c.session_id, c.turn_id,
                        c.user_message_id, c.agent_instance_id, c.user_id,
                        c.message_id, c.client_request_id, c.attempt_count,
                        c.created_at, c.trace_id
-                FROM chat_execution_commands c
-                WHERE c.status = 'pending'
+                FROM pending_commands c
+                WHERE (c.is_background = 0 OR NOT EXISTS (
+                    SELECT 1 FROM pending_commands foreground
+                    WHERE foreground.session_id = c.session_id AND foreground.is_background = 0
+                  ))
                   AND NOT EXISTS (
                       SELECT 1 FROM execution_runs r
                       WHERE r.conversation_id = c.session_id
                         AND r.status IN ('leased', 'running', 'cancel_requested')
                         AND (r.lease_until IS NULL OR r.lease_until >= @nowMs)
                   )
-                ORDER BY c.created_at ASC
+                ORDER BY c.created_at ASC, c.Id ASC
                 LIMIT 1";
             AddParam(selCmd, "@nowMs", nowMs);
 

@@ -44,6 +44,89 @@ public sealed class ExecutionLeaseStoreRecoveryTests
     }
 
     [TestMethod]
+    [DataRow("system")]
+    [DataRow("agent")]
+    public async Task Acquire_PrefersHumanInputOverOlderInternalWork(string senderKind)
+    {
+        await SeedPendingAsync("background", 1, FabricMetadata(senderKind));
+        await SeedPendingAsync("human", 2);
+
+        var lease = await _store.TryAcquireAsync("worker", TimeSpan.FromMinutes(2), CancellationToken.None);
+
+        Assert.AreEqual("human", lease?.CommandId);
+        await using var scope = _provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        Assert.AreEqual("pending", (await db.ChatExecutionCommands.SingleAsync(c => c.CommandId == "background")).Status);
+        // Priority never creates a second active run, nor cancels/drops internal work.
+        Assert.IsNull(await _store.TryAcquireAsync("other-worker", TimeSpan.FromMinutes(2), CancellationToken.None));
+        await _store.ReleaseAsync(lease!, RunStatus.Succeeded, CancellationToken.None);
+        Assert.AreEqual("background", (await _store.TryAcquireAsync("worker", TimeSpan.FromMinutes(2), CancellationToken.None))?.CommandId);
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("not-json")]
+    [DataRow("{}")]
+    [DataRow("{\"message_fabric_from_kind\":\"system\"}")]
+    [DataRow("{\"message_fabric_ingress\":\"true\",\"message_fabric_from_kind\":\"user\"}")]
+    public async Task Acquire_PreservesForegroundFifoAndUnknownMetadata(string? metadata)
+    {
+        await SeedPendingAsync("first", 1, metadata);
+        await SeedPendingAsync("second", 2);
+        Assert.AreEqual("first", (await _store.TryAcquireAsync("worker", TimeSpan.FromMinutes(2), CancellationToken.None))?.CommandId);
+    }
+
+    [TestMethod]
+    public async Task Acquire_PreservesBackgroundFifoAcrossUnblockedConversations()
+    {
+        await SeedPendingAsync("background", 1, FabricMetadata("system"), "other-conversation");
+        await SeedPendingAsync("human", 2);
+        Assert.AreEqual("background", (await _store.TryAcquireAsync("worker", TimeSpan.FromMinutes(2), CancellationToken.None))?.CommandId);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Acquire_ActiveBackgroundIsNotPreempted_ButRecoveredBackgroundYieldsToHuman(bool expired)
+    {
+        var active = await SeedRunningExecutionAsync(expired);
+        await using (var scope = _provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var command = await db.ChatExecutionCommands.SingleAsync();
+            command.MetadataJson = FabricMetadata("system");
+            await db.SaveChangesAsync();
+        }
+        await SeedPendingAsync("human", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 1);
+        if (!expired)
+        {
+            Assert.IsNull(await _store.TryAcquireAsync("worker", TimeSpan.FromMinutes(2), CancellationToken.None));
+            await _store.ReleaseAsync(active, RunStatus.LeaseLost, CancellationToken.None);
+        }
+        Assert.AreEqual("human", (await _store.TryAcquireAsync("worker", TimeSpan.FromMinutes(2), CancellationToken.None))?.CommandId);
+    }
+
+    private static string FabricMetadata(string senderKind) => System.Text.Json.JsonSerializer.Serialize(
+        new Dictionary<string, string>
+        {
+            [MessageFabricTurnMetadata.IsIngress] = "true",
+            [MessageFabricTurnMetadata.FromKind] = senderKind,
+        });
+
+    private async Task SeedPendingAsync(string id, long createdAt, string? metadata = null, string conversation = "conversation-1")
+    {
+        await using var scope = _provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity
+        {
+            BatchId = id, CommandId = id, WorkspaceId = "default", SessionId = conversation,
+            MessageId = id + "-assistant", UserMessageId = id + "-user", TurnId = id + "-turn",
+            AgentInstanceId = "agent-1", Status = "pending", CreatedAt = createdAt, MetadataJson = metadata,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [TestMethod]
     public async Task Release_RestoresCommandAndTurnForRetryInOneOperation()
     {
         var lease = await SeedRunningExecutionAsync(expired: false);
