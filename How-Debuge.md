@@ -1,3 +1,36 @@
+### 优化第二刀：拆黑盒 + MCP 后台化（2026-09-29，`dde9cba` / `add7c85`）
+
+**先补测量（零行为改动）**：`HostedServiceStartupTiming` 给每个 `IHostedService` 的 `StartAsync` 记 `host.start.<类型名>`；`PuddingApplicationHost.Build` 拆成 `host.build.container`（`builder.Build`，含 `ValidateOnBuild`）与 `host.build.endpoints`（`MapPuddingApplication`）。**只在容器里已注册 `IStartupPhaseSink` 时才包装**——Console/生产路径没有 sink，DI 图与之前逐字节一致；名字取自实例类型（有些服务是"先注册具体单例再派生 `IHostedService`"，描述符里看不到真实类型）。
+
+**实测（`D:\data`，同构建）——`host.start` 拆开后单点极其集中**：
+
+| 子阶段 | ms |
+|---|---|
+| `host.start.McpWorkspaceSkillHostedService` | **2,154.5**（占 `host.start` 82%、全启动 37%） |
+| `host.start.ConnectorHostLifecycleService` | 112.5 |
+| `host.start.CodeIndexMaintenanceHostedService` | 105.4 |
+| `host.start.HeartbeatOrchestrator` | 31.3 |
+| 其余 29 个服务合计 | <100 |
+| `host.build.container`（1183 个描述符，含校验） | 56.2 |
+| `host.build.endpoints` | 275.2 |
+
+⇒ **再次修正排序**：DI 校验最多 56 ms（不值得动）；`MapPuddingApplication` 端点映射 275 ms 才是 ASP.NET 时代那部分里的大头；而 MCP 首次对账是**唯一的大单点**。
+
+**改动（`add7c85`）**：`McpWorkspaceSkillHostedService.StartAsync` 原本直接 `await manager.RefreshAllAsync(ct)`——把外部集成的首次对账放在宿主启动同步路径上。现在立即返回，对账交给带独立 CTS 的后台任务；`StopAsync` 把取消送到在途对账并按 3 s 上界等待收敛（超时只记 Warning、不挂死停止），重复 Stop 幂等。
+
+**结果**：
+
+| | 改前 | 改后 |
+|---|---|---|
+| `host.start` | 2,613 ms | **536 ms** |
+| `host.start.McpWorkspaceSkillHostedService` | 2,154.5 ms | **1.8 ms** |
+| attempt total | 5,833 ms | **4,107 ms** |
+| ExecutionReady | ~6,900 ms | **5,020 ms** |
+
+**诚实边界（本刀唯一的行为差异）**：MCP 接通前工具清单为空（`IWorkspacePuddingToolSource` 快照），状态经既有 `IMcpConnectionManager.ListStatuses`（Status/Error/ToolCount）暴露 ⇒ **界面应显示"正在连接"而不是"没有工具"**；后台失败只记日志且下次 refresh 会重试。这条 UI 提示尚未实现（属 Desktop/Chat 侧）。
+
+**剩余排序**（热态 4,107 ms）：① EF 首次触碰 ~910 ms（编译模型，需漂移门禁）；② Web 平面 625 ms（注册 350 + 端点映射 275，客户端化后可条件化）；③ `jieba-backfill` ~577 ms（后台化）；④ 剩余 `host.start` 536 ms（连接器 112 + 代码索引维护 106 + …）；⑤ schema 阶梯 ~400 ms（已做）。
+
 ### 优化第一刀：schema 阶梯快速路径（2026-09-29，分支 `feature/dsh-startup-fastpath`）
 
 **改了什么**：`PUDDING_SCHEMA_LADDER` 之外，用 SQLite 原生 `PRAGMA user_version` 做**幂等阶梯的修订标记**——命中标记 + 哨兵表齐 ⇒ 跳过 25 个 schema 组；否则跑全量并在成功后写标记。判定抽成纯函数 `PlatformSchemaRevision`（13 项单测），规则 **fail-open**：读不到/非 SQLite/哨兵缺失/版本不符一律回落全量，绝不"假设已完成"。运维逃生门 `PUDDING_SCHEMA_LADDER=full` 强制全量。

@@ -1,3 +1,15 @@
+## 2026-09-29：优化第二刀——拆黑盒 + MCP 后台化（热态 5,833 → 4,107 ms）
+
+**先补测量（零行为改动，`dde9cba`）**：`HostedServiceStartupTiming` 给每个 `IHostedService` 记 `host.start.<类型名>`；`PuddingApplicationHost.Build` 拆 `host.build.container`（含 `ValidateOnBuild`）与 `host.build.endpoints`。**只在容器已有 `IStartupPhaseSink` 时包装**（Console/生产 DI 图逐字节不变），名字取自实例类型。测试 5 项固定"无 sink 不换描述符 / 顺序保持 / 异常上抛 / 实例注册也包装并转发 Stop"。
+
+拆开后的真相：`host.start` 32 个子阶段里 **`McpWorkspaceSkillHostedService` 2,154.5 ms（82%）**，其余最大只有 `ConnectorHostLifecycleService` 112.5、`CodeIndexMaintenanceHostedService` 105.4，29 个服务合计 <100 ms；`host.build.container` 仅 56.2 ms（1183 个描述符，含校验）⇒ **DI 校验不值得优化**，ASP.NET 时代那部分的大头是 `host.build.endpoints` 275.2 ms。
+
+**MCP 后台化（`add7c85`）**：该服务原本 `await manager.RefreshAllAsync(ct)`，把外部集成的首次对账压在宿主启动同步路径上。现在 StartAsync 立即返回、对账进后台任务（独立 CTS + 完成/取消/失败分别记日志），StopAsync 送取消并按 3 s 上界收敛、重复 Stop 幂等。实测：`host.start` 2,613 → **536 ms**；MCP 子阶段 2,154.5 → **1.8 ms**；attempt total 5,833 → **4,107 ms**；`ExecutionReady` ~6,900 → **5,020 ms**。测试 3 项（不等待外部对账 / 取消送达在途任务 / 永不收敛时停止仍有上界）。
+
+**诚实边界**：MCP 接通前工具清单为空，状态经 `IMcpConnectionManager.ListStatuses` 暴露 ⇒ **界面应显示"正在连接"而不是"没有工具"**；该提示尚未实现（Desktop/Chat 侧）。
+
+**剩余排序**：① EF 首次触碰 ~910 ms（编译模型 + 漂移门禁）；② Web 平面 625 ms（注册 350 + 端点映射 275，可条件化）；③ `jieba-backfill` ~577 ms 后台化；④ 剩余 `host.start` 536 ms；⑤ schema 阶梯（已做）。
+
 ## 2026-09-29：优化第一刀——schema 阶梯快速路径（附两处成本归因修正）
 
 用户裁定「开始优化」。第一刀选最大单笔且最安全的：**幂等 schema 阶梯的跳过**。用 SQLite 原生 `PRAGMA user_version` 做修订标记（零 schema 改动），命中标记 + 哨兵表齐就跳过 25 个 schema 组，成功后写标记。判定抽成纯函数 `PlatformSchemaRevision`（13 项单测 + fail-open：读不到/非 SQLite/哨兵缺失/版本不符一律回落全量），运维逃生门 `PUDDING_SCHEMA_LADDER=full`。
