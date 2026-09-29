@@ -216,12 +216,24 @@ internal sealed class StubMaintenanceCompositionFactory : IFullTextIndexMaintena
 
     internal ConcurrentQueue<MaintenanceOptions> CreatedWithOptions { get; } = new();
 
+    /// <summary>S5b-I7：<c>Create</c> 被调用时所在线程的事实（证明启动路径跑在 BackgroundWork 的专用低优先级线程上）。</summary>
+    internal string? CreateThreadName { get; private set; }
+
+    /// <summary>见 <see cref="CreateThreadName"/>。</summary>
+    internal ThreadPriority? CreateThreadPriority { get; private set; }
+
+    /// <summary>见 <see cref="CreateThreadName"/>。</summary>
+    internal bool? CreateThreadIsBackground { get; private set; }
+
     public IFullTextIndexMaintenanceComposition Create(
         MaintenanceOptions maintenanceOptions,
         IReadOnlyList<string> acceptedScopes)
     {
         Interlocked.Increment(ref CreateCalls);
         CreatedWithOptions.Enqueue(maintenanceOptions);
+        CreateThreadName = Thread.CurrentThread.Name;
+        CreateThreadPriority = Thread.CurrentThread.Priority;
+        CreateThreadIsBackground = Thread.CurrentThread.IsBackground;
         return _composition;
     }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Threading;
 using Microsoft.Extensions.Options;
 using PuddingAgent.Services;
 using PuddingFullTextIndex;
@@ -508,6 +509,66 @@ public sealed class S5bFullTextIndexMaintenanceHostWiringTests
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1), "StartAsync 仍必须立即返回");
 
         await service.StopAsync(CancellationToken.None);
+    }
+
+    // ── I7（2026-09-29 追加：对齐仓库后台重活统一入口）────────────────
+
+    /// <summary>
+    /// I7：维护启动路径跑在 <c>PuddingCode.Core.BackgroundWork</c> 的**专用低优先级后台线程**上，
+    /// 而不是 ThreadPool 的普通优先级线程（用户 2026-09-29 方向：后台重活不得与首屏 / 交互抢 CPU）。
+    /// <para>
+    /// 断言的是**线程事实**（名字 / 优先级 / IsBackground），而非「有没有调用过某个方法」——
+    /// 把实现改回 <c>Task.Run</c>、或把线程名写错，本用例都会变红。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task I7_Maintenance_Start_Runs_On_Dedicated_Low_Priority_Background_Thread()
+    {
+        using var fixture = new S5Fixture();
+        var corpus = fixture.NewCorpus("i7", ("note.txt", "alpha"));
+
+        var supplyOptions = new FullTextIndexSupplyOptions
+        {
+            Enabled = true,
+            Scopes = [corpus],
+            MaxIndexBytes = FullTextIndexSupplyOptions.DefaultMaxIndexBytes,
+            MinRebuildInterval = TimeSpan.Zero,
+        };
+
+        var engine = new CountingRootedEngine(fixture.IndexRoot);
+        var counting = new CountingMaintenance();
+        var stubComposition = new StubMaintenanceComposition(
+            counting, [], new MaintenanceOptions(), fixture.Options, engine);
+        var factory = new StubMaintenanceCompositionFactory(stubComposition);
+        var logger = new MaintenanceRecordingLogger();
+
+        var service = CreateService(
+            fixture.Options,
+            supplyOptions,
+            new MaintenanceOptions { Enabled = true },
+            factory,
+            logger);
+
+        try
+        {
+            await service.StartAsync(CancellationToken.None);
+
+            Assert.True(
+                await S5TestHelpers.WaitUntilAsync(() => factory.CreateCalls > 0, TimeSpan.FromSeconds(30)),
+                "开启后维护组合必须在有界时间内被构造");
+
+            Assert.Equal("pudding-bg-fulltext.maintenance", factory.CreateThreadName);
+            Assert.Equal(ThreadPriority.BelowNormal, factory.CreateThreadPriority);
+            Assert.True(factory.CreateThreadIsBackground, "后台重活线程必须是 IsBackground，禁止拖住进程退出");
+
+            _output.WriteLine($"[DEMO/I7] thread name      : {factory.CreateThreadName}");
+            _output.WriteLine($"[DEMO/I7] thread priority  : {factory.CreateThreadPriority}");
+            _output.WriteLine($"[DEMO/I7] is background    : {factory.CreateThreadIsBackground}");
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
     }
 
     // ── 局部工具 ──────────────────────────────────────────────────────────

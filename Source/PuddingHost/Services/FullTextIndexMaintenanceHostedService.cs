@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PuddingCode.Core;
 using PuddingFullTextIndex;
 using PuddingFullTextIndex.Infrastructure.Maintenance;
 using PuddingHost.Hosting;
@@ -57,7 +58,7 @@ public sealed class FullTextIndexMaintenanceHostedService : IHostedService
     private bool _startRequested;
     private bool _stopRequested;
     private IFullTextIndexMaintenanceComposition? _composition;
-    private Task? _startTask;
+    private BackgroundWork? _work;
 
     /// <summary>构造服务。</summary>
     /// <param name="maintenanceOptions">
@@ -99,11 +100,13 @@ public sealed class FullTextIndexMaintenanceHostedService : IHostedService
             _startRequested = true;
         }
 
-        // 启动路径之外的异步作业；StartAsync 立即返回（维护器自身还要挂 watcher / 起体检线程）。
-        var startTask = Task.Run(() => StartMaintenanceAsync(cancellationToken), cancellationToken);
+        // 启动路径之外的异步作业：走仓库统一入口 PuddingCode.Core.BackgroundWork
+        // （专用**低优先级**线程 + 有界停止 + 带耗时日志）—— 维护启动路径本身要做重活
+        // （路径检查通过后会做语料校准扫描），不得与首屏/交互抢 CPU。
+        var work = BackgroundWork.Start("fulltext.maintenance", StartMaintenanceAsync, _logger);
         lock (_lifecycle)
         {
-            _startTask = startTask;
+            _work = work;
         }
 
         return Task.CompletedTask;
@@ -188,7 +191,7 @@ public sealed class FullTextIndexMaintenanceHostedService : IHostedService
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         IFullTextIndexMaintenanceComposition? composition;
-        Task? startTask;
+        BackgroundWork? work;
 
         lock (_lifecycle)
         {
@@ -198,26 +201,14 @@ public sealed class FullTextIndexMaintenanceHostedService : IHostedService
 
             _stopRequested = true;
             composition = _composition;
-            startTask = _startTask;
+            work = _work;
         }
 
-        // 先等在途启动收尾：否则「启动还没挂上 watcher，停止就已经跑完」会留下残留 watcher。
-        if (startTask is not null && !startTask.IsCompleted)
+        // 先等在途启动收尾（送取消 + 按上界收敛）：否则「启动还没挂上 watcher，
+        // 停止就已经跑完」会留下残留 watcher。超时只记 Warning（BackgroundWork 内），不挂死停止路径。
+        if (work is not null)
         {
-            try
-            {
-                await startTask.WaitAsync(StartCompletionTimeout, cancellationToken).ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                _logger.LogWarning(
-                    "[FullTextMaintenance] 启动任务在收尾上界（{Timeout}）内未结束，仍继续停止维护。",
-                    StartCompletionTimeout);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("[FullTextMaintenance] 等待启动收尾被取消（宿主正在停止）。");
-            }
+            await work.StopAsync(StartCompletionTimeout, cancellationToken).ConfigureAwait(false);
 
             // 启动可能刚好完成：补读一次组合。
             lock (_lifecycle)
