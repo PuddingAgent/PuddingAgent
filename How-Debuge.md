@@ -1,3 +1,20 @@
+### 优化第四刀：移除 Web 入口 + 让 ServeAdminSpa 真正门控（2026-09-29，`ff3571a`）
+
+用户裁定：Admin 管理界面已大部分迁移到 WinUI 3 设置（**验收尚未完成**），验收后逐步移除 Admin 前端代码，**部分 API 后期再谈**；Desktop 的「高级管理（Web）」入口可移除。
+
+- 删除 `ChatWorkspace` 的 `AdministrationRequested` 事件与按钮，Desktop 侧不再接线。
+- **接通一个原本是死配置的开关**：`ServeAdminSpa` 全仓只有定义与工厂赋值、从未被读取（SPA 一直靠"文件存在就服务"）。现在它门控 **Web 界面外壳回退**：Admin SPA fallback、Chat SPA fallback、`/admin/reload` 便利端点。**静态文件与全部 API 端点不受影响**。
+- `ForDesktop` 传 `ServeAdminSpa=false`；`WorkbenchAddress` 基址由 `/admin/` 改为根（页面已不存在）；环回监听保留（连接器入站、External API、SKILL Hub、健康检查仍有消费者）。
+- 组合测试钉住"外壳回退不再注册"：**深层 SPA 路径必须 404**；健康检查与 JWT 保护的 API 断言照旧。
+
+**两个如实登记的发现（都未在本刀处理）**：
+1. **`/admin/` 仍返回 200**：SPA 的**静态产物**仍随输出打包，静态文件中间件照常服务它。门控静态产物属打包层 ⇒ 归"后续移除阶段"。
+2. **`/admin/reload` 仍返回 200**：已排除 Host 里那处映射（已门控）与 `WorkspaceController`（路由是 `api/[controller]`）⇒ 另有处理器应答，**未查明**。因 API 按裁定保留，不阻塞本刀，登记待查。
+
+**未验证**：本刀的启动耗时增量。测量时 `D:\data` 宿主锁被一个已在运行的 Desktop 实例持有（单实例把新启动转发给了它），日志落 `IOException … .pudding-host.lock`，证据记为 `kernel.core-start` **Aborted** / total 19.6 ms —— 顺带说明 D1 证据连"启动失败在哪个阶段"都能直接指名。按纪律未动那个实例。
+
+**流程教训（我自己犯的）**：本刀首次"验证"是误读——那 7 处编辑当时落在**主树**，而测试跑在 **worktree**（不含这些改动），49/49 其实没覆盖本刀。已把文件同步进 worktree 重新验证，并修掉自己引入的 `hostOptions` 重复声明。**教训：改哪个树，就必须在那个树里构建与测试。**
+
 ### 优化第三刀：jieba 回填后台化（2026-09-29，`3ff5707`）
 
 形制与 MCP 那一刀相同：`IMemoryTokenBackfill` 窄端口（生产实现直调 `IMemoryLibrary.BackfillTokensAsync`，单例）+ `MemoryTokenBackfillHostedService`（StartAsync 立即返回、后台任务带独立 CTS、停止送取消 + 5 s 上界 + 幂等）。**用窄端口而不是伪造整个 `IMemoryLibrary`** 是为了让"不阻塞启动 / 停止取消 / 失败有上界"能被几行假实现确定性地测出来。

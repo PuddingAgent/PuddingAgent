@@ -1,3 +1,11 @@
+## 2026-09-29：优化第四刀——移除 Web 入口，ServeAdminSpa 真正生效（`ff3571a`）
+
+用户裁定：Admin 界面已大部分迁移到 WinUI 设置（**验收未完成**，之后逐步移除前端；**API 后期再谈**）；Desktop 的「高级管理（Web）」入口可移除。本刀只做已授权且不依赖验收的部分：删除 `ChatWorkspace` 的 `AdministrationRequested` 事件与按钮 + Desktop 接线；**把 `ServeAdminSpa` 从死配置接通**（此前全仓只有定义与赋值、从未被读取，SPA 一直"文件存在就服务"），现在它门控 Web 界面外壳回退（Admin/Chat SPA fallback 与 `/admin/reload`），**静态文件与全部 API 不受影响**；`ForDesktop` 传 false，`WorkbenchAddress` 基址改为根。组合测试钉住"深层 SPA 路径必须 404"，同时保留健康检查与 JWT API 断言。
+
+**两个登记项（未处理）**：① `/admin/` 仍 200 —— SPA 静态产物仍随输出打包，属后续移除阶段；② `/admin/reload` 仍 200 —— 已排除 Host 内那处映射与 `WorkspaceController`（路由 `api/[controller]`），另有处理器应答，**未查明**（API 按裁定保留，不阻塞）。
+
+**未验证**：本刀启动耗时增量（测量时 `D:\data` 锁被用户运行中的 Desktop 实例持有；证据直接记为 `kernel.core-start` Aborted + 19.6 ms，日志落 `IOException … .pudding-host.lock`）。**流程教训**：本刀改动一度落在主树而测试跑在 worktree（49/49 未覆盖本刀），已同步后重新验证 —— **改哪个树就在哪个树里构建与测试**。
+
 ## 2026-09-29：优化第三刀——jieba 回填后台化（热态 4,107 → 3,414 ms，累计 −43%）
 
 与 MCP 同一形制：`IMemoryTokenBackfill` 窄端口（生产实现直调 `IMemoryLibrary.BackfillTokensAsync`）+ `MemoryTokenBackfillHostedService`（StartAsync 立即返回、后台任务独立 CTS、停止取消 + 5 s 上界 + 幂等）。用窄端口而非伪造整个 `IMemoryLibrary`，是为了让三条约束能用几行假实现确定性测出。初始化器里的同步 jieba 段已删除。
