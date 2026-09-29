@@ -1,3 +1,23 @@
+### 规范件：后台重活的统一入口 `BackgroundWork`（2026-09-29，`b96ae88`）
+
+**由证据驱动的抽象**：MCP 首次对账、jieba 词元回填各自实现过一次同形代码（独立 CTS + 后台任务 + 有界停止 + 带耗时日志）。第三处出现之前先抽出来，落点 **`PuddingCore/Core/BackgroundWork.cs`（`PuddingCode.Core`）**。
+
+**放层的教训**：我第一版把它放在 `PuddingHost`，立刻被编译器挡住 —— Platform 侧的 MCP 服务也要用它，而 **Platform 不能引用 Host**。依赖方向由编译期强制这条规矩，这次真的替我拦了一次错。
+
+**API 与保证**：
+- `BackgroundWork.Start(name, body, logger)` **立即返回**（绝不等待）；作业跑在 `Priority = BelowNormal` 的专用线程上（线程名 `pudding-bg-<name>`），不与首屏渲染/交互抢 CPU。
+- `Completion` / `IsRunning` 供观测；`StopAsync(timeout)` 幂等、送取消、**超时有界**（只记 Warning，绝不挂死停止路径）；作业失败或取消都不会把异常抛给停止路径。
+- **明确不做**：它**不**注册"我还没就绪"的状态面。调用方若把结果暴露给用户（记忆检索依赖词元、MCP 工具清单依赖连接）必须自己表达"预热中" —— **后台化不等于可以静默降级**。
+
+**验证**：Composition 54/54（新增 `BackgroundWorkTests` 5 项：启动不等待、BelowNormal 线程与线程名、停止送取消、无视取消时停止有界、失败不影响停止）；MCP 测试 3/3、jieba 测试 4/4 原样通过；Desktop 构建 0 错误。启动账复测：`host.start.McpWorkspaceSkillHostedService` **0.5 ms**、`host.start.MemoryTokenBackfillHostedService` **0.8 ms**，`host.initialize.jieba-backfill` 仍在（应为 False）——重构未回退后台化效果。
+
+**同时纠正我自己的说法**：`host.start` 残留的 ~292 ms **不是**廉价项，逐条看过契约后：
+- `MessageDeliveryDispatcher` 25 ms = **事件订阅**，必须同步（否则可能丢消息）；
+- `ConnectorHostLifecycleService` 112 ms = 注册（**必须留**）+ P2P 发现/绑定校验（可挪），要先把两段分开；
+- `CodeIndexMaintenanceHostedService` 106 ms 发生在组件自己的 `StartAsync` 里（其注释声称"只翻标志、不扫描"），**需另行归因**才能判断可不可以挪。
+
+⇒ 这三处都得按契约逐条分析，不能整段搬走；`BackgroundWork` 已经把"搬"这件事变便宜，但"能不能搬"仍需逐个判断。
+
 ### 实测后决定**不做**：EF 编译模型（2026-09-29）
 
 我上一轮把「EF 首次触碰 891.5 ms」列为 ① 最大单笔，并计划用 `dotnet ef dbcontext optimize` 编译模型削掉它。**实测把这个判断推翻了**，记录在此以免重复实验：
