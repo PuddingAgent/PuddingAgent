@@ -26,8 +26,14 @@ public sealed class DesktopCompositionTests
             using var http = new HttpClient();
             var address = kernel.Snapshot.WorkbenchAddress!;
             Assert.True((await http.GetAsync(new Uri(address, "/health/ready"), timeout.Token)).IsSuccessStatusCode);
-            var html = await http.GetStringAsync(address, timeout.Token);
-            Assert.Contains("<html", html, StringComparison.OrdinalIgnoreCase);
+            // 2026-09-29 用户裁定：管理界面迁移到原生设置、Desktop 端「高级管理（Web）」入口移除，
+            // 因此 Desktop 模式**不再注册 Web 界面外壳回退**（Admin/Chat SPA fallback）。
+            // 注意判据：深层 SPA 路径只有"回退"才会 200，它必须 404。
+            // 不断言 /admin/：SPA 的**静态产物**目前仍随 Desktop 输出打包（属用户所说的后续移除阶段），
+            // 静态文件中间件照常把它当文件服务；门控静态产物是打包的事，不是本刀的事。
+            Assert.Equal(
+                System.Net.HttpStatusCode.NotFound,
+                (await http.GetAsync(new Uri(address, "/admin/some/deep/route"), timeout.Token)).StatusCode);
             Assert.Throws<IOException>(() => new PuddingHost.Hosting.PuddingDataRootLease(root));
             var show = new Uri(address, "/api/desktop/show/Settings");
             Assert.Equal(System.Net.HttpStatusCode.Unauthorized, (await http.PostAsync(show, null, timeout.Token)).StatusCode);

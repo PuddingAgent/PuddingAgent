@@ -65,7 +65,11 @@ public static class PuddingWebApplicationExtensions
             await next();
         });
 
+        var hostOptions = app.Services.GetRequiredService<PuddingHostOptions>();
+
         // ── 静态文件（同时从输出目录 wwwroot/ 和项目 wwwroot/ 提供）─
+        // 注意：静态文件始终服务（头像、图标等非 SPA 资源也在这里）；被 ServeAdminSpa 关掉的是
+        // **Web 界面外壳**本身（Admin/Chat 的 SPA 回退）与 /admin 便利端点。
         // Desktop 将 Core 嵌套发布到 core/。这里必须以物理输出目录为准，
         // 不能依赖 Static Web Assets 清单；嵌套 OutDir 会让清单端点返回空内容。
         var outputWwwRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
@@ -89,7 +93,6 @@ public static class PuddingWebApplicationExtensions
         app.MapControllers();
 
         // ── DesktopChild shutdown endpoint (registered after controllers) ──
-        var hostOptions = app.Services.GetRequiredService<PuddingHostOptions>();
         app.MapDesktopChildEndpoints(hostOptions);
 
         // ── Desktop Browser Bridge WebSocket ──
@@ -176,11 +179,14 @@ public static class PuddingWebApplicationExtensions
             }, statusCode: readiness.IsReady ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
         });
 
-        // ── 配置热重载接口 ───────
-        app.MapMethods("/admin/reload", new[] { "GET", "POST" }, () =>
+        // ── 配置热重载接口（Admin SPA 专用便利端点；Web 界面关闭时不注册）───────
+        if (hostOptions.ServeAdminSpa)
         {
-            return Results.Ok(new { status = "file-backed", timestamp = DateTimeOffset.UtcNow });
-        });
+            app.MapMethods("/admin/reload", new[] { "GET", "POST" }, () =>
+            {
+                return Results.Ok(new { status = "file-backed", timestamp = DateTimeOffset.UtcNow });
+            });
+        }
 
         // ── 潜意识 LLM 状态 ──────────────────────
         app.MapGet("/health/subconscious", async (
@@ -245,11 +251,11 @@ public static class PuddingWebApplicationExtensions
                 "Agent LLM routing is read from manifest.json preferredProviderId/preferredModelId; " +
                 "the LLM resource pool has no default route."));
 
-        // ── Admin SPA fallback ───────────
+        // ── Admin SPA fallback（ServeAdminSpa=false 时不注册：原生设置已接管管理界面）───────────
         // MapFallbackToFile uses IWebHostEnvironment.WebRootFileProvider, which may not
         // point at Desktop's nested core/wwwroot. Return the physical publish artifact.
         var adminIndexPath = Path.Combine(outputWwwRoot, "admin", "index.html");
-        if (File.Exists(adminIndexPath))
+        if (hostOptions.ServeAdminSpa && File.Exists(adminIndexPath))
         {
             app.MapFallback(
                 "/admin/{*path:nonfile}",
@@ -278,7 +284,7 @@ public static class PuddingWebApplicationExtensions
         // 因此「API 形状」路径（/api/* 与 /admin/api/*）未命中必须显式 404（JSON），不得进入 SPA 回退。
         // 同时 SPA 外壳响应一律 no-store，避免浏览器缓存旧 HTML 与内容寻址新 chunk 形成混合部署。
         var chatIndexPath = Path.Combine(outputWwwRoot, "index.html");
-        if (File.Exists(chatIndexPath))
+        if (hostOptions.ServeAdminSpa && File.Exists(chatIndexPath))
         {
             app.MapFallback((HttpContext context) =>
             {

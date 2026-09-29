@@ -71,7 +71,6 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
     public bool HostOwnsNavigation => _compactNavigation;
     public event EventHandler? SettingsRequested;
     public event EventHandler? RuntimeRequested;
-    public event EventHandler? AdministrationRequested;
     public void SetActive(bool active)
     {
         _active = active;
@@ -147,10 +146,8 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
         var footer = new StackPanel { Spacing = 8 };
         var settings = new Button { Content = "设置", HorizontalAlignment = HorizontalAlignment.Stretch };
         var runtime = new Button { Content = "运行中心", HorizontalAlignment = HorizontalAlignment.Stretch };
-        var administration = new Button { Content = "高级管理（Web）", HorizontalAlignment = HorizontalAlignment.Stretch };
         settings.Click += (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty);
         runtime.Click += (_, _) => RuntimeRequested?.Invoke(this, EventArgs.Empty);
-        administration.Click += (_, _) => AdministrationRequested?.Invoke(this, EventArgs.Empty);
         if (_client is IWorkspaceSetupClient)
         {
             var setup = new Button { Content = "创建工作空间与角色", HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -170,7 +167,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
             editRole.Click += async (_, _) => { editRole.IsEnabled = false; try { await GuardAsync(() => OpenConfigurationAsync(true)); } finally { editRole.IsEnabled = true; } };
             footer.Children.Add(models); footer.Children.Add(editRole);
         }
-        footer.Children.Add(administration); footer.Children.Add(settings); footer.Children.Add(runtime); Grid.SetRow(footer, 2); navigation.Children.Add(footer); root.Children.Add(navigation);
+        footer.Children.Add(settings); footer.Children.Add(runtime); Grid.SetRow(footer, 2); navigation.Children.Add(footer); root.Children.Add(navigation);
         _chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _chat.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });

@@ -1,4 +1,4 @@
-﻿namespace PuddingHost.Hosting;
+namespace PuddingHost.Hosting;
 
 /// <summary>
 /// Factory for creating PuddingHostOptions from command-line args or defaults.
@@ -23,6 +23,12 @@ public static class PuddingHostOptionsFactory
     /// <summary>
     /// Create options for Desktop (WinUI in-process) mode with loopback binding.
     /// Product DLL kernel; Desktop owns its lifetime.
+    /// <para>
+    /// <c>ServeAdminSpa = false</c>：管理界面已迁移到原生 WinUI 设置（用户 2026-09-29 裁定：
+    /// Admin 前端验收完成后逐步移除），Desktop 端也已删除「高级管理（Web）」入口，
+    /// 因此不再服务 Web 界面外壳（Admin/Chat SPA 回退与 /admin 便利端点）。
+    /// **API 一律保留**（连接器入站、External API、SKILL Hub、健康检查仍有消费者）。
+    /// </para>
     /// </summary>
     public static PuddingHostOptions ForDesktop(string dataRoot)
     {
@@ -31,7 +37,7 @@ public static class PuddingHostOptionsFactory
             Mode = PuddingHostMode.Desktop,
             DataRoot = dataRoot,
             Urls = ["http://127.0.0.1:0"],
-            ServeAdminSpa = true,
+            ServeAdminSpa = false,
             BrowserAutomationEnabled = false,
         };
     }

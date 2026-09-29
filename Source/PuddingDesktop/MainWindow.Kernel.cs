@@ -268,11 +268,6 @@ public sealed partial class MainWindow
         _nativeChat = new ChatWorkspace(_createChatClient(), address);
         _nativeChat.SettingsRequested += (_, _) => _state.Navigate(ShellPage.Settings);
         _nativeChat.RuntimeRequested += (_, _) => _state.Navigate(ShellPage.RuntimeCenter);
-        _nativeChat.AdministrationRequested += async (_, _) =>
-        {
-            try { await Windows.System.Launcher.LaunchUriAsync(address); }
-            catch (Exception exception) { App.WriteDiagnostic(exception); }
-        };
         NativeChatPane.Content = _nativeChat;
         _chatDataRoot = dataRoot;
         _demo = false;

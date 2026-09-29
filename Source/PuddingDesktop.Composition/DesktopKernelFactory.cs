@@ -122,7 +122,9 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
                 _clients.Add(client); return client;
             }
         }
-        public Uri WorkbenchAddress => new(address, "/admin/");
+        // 环回监听本身仍然存在（连接器入站、External API、健康检查都在这条监听上），
+        // 但 Admin 页面已不再由 Desktop 服务 ⇒ 基址指向根，不再伪装成 /admin/。
+        public Uri WorkbenchAddress => new(address, "/");
         public CancellationToken Stopping => app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
         public Task<T> RunAsync<T>(Func<ISettingsScope, CancellationToken, Task<T>> body, CancellationToken cancellationToken)
         {
