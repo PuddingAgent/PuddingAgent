@@ -72,6 +72,8 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
                 builder.Services.AddSingleton<IHostLifetime, DesktopHostLifetime>();
                 builder.Services.AddScoped<PuddingPlatform.Services.AgentChat.AgentMainSessionService>();
                 builder.Services.AddScoped<PuddingPlatform.Services.AgentChat.LocalWorkspaceSetupService>();
+                // 证据 sink 进容器：Host 侧据此给每个 hosted service 与 Build 两段记阶段（无 sink 时不动 DI 图）。
+                if (sink is not null) builder.Services.AddSingleton<IStartupPhaseSink>(sink);
                 builderPhase?.Complete();
                 using (var buildPhase = startup?.Phase(StartupPhases.HostBuild))
                 {

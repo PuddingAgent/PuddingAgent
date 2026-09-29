@@ -57,6 +57,8 @@ public static class StartupPhases
     public const string HostDataRootLease = "host.data-root-lease";
     public const string HostBuilder = "host.builder";
     public const string HostBuild = "host.build";
+    public const string HostBuildContainer = "host.build.container";
+    public const string HostBuildEndpoints = "host.build.endpoints";
     public const string HostInitialize = "host.initialize";
     public const string HostStart = "host.start";
 

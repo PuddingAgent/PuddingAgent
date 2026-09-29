@@ -32,6 +32,9 @@ public interface IStartupPhaseScope : IDisposable
 /// </summary>
 public static class StartupPhaseNames
 {
+    /// <summary>容器构建（含 <c>ValidateOnBuild/ValidateScopes</c>）与端点映射两段，用于给 <c>host.build</c> 归因。</summary>
+    public const string BuildContainer = "host.build.container";
+    public const string BuildEndpoints = "host.build.endpoints";
     public const string PlatformSchema = "host.initialize.platform-schema";
     public const string PlatformSchemaStepPrefix = "host.initialize.platform-schema.";
     public const string PlatformSchemaMarker = "host.initialize.platform-schema.marker";

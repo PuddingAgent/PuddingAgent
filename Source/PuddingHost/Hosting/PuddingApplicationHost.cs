@@ -319,13 +319,30 @@ public static class PuddingApplicationHost
 
     /// <summary>
     /// Phase 2: Configure middleware pipeline and endpoint mapping.
+    /// <para>
+    /// 两段各自记一个阶段（<c>host.build.container</c> / <c>host.build.endpoints</c>），把「构建 + 映射」
+    /// 这个笼统耗时归因到具体一段。没有证据 sink 时**一行都不写**，行为与之前完全一致。
+    /// </para>
     /// </summary>
     public static WebApplication Build(WebApplicationBuilder builder)
     {
-        var app = builder.Build();
+        var sink = HostedServiceStartupTiming.FindSink(builder.Services);
+        // 有 sink 时给每个 hosted service 包一层计时（无 sink 时 DI 图不动）。
+        HostedServiceStartupTiming.WrapWhenEvidenceRequested(builder.Services);
+
+        WebApplication app;
+        using (var containerPhase = sink?.Phase(StartupPhaseNames.BuildContainer))
+        {
+            app = builder.Build();
+            containerPhase?.Complete($"{builder.Services.Count} 个服务描述符");
+        }
         Console.WriteLine("[Startup] Host built, configuring middleware...");
 
-        app.MapPuddingApplication();
+        using (var endpointsPhase = sink?.Phase(StartupPhaseNames.BuildEndpoints))
+        {
+            app.MapPuddingApplication();
+            endpointsPhase?.Complete();
+        }
 
         return app;
     }
