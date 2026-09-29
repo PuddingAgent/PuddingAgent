@@ -1,3 +1,15 @@
+## 2026-09-29：优化第三刀——jieba 回填后台化（热态 4,107 → 3,414 ms，累计 −43%）
+
+与 MCP 同一形制：`IMemoryTokenBackfill` 窄端口（生产实现直调 `IMemoryLibrary.BackfillTokensAsync`）+ `MemoryTokenBackfillHostedService`（StartAsync 立即返回、后台任务独立 CTS、停止取消 + 5 s 上界 + 幂等）。用窄端口而非伪造整个 `IMemoryLibrary`，是为了让三条约束能用几行假实现确定性测出。初始化器里的同步 jieba 段已删除。
+
+实测：`host.initialize` 2,365 → **1,739 ms**；jieba 同步阶段消失、后台 **697 ms** 完成（日志有行）；该服务同步段 **0.2 ms**；attempt total 4,107 → **3,414 ms**。**相对最初 5,990 ms 基线累计 −43%。**
+
+同时修掉我上一批的两个 flaky 断言（"墙钟 < N ms"在负载下会抖，实测踩到一次），改成"先等后台任务确实被调度，再断言它尚未完成时 StartAsync 已返回"的确定性判据。**教训：并发/后台化测试不要用墙钟阈值。**
+
+顺带核实：master 的 `PuddingPlatformTests` 也依赖 6a8 那组未提交改动（Service/Controller/Tests 三件套）才能编译。
+
+**剩余排序（3,414 ms）**：① EF 首次触碰 891.5 ms（26%，编译模型 + 漂移门禁）；② Web 平面 625 ms（注册 350 + 端点映射 275）——**用户已裁定 Web Chat / Admin 界面最终移除**，故其中"只为 Web UI 存在"的部分（SPA 静态文件、管理控制器、JWT/CORS 策略）可条件化删掉，必须保留的是连接器入站与 External API；③ `goal-reconcile` 150–360 ms（安全前置，只可收窄）；④ 剩余 `host.start` 610 ms；⑤ `workspace-catalog` 178 / `memory-db` 173。
+
 ## 2026-09-29：优化第二刀——拆黑盒 + MCP 后台化（热态 5,833 → 4,107 ms）
 
 **先补测量（零行为改动，`dde9cba`）**：`HostedServiceStartupTiming` 给每个 `IHostedService` 记 `host.start.<类型名>`；`PuddingApplicationHost.Build` 拆 `host.build.container`（含 `ValidateOnBuild`）与 `host.build.endpoints`。**只在容器已有 `IStartupPhaseSink` 时包装**（Console/生产 DI 图逐字节不变），名字取自实例类型。测试 5 项固定"无 sink 不换描述符 / 顺序保持 / 异常上抛 / 实例注册也包装并转发 Stop"。

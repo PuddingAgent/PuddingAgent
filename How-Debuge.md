@@ -1,3 +1,21 @@
+### 优化第三刀：jieba 回填后台化（2026-09-29，`3ff5707`）
+
+形制与 MCP 那一刀相同：`IMemoryTokenBackfill` 窄端口（生产实现直调 `IMemoryLibrary.BackfillTokensAsync`，单例）+ `MemoryTokenBackfillHostedService`（StartAsync 立即返回、后台任务带独立 CTS、停止送取消 + 5 s 上界 + 幂等）。**用窄端口而不是伪造整个 `IMemoryLibrary`** 是为了让"不阻塞启动 / 停止取消 / 失败有上界"能被几行假实现确定性地测出来。
+
+| | 改前 | 改后 |
+|---|---|---|
+| `host.initialize` | 2,365 ms | **1,739 ms** |
+| jieba 同步阶段 | 577–720 ms | **消失**（后台 697 ms 完成，日志有行） |
+| `host.start.MemoryTokenBackfillHostedService` 同步段 | — | **0.2 ms** |
+| attempt total | 4,107 ms | **3,414 ms** |
+| 相对最初 5,990 ms 基线 | — | **−43%** |
+
+**同时修掉我上一批测试里的两个 flaky 断言**："墙钟 < N ms"在负载下会抖（本轮实测踩到一次）。改成确定性判据：先等后台任务确实被调度（TCS 信号），再断言"它尚未完成时 StartAsync 已返回"。**教训：并发/后台化的测试不要用墙钟阈值当判据。**
+
+**顺带核实**：master 的 `PuddingPlatformTests` 同样依赖 6a8 那组未提交改动（`WorkspaceService.cs`/`WorkspaceApiController.cs`/`WorkspaceServiceTests.cs` 是一套）才能编译 ⇒ 他们那批必须落地。
+
+**剩余排序（热态 3,414 ms）**：① **EF 首次触碰 891.5 ms**（26%，编译模型 + 漂移门禁）；② **Web 平面 625 ms**（`host.builder` ~350 + `host.build.endpoints` ~275）；③ `goal-reconcile` 150–360 ms（安全前置，只能收窄）；④ 剩余 `host.start` 610 ms（连接器 112 + 代码索引维护 106 + …）；⑤ `workspace-catalog` 178 / `memory-db` 173。jieba 与 schema 阶梯已做。
+
 ### 优化第二刀：拆黑盒 + MCP 后台化（2026-09-29，`dde9cba` / `add7c85`）
 
 **先补测量（零行为改动）**：`HostedServiceStartupTiming` 给每个 `IHostedService` 的 `StartAsync` 记 `host.start.<类型名>`；`PuddingApplicationHost.Build` 拆成 `host.build.container`（`builder.Build`，含 `ValidateOnBuild`）与 `host.build.endpoints`（`MapPuddingApplication`）。**只在容器里已注册 `IStartupPhaseSink` 时才包装**——Console/生产路径没有 sink，DI 图与之前逐字节一致；名字取自实例类型（有些服务是"先注册具体单例再派生 `IHostedService`"，描述符里看不到真实类型）。
