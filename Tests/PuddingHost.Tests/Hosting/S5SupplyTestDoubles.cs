@@ -317,6 +317,15 @@ internal sealed class CountingRootedEngine : IFullTextIndexRootedEngine
     }
 
     public void InvalidateScope(string corpusRootPath) => Interlocked.Increment(ref InvalidateCalls);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// S5b（2026-09-27）补齐：<c>IFullTextIndexRootedEngine</c> 在 A22a 新增 <c>ProbeDocuments</c> 后，
+    /// 本替身未同步实现 ⇒ <c>PuddingHost.Tests</c> 编译失败（CS0535）。替身不给文档数：
+    /// 伪报 0 会与「存在但读不出 ⇒ null」的三态契约冲突。
+    /// </remarks>
+    public IndexDocumentProbe ProbeDocuments(string corpusRootPath) =>
+        new(Directory.Exists(Map(corpusRootPath)), null);
 }
 
 /// <summary>
@@ -379,6 +388,11 @@ internal sealed class SpyRootedEngine : IFullTextIndexRootedEngine
         Interlocked.Increment(ref InvalidateCalls);
         ((IFullTextIndexRootedEngine)_inner).InvalidateScope(corpusRootPath);
     }
+
+    /// <inheritdoc />
+    /// <remarks>S5b（2026-09-27）补齐：委托给真实引擎（A22a 新增成员，替身漏实现导致 CS0535）。</remarks>
+    public IndexDocumentProbe ProbeDocuments(string corpusRootPath) =>
+        ((IFullTextIndexRootedEngine)_inner).ProbeDocuments(corpusRootPath);
 }
 
 /// <summary>

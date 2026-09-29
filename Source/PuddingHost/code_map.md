@@ -1,4 +1,25 @@
-## 2026-09-27 Desktop DLL 接入
+## S5b（2026-09-27）— 全文索引「局部维护循环」接入宿主（**默认关闭 ⇒ 零副作用**）
+
+供给侧只解决**启动时预建**；本刀把组件已交付的**运行期局部维护循环**（watcher + mtime 补偿扫描 + 低频体检 → 同一份按路径变更集 → 局部写引擎）接进宿主，使「语料变更 → 索引自动跟进」成为可开可关的能力。
+
+| 文件 | 用途 |
+|------|------|
+| `Hosting/IFullTextIndexMaintenanceComposition.cs` | 🔑 宿主侧维护端口：`IFullTextIndexMaintenanceComposition`（`Maintenance` / `Scopes` / `ComponentOptions` / `IndexOptions` / `LiveEngine`）+ **惰性**工厂 `IFullTextIndexMaintenanceCompositionFactory`。默认关闭时工厂**永不被调用**（组合实例化推迟到真正进入维护路径之后）。 |
+| `Hosting/FullTextIndexMaintenanceOptions.cs` | 配置节名 `FullTextIndex:Maintenance`（唯一）+ 纯函数 `ApplySingleSource`（**单一真源**：`Scopes`/`WorkspaceRoot`/`MaxIndexBytes` 取自供给节，`IndexRootDirectory` 取自查询侧 `FullTextIndexOptions`；其余旋钮逐字保留绑定值，**不做默认值兜底**）+ `BuildScopes`（规范键走组件真源 `FullTextChangeCoalescer.NormalizeComparisonKey`，宿主**不复刻**规则；`IndexDirectory` 留 null 由组件自推）。 |
+| `Hosting/LuceneFullTextIndexMaintenanceCompositionFactory.cs` | 生产装配：`LuceneFullTextIndexMaintenanceEngine`（局部写内核 = **查询侧同一 `LuceneSearchEngine` 实例**，否则 `InvalidateScope` 打在别的实例上等于没失效）+ `FileSupplyLease` + `SearchEngineScopeReaderInvalidation` + `LuceneFullTextIndexMaintenance`。租约等待上界逐字取 `MaintenanceOptions.LeaseWaitUpperBound`，预算不写第二遍字面量。 |
+| `Services/FullTextIndexMaintenanceHostedService.cs` | 生命周期壳（形态照 `IndexPrebuildService`）：`Enabled=false` ⇒ **首句返回**（不构造组合、不解析 scope、不碰索引根、0 watcher/线程/Error）；开启但**供给未开启**或维护配置非法 ⇒ fail-closed 记 Error 且什么都不做（不静默取默认值）；`StartAsync` 永不阻塞宿主；启动/停止**幂等**；`StopAsync` 先等在途启动收尾（上界 `StartCompletionTimeout`，默认 30s）。 |
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 注册：`Configure<MaintenanceOptions>(GetSection(FullTextIndexMaintenanceOptions.SectionName))` + `AddSingleton<IFullTextIndexMaintenanceCompositionFactory>` + `AddHostedService<FullTextIndexMaintenanceHostedService>()`。 |
+
+测试（`../Tests/PuddingHost.Tests/Hosting/`，**宿主 154 → 163 用例**；S5b 新增 9 条）：
+`S5bFullTextIndexMaintenanceHostWiringTests`（I1 默认关闭零副作用：组合 0 构造 / 维护器 0 Start / 引擎 0 调用 / 索引根连目录都不建 / 0 Error；I2 `StartAsync` 恰好 1 次且 scope 键与**真实供给协调器**逐字符相同；I3 引擎与索引选项**引用相等**；I4 `StopAsync` 恰好 1 次；I5 配置流入 + **诱饵预算**被供给节覆盖；I6 非法配置 fail-closed 且如实记违规项；附加：供给未开启 ⇒ 拒绝而不猜 scope）、
+`S5bFullTextIndexMaintenanceHostBindingTests`（真实组合根：`system.json` → 绑定 + `Assert.Same(engine, composition.LiveEngine)` + hosted 恰好注册一次 + 全程不触碰索引根）、
+`S5bMaintenanceTestDoubles.cs`（替身）、`S5SupplyTestDoubles.cs`（补 `ProbeDocuments` —— 此前遗漏导致测试工程 **CS0535**）。
+
+⚠️ **本刀顺带修复一处主干缺陷**：`Platform.cs` 的 4 处注册/装配行曾被提交，但**对应的 4 个生产类型文件当时未入库** ⇒ 干净检出 `CS0246`、HEAD 不可编译。由 `c76c613` 补齐后宿主编译恢复 **0 错误**。
+
+⚠️ **未做 / 未证实**：① 「维护与供给共用同一引擎实例」在**真实运行期并发**下的可见性（多 reader / 跨进程租约）未做运行态验证（仅静态装配 + 单测层面的引用相等）；② 「变更后自动更新」**尚未在生产索引根上实跑** —— 需用户显式开启 `FullTextIndex:Maintenance:Enabled=true` 并重启 Core。
+
+
 
 `Hosting/PuddingApplicationHost.cs` 的 Desktop 模式使用明确 Host ApplicationName 与程序目录，避免 WinUI 入口或工作目录污染 MVC/资源发现。`PuddingDataRootLease` 由 Desktop Composition 与 Console/历史 Child 入口共同持有，禁止新版入口并发使用同一 DataRoot。Desktop 不再启动 PuddingAgent.exe；Host 生命周期由 Composition 驱动。
 
