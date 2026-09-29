@@ -14,9 +14,9 @@
    <NavigationView.MenuItems>
     <NavigationViewItem Content="工作台" Tag="web" Icon="Home" IsSelected="True"/>
     <NavigationViewItem Content="浏览器" Tag="browser" Icon="World"/>
+    <NavigationViewItem x:Name="RuntimeNavigationItem" Content="运行中心" Tag="runtime" Icon="Play"/>
    </NavigationView.MenuItems>
    <NavigationView.FooterMenuItems>
-    <NavigationViewItem Content="运行中心" Tag="runtime" Icon="Play"/>
     <NavigationViewItem Content="启动设置" Tag="settings" Icon="Setting"/>
    </NavigationView.FooterMenuItems>
    <Grid Margin="0,0,12,8">
@@ -27,14 +27,37 @@
       <Button Content="启动 Core" Click="OnStart"/>
      </StackPanel>
     </Grid>
-    <Grid x:Name="RuntimePane" Visibility="Collapsed" Padding="28">
-     <StackPanel Spacing="20" MaxWidth="860" HorizontalAlignment="Left">
+    <Grid x:Name="RuntimePane" Visibility="Collapsed" Padding="24" RowSpacing="16">
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <StackPanel Spacing="12">
       <TextBlock Text="运行中心" FontSize="28" FontWeight="SemiBold"/>
-      <TextBlock x:Name="RuntimeText" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
-      <StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="StartButton" Content="启动" Click="OnStart"/><Button Content="停止" Click="OnStop"/><Button Content="重启" Click="OnRestart"/><Button Content="退出 Pudding" Click="OnExit"/></StackPanel>
-      <TextBlock Text="Core 日志" FontSize="18"/>
-      <ScrollViewer Height="350"><TextBlock x:Name="LogText" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></ScrollViewer>
      </StackPanel>
+     <Grid Grid.Row="1" ColumnSpacing="12">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
+       <StackPanel Spacing="8"><TextBlock Text="Core 状态" Opacity="0.65"/><StackPanel Orientation="Horizontal" Spacing="8"><SymbolIcon x:Name="RuntimeStateIcon" Symbol="Pause"/><TextBlock x:Name="RuntimeStateText" FontSize="21" FontWeight="SemiBold"/></StackPanel><TextBlock x:Name="RuntimePidText" FontSize="12" Opacity="0.7"/></StackPanel>
+      </Border>
+      <Border Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
+       <StackPanel Spacing="8"><TextBlock Text="CPU · 整机占比" Opacity="0.65"/><TextBlock x:Name="RuntimeCpuText" Text="—" FontSize="24" FontWeight="SemiBold"/><ProgressBar x:Name="RuntimeCpuBar" Minimum="0" Maximum="100" Value="0"/><TextBlock Text="每秒采样 · 仅 Core" FontSize="12" Opacity="0.6"/></StackPanel>
+      </Border>
+      <Border Grid.Column="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
+       <StackPanel Spacing="8"><TextBlock Text="内存 · 工作集" Opacity="0.65"/><TextBlock x:Name="RuntimeMemoryText" Text="—" FontSize="24" FontWeight="SemiBold"/><TextBlock Text="物理内存 · 仅 Core" FontSize="12" Opacity="0.6"/></StackPanel>
+      </Border>
+      <Border Grid.Column="3" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
+       <StackPanel Spacing="8"><TextBlock Text="运行时长" Opacity="0.65"/><TextBlock x:Name="RuntimeUptimeText" Text="—" FontSize="24" FontWeight="SemiBold"/><TextBlock x:Name="RuntimeStartedText" FontSize="12" TextWrapping="Wrap" Opacity="0.7"/></StackPanel>
+      </Border>
+     </Grid>
+     <StackPanel Grid.Row="2" Spacing="10">
+      <TextBlock x:Name="RuntimeText" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontSize="12" Opacity="0.75"/>
+      <StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="StartButton" Content="启动" Click="OnStart"/><Button Content="停止" Click="OnStop"/><Button Content="重启" Click="OnRestart"/><Button Content="退出 Pudding" Click="OnExit"/></StackPanel>
+     </StackPanel>
+     <Grid Grid.Row="3" RowSpacing="10">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <Grid><TextBlock Text="Core 日志" FontSize="18" FontWeight="SemiBold"/><CheckBox x:Name="FollowLogsBox" Content="跟随最新日志" IsChecked="True" HorizontalAlignment="Right"/></Grid>
+      <Border Grid.Row="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
+       <ScrollViewer x:Name="RuntimeLogScroll" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="LogText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></ScrollViewer>
+      </Border>
+     </Grid>
     </Grid>
     <ScrollViewer x:Name="SettingsPane" Visibility="Collapsed" Padding="28">
      <StackPanel Spacing="18" MaxWidth="660" HorizontalAlignment="Left">

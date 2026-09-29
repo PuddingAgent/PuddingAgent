@@ -1,5 +1,7 @@
 ### WinUI 启动器恢复验证（2026-09-29）
 
+运行中心（2026-09-30）显示的 CPU 是独立 Core 进程的 `TotalProcessorTime` 增量除以单调时钟间隔与逻辑处理器数，0–100% 按整机口径；内存为工作集 MiB，不包括 WebView/其他工具子进程。首次采样、进程退出或权限不足显示“—”，不当作 0。仅页面可见且窗口显示时每秒采样；日志仅内容改变才重赋值，关闭“跟随最新日志”可以检查前面的内容。启动时间来自进程，启动耗时来自 Core 的 StartedAt/ReadyAt，不能把进程存活当成服务就绪。
+
 2026-09-30 补充：必须覆盖普通 `dotnet build` / VS 启动，不能只测 publish 或给 smoke 显式指定 Core 路径。截图出现 `Cannot find PuddingAgent.exe` 时先检查实际 Desktop 输出下的 `core/PuddingAgent.exe`。现已在 Build 后自动生成此目录；脚本默认写入空的 Core 路径并检查实际选中的路径。自定义配置必须包含 `.exe` 文件名，不能只填 `bin/Debug/net10.0` 目录。清空自定义路径后使用当前构建配套 Core；重新验证前退出旧的托盘实例，避免单实例激活旧代码。详见[修复记录](Docs/Reports/Desktop-Build-Core-Bundle-Fix-2026-09-30.md)。
 
 入口为 `TestScripts/test-pudding-desktop-launcher.ps1`，使用 Debug 构建的 Desktop；自动 smoke 入口不编入 Release。脚本为每次运行建立独立 DesktopHome、空 DataRoot 与随机端口，外部检查 Shell/Core PID、端口与 `.pudding-host.lock` 句柄释放。发布包路径可通过 `-DesktopExe` / `-CoreExe` 指定。Debug/Release 发布会把独立 Core 放入 `core/`，Web SPA 放入 `core/wwwroot/admin/`；缺少 SPA 时发布直接失败。

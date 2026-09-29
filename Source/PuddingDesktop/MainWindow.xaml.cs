@@ -20,6 +20,7 @@ public sealed partial class MainWindow : Window
     private readonly SemaphoreSlim _webGate = new(1, 1);
     private readonly SemaphoreSlim _browserGate = new(1, 1);
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly CoreProcessMetricsSampler _metrics = new();
     private Microsoft.UI.Xaml.Controls.WebView2? _web;
     private CoreWebView2Environment? _webEnvironment;
     private BrowserWorkspaceController? _browser;
@@ -28,6 +29,7 @@ public sealed partial class MainWindow : Window
     private long _webGeneration;
     private bool _ready, _closing, _closed;
     private bool _restartRequired, _loadingAppearance;
+    private string? _stateError;
     private readonly PuddingDesktop.Foundation.SkeletonSettingsStore _appearance = new(Path.Combine(App.StateRoot, "appearance"));
 
     public MainWindow(DesktopApplicationCoordinator coordinator)
@@ -57,7 +59,10 @@ public sealed partial class MainWindow : Window
             if (!string.IsNullOrEmpty(report)) _ = RunSmokeAsync(report);
 #endif
         };
-        _timer.Tick += (_, _) => { if (RuntimePane.Visibility == Visibility.Visible) LogText.Text = _coordinator.CoreLogBuffer.GetTail(100); };
+        _timer.Tick += (_, _) => { if (RuntimePane.Visibility == Visibility.Visible && AppWindow.IsVisible) RefreshRuntimePanel(); };
+        LogText.SizeChanged += (_, _) => FollowLatestLog();
+        RuntimeLogScroll.SizeChanged += (_, _) => FollowLatestLog();
+        FollowLogsBox.Checked += (_, _) => FollowLatestLog();
         RefreshStatus();
     }
 
@@ -70,11 +75,14 @@ public sealed partial class MainWindow : Window
         RuntimePane.Visibility = page == "runtime" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPane.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
         if (page == "settings") _ = LoadSettingsAsync();
+        if (page == "runtime") RefreshRuntimePanel();
+        else _metrics.Sample(null);
         if (page == "web" && _coordinator.WorkbenchAddress is { } address) _ = LoadWorkbenchAsync(address);
     }
 
     private void OnStateChanged(object? sender, DesktopStateChangedEventArgs e) => UiThread.Post(() =>
     {
+        _stateError = e.Error;
         RefreshStatus(e.Error);
         if (e.Current == DesktopStartupState.CoreReady && e.WorkbenchAddress is { } address)
             _ = LoadWorkbenchAsync(address);
@@ -90,10 +98,61 @@ public sealed partial class MainWindow : Window
 
     private void RefreshStatus(string? error = null)
     {
+        if (error is not null) _stateError = error;
+        error ??= _stateError;
         var runtime = _coordinator.RuntimeSnapshot;
         StatusText.Text = $"Core · {runtime.State}    {(_coordinator.CoreAddress?.Authority ?? "尚未连接")}";
-        RuntimeText.Text = $"状态：{runtime.State}\nCore PID：{runtime.Session?.ProcessId.ToString() ?? "—"}\n数据目录：{_coordinator.DataRoot ?? "尚未设置"}\n{error ?? runtime.LastError}";
+        var statusState = _coordinator.State is DesktopStartupState.CoreFailed or DesktopStartupState.InvalidConfiguration or DesktopStartupState.DebugFailed
+            ? DesktopRuntimeState.Failed : runtime.State;
+        var (label, symbol, color) = statusState switch
+        {
+            DesktopRuntimeState.Ready => ("运行中", Symbol.Accept, Windows.UI.Color.FromArgb(255, 29, 139, 85)),
+            DesktopRuntimeState.Starting => ("启动中", Symbol.Sync, Windows.UI.Color.FromArgb(255, 181, 112, 15)),
+            DesktopRuntimeState.RestartScheduled => ("等待重启", Symbol.Sync, Windows.UI.Color.FromArgb(255, 181, 112, 15)),
+            DesktopRuntimeState.Stopping => ("停止中", Symbol.Pause, Windows.UI.Color.FromArgb(255, 181, 112, 15)),
+            DesktopRuntimeState.Failed => ("启动失败", Symbol.Cancel, Windows.UI.Color.FromArgb(255, 202, 65, 65)),
+            DesktopRuntimeState.CircuitOpen => ("恢复已暂停", Symbol.Cancel, Windows.UI.Color.FromArgb(255, 202, 65, 65)),
+            DesktopRuntimeState.Stopped => ("已停止", Symbol.Stop, Windows.UI.Color.FromArgb(255, 116, 124, 139)),
+            _ => ("未启动", Symbol.Pause, Windows.UI.Color.FromArgb(255, 116, 124, 139))
+        };
+        var brush = new SolidColorBrush(color);
+        RuntimeStateText.Text = label;
+        RuntimeStateText.Foreground = RuntimeStateIcon.Foreground = RuntimeNavigationItem.Foreground = brush;
+        RuntimeStateIcon.Symbol = symbol;
+        RuntimePidText.Text = runtime.State == DesktopRuntimeState.Ready ? $"PID {runtime.Session?.ProcessId}" : $"Core · {runtime.State}";
+        var startup = runtime.State == DesktopRuntimeState.Ready && runtime.Session is { ReadyAt: { } ready } session ? $" · 启动耗时 {(ready - session.StartedAt).TotalSeconds:F1} 秒" : "";
+        RuntimeText.Text = $"接口：{_coordinator.CoreAddress?.Authority ?? "未连接"}{startup}\n数据目录：{_coordinator.DataRoot ?? "尚未设置"}";
+        if (!string.IsNullOrWhiteSpace(error ?? runtime.LastError)) RuntimeText.Text += $"\n{error ?? runtime.LastError}";
+        if (runtime.State != DesktopRuntimeState.Ready) UpdateMetrics(null);
         LoadingText.Text = error ?? runtime.LastError ?? "等待独立 Core 就绪；可在运行中心查看日志，或在启动设置中修改路径。";
+    }
+
+    private void RefreshRuntimePanel()
+    {
+        RefreshStatus();
+        var runtime = _coordinator.RuntimeSnapshot;
+        UpdateMetrics(_metrics.Sample(runtime.State == DesktopRuntimeState.Ready ? runtime.Session?.ProcessId : null));
+        var text = _coordinator.CoreLogBuffer.GetTail(300);
+        if (LogText.Text == text) return;
+        LogText.Text = text;
+        FollowLatestLog();
+    }
+
+    private void FollowLatestLog()
+    {
+        if (FollowLogsBox.IsChecked == true)
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                () => { if (!_closing && FollowLogsBox.IsChecked == true) RuntimeLogScroll.ChangeView(null, RuntimeLogScroll.ScrollableHeight, null, true); });
+    }
+
+    private void UpdateMetrics(CoreProcessMetrics? metrics)
+    {
+        RuntimeCpuText.Text = metrics?.CpuPercent is { } cpu ? $"{cpu:F1}%" : "—";
+        RuntimeCpuBar.Value = metrics?.CpuPercent ?? 0;
+        RuntimeCpuBar.Opacity = metrics?.CpuPercent is null ? 0.25 : 1;
+        RuntimeMemoryText.Text = metrics is null ? "—" : $"{metrics.WorkingSetBytes / 1048576d:F0} MiB";
+        RuntimeUptimeText.Text = metrics is null ? "—" : $"{(int)metrics.Uptime.TotalHours:00}:{metrics.Uptime.Minutes:00}:{metrics.Uptime.Seconds:00}";
+        RuntimeStartedText.Text = metrics is null ? "进程未运行或指标不可读" : $"启动于 {metrics.StartedAt.LocalDateTime:MM-dd HH:mm:ss}";
     }
 
     private async Task LoadWorkbenchAsync(Uri address)
@@ -310,8 +369,20 @@ public sealed partial class MainWindow : Window
             _coordinator.ActivateMainWindow();
             _coordinator.ApplyCloseBehavior(DesktopCloseBehavior.ExitAndStopCore);
             checks.Add("close hides to tray while Core lives; window reactivated");
-            Navigation.SelectedItem = Navigation.FooterMenuItems[0];
-            await Task.Delay(100);
+            Navigation.SelectedItem = RuntimeNavigationItem;
+            await Task.Delay(1100);
+            RefreshRuntimePanel();
+            if (RuntimeMemoryText.Text == "—" || RuntimeCpuText.Text == "—") throw new Exception("Runtime process metrics unavailable");
+            var logWidth = RuntimeLogScroll.ActualWidth;
+            var logHeight = RuntimeLogScroll.ActualHeight;
+            AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 740));
+            await Task.Delay(250);
+            if (RuntimeLogScroll.ActualWidth >= logWidth || RuntimeLogScroll.ActualHeight >= logHeight || RuntimeLogScroll.ActualHeight <= 0)
+                throw new Exception("Runtime log viewport did not resize");
+            AppWindow.Resize(new Windows.Graphics.SizeInt32(1440, 920));
+            await Task.Delay(250);
+            if (RuntimeLogScroll.ScrollableHeight - RuntimeLogScroll.VerticalOffset > 2) throw new Exception("Log follow did not settle after resize");
+            checks.Add("runtime CPU/memory sampled; log viewport adapts in both dimensions");
             var capture = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
             await capture.RenderAsync(Root);
             var pixels = await capture.GetPixelsAsync();
