@@ -1,3 +1,11 @@
+### WinUI 启动器恢复验证（2026-09-29）
+
+入口为 `TestScripts/test-pudding-desktop-launcher.ps1`，使用 Debug 构建的 Desktop；自动 smoke 入口不编入 Release。脚本为每次运行建立独立 DesktopHome、空 DataRoot 与随机端口，外部检查 Shell/Core PID、端口与 `.pudding-host.lock` 句柄释放。发布包路径可通过 `-DesktopExe` / `-CoreExe` 指定。Debug/Release 发布会把独立 Core 放入 `core/`，Web SPA 放入 `core/wwwroot/admin/`；缺少 SPA 时发布直接失败。
+
+使用 `dotnet publish Source/PuddingDesktop/PuddingDesktop.csproj -c Debug --artifacts-path temp/build/recovery-publish -o temp/build/recovery-bundle` 建包，再对该包运行脚本。Desktop 的构建、测试和发布串行执行，保存证据后清理本次隔离输出。诊断时区分运行中心的 Core 状态与 WebView 加载失败；WebView 失败不代表 Core 退出，重试应能创建新的 WebView。实际结果见 [恢复报告](Docs/Reports/Desktop-Shell-Recovery-2026-09-29.md)。
+
+数据库兼容性验证使用 SQLite 在线备份，只读打开源库，不能直接复制活动 db 而漏掉 WAL。`Tests/PuddingRecovery.SchemaProbe` 仅接受仓库 `temp/test-out` 下的副本，运行两次 schema bootstrap 后检查模型字段及新增必填列；不启动 Host/Worker。大库备份与 quick_check 可持续数分钟，依据备份页数进度判断。SQL 字段检查必须用 `表别名."列名"`，避免 SQLite 将缺失的双引号列名当作字符串常量，从而错误通过。结构检查不等于历史业务与真实模型验收。
+
 ### 全仓检索别用 search_grep 硬扫：2000 文件枚举上限与正确工具链（2026-09-21）
 
 `search_grep` 在大型仓库有**硬上限**：单次最多枚举 2000 个文件、最多扫描 2000 文件/64MB、单次调用封顶 10s。撞到上限时结果会带 partial 覆盖提示，但在缩小范围前很容易把偏短的 `no matches` 读成“真的没有”，从而得到**假阴性结论**。本次实测：定位“所有出站 HTTP 的 UA 设置点”时反复换窄模式仍覆盖不全，白跑一趟 Explorer 子代理做全仓清单式排查；反复扫的另一个代价是吃掉大量上下文。

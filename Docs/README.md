@@ -1,5 +1,10 @@
 # Pudding Agent Network 文档索引
 
+## 2026-09-29 WinUI Shell + Web UI + 独立 Core 恢复
+
+[权威 ADR](Features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md) · [分支恢复与验收记录](Reports/Desktop-Shell-Recovery-2026-09-29.md)。原桌面开发完整保存在 B；master 从 765b964 恢复，只接入 WinUI Shell 外观与必要 Core 修复，保留 Web 业务界面和独立进程启动器。
+
+
 ## 2026-09-17 Goal模式重新规划
 
 [简化设计](Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md) · [ADR-092第二版](07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md)：Goal专属存储、单一状态机与决策入口、Agent回合/证据检查两类工作；移除Goal步骤树与两级Verifier，Task可选适配。Agent自身goal.md独立。设计已更新，产品实现及新构建验收待完成。

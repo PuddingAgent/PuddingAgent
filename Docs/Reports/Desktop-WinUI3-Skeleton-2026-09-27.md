@@ -1,5 +1,7 @@
 # WinUI 3 骨架实施记录（2026-09-27）
 
+> 历史记录：下列原生演示、脚本与进程内 Core 接入方向已被 2026-09-29 恢复裁定取代。原成果保存在 B；当前 master 的实现及验证见[恢复报告](Desktop-Shell-Recovery-2026-09-29.md)。
+
 原地重建 `Source/PuddingDesktop`，产品名仍为 PuddingDesktop.exe；原 WPF 移入 WpfArchive，仅保留迁移与回归基线。Foundation 先独立测试后登记解决方案。
 
 已实现角色导航、按角色隔离草稿、保留来源的五类文档标签、设置、离线运行中心、按预览配置目录隔离的单实例、双 WebView2 隔离验证。此阶段不加载 Core，也不使用生产数据。

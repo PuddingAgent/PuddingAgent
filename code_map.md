@@ -1,3 +1,9 @@
+## 2026-09-29：恢复 WinUI 启动器主线
+
+分支 `B` 的 `a23ebf3` 保存原桌面开发全部代码；`master` 从 `765b964` 重建。产品 `Source/PuddingDesktop` 是 WinUI Shell，工作台复用 `Source/PuddingPlatformAdmin`；`Hosting/DesktopApplicationCoordinator.cs` 保留旧版子进程协调逻辑，仅适配 UI 调度。Core/配置/运行策略/Bridge 无 UI 源文件链接自 `PuddingDesktop.WpfArchive`。`Source/PuddingBrowser.WinUI` 为既有浏览器驱动提供 WinUI surface；不引入原生聊天或进程内 Host。
+
+`TestScripts/test-pudding-desktop-launcher.ps1` 验证独立 PID、工作台、浏览器、重启、退出与租约；`Tests/PuddingRecovery.SchemaProbe` 只读取隔离数据库中的业务字段并验证幂等执行表初始化，不启动后台 Worker。Core 保留终端输出、准入状态/失败计数与 DataRoot 租约修复；管理接口修复按行为最小移植。[恢复报告](Docs/Reports/Desktop-Shell-Recovery-2026-09-29.md) · [权威 ADR](Docs/Features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md)。
+
 ## 2026-09-25 文档回改：ADR-089 §8.3 留白已由 S5 关闭（正文同步，**纯文档 14/3**）
 
 **背景**：`Docs/Features/ADR-089-索引服务与库管理-2026-09-24.md` §8.3 仍写「`MinRebuildInterval` 的「索引是否足够新」用**索引根目录 mtime** 粗粒度代理（per-scope 索引目录在组件内且 `internal` ⇒ 宿主观测不到）」—— **该留白已在 S5（`ec7f221`）被关闭**：宿主端口 `IFullTextIndexSupplyComposition.LiveIndexLastWriteUtc(scopeRootPath)` 提供 **per-scope live 索引目录 mtime**（经组件单一真源 `IFullTextIndexRootedEngine.ResolveIndexDirectory` 解析目录，宿主**不复刻**命名哈希）。

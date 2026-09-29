@@ -1,5 +1,16 @@
 # Pudding Agent 项目指令
 
+## 2026-09-29 恢复主线裁定（覆盖下文历史 WPF / 进程内 DLL 约束）
+
+`master` 从 `765b964f5aedf621fe9d9ffd04b5a4a9bf64924e` 恢复；原桌面开发的全部已提交历史、未提交代码与新文档保存在分支 `B`（快照 `a23ebf3`）。不得整体合并 B；按必要修复和 UI 样式逐项移植。
+
+产品架构为 **WinUI 3 Shell + WebView2 承载既有 Web UI + 独立 ASP.NET Core 子进程**。业务界面保留 Web，Desktop 负责窗口、系统集成与 Core 启动器；不得装配进程内 PuddingHost，不继续原生聊天或业务设置迁移。配置沿用 DesktopHome/desktop.json 与 DataRoot/config/system.json。数据目录设置界面默认建议 `D:\data`，已保存目录优先。
+
+权威决策见 [Shell / Web / Core ADR](Docs/Features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md)，恢复与验证记录见 [恢复报告](Docs/Reports/Desktop-Shell-Recovery-2026-09-29.md)。`Source/PuddingDesktop.WpfArchive` 保留旧 UI 验证基线，其无 UI 的启动器/协议源文件由 WinUI 项目链接编译，共用逻辑；不将 WPF 放入 WinUI 产品进程。
+
+构建使用 `--artifacts-path temp/build/recovery`，先 restore/build 后同目录 `--no-restore`；Desktop 构建、测试与发布串行。生命周期验证脚本 `TestScripts/test-pudding-desktop-launcher.ps1` 使用隔离 DesktopHome、DataRoot 与端口。数据兼容性只在 `temp/test-out` 下的 SQLite 在线备份副本验证，不直接在 `D:\data` 试跑旧代码。Console / DesktopChild 共用 `.pudding-host.lock` 文件句柄租约，不删除锁文件绕过互斥。
+
+
 ## 项目概述
 Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层记忆体系、Skill 系统、子代理委派、潜意识后台管道。
 
