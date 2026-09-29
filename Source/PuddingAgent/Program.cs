@@ -17,6 +17,7 @@ var options = isDesktopChild
     ? PuddingHostOptionsFactory.ForDesktopChild(args)
     : PuddingHostOptionsFactory.ForConsole(args);
 
+using var dataRootLease = new PuddingDataRootLease(options.DataRoot);
 var builder = PuddingApplicationHost.CreateBuilder(args, options);
 var app = PuddingApplicationHost.Build(builder);
 CancellationTokenSource? startupLeaseCts = null;
