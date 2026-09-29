@@ -2,6 +2,8 @@
 
 ## 2026-09-29 WinUI Shell + Web UI + 独立 Core 恢复
 
+[2026-09-30 普通构建缺少 Core 修复](Reports/Desktop-Build-Core-Bundle-Fix-2026-09-30.md)：补齐 Build 配套子进程与自动发现验证。
+
 [权威 ADR](Features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md) · [分支恢复与验收记录](Reports/Desktop-Shell-Recovery-2026-09-29.md)。原桌面开发完整保存在 B；master 从 765b964 恢复，只接入 WinUI Shell 外观与必要 Core 修复，保留 Web 业务界面和独立进程启动器。
 
 

@@ -19,6 +19,8 @@ public static class CoreExecutableResolver
         if (!string.IsNullOrWhiteSpace(configuredPath))
         {
             var fullConfiguredPath = Path.GetFullPath(configuredPath);
+            if (Directory.Exists(fullConfiguredPath) || !string.Equals(Path.GetExtension(fullConfiguredPath), ".exe", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Core 路径必须指向 PuddingAgent.exe 文件，不能填写目录；留空使用当前 Desktop 配套的 Core。", nameof(configuredPath));
             if (!File.Exists(fullConfiguredPath))
                 throw new FileNotFoundException(
                     $"Configured Core executable does not exist: {fullConfiguredPath}",

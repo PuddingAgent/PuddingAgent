@@ -10,6 +10,9 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <UseWinUI>true</UseWinUI>
     <DisableTransitiveProjectReferences>true</DisableTransitiveProjectReferences>
+    <!-- Core is an executable bundle, not a compiler reference. VS must run
+         MSBuild so Core-only edits also reach this launcher build. -->
+    <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
@@ -37,6 +40,14 @@
       <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation' And '%(Filename)' != 'PuddingCore' And '%(Filename)' != 'PuddingBrowser.Abstractions' And '%(Filename)' != 'PuddingBrowser.Protocol' And '%(Filename)' != 'PuddingBrowser.WinUI'" />
     </ItemGroup>
     <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="Shell may reference launcher configuration contracts and browser adapters, never PuddingHost, Runtime, Platform or an in-process composition root." />
+  </Target>
+  <Target Name="BuildCoreBundle" AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true' And '$(IsCrossTargetingBuild)' != 'true'">
+    <MSBuild Projects="../PuddingAgent/PuddingAgent.csproj" Targets="Restore;Publish" BuildInParallel="false"
+      RemoveProperties="TargetFramework;TargetFrameworks;OutputPath;OutDir;BaseOutputPath;BaseIntermediateOutputPath;NoBuild"
+      Properties="Configuration=$(Configuration);ArtifactsPath=$(MSBuildThisFileDirectory)..\..\temp\build\desktop-launcher-core;PublishDir=$(TargetDir)core/;RuntimeIdentifier=win-x64;SelfContained=false;BuildProjectReferences=true;BuildingInsideVisualStudio=false" />
+    <Error Condition="!Exists('$(TargetDir)core/PuddingAgent.exe')" Text="Desktop build is incomplete: core/PuddingAgent.exe is missing." />
+    <Error Condition="!Exists('$(TargetDir)core/wwwroot/admin/index.html')" Text="Desktop build is incomplete: Core Web workbench is missing. Build PuddingPlatformAdmin first." />
   </Target>
   <Target Name="PublishCoreBundle" AfterTargets="Publish" Condition="'$(SkipCorePublish)' != 'true'">
     <MSBuild Projects="../PuddingAgent/PuddingAgent.csproj" Targets="Restore;Publish" BuildInParallel="false"

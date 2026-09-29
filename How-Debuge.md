@@ -1,5 +1,7 @@
 ### WinUI 启动器恢复验证（2026-09-29）
 
+2026-09-30 补充：必须覆盖普通 `dotnet build` / VS 启动，不能只测 publish 或给 smoke 显式指定 Core 路径。截图出现 `Cannot find PuddingAgent.exe` 时先检查实际 Desktop 输出下的 `core/PuddingAgent.exe`。现已在 Build 后自动生成此目录；脚本默认写入空的 Core 路径并检查实际选中的路径。自定义配置必须包含 `.exe` 文件名，不能只填 `bin/Debug/net10.0` 目录。清空自定义路径后使用当前构建配套 Core；重新验证前退出旧的托盘实例，避免单实例激活旧代码。详见[修复记录](Docs/Reports/Desktop-Build-Core-Bundle-Fix-2026-09-30.md)。
+
 入口为 `TestScripts/test-pudding-desktop-launcher.ps1`，使用 Debug 构建的 Desktop；自动 smoke 入口不编入 Release。脚本为每次运行建立独立 DesktopHome、空 DataRoot 与随机端口，外部检查 Shell/Core PID、端口与 `.pudding-host.lock` 句柄释放。发布包路径可通过 `-DesktopExe` / `-CoreExe` 指定。Debug/Release 发布会把独立 Core 放入 `core/`，Web SPA 放入 `core/wwwroot/admin/`；缺少 SPA 时发布直接失败。
 
 使用 `dotnet publish Source/PuddingDesktop/PuddingDesktop.csproj -c Debug --artifacts-path temp/build/recovery-publish -o temp/build/recovery-bundle` 建包，再对该包运行脚本。Desktop 的构建、测试和发布串行执行，保存证据后清理本次隔离输出。诊断时区分运行中心的 Core 状态与 WebView 加载失败；WebView 失败不代表 Core 退出，重试应能创建新的 WebView。实际结果见 [恢复报告](Docs/Reports/Desktop-Shell-Recovery-2026-09-29.md)。

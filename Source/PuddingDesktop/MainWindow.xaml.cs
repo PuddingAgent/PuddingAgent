@@ -242,7 +242,10 @@ public sealed partial class MainWindow : Window
             if (!double.IsFinite(PortBox.Value) || PortBox.Value is < 1 or > 65535 || PortBox.Value != Math.Truncate(PortBox.Value)) throw new InvalidOperationException("端口必须是 1 至 65535 的整数。");
             var store = new FileDesktopBootstrapSettingsStore();
             var previous = await store.LoadAsync(_lifetime.Token);
-            var settings = previous with { DataRoot = root, CoreExecutablePath = string.IsNullOrWhiteSpace(CorePathBox.Text) ? null : Path.GetFullPath(CorePathBox.Text.Trim()), CloseBehavior = TrayBox.IsChecked == true ? DesktopCloseBehavior.MinimizeToTray : DesktopCloseBehavior.ExitAndStopCore };
+            // Validate before writing either configuration file; invalid paths
+            // must not report a successful save or partially update Core settings.
+            var corePath = string.IsNullOrWhiteSpace(CorePathBox.Text) ? null : Core.CoreExecutableResolver.Resolve(CorePathBox.Text.Trim());
+            var settings = previous with { DataRoot = root, CoreExecutablePath = corePath, CloseBehavior = TrayBox.IsChecked == true ? DesktopCloseBehavior.MinimizeToTray : DesktopCloseBehavior.ExitAndStopCore };
             await new SystemConfigurationService().UpdateDesktopCoreSettingsAsync(root, core => core with { Port = (int)PortBox.Value, AutoStart = AutoStartBox.IsChecked == true }, _lifetime.Token);
             await store.SaveAsync(settings, _lifetime.Token);
             _restartRequired |= !string.Equals(_coordinator.DataRoot, root, StringComparison.OrdinalIgnoreCase);
@@ -360,7 +363,7 @@ public sealed partial class MainWindow : Window
             if (!second.HasExited) throw new Exception("Core survived stop");
             checks.Add("Core stopped while Shell remained available");
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { success = true, shellPid = Environment.ProcessId, corePids = pids, checks }));
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { success = true, shellPid = Environment.ProcessId, corePids = pids, coreExecutablePath = _coordinator.CoreExecutablePath, checks }));
         }
         catch (Exception ex) { App.WriteDiagnostic(ex); await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { success = false, error = ex.ToString(), state = _coordinator.State.ToString(), checks, corePids = pids })); }
         finally { await RequestCloseAsync(true); }

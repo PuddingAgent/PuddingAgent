@@ -4,6 +4,34 @@ namespace PuddingDesktop.Tests.Core;
 
 public sealed class CoreExecutableResolverTests
 {
+    [Theory]
+    [InlineData("existing-directory")]
+    [InlineData("missing-directory")]
+    public void Resolve_ConfiguredDirectoryIsRejectedInsteadOfUsingBundledCore(string directory)
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            CreateExecutable(Path.Combine(root, "core"));
+            Directory.CreateDirectory(Path.Combine(root, "existing-directory"));
+            var error = Assert.Throws<ArgumentException>(() => CoreExecutableResolver.Resolve(Path.Combine(root, directory), root));
+            Assert.Contains("PuddingAgent.exe", error.Message);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void Resolve_MissingConfiguredExecutableDoesNotSilentlyUseBundledCore()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            CreateExecutable(Path.Combine(root, "core"));
+            Assert.Throws<FileNotFoundException>(() => CoreExecutableResolver.Resolve(Path.Combine(root, "missing.exe"), root));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public void Resolve_ConfiguredPathWinsOverBundledAndDevelopmentOutputs()
     {

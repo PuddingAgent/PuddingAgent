@@ -1,18 +1,19 @@
 param(
     [string]$DesktopExe = 'temp/build/winui3/bin/PuddingDesktop/debug_win-x64/PuddingDesktop.exe',
-    [string]$CoreExe = 'temp/build/recovery-core/bin/PuddingAgent/debug/PuddingAgent.exe'
+    [string]$CoreExe
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $desktopPath = (Resolve-Path (Join-Path $repo $DesktopExe)).Path
-$corePath = (Resolve-Path (Join-Path $repo $CoreExe)).Path
+$configuredCore = if ([string]::IsNullOrWhiteSpace($CoreExe)) { $null } else { (Resolve-Path (Join-Path $repo $CoreExe)).Path }
+$corePath = if ($configuredCore) { $configuredCore } else { (Resolve-Path (Join-Path (Split-Path $desktopPath) 'core/PuddingAgent.exe')).Path }
 $testRoot = Join-Path $repo ('temp/test-out/launcher-' + [Guid]::NewGuid().ToString('N'))
 $dataRoot = Join-Path $testRoot 'data'
 $desktopHome = Join-Path $testRoot 'desktop'
 New-Item -ItemType Directory -Path (Join-Path $dataRoot 'config'),$desktopHome -Force | Out-Null
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0)
 $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
-@{ dataRoot=$dataRoot; coreExecutablePath=$corePath; closeBehavior='ExitAndStopCore' } |
+@{ dataRoot=$dataRoot; coreExecutablePath=$configuredCore; closeBehavior='ExitAndStopCore' } |
     ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $desktopHome 'desktop.json')
 @{ desktop=@{ core=@{ port=$port; autoStart=$true; autoRestart=$false; startupTimeoutSeconds=120; shutdownTimeoutSeconds=15 }; bootstrap=@{ httpEnabled=$false; enabled=$false } } } |
     ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 (Join-Path $dataRoot 'config/system.json')
@@ -35,6 +36,7 @@ if (-not $process.HasExited) {
 if (-not (Test-Path -LiteralPath $reportPath)) { throw "Launcher exited without report ($($process.ExitCode)). Evidence: $testRoot" }
 $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
 if (-not $report.success) { throw "Launcher smoke failed: $($report.error). Evidence: $testRoot" }
+if (-not [string]::Equals($report.coreExecutablePath,$corePath,[StringComparison]::OrdinalIgnoreCase)) { throw "Launcher selected an unexpected Core: $($report.coreExecutablePath)" }
 foreach ($childPid in $report.corePids) {
     if (Get-Process -Id $childPid -ErrorAction SilentlyContinue) { throw "Core $childPid survived Shell shutdown" }
 }

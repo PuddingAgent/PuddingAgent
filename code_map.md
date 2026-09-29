@@ -1,5 +1,7 @@
 ## 2026-09-29：恢复 WinUI 启动器主线
 
+2026-09-30 启动修复：`PuddingDesktop.csproj/BuildCoreBundle` 在普通 Build 后生成配套 `core/PuddingAgent.exe` 与 Web 静态文件，避免只发布才带 Core；设置保存前验证可执行文件路径。生命周期脚本默认不配置 Core 路径，检查自动发现与实际所选路径。[修复记录](Docs/Reports/Desktop-Build-Core-Bundle-Fix-2026-09-30.md)。
+
 分支 `B` 的 `a23ebf3` 保存原桌面开发全部代码；`master` 从 `765b964` 重建。产品 `Source/PuddingDesktop` 是 WinUI Shell，工作台复用 `Source/PuddingPlatformAdmin`；`Hosting/DesktopApplicationCoordinator.cs` 保留旧版子进程协调逻辑，仅适配 UI 调度。Core/配置/运行策略/Bridge 无 UI 源文件链接自 `PuddingDesktop.WpfArchive`。`Source/PuddingBrowser.WinUI` 为既有浏览器驱动提供 WinUI surface；不引入原生聊天或进程内 Host。
 
 `TestScripts/test-pudding-desktop-launcher.ps1` 验证独立 PID、工作台、浏览器、重启、退出与租约；`Tests/PuddingRecovery.SchemaProbe` 只读取隔离数据库中的业务字段并验证幂等执行表初始化，不启动后台 Worker。Core 保留终端输出、准入状态/失败计数与 DataRoot 租约修复；管理接口修复按行为最小移植。[恢复报告](Docs/Reports/Desktop-Shell-Recovery-2026-09-29.md) · [权威 ADR](Docs/Features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md)。
