@@ -9,6 +9,7 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <UseWinUI>true</UseWinUI>
+    <DisableTransitiveProjectReferences>true</DisableTransitiveProjectReferences>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
@@ -20,16 +21,37 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);**/bin/**;**/obj/**;**/TestResults/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\PuddingDesktop.Foundation\PuddingDesktop.Foundation.csproj" />
+    <ProjectReference Include="../PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
+    <ProjectReference Include="../PuddingCore/PuddingCore.csproj" />
+    <ProjectReference Include="../PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
+    <ProjectReference Include="../PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj" />
+    <ProjectReference Include="../PuddingBrowser.WinUI/PuddingBrowser.WinUI.csproj" />
+    <Compile Include="../PuddingDesktop.WpfArchive/Core/*.cs;../PuddingDesktop.WpfArchive/Configuration/*.cs;../PuddingDesktop.WpfArchive/Browser/*.cs;../PuddingDesktop.WpfArchive/Bootstrap/*.cs;../PuddingDesktop.WpfArchive/Debug/*.cs;../PuddingDesktop.WpfArchive/Diagnostics/*.cs;../PuddingDesktop.WpfArchive/Runtime/*.cs;../PuddingDesktop.WpfArchive/Hosting/DesktopLocalEndpointResolver.cs;../PuddingDesktop.WpfArchive/Hosting/DesktopStartupState.cs;../PuddingDesktop.WpfArchive/Hosting/DesktopStateChangedEventArgs.cs"
+      Exclude="../PuddingDesktop.WpfArchive/Runtime/DesktopTrayIconService.cs" Link="Launcher/%(RecursiveDir)%(Filename)%(Extension)" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
   </ItemGroup>
   <Target Name="EnforceShellBoundary" BeforeTargets="ResolveReferences">
     <ItemGroup>
-      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation'" />
+      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation' And '%(Filename)' != 'PuddingCore' And '%(Filename)' != 'PuddingBrowser.Abstractions' And '%(Filename)' != 'PuddingBrowser.Protocol' And '%(Filename)' != 'PuddingBrowser.WinUI'" />
     </ItemGroup>
-    <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="WinUI views may reference only Foundation. Put the future Core DLL adapter in the composition boundary, not the view assembly." />
+    <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="Shell may reference launcher configuration contracts and browser adapters, never PuddingHost, Runtime, Platform or an in-process composition root." />
+  </Target>
+  <Target Name="PublishCoreBundle" AfterTargets="Publish" Condition="'$(SkipCorePublish)' != 'true'">
+    <MSBuild Projects="../PuddingAgent/PuddingAgent.csproj" Targets="Restore;Publish" BuildInParallel="false"
+      Properties="Configuration=$(Configuration);PublishDir=$(PublishDir)core/;SkipCorePublish=true;RuntimeIdentifier=win-x64;SelfContained=false" />
+    <Error Condition="!Exists('$(PublishDir)core/PuddingAgent.exe')" Text="Independent Core executable missing from product bundle." />
+    <Error Condition="!Exists('$(PublishDir)core/wwwroot/admin/index.html')" Text="Web workbench missing from product bundle." />
+  </Target>
+  <Target Name="IncludeWinUiShellResourcesInPublish" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ShellResource Include="$(TargetDir)$(AssemblyName).pri;$(TargetDir)*.xbf" />
+      <ResolvedFileToPublish Include="@(ShellResource)">
+        <RelativePath>%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
   </Target>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
 </Project>

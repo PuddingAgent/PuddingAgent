@@ -1,155 +1,64 @@
 <Window x:Class="PuddingDesktop.MainWindow"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:foundation="using:PuddingDesktop.Foundation"
-    Title="Pudding · 角色工作台">
-  <Grid x:Name="Root" Background="{ThemeResource ShellBackground}" Loaded="OnLoaded" SizeChanged="OnRootSizeChanged">
-    <Grid.RowDefinitions><RowDefinition Height="48" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-    <Grid x:Name="TitleBar" Background="{ThemeResource NavigationBackground}">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="148" /></Grid.ColumnDefinitions>
-      <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0">
-        <Button Click="OnToggleNavigation" Style="{StaticResource QuietButton}" AutomationProperties.Name="切换角色导航" ToolTipService.ToolTip="角色导航"><FontIcon Glyph="&#xE700;" FontSize="16" /></Button>
-        <TextBlock Text="Pudding" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,16,0" />
-      </StackPanel>
-      <MenuBar Grid.Column="1" VerticalAlignment="Center">
-        <MenuBarItem Title="文件"><MenuFlyoutItem Text="新工作" Click="OnNewWork" /><MenuFlyoutItem Text="设置" Click="OnSettings" /><MenuFlyoutSeparator /><MenuFlyoutItem Text="退出" Click="OnExit" /></MenuBarItem>
-        <MenuBarItem Title="窗口"><MenuFlyoutItem Text="角色导航" Click="OnToggleNavigation" /><MenuFlyoutItem Text="编码工作区" Click="OnToggleWorkspace" /><MenuFlyoutItem Text="运行中心" Click="OnRuntime" /></MenuBarItem>
-        <MenuBarItem Title="帮助"><MenuFlyoutItem Text="关于骨架预览" Click="OnAbout" /></MenuBarItem>
-      </MenuBar>
-      <Grid x:Name="DragRegion" Grid.Column="2" Background="Transparent">
-        <TextBlock Text="CODING WORKSPACE" Opacity="0.5" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Center" IsHitTestVisible="False" />
-      </Grid>
-    </Grid>
-    <Grid Grid.Row="1" x:Name="Body">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition x:Name="NavigationColumn" Width="248" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition x:Name="WorkspaceColumn" Width="520" />
-      </Grid.ColumnDefinitions>
-      <Grid x:Name="NavigationPane" Padding="16,20,16,14" Background="{ThemeResource NavigationBackground}">
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <StackPanel Spacing="6">
-          <TextBlock Text="你的角色工作台" FontSize="20" FontWeight="SemiBold" />
-          <TextBlock x:Name="ProjectLabel" Text="尚未连接项目" Opacity="0.6" FontSize="12" />
-          <Button Content="＋  新工作" Click="OnNewWork" Margin="0,16,0,12" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" CornerRadius="9" />
-        </StackPanel>
-        <Grid Grid.Row="1" Margin="8,8,8,10">
-          <TextBlock Text="我的角色" FontSize="12" Opacity="0.6" />
-          <TextBlock x:Name="RoleCount" Text="0" HorizontalAlignment="Right" Opacity="0.6" FontSize="12" />
-        </Grid>
-        <StackPanel Grid.Row="2" Spacing="12">
-          <ListView x:Name="RoleList" SelectionChanged="OnRoleSelected" SelectionMode="Single" Background="Transparent" BorderThickness="0" MaxHeight="480">
-            <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="AutomationProperties.Name" Value="{Binding Name}" /></Style></ListView.ItemContainerStyle>
-            <ListView.ItemTemplate>
-              <DataTemplate x:DataType="foundation:RoleSummary">
-                <StackPanel Padding="0,6" Spacing="5">
-                  <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" />
-                  <TextBlock Text="{x:Bind Responsibility}" FontSize="12" Opacity="0.65" TextWrapping="Wrap" />
-                  <TextBlock Text="{x:Bind Status}" FontSize="11" Opacity="0.5" />
-                </StackPanel>
-              </DataTemplate>
-            </ListView.ItemTemplate>
-          </ListView>
-          <TextBlock x:Name="EmptyRoles" Text="内核接入后，这里将展示你的角色、主会话和工作状态。" TextWrapping="Wrap" FontSize="12" Opacity="0.6" Margin="8,0" />
-          <Button x:Name="DemoButton" Content="体验角色布局示例" Click="OnLoadDemo" Style="{StaticResource QuietButton}" />
-        </StackPanel>
-        <StackPanel Grid.Row="3" Spacing="4">
-          <Border Height="1" Background="{ThemeResource DividerBrush}" Margin="0,8" />
-          <Button Content="⚙  设置" Click="OnSettings" Style="{StaticResource QuietButton}" />
-          <Button Content="◉  运行中心" Click="OnRuntime" Style="{StaticResource QuietButton}" />
-          <TextBlock Text="○  内核未接入" Opacity="0.6" FontSize="12" Margin="12,12,0,0" />
-        </StackPanel>
-      </Grid>
-      <Grid Grid.Column="1" x:Name="WorkbenchPane" Padding="28,22,28,24">
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <Grid>
-          <StackPanel Spacing="5">
-            <TextBlock x:Name="RoleTitle" Text="从一个角色，开始新的工作" FontSize="22" FontWeight="SemiBold" />
-            <TextBlock x:Name="RoleSubtitle" Text="角色承担工作 · 会话承载沟通 · 结果可追溯" FontSize="12" Opacity="0.6" TextWrapping="Wrap" />
-          </StackPanel>
-          <Button HorizontalAlignment="Right" VerticalAlignment="Top" Click="OnToggleWorkspace" Style="{StaticResource QuietButton}" AutomationProperties.Name="切换编码工作区"><FontIcon Glyph="&#xE8A7;" FontSize="16" /></Button>
-        </Grid>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,24,0,20">
-          <StackPanel VerticalAlignment="Center" MaxWidth="680" Spacing="22" Padding="4,36,4,12">
-            <Border Background="{ThemeResource SoftBackground}" CornerRadius="18" Padding="24">
-              <StackPanel Spacing="12">
-                <FontIcon Glyph="&#xE943;" FontSize="36" HorizontalAlignment="Left" Opacity="0.75" />
-                <TextBlock x:Name="WelcomeTitle" Text="让合适的角色，&#x0a;把想法变成代码。" FontSize="30" FontWeight="SemiBold" TextWrapping="Wrap" />
-                <TextBlock x:Name="WelcomeDescription" Text="选择你的角色和项目，在同一个工作台中查看思路、工具调用、代码变更与交付物。" Opacity="0.65" TextWrapping="Wrap" LineHeight="24" />
-              </StackPanel>
-            </Border>
-            <InfoBar x:Name="PreviewNotice" IsOpen="True" IsClosable="False" Severity="Informational" Title="WinUI 3 骨架" Message="Core DLL 尚未接入。可以体验布局和角色切换；不会执行命令或发送消息。" />
-            <StackPanel Spacing="10">
-              <TextBlock Text="编码工作区" FontWeight="SemiBold" />
-              <TextBlock Text="查看文档类型与来源归属。下列入口仅在布局示例中可用。" FontSize="12" Opacity="0.6" TextWrapping="Wrap" />
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <Button x:Name="FileButton" Content="代码" Tag="File" Click="OnOpenDocument" IsEnabled="False" />
-                <Button x:Name="DiffButton" Content="Diff" Tag="Diff" Click="OnOpenDocument" IsEnabled="False" />
-                <Button x:Name="TerminalButton" Content="终端" Tag="Terminal" Click="OnOpenDocument" IsEnabled="False" />
-                <Button x:Name="BrowserButton" Content="浏览器" Tag="Browser" Click="OnOpenDocument" IsEnabled="False" />
-                <Button x:Name="ArtifactButton" Content="产物" Tag="Artifact" Click="OnOpenDocument" IsEnabled="False" />
-              </StackPanel>
-            </StackPanel>
-          </StackPanel>
-        </ScrollViewer>
-        <Border Grid.Row="2" Background="{ThemeResource CardBackground}" BorderBrush="{ThemeResource DividerBrush}" BorderThickness="1" CornerRadius="16" Padding="16">
-          <StackPanel Spacing="14">
-            <TextBox x:Name="DraftEditor" TextChanging="OnDraftChanging" IsEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" MaxHeight="180" BorderThickness="0" Background="Transparent" PlaceholderText="描述这位角色需要完成的工作…" AutomationProperties.Name="当前角色的工作草稿" />
-            <Grid>
-              <TextBlock x:Name="DraftHint" Text="先选择角色 · 草稿不会发送" FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
-              <Button Content="↑" IsEnabled="False" HorizontalAlignment="Right" AutomationProperties.Name="发送（内核未接入）" CornerRadius="16" />
-            </Grid>
-          </StackPanel>
-        </Border>
-      </Grid>
-      <Grid Grid.Column="1" x:Name="SettingsPane" Visibility="Collapsed" Padding="36,28">
-        <ScrollViewer>
-          <StackPanel Spacing="22" MaxWidth="680" HorizontalAlignment="Stretch">
-            <Button Content="← 返回工作台" Click="OnWorkbench" HorizontalAlignment="Left" />
-            <TextBlock Text="设置" FontSize="28" FontWeight="SemiBold" />
-            <TextBlock Text="外观与布局" FontSize="18" FontWeight="SemiBold" />
-            <ComboBox x:Name="ThemePicker" Header="应用主题" SelectionChanged="OnThemeChanged" HorizontalAlignment="Stretch"><ComboBoxItem Content="跟随系统" Tag="Default" /><ComboBoxItem Content="浅色" Tag="Light" /><ComboBoxItem Content="深色" Tag="Dark" /></ComboBox>
-            <Slider x:Name="NavigationWidthSlider" Header="角色导航宽度" Minimum="200" Maximum="320" Value="248" ValueChanged="OnLayoutSliderChanged" />
-            <Slider x:Name="WorkspaceWidthSlider" Header="编码工作区宽度" Minimum="360" Maximum="900" Value="520" ValueChanged="OnLayoutSliderChanged" />
-            <ComboBox x:Name="MaterialPicker" Header="窗口材质" SelectionChanged="OnMaterialChanged" HorizontalAlignment="Stretch"><ComboBoxItem Content="云母 · 柔和壁纸色调" Tag="Mica" /><ComboBoxItem Content="云母 Alt · 更鲜明的层次" Tag="MicaAlt" /><ComboBoxItem Content="桌面亚克力 · 磨砂玻璃" Tag="Acrylic" /></ComboBox>
-            <TextBlock Text="云母融入桌面壁纸色调；亚克力实时模糊窗口背后的内容。效果随系统透明效果、节能和窗口激活状态调整。" TextWrapping="Wrap" Opacity="0.65" FontSize="12" />
-            <Button Content="保存布局" Click="OnSaveSettings" HorizontalAlignment="Left" />
-            <InfoBar x:Name="SettingsNotice" IsOpen="True" IsClosable="False" Title="独立配置" Message="这里只保存外观与布局；不会读取或更改现有 Core / Desktop 配置。" />
-            <TextBlock x:Name="SettingsPath" TextWrapping="Wrap" FontSize="12" Opacity="0.6" IsTextSelectionEnabled="True" />
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
-      <Grid Grid.Column="1" x:Name="RuntimePane" Visibility="Collapsed" Padding="36,28">
-        <ScrollViewer>
-          <StackPanel Spacing="22" MaxWidth="680" HorizontalAlignment="Stretch">
-            <Button Content="← 返回工作台" Click="OnWorkbench" HorizontalAlignment="Left" />
-            <TextBlock Text="运行中心" FontSize="28" FontWeight="SemiBold" />
-            <InfoBar x:Name="KernelStatus" IsOpen="True" IsClosable="False" Severity="Informational" Title="Core DLL 尚未装配" Message="界面可独立运行。内核生命周期将在后续切片接入；此版本不会启动或重启现有 PuddingAgent。" />
-            <TextBlock Text="Desktop：WinUI 3 / .NET 10&#x0a;内核：未接入&#x0a;工作台：原生骨架&#x0a;业务数据：未连接" LineHeight="28" />
-            <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="启动内核" IsEnabled="False" /><Button Content="停止内核" IsEnabled="False" /><Button Content="重启内核" IsEnabled="False" /></StackPanel>
-            <TextBlock Text="WebView2 宿主验证" FontSize="18" FontWeight="SemiBold" />
-            <TextBlock Text="在隔离临时目录创建两个不同的浏览器环境，验证控件初始化和 Cookie 隔离。仅使用本机生成的测试页面。" TextWrapping="Wrap" Opacity="0.65" />
-            <Button x:Name="ProbeButton" Content="运行双浏览器验证" Click="OnHostingProbe" HorizontalAlignment="Left" />
-            <TextBlock x:Name="ProbeResult" TextWrapping="Wrap" />
-            <TextBlock x:Name="DiagnosticPath" TextWrapping="Wrap" FontSize="12" Opacity="0.6" IsTextSelectionEnabled="True" />
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
-      <Grid Grid.Column="2" x:Name="WorkspacePane" Background="{ThemeResource CardBackground}" BorderBrush="{ThemeResource DividerBrush}" BorderThickness="1,0,0,0">
-        <Grid.RowDefinitions><RowDefinition Height="48" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <Grid Padding="18,0" Background="{ThemeResource SoftBackground}">
-          <TextBlock Text="编码工作区" FontWeight="SemiBold" VerticalAlignment="Center" />
-          <Button Content="×" Click="OnToggleWorkspace" HorizontalAlignment="Right" Style="{StaticResource QuietButton}" AutomationProperties.Name="收起编码工作区" />
-        </Grid>
-        <TabView Grid.Row="1" x:Name="DocumentTabs" IsAddTabButtonVisible="False" TabWidthMode="SizeToContent" TabCloseRequested="OnDocumentClosed" SelectionChanged="OnDocumentSelected" />
-        <StackPanel Grid.Row="1" x:Name="EmptyDocuments" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16" Margin="28">
-          <FontIcon Glyph="&#xE8A5;" FontSize="40" Opacity="0.3" />
-          <TextBlock Text="工作有上下文，结果有来处。" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" TextWrapping="Wrap" />
-          <TextBlock Text="代码 · Diff · 终端 · 浏览器 · 产物" FontSize="12" Opacity="0.6" HorizontalAlignment="Center" />
-          <TextBlock Text="选择角色后打开示例文档，&#x0a;查看来源身份与跨角色切换行为。" TextAlignment="Center" TextWrapping="Wrap" Opacity="0.5" FontSize="12" />
-        </StackPanel>
-        <Border Grid.Row="2" Padding="16,12" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerBrush}"><TextBlock x:Name="DocumentSource" Text="没有活动文档" FontSize="11" Opacity="0.6" TextWrapping="Wrap" /></Border>
-      </Grid>
-    </Grid>
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <Grid x:Name="Root" Background="{ThemeResource ShellBackground}">
+  <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
+  <Grid x:Name="TitleBar" Padding="20,0,150,0">
+   <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+    <Border Width="26" Height="26" CornerRadius="8" Background="#D59F61"><TextBlock Text="P" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#202020"/></Border>
+    <TextBlock Text="Pudding" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+    <TextBlock Text="你的智能工作台" FontSize="12" Opacity="0.55" VerticalAlignment="Center"/>
+   </StackPanel>
   </Grid>
+  <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed" IsSettingsVisible="False" SelectionChanged="OnNavigate">
+   <NavigationView.MenuItems>
+    <NavigationViewItem Content="工作台" Tag="web" Icon="Home" IsSelected="True"/>
+    <NavigationViewItem Content="浏览器" Tag="browser" Icon="World"/>
+   </NavigationView.MenuItems>
+   <NavigationView.FooterMenuItems>
+    <NavigationViewItem Content="运行中心" Tag="runtime" Icon="Play"/>
+    <NavigationViewItem Content="启动设置" Tag="settings" Icon="Setting"/>
+   </NavigationView.FooterMenuItems>
+   <Grid Margin="0,0,12,8">
+    <Grid x:Name="WorkbenchPane"><Grid x:Name="WorkbenchHost"/>
+     <StackPanel x:Name="LoadingPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16" MaxWidth="540">
+      <TextBlock Text="准备你的工作台" FontSize="28" FontWeight="SemiBold"/>
+      <TextBlock x:Name="LoadingText" Text="正在连接 Pudding Core…" TextWrapping="Wrap" Opacity="0.7"/>
+      <Button Content="启动 Core" Click="OnStart"/>
+     </StackPanel>
+    </Grid>
+    <Grid x:Name="RuntimePane" Visibility="Collapsed" Padding="28">
+     <StackPanel Spacing="20" MaxWidth="860" HorizontalAlignment="Left">
+      <TextBlock Text="运行中心" FontSize="28" FontWeight="SemiBold"/>
+      <TextBlock x:Name="RuntimeText" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+      <StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="StartButton" Content="启动" Click="OnStart"/><Button Content="停止" Click="OnStop"/><Button Content="重启" Click="OnRestart"/><Button Content="退出 Pudding" Click="OnExit"/></StackPanel>
+      <TextBlock Text="Core 日志" FontSize="18"/>
+      <ScrollViewer Height="350"><TextBlock x:Name="LogText" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></ScrollViewer>
+     </StackPanel>
+    </Grid>
+    <ScrollViewer x:Name="SettingsPane" Visibility="Collapsed" Padding="28">
+     <StackPanel Spacing="18" MaxWidth="660" HorizontalAlignment="Left">
+      <TextBlock Text="启动设置" FontSize="28" FontWeight="SemiBold"/>
+      <TextBlock Text="业务配置在 Web 工作台中管理。这里设置本机启动参数。" TextWrapping="Wrap" Opacity="0.65"/>
+      <TextBox x:Name="DataRootBox" Header="数据目录" MinWidth="480"/>
+      <TextBox x:Name="CorePathBox" Header="Core 可执行文件（留空使用产品包）"/>
+      <NumberBox x:Name="PortBox" Header="Core 端口" Minimum="1" Maximum="65535" Value="80" SpinButtonPlacementMode="Compact"/>
+      <CheckBox x:Name="AutoStartBox" Content="打开 Desktop 时启动 Core" IsChecked="True"/>
+      <CheckBox x:Name="TrayBox" Content="关闭窗口时最小化到托盘" IsChecked="True"/>
+      <ComboBox x:Name="ThemeBox" Header="外观" SelectedIndex="0" SelectionChanged="OnTheme"><ComboBoxItem Content="跟随系统"/><ComboBoxItem Content="浅色"/><ComboBoxItem Content="深色"/></ComboBox>
+      <Button Content="保存启动设置" Click="OnSave"/>
+      <TextBlock x:Name="SettingsStatus" TextWrapping="Wrap"/>
+     </StackPanel>
+    </ScrollViewer>
+    <Grid x:Name="BrowserPane" Visibility="Collapsed">
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <StackPanel Orientation="Horizontal" Spacing="6" Margin="8"><Button Content="新标签" Click="OnNewTab"/><Button Content="后退" Click="OnBack"/><Button Content="刷新" Click="OnReload"/><TextBox x:Name="AddressBox" Width="420" PlaceholderText="输入网址" KeyDown="OnAddressKey"/><Button Content="打开" Click="OnGo"/><Button Content="设为 Agent 目标" Click="OnTarget"/><ToggleButton x:Name="Takeover" Content="人工接管" Click="OnTakeover"/></StackPanel>
+     <ListView x:Name="BrowserTabs" Grid.Row="1" SelectionChanged="OnBrowserTab" MaxHeight="100"><ListView.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="{Binding Title}" MaxWidth="400" TextTrimming="CharacterEllipsis"/><Button Content="关闭" Click="OnCloseTab" Padding="6,1"/></StackPanel></DataTemplate></ListView.ItemTemplate></ListView>
+     <Grid x:Name="BrowserSurface" Grid.Row="2"/>
+     <TextBlock x:Name="BrowserStatus" Grid.Row="3" Margin="8" TextWrapping="Wrap"/>
+    </Grid>
+   </Grid>
+  </NavigationView>
+  <TextBlock x:Name="StatusText" Grid.Row="2" Margin="20,0" FontSize="11" VerticalAlignment="Center" Opacity="0.65"/>
+ </Grid>
 </Window>

@@ -1,305 +1,369 @@
-using System.ComponentModel;
-using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
-using PuddingDesktop.Foundation;
-using Windows.Graphics;
+using Microsoft.Web.WebView2.Core;
+using PuddingBrowser.WebView2;
+using PuddingDesktop.Browser;
+using PuddingDesktop.Configuration;
+using PuddingDesktop.Hosting;
+using PuddingDesktop.Runtime;
+using System.Diagnostics;
+using System.Text.Json;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace PuddingDesktop;
 
 public sealed partial class MainWindow : Window
 {
-    private readonly ShellState _state = new();
-    private readonly IDesktopKernel _kernel;
-    private readonly SkeletonSettingsStore _settingsStore = new(App.StateRoot);
-    private ShellLayout _layout = new();
-    private string _material = "Mica";
-    private bool _loaded;
-    private bool _rendering;
-    private bool _demo;
-    private HostingProbeWindow? _probe;
+    private readonly DesktopApplicationCoordinator _coordinator;
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly SemaphoreSlim _webGate = new(1, 1);
+    private readonly SemaphoreSlim _browserGate = new(1, 1);
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private Microsoft.UI.Xaml.Controls.WebView2? _web;
+    private CoreWebView2Environment? _webEnvironment;
+    private BrowserWorkspaceController? _browser;
+    private DesktopTrayIcon? _tray;
+    private Uri? _webOrigin;
+    private long _webGeneration;
+    private bool _ready, _closing, _closed;
+    private bool _restartRequired, _loadingAppearance;
+    private readonly PuddingDesktop.Foundation.SkeletonSettingsStore _appearance = new(Path.Combine(App.StateRoot, "appearance"));
 
-    public MainWindow(IDesktopKernel kernel)
+    public MainWindow(DesktopApplicationCoordinator coordinator)
     {
-        _kernel = kernel;
+        _coordinator = coordinator;
         InitializeComponent();
+        Title = "Pudding";
         ExtendsContentIntoTitleBar = true;
-        SetTitleBar(DragRegion);
+        SetTitleBar(TitleBar);
         SystemBackdrop = new MicaBackdrop();
-        Root.ActualThemeChanged += (_, _) => UpdateCaptionColors();
-        AppWindow.Resize(new SizeInt32(1540, 960));
-        RoleList.ItemsSource = _state.Roles;
-        _state.PropertyChanged += OnStateChanged;
-        Closed += (_, _) => { _state.PropertyChanged -= OnStateChanged; _probe?.Close(); };
-    }
-
-    private async void OnLoaded(object sender, RoutedEventArgs args)
-    {
-        if (_loaded) return;
-        var result = await _settingsStore.LoadAsync();
-        _layout = result.Settings.Layout;
-        ThemePicker.SelectedIndex = result.Settings.Theme switch { "Light" => 1, "Dark" => 2, _ => 0 };
-        Root.RequestedTheme = ParseTheme(result.Settings.Theme);
-        MaterialPicker.SelectedIndex = result.Settings.Material switch { "MicaAlt" => 1, "Acrylic" => 2, _ => 0 };
-        ApplyMaterial(result.Settings.Material);
-        UpdateCaptionColors();
-        NavigationWidthSlider.Value = _layout.NavigationWidth;
-        WorkspaceWidthSlider.Value = _layout.WorkspaceWidth;
-        SettingsPath.Text = _settingsStore.FilePath;
-        DiagnosticPath.Text = Path.Combine(App.StateRoot, "desktop.log");
-        KernelStatus.Title = _kernel.Snapshot.Description;
-        if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
-        _loaded = true;
-        ApplyLayout();
-        var arguments = Environment.GetCommandLineArgs();
-        if (arguments.Contains("--demo")) LoadDemo();
-        var smokeIndex = Array.IndexOf(arguments, "--smoke-report");
-        if (smokeIndex >= 0 && smokeIndex + 1 < arguments.Length)
-            await RunSmokeAsync(Path.GetFullPath(arguments[smokeIndex + 1]));
-    }
-
-    private void OnLoadDemo(object sender, RoutedEventArgs args) => LoadDemo();
-
-    private void LoadDemo()
-    {
-        _demo = true;
-        _state.ReplaceRoles([
-            new(new("demo-project", "builder"), "demo/code", "代码工程师", "实现功能 · 重构与修复", "demo-builder-main", "布局示例 · 未运行"),
-            new(new("demo-project", "reviewer"), "demo/review", "代码审阅者", "检查边界 · 分析变更", "demo-reviewer-main", "布局示例 · 未运行"),
-            new(new("demo-project", "tester"), "demo/test", "测试工程师", "设计验证 · 追踪证据", "demo-tester-main", "布局示例 · 未运行")
-        ]);
-        ProjectLabel.Text = "示例项目 / 不关联真实仓库";
-        RoleCount.Text = _state.Roles.Count.ToString();
-        EmptyRoles.Visibility = Visibility.Collapsed;
-        DemoButton.Visibility = Visibility.Collapsed;
-        RoleList.SelectedIndex = 0;
-        PreviewNotice.Title = "布局示例";
-        PreviewNotice.Message = "角色与文档均为示例。草稿仅保存在本次进程内，不会提交给 Agent。";
-    }
-
-    private void OnRoleSelected(object sender, SelectionChangedEventArgs args)
-    {
-        if (RoleList.SelectedItem is RoleSummary role) _state.SelectRole(role.Identity);
-    }
-
-    private void OnStateChanged(object? sender, PropertyChangedEventArgs args)
-    {
-        if (!_loaded) return;
-        if (args.PropertyName == nameof(ShellState.SelectedDocument)) { RefreshDocuments(); return; }
-        _rendering = true;
-        try
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1440, 920));
+        _ready = true;
+        _coordinator.StateChanged += OnStateChanged;
+        AppWindow.Closing += (sender, e) => { if (!_closed) { e.Cancel = true; _ = RequestCloseAsync(false); } };
+        Root.Loaded += async (_, _) =>
         {
-            var role = _state.SelectedRole;
-            RoleTitle.Text = role?.Name ?? "从一个角色，开始新的工作";
-            RoleSubtitle.Text = role is null ? "角色承担工作 · 会话承载沟通 · 结果可追溯" : $"示例项目  /  {role.Responsibility}";
-            WelcomeTitle.Text = role is null ? "让合适的角色，\n把想法变成代码。" : $"与{role.Name}一起，\n开始下一项工作。";
-            WelcomeDescription.Text = role is null ? "选择你的角色和项目，在同一个工作台中查看思路、工具调用、代码变更与交付物。" : "主会话与草稿跟随当前角色。切换角色后，已打开文档仍保留原有来源，不会把工作悄悄交给另一个角色。";
-            if (DraftEditor.Text != _state.Draft) DraftEditor.Text = _state.Draft;
-            DraftEditor.IsEnabled = _demo && role is not null;
-            DraftHint.Text = role is null ? "先选择角色 · 草稿不会发送" : $"{role.Name}的草稿 · 未连接内核";
-            foreach (var button in new[] { FileButton, DiffButton, TerminalButton, BrowserButton, ArtifactButton }) button.IsEnabled = _demo && role is not null;
-            WorkbenchPane.Visibility = _state.Page == ShellPage.Workbench ? Visibility.Visible : Visibility.Collapsed;
-            SettingsPane.Visibility = _state.Page == ShellPage.Settings ? Visibility.Visible : Visibility.Collapsed;
-            RuntimePane.Visibility = _state.Page == ShellPage.RuntimeCenter ? Visibility.Visible : Visibility.Collapsed;
-        }
-        finally { _rendering = false; }
-    }
-
-    private void OnDraftChanging(TextBox sender, TextBoxTextChangingEventArgs args)
-    {
-        if (!_loaded || _rendering) return;
-        _state.TrySetDraft(_state.SelectionGeneration, DraftEditor.Text);
-    }
-
-    private void OnOpenDocument(object sender, RoutedEventArgs args)
-    {
-        if (sender is Button { Tag: string kind } && Enum.TryParse<WorkspaceDocumentKind>(kind, out var parsed)) OpenDemoDocument(parsed);
-    }
-
-    private void OpenDemoDocument(WorkspaceDocumentKind kind)
-    {
-        if (!_demo || _state.ActiveContext is not { } owner) return;
-        var (title, content) = kind switch
-        {
-            WorkspaceDocumentKind.File => ("Hello.cs", "// 只读布局示例；不是项目文件\nnamespace Sample;\n\npublic sealed class Greeting\n{\n    public string Hello(string role)\n        => $\"Hello, {role}!\";\n}\n"),
-            WorkspaceDocumentKind.Diff => ("变更示例", "只读 Diff 示例 · 未执行 Git 操作\n\n- return \"Hello\";\n+ return $\"Hello, {role}!\";\n\n真实接入后显示明确的 base/head 与来源 Run。"),
-            WorkspaceDocumentKind.Terminal => ("终端输出", "终端输出占位\n\n未执行任何命令。\n真实 terminal session 将由 Core 内核创建和授权。\n此面板目前不是交互终端。"),
-            WorkspaceDocumentKind.Browser => ("浏览器", "浏览器工作区占位\n\nAgent 浏览器尚未接入。\n可前往「运行中心」执行隔离双 WebView2 宿主验证。\n可见标签与 Agent 执行目标将分别管理。"),
-            _ => ("交付物", "交付物预览占位\n\n真实文件、测试结果和报告将保留来源角色与 Run。\n当前内容仅用于检查文档标签和来源导航。")
+            try { _tray = new DesktopTrayIcon(this, () => _ = RequestCloseAsync(true)); }
+            catch (Exception ex) { App.WriteDiagnostic(ex); }
+            await LoadSettingsAsync();
+            _loadingAppearance = true;
+            var appearance = await _appearance.LoadAsync();
+            ThemeBox.SelectedIndex = appearance.Settings.Theme switch { "Light" => 1, "Dark" => 2, _ => 0 };
+            _loadingAppearance = false;
+            _timer.Start();
+#if DEBUG
+            var report = Environment.GetEnvironmentVariable("PUDDING_LAUNCHER_SMOKE_REPORT");
+            if (!string.IsNullOrEmpty(report)) _ = RunSmokeAsync(report);
+#endif
         };
-        var id = $"demo:{owner.Agent.AgentId}:{kind}";
-        _state.OpenDocument(new(id, kind, title, id, owner, content));
-        _layout = _layout with { WorkspaceVisible = true };
-        ApplyLayout();
+        _timer.Tick += (_, _) => { if (RuntimePane.Visibility == Visibility.Visible) LogText.Text = _coordinator.CoreLogBuffer.GetTail(100); };
+        RefreshStatus();
     }
 
-    private void RefreshDocuments()
+    private void OnNavigate(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        foreach (var tab in DocumentTabs.TabItems.OfType<TabViewItem>().ToArray())
-            if (!_state.Documents.Any(document => document.Id == (string)tab.Tag)) DocumentTabs.TabItems.Remove(tab);
-        foreach (var document in _state.Documents)
+        if (!_ready) return;
+        var page = (args.SelectedItem as NavigationViewItem)?.Tag as string;
+        WorkbenchPane.Visibility = page == "web" ? Visibility.Visible : Visibility.Collapsed;
+        BrowserPane.Visibility = page == "browser" ? Visibility.Visible : Visibility.Collapsed;
+        RuntimePane.Visibility = page == "runtime" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsPane.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        if (page == "settings") _ = LoadSettingsAsync();
+        if (page == "web" && _coordinator.WorkbenchAddress is { } address) _ = LoadWorkbenchAsync(address);
+    }
+
+    private void OnStateChanged(object? sender, DesktopStateChangedEventArgs e) => UiThread.Post(() =>
+    {
+        RefreshStatus(e.Error);
+        if (e.Current == DesktopStartupState.CoreReady && e.WorkbenchAddress is { } address)
+            _ = LoadWorkbenchAsync(address);
+        if (e.Current is DesktopStartupState.CoreStopped or DesktopStartupState.CoreFailed
+            or DesktopStartupState.CoreStopping or DesktopStartupState.CoreRestartScheduled or DesktopStartupState.CoreCircuitOpen)
         {
-            if (DocumentTabs.TabItems.OfType<TabViewItem>().Any(tab => (string)tab.Tag == document.Id)) continue;
-            var panel = new StackPanel { Spacing = 18, Margin = new Thickness(24) };
-            panel.Children.Add(new TextBlock { Text = $"{document.Kind}  /  只读示例", FontSize = 12, Opacity = .6 });
-            panel.Children.Add(new TextBlock { Text = document.Content, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 13, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
-            var source = new Button { Content = "返回来源角色", Tag = document.Owner.Agent };
-            source.Click += OnRevealSource;
-            panel.Children.Add(source);
-            DocumentTabs.TabItems.Add(new TabViewItem { Header = document.Title, Tag = document.Id, Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+            _webGeneration++;
+            _webOrigin = null;
+            LoadingPanel.Visibility = Visibility.Visible;
+            _web?.CoreWebView2?.Navigate("about:blank");
         }
-        DocumentTabs.SelectedItem = DocumentTabs.TabItems.OfType<TabViewItem>().FirstOrDefault(tab => (string)tab.Tag == _state.SelectedDocument?.Id);
-        EmptyDocuments.Visibility = _state.Documents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        DocumentSource.Text = _state.SelectedDocument is { } selected
-            ? $"来源角色：{selected.Owner.Agent.AgentId}  ·  项目：{selected.Owner.Agent.WorkspaceId}\n{selected.Owner.SessionId}  ·  没有真实 Run"
-            : "没有活动文档";
+    });
+
+    private void RefreshStatus(string? error = null)
+    {
+        var runtime = _coordinator.RuntimeSnapshot;
+        StatusText.Text = $"Core · {runtime.State}    {(_coordinator.CoreAddress?.Authority ?? "尚未连接")}";
+        RuntimeText.Text = $"状态：{runtime.State}\nCore PID：{runtime.Session?.ProcessId.ToString() ?? "—"}\n数据目录：{_coordinator.DataRoot ?? "尚未设置"}\n{error ?? runtime.LastError}";
+        LoadingText.Text = error ?? runtime.LastError ?? "等待独立 Core 就绪；可在运行中心查看日志，或在启动设置中修改路径。";
     }
 
-    private void OnDocumentSelected(object sender, SelectionChangedEventArgs args)
+    private async Task LoadWorkbenchAsync(Uri address)
     {
-        if (DocumentTabs.SelectedItem is TabViewItem { Tag: string id } && _state.SelectedDocument?.Id != id) _state.SelectDocument(id);
-    }
-
-    private void OnDocumentClosed(TabView sender, TabViewTabCloseRequestedEventArgs args)
-    {
-        if (args.Tab.Tag is string id) _state.CloseDocument(id);
-    }
-
-    private void OnRevealSource(object sender, RoutedEventArgs args)
-    {
-        if (sender is Button { Tag: AgentIdentity agent })
+        var generation = _webGeneration;
+        await _webGate.WaitAsync(_lifetime.Token);
+        try
         {
-            RoleList.SelectedItem = _state.Roles.FirstOrDefault(role => role.Identity == agent);
-            _state.Navigate(ShellPage.Workbench);
+            if (generation != _webGeneration || _closing || _webOrigin == address) return;
+            _coordinator.BeginWebViewInitialization();
+            if (_web is null)
+            {
+                _webEnvironment = await CoreWebView2Environment.CreateWithOptionsAsync(null,
+                    Path.Combine(_coordinator.DataRoot!, "browser", "workbench", "user-data"), null);
+                _web = new Microsoft.UI.Xaml.Controls.WebView2();
+                WorkbenchHost.Children.Add(_web);
+                await _web.EnsureCoreWebView2Async(_webEnvironment);
+                _web.CoreWebView2.NewWindowRequested += (_, e) => { e.Handled = true; OpenExternal(e.Uri); };
+                _web.CoreWebView2.NavigationStarting += (_, e) =>
+                {
+                    if (_webOrigin is not null && Uri.TryCreate(e.Uri, UriKind.Absolute, out var target)
+                        && target.Scheme is "http" or "https" && target.GetLeftPart(UriPartial.Authority) != _webOrigin.GetLeftPart(UriPartial.Authority))
+                    { e.Cancel = true; OpenExternal(e.Uri); }
+                };
+                var currentWeb = _web;
+                _web.CoreWebView2.NavigationCompleted += (_, e) =>
+                {
+                    if (_closing || !ReferenceEquals(_web, currentWeb) || _webOrigin is null || !currentWeb.CoreWebView2.Source.StartsWith(_webOrigin.GetLeftPart(UriPartial.Authority) + "/", StringComparison.OrdinalIgnoreCase)) return;
+                    if (e.IsSuccess) { LoadingPanel.Visibility = Visibility.Collapsed; _coordinator.NotifyWorkbenchReady(); }
+                    else { _webOrigin = null; _coordinator.NotifyWorkbenchFailed(e.WebErrorStatus.ToString()); }
+                };
+                _web.CoreWebView2.ProcessFailed += (_, e) =>
+                {
+                    if (_closing || !ReferenceEquals(_web, currentWeb)) return;
+                    _webOrigin = null;
+                    LoadingPanel.Visibility = Visibility.Visible;
+                    _coordinator.NotifyWorkbenchFailed(e.ProcessFailedKind.ToString());
+                };
+            }
+            if (generation != _webGeneration || _closing) return;
+            _webOrigin = address;
+            _web.CoreWebView2.Navigate(new Uri(address, "/admin/").ToString());
         }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _webOrigin = null; App.WriteDiagnostic(ex); LoadingText.Text = ex.Message; _coordinator.NotifyWorkbenchFailed(ex.Message); }
+        finally { _webGate.Release(); }
     }
 
-    private void OnNewWork(object sender, RoutedEventArgs args)
+    private static void OpenExternal(string address)
     {
-        _state.Navigate(ShellPage.Workbench);
-        if (_state.SelectedRole is null) { _layout = _layout with { NavigationVisible = true }; ApplyLayout(); RoleList.Focus(FocusState.Programmatic); }
-        else DraftEditor.Focus(FocusState.Programmatic);
+        if (Uri.TryCreate(address, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
     }
-    private void OnSettings(object sender, RoutedEventArgs args) => _state.Navigate(ShellPage.Settings);
-    private void OnRuntime(object sender, RoutedEventArgs args) => _state.Navigate(ShellPage.RuntimeCenter);
-    private void OnWorkbench(object sender, RoutedEventArgs args) => _state.Navigate(ShellPage.Workbench);
-    private void OnExit(object sender, RoutedEventArgs args) => Close();
-    private void OnToggleNavigation(object sender, RoutedEventArgs args) { _layout = _layout with { NavigationVisible = !_layout.NavigationVisible }; ApplyLayout(); }
-    private void OnToggleWorkspace(object sender, RoutedEventArgs args) { _layout = _layout with { WorkspaceVisible = !_layout.WorkspaceVisible }; ApplyLayout(); }
-    private void OnRootSizeChanged(object sender, SizeChangedEventArgs args) { if (_loaded) ApplyLayout(); }
-    private void ApplyLayout()
+
+    internal async Task<bool> InitializeBrowserWorkspaceAsync(string dataRoot, CancellationToken ct)
     {
-        var allocation = _layout.Allocate(Root.ActualWidth);
-        NavigationColumn.Width = new(allocation.NavigationWidth);
-        WorkspaceColumn.Width = new(allocation.WorkspaceWidth);
-        NavigationPane.Visibility = allocation.NavigationWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
-        WorkspacePane.Visibility = allocation.WorkspaceWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-    private void OnLayoutSliderChanged(object sender, RangeBaseValueChangedEventArgs args)
-    {
-        if (!_loaded) return;
-        _layout = _layout with { NavigationWidth = NavigationWidthSlider.Value, WorkspaceWidth = WorkspaceWidthSlider.Value };
-        ApplyLayout();
-    }
-    private void OnThemeChanged(object sender, SelectionChangedEventArgs args)
-    {
-        if (_loaded && ThemePicker.SelectedItem is ComboBoxItem { Tag: string theme }) Root.RequestedTheme = ParseTheme(theme);
-    }
-    private void OnMaterialChanged(object sender, SelectionChangedEventArgs args)
-    {
-        if (_loaded && MaterialPicker.SelectedItem is ComboBoxItem { Tag: string material }) ApplyMaterial(material);
-    }
-    private void ApplyMaterial(string material)
-    {
-        _material = material;
-        SystemBackdrop = material switch
+        await _browserGate.WaitAsync(ct);
+        try
         {
-            "Acrylic" => new DesktopAcrylicBackdrop(),
-            "MicaAlt" => new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt },
-            _ => new MicaBackdrop()
-        };
+            if (_browser is not null) return true;
+            var dispatcher = new WinUiDispatcher(DispatcherQueue);
+            var surfaces = new WinUiBrowserSurfaceHost(dispatcher, BrowserSurface);
+            var runtime = new WebView2BrowserRuntime(dispatcher, surfaces, dataRoot);
+            var browser = new BrowserWorkspaceController(runtime, surfaces, dispatcher);
+            try { await browser.InitializeAsync(dataRoot, ct); }
+            catch { await browser.DisposeAsync(); throw; }
+            _browser = browser;
+            BrowserTabs.ItemsSource = browser.Tabs;
+            _coordinator.BridgeDispatcher.SetHandler(browser);
+            _coordinator.BridgeDispatcher.ActivityChanged += async (_, e) =>
+            { try { await browser.ApplyActivityAsync(e.Snapshot, _lifetime.Token); } catch (OperationCanceledException) { } catch (Exception ex) { App.WriteDiagnostic(ex); } };
+            _coordinator.BridgeDispatcher.OperationStateChanged += async (_, e) =>
+            { try { await browser.ApplyOperationStateAsync(e.Snapshot, _lifetime.Token); } catch (OperationCanceledException) { } catch (Exception ex) { App.WriteDiagnostic(ex); } };
+            browser.PropertyChanged += (_, _) => UiThread.Post(() =>
+            {
+                if (_closing) return;
+                BrowserStatus.Text = $"{browser.ControlState} · {browser.AgentTargetSummary} · {browser.CurrentAgentSummary}";
+                if (browser.ActiveTab is { } tab) { BrowserTabs.SelectedItem = tab; AddressBox.Text = tab.Url ?? ""; }
+            });
+            return true;
+        }
+        finally { _browserGate.Release(); }
     }
-    private static ElementTheme ParseTheme(string theme) => theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
-    private void UpdateCaptionColors()
+
+    private async Task RunAsync(Func<CancellationToken, Task> operation)
     {
-        var highContrast = new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast;
-        var foreground = highContrast
-            ? new Windows.UI.ViewManagement.UISettings().GetColorValue(Windows.UI.ViewManagement.UIColorType.Foreground)
-            : Root.ActualTheme == ElementTheme.Dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
-        AppWindow.TitleBar.ButtonForegroundColor = foreground;
-        AppWindow.TitleBar.ButtonInactiveForegroundColor = foreground;
-        AppWindow.TitleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
-        AppWindow.TitleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+        try { await operation(_lifetime.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { App.WriteDiagnostic(ex); RefreshStatus(ex.Message); }
     }
-    private async void OnSaveSettings(object sender, RoutedEventArgs args)
+    private async void OnStart(object sender, RoutedEventArgs e)
+    {
+        if (_restartRequired) { RefreshStatus("数据目录已改变，请退出并重开 Desktop。"); return; }
+        if (_coordinator.RuntimeSnapshot.State == DesktopRuntimeState.Ready && _coordinator.WorkbenchAddress is { } address)
+        {
+            _web?.Close(); _web = null; _webOrigin = null; WorkbenchHost.Children.Clear();
+            await LoadWorkbenchAsync(address);
+        }
+        else await RunAsync(_coordinator.StartCoreAsync);
+    }
+    private async void OnStop(object sender, RoutedEventArgs e) => await RunAsync(_coordinator.StopCoreAsync);
+    private async void OnRestart(object sender, RoutedEventArgs e)
+    {
+        if (_restartRequired) { RefreshStatus("数据目录已改变，请退出并重开 Desktop。"); return; }
+        await RunAsync(_coordinator.RestartCoreAsync);
+    }
+    private async void OnExit(object sender, RoutedEventArgs e) => await RequestCloseAsync(true);
+    private async void OnNewTab(object sender, RoutedEventArgs e) { if (_browser is not null) await RunAsync(async ct => { await _browser.CreatePageAsync("about:blank", true, ct); }); }
+    private async void OnBrowserTab(object sender, SelectionChangedEventArgs e) { if (_browser is not null && BrowserTabs.SelectedItem is BrowserTabViewModel tab && _browser.ActivePageId != tab.PageId) await RunAsync(ct => _browser.ActivateAsync(tab.PageId, ct)); }
+    private async void OnCloseTab(object sender, RoutedEventArgs e) { if (_browser is not null && sender is FrameworkElement { DataContext: BrowserTabViewModel tab }) await RunAsync(ct => _browser.ClosePageAsync(tab.PageId, ct)); }
+    private async void OnBack(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.GoBackAsync(page, ct)); }
+    private async void OnReload(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.ReloadAsync(page, ct)); }
+    private async void OnTarget(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.AssignAgentTargetAsync(page, ct)); }
+    private async void OnTakeover(object sender, RoutedEventArgs e) { if (_browser is not null) await RunAsync(ct => _browser.SetUserTakeoverAsync(Takeover.IsChecked == true, ct)); }
+    private async void OnGo(object sender, RoutedEventArgs e) => await NavigateBrowserAsync();
+    private async void OnAddressKey(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e) { if (e.Key == Windows.System.VirtualKey.Enter) { e.Handled = true; await NavigateBrowserAsync(); } }
+    private async Task NavigateBrowserAsync()
+    {
+        if (_browser is null) return;
+        var text = AddressBox.Text.Trim();
+        if (!text.Contains("://")) text = "https://" + text;
+        if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) { BrowserStatus.Text = "请输入 HTTP 或 HTTPS 地址。"; return; }
+        await RunAsync(async ct => { var page = _browser.ActivePageId ?? await _browser.CreatePageAsync(null, true, ct); await _browser.NavigateAsync(page, uri, ct); });
+    }
+    private async Task LoadSettingsAsync()
     {
         try
         {
-            await _settingsStore.SaveAsync(new(_layout, Root.RequestedTheme.ToString(), _material));
-            SettingsNotice.Title = "布局已保存"; SettingsNotice.Message = "仅更新预览程序的外观配置。"; SettingsNotice.Severity = InfoBarSeverity.Success;
+            var settings = await new FileDesktopBootstrapSettingsStore().LoadAsync(_lifetime.Token);
+            DataRootBox.Text = settings.DataRoot ?? @"D:\data";
+            CorePathBox.Text = settings.CoreExecutablePath ?? "";
+            TrayBox.IsChecked = settings.CloseBehavior == DesktopCloseBehavior.MinimizeToTray;
+            var result = await new SystemConfigurationService().LoadAsync(DataRootBox.Text, _lifetime.Token);
+            if (result.Config is { } config) { PortBox.Value = config.Desktop.Core.Port; AutoStartBox.IsChecked = config.Desktop.Core.AutoStart; }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            App.WriteDiagnostic(exception); SettingsNotice.Title = "保存失败"; SettingsNotice.Message = "无法写入预览配置，请检查目录权限。"; SettingsNotice.Severity = InfoBarSeverity.Error;
-        }
+        catch (Exception ex) { SettingsStatus.Text = ex.Message; }
     }
-    private async void OnAbout(object sender, RoutedEventArgs args)
+    private async void OnSave(object sender, RoutedEventArgs e)
     {
-        await new ContentDialog { XamlRoot = Root.XamlRoot, Title = "Pudding · WinUI 3", Content = "角色优先的 Coding 工作台\n\n这是可独立运行的骨架。\nCore DLL、真实会话和工具执行尚未接入。", CloseButtonText = "知道了" }.ShowAsync();
-    }
-    private async void OnHostingProbe(object sender, RoutedEventArgs args)
-    {
-        ProbeButton.IsEnabled = false;
         try
         {
-            _probe?.Close(); _probe = new HostingProbeWindow(); _probe.Activate();
-            ProbeResult.Text = await _probe.RunAsync();
+            if (_coordinator.RuntimeSnapshot.State is not (DesktopRuntimeState.Idle or DesktopRuntimeState.Stopped or DesktopRuntimeState.Failed or DesktopRuntimeState.CircuitOpen))
+                throw new InvalidOperationException("请先停止 Core，再修改启动设置。");
+            var root = Path.GetFullPath(DataRootBox.Text.Trim());
+            if (!Directory.Exists(root)) throw new DirectoryNotFoundException("请选择已存在的数据目录。");
+            if (!double.IsFinite(PortBox.Value) || PortBox.Value is < 1 or > 65535 || PortBox.Value != Math.Truncate(PortBox.Value)) throw new InvalidOperationException("端口必须是 1 至 65535 的整数。");
+            var store = new FileDesktopBootstrapSettingsStore();
+            var previous = await store.LoadAsync(_lifetime.Token);
+            var settings = previous with { DataRoot = root, CoreExecutablePath = string.IsNullOrWhiteSpace(CorePathBox.Text) ? null : Path.GetFullPath(CorePathBox.Text.Trim()), CloseBehavior = TrayBox.IsChecked == true ? DesktopCloseBehavior.MinimizeToTray : DesktopCloseBehavior.ExitAndStopCore };
+            await new SystemConfigurationService().UpdateDesktopCoreSettingsAsync(root, core => core with { Port = (int)PortBox.Value, AutoStart = AutoStartBox.IsChecked == true }, _lifetime.Token);
+            await store.SaveAsync(settings, _lifetime.Token);
+            _restartRequired |= !string.Equals(_coordinator.DataRoot, root, StringComparison.OrdinalIgnoreCase);
+            _coordinator.ApplyCloseBehavior(settings.CloseBehavior);
+            SettingsStatus.Text = "已保存。启动 Core 后生效；切换数据目录请重开 Desktop。";
         }
-        catch (Exception exception) { App.WriteDiagnostic(exception); ProbeResult.Text = "宿主验证失败：" + exception.Message; }
-        finally { ProbeButton.IsEnabled = true; }
+        catch (Exception ex) { SettingsStatus.Text = ex.Message; }
+    }
+    private async void OnTheme(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_ready) return;
+        Root.RequestedTheme = ThemeBox.SelectedIndex switch { 1 => ElementTheme.Light, 2 => ElementTheme.Dark, _ => ElementTheme.Default };
+        if (!_loadingAppearance)
+        {
+            try { await _appearance.SaveAsync(new(new(), Root.RequestedTheme.ToString(), "Mica")); }
+            catch (Exception ex) { App.WriteDiagnostic(ex); }
+        }
+    }
+    internal async Task RequestCloseAsync(bool explicitExit)
+    {
+        if (_closing) return;
+        if (!explicitExit && _tray?.Available == true && _coordinator.BackgroundMode.ShouldMinimizeToTray()) { AppWindow.Hide(); return; }
+        _closing = true;
+        _coordinator.RequestExplicitExit();
+        _timer.Stop();
+        try
+        {
+            await _coordinator.StopAsync(CancellationToken.None);
+            await _lifetime.CancelAsync();
+            await _webGate.WaitAsync();
+            try { _web?.Close(); _web = null; } finally { _webGate.Release(); }
+            if (_browser is not null) await _browser.DisposeAsync();
+            await _coordinator.DisposeAsync();
+            _tray?.Dispose();
+            _closed = true;
+            Close();
+            await ((App)Application.Current).FinishAsync();
+        }
+        catch (Exception ex) { App.WriteDiagnostic(ex); _closing = false; RefreshStatus(ex.Message); }
     }
 
-    private async Task RunSmokeAsync(string reportPath)
+#if DEBUG
+    private async Task RunSmokeAsync(string path)
     {
         var checks = new List<string>();
+        var pids = new List<int>();
         try
         {
-            void Check(bool condition, string name) { if (!condition) throw new InvalidOperationException(name); checks.Add(name); }
-            Check(!_state.Roles.Any() && !DraftEditor.IsEnabled, "offline shell does not impersonate a connected Agent");
-            _state.Navigate(ShellPage.Settings); Check(SettingsPane.Visibility == Visibility.Visible, "settings without Core");
-            _state.Navigate(ShellPage.RuntimeCenter); Check(RuntimePane.Visibility == Visibility.Visible, "runtime center without Core");
-            LoadDemo(); DraftEditor.Text = "builder draft";
-            OpenDemoDocument(WorkspaceDocumentKind.File);
-            RoleList.SelectedIndex = 1; Check(DraftEditor.Text == "", "role drafts isolated");
-            Check(_state.SelectedDocument?.Owner.Agent.AgentId == "builder", "document ownership stable");
-            RoleList.SelectedIndex = 0; Check(DraftEditor.Text == "builder draft", "draft restored");
-            foreach (var kind in Enum.GetValues<WorkspaceDocumentKind>()) OpenDemoDocument(kind);
-            Check(DocumentTabs.TabItems.Count == 5, "five typed document tabs");
-            _state.CloseDocument(_state.SelectedDocument!.Id); Check(DocumentTabs.TabItems.Count == 4, "close document updates UI");
-            _layout = new(); ApplyLayout();
-            Root.RequestedTheme = ElementTheme.Dark; Root.UpdateLayout();
-            Root.RequestedTheme = ElementTheme.Light; Root.UpdateLayout(); checks.Add("theme resources resolve");
-            ApplyMaterial("Acrylic"); Check(SystemBackdrop is DesktopAcrylicBackdrop, "desktop acrylic selected");
-            ApplyMaterial("MicaAlt"); Check(SystemBackdrop is MicaBackdrop { Kind: Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt }, "mica alt selected");
-            ApplyMaterial("Mica"); Check(SystemBackdrop is MicaBackdrop, "mica selected");
-            Check(Root.Background is SolidColorBrush { Color.A: 0 }, "root exposes system backdrop");
-            await _settingsStore.SaveAsync(new(_layout, "Light", "Acrylic"));
-            Check((await _settingsStore.LoadAsync()).Settings.Material == "Acrylic", "material persistence");
-            Check((await _settingsStore.LoadAsync()).Settings.Theme == "Light", "settings persistence");
-            _probe = new HostingProbeWindow(); _probe.Activate();
-            checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
-            _state.Navigate(ShellPage.Workbench);
-            Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
-            await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new { success = true, checks, processId = Environment.ProcessId }, new JsonSerializerOptions { WriteIndented = true }));
-            Close();
+            async Task WaitReady()
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                while (_coordinator.State != DesktopStartupState.WorkbenchReady) await Task.Delay(100, timeout.Token);
+            }
+            await WaitReady();
+            var pid = _coordinator.RuntimeSnapshot.Session!.ProcessId;
+            if (pid == Environment.ProcessId) throw new Exception("Core must be a separate process");
+            pids.Add(pid); checks.Add("independent Core ready and Web workbench loaded");
+            if (_tray?.Available != true) throw new Exception("Tray icon unavailable in lifecycle test");
+            _coordinator.ApplyCloseBehavior(DesktopCloseBehavior.MinimizeToTray);
+            await RequestCloseAsync(false);
+            if (AppWindow.IsVisible || Process.GetProcessById(pid).HasExited) throw new Exception("Tray close failed to retain Core");
+            _coordinator.ActivateMainWindow();
+            _coordinator.ApplyCloseBehavior(DesktopCloseBehavior.ExitAndStopCore);
+            checks.Add("close hides to tray while Core lives; window reactivated");
+            Navigation.SelectedItem = Navigation.FooterMenuItems[0];
+            await Task.Delay(100);
+            var capture = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
+            await capture.RenderAsync(Root);
+            var pixels = await capture.GetPixelsAsync();
+            var imagePath = Path.ChangeExtension(path, ".png");
+            await File.WriteAllBytesAsync(imagePath, []);
+            var imageFile = await Windows.Storage.StorageFile.GetFileFromPathAsync(imagePath);
+            using (var stream = await imageFile.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite))
+            {
+                var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
+                encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied,
+                    (uint)capture.PixelWidth, (uint)capture.PixelHeight, 96, 96, pixels.ToArray());
+                await encoder.FlushAsync();
+            }
+            Navigation.SelectedItem = Navigation.MenuItems[0];
+            if (_browser is null) throw new Exception("Agent browser controller was not mounted");
+            BrowserPane.Visibility = Visibility.Visible;
+            var page = await _browser.CreatePageAsync(new Uri(_coordinator.CoreAddress!, "/health").ToString(), true, _lifetime.Token);
+            await _browser.AssignAgentTargetAsync(page, _lifetime.Token);
+            var other = await _browser.CreatePageAsync("about:blank", true, _lifetime.Token);
+            if (_browser.AgentTargetPageId != page) throw new Exception("Visible tab changed Agent target");
+            await _browser.SetUserTakeoverAsync(true, _lifetime.Token);
+            await _browser.SetUserTakeoverAsync(false, _lifetime.Token);
+            await _browser.ClosePageAsync(other, _lifetime.Token);
+            await _browser.ClosePageAsync(page, _lifetime.Token);
+            BrowserPane.Visibility = Visibility.Collapsed;
+            checks.Add("WinUI browser surfaces, navigation, stable Agent target and human takeover");
+            if (AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name is "PuddingHost" or "PuddingRuntime" or "PuddingPlatform")) throw new Exception("Business host loaded in Shell");
+            checks.Add("no business Host loaded in Shell");
+            var old = Process.GetProcessById(pid);
+            await _coordinator.RestartCoreAsync(_lifetime.Token);
+            await WaitReady();
+            pid = _coordinator.RuntimeSnapshot.Session!.ProcessId;
+            if (pids[0] == pid || !old.HasExited) throw new Exception("Restart did not replace child");
+            pids.Add(pid); checks.Add("restart replaced Core process and reloaded Web");
+            using (var crashed = Process.GetProcessById(pid))
+            {
+                crashed.Kill();
+                await crashed.WaitForExitAsync();
+                using var crashTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                while (_coordinator.RuntimeSnapshot.State == DesktopRuntimeState.Ready) await Task.Delay(100, crashTimeout.Token);
+                await _coordinator.StartCoreAsync(_lifetime.Token);
+                await WaitReady();
+                pid = _coordinator.RuntimeSnapshot.Session!.ProcessId;
+                pids.Add(pid);
+                checks.Add("Core crash leaves Shell alive; manual start recovers Web");
+            }
+            using var second = Process.GetProcessById(pid);
+            await _coordinator.StopCoreAsync(_lifetime.Token);
+            if (!second.HasExited) throw new Exception("Core survived stop");
+            checks.Add("Core stopped while Shell remained available");
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { success = true, shellPid = Environment.ProcessId, corePids = pids, checks }));
         }
-        catch (Exception exception)
-        {
-            App.WriteDiagnostic(exception); Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
-            await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new { success = false, checks, error = exception.ToString() }));
-            Environment.ExitCode = 1; Close();
-        }
+        catch (Exception ex) { App.WriteDiagnostic(ex); await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { success = false, error = ex.ToString(), state = _coordinator.State.ToString(), checks, corePids = pids })); }
+        finally { await RequestCloseAsync(true); }
     }
+#endif
 }

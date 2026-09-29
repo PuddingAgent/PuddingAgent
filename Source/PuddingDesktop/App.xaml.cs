@@ -1,50 +1,49 @@
 using Microsoft.UI.Xaml;
+using PuddingDesktop.Configuration;
+using PuddingDesktop.Hosting;
+using PuddingDesktop.Runtime;
 
 namespace PuddingDesktop;
 
 public partial class App : Application
 {
-    private MainWindow? _window;
-    internal static string StateRoot { get; } = ResolveStateRoot();
-
-    public App()
-    {
-        InitializeComponent();
-        UnhandledException += (_, args) => WriteDiagnostic(args.Exception);
-    }
-
+    private DesktopApplicationCoordinator? _coordinator;
+    private DesktopSingleInstanceService? _single;
+    internal static string StateRoot => DesktopBootstrapPathProvider.GetDirectoryPath();
+    public App() { InitializeComponent(); UnhandledException += (_, e) => WriteDiagnostic(e.Exception); }
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
-        var current = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent();
-        var instance = Microsoft.Windows.AppLifecycle.AppInstance.FindOrRegisterForKey("PuddingDesktop.WinUi.Skeleton." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(StateRoot).TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant()))));
-        if (!instance.IsCurrent)
-        {
-            await instance.RedirectActivationToAsync(current.GetActivatedEventArgs());
-            Exit();
-            return;
-        }
-        _window = new MainWindow(new Kernel.UnconfiguredDesktopKernel());
-        instance.Activated += (_, _) => _window.DispatcherQueue.TryEnqueue(() => _window.Activate());
-        _window.Activate();
-    }
-
-    internal static void WriteDiagnostic(Exception exception)
-    {
+        UiThread.Queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         try
         {
-            Directory.CreateDirectory(StateRoot);
-            File.AppendAllText(Path.Combine(StateRoot, "desktop.log"), $"{DateTimeOffset.Now:O} {exception}\n");
+            // The settings-directory identity also permits isolated lifecycle harnesses.
+            _single = new DesktopSingleInstanceService("PuddingDesktop:" + Path.GetFullPath(StateRoot).ToUpperInvariant());
+            if (!_single.TryAcquirePrimary())
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await _single.SignalPrimaryAsync(cts.Token); Exit(); return;
+            }
+            _single.ActivationRequested += (_, _) => UiThread.Post(() => _coordinator?.ActivateMainWindow());
+            _coordinator = new DesktopApplicationCoordinator();
+            await _coordinator.StartAsync(Environment.GetCommandLineArgs().Skip(1).ToArray(), CancellationToken.None);
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (Exception ex) { WriteDiagnostic(ex); _coordinator?.ActivateMainWindow(); }
     }
-
-    private static string ResolveStateRoot()
+    internal async Task FinishAsync()
     {
-        var args = Environment.GetCommandLineArgs();
-        var index = Array.IndexOf(args, "--state-root");
-        return index >= 0 && index + 1 < args.Length
-            ? Path.GetFullPath(args[index + 1])
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pudding", "WinUiSkeleton");
+        if (_single is not null) await _single.DisposeAsync();
+        Exit();
     }
+    internal static void WriteDiagnostic(Exception exception) =>
+        Diagnostics.DesktopDiagnosticLog.Write("WinUI", exception);
+}
+
+internal static class UiThread
+{
+    internal static Microsoft.UI.Dispatching.DispatcherQueue Queue { get; set; } = null!;
+    internal static void Post(Action action)
+    {
+        if (Queue.HasThreadAccess) action(); else Queue.TryEnqueue(() => action());
+    }
+    internal static Task InvokeAsync(Func<Task> action) => new PuddingBrowser.WebView2.WinUiDispatcher(Queue).InvokeAsync(action, CancellationToken.None);
 }

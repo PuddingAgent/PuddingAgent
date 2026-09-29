@@ -53,7 +53,7 @@ public sealed class LayoutAndSettingsTests
     [Fact]
     public void AssemblyHasNoUiOrHostDependency()
     {
-        Assert.All(typeof(ShellState).Assembly.GetReferencedAssemblies(), reference =>
+        Assert.All(typeof(ShellLayout).Assembly.GetReferencedAssemblies(), reference =>
             Assert.True(reference.Name == "netstandard" || reference.Name!.StartsWith("System", StringComparison.Ordinal), reference.FullName));
     }
 }
