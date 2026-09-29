@@ -1183,12 +1183,23 @@ public sealed class LuceneFullTextIndexMaintenance : IFullTextIndexMaintenance
         };
 
         _healthThread = thread;
-        thread.Start();
+        // 先置位再 Start：让「体检线程已起来」在调用方返回后**确定性可见** ——
+        // 否则观测方会在 thread.Start() 与线程体首行之间看到假 false（依赖调度的隐式竞态）。
+        // 正常退出由线程体的 finally 复位；Start 抛异常则在此复位，不留假 true。
+        _healthThreadRunning = true;
+        try
+        {
+            thread.Start();
+        }
+        catch
+        {
+            _healthThreadRunning = false;
+            throw;
+        }
     }
 
     private void HealthCheckLoop(CancellationToken stopToken)
     {
-        _healthThreadRunning = true;
         try
         {
             while (!stopToken.IsCancellationRequested && !_stopSignal.IsSet)
