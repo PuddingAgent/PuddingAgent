@@ -277,6 +277,9 @@ public class TeamApiController(PlatformDbContext db) : ControllerBase
     [HttpDelete("workspaces/{workspaceId}")]
     public async Task<IActionResult> DeleteWorkspace(string workspaceId, CancellationToken ct)
     {
+        if (string.Equals(workspaceId, "default", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "不能删除默认工作空间" });
+
         var ws = await db.Workspaces
             .FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId, ct);
         if (ws is null) return NotFound();

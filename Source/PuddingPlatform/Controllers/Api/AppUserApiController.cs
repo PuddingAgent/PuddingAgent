@@ -21,7 +21,7 @@ public class AppUserApiController(PlatformDbContext db) : ControllerBase
     {
         var users = await db.AppUsers
             .AsNoTracking()
-            .Include(u => u.UserRoles)
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
             .OrderBy(u => u.Id)
             .ToListAsync(ct);
 
@@ -34,7 +34,7 @@ public class AppUserApiController(PlatformDbContext db) : ControllerBase
     {
         var user = await db.AppUsers
             .AsNoTracking()
-            .Include(u => u.UserRoles)
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
             .FirstOrDefaultAsync(u => u.UserId == userId, ct);
 
         if (user is null) return NotFound();
@@ -77,12 +77,15 @@ public class AppUserApiController(PlatformDbContext db) : ControllerBase
         string userId, [FromBody] UpdateUserRequest req, CancellationToken ct)
     {
         var user = await db.AppUsers
-            .Include(u => u.UserRoles)
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
             .FirstOrDefaultAsync(u => u.UserId == userId, ct);
         if (user is null) return NotFound();
 
         if (!Enum.TryParse<UserType>(req.UserType, ignoreCase: true, out var userType))
             return BadRequest(new { message = "UserType 无效" });
+
+        if (await db.AppUsers.AnyAsync(u => u.Id != user.Id && u.Email == req.Email, ct))
+            return Conflict(new { message = $"Email '{req.Email}' 已被使用" });
 
         user.Username = req.Username;
         user.Email = req.Email;
@@ -118,7 +121,7 @@ public class AppUserApiController(PlatformDbContext db) : ControllerBase
         string userId, [FromBody] AssignRolesRequest req, CancellationToken ct)
     {
         var user = await db.AppUsers
-            .Include(u => u.UserRoles)
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
             .FirstOrDefaultAsync(u => u.UserId == userId, ct);
         if (user is null) return NotFound();
 
