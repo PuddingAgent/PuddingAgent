@@ -1,3 +1,9 @@
+## 2026-09-29：实测后**放弃** EF 编译模型（排序更正）
+
+曾把「EF 首次触碰 891.5 ms」列为最大单笔并计划编译模型。实测推翻：隔离根同测试前后对照，`platform-schema.marker`（含模型构建）**243 → 122 ms（−121 ms）**，total 落在 ±200 ms 噪声带内。原因是同一个 marker 阶段在小库上只有 243 ms、在 `D:\data`（9.18 GB 机械盘）上是 891 ms —— 差额是**连接 + 首页随机 I/O**，编译模型治不了。代价 79 文件 / 826 KB + 漂移门禁 + 再生成纪律 ⇒ **不做**，生成物与 `UseModel` 已撤销。
+
+复现命令与数据在 [How-Debuge.md](How-Debuge.md)。**排序更正**：EF 那条降级为 ~120 ms 且已评估放弃；真正重量级是 HDD I/O（解在换 SSD）。剩余可做项：`host.start` 残留服务（连接器 112 + 代码索引维护 106 + 心跳 49 + 消息投递 25 ≈ 292 ms，纯代码、可用已验证的后台化模式）> Web 平面 625 ms（受 Admin 验收节奏约束）> goal-reconcile 150–360（安全前置，只可收窄）。
+
 ## 2026-09-29：优化第四刀——移除 Web 入口，ServeAdminSpa 真正生效（`ff3571a`）
 
 用户裁定：Admin 界面已大部分迁移到 WinUI 设置（**验收未完成**，之后逐步移除前端；**API 后期再谈**）；Desktop 的「高级管理（Web）」入口可移除。本刀只做已授权且不依赖验收的部分：删除 `ChatWorkspace` 的 `AdministrationRequested` 事件与按钮 + Desktop 接线；**把 `ServeAdminSpa` 从死配置接通**（此前全仓只有定义与赋值、从未被读取，SPA 一直"文件存在就服务"），现在它门控 Web 界面外壳回退（Admin/Chat SPA fallback 与 `/admin/reload`），**静态文件与全部 API 不受影响**；`ForDesktop` 传 false，`WorkbenchAddress` 基址改为根。组合测试钉住"深层 SPA 路径必须 404"，同时保留健康检查与 JWT API 断言。

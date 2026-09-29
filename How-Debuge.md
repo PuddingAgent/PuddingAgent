@@ -1,3 +1,25 @@
+### 实测后决定**不做**：EF 编译模型（2026-09-29）
+
+我上一轮把「EF 首次触碰 891.5 ms」列为 ① 最大单笔，并计划用 `dotnet ef dbcontext optimize` 编译模型削掉它。**实测把这个判断推翻了**，记录在此以免重复实验：
+
+**做法（已撤销）**：生成 `Source/PuddingPlatform/Data/Compiled/`（79 个文件 / 826 KB），在唯一注册点 `PuddingServiceCollectionExtensions.Platform.cs:508` 的 `DbContextOptionsBuilder` 上加 `opt.UseModel(PuddingPlatform.Data.Compiled.PlatformDbContextModel.Instance)`。复现命令：
+`dotnet ef dbcontext optimize --context PlatformDbContext --project Source\PuddingPlatform\PuddingPlatform.csproj --output-dir Data\Compiled --namespace PuddingPlatform.Data.Compiled`
+
+**实测（隔离根、同一个 Composition 证据测试、前后各一次）**：
+
+| | total | `platform-schema.marker`（含 EF 模型构建） | `database` |
+|---|---|---|---|
+| 无编译模型 | 4,004 ms | **243 ms** | 1,090 ms |
+| 有编译模型 | 4,375 ms | **122 ms** | 1,219 ms |
+
+⇒ **可归因收益只有 ~120 ms**（marker 243→122），总时差落在跑间噪声（±200 ms）里。
+
+**为什么 891 ms 不是模型构建**：同一个 `marker` 阶段在**隔离小库上只有 243 ms**、在 `D:\data`（9.18 GB、机械盘）上是 **891 ms**。差额是**连接建立 + 首页随机 I/O**（原生 SQLite 打开该库 0.0 ms、读 `user_version` 1 ms，但 EF 的连接/拦截器/首查要付 HDD 的寻道），**编译模型治不了这部分**。
+
+**结论：不做**。120 ms 换 826 KB 生成代码 + 漂移门禁 + 再生成纪律不划算；同样量级的收益在 `host.start` 残留服务（连接器 112 + 代码索引维护 106 + 心跳 49 + 消息投递 25 ≈ 292 ms）上有**更便宜**的拿法（纯代码、已有验证过的后台化模式）。生成物与那行 `UseModel` 已撤销，worktree 干净。
+
+**排序更正**：① 从"最大单笔"降级为 ~120 ms 且**已评估放弃**；真正的重量级是 `D:\data` 的 HDD I/O（冷启动 129 s 那条线，解在换 SSD）。
+
 ### 优化第四刀：移除 Web 入口 + 让 ServeAdminSpa 真正门控（2026-09-29，`ff3571a`）
 
 用户裁定：Admin 管理界面已大部分迁移到 WinUI 3 设置（**验收尚未完成**），验收后逐步移除 Admin 前端代码，**部分 API 后期再谈**；Desktop 的「高级管理（Web）」入口可移除。
