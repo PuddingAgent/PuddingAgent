@@ -114,23 +114,47 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
                 LogFilePath = logFilePath,
             };
 
-            // 注册 stdout/stderr 事件处理
+            // 注册 stdout/stderr 事件处理。
+            // ★ 两个处理器必须是 async void（事件签名如此）⇒ **任何逃逸异常都是进程级崩溃**。
+            //   实测 2026-09-29 上报 System.Threading.Channels.ChannelClosedException（第 129 行 stderr 写入）。
+            //   成因：Exited 处理器原先**立刻** TryComplete，而 .NET 明确「输出重定向时 Exited 可能在
+            //   stdout/stderr 投递完成之前触发」⇒ 迟到行写进已关闭的通道。危害有三：
+            //   ① async void 里抛异常 = 未处理异常；② 异常发生在 WriteLogAsync **之前** ⇒ 尾部行连日志都丢
+            //   （正是下方排空注释要保住的东西）；③ 快照靠 AppendOutput 恰好还在，所以只丢日志、不易察觉。
+            //   三道护栏：① 关通道推迟到排空之后（根因，见 Exited 处理器）；② 写通道失败不吞日志；
+            //   ③ 处理器整体兜异常 —— 以后同类竞态只留日志，不再让进程崩。
+            async Task PublishAsync(string tag, string text)
+            {
+                tp.AppendOutput(text);
+                try
+                {
+                    await channel.Writer.WriteAsync(text, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (ChannelClosedException)
+                {
+                    // 通道已关闭（排空超时或上游取消读取）：这行仍必须进日志与快照。
+                    _logger.LogDebug(
+                        "[Terminal] pid={Pid} channel already closed; {Tag} line kept in log and snapshot only",
+                        processId, tag);
+                }
+                await WriteLogAsync(logWriter, $"[{tag}] {text}").ConfigureAwait(false);
+            }
+
             process.OutputDataReceived += async (_, e) =>
             {
                 if (e.Data is null) return;
-                tp.AppendOutput(e.Data);
-                await channel.Writer.WriteAsync(e.Data, CancellationToken.None);
-                await WriteLogAsync(logWriter, $"[stdout] {e.Data}");
+                try { await PublishAsync("stdout", e.Data).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogError(ex, "[Terminal] pid={Pid} stdout handler failed", processId); }
             };
             process.ErrorDataReceived += async (_, e) =>
             {
                 if (e.Data is null) return;
-                tp.AppendOutput(e.Data);
-                await channel.Writer.WriteAsync(e.Data, CancellationToken.None);
-                await WriteLogAsync(logWriter, $"[stderr] {e.Data}");
+                try { await PublishAsync("stderr", e.Data).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogError(ex, "[Terminal] pid={Pid} stderr handler failed", processId); }
             };
 
-            // 进程退出时更新状态并关闭 Channel
+            // 进程退出时更新状态。**通道的关闭不在这里**：必须等输出排空（见下），
+            // 否则迟到的 stdout/stderr 行会写进已关闭的通道（ChannelClosedException）。
             process.Exited += async (_, _) =>
             {
                 try
@@ -139,7 +163,6 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
                     tp.Status = process.ExitCode == 0
                         ? TerminalProcessStatus.Exited
                         : TerminalProcessStatus.Failed;
-                    channel.Writer.TryComplete();
 
                     // ★ 必须等异步输出排空后，才能关闭日志/释放进程。
                     // .NET 明确：启用输出重定向时，Exited 可能在全部 stdout/stderr 处理完成**之前**触发；
@@ -167,6 +190,11 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
                             "[Terminal] pid={Pid} output drain did not finish within {Ms}ms; trailing output may be incomplete.",
                             processId, OutputDrainTimeoutMs);
                     }
+
+                    // ★ 排空之后才关通道：WaitForExit() 返回意味着 stdout/stderr 异步投递已全部完成，
+                    //   不会再有写入者 ⇒ 既不可能 ChannelClosedException，也不会因为关通道丢掉尾部行。
+                    //   排空超时（残留孙进程持有管道）时同样在此关闭，读端不会永久挂住。
+                    channel.Writer.TryComplete();
 
                     await logWriter.DisposeAsync();
                     await logStream.DisposeAsync();
