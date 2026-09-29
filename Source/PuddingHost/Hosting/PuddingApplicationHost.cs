@@ -32,7 +32,8 @@ public static class PuddingApplicationHost
     /// </summary>
     public static WebApplicationBuilder CreateBuilder(
         string[] args,
-        PuddingHostOptions options)
+        PuddingHostOptions options,
+        StartupPhaseTracker? phases = null)
     {
         // ── DataRoot resolution and directory preparation ─────
         var dataRoot = string.IsNullOrWhiteSpace(options.DataRoot)
@@ -40,6 +41,7 @@ public static class PuddingApplicationHost
             : options.DataRoot;
 
         var dataPaths = PuddingDataRootBootstrapper.Bootstrap(dataRoot);
+        phases?.Mark(StartupPhases.DataRootBootstrapped);
 
         // ── Bootstrap configuration ─────────────────────────
         var aspnetcoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
@@ -52,6 +54,7 @@ public static class PuddingApplicationHost
 
         // ── Serilog ──────────────────────────────────────────
         PuddingLoggingBootstrapper.Configure(dataPaths, bootstrapConfiguration);
+        phases?.Mark(StartupPhases.LoggingReady);
 
         // ── WebApplicationBuilder ────────────────────────────
         var builder = WebApplication.CreateBuilder(args);
@@ -267,6 +270,8 @@ public static class PuddingApplicationHost
             aspnetcoreEnvironment,
             options);
 
+        phases?.Mark(StartupPhases.ServicesRegistered);
+
         return builder;
     }
 
@@ -310,12 +315,14 @@ public static class PuddingApplicationHost
     /// <summary>
     /// Phase 2: Configure middleware pipeline and endpoint mapping.
     /// </summary>
-    public static WebApplication Build(WebApplicationBuilder builder)
+    public static WebApplication Build(WebApplicationBuilder builder, StartupPhaseTracker? phases = null)
     {
         var app = builder.Build();
+        phases?.Mark(StartupPhases.HostBuilt);
         Console.WriteLine("[Startup] Host built, configuring middleware...");
 
         app.MapPuddingApplication();
+        phases?.Mark(StartupPhases.MiddlewareMapped);
 
         return app;
     }
@@ -326,7 +333,8 @@ public static class PuddingApplicationHost
     /// </summary>
     public static async Task InitializeAsync(
         WebApplication application,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        StartupPhaseTracker? phases = null)
     {
         Console.WriteLine("[Startup] DB migration skipped — using pre-built database");
         await PuddingApplicationInitializer.InitializeAsync(application, cancellationToken);

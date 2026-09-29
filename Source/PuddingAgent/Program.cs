@@ -1,4 +1,4 @@
-﻿using PuddingHost.Hosting;
+using PuddingHost.Hosting;
 
 // ── PuddingAgent Console/DesktopChild Host (thin entry point) ──────
 // All composition root logic lives in PuddingHost;
@@ -11,15 +11,22 @@
 // Calling order: Parse args → CreateBuilder → Build → InitializeAsync →
 //                StartAsync → CaptureBoundAddresses → Ready signal
 
+// ── 启动阶段埋点（诊断「启动耗时」用）：stdout + 系统日志双通道，每阶段一行 ──
+var phases = StartupPhaseTracker.Start();
+phases.Mark(StartupPhases.ProcessStart);
+
 var isDesktopChild = args.Contains("--desktop-child");
 
 var options = isDesktopChild
     ? PuddingHostOptionsFactory.ForDesktopChild(args)
     : PuddingHostOptionsFactory.ForConsole(args);
+phases.Mark(StartupPhases.OptionsResolved);
 
 using var dataRootLease = new PuddingDataRootLease(options.DataRoot);
-var builder = PuddingApplicationHost.CreateBuilder(args, options);
-var app = PuddingApplicationHost.Build(builder);
+phases.Mark(StartupPhases.DataRootLease);
+
+var builder = PuddingApplicationHost.CreateBuilder(args, options, phases);
+var app = PuddingApplicationHost.Build(builder, phases);
 CancellationTokenSource? startupLeaseCts = null;
 Task startupLeaseTask = Task.CompletedTask;
 
@@ -31,12 +38,14 @@ if (isDesktopChild)
 
 try
 {
-    await PuddingApplicationHost.InitializeAsync(app, CancellationToken.None);
+    await PuddingApplicationHost.InitializeAsync(app, CancellationToken.None, phases);
+    phases.Mark(StartupPhases.Initialized);
 
     if (!isDesktopChild)
         Console.WriteLine("[Startup] Starting server...");
 
     await app.StartAsync();
+    phases.Mark(StartupPhases.ServerStarted);
 }
 finally
 {
@@ -55,6 +64,7 @@ finally
 }
 
 var address = PuddingApplicationHost.CaptureBoundAddresses(app);
+phases.Mark(StartupPhases.Ready);
 
 if (isDesktopChild)
 {

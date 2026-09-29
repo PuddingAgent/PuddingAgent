@@ -116,3 +116,23 @@ S5 把两条都换掉：写路径统一进组件协调器（跨进程租约 / �
 证据：`temp/S5-REPORT.md`、`temp/s5-evidence/`。
 
 ⚠️ **边界**：CLI 与其它工程一律未改（组件零改动）；**重启后的运行态验证由父级执行**（本刀禁止重启任何进程）。
+
+## 变更（2026-09-30，启动阶段埋点 `StartupPhaseTracker`：让「启动耗时」可归因 · 组件 + 宿主入口）
+
+**动机（实测）**：Core 启动耗时 **21.5 s**（Desktop 显示口径 = Core 进程 `ReadyAt − StartedAt`，见 `Source/PuddingDesktop/MainWindow.xaml.cs:123`），
+而系统日志文件 `D:\data\logs\system\pudding-*.log` 的**第一行**出现在进程启动后 **17.5 s**（07:00:31 进程启动 vs 07:00:48.460 首行）
+⇒ **日志管线建立之前的那段启动时间无法从任何日志归因**。
+
+**新增**：`Hosting/StartupPhaseTracker.cs` —— 纯逻辑（时钟与输出通道可注入；无文件 IO / 无静态可变状态 / 无线程）
++ `StartupPhases` 阶段名常量（唯一真源）。每个阶段点输出一行 `[StartupPhase] <name> total=<N>ms delta=<N>ms`，
+同时进入 **stdout**（Desktop 捕获；日志管线就绪前唯一可用通道）与 **Serilog**（落系统日志文件）。
+
+**打点位置（11 处，已用 grep 复核）**：`Program.cs` 6 处（process-start / options-resolved / data-root-lease / initialized / server-started / ready）；
+`CreateBuilder` 3 处（data-root-bootstrapped / logging-ready / services-registered）；`Build` 2 处（host-built / middleware-mapped）。
+`CreateBuilder` / `Build` / `InitializeAsync` 新增**可选**参数 `StartupPhaseTracker? phases = null` ⇒ 既有调用点零改动。
+
+**验证**：新增 xUnit 用例 4 个全绿；宿主全量 **159/159**（failed 0）；M1（`Format` 去掉 delta）⇒ 红点恰好 `Mark_WritesExactlyOneLinePerMark_InOrder_ThroughTheSink`；
+M2（删掉单调兜底）⇒ 红点恰好 `Mark_ClampsNegativeDelta_WhenClockMovesBackwards`（Expected 500 / Actual 100）；`MUTATION` 残留 **0**（活对照 14 / 20）。
+
+**未证实**：① 埋点真实触发需下次 Core 启动才可见（本次 Core 运行中，`Source/PuddingAgent/bin/Debug/net10.0` 被 PID 26676 锁定 ⇒ 30×MSB3021/3027、CS 错误 0）；
+② 复原后宿主 DLL 哈希未回到基线（`57E70653…` → `F1D19D2F…`），原因未证实 ⇒ 不声称逐位复原。
