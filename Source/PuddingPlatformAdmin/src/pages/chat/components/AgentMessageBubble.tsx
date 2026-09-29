@@ -635,7 +635,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                   活跃指示，配合卡底 TurnStatus 行，卡片不空白。 */}
               {isRunActive ? (
                 <TurnElapsedLabel
-                  startedAt={createdAt}
+                  startedAt={executionFlowProjection?.startedAt ?? createdAt}
+                  waiting={turnStatus?.kind === 'queued' || turnStatus?.kind === 'pending'}
                   className={styles.agentTimeText}
                 />
               ) : (
@@ -848,7 +849,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 {turnStatus && processActivity?.variant !== 'compaction' && (
                   <TurnStatus
                     status={turnStatus}
-                    turnStartedAt={createdAt}
+                    turnStartedAt={executionFlowProjection?.startedAt ?? createdAt}
                     agentName={agentName}
                   />
                 )}

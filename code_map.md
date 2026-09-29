@@ -1,3 +1,7 @@
+## 2026-09-30：消息排队与执行状态修复
+
+`SqliteExecutionLeaseStore` 依据可信 Message Fabric 来源，在同会话领取时让前台消息优先于尚未领取的 Agent/System 消息，保留活跃租约互斥和跨会话 FIFO。Web `executionFlowCollector/Projector` 保留 `turn.accepted/started`，`TurnStatus` 区分排队与执行并按真实开始时间计时。[诊断与验证](Docs/Reports/Chat-Queue-Response-Fix-2026-09-30.md)。
+
 ## 2026-09-29：恢复 WinUI 启动器主线
 
 2026-09-30 运行中心：上移导航，增加彩色状态、启动耗时/时间、运行时长与 Core CPU/工作集诊断，日志以剩余空间自适应。`CoreProcessMetricsSampler` 位于共用启动器 Runtime，按 PID 与启动时间重置采样；[界面与验证记录](Docs/Reports/Desktop-Runtime-Center-2026-09-30.md)。

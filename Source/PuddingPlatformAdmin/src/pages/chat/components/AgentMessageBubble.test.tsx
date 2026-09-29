@@ -341,7 +341,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.queryByTestId('message-item')).toBeNull();
-    expect(screen.getByText('Pudding 正在运行')).toBeTruthy();
+    expect(screen.getByText('Pudding 等待执行反馈')).toBeTruthy();
     // P1-3 降噪：阶段文案折叠进 tooltip、轨道/开发者 hint 不再直出主行；
     // 容器仍保留气泡壳类（agentBubbleNew.agentBubbleStreaming），单行布局走 waiting.styles。
     expect(screen.queryByText('正在请求模型')).toBeNull();
@@ -351,6 +351,28 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(screen.getByTestId('turn-status')).toBeTruthy();
     expect(container.querySelector('.turnStatusRow')).toBeTruthy();
     expect(screen.queryByTestId('reasoning-disclosure-row')).toBeNull();
+  });
+
+  it('shows accepted turns as queued, then starts the processing clock at turn.started', () => {
+    jest.useFakeTimers();
+    const now = Date.parse('2026-09-30T00:10:00Z');
+    jest.setSystemTime(now);
+    try {
+      const projection = {
+        nodes: [], lifecycle: 'accepted' as const,
+        stats: { totalEvents: 1, projectedEvents: 1, duplicateEvents: 0, ignoredAfterTerminal: 0, protocolErrors: 0 },
+        protocolErrors: [],
+      };
+      const props = { ...baseProps, status: 'thinking', content: '', createdAt: now - 600_000 };
+      const { rerender } = render(<AgentMessageBubble {...props} executionFlowProjection={projection} />);
+      expect(screen.getByText('Pudding 已入队，等待执行')).toBeTruthy();
+      expect(screen.getByTestId('turn-elapsed-label').textContent).toBe('已等待 10m');
+      rerender(<AgentMessageBubble {...props} executionFlowProjection={{ ...projection, lifecycle: 'started', startedAt: now - 20_000 }} />);
+      expect(screen.getByText('正在连接模型')).toBeTruthy();
+      expect(screen.getByTestId('turn-elapsed-label').textContent).toBe('已处理 20s');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('keeps the server elapsed time after the bubble remounts', () => {
@@ -368,7 +390,7 @@ describe('AgentMessageBubble streaming presentation', () => {
       );
 
       // CU-05：主行只显示单行 + ≥15s 时钟（Xm 格式）；不展示「复杂推理/深入分析」等推断文案。
-      expect(screen.getByText('Pudding 正在运行')).toBeTruthy();
+      expect(screen.getByText('Pudding 等待执行反馈')).toBeTruthy();
       expect(screen.getByText('· 已等待 10m')).toBeTruthy();
       expect(screen.queryByText('模型正在进行复杂推理')).toBeNull();
       expect(screen.queryByText('深入分析')).toBeNull();

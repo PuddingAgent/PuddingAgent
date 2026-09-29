@@ -87,7 +87,7 @@ describe('executionFlowCollector', () => {
       const res = collectExecutionEvents([
         env('metadata', 1, { messageId: 'm1' }),
         env('voice_capture_status', 2, { status: 'ok' }),
-        env('turn.started', 3),
+        env('unrecognized.event', 3),
       ]);
       expect(res.events).toHaveLength(0);
       expect(res.filteredCount).toBe(3);

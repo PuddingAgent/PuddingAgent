@@ -4,6 +4,8 @@
 //  - 15s 前后计时显隐正确，刷新（重挂载）不归零
 //  - 单 aria-live；终态到达立即移除；阶段文案来自已知事实
 import { render, screen } from '@testing-library/react';
+import { collectExecutionEvents } from '../../projections/executionFlowCollector';
+import type { AdminChatStreamEvent } from '@/services/platform/api';
 import * as React from 'react';
 import {
   type ExecutionFlowEvent,
@@ -36,6 +38,23 @@ function ev(
 }
 
 describe('deriveTurnStatusFromProjection（canonical 派生）', () => {
+  it('accepted → queued; started → connecting, with canonical execution clock across replay', () => {
+    const accepted = ev('turn.accepted', 1);
+    const started = ev('turn.started', 2, { occurredAt: '2026-08-22T08:10:00.000Z' });
+    const collect = (events: ExecutionFlowEvent[]) =>
+      collectExecutionEvents(events as unknown as AdminChatStreamEvent[]).events as ExecutionFlowEvent[];
+    const queued = projectExecutionFlow(collect([accepted]));
+    expect(deriveTurnStatusFromProjection(queued)).toEqual({ kind: 'queued' });
+    expect(queued.startedAt).toBeUndefined();
+    const running = projectExecutionFlow(collect([started, accepted, started]));
+    expect(deriveTurnStatusFromProjection(running)).toEqual({ kind: 'running', phase: 'connecting' });
+    expect(running.startedAt).toBe(Date.parse(started.occurredAt));
+    expect(running.nodes).toEqual([]);
+    expect(deriveTurnStatusFromProjection(projectExecutionFlow(collect([
+      accepted, started, ev('turn.failed', 3),
+    ]))).kind).toBe('failed');
+  });
+
   it('无节点无终态 → pending', () => {
     const projection = projectExecutionFlow([]);
     expect(deriveTurnStatusFromProjection(projection)).toEqual({
@@ -146,7 +165,7 @@ describe('deriveTurnStatusFromFacts（消费点事实派生）', () => {
 describe('TurnStatus 组件', () => {
   const NOW = new Date('2026-08-22T08:00:00.000Z').getTime();
 
-  it('pending：显示「{agentName} 正在运行」且无计时（<15s）', () => {
+  it('pending：显示「{agentName} 等待执行反馈」且无计时（<15s）', () => {
     render(
       <TurnStatus
         status={{ kind: 'pending' }}
@@ -155,7 +174,7 @@ describe('TurnStatus 组件', () => {
         now={NOW}
       />,
     );
-    expect(screen.getByText('Pudding 正在运行')).toBeTruthy();
+    expect(screen.getByText('Pudding 等待执行反馈')).toBeTruthy();
     expect(screen.queryByTestId('turn-status-elapsed')).toBeNull();
     expect(screen.getByTestId('turn-status').getAttribute('aria-live')).toBe(
       'polite',
@@ -166,7 +185,7 @@ describe('TurnStatus 组件', () => {
     render(
       <TurnStatus status={{ kind: 'pending' }} turnStartedAt={NOW} now={NOW} />,
     );
-    expect(screen.getByText('默认助手 正在运行')).toBeTruthy();
+    expect(screen.getByText('默认助手 等待执行反馈')).toBeTruthy();
   });
 
   it('running：阶段文案来自已知事实（五类）', () => {
@@ -327,7 +346,7 @@ describe('TurnStatus 组件', () => {
         now={NOW}
       />,
     );
-    expect(document.body.textContent).toContain('Pudding 正在运行');
+    expect(document.body.textContent).toContain('Pudding 等待执行反馈');
     expect(document.body.textContent).not.toMatch(
       /正在推理|深入分析|复杂推理|正在请求模型/,
     );

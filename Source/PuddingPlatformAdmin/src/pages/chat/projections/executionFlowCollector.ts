@@ -17,6 +17,8 @@ import type { ExecutionFlowEvent } from './executionFlowProjector';
 
 /** ExecutionFlowProjector 已知的 canonical type 白名单。 */
 const EXECUTION_FLOW_TYPES = new Set<string>([
+  'turn.accepted',
+  'turn.started',
   'message.thinking_summary.appended',
   'message.content.appended',
   'message.completed',

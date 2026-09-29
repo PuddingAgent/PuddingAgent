@@ -3911,3 +3911,10 @@ VisionPipelineException包含source=tool function_call_output、message#、plann
 先按 conversation_id 索引查 canonical 的 context.compaction.started/completed/failed，按 payload.compactionId 配对；requested 只是意图，旧 started 或缺失终态不代表当前仍执行。`GET /api/sessions/{id}/compaction-status`（正常认证）给出进程内 activeCompaction，重启后为 null。核对 loaded bundle hash，避免源码修复已存在但页面仍加载旧 bundle。UI 的状态待确认不是后端失败；超时不得制造持久化 failed 事件。
 
 环形用量应检查分母：总窗口占用 used/contextWindow 与压缩压力 used/effectiveWindow 不同；并核对 usageRecordedAtUtc 和 usageConfidence。后端故障诊断保留原始事件，不补造成功记录。详细证据与验收见 `Docs/Features/上下文压缩运行状态与界面设计.md`。
+
+
+## 2026-09-30：消息已受理却长时间没有执行
+
+先从用户消息的 SessionId/turn_id/command_id 查 `chat_execution_commands` 的 status/created_at/started_at，再按 conversation_id + turn_id 查 `conversation_events` 的 `turn.accepted`、`turn.started` 与首个推理/正文事件。只有 accepted 且 started_at 为空是排队，不是模型首字超时；其他 turn 的 LLM/tool 日志不能证明本条消息已经执行。
+
+检查同会话 active execution_runs 及 pending commands 的创建时间、可信 `message_fabric_ingress` / `message_fabric_from_kind`。Core 重启可能恢复旧后台任务，原 FIFO 又会先领取更旧的子代理结果。新规则只调整尚未领取任务，同会话前台优先，不取消活跃工具，也不删除后台记录。UI 没有可见内容不能推出正在运行：accepted 显示排队、started 之后才按实际开始时间计处理时长；未知显示等待反馈。只读现场库；回归使用内存 SQLite。详见 [现场时间线与修复](Docs/Reports/Chat-Queue-Response-Fix-2026-09-30.md)。

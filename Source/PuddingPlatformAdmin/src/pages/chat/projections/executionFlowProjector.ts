@@ -287,6 +287,9 @@ export interface ExecutionFlowProjectionStats {
 }
 
 export interface ExecutionFlowProjection {
+  /** Canonical admission/start facts; no content does not imply execution has started. */
+  lifecycle?: 'accepted' | 'started';
+  startedAt?: number;
   /** 有序 ViewModel 节点（按首个来源事件 sequence 升序）。 */
   nodes: ExecutionFlowNode[];
   /** turn 级终态（无终态事件时为 undefined）。 */
@@ -546,6 +549,8 @@ export function projectExecutionFlow(
 
   // 5) 顺序投影。
   let terminalEmitted = false; // 首个 turn 终态胜出（终态单调）。
+  let lifecycle: ExecutionFlowProjection['lifecycle'];
+  let startedAt: number | undefined;
   const nodes: ExecutionFlowNode[] = [];
   const toolNodesByCallId = new Map<string, ToolNode>();
   let openMessage: MessageNode | null = null;
@@ -674,6 +679,16 @@ export function projectExecutionFlow(
     stats.projectedEvents += 1;
 
     switch (type) {
+      case 'turn.accepted':
+        lifecycle ??= 'accepted';
+        break;
+      case 'turn.started':
+        if (terminalSequence === null || event.sequence < terminalSequence) {
+          lifecycle = 'started';
+          const timestamp = Date.parse(event.occurredAt);
+          if (Number.isFinite(timestamp)) startedAt ??= timestamp;
+        }
+        break;
       case 'message.thinking_summary.appended': {
         appendReasoning(event);
         break;
@@ -966,5 +981,9 @@ export function projectExecutionFlow(
     nodes.find((node): node is TerminalNode => node.kind === 'terminal') ??
     undefined;
 
-  return { nodes, terminal: terminalNode, stats, protocolErrors };
+  return {
+    nodes, terminal: terminalNode, stats, protocolErrors,
+    ...(lifecycle ? { lifecycle } : {}),
+    ...(startedAt !== undefined ? { startedAt } : {}),
+  };
 }

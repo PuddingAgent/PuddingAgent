@@ -2,7 +2,7 @@
 // 收敛 WaitingBubble / CurrentActivityPanel 的重复状态区域：
 //  - kind 由 canonical 事件字段派生（pending/running/succeeded/failed/cancelled）
 //  - 文案来自已知事实（正在连接模型/正在推理/正在执行工具/正在等待子代理/正在生成回答），
-//    无可见事件时显示「{agentName} 正在运行」（默认「默认助手」）
+//    无可见事件时显示「{agentName} 等待执行反馈」（默认「默认助手」）
 //  - 不展示「复杂推理/深入分析」等推断文案
 //  - 运行 ≥15s 才显示计时；基于持久化 turnStartedAt（reload/重挂载不归零）
 //  - 唯一 aria-live="polite" 状态区；终态到达立即不渲染（错误由终态错误行负责）
@@ -15,6 +15,7 @@ import { TurnStatusOrb } from './TurnStatusOrb';
 // ── TurnStatus 类型（canonical 事件字段派生）───────────────────────────────
 
 export type TurnStatusKind =
+  | 'queued'
   | 'pending'
   | 'running'
   | 'succeeded'
@@ -54,7 +55,7 @@ const TERMINAL_KINDS: ReadonlySet<TurnStatusKind> = new Set([
 
 /**
  * 从 CU-04 ExecutionFlowProjection 输出派生 TurnStatus（canonical 路径）：
- * 终态节点 → succeeded/failed/cancelled；无节点 → pending；
+ * 终态节点 → succeeded/failed/cancelled；无节点时依据 accepted/started，未知才 pending；
  * 最后节点 kind → 对应阶段；retry/未知节点 → connecting（重连/等待模型）。
  */
 export function deriveTurnStatusFromProjection(
@@ -73,7 +74,12 @@ export function deriveTurnStatusFromProjection(
     };
   }
   const last = nodes[nodes.length - 1];
-  if (!last) return { kind: 'pending' };
+  if (!last) {
+    if (projection.lifecycle === 'started') {
+      return { kind: 'running', phase: 'connecting' };
+    }
+    return { kind: projection.lifecycle === 'accepted' ? 'queued' : 'pending' };
+  }
   const phase: TurnPhase =
     last.kind === 'reasoning'
       ? 'reasoning'
@@ -119,7 +125,7 @@ export interface TurnStatusProps {
   status: TurnStatus;
   /** 持久化 turn 起点（毫秒时间戳；reload/重挂载不归零）。 */
   turnStartedAt: number;
-  /** 展示名；pending 态显示「{agentName} 正在运行」，默认「默认助手」。 */
+  /** 展示名；pending 态显示「{agentName} 等待执行反馈」，默认「默认助手」。 */
   agentName?: string;
   /** 计时显示阈值（秒），默认 15。 */
   clockThresholdSeconds?: number;
@@ -153,15 +159,17 @@ export const TurnStatus: React.FC<TurnStatusProps> = ({
       : 0;
   const showClock = elapsedSeconds >= clockThresholdSeconds;
   const label =
-    status.kind === 'pending'
-      ? `${agentName} 正在运行`
-      : TURN_STATUS_PHASE_COPY[status.phase ?? 'connecting'];
+    status.kind === 'queued'
+      ? `${agentName} 已入队，等待执行`
+      : status.kind === 'pending'
+        ? `${agentName} 等待执行反馈`
+        : TURN_STATUS_PHASE_COPY[status.phase ?? 'connecting'];
 
   return (
     <ExecutionDisclosureRow
       leading={
         <TurnStatusOrb
-          pending={status.kind === 'pending'}
+          pending={status.kind === 'pending' || status.kind === 'queued'}
           phase={status.phase}
           ariaLabel={label}
         />
@@ -195,6 +203,7 @@ export const TurnStatus: React.FC<TurnStatusProps> = ({
 //  - 文案复用 formatElapsed（<60s → Xs / ≥60s → Xm），不新增第二套时长格式。
 //  - 时间基准 = 持久化 turn 起点（reload/重挂载不归零）。
 export interface TurnElapsedLabelProps {
+  waiting?: boolean;
   /** 持久化 turn 起点（毫秒时间戳）。 */
   startedAt: number;
   /** 样式类（复用头部 agentTimeText）。 */
@@ -204,6 +213,7 @@ export interface TurnElapsedLabelProps {
 }
 
 export const TurnElapsedLabel: React.FC<TurnElapsedLabelProps> = ({
+  waiting = false,
   startedAt,
   className,
   now: nowProp,
@@ -224,7 +234,7 @@ export const TurnElapsedLabel: React.FC<TurnElapsedLabelProps> = ({
 
   return (
     <span className={className} data-testid="turn-elapsed-label">
-      已处理 {formatElapsed(elapsedSeconds)}
+      {waiting ? '已等待' : '已处理'} {formatElapsed(elapsedSeconds)}
     </span>
   );
 };
