@@ -22,6 +22,24 @@ public static class StartupPhases
     public const string Initialized = "initialized";
     public const string ServerStarted = "server-started";
     public const string Ready = "ready";
+
+    /// <summary>
+    /// 初始化段子阶段。<see cref="Initialized"/> 只有一个点，无法区分
+    /// 「25 个 schema bootstrapper」与「Memory DB / Workspace Catalog / jieba」的耗时；
+    /// 2026-09-30 实测 21.5 秒中约 17.5 秒落在这一段内，故必须细分。
+    /// </summary>
+    public const string PlatformDbEnsure = "platform-db-ensure";
+
+    public const string EventStoreEnsure = "event-store-ensure";
+    public const string MemoryDbEnsure = "memory-db-ensure";
+    public const string WorkspaceCatalog = "workspace-catalog";
+    public const string JiebaBackfill = "jieba-backfill";
+
+    /// <summary>单个 schema bootstrapper 的打点名前缀。</summary>
+    public const string SchemaPrefix = "schema-";
+
+    /// <summary>按类型名生成 bootstrapper 打点名（避免散落手写字符串）。</summary>
+    public static string Schema(string bootstrapperName) => SchemaPrefix + bootstrapperName;
 }
 
 /// <summary>

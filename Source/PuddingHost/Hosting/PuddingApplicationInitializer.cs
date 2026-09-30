@@ -30,7 +30,10 @@ namespace PuddingHost.Hosting;
 /// </summary>
 public static class PuddingApplicationInitializer
 {
-    public static async Task InitializeAsync(WebApplication app, CancellationToken cancellationToken)
+    public static async Task InitializeAsync(
+        WebApplication app,
+        CancellationToken cancellationToken,
+        StartupPhaseTracker? phases = null)
     {
         // ── Platform DB ───────────────────────────────────
         Console.WriteLine("[Startup] Ensuring Platform DB tables...");
@@ -42,31 +45,56 @@ public static class PuddingApplicationInitializer
                 .GetRequiredService<ILoggerFactory>()
                 .CreateLogger("PlatformSchema");
 
+            phases?.Mark(StartupPhases.Schema("EnsureCreated"));
             await platformDb.Database.EnsureCreatedAsync(cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(AppUserSchemaBootstrapper)));
             await AppUserSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(TokenUsageSchemaBootstrapper)));
             await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(ConversationCommandSchemaBootstrapper)));
             await ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(ChatMessageSchemaBootstrapper)));
             await ChatMessageSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(SessionSteeringSchemaBootstrapper)));
             await SessionSteeringSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(ExecutionRunSchemaBootstrapper)));
             await ExecutionRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(SubAgentRunSchemaBootstrapper)));
             await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(MessageFabricSchemaBootstrapper)));
             await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(ConnectorStreamProjectionSchemaBootstrapper)));
             await ConnectorStreamProjectionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(AgentOrchestrationSchemaBootstrapper)));
             await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(TaskDispatchSchemaBootstrapper)));
             await TaskDispatchSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(WorkspaceTaskSchemaBootstrapper)));
             await WorkspaceTaskSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(TaskPlanningSchemaBootstrapper)));
             await TaskPlanningSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(GoalSchemaBootstrapper)));
             await GoalSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(TodoSchemaBootstrapper)));
             await TodoSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(TaskSchedulingSchemaBootstrapper)));
             await TaskSchedulingSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(TaskSchedulerIntentSchemaBootstrapper)));
             await TaskSchedulerIntentSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(TaskSchedulerIntentOutcomeSchemaBootstrapper)));
             await TaskSchedulerIntentOutcomeSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(TaskSchedulerDecisionSchemaBootstrapper)));
             await TaskSchedulerDecisionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(TaskSchedulerScanRunSchemaBootstrapper)));
             await TaskSchedulerScanRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(ExternalAccessTokenSchemaBootstrapper)));
             await ExternalAccessTokenSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(ExternalTaskApiSchemaBootstrapper)));
             await ExternalTaskApiSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(ProviderFileRefSchemaBootstrapper)));
             await ProviderFileRefSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             // SKILL Hub 中央技能库（4 张 Hub* 表 + 索引）；EF 迁移快照漂移，故走同一幂等模式
+            phases?.Mark(StartupPhases.Schema(nameof(SkillHubSchemaBootstrapper)));
             await SkillHubSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
 
             // ── ADR-074 §12 / ADR-092：Core 重启后按 resume_policy 分流：默认 disarm 为 paused，
@@ -100,6 +128,7 @@ public static class PuddingApplicationInitializer
             }
 
             Console.WriteLine("[Startup] Platform DB tables and schema upgrades ensured");
+            phases?.Mark(StartupPhases.PlatformDbEnsure);
 
             // ── Conversation Event Store ──────────────────
             try
@@ -108,6 +137,7 @@ public static class PuddingApplicationInitializer
                 var eventStore = scope2.ServiceProvider.GetRequiredService<IConversationEventStore>();
                 await eventStore.EnsureTablesAsync(cancellationToken);
                 Console.WriteLine("[Startup] Conversation Event Store tables ensured");
+                phases?.Mark(StartupPhases.EventStoreEnsure);
             }
             catch (Exception ex)
             {
@@ -136,6 +166,7 @@ public static class PuddingApplicationInitializer
             await MemoryLibraryDbInitializer.InitializeAsync(libraryMemoryFactory, memoryLogger);
         }
         Console.WriteLine("[Startup] Memory DB tables ensured");
+        phases?.Mark(StartupPhases.MemoryDbEnsure);
 
         // ── Workspace Catalog ─────────────────────────────
         Console.WriteLine("[Startup] Initializing Workspace Catalog...");
@@ -153,6 +184,8 @@ public static class PuddingApplicationInitializer
             Console.WriteLine($"[Startup] Workspace Catalog init failed: {ex.Message}");
         }
 
+        phases?.Mark(StartupPhases.WorkspaceCatalog);
+
         // ── jieba backfill ───────────────────────────────
         Console.WriteLine("[Startup] Starting jieba backfill...");
         try
@@ -168,5 +201,7 @@ public static class PuddingApplicationInitializer
         {
             Console.WriteLine($"[startup] jieba tokens backfill skipped: {ex.Message}");
         }
+
+        phases?.Mark(StartupPhases.JiebaBackfill);
     }
 }

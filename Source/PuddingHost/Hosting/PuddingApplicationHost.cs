@@ -337,7 +337,7 @@ public static class PuddingApplicationHost
         StartupPhaseTracker? phases = null)
     {
         Console.WriteLine("[Startup] DB migration skipped — using pre-built database");
-        await PuddingApplicationInitializer.InitializeAsync(application, cancellationToken);
+        await PuddingApplicationInitializer.InitializeAsync(application, cancellationToken, phases);
     }
 
     /// <summary>
