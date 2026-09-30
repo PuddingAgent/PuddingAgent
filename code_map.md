@@ -1,3 +1,7 @@
+## 2026-09-30：Core 启动耗时归因（初始化段埋点补齐）
+
+`StartupPhaseTracker`（`Source/PuddingHost/Hosting/StartupPhaseTracker.cs`，`bcfac24`）在组合根各阶段打点（`[StartupPhase] <phase> total/delta ms`，stdout + 系统日志双通道）；该提交收了 `phases` 却未向下传，初始化段仍是单个 `initialized` 增量。`23a8e83` 把 `phases` 传入 `PuddingApplicationInitializer`，并细分 `platform-db-ensure`/`event-store-ensure`/`memory-db-ensure`/`workspace-catalog`/`jieba-backfill` 与 25 个 `schema-<类型名>`。零行为变更。实测基线（隔离 DataRoot）：空闲 6.5 s / Core 忙 12.4 s，组合根 `services-registered`→`host-built` 仅约 306 ms。[归因报告](Docs/Reports/Core启动耗时归因-2026-09-30.md) · [分诊入口](How-Debuge.md#2026-09-30运行中心启动耗时偏大core-启动做了什么慢在哪)。
+
 ## 2026-09-30：消息排队与执行状态修复
 
 `SqliteExecutionLeaseStore` 依据可信 Message Fabric 来源，在同会话领取时让前台消息优先于尚未领取的 Agent/System 消息，保留活跃租约互斥和跨会话 FIFO。Web `executionFlowCollector/Projector` 保留 `turn.accepted/started`，`TurnStatus` 区分排队与执行并按真实开始时间计时。[诊断与验证](Docs/Reports/Chat-Queue-Response-Fix-2026-09-30.md)。

@@ -3918,3 +3918,52 @@ VisionPipelineException包含source=tool function_call_output、message#、plann
 先从用户消息的 SessionId/turn_id/command_id 查 `chat_execution_commands` 的 status/created_at/started_at，再按 conversation_id + turn_id 查 `conversation_events` 的 `turn.accepted`、`turn.started` 与首个推理/正文事件。只有 accepted 且 started_at 为空是排队，不是模型首字超时；其他 turn 的 LLM/tool 日志不能证明本条消息已经执行。
 
 检查同会话 active execution_runs 及 pending commands 的创建时间、可信 `message_fabric_ingress` / `message_fabric_from_kind`。Core 重启可能恢复旧后台任务，原 FIFO 又会先领取更旧的子代理结果。新规则只调整尚未领取任务，同会话前台优先，不取消活跃工具，也不删除后台记录。UI 没有可见内容不能推出正在运行：accepted 显示排队、started 之后才按实际开始时间计处理时长；未知显示等待反馈。只读现场库；回归使用内存 SQLite。详见 [现场时间线与修复](Docs/Reports/Chat-Queue-Response-Fix-2026-09-30.md)。
+
+
+## 2026-09-30：运行中心「启动耗时」偏大（Core 启动做了什么、慢在哪）
+
+**口径**：该数字不是 Core 自报，而是 `Source/PuddingDesktop.WpfArchive/Core/CoreProcessSupervisor.cs`（WinUI Desktop 链接编译）里
+`ReadyAt - StartedAt`：`process.Start()` 之前取 `StartedAt`，收到 stdout `PUDDING_DESKTOP_READY` **且** `/health/ready` 通过后才取 `ReadyAt`。
+展示在 `Source/PuddingDesktop/MainWindow.xaml.cs:123`。Ready 行由 `Source/PuddingAgent/Program.cs` 在 `InitializeAsync` + `StartAsync` 之后输出，
+所以它覆盖「进程创建 → 组合根 → 初始化 → 全部 HostedService 启动 → 监听就绪」。
+
+**Core 启动做了什么**（顺序即代码顺序）：
+
+1. `Program.cs`：解析 `--desktop-child/--data-root/--desktop-parent-pid/--urls` → `PuddingDataRootLease`（占 `<DataRoot>/.pudding-host.lock`）。
+2. `PuddingApplicationHost.CreateBuilder`：`PuddingDataRootBootstrapper.Bootstrap`（拷 default-data、建运行目录、建默认 Agent 实例）→ 配置链（appsettings + `<DataRoot>/config/system.json`）→ Serilog → `WebApplication.CreateBuilder` → `ValidateScopes/ValidateOnBuild` → CORS/压缩/HttpLogging → MVC application parts → JWT/授权策略 → `AddPuddingApplicationServices`（Runtime/Platform/Connectors 组合根）。
+3. `Build`：`builder.Build()`（容器构建 + ValidateOnBuild）→ `MapPuddingApplication`。
+4. `InitializeAsync`：Platform DB 幂等 schema（`EnsureCreated` + 25 个 `*SchemaBootstrapper`）→ Conversation Event Store → Memory DB（core + library）→ Workspace Catalog → jieba tokens 回填。
+5. `app.StartAsync()`：全部 `IHostedService`（ConnectorHost/P2P/飞书、CodeIndexMaintenance、IndexPrebuild 全文供给、各类 Worker、保留期裁剪等）。
+6. `CaptureBoundAddresses` → 输出 `PUDDING_DESKTOP_READY`。
+
+**先看日志有没有覆盖这段**：取运行中心显示的「启动于」，与 `logs/system/pudding-*.log` 当日文件的**第一行**时间比较。
+2026-09-30 的现场是启动 07:00:31、首行 07:00:48.460 ⇒ **17.46 秒（81%）没有任何日志行**。
+根因：`PuddingApplicationInitializer` 的 `[Startup] ...` 全是 `Console.WriteLine`，只进 Desktop 内存环形缓冲（运行中心面板），**不落文件**且**不带耗时**。
+（`bcfac24` + `23a8e83` 已补埋点。）
+
+**读埋点**：grep `\[StartupPhase\]`。格式 `[StartupPhase] <phase> total=<自托管入口累计>ms delta=<距上一打点>ms`，
+同时进 stdout 与系统日志文件。阶段名见 `Source/PuddingHost/Hosting/StartupPhaseTracker.cs` 的 `StartupPhases`：
+`options-resolved`/`data-root-lease`/`data-root-bootstrapped`/`logging-ready`/`services-registered`/`host-built`/`middleware-mapped`/
+`initialized`/`server-started`/`ready`，以及初始化段的 `platform-db-ensure`/`event-store-ensure`/`memory-db-ensure`/
+`workspace-catalog`/`jieba-backfill` 和每个 bootstrapper 的 `schema-<类型名>`。
+**`delta` 才是该阶段的耗时**（打点在阶段边界，delta = 刚结束的那一步）。
+
+**已知边界与易误判点**：
+
+- `process-start` 实际是「托管入口」而非「OS 进程创建」，**不含 .NET 运行时与程序集加载**。这部分只能由
+  「进程创建时间（`Get-Process <pid> | Select StartTime` 或 `Process.StartTime`）→ 第一条 `[StartupPhase]` 行」的差额观察。
+- **不要先怀疑 DI**：实测隔离 DataRoot 下 `services-registered`→`host-built`（含 `ValidateOnBuild`）只有约 306 ms。
+- **不要先怀疑索引重建**：25 个 bootstrapper 里的 `CREATE INDEX IF NOT EXISTS` 在现网库均为空操作（先查 `sqlite_master`）。
+- **该指标会被机器负载成倍放大**：同一 Debug 二进制、同一隔离 DataRoot，机器空闲 **6.5 s**、Core 正在忙 **12.4 s**
+  （连尚未碰数据库的组合根都从 1077 ms 涨到 3856 ms）。判断"是否回归"必须同时说明当时的负载。
+- 2026-09-30 现场数据规模（可能是背景而非根因）：`pudding_platform.db` **9.20 GiB**、`-wal` **192.4 MB**；
+  `D:\data` 共 30,025 文件 / 17.3 GB，其中 `logs` 12,016 个、`workspaces` 12,615 个。
+  该机逐文件 IO 偏慢（`File.Copy` ≈ 5.9 ms/文件），且**运行中的 Core 在索引本仓库**，
+  往 `temp/` 写 1,287 个小文件实测被放大到 **0.69 秒/文件** ⇒ 测量与临时 DataRoot 不要放在被索引的仓库树内。
+
+**复现装置**：`temp/measure-core-startup.ps1`（隔离 DataRoot + 专用端口 + 逐行 stdout 时间戳，直接给出各 `[Startup]` 阶段的毫秒）。
+**不要指向 `D:\data`**：Console 与 DesktopChild 共用 `.pudding-host.lock` 句柄租约，第二个 Core 会被互斥挡住；
+也不要删除锁文件绕过互斥。
+
+只读核查现场库时用 `file:...?mode=ro` + `PRAGMA query_only=ON`；`dbstat` 全库聚合在数 GiB 库上可能超过 120 秒，不要为页面刷新而跑。
+完整时间线与实测分阶段数据见 [Core 启动耗时归因](Docs/Reports/Core启动耗时归因-2026-09-30.md)。
