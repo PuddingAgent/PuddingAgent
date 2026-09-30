@@ -3954,12 +3954,13 @@ VisionPipelineException包含source=tool function_call_output、message#、plann
   「进程创建时间（`Get-Process <pid> | Select StartTime` 或 `Process.StartTime`）→ 第一条 `[StartupPhase]` 行」的差额观察。
 - **不要先怀疑 DI**：实测隔离 DataRoot 下 `services-registered`→`host-built`（含 `ValidateOnBuild`）只有约 306 ms。
 - **不要先怀疑索引重建**：25 个 bootstrapper 里的 `CREATE INDEX IF NOT EXISTS` 在现网库均为空操作（先查 `sqlite_master`）。
-- **该指标会被机器负载成倍放大**：同一 Debug 二进制、同一隔离 DataRoot，机器空闲 **6.5 s**、Core 正在忙 **12.4 s**
-  （连尚未碰数据库的组合根都从 1077 ms 涨到 3856 ms）。判断"是否回归"必须同时说明当时的负载。
-- 2026-09-30 现场数据规模（可能是背景而非根因）：`pudding_platform.db` **9.20 GiB**、`-wal` **192.4 MB**；
-  `D:\data` 共 30,025 文件 / 17.3 GB，其中 `logs` 12,016 个、`workspaces` 12,615 个。
-  该机逐文件 IO 偏慢（`File.Copy` ≈ 5.9 ms/文件），且**运行中的 Core 在索引本仓库**，
-  往 `temp/` 写 1,287 个小文件实测被放大到 **0.69 秒/文件** ⇒ 测量与临时 DataRoot 不要放在被索引的仓库树内。
+- **先排除自己造成的负载**：`job_kill` **不会**杀掉 pwsh 的孙进程。2026-09-30 本次排查中有 3 个 Python 进程在 `job_kill` 后继续扫 9.2 GiB 的 platform.db，把整机磁盘打满，导致同一空库启动被误测为 **111.6 s**（Workspace Catalog 单项 73.9 s）、逐文件复制退化到 0.69 秒/文件。
+  规则：任何"机器负载导致变慢"的结论，先用 `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*<你的脚本>*' }` 证明当前负载不是自己造成的；杀掉孤儿进程后同一 DataRoot 立刻回到 **4.13 s**。
+- **无争用时该指标很小**：同一 Debug 二进制、隔离 DataRoot，空库首启 **6.5 s**、schema 已存在 **4.13 s**。现网 21.5 s 的差额不能用"代码路径固有开销"解释。
+- **192.4 MB 未检查点 WAL 已被实测证伪**：把探针库 WAL 灌到 209 MB 后启动，Platform 阶段 1.83 s（无大 WAL 时 2.01 s），主库仍 0 字节（未发生检查点）。不要再用"重启前 WAL 大"解释启动慢。
+- **`sqlite3.Connection.backup()` 在本机复制 9.2 GiB 的 platform.db 会挂住**（26 分钟 0 字节、9 秒 CPU）。需要副本时用停机窗口的文件级复制或 `VACUUM INTO`；`dbstat` 全库聚合同样不要在在线库上跑。
+- 2026-09-30 现场数据规模：`pudding_platform.db` 9.20 GiB、`-wal` 192.4 MB；`D:\data` 共 30,025 文件 / 17.3 GB（`workspaces` 12,615、`logs` 12,016、`agents` 1,287）。
+  测量用临时 DataRoot 请放在**仓库之外**：运行中的 Core 在索引本仓库，往 `temp/` 写大量小文件会被索引工作放大。
 
 **复现装置**：`temp/measure-core-startup.ps1`（隔离 DataRoot + 专用端口 + 逐行 stdout 时间戳，直接给出各 `[Startup]` 阶段的毫秒）。
 **不要指向 `D:\data`**：Console 与 DesktopChild 共用 `.pudding-host.lock` 句柄租约，第二个 Core 会被互斥挡住；
