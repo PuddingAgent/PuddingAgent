@@ -1,3 +1,7 @@
+## 2026-10-01：Desktop 图标与启动样式修复
+
+`Source/PuddingDesktop/Assets/Pudding.ico` 复用 Web 品牌头像，包含 16～256px 九档尺寸；项目嵌入程序图标并复制资源，`MainWindow/AppWindow.SetIcon` 设置任务栏图标，`DesktopIcon` 为托盘加载独立 HICON，`DesktopTrayIcon` 负责释放。`TestScripts/update-pudding-desktop-icon.ps1` 可重建 ICO。移除两处不存在的 `DefaultDropDownButtonStyle` 引用，修复构建成功后主窗口 XAML 加载失败。验证与边界见 [报告](Docs/Reports/Desktop-Icons-And-Startup-Fix-2026-10-01.md)。
+
 ## 2026-10-01：索引面板 B 卡消费真实符号索引数据（P3）
 
 Admin「索引与检索」页 L1 的 **B 卡（符号/代码索引）从占位改为真实数据消费**，并实现**四态优雅降级**：块缺失 `absent` / 观测不可用 `unavailable` / 已知的空 `empty` / 已观测 `observed`，**四态短词与 level 两两不同**（有 `Set=4` 断言）。契约字段名**从后端反读**（`Source/PuddingHost/Services/CodeIndexStatusProbe.cs` + `Tests/PuddingHost.Tests/Hosting/SA2*.cs` 的「恰好 23 个 camelCase」断言），23 字段只在 hover tooltip 与折叠的 L2 出现；D3 的**注册态与维护态分两个分区**（`data-zone="registry"` / `"driver"`）不合并；视觉用既有的陈旧/未登记/路径失效/涟漪/拨动开关/校准新鲜度环。新增 `src/pages/index-status/{codeIndexRow.tsx,codeIndex.test.tsx}`，`types.ts` 仅新增类型 + 一个可选根字段（既有 `fullText` 定义逐字未动）。⚠️ `codeIndex` 块由后端提供，**需重启 Core 才生效**；在此之前页面如实显示「未接入」（中性灰、不染红、无动效）。提交 `92b0f68`。

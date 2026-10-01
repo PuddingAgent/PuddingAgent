@@ -61,6 +61,7 @@ public sealed partial class MainWindow : Window
         _coordinator = coordinator;
         InitializeComponent();
         Title = "Pudding";
+        AppWindow.SetIcon(DesktopIcon.FilePath);
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
         SystemBackdrop = new MicaBackdrop();

@@ -10,6 +10,8 @@ internal sealed class DesktopTrayIcon : IDisposable
     private readonly IntPtr _handle;
     private readonly SubclassProc _callback;
     private readonly uint _taskbarCreated;
+    private readonly IntPtr _icon;
+    private bool _disposed;
     internal bool Available { get; private set; }
     internal DesktopTrayIcon(MainWindow window, Action exit)
     {
@@ -17,13 +19,18 @@ internal sealed class DesktopTrayIcon : IDisposable
         _handle = WinRT.Interop.WindowNative.GetWindowHandle(window);
         _callback = OnMessage;
         _taskbarCreated = RegisterWindowMessage("TaskbarCreated");
-        if (!SetWindowSubclass(_handle, _callback, 1, 0)) throw new InvalidOperationException("Cannot install tray callback.");
+        _icon = DesktopIcon.LoadTrayIcon();
+        if (!SetWindowSubclass(_handle, _callback, 1, 0))
+        {
+            DesktopIcon.DestroyIcon(_icon);
+            throw new InvalidOperationException("Cannot install tray callback.");
+        }
         Add();
     }
     private Data Create() => new()
     {
         Size = (uint)Marshal.SizeOf<Data>(), Window = _handle, Id = 1, Flags = 7, Message = 0x8051,
-        Icon = LoadIcon(IntPtr.Zero, new IntPtr(32512)), Tip = "Pudding · 打开工作台", Info = "", InfoTitle = ""
+        Icon = _icon, Tip = "Pudding · 打开工作台", Info = "", InfoTitle = ""
     };
     private void Add() { var data = Create(); Available = Shell_NotifyIcon(0, ref data); }
     private IntPtr OnMessage(IntPtr hwnd, uint message, nuint w, nint l, nuint id, nuint reference)
@@ -53,8 +60,11 @@ internal sealed class DesktopTrayIcon : IDisposable
     }
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         var data = Create(); Shell_NotifyIcon(2, ref data);
         RemoveWindowSubclass(_handle, _callback, 1); Available = false;
+        DesktopIcon.DestroyIcon(_icon);
     }
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct Data
@@ -74,7 +84,6 @@ internal sealed class DesktopTrayIcon : IDisposable
     [DllImport("comctl32.dll")] private static extern IntPtr DefSubclassProc(IntPtr hwnd, uint message, nuint w, nint l);
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern bool Shell_NotifyIcon(uint command, ref Data data);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string name);
-    [DllImport("user32.dll")] private static extern IntPtr LoadIcon(IntPtr module, IntPtr name);
     [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool AppendMenu(IntPtr menu, uint flags, nuint id, string text);
     [DllImport("user32.dll")] private static extern uint TrackPopupMenu(IntPtr menu, uint flags, int x, int y, int reserved, IntPtr hwnd, IntPtr rect);

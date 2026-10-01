@@ -19,11 +19,13 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Pudding.ico</ApplicationIcon>
     <AssemblyName>PuddingDesktop</AssemblyName>
     <RootNamespace>PuddingDesktop</RootNamespace>
     <DefaultItemExcludes>$(DefaultItemExcludes);**/bin/**;**/obj/**;**/TestResults/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="Assets\Pudding.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
     <ProjectReference Include="../PuddingCore/PuddingCore.csproj" />
     <ProjectReference Include="../PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />

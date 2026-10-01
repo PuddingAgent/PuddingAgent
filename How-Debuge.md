@@ -1,3 +1,7 @@
+### WinUI 图标与 XAML 启动错误（2026-10-01）
+
+编译通过不等于资源可在运行时解析。本次 `MainWindow.xaml` 的两处 `BasedOn="{StaticResource DefaultDropDownButtonStyle}"` 导致 `XamlParseException`，诊断在隔离 DesktopHome 的 `logs/desktop.*.log`；移除不存在的资源引用，保留 DropDownButton 控件默认模板后，外部生命周期脚本通过。程序图标来自 `ApplicationIcon`，任务栏来自 `AppWindow.SetIcon`，托盘来自 `LoadImage`：检查三条接线及发布包 `Assets/Pudding.ico`，不要只检查 EXE 文件图标。详见 [验证记录](Docs/Reports/Desktop-Icons-And-Startup-Fix-2026-10-01.md)。
+
 ### WinUI 启动器恢复验证（2026-09-29）
 
 运行中心（2026-09-30）显示的 CPU 是独立 Core 进程的 `TotalProcessorTime` 增量除以单调时钟间隔与逻辑处理器数，0–100% 按整机口径；内存为工作集 MiB，不包括 WebView/其他工具子进程。首次采样、进程退出或权限不足显示“—”，不当作 0。仅页面可见且窗口显示时每秒采样；日志仅内容改变才重赋值，关闭“跟随最新日志”可以检查前面的内容。启动时间来自进程，启动耗时来自 Core 的 StartedAt/ReadyAt，不能把进程存活当成服务就绪。

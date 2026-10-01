@@ -6,7 +6,10 @@
 - Runtime Center navigation lives beside Workbench and Browser. Colored status, startup duration/time, uptime, Core CPU and working-set cards sit above a stretchable log viewport with optional follow mode. Metrics sample only while this page and window are visible; unchanged logs are not reassigned.
 - `PuddingDesktop.WpfArchive/Runtime/CoreProcessMetricsSampler.cs`: shared BCL process sampling and monotonic CPU deltas; unavailable samples are empty, PID/start-time changes reset the CPU baseline. No business Host or database access.
 - `Hosting/DesktopApplicationCoordinator.cs`: former launcher coordinator with WinUI dispatcher/window adaptation. Process supervisor, restart policy, token/config handling and Bridge logic compile from shared sources in `PuddingDesktop.WpfArchive`.
-- `DesktopTrayIcon.cs`: native tray open/exit and close-policy adapter.
+- `Assets/Pudding.ico`: multi-size Web brand avatar, embedded in EXE and copied to build/publish output; regenerate with `TestScripts/update-pudding-desktop-icon.ps1`.
+- `DesktopIcon.cs`: shared icon path and private Win32 tray HICON loading; `MainWindow` sets the AppWindow icon for the taskbar/title bar.
+- `DesktopTrayIcon.cs`: native tray open/exit and close-policy adapter; owns and releases its Pudding icon handle.
+- Tool DropDownButton styles use the control's default template without the nonexistent `DefaultDropDownButtonStyle` resource key.
 - `PuddingDesktop.csproj`: rejects Host/Runtime/Platform compiler references; both Build and Publish bundle an independently executable Core in `core/`. VS fast up-to-date skipping is disabled so Core-only edits also reach the current build. PuddingCore reference is for existing configuration contracts, not Host composition.
 - `TestScripts/test-pudding-desktop-launcher.ps1`: isolated real-process smoke and external lifecycle checks; default Core path is empty to verify automatic discovery of the build's bundled Core. Explicit `-CoreExe` remains available for diagnostic overrides.
 

@@ -105,9 +105,9 @@
      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
 
-    <!-- DropDownButton versions: same shapes, but based on the DropDownButton default
-         style so the chevron and flyout visuals are preserved. -->
-    <Style x:Key="ToolIconDropDownStyle" TargetType="DropDownButton" BasedOn="{StaticResource DefaultDropDownButtonStyle}">
+    <!-- DropDownButton retains its control-provided default template (including
+         chevron/flyout); WinUI does not expose a DefaultDropDownButtonStyle key. -->
+    <Style x:Key="ToolIconDropDownStyle" TargetType="DropDownButton">
      <Setter Property="Width" Value="32"/>
      <Setter Property="Height" Value="32"/>
      <Setter Property="MinWidth" Value="0"/>
@@ -121,7 +121,7 @@
      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
 
-    <Style x:Key="ToolRoundDropDownStyle" TargetType="DropDownButton" BasedOn="{StaticResource DefaultDropDownButtonStyle}">
+    <Style x:Key="ToolRoundDropDownStyle" TargetType="DropDownButton">
      <Setter Property="Width" Value="34"/>
      <Setter Property="Height" Value="34"/>
      <Setter Property="MinWidth" Value="0"/>
