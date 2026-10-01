@@ -10,11 +10,14 @@
 - UI 统计（9cfd131）：`Source/PuddingPlatformAdmin/src/pages/chat/components/` 新增 `TurnTimingPanel.tsx`（渲染 `done` 帧 `timings`，未采集显示「未采集」而非 0）与 `serviceStatus.ts`（四个服务态纯映射，采不到即 `unknown`）；`IntentConsole.tsx` 缓存率改为无条件 `×100` 并标注口径与样本数，四个服务态改接真实端点（`context-health` / `/api/admin/index/status` / `/api/debug/subconscious/debug` / `/api/llm/providers`）；`useSessionEventProjection.ts` 捕获 `turn.completed.timings`，经 `ChatState` → `index.tsx` → `ChatLayout` → `ChatMain` 透传；`services/platform/api.ts` 新增手写契约 `TurnTimings` / `SubconsciousRuntimeControlSnapshotDto` / `getSubconsciousDebugState()`。
 - 调试入口：`How-Debuge.md` 的「2026-10-01：首 token 与会话缓存口径」；实施与验收记录见 `Docs/Reports/Agent-Harness-Latency-Implementation-2026-10-01.md`。
 
-## 2026-10-01：Chat 前端现代化 UI / UX 设计（待实施）
+## 2026-10-01：Chat 前端现代化 UI / UX（设计已交付，P0/P1 代码已落地）
 
-- 设计规格：Docs/Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md。
+- 设计规格：Docs/Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md（§13.7 P0 状态、§13.8 P1 状态、§14.6 SCROLL-001 状态）。
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
-- 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
+- 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案。
+- 已落地切片：SCROLL-001-WEB（`2430f97`：`global.style.ts` 补 `color-scheme` 与 `--pudding-scroll-*`，滚动条皮肤：透明轨道 + 10px gutter 内 6px 圆角 thumb + hover/active 只换色 + 不画箭头 + forced-colors 回退）；SCROLL-001-SHELL（`6bf5b16`：`PuddingDesktop.Foundation/WorkbenchAppearance.cs` 纯映射 + `MainWindow` 单一 `ApplyWorkbenchAppearance`，WebView2 首帧背景与 `PreferredColorScheme`）；IMG01/IMG04（`28dca85`：主题真源与 antd token 收敛为 §3 中性层级 + 单一蓝色强调，并修掉 10 个「被引用但从未定义」的短名 token 导致的暖色回退）；IMG03（`7e38284`：顶部保留高频动作，自动朗读/开发者模式收进「更多」并显示开关状态）；IMG06/IMG07（`7c2ad16`：`agentTurnCard` 去大面积有色底、链接改主题强调色、行内代码与表格密度按 §13.5）。
+- 前端版本机制（`4749fd9`）：版本号真源 = `Source/PuddingPlatformAdmin/package.json` 的 `version`（规则见 AGENTS.md「前端版本管理」）；`config/config.ts` 构建期注入 `__PUDDING_FRONTEND__`（版本/哈希/提交与构建时间/脏标记）→ `src/utils/frontendBuild.ts` → `src/components/FrontendVersionBadge`（挂在 `app.tsx` 的 `rootContainer`，页角常驻）。改前端必须递增版本号并重新部署 `dist` → Core 的 `wwwroot/admin`，只重启 Core 不会重新部署静态产物。
+- 未完成：IMG05 / IMG08–IMG12、SCROLL-001 QA 与 §12 整窗、WebView2 真实验收（需外部控制器重启到明确新构建）。
 
 ## 2026-10-01：Desktop 侧通道启动判定（第 67 轮）
 

@@ -529,6 +529,20 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 
 仍未取得、因而不能记为关闭的证据只剩一条：**整窗与 WebView2 真实验收**（§12 V/F/S/A/P/SEC/D、§13.6 IMG-V*、§14.5 表）。P0 因此只能记为「代码完成、未验收」。
 
+### 13.8 实施状态（P1：消息与表格）
+
+按 §13.6 的优先次序继续落「消息、表格」这一批。
+
+| 项 | 状态 | 提交 | 落地内容 |
+|---|---|---|---|
+| IMG06（助手长文巨底色矩形） | 代码已落地，未验收 | `7c2ad16` | `agentTurnCard` 去掉大面积有色底：原值 `color-mix(accent 3%, --pudding-admin-surface)` 就是截图里那块巨大矩形（深色下实测约 `#1b2339`），改为透明填充、回合分隔交给 1px 边界，边界同时从 admin token 换回 chat token。行内代码由「6px 圆角 + misty-blue 混色」改为 `surface-muted` + 4px + 常规字重 + `overflow-wrap`；块引用按 §5 改为 3px 左线 + `surface-muted` 底；链接由 `--sky-soft`（浅色下近乎白色、实际读不出来）改为主题强调色。代码块仍保留更深底作为局部锚点，未动。 |
+| IMG07（表格拥挤/首列过窄/正文过密） | 代码已落地，未验收 | `7c2ad16` | 单元格内边距 10/12；`th`/`td` 分隔线改用 `--pudding-chat-border`（原 `color-mix(--text-primary 25/10%)`）；首列给 `7em` 最小宽，避免「可部署产物」这类短标签被挤成一字一行；长内容列仍可换行、整表超宽由既有容器横滚；正文段落间距 8 → 12。 |
+| 旧底 token 收敛（附带） | 代码已落地 | `7c2ad16` | 把仍在用旧蓝灰/暖黄底的 5 处选中态与悬停态收敛到 §3 token（CommandPalette 的 `<mark>` 高亮与选中行、MentionPalette 选中项、ContextMenu hover、用户头像、focus view 头像）。`message`/`markdown` 样式现已不含 `--sky-soft` / `--misty-blue` / `--pale-yellow-sunlight`。 |
+
+本批证据：新增 4 项不变量测试（助手卡片无有色底且不再取 admin token、链接用 accent、行内代码用 surface-muted、表格 10/12 + 7em + 段落 12）；`pnpm jest` 全量 **1607 passed / 3 failed**（3 项为语音相关既有失败）；`biome lint` 无新增（CommandPalette 未用参数、ContextMenu 数组 index key 均为 HEAD 既有，已用 pristine 文件核对）；`pnpm run build` + chat bundle budget ok。**前端版本 6.1.0 → 6.1.1**：这是 AGENTS.md「前端版本管理」生效后第一次按规则递增版本号，部署后页角徽标显示 `v6.1.1 · 7c2ad16 · 2026-10-01 23:48`，并已在运行中的 Core 所服务的产物里核对到 `6.1.1` / `7c2ad16` / `dirty:!1`。
+
+仍未做（按 §13.6 次序）：**IMG08**（输入区微控件与无标签状态圆环）、**IMG09/IMG10**（Agent 行 badge 与左栏图标/中英文案）、**IMG11**（工具首页卡片可用/待接入区分）、**IMG12**（状态重复归位）、**IMG05**（Shell 分栏默认比例，须先在 Foundation 测再接入 Desktop）。以上与 §12 的整体验收均未完成，不能记为通过。
+
 ## 14. 独立缺陷登记：SCROLL-001 深色滚动条及 Web / Shell 边界不协调
 
 ### 14.1 登记与证据
