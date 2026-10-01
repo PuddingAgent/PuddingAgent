@@ -51,6 +51,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken);
 
+    /// <summary>对元素执行交互；实现方必须在交互后返回<b>新的</b>页面状态（旧 Ref 随之作废）。</summary>
+    Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
+        DesktopCallContext context, BrowserInteractRequest request, CancellationToken cancellationToken);
+
     /// <summary>按定位描述符查找元素；实现方必须为每个命中项标注当前 PageVersion。</summary>
     Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
         DesktopCallContext context, BrowserLocateRequest request, CancellationToken cancellationToken);

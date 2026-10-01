@@ -213,6 +213,31 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ShellStatusHandler(cancellationToken);
     }
 
+    public int InteractCount => _calls.Count(call => call.StartsWith("interact", StringComparison.Ordinal));
+
+    public Func<BrowserInteractRequest, CancellationToken, Task<CapabilityResult<DesktopInteractionResult>>>? InteractHandler { get; set; }
+
+    public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
+        DesktopCallContext context, BrowserInteractRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue($"interact:{request.Action}");
+        await AwaitGateAsync(cancellationToken);
+
+        // 交互会推进页面版本：返回的状态版本高于请求版本，旧 Ref 自此作废。
+        return InteractHandler is null
+            ? CapabilityResult<DesktopInteractionResult>.Success(new DesktopInteractionResult(
+                request.Target,
+                new DesktopPageState(
+                    request.Target,
+                    new Uri("https://example.com/after"),
+                    DesktopPageVersion.Require(request.ExpectedPageVersion.Value + 1),
+                    DesktopPageReadiness.Complete),
+                request.Locator is null
+                    ? null
+                    : new DesktopElementRef("e1", "button", DesktopPageVersion.Require(request.ExpectedPageVersion.Value + 1))))
+            : await InteractHandler(request, cancellationToken);
+    }
+
     public int LocateCount => _calls.Count(call => call.StartsWith("locate", StringComparison.Ordinal));
 
     public Func<BrowserLocateRequest, CancellationToken, Task<CapabilityResult<DesktopLocateResult>>>? LocateHandler { get; set; }

@@ -38,6 +38,9 @@ public enum DesktopCapability
 
     /// <summary>按定位描述符查找元素（返回带 PageVersion 的 Ref；命中 0 个不是错误）。</summary>
     BrowserLocate = 1 << 9,
+
+    /// <summary>对页面元素执行交互（变更类；必须固定页面版本，交互后旧 Ref 作废）。</summary>
+    BrowserInteract = 1 << 10,
 }
 
 public enum DesktopCapabilityKind
@@ -106,6 +109,8 @@ public static class DesktopCapabilities
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.BrowserLocate, "browser.locate", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
+        new(DesktopCapability.BrowserInteract, "browser.interact", InitialVersion,
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
     ];
 
     private static readonly Dictionary<DesktopCapability, DesktopCapabilityDescriptor> ByCapability =

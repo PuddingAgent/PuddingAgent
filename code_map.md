@@ -1,3 +1,20 @@
+## 2026-10-01：`browser.interact` 契约层（切片 D 变更类能力，第 1/2 步）
+
+分两步走：本轮只落**契约与准入**，避免「先声明再半实现」；因此 `browser.interact` 现在与
+dialog/picker/clipboard 同属「已登记但不可用」——`DefaultGrantable` 不含它，Core 侧解码明确返回
+`unsupported_capability`，不假装可用。
+
+- 两条**构造期强制**的不变式：①必须固定页面版本（变更类能力没有版本固定就无法判定操作的是哪一版）；
+  ②按动作校验参数（缺/多参数一律拒绝，避免「点了按钮但文案被静默忽略」的假成功）。
+- 结果携带**交互后的页面状态**：交互推进版本 ⇒ 旧 Ref 在 Core 侧自动作废（复用第 13/14 轮机制）。
+- 联合**同时**在 `Target` 与 `ExpectedPageVersion` 补上 Interact——第 14 轮的漏项教训已固化为回归断言
+  （漏一项会让 Core 侧版本保护对整条能力静默失效）。
+- 准入：`BrowserInteract=[AgentAuthorized]`；测试契约 87/87（新增 5 条）。
+- **未做（下一步）**：proto payload、两端映射、DesktopService 分支、Desktop 侧实现、探针往返、
+  加入 `DefaultGrantable`。
+
+测试合计：361 用例（Contracts 87、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 67、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：旧 Ref 作废的 Core 侧强制（按目标的页面版本跟踪）
 
 方案要求「交互提交后不得复用旧 Ref」。本轮把它做成 Core 侧强制，而不只是约定：

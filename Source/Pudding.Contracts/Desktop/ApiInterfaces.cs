@@ -30,6 +30,12 @@ public interface IPuddingDesktopWebViewApi
         DesktopPageTarget target,
         CancellationToken cancellationToken = default);
 
+    /// <summary>对元素执行交互（变更类；必须固定页面版本，交互后旧 Ref 作废）。</summary>
+    Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
+        DesktopCallContext context,
+        BrowserInteractRequest request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>按定位描述符查找元素（返回带 PageVersion 的 Ref；命中 0 个不是错误）。</summary>
     Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
         DesktopCallContext context,
