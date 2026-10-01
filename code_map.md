@@ -1,3 +1,14 @@
+## 2026-10-01：Harness/Pudding 耗时诊断的代码修复（P0 计时 / P1 提示词与搜索 / P2 上下文计时）
+
+诊断报告：`Docs/Reports/Agent-Harness-Latency-Diagnosis-2026-10-01.md`。本轮按「准确计时 → 提示词与搜索 → 按测量优化 → UI 统计」落地。
+
+- P0 计时（823fef9）：`Source/PuddingCore/Models/StreamDelta.cs` 新增 `ProviderDispatchElapsedMs` / `ProviderHeadersMs`；新增 `Source/PuddingCore/Core/ProviderStreamTiming.cs`（派发 / 响应头时点）；三个网关（OpenAi / Responses / Anthropic）在真实 HTTP 派发处打点。`AgentExecutionService.Streaming.cs` 的 `FIRST_TOKEN` 正名为 `CONTEXT_READY`，新增 `PROVIDER_TTFT` / `TURN_COMPLETE` 与 `done` 帧 `timings`；新增 `Source/PuddingRuntime/Services/AgentExecution/AgentTurnTimingCollector.cs` 汇总本轮各时点。`DirectLlmClient` 的 `stream_ttft_ms` 改为派发口径并拆分 reasoning/content/tool，未采集输出空串。
+- P1 搜索（3fa0800）：`Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` 的 `code_symbol_search` 接入 `ICodeProjectRegistry`，未登记项目 fail-closed（`not_registered`），命中校验文件存在 + 归属登记项目根，失效命中计入 `stale_skipped` 并可 `include_stale` 排查；`Tools/BuiltIns/Search/SearchGrepTool.cs` 覆盖声明补齐 `searched_scope` / `complete` / `limit_reason`（索引后端 summary 同步）；`Tools/Platform/ToolLoopInstructionBuilder.cs` 改为「索引健康才走加速路径，出现陈旧信号回落实时搜索」。
+- P1 提示词（2ac98ed）：`Source/PuddingHost/default-data/agent-template-presets/general-assistant.json` 的 `personaPrompt` / `agentsPrompt` / `memoryPrompt` 改为按需恢复记忆、按需检视工具与 Skill、按需联网，并新增「范围纪律（证据足够即停）」；6 条仓库卫生子句逐字保留（`AgentTemplateFileServiceTests`）。
+- P2 上下文（7601ac2）：`ContextAssemblyResult.StageDurationsMs` 由 `ContextPipelineOrchestrator` 既有 `MeasureAsync` 计时填充，随 `done` 帧 `timings.contextStagesMs` 与 `CONTEXT_READY` 日志（最慢 5 层）输出；未引入启发式跳过召回（首条消息本就跳过 `memory_recall`，`memory_crop` 是死代码），先让每层开销可见。
+- 运行中 Agent 配置（仓库外，已留 `.bak-<ts>` 快照）：`D:\data\agents\default.global_general-assistant.6a8\manifest.json` 的 `systemPrompt`、同目录 `AGENTS.md`（上下文恢复改为按需 + 范围纪律）、`TOOLS.md`（cmd 说明限定到 `terminal_*`，`shell` 支持 powershell/wsl）。
+- 调试入口：`How-Debuge.md` 的「2026-10-01：首 token 与会话缓存口径」。
+
 ## 2026-10-01：Chat 前端现代化 UI / UX 设计（待实施）
 
 - 设计规格：Docs/Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md。

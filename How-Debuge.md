@@ -136,7 +136,7 @@ PuddingHost 不调用 AddPuddingRuntime；仅在 Runtime.DependencyInjection 注
 
 ### Core 重启后首轮上下文慢、全文索引反复重建（2026-09-14）
 
-- 先按同一turn的canonical turn.started→context计时，再用`[HistoryHydration:Stage]`及`[ContextPipeline:Stage]`分解；现有FIRST_TOKEN日志早于Provider请求，不能当模型TTFT。阶段耗时另附加在agent.context.assemble指标的`stage.<name>.duration_ms`。
+- 先按同一turn的canonical turn.started→context计时，再用`[HistoryHydration:Stage]`及`[ContextPipeline:Stage]`分解；原FIRST_TOKEN日志早于Provider请求，不能当模型TTFT（现名`CONTEXT_READY`，真TTFT看`PROVIDER_TTFT`/done帧`timings.providerTtftMs`）。阶段耗时另附加在agent.context.assemble指标的`stage.<name>.duration_ms`，并随done帧`timings.contextStagesMs`下发。
 - 排查状态轮询是否GroupBy+First读取大量事件payload。AgentRunProjectionService现只按ix_ce_seq取最新四字段，最新游标与生命周期仍各自保持；不要靠扩大状态缓存掩盖慢SQL。
 - Lucene磁盘键不得使用String.GetHashCode：进程随机盐会使每次Core重启找不到旧索引。8ddd0d3改为规范化路径SHA-256并由Host用PuddingDataPaths.DataRoot配置索引根；Desktop不必设置PUDDING_DATA_ROOT。新格式首次建立后至少再次重启验证目录复用；不能只测同进程第二次调用。
 - 索引存在不代表新鲜：AgentLogRecall使用引擎现有增量更新后搜索，覆盖新增与删除。旧随机缓存目录无可靠映射，不做猜测迁移/删除，交由存储维护登记。
@@ -4022,6 +4022,13 @@ getComputedStyle(c).flexShrink;       // "1"
 - 冷加载 `agent.select`：`cache.loadConversation` 16ms、`api.getConversation` 124ms、`cache.saveConversation` 1ms（写盘顺序仍在 `set` 之前，但本数据集非主导）。
 ## 2026-10-01：首 token 与会话缓存口径
 
-`AgentExecutionService.Streaming.cs` 的 `[AgentExec:Perf] FIRST_TOKEN` 当前在模型调用前记录 context 帧准备时间，不代表模型 TTFT。诊断慢首输出时，结合 `[ContextPipeline:Stage]` 各层耗时、实际 provider dispatch 和首个非空 reasoning/content/tool delta；另测网页首正文渲染，不能用 context/status 帧替代。同 API/模型对比仍需对齐实际 endpoint、参数、工具和会话历史。
+`AgentExecutionService.Streaming.cs` 的 `[AgentExec:Perf] FIRST_TOKEN` 当前在模型调用前记录 context 帧准备时间，不代表模型 TTFT（已正名为 `CONTEXT_READY`）。诊断慢首输出时，结合 `[ContextPipeline:Stage]` 各层耗时、实际 provider dispatch 和首个非空 reasoning/content/tool delta；另测网页首正文渲染，不能用 context/status 帧替代。同 API/模型对比仍需对齐实际 endpoint、参数、工具和会话历史。
 
-`CacheDiagnosticsService` 默认最近 50 条、最多 200 条事件的加权缓存率，与全会话累计值区分；`PrefixHash` 是工程指纹，不等于供应商最长公共前缀。截图旧 E: 索引与扫描覆盖不足要先核对 workspace project/root，再通过正式接口重建当前 D: 索引，不能直接删业务数据库。完整证据与验收方案见 [诊断报告](Docs/Reports/Agent-Harness-Latency-Diagnosis-2026-10-01.md)。
+**实施后（823fef9 / 7601ac2）的判读入口**：
+- `[AgentExec:Perf] CONTEXT_READY`：仅表示上下文就绪，附最慢 5 个 `stage=ms`（来自 `ContextPipelineOrchestrator.MeasureAsync`）。
+- `[AgentExec:Perf] PROVIDER_TTFT`：`ttft/headers/reasoning/content/tool` 均为**供应商派发口径**（`StreamDelta.ProviderDispatchElapsedMs`，起点是 `HttpClient.SendAsync`）；`source=provider_dispatch` 才是真 TTFT，`local_model_call` 是网关未上报时的本地回退（含请求体构建与限流等待），不可当供应商指标。
+- `[AgentExec:Perf] TURN_COMPLETE` 与 `done` 帧的 `timings`：`contextReadyMs/modelDispatchMs/providerTtftMs/firstContentFrameMs/modelMs/toolMs/modelCalls/toolCalls/completedMs/contextStagesMs`。`firstContentFrameMs` 是**服务端首个正文帧**，不含浏览器渲染；网页渲染用 `performance.now()` 的 `chat.output.commit/paint`，两侧时钟不得相减。
+- 未采集一律为 `null`（UI 显示「未采集」），不要用 0 代替；`DirectLlmClient` 侧同名指标见 `stream_ttft_ms` / `stream_ttft_source` / `stream_provider_headers_ms`。
+- 搜索覆盖：`search_grep` 的 partial 声明带 `searched_scope/complete/limit_reason`；索引后端 summary 带 `complete/limit_reason`。`code_symbol_search` 现在会拒绝失效命中并返回 `stale_skipped`（文件不存在 / 越出登记项目根），未登记项目 fail-closed（`not_registered`）——**不要**把 `stale_skipped>0` 的空结果读成「符号不存在」，应重登记重建索引或回落实时 `search_grep`。
+
+`CacheDiagnosticsService` 默认最近 50 条、最多 200 条事件的加权缓存率（服务端一律 0–1 比例），与全会话累计值区分；`PrefixHash` 是工程指纹，不等于供应商最长公共前缀。截图旧 E: 索引与扫描覆盖不足要先核对 workspace project/root，再通过正式接口重建当前 D: 索引，不能直接删业务数据库。完整证据与验收方案见 [诊断报告](Docs/Reports/Agent-Harness-Latency-Diagnosis-2026-10-01.md)。
