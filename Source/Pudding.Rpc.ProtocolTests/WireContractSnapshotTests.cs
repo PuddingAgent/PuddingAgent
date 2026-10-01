@@ -98,7 +98,8 @@ public sealed class WireContractSnapshotTests
             ("deadline", 6),
             ("navigate", 10),
             ("execute_javascript", 11),
-            ("show_notification", 12));
+            ("show_notification", 12),
+            ("get_page_state", 13));
 
         AssertFieldNumbers(
             OperationResult.Descriptor,
@@ -107,14 +108,15 @@ public sealed class WireContractSnapshotTests
             ("navigate", 10),
             ("execute_javascript", 11),
             ("show_notification", 12),
-            ("error", 13));
+            ("error", 13),
+            ("page_state", 14));
 
         Assert.Equal(
-            ["Navigate", "ExecuteJavascript", "ShowNotification"],
+            ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState"],
             Enum.GetNames<CapabilityCommand.PayloadOneofCase>().Where(name => name != "None").ToArray());
 
         Assert.Equal(
-            ["Navigate", "ExecuteJavascript", "ShowNotification", "Error"],
+            ["Navigate", "ExecuteJavascript", "ShowNotification", "Error", "PageState"],
             Enum.GetNames<OperationResult.OutcomeOneofCase>().Where(name => name != "None").ToArray());
 
         AssertFieldNumbers(OperationCancel.Descriptor, ("operation_id", 1), ("generation", 2), ("reason", 3));
@@ -126,8 +128,8 @@ public sealed class WireContractSnapshotTests
     public void PayloadOneof_IsClosedWhitelist()
     {
         // 计划 §4：禁止「字符串命令名 + 任意 JSON」演化成万能调用。
-        Assert.Equal(3, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
-        Assert.Equal(4, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
+        Assert.Equal(4, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
+        Assert.Equal(5, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
     }
 
     [Fact]

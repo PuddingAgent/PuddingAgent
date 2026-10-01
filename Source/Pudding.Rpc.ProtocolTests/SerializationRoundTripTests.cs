@@ -127,6 +127,49 @@ public sealed class SerializationRoundTripTests
     }
 
     [Fact]
+    public void PageStateCommandAndOutcome_RoundTrip()
+    {
+        var command = new CapabilityCommand
+        {
+            OperationId = "op-state",
+            Generation = 2,
+            Capability = "webview.page_state",
+            Deadline = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(
+                new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.Zero)),
+            GetPageState = new GetPageStateCommand
+            {
+                Target = new CommandTarget { ContextId = "ctx-1", PageId = "page-1" },
+            },
+        };
+
+        var parsedCommand = CapabilityCommand.Parser.ParseFrom(command.ToByteArray());
+        Assert.Equal(CapabilityCommand.PayloadOneofCase.GetPageState, parsedCommand.PayloadCase);
+        Assert.Equal("page-1", parsedCommand.GetPageState.Target.PageId);
+
+        var result = new OperationResult
+        {
+            OperationId = "op-state",
+            Generation = 2,
+            PageState = new PageStateOutcome
+            {
+                Url = "https://example.com/a",
+                PageVersion = 12,
+                Readiness = "complete",
+            },
+        };
+
+        var parsedResult = OperationResult.Parser.ParseFrom(result.ToByteArray());
+        Assert.Equal(OperationResult.OutcomeOneofCase.PageState, parsedResult.OutcomeCase);
+        Assert.Equal("complete", parsedResult.PageState.Readiness);
+        Assert.Equal(12, parsedResult.PageState.PageVersion);
+
+        // 设置 error 必须清掉 page_state 分支（oneof 互斥）。
+        parsedResult.Error = new ErrorOutcome { Code = "invalid_request" };
+        Assert.Equal(OperationResult.OutcomeOneofCase.Error, parsedResult.OutcomeCase);
+        Assert.Null(parsedResult.PageState);
+    }
+
+    [Fact]
     public void JavaScriptResult_CarriesRawJsonFragment()
     {
         var outcome = new JavascriptOutcome { Kind = JavascriptValueKind.Json, JsonValue = "{\"a\":1}", Truncated = true };

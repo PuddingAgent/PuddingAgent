@@ -103,6 +103,11 @@ message ShowNotificationCommand {
   NotificationPriority priority = 3;
 }
 
+// 只读页面状态查询：Core 用它确认导航结果与 PageVersion，再决定后续交互。
+message GetPageStateCommand {
+  CommandTarget target = 1;
+}
+
 // Core → Desktop 的能力命令。payload 用 oneof 白名单化，禁止「字符串命令名 + 任意 JSON」。
 message CapabilityCommand {
   string operation_id = 1;
@@ -119,6 +124,7 @@ message CapabilityCommand {
     NavigateCommand navigate = 10;
     ExecuteJavascriptCommand execute_javascript = 11;
     ShowNotificationCommand show_notification = 12;
+    GetPageStateCommand get_page_state = 13;
   }
 }
 
@@ -167,6 +173,15 @@ message NotificationOutcome {
   string notification_id = 2;
 }
 
+// 页面状态结果（只读）：URL / 版本 / 就绪度。
+// 就绪度用字符串线名（unknown / loading / interactive / complete / failed），
+// 便于 Core 侧在不重新发版的情况下识别新状态。
+message PageStateOutcome {
+  string url = 1;
+  int64 page_version = 2;
+  string readiness = 3;
+}
+
 // 领域错误（非流故障）。流本身故障使用 gRPC status。
 message ErrorOutcome {
   // 线名真源：Pudding.Contracts 的 DesktopCapabilityErrorCodes。
@@ -186,6 +201,7 @@ message OperationResult {
     JavascriptOutcome execute_javascript = 11;
     NotificationOutcome show_notification = 12;
     ErrorOutcome error = 13;
+    PageStateOutcome page_state = 14;
   }
 }
 
