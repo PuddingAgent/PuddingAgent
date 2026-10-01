@@ -16,6 +16,20 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`page_state` 映射（第 56 轮）
+
+- 新增 `GetPageStateAsync`：目标不存在 ⇒ **`invalid_target`**（不是 internal，也不是 ui_unavailable）；
+  运行时就绪态非 Ready ⇒ `ui_unavailable`。
+- **两处"不假装"的诚实边界**（写进注释与测试）：
+  ①既有抽象只暴露 `IBrowserPage.IsLoading`，无法区分 Interactive/Complete/Failed ⇒ 只报
+  `Loading` 或 `Unknown`，**不声称已就绪**（需要就绪请用 `wait_for`）；
+  ②页面没有存活版本时返回 `DesktopPageVersion.Unknown`（调用方据此知道"没有版本依据"），
+  而不是编一个版本号。
+- 版本取值优先 `IBrowserPage.PageVersion`，回退 `Info.PageVersion`。
+- 测试：新组件 **9/9**（+4：URL/版本/Loading 如实、无版本 ⇒ Unknown 且就绪度 Unknown、
+  未知上下文与未知页面 ⇒ invalid_target、运行时未就绪 ⇒ ui_unavailable）。
+- 测试基建小坑记录：假运行时的页字典挂在 Runtime 上，而 `GetPageAsync` 在 Context 上 ⇒
+  用 `PageResolver` 由 Runtime 注入，避免为每个测试构造嵌套对象。
 ## 2026-10-01：新组件 `Pudding.DesktopSurface.Browser` 建立 + contexts 映射（第 55 轮）
 
 按组件化交付规程 S1→S4 落地（上一轮裁定"映射层独立成组件"）：

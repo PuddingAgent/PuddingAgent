@@ -83,6 +83,49 @@ public sealed class BrowserRuntimeDesktopSurface
             observedVersion > 0 ? new DesktopPageVersion(observedVersion) : default));
     }
 
+    /// <summary>
+    /// 读取页面状态：确认导航结果与**当前版本**；不返回页面内容。
+    ///
+    /// 就绪度的诚实边界：既有抽象只暴露 <see cref="IBrowserPage.IsLoading"/>，
+    /// 无法区分 Interactive/Complete/Failed ⇒ 这里只报 <see cref="DesktopPageReadiness.Loading"/>
+    /// 或 <see cref="DesktopPageReadiness.Unknown"/>，**不假装**已就绪（需要就绪请用 wait_for）。
+    /// 版本缺失时返回 <see cref="DesktopPageVersion.Unknown"/>（调用方据此知道"没有版本依据"）。
+    /// </summary>
+    public async Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
+        DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(target);
+
+        if (_runtime.State != BrowserRuntimeState.Ready)
+        {
+            return CapabilityResult<DesktopPageState>.Failure(
+                DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
+        }
+
+        var browserContext = await _runtime
+            .GetContextAsync(new BrowserContextId(target.ContextId), cancellationToken).ConfigureAwait(false);
+        if (browserContext is null)
+        {
+            return CapabilityResult<DesktopPageState>.Failure(
+                DesktopCapabilityError.InvalidTarget($"context '{target.ContextId}' is not known"));
+        }
+
+        var page = await browserContext.GetPageAsync(new PageId(target.PageId), cancellationToken).ConfigureAwait(false);
+        if (page is null)
+        {
+            return CapabilityResult<DesktopPageState>.Failure(
+                DesktopCapabilityError.InvalidTarget($"page '{target.Key}' is not known"));
+        }
+
+        var version = page.PageVersion > 0 ? page.PageVersion : page.Info.PageVersion;
+
+        return CapabilityResult<DesktopPageState>.Success(new DesktopPageState(
+            target,
+            ParseUrl(page.Info.Url),
+            version > 0 ? new DesktopPageVersion(version) : DesktopPageVersion.Unknown,
+            page.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown));
+    }
     private static Uri? ParseUrl(string? url) =>
         string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? null : parsed;
 }
