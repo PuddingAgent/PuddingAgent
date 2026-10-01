@@ -47,6 +47,67 @@ public sealed class CapabilityChannelHostTests
     }
 
     [Fact]
+    public void Preflight_ConfirmsRestAndCapabilityEndpointsAreBothBound()
+    {
+        var description = DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1, "core-1");
+
+        var report = CapabilityChannelPreflight.Check(
+            addresses: ["http://127.0.0.1:5099", @"\\.\pipe\pudding-capability-abc"],
+            expectedRestAddresses: ["http://127.0.0.1:5099"],
+            description);
+
+        Assert.True(report.IsHealthy);
+        Assert.Contains(report.Checks, check => check.Contains("REST 仍在监听", StringComparison.Ordinal));
+        Assert.Contains(report.Checks, check => check.Contains("能力端点已监听", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Preflight_NamesTheListenOverridesUseUrlsTrapWhenRestDisappears()
+    {
+        // 这正是「Listen* 覆盖 UseUrls」的失败形态：REST 静默消失。
+        var report = CapabilityChannelPreflight.Check(
+            addresses: [@"\\.\pipe\pudding-capability-abc"],
+            expectedRestAddresses: ["http://127.0.0.1:5099"],
+            DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1, "core-1"));
+
+        Assert.False(report.IsHealthy);
+        Assert.Contains(report.Failures, failure => failure.Contains("覆盖了 UseUrls", StringComparison.Ordinal));
+        Assert.DoesNotContain("secret", report.Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Preflight_ReportsAMissingCapabilityEndpointAndInstanceId()
+    {
+        var noEndpoint = CapabilityChannelPreflight.Check(
+            addresses: ["http://127.0.0.1:5099"],
+            expectedRestAddresses: ["http://127.0.0.1:5099"],
+            DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1, "core-1"));
+
+        Assert.False(noEndpoint.IsHealthy);
+        Assert.Contains(noEndpoint.Failures, failure => failure.Contains("能力端点", StringComparison.Ordinal));
+
+        // 缺少 Core 实例 ID：不是致命错误，但重连语义会退化，必须提示。
+        var noInstance = CapabilityChannelPreflight.Check(
+            addresses: [@"\\.\pipe\pudding-capability-abc"],
+            expectedRestAddresses: [],
+            DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1));
+
+        Assert.False(noInstance.IsHealthy);
+        Assert.Contains(noInstance.Failures, failure => failure.Contains("实例 ID", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Preflight_DisabledChannelOnlyRequiresRestToSurvive()
+    {
+        var report = CapabilityChannelPreflight.Check(
+            addresses: ["http://127.0.0.1:5099"],
+            expectedRestAddresses: ["http://127.0.0.1:5099/"],
+            description: null);
+
+        Assert.True(report.IsHealthy);
+        Assert.Contains(report.Checks, check => check.Contains("未启用", StringComparison.Ordinal));
+    }
+    [Fact]
     public async Task Host_WithNamedPipeChannel_KeepsServingHttp11RestEndpoints()
     {
         await using var harness = await CapabilityHostHarness.StartAsync();

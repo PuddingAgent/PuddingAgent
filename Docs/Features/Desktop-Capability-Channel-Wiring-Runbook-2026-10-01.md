@@ -128,7 +128,7 @@ await host.StartAsync(cancellationToken);
 | # | 动作 | 期望 |
 |---|---|---|
 | 1 | 关闭 `Enabled` 重启一次 | 行为与今天一致：REST 正常、无新端点、无 `pudding-capability-*` 管道 |
-| 2 | 打开 `Enabled`（named-pipe）重启 | `IServerAddressesFeature` 同时列出 REST 与管道；REST 健康检查 200 |
+| 2 | 打开 `Enabled`（named-pipe）重启 | 调用 `CapabilityChannelPreflight.Check(IServerAddressesFeature.Addresses, 期望的 REST 地址, Describe(...))`：**`IsHealthy` 必须为真**（它会明确区分「REST 被 Listen* 覆盖」与「能力端点没绑上」）；REST 健康检查 200 |
 | 3 | 就绪描述发布 | Desktop 能解析出端点（无凭据） |
 | 4 | Desktop 启动并拨入 | 握手协商成功，世代 ≥ 1，能力交集符合 `Grantable` |
 | 5 | 探针（可执行文件） | 47/47 exit 0 —— 注意探针自带服务端；产品验收应改用**真实 Core** 端点跑同一批断言 |

@@ -4,6 +4,22 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
 
+## 2026-10-01：能力通道启动预检（第 28 轮）
+
+把接线手册里的两条**手工检查**变成可复用、有测试的判定函数：
+
+- `CapabilityChannelPreflight.Check(addresses, expectedRestAddresses, description)` →
+  `CapabilityChannelPreflightReport`（逐项通过名单 + 失败原因，失败原因**不含凭据**）。
+- 判定项：①每个期望的 REST 地址是否仍在监听；②能力端点是否真的在监听（管道端点自动补 `\\.\pipe\` 前缀）；
+  ③端点描述是否带 Core 实例 ID（缺失会退化为「无法识别 Core 是否换实例」）；
+  ④通道关闭时只要求 REST 存活。
+- **失败原因直接点名实测约束**：REST 消失时提示「为能力通道调用 `Kestrel.Listen*` 覆盖了 `UseUrls`；
+  组合根必须显式绑定两者」——避免这类故障被当成网络问题排查。产品可在启动日志里输出 `Summary`。
+- 测试：适配层 **26/26**（+4，含「REST 消失且提示正确」「能力端点缺失」「实例 ID 缺失」「关闭时只查 REST」）。
+- 接线手册第 6 节第 2/3 步现可改为「看预检输出」，而不是人工核对地址列表。
+
+测试合计（复核实测）：Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 101、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 26 = **385**；探针 47/47。
 ## 2026-10-01：变更类结果不变量集中强制（第 27 轮）
 
 - 新增 `DesktopMutationInvariants.RequireVersionAdvanced(...)`：**变更类能力返回的页面版本必须严格推进**。
