@@ -29,6 +29,9 @@ internal sealed class AgentTurnTimingCollector
     /// <summary>Duration of the Agent context pipeline assembly (static/tools/skills/memory layers).</summary>
     public long? ContextAssembleMs { get; set; }
 
+    /// <summary>Per-stage context pipeline durations (stage → ms), when the pipeline reported them.</summary>
+    public IReadOnlyDictionary<string, long>? ContextStagesMs { get; set; }
+
     /// <summary>Duration of resolving the effective LLM configuration.</summary>
     public long? LlmConfigResolveMs { get; set; }
 
@@ -164,6 +167,7 @@ internal sealed class AgentTurnTimingCollector
         ["turnStartedAtUtc"] = TurnStartedAtUtc,
         ["historyLoadMs"] = HistoryLoadMs,
         ["contextAssembleMs"] = ContextAssembleMs,
+        ["contextStagesMs"] = ContextStagesMs,
         ["llmConfigResolveMs"] = LlmConfigResolveMs,
         ["toolBuildMs"] = ToolBuildMs,
         ["contextReadyMs"] = ContextReadyMs,

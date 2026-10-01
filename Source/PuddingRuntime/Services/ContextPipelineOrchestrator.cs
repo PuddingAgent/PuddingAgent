@@ -415,7 +415,8 @@ public sealed partial class ContextPipeline
             usedBudget,
             layers.AsReadOnly(),
             layerInfos.AsReadOnly(),
-            userContextBuilder.Length == 0 ? null : userContextBuilder.ToString());
+            userContextBuilder.Length == 0 ? null : userContextBuilder.ToString(),
+            new Dictionary<string, long>(stageDurations, StringComparer.Ordinal));
         }
         catch (Exception ex)
         {

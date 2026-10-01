@@ -393,7 +393,9 @@ public sealed record ContextAssemblyResult(
     int UsedTokens,
     IReadOnlyList<ContextLayerSnapshot> Layers,
     IReadOnlyList<ContextLayerInfo>? LayerInfos = null,
-    string? UserContextPrefix = null);
+    string? UserContextPrefix = null,
+    /// <summary>每个上下文阶段的耗时（stage → ms），用于按实测定位准备开销。</summary>
+    IReadOnlyDictionary<string, long>? StageDurationsMs = null);
 
 /// <summary>单层上下文 Token 快照。</summary>
 public sealed record ContextLayerSnapshot(

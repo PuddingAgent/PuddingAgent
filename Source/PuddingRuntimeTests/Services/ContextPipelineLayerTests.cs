@@ -48,6 +48,20 @@ public sealed class ContextPipelineLayerTests
     }
 
     [TestMethod]
+    public async Task AssembleAsync_Reports_Per_Stage_Durations()
+    {
+        var store = new ContextAssemblyStore();
+        var pipeline = CreatePipeline(store);
+
+        var result = await pipeline.AssembleAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.IsNotNull(result.StageDurationsMs, "阶段计时必须随结果返回，否则无法按实测定位准备开销");
+        Assert.IsTrue(result.StageDurationsMs!.ContainsKey("static"),
+            "静态层是每个请求都执行的最小子集，必须被计时");
+        Assert.IsTrue(result.StageDurationsMs.Values.All(ms => ms >= 0));
+    }
+
+    [TestMethod]
     public async Task AssembleAsync_Respects_Token_Budget()
     {
         var store = new ContextAssemblyStore();

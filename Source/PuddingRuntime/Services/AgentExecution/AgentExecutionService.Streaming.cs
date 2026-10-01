@@ -285,6 +285,11 @@ public sealed partial class AgentExecutionService
             "[AgentExec:Perf] Context assembled session={Session} elapsed={Ms}ms promptLen={Len}",
             request.SessionId, perfContextSw.ElapsedMilliseconds, streamingSystemPrompt.SystemPrompt.Length);
         turnTimings.ContextAssembleMs = perfContextSw.ElapsedMilliseconds;
+        turnTimings.ContextStagesMs = streamingSystemPrompt.StageDurationsMs;
+        // 按实测定位上下文准备开销：只记录最慢的几层，避免日志被全量表淹没。
+        var slowestContextStages = streamingSystemPrompt.StageDurationsMs is { Count: > 0 } stageMap
+            ? string.Join(",", stageMap.OrderByDescending(kv => kv.Value).Take(5).Select(kv => $"{kv.Key}={kv.Value}ms"))
+            : "(none)";
 
         // 子代理上下文装配完毕事件（ADR-021）
         await TryEmitContextAssembledAsync(streamSubAgentRunId, request, CancellationToken.None);
@@ -719,9 +724,10 @@ public sealed partial class AgentExecutionService
                     // 命名修正：此处只代表「上下文就绪」（模型尚未调用），
                     // 供应商 TTFT 由后面的 PROVIDER_TTFT 记录，二者不可混用。
                     _logger.LogInformation(
-                        "[AgentExec:Perf] CONTEXT_READY session={Session} totalElapsed={Ms}ms historyLoad={HistoryMs}ms contextBuild={ContextMs}ms",
+                        "[AgentExec:Perf] CONTEXT_READY session={Session} totalElapsed={Ms}ms historyLoad={HistoryMs}ms contextBuild={ContextMs}ms slowestStages={Stages}",
                         request.SessionId, perfTotalSw.ElapsedMilliseconds,
-                        perfHistorySw.ElapsedMilliseconds, perfContextSw.ElapsedMilliseconds);
+                        perfHistorySw.ElapsedMilliseconds, perfContextSw.ElapsedMilliseconds,
+                        slowestContextStages);
                     turnTimings.MarkContextReady();
                     _logger.LogDebug("[Diag] Stream round={Round} session={Session} tools={ToolCount} maxRounds={MaxRounds}",
                         round, request.SessionId, llmTools.Count, maxRounds);
