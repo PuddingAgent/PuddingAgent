@@ -62,6 +62,26 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层�
 ## 版本号约定
 - 版本号格式：`主版本号.次版本号.修订号`    
 
+### 前端版本管理（强制）
+
+前端（`Source/PuddingPlatformAdmin`）**独立于 Core/Desktop 管理自己的版本号**，因为它是被部署进 `wwwroot/admin` 的静态产物，运行中实例用的是哪一份构建必须能一眼看出来。
+
+- **唯一真源**：`Source/PuddingPlatformAdmin/package.json` 的 `version`。
+- **每次修改前端都必须递增该版本号**，且与前端改动放在**同一个 commit** 里：
+  - 样式/修复类改动 → 递增**修订号**（如 `6.1.0` → `6.1.1`）；
+  - 新增功能/组件类改动 → 递增**次版本号**（如 `6.0.0` → `6.1.0`）；
+  - 结构性重构或破坏性调整 → 递增**主版本号**。
+  - 只改文档、测试或后端时**不要**动前端版本号。
+- **展示**：每个前端页面右下角常驻一个很小的徽标，内容为
+  `v版本号[+dirty] · 短哈希 · 构建时间`（悬停显示全哈希、提交时间与构建时间）。
+  实现：`config/config.ts` 构建期注入 `__PUDDING_FRONTEND__` →
+  `src/utils/frontendBuild.ts` → `src/components/FrontendVersionBadge`（挂在 `app.tsx` 的 `rootContainer`）。
+- **`+dirty`** 表示构建时工作树有未提交改动：本地调试可能正常出现，但**正式交付构建不应带 `+dirty`**；看到它就说明产物不可复现。
+- **只重新构建前端不会生效**：产物需部署进 Core 读取的 `wwwroot/admin`
+  （`Source/PuddingAgent` 的构建通过 `PuddingHostContent.props` 把
+  `PuddingPlatformAdmin/dist` 拷进去）。改完前端必须重新构建并部署，然后核对页角徽标上的
+  版本号/哈希确实是新构建 —— 只重启 Core 不会重新部署静态产物。
+
 ## dev-up脚本python：
 
 dev-up 是源码开发环境的调试和代理 Python 工具，方便快速启动前后端开发栈。修改开发态 Core/Workbench 代码后可用它重启或重新编译；最终用户不使用这些命令。

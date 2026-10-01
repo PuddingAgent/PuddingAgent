@@ -1,5 +1,7 @@
 // https://umijs.org/config/
 
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from '@umijs/max';
 import proxy from './proxy';
@@ -22,8 +24,64 @@ const PUBLIC_PATH: string = '/admin/';
 const IS_DEV = process.env.NODE_ENV === 'development';
 const OUTPUT_PATH = process.env.PUDDING_ADMIN_OUTPUT_PATH || (IS_DEV ? 'dist-dev' : 'dist');
 
+/**
+ * 前端版本信息：版本号 / git 哈希 / 提交时间 / 构建时间。
+ *
+ * - 版本号真源 = 本目录 `package.json` 的 `version`。见 AGENTS.md「版本号约定」：
+ *   **每次修改前端都必须递增该版本号**，并与改动放在同一个 commit 里。
+ * - 构建期通过 umi `define` 注入 `__PUDDING_FRONTEND__`，由页面角落的
+ *   `FrontendVersionBadge` 展示，用来判断“运行中的实例究竟是哪一个构建”。
+ * - 取不到 git（无仓库/受限环境）时不抛错，降级为 unknown，避免构建被环境卡死。
+ */
+const ADMIN_ROOT = join(__dirname, '..');
+
+const readAdminPackageVersion = (): string => {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(join(ADMIN_ROOT, 'package.json'), 'utf8'),
+    ) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+};
+
+const readGit = (args: string[]): string => {
+  try {
+    return execFileSync('git', args, {
+      cwd: ADMIN_ROOT,
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return '';
+  }
+};
+
+const COMMIT = readGit(['rev-parse', 'HEAD']);
+
+const FRONTEND_BUILD_INFO = {
+  version: readAdminPackageVersion(),
+  commit: COMMIT,
+  commitShort: COMMIT ? COMMIT.slice(0, 7) : 'unknown',
+  commitTime: readGit(['log', '-1', '--format=%cI']),
+  // 构建时工作树有未提交改动 → 标脏：此时哈希不能代表可复现的交付物
+  dirty: readGit(['status', '--porcelain']).length > 0,
+  builtAt: new Date().toISOString(),
+};
+
 export default defineConfig({
   outputPath: OUTPUT_PATH,
+
+  /**
+   * @name 前端构建信息注入
+   * @description 供 FrontendVersionBadge 显示版本号/哈希/时间（AGENTS.md 版本号约定）。
+   * 传对象而不是 JSON 字符串：umi/mako 会把值再 stringify 一次，预先 stringify
+   * 会得到「字符串字面量」（读取端 spread 字符串会变成字符键，徽标静默退化成
+   * v0.0.0 · unknown）。读取端已同时兼容对象/字符串两种形态。
+   */
+  define: {
+    __PUDDING_FRONTEND__: FRONTEND_BUILD_INFO as unknown as string,
+  },
   /**
    * @name 开启 hash 模式
    * @description 让 build 之后的产物包含 hash 后缀。通常用于增量发布和避免浏览器加载缓存。

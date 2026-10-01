@@ -5,6 +5,7 @@ import { history } from '@umijs/max';
 import React from 'react';
 import { getInitialSettings, ThemeProviderContainer } from '@/components/ThemeMode';
 import { currentUser as queryCurrentUser } from '@/services/ant-design-pro/api';
+import FrontendVersionBadge from './components/FrontendVersionBadge';
 import { errorConfig } from './requestErrorConfig';
 import './global.style';
 
@@ -12,7 +13,13 @@ const loginPath = '/user/login';
 const bootstrapPath = '/bootstrap';
 
 export const rootContainer = (container: React.ReactNode) => {
-  return <ThemeProviderContainer>{container}</ThemeProviderContainer>;
+  return (
+    <ThemeProviderContainer>
+      {container}
+      {/* 全局前端版本徽标（AGENTS.md「版本号约定」）：所有前端页面角落可见 */}
+      <FrontendVersionBadge />
+    </ThemeProviderContainer>
+  );
 };
 
 /**
