@@ -71,6 +71,8 @@ public sealed partial class MainWindow : Window
         _coordinator.StateChanged += OnStateChanged;
         AppWindow.Closing += (sender, e) => { if (!_closed) { e.Cancel = true; _ = RequestCloseAsync(false); } };
         WorkbenchPane.SizeChanged += (_, _) => ApplyToolLayout();
+        // SCROLL-001：外观选择为“跟随系统”时，系统主题变化也要重新套用宿主外观
+        Root.ActualThemeChanged += (_, _) => ApplyWorkbenchAppearance();
         Root.Loaded += async (_, _) =>
         {
             try { _tray = new DesktopTrayIcon(this, () => _ = RequestCloseAsync(true)); }
@@ -78,8 +80,11 @@ public sealed partial class MainWindow : Window
             await LoadSettingsAsync();
             _loadingAppearance = true;
             var appearance = await _appearance.LoadAsync();
-            ThemeBox.SelectedIndex = appearance.Settings.Theme switch { "Light" => 1, "Dark" => 2, _ => 0 };
+            ThemeBox.SelectedIndex = WorkbenchAppearance.ComboIndex(
+                WorkbenchAppearance.ParsePreference(appearance.Settings.Theme));
             _loadingAppearance = false;
+            // SCROLL-001：恢复保存的外观后立即套用宿主表面，避免启动阶段闪白
+            ApplyWorkbenchAppearance();
             await LoadToolWorkspaceLayoutAsync();
             ApplyToolLayout();
             _timer.Start();
@@ -830,6 +835,8 @@ public sealed partial class MainWindow : Window
                 _web = new Microsoft.UI.Xaml.Controls.WebView2();
                 WorkbenchHost.Children.Add(_web);
                 await _web.EnsureCoreWebView2Async(_webEnvironment);
+                // SCROLL-001：首帧之前就给 WebView2 铺主题底色，消除加载闪白
+                ApplyWorkbenchAppearance();
                 _web.CoreWebView2.NewWindowRequested += (_, e) => { e.Handled = true; OpenExternal(e.Uri); };
                 _web.CoreWebView2.NavigationStarting += (_, e) =>
                 {
@@ -1101,11 +1108,44 @@ public sealed partial class MainWindow : Window
     {
         if (!_ready) return;
         Root.RequestedTheme = ThemeBox.SelectedIndex switch { 1 => ElementTheme.Light, 2 => ElementTheme.Dark, _ => ElementTheme.Default };
+        ApplyWorkbenchAppearance();
         if (!_loadingAppearance)
         {
             try { await _appearance.SaveAsync(new(new(), Root.RequestedTheme.ToString(), "Mica")); }
             catch (Exception ex) { App.WriteDiagnostic(ex); }
         }
+    }
+
+    /// <summary>
+    /// SCROLL-001（设计规格 §14.4）：宿主外观的唯一落点。
+    /// 启动恢复、下拉切换、系统主题变化、WebView2 首次创建都调用这里，
+    /// 避免「启动 / 切换 / 系统主题」三条分支各写一份颜色。
+    /// <para>
+    /// 只作用于宿主表面与 UA 默认控件：WebView2 首帧背景 + 原生滚动条等 UA 控件配色。
+    /// Web 应用主题仍由 Web 自身（ThemeMode / color-scheme）决定，不由此处替代。
+    /// 「跟随系统」必须映射为 <see cref="CoreWebView2PreferredColorScheme.Auto"/>，
+    /// 否则会把宿主选择冒充成系统偏好，破坏 Web 侧“跟随系统”语义。
+    /// </para>
+    /// </summary>
+    private void ApplyWorkbenchAppearance()
+    {
+        var web = _web;
+        if (web is null) return;
+
+        var preference = WorkbenchAppearance.PreferenceFromComboIndex(ThemeBox.SelectedIndex);
+        // 生效配色取 ActualTheme：RequestedTheme 为 Default 时即系统实际主题
+        var scheme = WorkbenchAppearance.Resolve(preference, Root.ActualTheme == ElementTheme.Dark);
+        var (alpha, red, green, blue) = WorkbenchAppearance.ToArgbParts(
+            WorkbenchAppearance.BackgroundArgb(scheme));
+        web.DefaultBackgroundColor = Windows.UI.Color.FromArgb(alpha, red, green, blue);
+
+        if (web.CoreWebView2 is null) return;
+        web.CoreWebView2.Profile.PreferredColorScheme = preference switch
+        {
+            WorkbenchThemePreference.Light => CoreWebView2PreferredColorScheme.Light,
+            WorkbenchThemePreference.Dark => CoreWebView2PreferredColorScheme.Dark,
+            _ => CoreWebView2PreferredColorScheme.Auto,
+        };
     }
     internal async Task RequestCloseAsync(bool explicitExit)
     {
