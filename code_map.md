@@ -1,6 +1,6 @@
-## 2026-10-01：Agent 浏览器右侧面板设计
+## 2026-10-01：右侧多 Tab 工具工作区设计
 
-建议将 WinUI Shell 的整页浏览器改为工作台右侧可收起分栏，默认隐藏，保留浏览器运行时、标签页、Agent 目标及控制权语义。本次仅交付方案。[设计方案](Docs/Features/Agent-Browser-Right-Panel-Design-2026-10-01.md)。
+按参考界面保留左侧与中间聊天结构，新增可拖动、可收起的右侧多 Tab 工具区，承载终端、Agent 浏览器、制成品、输出文件和交互面板；Shell 管容器，业务界面保留 Web。本次仅交付方案。[设计方案](Docs/Features/Agent-Browser-Right-Panel-Design-2026-10-01.md)。
 
 ## 2026-10-01：Agent 编辑工作台设计
 
