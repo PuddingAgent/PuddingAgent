@@ -16,6 +16,18 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`snapshot` 映射（第 59 轮）
+
+- 新增 `SnapshotAsync`：把请求预算（DOM/可达性树/HTML、节点数、文本长度）传给运行时，
+  返回后**再收敛一次**（`DesktopCapabilityBudgets`）——运行时漏了预算也不会无界回传；
+  本地收敛产生的截断同样**如实标注** `Truncated`。
+- 版本语义：给出期望版本时不符即 `page_version_mismatch`（返回过期快照比报错更危险）；
+  未给期望版本则取页面**当前**版本作为快照版本（Ref 的判定依据）。
+- fail closed：请求未指定任何内容种类时**直接拒绝**（`invalid_request`），不做无内容的空调用。
+- 测试放**独立文件** `SnapshotMappingTests.cs`（执行上一轮定下的规则），新组件 **22/22**（+4：
+  预算传递且保版本、运行时忽略预算时仍被截断并标注、版本不符且未取快照、无内容请求被拒）。
+- 一处编译期提醒：跨组件复用 `DesktopCapabilityBudgets` 需显式 `using Pudding.DesktopService;`
+  （命名空间不等于程序集名）。
 ## 2026-10-01：`locate` 映射（第 58 轮，陈旧引用保护在 Desktop 侧闭环）
 
 - 新增 `LocateAsync`，两条不变量在这里守住：

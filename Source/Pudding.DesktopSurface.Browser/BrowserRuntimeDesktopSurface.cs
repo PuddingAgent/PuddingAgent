@@ -1,5 +1,6 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
+using Pudding.DesktopService;
 using PuddingBrowser.Abstractions;
 
 namespace Pudding.DesktopSurface.Browser;
@@ -354,6 +355,68 @@ public sealed class BrowserRuntimeDesktopSurface
             ? CapabilityResult<IBrowserPage>.Failure(
                 DesktopCapabilityError.InvalidTarget($"page '{target.Key}' is not known"))
             : CapabilityResult<IBrowserPage>.Success(page);
+    }
+    /// <summary>
+    /// 读取页面快照。三个要点：
+    /// ①**预算**：把请求预算传给运行时，并在返回后再收敛一次（运行时漏了预算也不会无界回传）；
+    /// ②**截断如实**：运行时报的 Truncated 与本地收敛产生的截断都体现在结果里，不假装完整；
+    /// ③**版本**：给出期望版本时不符即拒绝，返回的快照版本是页面**当前**版本（Ref 的判定依据）。
+    /// 请求未指定任何内容（DOM/可达性树/HTML 都为 false）时直接拒绝：不做无内容的空调用。
+    /// </summary>
+    public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
+        DesktopCallContext context, BrowserSnapshotRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!request.Options.HasContent)
+        {
+            return CapabilityResult<DesktopSnapshot>.Failure(
+                DesktopCapabilityError.InvalidRequest("snapshot request requires at least one content kind"));
+        }
+
+        if (_runtime.State != BrowserRuntimeState.Ready)
+        {
+            return CapabilityResult<DesktopSnapshot>.Failure(
+                DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
+        }
+
+        var page = await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false);
+        if (page.IsFailure)
+        {
+            return CapabilityResult<DesktopSnapshot>.Failure(page.Error);
+        }
+
+        var browserPage = page.Value;
+        if (request.ExpectedPageVersion.IsKnown && browserPage.PageVersion != request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<DesktopSnapshot>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"page '{request.Target.Key}' is at v{browserPage.PageVersion}, request pinned v{request.ExpectedPageVersion.Value}",
+                retryable: true));
+        }
+
+        var snapshot = await browserPage.SnapshotAsync(new SnapshotOptions
+        {
+            IncludeDom = request.Options.IncludeDom,
+            IncludeAccessibilityTree = request.Options.IncludeAccessibilityTree,
+            IncludeHtml = request.Options.IncludeHtml,
+            MaxNodes = request.Options.MaxNodes,
+            MaxTextLength = request.Options.MaxTextLength,
+        }, cancellationToken).ConfigureAwait(false);
+
+        var mapped = new DesktopSnapshot(
+            request.Target,
+            snapshot.DomText,
+            snapshot.AccessibilityTree,
+            snapshot.Html,
+            snapshot.Truncated,
+            snapshot.NodeCount,
+            LiveVersion(browserPage.PageVersion));
+
+        // 纵深防御：运行时没守预算时也要在这里收敛（含硬上限）。
+        return CapabilityResult<DesktopSnapshot>.Success(
+            DesktopCapabilityBudgets.Apply(mapped, request.Options));
     }
     private static Uri? ParseUrl(string? url) =>
         string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? null : parsed;
