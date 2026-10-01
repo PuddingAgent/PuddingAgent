@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
+using Pudding.DesktopConnection;
 using Pudding.DesktopService;
+using Proto = Pudding.Rpc.Protocol.V1;
 
 namespace DesktopServiceTests;
 
@@ -308,3 +310,174 @@ internal static class RepoLayout
             $"Repository root (PuddingAgentNetwork.slnx) not found above {AppContext.BaseDirectory}.");
     }
 }
+
+/// <summary>假监督器：生命周期与状态发布可脚本化，用来验证宿主的启停/单实例/超时语义。</summary>
+internal sealed class FakeSupervisor : IDesktopConnectionSupervisor
+{
+    private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public bool Disposed { get; private set; }
+
+    public bool IgnoreCancellation { get; set; }
+
+    public int Runs { get; private set; }
+
+    public DesktopConnectionState State { get; private set; } = DesktopConnectionState.Idle;
+
+    public ConnectionGeneration Generation { get; set; } = ConnectionGeneration.None;
+
+    public int AttemptCount { get; set; }
+
+    public DesktopCapabilityError? LastError { get; set; }
+
+    public event Action<DesktopConnectionState>? StateChanged;
+
+    public void Publish(DesktopConnectionState state)
+    {
+        State = state;
+        StateChanged?.Invoke(state);
+    }
+
+    public void Release() => _release.TrySetResult();
+
+    public async Task RunAsync(CancellationToken cancellationToken)
+    {
+        Runs++;
+
+        if (IgnoreCancellation)
+        {
+            await _release.Task.ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await _release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // 正常停止。
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Disposed = true;
+        return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>假双向流：测试扮演 Core（推送 CoreFrame、观察 DesktopFrame）。</summary>
+internal sealed class FakeChannelStream : Pudding.DesktopConnection.DesktopChannelStream
+{
+    private readonly System.Threading.Channels.Channel<Proto.CoreFrame> _inbound =
+        System.Threading.Channels.Channel.CreateUnbounded<Proto.CoreFrame>();
+    private readonly List<Proto.DesktopFrame> _written = [];
+    private readonly object _sync = new();
+
+    public void Send(Proto.CoreFrame frame) => _inbound.Writer.TryWrite(frame);
+
+    public IReadOnlyList<Proto.DesktopFrame> Written
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _written.ToArray();
+            }
+        }
+    }
+
+    public override async ValueTask<Proto.CoreFrame?> ReadAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _inbound.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false)
+                ? await _inbound.Reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+        }
+        catch (System.Threading.Channels.ChannelClosedException)
+        {
+            return null;
+        }
+    }
+
+    public override ValueTask WriteAsync(Proto.DesktopFrame frame, CancellationToken cancellationToken)
+    {
+        lock (_sync)
+        {
+            _written.Add(frame);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public override ValueTask CompleteRequestStreamAsync() => ValueTask.CompletedTask;
+
+    public override ValueTask DisposeAsync()
+    {
+        _inbound.Writer.TryComplete();
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class FakeChannelStreamFactory : Pudding.DesktopConnection.IDesktopChannelStreamFactory
+{
+    private readonly object _sync = new();
+    private FakeChannelStream? _stream;
+
+    public FakeChannelStream? Stream
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _stream;
+            }
+        }
+    }
+
+    public ValueTask<Pudding.DesktopConnection.DesktopChannelStream> OpenAsync(CancellationToken cancellationToken)
+    {
+        var stream = new FakeChannelStream();
+        lock (_sync)
+        {
+            _stream = stream;
+        }
+
+        return ValueTask.FromResult<Pudding.DesktopConnection.DesktopChannelStream>(stream);
+    }
+}
+
+/// <summary>最小执行器：只为装配测试提供类型，不参与断言。</summary>
+internal sealed class StubExecutor : Pudding.DesktopConnection.IDesktopCapabilityExecutor
+{
+    public Task<DesktopCapabilityResponse> ExecuteAsync(
+        DesktopCapabilityDescriptor capability,
+        DesktopCapabilityRequest request,
+        DesktopCallContext context,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(DesktopCapabilityResponse.Failure(
+            DesktopCapabilityError.UnsupportedCapability(capability.Name)));
+}
+
+internal static class HostFrames
+{
+    public static Proto.CoreFrame HelloAck(ulong generation = 3) =>
+        new()
+        {
+            HelloAck = new Proto.CoreHelloAck
+            {
+                ConnectionId = "host-connection",
+                Generation = generation,
+                NegotiatedVersion = new Proto.ProtocolRange { Minimum = 1, Maximum = 1 },
+                Capabilities =
+                {
+                    new Proto.CapabilityDeclaration { Capability = "webview.navigate", Version = 1 },
+                    new Proto.CapabilityDeclaration { Capability = "webview.execute_javascript", Version = 1 },
+                    new Proto.CapabilityDeclaration { Capability = "shell.notification", Version = 1 },
+                },
+            },
+        };
+}
+

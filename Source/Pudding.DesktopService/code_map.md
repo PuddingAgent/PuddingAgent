@@ -3,7 +3,7 @@
 > Desktop 侧能力服务（计划 §6）：**目标校验 · 准入 · 生命周期 · 取消与关闭竞态 · UI 线程边界**
 > 依赖：`Pudding.Contracts`（平台无关契约）+ `Pudding.DesktopConnection`（执行器接缝）。
 > 编译期 Target `EnforceDesktopServiceBoundary` 禁止引用 Host/Runtime/Desktop/Browser 工程与 ASP.NET Core/WinUI/WebView2 包。
-> 测试：`Source/Pudding.DesktopServiceTests`（**58 用例**；假 UI 调度器确定性验证，不需要 WinUI 应用）
+> 测试：`Source/Pudding.DesktopServiceTests`（**69 用例**；假 UI 调度器与假监督器确定性验证，不需要 WinUI 应用）
 
 ## 职责边界
 
@@ -24,6 +24,7 @@
 | `DesktopCapabilityPolicy.cs` | 能力 × 可信级别准入表（8 能力 × 3 级别，快照断言）：脚本注入仅 `AgentAuthorized`；对话框/Picker/剪贴板仅 `Workbench`；`Workbench` **永不**允许脚本注入 |
 | `DesktopInteractionState.cs` | 暂停与用户接管两个**独立轴**：变更类能力被拒（`Paused`/`UserTakeover`，接管优先），只读能力仍可用（观测不打断用户） |
 | `DesktopServiceOptions.cs` | `AllowedCapabilities`、`ShellCallerTrust`（默认 `Untrusted` ⇒ 对话框/Picker/剪贴板默认不开放） |
+| `DesktopCapabilityHost.cs` | 宿主组合（切片 C-2）：只依赖 `IDesktopConnectionSupervisor` 端口 + `DesktopService`；启动时**二选一传输**（选旧 Bridge 则拒绝启动，不做跨传输回退）；同一 DesktopId **只允许一个活动传输**（进程级占用，停止即释放）；`StartAsync`/`StopAsync`/`WaitForStateAsync`；停止超时仍释放占用 |
 
 ## 错误映射（终态语义）
 
@@ -46,11 +47,11 @@
   实现互斥门会得到无法端到端验证的代码（违反「能编译 ≠ 已测试」），故先不做。
 - **`webview.page_state` 没有 wire 命令 payload**：作为只读直连 API 提供（`GetPageStateAsync`），
   UI 侧门面直接调用；补 payload 属于切片 D。
-- **WinUI `DispatcherQueue` 适配器未在本切片交付**：它是 20 行平台包装、无独立可测逻辑，
-  随「装配宿主」（切片 C-2/D）一起落地，并在 WinUI 应用内做线程访问定向验证。
+- **WinUI `DispatcherQueue` 适配器**在 `Source/PuddingDesktop.CapabilityHost`（只引用 Contracts、无独立可测逻辑，
+  契约由本组件的假调度器测试覆盖）；在 PuddingDesktop 里构造它并装配宿主属于切片 C-3/D。
 
 ## 门禁（2026-10-01 实测）
 
 - 独立构建：`dotnet build Source\Pudding.DesktopService -c Release` ⇒ 0 警告 / 0 错误。
-- 独立测试：`Pudding.DesktopServiceTests` ⇒ **58/58 通过**（含 5 条边界断言与策略表快照）。
+- 独立测试：`Pudding.DesktopServiceTests` ⇒ **69/69 通过**（含 5 条边界断言、策略表快照、宿主启停与单实例占用）。
 - 边界强制：csproj 只允许 `Pudding.Contracts` + `Pudding.DesktopConnection`、零包引用，由 Target 取红。

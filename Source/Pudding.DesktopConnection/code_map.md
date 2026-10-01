@@ -28,6 +28,7 @@
 | 文件 | 用途 |
 |------|------|
 | `DesktopConnectionRunner.cs` | 反复建连；指数退避 + jitter（`BackoffHistory` 可观测）；成功握手后重置梯度；**不跨传输回退、不重放任何副作用命令**；`Generation` 在握手成功当刻对外可见 |
+| `IDesktopConnectionSupervisor.cs` | 监督端口（状态/世代/尝试次数/最后错误/状态事件 + `RunAsync`/`DisposeAsync`）：宿主只依赖该端口，因此启停与单实例语义可以**不启动任何端点**就被测试；生产实现是 `DesktopConnectionRunner` |
 | `GrpcDesktopChannelStreamFactory.cs` | `GrpcChannel` + `SocketsHttpHandler.ConnectCallback`：NamedPipe（产品默认）/ Loopback h2c（调试备用）/ TLS（远端，后续）；`MaxReceive/SendMessageSize` 绑定帧上限 |
 | `DesktopChannelStream.cs` | 双向流抽象（读/写/半关闭）。存在的理由：连接状态机可**不启动 gRPC 服务端**被确定性测试 |
 | `DesktopConnectionOptions.cs` | 身份、能力声明、认证（`x-…` 元数据，**凭据不进 ToString/日志**）、在途/字节/终态缓存上限、握手与静默超时、审计出口、`TimeProvider`（可测时钟） |

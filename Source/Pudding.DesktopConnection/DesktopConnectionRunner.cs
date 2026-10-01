@@ -10,7 +10,7 @@ namespace Pudding.DesktopConnection;
 /// · 不跨传输回退（不做「IPC 失败就切 Loopback」）；
 /// · 不在新连接上重放脚本、通知、剪贴板写入等副作用命令 —— 副作用只能由 Core 在新世代重新下发。
 /// </summary>
-public sealed class DesktopConnectionRunner : IAsyncDisposable
+public sealed class DesktopConnectionRunner : IDesktopConnectionSupervisor, IAsyncDisposable
 {
     private readonly IDesktopChannelStreamFactory _streamFactory;
     private readonly IDesktopCapabilityExecutor _executor;
