@@ -516,7 +516,7 @@ Shell `MainWindow.xaml.cs` 的 `OnTheme` 当前设置 `Root.RequestedTheme` 并�
 
 ### 14.1 登记与证据
 
-- 编号：**SCROLL-001**；优先级：P0（本次 UI 改造第一批）；状态：**已登记，待实施，未修复/未验收**。
+- 编号：**SCROLL-001**；优先级：P0（本次 UI 改造第一批）；状态：**代码已落地（WEB + SHELL），未验收** —— 详见 §14.6。
 - 用户第三张标注图：`codex-clipboard-808394dd-0376-4a39-9587-28b5c7f1d767.png`，原图 2560×1344。红框明确指向 Chat 右侧白色滚动轨道与邻接工具区边界。截图作为视觉证据，不推断运行时版本和缩放。
 - 问题：深色 Web 内出现高亮轨道、传统箭头与窄灰 thumb；轨道与 Chat/Shell 深色背景明显割裂，邻接 splitter 进一步形成粗亮边。修复覆盖前端与客户端 Shell，不能仅处理一侧。
 - 影响范围：主消息列表、Agent/会话导航、输入 textarea、代码/表格横滚、Web 弹层，以及 Shell 工具首页/输出/设置等原生滚动区域；第三方网页不纳入应用 CSS 强制注入范围。
@@ -616,4 +616,30 @@ Shell `MainWindow.xaml.cs` 的 `OnTheme` 当前设置 `Root.RequestedTheme` 并�
 | 可访问 | thumb合成对比度≥3:1；150/200% DPI和200/400%缩放可辨识；高对比恢复系统控件，减少动画不影响操作 |
 | 范围 | 第三方网页不被注入样式，Shell与Web主题作用域明确；支持的浏览器/runtime分别验证 |
 
-关闭条件：WEB、SHELL、QA均完成并给出新构建证据；只改CSS或只改Root.RequestedTheme不能关闭缺陷。本次仅登记与方案交付，状态保持“待实施”。
+关闭条件：WEB、SHELL、QA均完成并给出新构建证据；只改CSS或只改Root.RequestedTheme不能关闭缺陷。
+
+### 14.6 实施状态（2026-10-01）
+
+本节只记录已落地的代码与证据，不修改上文规格；SCROLL-001 仍**未关闭**，因为 QA 与真实窗口验收未完成。
+
+| 子任务 | 状态 | 提交 | 已落地内容 |
+|---|---|---|---|
+| SCROLL-001-WEB | 代码已落地 | `2430f97` | `src/global.style.ts` 声明 `color-scheme:light/dark`（选择器用 ThemeMode 实际写入的 `[data-pudding-theme]`）；新增 `--pudding-scroll-thumb/-hover/-active`（浅 #738197/#526174/#2458d3，深 #65758c/#8b9db5/#91b3ff，即 §14.2 目标表）；应用统一滚动条皮肤：轨道 `transparent`（渲染结果 = 所属容器背景）、10px gutter 内 6px 圆角 thumb（2px 透明边 + `background-clip:content-box`）、hover/active 只换色、不绘制箭头、`forced-colors` 恢复系统绘制、非 Chromium 走 `@supports` 回退；未全局声明非 auto 的 `scrollbar-*`（避免 §14.3 第 4 步禁止的策略互相覆盖）。`scrollTokens.ts`/`composer`/`message` 的细条着色统一到同一组 token。新增 `scroll001.test.ts` 7 项不变量回归。 |
+| SCROLL-001-SHELL | 代码已落地 | `6bf5b16` | Foundation `WorkbenchAppearance`（BCL-only）解析外观选择 → 生效配色 → 预绘制背景 ARGB，颜色对齐 Web `colorBgLayout`（浅 #F5F0E8 / 深 #0B1020）；`MainWindow` 以 `ApplyWorkbenchAppearance` 为唯一落点，启动恢复、下拉切换、`ActualThemeChanged`、WebView2 首次创建共用；WebView2 首帧前铺主题底色消除加载闪白；`PreferredColorScheme` 按选择设置且「跟随系统」映射为 `Auto`。新增 21 项 Foundation 单测。 |
+| SCROLL-001-QA | **未完成** | — | 未录制同窗口前后截图/trace，未登记 `Docs/Reports`。 |
+
+已获得的证据：
+- `pnpm jest src/pages/chat` → 1115 passed / 3 failed；3 项均为语音相关测试（`InputArea`、`IntentConsole`），已在本轮改动前的 pristine 文件上复现，与本缺陷无关。
+- `pnpm run build` 通过，chat bundle budget ok：`sync=1379588 chat=343162 common=391269`。
+- `dotnet test Source/PuddingDesktop.FoundationTests` → 21 passed / 0 failed。
+- `dotnet build Source/PuddingDesktop/PuddingDesktop.csproj -t:Compile` → 0 错误。
+
+尚未获得、因而不能声称通过的证据：
+- **完整 Desktop 链接构建**：被运行中的 `PuddingDesktop`(PID 43484) 与 Visual Studio 的文件锁阻断（MSB3021/MSB3027 复制失败），非编译错误；需在进程外控制器关闭旧进程后重跑。
+- **WebView2 真实窗口验收**（§12 D01、§14.5 表、§13.6 IMG-V02）：轨道/corner/thumb、textarea、弹层、Shell 原生滚动区在深浅切换下的实际表现，以及加载与失败阶段是否仍闪白，均未实测。CSS 与单元测试不能替代该结论。
+
+已知待复核项（实施中引入，需在上述验收里确认）：
+1. `PreferredColorScheme` 会影响 WebView2 内 `prefers-color-scheme` 的取值；当 Shell 显式选择浅/深、而 Web 侧 ThemeMode 为「跟随系统」时，Web 将跟随 Shell 选择而非 Windows 偏好。这是 §13.4「宿主提供外观入口」的预期对齐，但需在实际窗口确认符合产品意图。
+2. Shell 预绘制背景沿用当前 Web 底色（#F5F0E8/#0B1020）；§3 中性色批次（IMG01）若调整 Web 底色，`WorkbenchAppearance` 的常量必须同步，否则会在首帧引入色差。
+
+下一次更新本节时，请把 QA 的截图/trace 路径与 `Docs/Reports` 记录一并写入，并在 WEB/SHELL/QA 全部具备新构建证据后才把 §14.1 状态改为「已修复」。
