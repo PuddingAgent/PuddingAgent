@@ -554,6 +554,115 @@
   color: var(--vs-c);
 }
 
+/* ══ B 卡项目标记（陈旧 / 未登记 / 路径失效 / 进行中涟漪）═══════════════
+   颜色只是**第四重**冗余编码：形状（`vs-mark--*` 的轮廓 / 纹理）+ 动效（复用 §9.4 既有档）
+   + 短词才是主编码（§9.1 原则 2）。本组**不声明** `animation` / `transition`
+   ⇒ 动效全部走既有 `.vs-anim-*` 类，文末的 reduced-motion 降级块无需扩写（I11 继续成立）。 */
+.vs-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.vs-mark__glyph {
+  position: relative;
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+}
+/* 陈旧：斜纹块（纹理编码 —— 灰度打印 / 色盲下与实心、虚线、断线均可区分）*/
+.vs-mark--stale .vs-mark__glyph {
+  border: 1px solid var(--vs-warn);
+  border-radius: 3px;
+  background: repeating-linear-gradient(45deg, var(--vs-warn) 0 2px, transparent 2px 5px);
+}
+/* 未登记：虚线方框 + 斜杠 */
+.vs-mark--unregistered .vs-mark__glyph {
+  border: 1px dashed var(--vs-unknown);
+  border-radius: 3px;
+}
+.vs-mark--unregistered .vs-mark__glyph::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: 6px;
+  height: 1px;
+  background: var(--vs-unknown);
+  transform: rotate(-45deg);
+}
+/* 路径失效：断开的线段（中间留缺口 —— 断口就是形状编码，不靠颜色）*/
+.vs-mark--pathbroken .vs-mark__glyph::before,
+.vs-mark--pathbroken .vs-mark__glyph::after {
+  content: '';
+  position: absolute;
+  width: 5px;
+  height: 2px;
+  background: var(--vs-error);
+}
+.vs-mark--pathbroken .vs-mark__glyph::before {
+  left: 0;
+  top: 7px;
+}
+.vs-mark--pathbroken .vs-mark__glyph::after {
+  right: 0;
+  top: 3px;
+}
+/* 进行中：圆 + 外扩环（环挂 `.vs-anim-ripple`）*/
+.vs-mark--inflight .vs-mark__glyph {
+  border: 1px solid var(--vs-busy);
+  border-radius: 50%;
+}
+.vs-mark__ripple {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--vs-busy);
+  border-radius: 50%;
+}
+
+/* ══ B 卡逐项目行（注册态与维护态**分区**呈现 —— D3：不得合成一个「状态」）═══ */
+.vs-ci-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vs-ci-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.vs-ci-row__id {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 180px;
+}
+.vs-ci-row__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vs-text);
+}
+.vs-ci-row__zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  border: 1px dashed var(--vs-line);
+  border-radius: 999px;
+}
+.vs-ci-row__marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.vs-ci-more {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--vs-text-3);
+}
+
 /* ══ 无障碍降级（§9.7 ①：无障碍，不是可选项）═════════════════════════
    红色线要求「降级为静态」⇒ 呼吸 / 急闪 / 涟漪 / 流光 全部停，过渡也停；
    仅保留颜色与形状两项编码（§9.1 原则 2 因此仍然成立）。 */

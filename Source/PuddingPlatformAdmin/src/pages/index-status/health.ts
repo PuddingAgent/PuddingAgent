@@ -12,15 +12,21 @@
 //    （唯一的 `?? 0` 只出现在已被「未知守卫」拦下的算数求和里，且结果不流向展示层）。
 
 import {
+  EMPTY_TEXT,
   UNKNOWN_TEXT,
   formatJobsReason,
   formatRelativeTime,
   formatTriStateBytes,
   formatTriStateCount,
+  formatTriStateDurationMs,
   formatTriStateText,
+  formatTriStateTimestamp,
   formatUtcTime,
 } from './api';
 import type {
+  CodeIndexMaintenanceStatus,
+  CodeIndexProjectStatus,
+  CodeIndexStatusDetail,
   FullTextIndexJobStatus,
   FullTextIndexScopeStatus,
   FullTextIndexStatusDetail,
@@ -501,15 +507,10 @@ export function deriveScopeCardStatus(detail: FullTextIndexStatusDetail | null):
   return cardStatus('ok', '就绪', 'scope 观测正常');
 }
 
-/**
- * B 卡 · 符号索引（代码）：本片**未接入**（后端 wire 无 `codeIndex`，属 `S-A2`）。
- * 未接入 ≠ 故障 ⇒ 不参与 L0 聚合、不染红、**不留空白**（空白会被读成「坏了」）。
- */
-export const SYMBOL_CARD_STATUS: CardStatus = cardStatus(
-  'neutral',
-  '未接入',
-  '本块尚未接入（待 S-A2：把 codeIndex 并入同一端点）',
-);
+// B 卡 · 符号索引（代码）：**P3 起消费真实数据** —— `codeIndex` 块的角标由
+// `deriveCodeIndexBlock`（四态：absent / unavailable / empty / observed）给出。
+// 旧的**中性占位常量** `SYMBOL_CARD_STATUS` 已删除：「未接入」仍是一条规则（规则 1），
+// 只是不再是唯一可能的结果（当时后端 wire 里确实没有这个块）。
 
 /** C 卡 · 供给台账（jobs）。 */
 export function deriveLedgerCardStatus(detail: FullTextIndexStatusDetail | null): CardStatus {
@@ -589,7 +590,11 @@ export type FieldKind =
   | 'bytes'
   | 'timestamp'
   | 'durationMs'
-  | 'text';
+  | 'text'
+  // P3 新增：字符串数组（`lastRemovalPaths`）与「复合结构」（`projects` / `maintenance`）。
+  // 复合结构**不得**被渲染成「未知」（那会把「有值」读成「读不到」），故单独一种 kind。
+  | 'list'
+  | 'nested';
 
 export interface FieldDescriptor<K extends string> {
   /** wire 字段名（逐字对齐 `types.ts`）。 */
@@ -632,3 +637,455 @@ export const SCOPE_FIELDS: readonly FieldDescriptor<keyof FullTextIndexScopeStat
 export const JOB_FIELDS: readonly FieldDescriptor<keyof FullTextIndexJobStatus>[] = (
   Object.keys(JOB_FIELD_META) as (keyof FullTextIndexJobStatus)[]
 ).map((key) => ({ key, ...JOB_FIELD_META[key] }));
+
+// ══ Slice P3 · B 卡（符号索引 / codeIndex）══════════════════════════════
+// 契约真源：`./types.ts` 的「符号索引块（S-A2 / P3 新增）」一节（字段名/顺序从后端反读，
+//   权威清单 = `Tests/PuddingHost.Tests/Hosting/SA2CodeIndexStatusTests.cs` A5/A6 +
+//   `Tests/PuddingHost.Tests/Hosting/SA2CodeIndexTestDoubles.cs` 的 `Sa2Samples.MaintenanceStatus`）。
+// 与前文同构的三条纪律：
+//   ① 纯函数：不碰 DOM / 不读真实时钟（`nowMs` 一律注入）；
+//   ② 三态贯穿：`null` = 未知 ≠ `false` ≠ `0`；且**块键缺失（`undefined`）**是**第四种**事实 ——
+//      块缺失 / 块降级不可用 / 块在但无项目 / 已观测，四者必须渲染成互不相同的状态，
+//      **禁止** `?? { projects: [] }` 式折叠（变异 MUTA-P3-1 正是拆掉这条）；
+//   ③ D3：注册态（`registration*`，真源 = 索引注册表 / SQLite 项目记录表）与
+//      维护态（`maintenance.*`，真源 = 维护驱动进程内状态）是**两套字段、两套呈现**，
+//      不得合成一个「状态」（故本文件给出 `registrationHint` 与 `maintenanceHint` 两条独立文案）。
+
+/** B 卡的四态取值域（互不相同，逐态一渲染）。 */
+export type CodeIndexBlockState = 'absent' | 'unavailable' | 'empty' | 'observed';
+
+/** 四态的**唯一短词**（I-P3-1：四个词两两不同 ⇒ 不靠颜色区分状态）。 */
+export const CODE_INDEX_BLOCK_TEXT: Record<CodeIndexBlockState, string> = {
+  absent: '未接入',
+  unavailable: '观测不可用',
+  empty: '无项目',
+  observed: '已接入',
+};
+
+/** 后端整块降级时 `note` 的已知前缀（真源：`CodeIndexStatusProbe` 抛错分支）。 */
+export const CODE_INDEX_NOTE_UNAVAILABLE_PREFIX = 'code-index-status-unavailable';
+
+/** 已知 `note` 取值的中文解释（未登记的取值原样回显并标注「未登记」，不吞不猜）。 */
+export const CODE_INDEX_NOTE_TEXT: Record<string, string> = {
+  [CODE_INDEX_NOTE_UNAVAILABLE_PREFIX]:
+    '整块读不出来（探针抛异常）⇒ 内容**不可知**，既不是「没有项目」也不是「都正常」；具体异常见宿主日志。',
+};
+
+export interface CodeIndexBlockVerdict {
+  state: CodeIndexBlockState;
+  /** 命中的规则号（1~4）—— 单测直接点它，顺序即优先级。 */
+  rule: number;
+  /** 视觉 level（驱动 L1 卡 B 的形状 / 动效 / 容器）。 */
+  level: IndexHealthLevel;
+  /** 卡片角标（与 A/C/D 卡同构：tone + glyph + 短词 + tooltip）。 */
+  status: CardStatus;
+  /** 异常态**唯一允许**的长句（§9.6）；非异常态为 `null`（正常态只给短词）。 */
+  headline: string | null;
+  /** 异常态的修复指引；非异常态为 `null`。 */
+  guidance: string | null;
+  /** 逐项目条目（`absent` 时为 `null`；工具提示用，不改语义）。 */
+  block: CodeIndexStatusDetail | null;
+}
+
+/**
+ * `note` 三态解释：`null`/空串 ⇒ **不适用**（正常）；已知原因码给中文解释；
+ * 未登记的原因码原样回显（不吞）。
+ */
+export function describeCodeIndexNote(note: string | null | undefined): string {
+  if (note === null || note === undefined || note === '') return '';
+  // 后端把原因码与具体异常拼在一个串里（`{prefix}: {ExceptionType}: {Message}`）
+  // ⇒ 必须**前缀**匹配，否则真实取值会被当成「未登记的原因」。
+  const trimmed = note.trim();
+  if (trimmed === CODE_INDEX_NOTE_UNAVAILABLE_PREFIX || trimmed.startsWith(`${CODE_INDEX_NOTE_UNAVAILABLE_PREFIX}:`)) {
+    return CODE_INDEX_NOTE_TEXT[CODE_INDEX_NOTE_UNAVAILABLE_PREFIX];
+  }
+  const known = CODE_INDEX_NOTE_TEXT[trimmed];
+  if (known !== undefined) return known;
+  return `未登记的原因「${note}」—— 请对照后端 CodeIndexStatusProbe 的降级分支补充解释。`;
+}
+
+/**
+ * B 卡块级四态（**首条命中即生效**）：
+ *
+ * | # | 条件 | 事实 |
+ * |---|---|---|
+ * | 1 | 根快照缺失 **或** 响应里**没有** `codeIndex` 键（`undefined`，含显式 `null`） | 本块未接入（端点要重启 Core 才生效）—— **不是故障，也不是「空」** |
+ * | 2 | `note` 非空 **或** `maintenanceRunning === null` | 整块降级 / 运行态不可知 ⇒ 观测不可用（**未知 ≠ 健康**） |
+ * | 3 | `projects.length === 0` | 块在，但注册表与维护驱动都没有可观测条目 ⇒ **已知的空** |
+ * | 4 | 其余 | 已观测到项目（再按陈旧 / 路径失效 / 被拒校准 / 进行中细分为 warn / busy / ok） |
+ */
+export function deriveCodeIndexBlock(
+  snapshot: FullTextIndexStatusSnapshot | null | undefined,
+): CodeIndexBlockVerdict {
+  const raw: CodeIndexStatusDetail | null | undefined = snapshot?.codeIndex;
+
+  // 规则 1：块**键缺失**（`undefined`）。`undefined` 是**预期状态**：该块由 Core 上的
+  // CodeIndexStatusProbe 产出，改动要重启 Core 才生效；未接入 ≠ 故障，也 ≠「没有项目」。
+  if (raw === null || raw === undefined) {
+    return {
+      state: 'absent',
+      rule: 1,
+      level: 'unknown',
+      status: cardStatus(
+        'neutral',
+        CODE_INDEX_BLOCK_TEXT.absent,
+        '端点响应里没有 codeIndex 键（该块要重启 Core 才生效）—— 未接入 ≠ 故障，也不代表「没有项目」',
+      ),
+      headline: null,
+      guidance: null,
+      block: null,
+    };
+  }
+  const block = raw;
+
+  // 规则 2：整块降级。`note` 是后端给的**如实原因**；`maintenanceRunning === null` 是
+  //「驱动跑没跑」这个事实本身不可知（R5：未知不得画成「没在跑」，也不得画成正常）。
+  if (block.note !== null || block.maintenanceRunning === null) {
+    const reason =
+      block.note !== null
+        ? formatTriStateText(block.note)
+        : 'maintenanceRunning 为 null ⇒ 维护驱动是否在跑不可知';
+    return {
+      state: 'unavailable',
+      rule: 2,
+      level: 'warn',
+      status: cardStatus('warn', CODE_INDEX_BLOCK_TEXT.unavailable, `${reason} ⇒ 观测不可用（≠ 没有项目）`),
+      headline: `${CODE_INDEX_BLOCK_TEXT.unavailable}：${reason}`,
+      guidance: describeCodeIndexNote(block.note) || '维护驱动运行态不可知 —— 运行事实与「注册 / 路径」事实无关',
+      block,
+    };
+  }
+
+  // 规则 3：块在、且确实一条项目都没有 ⇒「已知的空」（与规则 1 的「不知道」明确不同）。
+  if (block.projects.length === 0) {
+    return {
+      state: 'empty',
+      rule: 3,
+      level: 'off',
+      status: cardStatus(
+        'neutral',
+        CODE_INDEX_BLOCK_TEXT.empty,
+        '块已接入且读取成功，但注册表与维护驱动都没有条目 ⇒ 这是**已知的空**（不是「读不到」）',
+      ),
+      headline: null,
+      guidance: null,
+      block,
+    };
+  }
+
+  // 规则 4：已观测到项目。硬问题（路径失效 / 陈旧 / 被拒校准）**劣后于** busy：
+  // 「已知坏」优先于「正在进行」——与 §2 既有矩阵同取向。
+  const counts = summarizeCodeIndexProjects(block);
+  const hasProblem = counts.pathBroken > 0 || counts.stale > 0 || counts.rejectedCalibration > 0;
+  const level: IndexHealthLevel = hasProblem ? 'warn' : counts.inFlight > 0 ? 'busy' : 'ok';
+  const word = LEVEL_TEXT[level];
+  const hint = [
+    `项目 ${counts.total}`,
+    `陈旧 ${counts.stale}`,
+    `未登记 ${counts.unregistered}`,
+    `路径失效 ${counts.pathBroken}`,
+    `索引中 ${counts.inFlight}`,
+    `维护态缺席 ${counts.maintenanceMissing}`,
+    `维护驱动：${block.maintenanceRunning === true ? '运行中' : '未运行'}`,
+  ].join(' · ');
+  return {
+    state: 'observed',
+    rule: 4,
+    level,
+    status: cardStatus(hasProblem ? 'warn' : counts.inFlight > 0 ? 'busy' : 'ok', word, hint),
+    // 异常态才允许长句（§9.6）：短词 + tooltip 已足够表达「需处理」的原因分布。
+    headline: hasProblem ? `符号索引：${counts.stale} 项陈旧 · ${counts.pathBroken} 项路径失效` : null,
+    guidance:
+      hasProblem && counts.pathBroken > 0
+        ? '路径失效 ⇒ 后端 fail-closed 标记 `stale`（D2）：该项目的检索结果不可信'
+        : hasProblem
+          ? '陈旧 ⇒ 未在注册表登记或根路径不存在（D1/D2）：不得当作「已索引」'
+          : null,
+    block,
+  };
+}
+
+/** 逐项目问题计数（全部由既有 wire 字段推导；不读时钟、不猜）。 */
+export interface CodeIndexProjectCounts {
+  total: number;
+  /** 后端 fail-closed 判定为陈旧的项目数（D1/D2 的落点）。 */
+  stale: number;
+  /** 未在注册表登记的项目数（`registered === false`）。 */
+  unregistered: number;
+  /** 根路径不存在的项目数（`rootPathExists === false`）。 */
+  pathBroken: number;
+  /** 维护态为「索引进行中」的项目数。 */
+  inFlight: number;
+  /** 维护态**缺席**（`maintenance === null`）的项目数 —— 欠一次挂接，不等于陈旧。 */
+  maintenanceMissing: number;
+  /** 维护态里 `rejectedCalibrationRunCount > 0` 的项目数。 */
+  rejectedCalibration: number;
+  /** 已挂接但 `watcherAttached === false`（不会被增量感知）的项目数。 */
+  watcherDetached: number;
+}
+
+export function summarizeCodeIndexProjects(block: CodeIndexStatusDetail): CodeIndexProjectCounts {
+  const counts: CodeIndexProjectCounts = {
+    total: block.projects.length,
+    stale: 0,
+    unregistered: 0,
+    pathBroken: 0,
+    inFlight: 0,
+    maintenanceMissing: 0,
+    rejectedCalibration: 0,
+    watcherDetached: 0,
+  };
+  for (const entry of block.projects) {
+    if (entry.stale) counts.stale += 1;
+    if (!entry.registered) counts.unregistered += 1;
+    if (!entry.rootPathExists) counts.pathBroken += 1;
+    if (entry.maintenance === null) {
+      counts.maintenanceMissing += 1;
+      continue;
+    }
+    if (entry.maintenance.indexInFlight) counts.inFlight += 1;
+    if (entry.maintenance.rejectedCalibrationRunCount > 0) counts.rejectedCalibration += 1;
+    if (!entry.maintenance.watcherAttached) counts.watcherDetached += 1;
+  }
+  return counts;
+}
+
+/** 逐项目行的视觉标记（**全部由健康态推导**，页面不再散落判定分支）。 */
+export interface CodeIndexProjectMarks {
+  level: IndexHealthLevel;
+  /** 主视觉短词（`LEVEL_TEXT`，与 L0/L1 同一取词入口）。 */
+  word: string;
+  /** 陈旧标记（形状 + 动效 + 短词三重编码的承载点）。 */
+  stale: boolean;
+  /** 未登记标记（D1）。 */
+  unregistered: boolean;
+  /** 路径失效标记（D2）。 */
+  pathBroken: boolean;
+  /** 涟漪：索引**进行中**。 */
+  indexInFlight: boolean;
+  /** 维护态**缺席**（`maintenance === null`）—— 与「已挂接但空闲」不同。 */
+  maintenanceMissing: boolean;
+  /** 拨动开关的取值：`null` ⇒ 不可知（≠ 关）。 */
+  watcherAttached: boolean | null;
+  /** 被拒校准（`> 0`）⇒ warn。 */
+  calibrationRejected: boolean;
+  /** **注册态** tooltip（D3 第一半；真源 = 索引注册表）。 */
+  registrationHint: string;
+  /** **维护态** tooltip（D3 第二半；真源 = 维护驱动；23 字段由契约常量生成）。 */
+  maintenanceHint: string;
+}
+
+export function deriveCodeIndexProjectMarks(entry: CodeIndexProjectStatus): CodeIndexProjectMarks {
+  const maintenance = entry.maintenance;
+  const rejected = maintenance !== null && maintenance.rejectedCalibrationRunCount > 0;
+  // 取证取向（与 §2 矩阵一致）：已知坏 > 进行中 > 正常。顺序不可调换。
+  const level: IndexHealthLevel = !entry.rootPathExists
+    ? 'error'
+    : entry.stale || rejected
+      ? 'warn'
+      : maintenance?.indexInFlight === true
+        ? 'busy'
+        : 'ok';
+  return {
+    level,
+    word: LEVEL_TEXT[level],
+    stale: entry.stale,
+    unregistered: !entry.registered,
+    pathBroken: !entry.rootPathExists,
+    indexInFlight: maintenance?.indexInFlight === true,
+    maintenanceMissing: maintenance === null,
+    watcherAttached: maintenance === null ? null : maintenance.watcherAttached,
+    calibrationRejected: rejected,
+    registrationHint: [
+      `注册态（真源：索引注册表）：${entry.registered ? '已登记' : '**未登记**'}`,
+      `registrationState = ${formatTriStateText(entry.registrationState)}`,
+      `registrationStatus（原始）= ${formatTriStateText(entry.registrationStatus)}`,
+      `registrationSource = ${formatTriStateText(entry.registrationSource)}`,
+    ].join('\n'),
+    maintenanceHint:
+      maintenance === null
+        ? [
+            '维护态（真源：维护驱动）：**缺席**',
+            `maintenanceReason = ${formatTriStateText(entry.maintenanceReason)}`,
+            '（欠一次挂接 / 驱动未运行 —— 不等于陈旧，也不代表索引坏了）',
+          ].join('\n')
+        : describeMaintenanceStatus(maintenance),
+  };
+}
+
+/**
+ * 维护态的单字结论（**只在行内用**；23 字段逐条在 tooltip 与 L2 证据层）。
+ * 优先级：索引中 > 待重建 > 待索引 > 空闲（先报「正在动」，再报「要动什么」）。
+ */
+export type MaintenanceWord = '索引中' | '待重建' | '待索引' | '空闲';
+
+export function describeMaintenanceWord(entry: CodeIndexProjectStatus): MaintenanceWord | null {
+  const maintenance = entry.maintenance;
+  if (maintenance === null) return null;
+  if (maintenance.indexInFlight) return '索引中';
+  if (maintenance.needsReconcile) return '待重建';
+  if (maintenance.indexPending) return '待索引';
+  return '空闲';
+}
+
+/** 维护态缺席的原因码 → 中文（后端已知两个取值；未登记的取值原样回显）。 */
+export const MAINTENANCE_REASON_TEXT: Record<string, string> = {
+  'scope-not-attached': '驱动在跑，但这个 scope 没挂上去（欠一次 attach）—— 不等于陈旧',
+  'maintenance-driver-not-running': '维护驱动根本没在跑 ⇒ 进程内不存在任何已挂 scope',
+};
+
+export function describeMaintenanceReason(reason: string | null | undefined): string {
+  const text = formatTriStateText(reason);
+  if (reason === null || reason === undefined) return text;
+  const known = MAINTENANCE_REASON_TEXT[reason];
+  return known !== undefined ? known : `未登记的原因「${reason}」`;
+}
+
+/** 校准新鲜度环的**表达层**窗口（后端**没有**校准周期字段 ⇒ 这是约定，不是后端事实）。 */
+export const CALIBRATION_FRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 校准新鲜度环填充率：刚校准 = 满环，超过一个窗口 = 空环；**时间戳不可得 ⇒ `null`**（虚线空环，
+ * 不假装成 0 填充）。
+ */
+export function deriveCalibrationFreshnessRatio(
+  lastCalibrationAtUtc: string | null | undefined,
+  nowMs: number = Date.now(),
+): number | null {
+  const at = parsedTime(lastCalibrationAtUtc);
+  if (at === null) return null;
+  const ageMs = nowMs - at;
+  if (!Number.isFinite(ageMs)) return null;
+  return Math.max(0, Math.min(1, 1 - ageMs / CALIBRATION_FRESH_WINDOW_MS));
+}
+
+/** B 卡逐项目行在 L1 的**展示上限**（其余走 L2 证据层；不截断事实，只截断首屏噪声）。 */
+export const CODE_INDEX_VISIBLE_PROJECT_LIMIT = 6;
+
+// ── L2 证据层字段清单：**由契约常量生成**（页面不得手写字段名）──────────
+// ⚠️ `Record<keyof X, …>` 是**编译期穷尽性约束**：`types.ts` 的符号索引块新增字段而这里不补
+//    ⇒ `tsc` 直接报错。**声明顺序 = wire 顺序**（`Object.keys` 保持字符串键的插入序）。
+
+const CODE_INDEX_BLOCK_FIELD_META: Record<
+  keyof CodeIndexStatusDetail,
+  { label: string; kind: FieldKind }
+> = {
+  workspaceIds: { label: 'workspace 列表', kind: 'list' },
+  maintenanceRunning: { label: '维护驱动运行中', kind: 'bool' },
+  batchesProcessed: { label: '合并批次数', kind: 'count' },
+  reconcileRequests: { label: '重建请求数', kind: 'count' },
+  removalObservations: { label: '删除观测数', kind: 'count' },
+  pendingReconcileScopeCount: { label: '待重建 scope 数', kind: 'count' },
+  projects: { label: '项目条目', kind: 'nested' },
+  note: { label: '降级原因', kind: 'text' },
+};
+
+const CODE_INDEX_PROJECT_FIELD_META: Record<
+  keyof CodeIndexProjectStatus,
+  { label: string; kind: FieldKind }
+> = {
+  workspaceId: { label: 'workspace', kind: 'path' },
+  projectId: { label: '项目标识', kind: 'path' },
+  displayName: { label: '展示名', kind: 'text' },
+  rootPath: { label: '根路径', kind: 'path' },
+  registered: { label: '已登记', kind: 'bool' },
+  registrationState: { label: '注册态（投影）', kind: 'text' },
+  registrationStatus: { label: '注册态（原始）', kind: 'text' },
+  registrationSource: { label: 'scope 来源', kind: 'text' },
+  maintenance: { label: '维护态', kind: 'nested' },
+  maintenanceReason: { label: '维护态缺席原因', kind: 'text' },
+  rootPathExists: { label: '根路径存在', kind: 'bool' },
+  stale: { label: '陈旧', kind: 'bool' },
+};
+
+/** 维护态 23 字段 —— **顺序逐位对齐后端 A5 断言**（见 `types.ts` 的路径引用）。 */
+const CODE_INDEX_MAINTENANCE_FIELD_META: Record<
+  keyof CodeIndexMaintenanceStatus,
+  { label: string; kind: FieldKind }
+> = {
+  workspaceId: { label: 'workspace', kind: 'path' },
+  scopeId: { label: 'scope 标识', kind: 'path' },
+  rootPath: { label: '根路径', kind: 'path' },
+  observedVersion: { label: '观测版本', kind: 'count' },
+  desiredVersion: { label: '期望版本', kind: 'count' },
+  committedVersion: { label: '已提交版本', kind: 'count' },
+  markedWhileInFlightCount: { label: '进行中标记数', kind: 'count' },
+  indexPending: { label: '待索引', kind: 'bool' },
+  indexInFlight: { label: '索引进行中', kind: 'bool' },
+  needsReconcile: { label: '需要重建', kind: 'bool' },
+  reconcileReason: { label: '重建原因', kind: 'text' },
+  reconcileRequestCount: { label: '重建请求数', kind: 'count' },
+  removalObservationCount: { label: '删除观测数', kind: 'count' },
+  lastRemovalPaths: { label: '最近删除路径', kind: 'list' },
+  removedFileCount: { label: '已删除文件数', kind: 'count' },
+  incrementallyIndexedFileCount: { label: '增量索引文件数', kind: 'count' },
+  scopeEscalationCount: { label: '升级重建次数', kind: 'count' },
+  sweptFileCount: { label: '校准清理文件数', kind: 'count' },
+  calibrationRunCount: { label: '校准运行次数', kind: 'count' },
+  rejectedCalibrationRunCount: { label: '被拒校准次数', kind: 'count' },
+  lastCalibrationAtUtc: { label: '最近校准时刻', kind: 'timestamp' },
+  recentObservationCount: { label: '宽限窗口观测数', kind: 'count' },
+  watcherAttached: { label: 'watcher 已挂接', kind: 'bool' },
+};
+
+function fieldDescriptors<K extends string>(
+  meta: Record<K, { label: string; kind: FieldKind }>,
+): readonly FieldDescriptor<K>[] {
+  return (Object.keys(meta) as K[]).map((key) => ({ key, ...meta[key] }));
+}
+
+/** `codeIndex` 块**8 列**（顺序 = wire 顺序）。 */
+export const CODE_INDEX_BLOCK_FIELDS: readonly FieldDescriptor<keyof CodeIndexStatusDetail>[] =
+  fieldDescriptors(CODE_INDEX_BLOCK_FIELD_META);
+
+/** 逐项目**12 列**（顺序 = wire 顺序）。 */
+export const CODE_INDEX_PROJECT_FIELDS: readonly FieldDescriptor<keyof CodeIndexProjectStatus>[] =
+  fieldDescriptors(CODE_INDEX_PROJECT_FIELD_META);
+
+/** 维护态**23 列**（顺序 = wire 顺序；与后端 A5 断言逐位一致）。 */
+export const CODE_INDEX_MAINTENANCE_FIELDS: readonly FieldDescriptor<
+  keyof CodeIndexMaintenanceStatus
+>[] = fieldDescriptors(CODE_INDEX_MAINTENANCE_FIELD_META);
+
+/**
+ * 字段值 → **tooltip / 纯文本**用的字符串。
+ * `null`/`undefined` 一律「未知」（绝不折叠成否 / 零）；数组按「；」拼接，空数组给「（空）」；
+ * 复合结构（对象）只报「有」（逐字段进 L2 表），既不猜也不丢。
+ */
+export function rawFieldText(kind: FieldKind, value: unknown): string {
+  if (value === null || value === undefined) return UNKNOWN_TEXT;
+  switch (kind) {
+    case 'bool':
+      return value === true ? '是' : '否';
+    case 'count':
+      return typeof value === 'number' ? formatTriStateCount(value) : UNKNOWN_TEXT;
+    case 'bytes':
+      return typeof value === 'number' ? formatTriStateBytes(value) : UNKNOWN_TEXT;
+    case 'timestamp':
+      return typeof value === 'string' ? formatTriStateTimestamp(value) : UNKNOWN_TEXT;
+    case 'durationMs':
+      return typeof value === 'number' ? formatTriStateDurationMs(value) : UNKNOWN_TEXT;
+    case 'list': {
+      if (!Array.isArray(value)) return UNKNOWN_TEXT;
+      if (value.length === 0) return EMPTY_TEXT;
+      return value.map((item) => String(item)).join('；');
+    }
+    case 'nested':
+      if (Array.isArray(value)) return `共 ${value.length} 项（见下方表）`;
+      return typeof value === 'object' ? '有（见下方表）' : formatTriStateText(String(value));
+    case 'path':
+    case 'text':
+    default:
+      return typeof value === 'string' ? formatTriStateText(value) : UNKNOWN_TEXT;
+  }
+}
+
+/**
+ * 维护态 23 字段的 tooltip（字段名 + 顺序**由契约常量生成**；页面不得手写）。
+ * 这是「原始 23 字段只出现在 hover tooltip 与 L2」的**唯一**入口。
+ */
+export function describeMaintenanceStatus(status: CodeIndexMaintenanceStatus): string {
+  return CODE_INDEX_MAINTENANCE_FIELDS.map(
+    (field) => `${field.key}: ${rawFieldText(field.kind, status[field.key])}`,
+  ).join('\n');
+}

@@ -15,7 +15,7 @@ import {
   SCOPE_FIELDS,
   SIZE_WARN_RATIO,
   STATUS_TONES,
-  SYMBOL_CARD_STATUS,
+  deriveCodeIndexBlock,
   deriveConfigCardStatus,
   deriveIndexHealth,
   deriveL0Chips,
@@ -484,12 +484,14 @@ describe('L1 卡片角标（A 全文索引 / B 符号索引 / C 供给台账 / D
     expect(deriveScopeCardStatus(detail({ scopes: [scope({ hasIndex: null })] })).tone).toBe('neutral');
   });
 
-  it('B 卡：未接入 ≠ 故障（中性灰占位，不留空白、不染红）', () => {
-    expect(SYMBOL_CARD_STATUS.tone).toBe('neutral');
-    expect(SYMBOL_CARD_STATUS.text).toBe('未接入');
-    expect(SYMBOL_CARD_STATUS.hint).toContain('S-A2');
-    expect(SYMBOL_CARD_STATUS.tone).not.toBe('error');
-    expect(SYMBOL_CARD_STATUS.tone).not.toBe('warn');
+  it('B 卡：块缺失 ⇒ 未接入 ≠ 故障（中性灰，不留空白、不染红；但不再是「唯一可能的结果」）', () => {
+    const absent = deriveCodeIndexBlock(snapshot());
+    expect(absent.state).toBe('absent');
+    expect(absent.status.tone).toBe('neutral');
+    expect(absent.status.text).toBe('未接入');
+    expect(absent.status.hint).toContain('重启 Core');
+    expect(absent.status.tone).not.toBe('error');
+    expect(absent.status.tone).not.toBe('warn');
   });
 
   it('C 卡：有台账就绪 / 非终态进行中 / 台账读取失败故障 / 空台账中性', () => {

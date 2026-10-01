@@ -16,6 +16,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import {
+  EMPTY_TEXT,
   UNKNOWN_TEXT,
   formatRelativeTime,
   formatTriStateBoolean,
@@ -28,29 +29,37 @@ import {
   getIndexStatus,
 } from './api';
 import {
+  CODE_INDEX_BLOCK_FIELDS,
+  CODE_INDEX_MAINTENANCE_FIELDS,
+  CODE_INDEX_PROJECT_FIELDS,
+  CODE_INDEX_VISIBLE_PROJECT_LIMIT,
   JOB_FIELDS,
   LEVEL_TONE,
   RAW_FIELDS_DEFAULT_EXPANDED,
   SCOPE_FIELDS,
   STATUS_TONES,
-  SYMBOL_CARD_STATUS,
   buildBusyTitle,
+  deriveCalibrationFreshnessRatio,
+  deriveCodeIndexBlock,
   deriveConfigCardStatus,
   deriveIndexHealth,
   deriveL0Chips,
   deriveLedgerCardStatus,
   deriveScopeCardStatus,
   describeJobsLedger,
+  describeMaintenanceReason,
   hasUnknownScopeField,
   jobHasFailureSemantics,
   latestIndexWriteUtc,
   pickActiveJob,
   pickLatestTerminalJob,
   shouldRenderJobsTable,
+  summarizeCodeIndexProjects,
   summarizeIndexVolume,
   totalEntryCount,
 } from './health';
 import type { CardStatus, FieldKind, StatusTone } from './health';
+import { CodeIndexProjectRow } from './codeIndexRow';
 import {
   L0Strip,
   LEVEL_VISUALS,
@@ -64,6 +73,8 @@ import {
 } from './visuals';
 import type { SparkBar } from './visuals';
 import type {
+  CodeIndexMaintenanceStatus,
+  CodeIndexProjectStatus,
   FullTextIndexJobStatus,
   FullTextIndexScopeStatus,
   FullTextIndexStatusDetail,
@@ -159,6 +170,21 @@ function renderFieldValue(kind: FieldKind, value: unknown): React.ReactNode {
       return formatTriStateDurationMs(typeof value === 'number' ? value : null);
     case 'text':
       return formatTriStateText(typeof value === 'string' ? value : null);
+    // P3 新增：字符串数组（`lastRemovalPaths`）—— 空数组是「（空）」（有值但为空），不是未知。
+    case 'list': {
+      if (!Array.isArray(value)) return toneTag('neutral', UNKNOWN_TEXT);
+      const items = value.map((item) => String(item));
+      if (items.length === 0) return <Typography.Text type="secondary">{EMPTY_TEXT}</Typography.Text>;
+      return stringList(items, EMPTY_TEXT);
+    }
+    // P3 新增：复合结构（`projects` / `maintenance`）—— 逐字段在下方专用表里，不在此堆叠。
+    case 'nested': {
+      if (value === null || value === undefined) {
+        return toneTag('neutral', '缺席（原因为 null/缺失，见下方缺席清单）');
+      }
+      if (Array.isArray(value)) return <Tag>{`共 ${value.length} 项（见下方表）`}</Tag>;
+      return <Tag>有（见下方表）</Tag>;
+    }
     default:
       return toneTag('neutral', UNKNOWN_TEXT);
   }
@@ -178,6 +204,26 @@ const jobColumns: ColumnsType<FullTextIndexJobStatus> = JOB_FIELDS.map((field) =
   key: field.key,
   render: (value: unknown) => renderFieldValue(field.kind, value),
 }));
+
+// ── L2 · codeIndex 两张表（**列由契约常量生成**，页面不手写任何字段名）──────
+// 字段名与顺序全部来自 health.ts 的 `CODE_INDEX_*_FIELDS`（其声明序 = wire 序，
+// 且受 `Record<keyof X, …>` 编译期穷尽性约束）—— 页面这里只负责“把常量变成列”。
+const codeIndexProjectColumns: ColumnsType<CodeIndexProjectStatus> = CODE_INDEX_PROJECT_FIELDS.map(
+  (field) => ({
+    title: `${field.label}（${field.key}）`,
+    dataIndex: field.key,
+    key: field.key,
+    render: (value: unknown) => renderFieldValue(field.kind, value),
+  }),
+);
+
+const codeIndexMaintenanceColumns: ColumnsType<CodeIndexMaintenanceStatus> =
+  CODE_INDEX_MAINTENANCE_FIELDS.map((field) => ({
+    title: `${field.label}（${field.key}）`,
+    dataIndex: field.key,
+    key: field.key,
+    render: (value: unknown) => renderFieldValue(field.kind, value),
+  }));
 
 // ── 表达层映射（**不是业务真值**：真值仍在 health.ts / wire 契约）──────────
 
@@ -234,6 +280,7 @@ function toSparkBar(job: FullTextIndexJobStatus, maxElapsedMs: number): SparkBar
     ].join('\n'),
   };
 }
+
 
 const IndexStatusPage: React.FC = () => {
   const [snapshot, setSnapshot] = useState<FullTextIndexStatusSnapshot | null>(null);
@@ -304,6 +351,20 @@ const IndexStatusPage: React.FC = () => {
     fullText === null || hasUnknownScopeField(fullText)
       ? UNKNOWN_TEXT
       : formatTriStateCount(totalEntryCount(fullText));
+
+  // ── B 卡（符号索引 / codeIndex）：四态 + 逐项目标记（全部来自 health.ts 纯函数）──
+  const codeIndex = deriveCodeIndexBlock(snapshot);
+  const codeIndexRaw = codeIndex.block;
+  const codeIndexCounts = codeIndexRaw === null ? null : summarizeCodeIndexProjects(codeIndexRaw);
+  const codeIndexProjects = codeIndexRaw?.projects ?? [];
+  // 首屏只列前 N 项（不截断事实，只截断首屏噪声）；其余走 L2 证据层。
+  const visibleProjects = codeIndexProjects.slice(0, CODE_INDEX_VISIBLE_PROJECT_LIMIT);
+  const hiddenProjectCount = codeIndexProjects.length - visibleProjects.length;
+  // 维护态「有」（可画表）与「缺席」（只能如实列原因）分开 —— 不得把缺席画成一张全空的表。
+  const maintenanceRows = codeIndexProjects
+    .map((entry) => entry.maintenance)
+    .filter((value): value is CodeIndexMaintenanceStatus => value !== null);
+  const maintenanceMissing = codeIndexProjects.filter((entry) => entry.maintenance === null);
 
   // 火花线只画最近 5 条（长尾走 L2 台账），长度按**最能表达相对量级**的口径归一。
   const jobBars = useMemo<SparkBar[]>(() => {
@@ -416,24 +477,100 @@ const IndexStatusPage: React.FC = () => {
               </Col>
 
               <Col xs={24} xl={12}>
+                {/* ── B 卡 · 符号索引（代码）：S-A2/P3 起消费真实的 `codeIndex` 块。
+                       四态互不相同（块缺失 / 观测不可用 / 无项目 / 已观测）；
+                       `maintenance` 为 null 的项目在行内是**独立的缺席态**（虚线空心圆 + 原因）。 ── */}
                 <Card
                   size="small"
-                  className={cx('vs-card', 'vs-t-fast', frameClass(SYMBOL_CARD_STATUS.tone))}
+                  className={cx('vs-card', 'vs-t-fast', frameClass(codeIndex.status.tone))}
                   title="B · 符号索引（代码）"
-                  extra={cardWord(SYMBOL_CARD_STATUS)}
+                  extra={cardWord(codeIndex.status)}
                 >
-                  <div className="vs-metrics">
-                    <UnknownGlyph
-                      label="未接入"
-                      title="本块尚未接入（待 S-A2：把 codeIndex 并入同一端点）—— 未接入 ≠ 故障，不参与 L0 聚合、不染红"
-                    />
-                  </div>
-                  <span
-                    className="vs-note"
-                    title="计划显示：项目数 · 各项目状态（Completed / Indexing / Stale）· 最后索引时刻 · 索引体积；数据源 ICodeIndexMaintenance.GetScopeStatuses()"
-                  >
-                    待 S-A2 接入 · 未接入 ≠ 故障
-                  </span>
+                  {/* 态一：块**键缺失** —— 端点未重启（预期状态），未接入 ≠ 故障，也不等于「没有项目」 */}
+                  {codeIndex.state === 'absent' ? (
+                    <div className="vs-metrics">
+                      <UnknownGlyph
+                        label={codeIndex.status.text}
+                        title={`${codeIndex.status.hint}\n本卡不参与 L0 聚合（L0 仍只聚合全文索引）`}
+                      />
+                    </div>
+                  ) : null}
+
+                  {/* 态二：块在，但**一块项目也没有**（已知的空 ≠ 不知道） */}
+                  {codeIndex.state === 'empty' ? (
+                    <div className="vs-metrics">
+                      <span className="vs-metric">
+                        <span className="vs-bignum">{codeIndexProjects.length}</span>
+                        <span className="vs-caption">项目</span>
+                      </span>
+                      <UnknownGlyph label={codeIndex.status.text} title={codeIndex.status.hint} />
+                    </div>
+                  ) : null}
+
+                  {/* 态三：整块降级 / 运行态不可知 —— **未知 ≠ 健康**，升格为异常态长句（§9.6） */}
+                  {codeIndex.state === 'unavailable' ? (
+                    <>
+                      <div className="vs-metrics">
+                        <span className={cx('vs-shortword', 'vs-tone-warn')}>
+                          {codeIndex.status.text}
+                        </span>
+                        <span className="vs-caption" title={codeIndex.status.hint}>
+                          {`命中规则 #${codeIndex.rule}`}
+                        </span>
+                      </div>
+                      <span className="vs-note">{codeIndex.headline}</span>
+                      {codeIndex.guidance !== null ? (
+                        <span className="vs-note">{codeIndex.guidance}</span>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {/* 态四：已观测到项目 —— 计数 + 逐项目行（原始 23 字段只在 tooltip 与 L2） */}
+                  {codeIndex.state === 'observed' && codeIndexCounts !== null ? (
+                    <>
+                      <div className="vs-metrics">
+                        <span className="vs-metric" title={codeIndex.status.hint}>
+                          <span className="vs-bignum">{codeIndexCounts.total}</span>
+                          <span className="vs-caption">项目</span>
+                        </span>
+                        <span className="vs-metric">
+                          <span className="vs-bignum">{codeIndexCounts.stale}</span>
+                          <span className="vs-caption">陈旧</span>
+                        </span>
+                        <span className="vs-metric">
+                          <span className="vs-bignum">{codeIndexCounts.unregistered}</span>
+                          <span className="vs-caption">未登记</span>
+                        </span>
+                        <span className="vs-metric">
+                          <span className="vs-bignum">{codeIndexCounts.inFlight}</span>
+                          <span className="vs-caption">索引中</span>
+                        </span>
+                      </div>
+                      <div className="vs-ci-rows">
+                        {visibleProjects.map((entry) => (
+                          <CodeIndexProjectRow
+                            key={`${entry.workspaceId}/${entry.projectId}`}
+                            entry={entry}
+                            nowMs={nowMs}
+                          />
+                        ))}
+                      </div>
+                      {hiddenProjectCount > 0 ? (
+                        <span className="vs-ci-more">
+                          {`还有 ${hiddenProjectCount} 项未列（首屏上限 ${CODE_INDEX_VISIBLE_PROJECT_LIMIT}）⇒ 见下方 L2 证据层`}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {codeIndex.state === 'observed' && codeIndexCounts !== null ? (
+                    <span
+                      className="vs-note"
+                      title="本卡只报「索引在不在 / 陈旧不陈旧」；「搜不搜得到」不在本卡结论里"
+                    >
+                      索引存在 ≠ 搜得到 · 陈旧与路径失效由后端 fail-closed 标记（D1/D2）
+                    </span>
+                  ) : null}
                 </Card>
               </Col>
 
@@ -582,6 +719,89 @@ const IndexStatusPage: React.FC = () => {
                       dataSource={jobs}
                       columns={jobColumns}
                     />
+                  )}
+
+                  {/* ── codeIndex（符号索引）原始字段：字段名/顺序**由契约常量生成** ─────
+                       折叠机制与上文完全一致（L0 的「原始字段」开关）。
+                       ⚠️ 块缺失在这里也必须**显式**说明（不留空白 —— 空白会被读成「坏了」）。 ── */}
+                  <Typography.Text strong style={{ display: 'block', margin: '12px 0 4px' }}>
+                    {`符号索引块（codeIndex）· ${CODE_INDEX_BLOCK_FIELDS.length} 字段`}
+                  </Typography.Text>
+                  {codeIndexRaw === null ? (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="响应里没有 codeIndex 键"
+                      description="该块由 Core 上的 CodeIndexStatusProbe 产出，改动要重启 Core 才生效 —— 未接入 ≠ 故障。这与「块在、但 projects 为空」是两个不同事实。"
+                    />
+                  ) : (
+                    <>
+                      <Descriptions size="small" column={{ xs: 1, sm: 2, lg: 3 }} bordered>
+                        {CODE_INDEX_BLOCK_FIELDS.map((field) => (
+                          <Descriptions.Item key={field.key} label={`${field.label}（${field.key}）`}>
+                            {renderFieldValue(
+                              field.kind,
+                              (codeIndexRaw as unknown as Record<string, unknown>)[field.key],
+                            )}
+                          </Descriptions.Item>
+                        ))}
+                      </Descriptions>
+
+                      <Typography.Text strong style={{ display: 'block', margin: '12px 0 4px' }}>
+                        {`符号索引逐项目（projects，共 ${codeIndexProjects.length} 项）· ${CODE_INDEX_PROJECT_FIELDS.length} 列`}
+                      </Typography.Text>
+                      <Table<CodeIndexProjectStatus>
+                        size="small"
+                        rowKey={(row) => `${row.workspaceId}/${row.projectId}`}
+                        scroll={{ x: 1600 }}
+                        pagination={false}
+                        dataSource={codeIndexProjects}
+                        columns={codeIndexProjectColumns}
+                        locale={{
+                          emptyText:
+                            '（projects 为空：注册表与维护驱动都没有条目 —— 这是「已知的空」，不是「读不到」）',
+                        }}
+                      />
+
+                      <Typography.Text strong style={{ display: 'block', margin: '12px 0 4px' }}>
+                        {`维护态（maintenance，23 字段原样透传；可画表 ${maintenanceRows.length} 项）· ${CODE_INDEX_MAINTENANCE_FIELDS.length} 列`}
+                      </Typography.Text>
+                      {maintenanceRows.length === 0 ? (
+                        <Alert
+                          type="info"
+                          showIcon
+                          message="没有任何项目的维护态可见"
+                          description="maintenance 全为 null ⇒ 逐项缺席原因见下（这里**不渲染一张全空的表** —— 那会把「未知」画成「正常」）。"
+                        />
+                      ) : (
+                        <Table<CodeIndexMaintenanceStatus>
+                          size="small"
+                          rowKey={(row) => `${row.workspaceId}/${row.scopeId}`}
+                          scroll={{ x: 2200 }}
+                          pagination={false}
+                          dataSource={maintenanceRows}
+                          columns={codeIndexMaintenanceColumns}
+                        />
+                      )}
+
+                      {maintenanceMissing.length > 0 ? (
+                        <>
+                          <Typography.Text strong style={{ display: 'block', margin: '12px 0 4px' }}>
+                            {`维护态缺席清单（maintenance === null，共 ${maintenanceMissing.length} 项）`}
+                          </Typography.Text>
+                          <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                            {maintenanceMissing.map((entry) => (
+                              <Typography.Text
+                                key={`${entry.workspaceId}/${entry.projectId}`}
+                                style={{ fontSize: 12, wordBreak: 'break-all' }}
+                              >{`${entry.displayName ?? entry.projectId}（${entry.projectId}）：maintenanceReason = ${formatTriStateText(
+                                entry.maintenanceReason,
+                              )} ⇒ ${describeMaintenanceReason(entry.maintenanceReason)}`}</Typography.Text>
+                            ))}
+                          </Space>
+                        </>
+                      ) : null}
+                    </>
                   )}
                 </>
               ) : (

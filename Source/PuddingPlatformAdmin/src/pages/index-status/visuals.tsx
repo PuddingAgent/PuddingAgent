@@ -86,6 +86,14 @@ export interface StatusOrbProps {
   title?: string;
   size?: 'l0' | 'card';
   className?: string;
+  /**
+   * 是否允许带动效（默认 `true`，保持 P2 既有行为不变）。
+   *
+   * §9.7 ⑥「同屏最多一个会呼吸的元素」：**列表内的球体必须传 `false`** ——
+   * 把唯一的「呼吸」名额留给 L0；行内的动效语义由 `StaleMark`（急闪）/
+   * `RippleMark`（涟漪）这些**标记**承载（每个状态仍然有「形状 + 动效 + 短词」三重编码）。
+   */
+  animate?: boolean;
 }
 
 export const StatusOrb: React.FC<StatusOrbProps> = ({
@@ -94,9 +102,10 @@ export const StatusOrb: React.FC<StatusOrbProps> = ({
   title,
   size = 'l0',
   className,
+  animate = true,
 }) => {
   const visual = LEVEL_VISUALS[level];
-  const anim = visual.motion === ANIM_NONE ? null : visual.motion;
+  const anim = visual.motion === ANIM_NONE || !animate ? null : visual.motion;
   const label = word ?? visual.word;
   return (
     // 注意：动效类**只挂在被动画的子元素上**（光晕 / 核心 / 涟漪），根节点不重复挂 ——
@@ -495,3 +504,77 @@ export const L0Strip: React.FC<L0StripProps> = ({
     </section>
   );
 };
+
+// ── 9) 项目标记（B 卡 · 符号索引）：陈旧 / 未登记 / 路径失效 / 进行中涟漪 ──
+// 规格真源：§9.1 原则 2「颜色永不单独承载语义」—— 每个标记**同时**给出
+//   形状类（`vs-mark--*`）+ 动效（`vs-anim-*`，或静态） + 短词；颜色只是第四重冗余编码。
+// 动效**只复用 §9.4 已有的三档**（陈旧 = `alert` 1.2s 急闪；进行中 = `alert` 1.6s 涟漪），
+// **不自创第四档**；因此本组不新增任何 `@keyframes` 或 `animation/transition` 声明，
+// `prefers-reduced-motion` 的既有降级块对它们自动生效（I11 无需扩写）。
+
+/** 标记短词（页面不得另写一份）。 */
+export const MARK_WORDS = {
+  stale: '陈旧',
+  unregistered: '未登记',
+  pathBroken: '路径失效',
+  indexInFlight: '索引中',
+} as const;
+
+export interface MarkProps {
+  /** 短词（默认取本标记的规范短词）。 */
+  word?: string;
+  /** tooltip：原始字段 / 判定来源 / 修复方向。 */
+  title?: string;
+}
+
+/** 陈旧标记：形状 = 斜纹块（`vs-mark--stale`）· 动效 = 急闪（§9.4 alert 档）· 短词「陈旧」。 */
+export const StaleMark: React.FC<MarkProps> = ({ word = MARK_WORDS.stale, title }) => (
+  <span className={cx('vs-mark', 'vs-mark--stale')} title={title} role="img" aria-label={word} data-mark="stale">
+    <span className={cx('vs-mark__glyph', 'vs-anim-alert')} />
+    <span className="vs-caption">{word}</span>
+  </span>
+);
+
+/** 未登记标记（D1）：形状 = 虚线方框 + 斜杠 · 静态 · 短词「未登记」。 */
+export const UnregisteredMark: React.FC<MarkProps> = ({ word = MARK_WORDS.unregistered, title }) => (
+  <span
+    className={cx('vs-mark', 'vs-mark--unregistered')}
+    title={title}
+    role="img"
+    aria-label={word}
+    data-mark="unregistered"
+  >
+    <span className="vs-mark__glyph" />
+    <span className="vs-caption">{word}</span>
+  </span>
+);
+
+/** 路径失效标记（D2）：形状 = 断开的线段 · 静态 · 短词「路径失效」。 */
+export const PathBrokenMark: React.FC<MarkProps> = ({ word = MARK_WORDS.pathBroken, title }) => (
+  <span
+    className={cx('vs-mark', 'vs-mark--pathbroken')}
+    title={title}
+    role="img"
+    aria-label={word}
+    data-mark="pathbroken"
+  >
+    <span className="vs-mark__glyph" />
+    <span className="vs-caption">{word}</span>
+  </span>
+);
+
+/** 进行中涟漪标记：形状 = 圆 + 外扩环 · 动效 = 涟漪（§9.4 alert 1.6s）· 短词「索引中」。 */
+export const RippleMark: React.FC<MarkProps> = ({ word = MARK_WORDS.indexInFlight, title }) => (
+  <span
+    className={cx('vs-mark', 'vs-mark--inflight')}
+    title={title}
+    role="img"
+    aria-label={word}
+    data-mark="inflight"
+  >
+    <span className="vs-mark__glyph">
+      <span className={cx('vs-mark__ripple', 'vs-anim-ripple')} />
+    </span>
+    <span className="vs-caption">{word}</span>
+  </span>
+);

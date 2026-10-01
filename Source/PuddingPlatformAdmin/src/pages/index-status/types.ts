@@ -1,7 +1,10 @@
 // ── Slice B：全文索引状态只读面板 wire DTO ───────────────────────────
 // 唯一契约 = 后端 `PuddingHost/Services/FullTextIndexStatusProbe.cs`
 // （record 字段名即 wire 字段名；camelCase 由 ASP.NET 默认序列化策略产生）。
-// ⚠️ 本切片**只做全文索引块**：这里不得出现 codeIndex（符号索引属 S-A2）。
+// ⚠️ 本文件是**既有 wire 契约**：`fullText` 相关的类型（含字段名/顺序/可空性）自 Slice B 起冻结，
+//    一律**不得改动或删除**（后端 A1 断言同样要求它一个字段都不变）。
+// S-A2/P3 起新增**符号（代码）索引块** `codeIndex`：只**新增**类型与一个**可选**根字段，
+//    既有定义逐字未动（见文件末尾「符号索引块」一节）。
 //
 // R4 可空性纪律：`null` = **未知**（探测失败 / 不可知），与 `false` / `0` 是不同事实。
 // 因此所有「可为 null」的字段一律显式写 `| null`，禁止用 `?:` 或不可空类型糊过去。
@@ -10,8 +13,16 @@
 export interface FullTextIndexStatusSnapshot {
   /** 快照生成时刻（UTC）。 */
   generatedAtUtc: string;
-  /** 全文索引块（本切片唯一的块）。 */
+  /** 全文索引块（Slice B 起冻结）。 */
   fullText: FullTextIndexStatusDetail;
+  /**
+   * 符号（代码）索引块（S-A2 新增）。
+   *
+   * ⚠️ **可选**是刻意的：该块由 Core 上的 `CodeIndexStatusProbe` 产出，**要重启 Core 才生效**。
+   * 因此在未重启的宿主上，响应里**根本没有这个键** —— `undefined`（键缺失）= 「本块未接入」，
+   * 与「块存在但 `projects` 为空」是**两个不同事实**，前端必须分开渲染（不得用 `?? { projects: [] }` 折叠）。
+   */
+  codeIndex?: CodeIndexStatusDetail | null;
 }
 
 /** 局部维护循环（`FullTextIndex:Maintenance`，S5b）的如实上报。 */
@@ -107,4 +118,128 @@ export interface FullTextIndexStatusDetail {
   jobs: FullTextIndexJobStatus[];
   /** 台账为空时的**如实原因**；有 job 时为 `null`。 */
   jobsReason: FullTextIndexJobsReasonText | null;
+}
+
+// ══ 符号索引块（S-A2 / P3 新增）════════════════════════════════════════
+// 唯一契约 = 后端 `Source/PuddingHost/Services/CodeIndexStatusProbe.cs`（探针 + 两个 record）。
+// 权威字段名清单（含「维护态**恰好 23 个** camelCase 字段」的逐个点名断言）：
+//   · `Tests/PuddingHost.Tests/Hosting/SA2CodeIndexStatusTests.cs`（A5 / A6，第 205~250 行）
+//   · `Tests/PuddingHost.Tests/Hosting/SA2CodeIndexTestDoubles.cs`（`Sa2Samples.MaintenanceStatus` 逐字段赋值，第 120~150 行）
+// ⇒ 本节的字段名与**声明顺序**都是**从后端反读**的，不是猜的；顺序即 wire 顺序（ASP.NET camelCase）。
+
+/**
+ * 维护态（`ICodeIndexMaintenance.GetScopeStatuses` 的 23 字段记录，后端**原样透传**）。
+ *
+ * ⚠️ 字段顺序与 `SA2CodeIndexStatusTests.A5` 的断言数组**逐位一一对应** ——
+ * L2 证据层的列即由此顺序生成（见 `health.ts` 的 `CODE_INDEX_MAINTENANCE_FIELDS`）。
+ */
+export interface CodeIndexMaintenanceStatus {
+  /** 拥有该 scope 的 workspace。 */
+  workspaceId: string;
+  /** scope / 项目标识（注册表与维护驱动共用同一 id 空间）。 */
+  scopeId: string;
+  /** 驱动观测到的根路径。 */
+  rootPath: string;
+  /** 观测到的文件系统版本号。 */
+  observedVersion: number;
+  /** 期望（目标）版本号。 */
+  desiredVersion: number;
+  /** 已提交（落库）版本号。 */
+  committedVersion: number;
+  /** 在「进行中」期间被标记的次数。 */
+  markedWhileInFlightCount: number;
+  /** **待索引**（驱动待办）；D3 里被误当成注册态的 `Pending` 就是它。 */
+  indexPending: boolean;
+  /** **索引进行中**（真正的活动态；B 卡据此画涟漪）。 */
+  indexInFlight: boolean;
+  /** 需要重建索引。 */
+  needsReconcile: boolean;
+  /** 需要重建的**如实原因**；无需重建为 `null`。 */
+  reconcileReason: string | null;
+  /** 触发重建请求的批次数（累计）。 */
+  reconcileRequestCount: number;
+  /** 观测到的删除路径数（累计）。 */
+  removalObservationCount: number;
+  /** 最近一批的删除路径（**只读原样**，不做截断/聚合）。 */
+  lastRemovalPaths: string[];
+  /** 真正被删除的已索引文件数（累计）。 */
+  removedFileCount: number;
+  /** 逐个增量重建的文件数（累计）。 */
+  incrementallyIndexedFileCount: number;
+  /** 升级为整 scope 重建的批次数（累计）。 */
+  scopeEscalationCount: number;
+  /** 校准真正清掉的陈旧索引文件数（累计）。 */
+  sweptFileCount: number;
+  /** 累计校准运行次数（被拒绝的也算 —— 数字不吞掉尝试）。 */
+  calibrationRunCount: number;
+  /** 因根路径缺失/不可读而被**拒绝**的校准次数（累计）；`> 0` ⇒ B 卡 warn。 */
+  rejectedCalibrationRunCount: number;
+  /** 最近一次校准完成时刻（UTC）；**从未校准过为 `null`**（≠ 时间戳 0）。 */
+  lastCalibrationAtUtc: string | null;
+  /** 当前处于校准宽限窗口内的观测路径条数。 */
+  recentObservationCount: number;
+  /** 是否已挂接变更源（watcher）；`false` ⇒ 不会被增量感知。 */
+  watcherAttached: boolean;
+}
+
+/**
+ * 单个项目的只读条目。
+ *
+ * **D3：两个状态字段、两个真源，绝不合并** —— `registration*` 来自**索引注册表**（SQLite 项目记录表），
+ * `maintenance` 来自**维护驱动的进程内状态**。二者在 UI 上必须分别呈现为不同视觉语义，
+ * 不得合成一个「状态」（这也是 B 卡的设计约束）。
+ *
+ * **陈旧**：`stale === true` 的**唯一**来源是「未在注册表登记」**或**「`rootPathExists === false`」
+ * （后端 fail-closed，D1/D2）。`maintenance === null`（未挂到驱动）**不**导致陈旧。
+ */
+export interface CodeIndexProjectStatus {
+  /** 拥有该项目的 workspace。 */
+  workspaceId: string;
+  /** 项目 / scope 标识（注册表与维护驱动同 id 空间）。 */
+  projectId: string;
+  /** 展示名；**仅来自维护驱动的条目为 `null`**（不是空串）。 */
+  displayName: string | null;
+  /** 项目根路径。 */
+  rootPath: string;
+  /** 是否在注册表登记（D1 判定输入）。 */
+  registered: boolean;
+  /** 注册表**投影**（`Active` / `Covered` / `Removed` / `Failed`）；未登记为 `null`。 */
+  registrationState: string | null;
+  /** 项目记录**原始**生命周期状态（含 `Registering`）；未登记为 `null`。 */
+  registrationStatus: string | null;
+  /** scope 来源（`Manual` / `Auto` / `Pinned`）；未知为 `null`。 */
+  registrationSource: string | null;
+  /** 维护态 23 字段原样透传；**未挂到驱动为 `null`**（原因见 `maintenanceReason`）。 */
+  maintenance: CodeIndexMaintenanceStatus | null;
+  /** 维护态缺席时的**如实原因**（`scope-not-attached` / `maintenance-driver-not-running`）；正常为 `null`。 */
+  maintenanceReason: string | null;
+  /** 根路径的**目录存在性**判定（D2 判定输入）。 */
+  rootPathExists: boolean;
+  /** 陈旧：未登记 **或** 根路径不存在。 */
+  stale: boolean;
+}
+
+/**
+ * 符号（代码）索引块（`CodeIndexStatusDetailSnapshot`）。
+ *
+ * R5 三态纪律：计数类字段为 `null` = **读不出来（未知）**，与 `0`（真的是 0）是不同事实；
+ * `note` 非空 = 整块降级，其内容就是**如实原因**（已知原因码见 `code-index-status-unavailable`）。
+ */
+export interface CodeIndexStatusDetail {
+  /** 本次快照遍历的 workspace（真源：数据根 `workspaces` 下的目录名）。 */
+  workspaceIds: string[];
+  /** 维护驱动是否在跑；**整块降级为 `null`**（不得折叠成 `false` = 「没在跑」）。 */
+  maintenanceRunning: boolean | null;
+  /** 驱动自构造以来处理的合并批次总数；读不出来为 `null`。 */
+  batchesProcessed: number | null;
+  /** 需要重建索引的批次总数；读不出来为 `null`。 */
+  reconcileRequests: number | null;
+  /** 观测到的删除路径总数；读不出来为 `null`。 */
+  removalObservations: number | null;
+  /** 当前待重建的 scope 数；读不出来为 `null`。 */
+  pendingReconcileScopeCount: number | null;
+  /** 逐项目条目（注册表 ∪ 维护驱动，按 workspace/projectId 稳定排序）。 */
+  projects: CodeIndexProjectStatus[];
+  /** 整块读不出来时的**如实原因**；正常为 `null`。 */
+  note: string | null;
 }
