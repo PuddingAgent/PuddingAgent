@@ -4,6 +4,19 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：迁移使用统计——「能否退役旧 Bridge」变成可判定谓词（第 47 轮，切片 F）
+
+`DesktopTransportUsage(channelCalls, legacyCalls, noRouteCalls)` + `Record(route)`：
+
+- `CanRetireLegacyBridge`（**保守判据**）：①能力通道已被证明在用（`ChannelProven`，>0 次）；
+  ②统计窗口内**零次回退**到旧 Bridge；③没有"无路可走"记录（后者说明当时旧 Bridge 仍被依赖）。
+- `Explain()` 给运维一句结论与**理由**（通道未证明 / 仍有回退 / 仍有无路可走），且不含页面内容或凭据。
+- 价值：切片 F 的「默认切换与退役」不再是凭感觉关掉旧通道，而是有可观测依据的判定；
+  这也正是计划 §5「分阶段迁移」的收尾条件。
+- 测试：Broker **78/78**（+4：新窗口不可退役、纯通道可退役、任一回退/无路可走都阻断、计数非负且理由无内容）。
+
+测试合计（本轮实测）：Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 124、
+CapabilityBroker 78、CapabilityBroker.AspNetCore 26 = **424**；探针 53/53。
 ## 2026-10-01：`shell.file_picker` 端到端（第 46 轮，切片 E 收口）
 
 - 契约：`DesktopFilePickerRequest`（标题 ≤128、扩展名 ≤16 且**不接受通配符**）+ `DesktopFilePickerResult`

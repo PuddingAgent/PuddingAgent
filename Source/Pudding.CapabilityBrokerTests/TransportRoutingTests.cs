@@ -86,4 +86,59 @@ public sealed class TransportRoutingTests
             Assert.DoesNotContain("token", decision.Reason, StringComparison.OrdinalIgnoreCase);
         }
     }
+
+/// <summary>迁移使用统计：把"能否退役旧 Bridge"变成可判定谓词（保守：零回退 + 通道已证明在用）。</summary>
+public sealed class TransportUsageTests
+{
+    [Fact]
+    public void FreshWindow_CannotRetireBecauseTheChannelIsUnproven()
+    {
+        var usage = DesktopTransportUsage.Empty;
+
+        Assert.False(usage.ChannelProven);
+        Assert.False(usage.CanRetireLegacyBridge);
+        Assert.Contains("尚未观测到任何成功使用", usage.Explain(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ChannelOnly_ClearsTheWayForRetirement()
+    {
+        var usage = DesktopTransportUsage.Empty
+            .Record(DesktopTransportRoute.CapabilityChannel)
+            .Record(DesktopTransportRoute.CapabilityChannel);
+
+        Assert.True(usage.ChannelProven);
+        Assert.True(usage.CanRetireLegacyBridge);
+        Assert.Contains("可退役", usage.Explain(), StringComparison.Ordinal);
+        Assert.Contains("channel=2", usage.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnyFallbackOrDeadEnd_BlocksRetirement()
+    {
+        var withFallback = DesktopTransportUsage.Empty
+            .Record(DesktopTransportRoute.CapabilityChannel)
+            .Record(DesktopTransportRoute.LegacyBridge);
+
+        Assert.False(withFallback.CanRetireLegacyBridge);
+        Assert.Contains("回退到旧 Bridge", withFallback.Explain(), StringComparison.Ordinal);
+
+        var withDeadEnd = DesktopTransportUsage.Empty
+            .Record(DesktopTransportRoute.CapabilityChannel)
+            .Record(DesktopTransportRoute.None);
+
+        Assert.False(withDeadEnd.CanRetireLegacyBridge);
+        Assert.Contains("无路可走", withDeadEnd.Explain(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Counters_MustBeNonNegativeAndExplanationsStayContentFree()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DesktopTransportUsage(-1, 0, 0));
+
+        var usage = DesktopTransportUsage.Empty.Record(DesktopTransportRoute.LegacyBridge);
+        Assert.DoesNotContain("http", usage.Explain(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("token", usage.Explain(), StringComparison.OrdinalIgnoreCase);
+    }
+}
 }
