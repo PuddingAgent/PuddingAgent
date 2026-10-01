@@ -51,6 +51,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken);
 
+    /// <summary>标签页切换/关闭；实现方必须在操作后返回<b>新的</b>活动页状态与剩余清单。</summary>
+    Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
+        DesktopCallContext context, BrowserTabsRequest request, CancellationToken cancellationToken);
+
     /// <summary>列出上下文与页面；实现方必须为每个页面标注当前 PageVersion。</summary>
     Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext context, CancellationToken cancellationToken);

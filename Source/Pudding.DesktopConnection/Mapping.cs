@@ -426,6 +426,35 @@ internal static class CoreFrameMapping
                 return CapabilityResult<DesktopCapabilityRequest>.Success(DesktopCapabilityRequest.ForContexts());
             }
 
+            case DesktopCapability.BrowserTabs:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.Tabs)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var tabsTarget = DecodeTarget(command.Tabs.Target);
+                if (tabsTarget is null)
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                        DesktopCapabilityError.InvalidTarget("browser.tabs requires an explicit context_id/page_id target"));
+                }
+
+                if (command.Tabs.ExpectedPageVersion <= 0)
+                {
+                    return FailRequest("tab operation must pin a valid expected_page_version");
+                }
+
+                if (!DesktopTabActionWire.TryParse(command.Tabs.Action, out var tabAction))
+                {
+                    return FailRequest("tab action is missing or not registered");
+                }
+
+                return CapabilityResult<DesktopCapabilityRequest>.Success(
+                    DesktopCapabilityRequest.ForTabs(new BrowserTabsRequest(
+                        tabsTarget, tabAction, ToPageVersion(command.Tabs.ExpectedPageVersion))));
+            }
+
             case DesktopCapability.ShellStatus:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
@@ -499,6 +528,40 @@ internal static class DesktopFrameMapping
 {
     /// <summary>单条快照文本字段的硬上限（超过即截断并标注 truncated）。</summary>
     private const int SnapshotTextLimit = 2_000_000;
+
+    private static Proto.ContextsOutcome BuildContexts(DesktopContexts contexts)
+    {
+        var outcome = new Proto.ContextsOutcome();
+        foreach (var context in contexts.Contexts)
+        {
+            var wireContext = new Proto.ContextInfo
+            {
+                ContextId = context.ContextId,
+                Trust = context.Trust.ToString(),
+            };
+
+            foreach (var page in context.Pages)
+            {
+                wireContext.Pages.Add(new Proto.PageInfo
+                {
+                    ContextId = page.Target.ContextId,
+                    PageId = page.Target.PageId,
+                    PageVersion = page.Version.Value,
+                    Title = WireText.Truncate(page.Title, 512),
+                    Url = page.Url?.AbsoluteUri ?? string.Empty,
+                    IsActive = page.IsActive,
+                    IsAgentTarget = page.IsAgentTarget,
+                    CanGoBack = page.CanGoBack,
+                    CanGoForward = page.CanGoForward,
+                    IsLoading = page.IsLoading,
+                });
+            }
+
+            outcome.Contexts.Add(wireContext);
+        }
+
+        return outcome;
+    }
 
     public static Proto.DesktopFrame Hello(
         DesktopConnectionOptions options, IReadOnlyList<DesktopCapabilityDeclaration> declarations)
@@ -732,6 +795,22 @@ internal static class DesktopFrameMapping
 
                         result.Contexts.Contexts.Add(wireContext);
                     }
+
+                    break;
+
+                case DesktopCapability.BrowserTabs when response.Tabs is { } tabs:
+                    result.Tabs = new Proto.TabsOutcome
+                    {
+                        Action = DesktopTabActionWire.NameOf(tabs.Action),
+                        TabClosed = tabs.TabClosed,
+                        Page = new Proto.PageStateOutcome
+                        {
+                            Url = tabs.Page.Url?.AbsoluteUri ?? string.Empty,
+                            PageVersion = tabs.Page.Version.Value,
+                            Readiness = DesktopPageReadinessWire.NameOf(tabs.Page.Readiness),
+                        },
+                        Remaining = BuildContexts(tabs.Remaining),
+                    };
 
                     break;
 

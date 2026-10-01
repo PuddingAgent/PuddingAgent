@@ -199,6 +199,19 @@ public sealed class DesktopSession : IAsyncDisposable
                     DesktopCapabilityError.Internal("contexts response payload is missing")),
             cancellationToken);
 
+    /// <summary>标签页切换/关闭（变更类）：成功结果带回新的活动页状态与剩余清单。</summary>
+    public Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
+        BrowserTabsRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.BrowserTabs,
+            DesktopCapabilityRequest.ForTabs(request),
+            call,
+            static response => response.Tabs is { } value
+                ? CapabilityResult<DesktopTabsResult>.Success(value)
+                : CapabilityResult<DesktopTabsResult>.Failure(
+                    DesktopCapabilityError.Internal("tabs response payload is missing")),
+            cancellationToken);
+
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync(

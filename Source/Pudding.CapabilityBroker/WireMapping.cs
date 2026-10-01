@@ -147,6 +147,15 @@ internal static class CoreCommandEncoder
                 command.Contexts = new Proto.ContextsCommand();
                 break;
 
+            case DesktopCapability.BrowserTabs when request.Tabs is { } requestTabs:
+                command.Tabs = new Proto.TabsCommand
+                {
+                    Target = EncodeTarget(requestTabs.Target),
+                    ExpectedPageVersion = requestTabs.ExpectedPageVersion.Value,
+                    Action = DesktopTabActionWire.NameOf(requestTabs.Action),
+                };
+                break;
+
             case DesktopCapability.BrowserSnapshot when request.Snapshot is { } snapshot:
                 command.Snapshot = new Proto.SnapshotCommand
                 {
@@ -187,6 +196,8 @@ internal static class CoreCommandEncoder
             _ when request.Notification is { } notification =>
                 $"notification:{notification.Title}:{notification.Message}:{notification.Priority}",
             _ when request.PageState is { } target => $"page_state:{target.Key}",
+            _ when request.Tabs is { } requestTabs =>
+                $"tabs:{requestTabs.Action}:{requestTabs.Target.Key}:{requestTabs.ExpectedPageVersion.Value}",
             _ when request.Contexts => "contexts",
             _ when request.WaitFor is { } waitFor =>
                 $"wait_for:{waitFor.Target.Key}:{waitFor.Condition.Kind}:{waitFor.Condition.Value}:{waitFor.TimeoutMs}:{waitFor.ExpectedPageVersion.Value}",
@@ -217,7 +228,7 @@ internal static class DesktopResultDecoder
     /// 结果帧不重复携带目标，领域 DTO 的目标由请求关联而来。
     /// </summary>
     public static CapabilityResult<DesktopCapabilityResponse> Decode(
-        Proto.OperationResult result, DesktopCapability expectedCapability, DesktopPageTarget? requestedTarget, DesktopLocator? requestedLocator = null, DesktopWaitCondition? requestedWaitCondition = null)
+        Proto.OperationResult result, DesktopCapability expectedCapability, DesktopPageTarget? requestedTarget, DesktopLocator? requestedLocator = null, DesktopWaitCondition? requestedWaitCondition = null, DesktopTabAction? requestedTabAction = null)
     {
         if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.None)
         {
@@ -242,6 +253,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.Interact => expectedCapability == DesktopCapability.BrowserInteract,
             Proto.OperationResult.OutcomeOneofCase.WaitFor => expectedCapability == DesktopCapability.BrowserWaitFor,
             Proto.OperationResult.OutcomeOneofCase.Contexts => expectedCapability == DesktopCapability.BrowserContexts,
+            Proto.OperationResult.OutcomeOneofCase.Tabs => expectedCapability == DesktopCapability.BrowserTabs,
             _ => false,
         };
 
@@ -381,6 +393,45 @@ internal static class DesktopResultDecoder
 
                     return CapabilityResult<DesktopCapabilityResponse>.Success(
                         DesktopCapabilityResponse.FromContexts(new DesktopContexts(contexts)));
+                }
+
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Tabs)
+                {
+                    if (requestedTarget is null)
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal("tabs result cannot be correlated without the requested target"));
+                    }
+
+                    var remaining = DecodeContexts(result.Tabs.Remaining);
+                    if (remaining.IsFailure)
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(remaining.Error);
+                    }
+
+                    var tabAction = DesktopTabActionWire.TryParse(result.Tabs.Action, out var parsedAction)
+                        ? parsedAction
+                        : requestedTabAction ?? DesktopTabAction.Activate;
+
+                    Uri? tabUrl = null;
+                    if (!string.IsNullOrEmpty(result.Tabs.Page?.Url)
+                        && !Uri.TryCreate(result.Tabs.Page.Url, UriKind.Absolute, out tabUrl))
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal("tabs outcome carries a non-absolute url"));
+                    }
+
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromTabs(new DesktopTabsResult(
+                            requestedTarget,
+                            tabAction,
+                            new DesktopPageState(
+                                requestedTarget,
+                                tabUrl,
+                                ToPageVersion(result.Tabs.Page?.PageVersion ?? 0),
+                                DesktopPageReadinessWire.Parse(result.Tabs.Page?.Readiness)),
+                            result.Tabs.TabClosed,
+                            remaining.Value)));
                 }
 
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.WaitFor)
@@ -577,6 +628,71 @@ internal static class DesktopResultDecoder
 
         var code = DesktopCapabilityErrorCodes.ParseOrInternalError(outcome.Code);
         return new DesktopCapabilityError(code, outcome.Message, outcome.Retryable, outcome.MayHaveSideEffects);
+    }
+
+    private static CapabilityResult<DesktopContexts> DecodeContexts(Proto.ContextsOutcome? outcome)
+    {
+        var contexts = new List<DesktopContextInfo>(outcome?.Contexts.Count ?? 0);
+
+        foreach (var context in outcome?.Contexts ?? [])
+        {
+            var pages = new List<DesktopPageInfo>(context.Pages.Count);
+            foreach (var page in context.Pages)
+            {
+                DesktopPageTarget pageTarget;
+                try
+                {
+                    pageTarget = new DesktopPageTarget(page.ContextId, page.PageId);
+                }
+                catch (ArgumentException)
+                {
+                    return CapabilityResult<DesktopContexts>.Failure(
+                        DesktopCapabilityError.Internal("contexts outcome carries an unusable page target"));
+                }
+
+                Uri? pageUrl = null;
+                if (!string.IsNullOrEmpty(page.Url) && !Uri.TryCreate(page.Url, UriKind.Absolute, out pageUrl))
+                {
+                    return CapabilityResult<DesktopContexts>.Failure(
+                        DesktopCapabilityError.Internal("contexts outcome carries a non-absolute page url"));
+                }
+
+                try
+                {
+                    pages.Add(new DesktopPageInfo(
+                        pageTarget,
+                        ToPageVersion(page.PageVersion),
+                        NullIfEmpty(page.Title),
+                        pageUrl,
+                        page.IsActive,
+                        page.IsAgentTarget,
+                        page.CanGoBack,
+                        page.CanGoForward,
+                        page.IsLoading));
+                }
+                catch (ArgumentException)
+                {
+                    return CapabilityResult<DesktopContexts>.Failure(
+                        DesktopCapabilityError.Internal("contexts outcome carries a page without a live version"));
+                }
+            }
+
+            var trust = Enum.TryParse<DesktopContextTrust>(context.Trust, ignoreCase: false, out var parsedTrust)
+                ? parsedTrust
+                : DesktopContextTrust.Untrusted;
+
+            try
+            {
+                contexts.Add(new DesktopContextInfo(context.ContextId, trust, pages));
+            }
+            catch (ArgumentException)
+            {
+                return CapabilityResult<DesktopContexts>.Failure(
+                    DesktopCapabilityError.Internal("contexts outcome carries an unusable context"));
+            }
+        }
+
+        return CapabilityResult<DesktopContexts>.Success(new DesktopContexts(contexts));
     }
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;

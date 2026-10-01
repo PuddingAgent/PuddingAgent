@@ -32,6 +32,8 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                     DesktopPageVersion.Require(5),
                     DesktopPageReadiness.Complete))),
 
+            DesktopCapability.BrowserTabs => Tabs(request),
+
             DesktopCapability.BrowserContexts => Task.FromResult(DesktopCapabilityResponse.FromContexts(Contexts())),
 
             DesktopCapability.BrowserWaitFor => WaitFor(request),
@@ -127,6 +129,31 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                 isLoading: true),
         ]),
     ]);
+
+    /// <summary>标签页：关闭后剩余清单为空、激活后活动页切换（均为版本 +1）。</summary>
+    private static Task<DesktopCapabilityResponse> Tabs(DesktopCapabilityRequest request)
+    {
+        var tabs = request.Tabs ?? throw new InvalidOperationException("probe: tabs payload missing");
+        var next = DesktopPageVersion.Require(tabs.ExpectedPageVersion.Value + 1);
+        var closed = tabs.Action == DesktopTabAction.Close;
+
+        var remaining = closed
+            ? new DesktopContexts([])
+            : new DesktopContexts(
+            [
+                new DesktopContextInfo("ctx-probe", DesktopContextTrust.AgentAuthorized,
+                [
+                    new DesktopPageInfo(tabs.Target, next, title: "activated", isActive: true, isAgentTarget: true),
+                ]),
+            ]);
+
+        return Task.FromResult(DesktopCapabilityResponse.FromTabs(new DesktopTabsResult(
+            tabs.Target,
+            tabs.Action,
+            new DesktopPageState(tabs.Target, new Uri("https://example.com/probe-tab"), next, DesktopPageReadiness.Complete),
+            closed,
+            remaining)));
+    }
     private static Task<DesktopCapabilityResponse> ExecuteJavascriptAsync(
         JavascriptRequest request, CancellationToken cancellationToken)
     {

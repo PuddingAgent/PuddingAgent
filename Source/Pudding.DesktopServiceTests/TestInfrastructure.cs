@@ -213,6 +213,33 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ShellStatusHandler(cancellationToken);
     }
 
+    public int TabsCount => _calls.Count(call => call.StartsWith("tabs", StringComparison.Ordinal));
+
+    public async Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
+        DesktopCallContext context, BrowserTabsRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue($"tabs:{request.Action}");
+        await AwaitGateAsync(cancellationToken);
+
+        var next = DesktopPageVersion.Require(request.ExpectedPageVersion.Value + 1);
+        var remaining = request.Action == DesktopTabAction.Close
+            ? new DesktopContexts([])
+            : new DesktopContexts(
+            [
+                new DesktopContextInfo("ctx-1", DesktopContextTrust.AgentAuthorized,
+                [
+                    new DesktopPageInfo(request.Target, next, title: "active", isActive: true, isAgentTarget: true),
+                ]),
+            ]);
+
+        return CapabilityResult<DesktopTabsResult>.Success(new DesktopTabsResult(
+            request.Target,
+            request.Action,
+            new DesktopPageState(request.Target, new Uri("https://example.com/tab"), next, DesktopPageReadiness.Complete),
+            tabClosed: request.Action == DesktopTabAction.Close,
+            remaining));
+    }
+
     public int ContextsCount => _calls.Count(call => string.Equals(call, "contexts", StringComparison.Ordinal));
 
     public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(

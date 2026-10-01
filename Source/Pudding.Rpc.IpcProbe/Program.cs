@@ -146,7 +146,8 @@ internal static class Program
             | DesktopCapability.BrowserLocate
             | DesktopCapability.BrowserInteract
             | DesktopCapability.BrowserWaitFor
-            | DesktopCapability.BrowserContexts,
+            | DesktopCapability.BrowserContexts
+            | DesktopCapability.BrowserTabs,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
         InactivityTimeout = TimeSpan.FromSeconds(30),
@@ -459,6 +460,35 @@ internal static class Program
                 contexts.IsFailure
                     ? $"期望清单，实际 {contexts.Error!.Code}"
                     : $"清单不完整：{contexts.Value}");
+        }
+        // 11) 标签页操作（切片 D 收尾）：激活推进版本、关闭后剩余清单减一。
+        var activate = await session.TabsAsync(
+            new BrowserTabsRequest(target, DesktopTabAction.Activate, DesktopPageVersion.Require(6)),
+            Call("tab-activate"));
+        var close = await session.TabsAsync(
+            new BrowserTabsRequest(target, DesktopTabAction.Close, DesktopPageVersion.Require(6)),
+            Call("tab-close"));
+
+        if (activate.IsSuccess && !activate.Value.TabClosed
+            && activate.Value.Remaining.PageCount == 1
+            && activate.Value.Page.Version.Value > 6)
+        {
+            report.Pass(
+                "tabs-activate",
+                $"activate(v6，与交互步骤推进后的当前版本一致) → 活动页版本 {activate.Value.Page.Version.Value}，剩余 {activate.Value.Remaining}");
+        }
+        else
+        {
+            report.Fail("tabs-activate", activate.IsFailure ? $"期望激活成功，实际 {activate.Error!.Code}" : $"结果不符：{activate.Value}");
+        }
+
+        if (close.IsSuccess && close.Value.TabClosed && close.Value.Remaining.PageCount == 0)
+        {
+            report.Pass("tabs-close", "close → TabClosed=true，剩余清单为空（不必再查一次）");
+        }
+        else
+        {
+            report.Fail("tabs-close", close.IsFailure ? $"期望关闭成功，实际 {close.Error!.Code}" : $"结果不符：{close.Value}");
         }
         // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
         var refWithoutVersionRejected = false;

@@ -1,3 +1,18 @@
+## 2026-10-01：`browser.tabs` 端到端（切片 D 协议侧收尾）
+
+- proto：`TabsCommand`（payload 20）+ `TabsOutcome`（outcome 21，剩余清单复用 `ContextsOutcome`）。
+- 契约：`BrowserTabsRequest`（**必须固定页面版本**）+ `DesktopTabsResult`（活动页状态 + `TabClosed`
+  + 剩余清单）；两端映射 fail closed（动作线名未登记/目标缺失/版本未固定 ⇒ invalid_request）。
+- **结构性改进：结果联合的构造函数改为全参数默认值 + 工厂用命名参数**。此前每加一个分支都要手工调整
+  十余处参数计数（第 14/15/16 轮反复返工），现在新增分支只需加一个属性与一个工厂；
+  正确性仍由「恰好一个分支非空」的运行时不变量兜底。
+- 探针：激活（v6→v7，剩余 1 页）与关闭（`TabClosed=true`，剩余清单为空），管道与 h2c 各一轮
+  ⇒ **45/45 exit 0**。
+- **探针顺带验证了陈旧版本保护**：标签页请求最初固定 v5，而交互步骤已把版本推进到 6 ⇒ 被本地拒绝
+  （`page_version_mismatch`）。这既是保护在生效，也说明探针步骤之间共享同一会话的版本记忆。
+
+测试合计：374 用例（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.tabs` 契约与准入（切片 D 收尾，第 1/2 步）
 
 - 动作：`activate` / `close`（与既有 Bridge 的 `page.activate`/`page.close` 等价；线名真源在契约层）。

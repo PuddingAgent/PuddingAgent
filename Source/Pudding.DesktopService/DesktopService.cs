@@ -180,6 +180,27 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.BrowserTabs:
+            {
+                if (request.Tabs is not { } tabs)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("browser.tabs request payload is missing"));
+                }
+
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    tabs.Target,
+                    tabs.ExpectedPageVersion,
+                    context,
+                    token => _surface.TabsAsync(context, tabs, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromTabs(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             case DesktopCapability.BrowserContexts:
             {
                 if (!request.Contexts)

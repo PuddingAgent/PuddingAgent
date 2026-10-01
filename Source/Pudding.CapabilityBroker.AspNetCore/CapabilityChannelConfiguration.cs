@@ -28,7 +28,8 @@ public sealed record CapabilityChannelConfiguration
         | DesktopCapability.BrowserLocate
         | DesktopCapability.BrowserInteract
         | DesktopCapability.BrowserWaitFor
-        | DesktopCapability.BrowserContexts;
+        | DesktopCapability.BrowserContexts
+        | DesktopCapability.BrowserTabs;
 
     public const int DefaultMaxMessageBytes = 1024 * 1024;
 

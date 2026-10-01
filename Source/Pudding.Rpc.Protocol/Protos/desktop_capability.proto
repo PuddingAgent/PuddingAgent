@@ -214,6 +214,20 @@ message ContextsOutcome {
   repeated ContextInfo contexts = 1;
 }
 
+// 标签页操作（切片 D 收尾）：必须固定 expected_page_version；剩余清单复用 ContextsOutcome。
+message TabsCommand {
+  CommandTarget target = 1;
+  int64 expected_page_version = 2;
+  string action = 3;
+}
+
+message TabsOutcome {
+  string action = 1;
+  bool tab_closed = 2;
+  PageStateOutcome page = 3;
+  ContextsOutcome remaining = 4;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -246,6 +260,7 @@ message CapabilityCommand {
     InteractCommand interact = 17;
     WaitForCommand wait_for = 18;
     ContextsCommand contexts = 19;
+    TabsCommand tabs = 20;
   }
 }
 
@@ -354,6 +369,7 @@ message OperationResult {
     InteractionOutcome interact = 18;
     WaitOutcome wait_for = 19;
     ContextsOutcome contexts = 20;
+    TabsOutcome tabs = 21;
   }
 }
 

@@ -30,6 +30,12 @@ public interface IPuddingDesktopWebViewApi
         DesktopPageTarget target,
         CancellationToken cancellationToken = default);
 
+    /// <summary>标签页操作：激活或关闭目标页面（变更类；必须固定页面版本）。</summary>
+    Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
+        DesktopCallContext context,
+        BrowserTabsRequest request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>列出浏览器上下文与页面（只读；浏览器作用域，无页面目标）。</summary>
     Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext context,
