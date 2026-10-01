@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Pudding.DesktopService</RootNamespace>
+    <AssemblyName>Pudding.DesktopService</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Desktop 侧服务（计划 §6）：目标校验、准入、生命周期、取消与关闭竞态、UI 线程边界。
+    依赖 Contracts（平台无关契约）+ DesktopConnection（执行器接缝）。
+    禁止引用 WinUI/WebView2/ASP.NET Core/宿主：DispatcherQueue 适配与 WebView2 动作留在实现程序集。
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pudding.DesktopServiceTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+    <ProjectReference Include="..\Pudding.DesktopConnection\Pudding.DesktopConnection.csproj" />
+  </ItemGroup>
+
+  <Target Name="EnforceDesktopServiceBoundary" BeforeTargets="ResolveReferences">
+    <PropertyGroup>
+      <_DesktopServiceProjectReferences>@(ProjectReference)</_DesktopServiceProjectReferences>
+      <_DesktopServicePackageReferences>@(PackageReference)</_DesktopServicePackageReferences>
+    </PropertyGroup>
+    <Error Condition="$(_DesktopServiceProjectReferences.Contains('PuddingHost')) Or $(_DesktopServiceProjectReferences.Contains('PuddingRuntime')) Or $(_DesktopServiceProjectReferences.Contains('PuddingDesktop')) Or $(_DesktopServiceProjectReferences.Contains('Pudding.Browser')) Or $(_DesktopServiceProjectReferences.Contains('PuddingAgent'))"
+           Text="Pudding.DesktopService must not reference the host, runtime, desktop shell or browser UI projects." />
+    <Error Condition="$(_DesktopServicePackageReferences.Contains('Microsoft.AspNetCore')) Or $(_DesktopServicePackageReferences.Contains('Microsoft.UI')) Or $(_DesktopServicePackageReferences.Contains('WebView2'))"
+           Text="Pudding.DesktopService must not reference ASP.NET Core, WinUI or WebView2 packages." />
+  </Target>
+
+</Project>
