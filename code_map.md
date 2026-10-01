@@ -4,6 +4,25 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
 
+## 2026-10-01：DOM 脚本生成与解析（WinUI 表面里唯一有逻辑的部分，第 32 轮）
+
+WinUI/WebView2 表面剩余的工作里，真正需要动脑的是「生成 DOM 观察脚本 + 解析结果」——
+这部分与 WebView2 类型无关，因此抽到 `DesktopDomScripts`，可以**脱离 UI 环境测试**：
+
+- `BuildSnapshotScript(options)` / `BuildLocateScript(locator, maxResults)`：预算（`maxNodes`/`maxText`）
+  与「请求了哪些字段」写进脚本；定位描述符翻成 CSS 选择器（`test-id`/`label`/`placeholder`/`alt`/`title`/`role` 各有映射），
+  值做 JSON 转义（防止选择器注入）。
+- `ParseSnapshot(...)` / `ParseLocate(...)`：**fail closed** —— 非 JSON、结构不符、缺 `ref`/`tag`、
+  无有效 PageVersion 一律返回 `null`（由调用方折成 `internal_error`），不把半截数据当有效观测。
+- 解析时就把 **PageVersion 打在每个引用上**，并再跑一次预算收敛（服务侧仍会兜底）——
+  「Ref 随版本失效」因此从最上游就成立。
+- `null` 与 `false` 的勾选语义严格区分（`checked: null` ⇒ 未知，而不是未选中）。
+- 测试：DesktopService **107/107**（+6：脚本嵌入预算与字段、选择器映射与转义、
+  解析按预算收敛、结构畸形/空输入/无版本一律作废、引用带版本、null≠false）。
+- 未做：`interact`/`wait_for`/`contexts`/`tabs` 的脚本与解析（同模式），以及把它们接到真实 `CoreWebView2`。
+
+测试合计（本轮实测）：Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 107、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 26 = **391**；探针 47/47。
 ## 2026-10-01：探针「真实 Core 端点模式」（第 30 轮）
 
 接线手册第 5 步原本要求「改用真实 Core 端点跑同一批断言」，但探针只会起自带服务端。本轮补上该模式：

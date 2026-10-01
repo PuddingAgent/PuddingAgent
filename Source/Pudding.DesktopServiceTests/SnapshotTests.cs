@@ -188,4 +188,102 @@ public sealed class MutationInvariantTests
         Assert.True(response.IsFailure);
         Assert.Equal(DesktopCapabilityErrorCode.InternalError, response.Error!.Code);
     }
+
+/// <summary>DOM 脚本生成与解析：平台无关部分（可脱离 WebView2 测试），解析 fail closed。</summary>
+public sealed class DesktopDomScriptsTests
+{
+    private static readonly DesktopPageTarget Target = new("ctx-1", "page-1");
+
+    [Fact]
+    public void SnapshotScript_EmbedsTheBudgetAndRequestedFields()
+    {
+        var script = DesktopDomScripts.BuildSnapshotScript(
+            new DesktopSnapshotOptions(includeDom: true, includeAccessibilityTree: false, maxNodes: 42, maxTextLength: 777));
+
+        Assert.Contains("const maxNodes = 42", script, StringComparison.Ordinal);
+        Assert.Contains("const maxText = 777", script, StringComparison.Ordinal);
+        Assert.Contains("let domText = true", script, StringComparison.Ordinal);
+        Assert.Contains("const a11y = false", script, StringComparison.Ordinal);
+        Assert.Contains("JSON.stringify", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LocateScript_UsesTheLocatorStrategyAndIsJsonEscaped()
+    {
+        var escaped = DesktopDomScripts.BuildLocateScript(
+            new DesktopLocator(DesktopLocatorKind.TestId, "quote\"and\\slash"), maxResults: 5);
+
+        Assert.Contains("const max = 5", escaped, StringComparison.Ordinal);
+        Assert.Contains("\\\"", escaped, StringComparison.Ordinal);
+        Assert.Contains("data-testid", escaped, StringComparison.Ordinal);
+
+        Assert.Equal("[data-testid=\"x\"]", DesktopDomScripts.SelectorFor(new DesktopLocator(DesktopLocatorKind.TestId, "x")));
+        Assert.Equal("*", DesktopDomScripts.SelectorFor(new DesktopLocator(DesktopLocatorKind.Ref, "e1")));
+    }
+
+    [Fact]
+    public void ParseSnapshot_ReadsTheScriptShapeAndAppliesTheBudget()
+    {
+        var options = new DesktopSnapshotOptions(includeDom: true, includeAccessibilityTree: false, maxTextLength: 10);
+        var json = """{"nodeCount":123,"truncated":false,"domText":"0123456789ABCDEF","accessibilityTree":"tree"}""";
+
+        var snapshot = DesktopDomScripts.ParseSnapshot(json, Target, DesktopPageVersion.Require(4), options);
+
+        Assert.NotNull(snapshot);
+        Assert.Equal(123, snapshot!.NodeCount);
+        Assert.Equal(10, snapshot.DomText!.Length);
+        Assert.Null(snapshot.AccessibilityTree);   // 未请求的字段不得回传
+        Assert.True(snapshot.Truncated);           // 截断必须如实标注
+        Assert.Equal(4, snapshot.PageVersion.Value);
+    }
+
+    [Fact]
+    public void ParseSnapshot_FailsClosedOnMalformedInput()
+    {
+        var options = new DesktopSnapshotOptions();
+
+        Assert.Null(DesktopDomScripts.ParseSnapshot(null, Target, DesktopPageVersion.Require(1), options));
+        Assert.Null(DesktopDomScripts.ParseSnapshot("not json", Target, DesktopPageVersion.Require(1), options));
+        Assert.Null(DesktopDomScripts.ParseSnapshot("[1,2,3]", Target, DesktopPageVersion.Require(1), options));
+        Assert.Null(DesktopDomScripts.ParseSnapshot("""{"truncated":true}""", Target, DesktopPageVersion.Require(1), options));
+
+        // 没有有效 PageVersion 的观测一律作废（引用会失去版本依据）。
+        Assert.Null(DesktopDomScripts.ParseSnapshot("""{"nodeCount":1}""", Target, DesktopPageVersion.Unknown, options));
+    }
+
+    [Fact]
+    public void ParseLocate_ReadsElementsWithThePageVersionStamped()
+    {
+        var request = new BrowserLocateRequest(
+            Target, new DesktopLocator(DesktopLocatorKind.Css, "button"), DesktopPageVersion.Unknown, maxResults: 2);
+        var json = """
+            {"truncated":false,"elements":[
+              {"ref":"e1","tag":"button","role":"button","name":"提交","text":"提交","visible":true,"enabled":true,"checked":true},
+              {"ref":"e2","tag":"input","checked":null},
+              {"ref":"e3","tag":"div"}
+            ]}
+            """;
+
+        var located = DesktopDomScripts.ParseLocate(json, request, DesktopPageVersion.Require(6));
+
+        Assert.NotNull(located);
+        Assert.Equal(2, located!.Elements.Count);          // maxResults 生效
+        Assert.True(located.Truncated);                    // 被裁剪必须标注
+        Assert.Equal(6, located.Elements[0].PageVersion.Value);
+        Assert.True(located.Elements[0].IsChecked);
+        Assert.Null(located.Elements[1].IsChecked);        // null 与 false 必须区分
+        Assert.Equal(request.Locator, located.Locator);
+    }
+
+    [Fact]
+    public void ParseLocate_FailsClosedOnMalformedInput()
+    {
+        var request = new BrowserLocateRequest(Target, new DesktopLocator(DesktopLocatorKind.Css, "button"));
+
+        Assert.Null(DesktopDomScripts.ParseLocate(null, request, DesktopPageVersion.Require(1)));
+        Assert.Null(DesktopDomScripts.ParseLocate("""{"elements":"nope"}""", request, DesktopPageVersion.Require(1)));
+        Assert.Null(DesktopDomScripts.ParseLocate("""{"elements":[{"tag":"div"}]}""", request, DesktopPageVersion.Require(1)));
+        Assert.Null(DesktopDomScripts.ParseLocate("""{"elements":[{"ref":"e1"}]}""", request, DesktopPageVersion.Require(1)));
+    }
+}
 }
