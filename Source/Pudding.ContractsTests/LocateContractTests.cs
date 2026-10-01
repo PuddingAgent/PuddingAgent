@@ -134,4 +134,52 @@ public sealed class ClipboardContractTests
         Assert.False(contradictory.Truncated);
     }
 }
+
+/// <summary>对话框契约：正文上限、按钮组合语义、**用户取消不是失败**。</summary>
+public sealed class DialogContractTests
+{
+    [Fact]
+    public void Request_ValidatesTitleMessageAndButtons()
+    {
+        var request = new DesktopDialogRequest("确认", "是否继续？", DesktopDialogButtons.YesNoCancel);
+
+        Assert.Equal(DesktopDialogButtons.YesNoCancel, request.Buttons);
+        Assert.True(request.AllowsCancel);
+        Assert.Contains("dialog(", request.ToString(), StringComparison.Ordinal);
+        // ToString 只给形状：正文不进日志。
+        Assert.DoesNotContain("是否继续", request.ToString(), StringComparison.Ordinal);
+
+        Assert.Throws<ArgumentException>(() => new DesktopDialogRequest("  ", "x"));
+        Assert.Throws<ArgumentException>(
+            () => new DesktopDialogRequest("t", new string('x', DesktopDialogRequest.MaxMessageLength + 1)));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new DesktopDialogRequest("t", "m", (DesktopDialogButtons)99));
+
+        // 只有 Ok 是"必须选一个"：其余组合都允许取消。
+        Assert.False(new DesktopDialogRequest("t", "m", DesktopDialogButtons.Ok).AllowsCancel);
+        Assert.True(new DesktopDialogRequest("t", "m", DesktopDialogButtons.OkCancel).AllowsCancel);
+    }
+
+    [Fact]
+    public void Cancel_IsAResultNotAFailure()
+    {
+        var canceled = new DesktopDialogResult(DesktopDialogChoice.Cancel);
+
+        Assert.True(canceled.Canceled);
+        Assert.False(canceled.IsAffirmative);
+        Assert.Equal("dialog(Cancel, canceled)", canceled.ToString());
+
+        // 肯定性选择才能触发后续动作。
+        Assert.True(new DesktopDialogResult(DesktopDialogChoice.Yes).IsAffirmative);
+        Assert.True(new DesktopDialogResult(DesktopDialogChoice.Ok).IsAffirmative);
+        Assert.False(new DesktopDialogResult(DesktopDialogChoice.No).IsAffirmative);
+        Assert.False(new DesktopDialogResult(DesktopDialogChoice.No).Canceled);
+    }
+
+    [Fact]
+    public void Result_RejectsUnregisteredChoices()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DesktopDialogResult((DesktopDialogChoice)99));
+    }
+}
 }

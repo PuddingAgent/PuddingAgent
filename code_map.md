@@ -4,6 +4,18 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：对话框终态语义契约（第 42 轮，切片 E `shell.dialog` 第 1 步）
+
+计划要求「对话框/Picker 必须让用户能取消，且**取消不是错误**」。本轮先落契约（叶子级、零接口连锁）：
+
+- `DesktopDialogButtons`（Ok / OkCancel / YesNo / YesNoCancel —— 不提供自定义按钮，避免用户可见语义漂移）
+  + `DesktopDialogRequest(title, message, buttons)`：标题 ≤128、正文 ≤4096（避免把大段内容塞进弹窗）；
+  `AllowsCancel` 明确"只有 Ok 是必须选一个"。
+- `DesktopDialogResult(choice)`：**`Canceled` 是结果而不是失败**——把它伪装成 `CapabilityResult.Failure`
+  会让上层做出"重试弹窗"这种骚扰用户的行为；`IsAffirmative` 只在 Ok/Yes 时为真（决定是否执行后续动作）。
+- `ToString()` **只给形状**（`dialog(YesNoCancel, titleChars=2, messageChars=5)`），正文不进日志/审计。
+- 测试：契约 **96/96**（+3：参数校验与按钮语义、取消≠失败、未登记选择被拒）。
+- **未做**：能力登记与 wire payload、服务分支（含第 41 轮交互槽位的接入）、桌面侧实现与探针断言。
 ## 2026-10-01：交互槽位（单窗口同时最多一个对话框，第 41 轮）
 
 计划 §7 要求「单窗口同时最多一个对话框/Picker」。本轮先落**原语**（叶子级、零接口连锁）：
