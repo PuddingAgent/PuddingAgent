@@ -84,3 +84,82 @@ public sealed class ChannelTransportResolverTests
         Assert.Equal("NamedPipe:pudding-capability-abc", transport.ToString());
     }
 }
+/// <summary>Desktop 侧能力通道设置：默认关闭、声明集合与策略表一致、传输解析不做回退。</summary>
+public sealed class DesktopCapabilityChannelSettingsTests
+{
+
+
+    [Fact]
+    public void DefaultConfiguration_KeepsTheLegacyBridgeSelected()
+    {
+        var settings = DesktopCapabilityChannelSettings.Disabled;
+
+        Assert.False(settings.Enabled);
+        Assert.Equal("default", settings.DesktopId);
+        Assert.Equal(DesktopCapabilityChannelSettings.DefaultControlTokenHeader, settings.ControlTokenHeader);
+
+        // 未启用时两个入口都必须明确失败，不得静默降级到能力通道。
+        Assert.True(settings.CreateConnectionOptions(new DesktopProcessInstanceId("proc-1")).IsFailure);
+        Assert.True(settings.ResolveTransportFromDescription("named-pipe:pudding-x|1|").IsFailure);
+    }
+
+    [Fact]
+    public void EnabledConfiguration_BuildsConnectionOptions()
+    {
+        var settings = new DesktopCapabilityChannelSettings
+        {
+            Enabled = true,
+            DesktopId = "desk-7",
+            HandshakeTimeoutSeconds = 20,
+        };
+
+        var options = settings.CreateConnectionOptions(
+            new DesktopProcessInstanceId("proc-1"), DesktopChannelAuthentication.StaticHeader("x-token", "secret"));
+
+        Assert.True(options.IsSuccess);
+        Assert.Equal(new DesktopInstanceId("desk-7"), options.Value.DesktopId);
+        Assert.Equal(DesktopCapabilityChannelSettings.DeclaredCapabilities, options.Value.SupportedCapabilities);
+        Assert.Equal(TimeSpan.FromSeconds(20), options.Value.HandshakeTimeout);
+        Assert.NotNull(options.Value.Authentication);
+    }
+
+    [Fact]
+    public void DeclaredCapabilities_AllHaveAnAdmissionRule()
+    {
+        // 方向很重要：**已声明的必须都有显式准入规则**——否则会出现「未受管控的能力」。
+        // 反过来不成立：策略表包含预留能力（dialog/file_picker/clipboard 有准入行但尚未实现、
+        // 因而不在声明集合里），这是有意的「目录 ⊇ 已实现能力」形态。
+        var admitted = DesktopCapabilityPolicy.Snapshot.Keys.Aggregate(DesktopCapability.None, (all, one) => all | one);
+        var ungated = DesktopCapabilityChannelSettings.DeclaredCapabilities & ~admitted;
+
+        Assert.Equal(DesktopCapability.None, ungated);
+
+        // 预留能力确实还没被声明（改这条断言等于宣布它们已实现，应同时补 payload 与探针断言）。
+        Assert.False(DesktopCapabilityChannelSettings.DeclaredCapabilities.HasFlag(DesktopCapability.ShellDialog));
+        Assert.False(DesktopCapabilityChannelSettings.DeclaredCapabilities.HasFlag(DesktopCapability.ShellClipboard));
+    }
+
+    [Fact]
+    public void EnabledConfiguration_RejectsOutOfRangeTimeout()
+    {
+        var settings = new DesktopCapabilityChannelSettings { Enabled = true, HandshakeTimeoutSeconds = 0 };
+
+        var options = settings.CreateConnectionOptions(new DesktopProcessInstanceId("proc-1"));
+
+        Assert.True(options.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InvalidRequest, options.Error.Code);
+    }
+
+    [Fact]
+    public void EnabledConfiguration_ResolvesThePublishedEndpoint()
+    {
+        var settings = new DesktopCapabilityChannelSettings { Enabled = true };
+
+        var namedPipe = settings.ResolveTransportFromDescription("named-pipe:pudding-capability-abc|1|core-1");
+        Assert.True(namedPipe.IsSuccess);
+        Assert.Equal(DesktopChannelTransportKind.NamedPipe, namedPipe.Value.Kind);
+
+        // 描述不可解析时明确失败（不做跨传输回退）。
+        Assert.True(settings.ResolveTransportFromDescription("carrier-pigeon:x|1|").IsFailure);
+    }
+}

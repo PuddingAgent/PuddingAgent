@@ -4,6 +4,24 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
 
+## 2026-10-01：Desktop 侧通道设置与「已声明必须都有准入规则」（第 24 轮）
+
+补上重启窗口内 Desktop 组合根所缺的最后一块**可测配置**：
+
+- `DesktopCapabilityChannelSettings`：**纯值对象**（宿主把 `desktop.json` 字段映射进来）——
+  刻意**不读配置文件**，避免平台无关子库引入配置/宿主依赖；缺省即「关闭 + 沿用旧 Bridge」。
+  含 `CreateConnectionOptions(...)`（未启用时明确失败，不静默降级）与
+  `ResolveTransportFromDescription(...)`（复用严格解析器，不做跨传输回退）。
+- `DeclaredCapabilities` 是**代码事实**而非配置：写进配置会让「没实现却宣告」成为可能。
+- **测试抓到一个建模细节**：我最初的断言方向是「策略准入 ⊆ 已声明」，结果红——
+  策略表含**预留能力**（dialog/file_picker/clipboard 有准入行但未实现）。正确方向是反过来的：
+  **已声明的必须都有显式准入规则**（不出现未受管控的能力），而预留能力不在声明集合里是有意为之。
+  断言已按正确方向重写，并显式断言两个预留能力仍未被声明（改这条断言就等于宣布它们已实现，
+  必须同时补 payload 与探针断言）。
+- 测试：DesktopService **90/90**（+5）。
+
+测试合计（复核实测）：Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 90、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 22。
 ## 2026-10-01：门禁数字干净复核（发现并修正文档漂移）
 
 第 23 轮对已发布的门禁数字做了一次**干净重建复核**，结果：
