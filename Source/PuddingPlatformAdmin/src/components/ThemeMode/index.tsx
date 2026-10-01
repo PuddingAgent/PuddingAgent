@@ -135,12 +135,14 @@ export const ThemeProviderContainer: React.FC<{ children: React.ReactNode }> = (
       cssVar: true,
       algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
       token: {
-        colorPrimary: isDark ? '#a78bfa' : '#7c3aed',
-        colorBgLayout: isDark ? '#0b1020' : '#f5f0e8',
-        colorBgContainer: isDark ? '#172033' : '#fafaf7',
-        colorBorder: isDark ? 'rgba(167, 139, 250, 0.18)' : 'rgba(92, 74, 58, 0.12)',
-        colorText: isDark ? '#f8fafc' : '#1a1a2e',
-        colorTextSecondary: isDark ? '#cbd5e1' : '#5c4a3a',
+        // IMG01（设计规格 §3）：单一蓝色强调 + 中性层级；与 global.style.ts 的
+        // --pudding-chat-*/--pudding-admin-* 同源，避免 antd 派生 token 继续带出暖米/紫。
+        colorPrimary: isDark ? '#91b3ff' : '#2458d3',
+        colorBgLayout: isDark ? '#11151b' : '#f7f8fa',
+        colorBgContainer: isDark ? '#1a2029' : '#ffffff',
+        colorBorder: isDark ? '#445166' : '#d8dee8',
+        colorText: isDark ? '#e8edf4' : '#182230',
+        colorTextSecondary: isDark ? '#a8b5c7' : '#526174',
         borderRadius: 8,
         borderRadiusLG: 8,
         borderRadiusXL: 12,

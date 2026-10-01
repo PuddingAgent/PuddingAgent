@@ -344,7 +344,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
     padding: '6px 8px',
     marginTop: 4,
     background: 'transparent',
-    color: 'var(--pudding-chat-primary)',
+    color: 'var(--pudding-chat-accent)',
     fontSize: 12,
     lineHeight: '20px',
     cursor: 'pointer',
@@ -373,7 +373,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
     lineHeight: '20px',
     cursor: 'pointer',
     '&:hover': {
-      color: 'var(--pudding-chat-primary)',
+      color: 'var(--pudding-chat-accent)',
     },
   },
   /** 交错文本段：与正文同款排版（15/1.75 全宽），区别于过程行的 tertiary 灰阶 */

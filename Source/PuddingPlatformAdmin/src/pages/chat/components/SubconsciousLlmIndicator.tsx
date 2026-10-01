@@ -25,14 +25,14 @@ const SubconsciousLlmIndicator: React.FC<SubconsciousLlmIndicatorProps> = ({
           className={`${styles.statusIconThunder} ${active ? styles.subconsciousGlow : ''}`}
           style={{
             fontSize: 12,
-            color: active ? '#a78bfa' : 'var(--earth-brown)',
+            color: active ? 'var(--pudding-chat-accent)' : 'var(--earth-brown)',
             opacity: active ? 1 : 0.4,
           }}
         />
         <span
           className={styles.statusIconLabel}
           style={{
-            color: active ? '#a78bfa' : undefined,
+            color: active ? 'var(--pudding-chat-accent)' : undefined,
             opacity: active ? 1 : 0.5,
           }}
         >

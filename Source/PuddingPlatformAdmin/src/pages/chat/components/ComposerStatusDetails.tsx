@@ -52,15 +52,15 @@ const STATUS_LABEL: Record<ComposerRuntimeSummary['status'], string> = {
   error: '出错了，可重试',
 };
 
-/** 服务状态 → 圆点色 */
+/** 服务状态 → 圆点色（IMG01：改用 §3 语义 token，不再用暖灰/暖琥珀字面量） */
 const SERVICE_COLOR: Record<string, string> = {
-  available: '#6f8f72',
-  idle: '#b8a99a',
-  running: '#6f8f72',
-  building: '#c4944c',
-  warning: '#c4944c',
-  error: '#c4944c',
-  disabled: '#d1c9c0',
+  available: 'var(--pudding-status-success)',
+  idle: 'var(--pudding-chat-border-strong)',
+  running: 'var(--pudding-status-success)',
+  building: 'var(--pudding-status-warning)',
+  warning: 'var(--pudding-status-warning)',
+  error: 'var(--pudding-status-error)',
+  disabled: 'var(--pudding-chat-border-strong)',
 };
 
 /** 服务状态 → 文案 */
@@ -121,12 +121,12 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
           style={{
             background:
               summary.status === 'error'
-                ? '#c4944c'
+                ? 'var(--pudding-status-error)'
                 : summary.status === 'streaming' ||
                     summary.status === 'thinking' ||
                     summary.status === 'tool_executing'
-                  ? '#6f8f72'
-                  : '#d1c9c0',
+                  ? 'var(--pudding-status-success)'
+                  : 'var(--pudding-chat-border-strong)',
           }}
         />
         <span className={styles.composerStatusDetailsTitle}>
@@ -179,7 +179,7 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
             <span
               className={styles.composerStatusDetailsDot}
               style={{
-                background: SERVICE_COLOR[summary.contextService] ?? '#d1c9c0',
+                background: SERVICE_COLOR[summary.contextService] ?? 'var(--pudding-chat-border-strong)',
                 width: 6,
                 height: 6,
                 display: 'inline-block',
@@ -198,7 +198,7 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
               className={styles.composerStatusDetailsDot}
               style={{
                 background:
-                  SERVICE_COLOR[summary.backgroundMemory] ?? '#d1c9c0',
+                  SERVICE_COLOR[summary.backgroundMemory] ?? 'var(--pudding-chat-border-strong)',
                 width: 6,
                 height: 6,
                 display: 'inline-block',
@@ -216,7 +216,7 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
             <span
               className={styles.composerStatusDetailsDot}
               style={{
-                background: SERVICE_COLOR[summary.index] ?? '#d1c9c0',
+                background: SERVICE_COLOR[summary.index] ?? 'var(--pudding-chat-border-strong)',
                 width: 6,
                 height: 6,
                 display: 'inline-block',
@@ -242,7 +242,7 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
             <span
               className={styles.composerStatusDetailsDot}
               style={{
-                background: SERVICE_COLOR[summary.modelService] ?? '#d1c9c0',
+                background: SERVICE_COLOR[summary.modelService] ?? 'var(--pudding-chat-border-strong)',
                 width: 6,
                 height: 6,
                 display: 'inline-block',

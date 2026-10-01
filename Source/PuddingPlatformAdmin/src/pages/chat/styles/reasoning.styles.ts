@@ -59,7 +59,7 @@ export const useReasoningStyles = createStyles(() => ({
   separator: {
     position: 'relative' as const,
     zIndex: 1,
-    color: 'var(--text-tertiary)',
+    color: 'var(--pudding-chat-text-tertiary)',
     letterSpacing: 1,
   },
   summary: {
@@ -77,7 +77,7 @@ export const useReasoningStyles = createStyles(() => ({
     zIndex: 1,
     width: 16,
     textAlign: 'center' as const,
-    color: 'var(--text-tertiary)',
+    color: 'var(--pudding-chat-text-tertiary)',
     fontSize: 12,
   },
   body: {
@@ -86,7 +86,7 @@ export const useReasoningStyles = createStyles(() => ({
     padding: '8px 12px',
     overflow: 'auto',
     borderLeft:
-      '1px solid color-mix(in srgb, var(--accent-purple) 24%, var(--border-subtle))',
+      '1px solid color-mix(in srgb, var(--accent-purple) 24%, var(--pudding-chat-border))',
     borderRadius: '0 6px 6px 0',
     background: 'color-mix(in srgb, var(--accent-purple) 3%, transparent)',
     color: 'var(--text-secondary)',

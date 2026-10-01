@@ -56,9 +56,9 @@ public sealed class WorkbenchAppearanceTests
     [Fact]
     public void Background_uses_the_web_layout_truth_source_colors()
     {
-        // 与 src/components/ThemeMode/index.tsx 的 colorBgLayout / global.style.ts 一致
-        Assert.Equal(0xFFF5F0E8u, WorkbenchAppearance.BackgroundArgb(WorkbenchColorScheme.Light));
-        Assert.Equal(0xFF0B1020u, WorkbenchAppearance.BackgroundArgb(WorkbenchColorScheme.Dark));
+        // 与 src/components/ThemeMode/index.tsx 的 colorBgLayout / global.style.ts 一致（§3 中性色）
+        Assert.Equal(0xFFF7F8FAu, WorkbenchAppearance.BackgroundArgb(WorkbenchColorScheme.Light));
+        Assert.Equal(0xFF11151Bu, WorkbenchAppearance.BackgroundArgb(WorkbenchColorScheme.Dark));
     }
 
     [Theory]

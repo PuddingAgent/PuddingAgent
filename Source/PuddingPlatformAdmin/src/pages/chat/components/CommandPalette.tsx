@@ -374,7 +374,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                     padding: idx === 0 ? '10px 12px 4px' : '12px 12px 4px',
                     fontSize: 11,
                     fontWeight: 600,
-                    color: 'var(--muted-text)',
+                    color: 'var(--pudding-chat-text-muted)',
                     textTransform: 'uppercase',
                     letterSpacing: 0,
                   }}

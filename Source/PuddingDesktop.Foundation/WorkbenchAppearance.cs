@@ -27,19 +27,19 @@ public enum WorkbenchColorScheme
 /// </para>
 /// <para>
 /// 背景色真源在 Web 侧：<c>src/components/ThemeMode/index.tsx</c> 的 antd
-/// <c>colorBgLayout</c>（浅 #F5F0E8 / 深 #0B1020），对应
-/// <c>src/global.style.ts</c> 的 <c>--ant-colorBgLayout</c>。
+/// <c>colorBgLayout</c>（浅 #F7F8FA / 深 #11151B，IMG01 后为 §3 中性色），
+/// 对应 <c>src/global.style.ts</c> 的 <c>--ant-colorBgLayout</c>。
 /// WebView2 在首帧之前使用该色，避免网页加载前闪白（SCROLL-001 / IMG02）。
-/// 若 Web 侧主题底色调整（如 §3 中性色批次），此处必须同步。
+/// 若 Web 侧主题底色调整，此处必须同步（§14.6 待复核项 2）。
 /// </para>
 /// </summary>
 public static class WorkbenchAppearance
 {
-    /// <summary>浅色布局背景 #F5F0E8。</summary>
-    public const uint LightBackgroundArgb = 0xFFF5F0E8;
+    /// <summary>浅色布局背景 #F7F8FA（= §3 bg）。</summary>
+    public const uint LightBackgroundArgb = 0xFFF7F8FA;
 
-    /// <summary>深色布局背景 #0B1020。</summary>
-    public const uint DarkBackgroundArgb = 0xFF0B1020;
+    /// <summary>深色布局背景 #11151B（= §3 bg）。</summary>
+    public const uint DarkBackgroundArgb = 0xFF11151B;
 
     /// <summary>把设置里保存的 <c>Theme</c> 字符串解析为外观选择；未知/空值跟随系统。</summary>
     public static WorkbenchThemePreference ParsePreference(string? saved) => saved switch

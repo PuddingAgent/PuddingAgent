@@ -37,7 +37,7 @@ export const useVoiceStyles = createStyles(({ token }) => ({
   voiceBarRecording: {
     width: 3,
     borderRadius: 2,
-    background: '#7c3aed',
+    background: 'var(--pudding-chat-accent)',
     animation: 'voiceBarAnim 0.6s ease-in-out infinite alternate',
   },
   voiceBarPlaying: {

@@ -1,4 +1,4 @@
-﻿// ── EditablePlanCard：Plan 模式可编辑计划卡片（P1#5）─────────
+// ── EditablePlanCard：Plan 模式可编辑计划卡片（P1#5）─────────
 import { DeleteOutlined, HolderOutlined } from '@ant-design/icons';
 import { Button, Input, Space, Tag, Typography } from 'antd';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -39,7 +39,7 @@ const cardContainerStyle: React.CSSProperties = {
   border: '1px solid color-mix(in srgb, var(--pudding-chat-border) 80%, transparent)',
   background: 'var(--pudding-chat-surface-muted)',
   boxShadow: '0 2px 8px rgba(63, 38, 95, 0.05)',
-  borderLeft: '3px solid #7c3aed',
+  borderLeft: '3px solid var(--pudding-chat-accent)',
 };
 
 const titleStyle: React.CSSProperties = {
@@ -67,7 +67,7 @@ const stepRowStyle = (isDragging: boolean): React.CSSProperties => ({
   borderRadius: 6,
   border: '1px solid color-mix(in srgb, var(--pudding-chat-border) 55%, transparent)',
   background: isDragging
-    ? 'color-mix(in srgb, #7c3aed 10%, var(--pudding-chat-surface-muted))'
+    ? 'color-mix(in srgb, var(--pudding-chat-accent) 10%, var(--pudding-chat-surface-muted))'
     : 'var(--pudding-chat-surface-muted)',
   opacity: isDragging ? 0.7 : 1,
 });
@@ -265,7 +265,7 @@ const EditablePlanCard: React.FC<EditablePlanCardProps> = ({
             style={{
               ...stepRowStyle(draggingIndex === index),
               outline: overIndex === index && draggingIndex !== index
-                ? '1px dashed #7c3aed'
+                ? '1px dashed var(--pudding-chat-accent)'
                 : undefined,
             }}
           >

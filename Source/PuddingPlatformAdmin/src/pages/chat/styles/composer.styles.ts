@@ -818,7 +818,7 @@ export const useComposerStyles = createStyles(() => ({
       'opacity 140ms ease, background 140ms ease, transform 140ms ease',
     '&:hover:not(:disabled)': {
       transform: 'translateY(-1px)',
-      background: 'color-mix(in srgb, var(--pudding-chat-accent) 88%, #1d1b24)',
+      background: 'color-mix(in srgb, var(--pudding-chat-accent) 88%, #11151b)',
     },
     '&:disabled': {
       cursor: 'not-allowed' as const,
@@ -852,7 +852,7 @@ export const useComposerStyles = createStyles(() => ({
     border: 'none',
     borderRadius: '50%',
     background:
-      'color-mix(in srgb, var(--pudding-danger, #b5543c) 86%, #1d1b24)',
+      'color-mix(in srgb, var(--pudding-danger, #b42318) 86%, #11151b)',
     color: '#fff',
     display: 'inline-flex',
     alignItems: 'center',

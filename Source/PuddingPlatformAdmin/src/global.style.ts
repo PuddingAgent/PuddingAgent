@@ -2,16 +2,20 @@ import { injectGlobal } from 'antd-style';
 
 injectGlobal`
   :root {
-    --misty-blue: #d4e0f0;
-    --warm-beige: #f5f0e8;
-    --soft-white: #fafaf7;
-    --pale-yellow-sunlight: #fef9e7;
-    --earth-brown: #5c4a3a;
-    --sky-soft: #e6f0fa;
-    --desaturated-green: #7a9a7e;
-    --text-primary: #1a1a2e;
+    /* IMG01（设计规格 §3）：暖米色 + 紫色强调收敛为中性层级 + 单一蓝色强调。
+       下列 legacy 变量名保留（存量引用 200+ 处），值改为 §3 语义色；
+       变量改名（--accent-purple → --pudding-accent 等）作为后续独立切片，
+       不在换色时混做重构。 */
+    --misty-blue: #dde4ec;
+    --warm-beige: #f7f8fa;
+    --soft-white: #ffffff;
+    --pale-yellow-sunlight: #f3f6fa;
+    --earth-brown: #526174;
+    --sky-soft: #eaf0ff;
+    --desaturated-green: #157347;
+    --text-primary: #182230;
     --text-secondary: var(--earth-brown);
-    --accent-purple: #7c3aed;
+    --accent-purple: #2458d3;
     --avatar-0: #f97316;
     --avatar-1: #ef4444;
     --avatar-2: #8b5cf6;
@@ -37,39 +41,52 @@ injectGlobal`
     --pudding-scroll-thumb-hover: #526174;
     --pudding-scroll-thumb-active: #2458d3;
 
-    /* Runtime 语义色 */
-    --runtime-bg: #F5F0E8;
-    --runtime-bg-deep: #EDE5D9;
-    --glass-surface: rgba(250,250,247,0.72);
-    --glass-border: rgba(124,58,237,0.18);
-    --neural-line: rgba(124,58,237,0.18);
-    --memory-glow: #A78BFA;
-    --tool-signal: #22D3EE;
-    --success-signal: #22C55E;
-    --warning-signal: #F97316;
-    --error-signal: #EF4444;
-    --text-muted: #5C4A3A;
+    /* IMG01：下列短名 token 被 26 处样式以「var(短名, 暖色/紫色字面量)」形式引用，
+       但从未定义 —— 实际渲染的一直是回退的暖灰/紫（#1d1b24 / #756b5f / #8b5cf6 /
+       #b5543c / #f3eee7）。这里补成 §3 语义别名；被引用的 token 在深色分支重定义在
+       同一元素上，因此别名无需在深色段重复声明即可随主题变化。 */
+    --pudding-text: var(--pudding-chat-text);
+    --pudding-text-muted: var(--pudding-chat-text-muted);
+    --pudding-accent: var(--pudding-chat-accent);
+    --pudding-danger: var(--pudding-chat-danger);
+    --pudding-surface-soft: var(--pudding-chat-surface-muted);
+    /* 任务看板列背景：原引用未定义，回退到中性 #f5f5f5；补为主题表面色 */
+    --pudding-chat-panel-bg: var(--pudding-chat-surface);
 
-    /* Pudding Chat Tokens — Light */
-    --pudding-chat-bg: #f5f0e8;
-    --pudding-chat-sidebar-bg: rgba(250, 250, 247, 0.7);
-    --pudding-chat-header-bg: rgba(250, 250, 247, 0.7);
-    --pudding-chat-surface: #fafaf7;
-    --pudding-chat-surface-muted: #f2eee7;
-    --pudding-chat-border: rgba(92, 74, 58, 0.12);
-    --pudding-chat-border-strong: rgba(92, 74, 58, 0.2);
-    --pudding-chat-text: #1a1a2e;
-    --pudding-chat-text-muted: #5c4a3a;
-    --pudding-chat-text-subtle: #8c7a6a;
+    /* Runtime 语义色（IMG01：随 §3 中性层级收敛，信号色取可读档） */
+    --runtime-bg: #f7f8fa;
+    --runtime-bg-deep: #eef1f5;
+    --glass-surface: rgba(255,255,255,0.72);
+    --glass-border: rgba(36,88,211,0.18);
+    --neural-line: rgba(36,88,211,0.18);
+    --memory-glow: #6e93e8;
+    --tool-signal: #0e7490;
+    --success-signal: #157347;
+    --warning-signal: #8a5700;
+    --error-signal: #b42318;
+    --text-muted: #526174;
+
+    /* Pudding Chat Tokens — Light（IMG01/§3：bg/surface/text/border/accent 中性化） */
+    --pudding-chat-bg: #f7f8fa;
+    --pudding-chat-sidebar-bg: rgba(255, 255, 255, 0.7);
+    --pudding-chat-header-bg: rgba(255, 255, 255, 0.7);
+    --pudding-chat-surface: #ffffff;
+    --pudding-chat-surface-muted: #eef1f5;
+    --pudding-chat-border: #d8dee8;
+    --pudding-chat-border-strong: #c3ccd9;
+    --pudding-chat-text: #182230;
+    --pudding-chat-text-muted: #526174;
+    --pudding-chat-text-subtle: #5c6b7a;
     /* 文本四档灰（行为链升级 §3.1）：primary 正文 / secondary 次要 / tertiary 过程正文（思考、工具行）/ caption 装饰标签与耗时。
-       muted/subtle 为 legacy 别名（= secondary/tertiary），存量引用不破坏。 */
-    --pudding-chat-text-secondary: #5c4a3a;
-    --pudding-chat-text-tertiary: #8c7a6a;
-    --pudding-chat-text-caption: #ab9c8e;
-    --pudding-chat-accent: #7c3aed;
-    --pudding-chat-accent-soft: rgba(124, 58, 237, 0.08);
+       muted/subtle 为 legacy 别名（= secondary/tertiary），存量引用不破坏。
+       IMG04/§13.5：四档随 §3 重新标定，均在 bg 上 ≥4.5:1（caption 为装饰标签，≥3:1）。 */
+    --pudding-chat-text-secondary: #526174;
+    --pudding-chat-text-tertiary: #5c6b7a;
+    --pudding-chat-text-caption: #6e7a88;
+    --pudding-chat-accent: #2458d3;
+    --pudding-chat-accent-soft: #eaf0ff;
     --pudding-chat-danger: #b42318;
-    --pudding-chat-success: #4f7f58;
+    --pudding-chat-success: #157347;
     --pudding-chat-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
 
     /* Pudding Chat Design Tokens — Light（P0-4 附加：仅新增变量，不改既有值） */
@@ -77,14 +94,14 @@ injectGlobal`
     --pudding-chat-radius-md: 10px;
     --pudding-chat-radius-lg: 14px;
     --pudding-chat-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
-    --pudding-chat-shadow-md: 0 3px 12px rgba(63, 38, 95, 0.04);
-    --pudding-chat-shadow-hover: 0 6px 18px rgba(63, 38, 95, 0.065);
-    /* 状态色阶（§4.0 总表）：running=强调紫 / waiting=琥珀（与队列 #b36b1e 同族）/ success / error */
+    --pudding-chat-shadow-md: 0 3px 12px rgba(15, 23, 42, 0.04);
+    --pudding-chat-shadow-hover: 0 6px 18px rgba(15, 23, 42, 0.065);
+    /* 状态色阶（§4.0 总表）：running=强调蓝 / waiting=琥珀 / success / error（IMG01：随 §3 状态色） */
     --pudding-status-running: var(--accent-purple);
-    --pudding-status-waiting: #d97706;
-    --pudding-status-warning: #d97706;
-    --pudding-status-success: #22c55e;
-    --pudding-status-error: #ef4444;
+    --pudding-status-waiting: #8a5700;
+    --pudding-status-warning: #8a5700;
+    --pudding-status-success: #157347;
+    --pudding-status-error: #b42318;
     /* 代码块深底（P0-3：对齐 D4 对比度策略，浅色下代码表面独立加深一档） */
     --pudding-chat-code-bg: #1e2430;
     /* 工具 IN/OUT 参数面板（2026-08-24）：浅色下降为灰阶浅底——参数是结构化
@@ -92,21 +109,21 @@ injectGlobal`
        presentation 卡仍走 code-bg 深底。 */
     --pudding-toolcard-bg: #f6f8fa;
     --pudding-toolcard-fg: #3f4a5a;
-    --pudding-toolcard-border: rgba(92, 74, 58, 0.14);
+    --pudding-toolcard-border: #d8dee8;
 
-    /* Pudding Admin Tokens — Light */
-    --pudding-admin-bg: #f5f0e8;
-    --pudding-admin-bg-subtle: #ede5d9;
-    --pudding-admin-surface: #fafaf7;
-    --pudding-admin-surface-muted: #f2eee7;
-    --pudding-admin-border: rgba(92, 74, 58, 0.12);
-    --pudding-admin-border-strong: rgba(92, 74, 58, 0.2);
-    --pudding-admin-text: #1a1a2e;
-    --pudding-admin-text-muted: #5c4a3a;
-    --pudding-admin-accent: #7c3aed;
-    --pudding-admin-accent-soft: rgba(124, 58, 237, 0.08);
-    --pudding-admin-success: #4f7f58;
-    --pudding-admin-warning: #b7791f;
+    /* Pudding Admin Tokens — Light（IMG01：与 Chat 同一套 §3 中性层级） */
+    --pudding-admin-bg: #f7f8fa;
+    --pudding-admin-bg-subtle: #eef1f5;
+    --pudding-admin-surface: #ffffff;
+    --pudding-admin-surface-muted: #eef1f5;
+    --pudding-admin-border: #d8dee8;
+    --pudding-admin-border-strong: #c3ccd9;
+    --pudding-admin-text: #182230;
+    --pudding-admin-text-muted: #526174;
+    --pudding-admin-accent: #2458d3;
+    --pudding-admin-accent-soft: #eaf0ff;
+    --pudding-admin-success: #157347;
+    --pudding-admin-warning: #8a5700;
     --pudding-admin-danger: #b42318;
     --pudding-admin-radius: 8px;
     --pudding-admin-shadow-low: 0 1px 6px rgba(0, 0, 0, 0.04);
@@ -220,9 +237,10 @@ injectGlobal`
     50% { opacity: 1; }
   }
 
+  /* IMG01：光晕色随单一蓝色强调收敛（原为紫色 rgba(167,139,250,*)） */
   @keyframes neuralPulse {
-    0%, 100% { box-shadow: 0 0 4px rgba(167,139,250,0.12); }
-    50% { box-shadow: 0 0 12px rgba(167,139,250,0.24); }
+    0%, 100% { box-shadow: 0 0 4px rgba(36,88,211,0.12); }
+    50% { box-shadow: 0 0 12px rgba(36,88,211,0.24); }
   }
 
   @keyframes signalFlow {
@@ -241,8 +259,8 @@ injectGlobal`
   }
 
   @keyframes glowSettle {
-    0% { box-shadow: 0 0 20px rgba(167,139,250,0.15); }
-    100% { box-shadow: 0 0 0px rgba(167,139,250,0); }
+    0% { box-shadow: 0 0 20px rgba(36,88,211,0.15); }
+    100% { box-shadow: 0 0 0px rgba(36,88,211,0); }
   }
 
   /* 页面进入 — Runtime 品牌页（chat/login/bootstrap） */
@@ -427,42 +445,44 @@ injectGlobal`
 
     --warm-beige: var(--pudding-chat-bg);
     --soft-white: var(--pudding-chat-surface);
-    --pale-yellow-sunlight: #3a2f1d;
+    --pale-yellow-sunlight: #2a3342;
     --earth-brown: var(--pudding-chat-text-muted);
     --text-secondary: var(--pudding-chat-text-muted);
 
-    --runtime-bg: #070A12;
-    --runtime-bg-deep: #0B1020;
-    --glass-surface: rgba(17,24,39,0.68);
-    --glass-border: rgba(167,139,250,0.22);
-    --neural-line: rgba(167,139,250,0.24);
-    --memory-glow: #A78BFA;
-    --tool-signal: #22D3EE;
-    --success-signal: #4ADE80;
-    --warning-signal: #FB923C;
-    --error-signal: #F87171;
-    --text-primary: #E6EAF2;
-    --text-muted: #94A3B8;
+    /* Runtime 语义色（IMG01：与浅色段成对，信号色取深色可读档） */
+    --runtime-bg: #0e1218;
+    --runtime-bg-deep: #11151b;
+    --glass-surface: rgba(26,32,41,0.68);
+    --glass-border: rgba(145,179,255,0.22);
+    --neural-line: rgba(145,179,255,0.24);
+    --memory-glow: #91b3ff;
+    --tool-signal: #22d3ee;
+    --success-signal: #75d6a4;
+    --warning-signal: #f0c36a;
+    --error-signal: #ff9e99;
+    --text-primary: #e8edf4;
+    --text-muted: #a8b5c7;
 
-    /* Pudding Chat Tokens — Dark */
-    --pudding-chat-bg: #11100d;
-    --pudding-chat-sidebar-bg: rgba(24, 22, 18, 0.92);
-    --pudding-chat-header-bg: rgba(24, 22, 18, 0.88);
-    --pudding-chat-surface: #1c1a16;
-    --pudding-chat-surface-muted: #26231d;
-    --pudding-chat-border: rgba(224, 211, 190, 0.12);
-    --pudding-chat-border-strong: rgba(224, 211, 190, 0.22);
-    --pudding-chat-text: #f4efe7;
-    --pudding-chat-text-muted: #d2c5b5;
-    --pudding-chat-text-subtle: #a99c8d;
-    /* 文本四档灰 — Dark（与浅色段一一对应，§3.1） */
-    --pudding-chat-text-secondary: #d2c5b5;
-    --pudding-chat-text-tertiary: #a99c8d;
-    --pudding-chat-text-caption: #8d8174;
-    --pudding-chat-accent: #a78bfa;
-    --pudding-chat-accent-soft: rgba(167, 139, 250, 0.14);
-    --pudding-chat-danger: #fca5a5;
-    --pudding-chat-success: #86efac;
+    /* Pudding Chat Tokens — Dark（IMG01/§3：暖黑 → 中性深色） */
+    --pudding-chat-bg: #11151b;
+    --pudding-chat-sidebar-bg: rgba(26, 32, 41, 0.92);
+    --pudding-chat-header-bg: rgba(26, 32, 41, 0.88);
+    --pudding-chat-surface: #1a2029;
+    --pudding-chat-surface-muted: #242c37;
+    --pudding-chat-border: #445166;
+    --pudding-chat-border-strong: #56637a;
+    --pudding-chat-text: #e8edf4;
+    --pudding-chat-text-muted: #a8b5c7;
+    --pudding-chat-text-subtle: #9aa8bb;
+    /* 文本四档灰 — Dark（与浅色段一一对应，§3.1；IMG04：四档重新标定）
+       均在 bg 上 ≥4.5:1，caption 为装饰标签 ≥3:1。 */
+    --pudding-chat-text-secondary: #a8b5c7;
+    --pudding-chat-text-tertiary: #9aa8bb;
+    --pudding-chat-text-caption: #8b98a9;
+    --pudding-chat-accent: #91b3ff;
+    --pudding-chat-accent-soft: #243657;
+    --pudding-chat-danger: #ff9e99;
+    --pudding-chat-success: #75d6a4;
     --pudding-chat-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 
     /* Pudding Chat Design Tokens — Dark（P0-4 附加：与浅色段一一对应；半径主题无关，为保持深色段自包含重复声明） */
@@ -472,33 +492,33 @@ injectGlobal`
     --pudding-chat-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
     --pudding-chat-shadow-md: 0 3px 12px rgba(0, 0, 0, 0.32);
     --pudding-chat-shadow-hover: 0 6px 18px rgba(0, 0, 0, 0.38);
-    /* 状态色阶深色：running=浅紫（同 --pudding-chat-accent 深色）/ waiting=琥珀提亮档 / success=浅绿（同 --pudding-chat-success 深色）/ error=浅红（同 --pudding-chat-danger 深色） */
-    --pudding-status-running: #a78bfa;
-    --pudding-status-waiting: #f59e0b;
-    --pudding-status-warning: #f59e0b;
-    --pudding-status-success: #86efac;
-    --pudding-status-error: #fca5a5;
+    /* 状态色阶深色：running=浅蓝（同 --pudding-chat-accent 深色）/ waiting / success / error 随 §3 状态色 */
+    --pudding-status-running: #91b3ff;
+    --pudding-status-waiting: #f0c36a;
+    --pudding-status-warning: #f0c36a;
+    --pudding-status-success: #75d6a4;
+    --pudding-status-error: #ff9e99;
     /* 代码块深底（P0-3：深色下与聊天表面拉开一档） */
     --pudding-chat-code-bg: #0d1117;
     /* 工具 IN/OUT 参数面板：深色维持终端深底（与浅色策略成对，见 Light 块注释） */
     --pudding-toolcard-bg: #0d1117;
     --pudding-toolcard-fg: #e6edf3;
-    --pudding-toolcard-border: rgba(230, 237, 243, 0.12);
+    --pudding-toolcard-border: #3a4557;
 
-    /* Pudding Admin Tokens — Dark */
-    --pudding-admin-bg: #0b1020;
-    --pudding-admin-bg-subtle: #111827;
-    --pudding-admin-surface: #172033;
-    --pudding-admin-surface-muted: #1f2937;
-    --pudding-admin-border: rgba(167, 139, 250, 0.18);
-    --pudding-admin-border-strong: rgba(167, 139, 250, 0.28);
-    --pudding-admin-text: #f8fafc;
-    --pudding-admin-text-muted: #cbd5e1;
-    --pudding-admin-accent: #a78bfa;
-    --pudding-admin-accent-soft: rgba(167, 139, 250, 0.12);
-    --pudding-admin-success: #86efac;
-    --pudding-admin-warning: #facc15;
-    --pudding-admin-danger: #fca5a5;
+    /* Pudding Admin Tokens — Dark（IMG01：与 Chat 同一套 §3 中性层级） */
+    --pudding-admin-bg: #11151b;
+    --pudding-admin-bg-subtle: #161b23;
+    --pudding-admin-surface: #1a2029;
+    --pudding-admin-surface-muted: #242c37;
+    --pudding-admin-border: #445166;
+    --pudding-admin-border-strong: #56637a;
+    --pudding-admin-text: #e8edf4;
+    --pudding-admin-text-muted: #a8b5c7;
+    --pudding-admin-accent: #91b3ff;
+    --pudding-admin-accent-soft: #243657;
+    --pudding-admin-success: #75d6a4;
+    --pudding-admin-warning: #f0c36a;
+    --pudding-admin-danger: #ff9e99;
     --pudding-admin-shadow-low: 0 1px 8px rgba(0, 0, 0, 0.28);
   }
 
