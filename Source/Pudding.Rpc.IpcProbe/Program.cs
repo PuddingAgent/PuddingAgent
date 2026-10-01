@@ -142,7 +142,8 @@ internal static class Program
             | DesktopCapability.WebViewPageState
             | DesktopCapability.ShellNotification
             | DesktopCapability.ShellStatus
-            | DesktopCapability.BrowserSnapshot,
+            | DesktopCapability.BrowserSnapshot
+            | DesktopCapability.BrowserLocate,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
         InactivityTimeout = TimeSpan.FromSeconds(30),
@@ -322,6 +323,52 @@ internal static class Program
         else
         {
             report.Fail($"{label}-snapshot", $"期望快照结果，实际 {snapshot.Error}");
+        }
+        // 7) 元素定位（切片 D）：css 定位命中 + checked 三态过线 + Ref 必须携带来源版本。
+        var locate = await session.LocateAsync(
+            new BrowserLocateRequest(
+                target,
+                new DesktopLocator(DesktopLocatorKind.Css, "button"),
+                DesktopPageVersion.Unknown,
+                maxResults: 10),
+            Call("locate"));
+
+        var triStateOk = locate.IsSuccess
+            && locate.Value.Elements.Count == 3
+            && locate.Value.Elements[0].IsChecked == true
+            && locate.Value.Elements[1].IsChecked == false
+            && locate.Value.Elements[2].IsChecked is null;
+
+        if (triStateOk && locate.Value.Locator.Kind == DesktopLocatorKind.Css)
+        {
+            report.Pass(
+                $"{label}-locate",
+                $"browser.locate → {locate.Value.Elements.Count} 元素（checked 三态 true/false/未知 全部原样过线）"
+                + $" locator={locate.Value.Locator} page_version={locate.Value.PageVersion.Value}");
+        }
+        else
+        {
+            report.Fail($"{label}-locate", $"期望 3 个元素且 checked 三态完整，实际 {(locate.IsFailure ? locate.Error.ToString() : locate.Value.ToString())}");
+        }
+
+        // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
+        var refWithoutVersionRejected = false;
+        try
+        {
+            _ = new BrowserLocateRequest(target, new DesktopLocator(DesktopLocatorKind.Ref, "e1"));
+        }
+        catch (ArgumentException)
+        {
+            refWithoutVersionRejected = true;
+        }
+
+        if (refWithoutVersionRejected)
+        {
+            report.Pass("locate-ref-requires-version", "Ref 定位未携带来源 PageVersion 时在契约层即被拒绝");
+        }
+        else
+        {
+            report.Fail("locate-ref-requires-version", "Ref 定位缺少来源版本却被接受（引用失效无法判定）");
         }
         // 会话结束时 Broker 侧应当清空注册表（不残留陈旧会话）。
         await desktop.DisposeAsync();

@@ -56,6 +56,7 @@
 | `WebViewContracts.cs` | `NavigateDisposition`（Accepted/Completed，**都不代表 DOM 已就绪**）、`NavigateRequest/Result`、`JavascriptValueKind`、`JavascriptRequest`（脚本正文禁入审计；结果字节上限 1 B–4 MiB）、`JavascriptResult`（`JsonValue` 恒为裸 JSON 片段，避免二次编码） |
 | `ShellContracts.cs` | `DesktopNotificationPriority`、`DesktopNotificationRequest`（标题 ≤128 / 正文 ≤1024）、`DesktopNotificationResult` |
 | `ApiInterfaces.cs` | `IPuddingDesktopApi` → `IPuddingDesktopWebViewApi`（Navigate / ExecuteJavascript / GetPageState）+ `IPuddingDesktopShellApi`（ShowNotification）。全部带 `DesktopCallContext` 与 `CancellationToken` |
+| `Desktop/LocateContracts.cs` | 元素定位契约：`DesktopLocatorKind`（10 策略 + 线名真源）、`DesktopLocator`、`BrowserLocateRequest`（**Ref 必须携带来源 PageVersion**，构造期强制）、`DesktopElementRef`（必须带有效版本）、`DesktopLocateResult`（命中 0 ≠ 被截断） |
 | `CapabilityEndpoint.cs` | Core 发布的**能力通道端点描述**：形态（NamedPipe / LoopbackHttp2 / Tls）+ 地址 + 协议版本 + Core 实例 ID；`ToEndpointString()`/`TryParse` 严格解析。**没有任何凭据字段**（凭据由 Desktop 主机侧注入），地址形态受约束（明文只允许回环、TLS 只能 https、URI 不许带凭据/查询/片段） |
 
 > 与方案初稿的差异（有意）：初稿示例写 `Task<NavigateResult>`；实际返回 `Task<CapabilityResult<NavigateResult>>`，

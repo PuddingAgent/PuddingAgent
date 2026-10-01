@@ -36,7 +36,15 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                 new DesktopLocateResult(
                     request.Locate?.Target ?? new DesktopPageTarget("ctx-probe", "page-probe"),
                     request.Locate?.Locator ?? new DesktopLocator(DesktopLocatorKind.Css, "button"),
-                    [new DesktopElementRef("e1", "button", DesktopPageVersion.Require(5), role: "button", name: "probe")],
+                    [
+                        // checked 三态：true / false / 未知(null) 必须都能原样过线。
+                        new DesktopElementRef(
+                            "e1", "button", DesktopPageVersion.Require(5), role: "button", name: "probe-on", isChecked: true),
+                        new DesktopElementRef(
+                            "e2", "button", DesktopPageVersion.Require(5), role: "button", name: "probe-off", isChecked: false),
+                        new DesktopElementRef(
+                            "e3", "div", DesktopPageVersion.Require(5), role: "generic", name: "probe-unknown"),
+                    ],
                     truncated: false,
                     DesktopPageVersion.Require(5)))),
 

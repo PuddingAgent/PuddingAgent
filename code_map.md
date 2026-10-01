@@ -1,3 +1,15 @@
+## 2026-10-01：`browser.locate` 的端到端证据 + Ref 来源版本约束（补第 11 轮的欠账）
+
+- **Ref 不变式从文档升级为机器可检的边界约束**：`BrowserLocateRequest` 构造期拒绝「凭 Ref 定位却不带来源
+  PageVersion」——接收方无法判定引用是否失效，这种请求必须被拒绝而不是猜测。
+- 探针新增 locate 往返（管道与 h2c 各一轮）：css 定位命中 3 个元素，**`checked` 三态
+  （true / false / 未知）原样过线**——「不知道 ≠ false」在真实端点被验证；
+  并断言 Ref 缺版本在契约层即被拒绝。探针 **31/31 exit 0**。
+- 契约测试补 4 条（线名冻结与严格解析、Ref 来源版本、locator/元素引用校验、
+  **命中 0 ≠ 被截断**）。
+
+测试合计：345 用例（Contracts 81、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 57、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.locate`（切片 D 第二个能力）
 
 - 契约：`DesktopLocatorKind`（10 种策略，线名真源 `DesktopLocatorKindWire`：ref/css/xpath/text/role/label/

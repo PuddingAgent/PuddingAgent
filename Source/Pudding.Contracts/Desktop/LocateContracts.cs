@@ -142,6 +142,15 @@ public sealed record BrowserLocateRequest
                 nameof(maxResults), maxResults, $"Result limit must be in [1, {MaxMaxResults}].");
         }
 
+        // 「Ref 随页面版本失效」在边界上强制：凭引用定位却不说明引用来自哪一版，
+        // 接收方就无法判定它是否已失效，因此这种请求必须被拒绝而不是猜测。
+        if (locator is { IsReference: true } && expectedPageVersion.Value <= 0)
+        {
+            throw new ArgumentException(
+                "A reference locator must carry the page version the reference came from.",
+                nameof(expectedPageVersion));
+        }
+
         Target = target ?? throw new ArgumentNullException(nameof(target));
         Locator = locator ?? throw new ArgumentNullException(nameof(locator));
         ExpectedPageVersion = expectedPageVersion;
