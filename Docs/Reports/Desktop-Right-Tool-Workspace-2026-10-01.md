@@ -76,6 +76,15 @@ NavigationView 内容区
 
 **WinUI 3 关键事实（本次踩到并验证）**：给系统控件设置自定义 `Style` **必须** `BasedOn="{StaticResource Default<控件名>Style}"`，否则默认样式失效（按钮丢圆角等）；框架默认样式在编译期不校验 key，写错只会在**运行时**抛资源异常。本次用到的 16 个框架 key（`DefaultButtonStyle`、`DefaultDropDownButtonStyle`、`DefaultToggleButtonStyle`、`DefaultTextBoxStyle`、`DefaultListViewItemStyle`、`ListViewItemBackgroundSelected*`、`ListViewItemSelectionIndicatorBrush`、`SymbolThemeFontFamily`、`ContentControlThemeFontFamily`、`ControlFillColorDefaultBrush`、`ControlStrokeColorDefaultBrush`、`AccentFillColorDefaultBrush`）已逐个在 Windows App SDK 的框架资源索引（`Microsoft.UI.Xaml.Controls.pri`）中确认存在；`BasedOn="{StaticResource DefaultButtonStyle}"` 的可用性依据 WinUI 3 官方示例级说明（[System controls need BasedOn Styling in WinUI](https://www.reflectionit.nl/blog/2023/system-controls-need-basedon-styling-in-winui)）与 [Styling WinUI Controls and Staying Fluent](https://inthehand.com/2023/07/26/styling-winui-controls-and-staying-fluent/)。
 
+### 工具首页（按第二张参考图重做）
+
+首页内容改为 **XAML 声明**（`ToolHomePanel`，直接作为 `ToolTabContentHost` 的子元素，Shell 不再重新挂载它；`CreateToolContent` 仅在 `Parent is null` 时才加入子级）：
+
+- 顶部居中的装饰性罗盘：76 像素圆环 `Ellipse` + 旋转 35° 的菱形 `Path`，整体 45% 不透明度，不依赖字体图标（避免图标缺失显示方框）。
+- 每张入口卡为圆角 12 的 `Button`（`ToolHomeCardStyle`，`BasedOn DefaultButtonStyle`）：左侧彩色图标、中间「标题 + 灰色说明」两行、右侧灰色快捷键提示；卡片填充 `CardBackgroundFillColorDefaultBrush`、描边 `CardStrokeColorDefaultBrush`。
+- 五张卡与真实能力一致：输出文件（Ctrl + O）、新建终端（未接入，无快捷键）、浏览器（Ctrl + T）、制成品（等待 Core 成果接口）、交互面板（等待接入）；页面底部保留一行低透明度说明「拖动分隔线 / 双击复位 / 收起不停止任务」。
+- 快捷键**真的可用**：`Root.KeyboardAccelerators` 增加 `Ctrl + O`（打开输出文件）与 `Ctrl + T`（Agent 浏览器）；卡上的提示与实际加速键一一对应，不写「装饰性」快捷键。终端未接入，因此**不显示**快捷键（参考图中的 `Ctrl + \`` 未照抄）。
+
 ## 配置
 
 `desktop.json` 新增 `toolWorkspace` 节（`DesktopBootstrapSettings.ToolWorkspace`）：

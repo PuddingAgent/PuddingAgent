@@ -353,7 +353,8 @@ public sealed partial class MainWindow : Window
         {
             var created = CreateToolContent(active);
             _toolTabContent[active.Id] = created;
-            ToolTabContentHost.Children.Add(created);
+            // The tool home is declared in XAML and already a child of this host.
+            if (created.Parent is null) ToolTabContentHost.Children.Add(created);
         }
 
         var browserActive = active?.Kind == ToolTabKind.Browser;
@@ -414,54 +415,15 @@ public sealed partial class MainWindow : Window
         return tab;
     }
 
-    private UIElement CreateToolContent(ToolTab tab) => tab.Kind switch
+    private FrameworkElement CreateToolContent(ToolTab tab) => tab.Kind switch
     {
-        ToolTabKind.Home => CreateHomeContent(),
+        // Home is markup-declared: the visual design stays in XAML.
+        ToolTabKind.Home => ToolHomePanel,
         ToolTabKind.Output => CreateOutputContent(tab),
         _ => CreateDeferredContent(tab),
     };
 
-    private UIElement CreateHomeContent()
-    {
-        var panel = new StackPanel
-        {
-            Spacing = 10,
-            Padding = new Thickness(24),
-            MaxWidth = 460,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
-        panel.Children.Add(new TextBlock { Text = "工具首页", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        panel.Children.Add(new TextBlock
-        {
-            Text = "每个标签页是一个独立实例：终端、Agent 浏览器、制成品、输出文件或交互面板。"
-                 + "拖动左侧分隔线调整宽度，双击恢复默认比例；收起只隐藏显示，不会停止正在运行的任务。",
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.7,
-            FontSize = 12,
-        });
-        var entries = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0) };
-        entries.Children.Add(HomeEntry("Agent 浏览器", OnOpenBrowserTab));
-        entries.Children.Add(HomeEntry("终端 · 新会话", OnOpenTerminalTab));
-        entries.Children.Add(HomeEntry("打开输出文件…", OnOpenOutputTab));
-        entries.Children.Add(HomeEntry("制成品预览", OnOpenArtifactTab));
-        entries.Children.Add(HomeEntry("交互面板", OnOpenPanelTab));
-        panel.Children.Add(entries);
-        return panel;
-    }
-
-    private static Button HomeEntry(string text, RoutedEventHandler handler)
-    {
-        var button = new Button
-        {
-            Content = text,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-        };
-        button.Click += handler;
-        return button;
-    }
-
-    private UIElement CreateDeferredContent(ToolTab tab)
+    private FrameworkElement CreateDeferredContent(ToolTab tab)
     {
         var panel = new StackPanel
         {
@@ -477,7 +439,7 @@ public sealed partial class MainWindow : Window
         return panel;
     }
 
-    private UIElement CreateOutputContent(ToolTab tab)
+    private FrameworkElement CreateOutputContent(ToolTab tab)
     {
         var panel = new StackPanel
         {
@@ -613,7 +575,9 @@ public sealed partial class MainWindow : Window
         UpdateToolContentVisibility();
     }
 
-    private void OnOpenTerminalTab(object sender, RoutedEventArgs e) => OpenTool(new ToolTabDescriptor
+    private void OnOpenTerminalTab(object sender, RoutedEventArgs e) => OpenTerminalTool();
+
+    private void OpenTerminalTool() => OpenTool(new ToolTabDescriptor
     {
         Id = ToolTabIdentity.Terminal(Guid.NewGuid().ToString("N")),
         Kind = ToolTabKind.Terminal,
@@ -640,7 +604,9 @@ public sealed partial class MainWindow : Window
         Availability = ToolTabAvailability.Deferred,
     });
 
-    private async void OnOpenOutputTab(object sender, RoutedEventArgs e)
+    private async void OnOpenOutputTab(object sender, RoutedEventArgs e) => await PickAndOpenOutputAsync();
+
+    private async Task PickAndOpenOutputAsync()
     {
         try
         {
@@ -1020,7 +986,10 @@ public sealed partial class MainWindow : Window
         await RunAsync(async ct => { var page = _browser.ActivePageId ?? await _browser.CreatePageAsync(null, true, ct); await _browser.NavigateAsync(page, uri, ct); });
     }
 
-    private async void OnOpenBrowserTab(object sender, RoutedEventArgs e)
+    private async void OnOpenBrowserTab(object sender, RoutedEventArgs e) => await OpenBrowserToolAsync();
+
+    /// <summary>Opens the Agent browser tool, creating the first page when none exists.</summary>
+    private async Task OpenBrowserToolAsync()
     {
         SetToolExpanded(true);
         if (_browser is null) { ToolStatusText.Text = "Agent 浏览器运行时尚未就绪。"; return; }
@@ -1035,6 +1004,19 @@ public sealed partial class MainWindow : Window
         SyncToolTabItems();
         UpdateToolContentVisibility();
         await ActivateActiveToolAsync();
+    }
+
+    // Shortcuts advertised on the tool home cards; kept in sync with the card hints.
+    private async void OnAcceleratorBrowser(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        await OpenBrowserToolAsync();
+    }
+
+    private async void OnAcceleratorOutput(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        await PickAndOpenOutputAsync();
     }
 
     private async Task LoadSettingsAsync()

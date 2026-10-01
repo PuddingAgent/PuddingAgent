@@ -19,10 +19,11 @@
       <SolidColorBrush x:Key="ToolChipFillBrush" Color="#14FFFFFF"/>
       <SolidColorBrush x:Key="ToolChipHoverBrush" Color="#24FFFFFF"/>
       <SolidColorBrush x:Key="ToolChipPressedBrush" Color="#0FFFFFFF"/>
-      <!-- Chip visuals come from the ListViewItem states, so the chip is one control. -->
-      <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#2EFFFFFF"/>
-      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#3DFFFFFF"/>
-      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#1FFFFFFF"/>
+      <!-- Chip visuals come from the ListViewItem states, so the chip is one control.
+           The selected fill is deliberately strong: the active instance must be obvious. -->
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#3DFFFFFF"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#4DFFFFFF"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#2EFFFFFF"/>
       <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#14FFFFFF"/>
       <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#1FFFFFFF"/>
       <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent"/>
@@ -35,9 +36,9 @@
       <SolidColorBrush x:Key="ToolChipFillBrush" Color="#0A000000"/>
       <SolidColorBrush x:Key="ToolChipHoverBrush" Color="#14000000"/>
       <SolidColorBrush x:Key="ToolChipPressedBrush" Color="#08000000"/>
-      <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#1F000000"/>
-      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#2E000000"/>
-      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#17000000"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#2E000000"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#3D000000"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#1F000000"/>
       <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#0F000000"/>
       <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#17000000"/>
       <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent"/>
@@ -169,11 +170,28 @@
      <Setter Property="HorizontalContentAlignment" Value="Center"/>
      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
+
+    <!-- Tool home entry card: one rounded row per way into the workspace. -->
+    <Style x:Key="ToolHomeCardStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+     <Setter Property="HorizontalAlignment" Value="Stretch"/>
+     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+     <Setter Property="MinHeight" Value="0"/>
+     <Setter Property="Padding" Value="16,12"/>
+     <Setter Property="Margin" Value="0,0,0,10"/>
+     <Setter Property="CornerRadius" Value="12"/>
+     <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
+     <Setter Property="BorderThickness" Value="1"/>
+     <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
+    </Style>
    </ResourceDictionary>
   </Grid.Resources>
   <Grid.KeyboardAccelerators>
    <!-- Esc dismisses the overlay form of the tool workspace, never the split form. -->
    <KeyboardAccelerator Key="Escape" Invoked="OnEscapeInvoked"/>
+   <!-- Shortcuts advertised on the tool home cards. -->
+   <KeyboardAccelerator Modifiers="Control" Key="T" Invoked="OnAcceleratorBrowser"/>
+   <KeyboardAccelerator Modifiers="Control" Key="O" Invoked="OnAcceleratorOutput"/>
   </Grid.KeyboardAccelerators>
   <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
   <Grid x:Name="TitleBar" Padding="20,0,150,0">
@@ -314,7 +332,83 @@
        </StackPanel>
       </Grid>
       <Grid x:Name="ToolContentHost" Grid.Row="2">
-       <Grid x:Name="ToolTabContentHost"/>
+       <Grid x:Name="ToolTabContentHost">
+        <!--
+         Tool home (declared here so the visual design lives in markup): a decorative
+         compass over one rounded card per way into the workspace. Created in the tree
+         already, so the Shell never re-parents it.
+        -->
+        <Grid x:Name="ToolHomePanel" Visibility="Collapsed" Padding="24,16">
+         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520" Spacing="0">
+          <Grid Width="72" Height="72" HorizontalAlignment="Center" Margin="0,0,0,22" Opacity="0.45">
+           <Ellipse Stroke="{ThemeResource ControlStrokeColorDefaultBrush}" StrokeThickness="2"/>
+           <Path Data="M36,13 L45,36 L36,59 L27,36 Z" Fill="{ThemeResource ControlStrokeColorDefaultBrush}" RenderTransformOrigin="0.5,0.5">
+            <Path.RenderTransform><RotateTransform Angle="35"/></Path.RenderTransform>
+           </Path>
+          </Grid>
+
+          <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenOutputTab" ToolTipService.ToolTip="Ctrl + O">
+           <Grid ColumnSpacing="14">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE8B7;" FontSize="18" Foreground="#E2A33C" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Spacing="2">
+             <TextBlock Text="输出文件" FontSize="15" FontWeight="SemiBold"/>
+             <TextBlock Text="打开并预览本机的文档、数据或日志" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+            </StackPanel>
+            <TextBlock Grid.Column="2" Text="Ctrl + O" FontSize="12" Opacity="0.55" VerticalAlignment="Center"/>
+           </Grid>
+          </Button>
+
+          <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenTerminalTab">
+           <Grid ColumnSpacing="14">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE756;" FontSize="18" Foreground="#4C8DF6" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Spacing="2">
+             <TextBlock Text="新建终端" FontSize="15" FontWeight="SemiBold"/>
+             <TextBlock Text="在会话工作区运行命令（会话组件尚未接入）" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+            </StackPanel>
+           </Grid>
+          </Button>
+
+          <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenBrowserTab" ToolTipService.ToolTip="Ctrl + T">
+           <Grid ColumnSpacing="14">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE774;" FontSize="18" Foreground="#4C8DF6" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Spacing="2">
+             <TextBlock Text="浏览器" FontSize="15" FontWeight="SemiBold"/>
+             <TextBlock Text="浏览网页，并指定 Agent 目标页面" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+            </StackPanel>
+            <TextBlock Grid.Column="2" Text="Ctrl + T" FontSize="12" Opacity="0.55" VerticalAlignment="Center"/>
+           </Grid>
+          </Button>
+
+          <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenArtifactTab">
+           <Grid ColumnSpacing="14">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE8A5;" FontSize="18" Foreground="#B07CD6" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Spacing="2">
+             <TextBlock Text="制成品" FontSize="15" FontWeight="SemiBold"/>
+             <TextBlock Text="预览 Agent 生成的文档、图表与网页（等待 Core 成果接口）" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+            </StackPanel>
+           </Grid>
+          </Button>
+
+          <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenPanelTab">
+           <Grid ColumnSpacing="14">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE71D;" FontSize="18" Foreground="#4CB782" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Spacing="2">
+             <TextBlock Text="交互面板" FontSize="15" FontWeight="SemiBold"/>
+             <TextBlock Text="Agent 生成的表单、筛选器与参数设置（等待接入）" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+            </StackPanel>
+           </Grid>
+          </Button>
+
+          <TextBlock Margin="4,8,4,0" FontSize="11" Opacity="0.5" TextAlignment="Center" TextWrapping="Wrap"
+            Text="拖动左侧分隔线调整宽度，双击恢复默认比例；收起只隐藏显示，不会停止正在运行的任务。"/>
+         </StackPanel>
+        </Grid>
+       </Grid>
        <!-- One persistent browser surface host: tabs never reparent a live WebView2. -->
        <Grid x:Name="BrowserSurfaceHostPanel" Visibility="Collapsed"/>
        <TextBlock x:Name="ToolEmptyState" Margin="24" TextWrapping="Wrap" Opacity="0.6" VerticalAlignment="Top"
