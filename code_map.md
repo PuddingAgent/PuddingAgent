@@ -16,6 +16,18 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：WinUI 薄层落点确认（第 65 轮，实读发现）
+
+- **实读发现（会改变做法）**：`PuddingDesktop.CapabilityHost` 有编译期边界目标
+  `EnforceCapabilityHostBoundary`：**只允许引用 `Pudding.Contracts`**（"service logic belongs to
+  Pudding.DesktopService"）⇒ 组合装配**不能**放在该组件里，必须落在 **`PuddingDesktop` 应用**（组合根）。
+  这正是组件化边界的价值：把错误落点挡在编译期，而不是等人发现。
+- 规格新增 §6：各部分的**允许落点**（组合装配→PuddingDesktop；调度器→CapabilityHost；
+  Shell 端口实现→应用内；注册表驱动→MainWindow 页面生命周期回调；浏览器映射→已完成的独立组件）、
+  三个动作的 WinUI 实现要点（对话框必须设 `XamlRoot`、`None`⇒**取消**；Picker 必须 `InitializeWithWindow`
+  否则 COMException、返回 `null`⇒取消；剪贴板非文本⇒`HasText=false` 的**成功**结果且不得写日志）、
+  以及组合根要做的四件事（默认关闭零行为变更）。
+- 本轮只做实读与规格（未动代码）：避免在错误的程序集里写组合代码而浪费一轮。
 ## 2026-10-01：目标注册表默认实现（第 64 轮）
 
 - 新增 `BrowserTargetRegistry : IDesktopBrowserTargetRegistry`（DesktopService，平台无关）：

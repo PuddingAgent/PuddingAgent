@@ -111,3 +111,39 @@ public readonly record struct ElementHandleId(string Value);
 - 覆盖：导航成功推进版本、脚本不推进版本、定位项带元素版本、交互后版本推进、等待超时不是失败、
   上下文清单带版本、标签页关闭后回带新活动页、`Ok=false` 的错误映射。
 - 这批测试与 WinUI 无关，因而可在 CI/离线完整运行——这正是"UI 操作统一经过 DesktopService"能落地的原因。
+
+## 6. WinUI 薄层的落点与实现规格（第 65 轮实读确认）
+
+### 6.1 落点（**编译期边界决定，不能放错**）
+
+| 内容 | 允许放哪 | 依据（实读） |
+|---|---|---|
+| 组合装配（把调度器 + 两个端口接到 `DesktopService`/`DesktopCapabilityHost`） | **`PuddingDesktop` 应用**（组合根） | `PuddingDesktop.CapabilityHost` 有边界目标 `EnforceCapabilityHostBoundary`：**只允许引用 `Pudding.Contracts`**（"service logic belongs to Pudding.DesktopService"）⇒ 它 **不能** 引用 DesktopService/DesktopSurface.Browser |
+| `WinUiDesktopUiDispatcher`（已完成） | `PuddingDesktop.CapabilityHost` | 只依赖 Contracts ✓ |
+| `IDesktopShellFacilities` 实现（对话框/文件选择器/剪贴板） | `PuddingDesktop`（需要窗口 HWND / XamlRoot / WinRT 剪贴板） | 需要 Windows App SDK + WinRT，CapabilityHost 有边界但同为 WinUI 工程，**实现放应用内最简**（也可放 CapabilityHost 的独立文件，只要不引 DesktopService） |
+| `IDesktopBrowserTargetRegistry` 的**驱动**（页面创建/关闭/切换） | `PuddingDesktop`（`MainWindow` 的页面生命周期回调） | 注册表实现已在 `Pudding.DesktopService.BrowserTargetRegistry`（平台无关、已测） |
+| 浏览器 9 项能力的映射（已完成） | `Pudding.DesktopSurface.Browser` | 只依赖抽象 ✓ |
+
+### 6.2 三个动作的 WinUI 实现要点（实现时逐个确认，勿凭记忆）
+
+- **对话框**：`ContentDialog` 必须设置 `XamlRoot`（无 `XamlRoot` 会抛异常）⇒ 端口实现需能取到主窗口内容根的访问器；
+  `ShowAsync()` 的 `ContentDialogResult`（`Primary`/`Secondary`/`None`）↔ 我方 `DesktopDialogChoice` 的映射要**显式**写清：
+  把 `None`（用户按 ESC/点遮罩关闭）映射为 **`Cancel`**（取消是结果，不是失败）。
+- **文件选择器**：`Windows.Storage.Pickers.FileOpenPicker` 在桌面应用中必须先 `InitializeWithWindow`（传窗口 HWND），
+  否则会抛 `COMException`；`PickSingleFileAsync`/`PickMultipleFilesAsync` 返回 `null` ⇒ **取消**（映射为 `Canceled=true`）。
+- **剪贴板**：`Windows.ApplicationModel.DataTransfer.Clipboard.GetContent()` + `GetTextAsync()`；
+  非文本内容 ⇒ 返回 `HasText=false` 的成功结果（**不是错误**）；读取必须在 UI 线程。
+  内容与路径**不得写日志/审计**（契约已声明）。
+- **线程访问**：`WinUiDesktopUiDispatcher` 的 `TryEnqueue` 失败即抛（不悬挂）；真实 `DispatcherQueue` 下的
+  线程访问验证属窗口期验收项（`HasThreadAccess` 分支要真的被走到）。
+
+### 6.3 组合根要做的四件事（`PuddingDesktop`）
+
+1. 读 `desktop.json` 的 `Desktop:CapabilityChannel`（`DesktopCapabilityChannelSettings`，缺省关闭）；
+2. 关闭时**什么都不做**（继续走既有 WebSocket Bridge，行为与今天一致）；
+3. 启用时：`DesktopCapabilityChannelSettings.CreateConnectionOptions(...)` + `ResolveTransportFromDescription(...)`
+   解析 Core 发布的分段描述（解析失败即**不启通道**，不做跨传输回退）；
+4. 构造 `DesktopCapabilityHost(dispatcher, surface, options, supervisorFactory, auditSink)` 并 `StartAsync`；
+   同时**在页面生命周期回调里驱动 `BrowserTargetRegistry`**（创建即登记信任级别、关闭即注销、切换即设活动页）。
+
+> 上述 4 步是**唯一会改变产品行为**的部分，必须在重启窗口内由外部控制器验收（见外部验收单）。
