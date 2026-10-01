@@ -358,3 +358,63 @@ EXIT=0
 而 Agent 工具读的是 **`D:\Data\databases\code-index\code_index.db`**（2.8 GB）。**两者是不同的库**。
 所以：**不要**在 CLI 上跑 `index <path>` 来指望修复 Agent 可见的覆盖 —— 那只会写进另一个库（已在本轮查证，避免了空耗）。
 CLI 的命令面为：`index / search / status / watch / definition / references / hover`（`Program.cs:37-50`）。
+
+---
+
+## 更正 · D2 / D5 在当前 live 状态下**均不成立**（2026-10-01 21:59 复测，父级亲取）
+
+**测量（同一批探针，两次采样，间隔约 35 分钟）**
+
+| 探针符号 | 21:24 轮 | 21:59 轮（本轮） | 命中文件 |
+|---|---|---|---|
+`CodeIndexStatusProbe` | 0 条 | **1 条** | `Source/PuddingHost/Services/CodeIndexStatusProbe.cs` |
+`IndexAdminController` | — | **1 条** | `Source/PuddingHost/Controllers/IndexAdminController.cs` |
+`FullTextIndexSupplyAccessor` | — | **2 条** | `Source/PuddingHost/Hosting/FullTextIndexSupplyAccessor.cs`（类 + 接口） |
+`PuddingBuildOutputSync` | 0 条 | **2 条** | `Source/PuddingCore/Configuration/…` + `Source/PuddingCoreTests/…` |
+`PuddingToolServiceCollectionExtensions` | — | **1 条** | `Source/PuddingRuntime/Tools/Platform/…` |
+`VolcengineArkImageGenerationProvider` | — | **2 条** | `Source/PuddingRuntime/Services/…` + 其测试 |
+`ImageGenerationService` | — | **7 条** | `PuddingPlatform` / `PuddingCore.Abstractions` / 三个测试工程 |
+`ICodeIndexMaintenance` | — | **1 条** | `Source/PuddingCodeIndex/Contracts/…` |
+`CodeQueryToolHelper` | — | **2 条** | `Source/PuddingRuntime/Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` |
+**`NotRegisteredStatus`**（D1 修复 2026-10-01 **新加**的字段，该文件 L45） | — | **1 条** | 同上 ⇒ **索引内含最新提交的源码** |
+
+- 上述命中**全部**为 `D:\CodeProject\PuddingAgent\PuddingAgent\…`，`project_id=8a48458b30150fdbed4baaced35d24cf`（root）。
+- 覆盖子树：`Source/PuddingHost` · `Source/PuddingCore` · `Source/PuddingRuntime` · `Source/PuddingPlatform` · `Source/PuddingCodeIndex` · `Source/*Tests` · `Tests/PuddingAgent.IntegrationTests`。
+
+⇒ **判定：覆盖面完整、路径正确、内容新鲜。** 因此：
+- **D2（陈旧 `E:` 死路径仍被服务）**：已随上轮四个陈旧项目注销而消失，**当前不成立**（上轮已复核 0 命中）。
+- **D5（覆盖被截断）**：**不成立**，撤回该结论。
+
+### 我上一轮为什么判错（两个独立成因，都要记住）
+
+1. **时点**：上一轮采样正好落在**重建进行中**——root 项目 `updated_at_utc=13:58:07Z` 与本轮采样几乎同一分钟，且 `code_index_list_projects` 当时显示 `Registering`（`CodeIndexScheduler` 语义为「仍欠一次完整运行」）。**重建期间查询会静默返回空**，肉眼看起来就像"覆盖被截断"。
+2. **探针名错**：我拿**文件名**当符号名去搜（`CodeQueryTools`），而 `code_outline` 证实该文件里**没有这个类型**（实际是 `CodeQueryToolHelper` / `CodeIndexStatusTool` / `CodeSymbolSearchTool` / `CodeExploreTool` …）。⇒ 那次 0 命中是**我的探针错了**，不是索引缺口。
+
+**新增纪律（索引覆盖测量的三条硬要求）**
+1. **必须多次采样看趋势**，单次不得定论（重建是进行时，不是状态位）；
+2. 探针符号名必须**取自文件内容**（`code_outline` / `search_grep`），**不得取自文件名**；
+3. 每次「0 命中」必须配一个**已知存在**的对照符号；无对照则无法区分「真不存在」与「索引尚未追上」。
+
+### 收窄后**仍然成立**的两条
+
+- **D1 的范围**：`code_index_status` 已 fail-closed，但**搜索入口（`code_symbol_search` 等）仍未按「已登记且根路径存在」过滤**。优先级**下调为防御性**——当前注册表 4 条全部是有效 `D:` 路径，错误命中已无来源。
+- **没有「覆盖 / 新鲜度」信号**：调用方无法区分「索引正在重建（空结果是暂时的）」与「代码真的不存在」。**这正是本会话我两次误判的直接原因**，也是面板 `codeIndex` 块必须补的那条信号（`stale` 只覆盖「未登记 / 根路径不存在」，覆盖不到「重建中」）。
+
+---
+
+## D9 · 部署产物**不得**来自脏工作树（2026-10-01 21:59 实测）
+
+**实测**
+- `temp/host-preview`（构建于 `2026-10-01T09:40:05Z`）已**过时**：`Source/**` + `Tests/**` 中 **129 个** `.cs`（已排除 `obj/`、`bin/`）比该 `PuddingHost.dll` 新。
+  - 该产物：`PuddingHost.dll` sha256 `01447A694927F80F0CBBA1CEAD4F52873F5D349943A18DD656FE631AF1B0D0FC`；`PuddingAgent.dll` sha256 `9053C33E9E2D5F931E38C9B14940DB027EEC2FC78FFB68F38A9CE3C7A553A67D`。
+- 更关键：构建它时**工作树并不干净**——本轮 `git status` 实测有 **8 个 `M` + 3 个 `??`**，全部落在 LLM 流式/计时区域（`PuddingCore/Core/{AnthropicMessages,OpenAi,Responses}LlmGateway.cs`、`Models/StreamDelta.cs`、`PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs`、`Services/DirectLlmClient.cs`、`ProviderStreamTiming.cs`（新）、`AgentTurnTimingCollector.cs`（新）及其测试），**属他人未提交的在飞改动**，非本 Agent 所有。
+
+**判定**
+- 从脏树构建的产物**不对应任何 commit**；一旦部署＝把**他人半成品**一并带上线，且不可复现、无法用 SHA 追溯。
+
+**部署前置条件（硬性，任何一次都要满足）**
+1. 工作树干净 —— 或**显式列出**将随产物带入的未提交改动并确认其已完成；
+2. 产物必须**在目标 commit 上重新构建**（不得复用旧 `temp/host-preview`）；
+3. 记录 `artifact_assembly_sha256`，部署后按 SHA 复核运行目录 DLL。
+
+**注**：本机 `git status` 显示 `## master` 无 upstream 提示、`HEAD == origin/master == 1959fa5`（本轮实测 `ls-remote` 一致）。
