@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Pudding.DesktopConnection</RootNamespace>
+    <AssemblyName>Pudding.DesktopConnection</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Desktop 侧传输适配器（计划 §3）：
+      依赖 Contracts（领域真源）+ Rpc.Protocol（wire 真源）+ Grpc.Net.Client。
+      禁止引用 WinUI/WebView2/ASP.NET Core/宿主：UI 调度由 IDesktopCapabilityExecutor 实现方负责。
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pudding.DesktopConnectionTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+    <ProjectReference Include="..\Pudding.Rpc.Protocol\Pudding.Rpc.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" Version="2.84.0" />
+  </ItemGroup>
+
+  <!-- 编译期边界：适配器不得把 UI/宿主/服务端框架拉进 Desktop 进程。 -->
+  <Target Name="EnforceConnectionBoundary" BeforeTargets="ResolveReferences">
+    <PropertyGroup>
+      <_ConnectionProjectReferences>@(ProjectReference)</_ConnectionProjectReferences>
+      <_ConnectionPackageReferences>@(PackageReference)</_ConnectionPackageReferences>
+    </PropertyGroup>
+    <Error Condition="$(_ConnectionProjectReferences.Contains('PuddingHost')) Or $(_ConnectionProjectReferences.Contains('PuddingRuntime')) Or $(_ConnectionProjectReferences.Contains('PuddingDesktop')) Or $(_ConnectionProjectReferences.Contains('Pudding.Browser')) Or $(_ConnectionProjectReferences.Contains('PuddingAgent'))"
+           Text="Pudding.DesktopConnection must not reference the host, runtime, desktop shell or browser UI projects." />
+    <Error Condition="$(_ConnectionPackageReferences.Contains('Microsoft.AspNetCore')) Or $(_ConnectionPackageReferences.Contains('Microsoft.UI')) Or $(_ConnectionPackageReferences.Contains('WebView2'))"
+           Text="Pudding.DesktopConnection must not reference ASP.NET Core, WinUI or WebView2 packages." />
+  </Target>
+
+</Project>

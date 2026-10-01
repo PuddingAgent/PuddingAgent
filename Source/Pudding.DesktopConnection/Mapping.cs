@@ -1,0 +1,400 @@
+using System.Security.Cryptography;
+using Google.Protobuf;
+using Pudding.Contracts;
+using Pudding.Contracts.Desktop;
+using Proto = Pudding.Rpc.Protocol.V1;
+
+namespace Pudding.DesktopConnection;
+
+/// <summary>已解码且通过结构校验的命令（领域侧表示，不含任何 proto 类型）。</summary>
+internal sealed record DecodedCommand(
+    OperationId OperationId,
+    ConnectionGeneration Generation,
+    DesktopCapabilityDescriptor Capability,
+    DesktopCapabilityRequest Request,
+    DesktopCallContext Context,
+    string? TraceId,
+    string Fingerprint);
+
+/// <summary>
+/// Core → Desktop 帧的解码与<b>结构校验</b>（fail closed）。
+/// 校验失败返回领域错误，由连接层回一条错误结果帧 —— 不关闭整条通道。
+/// </summary>
+internal static class CoreFrameMapping
+{
+    private const int MaxTraceIdLength = 128;
+
+    private const int MaxScriptLength = 256 * 1024;
+
+    public static CapabilityResult<DecodedCommand> Decode(Proto.CapabilityCommand? command, DesktopInstanceId desktopId)
+    {
+        if (command is null)
+        {
+            return Fail("command payload is missing");
+        }
+
+        if (!OperationId.IsValid(command.OperationId))
+        {
+            return Fail("operation_id is missing or is not a valid identifier");
+        }
+
+        if (command.Generation == 0 || command.Generation > long.MaxValue)
+        {
+            return Fail("generation must be a positive 63-bit value");
+        }
+
+        if (command.Deadline is null)
+        {
+            return Fail("deadline is required");
+        }
+
+        if (!DesktopCapabilities.TryGetByName(command.Capability, out var descriptor))
+        {
+            return CapabilityResult<DecodedCommand>.Failure(
+                DesktopCapabilityError.UnsupportedCapability(WireText.Truncate(command.Capability, 64)));
+        }
+
+        var request = BuildRequest(command, descriptor);
+        if (!request.IsSuccess)
+        {
+            return CapabilityResult<DecodedCommand>.Failure(request.Error);
+        }
+
+        DesktopCorrelationId? correlationId = null;
+        if (!string.IsNullOrEmpty(command.CorrelationId) && DesktopCorrelationId.IsValid(command.CorrelationId))
+        {
+            correlationId = new DesktopCorrelationId(command.CorrelationId);
+        }
+
+        var operationId = new OperationId(command.OperationId);
+        var context = new DesktopCallContext(
+            desktopId, operationId, command.Deadline.ToDateTimeOffset(), correlationId);
+        var traceId = WireText.Truncate(command.TraceId, MaxTraceIdLength);
+
+        return CapabilityResult<DecodedCommand>.Success(new DecodedCommand(
+            operationId,
+            ConnectionGeneration.Require((long)command.Generation),
+            descriptor,
+            request.Value,
+            context,
+            string.IsNullOrEmpty(traceId) ? null : traceId,
+            Fingerprint(command, descriptor)));
+    }
+
+    private static CapabilityResult<DesktopCapabilityRequest> BuildRequest(
+        Proto.CapabilityCommand command, DesktopCapabilityDescriptor descriptor)
+    {
+        switch (descriptor.Capability)
+        {
+            case DesktopCapability.WebViewNavigate:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.Navigate)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var payload = command.Navigate;
+                var target = DecodeTarget(payload.Target);
+                if (target is null)
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                        DesktopCapabilityError.InvalidTarget("webview.navigate requires an explicit context_id/page_id target"));
+                }
+
+                if (string.IsNullOrWhiteSpace(payload.Url) || !Uri.TryCreate(payload.Url, UriKind.Absolute, out var url))
+                {
+                    return FailRequest("navigate url must be an absolute URL");
+                }
+
+                if (payload.ExpectedPageVersion < 0)
+                {
+                    return FailRequest("expected_page_version must not be negative");
+                }
+
+                return CapabilityResult<DesktopCapabilityRequest>.Success(
+                    DesktopCapabilityRequest.ForNavigate(
+                        new NavigateRequest(target, url, ToPageVersion(payload.ExpectedPageVersion))));
+            }
+
+            case DesktopCapability.WebViewExecuteJavascript:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.ExecuteJavascript)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var payload = command.ExecuteJavascript;
+                var target = DecodeTarget(payload.Target);
+                if (target is null)
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                        DesktopCapabilityError.InvalidTarget("webview.execute_javascript requires an explicit context_id/page_id target"));
+                }
+
+                if (string.IsNullOrWhiteSpace(payload.Script))
+                {
+                    return FailRequest("script must be non-empty");
+                }
+
+                if (payload.Script.Length > MaxScriptLength)
+                {
+                    return FailRequest($"script exceeds the {MaxScriptLength} character transport limit");
+                }
+
+                if (payload.MaxResultBytes > JavascriptRequest.MaxResultBytesLimit)
+                {
+                    return FailRequest($"max_result_bytes exceeds the {JavascriptRequest.MaxResultBytesLimit} byte limit");
+                }
+
+                if (payload.ExpectedPageVersion < 0)
+                {
+                    return FailRequest("expected_page_version must not be negative");
+                }
+
+                var maxResultBytes = payload.MaxResultBytes == 0
+                    ? JavascriptRequest.DefaultMaxResultBytes
+                    : (int)payload.MaxResultBytes;
+
+                return CapabilityResult<DesktopCapabilityRequest>.Success(
+                    DesktopCapabilityRequest.ForJavascript(new JavascriptRequest(
+                        target,
+                        payload.Script,
+                        ToPageVersion(payload.ExpectedPageVersion),
+                        maxResultBytes)));
+            }
+
+            case DesktopCapability.ShellNotification:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.ShowNotification)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var payload = command.ShowNotification;
+                if (string.IsNullOrWhiteSpace(payload.Title) || string.IsNullOrWhiteSpace(payload.Message))
+                {
+                    return FailRequest("notification title and message must be non-empty");
+                }
+
+                if (payload.Title.Length > DesktopNotificationRequest.MaxTitleLength
+                    || payload.Message.Length > DesktopNotificationRequest.MaxMessageLength)
+                {
+                    return FailRequest("notification title or message exceeds the maximum length");
+                }
+
+                return CapabilityResult<DesktopCapabilityRequest>.Success(
+                    DesktopCapabilityRequest.ForNotification(new DesktopNotificationRequest(
+                        payload.Title, payload.Message, ToDomain(payload.Priority))));
+            }
+
+            default:
+                // 目录里存在但本切片尚无 payload 的能力（page_state 只读、dialog/picker/clipboard 属切片 E）。
+                return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                    DesktopCapabilityError.UnsupportedCapability(descriptor.Name));
+        }
+    }
+
+    private static DesktopPageTarget? DecodeTarget(Proto.CommandTarget? target)
+    {
+        if (target is null || string.IsNullOrEmpty(target.ContextId) || string.IsNullOrEmpty(target.PageId))
+        {
+            return null;
+        }
+
+        try
+        {
+            return new DesktopPageTarget(target.ContextId, target.PageId);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static string Fingerprint(Proto.CapabilityCommand command, DesktopCapabilityDescriptor descriptor)
+    {
+        var payload = command.PayloadCase switch
+        {
+            Proto.CapabilityCommand.PayloadOneofCase.Navigate => command.Navigate.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.ExecuteJavascript => command.ExecuteJavascript.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.ShowNotification => command.ShowNotification.ToByteArray(),
+            _ => [],
+        };
+
+        return string.Concat(descriptor.Name, ":", Convert.ToHexString(SHA256.HashData(payload)));
+    }
+
+    private static DesktopPageVersion ToPageVersion(long value) =>
+        value > 0 ? DesktopPageVersion.Require(value) : DesktopPageVersion.Unknown;
+
+    private static DesktopNotificationPriority ToDomain(Proto.NotificationPriority priority) => priority switch
+    {
+        Proto.NotificationPriority.Low => DesktopNotificationPriority.Low,
+        Proto.NotificationPriority.High => DesktopNotificationPriority.High,
+        _ => DesktopNotificationPriority.Normal,
+    };
+
+    private static CapabilityResult<DecodedCommand> Fail(string message) =>
+        CapabilityResult<DecodedCommand>.Failure(DesktopCapabilityError.InvalidRequest(message));
+
+    private static CapabilityResult<DesktopCapabilityRequest> FailRequest(string message) =>
+        CapabilityResult<DesktopCapabilityRequest>.Failure(DesktopCapabilityError.InvalidRequest(message));
+
+    private static CapabilityResult<DesktopCapabilityRequest> Mismatch(DesktopCapabilityDescriptor descriptor) =>
+        FailRequest($"payload does not match capability '{descriptor.Name}'");
+}
+
+/// <summary>领域 → wire 的编码。领域真源在 Contracts，这里只做机械映射。</summary>
+internal static class DesktopFrameMapping
+{
+    public static Proto.DesktopFrame Hello(
+        DesktopConnectionOptions options, IReadOnlyList<DesktopCapabilityDeclaration> declarations)
+    {
+        var hello = new Proto.DesktopHello
+        {
+            DesktopId = options.DesktopId.Value,
+            ProcessInstanceId = options.ProcessInstanceId.Value,
+            SupportedVersions = new Proto.ProtocolRange
+            {
+                Minimum = (uint)DesktopProtocolVersion.Minimum,
+                Maximum = (uint)DesktopProtocolVersion.Current,
+            },
+            RequestedMaxFrameBytes = (uint)options.RequestedMaxFrameBytes,
+        };
+
+        foreach (var declaration in declarations)
+        {
+            hello.Capabilities.Add(new Proto.CapabilityDeclaration
+            {
+                Capability = declaration.Name,
+                Version = (uint)declaration.Version,
+            });
+        }
+
+        return new Proto.DesktopFrame { Hello = hello };
+    }
+
+    public static Proto.DesktopFrame HeartbeatAck(long sequence) =>
+        new() { HeartbeatAck = new Proto.HeartbeatAck { Sequence = sequence } };
+
+    public static Proto.DesktopFrame ChannelStatus(string state, string detail) =>
+        new()
+        {
+            Event = new Proto.DesktopEvent
+            {
+                EventId = OperationId.NewId().Value,
+                ChannelStatus = new Proto.ChannelStatusChanged
+                {
+                    State = WireText.Truncate(state, 64),
+                    Detail = WireText.Truncate(detail, 256),
+                },
+            },
+        };
+
+    public static Proto.DesktopFrame ErrorResult(OperationId operationId, ConnectionGeneration generation, DesktopCapabilityError error) =>
+        new()
+        {
+            Result = new Proto.OperationResult
+            {
+                OperationId = operationId.Value,
+                Generation = (ulong)generation.Value,
+                Error = ToWire(error),
+            },
+        };
+
+    public static Proto.DesktopFrame Result(
+        OperationId operationId,
+        ConnectionGeneration generation,
+        DesktopCapabilityDescriptor capability,
+        DesktopCapabilityResponse response)
+    {
+        var result = new Proto.OperationResult
+        {
+            OperationId = operationId.Value,
+            Generation = (ulong)generation.Value,
+        };
+
+        if (response.Error is { } error)
+        {
+            result.Error = ToWire(error);
+        }
+        else
+        {
+            switch (capability.Capability)
+            {
+                case DesktopCapability.WebViewNavigate when response.Navigate is { } navigate:
+                    result.Navigate = new Proto.NavigateOutcome
+                    {
+                        Disposition = ToWire(navigate.Disposition),
+                        CurrentUrl = navigate.CurrentUrl?.AbsoluteUri ?? string.Empty,
+                        PageVersion = navigate.PageVersion.Value,
+                    };
+                    break;
+
+                case DesktopCapability.WebViewExecuteJavascript when response.Javascript is { } javascript:
+                    result.ExecuteJavascript = new Proto.JavascriptOutcome
+                    {
+                        Kind = ToWire(javascript.Kind),
+                        JsonValue = javascript.JsonValue ?? string.Empty,
+                        Truncated = javascript.Truncated,
+                    };
+                    break;
+
+                case DesktopCapability.ShellNotification when response.Notification is { } notification:
+                    result.ShowNotification = new Proto.NotificationOutcome
+                    {
+                        Shown = notification.Shown,
+                        NotificationId = notification.NotificationId ?? string.Empty,
+                    };
+                    break;
+
+                default:
+                    result.Error = ToWire(DesktopCapabilityError.Internal(
+                        "executor returned a payload that does not match the commanded capability"));
+                    break;
+            }
+        }
+
+        return new Proto.DesktopFrame { Result = result };
+    }
+
+    public static Proto.ErrorOutcome ToWire(DesktopCapabilityError error) => new()
+    {
+        Code = error.WireCode,
+        Message = error.Message,
+        Retryable = error.Retryable,
+        MayHaveSideEffects = error.MayHaveSideEffects,
+    };
+
+    private static Proto.NavigateDisposition ToWire(Pudding.Contracts.Desktop.NavigateDisposition disposition) =>
+        disposition switch
+        {
+            Pudding.Contracts.Desktop.NavigateDisposition.Accepted => Proto.NavigateDisposition.Accepted,
+            Pudding.Contracts.Desktop.NavigateDisposition.Completed => Proto.NavigateDisposition.Completed,
+            _ => Proto.NavigateDisposition.Unspecified,
+        };
+
+    private static Proto.JavascriptValueKind ToWire(Pudding.Contracts.Desktop.JavascriptValueKind kind) => kind switch
+    {
+        Pudding.Contracts.Desktop.JavascriptValueKind.Undefined => Proto.JavascriptValueKind.Undefined,
+        Pudding.Contracts.Desktop.JavascriptValueKind.Null => Proto.JavascriptValueKind.Null,
+        Pudding.Contracts.Desktop.JavascriptValueKind.Boolean => Proto.JavascriptValueKind.Boolean,
+        Pudding.Contracts.Desktop.JavascriptValueKind.Number => Proto.JavascriptValueKind.Number,
+        Pudding.Contracts.Desktop.JavascriptValueKind.String => Proto.JavascriptValueKind.String,
+        Pudding.Contracts.Desktop.JavascriptValueKind.Json => Proto.JavascriptValueKind.Json,
+        _ => Proto.JavascriptValueKind.Unspecified,
+    };
+}
+
+internal static class WireText
+{
+    public static string Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return value.Length <= maxLength ? value : value[..maxLength];
+    }
+}
