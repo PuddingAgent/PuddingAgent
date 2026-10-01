@@ -51,6 +51,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken);
 
+    /// <summary>显示对话框；用户取消必须作为结果返回（Canceled），不得伪装成失败。</summary>
+    Task<CapabilityResult<DesktopDialogResult>> RequestDialogAsync(
+        DesktopCallContext context, DesktopDialogRequest request, CancellationToken cancellationToken);
+
     /// <summary>读取剪贴板；实现方必须按预算截断并如实标注，且不得把内容写进日志。</summary>
     Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
         DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken);

@@ -213,6 +213,21 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ShellStatusHandler(cancellationToken);
     }
 
+    public int DialogCount => _calls.Count(call => call.StartsWith("dialog", StringComparison.Ordinal));
+
+    public Func<DesktopDialogRequest, CancellationToken, Task<CapabilityResult<DesktopDialogResult>>>? DialogHandler { get; set; }
+
+    public async Task<CapabilityResult<DesktopDialogResult>> RequestDialogAsync(
+        DesktopCallContext context, DesktopDialogRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue("dialog");
+        await AwaitGateAsync(cancellationToken);
+
+        return DialogHandler is null
+            ? CapabilityResult<DesktopDialogResult>.Success(new DesktopDialogResult(DesktopDialogChoice.Ok))
+            : await DialogHandler(request, cancellationToken);
+    }
+
     public int ClipboardCount => _calls.Count(call => call.StartsWith("clipboard", StringComparison.Ordinal));
 
     public Func<ClipboardReadRequest, CancellationToken, Task<CapabilityResult<DesktopClipboardContent>>>? ClipboardHandler { get; set; }

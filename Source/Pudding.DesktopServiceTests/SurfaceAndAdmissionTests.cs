@@ -106,11 +106,11 @@ public sealed class SurfaceAndAdmissionTests
     {
         // 默认 ShellCallerTrust = Untrusted ⇒ 对话框/Picker/剪贴板不可用（切片 E 逐能力开放）。
         var harness = ServiceHarness.Create(
-            allowed: DesktopCapability.ShellDialog | DesktopCapability.ShellNotification,
+            allowed: DesktopCapability.ShellFilePicker | DesktopCapability.ShellNotification,
             hasThreadAccess: true);
 
         var response = await harness.ExecuteAsync(
-            DesktopCapability.ShellDialog, harness.NotificationRequest());
+            DesktopCapability.ShellFilePicker, harness.NotificationRequest());
 
         Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, response.Error!.Code);
     }

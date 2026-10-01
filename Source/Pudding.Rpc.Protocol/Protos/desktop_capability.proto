@@ -238,6 +238,17 @@ message ClipboardOutcome {
   bool truncated = 2;
 }
 
+// 对话框（交互类）：单窗口同时最多一个；用户取消用 canceled 表达，不是错误。
+message ShowDialogCommand {
+  string title = 1;
+  string message = 2;
+  string buttons = 3;
+}
+
+message DialogOutcome {
+  string choice = 1;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -272,6 +283,7 @@ message CapabilityCommand {
     ContextsCommand contexts = 19;
     TabsCommand tabs = 20;
     ClipboardReadCommand read_clipboard = 21;
+    ShowDialogCommand show_dialog = 22;
   }
 }
 
@@ -382,6 +394,7 @@ message OperationResult {
     ContextsOutcome contexts = 20;
     TabsOutcome tabs = 21;
     ClipboardOutcome clipboard = 22;
+    DialogOutcome dialog = 23;
   }
 }
 

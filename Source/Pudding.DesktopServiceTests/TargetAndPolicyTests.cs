@@ -117,14 +117,14 @@ public sealed class TargetAndPolicyTests
     [Fact]
     public async Task CapabilityWithoutCommandPayload_IsRejectedAsUnsupported()
     {
-        // shell.dialog 在目录里已登记但本切片没有 payload；即使被启用/授权也不能假装执行。
+        // shell.file_picker 在目录里已登记但本切片没有 payload；即使被启用/授权也不能假装执行。
         var harness = ServiceHarness.Create(
-            allowed: DesktopCapability.ShellDialog,
+            allowed: DesktopCapability.ShellFilePicker,
             shellCallerTrust: DesktopContextTrust.Workbench,
             hasThreadAccess: true);
 
         var response = await harness.ExecuteAsync(
-            DesktopCapability.ShellDialog,
+            DesktopCapability.ShellFilePicker,
             DesktopCapabilityRequest.ForNotification(new DesktopNotificationRequest("t", "m")));
 
         Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, response.Error!.Code);

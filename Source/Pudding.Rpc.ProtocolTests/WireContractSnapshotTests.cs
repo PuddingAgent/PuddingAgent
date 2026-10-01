@@ -107,7 +107,8 @@ public sealed class WireContractSnapshotTests
             ("wait_for", 18),
             ("contexts", 19),
             ("tabs", 20),
-            ("read_clipboard", 21));
+            ("read_clipboard", 21),
+            ("show_dialog", 22));
 
         AssertFieldNumbers(
             OperationResult.Descriptor,
@@ -125,14 +126,15 @@ public sealed class WireContractSnapshotTests
             ("wait_for", 19),
             ("contexts", 20),
             ("tabs", 21),
-            ("clipboard", 22));
+            ("clipboard", 22),
+            ("dialog", 23));
 
         Assert.Equal(
-            ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState", "GetShellStatus", "Snapshot", "Locate", "Interact", "WaitFor", "Contexts", "Tabs", "ReadClipboard"],
+            ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState", "GetShellStatus", "Snapshot", "Locate", "Interact", "WaitFor", "Contexts", "Tabs", "ReadClipboard", "ShowDialog"],
             Enum.GetNames<CapabilityCommand.PayloadOneofCase>().Where(name => name != "None").ToArray());
 
         Assert.Equal(
-            ["Navigate", "ExecuteJavascript", "ShowNotification", "Error", "PageState", "ShellStatus", "Snapshot", "Locate", "Interact", "WaitFor", "Contexts", "Tabs", "Clipboard"],
+            ["Navigate", "ExecuteJavascript", "ShowNotification", "Error", "PageState", "ShellStatus", "Snapshot", "Locate", "Interact", "WaitFor", "Contexts", "Tabs", "Clipboard", "Dialog"],
             Enum.GetNames<OperationResult.OutcomeOneofCase>().Where(name => name != "None").ToArray());
 
         AssertFieldNumbers(OperationCancel.Descriptor, ("operation_id", 1), ("generation", 2), ("reason", 3));
@@ -163,6 +165,8 @@ public sealed class WireContractSnapshotTests
         AssertFieldNumbers(TabsCommand.Descriptor, ("target", 1), ("expected_page_version", 2), ("action", 3));
         AssertFieldNumbers(TabsOutcome.Descriptor, ("action", 1), ("tab_closed", 2), ("page", 3), ("remaining", 4));
         AssertFieldNumbers(ClipboardReadCommand.Descriptor, ("max_characters", 1));
+        AssertFieldNumbers(ShowDialogCommand.Descriptor, ("title", 1), ("message", 2), ("buttons", 3));
+        AssertFieldNumbers(DialogOutcome.Descriptor, ("choice", 1));
         AssertFieldNumbers(ClipboardOutcome.Descriptor, ("text", 1), ("truncated", 2));
         AssertFieldNumbers(WaitOutcome.Descriptor,
             ("timed_out", 1), ("condition_kind", 2), ("condition_value", 3), ("page", 4), ("error", 5));
@@ -174,8 +178,8 @@ public sealed class WireContractSnapshotTests
     public void PayloadOneof_IsClosedWhitelist()
     {
         // 计划 §4：禁止「字符串命令名 + 任意 JSON」演化成万能调用。
-        Assert.Equal(12, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
-        Assert.Equal(13, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
+        Assert.Equal(13, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
+        Assert.Equal(14, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
     }
 
     [Fact]

@@ -19,6 +19,7 @@ public sealed record DesktopCapabilityRequest
         BrowserWaitForRequest? waitFor = null,
         BrowserTabsRequest? tabs = null,
         ClipboardReadRequest? clipboard = null,
+        DesktopDialogRequest? dialog = null,
         bool contexts = false,
         bool shellStatus = false)
     {
@@ -32,6 +33,7 @@ public sealed record DesktopCapabilityRequest
         WaitFor = waitFor;
         Tabs = tabs;
         Clipboard = clipboard;
+        Dialog = dialog;
         Contexts = contexts;
         ShellStatus = shellStatus;
     }
@@ -62,6 +64,9 @@ public sealed record DesktopCapabilityRequest
 
     /// <summary>剪贴板读取请求（v1 只读）。</summary>
     public ClipboardReadRequest? Clipboard { get; }
+
+    /// <summary>对话框请求（交互类：单窗口同时最多一个）。</summary>
+    public DesktopDialogRequest? Dialog { get; }
 
     /// <summary>浏览器上下文清单查询：无参数（浏览器作用域，不接受调用方指定目标）。</summary>
     public bool Contexts { get; }
@@ -99,6 +104,9 @@ public sealed record DesktopCapabilityRequest
     public static DesktopCapabilityRequest ForClipboard(ClipboardReadRequest request) =>
         new(clipboard: request ?? throw new ArgumentNullException(nameof(request)));
 
+    public static DesktopCapabilityRequest ForDialog(DesktopDialogRequest request) =>
+        new(dialog: request ?? throw new ArgumentNullException(nameof(request)));
+
     public static DesktopCapabilityRequest ForContexts() => new(contexts: true);
 
     public static DesktopCapabilityRequest ForShellStatus() => new(shellStatus: true);
@@ -130,6 +138,7 @@ public sealed record DesktopCapabilityRequest
         : WaitFor is not null ? $"wait_for {WaitFor.Condition} @{WaitFor.Target}"
         : Tabs is not null ? $"tabs {Tabs}"
         : Clipboard is not null ? $"clipboard(max={Clipboard.MaxCharacters})"
+        : Dialog is not null ? $"dialog {Dialog}"
         : Contexts ? "contexts"
         : ShellStatus ? "shell_status"
         : "empty";
@@ -158,6 +167,7 @@ public sealed record DesktopCapabilityResponse
         DesktopContexts? contexts = null,
         DesktopTabsResult? tabs = null,
         DesktopClipboardContent? clipboard = null,
+        DesktopDialogResult? dialog = null,
         DesktopCapabilityError? error = null)
     {
         var payloadCount = (navigate is null ? 0 : 1)
@@ -171,7 +181,8 @@ public sealed record DesktopCapabilityResponse
             + (wait is null ? 0 : 1)
             + (contexts is null ? 0 : 1)
             + (tabs is null ? 0 : 1)
-            + (clipboard is null ? 0 : 1);
+            + (clipboard is null ? 0 : 1)
+            + (dialog is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -190,6 +201,7 @@ public sealed record DesktopCapabilityResponse
         Contexts = contexts;
         Tabs = tabs;
         Clipboard = clipboard;
+        Dialog = dialog;
         Error = error;
     }
 
@@ -223,6 +235,9 @@ public sealed record DesktopCapabilityResponse
 
     /// <summary>剪贴板内容（只读；内容不进日志）。</summary>
     public DesktopClipboardContent? Clipboard { get; }
+
+    /// <summary>对话框结果（取消是结果而不是失败）。</summary>
+    public DesktopDialogResult? Dialog { get; }
 
     public DesktopCapabilityError? Error { get; }
 
@@ -264,6 +279,9 @@ public sealed record DesktopCapabilityResponse
     public static DesktopCapabilityResponse FromClipboard(DesktopClipboardContent content) =>
         new(clipboard: content ?? throw new ArgumentNullException(nameof(content)));
 
+    public static DesktopCapabilityResponse FromDialog(DesktopDialogResult result) =>
+        new(dialog: result ?? throw new ArgumentNullException(nameof(result)));
+
     public static DesktopCapabilityResponse Failure(DesktopCapabilityError error) =>
         new(error: error ?? throw new ArgumentNullException(nameof(error)));
     public override string ToString() =>
@@ -280,5 +298,6 @@ public sealed record DesktopCapabilityResponse
         : Contexts is not null ? $"contexts({Contexts})"
         : Tabs is not null ? $"tabs({Tabs})"
         : Clipboard is not null ? $"clipboard({Clipboard})"
+        : Dialog is not null ? $"dialog({Dialog})"
         : "empty";
 }

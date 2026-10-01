@@ -476,6 +476,30 @@ internal static class CoreFrameMapping
                 }
             }
 
+            case DesktopCapability.ShellDialog:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.ShowDialog)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                if (!Enum.TryParse<DesktopDialogButtons>(command.ShowDialog.Buttons, ignoreCase: true, out var buttons))
+                {
+                    return FailRequest("dialog button set is missing or not registered");
+                }
+
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForDialog(new DesktopDialogRequest(
+                            command.ShowDialog.Title, command.ShowDialog.Message, buttons)));
+                }
+                catch (ArgumentException ex)
+                {
+                    return FailRequest($"dialog request is not usable ({ex.ParamName})");
+                }
+            }
+
             case DesktopCapability.ShellStatus:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
@@ -841,6 +865,10 @@ internal static class DesktopFrameMapping
                         Text = WireText.Truncate(clipboard.Text, 1_000_000),
                         Truncated = clipboard.Truncated,
                     };
+                    break;
+
+                case DesktopCapability.ShellDialog when response.Dialog is { } dialog:
+                    result.Dialog = new Proto.DialogOutcome { Choice = dialog.Choice.ToString() };
                     break;
 
                 case DesktopCapability.ShellStatus when response.ShellStatus is { } shellStatus:

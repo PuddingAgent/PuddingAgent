@@ -144,15 +144,15 @@ public sealed class CommandDispatchTests
     {
         var options = new HarnessOptions
         {
-            Declared = DesktopCapability.WebViewNavigate | DesktopCapability.ShellDialog,
-            Granted = DesktopCapability.WebViewNavigate | DesktopCapability.ShellDialog,
+            Declared = DesktopCapability.WebViewNavigate | DesktopCapability.ShellFilePicker,
+            Granted = DesktopCapability.WebViewNavigate | DesktopCapability.ShellFilePicker,
         };
 
         await using var harness = await ConnectionHarness.StartAsync(options);
 
         harness.Stream.Send(Frames.CommandFrame(Frames.Command(
             "op-dialog",
-            "shell.dialog",
+            "shell.file_picker",
             deadline: DateTimeOffset.UtcNow.AddSeconds(30),
             payload: Proto.CapabilityCommand.PayloadOneofCase.Navigate)));
         var result = await harness.Stream.WaitForResultAsync("op-dialog");

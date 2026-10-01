@@ -198,4 +198,84 @@ public sealed class InteractionSlotTests
         Assert.False(state.IsInteractionActive);
     }
 }
+
+/// <summary>对话框接入服务：交互槽位强制"单窗口同时最多一个"；取消是结果而不是失败。</summary>
+public sealed class DialogAdmissionTests
+{
+    private const DesktopCapability Allowed = DesktopCapability.ShellDialog | DesktopCapability.ShellFilePicker;
+
+    [Fact]
+    public async Task SecondConcurrentDialog_IsRejectedWhileTheFirstIsActive()
+    {
+        var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true, shellCallerTrust: DesktopContextTrust.Workbench);
+        harness.Surface.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 第一个对话框占住槽位（surface 被 gate 挡住，尚未完成）。
+        var first = harness.Service.ExecuteAsync(
+            ServiceHarness.Descriptor(DesktopCapability.ShellDialog),
+            DesktopCapabilityRequest.ForDialog(new DesktopDialogRequest("标题", "内容")),
+            harness.Context("op-1"),
+            CancellationToken.None);
+        await TestWait.UntilAsync(() => harness.Surface.DialogCount == 1, "first dialog reaches the surface");
+
+        // 第二个并发对话框必须被拒绝，而不是排队。
+        var second = await harness.Service.ExecuteAsync(
+            ServiceHarness.Descriptor(DesktopCapability.ShellDialog),
+            DesktopCapabilityRequest.ForDialog(new DesktopDialogRequest("标题", "内容")),
+            harness.Context("op-2"),
+            CancellationToken.None);
+
+        Assert.True(second.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.UiUnavailable, second.Error!.Code);
+        Assert.Equal(1, harness.Surface.DialogCount);
+
+        harness.Surface.Gate.SetResult();
+        Assert.False((await first).IsFailure);
+    }
+
+    [Fact]
+    public async Task CanceledDialog_IsAResultNotAFailure()
+    {
+        var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true, shellCallerTrust: DesktopContextTrust.Workbench);
+        harness.Surface.DialogHandler = (_, _) => Task.FromResult(
+            CapabilityResult<DesktopDialogResult>.Success(new DesktopDialogResult(DesktopDialogChoice.Cancel)));
+
+        var response = await harness.Service.ExecuteAsync(
+            ServiceHarness.Descriptor(DesktopCapability.ShellDialog),
+            DesktopCapabilityRequest.ForDialog(new DesktopDialogRequest("标题", "内容", DesktopDialogButtons.OkCancel)),
+            harness.Context("op-1"),
+            CancellationToken.None);
+
+        Assert.False(response.IsFailure);          // 取消不是失败
+        Assert.True(response.Dialog!.Canceled);
+        Assert.False(response.Dialog.IsAffirmative);
+
+        // 终态必须释放槽位：再来一个对话框应当能进入。
+        var again = await harness.Service.ExecuteAsync(
+            ServiceHarness.Descriptor(DesktopCapability.ShellDialog),
+            DesktopCapabilityRequest.ForDialog(new DesktopDialogRequest("标题", "内容")),
+            harness.Context("op-2"),
+            CancellationToken.None);
+        Assert.False(again.IsFailure);
+        Assert.False(harness.Service.Interaction.IsInteractionActive);
+    }
+
+    [Fact]
+    public async Task DialogFailure_StillReleasesTheSlot()
+    {
+        var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true, shellCallerTrust: DesktopContextTrust.Workbench);
+        harness.Surface.DialogHandler = (_, _) => Task.FromResult(
+            CapabilityResult<DesktopDialogResult>.Failure(DesktopCapabilityError.UiUnavailable("no window")));
+
+        var response = await harness.Service.ExecuteAsync(
+            ServiceHarness.Descriptor(DesktopCapability.ShellDialog),
+            DesktopCapabilityRequest.ForDialog(new DesktopDialogRequest("标题", "内容")),
+            harness.Context("op-1"),
+            CancellationToken.None);
+
+        Assert.True(response.IsFailure);
+        // 异常/失败路径也必须释放槽位，否则后续对话框永远进不来。
+        Assert.False(harness.Service.Interaction.IsInteractionActive);
+    }
+}
 }

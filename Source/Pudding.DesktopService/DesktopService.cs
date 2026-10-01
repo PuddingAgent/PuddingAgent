@@ -188,6 +188,43 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.ShellDialog:
+            {
+                if (request.Dialog is not { } dialog)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("shell.dialog request payload is missing"));
+                }
+
+                // 单窗口同时最多一个对话框：第二个并发请求被拒绝，而不是排队
+                // （排队会让"取消的是哪一个"不可判定）。终态一律释放槽位。
+                var owner = context.OperationId.Value;
+                if (!Interaction.TryEnterInteraction(owner))
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.UiUnavailable("another interactive dialog is already active"));
+                }
+
+                try
+                {
+                    var result = await RunOnUiAsync(
+                        descriptor,
+                        target: null,
+                        DesktopPageVersion.Unknown,
+                        context,
+                        token => _surface.RequestDialogAsync(context, dialog, token),
+                        cancellationToken).ConfigureAwait(false);
+
+                    return result.IsSuccess
+                        ? DesktopCapabilityResponse.FromDialog(result.Value)
+                        : DesktopCapabilityResponse.Failure(result.Error);
+                }
+                finally
+                {
+                    Interaction.ExitInteraction(owner);
+                }
+            }
+
             case DesktopCapability.ShellClipboard:
             {
                 if (request.Clipboard is not { } clipboard)

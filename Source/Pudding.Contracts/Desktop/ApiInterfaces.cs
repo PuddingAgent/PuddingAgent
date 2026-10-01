@@ -80,6 +80,12 @@ public interface IPuddingDesktopShellApi
         DesktopNotificationRequest request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>显示对话框并返回用户选择（**取消是结果而不是失败**；单窗口同时最多一个）。</summary>
+    Task<CapabilityResult<DesktopDialogResult>> RequestDialogAsync(
+        DesktopCallContext context,
+        DesktopDialogRequest request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>只读 Shell 状态（窗口形态/托盘/自动化状态/打开页面数）。</summary>
     Task<CapabilityResult<DesktopShellStatus>> GetShellStatusAsync(
         DesktopCallContext context,

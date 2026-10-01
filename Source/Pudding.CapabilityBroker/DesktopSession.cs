@@ -225,6 +225,19 @@ public sealed class DesktopSession : IAsyncDisposable
                     DesktopCapabilityError.Internal("clipboard response payload is missing")),
             cancellationToken);
 
+    /// <summary>显示对话框（交互类）：取消由结果表达（Canceled），不是失败。</summary>
+    public Task<CapabilityResult<DesktopDialogResult>> RequestDialogAsync(
+        DesktopDialogRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.ShellDialog,
+            DesktopCapabilityRequest.ForDialog(request),
+            call,
+            static response => response.Dialog is { } value
+                ? CapabilityResult<DesktopDialogResult>.Success(value)
+                : CapabilityResult<DesktopDialogResult>.Failure(
+                    DesktopCapabilityError.Internal("dialog response payload is missing")),
+            cancellationToken);
+
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync(

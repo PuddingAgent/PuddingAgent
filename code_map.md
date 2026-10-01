@@ -4,6 +4,21 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`shell.dialog` 端到端接线 + 交互槽位接入（第 44 轮，步骤 2/3）
+
+- 联合：请求加 `dialog`、结果加 `dialog`（工厂 `ForDialog` / `FromDialog`）；接口加
+  `IPuddingDesktopShellApi.RequestDialogAsync` 与 `IDesktopUiSurface.RequestDialogAsync`。
+- proto：`ShowDialogCommand`（payload 22）+ `DialogOutcome`（outcome 23）；协议快照同步（分支计数 13/14）。
+- 两端映射 fail closed：按钮组合未登记 / 参数不可用 ⇒ invalid_request；**未登记的选择按"用户没有肯定"
+  处理**（折叠为 `Cancel`，fail safe），不猜成确定。
+- **交互槽位接入服务咽喉点**：进入前 `TryEnterInteraction`，`finally` 一律释放 ⇒ 第二个并发对话框被拒
+  （`ui_unavailable`）而不是排队；异常/失败路径同样释放（否则对话框会永久进不来）。
+- 测试：DesktopService **124/124**（+3：并发第二个被拒、取消是结果而不是失败且释放槽位、失败也释放）。
+- **本轮两处"红灯"都是测试前提错，不是实现错**——记录以备后查：
+  ① 三个旧用例断言「这些能力还没有 payload」，而 dialog/clipboard 现在有 payload ⇒ 目标改为 `file_picker`
+  （唯一仍无 payload 的能力）；② `ShellDialog` 策略只对 Workbench 开放，而夹具默认 Untrusted ⇒ 在到达
+  surface 前就被准入正确拒绝（说明准入在生效，而非实现有 bug）。
+- **未做（步骤 3）**：探针执行器与断言、能力集合 6 处、加入 `DefaultGrantable` ⇒ 它仍是「已登记但不可用」。
 ## 2026-10-01：对话框终态语义契约（第 42 轮，切片 E `shell.dialog` 第 1 步）
 
 计划要求「对话框/Picker 必须让用户能取消，且**取消不是错误**」。本轮先落契约（叶子级、零接口连锁）：
