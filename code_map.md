@@ -7,7 +7,8 @@
 - P1 提示词（2ac98ed）：`Source/PuddingHost/default-data/agent-template-presets/general-assistant.json` 的 `personaPrompt` / `agentsPrompt` / `memoryPrompt` 改为按需恢复记忆、按需检视工具与 Skill、按需联网，并新增「范围纪律（证据足够即停）」；6 条仓库卫生子句逐字保留（`AgentTemplateFileServiceTests`）。
 - P2 上下文（7601ac2）：`ContextAssemblyResult.StageDurationsMs` 由 `ContextPipelineOrchestrator` 既有 `MeasureAsync` 计时填充，随 `done` 帧 `timings.contextStagesMs` 与 `CONTEXT_READY` 日志（最慢 5 层）输出；未引入启发式跳过召回（首条消息本就跳过 `memory_recall`，`memory_crop` 是死代码），先让每层开销可见。
 - 运行中 Agent 配置（仓库外，已留 `.bak-<ts>` 快照）：`D:\data\agents\default.global_general-assistant.6a8\manifest.json` 的 `systemPrompt`、同目录 `AGENTS.md`（上下文恢复改为按需 + 范围纪律）、`TOOLS.md`（cmd 说明限定到 `terminal_*`，`shell` 支持 powershell/wsl）。
-- 调试入口：`How-Debuge.md` 的「2026-10-01：首 token 与会话缓存口径」。
+- UI 统计（9cfd131）：`Source/PuddingPlatformAdmin/src/pages/chat/components/` 新增 `TurnTimingPanel.tsx`（渲染 `done` 帧 `timings`，未采集显示「未采集」而非 0）与 `serviceStatus.ts`（四个服务态纯映射，采不到即 `unknown`）；`IntentConsole.tsx` 缓存率改为无条件 `×100` 并标注口径与样本数，四个服务态改接真实端点（`context-health` / `/api/admin/index/status` / `/api/debug/subconscious/debug` / `/api/llm/providers`）；`useSessionEventProjection.ts` 捕获 `turn.completed.timings`，经 `ChatState` → `index.tsx` → `ChatLayout` → `ChatMain` 透传；`services/platform/api.ts` 新增手写契约 `TurnTimings` / `SubconsciousRuntimeControlSnapshotDto` / `getSubconsciousDebugState()`。
+- 调试入口：`How-Debuge.md` 的「2026-10-01：首 token 与会话缓存口径」；实施与验收记录见 `Docs/Reports/Agent-Harness-Latency-Implementation-2026-10-01.md`。
 
 ## 2026-10-01：Chat 前端现代化 UI / UX 设计（待实施）
 
