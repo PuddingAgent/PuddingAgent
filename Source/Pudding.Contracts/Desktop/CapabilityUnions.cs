@@ -73,6 +73,7 @@ public sealed record DesktopCapabilityRequest
         Navigate?.ExpectedPageVersion
         ?? Javascript?.ExpectedPageVersion
         ?? Snapshot?.ExpectedPageVersion
+        ?? Locate?.ExpectedPageVersion
         ?? DesktopPageVersion.Unknown;
 
     public override string ToString() =>

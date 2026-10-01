@@ -39,6 +39,20 @@ public sealed class LocateContractTests
     }
 
     [Fact]
+    public void RequestUnion_ExposesTheLocateVersionAndTarget()
+    {
+        var target = new DesktopPageTarget("ctx-1", "page-1");
+        var request = DesktopCapabilityRequest.ForLocate(new BrowserLocateRequest(
+            target, new DesktopLocator(DesktopLocatorKind.Css, "button"), DesktopPageVersion.Require(5)));
+
+        // 回归：联合漏掉 Locate 会让 Core 侧的「旧版本引用作废」保护对 locate 静默失效
+        // （真实端点探针正是这样发现的：陈旧请求被发出并成功，而不是被本地拒绝）。
+        Assert.Equal(target, request.Target);
+        Assert.Equal(5, request.ExpectedPageVersion.Value);
+        Assert.Contains("locate", request.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Locator_AndElementRef_ValidateTheirInputs()
     {
         Assert.Throws<ArgumentException>(() => new DesktopLocator(DesktopLocatorKind.Css, "  "));

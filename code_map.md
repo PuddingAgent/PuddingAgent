@@ -11,13 +11,18 @@
 - 验证：Broker 测试 **62/62**（新增 5 条：旧版本被拒且未发命令、同版本/更新版本正常、
   未知版本不误伤、按目标隔离、失败结果不推进版本）。
 
-**未决（下一轮首要排查）**：真实端点探针里这条拒绝**没有触发**（探针实测「固定到 v4 的 locate 请求
-返回成功」），而 5 条确定性单测全部通过。差异只可能来自「真实结果路径上的版本记录」或
-`locate` 结果的记录条件；探针里我一度加了断言但先撤回（不把不确定的行为写成回归项），
-下一轮需要先查清再决定是修代码还是修探针。这正是「能编译 ≠ 已测试、单测绿 ≠ 端到端绿」的又一例证。
+**已查清并修复（第 14 轮）**：真实端点探针是对的——请求联合 `DesktopCapabilityRequest.ExpectedPageVersion`
+**漏了 `Locate?.ExpectedPageVersion`**，导致 locate 请求的版本在 Core 侧永远是 `Unknown`，
+于是「未知版本不做判断」这条保护把陈旧引用**静默放过**（命令被发出、Desktop 成功执行）。
+单测之所以"绿"是因为那些用例用 **snapshot** 构造陈旧请求，恰好绕开了缺失的分支——
+这正是「用例只覆盖一条路径 = 假绿」的典型形态；探针的跨路径断言是唯一能发现它的手段。
 
-测试合计：350 用例（Contracts 81、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
-CapabilityBroker 62、CapabilityBroker.AspNetCore 22）。
+修复：联合补上 `Locate?.ExpectedPageVersion`；契约测试加回归断言（联合必须暴露 locate 的目标与版本）；
+Broker 测试新增 `PageVersionRecordingTests`（5 条，覆盖 navigate/page_state/snapshot/locate 四种结果各自
+推进版本记忆，以及连续多步不让任何上一步的版本漏记）。探针重新加回陈旧版本断言：**33/33 通过**。
+
+测试合计：354 用例（Contracts 82、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 67、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.locate` 的端到端证据 + Ref 来源版本约束（补第 11 轮的欠账）
 
 - **Ref 不变式从文档升级为机器可检的边界约束**：`BrowserLocateRequest` 构造期拒绝「凭 Ref 定位却不带来源

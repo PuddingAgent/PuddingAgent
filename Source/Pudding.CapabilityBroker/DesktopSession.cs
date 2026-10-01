@@ -586,6 +586,15 @@ public sealed class DesktopSession : IAsyncDisposable
     /// 期望版本是否已过期：只有「本会话已经观测到更新的版本」才算过期。
     /// 未知版本（0）不作判断——那表示调用方不要求版本约束，而不是「旧版本」。
     /// </summary>
+    /// <summary>测试可见：本会话对某目标已知的页面版本（0 = 尚未观测到）。</summary>
+    internal long KnownPageVersionFor(DesktopPageTarget target)
+    {
+        lock (_sync)
+        {
+            return _knownPageVersions.TryGetValue(target.Key, out var known) ? known : 0;
+        }
+    }
+
     private bool IsStalePageVersion(DesktopCapabilityRequest request, out long knownVersion)
     {
         knownVersion = 0;

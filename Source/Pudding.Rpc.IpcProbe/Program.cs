@@ -351,6 +351,25 @@ internal static class Program
             report.Fail($"{label}-locate", $"期望 3 个元素且 checked 三态完整，实际 {(locate.IsFailure ? locate.Error.ToString() : locate.Value.ToString())}");
         }
 
+        // 旧 Ref 作废（Core 侧强制）：本会话已观测到 v5，固定到 v4 的请求必须被本地拒绝且**不发出命令**。
+        var stale = await session.LocateAsync(
+            new BrowserLocateRequest(
+                target,
+                new DesktopLocator(DesktopLocatorKind.Css, "button"),
+                DesktopPageVersion.Require(4)),
+            Call("locate-stale"));
+
+        if (stale.IsFailure && stale.Error!.Code == DesktopCapabilityErrorCode.PageVersionMismatch
+            && !stale.Error.MayHaveSideEffects)
+        {
+            report.Pass(
+                "locate-stale-version-rejected",
+                "固定到旧版本(v4)的请求被本地拒绝（page_version_mismatch、无副作用、未发出命令）");
+        }
+        else
+        {
+            report.Fail("locate-stale-version-rejected", stale.IsFailure ? $"期望 page_version_mismatch，实际 {stale.Error!.Code}" : "期望被拒，实际却成功");
+        }
         // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
         var refWithoutVersionRejected = false;
         try
