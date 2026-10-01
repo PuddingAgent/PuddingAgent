@@ -3971,3 +3971,42 @@ VisionPipelineException包含source=tool function_call_output、message#、plann
 
 ## 2026-10-01 Chat 性能归因补充
 诊断报告见 Docs/Reports/Chat-Frontend-Performance-Diagnosis-2026-10-01.md。开启 ?perf=1 后分别测 API 完成到可读帧、IndexedDB 事务、投影 CPU、React commit 和 Layout/Paint。chat.markdown.render.commitMs 包含 render 到 effect 的调度等待，不能作为纯解析耗时。消息级虚拟化不能免除单条超长回复内部的完整挂载，也不能免除全列表投影计算。
+
+## 11.40 Chat 长消息滚动「塌缩」与 WebView2 现场性能测量
+
+**实测报告**：Docs/Reports/Chat-Frontend-Performance-Measurement-2026-10-01.md
+**复现装置**：TestScripts/perf/（CDP + 同版本 Edge 独立 profile，只替换 conversation 数据源；不写数据库、不调 LLM、不重启 Desktop）。
+
+### 现场测量怎么做（不重启用户的 Desktop）
+
+1. 运行中的 `PuddingDesktop.exe` 的 WebView2 命令行**没有** `--remote-debugging-port`，无法附加；不要为了测量重启它（会打断用户会话）。改用同引擎的独立 Edge：`--remote-debugging-port=9333 --user-data-dir=<temp profile> --headless=new`，先 `GET /json/version` 确认是同一 Chromium 大版本。
+2. 登录走真实 UI 链路：`POST /api/login/account`（`{username,password,type:'account',autoLogin:true}`）后把返回 `token` 写进 `localStorage['pudding_token']`。该 Core 处于 mock 认证模式，返回 `mock-token-admin-*`。
+3. 数据注入用 CDP `Fetch` 域拦截 `GET /api/workspaces/{ws}/agents/{ag}/conversation` 并 `fulfillRequest` 返回合成 `AgentConversationView`。这样投影/合并/Markdown/IndexedDB/虚拟化/布局全部是真实代码，只有字节来源是合成的。
+4. 该构建的活动回合**不走 SSE**：`agent-client` 架构默认开启 → 主会话被标记 projection-owned → `useChatState` 显式 `stopSessionEventStream()`（记 `chat.sse.skipped`），内容由 `index.tsx` 的 **1200ms 轮询 `conversation`** 驱动。因此 `/events/stream` 永远不会被请求；要模拟流式，应让桩响应逐次变长。
+5. 采样边界：`chat.output.paint` 有 250ms/事件名节流，且行卸载会取消未触发的 rAF（`MessageItem.tsx` cleanup）。含长行且频繁卸载的场景会**低估 paint 样本**；此时以 `browser.longtask` 与滚动可达性为主证据。
+
+### 「滚到顶后长回复消失/回不去」的根因
+
+症状：会话含一条超长回复时，滚到顶部后时间线总高骤降（实测 38964px → 1374px），再做 `scrollTop = scrollHeight` 也回不到长回复（被钳制在 676px）。
+
+根因在 `components/MessageList.tsx` 的虚拟化容器：`chat-message-viewport-content` 以 `style.height = totalSize`（实测 38871.9px）承载虚拟高度，但它是滚动容器 `chat-message-list`（真实样式 `.acss-ntkkqu`: `display:flex; overflow-y:auto; flex:1 1 0%`）的 **flex 子项**，未显式设置 `flex-shrink`，默认 `1` → **计算高度被压回 662px，内联虚拟高度完全失效**。
+
+判别方法（浏览器控制台）：
+
+```js
+const c = document.querySelector('[data-testid="chat-message-viewport-content"]');
+c.style.height;                       // "38871.9px"  ← 期望值
+getComputedStyle(c).height;           // "662px"      ← 不一致即命中本缺陷
+getComputedStyle(c).flexShrink;       // "1"
+```
+
+后果链：虚拟高度不由容器承载 → 滚动容器 `scrollHeight` 只等于「当前已挂载的绝对定位行」撑起的高度 → 长行卸载即塌缩 → `totalSize` 与真实可滚动高度脱钩 → 贴底/程序化滚动无法到达长行。
+
+修复与验证：给该元素补 `flexShrink: 0`（与 `height: totalSize` 配套）。实测修复后 `content` 计算高度 38980.2px、`scrollHeight` 稳定 39016px、`scrollTop = scrollHeight` 精确回到长行底部（38318px）。
+注意：`contain: layout paint` / `overflow: hidden` 也能阻止塌缩，但会把 `scrollHeight` 压到容器可见高度（698px）并**丢失滚动范围**，不要采用。
+
+### 相关数值基线（生产构建，1440×1000 视口）
+
+- 单条 50KB Markdown 回复 = **1 个虚拟行**、行高 36962px、正文 50483 字符、**仅 11 个元素节点**；虚拟化阈值是「内容权重 ≥16000 字符」，单条超长回复即可触发。
+- 滚动该时间线：`browser.longtask` 实测 213ms；多条高行（10×6KB）场景加 `content-visibility: auto` 后长任务 101ms → 0、`renderToPaint` p95 96ms → 22ms。
+- 冷加载 `agent.select`：`cache.loadConversation` 16ms、`api.getConversation` 124ms、`cache.saveConversation` 1ms（写盘顺序仍在 `set` 之前，但本数据集非主导）。
