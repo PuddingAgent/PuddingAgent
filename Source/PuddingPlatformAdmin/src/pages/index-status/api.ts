@@ -108,3 +108,38 @@ export function formatJobsReason(reason: string | null | undefined): string {
   if (known) return known;
   return `未登记的原因码「${reason}」—— 请对照后端 FullTextIndexStatusJobReasons 补充解释。`;
 }
+
+// ── P1 新增展示工具（**只增不改**：上面既有函数的签名与行为一律不动）──────
+
+/**
+ * 相对时间（纯函数）：`null`/空串/不可解析 ⇒ 未知。
+ * `nowMs` 显式注入（默认取当前时钟）⇒ 断言不随时间漂移，可单测。
+ * 未来时刻（时钟回拨 / 跨机时差）一律收敛为「刚刚」，**不外推**成负数时间。
+ */
+export function formatRelativeTime(
+  value: string | null | undefined,
+  nowMs: number = Date.now(),
+): string {
+  if (value === null || value === undefined || value === '') return UNKNOWN_TEXT;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return UNKNOWN_TEXT;
+  const deltaMs = nowMs - parsed.getTime();
+  if (!Number.isFinite(deltaMs)) return UNKNOWN_TEXT;
+  if (deltaMs < 60_000) return '刚刚';
+  const minutes = Math.floor(deltaMs / 60_000);
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.floor(hours / 24)} 天前`;
+}
+
+/**
+ * 绝对时刻（UTC，逐字）：规格 §3 要求副行给「绝对时间 UTC」。
+ * `null`/空串/不可解析 ⇒ 未知（不伪造时刻）。
+ */
+export function formatUtcTime(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return UNKNOWN_TEXT;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return UNKNOWN_TEXT;
+  return `${parsed.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+}
