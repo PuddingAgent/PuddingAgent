@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    组件化交付规程 S2：只引用被测组件（Pudding.CapabilityBroker）。
+    Contracts 与 Rpc.Protocol 是被测组件的依赖闭包。
+    不引用 ASP.NET Core / Desktop / 宿主：Core 侧语义用假通道（FakeDesktopChannel）确定性验证。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.CapabilityBroker\Pudding.CapabilityBroker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2" PrivateAssets="all" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

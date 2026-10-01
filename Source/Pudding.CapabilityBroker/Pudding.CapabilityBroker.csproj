@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Pudding.CapabilityBroker</RootNamespace>
+    <AssemblyName>Pudding.CapabilityBroker</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Core 侧能力 Broker（计划 §3/§5）：服务端 Connect 的会话与操作语义。
+    平台无关：只依赖 Contracts（领域真源）+ Rpc.Protocol（wire 真源）。
+    不引用 Desktop/DesktopConnection/WinUI/宿主：ASP.NET Core 的 gRPC 服务基类与端点托管
+    由宿主侧薄适配层提供（ICoreDesktopChannel 是唯一接缝）。
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pudding.CapabilityBrokerTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+    <ProjectReference Include="..\Pudding.Rpc.Protocol\Pudding.Rpc.Protocol.csproj" />
+  </ItemGroup>
+
+  <Target Name="EnforceCapabilityBrokerBoundary" BeforeTargets="ResolveReferences">
+    <PropertyGroup>
+      <_BrokerProjectReferences>@(ProjectReference)</_BrokerProjectReferences>
+      <_BrokerPackageReferences>@(PackageReference)</_BrokerPackageReferences>
+    </PropertyGroup>
+    <Error Condition="$(_BrokerProjectReferences.Contains('PuddingHost')) Or $(_BrokerProjectReferences.Contains('PuddingRuntime')) Or $(_BrokerProjectReferences.Contains('PuddingDesktop')) Or $(_BrokerProjectReferences.Contains('Pudding.DesktopConnection')) Or $(_BrokerProjectReferences.Contains('Pudding.DesktopService'))"
+           Text="The Core-side capability broker must not reference Desktop, Host or Runtime projects." />
+    <Error Condition="$(_BrokerPackageReferences.Contains('Microsoft.AspNetCore')) Or $(_BrokerPackageReferences.Contains('Microsoft.UI')) Or $(_BrokerPackageReferences.Contains('WebView2'))"
+           Text="The Core-side capability broker is platform-agnostic: ASP.NET Core/WinUI/WebView2 packages belong to host adapters." />
+  </Target>
+
+</Project>
