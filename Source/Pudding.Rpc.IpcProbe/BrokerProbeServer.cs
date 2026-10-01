@@ -98,6 +98,7 @@ internal sealed class BrokerProbeServer : IAsyncDisposable
             | DesktopCapability.BrowserContexts
             | DesktopCapability.BrowserTabs
             | DesktopCapability.ShellDialog
+            | DesktopCapability.ShellFilePicker
             | DesktopCapability.ShellClipboard,
         MaxInFlightPerConnection = 8,
         MaxQueuedFrames = 128,

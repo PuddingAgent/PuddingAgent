@@ -209,6 +209,7 @@ internal static class Program
             | DesktopCapability.BrowserContexts
             | DesktopCapability.BrowserTabs
             | DesktopCapability.ShellDialog
+            | DesktopCapability.ShellFilePicker
             | DesktopCapability.ShellClipboard,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
@@ -606,6 +607,28 @@ internal static class Program
                 dialog.IsFailure || canceled.IsFailure
                     ? $"期望两次调用都成功，实际 {(dialog.IsFailure ? dialog.Error!.Code.ToString() : canceled.Error!.Code.ToString())}"
                     : $"结果不符：{dialog.Value} / {canceled.Value}");
+        }
+        // 14) 文件选择器（交互类）：用户选择与取消两种终态；返回路径不代表 Core 可读。
+        var picked = await session.RequestFilePickerAsync(
+            new DesktopFilePickerRequest("探针：选择文件"), Call("picker"));
+        var pickerCanceled = await session.RequestFilePickerAsync(
+            new DesktopFilePickerRequest("cancel"), Call("picker-cancel"));
+
+        if (picked.IsSuccess && !picked.Value.Canceled && picked.Value.HasSelection
+            && pickerCanceled.IsSuccess && pickerCanceled.Value.Canceled && !pickerCanceled.Value.HasSelection)
+        {
+            report.Pass(
+                "file_picker",
+                $"shell.file_picker → 选中 {picked.Value.Paths.Count} 个路径；取消 Canceled=true 且**不是失败**"
+                + "（路径只回传调用方，不代表 Core 可读）");
+        }
+        else
+        {
+            report.Fail(
+                "file_picker",
+                picked.IsFailure || pickerCanceled.IsFailure
+                    ? $"期望两次调用都成功，实际 {(picked.IsFailure ? picked.Error!.Code.ToString() : pickerCanceled.Error!.Code.ToString())}"
+                    : $"结果不符：{picked.Value} / {pickerCanceled.Value}");
         }
         // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
         var refWithoutVersionRejected = false;

@@ -80,6 +80,12 @@ public interface IPuddingDesktopShellApi
         DesktopNotificationRequest request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>显示文件选择器（**取消是结果而不是失败**）。返回的是用户选择，**不代表 Core 可读该路径**。</summary>
+    Task<CapabilityResult<DesktopFilePickerResult>> RequestFilePickerAsync(
+        DesktopCallContext context,
+        DesktopFilePickerRequest request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>显示对话框并返回用户选择（**取消是结果而不是失败**；单窗口同时最多一个）。</summary>
     Task<CapabilityResult<DesktopDialogResult>> RequestDialogAsync(
         DesktopCallContext context,

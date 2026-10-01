@@ -238,6 +238,19 @@ public sealed class DesktopSession : IAsyncDisposable
                     DesktopCapabilityError.Internal("dialog response payload is missing")),
             cancellationToken);
 
+    /// <summary>文件选择器（交互类）：取消由结果表达；返回路径不代表 Core 可读。</summary>
+    public Task<CapabilityResult<DesktopFilePickerResult>> RequestFilePickerAsync(
+        DesktopFilePickerRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.ShellFilePicker,
+            DesktopCapabilityRequest.ForFilePicker(request),
+            call,
+            static response => response.FilePicker is { } value
+                ? CapabilityResult<DesktopFilePickerResult>.Success(value)
+                : CapabilityResult<DesktopFilePickerResult>.Failure(
+                    DesktopCapabilityError.Internal("file_picker response payload is missing")),
+            cancellationToken);
+
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync(

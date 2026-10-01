@@ -188,6 +188,42 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.ShellFilePicker:
+            {
+                if (request.FilePicker is not { } picker)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("shell.file_picker request payload is missing"));
+                }
+
+                // 与对话框共用同一个交互槽位：单窗口同时最多一个被问的用户交互。
+                var pickerOwner = context.OperationId.Value;
+                if (!Interaction.TryEnterInteraction(pickerOwner))
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.UiUnavailable("another interactive dialog is already active"));
+                }
+
+                try
+                {
+                    var result = await RunOnUiAsync(
+                        descriptor,
+                        target: null,
+                        DesktopPageVersion.Unknown,
+                        context,
+                        token => _surface.RequestFilePickerAsync(context, picker, token),
+                        cancellationToken).ConfigureAwait(false);
+
+                    return result.IsSuccess
+                        ? DesktopCapabilityResponse.FromFilePicker(result.Value)
+                        : DesktopCapabilityResponse.Failure(result.Error);
+                }
+                finally
+                {
+                    Interaction.ExitInteraction(pickerOwner);
+                }
+            }
+
             case DesktopCapability.ShellDialog:
             {
                 if (request.Dialog is not { } dialog)

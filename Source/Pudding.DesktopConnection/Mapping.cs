@@ -500,6 +500,27 @@ internal static class CoreFrameMapping
                 }
             }
 
+            case DesktopCapability.ShellFilePicker:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.ShowFilePicker)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForFilePicker(new DesktopFilePickerRequest(
+                            command.ShowFilePicker.Title,
+                            command.ShowFilePicker.AllowMultiple,
+                            command.ShowFilePicker.Extensions.Count == 0 ? null : command.ShowFilePicker.Extensions.ToArray())));
+                }
+                catch (ArgumentException ex)
+                {
+                    return FailRequest($"file picker request is not usable ({ex.ParamName})");
+                }
+            }
+
             case DesktopCapability.ShellStatus:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
@@ -869,6 +890,12 @@ internal static class DesktopFrameMapping
 
                 case DesktopCapability.ShellDialog when response.Dialog is { } dialog:
                     result.Dialog = new Proto.DialogOutcome { Choice = dialog.Choice.ToString() };
+                    break;
+
+                case DesktopCapability.ShellFilePicker when response.FilePicker is { } picker:
+                    result.FilePicker = new Proto.FilePickerOutcome { Canceled = picker.Canceled };
+                    // 路径只回传调用方：不进日志/审计。
+                    result.FilePicker.Paths.AddRange(picker.Paths.Select(path => WireText.Truncate(path, 1024)));
                     break;
 
                 case DesktopCapability.ShellStatus when response.ShellStatus is { } shellStatus:

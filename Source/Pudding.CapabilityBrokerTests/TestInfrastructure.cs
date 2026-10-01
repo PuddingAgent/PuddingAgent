@@ -128,6 +128,7 @@ internal sealed class HarnessOptions
         | DesktopCapability.BrowserContexts
         | DesktopCapability.BrowserTabs
         | DesktopCapability.ShellDialog
+        | DesktopCapability.ShellFilePicker
         | DesktopCapability.ShellClipboard;
 
     public DesktopCapability Grantable { get; set; } =
@@ -143,6 +144,7 @@ internal sealed class HarnessOptions
         | DesktopCapability.BrowserContexts
         | DesktopCapability.BrowserTabs
         | DesktopCapability.ShellDialog
+        | DesktopCapability.ShellFilePicker
         | DesktopCapability.ShellClipboard;
 
     public int MaxInFlightPerConnection { get; set; } = 8;

@@ -51,6 +51,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken);
 
+    /// <summary>显示文件选择器；取消必须作为结果返回；返回路径不代表调用方可读。</summary>
+    Task<CapabilityResult<DesktopFilePickerResult>> RequestFilePickerAsync(
+        DesktopCallContext context, DesktopFilePickerRequest request, CancellationToken cancellationToken);
+
     /// <summary>显示对话框；用户取消必须作为结果返回（Canceled），不得伪装成失败。</summary>
     Task<CapabilityResult<DesktopDialogResult>> RequestDialogAsync(
         DesktopCallContext context, DesktopDialogRequest request, CancellationToken cancellationToken);

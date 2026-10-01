@@ -115,17 +115,15 @@ public sealed class TargetAndPolicyTests
     }
 
     [Fact]
-    public async Task CapabilityWithoutCommandPayload_IsRejectedAsUnsupported()
+    public async Task UnregisteredCapability_IsRejectedAsUnsupported()
     {
-        // shell.file_picker 在目录里已登记但本切片没有 payload；即使被启用/授权也不能假装执行。
+        // not.registered.capability 在目录里已登记但本切片没有 payload；即使被启用/授权也不能假装执行。
         var harness = ServiceHarness.Create(
-            allowed: DesktopCapability.ShellFilePicker,
+            allowed: (DesktopCapability)(1 << 20),
             shellCallerTrust: DesktopContextTrust.Workbench,
             hasThreadAccess: true);
 
-        var response = await harness.ExecuteAsync(
-            DesktopCapability.ShellFilePicker,
-            DesktopCapabilityRequest.ForNotification(new DesktopNotificationRequest("t", "m")));
+        var response = await harness.Service.ExecuteAsync(ServiceHarness.UnregisteredCapabilityDescriptor(), DesktopCapabilityRequest.ForNotification(new DesktopNotificationRequest("t", "m")), harness.Context(), CancellationToken.None);
 
         Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, response.Error!.Code);
     }

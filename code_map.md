@@ -4,6 +4,20 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`shell.file_picker` 端到端（第 46 轮，切片 E 收口）
+
+- 契约：`DesktopFilePickerRequest`（标题 ≤128、扩展名 ≤16 且**不接受通配符**）+ `DesktopFilePickerResult`
+  （`Canceled` + 选中路径）；**诚实语义**：返回的是用户的选择，**不代表 Core 获得该路径的读取权**
+  （权限仍受进程身份与 ACL 约束）；`ToString()` 只给形状（路径属隐私，不进日志/审计）。
+- proto：`ShowFilePickerCommand`（payload 23）+ `FilePickerOutcome`（outcome 24）；两端映射 fail closed。
+- 服务：与对话框**共用同一个交互槽位**（单窗口同时最多一个被问的用户交互），`finally` 一律释放。
+- 能力集合 6 处同步（含 ack 列表按目录顺序：dialog → file_picker → clipboard）。
+- 探针断言两条终态：**选中**（`HasSelection`）与**取消**（`Canceled=true`、无选择、**不是失败**）⇒ **53/53 exit 0**。
+- **不变量升级**：目录里每一项都已实现并声明 ⇒ 旧断言「某些能力还没有 payload」被替换为两条更有用的断言：
+  ①`DeclaredCapabilities == DesktopCapabilities.AllCapabilities`；②**未登记能力一律拒绝**
+  （用合成描述符 `(DesktopCapability)(1<<20)` 验证，防止"目录之外被悄悄实现"）。
+- 测试：Contracts 96、协议 20、DesktopConnection 80、DesktopService 124、Broker 74、适配层 26 = **420**。
+- **切片 E 完成**：notification / status / clipboard / dialog / file_picker 全部端到端。
 ## 2026-10-01：`shell.dialog` 端到端完成（第 45 轮，切片 E 第 3 步）
 
 - 探针执行器实现对话框（标题含 `cancel` 时演示用户取消），探针断言两条终态：

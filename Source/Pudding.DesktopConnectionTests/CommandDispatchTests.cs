@@ -140,19 +140,19 @@ public sealed class CommandDispatchTests
     }
 
     [Fact]
-    public async Task CatalogueCapabilityWithoutPayload_IsRejectedAsUnsupported()
+    public async Task UnregisteredCapability_IsRejectedAsUnsupported()
     {
         var options = new HarnessOptions
         {
-            Declared = DesktopCapability.WebViewNavigate | DesktopCapability.ShellFilePicker,
-            Granted = DesktopCapability.WebViewNavigate | DesktopCapability.ShellFilePicker,
+            Declared = DesktopCapability.WebViewNavigate | (DesktopCapability)(1 << 20),
+            Granted = DesktopCapability.WebViewNavigate | (DesktopCapability)(1 << 20),
         };
 
         await using var harness = await ConnectionHarness.StartAsync(options);
 
         harness.Stream.Send(Frames.CommandFrame(Frames.Command(
             "op-dialog",
-            "shell.file_picker",
+            "not.registered.capability",
             deadline: DateTimeOffset.UtcNow.AddSeconds(30),
             payload: Proto.CapabilityCommand.PayloadOneofCase.Navigate)));
         var result = await harness.Stream.WaitForResultAsync("op-dialog");

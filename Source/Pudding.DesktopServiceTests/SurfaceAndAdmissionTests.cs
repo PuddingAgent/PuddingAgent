@@ -102,15 +102,14 @@ public sealed class SurfaceAndAdmissionTests
     }
 
     [Fact]
-    public async Task InteractiveCapabilities_StayDisabledUntilTheirPayloadExists()
+    public async Task UnregisteredCapability_IsRejectedForInteractiveKinds()
     {
         // 默认 ShellCallerTrust = Untrusted ⇒ 对话框/Picker/剪贴板不可用（切片 E 逐能力开放）。
         var harness = ServiceHarness.Create(
-            allowed: DesktopCapability.ShellFilePicker | DesktopCapability.ShellNotification,
+            allowed: (DesktopCapability)(1 << 20) | DesktopCapability.ShellNotification,
             hasThreadAccess: true);
 
-        var response = await harness.ExecuteAsync(
-            DesktopCapability.ShellFilePicker, harness.NotificationRequest());
+        var response = await harness.Service.ExecuteAsync(ServiceHarness.UnregisteredCapabilityDescriptor(), harness.NotificationRequest(), harness.Context(), CancellationToken.None);
 
         Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, response.Error!.Code);
     }

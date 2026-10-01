@@ -169,6 +169,15 @@ internal static class CoreCommandEncoder
                 };
                 break;
 
+            case DesktopCapability.ShellFilePicker when request.FilePicker is { } picker:
+                command.ShowFilePicker = new Proto.ShowFilePickerCommand
+                {
+                    Title = picker.Title,
+                    AllowMultiple = picker.AllowMultiple,
+                };
+                command.ShowFilePicker.Extensions.AddRange(picker.Extensions);
+                break;
+
             case DesktopCapability.BrowserSnapshot when request.Snapshot is { } snapshot:
                 command.Snapshot = new Proto.SnapshotCommand
                 {
@@ -214,6 +223,8 @@ internal static class CoreCommandEncoder
             _ when request.Clipboard is { } clipboard => $"clipboard:{clipboard.MaxCharacters}",
             _ when request.Dialog is { } dialog =>
                 $"dialog:{dialog.Buttons}:{dialog.Title}:{dialog.Message}",
+            _ when request.FilePicker is { } picker =>
+                $"file_picker:{picker.AllowMultiple}:{picker.Title}:{string.Join(",", picker.Extensions)}",
             _ when request.Contexts => "contexts",
             _ when request.WaitFor is { } waitFor =>
                 $"wait_for:{waitFor.Target.Key}:{waitFor.Condition.Kind}:{waitFor.Condition.Value}:{waitFor.TimeoutMs}:{waitFor.ExpectedPageVersion.Value}",
@@ -272,6 +283,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.Tabs => expectedCapability == DesktopCapability.BrowserTabs,
             Proto.OperationResult.OutcomeOneofCase.Clipboard => expectedCapability == DesktopCapability.ShellClipboard,
             Proto.OperationResult.OutcomeOneofCase.Dialog => expectedCapability == DesktopCapability.ShellDialog,
+            Proto.OperationResult.OutcomeOneofCase.FilePicker => expectedCapability == DesktopCapability.ShellFilePicker,
             _ => false,
         };
 
@@ -411,6 +423,14 @@ internal static class DesktopResultDecoder
 
                     return CapabilityResult<DesktopCapabilityResponse>.Success(
                         DesktopCapabilityResponse.FromContexts(new DesktopContexts(contexts)));
+                }
+
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.FilePicker)
+                {
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromFilePicker(new DesktopFilePickerResult(
+                            result.FilePicker.Canceled,
+                            result.FilePicker.Paths.Count == 0 ? null : result.FilePicker.Paths.ToArray())));
                 }
 
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Dialog)

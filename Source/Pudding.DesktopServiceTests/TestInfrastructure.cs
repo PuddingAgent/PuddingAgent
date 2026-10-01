@@ -213,6 +213,22 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ShellStatusHandler(cancellationToken);
     }
 
+    public int FilePickerCount => _calls.Count(call => call.StartsWith("file_picker", StringComparison.Ordinal));
+
+    public Func<DesktopFilePickerRequest, CancellationToken, Task<CapabilityResult<DesktopFilePickerResult>>>? FilePickerHandler { get; set; }
+
+    public async Task<CapabilityResult<DesktopFilePickerResult>> RequestFilePickerAsync(
+        DesktopCallContext context, DesktopFilePickerRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue("file_picker");
+        await AwaitGateAsync(cancellationToken);
+
+        return FilePickerHandler is null
+            ? CapabilityResult<DesktopFilePickerResult>.Success(
+                new DesktopFilePickerResult(canceled: false, [@"C:\data\picked.txt"]))
+            : await FilePickerHandler(request, cancellationToken);
+    }
+
     public int DialogCount => _calls.Count(call => call.StartsWith("dialog", StringComparison.Ordinal));
 
     public Func<DesktopDialogRequest, CancellationToken, Task<CapabilityResult<DesktopDialogResult>>>? DialogHandler { get; set; }
@@ -426,6 +442,10 @@ internal sealed class ServiceHarness
     public static readonly DesktopPageTarget WebPage = new("ctx-web", "web-1");
 
     public static readonly DesktopPageTarget WorkbenchPage = new("ctx-work", "wb-1");
+
+    /// <summary>未登记能力的描述符：用于断言"未登记能力一律拒绝"（目录之外不得被实现）。</summary>
+    public static DesktopCapabilityDescriptor UnregisteredCapabilityDescriptor() => new(
+        (DesktopCapability)(1 << 20), "not.registered.capability", 1, DesktopCapabilityKind.Shell, DesktopCapabilityTraits.None);
 
     public static DesktopCapabilityDescriptor Descriptor(DesktopCapability capability) =>
         DesktopCapabilities.All.Single(descriptor => descriptor.Capability == capability);

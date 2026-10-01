@@ -34,6 +34,8 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
 
             DesktopCapability.ShellClipboard => ReadClipboard(request),
 
+            DesktopCapability.ShellFilePicker => RequestFilePicker(request),
+
             DesktopCapability.ShellDialog => RequestDialog(request),
 
             DesktopCapability.BrowserTabs => Tabs(request),
@@ -178,6 +180,17 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
 
         return Task.FromResult(DesktopCapabilityResponse.FromDialog(
             new DesktopDialogResult(canceled ? DesktopDialogChoice.Cancel : DesktopDialogChoice.Ok)));
+    }
+
+    /// <summary>文件选择器：标题含 "cancel" 时演示取消（取消是结果而不是失败）。</summary>
+    private static Task<DesktopCapabilityResponse> RequestFilePicker(DesktopCapabilityRequest request)
+    {
+        var picker = request.FilePicker ?? throw new InvalidOperationException("probe: file_picker payload missing");
+        var canceled = picker.Title.Contains("cancel", StringComparison.OrdinalIgnoreCase);
+
+        return Task.FromResult(DesktopCapabilityResponse.FromFilePicker(new DesktopFilePickerResult(
+            canceled,
+            canceled ? null : [@"C:\data\probe-picked.txt"])));
     }
     private static Task<DesktopCapabilityResponse> ExecuteJavascriptAsync(
         JavascriptRequest request, CancellationToken cancellationToken)

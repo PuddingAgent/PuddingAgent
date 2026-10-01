@@ -20,6 +20,7 @@ public sealed record DesktopCapabilityRequest
         BrowserTabsRequest? tabs = null,
         ClipboardReadRequest? clipboard = null,
         DesktopDialogRequest? dialog = null,
+        DesktopFilePickerRequest? filePicker = null,
         bool contexts = false,
         bool shellStatus = false)
     {
@@ -34,6 +35,7 @@ public sealed record DesktopCapabilityRequest
         Tabs = tabs;
         Clipboard = clipboard;
         Dialog = dialog;
+        FilePicker = filePicker;
         Contexts = contexts;
         ShellStatus = shellStatus;
     }
@@ -67,6 +69,9 @@ public sealed record DesktopCapabilityRequest
 
     /// <summary>对话框请求（交互类：单窗口同时最多一个）。</summary>
     public DesktopDialogRequest? Dialog { get; }
+
+    /// <summary>文件选择器请求（交互类：与对话框共用同一个槽位）。</summary>
+    public DesktopFilePickerRequest? FilePicker { get; }
 
     /// <summary>浏览器上下文清单查询：无参数（浏览器作用域，不接受调用方指定目标）。</summary>
     public bool Contexts { get; }
@@ -107,6 +112,9 @@ public sealed record DesktopCapabilityRequest
     public static DesktopCapabilityRequest ForDialog(DesktopDialogRequest request) =>
         new(dialog: request ?? throw new ArgumentNullException(nameof(request)));
 
+    public static DesktopCapabilityRequest ForFilePicker(DesktopFilePickerRequest request) =>
+        new(filePicker: request ?? throw new ArgumentNullException(nameof(request)));
+
     public static DesktopCapabilityRequest ForContexts() => new(contexts: true);
 
     public static DesktopCapabilityRequest ForShellStatus() => new(shellStatus: true);
@@ -139,6 +147,7 @@ public sealed record DesktopCapabilityRequest
         : Tabs is not null ? $"tabs {Tabs}"
         : Clipboard is not null ? $"clipboard(max={Clipboard.MaxCharacters})"
         : Dialog is not null ? $"dialog {Dialog}"
+        : FilePicker is not null ? $"file_picker {FilePicker}"
         : Contexts ? "contexts"
         : ShellStatus ? "shell_status"
         : "empty";
@@ -168,6 +177,7 @@ public sealed record DesktopCapabilityResponse
         DesktopTabsResult? tabs = null,
         DesktopClipboardContent? clipboard = null,
         DesktopDialogResult? dialog = null,
+        DesktopFilePickerResult? filePicker = null,
         DesktopCapabilityError? error = null)
     {
         var payloadCount = (navigate is null ? 0 : 1)
@@ -182,7 +192,8 @@ public sealed record DesktopCapabilityResponse
             + (contexts is null ? 0 : 1)
             + (tabs is null ? 0 : 1)
             + (clipboard is null ? 0 : 1)
-            + (dialog is null ? 0 : 1);
+            + (dialog is null ? 0 : 1)
+            + (filePicker is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -202,6 +213,7 @@ public sealed record DesktopCapabilityResponse
         Tabs = tabs;
         Clipboard = clipboard;
         Dialog = dialog;
+        FilePicker = filePicker;
         Error = error;
     }
 
@@ -238,6 +250,9 @@ public sealed record DesktopCapabilityResponse
 
     /// <summary>对话框结果（取消是结果而不是失败）。</summary>
     public DesktopDialogResult? Dialog { get; }
+
+    /// <summary>文件选择结果（取消是结果而不是失败）。</summary>
+    public DesktopFilePickerResult? FilePicker { get; }
 
     public DesktopCapabilityError? Error { get; }
 
@@ -282,6 +297,9 @@ public sealed record DesktopCapabilityResponse
     public static DesktopCapabilityResponse FromDialog(DesktopDialogResult result) =>
         new(dialog: result ?? throw new ArgumentNullException(nameof(result)));
 
+    public static DesktopCapabilityResponse FromFilePicker(DesktopFilePickerResult result) =>
+        new(filePicker: result ?? throw new ArgumentNullException(nameof(result)));
+
     public static DesktopCapabilityResponse Failure(DesktopCapabilityError error) =>
         new(error: error ?? throw new ArgumentNullException(nameof(error)));
     public override string ToString() =>
@@ -299,5 +317,6 @@ public sealed record DesktopCapabilityResponse
         : Tabs is not null ? $"tabs({Tabs})"
         : Clipboard is not null ? $"clipboard({Clipboard})"
         : Dialog is not null ? $"dialog({Dialog})"
+        : FilePicker is not null ? $"file_picker({FilePicker})"
         : "empty";
 }

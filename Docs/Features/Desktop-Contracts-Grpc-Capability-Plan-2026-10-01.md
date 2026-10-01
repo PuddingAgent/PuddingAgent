@@ -184,7 +184,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 | B：Protocol / Connection | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Rpc.Protocol` + **20/20**（字段号/oneof 分支/上限快照）；`Source/Pudding.DesktopConnection` + **80/80**；`Source/Pudding.Rpc.IpcProbe` **45/45**（Named Pipe + h2c 真实端点） |
 | C：DesktopService | 🟡 产品代码与配置绑定全部就绪，只剩组合根两行装配（需重启验收） | `Source/Pudding.DesktopService` **85/85**；`Source/PuddingDesktop.CapabilityHost`（`DispatcherQueue` 适配器，0 警告 0 错误）；`Source/Pudding.CapabilityBroker` **68/68**；`Source/Pudding.CapabilityBroker.AspNetCore` **22/22**（gRPC 服务 + Kestrel 装配助手 + **配置绑定/端点派生**，含实测约束：`Listen*` 覆盖 `UseUrls`；`Transport` 三态保证配置与监听一致）；接线配方见该组件 code_map，剩余 5 项装配待重启窗口 |
 | D：浏览器等价接入 | 🟡 **协议侧已完成**：`snapshot`/`locate`/`interact`/`wait_for`/`contexts`/`tabs` 六项端到端落地（含「交互后旧 Ref 作废」「超时不是失败」「清单必带版本」「关闭必须如实标注」四条语义）；只剩七个工具的**调用点迁移**（依赖 C-3 上线） | 探针在管道/h2c 上验证六种能力往返、旧引用本地拒绝、超时语义、清单完整性与标签页剩余清单（**45/45**）；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
-| E：Shell 能力 | 🟡 进行中：`shell.notification` + `shell.status` 已落地（端到端验证） | 两者都有 payload 与实现，在同一次探针运行中验证（**45/45**）；`shell.clipboard`（只读）与 `shell.dialog` 已端到端落地（含预算/隐私边界与"取消不是失败"语义，单窗口互斥由交互槽位强制）；只剩 `shell.file_picker` 未声明 |
+| E：Shell 能力 | 🟡 进行中：`shell.notification` + `shell.status` 已落地（端到端验证） | 两者都有 payload 与实现，在同一次探针运行中验证（**45/45**）；`shell.clipboard`（只读）、`shell.dialog` 与 `shell.file_picker` **全部端到端落地**（含预算/隐私边界、"取消不是失败"语义，单窗口互斥由交互槽位强制）；切片 E 收口 |
 | F：默认切换与退役 | ⛔ 未开始 | — |
 
 细节、探针原始结论、有意偏差与风险见[实施报告](../Reports/Desktop-Contracts-Rpc-SliceABC-2026-10-01.md)；
@@ -195,7 +195,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 | 项 | 结果 |
 |---|---|
 | 组件独立测试合计 | **420 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 124、CapabilityBroker 74、CapabilityBroker.AspNetCore 26） |
-| 真实端点探针 | **51/51 通过，exit 0**（Named Pipe 与 Loopback h2c 各一轮；含跨侧能力集合一致性守卫） |
+| 真实端点探针 | **53/53 通过，exit 0**（Named Pipe 与 Loopback h2c 各一轮；含跨侧能力集合一致性守卫） |
 | WinUI 适配器工程 | 0 警告 0 错误（无线程访问验证，需真实 `DispatcherQueue`） |
 | 运行中的产品 | **未受影响**：本轮系列全程未重启或改动运行中的 Core/Desktop；组合根装配仍待重启窗口 |
 

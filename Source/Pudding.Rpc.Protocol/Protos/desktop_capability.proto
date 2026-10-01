@@ -249,6 +249,18 @@ message DialogOutcome {
   string choice = 1;
 }
 
+// 文件选择器（交互类）：返回用户选择的路径，不代表 Core 可读。
+message ShowFilePickerCommand {
+  string title = 1;
+  bool allow_multiple = 2;
+  repeated string extensions = 3;
+}
+
+message FilePickerOutcome {
+  bool canceled = 1;
+  repeated string paths = 2;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -284,6 +296,7 @@ message CapabilityCommand {
     TabsCommand tabs = 20;
     ClipboardReadCommand read_clipboard = 21;
     ShowDialogCommand show_dialog = 22;
+    ShowFilePickerCommand show_file_picker = 23;
   }
 }
 
@@ -395,6 +408,7 @@ message OperationResult {
     TabsOutcome tabs = 21;
     ClipboardOutcome clipboard = 22;
     DialogOutcome dialog = 23;
+    FilePickerOutcome file_picker = 24;
   }
 }
 

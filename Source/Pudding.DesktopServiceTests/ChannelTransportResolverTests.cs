@@ -135,8 +135,10 @@ public sealed class DesktopCapabilityChannelSettingsTests
         Assert.Equal(DesktopCapability.None, ungated);
 
         // 预留能力确实还没被声明（改这条断言等于宣布它们已实现，应同时补 payload 与探针断言）。
-        Assert.False(DesktopCapabilityChannelSettings.DeclaredCapabilities.HasFlag(DesktopCapability.ShellFilePicker));
-        Assert.False(DesktopCapabilityChannelSettings.DeclaredCapabilities.HasFlag(DesktopCapability.ShellFilePicker));
+        // 目录里的每一项都已实现并声明（本例不再有"预留但未声明"的能力）：
+        Assert.Equal(DesktopCapabilities.AllCapabilities, DesktopCapabilityChannelSettings.DeclaredCapabilities);
+        // 目录里的每一项都已实现并声明（本例不再有"预留但未声明"的能力）：
+        Assert.Equal(DesktopCapabilities.AllCapabilities, DesktopCapabilityChannelSettings.DeclaredCapabilities);
     }
 
     [Fact]
