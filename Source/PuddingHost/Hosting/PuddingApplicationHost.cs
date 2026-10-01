@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using Pudding.CapabilityBroker;
+using Pudding.CapabilityBroker.AspNetCore;
 using PuddingAgent.Services;
 using PuddingCode.Configuration;
 using PuddingCode.Security;
@@ -260,6 +262,63 @@ public static class PuddingApplicationHost
         builder.Services.AddDesktopChildServices(options);
         builder.Services.AddSingleton<IAuthorizationHandler, StorageManagementAuthorizationHandler>();
 
+        // ── 切片 C-3：桌面能力通道（Desktop 主动 gRPC 双向流，Core 经该流下发能力命令）──
+        // **默认关闭**：`Desktop:CapabilityChannel:Enabled` 缺省 false ⇒ 不注册服务、不监听新端点、
+        // 不改变任何既有绑定，产品行为与今天逐字一致。回滚 = 置 false 并重启。
+        var capabilityChannel = CapabilityChannelConfiguration.Bind(builder.Configuration);
+        if (capabilityChannel.Enabled)
+        {
+            var capabilityUserScope = DesktopCapabilityChannelWiring.ResolveUserScope();
+            var capabilityProductInstance = DesktopCapabilityChannelWiring.ResolveProductInstanceId(dataRoot);
+
+            // Core 实例 ID 每次启动新生成：Desktop 用它识别「Core 是否换了实例」（重连语义）。
+            var capabilityCoreInstance = $"core-{Guid.NewGuid():N}";
+
+            var channelOptions = capabilityChannel.CreateOptions(
+                capabilityUserScope,
+                capabilityProductInstance,
+                capabilityCoreInstance);
+
+            // 显式重绑 REST：约束①「Listen* 覆盖 UseUrls」——不重绑会让 REST 在启用通道后静默消失。
+            var restEndpoints = DesktopCapabilityChannelWiring.ParseRestEndpoints(
+                urlBinding.ShouldCallUseUrls
+                    ? urlBinding.ExplicitUrls!
+                    : (urlBinding.EffectiveUrls ?? string.Empty)
+                        .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+            builder.WebHost.ConfigureKestrel(kestrel =>
+                DesktopCapabilityChannelWiring.BindRestAndCapabilityChannel(kestrel, restEndpoints, channelOptions));
+
+            // 认证：复用既有 ControlToken 校验（常量时间、令牌轮换无需重启）。
+            var capabilityAuthenticator =
+                new ControlTokenCapabilityAuthenticator(new DesktopControlTokenValidator(dataRoot));
+
+            // 授权：**默认拒绝**（DenyAll）。RPC 可达 ≠ 获得桌面操作授权；
+            // 待切片 D 在调用点提供可信运行身份后，再把授权器接到 Tool Runtime 准入判定。
+            builder.Services.AddCapabilityChannel(
+                channelOptions,
+                capabilityAuthenticator,
+                DenyAllDesktopCapabilities.Instance);
+
+            builder.Services.AddSingleton(capabilityChannel);
+            builder.Services.AddSingleton(new DesktopCapabilityChannelRuntime(
+                capabilityChannel,
+                channelOptions,
+                capabilityChannel.Describe(
+                    capabilityUserScope,
+                    capabilityProductInstance,
+                    capabilityCoreInstance)!,
+                restEndpoints
+                    // 端口 0 = 动态端口：实际端口启动后才知道，无法逐字比对，故不列入期望（预检仍校验能力端点）。
+                    .Where(endpoint => endpoint.Port != 0)
+                    .Select(endpoint => $"http://{endpoint.Address}:{endpoint.Port}")
+                    .ToArray()));
+
+            Console.WriteLine(
+                "[CapabilityChannel] 已启用：显式重绑 REST 与能力通道；授权器=默认拒绝（待切片 D 接入 Tool Runtime 准入）");
+        }
+
+
         // ── Connector lifecycle as IHostedService ───────────
         builder.Services.AddHostedService<ConnectorHostLifecycleService>();
 
@@ -322,6 +381,13 @@ public static class PuddingApplicationHost
         Console.WriteLine("[Startup] Host built, configuring middleware...");
 
         app.MapPuddingApplication();
+
+        // 只有启用时才映射能力通道端点（关闭时不注册任何新端点）。
+        if (app.Services.GetService<DesktopCapabilityChannelRuntime>() is not null)
+        {
+            app.MapCapabilityChannel();
+        }
+
         phases?.Mark(StartupPhases.MiddlewareMapped);
 
         return app;
@@ -356,6 +422,26 @@ public static class PuddingApplicationHost
 
         var addresses = serverAddressesFeature?.Addresses ?? [];
         addressAccessor?.SetBoundAddresses(addresses);
+
+        // 能力通道启用时：校验「REST 与能力端点都真的绑上了」——约束①的守门人。
+        // 不健康**立即失败**（fail closed）：REST 静默消失的产品比启动失败更难排查。
+        if (application.Services.GetService<DesktopCapabilityChannelRuntime>() is { } runtime)
+        {
+            var preflight = DesktopCapabilityChannelWiring.VerifyBinding(
+                addresses, runtime.ExpectedRestAddresses, runtime.Description);
+
+            Console.WriteLine($"[CapabilityChannel] {preflight.Summary}");
+            Console.WriteLine(
+                $"[CapabilityChannel] 就绪端点描述（不含凭据）：{runtime.Description.Kind}:{runtime.Description.Address}"
+                + $"|v{runtime.Description.ProtocolVersion}|{runtime.Description.ServerInstanceId}");
+
+            if (!preflight.IsHealthy)
+            {
+                throw new InvalidOperationException(
+                    $"[CapabilityChannel] 启动预检失败：{string.Join("；", preflight.Failures)}"
+                    + "。请把 Desktop:CapabilityChannel:Enabled 置为 false 回滚，或修正绑定配置。");
+            }
+        }
 
         var baseAddress = addressAccessor?.BaseAddress
             ?? throw new InvalidOperationException(

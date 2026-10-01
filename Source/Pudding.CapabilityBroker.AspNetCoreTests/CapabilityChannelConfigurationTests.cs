@@ -213,4 +213,57 @@ public sealed class CapabilityChannelConfigurationTests
             Assert.Equal(implemented, granted.HasFlag(descriptor.Capability));
         }
     }
+
+/// <summary>
+/// REST 显式重绑的地址解析：约束①「Listen* 覆盖 UseUrls」的守门逻辑。
+/// 只接受 http + 通配/回环/字面 IP；其余**失败**（不猜、不静默降级）。
+/// </summary>
+public sealed class RestEndpointBindingTests
+{
+    [Fact]
+    public void ParsesTheProductDefaultsAndLoopbackForms()
+    {
+        var endpoints = RestEndpointBinding.Parse(["http://0.0.0.0:8080", "http://127.0.0.1:5099"]);
+
+        Assert.Equal(2, endpoints.Count);
+        Assert.Equal(System.Net.IPAddress.Any, endpoints[0].Address);
+        Assert.Equal(8080, endpoints[0].Port);
+        Assert.Equal(System.Net.IPAddress.Loopback, endpoints[1].Address);
+        Assert.Equal(5099, endpoints[1].Port);
+    }
+
+    [Fact]
+    public void KeepsDynamicPortsAsZeroSoTheCallerCanSkipComparison()
+    {
+        var endpoints = RestEndpointBinding.Parse(["http://127.0.0.1:0"]);
+
+        Assert.Equal(0, endpoints[0].Port);
+    }
+
+    [Fact]
+    public void RejectsHttpsBecauseCertificatesCannotBeGuessed()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => RestEndpointBinding.Parse(["https://127.0.0.1:5099"]));
+
+        Assert.Contains("https", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Enabled", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsNonLoopbackHostNamesAndUnparsableAddresses()
+    {
+        Assert.Throws<InvalidOperationException>(() => RestEndpointBinding.Parse(["http://core.example:5099"]));
+        Assert.Throws<InvalidOperationException>(() => RestEndpointBinding.Parse(["not-a-url"]));
+        Assert.Throws<InvalidOperationException>(() => RestEndpointBinding.Parse(["   "]));
+        Assert.Throws<InvalidOperationException>(() => RestEndpointBinding.Parse(null));
+    }
+
+    [Fact]
+    public void AcceptsWildcardAndIpv6AnyAnySpellings()
+    {
+        Assert.Equal(System.Net.IPAddress.Any, RestEndpointBinding.Parse(["http://*:8080"])[0].Address);
+        Assert.Equal(System.Net.IPAddress.Any, RestEndpointBinding.Parse(["http://+:8080"])[0].Address);
+        Assert.Equal(System.Net.IPAddress.IPv6Any, RestEndpointBinding.Parse(["http://[::]:8080"])[0].Address);
+    }
+}
 }

@@ -36,7 +36,36 @@
 - `Transport=loopback-h2c` 必须给 `LoopbackPort`；`named-pipe` 不接受 `LoopbackPort`；
   两者都不接受对方的字段（保证「配置与监听一致」）。
 
-## 2. `PuddingHost` 侧接线（约 5 处）
+## 2. `PuddingHost` 侧接线（**已应用**，2026-10-01）
+
+> 状态：**Core 侧装配已落地**（`Source/PuddingHost/Hosting/DesktopCapabilityChannelWiring.cs` +
+> `PuddingApplicationHost` 三处插入），`PuddingAgent` 编译通过；`Enabled=false`（缺省）时
+> 全部代码路径被跳过 ⇒ 行为与今天一致。以下为落地后的实际形态与三处务实取舍。
+
+**实际装配点**（与下文原始配方略有差异，以实现为准）：
+
+1. `CreateBuilder`：`CapabilityChannelConfiguration.Bind(...)` → 仅当 `Enabled` 时
+   派生 `userScope`/`productInstanceId`/`coreInstanceId` → `CreateOptions` →
+   **显式重绑 REST 与能力通道**（`ParseRestEndpoints` + `BindRestAndCapabilityChannel`）→
+   `AddCapabilityChannel(authenticator, authorizer)` → 注册 `DesktopCapabilityChannelRuntime`。
+2. `Build`：`DesktopCapabilityChannelRuntime` 存在时才 `MapCapabilityChannel()`。
+3. `CaptureBoundAddresses`：启用时跑 `CapabilityChannelPreflight`，**不健康即抛异常**（fail closed），
+   并把就绪端点描述打到 stdout（供控制器/启动器读取）。
+
+**三处务实取舍（必须知道）**：
+
+- **授权器当前是 `DenyAll`**：`DesktopCallContext` **刻意不携带调用方身份**（身份由 Core 可信运行
+  上下文产生），而提供该身份的是切片 D 的调用点。在调用点给出可信身份之前，保持默认拒绝：
+  握手与能力协商正常，但**任何能力调用都会被拒**（fail closed，绝不出现 AllowAll 残留）。
+- **令牌 Header 双向接受**：接受既有产品 Header `X-Pudding-Desktop-Token` 与
+  Desktop 侧缺省 `x-pudding-control-token`，两者用同一套常量时间校验。
+  Desktop 侧配置 `ControlTokenHeader` 应对齐其中之一（默认值当前不同，务必显式确认）。
+- **REST 地址解析规则**：只接受 http + 通配/回环/字面 IP（`*`/`+` 先归一化为 `0.0.0.0`）；
+  https 或非回环主机名 ⇒ **启动失败**并提示改 urls 或关闭开关；端口 0（动态端口）不参与
+  REST 预检比对（实际端口启动后才知道）。
+
+## 2.1 原始配方（历史参考）
+
 
 ```csharp
 // PuddingApplicationHost.CreateAsync(...) 内，取得 hostOptions 之后：

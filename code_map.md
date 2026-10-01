@@ -16,6 +16,26 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：Core 侧组合根装配落地（第 50 轮，切片 C-3 第一步）
+
+用户授权重启窗口后，把能力通道接入 **Core 组合根**（`PuddingHost`）：
+
+- 新增 `Hosting/DesktopCapabilityChannelWiring.cs`：REST 端点解析委派、Kestrel 绑定、
+  启动预检、`ControlTokenCapabilityAuthenticator`（复用既有 `DesktopControlTokenValidator`，
+  常量时间比较、令牌轮换无需重启）、`DesktopCapabilityChannelRuntime`（**存在即表示已启用**）。
+- `PuddingApplicationHost` 三处插入：`CreateBuilder` 注册（**仅 Enabled 时**）、`Build` 映射端点、
+  `CaptureBoundAddresses` 跑预检并**不健康即失败**（fail closed），同时把就绪端点描述打到 stdout。
+- **默认关闭零行为变更**：`Enabled=false`（缺省）时上述路径全部跳过，不注册服务、不监听新端点、
+  不改变任何既有绑定；回滚 = 置 false 并重启。
+- 纯逻辑下沉 + 测试：REST 地址解析移到适配层 `RestEndpointBinding`（**31/31 适配层用例**，含
+  https 拒绝、非回环主机名拒绝、`*`/`+` 归一化、动态端口 0 保留）。
+- **三处务实取舍**（已写入手册与验收单）：①授权器暂用 `DenyAll`——`DesktopCallContext` 刻意不带
+  调用方身份，可信身份要等切片 D 的调用点提供，在此之前"握手可用、调用被拒"；②令牌 Header 同时接受
+  既有 `X-Pudding-Desktop-Token` 与 Desktop 缺省 `x-pudding-control-token`；③https/非回环主机名
+  在启用通道时**启动失败**而非静默降级。
+- 验证：适配层 31/31；`PuddingHost` 与 `PuddingAgent` 均编译通过；运行中的进程未被触碰。
+- **下一步**：`PuddingDesktop` 组合根 + `WebView2DesktopUiSurface`（接真实 `CoreWebView2`），
+  之后才能执行验收清单第 4~8 步。
 ## 2026-10-01：重启窗口检查脚本（第 48 轮，切片 C-3 的可执行验收）
 
 `TestScripts/test-capability-channel-window.ps1`：把窗口期**不需要人判断**的检查变成脚本，

@@ -43,7 +43,7 @@ browser.snapshot / browser.locate / browser.interact / browser.wait_for / browse
 详细补丁位置与配置样例见
 [接线手册](Desktop-Capability-Channel-Wiring-Runbook-2026-10-01.md)。摘要：
 
-1. **装配（代码侧已备好配方，尚未应用到产品）**：`PuddingApplicationHost` 绑定
+1. **装配（Core 侧已应用，2026-10-01）**：`PuddingApplicationHost` 绑定
    `Desktop:CapabilityChannel` 配置 → `AddCapabilityChannel` → **显式绑定 REST 与能力通道两者**
    （`Kestrel.Listen*` 会覆盖 `UseUrls`）→ `MapCapabilityChannel`；实现
    `ControlTokenCapabilityAuthenticator`（复用常数时间校验，**不得使用 AllowAll**）与
@@ -59,7 +59,9 @@ browser.snapshot / browser.locate / browser.interact / browser.wait_for / browse
 
 | 项 | 状态 | 依赖 |
 |---|---|---|
-| 组合根装配（`PuddingHost` / `PuddingDesktop`） | ⛔ 未应用 | 需重启窗口 |
+| `PuddingHost` 组合根装配 | ✅ **已应用**（`Enabled=false` 时零行为变更；`PuddingAgent` 编译通过） | — |
+| `PuddingDesktop` 组合根装配 + `WebView2DesktopUiSurface` | ⛔ 未应用 | 需真实 `CoreWebView2` 与 `DispatcherQueue`（下一步） |
+| 能力授权器接 Tool Runtime 准入 | ⛔ 暂用 `DenyAll`（fail closed） | 需切片 D 在调用点提供可信身份 |
 | `WebView2DesktopUiSurface` 接真实 `CoreWebView2` | ⛔ 未实现 | 需真实 `DispatcherQueue` 验证；平台无关逻辑（DOM 脚本、预算、版本不变量）已完成并测试 |
 | 切片 D：七个浏览器工具调用点迁移 | ⛔ 未开始 | C-3 上线 |
 | 切片 F：默认传输切换 + 退役旧 Bridge | 🟡 判据就绪 | C-3 上线且通道被证明在用（`DesktopTransportUsage.CanRetireLegacyBridge`） |
