@@ -7,8 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <AssemblyName>PuddingRpc.IpcProbe</AssemblyName>
-    <RootNamespace>PuddingRpc.IpcProbe</RootNamespace>
+    <AssemblyName>Pudding.Rpc.IpcProbe</AssemblyName>
+    <RootNamespace>Pudding.Rpc.IpcProbe</RootNamespace>
   </PropertyGroup>
 
   <!--

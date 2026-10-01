@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace PuddingRpc.IpcProbe;
+namespace Pudding.Rpc.IpcProbe;
 
 /// <summary>探针的 Kestrel 服务端：Named Pipe 与 Loopback h2c 两种端点（都显式 HTTP/2）。</summary>
 internal sealed class ProbeServer : IAsyncDisposable

@@ -2,7 +2,7 @@ using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
 
-namespace PuddingRpc.IpcProbe;
+namespace Pudding.Rpc.IpcProbe;
 
 /// <summary>探针执行器：模拟 WinUI 侧的桌面能力实现（不触碰真实 UI）。</summary>
 internal sealed class ProbeExecutor : IDesktopCapabilityExecutor

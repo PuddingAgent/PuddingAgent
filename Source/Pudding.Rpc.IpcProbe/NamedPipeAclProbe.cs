@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace PuddingRpc.IpcProbe;
+namespace Pudding.Rpc.IpcProbe;
 
 /// <summary>
 /// Named Pipe 端点安全探针：读出 Kestrel 创建的管道 DACL（SDDL），
@@ -272,7 +272,7 @@ internal sealed class ProbeReport
 
     public int Print()
     {
-        Console.WriteLine("=== PuddingRpc.IpcProbe（Desktop 主动 gRPC 能力通道 · 真实端点探针）===");
+        Console.WriteLine("=== Pudding.Rpc.IpcProbe（Desktop 主动 gRPC 能力通道 · 真实端点探针）===");
         foreach (var line in _lines)
         {
             Console.WriteLine(line);

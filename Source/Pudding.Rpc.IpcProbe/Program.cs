@@ -4,9 +4,10 @@ using Google.Protobuf.WellKnownTypes;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
+using DesktopConnectionClient = Pudding.DesktopConnection.DesktopConnection;
 using Proto = Pudding.Rpc.Protocol.V1;
 
-namespace PuddingRpc.IpcProbe;
+namespace Pudding.Rpc.IpcProbe;
 
 /// <summary>
 /// 技术探针（计划 §8 切片 B「完成 IPC 技术探针，不接产品 UI」）。
@@ -78,7 +79,7 @@ internal static class Program
     private static async Task RunAuthenticationFailureAsync(string pipeName, ProbeReport report)
     {
         var transport = DesktopChannelTransport.NamedPipe(pipeName);
-        await using var connection = new DesktopConnection(Factory(transport, null), new ProbeExecutor(), Options(null));
+        await using var connection = new DesktopConnectionClient(Factory(transport, null), new ProbeExecutor(), Options(null));
 
         var outcome = await connection.RunAsync().WaitAsync(StepTimeout);
 
@@ -95,11 +96,11 @@ internal static class Program
         }
     }
 
-    private static async Task<DesktopConnection> ConnectAsync(
+    private static async Task<DesktopConnectionClient> ConnectAsync(
         DesktopChannelTransport transport, ProbeCapabilityService service, ProbeReport report, string label)
     {
         var authentication = DesktopChannelAuthentication.StaticHeader(ProbeCapabilityService.AuthHeader, ControlToken);
-        var connection = new DesktopConnection(Factory(transport, authentication), new ProbeExecutor(), Options(authentication));
+        var connection = new DesktopConnectionClient(Factory(transport, authentication), new ProbeExecutor(), Options(authentication));
         _ = connection.RunAsync();
 
         await WaitAsync(

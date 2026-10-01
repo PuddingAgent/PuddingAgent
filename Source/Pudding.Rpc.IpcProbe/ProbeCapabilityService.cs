@@ -2,7 +2,7 @@ using System.Threading.Channels;
 using Grpc.Core;
 using Proto = Pudding.Rpc.Protocol.V1;
 
-namespace PuddingRpc.IpcProbe;
+namespace Pudding.Rpc.IpcProbe;
 
 /// <summary>
 /// 探针服务端替身：扮演 Core 侧的 DesktopCapability 服务。
