@@ -35,6 +35,7 @@
 - 未改动预算：`maxRounds=200` / `maxElapsedSeconds=86400` / `maxToolCallsTotal=400` 保持；报告建议的"定位任务软预算"依赖意图判定，仓库内**无意图分类器**，故不引入猜测式启发（只在提示词层用"证据足够即停"约束）。
 
 **搜索**
+> 口径对齐：并行线（`bf1c9e5`、`Docs/Features/Index-Retrieval-Known-Defects-2026-10-01.md`）已实测认定 **D2 的"陈旧 E: 命中"现象在当前 live 索引上已随四个陈旧项目注销而消失**（覆盖完整、路径正确、新鲜），但该文档同时登记"搜索入口仍未过滤"这一**代码洞仍开放**。本轮的 `code_symbol_search` 改动正是针对后者——**防御性加固**，不主张"当前 live 上复现过陈旧命中"。
 - `code_symbol_search`：接入 `ICodeProjectRegistry`。显式项目未登记 ⇒ **fail-closed**（`not_registered`，与 `code_index_status` 同一句文案，单点定义）；命中校验「文件存在 + 落在其登记项目根目录内」，失效命中计入 `stale_skipped` 并从 `results` 剔除；新增 `include_stale`（带 `stale_reason`）供排查；全陈旧时返回可行动原因，**不得读成"符号不存在"**；输出新增 `searched_scope` / `registered_project_count` / `complete`。
 - `search_grep`：非完整覆盖声明补齐 `searched_scope` / `complete=false` / `limit_reason`（稳定 token，如 `scan_budget`、`max_results`）；索引后端 summary 增加 `complete` / `limit_reason`。
 - `ToolLoopInstructionBuilder`：由"优先索引"改为"**索引健康才走加速路径**；出现陈旧/未登记信号时回落实时搜索"，并说明 partial 空结果不是"不存在"的证据。
@@ -74,7 +75,7 @@
 - **无真实模型 A/B**：报告 §7 要求的"同 repo commit、同 endpoint/模型/参数、每类 ≥10 次、冷/热分组、TTFT 分位数"未执行；完成时间是否接近 Harness **不可主张**。
 - **未做部署后验证**：本轮改动需由外部控制器重启到新构建后，再在新会话执行功能 smoke（`ready-for-external-deploy` → `in-product-functional-complete` 两段式），本次只到"源码 + 自动测试"。
 - **未改缓存机制**：DeepSeek 缓存默认开启且依赖已持久化前缀，现有 `PrefixCacheSnapshotBuilder` / Tail 追加 / 压缩策略保持不变；未观察到可证伪的前缀失效变化，不做投机性改动。
-- **未做索引重建/注册入口**：仓库内没有对应 HTTP 路由；旧 `E:` 路由的清理已由运行期 `code_index_unregister_project(remove_index_data=true)` 完成（见 `Docs/Features/Index-Retrieval-Known-Defects-2026-10-01.md`），本轮只堵"陈旧命中被当权威"的代码洞。
+- **未做索引重建/注册入口**：仓库内没有对应 HTTP 路由；旧 `E:` 路由的清理已由运行期 `code_index_unregister_project(remove_index_data=true)` 完成（见 `Docs/Features/Index-Retrieval-Known-Defects-2026-10-01.md`），本轮只堵"陈旧命中被当权威"的代码洞（该文档 §"收窄后仍然成立的两条"已同步更新为已修）。
 - **首包/渲染延迟**：`firstContentFrameMs` 是服务端首个正文帧；浏览器渲染延迟仍由既有 `chat.output.commit/paint` 本地埋点度量，本次未改动。
 
 ## 8. 回滚

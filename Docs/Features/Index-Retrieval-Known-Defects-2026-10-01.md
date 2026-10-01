@@ -398,6 +398,7 @@ CLI 的命令面为：`index / search / status / watch / definition / references
 ### 收窄后**仍然成立**的两条
 
 - **D1 的范围**：`code_index_status` 已 fail-closed，但**搜索入口（`code_symbol_search` 等）仍未按「已登记且根路径存在」过滤**。优先级**下调为防御性**——当前注册表 4 条全部是有效 `D:` 路径，错误命中已无来源。
+  - **更新（2026-10-01，提交 `3fa0800`）**：`code_symbol_search` 已补上注册表门禁与路径有效性校验——显式项目未登记 ⇒ `not_registered` fail-closed（与 `code_index_status` 同一句文案，单点定义 `CodeQueryToolHelper.BuildNotRegisteredMessage`）；每条命中校验「文件存在 + 落在其登记项目根目录内」，失效命中计入 `stale_skipped` 并从 `results` 剔除（`include_stale=true` 可带 `stale_reason` 排查）；输出新增 `searched_scope` / `registered_project_count` / `complete`。测试：`Source/PuddingRuntimeTests/Tools/CodeSymbolSearchStalePathGateTests.cs`（6 条）。仍属**防御性**（当前 live 注册表无误配来源），且**需重启 Core 才在运行中 Agent 生效**。
 - **没有「覆盖 / 新鲜度」信号**：调用方无法区分「索引正在重建（空结果是暂时的）」与「代码真的不存在」。**这正是本会话我两次误判的直接原因**，也是面板 `codeIndex` 块必须补的那条信号（`stale` 只覆盖「未登记 / 根路径不存在」，覆盖不到「重建中」）。
 
 ---
