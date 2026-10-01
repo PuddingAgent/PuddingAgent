@@ -1,0 +1,569 @@
+/* ── Slice P2 · 索引与检索面板：视觉语言 / 动效 / Token（规格 §9）───────────
+   规格真源：Docs/Features/Index-Status-Panel-UI-Prototype-2026-10-01.md §9
+   线框真源：Docs/Features/index-status-prototype/visual-language.svg（图 3）
+             Docs/Features/index-status-prototype/motion-tokens.svg（图 4）
+
+   四条落线纪律（图 4 · D 红线）：
+   ① `@media (prefers-reduced-motion: reduce)` 全量降级为静态（无障碍，非可选）；
+   ② 只动 `transform` / `opacity`：**animation 与 transition 只出现在**
+      `.vs-anim-*` 与 `.vs-t-fast` 这两组类上 —— 因此本文件里凡带 `animation`
+      的类，必须同时出现在文末降级块里（visuals.test.tsx 的 I11 断言逐条核对）；
+   ③ 无装饰性动画：每个动效都承载状态语义（呼吸=活着 / 急闪=需处理 / 涟漪·流光=进行中）；
+   ④ 颜色永不单独承载语义 ⇒ 形状类（.vs-shape-*）与动效类（.vs-anim-*）必须成对出现。
+
+   动效只有三档（§9.4，不做第四种）：fast 120ms / ambient 2.4s / alert 1.2s·1.6s。
+   ⚠️ 与 §9.5「hover 抬升 = translateY(-1px) + box-shadow 加深」的取舍：§9.7 ② 明禁「动画
+      box-shadow」，故本片 hover 只做 `transform: translateY(-1px)`，阴影保持静态（宁可少一层
+      层次，也不越过红线）。该取舍见 temp/p2-report.md 的 RISKS。 */
+
+/* ══ Token（图 4 · B/C）：语义色板 + 时长 + 圆角 + 字阶 + 层次 ══════════ */
+.vs-l0,
+.vs-card {
+  --vs-ok: #2f7d4f;
+  --vs-warn: #d97706;
+  --vs-error: #dc2626;
+  --vs-unknown: #94a3b8;
+  --vs-busy: #2563eb;
+  --vs-off: #b6bcc6;
+  --vs-track: #e8eaee;
+  --vs-line: #d7dbe2;
+  --vs-text: #1f2328;
+  --vs-text-2: #6b7280;
+  --vs-text-3: #9aa3af;
+
+  --vs-t-fast: 120ms;
+  --vs-t-ambient: 2.4s;
+  --vs-t-alert: 1.2s;
+  --vs-t-ripple: 1.6s;
+  --vs-ease: ease-in-out;
+
+  --vs-r-card: 8px;
+  --vs-r-panel: 10px;
+  --vs-elev-1: 0 1px 2px rgba(16, 24, 40, 0.06);
+
+  /* 当前色族（由 .vs-level-* / .vs-tone-* 覆盖）—— 组件一律只引用这两个变量 */
+  --vs-c: var(--vs-unknown);
+  --vs-tint: rgba(148, 163, 184, 0.12);
+}
+
+/* 色族（level = L0 聚合态；tone = 单卡视觉族）。tint 一律 8%~14% 透明（§9.5） */
+.vs-level-ok {
+  --vs-c: var(--vs-ok);
+  --vs-tint: rgba(47, 125, 79, 0.12);
+}
+.vs-level-warn {
+  --vs-c: var(--vs-warn);
+  --vs-tint: rgba(217, 119, 6, 0.12);
+}
+.vs-level-error {
+  --vs-c: var(--vs-error);
+  --vs-tint: rgba(220, 38, 38, 0.12);
+}
+.vs-level-unknown {
+  --vs-c: var(--vs-unknown);
+  --vs-tint: rgba(148, 163, 184, 0.12);
+}
+.vs-level-off {
+  --vs-c: var(--vs-off);
+  --vs-tint: rgba(182, 188, 198, 0.14);
+}
+.vs-level-busy {
+  --vs-c: var(--vs-busy);
+  --vs-tint: rgba(37, 99, 235, 0.12);
+}
+.vs-tone-ok {
+  --vs-c: var(--vs-ok);
+  --vs-tint: rgba(47, 125, 79, 0.12);
+}
+.vs-tone-warn {
+  --vs-c: var(--vs-warn);
+  --vs-tint: rgba(217, 119, 6, 0.12);
+}
+.vs-tone-error {
+  --vs-c: var(--vs-error);
+  --vs-tint: rgba(220, 38, 38, 0.12);
+}
+.vs-tone-neutral {
+  --vs-c: var(--vs-unknown);
+  --vs-tint: rgba(148, 163, 184, 0.12);
+}
+.vs-tone-busy {
+  --vs-c: var(--vs-busy);
+  --vs-tint: rgba(37, 99, 235, 0.12);
+}
+
+/* ══ 动效谱（图 4 · A）：三档，各有唯一用途 ═════════════════════════════ */
+
+@keyframes vs-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.92;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes vs-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes vs-ripple {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes vs-flow {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+/* ambient 2.4s —— **仅**「就绪」使用（I10） */
+.vs-anim-ambient {
+  animation: vs-breathe var(--vs-t-ambient) var(--vs-ease) infinite;
+}
+/* alert 1.2s —— 需处理（急闪） */
+.vs-anim-alert {
+  animation: vs-flash var(--vs-t-alert) var(--vs-ease) infinite;
+}
+/* alert 1.6s —— 进行中（外扩涟漪） */
+.vs-anim-ripple {
+  animation: vs-ripple var(--vs-t-ripple) var(--vs-ease) infinite;
+}
+/* alert 1.6s —— 进行中（不定长流光，不指向终点） */
+.vs-anim-flow {
+  animation: vs-flow var(--vs-t-ripple) linear infinite;
+}
+/* fast 120ms —— 唯一的过渡档（状态切换：色 / 尺寸 / 环填充） */
+.vs-t-fast {
+  transition:
+    transform var(--vs-t-fast) ease-out,
+    opacity var(--vs-t-fast) ease-out,
+    color var(--vs-t-fast) ease-out,
+    background-color var(--vs-t-fast) ease-out,
+    border-color var(--vs-t-fast) ease-out,
+    stroke var(--vs-t-fast) ease-out,
+    stroke-dasharray var(--vs-t-fast) ease-out;
+}
+
+/* ══ 容器处理（五态矩阵第三处变化）═════════════════════════════════════ */
+.vs-frame--plain {
+  border-top: 3px solid transparent;
+}
+.vs-frame--alert {
+  border-top: 3px solid var(--vs-c);
+  border-left: 3px solid var(--vs-c);
+}
+.vs-frame--dashed {
+  border: 1px dashed var(--vs-c);
+}
+.vs-frame--asleep {
+  filter: grayscale(1);
+  opacity: 0.75;
+}
+.vs-frame--busy {
+  border-top: 3px solid var(--vs-c);
+}
+
+/* ══ L0 状态条（图 3 · A）：四个视觉单元 + 一个开关，无长句 ═════════════ */
+.vs-l0 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  background: #fff;
+  border: 1px solid var(--vs-line);
+  border-radius: var(--vs-r-panel);
+  box-shadow: var(--vs-elev-1);
+}
+.vs-l0__unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.vs-l0__word {
+  font-size: 12px;
+  color: var(--vs-text-2);
+}
+.vs-l0__spacer {
+  flex: 1 1 24px;
+}
+.vs-l0__sentence {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--vs-text);
+}
+.vs-l0__guidance {
+  font-size: 12px;
+  color: var(--vs-text-2);
+}
+
+/* ══ 脉冲球（五个形状类：轮廓两两不同 ⇒ I9 第一重编码）═════════════════ */
+.vs-orb {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+}
+.vs-orb--card {
+  width: 44px;
+  height: 44px;
+}
+.vs-orb__halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--vs-c) 0%, transparent 70%);
+  opacity: 0.5;
+}
+.vs-orb__core {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--vs-c);
+}
+.vs-orb__core--sm {
+  width: 16px;
+  height: 16px;
+}
+.vs-orb__ring {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 2px solid var(--vs-c);
+  opacity: 0.35;
+}
+.vs-orb__hole {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px dashed var(--vs-c);
+  background: transparent;
+}
+.vs-orb__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--vs-c);
+}
+.vs-orb__ripple {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--vs-c);
+}
+.vs-shape-solid .vs-orb__ring {
+  inset: 2px;
+  opacity: 0.28;
+}
+.vs-shape-halo .vs-orb__halo {
+  inset: -8px;
+  opacity: 0.85;
+}
+.vs-shape-ringed .vs-orb__ring {
+  inset: 0;
+  opacity: 0.9;
+}
+.vs-shape-dashed .vs-orb__hole {
+  border-style: dashed;
+}
+.vs-shape-dot .vs-orb__dot {
+  opacity: 0.9;
+}
+.vs-shape-ripple .vs-orb__core {
+  opacity: 0.95;
+}
+
+/* ══ 环形仪表（stroke-dasharray 承载占比；未知 ⇒ 虚线空环）═════════════ */
+.vs-ring {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.vs-ring__svgwrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+.vs-ring__track {
+  stroke: var(--vs-track);
+}
+.vs-ring__value {
+  stroke: var(--vs-c);
+}
+.vs-ring__value--dashed {
+  stroke: var(--vs-unknown);
+  opacity: 0.7;
+}
+.vs-ring--unknown .vs-ring__label {
+  color: var(--vs-text-3);
+  font-weight: 400;
+}
+.vs-ring__label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vs-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══ 点阵（离散集合：实心 = 受理 · 虚线红环 = 被拒）═══════════════════ */
+.vs-dots {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vs-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--vs-c);
+}
+.vs-dot--rejected {
+  background: transparent;
+  border: 2px dashed var(--vs-c);
+}
+.vs-dot--unknown {
+  background: transparent;
+  border: 2px dashed var(--vs-c);
+}
+
+/* ══ 火花线（长度 = 耗时 · 颜色 = 结果 · 进行中 = 流光）════════════════ */
+.vs-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 240px;
+}
+.vs-bars--empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.vs-bars__empty {
+  width: 120px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px dashed var(--vs-unknown);
+}
+.vs-bar {
+  position: relative;
+  display: block;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--vs-track);
+  overflow: hidden;
+}
+.vs-bar--active {
+  background: var(--vs-tint);
+}
+.vs-bar__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: var(--vs-c);
+  opacity: 0.85;
+}
+.vs-bar__unknown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6px;
+  height: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--vs-unknown) 0 4px,
+    transparent 4px 8px
+  );
+}
+.vs-bar__flow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  border-radius: 999px;
+  background: var(--vs-c);
+  opacity: 0.85;
+}
+
+/* ══ 不定长流光（进行中；不指向终点）═══════════════════════════════════ */
+.vs-flow {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+}
+.vs-flow__track {
+  position: relative;
+  display: block;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--vs-tint);
+  overflow: hidden;
+}
+.vs-flow__band {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  border-radius: 999px;
+  background: var(--vs-c);
+  opacity: 0.85;
+}
+
+/* ══ 开关（配置开/关/未知：图形而非 `enabled = true` 这行字）═══════════ */
+.vs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.vs-toggle--button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.vs-toggle__track {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 22px;
+  border: 1px solid var(--vs-line);
+  border-radius: 999px;
+  background: var(--vs-track);
+}
+.vs-toggle__knob {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #c9ced6;
+  border-radius: 50%;
+  background: #fff;
+}
+.vs-toggle--on .vs-toggle__track {
+  border-color: var(--vs-ok);
+  background: var(--vs-ok);
+}
+.vs-toggle--on .vs-toggle__knob {
+  transform: translateX(20px);
+}
+.vs-toggle--unknown .vs-toggle__track {
+  border-style: dashed;
+}
+.vs-toggle--unknown .vs-toggle__knob {
+  border-style: dashed;
+  border-color: var(--vs-unknown);
+}
+
+/* ══ 未知图形（虚线空心圆：「没有质感」 = 不确定）══════════════════════ */
+.vs-unknown {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.vs-unknown__hole {
+  width: 32px;
+  height: 32px;
+  border: 2px dashed var(--vs-unknown);
+  border-radius: 50%;
+}
+.vs-unknown--card .vs-unknown__hole {
+  width: 40px;
+  height: 40px;
+}
+
+/* ══ 卡片与尺度（字阶 10/12/13/16/28 · 间距 4 的倍数 · 圆角 8/10）═════ */
+.vs-card {
+  background: #fff;
+  border-radius: var(--vs-r-card);
+}
+.vs-card:hover {
+  transform: translateY(-1px);
+}
+.vs-metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.vs-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.vs-bignum {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--vs-text);
+  font-variant-numeric: tabular-nums;
+}
+.vs-caption {
+  font-size: 12px;
+  color: var(--vs-text-2);
+}
+.vs-note {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--vs-text-3);
+}
+.vs-shortword {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vs-c);
+}
+
+/* ══ 无障碍降级（§9.7 ①：无障碍，不是可选项）═════════════════════════
+   红色线要求「降级为静态」⇒ 呼吸 / 急闪 / 涟漪 / 流光 全部停，过渡也停；
+   仅保留颜色与形状两项编码（§9.1 原则 2 因此仍然成立）。 */
+@media (prefers-reduced-motion: reduce) {
+  .vs-anim-ambient,
+  .vs-anim-alert,
+  .vs-anim-ripple,
+  .vs-anim-flow,
+  .vs-t-fast {
+    animation: none !important;
+    transition: none !important;
+  }
+}

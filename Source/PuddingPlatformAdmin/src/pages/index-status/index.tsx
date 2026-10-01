@@ -1,9 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
   Card,
-  Checkbox,
   Col,
   Descriptions,
   Row,
@@ -18,6 +17,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   UNKNOWN_TEXT,
+  formatRelativeTime,
   formatTriStateBoolean,
   formatTriStateBytes,
   formatTriStateCount,
@@ -30,11 +30,11 @@ import {
 import {
   JOB_FIELDS,
   LEVEL_TONE,
-  LEVEL_TEXT,
   RAW_FIELDS_DEFAULT_EXPANDED,
   SCOPE_FIELDS,
   STATUS_TONES,
   SYMBOL_CARD_STATUS,
+  buildBusyTitle,
   deriveConfigCardStatus,
   deriveIndexHealth,
   deriveL0Chips,
@@ -42,48 +42,54 @@ import {
   deriveScopeCardStatus,
   describeJobsLedger,
   hasUnknownScopeField,
-  healthToneStyle,
+  jobHasFailureSemantics,
   latestIndexWriteUtc,
   pickActiveJob,
   pickLatestTerminalJob,
-  summarizeIndexVolume,
   shouldRenderJobsTable,
+  summarizeIndexVolume,
   totalEntryCount,
 } from './health';
 import type { CardStatus, FieldKind, StatusTone } from './health';
+import {
+  L0Strip,
+  LEVEL_VISUALS,
+  RingGauge,
+  ScopeDots,
+  SparkBars,
+  ToggleGlyph,
+  UnknownGlyph,
+  cx,
+  frameClass,
+} from './visuals';
+import type { SparkBar } from './visuals';
 import type {
   FullTextIndexJobStatus,
   FullTextIndexScopeStatus,
   FullTextIndexStatusDetail,
   FullTextIndexStatusSnapshot,
 } from './types';
+import './index.css';
 
-// ── Slice P1：Admin「索引与检索」页（只读）──────────────────────────────
-// 信息架构（规格 §1）：**L0 结论条**（常驻 1 行）→ **L1 四张诊断卡** → **L2 原始字段**（默认折叠）。
-//   · 默认视图回答「现在能不能放心让 Agent 去搜」；排障时才下钻到字段 —— **字段一个不丢**，
-//     只是不再抢占首屏（原「字段名当列标题 + 8 列宽表」的全部内容都保留在 L2）。
+// ── Slice P2：Admin「索引与检索」页（只读 · **视觉优先** v2）──────────────
+// 信息架构（规格 §1，v2 不变）：**L0 结论条**（常驻 1 行）→ **L1 四张诊断卡** → **L2 原始字段**（默认折叠）。
+// v2 改的是**表达层**（规格 §9）：状态由「图形 + 动效 + 颜色」三重编码承载，文字退为短词与
+// tooltip；异常时才允许升格为句子（§9.6）。事实层（health.ts 的 9 行状态矩阵）**一字未改**。
 // 数据源：GET /api/admin/index/status（IndexAdminController，Admin JWT）。
 //
-// 三条纪律：
+// 四条纪律：
 // 1) 三态贯穿（规格 §4）：`null` = 未知 / `false` = 否 / `0` = 0，三者渲染必须不同；
 //    一律经 ./api 与 ./health 的纯函数，**禁止** `?? 0` / `|| '否'` 式折叠。
 // 2) 纯只读：本页没有任何写操作能力（不触发供给、不重建、不删除；「重建索引」按钮刻意不做）。
-// 3) 轮询照抄 src/pages/storage/index.tsx 的既有用法（window.setInterval + 卸载清理），
+// 3) 视觉层只吃 props（./visuals 不推导业务真值）：`level` / 值 / 标签都在此文件由 health.ts 的
+//    纯函数结果喂给组件 —— 「事实」与「视觉」互不污染。
+// 4) 轮询照抄 src/pages/storage/index.tsx 的既有用法（window.setInterval + 卸载清理），
 //    刻意**不**引入 src/pages/chat/** 的任何模块，以保证该目录零接触。
 
 /** 轮询间隔：与 storage 页同量级（30s），不自创激进间隔。 */
 const POLL_INTERVAL_MS = 30_000;
 
-/** 状态族 → 左侧色条（规格 §4 的 5 族配色）。 */
-const TONE_BORDER: Record<StatusTone, string> = {
-  ok: '#2f7d4f',
-  warn: '#b47818',
-  error: '#b3261e',
-  neutral: '#9aa3af',
-  busy: '#1a5fb4',
-};
-
-/** 状态角标：图形 + 文字双编码（灰度打印 / 色盲可辨）。 */
+/** 状态角标：图形 + 文字双编码（灰度打印 / 色盲可辨）—— **仅 L2 证据层使用**。 */
 function toneTag(tone: StatusTone, text: string, hint?: string): React.ReactNode {
   const style = STATUS_TONES[tone];
   return (
@@ -93,9 +99,13 @@ function toneTag(tone: StatusTone, text: string, hint?: string): React.ReactNode
   );
 }
 
-/** 卡片角标（A/C/D 由纯函数推导，B 为固定占位）。 */
-function cardTag(status: CardStatus): React.ReactNode {
-  return toneTag(status.tone, status.text, status.hint);
+/** L1 卡片的角标（短词 + tooltip；§9.6 正常态只给短词，异常态才升格）。 */
+function cardWord(status: CardStatus): React.ReactNode {
+  return (
+    <span className={cx('vs-shortword', `vs-tone-${status.tone}`)} title={status.hint}>
+      {status.text}
+    </span>
+  );
 }
 
 /** 布尔三态标签：`null` ⇒ 灰「○ 未知」· `false` ⇒ 「否」· `true` ⇒ 绿「是」。 */
@@ -169,6 +179,62 @@ const jobColumns: ColumnsType<FullTextIndexJobStatus> = JOB_FIELDS.map((field) =
   render: (value: unknown) => renderFieldValue(field.kind, value),
 }));
 
+// ── 表达层映射（**不是业务真值**：真值仍在 health.ts / wire 契约）──────────
+
+/** `"12:00:00"`（TimeSpan 字符串）⇒ 毫秒；不可解析 ⇒ `null`（不假装成 0）。 */
+function parseTimeSpanMs(value: string | null | undefined): number | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(?:(\d+)\.)?(\d{1,2}):(\d{2}):(\d{2})/.exec(value.trim());
+  if (match === null) return null;
+  const days = Number(match[1] ?? 0);
+  const hours = Number(match[2]);
+  const minutes = Number(match[3]);
+  const seconds = Number(match[4]);
+  const total = ((days * 24 + hours) * 60 + minutes) * 60 + seconds;
+  return Number.isFinite(total) ? total * 1000 : null;
+}
+
+/**
+ * 新鲜度环的填充率（§9.2：满 = 新鲜，随时间变空变灰）。
+ * 映射到 `minRebuildInterval`：刚写完 = 满环，超过一个最小重建间隔 = 空环。
+ * 任一输入不可得 ⇒ `null`（环画虚线，不假装成 0）。
+ */
+function deriveFreshnessRatio(
+  lastWriteUtc: string | null,
+  minRebuildInterval: string,
+  nowMs: number,
+): number | null {
+  const spanMs = parseTimeSpanMs(minRebuildInterval);
+  if (lastWriteUtc === null || spanMs === null || spanMs <= 0) return null;
+  const wroteAt = new Date(lastWriteUtc).getTime();
+  if (Number.isNaN(wroteAt)) return null;
+  const ageMs = nowMs - wroteAt;
+  if (!Number.isFinite(ageMs)) return null;
+  return Math.max(0, Math.min(1, 1 - ageMs / spanMs));
+}
+
+/** 单条 job ⇒ 火花线条（长度 = 耗时占比 · 颜色 = 结果 · 非终态 = 不定长流光）。 */
+function toSparkBar(job: FullTextIndexJobStatus, maxElapsedMs: number): SparkBar {
+  const active = job.finishedAt === null || job.finishedAt === undefined;
+  const tone: StatusTone = active
+    ? 'busy'
+    : jobHasFailureSemantics(job.state)
+      ? 'warn'
+      : 'ok';
+  return {
+    key: job.jobId,
+    ratio: job.elapsedMs === null ? null : maxElapsedMs > 0 ? job.elapsedMs / maxElapsedMs : 1,
+    tone,
+    active,
+    title: [
+      job.jobId,
+      `状态 ${formatTriStateText(job.state)} · 阶段 ${formatTriStateText(job.phase)}`,
+      `清点 ${formatTriStateCount(job.indexedFileCount)} 文件 · ${formatTriStateBytes(job.totalBytes)}`,
+      `耗时 ${formatTriStateDurationMs(job.elapsedMs)}（${formatUtcTime(job.startedAt)} 起）`,
+    ].join('\n'),
+  };
+}
+
 const IndexStatusPage: React.FC = () => {
   const [snapshot, setSnapshot] = useState<FullTextIndexStatusSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -204,29 +270,50 @@ const IndexStatusPage: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  const nowMs = Date.now();
   const fullText: FullTextIndexStatusDetail | null = snapshot?.fullText ?? null;
-  const verdict = deriveIndexHealth(snapshot);
-  const lead = healthToneStyle(verdict.level);
-  const chips = deriveL0Chips(fullText);
-  const ledger = describeJobsLedger(fullText);
+  const verdict = deriveIndexHealth(snapshot, nowMs);
+  const visual = LEVEL_VISUALS[verdict.level];
+  const levelTone = LEVEL_TONE[verdict.level];
+  const chips = deriveL0Chips(fullText, nowMs);
+  const chipHint = (key: 'freshness' | 'scope' | 'volume'): string | undefined =>
+    chips.find((chip) => chip.key === key)?.hint;
+
   const volume = fullText === null ? null : summarizeIndexVolume(fullText);
+  const volumeRatio = volume === null ? null : volume.ratio;
+  const volumeLabel =
+    volume !== null && volume.ratio !== null ? `${Math.round(volume.ratio * 100)}%` : UNKNOWN_TEXT;
+
   const scopes = fullText?.scopes ?? [];
   const jobs = fullText?.jobs ?? [];
   const activeJob = pickActiveJob(jobs);
   // 「最近 job」：进行中优先（活的比死的重要），否则取最近终态。
   const latestJob = activeJob ?? pickLatestTerminalJob(jobs);
   const lastWrite = fullText === null ? null : latestIndexWriteUtc(fullText);
-  const acceptedCount = fullText === null ? UNKNOWN_TEXT : `${fullText.acceptedScopes.length} 条`;
-  const rejectedCount = fullText === null ? UNKNOWN_TEXT : `${fullText.rejectedReasons.length} 条`;
-  const largestScopeBytes = volume === null ? null : volume.largestScopeBytes;
-  const maxIndexBytes = volume === null ? null : volume.maxIndexBytes;
+  const freshnessRatio =
+    fullText === null ? null : deriveFreshnessRatio(lastWrite, fullText.minRebuildInterval, nowMs);
+  const freshnessLabel = formatRelativeTime(lastWrite, nowMs);
+  const acceptedCount = fullText === null ? null : fullText.acceptedScopes.length;
+  const rejectedCount = fullText === null ? null : fullText.rejectedReasons.length;
+  const ledger = describeJobsLedger(fullText);
+  const scopeStatus = deriveScopeCardStatus(fullText);
+  const ledgerStatus = deriveLedgerCardStatus(fullText);
+  const configStatus = deriveConfigCardStatus(fullText);
   const latestElapsedMs = latestJob === null ? null : latestJob.elapsedMs;
   const entriesText =
     fullText === null || hasUnknownScopeField(fullText)
       ? UNKNOWN_TEXT
       : formatTriStateCount(totalEntryCount(fullText));
-  const pctText =
-    volume === null || volume.ratio === null ? UNKNOWN_TEXT : `${Math.round(volume.ratio * 100)}%`;
+
+  // 火花线只画最近 5 条（长尾走 L2 台账），长度按**最能表达相对量级**的口径归一。
+  const jobBars = useMemo<SparkBar[]>(() => {
+    const recent = jobs.slice(-5);
+    const maxElapsedMs = recent.reduce<number>(
+      (max, job) => (job.elapsedMs !== null && job.elapsedMs > max ? job.elapsedMs : max),
+      0,
+    );
+    return recent.map((job) => toSparkBar(job, maxElapsedMs));
+  }, [jobs]);
 
   return (
     <PageContainer
@@ -260,205 +347,157 @@ const IndexStatusPage: React.FC = () => {
           />
         ) : (
           <>
-            <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 12, display: 'block', marginBottom: 8 }}
+            >
               快照时刻 {formatUtcTime(snapshot.generatedAtUtc)} · 每 30 秒自动刷新 · 本页纯只读
             </Typography.Text>
 
-            {/* ── L0 结论条（常驻 1 行：现在能不能放心让 Agent 去搜） ── */}
-            <Card
-              size="small"
-              style={{ marginBottom: 12, borderLeft: `4px solid ${TONE_BORDER[LEVEL_TONE[verdict.level]]}` }}
-              styles={{ body: { padding: '10px 14px' } }}
-            >
-              <Space size={12} wrap align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
-                <Space size={12} wrap align="center">
-                  <Tag color={lead.tagColor}>
-                    {lead.glyph} {LEVEL_TEXT[verdict.level]}
-                  </Tag>
-                  <Typography.Text strong style={{ fontSize: 15 }}>
-                    {verdict.title}
-                  </Typography.Text>
-                </Space>
-                <Checkbox
-                  checked={showRawFields}
-                  onChange={(event) => setShowRawFields(event.target.checked)}
-                >
-                  原始字段
-                </Checkbox>
-              </Space>
-              <Space size={8} wrap style={{ marginTop: 8 }}>
-                {chips.map((chip) => (
-                  <Tag key={chip.key} title={chip.hint}>
-                    {chip.text}
-                  </Tag>
-                ))}
-              </Space>
-              <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                {verdict.detail}
-              </Typography.Text>
-            </Card>
+            {/* ── L0 状态条（图 3 · A）：四个视觉单元 + 一个开关 —— 图形/动效/颜色承载状态，
+                   文字只在 tooltip 与**异常时**出现（§9.6）。I13：L0 内最多 1 个呼吸元素。 ── */}
+            <L0Strip
+              level={verdict.level}
+              shortWord={visual.word}
+              headline={verdict.level === 'warn' || verdict.level === 'error' ? verdict.title : undefined}
+              guidance={
+                verdict.level === 'warn' || verdict.level === 'error'
+                  ? `${verdict.detail} · 命中矩阵第 ${verdict.rule} 行`
+                  : undefined
+              }
+              title={verdict.level === 'warn' || verdict.level === 'error' ? verdict.detail : verdict.title}
+              freshness={{ tone: levelTone, ratio: freshnessRatio, label: freshnessLabel, title: chipHint('freshness') }}
+              volume={{ tone: levelTone, ratio: volumeRatio, label: volumeLabel, title: chipHint('volume') }}
+              scopes={{ accepted: acceptedCount, rejected: rejectedCount, title: chipHint('scope') }}
+              busyLabel={activeJob === null ? undefined : buildBusyTitle(activeJob, nowMs)}
+              showRawFields={showRawFields}
+              onToggleRawFields={setShowRawFields}
+            />
 
-            {/* ── 异常态置顶告警条（仅 error / warn 出现） ── */}
-            {verdict.level === 'error' || verdict.level === 'warn' ? (
-              <Alert
-                type={verdict.level === 'error' ? 'error' : 'warning'}
-                showIcon
-                style={{ marginBottom: 12 }}
-                message={verdict.title}
-                description={verdict.detail}
-              />
-            ) : null}
-
-            {/* ── L1 四张诊断卡（哪儿不对） ── */}
+            {/* ── L1 四张诊断卡（哪儿不对）：每卡一种**主视觉**，文字只剩短词 + tooltip ── */}
             <Row gutter={[12, 12]}>
               <Col xs={24} xl={12}>
-                <Card size="small" title="A · 全文索引（Lucene）" extra={cardTag(deriveScopeCardStatus(fullText))}>
-                  <Descriptions column={1} size="small" colon={false} labelStyle={{ width: 110 }}>
-                    <Descriptions.Item label="索引根">
-                      <Space size={6} wrap>
-                        {pathText(fullText?.indexRoot)}
-                        <span style={{ fontSize: 12, color: '#6b7280' }}>存在：</span>
-                        {triStateTag(fullText?.indexRootExists)}
-                      </Space>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="scope">
-                      <Space size={6} wrap>
-                        <span>{fullText === null ? UNKNOWN_TEXT : `${fullText.acceptedScopes.length} 条受理`}</span>
-                        {fullText?.acceptedScopes.length === 1 ? pathText(fullText.acceptedScopes[0]) : null}
-                      </Space>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="条目 / 体积">
-                      {`${entriesText} 项 · ${formatTriStateBytes(largestScopeBytes)}`}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="上限占用">
-                      {`${formatTriStateBytes(maxIndexBytes)} 的 ${pctText}`}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="最后写入">
-                      <Space size={6} wrap>
-                        <span>{formatTriStateTimestamp(lastWrite)}</span>
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                          {formatUtcTime(lastWrite)}
-                        </Typography.Text>
-                      </Space>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="最小重建间隔">
-                      {formatTriStateText(fullText?.minRebuildInterval)}
-                    </Descriptions.Item>
-                  </Descriptions>
-                  <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                    本卡只证明「索引就绪」，不等于「搜得到」—— 后者需真跑一次查询（本片不做自动试搜）。
-                  </Typography.Text>
-                </Card>
-              </Col>
-
-              <Col xs={24} xl={12}>
-                <Card size="small" title="B · 符号索引（代码）" extra={cardTag(SYMBOL_CARD_STATUS)}>
-                  <div
-                    style={{
-                      border: '1px dashed #9aa3af',
-                      borderRadius: 4,
-                      padding: 12,
-                      background: '#fcfcfd',
-                    }}
-                  >
-                    <Typography.Text>本块尚未接入（待 S-A2：把 codeIndex 并入同一端点）。</Typography.Text>
-                    <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: '#4b5563', fontSize: 12 }}>
-                      <li>计划显示：项目数 · 各项目状态（Completed / Indexing / Stale）</li>
-                      <li>计划显示：最后索引时刻 · 索引体积</li>
-                      <li>计划数据源：ICodeIndexMaintenance.GetScopeStatuses()</li>
-                    </ul>
-                    <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                      纪律：未接入 ≠ 故障 —— 不参与 L0 聚合、不染红、**不留空白**（空白会被读成「坏了」，故必须给出明确占位文案）。
-                    </Typography.Text>
-                  </div>
-                </Card>
-              </Col>
-
-              <Col xs={24} xl={12}>
-                <Card size="small" title="C · 供给台账（jobs）" extra={cardTag(deriveLedgerCardStatus(fullText))}>
-                  <Descriptions column={1} size="small" colon={false} labelStyle={{ width: 110 }}>
-                    <Descriptions.Item label="供给组件">
-                      {fullText?.compositionCreated === true
-                        ? '已启动'
-                        : fullText?.compositionCreated === false
-                          ? '未启动（无人触发过预建）'
-                          : toneTag('neutral', UNKNOWN_TEXT)}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="最近 job">
-                      {latestJob === null ? (
-                        toneTag('neutral', UNKNOWN_TEXT)
-                      ) : (
-                        <Space size={6} wrap>
-                          {pathText(latestJob.jobId)}
-                          <Tag color="processing">{formatTriStateText(latestJob.state)}</Tag>
-                        </Space>
-                      )}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="清点">
-                      {latestJob === null
-                        ? UNKNOWN_TEXT
-                        : `${formatTriStateCount(latestJob.indexedFileCount)} 文件 · ${formatTriStateBytes(latestJob.totalBytes)}`}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="用时">
-                      {formatTriStateDurationMs(latestElapsedMs)}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="台账条数">
-                      {`${jobs.length}（全部 ${JOB_FIELDS.length} 列见 L2）`}
-                    </Descriptions.Item>
-                  </Descriptions>
-                  {ledger.isEmpty ? (
-                    <Alert
-                      type={fullText?.jobsReason === 'ledger-read-failed' ? 'error' : 'info'}
-                      showIcon
-                      style={{ marginTop: 8 }}
-                      message="台账为空 —— 如实原因如下（不显示空表格）"
-                      description={ledger.text}
+                <Card
+                  size="small"
+                  className={cx('vs-card', 'vs-t-fast', frameClass(scopeStatus.tone))}
+                  title="A · 全文索引（Lucene）"
+                  extra={cardWord(scopeStatus)}
+                >
+                  <div className="vs-metrics">
+                    <RingGauge
+                      tone={scopeStatus.tone}
+                      ratio={volumeRatio}
+                      label={volumeLabel}
+                      caption="体积占用"
+                      title={chipHint('volume')}
                     />
-                  ) : (
-                    <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                      台账非空：逐条状态（状态机状态 / 阶段 / 清点 / 耗时）见 L2 原始字段。
-                    </Typography.Text>
-                  )}
+                    <RingGauge
+                      tone={scopeStatus.tone}
+                      ratio={freshnessRatio}
+                      label={freshnessLabel}
+                      caption="新鲜度"
+                      title={chipHint('freshness')}
+                    />
+                    <span className="vs-metric">
+                      <span className="vs-bignum">{entriesText}</span>
+                      <span className="vs-caption">条目数</span>
+                    </span>
+                    <ScopeDots
+                      accepted={acceptedCount}
+                      rejected={rejectedCount}
+                      caption="scope 受理"
+                      title={chipHint('scope')}
+                    />
+                  </div>
+                  <span className="vs-note" title="本卡只证明「索引就绪」，不等于「搜得到」">
+                    索引就绪 ≠ 搜得到
+                  </span>
                 </Card>
               </Col>
 
               <Col xs={24} xl={12}>
-                <Card size="small" title="D · 配置与受理" extra={cardTag(deriveConfigCardStatus(fullText))}>
-                  <Descriptions column={1} size="small" colon={false} labelStyle={{ width: 110 }}>
-                    <Descriptions.Item label="FullTextIndex 节">
-                      <Space size={6} wrap>
-                        <span>{formatTriStateBoolean(fullText?.configured)}</span>
-                        <span style={{ fontSize: 12, color: '#6b7280' }}>enabled =</span>
-                        {triStateTag(fullText?.enabled)}
-                      </Space>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="workspaceRoot">
-                      {pathText(fullText?.workspaceRoot)}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="受理 scope">
-                      {acceptedCount}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="拒收原因">
-                      {rejectedCount}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="维护循环">
-                      <Space size={6} wrap>
-                        <span>
-                          {fullText?.maintenance.configured === true ? '已配置' : '未配置（走默认）'}
-                        </span>
-                        <span style={{ fontSize: 12, color: '#6b7280' }}>是否生效：</span>
-                        {triStateTag(fullText?.maintenance.enabled)}
-                      </Space>
-                    </Descriptions.Item>
-                  </Descriptions>
-                  <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                    注：维护开关 `null` ⇒ 宿主侧没有该子节的绑定器 ⇒ 生效值**不可知**，不得当作「关」。
-                  </Typography.Text>
+                <Card
+                  size="small"
+                  className={cx('vs-card', 'vs-t-fast', frameClass(SYMBOL_CARD_STATUS.tone))}
+                  title="B · 符号索引（代码）"
+                  extra={cardWord(SYMBOL_CARD_STATUS)}
+                >
+                  <div className="vs-metrics">
+                    <UnknownGlyph
+                      label="未接入"
+                      title="本块尚未接入（待 S-A2：把 codeIndex 并入同一端点）—— 未接入 ≠ 故障，不参与 L0 聚合、不染红"
+                    />
+                  </div>
+                  <span
+                    className="vs-note"
+                    title="计划显示：项目数 · 各项目状态（Completed / Indexing / Stale）· 最后索引时刻 · 索引体积；数据源 ICodeIndexMaintenance.GetScopeStatuses()"
+                  >
+                    待 S-A2 接入 · 未接入 ≠ 故障
+                  </span>
+                </Card>
+              </Col>
+
+              <Col xs={24} xl={12}>
+                <Card
+                  size="small"
+                  className={cx('vs-card', 'vs-t-fast', frameClass(ledgerStatus.tone))}
+                  title="C · 供给台账（jobs）"
+                  extra={cardWord(ledgerStatus)}
+                >
+                  <SparkBars
+                    bars={jobBars}
+                    caption={
+                      jobBars.length === 0
+                        ? undefined
+                        : `最近 ${jobBars.length} 次供给 · 长度=耗时 · 颜色=结果`
+                    }
+                    emptyText={ledger.isEmpty ? ledger.text : undefined}
+                  />
+                  {activeJob !== null ? (
+                    <span className="vs-note" title="不定长流光：只表达「还在走」，不给百分比（后端无 processed/total）">
+                      {buildBusyTitle(activeJob, nowMs)}
+                    </span>
+                  ) : null}
+                </Card>
+              </Col>
+
+              <Col xs={24} xl={12}>
+                <Card
+                  size="small"
+                  className={cx('vs-card', 'vs-t-fast', frameClass(configStatus.tone))}
+                  title="D · 配置与受理"
+                  extra={cardWord(configStatus)}
+                >
+                  <div className="vs-metrics">
+                    <ToggleGlyph
+                      value={fullText?.enabled ?? null}
+                      label="全文索引"
+                      title={`configured = ${formatTriStateBoolean(fullText?.configured)} · enabled = ${formatTriStateBoolean(fullText?.enabled)}`}
+                    />
+                    <ToggleGlyph
+                      value={fullText?.maintenance.enabled ?? null}
+                      label="维护循环"
+                      title={`configured = ${formatTriStateBoolean(fullText?.maintenance.configured)} · 生效值 null ⇒ 不可知（≠「关」）`}
+                    />
+                    <ScopeDots
+                      accepted={acceptedCount}
+                      rejected={rejectedCount}
+                      caption="scope 受理"
+                      title={chipHint('scope')}
+                    />
+                  </div>
+                  <span
+                    className="vs-note"
+                    title="维护开关 null ⇒ 宿主侧没有该子节的绑定器 ⇒ 生效值不可知，不得当作「关」"
+                  >
+                    未配置 ≠ 已关闭
+                  </span>
                 </Card>
               </Col>
             </Row>
 
-            {/* ── L2 原始字段（排障；默认折叠，与 L0 的「原始字段」开关联动） ── */}
+            {/* ── L2 原始字段（排障；默认折叠，与 L0 的「原始字段」开关联动）
+                    ⚠️ 证据层**原样保留**（规格 §9.6）：本层本来就该密，字段一个不丢。 ── */}
             <Card
               size="small"
               style={{ marginTop: 12 }}
