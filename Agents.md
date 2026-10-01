@@ -96,7 +96,7 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 - 编译入口: `dotnet build PuddingRuntime`
 - 代码地图: `code_map.md`  这是项目根目录下的代码快速索引，要求必须在开始前阅读，并在任务结束后维护。
 - 文档: `Docs`  这是项目的架构文档目录，要求必须在开始前阅读，并在任务结束后维护。
-
+- 临时编译，重定向编译必须使用`temp\builder`目录。
 
 ## 运行时配置
 
@@ -114,6 +114,16 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 - Desktop Release 预览发布: `dotnet publish Source\PuddingDesktop\PuddingDesktop.csproj -c Release --no-restore -o temp\build\desktop-preview --nologo`
 - Desktop build/test/publish 必须串行执行；并行构建同一 WPF 项目会共享 `obj`，可能产生重复 `mainwindow.baml` 的 `RG1000`。
 - 构建、测试和发布输出只允许放在仓库 `temp\build`、`temp\test-out` 或系统 Temp，不得放到 `D:\data`。
+
+## 前端包管理约定（强制）
+
+前端（Web UI）在 `Source\PuddingPlatformAdmin`，**包管理器统一使用 pnpm**，不得使用 npm / yarn。
+
+- 依据：该目录只有 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 与 `.npmrc`，没有 `package-lock.json` / `yarn.lock`；`node_modules` 是 pnpm 的 `.pnpm` 链接结构。
+- 安装与运行：`pnpm install`、`pnpm run start:dev`、`pnpm run build`、`pnpm run test`。`dev-up.py` 启动前端时同样执行 `pnpm install` 与 `pnpm run start:dev`，并强制要求 pnpm 存在。
+- 禁止 `npm install` / `yarn install`：会生成 `package-lock.json`、破坏 `.pnpm` 链接结构，使 `node_modules` 与锁文件不一致。
+- `package.json` 内部脚本仍写着 `npm run ...`（ant-design-pro 模板遗留），那只是脚本内部互调；对外入口一律走 pnpm。
+- `node_modules` 与 `.pnpm-store` 不入库（见 `.gitignore`）；需要依赖时重新 `pnpm install`，不要跨机器/跨工作树直接复制 `node_modules`。
 
 
 ## 长效学习管道（已建成）
