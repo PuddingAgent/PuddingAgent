@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftOutlined } from '@ant-design/icons';
-import { Alert, Avatar, Button, Col, Collapse, Drawer, Form, Modal, Row, Select, Space, Spin, Typography } from 'antd';
+import { ArrowLeftOutlined, CloseOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { Alert, Avatar, Button, Col, Collapse, Drawer, Form, Modal, Row, Select, Space, Spin, Tooltip, Typography } from 'antd';
 import {
   ProForm,
   ProFormDigit,
@@ -314,7 +314,21 @@ const WorkspaceAgentSettingsDrawer: React.FC<WorkspaceAgentSettingsDrawerProps> 
     .filter(Boolean)
     .join(' · ');
 
-  const width = screens.xl ? '94vw' : '100%';
+  /**
+   * 抽屉宽度分两种模式。
+   *
+   * 「角色与 Prompt」要装下目录 + 大面积正文，必须接近全屏；其余分区只有少量字段，
+   * 用全屏宽度只会把内容顶到左边、右侧留一大片死区（截图实测约 30–45% 宽度被浪费）。
+   * 所以普通分区收窄到 1040px，宽屏下不再有无内容的空白。
+   */
+  const useWideCanvas = activeSection === 'prompts';
+  const width = useWideCanvas
+    ? screens.xl
+      ? '94vw'
+      : '100%'
+    : screens.xl
+      ? 1040
+      : '100%';
   const editorDisabled = saving || loading || !baseline;
 
   const statusNode = errorCount > 0 ? (
@@ -480,7 +494,7 @@ const WorkspaceAgentSettingsDrawer: React.FC<WorkspaceAgentSettingsDrawerProps> 
             />
           </div>
 
-          <div hidden={activeSection !== 'models'}>
+          <div hidden={activeSection !== 'models'} className={styles.modelSectionHost}>
             <ModelMemorySection
               id="models"
               providers={providers}
@@ -509,38 +523,32 @@ const WorkspaceAgentSettingsDrawer: React.FC<WorkspaceAgentSettingsDrawerProps> 
               <div className={styles.sectionTitle}>执行护栏</div>
               <div className={styles.sectionHint}>这里的上限仍受平台安全上限约束。</div>
             </div>
-            <Row gutter={16}>
-              <Col xs={24} sm={12}>
-                <ProFormDigit
-                  name="maxRounds"
-                  label="最大轮次"
-                  min={1}
-                  max={1000}
-                  fieldProps={{ addonAfter: '轮' }}
-                  extra="一次任务允许的 Agent 循环轮数。"
-                />
-              </Col>
-              <Col xs={24} sm={12}>
-                <ProFormDigit
-                  name="maxElapsedSeconds"
-                  label="最大耗时"
-                  min={10}
-                  max={86400}
-                  fieldProps={{ addonAfter: '秒' }}
-                  extra="86400 秒等于 24 小时；平台安全上限仍会生效。"
-                />
-              </Col>
-              <Col xs={24} sm={12}>
-                <ProFormDigit
-                  name="maxToolCallsTotal"
-                  label="最大工具调用"
-                  min={1}
-                  max={500}
-                  fieldProps={{ addonAfter: '次' }}
-                  extra="包含主 Agent 与当前执行链中的工具调用。"
-                />
-              </Col>
-            </Row>
+            <div className={styles.fieldGrid}>
+              <ProFormDigit
+                name="maxRounds"
+                label="最大轮次"
+                min={1}
+                max={1000}
+                fieldProps={{ addonAfter: '轮' }}
+                extra="一次任务允许的 Agent 循环轮数。"
+              />
+              <ProFormDigit
+                name="maxElapsedSeconds"
+                label="最大耗时"
+                min={10}
+                max={86400}
+                fieldProps={{ addonAfter: '秒' }}
+                extra="86400 秒等于 24 小时；平台安全上限仍会生效。"
+              />
+              <ProFormDigit
+                name="maxToolCallsTotal"
+                label="最大工具调用"
+                min={1}
+                max={500}
+                fieldProps={{ addonAfter: '次' }}
+                extra="包含主 Agent 与当前执行链中的工具调用。"
+              />
+            </div>
             <Collapse
               size="small"
               items={[
@@ -588,14 +596,26 @@ const WorkspaceAgentSettingsDrawer: React.FC<WorkspaceAgentSettingsDrawerProps> 
       >
         <div className={styles.workbench} ref={bodyRef} tabIndex={-1}>
           <header className={styles.header}>
-            <Button
-              type="text"
-              className={styles.headerBack}
-              icon={<ArrowLeftOutlined />}
-              onClick={handleBack}
-            >
-              返回列表
-            </Button>
+            <div className={styles.headerGroup}>
+              <Button
+                type="text"
+                className={styles.headerBack}
+                icon={<ArrowLeftOutlined />}
+                onClick={handleBack}
+              >
+                返回列表
+              </Button>
+              {/* 抽屉头被隐藏（身份栏取代了它），这里补回一个可见的关闭入口。 */}
+              <Tooltip title="关闭（Esc）">
+                <Button
+                  type="text"
+                  className={styles.headerClose}
+                  icon={<CloseOutlined />}
+                  onClick={handleBack}
+                  aria-label="关闭 Agent 编辑工作台"
+                />
+              </Tooltip>
+            </div>
 
             <div className={styles.identity}>
               <Avatar size={44} src={avatar?.url} style={{ flexShrink: 0 }}>
@@ -611,14 +631,29 @@ const WorkspaceAgentSettingsDrawer: React.FC<WorkspaceAgentSettingsDrawerProps> 
 
             <div className={styles.headerActions}>
               {statusNode}
-              <Button
-                type="primary"
-                loading={saving}
-                disabled={!ready || (!isDirty && editMode)}
-                onClick={() => void handleSave()}
+              <Tooltip
+                title={
+                  editMode && !isDirty
+                    ? '当前没有未保存的更改'
+                    : '保存表示配置已写入；正在执行的任务会在下一次读取配置时生效。'
+                }
               >
-                {saving ? '保存中…' : isDirty || editMode ? '保存所有更改' : '创建 Agent'}
-              </Button>
+                <Button
+                  /* 无修改时降级为次要按钮：长期停在灰紫的禁用态会被误读成「不能保存」。 */
+                  type={isDirty || !editMode ? 'primary' : 'default'}
+                  loading={saving}
+                  disabled={!ready || (!isDirty && editMode)}
+                  onClick={() => void handleSave()}
+                >
+                  {saving
+                    ? '保存中…'
+                    : isDirty
+                      ? '保存所有更改'
+                      : editMode
+                        ? '已保存'
+                        : '创建 Agent'}
+                </Button>
+              </Tooltip>
             </div>
           </header>
 
@@ -676,8 +711,13 @@ const WorkspaceAgentSettingsDrawer: React.FC<WorkspaceAgentSettingsDrawerProps> 
           )}
 
           <footer className={styles.footer}>
-            <span>配置仅作用于当前 Agent；来源模板不会随本次保存改变。</span>
-            <span>保存表示配置已写入，正在执行的任务会在下一次读取配置时生效。Ctrl+S 保存。</span>
+            {/* 只保留一行：左侧「来源模板不受影响」已由字段说明覆盖，右侧「生效时机」已进保存按钮 Tooltip。
+                原来的两句长文案会与应用底部状态栏挤在同一行。 */}
+            <span className={styles.footerMeta}>
+              <InfoCircleOutlined />
+              配置只作用于当前 Agent。
+            </span>
+            <span className={styles.footerMeta}>Ctrl+S 保存 · Esc 关闭</span>
           </footer>
         </div>
       </ProForm>

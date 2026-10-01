@@ -52,22 +52,32 @@ const GrantChip: React.FC<{
   color?: string;
   closable?: boolean;
   onClose?: () => void;
-}> = ({ label, code, color = 'default', closable, onClose }) => (
-  <Tag
-    color={color}
-    closable={closable}
-    onClose={(event) => {
-      event.preventDefault();
-      onClose?.();
-    }}
-    style={{ marginInlineEnd: 0, padding: '2px 7px', lineHeight: 1.7 }}
-  >
-    <Space size={4}>
-      <span>{label}</span>
-      {code && <Text type="secondary" style={{ fontSize: 11 }}>{code}</Text>}
-    </Space>
-  </Tag>
-);
+}> = ({ label, code, color = 'default', closable, onClose }) => {
+  // 能力目录里 name 常常就等于 toolName（例如 name=toolName=search_tools），
+  // 此时再渲染 code 会得到「search_tools search_tools」。只在不同才补技术标识。
+  const showCode = Boolean(code) && code !== label;
+  return (
+    <Tag
+      color={color}
+      closable={closable}
+      onClose={(event) => {
+        event.preventDefault();
+        onClose?.();
+      }}
+      title={showCode ? `${label} · ${code}` : label}
+      style={{ marginInlineEnd: 0, padding: '2px 7px', lineHeight: 1.7 }}
+    >
+      <Space size={4}>
+        <span>{label}</span>
+        {showCode && (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {code}
+          </Text>
+        )}
+      </Space>
+    </Tag>
+  );
+};
 
 const ResourcePickerModal: React.FC<{
   kind: GrantModalKind;

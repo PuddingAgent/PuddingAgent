@@ -72,6 +72,17 @@ export const useWorkspaceAgentStyles = createStyles(({ token, css }) => ({
     padding-inline: 8px;
   `,
 
+  headerClose: css`
+    flex: 0 0 auto;
+  `,
+
+  headerGroup: css`
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  `,
+
   identity: css`
     display: flex;
     align-items: center;
@@ -207,6 +218,24 @@ export const useWorkspaceAgentStyles = createStyles(({ token, css }) => ({
 
   formColumn: css`
     max-width: 880px;
+  `,
+
+  /**
+   * 稀疏分区的字段网格。
+   *
+   * 护栏、Smart 子代理这类分区字段少，拉满宽屏只会产生长输入框 + 右侧死区；
+   * 用「最小列宽 + 自动换行」把它们收成紧凑的等宽列（三列合计 ≤ 880px）。
+   */
+  fieldGrid: css`
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 280px));
+    justify-content: start;
+    gap: 0 16px;
+    align-items: start;
+
+    @media (max-width: 767px) {
+      grid-template-columns: minmax(0, 1fr);
+    }
   `,
 
   sectionHeading: css`
@@ -662,6 +691,27 @@ export const useWorkspaceAgentStyles = createStyles(({ token, css }) => ({
     color: ${token.colorTextSecondary};
   `,
 
+  /**
+   * 「模型与记忆」分区的展示微调（只作用于工作台内的实例编辑）。
+   *
+   * 模型名常常很长（如 `Qwen3 Embedding 0.6B (本地) (text-embedding-qwen3-...)`），
+   * antd 的选择器默认换行会把两列布局顶成参差的多行；改为单行省略 + title 提示。
+   * 全局模板抽屉用的是另一个容器，不受这里影响。
+   */
+  modelSectionHost: css`
+    .ant-select-selection-item,
+    .ant-select-selection-placeholder {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .ant-form-item {
+      margin-bottom: 18px;
+    }
+  `,
+
+  // ── 底部说明：只有一行，避免与应用底部状态栏挤在同一行 ──────────
   footer: css`
     flex: 0 0 auto;
     display: flex;
@@ -669,7 +719,7 @@ export const useWorkspaceAgentStyles = createStyles(({ token, css }) => ({
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
-    padding: 10px 20px;
+    padding: 8px 20px;
     min-height: 40px;
     border-top: 1px solid ${token.colorBorderSecondary};
     background: ${token.colorFillQuaternary};
@@ -677,8 +727,16 @@ export const useWorkspaceAgentStyles = createStyles(({ token, css }) => ({
     color: ${token.colorTextSecondary};
 
     @media (max-width: 767px) {
-      padding: 10px 12px;
+      padding: 8px 12px;
     }
+  `,
+
+  footerMeta: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    min-width: 0;
   `,
 
   selectPopup: css`

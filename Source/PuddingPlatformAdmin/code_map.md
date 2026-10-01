@@ -218,6 +218,8 @@
 | `src/pages/workspace/[id]/MarkdownPreview.tsx` | 只读 Markdown 预览：不启用 `rehype-raw`，文档内 HTML 按文本处理、不执行脚本；链接新窗口 + `noopener` |
 | `src/pages/workspace/[id]/workbenchStyles.ts` | 工作台专用样式与响应式断点（≥1440 近全屏、1024–1439 单列、<1024 顶部横向分区导航 + 文档选择器）。刻意与 `agent-template-settings/styles.ts` 分离，全局模板抽屉布局不受影响 |
 
+2026-10-01 复核修正（依运行态截图）：抽屉宽度改为**按分区分模式**——只有「角色与 Prompt」用 `94vw` 近全屏，其余分区收窄到 1040px，消除右侧 30–45% 的无内容死区；护栏三个数字改用 `fieldGrid`（`minmax(240px,280px)` 自动换行）而非各占一整行；模型与记忆分区加 `modelSectionHost` 作用域，把 antd 选择器长模型名从换行改为单行省略；身份栏补回可见关闭按钮（原先把抽屉头隐藏后只剩「返回列表」）；无修改时保存按钮降级为「已保存」次要按钮（长期停在灰紫禁用态会被误读成不能保存）；底部说明收敛为一行，避免与应用底部状态栏挤在同一行。另修 `CapabilitySkillSection.tsx` 的 `GrantChip`：能力目录里 `name` 常等于 `toolName`，无条件追加 code 会渲染成 `search_tools search_tools`，现在两者相同则只渲染一次。
+
 可验证性：`promptDocuments.test.ts`（目录完整性、改回原值不脏、数组/空值比较、错误归类、查找与滚动估算）、`useFormSnapshot.test.tsx`（锁定 `preserve: true` 全量草稿行为）、`WorkspaceAgentSettingsDrawer.test.tsx`（身份栏、目录、草稿保留、预览、保存成功/失败、关闭确认、加载态）。全量 `tsc --noEmit` 的既有基线错误只在 `src/pages/chat`，`src/pages/workspace` 命中必须为 0。
 
 ## 用户头像

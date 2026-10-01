@@ -236,18 +236,40 @@ describe('WorkspaceAgentSettingsDrawer 编辑工作台', () => {
     expect(screen.getByText('未保存 · 1 项')).toBeTruthy();
   });
 
-  it('无修改时编辑模式禁用保存，返回列表直接关闭', async () => {
+  it('无修改时保存按钮降级为「已保存」且禁用，返回列表直接关闭', async () => {
     const onClose = jest.fn();
     render(
       <Harness initialValues={{ name: '审计员', systemPrompt: '原始内容' }} onClose={onClose} />,
     );
 
-    const save = (await screen.findByRole('button', {
-      name: '保存所有更改',
-    })) as HTMLButtonElement;
+    // 有修改时才显示「保存所有更改」；无修改时不能长期停在灰紫禁用态
+    const save = (await screen.findByRole('button', { name: '已保存' })) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: '保存所有更改' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /返回列表/ }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('身份栏提供可见关闭入口，且与返回列表共用未保存确认', async () => {
+    const onClose = jest.fn();
+    render(
+      <Harness initialValues={{ name: '审计员', systemPrompt: '原始内容' }} onClose={onClose} />,
+    );
+    await screen.findByText('审计员');
+    await openPromptSection();
+
+    // 有修改：关闭走同一套确认，不直接丢弃草稿
+    fireEvent.change(await findTextareaByLabel('系统提示词'), {
+      target: { value: '新内容' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '关闭 Agent 编辑工作台' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(await screen.findByText('放弃未保存的修改？')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '放弃修改' }));
+    });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
