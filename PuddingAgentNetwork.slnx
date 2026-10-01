@@ -17,6 +17,7 @@
     <Project Path="Source/PuddingDesktop/PuddingDesktop.csproj" />
     <Project Path="Source/PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
     <Project Path="Source/Pudding.DesktopConnection/Pudding.DesktopConnection.csproj" />
+    <Project Path="Source/Pudding.DesktopService/Pudding.DesktopService.csproj" />
     <Project Path="Source/PuddingDesktop.WpfArchive/PuddingDesktop.WpfArchive.csproj" />
     <Project Path="Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj" />
     <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
@@ -46,6 +47,7 @@
     <Project Path="Source/Pudding.ContractsTests/Pudding.ContractsTests.csproj" />
     <Project Path="Source/Pudding.Rpc.ProtocolTests/Pudding.Rpc.ProtocolTests.csproj" />
     <Project Path="Source/Pudding.DesktopConnectionTests/Pudding.DesktopConnectionTests.csproj" />
+    <Project Path="Source/Pudding.DesktopServiceTests/Pudding.DesktopServiceTests.csproj" />
     <Project Path="Tests/PuddingHost.Tests/PuddingHost.Tests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
     <Project Path="Source/PuddingCodeIndexTests/PuddingCodeIndexTests.csproj" />

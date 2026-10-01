@@ -1,3 +1,17 @@
+## 2026-10-01：DesktopService（切片 C：准入/竞态/UI 线程边界）
+
+新增 `Source/Pudding.DesktopService/`：Desktop 侧能力服务，把「目标校验 → 准入 → UI 调度 → 竞态复检 → 终态映射」收口到一个**不碰任何 UI 类型**的组件。
+
+- `ValidateAdmission` 在**入队前**与**拿到 UI 线程后**各执行一次：覆盖排队期间页面关闭/版本推进/用户接管/暂停/窗口退出——这是计划 §6 明确要求的竞态闭环。
+- 策略表 `DesktopCapabilityPolicy`（8 能力 × 3 可信级别，快照断言）：脚本注入仅 `AgentAuthorized`；对话框/Picker/剪贴板仅 `Workbench`；**`Workbench` 永不接受脚本注入**（硬不变式）。
+- `DesktopTargetRegistry`：页面/上下文登记唯一真源，页面版本**只允许前进**（回退会让旧 Snapshot/Locator 重新有效，必须拒绝）。
+- `DesktopInteractionState`：暂停与用户接管为**独立轴**（接管优先），变更类能力被拒、只读能力仍可用。
+- 未执行的操作绝不声称副作用：取消/期限的 `mayHaveSideEffects` 只在**已进入 surface** 时按能力 Traits 标注；排队中关闭窗口以 `ui_unavailable` 结束而**不悬挂**。
+- 契约前置（`533465a`）：`IDesktopUiDispatcher` / `IDesktopUiSurface` 平台无关接缝 + `DesktopContextTrust` + `RequiresPageTarget`。
+- 测试 `Source/Pudding.DesktopServiceTests/` **58/58**（假 UI 调度器：内联/排队/拒绝入队/已释放四种形态；含 5 条边界断言）。
+
+**仍未接入宿主**：WinUI `DispatcherQueue` 适配器与 DesktopCapabilityHost 装配属切片 C-2/D；交互类单窗口互斥与 `webview.page_state` 的 wire payload 分别随切片 E/D 落地（不做无法端到端验证的代码）。
+
 ## 2026-10-01：Contracts / gRPC 协议 / Desktop 连接组件（切片 A+B 实施）
 
 按[技术方案](Docs/Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md)落地首个实施范围 A+B，全部走「先独立构建测试、再登记 slnx」：
@@ -7,7 +21,7 @@
 - `Source/Pudding.DesktopConnection/`：Desktop 主动拨入的连接组件——单读单写、握手与世代失效、命令关联/幂等重放/同 ID 不同 payload 拒绝、取消及时生效、单操作 deadline、在途上限、字节预算背压（终态不丢、事件可丢并计数）、同目标变更串行化、断连确定性结束（未开始=Disconnected、已开始=OutcomeUnknown）、每操作一条审计；`DesktopConnectionRunner` 指数退避+jitter 重连且**不重放副作用**。测试 `Source/Pudding.DesktopConnectionTests/` **74/74**（假服务端双流；边界断言覆盖依赖闭包与接缝不泄漏 proto/UI）。
 - `Source/PuddingRpc.IpcProbe/`：**真实端点技术探针**（Kestrel Named Pipe + 显式 HTTP/2 ↔ ConnectCallback），**13/13 通过**：认证先于握手、往返 12.6 ms、1 MiB 单帧 5.8 ms、取消 3.1 ms、Loopback h2c 备用传输；并实测端点安全：**管道 DACL 仅含当前用户 SID**（无 Anonymous/Everyone）、`CurrentUserOnly` 默认 True、ACL 注入钩子 = `CreateNamedPipeServerStream`。
 
-首次实施**不改动运行代码**（未接入 Host/Core/Desktop 组合根、未动旧 WebSocket Bridge）；接入（切片 C/D）与 Shell 能力（切片 E）待后续。记录见 [实施报告](Docs/Reports/Desktop-Contracts-Rpc-SliceAB-2026-10-01.md)。
+首次实施**不改动运行代码**（未接入 Host/Core/Desktop 组合根、未动旧 WebSocket Bridge）；接入（切片 C/D）与 Shell 能力（切片 E）待后续。记录见 [实施报告](Docs/Reports/Desktop-Contracts-Rpc-SliceABC-2026-10-01.md)。
 
 ## 2026-10-01：Contracts 与 Desktop gRPC 能力通道规划
 
@@ -839,6 +853,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Source/Pudding.Contracts/` | **平台/传输无关契约叶（仅 BCL）**：能力目录、握手协商、错误语义、能力 DTO、审计形状 | [code_map](Source/Pudding.Contracts/code_map.md) |
 | `Source/Pudding.Rpc.Protocol/` | **wire-only 协议叶**：`Protos/desktop_capability.proto` + 生成类型（无业务/UI 实现） | [code_map](Source/Pudding.Rpc.Protocol/code_map.md) |
 | `Source/Pudding.DesktopConnection/` | Desktop 侧 gRPC 双向流适配器：连接状态机、命令关联、取消/期限/背压、重连 | [code_map](Source/Pudding.DesktopConnection/code_map.md) |
+| `Source/Pudding.DesktopService/` | Desktop 侧能力服务：目标/可信级别/版本校验、准入、入队后竞态复检、UI 调度边界 | [code_map](Source/Pudding.DesktopService/code_map.md) |
 | `Source/PuddingRpc.IpcProbe/` | 真实端点技术探针（Kestrel Named Pipe/h2c 服务端替身；退出码 0/1） | — |
 
 ## 调用链路
@@ -1199,6 +1214,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 | `Source/Pudding.ContractsTests/` | **契约组件（`Pudding.Contracts`）独立测试工程**：目录/错误/协商/结果/值对象 + 5 条边界与形状断言（58 用例） |
 | `Source/Pudding.Rpc.ProtocolTests/` | **协议组件（`Pudding.Rpc.Protocol`）独立测试工程**：service/字段号快照、oneof 互斥、序列化往返 + 5 条边界断言（17 用例） |
 | `Source/Pudding.DesktopConnectionTests/` | **连接组件独立测试工程**：假服务端双向流（握手/乱序关联/取消/期限/背压/旧世代/断连/重连不重放）+ 映射往返 + 6 条边界断言（74 用例） |
+| `Source/Pudding.DesktopServiceTests/` | **服务组件独立测试工程**：假 UI 调度器（内联/排队/拒绝/释放）+ 目标与策略表 + 交互状态 + 队列竞态 + 5 条边界断言（58 用例） |
 | `Tests/PuddingCodexServiceTests/` | Codex MCP Service |
 | `Tests/PuddingFullTextIndexTests/` | 全文索引 |
 | `Tests/PuddingWebApiTests/` | Web API |

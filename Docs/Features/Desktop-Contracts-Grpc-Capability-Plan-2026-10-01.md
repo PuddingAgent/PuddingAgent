@@ -1,7 +1,7 @@
 # Pudding.Contracts 与 Desktop gRPC 能力通道技术方案
 
 - 日期：2026-10-01。
-- 状态：Proposed；**2026-10-01 更新：切片 A+B 已实施**（Contracts / Rpc.Protocol / DesktopConnection / IPC 技术探针，见[实施报告](../Reports/Desktop-Contracts-Rpc-SliceAB-2026-10-01.md)）；切片 C–F **未实施**，未接入任何宿主，旧 Bridge 仍在运行。
+- 状态：Proposed；**2026-10-01 更新：切片 A+B 已实施**（Contracts / Rpc.Protocol / DesktopConnection / IPC 技术探针，见[实施报告](../Reports/Desktop-Contracts-Rpc-SliceABC-2026-10-01.md)）；切片 C–F **未实施**，未接入任何宿主，旧 Bridge 仍在运行。
 - 基线：[Shell / Web / 独立 Core ADR](ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md)、[恢复报告](../Reports/Desktop-Shell-Recovery-2026-09-29.md)、[组件化交付规程](../Conventions/组件化交付规程.md)。
 
 ## 1. 建议决策
@@ -180,9 +180,9 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 |---|---|---|
 | A：Contracts | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Contracts`（BCL-only，编译期边界）+ `Pudding.ContractsTests` 58/58；边界取红实测 |
 | B：Protocol / Connection | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Rpc.Protocol` + 17/17；`Source/Pudding.DesktopConnection` + 74/74；`Source/Pudding.Rpc.IpcProbe` 13/13（Named Pipe + h2c 真实端点） |
-| C：DesktopService | ⛔ 未开始 | 需在 WinUI 侧接 `IDesktopCapabilityExecutor` 并用假 UI 调度器验证目标/准入/关闭竞态 |
+| C：DesktopService | 🟡 主体完成，宿主装配未做 | `Source/Pudding.DesktopService`（目标校验/准入/入队后竞态复检/UI 调度边界）+ `Pudding.DesktopServiceTests` 58/58；**WinUI DispatcherQueue 适配器与 DesktopCapabilityHost 装配**（C-2）未做 |
 | D：浏览器等价接入 | ⛔ 未开始 | 旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 未动 |
 | E：Shell 能力 | ⛔ 未开始 | 目录已预留 `shell.status/dialog/file_picker/clipboard` 线名，但**尚无 payload 与实现**，不会被声明 |
 | F：默认切换与退役 | ⛔ 未开始 | — |
 
-细节、探针原始结论、有意偏差与风险见[实施报告](../Reports/Desktop-Contracts-Rpc-SliceAB-2026-10-01.md)。
+细节、探针原始结论、有意偏差与风险见[实施报告](../Reports/Desktop-Contracts-Rpc-SliceABC-2026-10-01.md)。

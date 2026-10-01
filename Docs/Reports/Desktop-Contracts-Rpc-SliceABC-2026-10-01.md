@@ -1,10 +1,10 @@
-# Desktop Contracts / gRPC 能力通道：切片 A+B 实施报告
+# Desktop Contracts / gRPC 能力通道：切片 A+B+C 实施报告
 
 - 日期：2026-10-01。
 - 方案：[Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md](../Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md)。
-- 范围：方案 §8 建议的首个实施范围 **A（Contracts）+ B（Protocol / Connection）+ IPC 技术探针**。
+- 范围：方案 §8 的 **A（Contracts）+ B（Protocol / Connection）+ IPC 技术探针**，以及 **C（DesktopService 主体）**。
 - 明确未做：**未接入宿主**（不改 `PuddingHost`/`PuddingAgent`/`PuddingDesktop` 组合根与 DI）、**未动旧 WebSocket Bridge**、未实现 Shell 对话框/Picker/剪贴板、未切默认传输。
-- 交付提交：`66dd7cf`（Contracts）、`b635ecf`（Rpc.Protocol）、`e041d2e`（执行器接缝联合）、`bd300ba`（DesktopConnection）、`b3fcd4c`（IPC 探针）。
+- 交付提交：`66dd7cf`（Contracts）、`b635ecf`（Rpc.Protocol）、`e041d2e`（执行器接缝联合）、`bd300ba`（DesktopConnection）、`b3fcd4c`（IPC 探针）、`533465a`（UI 接缝 + `RequiresPageTarget`）、`4417bbf`（DesktopService）。
 
 ## 1. 交付物
 
@@ -13,6 +13,7 @@
 | 契约叶 | `Source/Pudding.Contracts` | 仅 BCL；Target `EnforceContractsBoundary` 使 `ProjectReference`/`PackageReference` 非空即取红 |
 | 协议叶 | `Source/Pudding.Rpc.Protocol` | 只有 proto 与生成类型；Target `EnforceProtocolLeafBoundary` 禁止任何 `ProjectReference` |
 | Desktop 适配器 | `Source/Pudding.DesktopConnection` | 只引用 Contracts + Rpc.Protocol + `Grpc.Net.Client`；Target `EnforceConnectionBoundary` 禁止 Host/Runtime/Desktop/Browser 工程与 ASP.NET Core/WinUI/WebView2 包 |
+| Desktop 服务 | `Source/Pudding.DesktopService` | 只引用 Contracts + DesktopConnection、**零包引用**；Target `EnforceDesktopServiceBoundary` 同规则（切片 C） |
 | 技术探针 | `Source/Pudding.Rpc.IpcProbe` | 探针专用（Kestrel + Grpc.AspNetCore 作为服务端替身）；**无产品消费方** |
 
 测试工程（S2：各自只引用被测组件）：`Source/Pudding.ContractsTests`、`Source/Pudding.Rpc.ProtocolTests`、`Source/Pudding.DesktopConnectionTests`。
@@ -25,6 +26,7 @@
 | 独立测试 | `dotnet test Source\Pudding.ContractsTests` | **58/58 通过**（行覆盖 90.4%） |
 | 独立测试 | `dotnet test Source\Pudding.Rpc.ProtocolTests` | **17/17 通过** |
 | 独立测试 | `dotnet test Source\Pudding.DesktopConnectionTests` | **74/74 通过** |
+| 独立测试 | `dotnet test Source\Pudding.DesktopServiceTests` | **58/58 通过**（切片 C） |
 | 边界取红 | 临时给 Contracts 注入 `PackageReference Google.Protobuf` | 构建失败并输出 `EnforceContractsBoundary` 的 BCL-only 错误；移除后 `git hash-object` 逐位复原（`2baf6a4b…`） |
 | 真实端点探针 | `dotnet temp\build\recovery\bin\Pudding.Rpc.IpcProbe\release\Pudding.Rpc.IpcProbe.dll` | **13/13 通过，exit 0** |
 | 解决方案登记 | `dotnet sln PuddingAgentNetwork.slnx list` / `dotnet restore PuddingAgentNetwork.slnx` | 7 个新工程已登记且可解析 |
@@ -49,8 +51,31 @@
 - `DesktopConnectionRunner`：指数退避 + jitter 重连；**不跨传输回退、不重放副作用命令**（测试断言新连接上只有握手帧）。
 - UI 边界：`IDesktopCapabilityExecutor` 是唯一接缝，只依赖 Contracts；边界测试断言它与其他公共契约**不出现** proto/Grpc/Google.Protobuf/WinUI/ASP.NET Core 类型。
 
-## 4. 探针实测（真实端点，非假流）
+## 3.1 切片 C：DesktopService（准入 · 竞态 · UI 线程边界）
 
+组件 `Source/Pudding.DesktopService`，不依赖任何 UI 类型：UI 动作经 `IDesktopUiDispatcher` 调度、由
+`IDesktopUiSurface` 实现方访问 WebView2/窗口/通知。
+
+- **竞态闭环**：同一套 `ValidateAdmission` 在**入队前**与**拿到 UI 线程后**各执行一次。
+  测试覆盖：排队期间页面被关闭 ⇒ `invalid_target`；版本被推进 ⇒ `page_version_mismatch`；
+  用户接管 ⇒ `user_takeover`；窗口关闭 ⇒ `ui_unavailable`（**不悬挂**）；期限过期 ⇒ `deadline_exceeded`。
+  以上五种情况都断言 **surface 从未被调用**。
+- **准入策略表**（8 能力 × 3 可信级别，快照断言）：脚本注入仅 `AgentAuthorized`；
+  对话框/Picker/剪贴板仅 `Workbench`；**`Workbench` 永不接受脚本注入**（硬不变式 + 断言）。
+  与契约层的 `RequiresTrustedContext` 双向自洽断言（该 Traits 的能力绝不允许 `Untrusted`）。
+- **目标登记表**：页面版本**只允许前进** —— 回退会让旧 Snapshot/Locator 重新"有效"，测试断言回退被拒。
+- **交互状态**：暂停与用户接管是独立轴（接管优先）；变更类能力被拒，只读能力（页面状态）仍可用。
+- **副作用标注精确化**：`mayHaveSideEffects` 只在**已进入 surface** 时按能力 Traits 标注；
+  入队前取消、排队中取消、排队期间过期都如实返回 `false`（"从未执行"不得被说成"可能已生效"）。
+- **缺陷（本切片内发现并修掉）**：实现最初依赖调度器替服务检查取消，导致**预先取消的调用仍会执行到 surface**
+  （测试 `CanceledCaller_ReturnsCancelledAndNeverTouchesTheSurface` 抓红）⇒ 现在服务自己在入队前与
+  调用 surface 前各查一次取消，并据此选择 `mayHaveSideEffects` 取值。
+
+**有意取舍**：交互类能力的单窗口互斥推迟到切片 E（那时才有对话框/Picker payload，能做端到端验证）；
+`webview.page_state` 暂无 wire payload，先作为只读直连 API（`GetPageStateAsync`）提供；
+WinUI `DispatcherQueue` 适配器是 20 行平台包装、无独立可测逻辑，随宿主装配（C-2/D）一起落地并在应用内做线程验证。
+
+## 4. 探针实测（真实端点，非假流）
 ```
 PASS  kestrel-named-pipe: Kestrel HTTP/2 已监听 \\.\pipe\pudding-ipc-probe-…
 PASS  auth-before-handshake: 缺少控制令牌的连接被拒（unauthorized），未完成握手
@@ -88,8 +113,12 @@ PASS  loopback-navigate: 命令→结果往返 0.7 ms
 
 ## 6. 未实施与风险（诚实登记）
 
-- **未接入宿主**：Core 侧 Connect 服务/注册表/Broker（切片 C/D）与 Desktop 侧 `DesktopService`+`DispatcherQueue` 尚未装配，因此**没有**任何运行中的产品行为改变；本切片不构成「gRPC 已替代 Bridge」。
-- **UI 线程语义未在真实 WinUI 上验证**：`IDesktopCapabilityExecutor` 的契约（入队后重查取消/期限/页面版本、异常与取消总能完成、单窗口对话框互斥）仍是实现方的义务，需切片 C 用假 UI 调度器 + WinUI 定向验证。
+- **未接入宿主**：Core 侧 Connect 服务/注册表/Broker（切片 D）与 Desktop 侧 `DesktopCapabilityHost`
+  （DispatcherQueue 适配器 + `DesktopService` + `DesktopConnection` 装配、传输开关）尚未接线，
+  因此**没有**任何运行中的产品行为改变；本切片不构成「gRPC 已替代 Bridge」。
+- **UI 线程语义未在真实 WinUI 上验证**：`IDesktopUiDispatcher` 的契约（队列拒绝必返回 `ui_unavailable`、
+  窗口退出必须让任务完成）用假调度器验证过；真实 `DispatcherQueue` 的线程访问与队列拒绝行为需在
+  WinUI 应用内定向验证（需要外部控制器重启到新构建）。
 - **未测**：真实 ConPTY/Shell 能力、远端 TLS 端点、代理对双向流的支持、`Grpc.Tools` 在 CI 上的 protoc 可用性。
 - **性能声明边界**：探针数字是**单流、本机、空载**往返，不能据此宣称比现有 Bridge 更快（方案 §9 的要求）。
 - 方案中「旧 WebSocket Bridge 逐步退役」「移除临时传输开关」均未开始。
