@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1080" viewBox="0 0 1200 1080">
+  <style>
+    text{font-family:'Microsoft YaHei','PingFang SC',Segoe UI,sans-serif;fill:#1f2328}
+    .h1{font-size:17px;font-weight:700}.h2{font-size:14px;font-weight:700}
+    .s{font-size:11px}.xs{font-size:10px}.lb{font-size:11px;fill:#6b7280}
+    .anno{font-size:10px;fill:#9aa3af}
+    .mono{font-family:Consolas,Menlo,monospace;font-size:10px}
+    .card{fill:#fff;stroke:#d7dbe2}
+    .ui{fill:#fbfcfd;stroke:#d7dbe2}
+    .anno-box{fill:#f4f5f7;stroke:#d7dbe2}
+  </style>
+  <defs>
+    <linearGradient id="fresh" x1="0" x2="1"><stop offset="0" stop-color="#2f7d4f"/><stop offset="1" stop-color="#b6bcc6"/></linearGradient>
+  </defs>
+  <rect width="1200" height="1080" fill="#ffffff"/>
+
+  <text x="40" y="30" class="h1">图 4 · 动效规格与设计 Token（v2）</text>
+  <text x="40" y="52" class="lb">动效只承担一件事：把「变化」和「程度」变成无需阅读的直觉。禁止装饰性动画。</text>
+
+  <!-- ══ A. 动效谱 ══ -->
+  <text x="40" y="92" class="h2">A · 动效谱：三种速度，各有唯一用途（不做第四种）</text>
+  <rect x="40" y="104" width="1120" height="46" rx="6" class="ui"/>
+  <text x="70" y="133" class="s lb">档位</text>
+  <text x="200" y="133" class="s lb">时长</text>
+  <text x="330" y="133" class="s lb">缓动</text>
+  <text x="560" y="133" class="s lb">用途</text>
+  <text x="900" y="133" class="s lb">实现</text>
+
+  <rect x="40" y="158" width="1120" height="52" rx="6" class="card"/>
+  <text x="70" y="190" class="s">fast · 状态切换</text>
+  <text x="200" y="190" class="mono">120 ms</text>
+  <text x="330" y="190" class="mono">ease-out</text>
+  <text x="560" y="190" class="s">颜色 / 尺寸 / 环填充的过渡</text>
+  <text x="900" y="190" class="mono">transition: 120ms</text>
+
+  <rect x="40" y="216" width="1120" height="52" rx="6" class="card"/>
+  <text x="70" y="248" class="s">ambient · 常态呼吸</text>
+  <text x="200" y="248" class="mono">2.4 s ∞</text>
+  <text x="330" y="248" class="mono">ease-in-out</text>
+  <text x="560" y="248" class="s">仅「就绪」用：安静地在呼吸 = 它还活着</text>
+  <text x="900" y="248" class="mono">keyframes scale</text>
+
+  <rect x="40" y="274" width="1120" height="52" rx="6" class="card"/>
+  <text x="70" y="306" class="s">alert · 异常急闪 / 涟漪 / 流光</text>
+  <text x="200" y="306" class="mono">1.2 / 1.6 s ∞</text>
+  <text x="330" y="306" class="mono">ease-in-out</text>
+  <text x="560" y="306" class="s">需处理=急闪 · 进行中=涟漪+流光</text>
+  <text x="900" y="306" class="mono">keyframes opacity</text>
+
+  <!-- 时间线示意 -->
+  <text x="40" y="366" class="lb">同一条时间轴上的三种节奏（示意）</text>
+  <line x1="60" y1="400" x2="1140" y2="400" stroke="#e8eaee"/>
+  <text x="60" y="392" class="anno">就绪 · 呼吸 2.4s</text>
+  <g>
+    <circle cx="80" cy="400" r="7" fill="#2f7d4f" opacity="0.35"/>
+    <circle cx="300" cy="400" r="9" fill="#2f7d4f" opacity="0.75"/>
+    <circle cx="520" cy="400" r="7" fill="#2f7d4f" opacity="0.35"/>
+    <circle cx="740" cy="400" r="9" fill="#2f7d4f" opacity="0.75"/>
+    <circle cx="960" cy="400" r="7" fill="#2f7d4f" opacity="0.35"/>
+  </g>
+  <text x="60" y="446" class="anno">需处理 · 急闪 1.2s（频率更快 ⇒ 视觉上更「吵」）</text>
+  <g>
+    <circle cx="80" cy="454" r="6" fill="#d97706" opacity="0.3"/>
+    <circle cx="160" cy="454" r="10" fill="#d97706"/>
+    <circle cx="240" cy="454" r="6" fill="#d97706" opacity="0.3"/>
+    <circle cx="320" cy="454" r="10" fill="#d97706"/>
+    <circle cx="400" cy="454" r="6" fill="#d97706" opacity="0.3"/>
+    <circle cx="480" cy="454" r="10" fill="#d97706"/>
+  </g>
+  <text x="60" y="500" class="anno">进行中 · 涟漪向外扩散 + 条带流动（表达「还在走」而非「走了多少」）</text>
+  <g fill="none" stroke="#2563eb">
+    <circle cx="90" cy="516" r="8" stroke-width="2" opacity="0.85"/>
+    <circle cx="90" cy="516" r="16" stroke-width="2" opacity="0.5"/>
+    <circle cx="90" cy="516" r="24" stroke-width="2" opacity="0.25"/>
+    <circle cx="90" cy="516" r="32" stroke-width="2" opacity="0.1"/>
+  </g>
+  <rect x="150" y="508" width="240" height="16" rx="8" fill="#dbe9fb"/>
+  <rect x="150" y="508" width="240" height="16" rx="8" fill="none" stroke="#8fb8e8"/>
+  <rect x="230" y="508" width="80" height="16" rx="8" fill="#8fb8e8" opacity="0.85"/>
+  <text x="410" y="521" class="anno">← 光带在条内往返流动（不定长，不指向终点）</text>
+
+  <!-- ══ B. 语义色板 ══ -->
+  <text x="40" y="580" class="h2">B · 语义色板 Token（颜色 + 形状 + 动效三重编码才可用）</text>
+  <rect x="40" y="594" width="1120" height="150" rx="6" class="card"/>
+  <rect x="64" y="616" width="72" height="48" rx="6" fill="#2f7d4f"/>
+  <text x="64" y="686" class="mono">#2F7D4F</text>
+  <text x="64" y="702" class="anno">ok / 新鲜 / 健康</text>
+  <rect x="224" y="616" width="72" height="48" rx="6" fill="#D97706"/>
+  <text x="224" y="686" class="mono">#D97706</text>
+  <text x="224" y="702" class="anno">warn / 接近上限</text>
+  <rect x="384" y="616" width="72" height="48" rx="6" fill="#DC2626"/>
+  <text x="384" y="686" class="mono">#DC2626</text>
+  <text x="384" y="702" class="anno">error / scope 不存在</text>
+  <rect x="544" y="616" width="72" height="48" rx="6" fill="#94A3B8"/>
+  <text x="544" y="686" class="mono">#94A3B8</text>
+  <text x="544" y="702" class="anno">unknown（虚线+静止）</text>
+  <rect x="704" y="616" width="72" height="48" rx="6" fill="#2563EB"/>
+  <text x="704" y="686" class="mono">#2563EB</text>
+  <text x="704" y="702" class="anno">busy / 进行中</text>
+  <rect x="864" y="616" width="72" height="48" rx="6" fill="#B6BCC6"/>
+  <text x="864" y="686" class="mono">#B6BCC6</text>
+  <text x="864" y="702" class="anno">off / 已关闭（中性）</text>
+  <rect x="1024" y="616" width="112" height="48" rx="6" fill="#E8EAEE" stroke="#d7dbe2"/>
+  <text x="1024" y="686" class="mono">#E8EAEE → #1F2328</text>
+  <text x="1024" y="702" class="anno">中性轨道 / 文本 5 阶</text>
+  <text x="64" y="730" class="anno">规则：颜色填充只用 8%~14% 透明度做底色（tint），描边用 100% 本色；**任何状态都必须同时给出形状或动效**，色盲与灰度打印下仍然可辨。</text>
+
+  <!-- ══ C. 尺度与层次 ══ -->
+  <text x="40" y="786" class="h2">C · 尺度、层次与密度</text>
+  <rect x="40" y="800" width="545" height="150" rx="6" class="card"/>
+  <text x="60" y="826" class="s lb">间距阶（4 的倍数）</text>
+  <text x="60" y="848" class="mono">4 · 8 · 12 · 16 · 24 · 32</text>
+  <text x="60" y="874" class="s lb">圆角</text>
+  <text x="60" y="896" class="mono">chip 999 · card 8 · panel 10</text>
+  <text x="60" y="922" class="s lb">字阶</text>
+  <text x="60" y="944" class="mono">10 anno · 12 副 · 13 正文 · 16 卡题 · 28~30 数字</text>
+
+  <rect x="615" y="800" width="545" height="150" rx="6" class="card"/>
+  <text x="635" y="826" class="s lb">层次（elevation）</text>
+  <text x="635" y="848" class="mono">card: 0 1px 2px rgba(16,24,40,.06)</text>
+  <text x="635" y="870" class="mono">hover: 0 4px 12px rgba(16,24,40,.10) + translateY(-1px)</text>
+  <text x="635" y="896" class="s lb">密度反转</text>
+  <text x="635" y="918" class="anno">首屏「一眼」：图形大、留白多、文字少</text>
+  <text x="635" y="936" class="anno">细节按需：hover tooltip / 展开 L2 证据层</text>
+
+  <!-- ══ D. 红线 ══ -->
+  <text x="40" y="988" class="h2">D · 红线（违反即视为设计缺陷）</text>
+  <rect x="40" y="1002" width="1120" height="60" rx="6" class="anno-box"/>
+  <text x="56" y="1024" class="s" fill="#4b5563">① 尊重 `prefers-reduced-motion`：降级为静态（呼吸/急闪/涟漪/流光全部停，仅保留颜色与形状变化）—— 无障碍要求，不是可选项。</text>
+  <text x="56" y="1046" class="s" fill="#4b5563">② 只动 `transform` / `opacity`；禁止动画 `box-shadow`、`width`、`top/left`（布局抖动）。②b 禁止装饰性动画：每个动效必须有状态语义。③ 颜色不得单独承载语义。</text>
+  <text x="56" y="1068" class="s" fill="#4b5563">④ 不模拟百分比进度（后端无 processed/total）· ⑤ 未知/关闭态一律静止且低饱和 · ⑥ 同一屏最多一个「会呼吸」的元素，避免视觉噪声。</text>
+</svg>

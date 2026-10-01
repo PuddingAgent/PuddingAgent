@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1330" viewBox="0 0 1200 1330">
+  <style>
+    text{font-family:'Microsoft YaHei','PingFang SC',Segoe UI,sans-serif;fill:#1f2328}
+    .h1{font-size:17px;font-weight:700}.h2{font-size:14px;font-weight:700}
+    .s{font-size:11px}.xs{font-size:10px}.lb{font-size:11px;fill:#6b7280}
+    .anno{font-size:10px;fill:#9aa3af}
+    .mono{font-family:Consolas,Menlo,monospace;font-size:10px}
+    .card{fill:#fff;stroke:#d7dbe2}
+    .ui{fill:#fbfcfd;stroke:#d7dbe2}
+    .dash{fill:#fcfcfd;stroke:#9aa3af;stroke-dasharray:5 4}
+    .anno-box{fill:#f4f5f7;stroke:#d7dbe2}
+  </style>
+  <defs>
+    <pattern id="shim" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="10" height="10" fill="#dbe9fb"/>
+      <line x1="0" y1="0" x2="0" y2="10" stroke="#8fb8e8" stroke-width="3"/>
+    </pattern>
+    <radialGradient id="halo"><stop offset="0" stop-color="#2f7d4f" stop-opacity=".30"/><stop offset="1" stop-color="#2f7d4f" stop-opacity="0"/></radialGradient>
+    <radialGradient id="haloW"><stop offset="0" stop-color="#d97706" stop-opacity=".30"/><stop offset="1" stop-color="#d97706" stop-opacity="0"/></radialGradient>
+    <radialGradient id="haloB"><stop offset="0" stop-color="#2563eb" stop-opacity=".30"/><stop offset="1" stop-color="#2563eb" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="1330" fill="#ffffff"/>
+
+  <text x="40" y="30" class="h1">图 3 · 视觉语言（v2 · 视觉优先）—— 状态由图形/动效/颜色承载，文字退为副信息</text>
+  <text x="40" y="52" class="lb">原则：一眼看懂 · 颜色永不单独承载语义（必配形状或动效或短词）· 静默即健康，异常自己会「动」起来</text>
+
+  <!-- ══ A. L0 视觉条 ══ -->
+  <text x="40" y="92" class="h2">A · L0 状态条：四个视觉单元 + 一个开关（无长句，短词仅作标点）</text>
+  <rect x="40" y="104" width="1120" height="150" rx="10" class="card"/>
+
+  <!-- 脉冲球 -->
+  <circle cx="150" cy="179" r="52" fill="url(#halo)"/>
+  <circle cx="150" cy="179" r="34" fill="none" stroke="#2f7d4f" stroke-width="2" opacity="0.35"/>
+  <circle cx="150" cy="179" r="16" fill="#2f7d4f"/>
+  <text x="150" y="240" class="s" text-anchor="middle" fill="#2f7d4f">就绪</text>
+  <text x="150" y="256" class="anno" text-anchor="middle">呼吸 2.4s</text>
+
+  <!-- 新鲜度环（满=新鲜，随时间变空变灰） -->
+  <circle cx="330" cy="179" r="34" fill="none" stroke="#e8eaee" stroke-width="9"/>
+  <circle cx="330" cy="179" r="34" fill="none" stroke="#2f7d4f" stroke-width="9"
+          stroke-dasharray="209.9 3.7" stroke-linecap="round" transform="rotate(-90 330 179)"/>
+  <text x="330" y="185" class="h2" text-anchor="middle">12m</text>
+  <text x="330" y="240" class="s" text-anchor="middle">新鲜度</text>
+  <text x="330" y="256" class="anno" text-anchor="middle">环空 ⇒ 该重建了</text>
+
+  <!-- 体积环 -->
+  <circle cx="510" cy="179" r="34" fill="none" stroke="#e8eaee" stroke-width="9"/>
+  <circle cx="510" cy="179" r="34" fill="none" stroke="#2f7d4f" stroke-width="9"
+          stroke-dasharray="21.4 192.2" stroke-linecap="round" transform="rotate(-90 510 179)"/>
+  <text x="510" y="185" class="h2" text-anchor="middle">10%</text>
+  <text x="510" y="240" class="s" text-anchor="middle">体积占用</text>
+  <text x="510" y="256" class="anno" text-anchor="middle">≥80% 转琥珀 · ≥95% 转红脉动</text>
+
+  <!-- scope 点阵 -->
+  <circle cx="676" cy="179" r="10" fill="#2f7d4f"/>
+  <circle cx="704" cy="179" r="10" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="3 2"/>
+  <text x="690" y="240" class="s" text-anchor="middle">受理 1</text>
+  <text x="690" y="256" class="anno" text-anchor="middle">实心=受理 · 虚线红=被拒</text>
+
+  <!-- 开关 -->
+  <text x="880" y="172" class="s lb">原始字段</text>
+  <rect x="960" y="160" width="42" height="22" rx="11" fill="#e8eaee" stroke="#d7dbe2"/>
+  <circle cx="971" cy="171" r="8" fill="#fff" stroke="#c9ced6"/>
+  <text x="1014" y="174" class="xs lb">关</text>
+  <text x="880" y="200" class="anno">展开 L2（唯一文字密集区，主动下钻才出现）</text>
+  <text x="880" y="216" class="anno">hover 任意图形 ⇒ tooltip 给绝对时间/原始字节/路径</text>
+
+  <rect x="40" y="264" width="1120" height="34" rx="6" class="anno-box"/>
+  <text x="56" y="285" class="anno">▲ L0 无一句话结论：好坏=球体颜色与是否呼吸 · 新鲜度=环的完整度 · 体积=环 · 覆盖=点阵。文字只在 tooltip 与异常时出现。</text>
+
+  <!-- ══ B. 五态视觉编码 ══ -->
+  <text x="40" y="332" class="h2">B · 五态视觉编码（形状 + 动效 + 卡片处理，三者同时变化 —— 不靠颜色单独区分）</text>
+  <rect x="40" y="346" width="1120" height="46" rx="6" class="ui"/>
+  <text x="70" y="375" class="s lb">状态</text>
+  <text x="200" y="375" class="s lb">主视觉（36px）</text>
+  <text x="420" y="375" class="s lb">动效</text>
+  <text x="640" y="375" class="s lb">卡片/容器处理</text>
+  <text x="900" y="375" class="s lb">文字（降级为副信息）</text>
+
+  <!-- ok -->
+  <rect x="40" y="400" width="1120" height="62" rx="6" class="card"/>
+  <circle cx="290" cy="431" r="16" fill="#2f7d4f"/>
+  <text x="70" y="436" class="s">就绪 ok</text>
+  <text x="420" y="436" class="s">呼吸 2.4s｜scale 1→1.06 · 光晕 opacity .9→.55</text>
+  <text x="640" y="436" class="s">正常，无边框强调</text>
+  <text x="900" y="436" class="s">短词「就绪」（12px 次级色）</text>
+  <text x="900" y="452" class="anno">静默即健康：不动声色就是最好消息</text>
+
+  <!-- warn/err -->
+  <rect x="40" y="468" width="1120" height="62" rx="6" class="card"/>
+  <circle cx="290" cy="499" r="30" fill="url(#haloW)"/>
+  <circle cx="290" cy="499" r="16" fill="#d97706"/>
+  <text x="70" y="504" class="s">需处理 warn / error</text>
+  <text x="420" y="504" class="s">急闪 1.2s｜顶边 3px 色条</text>
+  <text x="640" y="504" class="s">顶部 3px 色条 + 左侧 3px 描边</text>
+  <text x="900" y="504" class="s">**异常时文字才升格**：一句话 + 修复指引</text>
+  <text x="900" y="520" class="anno">这是唯一允许长句的场景</text>
+
+  <!-- unknown -->
+  <rect x="40" y="536" width="1120" height="62" rx="6" class="dash"/>
+  <circle cx="290" cy="567" r="16" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="70" y="572" class="s">未知 unknown</text>
+  <text x="420" y="572" class="s">**无动效**（静止）</text>
+  <text x="640" y="572" class="s">容器虚线边框 + 内容降饱和</text>
+  <text x="900" y="572" class="s">「未知」+ tooltip「探测失败，不代表不存在」</text>
+  <text x="900" y="588" class="anno">不确定就该「没有质感」：不呼吸、不发光、不着色</text>
+
+  <!-- off -->
+  <rect x="40" y="604" width="1120" height="62" rx="6" fill="#f4f5f7" stroke="#d7dbe2"/>
+  <circle cx="290" cy="635" r="16" fill="#b6bcc6"/>
+  <text x="70" y="640" class="s" fill="#6b7280">已关闭 off</text>
+  <text x="420" y="640" class="s" fill="#6b7280">无动效（静止）</text>
+  <text x="640" y="640" class="s" fill="#6b7280">整体 grayscale + 透明度 0.75，hover 恢复</text>
+  <text x="900" y="640" class="s" fill="#6b7280">「已关闭」</text>
+  <text x="900" y="656" class="anno">关闭 ≠ 故障：视觉上就该「睡着」，绝不染红</text>
+
+  <!-- busy -->
+  <rect x="40" y="672" width="1120" height="62" rx="6" class="card"/>
+  <circle cx="290" cy="703" r="30" fill="url(#haloB)"/>
+  <circle cx="290" cy="703" r="16" fill="#2563eb"/>
+  <circle cx="290" cy="703" r="24" fill="none" stroke="#2563eb" stroke-width="2" opacity=".45"/>
+  <text x="70" y="708" class="s">进行中 busy</text>
+  <text x="420" y="708" class="s">涟漪 ripple 1.6s｜不定长流光条</text>
+  <text x="640" y="708" class="s">顶部 3px 流光带（shimmer）</text>
+  <text x="900" y="708" class="s">「重建中 · 已清点 4,560」</text>
+  <text x="900" y="724" class="anno">**不出现百分比/进度条**：后端无 processed/total</text>
+
+  <!-- ══ C. L1 卡片视觉 ══ -->
+  <text x="40" y="774" class="h2">C · L1 四张卡：每张只用一种主视觉，文字只做标签</text>
+
+  <!-- A -->
+  <rect x="40" y="790" width="545" height="230" rx="8" class="card"/>
+  <text x="60" y="816" class="h2">A · 全文索引（Lucene）</text>
+  <circle cx="158" cy="900" r="52" fill="none" stroke="#e8eaee" stroke-width="13"/>
+  <circle cx="158" cy="900" r="52" fill="none" stroke="#2f7d4f" stroke-width="13"
+          stroke-dasharray="32.7 294" stroke-linecap="round" transform="rotate(-90 158 900)"/>
+  <text x="158" y="908" class="h2" text-anchor="middle" font-size="20">10%</text>
+  <text x="158" y="962" class="anno" text-anchor="middle">体积环（上限 1.0 GB）</text>
+  <text x="300" y="868" class="s lb">条目数</text>
+  <text x="300" y="904" font-size="30" font-weight="700" class="mono">12</text>
+  <text x="300" y="928" class="anno">大数字 = 视觉锚点（tabular-nums 防跳动）</text>
+  <text x="300" y="958" class="s lb">新鲜度条（绿 → 灰，随时间流逝变短）</text>
+  <rect x="300" y="966" width="260" height="10" rx="5" fill="#e8eaee"/>
+  <rect x="300" y="966" width="252" height="10" rx="5" fill="#2f7d4f"/>
+  <text x="300" y="998" class="anno">最后更新 12 分钟前（hover 出绝对时间）</text>
+
+  <!-- B -->
+  <rect x="615" y="790" width="545" height="230" rx="8" class="dash"/>
+  <text x="635" y="816" class="h2" fill="#6b7280">B · 符号索引（代码）</text>
+  <circle cx="733" cy="900" r="52" fill="none" stroke="#b6bcc6" stroke-width="13" stroke-dasharray="6 6"/>
+  <text x="733" y="912" font-size="26" fill="#94a3b8" text-anchor="middle">?</text>
+  <text x="733" y="962" class="anno" text-anchor="middle">虚线空环 = 未接入</text>
+  <text x="870" y="878" class="s lb">待 S-A2 接入后启用同一视觉语法</text>
+  <text x="870" y="900" class="anno">项目数 · 每项目状态（点阵）· 最后索引时刻（环）</text>
+  <text x="870" y="922" class="anno">未接入 ≠ 故障：不染红、不脉动、不留空白</text>
+  <text x="870" y="944" class="anno">空白会被读成「坏了」，故必须给明确占位符号</text>
+
+  <!-- C -->
+  <rect x="40" y="1034" width="545" height="230" rx="8" class="card"/>
+  <text x="60" y="1060" class="h2">C · 供给台账（jobs）· 时间轴火花线</text>
+  <rect x="60" y="1086" width="120" height="14" rx="4" fill="#2f7d4f"/>
+  <rect x="188" y="1086" width="60" height="14" rx="4" fill="#2f7d4f"/>
+  <rect x="256" y="1086" width="180" height="14" rx="4" fill="#2f7d4f"/>
+  <rect x="444" y="1086" width="80" height="14" rx="4" fill="#d97706"/>
+  <rect x="60" y="1112" width="460" height="16" rx="8" fill="url(#shim)"/>
+  <text x="60" y="1150" class="s lb">最近 5 次 job：长度 = 耗时 · 颜色 = 结果 · 最后一条为进行中</text>
+  <text x="60" y="1170" class="anno">进行中用「不定长流光」（条纹流动）—— 天然表达「无已知终点」</text>
+  <text x="60" y="1192" class="anno">台账为空：不画空条，改画虚线占位 + 一句原因（三种如实说法）</text>
+  <text x="60" y="1214" class="anno">hover 任一条 ⇒ tooltip：jobId / state / phase / 清点 / 用时</text>
+  <text x="60" y="1240" class="anno">（jobId 等 9 个字段只在此 tooltip 与 L2 出现）</text>
+
+  <!-- D -->
+  <rect x="615" y="1034" width="545" height="230" rx="8" class="card"/>
+  <text x="635" y="1060" class="h2">D · 配置与受理</text>
+  <text x="635" y="1100" class="s lb">全文索引</text>
+  <rect x="735" y="1086" width="48" height="24" rx="12" fill="#2f7d4f"/>
+  <circle cx="771" cy="1098" r="9" fill="#fff"/>
+  <text x="795" y="1102" class="s" fill="#2f7d4f">开</text>
+  <text x="635" y="1140" class="s lb">scope 受理</text>
+  <circle cx="745" cy="1136" r="9" fill="#2f7d4f"/>
+  <text x="765" y="1140" class="anno">实心 = 受理</text>
+  <text x="635" y="1180" class="s lb">维护循环（S5b）</text>
+  <rect x="735" y="1166" width="48" height="24" rx="12" fill="#e8eaee" stroke="#d7dbe2"/>
+  <circle cx="747" cy="1178" r="9" fill="#fff" stroke="#c9ced6"/>
+  <circle cx="880" cy="1178" r="9" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="900" y="1182" class="anno">虚线圆 = 是否生效「未知」（null ≠ false）</text>
+  <text x="635" y="1214" class="anno">开关是图形，不是「enabled = true」这行字</text>
+  <text x="635" y="1240" class="anno">本卡不提供「重建」按钮（端点只读）</text>
+
+  <line x1="40" y1="1288" x2="1160" y2="1288" stroke="#d7dbe2"/>
+  <text x="40" y="1310" class="s" fill="#4b5563">注　本图为 v2 修订：首屏以视觉为主，文字仅保留短词与 tooltip；状态矩阵（§2）与文案（§3）**仍然有效**，但文案降级为 tooltip / 异常时的句子。</text>
+</svg>
