@@ -166,6 +166,19 @@ public sealed class DesktopSession : IAsyncDisposable
                     DesktopCapabilityError.Internal("notification response payload is missing")),
             cancellationToken);
 
+    /// <summary>页面快照（规划 §9 切片 D）：Ref 只在返回的 PageVersion 内有效。</summary>
+    public Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
+        BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.BrowserSnapshot,
+            DesktopCapabilityRequest.ForSnapshot(request),
+            call,
+            static response => response.Snapshot is { } value
+                ? CapabilityResult<DesktopSnapshot>.Success(value)
+                : CapabilityResult<DesktopSnapshot>.Failure(
+                    DesktopCapabilityError.Internal("snapshot response payload is missing")),
+            cancellationToken);
+
     /// <summary>只读 Shell 状态（窗口形态/托盘/自动化状态/打开页面数）。</summary>
     public Task<CapabilityResult<DesktopShellStatus>> GetShellStatusAsync(
         DesktopCallContext call, CancellationToken cancellationToken = default) =>

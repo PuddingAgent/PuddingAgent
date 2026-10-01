@@ -40,6 +40,8 @@ public static class DesktopCapabilityPolicy
         [DesktopCapability.ShellDialog] = [DesktopContextTrust.Workbench],
         [DesktopCapability.ShellFilePicker] = [DesktopContextTrust.Workbench],
         [DesktopCapability.ShellClipboard] = [DesktopContextTrust.Workbench],
+        // 快照读取会遍历 DOM（同样是脚本注入）：只对获授权的 Agent 浏览器开放，工作台与普通网页都不允许。
+        [DesktopCapability.BrowserSnapshot] = [DesktopContextTrust.AgentAuthorized],
     };
 
     public static bool IsAllowedForTrust(DesktopCapability capability, DesktopContextTrust trust) =>

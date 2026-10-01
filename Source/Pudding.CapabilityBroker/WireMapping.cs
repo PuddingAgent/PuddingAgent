@@ -74,6 +74,22 @@ internal static class CoreCommandEncoder
                 command.GetShellStatus = new Proto.GetShellStatusCommand();
                 break;
 
+            case DesktopCapability.BrowserSnapshot when request.Snapshot is { } snapshot:
+                command.Snapshot = new Proto.SnapshotCommand
+                {
+                    Target = EncodeTarget(snapshot.Target),
+                    ExpectedPageVersion = snapshot.ExpectedPageVersion.Value,
+                    Budget = new Proto.SnapshotBudget
+                    {
+                        IncludeDom = snapshot.Options.IncludeDom,
+                        IncludeAccessibilityTree = snapshot.Options.IncludeAccessibilityTree,
+                        IncludeHtml = snapshot.Options.IncludeHtml,
+                        MaxNodes = snapshot.Options.MaxNodes,
+                        MaxTextLength = snapshot.Options.MaxTextLength,
+                    },
+                };
+                break;
+
             default:
                 throw new ArgumentException(
                     $"Request does not carry a payload for capability '{capability.Name}'.", nameof(request));
@@ -98,6 +114,10 @@ internal static class CoreCommandEncoder
             _ when request.Notification is { } notification =>
                 $"notification:{notification.Title}:{notification.Message}:{notification.Priority}",
             _ when request.PageState is { } target => $"page_state:{target.Key}",
+            _ when request.Snapshot is { } snapshot =>
+                $"snapshot:{snapshot.Target.Key}:{snapshot.ExpectedPageVersion.Value}:"
+                + $"{snapshot.Options.IncludeDom}:{snapshot.Options.IncludeAccessibilityTree}:{snapshot.Options.IncludeHtml}:"
+                + $"{snapshot.Options.MaxNodes}:{snapshot.Options.MaxTextLength}",
             _ => "empty",
         });
 
@@ -136,6 +156,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.ShowNotification => expectedCapability == DesktopCapability.ShellNotification,
             Proto.OperationResult.OutcomeOneofCase.PageState => expectedCapability == DesktopCapability.WebViewPageState,
             Proto.OperationResult.OutcomeOneofCase.ShellStatus => expectedCapability == DesktopCapability.ShellStatus,
+            Proto.OperationResult.OutcomeOneofCase.Snapshot => expectedCapability == DesktopCapability.BrowserSnapshot,
             _ => false,
         };
 
@@ -211,6 +232,26 @@ internal static class DesktopResultDecoder
 
             default:
             {
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Snapshot)
+                {
+                    if (requestedTarget is null)
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal(
+                                "snapshot result cannot be correlated without the requested target"));
+                    }
+
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromSnapshot(new DesktopSnapshot(
+                            requestedTarget,
+                            NullIfEmpty(result.Snapshot.DomText),
+                            NullIfEmpty(result.Snapshot.AccessibilityTree),
+                            NullIfEmpty(result.Snapshot.Html),
+                            result.Snapshot.Truncated,
+                            result.Snapshot.NodeCount,
+                            ToPageVersion(result.Snapshot.PageVersion))));
+                }
+
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.ShellStatus)
                 {
                     // 只读 Shell 状态：线名未知按保守值处理（自动化状态折叠为 user_takeover）。
@@ -256,6 +297,8 @@ internal static class DesktopResultDecoder
         var code = DesktopCapabilityErrorCodes.ParseOrInternalError(outcome.Code);
         return new DesktopCapabilityError(code, outcome.Message, outcome.Retryable, outcome.MayHaveSideEffects);
     }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     private static DesktopPageVersion ToPageVersion(long value) =>
         value > 0 ? DesktopPageVersion.Require(value) : DesktopPageVersion.Unknown;

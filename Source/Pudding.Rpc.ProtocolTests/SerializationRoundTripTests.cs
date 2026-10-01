@@ -210,6 +210,60 @@ public sealed class SerializationRoundTripTests
     }
 
     [Fact]
+    public void SnapshotCommandAndOutcome_RoundTrip()
+    {
+        var command = new CapabilityCommand
+        {
+            OperationId = "op-snap",
+            Generation = 2,
+            Capability = "browser.snapshot",
+            Snapshot = new SnapshotCommand
+            {
+                Target = new CommandTarget { ContextId = "ctx-1", PageId = "page-1" },
+                ExpectedPageVersion = 7,
+                Budget = new SnapshotBudget
+                {
+                    IncludeDom = true,
+                    IncludeAccessibilityTree = false,
+                    IncludeHtml = false,
+                    MaxNodes = 500,
+                    MaxTextLength = 4096,
+                },
+            },
+        };
+
+        var parsedCommand = CapabilityCommand.Parser.ParseFrom(command.ToByteArray());
+        Assert.Equal(CapabilityCommand.PayloadOneofCase.Snapshot, parsedCommand.PayloadCase);
+        Assert.Equal(7, parsedCommand.Snapshot.ExpectedPageVersion);
+        Assert.Equal(500, parsedCommand.Snapshot.Budget.MaxNodes);
+
+        var result = new OperationResult
+        {
+            OperationId = "op-snap",
+            Generation = 2,
+            Snapshot = new SnapshotOutcome
+            {
+                DomText = "body>div",
+                AccessibilityTree = "document",
+                Html = "<div/>",
+                Truncated = true,
+                NodeCount = 12,
+                PageVersion = 7,
+            },
+        };
+
+        var parsedResult = OperationResult.Parser.ParseFrom(result.ToByteArray());
+        Assert.Equal(OperationResult.OutcomeOneofCase.Snapshot, parsedResult.OutcomeCase);
+        Assert.True(parsedResult.Snapshot.Truncated);
+        Assert.Equal(12, parsedResult.Snapshot.NodeCount);
+        Assert.Equal(7, parsedResult.Snapshot.PageVersion);
+
+        // 设置 error 必须清掉 snapshot 分支（oneof 互斥）。
+        parsedResult.Error = new ErrorOutcome { Code = "page_version_mismatch" };
+        Assert.Equal(OperationResult.OutcomeOneofCase.Error, parsedResult.OutcomeCase);
+        Assert.Null(parsedResult.Snapshot);
+    }
+    [Fact]
     public void JavaScriptResult_CarriesRawJsonFragment()
     {
         var outcome = new JavascriptOutcome { Kind = JavascriptValueKind.Json, JsonValue = "{\"a\":1}", Truncated = true };

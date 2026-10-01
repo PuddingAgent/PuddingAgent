@@ -32,6 +32,9 @@ public enum DesktopCapability
 
     /// <summary>剪贴板读写（受可信上下文限制）。</summary>
     ShellClipboard = 1 << 7,
+
+    /// <summary>读取页面快照（DOM/可访问性树，带 PageVersion）；Ref 只在同一 PageVersion 内有效。</summary>
+    BrowserSnapshot = 1 << 8,
 }
 
 public enum DesktopCapabilityKind
@@ -96,6 +99,8 @@ public static class DesktopCapabilities
             DesktopCapabilityKind.Shell, DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresUserInteraction | DesktopCapabilityTraits.RequiresTrustedContext),
         new(DesktopCapability.ShellClipboard, "shell.clipboard", InitialVersion,
             DesktopCapabilityKind.Shell, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
+        new(DesktopCapability.BrowserSnapshot, "browser.snapshot", InitialVersion,
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
     ];
 
     private static readonly Dictionary<DesktopCapability, DesktopCapabilityDescriptor> ByCapability =

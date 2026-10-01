@@ -29,6 +29,12 @@ public interface IPuddingDesktopWebViewApi
         DesktopCallContext context,
         DesktopPageTarget target,
         CancellationToken cancellationToken = default);
+
+    /// <summary>读取页面快照（DOM/可访问性树 + PageVersion）。Ref 只在同一 PageVersion 内有效。</summary>
+    Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
+        DesktopCallContext context,
+        BrowserSnapshotRequest request,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Shell 能力。本轮有类型化 DTO 的是通知与只读状态；对话框/Picker/剪贴板在后续切片逐能力开放。</summary>

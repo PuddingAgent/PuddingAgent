@@ -180,6 +180,27 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.BrowserSnapshot:
+            {
+                if (request.Snapshot is not { } snapshot)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("browser.snapshot request payload is missing"));
+                }
+
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    snapshot.Target,
+                    snapshot.ExpectedPageVersion,
+                    context,
+                    token => _surface.SnapshotAsync(context, snapshot, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromSnapshot(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             case DesktopCapability.ShellStatus:
             {
                 if (!request.ShellStatus)

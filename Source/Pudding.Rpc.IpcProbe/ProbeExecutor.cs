@@ -32,6 +32,16 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                     DesktopPageVersion.Require(5),
                     DesktopPageReadiness.Complete))),
 
+            DesktopCapability.BrowserSnapshot => Task.FromResult(DesktopCapabilityResponse.FromSnapshot(
+                new DesktopSnapshot(
+                    request.Snapshot?.Target ?? new DesktopPageTarget("ctx-probe", "page-probe"),
+                    "body > main > h1",
+                    "document:Probe",
+                    null,
+                    truncated: request.Snapshot is { Options.MaxNodes: < 10 },
+                    nodeCount: 42,
+                    DesktopPageVersion.Require(5)))),
+
             DesktopCapability.ShellStatus => Task.FromResult(DesktopCapabilityResponse.FromShellStatus(
                 new DesktopShellStatus(
                     DesktopWindowState.HiddenToTray,

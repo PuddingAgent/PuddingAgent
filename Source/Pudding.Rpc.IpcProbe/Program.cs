@@ -141,7 +141,8 @@ internal static class Program
             | DesktopCapability.WebViewExecuteJavascript
             | DesktopCapability.WebViewPageState
             | DesktopCapability.ShellNotification
-            | DesktopCapability.ShellStatus,
+            | DesktopCapability.ShellStatus
+            | DesktopCapability.BrowserSnapshot,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
         InactivityTimeout = TimeSpan.FromSeconds(30),
@@ -304,6 +305,24 @@ internal static class Program
             report.Fail($"{label}-shell-status", $"期望 shell_status 结果，实际 {status.Error}");
         }
 
+        // 6) 页面快照（切片 D 首个能力）：Ref 只在返回的 PageVersion 内有效。
+        var snapshot = await session.SnapshotAsync(
+            new BrowserSnapshotRequest(
+                target,
+                DesktopPageVersion.Unknown,
+                new DesktopSnapshotOptions(includeDom: true, includeAccessibilityTree: true, maxNodes: 500)),
+            Call("snapshot"));
+        if (snapshot.IsSuccess && snapshot.Value.NodeCount > 0 && snapshot.Value.PageVersion.Value > 0)
+        {
+            report.Pass(
+                $"{label}-snapshot",
+                $"browser.snapshot → nodes={snapshot.Value.NodeCount} page_version={snapshot.Value.PageVersion.Value} "
+                + $"truncated={snapshot.Value.Truncated}");
+        }
+        else
+        {
+            report.Fail($"{label}-snapshot", $"期望快照结果，实际 {snapshot.Error}");
+        }
         // 会话结束时 Broker 侧应当清空注册表（不残留陈旧会话）。
         await desktop.DisposeAsync();
         await WaitAsync(() => server.Broker.Sessions.Count == 0, $"{label}: broker session removed after disconnect");

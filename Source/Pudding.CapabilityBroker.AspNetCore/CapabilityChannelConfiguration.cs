@@ -23,7 +23,8 @@ public sealed record CapabilityChannelConfiguration
         | DesktopCapability.WebViewExecuteJavascript
         | DesktopCapability.WebViewPageState
         | DesktopCapability.ShellNotification
-        | DesktopCapability.ShellStatus;
+        | DesktopCapability.ShellStatus
+        | DesktopCapability.BrowserSnapshot;
 
     public const int DefaultMaxMessageBytes = 1024 * 1024;
 

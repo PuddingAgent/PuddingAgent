@@ -51,6 +51,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken);
 
+    /// <summary>读取页面快照；预算由请求给出，实现方必须截断并如实标注 <c>Truncated</c>。</summary>
+    Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
+        DesktopCallContext context, BrowserSnapshotRequest request, CancellationToken cancellationToken);
+
     Task<CapabilityResult<DesktopNotificationResult>> ShowNotificationAsync(
         DesktopCallContext context, DesktopNotificationRequest request, CancellationToken cancellationToken);
 

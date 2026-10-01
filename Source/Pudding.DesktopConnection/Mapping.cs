@@ -204,6 +204,54 @@ internal static class CoreFrameMapping
                         payload.Title, payload.Message, ToDomain(payload.Priority))));
             }
 
+            case DesktopCapability.BrowserSnapshot:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.Snapshot)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var target = DecodeTarget(command.Snapshot.Target);
+                if (target is null)
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                        DesktopCapabilityError.InvalidTarget("browser.snapshot requires an explicit context_id/page_id target"));
+                }
+
+                if (command.Snapshot.ExpectedPageVersion < 0)
+                {
+                    return FailRequest("expected_page_version must not be negative");
+                }
+
+                var budget = command.Snapshot.Budget;
+                DesktopSnapshotOptions options;
+                try
+                {
+                    options = new DesktopSnapshotOptions(
+                        includeDom: budget?.IncludeDom ?? true,
+                        includeAccessibilityTree: budget?.IncludeAccessibilityTree ?? true,
+                        includeHtml: budget?.IncludeHtml ?? false,
+                        maxNodes: budget is null || budget.MaxNodes == 0
+                            ? DesktopSnapshotOptions.DefaultMaxNodes
+                            : budget.MaxNodes,
+                        maxTextLength: budget is null || budget.MaxTextLength == 0
+                            ? DesktopSnapshotOptions.DefaultMaxTextLength
+                            : budget.MaxTextLength);
+                }
+                catch (ArgumentOutOfRangeException ex)
+                {
+                    return FailRequest($"snapshot budget is out of range ({ex.ParamName})");
+                }
+
+                if (!options.HasContent)
+                {
+                    return FailRequest("snapshot must request at least one of dom/accessibility_tree/html");
+                }
+
+                return CapabilityResult<DesktopCapabilityRequest>.Success(
+                    DesktopCapabilityRequest.ForSnapshot(new BrowserSnapshotRequest(
+                        target, ToPageVersion(command.Snapshot.ExpectedPageVersion), options)));
+            }
             case DesktopCapability.ShellStatus:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
@@ -275,6 +323,9 @@ internal static class CoreFrameMapping
 /// <summary>领域 → wire 的编码。领域真源在 Contracts，这里只做机械映射。</summary>
 internal static class DesktopFrameMapping
 {
+    /// <summary>单条快照文本字段的硬上限（超过即截断并标注 truncated）。</summary>
+    private const int SnapshotTextLimit = 2_000_000;
+
     public static Proto.DesktopFrame Hello(
         DesktopConnectionOptions options, IReadOnlyList<DesktopCapabilityDeclaration> declarations)
     {
@@ -385,6 +436,17 @@ internal static class DesktopFrameMapping
                     };
                     break;
 
+                case DesktopCapability.BrowserSnapshot when response.Snapshot is { } snapshot:
+                    result.Snapshot = new Proto.SnapshotOutcome
+                    {
+                        DomText = WireText.Truncate(snapshot.DomText, SnapshotTextLimit),
+                        AccessibilityTree = WireText.Truncate(snapshot.AccessibilityTree, SnapshotTextLimit),
+                        Html = WireText.Truncate(snapshot.Html, SnapshotTextLimit),
+                        Truncated = snapshot.Truncated,
+                        NodeCount = snapshot.NodeCount,
+                        PageVersion = snapshot.PageVersion.Value,
+                    };
+                    break;
                 case DesktopCapability.ShellStatus when response.ShellStatus is { } shellStatus:
                     result.ShellStatus = new Proto.ShellStatusOutcome
                     {

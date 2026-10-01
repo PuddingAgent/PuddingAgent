@@ -112,6 +112,22 @@ message GetPageStateCommand {
 message GetShellStatusCommand {
 }
 
+// 页面快照（切片 D）：Ref 只在同一 page_version 内有效。
+message SnapshotCommand {
+  CommandTarget target = 1;
+  int64 expected_page_version = 2;
+  SnapshotBudget budget = 3;
+}
+
+// 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
+message SnapshotBudget {
+  bool include_dom = 1;
+  bool include_accessibility_tree = 2;
+  bool include_html = 3;
+  int32 max_nodes = 4;
+  int32 max_text_length = 5;
+}
+
 // Core → Desktop 的能力命令。payload 用 oneof 白名单化，禁止「字符串命令名 + 任意 JSON」。
 message CapabilityCommand {
   string operation_id = 1;
@@ -130,6 +146,7 @@ message CapabilityCommand {
     ShowNotificationCommand show_notification = 12;
     GetPageStateCommand get_page_state = 13;
     GetShellStatusCommand get_shell_status = 14;
+    SnapshotCommand snapshot = 15;
   }
 }
 
@@ -187,6 +204,15 @@ message PageStateOutcome {
   string readiness = 3;
 }
 
+message SnapshotOutcome {
+  string dom_text = 1;
+  string accessibility_tree = 2;
+  string html = 3;
+  bool truncated = 4;
+  int32 node_count = 5;
+  int64 page_version = 6;
+}
+
 // Shell 状态结果（只读）：窗口形态、托盘可见性、自动化状态与打开的页面数。
 // 各状态用字符串线名（visible / hidden_to_tray / closing / unknown；free / paused / user_takeover），
 // 便于 Core 在不重新发版的情况下识别 Desktop 新增状态。
@@ -218,6 +244,7 @@ message OperationResult {
     ErrorOutcome error = 13;
     PageStateOutcome page_state = 14;
     ShellStatusOutcome shell_status = 15;
+    SnapshotOutcome snapshot = 16;
   }
 }
 

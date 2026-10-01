@@ -1,3 +1,24 @@
+## 2026-10-01：`browser.snapshot`（切片 D 首个能力，与既有 Bridge `page.snapshot` 等价）
+
+切片 D 的第一步不是迁移七个工具，而是先把「命令映射」补齐——这是方案 §9 的未决项之一。
+本轮落地 `browser.snapshot`（只读，但与 `execute_javascript` 同类：遍历 DOM 等同注入脚本）：
+
+- 契约：`DesktopCapability.BrowserSnapshot`（`browser.snapshot`，WebView，`RequiresTrustedContext | RequiresPageTarget`）
+  + `DesktopSnapshotOptions`（预算：`MaxNodes`/`MaxTextLength` 有硬上限，且**必须至少请求一种内容**）
+  + `BrowserSnapshotRequest`（显式目标 + 期望页面版本）、`DesktopSnapshot`（DOM/可访问性树/HTML + `Truncated` + `NodeCount` + `PageVersion`）。
+- proto：`SnapshotCommand`（payload 15，含 `SnapshotBudget`）+ `SnapshotOutcome`（outcome 16）。
+- 准入：策略表新增一行 —— **只对获授权的 Agent 浏览器开放**；普通网页与可信工作台都不允许
+  （工作台永远不可脚本注入，快照同属该类）。
+- 不变式落地：**Ref 只在同一 `PageVersion` 内有效**；`ExpectedPageVersion` 非 Unknown 时版本不符必须拒绝。
+- 验证：协议 20/20、契约 77/77、DesktopService 85/85（新增 4 条：预算/版本/未授权/失败传递）、
+  探针 **27/27**（管道与 h2c 上 `browser.snapshot` 往返：nodes=42、page_version=5）。
+
+**探针再次抓出真实缺陷**：请求联合的 `Target` 未包含 Snapshot ⇒ Core 侧无法把结果关联回请求
+（`snapshot result cannot be correlated without the requested target`）。这类缺陷只有在真实端点上才会暴露。
+
+测试合计：341 用例（Contracts 77、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 57、CapabilityBroker.AspNetCore 22）。
+
 ## 2026-10-01：能力通道配置绑定与端点派生（切片 C-3 收尾前的最后一块可独立验证件）
 
 把「接线所需的全部可判定逻辑」从宿主里搬出来，使重启窗口内只剩两行装配 + 一段配置：

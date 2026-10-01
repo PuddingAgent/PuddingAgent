@@ -213,6 +213,28 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ShellStatusHandler(cancellationToken);
     }
 
+    public int SnapshotCount => _calls.Count(call => call.StartsWith("snapshot", StringComparison.Ordinal));
+
+    public Func<BrowserSnapshotRequest, CancellationToken, Task<CapabilityResult<DesktopSnapshot>>>? SnapshotHandler { get; set; }
+
+    public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
+        DesktopCallContext context, BrowserSnapshotRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue($"snapshot:{request.Target}");
+        await AwaitGateAsync(cancellationToken);
+
+        return SnapshotHandler is null
+            ? CapabilityResult<DesktopSnapshot>.Success(new DesktopSnapshot(
+                request.Target,
+                "body > main",
+                "document",
+                null,
+                truncated: false,
+                nodeCount: 42,
+                DesktopPageVersion.Require(9)))
+            : await SnapshotHandler(request, cancellationToken);
+    }
+
     private Task AwaitGateAsync(CancellationToken cancellationToken) =>
         Gate is null ? Task.CompletedTask : Gate.Task.WaitAsync(cancellationToken);
 }

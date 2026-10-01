@@ -25,6 +25,7 @@ public sealed class CapabilityCatalogTests
             "shell.dialog|v1|Shell|HasSideEffects, RequiresTrustedContext, RequiresUserInteraction",
             "shell.file_picker|v1|Shell|HasSideEffects, RequiresTrustedContext, RequiresUserInteraction",
             "shell.clipboard|v1|Shell|Mutating, HasSideEffects, RequiresTrustedContext",
+            "browser.snapshot|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
         ];
 
         Assert.Equal(expected, actual);
@@ -100,7 +101,12 @@ public sealed class CapabilityCatalogTests
             .ToArray();
 
         Assert.Equal(
-            [DesktopCapability.WebViewNavigate, DesktopCapability.WebViewExecuteJavascript, DesktopCapability.WebViewPageState],
+            [
+                DesktopCapability.WebViewNavigate,
+                DesktopCapability.WebViewExecuteJavascript,
+                DesktopCapability.WebViewPageState,
+                DesktopCapability.BrowserSnapshot,
+            ],
             requiring);
 
         // Shell 能力没有页面目标：可信级别由服务侧调用方策略决定，而不是从目标推断。
@@ -118,6 +124,8 @@ public sealed class CapabilityCatalogTests
             .Select(d => d.Name)
             .ToArray();
 
-        Assert.Equal(["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard"], trustedOnly);
+        Assert.Equal(
+            ["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard", "browser.snapshot"],
+            trustedOnly);
     }
 }

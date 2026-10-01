@@ -172,7 +172,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 
 实施前需技术探针确认：选用包版本与锁定方式、产品 Named Pipe ACL/用户身份、启动就绪描述的演进、当前 Browser 命令到 proto 的完整映射、消息字节预算与图片/HTML传输、跨平台 UI 和远端部署需求。这些未决项不阻碍先建设纯 Contracts；未测量前不宣称 gRPC 比当前 Bridge 更快。
 
-**2026-10-01 更新（上述未决项的现状）**：包版本已锁定并在真实端点验证；Named Pipe DACL 与 ACL 注入钩子已实测（`CurrentUserOnly=True`、`CreateNamedPipeServerStream`）；启动就绪描述的**端点部分**已落地为 `DesktopCapabilityEndpoint`（严格解析、无凭据、按用户+产品实例派生管道名、不同 DataRoot 不串接），但「就绪协议里怎么携带它」仍需与现有 REST 就绪流程一起定；Browser 命令到 proto 目前只有 navigate / execute_javascript / page_state / show_notification 四条，snapshot/locate/interact/wait 属切片 D；消息字节预算有实测起点（1 MiB 单帧 5.8–6.3 ms），HTML/截图仍需限额文件或分块能力。
+**2026-10-01 更新（上述未决项的现状）**：包版本已锁定并在真实端点验证；Named Pipe DACL 与 ACL 注入钩子已实测（`CurrentUserOnly=True`、`CreateNamedPipeServerStream`）；启动就绪描述的**端点部分**已落地为 `DesktopCapabilityEndpoint`，并在配置层（`CapabilityChannelConfiguration`，默认关闭）完成「配置 → 选项 + 就绪描述」的绑定，但「就绪协议里怎么携带它」仍需与现有 REST 就绪流程一起定；**Browser 命令到 proto 的映射**已补 `browser.snapshot`（含预算与 Ref/PageVersion 不变式），`locate`/`interact`/`wait_for` 与 contexts/tabs 待补；消息字节预算有实测起点（1 MiB 单帧 5.8–6.3 ms），HTML/截图仍需限额文件或分块能力。
 
 本次源码核查与外部文档核实只支持方案合理性；未执行产品构建、gRPC 运行或 UI smoke，不把规划写成已完成实现。
 
@@ -183,7 +183,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 | A：Contracts | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Contracts`（BCL-only，编译期边界）+ `Pudding.ContractsTests` 58/58；边界取红实测 |
 | B：Protocol / Connection | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Rpc.Protocol` + 17/17；`Source/Pudding.DesktopConnection` + 74/74；`Source/Pudding.Rpc.IpcProbe` 13/13（Named Pipe + h2c 真实端点） |
 | C：DesktopService | 🟡 产品代码与配置绑定全部就绪，只剩组合根两行装配（需重启验收） | `Source/Pudding.DesktopService` 81/81；`Source/PuddingDesktop.CapabilityHost`（`DispatcherQueue` 适配器）；`Source/Pudding.CapabilityBroker` 57/57；`Source/Pudding.CapabilityBroker.AspNetCore` 22/22（gRPC 服务 + Kestrel 装配助手 + **配置绑定/端点派生**，含实测约束：`Listen*` 覆盖 `UseUrls`；`Transport` 三态保证配置与监听一致）；接线配方见该组件 code_map，剩余 5 项装配待重启窗口 |
-| D：浏览器等价接入 | 🟡 前置完成（`page_state` payload + Core Broker + 两端真实端点互操作 + 端点发现），等价接入未做 | 探针升级为「真实 Broker 作服务端」，Named Pipe / Loopback h2c 上完成握手、四能力往返、1 MiB 单帧、取消与断开收尾、端点描述两端一致性（**21/21**）；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
+| D：浏览器等价接入 | 🟡 进行中：`browser.snapshot` 已端到端落地（含 Ref/PageVersion 不变式） | 探针在管道/h2c 上验证快照往返（27/27）；`browser.locate`/`interact`/`wait_for` 与 contexts/tabs 仍未声明；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
 | E：Shell 能力 | 🟡 进行中：`shell.notification` + `shell.status` 已落地（只读，端到端验证） | 两者都有 payload 与实现，可在管道/h2c 上往返（探针 23/23）；`shell.dialog`/`shell.file_picker`/`shell.clipboard` 仍**未声明**（无 payload、无实现），交互式单窗口互斥依赖对话框载荷故一并后置 |
 | F：默认切换与退役 | ⛔ 未开始 | — |
 
