@@ -1922,4 +1922,3 @@ VisionRequestPolicy默认8、VisionCapabilityContract上限钳制、PuddingFileC
 - 证据与修复顺序：Docs/Reports/Agent-Harness-Latency-Diagnosis-2026-10-01.md。
 - 定位入口：AgentExecutionService.Streaming.cs（FIRST_TOKEN 实为请求前 context-ready）、ContextPipelineOrchestrator.cs（上下文阶段）、SearchGrepTool.cs（默认扫描边界）、CacheDiagnosticsService.cs（窗口加权缓存率）、IntentConsole / ComposerStatusDetails（已有诊断入口）。
 - 核查指定 Agent manifest 与 persona：额外上下文恢复/检视/调研规则、旧路径索引回退；仅交付诊断，未修改运行配置或产品代码。
-
