@@ -254,3 +254,41 @@ dotnet build "Source\PuddingAgent\PuddingAgent.csproj" -c Debug -o "temp\host-pr
 ⇒ `Source/PuddingHost/**` 未被覆盖）** 与 **D1（未登记项目 fail-closed，修复待部署）**。
 
 **复现命令**：`powershell -File temp\ft-lab-run.ps1`（脚本与逐行日志 `temp\ft-lab-log2.txt` 均在已 gitignore 的 `temp/`）。
+
+## D5 更新 · 2026-10-01 20:53 —— 状态被"修好"了，但**索引内容没跟上**（新的反证）
+
+**动作**：`code_index_register_project(project_id=8a48458b…, path=D:\CodeProject\PuddingAgent\PuddingAgent, index=true)`
+（本轮不再报 `SQLite Error 5: database is locked`，返回 `index_status=Pending` / `index_message=Indexing enqueued for background processing.`）
+
+**状态确实翻转了**（对比同日前值）：
+
+| 视图 | 20:52 之前 | 20:52 之后 |
+|---|---|---|
+`code_index_list_projects` 根项目 | `status=Registering` | **`status=Active`** |
+`code_index_status` 根项目 | `status=Pending` · `completed_at=11:46:53Z` · `started_at=null` | **`status=Completed`** · `completed_at=**12:52:51.6Z**` · `started_at=null` |
+⇒ D3（两个视图互相矛盾）**已被消除**：现在两边一致。
+
+**但覆盖范围没有改善（关键反证）**：
+
+| 探针 | 结果 |
+|---|---|
+`code_symbol_search("CodeIndexStatusProbe")`（**只存在于 D: 的 `Source/PuddingHost/Services/`，是本会话新增文件**） | **0 条** ⇒ D: 侧 `Source/PuddingHost/**` **仍然不可见** |
+`code_symbol_search("GenerateImageTool")`（对照：D: 上也确实存在） | 3 条，**全部** `file_path=E:\github\AgentNetworkPlan\…Source\PuddingHost\Tools\GenerateImageTool.cs`、`project_id=**b375fee0d6524ad393a26e72ba1e917d**` |
+
+**判定（诚实）**：`Completed` / `Active` 是**状态面的绿灯，不是覆盖面的绿灯**。
+- 时间反证：`completed_at=12:52:51`，而注册调用发起于 12:52:4x ⇒ 该次「全量运行」在**秒级**内被判定完成，
+  与「重新索引 4,500+ 文件」应有的耗时量级**严重不符** ⇒ 高度怀疑**运行没有真正执行索引工作**（只推进了状态机）。
+- `GenerateImageTool` 之所以还能搜到，靠的是一条**孤儿 project（`b375fee0…`，路径指向已不存在的 E: 盘）**里的陈旧行 ——
+  它既**不是** D: 的真值，又**掩盖了** D: 确实没有覆盖这一事实。
+
+**由此暴露我自己 S-A2 设计的一个缺口**（新发现，非外部缺陷）：
+`CodeIndexStatusProbe.IsStale` 的判据是 `未登记 || 根路径不存在`，**覆盖不到**
+「已登记 + 根路径存在 + **运行时报告 Completed，但索引里没有该项目的任何符号**」这一失败模式。
+⇒ 待办新增：**给 `codeIndex` 块加"覆盖可信度"信号**（至少要有可判定的证据，例如该 scope 的已索引文件数 / 最近一次运行耗时 /
+探针式抽查）——否则面板会在这种情形下显示「正常」，与本项目「不许把未知或坏当成正常」的纪律冲突。
+
+**当前可用兜底（已在本会话反复使用）**：符号检索不可信期间，定位代码一律用
+`file_search` / `search_grep` / `file_read` 在 D: 上现场核对，**不引用 `code_symbol_search` 返回的 `E:` 路径**。
+
+**未完成**：为什么「全量运行」会秒级完成（是否被某一 guard 短路、是否 Core 侧日志有原因）——
+本轮未查 Core 日志，列为下一步；修复可能的入口是 `PuddingCodeIndexer.Cli`（尚未确认其命令面）。
