@@ -209,6 +209,14 @@ const renderChatMain = (
   options: Parameters<typeof createChatMainElement>[0] = {},
 ) => render(createChatMainElement(options));
 
+/** 已展开的“更多”菜单可见文本（antd 关闭后仍保留 DOM，故只取未隐藏的那层）。 */
+const visibleMenuText = (): string =>
+  Array.from(
+    document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)'),
+  )
+    .map((node) => node.textContent ?? '')
+    .join(' | ');
+
 describe('ChatMain workbench header', () => {
   beforeEach(() => {
     mockHistoryPush.mockClear();
@@ -486,6 +494,49 @@ describe('ChatMain workbench header', () => {
     expect(screen.queryByTestId('history-search-modal')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '搜索历史消息' }));
     expect(screen.getByTestId('history-search-modal')).toBeTruthy();
+  });
+
+  // ── IMG03（设计规格 §13.2 / §4 矩阵）：顶部只留高频动作，低频开关分组进“更多” ──
+  it('IMG03：高频入口仍在顶部可直接到达，低频开关不再并排堆在顶部', () => {
+    renderChatMain();
+
+    // 高频：任务看板 / 搜索 / 快照仍是顶部可直接点击的入口
+    expect(screen.getByRole('button', { name: '任务看板' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '搜索历史消息' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Checkpoint 时间线' })).toBeTruthy();
+
+    // 低频开关不再作为独立顶部按钮暴露
+    expect(screen.queryByRole('button', { name: '开发者模式' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '开启自动朗读' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '关闭自动朗读' })).toBeNull();
+  });
+
+  it('IMG03：低频开关经“更多”仍可到达，并显示当前开启状态', async () => {
+    renderChatMain();
+
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+
+    // 自动朗读默认开启：断言“带明确状态后缀”的菜单项而非固定档位
+    expect(await screen.findByText(/^自动朗读（已(开启|关闭)）$/)).toBeTruthy();
+    expect(screen.getByText(/^开发者模式（已(开启|关闭)）$/)).toBeTruthy();
+  });
+
+  it('IMG03：更多里的开关切换后选中语义跟着变化，不丢失开关能力', async () => {
+    renderChatMain();
+
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const before = (await screen.findByText(/^自动朗读（已(开启|关闭)）$/))
+      .textContent;
+    fireEvent.click(screen.getByText(/^自动朗读（已(开启|关闭)）$/));
+
+    // 再次展开应反映切换后的状态（原“开/关自动朗读”按钮的能力保留）
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const expected = before?.includes('已开启')
+      ? '自动朗读（已关闭）'
+      : '自动朗读（已开启）';
+    await waitFor(() => {
+      expect(visibleMenuText()).toContain(expected);
+    });
   });
 
   it('keeps voice interaction inside the main input surface without a side rail', () => {

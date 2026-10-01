@@ -2,12 +2,14 @@
 import {
   AppstoreOutlined,
   BugOutlined,
+  CheckOutlined,
   FieldTimeOutlined,
   HistoryOutlined,
   MenuUnfoldOutlined,
+  MoreOutlined,
   SoundOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Divider, Select, Tooltip } from 'antd';
+import { Alert, Button, Divider, Dropdown, Select, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkspaceNavigationHeader } from '@/components';
 import type {
@@ -635,27 +637,51 @@ const ChatMain: React.FC<ChatMainProps> = ({
                   className={checkpointTimelineOpen ? styles.devModeActive : ''}
                 />
               </Tooltip>
-              <Tooltip title={autoTtsEnabled ? '关闭自动朗读' : '开启自动朗读'}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<SoundOutlined />}
-                  aria-label={autoTtsEnabled ? '关闭自动朗读' : '开启自动朗读'}
-                  onClick={() => setAutoTtsEnabled(!autoTtsEnabled)}
-                  className={autoTtsEnabled ? styles.devModeActive : ''}
-                />
-              </Tooltip>
-              <Tooltip title="开发者模式">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<BugOutlined />}
-                  aria-label="开发者模式"
-                  onMouseEnter={() => void loadDevPanel()}
-                  onFocus={() => void loadDevPanel()}
-                  onClick={() => setDevMode(!devMode)}
-                  className={devMode ? styles.devModeActive : ''}
-                />
+              {/* IMG03（设计规格 §13.2 / §4 矩阵）：顶部只留高频动作
+                  （任务看板 / 搜索 / 快照 / 余额数字），低频开关（自动朗读、
+                  开发者模式）收进“更多”。开关状态不能跟着一起藏起来：
+                  Tooltip 写明两项当前状态；开发者模式开启时触发器额外高亮
+                  （自动朗读默认开启，若也据此高亮则触发器恒亮、反而失去信号）。 */}
+              <Tooltip
+                title={`更多：自动朗读（${
+                  autoTtsEnabled ? '已开启' : '已关闭'
+                }）、开发者模式（${devMode ? '已开启' : '已关闭'}）`}
+              >
+                <Dropdown
+                  trigger={['click']}
+                  menu={{
+                    items: [
+                      {
+                        key: 'auto-tts',
+                        icon: autoTtsEnabled ? (
+                          <CheckOutlined />
+                        ) : (
+                          <SoundOutlined />
+                        ),
+                        label: autoTtsEnabled
+                          ? '自动朗读（已开启）'
+                          : '自动朗读（已关闭）',
+                        onClick: () => setAutoTtsEnabled(!autoTtsEnabled),
+                      },
+                      {
+                        key: 'dev-mode',
+                        icon: devMode ? <CheckOutlined /> : <BugOutlined />,
+                        label: devMode
+                          ? '开发者模式（已开启）'
+                          : '开发者模式（已关闭）',
+                        onClick: () => setDevMode(!devMode),
+                      },
+                    ],
+                  }}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<MoreOutlined />}
+                    aria-label="更多操作"
+                    className={devMode ? styles.devModeActive : ''}
+                  />
+                </Dropdown>
               </Tooltip>
             </>
           }
