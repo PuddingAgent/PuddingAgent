@@ -154,11 +154,47 @@ code_index_status(8a48458b…) → status="Pending", started_at_utc=null,
 - **教训**：单次 WAL 采样不足以判定"无写者"；必须**跨时间窗多次采样**，并同时看 main/WAL/shm 三个文件的 mtime。
 - 现行阻塞：**修复与清理两条路被同一把锁挡住** —— `code_index_register_project(index=true)` 与 `code_index_unregister_project(remove_index_data=true)` 均报 `SQLite Error 5`。
 
-### 运维结论（决策建议，未实施）
+### 运维结论（2026-10-01 修正：**重启 ≠ 部署**）
 
-一次 **Core 重启**可同时解决三件事：
-1. 让已交付的 `codeIndex` 端点块生效；
-2. 让面板 B 卡显示真实数据；
-3. **释放占用索引库的写者**，从而在安静窗口重新入队一次完整索引运行 + 清理陈旧数据。
+**旧结论作废。** 我先前写「一次 Core 重启可同时解决三件事」，**本轮实测证伪**。
+
+**证据链（本轮实测）**
+
+| 证据 | 取值 |
+|---|---|
+| 运行中 Core | PID **32848**，启动 **2026-10-01T17:26:27+08:00**（较上轮 PID 13552 **确已重启**） |
+| exe 路径 | `Source\PuddingAgent\bin\Debug\net10.0\PuddingAgent.exe` |
+| 该目录 `PuddingHost.dll` | len=851456，mtime **2026-10-01T03:14:26Z**（本地 11:14，**早于全部四个切片**），sha256 `708B3EEF…` |
+| 类型扫描（该 DLL） | `IndexAdminController`=**False** · `FullTextIndexStatusProbe`=**False** · `CodeIndexStatusProbe`=**False** · `FullTextIndexSupplyAccessor`=**False**；对照 `StorageAdminController`=**True**（⇒ 扫描有效，非仪器故障） |
+| HTTP | `/api/admin/index/status` → **404**；对照 `/api/admin/storage/overview` → **401**（路由存在，仅缺鉴权） |
+| 工具行为 | `code_index_status("scope-6526fb344e33")` → **仍为 `Completed`**（D1 修复应返回 `not_registered`） |
+| `bin\Release\net10.0\PuddingHost.dll` | mtime 04:17:59Z；`IndexAdminController`=**True** 但 `CodeIndexStatusProbe`=**False** ⇒ 含 S-A、**缺 S-A2/D1** |
+
+⇒ **重启只是重新加载同一份旧二进制**。四个切片的源码**从未编译进 Core 的启动目录**。
+⇒ 真正的激活动作 = **编译 + 部署 + 重启**（`bootstrap_reboot` / `deployment_mode=desktop-build`），**不是**单纯重启。
+
+### ✅ 可部署产物已备好（本轮新增，非破坏性）
+
+用**输出重定向**构建，**未触碰运行中的 Core 目录**：
+
+```
+dotnet build "Source\PuddingAgent\PuddingAgent.csproj" -c Debug -o "temp\host-preview"
+→ exit 0，143 warning / 0 error，用时 8.36s
+```
+
+| 项 | 值 |
+|---|---|
+| 产物规模 | **957 文件 / 791,902,371 B**，含 `PuddingAgent.exe` |
+| `PuddingHost.dll` | len=899584，sha256 `01447A69…0D0FC`；**四个新类型全 True**（含 `CodeIndexStatusProbe`） |
+| `PuddingRuntime.dll` | len=4529152，sha256 `3D922583…3A015`；含 **`not_registered`** ⇒ D1 修复已编译在内 |
+| `PuddingAgent.dll` | sha256 `9053C33E9E2D5F931E38C9B14940DB027EEC2FC78FFB68F38A9CE3C7A553A67D`（供 `bootstrap_reboot` 的 `artifact_assembly_sha256`） |
+| **安全证明** | 运行目录 `PuddingHost.dll` 仍为 `708B3EEF…`、`PuddingRuntime.dll` 仍为 `FA3654B0…` —— **逐位未变** |
+
+### ⚠️ 部署前必须处理的风险（已实测，未解决）
+
+| 风险 | 证据 |
+|---|---|
+| wwwroot 体量不等 | preview `wwwroot` = **317 文件 / 40,453,107 B**；live = **772 文件 / 205,676,954 B**（**多 455 文件 / ≈165 MB**）。若部署为**镜像替换**，会删掉 live 多出的 ≈165 MB ⇒ 须先确认 Desktop 部署是**覆盖式**还是**镜像式** |
+| admin SPA 一致性 | 两处 `wwwroot\admin\index.html` sha256 **相同** `C3B94DC5…` ⇒ 当前前端部署与构建源一致（好消息） |
 
 **在重启完成之前**：符号检索的可信度有限，**不应据 `code_symbol_search` 结果下"某代码不存在"的结论**（应改用 `file_read` / `search_grep` 现场核对）。
