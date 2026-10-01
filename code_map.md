@@ -1,3 +1,19 @@
+## 2026-10-01：Chat 前端现代化 UI / UX 设计（待实施）
+
+- 设计规格：Docs/Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md。
+- 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
+- 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
+
+## 2026-10-01：门禁数字干净复核（发现并修正文档漂移）
+
+第 23 轮对已发布的门禁数字做了一次**干净重建复核**，结果：
+
+- 实测：Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、CapabilityBroker 68、
+  CapabilityBroker.AspNetCore 22 ⇒ **合计 365**（此前多处写的「374 用例」是**累加笔误**，已全部修正）；
+  探针 **45/45 exit 0**；WinUI 适配器 0 警告 0 错误。
+- 教训：**手写累加的总数会静默漂移**。方案 §10.1 现在附上可复现命令与口径说明
+  （以该表为准，根 code_map 各轮条目中的合计属历史记录），并在表中记录本次修正。
+- 复核本身也再次确认：全部门禁在干净重建下可复现，探针 45 项断言全绿。
 ## 2026-10-01：接线手册（切片 C-3 收尾 · 重启窗口执行清单）
 
 新增 [能力通道接线手册](Docs/Features/Desktop-Capability-Channel-Wiring-Runbook-2026-10-01.md)：
@@ -16,7 +32,7 @@
 
 把第 10–20 轮的真实进展与证据回填到纲领文档，消除状态表滞后：
 
-- 方案 §10 进展表：A/B/C/D/E 各行的测试与探针数字更新为**实测值**（374 用例、探针 45/45），
+- 方案 §10 进展表：A/B/C/D/E 各行的测试与探针数字更新为**实测值**（365 用例、探针 45/45），
   D 行改为「**协议侧已完成**，只剩七个工具的调用点迁移」；§9 的「Browser 命令到 proto 的映射」未决项标记为**已完成**。
 - 方案新增 **§10.1 门禁快照**（六个组件套件 + 探针 + WinUI 适配器 + 「运行中的产品未受影响」的明确声明）
   与 **§10.2 探针抓到的四个真实缺陷**及结论：跨路径的真实端点断言不可替代，每次新增能力必须同步新增探针断言。
@@ -36,7 +52,7 @@
 - **探针顺带验证了陈旧版本保护**：标签页请求最初固定 v5，而交互步骤已把版本推进到 6 ⇒ 被本地拒绝
   （`page_version_mismatch`）。这既是保护在生效，也说明探针步骤之间共享同一会话的版本记忆。
 
-测试合计：374 用例（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+测试合计：365 用例（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
 CapabilityBroker 68、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.tabs` 契约与准入（切片 D 收尾，第 1/2 步）
 
@@ -51,7 +67,7 @@ CapabilityBroker 68、CapabilityBroker.AspNetCore 22）。
 - **未做（下一步）**：wire payload（payload 20 / outcome 21）、联合变体、两端映射、服务分支、探针往返、
   加入 `DefaultGrantable`。因此它现在是「已登记但不可用」，Core 侧解码明确返回 `unsupported_capability`。
 
-测试合计：374 用例（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+测试合计：365 用例（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
 CapabilityBroker 68、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.contexts` 端到端（切片 D 的「先看清有什么」）
 
