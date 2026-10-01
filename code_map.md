@@ -1,3 +1,17 @@
+## 2026-10-01：接线手册（切片 C-3 收尾 · 重启窗口执行清单）
+
+新增 [能力通道接线手册](Docs/Features/Desktop-Capability-Channel-Wiring-Runbook-2026-10-01.md)：
+代码侧已全部就绪，缺的只是**会改变产品行为的装配**，因此把它写成可直接执行的手册，让窗口期动作最少、可回滚。
+
+- **三条不可跳过的实测约束**：`Kestrel.Listen*` 覆盖 `UseUrls`（必须显式绑定 REST 与能力通道）；
+  命名管道端点也出现在地址列表（`http://pipe`）；`Enabled` 缺省 false ⇒ **回滚 = 关开关重启**。
+- **精确补丁位置**：`PuddingApplicationHost` 的 5 处（配置绑定 / 认证器 / 授权器 / Kestrel / Map），
+  含 `ControlTokenCapabilityAuthenticator` 与 `ToolRuntimeDesktopCapabilityAuthorizer` 的写法要求
+  （认证**复用**既有常量时间校验，不另写一套；授权 fail closed，**不得**以 `AllowAll` 上线）。
+- **8 步验收清单**（含「先关后开」的两阶段重启、REST 健康检查、无凭据拒绝、断连清空、回滚演练）
+  与 5 条风险的缓解措施。
+- 明确写出未完成项：`WebView2DesktopUiSurface` 尚未实现；`WinUiDesktopUiDispatcher` 编译通过但
+  线程访问验证必须在真实 `DispatcherQueue` 下做；就绪流程的具体挂载点需在窗口内先确认形态，手册不臆测。
 ## 2026-10-01：方案与报告回填（第 21 轮）
 
 把第 10–20 轮的真实进展与证据回填到纲领文档，消除状态表滞后：

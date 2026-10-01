@@ -187,7 +187,8 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 | E：Shell 能力 | 🟡 进行中：`shell.notification` + `shell.status` 已落地（端到端验证） | 两者都有 payload 与实现，在同一次探针运行中验证（**45/45**）；`shell.dialog`/`shell.file_picker`/`shell.clipboard` 仍**未声明**（无 payload、无实现），交互式单窗口互斥依赖对话框载荷故一并后置 |
 | F：默认切换与退役 | ⛔ 未开始 | — |
 
-细节、探针原始结论、有意偏差与风险见[实施报告](../Reports/Desktop-Contracts-Rpc-SliceABC-2026-10-01.md)。
+细节、探针原始结论、有意偏差与风险见[实施报告](../Reports/Desktop-Contracts-Rpc-SliceABC-2026-10-01.md)；
+切片 C-3 的**重启窗口执行清单**见[能力通道接线手册](Desktop-Capability-Channel-Wiring-Runbook-2026-10-01.md)（含精确补丁、8 步验收与回滚方式）。
 
 ### 10.1 门禁快照（最近一次全量运行）
 
