@@ -184,6 +184,22 @@
      <Setter Property="BorderThickness" Value="1"/>
      <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
     </Style>
+
+    <!-- IMG11：工具首页卡片的可用性标签（可用 / 待接入）。
+         文案在启动时由 ToolAvailabilityCatalog 写入（与标签页 Availability 同源），
+         不在此处写死 —— 否则「待接入」很容易被画成可用，或反之。 -->
+    <Style x:Key="ToolAvailabilityChipStyle" TargetType="Border">
+     <Setter Property="CornerRadius" Value="9"/>
+     <Setter Property="BorderThickness" Value="1"/>
+     <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
+     <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}"/>
+     <Setter Property="Padding" Value="6,1"/>
+     <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style x:Key="ToolAvailabilityChipTextStyle" TargetType="TextBlock">
+     <Setter Property="FontSize" Value="11"/>
+     <Setter Property="Opacity" Value="0.75"/>
+    </Style>
    </ResourceDictionary>
   </Grid.Resources>
   <Grid.KeyboardAccelerators>
@@ -355,7 +371,12 @@
              <TextBlock Text="输出文件" FontSize="15" FontWeight="SemiBold"/>
              <TextBlock Text="打开并预览本机的文档、数据或日志" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
-            <TextBlock Grid.Column="2" Text="Ctrl + O" FontSize="12" Opacity="0.55" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Right">
+             <Border Style="{StaticResource ToolAvailabilityChipStyle}">
+              <TextBlock x:Name="OutputCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
+             </Border>
+             <TextBlock Text="Ctrl + O" FontSize="12" Opacity="0.55" HorizontalAlignment="Right"/>
+            </StackPanel>
            </Grid>
           </Button>
 
@@ -367,6 +388,9 @@
              <TextBlock Text="新建终端" FontSize="15" FontWeight="SemiBold"/>
              <TextBlock Text="在会话工作区运行命令（会话组件尚未接入）" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
+            <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
+             <TextBlock x:Name="TerminalCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
+            </Border>
            </Grid>
           </Button>
 
@@ -378,7 +402,12 @@
              <TextBlock Text="浏览器" FontSize="15" FontWeight="SemiBold"/>
              <TextBlock Text="浏览网页，并指定 Agent 目标页面" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
-            <TextBlock Grid.Column="2" Text="Ctrl + T" FontSize="12" Opacity="0.55" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Right">
+             <Border Style="{StaticResource ToolAvailabilityChipStyle}">
+              <TextBlock x:Name="BrowserCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
+             </Border>
+             <TextBlock Text="Ctrl + T" FontSize="12" Opacity="0.55" HorizontalAlignment="Right"/>
+            </StackPanel>
            </Grid>
           </Button>
 
@@ -390,6 +419,9 @@
              <TextBlock Text="制成品" FontSize="15" FontWeight="SemiBold"/>
              <TextBlock Text="预览 Agent 生成的文档、图表与网页（等待 Core 成果接口）" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
+            <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
+             <TextBlock x:Name="ArtifactCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
+            </Border>
            </Grid>
           </Button>
 
@@ -401,6 +433,9 @@
              <TextBlock Text="交互面板" FontSize="15" FontWeight="SemiBold"/>
              <TextBlock Text="Agent 生成的表单、筛选器与参数设置（等待接入）" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
+            <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
+             <TextBlock x:Name="PanelCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
+            </Border>
            </Grid>
           </Button>
          </StackPanel>

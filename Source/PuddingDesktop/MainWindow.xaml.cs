@@ -67,6 +67,8 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1440, 920));
         _ready = true;
+        // IMG11：工具首页卡片的可用性标签取自 Foundation 真源，不在 XAML 里写死
+        ApplyToolAvailabilityLabels();
         ToolTabList.ItemsSource = _toolTabItems;
         _coordinator.StateChanged += OnStateChanged;
         AppWindow.Closing += (sender, e) => { if (!_closed) { e.Cancel = true; _ = RequestCloseAsync(false); } };
@@ -372,6 +374,20 @@ public sealed partial class MainWindow : Window
         UpdateToolStatus();
     }
 
+    /// <summary>
+    /// IMG11：把「可用 / 待接入」写到工具首页卡片上。文案来自
+    /// <see cref="ToolAvailabilityCatalog"/>，与标签页的 Availability 同一判断，
+    /// 所以不会出现「卡片说可用、点开说未接入」（或反过来）的自我矛盾。
+    /// </summary>
+    private void ApplyToolAvailabilityLabels()
+    {
+        OutputCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Output);
+        TerminalCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Terminal);
+        BrowserCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Browser);
+        ArtifactCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Artifact);
+        PanelCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Panel);
+    }
+
     private void UpdateToolStatus()
     {
         var active = _toolTabs.ActiveTab;
@@ -395,6 +411,10 @@ public sealed partial class MainWindow : Window
 
     private static string DescribeToolStatus(ToolTab tab) => tab.Availability switch
     {
+        // IMG12：工具首页没有「当前工具」，正常时就不留一句泛泛的「就绪」——
+        // 状态条只该在真有信息时说话，避免和 Chat 下缘的执行状态看起来像同一件事。
+        ToolTabAvailability.Ready when tab.Kind == ToolTabKind.Home
+            && string.IsNullOrWhiteSpace(tab.StatusText) => string.Empty,
         ToolTabAvailability.Ready => string.IsNullOrWhiteSpace(tab.StatusText) ? "就绪" : tab.StatusText,
         ToolTabAvailability.Deferred => DeferredNotice(tab.Kind),
         _ => string.IsNullOrWhiteSpace(tab.StatusText) ? "当前不可用。" : tab.StatusText,
@@ -589,7 +609,8 @@ public sealed partial class MainWindow : Window
         Kind = ToolTabKind.Terminal,
         Title = "终端 · 新会话",
         Subtitle = "会话组件待接入",
-        Availability = ToolTabAvailability.Deferred,
+        // IMG11：与工具首页卡片标签同源（ToolAvailabilityCatalog）
+        Availability = ToolAvailabilityCatalog.For(ToolTabKind.Terminal),
     });
 
     private void OnOpenArtifactTab(object sender, RoutedEventArgs e) => OpenTool(new ToolTabDescriptor
@@ -598,7 +619,7 @@ public sealed partial class MainWindow : Window
         Kind = ToolTabKind.Artifact,
         Title = "预览 · 制成品",
         Subtitle = "等待 Core 成果接口",
-        Availability = ToolTabAvailability.Deferred,
+        Availability = ToolAvailabilityCatalog.For(ToolTabKind.Artifact),
     });
 
     private void OnOpenPanelTab(object sender, RoutedEventArgs e) => OpenTool(new ToolTabDescriptor
@@ -607,7 +628,7 @@ public sealed partial class MainWindow : Window
         Kind = ToolTabKind.Panel,
         Title = "面板 · 交互",
         Subtitle = "等待 Agent 交互通道",
-        Availability = ToolTabAvailability.Deferred,
+        Availability = ToolAvailabilityCatalog.For(ToolTabKind.Panel),
     });
 
     private async void OnOpenOutputTab(object sender, RoutedEventArgs e) => await PickAndOpenOutputAsync();
@@ -1264,7 +1285,8 @@ public sealed partial class MainWindow : Window
                 Id = ToolTabIdentity.Terminal("smoke"),
                 Kind = ToolTabKind.Terminal,
                 Title = "终端 · 新会话",
-                Availability = ToolTabAvailability.Deferred,
+                // IMG11：与工具首页卡片标签同源，smoke 因此顺带验证「真源 → 标签页」这条线
+                Availability = ToolAvailabilityCatalog.For(ToolTabKind.Terminal),
             });
             if (terminalTab.Availability != ToolTabAvailability.Deferred || terminalTab.IsRunning)
                 throw new Exception("Deferred terminal tab must not claim to be running");
