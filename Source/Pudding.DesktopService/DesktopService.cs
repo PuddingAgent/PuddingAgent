@@ -134,7 +134,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     cancellationToken).ConfigureAwait(false);
 
                 return result.IsSuccess
-                    ? DesktopCapabilityResponse.FromJavascript(result.Value)
+                    ? DesktopCapabilityResponse.FromJavascript(
+                        DesktopCapabilityBudgets.Apply(result.Value, javascript.MaxResultBytes))
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
@@ -281,7 +282,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     cancellationToken).ConfigureAwait(false);
 
                 return result.IsSuccess
-                    ? DesktopCapabilityResponse.FromLocate(result.Value)
+                    ? DesktopCapabilityResponse.FromLocate(
+                        DesktopCapabilityBudgets.Apply(result.Value, locate.MaxResults))
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
@@ -302,7 +304,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     cancellationToken).ConfigureAwait(false);
 
                 return result.IsSuccess
-                    ? DesktopCapabilityResponse.FromSnapshot(result.Value)
+                    ? DesktopCapabilityResponse.FromSnapshot(
+                        DesktopCapabilityBudgets.Apply(result.Value, snapshot.Options))
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 

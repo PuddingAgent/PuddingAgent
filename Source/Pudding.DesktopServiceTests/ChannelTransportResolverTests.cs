@@ -163,3 +163,102 @@ public sealed class DesktopCapabilityChannelSettingsTests
         Assert.True(settings.ResolveTransportFromDescription("carrier-pigeon:x|1|").IsFailure);
     }
 }
+/// <summary>能力预算：按上限截断且如实标注（诚实优先，不假装完整）。</summary>
+public sealed class DesktopCapabilityBudgetsTests
+{
+    private static readonly DesktopPageTarget Target = new("ctx-1", "page-1");
+
+    [Fact]
+    public void Snapshot_IsTruncatedPerRequestedField()
+    {
+        var snapshot = new DesktopSnapshot(
+            Target, new string('d', 100), new string('a', 10), new string('h', 50), false, 7, DesktopPageVersion.Require(3));
+
+        // 只请求 dom + 可访问性树、且上限很小：HTML 不得回传（未请求），其余按上限截断。
+        var applied = DesktopCapabilityBudgets.Apply(
+            snapshot, new DesktopSnapshotOptions(includeDom: true, includeAccessibilityTree: true, includeHtml: false, maxTextLength: 20));
+
+        Assert.Equal(20, applied.DomText!.Length);
+        Assert.Equal(10, applied.AccessibilityTree!.Length);
+        Assert.Null(applied.Html);
+        Assert.True(applied.Truncated);
+        Assert.Equal(7, applied.NodeCount);
+        Assert.Equal(3, applied.PageVersion.Value);
+    }
+
+    [Fact]
+    public void Snapshot_WithinBudgetIsUnchangedAndNotFlagged()
+    {
+        var snapshot = new DesktopSnapshot(Target, "short", "tree", null, false, 2, DesktopPageVersion.Require(1));
+
+        var applied = DesktopCapabilityBudgets.Apply(
+            snapshot, new DesktopSnapshotOptions(maxTextLength: 1000));
+
+        Assert.Equal("short", applied.DomText);
+        Assert.Equal("tree", applied.AccessibilityTree);
+        Assert.False(applied.Truncated);
+    }
+
+    [Fact]
+    public void Snapshot_KeepsAnAlreadyFlaggedTruncation()
+    {
+        // 调用方已标注截断（例如受深度限制）时，不得因为本次未再丢内容而清零。
+        var snapshot = new DesktopSnapshot(Target, "short", null, null, true, 2, DesktopPageVersion.Require(1));
+
+        var applied = DesktopCapabilityBudgets.Apply(snapshot, new DesktopSnapshotOptions(maxTextLength: 1000));
+
+        Assert.True(applied.Truncated);
+    }
+
+    [Fact]
+    public void Locate_TakesTheFirstResultsAndFlagsTruncation()
+    {
+        var elements = Enumerable.Range(0, 5)
+            .Select(index => new DesktopElementRef($"e{index}", "div", DesktopPageVersion.Require(2)))
+            .ToArray();
+        var result = new DesktopLocateResult(Target, new DesktopLocator(DesktopLocatorKind.Css, "div"), elements, false, DesktopPageVersion.Require(2));
+
+        var applied = DesktopCapabilityBudgets.Apply(result, maxResults: 3);
+
+        Assert.Equal(3, applied.Elements.Count);
+        Assert.True(applied.Truncated);
+        Assert.Equal("e0", applied.Elements[0].Reference);
+
+        // 未超限时原样返回（不无谓标注截断）。
+        var untouched = DesktopCapabilityBudgets.Apply(result, maxResults: 5);
+        Assert.Equal(5, untouched.Elements.Count);
+        Assert.False(untouched.Truncated);
+    }
+
+    [Fact]
+    public void Javascript_IsCappedByBytesAndFlagged()
+    {
+        var payload = new string('x', 100);
+        var result = new JavascriptResult(JavascriptValueKind.String, payload, Truncated: false);
+
+        var applied = DesktopCapabilityBudgets.Apply(result, maxResultBytes: 10);
+
+        Assert.Equal(10, applied.JsonValue!.Length);
+        Assert.True(applied.Truncated);
+
+        var within = DesktopCapabilityBudgets.Apply(result, maxResultBytes: 1000);
+        Assert.Equal(100, within.JsonValue!.Length);
+        Assert.False(within.Truncated);
+    }
+
+    [Fact]
+    public void Contexts_AreCappedPerContext()
+    {
+        var pages = Enumerable.Range(0, 4)
+            .Select(index => new DesktopPageInfo(
+                new DesktopPageTarget("ctx-1", $"page-{index}"), DesktopPageVersion.Require(1)))
+            .ToArray();
+        var contexts = new DesktopContexts([new DesktopContextInfo("ctx-1", DesktopContextTrust.AgentAuthorized, pages)]);
+
+        var applied = DesktopCapabilityBudgets.Apply(contexts, maxPagesPerContext: 2);
+
+        Assert.Equal(2, applied.PageCount);
+        Assert.Single(applied.Contexts);
+        Assert.Equal(2, applied.Contexts[0].Pages.Count);
+    }
+}

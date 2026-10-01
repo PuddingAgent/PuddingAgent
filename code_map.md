@@ -4,6 +4,19 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
 
+## 2026-10-01：能力预算集中实现 + 咽喉点强制（第 25 轮）
+
+- 新增 `DesktopCapabilityBudgets`（纯函数，唯一实现）：快照按请求字段与上限截断、脚本按字节上限截断、
+  定位取前 N、清单按每上下文页面数上限截断。**诚实语义**：只要丢弃了内容就 `Truncated=true`
+  （不假装完整），调用方已标注截断的**不因本次未再丢内容而清零**，且不抛异常（预算是上限不是错误）。
+- **咽喉点强制**：`DesktopService` 在返回前统一调用预算函数（快照/脚本/定位三处）——
+  这样预算**不依赖每个 `IDesktopUiSurface` 实现是否自觉**。本系列正出现过探针执行器不执行预算的情况；
+  新增测试 `Budgets_AreEnforcedByTheServiceEvenIfTheSurfaceIgnoresThem` 用一个「不守规矩的 surface」
+  证明服务仍会截断，同时**不改变观测事实**（节点数照实回传）。
+- 测试：DesktopService **97/97**（+7）。
+
+测试合计（复核实测）：Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 97、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 22 = **377**。
 ## 2026-10-01：Desktop 侧通道设置与「已声明必须都有准入规则」（第 24 轮）
 
 补上重启窗口内 Desktop 组合根所缺的最后一块**可测配置**：

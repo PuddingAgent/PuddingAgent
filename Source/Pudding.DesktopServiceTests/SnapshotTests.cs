@@ -78,4 +78,33 @@ public sealed class SnapshotTests
         Assert.True(response.IsFailure);
         Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, response.Error!.Code);
     }
+
+    [Fact]
+    public async Task Budgets_AreEnforcedByTheServiceEvenIfTheSurfaceIgnoresThem()
+    {
+        // 咽喉点强制：surface 可以「不守规矩」，但服务返回给调用方的结果必须已按预算截断。
+        var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true);
+        harness.Surface.SnapshotHandler = (request, _) => Task.FromResult(
+            CapabilityResult<DesktopSnapshot>.Success(new DesktopSnapshot(
+                request.Target,
+                new string('d', 5000),
+                null,
+                null,
+                truncated: false,
+                nodeCount: 99,
+                DesktopPageVersion.Require(1))));
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.BrowserSnapshot,
+            DesktopCapabilityRequest.ForSnapshot(new BrowserSnapshotRequest(
+                ServiceHarness.AgentPage,
+                DesktopPageVersion.Require(1),
+                new DesktopSnapshotOptions(includeDom: true, includeAccessibilityTree: false, maxTextLength: 64))));
+
+        Assert.False(response.IsFailure);
+        Assert.Equal(64, response.Snapshot!.DomText!.Length);
+        Assert.True(response.Snapshot.Truncated);
+        // 预算不改变观测事实（节点数仍如实回传）。
+        Assert.Equal(99, response.Snapshot.NodeCount);
+    }
 }
