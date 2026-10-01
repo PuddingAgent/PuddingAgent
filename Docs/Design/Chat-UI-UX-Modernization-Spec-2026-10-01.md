@@ -541,7 +541,7 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 
 本批证据：新增 4 项不变量测试（助手卡片无有色底且不再取 admin token、链接用 accent、行内代码用 surface-muted、表格 10/12 + 7em + 段落 12）；`pnpm jest` 全量 **1607 passed / 3 failed**（3 项为语音相关既有失败）；`biome lint` 无新增（CommandPalette 未用参数、ContextMenu 数组 index key 均为 HEAD 既有，已用 pristine 文件核对）；`pnpm run build` + chat bundle budget ok。**前端版本 6.1.0 → 6.1.1**：这是 AGENTS.md「前端版本管理」生效后第一次按规则递增版本号，部署后页角徽标显示 `v6.1.1 · 7c2ad16 · 2026-10-01 23:48`，并已在运行中的 Core 所服务的产物里核对到 `6.1.1` / `7c2ad16` / `dirty:!1`。
 
-仍未做（按 §13.6 次序）：**IMG11**（工具首页卡片可用/待接入区分）、**IMG12**（状态重复归位）、**IMG05**（Shell 分栏默认比例，须先在 Foundation 测再接入 Desktop）。以上与 §12 的整体验收均未完成，不能记为通过。
+仍未做（按 §13.6 次序）：**IMG05**（Shell 分栏默认比例，须先在 Foundation 测再接入 Desktop）。以上与 §12 的整体验收均未完成，不能记为通过。
 
 ### 13.9 实施状态（P1：输入区微控件）
 
@@ -563,6 +563,19 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 本批证据：新增 2 项 IMG09 不变量测试（不得回归硬编码浅色块、必须走状态 token）；`pnpm jest` 全量 **1614 passed / 3 failed**（3 项语音相关既有失败）；`biome lint` 对 4 个改动文件 0 告警；`pnpm run build` + chat bundle budget ok。前端版本 6.1.2 → **6.1.3**，运行中 Core 已服务 `6.1.3` / `97fb4d2` / `dirty:!1`；两份 `wwwroot/admin` 的 source map 中 `SessionSidebar.tsx` 均含上述新文案（用 sourcesContent 核对，避免产物里中文被转义导致的假阴性）。
 
 **未验收**：深浅两套主题下徽标亮度与实际观感、左栏按钮文字化后的窄屏排布（§13.6 IMG-V01/V03、§12 V01/A01）需真实窗口。
+
+### 13.11 实施状态（P1-Shell：工具首页与状态条）
+
+本批为 **Shell（XAML）侧**改动，不涉及前端产物，因此**前端版本号不变**（AGENTS.md 的前端版本规则只约束 `PuddingPlatformAdmin`）。
+
+| 项 | 状态 | 提交 | 落地内容 |
+|---|---|---|---|
+| IMG11（工具首页卡片可用/待接入不区分） | 代码已落地，未验收 | `96d5356` | 新增 Foundation `ToolAvailabilityCatalog`：`ToolTabKind` → `ToolTabAvailability` 的纯映射（Home/Browser/Output = Ready；Terminal/Artifact/Panel = Deferred）+ 卡片标签「可用 / 待接入」。**卡片标签与标签页状态同源**——三处标签页描述符与 DEBUG smoke 也改走该真源，因此不会出现「卡片说可用、点开说未接入」的自我矛盾。五张卡片各加一个标签（共用两个 XAML 样式），文案在构造期由代码写入而非 XAML 写死（写死会随能力变化漂移）；快捷键 Ctrl+O / Ctrl+T 与点击行为、五个入口全部保留。 |
+| IMG12（状态重复归位） | 代码已落地，未验收 | `96d5356` | 核对后确认结构**本已分离**：Shell 底部行只有 Core 状态与地址（`StatusText`），工具区状态是 `ToolStatusText`（反映当前标签页），Chat 下缘是执行状态——故未做「搬运式」改动。只收敛一处：工具首页没有「当前工具」，正常时不再输出泛泛的「就绪」，状态条只在真有信息时说话，避免与 Chat 下缘的执行状态看起来像同一件事。 |
+
+本批证据：`dotnet test Source/PuddingDesktop.FoundationTests` → **70 passed / 0 failed**（+13：逐 kind 断言 `For`/`CardLabel`，并覆盖全部枚举成员以防新增 kind 时漏判）；`dotnet test Tests/PuddingDesktop.Tests` → **259 passed / 0 failed**；Desktop 完整链接构建 `dotnet build Source/PuddingDesktop/PuddingDesktop.csproj --no-restore -p:BaseOutputPath=temp\build\shell-img11\bin\`（输出重定向以避开运行中实例的文件锁）→ **0 错误**，并在产物中核对到 `ToolAvailabilityCatalog`、`ApplyToolAvailabilityLabels` 与 5 个 `*CardAvailabilityText` 字段，确认 XAML 名称已正确编译。
+
+**未验收**：卡片标签、快捷键与状态条的**真实观感**需要把 Desktop 重启到该新构建（属进程外控制器/用户操作）；本机运行中的实例按要求未被停止或重启，因此本次改动尚未被任何进程加载。
 
 ## 14. 独立缺陷登记：SCROLL-001 深色滚动条及 Web / Shell 边界不协调
 

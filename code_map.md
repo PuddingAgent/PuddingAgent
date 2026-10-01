@@ -12,12 +12,13 @@
 
 ## 2026-10-01：Chat 前端现代化 UI / UX（设计已交付，P0/P1 代码已落地）
 
-- 设计规格：Docs/Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md（§13.7 P0 状态、§13.8 P1 消息与表格、§13.9 P1 输入区、§13.10 P1 左栏导航、§14.6 SCROLL-001 状态）。
+- 设计规格：Docs/Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md（§13.7 P0 状态、§13.8 P1 消息与表格、§13.9 P1 输入区、§13.10 P1 左栏导航、§13.11 P1-Shell 工具首页与状态条、§14.6 SCROLL-001 状态）。
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案。
 - 已落地切片：SCROLL-001-WEB（`2430f97`：`global.style.ts` 补 `color-scheme` 与 `--pudding-scroll-*`，滚动条皮肤：透明轨道 + 10px gutter 内 6px 圆角 thumb + hover/active 只换色 + 不画箭头 + forced-colors 回退）；SCROLL-001-SHELL（`6bf5b16`：`PuddingDesktop.Foundation/WorkbenchAppearance.cs` 纯映射 + `MainWindow` 单一 `ApplyWorkbenchAppearance`，WebView2 首帧背景与 `PreferredColorScheme`）；IMG01/IMG04（`28dca85`：主题真源与 antd token 收敛为 §3 中性层级 + 单一蓝色强调，并修掉 10 个「被引用但从未定义」的短名 token 导致的暖色回退）；IMG03（`7e38284`：顶部保留高频动作，自动朗读/开发者模式收进「更多」并显示开关状态）；IMG06/IMG07（`7c2ad16`：`agentTurnCard` 去大面积有色底、链接改主题强调色、行内代码与表格密度按 §13.5）；IMG08（`5d53030`：草稿区两行起、执行偏好/权限补可见前缀、按钮 34→36（触屏 44）、发送按钮禁用态改中性表面以区分 ready）；IMG09/IMG10（`97fb4d2`：状态徽标去掉硬编码浅色实块改状态 token + 轻底；左栏文案统一为「智能体/群组」、顶部按钮补 Tooltip 与可访问名称、新任务文字+图标）。
 - 前端版本机制（`4749fd9`）：版本号真源 = `Source/PuddingPlatformAdmin/package.json` 的 `version`（规则见 AGENTS.md「前端版本管理」）；`config/config.ts` 构建期注入 `__PUDDING_FRONTEND__`（版本/哈希/提交与构建时间/脏标记）→ `src/utils/frontendBuild.ts` → `src/components/FrontendVersionBadge`（挂在 `app.tsx` 的 `rootContainer`，页角常驻）。改前端必须递增版本号并重新部署 `dist` → Core 的 `wwwroot/admin`，只重启 Core 不会重新部署静态产物。
-- 未完成：IMG05 / IMG11 / IMG12、SCROLL-001 QA 与 §12 整窗、WebView2 真实验收（需外部控制器重启到明确新构建）。
+- Shell 侧：IMG11/IMG12（`96d5356`：新增 Foundation `ToolAvailabilityCatalog`（kind→可用性纯映射，卡片「可用/待接入」标签与标签页 Availability 同源）+ `MainWindow.xaml` 五张卡片可用性标签（文案由代码写入）；工具首页正常时不再输出泛泛的「就绪」）。Shell 改动不涉及前端产物，前端版本号不变。
+- 未完成：IMG05（Shell 分栏默认比例，先在 Foundation 测再接入）、SCROLL-001 QA 与 §12 整窗、WebView2 真实验收（需外部控制器重启到明确新构建）。
 
 ## 2026-10-01：Desktop 侧通道启动判定（第 67 轮）
 
