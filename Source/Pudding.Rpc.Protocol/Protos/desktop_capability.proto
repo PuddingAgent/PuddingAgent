@@ -1,0 +1,245 @@
+// Pudding Desktop 能力通道 —— 线上契约真源（wire truth）
+//
+// 设计依据：Docs/Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md §5
+//
+// 方向约定（RPC 发起方向 ≠ 连接发起方向）：
+//   Desktop ── 发起 Connect 双向流 ──────────────> Core
+//           <── Command / Cancel ──────────────── Core Broker
+//           ── Hello / Result / Event ───────────>
+//
+// 本文件是字段、编号、service 定义的唯一真源；生成的 C# 类型禁止手改。
+// 领域接口/DTO 的真源在 Pudding.Contracts，两者的映射由 Pudding.DesktopConnection 负责。
+//
+// 兼容性纪律：已发布的字段号与 oneof 分支号永不重用；删除字段请用 reserved。
+
+syntax = "proto3";
+
+package pudding.capability.v1;
+
+option csharp_namespace = "Pudding.Rpc.Protocol.V1";
+
+import "google/protobuf/timestamp.proto";
+
+// Desktop 侧能力服务。仅此一个 service：Desktop 主动拨入，Core 经响应流下发命令。
+service DesktopCapability {
+  rpc Connect(stream DesktopFrame) returns (stream CoreFrame);
+}
+
+// ── 握手与限制 ────────────────────────────────────────────────
+
+// 双方支持的协议版本区间（闭区间）。
+message ProtocolRange {
+  uint32 minimum = 1;
+  uint32 maximum = 2;
+}
+
+// 能力声明：线名 + 版本。线名真源为 Pudding.Contracts 的能力目录。
+message CapabilityDeclaration {
+  string capability = 1;
+  uint32 version = 2;
+}
+
+// 通道限制。默认值只是起点，需压测确认（计划 §5）。
+message ChannelLimits {
+  uint32 max_frame_bytes = 1;
+  uint32 max_in_flight_operations = 2;
+  uint32 max_queued_bytes = 3;
+  uint32 heartbeat_interval_ms = 4;
+  uint32 heartbeat_timeout_ms = 5;
+}
+
+// Desktop → Core 的握手首帧。认证先于握手（传输层元数据），握手成功才开放调用。
+message DesktopHello {
+  string desktop_id = 1;
+  string process_instance_id = 2;
+  ProtocolRange supported_versions = 3;
+  repeated CapabilityDeclaration capabilities = 4;
+  uint32 requested_max_frame_bytes = 5;
+}
+
+// Core → Desktop 的握手回执。generation 用于让旧世代命令/结果失效。
+message CoreHelloAck {
+  string connection_id = 1;
+  uint64 generation = 2;
+  ProtocolRange negotiated_version = 3;
+  repeated CapabilityDeclaration capabilities = 4;
+  ChannelLimits limits = 5;
+  string core_instance_id = 6;
+}
+
+// ── 命令 ─────────────────────────────────────────────────────
+
+// 显式页面目标：禁止用「当前激活 Tab」隐式定位。
+message CommandTarget {
+  string context_id = 1;
+  string page_id = 2;
+}
+
+message NavigateCommand {
+  CommandTarget target = 1;
+  string url = 2;
+  // 期望的当前页面版本；0 = 不校验。
+  int64 expected_page_version = 3;
+}
+
+message ExecuteJavascriptCommand {
+  CommandTarget target = 1;
+  // 脚本正文。审计与日志禁止记录本字段。
+  string script = 2;
+  int64 expected_page_version = 3;
+  uint32 max_result_bytes = 4;
+}
+
+enum NotificationPriority {
+  NOTIFICATION_PRIORITY_UNSPECIFIED = 0;
+  NOTIFICATION_PRIORITY_LOW = 1;
+  NOTIFICATION_PRIORITY_NORMAL = 2;
+  NOTIFICATION_PRIORITY_HIGH = 3;
+}
+
+message ShowNotificationCommand {
+  string title = 1;
+  string message = 2;
+  NotificationPriority priority = 3;
+}
+
+// Core → Desktop 的能力命令。payload 用 oneof 白名单化，禁止「字符串命令名 + 任意 JSON」。
+message CapabilityCommand {
+  string operation_id = 1;
+  // 命令所属连接世代；与当前世代不符必须拒绝。
+  uint64 generation = 2;
+  // 能力线名（Pudding.Contracts 目录值）。
+  string capability = 3;
+  string trace_id = 4;
+  string correlation_id = 5;
+  // 单操作期限（UTC）。长连接 deadline 不代替它。
+  google.protobuf.Timestamp deadline = 6;
+
+  oneof payload {
+    NavigateCommand navigate = 10;
+    ExecuteJavascriptCommand execute_javascript = 11;
+    ShowNotificationCommand show_notification = 12;
+  }
+}
+
+// Core → Desktop 的取消。尽力而为：不能撤销已执行的脚本。
+message OperationCancel {
+  string operation_id = 1;
+  uint64 generation = 2;
+  string reason = 3;
+}
+
+// ── 结果 ─────────────────────────────────────────────────────
+
+enum NavigateDisposition {
+  NAVIGATE_DISPOSITION_UNSPECIFIED = 0;
+  // 请求已被接受，可能仍在加载。
+  NAVIGATE_DISPOSITION_ACCEPTED = 1;
+  // 导航本身已完成；仍不代表 DOM 可用于交互。
+  NAVIGATE_DISPOSITION_COMPLETED = 2;
+}
+
+message NavigateOutcome {
+  NavigateDisposition disposition = 1;
+  string current_url = 2;
+  int64 page_version = 3;
+}
+
+enum JavascriptValueKind {
+  JAVASCRIPT_VALUE_KIND_UNSPECIFIED = 0;
+  JAVASCRIPT_VALUE_KIND_UNDEFINED = 1;
+  JAVASCRIPT_VALUE_KIND_NULL = 2;
+  JAVASCRIPT_VALUE_KIND_BOOLEAN = 3;
+  JAVASCRIPT_VALUE_KIND_NUMBER = 4;
+  JAVASCRIPT_VALUE_KIND_STRING = 5;
+  JAVASCRIPT_VALUE_KIND_JSON = 6;
+}
+
+message JavascriptOutcome {
+  JavascriptValueKind kind = 1;
+  // 裸 JSON 片段（字符串值带引号），避免二次 JSON 编码。
+  string json_value = 2;
+  bool truncated = 3;
+}
+
+message NotificationOutcome {
+  bool shown = 1;
+  string notification_id = 2;
+}
+
+// 领域错误（非流故障）。流本身故障使用 gRPC status。
+message ErrorOutcome {
+  // 线名真源：Pudding.Contracts 的 DesktopCapabilityErrorCodes。
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+  bool may_have_side_effects = 4;
+}
+
+// Desktop → Core 的单次操作终态。终态结果不可丢（状态事件可合并）。
+message OperationResult {
+  string operation_id = 1;
+  uint64 generation = 2;
+
+  oneof outcome {
+    NavigateOutcome navigate = 10;
+    JavascriptOutcome execute_javascript = 11;
+    NotificationOutcome show_notification = 12;
+    ErrorOutcome error = 13;
+  }
+}
+
+// ── 事件与心跳 ────────────────────────────────────────────────
+
+message PageStateChanged {
+  CommandTarget target = 1;
+  // unknown / loading / interactive / complete / failed
+  string state = 2;
+  int64 page_version = 3;
+  string url = 4;
+}
+
+message ChannelStatusChanged {
+  string state = 1;
+  string detail = 2;
+}
+
+// Desktop → Core 的状态事件（可合并，不承载终态结果）。
+message DesktopEvent {
+  string event_id = 1;
+
+  oneof payload {
+    PageStateChanged page_state = 10;
+    ChannelStatusChanged channel_status = 11;
+  }
+}
+
+message Heartbeat {
+  int64 sequence = 1;
+}
+
+message HeartbeatAck {
+  int64 sequence = 1;
+}
+
+// ── 帧 ───────────────────────────────────────────────────────
+
+// Desktop → Core。每条方向一个 reader、一个 writer；其他线程经有界队列汇聚。
+message DesktopFrame {
+  oneof frame {
+    DesktopHello hello = 1;
+    OperationResult result = 2;
+    DesktopEvent event = 3;
+    HeartbeatAck heartbeat_ack = 4;
+  }
+}
+
+// Core → Desktop。
+message CoreFrame {
+  oneof frame {
+    CoreHelloAck hello_ack = 1;
+    CapabilityCommand command = 2;
+    OperationCancel cancel = 3;
+    Heartbeat heartbeat = 4;
+  }
+}

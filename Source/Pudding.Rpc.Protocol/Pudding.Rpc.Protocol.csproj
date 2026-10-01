@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Pudding.Rpc.Protocol</RootNamespace>
+    <AssemblyName>Pudding.Rpc.Protocol</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    wire-only 叶程序集：只有 proto 与其生成类型（消息 + 客户端桩 + 服务基类）。
+    协议真源是 Protos/desktop_capability.proto：
+      · 禁止手写领域接口/DTO（真源在 Pudding.Contracts）
+      · 禁止映射/连接/业务/UI 实现（属于 Pudding.DesktopConnection 与消费方适配器）
+    生成代码落在构建输出，不入库。
+    GrpcServices=Both：Core 侧要服务基类，Desktop 侧要客户端桩。
+  -->
+  <ItemGroup>
+    <Protobuf Include="Protos\desktop_capability.proto" GrpcServices="Both" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.35.1" />
+    <PackageReference Include="Grpc.Core.Api" Version="2.84.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.84.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- 编译期强制：wire 程序集不得引用任何工程（含 Contracts 与宿主）。 -->
+  <Target Name="EnforceProtocolLeafBoundary" BeforeTargets="ResolveReferences">
+    <Error Condition="'@(ProjectReference)' != ''"
+           Text="Pudding.Rpc.Protocol is a wire-only leaf: ProjectReference is forbidden. Mapping and connection belong to adapters." />
+  </Target>
+
+</Project>

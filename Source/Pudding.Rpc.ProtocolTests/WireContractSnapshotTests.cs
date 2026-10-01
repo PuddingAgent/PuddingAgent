@@ -1,0 +1,153 @@
+using Google.Protobuf.Reflection;
+using Pudding.Rpc.Protocol.V1;
+
+namespace Pudding.Rpc.ProtocolTests;
+
+/// <summary>
+/// 线上形状快照：service 名、流方向与字段号一旦发布就不能改（改 = 破坏性变更）。
+/// </summary>
+public sealed class WireContractSnapshotTests
+{
+    [Fact]
+    public void Service_HasSingleBidirectionalConnectMethod()
+    {
+        var service = DesktopCapability.Descriptor;
+
+        Assert.Equal("pudding.capability.v1.DesktopCapability", service.FullName);
+        var method = Assert.Single(service.Methods);
+        Assert.Equal("Connect", method.Name);
+        Assert.True(method.IsClientStreaming);
+        Assert.True(method.IsServerStreaming);
+        Assert.Equal(DesktopFrame.Descriptor.FullName, method.InputType.FullName);
+        Assert.Equal(CoreFrame.Descriptor.FullName, method.OutputType.FullName);
+    }
+
+    [Fact]
+    public void GeneratedStubs_AreBothClientAndServer()
+    {
+        Assert.NotNull(typeof(DesktopCapability.DesktopCapabilityClient));
+        Assert.NotNull(typeof(DesktopCapability.DesktopCapabilityBase));
+        Assert.True(typeof(DesktopCapability.DesktopCapabilityBase).IsAbstract);
+    }
+
+    [Fact]
+    public void FrameFieldNumbers_AreFrozen()
+    {
+        AssertFieldNumbers(
+            DesktopFrame.Descriptor,
+            ("hello", 1),
+            ("result", 2),
+            ("event", 3),
+            ("heartbeat_ack", 4));
+
+        AssertFieldNumbers(
+            CoreFrame.Descriptor,
+            ("hello_ack", 1),
+            ("command", 2),
+            ("cancel", 3),
+            ("heartbeat", 4));
+
+        Assert.Equal(
+            ["Hello", "Result", "Event", "HeartbeatAck"],
+            Enum.GetNames<DesktopFrame.FrameOneofCase>().Where(name => name != "None").ToArray());
+
+        Assert.Equal(
+            ["HelloAck", "Command", "Cancel", "Heartbeat"],
+            Enum.GetNames<CoreFrame.FrameOneofCase>().Where(name => name != "None").ToArray());
+    }
+
+    [Fact]
+    public void HandshakeFieldNumbers_AreFrozen()
+    {
+        AssertFieldNumbers(
+            DesktopHello.Descriptor,
+            ("desktop_id", 1),
+            ("process_instance_id", 2),
+            ("supported_versions", 3),
+            ("capabilities", 4),
+            ("requested_max_frame_bytes", 5));
+
+        AssertFieldNumbers(
+            CoreHelloAck.Descriptor,
+            ("connection_id", 1),
+            ("generation", 2),
+            ("negotiated_version", 3),
+            ("capabilities", 4),
+            ("limits", 5),
+            ("core_instance_id", 6));
+
+        AssertFieldNumbers(
+            ChannelLimits.Descriptor,
+            ("max_frame_bytes", 1),
+            ("max_in_flight_operations", 2),
+            ("max_queued_bytes", 3),
+            ("heartbeat_interval_ms", 4),
+            ("heartbeat_timeout_ms", 5));
+    }
+
+    [Fact]
+    public void CommandAndResultFieldNumbers_AreFrozen()
+    {
+        AssertFieldNumbers(
+            CapabilityCommand.Descriptor,
+            ("operation_id", 1),
+            ("generation", 2),
+            ("capability", 3),
+            ("trace_id", 4),
+            ("correlation_id", 5),
+            ("deadline", 6),
+            ("navigate", 10),
+            ("execute_javascript", 11),
+            ("show_notification", 12));
+
+        AssertFieldNumbers(
+            OperationResult.Descriptor,
+            ("operation_id", 1),
+            ("generation", 2),
+            ("navigate", 10),
+            ("execute_javascript", 11),
+            ("show_notification", 12),
+            ("error", 13));
+
+        Assert.Equal(
+            ["Navigate", "ExecuteJavascript", "ShowNotification"],
+            Enum.GetNames<CapabilityCommand.PayloadOneofCase>().Where(name => name != "None").ToArray());
+
+        Assert.Equal(
+            ["Navigate", "ExecuteJavascript", "ShowNotification", "Error"],
+            Enum.GetNames<OperationResult.OutcomeOneofCase>().Where(name => name != "None").ToArray());
+
+        AssertFieldNumbers(OperationCancel.Descriptor, ("operation_id", 1), ("generation", 2), ("reason", 3));
+        AssertFieldNumbers(ErrorOutcome.Descriptor,
+            ("code", 1), ("message", 2), ("retryable", 3), ("may_have_side_effects", 4));
+    }
+
+    [Fact]
+    public void PayloadOneof_IsClosedWhitelist()
+    {
+        // 计划 §4：禁止「字符串命令名 + 任意 JSON」演化成万能调用。
+        Assert.Equal(3, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
+        Assert.Equal(4, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
+    }
+
+    [Fact]
+    public void EnumZeroValues_AreUnspecified()
+    {
+        Assert.Equal(0, (int)NavigateDisposition.Unspecified);
+        Assert.Equal(0, (int)JavascriptValueKind.Unspecified);
+        Assert.Equal(0, (int)NotificationPriority.Unspecified);
+        Assert.Equal(1, (int)NavigateDisposition.Accepted);
+        Assert.Equal(2, (int)NavigateDisposition.Completed);
+        Assert.Equal(6, (int)JavascriptValueKind.Json);
+    }
+
+    private static void AssertFieldNumbers(MessageDescriptor descriptor, params (string Name, int Number)[] expected)
+    {
+        foreach (var (name, number) in expected)
+        {
+            var field = descriptor.FindFieldByName(name);
+            Assert.NotNull(field);
+            Assert.Equal(number, field!.FieldNumber);
+        }
+    }
+}
