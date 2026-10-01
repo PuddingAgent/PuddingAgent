@@ -51,6 +51,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken);
 
+    /// <summary>读取剪贴板；实现方必须按预算截断并如实标注，且不得把内容写进日志。</summary>
+    Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
+        DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken);
+
     /// <summary>标签页切换/关闭；实现方必须在操作后返回<b>新的</b>活动页状态与剩余清单。</summary>
     Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
         DesktopCallContext context, BrowserTabsRequest request, CancellationToken cancellationToken);

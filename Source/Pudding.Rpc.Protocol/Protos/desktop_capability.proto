@@ -228,6 +228,16 @@ message TabsOutcome {
   ContextsOutcome remaining = 4;
 }
 
+// 剪贴板读取（v1 只读）：预算由调用方给出，截断必须如实标注。
+message ClipboardReadCommand {
+  int32 max_characters = 1;
+}
+
+message ClipboardOutcome {
+  string text = 1;
+  bool truncated = 2;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -261,6 +271,7 @@ message CapabilityCommand {
     WaitForCommand wait_for = 18;
     ContextsCommand contexts = 19;
     TabsCommand tabs = 20;
+    ClipboardReadCommand read_clipboard = 21;
   }
 }
 
@@ -370,6 +381,7 @@ message OperationResult {
     WaitOutcome wait_for = 19;
     ContextsOutcome contexts = 20;
     TabsOutcome tabs = 21;
+    ClipboardOutcome clipboard = 22;
   }
 }
 

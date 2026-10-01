@@ -4,6 +4,17 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`shell.clipboard` wire 契约 + 请求联合结构收尾（第 38 轮，步骤 2/3）
+
+- proto：`ClipboardReadCommand`（payload 21，含 `max_characters`）+ `ClipboardOutcome`（outcome 22：text/truncated）；
+  协议快照同步（字段号、两个 oneof 分支名 `ReadClipboard`/`Clipboard`、分支计数 12/13）。
+- 契约：请求/结果联合各加一支（`ForClipboard` / `FromClipboard`）；`IPuddingDesktopWebViewApi.ReadClipboardAsync`
+  与 `IDesktopUiSurface.ReadClipboardAsync`。
+- **结构性收尾**：请求联合也改为「构造函数全默认值 + 工厂命名参数」（第 20 轮只改了结果联合）。
+  在此之前每加一支都要手工调整十余处位置参数——本轮再次验证了这个陷阱：
+  两个 oneof 分支名列表因一次全局替换被同时改错，来回修了三次才对。现在两侧都只需加属性 + 一个工厂。
+- 测试：协议 20/20、契约 93/93、DesktopConnection 80/80、DesktopService 113/113、Broker 74/74。
+- **未做（下一步）**：两端映射、服务分支、探针断言、加入 `DefaultGrantable`；因此它仍是「已登记但不可用」。
 ## 2026-10-01：`shell.clipboard` 只读 v1 的契约与准入（第 37 轮，切片 E 第 1/2 步）
 
 - **语义诚实化**：`shell.clipboard` 原目录条目按"读写"标了 `Mutating | HasSideEffects`，但 v1 只做**读取**

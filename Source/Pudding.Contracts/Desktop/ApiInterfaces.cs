@@ -30,6 +30,12 @@ public interface IPuddingDesktopWebViewApi
         DesktopPageTarget target,
         CancellationToken cancellationToken = default);
 
+    /// <summary>读取剪贴板文本（v1 只读；预算由请求给出，截断必须如实标注）。</summary>
+    Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
+        DesktopCallContext context,
+        ClipboardReadRequest request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>标签页操作：激活或关闭目标页面（变更类；必须固定页面版本）。</summary>
     Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
         DesktopCallContext context,

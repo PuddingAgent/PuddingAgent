@@ -9,17 +9,18 @@ namespace Pudding.Contracts.Desktop;
 public sealed record DesktopCapabilityRequest
 {
     private DesktopCapabilityRequest(
-        NavigateRequest? navigate,
-        JavascriptRequest? javascript,
-        DesktopNotificationRequest? notification,
-        DesktopPageTarget? pageState,
-        BrowserSnapshotRequest? snapshot,
-        BrowserLocateRequest? locate,
-        BrowserInteractRequest? interact,
-        BrowserWaitForRequest? waitFor,
-        BrowserTabsRequest? tabs,
-        bool contexts,
-        bool shellStatus)
+        NavigateRequest? navigate = null,
+        JavascriptRequest? javascript = null,
+        DesktopNotificationRequest? notification = null,
+        DesktopPageTarget? pageState = null,
+        BrowserSnapshotRequest? snapshot = null,
+        BrowserLocateRequest? locate = null,
+        BrowserInteractRequest? interact = null,
+        BrowserWaitForRequest? waitFor = null,
+        BrowserTabsRequest? tabs = null,
+        ClipboardReadRequest? clipboard = null,
+        bool contexts = false,
+        bool shellStatus = false)
     {
         Navigate = navigate;
         Javascript = javascript;
@@ -30,6 +31,7 @@ public sealed record DesktopCapabilityRequest
         Interact = interact;
         WaitFor = waitFor;
         Tabs = tabs;
+        Clipboard = clipboard;
         Contexts = contexts;
         ShellStatus = shellStatus;
     }
@@ -58,6 +60,9 @@ public sealed record DesktopCapabilityRequest
     /// <summary>标签页操作请求（变更类）。</summary>
     public BrowserTabsRequest? Tabs { get; }
 
+    /// <summary>剪贴板读取请求（v1 只读）。</summary>
+    public ClipboardReadRequest? Clipboard { get; }
+
     /// <summary>浏览器上下文清单查询：无参数（浏览器作用域，不接受调用方指定目标）。</summary>
     public bool Contexts { get; }
 
@@ -65,35 +70,38 @@ public sealed record DesktopCapabilityRequest
     public bool ShellStatus { get; }
 
     public static DesktopCapabilityRequest ForNavigate(NavigateRequest request) =>
-        new(request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, null, null, null, null, false, false);
+        new(navigate: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForJavascript(JavascriptRequest request) =>
-        new(null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, null, null, null, false, false);
+        new(javascript: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForNotification(DesktopNotificationRequest request) =>
-        new(null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, null, null, false, false);
+        new(notification: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForPageState(DesktopPageTarget target) =>
-        new(null, null, null, target ?? throw new ArgumentNullException(nameof(target)), null, null, null, null, null, false, false);
+        new(pageState: target ?? throw new ArgumentNullException(nameof(target)));
 
     public static DesktopCapabilityRequest ForSnapshot(BrowserSnapshotRequest request) =>
-        new(null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, false, false);
+        new(snapshot: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForLocate(BrowserLocateRequest request) =>
-        new(null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, false, false);
+        new(locate: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForInteract(BrowserInteractRequest request) =>
-        new(null, null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, false, false);
+        new(interact: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForWaitFor(BrowserWaitForRequest request) =>
-        new(null, null, null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, false, false);
-
-    public static DesktopCapabilityRequest ForContexts() => new(null, null, null, null, null, null, null, null, null, true, false);
+        new(waitFor: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForTabs(BrowserTabsRequest request) =>
-        new(null, null, null, null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), false, false);
+        new(tabs: request ?? throw new ArgumentNullException(nameof(request)));
 
-    public static DesktopCapabilityRequest ForShellStatus() => new(null, null, null, null, null, null, null, null, null, false, true);
+    public static DesktopCapabilityRequest ForClipboard(ClipboardReadRequest request) =>
+        new(clipboard: request ?? throw new ArgumentNullException(nameof(request)));
+
+    public static DesktopCapabilityRequest ForContexts() => new(contexts: true);
+
+    public static DesktopCapabilityRequest ForShellStatus() => new(shellStatus: true);
 
     /// <summary>页面目标；通知类与 Shell 状态查询没有页面目标，返回 <c>null</c>。</summary>
     public DesktopPageTarget? Target =>
@@ -121,6 +129,7 @@ public sealed record DesktopCapabilityRequest
         : Interact is not null ? $"interact {Interact}"
         : WaitFor is not null ? $"wait_for {WaitFor.Condition} @{WaitFor.Target}"
         : Tabs is not null ? $"tabs {Tabs}"
+        : Clipboard is not null ? $"clipboard(max={Clipboard.MaxCharacters})"
         : Contexts ? "contexts"
         : ShellStatus ? "shell_status"
         : "empty";
@@ -148,6 +157,7 @@ public sealed record DesktopCapabilityResponse
         DesktopWaitResult? wait = null,
         DesktopContexts? contexts = null,
         DesktopTabsResult? tabs = null,
+        DesktopClipboardContent? clipboard = null,
         DesktopCapabilityError? error = null)
     {
         var payloadCount = (navigate is null ? 0 : 1)
@@ -160,7 +170,8 @@ public sealed record DesktopCapabilityResponse
             + (interact is null ? 0 : 1)
             + (wait is null ? 0 : 1)
             + (contexts is null ? 0 : 1)
-            + (tabs is null ? 0 : 1);
+            + (tabs is null ? 0 : 1)
+            + (clipboard is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -178,6 +189,7 @@ public sealed record DesktopCapabilityResponse
         Wait = wait;
         Contexts = contexts;
         Tabs = tabs;
+        Clipboard = clipboard;
         Error = error;
     }
 
@@ -208,6 +220,9 @@ public sealed record DesktopCapabilityResponse
 
     /// <summary>标签页操作结果（含剩余清单）。</summary>
     public DesktopTabsResult? Tabs { get; }
+
+    /// <summary>剪贴板内容（只读；内容不进日志）。</summary>
+    public DesktopClipboardContent? Clipboard { get; }
 
     public DesktopCapabilityError? Error { get; }
 
@@ -246,6 +261,9 @@ public sealed record DesktopCapabilityResponse
     public static DesktopCapabilityResponse FromTabs(DesktopTabsResult result) =>
         new(tabs: result ?? throw new ArgumentNullException(nameof(result)));
 
+    public static DesktopCapabilityResponse FromClipboard(DesktopClipboardContent content) =>
+        new(clipboard: content ?? throw new ArgumentNullException(nameof(content)));
+
     public static DesktopCapabilityResponse Failure(DesktopCapabilityError error) =>
         new(error: error ?? throw new ArgumentNullException(nameof(error)));
     public override string ToString() =>
@@ -261,5 +279,6 @@ public sealed record DesktopCapabilityResponse
         : Wait is not null ? $"wait_for({Wait})"
         : Contexts is not null ? $"contexts({Contexts})"
         : Tabs is not null ? $"tabs({Tabs})"
+        : Clipboard is not null ? $"clipboard({Clipboard})"
         : "empty";
 }
