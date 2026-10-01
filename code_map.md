@@ -1,3 +1,7 @@
+## 2026-10-01：真实消息加载慢定位
+
+真实默认助手 conversation 三轮 5.75～5.96s，响应约 107KB；`AgentConversationProjectionService.GetConversationAsync` 的最近消息过程摘要与回合终态查询各约 2.8s，实际计划按会话顺序索引筛选约 164 万事件。只读终态索引路径对照降至 14.5ms，未改 schema/产品。评估与优化顺序见 [实测报告](Docs/Reports/Chat-Message-Load-Latency-2026-10-01.md)。
+
 ## 2026-10-01：Desktop 图标与启动样式修复
 
 补充类型报错排查：`SplitterHandle : Grid` 与链接配置类型均已存在；dotnet / VS 18 实际设计时编译及 VS 完整 Rebuild 均通过。编辑器报错是否已刷新仍待确认，详见下述报告补充记录。

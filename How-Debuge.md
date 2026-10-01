@@ -1,3 +1,7 @@
+### 消息骨架屏等待：真实接口与查询计划（2026-10-01）
+
+先区分服务器首字节、读正文、JSON 和首帧，不要用替换 conversation 的合成渲染测试排除真实数据库成本。本次默认助手 GET conversation 约 5.8 秒，其中近期消息摘要和终态查询各约 2.8 秒；实际计划 `ix_ce_seq (conversation_id=?)` 扫描约 164 万会话事件。只读 `INDEXED BY ix_ce_turn` 对照将终态降至 14.5ms，但不是产品修复。诊断只读数据库/查询计划不执行 ANALYZE 或 DDL；索引改动应先在 temp/test-out 在线备份副本验证。详见 [评估报告](Docs/Reports/Chat-Message-Load-Latency-2026-10-01.md)。
+
 ### WinUI 图标与 XAML 启动错误（2026-10-01）
 
 若错误列表称 `SplitterHandle` 缺少 `Visibility/CapturePointer`，或启动配置缺少 `ToolWorkspace`，先核对错误来源。2026-10-01 当前源码在 dotnet 和 VS 18 MSBuild 的实际设计时 Compile、VS 完整 Rebuild 中均通过；类型定义和 Compile 链接项完整。先重新加载解决方案并对照“生成”错误，不能仅凭 IntelliSense 列表添加重复 API。验证详情见同一图标修复报告的补充记录。
