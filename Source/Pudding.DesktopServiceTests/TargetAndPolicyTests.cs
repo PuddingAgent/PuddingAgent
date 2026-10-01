@@ -140,6 +140,7 @@ public sealed class TargetAndPolicyTests
 
         string[] expected =
         [
+            $"BrowserLocate=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"BrowserSnapshot=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"ShellClipboard=[{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellDialog=[{nameof(DesktopContextTrust.Workbench)}]",

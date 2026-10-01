@@ -252,6 +252,64 @@ internal static class CoreFrameMapping
                     DesktopCapabilityRequest.ForSnapshot(new BrowserSnapshotRequest(
                         target, ToPageVersion(command.Snapshot.ExpectedPageVersion), options)));
             }
+            case DesktopCapability.BrowserLocate:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.Locate)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var locateTarget = DecodeTarget(command.Locate.Target);
+                if (locateTarget is null)
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                        DesktopCapabilityError.InvalidTarget("browser.locate requires an explicit context_id/page_id target"));
+                }
+
+                if (command.Locate.ExpectedPageVersion < 0)
+                {
+                    return FailRequest("expected_page_version must not be negative");
+                }
+
+                var spec = command.Locate.Locator;
+                if (spec is null || !DesktopLocatorKindWire.TryParse(spec.Kind, out var locatorKind))
+                {
+                    return FailRequest("locator kind is missing or not registered");
+                }
+
+                DesktopLocator locator;
+                try
+                {
+                    locator = new DesktopLocator(
+                        locatorKind,
+                        spec.Value,
+                        string.IsNullOrEmpty(spec.Name) ? null : spec.Name,
+                        spec.Exact,
+                        spec.Nth < 0 ? null : spec.Nth,
+                        string.IsNullOrEmpty(spec.HasText) ? null : spec.HasText);
+                }
+                catch (ArgumentException ex)
+                {
+                    return FailRequest($"locator is not usable ({ex.ParamName})");
+                }
+
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForLocate(new BrowserLocateRequest(
+                            locateTarget,
+                            locator,
+                            ToPageVersion(command.Locate.ExpectedPageVersion),
+                            command.Locate.MaxResults == 0
+                                ? BrowserLocateRequest.DefaultMaxResults
+                                : command.Locate.MaxResults)));
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    return FailRequest("max_results is out of range");
+                }
+            }
+
             case DesktopCapability.ShellStatus:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
@@ -447,6 +505,37 @@ internal static class DesktopFrameMapping
                         PageVersion = snapshot.PageVersion.Value,
                     };
                     break;
+                case DesktopCapability.BrowserLocate when response.Locate is { } locate:
+                    result.Locate = new Proto.LocateOutcome
+                    {
+                        Truncated = locate.Truncated,
+                        PageVersion = locate.PageVersion.Value,
+                    };
+                    foreach (var element in locate.Elements)
+                    {
+                        var wireElement = new Proto.ElementRef
+                        {
+                            Ref = element.Reference,
+                            Tag = element.Tag,
+                            Role = element.Role ?? string.Empty,
+                            Name = WireText.Truncate(element.Name, 512),
+                            Text = WireText.Truncate(element.Text, 2048),
+                            Visible = element.Visible,
+                            Enabled = element.Enabled,
+                            PageVersion = element.PageVersion.Value,
+                        };
+
+                        // proto3 optional：只有确实知道勾选状态时才设 presence（不知道 ≠ false）。
+                        if (element.IsChecked is { } isChecked)
+                        {
+                            wireElement.Checked = isChecked;
+                        }
+
+                        result.Locate.Elements.Add(wireElement);
+                    }
+
+                    break;
+
                 case DesktopCapability.ShellStatus when response.ShellStatus is { } shellStatus:
                     result.ShellStatus = new Proto.ShellStatusOutcome
                     {

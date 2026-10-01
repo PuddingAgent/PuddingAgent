@@ -24,7 +24,8 @@ public sealed record CapabilityChannelConfiguration
         | DesktopCapability.WebViewPageState
         | DesktopCapability.ShellNotification
         | DesktopCapability.ShellStatus
-        | DesktopCapability.BrowserSnapshot;
+        | DesktopCapability.BrowserSnapshot
+        | DesktopCapability.BrowserLocate;
 
     public const int DefaultMaxMessageBytes = 1024 * 1024;
 

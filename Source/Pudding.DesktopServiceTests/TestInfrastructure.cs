@@ -213,6 +213,29 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ShellStatusHandler(cancellationToken);
     }
 
+    public int LocateCount => _calls.Count(call => call.StartsWith("locate", StringComparison.Ordinal));
+
+    public Func<BrowserLocateRequest, CancellationToken, Task<CapabilityResult<DesktopLocateResult>>>? LocateHandler { get; set; }
+
+    public async Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
+        DesktopCallContext context, BrowserLocateRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue($"locate:{request.Locator}");
+        await AwaitGateAsync(cancellationToken);
+
+        return LocateHandler is null
+            ? CapabilityResult<DesktopLocateResult>.Success(new DesktopLocateResult(
+                request.Target,
+                request.Locator,
+                [
+                    new DesktopElementRef(
+                        "e1", "button", DesktopPageVersion.Require(9), role: "button", name: "提交", visible: true),
+                ],
+                truncated: false,
+                DesktopPageVersion.Require(9)))
+            : await LocateHandler(request, cancellationToken);
+    }
+
     public int SnapshotCount => _calls.Count(call => call.StartsWith("snapshot", StringComparison.Ordinal));
 
     public Func<BrowserSnapshotRequest, CancellationToken, Task<CapabilityResult<DesktopSnapshot>>>? SnapshotHandler { get; set; }

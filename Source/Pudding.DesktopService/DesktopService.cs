@@ -180,6 +180,27 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.BrowserLocate:
+            {
+                if (request.Locate is not { } locate)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("browser.locate request payload is missing"));
+                }
+
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    locate.Target,
+                    locate.ExpectedPageVersion,
+                    context,
+                    token => _surface.LocateAsync(context, locate, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromLocate(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             case DesktopCapability.BrowserSnapshot:
             {
                 if (request.Snapshot is not { } snapshot)

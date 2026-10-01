@@ -1,3 +1,22 @@
+## 2026-10-01：`browser.locate`（切片 D 第二个能力）
+
+- 契约：`DesktopLocatorKind`（10 种策略，线名真源 `DesktopLocatorKindWire`：ref/css/xpath/text/role/label/
+  placeholder/alt-text/title/test-id）+ `DesktopLocator`（值/name/exact/nth/hasText，构造期校验）
+  + `BrowserLocateRequest`（目标 + 描述符 + 期望版本 + 结果上限 1..100）
+  + `DesktopElementRef`（**要求有效 PageVersion**：Ref 随页面版本失效）+ `DesktopLocateResult`
+  （命中 0 个**不是错误**，由调用方决定等待或换策略）。
+  v1 **不支持**复合定位（Has）与跨帧选择（Frame）：线缆上无法表达，因此不假装支持。
+- proto：`LocateCommand`（payload 16）+ `LocatorSpec` + `ElementRef`（`optional bool checked` 保留未知语义）
+  + `LocateOutcome`（outcome 17）。
+- 准入：策略表 `BrowserLocate=[AgentAuthorized]`（与 snapshot 同类：读取需要注入脚本，工作台不可）。
+- 两端映射：Desktop 侧 fail closed（kind 未登记 / 目标缺失 / 版本为负 / max_results 越界 ⇒ `invalid_request`），
+  编码时 `checked` 只在确实知道时设 presence（**不知道 ≠ false**）；Core 侧解码逐项校验引用形态，
+  坏引用整体拒绝（不把无版本的 Ref 交给上层），结果回填**请求的描述符**（结果帧不重复携带它）。
+- 验证：协议 20/20（字段号/oneof 分支/上限快照）、契约 77/77、两端与服务的既有套件全绿、
+  真实端点探针 **27/27**（`browser.snapshot` 往返仍为端到端回归项）。
+
+测试合计：341 用例（Contracts 77、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 57、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.snapshot`（切片 D 首个能力，与既有 Bridge `page.snapshot` 等价）
 
 切片 D 的第一步不是迁移七个工具，而是先把「命令映射」补齐——这是方案 §9 的未决项之一。

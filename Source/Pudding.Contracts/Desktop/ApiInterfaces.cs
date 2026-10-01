@@ -30,6 +30,12 @@ public interface IPuddingDesktopWebViewApi
         DesktopPageTarget target,
         CancellationToken cancellationToken = default);
 
+    /// <summary>按定位描述符查找元素（返回带 PageVersion 的 Ref；命中 0 个不是错误）。</summary>
+    Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
+        DesktopCallContext context,
+        BrowserLocateRequest request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>读取页面快照（DOM/可访问性树 + PageVersion）。Ref 只在同一 PageVersion 内有效。</summary>
     Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         DesktopCallContext context,

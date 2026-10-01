@@ -74,6 +74,24 @@ internal static class CoreCommandEncoder
                 command.GetShellStatus = new Proto.GetShellStatusCommand();
                 break;
 
+            case DesktopCapability.BrowserLocate when request.Locate is { } locate:
+                command.Locate = new Proto.LocateCommand
+                {
+                    Target = EncodeTarget(locate.Target),
+                    ExpectedPageVersion = locate.ExpectedPageVersion.Value,
+                    MaxResults = locate.MaxResults,
+                    Locator = new Proto.LocatorSpec
+                    {
+                        Kind = DesktopLocatorKindWire.NameOf(locate.Locator.Kind),
+                        Value = locate.Locator.Value,
+                        Name = locate.Locator.Name ?? string.Empty,
+                        Exact = locate.Locator.Exact,
+                        Nth = locate.Locator.Nth ?? -1,
+                        HasText = locate.Locator.HasText ?? string.Empty,
+                    },
+                };
+                break;
+
             case DesktopCapability.BrowserSnapshot when request.Snapshot is { } snapshot:
                 command.Snapshot = new Proto.SnapshotCommand
                 {
@@ -114,6 +132,8 @@ internal static class CoreCommandEncoder
             _ when request.Notification is { } notification =>
                 $"notification:{notification.Title}:{notification.Message}:{notification.Priority}",
             _ when request.PageState is { } target => $"page_state:{target.Key}",
+            _ when request.Locate is { } locate =>
+                $"locate:{locate.Target.Key}:{locate.Locator}:{locate.ExpectedPageVersion.Value}:{locate.MaxResults}",
             _ when request.Snapshot is { } snapshot =>
                 $"snapshot:{snapshot.Target.Key}:{snapshot.ExpectedPageVersion.Value}:"
                 + $"{snapshot.Options.IncludeDom}:{snapshot.Options.IncludeAccessibilityTree}:{snapshot.Options.IncludeHtml}:"
@@ -136,7 +156,7 @@ internal static class DesktopResultDecoder
     /// 结果帧不重复携带目标，领域 DTO 的目标由请求关联而来。
     /// </summary>
     public static CapabilityResult<DesktopCapabilityResponse> Decode(
-        Proto.OperationResult result, DesktopCapability expectedCapability, DesktopPageTarget? requestedTarget)
+        Proto.OperationResult result, DesktopCapability expectedCapability, DesktopPageTarget? requestedTarget, DesktopLocator? requestedLocator = null)
     {
         if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.None)
         {
@@ -157,6 +177,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.PageState => expectedCapability == DesktopCapability.WebViewPageState,
             Proto.OperationResult.OutcomeOneofCase.ShellStatus => expectedCapability == DesktopCapability.ShellStatus,
             Proto.OperationResult.OutcomeOneofCase.Snapshot => expectedCapability == DesktopCapability.BrowserSnapshot,
+            Proto.OperationResult.OutcomeOneofCase.Locate => expectedCapability == DesktopCapability.BrowserLocate,
             _ => false,
         };
 
@@ -232,6 +253,48 @@ internal static class DesktopResultDecoder
 
             default:
             {
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Locate)
+                {
+                    if (requestedTarget is null)
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal(
+                                "locate result cannot be correlated without the requested target"));
+                    }
+
+                    var elements = new List<DesktopElementRef>(result.Locate.Elements.Count);
+                    foreach (var element in result.Locate.Elements)
+                    {
+                        try
+                        {
+                            elements.Add(new DesktopElementRef(
+                                element.Ref,
+                                element.Tag,
+                                ToPageVersion(element.PageVersion),
+                                NullIfEmpty(element.Role),
+                                NullIfEmpty(element.Name),
+                                NullIfEmpty(element.Text),
+                                element.Visible,
+                                element.Enabled,
+                                element.HasChecked ? element.Checked : null));
+                        }
+                        catch (ArgumentException)
+                        {
+                            // 引用形态非法（空 Ref/Tag 或没有有效版本）：fail closed，不把坏引用交给上层。
+                            return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                                DesktopCapabilityError.Internal("locate outcome carries an unusable element reference"));
+                        }
+                    }
+
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromLocate(new DesktopLocateResult(
+                            requestedTarget,
+                            requestedLocator ?? new DesktopLocator(DesktopLocatorKind.Css, "*"),
+                            elements,
+                            result.Locate.Truncated,
+                            ToPageVersion(result.Locate.PageVersion))));
+                }
+
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Snapshot)
                 {
                     if (requestedTarget is null)

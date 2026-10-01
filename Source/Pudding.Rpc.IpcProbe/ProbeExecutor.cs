@@ -32,6 +32,14 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                     DesktopPageVersion.Require(5),
                     DesktopPageReadiness.Complete))),
 
+            DesktopCapability.BrowserLocate => Task.FromResult(DesktopCapabilityResponse.FromLocate(
+                new DesktopLocateResult(
+                    request.Locate?.Target ?? new DesktopPageTarget("ctx-probe", "page-probe"),
+                    request.Locate?.Locator ?? new DesktopLocator(DesktopLocatorKind.Css, "button"),
+                    [new DesktopElementRef("e1", "button", DesktopPageVersion.Require(5), role: "button", name: "probe")],
+                    truncated: false,
+                    DesktopPageVersion.Require(5)))),
+
             DesktopCapability.BrowserSnapshot => Task.FromResult(DesktopCapabilityResponse.FromSnapshot(
                 new DesktopSnapshot(
                     request.Snapshot?.Target ?? new DesktopPageTarget("ctx-probe", "page-probe"),

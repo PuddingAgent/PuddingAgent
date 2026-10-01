@@ -200,7 +200,8 @@ public sealed class CapabilityChannelConfigurationTests
                 DesktopCapability.WebViewPageState or
                 DesktopCapability.ShellNotification or
                 DesktopCapability.ShellStatus or
-                DesktopCapability.BrowserSnapshot;
+                DesktopCapability.BrowserSnapshot or
+                DesktopCapability.BrowserLocate;
 
             Assert.Equal(implemented, granted.HasFlag(descriptor.Capability));
         }

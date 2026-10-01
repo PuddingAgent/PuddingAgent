@@ -183,7 +183,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 | A：Contracts | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Contracts`（BCL-only，编译期边界）+ `Pudding.ContractsTests` 58/58；边界取红实测 |
 | B：Protocol / Connection | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Rpc.Protocol` + 17/17；`Source/Pudding.DesktopConnection` + 74/74；`Source/Pudding.Rpc.IpcProbe` 13/13（Named Pipe + h2c 真实端点） |
 | C：DesktopService | 🟡 产品代码与配置绑定全部就绪，只剩组合根两行装配（需重启验收） | `Source/Pudding.DesktopService` 81/81；`Source/PuddingDesktop.CapabilityHost`（`DispatcherQueue` 适配器）；`Source/Pudding.CapabilityBroker` 57/57；`Source/Pudding.CapabilityBroker.AspNetCore` 22/22（gRPC 服务 + Kestrel 装配助手 + **配置绑定/端点派生**，含实测约束：`Listen*` 覆盖 `UseUrls`；`Transport` 三态保证配置与监听一致）；接线配方见该组件 code_map，剩余 5 项装配待重启窗口 |
-| D：浏览器等价接入 | 🟡 进行中：`browser.snapshot` 已端到端落地（含 Ref/PageVersion 不变式） | 探针在管道/h2c 上验证快照往返（27/27）；`browser.locate`/`interact`/`wait_for` 与 contexts/tabs 仍未声明；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
+| D：浏览器等价接入 | 🟡 进行中：`browser.snapshot` + `browser.locate` 已落地（含 Ref/PageVersion 不变式） | 探针在管道/h2c 上验证快照往返（27/27）；`interact`/`wait_for` 与 contexts/tabs 仍未声明；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
 | E：Shell 能力 | 🟡 进行中：`shell.notification` + `shell.status` 已落地（只读，端到端验证） | 两者都有 payload 与实现，可在管道/h2c 上往返（探针 23/23）；`shell.dialog`/`shell.file_picker`/`shell.clipboard` 仍**未声明**（无 payload、无实现），交互式单窗口互斥依赖对话框载荷故一并后置 |
 | F：默认切换与退役 | ⛔ 未开始 | — |
 

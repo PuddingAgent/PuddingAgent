@@ -35,6 +35,9 @@ public enum DesktopCapability
 
     /// <summary>读取页面快照（DOM/可访问性树，带 PageVersion）；Ref 只在同一 PageVersion 内有效。</summary>
     BrowserSnapshot = 1 << 8,
+
+    /// <summary>按定位描述符查找元素（返回带 PageVersion 的 Ref；命中 0 个不是错误）。</summary>
+    BrowserLocate = 1 << 9,
 }
 
 public enum DesktopCapabilityKind
@@ -100,6 +103,8 @@ public static class DesktopCapabilities
         new(DesktopCapability.ShellClipboard, "shell.clipboard", InitialVersion,
             DesktopCapabilityKind.Shell, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
         new(DesktopCapability.BrowserSnapshot, "browser.snapshot", InitialVersion,
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
+        new(DesktopCapability.BrowserLocate, "browser.locate", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
     ];
 

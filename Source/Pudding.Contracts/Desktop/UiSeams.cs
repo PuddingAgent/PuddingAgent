@@ -51,6 +51,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken);
 
+    /// <summary>按定位描述符查找元素；实现方必须为每个命中项标注当前 PageVersion。</summary>
+    Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
+        DesktopCallContext context, BrowserLocateRequest request, CancellationToken cancellationToken);
+
     /// <summary>读取页面快照；预算由请求给出，实现方必须截断并如实标注 <c>Truncated</c>。</summary>
     Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         DesktopCallContext context, BrowserSnapshotRequest request, CancellationToken cancellationToken);

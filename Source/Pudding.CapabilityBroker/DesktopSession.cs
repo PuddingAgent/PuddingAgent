@@ -166,6 +166,19 @@ public sealed class DesktopSession : IAsyncDisposable
                     DesktopCapabilityError.Internal("notification response payload is missing")),
             cancellationToken);
 
+    /// <summary>元素定位（切片 D）：结果回填请求的描述符；Ref 只在返回的 PageVersion 内有效。</summary>
+    public Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
+        BrowserLocateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.BrowserLocate,
+            DesktopCapabilityRequest.ForLocate(request),
+            call,
+            static response => response.Locate is { } value
+                ? CapabilityResult<DesktopLocateResult>.Success(value)
+                : CapabilityResult<DesktopLocateResult>.Failure(
+                    DesktopCapabilityError.Internal("locate response payload is missing")),
+            cancellationToken);
+
     /// <summary>页面快照（规划 §9 切片 D）：Ref 只在返回的 PageVersion 内有效。</summary>
     public Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
@@ -394,6 +407,7 @@ public sealed class DesktopSession : IAsyncDisposable
 
             pending = new PendingOperation(call.OperationId, descriptor.Name, fingerprint, call, Now);
             pending.SetRequestTarget(request.Target);
+        pending.SetRequestLocator(request.Locate?.Locator);
 
             // 期限到点：本地给出 deadline_exceeded（携带「可能已产生副作用」），Desktop 的迟到结果被忽略。
             var remaining = call.DeadlineUtc - Now;
@@ -691,7 +705,10 @@ public sealed class DesktopSession : IAsyncDisposable
             return;
         }
 
-        CompleteFromDesktop(pending, DesktopResultDecoder.Decode(result, descriptor.Capability, pending.RequestTarget));
+        CompleteFromDesktop(
+                pending,
+                DesktopResultDecoder.Decode(
+                    result, descriptor.Capability, pending.RequestTarget, pending.RequestLocator));
     }
 
     private async Task FaultAsync(DesktopCapabilityError error)
@@ -811,6 +828,9 @@ public sealed class DesktopSession : IAsyncDisposable
 
         public DesktopPageTarget? RequestTarget { get; private set; }
 
+    /// <summary>定位请求的描述符：结果必须回填同一个描述符（结果帧不重复携带它）。</summary>
+    public DesktopLocator? RequestLocator { get; private set; }
+
         public DateTimeOffset CreatedAtUtc { get; }
 
         public DateTimeOffset? SentAtUtc { get; private set; }
@@ -825,6 +845,8 @@ public sealed class DesktopSession : IAsyncDisposable
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public void SetRequestTarget(DesktopPageTarget? target) => RequestTarget = target;
+
+    public void SetRequestLocator(DesktopLocator? locator) => RequestLocator = locator;
 
         public void AttachTimer(ITimer timer) => _deadlineTimer = timer;
 

@@ -119,6 +119,37 @@ message SnapshotCommand {
   SnapshotBudget budget = 3;
 }
 
+// 元素定位（切片 D）：v1 不支持复合定位（has）与跨帧选择（frame），线缆上无法表达。
+message LocateCommand {
+  CommandTarget target = 1;
+  int64 expected_page_version = 2;
+  LocatorSpec locator = 3;
+  int32 max_results = 4;
+}
+
+// 定位策略 + 值 + 可选修饰；kind 用线名（ref/css/xpath/text/role/label/placeholder/alt-text/title/test-id）。
+message LocatorSpec {
+  string kind = 1;
+  string value = 2;
+  string name = 3;
+  bool exact = 4;
+  int32 nth = 5;
+  string has_text = 6;
+}
+
+// 元素引用（按值元数据）：page_version 必须有效，交互提交后不得复用。
+message ElementRef {
+  string ref = 1;
+  string tag = 2;
+  string role = 3;
+  string name = 4;
+  string text = 5;
+  bool visible = 6;
+  bool enabled = 7;
+  optional bool checked = 8;
+  int64 page_version = 9;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -147,6 +178,7 @@ message CapabilityCommand {
     GetPageStateCommand get_page_state = 13;
     GetShellStatusCommand get_shell_status = 14;
     SnapshotCommand snapshot = 15;
+    LocateCommand locate = 16;
   }
 }
 
@@ -213,6 +245,12 @@ message SnapshotOutcome {
   int64 page_version = 6;
 }
 
+message LocateOutcome {
+  repeated ElementRef elements = 1;
+  bool truncated = 2;
+  int64 page_version = 3;
+}
+
 // Shell 状态结果（只读）：窗口形态、托盘可见性、自动化状态与打开的页面数。
 // 各状态用字符串线名（visible / hidden_to_tray / closing / unknown；free / paused / user_takeover），
 // 便于 Core 在不重新发版的情况下识别 Desktop 新增状态。
@@ -245,6 +283,7 @@ message OperationResult {
     PageStateOutcome page_state = 14;
     ShellStatusOutcome shell_status = 15;
     SnapshotOutcome snapshot = 16;
+    LocateOutcome locate = 17;
   }
 }
 
