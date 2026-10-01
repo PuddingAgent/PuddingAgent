@@ -291,7 +291,24 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             return CapabilityResult<TResult>.Failure(DesktopCapabilityError.DeadlineExceeded(mayHaveSideEffects: false));
         }
 
-        operation.CancelAfter(remaining);
+        // 用显式计时器记录「是不是期限到点」：只按墙钟比较会在定时器抖动时把期限误判为取消。
+        var deadlineFired = 0;
+        using var deadlineTimer = _timeProvider.CreateTimer(
+            _ =>
+            {
+                Interlocked.Exchange(ref deadlineFired, 1);
+                try
+                {
+                    operation.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // 操作已经结束。
+                }
+            },
+            null,
+            remaining,
+            Timeout.InfiniteTimeSpan);
 
         try
         {
@@ -299,6 +316,14 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         }
         catch (OperationCanceledException)
         {
+            if (Volatile.Read(ref deadlineFired) != 0)
+            {
+                var sideEffects = DesktopCapabilities.TryGet(capability, out var descriptor)
+                    && descriptor.Traits.HasFlag(DesktopCapabilityTraits.HasSideEffects);
+                return CapabilityResult<TResult>.Failure(
+                    DesktopCapabilityError.DeadlineExceeded(sideEffects));
+            }
+
             // 已经进入 surface：可能已产生副作用（由能力的 Traits 决定）。
             return CapabilityResult<TResult>.Failure(MapCancellation(capability, context, started: true));
         }

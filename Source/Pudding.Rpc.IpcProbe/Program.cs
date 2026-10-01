@@ -4,6 +4,7 @@ using Pudding.CapabilityBroker;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
+using Pudding.DesktopService;
 using DesktopConnectionClient = Pudding.DesktopConnection.DesktopConnection;
 
 namespace Pudding.Rpc.IpcProbe;
@@ -42,6 +43,8 @@ internal static class Program
 
         try
         {
+            RunEndpointDescriptionRoundTrip(report);
+
             await using var server = await BrokerProbeServer.StartNamedPipeAsync(pipeName, ControlToken, DesktopId);
             report.Pass(
                 "kestrel-named-pipe",
@@ -62,6 +65,39 @@ internal static class Program
         }
 
         return report.Print();
+    }
+
+    /// <summary>
+    /// 端点描述的两端一致性（计划 §7）：Core 侧派生管道名并发布描述，Desktop 侧严格解析成传输。
+    /// 描述里不含凭据；不同用户/不同 DataRoot 派生出不同的管道名。
+    /// </summary>
+    private static void RunEndpointDescriptionRoundTrip(ProbeReport report)
+    {
+        var endpoint = CapabilityEndpointNaming.NamedPipeEndpoint(
+            "probe-user-scope", "probe-data-root", "core-probe");
+        var text = endpoint.ToEndpointString();
+        var resolved = DesktopChannelTransportResolver.ResolveFromText(text);
+
+        if (resolved.IsSuccess
+            && resolved.Value.Kind == DesktopChannelTransportKind.NamedPipe
+            && string.Equals(resolved.Value.Address, endpoint.Address, StringComparison.Ordinal))
+        {
+            report.Pass("endpoint-description", $"Core 发布 → Desktop 解析：{text}（transport={resolved.Value.Kind}）");
+        }
+        else
+        {
+            report.Fail("endpoint-description", $"描述往返失败：{text} ⇒ {resolved.Error}");
+        }
+
+        var otherRoot = CapabilityEndpointNaming.NamedPipeEndpoint("probe-user-scope", "another-data-root", "core-probe");
+        if (!string.Equals(otherRoot.Address, endpoint.Address, StringComparison.Ordinal))
+        {
+            report.Pass("endpoint-isolation", "不同 DataRoot 派生出不同管道名（不会串接）");
+        }
+        else
+        {
+            report.Fail("endpoint-isolation", "不同 DataRoot 得到同一个管道名");
+        }
     }
 
     private static DesktopConnectionOptions DesktopOptions(DesktopChannelAuthentication? authentication) => new()

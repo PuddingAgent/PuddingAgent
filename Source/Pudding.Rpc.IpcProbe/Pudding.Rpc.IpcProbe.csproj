@@ -26,6 +26,7 @@
     <ProjectReference Include="..\Pudding.CapabilityBroker\Pudding.CapabilityBroker.csproj" />
     <ProjectReference Include="..\Pudding.Rpc.Protocol\Pudding.Rpc.Protocol.csproj" />
     <ProjectReference Include="..\Pudding.DesktopConnection\Pudding.DesktopConnection.csproj" />
+    <ProjectReference Include="..\Pudding.DesktopService\Pudding.DesktopService.csproj" />
   </ItemGroup>
 
 </Project>

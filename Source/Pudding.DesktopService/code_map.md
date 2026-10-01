@@ -3,7 +3,7 @@
 > Desktop 侧能力服务（计划 §6）：**目标校验 · 准入 · 生命周期 · 取消与关闭竞态 · UI 线程边界**
 > 依赖：`Pudding.Contracts`（平台无关契约）+ `Pudding.DesktopConnection`（执行器接缝）。
 > 编译期 Target `EnforceDesktopServiceBoundary` 禁止引用 Host/Runtime/Desktop/Browser 工程与 ASP.NET Core/WinUI/WebView2 包。
-> 测试：`Source/Pudding.DesktopServiceTests`（**69 用例**；假 UI 调度器与假监督器确定性验证，不需要 WinUI 应用）
+> 测试：`Source/Pudding.DesktopServiceTests`（**76 用例**；假 UI 调度器与假监督器确定性验证，不需要 WinUI 应用）
 
 ## 职责边界
 
@@ -25,6 +25,7 @@
 | `DesktopInteractionState.cs` | 暂停与用户接管两个**独立轴**：变更类能力被拒（`Paused`/`UserTakeover`，接管优先），只读能力仍可用（观测不打断用户） |
 | `DesktopServiceOptions.cs` | `AllowedCapabilities`、`ShellCallerTrust`（默认 `Untrusted` ⇒ 对话框/Picker/剪贴板默认不开放） |
 | `DesktopCapabilityHost.cs` | 宿主组合（切片 C-2）：只依赖 `IDesktopConnectionSupervisor` 端口 + `DesktopService`；启动时**二选一传输**（选旧 Bridge 则拒绝启动，不做跨传输回退）；同一 DesktopId **只允许一个活动传输**（进程级占用，停止即释放）；`StartAsync`/`StopAsync`/`WaitForStateAsync`；停止超时仍释放占用 |
+| `DesktopChannelTransportResolver.cs` | 把 Core 发布的端点描述解析成 Desktop 传输（计划 §7）：版本不支持 / 形态未知 / 地址不可用一律明确失败；**凭据不从描述里取**（描述没有凭据字段，凭据只能由主机侧注入） |
 
 ## 错误映射（终态语义）
 
@@ -53,5 +54,5 @@
 ## 门禁（2026-10-01 实测）
 
 - 独立构建：`dotnet build Source\Pudding.DesktopService -c Release` ⇒ 0 警告 / 0 错误。
-- 独立测试：`Pudding.DesktopServiceTests` ⇒ **69/69 通过**（含 5 条边界断言、策略表快照、宿主启停与单实例占用）。
+- 独立测试：`Pudding.DesktopServiceTests` ⇒ **76/76 通过**（含 5 条边界断言、策略表快照、宿主启停与单实例占用、端点描述解析）。
 - 边界强制：csproj 只允许 `Pudding.Contracts` + `Pudding.DesktopConnection`、零包引用，由 Target 取红。

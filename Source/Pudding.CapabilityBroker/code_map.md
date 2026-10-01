@@ -4,7 +4,7 @@
 > 并作为「已连接 Desktop 的注册表 + 能力调用入口」。
 > 平台无关：只依赖 `Pudding.Contracts` + `Pudding.Rpc.Protocol`；编译期 Target
 > `EnforceCapabilityBrokerBoundary` 禁止引用 ASP.NET Core / Desktop 侧组件 / 宿主 / Runtime。
-> 测试：`Source/Pudding.CapabilityBrokerTests`（**52 用例**，假通道确定性验证，不需要 Kestrel）
+> 测试：`Source/Pudding.CapabilityBrokerTests`（**57 用例**，假通道确定性验证，不需要 Kestrel）
 
 ## 为什么有 `ICoreDesktopChannel`
 
@@ -21,6 +21,7 @@
 | `WireMapping.cs` | `CoreCommandEncoder`（领域 → proto，四种 payload；指纹只覆盖能力与业务 payload）、`DesktopResultDecoder`（proto → 领域，fail closed：payload 与命令能力不一致 ⇒ `internal_error`；错误码/重试/副作用语义如实还原）、`PageReadinessWire`（就绪度线名，未知折叠为 `unknown`） |
 | `ICoreDesktopChannel.cs` | 服务端流接缝 + `DesktopLinkState` + 授权接缝 `IDesktopCapabilityAuthorizer`（默认 **DenyAll**：RPC 可达 ≠ 获得桌面操作授权）+ `AllowAll`（仅测试/受控探针） |
 | `DesktopCapabilityPolicy.cs` | 本机可授予能力上限、在途/队列/心跳/握手参数；`ToWireLimits` 下发实际限制 |
+| `CapabilityEndpointNaming.cs` | **端点命名与描述**（计划 §7）：管道名 = `pudding-capability-<作用域哈希>`（按用户 + 产品实例派生，不同 DataRoot 不串接；哈希而非明文，管道名出现在系统工具里也不泄漏作用域）；`LoopbackEndpoint`/`TlsEndpoint` 校验端口范围、TLS 必须显式 host；描述经 `ToEndpointString()` 发布 |
 
 ## 语义要点（与 Desktop 侧对称）
 
