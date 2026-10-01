@@ -1,3 +1,23 @@
+## 2026-10-01：能力通道配置绑定与端点派生（切片 C-3 收尾前的最后一块可独立验证件）
+
+把「接线所需的全部可判定逻辑」从宿主里搬出来，使重启窗口内只剩两行装配 + 一段配置：
+
+- `CapabilityChannelConfiguration`（`Desktop:CapabilityChannel` 段）：**默认关闭**（不配置 ⇒ 产品行为逐字不变）；
+  `Enabled` / `Transport` / `DesktopId` / `NamedPipeName` / `LoopbackPort` / `Grantable` / 队列与超时；
+  `CreateOptions(...)` 派生隔离管道名并复用组件校验，`Describe(...)` 产出可发布端点描述（关闭时为 null）。
+- **配置与监听必须一致**：新增 `Transport` 三态（`named-pipe` 缺省 / `loopback-h2c` / `both`）。
+  这是测试抓出的设计歧义——原先「只配 LoopbackPort」时 `Describe` 仍发布管道端点，会让 Desktop
+  去连**没有在监听**的管道；现在非法组合（named-pipe 带端口、loopback 带管道名、未知传输值）
+  一律整体失败，不做静默回退。
+- 能力线名未知即整体失败（不静默忽略，避免配置漂移）；缺省授予集合恰为「已有 payload 的 5 个能力」
+  （dialog/picker/clipboard 不会被误授予，测试用目录遍历断言）。
+- 验证：适配层测试 **22/22**（新增 9 条配置用例）；探针 **25/25**（新增「配置派生端点 → Desktop 解析」
+  「loopback 配置描述为回环」「关闭时描述为空」三条跨端断言）。
+- 文档：适配层 code_map 给出接线配方（配置样例 + 两行装配）与剩余 5 项装配待办。
+
+测试合计：336 用例（Contracts 77、Rpc.Protocol 19、DesktopConnection 80、DesktopService 81、
+CapabilityBroker 57、CapabilityBroker.AspNetCore 22）。
+
 ## 2026-10-01：`shell.status` 参数化能力（切片 E 第一项）
 
 切片 E 按方案「通知/状态先行」推进，落地第二个只读能力（与 `page_state` 同形，端到端可验证）：

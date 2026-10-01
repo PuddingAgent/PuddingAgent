@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using Pudding.CapabilityBroker;
+using Pudding.CapabilityBroker.AspNetCore;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
@@ -68,13 +69,14 @@ internal static class Program
     }
 
     /// <summary>
-    /// 端点描述的两端一致性（计划 §7）：Core 侧派生管道名并发布描述，Desktop 侧严格解析成传输。
-    /// 描述里不含凭据；不同用户/不同 DataRoot 派生出不同的管道名。
+    /// 端点描述的两端一致性（计划 §7）：Core 侧**从配置派生**管道名并发布描述，
+    /// Desktop 侧严格解析成传输。描述里不含凭据；不同用户/不同 DataRoot 派生出不同的管道名；
+    /// 通道关闭时描述为空（就绪流程里不出现该字段）。
     /// </summary>
     private static void RunEndpointDescriptionRoundTrip(ProbeReport report)
     {
-        var endpoint = CapabilityEndpointNaming.NamedPipeEndpoint(
-            "probe-user-scope", "probe-data-root", "core-probe");
+        var configured = new CapabilityChannelConfiguration { Enabled = true };
+        var endpoint = configured.Describe("probe-user-scope", "probe-data-root", "core-probe")!;
         var text = endpoint.ToEndpointString();
         var resolved = DesktopChannelTransportResolver.ResolveFromText(text);
 
@@ -82,11 +84,43 @@ internal static class Program
             && resolved.Value.Kind == DesktopChannelTransportKind.NamedPipe
             && string.Equals(resolved.Value.Address, endpoint.Address, StringComparison.Ordinal))
         {
-            report.Pass("endpoint-description", $"Core 发布 → Desktop 解析：{text}（transport={resolved.Value.Kind}）");
+            report.Pass(
+                "endpoint-description",
+                $"配置派生端点 → Desktop 解析：{text}（transport={resolved.Value.Kind}）");
         }
         else
         {
             report.Fail("endpoint-description", $"描述往返失败：{text} ⇒ {resolved.Error}");
+        }
+
+        // 调试备用传输也必须描述成「实际监听的形态」。
+        var loopback = new CapabilityChannelConfiguration
+        {
+            Enabled = true,
+            Transport = CapabilityChannelTransport.LoopbackHttp2,
+            LoopbackPort = 5099,
+        };
+        var loopbackResolved = DesktopChannelTransportResolver.Resolve(
+            loopback.Describe("probe-user-scope", "probe-data-root", "core-probe"));
+        if (loopbackResolved.IsSuccess
+            && loopbackResolved.Value.Kind == DesktopChannelTransportKind.LoopbackHttp2
+            && string.Equals(loopbackResolved.Value.Address, "http://127.0.0.1:5099", StringComparison.Ordinal))
+        {
+            report.Pass("endpoint-transport", "loopback-h2c 配置描述为回环端点（不会指向未监听的管道）");
+        }
+        else
+        {
+            report.Fail("endpoint-transport", $"loopback 描述错误：{loopbackResolved.Error}");
+        }
+
+        var disabled = new CapabilityChannelConfiguration();
+        if (disabled.Describe("probe-user-scope", "probe-data-root", "core-probe") is null)
+        {
+            report.Pass("endpoint-default-off", "通道未开启时端点描述为空（默认不改动既有行为）");
+        }
+        else
+        {
+            report.Fail("endpoint-default-off", "通道未开启却仍发布了端点描述");
         }
 
         var otherRoot = CapabilityEndpointNaming.NamedPipeEndpoint("probe-user-scope", "another-data-root", "core-probe");
@@ -99,7 +133,6 @@ internal static class Program
             report.Fail("endpoint-isolation", "不同 DataRoot 得到同一个管道名");
         }
     }
-
     private static DesktopConnectionOptions DesktopOptions(DesktopChannelAuthentication? authentication) => new()
     {
         DesktopId = new DesktopInstanceId(DesktopId),

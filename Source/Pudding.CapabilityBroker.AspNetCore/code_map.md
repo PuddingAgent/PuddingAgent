@@ -12,6 +12,8 @@
 |---|---|
 | `CapabilityChannelHostExtensions.cs` | `CapabilityChannelOptions`（Desktop 身份、可授予能力、队列/心跳/握手限制、消息上限、端点形态、审计出口）+ `AddCapabilityChannel(...)`（注册 Broker/认证器/服务/gRPC）+ `MapCapabilityChannel(app)` + `ListenForCapabilityChannel(kestrel)` |
 | `CoreCapabilityAuthentication.cs` | 认证接缝 `ICoreCapabilityAuthenticator`（**默认拒绝一切**）、`StaticHeaderCapabilityAuthenticator`（测试/受控探针）、`ServerStreamDesktopChannel`（服务端流 → `ICoreDesktopChannel`，串行化写入） |
+| `CapabilityChannelConfiguration.cs` | **配置绑定与端点派生**（计划 §7/§9）：`Desktop:CapabilityChannel` 段 → `CapabilityChannelOptions` + 就绪描述。默认关闭；`Transport` 三态（`named-pipe` 缺省 / `loopback-h2c` / `both`）保证「配置与监听一致」；能力线名未知即整体失败；`Describe(...)` 只发布实际监听的端点且不含凭据 |
+| `CapabilityChannelTransport.cs` | 传输形态常量（配置取值真源） |
 | `DesktopCapabilityService`（同文件内部类） | 唯一 gRPC 服务：**认证先于握手** → `broker.AcceptAsync` → `await session.Completion` |
 
 ## 实测约束（装配产品组合根前必读）
@@ -27,16 +29,34 @@
 3. **认证失败不产生会话**：被拒的连接不会进入 Broker 的注册表（测试断言 `Sessions` 为空）。
 4. 同一 Desktop 的第二条连接在第一条活跃时被拒（`InvalidArgument`），与 Broker 的单实例传输策略一致。
 
-## 与产品的接线（下一步，需要外部控制器重启验证）
+## 与产品的接线（重启窗口内只需两行 + 一段配置）
 
-```csharp
-// PuddingApplicationHost（DesktopChild 模式，且配置开关为开）：
-builder.Services.AddCapabilityChannel(options, controlTokenAuthenticator, toolRuntimeAuthorizer);
-builder.WebHost.ConfigureKestrel(k => { /* 既有 REST 显式绑定 */ k.ListenForCapabilityChannel(options); });
-...
-app.MapCapabilityChannel();
+```jsonc
+// <DataRoot>/config/system.json（缺省不写 = 关闭，产品行为不变）
+"Desktop": {
+  "CapabilityChannel": {
+    "Enabled": true,
+    "Transport": "named-pipe",          // named-pipe | loopback-h2c | both
+    "DesktopId": "default",             // 与 Desktop 侧 desktop.json 同一值
+    "Grantable": "webview.navigate,webview.execute_javascript,webview.page_state,shell.notification,shell.status"
+  }
+}
 ```
 
-仍未做：①把上述两行接入 `PuddingApplicationHost`（含 `<DataRoot>/config/system.json` 的开关，默认关闭）；
-②用既有 `DesktopControlTokenValidator` 实现 `ICoreCapabilityAuthenticator`；
-③用继承 Tool Runtime 准入的实现替换 `AllowAll`/`DenyAll` 授权器；④把端点描述并入「启动就绪」流程。
+```csharp
+// PuddingApplicationHost（DesktopChild 模式）
+var channel = CapabilityChannelConfiguration.Bind(builder.Configuration);
+if (channel.Enabled)
+{
+    var options = channel.CreateOptions(userScope, productInstanceId, coreInstanceId);   // 非法配置 ⇒ 抛错，宿主记录并继续用旧传输（fail closed）
+    builder.Services.AddCapabilityChannel(options, controlTokenAuthenticator, toolRuntimeAuthorizer);
+    builder.WebHost.ConfigureKestrel(k => { /* 既有 REST 显式绑定 */ k.ListenForCapabilityChannel(options); });
+}
+...
+if (channel.Enabled) { app.MapCapabilityChannel(); }
+// 就绪流程：channel.Describe(userScope, productInstanceId, coreInstanceId) 发布端点（关闭时为 null）
+```
+
+仍未做（属于重启窗口内的装配，需外部控制器验收）：①上述代码接入 `PuddingApplicationHost`；
+②用既有 `DesktopControlTokenValidator` 实现 `ICoreCapabilityAuthenticator`；③用继承 Tool Runtime 准入的实现
+替换探针的 `AllowAll` 授权器；④`Describe(...)` 并入启动就绪流程；⑤Desktop 侧组合根启动宿主。
