@@ -6,7 +6,7 @@
 
 目标：让聊天成为安静、清晰、有层次的工作界面；保留现有功能、数据、入口能力与业务语义。采用柔和中性色、单一蓝色强调、清晰字体、紧凑导航与舒展阅读区。正文是视觉主角，过程可追溯，操作可发现，危险动作明确。
 
-本规格基于当前源码静态审阅，不是运行页面截图审计。尺寸和颜色是目标设计值；实际效果必须按第 12 节截图、键盘、真实交互验收。没有以静态源码证明服务端能力可用。
+本规格初版基于源码静态审阅；第 13 节补充用户提供的浅/深色截图分析，第 14 节登记滚动条缺陷与 Web / Shell 修复方案。尺寸和颜色是目标设计值；实际效果必须按第 12 节截图、键盘、真实交互验收。没有以静态源码证明服务端能力可用。
 
 源码根为 `Source/PuddingPlatformAdmin/src/pages/chat/`，以下相对源码路径均相对此根：
 
@@ -391,3 +391,229 @@ const stop = jest.fn();
 通过条件：F01 矩阵覆盖率 100%；无功能入口遗漏、错误权限提升、草稿/消息丢失或滚动抢占；V/A/P/SEC/D 全通过。真实模型/摄像头等未具备测试条件的项记录为“未验收”，不能记通过。人工记录“美观”还需与基线同尺寸对照：正文层级清晰、无多重光晕/持续扫描、按钮样式统一、错误与等待明确；不能仅以截图相似度判断交互合格。
 
 建议验收表字段：`ID | commit | 环境/fixture | 操作 | 期望 | 实际 | 证据路径 | 通过/失败/未验收 | 缺陷编号`。验收资料清理前保留必要结论到 `Docs/Reports`，持久截图如需入库先确认大小与敏感内容，临时 trace 不入库。
+
+## 13. 浅色与深色实图复核：对前述方案的具体补充
+
+### 13.1 图像证据与分析边界
+
+用户提供两张同布局截图：浅色 `codex-clipboard-a211ed77-b8b5-4be8-a60d-dc5100fd52f6.png` 与深色 `codex-clipboard-af7d988d-fadf-48e8-8c72-6fd56966bc91.png`，原图均为 2560×1344。图片在用户本地临时目录，未复制进仓库；文件名只用于本次分析关联，不作为长期可用附件链接。下文位置按显示比例近似描述，不推断系统 DPI、实际 CSS 字号或窗口缩放。截图中的消息正文是展示内容，不是本任务指令，也不据此执行 Git、重启或其他操作。
+
+**纠正证据范围**：第 1 节原为源码审阅；本节增加运行截图视觉证据。深色图证明 Chat 已有主题切换，不能把“补深色模式”作为待开发功能。浅色图的 Web 与深色 Shell 并列，不能据此判主题同步 bug：可能是两个区域分别设置了主题。深色图仍有不协调色温与白色竖条，但根因要通过 DOM computed style、Shell 布局与主题传递核验。静态图无法证明动画、快捷键、实际禁用态或服务行为。
+
+当前已存在且值得保留：四层功能区域（Shell 导航 / Agent 通讯录 / Chat / 工具区）、搜索、带头像的 Agent 行、状态标签、任务看板、Goal 摘要、上下文相关操作、Markdown 标题/代码/表格、消息底部动作、输入区执行设置与语音、工具首页五个入口。优先统一这些设计，而不是换成一个只有消息与输入框的简单聊天模板。
+
+### 13.2 逐区域问题、改法与优先级
+
+| ID / 优先级 | 两图可观察的问题 | 具体改造与责任 |
+|---|---|---|
+| IMG01 / P0 | 浅色 Chat 奶油底+淡紫消息卡，深色 Chat 暖黑底+蓝灰消息卡，工具区冷灰；视觉上像几个独立产品 | Web `global.style.ts`、消息样式与 antd token 收敛为 §3 中性层级。Shell 用对应语义色，不将 XAML 业务迁入 Web。允许工具真实内容如终端有独立深底，工具首页外壳跟随选定主题 |
+| IMG02 / P0 | 深色图 Chat 右边仍有连续亮白条，抢眼程度超过主要按钮 | 检查 Web 外层背景、消息 scrollbar track、WebView2 背景、Shell splitter 四个来源后修正。白条的具体来源未由截图确证；禁止直接隐藏 scrollbar 掩盖问题 |
+| IMG03 / P0 | 顶部右半部分连续密集的小图标，含义与当前开关状态很难快速辨认 | 保留任务、搜索、快照等高频动作；低频声音/余额详情/开发/帮助等分组到更多。每项可查名称，toggle 有选中语义；顶部工具栏与阅读模式条各司其职 |
+| IMG04 / P0 | 深色顶部部分图标近黑，消息底部动作与“29 步思考 · 47 工具”较暗；输入 placeholder 偏暗 | 图标使用 text-muted，不用固定黑色或 opacity 叠加；统计用 caption 专属 token，通过实际合成对比度验证。placeholder 次级色，功能禁用另用状态与原因，不以昏暗程度猜测 |
+| IMG05 / P1 | 工具首页约占整窗右侧 44%，大量空间只承载五个入口；Chat 与长表格受限 | 保留用户可调分栏；无内容首页采用较窄默认，打开浏览器/文件等可保留用户展开宽度。宽度决策走 Foundation，不在 Chat CSS 模拟 Shell 分栏 |
+| IMG06 / P1 | 单条助手长文形成巨大底色矩形；标题、粗体、行内代码、代码块同时抢眼 | 助手正文去大面积有色底，保持阅读列与回合分隔；用户仍浅强调气泡。行内代码降低对比、常规字重；保留代码块更深底作局部锚点 |
+| IMG07 / P1 | 表格首列很窄，“可部署产物/在飞子代理”等短标签被分成多行；正文总体密集 | 首列标签给合适最小宽，空间不足让表格容器横滚；长内容列可换行。调正文行高/段落间距，避免整段粗体与过量 inline code 外框 |
+| IMG08 / P1 | 输入区高度很紧凑，小型“自动/自动审批”与无文字圆环挤在底部；发送与录音都是小图标 | 保留两行草稿空间与独立工具行；“执行偏好：自动”“权限：自动审批”可查完整含义；状态圆环旁提供摘要/详情入口。发送主按钮 36，触控 44；disabled 与 ready 明确区分 |
+| IMG09 / P1 | Agent 行状态 badge 深色下亮度较高；名称、主线会话、在线标签层级有竞争；列表下方 Groups 是未接入占位 | 选中行采用单一底色/左线；badge 用浅色文字+轻底，而非近白实块。辅助“主线会话”降低至次级信息。Groups 改中文“群组”，折叠展示“群组即将开放”，保留占位能力提示，不伪造可点击入口 |
+| IMG10 / P1 | 左栏顶部“+”、气泡和列表图标缺少直接可读含义；Agents / Groups 与中文工作台混用 | 新任务优先文字+图标；其他按钮具备 Tooltip/可访问名称并显示真实切换状态。显示文案统一“智能体”“群组”，底层 Agent 类型和路由不改 |
+| IMG11 / P1 | 工具首页可用/未接入项都类似强度卡片，说明小且灰；终端、制成品、交互面板已有等待提示 | 保留五个入口及原占位面板。卡片增加“可用/待接入”文字标签；占位项可打开说明但不能装成业务就绪。这里描述入口形态，不宣称图片中的输出文件/浏览器已端到端验收 |
+| IMG12 / P2 | 底部 Core Ready/IP 细小；Chat 与工具区都有自己的状态，可能让用户混淆执行完成与服务就绪 | Shell 底部只表示 Core/连接健康；Chat 下缘表示 Agent 执行，工具页表示当前工具。正常时简洁，故障时明确文字与修复入口，避免复制全套状态条 |
+
+截图中只看到助手消息底部与部分内容，无法确定消息顶部身份、历史加载、审批、队列是否正常展示，不能把未入镜元素判为缺失。发送按钮在图中草稿为空，因此外观偏淡可能是正确禁用态，需用“有文本且就绪”的对照图判断主按钮效果。
+
+### 13.3 将设计尺寸转为可实施的分栏规格
+
+前述 §2 的 880 是**消息阅读列**最大宽，右侧 320 是 **Web 内子代理/详情抽屉**目标宽，不适用于截图的 **Shell 多标签工具工作区**。两者必须区分，不能把浏览器工具窗压成 320px。
+
+已核对当前源码：`Source/PuddingDesktop.Foundation/ToolWorkspaceLayout.cs` 默认工具比例 0.45、工具最小宽 360、Chat 宿主最小宽 560、splitter 命中区 6；`Source/PuddingDesktop/MainWindow.xaml.cs` 的 `ApplyToolLayout` 消费该分配，`MainWindow.xaml` 定义 ChatColumn / ToolSplitterColumn / ToolColumn。因此截图近似 55:45 的主分区符合当前设计默认值，不是未知布局错误。560 是包含 Web 内 Agent 栏的宿主宽，不等于正文可用宽。
+
+修订目标：首次使用且只显示工具首页时推荐比例 0.32（范围约 30–35%）；如果已有保存比例，继续优先恢复用户设置。浏览器/终端/文件工具进入后可继续当前比例，用户可拖动到 45–50% 或放大。**不得每次切换标签自动改变比例**，否则持续布局跳动、文本重排。工具区折叠后只保留入口与活动徽标，不卸载浏览器/终端会话；是否卸载由当前资源生命周期策略决定，视觉方案不改变它。
+
+建议首次配置举例（均为布局单位示意，不是截图 CSS px 测量）：可用区域 1600，工具约 512、splitter 6、Chat 宿主约 1082；Chat 内通讯录 264、正文区约 818。当前用户已保存比例保留，新增初始化默认只影响未配置状态；双击复位要有明确“恢复默认分栏”的提示与测试，不悄悄复写配置。
+
+原生宽度单位与 Web CSS px 在 DPI/WebView 缩放下需分别量测，Web 响应式由实际宿主 viewport 决定。沿用现有拖动、键盘调整、overlay、zoom 与自动展开偏好；窄屏不能同时保留 Agent 栏和 Shell 工具分栏而挤到正文不可读。
+
+### 13.4 主题源与滚动条的实际接入点
+
+Web 主题入口由 `Source/PuddingPlatformAdmin/src/app.tsx` 使用 `ThemeProviderContainer`，颜色真源为 `src/global.style.ts` 的 Light / Dark token 段。当前 warm 系列与 Chat、runtime、admin、antd 派生 token 并存。修改时必须审计 `--warm-beige`、`--accent-purple`、`token.colorBg*` 等消息使用点；仅改 `--pudding-chat-bg` 不能消除蓝灰消息卡。caption / tertiary / secondary / subtle 也须按 §3 配套映射，避免旧棕灰继续覆盖新主题。
+
+Shell `MainWindow.xaml.cs` 的 `OnTheme` 当前设置 `Root.RequestedTheme` 并保存外观；这段处理没有显示向 Web 同步的逻辑。是否另有桥接需实施时完整追踪，不能据此直接宣布所有同步机制都缺失。产品目标：宿主内提供一个外观选择入口，明确“跟随系统/浅色/深色”；如保留 Web 独立选择，必须标明“仅聊天区域”，不能出现两个看似全局但范围不明的开关。
+
+统一外观需要 Shell 配合时，使用已审计可信工作台通道传递纯外观偏好，Web 继续自己渲染；不向第三方浏览器页注入主题，不传 token 或业务数据。主题事件不重新导航、不销毁草稿、不中断 Core。桥未实现之前可先共享色板并明确独立设置范围，不声称已经同步。
+
+滚动条样式示例（作用于现有实际滚动节点，绝非创建新节点）：
+
+```css
+.chatScrollRegion {
+  color-scheme: light;
+  scrollbar-color: #8794a7 #f7f8fa;
+  scrollbar-width: thin;
+}
+[data-theme='dark'] .chatScrollRegion {
+  color-scheme: dark;
+  scrollbar-color: #65758c #11151b;
+}
+.chatScrollRegion::-webkit-scrollbar { width: 10px; height: 10px; }
+.chatScrollRegion::-webkit-scrollbar-track {
+  background: var(--pudding-chat-bg);
+}
+.chatScrollRegion::-webkit-scrollbar-thumb {
+  background: var(--pudding-chat-text-muted);
+  border: 3px solid var(--pudding-chat-bg);
+  border-radius: 8px;
+}
+```
+
+示例 `[data-theme]` 需替换为产品真实主题选择器，不能直接再引入一套主题状态。原生高对比时尊重系统滚动条，不强制透明化。若白条实际来自 WebView2 未铺满或 Shell 背景，修复对应尺寸/背景而不是加 CSS；验收同时检查 loading 与加载失败阶段，不让网页加载前闪白。
+
+### 13.5 细化消息与工具卡控件
+
+消息正文保持 15px/1.75，常规字重 400；深色正文用柔和 text 色而非全白。段落底色透明或与 surface 同色，不叠暖/紫/蓝三套底。行内代码使用 `surface-muted`、13px 等宽、2px 4px padding、4px 圆角；表格内行内代码不再叠亮灰色硬边，不把每个路径都做成可交互 chip。
+
+```css
+.chatMarkdown :not(pre) > code {
+  background: var(--pudding-chat-surface-muted);
+  color: var(--pudding-chat-text);
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 0.9em; font-weight: 400;
+  padding: 2px 4px; border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+.chatTableViewport { overflow-x: auto; max-width: 100%; }
+.chatMarkdown table { width: 100%; border-collapse: collapse; }
+.chatMarkdown th, .chatMarkdown td {
+  padding: 10px 12px; vertical-align: top;
+  border-bottom: 1px solid var(--pudding-chat-border);
+}
+/* 只用于具有短标签首列的规格/状态表，不能全局套在任意数据表 */
+.chatLabelTable th:first-child, .chatLabelTable td:first-child {
+  min-width: 7em; white-space: nowrap;
+}
+```
+
+任意 Markdown 表格默认允许换行，长内容仍可横滚；仅能确定语义的应用状态表使用 `chatLabelTable`，不要靠“第一列都 nowrap”制造新的超宽表。长原始路径可在正文折行，代码块仍保留原始格式。
+
+工具首页布局：上方标题“工具工作区”、一行说明“查看文件、打开浏览器或检查执行结果”；五张卡片沿用原顺序，每卡主标题 15/600、说明 13/1.5、图标 20，padding 12–16，间距 8。统一圆角 10，hover 加边框/底色，键盘有焦点框。快捷键只在确实注册时显示。未接入项保留原说明面板，标签“待接入”，默认焦点与点击反馈不假装打开可用的终端或提交表单。
+
+空态组最大宽 440，靠工具区上部约 20–25% 高度布置，避免中心巨大留白使界面像等待页。有活动标签时主页让位于真实内容，工具区右上 + / 收起 / 放大保留。Shell 主题 brush 修改只调整工具外壳、卡片和 tab，不改第三方网页内容。
+
+### 13.6 基于两张截图追加验收
+
+| ID | 对照步骤 | 通过标准 |
+|---|---|---|
+| IMG-V01 | 同窗口、同消息、同分栏，分别拍浅色与深色 | 背景/卡片/文字/选中/输入/代码都为同一主题的层级；无暖黑与无意蓝灰大卡并存；消息去大色块后仍可分辨回合 |
+| IMG-V02 | 深色初始加载、历史流式、滚动、打开右工具、加载失败 | 无连续高亮白边或闪白；滚动条可用；1px 分割线与6px拖动区清楚；不能以隐藏滚动条达标 |
+| IMG-V03 | 所有顶部与消息底部图标的 normal/hover/focus/disabled | 深色无黑色图标失踪；文字/图标符合对比度；disabled 可解释；截图不可取代量测 |
+| IMG-V04 | 空草稿 / 可发送文本 / 运行中 / 请求停止 | 四种操作外观可区分；有草稿主操作明确；自动/自动审批含义可查，停止与排队/补充保留 |
+| IMG-V05 | 无已存配置首次启动；已有用户比例；拖动后重开；切工具标签 | 首次首页采用修订默认；既有比例与偏好恢复；标签切换不改比例；原键盘/双击/overlay/zoom 行为通过 |
+| IMG-V06 | 查看截图同类“项/状态”表及长工具输出表 | 短标签无需一两字强制换行；表格不会扩大整页；代码复制内容与原文一致 |
+| IMG-V07 | Shell/Web 主题选择、跟随系统、重启 | 设置范围明确；实现同步时只作用可信工作台；草稿和执行不中断；第三方工具网页无主题脚本注入 |
+| IMG-V08 | 工具首页五张卡，包含所有待接入项 | 可用与占位可区分；五入口全保留；说明可读、键盘焦点可见、未接入项不生成虚假成功反馈 |
+
+本节优先次序：先修 IMG01–04 色彩/边界/可读性，再落消息、表格、输入微控件与导航；Shell 分栏与主题协同单独切片，先在 Foundation 测试后接入 Desktop，仍遵循串行构建与隔离生命周期验证。只做 Chat CSS 的切片不能声明已完成整窗一致性验收。
+
+## 14. 独立缺陷登记：SCROLL-001 深色滚动条及 Web / Shell 边界不协调
+
+### 14.1 登记与证据
+
+- 编号：**SCROLL-001**；优先级：P0（本次 UI 改造第一批）；状态：**已登记，待实施，未修复/未验收**。
+- 用户第三张标注图：`codex-clipboard-808394dd-0376-4a39-9587-28b5c7f1d767.png`，原图 2560×1344。红框明确指向 Chat 右侧白色滚动轨道与邻接工具区边界。截图作为视觉证据，不推断运行时版本和缩放。
+- 问题：深色 Web 内出现高亮轨道、传统箭头与窄灰 thumb；轨道与 Chat/Shell 深色背景明显割裂，邻接 splitter 进一步形成粗亮边。修复覆盖前端与客户端 Shell，不能仅处理一侧。
+- 影响范围：主消息列表、Agent/会话导航、输入 textarea、代码/表格横滚、Web 弹层，以及 Shell 工具首页/输出/设置等原生滚动区域；第三方网页不纳入应用 CSS 强制注入范围。
+- 核验事实：`styles/layout.styles.ts` 的消息滚动样式已有 `overflowY:auto`、`scrollbarGutter:stable`、`overflowAnchor:none`；应保留其布局与 viewport 契约。`src/global.style.ts` 未检索到 scrollbar 或 color-scheme 专项规则。Shell 在 `MainWindow.xaml.cs` 创建工作台 WebView2，`MainWindow.xaml` 定义宿主与 splitter。根因仍需分层核验，截图本身只能证明视觉缺陷。
+
+### 14.2 目标外观与交互
+
+| 项 | 浅色 | 深色 | 行为 |
+|---|---|---|---|
+| track | 所属容器背景，消息为 #F7F8FA | 所属容器背景，消息为 #11151B | 不使用白色/浅灰大轨道，不铺强调色 |
+| thumb idle | #738197 | #65758C | 有可发现性，圆角，实际合成后与 track ≥3:1 |
+| thumb hover | #526174 | #8B9DB5 | 只换色，不增加整体宽度造成布局跳动 |
+| thumb active | #2458D3 | #91B3FF | 拖动时轻强调，松开恢复 |
+| gutter / 命中区 | Web 10px，触控视实际系统行为 | 同浅色 | thumb 视觉宽约6px；系统高对比/无障碍可用更宽，不强制细条 |
+| Shell splitter | 1px 主题边界线 | 1px 主题边界线 | 保留现有6px拖动命中，hover/focus显示，不伪装成scrollbar |
+
+保留鼠标滚轮、触控板、触摸、拖动 thumb、点击轨道、方向/PageUp/PageDown/Home/End 与 textarea 选择操作。滚动能力不可用 `overflow:hidden`、零宽滚动条或 JS 自绘拖条替代。减少动画下滚动无平滑强制效果。不要让 thumb hover 时改变 gutter 宽度。
+
+### 14.3 前端修复步骤与代码模式
+
+1. 在 DevTools 确认白色轨道所属节点，记录实际 `overflow`、computed `color-scheme` 和父容器背景；用 `MessageList` ref 对照 `useMessageViewportRuntime`，确认只有一个主消息滚动节点。若是 document/body 额外滚动，应先修根布局 min-height/overflow，而不是给两个节点都做主题滚动条。
+2. 在现有 Light/Dark 主题真源分别设置 `color-scheme:light/dark`，与 ThemeMode 实际选择同步；覆盖 textarea/Select 等浏览器默认 UI 的主题。不能只设置 `prefers-color-scheme`，否则显式选择浅/深会与系统偏好冲突。
+3. token 增加 track/thumb/hover/active；复用所有应用所属滚动容器。弹层 Portal 用已有主题 class/token；代码/表格 track 跟随它自己的 surface，不统一铺页面 bg。
+4. 优先一个样式入口。第13.4节代码为通用示意；本节细化为两种实现策略，**实施时择一**，不能让非auto的标准 scrollbar 属性与 Chromium 伪元素宽度/hover样式互相覆盖。
+
+```css
+/* 策略 A：最小实现，原生外观与可访问行为优先；宽度/hover随runtime */
+.appScrollRegion {
+  scrollbar-width: thin;
+  scrollbar-color: var(--chat-scroll-thumb) var(--chat-scroll-track);
+}
+/* 深浅主题在真实主题真源设置，下列变量值不是新主题状态 */
+/* light: thumb #738197; dark: thumb #65758c; track取当前容器背景 */
+```
+
+```css
+/* 策略 B：若产品要求 WebView2 中固定10px及明确hover反馈，
+   对工作台应用滚动节点使用Chromium伪元素，不同时应用策略A。 */
+.appScrollRegion {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+.appScrollRegion::-webkit-scrollbar { width: 10px; height: 10px; }
+.appScrollRegion::-webkit-scrollbar-track,
+.appScrollRegion::-webkit-scrollbar-corner {
+  background: var(--chat-scroll-track);
+}
+.appScrollRegion::-webkit-scrollbar-thumb {
+  background: var(--chat-scroll-thumb);
+  border: 2px solid var(--chat-scroll-track);
+  border-radius: 999px;
+}
+.appScrollRegion::-webkit-scrollbar-thumb:hover {
+  background: var(--chat-scroll-thumb-hover);
+}
+.appScrollRegion::-webkit-scrollbar-thumb:active {
+  background: var(--chat-scroll-thumb-active);
+}
+/* 不绘制上下箭头；滚轮、轨道、键盘操作仍用浏览器原生能力 */
+.appScrollRegion::-webkit-scrollbar-button { display: none; }
+@media (forced-colors: active) {
+  .appScrollRegion { scrollbar-width: auto; scrollbar-color: auto; }
+  .appScrollRegion::-webkit-scrollbar,
+  .appScrollRegion::-webkit-scrollbar-track,
+  .appScrollRegion::-webkit-scrollbar-corner,
+  .appScrollRegion::-webkit-scrollbar-thumb,
+  .appScrollRegion::-webkit-scrollbar-thumb:hover,
+  .appScrollRegion::-webkit-scrollbar-thumb:active,
+  .appScrollRegion::-webkit-scrollbar-button { all: revert; }
+}
+```
+
+这些是样式接入模式，需在目标 WebView2/浏览器实测兼容性；不支持时退回跟随正确 color-scheme 的原生滚动条，不要求加新依赖。`appScrollRegion` 挂到现有真实节点。高对比优先系统绘制，检查按钮与corner都恢复，不把自定义强制色样式残留。现有 stable gutter / overflowAnchor 不变，样式完成后重新测滚动锚点。
+
+### 14.4 Shell 修复步骤与责任
+
+1. 核对 `WorkbenchHost`、WebView2 control、外围 Grid、ToolSplitterColumn 背景及尺寸：WebView2 必须 stretch 填满宿主，父容器没有白色 gutter；加载前/失败占位也使用主题背景。具体 WebView2 默认背景设置应在已锁定 SDK 提供的可用接口上实现，不套用 WPF 控件代码。
+2. 在现有 `OnTheme` / 启动外观恢复路径统一生效；必要时提供纯外观适配函数（effective theme → 宿主背景、工作台 preferred color scheme、原生刷子），避免启动、切换、系统主题变化三个分支各写一份颜色。preferred scheme 只能改善 UA 默认控件，**不能替代 Web 应用主题更新**。
+3. splitter 使用 `ThemeResource` 边界色；正常态1px、命中6px，拖动/键盘焦点强调，不新增白色 Border。保留 `OnSplitter*` 事件与 Foundation 分配算法；滚动条样式修复不改分栏比例。
+4. 原生 `ScrollViewer` / `ScrollBar` 优先使用 WinUI 默认主题模板，检查是否有固定白色背景、旧样式或错误 RequestedTheme 覆盖；必要时按已引用 WinUI 版本的真实资源 key 覆盖刷子。勿用未核验 key 写一份“可编译示例”，也不整套复制 ScrollBar 模板破坏系统交互。
+5. 原生系统滚动条和 Chromium scrollbar 的实现不相同，验收要求色温、对比度与轻量感一致，不强制像素级同模板。工具标签页、输出文件或日志视图如由 Web 承载，按自身可信范围套主题；第三方浏览器页由其内容决定，不注入应用 CSS。
+6. 独立颜色映射/布局判断先在 Foundation 或现有无UI边界测试，再接入 MainWindow。可视控件与 DPI 需真实 Desktop 外部验证，CSS 与单元测试不能证明整窗已修复。
+
+### 14.5 任务拆解、验收与关闭条件
+
+- SCROLL-001-WEB：前端主题真源、真实滚动节点、textarea/代码/表格/portal；责任文件 `src/global.style.ts`、ThemeMode 与现有 `styles/*.styles.ts`，不修改客户端状态机。
+- SCROLL-001-SHELL：宿主默认背景/加载态、effective theme、原生滚动区及splitter；责任 `MainWindow.xaml` / `.xaml.cs` 与必要的纯外观适配边界。
+- SCROLL-001-QA：同窗口录制前后截图与交互，证据放 `temp/test-out`，结果登记 `Docs/Reports`。
+
+| 验收 | 必须通过 |
+|---|---|
+| 深浅切换 | Chat轨道、corner、thumb、textarea、菜单与Shell原生滚动区无主题滞留；深色无白轨道 |
+| 初始/恢复 | 首次加载、刷新、导航失败、Core重连、Shell重开不闪白；不丢草稿或改变执行 |
+| 操作 | 滚轮/触控板/拖条/轨道/键盘仍可用，底部与顶部都可达；不改变viewport自动跟随与阅读暂停 |
+| 布局 | 高度不足、长历史、长代码/表格、消息后加载图片无双层主滚动条，无横向白corner；gutter不因hover跳动 |
+| 分栏 | 拖动splitter、收起/放大工具区、键盘调整后，滚动条与拖动区各自操作正确 |
+| 可访问 | thumb合成对比度≥3:1；150/200% DPI和200/400%缩放可辨识；高对比恢复系统控件，减少动画不影响操作 |
+| 范围 | 第三方网页不被注入样式，Shell与Web主题作用域明确；支持的浏览器/runtime分别验证 |
+
+关闭条件：WEB、SHELL、QA均完成并给出新构建证据；只改CSS或只改Root.RequestedTheme不能关闭缺陷。本次仅登记与方案交付，状态保持“待实施”。

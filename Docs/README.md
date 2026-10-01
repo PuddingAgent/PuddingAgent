@@ -2,7 +2,7 @@
 
 ## 2026-10-01 Chat 前端 UI / UX 现代化设计
 
-[实施规格](Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md)：保留现有 Chat 功能与入口，规定视觉 token、布局、消息/过程渲染、输入交互、示例代码、实施切片及验收门禁。设计已交付，产品实现与验收待完成。
+[实施规格](Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md)：保留现有 Chat 功能与入口，规定视觉 token、布局、消息/过程渲染、输入交互、示例代码、实施切片及验收门禁。设计已交付，产品实现与验收待完成。已补浅/深色实图分析（§13）及滚动条缺陷 SCROLL-001：前端与 Shell 修复方案、分工和关闭门禁（§14，待实施）。
 
 ## 2026-09-29 WinUI Shell + Web UI + 独立 Core 恢复
 
