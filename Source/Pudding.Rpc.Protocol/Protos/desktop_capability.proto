@@ -108,6 +108,10 @@ message GetPageStateCommand {
   CommandTarget target = 1;
 }
 
+// 只读 Shell 状态查询：无参数（Shell 是窗口作用域，不接受调用方指定目标）。
+message GetShellStatusCommand {
+}
+
 // Core → Desktop 的能力命令。payload 用 oneof 白名单化，禁止「字符串命令名 + 任意 JSON」。
 message CapabilityCommand {
   string operation_id = 1;
@@ -125,6 +129,7 @@ message CapabilityCommand {
     ExecuteJavascriptCommand execute_javascript = 11;
     ShowNotificationCommand show_notification = 12;
     GetPageStateCommand get_page_state = 13;
+    GetShellStatusCommand get_shell_status = 14;
   }
 }
 
@@ -182,6 +187,16 @@ message PageStateOutcome {
   string readiness = 3;
 }
 
+// Shell 状态结果（只读）：窗口形态、托盘可见性、自动化状态与打开的页面数。
+// 各状态用字符串线名（visible / hidden_to_tray / closing / unknown；free / paused / user_takeover），
+// 便于 Core 在不重新发版的情况下识别 Desktop 新增状态。
+message ShellStatusOutcome {
+  string window_state = 1;
+  bool tray_visible = 2;
+  string automation_state = 3;
+  uint32 open_page_count = 4;
+}
+
 // 领域错误（非流故障）。流本身故障使用 gRPC status。
 message ErrorOutcome {
   // 线名真源：Pudding.Contracts 的 DesktopCapabilityErrorCodes。
@@ -202,6 +217,7 @@ message OperationResult {
     NotificationOutcome show_notification = 12;
     ErrorOutcome error = 13;
     PageStateOutcome page_state = 14;
+    ShellStatusOutcome shell_status = 15;
   }
 }
 

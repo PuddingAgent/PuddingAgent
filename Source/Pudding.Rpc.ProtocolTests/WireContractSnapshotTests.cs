@@ -99,7 +99,8 @@ public sealed class WireContractSnapshotTests
             ("navigate", 10),
             ("execute_javascript", 11),
             ("show_notification", 12),
-            ("get_page_state", 13));
+            ("get_page_state", 13),
+            ("get_shell_status", 14));
 
         AssertFieldNumbers(
             OperationResult.Descriptor,
@@ -109,27 +110,30 @@ public sealed class WireContractSnapshotTests
             ("execute_javascript", 11),
             ("show_notification", 12),
             ("error", 13),
-            ("page_state", 14));
+            ("page_state", 14),
+            ("shell_status", 15));
 
         Assert.Equal(
-            ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState"],
+            ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState", "GetShellStatus"],
             Enum.GetNames<CapabilityCommand.PayloadOneofCase>().Where(name => name != "None").ToArray());
 
         Assert.Equal(
-            ["Navigate", "ExecuteJavascript", "ShowNotification", "Error", "PageState"],
+            ["Navigate", "ExecuteJavascript", "ShowNotification", "Error", "PageState", "ShellStatus"],
             Enum.GetNames<OperationResult.OutcomeOneofCase>().Where(name => name != "None").ToArray());
 
         AssertFieldNumbers(OperationCancel.Descriptor, ("operation_id", 1), ("generation", 2), ("reason", 3));
         AssertFieldNumbers(ErrorOutcome.Descriptor,
             ("code", 1), ("message", 2), ("retryable", 3), ("may_have_side_effects", 4));
+        AssertFieldNumbers(ShellStatusOutcome.Descriptor,
+            ("window_state", 1), ("tray_visible", 2), ("automation_state", 3), ("open_page_count", 4));
     }
 
     [Fact]
     public void PayloadOneof_IsClosedWhitelist()
     {
         // 计划 §4：禁止「字符串命令名 + 任意 JSON」演化成万能调用。
-        Assert.Equal(4, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
-        Assert.Equal(5, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
+        Assert.Equal(5, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
+        Assert.Equal(6, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
     }
 
     [Fact]

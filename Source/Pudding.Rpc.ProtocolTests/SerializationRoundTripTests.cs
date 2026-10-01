@@ -170,6 +170,46 @@ public sealed class SerializationRoundTripTests
     }
 
     [Fact]
+    public void ShellStatusCommandAndOutcome_RoundTrip()
+    {
+        var command = new CapabilityCommand
+        {
+            OperationId = "op-status",
+            Generation = 3,
+            Capability = "shell.status",
+            GetShellStatus = new GetShellStatusCommand(),
+        };
+
+        var parsedCommand = CapabilityCommand.Parser.ParseFrom(command.ToByteArray());
+        Assert.Equal(CapabilityCommand.PayloadOneofCase.GetShellStatus, parsedCommand.PayloadCase);
+        Assert.NotNull(parsedCommand.GetShellStatus);
+
+        var result = new OperationResult
+        {
+            OperationId = "op-status",
+            Generation = 3,
+            ShellStatus = new ShellStatusOutcome
+            {
+                WindowState = "hidden_to_tray",
+                TrayVisible = true,
+                AutomationState = "user_takeover",
+                OpenPageCount = 4,
+            },
+        };
+
+        var parsedResult = OperationResult.Parser.ParseFrom(result.ToByteArray());
+        Assert.Equal(OperationResult.OutcomeOneofCase.ShellStatus, parsedResult.OutcomeCase);
+        Assert.Equal("hidden_to_tray", parsedResult.ShellStatus.WindowState);
+        Assert.True(parsedResult.ShellStatus.TrayVisible);
+        Assert.Equal(4u, parsedResult.ShellStatus.OpenPageCount);
+
+        // 设置 error 必须清掉 shell_status 分支（oneof 互斥）。
+        parsedResult.Error = new ErrorOutcome { Code = "paused" };
+        Assert.Equal(OperationResult.OutcomeOneofCase.Error, parsedResult.OutcomeCase);
+        Assert.Null(parsedResult.ShellStatus);
+    }
+
+    [Fact]
     public void JavaScriptResult_CarriesRawJsonFragment()
     {
         var outcome = new JavascriptOutcome { Kind = JavascriptValueKind.Json, JsonValue = "{\"a\":1}", Truncated = true };

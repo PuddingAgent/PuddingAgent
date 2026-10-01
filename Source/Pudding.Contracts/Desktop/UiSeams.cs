@@ -53,4 +53,11 @@ public interface IDesktopUiSurface
 
     Task<CapabilityResult<DesktopNotificationResult>> ShowNotificationAsync(
         DesktopCallContext context, DesktopNotificationRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 只读 Shell 状态：实现方只报告「只有它知道」的部分（窗口形态/托盘可见性）；
+    /// 自动化状态与打开页面数由 DesktopService 依自身权威状态补齐。
+    /// </summary>
+    Task<CapabilityResult<DesktopShellStatus>> GetShellStatusAsync(
+        DesktopCallContext context, CancellationToken cancellationToken);
 }
