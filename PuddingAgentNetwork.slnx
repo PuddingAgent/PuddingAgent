@@ -10,11 +10,13 @@
     <Project Path="Source/PuddingBrowser.WinUI/PuddingBrowser.WinUI.csproj" />
     <Project Path="Source/PuddingBrowser.WinUITests/PuddingBrowser.WinUITests.csproj" />
     <Project Path="Source/PuddingCodeIndex/PuddingCodeIndex.csproj" />
+    <Project Path="Source/Pudding.Contracts/Pudding.Contracts.csproj" />
     <Project Path="Source/PuddingController/PuddingController.csproj" Id="5180d09e-4b2c-47e7-a624-7137a410ea9a" />
     <Project Path="Source/PuddingCodexService/PuddingCodexService.csproj" />
     <Project Path="Source/PuddingCore/PuddingCore.csproj" />
     <Project Path="Source/PuddingDesktop/PuddingDesktop.csproj" />
     <Project Path="Source/PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
+    <Project Path="Source/Pudding.DesktopConnection/Pudding.DesktopConnection.csproj" />
     <Project Path="Source/PuddingDesktop.WpfArchive/PuddingDesktop.WpfArchive.csproj" />
     <Project Path="Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj" />
     <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
@@ -26,6 +28,8 @@
     <Project Path="Source/PuddingPlatform/PuddingPlatform.csproj" />
     <Project Path="Source/PuddingRetrievalEval/PuddingRetrievalEval.csproj" />
     <Project Path="Source/PuddingRetrievalEvalProbe/PuddingRetrievalEvalProbe.csproj" />
+    <Project Path="Source/Pudding.Rpc.Protocol/Pudding.Rpc.Protocol.csproj" />
+    <Project Path="Source/Pudding.Rpc.IpcProbe/Pudding.Rpc.IpcProbe.csproj" />
     <Project Path="Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
     <Project Path="Source/PuddingTaskRecall.Cli/PuddingTaskRecall.Cli.csproj" />
     <Project Path="Source/PuddingVectorIndex/PuddingVectorIndex.csproj" />
@@ -39,6 +43,9 @@
     <Project Path="Tests/PuddingBrowser.WebView2.Smoke/PuddingBrowser.WebView2.Smoke.csproj" />
     <Project Path="Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj" />
     <Project Path="Source/PuddingDesktop.FoundationTests/PuddingDesktop.FoundationTests.csproj" />
+    <Project Path="Source/Pudding.ContractsTests/Pudding.ContractsTests.csproj" />
+    <Project Path="Source/Pudding.Rpc.ProtocolTests/Pudding.Rpc.ProtocolTests.csproj" />
+    <Project Path="Source/Pudding.DesktopConnectionTests/Pudding.DesktopConnectionTests.csproj" />
     <Project Path="Tests/PuddingHost.Tests/PuddingHost.Tests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
     <Project Path="Source/PuddingCodeIndexTests/PuddingCodeIndexTests.csproj" />
