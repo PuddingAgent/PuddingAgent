@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>PuddingRpc.IpcProbe</AssemblyName>
+    <RootNamespace>PuddingRpc.IpcProbe</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    技术探针（不是产品组件）：验证「Core Kestrel 托管 gRPC + Desktop 主动拨入」在真实端点上的可行性。
+    因此这里允许引用 ASP.NET Core 与 Grpc.AspNetCore —— 只作为探针的服务端替身；
+    产品代码路径不引用本工程（slnx 登记，无消费方）。
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Grpc.AspNetCore" Version="2.84.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+    <ProjectReference Include="..\Pudding.Rpc.Protocol\Pudding.Rpc.Protocol.csproj" />
+    <ProjectReference Include="..\Pudding.DesktopConnection\Pudding.DesktopConnection.csproj" />
+  </ItemGroup>
+
+</Project>
