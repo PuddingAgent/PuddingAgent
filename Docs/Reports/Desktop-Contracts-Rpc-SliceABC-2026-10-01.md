@@ -71,8 +71,7 @@
   （测试 `CanceledCaller_ReturnsCancelledAndNeverTouchesTheSurface` 抓红）⇒ 现在服务自己在入队前与
   调用 surface 前各查一次取消，并据此选择 `mayHaveSideEffects` 取值。
 
-**有意取舍**：交互类能力的单窗口互斥推迟到切片 E（那时才有对话框/Picker payload，能做端到端验证）；
-`webview.page_state` 暂无 wire payload，先作为只读直连 API（`GetPageStateAsync`）提供。
+**有意取舍**：交互类能力的单窗口互斥推迟到切片 E（那时才有对话框/Picker payload，能做端到端验证）。
 
 ### C-2 宿主组合与 WinUI 适配器（本轮追加）
 
@@ -84,6 +83,19 @@
 - `Source/PuddingDesktop.CapabilityHost`（WinUI 库，只引用 Contracts）：`WinUiDesktopUiDispatcher`
   把动作调度到 `DispatcherQueue`，入队失败**以异常结束而不是悬挂**。该类需要真实 DispatcherQueue，
   无独立可测逻辑；其契约由假调度器测试覆盖，本工程只保证编译期符合 `IDesktopUiDispatcher`。
+
+### D-0 `webview.page_state` 接通 wire payload（本轮追加）
+
+此前只有领域 DTO 与只读直连 API，因此 Core 无法经能力通道确认「导航后页面到了哪一版」。现已补齐：
+
+- proto：`GetPageStateCommand` = `CapabilityCommand.payload` 第 4 个白名单分支（13）；
+  `PageStateOutcome { url, page_version, readiness }` = `OperationResult.outcome` 第 5 个分支（14）。
+- readiness 用**字符串线名**而非枚举：Core 可在不重新发版的前提下识别 Desktop 新增状态；
+  未知线名折叠为 `unknown`（只读观测 fail soft），由 `PageReadinessWire_RoundTripsAndFoldsUnknownNames` 断言。
+- 命令侧 fail closed：能力与 payload 必须一致（`page_state` 带 `navigate` payload ⇒ `invalid_request`）、
+  目标缺失 ⇒ `invalid_target`。
+- DesktopService 的命令路径与只读直连 API 共用同一套目标/可信级别/版本/竞态校验。
+- 真实端点探针新增 page_state 往返：**named pipe 与 loopback h2c 各一次**，探针 **15/15**。
 
 ## 4. 探针实测（真实端点，非假流）
 ```
