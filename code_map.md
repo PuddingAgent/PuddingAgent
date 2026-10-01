@@ -4,6 +4,22 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`shell.clipboard` 只读 v1 的契约与准入（第 37 轮，切片 E 第 1/2 步）
+
+- **语义诚实化**：`shell.clipboard` 原目录条目按"读写"标了 `Mutating | HasSideEffects`，但 v1 只做**读取**
+  ⇒ 改为 `RequiresTrustedContext`。该能力**尚未被任何一方声明**，因此没有兼容性负担；
+  将来加入写入必须用**新能力名或升版本**，不得悄悄改变同名能力语义（已写进目录注释）。
+- 契约：`ClipboardReadRequest(maxCharacters)`（1..1,000,000，缺省 64,000——剪贴板可能含极长文本甚至凭据，
+  **绝不无界回传**）+ `DesktopClipboardContent(Text, Truncated)`：
+  - `ToString()` **只给形状**（`clipboard(chars=10, truncated=False)`），避免内容被顺手写进日志/审计；
+  - 空内容 + 截断这种自相矛盾组合归一为「无内容」，不返回含糊状态。
+- 准入沿用既有策略行 `[Workbench]`（读用户剪贴板属隐私敏感操作，只在可信工作台上下文开放）。
+- 测试：契约 **93/93**（+3：预算校验、内容不进日志、空≠截断）。
+- **未做（下一步）**：proto payload/outcome、联合变体、两端映射、服务分支、Desktop 侧实现、探针断言；
+  因此它现在仍是「已登记但不可用」，`DefaultGrantable` 不含它（第 24 轮的断言会守住这一点）。
+
+测试合计（本轮实测）：Contracts 93、Rpc.Protocol 20、DesktopConnection 80、DesktopService 113、
+CapabilityBroker 74、CapabilityBroker.AspNetCore 26 = **406**；探针 47/47。
 ## 2026-10-01：迁移期传输选择规则（第 36 轮，落实计划 §5 的"分阶段迁移 Bridge"）
 
 `DesktopTransportRouting.Decide(channelReady, channelAttempted, legacyBridgeAvailable)`（纯函数 + 理由串）：

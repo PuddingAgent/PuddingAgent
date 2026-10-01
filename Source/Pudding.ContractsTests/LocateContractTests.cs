@@ -92,4 +92,46 @@ public sealed class LocateContractTests
         Assert.False(truncated.IsEmpty);
         Assert.True(truncated.Truncated);
     }
+
+/// <summary>剪贴板只读契约：预算校验、截断如实标注、内容不进日志。</summary>
+public sealed class ClipboardContractTests
+{
+    [Fact]
+    public void ReadRequest_RequiresAUsableBudget()
+    {
+        _ = new ClipboardReadRequest();
+        Assert.Equal(ClipboardReadRequest.DefaultMaxCharacters, new ClipboardReadRequest().MaxCharacters);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ClipboardReadRequest(0));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ClipboardReadRequest(ClipboardReadRequest.MaxMaxCharacters + 1));
+    }
+
+    [Fact]
+    public void Content_ReportsShapeAndNeverTheText()
+    {
+        var content = new DesktopClipboardContent("这是用户的剪贴板内容", truncated: false);
+
+        Assert.True(content.HasText);
+        Assert.Equal(10, content.Length);
+        Assert.False(content.Truncated);
+
+        // ToString 只给形状：避免被顺手写进日志或审计。
+        Assert.Equal("clipboard(chars=10, truncated=False)", content.ToString());
+        Assert.DoesNotContain("剪贴板", content.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EmptyClipboard_IsNotATruncation()
+    {
+        var empty = new DesktopClipboardContent(null, truncated: false);
+        Assert.False(empty.HasText);
+        Assert.False(empty.Truncated);
+
+        // 空内容 + 截断是自相矛盾的组合：归一为「无内容」，不返回含糊状态。
+        var contradictory = new DesktopClipboardContent(null, truncated: true);
+        Assert.False(contradictory.HasText);
+        Assert.False(contradictory.Truncated);
+    }
+}
 }

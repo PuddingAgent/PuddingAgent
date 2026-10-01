@@ -112,8 +112,10 @@ public static class DesktopCapabilities
             DesktopCapabilityKind.Shell, DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresUserInteraction | DesktopCapabilityTraits.RequiresTrustedContext),
         new(DesktopCapability.ShellFilePicker, "shell.file_picker", InitialVersion,
             DesktopCapabilityKind.Shell, DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresUserInteraction | DesktopCapabilityTraits.RequiresTrustedContext),
+        // v1 只做**读取**：因此标记为只读（无 Mutating/HasSideEffects）。该能力尚未被任何一方声明，
+        // 因此没有兼容性负担；将来加入写入时必须用新能力名或升版本，不得悄悄改变同名能力语义。
         new(DesktopCapability.ShellClipboard, "shell.clipboard", InitialVersion,
-            DesktopCapabilityKind.Shell, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
+            DesktopCapabilityKind.Shell, DesktopCapabilityTraits.RequiresTrustedContext),
         new(DesktopCapability.BrowserSnapshot, "browser.snapshot", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.BrowserLocate, "browser.locate", InitialVersion,

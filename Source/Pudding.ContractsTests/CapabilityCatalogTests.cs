@@ -24,7 +24,7 @@ public sealed class CapabilityCatalogTests
             "shell.status|v1|Shell|None",
             "shell.dialog|v1|Shell|HasSideEffects, RequiresTrustedContext, RequiresUserInteraction",
             "shell.file_picker|v1|Shell|HasSideEffects, RequiresTrustedContext, RequiresUserInteraction",
-            "shell.clipboard|v1|Shell|Mutating, HasSideEffects, RequiresTrustedContext",
+            "shell.clipboard|v1|Shell|RequiresTrustedContext",
             "browser.snapshot|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
             "browser.locate|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
             "browser.interact|v1|WebView|Mutating, HasSideEffects, RequiresTrustedContext, RequiresPageTarget",
