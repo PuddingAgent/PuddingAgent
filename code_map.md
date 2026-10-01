@@ -1,3 +1,26 @@
+## 2026-10-01：Core 侧能力 Broker + 两端真实端点互操作（切片 C/D 的 Core 适配器）
+
+新增 `Source/Pudding.CapabilityBroker/`：Core 侧适配器（平台无关，只依赖 Contracts + Rpc.Protocol）。
+
+- `CapabilityBroker`：接受 Desktop 拨入的连接——读 hello、校验**本机期望身份**/版本/能力，授予
+  `声明 ∩ 本机允许`，回 ack 并建立会话；同一 Desktop 只允许一个活动传输；每次接受递增世代
+  （旧 PageId/Snapshot ref 由此作废）；会话结束自动从注册表移除。
+- `DesktopSession`：命令下发（有界队列按帧数与期限）、结果关联（未知 OperationId 与**旧世代结果**
+  一律忽略）、期限到点本地给 `deadline_exceeded`、调用方取消发 cancel 帧、断连把 pending 收尾为
+  `OutcomeUnknown`（已发）/`Disconnected`（未发）并归还在途额度。
+- 授权接缝默认 **DenyAll**（RPC 可达 ≠ 获得桌面操作授权）；`ICoreDesktopChannel` 把 gRPC 服务端流
+  抽象掉，因此全部语义无需 Kestrel 即可确定性测试（52 用例）。
+- 测试抓红并修复：干净关闭被误标为 Faulted；断连未归还在途额度（泄漏）。
+
+**探针改为使用真实 Broker 作服务端**（不再自带替身），因此它现在同时验证**两端适配器的互操作**：
+`Pudding.CapabilityBroker`（Core）↔ `Pudding.DesktopConnection`（Desktop）在 Named Pipe 与 Loopback h2c 上
+完成握手协商、navigate / page_state / 通知的类型化往返、1 MiB 单帧、取消（3.6 ms 生效且标注副作用）、
+断开后注册表清空。实测 **19/19 通过，exit 0**。
+
+测试合计：ContractsTests 62、Rpc.ProtocolTests 18、DesktopConnectionTests 80、DesktopServiceTests 70、
+CapabilityBrokerTests 52 = **282 用例**；WinUI 适配器工程 0 警告 0 错误。
+**仍未接入运行中的产品**（Core 侧端点托管/DI 装配与 Desktop 侧组合根启动属下一步）。
+
 ## 2026-10-01：`webview.page_state` 接通 wire payload（切片 D 前置）
 
 `webview.page_state` 此前只有领域 DTO 与只读直连 API，没有命令 payload，因此 Core 无法经能力通道确认
@@ -872,6 +895,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Source/Pudding.Rpc.Protocol/` | **wire-only 协议叶**：`Protos/desktop_capability.proto` + 生成类型（无业务/UI 实现） | [code_map](Source/Pudding.Rpc.Protocol/code_map.md) |
 | `Source/Pudding.DesktopConnection/` | Desktop 侧 gRPC 双向流适配器：连接状态机、命令关联、取消/期限/背压、重连 | [code_map](Source/Pudding.DesktopConnection/code_map.md) |
 | `Source/Pudding.DesktopService/` | Desktop 侧能力服务：目标/可信级别/版本校验、准入、入队后竞态复检、UI 调度边界、宿主装配与生命周期 | [code_map](Source/Pudding.DesktopService/code_map.md) |
+| `Source/Pudding.CapabilityBroker/` | Core 侧能力 Broker：握手协商、会话与世代、命令关联、取消/期限/队列预算、授权接缝 | [code_map](Source/Pudding.CapabilityBroker/code_map.md) |
 | `Source/PuddingDesktop.CapabilityHost/` | WinUI 侧平台适配：`DispatcherQueue` 调度实现（只引用 Contracts） | [code_map](Source/PuddingDesktop.CapabilityHost/code_map.md) |
 | `Source/PuddingRpc.IpcProbe/` | 真实端点技术探针（Kestrel Named Pipe/h2c 服务端替身；退出码 0/1） | — |
 
@@ -1233,7 +1257,8 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 | `Source/Pudding.ContractsTests/` | **契约组件（`Pudding.Contracts`）独立测试工程**：目录/错误/协商/结果/值对象 + 5 条边界与形状断言（58 用例） |
 | `Source/Pudding.Rpc.ProtocolTests/` | **协议组件（`Pudding.Rpc.Protocol`）独立测试工程**：service/字段号快照、oneof 互斥、序列化往返 + 5 条边界断言（17 用例） |
 | `Source/Pudding.DesktopConnectionTests/` | **连接组件独立测试工程**：假服务端双向流（握手/乱序关联/取消/期限/背压/旧世代/断连/重连不重放）+ 映射往返 + 6 条边界断言（74 用例） |
-| `Source/Pudding.DesktopServiceTests/` | **服务组件独立测试工程**：假 UI 调度器（内联/排队/拒绝/释放）+ 目标与策略表 + 交互状态 + 队列竞态 + 宿主启停/单实例占用 + 5 条边界断言（69 用例） |
+| `Source/Pudding.DesktopServiceTests/` | **服务组件独立测试工程**：假 UI 调度器（内联/排队/拒绝/释放）+ 目标与策略表 + 交互状态 + 队列竞态 + 宿主启停/单实例占用 + 5 条边界断言（69→70 用例） |
+| `Source/Pudding.CapabilityBrokerTests/` | **Core 侧 Broker 独立测试工程**：假通道的协商/注册表/单实例/世代递增/命令关联/期限/取消/在途与队列耗尽/断连收尾/审计/映射 + 6 条边界断言（52 用例） |
 | `Tests/PuddingCodexServiceTests/` | Codex MCP Service |
 | `Tests/PuddingFullTextIndexTests/` | 全文索引 |
 | `Tests/PuddingWebApiTests/` | Web API |

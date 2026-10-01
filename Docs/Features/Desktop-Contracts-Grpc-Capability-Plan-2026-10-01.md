@@ -180,8 +180,8 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 |---|---|---|
 | A：Contracts | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Contracts`（BCL-only，编译期边界）+ `Pudding.ContractsTests` 58/58；边界取红实测 |
 | B：Protocol / Connection | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Rpc.Protocol` + 17/17；`Source/Pudding.DesktopConnection` + 74/74；`Source/Pudding.Rpc.IpcProbe` 13/13（Named Pipe + h2c 真实端点） |
-| C：DesktopService | 🟡 主体完成（含宿主组合与 WinUI 适配器），产品内装配未做 | `Source/Pudding.DesktopService`（目标校验/准入/入队后竞态复检/UI 调度边界/**DesktopCapabilityHost 启停与单实例传输**）+ 69/69；`Source/PuddingDesktop.CapabilityHost`（`DispatcherQueue` 适配器，编译期边界）；**在 PuddingDesktop 组合根构造并启动**（C-3）未做 |
-| D：浏览器等价接入 | 🟡 前置完成（`page_state` wire payload 已接通），等价接入未做 | `get_page_state`/`page_state` 已落地并在真实端点探针验证（15/15）；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
+| C：DesktopService | 🟡 主体完成（Desktop 服务 + 宿主组合 + WinUI 适配器 + **Core 侧 Broker**），两端产品内装配未做 | `Source/Pudding.DesktopService`（目标/准入/竞态/UI 调度/宿主启停）+ 70/70；`Source/PuddingDesktop.CapabilityHost`（`DispatcherQueue` 适配器）；`Source/Pudding.CapabilityBroker`（Core 侧协商/会话/关联/授权）+ 52/52；**在 PuddingHost 托管端点与 PuddingDesktop 组合根启动**（C-3）未做 |
+| D：浏览器等价接入 | 🟡 前置完成（`page_state` payload + Core Broker + 两端真实端点互操作），等价接入未做 | 探针升级为「真实 Broker 作服务端」，Named Pipe / Loopback h2c 上完成握手、四能力往返、1 MiB 单帧、取消与断开收尾（**19/19**）；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
 | E：Shell 能力 | ⛔ 未开始 | 目录已预留 `shell.status/dialog/file_picker/clipboard` 线名，但**尚无 payload 与实现**，不会被声明 |
 | F：默认切换与退役 | ⛔ 未开始 | — |
 

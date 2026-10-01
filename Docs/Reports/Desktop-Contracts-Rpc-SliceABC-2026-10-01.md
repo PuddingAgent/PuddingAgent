@@ -97,6 +97,21 @@
 - DesktopService 的命令路径与只读直连 API 共用同一套目标/可信级别/版本/竞态校验。
 - 真实端点探针新增 page_state 往返：**named pipe 与 loopback h2c 各一次**，探针 **15/15**。
 
+### C-3 Core 侧 Broker 与两端真实端点互操作（本轮追加）
+
+- `Source/Pudding.CapabilityBroker`（平台无关，只依赖 Contracts + Rpc.Protocol）：接受 Desktop 拨入的连接，
+  校验**本机期望身份**（不接受对端自称）、授予 `声明 ∩ 本机允许`、回 ack 并建立会话；
+  同一 Desktop 只允许一个活动传输；每次接受递增世代；会话结束自动从注册表移除。
+  会话负责命令下发（有界队列）、结果关联（未知 OperationId 与旧世代结果一律忽略）、
+  期限本地收尾、取消发帧、断连把 pending 收尾为 `Disconnected`/`OutcomeUnknown` 并归还在途额度。
+- 授权接缝**默认 DenyAll**：RPC 可达 ≠ 获得桌面操作授权（计划 §7）。
+- `ICoreDesktopChannel` 把 gRPC 服务端流抽象掉 ⇒ 全部语义可用假通道确定性测试（**52/52**）。
+  测试抓红并修复两个真实缺陷：干净关闭被误标为 Faulted；断连未归还在途额度（泄漏）。
+- **探针升级**：服务端不再自带替身，改用真实 Broker ⇒ 探针同时验证**两端适配器互操作**
+  （Core 编码的命令被 Desktop 解码执行、Desktop 结果被 Core 解码为类型化输出）。
+  实测 **19/19 通过**：Named Pipe 握手 17.5 ms 往返、page_state、1 MiB 单帧 6.3 ms、
+  取消 3.6 ms 生效且标注副作用、断开后 Broker 注册表清空；Loopback h2c 同样全绿。
+
 ## 4. 探针实测（真实端点，非假流）
 ```
 PASS  kestrel-named-pipe: Kestrel HTTP/2 已监听 \\.\pipe\pudding-ipc-probe-…

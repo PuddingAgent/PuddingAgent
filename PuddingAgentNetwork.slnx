@@ -10,6 +10,7 @@
     <Project Path="Source/PuddingBrowser.WinUI/PuddingBrowser.WinUI.csproj" />
     <Project Path="Source/PuddingBrowser.WinUITests/PuddingBrowser.WinUITests.csproj" />
     <Project Path="Source/PuddingCodeIndex/PuddingCodeIndex.csproj" />
+    <Project Path="Source/Pudding.CapabilityBroker/Pudding.CapabilityBroker.csproj" />
     <Project Path="Source/Pudding.Contracts/Pudding.Contracts.csproj" />
     <Project Path="Source/PuddingController/PuddingController.csproj" Id="5180d09e-4b2c-47e7-a624-7137a410ea9a" />
     <Project Path="Source/PuddingCodexService/PuddingCodexService.csproj" />
@@ -45,6 +46,7 @@
     <Project Path="Tests/PuddingBrowser.WebView2.Smoke/PuddingBrowser.WebView2.Smoke.csproj" />
     <Project Path="Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj" />
     <Project Path="Source/PuddingDesktop.FoundationTests/PuddingDesktop.FoundationTests.csproj" />
+    <Project Path="Source/Pudding.CapabilityBrokerTests/Pudding.CapabilityBrokerTests.csproj" />
     <Project Path="Source/Pudding.ContractsTests/Pudding.ContractsTests.csproj" />
     <Project Path="Source/Pudding.Rpc.ProtocolTests/Pudding.Rpc.ProtocolTests.csproj" />
     <Project Path="Source/Pudding.DesktopConnectionTests/Pudding.DesktopConnectionTests.csproj" />

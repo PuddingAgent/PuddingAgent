@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+    <ProjectReference Include="..\Pudding.CapabilityBroker\Pudding.CapabilityBroker.csproj" />
     <ProjectReference Include="..\Pudding.Rpc.Protocol\Pudding.Rpc.Protocol.csproj" />
     <ProjectReference Include="..\Pudding.DesktopConnection\Pudding.DesktopConnection.csproj" />
   </ItemGroup>
