@@ -17,9 +17,9 @@ public sealed class CapabilityCatalogTests
 
         string[] expected =
         [
-            "webview.navigate|v1|WebView|Mutating, HasSideEffects",
-            "webview.execute_javascript|v1|WebView|Mutating, HasSideEffects, RequiresTrustedContext",
-            "webview.page_state|v1|WebView|None",
+            "webview.navigate|v1|WebView|Mutating, HasSideEffects, RequiresPageTarget",
+            "webview.execute_javascript|v1|WebView|Mutating, HasSideEffects, RequiresTrustedContext, RequiresPageTarget",
+            "webview.page_state|v1|WebView|RequiresPageTarget",
             "shell.notification|v1|Shell|HasSideEffects",
             "shell.status|v1|Shell|None",
             "shell.dialog|v1|Shell|HasSideEffects, RequiresTrustedContext, RequiresUserInteraction",
@@ -88,6 +88,36 @@ public sealed class CapabilityCatalogTests
         Assert.True(execute.Traits.HasFlag(DesktopCapabilityTraits.RequiresTrustedContext));
 
         Assert.True(DesktopCapabilities.TryGet(DesktopCapability.WebViewPageState, out var state));
-        Assert.Equal(DesktopCapabilityTraits.None, state.Traits);
+        Assert.Equal(DesktopCapabilityTraits.RequiresPageTarget, state.Traits);
+    }
+
+    [Fact]
+    public void RequiresPageTarget_MarksExactlyTheWebViewCapabilities()
+    {
+        var requiring = DesktopCapabilities.All
+            .Where(d => d.Traits.HasFlag(DesktopCapabilityTraits.RequiresPageTarget))
+            .Select(d => d.Capability)
+            .ToArray();
+
+        Assert.Equal(
+            [DesktopCapability.WebViewNavigate, DesktopCapability.WebViewExecuteJavascript, DesktopCapability.WebViewPageState],
+            requiring);
+
+        // Shell 能力没有页面目标：可信级别由服务侧调用方策略决定，而不是从目标推断。
+        Assert.All(
+            DesktopCapabilities.All.Where(d => d.Kind == DesktopCapabilityKind.Shell),
+            d => Assert.False(d.Traits.HasFlag(DesktopCapabilityTraits.RequiresPageTarget)));
+    }
+
+    [Fact]
+    public void RequiresTrustedContext_IsNeverGrantedToUntrustedTargets()
+    {
+        // 契约层的自洽断言：标记为「需要可信上下文」的能力，级别语义必须由策略显式收窄（见 DesktopService）。
+        var trustedOnly = DesktopCapabilities.All
+            .Where(d => d.Traits.HasFlag(DesktopCapabilityTraits.RequiresTrustedContext))
+            .Select(d => d.Name)
+            .ToArray();
+
+        Assert.Equal(["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard"], trustedOnly);
     }
 }

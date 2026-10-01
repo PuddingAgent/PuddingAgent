@@ -57,6 +57,9 @@ public enum DesktopCapabilityTraits
 
     /// <summary>需要用户在场（对话框、Picker），单窗口同时最多一个。</summary>
     RequiresUserInteraction = 1 << 3,
+
+    /// <summary>请求必须携带显式页面目标（ContextId/PageId），并据此判定可信级别。</summary>
+    RequiresPageTarget = 1 << 4,
 }
 
 /// <summary>握手声明：能力 + 线名 + 版本。线名是 wire 真源的一部分，重命名属于破坏性变更。</summary>
@@ -78,11 +81,11 @@ public static class DesktopCapabilities
     private static readonly DesktopCapabilityDescriptor[] Catalog =
     [
         new(DesktopCapability.WebViewNavigate, "webview.navigate", InitialVersion,
-            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects),
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.WebViewExecuteJavascript, "webview.execute_javascript", InitialVersion,
-            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.WebViewPageState, "webview.page_state", InitialVersion,
-            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.None),
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.ShellNotification, "shell.notification", InitialVersion,
             DesktopCapabilityKind.Shell, DesktopCapabilityTraits.HasSideEffects),
         new(DesktopCapability.ShellStatus, "shell.status", InitialVersion,
