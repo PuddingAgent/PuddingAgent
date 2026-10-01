@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    组件化交付规程 S2：本测试工程**只引用被测组件**（ProjectReference 恰好 1 条）。
+    不得引用宿主（PuddingHost/PuddingRuntime/PuddingAgent/PuddingDesktop）、
+    其他组件或任何传输实现；边界由 ComponentBoundaryTests 在运行时断言。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2" PrivateAssets="all" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

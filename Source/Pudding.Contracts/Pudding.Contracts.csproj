@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Pudding.Contracts</RootNamespace>
+    <AssemblyName>Pudding.Contracts</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    架构第一原则：Pudding.Contracts 是平台与传输无关的叶程序集（
+    Docs/Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md §3）。
+
+    只允许 BCL。UI、HTTP、gRPC、Protobuf、DI、数据库与宿主引用在这里编译期取红：
+    ProjectReference = 0、PackageReference = 0。
+    传输适配器（Pudding.Rpc.Protocol / Pudding.DesktopConnection）才是引用方，
+    依赖方向为 适配器 → Contracts，永不反向。
+    与 PuddingDesktop.Foundation 的 EnforceFoundationBoundary 同构。
+  -->
+  <Target Name="EnforceContractsBoundary" BeforeTargets="ResolveReferences">
+    <Error Condition="'@(ProjectReference)' != '' Or '@(PackageReference)' != ''"
+           Text="Pudding.Contracts is a platform- and transport-agnostic leaf (BCL only). ProjectReference and PackageReference are forbidden here; UI/HTTP/gRPC/Protobuf/DI/database/host dependencies belong in transport adapters." />
+  </Target>
+
+</Project>
