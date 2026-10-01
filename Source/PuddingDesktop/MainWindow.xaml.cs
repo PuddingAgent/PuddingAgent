@@ -54,6 +54,7 @@ public sealed partial class MainWindow : Window
     private ToolWorkspaceLayout _toolLayout = new();
     private bool _toolExpanded, _toolZoomed, _toolDragging, _toolSyncing, _toolLayoutLoaded;
     private double _toolDragOriginX, _toolDragOriginWidth;
+    private Brush? _splitterIdleBrush;
 
     public MainWindow(DesktopApplicationCoordinator coordinator)
     {
@@ -372,6 +373,10 @@ public sealed partial class MainWindow : Window
             ToolStatusText.Text = string.Empty;
             return;
         }
+        // Nav affordances mirror the active page instead of always looking live.
+        var browserActive = active.Kind == ToolTabKind.Browser && _browser is not null;
+        BrowserBackButton.IsEnabled = browserActive && _browser!.CanGoBack;
+        BrowserForwardButton.IsEnabled = browserActive && _browser!.CanGoForward;
         ToolStatusText.Text = active.Kind switch
         {
             ToolTabKind.Browser when _browser is not null =>
@@ -740,6 +745,26 @@ public sealed partial class MainWindow : Window
         _ = PersistToolLayoutAsync();
     }
 
+    /// <summary>Hover affordance so the divider reads as draggable.</summary>
+    private void OnSplitterPointerEntered(object sender, PointerRoutedEventArgs e) => SetSplitterHighlight(true);
+
+    private void OnSplitterPointerExited(object sender, PointerRoutedEventArgs e) => SetSplitterHighlight(false);
+
+    private void SetSplitterHighlight(bool highlighted)
+    {
+        if (highlighted)
+        {
+            _splitterIdleBrush ??= ToolSplitterLine.Fill;
+            ToolSplitterLine.Width = 3;
+            ToolSplitterLine.Fill = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
+        }
+        else
+        {
+            ToolSplitterLine.Width = 1;
+            if (_splitterIdleBrush is not null) ToolSplitterLine.Fill = _splitterIdleBrush;
+        }
+    }
+
     private async void OnSplitterDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         _toolLayout = _toolLayout.ResetWidth();
@@ -978,6 +1003,9 @@ public sealed partial class MainWindow : Window
     private async void OnExit(object sender, RoutedEventArgs e) => await RequestCloseAsync(true);
     private async void OnNewTab(object sender, RoutedEventArgs e) { if (_browser is not null) await RunAsync(async ct => { await _browser.CreatePageAsync("about:blank", true, ct); }); }
     private async void OnBack(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.GoBackAsync(page, ct)); }
+    private async void OnForward(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.GoForwardAsync(page, ct)); }
+    private void OnCopyAddress(object sender, RoutedEventArgs e) => CopyToClipboard(AddressBox.Text.Trim());
+    private void OnOpenAddressExternally(object sender, RoutedEventArgs e) => OpenExternal(AddressBox.Text.Trim());
     private async void OnReload(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.ReloadAsync(page, ct)); }
     private async void OnTarget(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.AssignAgentTargetAsync(page, ct)); }
     private async void OnTakeover(object sender, RoutedEventArgs e) { if (_browser is not null) await RunAsync(ct => _browser.SetUserTakeoverAsync(Takeover.IsChecked == true, ct)); }

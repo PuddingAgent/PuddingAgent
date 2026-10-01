@@ -3,6 +3,174 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:local="using:PuddingDesktop">
  <Grid x:Name="Root" Background="{ThemeResource ShellBackground}">
+  <Grid.Resources>
+   <!--
+    Lightweight styling for the tool workspace (reference: pill tab chips, circular
+    toolbar buttons, omnibox pill). Explicit ARGB per theme keeps one visual language
+    in light, dark and high contrast without hardcoding a single theme's colours.
+   -->
+   <ResourceDictionary>
+    <ResourceDictionary.ThemeDictionaries>
+     <ResourceDictionary x:Key="Default">
+      <SolidColorBrush x:Key="ToolTabSelectedBrush" Color="#2EFFFFFF"/>
+      <SolidColorBrush x:Key="ToolTabSelectedHoverBrush" Color="#3DFFFFFF"/>
+      <SolidColorBrush x:Key="ToolTabHoverBrush" Color="#14FFFFFF"/>
+      <SolidColorBrush x:Key="ToolTabPressedBrush" Color="#1FFFFFFF"/>
+      <SolidColorBrush x:Key="ToolChipFillBrush" Color="#14FFFFFF"/>
+      <SolidColorBrush x:Key="ToolChipHoverBrush" Color="#24FFFFFF"/>
+      <SolidColorBrush x:Key="ToolChipPressedBrush" Color="#0FFFFFFF"/>
+      <!-- Chip visuals come from the ListViewItem states, so the chip is one control. -->
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#2EFFFFFF"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#3DFFFFFF"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#1FFFFFFF"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#14FFFFFF"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#1FFFFFFF"/>
+      <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent"/>
+     </ResourceDictionary>
+     <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="ToolTabSelectedBrush" Color="#1F000000"/>
+      <SolidColorBrush x:Key="ToolTabSelectedHoverBrush" Color="#2E000000"/>
+      <SolidColorBrush x:Key="ToolTabHoverBrush" Color="#0F000000"/>
+      <SolidColorBrush x:Key="ToolTabPressedBrush" Color="#17000000"/>
+      <SolidColorBrush x:Key="ToolChipFillBrush" Color="#0A000000"/>
+      <SolidColorBrush x:Key="ToolChipHoverBrush" Color="#14000000"/>
+      <SolidColorBrush x:Key="ToolChipPressedBrush" Color="#08000000"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#1F000000"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#2E000000"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#17000000"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#0F000000"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#17000000"/>
+      <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent"/>
+     </ResourceDictionary>
+     <ResourceDictionary x:Key="HighContrast">
+      <SolidColorBrush x:Key="ToolTabSelectedBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="ToolTabSelectedHoverBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="ToolTabHoverBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="ToolTabPressedBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="ToolChipFillBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="ToolChipHoverBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="ToolChipPressedBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="Transparent"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="Transparent"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="Transparent"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="Transparent"/>
+      <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="Transparent"/>
+      <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent"/>
+     </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+
+    <!-- Ghost icon action: tab bar "+", overflow, zoom, collapse.
+         Every keyed style must be based on the WinUI default style, otherwise the
+         control loses the default setters (corner radius, state brushes) entirely. -->
+    <Style x:Key="ToolIconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+     <Setter Property="Width" Value="32"/>
+     <Setter Property="Height" Value="32"/>
+     <Setter Property="MinWidth" Value="0"/>
+     <Setter Property="Padding" Value="0"/>
+     <Setter Property="Background" Value="Transparent"/>
+     <Setter Property="BorderThickness" Value="0"/>
+     <Setter Property="CornerRadius" Value="8"/>
+     <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}"/>
+     <Setter Property="FontSize" Value="14"/>
+     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Filled circular button used by the current tool's operation bar. -->
+    <Style x:Key="ToolRoundButtonStyle" TargetType="Button" BasedOn="{StaticResource ToolIconButtonStyle}">
+     <Setter Property="Width" Value="34"/>
+     <Setter Property="Height" Value="34"/>
+     <Setter Property="CornerRadius" Value="17"/>
+     <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}"/>
+     <Setter Property="FontSize" Value="13"/>
+    </Style>
+
+    <!-- Same shape, but with a label (Agent target / human takeover). -->
+    <Style x:Key="ToolRoundTextButtonStyle" TargetType="Button" BasedOn="{StaticResource ToolRoundButtonStyle}">
+     <Setter Property="Width" Value="Auto"/>
+     <Setter Property="Padding" Value="12,0"/>
+     <Setter Property="FontFamily" Value="{ThemeResource ContentControlThemeFontFamily}"/>
+     <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style x:Key="ToolRoundToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+     <Setter Property="Height" Value="34"/>
+     <Setter Property="MinWidth" Value="0"/>
+     <Setter Property="CornerRadius" Value="17"/>
+     <Setter Property="Padding" Value="12,0"/>
+     <Setter Property="BorderThickness" Value="0"/>
+     <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}"/>
+     <Setter Property="FontSize" Value="12"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <!-- DropDownButton versions: same shapes, but based on the DropDownButton default
+         style so the chevron and flyout visuals are preserved. -->
+    <Style x:Key="ToolIconDropDownStyle" TargetType="DropDownButton" BasedOn="{StaticResource DefaultDropDownButtonStyle}">
+     <Setter Property="Width" Value="32"/>
+     <Setter Property="Height" Value="32"/>
+     <Setter Property="MinWidth" Value="0"/>
+     <Setter Property="Padding" Value="0"/>
+     <Setter Property="Background" Value="Transparent"/>
+     <Setter Property="BorderThickness" Value="0"/>
+     <Setter Property="CornerRadius" Value="8"/>
+     <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}"/>
+     <Setter Property="FontSize" Value="14"/>
+     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="ToolRoundDropDownStyle" TargetType="DropDownButton" BasedOn="{StaticResource DefaultDropDownButtonStyle}">
+     <Setter Property="Width" Value="34"/>
+     <Setter Property="Height" Value="34"/>
+     <Setter Property="MinWidth" Value="0"/>
+     <Setter Property="Padding" Value="0"/>
+     <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}"/>
+     <Setter Property="BorderThickness" Value="0"/>
+     <Setter Property="CornerRadius" Value="17"/>
+     <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}"/>
+     <Setter Property="FontSize" Value="13"/>
+     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Pill omnibox. -->
+    <Style x:Key="ToolAddressBoxStyle" TargetType="TextBox" BasedOn="{StaticResource DefaultTextBoxStyle}">
+     <Setter Property="Height" Value="34"/>
+     <Setter Property="CornerRadius" Value="17"/>
+     <Setter Property="BorderThickness" Value="1"/>
+     <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}"/>
+     <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}"/>
+     <Setter Property="TextAlignment" Value="Center"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+     <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <!-- Tab chip: one rounded instance per open tool. -->
+    <Style x:Key="ToolTabItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+     <Setter Property="MinHeight" Value="0"/>
+     <Setter Property="Padding" Value="0"/>
+     <Setter Property="Margin" Value="0,0,4,0"/>
+     <Setter Property="CornerRadius" Value="9"/>
+     <Setter Property="HorizontalContentAlignment" Value="Left"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="ToolTabCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+     <Setter Property="Width" Value="18"/>
+     <Setter Property="Height" Value="18"/>
+     <Setter Property="MinWidth" Value="0"/>
+     <Setter Property="Padding" Value="0"/>
+     <Setter Property="Background" Value="Transparent"/>
+     <Setter Property="BorderThickness" Value="0"/>
+     <Setter Property="CornerRadius" Value="9"/>
+     <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}"/>
+     <Setter Property="FontSize" Value="8"/>
+     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+   </ResourceDictionary>
+  </Grid.Resources>
   <Grid.KeyboardAccelerators>
    <!-- Esc dismisses the overlay form of the tool workspace, never the split form. -->
    <KeyboardAccelerator Key="Escape" Invoked="OnEscapeInvoked"/>
@@ -40,8 +208,9 @@
      <local:SplitterHandle x:Name="ToolSplitter" Grid.Column="1" Visibility="Collapsed"
        PointerPressed="OnSplitterPointerPressed" PointerMoved="OnSplitterPointerMoved"
        PointerReleased="OnSplitterPointerReleased" PointerCaptureLost="OnSplitterPointerCaptureLost"
+       PointerEntered="OnSplitterPointerEntered" PointerExited="OnSplitterPointerExited"
        DoubleTapped="OnSplitterDoubleTapped" KeyDown="OnSplitterKeyDown">
-      <Rectangle Width="1" HorizontalAlignment="Center" Fill="{ThemeResource CardStrokeColorDefaultBrush}"/>
+      <Rectangle x:Name="ToolSplitterLine" Width="1" HorizontalAlignment="Center" Fill="{ThemeResource CardStrokeColorDefaultBrush}"/>
      </local:SplitterHandle>
      <Border x:Name="ToolOverlayScrim" Grid.ColumnSpan="3" Background="#40000000" Visibility="Collapsed" Tapped="OnToolScrimTapped"/>
      <!-- Right tool workspace: instance tabs, per-tool toolbar, content, status. -->
@@ -49,63 +218,101 @@
       <Grid.RowDefinitions>
        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <Grid Padding="6,4,6,0" ColumnSpacing="4" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
-       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-       <ListView x:Name="ToolTabList" SelectionMode="Single" SelectionChanged="OnToolTabSelected" VerticalAlignment="Center"
-         ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+      <Grid Padding="8,6,8,4" ColumnSpacing="2" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+       <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+       </Grid.ColumnDefinitions>
+       <!-- Left-aligned so "+" sits right after the last chip, like the reference. -->
+       <ListView x:Name="ToolTabList" SelectionMode="Single" SelectionChanged="OnToolTabSelected"
+         HorizontalAlignment="Left" VerticalAlignment="Center"
+         ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
          ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
         <ListView.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListView.ItemsPanel>
-        <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="MinHeight" Value="0"/><Setter Property="Padding" Value="8,4"/><Setter Property="Margin" Value="0,0,2,0"/></Style></ListView.ItemContainerStyle>
+        <ListView.ItemContainerStyle><Style TargetType="ListViewItem" BasedOn="{StaticResource ToolTabItemStyle}"/></ListView.ItemContainerStyle>
         <ListView.ItemTemplate>
          <DataTemplate>
-          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-           <FontIcon Glyph="{Binding Glyph}" FontSize="12" Opacity="0.8" VerticalAlignment="Center"/>
-           <TextBlock Text="{Binding Title}" MaxWidth="150" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding Tooltip}"/>
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="10,5">
+           <FontIcon Glyph="{Binding Glyph}" FontSize="13" Opacity="0.85" VerticalAlignment="Center"/>
+           <TextBlock Text="{Binding Title}" MaxWidth="140" TextTrimming="CharacterEllipsis" FontSize="12" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding Tooltip}"/>
            <ProgressRing Width="12" Height="12" IsActive="{Binding IsRunning}" Visibility="{Binding RunningVisibility}" VerticalAlignment="Center"/>
            <Ellipse Width="7" Height="7" Fill="#D59F61" Visibility="{Binding UnreadVisibility}" VerticalAlignment="Center"/>
-           <Button Click="OnCloseToolTab" Padding="3,1" MinWidth="0" Background="Transparent" BorderThickness="0" Visibility="{Binding CloseVisibility}" VerticalAlignment="Center" ToolTipService.ToolTip="关闭标签页">
-            <FontIcon Glyph="&#xE711;" FontSize="9"/>
+           <Button Style="{StaticResource ToolTabCloseButtonStyle}" Click="OnCloseToolTab" Visibility="{Binding CloseVisibility}" VerticalAlignment="Center" ToolTipService.ToolTip="关闭标签页">
+            <FontIcon Glyph="&#xE711;" FontSize="8"/>
            </Button>
           </StackPanel>
          </DataTemplate>
         </ListView.ItemTemplate>
        </ListView>
-       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-        <DropDownButton x:Name="ToolOverflowButton" Content="&#xE70D;" FontFamily="{ThemeResource SymbolThemeFontFamily}" Padding="8,4" ToolTipService.ToolTip="全部标签页">
+       <DropDownButton x:Name="ToolAddButton" Grid.Column="1" Content="&#xE710;" Style="{StaticResource ToolIconDropDownStyle}" ToolTipService.ToolTip="打开工具">
+        <DropDownButton.Flyout>
+         <MenuFlyout Placement="BottomEdgeAlignedLeft">
+          <MenuFlyoutItem Text="新标签页（工具首页）" Click="OnOpenHomeTab"/>
+          <MenuFlyoutSeparator/>
+          <MenuFlyoutItem Text="终端 · 新会话" Click="OnOpenTerminalTab"/>
+          <MenuFlyoutItem Text="Agent 浏览器" Click="OnOpenBrowserTab"/>
+          <MenuFlyoutItem Text="制成品预览" Click="OnOpenArtifactTab"/>
+          <MenuFlyoutItem Text="输出文件" Click="OnOpenOutputTab"/>
+          <MenuFlyoutItem Text="交互面板" Click="OnOpenPanelTab"/>
+          <MenuFlyoutSeparator/>
+          <ToggleMenuFlyoutItem x:Name="AutoExpandMenuItem" Text="任务开始时自动展开" Click="OnToggleAutoExpand"/>
+         </MenuFlyout>
+        </DropDownButton.Flyout>
+       </DropDownButton>
+       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+        <DropDownButton x:Name="ToolOverflowButton" Content="&#xE70D;" Style="{StaticResource ToolIconDropDownStyle}" Visibility="Collapsed" ToolTipService.ToolTip="全部标签页">
          <DropDownButton.Flyout>
           <MenuFlyout x:Name="ToolOverflowMenu" Placement="BottomEdgeAlignedRight" Opening="OnToolOverflowOpening"/>
          </DropDownButton.Flyout>
         </DropDownButton>
-        <DropDownButton x:Name="ToolAddButton" Content="&#xE710;" FontFamily="{ThemeResource SymbolThemeFontFamily}" Padding="8,4" ToolTipService.ToolTip="打开工具">
-         <DropDownButton.Flyout>
-          <MenuFlyout Placement="BottomEdgeAlignedRight">
-           <MenuFlyoutItem Text="新标签页（工具首页）" Click="OnOpenHomeTab"/>
-           <MenuFlyoutSeparator/>
-           <MenuFlyoutItem Text="终端 · 新会话" Click="OnOpenTerminalTab"/>
-           <MenuFlyoutItem Text="Agent 浏览器" Click="OnOpenBrowserTab"/>
-           <MenuFlyoutItem Text="制成品预览" Click="OnOpenArtifactTab"/>
-           <MenuFlyoutItem Text="输出文件" Click="OnOpenOutputTab"/>
-           <MenuFlyoutItem Text="交互面板" Click="OnOpenPanelTab"/>
-           <MenuFlyoutSeparator/>
-           <ToggleMenuFlyoutItem x:Name="AutoExpandMenuItem" Text="任务开始时自动展开" Click="OnToggleAutoExpand"/>
-          </MenuFlyout>
-         </DropDownButton.Flyout>
-        </DropDownButton>
-        <Button x:Name="ToolZoomButton" Content="&#xE740;" FontFamily="{ThemeResource SymbolThemeFontFamily}" Padding="8,4" Click="OnToggleToolZoom" ToolTipService.ToolTip="放大工具区"/>
-        <Button x:Name="ToolCollapseButton" Content="&#xE89F;" FontFamily="{ThemeResource SymbolThemeFontFamily}" Padding="8,4" Click="OnCollapseToolPanel" ToolTipService.ToolTip="收起工具区"/>
+        <Button x:Name="ToolZoomButton" Content="&#xE740;" Style="{StaticResource ToolIconButtonStyle}" Click="OnToggleToolZoom" ToolTipService.ToolTip="放大工具区"/>
+        <Button x:Name="ToolCollapseButton" Content="&#xE89F;" Style="{StaticResource ToolIconButtonStyle}" Click="OnCollapseToolPanel" ToolTipService.ToolTip="收起工具区"/>
        </StackPanel>
       </Grid>
       <!-- Operation bar of the active tool; shown for browser tabs only. -->
-      <StackPanel x:Name="BrowserToolBar" Grid.Row="1" Orientation="Horizontal" Spacing="6" Padding="8,6" Visibility="Collapsed"
+      <Grid x:Name="BrowserToolBar" Grid.Row="1" Padding="8,6" ColumnSpacing="6" Visibility="Collapsed"
         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
-       <Button Content="后退" Click="OnBack"/>
-       <Button Content="刷新" Click="OnReload"/>
-       <TextBox x:Name="AddressBox" Width="230" PlaceholderText="输入网址" KeyDown="OnAddressKey"/>
-       <Button Content="打开" Click="OnGo"/>
-       <Button Content="新页面" Click="OnNewTab"/>
-       <Button Content="设为 Agent 目标" Click="OnTarget"/>
-       <ToggleButton x:Name="Takeover" Content="人工接管" Click="OnTakeover"/>
-      </StackPanel>
+       <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+       </Grid.ColumnDefinitions>
+       <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+        <Button x:Name="BrowserBackButton" Content="&#xE72B;" Style="{StaticResource ToolRoundButtonStyle}" Click="OnBack" ToolTipService.ToolTip="后退"/>
+        <Button x:Name="BrowserForwardButton" Content="&#xE72A;" Style="{StaticResource ToolRoundButtonStyle}" Click="OnForward" ToolTipService.ToolTip="前进"/>
+        <Button Content="&#xE72C;" Style="{StaticResource ToolRoundButtonStyle}" Click="OnReload" ToolTipService.ToolTip="刷新"/>
+       </StackPanel>
+       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="4,0">
+        <Button Style="{StaticResource ToolRoundTextButtonStyle}" Click="OnTarget" ToolTipService.ToolTip="把当前页面设为 Agent 目标">
+         <StackPanel Orientation="Horizontal" Spacing="6">
+          <FontIcon Glyph="&#xE7B3;" FontSize="12"/>
+          <TextBlock Text="设为 Agent 目标" VerticalAlignment="Center"/>
+         </StackPanel>
+        </Button>
+        <ToggleButton x:Name="Takeover" Style="{StaticResource ToolRoundToggleStyle}" Click="OnTakeover" ToolTipService.ToolTip="人工接管：暂停 Agent 操作">
+         <StackPanel Orientation="Horizontal" Spacing="6">
+          <FontIcon Glyph="&#xE7FC;" FontSize="12"/>
+          <TextBlock Text="人工接管" VerticalAlignment="Center"/>
+         </StackPanel>
+        </ToggleButton>
+       </StackPanel>
+       <TextBox x:Name="AddressBox" Grid.Column="2" Style="{StaticResource ToolAddressBoxStyle}"
+         PlaceholderText="搜索或输入网址" KeyDown="OnAddressKey"/>
+       <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+        <Button Content="&#xE710;" Style="{StaticResource ToolRoundButtonStyle}" Click="OnNewTab" ToolTipService.ToolTip="新建页面"/>
+        <DropDownButton Content="&#xE712;" Style="{StaticResource ToolRoundDropDownStyle}" ToolTipService.ToolTip="更多操作">
+         <DropDownButton.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedRight">
+           <MenuFlyoutItem Text="打开地址" Click="OnGo"/>
+           <MenuFlyoutItem Text="刷新" Click="OnReload"/>
+           <MenuFlyoutItem Text="后退" Click="OnBack"/>
+           <MenuFlyoutItem Text="前进" Click="OnForward"/>
+           <MenuFlyoutItem Text="新建页面" Click="OnNewTab"/>
+           <MenuFlyoutSeparator/>
+           <MenuFlyoutItem Text="将当前地址复制到剪贴板" Click="OnCopyAddress"/>
+           <MenuFlyoutItem Text="在系统浏览器中打开" Click="OnOpenAddressExternally"/>
+          </MenuFlyout>
+         </DropDownButton.Flyout>
+        </DropDownButton>
+       </StackPanel>
+      </Grid>
       <Grid x:Name="ToolContentHost" Grid.Row="2">
        <Grid x:Name="ToolTabContentHost"/>
        <!-- One persistent browser surface host: tabs never reparent a live WebView2. -->

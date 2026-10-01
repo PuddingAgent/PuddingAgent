@@ -60,6 +60,22 @@ NavigationView 内容区
 
 未接入的能力由 `ToolTabAvailability.Deferred` 显式标注，界面文案说明缺什么；不嵌入假提示符、假输出或假的运行指示（遵守设计「不可只嵌入输出文本便宣称完整终端已实现」）。
 
+## 视觉样式（按参考图对齐）
+
+工具区顶部与操作栏按用户提供的参考图重做，`MainWindow.xaml` 的 `Root.Resources` 集中定义：
+
+| 元素 | 样式 |
+|---|---|
+| 实例 Tab | `ListViewItem` 药丸 chip（`CornerRadius=9`、`BasedOn DefaultListViewItemStyle`）：图标 + 截断标题 + 运行 `ProgressRing` + 未读点 + 18×18 圆形关闭按钮 |
+| 「+」 | 无边框幽灵图标按钮，紧贴最后一个 chip 之后（`HorizontalAlignment=Left` 让 Tab 列表按内容宽度排布） |
+| 放大 / 收起 / 溢出 | 同款幽灵图标按钮（32×32、`CornerRadius=8`），悬停由 WinUI 默认状态笔刷提供 |
+| 操作栏 | 圆形图标按钮（34×34、`CornerRadius=17`、`ControlFillColorDefaultBrush`）：后退 / 前进 / 刷新；「设为 Agent 目标」「人工接管」为同形状带标签按钮；地址栏为药丸 omnibox（`CornerRadius=17`、居中文本、placeholder「搜索或输入网址」）；右侧圆形「新建页面」与「更多」菜单 |
+| 形式可用性 | 后退/前进按当前页面 `CanGoBack`/`CanGoForward` 置灰，不再永远显示为可点 |
+| 分隔线 | 悬停时 1 像素线加粗到 3 像素并显示 accent 色，明确可拖动 |
+| 主题 | 每个颜色都按 `ThemeDictionaries`（Default/Light/HighContrast）分别给值，未硬编码单一主题；选中态采用参考图的中性填充，未使用设计原稿提到的紫色选中态（以最新参考图为准，此处为有意的偏离） |
+
+**WinUI 3 关键事实（本次踩到并验证）**：给系统控件设置自定义 `Style` **必须** `BasedOn="{StaticResource Default<控件名>Style}"`，否则默认样式失效（按钮丢圆角等）；框架默认样式在编译期不校验 key，写错只会在**运行时**抛资源异常。本次用到的 16 个框架 key（`DefaultButtonStyle`、`DefaultDropDownButtonStyle`、`DefaultToggleButtonStyle`、`DefaultTextBoxStyle`、`DefaultListViewItemStyle`、`ListViewItemBackgroundSelected*`、`ListViewItemSelectionIndicatorBrush`、`SymbolThemeFontFamily`、`ContentControlThemeFontFamily`、`ControlFillColorDefaultBrush`、`ControlStrokeColorDefaultBrush`、`AccentFillColorDefaultBrush`）已逐个在 Windows App SDK 的框架资源索引（`Microsoft.UI.Xaml.Controls.pri`）中确认存在；`BasedOn="{StaticResource DefaultButtonStyle}"` 的可用性依据 WinUI 3 官方示例级说明（[System controls need BasedOn Styling in WinUI](https://www.reflectionit.nl/blog/2023/system-controls-need-basedon-styling-in-winui)）与 [Styling WinUI Controls and Staying Fluent](https://inthehand.com/2023/07/26/styling-winui-controls-and-staying-fluent/)。
+
 ## 配置
 
 `desktop.json` 新增 `toolWorkspace` 节（`DesktopBootstrapSettings.ToolWorkspace`）：
@@ -84,6 +100,8 @@ NavigationView 内容区
 启动冒烟脚本 `TestScripts/test-pudding-desktop-launcher.ps1` 未改动；`RunSmokeAsync` 已扩展到工作区：默认收起 → 展开 → 每个浏览器页面一个实例 Tab → Agent 目标不随可见 Tab 改变 → 输出物 Tab 真实文件 → 延迟能力不伪装运行 → 拖动按比例、双击复位、最小宽度 → 窄窗口覆盖 + 收起不销毁页面 → 关闭页面移除实例 Tab。
 
 **未验证（需外部控制器）**：真实桌面上的键盘焦点、Esc、中文输入法、第三方网页叠层、收起后网页与自动化的后台行为、Core 断连恢复。本机运行中的产品进程按用户要求未停止、未重启，因此新构建尚未被加载；这些验收项在外部控制器重启到明确新构建后执行，未验证一律不视为通过。
+
+**未验证（视觉）**：本次按参考图重做按钮样式，编译与资源 key 可用性已核，但**实际观感**（chip 选中填充、圆形按钮悬停、omnibox 居中文本、分隔线悬停高亮）必须在真实桌面上肉眼确认；如与参考图有偏差，改动集中在 `MainWindow.xaml` 的 `Root.Resources` 与工具区两个 Grid，不影响行为逻辑。
 
 ## 未纳入本阶段
 
