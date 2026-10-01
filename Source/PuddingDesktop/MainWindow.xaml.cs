@@ -760,7 +760,11 @@ public sealed partial class MainWindow : Window
 
     private async void OnSplitterDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        _toolLayout = _toolLayout.ResetWidth();
+        // IMG05（§13.3）：「恢复默认分栏」按当前上下文取目标比例 —— 只有工具首页时
+        // 回到启动器比例，否则回到通用默认。这是用户显式动作，所以照旧持久化
+        // （「不悄悄复写配置」指的是不能在切换标签页等隐式路径上改写比例）。
+        var launcherOnly = _toolTabs.ActiveTab is null or { Kind: ToolTabKind.Home };
+        _toolLayout = _toolLayout.ResetWidth(ToolWorkspaceLayout.DefaultRatioFor(launcherOnly));
         ApplyToolLayout();
         e.Handled = true;
         await PersistToolLayoutAsync();
@@ -790,11 +794,18 @@ public sealed partial class MainWindow : Window
         try
         {
             var settings = await new FileDesktopBootstrapSettingsStore().LoadAsync(_lifetime.Token);
-            var preference = (settings.ToolWorkspace ?? new DesktopToolWorkspaceSettings()).Normalize();
+            // IMG05（§13.3）：只有「用户从未配置过」才用初始化默认。
+            // 首次使用且只显示工具首页 → 启动器比例 0.32；已保存比例（哪怕正好是 0.45）
+            // 一律原样恢复。标签页切换不会再动这个比例。
+            var launcherOnly = _toolTabs.ActiveTab is null or { Kind: ToolTabKind.Home };
+            var preference = settings.ToolWorkspace?.Normalize();
             _toolLayout = new ToolWorkspaceLayout
             {
-                WidthRatio = preference.WidthRatio,
-                AutoExpandOnActivity = preference.AutoExpandOnActivity,
+                // 已保存比例优先（哪怕正好是默认值）；只有未配置才用初始化默认。
+                WidthRatio = ToolWorkspaceLayout.ResolveLoadedRatio(
+                    preference?.WidthRatio,
+                    launcherOnly),
+                AutoExpandOnActivity = preference?.AutoExpandOnActivity ?? false,
             };
             _toolActivity.AutoExpandOnActivity = _toolLayout.AutoExpandOnActivity;
             AutoExpandMenuItem.IsChecked = _toolLayout.AutoExpandOnActivity;

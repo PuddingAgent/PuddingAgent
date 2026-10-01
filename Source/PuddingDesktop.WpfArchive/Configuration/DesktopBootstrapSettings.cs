@@ -13,7 +13,12 @@ public sealed record DesktopBootstrapSettings
     public Runtime.DesktopCloseBehavior CloseBehavior { get; init; } = Runtime.DesktopCloseBehavior.MinimizeToTray;
     public bool StartWithWindows { get; init; }
     public DesktopWindowSettings Window { get; init; } = new();
-    public DesktopToolWorkspaceSettings ToolWorkspace { get; init; } = new();
+    /// <summary>
+    /// Shell 工具区分栏偏好。**null = 用户从未配置过**（首次使用）——用它区分
+    /// 「未配置」与「保存了默认值」：前者按设计规格 §13.3 用启动器比例 0.32 初始化，
+    /// 后者（哪怕值恰好等于 0.45）必须原样恢复，不能被初始化默认覆盖。
+    /// </summary>
+    public DesktopToolWorkspaceSettings? ToolWorkspace { get; init; }
     public DesktopDebugSettings Debug { get; init; } = new();
 }
 

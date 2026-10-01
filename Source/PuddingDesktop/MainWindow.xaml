@@ -239,7 +239,10 @@
       <TextBlock x:Name="LoadingText" Text="正在连接 Pudding Core…" TextWrapping="Wrap" Opacity="0.7"/>
       <Button Content="启动 Core" Click="OnStart"/>
      </StackPanel>
+     <!-- IMG05/§13.3：把分割线的可操作方式说清楚 —— 双击复原「默认分栏」是显式
+          动作，不能只靠用户猜（拖动与键盘调整同理）。 -->
      <local:SplitterHandle x:Name="ToolSplitter" Grid.Column="1" Visibility="Collapsed"
+       ToolTipService.ToolTip="拖动调整宽度 · 双击恢复默认分栏 · ←/→ 微调"
        PointerPressed="OnSplitterPointerPressed" PointerMoved="OnSplitterPointerMoved"
        PointerReleased="OnSplitterPointerReleased" PointerCaptureLost="OnSplitterPointerCaptureLost"
        PointerEntered="OnSplitterPointerEntered" PointerExited="OnSplitterPointerExited"
