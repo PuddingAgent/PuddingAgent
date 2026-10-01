@@ -38,6 +38,35 @@ internal static class CodeQueryToolHelper
 
         return resolution.Scope?.ScopeId;
     }
+
+    /// <summary>
+    /// D1 fail-closed 结果里 <c>status</c> 的**单点定义**：该项目未在本 workspace 的注册表中登记。
+    /// </summary>
+    public const string NotRegisteredStatus = "not_registered";
+
+    /// <summary>
+    /// 「该项目是否属于本 workspace 的**已登记项目**」的**唯一定义**（风格对齐
+    /// <c>PuddingHost/Services/CodeIndexStatusProbe.IsStale</c>：一处定义、所有判定点共用）。
+    /// <para>
+    /// 真源与 <c>code_index_list_projects</c> **完全一致** —— 同一个 <see cref="ICodeProjectRegistry.ListProjectsAsync"/>
+    /// 结果集、同一个 workspace 口径、逐项 <see cref="StringComparison.Ordinal"/> 比对。
+    /// 于是「列表工具里查不到」⇔「这里为 false」，两处口径不可能各自漂移。
+    /// </para>
+    /// <para>
+    /// 刻意**不**做 Trim、**不**忽略大小写：<c>project_id</c> 是索引内的稳定标识，
+    /// 放宽比较会把两个不同项目判成同一个，从而又把「已注销」当「已登记」放行 —— 正是 D1 要堵的洞。
+    /// </para>
+    /// </summary>
+    public static bool IsRegistered(IReadOnlyList<CodeProjectRecord> registeredProjects, string projectId)
+    {
+        foreach (var registered in registeredProjects)
+        {
+            if (string.Equals(registered.ProjectId, projectId, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -47,7 +76,7 @@ internal static class CodeQueryToolHelper
 [Tool(
     id: "code_index_status",
     name: "Code index status",
-    description: "获取已登记代码项目的当前索引状态（indexing status）。【何时用】登记项目后、执行索引查询前，确认索引是否已完成；查询结果异常/为空时用它诊断是否索引未就绪。【怎么用】传 project_id；也可只传 file_path 或 scope_path 自动探测所属项目。【坑】项目未登记会报错；status 为 Pending/Indexing 时查询类工具结果不完整，等 Completed 再查；索引数据随源码变更会过期，重大改动后可重新登记触发重索引。",
+    description: "获取已登记代码项目的当前索引状态（indexing status）。【何时用】登记项目后、执行索引查询前，确认索引是否已完成；查询结果异常/为空时用它诊断是否索引未就绪。【怎么用】传 project_id；也可只传 file_path 或 scope_path 自动探测所属项目。【坑】项目未在注册表登记时**不返回索引状态**，而是显式返回 status=not_registered（该项目可能已注销；用 code_index_list_projects 查当前已登记的 project_id）—— 已登记项目的返回体保持逐字不变；status 为 Pending/Indexing 时查询类工具结果不完整，等 Completed 再查；索引数据随源码变更会过期，重大改动后可重新登记触发重索引。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -62,13 +91,16 @@ public sealed class CodeIndexStatusTool : PuddingToolBase<CodeIndexStatusArgs>
 
     private readonly ICodeQueryService? _queryService;
     private readonly ICodeIndexScopeResolver? _resolver;
+    private readonly ICodeProjectRegistry? _registry;
 
     public CodeIndexStatusTool(
         ICodeQueryService? queryService = null,
-        ICodeIndexScopeResolver? resolver = null)
+        ICodeIndexScopeResolver? resolver = null,
+        ICodeProjectRegistry? registry = null)
     {
         _queryService = queryService;
         _resolver = resolver;
+        _registry = registry;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -79,12 +111,36 @@ public sealed class CodeIndexStatusTool : PuddingToolBase<CodeIndexStatusArgs>
         if (_queryService is null)
             return Fail("Code query tools are not available: ICodeQueryService is not registered.");
 
+        // D1 fail-closed：注册表不可用时与同目录既有工具（CodeProjectManagementTools）用**同一句**文案，
+        // 不得静默降级成「当它已登记」。
+        if (_registry is null)
+            return Fail("Code project tools are not available: ICodeProjectRegistry is not registered.");
+
         var projectId = await CodeQueryToolHelper.ResolveAndEnsureProjectIdAsync(
             _resolver, context.WorkspaceId, args.ProjectId, args.FilePath, args.ScopePath, ct)
             .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(projectId))
             return Fail("project_id is required, or provide file_path/scope_path for auto-detection.");
+
+        // D1：注册表是唯一真源。未登记（可能已注销）⇒ 不得返回索引视图里的陈旧 Completed，
+        // 也不得泄露陈旧的完成时间。fail-closed，但仍以**成功结果**返回（不抛异常、不 500）。
+        if (!CodeQueryToolHelper.IsRegistered(
+                await _registry.ListProjectsAsync(context.WorkspaceId, ct).ConfigureAwait(false),
+                projectId))
+        {
+            return Ok(JsonSerializer.Serialize(new
+            {
+                workspace_id = context.WorkspaceId,
+                project_id = projectId,
+                status = CodeQueryToolHelper.NotRegisteredStatus,
+                message = $"Project '{projectId}' is not registered in workspace "
+                    + $"'{context.WorkspaceId}' (it may have been unregistered); "
+                    + "use code_index_list_projects to list the currently registered projects.",
+                started_at_utc = (DateTimeOffset?)null,
+                completed_at_utc = (DateTimeOffset?)null,
+            }, JsonOptions));
+        }
 
         var result = await _queryService.GetProjectIndexStatusAsync(
             context.WorkspaceId,

@@ -321,3 +321,15 @@ S2a 已落地（`578c3c0`，**已推送；需重启才生效**）：把三处硬
 **门禁**：`CodeSymbolSearchMatchTargetTests` **6/6**（新增「透传为切分后的列表」与「缺省为 null」两条）；`PuddingRuntimeTests` 全套 **1881 通过 / 0 失败 / 6 跳过 / 1887**。
 
 **留白**：本改动需宿主重启才在运行中的 `code_symbol_search` 上生效。 |
+
+---
+
+## 变更（2026-10-01，D1 的一半）：`code_index_status` 对未登记项目 fail-closed
+
+**改动**：`Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` —— `code_index_status` 在返回索引状态**之前**先用**注册表**核对 `project_id`。判定为**单点定义** `CodeQueryToolHelper.IsRegistered`（真源 = `ICodeProjectRegistry.ListProjectsAsync`，与 `code_index_list_projects` **同一 API、同一 workspace 口径**、逐项 `Ordinal` 比对 ⇒「列表工具查不到」⇔「未登记」，两处口径不可能各自漂移）。未登记 ⇒ 显式返回 `status="not_registered"`（单点常量 `CodeQueryToolHelper.NotRegisteredStatus`），`message` 指向 `code_index_list_projects`，且 `started_at_utc`/`completed_at_utc` 恒为 `null`（不泄露陈旧完成时间）；**不抛异常、不是 500**。`ICodeProjectRegistry` 未在 DI 注册 ⇒ 与同目录 `CodeProjectManagementTools` 用**同一句** Fail 文案（不静默降级成「当它已登记」）。**已登记项目的返回体逐字不变**（回归线由冻结原文断言钉住）。`code_symbol_search` 一字未改（D2 是独立切片）。
+
+**为什么**：D1 实测——已从注册表移除的 `scope-6526fb344e33` 仍被 `code_index_status` 报成 `Completed`（查询视图只读索引存储、从不查注册表）。缺陷登记见 `Docs/Features/Index-Retrieval-Known-Defects-2026-10-01.md`（F1）。
+
+**门禁**：新增 `PuddingRuntimeTests/Tools/CodeIndexStatusRegistryGateTests.cs` **4 用例**（未登记⇒`not_registered` 且**零次**读索引视图 / 已登记⇒冻结原文逐字一致 / 注册表缺席⇒既有 Fail 文案 / 自动探测出的 project_id 同样过门槛）；`dotnet build PuddingRuntime.csproj -c Debug -t:Rebuild` **0 error**；`dotnet test --filter CodeIndexStatusRegistryGateTests` **4/4（RC=0）**。变异（`IsRegistered` 无条件 `return true`）⇒ **2 失败 / 2 通过**，两条均为 `应为: "not_registered" 但却是: "Completed"`（取红）；复原后源码 SHA-256 与变异前**逐位相同**，产物 `PuddingRuntime.dll` SHA-256 由 `C1BE0B1F…` 回到 `5D275F47…`（同一 Clean 构建确定性复现，证明真的重编译），`MUTATION-D1` 残留 **0**。
+
+**留白**：① 需宿主重启才在运行中的 `code_index_status` 上生效；② D1 的另一半（`code_symbol_search` 对已注销/死路径项目照常作答）属独立切片；③ 本片未触碰注册表写路径，D4 的清理阻塞不变。

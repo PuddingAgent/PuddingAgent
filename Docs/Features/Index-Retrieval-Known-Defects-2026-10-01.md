@@ -18,6 +18,16 @@
 **判定**：注册表（`list_projects` 的真源）与**查询视图**（`code_index_status`）口径不一致。"
 已注销" ≠ "已清除"。
 
+### D1 修复状态（2026-10-01，代码已交付）
+
+`code_index_status` 现已 **fail-closed**：调用前用**注册表**（`ICodeProjectRegistry.ListProjectsAsync`，与 `code_index_list_projects` **同一 API、同一 workspace 入参**）核对 `project_id`；未登记 ⇒ 返回 `status="not_registered"` + `message` 指向 `code_index_list_projects`，且**根本不去读索引视图**（有断言：状态读取次数 = 0）。已登记项目的返回体**逐字冻结**作为回归线。
+
+- **单点定义**：`CodeQueryTools.CodeQueryToolHelper.IsRegistered(...)`（风格对齐 `CodeIndexStatusProbe.IsStale`）；刻意用 **Ordinal** 比较、不 `Trim`、不忽略大小写 —— 放宽比较会把两个不同项目判成同一个，从而又把「已注销」当「已登记」放行，正是本缺陷要堵的洞。
+- **口径选择**：用带 `Status <> Removed` 过滤的 `ListProjectsAsync`，**不用**无过滤的 `GetProjectAsync`（后者会把已注销行判成「已登记」）；测试里让 `GetProjectAsync` 直接 `throw`，把这条口径钉成**会失败的断言**。
+- **验证**：新测试 `Source/PuddingRuntimeTests/Tools/CodeIndexStatusRegistryGateTests.cs`（4 条）在**改动前 4/4 红**（D1 在单测层复现）→ 改动后 4/4 绿；父级独立变异（`IsRegistered` 恒真）⇒ **2 红**（`not_registered` 与自动探测两条），逐位复原后产物 `PuddingRuntime.dll` SHA 精确回到 `5D275F47…`、复跑 4/4 绿。
+- ⚠️ **范围**：`code_symbol_search` 的 D2（陈旧 `E:` 死路径仍被服务）**未修**，仍为独立切片。
+- ⚠️ **生效条件**：工具是进程内实现，**需重启 Core 才在运行中的 Agent 上生效**；在此之前线上工具仍是旧行为。
+
 ## D2 · 陈旧 `E:\` 根路径仍被服务给调用方
 
 **现象**（同一次调用，`code_symbol_search(query="ICodeIndexMaintenance", project_id="scope-6526fb344e33")`，`count = 10`）
