@@ -16,6 +16,21 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`locate` 映射（第 58 轮，陈旧引用保护在 Desktop 侧闭环）
+
+- 新增 `LocateAsync`，两条不变量在这里守住：
+  **①凭 Ref 定位必须核对来源版本**——不符即 `page_version_mismatch` 且**不发起查询**
+  （否则可能命中另一个页面的元素；测试断言 `Queried` 为 false）；
+  **②每个 Ref 的版本取元素自身**（`IElementHandle.PageVersion`），**绝不用页面当前版本替代**。
+  测试用"页面 v9 / 元素 v8"这一不一致输入证明取值来源——这正是 Core 侧曾经失效的同一条不变量。
+- 语义细节：命中 0 个是**成功**（`IsEmpty`，调用方据此决定等待或换策略）；超出上限**如实标注** `Truncated`；
+  元素**没有存活版本** ⇒ 响亮报 `internal_error`，**不静默丢弃命中项**（静默丢会隐藏真相）。
+- 映射：`DesktopLocatorKind` 与运行时 `LocatorKind` 取值一一对应（同一顺序），
+  `Frame`/`Has` 属 v1 不支持的复合定位，**不设置**（线缆上已拒绝）。
+- 测试：新组件 **18/18**（+5）。
+- 测试文件结构教训（第二次）：用"在最后一个 `}` 之前插入"导致新类被**嵌套**进上一个测试类
+  （能编译但结构意外）。追加测试类应显式定位到**文件末尾的命名空间收口位置**，或拆成独立文件——
+  下一轮起新测试类放**独立文件**，不再往大文件里追加。
 ## 2026-10-01：`tabs` 映射（第 57 轮）
 
 - 新增 `TabsAsync`：**变更类必须固定版本**——版本不符即返回 `page_version_mismatch`，

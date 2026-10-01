@@ -226,6 +226,135 @@ public sealed class BrowserRuntimeDesktopSurface
             page.PageVersion > 0 ? new DesktopPageVersion(page.PageVersion) : DesktopPageVersion.Unknown,
             DesktopPageReadiness.Unknown);
     }
+    /// <summary>
+    /// 定位元素。两条不变量在这里守住：
+    /// ①**凭 Ref 定位必须配套来源版本**，且版本不符即拒绝（引用随版本失效）；
+    /// ②**每个 Ref 的版本取元素自身**（<see cref="IElementHandle.PageVersion"/>），
+    ///   绝不用"页面当前版本"替代——元素来自哪一版就标哪一版。
+    /// 命中 0 个不是错误（调用方据此决定等待或换策略）；被裁剪必须如实标注。
+    /// </summary>
+    public async Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
+        DesktopCallContext context, BrowserLocateRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_runtime.State != BrowserRuntimeState.Ready)
+        {
+            return CapabilityResult<DesktopLocateResult>.Failure(
+                DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
+        }
+
+        var page = await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false);
+        if (page.IsFailure)
+        {
+            return CapabilityResult<DesktopLocateResult>.Failure(page.Error);
+        }
+
+        var browserPage = page.Value;
+        var pageVersion = browserPage.PageVersion;
+
+        // 调用方给了版本约束（Ref 定位必然有）就必须核对：不符说明引用/目标已过期。
+        if (request.ExpectedPageVersion.IsKnown && pageVersion != request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<DesktopLocateResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"page '{request.Target.Key}' is at v{pageVersion}, request pinned v{request.ExpectedPageVersion.Value}",
+                retryable: true));
+        }
+
+        var runtimeLocator = ToRuntimeLocator(request.Locator);
+
+        if (request.Locator.IsReference)
+        {
+            var handle = await browserPage.QueryAsync(runtimeLocator, cancellationToken).ConfigureAwait(false);
+            if (handle is null)
+            {
+                // 引用无效（元素已消失）⇒ 空结果是**成功**，不是错误。
+                return CapabilityResult<DesktopLocateResult>.Success(new DesktopLocateResult(
+                    request.Target, request.Locator, [], truncated: false, LiveVersion(pageVersion)));
+            }
+
+            var mapped = MapHandle(handle);
+            return mapped.IsFailure
+                ? CapabilityResult<DesktopLocateResult>.Failure(mapped.Error)
+                : CapabilityResult<DesktopLocateResult>.Success(new DesktopLocateResult(
+                    request.Target, request.Locator, [mapped.Value], truncated: false, LiveVersion(pageVersion)));
+        }
+
+        var handles = await browserPage.QueryAllAsync(runtimeLocator, cancellationToken).ConfigureAwait(false);
+        var truncated = handles.Count > request.MaxResults;
+        var elements = new List<DesktopElementRef>(Math.Min(handles.Count, request.MaxResults));
+
+        foreach (var handle in handles.Take(request.MaxResults))
+        {
+            var mapped = MapHandle(handle);
+            if (mapped.IsFailure)
+            {
+                return CapabilityResult<DesktopLocateResult>.Failure(mapped.Error);
+            }
+
+            elements.Add(mapped.Value);
+        }
+
+        return CapabilityResult<DesktopLocateResult>.Success(new DesktopLocateResult(
+            request.Target, request.Locator, elements, truncated, LiveVersion(pageVersion)));
+    }
+
+    /// <summary>把元素句柄映射成按值引用；**版本取元素自身**（缺失即报错，不静默丢弃）。</summary>
+    private static CapabilityResult<DesktopElementRef> MapHandle(IElementHandle handle)
+    {
+        if (handle.PageVersion <= 0)
+        {
+            // 元素没有版本 ⇒ 引用会失去依据：这是运行时缺陷，必须响亮而不是静默丢弃命中项。
+            return CapabilityResult<DesktopElementRef>.Failure(DesktopCapabilityError.Internal(
+                $"element '{handle.Info.Ref}' has no live page version"));
+        }
+
+        var info = handle.Info;
+        return CapabilityResult<DesktopElementRef>.Success(new DesktopElementRef(
+            info.Ref,
+            info.Tag,
+            new DesktopPageVersion(handle.PageVersion),
+            role: info.Role,
+            name: info.Name,
+            text: info.Text,
+            visible: info.Visible,
+            enabled: info.Enabled,
+            isChecked: info.Checked));
+    }
+
+    private static DesktopPageVersion LiveVersion(long value) =>
+        value > 0 ? new DesktopPageVersion(value) : DesktopPageVersion.Unknown;
+
+    private static Locator ToRuntimeLocator(DesktopLocator locator) => new()
+    {
+        Kind = (LocatorKind)(int)locator.Kind,
+        Value = locator.Value,
+        Name = locator.Name,
+        Exact = locator.Exact,
+        Nth = locator.Nth,
+        HasText = locator.HasText,
+        // v1 不支持 Frame/Has：契约层不表达，故不设置（线缆上也拒绝）。
+    };
+
+    private async Task<CapabilityResult<IBrowserPage>> ResolvePageAsync(
+        DesktopPageTarget target, CancellationToken cancellationToken)
+    {
+        var browserContext = await _runtime
+            .GetContextAsync(new BrowserContextId(target.ContextId), cancellationToken).ConfigureAwait(false);
+        if (browserContext is null)
+        {
+            return CapabilityResult<IBrowserPage>.Failure(
+                DesktopCapabilityError.InvalidTarget($"context '{target.ContextId}' is not known"));
+        }
+
+        var page = await browserContext.GetPageAsync(new PageId(target.PageId), cancellationToken).ConfigureAwait(false);
+        return page is null
+            ? CapabilityResult<IBrowserPage>.Failure(
+                DesktopCapabilityError.InvalidTarget($"page '{target.Key}' is not known"))
+            : CapabilityResult<IBrowserPage>.Success(page);
+    }
     private static Uri? ParseUrl(string? url) =>
         string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? null : parsed;
 }
