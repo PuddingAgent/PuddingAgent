@@ -13,6 +13,14 @@
 
 ## 验证
 
+### 补充：用户提供的类型错误
+
+用户随后提供 `SplitterHandle.Visibility/CapturePointer/ReleasePointerCaptures`、`DesktopBootstrapSettings.ToolWorkspace`、`DesktopToolWorkspaceSettings` 以及级联的 `string.WidthRatio/AutoExpandOnActivity` 错误。检查当前源码：SplitterHandle 继承 `Microsoft.UI.Xaml.Controls.Grid`；配置类型与属性定义在链接编译的 `PuddingDesktop.WpfArchive/Configuration/DesktopBootstrapSettings.cs`，MSBuild 设计时 Compile 项也包含该文件。没有添加重复成员或绕过类型检查。
+
+使用 dotnet MSBuild 与本机 Visual Studio 18 Community 的 .NET Framework MSBuild 18.10.1 分别执行 `Compile`，设置 `DesignTimeBuild=true;BuildingInsideVisualStudio=true;SkipCompilerExecution=false;ProvideCommandLineArgs=true;BuildProjectReferences=false`，实际调用编译器，均 0 错误。随后用 VS MSBuild `/restore /t:Rebuild /p:ArtifactsPath=temp/build/recovery /m:1` 完整重建桌面及配套 Core，退出码 0，未出现上述错误。日志为 `temp/desktop-design-time-compile.log`、`temp/desktop-vs-design-time.log` 与 `temp/desktop-vs-rebuild.log`。
+
+当前证据倾向于编辑器旧类型信息，但尚未确认用户错误列表的来源，不能宣称 IntelliSense 报错已消除。若仍显示，应重新加载当前解决方案，对照“生成”来源与项目/文件/行号，继续定位；保留 `.vs` 与用户未保存编辑，不以删除缓存或添加冗余 API 代替诊断。
+
 串行执行 Desktop 构建、发布和生命周期验证，所有测试使用隔离 DesktopHome、DataRoot 和端口，不访问生产 `D:\data`：
 
 - Desktop Debug 构建通过；Debug 与 Release 完整发布均成功，两个发布包均含 `Assets/Pudding.ico` 和独立 Core/Web。

@@ -1,5 +1,7 @@
 ### WinUI 图标与 XAML 启动错误（2026-10-01）
 
+若错误列表称 `SplitterHandle` 缺少 `Visibility/CapturePointer`，或启动配置缺少 `ToolWorkspace`，先核对错误来源。2026-10-01 当前源码在 dotnet 和 VS 18 MSBuild 的实际设计时 Compile、VS 完整 Rebuild 中均通过；类型定义和 Compile 链接项完整。先重新加载解决方案并对照“生成”错误，不能仅凭 IntelliSense 列表添加重复 API。验证详情见同一图标修复报告的补充记录。
+
 编译通过不等于资源可在运行时解析。本次 `MainWindow.xaml` 的两处 `BasedOn="{StaticResource DefaultDropDownButtonStyle}"` 导致 `XamlParseException`，诊断在隔离 DesktopHome 的 `logs/desktop.*.log`；移除不存在的资源引用，保留 DropDownButton 控件默认模板后，外部生命周期脚本通过。程序图标来自 `ApplicationIcon`，任务栏来自 `AppWindow.SetIcon`，托盘来自 `LoadImage`：检查三条接线及发布包 `Assets/Pudding.ico`，不要只检查 EXE 文件图标。详见 [验证记录](Docs/Reports/Desktop-Icons-And-Startup-Fix-2026-10-01.md)。
 
 ### WinUI 启动器恢复验证（2026-09-29）

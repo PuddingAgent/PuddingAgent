@@ -1,5 +1,7 @@
 ## 2026-10-01：Desktop 图标与启动样式修复
 
+补充类型报错排查：`SplitterHandle : Grid` 与链接配置类型均已存在；dotnet / VS 18 实际设计时编译及 VS 完整 Rebuild 均通过。编辑器报错是否已刷新仍待确认，详见下述报告补充记录。
+
 `Source/PuddingDesktop/Assets/Pudding.ico` 复用 Web 品牌头像，包含 16～256px 九档尺寸；项目嵌入程序图标并复制资源，`MainWindow/AppWindow.SetIcon` 设置任务栏图标，`DesktopIcon` 为托盘加载独立 HICON，`DesktopTrayIcon` 负责释放。`TestScripts/update-pudding-desktop-icon.ps1` 可重建 ICO。移除两处不存在的 `DefaultDropDownButtonStyle` 引用，修复构建成功后主窗口 XAML 加载失败。验证与边界见 [报告](Docs/Reports/Desktop-Icons-And-Startup-Fix-2026-10-01.md)。
 
 ## 2026-10-01：索引面板 B 卡消费真实符号索引数据（P3）
