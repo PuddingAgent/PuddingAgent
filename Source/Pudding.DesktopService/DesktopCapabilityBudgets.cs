@@ -107,6 +107,24 @@ public static class DesktopCapabilityBudgets
         return truncated ? new DesktopContexts(adjusted, contexts.ObservedVersion) : contexts;
     }
 
+    /// <summary>
+    /// 按预算收敛剪贴板内容。剪贴板可能含极长文本甚至凭据 ⇒ **绝不无界回传**；
+    /// 同时再夹一层硬上限（即使调用方算了假预算，也不会超过 <see cref="ClipboardReadRequest.MaxMaxCharacters"/>）。
+    /// </summary>
+    public static DesktopClipboardContent Apply(DesktopClipboardContent content, int maxCharacters)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        var effective = Math.Clamp(maxCharacters, 1, ClipboardReadRequest.MaxMaxCharacters);
+        var text = content.Text;
+
+        if (text is null || text.Length <= effective)
+        {
+            return content;
+        }
+
+        return new DesktopClipboardContent(text[..effective], truncated: true);
+    }
     private static (string? Value, bool Dropped) Truncate(string? value, int limit)
     {
         if (value is null || limit <= 0 || value.Length <= limit)

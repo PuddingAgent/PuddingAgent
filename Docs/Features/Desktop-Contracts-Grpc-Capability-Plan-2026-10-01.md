@@ -194,7 +194,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 
 | 项 | 结果 |
 |---|---|
-| 组件独立测试合计 | **406 用例全绿**（Contracts 93、Rpc.Protocol 20、DesktopConnection 80、DesktopService 113、CapabilityBroker 74、CapabilityBroker.AspNetCore 26） |
+| 组件独立测试合计 | **410 用例全绿**（Contracts 93、Rpc.Protocol 20、DesktopConnection 80、DesktopService 117、CapabilityBroker 74、CapabilityBroker.AspNetCore 26） |
 | 真实端点探针 | **47/47 通过，exit 0**（Named Pipe 与 Loopback h2c 各一轮；含跨侧能力集合一致性守卫） |
 | WinUI 适配器工程 | 0 警告 0 错误（无线程访问验证，需真实 `DispatcherQueue`） |
 | 运行中的产品 | **未受影响**：本轮系列全程未重启或改动运行中的 Core/Desktop；组合根装配仍待重启窗口 |
@@ -210,7 +210,7 @@ foreach ($p in @('Pudding.ContractsTests','Pudding.Rpc.ProtocolTests','Pudding.D
 dotnet temp\build\recovery\bin\Pudding.Rpc.IpcProbe\release\Pudding.Rpc.IpcProbe.dll
 ```
 
-口径说明：本表的数字为**最近一次干净运行实测**（第 37 轮更新：406 = 93+20+80+113+74+26，探针 47/47；该表**每轮都要随实测更新**，此前两次滞后的教训见 §10.2 的同类问题）。
+口径说明：本表的数字为**最近一次干净运行实测**（第 39 轮更新：410 = 93+20+80+117+74+26，探针 47/47；该表**每轮都要随实测更新**，此前两次滞后的教训见 §10.2 的同类问题）。
 根 `code_map.md` 各轮条目里的「测试合计」是**历史记录**，可能与当下不一致——以本表为准。
 本次复核即发现并修正了一处漂移：此前多处写的「374 用例」是累加笔误，实际为 365。
 

@@ -261,4 +261,52 @@ public sealed class DesktopCapabilityBudgetsTests
         Assert.Single(applied.Contexts);
         Assert.Equal(2, applied.Contexts[0].Pages.Count);
     }
+
+/// <summary>剪贴板预算：越界截断并如实标注；空剪贴板保持"无内容"。</summary>
+public sealed class ClipboardBudgetTests
+{
+    [Fact]
+    public void WithinBudget_IsUnchanged()
+    {
+        var content = new DesktopClipboardContent("short", truncated: false);
+
+        var applied = DesktopCapabilityBudgets.Apply(content, maxCharacters: 100);
+
+        Assert.Equal("short", applied.Text);
+        Assert.False(applied.Truncated);
+    }
+
+    [Fact]
+    public void OverBudget_IsTruncatedAndFlagged()
+    {
+        var content = new DesktopClipboardContent(new string('x', 500), truncated: false);
+
+        var applied = DesktopCapabilityBudgets.Apply(content, maxCharacters: 64);
+
+        Assert.Equal(64, applied.Length);
+        Assert.True(applied.Truncated);
+        // 内容不进日志：ToString 只给形状。
+        Assert.Equal("clipboard(chars=64, truncated=True)", applied.ToString());
+    }
+
+    [Fact]
+    public void HardCeiling_IsAppliedEvenIfTheCallerAsksForMore()
+    {
+        var content = new DesktopClipboardContent(new string('y', ClipboardReadRequest.MaxMaxCharacters + 100), truncated: false);
+
+        var applied = DesktopCapabilityBudgets.Apply(content, maxCharacters: int.MaxValue);
+
+        Assert.Equal(ClipboardReadRequest.MaxMaxCharacters, applied.Length);
+        Assert.True(applied.Truncated);
+    }
+
+    [Fact]
+    public void EmptyClipboard_StaysEmptyAndNotTruncated()
+    {
+        var appended = DesktopCapabilityBudgets.Apply(new DesktopClipboardContent(null, false), maxCharacters: 10);
+
+        Assert.False(appended.HasText);
+        Assert.False(appended.Truncated);
+    }
+}
 }

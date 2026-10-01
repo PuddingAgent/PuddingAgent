@@ -4,6 +4,17 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：剪贴板预算收敛（第 39 轮，叶子级增量）
+
+- `DesktopCapabilityBudgets.Apply(DesktopClipboardContent, maxCharacters)`：越界即截断并标注 `Truncated`；
+  并**再夹一层硬上限**（`ClipboardReadRequest.MaxMaxCharacters`）——即使调用方算出异常大的预算，
+  也不会无界回传剪贴板内容。
+- 本轮刻意只做**叶子级改动**（不引入接口变更、不影响任何实现方），因为上一轮刚因"接口新增成员未同步
+  全部实现方"而出现过一次红提交。教训：接口类改动必须"接口 + 全部实现 + 验证"在同一提交内闭环。
+- 测试：DesktopService **117/117**（+4：预算内不变、越界截断且标注、硬上限兜底、空剪贴板保持无内容）。
+
+测试合计（本轮实测）：Contracts 93、Rpc.Protocol 20、DesktopConnection 80、DesktopService 117、
+CapabilityBroker 74、CapabilityBroker.AspNetCore 26 = **410**；探针 47/47。
 ## 2026-10-01：`shell.clipboard` wire 契约 + 请求联合结构收尾（第 38 轮，步骤 2/3）
 
 - proto：`ClipboardReadCommand`（payload 21，含 `max_characters`）+ `ClipboardOutcome`（outcome 22：text/truncated）；
