@@ -118,7 +118,8 @@
   <rect x="615" y="800" width="545" height="150" rx="6" class="card"/>
   <text x="635" y="826" class="s lb">层次（elevation）</text>
   <text x="635" y="848" class="mono">card: 0 1px 2px rgba(16,24,40,.06)</text>
-  <text x="635" y="870" class="mono">hover: 0 4px 12px rgba(16,24,40,.10) + translateY(-1px)</text>
+  <text x="635" y="870" class="mono">hover: translateY(-1px) only -- shadow stays static</text>
+  <text x="635" y="886" class="anno">(red line 2 forbids animating box-shadow)</text>
   <text x="635" y="896" class="s lb">密度反转</text>
   <text x="635" y="918" class="anno">首屏「一眼」：图形大、留白多、文字少</text>
   <text x="635" y="936" class="anno">细节按需：hover tooltip / 展开 L2 证据层</text>
