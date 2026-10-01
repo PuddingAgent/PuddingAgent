@@ -1,3 +1,19 @@
+## 2026-10-01：`webview.page_state` 接通 wire payload（切片 D 前置）
+
+`webview.page_state` 此前只有领域 DTO 与只读直连 API，没有命令 payload，因此 Core 无法经能力通道确认
+「导航后页面到了哪一版」。本轮把它补成完整往返：
+
+- proto（`7736eb6`）：`GetPageStateCommand` 成为 `CapabilityCommand.payload` 第 4 个白名单分支（13）；
+  `PageStateOutcome { url, page_version, readiness }` 成为 `OperationResult.outcome` 第 5 个分支（14）。
+- readiness 用**字符串线名**（`unknown/loading/interactive/complete/failed`）而不是枚举：Core 可在不重新发版
+  的前提下识别 Desktop 新增状态；未知线名在映射层折叠为 `unknown`（只读观测 fail soft，不让结果失败）。
+- Contracts：能力联合增加 `ForPageState` / `FromPageState`（四选一 / 五选一，构造期仍拒绝歧义）。
+- DesktopConnection：命令解码要求能力与 payload 一致（`page_state` 带 `navigate` payload ⇒ `invalid_request`）、
+  目标缺失 ⇒ `invalid_target`；结果编码走 `PageStateOutcome`。
+- DesktopService：命令路径与只读直连 API 共用同一套目标/可信级别/版本/竞态校验，再经 UI 调度落到 surface。
+- 验证：ContractsTests **62/62**、Rpc.ProtocolTests **18/18**、DesktopConnectionTests **80/80**、
+  DesktopServiceTests **70/70**；真实端点探针 **15/15**（named pipe 与 loopback h2c 各做一次 page_state 往返）。
+
 ## 2026-10-01：DesktopService（切片 C：准入/竞态/UI 线程边界）
 
 新增 `Source/Pudding.DesktopService/`：Desktop 侧能力服务，把「目标校验 → 准入 → UI 调度 → 竞态复检 → 终态映射」收口到一个**不碰任何 UI 类型**的组件。

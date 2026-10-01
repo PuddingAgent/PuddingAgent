@@ -45,8 +45,8 @@
 
 - **交互类能力（对话框/Picker）的单窗口互斥随切片 E 落地**：本切片这两个能力还没有命令 payload，
   实现互斥门会得到无法端到端验证的代码（违反「能编译 ≠ 已测试」），故先不做。
-- **`webview.page_state` 没有 wire 命令 payload**：作为只读直连 API 提供（`GetPageStateAsync`），
-  UI 侧门面直接调用；补 payload 属于切片 D。
+- **`webview.page_state` 已有 wire payload**（`get_page_state` 命令 + `page_state` 结果，2026-10-01），
+  命令路径与只读直连 API（`GetPageStateAsync`）共用同一套校验与调度。
 - **WinUI `DispatcherQueue` 适配器**在 `Source/PuddingDesktop.CapabilityHost`（只引用 Contracts、无独立可测逻辑，
   契约由本组件的假调度器测试覆盖）；在 PuddingDesktop 里构造它并装配宿主属于切片 C-3/D。
 

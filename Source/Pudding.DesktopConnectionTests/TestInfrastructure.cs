@@ -320,7 +320,7 @@ internal sealed class FakeExecutor : IDesktopCapabilityExecutor
     private readonly ConcurrentQueue<ExecutorCall> _calls = new();
 
     public FakeExecutor(Func<ExecutorCall, CancellationToken, Task<DesktopCapabilityResponse>>? handler = null) =>
-        _handler = handler ?? (static (call, _) => Task.FromResult(DefaultResponse(call.Capability)));
+        _handler = handler ?? (static (call, _) => Task.FromResult(DefaultResponse(call.Capability, call.Request)));
 
     public IReadOnlyList<ExecutorCall> Calls => _calls.ToArray();
 
@@ -340,7 +340,8 @@ internal sealed class FakeExecutor : IDesktopCapabilityExecutor
     public static DesktopCapabilityDescriptor Descriptor(DesktopCapability capability) =>
         DesktopCapabilities.All.Single(descriptor => descriptor.Capability == capability);
 
-    public static DesktopCapabilityResponse DefaultResponse(DesktopCapabilityDescriptor capability) =>
+    public static DesktopCapabilityResponse DefaultResponse(
+        DesktopCapabilityDescriptor capability, DesktopCapabilityRequest? request = null) =>
         capability.Capability switch
         {
             DesktopCapability.WebViewNavigate => DesktopCapabilityResponse.FromNavigate(
@@ -354,6 +355,13 @@ internal sealed class FakeExecutor : IDesktopCapabilityExecutor
 
             DesktopCapability.ShellNotification => DesktopCapabilityResponse.FromNotification(
                 new DesktopNotificationResult(true, "n-1")),
+
+            DesktopCapability.WebViewPageState => DesktopCapabilityResponse.FromPageState(
+                new DesktopPageState(
+                    request?.Target ?? new DesktopPageTarget("ctx-1", "page-1"),
+                    new Uri("https://example.com/state"),
+                    DesktopPageVersion.Require(3),
+                    Pudding.Contracts.Desktop.DesktopPageReadiness.Complete)),
 
             _ => DesktopCapabilityResponse.Failure(DesktopCapabilityError.UnsupportedCapability(capability.Name)),
         };
@@ -411,7 +419,10 @@ internal sealed class RecordingAuditSink : IDesktopCapabilityAuditSink
 internal sealed class HarnessOptions
 {
     public DesktopCapability Declared { get; set; } =
-        DesktopCapability.WebViewNavigate | DesktopCapability.WebViewExecuteJavascript | DesktopCapability.ShellNotification;
+        DesktopCapability.WebViewNavigate
+        | DesktopCapability.WebViewExecuteJavascript
+        | DesktopCapability.WebViewPageState
+        | DesktopCapability.ShellNotification;
 
     public DesktopCapability? Granted { get; set; }
 
@@ -673,8 +684,31 @@ internal static class Frames
             },
         };
 
-    public static Proto.CoreFrame NotificationCommand(
+    public static Proto.CoreFrame PageStateCommand(
         string operationId,
+        ulong generation = 1,
+        string contextId = "ctx-1",
+        string pageId = "page-1",
+        DateTimeOffset? deadline = null,
+        bool includeTarget = true) =>
+        new()
+        {
+            Command = new Proto.CapabilityCommand
+            {
+                OperationId = operationId,
+                Generation = generation,
+                Capability = "webview.page_state",
+                Deadline = ProtoTimestamp(deadline ?? DateTimeOffset.UtcNow.AddSeconds(30)),
+                GetPageState = new Proto.GetPageStateCommand
+                {
+                    Target = includeTarget
+                        ? new Proto.CommandTarget { ContextId = contextId, PageId = pageId }
+                        : null,
+                },
+            },
+        };
+
+    public static Proto.CoreFrame NotificationCommand(        string operationId,
         string title = "标题",
         string message = "内容",
         Proto.NotificationPriority priority = Proto.NotificationPriority.High,

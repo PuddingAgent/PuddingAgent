@@ -66,6 +66,7 @@ internal static class Program
         ProcessInstanceId = new DesktopProcessInstanceId($"probe-{Environment.ProcessId}"),
         SupportedCapabilities = DesktopCapability.WebViewNavigate
             | DesktopCapability.WebViewExecuteJavascript
+            | DesktopCapability.WebViewPageState
             | DesktopCapability.ShellNotification,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
@@ -140,6 +141,22 @@ internal static class Program
             $"{label}-navigate",
             $"命令→结果往返 {stopwatch.Elapsed.TotalMilliseconds:F1} ms：{result.Navigate.CurrentUrl} "
             + $"（disposition={result.Navigate.Disposition}, generation={result.Generation}）");
+
+        // 只读页面状态：Core 用它确认导航结果与 PageVersion，再决定后续交互。
+        var stateOperationId = $"probe-{label}-page-state";
+        service.Enqueue(ProbeFrames.PageState(stateOperationId, (ulong)connection.Generation.Value));
+        var state = await service.WaitForResultAsync(stateOperationId, StepTimeout);
+
+        if (state.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.PageState)
+        {
+            report.Pass(
+                $"{label}-page-state",
+                $"page_state → {state.PageState.Url}（version={state.PageState.PageVersion}, readiness={state.PageState.Readiness}）");
+        }
+        else
+        {
+            report.Fail($"{label}-page-state", $"期望 page_state 结果，实际 {state.OutcomeCase}/{state.Error?.Code}");
+        }
     }
 
     private static async Task RunPayloadSizesAsync(
@@ -254,6 +271,19 @@ internal static class ProbeFrames
 
     public static Proto.CoreFrame HangingJavascript(string operationId, ulong generation) =>
         Javascript(operationId, generation, 1024, "hang();");
+
+    public static Proto.CoreFrame PageState(string operationId, ulong generation) =>
+        Command(new Proto.CapabilityCommand
+        {
+            OperationId = operationId,
+            Generation = generation,
+            Capability = "webview.page_state",
+            Deadline = Deadline(),
+            GetPageState = new Proto.GetPageStateCommand
+            {
+                Target = new Proto.CommandTarget { ContextId = "ctx-probe", PageId = "page-probe" },
+            },
+        });
 
     public static Proto.CoreFrame Cancel(string operationId, ulong generation) =>
         new()

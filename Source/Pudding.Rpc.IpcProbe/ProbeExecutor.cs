@@ -25,6 +25,13 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
             DesktopCapability.ShellNotification => Task.FromResult(DesktopCapabilityResponse.FromNotification(
                 new DesktopNotificationResult(true, "probe-notification"))),
 
+            DesktopCapability.WebViewPageState => Task.FromResult(DesktopCapabilityResponse.FromPageState(
+                new DesktopPageState(
+                    request.PageState ?? new DesktopPageTarget("ctx-probe", "page-probe"),
+                    new Uri("https://example.com/probe-state"),
+                    DesktopPageVersion.Require(5),
+                    DesktopPageReadiness.Complete))),
+
             _ => Task.FromResult(DesktopCapabilityResponse.Failure(
                 DesktopCapabilityError.UnsupportedCapability(capability.Name))),
         };

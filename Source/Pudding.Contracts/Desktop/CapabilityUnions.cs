@@ -11,11 +11,13 @@ public sealed record DesktopCapabilityRequest
     private DesktopCapabilityRequest(
         NavigateRequest? navigate,
         JavascriptRequest? javascript,
-        DesktopNotificationRequest? notification)
+        DesktopNotificationRequest? notification,
+        DesktopPageTarget? pageState)
     {
         Navigate = navigate;
         Javascript = javascript;
         Notification = notification;
+        PageState = pageState;
     }
 
     public NavigateRequest? Navigate { get; }
@@ -24,19 +26,25 @@ public sealed record DesktopCapabilityRequest
 
     public DesktopNotificationRequest? Notification { get; }
 
+    /// <summary>只读页面状态查询的目标（该能力不需要其它参数）。</summary>
+    public DesktopPageTarget? PageState { get; }
+
     public static DesktopCapabilityRequest ForNavigate(NavigateRequest request) =>
-        new(request ?? throw new ArgumentNullException(nameof(request)), null, null);
+        new(request ?? throw new ArgumentNullException(nameof(request)), null, null, null);
 
     public static DesktopCapabilityRequest ForJavascript(JavascriptRequest request) =>
-        new(null, request ?? throw new ArgumentNullException(nameof(request)), null);
+        new(null, request ?? throw new ArgumentNullException(nameof(request)), null, null);
 
     public static DesktopCapabilityRequest ForNotification(DesktopNotificationRequest request) =>
-        new(null, null, request ?? throw new ArgumentNullException(nameof(request)));
+        new(null, null, request ?? throw new ArgumentNullException(nameof(request)), null);
+
+    public static DesktopCapabilityRequest ForPageState(DesktopPageTarget target) =>
+        new(null, null, null, target ?? throw new ArgumentNullException(nameof(target)));
 
     /// <summary>页面目标；通知类能力没有页面目标，返回 <c>null</c>。</summary>
-    public DesktopPageTarget? Target => Navigate?.Target ?? Javascript?.Target;
+    public DesktopPageTarget? Target => Navigate?.Target ?? Javascript?.Target ?? PageState;
 
-    /// <summary>期望页面版本；无页面目标时为 <see cref="DesktopPageVersion.Unknown"/>。</summary>
+    /// <summary>期望页面版本；无页面目标或只读查询时为 <see cref="DesktopPageVersion.Unknown"/>。</summary>
     public DesktopPageVersion ExpectedPageVersion =>
         Navigate?.ExpectedPageVersion ?? Javascript?.ExpectedPageVersion ?? DesktopPageVersion.Unknown;
 
@@ -44,6 +52,7 @@ public sealed record DesktopCapabilityRequest
         Navigate is not null ? $"navigate {Navigate.Url} @{Navigate.Target}"
         : Javascript is not null ? $"execute_javascript @{Javascript.Target} ({Javascript.Script.Length} chars)"
         : Notification is not null ? "notification"
+        : PageState is not null ? $"page_state @{PageState}"
         : "empty";
 }
 
@@ -57,9 +66,13 @@ public sealed record DesktopCapabilityResponse
         NavigateResult? navigate,
         JavascriptResult? javascript,
         DesktopNotificationResult? notification,
+        DesktopPageState? pageState,
         DesktopCapabilityError? error)
     {
-        var payloadCount = (navigate is null ? 0 : 1) + (javascript is null ? 0 : 1) + (notification is null ? 0 : 1);
+        var payloadCount = (navigate is null ? 0 : 1)
+            + (javascript is null ? 0 : 1)
+            + (notification is null ? 0 : 1)
+            + (pageState is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -69,6 +82,7 @@ public sealed record DesktopCapabilityResponse
         Navigate = navigate;
         Javascript = javascript;
         Notification = notification;
+        PageState = pageState;
         Error = error;
     }
 
@@ -78,26 +92,32 @@ public sealed record DesktopCapabilityResponse
 
     public DesktopNotificationResult? Notification { get; }
 
+    public DesktopPageState? PageState { get; }
+
     public DesktopCapabilityError? Error { get; }
 
     public bool IsFailure => Error is not null;
 
     public static DesktopCapabilityResponse FromNavigate(NavigateResult result) =>
-        new(result ?? throw new ArgumentNullException(nameof(result)), null, null, null);
+        new(result ?? throw new ArgumentNullException(nameof(result)), null, null, null, null);
 
     public static DesktopCapabilityResponse FromJavascript(JavascriptResult result) =>
-        new(null, result ?? throw new ArgumentNullException(nameof(result)), null, null);
+        new(null, result ?? throw new ArgumentNullException(nameof(result)), null, null, null);
 
     public static DesktopCapabilityResponse FromNotification(DesktopNotificationResult result) =>
-        new(null, null, result ?? throw new ArgumentNullException(nameof(result)), null);
+        new(null, null, result ?? throw new ArgumentNullException(nameof(result)), null, null);
+
+    public static DesktopCapabilityResponse FromPageState(DesktopPageState state) =>
+        new(null, null, null, state ?? throw new ArgumentNullException(nameof(state)), null);
 
     public static DesktopCapabilityResponse Failure(DesktopCapabilityError error) =>
-        new(null, null, null, error ?? throw new ArgumentNullException(nameof(error)));
+        new(null, null, null, null, error ?? throw new ArgumentNullException(nameof(error)));
 
     public override string ToString() =>
         Error is not null ? $"failure({Error.WireCode})"
         : Navigate is not null ? $"navigate({Navigate.Disposition})"
         : Javascript is not null ? $"javascript({Javascript.Kind})"
         : Notification is not null ? $"notification(shown={Notification.Shown})"
+        : PageState is not null ? $"page_state({PageState.Readiness})"
         : "empty";
 }

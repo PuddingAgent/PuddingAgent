@@ -163,6 +163,23 @@ internal static class CoreFrameMapping
                         maxResultBytes)));
             }
 
+            case DesktopCapability.WebViewPageState:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetPageState)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var target = DecodeTarget(command.GetPageState.Target);
+                if (target is null)
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                        DesktopCapabilityError.InvalidTarget("webview.page_state requires an explicit context_id/page_id target"));
+                }
+
+                return CapabilityResult<DesktopCapabilityRequest>.Success(DesktopCapabilityRequest.ForPageState(target));
+            }
+
             case DesktopCapability.ShellNotification:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.ShowNotification)
@@ -188,7 +205,7 @@ internal static class CoreFrameMapping
             }
 
             default:
-                // 目录里存在但本切片尚无 payload 的能力（page_state 只读、dialog/picker/clipboard 属切片 E）。
+                // 目录里存在但本切片尚无 payload 的能力（dialog/picker/clipboard 属切片 E）。
                 return CapabilityResult<DesktopCapabilityRequest>.Failure(
                     DesktopCapabilityError.UnsupportedCapability(descriptor.Name));
         }
@@ -348,6 +365,15 @@ internal static class DesktopFrameMapping
                     };
                     break;
 
+                case DesktopCapability.WebViewPageState when response.PageState is { } pageState:
+                    result.PageState = new Proto.PageStateOutcome
+                    {
+                        Url = pageState.Url?.AbsoluteUri ?? string.Empty,
+                        PageVersion = pageState.Version.Value,
+                        Readiness = PageReadinessWire.NameOf(pageState.Readiness),
+                    };
+                    break;
+
                 default:
                     result.Error = ToWire(DesktopCapabilityError.Internal(
                         "executor returned a payload that does not match the commanded capability"));
@@ -386,9 +412,34 @@ internal static class DesktopFrameMapping
     };
 }
 
-internal static class WireText
+/// <summary>
+/// 页面就绪度的线名（真源在本文件，快照由映射测试断言）：
+/// 用字符串而不是枚举，便于 Core 在不重新发版的前提下识别 Desktop 新增的状态。
+/// 未知线名折叠为 <see cref="DesktopPageReadiness.Unknown"/>（只读观测，fail soft）。
+/// </summary>
+internal static class PageReadinessWire
 {
-    public static string Truncate(string? value, int maxLength)
+    public static string NameOf(DesktopPageReadiness readiness) => readiness switch
+    {
+        DesktopPageReadiness.Loading => "loading",
+        DesktopPageReadiness.Interactive => "interactive",
+        DesktopPageReadiness.Complete => "complete",
+        DesktopPageReadiness.Failed => "failed",
+        _ => "unknown",
+    };
+
+    public static DesktopPageReadiness Parse(string? name) => name switch
+    {
+        "loading" => DesktopPageReadiness.Loading,
+        "interactive" => DesktopPageReadiness.Interactive,
+        "complete" => DesktopPageReadiness.Complete,
+        "failed" => DesktopPageReadiness.Failed,
+        _ => DesktopPageReadiness.Unknown,
+    };
+}
+
+internal static class WireText
+{    public static string Truncate(string? value, int maxLength)
     {
         if (string.IsNullOrEmpty(value))
         {

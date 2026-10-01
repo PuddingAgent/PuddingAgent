@@ -153,6 +153,71 @@ public sealed class MappingRoundTripTests
     }
 
     [Fact]
+    public void DecodePageStateCommand_ProducesTargetOnlyRequest()
+    {
+        var decoded = CoreFrameMapping.Decode(Frames.PageStateCommand("op-state").Command, DesktopId);
+
+        Assert.True(decoded.IsSuccess);
+        Assert.NotNull(decoded.Value.Request.PageState);
+        Assert.Equal("ctx-1/page-1", decoded.Value.Request.Target!.Key);
+        Assert.Null(decoded.Value.Request.Navigate);
+        Assert.False(decoded.Value.Request.ExpectedPageVersion.IsKnown);
+
+        Assert.Equal(
+            DesktopCapabilityErrorCode.InvalidTarget,
+            CoreFrameMapping.Decode(Frames.PageStateCommand("op-1", includeTarget: false).Command, DesktopId).Error.Code);
+    }
+
+    [Fact]
+    public void Decode_CapabilityAndPayloadMustAgree()
+    {
+        // page_state 能力 + navigate payload ⇒ 拒绝（白名单判别联合，不做「猜意图」）。
+        var mismatch = Frames.NavigateCommand("op-1").Command;
+        mismatch.Capability = "webview.page_state";
+
+        Assert.Equal(
+            DesktopCapabilityErrorCode.InvalidRequest,
+            CoreFrameMapping.Decode(mismatch, DesktopId).Error.Code);
+    }
+
+    [Fact]
+    public void EncodePageStateResult_UsesPageStateOutcome()
+    {
+        var frame = DesktopFrameMapping.Result(
+            new OperationId("op-state"),
+            ConnectionGeneration.Require(2),
+            FakeExecutor.Descriptor(DesktopCapability.WebViewPageState),
+            DesktopCapabilityResponse.FromPageState(new DesktopPageState(
+                new DesktopPageTarget("ctx-1", "page-1"),
+                new Uri("https://example.com/state"),
+                DesktopPageVersion.Require(12),
+                DesktopPageReadiness.Interactive)));
+
+        Assert.Equal(Proto.OperationResult.OutcomeOneofCase.PageState, frame.Result.OutcomeCase);
+        Assert.Equal("https://example.com/state", frame.Result.PageState.Url);
+        Assert.Equal(12, frame.Result.PageState.PageVersion);
+        Assert.Equal("interactive", frame.Result.PageState.Readiness);
+    }
+
+    [Fact]
+    public void PageReadinessWire_RoundTripsAndFoldsUnknownNames()
+    {
+        var names = new List<string>();
+        foreach (var readiness in Enum.GetValues<DesktopPageReadiness>())
+        {
+            var name = PageReadinessWire.NameOf(readiness);
+            names.Add(name);
+            Assert.Equal(readiness, PageReadinessWire.Parse(name));
+        }
+
+        Assert.Equal(["unknown", "loading", "interactive", "complete", "failed"], names);
+
+        // 只读观测 fail soft：Core 不认识的新状态折叠为 unknown，而不是让结果失败。
+        Assert.Equal(DesktopPageReadiness.Unknown, PageReadinessWire.Parse("hibernated"));
+        Assert.Equal(DesktopPageReadiness.Unknown, PageReadinessWire.Parse(null));
+    }
+
+    [Fact]
     public void Encode_Result_UsesTheCommandedCapabilityBranch()
     {
         var navigate = DesktopFrameMapping.Result(

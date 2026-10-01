@@ -159,8 +159,29 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.WebViewPageState:
+            {
+                if (request.PageState is not { } pageTarget)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("page_state request payload is missing"));
+                }
+
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    pageTarget,
+                    DesktopPageVersion.Unknown,
+                    context,
+                    token => _surface.GetPageStateAsync(context, pageTarget, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromPageState(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             default:
-                // 目录里已登记但本切片尚无命令 payload 的能力（webview.page_state 属只读直连 API）。
+                // 目录里已登记但本切片尚无命令 payload 的能力（dialog/picker/clipboard 属切片 E）。
                 return DesktopCapabilityResponse.Failure(
                     DesktopCapabilityError.UnsupportedCapability(capability.Name));
         }

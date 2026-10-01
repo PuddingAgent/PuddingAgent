@@ -19,7 +19,7 @@ public sealed class HandshakeTests
         Assert.Equal((uint)DesktopProtocolVersion.Minimum, hello.SupportedVersions.Minimum);
         Assert.Equal((uint)DesktopProtocolVersion.Current, hello.SupportedVersions.Maximum);
         Assert.Equal(
-            ["webview.navigate", "webview.execute_javascript", "shell.notification"],
+            ["webview.navigate", "webview.execute_javascript", "webview.page_state", "shell.notification"],
             hello.Capabilities.Select(capability => capability.Capability).ToArray());
 
         Assert.Equal(DesktopConnectionState.Ready, harness.Connection.State);
@@ -27,7 +27,10 @@ public sealed class HandshakeTests
         Assert.Equal("conn-1", harness.Connection.ConnectionId);
         Assert.Equal(1, harness.Connection.NegotiatedVersion);
         Assert.Equal(
-            DesktopCapability.WebViewNavigate | DesktopCapability.WebViewExecuteJavascript | DesktopCapability.ShellNotification,
+            DesktopCapability.WebViewNavigate
+                | DesktopCapability.WebViewExecuteJavascript
+                | DesktopCapability.WebViewPageState
+                | DesktopCapability.ShellNotification,
             harness.Connection.NegotiatedCapabilities);
     }
 

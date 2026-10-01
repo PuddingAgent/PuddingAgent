@@ -24,8 +24,16 @@
 | `DesktopCapabilities` | **能力目录唯一真源**：线名（`webview.navigate` 等）、版本、Kind、Traits；`DeclareFor` 生成握手声明；`TryGetByName` / `NameOf` / `Enumerate`。目录 ⊇ 当前已实现能力：未实现的能力**不声明**即不会被 Core 授予 |
 | `DesktopCapabilityNegotiation.Validate` | 握手协商：Core 只能授予 Desktop 已声明且版本不高于声明的能力；越权授予 ⇒ 协议错误且**不做部分接受**（协商失败不产生任何可用能力） |
 
-> 本切片（A+B）只有 `webview.navigate` / `webview.execute_javascript` / `webview.page_state` / `shell.notification`
-> 具备类型化 DTO 与 proto payload；其余条目是**预留身份**，在切片 E 逐能力补齐 payload 后才可能被声明。
+> 已接通 wire payload 的能力：`webview.navigate` / `webview.execute_javascript` / `webview.page_state` /
+> `shell.notification`（2026-10-01 起 `page_state` 也有命令 payload：proto 的 `GetPageStateCommand`）。
+> 其余条目是**预留身份**，在切片 E 逐能力补齐 payload 后才可能被声明。
+
+## 能力请求/结果判别联合（`Desktop/`）
+
+| 成员 | 用途 |
+|------|------|
+| `DesktopCapabilityRequest` | 四选一：`ForNavigate` / `ForJavascript` / `ForNotification` / `ForPageState`；`Target` 从分支取（通知类为 `null`），`ExpectedPageVersion` 只对前两者有意义 |
+| `DesktopCapabilityResponse` | 五选一（四类类型化输出 + `Failure`）；构造期拒绝「成功 + 错误」歧义。存在理由：让执行器接缝（`IDesktopCapabilityExecutor`）与 UI 实现**都不依赖 proto** |
 
 ## 错误语义（`CapabilityErrors.cs`）
 

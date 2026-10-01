@@ -79,6 +79,36 @@ public sealed class CapabilityUnionTests
     }
 
     [Fact]
+    public void Request_PageStateVariant_CarriesOnlyATarget()
+    {
+        var request = DesktopCapabilityRequest.ForPageState(Target);
+
+        Assert.Null(request.Navigate);
+        Assert.Null(request.Javascript);
+        Assert.Null(request.Notification);
+        Assert.Equal(Target, request.PageState);
+        Assert.Equal(Target, request.Target);
+        Assert.False(request.ExpectedPageVersion.IsKnown);
+        Assert.Contains("page_state", request.ToString(), StringComparison.Ordinal);
+        Assert.Throws<ArgumentNullException>(() => DesktopCapabilityRequest.ForPageState(null!));
+    }
+
+    [Fact]
+    public void Response_PageStateVariant_IsExclusiveAndPrintable()
+    {
+        var response = DesktopCapabilityResponse.FromPageState(
+            new DesktopPageState(Target, new Uri("https://example.com/a"), DesktopPageVersion.Require(5), DesktopPageReadiness.Complete));
+
+        Assert.False(response.IsFailure);
+        Assert.Equal(DesktopPageReadiness.Complete, response.PageState!.Readiness);
+        Assert.Null(response.Navigate);
+        Assert.Null(response.Javascript);
+        Assert.Null(response.Notification);
+        Assert.Equal("page_state(Complete)", response.ToString());
+        Assert.Throws<ArgumentNullException>(() => DesktopCapabilityResponse.FromPageState(null!));
+    }
+
+    [Fact]
     public void ToString_IsPayloadFree()
     {
         var response = DesktopCapabilityResponse.Failure(DesktopCapabilityError.Internal("boom"));

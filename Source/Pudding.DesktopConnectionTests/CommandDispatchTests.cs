@@ -9,6 +9,39 @@ namespace DesktopConnectionTests;
 public sealed class CommandDispatchTests
 {
     [Fact]
+    public async Task PageStateCommand_ReturnsPageStateOutcome()
+    {
+        await using var harness = await ConnectionHarness.StartAsync();
+
+        harness.Stream.Send(Frames.PageStateCommand("op-state"));
+        var result = await harness.Stream.WaitForResultAsync("op-state");
+
+        Assert.Equal(Proto.OperationResult.OutcomeOneofCase.PageState, result.OutcomeCase);
+        Assert.Equal("https://example.com/state", result.PageState.Url);
+        Assert.Equal(3, result.PageState.PageVersion);
+        Assert.Equal("complete", result.PageState.Readiness);
+
+        var call = Assert.Single(harness.Executor.Calls);
+        Assert.Equal("ctx-1/page-1", call.Request.Target!.Key);
+
+        var audit = await harness.Audit.WaitForAsync(new OperationId("op-state"));
+        Assert.Equal(DesktopCapabilityOutcome.Succeeded, audit.Outcome);
+        Assert.Equal("webview.page_state", audit.Capability);
+    }
+
+    [Fact]
+    public async Task PageStateCommand_WithoutTarget_IsRejectedAsInvalidTarget()
+    {
+        await using var harness = await ConnectionHarness.StartAsync();
+
+        harness.Stream.Send(Frames.PageStateCommand("op-state", includeTarget: false));
+        var result = await harness.Stream.WaitForResultAsync("op-state");
+
+        Assert.Equal("invalid_target", result.Error.Code);
+        Assert.Equal(0, harness.Executor.CallCount);
+    }
+
+    [Fact]
     public async Task NavigateCommand_ProducesTypedResultAndAudit()
     {
         await using var harness = await ConnectionHarness.StartAsync();

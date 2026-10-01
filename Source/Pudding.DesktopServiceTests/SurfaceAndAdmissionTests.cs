@@ -152,13 +152,28 @@ public sealed class SurfaceAndAdmissionTests
     }
 
     [Fact]
-    public async Task PageStateCapabilityWithoutPayload_IsRejectedAsUnsupported()
+    public async Task PageStateCommand_ReturnsPageStateThroughTheDispatcher()
+    {
+        var harness = ServiceHarness.Create(hasThreadAccess: true);
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.WebViewPageState,
+            DesktopCapabilityRequest.ForPageState(ServiceHarness.AgentPage));
+
+        Assert.NotNull(response.PageState);
+        Assert.Equal(DesktopPageReadiness.Complete, response.PageState.Readiness);
+        Assert.Equal(1, harness.Surface.PageStateCount);
+    }
+
+    [Fact]
+    public async Task PageStateCommand_WithoutItsPayload_IsRejectedAsInvalidRequest()
     {
         var harness = ServiceHarness.Create(hasThreadAccess: true);
 
         var response = await harness.ExecuteAsync(
             DesktopCapability.WebViewPageState, harness.NotificationRequest());
 
-        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, response.Error!.Code);
+        Assert.Equal(DesktopCapabilityErrorCode.InvalidRequest, response.Error!.Code);
+        Assert.Equal(0, harness.Surface.PageStateCount);
     }
 }
