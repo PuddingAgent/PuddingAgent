@@ -399,7 +399,9 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
           onBlur={handleBlur}
           placeholder={placeholder}
           disabled={disabled}
-          autoSize={{ minRows: 1, maxRows: 5 }}
+          // IMG08 / §7：草稿区两行起（原 1 行，输入区显得很紧凑），
+          // 最多八行后内部滚动
+          autoSize={{ minRows: 2, maxRows: 8 }}
           className={className}
           data-testid="chat-input"
         />

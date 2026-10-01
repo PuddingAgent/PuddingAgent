@@ -594,12 +594,19 @@ export const useComposerStyles = createStyles(() => ({
       '0 0 16px rgba(124,58,237,0.3), 0 0 40px rgba(124,58,237,0.1) !important' as any,
     animation: 'puddingComposerRecording 1.2s ease-in-out infinite',
   },
+  /** IMG08：控件可见前缀（「执行偏好：」「权限：」）。
+      只在名称上用 caption 色，数值本身仍走正文色，避免整行都变灰。 */
+  composerControlPrefix: {
+    color: 'var(--pudding-chat-text-caption)',
+    fontSize: 12,
+    fontWeight: 400,
+  },
   composerToolbar: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    minHeight: 34,
+    minHeight: 36,
   },
   composerToolbarLeft: {
     display: 'flex',
@@ -613,13 +620,17 @@ export const useComposerStyles = createStyles(() => ({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 6,
+    // IMG08/§2：工具行允许换行 —— 加上「执行偏好：」「权限：」可见前缀后，
+    // 窄窗口宁可换行也不能把这一行挤出页面横向滚动。
+    flexWrap: 'wrap' as const,
+    rowGap: 6,
     flexShrink: 0,
   },
   composerToolbarButton: {
-    width: 34,
-    minWidth: 34,
-    height: 34,
-    minHeight: 34,
+    width: 36,
+    minWidth: 36,
+    height: 36,
+    minHeight: 36,
     padding: 0,
     border: 'none',
     borderRadius: '50%',
@@ -674,7 +685,7 @@ export const useComposerStyles = createStyles(() => ({
   },
   composerPreferenceButton: {
     minWidth: 58,
-    height: 34,
+    height: 36,
     padding: '0 9px',
     border: 'none',
     borderRadius: 17,
@@ -722,7 +733,7 @@ export const useComposerStyles = createStyles(() => ({
   /* P1#4：权限模式选择器 */
   composerPermissionModeButton: {
     minWidth: 72,
-    height: 34,
+    height: 36,
     padding: '0 9px',
     border: 'none',
     borderRadius: 17,
@@ -799,9 +810,9 @@ export const useComposerStyles = createStyles(() => ({
     opacity: 0.62,
   },
   composerSendButton: {
-    minWidth: 34,
-    height: 34,
-    minHeight: 34,
+    minWidth: 36,
+    height: 36,
+    minHeight: 36,
     padding: 0,
     border: 'none',
     borderRadius: '50%',
@@ -822,8 +833,20 @@ export const useComposerStyles = createStyles(() => ({
     },
     '&:disabled': {
       cursor: 'not-allowed' as const,
-      opacity: 0.36,
+      // IMG08：禁用态不该只是「把主色按钮调淡」—— 调淡后仍像可点的主操作。
+      // 改成中性表面 + caption 文字，与实色 ready 态在颜色上明确区分
+      // （禁用原因由外层 Tooltip 说明：输入内容后 / 发送）。
+      background: 'var(--pudding-chat-surface-muted)',
+      color: 'var(--pudding-chat-text-caption)',
+      opacity: 1,
       transform: 'none',
+    },
+    // §3：触屏点击区 44（鼠标环境保持 36，避免工具行过高）
+    '@media (hover: none)': {
+      width: 44,
+      minWidth: 44,
+      height: 44,
+      minHeight: 44,
     },
     // 运行中有草稿：胶囊形态承载“加入队列”文字，动作语义不依赖图标或 hover。
     '&[data-queued="true"]': {
@@ -844,10 +867,10 @@ export const useComposerStyles = createStyles(() => ({
   },
   // “停止当前执行”独立按钮：与发送/排队按钮并排、位置稳定，不与发送共用控件。
   composerStopButton: {
-    width: 34,
-    minWidth: 34,
-    height: 34,
-    minHeight: 34,
+    width: 36,
+    minWidth: 36,
+    height: 36,
+    minHeight: 36,
     padding: 0,
     border: 'none',
     borderRadius: '50%',

@@ -1164,8 +1164,10 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               <button
                 type="button"
                 className={styles.composerPreferenceButton}
-                aria-label="选择执行偏好"
+                aria-label={`执行偏好：${executionModeLabel}`}
               >
+                {/* IMG08：原按钮只有「自动」两个字，看不出这是什么设置 */}
+                <span className={styles.composerControlPrefix}>执行偏好：</span>
                 <span>{executionModeLabel}</span>
                 <DownOutlined />
               </button>

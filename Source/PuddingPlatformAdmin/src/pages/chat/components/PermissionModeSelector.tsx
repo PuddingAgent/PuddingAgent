@@ -97,6 +97,9 @@ const PermissionModeSelector: React.FC<PermissionModeSelectorProps> = ({
         data-testid="permission-mode-selector"
       >
         <SafetyOutlined />
+        {/* IMG08：光看「自动审批」不知道这是什么开关，补一个可见前缀。
+            aria-label 保持「权限模式：X」不变（既有测试与可访问名称依赖它）。 */}
+        <span className={styles.composerControlPrefix}>权限：</span>
         <span>{PERMISSION_MODE_LABELS[value]}</span>
         <DownOutlined />
       </button>
