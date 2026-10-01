@@ -643,11 +643,15 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 | SCROLL-001-SHELL | 代码已落地 | `6bf5b16` | Foundation `WorkbenchAppearance`（BCL-only）解析外观选择 → 生效配色 → 预绘制背景 ARGB，颜色对齐 Web `colorBgLayout`（浅 #F5F0E8 / 深 #0B1020）；`MainWindow` 以 `ApplyWorkbenchAppearance` 为唯一落点，启动恢复、下拉切换、`ActualThemeChanged`、WebView2 首次创建共用；WebView2 首帧前铺主题底色消除加载闪白；`PreferredColorScheme` 按选择设置且「跟随系统」映射为 `Auto`。新增 21 项 Foundation 单测。 |
 | SCROLL-001-QA | **未完成** | — | 未录制同窗口前后截图/trace，未登记 `Docs/Reports`。 |
 
-已获得的证据：
+已获得的证据（SCROLL-001 切片提交时的实测值；后续切片新增测试后的最新数字见 §13.7）：
 - `pnpm jest src/pages/chat` → 1115 passed / 3 failed；3 项均为语音相关测试（`InputArea`、`IntentConsole`），已在本轮改动前的 pristine 文件上复现，与本缺陷无关。
 - `pnpm run build` 通过，chat bundle budget ok：`sync=1379588 chat=343162 common=391269`。
 - `dotnet test Source/PuddingDesktop.FoundationTests` → 21 passed / 0 failed。
 - `dotnet build Source/PuddingDesktop/PuddingDesktop.csproj -t:Compile` → 0 错误。
+
+**splitter 与滚动节点核对**（§14.4 第 3 步、§14.3 第 1 步要求先核验再改）：
+- Shell splitter 已符合规范，**未改动**：`MainWindow.xaml` 的 `ToolSplitterLine` 是 1px 矩形、填充 `{ThemeResource CardStrokeColorDefaultBrush}`（主题边界色，非白色 Border）；`SplitterHandle.cs` 提供透明 6px 拖动命中区、`IsTabStop = true` 与 `SizeWestEast` 光标，保留 `OnSplitter*` 与 Foundation 分配算法。
+- Web 侧真实滚动节点：`MessageList.tsx` 的 `styles.messageList`（`overflowY:auto` + `scrollbarGutter:stable` + `overflowAnchor:none`，布局契约未动）。皮肤走全局 `::-webkit-scrollbar`，因此同时覆盖会话导航、输入 textarea、代码/表格横滚与弹层；弹层容器为 `getPuddingPopupContainer`（`triggerNode.parentElement ?? document.body`），位于应用树内，随主题与皮肤生效，未新增节点、未改 `overflow`。
 
 尚未获得、因而不能声称通过的证据：
 - **完整 Desktop 链接构建**：被运行中的 `PuddingDesktop`(PID 43484) 与 Visual Studio 的文件锁阻断（MSB3021/MSB3027 复制失败），非编译错误；需在进程外控制器关闭旧进程后重跑。
