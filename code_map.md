@@ -4,6 +4,18 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：交互槽位（单窗口同时最多一个对话框，第 41 轮）
+
+计划 §7 要求「单窗口同时最多一个对话框/Picker」。本轮先落**原语**（叶子级、零接口连锁）：
+
+- `DesktopInteractionState.TryEnterInteraction(owner)` / `ExitInteraction(owner)` / `InteractionOwner` / `IsInteractionActive`。
+- **第二个并发交互被拒绝，而不是排队**：排队会让用户面对"对话框序列"，并让取消语义变得不可判定
+  （到底取消了哪一个）；同一持有者重复进入也返回 false（调用方 bug，但不破坏既有状态）。
+- **只有持有者能释放**：非持有者调用被忽略并返回 false（fail safe，不让无关路径抢走或释放槽位）。
+- 与既有的"暂停/用户接管"两条轴相互独立（它们回答"能不能自动化"，槽位回答"此刻有没有人在被问"）。
+- 测试：DesktopService **121/121**（+4：唯一占用、仅持有者可释放、释放后可再占用、必须有持有者）。
+- **未做**：把槽位接进准入（需要 `shell.dialog` 的 payload 才能形成完整闭环）——届时
+  `RequiresUserInteraction` 的能力必须在进入前占用槽位、在终态释放，这条会由服务侧咽喉点强制。
 ## 2026-10-01：`shell.clipboard` 只读能力端到端（第 40 轮，切片 E 完成第 3 步）
 
 - 两端映射：Desktop 侧解码 `read_clipboard`（预算越界 ⇒ invalid_request）并在编码时按硬上限截断文本；

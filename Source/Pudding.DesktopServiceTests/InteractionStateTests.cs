@@ -1,6 +1,8 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 
+using Pudding.DesktopService;
+
 namespace DesktopServiceTests;
 
 /// <summary>暂停与用户接管：只读能力保持可用，变更类能力必须明确拒绝。</summary>
@@ -136,4 +138,64 @@ public sealed class InteractionStateTests
         Assert.Equal(DesktopCapabilityErrorCode.UserTakeover, response.Error!.Code);
         Assert.Equal(0, harness.Surface.NavigateCount);
     }
+
+/// <summary>交互槽位：单窗口同时最多一个对话框/Picker（第二个并发交互必须被拒绝，而不是排队）。</summary>
+public sealed class InteractionSlotTests
+{
+    [Fact]
+    public void OnlyOneInteractionCanBeActiveAtATime()
+    {
+        var state = new DesktopInteractionState();
+
+        Assert.False(state.IsInteractionActive);
+        Assert.True(state.TryEnterInteraction("dialog-1"));
+        Assert.True(state.IsInteractionActive);
+        Assert.Equal("dialog-1", state.InteractionOwner);
+
+        // 第二个并发交互被拒绝（排队会让"取消的是哪一个"变得不可判定）。
+        Assert.False(state.TryEnterInteraction("dialog-2"));
+        Assert.Equal("dialog-1", state.InteractionOwner);
+
+        // 同一持有者重复进入也算重复调用：不破坏既有状态。
+        Assert.False(state.TryEnterInteraction("dialog-1"));
+        Assert.Equal("dialog-1", state.InteractionOwner);
+    }
+
+    [Fact]
+    public void OnlyTheOwnerCanReleaseTheSlot()
+    {
+        var state = new DesktopInteractionState();
+        _ = state.TryEnterInteraction("dialog-1");
+
+        Assert.False(state.ExitInteraction("dialog-2"));
+        Assert.Equal("dialog-1", state.InteractionOwner);
+
+        Assert.True(state.ExitInteraction("dialog-1"));
+        Assert.False(state.IsInteractionActive);
+        Assert.Null(state.InteractionOwner);
+
+        // 已释放后再释放是空操作。
+        Assert.False(state.ExitInteraction("dialog-1"));
+    }
+
+    [Fact]
+    public void SlotCanBeTakenAgainAfterRelease()
+    {
+        var state = new DesktopInteractionState();
+        _ = state.TryEnterInteraction("dialog-1");
+        _ = state.ExitInteraction("dialog-1");
+
+        Assert.True(state.TryEnterInteraction("dialog-2"));
+        Assert.Equal("dialog-2", state.InteractionOwner);
+    }
+
+    [Fact]
+    public void SlotRequiresAnOwner()
+    {
+        var state = new DesktopInteractionState();
+
+        Assert.Throws<ArgumentException>(() => state.TryEnterInteraction("  "));
+        Assert.False(state.IsInteractionActive);
+    }
+}
 }
