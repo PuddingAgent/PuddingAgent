@@ -16,6 +16,21 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`tabs` 映射（第 57 轮）
+
+- 新增 `TabsAsync`：**变更类必须固定版本**——版本不符即返回 `page_version_mismatch`，
+  且**绝不执行动作**（否则切换/关闭的可能是另一个页面；测试断言 `BringToFront` 未被调用、无关闭记录）。
+- `activate` → `BringToFrontAsync`；`close` → `ClosePageAsync`；两者随后统一走 `GetContextsAsync`
+  取**剩余清单**，让调用方立刻知道"现在还有什么"，不必再查一次。
+- 活动页解析顺序：优先注册表的 `ActivePage`（Desktop 知道焦点），且它必须仍在剩余清单里；
+  否则回退到目标页状态。
+- **已知边界如实登记**：关闭**最后一个**页面后没有活动页，而 `DesktopTabsResult.Page` 目前不允许为空
+  ⇒ 回带被关闭页面**关闭前**的状态（`Remaining.IsEmpty` 已足以让调用方知道没有页面了）。
+  若产品真需要"关掉最后一个页面"，应把该字段改为可空（契约变更，需同步 wire 与探针）——不在此处擅自改契约。
+- 测试：新组件 **13/13**（+4：激活保留清单、版本不符拒绝且不执行、关闭移除并回带剩余、未知目标/未就绪）。
+- 测试基建教训：假实现放在别的测试类里是私有不可见的 ⇒ tabs 用**自包含**假实现；
+  且用 `Remove/Insert` 追加到文件末尾时**吞掉了上一个类的右花括号**（编译才暴露）——
+  追加类应改用"在最后一个 `}` 之前插入"并保留原括号。
 ## 2026-10-01：`page_state` 映射（第 56 轮）
 
 - 新增 `GetPageStateAsync`：目标不存在 ⇒ **`invalid_target`**（不是 internal，也不是 ui_unavailable）；

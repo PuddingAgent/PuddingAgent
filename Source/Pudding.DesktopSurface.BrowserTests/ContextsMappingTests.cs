@@ -393,4 +393,293 @@ public sealed class PageStateMappingTests
         public Task OpenDevToolsAsync(CancellationToken ct) => throw new NotSupportedException();
     }
 }
+
+}
+
+/// <summary>tabs 映射：变更类必须固定版本（版本不符即拒绝且**不执行动作**），操作后回带活动页与剩余清单。</summary>
+public sealed class TabsMappingTests
+{
+    private static readonly DesktopCallContext Call = new(
+        new DesktopInstanceId("desktop-1"),
+        new OperationId("op-1"),
+        DateTimeOffset.UtcNow.AddSeconds(30));
+
+    private static readonly DesktopPageTarget Target = new("ctx-1", "p-1");
+
+    [Fact]
+    public async Task ActivateBringsThePinnedPageToFrontAndKeepsTheContexts()
+    {
+        var runtime = Runtime(recordBringToFront: true);
+        var result = await Surface(runtime).TabsAsync(
+            Call, new BrowserTabsRequest(Target, DesktopTabAction.Activate, DesktopPageVersion.Require(7)), CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        Assert.False(result.Value.TabClosed);
+        Assert.Equal("p-1", result.Value.Page.Target.PageId);
+        Assert.Equal(7, result.Value.Page.Version.Value);
+        Assert.Single(result.Value.Remaining.Contexts);
+        Assert.Equal(2, result.Value.Remaining.PageCount);
+        Assert.True(runtime.Pages["ctx-1/p-1"].BroughtToFront);
+    }
+
+    [Fact]
+    public async Task AVersionsMismatchIsRejectedWithoutPerformingTheAction()
+    {
+        var runtime = Runtime(recordBringToFront: true);
+        var result = await Surface(runtime).TabsAsync(
+            Call, new BrowserTabsRequest(Target, DesktopTabAction.Activate, DesktopPageVersion.Require(6)), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, result.Error!.Code);
+        // 关键：版本不符时**绝不**执行动作（否则会切换/关闭另一个页面）。
+        Assert.False(runtime.Pages["ctx-1/p-1"].BroughtToFront);
+        Assert.Empty(runtime.ClosedPages);
+    }
+
+    [Fact]
+    public async Task CloseRemovesThePageAndReportsWhatRemains()
+    {
+        var runtime = Runtime();
+        var result = await Surface(runtime).TabsAsync(
+            Call, new BrowserTabsRequest(Target, DesktopTabAction.Close, DesktopPageVersion.Require(7)), CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        Assert.True(result.Value.TabClosed);
+        Assert.Contains("ctx-1/p-1", runtime.ClosedPages);
+        Assert.Equal(1, result.Value.Remaining.PageCount);
+    }
+
+    [Fact]
+    public async Task UnknownTargetsAndNotReadyRuntimeAreReportedAsSuch()
+    {
+        var runtime = Runtime();
+        var unknownContext = await Surface(runtime).TabsAsync(
+            Call,
+            new BrowserTabsRequest(new DesktopPageTarget("ctx-x", "p-1"), DesktopTabAction.Activate, DesktopPageVersion.Require(7)),
+            CancellationToken.None);
+        Assert.Equal(DesktopCapabilityErrorCode.InvalidTarget, unknownContext.Error!.Code);
+
+        runtime.State = BrowserRuntimeState.Starting;
+        var notReady = await Surface(runtime).TabsAsync(
+            Call, new BrowserTabsRequest(Target, DesktopTabAction.Activate, DesktopPageVersion.Require(7)), CancellationToken.None);
+        Assert.Equal(DesktopCapabilityErrorCode.UiUnavailable, notReady.Error!.Code);
+    }
+
+    private static BrowserRuntimeDesktopSurface Surface(TabsFakeRuntime runtime) =>
+        new(runtime, new TabsFakeTargets());
+
+    private static TabsFakeRuntime Runtime(bool recordBringToFront = false)
+    {
+        var runtime = new TabsFakeRuntime
+        {
+            Contexts =
+            {
+                new TabsFakeContext("ctx-1", "C:\\profile\\a",
+                    Info("p-1", "ctx-1", "https://example.test/a", 7),
+                    Info("p-2", "ctx-1", "https://example.test/b", 8)),
+            },
+        };
+        runtime.Pages["ctx-1/p-1"] = new TabsFakePage("p-1", "ctx-1", "https://example.test/a", 7)
+        {
+            RecordBringToFront = recordBringToFront,
+        };
+        runtime.Pages["ctx-1/p-2"] = new TabsFakePage("p-2", "ctx-1", "https://example.test/b", 8);
+        return runtime;
+    }
+
+    private static PageInfo Info(string pageId, string contextId, string url, long version) => new()
+    {
+        Id = new PageId(pageId),
+        ContextId = new BrowserContextId(contextId),
+        Title = pageId,
+        Url = url,
+        PageVersion = version,
+    };
+
+    private sealed class TabsFakeTargets : IDesktopBrowserTargetRegistry
+    {
+        public DesktopContextTrust TrustFor(string contextId) => DesktopContextTrust.AgentAuthorized;
+
+        public bool IsAgentTarget(string contextId, string pageId) => true;
+
+        public (string ContextId, string PageId)? ActivePage => null;
+    }
+
+    private sealed class TabsFakeRuntime : IBrowserRuntime
+    {
+        public BrowserRuntimeState State { get; set; } = BrowserRuntimeState.Ready;
+
+        public List<TabsFakeContext> Contexts { get; } = [];
+
+        public Dictionary<string, TabsFakePage> Pages { get; } = [];
+
+        public HashSet<string> ClosedPages { get; } = [];
+
+        public Task<IReadOnlyList<BrowserContextInfo>> ListContextsAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<BrowserContextInfo>>(Contexts.Select(c => c.Info).ToArray());
+
+        public Task<IBrowserContext?> GetContextAsync(BrowserContextId id, CancellationToken ct)
+        {
+            var context = Contexts.FirstOrDefault(c => c.Id.Value == id.Value);
+            if (context is not null)
+            {
+                context.Owner = this;
+            }
+
+            return Task.FromResult<IBrowserContext?>(context);
+        }
+
+        public Task<IBrowserContext> CreateContextAsync(BrowserContextOptions options, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task CloseContextAsync(BrowserContextId id, CancellationToken ct) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<BrowserEvent> WatchEventsAsync(BrowserEventFilter filter, CancellationToken ct) =>
+            AsyncEnumerable.Empty<BrowserEvent>();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class TabsFakeContext : IBrowserContext
+    {
+        private readonly List<PageInfo> _pages;
+
+        public TabsFakeContext(string id, string userDataDirectory, params PageInfo[] pages)
+        {
+            Id = new BrowserContextId(id);
+            _pages = [.. pages];
+            Info = new BrowserContextInfo
+            {
+                Id = Id,
+                UserDataDirectory = userDataDirectory,
+                PageCount = pages.Length,
+            };
+        }
+
+        public TabsFakeRuntime? Owner { get; set; }
+
+        public BrowserContextId Id { get; }
+
+        public BrowserContextInfo Info { get; private set; }
+
+        public Task<IReadOnlyList<PageInfo>> ListPagesAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<PageInfo>>(_pages.ToArray());
+
+        public Task<IBrowserPage?> GetPageAsync(PageId id, CancellationToken ct) =>
+            Task.FromResult<IBrowserPage?>(
+                Owner is not null && Owner.Pages.TryGetValue($"{Id.Value}/{id.Value}", out var page) ? page : null);
+
+        public Task ClosePageAsync(PageId id, CancellationToken ct)
+        {
+            var key = $"{Id.Value}/{id.Value}";
+            _pages.RemoveAll(page => page.Id.Value == id.Value);
+            Owner?.ClosedPages.Add(key);
+            Owner?.Pages.Remove(key);
+            Info = Info with { PageCount = _pages.Count };
+            return Task.CompletedTask;
+        }
+
+        public Task<IBrowserPage> NewPageAsync(PageCreateOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<BrowserCookie>> GetCookiesAsync(IReadOnlyList<Uri>? urls, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task SetCookiesAsync(IReadOnlyList<BrowserCookie> cookies, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task ClearCookiesAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public Task GrantPermissionsAsync(Uri origin, IReadOnlyList<BrowserPermission> permissions, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task ResetPermissionsAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class TabsFakePage(string id, string contextId, string url, long version) : IBrowserPage
+    {
+        public bool RecordBringToFront { get; set; }
+
+        public bool BroughtToFront { get; private set; }
+
+        public PageId Id { get; } = new(id);
+
+        public BrowserContextId ContextId { get; } = new(contextId);
+
+        public long PageVersion { get; } = version;
+
+        public PageInfo Info { get; } = Info(id, contextId, url, version);
+
+        public bool CanGoBack => false;
+
+        public bool CanGoForward => false;
+
+        public bool IsLoading => false;
+
+        public Task BringToFrontAsync(CancellationToken ct)
+        {
+            if (RecordBringToFront)
+            {
+                BroughtToFront = true;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public Task<NavigationResult> GotoAsync(Uri url2, NavigationOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task GoBackAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public Task GoForwardAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public Task ReloadAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public Task StopAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<PageSnapshot> SnapshotAsync(SnapshotOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<System.Text.Json.JsonDocument> SendCdpAsync(string method, System.Text.Json.JsonElement? parameters, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<BrowserSubscriptionId> SubscribeCdpAsync(string eventName, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task UnsubscribeAsync(BrowserSubscriptionId subscriptionId, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task FillAsync(Locator locator, string value, FillOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task PressAsync(Locator locator, string key, KeyOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task ScrollAsync(ScrollOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task SelectAsync(Locator locator, IReadOnlyList<string> values, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task CheckAsync(Locator locator, bool isChecked, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task SetInputFilesAsync(Locator locator, IReadOnlyList<string> paths, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<WaitResult> WaitForAsync(WaitCondition condition, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<ScreenshotResult> ScreenshotAsync(ScreenshotOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<PdfResult> PrintToPdfAsync(PdfOptions options, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task OpenDevToolsAsync(CancellationToken ct) => throw new NotSupportedException();
+    }
 }
