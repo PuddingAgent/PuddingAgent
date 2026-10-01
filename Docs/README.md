@@ -1,5 +1,9 @@
 # Pudding Agent Network 文档索引
 
+## 2026-10-01 Chat 前端 UI / UX 现代化设计
+
+[实施规格](Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md)：保留现有 Chat 功能与入口，规定视觉 token、布局、消息/过程渲染、输入交互、示例代码、实施切片及验收门禁。设计已交付，产品实现与验收待完成。
+
 ## 2026-09-29 WinUI Shell + Web UI + 独立 Core 恢复
 
 [2026-09-30 普通构建缺少 Core 修复](Reports/Desktop-Build-Core-Bundle-Fix-2026-09-30.md)：补齐 Build 配套子进程与自动发现验证。
