@@ -16,6 +16,21 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`interact` 映射（第 61 轮）
+
+- 新增 `InteractAsync`：动作**按类型映射到运行时显式 API**（Click/Fill/Press/Check/Select/Hover/Scroll），
+  **不自己拼 DOM 脚本**（既有运行时已提供这些语义，重建只会引入第二套行为）。
+- 三条硬要求：
+  ①**必须固定版本**且不符即拒绝（否则可能操作到另一个页面），且**拒绝时不发起任何调用**；
+  ②元素不存在 ⇒ `invalid_target`（是目标问题，不是内部错误——调用方应改定位或先等待）；
+  ③**交互后回带新的页面状态与版本**（旧 Ref 由此作废）。测试断言页面从 v7 推进到 v8 后结果带 v8，
+  而元素引用仍带**元素自身**的 v7（交互前那一版）——两者语义不同，不可混用。
+- `focus` 在当前运行时**没有对应 API** ⇒ 明确返回 `unsupported_capability`，**不用脚本"凑"出来**
+  （宁可少一个动作，也不引入与运行时不一致的第二套行为）。
+- `scroll` 不需要定位：作用于页面本身，不得去查元素（有断言）。
+- 测试放独立文件，新组件 **30/30**（+4）。
+- 表面进度：contexts / page_state / tabs / locate / snapshot / wait_for / **interact** 完成；
+  只剩 navigate 与 javascript。
 ## 2026-10-01：`wait_for` 映射（第 60 轮）
 
 - 新增 `WaitForAsync`，核心语义：**超时不是失败**——用 `TimedOut` 如实标注并**照样回带等待结束时的页面状态**

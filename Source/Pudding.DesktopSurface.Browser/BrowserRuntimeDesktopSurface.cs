@@ -477,6 +477,122 @@ public sealed class BrowserRuntimeDesktopSurface
         UrlPattern = request.Condition.Kind == DesktopWaitConditionKind.UrlPattern ? request.Condition.Value : null,
         TimeoutMs = request.TimeoutMs,
     };
+    /// <summary>
+    /// 执行交互（切片 D 唯一会改变页面状态的能力）。要点：
+    /// ①**必须固定版本**且版本不符即拒绝——否则可能操作到另一个页面；
+    /// ②动作按类型映射到运行时的显式 API（不自己拼 DOM 脚本）；
+    /// ③**交互后回带新的页面状态与版本**（旧 Ref 随之作废）。
+    ///   运行时以页面版本作为变更计数，因此交互必然推进版本；服务侧还有 `DesktopMutationInvariants` 兜底。
+    /// ④`focus` 在当前运行时没有对应 API ⇒ 明确返回 `unsupported_capability`，**不**用脚本"凑"出来。
+    /// </summary>
+    public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
+        DesktopCallContext context, BrowserInteractRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.Action == DesktopInteractionAction.Focus)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(
+                DesktopCapabilityError.UnsupportedCapability("the browser runtime has no focus action"));
+        }
+
+        if (_runtime.State != BrowserRuntimeState.Ready)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(
+                DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
+        }
+
+        var page = await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false);
+        if (page.IsFailure)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(page.Error);
+        }
+
+        var browserPage = page.Value;
+        if (browserPage.PageVersion != request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"page '{request.Target.Key}' is at v{browserPage.PageVersion}, request pinned v{request.ExpectedPageVersion.Value}",
+                retryable: true));
+        }
+
+        Locator? locator = null;
+        IElementHandle? handle = null;
+
+        if (request.RequiresLocator)
+        {
+            locator = ToRuntimeLocator(request.Locator!);
+            handle = await browserPage.QueryAsync(locator, cancellationToken).ConfigureAwait(false);
+            if (handle is null)
+            {
+                // 元素不存在是**目标问题**，不是内部错误：调用方应改定位或先等待。
+                return CapabilityResult<DesktopInteractionResult>.Failure(
+                    DesktopCapabilityError.InvalidTarget($"no element matches {request.Locator}"));
+            }
+        }
+
+        await PerformAsync(browserPage, request, locator, cancellationToken).ConfigureAwait(false);
+
+        // 交互后的页面状态：版本取**交互之后**的事实（旧 Ref 由此作废）。
+        var state = new DesktopPageState(
+            request.Target,
+            ParseUrl(browserPage.Info.Url),
+            LiveVersion(browserPage.PageVersion),
+            browserPage.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown);
+
+        DesktopElementRef? element = null;
+        if (handle is not null)
+        {
+            var mapped = MapHandle(handle);
+            if (mapped.IsFailure)
+            {
+                return CapabilityResult<DesktopInteractionResult>.Failure(mapped.Error);
+            }
+
+            element = mapped.Value;
+        }
+
+        return CapabilityResult<DesktopInteractionResult>.Success(
+            new DesktopInteractionResult(request.Target, state, element));
+    }
+
+    private static async Task PerformAsync(
+        IBrowserPage page, BrowserInteractRequest request, Locator? locator, CancellationToken cancellationToken)
+    {
+        switch (request.Action)
+        {
+            case DesktopInteractionAction.Click:
+                await page.ClickAsync(locator!, new ClickOptions(), cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Fill:
+                await page.FillAsync(locator!, request.Text!, new FillOptions(), cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Press:
+                await page.PressAsync(locator!, request.Text!, new KeyOptions(), cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Check:
+                await page.CheckAsync(locator!, true, cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Uncheck:
+                await page.CheckAsync(locator!, false, cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Select:
+                await page.SelectAsync(locator!, request.Values!, cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Hover:
+                await page.HoverAsync(locator!, new PointerOptions(), cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Scroll:
+                await page.ScrollAsync(
+                    new ScrollOptions { DeltaX = request.DeltaX, DeltaY = request.DeltaY }, cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(request), request.Action, "Interaction action is not mapped.");
+        }
+    }
     private static Uri? ParseUrl(string? url) =>
         string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? null : parsed;
 }
