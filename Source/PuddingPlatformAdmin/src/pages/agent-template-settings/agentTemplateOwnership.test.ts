@@ -28,8 +28,10 @@ describe('Agent template and instance field ownership copy', () => {
     const workspaceDetail = read('..', 'workspace', '[id]', 'WorkspaceAgentSettingsDrawer.tsx');
 
     expect(workspaceDetail).toContain('实例职责');
-    expect(workspaceDetail).toContain('模板只在创建时提供初始快照；Agent 创建后独立演进。');
     expect(workspaceDetail).toContain('来源模板');
+    // 2026-10-01 编辑工作台改版：来源模板说明改为强调「创建时快照 + 编辑模式只读」，
+    // 语义不变（仍然是实例身份，不是模板默认值预览）。
+    expect(workspaceDetail).toContain('创建时复制模板配置快照，之后独立修改；编辑模式下不可更换。');
     expect(workspaceDetail).not.toContain('模型覆盖');
     expect(workspaceDetail).not.toContain('高级 Prompt 覆盖');
   });

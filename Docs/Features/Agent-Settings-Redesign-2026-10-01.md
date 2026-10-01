@@ -1,7 +1,7 @@
 # Agent 编辑工作台设计方案
 
 - 日期：2026-10-01。
-- 状态：设计建议，待评审；本次不修改产品代码。
+- 状态：一期已实施（见文末「实施记录」与偏差说明）；二期未开始。
 - 范围：截图中的工作区 Agent 编辑界面，重点为「角色与 Prompt」。
 - 架构：在既有 Web UI 中实现，沿用 WinUI Shell + WebView2 + 独立 Core 的边界。
 - 配套：[桌面布局示意](../Design/Agent-Settings-Workbench.svg)。示意中的 Agent 名称、文本、字数和状态均为设计示例，不代表实际配置。
@@ -195,3 +195,37 @@ Ctrl+S / Cmd+S 在工作台内触发保存并阻止浏览器另存为；输入�
 - 保持 Agent 实例、来源模板快照及系统默认内容的语义区别；无意外模型请求、无凭据展示。
 
 前端构建与测试使用 pnpm。实现验收须覆盖真实 WebView2 中的键盘、DPI、滚动和保存行为；设计示意与设计文档本身不等同于已完成上述功能验收。
+
+## 11. 实施记录（一期，2026-10-01）
+
+已落地第 9 节「第一期」全部五步，未改动 Core 字段含义与保存接口。
+
+| 文件 | 作用 |
+|---|---|
+| `Source/PuddingPlatformAdmin/src/pages/workspace/[id]/WorkspaceAgentSettingsDrawer.tsx` | 工作台外壳：身份栏、状态、保存、关闭确认、`Ctrl+S`、草稿基线 |
+| `Source/PuddingPlatformAdmin/src/pages/workspace/[id]/promptDocuments.ts` | Prompt 目录元数据 + 脏值/错误/查找纯逻辑 |
+| `Source/PuddingPlatformAdmin/src/pages/workspace/[id]/AgentPromptCatalog.tsx` | 文档目录（三组、选中、已修改、校验未通过） |
+| `Source/PuddingPlatformAdmin/src/pages/workspace/[id]/AgentPromptEditor.tsx` | 单文档大编辑器（编辑/预览/查找/字符数） |
+| `Source/PuddingPlatformAdmin/src/pages/workspace/[id]/MarkdownPreview.tsx` | 只读 Markdown 预览 |
+| `Source/PuddingPlatformAdmin/src/pages/workspace/[id]/workbenchStyles.ts` | 工作台专用样式与响应式断点 |
+
+要点与偏差：
+
+1. **草稿快照必须带 `preserve`**。Prompt 文档字段由受控编辑器写入表单、不渲染 `Form.Item`，`getFieldsValue()` 不会返回它们；脏值判断改用 `Form.useWatch([], { form, preserve: true })`，并以 `useFormSnapshot.test.tsx` 锁定该行为。
+2. **基线时间点由父组件驱动**。新增 `dataVersion`：父组件每次把服务端数据、模板快照或来源模板切换后的新值写入表单都递增，工作台据此重取快照。原设计里「子组件在 effect 中读表单」的做法会与父组件写值竞争（实测会把全部字段判为已修改），因此改为显式信号。
+3. **隐藏分区改为按需渲染**。非活动分区不再常驻 DOM，只有活动分区挂载；Prompt 文档同理只渲染当前文档，未挂载字段由表单 store 保留，保存仍是整表单一次提交。
+4. **保存不关闭工作台**（编辑模式）：父组件 `onSave` 返回是否成功，成功只刷新列表并刷新基线，用户留在当前文档。**新增模式成功后返回列表**，否则父组件的 `editItem` 仍为空，再次保存会重复创建。
+5. **抽屉 `mask={false}`**：宽屏保留背景列表作为上下文；关闭由抽屉遮罩取消，改由「返回列表」与 `Esc` 触发三选一确认。
+6. **占位符只做文本辅助**：展示已出现的 `{{变量}}` 名称，不替换、不猜测；没有真实分词器时不显示 Token 数。
+7. **空值语义以 Core 为准**（`WorkspaceAgentFileService.WriteAgentMdFileAsync`：内容空白即不写文件、并从 manifest 移除引用；心跳另有 embedded 默认提示词回退）。因此只有心跳显示「使用默认提示词」，其余显示「未填写」，不统一宣称继承默认。
+8. **生效时机表述**：`AgentRuntimeProfileResolver.ResolveAsync` 在运行入口按需解析，未做缓存；界面只说「下一次读取配置时生效」，不断言「立即生效」。
+9. **共享样式未改动语义**。工作台样式独立成 `workbenchStyles.ts`；`AgentTemplateSettingsNav` 只新增可选 `className`/`markedSections`/`badges`，全局模板抽屉外观与行为不变。
+10. **Markdown 预览安全**：不启用 `rehype-raw`，HTML 按文本处理；链接新窗口 + `noopener`。这与聊天 `MarkdownBlock`（为渲染 Agent 输出而启用 raw）刻意不同。
+
+已验证：
+
+- `pnpm exec tsc --noEmit`：`src/pages/workspace` 与 `src/pages/agent-template-settings` 命中 0（仅 `src/pages/chat` 存在改动前既有基线错误）。
+- `pnpm exec jest`：新增 3 个套件全通；全量 185 套件中 182 通过，失败的 `InputArea` / `IntentConsole`（语音会话）与本改动无关且改动前即失败。
+- `pnpm run build` 成功，`[chat-bundle-budget] ok`。
+
+尚未完成（不得由上述结果推定已完成）：真实 WebView2 中的键盘、DPI 缩放、滚动与保存行为验收；第 10 节其余场景中的键盘 / 输入法 / 10,000 字符往返仍需在运行态人工确认。第 9 节二期的修改比较、恢复、模板变量渲染预览未实现。

@@ -12,6 +12,17 @@ export interface AgentTemplateSettingsNavProps {
   errorSections: Set<AgentTemplateSectionKey>;
   onNavigate: (key: AgentTemplateSectionKey) => void;
   sections?: SettingsSectionMeta[];
+  /**
+   * 调用方附加的容器类名。
+   *
+   * 工作区 Agent 编辑工作台需要在同一份导航结构上换一套容器外观（背景、宽度、
+   * 窄屏横向滚动），通过类名覆盖而不是改共享样式，避免影响全局模板抽屉。
+   */
+  className?: string;
+  /** 额外高亮的分区（例如存在未保存修改），与校验错误态使用同样的标记位。 */
+  markedSections?: Set<AgentTemplateSectionKey>;
+  /** 分区徽标数字，例如未保存修改数量。 */
+  badges?: Partial<Record<AgentTemplateSectionKey, number>>;
 }
 
 const AgentTemplateSettingsNav: React.FC<AgentTemplateSettingsNavProps> = ({
@@ -19,6 +30,9 @@ const AgentTemplateSettingsNav: React.FC<AgentTemplateSettingsNavProps> = ({
   errorSections,
   onNavigate,
   sections = AGENT_TEMPLATE_SECTIONS,
+  className,
+  markedSections,
+  badges,
 }) => {
   const { styles, cx } = useStyles();
 
@@ -29,9 +43,16 @@ const AgentTemplateSettingsNav: React.FC<AgentTemplateSettingsNavProps> = ({
   };
 
   return (
-    <nav className={styles.settingsNav} aria-label="设置分组导航">
+    <nav className={className ? `${styles.settingsNav} ${className}` : styles.settingsNav} aria-label="设置分组导航">
       {sections.map((section) => {
         const status = getStatus(section.key);
+        const dirty = status !== 'error' && Boolean(markedSections?.has(section.key));
+        const badge = badges?.[section.key];
+        const statusLabel = status === 'error'
+          ? '，存在校验错误'
+          : dirty
+            ? '，有未保存修改'
+            : '';
         return (
           <button
             key={section.key}
@@ -43,6 +64,7 @@ const AgentTemplateSettingsNav: React.FC<AgentTemplateSettingsNavProps> = ({
             )}
             onClick={() => onNavigate(section.key)}
             aria-current={status === 'active' ? 'page' : undefined}
+            aria-label={`${section.label}${statusLabel}`}
           >
             <span
               className={cx(
@@ -54,8 +76,9 @@ const AgentTemplateSettingsNav: React.FC<AgentTemplateSettingsNavProps> = ({
             />
             <span>{section.label}</span>
             {status === 'error' && (
-              <span className={styles.navBadge}>!</span>
+              <span className={styles.navBadge}>{badge && badge > 1 ? badge : '!'}</span>
             )}
+            {dirty && !badge && <span className={cx(styles.navDot, 'dot-dirty')} />}
           </button>
         );
       })}

@@ -110,6 +110,9 @@ export const useStyles = createStyles(({ token, css }) => ({
     &.dot-error {
       background: ${token.colorError};
     }
+    &.dot-dirty {
+      background: ${token.colorWarning};
+    }
     &.dot-normal {
       background: transparent;
     }

@@ -279,10 +279,13 @@ const WorkflowsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
 
 // ─── Agent 管理 Tab ───────────────────────────────────────────────────────────
 
-const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+const WorkspaceAgentsTab: React.FC<{ workspaceId: string; workspaceName?: string }> = ({ workspaceId, workspaceName }) => {
   const { message } = App.useApp();
   const tableRef = useRef<ActionType>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  /** 每次把新的服务端数据 / 模板快照写入表单后递增，工作台据此刷新未保存基线。 */
+  const [drawerDataVersion, setDrawerDataVersion] = useState(0);
   const [editItem, setEditItem] = useState<WorkspaceAgentDto | null>(null);
   const [globalTemplates, setGlobalTemplates] = useState<GlobalAgentTemplateDto[]>([]);
   const [avatars, setAvatars] = useState<AgentAvatarDto[]>([]);
@@ -405,40 +408,50 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
 
   const openCreate = async () => {
     setEditItem(null);
+    setDrawerLoading(true);
     form.resetFields();
     setGrantTargetKeys([]);
     setSkillTargetKeys([]);
     const template = globalTemplates.find((item) => item.templateId === 'general-assistant')
       ?? globalTemplates[0];
-    if (template) {
-      await applyTemplateSnapshot(template);
-    } else {
-      form.setFieldsValue({
-        isEnabled: true,
-        role: 'Service',
-        memorySearchMode: 'deep',
-        maxRounds: 200,
-        maxElapsedSeconds: 2400,
-        maxToolCallsTotal: 100,
-        selectedCapabilityIds: defaultCapIds,
-        skillPackageIds: [],
-      });
+    try {
+      if (template) {
+        await applyTemplateSnapshot(template);
+      } else {
+        form.setFieldsValue({
+          isEnabled: true,
+          role: 'Service',
+          memorySearchMode: 'deep',
+          maxRounds: 200,
+          maxElapsedSeconds: 2400,
+          maxToolCallsTotal: 100,
+          selectedCapabilityIds: defaultCapIds,
+          skillPackageIds: [],
+        });
+      }
+    } finally {
+      setDrawerLoading(false);
     }
+    setDrawerDataVersion((version) => version + 1);
     setDrawerOpen(true);
   };
 
   const openEdit = async (item: WorkspaceAgentDto) => {
     setEditItem(item);
+    setDrawerLoading(true);
     form.resetFields();
     try {
       const detail = await getWorkspaceAgent(workspaceId, item.agentId);
       form.setFieldsValue({ ...detail });
       syncGrantState(detail.selectedCapabilityIds ?? [], detail.skillPackageIds ?? []);
       await loadAgentModelOptions(detail);
+      setDrawerDataVersion((version) => version + 1);
       setDrawerOpen(true);
     } catch {
       setEditItem(null);
       message.error('Agent 完整配置加载失败，请稍后重试');
+    } finally {
+      setDrawerLoading(false);
     }
   };
 
@@ -448,6 +461,8 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
     if (template) {
       await applyTemplateSnapshot(template);
     }
+    // 模板快照已覆盖表单内容，工作台需要以新快照作为未保存基线
+    setDrawerDataVersion((version) => version + 1);
   };
 
   const handleProviderChange = async (providerId: string) => {
@@ -465,7 +480,13 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
     await loadModels(providerId, setEmbeddingModels, setLoadingEmbeddingModels, true);
   };
 
-  const handleSave = async (validatedValues?: WorkspaceAgentFormValues) => {
+  /**
+   * 保存整个 Agent 表单。
+   *
+   * 编辑工作台负责关闭时机（无修改直接返回 / 有修改时确认），所以这里只返回结果，
+   * 成功时刷新列表但不关闭工作台：保存后用户仍留在当前文档继续编辑。
+   */
+  const handleSave = async (validatedValues?: WorkspaceAgentFormValues): Promise<boolean> => {
     try {
       const values = validatedValues ?? await form.validateFields();
       const request = {
@@ -484,11 +505,12 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
         await createWorkspaceAgent(workspaceId, request as CreateWorkspaceAgentRequest);
         message.success('Agent 已创建');
       }
-      setDrawerOpen(false);
       tableRef.current?.reload();
+      return true;
     } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'errorFields' in err) return;
+      if (err && typeof err === 'object' && 'errorFields' in err) return false;
       message.error('保存失败');
+      return false;
     }
   };
 
@@ -566,7 +588,13 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
         open={drawerOpen}
         editMode={!!editItem}
         form={form}
-        onClose={() => setDrawerOpen(false)}
+        workspaceName={workspaceName}
+        loading={drawerLoading}
+        dataVersion={drawerDataVersion}
+        onClose={() => {
+          setDrawerOpen(false);
+          tableRef.current?.reload();
+        }}
         onSave={handleSave}
         onSourceTemplateChange={handleSourceTemplateChange}
         templates={globalTemplates}
@@ -1519,7 +1547,12 @@ const WorkspaceDetailPage: React.FC = () => {
                 Agent 列表
               </Space>
             ),
-            children: <WorkspaceAgentsTab workspaceId={workspace.workspaceId} />,
+            children: (
+              <WorkspaceAgentsTab
+                workspaceId={workspace.workspaceId}
+                workspaceName={workspace.name}
+              />
+            ),
           },
           {
             key: 'workflows',

@@ -205,6 +205,21 @@
 | `src/utils/workspaceNavigation.ts` | 工作空间入口在最近访问或唯一工作空间时解析到 Chat；不再生成 Studio 深链 |
 | `public/assets/` | 只保留 Web 运行时实际需要的静态资源；`images/me.png` 是当前用户的 Pudding 默认头像，Agent 精灵素材已迁出到 `../PuddingDesktop/Assets/AgentSprites/` |
 
+## 工作区 Agent 编辑工作台（2026-10-01）
+
+设计依据 `Docs/Features/Agent-Settings-Redesign-2026-10-01.md`（一期：编辑效率与状态完整性）。
+
+| 文件 | 职责与边界 |
+|------|------------|
+| `src/pages/workspace/[id]/WorkspaceAgentSettingsDrawer.tsx` | 近全屏工作台外壳：身份栏（头像/名称/工作区/来源模板）、未保存与校验状态、`保存所有更改`（新增模式成功后返回列表）、关闭三选一确认、`Ctrl+S` 拦截；逐字段快照比较得出脏值，不依赖 `isFieldsTouched`。Prompt 文档字段由受控编辑器写入表单、不渲染 `Form.Item`，因此草稿快照用 `Form.useWatch([], { preserve: true })` |
+| `src/pages/workspace/[id]/promptDocuments.ts` | Prompt 目录元数据（字段→中文职责/次级标签/分组/空值语义）与纯逻辑：`collectDirtyFields`/`collectDirtySections`/`collectDirtyPromptDocuments`/`summarizeValidationErrors`/`findTextMatches`/`estimateScrollTop`。空值语义以 Core 为准：只有心跳留空会回退默认提示词，其余 Markdown 留空不生成文件、界面只写「未填写」 |
+| `src/pages/workspace/[id]/AgentPromptCatalog.tsx` | 「角色与 Prompt」文档目录：常用 / 行为与协作 / 生命周期三组，显示选中、已修改、校验未通过；中文职责是主标题 |
+| `src/pages/workspace/[id]/AgentPromptEditor.tsx` | 单文档大编辑器：编辑/预览切换、文档内查找（命中计数 + 定位 + 高亮覆盖层，不改写原文）、字符数、`{{变量}}` 仅作文本辅助不替换；窄屏（<1024px）用选择器取代目录 |
+| `src/pages/workspace/[id]/MarkdownPreview.tsx` | 只读 Markdown 预览：不启用 `rehype-raw`，文档内 HTML 按文本处理、不执行脚本；链接新窗口 + `noopener` |
+| `src/pages/workspace/[id]/workbenchStyles.ts` | 工作台专用样式与响应式断点（≥1440 近全屏、1024–1439 单列、<1024 顶部横向分区导航 + 文档选择器）。刻意与 `agent-template-settings/styles.ts` 分离，全局模板抽屉布局不受影响 |
+
+可验证性：`promptDocuments.test.ts`（目录完整性、改回原值不脏、数组/空值比较、错误归类、查找与滚动估算）、`useFormSnapshot.test.tsx`（锁定 `preserve: true` 全量草稿行为）、`WorkspaceAgentSettingsDrawer.test.tsx`（身份栏、目录、草稿保留、预览、保存成功/失败、关闭确认、加载态）。全量 `tsc --noEmit` 的既有基线错误只在 `src/pages/chat`，`src/pages/workspace` 命中必须为 0。
+
 ## 用户头像
 
 | 文件 | 职责与边界 |
