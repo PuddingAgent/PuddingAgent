@@ -207,7 +207,8 @@ internal static class Program
             | DesktopCapability.BrowserInteract
             | DesktopCapability.BrowserWaitFor
             | DesktopCapability.BrowserContexts
-            | DesktopCapability.BrowserTabs,
+            | DesktopCapability.BrowserTabs
+            | DesktopCapability.ShellClipboard,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
         InactivityTimeout = TimeSpan.FromSeconds(30),
@@ -564,6 +565,25 @@ internal static class Program
                 "capability-sets-aligned",
                 $"两侧集合不一致：Core={CapabilityChannelConfiguration.DefaultGrantable} / "
                 + $"Desktop={DesktopCapabilityChannelSettings.DeclaredCapabilities}");
+        }
+        // 12) 剪贴板只读（切片 E）：预算内原样、超预算按上限截断并如实标注。
+        var clipboard = await session.ReadClipboardAsync(new ClipboardReadRequest(1_000), Call("clipboard"));
+        var truncated = await session.ReadClipboardAsync(new ClipboardReadRequest(10), Call("clipboard-truncated"));
+
+        if (clipboard.IsSuccess && clipboard.Value.Length == 100 && !clipboard.Value.Truncated
+            && truncated.IsSuccess && truncated.Value.Length == 10 && truncated.Value.Truncated)
+        {
+            report.Pass(
+                "clipboard",
+                $"shell.clipboard → 预算内 {clipboard.Value.Length} 字符；预算 10 时截断为 {truncated.Value.Length} 并标注 Truncated");
+        }
+        else
+        {
+            report.Fail(
+                "clipboard",
+                clipboard.IsFailure || truncated.IsFailure
+                    ? $"期望读取成功，实际 {(clipboard.IsFailure ? clipboard.Error!.Code.ToString() : truncated.Error!.Code.ToString())}"
+                    : $"结果不符：{clipboard.Value} / {truncated.Value}");
         }
         // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
         var refWithoutVersionRejected = false;

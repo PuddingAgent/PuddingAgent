@@ -212,6 +212,19 @@ public sealed class DesktopSession : IAsyncDisposable
                     DesktopCapabilityError.Internal("tabs response payload is missing")),
             cancellationToken);
 
+    /// <summary>读取剪贴板（只读，v1）：预算由请求给出，越界截断并由服务侧兜底标注。</summary>
+    public Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
+        ClipboardReadRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.ShellClipboard,
+            DesktopCapabilityRequest.ForClipboard(request),
+            call,
+            static response => response.Clipboard is { } value
+                ? CapabilityResult<DesktopClipboardContent>.Success(value)
+                : CapabilityResult<DesktopClipboardContent>.Failure(
+                    DesktopCapabilityError.Internal("clipboard response payload is missing")),
+            cancellationToken);
+
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync(

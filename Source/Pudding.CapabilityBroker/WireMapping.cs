@@ -156,6 +156,10 @@ internal static class CoreCommandEncoder
                 };
                 break;
 
+            case DesktopCapability.ShellClipboard when request.Clipboard is { } clipboard:
+                command.ReadClipboard = new Proto.ClipboardReadCommand { MaxCharacters = clipboard.MaxCharacters };
+                break;
+
             case DesktopCapability.BrowserSnapshot when request.Snapshot is { } snapshot:
                 command.Snapshot = new Proto.SnapshotCommand
                 {
@@ -198,6 +202,7 @@ internal static class CoreCommandEncoder
             _ when request.PageState is { } target => $"page_state:{target.Key}",
             _ when request.Tabs is { } requestTabs =>
                 $"tabs:{requestTabs.Action}:{requestTabs.Target.Key}:{requestTabs.ExpectedPageVersion.Value}",
+            _ when request.Clipboard is { } clipboard => $"clipboard:{clipboard.MaxCharacters}",
             _ when request.Contexts => "contexts",
             _ when request.WaitFor is { } waitFor =>
                 $"wait_for:{waitFor.Target.Key}:{waitFor.Condition.Kind}:{waitFor.Condition.Value}:{waitFor.TimeoutMs}:{waitFor.ExpectedPageVersion.Value}",
@@ -254,6 +259,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.WaitFor => expectedCapability == DesktopCapability.BrowserWaitFor,
             Proto.OperationResult.OutcomeOneofCase.Contexts => expectedCapability == DesktopCapability.BrowserContexts,
             Proto.OperationResult.OutcomeOneofCase.Tabs => expectedCapability == DesktopCapability.BrowserTabs,
+            Proto.OperationResult.OutcomeOneofCase.Clipboard => expectedCapability == DesktopCapability.ShellClipboard,
             _ => false,
         };
 
@@ -393,6 +399,14 @@ internal static class DesktopResultDecoder
 
                     return CapabilityResult<DesktopCapabilityResponse>.Success(
                         DesktopCapabilityResponse.FromContexts(new DesktopContexts(contexts)));
+                }
+
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Clipboard)
+                {
+                    // 剪贴板内容只回传给调用方：不写日志、不进审计（审计记的是操作与形状）。
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromClipboard(new DesktopClipboardContent(
+                            NullIfEmpty(result.Clipboard.Text), result.Clipboard.Truncated)));
                 }
 
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Tabs)

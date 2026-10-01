@@ -205,7 +205,8 @@ public sealed class CapabilityChannelConfigurationTests
                 DesktopCapability.BrowserInteract or
                 DesktopCapability.BrowserWaitFor or
                 DesktopCapability.BrowserContexts or
-                DesktopCapability.BrowserTabs;
+                DesktopCapability.BrowserTabs or
+                DesktopCapability.ShellClipboard;
 
             Assert.Equal(implemented, granted.HasFlag(descriptor.Capability));
         }

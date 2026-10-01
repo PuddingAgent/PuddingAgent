@@ -32,6 +32,8 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                     DesktopPageVersion.Require(5),
                     DesktopPageReadiness.Complete))),
 
+            DesktopCapability.ShellClipboard => ReadClipboard(request),
+
             DesktopCapability.BrowserTabs => Tabs(request),
 
             DesktopCapability.BrowserContexts => Task.FromResult(DesktopCapabilityResponse.FromContexts(Contexts())),
@@ -153,6 +155,17 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
             new DesktopPageState(tabs.Target, new Uri("https://example.com/probe-tab"), next, DesktopPageReadiness.Complete),
             closed,
             remaining)));
+    }
+
+    /// <summary>剪贴板：回带 100 字符文本；预算很小则演示截断语义。</summary>
+    private static Task<DesktopCapabilityResponse> ReadClipboard(DesktopCapabilityRequest request)
+    {
+        var clipboard = request.Clipboard ?? throw new InvalidOperationException("probe: clipboard payload missing");
+        var text = new string('c', 100);
+        var truncated = text.Length > clipboard.MaxCharacters;
+
+        return Task.FromResult(DesktopCapabilityResponse.FromClipboard(new DesktopClipboardContent(
+            truncated ? text[..clipboard.MaxCharacters] : text, truncated)));
     }
     private static Task<DesktopCapabilityResponse> ExecuteJavascriptAsync(
         JavascriptRequest request, CancellationToken cancellationToken)

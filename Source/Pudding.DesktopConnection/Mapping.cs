@@ -455,6 +455,27 @@ internal static class CoreFrameMapping
                         tabsTarget, tabAction, ToPageVersion(command.Tabs.ExpectedPageVersion))));
             }
 
+            case DesktopCapability.ShellClipboard:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.ReadClipboard)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForClipboard(new ClipboardReadRequest(
+                            command.ReadClipboard.MaxCharacters == 0
+                                ? ClipboardReadRequest.DefaultMaxCharacters
+                                : command.ReadClipboard.MaxCharacters)));
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    return FailRequest("clipboard budget is out of range");
+                }
+            }
+
             case DesktopCapability.ShellStatus:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
@@ -812,6 +833,14 @@ internal static class DesktopFrameMapping
                         Remaining = BuildContexts(tabs.Remaining),
                     };
 
+                    break;
+
+                case DesktopCapability.ShellClipboard when response.Clipboard is { } clipboard:
+                    result.Clipboard = new Proto.ClipboardOutcome
+                    {
+                        Text = WireText.Truncate(clipboard.Text, 1_000_000),
+                        Truncated = clipboard.Truncated,
+                    };
                     break;
 
                 case DesktopCapability.ShellStatus when response.ShellStatus is { } shellStatus:

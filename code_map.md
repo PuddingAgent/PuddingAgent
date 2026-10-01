@@ -4,6 +4,20 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`shell.clipboard` 只读能力端到端（第 40 轮，切片 E 完成第 3 步）
+
+- 两端映射：Desktop 侧解码 `read_clipboard`（预算越界 ⇒ invalid_request）并在编码时按硬上限截断文本；
+  Core 侧编码/指纹/解码（**内容只回传调用方，不写日志、不进审计**，审计记的是操作与形状）。
+- 服务分支 + 预算兜底：`DesktopService` 用 `DesktopCapabilityBudgets.Apply(...)` 统一收敛，
+  表面实现即使不守规矩也会被截断并如实标注。
+- 能力集合 6 处一次同步：Core `DefaultGrantable`、Desktop `DeclaredCapabilities`、配置测试的 implemented 判定、
+  Broker 测试夹具声明/可授予、探针两端声明。
+- 探针断言（管道与 h2c 各一轮）：预算内 100 字符原样；预算 10 时截断为 10 并标注 `Truncated`
+  ⇒ **49/49 exit 0**；跨侧集合一致性守卫同时通过（12 项能力上下游一致）。
+- **本轮按上一轮教训执行**：把「接口实现方（探针执行器 + 测试夹具）+ 两端映射 + 服务分支 + 能力集合 +
+  探针断言 + 全量验证」放在**同一次提交**内闭环，未再出现红提交。
+- 一处细节被抓到：能力声明按**目录顺序**，`shell.clipboard` 必须紧跟 `shell.status`，不能追加到末尾
+  （ack 列表断言因此先红后绿）。
 ## 2026-10-01：剪贴板预算收敛（第 39 轮，叶子级增量）
 
 - `DesktopCapabilityBudgets.Apply(DesktopClipboardContent, maxCharacters)`：越界即截断并标注 `Truncated`；

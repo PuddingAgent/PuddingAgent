@@ -188,6 +188,28 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.ShellClipboard:
+            {
+                if (request.Clipboard is not { } clipboard)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("shell.clipboard request payload is missing"));
+                }
+
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    target: null,
+                    DesktopPageVersion.Unknown,
+                    context,
+                    token => _surface.ReadClipboardAsync(context, clipboard, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromClipboard(
+                        DesktopCapabilityBudgets.Apply(result.Value, clipboard.MaxCharacters))
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             case DesktopCapability.BrowserTabs:
             {
                 if (request.Tabs is not { } tabs)

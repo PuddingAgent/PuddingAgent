@@ -136,7 +136,7 @@ public sealed class DesktopCapabilityChannelSettingsTests
 
         // 预留能力确实还没被声明（改这条断言等于宣布它们已实现，应同时补 payload 与探针断言）。
         Assert.False(DesktopCapabilityChannelSettings.DeclaredCapabilities.HasFlag(DesktopCapability.ShellDialog));
-        Assert.False(DesktopCapabilityChannelSettings.DeclaredCapabilities.HasFlag(DesktopCapability.ShellClipboard));
+        Assert.False(DesktopCapabilityChannelSettings.DeclaredCapabilities.HasFlag(DesktopCapability.ShellFilePicker));
     }
 
     [Fact]

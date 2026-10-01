@@ -50,7 +50,8 @@ public sealed record DesktopCapabilityChannelSettings
         | DesktopCapability.BrowserInteract
         | DesktopCapability.BrowserWaitFor
         | DesktopCapability.BrowserContexts
-        | DesktopCapability.BrowserTabs;
+        | DesktopCapability.BrowserTabs
+        | DesktopCapability.ShellClipboard;
 
     /// <summary>构造连接选项；未启用时明确失败（不静默降级到旧传输）。</summary>
     public CapabilityResult<DesktopConnectionOptions> CreateConnectionOptions(

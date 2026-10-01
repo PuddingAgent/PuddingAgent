@@ -20,7 +20,7 @@ public sealed class NegotiationAndRegistryTests
         Assert.Equal(1u, ack.NegotiatedVersion.Minimum);
         Assert.Equal((uint)DesktopProtocolVersion.Current, ack.NegotiatedVersion.Maximum);
         Assert.Equal(
-            ["webview.navigate", "webview.execute_javascript", "webview.page_state", "shell.notification", "shell.status", "browser.snapshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.tabs"],
+            ["webview.navigate", "webview.execute_javascript", "webview.page_state", "shell.notification", "shell.status", "shell.clipboard", "browser.snapshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.tabs"],
             ack.Capabilities.Select(declaration => declaration.Capability).ToArray());
         Assert.Equal(8u, ack.Limits.MaxInFlightOperations);
         Assert.False(string.IsNullOrEmpty(ack.CoreInstanceId));
