@@ -16,6 +16,19 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：目标注册表默认实现（第 64 轮）
+
+- 新增 `BrowserTargetRegistry : IDesktopBrowserTargetRegistry`（DesktopService，平台无关）：
+  WinUI 侧只需在**页面创建/关闭/切换**时驱动它（`RegisterContext`/`RegisterPage`/`SetActivePage`/
+  `UnregisterPage`/`UnregisterContext`/`Clear`），映射层即可拿到「可信级别 / 活动页 / Agent 目标」。
+- 三条设计要点（都有断言）：
+  **①fail closed**：未登记的上下文一律 `Untrusted`、未登记的页面不是 Agent 目标——"没登记"绝不等于"可信"；
+  **②不报告陈旧活跃页**：页面或上下文被注销时，若它正是活跃页则一并清除，
+  且 `ActivePage` 读取时还会再核对页面是否仍在册（双保险，避免调用方拿到已不存在的"当前页"）；
+  **③线程安全**：WinUI 在 UI 线程更新、映射层在后台线程读取。
+- 测试：DesktopService **133/133**（+4）。
+- 意义：这把"唯一需要真实 WinUI 的部分"进一步压缩——WinUI 只需在既有页面生命周期回调里调用本类，
+  再实现 Shell 三个动作的端口即可，不再需要自己维护注册表逻辑。
 ## 2026-10-01：全量门禁复核（第 63 轮，浏览器侧完成后）
 
 - **470 用例全绿**（7 个套件：Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 129、
