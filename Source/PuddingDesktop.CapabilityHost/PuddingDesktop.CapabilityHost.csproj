@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <UseWinUI>true</UseWinUI>
+    <DisableTransitiveProjectReferences>true</DisableTransitiveProjectReferences>
+    <WindowsPackageType>None</WindowsPackageType>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>PuddingDesktop.CapabilityHost</RootNamespace>
+    <AssemblyName>PuddingDesktop.CapabilityHost</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    WinUI 侧平台适配：只承载「必须依赖 Windows App SDK」的包装
+    （DispatcherQueue 调度、后续的 WebView2 动作表面）。
+    业务/准入/竞态逻辑全部在 Pudding.DesktopService（可用假调度器独立测试）。
+
+    编译期边界：只允许引用 Pudding.Contracts（平台无关契约）。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
+  </ItemGroup>
+
+  <Target Name="EnforceCapabilityHostBoundary" BeforeTargets="ResolveReferences">
+    <ItemGroup>
+      <Forbidden Include="@(ProjectReference)" Condition="'%(Filename)' != 'Pudding.Contracts'" />
+    </ItemGroup>
+    <Error Condition="'@(Forbidden)' != ''"
+           Text="The WinUI capability host may reference only Pudding.Contracts; service logic belongs to Pudding.DesktopService." />
+  </Target>
+
+</Project>

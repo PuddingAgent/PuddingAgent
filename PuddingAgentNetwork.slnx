@@ -18,6 +18,7 @@
     <Project Path="Source/PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
     <Project Path="Source/Pudding.DesktopConnection/Pudding.DesktopConnection.csproj" />
     <Project Path="Source/Pudding.DesktopService/Pudding.DesktopService.csproj" />
+    <Project Path="Source/PuddingDesktop.CapabilityHost/PuddingDesktop.CapabilityHost.csproj" />
     <Project Path="Source/PuddingDesktop.WpfArchive/PuddingDesktop.WpfArchive.csproj" />
     <Project Path="Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj" />
     <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />

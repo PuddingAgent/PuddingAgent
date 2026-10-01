@@ -72,8 +72,18 @@
   调用 surface 前各查一次取消，并据此选择 `mayHaveSideEffects` 取值。
 
 **有意取舍**：交互类能力的单窗口互斥推迟到切片 E（那时才有对话框/Picker payload，能做端到端验证）；
-`webview.page_state` 暂无 wire payload，先作为只读直连 API（`GetPageStateAsync`）提供；
-WinUI `DispatcherQueue` 适配器是 20 行平台包装、无独立可测逻辑，随宿主装配（C-2/D）一起落地并在应用内做线程验证。
+`webview.page_state` 暂无 wire payload，先作为只读直连 API（`GetPageStateAsync`）提供。
+
+### C-2 宿主组合与 WinUI 适配器（本轮追加）
+
+- `DesktopCapabilityHost`：只依赖监督端口 `IDesktopConnectionSupervisor`（`DesktopConnectionRunner` 实现），
+  因此**启停/单实例/超时语义可无端点单测**。要点：启动时**二选一传输**（选旧 Bridge 则拒绝启动，
+  不做跨传输自动回退）；同一 DesktopId **只允许一个活动能力传输**（进程级占用，停止即归还 ——
+  否则产品重启后再也起不来）；停止超时（监督器不理会取消）仍释放占用；`WaitForStateAsync` 供「宿主已就绪」告示。
+- 装配验证：测试用**真实 `DesktopConnectionRunner` + 假端点**完成握手（generation=3）并达到 `Ready`。
+- `Source/PuddingDesktop.CapabilityHost`（WinUI 库，只引用 Contracts）：`WinUiDesktopUiDispatcher`
+  把动作调度到 `DispatcherQueue`，入队失败**以异常结束而不是悬挂**。该类需要真实 DispatcherQueue，
+  无独立可测逻辑；其契约由假调度器测试覆盖，本工程只保证编译期符合 `IDesktopUiDispatcher`。
 
 ## 4. 探针实测（真实端点，非假流）
 ```
@@ -113,8 +123,8 @@ PASS  loopback-navigate: 命令→结果往返 0.7 ms
 
 ## 6. 未实施与风险（诚实登记）
 
-- **未接入宿主**：Core 侧 Connect 服务/注册表/Broker（切片 D）与 Desktop 侧 `DesktopCapabilityHost`
-  （DispatcherQueue 适配器 + `DesktopService` + `DesktopConnection` 装配、传输开关）尚未接线，
+- **未接入宿主**：Core 侧 Connect 服务/注册表/Broker（切片 D）与 Desktop 侧在 `PuddingDesktop` 组合根
+  构造 `WinUiDesktopUiDispatcher`/`IDesktopUiSurface` 并启动 `DesktopCapabilityHost`（C-3）尚未接线，
   因此**没有**任何运行中的产品行为改变；本切片不构成「gRPC 已替代 Bridge」。
 - **UI 线程语义未在真实 WinUI 上验证**：`IDesktopUiDispatcher` 的契约（队列拒绝必返回 `ui_unavailable`、
   窗口退出必须让任务完成）用假调度器验证过；真实 `DispatcherQueue` 的线程访问与队列拒绝行为需在

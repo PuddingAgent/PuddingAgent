@@ -8,9 +8,11 @@
 - `DesktopInteractionState`：暂停与用户接管为**独立轴**（接管优先），变更类能力被拒、只读能力仍可用。
 - 未执行的操作绝不声称副作用：取消/期限的 `mayHaveSideEffects` 只在**已进入 surface** 时按能力 Traits 标注；排队中关闭窗口以 `ui_unavailable` 结束而**不悬挂**。
 - 契约前置（`533465a`）：`IDesktopUiDispatcher` / `IDesktopUiSurface` 平台无关接缝 + `DesktopContextTrust` + `RequiresPageTarget`。
-- 测试 `Source/Pudding.DesktopServiceTests/` **58/58**（假 UI 调度器：内联/排队/拒绝入队/已释放四种形态；含 5 条边界断言）。
+- 测试 `Source/Pudding.DesktopServiceTests/` **69/69**（假 UI 调度器：内联/排队/拒绝入队/已释放四种形态；假监督器：启停/单实例占用/停止超时；含真实监督器在假端点完成握手的装配验证；5 条边界断言）。
+- **宿主装配（C-2）**：`DesktopCapabilityHost` 只依赖监督端口 `IDesktopConnectionSupervisor`（`DesktopConnectionRunner` 实现它），因此启停与单实例语义可无端点单测：启动时**二选一传输**（选旧 Bridge 则拒绝启动，不做跨传输回退）、同一 DesktopId **只允许一个活动能力传输**（停止即归还占用，避免产品重启后起不来）、停止超时（监督器不理会取消）仍释放占用。
+- **WinUI 侧适配**：`Source/PuddingDesktop.CapabilityHost`（只引用 Contracts，编译期边界）提供 `WinUiDesktopUiDispatcher`：`DispatcherQueue` 包装，已在 UI 线程则同步执行，入队失败**以异常结束而不是悬挂**。该类无可独立单测的逻辑，其契约由假调度器测试覆盖。
 
-**仍未接入宿主**：WinUI `DispatcherQueue` 适配器与 DesktopCapabilityHost 装配属切片 C-2/D；交互类单窗口互斥与 `webview.page_state` 的 wire payload 分别随切片 E/D 落地（不做无法端到端验证的代码）。
+**仍未在产品内装配**：在 `PuddingDesktop` 组合根构造调度器与 WebView2 动作表面并启动宿主（C-3）属切片 D；交互类单窗口互斥与 `webview.page_state` 的 wire payload 分别随切片 E/D 落地（不做无法端到端验证的代码）。
 
 ## 2026-10-01：Contracts / gRPC 协议 / Desktop 连接组件（切片 A+B 实施）
 
@@ -853,7 +855,8 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Source/Pudding.Contracts/` | **平台/传输无关契约叶（仅 BCL）**：能力目录、握手协商、错误语义、能力 DTO、审计形状 | [code_map](Source/Pudding.Contracts/code_map.md) |
 | `Source/Pudding.Rpc.Protocol/` | **wire-only 协议叶**：`Protos/desktop_capability.proto` + 生成类型（无业务/UI 实现） | [code_map](Source/Pudding.Rpc.Protocol/code_map.md) |
 | `Source/Pudding.DesktopConnection/` | Desktop 侧 gRPC 双向流适配器：连接状态机、命令关联、取消/期限/背压、重连 | [code_map](Source/Pudding.DesktopConnection/code_map.md) |
-| `Source/Pudding.DesktopService/` | Desktop 侧能力服务：目标/可信级别/版本校验、准入、入队后竞态复检、UI 调度边界 | [code_map](Source/Pudding.DesktopService/code_map.md) |
+| `Source/Pudding.DesktopService/` | Desktop 侧能力服务：目标/可信级别/版本校验、准入、入队后竞态复检、UI 调度边界、宿主装配与生命周期 | [code_map](Source/Pudding.DesktopService/code_map.md) |
+| `Source/PuddingDesktop.CapabilityHost/` | WinUI 侧平台适配：`DispatcherQueue` 调度实现（只引用 Contracts） | [code_map](Source/PuddingDesktop.CapabilityHost/code_map.md) |
 | `Source/PuddingRpc.IpcProbe/` | 真实端点技术探针（Kestrel Named Pipe/h2c 服务端替身；退出码 0/1） | — |
 
 ## 调用链路
@@ -1214,7 +1217,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 | `Source/Pudding.ContractsTests/` | **契约组件（`Pudding.Contracts`）独立测试工程**：目录/错误/协商/结果/值对象 + 5 条边界与形状断言（58 用例） |
 | `Source/Pudding.Rpc.ProtocolTests/` | **协议组件（`Pudding.Rpc.Protocol`）独立测试工程**：service/字段号快照、oneof 互斥、序列化往返 + 5 条边界断言（17 用例） |
 | `Source/Pudding.DesktopConnectionTests/` | **连接组件独立测试工程**：假服务端双向流（握手/乱序关联/取消/期限/背压/旧世代/断连/重连不重放）+ 映射往返 + 6 条边界断言（74 用例） |
-| `Source/Pudding.DesktopServiceTests/` | **服务组件独立测试工程**：假 UI 调度器（内联/排队/拒绝/释放）+ 目标与策略表 + 交互状态 + 队列竞态 + 5 条边界断言（58 用例） |
+| `Source/Pudding.DesktopServiceTests/` | **服务组件独立测试工程**：假 UI 调度器（内联/排队/拒绝/释放）+ 目标与策略表 + 交互状态 + 队列竞态 + 宿主启停/单实例占用 + 5 条边界断言（69 用例） |
 | `Tests/PuddingCodexServiceTests/` | Codex MCP Service |
 | `Tests/PuddingFullTextIndexTests/` | 全文索引 |
 | `Tests/PuddingWebApiTests/` | Web API |
