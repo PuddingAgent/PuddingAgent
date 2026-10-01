@@ -415,6 +415,17 @@ internal static class CoreFrameMapping
                 }
             }
 
+            case DesktopCapability.BrowserContexts:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.Contexts)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                // 无参数能力：不接受调用方指定目标（浏览器作用域）。
+                return CapabilityResult<DesktopCapabilityRequest>.Success(DesktopCapabilityRequest.ForContexts());
+            }
+
             case DesktopCapability.ShellStatus:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
@@ -690,6 +701,38 @@ internal static class DesktopFrameMapping
                             Readiness = DesktopPageReadinessWire.NameOf(wait.Page.Readiness),
                         },
                     };
+                    break;
+
+                case DesktopCapability.BrowserContexts when response.Contexts is { } contexts:
+                    result.Contexts = new Proto.ContextsOutcome();
+                    foreach (var context in contexts.Contexts)
+                    {
+                        var wireContext = new Proto.ContextInfo
+                        {
+                            ContextId = context.ContextId,
+                            Trust = context.Trust.ToString(),
+                        };
+
+                        foreach (var page in context.Pages)
+                        {
+                            wireContext.Pages.Add(new Proto.PageInfo
+                            {
+                                ContextId = page.Target.ContextId,
+                                PageId = page.Target.PageId,
+                                PageVersion = page.Version.Value,
+                                Title = WireText.Truncate(page.Title, 512),
+                                Url = page.Url?.AbsoluteUri ?? string.Empty,
+                                IsActive = page.IsActive,
+                                IsAgentTarget = page.IsAgentTarget,
+                                CanGoBack = page.CanGoBack,
+                                CanGoForward = page.CanGoForward,
+                                IsLoading = page.IsLoading,
+                            });
+                        }
+
+                        result.Contexts.Contexts.Add(wireContext);
+                    }
+
                     break;
 
                 case DesktopCapability.ShellStatus when response.ShellStatus is { } shellStatus:

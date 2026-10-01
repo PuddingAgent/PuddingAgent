@@ -187,6 +187,33 @@ message WaitOutcome {
   string error = 5;
 }
 
+// 上下文与页面清单（只读，浏览器作用域）：先看清有什么，后续调用才能带上显式目标与版本。
+message ContextsCommand {
+}
+
+message PageInfo {
+  string context_id = 1;
+  string page_id = 2;
+  int64 page_version = 3;
+  string title = 4;
+  string url = 5;
+  bool is_active = 6;
+  bool is_agent_target = 7;
+  bool can_go_back = 8;
+  bool can_go_forward = 9;
+  bool is_loading = 10;
+}
+
+message ContextInfo {
+  string context_id = 1;
+  string trust = 2;
+  repeated PageInfo pages = 3;
+}
+
+message ContextsOutcome {
+  repeated ContextInfo contexts = 1;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -218,6 +245,7 @@ message CapabilityCommand {
     LocateCommand locate = 16;
     InteractCommand interact = 17;
     WaitForCommand wait_for = 18;
+    ContextsCommand contexts = 19;
   }
 }
 
@@ -325,6 +353,7 @@ message OperationResult {
     LocateOutcome locate = 17;
     InteractionOutcome interact = 18;
     WaitOutcome wait_for = 19;
+    ContextsOutcome contexts = 20;
   }
 }
 

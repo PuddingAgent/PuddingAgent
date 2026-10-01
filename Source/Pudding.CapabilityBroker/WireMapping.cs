@@ -143,6 +143,10 @@ internal static class CoreCommandEncoder
                 };
                 break;
 
+            case DesktopCapability.BrowserContexts when request.Contexts:
+                command.Contexts = new Proto.ContextsCommand();
+                break;
+
             case DesktopCapability.BrowserSnapshot when request.Snapshot is { } snapshot:
                 command.Snapshot = new Proto.SnapshotCommand
                 {
@@ -183,6 +187,7 @@ internal static class CoreCommandEncoder
             _ when request.Notification is { } notification =>
                 $"notification:{notification.Title}:{notification.Message}:{notification.Priority}",
             _ when request.PageState is { } target => $"page_state:{target.Key}",
+            _ when request.Contexts => "contexts",
             _ when request.WaitFor is { } waitFor =>
                 $"wait_for:{waitFor.Target.Key}:{waitFor.Condition.Kind}:{waitFor.Condition.Value}:{waitFor.TimeoutMs}:{waitFor.ExpectedPageVersion.Value}",
             _ when request.Interact is { } interact =>
@@ -236,6 +241,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.Locate => expectedCapability == DesktopCapability.BrowserLocate,
             Proto.OperationResult.OutcomeOneofCase.Interact => expectedCapability == DesktopCapability.BrowserInteract,
             Proto.OperationResult.OutcomeOneofCase.WaitFor => expectedCapability == DesktopCapability.BrowserWaitFor,
+            Proto.OperationResult.OutcomeOneofCase.Contexts => expectedCapability == DesktopCapability.BrowserContexts,
             _ => false,
         };
 
@@ -311,6 +317,72 @@ internal static class DesktopResultDecoder
 
             default:
             {
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Contexts)
+                {
+                    var contexts = new List<DesktopContextInfo>(result.Contexts.Contexts.Count);
+                    foreach (var context in result.Contexts.Contexts)
+                    {
+                        var pages = new List<DesktopPageInfo>(context.Pages.Count);
+                        foreach (var page in context.Pages)
+                        {
+                            DesktopPageTarget? pageTarget;
+                            try
+                            {
+                                pageTarget = new DesktopPageTarget(page.ContextId, page.PageId);
+                            }
+                            catch (ArgumentException)
+                            {
+                                return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                                    DesktopCapabilityError.Internal("contexts outcome carries an unusable page target"));
+                            }
+
+                            Uri? pageUrl = null;
+                            if (!string.IsNullOrEmpty(page.Url)
+                                && !Uri.TryCreate(page.Url, UriKind.Absolute, out pageUrl))
+                            {
+                                return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                                    DesktopCapabilityError.Internal("contexts outcome carries a non-absolute page url"));
+                            }
+
+                            try
+                            {
+                                pages.Add(new DesktopPageInfo(
+                                    pageTarget,
+                                    ToPageVersion(page.PageVersion),
+                                    NullIfEmpty(page.Title),
+                                    pageUrl,
+                                    page.IsActive,
+                                    page.IsAgentTarget,
+                                    page.CanGoBack,
+                                    page.CanGoForward,
+                                    page.IsLoading));
+                            }
+                            catch (ArgumentException)
+                            {
+                                return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                                    DesktopCapabilityError.Internal("contexts outcome carries a page without a live version"));
+                            }
+                        }
+
+                        var trust = Enum.TryParse<DesktopContextTrust>(context.Trust, ignoreCase: false, out var parsedTrust)
+                            ? parsedTrust
+                            : DesktopContextTrust.Untrusted;
+
+                        try
+                        {
+                            contexts.Add(new DesktopContextInfo(context.ContextId, trust, pages));
+                        }
+                        catch (ArgumentException)
+                        {
+                            return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                                DesktopCapabilityError.Internal("contexts outcome carries an unusable context"));
+                        }
+                    }
+
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromContexts(new DesktopContexts(contexts)));
+                }
+
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.WaitFor)
                 {
                     if (requestedTarget is null)

@@ -94,7 +94,8 @@ internal sealed class BrokerProbeServer : IAsyncDisposable
             | DesktopCapability.BrowserSnapshot
             | DesktopCapability.BrowserLocate
             | DesktopCapability.BrowserInteract
-            | DesktopCapability.BrowserWaitFor,
+            | DesktopCapability.BrowserWaitFor
+            | DesktopCapability.BrowserContexts,
         MaxInFlightPerConnection = 8,
         MaxQueuedFrames = 128,
         MaxMessageBytes = MaxMessageBytes,

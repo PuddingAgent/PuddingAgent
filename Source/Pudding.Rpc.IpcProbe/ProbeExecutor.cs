@@ -32,6 +32,8 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                     DesktopPageVersion.Require(5),
                     DesktopPageReadiness.Complete))),
 
+            DesktopCapability.BrowserContexts => Task.FromResult(DesktopCapabilityResponse.FromContexts(Contexts())),
+
             DesktopCapability.BrowserWaitFor => WaitFor(request),
 
             DesktopCapability.BrowserInteract => Interact(request),
@@ -103,6 +105,28 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                 DesktopPageReadiness.Complete),
             timedOut ? "probe: condition never satisfied" : null)));
     }
+
+    /// <summary>上下文清单：一个 Agent 上下文 + 两个页面（含活动页与导航能力标志）。</summary>
+    private static DesktopContexts Contexts() => new(
+    [
+        new DesktopContextInfo("ctx-probe", DesktopContextTrust.AgentAuthorized,
+        [
+            new DesktopPageInfo(
+                new DesktopPageTarget("ctx-probe", "page-probe"),
+                DesktopPageVersion.Require(5),
+                title: "探针页",
+                url: new Uri("https://example.com/probe"),
+                isActive: true,
+                isAgentTarget: true,
+                canGoBack: true),
+            new DesktopPageInfo(
+                new DesktopPageTarget("ctx-probe", "page-2"),
+                DesktopPageVersion.Require(2),
+                title: "第二页",
+                url: new Uri("https://example.com/second"),
+                isLoading: true),
+        ]),
+    ]);
     private static Task<DesktopCapabilityResponse> ExecuteJavascriptAsync(
         JavascriptRequest request, CancellationToken cancellationToken)
     {

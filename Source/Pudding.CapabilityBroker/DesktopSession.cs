@@ -186,6 +186,19 @@ public sealed class DesktopSession : IAsyncDisposable
                     DesktopCapabilityError.Internal("wait_for response payload is missing")),
             cancellationToken);
 
+    /// <summary>列出上下文与页面（只读，浏览器作用域）。</summary>
+    public Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
+        DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.BrowserContexts,
+            DesktopCapabilityRequest.ForContexts(),
+            call,
+            static response => response.Contexts is { } value
+                ? CapabilityResult<DesktopContexts>.Success(value)
+                : CapabilityResult<DesktopContexts>.Failure(
+                    DesktopCapabilityError.Internal("contexts response payload is missing")),
+            cancellationToken);
+
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync(

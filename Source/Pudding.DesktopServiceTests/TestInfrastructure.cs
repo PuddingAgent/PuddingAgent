@@ -213,6 +213,29 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ShellStatusHandler(cancellationToken);
     }
 
+    public int ContextsCount => _calls.Count(call => string.Equals(call, "contexts", StringComparison.Ordinal));
+
+    public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
+        DesktopCallContext context, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue("contexts");
+        await AwaitGateAsync(cancellationToken);
+
+        return CapabilityResult<DesktopContexts>.Success(new DesktopContexts(
+        [
+            new DesktopContextInfo("ctx-1", DesktopContextTrust.AgentAuthorized,
+            [
+                new DesktopPageInfo(
+                    new DesktopPageTarget("ctx-1", "page-1"),
+                    DesktopPageVersion.Require(9),
+                    title: "示例页",
+                    url: new Uri("https://example.com/1"),
+                    isActive: true,
+                    isAgentTarget: true),
+            ]),
+        ]));
+    }
+
     public int WaitForCount => _calls.Count(call => call.StartsWith("wait_for", StringComparison.Ordinal));
 
     public async Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(

@@ -44,6 +44,9 @@ public enum DesktopCapability
 
     /// <summary>等待条件满足（只读轮询；超时用 TimedOut 标注，不算失败）。</summary>
     BrowserWaitFor = 1 << 11,
+
+    /// <summary>列出浏览器上下文与页面（只读；浏览器作用域，不需要页面目标）。</summary>
+    BrowserContexts = 1 << 12,
 }
 
 public enum DesktopCapabilityKind
@@ -116,6 +119,8 @@ public static class DesktopCapabilities
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.BrowserWaitFor, "browser.wait_for", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
+        new(DesktopCapability.BrowserContexts, "browser.contexts", InitialVersion,
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext),
     ];
 
     private static readonly Dictionary<DesktopCapability, DesktopCapabilityDescriptor> ByCapability =

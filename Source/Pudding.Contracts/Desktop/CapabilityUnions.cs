@@ -17,6 +17,7 @@ public sealed record DesktopCapabilityRequest
         BrowserLocateRequest? locate,
         BrowserInteractRequest? interact,
         BrowserWaitForRequest? waitFor,
+        bool contexts,
         bool shellStatus)
     {
         Navigate = navigate;
@@ -27,6 +28,7 @@ public sealed record DesktopCapabilityRequest
         Locate = locate;
         Interact = interact;
         WaitFor = waitFor;
+        Contexts = contexts;
         ShellStatus = shellStatus;
     }
 
@@ -51,34 +53,39 @@ public sealed record DesktopCapabilityRequest
     /// <summary>条件等待请求（只读）。</summary>
     public BrowserWaitForRequest? WaitFor { get; }
 
+    /// <summary>浏览器上下文清单查询：无参数（浏览器作用域，不接受调用方指定目标）。</summary>
+    public bool Contexts { get; }
+
     /// <summary>只读 Shell 状态查询：无参数（Shell 是窗口作用域）。</summary>
     public bool ShellStatus { get; }
 
     public static DesktopCapabilityRequest ForNavigate(NavigateRequest request) =>
-        new(request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, null, null, null, false);
+        new(request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, null, null, null, false, false);
 
     public static DesktopCapabilityRequest ForJavascript(JavascriptRequest request) =>
-        new(null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, null, null, false);
+        new(null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, null, null, false, false);
 
     public static DesktopCapabilityRequest ForNotification(DesktopNotificationRequest request) =>
-        new(null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, null, false);
+        new(null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, null, null, false, false);
 
     public static DesktopCapabilityRequest ForPageState(DesktopPageTarget target) =>
-        new(null, null, null, target ?? throw new ArgumentNullException(nameof(target)), null, null, null, null, false);
+        new(null, null, null, target ?? throw new ArgumentNullException(nameof(target)), null, null, null, null, false, false);
 
     public static DesktopCapabilityRequest ForSnapshot(BrowserSnapshotRequest request) =>
-        new(null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, false);
+        new(null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, null, false, false);
 
     public static DesktopCapabilityRequest ForLocate(BrowserLocateRequest request) =>
-        new(null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, false);
+        new(null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, null, false, false);
 
     public static DesktopCapabilityRequest ForInteract(BrowserInteractRequest request) =>
-        new(null, null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, false);
+        new(null, null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), null, false, false);
 
     public static DesktopCapabilityRequest ForWaitFor(BrowserWaitForRequest request) =>
-        new(null, null, null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), false);
+        new(null, null, null, null, null, null, null, request ?? throw new ArgumentNullException(nameof(request)), false, false);
 
-    public static DesktopCapabilityRequest ForShellStatus() => new(null, null, null, null, null, null, null, null, true);
+    public static DesktopCapabilityRequest ForContexts() => new(null, null, null, null, null, null, null, null, true, false);
+
+    public static DesktopCapabilityRequest ForShellStatus() => new(null, null, null, null, null, null, null, null, false, true);
 
     /// <summary>页面目标；通知类与 Shell 状态查询没有页面目标，返回 <c>null</c>。</summary>
     public DesktopPageTarget? Target =>
@@ -104,6 +111,7 @@ public sealed record DesktopCapabilityRequest
         : Locate is not null ? $"locate {Locate.Locator} @{Locate.Target}"
         : Interact is not null ? $"interact {Interact}"
         : WaitFor is not null ? $"wait_for {WaitFor.Condition} @{WaitFor.Target}"
+        : Contexts ? "contexts"
         : ShellStatus ? "shell_status"
         : "empty";
 }
@@ -124,6 +132,7 @@ public sealed record DesktopCapabilityResponse
         DesktopLocateResult? locate,
         DesktopInteractionResult? interact,
         DesktopWaitResult? wait,
+        DesktopContexts? contexts,
         DesktopCapabilityError? error)
     {
         var payloadCount = (navigate is null ? 0 : 1)
@@ -134,7 +143,8 @@ public sealed record DesktopCapabilityResponse
             + (snapshot is null ? 0 : 1)
             + (locate is null ? 0 : 1)
             + (interact is null ? 0 : 1)
-            + (wait is null ? 0 : 1);
+            + (wait is null ? 0 : 1)
+            + (contexts is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -150,6 +160,7 @@ public sealed record DesktopCapabilityResponse
         Locate = locate;
         Interact = interact;
         Wait = wait;
+        Contexts = contexts;
         Error = error;
     }
 
@@ -175,39 +186,45 @@ public sealed record DesktopCapabilityResponse
     /// <summary>条件等待结果（超时也带页面状态）。</summary>
     public DesktopWaitResult? Wait { get; }
 
+    /// <summary>上下文与页面清单。</summary>
+    public DesktopContexts? Contexts { get; }
+
     public DesktopCapabilityError? Error { get; }
 
     public bool IsFailure => Error is not null;
 
     public static DesktopCapabilityResponse FromNavigate(NavigateResult result) =>
-        new(result ?? throw new ArgumentNullException(nameof(result)), null, null, null, null, null, null, null, null, null);
+        new(result ?? throw new ArgumentNullException(nameof(result)), null, null, null, null, null, null, null, null, null, null);
 
     public static DesktopCapabilityResponse FromJavascript(JavascriptResult result) =>
-        new(null, result ?? throw new ArgumentNullException(nameof(result)), null, null, null, null, null, null, null, null);
+        new(null, result ?? throw new ArgumentNullException(nameof(result)), null, null, null, null, null, null, null, null, null);
 
     public static DesktopCapabilityResponse FromNotification(DesktopNotificationResult result) =>
-        new(null, null, result ?? throw new ArgumentNullException(nameof(result)), null, null, null, null, null, null, null);
+        new(null, null, result ?? throw new ArgumentNullException(nameof(result)), null, null, null, null, null, null, null, null);
 
     public static DesktopCapabilityResponse FromPageState(DesktopPageState state) =>
-        new(null, null, null, state ?? throw new ArgumentNullException(nameof(state)), null, null, null, null, null, null);
+        new(null, null, null, state ?? throw new ArgumentNullException(nameof(state)), null, null, null, null, null, null, null);
 
     public static DesktopCapabilityResponse FromShellStatus(DesktopShellStatus status) =>
-        new(null, null, null, null, status ?? throw new ArgumentNullException(nameof(status)), null, null, null, null, null);
+        new(null, null, null, null, status ?? throw new ArgumentNullException(nameof(status)), null, null, null, null, null, null);
 
     public static DesktopCapabilityResponse FromSnapshot(DesktopSnapshot snapshot) =>
-        new(null, null, null, null, null, snapshot ?? throw new ArgumentNullException(nameof(snapshot)), null, null, null, null);
+        new(null, null, null, null, null, snapshot ?? throw new ArgumentNullException(nameof(snapshot)), null, null, null, null, null);
 
     public static DesktopCapabilityResponse FromLocate(DesktopLocateResult result) =>
-        new(null, null, null, null, null, null, result ?? throw new ArgumentNullException(nameof(result)), null, null, null);
+        new(null, null, null, null, null, null, result ?? throw new ArgumentNullException(nameof(result)), null, null, null, null);
 
     public static DesktopCapabilityResponse FromInteract(DesktopInteractionResult result) =>
-        new(null, null, null, null, null, null, null, result ?? throw new ArgumentNullException(nameof(result)), null, null);
+        new(null, null, null, null, null, null, null, result ?? throw new ArgumentNullException(nameof(result)), null, null, null);
 
     public static DesktopCapabilityResponse FromWait(DesktopWaitResult result) =>
-        new(null, null, null, null, null, null, null, null, result ?? throw new ArgumentNullException(nameof(result)), null);
+        new(null, null, null, null, null, null, null, null, result ?? throw new ArgumentNullException(nameof(result)), null, null);
+
+    public static DesktopCapabilityResponse FromContexts(DesktopContexts contexts) =>
+        new(null, null, null, null, null, null, null, null, null, contexts ?? throw new ArgumentNullException(nameof(contexts)), null);
 
     public static DesktopCapabilityResponse Failure(DesktopCapabilityError error) =>
-        new(null, null, null, null, null, null, null, null, null, error ?? throw new ArgumentNullException(nameof(error)));
+        new(null, null, null, null, null, null, null, null, null, null, error ?? throw new ArgumentNullException(nameof(error)));
 
     public override string ToString() =>
         Error is not null ? $"failure({Error.WireCode})"
@@ -220,5 +237,6 @@ public sealed record DesktopCapabilityResponse
         : Locate is not null ? $"locate({Locate})"
         : Interact is not null ? $"interact({Interact})"
         : Wait is not null ? $"wait_for({Wait})"
+        : Contexts is not null ? $"contexts({Contexts})"
         : "empty";
 }

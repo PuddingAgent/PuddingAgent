@@ -1,3 +1,19 @@
+## 2026-10-01：`browser.contexts` 端到端（切片 D 的「先看清有什么」）
+
+- 形态：**无参数只读能力**（同 `shell.status`）——浏览器作用域，不接受调用方指定目标；
+  traits 只有 `RequiresTrustedContext`（**没有 RequiresPageTarget**，这是目录里第一个这种组合）。
+- 契约：`DesktopPageInfo`（**版本必须有效** + 标题/地址/活动页/Agent 目标/前后退/加载中）、
+  `DesktopContextInfo`（上下文 + 可信级别 + 页面列表）、`DesktopContexts`。
+- proto：`ContextsCommand`（payload 19）+ `PageInfo`/`ContextInfo`/`ContextsOutcome`（outcome 20）。
+- 两端映射 fail closed：页面目标不可用、地址非绝对、**页面缺少有效版本**、上下文不可用
+  ⇒ `internal_error`（不把坏清单交给上层）；可信级别线名不认识时按 `Untrusted` 保守处理。
+- 探针：`browser.contexts` → 1 上下文 / 2 页面，**每页都带有效 PageVersion**、活动页可识别，
+  管道与 h2c 各一轮 ⇒ **41/41 exit 0**。
+- 价值：这是后续 `browser.tabs`（激活/关闭）与所有 `interact` 调用的前置——先拿到「带版本的目标」，
+  再按「显式目标 + 版本固定」的规则发起操作。
+
+测试合计：364 用例（Contracts 87、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.wait_for` 端到端（切片 D 最后一块只读能力）
 
 - 语义核心：**超时不是失败**——结果用 `TimedOut` 如实标注，并照样回带等待结束时的页面状态，

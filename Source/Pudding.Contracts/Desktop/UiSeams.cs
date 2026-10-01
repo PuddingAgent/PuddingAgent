@@ -51,6 +51,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken);
 
+    /// <summary>列出上下文与页面；实现方必须为每个页面标注当前 PageVersion。</summary>
+    Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
+        DesktopCallContext context, CancellationToken cancellationToken);
+
     /// <summary>等待条件满足；实现方必须在请求的超时上限内返回（超时用 TimedOut 标注，不抛异常）。</summary>
     Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
         DesktopCallContext context, BrowserWaitForRequest request, CancellationToken cancellationToken);

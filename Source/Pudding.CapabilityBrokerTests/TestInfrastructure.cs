@@ -123,7 +123,9 @@ internal sealed class HarnessOptions
         | DesktopCapability.ShellStatus
         | DesktopCapability.BrowserSnapshot
         | DesktopCapability.BrowserLocate
-        | DesktopCapability.BrowserInteract;
+        | DesktopCapability.BrowserInteract
+        | DesktopCapability.BrowserWaitFor
+        | DesktopCapability.BrowserContexts;
 
     public DesktopCapability Grantable { get; set; } =
         DesktopCapability.WebViewNavigate
@@ -133,7 +135,9 @@ internal sealed class HarnessOptions
         | DesktopCapability.ShellStatus
         | DesktopCapability.BrowserSnapshot
         | DesktopCapability.BrowserLocate
-        | DesktopCapability.BrowserInteract;
+        | DesktopCapability.BrowserInteract
+        | DesktopCapability.BrowserWaitFor
+        | DesktopCapability.BrowserContexts;
 
     public int MaxInFlightPerConnection { get; set; } = 8;
 

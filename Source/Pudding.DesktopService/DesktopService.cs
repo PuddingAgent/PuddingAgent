@@ -180,6 +180,27 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.BrowserContexts:
+            {
+                if (!request.Contexts)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("browser.contexts request payload is missing"));
+                }
+
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    target: null,
+                    DesktopPageVersion.Unknown,
+                    context,
+                    token => _surface.GetContextsAsync(context, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromContexts(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             case DesktopCapability.BrowserWaitFor:
             {
                 if (request.WaitFor is not { } waitFor)

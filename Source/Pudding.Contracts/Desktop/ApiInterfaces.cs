@@ -30,6 +30,11 @@ public interface IPuddingDesktopWebViewApi
         DesktopPageTarget target,
         CancellationToken cancellationToken = default);
 
+    /// <summary>列出浏览器上下文与页面（只读；浏览器作用域，无页面目标）。</summary>
+    Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
+        DesktopCallContext context,
+        CancellationToken cancellationToken = default);
+
     /// <summary>等待条件满足（只读）；超时用 TimedOut 标注而不是失败。</summary>
     Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
         DesktopCallContext context,

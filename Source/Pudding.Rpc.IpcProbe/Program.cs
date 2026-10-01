@@ -145,7 +145,8 @@ internal static class Program
             | DesktopCapability.BrowserSnapshot
             | DesktopCapability.BrowserLocate
             | DesktopCapability.BrowserInteract
-            | DesktopCapability.BrowserWaitFor,
+            | DesktopCapability.BrowserWaitFor
+            | DesktopCapability.BrowserContexts,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
         InactivityTimeout = TimeSpan.FromSeconds(30),
@@ -438,6 +439,26 @@ internal static class Program
                 "wait_for",
                 $"满足 → TimedOut=false v{satisfied.Value.Page.Version.Value}；"
                 + $"超时 → TimedOut=true v{timedOut.Value.Page.Version.Value}（超时不是失败）");
+        }
+        // 10) 上下文与页面清单（只读）：为后续调用提供带版本的目标。
+        var contexts = await session.GetContextsAsync(Call("contexts"));
+        if (contexts.IsSuccess
+            && contexts.Value.Contexts.Count == 1
+            && contexts.Value.Contexts[0].Pages.Count == 2
+            && contexts.Value.Contexts[0].Pages.All(page => page.Version.Value > 0)
+            && contexts.Value.Contexts[0].Pages.Any(page => page.IsActive))
+        {
+            report.Pass(
+                "contexts",
+                $"browser.contexts → {contexts.Value}（每页都带有效 PageVersion，活动页可识别）");
+        }
+        else
+        {
+            report.Fail(
+                "contexts",
+                contexts.IsFailure
+                    ? $"期望清单，实际 {contexts.Error!.Code}"
+                    : $"清单不完整：{contexts.Value}");
         }
         // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
         var refWithoutVersionRejected = false;
