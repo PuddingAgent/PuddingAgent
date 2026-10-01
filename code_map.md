@@ -4,6 +4,19 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
 
+## 2026-10-01：探针「真实 Core 端点模式」（第 30 轮）
+
+接线手册第 5 步原本要求「改用真实 Core 端点跑同一批断言」，但探针只会起自带服务端。本轮补上该模式：
+
+- `--endpoint "<Core 发布的端点描述>" [--dry-run]`：解析描述 → 严格校验 → 解析传输；
+  `--dry-run` 只报告不连接，**产品重启前就能先验证描述与安全约束**。
+- 实测（三种输入）：
+  - 正常描述 ⇒ 3/3 通过、exit 0（含 kind/address/实例 ID/传输）；
+  - **缺实例 ID** ⇒ 该轮 2 通过 1 失败、exit 1（重连语义退化必须提示）；
+  - **未登记形态**（`carrier-pigeon:`）⇒ 0 通过 1 失败、exit 1（严格解析，不猜测）。
+- 不带 `--endpoint` 时原模式不变（自带服务端 47/47 exit 0 复跑确认）。
+- 该模式把手册第 2/3 步（`CapabilityChannelPreflight`）与第 5 步串成「描述侧」与「绑定侧」两道检查：
+  前者看宿主实际监听，后者看描述能否被 Desktop 严格解析。
 ## 2026-10-01：第 29 轮干净复核（数字再次同步）
 
 - 实测：**385 用例**（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 101、

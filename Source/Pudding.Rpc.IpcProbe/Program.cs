@@ -36,10 +36,70 @@ internal static class Program
 
     private static readonly TimeSpan StepTimeout = TimeSpan.FromSeconds(20);
 
-    private static async Task<int> Main()
+    /// <summary>
+    /// 真实 Core 端点模式：只做「描述 → 传输」的解析与安全校验（不启动任何服务端、不连接网络）。
+    /// 产品重启前可先用它确认就绪描述可被 Desktop 侧严格解析；传 `--dry-run` 时只报告并退出。
+    /// </summary>
+    private static int RunAgainstRealCore(string? description, bool dryRun, ProbeReport report)
+    {
+        var parsed = DesktopCapabilityEndpoint.TryParse(description, out var endpoint);
+
+        if (!parsed || endpoint is null)
+        {
+            report.Fail("real-core-parse", $"无法解析端点描述：{(description is null ? "(缺少参数)" : description)}");
+            report.Print();
+            return 1;
+        }
+
+        report.Pass(
+            "real-core-parse",
+            $"端点描述可解析：kind={endpoint.Kind} address={endpoint.Address} core={endpoint.ServerInstanceId ?? "(未提供)"}");
+
+        if (endpoint.ServerInstanceId is null)
+        {
+            report.Fail("real-core-instance-id", "描述缺少 Core 实例 ID：Desktop 无法识别 Core 是否更换实例（重连语义退化）");
+        }
+        else
+        {
+            report.Pass("real-core-instance-id", "描述带 Core 实例 ID（可识别换实例）");
+        }
+
+        var transport = DesktopChannelTransportResolver.Resolve(endpoint);
+        if (transport.IsFailure)
+        {
+            report.Fail("real-core-transport", $"描述无法解析为可用传输：{transport.Error.Code}");
+        }
+        else
+        {
+            report.Pass("real-core-transport", $"传输可用：{transport.Value}");
+        }
+
+        if (dryRun)
+        {
+            report.Info("dry-run：未建立连接（产品重启前可先跑本步确认描述与传输）");
+        }
+        else
+        {
+            report.Info("真实端点模式：请由外部控制器在产品重启后运行完整断言（本探针不启动服务端）");
+        }
+
+        return report.Print();
+    }
+    private static async Task<int> Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
         var report = new ProbeReport();
+
+        // 真实 Core 端点模式（接线手册第 5 步）：解析 Core 发布的端点描述并连接，
+        // 而不是起一个自带服务端。`--dry-run` 只验证解析与传输与安全约束，可在产品重启前先跑。
+        var endpointIndex = Array.IndexOf(args, "--endpoint");
+        if (endpointIndex >= 0)
+        {
+            var description = endpointIndex + 1 < args.Length ? args[endpointIndex + 1] : null;
+            var dryRun = args.Contains("--dry-run", StringComparer.Ordinal);
+            return RunAgainstRealCore(description, dryRun, report);
+        }
+
         var pipeName = $"pudding-ipc-probe-{Guid.NewGuid():N}";
 
         try
