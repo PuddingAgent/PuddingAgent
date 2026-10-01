@@ -1,3 +1,7 @@
+## 2026-10-01：索引面板 B 卡消费真实符号索引数据（P3）
+
+Admin「索引与检索」页 L1 的 **B 卡（符号/代码索引）从占位改为真实数据消费**，并实现**四态优雅降级**：块缺失 `absent` / 观测不可用 `unavailable` / 已知的空 `empty` / 已观测 `observed`，**四态短词与 level 两两不同**（有 `Set=4` 断言）。契约字段名**从后端反读**（`Source/PuddingHost/Services/CodeIndexStatusProbe.cs` + `Tests/PuddingHost.Tests/Hosting/SA2*.cs` 的「恰好 23 个 camelCase」断言），23 字段只在 hover tooltip 与折叠的 L2 出现；D3 的**注册态与维护态分两个分区**（`data-zone="registry"` / `"driver"`）不合并；视觉用既有的陈旧/未登记/路径失效/涟漪/拨动开关/校准新鲜度环。新增 `src/pages/index-status/{codeIndexRow.tsx,codeIndex.test.tsx}`，`types.ts` 仅新增类型 + 一个可选根字段（既有 `fullText` 定义逐字未动）。⚠️ `codeIndex` 块由后端提供，**需重启 Core 才生效**；在此之前页面如实显示「未接入」（中性灰、不染红、无动效）。提交 `92b0f68`。
+
 ## 2026-10-01：Admin 索引状态端点增列符号索引块（S-A2）
 
 `GET /api/admin/index/status` 在既有 `fullText` 块之外**新增并列的 `codeIndex` 块**（符号/代码索引）；`fullText` 的字段名与结构**一个未动**（前端已上线）。数据源三处、真源分明：枚举真源 `ICodeIndexScopeRegistry.ListScopesAsync`（注册表）+ `ICodeIndexMaintenance.GetScopeStatuses`（未登记 scope 也能被看见）；原始注册态来自 `ICodeProjectRegistry.ListProjectsAsync`（唯一能表达 `Registering` 的地方）；维护态是 `CodeIndexMaintenanceScopeStatus` **23 字段原样透传**。D1/D2 的 fail-closed 做进数据：**未登记** 或 **根路径不存在** ⇒ `stale = true`；D3 的注册态与维护态分别呈现（`registrationState`/`registrationStatus` vs `maintenance`），不合并。全程只读：不打开写事务、不改路由与鉴权。见 `Source/PuddingHost/Services/CodeIndexStatusProbe.cs` 与 `Tests/PuddingHost.Tests/Hosting/SA2CodeIndexStatusTests.cs`。
