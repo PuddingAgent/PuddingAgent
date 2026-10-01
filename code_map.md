@@ -16,6 +16,22 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：浏览器侧表面映射规格（第 52 轮）
+
+- 结论（改变实现路线）：Desktop 侧浏览器表面**不应重建 WebView2 逻辑**，而应映射到既有抽象
+  `PuddingBrowser.Abstractions`（`IBrowserRuntime` → `IBrowserContext` → `IBrowserPage`），
+  现有七个浏览器工具正基于它工作；`DesktopDomScripts` 因而只作为**备选/参考**，不进入浏览器侧生产路径。
+- **关键好消息**：既有抽象**已带页面版本**——`IBrowserPage.PageVersion` 与 `IElementHandle.PageVersion`
+  都是一等成员 ⇒ 「Ref 随版本失效」有天然依据，无需另造版本来源。
+- 已实读并写进规格的目标类型：`BrowserContextInfo` / `PageInfo`（含 `PageVersion`）/ `NavigationOptions` /
+  `NavigationResult`（含 `Ok`/`StatusCode`/`ErrorText`）/ `BrowserContextId`/`PageId`/`ElementHandleId`，
+  以及 `IBrowserPage` 的 Goto/Snapshot/Query/QueryAll/Evaluate/Click/Fill/Type/Press/Hover/Scroll/Select/
+  Check/WaitFor/BringToFront 全套动作。
+- 规格文档：[Desktop 表面浏览器映射规格](Docs/Features/Desktop-Surface-Browser-Mapping-2026-10-01.md)，
+  含九项能力的映射表、必须保留的既有语义、**实现前需再确认的 4 项**（我方 Contracts 构造签名、
+  Locator 策略对应、BrowserScript 形态、WaitCondition 对应）与假运行时的测试策略。
+- 本轮只产出规格与实测事实，未改代码：下一轮按规格实现（先 contexts/tabs/page_state，
+  再 snapshot/locate/interact/wait_for，最后 navigate/javascript），每步用假运行时测试。
 ## 2026-10-01：Desktop 表面的 Shell 设施端口与适配层（第 51 轮）
 
 - 新增 `IDesktopShellFacilities`（Contracts）：WinUI 侧只需实现**三个动作**（对话框 / 文件选择器 / 剪贴板），
