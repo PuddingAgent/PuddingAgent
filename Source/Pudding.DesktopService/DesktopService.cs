@@ -112,9 +112,16 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     token => _surface.NavigateAsync(context, navigate, token),
                     cancellationToken).ConfigureAwait(false);
 
-                return result.IsSuccess
-                    ? DesktopCapabilityResponse.FromNavigate(result.Value)
-                    : DesktopCapabilityResponse.Failure(result.Error);
+                if (result.IsFailure)
+                {
+                    return DesktopCapabilityResponse.Failure(result.Error);
+                }
+
+                var navigationViolation = DesktopMutationInvariants.RequireVersionAdvanced(
+                    capability.Capability, request.ExpectedPageVersion, result.Value.PageVersion);
+                return navigationViolation is not null
+                    ? DesktopCapabilityResponse.Failure(navigationViolation)
+                    : DesktopCapabilityResponse.FromNavigate(result.Value);
             }
 
             case DesktopCapability.WebViewExecuteJavascript:
@@ -197,9 +204,16 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     token => _surface.TabsAsync(context, tabs, token),
                     cancellationToken).ConfigureAwait(false);
 
-                return result.IsSuccess
-                    ? DesktopCapabilityResponse.FromTabs(result.Value)
-                    : DesktopCapabilityResponse.Failure(result.Error);
+                if (result.IsFailure)
+                {
+                    return DesktopCapabilityResponse.Failure(result.Error);
+                }
+
+                var tabsViolation = DesktopMutationInvariants.RequireVersionAdvanced(
+                    capability.Capability, tabs.ExpectedPageVersion, result.Value.Page.Version);
+                return tabsViolation is not null
+                    ? DesktopCapabilityResponse.Failure(tabsViolation)
+                    : DesktopCapabilityResponse.FromTabs(result.Value);
             }
 
             case DesktopCapability.BrowserContexts:
@@ -260,9 +274,16 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     token => _surface.InteractAsync(context, interact, token),
                     cancellationToken).ConfigureAwait(false);
 
-                return result.IsSuccess
-                    ? DesktopCapabilityResponse.FromInteract(result.Value)
-                    : DesktopCapabilityResponse.Failure(result.Error);
+                if (result.IsFailure)
+                {
+                    return DesktopCapabilityResponse.Failure(result.Error);
+                }
+
+                var interactionViolation = DesktopMutationInvariants.RequireVersionAdvanced(
+                    capability.Capability, interact.ExpectedPageVersion, result.Value.Page.Version);
+                return interactionViolation is not null
+                    ? DesktopCapabilityResponse.Failure(interactionViolation)
+                    : DesktopCapabilityResponse.FromInteract(result.Value);
             }
 
             case DesktopCapability.BrowserLocate:

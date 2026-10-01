@@ -215,11 +215,18 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
 
     public int TabsCount => _calls.Count(call => call.StartsWith("tabs", StringComparison.Ordinal));
 
+    public Func<BrowserTabsRequest, CancellationToken, Task<CapabilityResult<DesktopTabsResult>>>? TabsHandler { get; set; }
+
     public async Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
         DesktopCallContext context, BrowserTabsRequest request, CancellationToken cancellationToken)
     {
         _calls.Enqueue($"tabs:{request.Action}");
         await AwaitGateAsync(cancellationToken);
+
+        if (TabsHandler is not null)
+        {
+            return await TabsHandler(request, cancellationToken);
+        }
 
         var next = DesktopPageVersion.Require(request.ExpectedPageVersion.Value + 1);
         var remaining = request.Action == DesktopTabAction.Close

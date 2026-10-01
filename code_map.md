@@ -4,6 +4,21 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
 
+## 2026-10-01：变更类结果不变量集中强制（第 27 轮）
+
+- 新增 `DesktopMutationInvariants.RequireVersionAdvanced(...)`：**变更类能力返回的页面版本必须严格推进**。
+  理由：核心语义是「Ref 随 PageVersion 失效」，若一次导航/交互/标签页操作返回的版本没有推进
+  （或不带版本），交互前的旧引用在 Core 眼里**仍然有效**，整套保护被静默破坏 ⇒ fail closed 折成 `internal_error`。
+  只读能力豁免（它们本来就可能回带与请求相同的版本）。
+- 咽喉点生效：`DesktopService` 在导航/交互/标签页三处成功路径统一检查；
+  与第 25 轮的预算强制同一位置，保证「不依赖各 surface 实现是否自觉」。
+- **测试过程中先红后绿，暴露了一个真实前提**：我最初把请求固定到 v5，而夹具注册表里该页是 v1
+  ⇒ 准入阶段的版本校验在到达 surface 之前就正确拒绝了（`page_version_mismatch`）。
+  修正测试前提后 4 条新用例全绿——这本身证明了两道版本闸门（准入 vs 结果）各司其职。
+- 测试：DesktopService **101/101**（+4）。
+
+测试合计（复核实测）：Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 101、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 22 = **381**；探针 47/47。
 ## 2026-10-01：跨侧能力集合漂移守卫（第 26 轮）
 
 本系列最常犯的错是「新增能力时只改了某一侧的集合」（探针先后三次以 `unsupported_capability` 抓到）。
