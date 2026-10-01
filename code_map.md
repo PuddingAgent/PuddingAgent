@@ -16,6 +16,23 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：新组件 `Pudding.DesktopSurface.Browser` 建立 + contexts 映射（第 55 轮）
+
+按组件化交付规程 S1→S4 落地（上一轮裁定"映射层独立成组件"）：
+
+- **S1 工程** `Source/Pudding.DesktopSurface.Browser`：只依赖 Contracts + DesktopService +
+  **`PuddingBrowser.Abstractions`**（抽象，无 WebView2/WinUI 类型）。
+- **S4 编译期边界**（`EnforceDesktopSurfaceBrowserBoundary`）：禁止引用宿主/运行时/WinUI 外壳/
+  浏览器**实现**（`PuddingBrowser.WebView2`、`PuddingBrowser.AgentTools`）与 ASP.NET Core/WinUI/WebView2 包。
+  与 DesktopService 的边界互补：两侧各自守住"不越界"，因此不必把浏览器依赖塞进 DesktopService。
+- **S2 测试工程** `Pudding.DesktopSurface.BrowserTests`：只引用被测组件，用**假运行时 + 假注册表**，
+  不需要 WebView2 ⇒ 离线完整测试（**5/5**）。
+- **首个映射能力 `contexts`**：页面必须带**有效版本**才进清单（版本 0 的页面**跳过**——宁可少报，
+  也不给出没有版本依据的引用）；活动页/Agent 目标/可信级别**只从 `IDesktopBrowserTargetRegistry` 读**
+  （未登记 ⇒ `Untrusted`，fail closed）；`ObservedVersion` 取清单中最高版本；
+  清单与实例不一致（上下文正在关闭）**如实跳过而不编造**；运行时就绪态非 Ready ⇒ `ui_unavailable`。
+- S5（接入 WinUI 组合根）留到表面全部实现后再做，避免把半成品接进产品。
+- 本轮同时修掉一个流程问题：**建工程前必须先建目录**（首次写入因此静默失败；`$e` 标记不具备说服力）。
 ## 2026-10-01：浏览器映射的落点裁定（第 54 轮）
 
 - 尝试把浏览器侧映射直接放进 `Pudding.DesktopService` 时**被其编译期边界目标拦下**

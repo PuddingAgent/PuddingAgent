@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Pudding.DesktopSurface.Browser</RootNamespace>
+    <AssemblyName>Pudding.DesktopSurface.Browser</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Desktop 表面的浏览器侧映射。只依赖**抽象**：Contracts + DesktopService + PuddingBrowser.Abstractions。
+    刻意独立于 Pudding.DesktopService：后者有编译期边界（不得引用浏览器项目），
+    而本组件恰恰要把浏览器运行时映射进表面 —— 分开后两侧边界都由编译器守住。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+    <ProjectReference Include="..\Pudding.DesktopService\Pudding.DesktopService.csproj" />
+    <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
+  </ItemGroup>
+
+  <Target Name="EnforceDesktopSurfaceBrowserBoundary" BeforeTargets="ResolveReferences">
+    <PropertyGroup>
+      <_SurfaceProjectReferences>@(ProjectReference)</_SurfaceProjectReferences>
+      <_SurfacePackageReferences>@(PackageReference)</_SurfacePackageReferences>
+    </PropertyGroup>
+    <Error Condition="$(_SurfaceProjectReferences.Contains('PuddingHost')) Or $(_SurfaceProjectReferences.Contains('PuddingRuntime')) Or $(_SurfaceProjectReferences.Contains('PuddingDesktop')) Or $(_SurfaceProjectReferences.Contains('PuddingBrowser.WebView2')) Or $(_SurfaceProjectReferences.Contains('PuddingBrowser.AgentTools')) Or $(_SurfaceProjectReferences.Contains('PuddingAgent'))"
+           Text="Pudding.DesktopSurface.Browser must not reference hosts, the WinUI shell or browser implementations (only the browser abstractions)." />
+    <Error Condition="$(_SurfacePackageReferences.Contains('Microsoft.AspNetCore')) Or $(_SurfacePackageReferences.Contains('Microsoft.UI')) Or $(_SurfacePackageReferences.Contains('WebView2'))"
+           Text="Pudding.DesktopSurface.Browser must not reference ASP.NET Core, WinUI or WebView2 packages." />
+  </Target>
+
+</Project>
