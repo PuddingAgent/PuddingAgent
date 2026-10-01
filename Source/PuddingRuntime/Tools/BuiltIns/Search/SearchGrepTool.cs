@@ -52,7 +52,13 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private const string LargeFileSkippedMessage = "已跳过 {0} 个超过 1MB 的大文件，结果可能不完整";
     private const string PaginationReportMessage = "返回数量为 {0} 个超过预算 100，完整结果已释放到临时文件，路径为 {1}，如果需要阅读完整的请使用 file_read 工具以 OffsetLines 参数分页阅读。";
     // ADR-089 U0-S2：覆盖声明行。非 Complete 的结果必须显式声明剩余范围未搜索，空输出不得伪装为"查无结果"。
-    private const string CoveragePartialMessage = "(coverage: partial — scanned {0}/{1} files, {2}/{3} bytes; remaining files not searched)";
+    /// <summary>
+    /// 非完整覆盖的单点声明：同时给出人类可读原因与机器可读事实
+    /// （searched_scope / complete / limit_reason），调用方据此区分「没找到」与「没搜到」。
+    /// </summary>
+    private const string CoveragePartialMessage =
+        "(coverage: partial — scanned {0}/{1} files, {2}/{3} bytes; remaining files not searched; "
+        + "searched_scope={4}; complete=false; limit_reason={5})";
     private const int MaxInlineResults = 100;
 
     private static readonly TimeSpan ManagedSearchTimeout = TimeSpan.FromSeconds(10);
@@ -547,8 +553,14 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         }
 
         total.Stop();
+        // 覆盖完整性：索引是快照，陈旧命中说明索引与当前工作树不一致，不能声称覆盖完整。
+        var indexComplete = !truncated && staleSkipped == 0;
+        var indexLimitReason = truncated
+            ? "max_results"
+            : staleSkipped > 0 ? "stale_index_paths" : "none";
         var summary = $"(backend=index: scope={scopeDirectory}, lines={lines.Count}, engineMatches={engineMatchCount}, "
             + $"engineTotalMatches={engineResult.TotalMatches}, engineMs={engineResult.ElapsedMs}, totalMs={total.ElapsedMilliseconds}"
+            + $", complete={indexComplete.ToString().ToLowerInvariant()}, limit_reason={indexLimitReason}"
             + (truncated ? ", truncated=max_results" : string.Empty)
             + (staleSkipped > 0 ? $", staleSkipped={staleSkipped}" : string.Empty)
             + (firstStaleRawPath is not null ? $", firstStaleRawPath={firstStaleRawPath}" : string.Empty)
@@ -840,28 +852,59 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             && !totalCapReached && skippedLargeFiles == 0 && errors == 0;
 
         var notes = new List<string>();
+        // 机器可读的限流原因：与 notes 一一对应，但只输出稳定 token，便于上层与日志判读。
+        var limitReasons = new List<string>();
         if (timedOut)
             notes.Add($"搜索超时（{_searchTimeout.TotalSeconds:0.##}s），结果可能不完整，建议缩小 directory/pattern/file_ext 范围，或改用索引工具 code_symbol_search / code_explore / file_search");
+        if (timedOut)
+            limitReasons.Add("search_timeout");
         if (regexTimedOut)
             notes.Add($"正则求值超时（{_searchTimeout.TotalSeconds:0.##}s），未能完成判定，结果可能不完整；建议简化 query（避免灾难性回溯）或缩小范围");
+        if (regexTimedOut)
+            limitReasons.Add("regex_timeout");
         if (enumerationTruncated)
+        {
             notes.Add(string.Format(EnumerationTruncatedMessage, MaxEnumeratedFiles));
+            limitReasons.Add("max_enumerated_files");
+        }
         if (enumerationErroredDirs > 0)
+        {
             notes.Add(string.Format(EnumerationErroredMessage, enumerationErroredDirs));
+            limitReasons.Add("enumeration_errors");
+        }
         if (scanBudgetExceeded)
+        {
             notes.Add(string.Format(ScanBudgetMessage, MaxScannedFiles, MaxScannedBytes));
+            limitReasons.Add("scan_budget");
+        }
         if (totalCapReached)
+        {
             notes.Add(string.Format(TotalCapMessage, matchCount));
+            limitReasons.Add("max_total_bytes");
+        }
         if (errorBudgetExceeded)
+        {
             notes.Add(string.Format(ErrorBudgetMessage, MaxErrors));
+            limitReasons.Add("max_errors");
+        }
         else if (errors > 0)
+        {
             notes.Add(string.Format(ReadErrorsMessage, errors));
+            limitReasons.Add("read_errors");
+        }
         if (skippedLargeFiles > 0)
+        {
             notes.Add(string.Format(LargeFileSkippedMessage, skippedLargeFiles));
+            limitReasons.Add("large_files_skipped");
+        }
         if (maxResultsReached)
+        {
             notes.Add(string.Format(MaxResultsReachedMessage, maxResults));
+            limitReasons.Add("max_results");
+        }
+        var limitReasonText = limitReasons.Count > 0 ? string.Join('|', limitReasons) : "none";
         if (!coverageComplete)
-            notes.Add(string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes));
+            notes.Add(string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes, cwd, limitReasonText));
 
         // 状态映射（S2-4）：partial/truncated/timeout 一律不得用 Ok；只有覆盖 Complete 的空结果才是 no_match。
         // R2：内部超时（整体预算或正则求值）都映射 timeout，绝不落为 no_match。
@@ -888,7 +931,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             {
                 var partialOutput = notes.Count > 0
                     ? string.Join("\n", notes)
-                    : string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes);
+                    : string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes, cwd, limitReasonText);
                 return ToolExecutionResult.Ok(partialOutput, status: ToolResultStatuses.Truncated);
             }
 

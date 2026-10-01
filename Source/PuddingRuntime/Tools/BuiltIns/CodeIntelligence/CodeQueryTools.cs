@@ -67,6 +67,15 @@ internal static class CodeQueryToolHelper
 
         return false;
     }
+
+    /// <summary>
+    /// 「项目未登记」的**单点文案**：D1 的 <c>code_index_status</c> 与 D2 的
+    /// <c>code_symbol_search</c> 使用同一句话，避免两处口径各自漂移。
+    /// </summary>
+    public static string BuildNotRegisteredMessage(string workspaceId, string projectId)
+        => $"Project '{projectId}' is not registered in workspace '{workspaceId}' "
+           + "(it may have been unregistered); use code_index_list_projects to list the "
+           + "currently registered projects.";
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -134,9 +143,7 @@ public sealed class CodeIndexStatusTool : PuddingToolBase<CodeIndexStatusArgs>
                 workspace_id = context.WorkspaceId,
                 project_id = projectId,
                 status = CodeQueryToolHelper.NotRegisteredStatus,
-                message = $"Project '{projectId}' is not registered in workspace "
-                    + $"'{context.WorkspaceId}' (it may have been unregistered); "
-                    + "use code_index_list_projects to list the currently registered projects.",
+                message = CodeQueryToolHelper.BuildNotRegisteredMessage(context.WorkspaceId, projectId),
                 started_at_utc = (DateTimeOffset?)null,
                 completed_at_utc = (DateTimeOffset?)null,
             }, JsonOptions));
@@ -181,7 +188,7 @@ public sealed record CodeIndexStatusArgs
 [Tool(
     id: "code_symbol_search",
     name: "Search code symbols",
-    description: "按名称在已登记项目中搜索代码符号（symbol search），结果包含符号种类、文件位置与签名。【何时用】定位某个类/方法/属性的定义与签名时使用；也是 code_callers/code_callees/code_impact 的前置步骤——先用它拿到 symbol_id。【怎么用】传 query（符号名关键词）；可选 project_id 限定项目（不传则跨全部已索引项目搜索）、kind 过滤符号种类、limit 控制数量（默认50）、include_parameters=true 可包含参数符号。【坑】依赖项目已登记且索引完成，否则搜不到；不传 project_id 时跨项目搜索，重名结果较多；参数与未知符号默认被过滤。",
+    description: "按名称在已登记项目中搜索代码符号（symbol search），结果包含符号种类、文件位置与签名。【何时用】定位某个类/方法/属性的定义与签名时使用；也是 code_callers/code_callees/code_impact 的前置步骤——先用它拿到 symbol_id。【怎么用】传 query（符号名关键词）；可选 project_id 限定项目（不传则跨全部已登记项目搜索）、kind 过滤符号种类、limit 控制数量（默认50）、include_parameters=true 可包含参数符号。【坑】依赖项目已登记且索引完成，否则搜不到；未登记项目直接 fail-closed（status=not_registered）；索引命中会校验文件存在且落在登记项目根目录内，失效命中被计入 stale_skipped 并从结果中剔除——此时 results 为空不等于“符号不存在”，需重登记重建索引或在当前仓库用 search_grep 实时搜索；不传 project_id 时跨项目搜索，重名结果较多；参数与未知符号默认被过滤。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -196,13 +203,16 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
 
     private readonly ICodeQueryService? _queryService;
     private readonly ICodeIndexScopeResolver? _resolver;
+    private readonly ICodeProjectRegistry? _registry;
 
     public CodeSymbolSearchTool(
         ICodeQueryService? queryService = null,
-        ICodeIndexScopeResolver? resolver = null)
+        ICodeIndexScopeResolver? resolver = null,
+        ICodeProjectRegistry? registry = null)
     {
         _queryService = queryService;
         _resolver = resolver;
+        _registry = registry;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -220,6 +230,18 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
         var projectId = await CodeQueryToolHelper.ResolveAndEnsureProjectIdAsync(
             _resolver, context.WorkspaceId, args.ProjectId, args.FilePath, args.ScopePath, ct)
             .ConfigureAwait(false);
+
+        // D2：注册表是唯一真源。显式项目未登记（可能已注销）⇒ 不得返回陈旧索引里的命中。
+        IReadOnlyList<CodeProjectRecord> registeredProjects = _registry is null
+            ? Array.Empty<CodeProjectRecord>()
+            : await _registry.ListProjectsAsync(context.WorkspaceId, ct).ConfigureAwait(false);
+
+        if (projectId is not null
+            && _registry is not null
+            && !CodeQueryToolHelper.IsRegistered(registeredProjects, projectId))
+        {
+            return Fail(CodeQueryToolHelper.BuildNotRegisteredMessage(context.WorkspaceId, projectId));
+        }
 
         CodeSymbolKind? kind = null;
         if (!string.IsNullOrWhiteSpace(args.Kind)
@@ -243,7 +265,27 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
 
         var results = await _queryService.SearchSymbolsAsync(request, ct);
 
-        var list = results.Select(r => new
+        // D2 陈旧路径校验：索引可能仍持有旧机器/旧路径的项目（例如仓库已从 E: 迁到 D:）。
+        // 命中路径必须真实存在且归属其登记项目根目录，否则不得当权威结果返回。
+        var includeStale = args.IncludeStale == true;
+        var stale = new List<(CodeSymbolDetail Detail, string Reason)>();
+        var rescoped = new List<CodeSymbolDetail>();
+        foreach (var detail in results)
+        {
+            var reason = ClassifyHit(detail.Symbol.FilePath, detail.Symbol.ProjectId, registeredProjects, _registry);
+            if (reason is null)
+                rescoped.Add(detail);
+            else
+                stale.Add((detail, reason));
+        }
+
+        // 默认过滤参数和未知种类以减少噪音，除非明确要求
+        var visible = args.IncludeParameters == true
+            ? rescoped
+            : rescoped.Where(r => r.Symbol.Kind.ToString() is not ("Parameter" or "Unknown")).ToList();
+
+        // 统一的投影：可信命中 stale_reason=null；include_stale=true 时陈旧命中带原因一并返回。
+        object Project(CodeSymbolDetail r, string? staleReason) => new
         {
             symbol_id = r.Symbol.SymbolId,
             name = r.Symbol.Name,
@@ -255,38 +297,103 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             end_line = r.Symbol.EndLine,
             display_name = r.DisplayName,
             project_id = r.Symbol.ProjectId,
-        }).ToList();
+            stale_reason = staleReason,
+        };
 
-        // 默认过滤参数和未知种类以减少噪音，除非明确要求
-        if (args.IncludeParameters != true)
-        {
-            var filtered = list.Count;
-            list = list.Where(r => r.kind != "Parameter" && r.kind != "Unknown").ToList();
-            filtered -= list.Count;
-            // filtered entries silently dropped (use include_parameters=true to see them)
-        }
+        var list = visible.Select(r => Project(r, null)).ToList();
+        if (includeStale)
+            list.AddRange(stale.Select(s => Project(s.Detail, s.Reason)));
+
+        var staleExamples = stale
+            .Take(5)
+            .Select(s => new { file_path = s.Detail.Symbol.FilePath, project_id = s.Detail.Symbol.ProjectId, reason = s.Reason })
+            .ToList();
 
         var output = JsonSerializer.Serialize(new
         {
             workspace_id = context.WorkspaceId,
             query = args.Query.Trim(),
             kind = kind?.ToString(),
+            // 覆盖范围与完整性：让调用方在"没找到"与"没搜到"之间做区分。
+            searched_scope = projectId ?? "(all registered projects in workspace)",
+            registered_project_count = _registry is null ? (int?)null : registeredProjects.Count,
+            complete = _registry is not null,
             count = list.Count,
+            stale_skipped = stale.Count,
+            stale_examples = staleExamples,
             results = list,
+            results_include_stale = includeStale,
         }, JsonOptions);
 
-        // 当没有任何项目被索引或没有匹配结果时，给出有帮助的提示
-        if (list.Count == 0)
+        if (stale.Count > 0)
         {
-            var hint = projectId == null
-                ? "\n\n💡 Tip: No matching symbols found across all indexed projects. " +
-                  "Auto-detection works when file_path or scope_path is provided."
-                : $"\n\n💡 Tip: No symbols matching '{args.Query.Trim()}' found in project '{projectId}'." +
-                  " Try a different query, or use code_index_list_projects to see registered projects.";
+            output += $"\n\n⚠️ {stale.Count} index hit(s) were rejected as stale (file missing or outside the "
+                + "registered project root)"
+                + (includeStale ? " and are marked with `stale_reason`." : " and are NOT part of the authoritative results.")
+                + " The index may belong to an older checkout; re-register the project "
+                + "(code_index_register_project) to rebuild it, or run a live `search_grep` in the current repository.";
+        }
+
+        // 当没有任何项目被索引或没有匹配结果时，给出有帮助的提示
+        if (visible.Count == 0)
+        {
+            var hint = stale.Count > 0
+                ? $"\n\n💡 Tip: All {stale.Count} hit(s) for '{args.Query.Trim()}' were stale; this is not evidence "
+                  + "that the symbol is absent from the current checkout."
+                : projectId == null
+                    ? "\n\n💡 Tip: No matching symbols found across all indexed projects. " +
+                      "Auto-detection works when file_path or scope_path is provided."
+                    : $"\n\n💡 Tip: No symbols matching '{args.Query.Trim()}' found in project '{projectId}'." +
+                      " Try a different query, or use code_index_list_projects to see registered projects.";
             output += hint;
         }
 
         return Ok(output);
+    }
+
+    /// <summary>
+    /// D2：判定一条索引命中是否可信。返回 null 表示可信；否则返回拒绝原因。
+    /// 判定只看两条可证伪的事实：文件是否存在、路径是否落在其登记项目根目录内。
+    /// 注册表不可用时（降级组合）不做归属判定，只做存在性判定。
+    /// </summary>
+    private static string? ClassifyHit(
+        string? filePath,
+        string? hitProjectId,
+        IReadOnlyList<CodeProjectRecord> registeredProjects,
+        ICodeProjectRegistry? registry)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return "missing_file_path";
+
+        if (!File.Exists(filePath))
+            return "file_not_found";
+
+        if (registry is null)
+            return null;
+
+        var owner = registeredProjects.FirstOrDefault(p =>
+            string.Equals(p.ProjectId, hitProjectId, StringComparison.Ordinal));
+        if (owner is null)
+            return "project_not_registered";
+
+        var root = owner.ProjectPath;
+        if (string.IsNullOrWhiteSpace(root))
+            return "project_root_unknown";
+
+        try
+        {
+            var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+            var normalizedHit = Path.GetFullPath(filePath);
+            var underRoot = normalizedHit.StartsWith(
+                normalizedRoot + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase);
+            return underRoot ? null : "outside_registered_root";
+        }
+        catch (Exception)
+        {
+            // 路径不是合法路径时同样不可信：不做猜测。
+            return "invalid_path";
+        }
     }
 
     /// <summary>
@@ -363,6 +470,11 @@ public sealed record CodeSymbolSearchArgs
     [ToolParam("可选：文件类型（扩展名）过滤，逗号分隔，前导点可选、大小写不敏感，如 \"cs\" 或 \".cs,.ts\"。"
         + "只返回这些扩展名文件里定义的符号；省略 = 不过滤（跨全部语言，与历史行为一致）。")]
     public string? FileExtensions { get; init; }
+
+    [ToolParam("默认 false：索引命中必须通过校验（文件存在且落在其登记项目根目录内），"
+        + "失效命中会被拒绝并计入 stale_skipped，不会出现在 results 里。"
+        + "仅在需要排查陈旧索引时设为 true，把原始行一并返回。")]
+    public bool? IncludeStale { get; init; }
 }
 
 // ═══════════════════════════════════════════════════════════════

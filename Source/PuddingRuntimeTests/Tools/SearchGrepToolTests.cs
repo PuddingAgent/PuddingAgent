@@ -1713,6 +1713,70 @@ public sealed class SearchGrepToolTests
         Assert.AreEqual("search_grep", tool.Descriptor.ToolId);
     }
 
+    /// <summary>
+    /// 覆盖声明必须机器可读：searched_scope / complete / limit_reason 三者齐备，
+    /// 调用方据此区分「没找到」与「没搜到」，而不是把 partial 结果当权威空结果。
+    /// </summary>
+    [TestMethod]
+    public async Task Coverage_Partial_Declares_Scope_Complete_And_Limit_Reason()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "pudding-grep-coverage-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a.cs"), "needle one");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "b.cs"), "needle two");
+        try
+        {
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance,
+                new StubFullTextSearchEngine(false, null!));
+
+            var result = await ExecuteAsync(tool, "needle", new Dictionary<string, string>
+            {
+                ["directory"] = tempDir,
+                ["max_results"] = "1",
+            });
+
+            Assert.AreEqual(ToolResultStatuses.Truncated, result.Status);
+            StringAssert.Contains(result.Output, "(coverage: partial");
+            Assert.AreEqual(1, result.Output.Split("(coverage: partial").Length - 1,
+                "coverage declaration must appear exactly once");
+            StringAssert.Contains(result.Output, $"searched_scope={tempDir}");
+            StringAssert.Contains(result.Output, "complete=false");
+            StringAssert.Contains(result.Output, "limit_reason=max_results");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    /// <summary>完整覆盖时不得输出 partial 声明，且空结果仍是权威 no_match。</summary>
+    [TestMethod]
+    public async Task Coverage_Complete_Empty_Result_Stays_NoMatch_Without_Partial_Declaration()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "pudding-grep-complete-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a.cs"), "nothing here");
+        try
+        {
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance,
+                new StubFullTextSearchEngine(false, null!));
+
+            var result = await ExecuteAsync(tool, "needle", new Dictionary<string, string>
+            {
+                ["directory"] = tempDir,
+            });
+
+            Assert.AreEqual(ToolResultStatuses.NoMatch, result.Status);
+            StringAssert.Contains(result.Output, "(no matches)");
+            Assert.IsFalse(result.Output.Contains("(coverage: partial"),
+                "完整覆盖不得声明 partial");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         SearchGrepTool tool,
         string query,
