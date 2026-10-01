@@ -55,7 +55,22 @@ browser.snapshot / browser.locate / browser.interact / browser.wait_for / browse
 4. 按脚本列出的 5 项 MANUAL 清单逐条确认：Desktop 拨入 / 无凭据拒绝 / 断连收尾 / 注册表清空 / 回滚演练。
 5. 回滚：`Enabled=false` 重启即回到今天的行为（可秒级回退）。
 
+## 4.1 关键事实：第 4/6/7 步**不需要** PuddingDesktop 也能验收
+
+探针已支持真实 Core 端点模式（`--endpoint "<就绪描述>"`），它本身就是**一个 Desktop 侧对端**，
+因此下列验收项可在**不改动 PuddingDesktop** 的情况下先行完成：
+
+| 验收项 | 探针覆盖方式 |
+|---|---|
+| 4 Desktop 拨入与握手 | 探针连真实 Core：世代 ≥ 1、能力交集符合 `Grantable` |
+| 6 无凭据/错凭据被拒 | 探针用错误令牌连接 ⇒ `unauthenticated`，且 Core 侧不产生会话 |
+| 7 断连收尾 | 探针退出 ⇒ Core 注册表清空、管道释放、Core 存活 |
+
+需要真实 PuddingDesktop 的只有「**用产品 UI 走完整业务操作**」（第 8 步的功能 smoke）——
+那需要 WinUI 表面（已完成 Shell 侧端口 + 适配层；浏览器侧待映射到既有 `IBrowserRuntime` 抽象）。
+
 ## 5. 尚未完成（明确登记，均依赖第 4 节）
+
 
 | 项 | 状态 | 依赖 |
 |---|---|---|

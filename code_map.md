@@ -16,6 +16,19 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：Desktop 表面的 Shell 设施端口与适配层（第 51 轮）
+
+- 新增 `IDesktopShellFacilities`（Contracts）：WinUI 侧只需实现**三个动作**（对话框 / 文件选择器 / 剪贴板），
+  其余（准入、预算、线程调度、版本不变量）已由 DesktopService 负责。
+- 新增 `DesktopShellSurface`（DesktopService）：平台无关适配层，只做三件事因而**可脱 UI 测试**：
+  ①**预算纵深防御**（设施漏了预算也会被截断并标注，含硬上限）；
+  ②**异常不越界**（非取消异常折叠为 `internal_error`，且**只带异常类型名**——异常消息可能含路径/剪贴板片段）；
+  ③**取消归一**（`OperationCanceledException` 原样传播，绝不折叠成失败）。
+- 测试：DesktopService **129/129**（+5：越预算截断、取消是结果、失败原样传递、异常→internal 且不泄漏消息、取消除外）。
+- 发现（重要）：Desktop 侧已存在完整浏览器抽象 `PuddingBrowser.Abstractions`（`IBrowserRuntime` →
+  `IBrowserContext` → `IBrowserPage`：Goto/Snapshot/Query/QueryAll/Evaluate/WaitFor），
+  现有七个浏览器工具正基于它工作 ⇒ **浏览器侧表面不应重建 WebView2 逻辑**，而应映射到该抽象
+  （因而同样可假实现测试）。这是下一轮的主任务。
 ## 2026-10-01：Core 侧组合根装配落地（第 50 轮，切片 C-3 第一步）
 
 用户授权重启窗口后，把能力通道接入 **Core 组合根**（`PuddingHost`）：
