@@ -403,9 +403,6 @@
             </StackPanel>
            </Grid>
           </Button>
-
-          <TextBlock Margin="4,8,4,0" FontSize="11" Opacity="0.5" TextAlignment="Center" TextWrapping="Wrap"
-            Text="拖动左侧分隔线调整宽度，双击恢复默认比例；收起只隐藏显示，不会停止正在运行的任务。"/>
          </StackPanel>
         </Grid>
        </Grid>
