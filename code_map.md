@@ -17,6 +17,9 @@
 - 不带 `--endpoint` 时原模式不变（自带服务端 47/47 exit 0 复跑确认）。
 - 该模式把手册第 2/3 步（`CapabilityChannelPreflight`）与第 5 步串成「描述侧」与「绑定侧」两道检查：
   前者看宿主实际监听，后者看描述能否被 Desktop 严格解析。
+- **判定覆盖矩阵已实测**（7 种输入，退出码与期望逐一相符）：
+  正常 named-pipe / loopback-h2c / tls ⇒ exit 0；
+  非回环明文、`http` 冒充 `tls`、版本为 0、缺实例 ID ⇒ exit 1（严格解析，不猜测、不静默回退）。
 ## 2026-10-01：第 29 轮干净复核（数字再次同步）
 
 - 实测：**385 用例**（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 101、
