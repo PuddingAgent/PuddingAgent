@@ -3968,3 +3968,6 @@ VisionPipelineException包含source=tool function_call_output、message#、plann
 
 只读核查现场库时用 `file:...?mode=ro` + `PRAGMA query_only=ON`；`dbstat` 全库聚合在数 GiB 库上可能超过 120 秒，不要为页面刷新而跑。
 完整时间线与实测分阶段数据见 [Core 启动耗时归因](Docs/Reports/Core启动耗时归因-2026-09-30.md)。
+
+## 2026-10-01 Chat 性能归因补充
+诊断报告见 Docs/Reports/Chat-Frontend-Performance-Diagnosis-2026-10-01.md。开启 ?perf=1 后分别测 API 完成到可读帧、IndexedDB 事务、投影 CPU、React commit 和 Layout/Paint。chat.markdown.render.commitMs 包含 render 到 effect 的调度等待，不能作为纯解析耗时。消息级虚拟化不能免除单条超长回复内部的完整挂载，也不能免除全列表投影计算。
