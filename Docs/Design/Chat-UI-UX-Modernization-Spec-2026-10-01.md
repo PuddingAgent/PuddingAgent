@@ -518,12 +518,14 @@ Shell `MainWindow.xaml.cs` 的 `OnTheme` 当前设置 `Root.RequestedTheme` 并�
 |---|---|---|---|
 | IMG01（色彩不统一） | 代码已落地，未验收 | `28dca85` | 主题真源 `global.style.ts` 的暖米色 + 紫色强调与 runtime/admin/antd 派生 token 收敛到 §3（bg/surface/text/border/accent/状态色），紫色光晕改蓝；`ThemeMode` 的 antd token 同步；消息/计划卡/语音/状态详情的硬编码紫与暖色字面量改 token；Shell `WorkbenchAppearance` 预绘制背景同步 §3。 |
 | IMG02（深色白条） | 代码已落地，未验收 | `2430f97`、`6bf5b16` | 见 §14.6（color-scheme + 滚动条皮肤 + WebView2 预绘制背景）。 |
-| IMG03（顶部图标密集） | **未实施** | — | 保留高频动作、低频项分组进“更多”尚未动手；属 P0 剩余项。 |
+| IMG03（顶部图标密集） | 代码已落地，未验收 | `7e38284` | 顶部常驻任务看板 / 搜索 / 快照 / 余额数字；自动朗读与开发者模式收进“更多”下拉，每项带名称与“已开启/已关闭”状态与选中勾；Tooltip 明写两项状态，开发者模式开启时触发器高亮；未删除任何入口，DevPanel 仍懒加载。 |
 | IMG04（暗色图标/统计/placeholder 偏暗） | 代码已落地，未验收 | `28dca85` | 文本四档（text/secondary/tertiary/caption）按 §3 重新标定，浅色 caption #6E7A88、过程文字 #5C6B7A，深色 #8B98A9 / #9AA8BB；状态色取 §3 三态。 |
 
 IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--pudding-text-muted`、`--pudding-accent`、`--pudding-danger`、`--pudding-surface-soft`、`--pudding-chat-primary`、`--pudding-chat-panel-bg`、`--muted-text`、`--text-tertiary`、`--border-subtle` 被 30+ 处以 `var(短名, 暖色字面量)` 引用但从未定义，实际渲染的一直是回退的暖灰/紫（#1d1b24 / #756b5f / #8b5cf6 / #b5543c / #f5f5f5）。已在主题真源补齐集中的 §3 别名并修正明确笔误的调用点。未定义引用由 12 项降至 6 项，余下 4 项为 JSX 运行时设置（`--bx/--by/--particle-drift/--pudding-state-dot-size`）、1 项为测试字符串拼接（`--pudding-status-`）、1 项 `--composer-feedback-fill` 无明确意图（`backgroundImage` 引用而从未设置，仅记录不改）。审计脚本：`temp/token-audit.mjs`。
 
 对比度核算：`temp/palette-contrast.mjs` 对 §3 色板逐项计算，28/28 达标（正文与过程文字 ≥4.5:1，装饰标签、边框、滚动条 thumb ≥3:1）；但**这是脚本计算，不等于实机验收** —— §13.6 的 IMG-V01/V03 与 §12 的 V01–V03 仍需真实窗口截图与量测，未做之前不能记为通过。
+
+**P0 批次代码状态（2026-10-01）**：SCROLL-001-WEB（`2430f97`）、SCROLL-001-SHELL（`6bf5b16`）、IMG01/IMG04（`28dca85`）、IMG03（`7e38284`）均已落地并通过前端测试与构建门禁；文档状态见各节。仍未取得的证据有两条，且都不由代码决定：① **完整 Desktop 链接构建**（`dotnet build` 复制输出被运行中的 `PuddingDesktop` 与 Visual Studio 文件锁阻断，`-t:Compile` 已 0 错误）；② **整窗与 WebView2 真实验收**（§12 V/F/S/A/P/SEC/D、§13.6 IMG-V*、§14.5 表）。因此 P0 只能记为「代码完成、未验收」，不能记为已关闭。
 
 ## 14. 独立缺陷登记：SCROLL-001 深色滚动条及 Web / Shell 边界不协调
 
