@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Pudding.CapabilityBroker.AspNetCore</RootNamespace>
+    <AssemblyName>Pudding.CapabilityBroker.AspNetCore</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Core 侧宿主适配层（计划 §3）：把 gRPC 服务端流接到 Pudding.CapabilityBroker，
+    并提供 Kestrel 端点与 DI/路由注册的纯函数式装配助手。
+    平台无关的会话语义全在 Pudding.CapabilityBroker；本工程只做「ASP.NET Core ↔ Broker」的接线。
+    编译期边界：只允许引用 Broker / Contracts / Rpc.Protocol（不得引用 Desktop 侧或宿主工程）。
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pudding.CapabilityBroker.AspNetCoreTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Grpc.AspNetCore" Version="2.84.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+    <ProjectReference Include="..\Pudding.Rpc.Protocol\Pudding.Rpc.Protocol.csproj" />
+    <ProjectReference Include="..\Pudding.CapabilityBroker\Pudding.CapabilityBroker.csproj" />
+  </ItemGroup>
+
+  <Target Name="EnforceCapabilityHostAdapterBoundary" BeforeTargets="ResolveReferences">
+    <PropertyGroup>
+      <_AdapterProjectReferences>@(ProjectReference)</_AdapterProjectReferences>
+      <_AdapterPackageReferences>@(PackageReference)</_AdapterPackageReferences>
+    </PropertyGroup>
+    <Error Condition="$(_AdapterProjectReferences.Contains('PuddingHost')) Or $(_AdapterProjectReferences.Contains('PuddingRuntime')) Or $(_AdapterProjectReferences.Contains('PuddingDesktop')) Or $(_AdapterProjectReferences.Contains('Pudding.DesktopConnection')) Or $(_AdapterProjectReferences.Contains('Pudding.DesktopService'))"
+           Text="The Core host adapter must not reference Desktop, Host or Runtime projects." />
+    <Error Condition="$(_AdapterPackageReferences.Contains('Microsoft.UI')) Or $(_AdapterPackageReferences.Contains('WebView2'))"
+           Text="The Core host adapter must not reference WinUI or WebView2 packages." />
+  </Target>
+
+</Project>

@@ -28,7 +28,8 @@ public sealed record DesktopCapabilityPolicy
     /// <summary>握手等待上限（对端必须先发 hello）。</summary>
     public TimeSpan HandshakeTimeout { get; init; } = TimeSpan.FromSeconds(15);
 
-    internal void Validate()
+    /// <summary>校验限制可用性（宿主适配层在构造选项时调用，避免把非法配置带进运行期）。</summary>
+    public void Validate()
     {
         if (Grantable == DesktopCapability.None)
         {

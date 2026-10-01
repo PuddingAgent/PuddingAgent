@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    组件化交付规程 S2：只引用被测组件（Pudding.CapabilityBroker.AspNetCore）。
+    测试自行托管最小 Kestrel 并把真实 gRPC 客户端当作 Desktop 对端，
+    因此不需要启动产品 Core、也不需要 Desktop 侧组件。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.CapabilityBroker.AspNetCore\Pudding.CapabilityBroker.AspNetCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" Version="2.84.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2" PrivateAssets="all" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
