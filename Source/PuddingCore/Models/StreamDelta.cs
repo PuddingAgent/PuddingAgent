@@ -50,6 +50,19 @@ public sealed record StreamDelta
 
     /// <summary>Time spent parsing the provider data payload into a StreamDelta.</summary>
     public long? GatewayParseMs { get; init; }
+
+    /// <summary>
+    /// Elapsed milliseconds from the moment the HTTP request was handed to the transport
+    /// until this delta was produced by the gateway. Unlike <see cref="ProviderReadMs"/> this
+    /// includes connection/headers wait, so it is the correct basis for provider TTFT.
+    /// </summary>
+    public long? ProviderDispatchElapsedMs { get; init; }
+
+    /// <summary>
+    /// Elapsed milliseconds from dispatch until the provider response headers were received.
+    /// Set on the first delta emitted for a provider response only.
+    /// </summary>
+    public long? ProviderHeadersMs { get; init; }
 }
 
 /// <summary>流式工具调用累积器——将多个 StreamDelta 的工具调用片段拼接为完整调用。</summary>

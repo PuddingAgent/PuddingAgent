@@ -435,6 +435,88 @@ public sealed class LlmStreamObservabilityTests
     }
 
     [TestMethod]
+    public async Task ChatStreamAsync_TtftMetadata_CountsOnlyNonEmptyModelDeltas()
+    {
+        var telemetry = new RecordingTelemetrySink();
+        // First provider chunk carries only a role: it is transport progress, not model output.
+        const string sse = """
+            data: {"id":"c1","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}
+
+            data: {"id":"c1","choices":[{"delta":{"reasoning_content":"think"},"finish_reason":null}]}
+
+            data: {"id":"c1","choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+            """;
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(new StaticSseHandler(sse))),
+            new TestLlmConfigService(),
+            NullLogger<DirectLlmClient>.Instance,
+            telemetrySink: telemetry);
+
+        var deltaCount = 0;
+        await foreach (var _ in client.ChatStreamAsync(
+                           "default",
+                           "session-ttft",
+                           "template-1",
+                           [new ChatMessage(ChatRole.User, "hello")],
+                           llmConfig: new LlmConfig
+                           {
+                               Endpoint = "https://provider.test/v1",
+                               ApiKey = "test-key",
+                               ModelId = "test-model",
+                           }))
+        {
+            deltaCount++;
+        }
+
+        Assert.AreEqual(2, deltaCount, "The role-only chunk must not surface as a model delta.");
+
+        var dimensions = telemetry.Metrics.Last(metric => metric.Name == "llm.chat_stream").Dimensions!;
+        Assert.AreEqual("provider_dispatch", dimensions["stream_ttft_source"]);
+        Assert.IsTrue(long.TryParse(dimensions["stream_ttft_ms"], out var ttft), "TTFT must be a number once a model delta arrives.");
+        Assert.IsTrue(long.TryParse(dimensions["stream_ttft_reasoning_ms"], out var reasoning));
+        Assert.IsTrue(long.TryParse(dimensions["stream_ttft_content_ms"], out var content));
+        Assert.IsTrue(content >= reasoning, "Content follows reasoning, so its dispatch-relative TTFT cannot be earlier.");
+        Assert.IsFalse(string.IsNullOrEmpty(dimensions["stream_provider_headers_ms"]), "Provider header timing must be reported.");
+    }
+    [TestMethod]
+    public async Task ChatStreamAsync_NoModelDelta_LeavesTtftUncollected()
+    {
+        var telemetry = new RecordingTelemetrySink();
+        const string sse = """
+            data: {"id":"c1","choices":[{"delta":{"role":"assistant"},"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+            """;
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(new StaticSseHandler(sse))),
+            new TestLlmConfigService(),
+            NullLogger<DirectLlmClient>.Instance,
+            telemetrySink: telemetry);
+
+        await foreach (var _ in client.ChatStreamAsync(
+                           "default",
+                           "session-no-model-delta",
+                           "template-1",
+                           [new ChatMessage(ChatRole.User, "hello")],
+                           llmConfig: new LlmConfig
+                           {
+                               Endpoint = "https://provider.test/v1",
+                               ApiKey = "test-key",
+                               ModelId = "test-model",
+                           }))
+        {
+        }
+
+        var dimensions = telemetry.Metrics.Last(metric => metric.Name == "llm.chat_stream").Dimensions!;
+        Assert.AreEqual("unavailable", dimensions["stream_ttft_source"]);
+        Assert.AreEqual(string.Empty, dimensions["stream_ttft_ms"], "Not collected must be empty, never 0.");
+    }
+
+    [TestMethod]
     public async Task ProviderRateLimiter_AcquireAsync_ReturnsStructuredLeaseDiagnostics()
     {
         var limiter = new ProviderRateLimiter(
@@ -501,6 +583,17 @@ public sealed class LlmStreamObservabilityTests
     private sealed class FixedHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
+    }
+
+    private sealed class StaticSseHandler(string sse) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+            });
     }
 
     private sealed class CapturingJsonHandler : HttpMessageHandler

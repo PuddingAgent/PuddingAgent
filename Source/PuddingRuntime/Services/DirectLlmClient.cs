@@ -507,7 +507,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                         delta = enumerator.Current;
                         if (!hasYieldedDelta)
                             streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: true);
-                        streamDiagnostics.Observe(delta);
+                        streamDiagnostics.Observe(delta, sw.ElapsedMilliseconds);
                     }
                     catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
                     {
@@ -1400,7 +1400,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         private long _toolDeltaCount;
         private long _usageChunkCount;
         private TokenUsageDto? _usage;
-        private long _timeToFirstTokenMs;
+        private long? _timeToFirstTokenMs;
+        private long? _firstReasoningMs;
+        private long? _firstContentMs;
+        private long? _firstToolDeltaMs;
+        private long? _providerHeadersMs;
+        private string? _ttftSource;
         private long _firstChunkWaitMs;
         private bool _firstChunkWaitObserved;
         private bool _firstChunkReceived;
@@ -1408,7 +1413,11 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         public long ChunkCount { get; private set; }
 
-        public long TimeToFirstTokenMs => _timeToFirstTokenMs;
+        /// <summary>
+        /// Provider TTFT: elapsed time from the actual HTTP dispatch to the first non-empty
+        /// model delta (reasoning, content or tool call). Null until such a delta is observed.
+        /// </summary>
+        public long? TimeToFirstTokenMs => _timeToFirstTokenMs;
 
         public TokenUsageDto? Usage => _usage;
 
@@ -1422,12 +1431,35 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             _firstChunkReceived = received;
         }
 
-        public void Observe(StreamDelta delta)
+        public void Observe(StreamDelta delta, long? clientElapsedMs = null)
         {
-            if (ChunkCount == 0)
+            // Prefer the gateway's dispatch-relative clock: it starts at the actual HTTP send,
+            // so it excludes local request building but includes connection/headers wait.
+            var dispatchElapsedMs = delta.ProviderDispatchElapsedMs ?? clientElapsedMs;
+            if (_providerHeadersMs is null && delta.ProviderHeadersMs is { } headersMs)
+                _providerHeadersMs = headersMs;
+
+            var hasReasoning = !string.IsNullOrEmpty(delta.ReasoningDelta);
+            var hasContent = !string.IsNullOrEmpty(delta.ContentDelta);
+            var hasToolDelta = delta.ToolCallIndex.HasValue;
+
+            if (hasReasoning && _firstReasoningMs is null)
+                _firstReasoningMs = dispatchElapsedMs;
+            if (hasContent && _firstContentMs is null)
+                _firstContentMs = dispatchElapsedMs;
+            if (hasToolDelta && _firstToolDeltaMs is null)
+                _firstToolDeltaMs = dispatchElapsedMs;
+
+            if (_timeToFirstTokenMs is null
+                && dispatchElapsedMs is not null
+                && (hasReasoning || hasContent || hasToolDelta))
             {
-                _timeToFirstTokenMs = delta.ProviderReadMs ?? 0;
+                _timeToFirstTokenMs = dispatchElapsedMs;
+                _ttftSource = delta.ProviderDispatchElapsedMs is not null
+                    ? "provider_dispatch"
+                    : "client_elapsed";
             }
+
             ChunkCount++;
             ObserveValue(delta.ProviderReadMs, ref _readTotalMs, ref _readMaxMs);
             if (delta.ProviderChunkGapMs.HasValue)
@@ -1469,7 +1501,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 ["stream_reasoning_chars"] = _reasoningChars.ToString(),
                 ["stream_tool_delta_count"] = _toolDeltaCount.ToString(),
                 ["stream_usage_chunk_count"] = _usageChunkCount.ToString(),
-                ["stream_ttft_ms"] = _timeToFirstTokenMs.ToString(),
+                ["stream_ttft_ms"] = FormatMs(_timeToFirstTokenMs),
+                ["stream_ttft_source"] = _ttftSource ?? "unavailable",
+                ["stream_ttft_reasoning_ms"] = FormatMs(_firstReasoningMs),
+                ["stream_ttft_content_ms"] = FormatMs(_firstContentMs),
+                ["stream_ttft_tool_ms"] = FormatMs(_firstToolDeltaMs),
+                ["stream_provider_headers_ms"] = FormatMs(_providerHeadersMs),
             };
             if (!string.IsNullOrWhiteSpace(_finishReason))
                 metadata["stream_finish_reason"] = _finishReason;
@@ -1566,6 +1603,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         private static double Average(long total, long count)
             => count <= 0 ? 0 : (double)total / count;
+
+        /// <summary>Emit an empty string for an unobserved value so consumers show "not collected" instead of 0.</summary>
+        private static string FormatMs(long? value) => value?.ToString() ?? "";
     }
 
     private sealed class ProxyTool(LlmToolDefinition dto) : ITool

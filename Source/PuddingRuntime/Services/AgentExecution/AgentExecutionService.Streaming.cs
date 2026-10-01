@@ -109,6 +109,9 @@ public sealed partial class AgentExecutionService
 
         // ── 全管道性能诊断 ──
         var perfTotalSw = System.Diagnostics.Stopwatch.StartNew();
+        // 精确计时：本 turn 的提交/上下文就绪/供应商 TTFT/模型/工具/首正文时点。
+        // 与 perf* Stopwatch 并存：前者服务 UI 与会话统计，后者保持既有日志口径。
+        var turnTimings = new AgentTurnTimingCollector();
         var perfHistorySw = System.Diagnostics.Stopwatch.StartNew();
         var perfHistoryStartedAt = DateTimeOffset.UtcNow;
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
@@ -199,6 +202,7 @@ public sealed partial class AgentExecutionService
         _logger.LogInformation(
             "[AgentExec:Perf] History loaded session={Session} elapsed={Ms}ms count={Count}",
             request.SessionId, perfHistorySw.ElapsedMilliseconds, history.Count);
+        turnTimings.HistoryLoadMs = perfHistorySw.ElapsedMilliseconds;
 
         var perfContextSw = System.Diagnostics.Stopwatch.StartNew();
         var perfContextStartedAt = DateTimeOffset.UtcNow;
@@ -280,6 +284,7 @@ public sealed partial class AgentExecutionService
         _logger.LogInformation(
             "[AgentExec:Perf] Context assembled session={Session} elapsed={Ms}ms promptLen={Len}",
             request.SessionId, perfContextSw.ElapsedMilliseconds, streamingSystemPrompt.SystemPrompt.Length);
+        turnTimings.ContextAssembleMs = perfContextSw.ElapsedMilliseconds;
 
         // 子代理上下文装配完毕事件（ADR-021）
         await TryEmitContextAssembledAsync(streamSubAgentRunId, request, CancellationToken.None);
@@ -361,6 +366,7 @@ public sealed partial class AgentExecutionService
         }
 
         // 构建工具定义：优先用上游下发的 ToolDefinitions，否则从 SkillRuntime 构建
+        turnTimings.LlmConfigResolveMs = llmConfigSw.ElapsedMilliseconds;
         var toolBuildStartedAt = DateTimeOffset.UtcNow;
         var toolBuildSw = System.Diagnostics.Stopwatch.StartNew();
                 var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
@@ -462,6 +468,7 @@ public sealed partial class AgentExecutionService
 
         var streamCompletedSuccessfully = false;
         var pipelineDiagnostics = new StreamPipelineDiagnosticsAccumulator();
+        turnTimings.ToolBuildMs = toolBuildSw.ElapsedMilliseconds;
 
         try
         {
@@ -709,10 +716,13 @@ public sealed partial class AgentExecutionService
                 // 发送 context 帧（仅第1轮）
                 if (round == 0)
                 {
+                    // 命名修正：此处只代表「上下文就绪」（模型尚未调用），
+                    // 供应商 TTFT 由后面的 PROVIDER_TTFT 记录，二者不可混用。
                     _logger.LogInformation(
-                        "[AgentExec:Perf] FIRST_TOKEN session={Session} totalElapsed={Ms}ms historyLoad={HistoryMs}ms contextBuild={ContextMs}ms",
+                        "[AgentExec:Perf] CONTEXT_READY session={Session} totalElapsed={Ms}ms historyLoad={HistoryMs}ms contextBuild={ContextMs}ms",
                         request.SessionId, perfTotalSw.ElapsedMilliseconds,
                         perfHistorySw.ElapsedMilliseconds, perfContextSw.ElapsedMilliseconds);
+                    turnTimings.MarkContextReady();
                     _logger.LogDebug("[Diag] Stream round={Round} session={Session} tools={ToolCount} maxRounds={MaxRounds}",
                         round, request.SessionId, llmTools.Count, maxRounds);
                     var contextFrame = BuildStreamContextFrame(history, template, effectiveCapability);
@@ -891,6 +901,7 @@ public sealed partial class AgentExecutionService
                         ct: ct).GetAsyncEnumerator(ct);
                 }
                 llmPrepareSw.Stop();
+                turnTimings.BeginModelCall();
                 await RecordActivityAsync(
                     streamTrace,
                     component: RuntimeActivityComponents.AgentExecution,
@@ -936,6 +947,20 @@ public sealed partial class AgentExecutionService
                             break;
                         }
 
+                        if (turnTimings.ObserveProviderDelta(delta))
+                        {
+                            _logger.LogInformation(
+                                "[AgentExec:Perf] PROVIDER_TTFT session={Session} round={Round} ttft={Ttft}ms headers={Headers}ms reasoning={Reasoning}ms content={Content}ms tool={Tool}ms source={Source}",
+                                request.SessionId,
+                                round + 1,
+                                turnTimings.ProviderTtftMs,
+                                turnTimings.ProviderHeadersMs,
+                                turnTimings.ProviderFirstReasoningMs,
+                                turnTimings.ProviderFirstContentMs,
+                                turnTimings.ProviderFirstToolDeltaMs,
+                                delta.ProviderDispatchElapsedMs is not null ? "provider_dispatch" : "local_model_call");
+                        }
+
                         // 思维链增量 → thinking 事件
                         if (!string.IsNullOrEmpty(delta.ReasoningDelta))
                         {
@@ -960,6 +985,7 @@ public sealed partial class AgentExecutionService
                         if (!string.IsNullOrEmpty(delta.ContentDelta))
                         {
                             roundDeltaFrames++;
+                            turnTimings.MarkFirstContentFrame();
                             var originalDelta = delta.ContentDelta;
                             replyBuf.Append(originalDelta);
                             ReportMeaningfulProgress(
@@ -1012,6 +1038,7 @@ public sealed partial class AgentExecutionService
                 finally
                 {
                     await llmEnumerator.DisposeAsync();
+                    turnTimings.EndModelCall();
                 }
 
                 if (llmException is OperationCanceledException && ct.IsCancellationRequested)
@@ -1480,6 +1507,7 @@ public sealed partial class AgentExecutionService
                     if (!executionBlocked)
                         result = failedToolCallTracker.Observe(repeatKey, result);
                     toolSw.Stop();
+                    turnTimings.RegisterToolCall(toolSw.ElapsedMilliseconds);
 
                     await RecordToolMetricAsync(
                         streamTrace,
@@ -1839,11 +1867,25 @@ public sealed partial class AgentExecutionService
             var voiceEnabled = true;
             var voiceTtsText = (string?)null;
 
+            turnTimings.MarkCompleted();
+            _logger.LogInformation(
+                "[AgentExec:Perf] TURN_COMPLETE session={Session} total={Total}ms contextReady={ContextReady}ms providerTtft={Ttft}ms firstContent={FirstContent}ms model={Model}ms tools={Tool}ms rounds={Rounds} toolCalls={ToolCalls}",
+                request.SessionId,
+                turnTimings.ElapsedMs,
+                turnTimings.ContextReadyMs,
+                turnTimings.ProviderTtftMs,
+                turnTimings.FirstContentFrameMs,
+                turnTimings.ModelMs,
+                turnTimings.ToolMs,
+                streamRoundsStarted,
+                totalToolCalls);
+
             var doneFrame = ServerSentEventFrame.Json(SseEventTypes.Done, new
             {
                 reply,
                 usage = finalUsage,
                 prefixSnapshot = lastPrefixSnapshot,
+                timings = turnTimings.ToPayload(),
                 traceId = streamTrace.TraceId,
                 sessionId = request.SessionId,
                 messageId = request.MessageId,

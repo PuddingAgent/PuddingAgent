@@ -120,6 +120,53 @@ public sealed class OpenAiLlmGatewayCompatibilityTests
         Assert.IsTrue(response.ToolCalls.All(call => !string.IsNullOrWhiteSpace(call.Id)));
     }
 
+    [TestMethod]
+    public async Task ChatStreamAsync_StampsProviderDispatchAndHeadersTimings()
+    {
+        const string sse = """
+            data: {"id":"chatcmpl-ttft","choices":[{"delta":{"content":"a"},"finish_reason":null}]}
+
+            data: {"id":"chatcmpl-ttft","choices":[{"delta":{"content":"b"},"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+            """;
+        var gateway = CreateGateway(_ => StreamingResponse(sse));
+
+        var deltas = await ReadStreamAsync(gateway);
+
+        Assert.HasCount(2, deltas);
+        Assert.IsTrue(
+            deltas.All(delta => delta.ProviderDispatchElapsedMs is not null),
+            "Every delta must carry a dispatch-relative timestamp for TTFT attribution.");
+        Assert.IsNotNull(deltas[0].ProviderHeadersMs);
+        Assert.IsNull(deltas[1].ProviderHeadersMs, "Headers are reported once per provider response.");
+        Assert.IsTrue(
+            deltas[0].ProviderDispatchElapsedMs <= deltas[1].ProviderDispatchElapsedMs,
+            "Dispatch-relative timestamps must be monotonic within one response.");
+    }
+
+    [TestMethod]
+    public async Task ChatStreamAsync_ChunkWithoutModelPayload_DoesNotEmitDelta()
+    {
+        // A role-only first chunk is transport progress, not a model TTFT signal.
+        const string sse = """
+            data: {"id":"chatcmpl-role","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}
+
+            data: {"id":"chatcmpl-role","choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+            """;
+        var gateway = CreateGateway(_ => StreamingResponse(sse));
+
+        var deltas = await ReadStreamAsync(gateway);
+
+        Assert.HasCount(1, deltas);
+        Assert.AreEqual("answer", deltas[0].ContentDelta);
+        Assert.IsNotNull(deltas[0].ProviderHeadersMs, "The only emitted delta must still carry provider header timing.");
+    }
+
     private static OpenAiLlmGateway CreateGateway(Func<HttpRequestMessage, HttpResponseMessage> send)
         => new(
             new HttpClient(new StubHttpMessageHandler(send)),

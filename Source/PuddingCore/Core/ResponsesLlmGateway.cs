@@ -159,7 +159,9 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         IReadOnlyList<ITool> tools,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        using var response = await SendWithFileRebuildAsync(messages, tools, stream: true, ct);
+        var timing = new ProviderStreamTiming();
+        using var response = await SendWithFileRebuildAsync(messages, tools, stream: true, ct, timing);
+        var headersMs = timing.HeadersMs;
 
         if (!response.IsSuccessStatusCode)
         {
@@ -175,6 +177,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         var parser = new ResponsesStreamParser();
         long chunkIndex = 0;
         long? lastProviderChunkAt = null;
+        var emittedAnyDelta = false;
 
         while (true)
         {
@@ -208,6 +211,9 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             {
                 var delta = deltas[deltaIndex];
                 var firstForChunk = deltaIndex == 0;
+                var firstForResponse = !emittedAnyDelta;
+                var dispatchElapsedMs = timing.SinceDispatchMs;
+                emittedAnyDelta = true;
                 yield return delta with
                 {
                     ProviderChunkIndex = chunkIndex,
@@ -215,6 +221,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                     ProviderChunkGapMs = firstForChunk ? providerGapMs : null,
                     ProviderPayloadChars = firstForChunk ? data.Length : null,
                     GatewayParseMs = firstForChunk ? parseMs : null,
+                    ProviderDispatchElapsedMs = dispatchElapsedMs,
+                    ProviderHeadersMs = firstForResponse ? headersMs : null,
                 };
             }
         }
@@ -245,13 +253,16 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<ITool> tools,
         bool stream,
-        CancellationToken ct)
+        CancellationToken ct,
+        ProviderStreamTiming? timing = null)
     {
         var (requestBody, fileImages) = await BuildResponsesRequestBodyAsync(messages, tools, stream, ct);
         using var request = CreateRequest(requestBody);
+        timing?.MarkDispatch();
         var response = stream
             ? await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
             : await httpClient.SendAsync(request, ct);
+        timing?.MarkHeaders();
 
         if (response.IsSuccessStatusCode || !CanRebuildFileReferences(fileImages))
             return response;
@@ -284,9 +295,11 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
 
         var (rebuiltBody, _) = await BuildResponsesRequestBodyAsync(messages, tools, stream, ct);
         using var rebuiltRequest = CreateRequest(rebuiltBody);
+        timing?.MarkDispatch();
         var rebuiltResponse = stream
             ? await httpClient.SendAsync(rebuiltRequest, HttpCompletionOption.ResponseHeadersRead, ct)
             : await httpClient.SendAsync(rebuiltRequest, ct);
+        timing?.MarkHeaders();
         if (!rebuiltResponse.IsSuccessStatusCode)
         {
             var rebuiltError = await rebuiltResponse.Content.ReadAsStringAsync(ct);

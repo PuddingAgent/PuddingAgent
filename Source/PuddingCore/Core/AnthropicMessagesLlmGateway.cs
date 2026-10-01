@@ -65,10 +65,14 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
     {
         var requestBody = await BuildRequestBodyAsync(messages, tools, stream: true, ct);
         using var request = CreateRequest(requestBody);
+        var timing = new ProviderStreamTiming();
+        timing.MarkDispatch();
         using var response = await httpClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
             ct);
+        timing.MarkHeaders();
+        var headersMs = timing.HeadersMs;
 
         if (!response.IsSuccessStatusCode)
         {
@@ -84,6 +88,7 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
         var parser = new AnthropicStreamParser();
         long chunkIndex = 0;
         long? lastProviderChunkAt = null;
+        var emittedAnyDelta = false;
 
         while (true)
         {
@@ -115,6 +120,9 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
             {
                 var delta = deltas[deltaIndex];
                 var firstForChunk = deltaIndex == 0;
+                var firstForResponse = !emittedAnyDelta;
+                var dispatchElapsedMs = timing.SinceDispatchMs;
+                emittedAnyDelta = true;
                 yield return delta with
                 {
                     ProviderChunkIndex = chunkIndex,
@@ -122,6 +130,8 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
                     ProviderChunkGapMs = firstForChunk ? providerGapMs : null,
                     ProviderPayloadChars = firstForChunk ? data.Length : null,
                     GatewayParseMs = firstForChunk ? parseMs : null,
+                    ProviderDispatchElapsedMs = dispatchElapsedMs,
+                    ProviderHeadersMs = firstForResponse ? headersMs : null,
                 };
             }
         }

@@ -93,8 +93,12 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
 
+        var timing = new ProviderStreamTiming();
+        timing.MarkDispatch();
         using var response = await httpClient.SendAsync(request,
             HttpCompletionOption.ResponseHeadersRead, ct);
+        timing.MarkHeaders();
+        var headersMs = timing.HeadersMs;
 
         if (!response.IsSuccessStatusCode)
         {
@@ -109,6 +113,7 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         using var reader = new StreamReader(stream, Encoding.UTF8);
         long chunkIndex = 0;
         long? lastProviderChunkAt = null;
+        var emittedAnyDelta = false;
         var toolCallIdsByIndex = new Dictionary<int, string>();
         var toolCallIdOwners = new Dictionary<string, int>(StringComparer.Ordinal);
         var synthesizedToolCallIndexes = new HashSet<int>();
@@ -146,6 +151,9 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
                     toolCallIdOwners,
                     synthesizedToolCallIndexes);
                 var isFirstDeltaForChunk = deltaIndex == 0;
+                var isFirstDeltaForResponse = !emittedAnyDelta;
+                var dispatchElapsedMs = timing.SinceDispatchMs;
+                emittedAnyDelta = true;
                 yield return delta with
                 {
                     ProviderChunkIndex = chunkIndex,
@@ -153,6 +161,8 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
                     ProviderChunkGapMs = isFirstDeltaForChunk ? providerGapMs : null,
                     ProviderPayloadChars = isFirstDeltaForChunk ? data.Length : null,
                     GatewayParseMs = isFirstDeltaForChunk ? parseMs : null,
+                    ProviderDispatchElapsedMs = dispatchElapsedMs,
+                    ProviderHeadersMs = isFirstDeltaForResponse ? headersMs : null,
                 };
             }
         }
