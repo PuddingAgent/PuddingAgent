@@ -2,8 +2,22 @@
 
 - 设计规格：Docs/Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md。
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
-- 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
+- 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：交互脚本与解析；澄清 contexts/tabs 不需要 DOM 脚本（第 33 轮）
+
+- `BuildInteractScript(request)`：对首个命中元素执行 9 种动作（click/fill/press/check/uncheck/select/
+  hover/focus/scroll），文案与值经 JSON 转义；`scroll` 无定位时作用于 `body`；
+  **未指定的勾选态编码为 `null`（未知）而不是 `false`**；脚本内 try/catch 把异常变成 `ok:false` 而不是抛出。
+- `ParseInteract(json, pageVersion)` → `DesktopInteractionScriptResult(Succeeded, Element, Error)`，
+  **fail closed**（非 JSON/结构不符/缺 ref·tag/无有效版本 ⇒ `null`；元素结构坏了整体作废）。
+- **澄清一处设计**：`contexts`/`tabs` **不需要 DOM 脚本**——它们来自 Desktop 的页面注册表与窗口事实，
+  不是从页面里读出来的。因此 `DesktopDomScripts` 只覆盖 snapshot / locate / interact 三类真正触碰页面内容的能力；
+  剩下只有 `wait_for` 需要一条「条件是否满足」的判定脚本。
+- 测试：DesktopService **111/111**（+4：脚本携带动作与参数、解析带版本、失败不臆造元素、畸形输入作废）。
+
+测试合计（本轮实测）：Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 111、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 26 = **395**；探针 47/47。
 ## 2026-10-01：DOM 脚本生成与解析（WinUI 表面里唯一有逻辑的部分，第 32 轮）
 
 WinUI/WebView2 表面剩余的工作里，真正需要动脑的是「生成 DOM 观察脚本 + 解析结果」——

@@ -86,6 +86,131 @@ public static class DesktopDomScripts
             """;
     }
 
+    /// <summary>
+    /// 交互脚本：对首个命中元素执行动作，返回 { ok, error, element }。
+    /// 页面状态由宿主另行观测（脚本只负责动作本身），因此这里不回带 page_version。
+    /// </summary>
+    public static string BuildInteractScript(BrowserInteractRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var selector = request.Locator is null ? "body" : SelectorFor(request.Locator);
+        var action = DesktopInteractionActionWire.NameOf(request.Action);
+        var text = request.Text is null ? "null" : JsonString(request.Text);
+        var values = request.Values is { Count: > 0 }
+            ? "[" + string.Join(",", request.Values.Select(JsonString)) + "]"
+            : "null";
+        var isChecked = request.IsChecked is { } flag ? (flag ? "true" : "false") : "null";
+        var deltaX = (request.DeltaX ?? 0).ToString(CultureInfo.InvariantCulture);
+        var deltaY = (request.DeltaY ?? 0).ToString(CultureInfo.InvariantCulture);
+
+        return $$"""
+            (() => {
+              const selector = {{JsonString(selector)}};
+              const action = {{JsonString(action)}};
+              const text = {{text}};
+              const values = {{values}};
+              const checked = {{isChecked}};
+              const deltaX = {{deltaX}};
+              const deltaY = {{deltaY}};
+
+              const element = document.querySelector(selector);
+              if (!element) { return JSON.stringify({ ok: false, error: 'element not found', element: null }); }
+
+              const describe = () => {
+                const rect = element.getBoundingClientRect();
+                return {
+                  ref: 'e1',
+                  tag: element.tagName.toLowerCase(),
+                  role: element.getAttribute('role'),
+                  name: element.getAttribute('aria-label') || element.getAttribute('name'),
+                  text: (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200),
+                  visible: rect.width > 0 && rect.height > 0,
+                  enabled: !element.disabled,
+                  checked: typeof element.checked === 'boolean' ? element.checked : null
+                };
+              };
+
+              try {
+                switch (action) {
+                  case 'click': element.click(); break;
+                  case 'fill': element.focus(); element.value = text; element.dispatchEvent(new Event('input', { bubbles: true })); element.dispatchEvent(new Event('change', { bubbles: true })); break;
+                  case 'press': element.focus(); element.dispatchEvent(new KeyboardEvent('keydown', { key: text, bubbles: true })); break;
+                  case 'check': element.checked = true; element.dispatchEvent(new Event('change', { bubbles: true })); break;
+                  case 'uncheck': element.checked = false; element.dispatchEvent(new Event('change', { bubbles: true })); break;
+                  case 'select': element.focus(); element.value = (values && values.length) ? values[0] : element.value; element.dispatchEvent(new Event('change', { bubbles: true })); break;
+                  case 'hover': element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); break;
+                  case 'focus': element.focus(); break;
+                  case 'scroll': window.scrollBy(deltaX, deltaY); break;
+                  default: return JSON.stringify({ ok: false, error: 'unsupported action', element: null });
+                }
+              } catch (error) {
+                return JSON.stringify({ ok: false, error: String(error), element: null });
+              }
+
+              return JSON.stringify({ ok: true, error: null, element: describe() });
+            })()
+            """;
+    }
+
+    /// <summary>解析交互脚本结果；结构不符返回 <c>null</c>（fail closed）。</summary>
+    public static DesktopInteractionScriptResult? ParseInteract(
+        string? json, DesktopPageVersion pageVersion)
+    {
+        if (string.IsNullOrWhiteSpace(json) || pageVersion.Value <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("ok", out var ok)
+                || ok.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return null;
+            }
+
+            var succeeded = ok.GetBoolean();
+            var error = ReadOptionalString(root, "error");
+
+            DesktopElementRef? element = null;
+            if (root.TryGetProperty("element", out var raw) && raw.ValueKind == JsonValueKind.Object)
+            {
+                var reference = ReadRequiredString(raw, "ref");
+                var tag = ReadRequiredString(raw, "tag");
+                if (reference is null || tag is null)
+                {
+                    return null;
+                }
+
+                element = new DesktopElementRef(
+                    reference,
+                    tag,
+                    pageVersion,
+                    ReadOptionalString(raw, "role"),
+                    ReadOptionalString(raw, "name"),
+                    ReadOptionalString(raw, "text"),
+                    visible: !raw.TryGetProperty("visible", out var visible) || visible.ValueKind == JsonValueKind.True,
+                    enabled: !raw.TryGetProperty("enabled", out var enabled) || enabled.ValueKind == JsonValueKind.True,
+                    isChecked: raw.TryGetProperty("checked", out var isChecked) && isChecked.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? isChecked.GetBoolean()
+                        : null);
+            }
+
+            return new DesktopInteractionScriptResult(succeeded, element, error);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
     /// <summary>把定位描述符翻成 CSS 选择器（v1：不支持的策略由调用方在准入阶段拒绝）。</summary>
     public static string SelectorFor(DesktopLocator locator)
     {
@@ -238,4 +363,7 @@ public static class DesktopDomScripts
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+/// <summary>交互脚本结果：动作是否成功 + 受影响元素（可选）+ 失败说明（可选）。</summary>
+public sealed record DesktopInteractionScriptResult(bool Succeeded, DesktopElementRef? Element, string? Error);
 }

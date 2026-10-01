@@ -286,4 +286,68 @@ public sealed class DesktopDomScriptsTests
         Assert.Null(DesktopDomScripts.ParseLocate("""{"elements":[{"ref":"e1"}]}""", request, DesktopPageVersion.Require(1)));
     }
 }
+
+/// <summary>交互脚本生成与解析（平台无关；fail closed）。</summary>
+public sealed class DesktopInteractScriptTests
+{
+    private static readonly DesktopPageTarget Target = new("ctx-1", "page-1");
+    private static readonly DesktopLocator Button = new(DesktopLocatorKind.Css, "button");
+
+    [Fact]
+    public void InteractScript_CarriesTheActionAndParameters()
+    {
+        var script = DesktopDomScripts.BuildInteractScript(new BrowserInteractRequest(
+            Target, DesktopInteractionAction.Fill, DesktopPageVersion.Require(3), Button, text: "你好\"x\""));
+
+        Assert.Contains("const action = \"fill\"", script, StringComparison.Ordinal);
+        Assert.Contains("const selector = \"button\"", script, StringComparison.Ordinal);
+        Assert.Contains("\\\"x\\\"", script, StringComparison.Ordinal);   // 文案被 JSON 转义
+        Assert.Contains("dispatchEvent", script, StringComparison.Ordinal);
+
+        // scroll 无定位：作用于页面本身。
+        var scroll = DesktopDomScripts.BuildInteractScript(new BrowserInteractRequest(
+            Target, DesktopInteractionAction.Scroll, DesktopPageVersion.Require(3), deltaY: -200));
+        Assert.Contains("const selector = \"body\"", scroll, StringComparison.Ordinal);
+        Assert.Contains("const deltaY = -200", scroll, StringComparison.Ordinal);
+        Assert.Contains("const checked = null", script, StringComparison.Ordinal);  // 未指定 ⇒ null，不是 false
+    }
+
+    [Fact]
+    public void ParseInteract_ReadsTheElementWithThePageVersionStamped()
+    {
+        var json = """{"ok":true,"error":null,"element":{"ref":"e1","tag":"button","role":"button","name":"提交","text":"提交","visible":true,"enabled":true,"checked":false}}""";
+
+        var parsed = DesktopDomScripts.ParseInteract(json, DesktopPageVersion.Require(7));
+
+        Assert.NotNull(parsed);
+        Assert.True(parsed!.Succeeded);
+        Assert.Null(parsed.Error);
+        Assert.Equal(7, parsed.Element!.PageVersion.Value);
+        Assert.False(parsed.Element.IsChecked);   // false ≠ 未知
+    }
+
+    [Fact]
+    public void ParseInteract_ReadsFailuresWithoutInventingAnElement()
+    {
+        var parsed = DesktopDomScripts.ParseInteract(
+            """{"ok":false,"error":"element not found","element":null}""", DesktopPageVersion.Require(1));
+
+        Assert.NotNull(parsed);
+        Assert.False(parsed!.Succeeded);
+        Assert.Equal("element not found", parsed.Error);
+        Assert.Null(parsed.Element);
+    }
+
+    [Fact]
+    public void ParseInteract_FailsClosedOnMalformedInput()
+    {
+        Assert.Null(DesktopDomScripts.ParseInteract(null, DesktopPageVersion.Require(1)));
+        Assert.Null(DesktopDomScripts.ParseInteract("nope", DesktopPageVersion.Require(1)));
+        Assert.Null(DesktopDomScripts.ParseInteract("""{"error":"x"}""", DesktopPageVersion.Require(1)));
+        // 元素结构坏了 ⇒ 整体作废，不把坏引用交给上层。
+        Assert.Null(DesktopDomScripts.ParseInteract("""{"ok":true,"element":{"tag":"button"}}""", DesktopPageVersion.Require(1)));
+        // 没有有效版本 ⇒ 引用失去版本依据。
+        Assert.Null(DesktopDomScripts.ParseInteract("""{"ok":true,"element":null}""", DesktopPageVersion.Unknown));
+    }
+}
 }
