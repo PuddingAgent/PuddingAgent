@@ -16,6 +16,19 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：浏览器映射的落点裁定（第 54 轮）
+
+- 尝试把浏览器侧映射直接放进 `Pudding.DesktopService` 时**被其编译期边界目标拦下**
+  （该工程禁止引用宿主/运行时/桌面外壳/浏览器 UI 项目；见 `EnforceDesktopServiceBoundary`）。
+  我按规则**意图**处理：映射层不塞进 DesktopService，而应**独立成组件**
+  （拟定 `Pudding.DesktopSurface.Browser` + 自己的测试工程，遵循 S1→S4→S5 顺序）。
+- 本轮保留的产出：新增 `IDesktopBrowserTargetRegistry`（Contracts 端口）——
+  「上下文可信级别 / 活动页 / 是否 Agent 目标」**只能由 Desktop 登记后读**，绝不接受调用方填写。
+  既有浏览器运行时只描述"有哪些页面"，不描述"这些页面对 Agent 意味着什么"，这个端口补上的正是后者。
+- 已还原被我改动的 DesktopService csproj，并移除误放的映射文件 ⇒ 边界与构建均恢复绿色
+  （DesktopService 与测试各自编译/运行通过）。
+- 教训（再次）：**动手前先看目标工程的编译期约束**；本系列已因忽略既有规则而返工两次
+  （能力集合漂移、本次边界），代价都是"改完才发现"，应在读代码阶段就发现。
 ## 2026-10-01：产品代码改动后的全量复核（第 53 轮）
 
 - 因为本轮开始改动**产品运行代码**（`PuddingHost` 组合根），按纪律重跑完整门禁确认无连带影响：

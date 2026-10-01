@@ -35,4 +35,4 @@
            Text="Pudding.DesktopService must not reference ASP.NET Core, WinUI or WebView2 packages." />
   </Target>
 
-</Project>
+  </Project>
