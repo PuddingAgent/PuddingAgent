@@ -1,3 +1,7 @@
+## 2026-10-01：Contracts 与 Desktop gRPC 能力通道规划
+
+建议新增纯 BCL 的 Pudding.Contracts 与独立 proto 生成组件；Desktop 主动建立 Core gRPC 双向流，能力调用经 DesktopService 与 DispatcherQueue 进入 UI，业务继续使用 HTTP/既有事件通道。以现有认证 WebSocket Browser Bridge 为迁移基线，分阶段独立验证后接入；本次仅交付文档。[技术方案](Docs/Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md)。
+
 ## 2026-10-01：真实消息加载慢定位
 
 真实默认助手 conversation 三轮 5.75～5.96s，响应约 107KB；`AgentConversationProjectionService.GetConversationAsync` 的最近消息过程摘要与回合终态查询各约 2.8s，实际计划按会话顺序索引筛选约 164 万事件。只读终态索引路径对照降至 14.5ms，未改 schema/产品。评估与优化顺序见 [实测报告](Docs/Reports/Chat-Message-Load-Latency-2026-10-01.md)。
