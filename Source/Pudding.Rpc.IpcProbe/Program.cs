@@ -490,6 +490,21 @@ internal static class Program
         {
             report.Fail("tabs-close", close.IsFailure ? $"期望关闭成功，实际 {close.Error!.Code}" : $"结果不符：{close.Value}");
         }
+        // 跨侧漂移守卫：Core 的缺省可授予集合必须与 Desktop 的声明集合逐位一致。
+        // 本系列曾三次因「加能力时只改了一侧」而出现 unsupported_capability —— 这条断言把它变成发布门禁。
+        if (CapabilityChannelConfiguration.DefaultGrantable == DesktopCapabilityChannelSettings.DeclaredCapabilities)
+        {
+            report.Pass(
+                "capability-sets-aligned",
+                $"Core 缺省可授予 == Desktop 声明（{CapabilityChannelConfiguration.DefaultGrantable}）");
+        }
+        else
+        {
+            report.Fail(
+                "capability-sets-aligned",
+                $"两侧集合不一致：Core={CapabilityChannelConfiguration.DefaultGrantable} / "
+                + $"Desktop={DesktopCapabilityChannelSettings.DeclaredCapabilities}");
+        }
         // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
         var refWithoutVersionRejected = false;
         try

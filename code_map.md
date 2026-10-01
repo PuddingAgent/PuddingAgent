@@ -4,6 +4,17 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
 
+## 2026-10-01：跨侧能力集合漂移守卫（第 26 轮）
+
+本系列最常犯的错是「新增能力时只改了某一侧的集合」（探针先后三次以 `unsupported_capability` 抓到）。
+本轮把它变成**发布门禁**：探针新增断言 `capability-sets-aligned` —— Core 的
+`CapabilityChannelConfiguration.DefaultGrantable` 必须与 Desktop 的
+`DesktopCapabilityChannelSettings.DeclaredCapabilities` **逐位一致**（管道与 h2c 各断言一次）。
+
+- 干净复核（第 26 轮，输出只落 `temp\`）：**377 用例**（Contracts 90、Rpc.Protocol 20、
+  DesktopConnection 80、DesktopService 97、CapabilityBroker 68、CapabilityBroker.AspNetCore 22）；
+  探针 **47/47 exit 0**（45 项能力/语义断言 + 2 项跨侧守卫）；WinUI 适配器 0 警告 0 错误。
+- 方案 §10.1 与接线手册中的门禁数字已同步为本次实测值。
 ## 2026-10-01：能力预算集中实现 + 咽喉点强制（第 25 轮）
 
 - 新增 `DesktopCapabilityBudgets`（纯函数，唯一实现）：快照按请求字段与上限截断、脚本按字节上限截断、
