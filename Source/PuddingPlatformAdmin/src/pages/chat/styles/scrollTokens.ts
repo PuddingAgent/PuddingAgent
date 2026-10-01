@@ -17,23 +17,24 @@ export const CHAT_RENDERER_BODY_MAX_HEIGHT = 224;
 
 /**
  * 细滚动条皮肤：scrollbar-width: thin（Firefox）+ ::-webkit-scrollbar（Chromium）。
- * 颜色只走既有 caption token 低饱和 color-mix，不引入新颜色
- * （对齐用户批注 3「整体的配色和字体很好」）。
+ * SCROLL-001（2026-10-01）：颜色改走 global.style.ts 的 `--pudding-scroll-*` 主题 token，
+ * 深浅色各自命名为同一组变量，避免原 caption 低饱和混色在深色下偏棕、
+ * 与全局滚动条皮肤（#738197 / #65758C）色温不一致。
+ * 注意：Chromium 下 `scrollbar-width: thin` 为元素级非 auto 值，会优先于
+ * `::-webkit-scrollbar`，因此实际渲染颜色来自 scrollbarColor；伪元素规则保留给
+ * 非冲突场景与既有测试断言（ReasoningDisclosureRow/ToolCallRow）。
  */
 export const thinScrollbarStyle = {
   scrollbarWidth: 'thin' as const,
-  scrollbarColor:
-    'color-mix(in srgb, var(--pudding-chat-text-caption) 45%, transparent) transparent',
+  scrollbarColor: 'var(--pudding-scroll-thumb) transparent',
   '&::-webkit-scrollbar': { width: 6, height: 6 },
   '&::-webkit-scrollbar-track': { background: 'transparent' },
   '&::-webkit-scrollbar-thumb': {
-    background:
-      'color-mix(in srgb, var(--pudding-chat-text-caption) 45%, transparent)',
+    background: 'var(--pudding-scroll-thumb)',
     borderRadius: 3,
   },
   '&::-webkit-scrollbar-thumb:hover': {
-    background:
-      'color-mix(in srgb, var(--pudding-chat-text-caption) 70%, transparent)',
+    background: 'var(--pudding-scroll-thumb-hover)',
   },
 };
 

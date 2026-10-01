@@ -23,6 +23,20 @@ injectGlobal`
     --avatar-8: #14b8a6;
     --avatar-9: #f43f5e;
 
+    /* SCROLL-001：原生滚动条与表单控件（textarea/Select/checkbox）跟随应用主题。
+       缺此声明时 Chromium 在深色主题下仍绘制浅色原生滚动条（浅灰/白轨道），
+       与 scrollbar-gutter:stable 叠加就形成常亮白条（IMG02 / SCROLL-001 根因之一）。
+       显式选择浅/深必须用本声明同步，不能只依赖 prefers-color-scheme。 */
+    color-scheme: light;
+
+    /* SCROLL-001 滚动条皮肤 token（§14.2 目标外观表）。
+       轨道不单列 token：渲染时用 transparent = 所属容器自身背景，
+       这样代码块/表格跟自己的 surface、消息跟 chat bg，无需逐容器重复声明。
+       thumb 圆角细条；hover/active 只换色不改宽度，避免 gutter 跳动。 */
+    --pudding-scroll-thumb: #738197;
+    --pudding-scroll-thumb-hover: #526174;
+    --pudding-scroll-thumb-active: #2458d3;
+
     /* Runtime 语义色 */
     --runtime-bg: #F5F0E8;
     --runtime-bg-deep: #EDE5D9;
@@ -275,6 +289,68 @@ injectGlobal`
     transition: background-color 200ms ease, color 200ms ease;
   }
 
+  /* ── SCROLL-001 滚动条皮肤（策略 B：Chromium 伪元素，§14.2/§14.3）──────────
+     轨道用 transparent 而非写死色值 = 所属容器自身背景（"背景同色轨道"）：
+     代码块/表格跟自己的 surface、消息跟 chat bg，无需逐容器重复声明。
+     10px gutter 内绘制 6px 视觉 thumb（2px 透明边 + background-clip:content-box）
+     → 圆角细条；hover/active 只换色不改宽度，gutter 不跳动。
+     不隐藏 overflow、不 JS 自绘拖条、不建新节点：滚轮/触控板/拖动 thumb/
+     点击轨道/键盘(方向、PageUp/Down、Home/End) 全部保留原生能力。
+     已声明 scrollbar-width:thin 的块级容器（scrollTokens.ts）在 Chromium 中
+     优先级更高，保持既有细条外观，仅经 token 统一色温。
+     注意：不要在这里声明 scrollbar-color/-width —— 全局非 auto 会反过来
+     停用 Chromium 伪元素，两种策略互相覆盖。 */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--pudding-scroll-thumb);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--pudding-scroll-thumb-hover);
+  }
+
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--pudding-scroll-thumb-active);
+  }
+
+  /* 不绘制上下箭头：传统箭头是 SCROLL-001 描述的缺陷外观之一 */
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  /* 非 Chromium（Firefox）回退：标准属性，轨迹仍保持容器背景 */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--pudding-scroll-thumb) transparent;
+    }
+  }
+
+  /* 系统高对比：放弃自定义皮肤，恢复系统绘制（可用性优先，不强制细条） */
+  @media (forced-colors: active) {
+    ::-webkit-scrollbar,
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner,
+    ::-webkit-scrollbar-thumb,
+    ::-webkit-scrollbar-thumb:hover,
+    ::-webkit-scrollbar-thumb:active,
+    ::-webkit-scrollbar-button {
+      all: revert;
+    }
+  }
+
   .ant-layout {
     min-height: 100vh;
     background-color: var(--ant-colorBgLayout);
@@ -342,6 +418,13 @@ injectGlobal`
   }
 
   [data-pudding-theme='dark'] {
+    /* SCROLL-001：深色主题下原生控件与滚动条跟随深色，消除浅色轨道/传统箭头。
+       选择器与 ThemeMode 写入的 document.documentElement[data-pudding-theme] 一致。 */
+    color-scheme: dark;
+    --pudding-scroll-thumb: #65758c;
+    --pudding-scroll-thumb-hover: #8b9db5;
+    --pudding-scroll-thumb-active: #91b3ff;
+
     --warm-beige: var(--pudding-chat-bg);
     --soft-white: var(--pudding-chat-surface);
     --pale-yellow-sunlight: #3a2f1d;

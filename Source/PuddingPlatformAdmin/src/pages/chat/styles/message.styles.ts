@@ -511,6 +511,8 @@ export const useMessageStyles = createStyles(({ token }) => ({
     scrollbarGutter: 'stable' as const,
     overscrollBehavior: 'contain' as const,
     scrollbarWidth: 'thin' as const,
+    // SCROLL-001：thin 元素级声明会让 Chromium 忽略伪元素，实际着色来自本行
+    scrollbarColor: 'var(--pudding-scroll-thumb) transparent',
   },
 }));
 
