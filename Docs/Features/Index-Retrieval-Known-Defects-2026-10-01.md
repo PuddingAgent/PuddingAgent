@@ -190,11 +190,67 @@ dotnet build "Source\PuddingAgent\PuddingAgent.csproj" -c Debug -o "temp\host-pr
 | `PuddingAgent.dll` | sha256 `9053C33E9E2D5F931E38C9B14940DB027EEC2FC78FFB68F38A9CE3C7A553A67D`（供 `bootstrap_reboot` 的 `artifact_assembly_sha256`） |
 | **安全证明** | 运行目录 `PuddingHost.dll` 仍为 `708B3EEF…`、`PuddingRuntime.dll` 仍为 `FA3654B0…` —— **逐位未变** |
 
-### ⚠️ 部署前必须处理的风险（已实测，未解决）
+### ✅ 部署风险已裁定：**覆盖式（增量 + 逐文件回滚），不是镜像式**（2026-10-01 19:50 源码取证）
 
-| 风险 | 证据 |
+原先登记的「wwwroot 体量不等 ⇒ 可能被镜像删除 ≈165 MB」**已证伪**。权威实现是
+`Source/PuddingCore/Configuration/PuddingBuildOutputSync.cs` 的
+`DeployDirectoryTransactional(sourceDirectory, targetDirectory)`（L101-L223）；Desktop 侧调用点
+`Source/PuddingDesktop.WpfArchive/Bootstrap/DesktopBootstrapSignalService.cs:800`。
+
+| 源码行 | 行为 |
 |---|---|
-| wwwroot 体量不等 | preview `wwwroot` = **317 文件 / 40,453,107 B**；live = **772 文件 / 205,676,954 B**（**多 455 文件 / ≈165 MB**）。若部署为**镜像替换**，会删掉 live 多出的 ≈165 MB ⇒ 须先确认 Desktop 部署是**覆盖式**还是**镜像式** |
-| admin SPA 一致性 | 两处 `wwwroot\admin\index.html` sha256 **相同** `C3B94DC5…` ⇒ 当前前端部署与构建源一致（好消息） |
+| L144-L152 | 枚举源目录**全部文件**，命中目标后 `FilesIdentical` ⇒ **字节一致即 skip**（不重写） |
+| L154-L176 | 变化的文件先复制到 `staging/` 并**逐文件复校字节**；暂存失败则**完全不碰** live 目录 |
+| L191-L206 | 提交阶段：原文件存在则先备份到 `backup/`，再 `File.Move(..., overwrite: true)` |
+| L207-L224 | 提交失败 ⇒ **逆序回滚**已改文件；`File.Delete` 仅用于「本无原文件」的新增文件 |
+
+**关键结论**：函数内**没有任何“删除目标多余文件”的分支** —— `File.Delete` 只出现在**回滚新增文件**这一条路径上。
+⇒ 目标目录中不在产物里的文件（即 live 多出的 455 文件 / ≈165 MB）**会被原样保留**；部署是**纯增量覆盖**。
+
+| 体量差异（已量化，非风险） | 值 |
+|---|---|
+| preview `wwwroot` | **317** 文件 / 40,453,107 B |
+| live `wwwroot` | **772** 文件 / 205,676,954 B |
+| 仅 live 存在 | **560** 个（`\admin` 171 · `\` 根 160 · `\lib\*` 168 · 其余为静态页面目录） |
+| 仅 preview 存在 | **105** 个（多为 `\admin\*.gz` 预压缩产物） |
+| admin SPA 一致性 | 两处 `wwwroot\admin\index.html` sha256 **相同** `C3B94DC5…` ⇒ 前端部署与构建源一致 |
+| 旁注（**未定论**） | 体量差异**未完全归因**：preview 是单项目 `-o` 构建产物，live 是 Desktop 全量构建 + 历次部署的累积（含其他项目的静态 Web 资产）。该差异**对部署安全性无影响**（覆盖式），故不再深挖 |
+
+**残留风险（低）**：失败路径会在目标目录**父级**留下 `.pudding-bootstrap-<guid>` 事务目录；`TryDeleteTransactionDirectory` 负责清理，异常中断可能残留 —— 部署后按 `dir /b /ad .pudding-bootstrap-*` 复查一次。
 
 **在重启完成之前**：符号检索的可信度有限，**不应据 `code_symbol_search` 结果下"某代码不存在"的结论**（应改用 `file_read` / `search_grep` 现场核对）。
+
+## D7 · 【已证伪】「配置的 scope 失效 ⇒ 既有索引被清空」（2026-10-01 20:2x 隔离实验）
+
+**背景**：上一轮曾把 2026-10-01 的「全文索引根 0 条目」归因为 fail-open 缺陷 —— 猜测
+「配置的 scope 路径不存在时，预建/供给路径会枚举 0 文件并把该 scope 的索引重建为空」。
+该猜测当时明确标注为**未证实**。本实验在**隔离 lab** 中验证，**结论：假设不成立**。
+
+**实验设计**（全程只碰 `temp/ft-lab/**`，生产索引根 `D:\Data\fulltext-index` **未被访问**）
+
+| 步 | 操作 | 结果 |
+|---|---|---|
+| 1 | 3 文件语料建索引：`build --scope temp\ft-lab\corpus --index-root temp\ft-lab\index --wait` | `state=Succeeded` · `IndexedFileCount=3` · `TotalBytes=170` · `ElapsedMs=580` · **exit 0** |
+| — | 盘上产物 | scope 目录 `b4bc6536…dcec6`：**6 文件 / 2,498 B**（Lucene `_0.cfe/_0.cfs/_0.si/segments_*/\.last_indexed`） |
+| 2 | `status` 复核 | `exists=true` · `hasIndex=true` · `indexEntryCount=6` · `indexBytes=2498` |
+| 3 | **把语料目录改名**（模拟「配置的 scope 已不存在」，即 E: 盘消失那一幕）后重建 | `outcome=**Rejected**` · `reason=scope 目录不存在：…` · `scope[0].scopeKey=**none**` · `jobId=**none**` · **exit 2** |
+| — | 盘上产物（重建被拒后） | 仍为 **6 文件 / 2,498 B** —— **逐字节未变** |
+| 4 | `status` 复核 | `exists=**false**`（scope 确实不存在）但 `hasIndex=**true**` · `indexEntryCount=**6**` · `indexBytes=**2498**` |
+
+**判定**：供给/构建路径在 scope 缺失时**在任何 job 创建之前就 fail-closed 拒绝**
+（`scopeKey=none`、无 jobId、exit 2），**完全不动既有索引**。
+⇒ 「scope 失效 ⇒ 索引被清空」**在供给路径上被证伪**。
+
+**由此收窄的剩余空间**（诚实标注）：
+- CLI 只有 `plan / status / build / cancel` 四个命令（`SupplyCommandLine.cs:195-204`）⇒ **维护循环（incremental）路径无法从 CLI 触发**，本轮未覆盖。
+- 但本分支查证过 **`FullTextIndex:Maintenance` 绑定器不存在于本地线**（S5b 维护接线只在 tag `backup/origin-master-2d264fe` 那条线上）⇒ 本分支**没有能清空索引的维护路径**。
+- 因此对「索引根 0 条目」目前**证据最强的解释是**：`FullTextIndex.Scopes` 当时指向已不存在的 `E:`，
+  该 scope 从未成功建过索引；而 `D:` 这个 scope key 的索引**是当时才第一次建立**（重建后 12 文件 / 106,029,333 B）。
+- ⚠️ 需要更正的一处旧表述：此前「9-30 还有 225 条、现在 0 条」中的 **225 这个数字来源不可考**
+  （疑为另一分支 / 另一索引根的旧观测），**不应作为「索引被清空」的证据引用**。
+
+**行动结论**：从待办中**移除**「复现 fail-open 清空缺陷」这一项（无机制支持，继续追查是空耗）；
+索引「看不见 / 搜不到」的真实成因回到已登记的 **D5（根项目停在 `Registering`，全量运行从未完成
+⇒ `Source/PuddingHost/**` 未被覆盖）** 与 **D1（未登记项目 fail-closed，修复待部署）**。
+
+**复现命令**：`powershell -File temp\ft-lab-run.ps1`（脚本与逐行日志 `temp\ft-lab-log2.txt` 均在已 gitignore 的 `temp/`）。
