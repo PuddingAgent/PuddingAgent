@@ -525,7 +525,9 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 
 对比度核算：`temp/palette-contrast.mjs` 对 §3 色板逐项计算，28/28 达标（正文与过程文字 ≥4.5:1，装饰标签、边框、滚动条 thumb ≥3:1）；但**这是脚本计算，不等于实机验收** —— §13.6 的 IMG-V01/V03 与 §12 的 V01–V03 仍需真实窗口截图与量测，未做之前不能记为通过。
 
-**P0 批次代码状态（2026-10-01）**：SCROLL-001-WEB（`2430f97`）、SCROLL-001-SHELL（`6bf5b16`）、IMG01/IMG04（`28dca85`）、IMG03（`7e38284`）均已落地并通过前端测试与构建门禁；文档状态见各节。仍未取得的证据有两条，且都不由代码决定：① **完整 Desktop 链接构建**（`dotnet build` 复制输出被运行中的 `PuddingDesktop` 与 Visual Studio 文件锁阻断，`-t:Compile` 已 0 错误）；② **整窗与 WebView2 真实验收**（§12 V/F/S/A/P/SEC/D、§13.6 IMG-V*、§14.5 表）。因此 P0 只能记为「代码完成、未验收」，不能记为已关闭。
+**P0 批次代码状态（2026-10-01）**：SCROLL-001-WEB（`2430f97`）、SCROLL-001-SHELL（`6bf5b16`）、IMG01/IMG04（`28dca85`）、IMG03（`7e38284`）均已落地并通过前端测试与构建门禁；文档状态见各节。**Desktop 构建与测试证据已补齐**（2026-10-01 第三轮）：把输出重定向到未占用目录即可在应用运行中完成完整链接构建，无需关闭旧进程 —— `dotnet build Source/PuddingDesktop/PuddingDesktop.csproj --no-restore -p:BaseOutputPath=temp\build\scroll-check\bin\` → **0 错误**，产出 1567 个文件（含 `PuddingDesktop.exe`、`PuddingDesktop.dll`、`PuddingDesktop.Foundation.dll` 与 `core/` 子进程包）；`dotnet test Tests/PuddingDesktop.Tests` → **259 passed / 0 failed**，`dotnet test Source/PuddingDesktop.FoundationTests` → **57 passed / 0 failed**。重定向的意义是**不覆盖正在运行的安装**（`PuddingHostContent.props` 会把 `PuddingAdminDistPath` 链入输出 wwwroot），因此该构建不构成部署、也不能当作运行中实例已加载新代码的证据。
+
+仍未取得、因而不能记为关闭的证据只剩一条：**整窗与 WebView2 真实验收**（§12 V/F/S/A/P/SEC/D、§13.6 IMG-V*、§14.5 表）。P0 因此只能记为「代码完成、未验收」。
 
 ## 14. 独立缺陷登记：SCROLL-001 深色滚动条及 Web / Shell 边界不协调
 
@@ -653,12 +655,15 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 - Shell splitter 已符合规范，**未改动**：`MainWindow.xaml` 的 `ToolSplitterLine` 是 1px 矩形、填充 `{ThemeResource CardStrokeColorDefaultBrush}`（主题边界色，非白色 Border）；`SplitterHandle.cs` 提供透明 6px 拖动命中区、`IsTabStop = true` 与 `SizeWestEast` 光标，保留 `OnSplitter*` 与 Foundation 分配算法。
 - Web 侧真实滚动节点：`MessageList.tsx` 的 `styles.messageList`（`overflowY:auto` + `scrollbarGutter:stable` + `overflowAnchor:none`，布局契约未动）。皮肤走全局 `::-webkit-scrollbar`，因此同时覆盖会话导航、输入 textarea、代码/表格横滚与弹层；弹层容器为 `getPuddingPopupContainer`（`triggerNode.parentElement ?? document.body`），位于应用树内，随主题与皮肤生效，未新增节点、未改 `overflow`。
 
-尚未获得、因而不能声称通过的证据：
-- **完整 Desktop 链接构建**：被运行中的 `PuddingDesktop`(PID 43484) 与 Visual Studio 的文件锁阻断（MSB3021/MSB3027 复制失败），非编译错误；需在进程外控制器关闭旧进程后重跑。
+Desktop 构建证据（2026-10-01 第三轮补齐）：
+- **完整 Desktop 链接构建**：直接在默认输出目录构建会因运行中的 `PuddingDesktop`(PID 43484) 与 Visual Studio 持有文件句柄而失败（MSB3021/MSB3027 复制失败，非编译错误）；把输出重定向到未占用目录后构建通过：`dotnet build Source/PuddingDesktop/PuddingDesktop.csproj --no-restore -p:BaseOutputPath=temp\build\scroll-check\bin\` → 0 错误，产出含 `PuddingDesktop.exe`/`PuddingDesktop.dll`/`PuddingDesktop.Foundation.dll` 与 `core/` 子进程包的完整布局。重定向同时保证**不覆盖正在运行的安装**。注意这**不等于**运行中实例已加载新代码：进程内验证仍要求进程外控制器重启到明确的新构建。
+- `dotnet test Tests/PuddingDesktop.Tests` → 259 passed / 0 failed；`dotnet test Source/PuddingDesktop.FoundationTests` → 57 passed / 0 failed。
+
+仍未获得、因而不能声称通过的证据：
 - **WebView2 真实窗口验收**（§12 D01、§14.5 表、§13.6 IMG-V02）：轨道/corner/thumb、textarea、弹层、Shell 原生滚动区在深浅切换下的实际表现，以及加载与失败阶段是否仍闪白，均未实测。CSS 与单元测试不能替代该结论。
 
 已知待复核项（实施中引入，需在上述验收里确认）：
 1. `PreferredColorScheme` 会影响 WebView2 内 `prefers-color-scheme` 的取值；当 Shell 显式选择浅/深、而 Web 侧 ThemeMode 为「跟随系统」时，Web 将跟随 Shell 选择而非 Windows 偏好。这是 §13.4「宿主提供外观入口」的预期对齐，但需在实际窗口确认符合产品意图。
-2. Shell 预绘制背景沿用当前 Web 底色（#F5F0E8/#0B1020）；§3 中性色批次（IMG01）若调整 Web 底色，`WorkbenchAppearance` 的常量必须同步，否则会在首帧引入色差。
+2. Shell 预绘制背景的旧色差**已消除**（`28dca85`）：`WorkbenchAppearance` 与 Web 的 `colorBgLayout` 现同为 §3 的 #F7F8FA / #11151B；两侧常量仍需成对维护，但本轮已无首帧色差待复核。
 
 下一次更新本节时，请把 QA 的截图/trace 路径与 `Docs/Reports` 记录一并写入，并在 WEB/SHELL/QA 全部具备新构建证据后才把 §14.1 状态改为「已修复」。
