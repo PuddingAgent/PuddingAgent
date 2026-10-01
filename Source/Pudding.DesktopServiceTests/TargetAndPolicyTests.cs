@@ -143,6 +143,7 @@ public sealed class TargetAndPolicyTests
             $"BrowserInteract=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"BrowserLocate=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"BrowserSnapshot=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
+            $"BrowserWaitFor=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"ShellClipboard=[{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellDialog=[{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellFilePicker=[{nameof(DesktopContextTrust.Workbench)}]",

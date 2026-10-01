@@ -213,6 +213,26 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ShellStatusHandler(cancellationToken);
     }
 
+    public int WaitForCount => _calls.Count(call => call.StartsWith("wait_for", StringComparison.Ordinal));
+
+    public async Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
+        DesktopCallContext context, BrowserWaitForRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue($"wait_for:{request.Condition}");
+        await AwaitGateAsync(cancellationToken);
+
+        // 探针/夹具语义：条件满足（TimedOut=false），并把结束时的页面状态带回来。
+        return CapabilityResult<DesktopWaitResult>.Success(new DesktopWaitResult(
+            request.Target,
+            request.Condition,
+            timedOut: false,
+            new DesktopPageState(
+                request.Target,
+                new Uri("https://example.com/waited"),
+                DesktopPageVersion.Require(9),
+                DesktopPageReadiness.Complete)));
+    }
+
     public int InteractCount => _calls.Count(call => call.StartsWith("interact", StringComparison.Ordinal));
 
     public Func<BrowserInteractRequest, CancellationToken, Task<CapabilityResult<DesktopInteractionResult>>>? InteractHandler { get; set; }

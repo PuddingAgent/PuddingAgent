@@ -32,6 +32,8 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                     DesktopPageVersion.Require(5),
                     DesktopPageReadiness.Complete))),
 
+            DesktopCapability.BrowserWaitFor => WaitFor(request),
+
             DesktopCapability.BrowserInteract => Interact(request),
 
             DesktopCapability.BrowserLocate => Task.FromResult(DesktopCapabilityResponse.FromLocate(
@@ -82,6 +84,24 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
             interact.Target,
             new DesktopPageState(interact.Target, new Uri("https://example.com/probe-after-interact"), nextVersion, DesktopPageReadiness.Complete),
             interact.Locator is null ? null : new DesktopElementRef("e1", "button", nextVersion, role: "button", name: "probe"))));
+    }
+
+    /// <summary>等待：条件含 "never" 时演示超时语义（TimedOut=true，仍然回带页面状态）。</summary>
+    private static Task<DesktopCapabilityResponse> WaitFor(DesktopCapabilityRequest request)
+    {
+        var wait = request.WaitFor ?? throw new InvalidOperationException("probe: wait_for payload missing");
+        var timedOut = wait.Condition.Value.Contains("never", StringComparison.OrdinalIgnoreCase);
+
+        return Task.FromResult(DesktopCapabilityResponse.FromWait(new DesktopWaitResult(
+            wait.Target,
+            wait.Condition,
+            timedOut,
+            new DesktopPageState(
+                wait.Target,
+                new Uri("https://example.com/probe-waited"),
+                DesktopPageVersion.Require(5),
+                DesktopPageReadiness.Complete),
+            timedOut ? "probe: condition never satisfied" : null)));
     }
     private static Task<DesktopCapabilityResponse> ExecuteJavascriptAsync(
         JavascriptRequest request, CancellationToken cancellationToken)

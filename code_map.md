@@ -1,3 +1,18 @@
+## 2026-10-01：`browser.wait_for` 端到端（切片 D 最后一块只读能力）
+
+- 语义核心：**超时不是失败**——结果用 `TimedOut` 如实标注，并照样回带等待结束时的页面状态，
+  让调用方自己决定重试/换条件/放弃；把超时当异常会诱导上层做出错误的重试决策。
+- 契约：`DesktopWaitConditionKind`（selector / selector-hidden / url-pattern + 线名真源）
+  + `DesktopWaitCondition`、`BrowserWaitForRequest`（超时上限 1..600s）、`DesktopWaitResult`
+  （可选诊断 `Error` 只用于说明语法问题，**不用于表达超时**）。
+- proto：`WaitForCommand`（payload 18）+ `WaitOutcome`（outcome 19）；两端映射 fail closed
+  （条件线名未登记/目标缺失 ⇒ invalid_request）；结果回显的条件与真源不一致时以**请求**为准。
+- DesktopService 分支 + `IDesktopUiSurface.WaitForAsync` + `DefaultGrantable` 与探针两端能力集合。
+- 探针：满足（`TimedOut=false`）与超时（`TimedOut=true`，仍带回版本）两条断言，管道与 h2c 各一轮，
+  **39/39 exit 0**。
+
+测试合计：363 用例（Contracts 87、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.interact` 端到端（切片 D 唯一变更类能力，第 2/2 步）
 
 - proto：`InteractCommand`（payload 17：目标/版本/动作/定位/文案/值/勾选/位移）+ `InteractionOutcome`

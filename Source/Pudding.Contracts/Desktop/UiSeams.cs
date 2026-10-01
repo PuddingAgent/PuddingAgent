@@ -51,6 +51,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopCallContext context, DesktopPageTarget target, CancellationToken cancellationToken);
 
+    /// <summary>等待条件满足；实现方必须在请求的超时上限内返回（超时用 TimedOut 标注，不抛异常）。</summary>
+    Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
+        DesktopCallContext context, BrowserWaitForRequest request, CancellationToken cancellationToken);
+
     /// <summary>对元素执行交互；实现方必须在交互后返回<b>新的</b>页面状态（旧 Ref 随之作废）。</summary>
     Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         DesktopCallContext context, BrowserInteractRequest request, CancellationToken cancellationToken);

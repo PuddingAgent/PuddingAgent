@@ -45,6 +45,8 @@ public static class DesktopCapabilityPolicy
         [DesktopCapability.BrowserLocate] = [DesktopContextTrust.AgentAuthorized],
         // 交互是变更类：只对获授权的 Agent 浏览器开放（工作台不可注入脚本，普通网页更不允许）。
         [DesktopCapability.BrowserInteract] = [DesktopContextTrust.AgentAuthorized],
+        // 等待是只读轮询（同样读取 DOM）：只对获授权的 Agent 浏览器开放。
+        [DesktopCapability.BrowserWaitFor] = [DesktopContextTrust.AgentAuthorized],
     };
 
     public static bool IsAllowedForTrust(DesktopCapability capability, DesktopContextTrust trust) =>

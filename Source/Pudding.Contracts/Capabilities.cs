@@ -41,6 +41,9 @@ public enum DesktopCapability
 
     /// <summary>对页面元素执行交互（变更类；必须固定页面版本，交互后旧 Ref 作废）。</summary>
     BrowserInteract = 1 << 10,
+
+    /// <summary>等待条件满足（只读轮询；超时用 TimedOut 标注，不算失败）。</summary>
+    BrowserWaitFor = 1 << 11,
 }
 
 public enum DesktopCapabilityKind
@@ -111,6 +114,8 @@ public static class DesktopCapabilities
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.BrowserInteract, "browser.interact", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
+        new(DesktopCapability.BrowserWaitFor, "browser.wait_for", InitialVersion,
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
     ];
 
     private static readonly Dictionary<DesktopCapability, DesktopCapabilityDescriptor> ByCapability =

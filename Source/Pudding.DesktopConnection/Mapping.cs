@@ -379,6 +379,42 @@ internal static class CoreFrameMapping
                 }
             }
 
+            case DesktopCapability.BrowserWaitFor:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.WaitFor)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var waitTarget = DecodeTarget(command.WaitFor.Target);
+                if (waitTarget is null)
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                        DesktopCapabilityError.InvalidTarget("browser.wait_for requires an explicit context_id/page_id target"));
+                }
+
+                if (!DesktopWaitConditionKindWire.TryParse(command.WaitFor.ConditionKind, out var waitKind))
+                {
+                    return FailRequest("wait condition kind is missing or not registered");
+                }
+
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForWaitFor(new BrowserWaitForRequest(
+                            waitTarget,
+                            new DesktopWaitCondition(waitKind, command.WaitFor.ConditionValue),
+                            command.WaitFor.TimeoutMs == 0
+                                ? BrowserWaitForRequest.DefaultTimeoutMs
+                                : command.WaitFor.TimeoutMs,
+                            ToPageVersion(command.WaitFor.ExpectedPageVersion))));
+                }
+                catch (ArgumentException ex)
+                {
+                    return FailRequest($"wait condition is not usable ({ex.ParamName})");
+                }
+            }
+
             case DesktopCapability.ShellStatus:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
@@ -638,6 +674,22 @@ internal static class DesktopFrameMapping
                         result.Interact.Element = wireElement;
                     }
 
+                    break;
+
+                case DesktopCapability.BrowserWaitFor when response.Wait is { } wait:
+                    result.WaitFor = new Proto.WaitOutcome
+                    {
+                        TimedOut = wait.TimedOut,
+                        ConditionKind = DesktopWaitConditionKindWire.NameOf(wait.Condition.Kind),
+                        ConditionValue = WireText.Truncate(wait.Condition.Value, 2048),
+                        Error = WireText.Truncate(wait.Error, 512),
+                        Page = new Proto.PageStateOutcome
+                        {
+                            Url = wait.Page.Url?.AbsoluteUri ?? string.Empty,
+                            PageVersion = wait.Page.Version.Value,
+                            Readiness = DesktopPageReadinessWire.NameOf(wait.Page.Readiness),
+                        },
+                    };
                     break;
 
                 case DesktopCapability.ShellStatus when response.ShellStatus is { } shellStatus:

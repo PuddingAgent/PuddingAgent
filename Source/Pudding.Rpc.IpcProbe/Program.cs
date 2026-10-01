@@ -144,7 +144,8 @@ internal static class Program
             | DesktopCapability.ShellStatus
             | DesktopCapability.BrowserSnapshot
             | DesktopCapability.BrowserLocate
-            | DesktopCapability.BrowserInteract,
+            | DesktopCapability.BrowserInteract
+            | DesktopCapability.BrowserWaitFor,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
         InactivityTimeout = TimeSpan.FromSeconds(30),
@@ -407,6 +408,36 @@ internal static class Program
             {
                 report.Fail("interact-invalidates-refs", afterInteract.IsFailure ? $"期望 page_version_mismatch，实际 {afterInteract.Error!.Code}" : "期望被拒，实际却成功");
             }
+        }
+        // 9) 条件等待（切片 D 最后一块只读能力）：满足与超时都必须如实标注，且都要回带页面状态。
+        var satisfied = await session.WaitForAsync(
+            new BrowserWaitForRequest(
+                target,
+                new DesktopWaitCondition(DesktopWaitConditionKind.Selector, "#ready"),
+                timeoutMs: 5000),
+            Call("wait-satisfied"));
+
+        var timedOut = await session.WaitForAsync(
+            new BrowserWaitForRequest(
+                target,
+                new DesktopWaitCondition(DesktopWaitConditionKind.Selector, "#never-appears"),
+                timeoutMs: 1000),
+            Call("wait-timeout"));
+
+        if (!satisfied.IsSuccess || satisfied.Value.TimedOut)
+        {
+            report.Fail("wait_for", satisfied.IsFailure ? $"期望条件满足，实际 {satisfied.Error!.Code}" : "期望 TimedOut=false");
+        }
+        else if (!timedOut.IsSuccess || !timedOut.Value.TimedOut || timedOut.Value.Page.Version.Value <= 0)
+        {
+            report.Fail("wait_for-timeout", "超时必须作为正常结果返回（TimedOut=true）并带回页面状态");
+        }
+        else
+        {
+            report.Pass(
+                "wait_for",
+                $"满足 → TimedOut=false v{satisfied.Value.Page.Version.Value}；"
+                + $"超时 → TimedOut=true v{timedOut.Value.Page.Version.Value}（超时不是失败）");
         }
         // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
         var refWithoutVersionRejected = false;

@@ -132,6 +132,17 @@ internal static class CoreCommandEncoder
                 command.Interact.DeltaY = interact.DeltaY ?? 0;
                 break;
 
+            case DesktopCapability.BrowserWaitFor when request.WaitFor is { } waitFor:
+                command.WaitFor = new Proto.WaitForCommand
+                {
+                    Target = EncodeTarget(waitFor.Target),
+                    ExpectedPageVersion = waitFor.ExpectedPageVersion.Value,
+                    ConditionKind = DesktopWaitConditionKindWire.NameOf(waitFor.Condition.Kind),
+                    ConditionValue = waitFor.Condition.Value,
+                    TimeoutMs = waitFor.TimeoutMs,
+                };
+                break;
+
             case DesktopCapability.BrowserSnapshot when request.Snapshot is { } snapshot:
                 command.Snapshot = new Proto.SnapshotCommand
                 {
@@ -172,6 +183,8 @@ internal static class CoreCommandEncoder
             _ when request.Notification is { } notification =>
                 $"notification:{notification.Title}:{notification.Message}:{notification.Priority}",
             _ when request.PageState is { } target => $"page_state:{target.Key}",
+            _ when request.WaitFor is { } waitFor =>
+                $"wait_for:{waitFor.Target.Key}:{waitFor.Condition.Kind}:{waitFor.Condition.Value}:{waitFor.TimeoutMs}:{waitFor.ExpectedPageVersion.Value}",
             _ when request.Interact is { } interact =>
                 $"interact:{interact.Action}:{interact.Target.Key}:{interact.ExpectedPageVersion.Value}:{interact.Locator}:"
                 + $"{interact.Text}:{string.Join(",", interact.Values ?? [])}:{interact.IsChecked}:{interact.DeltaX}:{interact.DeltaY}",
@@ -199,7 +212,7 @@ internal static class DesktopResultDecoder
     /// 结果帧不重复携带目标，领域 DTO 的目标由请求关联而来。
     /// </summary>
     public static CapabilityResult<DesktopCapabilityResponse> Decode(
-        Proto.OperationResult result, DesktopCapability expectedCapability, DesktopPageTarget? requestedTarget, DesktopLocator? requestedLocator = null)
+        Proto.OperationResult result, DesktopCapability expectedCapability, DesktopPageTarget? requestedTarget, DesktopLocator? requestedLocator = null, DesktopWaitCondition? requestedWaitCondition = null)
     {
         if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.None)
         {
@@ -222,6 +235,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.Snapshot => expectedCapability == DesktopCapability.BrowserSnapshot,
             Proto.OperationResult.OutcomeOneofCase.Locate => expectedCapability == DesktopCapability.BrowserLocate,
             Proto.OperationResult.OutcomeOneofCase.Interact => expectedCapability == DesktopCapability.BrowserInteract,
+            Proto.OperationResult.OutcomeOneofCase.WaitFor => expectedCapability == DesktopCapability.BrowserWaitFor,
             _ => false,
         };
 
@@ -297,6 +311,43 @@ internal static class DesktopResultDecoder
 
             default:
             {
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.WaitFor)
+                {
+                    if (requestedTarget is null)
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal("wait_for result cannot be correlated without the requested target"));
+                    }
+
+                    Uri? waitUrl = null;
+                    if (!string.IsNullOrEmpty(result.WaitFor.Page?.Url)
+                        && !Uri.TryCreate(result.WaitFor.Page.Url, UriKind.Absolute, out waitUrl))
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal("wait_for outcome carries a non-absolute url"));
+                    }
+
+                    // 线名未登记时按请求里的条件回填（结果帧只是回显；真源是请求）。
+                    var waitKind = DesktopWaitConditionKindWire.TryParse(result.WaitFor.ConditionKind, out var parsedKind)
+                        ? parsedKind
+                        : requestedWaitCondition?.Kind ?? DesktopWaitConditionKind.Selector;
+                    var waitValue = string.IsNullOrEmpty(result.WaitFor.ConditionValue)
+                        ? requestedWaitCondition?.Value ?? "*"
+                        : result.WaitFor.ConditionValue;
+
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromWait(new DesktopWaitResult(
+                            requestedTarget,
+                            new DesktopWaitCondition(waitKind, waitValue),
+                            result.WaitFor.TimedOut,
+                            new DesktopPageState(
+                                requestedTarget,
+                                waitUrl,
+                                ToPageVersion(result.WaitFor.Page?.PageVersion ?? 0),
+                                DesktopPageReadinessWire.Parse(result.WaitFor.Page?.Readiness)),
+                            NullIfEmpty(result.WaitFor.Error))));
+                }
+
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Interact)
                 {
                     if (requestedTarget is null)

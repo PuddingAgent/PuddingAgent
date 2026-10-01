@@ -170,6 +170,23 @@ message InteractionOutcome {
   PageStateOutcome page = 2;
 }
 
+// 条件等待（只读轮询）：timeout_ms 是硬上限；超时用 timed_out 标注，不是错误。
+message WaitForCommand {
+  CommandTarget target = 1;
+  int64 expected_page_version = 2;
+  string condition_kind = 3;
+  string condition_value = 4;
+  int32 timeout_ms = 5;
+}
+
+message WaitOutcome {
+  bool timed_out = 1;
+  string condition_kind = 2;
+  string condition_value = 3;
+  PageStateOutcome page = 4;
+  string error = 5;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -200,6 +217,7 @@ message CapabilityCommand {
     SnapshotCommand snapshot = 15;
     LocateCommand locate = 16;
     InteractCommand interact = 17;
+    WaitForCommand wait_for = 18;
   }
 }
 
@@ -306,6 +324,7 @@ message OperationResult {
     SnapshotOutcome snapshot = 16;
     LocateOutcome locate = 17;
     InteractionOutcome interact = 18;
+    WaitOutcome wait_for = 19;
   }
 }
 

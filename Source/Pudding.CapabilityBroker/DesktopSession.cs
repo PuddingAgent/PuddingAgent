@@ -173,6 +173,19 @@ public sealed class DesktopSession : IAsyncDisposable
     /// 元素交互（切片 D 唯一变更类能力）。成功结果携带<b>交互后的页面状态</b>，
     /// 版本随之推进 ⇒ 交互前的 Ref 在本会话内立即作废（复用按目标的版本跟踪）。
     /// </summary>
+    /// <summary>条件等待（只读）：超时用 TimedOut 标注而不是失败，并照常回带页面状态。</summary>
+    public Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
+        BrowserWaitForRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.BrowserWaitFor,
+            DesktopCapabilityRequest.ForWaitFor(request),
+            call,
+            static response => response.Wait is { } value
+                ? CapabilityResult<DesktopWaitResult>.Success(value)
+                : CapabilityResult<DesktopWaitResult>.Failure(
+                    DesktopCapabilityError.Internal("wait_for response payload is missing")),
+            cancellationToken);
+
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync(

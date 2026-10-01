@@ -30,6 +30,12 @@ public interface IPuddingDesktopWebViewApi
         DesktopPageTarget target,
         CancellationToken cancellationToken = default);
 
+    /// <summary>等待条件满足（只读）；超时用 TimedOut 标注而不是失败。</summary>
+    Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
+        DesktopCallContext context,
+        BrowserWaitForRequest request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>对元素执行交互（变更类；必须固定页面版本，交互后旧 Ref 作废）。</summary>
     Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         DesktopCallContext context,
