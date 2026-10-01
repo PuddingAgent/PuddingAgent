@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PuddingAgent.Services;
+using PuddingCode.Configuration;
+using PuddingCodeIndex.Contracts;
 using PuddingFullTextIndex;
 using PuddingFullTextIndex.Contracts;
 using PuddingFullTextIndex.Infrastructure.Search;
@@ -57,15 +59,15 @@ public sealed class SAIndexStatusApiTests
 
         var snapshot = await probe.BuildAsync();
 
-        Assert.False(snapshot.FullText.Enabled);
-        Assert.False(snapshot.FullText.CompositionCreated);
+        Assert.False(snapshot.Enabled);
+        Assert.False(snapshot.CompositionCreated);
         Assert.Null(accessor.Current);
         Assert.Equal(0, factory.CreateCalls);
         Assert.False(
             Directory.Exists(fixture.IndexRoot),
             "默认关闭时，状态查询**不得**创建索引根目录（R2 零副作用）");
-        Assert.Empty(snapshot.FullText.AcceptedScopes);
-        Assert.Empty(snapshot.FullText.Scopes);
+        Assert.Empty(snapshot.AcceptedScopes);
+        Assert.Empty(snapshot.Scopes);
     }
 
     /// <summary>I1（另一半口径）：<c>Enabled=true</c> 但配置被拒（<c>Scopes</c> 为空）⇒ 同样不构造组合。</summary>
@@ -85,8 +87,8 @@ public sealed class SAIndexStatusApiTests
 
         var snapshot = await probe.BuildAsync();
 
-        Assert.True(snapshot.FullText.Enabled);
-        Assert.False(snapshot.FullText.CompositionCreated);
+        Assert.True(snapshot.Enabled);
+        Assert.False(snapshot.CompositionCreated);
         Assert.Equal(0, factory.CreateCalls);
         Assert.False(Directory.Exists(fixture.IndexRoot));
         Assert.True(FullTextIndexSupplyResolver.Resolve(new FullTextIndexSupplyOptions { Enabled = true, Scopes = [] })
@@ -150,7 +152,7 @@ public sealed class SAIndexStatusApiTests
         var probe = CreateProbe(supplyOptions, fixture.Options, engine, sharedAccessor);
         var snapshot = await probe.BuildAsync();
 
-        Assert.True(snapshot.FullText.CompositionCreated);
+        Assert.True(snapshot.CompositionCreated);
         Assert.Same(composition, sharedAccessor.Current);
         Assert.Same(sharedAccessor.Current, sharedAccessor.GetOrCreate(supplyOptions));
         Assert.Equal(1, sharedFactory.CreateCalls);
@@ -196,7 +198,7 @@ public sealed class SAIndexStatusApiTests
         var probe = CreateProbe(supplyOptions, fixture.Options, engine, accessor);
         var snapshot = await probe.BuildAsync();
 
-        var reported = Assert.Single(snapshot.FullText.Jobs);
+        var reported = Assert.Single(snapshot.Jobs);
         Assert.Equal(job.JobId, reported.JobId);
         Assert.Equal(job.State.ToString(), reported.State);
         Assert.Equal(job.Phase, reported.Phase);
@@ -206,7 +208,7 @@ public sealed class SAIndexStatusApiTests
         Assert.Equal(job.DiscoveredFileCount, reported.IndexedFileCount);
         Assert.Equal(job.DiscoveredBytes, reported.TotalBytes);
         Assert.Equal(71_000L, reported.ElapsedMs!.Value);
-        Assert.Null(snapshot.FullText.JobsReason);
+        Assert.Null(snapshot.JobsReason);
         Assert.Equal(1, coordinator.ListStatusCalls);
         Assert.Equal(0, coordinator.BuildCalls);
         Assert.Equal(0, coordinator.PlanCalls);
@@ -231,9 +233,9 @@ public sealed class SAIndexStatusApiTests
         var probe = CreateProbe(supplyOptions, fixture.Options, engine, accessor);
         var snapshot = await probe.BuildAsync();
 
-        Assert.False(snapshot.FullText.CompositionCreated);
-        Assert.Empty(snapshot.FullText.Jobs);
-        Assert.Equal("composition-not-created", snapshot.FullText.JobsReason);
+        Assert.False(snapshot.CompositionCreated);
+        Assert.Empty(snapshot.Jobs);
+        Assert.Equal("composition-not-created", snapshot.JobsReason);
         Assert.Equal(0, factory.CreateCalls);
         Assert.False(Directory.Exists(fixture.IndexRoot));
     }
@@ -311,7 +313,7 @@ public sealed class SAIndexStatusApiTests
         var after = CaptureRootState(fixture.IndexRoot);
 
         // 真实引擎会算出真目录名（单一真源），此处只断言只读性。
-        Assert.Single(snapshot.FullText.Scopes);
+        Assert.Single(snapshot.Scopes);
         Assert.Equal(before.RootLastWriteUtc, after.RootLastWriteUtc);
         Assert.Equal(before.EntryCount, after.EntryCount);
         Assert.Equal(before.Tree, after.Tree);
@@ -359,7 +361,7 @@ public sealed class SAIndexStatusApiTests
                 new StubCompositionFactory(FixedComposition(new LedgerSupplyCoordinator([])))),
             NullLogger<FullTextIndexStatusProbe>.Instance);
 
-        var before = (await probe.BuildAsync()).FullText;
+        var before = await probe.BuildAsync();
 
         Assert.True(before.Enabled);
         Assert.Equal(first.MaxIndexBytes, before.MaxIndexBytes);
@@ -369,7 +371,7 @@ public sealed class SAIndexStatusApiTests
 
         // 换值（同一个探针实例、同一个进程）—— 响应必须跟着变。
         monitor.CurrentValue = second;
-        var after = (await probe.BuildAsync()).FullText;
+        var after = await probe.BuildAsync();
 
         Assert.Equal(second.MaxIndexBytes, after.MaxIndexBytes);
         Assert.Equal(second.MinRebuildInterval, after.MinRebuildInterval);
@@ -401,7 +403,7 @@ public sealed class SAIndexStatusApiTests
                 new StubCompositionFactory(FixedComposition(new LedgerSupplyCoordinator([])))));
 
         var snapshot = await probe.BuildAsync();
-        var reported = Assert.Single(snapshot.FullText.Scopes);
+        var reported = Assert.Single(snapshot.Scopes);
 
         var engineSays = engine.ResolveIndexDirectory(scope);
 
@@ -432,7 +434,7 @@ public sealed class SAIndexStatusApiTests
                 new StubCompositionFactory(FixedComposition(new LedgerSupplyCoordinator([])))));
 
         var snapshot = await probe.BuildAsync();
-        var reported = Assert.Single(snapshot.FullText.Scopes);
+        var reported = Assert.Single(snapshot.Scopes);
 
         Assert.Equal(scope, reported.ScopePath);
         Assert.Null(reported.IndexDirectory);
@@ -466,7 +468,7 @@ public sealed class SAIndexStatusApiTests
                 new StubCompositionFactory(FixedComposition(new LedgerSupplyCoordinator([])))));
 
         var snapshot = await probe.BuildAsync();
-        var reported = Assert.Single(snapshot.FullText.Scopes);
+        var reported = Assert.Single(snapshot.Scopes);
 
         Assert.Equal(scope, reported.ScopePath);
         Assert.Null(reported.IndexDirectory);
@@ -498,7 +500,7 @@ public sealed class SAIndexStatusApiTests
                 new StubCompositionFactory(FixedComposition(new LedgerSupplyCoordinator([])))));
 
         var snapshot = await probe.BuildAsync();
-        var reported = Assert.Single(snapshot.FullText.Scopes);
+        var reported = Assert.Single(snapshot.Scopes);
 
         Assert.Equal(missing, reported.IndexDirectory);
         Assert.False(reported.IndexDirectoryExists);
@@ -524,9 +526,9 @@ public sealed class SAIndexStatusApiTests
 
         var snapshot = await probe.BuildAsync();
 
-        Assert.True(snapshot.FullText.CompositionCreated);
-        Assert.Empty(snapshot.FullText.Jobs);
-        Assert.Equal("ledger-read-failed", snapshot.FullText.JobsReason);
+        Assert.True(snapshot.CompositionCreated);
+        Assert.Empty(snapshot.Jobs);
+        Assert.Equal("ledger-read-failed", snapshot.JobsReason);
         Assert.Equal(200, await InvokeControllerStatusAsync(probe));
     }
 
@@ -553,6 +555,14 @@ public sealed class SAIndexStatusApiTests
             new StubCompositionFactory(FixedComposition(new LedgerSupplyCoordinator([]))));
         services.AddSingleton<IFullTextIndexSupplyAccessor, FullTextIndexSupplyAccessor>();
         services.AddSingleton<FullTextIndexStatusProbe>();
+        // S-A2：控制器现在还要一棵 codeIndex 探针。这里给零磁盘替身（与生产同形的依赖集：
+        // 驱动 / 注册表 / 项目记录 / 数据根），于是 I9 仍然只验证「DI 能造出控制器」。
+        services.AddSingleton<ICodeIndexMaintenance>(new Sa2MaintenanceStub());
+        services.AddSingleton<ICodeIndexScopeRegistry>(new Sa2ScopeRegistryStub());
+        services.AddSingleton<ICodeProjectRegistry>(new Sa2ProjectRegistryStub());
+        services.AddSingleton(
+            PuddingDataPaths.FromRoot(Path.Combine(Path.GetTempPath(), "pudding-sa2-di-data-root")));
+        services.AddSingleton<CodeIndexStatusProbe>();
 
         using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
@@ -595,13 +605,19 @@ public sealed class SAIndexStatusApiTests
     private static IFullTextIndexSupplyComposition FixedComposition(IFullTextIndexSupplyCoordinator coordinator) =>
         new TestSupplyComposition(coordinator, new SupplyCoordinatorOptions(), _ => DateTimeOffset.MinValue);
 
-    /// <summary>走控制器动作（<c>OkObjectResult</c> = HTTP 200；异常会在此直接冒泡成测试失败）。</summary>
+    /// <summary>
+    /// 走控制器动作（<c>OkObjectResult</c> = HTTP 200；异常会在此直接冒泡成测试失败）。
+    /// <para>
+    /// S-A2 起控制器需要两块探针。本文件只关心 <c>fullText</c> 块，因此 codeIndex 一侧注入一个
+    /// **零磁盘、零项目**的替身（数据根指向不存在的目录 ⇒ workspace 枚举为空）。
+    /// </para>
+    /// </summary>
     private static async Task<int> InvokeControllerStatusAsync(FullTextIndexStatusProbe probe)
     {
-        var controller = new IndexAdminController(probe);
+        var controller = new IndexAdminController(probe, Sa2Samples.EmptyProbeWithoutDisk());
         var result = await controller.GetStatus(CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        Assert.IsType<FullTextIndexStatusSnapshot>(ok.Value);
+        Assert.IsType<IndexAdminStatusSnapshot>(ok.Value);
         return ok.StatusCode ?? 0;
     }
 
@@ -797,11 +813,11 @@ public sealed class SAIndexStatusApiHostCompositionTests
             var probe = app.Services.GetRequiredService<FullTextIndexStatusProbe>();
             var snapshot = await probe.BuildAsync();
 
-            Assert.False(snapshot.FullText.Enabled);
-            Assert.False(snapshot.FullText.CompositionCreated);
+            Assert.False(snapshot.Enabled);
+            Assert.False(snapshot.CompositionCreated);
             Assert.Null(accessor.Current);
-            Assert.Empty(snapshot.FullText.Jobs);
-            Assert.Equal("composition-not-created", snapshot.FullText.JobsReason);
+            Assert.Empty(snapshot.Jobs);
+            Assert.Equal("composition-not-created", snapshot.JobsReason);
             Assert.False(
                 Directory.Exists(Path.Combine(dataRoot, "fulltext-index")),
                 "默认关闭时，连组合根级的状态查询也不得创建索引根");
@@ -810,7 +826,7 @@ public sealed class SAIndexStatusApiHostCompositionTests
             var actionResult = await controller.GetStatus(CancellationToken.None);
             var ok = Assert.IsType<OkObjectResult>(actionResult.Result);
             Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
-            var body = Assert.IsType<FullTextIndexStatusSnapshot>(ok.Value);
+            var body = Assert.IsType<IndexAdminStatusSnapshot>(ok.Value);
             Assert.False(body.FullText.CompositionCreated);
         }
         finally

@@ -202,6 +202,10 @@ public static partial class PuddingServiceCollectionExtensions
         // IConfiguration / IOptionsMonitor<FullTextIndexSupplyOptions> / FullTextIndexOptions /
         // IFullTextSearchEngine / IFullTextIndexSupplyAccessor。
         builder.Services.AddSingleton<FullTextIndexStatusProbe>();
+        // S-A2（2026-10-01）：符号 / 代码索引块的只读探针。依赖全部已在上面注册：
+        // ICodeIndexMaintenance / ICodeIndexScopeRegistry / ICodeProjectRegistry（AddPuddingCodeIntelligence）
+        // 与 PuddingDataPaths（PuddingApplicationHost 注册的实例）。只调用查询型 API，不打开写事务。
+        builder.Services.AddSingleton<CodeIndexStatusProbe>();
         builder.Services.AddPuddingAgentTool<SearchGrepTool>();
 
         // ── Smart 工作流工具（角色化子代理）──

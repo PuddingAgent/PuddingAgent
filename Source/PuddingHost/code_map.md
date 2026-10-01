@@ -14,6 +14,9 @@
 | `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM |
 | `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
 | `Hosting/StorageManagementAuthorization.cs` | 平台 admin JWT，或 DesktopChild Loopback + ControlToken 的管理策略 |
+| `Controllers/IndexAdminController.cs` | `GET /api/admin/index/status`（Admin JWT 只读）**并列两块**：`fullText`（S-A，字段名与结构冻结）+ `codeIndex`（S-A2 新增：逐项目 projectId/displayName/rootPath/注册态/维护态 23 字段/rootPathExists/stale）；D1/D2 的 fail-closed 做进数据（未登记或根路径不存在 ⇒ stale） |
+| `Services/CodeIndexStatusProbe.cs` | S-A2：codeIndex 块的只读探针。枚举真源 `ICodeIndexScopeRegistry.ListScopesAsync` ∪ `ICodeIndexMaintenance.GetScopeStatuses`（未登记 scope 也能被看见），原始注册态取自 `ICodeProjectRegistry.ListProjectsAsync`；维护态 23 字段原样透传；只调查询型 API，失败降级为 null/空列表，绝不 500 |
+| `Services/FullTextIndexStatusProbe.cs` | S-A：`fullText` 块探针（只产块，不再产响应根对象）；响应根对象 `IndexAdminStatusSnapshot` 由控制器组装 |
 
 ## Browser Bridge（Phase 2A）
 

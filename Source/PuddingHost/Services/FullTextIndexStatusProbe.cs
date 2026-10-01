@@ -9,16 +9,13 @@ using PuddingHost.Hosting;
 namespace PuddingAgent.Services;
 
 // ────────────────────────────────────────────────────────────────────────
-// 响应形状（D2）。字段名即契约；camelCase 由 ASP.NET 默认序列化策略决定。
-// ⚠️ 本切片**只做全文索引块**：这里不得出现 codeIndex（符号索引属下一刀 S-A2）。
+// 全文索引块的响应形状（D2）。字段名即契约；camelCase 由 ASP.NET 默认序列化策略决定。
+//
+// S-A：fullText 是响应里唯一的块，探针直接产出响应根对象。
+// S-A2（2026-10-01）：响应根对象上移到 HTTP 边界（IndexAdminController.IndexAdminStatusSnapshot，
+// 因为根上现在并列着两个块），本探针只产出 fullText 块本身。
+// ⚠️ fullText 的**字段名与结构一个都没动**：前端已按它实现并上线。
 // ────────────────────────────────────────────────────────────────────────
-
-/// <summary>全文索引状态响应根对象。</summary>
-/// <param name="GeneratedAtUtc">快照生成时刻（UTC）。</param>
-/// <param name="FullText">全文索引块（本切片唯一的块）。</param>
-public sealed record FullTextIndexStatusSnapshot(
-    DateTime GeneratedAtUtc,
-    FullTextIndexStatusDetailSnapshot FullText);
 
 /// <summary>全文索引块的配置真值 + 观测真值（每一项都可追溯到单一真源，见各属性注释）。</summary>
 /// <param name="Configured">有效配置里是否存在 <c>FullTextIndex</c> 节。</param>
@@ -197,9 +194,9 @@ public sealed class FullTextIndexStatusProbe
         _rootedEngine = searchEngine as IFullTextIndexRootedEngine;
     }
 
-    /// <summary>构建一次状态快照（全程只读）。</summary>
+    /// <summary>构建一次 fullText 块快照（全程只读）。</summary>
     /// <param name="ct">取消令牌（仅用于台账读取；取消不改变「只读」性质）。</param>
-    public async Task<FullTextIndexStatusSnapshot> BuildAsync(CancellationToken ct = default)
+    public async Task<FullTextIndexStatusDetailSnapshot> BuildAsync(CancellationToken ct = default)
     {
         var options = _supplyOptions.CurrentValue;
         var resolution = FullTextIndexSupplyResolver.Resolve(options);
@@ -212,10 +209,8 @@ public sealed class FullTextIndexStatusProbe
 
         var indexRoot = _indexOptions.IndexRootDirectory;
 
-        return new FullTextIndexStatusSnapshot(
-            GeneratedAtUtc: DateTime.UtcNow,
-            FullText: new FullTextIndexStatusDetailSnapshot(
-                Configured: IsSectionConfigured(FullTextIndexSupplyOptions.SectionName),
+        return new FullTextIndexStatusDetailSnapshot(
+            Configured: IsSectionConfigured(FullTextIndexSupplyOptions.SectionName),
                 Enabled: options.Enabled,
                 IndexRoot: indexRoot,
                 IndexRootExists: Directory.Exists(indexRoot),
@@ -228,7 +223,7 @@ public sealed class FullTextIndexStatusProbe
                 Maintenance: ObserveMaintenance(),
                 Scopes: scopes,
                 Jobs: jobs,
-                JobsReason: jobsReason));
+                JobsReason: jobsReason);
     }
 
     // ── 配置真值（只读） ──────────────────────────────────────────────

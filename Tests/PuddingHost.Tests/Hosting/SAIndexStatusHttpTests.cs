@@ -34,9 +34,11 @@ namespace PuddingHost.Tests.Hosting;
 /// </summary>
 public sealed class SAIndexStatusHttpTests
 {
-    /// <summary>路由与响应形状（含 D5 红线：**不得**出现 <c>codeIndex</c>）。</summary>
+    /// <summary>
+    /// 路由与响应形状（S-A2 起：<c>codeIndex</c> 块**必须**出现；<c>fullText</c> 字段名前缀未变）。
+    /// </summary>
     [Fact]
-    public async Task Get_Status_Returns_200_With_The_Documented_Shape_And_No_CodeIndex_Block()
+    public async Task Get_Status_Returns_200_With_The_Documented_Shape_And_The_New_CodeIndex_Block()
     {
         using var fixture = new S5Fixture();
         var scope = fixture.NewCorpus("http-shape", ("a.txt", "aaa"));
@@ -68,7 +70,11 @@ public sealed class SAIndexStatusHttpTests
 
         var response = await client.GetAsync("/api/admin/index/status");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // 临时诊断（S-A2 调查用）：失败时把响应体带出来。
+        var diagnosticBody = await response.Content.ReadAsStringAsync();
+        Assert.True(
+            response.StatusCode == HttpStatusCode.OK,
+            $"期望 200，实际 {(int)response.StatusCode}；响应体：{diagnosticBody}");
         var json = await response.Content.ReadAsStringAsync();
 
         using var document = JsonDocument.Parse(json);
@@ -89,9 +95,13 @@ public sealed class SAIndexStatusHttpTests
             Assert.True(fullText.TryGetProperty(name, out _), $"响应缺少字段 fullText.{name}");
         }
 
-        // D5 红线：本切片不得出现符号索引块或占位。
-        Assert.False(root.TryGetProperty("codeIndex", out _), "S-A 不得出现 codeIndex（属下一刀 S-A2）");
-        Assert.False(fullText.TryGetProperty("codeIndex", out _), "S-A 不得出现 codeIndex（属下一刀 S-A2）");
+        // S-A2（2026-10-01）：红线升级 —— 本切片**必须**出现 codeIndex 块，
+        // 但 fullText 那一块**不得**被塞进任何 codeIndex 字段（字段名与结构冻结）。
+        // 旧断言（断言 codeIndex 不存在）属 S-A 那一刀的临时红线，已由 S-A2 的规格取代。
+        Assert.True(root.TryGetProperty("codeIndex", out var codeIndex), "S-A2 起响应必须携带 codeIndex 块");
+        Assert.Equal(JsonValueKind.Object, codeIndex.ValueKind);
+        Assert.False(fullText.TryGetProperty("codeIndex", out _), "codeIndex 不得被塞进 fullText 块");
+        Assert.False(codeIndex.TryGetProperty("fullText", out _), "codeIndex 块不得反向嵌套 fullText");
 
         // 配置真值与受理结果。
         Assert.True(fullText.GetProperty("enabled").GetBoolean());
@@ -151,7 +161,10 @@ public sealed class SAIndexStatusHttpTests
 
         var response = await client.GetAsync("/api/admin/index/status");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var forbiddenBody = await response.Content.ReadAsStringAsync();
+        Assert.True(
+            response.StatusCode == HttpStatusCode.Forbidden,
+            $"期望 403，实际 {(int)response.StatusCode}；响应体：{forbiddenBody}");
     }
 
     // ── 局部工具 ────────────────────────────────────────────────────────
@@ -194,6 +207,8 @@ public sealed class SAIndexStatusHttpTests
         builder.Services.AddRouting();
         builder.Services.AddControllers().AddApplicationPart(typeof(IndexAdminController).Assembly);
         builder.Services.AddSingleton(probe);
+        // S-A2：控制器现在还要一棵 codeIndex 探针（零磁盘替身：数据根不存在 ⇒ 无项目、不读真实库）。
+        builder.Services.AddSingleton(Sa2Samples.EmptyProbeWithoutDisk());
 
         // 显式注入受控配置：不受测试输出目录里 appsettings.json 的干扰。
         builder.Services.AddSingleton<IConfiguration>(
