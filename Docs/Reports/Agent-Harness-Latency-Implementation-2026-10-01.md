@@ -67,6 +67,7 @@
 - `pnpm exec jest ...`（新增/改动套件）：44 通过 / 1 失败（45）。唯一失败是**既有语音族红**：HEAD 源码里 `IntentConsole.tsx` 只有 `开始语音输入`、无 `开始语音对话` 按钮（`git show HEAD:` 实测计数 0），而 HEAD 测试期望 `开始语音会话`——与 `TestScripts/known-red-dispositions.md` #6/#7/#9 同一归属问题。
 - `pnpm exec tsc --noEmit`：6 条错误，**均在本次未改逻辑的既有代码**上：`chat/index.tsx:808` 的 `onEditAndRerun`（HEAD 同样存在该调用，已用 `git show HEAD:` 证实）、`executionFlowProjector.ts:682/685/686/688`（该文件本次零改动）。
 - `node scripts/check-chat-bundle-budget.cjs`：`ok sync=… chat=348792 common=417160`（exit 0，上限 507,904 B；本次 +5,510 B，未削弱门禁）。
+- 前端全量 `pnpm exec jest --runInBand`：**Test Suites 192 通过 / 2 失败；Tests 1591 通过 / 3 失败 / 1594 总计**。3 条失败与 `TestScripts/known-red-dispositions.md` 登记的语音族 #6/#7/#9 完全一致（`InputArea.test.tsx` ×2「voice mode … transcript / unavailable state」+ `IntentConsole.test.tsx` ×1 同族用例），无新增红。
 
 ## 7. 明确未做 / 不可主张
 

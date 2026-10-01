@@ -19,6 +19,11 @@
   ⇒ 等用户定“接线 vs 移除”后再动测试（**无决策不动测试、不删组件**）。
 - ✅ **稳定性**：此前 1 例 flaky（access-token 套件并行下超时）**已治好**，见下方「flaky 已修」一节。
 
+## 基线复测（2026-10-01，耗时诊断 UI 提交 `9cfd131` 后）
+- `pnpm exec jest --runInBand` 全量 ⇒ **`Test Suites: 2 failed, 192 passed, 194 total` / `Tests: 3 failed, 1591 passed, 1594 total`**。
+- 3 条失败与上表 #6/#7/#9 语音族**逐例一致**（`InputArea status feedback › switches into voice mode and sends a transcript with voice metadata`、`… shows the voice mode unavailable state …`、`IntentConsole` 同族 1 例），**无新增红**，名单未变。
+- 同期 `pnpm exec tsc --noEmit` 有 6 条既有错误（`chat/index.tsx:808` `onEditAndRerun`；`projections/executionFlowProjector.ts:682/685/686/688`），与语音族无关，尚未纳入任何门禁名单。
+
 ## 逐例台账（3 例待查 = 语音族；已修的都移到下方「已修完的例」）
 
 | # | 套件 | 用例 | 类 | 证据/状态 |
