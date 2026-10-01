@@ -47,6 +47,9 @@ public enum DesktopCapability
 
     /// <summary>列出浏览器上下文与页面（只读；浏览器作用域，不需要页面目标）。</summary>
     BrowserContexts = 1 << 12,
+
+    /// <summary>标签页操作：激活或关闭目标页面（变更类；必须固定页面版本）。</summary>
+    BrowserTabs = 1 << 13,
 }
 
 public enum DesktopCapabilityKind
@@ -121,6 +124,8 @@ public static class DesktopCapabilities
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.BrowserContexts, "browser.contexts", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext),
+        new(DesktopCapability.BrowserTabs, "browser.tabs", InitialVersion,
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
     ];
 
     private static readonly Dictionary<DesktopCapability, DesktopCapabilityDescriptor> ByCapability =

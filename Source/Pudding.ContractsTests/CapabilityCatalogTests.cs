@@ -30,6 +30,7 @@ public sealed class CapabilityCatalogTests
             "browser.interact|v1|WebView|Mutating, HasSideEffects, RequiresTrustedContext, RequiresPageTarget",
             "browser.wait_for|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
             "browser.contexts|v1|WebView|RequiresTrustedContext",
+            "browser.tabs|v1|WebView|Mutating, HasSideEffects, RequiresTrustedContext, RequiresPageTarget",
         ];
 
         Assert.Equal(expected, actual);
@@ -113,6 +114,7 @@ public sealed class CapabilityCatalogTests
                 DesktopCapability.BrowserLocate,
                 DesktopCapability.BrowserInteract,
                 DesktopCapability.BrowserWaitFor,
+                DesktopCapability.BrowserTabs,
             ],
             requiring);
 
@@ -132,7 +134,7 @@ public sealed class CapabilityCatalogTests
             .ToArray();
 
         Assert.Equal(
-            ["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard", "browser.snapshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts"],
+            ["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard", "browser.snapshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.tabs"],
             trustedOnly);
     }
 }

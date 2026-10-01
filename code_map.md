@@ -1,3 +1,18 @@
+## 2026-10-01：`browser.tabs` 契约与准入（切片 D 收尾，第 1/2 步）
+
+- 动作：`activate` / `close`（与既有 Bridge 的 `page.activate`/`page.close` 等价；线名真源在契约层）。
+- `BrowserTabsRequest`：**必须固定页面版本**——版本不符说明目标页在等待期间已变化，
+  此时切换/关闭的可能是**另一个页面**，必须拒绝而不是猜；`IsDestructive` 供准入与审计区别对待。
+- `DesktopTabsResult`：操作后的**活动页状态** + 是否真的关闭（页面可以拒绝关闭，必须如实区分）
+  + **剩余清单**（调用方立刻知道"现在还有什么"，不必再查一次）。
+- 能力登记 `BrowserTabs`：`Mutating | HasSideEffects | RequiresTrustedContext | RequiresPageTarget`；
+  准入 `[AgentAuthorized]`。
+- 契约测试 +3（动作线名冻结与严格解析、必须固定版本、结果区分"已关闭/未关闭"并带剩余清单）。
+- **未做（下一步）**：wire payload（payload 20 / outcome 21）、联合变体、两端映射、服务分支、探针往返、
+  加入 `DefaultGrantable`。因此它现在是「已登记但不可用」，Core 侧解码明确返回 `unsupported_capability`。
+
+测试合计：374 用例（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.contexts` 端到端（切片 D 的「先看清有什么」）
 
 - 形态：**无参数只读能力**（同 `shell.status`）——浏览器作用域，不接受调用方指定目标；

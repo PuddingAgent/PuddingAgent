@@ -49,6 +49,8 @@ public static class DesktopCapabilityPolicy
         [DesktopCapability.BrowserWaitFor] = [DesktopContextTrust.AgentAuthorized],
         // 清单会暴露页面标题与地址：只对获授权的 Agent 浏览器开放。
         [DesktopCapability.BrowserContexts] = [DesktopContextTrust.AgentAuthorized],
+        // 标签页切换/关闭是变更类：只对获授权的 Agent 浏览器开放。
+        [DesktopCapability.BrowserTabs] = [DesktopContextTrust.AgentAuthorized],
     };
 
     public static bool IsAllowedForTrust(DesktopCapability capability, DesktopContextTrust trust) =>
