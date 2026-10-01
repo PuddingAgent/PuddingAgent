@@ -4,6 +4,25 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：迁移期传输选择规则（第 36 轮，落实计划 §5 的"分阶段迁移 Bridge"）
+
+`DesktopTransportRouting.Decide(channelReady, channelAttempted, legacyBridgeAvailable)`（纯函数 + 理由串）：
+
+| 情形 | 路由 | 理由 |
+|---|---|---|
+| 通道就绪（未尝试过） | 能力通道 | 迁移目标传输优先 |
+| 通道未就绪 + 旧 Bridge 可用 + **本次未碰过通道** | 旧 Bridge | 允许回退（无重复执行风险） |
+| **本次已尝试过通道** + 通道不可用 | **None（明确失败）** | 通道超时 ≠ Desktop 没执行，回退会把它再做一遍 |
+| 本次已尝试过通道 + 通道仍就绪 | 能力通道 | 只能等通道结果 |
+| 两者都不可用 | None | 如实报告失败，不静默换路重试 |
+
+- 这条规则正是「跨传输回退」最危险之处：**同一次操作绝不执行两次**。因此回退只在"尚未碰过通道"时允许。
+- `NoRoute(decision)` 统一无路可走时的错误措辞（`not_connected`），避免各处自造含糊说法；
+  对有路可走的结果误用会抛异常（调用方 bug 应尽早暴露）。
+- 测试：Broker **74/74**（+6，含"尝试过通道后无回退""仍就绪则继续等""理由不含页面内容/凭据"）。
+
+测试合计（本轮实测）：Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 113、
+CapabilityBroker 74、CapabilityBroker.AspNetCore 26 = **403**；探针 47/47。
 ## 2026-10-01：等待条件脚本——`DesktopDomScripts` 收口（第 34 轮）
 
 - `BuildWaitScript(condition)`：三种条件与契约线名一一对应（selector / selector-hidden / url-pattern），
