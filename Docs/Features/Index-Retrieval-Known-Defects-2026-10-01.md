@@ -292,3 +292,69 @@ dotnet build "Source\PuddingAgent\PuddingAgent.csproj" -c Debug -o "temp\host-pr
 
 **未完成**：为什么「全量运行」会秒级完成（是否被某一 guard 短路、是否 Core 侧日志有原因）——
 本轮未查 Core 日志，列为下一步；修复可能的入口是 `PuddingCodeIndexer.Cli`（尚未确认其命令面）。
+
+## D8 · 已处理：`code_symbol_search` 返回「已注销项目」的陈旧行（含指向已不存在 `E:` 盘的路径）
+
+**现象**：即使项目已从注册表移除（`code_index_list_projects` 里看不到），其符号行**仍留在符号存储里并被检索命中**，
+返回的 `file_path` 全部是 `E:\github\AgentNetworkPlan\…`（本机已无 E: 盘）。
+
+**证据（本会话实测）**：
+
+| 时点 | 探针 | 结果 |
+|---|---|---|
+清理前 | `code_symbol_search("GenerateImageTool")` | 3 条，**全部** `E:\github\…`，`project_id=b375fee0d6524ad393a26e72ba1e917d` |
+清理前 | `code_symbol_search("BootstrapRebootTool")` | 10 条，**全部** `E:\github\…`，`project_id=scope-6526fb344e33` |
+清理前 | `code_symbol_search("CodeIndexStatusProbe")` | 0 条（该文件只存在于 D:） |
+
+**处置（已执行，四例全部成功）**：`code_index_unregister_project(project_id, remove_index_data=true)`
+
+```
+b375fee0d6524ad393a26e72ba1e917d   → removed
+scope-6526fb344e33                  → removed
+scope-0ca100c528ef                  → removed
+scope-ee887ff5297f                  → removed
+```
+⇒ 本轮**未再出现** `SQLite Error 5: database is locked`（与当日 16:18 那次失败形成对照，说明该锁是间歇性的）。
+
+**清理后验证（同探针复测 + 对照）**：
+
+| 探针 | 清理后 | 判读 |
+|---|---|---|
+`code_symbol_search("GenerateImageTool")` | **0 条** | 陈旧 `E:` 行已消失 |
+`code_symbol_search("BootstrapRebootTool")` | **0 条** | 同上（该符号现在**诚实为空**，因为 `Source/PuddingRuntime` 的 D: 覆盖也不完整） |
+**对照** `code_symbol_search("IndexPrebuildService")` | **5 条，全部 `D:\CodeProject\…`**，`project_id=8a48458b…` | **仪器有效**：搜索本身工作正常，返回的是真 D: 路径 |
+`code_index_status(b375fee0…)` | `status=Unknown` / `message="Project is not registered."` | 数据删除后该 id 不再被"认领" |
+
+**另一个附带发现（D5 覆盖面的进一步收窄）**：
+
+| 符号所在位置 | 是否可搜到 |
+|---|---|
+`Tests/PuddingHost.Tests/**`（如 `IndexPrebuildServiceTests`） | ✅ **可以**（D: 路径，root 项目 `8a48458b…`） |
+`Source/PuddingHost/**`（如 `StorageAdminController`、`CodeIndexStatusProbe`） | ❌ 搜不到 |
+`Source/PuddingCore/**`（如 `PuddingBuildOutputSync`） | ❌ 搜不到 |
+
+⇒ D5 的真实形状不是"完全没索引"，而是**覆盖被限制在一部分子树**（本样本中 `Tests/**` 有、`Source/**` 无），
+结合「全量运行秒级判定完成」，高度指向**运行范围/枚举被某种条件截断**，而非"没有运行"。
+
+**给后续修复的方向（未实现）**：
+1. `code_symbol_search`（以及其它读符号的查询）**必须按"已登记且根路径存在"过滤**——`D1` 只补了 `code_index_status` 这一个入口，**搜索入口没有补**；
+2. `unregister(remove_index_data:true)` 应当是**数据清理的权威语义**，建议在注销路径上强制清理（而非依赖手动传参）；
+3. 需要一条"**覆盖可信度**"信号（登记范围 vs 实际已索引范围），否则 `Active`/`Completed` 会持续欺骗调用方与面板。
+
+**兜底（仍生效）**：符号检索结果必须**先用 `Test-Path` 验证根路径**再采信；定位代码优先 `file_search` / `search_grep` / `file_read`。
+
+---
+
+## 附 · `PuddingCodeIndexer.Cli` **不能**用来修 Agent 侧覆盖（已实测，防止走错路）
+
+```
+> dotnet run --project Source\PuddingCodeIndexer.Cli -c Debug -- status
+No indexed projects found.
+Database: C:\Users\hyfree\AppData\Local\PuddingCodeIndexer\code-index.db
+EXIT=0
+```
+
+⇒ 该 CLI 默认用的是 **`%LOCALAPPDATA%\PuddingCodeIndexer\code-index.db`**（**空的**），
+而 Agent 工具读的是 **`D:\Data\databases\code-index\code_index.db`**（2.8 GB）。**两者是不同的库**。
+所以：**不要**在 CLI 上跑 `index <path>` 来指望修复 Agent 可见的覆盖 —— 那只会写进另一个库（已在本轮查证，避免了空耗）。
+CLI 的命令面为：`index / search / status / watch / definition / references / hover`（`Program.cs:37-50`）。
