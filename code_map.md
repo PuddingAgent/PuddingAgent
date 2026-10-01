@@ -16,6 +16,16 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`wait_for` 映射（第 60 轮）
+
+- 新增 `WaitForAsync`，核心语义：**超时不是失败**——用 `TimedOut` 如实标注并**照样回带等待结束时的页面状态**
+  （版本可能是等待期间推进后的版本），让调用方自己决定重试/换条件/放弃；把它当异常会诱发错误的重试决策。
+- 条件按类型映射到运行时（`selector` → `Selector`、`selector-hidden` → `SelectorToHide`、
+  `url-pattern` → `UrlPattern`），超时上限一并传入；诊断字段 `Error` 只作附加说明，**不用于表达超时**。
+- 固定了期望版本时版本不符即拒绝：等一个"已经过去"的版本的所谓就绪没有意义。
+- 测试放独立文件，新组件 **26/26**（+4：条件按类型映射且满足、**超时是成功结果**且带状态、
+  版本不符且未等待、未知目标/未就绪各自的错误码）。
+- 表面进度：contexts / page_state / tabs / locate / snapshot / wait_for 已完成；剩 interact → navigate / javascript。
 ## 2026-10-01：`snapshot` 映射（第 59 轮）
 
 - 新增 `SnapshotAsync`：把请求预算（DOM/可达性树/HTML、节点数、文本长度）传给运行时，

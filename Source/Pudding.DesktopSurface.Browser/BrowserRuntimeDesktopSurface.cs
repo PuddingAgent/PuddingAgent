@@ -418,6 +418,65 @@ public sealed class BrowserRuntimeDesktopSurface
         return CapabilityResult<DesktopSnapshot>.Success(
             DesktopCapabilityBudgets.Apply(mapped, request.Options));
     }
+    /// <summary>
+    /// 等待条件满足。核心语义：**超时不是失败**——用 <see cref="DesktopWaitResult.TimedOut"/> 如实标注，
+    /// 并照样回带等待结束时的页面状态（版本可能是等待期间推进后的版本），
+    /// 让调用方自己决定重试/换条件/放弃；把它当异常会让上层做出错误的重试决策。
+    /// 固定了期望版本时，版本不符即拒绝：等一个已经过去的版本的"就绪"没有意义。
+    /// </summary>
+    public async Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
+        DesktopCallContext context, BrowserWaitForRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_runtime.State != BrowserRuntimeState.Ready)
+        {
+            return CapabilityResult<DesktopWaitResult>.Failure(
+                DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
+        }
+
+        var page = await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false);
+        if (page.IsFailure)
+        {
+            return CapabilityResult<DesktopWaitResult>.Failure(page.Error);
+        }
+
+        var browserPage = page.Value;
+        if (request.ExpectedPageVersion.IsKnown && browserPage.PageVersion != request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<DesktopWaitResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"page '{request.Target.Key}' is at v{browserPage.PageVersion}, request pinned v{request.ExpectedPageVersion.Value}",
+                retryable: true));
+        }
+
+        var condition = ToRuntimeWaitCondition(request);
+        var waited = await browserPage.WaitForAsync(condition, cancellationToken).ConfigureAwait(false);
+
+        // 等待可能推进了页面版本（导航/交互所致）⇒ 状态取等待**结束时**的事实。
+        var state = new DesktopPageState(
+            request.Target,
+            ParseUrl(browserPage.Info.Url),
+            LiveVersion(browserPage.PageVersion),
+            browserPage.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown);
+
+        return CapabilityResult<DesktopWaitResult>.Success(new DesktopWaitResult(
+            request.Target,
+            request.Condition,
+            waited.TimedOut,
+            state,
+            // 诊断信息只作为附加说明传递；「超时」由 TimedOut 表达，不走这里。
+            waited.Error));
+    }
+
+    private static WaitCondition ToRuntimeWaitCondition(BrowserWaitForRequest request) => new()
+    {
+        Selector = request.Condition.Kind == DesktopWaitConditionKind.Selector ? request.Condition.Value : null,
+        SelectorToHide = request.Condition.Kind == DesktopWaitConditionKind.SelectorHidden ? request.Condition.Value : null,
+        UrlPattern = request.Condition.Kind == DesktopWaitConditionKind.UrlPattern ? request.Condition.Value : null,
+        TimeoutMs = request.TimeoutMs,
+    };
     private static Uri? ParseUrl(string? url) =>
         string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? null : parsed;
 }
