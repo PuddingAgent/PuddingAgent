@@ -55,6 +55,7 @@ export default {
   'menu.editor.koni': 'Koni Editor',
   'menu.memoryLibrary': 'Memory Library',
   'menu.storage': 'Storage',
+  'menu.indexStatus': 'Full-Text Index Status',
   'menu.workspace': 'Workspace',
   'menu.workspaceTasks': 'Workspace Tasks',
   'menu.llmResourcePool': 'LLM Resource Pool',

@@ -129,6 +129,12 @@ const routeCatalog = [
     component: './storage',
   },
   {
+    path: '/index-status',
+    name: 'indexStatus',
+    icon: 'database',
+    component: './index-status',
+  },
+  {
     path: '/diagnostics',
     name: 'diagnostics',
     icon: 'bug',
