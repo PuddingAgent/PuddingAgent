@@ -1,0 +1,216 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1640" viewBox="0 0 1200 1640">
+  <style>
+    text{font-family:'Microsoft YaHei','PingFang SC',Segoe UI,sans-serif;fill:#1f2328}
+    .t{font-size:13px}.s{font-size:11px}.xs{font-size:10px}
+    .h1{font-size:17px;font-weight:700}.h2{font-size:14px;font-weight:700}
+    .lb{font-size:11px;fill:#6b7280}
+    .mono{font-family:Consolas,Menlo,monospace;font-size:11px}
+    .panel{fill:#fafbfc;stroke:#c9ced6}
+    .card{fill:#ffffff;stroke:#c9ced6}
+    .dash{fill:#fcfcfd;stroke:#9aa3af;stroke-dasharray:6 4}
+    .chip{fill:#ffffff;stroke:#c9ced6}
+    .ok{fill:#e7f4ea;stroke:#2f7d4f}.okt{fill:#1e5b36}
+    .warn{fill:#fdf3e2;stroke:#b47818}.warnt{fill:#7a4f0a}
+    .err{fill:#fbe9e7;stroke:#b3261e}.errt{fill:#8c1d18}
+    .unk{fill:#eef0f3;stroke:#6b7280}.unkt{fill:#4b5563}
+    .bld{fill:#e8f0fe;stroke:#1a5fb4}.bldt{fill:#12457f}
+    .note{fill:#f4f5f7;stroke:#c9ced6}
+  </style>
+  <rect width="1200" height="1640" fill="#ffffff"/>
+
+  <!-- 图题 -->
+  <text x="40" y="28" class="h1">图 1 · 「索引与检索」状态面板（Admin）· 线框原型</text>
+  <text x="1160" y="28" class="s" text-anchor="end">2026-10-01 · 灰度可打印 · 所有状态均附文字标签，不依赖颜色</text>
+
+  <!-- 浏览器壳 -->
+  <rect x="40" y="48" width="1120" height="1088" rx="8" class="card"/>
+  <rect x="40" y="48" width="1120" height="34" rx="8" fill="#eceff3" stroke="#c9ced6"/>
+  <circle cx="58" cy="65" r="5" fill="#c9ced6"/><circle cx="74" cy="65" r="5" fill="#c9ced6"/><circle cx="90" cy="65" r="5" fill="#c9ced6"/>
+  <text x="110" y="69" class="mono" fill="#4b5563">/index-status</text>
+  <line x1="40" y1="82" x2="1160" y2="82" stroke="#c9ced6"/>
+
+  <!-- 左侧菜单 -->
+  <rect x="40" y="82" width="150" height="1054" class="panel"/>
+  <text x="56" y="112" class="s" fill="#6b7280">Pudding Admin</text>
+  <g class="s" fill="#4b5563">
+    <text x="56" y="140">首页</text>
+    <text x="56" y="166">对话</text>
+    <text x="56" y="192">工作区</text>
+    <text x="56" y="218">LLM 资源池</text>
+    <text x="56" y="244">语音模型</text>
+    <text x="56" y="270">Token 统计</text>
+    <text x="56" y="296">智能体模板</text>
+    <text x="56" y="322">能力管理</text>
+    <text x="56" y="348">技能管理</text>
+    <text x="56" y="374">密钥库</text>
+    <text x="56" y="400">会话</text>
+    <text x="56" y="426">记忆库</text>
+    <text x="56" y="452" fill="#1f2328">存储</text>
+  </g>
+  <rect x="48" y="462" width="134" height="26" rx="4" class="bld"/>
+  <text x="56" y="479" class="s bldt">索引与检索　◀ 本页</text>
+  <g class="s" fill="#4b5563">
+    <text x="56" y="508">诊断</text>
+    <text x="56" y="534">运行时</text>
+    <text x="56" y="560">编排</text>
+    <text x="56" y="586">工具审批</text>
+    <text x="56" y="612">系统配置</text>
+  </g>
+  <text x="56" y="668" class="xs" fill="#9aa3af">改名建议：「索引与检索」</text>
+  <text x="56" y="684" class="xs" fill="#9aa3af">（原「索引状态」仅覆盖一半）</text>
+  <text x="56" y="700" class="xs" fill="#9aa3af">图标建议：search</text>
+  <text x="56" y="716" class="xs" fill="#9aa3af">（现与「记忆库」同为 database）</text>
+
+  <!-- 页头 -->
+  <text x="210" y="122" class="h1">索引与检索</text>
+  <rect x="1064" y="104" width="76" height="28" rx="4" class="chip"/>
+  <text x="1102" y="122" class="s" text-anchor="middle">刷新</text>
+  <text x="210" y="146" class="s lb">快照时刻 2026-10-01 12:41:06 UTC · 每 30 秒自动刷新 · 本页纯只读</text>
+
+  <!-- L0 结论条 -->
+  <rect x="210" y="158" width="930" height="62" rx="8" class="card"/>
+  <rect x="226" y="176" width="128" height="26" rx="13" class="ok"/>
+  <text x="240" y="193" class="s okt">● 索引就绪</text>
+  <rect x="362" y="176" width="148" height="26" rx="13" class="chip"/>
+  <text x="374" y="193" class="s">最后更新 12 分钟前</text>
+  <rect x="518" y="176" width="168" height="26" rx="13" class="chip"/>
+  <text x="530" y="193" class="s">scope 1 受理 · 0 拒绝</text>
+  <rect x="694" y="176" width="206" height="26" rx="13" class="chip"/>
+  <text x="706" y="193" class="s">106.0 MB / 1.0 GB · 10%</text>
+  <text x="1118" y="193" class="s" text-anchor="end">原始字段 ☐</text>
+  <text x="210" y="238" class="xs" fill="#9aa3af">L0 结论条：4 个 chip 全部由既有 wire 字段在前端推导（零后端改动）；「原始字段」开关展开 L2</text>
+
+  <!-- 异常告警条（变体） -->
+  <rect x="210" y="252" width="930" height="46" rx="6" class="err"/>
+  <text x="226" y="271" class="s errt">▲ scope 路径不存在：E:\github\AgentNetworkPlan\PuddingAgent</text>
+  <text x="226" y="289" class="xs errt">检查 D:\Data\config\system.json → FullTextIndex.Scopes</text>
+  <text x="1124" y="279" class="xs" text-anchor="end" fill="#8c1d18">← 仅异常态出现，置顶</text>
+
+  <!-- L1 卡片 A -->
+  <rect x="210" y="316" width="455" height="238" rx="6" class="card"/>
+  <text x="226" y="340" class="h2">A · 全文索引（Lucene）</text>
+  <rect x="556" y="322" width="94" height="24" rx="12" class="ok"/>
+  <text x="603" y="338" class="s okt" text-anchor="middle">● 就绪</text>
+  <g class="s">
+    <text x="226" y="368" class="lb">索引根</text><text x="330" y="368" class="mono">D:\Data\fulltext-index</text><text x="520" y="368" class="s okt">存在</text>
+    <text x="226" y="392" class="lb">scope</text><text x="330" y="392" class="mono">D:\CodeProject\PuddingAgent\PuddingAgent</text>
+    <text x="226" y="416" class="lb">条目 / 体积</text><text x="330" y="416" class="t">12 项 · 106.0 MB</text>
+    <text x="226" y="440" class="lb">上限占用</text><text x="330" y="440" class="t">1.0 GB 的 10%</text>
+    <text x="226" y="464" class="lb">最后写入</text><text x="330" y="464" class="t">2026-10-01 04:01 UTC（12 分钟前）</text>
+    <text x="226" y="488" class="lb">最小重建间隔</text><text x="330" y="488" class="mono">12:00:00</text>
+  </g>
+  <rect x="330" y="500" width="300" height="8" rx="4" fill="#eceff3"/>
+  <rect x="330" y="500" width="30" height="8" rx="4" fill="#2f7d4f"/>
+  <text x="640" y="509" class="xs" fill="#9aa3af">体积进度（10%，≥80% 转黄）</text>
+  <text x="226" y="534" class="xs" fill="#9aa3af">时间：相对为主 + 绝对在 tooltip；字节：人类可读 + 原始值在 tooltip</text>
+
+  <!-- L1 卡片 B -->
+  <rect x="685" y="316" width="455" height="238" rx="6" class="card"/>
+  <text x="701" y="340" class="h2">B · 符号索引（代码）</text>
+  <rect x="1031" y="322" width="94" height="24" rx="12" class="unk"/>
+  <text x="1078" y="338" class="s unkt" text-anchor="middle">○ 未接入</text>
+  <rect x="701" y="356" width="423" height="182" rx="4" class="dash"/>
+  <text x="717" y="382" class="t">本块尚未接入（待 S-A2：把 codeIndex 并入同一端点）</text>
+  <g class="s" fill="#4b5563">
+    <text x="717" y="410">计划显示：项目数 · 各项目状态（Completed / Indexing / Stale）</text>
+    <text x="717" y="432">　　　　　最后索引时刻 · 索引体积</text>
+    <text x="717" y="460">计划数据源：ICodeIndexMaintenance.GetScopeStatuses()</text>
+    <text x="717" y="488">纪律：未接入 ≠ 故障 —— 不参与 L0 聚合、不染红、不留空白</text>
+    <text x="717" y="516">（空白会被读成「坏了」，故必须给出明确占位文案）</text>
+  </g>
+
+  <!-- L1 卡片 C -->
+  <rect x="210" y="570" width="455" height="256" rx="6" class="card"/>
+  <text x="226" y="594" class="h2">C · 供给台账（jobs）</text>
+  <g class="s">
+    <text x="226" y="622" class="lb">供给组件</text><text x="330" y="622" class="t">已启动</text>
+    <text x="226" y="646" class="lb">最近 job</text><text x="330" y="646" class="mono">supply-ca432897…4615</text>
+    <text x="226" y="670" class="lb">结果</text><text x="330" y="670" class="t">Succeeded</text><text x="410" y="670" class="s okt">✓</text>
+    <text x="226" y="694" class="lb">清点</text><text x="330" y="694" class="t">4,560 文件 · 82.8 MB</text>
+    <text x="226" y="718" class="lb">用时</text><text x="330" y="718" class="t">46.2 秒</text>
+    <text x="226" y="742" class="lb">台账条数</text><text x="330" y="742" class="t">1（此处仅最近 1 条，全部见 L2）</text>
+  </g>
+  <rect x="226" y="758" width="423" height="56" rx="4" class="dash"/>
+  <text x="240" y="778" class="xs" fill="#4b5563">台账为空时**必须给出原因**，不显示空表格：</text>
+  <text x="240" y="794" class="xs" fill="#4b5563">「供给组件已启动 · 暂无 job」/「尚未启动，无人触发过预建」</text>
+  <text x="240" y="808" class="xs" fill="#4b5563">「台账读取失败 ⇒ 内容不可知（≠ 没有 job）」</text>
+
+  <!-- L1 卡片 D -->
+  <rect x="685" y="570" width="455" height="256" rx="6" class="card"/>
+  <text x="701" y="594" class="h2">D · 配置与受理</text>
+  <g class="s">
+    <text x="701" y="622" class="lb">FullTextIndex 节</text><text x="830" y="622" class="t">已配置 · enabled = true</text>
+    <text x="701" y="646" class="lb">workspaceRoot</text><text x="830" y="646" class="mono">D:\CodeProject\PuddingAgent</text>
+    <text x="701" y="670" class="lb">受理 scope</text><text x="830" y="670" class="t">1 条（逐条列出）</text>
+    <text x="701" y="694" class="lb">拒收原因</text><text x="830" y="694" class="t">0 条</text>
+    <text x="701" y="718" class="lb">维护循环</text><text x="830" y="718" class="t">未配置（走默认）</text>
+  </g>
+  <rect x="830" y="730" width="140" height="22" rx="11" class="unk"/>
+  <text x="900" y="745" class="xs unkt" text-anchor="middle">是否生效：未知</text>
+  <text x="985" y="745" class="xs" fill="#9aa3af">← 三态示例（null≠false）</text>
+  <text x="701" y="778" class="xs" fill="#9aa3af">拒收原因非空 ⇒ 置顶红色告警条 + 逐条原文</text>
+  <text x="701" y="796" class="xs" fill="#9aa3af">关闭态（enabled=false）用中性灰，**不染红**：关闭 ≠ 坏了</text>
+  <text x="701" y="814" class="xs" fill="#9aa3af">本页不提供「重建索引」按钮（端点只读）</text>
+
+  <!-- L2 折叠区 -->
+  <rect x="210" y="842" width="930" height="150" rx="6" class="dash"/>
+  <text x="226" y="866" class="h2" fill="#4b5563">L2 · 原始字段（排障）· 默认折叠</text>
+  <rect x="1060" y="848" width="66" height="24" rx="4" class="chip"/>
+  <text x="1093" y="864" class="s" text-anchor="middle">展开 ▾</text>
+  <text x="226" y="892" class="xs lb">逐 scope 8 列：</text>
+  <text x="226" y="908" class="mono" fill="#6b7280">scopePath · scopeExists · hasIndex · indexDirectory · indexDirectoryExists · indexEntryCount · indexBytes · indexDirectoryLastWriteUtc</text>
+  <text x="226" y="932" class="xs lb">逐 job 9 列：</text>
+  <text x="226" y="948" class="mono" fill="#6b7280">jobId · state · phase · startedAt · finishedAt · message · indexedFileCount · totalBytes · elapsedMs</text>
+  <text x="226" y="974" class="xs" fill="#9aa3af">与 L0 的「原始字段 ☐」联动。默认关闭 = 信息设计；打开 = 字段镜像（现状页面的全部内容，一个字段都不丢）</text>
+
+  <!-- 图例 -->
+  <rect x="210" y="1006" width="930" height="104" rx="6" class="note"/>
+  <text x="226" y="1028" class="s" fill="#1f2328">状态语义（颜色 + 文字双编码，灰度打印可辨）</text>
+  <rect x="226" y="1040" width="128" height="24" rx="12" class="ok"/>
+  <text x="290" y="1056" class="xs okt" text-anchor="middle">● 就绪</text>
+  <rect x="362" y="1040" width="128" height="24" rx="12" class="warn"/>
+  <text x="426" y="1056" class="xs warnt" text-anchor="middle">▲ 需处理</text>
+  <rect x="498" y="1040" width="128" height="24" rx="12" class="unk"/>
+  <text x="562" y="1056" class="xs unkt" text-anchor="middle">○ 未知</text>
+  <rect x="634" y="1040" width="150" height="24" rx="12" class="unk"/>
+  <text x="709" y="1056" class="xs unkt" text-anchor="middle">■ 已关闭（非故障）</text>
+  <rect x="792" y="1040" width="128" height="24" rx="12" class="bld"/>
+  <text x="856" y="1056" class="xs bldt" text-anchor="middle">◐ 进行中</text>
+  <text x="226" y="1086" class="xs" fill="#4b5563">未知 ≠ 否 ≠ 0：null 一律渲染为「未知」并附 tooltip「探测失败，不代表不存在」；禁止 `?? 0` / `|| '否'` 折叠。</text>
+  <text x="226" y="1102" class="xs" fill="#4b5563">本页只证明「索引就绪」，不等于「搜得到」；「能否搜到」需真跑一次查询（建议做成手动「试搜」，不自动跑）。</text>
+
+  <!-- 状态条六形态 -->
+  <text x="40" y="1168" class="h1">L0 状态条 · 六种形态（同一组件的全部取值 · 首条命中即生效）</text>
+
+  <rect x="40" y="1186" width="152" height="30" rx="15" class="ok"/>
+  <text x="116" y="1206" class="s okt" text-anchor="middle">● 索引就绪 · 12 分钟前</text>
+  <text x="210" y="1206" class="s">全绿条件：enabled 且 scope 均存在、≥1 scope 有索引且条目 &gt; 0、无拒收、无失败 job</text>
+
+  <rect x="40" y="1226" width="612" height="30" rx="15" class="err"/>
+  <text x="54" y="1246" class="s errt">▲ scope 路径不存在：E:\github\AgentNetworkPlan\PuddingAgent（检查 FullTextIndex.Scopes）</text>
+  <text x="670" y="1246" class="s">enabled 且某 scope 不存在 —— 2026-10-01 **真实发生过**（E: 盘消失）</text>
+
+  <rect x="40" y="1266" width="270" height="30" rx="15" class="warn"/>
+  <text x="54" y="1286" class="s warnt">▲ 索引为空（0 条目）· 尚未建立</text>
+  <text x="328" y="1286" class="s">scope 在、索引目录在，但条目为 0</text>
+
+  <rect x="40" y="1306" width="300" height="30" rx="15" class="unk"/>
+  <text x="54" y="1326" class="s unkt">○ 状态未知 · 探测失败（≠ 未启用）</text>
+  <text x="358" y="1326" class="s">关键字段为 null（读不到 ≠ 不存在）</text>
+
+  <rect x="40" y="1346" width="256" height="30" rx="15" class="unk"/>
+  <text x="54" y="1366" class="s unkt">■ 全文索引已关闭（enabled=false）</text>
+  <text x="314" y="1366" class="s">关闭是明确状态，用中性灰；**不染红**（否则每次关掉都像故障）</text>
+
+  <rect x="40" y="1386" width="596" height="30" rx="15" class="bld"/>
+  <text x="54" y="1406" class="s bldt">◐ 正在重建 · 已清点 4,560 文件 · 82.8 MB · 已用 46 秒</text>
+  <text x="654" y="1406" class="s">**不显示进度百分比**：后端未提供 processed/total（详见设计文档 §6 缺口 ①）</text>
+
+  <!-- 页脚 -->
+  <line x1="40" y1="1444" x2="1160" y2="1444" stroke="#c9ced6"/>
+  <text x="40" y="1468" class="s" fill="#4b5563">注 1　原型数值取自 2026-10-01 实测（索引根 D:\Data\fulltext-index · 106.0 MB · 条目 12 · 索引重建用时 46.2 秒），仅作排版示例。</text>
+  <text x="40" y="1490" class="s" fill="#4b5563">注 2　本片为零后端改动：L0 聚合态由现有 wire 字段在前端推导（纯函数、可单测、可变异取红），端点 GET /api/admin/index/status 保持不动。</text>
+  <text x="40" y="1512" class="s" fill="#4b5563">注 3　三态纪律（null=未知 / false=否 / 0=0）贯穿到人话层；这是后端 R5 纪律在 UI 上的延续，已由既有 16 条 jest 断言保护。</text>
+  <text x="40" y="1534" class="s" fill="#4b5563">注 4　后端缺口：① 无进度百分比 ② 符号索引块待 S-A2 ③「能否搜到」需真跑查询（本页只证明「索引就绪」）。</text>
+  <text x="40" y="1556" class="s" fill="#4b5563">注 5　chat 侧入口见「图 2 · chat 状态条与 popover」；本页不引入 chat 的任何模块。</text>
+</svg>

@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="880" viewBox="0 0 1200 880">
+  <style>
+    text{font-family:'Microsoft YaHei','PingFang SC',Segoe UI,sans-serif;fill:#1f2328}
+    .t{font-size:13px}.s{font-size:11px}.xs{font-size:10px}
+    .h1{font-size:17px;font-weight:700}.h2{font-size:14px;font-weight:700}
+    .lb{font-size:11px;fill:#6b7280}
+    .mono{font-family:Consolas,Menlo,monospace;font-size:11px}
+    .panel{fill:#fafbfc;stroke:#c9ced6}
+    .card{fill:#ffffff;stroke:#c9ced6}
+    .dash{fill:#fcfcfd;stroke:#9aa3af;stroke-dasharray:6 4}
+    .chip{fill:#ffffff;stroke:#c9ced6}
+    .bub{fill:#f2f4f7;stroke:#dfe3e8}
+    .ok{fill:#e7f4ea;stroke:#2f7d4f}.okt{fill:#1e5b36}
+    .warn{fill:#fdf3e2;stroke:#b47818}.warnt{fill:#7a4f0a}
+    .err{fill:#fbe9e7;stroke:#b3261e}.errt{fill:#8c1d18}
+    .unk{fill:#eef0f3;stroke:#6b7280}.unkt{fill:#4b5563}
+    .bld{fill:#e8f0fe;stroke:#1a5fb4}.bldt{fill:#12457f}
+    .note{fill:#f4f5f7;stroke:#c9ced6}
+  </style>
+  <rect width="1200" height="880" fill="#ffffff"/>
+
+  <text x="40" y="28" class="h1">图 2 · chat 侧入口（状态条 + popover）· 线框原型</text>
+  <text x="1160" y="28" class="s" text-anchor="end">2026-10-01 · 入口只放「一行结论」，详情一律回 Admin 面板</text>
+
+  <!-- chat 窗口 -->
+  <rect x="40" y="48" width="560" height="432" rx="8" class="card"/>
+  <rect x="40" y="48" width="560" height="34" rx="8" fill="#eceff3" stroke="#c9ced6"/>
+  <text x="56" y="70" class="s">默认助手</text>
+  <text x="584" y="70" class="xs" fill="#6b7280" text-anchor="end">chat 路由（layout:false）</text>
+  <line x1="40" y1="82" x2="600" y2="82" stroke="#c9ced6"/>
+
+  <rect x="60" y="100" width="300" height="44" rx="8" class="bub"/>
+  <text x="74" y="127" class="s" fill="#4b5563">（对话消息区域，与本设计无关）</text>
+  <rect x="260" y="156" width="300" height="44" rx="8" class="bub"/>
+  <text x="274" y="183" class="s" fill="#4b5563">（对话消息区域，与本设计无关）</text>
+
+  <!-- composer -->
+  <rect x="60" y="220" width="520" height="240" rx="8" class="panel"/>
+  <rect x="76" y="236" width="488" height="80" rx="6" class="card"/>
+  <text x="92" y="262" class="s" fill="#6b7280">输入你的问题 …</text>
+  <rect x="500" y="288" width="48" height="20" rx="4" class="ok"/>
+  <text x="524" y="303" class="xs okt" text-anchor="middle">发送</text>
+
+  <!-- 状态条 -->
+  <rect x="76" y="330" width="488" height="34" rx="6" class="card"/>
+  <text x="92" y="351" class="s" fill="#6b7280">模型</text>
+  <text x="140" y="351" class="s">deepseek-flash</text>
+  <text x="300" y="351" class="s" fill="#6b7280">上下文</text>
+  <text x="352" y="351" class="s">可用</text>
+  <text x="420" y="351" class="s" fill="#6b7280">索引</text>
+  <circle cx="452" cy="347" r="4" fill="#2f7d4f"/>
+  <text x="462" y="351" class="s okt">就绪 · 12 分钟前</text>
+  <text x="544" y="351" class="s" fill="#6b7280">⌄</text>
+  <text x="80" y="380" class="xs" fill="#9aa3af">↑ 现状：此处硬编码 index:'disabled' ⇒ 永远显示「未启用」（本切片修复）</text>
+  <text x="80" y="398" class="xs" fill="#9aa3af">点击「索引」区 → 弹出 popover（不跳页）；只放一行结论，不塞表格</text>
+  <text x="80" y="430" class="xs" fill="#9aa3af">budget：chat chunk 上限 507,904 B，实测 343,282 B，余量 164,622 B（32.3%）</text>
+  <text x="80" y="446" class="xs" fill="#9aa3af">⇒ 一行 + 轻量 popover 可行；表格/图表一律留 Admin 页</text>
+
+  <!-- popover -->
+  <text x="640" y="72" class="h2">弹层（popover / hover 或点击触发）</text>
+  <rect x="640" y="86" width="520" height="230" rx="8" class="card"/>
+  <g class="s">
+    <text x="660" y="116" class="lb">全文索引</text>
+    <circle cx="812" cy="112" r="4" fill="#2f7d4f"/><text x="822" y="116" class="okt">就绪</text>
+    <text x="660" y="144" class="lb">最后更新</text><text x="812" y="144">12 分钟前 · 10-01 04:01 UTC</text>
+    <text x="660" y="172" class="lb">索引体积</text><text x="812" y="172">106.0 MB / 1.0 GB（10%）</text>
+    <text x="660" y="200" class="lb">scope</text><text x="812" y="200">1 受理 · 0 拒绝</text>
+  </g>
+  <line x1="660" y1="220" x2="1140" y2="220" stroke="#dfe3e8"/>
+  <text x="660" y="248" class="s bldt">打开完整面板 →</text>
+  <text x="800" y="248" class="xs" fill="#9aa3af">（新标签打开 /index-status，不改当前会话）</text>
+  <text x="660" y="284" class="xs" fill="#9aa3af">四行 = 用户最期望看到的：能不能用 · 有多新 · 占多少 · 配置是否被受理</text>
+  <text x="660" y="300" class="xs" fill="#9aa3af">异常态时第一行换成告警句（下方三态条），并自动染红 —— 坏了自己找上门</text>
+
+  <!-- 三态条 -->
+  <text x="40" y="516" class="h1">入口状态条 · 四态（与 Admin 的 L0 结论条同源、同一纯函数）</text>
+
+  <rect x="40" y="534" width="272" height="32" rx="16" class="ok"/>
+  <text x="56" y="555" class="s okt">索引 · 就绪 · 12 分钟前更新</text>
+  <text x="330" y="555" class="s">正常：安静，不打扰</text>
+
+  <rect x="40" y="578" width="470" height="32" rx="16" class="err"/>
+  <text x="56" y="599" class="s errt">索引 · 需处理 · scope 路径不存在</text>
+  <text x="528" y="599" class="s">异常：自己转红，不需要用户去问</text>
+
+  <rect x="40" y="622" width="272" height="32" rx="16" class="unk"/>
+  <text x="56" y="643" class="s unkt">索引 · 未知 · 探测失败</text>
+  <text x="330" y="643" class="s">读不到就是「未知」，不写「未启用」「未建立」</text>
+
+  <rect x="40" y="666" width="330" height="32" rx="16" class="bld"/>
+  <text x="56" y="687" class="s bldt">索引 · 正在重建 · 已清点 4,560 文件</text>
+  <text x="388" y="687" class="s">进行中：显示已清点 + 已耗时，**不造假进度条**</text>
+
+  <!-- 页脚 -->
+  <line x1="40" y1="720" x2="1160" y2="720" stroke="#c9ced6"/>
+  <text x="40" y="744" class="s" fill="#4b5563">注 1　入口只承载「一行结论 + 四行摘要」；任何表格（逐 scope / 逐 job）都不进 chat，避免吃掉 496 KiB chat 预算。</text>
+  <text x="40" y="766" class="s" fill="#4b5563">注 2　不自动弹窗、不自动跳转；仅在异常态改变颜色与文案。已关闭（enabled=false）用中性灰，不染红。</text>
+  <text x="40" y="788" class="s" fill="#4b5563">注 3　索引项不得与「上下文」「记忆」合并成一句模糊话；四态文案见上方。既有 IndexIndicator.tsx 为死代码，本切片不复活它。</text>
+  <text x="40" y="810" class="s" fill="#4b5563">注 4　实现顺序建议：先 Admin 详情页（图 1，落地面）→ 再 chat 入口（图 2，高频面）；两片分开提交，便于回滚。</text>
+</svg>
