@@ -593,6 +593,122 @@ public sealed class BrowserRuntimeDesktopSurface
                 throw new ArgumentOutOfRangeException(nameof(request), request.Action, "Interaction action is not mapped.");
         }
     }
+    /// <summary>
+    /// 导航（变更类）：固定版本不符即拒绝；运行时报 `Ok=false` 时映射为**可判定的目标错误**
+    /// （而不是一律 internal_error —— 上层要能区分"这个地址去不了"与"运行时坏了"）。
+    /// 返回的 <see cref="NavigateResult.Disposition"/> 只表示导航本身完成，**不代表 DOM 可交互**。
+    /// </summary>
+    public async Task<CapabilityResult<NavigateResult>> NavigateAsync(
+        DesktopCallContext context, NavigateRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_runtime.State != BrowserRuntimeState.Ready)
+        {
+            return CapabilityResult<NavigateResult>.Failure(
+                DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
+        }
+
+        var page = await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false);
+        if (page.IsFailure)
+        {
+            return CapabilityResult<NavigateResult>.Failure(page.Error);
+        }
+
+        var browserPage = page.Value;
+        if (request.ExpectedPageVersion.IsKnown && browserPage.PageVersion != request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<NavigateResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"page '{request.Target.Key}' is at v{browserPage.PageVersion}, request pinned v{request.ExpectedPageVersion.Value}",
+                retryable: true));
+        }
+
+        var navigation = await browserPage
+            .GotoAsync(request.Url, new NavigationOptions(), cancellationToken).ConfigureAwait(false);
+
+        if (!navigation.Ok)
+        {
+            // 只带状态码：错误文案可能包含页面/网络细节，不必外传。
+            return CapabilityResult<NavigateResult>.Failure(DesktopCapabilityError.InvalidTarget(
+                navigation.StatusCode is { } status
+                    ? $"navigation to '{request.Url}' failed with HTTP {status}"
+                    : $"navigation to '{request.Url}' failed"));
+        }
+
+        return CapabilityResult<NavigateResult>.Success(new NavigateResult(
+            NavigateDisposition.Completed,
+            navigation.Url,
+            LiveVersion(browserPage.PageVersion)));
+    }
+
+    /// <summary>
+    /// 执行脚本并回带**裸 JSON 片段**的返回值（避免二次编码）。
+    /// 脚本正文不进日志（契约已声明）；结果超出预算时**置 Truncated 并返回 null 值**，
+    /// 而不是把 JSON 截成半截（半截 JSON 会让调用方解析失败且无法察觉原因）。
+    /// </summary>
+    public async Task<CapabilityResult<JavascriptResult>> ExecuteJavascriptAsync(
+        DesktopCallContext context, JavascriptRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_runtime.State != BrowserRuntimeState.Ready)
+        {
+            return CapabilityResult<JavascriptResult>.Failure(
+                DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
+        }
+
+        var page = await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false);
+        if (page.IsFailure)
+        {
+            return CapabilityResult<JavascriptResult>.Failure(page.Error);
+        }
+
+        var browserPage = page.Value;
+        if (request.ExpectedPageVersion.IsKnown && browserPage.PageVersion != request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<JavascriptResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"page '{request.Target.Key}' is at v{browserPage.PageVersion}, request pinned v{request.ExpectedPageVersion.Value}",
+                retryable: true));
+        }
+
+        var value = await browserPage.EvaluateAsync(
+            new BrowserScript { Source = request.Script }, cancellationToken).ConfigureAwait(false);
+
+        var (kind, json) = MapScriptValue(value);
+
+        if (json is not null && System.Text.Encoding.UTF8.GetByteCount(json) > request.MaxResultBytes)
+        {
+            // 截断 JSON 会产出无法解析的半截文本：宁可只标注截断、不给值。
+            return CapabilityResult<JavascriptResult>.Success(
+                new JavascriptResult(kind, JsonValue: null, Truncated: true));
+        }
+
+        return CapabilityResult<JavascriptResult>.Success(new JavascriptResult(kind, json, Truncated: false));
+    }
+
+    private static (JavascriptValueKind Kind, string? Json) MapScriptValue(BrowserScriptValue value)
+    {
+        if (value.Value is not { } element || element.ValueKind == System.Text.Json.JsonValueKind.Null)
+        {
+            return string.Equals(value.Type, "undefined", StringComparison.OrdinalIgnoreCase)
+                ? (JavascriptValueKind.Undefined, null)
+                : (JavascriptValueKind.Null, null);
+        }
+
+        var kind = element.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False => JavascriptValueKind.Boolean,
+            System.Text.Json.JsonValueKind.Number => JavascriptValueKind.Number,
+            System.Text.Json.JsonValueKind.String => JavascriptValueKind.String,
+            _ => JavascriptValueKind.Json,
+        };
+
+        return (kind, element.GetRawText());
+    }
     private static Uri? ParseUrl(string? url) =>
         string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? null : parsed;
 }

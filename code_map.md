@@ -16,6 +16,20 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`navigate` + `javascript` 映射 —— 浏览器侧**全部完成**（第 62 轮）
+
+- `NavigateAsync`：固定版本不符即拒绝；运行时报 `Ok=false` 时映射为**可判定的目标错误**
+  （`invalid_target`，含状态码；**不是** internal——上层必须能区分"这个地址去不了"与"运行时坏了"）；
+  只带状态码不带错误文案（文案可能含页面/网络细节）。`Disposition=Completed` 只表示导航本身完成，
+  **不代表 DOM 可交互**（契约已声明）；返回**导航后的**页面版本。
+- `ExecuteJavascriptAsync`：返回值是**裸 JSON 片段**（`GetRawText()`，避免二次编码）；
+  `undefined`/`null` 如实区分；**超预算时只标注 `Truncated` 并返回 null 值**——
+  把 JSON 截成半截会让调用方解析失败且不知原因。脚本正文不进日志（契约已声明）。
+- 测试放独立文件，新组件 **36/36**（+6：导航成功带新版本、导航失败→目标错误、版本不符且未导航、
+  字符串→裸 JSON、undefined/对象各自如实映射、超预算标注截断且不给半截值）。
+- **浏览器侧 9 项能力全部完成**：contexts / page_state / tabs / locate / snapshot / wait_for /
+  interact / navigate / javascript。剩余工作：①WinUI 侧两个薄端口实现（Shell 设施 + 目标注册表）；
+  ②表面对接 WinUI 组合根（S5）；③授权器接 Tool Runtime 准入（待切片 D 提供可信身份）。
 ## 2026-10-01：`interact` 映射（第 61 轮）
 
 - 新增 `InteractAsync`：动作**按类型映射到运行时显式 API**（Click/Fill/Press/Check/Select/Hover/Scroll），
