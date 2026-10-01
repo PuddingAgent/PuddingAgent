@@ -52,14 +52,15 @@ describe('SessionSidebar agent contacts', () => {
     render(<SessionSidebar {...baseProps} onAgentChange={onAgentChange} />);
 
     expect(
-      screen.getByRole('navigation', { name: 'Agent 通讯录' }),
+      screen.getByRole('navigation', { name: '智能体通讯录' }),
     ).toBeTruthy();
     expect(
       screen.getByRole('button', { name: /规划 Agent/ }).getAttribute('title'),
     ).toBeNull();
     expect(screen.getByText('工作中')).toBeTruthy();
-    expect(screen.getByText('Groups')).toBeTruthy();
-    expect(screen.getByText('群组即将接入')).toBeTruthy();
+    // IMG10：文案统一为中文（Agents→智能体、Groups→群组、接入→开放）
+    expect(screen.getByText('群组')).toBeTruthy();
+    expect(screen.getByText('群组即将开放')).toBeTruthy();
     expect(screen.queryByRole('region', { name: '会话细节' })).toBeNull();
     expect(screen.queryByText('最近会话')).toBeNull();
 

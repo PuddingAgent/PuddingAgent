@@ -13,14 +13,22 @@ export const useAgentStyles = createStyles(({ token }) => ({
     border: '1px solid transparent',
   },
   agentStatusTag_working: {
-    color: '#8a4b00',
-    background: '#fff4d6',
-    borderColor: '#f2cf7a',
+    // IMG09：原来是硬编码浅色实块（#fff4d6 底 + #f2cf7a 边 + #8a4b00 字），
+    // 深色主题下就成了近白亮块、比主操作还抢眼。改为语义状态色 + 轻底：
+    // 浅色下深文字浅底、深色下浅文字深底，两种主题都成立。
+    color: 'var(--pudding-status-waiting)',
+    background:
+      'color-mix(in srgb, var(--pudding-status-waiting) 14%, transparent)',
+    borderColor:
+      'color-mix(in srgb, var(--pudding-status-waiting) 34%, transparent)',
   },
   agentStatusTag_idle: {
-    color: '#216e48',
-    background: '#dcfce7',
-    borderColor: '#9be5b7',
+    // 同上：原 #dcfce7 / #9be5b7 / #216e48 在深色下是亮绿实块
+    color: 'var(--pudding-status-success)',
+    background:
+      'color-mix(in srgb, var(--pudding-status-success) 12%, transparent)',
+    borderColor:
+      'color-mix(in srgb, var(--pudding-status-success) 30%, transparent)',
   },
   agentStatusTag_disabled: {
     color: 'var(--pudding-chat-text-subtle)',

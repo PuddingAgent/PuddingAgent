@@ -1,4 +1,4 @@
-﻿// ── SessionSidebar：左侧会话列表 ────────────────────────────
+// ── SessionSidebar：左侧会话列表 ────────────────────────────
 import {
   DeleteOutlined,
   EditOutlined,
@@ -145,7 +145,8 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
     >
       <div className={styles.sidebarHeader}>
         <div className={styles.sidebarTitleBlock}>
-          <div className={styles.sidebarTitle}>Agents</div>
+          {/* IMG10：显示文案统一为「智能体」；底层 Agent 类型与路由不变 */}
+          <div className={styles.sidebarTitle}>智能体</div>
           <div className={styles.sidebarSubtitle}>主线入口</div>
         </div>
         <Tooltip title="新任务">
@@ -157,30 +158,36 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
             disabled={creatingSession}
             aria-label="新任务"
             data-testid="chat-new-session"
+          >
+            新任务
+          </Button>
+        </Tooltip>
+        {/* IMG10：图标按钮统一带 Tooltip + 可访问名称，并用 aria-expanded 反映真实切换状态 */}
+        <Tooltip title={historyOpen ? '隐藏历史会话' : '查看历史会话'}>
+          <Button
+            type="text"
+            icon={<MessageOutlined />}
+            className={styles.sidebarIconBtn}
+            onClick={() => setHistoryOpen((open) => !open)}
+            aria-label={historyOpen ? '隐藏历史会话' : '查看历史会话'}
+            aria-expanded={historyOpen}
+            data-testid="chat-history-toggle"
           />
         </Tooltip>
-        <Button
-          type="text"
-          icon={<MessageOutlined />}
-          className={styles.sidebarIconBtn}
-          onClick={() => setHistoryOpen((open) => !open)}
-          aria-label={historyOpen ? '隐藏历史会话' : '查看历史会话'}
-          aria-expanded={historyOpen}
-          title={historyOpen ? '隐藏历史会话' : '查看历史会话'}
-          data-testid="chat-history-toggle"
-        />
-        <Tooltip title="收起">
+        <Tooltip title="收起侧栏">
           <Button
             type="text"
             size="small"
             icon={<MenuFoldOutlined />}
+            className={styles.sidebarIconBtn}
+            aria-label="收起侧栏"
             onClick={onToggleSidebar}
           />
         </Tooltip>
       </div>
       <div className={styles.sidebarSearch}>
         <Input
-          placeholder="搜索 Agent 或会话"
+          placeholder="搜索智能体或会话"
           allowClear
           size="small"
           value={searchQuery}
@@ -192,7 +199,7 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
           }
         />
       </div>
-      <nav className={styles.agentContactList} aria-label="Agent 通讯录">
+      <nav className={styles.agentContactList} aria-label="智能体通讯录">
         {agentLoading && (
           <div style={{ textAlign: 'center', padding: 16 }}>
             <Spin />
@@ -200,7 +207,7 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
         )}
         {!agentLoading && filteredAgents.length === 0 && (
           <div className={styles.sidebarEmpty}>
-            {searchQuery ? '未找到匹配的 Agent' : '当前工作空间还没有 Agent'}
+            {searchQuery ? '未找到匹配的智能体' : '当前工作空间还没有智能体'}
           </div>
         )}
         {!agentLoading &&
@@ -252,10 +259,12 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
               </button>
             );
           })}
-        <div className={styles.sidebarSecondaryLabel}>Groups</div>
+        {/* IMG10：与中文工作台统一文案。占位保持不可点击（不伪造可点入口），
+            也不新增折叠控件 —— 对一个尚未接入的能力，折叠交互本身就是假交互。 */}
+        <div className={styles.sidebarSecondaryLabel}>群组</div>
         <div className={styles.sidebarEmptyInline}>
           <TeamOutlined />
-          <span>群组即将接入</span>
+          <span>群组即将开放</span>
         </div>
       </nav>
       {historyOpen && (
