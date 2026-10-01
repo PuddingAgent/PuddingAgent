@@ -98,3 +98,57 @@ code_symbol_search("ICodeIndexMaintenance", project_id="scope-6526fb344e33")
                                            # 10 条，file_path 全为 E:\github\...
 Test-Path "E:\github\AgentNetworkPlan\PuddingAgent"   # False
 ```
+
+
+---
+
+## D5 · 根项目索引停在 `Registering` 且覆盖不全：`Source/PuddingHost/**` 符号检索不到（2026-10-01 新增）
+
+### 现象：三个探针（`code_symbol_search`，无 project 过滤）
+
+| 查询 | 返回 | 结论 |
+|---|---|---|
+| `CodeIndexMaintenanceHostedService` | **仅 1 条**，`file_path` = `E:\...\Source\PuddingHost\Hosting\...`，`project_id` = `b375fee0d6524ad393a26e72ba1e917d` | D: 的真实副本**未返回** |
+| `FullTextIndexStatusProbe`（D: 中存在，S-A2 刚改过） | **0 条** | 目录级盲区 |
+| `StorageAdminController` | **仅 1 条**，E: 路径，同一孤儿 `project_id` | 同上 |
+| `BootstrapRebootTool`（**对照**，属 PuddingRuntime） | 2 条，**均为 D: 路径**，`project_id` = `8a48458b…` | 索引**部分覆盖**，不是全空 |
+
+**判定**：当前仓库的符号索引 = **部分覆盖 + 陈旧 E: 残留**。`Source/PuddingHost/**`（3/3 探针）在 D: 侧无结果，查询**回落到旧 E: 行**；`Source/PuddingRuntime/**` 正常。
+⇒ **`code_symbol_search` 现在既「漏」又「假」**：漏掉真实存在的文件，同时把不存在的盘符路径当结果给出。
+
+### 根项目状态自相矛盾且已冻结
+
+两轮实测（间隔 ≥2 小时）**取值完全一致**：
+
+```
+code_index_list_projects → 8a48458b…: status="Registering", updated_at_utc=2026-10-01T04:52:56.1743861Z
+code_index_status(8a48458b…) → status="Pending", started_at_utc=null,
+                               completed_at_utc=2026-10-01T04:52:56.1743861Z   ← Pending 却有 completed_at
+```
+
+### 源码层面已登记的治理缺口（关键）
+
+| 位置 | 原文要点 |
+|---|---|
+| `Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs:204` | `Registering` = **"a full run is still owed"**（仍欠一次完整运行） |
+| 同文件 `:298-314`（U3-G1） | **"records a cancelled run without moving the row off `Registering`"** ⇒ 被取消/中断的运行**不会**把行移出 `Registering` |
+| `Source/PuddingCodeIndex/Contracts/Retrieval/ScopeOverlap.cs:70` | **"索引侧的治理实现（Registering 超时收敛等）属 U3 收尾项，不在本刀"** ⇒ **没有任何机制会收敛卡住的 `Registering`** |
+
+⇒ 根项目**仍欠一次完整运行**，且**无超时收敛**；在补完之前，根级目录（如 `Source/PuddingHost/**`）的符号就是检索不到。这不是"没索引过"，而是"索引过一半、剩下的没人管"。
+
+### D4 修正：我上一版的判断不完整
+
+- 上一版据 `-wal = 0 B` 推断「采样窗口内无活跃写者」。**该推断已被推翻**：同一文件 2 小时后实测
+  `-wal = 3,506,152 B`、`main mtime = 2026-10-01T08:18:47Z`（采样时刻约 1.5 分钟前）、`-shm mtime` 同步刷新。
+- ⇒ 修正为：**索引库存在活跃写者**；`SQLite Error 5: database is locked` 是**写者繁忙**所致，不是"死锁无人动"。
+- **教训**：单次 WAL 采样不足以判定"无写者"；必须**跨时间窗多次采样**，并同时看 main/WAL/shm 三个文件的 mtime。
+- 现行阻塞：**修复与清理两条路被同一把锁挡住** —— `code_index_register_project(index=true)` 与 `code_index_unregister_project(remove_index_data=true)` 均报 `SQLite Error 5`。
+
+### 运维结论（决策建议，未实施）
+
+一次 **Core 重启**可同时解决三件事：
+1. 让已交付的 `codeIndex` 端点块生效；
+2. 让面板 B 卡显示真实数据；
+3. **释放占用索引库的写者**，从而在安静窗口重新入队一次完整索引运行 + 清理陈旧数据。
+
+**在重启完成之前**：符号检索的可信度有限，**不应据 `code_symbol_search` 结果下"某代码不存在"的结论**（应改用 `file_read` / `search_grep` 现场核对）。
