@@ -16,6 +16,14 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：全量门禁复核（第 63 轮，浏览器侧完成后）
+
+- **470 用例全绿**（7 个套件：Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 129、
+  **DesktopSurface.Browser 36**、CapabilityBroker 78、CapabilityBroker.AspNetCore 31）、
+  探针 **53/53 exit 0**、`PuddingHost` / `PuddingAgent` / `PuddingDesktop.CapabilityHost` 均编译通过。
+- 方案 §10.1 同步为 470/53，并把 C-3 Desktop 侧更新为「平台无关逻辑全部完成，
+  待 WinUI 两个薄端口与组合根对接」。
+- 结论：新增组件未影响任何既有套件；运行中的进程未被触碰；工作树我的路径 clean。
 ## 2026-10-01：`navigate` + `javascript` 映射 —— 浏览器侧**全部完成**（第 62 轮）
 
 - `NavigateAsync`：固定版本不符即拒绝；运行时报 `Ok=false` 时映射为**可判定的目标错误**

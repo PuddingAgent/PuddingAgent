@@ -186,7 +186,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 | D：浏览器等价接入 | 🟡 **协议侧已完成**：`snapshot`/`locate`/`interact`/`wait_for`/`contexts`/`tabs` 六项端到端落地（含「交互后旧 Ref 作废」「超时不是失败」「清单必带版本」「关闭必须如实标注」四条语义）；只剩七个工具的**调用点迁移**（依赖 C-3 上线） | 探针在管道/h2c 上验证六种能力往返、旧引用本地拒绝、超时语义、清单完整性与标签页剩余清单（**45/45**）；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
 | E：Shell 能力 | 🟡 进行中：`shell.notification` + `shell.status` 已落地（端到端验证） | 两者都有 payload 与实现，在同一次探针运行中验证（**45/45**）；`shell.clipboard`（只读）、`shell.dialog` 与 `shell.file_picker` **全部端到端落地**（含预算/隐私边界、"取消不是失败"语义，单窗口互斥由交互槽位强制）；切片 E 收口 |
 | C-3 Core 侧装配 | ✅ **已应用**（`Enabled=false` 零行为变更；适配层 31/31；`PuddingAgent` 编译通过） |
-| C-3 Desktop 侧表面 | 🟡 Shell 侧完成（端口 + 129/129 适配层）；浏览器侧规格就绪待实现 |
+| C-3 Desktop 侧表面 | 🟡 **平台无关逻辑全部完成**：Shell 端口+适配层、浏览器侧 9/9 能力（36/36，假运行时测试）；待 WinUI 两个薄端口实现与组合根对接 |
 | F：默认切换与退役 | 🟡 决策依据就绪（迁移使用统计 + 可判定退役条件），切换本身待 C-3 上线 | `DesktopTransportUsage`：能力通道已证明在用 + 零回退 + 无"无路可走"才允许退役；`Explain()` 给理由（Broker 78/78）；默认传输切换与 Bridge 退役需重启窗口 |
 
 细节、探针原始结论、有意偏差与风险见[实施报告](../Reports/Desktop-Contracts-Rpc-SliceABC-2026-10-01.md)；
@@ -196,7 +196,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 
 | 项 | 结果 |
 |---|---|
-| 组件独立测试合计 | **434 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 129、CapabilityBroker 78、CapabilityBroker.AspNetCore 31） |
+| 组件独立测试合计 | **470 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 129、DesktopSurface.Browser 36、CapabilityBroker 78、CapabilityBroker.AspNetCore 31） |
 | 真实端点探针 | **53/53 通过，exit 0**（Named Pipe 与 Loopback h2c 各一轮；含跨侧能力集合一致性守卫） |
 | WinUI 适配器工程 | 0 警告 0 错误（无线程访问验证，需真实 `DispatcherQueue`） |
 | 运行中的产品 | **未受影响**：本轮系列全程未重启或改动运行中的 Core/Desktop；组合根装配仍待重启窗口 |
@@ -212,7 +212,7 @@ foreach ($p in @('Pudding.ContractsTests','Pudding.Rpc.ProtocolTests','Pudding.D
 dotnet temp\build\recovery\bin\Pudding.Rpc.IpcProbe\release\Pudding.Rpc.IpcProbe.dll
 ```
 
-口径说明：本表的数字为**最近一次干净运行实测**（第 53 轮复核（含产品代码改动后）：434 = 96+20+80+129+78+31，探针 53/53，PuddingHost/PuddingAgent 编译通过；该表**每轮都要随实测更新**，此前两次滞后的教训见 §10.2 的同类问题）。
+口径说明：本表的数字为**最近一次干净运行实测**（第 63 轮复核：470 = 96+20+80+129+36+78+31，探针 53/53，PuddingHost/PuddingAgent/PuddingDesktop.CapabilityHost 编译通过；该表**每轮都要随实测更新**，此前两次滞后的教训见 §10.2 的同类问题）。
 根 `code_map.md` 各轮条目里的「测试合计」是**历史记录**，可能与当下不一致——以本表为准。
 本次复核即发现并修正了一处漂移：此前多处写的「374 用例」是累加笔误，实际为 365。
 
