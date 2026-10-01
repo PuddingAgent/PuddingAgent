@@ -541,7 +541,7 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 
 本批证据：新增 4 项不变量测试（助手卡片无有色底且不再取 admin token、链接用 accent、行内代码用 surface-muted、表格 10/12 + 7em + 段落 12）；`pnpm jest` 全量 **1607 passed / 3 failed**（3 项为语音相关既有失败）；`biome lint` 无新增（CommandPalette 未用参数、ContextMenu 数组 index key 均为 HEAD 既有，已用 pristine 文件核对）；`pnpm run build` + chat bundle budget ok。**前端版本 6.1.0 → 6.1.1**：这是 AGENTS.md「前端版本管理」生效后第一次按规则递增版本号，部署后页角徽标显示 `v6.1.1 · 7c2ad16 · 2026-10-01 23:48`，并已在运行中的 Core 所服务的产物里核对到 `6.1.1` / `7c2ad16` / `dirty:!1`。
 
-仍未做（按 §13.6 次序）：**IMG09/IMG10**（Agent 行 badge 与左栏图标/中英文案）、**IMG11**（工具首页卡片可用/待接入区分）、**IMG12**（状态重复归位）、**IMG05**（Shell 分栏默认比例，须先在 Foundation 测再接入 Desktop）。以上与 §12 的整体验收均未完成，不能记为通过。
+仍未做（按 §13.6 次序）：**IMG11**（工具首页卡片可用/待接入区分）、**IMG12**（状态重复归位）、**IMG05**（Shell 分栏默认比例，须先在 Foundation 测再接入 Desktop）。以上与 §12 的整体验收均未完成，不能记为通过。
 
 ### 13.9 实施状态（P1：输入区微控件）
 
@@ -552,6 +552,17 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 本批证据：新增 5 项不变量测试（工具行 `flex-wrap`、36/44 点击区、禁用态颜色与 ready 态区分、前缀用 caption 色、权限前缀且可访问名称不变）；`pnpm jest` 全量 **1612 passed / 3 failed**（3 项语音相关既有失败）；`biome lint` 无新增 —— IntentConsole 的 12 处既有告警用 pristine 文件逐项比对（pristine=12 / mine=12）；`pnpm run build` + chat bundle budget ok。前端版本 6.1.1 → **6.1.2**，部署后徽标显示 `v6.1.2 · 5d53030 · 2026-10-01 23:53`，并已在运行中 Core 服务的产物里核对到 `6.1.2` / `5d53030` / `dirty:!1`。
 
 **未验收**：输入区实际高度、触屏点击区、禁用态观感与状态圆环的摘要/详情入口可发现性（§13.6 IMG-V04、§12 V02/A01）需要真实窗口；状态圆环本身（悬浮摘要 + 点击明细面板）是既有实现，本次未改，仅确认其入口存在。
+
+### 13.10 实施状态（P1：左栏导航）
+
+| 项 | 状态 | 提交 | 落地内容 |
+|---|---|---|---|
+| IMG09（Agent 行状态 badge 深色下过亮） | 代码已落地，未验收 | `97fb4d2` | 根因是 `agentStatusTag_working` / `_idle` 写了**硬编码浅色实块**（`#fff4d6`/`#f2cf7a`/`#8a4b00` 与 `#dcfce7`/`#9be5b7`/`#216e48`），深色主题下就成了比主操作还亮的近白/亮绿块。改为语义状态 token（`--pudding-status-waiting` / `--pudding-status-success`）+ 半透明轻底：浅色下深字浅底、深色下浅字深底。**选中行与「主线会话」经核对本已符合**（选中行是单一 `accent-soft` 底色、`agentContactMeta` 已是 11px + text-subtle 的次级信息），本批未改，避免无谓改动。 |
+| IMG10（左栏图标含义与中英文混用） | 代码已落地，未验收 | `97fb4d2` | 文案统一：Agents → **智能体**、Groups → **群组**、群组即将接入 → **群组即将开放**、搜索占位 → 「搜索智能体或会话」、`aria-label` → 「智能体通讯录」、空态两处 Agent → 智能体；底层 Agent 类型与路由未动。顶部按钮：新任务改为**文字 + 图标**；历史会话按钮由原生 `title` 改为 Tooltip（`aria-expanded` 继续反映真实开关状态）；收起按钮补 `aria-label` 与统一点击区类。「群组」占位保持不可点击，**且未新增折叠控件**——对尚未接入的能力，折叠交互本身就是假交互，只保留能力提示。同步更新 `SessionSidebar.test.tsx` 中依赖旧文案的三处断言（属文案统一要求，不是为过测试放宽断言）。 |
+
+本批证据：新增 2 项 IMG09 不变量测试（不得回归硬编码浅色块、必须走状态 token）；`pnpm jest` 全量 **1614 passed / 3 failed**（3 项语音相关既有失败）；`biome lint` 对 4 个改动文件 0 告警；`pnpm run build` + chat bundle budget ok。前端版本 6.1.2 → **6.1.3**，运行中 Core 已服务 `6.1.3` / `97fb4d2` / `dirty:!1`；两份 `wwwroot/admin` 的 source map 中 `SessionSidebar.tsx` 均含上述新文案（用 sourcesContent 核对，避免产物里中文被转义导致的假阴性）。
+
+**未验收**：深浅两套主题下徽标亮度与实际观感、左栏按钮文字化后的窄屏排布（§13.6 IMG-V01/V03、§12 V01/A01）需真实窗口。
 
 ## 14. 独立缺陷登记：SCROLL-001 深色滚动条及 Web / Shell 边界不协调
 
