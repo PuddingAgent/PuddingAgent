@@ -1,8 +1,19 @@
 // ── ComposerStatusDetails：运行状态详情（面向普通用户的摘要）──
 import { CodeOutlined } from '@ant-design/icons';
 import React from 'react';
+import type { TurnTimings } from '@/services/platform/api';
 import { useChatStyles } from '../styles';
 import type { ChatStatus } from './InputArea';
+import type {
+  BackgroundMemoryStatus,
+  ContextServiceStatus,
+  IndexServiceStatus,
+  ModelServiceStatus,
+} from './serviceStatus';
+import TurnTimingPanel from './TurnTimingPanel';
+
+/** 缓存命中率的**口径**：窗口 vs 全会话（两者数值可能不同，必须标注是哪一个）。 */
+export type CacheHitRateScope = 'windowed' | 'session';
 
 /** Composer 运行时摘要视图模型 */
 export interface ComposerRuntimeSummary {
@@ -20,18 +31,26 @@ export interface ComposerRuntimeSummary {
   contextUsageStatus?: 'idle' | 'loading' | 'ready' | 'error';
   /** 上下文窗口解析失败时展示后端返回的诊断文本。 */
   contextUsageError?: string;
-  /** 缓存命中率，统一使用 0-100 百分比口径。 */
+  /** 缓存命中率，统一使用 **0-100 百分比**口径（后端 `TTL` 契约是 0-1 比例，换算在上游）。 */
   cacheHitRate?: number;
-  /** 上下文服务（ASP/LSP 的普通模式翻译） */
-  contextService: 'available' | 'idle' | 'disabled' | 'error';
-  /** 索引状态 */
-  index: 'available' | 'building' | 'disabled' | 'error';
-  /** 后台记忆整理 */
-  backgroundMemory: 'idle' | 'running' | 'disabled' | 'error';
+  /** 该命中率的口径；`undefined` ⇒ 不知道来自哪个口径，不标注。 */
+  cacheHitRateScope?: CacheHitRateScope;
+  /** `windowed` 口径的样本条数（后端 `analyzedEventCount`）。 */
+  cacheHitRateSampleCount?: number;
+  /** 上下文服务（ASP/LSP 的普通模式翻译）；`unknown` = 没采到，不是「可用」。 */
+  contextService: ContextServiceStatus;
+  /** 索引状态；`unknown` = 探测不可用（**不冒充** available/disabled）。 */
+  index: IndexServiceStatus;
+  /** 后台记忆整理；`unknown` = 状态不可知（如调试端点 404）。 */
+  backgroundMemory: BackgroundMemoryStatus;
   /** 当前会话可见的子任务数 */
   subAgentsRunning: number;
   /** 模型服务 */
-  modelService: 'available' | 'warning' | 'error';
+  modelService: ModelServiceStatus;
+  /** 本 Turn 的后端耗时明细（`turn.completed` 帧携带）；未采集 ⇒ 该面板不渲染。 */
+  turnTimings?: TurnTimings;
+  /** 最近一次 usage（输入/输出 token）；未采集 ⇒ 面板按「未采集」渲染。 */
+  usage?: { promptTokens?: number; completionTokens?: number };
 }
 
 interface ComposerStatusDetailsProps {
@@ -61,6 +80,8 @@ const SERVICE_COLOR: Record<string, string> = {
   warning: 'var(--pudding-status-warning)',
   error: 'var(--pudding-status-error)',
   disabled: 'var(--pudding-chat-border-strong)',
+  // `unknown`（没采到）沿用 `disabled` 的中性灰：它既不是故障，也不是「关」。
+  unknown: 'var(--pudding-chat-border-strong)',
 };
 
 /** 服务状态 → 文案 */
@@ -72,6 +93,8 @@ const SERVICE_LABEL: Record<string, string> = {
   warning: '需注意',
   error: '异常',
   disabled: '未启用',
+  // 「没采到」必须与「未启用」不同文案，否则不可知会被读成关。
+  unknown: '未知',
 };
 
 /** 格式化 Token 数 */
@@ -83,6 +106,26 @@ const fmtTokens = (n: number): string => {
 const fmtCacheHitRate = (rate?: number): string => {
   if (rate === undefined || !Number.isFinite(rate) || rate < 0) return '待计算';
   return `${Math.min(100, Math.round(rate))}%`;
+};
+
+/**
+ * 缓存命中率**口径**标注：窗口（带样本条数）vs 全会话。
+ *
+ * 两个口径的数值可能不同（窗口只看最近 N 条事件，会话是累计），所以必须把
+ * 「当前显示的是哪一个」写在数值旁边，而不是让窗口值静默覆盖会话值。
+ * 口径未知（老调用点没传）⇒ 不标注，也不猜。
+ */
+export const formatCacheHitRateScope = (
+  scope?: CacheHitRateScope,
+  sampleCount?: number,
+): string | undefined => {
+  if (scope === 'windowed') {
+    return typeof sampleCount === 'number' && Number.isFinite(sampleCount)
+      ? `本请求窗口(最近${sampleCount}条)`
+      : '本请求窗口';
+  }
+  if (scope === 'session') return '全会话';
+  return undefined;
 };
 
 const getContextUsageFallbackLabel = (
@@ -111,6 +154,10 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
       ? summary.token.effectiveLimit
       : windowLimit;
   const reservedOutput = Math.max(windowLimit - effectiveLimit, 0);
+  const cacheHitScopeLabel = formatCacheHitRateScope(
+    summary.cacheHitRateScope,
+    summary.cacheHitRateSampleCount,
+  );
 
   return (
     <div className={styles.composerStatusDetails}>
@@ -170,7 +217,14 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
         <div className={styles.composerStatusDetailRow}>
           <span className={styles.composerStatusDetailLabel}>缓存命中</span>
           <span className={styles.composerStatusDetailValue}>
-            {fmtCacheHitRate(summary.cacheHitRate)}
+            <span data-testid="cache-hit-rate">
+              {fmtCacheHitRate(summary.cacheHitRate)}
+            </span>
+            {cacheHitScopeLabel !== undefined && (
+              <span style={{ marginLeft: 6, opacity: 0.7 }}>
+                {cacheHitScopeLabel}
+              </span>
+            )}
           </span>
         </div>
         <div className={styles.composerStatusDetailRow}>
@@ -254,6 +308,8 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
             {SERVICE_LABEL[summary.modelService] ?? '未知'}
           </span>
         </div>
+        {/* 本轮耗时明细（后端 timing 契约）：独立组件承载，缺席一律「未采集」。 */}
+        <TurnTimingPanel timings={summary.turnTimings} usage={summary.usage} />
       </div>
 
       {/* ── 开发者详情入口 ── */}

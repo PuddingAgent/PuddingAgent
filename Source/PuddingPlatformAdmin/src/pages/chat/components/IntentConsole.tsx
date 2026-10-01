@@ -14,10 +14,15 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type CacheDiagnosticsReport,
   type ContextHealthSnapshot,
+  type TokenUsageDto,
+  type TurnTimings,
   getCacheDiagnostics,
   getContextHealth,
+  getSubconsciousDebugState,
+  listLlmProviders,
   uploadVisionArtifact,
 } from '@/services/platform/api';
+import { getIndexStatus } from '@/pages/index-status/api';
 import {
   type BrowserCameraInputAdapter,
   defaultBrowserCameraInputAdapter,
@@ -59,6 +64,14 @@ import ContextUsageRing from './ContextUsageRing';
 import ComposerStatusDetails, {
   type ComposerRuntimeSummary,
 } from './ComposerStatusDetails';
+import {
+  UNKNOWN_SERVICE_SIGNALS,
+  type RuntimeServiceSignals,
+  deriveBackgroundMemoryStatus,
+  deriveContextServiceStatus,
+  deriveIndexServiceStatus,
+  deriveModelServiceStatus,
+} from './serviceStatus';
 import PermissionModeSelector from './PermissionModeSelector';
 import MessageQueueDropdown from './MessageQueueDropdown';
 
@@ -220,6 +233,10 @@ interface IntentConsoleProps {
   cacheHitTokens?: number;
   cacheMissTokens?: number;
   cacheHitRate?: number;
+  /** 本 Turn 的后端耗时明细（`turn.completed` 帧携带）；未采集为 undefined。 */
+  turnTimings?: TurnTimings;
+  /** 最近一次 usage（输入/输出 token）；未采集为 undefined。 */
+  latestUsage?: TokenUsageDto;
   /** 来自 useCompaction hook 的压缩状态文案（如 "上次压缩: 2分钟前"） */
   compactionStatus?: string | null;
   /** 当前会话可见的子任务数 */
@@ -292,6 +309,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   cacheHitTokens,
   cacheMissTokens,
   cacheHitRate,
+  turnTimings,
+  latestUsage,
   compactionStatus,
   subAgentsRunning = 0,
   agents,
@@ -394,15 +413,33 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const contextRequestRef = useRef(0);
   const contextSessionRef = useRef(sessionId);
   contextSessionRef.current = sessionId;
+  /**
+   * 四个服务态信号（上下文服务 / 索引 / 后台记忆 / 模型服务）。
+   * 基线值 = 全部「未知」：**没采到 ≠ 可用**（旧实现在这里硬编码 available/disabled）。
+   */
+  const [serviceSignals, setServiceSignals] = useState<RuntimeServiceSignals>(
+    UNKNOWN_SERVICE_SIGNALS,
+  );
   const refreshContextHealth = useCallback(async () => {
     if (!sessionId) return;
     const requestId = ++contextRequestRef.current;
     setContextHealthLoading(true);
     setContextHealthError(null);
     try {
-      const [contextResult, cacheResult] = await Promise.allSettled([
+      // 四个服务态与上下文/缓存同批刷新（allSettled ⇒ 任一失败不影响其余），
+      // 全部由**已有**端点推导，不新增后端端点。
+      const [
+        contextResult,
+        cacheResult,
+        indexResult,
+        subconsciousResult,
+        providersResult,
+      ] = await Promise.allSettled([
         getContextHealth(sessionId),
         getCacheDiagnostics(sessionId),
+        getIndexStatus(),
+        getSubconsciousDebugState(),
+        listLlmProviders(),
       ]);
 
       if (requestId !== contextRequestRef.current || contextSessionRef.current !== sessionId) return;
@@ -418,11 +455,20 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       if (cacheResult.status === 'fulfilled') {
         setCacheDiagnostics(cacheResult.value);
       }
+
+      // 采不到 ⇒ unknown（映射规则见 serviceStatus.ts，逐条可单测）。
+      setServiceSignals({
+        contextService: deriveContextServiceStatus(contextResult),
+        index: deriveIndexServiceStatus(indexResult),
+        backgroundMemory: deriveBackgroundMemoryStatus(subconsciousResult),
+        modelService: deriveModelServiceStatus(providersResult),
+      });
     } catch (error) {
       setContextHealth(null);
       setContextHealthError(
         getRequestErrorMessage(error, '上下文窗口刷新失败'),
       );
+      setServiceSignals(UNKNOWN_SERVICE_SIGNALS);
     } finally {
       if (requestId === contextRequestRef.current && contextSessionRef.current === sessionId) setContextHealthLoading(false);
     }
@@ -800,11 +846,29 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           ? 'ready'
           : 'idle';
 
-  const diagnosticsCacheHitRate = React.useMemo(() => {
+  /**
+   * 窗口缓存诊断 → 「本请求窗口」口径的命中率。
+   *
+   * 后端契约是**无歧义的 0-1 比例**（`CacheDiagnosticsService` 用 `totalHit / totalEligible`，
+   * `TokenUsageNormalizer` 同口径），所以这里**无条件 ×100**；
+   * 旧实现写 `rate <= 1 ? rate * 100 : rate` 是在猜单位——一旦上游给出 1.0（=100%）
+   * 或任何越界值，猜出来的口径就与真值不符（诊断报告 §5）。
+   *
+   * 同时把**口径与样本条数**一起带出去：窗口值与会话值（props `cacheHitRate`）是两个不同事实，
+   * 不允许窗口值静默覆盖会话值而不标注。
+   */
+  const diagnosticsCache = React.useMemo(() => {
     const rate = cacheDiagnostics?.averageCacheHitRate;
     if (rate === undefined || rate === null || !Number.isFinite(rate))
       return undefined;
-    return rate <= 1 ? rate * 100 : rate;
+    const analyzed = cacheDiagnostics?.analyzedEventCount;
+    return {
+      rate: rate * 100,
+      sampleCount:
+        typeof analyzed === 'number' && Number.isFinite(analyzed)
+          ? analyzed
+          : undefined,
+    };
   }, [cacheDiagnostics]);
 
   /** 组装运行摘要视图模型 */
@@ -815,12 +879,25 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       token: runtimeToken,
       contextUsageStatus,
       contextUsageError: contextHealthError ?? undefined,
-      cacheHitRate: diagnosticsCacheHitRate ?? cacheHitRate,
-      contextService: 'available',
-      index: 'disabled',
-      backgroundMemory: 'idle',
+      cacheHitRate: diagnosticsCache?.rate ?? cacheHitRate,
+      cacheHitRateScope: diagnosticsCache
+        ? 'windowed'
+        : cacheHitRate !== undefined
+          ? 'session'
+          : undefined,
+      cacheHitRateSampleCount: diagnosticsCache?.sampleCount,
+      contextService: serviceSignals.contextService,
+      index: serviceSignals.index,
+      backgroundMemory: serviceSignals.backgroundMemory,
       subAgentsRunning,
-      modelService: 'available',
+      modelService: serviceSignals.modelService,
+      turnTimings,
+      usage: latestUsage
+        ? {
+            promptTokens: latestUsage.promptTokens,
+            completionTokens: latestUsage.completionTokens,
+          }
+        : undefined,
     }),
     [
       status,
@@ -828,9 +905,12 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       runtimeToken,
       contextUsageStatus,
       contextHealthError,
-      diagnosticsCacheHitRate,
+      diagnosticsCache,
       cacheHitRate,
+      serviceSignals,
       subAgentsRunning,
+      turnTimings,
+      latestUsage,
     ],
     );
 

@@ -150,6 +150,10 @@ interface ChatMainProps {
   cacheHitTokens?: number;
   cacheMissTokens?: number;
   cacheHitRate?: number;
+  /** 本 Turn 的后端耗时明细（`turn.completed` 帧携带）；未采集为 undefined。 */
+  turnTimings?: import('@/services/platform/api').TurnTimings;
+  /** 最近一次 usage（输入/输出 token 展示用）；未采集为 undefined。 */
+  latestUsage?: import('@/services/platform/api').TokenUsageDto;
   /** 来自 useCompaction hook 的压缩状态文案 */
   compactionStatus?: string | null;
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
@@ -238,6 +242,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
   cacheHitTokens,
   cacheMissTokens,
   cacheHitRate,
+  turnTimings,
+  latestUsage,
   compactionStatus,
   formatTime,
   onDeleteTurn,
@@ -768,6 +774,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     cacheHitTokens={cacheHitTokens}
                     cacheMissTokens={cacheMissTokens}
                     cacheHitRate={cacheHitRate}
+                    turnTimings={turnTimings}
+                    latestUsage={latestUsage}
                     compactionStatus={compactionStatus}
                     subAgentsRunning={subAgentCount}
                     onOpenSubAgentInspector={() =>

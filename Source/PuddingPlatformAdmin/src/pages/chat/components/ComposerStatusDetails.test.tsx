@@ -115,4 +115,70 @@ describe('ComposerStatusDetails', () => {
     expect(screen.getByText('待计算')).toBeTruthy();
     expect(screen.queryByText('-1%')).toBeNull();
   });
+
+  it('labels the windowed cache hit rate with its sample count', () => {
+    render(
+      <ComposerStatusDetails
+        summary={{
+          ...baseSummary,
+          cacheHitRate: 76,
+          cacheHitRateScope: 'windowed',
+          cacheHitRateSampleCount: 42,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('76%')).toBeTruthy();
+    expect(screen.getByText('本请求窗口(最近42条)')).toBeTruthy();
+  });
+
+  it('labels the session-wide cache hit rate so the window value cannot silently win', () => {
+    render(
+      <ComposerStatusDetails
+        summary={{ ...baseSummary, cacheHitRate: 76, cacheHitRateScope: 'session' }}
+      />,
+    );
+
+    expect(screen.getByText('76%')).toBeTruthy();
+    expect(screen.getByText('全会话')).toBeTruthy();
+    expect(screen.queryByText(/本请求窗口/)).toBeNull();
+  });
+
+  it('renders 未知 for every service status that was never collected', () => {
+    render(
+      <ComposerStatusDetails
+        summary={{
+          ...baseSummary,
+          contextService: 'unknown',
+          index: 'unknown',
+          backgroundMemory: 'unknown',
+          modelService: 'unknown',
+        }}
+      />,
+    );
+
+    // 「未知」与「未启用」必须不同文案：不可知不得被读成关。
+    expect(screen.getAllByText('未知')).toHaveLength(4);
+    expect(screen.queryByText('可用')).toBeNull();
+  });
+
+  it('renders the this-turn timing panel inside 本轮摘要 and never fakes 0', () => {
+    render(
+      <ComposerStatusDetails
+        summary={{
+          ...baseSummary,
+          turnTimings: { completedMs: 2500, providerTtftMs: null },
+          usage: { promptTokens: 1234 },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('本轮摘要')).toBeTruthy();
+    expect(screen.getByText('本轮耗时')).toBeTruthy();
+    expect(screen.getByText('2.5 s')).toBeTruthy();
+    expect(screen.getByText('Provider 首包')).toBeTruthy();
+    expect(screen.getAllByText('未采集').length).toBeGreaterThan(0);
+    expect(screen.queryByText('0 ms')).toBeNull();
+    expect(screen.queryByText('0 次')).toBeNull();
+  });
 });

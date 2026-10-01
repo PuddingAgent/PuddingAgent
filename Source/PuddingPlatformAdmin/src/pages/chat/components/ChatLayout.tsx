@@ -89,6 +89,10 @@ interface ChatLayoutProps {
   cacheHitTokens?: number;
   cacheMissTokens?: number;
   cacheHitRate?: number;
+  /** 本 Turn 的后端耗时明细（`turn.completed` 帧携带）；未采集为 undefined。 */
+  turnTimings?: import('@/services/platform/api').TurnTimings;
+  /** 最近一次 usage（输入/输出 token 展示用）；未采集为 undefined。 */
+  latestUsage?: import('@/services/platform/api').TokenUsageDto;
   /** 来自 useCompaction hook 的压缩状态文案 */
   compactionStatus?: string | null;
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
@@ -208,6 +212,8 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         cacheHitTokens={props.cacheHitTokens}
         cacheMissTokens={props.cacheMissTokens}
         cacheHitRate={props.cacheHitRate}
+        turnTimings={props.turnTimings}
+        latestUsage={props.latestUsage}
         compactionStatus={props.compactionStatus}
         formatTime={props.formatTime}
         onDeleteTurn={props.onDeleteTurn}

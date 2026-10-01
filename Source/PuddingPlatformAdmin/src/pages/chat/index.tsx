@@ -721,6 +721,8 @@ const ChatPageContent: React.FC = () => {
         cacheHitTokens={chat.sessionCacheHitTokens}
         cacheMissTokens={chat.sessionCacheMissTokens}
         cacheHitRate={chat.cacheHitRate}
+        turnTimings={chat.latestTurnTimings}
+        latestUsage={chat.latestUsage}
         compactionStatus={chat.compactionStatus}
         getTurnProjection={getTurnProjectionWithSurface}
         onTurnVisible={turnSurface.registerVisibleTurn}

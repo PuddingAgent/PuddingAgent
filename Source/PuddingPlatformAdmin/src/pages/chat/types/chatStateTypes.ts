@@ -8,6 +8,7 @@ import type {
 } from 'react';
 import type {
   TokenUsageDto,
+  TurnTimings,
   WorkspaceAgentDto,
   WorkspaceWithPermDto,
 } from '@/services/platform/api';
@@ -185,6 +186,11 @@ export interface UseChatStateReturn {
   error: string | null;
   setError: (value: string | null) => void;
   latestUsage: TokenUsageDto | undefined;
+  /**
+   * 本会话最近一次 Turn 的后端耗时明细（`turn.completed` 帧的 `timings`）。
+   * 未采集（尚未完成一轮 / 旧后端）为 `undefined` —— 展示层据此渲染「未采集」。
+   */
+  latestTurnTimings: TurnTimings | undefined;
   subAgentCards: SubAgentCardMap;
   /** CU-11 路径 B：turnId → canonical 执行流投影（灰度开关控制）。 */
   getTurnProjection: (turnId: string) => ExecutionFlowProjection | undefined;

@@ -2564,6 +2564,59 @@ export interface TokenUsageDto {
   promptCacheMissTokens?: number;
 }
 
+/**
+ * 单个 Turn 的耗时明细（手写冻结契约，**没有 codegen**）。
+ *
+ * 真源：`Source/PuddingRuntime/Services/AgentExecution/AgentTurnTimingCollector.cs`
+ * 的 `ToPayload()`，随终端 `done` 帧（前端规范化为 `turn.completed`）下发并把该帧持久化/回放。
+ * 键名逐字对齐后端；**全部是毫秒数**。
+ *
+ * 三态纪律：**没观测到的字段是 `null`（或整键缺席），不是 0**。
+ * 渲染层必须把它显示成「未采集」，只有真实采到的 0 才渲染 `0 ms`。
+ */
+export interface TurnTimings {
+  /** Turn 提交的墙钟时刻（UTC）：只用于跨进程对表，不是时长。 */
+  turnStartedAtUtc?: string | null;
+  /** 进入 loop 前加载/持久化会话历史的耗时。 */
+  historyLoadMs?: number | null;
+  /** Agent 上下文管线装配耗时（静态/工具/技能/记忆各层）。 */
+  contextAssembleMs?: number | null;
+  /** 上下文管线**逐阶段**耗时（阶段名 → 毫秒）。 */
+  contextStagesMs?: Record<string, number> | null;
+  /** 解析生效 LLM 配置的耗时。 */
+  llmConfigResolveMs?: number | null;
+  /** 构建发给 provider 的工具规格耗时。 */
+  toolBuildMs?: number | null;
+  /** 首个上下文帧就绪、可开始流式输出的时刻（相对提交）。 */
+  contextReadyMs?: number | null;
+  /** 首个 provider 调用交到 LLM 调用层的时刻（相对提交）。 */
+  modelDispatchMs?: number | null;
+  /** provider 侧：HTTP 发出 → 收到响应头的耗时。 */
+  providerHeadersMs?: number | null;
+  /** Provider TTFT：HTTP 发出 → 首个非空模型增量（推理/内容/工具）。 */
+  providerTtftMs?: number | null;
+  /** `providerTtftMs` 的计时基准：provider 派发时钟 / 本地调用时钟 / 不可用。 */
+  providerTtftSource?: 'provider_dispatch' | 'local_model_call' | 'unavailable';
+  /** provider 相对时刻：首个推理增量。 */
+  providerFirstReasoningMs?: number | null;
+  /** provider 相对时刻：首个正文增量。 */
+  providerFirstContentMs?: number | null;
+  /** provider 相对时刻：首个工具调用增量。 */
+  providerFirstToolDeltaMs?: number | null;
+  /** 端到端（相对提交）：首个助手正文帧发出的时刻。 */
+  firstContentFrameMs?: number | null;
+  /** provider 流内总耗时（所有轮次）。 */
+  modelMs?: number | null;
+  /** 工具执行总耗时（所有调用）。 */
+  toolMs?: number | null;
+  /** 本 Turn 的 provider 流调用次数。 */
+  modelCalls?: number | null;
+  /** 本 Turn 的工具调用次数。 */
+  toolCalls?: number | null;
+  /** Turn 进入终态的时刻（相对提交）。 */
+  completedMs?: number | null;
+}
+
 export type ContextHealthState = 'Healthy' | 'Warning' | 'Unhealthy' | 'Critical' | 'Blocking';
 export type ContextCompactionLevel = 'Micro' | 'SessionMemory' | 'Full';
 export type ContextCompactionMode = 'Manual' | 'Auto';
@@ -3183,6 +3236,22 @@ export async function getCacheDiagnostics(
     method: 'GET',
     params: { limit },
   });
+}
+
+/** 潜意识运行时快照（`GET /api/debug/subconscious/debug`，SubconsciousDebugApiController）。
+ *  `state` 的已知取值只有 `running` / `paused`（后端 `SubconsciousRuntimeStates`）；
+ *  该端点受 `Subconscious:DebugApiEnabled` 门控，**关闭时返回 404**（≠「未启用潜意识」）。 */
+export interface SubconsciousRuntimeControlSnapshotDto {
+  state: string;
+  isPaused?: boolean;
+  lastCommand?: string | null;
+  reason?: string | null;
+  requestedBy?: string | null;
+  updatedAtUtc?: string;
+}
+
+export async function getSubconsciousDebugState(): Promise<SubconsciousRuntimeControlSnapshotDto> {
+  return request('/api/debug/subconscious/debug', { method: 'GET' });
 }
 
 export async function compactSession(

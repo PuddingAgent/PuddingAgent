@@ -1,12 +1,27 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
-import { uploadVisionArtifact } from '@/services/platform/api';
+import { getIndexStatus } from '@/pages/index-status/api';
+import {
+  getCacheDiagnostics,
+  getContextHealth,
+  getSubconsciousDebugState,
+  listLlmProviders,
+  uploadVisionArtifact,
+} from '@/services/platform/api';
 import IntentConsole from './IntentConsole';
 
 jest.mock('@/services/platform/api', () => ({
   getCacheDiagnostics: jest.fn(),
   getContextHealth: jest.fn(),
+  getSubconsciousDebugState: jest.fn(),
+  listLlmProviders: jest.fn(),
   uploadVisionArtifact: jest.fn(),
+}));
+
+// 索引态复用 index-status 的只读端点：只替身网络函数，保留纯函数（deriveIndexHealth 等）。
+jest.mock('@/pages/index-status/api', () => ({
+  ...jest.requireActual('@/pages/index-status/api'),
+  getIndexStatus: jest.fn(),
 }));
 
 jest.mock('../styles', () => {
@@ -30,12 +45,60 @@ jest.mock('./CommandPalette', () => ({
   default: () => null,
 }));
 
+// ContextUsageRing 是工具栏上的圆环控件：生产里 ComposerStatusDetails 是作为 `runtimeDetails`
+// 传给它的，**只有气泡打开时才进 DOM**。本文件的用例考察运行摘要字段的透传，
+// 与圆环外壳无关 ⇒ 替身直接渲染 runtimeDetails（与 InputArea.test.tsx 同一约定）。
+jest.mock('./ContextUsageRing', () => {
+  const ReactLib = require('react');
+  const Stub = ({ runtimeDetails }: { runtimeDetails?: unknown }) =>
+    ReactLib.createElement(
+      'div',
+      { 'data-testid': 'context-usage-ring' },
+      runtimeDetails,
+    );
+  return { __esModule: true, default: Stub, ContextUsageRing: Stub };
+});
+
 jest.mock('./ComposerActionMenu', () => () => null);
+// 运行摘要替身：既保留原有「运行中 N」渲染，也把本次任务新增的字段逐个暴露成可断言节点
+// （缓存口径/样本数、四个服务态、timing/usage 透传）。
 jest.mock(
   './ComposerStatusDetails',
   () =>
-    ({ summary }: { summary: { subAgentsRunning: number } }) => (
-      <div data-testid="status-details">运行中 {summary.subAgentsRunning}</div>
+    ({ summary }: { summary: Record<string, any> }) => (
+      <div data-testid="status-details">
+        <span data-testid="summary-sub-agents">
+          运行中 {summary.subAgentsRunning}
+        </span>
+        <span data-testid="summary-cache-hit-rate">
+          {String(summary.cacheHitRate)}
+        </span>
+        <span data-testid="summary-cache-scope">
+          {String(summary.cacheHitRateScope)}
+        </span>
+        <span data-testid="summary-cache-samples">
+          {String(summary.cacheHitRateSampleCount)}
+        </span>
+        <span data-testid="summary-context-service">
+          {String(summary.contextService)}
+        </span>
+        <span data-testid="summary-index">{String(summary.index)}</span>
+        <span data-testid="summary-background-memory">
+          {String(summary.backgroundMemory)}
+        </span>
+        <span data-testid="summary-model-service">
+          {String(summary.modelService)}
+        </span>
+        <span data-testid="summary-completed-ms">
+          {String(summary.turnTimings?.completedMs)}
+        </span>
+        <span data-testid="summary-prompt-tokens">
+          {String(summary.usage?.promptTokens)}
+        </span>
+        <span data-testid="summary-completion-tokens">
+          {String(summary.usage?.completionTokens)}
+        </span>
+      </div>
     ),
 );
 
@@ -458,5 +521,179 @@ describe('IntentConsole', () => {
     await waitFor(() => {
       expect(onSteerCurrent).toHaveBeenCalledWith('请顺带检查错误日志');
     });
+  });
+
+  // ── 诊断报告 §5–§6：真实数字 / 三态纪律 ──
+
+  /** 五个诊断请求的替身基线：默认「全部失败」，各用例按需覆盖。 */
+  const stubDiagnosticsRequests = (overrides: {
+    contextHealth?: unknown;
+    cacheDiagnostics?: unknown;
+    indexStatus?: unknown;
+    subconscious?: unknown;
+    providers?: unknown;
+  }) => {
+    (getContextHealth as jest.Mock).mockReset();
+    (getCacheDiagnostics as jest.Mock).mockReset();
+    (getIndexStatus as jest.Mock).mockReset();
+    (getSubconsciousDebugState as jest.Mock).mockReset();
+    (listLlmProviders as jest.Mock).mockReset();
+
+    const settle = (
+      mocked: jest.Mock,
+      value: unknown,
+      failureReason: unknown,
+    ) => {
+      if (value !== undefined) mocked.mockResolvedValue(value);
+      else mocked.mockRejectedValue(failureReason);
+    };
+
+    settle(getContextHealth as jest.Mock, overrides.contextHealth, {
+      response: { status: 409 },
+      data: { code: 'context_window_unresolved' },
+    });
+    settle(
+      getCacheDiagnostics as jest.Mock,
+      overrides.cacheDiagnostics,
+      new Error('cache offline'),
+    );
+    settle(getIndexStatus as jest.Mock, overrides.indexStatus, {
+      response: { status: 401 },
+    });
+    settle(getSubconsciousDebugState as jest.Mock, overrides.subconscious, {
+      response: { status: 404 },
+    });
+    settle(
+      listLlmProviders as jest.Mock,
+      overrides.providers,
+      new Error('providers offline'),
+    );
+  };
+
+  it('converts the 0-1 cache ratio without guessing its unit, and labels the window', async () => {
+    stubDiagnosticsRequests({
+      cacheDiagnostics: {
+        sessionId: 'session-1',
+        analyzedEventCount: 42,
+        averageCacheHitRate: 0.76,
+      },
+    });
+
+    render(<IntentConsole {...baseProps} sessionId="session-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-cache-hit-rate').textContent).toBe(
+        '76',
+      ),
+    );
+    // 窗口口径必须自带出处与样本条数，不允许静默覆盖会话值。
+    expect(screen.getByTestId('summary-cache-scope').textContent).toBe(
+      'windowed',
+    );
+    expect(screen.getByTestId('summary-cache-samples').textContent).toBe('42');
+  });
+
+  it('scales the ratio unconditionally (100% stays 100, never 1)', async () => {
+    stubDiagnosticsRequests({
+      cacheDiagnostics: {
+        sessionId: 'session-1',
+        analyzedEventCount: 7,
+        averageCacheHitRate: 1,
+      },
+    });
+
+    render(<IntentConsole {...baseProps} sessionId="session-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-cache-hit-rate').textContent).toBe(
+        '100',
+      ),
+    );
+  });
+
+  it('falls back to the session-wide scope when the windowed report has no rate', async () => {
+    stubDiagnosticsRequests({
+      cacheDiagnostics: {
+        sessionId: 'session-1',
+        analyzedEventCount: 0,
+        averageCacheHitRate: null,
+      },
+    });
+
+    render(
+      <IntentConsole {...baseProps} sessionId="session-1" cacheHitRate={31} />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-cache-hit-rate').textContent).toBe(
+        '31',
+      ),
+    );
+    expect(screen.getByTestId('summary-cache-scope').textContent).toBe(
+      'session',
+    );
+  });
+
+  it('renders unknown — never available — for service probes that are unavailable', async () => {
+    stubDiagnosticsRequests({});
+
+    render(<IntentConsole {...baseProps} sessionId="session-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-index').textContent).toBe('unknown'),
+    );
+    expect(screen.getByTestId('summary-background-memory').textContent).toBe(
+      'unknown',
+    );
+    expect(screen.getByTestId('summary-context-service').textContent).toBe(
+      'unknown',
+    );
+    // 模型服务没有健康端点：请求失败只能是 error（而不是 available）。
+    expect(screen.getByTestId('summary-model-service').textContent).toBe(
+      'error',
+    );
+    expect(screen.getByTestId('summary-index').textContent).not.toBe(
+      'disabled',
+    );
+  });
+
+  it('maps real service data honestly (off index / running memory / usable provider)', async () => {
+    stubDiagnosticsRequests({
+      contextHealth: { sessionId: 'session-1', state: 'Healthy' },
+      indexStatus: { generatedAtUtc: '2026-10-01T05:00:00Z', fullText: { enabled: false } },
+      subconscious: { state: 'running' },
+      providers: [{ isEnabled: true, hasApiKey: true }],
+    });
+
+    render(<IntentConsole {...baseProps} sessionId="session-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-index').textContent).toBe('disabled'),
+    );
+    expect(screen.getByTestId('summary-background-memory').textContent).toBe(
+      'running',
+    );
+    expect(screen.getByTestId('summary-context-service').textContent).toBe(
+      'available',
+    );
+    expect(screen.getByTestId('summary-model-service').textContent).toBe(
+      'available',
+    );
+  });
+
+  it('forwards this-turn timings and usage to the status details', () => {
+    render(
+      <IntentConsole
+        {...baseProps}
+        turnTimings={{ completedMs: 1234, modelMs: null }}
+        latestUsage={{ promptTokens: 10, completionTokens: 5 }}
+      />,
+    );
+
+    expect(screen.getByTestId('summary-completed-ms').textContent).toBe('1234');
+    expect(screen.getByTestId('summary-prompt-tokens').textContent).toBe('10');
+    expect(screen.getByTestId('summary-completion-tokens').textContent).toBe(
+      '5',
+    );
   });
 });

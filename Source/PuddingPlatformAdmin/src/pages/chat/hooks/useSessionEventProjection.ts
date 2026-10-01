@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AdminChatStreamEvent,
   TokenUsageDto,
+  TurnTimings,
   WorkspaceAgentDto,
 } from '@/services/platform/api';
 import { recordPerfEvent, writeDebugTrace } from '@/utils/perfEventRuntime';
@@ -169,6 +170,14 @@ export function useSessionEventProjection({
     [subAgentRuns],
   );
   const [latestUsage, setLatestUsage] = useState<TokenUsageDto | undefined>();
+  /**
+   * 本会话最近一次 Turn 的后端耗时明细（`turn.completed` 帧的 `timings` 键）。
+   * 与 `latestUsage` 同源同时机：终态帧里带什么就存什么；**没带 ⇒ `undefined`**，
+   * 由渲染层显示「未采集」，绝不编造 0（诊断报告 §6）。
+   */
+  const [latestTurnTimings, setLatestTurnTimings] = useState<
+    TurnTimings | undefined
+  >();
   const [sessionCacheHitTokens, setSessionCacheHitTokens] = useState(0);
   const [sessionCacheMissTokens, setSessionCacheMissTokens] = useState(0);
   const hydrateSessionReplayRef = useRef(false);
@@ -1614,6 +1623,21 @@ export function useSessionEventProjection({
       if (ev.type === 'usage.recorded' && ev.usage) setLatestUsage(ev.usage);
       if (ev.type === 'turn.completed' && ev.usage) setLatestUsage(ev.usage);
 
+      // 诊断报告 §6：终态 `done` 帧把 `AgentTurnTimingCollector.ToPayload()` 挂在
+      // `timings` 键上（持久化后回放同样带），信封投影已把 payload 摊平到事件上。
+      // 只接受对象形态；缺失/非对象 ⇒ 保持 undefined（渲染层报「未采集」）。
+      if (ev.type === 'turn.completed') {
+        const rawTimings = anyEv.timings;
+        if (
+          rawTimings !== null &&
+          rawTimings !== undefined &&
+          typeof rawTimings === 'object' &&
+          !Array.isArray(rawTimings)
+        ) {
+          setLatestTurnTimings(rawTimings as TurnTimings);
+        }
+      }
+
       // T-CACHE-008: Accumulate cache hit/miss for the main session
       if (ev.type === 'turn.completed' && ev.usage) {
         const hitTokens = ev.usage.promptCacheHitTokens || 0;
@@ -1732,6 +1756,8 @@ export function useSessionEventProjection({
     subAgentCards,
     latestUsage,
     setLatestUsage,
+    latestTurnTimings,
+    setLatestTurnTimings,
     sessionCacheHitTokens,
     setSessionCacheHitTokens,
     sessionCacheMissTokens,
