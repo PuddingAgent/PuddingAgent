@@ -4,7 +4,8 @@ import { createStyles } from 'antd-style';
 export const useMarkdownStyles = createStyles(() => ({
   markdownBody: {
     whiteSpace: 'normal' as const,
-    '& p': { margin: '0 0 8px' },
+    // IMG07 / §5：正文段落节奏 12（原 8 偏密）
+    '& p': { margin: '0 0 12px' },
     '& p:last-child': { marginBottom: 0 },
     // 列表节奏放半档（对齐 harness 16px 节奏）：列表块 8px、li 间 2px
     '& ul, & ol': { paddingLeft: 22, margin: '8px 0' },
@@ -15,44 +16,52 @@ export const useMarkdownStyles = createStyles(() => ({
       lineHeight: 1,
       verticalAlign: '-0.06em',
     },
+    // §5：块引用左线 3px + surface-muted 底 + 内边距 12
+    // （原为 2px + 暖黄 borderLeft + 棕字 + opacity，属于「叠了几套底」的来源之一）
     '& blockquote': {
       margin: '8px 0',
-      paddingLeft: 12,
-      borderLeft: '2px solid var(--pale-yellow-sunlight)',
-      color: 'var(--earth-brown)',
-      opacity: 0.8,
+      padding: '8px 12px',
+      borderLeft: '3px solid var(--pudding-chat-border)',
+      background: 'var(--pudding-chat-surface-muted)',
+      borderRadius: '0 6px 6px 0',
+      color: 'var(--pudding-chat-text-muted)',
     },
+    // §5：链接需要可辨认的强调色。原 --sky-soft 在浅色主题下几乎是白色，
+    // 正文里的链接实际读不出来（IM04 类可读性问题）。
     '& a': {
-      color: 'var(--sky-soft)',
+      color: 'var(--pudding-chat-accent)',
       textDecoration: 'none',
       '&:hover': { textDecoration: 'underline' },
     },
-    // 表格对齐 harness MarkdownText：仅横向分隔线（无竖线网格），
-    // th 加粗下边线、td 弱下边线，末行无底线。
+    // IMG07（§13.5）：单元格 10/12、分隔线走主题 border；首列给 7em 最小宽，
+    // 避免「可部署产物」这类短标签被挤成一字一行。长内容列仍可换行，
+    // 整表超宽时由 markdownTableScroll 横滚（不把整个消息设 overflow:hidden）。
     '& table': {
       borderCollapse: 'collapse' as const,
+      width: '100%',
       minWidth: 'min(100%, 420px)',
       margin: '2px 0',
     },
     '& th, & td': {
       border: 'none',
-      padding: '9px 14px',
+      padding: '10px 12px',
       textAlign: 'left' as const,
       verticalAlign: 'top',
+    },
+    '& th:first-child, & td:first-child': {
+      minWidth: '7em',
     },
     '& th': {
       background: 'transparent',
       fontSize: 13,
       fontWeight: 600,
       whiteSpace: 'nowrap' as const,
-      borderBottom:
-        '1.5px solid color-mix(in srgb, var(--text-primary, #333) 25%, transparent)',
+      borderBottom: '1.5px solid var(--pudding-chat-border)',
     },
     '& td': {
       fontSize: 13.5,
       lineHeight: '22px',
-      borderBottom:
-        '1px solid color-mix(in srgb, var(--text-primary, #333) 10%, transparent)',
+      borderBottom: '1px solid var(--pudding-chat-border)',
     },
     '& tr:last-child td': { borderBottom: 'none' },
   },
@@ -62,11 +71,17 @@ export const useMarkdownStyles = createStyles(() => ({
     margin: '8px 0',
   },
   inlineCode: {
-    padding: '1px 5px',
-    borderRadius: 6,
-    background: 'color-mix(in srgb, var(--misty-blue) 30%, transparent)',
-    fontSize: '0.92em',
+    // IMG06 / §13.5：行内代码降低对比、常规字重、收紧内边距与圆角。
+    // 原来是 6px 圆角 + misty-blue 混色底，让正文里每个路径都像可点 chip，
+    // 和标题、粗体、代码块一起抢眼。表格内的行内代码也走这里（不再叠亮灰硬边）。
+    padding: '2px 4px',
+    borderRadius: 4,
+    background: 'var(--pudding-chat-surface-muted)',
+    color: 'var(--pudding-chat-text)',
+    fontWeight: 400,
+    fontSize: '0.9em',
     fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+    overflowWrap: 'anywhere' as const,
   },
     codeBlockWrap: {
     position: 'relative' as const,

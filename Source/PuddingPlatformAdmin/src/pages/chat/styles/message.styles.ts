@@ -148,9 +148,13 @@ export const useMessageStyles = createStyles(({ token }) => ({
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'stretch',
-    background:
-      'color-mix(in srgb, var(--pudding-chat-accent) 3%, var(--pudding-admin-surface))',
-    border: '1px solid var(--pudding-admin-border)',
+    // IMG06（§13.5「助手正文去大面积有色底」）：原来的
+    // color-mix(accent 3%, admin-surface) 就是截图里那块巨大的蓝灰矩形
+    // （深色下实测约 #1b2339）。改为透明填充，回合分隔交给 1px 边界；
+    // 正文本身不再有底色，代码块仍保留更深底作为局部锚点。
+    background: 'transparent',
+    // 顺带把 admin 语义 token 换回 chat 语义 token（同一容器不该跨层取色）
+    border: '1px solid var(--pudding-chat-border)',
     borderRadius: 'var(--pudding-chat-radius-lg)',
     padding: '10px 14px 6px',
     width: '100%',
@@ -457,12 +461,12 @@ export const useMessageStyles = createStyles(({ token }) => ({
     borderLeft: '2px solid var(--tool-signal, #22D3EE)',
   },
   timelineNodeToolRunning: {
-    borderLeft: '2px solid var(--earth-brown)',
+    borderLeft: '2px solid var(--pudding-status-running)',
     '&::before': {
       animation: 'signalFlow 2s linear infinite',
-      background: 'var(--earth-brown)',
+      background: 'var(--pudding-status-running)',
       boxShadow:
-        '0 0 6px color-mix(in srgb, var(--misty-blue) 40%, transparent)',
+        '0 0 6px color-mix(in srgb, var(--pudding-status-running) 40%, transparent)',
       backgroundSize: '200% 100%',
     },
   },
@@ -594,8 +598,8 @@ export const useFocusViewStyles = createStyles(() => ({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-    background: 'var(--sky-soft)',
-    color: 'var(--earth-brown)',
+    background: 'var(--pudding-chat-accent-soft)',
+    color: 'var(--pudding-chat-text-muted)',
     fontSize: 10,
     fontWeight: 500,
   },

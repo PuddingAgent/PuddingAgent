@@ -101,9 +101,9 @@ function rowStyle(active: boolean): React.CSSProperties {
     gap: 8,
     cursor: 'pointer',
     fontSize: 13,
-    color: 'var(--text-primary)',
+    color: 'var(--pudding-chat-text)',
     background: active
-      ? 'rgb(from var(--misty-blue) r g b / 0.45)'
+      ? 'var(--pudding-chat-accent-soft)'
       : 'transparent',
   };
 }

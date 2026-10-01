@@ -1,4 +1,4 @@
-﻿// ── 聊天页样式（antd-style createStyles — 组合模式）─────────────────────
+// ── 聊天页样式（antd-style createStyles — 组合模式）─────────────────────
 import { createStyles } from 'antd-style';
 import { useMemo } from 'react';
 import { useAgentStyles } from './styles/agent.styles';
@@ -303,8 +303,8 @@ const useResidualStyles = createStyles(({ token }) => ({
     width: 32,
     height: 32,
     borderRadius: '50%',
-    background: 'var(--sky-soft)',
-    color: 'var(--earth-brown)',
+    background: 'var(--pudding-chat-accent-soft)',
+    color: 'var(--pudding-chat-text-muted)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

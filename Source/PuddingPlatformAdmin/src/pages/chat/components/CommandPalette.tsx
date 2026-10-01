@@ -323,7 +323,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         {text.slice(0, idx)}
         <mark
           style={{
-            background: 'var(--pale-yellow-sunlight)',
+            background: 'var(--pudding-chat-accent-soft)',
             padding: '0 2px',
             borderRadius: 2,
             color: 'inherit',
@@ -396,7 +396,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                   transition: 'background 0.15s, border-color 0.15s',
                   background:
                     idx === selectedIdx
-                      ? 'color-mix(in srgb, var(--misty-blue) 50%, transparent)'
+                      ? 'var(--pudding-chat-accent-soft)'
                       : 'transparent',
                   borderTop:
                     '1px solid color-mix(in srgb, var(--earth-brown) 5%, transparent)',

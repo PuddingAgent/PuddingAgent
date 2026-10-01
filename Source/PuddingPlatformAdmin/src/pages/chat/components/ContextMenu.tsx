@@ -59,7 +59,7 @@ function menuItemStyle(disabled: boolean): React.CSSProperties {
 
 function menuItemHoverStyle(disabled: boolean): React.CSSProperties {
   if (disabled) return {};
-  return { background: 'rgb(from var(--misty-blue) r g b / 0.4)' };
+  return { background: 'var(--pudding-chat-accent-soft)' };
 }
 
 // ── 菜单项配置 ───────────────────────────────────────────────
