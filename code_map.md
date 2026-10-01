@@ -1,3 +1,7 @@
+## 2026-10-01：Agent 编辑工作台设计
+
+工作区 Agent 编辑界面建议采用自适应宽度工作台、Prompt 文档目录和大正文编辑区，统一身份、修改标记、保存及异常反馈。保持模板创建快照与实例独立修改的语义；本次只交付方案与布局示意。[设计方案](Docs/Features/Agent-Settings-Redesign-2026-10-01.md) · [布局示意](Docs/Design/Agent-Settings-Workbench.svg)。
+
 ## 2026-10-01：Visual Studio NU1105 还原修复
 
 PuddingAgentNetwork.slnx 补登记 src/HarnessAgent/Core/HarnessAgent.Core.csproj；PuddingHost 已引用该组件，解决方案缺项会使 Visual Studio 无法取得还原信息。诊断及验证见 [修复记录](Docs/Reports/Core-VS-Restore-Fix-2026-10-01.md)。
