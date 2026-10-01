@@ -34,6 +34,8 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
 
             DesktopCapability.ShellClipboard => ReadClipboard(request),
 
+            DesktopCapability.ShellDialog => RequestDialog(request),
+
             DesktopCapability.BrowserTabs => Tabs(request),
 
             DesktopCapability.BrowserContexts => Task.FromResult(DesktopCapabilityResponse.FromContexts(Contexts())),
@@ -166,6 +168,16 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
 
         return Task.FromResult(DesktopCapabilityResponse.FromClipboard(new DesktopClipboardContent(
             truncated ? text[..clipboard.MaxCharacters] : text, truncated)));
+    }
+
+    /// <summary>对话框：标题含 "cancel" 时演示"用户取消"（取消是结果而不是失败）。</summary>
+    private static Task<DesktopCapabilityResponse> RequestDialog(DesktopCapabilityRequest request)
+    {
+        var dialog = request.Dialog ?? throw new InvalidOperationException("probe: dialog payload missing");
+        var canceled = dialog.Title.Contains("cancel", StringComparison.OrdinalIgnoreCase);
+
+        return Task.FromResult(DesktopCapabilityResponse.FromDialog(
+            new DesktopDialogResult(canceled ? DesktopDialogChoice.Cancel : DesktopDialogChoice.Ok)));
     }
     private static Task<DesktopCapabilityResponse> ExecuteJavascriptAsync(
         JavascriptRequest request, CancellationToken cancellationToken)

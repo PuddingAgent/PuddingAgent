@@ -4,6 +4,17 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：`shell.dialog` 端到端完成（第 45 轮，切片 E 第 3 步）
+
+- 探针执行器实现对话框（标题含 `cancel` 时演示用户取消），探针断言两条终态：
+  **正常选择**（`Ok`、`IsAffirmative=true`）与**用户取消**（`Canceled=true`、`IsAffirmative=false`、**不是失败**）
+  ⇒ **51/51 exit 0**（管道与 h2c 各一轮），跨侧集合一致性守卫同时通过（13 项能力上下游一致）。
+- 能力集合 6 处一次同步：Core `DefaultGrantable`、Desktop `DeclaredCapabilities`、配置测试 implemented 判定、
+  Broker 夹具声明/可授予、ack 协商列表（**顺序按目录：`shell.dialog` 在 `shell.status` 与 `shell.clipboard` 之间**）、
+  探针两端声明。
+- 一处遗留断言更新：预留能力只剩 `shell.file_picker`（`shell.dialog`/`shell.clipboard` 均已实现）。
+- 测试：Contracts 96、协议 20、DesktopConnection 80、DesktopService **124**、Broker 74、适配层 26 = **420**。
+- **切片 E 现状**：notification ✅ / status ✅ / clipboard ✅ / dialog ✅；只差 `shell.file_picker`。
 ## 2026-10-01：`shell.dialog` 端到端接线 + 交互槽位接入（第 44 轮，步骤 2/3）
 
 - 联合：请求加 `dialog`、结果加 `dialog`（工厂 `ForDialog` / `FromDialog`）；接口加

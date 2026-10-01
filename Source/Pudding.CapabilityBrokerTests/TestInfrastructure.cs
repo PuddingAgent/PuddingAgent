@@ -127,6 +127,7 @@ internal sealed class HarnessOptions
         | DesktopCapability.BrowserWaitFor
         | DesktopCapability.BrowserContexts
         | DesktopCapability.BrowserTabs
+        | DesktopCapability.ShellDialog
         | DesktopCapability.ShellClipboard;
 
     public DesktopCapability Grantable { get; set; } =
@@ -141,6 +142,7 @@ internal sealed class HarnessOptions
         | DesktopCapability.BrowserWaitFor
         | DesktopCapability.BrowserContexts
         | DesktopCapability.BrowserTabs
+        | DesktopCapability.ShellDialog
         | DesktopCapability.ShellClipboard;
 
     public int MaxInFlightPerConnection { get; set; } = 8;

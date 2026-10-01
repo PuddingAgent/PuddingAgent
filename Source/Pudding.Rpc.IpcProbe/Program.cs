@@ -208,6 +208,7 @@ internal static class Program
             | DesktopCapability.BrowserWaitFor
             | DesktopCapability.BrowserContexts
             | DesktopCapability.BrowserTabs
+            | DesktopCapability.ShellDialog
             | DesktopCapability.ShellClipboard,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
@@ -584,6 +585,27 @@ internal static class Program
                 clipboard.IsFailure || truncated.IsFailure
                     ? $"期望读取成功，实际 {(clipboard.IsFailure ? clipboard.Error!.Code.ToString() : truncated.Error!.Code.ToString())}"
                     : $"结果不符：{clipboard.Value} / {truncated.Value}");
+        }
+        // 13) 对话框（交互类）：正常选择与**用户取消**两种终态；取消是结果而不是失败。
+        var dialog = await session.RequestDialogAsync(
+            new DesktopDialogRequest("探针", "是否继续？", DesktopDialogButtons.YesNo), Call("dialog"));
+        var canceled = await session.RequestDialogAsync(
+            new DesktopDialogRequest("cancel", "用户点了取消"), Call("dialog-cancel"));
+
+        if (dialog.IsSuccess && !dialog.Value.Canceled && dialog.Value.IsAffirmative
+            && canceled.IsSuccess && canceled.Value.Canceled && !canceled.Value.IsAffirmative)
+        {
+            report.Pass(
+                "dialog",
+                $"shell.dialog → 正常选择 {dialog.Value.Choice}；用户取消 Canceled=true 且**不是失败**");
+        }
+        else
+        {
+            report.Fail(
+                "dialog",
+                dialog.IsFailure || canceled.IsFailure
+                    ? $"期望两次调用都成功，实际 {(dialog.IsFailure ? dialog.Error!.Code.ToString() : canceled.Error!.Code.ToString())}"
+                    : $"结果不符：{dialog.Value} / {canceled.Value}");
         }
         // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
         var refWithoutVersionRejected = false;
