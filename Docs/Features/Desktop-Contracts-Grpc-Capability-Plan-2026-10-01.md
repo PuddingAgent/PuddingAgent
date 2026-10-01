@@ -182,7 +182,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 |---|---|---|
 | A：Contracts | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Contracts`（BCL-only，编译期边界）+ `Pudding.ContractsTests` 58/58；边界取红实测 |
 | B：Protocol / Connection | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Rpc.Protocol` + 17/17；`Source/Pudding.DesktopConnection` + 74/74；`Source/Pudding.Rpc.IpcProbe` 13/13（Named Pipe + h2c 真实端点） |
-| C：DesktopService | 🟡 主体完成（Desktop 服务 + 宿主组合 + WinUI 适配器 + **Core 侧 Broker** + **端点描述/命名隔离**），两端产品内装配未做 | `Source/Pudding.DesktopService`（目标/准入/竞态/UI 调度/宿主启停/端点解析）+ 76/76；`Source/PuddingDesktop.CapabilityHost`（`DispatcherQueue` 适配器）；`Source/Pudding.CapabilityBroker`（协商/会话/关联/授权/端点命名）+ 57/57；**在 PuddingHost 托管端点与 PuddingDesktop 组合根启动**（C-3）未做 |
+| C：DesktopService | 🟡 产品代码已全部就绪（Desktop 服务 + 宿主组合 + WinUI 适配器 + Core Broker + **Core 宿主适配层** + 端点命名/解析），只剩组合根接线 | `Source/Pudding.DesktopService` 76/76；`Source/PuddingDesktop.CapabilityHost`（`DispatcherQueue` 适配器）；`Source/Pudding.CapabilityBroker` 57/57；`Source/Pudding.CapabilityBroker.AspNetCore` 13/13（gRPC 服务/Kestrel 装配助手，含实测约束：`Listen*` 覆盖 `UseUrls`）；**接入 PuddingApplicationHost 与 PuddingDesktop 组合根**（C-3 收尾）未做 |
 | D：浏览器等价接入 | 🟡 前置完成（`page_state` payload + Core Broker + 两端真实端点互操作 + 端点发现），等价接入未做 | 探针升级为「真实 Broker 作服务端」，Named Pipe / Loopback h2c 上完成握手、四能力往返、1 MiB 单帧、取消与断开收尾、端点描述两端一致性（**21/21**）；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
 | E：Shell 能力 | ⛔ 未开始 | 目录已预留 `shell.status/dialog/file_picker/clipboard` 线名，但**尚无 payload 与实现**，不会被声明 |
 | F：默认切换与退役 | ⛔ 未开始 | — |

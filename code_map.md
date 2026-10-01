@@ -1,3 +1,25 @@
+## 2026-10-01：Core 侧宿主适配层（切片 C-3 的最后一块产品代码）
+
+新增 `Source/Pudding.CapabilityBroker.AspNetCore`：把 gRPC 服务端流接到 Broker，并提供端点/DI/路由装配助手
+（`AddCapabilityChannel` / `MapCapabilityChannel` / `ListenForCapabilityChannel`）。认证接缝默认**拒绝一切**；
+授权器仍由 Broker 侧 fail closed。测试自托管最小 Kestrel、用真实 gRPC 客户端扮演 Desktop，**13/13**。
+
+**两条实测约束（装配产品组合根前必读）**：
+
+1. **`KestrelServerOptions.Listen*` 会覆盖 `UseUrls`** —— 一旦为能力通道调用 `ListenForCapabilityChannel`，
+   原先由 `UseUrls` 绑定的 REST 端点会**静默消失**（地址列表只剩管道/新端点）。产品组合根必须显式绑定两者，
+   或改用「复用既有监听器 + `Http1AndHttp2`」。两条测试固定该结论（含阳性对照：显式绑定两者后 REST 仍 200）。
+   这是本轮最有价值的发现：若不做这一步验证，接入时会让产品 REST 全线不可用。
+2. **命名管道端点也会出现在地址列表里**（`http://pipe`，`Uri.Port` 为默认 80）：按地址探测端口的代码必须排除它。
+
+探针改为**直接使用产品适配层**（不再自带替身），仍 **21/21 通过**：因此它现在验证的是
+「产品适配层 + 产品 Broker + 产品 Desktop 连接」的组合，而不是探针私有实现。
+
+测试合计：Contracts 70、Rpc.Protocol 18、DesktopConnection 80、DesktopService 76、CapabilityBroker 57、
+CapabilityBroker.AspNetCore 13 = **314 用例**。下一步（需外部控制器重启验证）：把两行装配接入
+`PuddingApplicationHost`（配置默认关闭）、用 `DesktopControlTokenValidator` 实现认证器、
+用继承 Tool Runtime 准入的授权器替换探针实现、把端点描述并入启动就绪流程。
+
 ## 2026-10-01：能力通道端点描述与命名隔离（计划 §7）
 
 把「Core 怎么告诉 Desktop 端点在哪」做成可独立验证的契约（不需要端点、不需要重启）：
@@ -913,6 +935,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Source/Pudding.DesktopConnection/` | Desktop 侧 gRPC 双向流适配器：连接状态机、命令关联、取消/期限/背压、重连 | [code_map](Source/Pudding.DesktopConnection/code_map.md) |
 | `Source/Pudding.DesktopService/` | Desktop 侧能力服务：目标/可信级别/版本校验、准入、入队后竞态复检、UI 调度边界、宿主装配与生命周期 | [code_map](Source/Pudding.DesktopService/code_map.md) |
 | `Source/Pudding.CapabilityBroker/` | Core 侧能力 Broker：握手协商、会话与世代、命令关联、取消/期限/队列预算、授权接缝、**端点命名与描述** | [code_map](Source/Pudding.CapabilityBroker/code_map.md) |
+| `Source/Pudding.CapabilityBroker.AspNetCore/` | Core 侧宿主适配层：gRPC 服务、服务端流适配、Kestrel/DI/路由装配助手 | [code_map](Source/Pudding.CapabilityBroker.AspNetCore/code_map.md) |
 | `Source/PuddingDesktop.CapabilityHost/` | WinUI 侧平台适配：`DispatcherQueue` 调度实现（只引用 Contracts） | [code_map](Source/PuddingDesktop.CapabilityHost/code_map.md) |
 | `Source/PuddingRpc.IpcProbe/` | 真实端点技术探针（Kestrel Named Pipe/h2c 服务端替身；退出码 0/1） | — |
 
@@ -1276,6 +1299,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 | `Source/Pudding.DesktopConnectionTests/` | **连接组件独立测试工程**：假服务端双向流（握手/乱序关联/取消/期限/背压/旧世代/断连/重连不重放）+ 映射往返 + 6 条边界断言（74 用例） |
 | `Source/Pudding.DesktopServiceTests/` | **服务组件独立测试工程**：假 UI 调度器（内联/排队/拒绝/释放）+ 目标与策略表 + 交互状态 + 队列竞态 + 宿主启停/单实例占用 + 5 条边界断言（69→70 用例） |
 | `Source/Pudding.CapabilityBrokerTests/` | **Core 侧 Broker 独立测试工程**：假通道的协商/注册表/单实例/世代递增/命令关联/期限/取消/在途与队列耗尽/断连收尾/审计/映射/端点命名 + 6 条边界断言（57 用例） |
+| `Source/Pudding.CapabilityBroker.AspNetCoreTests/` | **Core 侧宿主适配层独立测试工程**：自托管最小 Kestrel + 真实 gRPC 客户端；认证/身份/单实例/两条传输握手/命令回传/取消/断开清理 + Kestrel 绑定约束（13 用例） |
 | `Tests/PuddingCodexServiceTests/` | Codex MCP Service |
 | `Tests/PuddingFullTextIndexTests/` | 全文索引 |
 | `Tests/PuddingWebApiTests/` | Web API |
