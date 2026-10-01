@@ -107,7 +107,8 @@ internal static class Program
         SupportedCapabilities = DesktopCapability.WebViewNavigate
             | DesktopCapability.WebViewExecuteJavascript
             | DesktopCapability.WebViewPageState
-            | DesktopCapability.ShellNotification,
+            | DesktopCapability.ShellNotification
+            | DesktopCapability.ShellStatus,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
         InactivityTimeout = TimeSpan.FromSeconds(30),
@@ -255,6 +256,19 @@ internal static class Program
         else
         {
             report.Fail("notification", $"期望通知成功，实际 {notification.Error}");
+        }
+
+        // 5) 只读 Shell 状态（切片 E 第一项：无参数能力）
+        var status = await session.GetShellStatusAsync(Call("shell-status"));
+        if (status.IsSuccess)
+        {
+            report.Pass(
+                $"{label}-shell-status",
+                $"shell_status → {status.Value}（无参数能力，Core 据此决定是否派发变更类操作）");
+        }
+        else
+        {
+            report.Fail($"{label}-shell-status", $"期望 shell_status 结果，实际 {status.Error}");
         }
 
         // 会话结束时 Broker 侧应当清空注册表（不残留陈旧会话）。

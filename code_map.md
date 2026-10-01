@@ -1,3 +1,26 @@
+## 2026-10-01：`shell.status` 参数化能力（切片 E 第一项）
+
+切片 E 按方案「通知/状态先行」推进，落地第二个只读能力（与 `page_state` 同形，端到端可验证）：
+
+- proto：`GetShellStatusCommand`（无参数 payload，14）+ `ShellStatusOutcome`（outcome 15：
+  window_state / tray_visible / automation_state / open_page_count）。
+- 契约：`DesktopShellStatus`（构造期校验）+ `DesktopShellStatusWire` 线名真源；请求联合 `ForShellStatus()`、
+  结果联合 `FromShellStatus(...)`；`IPuddingDesktopShellApi.GetShellStatusAsync` 与
+  `IDesktopUiSurface.GetShellStatusAsync`。
+- **分层诚实**：surface（WinUI）只报告「只有它知道」的窗口形态与托盘可见性；
+  自动化状态（暂停/用户接管）与打开页面数由 **DesktopService 依自身权威状态补齐**，避免两处状态漂移。
+- **fail safe**：未知自动化状态折叠为 `user_takeover`（宁可少自动，不可误自动）。
+- **消除重复真源**：就绪度线名表从「两个适配器各一份」上移为契约层 `DesktopPageReadinessWire` 单一真源。
+- 验证：协议 19/19、契约 77/77、DesktopConnection 80/80、DesktopService 81/81、CapabilityBroker 57/57、
+  探针 **23/23**（含管道与 h2c 上的 shell_status 往返）。
+- **探针抓出的真实缺口**：两端的「声明/可授予能力集合」未包含新能力 ⇒ 需要同时更新
+  `DesktopConnectionOptions.SupportedCapabilities`、DesktopService 的 `AllowedCapabilities` 与
+  Broker 的 `Grantable`。这正是「能力开放」漏配时的失败模式（对方会以 `unsupported_capability` 拒绝），
+  已由探针固定为回归项。
+
+测试合计：327 用例（Contracts 77、Rpc.Protocol 19、DesktopConnection 80、DesktopService 81、
+CapabilityBroker 57、CapabilityBroker.AspNetCore 13）。
+
 ## 2026-10-01：Core 侧宿主适配层（切片 C-3 的最后一块产品代码）
 
 新增 `Source/Pudding.CapabilityBroker.AspNetCore`：把 gRPC 服务端流接到 Broker，并提供端点/DI/路由装配助手

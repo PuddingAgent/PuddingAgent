@@ -67,6 +67,19 @@ public sealed class InvokeAndCorrelationTests
         var notificationResult = await notification.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(notificationResult.Value.Shown);
         Assert.Equal("n-1", notificationResult.Value.NotificationId);
+
+        // 无参数能力：请求不携带目标，结果由 DesktopService 补齐自动化状态与页面数。
+        var status = harness.Session.GetShellStatusAsync(harness.Call("op-status"));
+        var statusCommand = await harness.WaitForCommandAsync("op-status");
+        Assert.Equal("shell.status", statusCommand!.Capability);
+        Assert.NotNull(statusCommand.GetShellStatus);
+        Assert.Null(statusCommand.Navigate);
+        harness.Channel.Push(DesktopFrames.Result(DesktopFrames.ShellStatusOk("op-status", 1)));
+        var statusResult = await status.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(DesktopWindowState.HiddenToTray, statusResult.Value.WindowState);
+        Assert.True(statusResult.Value.TrayVisible);
+        Assert.Equal(DesktopAutomationState.Free, statusResult.Value.Automation);
+        Assert.Equal(3, statusResult.Value.OpenPageCount);
     }
 
     [Fact]

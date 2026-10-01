@@ -119,13 +119,15 @@ internal sealed class HarnessOptions
         DesktopCapability.WebViewNavigate
         | DesktopCapability.WebViewExecuteJavascript
         | DesktopCapability.WebViewPageState
-        | DesktopCapability.ShellNotification;
+        | DesktopCapability.ShellNotification
+        | DesktopCapability.ShellStatus;
 
     public DesktopCapability Grantable { get; set; } =
         DesktopCapability.WebViewNavigate
         | DesktopCapability.WebViewExecuteJavascript
         | DesktopCapability.WebViewPageState
-        | DesktopCapability.ShellNotification;
+        | DesktopCapability.ShellNotification
+        | DesktopCapability.ShellStatus;
 
     public int MaxInFlightPerConnection { get; set; } = 8;
 
@@ -329,6 +331,25 @@ internal static class DesktopFrames
             Generation = generation,
             PageState = new Proto.PageStateOutcome { Url = url, PageVersion = pageVersion, Readiness = readiness },
         };
+
+    public static Proto.OperationResult ShellStatusOk(
+        string operationId,
+        ulong generation,
+        string windowState = "hidden_to_tray",
+        bool trayVisible = true,
+        string automationState = "free",
+        uint openPageCount = 3) => new()
+    {
+        OperationId = operationId,
+        Generation = generation,
+        ShellStatus = new Proto.ShellStatusOutcome
+        {
+            WindowState = windowState,
+            TrayVisible = trayVisible,
+            AutomationState = automationState,
+            OpenPageCount = openPageCount,
+        },
+    };
 
     public static Proto.OperationResult NotificationOk(string operationId, ulong generation, bool shown = true) =>
         new()

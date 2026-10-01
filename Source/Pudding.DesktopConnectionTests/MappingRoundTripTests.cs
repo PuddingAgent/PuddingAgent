@@ -200,21 +200,21 @@ public sealed class MappingRoundTripTests
     }
 
     [Fact]
-    public void PageReadinessWire_RoundTripsAndFoldsUnknownNames()
+    public void DesktopPageReadinessWire_RoundTripsAndFoldsUnknownNames()
     {
         var names = new List<string>();
         foreach (var readiness in Enum.GetValues<DesktopPageReadiness>())
         {
-            var name = PageReadinessWire.NameOf(readiness);
+            var name = DesktopPageReadinessWire.NameOf(readiness);
             names.Add(name);
-            Assert.Equal(readiness, PageReadinessWire.Parse(name));
+            Assert.Equal(readiness, DesktopPageReadinessWire.Parse(name));
         }
 
         Assert.Equal(["unknown", "loading", "interactive", "complete", "failed"], names);
 
         // 只读观测 fail soft：Core 不认识的新状态折叠为 unknown，而不是让结果失败。
-        Assert.Equal(DesktopPageReadiness.Unknown, PageReadinessWire.Parse("hibernated"));
-        Assert.Equal(DesktopPageReadiness.Unknown, PageReadinessWire.Parse(null));
+        Assert.Equal(DesktopPageReadiness.Unknown, DesktopPageReadinessWire.Parse("hibernated"));
+        Assert.Equal(DesktopPageReadiness.Unknown, DesktopPageReadinessWire.Parse(null));
     }
 
     [Fact]

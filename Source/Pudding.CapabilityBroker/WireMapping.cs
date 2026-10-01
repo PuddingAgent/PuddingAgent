@@ -70,6 +70,10 @@ internal static class CoreCommandEncoder
                 command.GetPageState = new Proto.GetPageStateCommand { Target = EncodeTarget(target) };
                 break;
 
+            case DesktopCapability.ShellStatus when request.ShellStatus:
+                command.GetShellStatus = new Proto.GetShellStatusCommand();
+                break;
+
             default:
                 throw new ArgumentException(
                     $"Request does not carry a payload for capability '{capability.Name}'.", nameof(request));
@@ -131,6 +135,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.ExecuteJavascript => expectedCapability == DesktopCapability.WebViewExecuteJavascript,
             Proto.OperationResult.OutcomeOneofCase.ShowNotification => expectedCapability == DesktopCapability.ShellNotification,
             Proto.OperationResult.OutcomeOneofCase.PageState => expectedCapability == DesktopCapability.WebViewPageState,
+            Proto.OperationResult.OutcomeOneofCase.ShellStatus => expectedCapability == DesktopCapability.ShellStatus,
             _ => false,
         };
 
@@ -206,6 +211,17 @@ internal static class DesktopResultDecoder
 
             default:
             {
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.ShellStatus)
+                {
+                    // 只读 Shell 状态：线名未知按保守值处理（自动化状态折叠为 user_takeover）。
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromShellStatus(new DesktopShellStatus(
+                            DesktopShellStatusWire.ParseWindowState(result.ShellStatus.WindowState),
+                            result.ShellStatus.TrayVisible,
+                            DesktopShellStatusWire.ParseAutomationState(result.ShellStatus.AutomationState),
+                            (int)Math.Min(result.ShellStatus.OpenPageCount, int.MaxValue))));
+                }
+
                 if (requestedTarget is null)
                 {
                     return CapabilityResult<DesktopCapabilityResponse>.Failure(
@@ -225,7 +241,7 @@ internal static class DesktopResultDecoder
                         requestedTarget,
                         url,
                         ToPageVersion(result.PageState.PageVersion),
-                        PageReadinessWire.Parse(result.PageState.Readiness))));
+                        DesktopPageReadinessWire.Parse(result.PageState.Readiness))));
             }
         }
     }
@@ -245,27 +261,3 @@ internal static class DesktopResultDecoder
         value > 0 ? DesktopPageVersion.Require(value) : DesktopPageVersion.Unknown;
 }
 
-/// <summary>
-/// 页面就绪度线名（与 Desktop 侧同一套名字；未知线名折叠为 unknown）。
-/// 快照由本组件的映射测试与真实端点探针共同保证。
-/// </summary>
-internal static class PageReadinessWire
-{
-    public static string NameOf(DesktopPageReadiness readiness) => readiness switch
-    {
-        DesktopPageReadiness.Loading => "loading",
-        DesktopPageReadiness.Interactive => "interactive",
-        DesktopPageReadiness.Complete => "complete",
-        DesktopPageReadiness.Failed => "failed",
-        _ => "unknown",
-    };
-
-    public static DesktopPageReadiness Parse(string? name) => name switch
-    {
-        "loading" => DesktopPageReadiness.Loading,
-        "interactive" => DesktopPageReadiness.Interactive,
-        "complete" => DesktopPageReadiness.Complete,
-        "failed" => DesktopPageReadiness.Failed,
-        _ => DesktopPageReadiness.Unknown,
-    };
-}

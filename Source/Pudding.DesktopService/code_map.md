@@ -3,7 +3,7 @@
 > Desktop 侧能力服务（计划 §6）：**目标校验 · 准入 · 生命周期 · 取消与关闭竞态 · UI 线程边界**
 > 依赖：`Pudding.Contracts`（平台无关契约）+ `Pudding.DesktopConnection`（执行器接缝）。
 > 编译期 Target `EnforceDesktopServiceBoundary` 禁止引用 Host/Runtime/Desktop/Browser 工程与 ASP.NET Core/WinUI/WebView2 包。
-> 测试：`Source/Pudding.DesktopServiceTests`（**76 用例**；假 UI 调度器与假监督器确定性验证，不需要 WinUI 应用）
+> 测试：`Source/Pudding.DesktopServiceTests`（**81 用例**；假 UI 调度器与假监督器确定性验证，不需要 WinUI 应用）
 
 ## 职责边界
 

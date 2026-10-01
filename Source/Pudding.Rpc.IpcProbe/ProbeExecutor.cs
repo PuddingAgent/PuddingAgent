@@ -32,6 +32,13 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                     DesktopPageVersion.Require(5),
                     DesktopPageReadiness.Complete))),
 
+            DesktopCapability.ShellStatus => Task.FromResult(DesktopCapabilityResponse.FromShellStatus(
+                new DesktopShellStatus(
+                    DesktopWindowState.HiddenToTray,
+                    trayVisible: true,
+                    DesktopAutomationState.Free,
+                    openPageCount: 3))),
+
             _ => Task.FromResult(DesktopCapabilityResponse.Failure(
                 DesktopCapabilityError.UnsupportedCapability(capability.Name))),
         };

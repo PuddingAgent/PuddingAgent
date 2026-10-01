@@ -157,13 +157,13 @@ public sealed class MappingTests
     public void Readiness_NamesAreFrozenAndUnknownFoldsToUnknown()
     {
         var names = Enum.GetValues<DesktopPageReadiness>()
-            .Select(PageReadinessWire.NameOf)
+            .Select(DesktopPageReadinessWire.NameOf)
             .ToArray();
 
         Assert.Equal(["unknown", "loading", "interactive", "complete", "failed"], names);
-        Assert.Equal(DesktopPageReadiness.Interactive, PageReadinessWire.Parse("interactive"));
-        Assert.Equal(DesktopPageReadiness.Unknown, PageReadinessWire.Parse("hibernated"));
-        Assert.Equal(DesktopPageReadiness.Unknown, PageReadinessWire.Parse(null));
+        Assert.Equal(DesktopPageReadiness.Interactive, DesktopPageReadinessWire.Parse("interactive"));
+        Assert.Equal(DesktopPageReadiness.Unknown, DesktopPageReadinessWire.Parse("hibernated"));
+        Assert.Equal(DesktopPageReadiness.Unknown, DesktopPageReadinessWire.Parse(null));
     }
 
     private static DesktopCapabilityDescriptor FakeDescriptor(DesktopCapability capability) =>

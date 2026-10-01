@@ -39,7 +39,7 @@
 | 文件 | 用途 |
 |------|------|
 | `IDesktopCapabilityExecutor.cs` | **UI 侧唯一接缝**：`ExecuteAsync(descriptor, request, context, ct)`，只依赖 Contracts；实现方负责 `DispatcherQueue` 调度、准入与目标校验 |
-| `Mapping.cs` | `CoreFrameMapping.Decode`（proto → 领域，fail closed：op id/generation/deadline/能力/payload 一致性/目标/URL/脚本与结果上限）；指纹只覆盖 payload（deadline/trace 不参与），保证重试指纹稳定；`DesktopFrameMapping`（领域 → proto，含 `ErrorOutcome` 语义、`Hello` 的契约版本区间、`PageReadinessWire` 就绪度线名与未知线名折叠） |
+| `Mapping.cs` | `CoreFrameMapping.Decode`（proto → 领域，fail closed：op id/generation/deadline/能力/payload 一致性/目标/URL/脚本与结果上限）；指纹只覆盖 payload（deadline/trace 不参与），保证重试指纹稳定；`DesktopFrameMapping`（领域 → proto，含 `ErrorOutcome` 语义、`Hello` 的契约版本区间、就绪度/Shell 状态线名走契约层真源（`DesktopPageReadinessWire`/`DesktopShellStatusWire`）） |
 
 ## 与方案的对应（切片 B）
 

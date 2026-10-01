@@ -180,12 +180,52 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.ShellStatus:
+            {
+                if (!request.ShellStatus)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("shell_status request payload is missing"));
+                }
+
+                var reported = await RunOnUiAsync(
+                    descriptor,
+                    target: null,
+                    DesktopPageVersion.Unknown,
+                    context,
+                    token => _surface.GetShellStatusAsync(context, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                if (reported.IsFailure)
+                {
+                    return DesktopCapabilityResponse.Failure(reported.Error);
+                }
+
+                // 自动化状态与打开页面数由本服务依自身权威状态补齐：
+                // surface 只报告「只有它知道」的窗口/托盘部分，避免两处状态互相漂移。
+                var enriched = new DesktopShellStatus(
+                    reported.Value.WindowState,
+                    reported.Value.TrayVisible,
+                    MapAutomation(Interaction),
+                    Targets.OpenPageCount);
+
+                return DesktopCapabilityResponse.FromShellStatus(enriched);
+            }
+
             default:
                 // 目录里已登记但本切片尚无命令 payload 的能力（dialog/picker/clipboard 属切片 E）。
                 return DesktopCapabilityResponse.Failure(
                     DesktopCapabilityError.UnsupportedCapability(capability.Name));
         }
     }
+
+    /// <summary>交互状态 → 线上面状态（暂停与用户接管都表示「不可自动化」）。</summary>
+    private static DesktopAutomationState MapAutomation(DesktopInteractionState state) => state switch
+    {
+        _ when state.IsUserTakeover => DesktopAutomationState.UserTakeover,
+        _ when state.IsPaused => DesktopAutomationState.Paused,
+        _ => DesktopAutomationState.Free,
+    };
 
     // ── 只读直连 API（UI 侧门面复用；本切片不经 wire 命令） ────────────────
 

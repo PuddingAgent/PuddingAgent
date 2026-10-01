@@ -158,6 +158,11 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
 
     public int PageStateCount => _calls.Count(call => call.StartsWith("page_state", StringComparison.Ordinal));
 
+    public int ShellStatusCount => _calls.Count(call => string.Equals(call, "shell_status", StringComparison.Ordinal));
+
+    /// <summary>surface 只报告它知道的窗口/托盘部分；其余由 DesktopService 补齐。</summary>
+    public Func<CancellationToken, Task<CapabilityResult<DesktopShellStatus>>>? ShellStatusHandler { get; set; }
+
     public async Task<CapabilityResult<NavigateResult>> NavigateAsync(
         DesktopCallContext context, NavigateRequest request, CancellationToken cancellationToken)
     {
@@ -194,6 +199,18 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
         _calls.Enqueue("notification");
         await AwaitGateAsync(cancellationToken);
         return CapabilityResult<DesktopNotificationResult>.Success(new DesktopNotificationResult(true, "n-1"));
+    }
+
+    public async Task<CapabilityResult<DesktopShellStatus>> GetShellStatusAsync(
+        DesktopCallContext context, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue("shell_status");
+        await AwaitGateAsync(cancellationToken);
+
+        return ShellStatusHandler is null
+            ? CapabilityResult<DesktopShellStatus>.Success(new DesktopShellStatus(
+                DesktopWindowState.HiddenToTray, trayVisible: true, DesktopAutomationState.Free, openPageCount: 0))
+            : await ShellStatusHandler(cancellationToken);
     }
 
     private Task AwaitGateAsync(CancellationToken cancellationToken) =>

@@ -204,6 +204,17 @@ internal static class CoreFrameMapping
                         payload.Title, payload.Message, ToDomain(payload.Priority))));
             }
 
+            case DesktopCapability.ShellStatus:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                // 无参数能力：payload 必须存在但为空，调用方不能借它夹带目标。
+                return CapabilityResult<DesktopCapabilityRequest>.Success(DesktopCapabilityRequest.ForShellStatus());
+            }
+
             default:
                 // 目录里存在但本切片尚无 payload 的能力（dialog/picker/clipboard 属切片 E）。
                 return CapabilityResult<DesktopCapabilityRequest>.Failure(
@@ -370,7 +381,17 @@ internal static class DesktopFrameMapping
                     {
                         Url = pageState.Url?.AbsoluteUri ?? string.Empty,
                         PageVersion = pageState.Version.Value,
-                        Readiness = PageReadinessWire.NameOf(pageState.Readiness),
+                        Readiness = DesktopPageReadinessWire.NameOf(pageState.Readiness),
+                    };
+                    break;
+
+                case DesktopCapability.ShellStatus when response.ShellStatus is { } shellStatus:
+                    result.ShellStatus = new Proto.ShellStatusOutcome
+                    {
+                        WindowState = DesktopShellStatusWire.NameOf(shellStatus.WindowState),
+                        TrayVisible = shellStatus.TrayVisible,
+                        AutomationState = DesktopShellStatusWire.NameOf(shellStatus.Automation),
+                        OpenPageCount = (uint)shellStatus.OpenPageCount,
                     };
                     break;
 
@@ -413,31 +434,9 @@ internal static class DesktopFrameMapping
 }
 
 /// <summary>
-/// 页面就绪度的线名（真源在本文件，快照由映射测试断言）：
-/// 用字符串而不是枚举，便于 Core 在不重新发版的前提下识别 Desktop 新增的状态。
-/// 未知线名折叠为 <see cref="DesktopPageReadiness.Unknown"/>（只读观测，fail soft）。
+/// 就绪度线名真源已上移到 <see cref="DesktopPageReadinessWire"/>（契约层）：
+/// 两端适配器共用同一张表，避免两份手写映射漂移。
 /// </summary>
-internal static class PageReadinessWire
-{
-    public static string NameOf(DesktopPageReadiness readiness) => readiness switch
-    {
-        DesktopPageReadiness.Loading => "loading",
-        DesktopPageReadiness.Interactive => "interactive",
-        DesktopPageReadiness.Complete => "complete",
-        DesktopPageReadiness.Failed => "failed",
-        _ => "unknown",
-    };
-
-    public static DesktopPageReadiness Parse(string? name) => name switch
-    {
-        "loading" => DesktopPageReadiness.Loading,
-        "interactive" => DesktopPageReadiness.Interactive,
-        "complete" => DesktopPageReadiness.Complete,
-        "failed" => DesktopPageReadiness.Failed,
-        _ => DesktopPageReadiness.Unknown,
-    };
-}
-
 internal static class WireText
 {    public static string Truncate(string? value, int maxLength)
     {

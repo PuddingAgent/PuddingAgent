@@ -166,6 +166,19 @@ public sealed class DesktopSession : IAsyncDisposable
                     DesktopCapabilityError.Internal("notification response payload is missing")),
             cancellationToken);
 
+    /// <summary>只读 Shell 状态（窗口形态/托盘/自动化状态/打开页面数）。</summary>
+    public Task<CapabilityResult<DesktopShellStatus>> GetShellStatusAsync(
+        DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.ShellStatus,
+            DesktopCapabilityRequest.ForShellStatus(),
+            call,
+            static response => response.ShellStatus is { } value
+                ? CapabilityResult<DesktopShellStatus>.Success(value)
+                : CapabilityResult<DesktopShellStatus>.Failure(
+                    DesktopCapabilityError.Internal("shell_status response payload is missing")),
+            cancellationToken);
+
     /// <summary>请求取消一个在途操作（尽力而为：不撤销已执行的脚本，结果由 Desktop 报告）。</summary>
     public async Task<bool> CancelAsync(OperationId operationId, CancellationToken cancellationToken = default)
     {

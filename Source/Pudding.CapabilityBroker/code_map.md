@@ -18,7 +18,7 @@
 |---|---|
 | `CapabilityBroker.cs` | 接受连接：读 hello（带握手超时）→ 校验身份/版本/能力 → 授予 `声明 ∩ 本机允许` → 回 ack → 建立会话并注册；**同一 Desktop 只允许一个活动传输**；每次接受递增世代（旧 PageId/Snapshot ref 由此作废）；会话结束自动从注册表移除 |
 | `DesktopSession.cs` | 会话：命令下发（有界队列按帧数与期限）、结果关联（未知 OperationId 与**旧世代结果**一律忽略）、期限到点本地给 `deadline_exceeded`、调用方取消发 cancel 帧并立即给终态、断连把 pending 收尾为 `OutcomeUnknown`（已发）/`Disconnected`（未发）并归还在途额度 |
-| `WireMapping.cs` | `CoreCommandEncoder`（领域 → proto，四种 payload；指纹只覆盖能力与业务 payload）、`DesktopResultDecoder`（proto → 领域，fail closed：payload 与命令能力不一致 ⇒ `internal_error`；错误码/重试/副作用语义如实还原）、`PageReadinessWire`（就绪度线名，未知折叠为 `unknown`） |
+| `WireMapping.cs` | `CoreCommandEncoder`（领域 → proto，五种 payload；指纹只覆盖能力与业务 payload）、`DesktopResultDecoder`（proto → 领域，fail closed：payload 与命令能力不一致 ⇒ `internal_error`；错误码/重试/副作用语义如实还原）；就绪度/Shell 状态线名真源在契约层（`DesktopPageReadinessWire`/`DesktopShellStatusWire`） |
 | `ICoreDesktopChannel.cs` | 服务端流接缝 + `DesktopLinkState` + 授权接缝 `IDesktopCapabilityAuthorizer`（默认 **DenyAll**：RPC 可达 ≠ 获得桌面操作授权）+ `AllowAll`（仅测试/受控探针） |
 | `DesktopCapabilityPolicy.cs` | 本机可授予能力上限、在途/队列/心跳/握手参数；`ToWireLimits` 下发实际限制 |
 | `CapabilityEndpointNaming.cs` | **端点命名与描述**（计划 §7）：管道名 = `pudding-capability-<作用域哈希>`（按用户 + 产品实例派生，不同 DataRoot 不串接；哈希而非明文，管道名出现在系统工具里也不泄漏作用域）；`LoopbackEndpoint`/`TlsEndpoint` 校验端口范围、TLS 必须显式 host；描述经 `ToEndpointString()` 发布 |
