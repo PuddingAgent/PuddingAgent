@@ -25,6 +25,12 @@ internal sealed class StreamPipelineDiagnosticsAccumulator
 
     public bool IsEmpty => _keyVaultCount == 0 && _ssmAppendCount == 0;
 
+    /// <summary>Number of persisted frames in this turn (for per-turn persist cost attribution).</summary>
+    public long AppendCount => Interlocked.Read(ref _ssmAppendCount);
+
+    /// <summary>Total milliseconds spent persisting frames in this turn.</summary>
+    public long AppendTotalMs => Interlocked.Read(ref _ssmAppendTotalMs);
+
     public void ObserveKeyVaultStrip(long durationMs, string stage, int inputChars)
     {
         Interlocked.Increment(ref _keyVaultCount);

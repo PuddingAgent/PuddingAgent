@@ -1930,6 +1930,11 @@ public sealed partial class AgentExecutionService
             _controlRegistry.Remove(request.SessionId);
             _skillPackageRegistry.Remove(instance.AgentInstanceId);
             _contextManager.MarkSessionExecutionCompleted(request.SessionId);
+            // 落库成本按轮观测：Append 在每个 yield 之前 await，若这里显著增长，才值得做有界批量写入。
+            _logger.LogInformation(
+                "[AgentExec:Perf] STREAM_PERSIST session={Session} appendCount={Count} appendTotalMs={Total}ms totalElapsed={Elapsed}ms",
+                request.SessionId, pipelineDiagnostics.AppendCount, pipelineDiagnostics.AppendTotalMs,
+                perfTotalSw.ElapsedMilliseconds);
             await RecordStreamPipelineDiagnosticsAsync(
                 streamTrace,
                 pipelineDiagnostics,
