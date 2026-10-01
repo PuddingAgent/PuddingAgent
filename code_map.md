@@ -16,6 +16,14 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：产品代码改动后的全量复核（第 53 轮）
+
+- 因为本轮开始改动**产品运行代码**（`PuddingHost` 组合根），按纪律重跑完整门禁确认无连带影响：
+  **434 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 129、
+  CapabilityBroker 78、CapabilityBroker.AspNetCore 31）、探针 **53/53 exit 0**、
+  `PuddingHost` 与 `PuddingAgent` 均**编译通过**（警告为既有存量；先前已确认新文件 0 警告）。
+- 方案 §10.1 同步为 434/53，并把 C-3 状态拆成「Core 侧装配 ✅ / Desktop 侧表面 🟡」两行。
+- 结论：产品侧改动**默认关闭**且未影响任何既有组件与测试；运行中的进程未被触碰。
 ## 2026-10-01：浏览器侧表面映射规格（第 52 轮）
 
 - 结论（改变实现路线）：Desktop 侧浏览器表面**不应重建 WebView2 逻辑**，而应映射到既有抽象
