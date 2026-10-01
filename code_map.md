@@ -1917,3 +1917,9 @@ VisionRequestPolicy默认8、VisionCapabilityContract上限钳制、PuddingFileC
 
 ## 2026-10-01 Chat 前端性能实测
 运行时实测报告：Docs/Reports/Chat-Frontend-Performance-Measurement-2026-10-01.md；测量脚手架 TestScripts/perf/README.md（CDP + 同版 Edge 独立 profile，只替换 conversation 数据源，不写库/不调 LLM/不重启 Desktop）。关键结论：50KB 单条回复 = 1 个 36962px 虚拟行、仅 11 个元素节点；`chat-message-viewport-content` 缺 `flex-shrink:0`，其内联 `height: totalSize`(38871.9px) 被 flex 压回 662px，滚到顶后滚动容器 `scrollHeight` 从 38964px 塌到 1374px、`scrollTop=scrollHeight` 被钳制在 676px 无法回到长回复（加 `flex-shrink:0` 即恢复，见 A/B）；多高行场景 `content-visibility:auto` 使长任务 101ms→0、renderToPaint p95 96→22ms；缓存 load 16ms / save 1–18ms 小于 api 124ms，非本轮主导；活动回合由 1200ms `conversation` 轮询驱动（SSE 被显式停用）。
+## 2026-10-01：Harness 执行效率诊断（方案，未实施）
+
+- 证据与修复顺序：Docs/Reports/Agent-Harness-Latency-Diagnosis-2026-10-01.md。
+- 定位入口：AgentExecutionService.Streaming.cs（FIRST_TOKEN 实为请求前 context-ready）、ContextPipelineOrchestrator.cs（上下文阶段）、SearchGrepTool.cs（默认扫描边界）、CacheDiagnosticsService.cs（窗口加权缓存率）、IntentConsole / ComposerStatusDetails（已有诊断入口）。
+- 核查指定 Agent manifest 与 persona：额外上下文恢复/检视/调研规则、旧路径索引回退；仅交付诊断，未修改运行配置或产品代码。
+

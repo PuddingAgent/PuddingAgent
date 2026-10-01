@@ -4020,3 +4020,9 @@ getComputedStyle(c).flexShrink;       // "1"
 - 单条 50KB Markdown 回复 = **1 个虚拟行**、行高 36962px、正文 50483 字符、**仅 11 个元素节点**；虚拟化阈值是「内容权重 ≥16000 字符」，单条超长回复即可触发。
 - 滚动该时间线：`browser.longtask` 实测 213ms；多条高行（10×6KB）场景加 `content-visibility: auto` 后长任务 101ms → 0、`renderToPaint` p95 96ms → 22ms。
 - 冷加载 `agent.select`：`cache.loadConversation` 16ms、`api.getConversation` 124ms、`cache.saveConversation` 1ms（写盘顺序仍在 `set` 之前，但本数据集非主导）。
+## 2026-10-01：首 token 与会话缓存口径
+
+`AgentExecutionService.Streaming.cs` 的 `[AgentExec:Perf] FIRST_TOKEN` 当前在模型调用前记录 context 帧准备时间，不代表模型 TTFT。诊断慢首输出时，结合 `[ContextPipeline:Stage]` 各层耗时、实际 provider dispatch 和首个非空 reasoning/content/tool delta；另测网页首正文渲染，不能用 context/status 帧替代。同 API/模型对比仍需对齐实际 endpoint、参数、工具和会话历史。
+
+`CacheDiagnosticsService` 默认最近 50 条、最多 200 条事件的加权缓存率，与全会话累计值区分；`PrefixHash` 是工程指纹，不等于供应商最长公共前缀。截图旧 E: 索引与扫描覆盖不足要先核对 workspace project/root，再通过正式接口重建当前 D: 索引，不能直接删业务数据库。完整证据与验收方案见 [诊断报告](Docs/Reports/Agent-Harness-Latency-Diagnosis-2026-10-01.md)。
+
