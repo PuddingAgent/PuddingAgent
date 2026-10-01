@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/Source/">
+    <Project Path="src/HarnessAgent/Core/HarnessAgent.Core.csproj" />
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
     <Project Path="Source/PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
     <Project Path="Source/PuddingBrowser.AgentTools/PuddingBrowser.AgentTools.csproj" />

@@ -1,3 +1,7 @@
+## 2026-10-01：Visual Studio NU1105 还原修复
+
+PuddingAgentNetwork.slnx 补登记 src/HarnessAgent/Core/HarnessAgent.Core.csproj；PuddingHost 已引用该组件，解决方案缺项会使 Visual Studio 无法取得还原信息。诊断及验证见 [修复记录](Docs/Reports/Core-VS-Restore-Fix-2026-10-01.md)。
+
 ## 2026-09-30：Core 启动耗时归因（初始化段埋点补齐）
 
 `StartupPhaseTracker`（`Source/PuddingHost/Hosting/StartupPhaseTracker.cs`，`bcfac24`）在组合根各阶段打点（`[StartupPhase] <phase> total/delta ms`，stdout + 系统日志双通道）；该提交收了 `phases` 却未向下传，初始化段仍是单个 `initialized` 增量。`23a8e83` 把 `phases` 传入 `PuddingApplicationInitializer`，并细分 `platform-db-ensure`/`event-store-ensure`/`memory-db-ensure`/`workspace-catalog`/`jieba-backfill` 与 25 个 `schema-<类型名>`。零行为变更。干净实测基线（隔离 DataRoot、无争用）：空库首启 6.5 s、schema 已存在 4.13 s，组合根 `Host built` 仅 536–724 ms；已证伪 DI/索引重建/192 MB WAL 三个候选。[归因报告](Docs/Reports/Core启动耗时归因-2026-09-30.md) · [分诊入口](How-Debuge.md#2026-09-30运行中心启动耗时偏大core-启动做了什么慢在哪)。
