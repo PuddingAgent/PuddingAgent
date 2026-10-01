@@ -526,7 +526,8 @@ public sealed class S5IndexSupplyHostWiringTests
         FullTextIndexSupplyOptions supplyOptions,
         ILogger<IndexPrebuildService> logger,
         TimeSpan? buildWaitTimeout = null) =>
-        new(engine, Options.Create(supplyOptions), factory, logger)
+        // S-A（2026-10-01）：构造参数从「工厂」改为「共享访问器」（真实现包计数工厂）。
+        new(engine, Options.Create(supplyOptions), new FullTextIndexSupplyAccessor(factory), logger)
         {
             StartupDelay = TimeSpan.Zero,
             StatusPollInterval = TimeSpan.FromMilliseconds(20),

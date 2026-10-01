@@ -184,6 +184,12 @@ public static partial class PuddingServiceCollectionExtensions
                 rootedEngine,
                 stagingOptions => new LuceneSearchEngine(stagingOptions));
         });
+        // S-A（2026-10-01）：把上面那个**惰性工厂**升格为「宿主共享的惰性单例访问器」。
+        // 为什么必须升格：组合实例此前只在 IndexPrebuildService.PrebuildAsync 里**局部构造**，
+        // 其他消费方（状态只读出口 / 后续面板）拿不到它 ⇒ job 台账永远为空。
+        // 注意保留 R4 的两条：工厂仍然是惰性的（组合只在真正进入供给路径时才造），
+        // 且访问器的 Current **不触发构造** —— 默认关闭时仍然一次都不构造。
+        builder.Services.AddSingleton<IFullTextIndexSupplyAccessor, FullTextIndexSupplyAccessor>();
         // U4-7（2026-09-25）：IndexPrebuildService 从 HOSTED-DISABLED 改为**由配置门控**的常驻注册。
         // 默认（system.json 无 FullTextIndex 节 / Enabled=false）下 StartAsync 立即返回、不建索引、零索引 I/O，
         // 因此注册它不改变现网行为（该服务此前根本没被注册）；只有显式 Enabled=true 且 fail-closed 校验通过
@@ -191,6 +197,11 @@ public static partial class PuddingServiceCollectionExtensions
         // S5（2026-09-25）：预建**不再直写引擎**——改为经上面的供给组合向 A1 协调器提交、
         // 轮询到终态（租约 / 预算硬限 / staging / 原子切换都在组件内），且新鲜度改为 per-scope。
         builder.Services.AddHostedService<IndexPrebuildService>();
+        // S-A（2026-10-01）：全文索引**状态只读出口**的数据来源（IndexAdminController 注入它）。
+        // 只读 Current（不构造组合）、只用读类文件 API（零副作用）；依赖全部已在上面注册：
+        // IConfiguration / IOptionsMonitor<FullTextIndexSupplyOptions> / FullTextIndexOptions /
+        // IFullTextSearchEngine / IFullTextIndexSupplyAccessor。
+        builder.Services.AddSingleton<FullTextIndexStatusProbe>();
         builder.Services.AddPuddingAgentTool<SearchGrepTool>();
 
         // ── Smart 工作流工具（角色化子代理）──

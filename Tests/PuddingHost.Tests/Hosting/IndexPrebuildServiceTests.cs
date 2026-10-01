@@ -127,7 +127,7 @@ public sealed class IndexPrebuildServiceTests
         var service = new IndexPrebuildService(
             engine,
             Options.Create(new FullTextIndexSupplyOptions { Enabled = true }),
-            factory,
+            new FullTextIndexSupplyAccessor(factory),
             logger)
         {
             StartupDelay = TimeSpan.Zero,
@@ -151,7 +151,9 @@ public sealed class IndexPrebuildServiceTests
         IFullTextSearchEngine engine,
         IFullTextIndexSupplyCompositionFactory factory,
         FullTextIndexSupplyOptions supplyOptions) =>
-        new(engine, Options.Create(supplyOptions), factory, new SupplyRecordingLogger())
+        // S-A（2026-10-01）：服务不再直抽工厂，而是抽共享访问器；测试用真实现包住计数工厂，
+        // 因此 factory.CreateCalls 的语义（「组合到底被构造了几次」）逐字不变。
+        new(engine, Options.Create(supplyOptions), new FullTextIndexSupplyAccessor(factory), new SupplyRecordingLogger())
         {
             StartupDelay = TimeSpan.Zero,
             StatusPollInterval = TimeSpan.FromMilliseconds(20),

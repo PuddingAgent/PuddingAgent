@@ -76,7 +76,7 @@ public sealed class IndexPrebuildService : IHostedService
 
     private readonly IFullTextSearchEngine _searchEngine;
     private readonly IOptions<FullTextIndexSupplyOptions> _supplyOptions;
-    private readonly IFullTextIndexSupplyCompositionFactory _compositionFactory;
+    private readonly IFullTextIndexSupplyAccessor _supplyAccessor;
     private readonly ILogger<IndexPrebuildService> _logger;
 
     /// <summary>Creates the prebuild service.</summary>
@@ -85,19 +85,30 @@ public sealed class IndexPrebuildService : IHostedService
     /// 「live 索引目录在哪」的映射；写索引一律经协调器（本服务不得再调用 <c>BuildIndexAsync</c>）。
     /// </param>
     /// <param name="supplyOptions">供给参数（Data 目录 <c>system.json</c> 的 <c>FullTextIndex</c> 节）。</param>
-    /// <param name="compositionFactory">供给组合的惰性工厂（默认关闭时**永不被调用**）。</param>
+    /// <param name="supplyAccessor">
+    /// 供给组合的**共享惰性访问器**（S-A 起）：本服务不再是「唯一拿到组合的地方」，
+    /// 而是与其他消费方（如状态只读出口）共用同一个实例。
+    /// 默认关闭时**永不被调用**（R4：门控早返回在它之前）。
+    /// </param>
     /// <param name="logger">Logger.</param>
     public IndexPrebuildService(
         IFullTextSearchEngine searchEngine,
         IOptions<FullTextIndexSupplyOptions> supplyOptions,
-        IFullTextIndexSupplyCompositionFactory compositionFactory,
+        IFullTextIndexSupplyAccessor supplyAccessor,
         ILogger<IndexPrebuildService> logger)
     {
         _searchEngine = searchEngine;
         _supplyOptions = supplyOptions;
-        _compositionFactory = compositionFactory;
+        _supplyAccessor = supplyAccessor;
         _logger = logger;
     }
+
+    /// <summary>
+    /// 本服务持有的供给访问器（**测试可见**，<c>InternalsVisibleTo("PuddingHost.Tests")</c>）：
+    /// 用于断言「宿主组合根里预建服务与状态出口看到的是同一个 <c>Current</c>」这件事本身。
+    /// 生产代码不消费它。
+    /// </summary>
+    internal IFullTextIndexSupplyAccessor SupplyAccessor => _supplyAccessor;
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken ct)
@@ -139,8 +150,9 @@ public sealed class IndexPrebuildService : IHostedService
             var options = _supplyOptions.Value;
             var minRebuildInterval = options.MinRebuildInterval;
 
-            // 供给组合**只在这里**构造：默认关闭 / 配置被拒时根本走不到这一行（R4）。
-            var composition = _compositionFactory.Create(options);
+            // 供给组合**只在这里**构造（S-A 起经共享访问器：所有消费方共用同一实例）：
+            // 默认关闭 / 配置被拒时根本走不到这一行（R4 —— 门控早返回在上面）。
+            var composition = _supplyAccessor.GetOrCreate(options);
 
             _logger.LogInformation(
                 "[IndexPrebuild] Supply composition ready: budget {Budget} bytes and min rebuild interval " +
