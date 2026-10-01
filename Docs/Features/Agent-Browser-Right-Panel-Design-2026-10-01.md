@@ -1,6 +1,6 @@
 # 右侧多 Tab 工具工作区设计
 
-日期：2026-10-01。状态：设计建议，尚未实现。
+日期：2026-10-01。状态：**第一阶段（统一分栏 / Tab 容器 / 工具入口 / 收起 / 拖动宽度 / 浏览器适配）已实现**，见 [第一阶段实现记录](../Reports/Desktop-Right-Tool-Workspace-2026-10-01.md)；第二、三阶段（成果与输出预览、受控交互面板、终端会话）仍为设计建议。
 
 ## 目标与布局
 
@@ -48,6 +48,8 @@ Tab 对应具体实例，允许同时打开多个终端、页面和成果；不�
 
 现有 MainWindow.xaml 的 BrowserPane 与 WorkbenchPane 作为兄弟页面，OnNavigate 切换其 Visibility。浏览器运行时使用 WinUiBrowserSurfaceHost 和 BrowserWorkspaceController；因此右侧承载区由 WinUI Shell 调整，业务聊天继续保留在 Web UI，Core 保持独立进程。
 
+> **实现更新（2026-10-01，第一阶段）**：`MainWindow.xaml` 已删除 `BrowserPane`，左侧导航不再有「浏览器」整页入口（按设计 §39 迁入工具菜单）。`WorkbenchPane` 改为「聊天 ∥ 分隔线 ∥ 工具区」三列分栏；工具区自上而下为实例 Tab 栏（+ 放大 收起）、当前工具操作栏、内容区与状态栏。浏览器 surface 宿主改为工具区内**单一常驻面板**，外层实例 Tab 与 `PageId` 一一对应，不再随 Tab 重挂载 WebView2。布局与实例策略提取到 BCL-only 的 `PuddingDesktop.Foundation`（`ToolWorkspaceLayout`、`ToolWorkspaceTabs`、`ToolWorkspaceActivityPolicy`），WinUI 层只做投影。布局偏好落在 `desktop.json` 的 `toolWorkspace` 节。详见 [第一阶段实现记录](../Reports/Desktop-Right-Tool-Workspace-2026-10-01.md)。
+
 建议将工作台与工具区放入 Shell 内容区的分栏容器，工具区展开状态独立于主导航。Shell 只管理布局、Tab 容器及原生能力承载；制成品、输出物及交互面板的业务展示使用 Web，数据与执行事实由 Core 提供。复用原 BrowserSurface、运行时及控制器，不在前端 iframe 中重新创建 Agent 网页；Agent 网页与可信工作台使用隔离的浏览器环境，生成 HTML 不获得工作台认证或桌面桥权限。
 
 建立统一 Tab 描述：类型、实例 ID、标题、所属工作区/会话/Agent、内容引用及实际运行状态；业务状态由服务提供，Shell 不复制执行状态机。Web 点击成果经限定的桌面桥请求打开资源，终端输入经已有受控服务执行。终端若缺少可复用会话能力，先交付独立组件与测试，再接入宿主；不可只嵌入输出文本便宣称完整终端已实现。
@@ -64,4 +66,4 @@ Tab 对应具体实例，允许同时打开多个终端、页面和成果；不�
 - 自动展开关闭时活动仅提示；当前活动被手动收起后不反复弹出。
 - 键盘焦点、Esc、中文输入法、第三方网页叠层及 Core 断连恢复通过真实桌面验证。
 
-本次仅交付设计文档；不代表已完成布局、后台行为或生命周期验证。
+本次第一阶段交付布局、Tab 容器与浏览器适配；编译与单元门禁见实现记录，真实桌面项（键盘焦点、Esc、中文输入法、第三方网页叠层、收起后网页/自动化后台行为、Core 断连恢复）仍需外部控制器重启到新构建后验证，未验证项一律不视为已通过。

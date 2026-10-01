@@ -1,7 +1,12 @@
 <Window x:Class="PuddingDesktop.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
- xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:local="using:PuddingDesktop">
  <Grid x:Name="Root" Background="{ThemeResource ShellBackground}">
+  <Grid.KeyboardAccelerators>
+   <!-- Esc dismisses the overlay form of the tool workspace, never the split form. -->
+   <KeyboardAccelerator Key="Escape" Invoked="OnEscapeInvoked"/>
+  </Grid.KeyboardAccelerators>
   <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
   <Grid x:Name="TitleBar" Padding="20,0,150,0">
    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
@@ -13,19 +18,104 @@
   <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed" IsSettingsVisible="False" SelectionChanged="OnNavigate">
    <NavigationView.MenuItems>
     <NavigationViewItem Content="工作台" Tag="web" Icon="Home" IsSelected="True"/>
-    <NavigationViewItem Content="浏览器" Tag="browser" Icon="World"/>
     <NavigationViewItem x:Name="RuntimeNavigationItem" Content="运行中心" Tag="runtime" Icon="Play"/>
    </NavigationView.MenuItems>
    <NavigationView.FooterMenuItems>
     <NavigationViewItem Content="启动设置" Tag="settings" Icon="Setting"/>
    </NavigationView.FooterMenuItems>
    <Grid Margin="0,0,12,8">
-    <Grid x:Name="WorkbenchPane"><Grid x:Name="WorkbenchHost"/>
-     <StackPanel x:Name="LoadingPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16" MaxWidth="540">
+    <!-- Workbench page: chat keeps its structure, the tool workspace is added beside it. -->
+    <Grid x:Name="WorkbenchPane">
+     <Grid.ColumnDefinitions>
+      <ColumnDefinition x:Name="ChatColumn" Width="*"/>
+      <ColumnDefinition x:Name="ToolSplitterColumn" Width="0"/>
+      <ColumnDefinition x:Name="ToolColumn" Width="0"/>
+     </Grid.ColumnDefinitions>
+     <Grid x:Name="WorkbenchHost" Grid.Column="0"/>
+     <StackPanel x:Name="LoadingPanel" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16" MaxWidth="540">
       <TextBlock Text="准备你的工作台" FontSize="28" FontWeight="SemiBold"/>
       <TextBlock x:Name="LoadingText" Text="正在连接 Pudding Core…" TextWrapping="Wrap" Opacity="0.7"/>
       <Button Content="启动 Core" Click="OnStart"/>
      </StackPanel>
+     <local:SplitterHandle x:Name="ToolSplitter" Grid.Column="1" Visibility="Collapsed"
+       PointerPressed="OnSplitterPointerPressed" PointerMoved="OnSplitterPointerMoved"
+       PointerReleased="OnSplitterPointerReleased" PointerCaptureLost="OnSplitterPointerCaptureLost"
+       DoubleTapped="OnSplitterDoubleTapped" KeyDown="OnSplitterKeyDown">
+      <Rectangle Width="1" HorizontalAlignment="Center" Fill="{ThemeResource CardStrokeColorDefaultBrush}"/>
+     </local:SplitterHandle>
+     <Border x:Name="ToolOverlayScrim" Grid.ColumnSpan="3" Background="#40000000" Visibility="Collapsed" Tapped="OnToolScrimTapped"/>
+     <!-- Right tool workspace: instance tabs, per-tool toolbar, content, status. -->
+     <Grid x:Name="ToolPanel" Grid.Column="2" Visibility="Collapsed" Background="{ThemeResource ShellBackground}">
+      <Grid.RowDefinitions>
+       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+      <Grid Padding="6,4,6,0" ColumnSpacing="4" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <ListView x:Name="ToolTabList" SelectionMode="Single" SelectionChanged="OnToolTabSelected" VerticalAlignment="Center"
+         ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+         ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+        <ListView.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListView.ItemsPanel>
+        <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="MinHeight" Value="0"/><Setter Property="Padding" Value="8,4"/><Setter Property="Margin" Value="0,0,2,0"/></Style></ListView.ItemContainerStyle>
+        <ListView.ItemTemplate>
+         <DataTemplate>
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+           <FontIcon Glyph="{Binding Glyph}" FontSize="12" Opacity="0.8" VerticalAlignment="Center"/>
+           <TextBlock Text="{Binding Title}" MaxWidth="150" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding Tooltip}"/>
+           <ProgressRing Width="12" Height="12" IsActive="{Binding IsRunning}" Visibility="{Binding RunningVisibility}" VerticalAlignment="Center"/>
+           <Ellipse Width="7" Height="7" Fill="#D59F61" Visibility="{Binding UnreadVisibility}" VerticalAlignment="Center"/>
+           <Button Click="OnCloseToolTab" Padding="3,1" MinWidth="0" Background="Transparent" BorderThickness="0" Visibility="{Binding CloseVisibility}" VerticalAlignment="Center" ToolTipService.ToolTip="关闭标签页">
+            <FontIcon Glyph="&#xE711;" FontSize="9"/>
+           </Button>
+          </StackPanel>
+         </DataTemplate>
+        </ListView.ItemTemplate>
+       </ListView>
+       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+        <DropDownButton x:Name="ToolOverflowButton" Content="&#xE70D;" FontFamily="{ThemeResource SymbolThemeFontFamily}" Padding="8,4" ToolTipService.ToolTip="全部标签页">
+         <DropDownButton.Flyout>
+          <MenuFlyout x:Name="ToolOverflowMenu" Placement="BottomEdgeAlignedRight" Opening="OnToolOverflowOpening"/>
+         </DropDownButton.Flyout>
+        </DropDownButton>
+        <DropDownButton x:Name="ToolAddButton" Content="&#xE710;" FontFamily="{ThemeResource SymbolThemeFontFamily}" Padding="8,4" ToolTipService.ToolTip="打开工具">
+         <DropDownButton.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedRight">
+           <MenuFlyoutItem Text="新标签页（工具首页）" Click="OnOpenHomeTab"/>
+           <MenuFlyoutSeparator/>
+           <MenuFlyoutItem Text="终端 · 新会话" Click="OnOpenTerminalTab"/>
+           <MenuFlyoutItem Text="Agent 浏览器" Click="OnOpenBrowserTab"/>
+           <MenuFlyoutItem Text="制成品预览" Click="OnOpenArtifactTab"/>
+           <MenuFlyoutItem Text="输出文件" Click="OnOpenOutputTab"/>
+           <MenuFlyoutItem Text="交互面板" Click="OnOpenPanelTab"/>
+           <MenuFlyoutSeparator/>
+           <ToggleMenuFlyoutItem x:Name="AutoExpandMenuItem" Text="任务开始时自动展开" Click="OnToggleAutoExpand"/>
+          </MenuFlyout>
+         </DropDownButton.Flyout>
+        </DropDownButton>
+        <Button x:Name="ToolZoomButton" Content="&#xE740;" FontFamily="{ThemeResource SymbolThemeFontFamily}" Padding="8,4" Click="OnToggleToolZoom" ToolTipService.ToolTip="放大工具区"/>
+        <Button x:Name="ToolCollapseButton" Content="&#xE89F;" FontFamily="{ThemeResource SymbolThemeFontFamily}" Padding="8,4" Click="OnCollapseToolPanel" ToolTipService.ToolTip="收起工具区"/>
+       </StackPanel>
+      </Grid>
+      <!-- Operation bar of the active tool; shown for browser tabs only. -->
+      <StackPanel x:Name="BrowserToolBar" Grid.Row="1" Orientation="Horizontal" Spacing="6" Padding="8,6" Visibility="Collapsed"
+        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+       <Button Content="后退" Click="OnBack"/>
+       <Button Content="刷新" Click="OnReload"/>
+       <TextBox x:Name="AddressBox" Width="230" PlaceholderText="输入网址" KeyDown="OnAddressKey"/>
+       <Button Content="打开" Click="OnGo"/>
+       <Button Content="新页面" Click="OnNewTab"/>
+       <Button Content="设为 Agent 目标" Click="OnTarget"/>
+       <ToggleButton x:Name="Takeover" Content="人工接管" Click="OnTakeover"/>
+      </StackPanel>
+      <Grid x:Name="ToolContentHost" Grid.Row="2">
+       <Grid x:Name="ToolTabContentHost"/>
+       <!-- One persistent browser surface host: tabs never reparent a live WebView2. -->
+       <Grid x:Name="BrowserSurfaceHostPanel" Visibility="Collapsed"/>
+       <TextBlock x:Name="ToolEmptyState" Margin="24" TextWrapping="Wrap" Opacity="0.6" VerticalAlignment="Top"
+         Text="工具区已打开。用右上角 + 打开终端、Agent 浏览器、制成品、输出文件或交互面板。"/>
+      </Grid>
+      <TextBlock x:Name="ToolStatusText" Grid.Row="3" Margin="8,4" FontSize="11" Opacity="0.7" TextWrapping="Wrap"/>
+     </Grid>
+     <Button x:Name="ToolEntryButton" Grid.Column="0" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,10,0" Visibility="Collapsed" Click="OnExpandToolPanel" ToolTipService.ToolTip="打开工具区"/>
     </Grid>
     <Grid x:Name="RuntimePane" Visibility="Collapsed" Padding="24" RowSpacing="16">
      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -81,13 +171,6 @@
       <TextBlock x:Name="SettingsStatus" TextWrapping="Wrap"/>
      </StackPanel>
     </ScrollViewer>
-    <Grid x:Name="BrowserPane" Visibility="Collapsed">
-     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-     <StackPanel Orientation="Horizontal" Spacing="6" Margin="8"><Button Content="新标签" Click="OnNewTab"/><Button Content="后退" Click="OnBack"/><Button Content="刷新" Click="OnReload"/><TextBox x:Name="AddressBox" Width="420" PlaceholderText="输入网址" KeyDown="OnAddressKey"/><Button Content="打开" Click="OnGo"/><Button Content="设为 Agent 目标" Click="OnTarget"/><ToggleButton x:Name="Takeover" Content="人工接管" Click="OnTakeover"/></StackPanel>
-     <ListView x:Name="BrowserTabs" Grid.Row="1" SelectionChanged="OnBrowserTab" MaxHeight="100"><ListView.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="{Binding Title}" MaxWidth="400" TextTrimming="CharacterEllipsis"/><Button Content="关闭" Click="OnCloseTab" Padding="6,1"/></StackPanel></DataTemplate></ListView.ItemTemplate></ListView>
-     <Grid x:Name="BrowserSurface" Grid.Row="2"/>
-     <TextBlock x:Name="BrowserStatus" Grid.Row="3" Margin="8" TextWrapping="Wrap"/>
-    </Grid>
    </Grid>
   </NavigationView>
   <TextBlock x:Name="StatusText" Grid.Row="2" Margin="20,0" FontSize="11" VerticalAlignment="Center" Opacity="0.65"/>

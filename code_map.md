@@ -1,3 +1,7 @@
+## 2026-10-01：右侧多 Tab 工具工作区（第一阶段实现）
+
+WinUI Shell 工作台改为「聊天 ∥ 可拖动分隔线 ∥ 右侧多 Tab 工具区」三列分栏；左侧导航删除「浏览器」整页入口，迁入工具菜单。工具区自上而下为实例 Tab 栏（+ 放大 收起 溢出列表）、当前工具操作栏、内容区与状态栏；默认收起，初始宽度为此前合计宽度的 45%，工具区最小 360、聊天最小 560，不满足时改用覆盖面板。布局与实例策略提取到 BCL-only 的 `Source/PuddingDesktop.Foundation/ToolWorkspaceLayout.cs` 与 `ToolWorkspaceTabs.cs`（可无窗口单测），WinUI 层只做投影；布局偏好落在 `desktop.json` 的 `toolWorkspace` 节。Agent 浏览器与每个 `PageId` 一一对应为外层 Tab，surface 宿主改为单一常驻面板（不重挂载 WebView2）；输出物 Tab 支持真实文件预览与打开；终端/制成品/交互面板标记为 `Deferred`，不伪装运行。真实桌面焦点/Esc/叠层与收起后后台行为仍需外部控制器重启到新构建后验证。[设计方案](Docs/Features/Agent-Browser-Right-Panel-Design-2026-10-01.md) · [实现记录](Docs/Reports/Desktop-Right-Tool-Workspace-2026-10-01.md)。
+
 ## 2026-10-01：右侧多 Tab 工具工作区设计
 
 按参考界面保留左侧与中间聊天结构，新增可拖动、可收起的右侧多 Tab 工具区，承载终端、Agent 浏览器、制成品、输出文件和交互面板；Shell 管容器，业务界面保留 Web。本次仅交付方案。[设计方案](Docs/Features/Agent-Browser-Right-Panel-Design-2026-10-01.md)。

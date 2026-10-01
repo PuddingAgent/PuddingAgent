@@ -1,20 +1,32 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.WebView2;
 using PuddingDesktop.Browser;
 using PuddingDesktop.Configuration;
+using PuddingDesktop.Foundation;
 using PuddingDesktop.Hosting;
 using PuddingDesktop.Runtime;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Runtime.InteropServices.WindowsRuntime;
+using Shapes = Microsoft.UI.Xaml.Shapes;
 
 namespace PuddingDesktop;
 
 public sealed partial class MainWindow : Window
 {
+    private const long MaxOutputPreviewBytes = 256 * 1024;
+
+    private static readonly HashSet<string> PreviewableExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".json", ".jsonl", ".csv", ".tsv", ".log", ".xml", ".yml", ".yaml",
+        ".html", ".htm", ".css", ".js", ".ts", ".sql", ".cs", ".ps1", ".py", ".toml", ".ini",
+    };
+
     private readonly DesktopApplicationCoordinator _coordinator;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SemaphoreSlim _webGate = new(1, 1);
@@ -32,6 +44,17 @@ public sealed partial class MainWindow : Window
     private string? _stateError;
     private readonly PuddingDesktop.Foundation.SkeletonSettingsStore _appearance = new(Path.Combine(App.StateRoot, "appearance"));
 
+    // Right tool workspace: instance tabs plus a layout preference that survives restart.
+    private readonly ToolWorkspaceTabs _toolTabs = new();
+    private readonly ToolWorkspaceActivityPolicy _toolActivity = new();
+    private readonly ObservableCollection<ToolTabItem> _toolTabItems = [];
+    private readonly Dictionary<string, UIElement> _toolTabContent = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _outputPaths = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _outputPreviews = new(StringComparer.Ordinal);
+    private ToolWorkspaceLayout _toolLayout = new();
+    private bool _toolExpanded, _toolZoomed, _toolDragging, _toolSyncing, _toolLayoutLoaded;
+    private double _toolDragOriginX, _toolDragOriginWidth;
+
     public MainWindow(DesktopApplicationCoordinator coordinator)
     {
         _coordinator = coordinator;
@@ -42,8 +65,10 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1440, 920));
         _ready = true;
+        ToolTabList.ItemsSource = _toolTabItems;
         _coordinator.StateChanged += OnStateChanged;
         AppWindow.Closing += (sender, e) => { if (!_closed) { e.Cancel = true; _ = RequestCloseAsync(false); } };
+        WorkbenchPane.SizeChanged += (_, _) => ApplyToolLayout();
         Root.Loaded += async (_, _) =>
         {
             try { _tray = new DesktopTrayIcon(this, () => _ = RequestCloseAsync(true)); }
@@ -53,13 +78,19 @@ public sealed partial class MainWindow : Window
             var appearance = await _appearance.LoadAsync();
             ThemeBox.SelectedIndex = appearance.Settings.Theme switch { "Light" => 1, "Dark" => 2, _ => 0 };
             _loadingAppearance = false;
+            await LoadToolWorkspaceLayoutAsync();
+            ApplyToolLayout();
             _timer.Start();
 #if DEBUG
             var report = Environment.GetEnvironmentVariable("PUDDING_LAUNCHER_SMOKE_REPORT");
             if (!string.IsNullOrEmpty(report)) _ = RunSmokeAsync(report);
 #endif
         };
-        _timer.Tick += (_, _) => { if (RuntimePane.Visibility == Visibility.Visible && AppWindow.IsVisible) RefreshRuntimePanel(); };
+        _timer.Tick += (_, _) =>
+        {
+            _toolActivity.Observe(ToolActivityInFlight());
+            if (RuntimePane.Visibility == Visibility.Visible && AppWindow.IsVisible) RefreshRuntimePanel();
+        };
         LogText.SizeChanged += (_, _) => FollowLatestLog();
         RuntimeLogScroll.SizeChanged += (_, _) => FollowLatestLog();
         FollowLogsBox.Checked += (_, _) => FollowLatestLog();
@@ -71,13 +102,16 @@ public sealed partial class MainWindow : Window
         if (!_ready) return;
         var page = (args.SelectedItem as NavigationViewItem)?.Tag as string;
         WorkbenchPane.Visibility = page == "web" ? Visibility.Visible : Visibility.Collapsed;
-        BrowserPane.Visibility = page == "browser" ? Visibility.Visible : Visibility.Collapsed;
         RuntimePane.Visibility = page == "runtime" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPane.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
         if (page == "settings") _ = LoadSettingsAsync();
         if (page == "runtime") RefreshRuntimePanel();
         else _metrics.Sample(null);
-        if (page == "web" && _coordinator.WorkbenchAddress is { } address) _ = LoadWorkbenchAsync(address);
+        if (page == "web")
+        {
+            ApplyToolLayout();
+            if (_coordinator.WorkbenchAddress is { } address) _ = LoadWorkbenchAsync(address);
+        }
     }
 
     private void OnStateChanged(object? sender, DesktopStateChangedEventArgs e) => UiThread.Post(() =>
@@ -155,6 +189,640 @@ public sealed partial class MainWindow : Window
         RuntimeStartedText.Text = metrics is null ? "进程未运行或指标不可读" : $"启动于 {metrics.StartedAt.LocalDateTime:MM-dd HH:mm:ss}";
     }
 
+    // ── Right-hand multi-tab tool workspace ─────────────────────────────────────
+
+    private void OnExpandToolPanel(object sender, RoutedEventArgs e) => SetToolExpanded(true);
+
+    private void OnCollapseToolPanel(object sender, RoutedEventArgs e) => SetToolExpanded(false);
+
+    private void OnToolScrimTapped(object sender, TappedRoutedEventArgs e)
+    {
+        // Narrow-window overlay: clicking outside the panel dismisses it, as designed.
+        SetToolExpanded(false);
+    }
+
+    private void OnEscapeInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (!_toolExpanded || _toolZoomed) return;
+        if (!_toolLayout.Resolve(WorkbenchPane.ActualWidth, true).SpansContent) return;
+        SetToolExpanded(false);
+        args.Handled = true;
+    }
+
+    /// <summary>
+    /// Expand/collapse is a display change only: tabs, browser pages, Agent targets and
+    /// running tasks survive it, and collapsing never navigates a page to blank.
+    /// </summary>
+    private void SetToolExpanded(bool expanded)
+    {
+        if (_toolExpanded == expanded)
+        {
+            ApplyToolLayout();
+            return;
+        }
+        _toolExpanded = expanded;
+        if (expanded)
+        {
+            _toolActivity.NotifyUserExpanded();
+            _toolTabs.EnsureHome();
+            SyncToolTabItems();
+            UpdateToolContentVisibility();
+        }
+        else
+        {
+            // Remember that the user closed the workspace during this activity round.
+            _toolActivity.NotifyUserCollapsed();
+        }
+        ApplyToolLayout();
+    }
+
+    private void OnToggleToolZoom(object sender, RoutedEventArgs e)
+    {
+        if (!_toolExpanded) SetToolExpanded(true);
+        _toolZoomed = !_toolZoomed;
+        ApplyToolLayout();
+    }
+
+    private void ApplyToolLayout()
+    {
+        var allocation = _toolLayout.Resolve(WorkbenchPane.ActualWidth, _toolExpanded, _toolZoomed);
+        var spans = allocation.SpansContent;
+        var split = allocation.IsVisible && !spans;
+
+        ToolPanel.Visibility = allocation.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        ToolEntryButton.Visibility = allocation.IsVisible ? Visibility.Collapsed : Visibility.Visible;
+        Grid.SetColumn(ToolPanel, spans ? 0 : 2);
+        Grid.SetColumnSpan(ToolPanel, spans ? 3 : 1);
+        // Covering the chat must not stretch the panel: keep its resolved width, right
+        // aligned, so the visible chat strip outside it stays clickable for dismissal.
+        ToolPanel.Width = spans ? allocation.ToolRegionWidth : double.NaN;
+        ToolPanel.HorizontalAlignment = spans ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+        ToolSplitterColumn.Width = split ? new GridLength(ToolWorkspaceLayout.SplitterWidth) : new GridLength(0);
+        ToolSplitter.Visibility = split ? Visibility.Visible : Visibility.Collapsed;
+        ToolColumn.Width = split ? new GridLength(allocation.PanelWidth) : new GridLength(0);
+        // The scrim belongs to the narrow-window overlay; zoom has no "outside" to click.
+        ToolOverlayScrim.Visibility = spans && !_toolZoomed ? Visibility.Visible : Visibility.Collapsed;
+        ToolZoomButton.Content = _toolZoomed ? "\uE73F" : "\uE740";
+        ToolZoomButton.IsEnabled = allocation.IsVisible;
+        ToolZoomButton.Visibility = allocation.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        ToolCollapseButton.Visibility = allocation.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        ToolAddButton.Visibility = allocation.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        UpdateToolEntryButton();
+        UpdateToolContentVisibility();
+    }
+
+    private void UpdateToolEntryButton()
+    {
+        var summary = _toolTabs.DescribeActivity();
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        content.Children.Add(new FontIcon { Glyph = "\uE71D", FontSize = 12 });
+        content.Children.Add(new TextBlock
+        {
+            Text = summary.Length == 0 ? "工具区" : $"工具区 · {summary}",
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        if (summary.Length > 0)
+            content.Children.Add(new Shapes.Ellipse
+            {
+                Width = 7,
+                Height = 7,
+                Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 213, 159, 97)),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        ToolEntryButton.Content = content;
+    }
+
+    private void SyncToolTabItems()
+    {
+        _toolSyncing = true;
+        try
+        {
+            var desired = _toolTabs.Tabs.ToList();
+            for (var index = 0; index < desired.Count; index++)
+            {
+                var item = _toolTabItems.FirstOrDefault(candidate => candidate.Id == desired[index].Id);
+                if (item is null)
+                {
+                    _toolTabItems.Insert(Math.Min(index, _toolTabItems.Count), new ToolTabItem(desired[index]));
+                    continue;
+                }
+                item.Refresh();
+                var current = _toolTabItems.IndexOf(item);
+                if (current != index) _toolTabItems.Move(current, index);
+            }
+            foreach (var stale in _toolTabItems.Where(item => _toolTabs.Find(item.Id) is null).ToList())
+                _toolTabItems.Remove(stale);
+            ToolTabList.SelectedItem = _toolTabItems.FirstOrDefault(item => item.Id == _toolTabs.ActiveTabId);
+            // A crowded strip scrolls horizontally and also offers the full list.
+            ToolOverflowButton.Visibility = _toolTabs.Tabs.Count > 2 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        finally { _toolSyncing = false; }
+    }
+
+    /// <summary>Rebuilds the "all tabs" list so it always reflects the open instances.</summary>
+    private void OnToolOverflowOpening(object? sender, object e)
+    {
+        ToolOverflowMenu.Items.Clear();
+        foreach (var tab in _toolTabs.Tabs)
+        {
+            var item = new ToggleMenuFlyoutItem
+            {
+                Text = tab.Tooltip + (tab.IsRunning ? "（运行中）" : tab.HasUnread ? "（未读）" : string.Empty),
+                IsChecked = tab.Id == _toolTabs.ActiveTabId,
+            };
+            var id = tab.Id;
+            item.Click += (_, _) =>
+            {
+                _toolTabs.Activate(id);
+                SyncToolTabItems();
+                UpdateToolContentVisibility();
+                _ = ActivateActiveToolAsync();
+            };
+            ToolOverflowMenu.Items.Add(item);
+        }
+    }
+
+    private void UpdateToolContentVisibility()
+    {
+        var active = _toolTabs.ActiveTab;
+        // Every non-browser instance owns one lazily created content host; browser tabs
+        // share the single persistent surface host so a live WebView2 is never reparented.
+        if (active is not null && active.Kind != ToolTabKind.Browser && !_toolTabContent.ContainsKey(active.Id))
+        {
+            var created = CreateToolContent(active);
+            _toolTabContent[active.Id] = created;
+            ToolTabContentHost.Children.Add(created);
+        }
+
+        var browserActive = active?.Kind == ToolTabKind.Browser;
+        BrowserToolBar.Visibility = browserActive ? Visibility.Visible : Visibility.Collapsed;
+        BrowserSurfaceHostPanel.Visibility = browserActive ? Visibility.Visible : Visibility.Collapsed;
+        ToolEmptyState.Visibility = _toolTabs.Tabs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var (id, content) in _toolTabContent)
+            content.Visibility = active is not null && id == active.Id ? Visibility.Visible : Visibility.Collapsed;
+        UpdateToolStatus();
+    }
+
+    private void UpdateToolStatus()
+    {
+        var active = _toolTabs.ActiveTab;
+        if (active is null)
+        {
+            ToolStatusText.Text = string.Empty;
+            return;
+        }
+        ToolStatusText.Text = active.Kind switch
+        {
+            ToolTabKind.Browser when _browser is not null =>
+                $"{_browser.ControlState} · {_browser.AgentTargetSummary} · {_browser.CurrentAgentSummary}",
+            ToolTabKind.Browser => "Agent 浏览器运行时尚未就绪。",
+            _ => DescribeToolStatus(active),
+        };
+    }
+
+    private static string DescribeToolStatus(ToolTab tab) => tab.Availability switch
+    {
+        ToolTabAvailability.Ready => string.IsNullOrWhiteSpace(tab.StatusText) ? "就绪" : tab.StatusText,
+        ToolTabAvailability.Deferred => DeferredNotice(tab.Kind),
+        _ => string.IsNullOrWhiteSpace(tab.StatusText) ? "当前不可用。" : tab.StatusText,
+    };
+
+    /// <summary>
+    /// Deferred capabilities state what is missing. No tab shows a fake prompt, fake
+    /// output or a running marker for work that no component executes yet.
+    /// </summary>
+    private static string DeferredNotice(ToolTabKind kind) => kind switch
+    {
+        ToolTabKind.Terminal => "终端会话组件尚未接入：该标签页只保留实例与状态位，不执行命令，也不伪装运行状态。",
+        ToolTabKind.Artifact => "制成品预览尚未接入 Core 成果接口：暂不能列出或渲染 Agent 生成的文档、图表与网页。",
+        ToolTabKind.Panel => "交互面板尚未接入：Agent 生成表单与筛选器的提交通道未建立，因此不提供输入控件。",
+        _ => "该能力尚未接入。",
+    };
+
+    private ToolTab OpenTool(ToolTabDescriptor descriptor, bool focus = true)
+    {
+        var tab = _toolTabs.Open(descriptor, focus);
+        SetToolExpanded(true);
+        SyncToolTabItems();
+        UpdateToolContentVisibility();
+        return tab;
+    }
+
+    private UIElement CreateToolContent(ToolTab tab) => tab.Kind switch
+    {
+        ToolTabKind.Home => CreateHomeContent(),
+        ToolTabKind.Output => CreateOutputContent(tab),
+        _ => CreateDeferredContent(tab),
+    };
+
+    private UIElement CreateHomeContent()
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 10,
+            Padding = new Thickness(24),
+            MaxWidth = 460,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        panel.Children.Add(new TextBlock { Text = "工具首页", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "每个标签页是一个独立实例：终端、Agent 浏览器、制成品、输出文件或交互面板。"
+                 + "拖动左侧分隔线调整宽度，双击恢复默认比例；收起只隐藏显示，不会停止正在运行的任务。",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.7,
+            FontSize = 12,
+        });
+        var entries = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0) };
+        entries.Children.Add(HomeEntry("Agent 浏览器", OnOpenBrowserTab));
+        entries.Children.Add(HomeEntry("终端 · 新会话", OnOpenTerminalTab));
+        entries.Children.Add(HomeEntry("打开输出文件…", OnOpenOutputTab));
+        entries.Children.Add(HomeEntry("制成品预览", OnOpenArtifactTab));
+        entries.Children.Add(HomeEntry("交互面板", OnOpenPanelTab));
+        panel.Children.Add(entries);
+        return panel;
+    }
+
+    private static Button HomeEntry(string text, RoutedEventHandler handler)
+    {
+        var button = new Button
+        {
+            Content = text,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+        };
+        button.Click += handler;
+        return button;
+    }
+
+    private UIElement CreateDeferredContent(ToolTab tab)
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 8,
+            Padding = new Thickness(24),
+            MaxWidth = 520,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        panel.Children.Add(new TextBlock { Text = tab.Title, FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        if (!string.IsNullOrWhiteSpace(tab.Subtitle))
+            panel.Children.Add(new TextBlock { Text = tab.Subtitle, Opacity = 0.6, FontSize = 12, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = DeferredNotice(tab.Kind), TextWrapping = TextWrapping.Wrap, Opacity = 0.8 });
+        return panel;
+    }
+
+    private UIElement CreateOutputContent(ToolTab tab)
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 8,
+            Padding = new Thickness(20),
+            MaxWidth = 700,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        panel.Children.Add(new TextBlock { Text = tab.Title, FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock
+        {
+            Text = DescribeToolStatus(tab),
+            Opacity = 0.7,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+        });
+
+        var path = _outputPaths.GetValueOrDefault(tab.Id);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(OutputAction("用默认程序打开", (_, _) => OpenWithShell(path)));
+        actions.Children.Add(OutputAction("复制路径", (_, _) => CopyToClipboard(path)));
+        actions.Children.Add(OutputAction("打开其他输出文件…", OnOpenOutputTab));
+        panel.Children.Add(actions);
+
+        if (_outputPreviews.TryGetValue(tab.Id, out var preview))
+        {
+            panel.Children.Add(new TextBlock { Text = "内容预览", Opacity = 0.6, FontSize = 12, Margin = new Thickness(0, 6, 0, 0) });
+            panel.Children.Add(new Border
+            {
+                Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+                BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10),
+                MaxHeight = 320,
+                Child = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Content = new TextBlock
+                    {
+                        Text = preview,
+                        FontFamily = new FontFamily("Consolas"),
+                        FontSize = 12,
+                        TextWrapping = TextWrapping.Wrap,
+                        IsTextSelectionEnabled = true,
+                    },
+                },
+            });
+        }
+        return panel;
+    }
+
+    private static Button OutputAction(string text, RoutedEventHandler handler)
+    {
+        var button = new Button { Content = text };
+        button.Click += handler;
+        return button;
+    }
+
+    private static void OpenWithShell(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+    }
+
+    private static void CopyToClipboard(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try
+        {
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText(text);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        }
+        catch (Exception ex) { App.WriteDiagnostic(ex); }
+    }
+
+    private void OnToolTabSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (_toolSyncing) return;
+        if (ToolTabList.SelectedItem is not ToolTabItem item) return;
+        if (_toolTabs.ActiveTabId == item.Id) return;
+        _toolTabs.Activate(item.Id);
+        SyncToolTabItems();
+        UpdateToolContentVisibility();
+        _ = ActivateActiveToolAsync();
+    }
+
+    private async Task ActivateActiveToolAsync()
+    {
+        var active = _toolTabs.ActiveTab;
+        if (active?.Kind == ToolTabKind.Browser && _browser is not null)
+        {
+            var page = _browser.Tabs.FirstOrDefault(candidate => ToolTabIdentity.Browser(candidate.PageId.Value) == active.Id)?.PageId;
+            if (page is { } pageId && _browser.ActivePageId != pageId)
+                await RunAsync(ct => _browser.ActivateAsync(pageId, ct));
+        }
+        UpdateToolStatus();
+    }
+
+    private async void OnCloseToolTab(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ToolTabItem item }) return;
+        await CloseToolTabAsync(item.Id);
+    }
+
+    private async Task CloseToolTabAsync(string tabId)
+    {
+        var tab = _toolTabs.Find(tabId);
+        if (tab is null) return;
+        if (tab.Kind == ToolTabKind.Browser && _browser is not null)
+        {
+            // Closing a browser tab closes its page, following the existing target rules;
+            // the toolbar "收起" is a different operation and never does this.
+            var page = _browser.Tabs.FirstOrDefault(candidate => ToolTabIdentity.Browser(candidate.PageId.Value) == tabId)?.PageId;
+            if (page is { } pageId) await RunAsync(ct => _browser.ClosePageAsync(pageId, ct));
+            return;
+        }
+        _toolTabs.Close(tabId);
+        if (_toolTabContent.Remove(tabId, out var content)) ToolTabContentHost.Children.Remove(content);
+        _outputPaths.Remove(tabId);
+        _outputPreviews.Remove(tabId);
+        SyncToolTabItems();
+        UpdateToolContentVisibility();
+    }
+
+    private void OnOpenHomeTab(object sender, RoutedEventArgs e)
+    {
+        SetToolExpanded(true);
+        _toolTabs.EnsureHome();
+        SyncToolTabItems();
+        UpdateToolContentVisibility();
+    }
+
+    private void OnOpenTerminalTab(object sender, RoutedEventArgs e) => OpenTool(new ToolTabDescriptor
+    {
+        Id = ToolTabIdentity.Terminal(Guid.NewGuid().ToString("N")),
+        Kind = ToolTabKind.Terminal,
+        Title = "终端 · 新会话",
+        Subtitle = "会话组件待接入",
+        Availability = ToolTabAvailability.Deferred,
+    });
+
+    private void OnOpenArtifactTab(object sender, RoutedEventArgs e) => OpenTool(new ToolTabDescriptor
+    {
+        Id = ToolTabIdentity.Artifact(Guid.NewGuid().ToString("N")),
+        Kind = ToolTabKind.Artifact,
+        Title = "预览 · 制成品",
+        Subtitle = "等待 Core 成果接口",
+        Availability = ToolTabAvailability.Deferred,
+    });
+
+    private void OnOpenPanelTab(object sender, RoutedEventArgs e) => OpenTool(new ToolTabDescriptor
+    {
+        Id = ToolTabIdentity.Panel(Guid.NewGuid().ToString("N")),
+        Kind = ToolTabKind.Panel,
+        Title = "面板 · 交互",
+        Subtitle = "等待 Agent 交互通道",
+        Availability = ToolTabAvailability.Deferred,
+    });
+
+    private async void OnOpenOutputTab(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(AppWindow.Id)
+            {
+                CommitButtonText = "打开",
+                SuggestedStartLocation = Microsoft.Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+            };
+            picker.FileTypeFilter.Add("*");
+            var result = await picker.PickSingleFileAsync();
+            if (result is null) return;
+            await OpenOutputAsync(result.Path);
+        }
+        catch (Exception ex)
+        {
+            ToolStatusText.Text = ex.Message;
+            App.WriteDiagnostic(ex);
+        }
+    }
+
+    private async Task OpenOutputAsync(string path)
+    {
+        var full = Path.GetFullPath(path);
+        var info = new FileInfo(full);
+        if (!info.Exists) throw new FileNotFoundException("文件不存在。", full);
+
+        var id = ToolTabIdentity.Output(full);
+        _outputPaths[id] = full;
+        if (await TryReadPreviewAsync(full, info) is { } preview) _outputPreviews[id] = preview;
+
+        var parent = Path.GetDirectoryName(full);
+        var size = info.Length < 1024
+            ? $"{info.Length} B"
+            : info.Length < 1024 * 1024 ? $"{info.Length / 1024d:F1} KB" : $"{info.Length / 1048576d:F1} MB";
+        var type = string.IsNullOrEmpty(info.Extension) ? "未知格式" : info.Extension.TrimStart('.').ToUpperInvariant();
+        var note = _outputPreviews.ContainsKey(id) ? "已生成文本预览。" : "该格式不支持文本预览，可用「用默认程序打开」。";
+
+        OpenTool(new ToolTabDescriptor
+        {
+            Id = id,
+            Kind = ToolTabKind.Output,
+            Title = $"文件 · {info.Name}",
+            Subtitle = parent,
+            ResourceKey = full,
+            StatusText = $"{full}\n{type} · {size}。{note}",
+        });
+    }
+
+    private static async Task<string?> TryReadPreviewAsync(string path, FileInfo info)
+    {
+        if (info.Length > MaxOutputPreviewBytes) return null;
+        if (!PreviewableExtensions.Contains(info.Extension)) return null;
+        try
+        {
+            var text = await File.ReadAllTextAsync(path);
+            return text.Length == 0 ? "(空文件)" : text;
+        }
+        catch (Exception ex)
+        {
+            App.WriteDiagnostic(ex);
+            return null;
+        }
+    }
+
+    // ── Divider: drag, double-click reset, keyboard adjust ──────────────────────
+
+    private void OnSplitterPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_toolExpanded) return;
+        var point = e.GetCurrentPoint(WorkbenchPane);
+        if (!point.Properties.IsLeftButtonPressed) return;
+        _toolDragging = true;
+        _toolDragOriginX = point.Position.X;
+        _toolDragOriginWidth = _toolLayout.Resolve(WorkbenchPane.ActualWidth, true).ToolRegionWidth;
+        ToolSplitter.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void OnSplitterPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_toolDragging) return;
+        var width = WorkbenchPane.ActualWidth;
+        var tool = _toolDragOriginWidth - (e.GetCurrentPoint(WorkbenchPane).Position.X - _toolDragOriginX);
+        _toolLayout = _toolLayout.WithToolWidth(width, tool);
+        ApplyToolLayout();
+        e.Handled = true;
+    }
+
+    private async void OnSplitterPointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_toolDragging) return;
+        _toolDragging = false;
+        ToolSplitter.ReleasePointerCaptures();
+        e.Handled = true;
+        await PersistToolLayoutAsync();
+    }
+
+    private void OnSplitterPointerCaptureLost(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_toolDragging) return;
+        _toolDragging = false;
+        _ = PersistToolLayoutAsync();
+    }
+
+    private async void OnSplitterDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        _toolLayout = _toolLayout.ResetWidth();
+        ApplyToolLayout();
+        e.Handled = true;
+        await PersistToolLayoutAsync();
+    }
+
+    private async void OnSplitterKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var step = e.Key switch
+        {
+            Windows.System.VirtualKey.Left => -24d,
+            Windows.System.VirtualKey.Right => 24d,
+            _ => 0d,
+        };
+        if (step == 0) return;
+        var width = WorkbenchPane.ActualWidth;
+        var tool = _toolLayout.Resolve(width, true).ToolRegionWidth + step;
+        _toolLayout = _toolLayout.WithToolWidth(width, tool);
+        ApplyToolLayout();
+        e.Handled = true;
+        await PersistToolLayoutAsync();
+    }
+
+    // ── Layout preference persistence (desktop.json) ────────────────────────────
+
+    private async Task LoadToolWorkspaceLayoutAsync()
+    {
+        try
+        {
+            var settings = await new FileDesktopBootstrapSettingsStore().LoadAsync(_lifetime.Token);
+            var preference = (settings.ToolWorkspace ?? new DesktopToolWorkspaceSettings()).Normalize();
+            _toolLayout = new ToolWorkspaceLayout
+            {
+                WidthRatio = preference.WidthRatio,
+                AutoExpandOnActivity = preference.AutoExpandOnActivity,
+            };
+            _toolActivity.AutoExpandOnActivity = _toolLayout.AutoExpandOnActivity;
+            AutoExpandMenuItem.IsChecked = _toolLayout.AutoExpandOnActivity;
+        }
+        catch (Exception ex) { App.WriteDiagnostic(ex); }
+        _toolLayoutLoaded = true;
+    }
+
+    private async void OnToggleAutoExpand(object sender, RoutedEventArgs e)
+    {
+        _toolLayout = _toolLayout with { AutoExpandOnActivity = AutoExpandMenuItem.IsChecked };
+        _toolActivity.AutoExpandOnActivity = _toolLayout.AutoExpandOnActivity;
+        await PersistToolLayoutAsync();
+    }
+
+    /// <summary>
+    /// A round is the span of continuous execution: a lingering unread marker is not activity.
+    /// </summary>
+    private bool ToolActivityInFlight() =>
+        _toolTabs.RunningCount > 0 || (_browser?.Tabs.Any(tab => tab.IsLoading) ?? false);
+
+    private async Task PersistToolLayoutAsync()
+    {
+        if (!_toolLayoutLoaded) return;
+        try
+        {
+            // Never create or rewrite a launcher settings file that would drop the DataRoot.
+            if (!File.Exists(DesktopBootstrapPathProvider.GetFilePath())) return;
+            var store = new FileDesktopBootstrapSettingsStore();
+            var settings = await store.LoadAsync(_lifetime.Token);
+            if (string.IsNullOrWhiteSpace(settings.DataRoot)) return;
+            var preference = new DesktopToolWorkspaceSettings
+            {
+                WidthRatio = _toolLayout.WidthRatio,
+                AutoExpandOnActivity = _toolLayout.AutoExpandOnActivity,
+            }.Normalize();
+            if (settings.ToolWorkspace is { } current
+                && Math.Abs(current.WidthRatio - preference.WidthRatio) < 0.0005
+                && current.AutoExpandOnActivity == preference.AutoExpandOnActivity) return;
+            await store.SaveAsync(settings with { ToolWorkspace = preference }, _lifetime.Token);
+        }
+        catch (Exception ex) { App.WriteDiagnostic(ex); }
+    }
+
+    // ── Agent browser inside the tool workspace ─────────────────────────────────
+
     private async Task LoadWorkbenchAsync(Uri address)
     {
         var generation = _webGeneration;
@@ -214,27 +882,75 @@ public sealed partial class MainWindow : Window
         {
             if (_browser is not null) return true;
             var dispatcher = new WinUiDispatcher(DispatcherQueue);
-            var surfaces = new WinUiBrowserSurfaceHost(dispatcher, BrowserSurface);
+            var surfaces = new WinUiBrowserSurfaceHost(dispatcher, BrowserSurfaceHostPanel);
             var runtime = new WebView2BrowserRuntime(dispatcher, surfaces, dataRoot);
             var browser = new BrowserWorkspaceController(runtime, surfaces, dispatcher);
             try { await browser.InitializeAsync(dataRoot, ct); }
             catch { await browser.DisposeAsync(); throw; }
             _browser = browser;
-            BrowserTabs.ItemsSource = browser.Tabs;
             _coordinator.BridgeDispatcher.SetHandler(browser);
             _coordinator.BridgeDispatcher.ActivityChanged += async (_, e) =>
             { try { await browser.ApplyActivityAsync(e.Snapshot, _lifetime.Token); } catch (OperationCanceledException) { } catch (Exception ex) { App.WriteDiagnostic(ex); } };
             _coordinator.BridgeDispatcher.OperationStateChanged += async (_, e) =>
             { try { await browser.ApplyOperationStateAsync(e.Snapshot, _lifetime.Token); } catch (OperationCanceledException) { } catch (Exception ex) { App.WriteDiagnostic(ex); } };
+            // Every live page becomes one instance tab; the old inner tab strip is gone so
+            // the outer tab and the page identity stay 1:1.
+            browser.Tabs.CollectionChanged += (_, _) => UiThread.Post(SyncBrowserTabs);
             browser.PropertyChanged += (_, _) => UiThread.Post(() =>
             {
                 if (_closing) return;
-                BrowserStatus.Text = $"{browser.ControlState} · {browser.AgentTargetSummary} · {browser.CurrentAgentSummary}";
-                if (browser.ActiveTab is { } tab) { BrowserTabs.SelectedItem = tab; AddressBox.Text = tab.Url ?? ""; }
+                SyncBrowserTabs();
+                UpdateToolStatus();
+                if (browser.ActiveTab is { } tab) AddressBox.Text = tab.Url ?? "";
             });
+            SyncBrowserTabs();
             return true;
         }
         finally { _browserGate.Release(); }
+    }
+
+    private void SyncBrowserTabs()
+    {
+        if (_closing) return;
+        var browser = _browser;
+        if (browser is null)
+        {
+            SyncToolTabItems();
+            return;
+        }
+
+        var live = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var page in browser.Tabs)
+        {
+            var id = ToolTabIdentity.Browser(page.PageId.Value);
+            live.Add(id);
+            var activePage = browser.ActivePageId == page.PageId;
+            _toolTabs.Open(new ToolTabDescriptor
+            {
+                Id = id,
+                Kind = ToolTabKind.Browser,
+                Title = string.IsNullOrWhiteSpace(page.Title) ? "新标签页" : page.Title,
+                Subtitle = "Agent 浏览器",
+                ResourceKey = page.PageId.Value,
+                StatusText = page.Url,
+                IsRunning = page.IsLoading,
+            }, focus: activePage && _toolExpanded);
+        }
+        foreach (var stale in _toolTabItems.Where(item => item.Model.Kind == ToolTabKind.Browser && !live.Contains(item.Id)).ToList())
+            _toolTabs.Close(stale.Id);
+
+        // Background Agent activity never steals the tab or keyboard focus: while the
+        // workspace is closed it only raises a marker, and the panel opens by itself
+        // solely when the user enabled that preference and did not just collapse it.
+        if (!_toolExpanded && browser.ActivePageId is { } background)
+        {
+            _toolTabs.MarkUnread(ToolTabIdentity.Browser(background.Value));
+            if (_toolActivity.ShouldAutoExpand()) SetToolExpanded(true);
+        }
+
+        _toolActivity.Observe(ToolActivityInFlight());
+        SyncToolTabItems();
+        UpdateToolContentVisibility();
     }
 
     private async Task RunAsync(Func<CancellationToken, Task> operation)
@@ -261,8 +977,6 @@ public sealed partial class MainWindow : Window
     }
     private async void OnExit(object sender, RoutedEventArgs e) => await RequestCloseAsync(true);
     private async void OnNewTab(object sender, RoutedEventArgs e) { if (_browser is not null) await RunAsync(async ct => { await _browser.CreatePageAsync("about:blank", true, ct); }); }
-    private async void OnBrowserTab(object sender, SelectionChangedEventArgs e) { if (_browser is not null && BrowserTabs.SelectedItem is BrowserTabViewModel tab && _browser.ActivePageId != tab.PageId) await RunAsync(ct => _browser.ActivateAsync(tab.PageId, ct)); }
-    private async void OnCloseTab(object sender, RoutedEventArgs e) { if (_browser is not null && sender is FrameworkElement { DataContext: BrowserTabViewModel tab }) await RunAsync(ct => _browser.ClosePageAsync(tab.PageId, ct)); }
     private async void OnBack(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.GoBackAsync(page, ct)); }
     private async void OnReload(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.ReloadAsync(page, ct)); }
     private async void OnTarget(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.AssignAgentTargetAsync(page, ct)); }
@@ -274,9 +988,27 @@ public sealed partial class MainWindow : Window
         if (_browser is null) return;
         var text = AddressBox.Text.Trim();
         if (!text.Contains("://")) text = "https://" + text;
-        if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) { BrowserStatus.Text = "请输入 HTTP 或 HTTPS 地址。"; return; }
+        if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) { ToolStatusText.Text = "请输入 HTTP 或 HTTPS 地址。"; return; }
         await RunAsync(async ct => { var page = _browser.ActivePageId ?? await _browser.CreatePageAsync(null, true, ct); await _browser.NavigateAsync(page, uri, ct); });
     }
+
+    private async void OnOpenBrowserTab(object sender, RoutedEventArgs e)
+    {
+        SetToolExpanded(true);
+        if (_browser is null) { ToolStatusText.Text = "Agent 浏览器运行时尚未就绪。"; return; }
+        if (_browser.Tabs.Count == 0)
+        {
+            // No live page yet: create one; the collection hook opens its instance tab.
+            await RunAsync(async ct => { await _browser.CreatePageAsync("about:blank", true, ct); });
+            return;
+        }
+        var page = _browser.ActivePageId ?? _browser.Tabs[0].PageId;
+        _toolTabs.Activate(ToolTabIdentity.Browser(page.Value));
+        SyncToolTabItems();
+        UpdateToolContentVisibility();
+        await ActivateActiveToolAsync();
+    }
+
     private async Task LoadSettingsAsync()
     {
         try
@@ -437,19 +1169,92 @@ public sealed partial class MainWindow : Window
                     (uint)capture.PixelWidth, (uint)capture.PixelHeight, 96, 96, pixels.ToArray());
                 await encoder.FlushAsync();
             }
+
+            // ── Right tool workspace ─────────────────────────────────────────────
             Navigation.SelectedItem = Navigation.MenuItems[0];
+            await Task.Delay(150);
+            if (_toolExpanded) throw new Exception("Tool workspace must start collapsed");
+            SetToolExpanded(true);
+            await Task.Delay(150);
+            if (ToolPanel.Visibility != Visibility.Visible) throw new Exception("Tool workspace did not expand");
+            if (_toolTabs.Find(ToolTabIdentity.Home) is null) throw new Exception("Tool home tab missing after expand");
             if (_browser is null) throw new Exception("Agent browser controller was not mounted");
-            BrowserPane.Visibility = Visibility.Visible;
+
             var page = await _browser.CreatePageAsync(new Uri(_coordinator.CoreAddress!, "/health").ToString(), true, _lifetime.Token);
+            await Task.Delay(200);
+            var browserTabId = ToolTabIdentity.Browser(page.Value);
+            if (_toolTabs.Find(browserTabId) is null) throw new Exception("Browser page did not open an instance tab");
+            if (_toolTabs.ActiveTabId != browserTabId) throw new Exception("Focused browser page did not select its tab");
             await _browser.AssignAgentTargetAsync(page, _lifetime.Token);
             var other = await _browser.CreatePageAsync("about:blank", true, _lifetime.Token);
+            await Task.Delay(150);
             if (_browser.AgentTargetPageId != page) throw new Exception("Visible tab changed Agent target");
+            if (_toolTabs.Find(ToolTabIdentity.Browser(other.Value)) is null) throw new Exception("Second browser page did not open a tab");
+            if (browserTabId == ToolTabIdentity.Browser(other.Value)) throw new Exception("Browser identities collided");
+            await _browser.ActivateAsync(page, _lifetime.Token);
+            await Task.Delay(150);
+            if (_toolTabs.ActiveTabId != browserTabId) throw new Exception("Selecting a browser page did not focus its tab");
             await _browser.SetUserTakeoverAsync(true, _lifetime.Token);
             await _browser.SetUserTakeoverAsync(false, _lifetime.Token);
+            checks.Add("instance tabs per browser page; Agent target stayed stable across tab switches");
+
+            var smokeOutput = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, "smoke-output.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(smokeOutput)!);
+            await File.WriteAllTextAsync(smokeOutput, "pudding tool workspace smoke\n");
+            await OpenOutputAsync(smokeOutput);
+            var outputId = _toolTabs.Tabs.FirstOrDefault(tab => tab.Kind == ToolTabKind.Output)?.Id;
+            if (outputId is null) throw new Exception("Output tab did not open");
+            if (_toolTabs.Tabs.First(tab => tab.Id == outputId).Availability != ToolTabAvailability.Ready)
+                throw new Exception("Output tab is not marked ready");
+            await CloseToolTabAsync(outputId);
+            if (_toolTabs.Find(outputId) is not null) throw new Exception("Output tab did not close");
+            var terminalTab = OpenTool(new ToolTabDescriptor
+            {
+                Id = ToolTabIdentity.Terminal("smoke"),
+                Kind = ToolTabKind.Terminal,
+                Title = "终端 · 新会话",
+                Availability = ToolTabAvailability.Deferred,
+            });
+            if (terminalTab.Availability != ToolTabAvailability.Deferred || terminalTab.IsRunning)
+                throw new Exception("Deferred terminal tab must not claim to be running");
+            await CloseToolTabAsync(terminalTab.Id);
+            checks.Add("output tab opens a real file; deferred tools report deferred instead of faking execution");
+
+            // Divider: ratio-based width, double-click reset, minimums.
+            var wide = WorkbenchPane.ActualWidth;
+            var initial = _toolLayout.Resolve(wide, true).ToolRegionWidth;
+            _toolLayout = _toolLayout.WithToolWidth(wide, initial + 120);
+            ApplyToolLayout();
+            if (Math.Abs(_toolLayout.Resolve(wide, true).ToolRegionWidth - (initial + 120)) > 1) throw new Exception("Divider drag did not resize the workspace");
+            _toolLayout = _toolLayout.ResetWidth();
+            ApplyToolLayout();
+            if (Math.Abs(_toolLayout.WidthRatio - ToolWorkspaceLayout.DefaultWidthRatio) > 0.0001) throw new Exception("Double-click reset did not restore the default ratio");
+            if (_toolLayout.Resolve(wide, true).ToolRegionWidth < ToolWorkspaceLayout.MinimumToolWidth - 1) throw new Exception("Tool workspace fell below its minimum width");
+            checks.Add("divider drag persisted as a ratio; double-click restored the default split");
+
+            // Narrow window: the workspace overlays the chat instead of squeezing it.
+            AppWindow.Resize(new Windows.Graphics.SizeInt32(860, 640));
+            await Task.Delay(300);
+            if (!_toolLayout.Resolve(WorkbenchPane.ActualWidth, true).SpansContent) throw new Exception("Narrow window did not switch to the overlay layout");
+            if (ToolOverlayScrim.Visibility != Visibility.Visible) throw new Exception("Overlay scrim missing in narrow layout");
+            if (ToolPanel.ActualWidth <= 0 || ToolPanel.ActualWidth >= WorkbenchPane.ActualWidth)
+                throw new Exception("Overlay tool panel must keep its resolved width instead of stretching");
+            SetToolExpanded(false);
+            await Task.Delay(120);
+            if (ToolPanel.Visibility != Visibility.Collapsed || _browser.Tabs.Count != 2)
+                throw new Exception("Collapsing must hide the panel without destroying browser pages");
+            checks.Add("narrow window overlays the chat; collapse keeps pages alive");
+            AppWindow.Resize(new Windows.Graphics.SizeInt32(1440, 920));
+            await Task.Delay(250);
+            SetToolExpanded(true);
+            await Task.Delay(150);
             await _browser.ClosePageAsync(other, _lifetime.Token);
             await _browser.ClosePageAsync(page, _lifetime.Token);
-            BrowserPane.Visibility = Visibility.Collapsed;
-            checks.Add("WinUI browser surfaces, navigation, stable Agent target and human takeover");
+            await Task.Delay(150);
+            if (_toolTabs.Tabs.Any(tab => tab.Kind == ToolTabKind.Browser)) throw new Exception("Closed browser pages left instance tabs behind");
+            SetToolExpanded(false);
+            checks.Add("closing a browser page removes its instance tab");
+
             if (AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name is "PuddingHost" or "PuddingRuntime" or "PuddingPlatform")) throw new Exception("Business host loaded in Shell");
             checks.Add("no business Host loaded in Shell");
             var old = Process.GetProcessById(pid);
