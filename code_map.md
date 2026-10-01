@@ -4,6 +4,23 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：重启窗口检查脚本（第 48 轮，切片 C-3 的可执行验收）
+
+`TestScripts/test-capability-channel-window.ps1`：把窗口期**不需要人判断**的检查变成脚本，
+并**只报告它真的验证过的东西**——无法自动化的步骤显式列为 `MANUAL`，退出码 2 表示"窗口流程未完成"，
+避免被误读为通过。
+
+- 自动部分：①读 `config/system.json` 判开关状态（**只打印形态，绝不打印凭据**，测试已断言不泄漏）；
+  ②探针 `--endpoint <描述> --dry-run` 验证就绪描述可被严格解析（重启前即可跑）。
+- 手工部分（显式列出）：重启并观察绑定、Desktop 拨入、无凭据拒绝、断连收尾、回滚演练。
+- 退出码：`0` 自动部分全过 / `1` 有失败 / `2` 自动部分通过但窗口流程未完成。
+- **实测四场景**：已启用+合法描述 ⇒ exit 2（配置 PASS + 描述 PASS）；未配置 ⇒ exit 2；
+  坏描述 ⇒ exit 1；缺配置 ⇒ exit 1；均与期望一致，且输出中不含凭据。
+- 编写过程中踩到三个真实陷阱，已全部写进脚本注释以省下窗口期的时间：
+  ①**PS 5.1 会把无 BOM 的 UTF-8 脚本按 ANSI 读**，中文字符串被截断导致解析错误 ⇒ 脚本必须以 **UTF-8 BOM** 保存；
+  ②`$ErrorActionPreference='Stop'` 下原生命令写 stderr 会变成终止错误（而探针失败时正是写 stderr）⇒ 局部降级为 Continue，用退出码判成败；
+  ③扫描 `temp\build` 找探针 dll 时必须**排除 `obj\` 下的 ref/refint 引用程序集**（不可运行，缺 hostpolicy/runtimeconfig）——
+  这个错误最初表现为"描述解析 FAIL 但无结论"，加上诊断输出后才定位。
 ## 2026-10-01：迁移使用统计——「能否退役旧 Bridge」变成可判定谓词（第 47 轮，切片 F）
 
 `DesktopTransportUsage(channelCalls, legacyCalls, noRouteCalls)` + `Record(route)`：
