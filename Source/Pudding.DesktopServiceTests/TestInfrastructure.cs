@@ -213,6 +213,23 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ShellStatusHandler(cancellationToken);
     }
 
+    public int ClipboardCount => _calls.Count(call => call.StartsWith("clipboard", StringComparison.Ordinal));
+
+    public Func<ClipboardReadRequest, CancellationToken, Task<CapabilityResult<DesktopClipboardContent>>>? ClipboardHandler { get; set; }
+
+    public async Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
+        DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue("clipboard");
+        await AwaitGateAsync(cancellationToken);
+
+        // 夹具：默认回带一段文本；调用方可用 ClipboardHandler 覆盖（含超预算、空剪贴板等情形）。
+        return ClipboardHandler is null
+            ? CapabilityResult<DesktopClipboardContent>.Success(
+                new DesktopClipboardContent("clipboard-text", truncated: false))
+            : await ClipboardHandler(request, cancellationToken);
+    }
+
     public int TabsCount => _calls.Count(call => call.StartsWith("tabs", StringComparison.Ordinal));
 
     public Func<BrowserTabsRequest, CancellationToken, Task<CapabilityResult<DesktopTabsResult>>>? TabsHandler { get; set; }
