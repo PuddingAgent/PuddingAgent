@@ -4,6 +4,13 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；本次只交付文档，未改产品代码。
 
+## 2026-10-01：第 29 轮干净复核（数字再次同步）
+
+- 实测：**385 用例**（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 101、
+  CapabilityBroker 68、CapabilityBroker.AspNetCore 26）、探针 **47/47 exit 0**、WinUI 适配器 **0 错误 0 警告**。
+- 方案 §10.1 上一轮写 377，本轮实测 385（第 27/28 轮各新增 4 条用例）⇒ 已同步。
+  **规律**：这张表每轮都必须随实测更新，否则会重复出现"文档数字滞后"——已连续两轮踩到。
+- 本轮无代码改动：只做复核与数字同步（避免为凑进度而引入未经验证的改动）。
 ## 2026-10-01：能力通道启动预检（第 28 轮）
 
 把接线手册里的两条**手工检查**变成可复用、有测试的判定函数：
