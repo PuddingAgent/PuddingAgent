@@ -1,6 +1,7 @@
 # memory/ 总索引
 
-> 最后更新：2026-09-13
+> 最后更新：2026-10-01
+> ⚠️ **2026-10-01 环境迁移**：源代码仓库根已由 `E:\github\AgentNetworkPlan\PuddingAgent` 改为 **`D:\CodeProject\PuddingAgent\PuddingAgent`**（宿主**已无 E: 盘**）；数据根书写统一 **`D:\Data`**。本目录及 Agent 私有目录历史归档中的旧路径属**陈旧投影**，**不逐字改写**；判断当前路径一律现场 `Test-Path` / `Get-PSDrive` 实测。详见工作区 `memory/agent-env-and-conventions.md` 第六/七节。**注意：本文件在 git 中被跟踪**（非 gitignore）。
 
 ## 协作约定
 
