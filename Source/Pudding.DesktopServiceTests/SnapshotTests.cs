@@ -350,4 +350,39 @@ public sealed class DesktopInteractScriptTests
         Assert.Null(DesktopDomScripts.ParseInteract("""{"ok":true,"element":null}""", DesktopPageVersion.Unknown));
     }
 }
+
+/// <summary>等待条件脚本：只回答「此刻是否满足」，无法判定返回 null（≠ 未满足）。</summary>
+public sealed class DesktopWaitScriptTests
+{
+    [Fact]
+    public void WaitScript_MapsEveryConditionKind()
+    {
+        var selector = DesktopDomScripts.BuildWaitScript(new DesktopWaitCondition(DesktopWaitConditionKind.Selector, "#ready"));
+        Assert.Contains("const kind = \"selector\"", selector, StringComparison.Ordinal);
+        Assert.Contains("document.querySelector(value) !== null", selector, StringComparison.Ordinal);
+
+        var hidden = DesktopDomScripts.BuildWaitScript(new DesktopWaitCondition(DesktopWaitConditionKind.SelectorHidden, ".loading"));
+        Assert.Contains("selector-hidden", hidden, StringComparison.Ordinal);
+        Assert.Contains("=== null", hidden, StringComparison.Ordinal);
+
+        var url = DesktopDomScripts.BuildWaitScript(new DesktopWaitCondition(DesktopWaitConditionKind.UrlPattern, "/done"));
+        Assert.Contains("location.href.indexOf", url, StringComparison.Ordinal);
+
+        // 未登记条件必须显式返回「无法判定」，而不是默默当成未满足。
+        Assert.Contains("satisfied: null", selector.Replace("case 'selector': satisfied = document.querySelector(value) !== null; break;", string.Empty), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseWait_DistinguishesNotYetFromCannotTell()
+    {
+        Assert.True(DesktopDomScripts.ParseWait("""{"satisfied":true}"""));
+        Assert.False(DesktopDomScripts.ParseWait("""{"satisfied":false}"""));
+
+        // 「无法判定」与「未满足」是两件事：前者应让调用方明确处理。
+        Assert.Null(DesktopDomScripts.ParseWait("""{"satisfied":null}"""));
+        Assert.Null(DesktopDomScripts.ParseWait("""{}"""));
+        Assert.Null(DesktopDomScripts.ParseWait("nope"));
+        Assert.Null(DesktopDomScripts.ParseWait(null));
+    }
+}
 }

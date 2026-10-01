@@ -211,6 +211,60 @@ public static class DesktopDomScripts
             return null;
         }
     }
+    /// <summary>
+    /// 等待条件判定脚本：返回 { satisfied }。轮询节奏由宿主决定，脚本只回答「此刻是否满足」。
+    /// 三种条件与契约里的线名一一对应：选择器出现 / 选择器消失 / 地址包含模式。
+    /// </summary>
+    public static string BuildWaitScript(DesktopWaitCondition condition)
+    {
+        ArgumentNullException.ThrowIfNull(condition);
+
+        var kind = DesktopWaitConditionKindWire.NameOf(condition.Kind);
+        var value = JsonString(condition.Value);
+
+        return $$"""
+            (() => {
+              const kind = {{JsonString(kind)}};
+              const value = {{value}};
+              let satisfied = false;
+              switch (kind) {
+                case 'selector': satisfied = document.querySelector(value) !== null; break;
+                case 'selector-hidden': satisfied = document.querySelector(value) === null; break;
+                case 'url-pattern': satisfied = location.href.indexOf(value) >= 0; break;
+                default: return JSON.stringify({ satisfied: null });
+              }
+              return JSON.stringify({ satisfied });
+            })()
+            """;
+    }
+
+    /// <summary>解析等待判定结果；结构不符返回 <c>null</c>（fail closed）。</summary>
+    public static bool? ParseWait(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("satisfied", out var satisfied)
+                || satisfied.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                // 未登记条件（satisfied: null）也走这里：调用方应把它当作「无法判定」而不是「未满足」。
+                return null;
+            }
+
+            return satisfied.GetBoolean();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
     /// <summary>把定位描述符翻成 CSS 选择器（v1：不支持的策略由调用方在准入阶段拒绝）。</summary>
     public static string SelectorFor(DesktopLocator locator)
     {
