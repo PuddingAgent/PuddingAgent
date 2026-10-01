@@ -541,7 +541,7 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 
 本批证据：新增 4 项不变量测试（助手卡片无有色底且不再取 admin token、链接用 accent、行内代码用 surface-muted、表格 10/12 + 7em + 段落 12）；`pnpm jest` 全量 **1607 passed / 3 failed**（3 项为语音相关既有失败）；`biome lint` 无新增（CommandPalette 未用参数、ContextMenu 数组 index key 均为 HEAD 既有，已用 pristine 文件核对）；`pnpm run build` + chat bundle budget ok。**前端版本 6.1.0 → 6.1.1**：这是 AGENTS.md「前端版本管理」生效后第一次按规则递增版本号，部署后页角徽标显示 `v6.1.1 · 7c2ad16 · 2026-10-01 23:48`，并已在运行中的 Core 所服务的产物里核对到 `6.1.1` / `7c2ad16` / `dirty:!1`。
 
-仍未做（按 §13.6 次序）：**IMG05**（Shell 分栏默认比例，须先在 Foundation 测再接入 Desktop）。以上与 §12 的整体验收均未完成，不能记为通过。
+§13.6 列出的代码项至此**全部落地**（P0 与 P1，含 Shell 分栏）。**仍未完成的只有验收**：§12 的 V/F/S/A/P/SEC/D、§13.6 的 IMG-V*、§14.5 的滚动条验收表都需要真实窗口，且 Shell/Desktop 改动必须经进程外重启到明确新构建才会被加载 —— 在此之前一律记为「代码完成、未验收」，不能记为通过。
 
 ### 13.9 实施状态（P1：输入区微控件）
 
@@ -576,6 +576,20 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 本批证据：`dotnet test Source/PuddingDesktop.FoundationTests` → **70 passed / 0 failed**（+13：逐 kind 断言 `For`/`CardLabel`，并覆盖全部枚举成员以防新增 kind 时漏判）；`dotnet test Tests/PuddingDesktop.Tests` → **259 passed / 0 failed**；Desktop 完整链接构建 `dotnet build Source/PuddingDesktop/PuddingDesktop.csproj --no-restore -p:BaseOutputPath=temp\build\shell-img11\bin\`（输出重定向以避开运行中实例的文件锁）→ **0 错误**，并在产物中核对到 `ToolAvailabilityCatalog`、`ApplyToolAvailabilityLabels` 与 5 个 `*CardAvailabilityText` 字段，确认 XAML 名称已正确编译。
 
 **未验收**：卡片标签、快捷键与状态条的**真实观感**需要把 Desktop 重启到该新构建（属进程外控制器/用户操作）；本机运行中的实例按要求未被停止或重启，因此本次改动尚未被任何进程加载。
+
+### 13.12 实施状态（P1-Shell：工具区分栏默认比例）
+
+Shell 侧改动，不涉及前端产物，前端版本号不变。
+
+| 项 | 状态 | 提交 | 落地内容 |
+|---|---|---|---|
+| IMG05（首次工具区占比过大） | 代码已落地，未验收 | `53c2f1b` | Foundation 先行为准：新增 `LauncherOnlyWidthRatio = 0.32`（§13.3 的 30–35% 区间）与三个纯函数 `InitialRatioWithoutPreference` / `DefaultRatioFor` / `ResolveLoadedRatio`。**已保存比例一律优先**——哪怕它正好等于通用默认 0.45，也哪怕当前只显示工具首页；初始化默认只影响「未配置」状态。Shell 加载时按 `ResolveLoadedRatio(保存值, 仅工具首页)` 取比例，**标签页切换不重算比例**（§13.3 明确禁止，否则持续抖动）。双击「恢复默认分栏」按上下文取目标（仅工具首页 → 0.32，否则 0.45），并给分割线补 Tooltip「拖动调整宽度 · 双击恢复默认分栏 · ←/→ 微调」让既有能力可被发现；双击是显式动作，仍照旧持久化。 |
+
+**关键前提：把「未配置」变成可判定。** `DesktopBootstrapSettings.ToolWorkspace` 原为「非空 + 默认实例」，因此无法区分「用户从未配置」与「用户保存了 0.45」——初始化默认永远不会生效，而强行按值比较又会在用户恰好拖到 0.45 时覆盖其设置。本批将其改为**可空**：desktop.json 缺 `toolWorkspace` 节才等于未配置。相应更新 3 项 settings JSON 测试（缺节 → `null`，不再伪装成保存了 0.45；往返测试补 `NotNull`）。
+
+本批证据：`dotnet test Source/PuddingDesktop.FoundationTests` → **84 passed / 0 failed**（+14：启动器比例在设计区间、上下文复位目标、已保存优先（含 0.45 与越界 clamp）、未配置回退、`NaN` 视为未配置、新默认仍受聊天最小宽保护）；`dotnet test Tests/PuddingDesktop.Tests` → **259 passed / 0 failed**；Desktop 完整链接构建 `dotnet build Source/PuddingDesktop/PuddingDesktop.csproj --no-restore -p:BaseOutputPath=temp\build\shell-img05\bin\` → **0 错误**，产物中核对到 `LauncherOnlyWidthRatio` / `InitialRatioWithoutPreference` / `DefaultRatioFor` / `ResolveLoadedRatio` 四个符号。
+
+**未验收**：首次启动的实际分栏比例、拖动/双击/键盘复位手感、以及「保存过的比例在重启后原样恢复」这三项必须把 Desktop 重启到新构建后实测（属进程外控制器/用户操作）。
 
 ## 14. 独立缺陷登记：SCROLL-001 深色滚动条及 Web / Shell 边界不协调
 
