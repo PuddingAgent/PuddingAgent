@@ -16,6 +16,16 @@
 - 入口与责任：ChatLayout / ChatMain / SessionSidebar；实际主输入为 IntentConsole + ComposerTextInput；渲染与滚动保留 MessageList / execution-flow / viewport；样式沿用 styles.ts 聚合的 antd-style 分模块结构。
 - 文档包含现有功能入口保留矩阵、主题与字体、响应式布局、交互示例及验收门禁；§13 补浅/深色实图分析，§14 登记 SCROLL-001 滚动条跨 Web/Shell 修复方案（global.style.ts / ThemeMode / layout.styles.ts；MainWindow 宿主、主题与 splitter）。本次只交付文档，未改产品代码。
 
+## 2026-10-01：Desktop 侧通道启动判定（第 67 轮）
+
+- 新增 `DesktopCapabilityChannelPreflight.Evaluate(settings, processInstanceId, authentication, endpointDescription)`
+  → `(ShouldStart, Summary, Notes)`：**组合根只调用一次**，把理由写进启动日志。
+- 规则（fail closed，**绝不跨传输回退**）：①未启用 ⇒ 不启动（旧 Bridge 保持，行为不变）；
+  ②启用但端点描述缺失/不可解析、或连接选项被拒 ⇒ **不启动**（宁可暂不启用，也不猜端点，
+  更不像"先试通道、失败再退 Bridge"那样可能把同一次操作执行两次）；③启用且描述可用 ⇒ 启动并报告传输与声明能力。
+- 测试：DesktopService **137/137**（+4：关闭保持旧 Bridge、描述缺失/乱码都不启动、可用即启动、
+  null 设置按关闭处理）。
+- 这个判定是为了让 WinUI 组合根保持**极薄**：它只需读设置 + 调本函数 + 按结果启动或什么都不做。
 ## 2026-10-01：WinUI 薄层落点确认（第 65 轮，实读发现）
 
 - **实读发现（会改变做法）**：`PuddingDesktop.CapabilityHost` 有编译期边界目标
