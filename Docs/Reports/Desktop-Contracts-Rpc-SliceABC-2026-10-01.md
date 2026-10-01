@@ -159,3 +159,21 @@ PASS  loopback-navigate: 命令→结果往返 0.7 ms
 - **未测**：真实 ConPTY/Shell 能力、远端 TLS 端点、代理对双向流的支持、`Grpc.Tools` 在 CI 上的 protoc 可用性。
 - **性能声明边界**：探针数字是**单流、本机、空载**往返，不能据此宣称比现有 Bridge 更快（方案 §9 的要求）。
 - 方案中「旧 WebSocket Bridge 逐步退役」「移除临时传输开关」均未开始。
+## 6. 追加进展（第 10–20 轮：切片 D 协议侧完成 + 切片 E 起步）
+
+- **能力清单**（全部端到端、均在真实端点验证）：`webview.navigate` / `webview.execute_javascript` /
+  `webview.page_state` / `shell.notification` / `shell.status` / `browser.snapshot` / `browser.locate` /
+  `browser.interact` / `browser.wait_for` / `browser.contexts` / `browser.tabs`。
+- **贯穿性语义**（各有探针断言）：
+  1. Ref 随 PageVersion 失效——`BrowserLocateRequest` 构造期强制「凭 Ref 定位必须带来源版本」，
+     且 Core 侧按目标跟踪版本，**比已知版本更旧的请求在发出命令前就被本地拒绝**；
+  2. 交互后旧 Ref 作废——交互结果携带新页面状态，版本随之推进；
+  3. 超时不是失败——`wait_for` 用 `TimedOut` 如实标注并照常回带页面状态；
+  4. 清单必带版本——`browser.contexts` 的每个页面都要求有效 PageVersion（把不变量前置到最上游）；
+  5. 关闭必须如实区分——`browser.tabs` 的 `TabClosed` 允许「页面拒绝关闭」这一真实情形。
+- **结构性改进**：结果联合的构造函数改为全参数默认值 + 工厂命名参数，终结了「每加一个分支要手工调整
+  十余处参数计数」的反复返工；正确性由「恰好一个分支非空」的运行时不变量兜底。
+- **配置/装配就绪度**：`CapabilityChannelConfiguration` 默认关闭（不配置即行为不变），
+  `Transport` 三态保证「配置与监听一致」，接线配方与剩余 5 项装配待办写在该组件 code_map。
+- **四次探针抓到的真实缺陷**见方案 §10.2（取消不响应、干净关闭误标 + 额度泄漏、联合漏项致保护失效、
+  版本提取漏交互结果）——均已修复并补了单测与探针断言。

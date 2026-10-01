@@ -172,7 +172,7 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 
 实施前需技术探针确认：选用包版本与锁定方式、产品 Named Pipe ACL/用户身份、启动就绪描述的演进、当前 Browser 命令到 proto 的完整映射、消息字节预算与图片/HTML传输、跨平台 UI 和远端部署需求。这些未决项不阻碍先建设纯 Contracts；未测量前不宣称 gRPC 比当前 Bridge 更快。
 
-**2026-10-01 更新（上述未决项的现状）**：包版本已锁定并在真实端点验证；Named Pipe DACL 与 ACL 注入钩子已实测（`CurrentUserOnly=True`、`CreateNamedPipeServerStream`）；启动就绪描述的**端点部分**已落地为 `DesktopCapabilityEndpoint`，并在配置层（`CapabilityChannelConfiguration`，默认关闭）完成「配置 → 选项 + 就绪描述」的绑定，但「就绪协议里怎么携带它」仍需与现有 REST 就绪流程一起定；**Browser 命令到 proto 的映射**已补 `browser.snapshot`（含预算与 Ref/PageVersion 不变式），`locate`/`interact`/`wait_for` 与 contexts/tabs 待补；消息字节预算有实测起点（1 MiB 单帧 5.8–6.3 ms），HTML/截图仍需限额文件或分块能力。
+**2026-10-01 更新（上述未决项的现状）**：包版本已锁定并在真实端点验证；Named Pipe DACL 与 ACL 注入钩子已实测（`CurrentUserOnly=True`、`CreateNamedPipeServerStream`）；启动就绪描述的**端点部分**已落地为 `DesktopCapabilityEndpoint`，并在配置层（`CapabilityChannelConfiguration`，默认关闭）完成「配置 → 选项 + 就绪描述」的绑定，但「就绪协议里怎么携带它」仍需与现有 REST 就绪流程一起定；**Browser 命令到 proto 的映射已完成**（`snapshot`/`locate`/`interact`/`wait_for`/`contexts`/`tabs`，含预算、Ref/PageVersion、超时与关闭语义），与既有 Bridge 的九项命令一一对应；消息字节预算有实测起点（1 MiB 单帧 5.8–6.3 ms），HTML/截图仍需限额文件或分块能力。
 
 本次源码核查与外部文档核实只支持方案合理性；未执行产品构建、gRPC 运行或 UI smoke，不把规划写成已完成实现。
 
@@ -180,11 +180,32 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 
 | 切片 | 状态 | 证据 |
 |---|---|---|
-| A：Contracts | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Contracts`（BCL-only，编译期边界）+ `Pudding.ContractsTests` 58/58；边界取红实测 |
-| B：Protocol / Connection | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Rpc.Protocol` + 17/17；`Source/Pudding.DesktopConnection` + 74/74；`Source/Pudding.Rpc.IpcProbe` 13/13（Named Pipe + h2c 真实端点） |
-| C：DesktopService | 🟡 产品代码与配置绑定全部就绪，只剩组合根两行装配（需重启验收） | `Source/Pudding.DesktopService` 81/81；`Source/PuddingDesktop.CapabilityHost`（`DispatcherQueue` 适配器）；`Source/Pudding.CapabilityBroker` 57/57；`Source/Pudding.CapabilityBroker.AspNetCore` 22/22（gRPC 服务 + Kestrel 装配助手 + **配置绑定/端点派生**，含实测约束：`Listen*` 覆盖 `UseUrls`；`Transport` 三态保证配置与监听一致）；接线配方见该组件 code_map，剩余 5 项装配待重启窗口 |
-| D：浏览器等价接入 | 🟡 进行中：`browser.snapshot`/`locate`/`interact`/`wait_for`/`contexts` 已端到端落地（含「交互后旧 Ref 作废」「超时不是失败」「清单必带版本」三条语义） | 探针在管道/h2c 上验证五种能力往返、旧引用拒绝、超时语义与清单完整性（41/41）；`tabs`（激活/关闭）仍未声明；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
-| E：Shell 能力 | 🟡 进行中：`shell.notification` + `shell.status` 已落地（只读，端到端验证） | 两者都有 payload 与实现，可在管道/h2c 上往返（探针 23/23）；`shell.dialog`/`shell.file_picker`/`shell.clipboard` 仍**未声明**（无 payload、无实现），交互式单窗口互斥依赖对话框载荷故一并后置 |
+| A：Contracts | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Contracts`（BCL-only，编译期边界）+ `Pudding.ContractsTests` **90/90**；边界取红实测 |
+| B：Protocol / Connection | ✅ S1–S4 + S5（slnx 登记） | `Source/Pudding.Rpc.Protocol` + **20/20**（字段号/oneof 分支/上限快照）；`Source/Pudding.DesktopConnection` + **80/80**；`Source/Pudding.Rpc.IpcProbe` **45/45**（Named Pipe + h2c 真实端点） |
+| C：DesktopService | 🟡 产品代码与配置绑定全部就绪，只剩组合根两行装配（需重启验收） | `Source/Pudding.DesktopService` **85/85**；`Source/PuddingDesktop.CapabilityHost`（`DispatcherQueue` 适配器，0 警告 0 错误）；`Source/Pudding.CapabilityBroker` **68/68**；`Source/Pudding.CapabilityBroker.AspNetCore` **22/22**（gRPC 服务 + Kestrel 装配助手 + **配置绑定/端点派生**，含实测约束：`Listen*` 覆盖 `UseUrls`；`Transport` 三态保证配置与监听一致）；接线配方见该组件 code_map，剩余 5 项装配待重启窗口 |
+| D：浏览器等价接入 | 🟡 **协议侧已完成**：`snapshot`/`locate`/`interact`/`wait_for`/`contexts`/`tabs` 六项端到端落地（含「交互后旧 Ref 作废」「超时不是失败」「清单必带版本」「关闭必须如实标注」四条语义）；只剩七个工具的**调用点迁移**（依赖 C-3 上线） | 探针在管道/h2c 上验证六种能力往返、旧引用本地拒绝、超时语义、清单完整性与标签页剩余清单（**45/45**）；旧 `DesktopBrowserBridgeEndpointExtensions` 与 WebSocket Bridge 仍未动 |
+| E：Shell 能力 | 🟡 进行中：`shell.notification` + `shell.status` 已落地（端到端验证） | 两者都有 payload 与实现，在同一次探针运行中验证（**45/45**）；`shell.dialog`/`shell.file_picker`/`shell.clipboard` 仍**未声明**（无 payload、无实现），交互式单窗口互斥依赖对话框载荷故一并后置 |
 | F：默认切换与退役 | ⛔ 未开始 | — |
 
 细节、探针原始结论、有意偏差与风险见[实施报告](../Reports/Desktop-Contracts-Rpc-SliceABC-2026-10-01.md)。
+
+### 10.1 门禁快照（最近一次全量运行）
+
+| 项 | 结果 |
+|---|---|
+| 组件独立测试合计 | **374 用例全绿**（Contracts 90、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、CapabilityBroker 68、CapabilityBroker.AspNetCore 22） |
+| 真实端点探针 | **45/45 通过，exit 0**（Named Pipe 与 Loopback h2c 各一轮） |
+| WinUI 适配器工程 | 0 警告 0 错误（无线程访问验证，需真实 `DispatcherQueue`） |
+| 运行中的产品 | **未受影响**：本轮系列全程未重启或改动运行中的 Core/Desktop；组合根装配仍待重启窗口 |
+
+### 10.2 真实端点探针抓到并已修复的缺陷（四次，均为单测无法发现）
+
+1. **取消不响应**：`OperationCancel` 只是发帧，取消方仍等执行器结束 ⇒ 改为竞争 `executeTask`/期限/取消注册。
+2. **干净关闭被误标为 `Faulted`**，且**断连未归还在途额度**（每断一次泄漏一个额度）⇒ 语义与资源同时修正。
+3. **请求联合漏 `Locate?.ExpectedPageVersion`**：locate 的版本在 Core 侧恒为 `Unknown`，
+   使「旧版本引用作废」保护对该能力**静默失效**（命令被发出、Desktop 成功执行）。
+   单测之所以绿，是因为那些用例用 `snapshot` 构造陈旧请求，恰好绕开缺失分支——**用例只覆盖一条路径 = 假绿**。
+4. **版本提取漏交互结果**：`RecordPageVersion` 未包含 `InteractionOutcome` ⇒ 交互后旧 Ref 不作废。
+
+> 结论：这类「新增分支/结果类型时漏改某个聚合点」的错误只能由**跨路径的真实端点断言**发现。
+> 因此探针不是可选项，而是本方案的门禁核心；每次新增能力都必须同时新增探针断言。
