@@ -32,6 +32,8 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                     DesktopPageVersion.Require(5),
                     DesktopPageReadiness.Complete))),
 
+            DesktopCapability.BrowserInteract => Interact(request),
+
             DesktopCapability.BrowserLocate => Task.FromResult(DesktopCapabilityResponse.FromLocate(
                 new DesktopLocateResult(
                     request.Locate?.Target ?? new DesktopPageTarget("ctx-probe", "page-probe"),
@@ -69,6 +71,18 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
                 DesktopCapabilityError.UnsupportedCapability(capability.Name))),
         };
 
+
+    /// <summary>交互：返回的状态版本比请求高一级 ⇒ 交互前的 Ref 在 Core 侧立即作废。</summary>
+    private static Task<DesktopCapabilityResponse> Interact(DesktopCapabilityRequest request)
+    {
+        var interact = request.Interact ?? throw new InvalidOperationException("probe: interact payload missing");
+        var nextVersion = DesktopPageVersion.Require(interact.ExpectedPageVersion.Value + 1);
+
+        return Task.FromResult(DesktopCapabilityResponse.FromInteract(new DesktopInteractionResult(
+            interact.Target,
+            new DesktopPageState(interact.Target, new Uri("https://example.com/probe-after-interact"), nextVersion, DesktopPageReadiness.Complete),
+            interact.Locator is null ? null : new DesktopElementRef("e1", "button", nextVersion, role: "button", name: "probe"))));
+    }
     private static Task<DesktopCapabilityResponse> ExecuteJavascriptAsync(
         JavascriptRequest request, CancellationToken cancellationToken)
     {

@@ -122,7 +122,8 @@ internal sealed class HarnessOptions
         | DesktopCapability.ShellNotification
         | DesktopCapability.ShellStatus
         | DesktopCapability.BrowserSnapshot
-        | DesktopCapability.BrowserLocate;
+        | DesktopCapability.BrowserLocate
+        | DesktopCapability.BrowserInteract;
 
     public DesktopCapability Grantable { get; set; } =
         DesktopCapability.WebViewNavigate
@@ -131,7 +132,8 @@ internal sealed class HarnessOptions
         | DesktopCapability.ShellNotification
         | DesktopCapability.ShellStatus
         | DesktopCapability.BrowserSnapshot
-        | DesktopCapability.BrowserLocate;
+        | DesktopCapability.BrowserLocate
+        | DesktopCapability.BrowserInteract;
 
     public int MaxInFlightPerConnection { get; set; } = 8;
 
@@ -361,6 +363,34 @@ internal static class DesktopFrames
                     Enabled = true,
                     PageVersion = pageVersion,
                 },
+            },
+        },
+    };
+
+    public static Proto.OperationResult InteractOk(
+        string operationId,
+        ulong generation,
+        long pageVersion = 6,
+        string url = "https://example.com/after") => new()
+    {
+        OperationId = operationId,
+        Generation = generation,
+        Interact = new Proto.InteractionOutcome
+        {
+            Element = new Proto.ElementRef
+            {
+                Ref = "e1",
+                Tag = "button",
+                Role = "button",
+                Visible = true,
+                Enabled = true,
+                PageVersion = pageVersion,
+            },
+            Page = new Proto.PageStateOutcome
+            {
+                Url = url,
+                PageVersion = pageVersion,
+                Readiness = "complete",
             },
         },
     };

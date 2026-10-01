@@ -169,6 +169,22 @@ public sealed class DesktopSession : IAsyncDisposable
                     DesktopCapabilityError.Internal("notification response payload is missing")),
             cancellationToken);
 
+    /// <summary>
+    /// 元素交互（切片 D 唯一变更类能力）。成功结果携带<b>交互后的页面状态</b>，
+    /// 版本随之推进 ⇒ 交互前的 Ref 在本会话内立即作废（复用按目标的版本跟踪）。
+    /// </summary>
+    public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
+        BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.BrowserInteract,
+            DesktopCapabilityRequest.ForInteract(request),
+            call,
+            static response => response.Interact is { } value
+                ? CapabilityResult<DesktopInteractionResult>.Success(value)
+                : CapabilityResult<DesktopInteractionResult>.Failure(
+                    DesktopCapabilityError.Internal("interaction response payload is missing")),
+            cancellationToken);
+
     /// <summary>元素定位（切片 D）：结果回填请求的描述符；Ref 只在返回的 PageVersion 内有效。</summary>
     public Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
         BrowserLocateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
@@ -614,12 +630,15 @@ public sealed class DesktopSession : IAsyncDisposable
     /// <summary>从成功结果里提取 (目标, 版本)；结果帧不回带目标时用请求目标补齐。</summary>
     private void RecordPageVersion(PendingOperation pending, DesktopCapabilityResponse response)
     {
+        // 交互结果同样推进版本——**这是「交互后旧 Ref 作废」的关键一步**：
+        // 漏掉任何一类结果都会让旧引用继续被当成有效引用（真实端点探针正是这样发现的）。
         var target = response.PageState?.Target ?? response.Snapshot?.Target ?? response.Locate?.Target
-            ?? pending.RequestTarget;
+            ?? response.Interact?.Target ?? pending.RequestTarget;
         var version = response.Navigate?.PageVersion
             ?? response.PageState?.Version
             ?? response.Snapshot?.PageVersion
-            ?? response.Locate?.PageVersion;
+            ?? response.Locate?.PageVersion
+            ?? response.Interact?.Page.Version;
 
         if (target is null || version is not { } observed || observed.Value <= 0)
         {

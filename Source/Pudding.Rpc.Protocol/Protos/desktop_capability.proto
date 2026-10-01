@@ -150,6 +150,26 @@ message ElementRef {
   int64 page_version = 9;
 }
 
+// 元素交互（切片 D 唯一变更类能力）：必须固定 expected_page_version；
+// 按 action 校验参数（fill/press 需 text，select 需 values，check/uncheck 需 checked，scroll 需非零 delta）。
+message InteractCommand {
+  CommandTarget target = 1;
+  int64 expected_page_version = 2;
+  string action = 3;
+  LocatorSpec locator = 4;
+  string text = 5;
+  repeated string values = 6;
+  optional bool checked = 7;
+  double delta_x = 8;
+  double delta_y = 9;
+}
+
+// 交互结果：受影响元素（可选）+ 交互后的页面状态（版本通常高于请求版本 ⇒ 旧 Ref 作废）。
+message InteractionOutcome {
+  ElementRef element = 1;
+  PageStateOutcome page = 2;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -179,6 +199,7 @@ message CapabilityCommand {
     GetShellStatusCommand get_shell_status = 14;
     SnapshotCommand snapshot = 15;
     LocateCommand locate = 16;
+    InteractCommand interact = 17;
   }
 }
 
@@ -284,6 +305,7 @@ message OperationResult {
     ShellStatusOutcome shell_status = 15;
     SnapshotOutcome snapshot = 16;
     LocateOutcome locate = 17;
+    InteractionOutcome interact = 18;
   }
 }
 

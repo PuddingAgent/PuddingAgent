@@ -92,6 +92,46 @@ internal static class CoreCommandEncoder
                 };
                 break;
 
+            case DesktopCapability.BrowserInteract when request.Interact is { } interact:
+                command.Interact = new Proto.InteractCommand
+                {
+                    Target = EncodeTarget(interact.Target),
+                    ExpectedPageVersion = interact.ExpectedPageVersion.Value,
+                    Action = DesktopInteractionActionWire.NameOf(interact.Action),
+                };
+
+                if (interact.Locator is { } interactLocator)
+                {
+                    command.Interact.Locator = new Proto.LocatorSpec
+                    {
+                        Kind = DesktopLocatorKindWire.NameOf(interactLocator.Kind),
+                        Value = interactLocator.Value,
+                        Name = interactLocator.Name ?? string.Empty,
+                        Exact = interactLocator.Exact,
+                        Nth = interactLocator.Nth ?? -1,
+                        HasText = interactLocator.HasText ?? string.Empty,
+                    };
+                }
+
+                if (interact.Text is { } text)
+                {
+                    command.Interact.Text = text;
+                }
+
+                if (interact.Values is { Count: > 0 } values)
+                {
+                    command.Interact.Values.AddRange(values);
+                }
+
+                if (interact.IsChecked is { } isChecked)
+                {
+                    command.Interact.Checked = isChecked;
+                }
+
+                command.Interact.DeltaX = interact.DeltaX ?? 0;
+                command.Interact.DeltaY = interact.DeltaY ?? 0;
+                break;
+
             case DesktopCapability.BrowserSnapshot when request.Snapshot is { } snapshot:
                 command.Snapshot = new Proto.SnapshotCommand
                 {
@@ -132,6 +172,9 @@ internal static class CoreCommandEncoder
             _ when request.Notification is { } notification =>
                 $"notification:{notification.Title}:{notification.Message}:{notification.Priority}",
             _ when request.PageState is { } target => $"page_state:{target.Key}",
+            _ when request.Interact is { } interact =>
+                $"interact:{interact.Action}:{interact.Target.Key}:{interact.ExpectedPageVersion.Value}:{interact.Locator}:"
+                + $"{interact.Text}:{string.Join(",", interact.Values ?? [])}:{interact.IsChecked}:{interact.DeltaX}:{interact.DeltaY}",
             _ when request.Locate is { } locate =>
                 $"locate:{locate.Target.Key}:{locate.Locator}:{locate.ExpectedPageVersion.Value}:{locate.MaxResults}",
             _ when request.Snapshot is { } snapshot =>
@@ -178,6 +221,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.ShellStatus => expectedCapability == DesktopCapability.ShellStatus,
             Proto.OperationResult.OutcomeOneofCase.Snapshot => expectedCapability == DesktopCapability.BrowserSnapshot,
             Proto.OperationResult.OutcomeOneofCase.Locate => expectedCapability == DesktopCapability.BrowserLocate,
+            Proto.OperationResult.OutcomeOneofCase.Interact => expectedCapability == DesktopCapability.BrowserInteract,
             _ => false,
         };
 
@@ -253,6 +297,57 @@ internal static class DesktopResultDecoder
 
             default:
             {
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Interact)
+                {
+                    if (requestedTarget is null)
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal(
+                                "interaction result cannot be correlated without the requested target"));
+                    }
+
+                    Uri? interactUrl = null;
+                    if (!string.IsNullOrEmpty(result.Interact.Page?.Url)
+                        && !Uri.TryCreate(result.Interact.Page.Url, UriKind.Absolute, out interactUrl))
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal("interaction outcome carries a non-absolute url"));
+                    }
+
+                    DesktopElementRef? element = null;
+                    if (result.Interact.Element is { } interacted)
+                    {
+                        try
+                        {
+                            element = new DesktopElementRef(
+                                interacted.Ref,
+                                interacted.Tag,
+                                ToPageVersion(interacted.PageVersion),
+                                NullIfEmpty(interacted.Role),
+                                NullIfEmpty(interacted.Name),
+                                NullIfEmpty(interacted.Text),
+                                interacted.Visible,
+                                interacted.Enabled,
+                                interacted.HasChecked ? interacted.Checked : null);
+                        }
+                        catch (ArgumentException)
+                        {
+                            return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                                DesktopCapabilityError.Internal("interaction outcome carries an unusable element reference"));
+                        }
+                    }
+
+                    var pageState = new DesktopPageState(
+                        requestedTarget,
+                        interactUrl,
+                        ToPageVersion(result.Interact.Page?.PageVersion ?? 0),
+                        DesktopPageReadinessWire.Parse(result.Interact.Page?.Readiness));
+
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromInteract(new DesktopInteractionResult(
+                            requestedTarget, pageState, element)));
+                }
+
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Locate)
                 {
                     if (requestedTarget is null)

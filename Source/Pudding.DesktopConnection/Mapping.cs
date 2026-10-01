@@ -310,6 +310,75 @@ internal static class CoreFrameMapping
                 }
             }
 
+            case DesktopCapability.BrowserInteract:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.Interact)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var interactTarget = DecodeTarget(command.Interact.Target);
+                if (interactTarget is null)
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                        DesktopCapabilityError.InvalidTarget("browser.interact requires an explicit context_id/page_id target"));
+                }
+
+                if (command.Interact.ExpectedPageVersion <= 0)
+                {
+                    return FailRequest("interaction must pin a valid expected_page_version");
+                }
+
+                if (!DesktopInteractionActionWire.TryParse(command.Interact.Action, out var action))
+                {
+                    return FailRequest("interaction action is missing or not registered");
+                }
+
+                DesktopLocator? locator = null;
+                if (command.Interact.Locator is { } spec)
+                {
+                    if (!DesktopLocatorKindWire.TryParse(spec.Kind, out var locatorKind) || string.IsNullOrEmpty(spec.Value))
+                    {
+                        return FailRequest("interaction locator is missing or not registered");
+                    }
+
+                    try
+                    {
+                        locator = new DesktopLocator(
+                            locatorKind,
+                            spec.Value,
+                            string.IsNullOrEmpty(spec.Name) ? null : spec.Name,
+                            spec.Exact,
+                            spec.Nth < 0 ? null : spec.Nth,
+                            string.IsNullOrEmpty(spec.HasText) ? null : spec.HasText);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        return FailRequest($"interaction locator is not usable ({ex.ParamName})");
+                    }
+                }
+
+                try
+                {
+                    // 按动作的参数要求在这里就校验（缺/多参数 ⇒ invalid_request，而不是发出去让页面猜）。
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForInteract(new BrowserInteractRequest(
+                            interactTarget,
+                            action,
+                            ToPageVersion(command.Interact.ExpectedPageVersion),
+                            locator,
+                            string.IsNullOrEmpty(command.Interact.Text) ? null : command.Interact.Text,
+                            command.Interact.Values.Count == 0 ? null : command.Interact.Values.ToArray(),
+                            command.Interact.HasChecked ? command.Interact.Checked : null,
+                            command.Interact.DeltaX == 0 ? null : command.Interact.DeltaX,
+                            command.Interact.DeltaY == 0 ? null : command.Interact.DeltaY)));
+                }
+                catch (ArgumentException ex)
+                {
+                    return FailRequest($"interaction parameters do not match the action ({ex.ParamName})");
+                }
+            }
+
             case DesktopCapability.ShellStatus:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus)
@@ -532,6 +601,41 @@ internal static class DesktopFrameMapping
                         }
 
                         result.Locate.Elements.Add(wireElement);
+                    }
+
+                    break;
+
+                case DesktopCapability.BrowserInteract when response.Interact is { } interaction:
+                    result.Interact = new Proto.InteractionOutcome
+                    {
+                        Page = new Proto.PageStateOutcome
+                        {
+                            Url = interaction.Page.Url?.AbsoluteUri ?? string.Empty,
+                            PageVersion = interaction.Page.Version.Value,
+                            Readiness = DesktopPageReadinessWire.NameOf(interaction.Page.Readiness),
+                        },
+                    };
+
+                    if (interaction.Element is { } interacted)
+                    {
+                        var wireElement = new Proto.ElementRef
+                        {
+                            Ref = interacted.Reference,
+                            Tag = interacted.Tag,
+                            Role = interacted.Role ?? string.Empty,
+                            Name = WireText.Truncate(interacted.Name, 512),
+                            Text = WireText.Truncate(interacted.Text, 2048),
+                            Visible = interacted.Visible,
+                            Enabled = interacted.Enabled,
+                            PageVersion = interacted.PageVersion.Value,
+                        };
+
+                        if (interacted.IsChecked is { } isChecked)
+                        {
+                            wireElement.Checked = isChecked;
+                        }
+
+                        result.Interact.Element = wireElement;
                     }
 
                     break;

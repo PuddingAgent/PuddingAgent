@@ -97,6 +97,28 @@ public sealed class PageVersionRecordingTests
     }
 
     [Fact]
+    public async Task InteractionResult_AdvancesTheKnownVersion()
+    {
+        await using var harness = await StartedAsync();
+
+        // 交互（click@v5）返回 v6 ⇒ 交互前的引用必须立即作废。
+        var interact = harness.Session.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(5),
+                new DesktopLocator(DesktopLocatorKind.Css, "button")),
+            harness.Call("op-interact"));
+        var command = await harness.WaitForCommandAsync("op-interact");
+        Assert.Equal("click", command!.Interact.Action);
+
+        harness.Channel.Push(DesktopFrames.Result(DesktopFrames.InteractOk("op-interact", 1, pageVersion: 6)));
+        Assert.True((await interact.WaitAsync(TimeSpan.FromSeconds(5))).IsSuccess);
+        Assert.Equal(6, harness.Session.KnownPageVersionFor(Target));
+
+        var stale = await harness.Session.LocateAsync(Locate(5), harness.Call("op-stale"));
+        Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, stale.Error!.Code);
+    }
+
+    [Fact]
     public async Task EveryResultKind_RecordsUnderTheRequestedTarget()
     {
         await using var harness = await StartedAsync();

@@ -180,6 +180,27 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.BrowserInteract:
+            {
+                if (request.Interact is not { } interact)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("browser.interact request payload is missing"));
+                }
+
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    interact.Target,
+                    interact.ExpectedPageVersion,
+                    context,
+                    token => _surface.InteractAsync(context, interact, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromInteract(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             case DesktopCapability.BrowserLocate:
             {
                 if (request.Locate is not { } locate)

@@ -143,7 +143,8 @@ internal static class Program
             | DesktopCapability.ShellNotification
             | DesktopCapability.ShellStatus
             | DesktopCapability.BrowserSnapshot
-            | DesktopCapability.BrowserLocate,
+            | DesktopCapability.BrowserLocate
+            | DesktopCapability.BrowserInteract,
         Authentication = authentication,
         HandshakeTimeout = StepTimeout,
         InactivityTimeout = TimeSpan.FromSeconds(30),
@@ -369,6 +370,43 @@ internal static class Program
         else
         {
             report.Fail("locate-stale-version-rejected", stale.IsFailure ? $"期望 page_version_mismatch，实际 {stale.Error!.Code}" : "期望被拒，实际却成功");
+        }
+        // 8) 交互（切片 D 唯一变更类能力）→ 交互后的状态版本推进 ⇒ 交互前的旧 Ref 立即作废。
+        var interact = await session.InteractAsync(
+            new BrowserInteractRequest(
+                target,
+                DesktopInteractionAction.Click,
+                DesktopPageVersion.Require(5),
+                new DesktopLocator(DesktopLocatorKind.Css, "button")),
+            Call("interact"));
+
+        if (!interact.IsSuccess || interact.Value.Page.Version.Value <= 5)
+        {
+            report.Fail("interact", interact.IsFailure ? $"期望交互成功，实际 {interact.Error!.Code}" : "交互后版本没有推进");
+        }
+        else
+        {
+            report.Pass(
+                "interact",
+                $"browser.interact(click) → 页面版本 {interact.Value.Page.Version.Value}（高于交互前的 5）");
+
+            // 旧 Ref 作废：仍固定到交互前版本的请求必须被本地拒绝。
+            var afterInteract = await session.LocateAsync(
+                new BrowserLocateRequest(
+                    target,
+                    new DesktopLocator(DesktopLocatorKind.Css, "button"),
+                    DesktopPageVersion.Require(5)),
+                Call("locate-after-interact"));
+
+            if (afterInteract.IsFailure
+                && afterInteract.Error!.Code == DesktopCapabilityErrorCode.PageVersionMismatch)
+            {
+                report.Pass("interact-invalidates-refs", "交互后固定到旧版本(5)的请求被本地拒绝（旧 Ref 已作废）");
+            }
+            else
+            {
+                report.Fail("interact-invalidates-refs", afterInteract.IsFailure ? $"期望 page_version_mismatch，实际 {afterInteract.Error!.Code}" : "期望被拒，实际却成功");
+            }
         }
         // 边界约束（机器可检）：凭 Ref 定位却不说明来源版本必须被拒绝，而不是由接收方猜测。
         var refWithoutVersionRejected = false;

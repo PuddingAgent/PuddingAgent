@@ -1,3 +1,20 @@
+## 2026-10-01：`browser.interact` 端到端（切片 D 唯一变更类能力，第 2/2 步）
+
+- proto：`InteractCommand`（payload 17：目标/版本/动作/定位/文案/值/勾选/位移）+ `InteractionOutcome`
+  （outcome 18：元素 + 交互后的页面状态，复用 `PageStateOutcome`）。
+- Desktop 侧解码 fail closed：动作与定位线名未登记、版本未固定、**按动作的参数不匹配**一律 `invalid_request`
+  （缺/多参数都不放过）；编码结果时 `checked` 只在确实知道时设 presence。
+- DesktopService 分支 + `IDesktopUiSurface.InteractAsync`；`DefaultGrantable` 与探针两端能力集合已加入
+  `browser.interact`（至此不再「已登记但不可用」）。
+- **端到端证明「交互后旧 Ref 作废」**：探针交互 click@v5 → 返回 v6 → 再固定到 v5 的请求被 Core **本地拒绝**
+  （`page_version_mismatch`，未发出命令）。探针 **37/37 exit 0**。
+- **探针第三次抓到同类真实缺陷**：`RecordPageVersion` 的版本提取漏了**交互结果** ⇒ 交互后旧引用不会作废。
+  这与第 14 轮（联合漏 `Locate`）是同一类错误：**新增一类结果/分支时必须更新所有聚合点**。
+  修复后补了单测（交互结果推进版本）与探针断言各一条。
+- 测试：Broker **68/68**、协议 20/20、探针 37/37。
+
+测试合计：362 用例（Contracts 87、Rpc.Protocol 20、DesktopConnection 80、DesktopService 85、
+CapabilityBroker 68、CapabilityBroker.AspNetCore 22）。
 ## 2026-10-01：`browser.interact` 契约层（切片 D 变更类能力，第 1/2 步）
 
 分两步走：本轮只落**契约与准入**，避免「先声明再半实现」；因此 `browser.interact` 现在与
