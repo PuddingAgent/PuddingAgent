@@ -20,6 +20,9 @@ public sealed class DesktopSession : IAsyncDisposable
     private readonly IDesktopCapabilityAuthorizer _authorizer;
     private readonly IDesktopCapabilityAuditSink _audit;
     private readonly SemaphoreSlim _inFlight;
+
+    /// <summary>每个页面目标最近一次被观测到的 PageVersion：比它更旧的期望版本说明引用已作废。</summary>
+    private readonly Dictionary<string, long> _knownPageVersions = new(StringComparer.Ordinal);
     private readonly Channel<Proto.CoreFrame> _outbound;
     private readonly Dictionary<OperationId, PendingOperation> _pending = new();
     private readonly object _sync = new();
@@ -405,6 +408,18 @@ public sealed class DesktopSession : IAsyncDisposable
                 return CapabilityResult<TResult>.Failure(exhausted);
             }
 
+            if (IsStalePageVersion(request, out var knownVersion))
+            {
+                // 「交互提交后旧 Ref 作废」的 Core 侧强制：不发命令，也不把陈旧引用当有效引用用。
+                var stale = new DesktopCapabilityError(
+                    DesktopCapabilityErrorCode.PageVersionMismatch,
+                    $"request pins page version {request.ExpectedPageVersion.Value} but the desktop is already at {knownVersion}",
+                    retryable: true,
+                    mayHaveSideEffects: false);
+                AuditTransient(call.OperationId, descriptor.Name, DesktopCapabilityOutcome.Rejected, stale);
+                return CapabilityResult<TResult>.Failure(stale);
+            }
+
             pending = new PendingOperation(call.OperationId, descriptor.Name, fingerprint, call, Now);
             pending.SetRequestTarget(request.Target);
         pending.SetRequestLocator(request.Locate?.Locator);
@@ -567,6 +582,50 @@ public sealed class DesktopSession : IAsyncDisposable
         return true;
     }
 
+    /// <summary>
+    /// 期望版本是否已过期：只有「本会话已经观测到更新的版本」才算过期。
+    /// 未知版本（0）不作判断——那表示调用方不要求版本约束，而不是「旧版本」。
+    /// </summary>
+    private bool IsStalePageVersion(DesktopCapabilityRequest request, out long knownVersion)
+    {
+        knownVersion = 0;
+        var target = request.Target;
+        var expected = request.ExpectedPageVersion;
+        if (target is null || expected.Value <= 0)
+        {
+            return false;
+        }
+
+        lock (_sync)
+        {
+            return _knownPageVersions.TryGetValue(target.Key, out knownVersion) && knownVersion > expected.Value;
+        }
+    }
+
+    /// <summary>从成功结果里提取 (目标, 版本)；结果帧不回带目标时用请求目标补齐。</summary>
+    private void RecordPageVersion(PendingOperation pending, DesktopCapabilityResponse response)
+    {
+        var target = response.PageState?.Target ?? response.Snapshot?.Target ?? response.Locate?.Target
+            ?? pending.RequestTarget;
+        var version = response.Navigate?.PageVersion
+            ?? response.PageState?.Version
+            ?? response.Snapshot?.PageVersion
+            ?? response.Locate?.PageVersion;
+
+        if (target is null || version is not { } observed || observed.Value <= 0)
+        {
+            return;
+        }
+
+        lock (_sync)
+        {
+            if (!_knownPageVersions.TryGetValue(target.Key, out var current) || observed.Value > current)
+            {
+                _knownPageVersions[target.Key] = observed.Value;
+            }
+        }
+    }
+
     private void CompleteFromDesktop(PendingOperation pending, CapabilityResult<DesktopCapabilityResponse> result)
     {
         lock (_sync)
@@ -579,6 +638,13 @@ public sealed class DesktopSession : IAsyncDisposable
 
         pending.Dispose();
         _inFlight.Release();
+
+        // 成功结果把「该目标当前是哪一版」记下来：旧版本的引用自此作废。
+        if (result.IsSuccess)
+        {
+            RecordPageVersion(pending, result.Value);
+        }
+
         pending.Completion.TrySetResult(result);
         Audit(pending, result.IsSuccess ? DesktopCapabilityOutcome.Succeeded : DesktopCapabilityOutcome.Failed, result.IsSuccess ? null : result.Error);
     }

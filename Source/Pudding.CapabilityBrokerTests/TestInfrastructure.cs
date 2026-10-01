@@ -120,14 +120,18 @@ internal sealed class HarnessOptions
         | DesktopCapability.WebViewExecuteJavascript
         | DesktopCapability.WebViewPageState
         | DesktopCapability.ShellNotification
-        | DesktopCapability.ShellStatus;
+        | DesktopCapability.ShellStatus
+        | DesktopCapability.BrowserSnapshot
+        | DesktopCapability.BrowserLocate;
 
     public DesktopCapability Grantable { get; set; } =
         DesktopCapability.WebViewNavigate
         | DesktopCapability.WebViewExecuteJavascript
         | DesktopCapability.WebViewPageState
         | DesktopCapability.ShellNotification
-        | DesktopCapability.ShellStatus;
+        | DesktopCapability.ShellStatus
+        | DesktopCapability.BrowserSnapshot
+        | DesktopCapability.BrowserLocate;
 
     public int MaxInFlightPerConnection { get; set; } = 8;
 
@@ -331,6 +335,54 @@ internal static class DesktopFrames
             Generation = generation,
             PageState = new Proto.PageStateOutcome { Url = url, PageVersion = pageVersion, Readiness = readiness },
         };
+
+    public static Proto.OperationResult LocateOk(
+        string operationId,
+        ulong generation,
+        long pageVersion = 7,
+        string reference = "e1",
+        bool truncated = false) => new()
+    {
+        OperationId = operationId,
+        Generation = generation,
+        Locate = new Proto.LocateOutcome
+        {
+            Truncated = truncated,
+            PageVersion = pageVersion,
+            Elements =
+            {
+                new Proto.ElementRef
+                {
+                    Ref = reference,
+                    Tag = "button",
+                    Role = "button",
+                    Name = "probe",
+                    Visible = true,
+                    Enabled = true,
+                    PageVersion = pageVersion,
+                },
+            },
+        },
+    };
+
+    public static Proto.OperationResult SnapshotOk(
+        string operationId,
+        ulong generation,
+        long pageVersion = 7,
+        int nodeCount = 12,
+        bool truncated = false) => new()
+    {
+        OperationId = operationId,
+        Generation = generation,
+        Snapshot = new Proto.SnapshotOutcome
+        {
+            DomText = "body > main",
+            AccessibilityTree = "document",
+            Truncated = truncated,
+            NodeCount = nodeCount,
+            PageVersion = pageVersion,
+        },
+    };
 
     public static Proto.OperationResult ShellStatusOk(
         string operationId,
