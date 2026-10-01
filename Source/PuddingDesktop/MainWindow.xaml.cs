@@ -290,6 +290,47 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) { SettingsStatus.Text = ex.Message; }
     }
+    private async void OnBrowseDataRoot(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new Microsoft.Windows.Storage.Pickers.FolderPicker(AppWindow.Id)
+            {
+                CommitButtonText = "选择文件夹",
+                SuggestedStartLocation = Microsoft.Windows.Storage.Pickers.PickerLocationId.ComputerFolder,
+            };
+            var result = await picker.PickSingleFolderAsync();
+            if (result is null) return;
+            if (!Directory.Exists(result.Path))
+                throw new DirectoryNotFoundException("请选择已存在的数据目录。");
+            DataRootBox.Text = result.Path;
+            SettingsStatus.Text = "已选择数据目录；保存启动设置后生效，切换目录需重开 Desktop。";
+        }
+        catch (Exception ex) { SettingsStatus.Text = ex.Message; }
+    }
+
+    private async void OnBrowseCorePath(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // The picker needs the window to parent the dialog; unpackaged WinUI
+            // cannot fall back to a packaged application view.
+            var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(AppWindow.Id)
+            {
+                CommitButtonText = "选择",
+                SuggestedStartLocation = Microsoft.Windows.Storage.Pickers.PickerLocationId.ComputerFolder,
+            };
+            picker.FileTypeFilter.Add(".exe");
+            var result = await picker.PickSingleFileAsync();
+            if (result is null) return;
+            if (!string.Equals(Path.GetFileName(result.Path), "PuddingAgent.exe", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("请选择名为 PuddingAgent.exe 的文件。");
+            CorePathBox.Text = result.Path;
+            SettingsStatus.Text = "已选择 Core 可执行文件；保存启动设置后生效。";
+        }
+        catch (Exception ex) { SettingsStatus.Text = ex.Message; }
+    }
+
     private async void OnSave(object sender, RoutedEventArgs e)
     {
         try

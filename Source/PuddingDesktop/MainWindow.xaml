@@ -63,8 +63,16 @@
      <StackPanel Spacing="18" MaxWidth="660" HorizontalAlignment="Left">
       <TextBlock Text="启动设置" FontSize="28" FontWeight="SemiBold"/>
       <TextBlock Text="业务配置在 Web 工作台中管理。这里设置本机启动参数。" TextWrapping="Wrap" Opacity="0.65"/>
-      <TextBox x:Name="DataRootBox" Header="数据目录" MinWidth="480"/>
-      <TextBox x:Name="CorePathBox" Header="Core 可执行文件（留空使用配套 Core）" PlaceholderText="留空自动启动；自定义路径须包含 PuddingAgent.exe"/>
+      <Grid ColumnSpacing="8">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <TextBox x:Name="DataRootBox" Header="数据目录" MinWidth="480"/>
+       <Button Grid.Column="1" x:Name="DataRootBrowseButton" Content="浏览…" VerticalAlignment="Bottom" Click="OnBrowseDataRoot"/>
+      </Grid>
+      <Grid ColumnSpacing="8">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <TextBox x:Name="CorePathBox" Header="Core 可执行文件（留空使用配套 Core）" PlaceholderText="留空自动启动；自定义路径须包含 PuddingAgent.exe"/>
+       <Button Grid.Column="1" x:Name="CorePathBrowseButton" Content="浏览…" VerticalAlignment="Bottom" Click="OnBrowseCorePath"/>
+      </Grid>
       <NumberBox x:Name="PortBox" Header="Core 端口" Minimum="1" Maximum="65535" Value="80" SpinButtonPlacementMode="Compact"/>
       <CheckBox x:Name="AutoStartBox" Content="打开 Desktop 时启动 Core" IsChecked="True"/>
       <CheckBox x:Name="TrayBox" Content="关闭窗口时最小化到托盘" IsChecked="True"/>
