@@ -474,8 +474,11 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
     {
         if (request.Action == DesktopInteractionAction.Scroll)
         {
-            await page.ScrollAsync(new ScrollOptions { DeltaY = request.DeltaY ?? 0 }, cancellationToken)
-                .ConfigureAwait(false);
+            // 两个轴都要传：此前只映射了 DeltaY，等于**悄悄丢掉** DeltaX
+            // （线缆与 Desktop 侧本来就带 delta_x，因此那是我这边的缺陷）。
+            await page.ScrollAsync(
+                new ScrollOptions { DeltaX = request.DeltaX, DeltaY = request.DeltaY },
+                cancellationToken).ConfigureAwait(false);
             return null;
         }
 

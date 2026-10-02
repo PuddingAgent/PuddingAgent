@@ -332,6 +332,25 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
+    public async Task Interact_Scroll_PassesBothDeltaAxesToTheRuntime()
+    {
+        // 两个轴都必须传：线缆与 Desktop 侧本来就带 delta_x，
+        // 因此"只传 DeltaY"是 Bridge 适配器自己的缺陷（会悄悄丢掉横向滚动）。
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Scroll, DesktopPageVersion.Require(3),
+                deltaX: 12, deltaY: -40), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.NotNull(page.LastScroll);
+        Assert.Equal(12d, page.LastScroll!.DeltaX);
+        Assert.Equal(-40d, page.LastScroll.DeltaY);
+    }
+
+    [Fact]
     public async Task WaitFor_TimeoutIsAResultNotAFailure()
     {
         var page = new FakePage { Version = 4, Wait = _ => new WaitResult { TimedOut = true } };
@@ -616,6 +635,8 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public int ClickCount { get; private set; }
 
+        public ScrollOptions? LastScroll { get; private set; }
+
         public Func<Uri, NavigationResult>? Navigate { get; init; }
 
         public Func<BrowserScript, BrowserScriptValue>? Script { get; init; }
@@ -706,7 +727,12 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task ScrollAsync(ScrollOptions options, CancellationToken ct) => throw new NotSupportedException();
+        public Task ScrollAsync(ScrollOptions options, CancellationToken ct)
+        {
+            LastScroll = options;
+            Version++;
+            return Task.CompletedTask;
+        }
 
         public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => throw new NotSupportedException();
 

@@ -375,7 +375,7 @@ Core 侧实现是 `Source/PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs`，
 | 5 | 导航结果 `NavigationOk` / `StatusCode` / `ErrorText` | 结果 | `NavigateResult`（当前只有 Disposition/Url/Version） |
 | 6 | 标签页 `new`（含 `Url` 与是否激活） | **能力** | 目录 + proto + Desktop 侧实现 |
 | 7 | 交互 `type`（与 `fill` 语义不同） | **能力** | `DesktopInteractionAction` + proto |
-| 8 | 交互 `DeltaX` | 请求 | 交互 payload（`DeltaY` 已有） |
+| 8 | ~~交互 `DeltaX`~~ | — | **已更正（2026-10-02）：不是契约缺口**——proto `InteractCommand.delta_x` 与 `Pudding.DesktopConnection.Mapping` 本来就带它，缺口只在 Bridge 适配器（只映射了 `DeltaY`，已修并加测试） |
 | 9 | 快照 `IncludeHidden` / `IncludeIframes` / `IncludeShadowDom` / `MaxDepth` | 请求 | `DesktopSnapshotOptions` + proto `SnapshotBudget` |
 | 10 | 定位结果 `BoundingBox` | 结果 | `DesktopElementRef` |
 | 11 | 等待 `TimeoutMs` | 请求 | `BrowserWaitForRequest` |
