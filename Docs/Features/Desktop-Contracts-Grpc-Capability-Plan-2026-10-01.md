@@ -196,7 +196,8 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 
 | 项 | 结果 |
 |---|---|
-| 组件独立测试合计 | **537 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、**DesktopService 170**、DesktopSurface.Browser 54、CapabilityBroker 78、CapabilityBroker.AspNetCore 39） |
+| 组件独立测试合计 | **549 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、**DesktopService 170**、DesktopSurface.Browser 54、**CapabilityBroker 90**、CapabilityBroker.AspNetCore 39） |
+| 授权器 | **已从 `DenyAll` 换成可信身份门禁**（`56e31b2`）：身份取自 Core 可信运行上下文（`RuntimeTraceContextAccessor`），按能力 traits 逐条 fail closed。**仍未接 Tool Runtime 权限/审批链**（切片 D 调用点迁移） |
 | 桌面启动器侧测试 | **279 全绿**（`PuddingDesktop.Tests`；含能力通道文件段的跨侧缺省值一致性断言与"Core 产出→Desktop 解析→预检"的端到端契约断言；不计入上面 7 套） |
 | Shell 接线 | **Desktop 侧接线已完成**（`cd2e1d9`）：默认关闭、fail closed、Core 不再就绪即释放传输；Shell 构建 0 错误。**启用态与生命周期仍待外部控制器在重启窗口内验收** |
 | 真实端点探针 | **53/53 通过，exit 0**（Named Pipe 与 Loopback h2c 各一轮；含跨侧能力集合一致性守卫） |
