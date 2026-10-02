@@ -655,6 +655,9 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
 
 internal sealed class FakeCallContextFactory : IDesktopCapabilityCallContextFactory
 {
+    public DesktopCallContext? TryCreate(string? permissionEvidenceSummary, TimeSpan? timeout = null)
+        => TryCreate(timeout);
+
     public DesktopCallContext? TryCreate(TimeSpan? timeout = null) => new(
         new DesktopInstanceId("desk-test"),
         OperationId.NewId(),

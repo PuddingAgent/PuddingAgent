@@ -59,7 +59,7 @@ public sealed class BrowserContextTool(
 
     private async Task<ToolExecutionResult> CreateAsync(BrowserContextArgs args, CancellationToken ct)
     {
-        if (callContexts.TryCreate() is not { } call)
+        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
         {
             return BrowserToolResponse.Failure(
                 "browser_not_connected", "No Desktop is connected for browser capabilities");
@@ -122,7 +122,7 @@ public sealed class BrowserContextTool(
             return BrowserToolResponse.Failure("browser_invalid_arguments", "context_id is required for close");
         }
 
-        if (callContexts.TryCreate() is not { } call)
+        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
         {
             return BrowserToolResponse.Failure(
                 "browser_not_connected", "No Desktop is connected for browser capabilities");
@@ -139,7 +139,7 @@ public sealed class BrowserContextTool(
     /// <summary>读上下文清单；<c>null</c> 表示未连接 Desktop（与"读取失败"区分，两者错误码不同）。</summary>
     private async Task<CapabilityResult<DesktopContexts>?> ReadContextsAsync(CancellationToken ct)
     {
-        if (callContexts.TryCreate() is not { } call)
+        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
         {
             return null;
         }

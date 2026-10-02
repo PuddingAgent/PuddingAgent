@@ -108,7 +108,7 @@ public sealed class BrowserInteractTool(
 
 
 
-            if (callContexts.TryCreate() is not { } call)
+            if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
 
             {
 

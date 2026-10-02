@@ -76,7 +76,7 @@ public sealed class BrowserTabsTool(
                 "browser_invalid_arguments", "url must be an absolute http/https URL");
         }
 
-        if (callContexts.TryCreate() is not { } call)
+        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
         {
             return BrowserToolResponse.Failure(
                 "browser_not_connected", "No Desktop is connected for browser capabilities");
@@ -108,7 +108,7 @@ public sealed class BrowserTabsTool(
 
     private async Task<ToolExecutionResult> ListAsync(BrowserTabsArgs args, CancellationToken ct)
     {
-        if (callContexts.TryCreate() is not { } call)
+        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
         {
             return BrowserToolResponse.Failure(
                 "browser_not_connected", "No Desktop is connected for browser capabilities");
@@ -150,7 +150,7 @@ public sealed class BrowserTabsTool(
             return BrowserToolResponse.Failure("browser_page_not_found", "Browser page not found");
         }
 
-        if (callContexts.TryCreate() is not { } call)
+        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
         {
             return BrowserToolResponse.Failure(
                 "browser_not_connected", "No Desktop is connected for browser capabilities");

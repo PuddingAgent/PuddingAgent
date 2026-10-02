@@ -39,7 +39,7 @@ public sealed class BrowserWaitForTool(
             return BrowserToolResponse.Failure("browser_invalid_arguments", "wait condition or timeout is invalid");
         try
         {
-            if (callContexts.TryCreate() is not { } call)
+            if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
             {
                 return BrowserToolResponse.Failure(
                     "browser_not_connected", "No Desktop is connected for browser capabilities");

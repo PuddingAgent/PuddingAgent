@@ -29,6 +29,15 @@ internal sealed class ConnectedDesktopCallContextFactory(
 
     private readonly TimeSpan _defaultTimeout = defaultTimeout ?? DefaultCallTimeout;
 
+    public DesktopCallContext? TryCreate(string? permissionEvidenceSummary, TimeSpan? timeout = null)
+    {
+        var call = TryCreate(timeout);
+        // 证据是**进程内**字段：不上线缆，Desktop 侧重建上下文时恒为 null（设计意图）。
+        return call is null || permissionEvidenceSummary is null
+            ? call
+            : call with { PermissionEvidenceSummary = permissionEvidenceSummary };
+    }
+
     public DesktopCallContext? TryCreate(TimeSpan? timeout = null)
     {
         if (_activeDesktopId() is not { } desktopId)

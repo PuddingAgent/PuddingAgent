@@ -33,7 +33,7 @@ public sealed class BrowserLocateTool(
         {
             var locator = BrowserLocatorInputMapper.ToDesktopLocator(args.Locator);
 
-            if (callContexts.TryCreate() is not { } call)
+            if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
             {
                 return BrowserToolResponse.Failure(
                     "browser_not_connected", "No Desktop is connected for browser capabilities");
