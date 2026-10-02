@@ -24,6 +24,20 @@
 - Shell 侧：IMG11/IMG12（`96d5356`：新增 Foundation `ToolAvailabilityCatalog`（kind→可用性纯映射，卡片「可用/待接入」标签与标签页 Availability 同源）+ `MainWindow.xaml` 五张卡片可用性标签（文案由代码写入）；工具首页正常时不再输出泛泛的「就绪」）；IMG05（`53c2f1b`：Foundation `LauncherOnlyWidthRatio=0.32` + `InitialRatioWithoutPreference`/`DefaultRatioFor`/`ResolveLoadedRatio` 纯函数，已保存比例一律优先、切标签不重算比例；`DesktopBootstrapSettings.ToolWorkspace` 改可空以区分「未配置 vs 保存了默认值」；分割线补 Tooltip）。Shell 改动不涉及前端产物，前端版本号不变。
 - §13.6 的代码项（P0 + P1，含 Shell 两批）已全部落地。**静态外观已获像素复核**（Docs/Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md：聊天区 `#11100d`→`#11151b`、助手卡片去底色后与背景同色、输入区 `#1c1a16`→`#1a2029`、**消息区右侧白轨道与上下箭头消失**、页角徽标 `v6.1.3 · 97fb4d2` 可见、工具卡片可用/待接入标签可见）。**未完成的是验收**：SCROLL-001 QA 表、§12 整窗与 WebView2 真实验收（§12 V/F/S/A/P/SEC/D、§13.6 IMG-V*、§14.5 表）中的交互、浅色主题、DPI/缩放与性能项。同轮登记两处缺口：IMG03 的「帮助」在共享组件 `PuddingGlobalActions`（chat 变体），IMG07 的窄标签首列症状未被该截图覆盖。
 
+## 2026-10-01：组合根工厂（第 70 轮，让 PuddingDesktop 只剩三件事）
+
+- 新增 `DesktopCapabilityHostFactory.Create(settings, processInstanceId, authentication, streamFactory, executor)`
+  → `CapabilityResult<DesktopCapabilityHost>`：**组合根里唯一需要动脑的那步**，做成一次可测调用。
+- 语义（都有断言）：
+  ①**关闭 ⇒ 明确失败且不构造宿主**（`invalid_request`，调用方据此保持旧 Bridge）——
+  与规格 §7.2 的陷阱吻合（`StartAsync` 在旧模式下会抛异常，因此关闭时**根本不能构造/启动**）；
+  ②启用 ⇒ 构造成功但**不启动**（`IsRunning == false`、`State == Idle`）——
+  启动会占用「同一 DesktopId 单一活动传输」的名额，属组合根的生命周期决定；
+  ③握手超时非法/`DesktopId` 非法等配置问题折叠为 `invalid_request`，**不抛到启动期**。
+- 测试：DesktopService **141/141**（+4）。
+- 实测记录：`IDesktopChannelStreamFactory` 的真签名是
+  `ValueTask<DesktopChannelStream> OpenAsync(CancellationToken)`（抽象流 + `ValueTask`，不是泛型结果）——
+  写假实现前必须实读接口，凭记忆会错。
 ## 2026-10-01：组合根配方与一处关键陷阱（第 69 轮，实读 DesktopCapabilityHost）
 
 - 实读 `DesktopCapabilityHost` 得到**确切契约**：`new(options, supervisorFactory)`；
