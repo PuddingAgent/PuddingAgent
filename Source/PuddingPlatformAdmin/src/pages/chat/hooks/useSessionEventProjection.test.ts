@@ -3,6 +3,7 @@ import type { MutableRefObject } from 'react';
 import type { AdminChatStreamEvent } from '@/services/platform/api';
 import type { ChatTurn, TimelineItem } from '../types';
 import { useSessionEventProjection } from './useSessionEventProjection';
+import type { SessionEventCursorState } from './sessionEventCursor';
 
 // ── CU-03：bootstrap / gap recovery / live SSE 统一输入 ──────────────
 // 验收点：重复 eventId 幂等、终态单调（不被迟到 progress 降级）、
@@ -75,6 +76,9 @@ function setup(initialTurns: ChatTurn[] = [makeRunningTurn()]): Harness {
   const lastSequenceNumRef = {
     current: 0,
   } as MutableRefObject<number>;
+  const sessionEventCursorRef = {
+    current: { sessionId: null, phase: 'unknown' as const, sequence: 0 },
+  } as MutableRefObject<SessionEventCursorState>;
   const activeMessageIdsRef = {
     current: new Set<string>(),
   } as MutableRefObject<Set<string>>;
@@ -109,6 +113,7 @@ function setup(initialTurns: ChatTurn[] = [makeRunningTurn()]): Harness {
         latestTurnIdRef,
         messageIdToTurnIdRef,
         lastSequenceNumRef,
+        sessionEventCursorRef,
         activeMessageIdsRef,
       },
       buffers: {

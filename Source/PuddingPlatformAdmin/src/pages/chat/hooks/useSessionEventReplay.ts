@@ -30,6 +30,12 @@ import {
   normalizeSessionEvent,
 } from '../utils/sessionEventReplay';
 import type { CompactionLifecycleOptions } from './useCompaction';
+import {
+  type SessionEventCursorPreparation,
+  type SessionEventCursorState,
+  markSessionEventCursorFailed,
+  markSessionEventCursorReady,
+} from './sessionEventCursor';
 
 interface SessionReplayIdentityPort {
   lastSequenceNumRef: MutableRefObject<number>;
@@ -39,6 +45,8 @@ interface SessionReplayIdentityPort {
   selectedSessionIdRef: MutableRefObject<string | null>;
   sessionIdRef: MutableRefObject<string | undefined>;
   hydrateSessionReplayRef: MutableRefObject<boolean>;
+  /** 带会话身份的游标状态：只有成功应用过快照的会话才会被标 ready。 */
+  sessionEventCursorRef: MutableRefObject<SessionEventCursorState>;
 }
 
 interface SessionReplayProjectionPort {
@@ -86,6 +94,7 @@ export function useSessionEventReplay({
     selectedSessionIdRef,
     sessionIdRef,
     hydrateSessionReplayRef,
+    sessionEventCursorRef,
   } = identity;
   const {
     applySessionEvent,
@@ -139,14 +148,17 @@ export function useSessionEventReplay({
     async (
       sessionId: string,
       signal?: AbortSignal,
-      options?: { resetCursor?: boolean },
-    ): Promise<ConversationBootstrapResponse['turns']> => {
+      options?: { resetCursor?: boolean; isCurrent?: () => boolean },
+    ): Promise<SessionEventCursorPreparation> => {
       try {
         const [bootstrap, statuses] = await Promise.all([
           getConversationBootstrap(sessionId, 1),
           getSessionSubAgents(sessionId).catch(() => []),
         ]);
-        if (signal?.aborted) return [];
+        // 取消/过期不是成功：迟到的 A 快照不得回写 B 的游标。
+        if (signal?.aborted) return { ok: false, reason: 'aborted' };
+        if (options?.isCurrent && !options.isCurrent())
+          return { ok: false, reason: 'stale-session' };
         // 重放判活：只有「最后一个未终态的 started」才是真在跑的压缩；
         // 其余历史 started 不得在刷新后复活成「正在压缩上下文」。
         // 重放判活：服务端 compactionRunning 为权威；为 false 时任何历史 started 都是孤儿
@@ -184,21 +196,32 @@ export function useSessionEventReplay({
           return reconcileSubAgentRunStatuses(merged, statuses);
         });
         const cursor = Number(bootstrap.snapshotCursor);
-        if (!Number.isFinite(cursor) || cursor < 0)
-          return bootstrap.turns ?? [];
+        if (!Number.isFinite(cursor) || cursor < 0) {
+          markSessionEventCursorFailed(sessionEventCursorRef.current, sessionId);
+          return { ok: false, reason: 'invalid-cursor' };
+        }
         // 默认取较大值（游标只能前进）；`resetCursor` 用于 410 snapshot_required：
         // 此时本地游标之后的事件已不可读，快照才是新的权威起点——
         // 用 Math.max 保留陈旧游标只会让重连再次 410。
-        lastSequenceNumRef.current =
+        const nextCursor =
           options?.resetCursor === true
             ? Math.max(0, cursor)
             : Math.max(lastSequenceNumRef.current, cursor);
+        lastSequenceNumRef.current = nextCursor;
+        // 只有「快照已应用」此刻才把该会话标为 ready：数值 0 也可以是合法权威游标，
+        // 但「还没同步过」绝不等于 0（旧实现正是把两者混为一谈才触发全历史回放）。
+        markSessionEventCursorReady(
+          sessionEventCursorRef.current,
+          sessionId,
+          nextCursor,
+        );
         recordPerfEvent('chat.replay.cursorSynced', {
           sessionId,
-          lastSequenceNum: lastSequenceNumRef.current,
+          lastSequenceNum: nextCursor,
         });
-        return bootstrap.turns ?? [];
+        return { ok: true, cursor: nextCursor, turns: bootstrap.turns ?? [] };
       } catch (error) {
+        markSessionEventCursorFailed(sessionEventCursorRef.current, sessionId);
         recordPerfEvent(
           'chat.replay.cursorSyncFailed',
           {
@@ -208,10 +231,15 @@ export function useSessionEventReplay({
           },
           { throttleMs: 1_000 },
         );
-        return [];
+        return { ok: false, reason: 'failed' };
       }
     },
-    [handleCompactionLifecycleEvent, lastSequenceNumRef, setSubAgentRuns],
+    [
+      handleCompactionLifecycleEvent,
+      lastSequenceNumRef,
+      sessionEventCursorRef,
+      setSubAgentRuns,
+    ],
   );
 
   const replayMissedSessionEvents = useCallback(

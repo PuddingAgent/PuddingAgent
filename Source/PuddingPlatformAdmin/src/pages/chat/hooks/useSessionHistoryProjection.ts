@@ -1,4 +1,4 @@
-﻿import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback } from 'react';
 import {
   type ConversationBootstrapResponse,
@@ -32,11 +32,13 @@ interface SessionHistoryTurnPort {
   setLoading: Dispatch<SetStateAction<boolean>>;
 }
 
+import type { SessionEventCursorPreparation } from './sessionEventCursor';
 interface SessionHistoryIntegrationPort {
   mergeCompactionLifecycleTurns: (turns: ChatTurn[]) => ChatTurn[];
+  /** 判别联合：`ok=false` 表示游标准备失败（不得当成「成功但没有 turns」）。 */
   syncCompletedHistoryEventCursor: (
     sessionId: string,
-  ) => Promise<ConversationBootstrapResponse['turns']>;
+  ) => Promise<SessionEventCursorPreparation>;
   bindHistoryProjector: (
     projector: (response: MessageListResponse) => ChatTurn[],
   ) => void;
@@ -344,11 +346,12 @@ export function useSessionHistoryProjection({
       latestTurnIdRef.current =
         reconciledTurns[reconciledTurns.length - 1]?.turnId ?? null;
       setLoading(false);
-      const bootstrapTurns =
-        await syncCompletedHistoryEventCursor(sessionId);
+      const preparation = await syncCompletedHistoryEventCursor(sessionId);
       const terminalReconciledTurns = reconcileBootstrapTerminalTurns(
         turnsRef.current,
-        bootstrapTurns,
+        preparation.ok
+          ? (preparation.turns as ConversationBootstrapResponse['turns'])
+          : [],
         sessionId,
       );
       if (terminalReconciledTurns !== turnsRef.current) {

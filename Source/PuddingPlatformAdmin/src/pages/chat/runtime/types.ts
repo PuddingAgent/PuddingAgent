@@ -2,6 +2,7 @@
 // ADR-054 Step 1: Runtime Store Skeleton 基础类型定义
 
 import type { MutableRefObject } from 'react';
+import type { SessionEventCursorState } from '../hooks/sessionEventCursor';
 
 // ── Runtime Store 接口 ───────────────────────────────────
 
@@ -120,6 +121,8 @@ export interface SessionRuntimeRefs {
   sessionIdRef: MutableRefObject<string | undefined>;
   sseSessionIdRef: MutableRefObject<string | null>;
   lastSequenceNumRef: MutableRefObject<number>;
+  /** 带会话身份的游标状态（B1）：会话消失时必须一并清空，避免身份残留。 */
+  sessionEventCursorRef: MutableRefObject<SessionEventCursorState>;
   messageIdToTurnIdRef: MutableRefObject<Map<string, string>>;
   activeMessageIdsRef: MutableRefObject<Set<string>>;
   projectionOwnedSessionIdsRef: MutableRefObject<Set<string>>;

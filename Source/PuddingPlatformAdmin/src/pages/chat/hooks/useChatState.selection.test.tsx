@@ -6,6 +6,8 @@ import {
   ensureMainSession,
   executeConversationSystemCommand,
   getAgentMessageQueue,
+  getConversationBootstrap,
+  getSessionSubAgents,
   listSessionMessages,
   listSessions,
   listWorkspaceAgents,
@@ -36,6 +38,8 @@ jest.mock('@/services/platform/api', () => ({
   ensureMainSession: jest.fn(),
   executeConversationSystemCommand: jest.fn(),
   getAgentMessageQueue: jest.fn(),
+  getConversationBootstrap: jest.fn(),
+  getSessionSubAgents: jest.fn(),
   listSessions: jest.fn(),
   listSessionMessages: jest.fn(),
   listTeams: jest.fn(),
@@ -158,7 +162,12 @@ describe('useChatState session selection races', () => {
   beforeEach(() => {
     localStorage.clear();
     jest.clearAllMocks();
-    (listWorkspaces as jest.Mock).mockResolvedValue([workspace]);
+    (getConversationBootstrap as jest.Mock).mockResolvedValue({
+    turns: [],
+    snapshotCursor: 0,
+  });
+  (getSessionSubAgents as jest.Mock).mockResolvedValue([]);
+  (listWorkspaces as jest.Mock).mockResolvedValue([workspace]);
     (listWorkspaceAgents as jest.Mock).mockResolvedValue(agents);
     (listSessions as jest.Mock).mockResolvedValue(sessions);
     (ensureMainSession as jest.Mock).mockResolvedValue(sessions[0]);

@@ -5,6 +5,7 @@ import { act, renderHook } from '@testing-library/react';
 import { useRef } from 'react';
 import { submitConversationTurn } from '@/services/platform/api';
 import { useMessageSend } from './useMessageSend';
+import { createSessionEventCursorState } from './sessionEventCursor';
 
 jest.mock('@/services/platform/api', () => ({
   createSession: jest.fn(),
@@ -58,6 +59,12 @@ function useSendHarness(overrides: HarnessOverrides = {}) {
   const mainSessionIdRef = useRef<string | null>('main-1');
   const forceNewSessionRef = useRef(false);
 
+  const ensureSessionEventStream = jest.fn(async (_sessionId: string) => ({
+    ok: true,
+    opened: true,
+    reason: undefined as string | undefined,
+  }));
+
   const restoreDraft = jest.fn();
   const setError = jest.fn();
   const setTurns = jest.fn((updater: any) => {
@@ -101,7 +108,10 @@ function useSendHarness(overrides: HarnessOverrides = {}) {
       refreshSessions: async () => undefined,
     },
     stream: {
-      startSessionEventStream: () => undefined,
+      ensureSessionEventStream,
+      sessionEventCursorRef: {
+        current: createSessionEventCursorState(),
+      },
       resetStreamCursorForSessionChange: () => undefined,
       replayMissedSessionEvents: async () => undefined,
       replayMissedSessionEventsIfNeeded: async () => undefined,
@@ -125,7 +135,15 @@ function useSendHarness(overrides: HarnessOverrides = {}) {
     },
   });
 
-  return { ...harness, restoreDraft, setError, setTurns, turnsRef, loadingRef };
+  return {
+    ...harness,
+    ensureSessionEventStream,
+    restoreDraft,
+    setError,
+    setTurns,
+    turnsRef,
+    loadingRef,
+  };
 }
 
 describe('useMessageSend feedback semantics', () => {
@@ -189,5 +207,59 @@ describe('useMessageSend feedback semantics', () => {
 
     expect(messageApi.success).not.toHaveBeenCalled();
     expect(result.current.restoreDraft).not.toHaveBeenCalled();
+  });
+
+  // ── B1：发送路径必须先拿到权威游标 ──────────────────────────────
+  it('prepares the session cursor before submitting the turn', async () => {
+    (submitConversationTurn as jest.Mock).mockResolvedValueOnce({
+      success: true,
+      status: 'accepted',
+      messageId: 'message-3',
+      conversationId: 'session-1',
+      turnIds: ['server-turn-3'],
+      eventCursor: 0,
+    });
+    const { result } = renderHook(() => useSendHarness({ loading: false }));
+
+    await act(async () => {
+      await result.current.sendMessage('已有会话的第一条消息');
+    });
+
+    expect(result.current.ensureSessionEventStream).toHaveBeenCalledWith(
+      'session-1',
+    );
+    // 顺序断言：先准备好游标，再提交（否则提交路径开流会从 0 全量回放）。
+    expect(
+      result.current.ensureSessionEventStream.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      (submitConversationTurn as jest.Mock).mock.invocationCallOrder[0],
+    );
+    expect(result.current.restoreDraft).not.toHaveBeenCalled();
+  });
+
+  it('keeps the draft and does not submit when cursor preparation fails', async () => {
+    const { result } = renderHook(() => useSendHarness({ loading: false }));
+    result.current.ensureSessionEventStream.mockResolvedValueOnce({
+      ok: false,
+      opened: false,
+      reason: 'cursor-preparation-failed',
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('游标准备失败就不发送');
+    });
+
+    // 绝不用 cursor=0 兜底：既不提交，也不丢草稿。
+    expect(submitConversationTurn).not.toHaveBeenCalled();
+    expect(result.current.restoreDraft).toHaveBeenCalledWith(
+      '游标准备失败就不发送',
+    );
+    expect(result.current.setError).toHaveBeenCalledWith(
+      '会话事件游标准备失败，消息未发送，请重试。',
+    );
+    // 失败轮保留在时间线作为记录（与 POST 失败同一语义），终态为 error。
+    expect(result.current.turnsRef.current.at(-1)?.assistant?.status).toBe(
+      'error',
+    );
   });
 });

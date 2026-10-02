@@ -5,6 +5,7 @@ import {
   getSessionSubAgents,
 } from '@/services/platform/api';
 import { useSessionEventReplay } from './useSessionEventReplay';
+import { createSessionEventCursorState } from './sessionEventCursor';
 
 jest.mock('@/services/platform/api', () => ({
   getConversationBootstrap: jest.fn(),
@@ -47,6 +48,9 @@ describe('useSessionEventReplay', () => {
           selectedSessionIdRef: { current: 'session-a' },
           sessionIdRef: { current: 'session-a' },
           hydrateSessionReplayRef: { current: false },
+          sessionEventCursorRef: {
+            current: createSessionEventCursorState(),
+          },
         },
         projection: {
           applySessionEvent: jest.fn(),
@@ -107,6 +111,9 @@ describe('useSessionEventReplay', () => {
           selectedSessionIdRef: { current: 'session-a' },
           sessionIdRef: { current: 'session-a' },
           hydrateSessionReplayRef: { current: false },
+          sessionEventCursorRef: {
+            current: createSessionEventCursorState(),
+          },
         },
         projection: {
           applySessionEvent: jest.fn(),
@@ -144,5 +151,63 @@ describe('useSessionEventReplay', () => {
         runningCompactionId: 'compact-2',
       }),
     );
+  });
+
+  it('reports cursor preparation success and failure as a discriminated result', async () => {
+    jest.mocked(getSessionSubAgents).mockResolvedValue([] as never);
+    jest.mocked(getConversationBootstrap).mockResolvedValue({
+      turns: [],
+      snapshotCursor: 42,
+    } as never);
+
+    const lastSequenceNumRef = { current: 0 };
+    const sessionEventCursorRef = { current: createSessionEventCursorState() };
+
+    const { result } = renderHook(() =>
+      useSessionEventReplay({
+        identity: {
+          lastSequenceNumRef,
+          sseSessionIdRef: { current: null },
+          lastSseEventAtRef: { current: null },
+          activeMessageIdsRef: { current: new Set() },
+          selectedSessionIdRef: { current: 'session-a' },
+          sessionIdRef: { current: 'session-a' },
+          hydrateSessionReplayRef: { current: false },
+          sessionEventCursorRef,
+        },
+        projection: {
+          applySessionEvent: jest.fn(),
+          handleCompactionLifecycleEvent: jest.fn(),
+          setSubAgentRuns: jest.fn(),
+          subAgentRuns: {},
+          pruneTrackedActiveMessages: jest.fn(() => false),
+        },
+      }),
+    );
+
+    await act(async () => {
+      // 成功：返回权威游标，且只有此刻才把该会话标为 ready。
+      const prepared = await result.current.syncCompletedHistoryEventCursor(
+        'session-a',
+      );
+      expect(prepared).toEqual({ ok: true, cursor: 42, turns: [] });
+    });
+    expect(sessionEventCursorRef.current).toEqual({
+      sessionId: 'session-a',
+      phase: 'ready',
+      sequence: 42,
+    });
+    expect(lastSequenceNumRef.current).toBe(42);
+
+    // 失败：返回 ok=false，且绝不 ready（否则会以 0 兜底开流）。
+    jest
+      .mocked(getConversationBootstrap)
+      .mockRejectedValueOnce(new Error('bootstrap unavailable'));
+    let failed: unknown;
+    await act(async () => {
+      failed = await result.current.syncCompletedHistoryEventCursor('session-a');
+    });
+    expect(failed).toEqual({ ok: false, reason: 'failed' });
+    expect(sessionEventCursorRef.current.phase).toBe('unknown');
   });
 });

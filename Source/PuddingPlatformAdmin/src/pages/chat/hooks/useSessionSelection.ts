@@ -1,4 +1,4 @@
-﻿import type { MessageInstance } from 'antd/es/message/interface';
+import type { MessageInstance } from 'antd/es/message/interface';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useEffect, useRef } from 'react';
 import {
@@ -17,6 +17,11 @@ import {
 } from '../utils/chatStateUtils';
 import type { ScrollIntent } from '../viewport/types';
 import { reconcileBootstrapTerminalTurns } from './useSessionHistoryProjection';
+import {
+  type SessionEventCursorPreparation,
+  type SessionEventCursorState,
+  invalidateSessionEventCursor,
+} from './sessionEventCursor';
 
 interface SessionSelectionCatalogPort {
   workspaceId?: string;
@@ -55,18 +60,25 @@ interface SessionSelectionHistoryPort {
 
 interface SessionSelectionStreamPort {
   stop: () => void;
-  start: (sessionId: string) => void;
+  /** 统一开流入口（B1）：先保证该会话有权威游标，再开流。 */
+  ensure: (sessionId: string) => Promise<{
+    ok: boolean;
+    opened: boolean;
+    reason?: string;
+  }>;
   replayLatestTurn: (
     sessionId: string,
     turns: ChatTurn[],
     signal?: AbortSignal,
   ) => Promise<void>;
+  /** 游标准备的判别联合：`ok=false` 时必须当作准备失败（不得当成「成功但没有 turns」）。 */
   syncCompletedCursor: (
     sessionId: string,
     signal?: AbortSignal,
-  ) => Promise<ConversationBootstrapResponse['turns']>;
+  ) => Promise<SessionEventCursorPreparation>;
   projectionOwnedSessionIdsRef: MutableRefObject<Set<string>>;
   lastSequenceNumRef: MutableRefObject<number>;
+  sessionEventCursorRef: MutableRefObject<SessionEventCursorState>;
 }
 
 interface SessionSelectionLifecyclePort {
@@ -128,11 +140,12 @@ export function useSessionSelection({
   } = history;
   const {
     stop,
-    start,
+    ensure,
     replayLatestTurn,
     syncCompletedCursor,
     projectionOwnedSessionIdsRef,
     lastSequenceNumRef,
+    sessionEventCursorRef,
   } = stream;
   const { clearSessionUnread, clearRuntimeEvents, resetCompaction } = lifecycle;
 
@@ -179,6 +192,8 @@ export function useSessionSelection({
       sessionIdRef.current = sessionId;
       forceNewSessionRef.current = false;
       lastSequenceNumRef.current = 0;
+      // 切到别的会话：清空游标身份，B 必须自己 bootstrap 之后才可能 ready。
+      invalidateSessionEventCursor(sessionEventCursorRef.current);
       messageIdToTurnIdRef.current.clear();
       resetCompaction();
       latestTurnIdRef.current = null;
@@ -278,11 +293,13 @@ export function useSessionSelection({
             loadedLatestUser:
               loadedTurns[loadedTurns.length - 1]?.userMessage.text,
           });
-          const bootstrapTurns = await syncCompletedCursor(
+          const bootstrapPreparation = await syncCompletedCursor(
             sessionId,
             controller.signal,
           );
-          applyBootstrapTerminals(bootstrapTurns);
+          applyBootstrapTerminals(
+            bootstrapPreparation.ok ? (bootstrapPreparation.turns as ConversationBootstrapResponse['turns']) : [],
+          );
           return;
         }
 
@@ -302,7 +319,7 @@ export function useSessionSelection({
           setOldestMessageCursor(response.oldestCreatedAt);
         }
 
-        let bootstrapTurns: ConversationBootstrapResponse['turns'];
+        let bootstrapPreparation: SessionEventCursorPreparation;
         if (shouldReplayEventsAfterHistory(loadedTurns)) {
           const replayStartedAt = performance.now();
           await replayLatestTurn(sessionId, loadedTurns, controller.signal);
@@ -317,13 +334,13 @@ export function useSessionSelection({
               turnCount: loadedTurns.length,
             },
           );
-          bootstrapTurns = await syncCompletedCursor(
+          bootstrapPreparation = await syncCompletedCursor(
             sessionId,
             controller.signal,
           );
         } else {
           const cursorStartedAt = performance.now();
-          bootstrapTurns = await syncCompletedCursor(
+          bootstrapPreparation = await syncCompletedCursor(
             sessionId,
             controller.signal,
           );
@@ -339,7 +356,9 @@ export function useSessionSelection({
             },
           );
         }
-        applyBootstrapTerminals(bootstrapTurns);
+        applyBootstrapTerminals(
+          bootstrapPreparation.ok ? (bootstrapPreparation.turns as ConversationBootstrapResponse['turns']) : [],
+        );
 
         recordPerfStep('session.select', 'select.finish', selectStartedAt, {
           traceId,
@@ -386,7 +405,8 @@ export function useSessionSelection({
           !controller.signal.aborted &&
           sessionIdRef.current === sessionId
         ) {
-          start(sessionId);
+          // 统一入口：游标已由上面的 syncCompletedCursor 置为 ready，因此这里直接命中权威游标。
+          void ensure(sessionId);
         }
       }
     },
@@ -418,7 +438,7 @@ export function useSessionSelection({
       setSelectedSessionId,
       setTurns,
       setViewportScrollIntent,
-      start,
+      ensure,
       stop,
       syncCompletedCursor,
       toTurnsFromHistory,

@@ -119,6 +119,12 @@ import { useMessageSend } from './useMessageSend';
 import { useSessionCatalog } from './useSessionCatalog';
 import { useSessionEventBuffers } from './useSessionEventBuffers';
 import { useSessionEventConnection } from './useSessionEventConnection';
+import {
+  type SessionEventCursorState,
+  createSessionEventCursorState,
+  invalidateSessionEventCursor,
+  markSessionEventCursorReady,
+} from './sessionEventCursor';
 import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import { isExecutionFlowProjectionEnabled } from '../client/featureFlag';
 import { useSessionEventProjection } from './useSessionEventProjection';
@@ -351,6 +357,14 @@ export function useChatState(
   const latestTurnIdRef = useRef<string | null>(null);
   const messageIdToTurnIdRef = useRef<Map<string, string>>(new Map());
   const lastSequenceNumRef = useRef<number>(0);
+  /**
+   * 带会话身份与阶段的游标状态（B1）：开流决策的权威来源。
+   * `lastSequenceNumRef` 保留为数值镜像（历史同步/缺口重放仍按数字读取），
+   * 但「未初始化」与「权威 0」的区别只由本状态表达。
+   */
+  const sessionEventCursorRef = useRef<SessionEventCursorState>(
+    createSessionEventCursorState(),
+  );
   const projectionOwnedSessionIdsRef = useRef<Set<string>>(new Set());
   const {
     sessionEventsAbortRef,
@@ -359,7 +373,7 @@ export function useChatState(
     sseSessionIdRef,
     lastSseEventAtRef,
     reconnectCountRef,
-    startSessionEventStream,
+    ensureSessionEventStream,
     reconnectCount,
     stopSessionEventStream,
     bindSessionEventConnection,
@@ -558,6 +572,7 @@ export function useChatState(
       latestTurnIdRef,
       messageIdToTurnIdRef,
       lastSequenceNumRef,
+      sessionEventCursorRef,
       activeMessageIdsRef,
     },
     buffers: {
@@ -663,6 +678,7 @@ export function useChatState(
       sessionIdRef,
       sseSessionIdRef,
       lastSequenceNumRef,
+      sessionEventCursorRef,
       messageIdToTurnIdRef,
       activeMessageIdsRef,
       projectionOwnedSessionIdsRef,
@@ -735,6 +751,7 @@ export function useChatState(
         resetHistoryPagination();
         messageIdToTurnIdRef.current.clear();
         lastSequenceNumRef.current = 0;
+        invalidateSessionEventCursor(sessionEventCursorRef.current);
       }
 
       // 4. 如果是 main session → 清除 mainSessionId 和 agent 缓存，并抑制自动重建
@@ -784,6 +801,7 @@ export function useChatState(
       selectedSessionIdRef,
       sessionIdRef,
       hydrateSessionReplayRef,
+      sessionEventCursorRef,
     },
     projection: {
       applySessionEvent,
@@ -806,10 +824,13 @@ export function useChatState(
     syncSessionIdentity,
     activeMessageIdsRef,
     lastSequenceNumRef,
+    sessionEventCursorRef,
     streamStartAtRef,
     selectedSessionIdRef,
     sessionIdRef,
     turnsRef,
+    isProjectionOwnedSession: (sessionId: string) =>
+      projectionOwnedSessionIdsRef.current.has(sessionId),
   });
 
   const { toTurnsFromHistory, reconcileCompletedSessionMessages } =
@@ -839,6 +860,7 @@ export function useChatState(
       clearChatInteractionRuntimeEvents();
       resetHistoryPagination();
       lastSequenceNumRef.current = 0;
+      invalidateSessionEventCursor(sessionEventCursorRef.current);
       latestTurnIdRef.current = null;
       messageIdToTurnIdRef.current.clear();
       resetCompaction();
@@ -917,6 +939,13 @@ export function useChatState(
       // source cursor into the successor would skip its compaction-origin event
       // and every early event whose sequence is lower than the old cursor.
       lastSequenceNumRef.current = 0;
+      // 后继会话由服务端刚创建：这里是「服务端已确认的新会话」，游标 0 是权威值，
+      // 而不是「还没同步过」（后者必须走 ensureSessionEventStream 准备）。
+      markSessionEventCursorReady(
+        sessionEventCursorRef.current,
+        sessionId,
+        0,
+      );
       messageIdToTurnIdRef.current.clear();
       projectionOwnedSessionIdsRef.current.delete(sessionId);
       setSessions((prev) => {
@@ -940,15 +969,12 @@ export function useChatState(
         ];
       });
       // S3：新后继会话的 sequence 从低位开始，且此处需要它的全部早段事件
-      // （压缩来源事件与承接中的 turn），因此显式声明「有意全量回放 0」——
-      // 而不是让「游标恰好为 0」隐式表达这个意图。新会话日志短，回放有界。
-      startSessionEventStream(sessionId, {
-        cursor: 0,
-        reason: 'compaction-successor',
-      });
+      // （压缩来源事件与承接中的 turn），因此在上一步把**服务端刚创建**的会话游标记为权威 0；
+      // 统一入口 ensure 随后按该游标开流（不再有绕过游标准备的 cursor:0 调用）。
+      void ensureSessionEventStream(sessionId);
       refreshSessions({ preserveSessionId: sessionId });
     },
-    [refreshSessions, startSessionEventStream],
+    [refreshSessions, ensureSessionEventStream],
   );
 
   bindCompactedSessionSwitch(switchToCompactedSessionPreservingTurns);
@@ -1001,11 +1027,12 @@ export function useChatState(
     },
     stream: {
       stop: stopSessionEventStream,
-      start: startSessionEventStream,
+      ensure: ensureSessionEventStream,
       replayLatestTurn: replayLatestTurnSessionEvents,
       syncCompletedCursor: syncCompletedHistoryEventCursor,
       projectionOwnedSessionIdsRef,
       lastSequenceNumRef,
+      sessionEventCursorRef,
     },
     lifecycle: {
       clearSessionUnread,
@@ -1264,14 +1291,15 @@ export function useChatState(
       );
       return;
     }
-    startSessionEventStream(selectedSessionId);
+    // 统一入口：游标未就绪时先 bootstrap，绝不以 0 兜底开流。
+    void ensureSessionEventStream(selectedSessionId);
     return () => {
       stopSessionEventStream();
     };
   }, [
     historyLoading,
     selectedSessionId,
-    startSessionEventStream,
+    ensureSessionEventStream,
     stopSessionEventStream,
   ]);
 
@@ -1301,6 +1329,12 @@ export function useChatState(
         selectedSessionIdRef.current = forkedSessionId;
         forceNewSessionRef.current = false;
         lastSequenceNumRef.current = 0;
+        // 服务端刚创建的分支会话：游标 0 是权威值（事件日志为空），随后走统一入口开流。
+        markSessionEventCursorReady(
+          sessionEventCursorRef.current,
+          forkedSessionId,
+          0,
+        );
         latestTurnIdRef.current = null;
         messageIdToTurnIdRef.current.clear();
         activeMessageIdsRef.current.clear();
@@ -1312,11 +1346,9 @@ export function useChatState(
           toSessionListItem(session, title),
           ...prev,
         ]);
-        // S3：分支会话是新建的，事件日志从低位开始；显式声明全量回放意图（有界）。
-        startSessionEventStream(forkedSessionId, {
-          cursor: 0,
-          reason: 'checkpoint-fork',
-        });
+        // S3：分支会话是新建的（日志为空），上一步已把它的权威游标声明为 0；
+        // 这里通过统一入口开流，不再有绕过游标准备的显式 cursor:0 调用。
+        void ensureSessionEventStream(forkedSessionId);
         refreshSessions({ preserveSessionId: forkedSessionId });
         logChatDiag('checkpoint.fork.created', {
           checkpointId: checkpoint.checkpointId,
@@ -1346,7 +1378,7 @@ export function useChatState(
       setSelectedSessionId,
       setSessions,
       setTurns,
-      startSessionEventStream,
+      ensureSessionEventStream,
       workspaceId,
     ],
   );
@@ -1392,7 +1424,8 @@ export function useChatState(
       refreshSessions,
     },
     stream: {
-      startSessionEventStream,
+      ensureSessionEventStream,
+      sessionEventCursorRef,
       resetStreamCursorForSessionChange,
       replayMissedSessionEvents,
       replayMissedSessionEventsIfNeeded,

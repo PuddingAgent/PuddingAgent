@@ -17,6 +17,9 @@ function createMockRefs(
     sessionIdRef: { current: undefined },
     sseSessionIdRef: { current: null },
     lastSequenceNumRef: { current: 0 },
+    sessionEventCursorRef: {
+      current: { sessionId: null, phase: 'unknown' as const, sequence: 0 },
+    },
     messageIdToTurnIdRef: { current: new Map() },
     activeMessageIdsRef: { current: new Set() },
     projectionOwnedSessionIdsRef: { current: new Set() },

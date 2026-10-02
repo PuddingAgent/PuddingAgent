@@ -10,21 +10,29 @@ import type { ChatTurn } from '../types';
 import { logChatDiag } from '../utils/chatDiagnostics';
 import { resolveSessionReplayPollInterval } from '../utils/chatStateUtils';
 import { isSessionNotFoundError } from './sessionRuntimeCleanup';
+import {
+  type SessionEventCursorPreparation,
+  type SessionEventCursorState,
+  type SessionEventStreamEnsureResult,
+  decideSessionEventStreamStart,
+  isCursorReadyForSession,
+} from './sessionEventCursor';
 
 /**
  * startSessionEventStream 的可选覆盖项（S3：游标必须显式）。
  */
 export interface StartSessionEventStreamOptions {
   /**
-   * 显式订阅起点。省略时使用 lastSequenceNumRef（由 bootstrap/history 写入的权威位置）。
-   * 显式 0 表示**有意全量回放**，仅用于刚创建的新会话（事件日志短且有界）。
+   * 显式订阅起点。省略时使用**该会话已就绪的权威游标**（bootstrap/history 写入）；
+   * 未就绪时不再退回 0，而是拒绝开流（调用方须走 ensureSessionEventStream）。
+   * 显式 0 表示**有意全量回放**，仅用于服务端刚创建、事件日志为空的新会话。
    */
   cursor?: number;
   /** 诊断用：为何以该游标开流。 */
   reason?: string;
 }
 
-interface SessionEventConnectionPorts {
+export interface SessionEventConnectionPorts {
   applySessionEvent: (
     event: AdminChatStreamEvent,
     options?: { replay?: boolean },
@@ -48,25 +56,32 @@ interface SessionEventConnectionPorts {
     nextSessionId?: string | null,
   ) => void;
   /**
-   * 重取 `/bootstrap` 快照并把 lastSequenceNumRef 同步到快照游标。
+   * 重取 `/bootstrap` 快照并把游标同步到快照位置。
    *
    * `resetCursor: true` 表示**强制**把游标置为快照位置——用于 410
    * `snapshot_required`：本地游标之后的事件已不可读，只能以快照为新起点；
    * 默认的 Math.max 语义会保留陈旧游标，导致重连后再次 410。
+   *
+   * 返回**判别联合**：`ok=false` 明确表示「准备失败/被取消/会话已过期」，
+   * 调用方不得把失败当成「成功但没有 turns」。
    */
   syncCompletedHistoryEventCursor: (
     sessionId: string,
     signal?: AbortSignal,
-    options?: { resetCursor?: boolean },
-  ) => Promise<unknown>;
+    options?: { resetCursor?: boolean; isCurrent?: () => boolean },
+  ) => Promise<SessionEventCursorPreparation>;
   flushPendingDeltas: () => void;
   syncSessionIdentity: () => void;
   activeMessageIdsRef: MutableRefObject<Set<string>>;
   lastSequenceNumRef: MutableRefObject<number>;
+  /** 带会话身份与阶段的游标状态：开流决策的权威来源。 */
+  sessionEventCursorRef: MutableRefObject<SessionEventCursorState>;
   streamStartAtRef: MutableRefObject<Map<string, number>>;
   selectedSessionIdRef: MutableRefObject<string | null>;
   sessionIdRef: MutableRefObject<string | undefined>;
   turnsRef: MutableRefObject<ChatTurn[]>;
+  /** 该会话是否由消息/活动投影承担实时更新（是则不开原始 SSE）。 */
+  isProjectionOwnedSession: (sessionId: string) => boolean;
 }
 
 const noop = () => {};
@@ -77,16 +92,31 @@ const defaultPorts = {
   replayMissedSessionEvents: async () => {},
   replayMissedSessionEventsIfNeeded: async () => false,
   resetStreamCursorForSessionChange: noop,
-  syncCompletedHistoryEventCursor: async () => undefined,
+  syncCompletedHistoryEventCursor: async () => ({
+    ok: false,
+    reason: 'failed',
+  }),
   flushPendingDeltas: noop,
   syncSessionIdentity: noop,
   activeMessageIdsRef: { current: new Set<string>() },
   lastSequenceNumRef: { current: 0 },
+  sessionEventCursorRef: {
+    current: { sessionId: null, phase: 'unknown' as const, sequence: 0 },
+  },
   streamStartAtRef: { current: new Map<string, number>() },
   selectedSessionIdRef: { current: null },
   sessionIdRef: { current: undefined },
   turnsRef: { current: [] },
+  isProjectionOwnedSession: () => false,
 } satisfies SessionEventConnectionPorts;
+
+/** One in-flight "make the cursor ready, then open the stream" request. */
+interface ConnectionRequest {
+  sessionId: string;
+  generation: number;
+  controller: AbortController;
+  promise: Promise<SessionEventStreamEnsureResult> | null;
+}
 
 /** Owns live SSE connection refs, reconnect scheduling, and replay polling. */
 export function useSessionEventConnection() {
@@ -99,6 +129,22 @@ export function useSessionEventConnection() {
   const lastSseEventAtRef = useRef<number | null>(null);
   const reconnectCountRef = useRef(0);
   const [reconnectCount, setReconnectCount] = useState(0);
+  const connectionRequestRef = useRef<ConnectionRequest>({
+    sessionId: '',
+    generation: 0,
+    controller: new AbortController(),
+    promise: null,
+  });
+  /**
+   * 重连兜底入口：重连时游标可能已被清空（会话切换/快照重置），此时必须先重新准备游标，
+   * 而不是以 0 兜底开流。用 ref 传递以避免「先定义的 scheduleReconnect 引用后定义的 ensure」。
+   */
+  const ensureSessionEventStreamRef = useRef<
+    ((
+      sessionId: string,
+      options?: { forceReconnect?: boolean },
+    ) => Promise<SessionEventStreamEnsureResult>) | null
+  >(null);
 
   const bindSessionEventConnection = useCallback(
     (ports: SessionEventConnectionPorts) => {
@@ -122,27 +168,75 @@ export function useSessionEventConnection() {
     }
   }, []);
 
+  const stopSessionEventStreamInternal = useCallback(
+    (options?: { abortCursorPreparation?: boolean }) => {
+      const ports = portsRef.current;
+      ports.flushPendingDeltas();
+      clearSessionEventTimers();
+      sessionEventsAbortRef.current?.abort();
+      sessionEventsAbortRef.current = null;
+      sseSessionIdRef.current = null;
+      lastSseEventAtRef.current = null;
+      reconnectCountRef.current = 0;
+      setReconnectCount(0);
+      if (options?.abortCursorPreparation) {
+        // 停止（会话切换/卸载）时也取消正在进行的游标准备，避免迟到的 bootstrap 回写游标。
+        connectionRequestRef.current.controller.abort();
+        connectionRequestRef.current = {
+          ...connectionRequestRef.current,
+          sessionId: '',
+          promise: null,
+        };
+      }
+      ports.syncSessionIdentity();
+    },
+    [clearSessionEventTimers],
+  );
+
   const stopSessionEventStream = useCallback(() => {
-    const ports = portsRef.current;
-    ports.flushPendingDeltas();
-    clearSessionEventTimers();
-    sessionEventsAbortRef.current?.abort();
-    sessionEventsAbortRef.current = null;
-    sseSessionIdRef.current = null;
-    lastSseEventAtRef.current = null;
-    reconnectCountRef.current = 0;
-    setReconnectCount(0);
-    ports.syncSessionIdentity();
-  }, [clearSessionEventTimers]);
+    stopSessionEventStreamInternal({ abortCursorPreparation: true });
+  }, [stopSessionEventStreamInternal]);
 
   const startSessionEventStream = useCallback(
-    (sessionId: string, options?: StartSessionEventStreamOptions) => {
-      if (!sessionId) return;
+    (sessionId: string, options?: StartSessionEventStreamOptions): boolean => {
+      if (!sessionId) return false;
       const ports = portsRef.current;
+
+      // 唯一的开流起点决策：未就绪的会话不再退回 0（那会把整段历史当成实时帧回放）。
+      const decision = decideSessionEventStreamStart({
+        state: ports.sessionEventCursorRef.current,
+        sessionId,
+        explicitCursor: options?.cursor,
+      });
+
+      if (decision.kind !== 'open') {
+        recordPerfEvent(
+          'chat.sse.startRefused',
+          {
+            sessionId,
+            decision: decision.kind,
+            reason:
+              decision.kind === 'refused' ? decision.reason : 'cursor-hydrating',
+            cursorSessionId: ports.sessionEventCursorRef.current.sessionId,
+            cursorPhase: ports.sessionEventCursorRef.current.phase,
+          },
+          { throttleMs: 1_000 },
+        );
+        logChatDiag('sse.start.deferredWithoutAuthoritativeCursor', {
+          sessionId,
+          decision: decision.kind,
+          cursorSessionId: ports.sessionEventCursorRef.current.sessionId,
+          cursorPhase: ports.sessionEventCursorRef.current.phase,
+          lastSequenceNum: ports.lastSequenceNumRef.current,
+          requestReason: options?.reason,
+        });
+        return false;
+      }
+
       const previousStreamSessionId = sseSessionIdRef.current;
       const previousReconnectCount =
         previousStreamSessionId === sessionId ? reconnectCountRef.current : 0;
-      stopSessionEventStream();
+      stopSessionEventStreamInternal();
       reconnectCountRef.current = previousReconnectCount;
       setReconnectCount(previousReconnectCount);
       // A first connection is opened only after history/bootstrap has advanced
@@ -157,13 +251,9 @@ export function useSessionEventConnection() {
       }
       sseSessionIdRef.current = sessionId;
       ports.syncSessionIdentity();
-      // S3：游标必须显式。显式 0 ＝调用方有意全量回放（仅限刚创建的新会话）；
-      // 省略＝沿用 lastSequenceNumRef（bootstrap/history 写入的权威位置）。
-      const explicitCursor = options?.cursor;
-      const afterSequence =
-        typeof explicitCursor === 'number'
-          ? Math.max(0, explicitCursor)
-          : Math.max(0, ports.lastSequenceNumRef.current);
+      // S3：游标必须显式。显式 0 ＝调用方有意全量回放（仅限服务端刚创建、日志为空的新会话）；
+      // 省略＝使用该会话**已就绪**的权威游标（上面的决策已保证这一点）。
+      const afterSequence = decision.afterSequence;
       recordPerfEvent('chat.sse.start', { sessionId });
       logChatDiag('sse.start', {
         sessionId,
@@ -171,8 +261,7 @@ export function useSessionEventConnection() {
         selectedSessionId: ports.selectedSessionIdRef.current,
         sessionIdRef: ports.sessionIdRef.current,
         lastSequenceNum: afterSequence,
-        cursorSource:
-          typeof explicitCursor === 'number' ? 'explicit' : 'authoritative-ref',
+        cursorSource: decision.cursorSource,
         cursorReason: options?.reason,
         activeMessageCount: ports.activeMessageIdsRef.current.size,
         turnCount: ports.turnsRef.current.length,
@@ -231,7 +320,13 @@ export function useSessionEventConnection() {
               !controller.signal.aborted &&
               sseSessionIdRef.current === sessionId
             ) {
-              startSessionEventStream(sessionId);
+              // 游标可能已被清空（例如刚做过快照重置）：先重新准备，绝不退回 0。
+              // 重连必须强制重建流：旧连接此时的「健康」只说明还没被 abort。
+              if (!startSessionEventStream(sessionId)) {
+                void ensureSessionEventStreamRef.current?.(sessionId, {
+                  forceReconnect: true,
+                });
+              }
             }
           },
           Math.min(
@@ -465,9 +560,137 @@ export function useSessionEventConnection() {
         });
         originalAbort();
       };
+
+      return true;
     },
-    [stopSessionEventStream],
+    [stopSessionEventStreamInternal],
   );
+
+  /** 该会话是否已经有一条健康的 SSE（可复用，不必重建）。 */
+  const hasHealthySessionEventStream = useCallback(
+    (sessionId: string): boolean => {
+      const controller = sessionEventsAbortRef.current;
+      return (
+        !!controller &&
+        !controller.signal.aborted &&
+        sseSessionIdRef.current === sessionId
+      );
+    },
+    [],
+  );
+
+  /**
+   * 统一的开流入口（B1）：先保证该会话有**权威游标**，再开流。
+   * <para>
+   * - 会话由消息/活动投影承担实时更新 ⇒ 不开第二条原始 SSE（`ok=true, opened=false`）；
+   * - 已有健康连接 ⇒ 复用（`ok=true, opened=false`）；
+   * - 游标未就绪 ⇒ 通过 `syncCompletedHistoryEventCursor` 同步（同会话请求合并，generation+AbortSignal
+   *   复检防止 A 的迟到 bootstrap 修改 B 的游标）；
+   * - 准备失败 ⇒ `ok=false`：调用方**不得**退回 0 兜底。
+   * </para>
+   */
+  const ensureSessionEventStream = useCallback(
+    async (
+      sessionId: string,
+      options?: { forceReconnect?: boolean },
+    ): Promise<SessionEventStreamEnsureResult> => {
+      if (!sessionId) return { ok: false, opened: false, reason: 'stale-request' };
+
+      const ports = portsRef.current;
+
+      if (ports.isProjectionOwnedSession(sessionId)) {
+        recordPerfEvent(
+          'chat.sse.ensureSkipped',
+          { sessionId, reason: 'projection-owned' },
+          { throttleMs: 1_000 },
+        );
+        return { ok: true, opened: false, reason: 'projection-owned' };
+      }
+
+      // 重连必须重新建立流：此时旧连接可能仍在（只是收到了 503/超时），复用等于什么都不做。
+      if (!options?.forceReconnect && hasHealthySessionEventStream(sessionId)) {
+        return { ok: true, opened: false, reason: 'already-connected' };
+      }
+
+      const pending = connectionRequestRef.current;
+      if (pending.sessionId === sessionId && pending.promise) {
+        return pending.promise;
+      }
+
+      // 换会话：取消上一个准备请求，避免它的迟到结果回写。
+      pending.controller.abort();
+
+      const generation = pending.generation + 1;
+      const controller = new AbortController();
+      const request: ConnectionRequest = {
+        sessionId,
+        generation,
+        controller,
+        promise: null,
+      };
+      connectionRequestRef.current = request;
+
+      const isCurrent = () =>
+        connectionRequestRef.current === request && !controller.signal.aborted;
+
+      const promise = (async (): Promise<SessionEventStreamEnsureResult> => {
+        const currentPorts = portsRef.current;
+
+        if (
+          !isCursorReadyForSession(
+            currentPorts.sessionEventCursorRef.current,
+            sessionId,
+          )
+        ) {
+          const prepared = await currentPorts.syncCompletedHistoryEventCursor(
+            sessionId,
+            controller.signal,
+            { isCurrent },
+          );
+
+          if (!isCurrent()) {
+            return { ok: false, opened: false, reason: 'stale-request' };
+          }
+
+          if (!prepared.ok) {
+            recordPerfEvent(
+              'chat.sse.cursorPreparationFailed',
+              { sessionId, reason: prepared.reason },
+              { throttleMs: 1_000 },
+            );
+            return {
+              ok: false,
+              opened: false,
+              reason: 'cursor-preparation-failed',
+            };
+          }
+        }
+
+        if (
+          !isCurrent() ||
+          !isCursorReadyForSession(
+            portsRef.current.sessionEventCursorRef.current,
+            sessionId,
+          )
+        ) {
+          return { ok: false, opened: false, reason: 'cursor-not-ready' };
+        }
+
+        const opened = startSessionEventStream(sessionId);
+        return {
+          ok: true,
+          opened,
+          reason: opened ? undefined : 'projection-owned',
+        };
+      })();
+
+      request.promise = promise;
+      return promise;
+    },
+    [hasHealthySessionEventStream, startSessionEventStream],
+  );
+
+  ensureSessionEventStreamRef.current = ensureSessionEventStream;
 
   return {
     sessionEventsAbortRef,
@@ -478,6 +701,7 @@ export function useSessionEventConnection() {
     reconnectCountRef,
     reconnectCount,
     startSessionEventStream,
+    ensureSessionEventStream,
     stopSessionEventStream,
     bindSessionEventConnection,
   };

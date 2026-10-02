@@ -9,6 +9,8 @@
 
 import type { MutableRefObject } from 'react';
 import type { BufferedAnswerDelta } from '../types/chatStateTypes';
+import { invalidateSessionEventCursor } from './sessionEventCursor';
+import type { SessionEventCursorState } from './sessionEventCursor';
 
 /** 当 API 返回 404 或 session 被删除/归档时抛出，用于跨层传播 */
 export class SessionNotFoundError extends Error {
@@ -35,6 +37,8 @@ export interface SessionRuntimeRefs {
   sessionIdRef: MutableRefObject<string | undefined>;
   sseSessionIdRef: MutableRefObject<string | null>;
   lastSequenceNumRef: MutableRefObject<number>;
+  /** 带会话身份的游标状态（B1）：会话消失时必须一并清空。 */
+  sessionEventCursorRef: MutableRefObject<SessionEventCursorState>;
   messageIdToTurnIdRef: MutableRefObject<Map<string, string>>;
   activeMessageIdsRef: MutableRefObject<Set<string>>;
   projectionOwnedSessionIdsRef: MutableRefObject<Set<string>>;
@@ -136,6 +140,8 @@ export function disposeCurrentSessionRuntime(
     refs.sseSessionIdRef.current = null;
   }
   refs.lastSequenceNumRef.current = 0;
+  // 会话消失：游标身份也必须一并清空，否则「B 的会话 id + A 的序号」会成为合法的开流依据。
+  invalidateSessionEventCursor(refs.sessionEventCursorRef.current);
   refs.forceNewSessionRef.current = false;
 
   // 6. 清除 projection ownership

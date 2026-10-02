@@ -35,6 +35,10 @@ import {
 } from '../utils/chatStateUtils';
 import type { ScrollIntent } from '../viewport/types';
 import { getChatRouteLabel, resolveChatRoute } from './chatRouting';
+import {
+  type SessionEventCursorState,
+  markSessionEventCursorReady,
+} from './sessionEventCursor';
 
 interface MessageSendIdentityPort {
   workspaceId?: string;
@@ -70,10 +74,16 @@ interface MessageSendSessionPort {
 }
 
 interface MessageSendStreamPort {
-  startSessionEventStream: (
+  /**
+   * 统一开流入口（B1）：先保证该会话有权威游标，再开流。
+   * `ok=false` 表示游标准备失败/被拒 —— 调用方**不得**退回 `cursor: 0`。
+   * `ok=true, opened=false` 表示无需开原始流（投影自有的会话）或连接已健康。
+   */
+  ensureSessionEventStream: (
     sessionId: string,
-    options?: { cursor?: number; reason?: string },
-  ) => void;
+  ) => Promise<{ ok: boolean; opened: boolean; reason?: string }>;
+  /** 带会话身份的游标状态：服务端刚创建的空会话在此处声明权威 0。 */
+  sessionEventCursorRef: MutableRefObject<SessionEventCursorState>;
   resetStreamCursorForSessionChange: (
     previousSessionId?: string | null,
     nextSessionId?: string | null,
@@ -170,7 +180,8 @@ export function useMessageSend({
     refreshSessions,
   } = sessions;
   const {
-    startSessionEventStream,
+    ensureSessionEventStream,
+    sessionEventCursorRef,
     resetStreamCursorForSessionChange,
     replayMissedSessionEvents,
     replayMissedSessionEventsIfNeeded,
@@ -246,6 +257,7 @@ export function useMessageSend({
         sessionIdRef.current ??
         selectedSessionIdRef.current ??
         mainSessionIdRef.current;
+      let sessionJustCreated = false;
       if (forceNewSessionRef.current && !isSystemCommand) {
         const created = await createSession(
           workspaceId,
@@ -254,6 +266,7 @@ export function useMessageSend({
           targetAgent ? getAgentName(targetAgent) : targetAgentId,
         );
         sendConversationId = created.sessionId;
+        sessionJustCreated = true;
       } else if (!sendConversationId) {
         const ensureRequest = buildAgentMainSessionRequest(
           workspaceId,
@@ -267,10 +280,21 @@ export function useMessageSend({
 
       sessionIdRef.current = sendConversationId;
       setSelectedSessionId(sendConversationId);
-      startSessionEventStream(sendConversationId);
+
+      // B1：只有服务端刚创建、事件日志为空的新会话才允许声明 cursor=0；
+      // 已有会话的权威游标由统一入口在提交前准备（见下方 try 内），绝不以 0 兜底。
+      if (sessionJustCreated) {
+        markSessionEventCursorReady(
+          sessionEventCursorRef.current,
+          sendConversationId,
+          0,
+        );
+      }
 
       const turnId = createId();
       if (isSystemCommand) {
+        // 系统指令不建 Turn：这里只按旧行为把流开起来（不阻塞指令执行）。
+        void ensureSessionEventStream(sendConversationId);
         const clientRequestId = createId();
         const clientMessageId = createId();
         const responseMessageId = createId();
@@ -423,6 +447,18 @@ export function useMessageSend({
       });
 
       try {
+        // B1：提交前先拿到该会话的**权威游标**（bootstrap 快照），失败则不提交、不丢草稿 ——
+        // 绝不用 cursor:0 兜底（那会把整段历史当成实时帧回放）。
+        // 「被取消/被别的会话顶掉」不是准备失败：用户已切走，消息照常提交，只是不为旧会话开流。
+        const streamEnsure = await ensureSessionEventStream(sendConversationId);
+        if (!streamEnsure.ok && streamEnsure.reason !== 'stale-request') {
+          logChatDiag('post.streamCursorPreparationFailed', {
+            sessionId: sendConversationId,
+            reason: streamEnsure.reason,
+          });
+          throw new Error('会话事件游标准备失败，消息未发送，请重试。');
+        }
+
         // Persist before the HTTP request, but only after the optimistic state is
         // synchronously attached to the conversation that initiated the send.
         // This closes the selection race where IndexedDB yielded and the turn was
@@ -535,7 +571,8 @@ export function useMessageSend({
         );
         activeMessageIdsRef.current.add(messageId);
         if (stillViewingSendSession) {
-          startSessionEventStream(returnedSessionId);
+          // 返回的可能是同一个会话（连接健康则复用）或另一个会话（为该会话单独准备游标）。
+          void ensureSessionEventStream(returnedSessionId);
         }
 
         // 埋点
@@ -737,7 +774,8 @@ export function useMessageSend({
       replayMissedSessionEventsIfNeeded,
       refreshSessions,
       handleCompactCommand,
-      startSessionEventStream,
+      ensureSessionEventStream,
+      sessionEventCursorRef,
       reconcileCompletedSessionMessages,
       resetStreamCursorForSessionChange,
       setAgentIdsWorking,

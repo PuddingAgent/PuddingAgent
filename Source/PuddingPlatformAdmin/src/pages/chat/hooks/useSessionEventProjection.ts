@@ -60,6 +60,11 @@ import {
   requireToolCallId,
 } from '../utils/canonicalEvents';
 import type { CompactionLifecycleOptions } from './useCompaction';
+import {
+  type SessionEventCursorState,
+  advanceSessionEventCursor,
+  invalidateSessionEventCursor,
+} from './sessionEventCursor';
 
 interface ProjectionIdentityPort {
   agentId?: string;
@@ -78,6 +83,8 @@ interface ProjectionTurnsPort {
   latestTurnIdRef: MutableRefObject<string | null>;
   messageIdToTurnIdRef: MutableRefObject<Map<string, string>>;
   lastSequenceNumRef: MutableRefObject<number>;
+  /** 带会话身份的游标状态：实时事件推进它，会话切换时清空它。 */
+  sessionEventCursorRef: MutableRefObject<SessionEventCursorState>;
   activeMessageIdsRef: MutableRefObject<Set<string>>;
 }
 
@@ -145,6 +152,7 @@ export function useSessionEventProjection({
     latestTurnIdRef,
     messageIdToTurnIdRef,
     lastSequenceNumRef,
+    sessionEventCursorRef,
     activeMessageIdsRef,
   } = turns;
   const {
@@ -312,6 +320,14 @@ export function useSessionEventProjection({
     if (Number.isFinite(seq) && seq > lastSequenceNumRef.current) {
       lastSequenceNumRef.current = seq;
     }
+    // 游标状态只对「当前正在流的会话」推进：advanceSessionEventCursor 会拒绝别的会话。
+    const sessionId =
+      sseSessionIdRef.current ??
+      sessionIdRef.current ??
+      selectedSessionIdRef.current;
+    if (sessionId) {
+      advanceSessionEventCursor(sessionEventCursorRef.current, sessionId, seq);
+    }
   }, []);
 
   const resetStreamCursorForSessionChange = useCallback(
@@ -321,6 +337,8 @@ export function useSessionEventProjection({
       )
         return;
       lastSequenceNumRef.current = 0;
+      // 会话切换：A 的游标绝不能被带给 B（B 必须自己经过 bootstrap 才 ready）。
+      invalidateSessionEventCursor(sessionEventCursorRef.current);
       activeMessageIdsRef.current.clear();
       streamStartAtRef.current.clear();
       duplicateDeltaReplayOffsetRef.current.clear();
