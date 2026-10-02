@@ -8,7 +8,7 @@ namespace PuddingCodeIndex.Storage;
 /// <summary>
 /// SQLite-backed store for workspace-registered code projects and their semantic graph.
 /// </summary>
-public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceMaintenanceStore
+public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceMaintenanceStore, ICodeGraphDependencyQuery
 {
     private readonly string _databasePath;
     private bool _initialized;

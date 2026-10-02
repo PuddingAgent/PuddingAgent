@@ -31,6 +31,7 @@
 | `ICodeSourceMaintenanceStore`（同 `CodeSourceManifestContracts.cs`） | **可选持久化/维护写能力端口**（2026-10-02）：`LoadSourceMaintenanceAsync` / `SaveSourceManifestAsync`（单事务 upsert+删除，删除同时清消费者水位）/ `SaveMaintenanceLedgerAsync`（整体替换消费者水位与待重试，**拒绝回退写入**）/ `ReplaceFilesAsync`（**原子文件替换**：索引结果 + 源指纹同事务；见下）。故意不加进 `ICodeIndexStore`（给共享端口加成员会破坏每一个实现者，含组件外替身） |
 | `CodeSourceScanningContracts.cs` | **D2 磁盘枚举与校准合同**（2026-10-02）：`CodeSourceDiskEntry`（只含元数据，stat 读不到就是 null）、`ICodeSourceIgnoreRules`（忽略规则**注入端口**，组件不反向引用 `PuddingPathFiltering`）、`ICodeSourceScanner` + `CodeSourceScanOutcome`（`RootUsable` / `Complete` / 原因）、`CodeSourceScanRun`（变更集 + 捕获版本 + 扫描开始时刻 + 能力缺失）、`CodeSourceScanOptions`、`CodeSourceScanReasons` |
 | `ICodeProjectRootDetector.cs` | 项目根探测端口 |
+| `CodeSourceUpdateContracts.cs` | **D3 更新计划合同**（2026-10-02）：`CodeFileSemanticChange`（真正提取出的符号变化，空列表=无影响）、`ICodeGraphDependencyQuery`（反向依赖查询端口；实现留在存储）、`CodeSourceUpdateAction`（Extract/RebindOnly/Delete/RetryLater）、`CodeSourceUpdateItem` / `CodeSourceUpdatePlan`（计数 + `Truncated`）、`CodeSourceUpdateReasons` |
 | `CodeSourceManifestContracts.cs` | **D2 源状态与变更判定合同**（2026-10-02）：`SourceFingerprint`（mtime/length/内容 hash，hash 必须来自实际参与提取的那份内容）、`AppliedFileVersion`（**每个消费者分别推进**的水位 + 解析器策略/语义输入指纹）、`CodeSourceEntry`（持久 manifest 行，`Complete=false` 不得当作已应用）、`CodeSourceObservation`（stat 读不到就是 null，不得顶替）、`CodeConsumerInputFingerprint`、`CodeSourceAction`（Reuse / RefreshFingerprintOnly / RebindConsumers / ReindexContent / Delete / Deferred）、`CodeSourceChangeSource` 三源位标、`CodeSourceChange` / `CodeSourceScanRequest` / `CodeSourceChangeSet`（含扫描完整性、建议水位与各动作计数） |
 
 ## 变更捕获管线（Services/CodeIndex/ → `PuddingCodeIndex.Services.CodeIndex`）
@@ -50,6 +51,7 @@
 | `CodeSourceMaintenanceLedger.cs` | **D2 持久待办语义（纯内存，无 I/O）**（2026-10-02）：`FromState` 从持久快照恢复（保留 `DirtyAgain`）；`RecordObservedChanges` 每批递增期望版本并**标记「还有工作」**，返回捕获版本；`CompleteCommit` 只确认捕获版本、只对真正提交成功的消费者做单调 `max` 推进；扫描水位仅在「捕获版本即当前期望 + 扫描完整 + 无未解决路径 + 无待重试」时前进且永不回退；`BeginEpoch` 递增世代（旧世代提交返回 `StaleEpoch`）；`RecordFailure`/`DueRetries`/`ClearRetry` 实现有界退避（默认 60s→30min）。持久化在 `SqliteCodeIndexStore.SourceMaintenance.cs` |
 | `FileSystemCodeSourceScanner.cs` | **D2 默认磁盘枚举**（2026-10-02，只读元数据、不读正文、不写任何东西）：根先探测（缺失/不可读 ⇒ `RootUsable=false`）；目录被忽略即整棵子树不枚举（忽略规则经 `ICodeSourceIgnoreRules` 注入）；子树读不到或触条目上限只置 `Complete=false` + 原因（**绝不假装「那里没有文件」**）；忽略规则抛错按「不忽略」处理（多一个候选只是核验一次）；枚举顺序按组件路径身份确定 |
 | `CodeSourceScanService.cs` | **D2 完整清单校准**（2026-10-02）：持久状态 → 磁盘枚举 → 真实变更集 → 账本登记捕获版本并持久化。**不读正文/不算 hash**（返回 `RequiresContentHash=true` 交执行层）、**不写索引**、**不推进扫描水位**（水位只在执行层回报 `CompleteCommit` 时前进）；存储无该能力时降级为 `CapabilityMissing` 并只产出磁盘事实；无待办时不递增版本也不写库 |
+| `CodeSourceUpdatePlanner.cs` | **D3 更新计划**（2026-10-02）：变更集 → 执行计划（Extract → RebindOnly → Delete → RetryLater，组内按路径排序）。**反向依赖扩展只沿已知符号变化走**（没有 `CodeFileSemanticChange` 就一次图都不查）；依赖方以 `RebindOnly`/深度 1 入计划并沿用触发它的消费者；本来要提取/删除/退避的依赖方不被降级；退避中的路径不参与扩展也不重复入队；扩展有界并显式 `Truncated`；`RefreshFingerprintOnly` 不进计划 |
 
 ## 服务（Services/ → `PuddingCodeIndex.Services`）
 
@@ -68,7 +70,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `SqliteCodeIndexStore.cs` | SQLite 索引存储（实现 `ICodeIndexStore` + `ICodeSourceMaintenanceStore`，`sealed partial`）；**U3-B3** 的 `RemoveFilesAsync` 对一个批次只开**一个事务**（部分失败 ⇒ 一字不删）。**逐符号图删除用四条精确删除**（2026-10-02）：`RemoveSymbolGraphForFileAsync` 对每个符号分别删 CodeReferences/CodeRelations 的 Source 与 Target，而不是每表一条 `Source OR Target` —— OR 形式只落到主键作用域前缀，每个符号都重扫整个 workspace/project 分区；四条精确删除走既有的 Source/Target 索引，四次删除与文件符号删除仍在同一事务 |
+| `SqliteCodeIndexStore.cs` | SQLite 索引存储（实现 `ICodeIndexStore` + `ICodeSourceMaintenanceStore` + `ICodeGraphDependencyQuery`，`sealed partial`）；**U3-B3** 的 `RemoveFilesAsync` 对一个批次只开**一个事务**（部分失败 ⇒ 一字不删）。**逐符号图删除用四条精确删除**（2026-10-02）：`RemoveSymbolGraphForFileAsync` 对每个符号分别删 CodeReferences/CodeRelations 的 Source 与 Target，而不是每表一条 `Source OR Target` —— OR 形式只落到主键作用域前缀，每个符号都重扫整个 workspace/project 分区；四条精确删除走既有的 Source/Target 索引，四次删除与文件符号删除仍在同一事务 |
 | `SqliteCodeIndexStore.SourceMaintenance.cs` | **D2 源维护状态持久化**（2026-10-02，部分类）：幂等建表 `CodeSourceManifest` / `CodeSourceAppliedVersions` / `CodeIndexMaintenanceLedger` / `CodeIndexMaintenanceConsumerWatermarks` / `CodeIndexMaintenanceRetries`；manifest 单事务 upsert+删除（删除同时清消费者水位，同名新文件不继承旧状态）；账本写入整体替换消费者水位与待重试，并**拒绝回退写入**（世代更旧或同世代期望版本更旧 ⇒ 返回 false，存储保持原值）；无记录时返回空 manifest 与默认账本（含「没有基线」的 null 指纹与 `Complete=false` 行原样往返） |
 | `SqliteCodeIndexStore.FileReplacement.cs` | **D4 原子文件替换**（2026-10-02，部分类）：一个批次一个事务。每个文件按**所有权**重建出边/引用（所有权 = `SourceFilePath` 属于该文件，或来源符号属于其旧符号集）；**只有**指向消失符号的入边才删除，并先报告其来源文件（依赖方，剔除本批次内文件）——指向仍存在符号的入边必须保留；符号整体替换；文件记录/符号/引用/关系与 manifest 行（指纹 + `Complete` + 各消费者水位）同事务写入；任一步失败整批回滚（旧产物与旧指纹保持完整，不提前 clear）。`IN (…)` 用 JSON 数组参数 + `json_each` 展开并分块（128），既不拼 SQL 也不撞参数上限；校验（路径一致、scope 一致、同批不重复）在事务之前 |
 
@@ -87,7 +89,7 @@
 ## 测试
 
 **`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
-**246 用例**（2026-10-02 实测；含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**，**U3-G1 后 114 → 116：+2 条取消标记 + 对照用例**；**高磁盘读取修复 C 后 +7：4 条入边/出边/自引用/跨 scope 语义 + 3 条删除计划与 VDBE 工作量用例**；**D2 第一阶段 +25：源指纹 / 三源变更判定 / 删除可证实性 / 水位规则**；**D2 第二阶段 +15：账本捕获版本、消费者水位、扫描水位前置条件、世代作废与退避阶梯**；**D2 存储 +14：manifest/账本往返、单事务原子性、删除连带水位、回退写入拒绝**；**D2 校准 +17：元数据扫描器 8 条（忽略剪枝/不完整/触顶/规则异常）+ 校准服务 9 条（增删改候选、水位不推进、根不可用不删、能力缺失降级）**；**D4 原子替换 +10：同事务提交、所有权重建、稳定入边保留、消失目标报告依赖方、批次回滚、分块删除**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+**261 用例**（2026-10-02 实测；含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**，**U3-G1 后 114 → 116：+2 条取消标记 + 对照用例**；**高磁盘读取修复 C 后 +7：4 条入边/出边/自引用/跨 scope 语义 + 3 条删除计划与 VDBE 工作量用例**；**D2 第一阶段 +25：源指纹 / 三源变更判定 / 删除可证实性 / 水位规则**；**D2 第二阶段 +15：账本捕获版本、消费者水位、扫描水位前置条件、世代作废与退避阶梯**；**D2 存储 +14：manifest/账本往返、单事务原子性、删除连带水位、回退写入拒绝**；**D2 校准 +17：元数据扫描器 8 条（忽略剪枝/不完整/触顶/规则异常）+ 校准服务 9 条（增删改候选、水位不推进、根不可用不删、能力缺失降级）**；**D4 原子替换 +10：同事务提交、所有权重建、稳定入边保留、消失目标报告依赖方、批次回滚、分块删除**；**D3 更新计划 +15：动作映射与顺序、只沿已知符号变化扩展、退避不驱动依赖方、扩展触顶 Truncated、图查询分块与双来源**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
 `InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；

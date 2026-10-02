@@ -199,33 +199,36 @@ public sealed partial class SqliteCodeIndexStore
         return symbolIds;
     }
 
-    /// <summary>其他文件指向这些符号的入边来源（本文件自己的行不算依赖方）。</summary>
+    /// <summary>其他文件指向这些符号的入边来源（<paramref name="excludedSourceFilePath"/> 自己的行不算）。</summary>
     private static async Task<List<string>> ReadDependentSourcePathsAsync(
         SqliteConnection connection,
-        DbTransaction transaction,
+        DbTransaction? transaction,
         string workspaceId,
         string projectId,
         IReadOnlyList<string> symbolIds,
-        string ownerFilePath,
+        string? excludedSourceFilePath,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.Transaction = (SqliteTransaction)transaction;
+        if (transaction is not null)
+            command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = """
             SELECT DISTINCT SourceFilePath FROM CodeReferences
             WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId
               AND TargetSymbolId IN (SELECT value FROM json_each($symbolIds))
-              AND SourceFilePath IS NOT NULL AND SourceFilePath <> $ownerFilePath
+              AND SourceFilePath IS NOT NULL
+              AND ($excludedFilePath IS NULL OR SourceFilePath <> $excludedFilePath)
             UNION
             SELECT DISTINCT SourceFilePath FROM CodeRelations
             WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId
               AND TargetSymbolId IN (SELECT value FROM json_each($symbolIds))
-              AND SourceFilePath IS NOT NULL AND SourceFilePath <> $ownerFilePath;
+              AND SourceFilePath IS NOT NULL
+              AND ($excludedFilePath IS NULL OR SourceFilePath <> $excludedFilePath);
             """;
         command.Parameters.AddWithValue("$workspaceId", workspaceId);
         command.Parameters.AddWithValue("$projectId", projectId);
         command.Parameters.AddWithValue("$symbolIds", ToJsonArray(symbolIds));
-        command.Parameters.AddWithValue("$ownerFilePath", ownerFilePath);
+        command.Parameters.AddWithValue("$excludedFilePath", (object?)excludedSourceFilePath ?? DBNull.Value);
 
         var paths = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -236,6 +239,48 @@ public sealed partial class SqliteCodeIndexStore
         }
 
         return paths;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> ListDependentFilePathsAsync(
+        string workspaceId,
+        string projectId,
+        IReadOnlyCollection<string> symbolIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectId);
+        ArgumentNullException.ThrowIfNull(symbolIds);
+
+        var ids = symbolIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (ids.Length == 0)
+            return [];
+
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var dependents = new SortedSet<string>(CodePathIdentity.PathComparer);
+
+        foreach (var chunk in Chunk(ids))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            foreach (var path in await ReadDependentSourcePathsAsync(
+                         connection, transaction: null, workspaceId, projectId, chunk, excludedSourceFilePath: null, cancellationToken)
+                     .ConfigureAwait(false))
+            {
+                if (!string.IsNullOrWhiteSpace(path))
+                    dependents.Add(path);
+            }
+        }
+
+        return dependents.ToArray();
     }
 
     /// <summary>删除其他文件指向消失符号的入边（本文件拥有的行由所有权删除负责）。</summary>

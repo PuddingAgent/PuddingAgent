@@ -359,6 +359,81 @@ public sealed class SqliteCodeIndexStoreReplaceFilesTests
         Assert.IsNotNull(await store.GetSymbolAsync(WorkspaceId, ProjectId, "sym-new-399"));
     }
 
+    [TestMethod]
+    public async Task GraphQuery_ReturnsDependentFilesFromReferencesAndRelations()
+    {
+        using var fixture = Fixture.Create();
+        var store = fixture.Store;
+        var a = fixture.File("src/A.cs");
+        var b = fixture.File("src/B.cs");
+        var c = fixture.File("src/C.cs");
+
+        await store.ReplaceFilesAsync(
+            WorkspaceId,
+            ProjectId,
+            [
+                Replacement(a, ["sym-a"], fingerprint: new SourceFingerprint(T0, 10, "h1")),
+                Replacement(
+                    b,
+                    ["sym-b"],
+                    references:
+                    [
+                        Reference("sym-b", "sym-a", b, 1),
+                        Reference("sym-b", "sym-a", b, 2),
+                    ],
+                    fingerprint: new SourceFingerprint(T0, 10, "h2")),
+                Replacement(
+                    c,
+                    ["sym-c"],
+                    relations: [Relation("sym-c", "sym-a", c, 1)],
+                    fingerprint: new SourceFingerprint(T0, 10, "h3")),
+            ]);
+
+        var dependents = await store.ListDependentFilePathsAsync(WorkspaceId, ProjectId, ["sym-a"]);
+
+        CollectionAssert.AreEquivalent(
+            new[] { b, c },
+            dependents.ToArray(),
+            "引用与关系两个来源都要覆盖，且同一文件只出现一次");
+    }
+
+    [TestMethod]
+    public async Task GraphQuery_IsEmptyWithoutSymbolsAndForUnknownSymbols()
+    {
+        using var fixture = Fixture.Create();
+        var store = fixture.Store;
+
+        Assert.IsEmpty(await store.ListDependentFilePathsAsync(WorkspaceId, ProjectId, []), "空输入不查库");
+        Assert.IsEmpty(await store.ListDependentFilePathsAsync(WorkspaceId, ProjectId, ["nobody-points-here"]));
+    }
+
+    [TestMethod]
+    public async Task GraphQuery_HandlesMoreSymbolsThanOneInClauseAllows()
+    {
+        using var fixture = Fixture.Create();
+        var store = fixture.Store;
+        var owner = fixture.File("src/Owner.cs");
+        var dependent = fixture.File("src/Dependent.cs");
+
+        var symbolIds = Enumerable.Range(0, 300).Select(index => $"sym-{index}").ToArray();
+
+        await store.ReplaceFilesAsync(
+            WorkspaceId,
+            ProjectId,
+            [
+                Replacement(owner, symbolIds, fingerprint: new SourceFingerprint(T0, 10, "h1")),
+                Replacement(
+                    dependent,
+                    ["sym-dep"],
+                    references: [Reference("sym-dep", "sym-299", dependent, 1)],
+                    fingerprint: new SourceFingerprint(T0, 10, "h2")),
+            ]);
+
+        var dependents = await store.ListDependentFilePathsAsync(WorkspaceId, ProjectId, symbolIds);
+
+        CollectionAssert.AreEqual(new[] { dependent }, dependents.ToArray(), "分块查询必须覆盖全部符号");
+    }
+
     private static CodeSourceFileReplacement Replacement(
         string filePath,
         IReadOnlyList<string> symbolIds,
