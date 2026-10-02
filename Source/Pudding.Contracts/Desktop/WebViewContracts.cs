@@ -126,7 +126,9 @@ public sealed record NavigateResult(
     // back/forward/reload/stop 在运行时没有等价返回值，因此它们不回带 ok/status/error。
     bool? Ok = null,
     int? StatusCode = null,
-    string? ErrorText = null);
+    string? ErrorText = null,
+    // 加宽（2026-10-02，缺口 #14，见 #12 同源问题）：导航后的页面标题；未知时为 null。
+    string? Title = null);
 
 /// <summary>
 /// 脚本返回值形态。为避免字符串二次 JSON 编码，<c>JsonValue</c> 始终是<b>裸 JSON 片段</b>：

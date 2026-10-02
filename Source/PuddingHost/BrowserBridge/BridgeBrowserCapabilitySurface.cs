@@ -74,7 +74,8 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
                 LiveVersion(page),
                 result.Ok,
                 result.StatusCode,
-                result.ErrorText));
+                result.ErrorText,
+                page.Info.Title));
         }
 
         switch (request.Action)
@@ -98,7 +99,8 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
 
         // 这四个动作在运行时没有等价返回值 ⇒ ok/status/error **未知**，如实留空（不猜）。
         return CapabilityResult<NavigateResult>.Success(new NavigateResult(
-            NavigateDisposition.Completed, TryParseUrl(page.Info.Url), LiveVersion(page)));
+            NavigateDisposition.Completed, TryParseUrl(page.Info.Url), LiveVersion(page),
+            Title: page.Info.Title));
     }
 
     public async Task<CapabilityResult<JavascriptResult>> ExecuteJavascriptAsync(

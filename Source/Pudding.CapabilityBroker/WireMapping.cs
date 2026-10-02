@@ -333,7 +333,8 @@ internal static class DesktopResultDecoder
                         // optional：没设 presence 就是"不知道"，保持 null（不猜）。
                         result.Navigate.HasNavigationOk ? result.Navigate.NavigationOk : null,
                         result.Navigate.HasStatusCode ? result.Navigate.StatusCode : null,
-                        NullIfEmpty(result.Navigate.ErrorText))));
+                        NullIfEmpty(result.Navigate.ErrorText),
+                            NullIfEmpty(result.Navigate.Title))));
             }
 
             case Proto.OperationResult.OutcomeOneofCase.ExecuteJavascript:

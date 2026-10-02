@@ -19,7 +19,7 @@ public sealed class BrowserAgentToolsTests
         {
             new BrowserContextTool(runtime, _originAccessor),
             new BrowserTabsTool(runtime, _originAccessor),
-            new BrowserNavigateTool(runtime, _originAccessor),
+            new BrowserNavigateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
@@ -88,7 +88,7 @@ public sealed class BrowserAgentToolsTests
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") },
             CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
-        var tool = new BrowserNavigateTool(runtime, _originAccessor);
+        var tool = new BrowserNavigateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor);
 
         var result = await ExecuteAsync(tool,
             $$"""{"action":"goto","context_id":"ctx-1","page_id":"{{page.Id.Value}}","url":"https://example.org"}""");
@@ -478,9 +478,48 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
                 DesktopPageReadiness.Unknown,
                 page.Info.Title)));
     }
-    public Task<CapabilityResult<NavigateResult>> NavigateAsync(
-        NavigateRequest request, DesktopCallContext call, CancellationToken ct = default) =>
-        throw new NotSupportedException();
+    public async Task<CapabilityResult<NavigateResult>> NavigateAsync(
+        NavigateRequest request, DesktopCallContext call, CancellationToken ct = default)
+    {
+        if (await ResolvePageAsync(request.Target, ct) is not { } page)
+        {
+            return CapabilityResult<NavigateResult>.Failure(
+                DesktopCapabilityError.InvalidTarget($"page '{request.Target.Key}' is not known"));
+        }
+
+        NavigationResult? navigation = null;
+        switch (request.Action)
+        {
+            case DesktopNavigationAction.Goto:
+                navigation = await page.GotoAsync(
+                    request.Url!, new NavigationOptions { TimeoutMs = request.TimeoutMs }, ct);
+                break;
+            case DesktopNavigationAction.Back:
+                await page.GoBackAsync(ct);
+                break;
+            case DesktopNavigationAction.Forward:
+                await page.GoForwardAsync(ct);
+                break;
+            case DesktopNavigationAction.Reload:
+                await page.ReloadAsync(ct);
+                break;
+            default:
+                await page.StopAsync(ct);
+                break;
+        }
+
+        var version = page.PageVersion > 0
+            ? DesktopPageVersion.Require(page.PageVersion)
+            : DesktopPageVersion.Unknown;
+        return CapabilityResult<NavigateResult>.Success(new NavigateResult(
+            NavigateDisposition.Completed,
+            navigation?.Url ?? (Uri.TryCreate(page.Info.Url, UriKind.Absolute, out var current) ? current : null),
+            version,
+            navigation?.Ok,
+            navigation?.StatusCode,
+            navigation?.ErrorText,
+            page.Info.Title));
+    }
     public Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
         BrowserTabsRequest request, DesktopCallContext call, CancellationToken ct = default) =>
         throw new NotSupportedException();

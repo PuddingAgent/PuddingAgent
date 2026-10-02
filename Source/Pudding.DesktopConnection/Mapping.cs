@@ -741,6 +741,7 @@ internal static class DesktopFrameMapping
                         CurrentUrl = navigate.CurrentUrl?.AbsoluteUri ?? string.Empty,
                         PageVersion = navigate.PageVersion.Value,
                         ErrorText = WireText.Truncate(navigate.ErrorText, 512),
+                        Title = WireText.Truncate(navigate.Title, 512),
                     };
 
                     // proto3 optional：只有确实知道结果时才设 presence（不知道 ≠ false）。

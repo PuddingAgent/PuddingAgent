@@ -184,7 +184,7 @@ public sealed class WireContractSnapshotTests
             ("target", 1), ("url", 2), ("expected_page_version", 3), ("action", 4), ("timeout_ms", 5));
         AssertFieldNumbers(NavigateOutcome.Descriptor,
             ("disposition", 1), ("current_url", 2), ("page_version", 3),
-            ("navigation_ok", 4), ("status_code", 5), ("error_text", 6));
+            ("navigation_ok", 4), ("status_code", 5), ("error_text", 6), ("title", 7));
     }
 
     [Fact]

@@ -351,6 +351,9 @@ message NavigateOutcome {
   optional bool navigation_ok = 4;
   optional int32 status_code = 5;
   string error_text = 6;
+  // 导航后的页面标题（加宽 2026-10-02，缺口 #14）：browser_navigate 的结果带标题，
+  // 而 NavigateOutcome 此前没有 ⇒ 迁移该工具就会丢标题（其余状态类能力都带）。
+  string title = 7;
 }
 
 enum JavascriptValueKind {

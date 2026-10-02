@@ -652,7 +652,8 @@ public sealed class BrowserRuntimeDesktopSurface
                 LiveVersion(browserPage.PageVersion),
                 navigation.Ok,
                 navigation.StatusCode,
-                navigation.ErrorText));
+                navigation.ErrorText,
+                browserPage.Info.Title));
         }
 
         switch (request.Action)
@@ -678,7 +679,8 @@ public sealed class BrowserRuntimeDesktopSurface
         return CapabilityResult<NavigateResult>.Success(new NavigateResult(
             NavigateDisposition.Completed,
             ParseUrl(browserPage.Info.Url),
-            LiveVersion(browserPage.PageVersion)));
+            LiveVersion(browserPage.PageVersion),
+            Title: browserPage.Info.Title));
     }
 
     /// <summary>
