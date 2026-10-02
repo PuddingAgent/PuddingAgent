@@ -9,6 +9,16 @@ namespace Pudding.Contracts;
 /// </summary>
 public sealed record DesktopCallContext
 {
+    /// <summary>
+    /// 权限证据（第一阶段：只携带，不在接缝处校验）。
+    /// <para>
+    /// **不上线缆**：能力通道的 wire 只携带 operation_id / generation / capability / deadline，
+    /// Desktop 侧由这些字段重建上下文 ⇒ 本字段在 Desktop 侧恒为 <c>null</c>（这正是设计意图：
+    /// 证据留在 Core 进程内，接缝自行校验）。
+    /// </para>
+    /// </summary>
+    public string? PermissionEvidenceSummary { get; init; }
+
     public DesktopCallContext(
         DesktopInstanceId desktopId,
         OperationId operationId,

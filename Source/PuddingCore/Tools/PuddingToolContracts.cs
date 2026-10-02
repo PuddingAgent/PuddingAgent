@@ -149,6 +149,37 @@ public interface IToolPermissionPolicyService
 }
 
 /// <summary>Tool 执行上下文，由平台注入，Tool 实现不需要自行解析会话和权限。</summary>
+/// <summary>
+/// 一次工具调用的**权限证据**（桌面能力链路权限证据设计的第一阶段产物）。
+///
+/// <para>
+/// 目的：把「这次调用是否已获准」这一结论从 Tool Runtime 带到能力接缝，使接缝不必假设
+/// "能拿到 DI 就能调副作用能力"。**仅进程内传播**，不上能力通道线缆
+/// （线缆上出现审批凭据会让接收方无法验证真伪，等于自证）。
+/// </para>
+/// <para>
+/// 本阶段（观察期）只**携带与记录**，不做任何拒绝 —— 缺失证据是合法状态，
+/// 由 <see cref="ToolPermissionEvidence.IsAbsent"/> 真源表达，禁止用 "Approved=false" 冒充缺失。
+/// </para>
+/// </summary>
+/// <param name="ToolCallId">被批的那一次工具调用身份（与 <see cref="ToolExecutionContext.ToolCallId"/> 对齐）。</param>
+/// <param name="Decision">审批结论：<c>allowed</c> / <c>denied</c> / <c>not-required</c>。</param>
+/// <param name="ApprovalId">若走了人工审批，记录审批单 id；否则为 <c>null</c>。</param>
+/// <param name="Source">结论来源（如 <c>guard</c> / <c>approval-store</c> / <c>policy</c>），用于排障与审计。</param>
+public sealed record ToolPermissionEvidence(
+    string ToolCallId,
+    string Decision,
+    string? ApprovalId = null,
+    string? Source = null)
+{
+    /// <summary>证据是否缺失（未评估）。**不允许**用 <c>Decision = "denied"</c> 表示缺失。</summary>
+    public static bool IsAbsent(ToolPermissionEvidence? evidence) => evidence is null;
+
+    /// <summary>结论为"已获准"（含"无需审批"）。</summary>
+    public bool IsAllowed => string.Equals(Decision, "allowed", StringComparison.Ordinal)
+        || string.Equals(Decision, "not-required", StringComparison.Ordinal);
+}
+
 public sealed record ToolExecutionContext
 {
     public required string WorkspaceId { get; init; }
@@ -166,6 +197,11 @@ public sealed record ToolExecutionContext
     public string? WorkingDirectory { get; init; }
     public string? AgentTemplateId { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
+    /// <summary>
+    /// 权限证据（第一阶段：只携带与记录，不做拒绝）。默认 <c>null</c> = 未评估。
+    /// </summary>
+    public ToolPermissionEvidence? PermissionEvidence { get; init; }
+
     /// <summary>
     /// 当前 Tool 调用的身份 id。在 ToolInvocationService 进入工具前冻结，并透传到执行层；
     /// 契约来源：tool-alignment B:227-254（一次调用只有一个外部 callId，跨层不得重新生成）。
