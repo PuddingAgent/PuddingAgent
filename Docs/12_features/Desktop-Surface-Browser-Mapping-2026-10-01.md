@@ -360,6 +360,31 @@ Core 侧实现是 `Source/PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs`，
 > `BrowserInteractArgs` / `BrowserSnapshotArgs` / `BrowserLocateArgs` / `BrowserWaitForArgs`，
 > 以及能力侧的 `DesktopCapabilityRequest` 联合与各 `*Options` 记录。
 
+#### 8.5.1 加宽清单（**请求面 + 响应面**都已逐项实读，可直接照此施工）
+
+上面只审计了**参数**；随后又审计了七个工具的**响应值**记录（`Browser*ToolValue`）与契约结果 DTO，
+发现响应面同样有缺口（例如元素 `BoundingBox`）。**完整清单**如下——按此施工即可避免
+"迁移 = 削功能"（前两轮各只发现了一半，第三次审计才把两面凑齐）：
+
+| # | 缺口 | 方向 | 位置 |
+|---|---|---|---|
+| 1 | 上下文 `create` / `close` | **能力** | 目录 + proto payload oneof + Desktop 侧实现 |
+| 2 | 上下文 `Persistent` | 结果 | `DesktopContextInfo`（`PageCount` 可由 `Pages.Count` 得到，不算缺口） |
+| 3 | 导航 `back` / `forward` / `reload` / `stop` | **能力** | 目录 + proto + Desktop 侧实现 |
+| 4 | 导航 `TimeoutMs` | 请求 | `NavigateRequest` |
+| 5 | 导航结果 `NavigationOk` / `StatusCode` / `ErrorText` | 结果 | `NavigateResult`（当前只有 Disposition/Url/Version） |
+| 6 | 标签页 `new`（含 `Url` 与是否激活） | **能力** | 目录 + proto + Desktop 侧实现 |
+| 7 | 交互 `type`（与 `fill` 语义不同） | **能力** | `DesktopInteractionAction` + proto |
+| 8 | 交互 `DeltaX` | 请求 | 交互 payload（`DeltaY` 已有） |
+| 9 | 快照 `IncludeHidden` / `IncludeIframes` / `IncludeShadowDom` / `MaxDepth` | 请求 | `DesktopSnapshotOptions` + proto `SnapshotBudget` |
+| 10 | 定位结果 `BoundingBox` | 结果 | `DesktopElementRef` |
+| 11 | 等待 `TimeoutMs` | 请求 | `BrowserWaitForRequest` |
+
+> 说明：`BrowserTabToolValue.Title` 在契约里是 `string?`，而工具值为 `required string`
+> ⇒ 迁移时回退空串即可，**不算缺口**（但要在实现里显式处理，不能假定非空）。
+> 每项都属于跨侧协议变更 ⇒ 必须**两侧同提交**并补探针断言（本系列的门禁核心）。
+
+
 
 
 
