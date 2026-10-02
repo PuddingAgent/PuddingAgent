@@ -604,6 +604,7 @@ internal static class DesktopFrameMapping
             {
                 ContextId = context.ContextId,
                 Trust = context.Trust.ToString(),
+                Persistent = context.Persistent,
             };
 
             foreach (var page in context.Pages)
@@ -840,6 +841,7 @@ internal static class DesktopFrameMapping
                         {
                             ContextId = context.ContextId,
                             Trust = context.Trust.ToString(),
+                Persistent = context.Persistent,
                         };
 
                         foreach (var page in context.Pages)

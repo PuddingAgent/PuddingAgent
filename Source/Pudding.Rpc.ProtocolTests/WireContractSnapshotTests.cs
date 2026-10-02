@@ -162,7 +162,7 @@ public sealed class WireContractSnapshotTests
         AssertFieldNumbers(PageInfo.Descriptor,
             ("context_id", 1), ("page_id", 2), ("page_version", 3), ("title", 4), ("url", 5), ("is_active", 6),
             ("is_agent_target", 7), ("can_go_back", 8), ("can_go_forward", 9), ("is_loading", 10));
-        AssertFieldNumbers(ContextInfo.Descriptor, ("context_id", 1), ("trust", 2), ("pages", 3));
+        AssertFieldNumbers(ContextInfo.Descriptor, ("context_id", 1), ("trust", 2), ("pages", 3), ("persistent", 4));
         AssertFieldNumbers(ContextsOutcome.Descriptor, ("contexts", 1));
         AssertFieldNumbers(TabsCommand.Descriptor, ("target", 1), ("expected_page_version", 2), ("action", 3));
         AssertFieldNumbers(TabsOutcome.Descriptor, ("action", 1), ("tab_closed", 2), ("page", 3), ("remaining", 4));

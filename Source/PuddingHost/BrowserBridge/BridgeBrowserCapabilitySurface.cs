@@ -141,7 +141,7 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
                 observed = Max(observed, info.Version);
             }
 
-            contexts.Add(new DesktopContextInfo(context.Id.Value, DesktopContextTrust.Untrusted, pageInfos));
+            contexts.Add(new DesktopContextInfo(context.Id.Value, DesktopContextTrust.Untrusted, pageInfos) { Persistent = summary.Persistent });
         }
 
         return CapabilityResult<DesktopContexts>.Success(new DesktopContexts(contexts, observed));

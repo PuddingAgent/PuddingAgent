@@ -1,3 +1,18 @@
+---
+title: "2026-10-02 加宽第 8 项落实为**自身缺陷修复**：Bridge 侧丢掉了 `DeltaX`"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: "按 §8.5.1 的加宽清单开始施工，先挑\"只加字段、不加能力\"的最低风险项。 第一件（交互 DeltaX）动手前先实读线缆与两侧映射，结果发现它根本不是契约缺口。"
+categories: [docs, changelog]
+tags: [加宽第, 项实为, 缺陷]
+related_docs: []
+related_files: [Source/Pudding.Rpc.Protocol/Protos/desktop_capability.proto, Source/Pudding.CapabilityBroker/WireMapping.cs, Source/Pudding.DesktopConnection/Mapping.cs, Source/PuddingHost/BrowserBridge/BridgeBrowserCapabilitySurface.cs, Tests/PuddingHost.Tests/BrowserBridge/BridgeBrowserCapabilitySurfaceTests.cs, Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md]
+slug: changelog-2026-10-02-加宽第8项实为bridge侧deltax缺陷
+draft: false
+---
+
 # 2026-10-02 加宽第 8 项落实为**自身缺陷修复**：Bridge 侧丢掉了 `DeltaX`
 
 ## 目标 / 背景

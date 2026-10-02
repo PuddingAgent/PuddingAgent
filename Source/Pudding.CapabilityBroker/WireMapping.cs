@@ -412,7 +412,7 @@ internal static class DesktopResultDecoder
 
                         try
                         {
-                            contexts.Add(new DesktopContextInfo(context.ContextId, trust, pages));
+                            contexts.Add(new DesktopContextInfo(context.ContextId, trust, pages) { Persistent = context.Persistent });
                         }
                         catch (ArgumentException)
                         {
@@ -740,7 +740,7 @@ internal static class DesktopResultDecoder
 
             try
             {
-                contexts.Add(new DesktopContextInfo(context.ContextId, trust, pages));
+                contexts.Add(new DesktopContextInfo(context.ContextId, trust, pages) { Persistent = context.Persistent });
             }
             catch (ArgumentException)
             {

@@ -208,6 +208,9 @@ message ContextInfo {
   string context_id = 1;
   string trust = 2;
   repeated PageInfo pages = 3;
+  // 是否为持久化上下文（user-data-dir 落盘）。加宽（2026-10-02）：工具侧
+  // BrowserContextToolValue.Persistent 一直存在，而线缆此前没有 ⇒ 能力通道取不到、Bridge 取得到。
+  bool persistent = 4;
 }
 
 message ContextsOutcome {

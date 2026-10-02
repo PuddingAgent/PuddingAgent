@@ -87,6 +87,14 @@ public sealed record DesktopContextInfo
 
     public IReadOnlyList<DesktopPageInfo> Pages { get; }
 
+    /// <summary>
+    /// 是否为持久化上下文（user-data-dir 落盘）。
+    /// 加宽（2026-10-02）：工具侧 `BrowserContextToolValue.Persistent` 一直存在，
+    /// 而契约/线缆此前没有 ⇒ 能力通道拿不到、Bridge 拿得到。缺省 <c>false</c>（"未声明即非持久"），
+    /// 与线缆上的 `bool`（无 presence）语义一致。
+    /// </summary>
+    public bool Persistent { get; init; }
+
     public int PageCount => Pages.Count;
 
     public override string ToString() => $"{ContextId} [{Trust}] pages={PageCount}";

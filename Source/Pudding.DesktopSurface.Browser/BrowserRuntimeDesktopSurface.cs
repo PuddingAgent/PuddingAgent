@@ -76,7 +76,7 @@ public sealed class BrowserRuntimeDesktopSurface
                 observedVersion = Math.Max(observedVersion, page.PageVersion);
             }
 
-            mapped.Add(new DesktopContextInfo(info.Id.Value, _targets.TrustFor(info.Id.Value), mappedPages));
+            mapped.Add(new DesktopContextInfo(info.Id.Value, _targets.TrustFor(info.Id.Value), mappedPages) { Persistent = info.Persistent });
         }
 
         return CapabilityResult<DesktopContexts>.Success(new DesktopContexts(

@@ -165,6 +165,7 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         Assert.False(page.IsActive);
         Assert.False(page.IsAgentTarget);
         Assert.Equal(DesktopContextTrust.Untrusted, context.Trust);
+        Assert.True(context.Persistent);
         Assert.Equal(5, result.Value.ObservedVersion.Value);
     }
 
