@@ -281,8 +281,14 @@ public sealed class ToolInvocationService : IToolInvocationService
     /// 调用方照旧立即返回；guard 允许 ⇒ 携带 <c>allowed</c> 证据继续执行。
     /// </para>
     /// <para>
-    /// **未配置 guard 时返回 <c>null</c>（= 未评估）**，不得写成 <c>not-required</c> ——
-    /// 那会谎称"策略判定无需审批"。缺失必须是可表达的状态（<see cref="ToolPermissionEvidence.IsAbsent"/>）。
+    /// **未配置 guard 时返回 <c>not-required</c> 且 <c>Source = "no-guard-configured"</c>**：
+    /// 「没有配置任何策略」本身就是一种策略状态（无人要求审批），与「证据根本没到这一层」是两件事，
+    /// 由 <see cref="ToolPermissionEvidence.Source"/> 区分；后者仍然是 <c>null</c>。
+    /// </para>
+    /// <para>
+    /// 为什么不把"未配置 guard"也记成 <c>null</c>：第二阶段的 fail-closed 只能看见证据本身，
+    /// 若"没有 guard"与"未知"不可区分，那么任何未配置 guard 的部署都会被拒绝所有副作用调用 ——
+    /// 那不是收紧，而是打断。
     /// </para>
     /// </summary>
     /// <param name="request">本次工具调用请求。</param>
@@ -295,7 +301,9 @@ public sealed class ToolInvocationService : IToolInvocationService
         denied = null;
         if (_workspaceGuard is null)
         {
-            return null;
+            // 策略状态：未配置任何 guard ⇒ 无人要求审批（真话，且与"未知"可区分）。
+            return new ToolPermissionEvidence(
+                request.ToolCallId, "not-required", Source: "no-guard-configured");
         }
 
         var decision = _workspaceGuard.CanExecuteTool(request.AgentInstanceId, request.ToolName);

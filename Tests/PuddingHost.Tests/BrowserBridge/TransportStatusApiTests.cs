@@ -29,6 +29,8 @@ public sealed class TransportStatusApiTests
         Assert.False(snapshot.ChannelProven);
         Assert.False(snapshot.CanRetireLegacyBridge);
         Assert.Equal(0, snapshot.CapabilityChannelCalls);
+        // 副作用能力缺权限证据的观测计数同样必须如实暴露（第一阶段的核心观测面）。
+        Assert.Equal(0, snapshot.MissingEvidenceCalls);
     }
 
     [Fact]
@@ -50,10 +52,12 @@ public sealed class TransportStatusApiTests
         tracker.Record(DesktopTransportRoute.CapabilityChannel);
         tracker.Record(DesktopTransportRoute.CapabilityChannel);
         tracker.Record(DesktopTransportRoute.LegacyBridge);
+        tracker.RecordMissingEvidence();
 
         var afterBridgeFallback = controller.GetStatus().Value!;
         Assert.Equal(2, afterBridgeFallback.CapabilityChannelCalls);
         Assert.Equal(1, afterBridgeFallback.LegacyBridgeCalls);
+        Assert.Equal(1, afterBridgeFallback.MissingEvidenceCalls);
         Assert.True(afterBridgeFallback.ChannelProven);
         // 窗口内出现过一次回退 ⇒ **不可**退役（判据是零回退 + 零无路由）。
         Assert.False(afterBridgeFallback.CanRetireLegacyBridge);
