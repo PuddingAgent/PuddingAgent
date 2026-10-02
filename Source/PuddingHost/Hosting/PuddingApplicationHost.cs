@@ -8,6 +8,7 @@ using Pudding.CapabilityBroker;
 using Pudding.CapabilityBroker.AspNetCore;
 using PuddingAgent.Services;
 using PuddingCode.Configuration;
+using PuddingCode.Observability;
 using PuddingCode.Security;
 using PuddingPlatform.Controllers.Api;
 using PuddingPlatform.Security;
@@ -69,6 +70,8 @@ public static class PuddingApplicationHost
         if (args.Length > 0)
             builder.Configuration.AddCommandLine(args);
         builder.Services.AddSingleton(dataPaths);
+        // 日志级别开关（Debug 按钮的出口）：单例，与 bootstrapper 共用同一个 LoggingLevelSwitch。
+        builder.Services.AddSingleton(new PuddingLogLevelStore(dataPaths.LoggingConfigFile));
 
         // ── DI validation ────────────────────────────────────
         builder.Host.UseDefaultServiceProvider(o =>

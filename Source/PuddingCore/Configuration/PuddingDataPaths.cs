@@ -181,6 +181,16 @@ public sealed record PuddingDataPaths
 
     public string TerminalLogsRoot => Path.Combine(LogsRoot, "components", "terminal");
 
+    /// <summary>
+    /// 日志级别的持久化文件：<c>&lt;DataRoot&gt;/config/logging.json</c>，形如
+    /// <c>{"Logging":{"Level":"Debug"}}</c>。
+    /// <para>
+    /// 单独一个文件而不是塞进 <c>system.json</c>：级别是随时可开关的运维旋钮，
+    /// 与 system.json 里的端口/Token/启动策略不是一类东西；分开也避免读写时互相覆盖。
+    /// </para>
+    /// </summary>
+    public string LoggingConfigFile => SystemConfigFile("logging.json");
+
     public string ErrorLogFile => Path.Combine(LogsRoot, "error", "pudding-error");
 
     public string SystemLogFile => Path.Combine(LogsRoot, "system", "pudding");

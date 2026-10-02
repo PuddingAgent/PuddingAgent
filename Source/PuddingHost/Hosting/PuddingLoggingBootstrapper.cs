@@ -40,6 +40,10 @@ public static class PuddingLoggingBootstrapper
         var minLevel = PuddingLogLevelSwitch.ResolveStartupLevel(bootstrapConfiguration["Logging:Level"]);
         PuddingLogLevelSwitch.Instance.MinimumLevel = minLevel;
 
+        // Debug 按钮写的持久化级别在此生效（文件是「意图」，开关是「事实」）；
+        // 文件缺失/损坏 ⇒ 沿用上面解析出的启动级别。
+        new PuddingLogLevelStore(dataPaths.LoggingConfigFile).ApplyPersistedLevel(minLevel);
+
         var fileOutputTemplate =
             "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [tag:{Tag}] [trace:{TraceId}] [session:{SessionId}] {Message:lj}{NewLine}{Exception}";
 
