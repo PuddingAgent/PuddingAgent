@@ -385,21 +385,23 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
-    public async Task WaitFor_RuntimeErrorIsAFailureWithoutLeakingTheText()
+    public async Task WaitFor_DiagnosticErrorRidesTheResultInsteadOfBecomingAFailure()
     {
+        // 与 Desktop 侧同一套语义：超时由 TimedOut 表达，运行时诊断信息作为附加说明随**成功结果**返回。
+        // （审计发现本适配器原先把诊断升级成失败 ⇒ 两条传输不一致。）
         var page = new FakePage
         {
             Version = 4,
-            Wait = _ => new WaitResult { Error = "timeout on #slow at https://example.test/a?token=SECRET" },
+            Wait = _ => new WaitResult { Error = "wait reported a diagnostic" },
         };
         var surface = Create(page);
 
         var result = await surface.WaitForAsync(
             new BrowserWaitForRequest(Target, new DesktopWaitCondition(DesktopWaitConditionKind.Selector, "#slow")), Call);
 
-        Assert.True(result.IsFailure);
-        Assert.DoesNotContain("SECRET", result.Error!.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("token", result.Error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(result.IsFailure);
+        Assert.Equal("wait reported a diagnostic", result.Value.Error);
+        Assert.False(result.Value.TimedOut);
     }
 
     [Fact]
@@ -611,6 +613,33 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         Assert.False(acted);
     }
 
+    [Fact]
+    public async Task Interact_ReportsTheAffectedElementResolvedBeforeActing()
+    {
+        // 受影响元素必须在动作**之前**解析（产品规则禁止交互后重查旧 Locator）。
+        var page = new FakePage
+        {
+            Version = 3,
+            Query = _ => new FakeElementHandle
+            {
+                Version = 4,
+                Info = new BrowserElementInfo { Ref = "e9", Tag = "button" },
+            },
+        };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "button")), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.NotNull(result.Value.Element);
+        Assert.Equal("e9", result.Value.Element!.Reference);
+        // 引用版本取交互**之后**的事实（旧 Ref 由此作废），而不是句柄里的旧版本。
+        Assert.Equal(4, result.Value.Element.PageVersion.Value);
+    }
+
     private static BridgeBrowserCapabilitySurface Create(FakePage page) => new(new FakeRuntime(page));
 
     private static BridgeBrowserCapabilitySurface Create(FakeRuntime runtime) => new(runtime);
@@ -727,6 +756,8 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public Func<Locator, IReadOnlyList<IElementHandle>>? QueryAll { get; init; }
 
+        public Func<Locator, IElementHandle?>? Query { get; init; }
+
         public Func<WaitCondition, WaitResult>? Wait { get; init; }
 
         public Func<SnapshotOptions, PageSnapshot>? Snapshot { get; init; }
@@ -776,7 +807,8 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
             return Task.FromResult(Snapshot?.Invoke(options) ?? new PageSnapshot());
         }
 
-        public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct) =>
+            Task.FromResult(Query?.Invoke(locator));
 
         public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct) =>
             Task.FromResult(QueryAll?.Invoke(locator) ?? (IReadOnlyList<IElementHandle>)[]);

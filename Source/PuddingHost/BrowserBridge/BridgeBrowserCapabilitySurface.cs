@@ -259,6 +259,21 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
     }
 
     /// <summary>纵深防御：超出预算就截断并**如实**把 <paramref name="truncated"/> 置真。</summary>
+    /// <summary>句柄 → 元素引用（与 locate 同样的字段来源；版本取调用方给定的事实版本）。</summary>
+    private static DesktopElementRef ToElementRef(IElementHandle handle, DesktopPageVersion version) =>
+        new(
+            handle.Id.Value,
+            handle.Info.Tag,
+            version,
+            handle.Info.Role,
+            handle.Info.Name,
+            handle.Info.Text,
+            handle.Info.Visible,
+            handle.Info.Enabled,
+            handle.Info.Checked)
+        {
+            BoundingBox = handle.Info.BoundingBox is { } b ? new DesktopElementBox(b.X, b.Y, b.Width, b.Height) : null,
+        };
     private static string? Clamp(string? text, int maxLength, ref bool truncated)
     {
         if (text is null || text.Length <= maxLength)
@@ -358,16 +373,11 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
         var result = await page.WaitForAsync(ToRuntimeWaitCondition(request), cancellationToken)
             .ConfigureAwait(false);
 
-        if (result.Error is not null)
-        {
-            // 运行时错误文本可能含选择器/URL ⇒ 不透传，只表示"等失败了"（超时不算失败，见下）。
-            return CapabilityResult<DesktopWaitResult>.Failure(
-                DesktopCapabilityError.Internal("wait failed in the bridge runtime"));
-        }
-
-        // **超时是结果而不是失败**（与 Desktop 侧一致）。
+        // 与 Desktop 侧同一套语义：**超时是结果不是失败**，运行时诊断信息作为附加说明随结果返回
+        // （审计发现本适配器原先把诊断信息升级成了失败，两条传输因此不一致）。
         return CapabilityResult<DesktopWaitResult>.Success(new DesktopWaitResult(
-            request.Target, request.Condition, result.TimedOut, BuildPageState(request.Target, page)));
+            request.Target, request.Condition, result.TimedOut, BuildPageState(request.Target, page),
+            result.Error));
     }
 
     public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
@@ -394,6 +404,14 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
                 $"expected page version {request.ExpectedPageVersion.Value} but the page is at {live.Value}; re-acquire state"));
         }
 
+        // 受影响元素必须在**动作之前**解析：产品规则明确禁止交互提交后重查旧 Locator
+        // （后续状态只能靠 Wait 或新 Snapshot 获取），所以这里先取句柄、动作之后再映射成引用。
+        IElementHandle? affected = null;
+        if (request.Locator is { } requestedLocator && ToRuntimeLocator(requestedLocator) is { } preLocator)
+        {
+            affected = await page.QueryAsync(preLocator, cancellationToken).ConfigureAwait(false);
+        }
+
         if (await ApplyInteractionAsync(page, request, cancellationToken).ConfigureAwait(false) is { } error)
         {
             return CapabilityResult<DesktopInteractionResult>.Failure(error);
@@ -409,7 +427,11 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
                 "mutating capability returned a page version that did not advance"));
         }
 
-        return CapabilityResult<DesktopInteractionResult>.Success(new DesktopInteractionResult(request.Target, state));
+        // 版本用**交互之后**的事实：引用随版本失效，旧 Ref 由此作废。
+        var element = affected is null ? null : ToElementRef(affected, state.Version);
+
+        return CapabilityResult<DesktopInteractionResult>.Success(
+            new DesktopInteractionResult(request.Target, state, element));
     }
 
     // ── 内部 ───────────────────────────────────────────────────────────
