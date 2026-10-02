@@ -347,7 +347,62 @@ public interface ICodeSourceMaintenanceStore
         string projectId,
         CodeSourceMaintenanceLedgerState state,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// **原子替换**一批文件的索引结果与源指纹（D4）：整个批次一个事务。
+    /// <para>每个文件的语义（顺序即所有权规则）：</para>
+    /// <list type="number">
+    ///   <item><description>找出该文件**消失的符号**；先记录「其他文件指向这些消失符号的入边」的
+    ///     来源文件（它们需要重新绑定），再删除这些入边 —— 指向**仍然存在**符号的入边必须保留。</description></item>
+    ///   <item><description>删除该文件**拥有**的引用/关系行（所有权 = <c>SourceFilePath</c> 属于该文件，
+    ///     或来源符号属于该文件的旧符号集），随后重建。</description></item>
+    ///   <item><description>整体替换该文件的符号行，写入文件记录、符号、引用、关系，
+    ///     并在**同一事务**里更新 manifest 行（指纹 + `Complete`）与该文件的各消费者已应用版本。</description></item>
+    ///   <item><description>任何一步失败 ⇒ 整个批次回滚：旧索引结果与旧指纹保持完整，不得留下半成品。</description></item>
+    /// </list>
+    /// </summary>
+    /// <param name="workspaceId">工作空间。</param>
+    /// <param name="projectId">范围。</param>
+    /// <param name="replacements">本批次要替换的文件（每个文件的路径与 scope 必须一致）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task<CodeSourceFileReplacementResult> ReplaceFilesAsync(
+        string workspaceId,
+        string projectId,
+        IReadOnlyCollection<CodeSourceFileReplacement> replacements,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// 一个文件的**原子替换**（D4，2026-10-02）：索引结果（文件记录 + 符号 + 引用 + 关系）与
+/// 该消费者已应用指纹/manifest 行必须在**同一个事务**里提交。
+/// <para>
+/// 调用方必须在内存里完成稳定读取与提取，再调用替换；<b>不得先 clear 再提取</b> ——
+/// 那样提取失败就会留下「旧结果已删、新结果没有」的空洞。
+/// </para>
+/// </summary>
+/// <param name="File">文件记录（<see cref="CodeFileRecord.FilePath"/> 必须与 <paramref name="Source"/> 的路径一致）。</param>
+/// <param name="Symbols">该文件本次提取到的符号（空表示没有可索引符号，旧符号仍会被移除）。</param>
+/// <param name="References">该文件拥有的引用行。</param>
+/// <param name="Relations">该文件拥有的关系行。</param>
+/// <param name="Source">同事务写入的源指纹与各消费者已应用版本。</param>
+public sealed record CodeSourceFileReplacement(
+    CodeFileRecord File,
+    IReadOnlyList<CodeSymbolRecord> Symbols,
+    IReadOnlyList<CodeReferenceRecord> References,
+    IReadOnlyList<CodeRelationRecord> Relations,
+    CodeSourceEntry Source);
+
+/// <summary>原子替换的结果。</summary>
+/// <param name="ReplacedFileCount">本次事务里被替换的文件数。</param>
+/// <param name="InvalidatedDependentFilePaths">
+/// 因「目标符号消失」而失去入边的**其他文件**（不在本批次内）：调用方必须为它们安排重新绑定，
+/// 否则引用/关系图会静默残缺。保留在仍存在符号上的入边**不会**出现在这里。
+/// </param>
+/// <param name="RemovedSymbolIds">本次替换中消失的符号 id（诊断与验收计数）。</param>
+public sealed record CodeSourceFileReplacementResult(
+    int ReplacedFileCount,
+    IReadOnlyList<string> InvalidatedDependentFilePaths,
+    IReadOnlyList<string> RemovedSymbolIds);
 
 /// <summary>一个路径的变更判定结果。</summary>
 /// <param name="FilePath">绝对路径（保留请求里给的大小写）。</param>
