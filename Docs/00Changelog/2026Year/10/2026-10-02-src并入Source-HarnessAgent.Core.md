@@ -20,6 +20,7 @@
 
 ## 未完成
 
+- `Source/PuddingHost/code_map.md` 中飞书 WS 底座的旧路径仍在文件中：该文件当时混有**他方未提交**的历史记录迁出改动，为遵守「只提交自己的改动」，本次撤回该文件的一行修改，待他方提交后用 `../../src/HarnessAgent/Core/…` → `../HarnessAgent.Core/…` 一行修复补上（不影响编译，仅索引路径失真）。
 - `Tests/HarnessAgent.Cli/` 仍未登记进 `PuddingAgentNetwork.slnx`（既有缺口，本次不扩大范围）。
 - 历史报告与检索基线（`Docs/Reports/Core-VS-Restore-Fix-2026-10-01.md`、`Docs/Reports/模块清单-module_map-2026-09-18.md`、`Source/PuddingRetrievalEval/eval/reports/*` 等）仍记录旧路径 `src/HarnessAgent/Core`；按历史快照原则不改写。
 
