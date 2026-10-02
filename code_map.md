@@ -24,6 +24,15 @@
 - Shell 侧：IMG11/IMG12（`96d5356`：新增 Foundation `ToolAvailabilityCatalog`（kind→可用性纯映射，卡片「可用/待接入」标签与标签页 Availability 同源）+ `MainWindow.xaml` 五张卡片可用性标签（文案由代码写入）；工具首页正常时不再输出泛泛的「就绪」）；IMG05（`53c2f1b`：Foundation `LauncherOnlyWidthRatio=0.32` + `InitialRatioWithoutPreference`/`DefaultRatioFor`/`ResolveLoadedRatio` 纯函数，已保存比例一律优先、切标签不重算比例；`DesktopBootstrapSettings.ToolWorkspace` 改可空以区分「未配置 vs 保存了默认值」；分割线补 Tooltip）。Shell 改动不涉及前端产物，前端版本号不变。
 - §13.6 的代码项（P0 + P1，含 Shell 两批）已全部落地。**静态外观已获像素复核**（Docs/Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md：聊天区 `#11100d`→`#11151b`、助手卡片去底色后与背景同色、输入区 `#1c1a16`→`#1a2029`、**消息区右侧白轨道与上下箭头消失**、页角徽标 `v6.1.3 · 97fb4d2` 可见、工具卡片可用/待接入标签可见）。**未完成的是验收**：SCROLL-001 QA 表、§12 整窗与 WebView2 真实验收（§12 V/F/S/A/P/SEC/D、§13.6 IMG-V*、§14.5 表）中的交互、浅色主题、DPI/缩放与性能项。同轮登记两处缺口：IMG03 的「帮助」在共享组件 `PuddingGlobalActions`（chat 变体），IMG07 的窄标签首列症状未被该截图覆盖。
 
+## 2026-10-01：组合顺序钉住（第 71 轮）
+
+- 新增 `DesktopCapabilityCompositionTests`：把组合根将要使用的**确切顺序**固定下来——
+  **先 `DesktopCapabilityChannelPreflight.Evaluate` 判定，再按 `ShouldStart` 决定是否 `DesktopCapabilityHostFactory.Create`**。
+- 四条断言覆盖四种组合：关闭（有描述/无描述）⇒ 都不启动且不构造宿主；启用 + 合法描述 ⇒ 两道闸门都通过且得到**未启动**的宿主；
+  启用 + 描述不可用 ⇒ 在构造宿主之前就停下。
+- 为什么要钉：顺序写反会踩到规格 §7.2 的陷阱（`StartAsync` 在旧传输模式下抛异常），
+  而这是**平台无关、可离线验证**的部分——把正确顺序变成测试，接线时照抄即可。
+- 测试：DesktopService **145/145**（+4）。
 ## 2026-10-01：组合根工厂（第 70 轮，让 PuddingDesktop 只剩三件事）
 
 - 新增 `DesktopCapabilityHostFactory.Create(settings, processInstanceId, authentication, streamFactory, executor)`
