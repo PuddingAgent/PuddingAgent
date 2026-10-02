@@ -490,3 +490,25 @@ S-A2 的 `A5_..._With_All_23_Fields` 断言由绿转红（失败 1 / 通过 24 /
 ⚠️ 另登记：`src/pages/chat/components/serviceStatus.ts:18` 引用 `index-status/health` ⇒ `health.ts` 进 `common-async`（本刀使 common +4139 B）；
 「改 index-status 不影响 chat」的旧结论**已不成立**，后续应把共享纯函数下沉到独立模块。
 详见 `Docs/00_changelog/2026Year/10/2026-10-03-P4-面板消费源维护9字段.md`。
+
+---
+
+## D11 · 面板入口 URL 一直报错（2026-10-03，**已纠正 + 已登记**）
+
+**事实**：管理端 SPA 的 umi `base = '/admin/'`（`Source/PuddingPlatformAdmin/config/config.ts:94`），
+路由 `path: '/index-status'`（`config/routes.ts:132`）在基座下注册 ⇒ **正确入口 = `http://127.0.0.1/admin/index-status`（需登录）**。
+自 Slice B 起我反复报告的 `http://127.0.0.1/index-status` **从来就打不开**。
+
+**证据（浏览器四页对照）**：`/index-status` 与 `/nonexistent-xyz-route` **均卡在加载壳**（基座外一律如此）；
+`/admin/` **正常渲染登录页**（页脚 `v6.2.0+dirty · 35f065d`）；`/admin/index-status` **能挂载**并跳 `/admin/user/login`。
+⚠️ 「跳登录」**只证明基座是 `/admin`**，不能证明路由存在 —— 路由存在由**源码** `routes.ts:132` + 既有前端测试证明。
+
+**仪器纪律（新增）**：SPA 深链的 **HTTP 200 是假阳性**（Core 的 SPA 回退对任意路径都返回 shell HTML）。
+"前端已上线"的判据必须是：① 在**正确基座**下访问 ② 页面**挂载成功**（出现预期 DOM）③ 需鉴权的路由注明**需登录**。
+
+**D11（UX，低危）**：基座外的未知路径返回 200 + 永久加载壳，既非 404 也非跳转，**看起来像系统坏了**。
+修复方向（未实施）：Core 对非 `/admin`/`/api`/静态资产的未知路径 302 → `/admin/`，或返回明确 404。
+
+**仍未验证（留白）**：已登录态下的真实渲染与 `codeIndex` 显示（依赖 Core 部署 + 用户会话）。
+
+详见 `Docs/00_changelog/2026Year/10/2026-10-03-SPA深链URL纠正.md`。
