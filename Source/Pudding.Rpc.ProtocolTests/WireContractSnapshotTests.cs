@@ -179,6 +179,7 @@ public sealed class WireContractSnapshotTests
             ("include_dom", 1), ("include_accessibility_tree", 2), ("include_html", 3), ("max_nodes", 4),
             ("max_text_length", 5), ("include_hidden", 6), ("include_iframes", 7),
             ("include_shadow_dom", 8), ("max_depth", 9));
+        AssertFieldNumbers(PageStateOutcome.Descriptor, ("url", 1), ("page_version", 2), ("readiness", 3), ("title", 4));
     }
 
     [Fact]

@@ -490,7 +490,8 @@ internal static class DesktopResultDecoder
                                 requestedTarget,
                                 tabUrl,
                                 ToPageVersion(result.Tabs.Page?.PageVersion ?? 0),
-                                DesktopPageReadinessWire.Parse(result.Tabs.Page?.Readiness)),
+                                DesktopPageReadinessWire.Parse(result.Tabs.Page?.Readiness),
+                                NullIfEmpty(result.Tabs.Page?.Title)),
                             result.Tabs.TabClosed,
                             remaining.Value)));
                 }
@@ -528,7 +529,8 @@ internal static class DesktopResultDecoder
                                 requestedTarget,
                                 waitUrl,
                                 ToPageVersion(result.WaitFor.Page?.PageVersion ?? 0),
-                                DesktopPageReadinessWire.Parse(result.WaitFor.Page?.Readiness)),
+                                DesktopPageReadinessWire.Parse(result.WaitFor.Page?.Readiness),
+                                NullIfEmpty(result.WaitFor.Page?.Title)),
                             NullIfEmpty(result.WaitFor.Error))));
                 }
 
@@ -579,7 +581,8 @@ internal static class DesktopResultDecoder
                         requestedTarget,
                         interactUrl,
                         ToPageVersion(result.Interact.Page?.PageVersion ?? 0),
-                        DesktopPageReadinessWire.Parse(result.Interact.Page?.Readiness));
+                        DesktopPageReadinessWire.Parse(result.Interact.Page?.Readiness),
+                        NullIfEmpty(result.Interact.Page?.Title));
 
                     return CapabilityResult<DesktopCapabilityResponse>.Success(
                         DesktopCapabilityResponse.FromInteract(new DesktopInteractionResult(
@@ -681,7 +684,8 @@ internal static class DesktopResultDecoder
                         requestedTarget,
                         url,
                         ToPageVersion(result.PageState.PageVersion),
-                        DesktopPageReadinessWire.Parse(result.PageState.Readiness))));
+                        DesktopPageReadinessWire.Parse(result.PageState.Readiness),
+                            NullIfEmpty(result.PageState.Title))));
             }
         }
     }

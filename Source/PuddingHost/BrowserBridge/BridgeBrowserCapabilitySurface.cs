@@ -38,7 +38,7 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
             target,
             TryParseUrl(page.Info.Url),
             LiveVersion(page),
-            page.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown));
+            page.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown, page.Info.Title));
     }
 
     public async Task<CapabilityResult<NavigateResult>> NavigateAsync(
@@ -482,7 +482,7 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
             target,
             TryParseUrl(page.Info.Url),
             LiveVersion(page),
-            page.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown);
+            page.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown, page.Info.Title);
 
     private static DesktopPageVersion Max(DesktopPageVersion left, DesktopPageVersion right) =>
         !right.IsKnown ? left

@@ -371,6 +371,9 @@ message PageStateOutcome {
   string url = 1;
   int64 page_version = 2;
   string readiness = 3;
+  // 页面标题（加宽 2026-10-02，缺口 #12）：四个「页状态类」工具的结果里 Title 是必填，
+  // 而线缆此前没有它 ⇒ 迁移那些工具就会悄悄削掉标题。
+  string title = 4;
 }
 
 message SnapshotOutcome {

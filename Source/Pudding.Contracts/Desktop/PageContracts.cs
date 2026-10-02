@@ -60,4 +60,6 @@ public sealed record DesktopPageState(
     DesktopPageTarget Target,
     Uri? Url,
     DesktopPageVersion Version,
-    DesktopPageReadiness Readiness);
+    DesktopPageReadiness Readiness,
+    // 加宽（2026-10-02，缺口 #12）：工具侧页状态结果带标题；不知道时为 null（不编造）。
+    string? Title = null);

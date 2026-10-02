@@ -746,6 +746,7 @@ internal static class DesktopFrameMapping
                         Url = pageState.Url?.AbsoluteUri ?? string.Empty,
                         PageVersion = pageState.Version.Value,
                         Readiness = DesktopPageReadinessWire.NameOf(pageState.Readiness),
+                        Title = WireText.Truncate(pageState.Title, 512),
                     };
                     break;
 
@@ -800,6 +801,7 @@ internal static class DesktopFrameMapping
                             Url = interaction.Page.Url?.AbsoluteUri ?? string.Empty,
                             PageVersion = interaction.Page.Version.Value,
                             Readiness = DesktopPageReadinessWire.NameOf(interaction.Page.Readiness),
+                            Title = WireText.Truncate(interaction.Page.Title, 512),
                         },
                     };
 
@@ -840,6 +842,7 @@ internal static class DesktopFrameMapping
                             Url = wait.Page.Url?.AbsoluteUri ?? string.Empty,
                             PageVersion = wait.Page.Version.Value,
                             Readiness = DesktopPageReadinessWire.NameOf(wait.Page.Readiness),
+                            Title = WireText.Truncate(wait.Page.Title, 512),
                         },
                     };
                     break;
@@ -887,6 +890,7 @@ internal static class DesktopFrameMapping
                             Url = tabs.Page.Url?.AbsoluteUri ?? string.Empty,
                             PageVersion = tabs.Page.Version.Value,
                             Readiness = DesktopPageReadinessWire.NameOf(tabs.Page.Readiness),
+                            Title = WireText.Truncate(tabs.Page.Title, 512),
                         },
                         Remaining = BuildContexts(tabs.Remaining),
                     };

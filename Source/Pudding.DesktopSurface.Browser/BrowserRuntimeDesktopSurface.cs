@@ -125,7 +125,7 @@ public sealed class BrowserRuntimeDesktopSurface
             target,
             ParseUrl(page.Info.Url),
             version > 0 ? new DesktopPageVersion(version) : DesktopPageVersion.Unknown,
-            page.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown));
+            page.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown, page.Info.Title));
     }
     /// <summary>
     /// 标签页激活/关闭（变更类，**必须固定版本**）：版本不符即拒绝，绝不猜"用户指的是哪个页面"。
@@ -213,7 +213,7 @@ public sealed class BrowserRuntimeDesktopSurface
 
         return page is null
             ? null
-            : new DesktopPageState(page.Target, page.Url, page.Version, DesktopPageReadiness.Unknown);
+            : new DesktopPageState(page.Target, page.Url, page.Version, DesktopPageReadiness.Unknown, page.Title);
     }
 
     /// <summary>注册表还没更新时的回退：取剩余清单里的第一页（关闭时目标页已不在清单里）。</summary>
@@ -225,7 +225,7 @@ public sealed class BrowserRuntimeDesktopSurface
             target,
             ParseUrl(page.Info.Url),
             page.PageVersion > 0 ? new DesktopPageVersion(page.PageVersion) : DesktopPageVersion.Unknown,
-            DesktopPageReadiness.Unknown);
+            DesktopPageReadiness.Unknown, page.Info.Title);
     }
     /// <summary>
     /// 定位元素。两条不变量在这里守住：
@@ -466,7 +466,7 @@ public sealed class BrowserRuntimeDesktopSurface
             request.Target,
             ParseUrl(browserPage.Info.Url),
             LiveVersion(browserPage.PageVersion),
-            browserPage.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown);
+            browserPage.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown, browserPage.Info.Title);
 
         return CapabilityResult<DesktopWaitResult>.Success(new DesktopWaitResult(
             request.Target,
@@ -547,7 +547,7 @@ public sealed class BrowserRuntimeDesktopSurface
             request.Target,
             ParseUrl(browserPage.Info.Url),
             LiveVersion(browserPage.PageVersion),
-            browserPage.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown);
+            browserPage.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown, browserPage.Info.Title);
 
         DesktopElementRef? element = null;
         if (handle is not null)
