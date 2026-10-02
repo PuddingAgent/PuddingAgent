@@ -33,6 +33,7 @@ draft: false
 | `Controllers/IndexAdminController.cs` | `GET /api/admin/index/status`（Admin JWT 只读）**并列两块**：`fullText`（S-A，字段名与结构冻结）+ `codeIndex`（S-A2 新增：逐项目 projectId/displayName/rootPath/注册态/维护态 23 字段/rootPathExists/stale）；D1/D2 的 fail-closed 做进数据（未登记或根路径不存在 ⇒ stale） |
 | `Services/CodeIndexStatusProbe.cs` | S-A2：codeIndex 块的只读探针。枚举真源 `ICodeIndexScopeRegistry.ListScopesAsync` ∪ `ICodeIndexMaintenance.GetScopeStatuses`（未登记 scope 也能被看见），原始注册态取自 `ICodeProjectRegistry.ListProjectsAsync`；维护态 23 字段原样透传；只调查询型 API，失败降级为 null/空列表，绝不 500 |
 | `Services/FullTextIndexStatusProbe.cs` | S-A：`fullText` 块探针（只产块，不再产响应根对象）；响应根对象 `IndexAdminStatusSnapshot` 由控制器组装 |
+| `Controllers/TransportStatusController.cs` | 切片 F 的**退役判据证据面**：`GET /api/admin/transport/status`（Admin JWT）只读返回传输用量 —— 能力通道/旧 Bridge/无路由计数 + `channelProven` + `canRetireLegacyBridge`；浏览器自动化未启用时计数器未注册 ⇒ 如实 `available = false` |
 
 ## Browser Bridge（Phase 2A）
 
