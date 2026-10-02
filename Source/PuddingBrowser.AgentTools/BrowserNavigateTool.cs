@@ -125,7 +125,7 @@ public sealed class BrowserNavigateTool(
                     {
                         ContextId = contextId,
                         PageId = args.PageId.Trim(),
-                        // 标题由 NavigateResult 回带（缺口 #14 已补）；未知时回退空串，不编造。
+                        // 标题由 NavigateResult 回带（缺口 #14 已补）；未知时回退空串，不编造。
                         Title = page.Title ?? string.Empty,
                         Url = page.CurrentUrl?.AbsoluteUri ?? string.Empty,
                         PageVersion = page.PageVersion.IsKnown ? page.PageVersion.Value : 0,
