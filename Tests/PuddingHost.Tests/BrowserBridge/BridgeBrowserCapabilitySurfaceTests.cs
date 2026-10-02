@@ -417,14 +417,79 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
-    public async Task OperationsNotYetMigrated_FailLoudlyInsteadOfPretending()
+    public async Task Snapshot_MapsFieldsAndCarriesTheLiveVersion()
     {
-        var surface = Create(new FakePage());
+        var page = new FakePage
+        {
+            Version = 6,
+            Snapshot = _ => new PageSnapshot
+            {
+                DomText = "<button>ok</button>",
+                AccessibilityTree = "button \"ok\"",
+                Html = "<html/>",
+                NodeCount = 3,
+            },
+        };
+        var surface = Create(page);
 
-        var snapshot = await surface.SnapshotAsync(new BrowserSnapshotRequest(Target, DesktopPageVersion.Require(1)), Call);
+        var result = await surface.SnapshotAsync(
+            new BrowserSnapshotRequest(Target, DesktopPageVersion.Require(6)), Call);
 
-        Assert.NotNull(snapshot.Error);
-        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, snapshot.Error!.Code);
+        Assert.False(result.IsFailure);
+        Assert.Equal("<button>ok</button>", result.Value.DomText);
+        Assert.Equal("button \"ok\"", result.Value.AccessibilityTree);
+        Assert.Equal("<html/>", result.Value.Html);
+        Assert.Equal(3, result.Value.NodeCount);
+        Assert.False(result.Value.Truncated);
+        Assert.Equal(6, result.Value.PageVersion.Value);
+    }
+
+    [Fact]
+    public async Task Snapshot_WithStaleExpectedVersion_IsRejectedBeforeTouchingThePage()
+    {
+        // 契约：期望版本不符时**不得返回过期快照**（与 Desktop 侧同一条规则）。
+        var page = new FakePage { Version = 6 };
+        var surface = Create(page);
+
+        var result = await surface.SnapshotAsync(
+            new BrowserSnapshotRequest(Target, DesktopPageVersion.Require(2)), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, result.Error!.Code);
+        Assert.Equal(0, page.SnapshotCount);
+    }
+
+    [Fact]
+    public async Task Snapshot_WithNoLiveVersion_FailsLoudlyWithoutSnapping()
+    {
+        var page = new FakePage { Version = 0 };
+        var surface = Create(page);
+
+        var result = await surface.SnapshotAsync(new BrowserSnapshotRequest(Target), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InternalError, result.Error!.Code);
+        Assert.Equal(0, page.SnapshotCount);
+    }
+
+    [Fact]
+    public async Task Snapshot_OverBudgetText_IsClampedAndFlagged()
+    {
+        // 纵深防御：即使运行时漏了预算，这里也要再截一次并**如实**标注。
+        var page = new FakePage
+        {
+            Version = 6,
+            Snapshot = _ => new PageSnapshot { DomText = new string('x', 100), NodeCount = 1 },
+        };
+        var surface = Create(page);
+
+        var result = await surface.SnapshotAsync(
+            new BrowserSnapshotRequest(
+                Target, DesktopPageVersion.Require(6), new DesktopSnapshotOptions(maxTextLength: 10)), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.Equal(10, result.Value.DomText!.Length);
+        Assert.True(result.Value.Truncated);
     }
 
     private static BrowserContextInfo Summary(string contextId) =>
@@ -546,6 +611,10 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public Func<WaitCondition, WaitResult>? Wait { get; init; }
 
+        public Func<SnapshotOptions, PageSnapshot>? Snapshot { get; init; }
+
+        public int SnapshotCount { get; private set; }
+
         public PageId Id { get; init; } = new("page-1");
 
         public BrowserContextId ContextId { get; } = new("ctx-1");
@@ -583,7 +652,11 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public Task StopAsync(CancellationToken ct) => throw new NotSupportedException();
 
-        public Task<PageSnapshot> SnapshotAsync(SnapshotOptions options, CancellationToken ct) => throw new NotSupportedException();
+        public Task<PageSnapshot> SnapshotAsync(SnapshotOptions options, CancellationToken ct)
+        {
+            SnapshotCount++;
+            return Task.FromResult(Snapshot?.Invoke(options) ?? new PageSnapshot());
+        }
 
         public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct) => throw new NotSupportedException();
 

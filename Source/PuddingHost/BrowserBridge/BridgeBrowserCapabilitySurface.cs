@@ -187,9 +187,71 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
             new DesktopTabsResult(request.Target, request.Action, state, tabClosed, remaining.Value));
     }
 
-    public Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
-        BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        NotMigrated<DesktopSnapshot>(DesktopCapability.BrowserSnapshot);
+    /// <summary>
+    /// 页面快照。契约与运行时的选项/结果字段**逐项对应**（都是文本形态：dom / a11y / html），
+    /// 因此这里是一次真实搬运：
+    /// · 契约没有 `IncludeHidden`/`IncludeIframes`/`IncludeShadowDom`/`MaxDepth` 字段 ⇒ 一律沿用
+    ///   运行时默认值（两条传输因此同形，不各写一份默认值）；
+    /// · 期望版本不符 ⇒ 明确拒绝（**不得返回过期快照**，与 Desktop 侧同一条规则）；
+    /// · 文本超预算 ⇒ 纵深防御再截一次并置 `Truncated`（运行时的标注原样保留）。
+    /// </summary>
+    public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
+        BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false) is not { } page)
+        {
+            return NotFound<DesktopSnapshot>(request.Target);
+        }
+
+        var version = LiveVersion(page);
+        if (!version.IsKnown)
+        {
+            // 快照里的引用按版本失效：没有活版本的快照不可被引用 ⇒ 响亮失败。
+            return CapabilityResult<DesktopSnapshot>.Failure(DesktopCapabilityError.Internal(
+                "page has no live version; a snapshot without a version cannot be referenced"));
+        }
+
+        if (request.ExpectedPageVersion.IsKnown && request.ExpectedPageVersion.Value != version.Value)
+        {
+            return CapabilityResult<DesktopSnapshot>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"expected page version {request.ExpectedPageVersion.Value} but the page is at {version.Value}; re-acquire state"));
+        }
+
+        var options = request.Options;
+        var snapshot = await page.SnapshotAsync(
+            new SnapshotOptions
+            {
+                IncludeDom = options.IncludeDom,
+                IncludeAccessibilityTree = options.IncludeAccessibilityTree,
+                IncludeHtml = options.IncludeHtml,
+                MaxNodes = options.MaxNodes,
+                MaxTextLength = options.MaxTextLength,
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var truncated = snapshot.Truncated;
+        var domText = Clamp(snapshot.DomText, options.MaxTextLength, ref truncated);
+        var accessibilityTree = Clamp(snapshot.AccessibilityTree, options.MaxTextLength, ref truncated);
+        var html = Clamp(snapshot.Html, options.MaxTextLength, ref truncated);
+
+        return CapabilityResult<DesktopSnapshot>.Success(new DesktopSnapshot(
+            request.Target, domText, accessibilityTree, html, truncated, snapshot.NodeCount, version));
+    }
+
+    /// <summary>纵深防御：超出预算就截断并**如实**把 <paramref name="truncated"/> 置真。</summary>
+    private static string? Clamp(string? text, int maxLength, ref bool truncated)
+    {
+        if (text is null || text.Length <= maxLength)
+        {
+            return text;
+        }
+
+        truncated = true;
+        return text[..maxLength];
+    }
 
     public async Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
         BrowserLocateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
@@ -495,8 +557,4 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
     private static CapabilityResult<T> NotFound<T>(DesktopPageTarget target) =>
         CapabilityResult<T>.Failure(DesktopCapabilityError.InvalidTarget(
             $"page target '{target.Key}' was not found in the bridge runtime"));
-
-    private static Task<CapabilityResult<T>> NotMigrated<T>(DesktopCapability capability) =>
-        Task.FromResult(CapabilityResult<T>.Failure(DesktopCapabilityError.UnsupportedCapability(
-            $"{DesktopCapabilities.NameOf(capability)} is not migrated to the narrow port yet")));
 }
