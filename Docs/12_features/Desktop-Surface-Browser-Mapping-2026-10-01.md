@@ -378,7 +378,7 @@ Core 侧实现是 `Source/PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs`，
 | 8 | ~~交互 `DeltaX`~~ | — | **已更正（2026-10-02）：不是契约缺口**——proto `InteractCommand.delta_x` 与 `Pudding.DesktopConnection.Mapping` 本来就带它，缺口只在 Bridge 适配器（只映射了 `DeltaY`，已修并加测试） |
 | 9 | 快照 `IncludeHidden` / `IncludeIframes` / `IncludeShadowDom` / `MaxDepth` | 请求 | `DesktopSnapshotOptions` + proto `SnapshotBudget` |
 | 10 | 定位结果 `BoundingBox` | 结果 | `DesktopElementRef` |
-| 11 | 等待 `TimeoutMs` | 请求 | `BrowserWaitForRequest` |
+| 11 | ~~等待 `TimeoutMs`~~ | — | **已更正（2026-10-02）：不是契约缺口**——契约 `BrowserWaitForRequest.TimeoutMs`、线缆 `WaitForCommand.timeout_ms`、Core 与 Desktop 两侧映射本来都带它，缺口只在 Bridge 适配器（未传，已修并加测试） |
 
 > 说明：`BrowserTabToolValue.Title` 在契约里是 `string?`，而工具值为 `required string`
 > ⇒ 迁移时回退空串即可，**不算缺口**（但要在实现里显式处理，不能假定非空）。

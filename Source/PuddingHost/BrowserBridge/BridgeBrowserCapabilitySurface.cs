@@ -333,7 +333,7 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
             return NotFound<DesktopWaitResult>(request.Target);
         }
 
-        var result = await page.WaitForAsync(ToRuntimeWaitCondition(request.Condition), cancellationToken)
+        var result = await page.WaitForAsync(ToRuntimeWaitCondition(request), cancellationToken)
             .ConfigureAwait(false);
 
         if (result.Error is not null)
@@ -459,12 +459,12 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
         _ => value.Value is null ? JavascriptValueKind.Undefined : JavascriptValueKind.Json,
     };
 
-    /// <summary>能力形状的等待条件 → 运行时等待条件（三种一一对应）。</summary>
-    private static WaitCondition ToRuntimeWaitCondition(DesktopWaitCondition condition) => condition.Kind switch
+    /// <summary>能力形状的等待条件 → 运行时等待条件（三种一一对应）。**超时也要带上**：契约与线缆本来就有 timeout_ms，此前这里丢掉等于用运行时默认值悄悄覆盖调用方的预算（与 DeltaX 同类缺陷）。</summary>
+    private static WaitCondition ToRuntimeWaitCondition(BrowserWaitForRequest request) => request.Condition.Kind switch
     {
-        DesktopWaitConditionKind.Selector => new WaitCondition { Selector = condition.Value },
-        DesktopWaitConditionKind.SelectorHidden => new WaitCondition { SelectorToHide = condition.Value },
-        _ => new WaitCondition { UrlPattern = condition.Value },
+        DesktopWaitConditionKind.Selector => new WaitCondition { Selector = request.Condition.Value, TimeoutMs = request.TimeoutMs },
+        DesktopWaitConditionKind.SelectorHidden => new WaitCondition { SelectorToHide = request.Condition.Value, TimeoutMs = request.TimeoutMs },
+        _ => new WaitCondition { UrlPattern = request.Condition.Value, TimeoutMs = request.TimeoutMs },
     };
 
     /// <summary>

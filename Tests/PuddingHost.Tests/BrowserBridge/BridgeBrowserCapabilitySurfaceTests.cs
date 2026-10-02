@@ -355,6 +355,22 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
+    public async Task WaitFor_PassesTheRequestedBudgetToTheRuntime()
+    {
+        // 契约与线缆本来就有 timeout_ms；此前适配器没带 ⇒ 调用方的预算被运行时默认值悄悄覆盖。
+        WaitCondition? seen = null;
+        var page = new FakePage { Version = 4, Wait = c => { seen = c; return new WaitResult { TimedOut = true }; } };
+        var surface = Create(page);
+
+        var result = await surface.WaitForAsync(
+            new BrowserWaitForRequest(Target, new DesktopWaitCondition(DesktopWaitConditionKind.Selector, "#slow"), 1_234), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.NotNull(seen);
+        Assert.Equal(1_234, seen!.TimeoutMs);
+    }
+
+    [Fact]
     public async Task WaitFor_TimeoutIsAResultNotAFailure()
     {
         var page = new FakePage { Version = 4, Wait = _ => new WaitResult { TimedOut = true } };
