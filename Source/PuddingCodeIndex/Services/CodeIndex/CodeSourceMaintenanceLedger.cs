@@ -118,6 +118,55 @@ public sealed class CodeSourceMaintenanceLedger
     }
 
     /// <summary>
+    /// 从持久快照恢复账本（含世代、版本、扫描水位、脏标记、消费者水位与待重试）。
+    /// <para>
+    /// 快照里的 <see cref="CodeSourceMaintenanceLedgerState.DirtyAgain"/> 会被保留：重启后仍然「还有工作」，
+    /// 不能因为进程重来就当作已完成。
+    /// </para>
+    /// </summary>
+    /// <param name="state">持久快照。</param>
+    /// <param name="timeProvider">可选时钟（确定性测试）。</param>
+    /// <param name="retryBase">退避底数覆盖。</param>
+    /// <param name="retryMax">退避上限覆盖。</param>
+    public static CodeSourceMaintenanceLedger FromState(
+        CodeSourceMaintenanceLedgerState state,
+        TimeProvider? timeProvider = null,
+        TimeSpan? retryBase = null,
+        TimeSpan? retryMax = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        var ledger = new CodeSourceMaintenanceLedger(
+            state.WorkspaceId,
+            state.ScopeId,
+            state.Epoch,
+            timeProvider,
+            retryBase,
+            retryMax)
+        {
+            _desiredVersion = state.DesiredVersion,
+            _committedVersion = state.CommittedVersion,
+            _scanWatermarkUtc = state.ScanWatermarkUtc,
+            _dirtyAgain = state.DirtyAgain,
+        };
+
+        foreach (var (providerId, appliedVersion) in state.ConsumerAppliedVersions
+                     ?? new Dictionary<string, long>())
+        {
+            if (!string.IsNullOrWhiteSpace(providerId))
+                ledger._consumerAppliedVersions[providerId] = appliedVersion;
+        }
+
+        foreach (var (filePath, retry) in state.PendingRetries ?? new Dictionary<string, CodeSourceRetry>())
+        {
+            if (!string.IsNullOrWhiteSpace(filePath) && retry is not null)
+                ledger._pendingRetries[filePath] = retry;
+        }
+
+        return ledger;
+    }
+
+    /// <summary>
     /// 记录一批被观察到的变化：期望版本递增一次（一个批次一个版本），返回**被捕获的版本**。
     /// <para>
     /// 该版本要在执行结束时原样回报给 <see cref="CompleteCommit"/>：只确认被捕获的版本，
@@ -133,6 +182,10 @@ public sealed class CodeSourceMaintenanceLedger
         lock (_gate)
         {
             _desiredVersion++;
+
+            // 期望版本已经领先已提交版本 ⇒ 账本必须标记「还有工作」（进程中途退出也不会把它当成已完成）。
+            _dirtyAgain = true;
+
             return _desiredVersion;
         }
     }

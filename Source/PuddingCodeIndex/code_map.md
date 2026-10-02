@@ -29,6 +29,7 @@
 | `ICodeProjectRegistry.cs` | 项目注册端口 |
 | `ICodeWorkspaceResolver.cs` | 工作区解析端口 |
 | `ICodeSourceMaintenanceStore`（同 `CodeSourceManifestContracts.cs`） | **可选持久化能力端口**（2026-10-02）：`LoadSourceMaintenanceAsync` / `SaveSourceManifestAsync`（单事务 upsert+删除，删除同时清消费者水位）/ `SaveMaintenanceLedgerAsync`（整体替换消费者水位与待重试，**拒绝回退写入**）。故意不加进 `ICodeIndexStore`（给共享端口加成员会破坏每一个实现者，含组件外替身） |
+| `CodeSourceScanningContracts.cs` | **D2 磁盘枚举与校准合同**（2026-10-02）：`CodeSourceDiskEntry`（只含元数据，stat 读不到就是 null）、`ICodeSourceIgnoreRules`（忽略规则**注入端口**，组件不反向引用 `PuddingPathFiltering`）、`ICodeSourceScanner` + `CodeSourceScanOutcome`（`RootUsable` / `Complete` / 原因）、`CodeSourceScanRun`（变更集 + 捕获版本 + 扫描开始时刻 + 能力缺失）、`CodeSourceScanOptions`、`CodeSourceScanReasons` |
 | `ICodeProjectRootDetector.cs` | 项目根探测端口 |
 | `CodeSourceManifestContracts.cs` | **D2 源状态与变更判定合同**（2026-10-02）：`SourceFingerprint`（mtime/length/内容 hash，hash 必须来自实际参与提取的那份内容）、`AppliedFileVersion`（**每个消费者分别推进**的水位 + 解析器策略/语义输入指纹）、`CodeSourceEntry`（持久 manifest 行，`Complete=false` 不得当作已应用）、`CodeSourceObservation`（stat 读不到就是 null，不得顶替）、`CodeConsumerInputFingerprint`、`CodeSourceAction`（Reuse / RefreshFingerprintOnly / RebindConsumers / ReindexContent / Delete / Deferred）、`CodeSourceChangeSource` 三源位标、`CodeSourceChange` / `CodeSourceScanRequest` / `CodeSourceChangeSet`（含扫描完整性、建议水位与各动作计数） |
 
@@ -46,7 +47,9 @@
 | `CodeIndexMaintenanceService.cs` | **U3-B1/U3-B3** 变更→索引的单一驱动（消费批次、置脏补跑、有界停止）。**U3-B3 按文件施用**：`PathsToRemove` → store 真删除；`PathsToReindex` → `ICodeIndexFileUpdater.IndexFileAsync` 逐文件（索引器无该能力则同样升级）；仅 reconcile / 目录变更 / 索引器拒绝才升级为 scope 级重索引；批次施用失败 ⇒ 标 `NeedsReconcile` + 记错误日志（不静默丢弃）。**U3-D 常规校准**：驱动步末尾的校准由 `TryBeginCalibration` 逐 scope 判due —— 被标位的 scope（U3-C，首次尝试在下一步、重试节流 `DefaultCalibrationInterval` 60s）**或**自有常规周期到期的 scope（`DefaultCalibrationPeriod` 15min，按**上次完成**计时，首次以挂载时刻为锚）。未到期 ⇒ **一次校准都不发起**（每日 200ms 步不会变成扫盘）；被拒/被截断 ⇒ **保持或置位** `NeedsReconcile`。**U3-E 重试退避**：被标位 scope 的重试间隔改为**指数阶梯** —— 以 `DefaultCalibrationInterval`(60s) 为底、**第二次及以后的连续失败**逐次翻倍（60s/2m/4m/8m/16m），封顶到组件常量 `DefaultCalibrationBackoffMax`(**30min**)；**任何一次“读到了根”的 sweep（完成或截断）立刻把档位复位到 0**；15min 常规钟与“首次尝试在下一步 / 单次失败仍 60s”**逐字未变**（阶梯只判“重复失败”，且与常规钟不叠加：`IsCalibrationDue` 的 if/else 二者永不同时参与） |
 | `CodeIndexCalibrationService.cs` | **U3-C 校准（mark-and-sweep）**：取 scope 已索引路径集合（`ListFilesAsync`），逐条判磁盘存在性，对"已消失"的调用 `RemoveFilesAsync`（只删索引行）；**根目录缺失/不可读 ⇒ 拒绝 sweep**（零移除 + 保持置位）；宽限窗口内被变更管线刚观测过的路径豁免；每事务 ≤256 条、每轮 ≤4096 条，可取消。**D 后续阶段**：扩展为「磁盘清单 vs manifest 差异扫描」（发现漏通知的新增文件），并接入持久账本 |
 | `CodeSourceChangeDetector.cs` | **D2 变更判定纯逻辑**（2026-10-02）：三源提示（watcher / mtime·stat 扫描 / 深度核验）＋ 持久 manifest ＋ 消费者输入指纹 → `CodeSourceChangeSet`。不读文件、不访问数据库、不看时钟。落地的不变量：新路径即使 mtime 很旧也必须处理；stat 未变+无提示+输入未变 ⇒ 复用（不读正文）；mtime 落在 `ScanStartedUtc - RacyOverlap` 内是候选；提示/深度核验/stat 读不到必须核验内容；**hash 与本次 stat 不一致（读写竞争）⇒ Deferred，绝不提交**；内容一致但策略/语义输入变了 ⇒ 只重绑；**删除只能由完整且根可用的扫描得出**，不完整/根不可用/watcher-only/扫描期间又变化的路径一律 Deferred；水位只在「完整+根可用+确实扫描过」时推进 |
-| `CodeSourceMaintenanceLedger.cs` | **D2 持久待办语义（纯内存，无 I/O）**（2026-10-02）：`RecordObservedChanges` 每批递增期望版本并返回**捕获版本**；`CompleteCommit` 只确认捕获版本、只对真正提交成功的消费者做单调 `max` 推进；扫描水位仅在「捕获版本即当前期望 + 扫描完整 + 无未解决路径 + 无待重试」时前进且永不回退；`BeginEpoch` 递增世代（旧世代提交返回 `StaleEpoch`，什么都不记）；`RecordFailure`/`DueRetries`/`ClearRetry` 实现有界退避（默认 60s→30min）与到期派发。持久化表结构**尚未实施** |
+| `CodeSourceMaintenanceLedger.cs` | **D2 持久待办语义（纯内存，无 I/O）**（2026-10-02）：`FromState` 从持久快照恢复（保留 `DirtyAgain`）；`RecordObservedChanges` 每批递增期望版本并**标记「还有工作」**，返回捕获版本；`CompleteCommit` 只确认捕获版本、只对真正提交成功的消费者做单调 `max` 推进；扫描水位仅在「捕获版本即当前期望 + 扫描完整 + 无未解决路径 + 无待重试」时前进且永不回退；`BeginEpoch` 递增世代（旧世代提交返回 `StaleEpoch`）；`RecordFailure`/`DueRetries`/`ClearRetry` 实现有界退避（默认 60s→30min）。持久化在 `SqliteCodeIndexStore.SourceMaintenance.cs` |
+| `FileSystemCodeSourceScanner.cs` | **D2 默认磁盘枚举**（2026-10-02，只读元数据、不读正文、不写任何东西）：根先探测（缺失/不可读 ⇒ `RootUsable=false`）；目录被忽略即整棵子树不枚举（忽略规则经 `ICodeSourceIgnoreRules` 注入）；子树读不到或触条目上限只置 `Complete=false` + 原因（**绝不假装「那里没有文件」**）；忽略规则抛错按「不忽略」处理（多一个候选只是核验一次）；枚举顺序按组件路径身份确定 |
+| `CodeSourceScanService.cs` | **D2 完整清单校准**（2026-10-02）：持久状态 → 磁盘枚举 → 真实变更集 → 账本登记捕获版本并持久化。**不读正文/不算 hash**（返回 `RequiresContentHash=true` 交执行层）、**不写索引**、**不推进扫描水位**（水位只在执行层回报 `CompleteCommit` 时前进）；存储无该能力时降级为 `CapabilityMissing` 并只产出磁盘事实；无待办时不递增版本也不写库 |
 
 ## 服务（Services/ → `PuddingCodeIndex.Services`）
 
@@ -83,7 +86,7 @@
 ## 测试
 
 **`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
-**219 用例**（2026-10-02 实测；含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**，**U3-G1 后 114 → 116：+2 条取消标记 + 对照用例**；**高磁盘读取修复 C 后 +7：4 条入边/出边/自引用/跨 scope 语义 + 3 条删除计划与 VDBE 工作量用例**；**D2 第一阶段 +25：源指纹 / 三源变更判定 / 删除可证实性 / 水位规则**；**D2 第二阶段 +15：账本捕获版本、消费者水位、扫描水位前置条件、世代作废与退避阶梯**；**D2 存储 +14：manifest/账本往返、单事务原子性、删除连带水位、回退写入拒绝**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+**236 用例**（2026-10-02 实测；含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**，**U3-G1 后 114 → 116：+2 条取消标记 + 对照用例**；**高磁盘读取修复 C 后 +7：4 条入边/出边/自引用/跨 scope 语义 + 3 条删除计划与 VDBE 工作量用例**；**D2 第一阶段 +25：源指纹 / 三源变更判定 / 删除可证实性 / 水位规则**；**D2 第二阶段 +15：账本捕获版本、消费者水位、扫描水位前置条件、世代作废与退避阶梯**；**D2 存储 +14：manifest/账本往返、单事务原子性、删除连带水位、回退写入拒绝**；**D2 校准 +17：元数据扫描器 8 条（忽略剪枝/不完整/触顶/规则异常）+ 校准服务 9 条（增删改候选、水位不推进、根不可用不删、能力缺失降级）**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
 `InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；
