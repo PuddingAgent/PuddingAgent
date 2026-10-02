@@ -34,26 +34,28 @@ public static class PuddingLoggingBootstrapper
             // SelfLog 初始化失败不应阻止日志系统启动
         }
 
-        var logLevel = Environment.GetEnvironmentVariable("PUDDING_LOG_LEVEL") ?? "Information";
-        var minLevel = logLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase)
-            ? LogEventLevel.Debug
-            : LogEventLevel.Information;
+        // 级别来源优先级：配置 Logging:Level（appsettings，或后续由 Debug 接口写入 system.json）
+        // ⇒ 环境变量 PUDDING_LOG_LEVEL（保留既有行为）⇒ Information。
+        // 用 LoggingLevelSwitch 而不是固定值：Debug 按钮可在**不重启**的情况下切换级别。
+        var minLevel = PuddingLogLevelSwitch.ResolveStartupLevel(bootstrapConfiguration["Logging:Level"]);
+        PuddingLogLevelSwitch.Instance.MinimumLevel = minLevel;
 
         var fileOutputTemplate =
-            "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [trace:{TraceId}] [session:{SessionId}] {Message:lj}{NewLine}{Exception}";
+            "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [tag:{Tag}] [trace:{TraceId}] [session:{SessionId}] {Message:lj}{NewLine}{Exception}";
 
         Log.Logger = new LoggerConfiguration()
             .ReadFrom.Configuration(bootstrapConfiguration)
-            .MinimumLevel.Is(minLevel)
+            .MinimumLevel.ControlledBy(PuddingLogLevelSwitch.Instance)
             .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
             .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
             .Enrich.FromLogContext()
+            .Enrich.With<LogTagEnricher>()
             .Enrich.WithMachineName()
             .Enrich.WithThreadId()
             .Enrich.With<TraceContextEnricher>()
             .WriteTo.Console(outputTemplate:
-                "[{Timestamp:HH:mm:ss} {Level:u3}] [trace:{TraceId}] {Message:lj}{NewLine}{Exception}")
+                "[{Timestamp:HH:mm:ss} {Level:u3}] [tag:{Tag}] [trace:{TraceId}] {Message:lj}{NewLine}{Exception}")
             .WriteTo.Logger(lc => lc
                 .Filter.ByIncludingComponent(RuntimeActivityComponents.Connector)
                 .WriteTo.Sink(new SizeRollingFileSink(
