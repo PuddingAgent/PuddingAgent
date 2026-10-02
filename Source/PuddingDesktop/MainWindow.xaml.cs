@@ -222,7 +222,12 @@ public sealed partial class MainWindow : Window
         RuntimeCpuText.Text = metrics?.CpuPercent is { } cpu ? $"{cpu:F1}%" : "—";
         RuntimeCpuBar.Value = metrics?.CpuPercent ?? 0;
         RuntimeCpuBar.Opacity = metrics?.CpuPercent is null ? 0.25 : 1;
-        RuntimeMemoryText.Text = metrics is null ? "—" : $"{metrics.WorkingSetBytes / 1048576d:F0} MiB";
+        // 口径必须与任务管理器一致：任务管理器「内存」列是专用工作集（私有页），
+        // 而 WorkingSet64 含共享页（映像/映射文件/共享 JIT 代码），同一时刻可高出一倍。
+        // 专用工作集不可读时才回退到工作集，并在副标题写明当前用的是哪个口径。
+        var memory = CoreMemoryDisplay.Format(metrics);
+        RuntimeMemoryText.Text = memory.Value;
+        RuntimeMemoryDetailText.Text = memory.Detail;
         RuntimeUptimeText.Text = metrics is null ? "—" : $"{(int)metrics.Uptime.TotalHours:00}:{metrics.Uptime.Minutes:00}:{metrics.Uptime.Seconds:00}";
         RuntimeStartedText.Text = metrics is null ? "进程未运行或指标不可读" : $"启动于 {metrics.StartedAt.LocalDateTime:MM-dd HH:mm:ss}";
     }

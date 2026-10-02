@@ -467,7 +467,7 @@
        <StackPanel Spacing="8"><TextBlock Text="CPU · 整机占比" Opacity="0.65"/><TextBlock x:Name="RuntimeCpuText" Text="—" FontSize="24" FontWeight="SemiBold"/><ProgressBar x:Name="RuntimeCpuBar" Minimum="0" Maximum="100" Value="0"/><TextBlock Text="每秒采样 · 仅 Core" FontSize="12" Opacity="0.6"/></StackPanel>
       </Border>
       <Border Grid.Column="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
-       <StackPanel Spacing="8"><TextBlock Text="内存 · 工作集" Opacity="0.65"/><TextBlock x:Name="RuntimeMemoryText" Text="—" FontSize="24" FontWeight="SemiBold"/><TextBlock Text="物理内存 · 仅 Core" FontSize="12" Opacity="0.6"/></StackPanel>
+       <StackPanel Spacing="8"><TextBlock Text="内存 · 专用工作集" Opacity="0.65"/><TextBlock x:Name="RuntimeMemoryText" Text="—" FontSize="24" FontWeight="SemiBold"/><TextBlock x:Name="RuntimeMemoryDetailText" Text="任务管理器口径 · 仅 Core" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/></StackPanel>
       </Border>
       <Border Grid.Column="3" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
        <StackPanel Spacing="8"><TextBlock Text="运行时长" Opacity="0.65"/><TextBlock x:Name="RuntimeUptimeText" Text="—" FontSize="24" FontWeight="SemiBold"/><TextBlock x:Name="RuntimeStartedText" FontSize="12" TextWrapping="Wrap" Opacity="0.7"/></StackPanel>

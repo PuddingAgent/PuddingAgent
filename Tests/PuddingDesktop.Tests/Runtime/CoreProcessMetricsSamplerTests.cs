@@ -39,4 +39,49 @@ public sealed class CoreProcessMetricsSamplerTests
         Assert.Null(sampler.Sample(null));
         Assert.Null(sampler.Sample(int.MaxValue));
     }
+
+    /// <summary>
+    /// 面板必须能给出任务管理器口径的专用工作集，而不是把总工作集当成进程占用：
+    /// 专用工作集是总工作集的子集，二者相等说明采样退回到了工作集口径（界面会标注）。
+    /// </summary>
+    [Fact]
+    public void PrivateWorkingSetIsReportedAndNeverExceedsTotalWorkingSet()
+    {
+        var sampler = new CoreProcessMetricsSampler();
+        var metrics = sampler.Sample(Environment.ProcessId);
+        Assert.NotNull(metrics);
+        if (!Environment.Is64BitProcess) return;
+        Assert.NotNull(metrics.PrivateWorkingSetBytes);
+        Assert.True(metrics.PrivateWorkingSetBytes > 0);
+        Assert.True(metrics.PrivateWorkingSetBytes <= metrics.WorkingSetBytes);
+    }
+
+    [Fact]
+    public void MemoryCardShowsPrivateWorkingSetAndDisclosesWorkingSet()
+    {
+        var started = DateTimeOffset.UtcNow;
+        var metrics = new CoreProcessMetrics(started, TimeSpan.FromMinutes(5), 1007L * 1048576, 733L * 1048576, 4.4);
+
+        var (value, detail) = CoreMemoryDisplay.Format(metrics);
+
+        Assert.Equal("733 MiB", value);
+        Assert.Contains("任务管理器口径", detail);
+        Assert.Contains("工作集 1007 MiB", detail);
+    }
+
+    [Fact]
+    public void MemoryCardFallsBackToWorkingSetOnlyWhenPrivateWorkingSetIsUnavailable()
+    {
+        var metrics = new CoreProcessMetrics(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(5), 1007L * 1048576, null, null);
+
+        var (value, detail) = CoreMemoryDisplay.Format(metrics);
+
+        Assert.Equal("1007 MiB", value);
+        Assert.Equal(CoreMemoryDisplay.WorkingSetFallbackDetail, detail);
+        Assert.Contains("含共享页", detail);
+
+        var (unknown, idleDetail) = CoreMemoryDisplay.Format(null);
+        Assert.Equal("—", unknown);
+        Assert.Equal(CoreMemoryDisplay.IdleDetail, idleDetail);
+    }
 }

@@ -2,7 +2,16 @@ using System.Diagnostics;
 
 namespace PuddingDesktop.Runtime;
 
-public sealed record CoreProcessMetrics(DateTimeOffset StartedAt, TimeSpan Uptime, long WorkingSetBytes, double? CpuPercent);
+/// <summary>
+/// WorkingSetBytes 是总工作集（含共享页）；PrivateWorkingSetBytes 是任务管理器「内存」列口径的
+/// 专用工作集，读不到时为 null，界面必须回退并标注口径，不能把两个数字当成同一件事。
+/// </summary>
+public sealed record CoreProcessMetrics(
+    DateTimeOffset StartedAt,
+    TimeSpan Uptime,
+    long WorkingSetBytes,
+    long? PrivateWorkingSetBytes,
+    double? CpuPercent);
 
 // Only samples the supervised Core PID. CPU uses total machine capacity (0-100%),
 // not a per-core percentage; a new process needs two observations.
@@ -19,7 +28,8 @@ public sealed class CoreProcessMetricsSampler
             var started = new DateTimeOffset(process.StartTime);
             var cpu = _cpu.Observe(process.Id, started, process.TotalProcessorTime,
                 TimeSpan.FromSeconds((double)Stopwatch.GetTimestamp() / Stopwatch.Frequency), Environment.ProcessorCount);
-            return new(started, DateTimeOffset.Now - started, process.WorkingSet64, cpu);
+            return new(started, DateTimeOffset.Now - started, process.WorkingSet64,
+                ProcessMemoryReader.TryGetPrivateWorkingSetBytes(process.Id), cpu);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
         { _cpu.Reset(); return null; }
