@@ -50,6 +50,14 @@ public sealed class DesktopSurfaceComposition : IDesktopUiSurface
         DesktopCallContext context, CancellationToken cancellationToken) =>
         _browser.GetContextsAsync(context, cancellationToken);
 
+    public Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
+        DesktopCallContext context, BrowserContextCreateRequest request, CancellationToken cancellationToken) =>
+        _browser.CreateContextAsync(request, context, cancellationToken);
+
+    public Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
+        DesktopCallContext context, BrowserContextCloseRequest request, CancellationToken cancellationToken) =>
+        _browser.CloseContextAsync(request, context, cancellationToken);
+
     public Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
         DesktopCallContext context, BrowserWaitForRequest request, CancellationToken cancellationToken) =>
         _browser.WaitForAsync(context, request, cancellationToken);

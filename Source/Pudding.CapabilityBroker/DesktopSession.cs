@@ -12,7 +12,7 @@ namespace Pudding.CapabilityBroker;
 ///
 /// 与 Desktop 侧对称但方向相反：Core 写命令、读结果/事件；两侧各自持有自己的状态机与待完成表。
 /// </summary>
-public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapabilitySurface
+public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapabilitySurface, IDesktopContextCapabilitySurface
 {
     private readonly ICoreDesktopChannel _channel;
     private readonly DesktopCapabilityPolicy _policy;
@@ -184,6 +184,32 @@ public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapability
                 ? CapabilityResult<DesktopWaitResult>.Success(value)
                 : CapabilityResult<DesktopWaitResult>.Failure(
                     DesktopCapabilityError.Internal("wait_for response payload is missing")),
+            cancellationToken);
+
+    // ── 上下文管理（缺口 #1，变更类）──────────────────────────────────────
+
+    public Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
+        BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.BrowserContextCreate,
+            DesktopCapabilityRequest.ForContextCreate(request),
+            call,
+            static response => response.ContextCreated is { } value
+                ? CapabilityResult<DesktopContextInfo>.Success(value)
+                : CapabilityResult<DesktopContextInfo>.Failure(
+                    DesktopCapabilityError.Internal("context_created response payload is missing")),
+            cancellationToken);
+
+    public Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
+        BrowserContextCloseRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.BrowserContextClose,
+            DesktopCapabilityRequest.ForContextClose(request),
+            call,
+            static response => response.ContextClosed is { } value
+                ? CapabilityResult<DesktopContextClosed>.Success(value)
+                : CapabilityResult<DesktopContextClosed>.Failure(
+                    DesktopCapabilityError.Internal("context_closed response payload is missing")),
             cancellationToken);
 
     /// <summary>列出上下文与页面（只读，浏览器作用域）。</summary>

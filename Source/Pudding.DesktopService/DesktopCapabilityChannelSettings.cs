@@ -51,6 +51,8 @@ public sealed record DesktopCapabilityChannelSettings
         | DesktopCapability.BrowserWaitFor
         | DesktopCapability.BrowserContexts
         | DesktopCapability.BrowserTabs
+        | DesktopCapability.BrowserContextCreate
+        | DesktopCapability.BrowserContextClose
         | DesktopCapability.ShellDialog
         | DesktopCapability.ShellFilePicker
         | DesktopCapability.ShellClipboard;

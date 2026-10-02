@@ -153,6 +153,21 @@ internal static class CoreCommandEncoder
                 command.Contexts = new Proto.ContextsCommand();
                 break;
 
+            case DesktopCapability.BrowserContextCreate when request.ContextCreate is { } createContext:
+                command.ContextCreate = new Proto.ContextCreateCommand
+                {
+                    ContextId = createContext.ContextId ?? string.Empty,
+                    Persistent = createContext.Persistent,
+                };
+                break;
+
+            case DesktopCapability.BrowserContextClose when request.ContextClose is { } closeContext:
+                command.ContextClose = new Proto.ContextCloseCommand
+                {
+                    ContextId = closeContext.ContextId,
+                };
+                break;
+
             case DesktopCapability.BrowserTabs when request.Tabs is { } requestTabs:
                 command.Tabs = new Proto.TabsCommand
                 {
@@ -294,6 +309,8 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.Interact => expectedCapability == DesktopCapability.BrowserInteract,
             Proto.OperationResult.OutcomeOneofCase.WaitFor => expectedCapability == DesktopCapability.BrowserWaitFor,
             Proto.OperationResult.OutcomeOneofCase.Contexts => expectedCapability == DesktopCapability.BrowserContexts,
+            Proto.OperationResult.OutcomeOneofCase.ContextCreated => expectedCapability == DesktopCapability.BrowserContextCreate,
+            Proto.OperationResult.OutcomeOneofCase.ContextClosed => expectedCapability == DesktopCapability.BrowserContextClose,
             Proto.OperationResult.OutcomeOneofCase.Tabs => expectedCapability == DesktopCapability.BrowserTabs,
             Proto.OperationResult.OutcomeOneofCase.Clipboard => expectedCapability == DesktopCapability.ShellClipboard,
             Proto.OperationResult.OutcomeOneofCase.Dialog => expectedCapability == DesktopCapability.ShellDialog,
@@ -380,6 +397,34 @@ internal static class DesktopResultDecoder
 
             default:
             {
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.ContextCreated)
+                {
+                    var created = result.ContextCreated.Context;
+                    var createdTrust = Enum.TryParse<DesktopContextTrust>(
+                        created.Trust, ignoreCase: false, out var parsedCreatedTrust)
+                        ? parsedCreatedTrust
+                        : DesktopContextTrust.Untrusted;
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromContextCreated(
+                            new DesktopContextInfo(created.ContextId, createdTrust, [])
+                            {
+                                Persistent = created.Persistent,
+                            }));
+                }
+
+                if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.ContextClosed)
+                {
+                    if (string.IsNullOrWhiteSpace(result.ContextClosed.ContextId))
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal("context_closed outcome carries no context id"));
+                    }
+
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromContextClosed(
+                            new DesktopContextClosed(result.ContextClosed.ContextId)));
+                }
+
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Contexts)
                 {
                     var contexts = new List<DesktopContextInfo>(result.Contexts.Contexts.Count);

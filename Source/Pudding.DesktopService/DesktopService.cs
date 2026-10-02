@@ -335,6 +335,48 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.FromTabs(result.Value);
             }
 
+            case DesktopCapability.BrowserContextCreate:
+            {
+                if (request.ContextCreate is not { } createContext)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("browser.context.create request payload is missing"));
+                }
+
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    target: null,
+                    DesktopPageVersion.Unknown,
+                    context,
+                    token => _surface.CreateContextAsync(context, createContext, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromContextCreated(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
+            case DesktopCapability.BrowserContextClose:
+            {
+                if (request.ContextClose is not { } closeContext)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("browser.context.close request payload is missing"));
+                }
+
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    target: null,
+                    DesktopPageVersion.Unknown,
+                    context,
+                    token => _surface.CloseContextAsync(context, closeContext, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromContextClosed(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             case DesktopCapability.BrowserContexts:
             {
                 if (!request.Contexts)

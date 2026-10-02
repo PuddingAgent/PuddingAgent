@@ -43,8 +43,43 @@ internal sealed class TransportRoutedBrowserCapabilitySurface(
     IDesktopBrowserCapabilitySurface legacyBridge,
     Func<IDesktopBrowserCapabilitySurface?> activeChannel,
     Func<bool> legacyBridgeAvailable,
-    DesktopTransportUsageTracker usage) : IDesktopBrowserCapabilitySurface
+    DesktopTransportUsageTracker usage) : IDesktopBrowserCapabilitySurface, IDesktopContextCapabilitySurface
 {
+    // ── 上下文管理（缺口 #1）：同一套决策；组合根传入的两个实现都实现了这个端口。──
+
+    public Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
+        BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeContextAsync((surface, ct) => surface.CreateContextAsync(request, call, ct), cancellationToken);
+
+    public Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
+        BrowserContextCloseRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeContextAsync((surface, ct) => surface.CloseContextAsync(request, call, ct), cancellationToken);
+
+    private async Task<CapabilityResult<T>> InvokeContextAsync<T>(
+        Func<IDesktopContextCapabilitySurface, CancellationToken, Task<CapabilityResult<T>>> invoke,
+        CancellationToken cancellationToken)
+    {
+        var channel = activeChannel() as IDesktopContextCapabilitySurface;
+        var decision = DesktopTransportRouting.Decide(
+            channelReady: channel is not null,
+            channelAttempted: false,
+            legacyBridgeAvailable: legacyBridgeAvailable());
+
+        switch (decision.Route)
+        {
+            case DesktopTransportRoute.CapabilityChannel when channel is not null:
+                usage.Record(DesktopTransportRoute.CapabilityChannel);
+                return await invoke(channel, cancellationToken).ConfigureAwait(false);
+
+            case DesktopTransportRoute.LegacyBridge when legacyBridge is IDesktopContextCapabilitySurface legacyContext:
+                usage.Record(DesktopTransportRoute.LegacyBridge);
+                return await invoke(legacyContext, cancellationToken).ConfigureAwait(false);
+
+            default:
+                usage.Record(DesktopTransportRoute.None);
+                return CapabilityResult<T>.Failure(DesktopTransportRouting.NoRoute(decision));
+        }
+    }
     public Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync((surface, ct) => surface.GetContextsAsync(call, ct), cancellationToken);

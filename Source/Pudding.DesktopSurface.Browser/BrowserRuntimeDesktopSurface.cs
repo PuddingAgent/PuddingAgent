@@ -12,8 +12,54 @@ namespace Pudding.DesktopSurface.Browser;
 /// 本轮只实现 <see cref="GetContextsAsync"/>（清单是"先看清有什么"的入口，且不需要任何 DOM 交互），
 /// 其余操作按 [映射规格](../../Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md) 逐步补齐。
 /// </summary>
-public sealed class BrowserRuntimeDesktopSurface
+public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurface
 {
+    // ── 上下文管理（缺口 #1）────────────────────────────────────────────
+
+    public async Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
+        BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(call);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_runtime.State != BrowserRuntimeState.Ready)
+        {
+            return CapabilityResult<DesktopContextInfo>.Failure(
+                DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
+        }
+
+        var created = await _runtime.CreateContextAsync(
+            new BrowserContextOptions
+            {
+                Id = request.ContextId is { } requestedId ? new BrowserContextId(requestedId) : null,
+                Persistent = request.Persistent,
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        // 新建上下文里的页面列表必然为空；可信级别取自目标注册表（不是猜）。
+        return CapabilityResult<DesktopContextInfo>.Success(
+            new DesktopContextInfo(created.Id.Value, _targets.TrustFor(created.Id.Value), [])
+            {
+                Persistent = request.Persistent,
+            });
+    }
+
+    public async Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
+        BrowserContextCloseRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(call);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var contextId = new BrowserContextId(request.ContextId);
+        if (await _runtime.GetContextAsync(contextId, cancellationToken).ConfigureAwait(false) is null)
+        {
+            return CapabilityResult<DesktopContextClosed>.Failure(
+                DesktopCapabilityError.InvalidTarget($"context '{request.ContextId}' is not known"));
+        }
+
+        await _runtime.CloseContextAsync(contextId, cancellationToken).ConfigureAwait(false);
+        return CapabilityResult<DesktopContextClosed>.Success(new DesktopContextClosed(request.ContextId));
+    }
     private readonly IBrowserRuntime _runtime;
     private readonly IDesktopBrowserTargetRegistry _targets;
 

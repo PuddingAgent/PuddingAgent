@@ -50,6 +50,13 @@ public enum DesktopCapability
 
     /// <summary>标签页操作：激活或关闭目标页面（变更类；必须固定页面版本）。</summary>
     BrowserTabs = 1 << 13,
+
+    /// <summary>创建浏览器上下文（变更类，缺口 #1）。**新能力名**而非扩展 browser.contexts ——
+    /// 目录规则要求改变同名能力语义时必须用新名字或升版本。</summary>
+    BrowserContextCreate = 1 << 14,
+
+    /// <summary>关闭浏览器上下文（变更类、破坏性，缺口 #1）。</summary>
+    BrowserContextClose = 1 << 15,
 }
 
 public enum DesktopCapabilityKind
@@ -126,6 +133,10 @@ public static class DesktopCapabilities
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.BrowserContexts, "browser.contexts", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext),
+        new(DesktopCapability.BrowserContextCreate, "browser.context.create", InitialVersion,
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
+        new(DesktopCapability.BrowserContextClose, "browser.context.close", InitialVersion,
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
         new(DesktopCapability.BrowserTabs, "browser.tabs", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
     ];

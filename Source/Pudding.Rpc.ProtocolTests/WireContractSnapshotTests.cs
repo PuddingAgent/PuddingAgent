@@ -132,11 +132,15 @@ public sealed class WireContractSnapshotTests
             ("file_picker", 24));
 
         Assert.Equal(
-            ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState", "GetShellStatus", "Snapshot", "Locate", "Interact", "WaitFor", "Contexts", "Tabs", "ReadClipboard", "ShowDialog", "ShowFilePicker"],
+            ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState", "GetShellStatus", "Snapshot", "Locate",
+            "Interact", "WaitFor", "Contexts", "Tabs", "ReadClipboard", "ShowDialog", "ShowFilePicker",
+            "ContextCreate", "ContextClose"],
             Enum.GetNames<CapabilityCommand.PayloadOneofCase>().Where(name => name != "None").ToArray());
 
         Assert.Equal(
-            ["Navigate", "ExecuteJavascript", "ShowNotification", "Error", "PageState", "ShellStatus", "Snapshot", "Locate", "Interact", "WaitFor", "Contexts", "Tabs", "Clipboard", "Dialog", "FilePicker"],
+            ["Navigate", "ExecuteJavascript", "ShowNotification", "Error", "PageState", "ShellStatus", "Snapshot",
+            "Locate", "Interact", "WaitFor", "Contexts", "Tabs", "Clipboard", "Dialog", "FilePicker",
+            "ContextCreated", "ContextClosed"],
             Enum.GetNames<OperationResult.OutcomeOneofCase>().Where(name => name != "None").ToArray());
 
         AssertFieldNumbers(OperationCancel.Descriptor, ("operation_id", 1), ("generation", 2), ("reason", 3));
@@ -182,6 +186,10 @@ public sealed class WireContractSnapshotTests
             ("max_text_length", 5), ("include_hidden", 6), ("include_iframes", 7),
             ("include_shadow_dom", 8), ("max_depth", 9));
         AssertFieldNumbers(PageStateOutcome.Descriptor, ("url", 1), ("page_version", 2), ("readiness", 3), ("title", 4));
+        AssertFieldNumbers(ContextCreateCommand.Descriptor, ("context_id", 1), ("persistent", 2));
+        AssertFieldNumbers(ContextCloseCommand.Descriptor, ("context_id", 1));
+        AssertFieldNumbers(ContextCreatedOutcome.Descriptor, ("context", 1));
+        AssertFieldNumbers(ContextClosedOutcome.Descriptor, ("context_id", 1));
         AssertFieldNumbers(NavigateCommand.Descriptor,
             ("target", 1), ("url", 2), ("expected_page_version", 3), ("action", 4), ("timeout_ms", 5));
         AssertFieldNumbers(NavigateOutcome.Descriptor,
@@ -193,8 +201,8 @@ public sealed class WireContractSnapshotTests
     public void PayloadOneof_IsClosedWhitelist()
     {
         // 计划 §4：禁止「字符串命令名 + 任意 JSON」演化成万能调用。
-        Assert.Equal(14, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
-        Assert.Equal(15, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
+        Assert.Equal(16, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
+        Assert.Equal(17, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
     }
 
     [Fact]

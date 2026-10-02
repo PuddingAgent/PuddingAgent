@@ -450,6 +450,38 @@ internal static class CoreFrameMapping
                 return CapabilityResult<DesktopCapabilityRequest>.Success(DesktopCapabilityRequest.ForContexts());
             }
 
+            case DesktopCapability.BrowserContextCreate:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.ContextCreate)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                return CapabilityResult<DesktopCapabilityRequest>.Success(
+                    DesktopCapabilityRequest.ForContextCreate(new BrowserContextCreateRequest(
+                        string.IsNullOrWhiteSpace(command.ContextCreate.ContextId)
+                            ? null
+                            : command.ContextCreate.ContextId,
+                        command.ContextCreate.Persistent)));
+            }
+
+            case DesktopCapability.BrowserContextClose:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.ContextClose)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                if (string.IsNullOrWhiteSpace(command.ContextClose.ContextId))
+                {
+                    return FailRequest("closing a context requires a context_id");
+                }
+
+                return CapabilityResult<DesktopCapabilityRequest>.Success(
+                    DesktopCapabilityRequest.ForContextClose(
+                        new BrowserContextCloseRequest(command.ContextClose.ContextId)));
+            }
+
             case DesktopCapability.BrowserTabs:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.Tabs)
@@ -938,6 +970,25 @@ internal static class DesktopFrameMapping
                         result.Contexts.Contexts.Add(wireContext);
                     }
 
+                    break;
+
+                case DesktopCapability.BrowserContextCreate when response.ContextCreated is { } created:
+                    result.ContextCreated = new Proto.ContextCreatedOutcome
+                    {
+                        Context = new Proto.ContextInfo
+                        {
+                            ContextId = created.ContextId,
+                            Trust = created.Trust.ToString(),
+                            Persistent = created.Persistent,
+                        },
+                    };
+                    break;
+
+                case DesktopCapability.BrowserContextClose when response.ContextClosed is { } closed:
+                    result.ContextClosed = new Proto.ContextClosedOutcome
+                    {
+                        ContextId = closed.ContextId,
+                    };
                     break;
 
                 case DesktopCapability.BrowserTabs when response.Tabs is { } tabs:

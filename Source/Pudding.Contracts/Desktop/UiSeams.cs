@@ -75,6 +75,15 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
         DesktopCallContext context, BrowserWaitForRequest request, CancellationToken cancellationToken);
 
+    /// <summary>创建浏览器上下文（缺口 #1，变更类）。返回新建上下文摘要（页面列表为空）。</summary>
+    Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
+        DesktopCallContext context, BrowserContextCreateRequest request, CancellationToken cancellationToken);
+
+    /// <summary>关闭浏览器上下文（缺口 #1，破坏性变更类）。</summary>
+    Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
+        DesktopCallContext context, BrowserContextCloseRequest request, CancellationToken cancellationToken);
+
+
     /// <summary>对元素执行交互；实现方必须在交互后返回<b>新的</b>页面状态（旧 Ref 随之作废）。</summary>
     Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         DesktopCallContext context, BrowserInteractRequest request, CancellationToken cancellationToken);

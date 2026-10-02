@@ -18,11 +18,51 @@ namespace PuddingHost.BrowserBridge;
 /// · 版本只报运行时真正知道的（`PageVersion &gt; 0` 才转成已知版本，否则 `Unknown`）；
 /// · 就绪度不猜：`IsLoading` 只能区分"加载中"与"未知"，**绝不**声称 Interactive/Complete。
 /// </summary>
-internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : IDesktopBrowserCapabilitySurface
+internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
+    : IDesktopBrowserCapabilitySurface, IDesktopContextCapabilitySurface
 {
     private static readonly Encoding Utf8 = Encoding.UTF8;
 
     private readonly IBrowserRuntime _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+
+    // ── 上下文管理（缺口 #1）：与 Desktop 侧同形（新建的上下文页面列表为空、可信级别保守）。──
+
+    public async Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
+        BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var created = await _runtime.CreateContextAsync(
+            new BrowserContextOptions
+            {
+                Id = request.ContextId is { } requestedId ? new BrowserContextId(requestedId) : null,
+                Persistent = request.Persistent,
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        // Bridge 侧不知道可信级别（Desktop 侧注册表才是权威）⇒ 保守取 Untrusted（既有不对称，已登记）。
+        return CapabilityResult<DesktopContextInfo>.Success(
+            new DesktopContextInfo(created.Id.Value, DesktopContextTrust.Untrusted, [])
+            {
+                Persistent = request.Persistent,
+            });
+    }
+
+    public async Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
+        BrowserContextCloseRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var contextId = new BrowserContextId(request.ContextId);
+        if (await _runtime.GetContextAsync(contextId, cancellationToken).ConfigureAwait(false) is null)
+        {
+            return CapabilityResult<DesktopContextClosed>.Failure(
+                DesktopCapabilityError.InvalidTarget($"context '{request.ContextId}' is not known"));
+        }
+
+        await _runtime.CloseContextAsync(contextId, cancellationToken).ConfigureAwait(false);
+        return CapabilityResult<DesktopContextClosed>.Success(new DesktopContextClosed(request.ContextId));
+    }
 
     public async Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopPageTarget target, DesktopCallContext call, CancellationToken cancellationToken = default)

@@ -140,6 +140,16 @@ internal sealed class ManualUiDispatcher : IDesktopUiDispatcher
 /// <summary>记录型 UI 动作表面：可脚本化返回值、阻塞门与抛异常。</summary>
 internal sealed class RecordingUiSurface : IDesktopUiSurface
 {
+    // 缺口 #1：能力通道新增两个上下文写操作 ⇒ 替身补上（默认可记录失败，用例按需覆盖）。
+    public Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
+        DesktopCallContext context, BrowserContextCreateRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(CapabilityResult<DesktopContextInfo>.Failure(
+            DesktopCapabilityError.UnsupportedCapability("context create is not scripted in this fake")));
+
+    public Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
+        DesktopCallContext context, BrowserContextCloseRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(CapabilityResult<DesktopContextClosed>.Failure(
+            DesktopCapabilityError.UnsupportedCapability("context close is not scripted in this fake")));
     private readonly ConcurrentQueue<string> _calls = new();
 
     public TaskCompletionSource? Gate { get; set; }

@@ -208,6 +208,18 @@ message WaitOutcome {
 message ContextsCommand {
 }
 
+// 上下文管理（缺口 #1，2026-10-02）：**新能力名** browser.context.create / browser.context.close。
+// 目录规则要求「改变同名能力语义」必须用新能力名，因此 browser.contexts 保持只读。
+message ContextCreateCommand {
+  // 可选：空串表示由运行时生成 id。
+  string context_id = 1;
+  bool persistent = 2;
+}
+
+message ContextCloseCommand {
+  string context_id = 1;
+}
+
 message PageInfo {
   string context_id = 1;
   string page_id = 2;
@@ -232,6 +244,14 @@ message ContextInfo {
 
 message ContextsOutcome {
   repeated ContextInfo contexts = 1;
+}
+
+message ContextCreatedOutcome {
+  ContextInfo context = 1;
+}
+
+message ContextClosedOutcome {
+  string context_id = 1;
 }
 
 // 标签页操作（切片 D 收尾）：必须固定 expected_page_version；剩余清单复用 ContextsOutcome。
@@ -328,6 +348,8 @@ message CapabilityCommand {
     ClipboardReadCommand read_clipboard = 21;
     ShowDialogCommand show_dialog = 22;
     ShowFilePickerCommand show_file_picker = 23;
+  ContextCreateCommand context_create = 24;
+  ContextCloseCommand context_close = 25;
   }
 }
 
@@ -451,6 +473,8 @@ message OperationResult {
     ClipboardOutcome clipboard = 22;
     DialogOutcome dialog = 23;
     FilePickerOutcome file_picker = 24;
+  ContextCreatedOutcome context_created = 25;
+  ContextClosedOutcome context_closed = 26;
   }
 }
 
