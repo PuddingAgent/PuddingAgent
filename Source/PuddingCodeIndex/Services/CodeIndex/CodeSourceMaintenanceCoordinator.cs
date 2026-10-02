@@ -269,6 +269,14 @@ public sealed class CodeSourceMaintenanceCoordinator
                 continue;
             }
 
+            // 提取发生在读盘之后：提交前再确认一次 stat 未变。否则这份索引对应的可能是旧字节，
+            // 而指纹写的是新字节 —— 那正是「指纹必须来自真正解析的那份内容」要防的错配。
+            if (!StillMatches(fileFingerprint, payload.FilePath))
+            {
+                failures.Add((payload.FilePath, "file changed between the verified read and the extraction"));
+                continue;
+            }
+
             var previousSymbols = await _store
                 .GetSymbolsByFileAsync(workspaceId, projectId, payload.FilePath, cancellationToken)
                 .ConfigureAwait(false);
@@ -317,6 +325,11 @@ public sealed class CodeSourceMaintenanceCoordinator
         // ② 只重绑：索引不变，只把消费者视图推进到捕获版本（含指纹未变的路径）。
         //    「指纹未变被跳过提取」的路径也在这里刷新 manifest：内容确实没变，但消费者视图要推进，
         //    否则它每一轮都会被当成待处理（无谓读盘）。
+        //    ⚠️ 只刷新**本轮真的观测过**的路径（变更集里有它的条目）：反向依赖扩展出来的依赖方这一轮
+        //    根本没看盘，替它们写「消费者已应用到版本 V」是凭空的（它的内容可能早就变了）。
+        var observedPaths = new HashSet<string>(
+            scanRun.ChangeSet.Changes.Select(change => change.FilePath), CodePathIdentity.PathComparer);
+
         var rebindTargets = rebindPaths
             .Concat(reusedPaths)
             .Distinct(CodePathIdentity.PathComparer)
@@ -327,6 +340,12 @@ public sealed class CodeSourceMaintenanceCoordinator
             var entries = new List<CodeSourceEntry>();
             foreach (var path in rebindTargets)
             {
+                if (!observedPaths.Contains(path))
+                {
+                    // 本轮没观测过它：不写 manifest（下一轮扫描会重新看盘并按真实指纹处理）。
+                    continue;
+                }
+
                 var fingerprint = snapshot.Manifest.TryGetValue(path, out var existing)
                     ? existing.Fingerprint
                     : null;
@@ -350,12 +369,50 @@ public sealed class CodeSourceMaintenanceCoordinator
         }
 
         // ③ 删除：索引行 + manifest 行（两者分别事务；任一失败都会在下一轮被重新发现，自愈）。
+        //    删除会连带删掉**其他文件**指向被删符号的入边（`RemoveFilesAsync` 不做依赖方计算），
+        //    所以这里在删之前把它们查出来并排进待办 —— 否则引用/关系图会静默残缺。
         if (deletePaths.Length > 0)
         {
+            var dependentsOfDeleted = new SortedSet<string>(CodePathIdentity.PathComparer);
+
+            foreach (var path in deletePaths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var symbols = await _store.GetSymbolsByFileAsync(workspaceId, projectId, path, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var symbolIds = symbols
+                    .Select(symbol => symbol.SymbolId)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .ToArray();
+
+                if (symbolIds.Length == 0)
+                    continue;
+
+                foreach (var dependent in await _graph
+                             .ListDependentFilePathsAsync(workspaceId, projectId, symbolIds, cancellationToken)
+                             .ConfigureAwait(false))
+                {
+                    if (!string.IsNullOrWhiteSpace(dependent)
+                        && !deletePaths.Contains(dependent, CodePathIdentity.PathComparer))
+                    {
+                        dependentsOfDeleted.Add(dependent);
+                    }
+                }
+            }
+
             await _store.RemoveFilesAsync(workspaceId, projectId, deletePaths, cancellationToken).ConfigureAwait(false);
             await _maintenanceStore
                 .SaveSourceManifestAsync(workspaceId, projectId, [], deletePaths, cancellationToken)
                 .ConfigureAwait(false);
+
+            foreach (var dependent in dependentsOfDeleted)
+            {
+                // 记进持久待办：下一轮它会被当作待处理路径重新提取，入边被删掉的缺口由此补上。
+                ledger.RecordFailure(dependent, "dependent of a deleted file", now);
+                invalidated.Add(dependent);
+            }
         }
 
         if (notApplicable.Count > 0)
@@ -365,15 +422,48 @@ public sealed class CodeSourceMaintenanceCoordinator
                 .ConfigureAwait(false);
         }
 
-        // ④ 账本：成功路径清退避，失败路径记退避（并计入未解决），只有真的提交成功才可能推进水位。
+        // ④ 账本：本轮**确实处理过**的路径一律清退避（不管走的是哪条分支：提取、删除、只重绑、
+        //    指纹一致复用、无消费者认领）—— 只在提取/删除时清会让一个从此走 Rebind/NotApplicable
+        //    的路径永远挂着待重试，从而永久冻结水位。
         foreach (var path in extractedPaths)
             ledger.ClearRetry(path);
 
         foreach (var path in deletePaths)
             ledger.ClearRetry(path);
 
+        foreach (var path in reusedPaths)
+            ledger.ClearRetry(path);
+
+        foreach (var path in rebindPaths)
+            ledger.ClearRetry(path);
+
+        foreach (var entry in notApplicable)
+            ledger.ClearRetry(entry.FilePath);
+
         foreach (var (filePath, reason) in failures)
             ledger.RecordFailure(filePath, reason, now);
+
+        // ⑤ 「本轮没定论」的路径（检测器判 Deferred / 仍在退避）必须**同时**：
+        //    记进持久待办（否则它的下一个触发器只剩「再来一次 watcher 提示」或 15 分钟周期扫描，
+        //    期间既不进索引也不进重试表 —— 真正的静默丢失窗口）；并且让水位停住。
+        //    已在待办里的路径不重复记（否则每次 RecordFailure 都会把下一次尝试时刻往后推，永不到期）。
+        var pendingRetryPaths = snapshot.Ledger.PendingRetries.Keys.ToHashSet(CodePathIdentity.PathComparer);
+        var deferredByPlan = 0;
+
+        foreach (var item in secondPlan.Items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (item.Action != CodeSourceUpdateAction.RetryLater)
+                continue;
+
+            deferredByPlan++;
+
+            if (pendingRetryPaths.Contains(item.FilePath))
+                continue;
+
+            ledger.RecordFailure(item.FilePath, "the round reached no conclusion for this path", now);
+        }
 
         var commitOutcome = ledger.CompleteCommit(new CodeSourceCommitCompletion(
             Epoch: snapshot.Ledger.Epoch,
@@ -384,18 +474,15 @@ public sealed class CodeSourceMaintenanceCoordinator
                 .ToArray(),
             ScanStartedUtc: scanRun.ScanStartedUtc,
             ScanComplete: scanRun.ChangeSet.ScanComplete,
-            UnresolvedPathCount: failures.Count));
+            UnresolvedPathCount: failures.Count + deferredByPlan));
 
         await _maintenanceStore.SaveMaintenanceLedgerAsync(workspaceId, projectId, ledger.Snapshot(), cancellationToken)
             .ConfigureAwait(false);
 
-        var deferred = secondPlan.Items.Count(item => item.Action == CodeSourceUpdateAction.RetryLater);
+        var deferred = deferredByPlan;
 
-        // 「未解决」= 本轮失败 + 仍在退避窗口内的路径：两者都让水位停住，必须如实报告。
-        var backingOffSet = backingOff.ToHashSet(CodePathIdentity.PathComparer);
-        var unresolved = failures.Count
-            + secondPlan.Items.Count(item =>
-                item.Action == CodeSourceUpdateAction.RetryLater && backingOffSet.Contains(item.FilePath));
+        // 「未解决」= 本轮失败 + 本轮没有定论的路径（两者都让水位停住，必须如实报告）。
+        var unresolved = failures.Count + deferredByPlan;
 
         _logger?.LogInformation(
             "[CodeSourceMaintenance] Scope {ScopeId}: {Extract} extracted, {Rebind} rebound, {Delete} deleted, {NotApplicable} not-applicable, {Unresolved} unresolved, {Deferred} deferred; ledger {Outcome}, watermark advanced={Watermark}.",
@@ -419,6 +506,23 @@ public sealed class CodeSourceMaintenanceCoordinator
             ReusedFileCount: reusedPaths.Count);
     }
 
+    /// <summary>提交前确认文件的 stat 仍与读到的那份指纹一致（提取可能耗时，期间文件可能被改写）。</summary>
+    private static bool StillMatches(SourceFingerprint fingerprint, string filePath)
+    {
+        try
+        {
+            var info = new FileInfo(filePath);
+
+            return info.Exists
+                && info.Length == fingerprint.Length
+                && new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero) == fingerprint.LastWriteTimeUtc;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>
     /// 该路径的内容是否与「上次已提交」完全一致（长度 + 内容 hash），且所有消费者都已登记其上？
     /// <para>
@@ -432,11 +536,15 @@ public sealed class CodeSourceMaintenanceCoordinator
         IReadOnlyDictionary<string, CodeSourceEntry> manifest,
         IReadOnlyCollection<CodeConsumerInputFingerprint> consumerInputs)
     {
-        if (!manifest.TryGetValue(filePath, out var entry) || !entry.Complete)
+        if (!manifest.TryGetValue(filePath, out var entry)
+            || !entry.Complete
+            || entry.Fingerprint is not { } committed)
+        {
             return false;
+        }
 
-        if (entry.Fingerprint.Length != observed.Length
-            || !string.Equals(entry.Fingerprint.ContentHash, observed.ContentHash, StringComparison.Ordinal))
+        if (committed.Length != observed.Length
+            || !string.Equals(committed.ContentHash, observed.ContentHash, StringComparison.Ordinal))
         {
             return false;
         }
