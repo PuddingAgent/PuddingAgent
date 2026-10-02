@@ -20,7 +20,7 @@ namespace PuddingCodeIndex.Services.CodeIndex;
 /// </list>
 /// </para>
 /// </summary>
-public sealed class FileSystemCodeSourceScanner : ICodeSourceScanner
+public sealed class FileSystemCodeSourceScanner : ICodeSourceScanner, ICodeSourcePathProbe
 {
     /// <summary>默认条目上限：触顶即本轮不完整（不删任何东西）。</summary>
     public const int DefaultMaxEntries = 200_000;
@@ -145,6 +145,114 @@ public sealed class FileSystemCodeSourceScanner : ICodeSourceScanner
         entries.Sort((left, right) => CodePathIdentity.PathComparer.Compare(left.FilePath, right.FilePath));
 
         return Task.FromResult(new CodeSourceScanOutcome(entries, RootUsable: true, complete, incompleteReason));
+    }
+
+    /// <summary>
+    /// 按路径观测（D4）：只给这批已知路径取元数据，**不遍历整棵树**。
+    /// <para>
+    /// 结果**必然不完整**（<c>Complete=false</c>）：没被问到的路径这一轮没被观测过，
+    /// 因此永远不能据此得出「已删除」。目录提示会枚举其子树（目录变更可能影响它下面的文件）。
+    /// </para>
+    /// </summary>
+    /// <inheritdoc />
+    public Task<CodeSourceScanOutcome> ObserveAsync(
+        IReadOnlyCollection<string> absolutePaths,
+        CancellationToken cancellationToken = default)
+    {
+        var paths = (absolutePaths ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(CodePathIdentity.PathComparer)
+            .OrderBy(path => path, CodePathIdentity.PathComparer)
+            .ToArray();
+
+        if (paths.Length == 0)
+            return Task.FromResult(new CodeSourceScanOutcome([], RootUsable: true, Complete: false, null));
+
+        var entries = new List<CodeSourceDiskEntry>();
+        string? incompleteReason = null;
+
+        foreach (var path in paths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var isDirectory = IsDirectory(path);
+
+            if (SafeIsIgnored(path, isDirectory))
+                continue;
+
+            if (!isDirectory)
+            {
+                // 不存在的路径也要如实给出（元数据为 null）：判定层据此把它当候选并保守处理
+                // （提示驱动的轮次里它只会被判成 Deferred，正式删除留给周期性完整扫描）。
+                entries.Add(ReadEntry(path));
+                continue;
+            }
+
+            // 目录提示：枚举其子树（目录变更可能影响批次从未提到的文件）。
+            // 目录自己不是文件候选；它已经不在磁盘上时只记「本轮不完整」，删除由完整扫描确认。
+            var pending = new Stack<string>();
+            pending.Push(path);
+
+            while (pending.Count > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var directory = pending.Pop();
+
+                IEnumerable<string> children;
+                try
+                {
+                    children = Directory.EnumerateFileSystemEntries(directory);
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+                {
+                    incompleteReason ??= CodeSourceScanReasons.SubtreeUnreadable;
+                    continue;
+                }
+
+                var childList = new List<string>();
+                try
+                {
+                    foreach (var child in children)
+                        childList.Add(child);
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+                {
+                    incompleteReason ??= CodeSourceScanReasons.SubtreeUnreadable;
+                }
+
+                childList.Sort(CodePathIdentity.PathComparer);
+
+                foreach (var child in childList)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var childIsDirectory = IsDirectory(child);
+                    if (SafeIsIgnored(child, childIsDirectory))
+                        continue;
+
+                    if (childIsDirectory)
+                    {
+                        pending.Push(child);
+                        continue;
+                    }
+
+                    if (entries.Count >= _maxEntries)
+                    {
+                        incompleteReason = CodeSourceScanReasons.EntryLimitReached;
+                        pending.Clear();
+                        break;
+                    }
+
+                    entries.Add(ReadEntry(child));
+                }
+            }
+        }
+
+        entries.Sort((left, right) => CodePathIdentity.PathComparer.Compare(left.FilePath, right.FilePath));
+
+        // 按路径观测**永远不完整**：没被问到的路径这一轮没有事实，绝不允许据此删除任何记录。
+        return Task.FromResult(new CodeSourceScanOutcome(entries, RootUsable: true, Complete: false, incompleteReason));
     }
 
     private bool SafeIsIgnored(string path, bool isDirectory)

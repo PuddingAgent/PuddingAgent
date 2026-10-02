@@ -83,7 +83,7 @@ public sealed class CodeSourceScanService
             ? CreateEmptySnapshot(workspaceId, projectId)
             : await _store.LoadSourceMaintenanceAsync(workspaceId, projectId, cancellationToken).ConfigureAwait(false);
 
-        var outcome = await _scanner.ScanAsync(rootPath ?? string.Empty, cancellationToken).ConfigureAwait(false);
+        var outcome = await ObserveAsync(rootPath, effectiveOptions, cancellationToken).ConfigureAwait(false);
         var scanStartedUtc = effectiveOptions.ScanStartedUtc ?? _timeProvider.GetUtcNow();
 
         var request = new CodeSourceScanRequest(
@@ -134,6 +134,34 @@ public sealed class CodeSourceScanService
             capturedVersion,
             scanStartedUtc,
             CapabilityMissing: _store is null);
+    }
+
+    /// <summary>
+    /// 取本轮的磁盘事实。
+    /// <para>
+    /// <b>提示驱动</b>（<c>Targeted=true</c> 且有提示）：走**按路径观测**（若有该能力），只给这批提示取元数据，
+    /// 不遍历整棵树 —— 否则「保存一个文件」就会触发一次全树枚举，新链路反而比旧路径更费磁盘。
+    /// 这种观测必然不完整（<c>Complete=false</c>），所以删除仍然只能由周期性完整扫描确认。
+    /// </para>
+    /// <para>
+    /// 其它情况（周期性校准、深度核验、没有按路径能力）走完整枚举。
+    /// </para>
+    /// </summary>
+    private async Task<CodeSourceScanOutcome> ObserveAsync(
+        string rootPath,
+        CodeSourceScanOptions options,
+        CancellationToken cancellationToken)
+    {
+        var hints = (options.WatcherHints ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToArray();
+
+        if (options.Targeted && hints.Length > 0 && _scanner is ICodeSourcePathProbe probe)
+        {
+            return await probe.ObserveAsync(hints, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await _scanner.ScanAsync(rootPath ?? string.Empty, cancellationToken).ConfigureAwait(false);
     }
 
     private static CodeSourceMaintenanceSnapshot CreateEmptySnapshot(string workspaceId, string projectId) =>

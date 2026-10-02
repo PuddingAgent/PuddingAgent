@@ -15,6 +15,13 @@ namespace PuddingCodeIndex.Services.CodeIndex;
 /// 默认 <see cref="Legacy"/>：切换是行为变化，必须显式打开（并由外部控制器重启后复核）。
 /// 打开但零件未装配齐时会告警并退回 <see cref="Legacy"/>，绝不假装新链路在跑。
 /// </para>
+/// <para>
+/// ⚠️ <b>启用前的硬前提（尚未完成）</b>：周期性校准目前仍走旧的 `CodeIndexCalibrationService` 扫描
+/// （直接删 store 里的陈旧行），而新链路的 manifest/账本由协调器维护 ——
+/// 两者同时存在会让「索引」与「manifest」对同一路径给出不同结论。
+/// 启用前必须把常规校准钟（默认 15 分钟）接到协调器的**完整**扫描上
+/// （提示驱动的批次只做按路径观测，不产生删除；丢失的删除只能靠周期性完整扫描兜住）。
+/// </para>
 /// </summary>
 public enum CodeSourceMaintenanceMode
 {

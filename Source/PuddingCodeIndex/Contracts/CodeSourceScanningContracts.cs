@@ -115,4 +115,5 @@ public sealed record CodeSourceScanOptions(
     IReadOnlyCollection<string>? ChangedDuringScan = null,
     IReadOnlyCollection<CodeConsumerInputFingerprint>? ConsumerInputs = null,
     bool DeepVerify = false,
-    DateTimeOffset? ScanStartedUtc = null);
+    DateTimeOffset? ScanStartedUtc = null,
+    bool Targeted = false);

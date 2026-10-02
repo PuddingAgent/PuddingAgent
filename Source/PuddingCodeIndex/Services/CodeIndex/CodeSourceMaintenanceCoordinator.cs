@@ -13,12 +13,18 @@ namespace PuddingCodeIndex.Services.CodeIndex;
 /// <param name="WatcherHints">watcher 提示的变更路径（只作为提示，绝不作为删除依据）。</param>
 /// <param name="ChangedDuringScan">扫描期间又变化的路径（一律不删除、留待下一轮）。</param>
 /// <param name="DeepVerify">是否对全部路径做内容核验（昂贵，只在需要时打开）。</param>
+/// <param name="Targeted">
+/// 有提示时是否走**按路径观测**而不是全树枚举。默认 false（完整校准）；
+/// 由 watcher 提示驱动的批次应置 true —— 否则每次保存一个文件都会遍历整棵树，
+/// 新链路反而比旧的逐文件路径更费磁盘。按路径观测的结论必然不完整，因此不会产生删除。
+/// </param>
 public sealed record CodeSourceMaintenanceRunOptions(
     IReadOnlyCollection<CodeConsumerInputFingerprint> ConsumerInputs,
     IReadOnlyCollection<string>? ProjectFilePaths = null,
     IReadOnlyCollection<string>? WatcherHints = null,
     IReadOnlyCollection<string>? ChangedDuringScan = null,
-    bool DeepVerify = false);
+    bool DeepVerify = false,
+    bool Targeted = false);
 
 /// <summary>一次源维护运行的结果（诊断 + 验收用）。</summary>
 /// <param name="CapabilityMissing">存储没有源维护能力（<c>ICodeSourceMaintenanceStore</c>）：什么都没写。</param>
@@ -139,7 +145,8 @@ public sealed class CodeSourceMaintenanceCoordinator
                     WatcherHints: options.WatcherHints,
                     ChangedDuringScan: options.ChangedDuringScan,
                     ConsumerInputs: consumerInputs,
-                    DeepVerify: options.DeepVerify),
+                    DeepVerify: options.DeepVerify,
+                    Targeted: options.Targeted),
                 cancellationToken)
             .ConfigureAwait(false);
 

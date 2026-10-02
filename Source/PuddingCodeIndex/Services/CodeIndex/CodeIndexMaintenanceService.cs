@@ -755,7 +755,10 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
                     new CodeSourceMaintenanceRunOptions(
                         inputs,
                         ProjectFilePaths: descriptor.ProjectFilePaths,
-                        WatcherHints: hints),
+                        WatcherHints: hints,
+                        // 提示驱动的批次只做按路径观测：全树枚举是周期性校准的事，
+                        // 每一次「保存一个文件」都遍历整棵树会让新链路比旧路径更费磁盘。
+                        Targeted: hints.Length > 0),
                     cancellationToken)
                 .ConfigureAwait(false);
 
