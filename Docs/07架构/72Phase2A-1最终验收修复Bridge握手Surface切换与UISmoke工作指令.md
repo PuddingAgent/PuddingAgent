@@ -17,7 +17,7 @@
 
 请先冻结 dirty worktree，然后按文档修复这些根因，补齐测试，串行 build/test/publish，并在系统 Temp 隔离 DataRoot 下完成真实双标签、Bridge 重连、Core Stop 和退出 smoke。不要只增加绕过测试，不要把等待时间缩短后宣称成功，不要进入 BrowserWindow、RemoteBrowserRuntime、Agent Tools、DOM/CDP 或 Douyin Adapter。
 
-不得 reset/checkout 无关改动，不得触碰 D:\data，不得静默终止用户当前运行的 PuddingDesktop。若单实例阻止新版 smoke，先报告旧进程并请求用户正常退出，再运行隔离 smoke。所有 Definition of Done 满足后才更新 68/69/70/71/72、Agents.md、How-Debuge.md、README 和 code_map，并声明 Phase 2A-1 accepted。
+不得 reset/checkout 无关改动，不得触碰 D:\data，不得静默终止用户当前运行的 PuddingDesktop。若单实例阻止新版 smoke，先报告旧进程并请求用户正常退出，再运行隔离 smoke。所有 Definition of Done 满足后才更新 68/69/70/71/72、Agents.md、Docs/How-Debuge/README.md、README 和 code_map，并声明 Phase 2A-1 accepted。
 ```
 
 ## 1. 当前验证事实
@@ -128,7 +128,7 @@ Tests/PuddingHost.Tests/PuddingHost.Tests.csproj
 Tests/PuddingDesktop.Tests/Browser/**
 TestScripts/start-phase2a1-browser-smoke.ps1（需要时新增）
 Agents.md
-How-Debuge.md
+Docs/How-Debuge/README.md
 Source/code_map.md
 Docs/README.md
 Docs/07架构/README.md
@@ -480,7 +480,7 @@ Get-CimInstance Win32_Process |
 - `Agents.md` 将下一阶段改为 Phase 2A-2；
 - `Source/code_map.md` 删除“WebView2 Driver 当前为骨架”等过期描述并列出最终入口；
 - 两个 README 指向已验收状态；
-- `How-Debuge.md` 写入 HelloAck 死锁、Watchdog、generation、Surface、DataContext、UDF 和单实例 smoke 诊断方法。
+- `Docs/How-Debuge/README.md` 写入 HelloAck 死锁、Watchdog、generation、Surface、DataContext、UDF 和单实例 smoke 诊断方法。
 
 不得在 smoke 未完成时只修改文档把状态伪装为 accepted。
 

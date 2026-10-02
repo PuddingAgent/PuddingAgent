@@ -19,9 +19,9 @@
 3. 把 Dispatcher 绑定到 Controller，使 Bridge 命令真正驱动可见 WebView2；
 4. 修复 Bridge 的 HelloAck、单发送循环、心跳超时、连接代际、取消、断线不重放和单一重连循环；
 5. 补齐 Host Bridge、Desktop Client、Controller、真实命令成功路径测试；
-6. 完成 publish、隔离 DataRoot/UDF 的 Desktop smoke，并更新 68/69/70/71、How-Debuge.md、README 和 code_map。
+6. 完成 publish、隔离 DataRoot/UDF 的 Desktop smoke，并更新 68/69/70/71、Docs/How-Debuge/README.md、README 和 code_map。
 
-开始前必须阅读 Agents.md、Source/code_map.md、Docs/07架构/68、69、70、71 和 How-Debuge.md。先执行 git status --short 并保存本批次允许修改文件清单。不得 reset、checkout 或覆盖 Feishu、RuntimeTests、Storage、外部子模块等无关 dirty files。
+开始前必须阅读 Agents.md、Source/code_map.md、Docs/07架构/68、69、70、71 和 Docs/How-Debuge/README.md。先执行 git status --short 并保存本批次允许修改文件清单。不得 reset、checkout 或覆盖 Feishu、RuntimeTests、Storage、外部子模块等无关 dirty files。
 
 不要进入 BrowserWindow、RemoteBrowserRuntime、Agent Tool、DOM/Input/CDP/Network、Douyin 选择器或 dev-up.py 产品化；这些全部属于后续批次。不要清理 D:\data，也不要把 build/test/publish/UDF 输出写入 D:\data。持续推进到本文件 Definition of Done 全部满足；只要真实 UI、Bridge 集成测试或 smoke 未完成，就不得把 Phase 2A-1 标记为 completed。
 ```
@@ -53,7 +53,7 @@
 10. Broker 使用跨连接的全局发送 Channel。旧连接断开后，未消费命令可能被新连接读取，违反“旧命令不重放”。旧连接 finally 还可能误伤新连接的 pending command。
 11. Desktop 的失败重连可以递归启动多个 `ReconnectLoopAsync`；Receive/Send 同时失败时也可能产生重复重连循环。
 12. `Tests/PuddingHost.Tests/BrowserBridge/` 不存在；计划中的 `BrowserWorkspaceControllerTests`、`DesktopBrowserBridgeClientTests` 也不存在。
-13. 68/69/70、两个 README、`Source/code_map.md` 和 `How-Debuge.md` 尚未记录真实完成状态和诊断方法。
+13. 68/69/70、两个 README、`Source/code_map.md` 和 `Docs/How-Debuge/README.md` 尚未记录真实完成状态和诊断方法。
 
 因此本批次必须先关闭 Phase 2A-1 的验收缺口，不能直接推进 Phase 2A-2。
 
@@ -79,7 +79,7 @@ Tests/PuddingDesktop.Tests/Browser/**
 Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj
 TestScripts/start-phase2a1-browser-smoke.ps1（仅在确有自动化价值时新增）
 Agents.md
-How-Debuge.md
+Docs/How-Debuge/README.md
 Source/code_map.md
 Docs/README.md
 Docs/07架构/README.md
@@ -596,7 +596,7 @@ git diff --check
 - 在 68 记录通用 Browser 的当前真实实现边界；
 - 在 `Agents.md` 将下一阶段改为 Phase 2A-2，但仍强调不进入 Douyin 特化；
 - 更新两个 README 和 `Source/code_map.md`，列出 Protocol、Host Broker、Desktop Client、Controller、View 和测试入口；
-- 在 `How-Debuge.md` 写入 Bridge 诊断：endpoint、连接代际、Hello、Heartbeat、pending、UDF、WebView2 ProcessFailed、重连日志和隐私过滤。
+- 在 `Docs/How-Debuge/README.md` 写入 Bridge 诊断：endpoint、连接代际、Hello、Heartbeat、pending、UDF、WebView2 ProcessFailed、重连日志和隐私过滤。
 
 Phase 2A-2 的独立工作文档应在本批次验收通过后另行创建，不得与本补丁混合实现。
 
@@ -621,7 +621,7 @@ Phase 2A-2 的独立工作文档应在本批次验收通过后另行创建，不
 - [ ] Release publish 成功且包含 `core/PuddingAgent.exe` 与 Workbench 静态资源。
 - [ ] 隔离 Desktop smoke 覆盖两个 Tab、Bridge 重连、Core Stop 和明确退出。
 - [ ] 没有修改 `dev-up.py`、Douyin 逻辑、`D:\data` 或无关 dirty files。
-- [ ] 68/69/70/71、两个 README、`Source/code_map.md`、`Agents.md`、`How-Debuge.md` 同步。
+- [ ] 68/69/70/71、两个 README、`Source/code_map.md`、`Agents.md`、`Docs/How-Debuge/README.md` 同步。
 
 ## 14. 完成报告格式
 

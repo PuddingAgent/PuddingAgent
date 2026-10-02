@@ -445,7 +445,7 @@ DB 与 JSONL history loader 必须反序列化 `ContentPartsJson`，恢复图片
 | Host | Platform/Runtime composition extensions | 注册 Planner、Files client/store、Image Reader source resolver、清理 worker，并通过 ValidateOnBuild |
 | Tests | Core/Runtime/Platform/Admin/Integration 对应测试项目 | 覆盖原生附件、Image Reader source/mode/权限/富工具结果、delegate、fail-closed、多轮、重启、Files、用量和真实 smoke |
 
-实现结束后同步维护顶层和各子项目 `code_map.md`；如果新增排障日志路径，再更新 `How-Debuge.md`。
+实现结束后同步维护顶层和各子项目 `code_map.md`；如果新增排障日志路径，再更新 `Docs/How-Debuge/README.md`。
 
 ## 11. 分期与验收门禁
 

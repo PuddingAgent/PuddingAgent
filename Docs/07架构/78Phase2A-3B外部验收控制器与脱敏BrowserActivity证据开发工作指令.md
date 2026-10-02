@@ -41,7 +41,7 @@ Source/PuddingDesktop/Browser/BrowserWorkspaceController.cs
 Source/PuddingDesktop/Views/BrowserWorkspaceView.xaml
 Source/PuddingDesktop/Views/BrowserWorkspaceView.xaml.cs
 Agents.md
-How-Debuge.md
+Docs/How-Debuge/README.md
 Source/code_map.md
 Docs/07架构/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md
 Docs/07架构/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md

@@ -21,7 +21,7 @@
 5. Windows 11 Agent Browser 双标签工作区；
 6. 定向测试、文档和 code_map 更新。
 
-开始前必须阅读 Agents.md、Source/code_map.md、Docs/07架构/68、69、70 和 How-Debuge.md，先冻结本批次文件边界。不要修改或回滚无关的 Feishu、RuntimeTests、Storage、外部子模块等已有工作树变更。不要修改 dev-up.py，不要清理或把构建产物写入 D:\data，不要加入抖音选择器或抖音专用逻辑。
+开始前必须阅读 Agents.md、Source/code_map.md、Docs/07架构/68、69、70 和 Docs/How-Debuge/README.md，先冻结本批次文件边界。不要修改或回滚无关的 Feishu、RuntimeTests、Storage、外部子模块等已有工作树变更。不要修改 dev-up.py，不要清理或把构建产物写入 D:\data，不要加入抖音选择器或抖音专用逻辑。
 
 按文档的 Phase 2A-1 范围持续推进到验收完成；如果遇到必须改变协议/进程边界的真实阻塞，先提交证据和最小替代方案，不要静默扩大范围。
 ```
@@ -513,7 +513,7 @@ Tests/PuddingDesktop.Tests/Browser/
 
 - `Source/code_map.md`；
 - `Docs/07架构/68`、`69`、`70` 状态；
-- `How-Debuge.md` 的 Bridge、UDF、WebSocket、Page/Surface 诊断路径；
+- `Docs/How-Debuge/README.md` 的 Bridge、UDF、WebSocket、Page/Surface 诊断路径；
 - 两个 Docs README 索引。
 
 ## 8. 构建与验收命令

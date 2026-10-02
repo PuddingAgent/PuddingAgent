@@ -39,7 +39,7 @@ DesktopApplicationCoordinator
 
 ## 4. 使用与诊断
 
-见 `How-Debuge.md` §11.34（开启方式、端口互斥、日志位置、常见症状）。
+见 `Docs/How-Debuge/README.md` §11.34（开启方式、端口互斥、日志位置、常见症状）。
 
 ### VS Code 启动配置（2026-09-12）
 

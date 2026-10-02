@@ -2,7 +2,7 @@
 
 - **状态**：已接受（2026-08-29 修订：Codex 可调用的 Desktop 本机制品控制面）
 - **日期**：2026-08-06
-- **相关**：ADR-041（开发构建与发布打包链路分离）、`YoloSignalService`（信号先例）、`How-Debuge.md §11.17`、`Source/code_map.md`
+- **相关**：ADR-041（开发构建与发布打包链路分离）、`YoloSignalService`（信号先例）、`Docs/How-Debuge/README.md §11.17`、`Source/code_map.md`
 - **提交**：`0bbb223`（WP-B1 信号服务）、`4a09175`（WP-B2 HTTP 端点）、`b6e1bc4`（回填不阻塞修复）
 
 ---

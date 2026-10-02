@@ -119,7 +119,7 @@ Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj（仅测试依赖确有�
 Tests/PuddingHost.Tests/PuddingHost.Tests.csproj（仅 TestHost 依赖确有需要时）
 TestScripts/start-phase2a1-browser-smoke.ps1
 Agents.md
-How-Debuge.md
+Docs/How-Debuge/README.md
 Source/code_map.md
 Docs/README.md
 Docs/07架构/README.md
@@ -311,7 +311,7 @@ git diff --check
 
 ```text
 Agents.md
-How-Debuge.md
+Docs/How-Debuge/README.md
 Source/code_map.md
 Docs/README.md
 Docs/07架构/README.md
@@ -325,7 +325,7 @@ Phase 2A-1 accepted（2026-08-02）
 下一批次允许规划 Phase 2A-2，但尚未实现。
 ```
 
-`How-Debuge.md` 至少记录：Bridge 状态、握手失败、认证失败、watchdog timeout、generation、Core Restart、Surface/Tab 不一致时的日志位置与排查顺序。
+`Docs/How-Debuge/README.md` 至少记录：Bridge 状态、握手失败、认证失败、watchdog timeout、generation、Core Restart、Surface/Tab 不一致时的日志位置与排查顺序。
 
 ## 9. Definition of Done
 

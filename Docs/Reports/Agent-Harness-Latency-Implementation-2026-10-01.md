@@ -13,7 +13,7 @@
 | `2ac98ed` | P1 提示词 | 预设 `general-assistant.json`：按需恢复/检视/联网 + 「证据足够即停」 |
 | `7601ac2` | P2 上下文 | 上下文阶段计时随结果与 `done` 帧下发 |
 | `14e35fd` | P0 补测 | 落库耗时按轮汇总 + `STREAM_PERSIST` 埋点 |
-| `2bf71ca` | 文档 | `How-Debuge.md` / `code_map.md` |
+| `2bf71ca` | 文档 | `Docs/How-Debuge/README.md` / `code_map.md` |
 | `9cfd131` | UI 统计 | 真实服务态、缓存口径修复、本轮时间分解面板 |
 
 ## 2. P0：计时口径

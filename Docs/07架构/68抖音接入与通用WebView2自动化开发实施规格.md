@@ -1439,7 +1439,7 @@ result/errorCode
 
 默认不记录：Cookie 值、Authorization Header、LocalStorage 全量、表单值、原始回复输入以外的敏感文本、完整 HTML、下载文件内容。Agent 显式请求的数据可以作为 Tool Result 返回，但普通运行日志只记录大小和哈希。
 
-`How-Debuge.md` 在实现阶段增加：WebView2 Runtime 检测、UDF 锁、Browser Process Exit、CDP 错误、Douyin Locator 失败和 ReplyIntent 对账查询。
+`Docs/How-Debuge/README.md` 在实现阶段增加：WebView2 Runtime 检测、UDF 锁、Browser Process Exit、CDP 错误、Douyin Locator 失败和 ReplyIntent 对账查询。
 
 ## 13. 错误模型
 
@@ -1730,5 +1730,5 @@ Phase 1B-R/S 完成项：
 - [ ] ReplyIntent 在歧义失败后不会自动重复发送；
 - [ ] 运行时数据全部位于 `PUDDING_DATA_ROOT`；
 - [x] `PuddingDesktop.exe` 独立运行，不依赖 `dev-up.py`；
-- [x] `How-Debuge.md`、`Source/code_map.md` 和 Desktop 架构文档同步更新；
+- [x] `Docs/How-Debuge/README.md`、`Source/code_map.md` 和 Desktop 架构文档同步更新；
 - [x] Phase 1B-R/S 定向构建、测试、发布和隔离窗口 smoke 结果在交付说明中列出。

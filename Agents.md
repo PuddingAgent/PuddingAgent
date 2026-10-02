@@ -54,10 +54,11 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层�
 
 重置开发环境之后，需要访问Bootstrap页面，完成初始化。当然，也需要重新配置一下配置文件，因为Bootstrap是根据配置文件(Bootstrap.Initialized=true)判断是否可以初始化的。
 
-# How-Debuge.md
+# Docs/How-Debuge/（调试与诊断手册）
 
-可以读取How-Debuge.md，了解如何调试Agent和去哪里诊断和过滤错误日志。
-将调试和日志的经验，写入到How-Debuge.md。包括关键的日志埋点等，在哪里找Error日志。
+可以读取 `Docs/How-Debuge/README.md`（主索引），了解如何调试 Agent、去哪里诊断和过滤错误日志。
+将调试和日志的经验写入**对应主题分册**（`Docs/How-Debuge/01`～`15`），新主题才新建分册并在主索引登记；
+包括关键的日志埋点等，在哪里找 Error 日志。原根目录单文件 `How-Debuge.md` 已于 2026-10-02 按主题拆分并删除。
 
 ## 版本号约定
 - 版本号格式：`主版本号.次版本号.修订号`    

@@ -141,7 +141,7 @@
 | `Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md:38/39/1452` | 定价表 + 示例 `goalQuestionerModelId` |
 | `Docs/07架构/65ADR-064…md:171/178`、`66ADR-065…md:87`、`92ADR-077…md:13/67/112/315/533`、`design/auto-compression-strategy-v1.md:89/173`、`design/sliding-window-fuse-v1.md:110` | ADR / 设计稿 |
 | `Docs/Reports/*`（`pudding-agent-efficiency-2026-09-05.metrics.json:20/36/52/76/92/108`、`PuddingAgent首轮修复与验证-2026-09-05.md:41`、`PuddingAgent-GLM-Optimization-2026-09-11/audit-evidence/**/board-receipts.json:263`、`PuddingAgent-Autonomy-Audit-2026-09-12/02-….md:27`、`…/evidence/board-receipts.json:47`） | 历史度量/看板快照 |
-| `How-Debuge.md:2921` | 排障笔记 |
+| `Docs/How-Debuge/README.md:2921` | 排障笔记 |
 | `memory/**`（`agent-collaboration-agreement.md:48` 之外的档案：`goal-archive-2026081*.md`、`goal-archive-20260820*.md`、`goal-archive-20260821*.md`、`goal-archive-2026-09-12*.md` 等 40+ 处） | 会话归档 |
 | `D:\data\jsonl\**.jsonl`（如 `446afcb3….jsonl:319-321`、`861ce7e8…-sub-e8fcdaf2.jsonl:1-3`）+ `D:\data\agents\*\memory\session-summaries\**.md` | **运行日志/摘要（不可变历史）** |
 | `D:\data\agents\*\goal.md:18/25/36/58` | 我自己的目标叙述（可由各自 Agent 择机更新，非配置） |

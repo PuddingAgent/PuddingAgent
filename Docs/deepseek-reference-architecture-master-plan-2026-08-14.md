@@ -1853,7 +1853,7 @@ Shell/File/Terminal 的 local 实现先注册为 `pudding.sandbox.windows-local`
 - 除 Microkernel 白名单外，root DI 中直接注册具体 LLM/Tool/Skill/Session/Sandbox/Storage/Schedule 实现为 0；
 - 每个标准能力都能在 composition dump 中追溯到 plugin id/version/config hash。
 
-更新 `code_map.md`、`Docs/README.md`、事件/Hook/会话/学习相关 ADR；记录数据库重建步骤、运行诊断位置和关键日志字段到 `How-Debuge.md`。
+更新 `code_map.md`、`Docs/README.md`、事件/Hook/会话/学习相关 ADR；记录数据库重建步骤、运行诊断位置和关键日志字段到 `Docs/How-Debuge/README.md`。
 
 ## 22. 验收目标
 

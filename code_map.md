@@ -248,7 +248,7 @@ Chat first paint → AgentConversationProjectionService（最近 20 条可见消
 
 | 文档 | 主题 |
 |------|------|
-| [`Agents.md`](Agents.md) / [`Agents-Hygiene.md`](Docs/Conventions/Agents-Hygiene.md) / [`How-Debuge.md`](How-Debuge.md) | 仓库级开发与提交纪律 / 调试与日志诊断入口 |
+| [`Agents.md`](Agents.md) / [`Agents-Hygiene.md`](Docs/Conventions/Agents-Hygiene.md) / [`Docs/How-Debuge/README.md`](Docs/How-Debuge/README.md) | 仓库级开发与提交纪律 / 调试与日志诊断入口 |
 | [`Docs/README.md`](Docs/README.md) | 文档总索引与建议阅读顺序 |
 | [`Docs/架构.md`](Docs/架构.md) | 架构总览与阅读地图 |
 | [`Docs/07架构/README.md`](Docs/07架构/README.md) | 模块级架构分册与 **ADR 全表**（按编号查 ADR 走这里） |
