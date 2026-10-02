@@ -372,9 +372,22 @@ public sealed class ConversationEventStore(
         var conn = db.Database.GetDbConnection();
         await conn.OpenAsync(ct);
         using var cmd = conn.CreateCommand();
+        // Both ends are found by an index endpoint seek (`ORDER BY sequence … LIMIT 1`) instead of the
+        // aggregate pair `MIN(sequence), MAX(sequence)`: on a long session the aggregate form visits every
+        // index entry of the conversation, and this method is called once per 256-event replay batch and once
+        // per live poll, so that cost is paid repeatedly (diagnosis: Docs/14_reports/2026-10-02-…高磁盘读取诊断.md).
+        // The two subqueries deliberately stay in ONE statement: a single statement sees one read view, so a
+        // concurrent append/prune can never return a min from before it and a max from after it.
+        // No new index is needed: `(conversation_id, sequence)` already exists and both ends are covered by it.
+        // Empty sessions keep their contract: the single row carries two NULLs, which map to EventBounds(null, null).
         cmd.CommandText = @"
-            SELECT MIN(sequence), MAX(sequence) FROM conversation_events
-            WHERE conversation_id = @cid";
+            SELECT
+                (SELECT sequence FROM conversation_events
+                 WHERE conversation_id = @cid
+                 ORDER BY sequence ASC LIMIT 1),
+                (SELECT sequence FROM conversation_events
+                 WHERE conversation_id = @cid
+                 ORDER BY sequence DESC LIMIT 1)";
         var pCid = cmd.CreateParameter();
         pCid.ParameterName = "@cid";
         pCid.Value = conversationId;
