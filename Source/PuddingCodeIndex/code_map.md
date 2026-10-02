@@ -61,7 +61,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `SqliteCodeIndexStore.cs` | SQLite 索引存储（实现 `ICodeIndexStore`）；**U3-B3** 的 `RemoveFilesAsync` 对一个批次只开**一个事务**（部分失败 ⇒ 一字不删） |
+| `SqliteCodeIndexStore.cs` | SQLite 索引存储（实现 `ICodeIndexStore`）；**U3-B3** 的 `RemoveFilesAsync` 对一个批次只开**一个事务**（部分失败 ⇒ 一字不删）。**逐符号图删除用四条精确删除**（2026-10-02）：`RemoveSymbolGraphForFileAsync` 对每个符号分别删 CodeReferences/CodeRelations 的 Source 与 Target，而不是每表一条 `Source OR Target` —— OR 形式只落到主键作用域前缀，每个符号都重扫整个 workspace/project 分区；四条精确删除走既有的 Source/Target 索引，四次删除与文件符号删除仍在同一事务 |
 
 ## 依赖
 
@@ -78,7 +78,7 @@
 ## 测试
 
 **`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
-**116 用例**（含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**，**U3-G1 后 114 → 116：+2 条取消标记 + 对照用例**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+**165 用例**（2026-10-02 实测；含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**，**U3-G1 后 114 → 116：+2 条取消标记 + 对照用例**；**高磁盘读取修复 C 后 +7：4 条入边/出边/自引用/跨 scope 语义 + 3 条删除计划与 VDBE 工作量用例**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
 `InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；

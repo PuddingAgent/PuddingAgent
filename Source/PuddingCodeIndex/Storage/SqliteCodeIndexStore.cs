@@ -921,15 +921,31 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
 
         foreach (var symbolId in symbolIds)
         {
+            // One exact delete per (table, column) instead of one `Source = $s OR Target = $s` per table.
+            // The OR form cannot be answered by the (WorkspaceId, ProjectId, Source|TargetSymbolId) indexes:
+            // SQLite falls back to the primary-key scope prefix, so every symbol re-walks the whole
+            // workspace/project partition of both tables. Measured on the live index (2026-10-02 diagnosis,
+            // Docs/14_reports/2026-10-02-PuddingAgent高磁盘读取诊断.md): 335.7 MB read for one symbol via the
+            // OR form, 81,920 bytes for the four exact lookups. All four statements stay in the caller's
+            // transaction, so cancellation or an exception still rolls the whole file removal back.
+            // A self-reference is already gone after its Source delete; the Target delete is then a safe no-op.
             await ExecuteNonQueryAsync(connection, transaction, """
                 DELETE FROM CodeReferences
                 WHERE WorkspaceId = $workspaceId
                   AND ProjectId = $projectId
-                  AND (SourceSymbolId = $symbolId OR TargetSymbolId = $symbolId);
+                  AND SourceSymbolId = $symbolId;
+                DELETE FROM CodeReferences
+                WHERE WorkspaceId = $workspaceId
+                  AND ProjectId = $projectId
+                  AND TargetSymbolId = $symbolId;
                 DELETE FROM CodeRelations
                 WHERE WorkspaceId = $workspaceId
                   AND ProjectId = $projectId
-                  AND (SourceSymbolId = $symbolId OR TargetSymbolId = $symbolId);
+                  AND SourceSymbolId = $symbolId;
+                DELETE FROM CodeRelations
+                WHERE WorkspaceId = $workspaceId
+                  AND ProjectId = $projectId
+                  AND TargetSymbolId = $symbolId;
                 """,
                 cancellationToken,
                 ("$workspaceId", workspaceId),

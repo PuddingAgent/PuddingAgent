@@ -57,6 +57,159 @@ public sealed class SqliteCodeIndexStoreRemoveFilesTests
     }
 
     [TestMethod]
+    public async Task RemoveFilesAsync_RemovesIncomingEdgesThatComeFromOtherFiles()
+    {
+        using var fixture = Fixture.Create();
+        var store = fixture.Store;
+
+        var removedFile = fixture.File("Removed.cs");
+        var keptFile = fixture.File("Kept.cs");
+        var thirdFile = fixture.File("Third.cs");
+        var removed = Symbol(removedFile, "sym-removed", "RemovedClass");
+        var kept = Symbol(keptFile, "sym-kept", "KeptClass");
+        var third = Symbol(thirdFile, "sym-third", "ThirdClass");
+
+        await store.UpsertFilesAsync(WorkspaceId, ProjectId, [
+            File(removedFile), File(keptFile), File(thirdFile),
+        ]);
+        await store.UpsertSymbolsAsync(WorkspaceId, ProjectId, [removed, kept, third]);
+        await store.UpsertRelationsAsync(WorkspaceId, ProjectId, [
+            // 入边：来自别的文件的符号指向被删文件的符号。
+            new CodeRelationRecord(WorkspaceId, ProjectId, kept.SymbolId, removed.SymbolId,
+                CodeRelationKind.Calls, 7, keptFile, DateTimeOffset.UtcNow),
+            // 出边：被删文件的符号指向别的符号。
+            new CodeRelationRecord(WorkspaceId, ProjectId, removed.SymbolId, third.SymbolId,
+                CodeRelationKind.Implements, 8, removedFile, DateTimeOffset.UtcNow),
+            // 无关边：两个保留文件之间，必须原样留下。
+            new CodeRelationRecord(WorkspaceId, ProjectId, kept.SymbolId, third.SymbolId,
+                CodeRelationKind.References, 9, keptFile, DateTimeOffset.UtcNow),
+        ]);
+        await store.UpsertReferencesAsync(WorkspaceId, ProjectId, [
+            new CodeReferenceRecord(WorkspaceId, ProjectId, kept.SymbolId, removed.SymbolId,
+                keptFile, 7, "RemovedClass x;", DateTimeOffset.UtcNow),
+            new CodeReferenceRecord(WorkspaceId, ProjectId, kept.SymbolId, third.SymbolId,
+                keptFile, 9, "ThirdClass y;", DateTimeOffset.UtcNow),
+        ]);
+
+        await store.RemoveFilesAsync(WorkspaceId, ProjectId, [removedFile]);
+
+        // 入边与出边都按原合同清除 —— 只按 SourceFilePath 删会漏掉入边。
+        Assert.IsEmpty(await store.ListIncomingRelationsAsync(WorkspaceId, ProjectId, removed.SymbolId),
+            "指向被删符号的入边必须清除");
+        Assert.IsEmpty(await store.ListRelationsAsync(WorkspaceId, ProjectId, removed.SymbolId),
+            "被删符号的出边必须清除");
+        Assert.IsEmpty(await store.ListReferencesAsync(WorkspaceId, ProjectId, removed.SymbolId),
+            "指向被删符号的引用必须清除");
+
+        // 无关图不得被牵连。
+        Assert.HasCount(1, await store.ListRelationsAsync(WorkspaceId, ProjectId, kept.SymbolId));
+        Assert.HasCount(1, await store.ListIncomingRelationsAsync(WorkspaceId, ProjectId, third.SymbolId));
+        Assert.HasCount(1, await store.ListReferencesAsync(WorkspaceId, ProjectId, third.SymbolId));
+        Assert.HasCount(1, await store.GetSymbolsByFileAsync(WorkspaceId, ProjectId, keptFile));
+    }
+
+    [TestMethod]
+    public async Task RemoveFilesAsync_RemovesASymbolsSelfReference()
+    {
+        using var fixture = Fixture.Create();
+        var store = fixture.Store;
+
+        var filePath = fixture.File("Self.cs");
+        var self = Symbol(filePath, "sym-self", "SelfClass");
+
+        await store.UpsertFilesAsync(WorkspaceId, ProjectId, [File(filePath)]);
+        await store.UpsertSymbolsAsync(WorkspaceId, ProjectId, [self]);
+        await store.UpsertRelationsAsync(WorkspaceId, ProjectId, [
+            new CodeRelationRecord(WorkspaceId, ProjectId, self.SymbolId, self.SymbolId,
+                CodeRelationKind.References, 3, filePath, DateTimeOffset.UtcNow),
+        ]);
+        await store.UpsertReferencesAsync(WorkspaceId, ProjectId, [
+            new CodeReferenceRecord(WorkspaceId, ProjectId, self.SymbolId, self.SymbolId,
+                filePath, 3, "SelfClass s;", DateTimeOffset.UtcNow),
+        ]);
+
+        await store.RemoveFilesAsync(WorkspaceId, ProjectId, [filePath]);
+
+        Assert.IsEmpty(await store.ListRelationsAsync(WorkspaceId, ProjectId, self.SymbolId));
+        Assert.IsEmpty(await store.ListIncomingRelationsAsync(WorkspaceId, ProjectId, self.SymbolId));
+        Assert.IsEmpty(await store.ListReferencesAsync(WorkspaceId, ProjectId, self.SymbolId));
+    }
+
+    [TestMethod]
+    public async Task RemoveFilesAsync_OnlyTouchesTheRequestedWorkspaceAndProject()
+    {
+        using var fixture = Fixture.Create();
+        var store = fixture.Store;
+
+        const string otherProjectId = "proj-remove-other";
+        var filePath = fixture.File("Shared.cs");
+        const string symbolId = "sym-shared";
+
+        await store.UpsertFilesAsync(WorkspaceId, ProjectId, [File(filePath)]);
+        await store.UpsertSymbolsAsync(WorkspaceId, ProjectId, [Symbol(filePath, symbolId, "SharedClass")]);
+        await store.UpsertRelationsAsync(WorkspaceId, ProjectId, [
+            new CodeRelationRecord(WorkspaceId, ProjectId, symbolId, symbolId,
+                CodeRelationKind.Calls, 1, filePath, DateTimeOffset.UtcNow),
+        ]);
+
+        // 另一个 project 里有同样的 file path 与 symbol id。
+        await store.UpsertFilesAsync(WorkspaceId, otherProjectId, [
+            new CodeFileRecord(WorkspaceId, otherProjectId, filePath, "C#", DateTimeOffset.UtcNow),
+        ]);
+        await store.UpsertSymbolsAsync(WorkspaceId, otherProjectId, [
+            new CodeSymbolRecord(WorkspaceId, otherProjectId, filePath, symbolId, "SharedClass",
+                CodeSymbolKind.Class, 1, 5, "class SharedClass", Container: null),
+        ]);
+        await store.UpsertRelationsAsync(WorkspaceId, otherProjectId, [
+            new CodeRelationRecord(WorkspaceId, otherProjectId, symbolId, symbolId,
+                CodeRelationKind.Calls, 1, filePath, DateTimeOffset.UtcNow),
+        ]);
+
+        await store.RemoveFilesAsync(WorkspaceId, ProjectId, [filePath]);
+
+        Assert.IsNull(await store.GetSymbolAsync(WorkspaceId, ProjectId, symbolId));
+        Assert.IsNotNull(await store.GetSymbolAsync(WorkspaceId, otherProjectId, symbolId),
+            "另一个 project 的同名符号不得被删除");
+        Assert.HasCount(1, await store.ListRelationsAsync(WorkspaceId, otherProjectId, symbolId),
+            "另一个 project 的图不得被删除");
+    }
+
+    [TestMethod]
+    public async Task RemoveFilesAsync_DeletesTheFileRecordAndGraphRowsOfAFileWithoutSymbols()
+    {
+        using var fixture = Fixture.Create();
+        var store = fixture.Store;
+
+        var filePath = fixture.File("Empty.cs");
+        var otherPath = fixture.File("Other.cs");
+        var other = Symbol(otherPath, "sym-other", "OtherClass");
+
+        await store.UpsertFilesAsync(WorkspaceId, ProjectId, [File(filePath), File(otherPath)]);
+        await store.UpsertSymbolsAsync(WorkspaceId, ProjectId, [other]);
+
+        // 文件已经没有符号行了，但图里还留着以它 SourceFilePath 归属的行（符号行先被清掉的情况）。
+        await store.UpsertRelationsAsync(WorkspaceId, ProjectId, [
+            new CodeRelationRecord(WorkspaceId, ProjectId, "sym-vanished", other.SymbolId,
+                CodeRelationKind.Calls, 4, filePath, DateTimeOffset.UtcNow),
+        ]);
+        await store.UpsertReferencesAsync(WorkspaceId, ProjectId, [
+            new CodeReferenceRecord(WorkspaceId, ProjectId, "sym-vanished", other.SymbolId,
+                filePath, 4, "OtherClass o;", DateTimeOffset.UtcNow),
+        ]);
+
+        var removed = await store.RemoveFilesAsync(WorkspaceId, ProjectId, [filePath]);
+
+        Assert.AreEqual(1, removed, "没有符号的文件记录仍必须被删除");
+        Assert.IsEmpty(await store.GetSymbolsByFileAsync(WorkspaceId, ProjectId, filePath));
+        Assert.IsEmpty(await store.ListRelationsAsync(WorkspaceId, ProjectId, other.SymbolId),
+            "归属该文件的残留图行必须清除");
+        Assert.IsEmpty(await store.ListReferencesAsync(WorkspaceId, ProjectId, other.SymbolId),
+            "归属该文件的残留引用行必须清除");
+        Assert.HasCount(1, await store.GetSymbolsByFileAsync(WorkspaceId, ProjectId, otherPath),
+            "无关文件不得受影响");
+    }
+
+    [TestMethod]
     public async Task RemoveFilesAsync_Is_Idempotent_For_Paths_That_Are_Not_Indexed()
     {
         using var fixture = Fixture.Create();
