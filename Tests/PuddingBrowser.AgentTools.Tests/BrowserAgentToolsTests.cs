@@ -18,7 +18,7 @@ public sealed class BrowserAgentToolsTests
         var tools = new IPuddingTool[]
         {
             new BrowserContextTool(runtime, _originAccessor),
-            new BrowserTabsTool(runtime, _originAccessor),
+            new BrowserTabsTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserNavigateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
@@ -61,7 +61,7 @@ public sealed class BrowserAgentToolsTests
         var context = await runtime.CreateContextAsync(
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") },
             CancellationToken.None);
-        var tool = new BrowserTabsTool(runtime, _originAccessor);
+        var tool = new BrowserTabsTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor);
 
         var created = await ExecuteAsync(tool,
             """{"action":"new","context_id":"ctx-1","url":"https://example.com"}""");
@@ -102,7 +102,7 @@ public sealed class BrowserAgentToolsTests
     public async Task InvalidAction_ReturnsStableStructuredFailure()
     {
         var result = await ExecuteAsync(
-            new BrowserTabsTool(new FakeBrowserRuntime(), _originAccessor),
+            new BrowserTabsTool(new FakeCapabilitySurface(new FakeBrowserRuntime()), new FakeCallContextFactory(), _originAccessor),
             """{"action":"teleport"}""");
 
         Assert.False(result.Success);
@@ -478,6 +478,90 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
                 DesktopPageReadiness.Unknown,
                 page.Info.Title)));
     }
+    public async Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
+        BrowserTabsRequest request, DesktopCallContext call, CancellationToken ct = default)
+    {
+        if (request.Action == DesktopTabAction.New)
+        {
+            if (await runtime.GetContextAsync(new BrowserContextId(request.ContextId), ct) is not { } newContext)
+            {
+                return CapabilityResult<DesktopTabsResult>.Failure(
+                    DesktopCapabilityError.InvalidTarget($"context '{request.ContextId}' is not known"));
+            }
+
+            // 说明：替身按「建页 → 可选导航 → 可选置前」执行（生产实现把初始地址/激活一次性交给运行时）。
+            var created = await newContext.NewPageAsync(new PageCreateOptions(), ct);
+            if (request.Url is { } initialUrl)
+            {
+                await created.GotoAsync(initialUrl, new NavigationOptions(), ct);
+            }
+
+            if (request.Activate)
+            {
+                await created.BringToFrontAsync(ct);
+            }
+
+            var createdTarget = new DesktopPageTarget(request.ContextId, created.Id.Value);
+            return CapabilityResult<DesktopTabsResult>.Success(new DesktopTabsResult(
+                createdTarget, request.Action, State(createdTarget, created), tabClosed: false, await ContextsAsync(ct)));
+        }
+
+        var tabsTarget = request.Target!;
+        if (await runtime.GetContextAsync(new BrowserContextId(tabsTarget.ContextId), ct) is not { } context
+            || await context.GetPageAsync(new PageId(tabsTarget.PageId), ct) is not { } page)
+        {
+            return CapabilityResult<DesktopTabsResult>.Failure(
+                DesktopCapabilityError.InvalidTarget($"page '{tabsTarget.Key}' is not known"));
+        }
+
+        if (request.Action == DesktopTabAction.Close)
+        {
+            await context.ClosePageAsync(new PageId(tabsTarget.PageId), ct);
+        }
+        else
+        {
+            await page.BringToFrontAsync(ct);
+        }
+
+        return CapabilityResult<DesktopTabsResult>.Success(new DesktopTabsResult(
+            tabsTarget,
+            request.Action,
+            State(tabsTarget, page),
+            tabClosed: request.Action == DesktopTabAction.Close,
+            await ContextsAsync(ct)));
+    }
+
+    private static DesktopPageState State(DesktopPageTarget target, IBrowserPage page) => new(
+        target,
+        Uri.TryCreate(page.Info.Url, UriKind.Absolute, out var url) ? url : null,
+        page.PageVersion > 0 ? DesktopPageVersion.Require(page.PageVersion) : DesktopPageVersion.Unknown,
+        DesktopPageReadiness.Unknown,
+        page.Info.Title);
+
+    private async Task<DesktopContexts> ContextsAsync(CancellationToken ct)
+    {
+        var contexts = new List<DesktopContextInfo>();
+        foreach (var summary in await runtime.ListContextsAsync(ct))
+        {
+            if (await runtime.GetContextAsync(summary.Id, ct) is not { } context)
+            {
+                continue;
+            }
+
+            var pages = (await context.ListPagesAsync(ct))
+                .Where(p => p.PageVersion > 0)
+                .Select(p => new DesktopPageInfo(
+                    new DesktopPageTarget(summary.Id.Value, p.Id.Value),
+                    DesktopPageVersion.Require(p.PageVersion),
+                    p.Title,
+                    Uri.TryCreate(p.Url, UriKind.Absolute, out var u) ? u : null))
+                .ToArray();
+            contexts.Add(new DesktopContextInfo(summary.Id.Value, DesktopContextTrust.Untrusted, pages));
+        }
+
+        return new DesktopContexts(contexts);
+    }
+
     public async Task<CapabilityResult<NavigateResult>> NavigateAsync(
         NavigateRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
@@ -520,10 +604,6 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
             navigation?.ErrorText,
             page.Info.Title));
     }
-    public Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
-        BrowserTabsRequest request, DesktopCallContext call, CancellationToken ct = default) =>
-        throw new NotSupportedException();
-
 
 
 

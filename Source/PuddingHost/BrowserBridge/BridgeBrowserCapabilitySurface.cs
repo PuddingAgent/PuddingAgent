@@ -207,19 +207,12 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
                     $"context '{request.ContextId}' is not known"));
             }
 
+            // 初始地址与是否激活交给运行时一次性完成（与迁移前工具行为一致，且少两次往返）。
             var created = await newTabContext
-                .NewPageAsync(new PageCreateOptions(), cancellationToken)
+                .NewPageAsync(
+                    new PageCreateOptions { InitialUrl = request.Url, Activate = request.Activate },
+                    cancellationToken)
                 .ConfigureAwait(false);
-            if (request.Url is { } initialUrl)
-            {
-                await created.GotoAsync(initialUrl, new NavigationOptions(), cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (request.Activate)
-            {
-                await created.BringToFrontAsync(cancellationToken).ConfigureAwait(false);
-            }
 
             var afterNew = await GetContextsAsync(call, cancellationToken).ConfigureAwait(false);
             if (afterNew.IsFailure)
