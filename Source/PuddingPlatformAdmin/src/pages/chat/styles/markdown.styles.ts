@@ -33,9 +33,13 @@ export const useMarkdownStyles = createStyles(() => ({
       textDecoration: 'none',
       '&:hover': { textDecoration: 'underline' },
     },
-    // IMG07（§13.5）：单元格 10/12、分隔线走主题 border；首列给 7em 最小宽，
-    // 避免「可部署产物」这类短标签被挤成一字一行。长内容列仍可换行，
-    // 整表超宽时由 markdownTableScroll 横滚（不把整个消息设 overflow:hidden）。
+    // IMG07（§13.5）：单元格 10/12、分隔线走主题 border。
+    // **不在全局给首列定最小宽**：规格明确说该类规则"只用于具有短标签首列的规格/
+    // 状态表，不能全局套在任意数据表"；而且实测在 Chromium 的自动表格布局下，全局
+    // `min-width` 对单元格并不真正生效（真实会话里该列约 4em，仍在 7em 之下）——
+    // 留着它只会制造"已经修好了"的假象。默认表格保持：允许换行、整表超宽由
+    // markdownTableScroll 横滚（不把整个消息设 overflow:hidden）。
+    // 短标签表改用下方 chatLabelTable：由 MarkdownBlock 按表头词判定后套用。
     '& table': {
       borderCollapse: 'collapse' as const,
       width: '100%',
@@ -47,9 +51,6 @@ export const useMarkdownStyles = createStyles(() => ({
       padding: '10px 12px',
       textAlign: 'left' as const,
       verticalAlign: 'top',
-    },
-    '& th:first-child, & td:first-child': {
-      minWidth: '7em',
     },
     '& th': {
       background: 'transparent',
@@ -64,6 +65,17 @@ export const useMarkdownStyles = createStyles(() => ({
       borderBottom: '1px solid var(--pudding-chat-border)',
     },
     '& tr:last-child td': { borderBottom: 'none' },
+  },
+  /**
+   * §13.5 的标签表钩子：只给「首列是短标签」的规格/状态表（表头形如 项/项目/字段）。
+   * 作用域限定在这个类上，**绝不做全局首列规则**；判定由 `MarkdownBlock` 的
+   * `isLabelTable`（纯函数）负责，判定不中就走默认的"允许换行 + 容器横滚"。
+   */
+  chatLabelTable: {
+    '& th:first-child, & td:first-child': {
+      minWidth: '7em',
+      whiteSpace: 'nowrap' as const,
+    },
   },
   markdownTableScroll: {
     maxWidth: '100%',

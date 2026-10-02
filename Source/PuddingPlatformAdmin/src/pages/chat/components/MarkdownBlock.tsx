@@ -184,6 +184,58 @@ const CodeBlock: React.FC<{
   );
 };
 
+/**
+ * §13.5：只有「首列是短标签」的规格/状态表才该套 `chatLabelTable`（首列最小宽 + 不换行）。
+ * LLM 生成的表格无法知道语义，所以按**表头词**判定 —— 真实会话里这类表的表头就是
+ * 「项 / 项目 / 字段 / 标签」这类短标签词；判定不中一律走默认（允许换行 + 容器横滚），
+ * 不会把普通数据表锁成不可换行。
+ */
+const LABEL_TABLE_HEADERS = new Set([
+  '项',
+  '项目',
+  '字段',
+  '标签',
+  '键',
+  '属性',
+]);
+
+/** 把一段 React 子树里的文本拼起来（表格表头判定只需要文字）。 */
+function flattenText(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(flattenText).join('');
+  if (React.isValidElement(node)) {
+    return flattenText(
+      (node.props as { children?: React.ReactNode }).children ?? null,
+    );
+  }
+  return '';
+}
+
+/** 取 markdown 表格第一个表头单元格的文字（找不到则返回空串）。 */
+export function firstHeaderText(children: React.ReactNode): string {
+  let found: React.ReactNode = null;
+  const walk = (nodes: React.ReactNode): boolean => {
+    for (const child of React.Children.toArray(nodes)) {
+      if (!React.isValidElement(child)) continue;
+      const inner = (child.props as { children?: React.ReactNode }).children;
+      if (child.type === 'th') {
+        found = inner ?? null;
+        return true;
+      }
+      if (walk(inner ?? null)) return true;
+    }
+    return false;
+  };
+  walk(children ?? null);
+  return flattenText(found).trim();
+}
+
+/** 该 markdown 表格是否属于「短标签首列」的规格/状态表（决定是否套 chatLabelTable）。 */
+export function isLabelTable(children: React.ReactNode): boolean {
+  return LABEL_TABLE_HEADERS.has(firstHeaderText(children));
+}
+
 function sharedComponents(
   styles: Record<string, string>,
   isStreaming?: boolean,
@@ -199,7 +251,12 @@ function sharedComponents(
       node?: unknown;
     }) => (
       <div className={styles.markdownTableScroll}>
-        <table {...props}>{children}</table>
+        <table
+          {...props}
+          className={isLabelTable(children) ? styles.chatLabelTable : undefined}
+        >
+          {children}
+        </table>
       </div>
     ),
     a: ({
