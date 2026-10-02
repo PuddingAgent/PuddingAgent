@@ -434,3 +434,27 @@ CLI 的命令面为：`index / search / status / watch / definition / references
 3. 记录 `artifact_assembly_sha256`，部署后按 SHA 复核运行目录 DLL。
 
 **注**：本机 `git status` 显示 `## master` 无 upstream 提示、`HEAD == origin/master == 1959fa5`（本轮实测 `ls-remote` 一致）。
+
+---
+
+## D6 复测（2026-10-02 22:11）· 「重启 ≠ 部署」**再次成立**
+
+**实测（全部现场）**
+- 运行中 Core：**PID 34672**，`Path = Source\PuddingAgent\bin\Debug\net10.0\PuddingAgent.exe`，
+  **StartTime = 2026-10-02 18:08:17**（本地）⇒ 今天**确实重启过**。
+- 但该运行目录的二进制**仍是 2026-10-01 的**：`PuddingAgent.dll` `2026-10-01 03:14:27` / 13,824 B；
+  `PuddingHost.dll` `2026-10-01 03:14:26` / 851,456 B；`PuddingRuntime.dll` `2026-10-01 03:06:09` / 4,527,104 B。
+- HTTP 探针（`http://127.0.0.1`）：`/api/admin/index/status` → **404**；
+  对照 `/api/admin/storage/overview` → **401**（路由存在、仅缺鉴权 ⇒ 仪器有效）；
+  `/health/live` → 200；`/index-status` → 200（前端仍在线）。
+
+**判定**
+- **重启不会带来新二进制**：S-A / S-A2 / D1 的后端类型仍不在进程内。激活动作依然是
+  **编译 + 部署 + 重启**（`bootstrap_reboot`），且须满足 D9 三前置。
+- 前端路径与后端路径**互相独立**：改前端一条命令生效（零重启）；改后端需部署+重启。二者不可互相推断。
+
+**同时登记的两条环境事实（非本缺陷，但影响引用）**
+- **本地领先远端**：`HEAD = c4f750c`（2026-10-02 19:13）vs `origin/master = bf1c9e5` ⇒ 本地含**他人 10-02 未推送提交**
+  （code-index 维护系列 + 前端 6.2.0 Debug 按钮）。**不替他人推送**，仅登记事实。
+- **文档目录已重组**：本文件原路径 `Docs/Features/…` 实测 `File not found`，现位于
+  **`Docs/12_features/Index-Retrieval-Known-Defects-2026-10-01.md`**。引用本文档的旧记录（含 `goal.md`）需按新路径复核。
