@@ -547,6 +547,70 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     private static BrowserContextInfo Summary(string contextId) =>
         new() { Id = new BrowserContextId(contextId), UserDataDirectory = @"C:\udf", Persistent = true, PageCount = 1 };
 
+    // ── 版本门禁（逐字段审计发现适配器原先只在 3/7 个可钉版本的操作上做了它） ──
+
+    [Fact]
+    public async Task Navigate_WithStalePin_IsRejectedBeforeNavigating()
+    {
+        var acted = false;
+        var page = new FakePage { Version = 9, Navigate = _ => { acted = true; return new NavigationResult { Url = new Uri("https://example.test/a"), Ok = true }; } };
+        var surface = Create(page);
+
+        var result = await surface.NavigateAsync(
+            new NavigateRequest(Target, new Uri("https://example.test/a"), DesktopPageVersion.Require(3)), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, result.Error!.Code);
+        Assert.False(acted);
+    }
+
+    [Fact]
+    public async Task Tabs_WithStalePin_IsRejectedBeforeActing()
+    {
+        // tabs 的版本是必填（请求构造即校验）⇒ 与 Desktop 侧一样无条件核对。
+        var page = new FakePage { Version = 9 };
+        var context = new FakeContext(page);
+        var surface = Create(new FakeRuntime(contexts: [Summary("ctx-1")], context: context));
+
+        var result = await surface.TabsAsync(
+            new BrowserTabsRequest(Target, DesktopTabAction.Activate, DesktopPageVersion.Require(3)), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, result.Error!.Code);
+        Assert.Equal(0, page.BringToFrontCount);
+    }
+
+    [Fact]
+    public async Task WaitFor_WithStalePin_IsRejectedBeforeWaiting()
+    {
+        var acted = false;
+        var page = new FakePage { Version = 9, Wait = _ => { acted = true; return new WaitResult(); } };
+        var surface = Create(page);
+
+        var result = await surface.WaitForAsync(
+            new BrowserWaitForRequest(Target, new DesktopWaitCondition(DesktopWaitConditionKind.Selector, "#slow"),
+                expectedPageVersion: DesktopPageVersion.Require(3)), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, result.Error!.Code);
+        Assert.False(acted);
+    }
+
+    [Fact]
+    public async Task ExecuteJavascript_WithStalePin_IsRejectedBeforeEvaluating()
+    {
+        var acted = false;
+        var page = new FakePage { Version = 9, Script = _ => { acted = true; return new BrowserScriptValue(); } };
+        var surface = Create(page);
+
+        var result = await surface.ExecuteJavascriptAsync(
+            new JavascriptRequest(Target, "1 + 1", expectedPageVersion: DesktopPageVersion.Require(3)), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, result.Error!.Code);
+        Assert.False(acted);
+    }
+
     private static BridgeBrowserCapabilitySurface Create(FakePage page) => new(new FakeRuntime(page));
 
     private static BridgeBrowserCapabilitySurface Create(FakeRuntime runtime) => new(runtime);

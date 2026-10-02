@@ -51,6 +51,12 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
             return NotFound<NavigateResult>(request.Target);
         }
 
+        // 与 Desktop 侧同一套版本门禁（导航可钉版本；钉了就必须核对）。
+        if (VersionGate(request.Target.Key, page.PageVersion, request.ExpectedPageVersion, required: false) is { } navigateGate)
+        {
+            return CapabilityResult<NavigateResult>.Failure(navigateGate);
+        }
+
         var result = await page.GotoAsync(request.Url, new NavigationOptions(), cancellationToken).ConfigureAwait(false);
         if (!result.Ok)
         {
@@ -72,6 +78,11 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
         if (await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false) is not { } page)
         {
             return NotFound<JavascriptResult>(request.Target);
+        }
+
+        if (VersionGate(request.Target.Key, page.PageVersion, request.ExpectedPageVersion, required: false) is { } scriptGate)
+        {
+            return CapabilityResult<JavascriptResult>.Failure(scriptGate);
         }
 
         var value = await page
@@ -156,6 +167,12 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
             || await context.GetPageAsync(new PageId(request.Target.PageId), cancellationToken).ConfigureAwait(false) is not { } page)
         {
             return NotFound<DesktopTabsResult>(request.Target);
+        }
+
+        // 变更类（切换/关闭）必须固定版本：不符说明目标页在等待期间已变化，动的可能是另一个页面。
+        if (VersionGate(request.Target.Key, page.PageVersion, request.ExpectedPageVersion, required: true) is { } tabsGate)
+        {
+            return CapabilityResult<DesktopTabsResult>.Failure(tabsGate);
         }
 
         // 状态要在**操作之前**取：关闭之后页面就没了，那时再读 Info 不可靠。
@@ -331,6 +348,11 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
         if (await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false) is not { } page)
         {
             return NotFound<DesktopWaitResult>(request.Target);
+        }
+
+        if (VersionGate(request.Target.Key, page.PageVersion, request.ExpectedPageVersion, required: false) is { } waitGate)
+        {
+            return CapabilityResult<DesktopWaitResult>.Failure(waitGate);
         }
 
         var result = await page.WaitForAsync(ToRuntimeWaitCondition(request), cancellationToken)
@@ -560,6 +582,27 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
                 Nth = locator.Nth,
                 HasText = locator.HasText,
             };
+    }
+
+    /// <summary>
+    /// 与 Desktop 侧同一套版本门禁：**钉了版本就必须核对**（不符说明目标在等待期间已变化，
+    /// 这时去动它可能动到另一个页面）。变更类请求（tabs/interact）的版本是必填 ⇒ 无条件核对；
+    /// 其余请求的版本可选，未知即跳过。逐字段审计发现：本适配器原先只在 3/7 个操作上做了这件事。
+    /// </summary>
+    private static DesktopCapabilityError? VersionGate(
+        string targetKey, long actual, DesktopPageVersion expected, bool required)
+    {
+        if (!required && !expected.IsKnown)
+        {
+            return null;
+        }
+
+        return expected.Value == actual
+            ? null
+            : new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"page '{targetKey}' is at v{actual}, request pinned v{expected.Value}",
+                retryable: true);
     }
 
     private static CapabilityResult<T> NotFound<T>(DesktopPageTarget target) =>
