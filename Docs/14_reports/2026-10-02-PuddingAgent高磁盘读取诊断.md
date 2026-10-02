@@ -174,3 +174,173 @@ FROM conversation_events WHERE conversation_id=@cid;
 - 进程样本与托管栈临时输出位于 `temp/test-out/io-diagnosis`，关键数值与栈已汇总在本文；按仓库卫生规则，临时输出收尾清理，不提交完整栈或数据库内容。
 - 只读查询探针自己的 I/O 通过 `GetProcessIoCounters(GetCurrentProcess())` 前后差测量，未计入 PuddingAgent PID 的采样窗口。缓存、其他并发进程与在线库变化影响耗时；数值代表该次观测，不是稳定性能基准。
 - 原截图监视窗口及其是否经历多次重启未知，无法把本次采样精确还原为截图当时的完整调用分布。
+
+## 代码级修复方案（待实施）
+
+本节是施工方案，示例用于明确算法与合同，**尚未修改产品代码、运行修复测试或部署**。建议拆成四个原子改动：A 边界 SQL、B SSE 回放/游标、C 索引关系删除、D 文件变更分类。A/C 可先各自在现有组件内独立验证；宿主接入与部署放在组件门禁之后。以下路径均相对仓库根。
+
+### A. 将事件边界查询改为两次索引端点查找
+
+修改 `Source/PuddingPlatform/Services/ConversationEventStore.cs` 的 `GetBoundsAsync`，保留方法签名、参数化、`EnsureTableAsync` 和返回 `EventBounds(null, null)` 的空会话行为，只替换 SQL：
+
+```sql
+SELECT
+  (SELECT sequence FROM conversation_events
+   WHERE conversation_id = @cid
+   ORDER BY sequence ASC LIMIT 1),
+  (SELECT sequence FROM conversation_events
+   WHERE conversation_id = @cid
+   ORDER BY sequence DESC LIMIT 1);
+```
+
+两端在**同一条语句**内读取，避免拆成两个 command 后遇到并发写入/裁剪而得到不一致的边界。不新增索引；利用已有 `(conversation_id, sequence)`。不改用 `conversation_heads` 作为 min，不缓存真实 min，不增加迁移或兼容层。既有两套同构索引的清理不与本修复混做。
+
+在 `Source/PuddingPlatformTests/Services/` 新增边界查询测试，用产品 `Microsoft.Data.Sqlite` 创建隔离库：空会话、单事件、两个会话隔离、稀疏序号、前缀裁剪后 min 改变、并发追加/裁剪的合法快照。百万事件性能夹具只保留小 payload，比较相同缓存条件下的读次数/字节与执行工作量；不以机器相关的毫秒数作单元测试门禁。查询计划出现 `SEARCH` 本身不能证明优化，因为原扫描也是 SEARCH；需确认端点 LIMIT 提前结束，工作量不会随整段会话事件数线性增加。
+
+### B. SSE 先确定可靠游标，再按固定上界追赶
+
+#### B1. 前端消除“未初始化等于零”的含义冲突
+
+主要修改：
+
+- `Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts`：统一开流入口与会话身份校验。
+- `.../hooks/useSessionEventReplay.ts`：bootstrap 游标初始化的成功/失败合同。
+- `.../hooks/useMessageSend.ts`：发送前后不直接无条件重建 SSE。
+- `.../hooks/useChatState.ts`、`.../hooks/useSessionSelection.ts`、`.../hooks/sessionRuntimeCleanup.ts`、`.../hooks/useSessionEventProjection.ts`：所有游标初始化、清理、递增与跨会话切换一起调整。
+
+游标保存为带会话身份的状态，替换仅凭数值判断的 `lastSequenceNumRef` 用法。建议形状：
+
+```ts
+type SessionEventCursorState = {
+  sessionId: string | null;
+  phase: 'unknown' | 'hydrating' | 'ready';
+  sequence: number;
+};
+```
+
+`sequence=0, phase='unknown'` 不能订阅；只有服务端 bootstrap 成功、其快照已经应用到当前会话后才能设置 ready。bootstrap 返回的真实 0 可以是合法空会话游标，不能以“值为 0”直接判失败或跳到 head。正常事件仅推进同一 session 的 sequence；410 恢复先应用替代快照，再按其 cursor 重置。切换会话时清空 readiness，禁止把 A 的较大 sequence 带给 B。
+
+当前 `syncCompletedHistoryEventCursor` 捕获异常后返回 `[]`，调用方无法区别“成功但没有 turns”与“初始化失败”。拆出返回判别联合的游标准备方法，由现有历史同步与连接入口共同使用；失败时不能标 ready。不要继续用 turns 数量推断初始化成功。
+
+统一新增 `ensureSessionEventStream(sessionId)` 异步入口；它负责 ready 检查、同会话 bootstrap 请求合并与连接复用。算法骨架：
+
+```ts
+// 伪代码：generation、AbortSignal 与会话身份必须贯穿所有 await。
+if (hasHealthyConnection(sessionId)) return;
+const request = beginConnectionRequest(sessionId);
+if (!isReadyFor(sessionId)) {
+  const prepared = await prepareAndApplyBootstrap(sessionId, request.signal);
+  if (!prepared.ok || !request.isCurrent()) return;
+}
+if (!request.isCurrent() || !isReadyFor(sessionId)) return;
+openSessionEventStream(sessionId, cursorStateRef.current.sequence);
+```
+
+具体约束：
+
+1. `useMessageSend` 发送已有会话前 await ensure；游标准备失败时保持输入/待发项，不用 0 兜底。bootstrap 正在进行时不冻结整个页面。
+2. POST 返回同一个 session 且连接健康时复用连接；返回另一个 session 时为该 session 单独准备游标。返回时用户已切走，则不切换页面、不替其他会话开流。
+3. `useChatState` 的 effect、新建/后继/分支会话、重连、send 全部走统一入口。删除绕过准备的 `cursor: 0` 调用，或将其限定为服务端已确认并已应用的空快照；不能只凭调用点名称断言会话是新的。
+4. projection-owned 页面也必须经过统一的开流决策。若该路径的消息/活动投影已完整承担实时更新，则 send 不能偷偷启用另一条原始 SSE；若仍需 SSE 承载工具、压缩、子代理事件，应明确保留这些职责并完成 cursor 准备，不能简单全部禁用。
+5. 开流使用的是**已应用快照的 snapshotCursor**，不能在 POST 后直接取最新 head 跳过本轮开始事件。projection checkpoint 落后时允许补读真正的缺口，不能静默跳过。
+6. 请求用 generation/session/AbortSignal 三项复检，防止 A 的迟到 bootstrap 修改 B 的游标。同 session 的准备请求只进行一次；取消不等于准备成功。
+
+扩展已有 `useSessionEventConnection.test.tsx`、`useSessionEventReplay.test.tsx`，并补消息发送集成测试：旧会话初值 0、bootstrap 失败、A/B 交错返回、同会话 POST 前后复用、返回不同 session、投影负责主会话、新会话真实 cursor=0、410 替代快照、丢通知补偿。必须断言旧会话实际订阅的 `afterSequence`，不能只测试 ref 被赋值。
+
+#### B2. 后端每次追赶只读到固定 head
+
+修改 `Source/PuddingPlatform/Services/SessionEventStreamService.cs` 的 `FollowAsync`：入口读取一次 bounds，冻结 `replayThrough`；删除 replay 循环中每满 256 条重新查询 bounds/更新 head 的两行：
+
+```csharp
+var replayThrough = (await _eventStore.GetBoundsAsync(sessionId, ct))
+    .MaxSequence ?? 0;
+while (nextAfter < replayThrough)
+{
+    var batch = await _eventStore.ReadForwardAsync(
+        sessionId, nextAfter, replayThrough, 256, ct);
+    // 按现有逻辑逐条输出 IsReplay=true，推进 nextAfter。
+    // 空批/不足一批按实际读取结果结束；不再刷新 replayThrough。
+}
+```
+
+live 通知分支同样冻结本次 `drainThrough`，逐批读完该区间，不在批内刷新全局 head；本次之后追加的事件留给下一次通知/轮询追赶。保留 1 秒 durable poll 和 15 秒 heartbeat，首轮先订阅再查 head，避免在 replay→live 衔接时仅依赖一次易丢的通知。
+
+当前 `CommittedEventSignal` 使用多个 reader 共享 Channel；不能假定每个 SSE 都收到每次广播。继续保留持久化轮询兜底。替换通知 waiter 时取消并等待旧 waiter，使用每个等待周期的关联 CTS；不要让旧的未完成 waiter继续消费新通知。取消或客户端断开时释放 CTS、停止轮询。
+
+在 `Source/PuddingPlatformTests/Services/` 新增 `SessionEventStreamService` 测试，使用可控制 event store/signal：
+
+- 读取 1,024 条历史需要四个主要批次，但 replay 不发生四次边界重查；所有输出都有正确 IsReplay 标志。
+- 回放途中追加事件不延长初始 replay；进入 live 后仍完整输出，顺序正确、无重复。
+- 只通过数据库追加且故意丢通知，轮询最终读到；两个 subscriber 都不会因共享 Channel 而永久漏事件。
+- 空会话等待、稀疏序号、查询空批、取消、heartbeat、旧 waiter 清理。
+
+不在第一批补丁里粗暴拒绝所有 cursor=0，也不拿 `head-cursor` 当事件数量，因为新会话与稀疏序号合法。若增加大规模回放保护，需用有界 LIMIT 探针判断真实缺口，并与可用快照及投影落后恢复一起设计；只返回 410 而 bootstrap cursor 始终落后会形成重连循环。
+
+### C. 将索引图删除的 OR 拆成四个精确删除
+
+修改 `Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs` 的 `RemoveSymbolGraphForFileAsync`。保留已有 symbolIds 查询和调用者传入的事务，对每个 symbol 执行：
+
+```sql
+DELETE FROM CodeReferences
+WHERE WorkspaceId=$workspaceId AND ProjectId=$projectId
+  AND SourceSymbolId=$symbolId;
+DELETE FROM CodeReferences
+WHERE WorkspaceId=$workspaceId AND ProjectId=$projectId
+  AND TargetSymbolId=$symbolId;
+DELETE FROM CodeRelations
+WHERE WorkspaceId=$workspaceId AND ProjectId=$projectId
+  AND SourceSymbolId=$symbolId;
+DELETE FROM CodeRelations
+WHERE WorkspaceId=$workspaceId AND ProjectId=$projectId
+  AND TargetSymbolId=$symbolId;
+```
+
+四次删除和最后的文件符号删除仍在**同一事务**，取消/异常时整体回滚。自引用在 source 删除时已消失，target 再删是安全的 no-op。跨文件入边与出边按原合同都清除；其他 workspace/project 不受影响。不只按 SourceFilePath 删除，因为那会漏掉来自别的文件的入边。
+
+先采用这个行为等价的改动，不同时更改 pooling、PRAGMA、事务粒度或全量重建算法；未来若引入批量 symbolIds/临时表，另做独立任务。保留 Source/Target 现有索引，用产品 provider 的 DELETE 查询计划确认约束进入完整 `(WorkspaceId, ProjectId, SymbolId)`，而不是仅 scope 前缀。
+
+扩展现有 `Source/PuddingCodeIndexTests/Storage/SqliteCodeIndexStoreTests.cs` 和 `SqliteCodeIndexStoreRemoveFilesTests.cs`：多符号文件、入边/出边/自引用、同 ID 不同 scope、无关图保留、重复删除幂等、零符号文件、批内异常/取消回滚。大量无关关系夹具应证明删除代价由目标符号关联规模决定，不随整个 project 图规模重复线性增长。真实数据删除对照只在 SQLite 在线备份副本执行。
+
+### D. 为变更分类增加组件内显式能力
+
+不要把 `CompositeCodeIndexer` 对所有不支持文件的 Failed 直接改成 Success；现有 `ICodeIndexFileUpdater` 明确约定拒绝文件是失败，改 Success 会虚增增量索引数并掩盖真实语言失败。也不要在 watcher 内另建 `.cs/.ts/.py` 白名单，避免与 `ILanguageCodeIndexer.SupportedExtensions` 产生第二真源。
+
+建议在 `Source/PuddingCodeIndex/Contracts/` 新增可选分类端口 `ICodeIndexChangeClassifier` 和 disposition：
+
+```csharp
+public enum CodeIndexChangeDisposition { Ignore, Incremental, Reconcile }
+public interface ICodeIndexChangeClassifier
+{
+    CodeIndexChangeDisposition ClassifyChangedFile(string filePath);
+}
+```
+
+由 `CompositeCodeIndexer` 实现：已注册语言的 `SupportedExtensions` 唯一决定 Incremental；组件内显式项目/依赖配置规则决定 Reconcile；其余普通文件 Ignore。配置名单应覆盖 `.sln/.slnx/.csproj/.props/.targets`、`Directory.Build.*`、`global.json/NuGet.config`、`tsconfig*.json/jsconfig*.json`、`package.json/pnpm-lock.yaml/pnpm-workspace.yaml`、`pyproject.toml/requirements*.txt/setup.py/setup.cfg`、`.gitignore/.editorconfig` 等实际影响已有语言索引的输入，并在测试中逐条说明范围。规则仅放一处，名单按语言工具链需求审阅，不能把所有 `.json/.yaml/.md` 泛化为项目配置。
+
+`CodeIndexMaintenanceService.IndexChangedFilesAsync` 在 directory/vanished 的既有处理之后、解析 descriptor 与调用 indexer之前，检查 `_fileUpdater is ICodeIndexChangeClassifier`：
+
+- Ignore：跳过普通文档，记录有界 Debug 或独立 ignored 计数；不增加 `IncrementallyIndexedFileCount`，不 enqueue scope。
+- Incremental：执行原逐文件更新；真实失败仍升级 reconcile。
+- Reconcile：交给原有全量调度器；同批多个配置变更折叠成一次。
+- updater 没有可选分类能力：保留原 fail-safe 行为。这是能力检测，不为旧 API 增加兼容适配层。
+
+删除/改名仍保留 `RemoveFilesAsync`，即使新扩展不被支持，也先清掉旧路径索引；目录变更、watcher 溢出、batch reconcile 的补偿不被 Ignore 覆盖。不修改 Host/Runtime DI；maintenance 在现有 updater 上检测可选接口，`PuddingCodeIndex` 不反向引用语言智能。
+
+扩展已有 `CompositeCodeIndexerTests.cs`、`CodeIndexMaintenanceServiceTests.cs`：`.md` 不触发 scheduler；支持语言文件只增量更新；项目/依赖配置触发一次 scope；同批普通文档和代码不互相阻断；语言真正失败仍补偿；rename 到不支持扩展删除旧记录；目录/溢出 reconcile 保持。更新旧“无 owner 必须导致 scope”的测试，区分直接调用 IndexFileAsync 的 Failed 合同与 maintenance 的 Ignore 决策。
+
+### 交付、部署与验收
+
+| 原子任务 | 独立门禁 | 产品验证 |
+|---|---|---|
+| A 边界 SQL | Platform 隔离 SQLite 功能与读取成本测试 | 长会话 bounds 查询不再读完整事件索引 |
+| B 游标与 SSE | Platform 事件流测试；前端 pnpm/Jest 连接、回放和发送测试 | 旧会话首次发送、第二次发送、刷新、断线重连无零游标全回放，且事件不丢失 |
+| C 图删除 | PuddingCodeIndex 独立 store/事务测试，真实数据备份副本对照 | 单文件代码变更及必要全量索引无逐符号全 scope 扫描 |
+| D 分类 | PuddingCodeIndex 独立 composite/maintenance/边界测试 | Markdown 变更不启动全仓语言索引，项目配置变更仍补偿 |
+
+本次仅补文档，不递增前端版本。实施 B 时按当时 `package.json` 版本递增修订号，不在方案里硬编码版本；用 pnpm 构建，将产物部署至新 Core 的 `wwwroot/admin`，核对页角版本/哈希。A/C/D 不改前端版本。
+
+构建/测试输出隔离到 `temp/build`、`temp/test-out`；涉及 Desktop 的 build/test/publish 串行，使用约定 `--artifacts-path temp/build/recovery`，先 restore/build，再同目录 `--no-restore`。已有组件修复在各自边界先测，不为本方案抽新宿主依赖或重构业务。每个原子任务更新受影响 code_map、写日志、精确暂存并独立提交。
+
+外部控制器部署到明确的新构建后，固定同一长会话与采样区间，分别验证空闲 60 秒、发送短消息、刷新/重连、改一个 Markdown、改一个代码文件、改一个项目配置。先用隔离 DataRoot/备份数据完成正确性验收，再做用户开发实例的受控性能复核；避免 dev-up 与 Desktop 同时持有同 DataRoot。
+
+验收同时收集按文件的 platform/code-index 读取、进程增量、物理磁盘增量、SSE cursor/replayCount 与索引升级原因。目标是消除**随全部历史/全部关系量增长的重复扫描**，不能承诺每次聊天绝对固定字节数；真实补偿缺口、模型上下文、工具读取仍会有必要 I/O。未拿到文件级跟踪时单独列出该证据缺口，不能用进程总读取量证明某个数据库的改进。
