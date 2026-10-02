@@ -1,3 +1,18 @@
+---
+title: "Desktop 表面 · 浏览器侧映射规格（映射到既有 `IBrowserRuntime`）"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "csharp // 运行时 public interface IBrowserRuntime : IAsyncDisposable { BrowserRuntimeState State { get; } Task<IBrowserContext> CreateContextAsync(BrowserContextOptions options, CancellationToken ct); Ta"
+categories: [docs, features]
+tags: [desktop, surface, browser, mapping, features]
+related_docs: []
+related_files: [Source/PuddingDesktop/MainWindow.xaml.cs, Source/PuddingDesktop/code_map.md, Source/PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs, Source/Pudding.CapabilityBroker/DesktopSession.cs]
+slug: features-desktop-surface-browser-mapping-2026-10-01
+draft: false
+---
+
 # Desktop 表面 · 浏览器侧映射规格（映射到既有 `IBrowserRuntime`）
 
 > 目的：把 `IDesktopUiSurface` 的浏览器部分实现为**对既有浏览器抽象的映射**，而不是重建 WebView2 逻辑。
@@ -311,6 +326,40 @@ Core 侧实现是 `Source/PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs`，
 > `NavigateAsync` / `SnapshotAsync` / `LocateAsync` / `InteractAsync` / `WaitForAsync` /
 > `GetContextsAsync` / `TabsAsync` / `ExecuteJavascriptAsync` 等类型化调用，
 > 因此第 ② 步不需要新的协议能力。
+
+### 8.5 迁移第七步之前必须先**加宽契约**：工具面 ⊃ 能力面（实读七个工具的参数后确认）
+
+§8.4 的 ①②③ 已完成（窄端口 + 两个 9/9 实现）。但真正开始改工具调用点之前，本轮实读七个工具
+的参数记录，发现一个**会让迁移变成功能倒退**的问题：**能力契约只覆盖工具面的一个子集**。
+
+| 工具 | 工具面（`*Args`） | 能力契约覆盖 | 缺口 |
+|---|---|---|---|
+| `browser_context` | `create` / `list` / `get` / `close` | 仅 `browser.contexts`（清单） | **创建 / 关闭上下文无对应能力**（`get` 可由清单过滤） |
+| `browser_navigate` | `goto` / `back` / `forward` / `reload` / `stop` + `TimeoutMs` | 仅 `webview.navigate`（=goto） | **back / forward / reload / stop**；**`TimeoutMs`** |
+| `browser_tabs` | `new` / `list` / `activate` / `close` + `Url` + `Activate` | `browser.tabs`（activate/close）+ `browser.contexts`（list） | **新建标签页**（含初始 URL 与是否激活） |
+| `browser_interact` | `click` / `fill` / **`type`** / `press` / `hover` / `scroll` / `select` / `check` + **`DeltaX`** | `browser.interact`（8 动作，含 `Fill`） | **`type`**（与 `fill` 语义不同）；**`DeltaX`**（当前只映射了 `DeltaY`） |
+| `browser_snapshot` | 上述 + `IncludeHidden` / `IncludeIframes` / `IncludeShadowDom` / `MaxDepth` | `browser.snapshot` | **四个参数**（契约 `DesktopSnapshotOptions` 没有它们） |
+| `browser_locate` | `Locator` | `browser.locate` | ✓（`Ref` 定位由 Desktop 侧注册表处理） |
+| `browser_wait_for` | 三个条件 + `TimeoutMs` | `browser.wait_for`（三条件 ✓） | **`TimeoutMs`** |
+
+⇒ **七个工具里只有 `locate` 是完整可迁移的**。若照原计划直接改调用点，结果是
+**能力倒退**（context 的 create/close、navigate 的四个动作、新建标签页、`type`、
+快照四个参数、三处超时、`DeltaX` 全部消失）——而且这种倒退在编译期与单元测试里都看不出来，
+只有在 Agent 真实用到那些动作时才暴露。
+
+**因此修正后的下一步顺序**：
+
+1. **加宽契约**：为缺口补能力/字段——上下文 `create`/`close`、导航 `back`/`forward`/`reload`/`stop`、
+   标签页 `new`、交互 `type`、以及超时与快照/滚动参数。这一步要动 **proto（payload/outcome oneof）+
+   两侧映射 + Desktop 侧实现 + 探针断言**，属于跨侧协议变更，必须**两侧同提交**并补探针；
+2. 每加一项，**两侧窄端口实现同时补齐**（本轮已把流程跑通：先实读形状 → 再映射 → 再逐项测试）；
+3. 工具调用点**按能力就绪度逐个迁移**（先 `locate`，它现在就能迁），并保持"开关二选一、不回退"；
+4. 未迁移的工具继续走既有 Bridge —— 这与计划的分阶段迁移一致，且**任何时候都不出现功能倒退**。
+
+> 判断依据（本轮实读）：`BrowserContextArgs` / `BrowserNavigateArgs` / `BrowserTabsArgs` /
+> `BrowserInteractArgs` / `BrowserSnapshotArgs` / `BrowserLocateArgs` / `BrowserWaitForArgs`，
+> 以及能力侧的 `DesktopCapabilityRequest` 联合与各 `*Options` 记录。
+
 
 
 
