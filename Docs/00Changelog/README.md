@@ -69,7 +69,7 @@ ADR / 设计 / 报告 / 任务 id / 提交号。
 
 1. **禁止**把日志写进索引与决策文档：`code_map.md`（根与子项目）、`Docs/README.md`、ADR 正文、`Docs/架构.md`。
 2. **禁止**把日志文件放在 `Docs/` 根目录；新日志一律进 `Docs/00Changelog/<YYYY>Year/<MM>/`。
-3. 每个原子任务完成后写一条日志，并与该任务的代码改动放在**同一个 commit**（见 `Agents-Hygiene.md`）。
+3. 每个原子任务完成后写一条日志，并与该任务的代码改动放在**同一个 commit**（见 `Docs/Conventions/Agents-Hygiene.md`）。
 4. **追加式、可更正、不抹除**：已写入的日志不删改历史结论；更正写成「更正（YYYY-MM-DD）：…」。
 5. 日志是**摘要**，不是证据仓库：完整证据留在 `Docs/Reports/`、`Docs/QA/`，日志里链接过去，不要复制整份报告或大段代码。
 6. 敏感信息（apiKey、ControlToken、用户隐私数据、密钥路径）**不得**写入日志。
