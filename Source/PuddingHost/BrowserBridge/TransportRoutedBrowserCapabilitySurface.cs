@@ -23,6 +23,32 @@ internal sealed class DesktopTransportUsageTracker
         }
     }
 
+    private long _missingEvidence;
+
+    /// <summary>
+    /// **副作用类**能力在缺失权限证据时被派发的次数（权限证据链第一阶段：只观测，不拒绝）。
+    /// 干净迁移窗口里它应当为 0；不为 0 说明有调用方绕过了工具层。
+    /// </summary>
+    public long MissingEvidenceCalls
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _missingEvidence;
+            }
+        }
+    }
+
+    /// <summary>记录一次「副作用能力缺权限证据」的观测（不改变任何判定）。</summary>
+    public void RecordMissingEvidence()
+    {
+        lock (_gate)
+        {
+            _missingEvidence++;
+        }
+    }
+
     public void Record(DesktopTransportRoute route)
     {
         lock (_gate)
@@ -47,13 +73,31 @@ internal sealed class TransportRoutedBrowserCapabilitySurface(
 {
     // ── 上下文管理（缺口 #1）：同一套决策；组合根传入的两个实现都实现了这个端口。──
 
+    /// <summary>
+    /// 第一阶段观测：副作用类能力在缺失权限证据时**只记录**，不拒绝
+    /// （入口与证据来源见 Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md）。
+    /// </summary>
+    private void ObserveEvidence(DesktopCallContext call)
+    {
+        if (string.IsNullOrEmpty(call.PermissionEvidenceSummary))
+        {
+            usage.RecordMissingEvidence();
+        }
+    }
+
     public Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
-        BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        InvokeContextAsync((surface, ct) => surface.CreateContextAsync(request, call, ct), cancellationToken);
+        BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ObserveEvidence(call);
+        return InvokeContextAsync((surface, ct) => surface.CreateContextAsync(request, call, ct), cancellationToken);
+    }
 
     public Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
-        BrowserContextCloseRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        InvokeContextAsync((surface, ct) => surface.CloseContextAsync(request, call, ct), cancellationToken);
+        BrowserContextCloseRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ObserveEvidence(call);
+        return InvokeContextAsync((surface, ct) => surface.CloseContextAsync(request, call, ct), cancellationToken);
+    }
 
     private async Task<CapabilityResult<T>> InvokeContextAsync<T>(
         Func<IDesktopContextCapabilitySurface, CancellationToken, Task<CapabilityResult<T>>> invoke,
@@ -89,12 +133,18 @@ internal sealed class TransportRoutedBrowserCapabilitySurface(
         InvokeAsync((surface, ct) => surface.GetPageStateAsync(target, call, ct), cancellationToken);
 
     public Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
-        BrowserTabsRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        InvokeAsync((surface, ct) => surface.TabsAsync(request, call, ct), cancellationToken);
+        BrowserTabsRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ObserveEvidence(call);
+        return InvokeAsync((surface, ct) => surface.TabsAsync(request, call, ct), cancellationToken);
+    }
 
     public Task<CapabilityResult<NavigateResult>> NavigateAsync(
-        NavigateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        InvokeAsync((surface, ct) => surface.NavigateAsync(request, call, ct), cancellationToken);
+        NavigateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ObserveEvidence(call);
+        return InvokeAsync((surface, ct) => surface.NavigateAsync(request, call, ct), cancellationToken);
+    }
 
     public Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
@@ -105,16 +155,22 @@ internal sealed class TransportRoutedBrowserCapabilitySurface(
         InvokeAsync((surface, ct) => surface.LocateAsync(request, call, ct), cancellationToken);
 
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
-        BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        InvokeAsync((surface, ct) => surface.InteractAsync(request, call, ct), cancellationToken);
+        BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ObserveEvidence(call);
+        return InvokeAsync((surface, ct) => surface.InteractAsync(request, call, ct), cancellationToken);
+    }
 
     public Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
         BrowserWaitForRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync((surface, ct) => surface.WaitForAsync(request, call, ct), cancellationToken);
 
     public Task<CapabilityResult<JavascriptResult>> ExecuteJavascriptAsync(
-        JavascriptRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        InvokeAsync((surface, ct) => surface.ExecuteJavascriptAsync(request, call, ct), cancellationToken);
+        JavascriptRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ObserveEvidence(call);
+        return InvokeAsync((surface, ct) => surface.ExecuteJavascriptAsync(request, call, ct), cancellationToken);
+    }
 
     private async Task<CapabilityResult<T>> InvokeAsync<T>(
         Func<IDesktopBrowserCapabilitySurface, CancellationToken, Task<CapabilityResult<T>>> invoke,

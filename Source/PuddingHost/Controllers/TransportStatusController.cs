@@ -36,14 +36,16 @@ public sealed class TransportStatusController(IServiceProvider services) : Contr
     public ActionResult<DesktopTransportStatusSnapshot> GetStatus()
     {
         // 浏览器自动化关闭时窄端口/计数器都不注册 ⇒ GetService 返回 null（不注入构造函数，避免整个控制器构造失败）。
-        var usage = services.GetService<DesktopTransportUsageTracker>()?.Current;
+        var tracker = services.GetService<DesktopTransportUsageTracker>();
+        var usage = tracker?.Current;
         return new DesktopTransportStatusSnapshot(
             Available: usage is not null,
             CapabilityChannelCalls: usage?.CapabilityChannelCalls ?? 0,
             LegacyBridgeCalls: usage?.LegacyBridgeCalls ?? 0,
             NoRouteCalls: usage?.NoRouteCalls ?? 0,
             ChannelProven: usage?.ChannelProven ?? false,
-            CanRetireLegacyBridge: usage?.CanRetireLegacyBridge ?? false);
+            CanRetireLegacyBridge: usage?.CanRetireLegacyBridge ?? false,
+            MissingEvidenceCalls: tracker?.MissingEvidenceCalls ?? 0);
     }
 }
 
@@ -67,4 +69,8 @@ public sealed record DesktopTransportStatusSnapshot(
     long LegacyBridgeCalls,
     long NoRouteCalls,
     bool ChannelProven,
-    bool CanRetireLegacyBridge);
+    bool CanRetireLegacyBridge,
+    /// <param name="MissingEvidenceCalls">
+    /// 副作用类能力在**缺失权限证据**时被派发的次数（权限证据链第一阶段只观测；干净窗口应为 0）。
+    /// </param>
+    long MissingEvidenceCalls);

@@ -218,6 +218,16 @@ public sealed class BrowserAgentToolsTests
         IPuddingTool tool,
         string arguments,
         CancellationToken ct = default)
+        => ExecuteAsync(tool, arguments, permissionEvidence: null, ct);
+
+    /// <summary>
+    /// 同上，并带上本次调用的**权限证据**（权限证据链第一阶段的携带断言用）。
+    /// </summary>
+    private static Task<ToolExecutionResult> ExecuteAsync(
+        IPuddingTool tool,
+        string arguments,
+        ToolPermissionEvidence? permissionEvidence,
+        CancellationToken ct = default)
         => tool.ExecuteAsync(new ToolExecutionRequest
         {
             ToolCallId = Guid.NewGuid().ToString("N"),
@@ -226,9 +236,41 @@ public sealed class BrowserAgentToolsTests
             {
                 WorkspaceId = "default",
                 SessionId = "session-1",
-                AgentInstanceId = "agent-1"
+                AgentInstanceId = "agent-1",
+                PermissionEvidence = permissionEvidence
             }
         }, ct);
+
+    [Fact]
+    public async Task MigratedTool_CarriesPermissionEvidence_IntoTheCapabilityCallContext()
+    {
+        // 权限证据链第一阶段：证据从 ToolExecutionContext 经工具作用域到达能力调用上下文。
+        var runtime = new FakeBrowserRuntime();
+        var port = new FakeCapabilitySurface(runtime);
+        var factory = new FakeCallContextFactory();
+        var tool = new BrowserContextTool(port, port, factory, _originAccessor);
+
+        await ExecuteAsync(
+            tool,
+            """{"action":"list"}""",
+            new ToolPermissionEvidence("call-1", "allowed", Source: "workspace-guard"));
+
+        Assert.Equal("decision=allowed;source=workspace-guard", factory.LastPermissionEvidenceSummary);
+    }
+
+    [Fact]
+    public async Task MigratedTool_WithoutPermissionEvidence_PassesNothing_AndDoesNotFakeADenial()
+    {
+        // 未评估是合法状态：摘要为 null，**不得**伪造成 denied（否则接缝将来会误判）。
+        var runtime = new FakeBrowserRuntime();
+        var port = new FakeCapabilitySurface(runtime);
+        var factory = new FakeCallContextFactory();
+        var tool = new BrowserContextTool(port, port, factory, _originAccessor);
+
+        await ExecuteAsync(tool, """{"action":"list"}""");
+
+        Assert.Null(factory.LastPermissionEvidenceSummary);
+    }
 
     private static void AssertJsonOk(string json, string expectedContextId)
     {
@@ -655,8 +697,14 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
 
 internal sealed class FakeCallContextFactory : IDesktopCapabilityCallContextFactory
 {
+    /// <summary>最近一次收到的权限证据摘要（用于断言工具确实把证据带到能力调用上下文）。</summary>
+    public string? LastPermissionEvidenceSummary { get; private set; }
+
     public DesktopCallContext? TryCreate(string? permissionEvidenceSummary, TimeSpan? timeout = null)
-        => TryCreate(timeout);
+    {
+        LastPermissionEvidenceSummary = permissionEvidenceSummary;
+        return TryCreate(timeout);
+    }
 
     public DesktopCallContext? TryCreate(TimeSpan? timeout = null) => new(
         new DesktopInstanceId("desk-test"),
