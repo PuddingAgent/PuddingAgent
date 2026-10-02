@@ -35,6 +35,44 @@ const ThemeModeContext = createContext<ThemeModeContextValue>({
 
 export const useThemeMode = () => useContext(ThemeModeContext);
 
+/**
+ * Web 主题开关的**作用范围**提示（设计规格 §13.x）。
+ *
+ * 宿主（Shell）的工具区、窗口装饰与底部状态条由 Desktop 的外观设置决定，Web 这个开关
+ * 只改 Web 工作台。规格明确要求：**保留 Web 独立选择就必须标明范围**，不能让两个
+ * "看起来都是全局"的开关同时存在却范围不明。实测依据：浅色下 Web 为 #f7f8fa/#ffffff，
+ * 而右侧工具区在深浅两张截图里都是 #27272b/#121212（不随此开关变化）。
+ */
+export const THEME_SCOPE_HINT = '仅 Web 工作台，右侧工具区由 Desktop 外观设置决定';
+
+export interface ThemeToggleCopy {
+  tooltipText: string;
+  /** 可访问名称：只说"Web 工作台主题"，不暗示它会改整个应用 */
+  ariaLabel: string;
+}
+
+/**
+ * 主题开关的文案（纯函数，便于无 UI 单测"范围提示不被删掉"）。
+ */
+export const describeThemeToggle = (
+  themeMode: ThemeMode,
+  isDark: boolean,
+): ThemeToggleCopy => {
+  const state =
+    themeMode === 'system'
+      ? `跟随系统（当前${isDark ? '暗色' : '亮色'}）`
+      : `${isDark ? '暗色' : '亮色'}`;
+  const action =
+    themeMode === 'system'
+      ? '点击切换到手动模式'
+      : `点击切换到${isDark ? '亮色' : '暗色'}`;
+
+  return {
+    tooltipText: `外观（${THEME_SCOPE_HINT}）：${state}，${action}`,
+    ariaLabel: '切换 Web 工作台主题',
+  };
+};
+
 const getStoredThemeMode = (): ThemeMode => {
   if (typeof window === 'undefined') {
     return 'system';
@@ -205,18 +243,14 @@ export const ThemeToggleAction: React.FC<ThemeToggleActionProps> = ({
       <SunOutlined />
     );
 
-  const tooltipText =
-    themeMode === 'system'
-      ? `跟随系统（当前${isDark ? '暗色' : '亮色'}），点击切换到手动模式`
-      : isDark
-        ? '切换到亮色主题'
-        : '切换到暗色主题';
+  // IMG02/§13.x：范围必须在文案里说明（Web 独立开关 + 宿主外观设置并存）
+  const { tooltipText, ariaLabel } = describeThemeToggle(themeMode, isDark);
 
   return (
     <Tooltip title={tooltipText}>
       <Button
         type="text"
-        aria-label="切换主题"
+        aria-label={ariaLabel}
         icon={icon}
         size={compact ? 'small' : undefined}
         onClick={toggleTheme}
