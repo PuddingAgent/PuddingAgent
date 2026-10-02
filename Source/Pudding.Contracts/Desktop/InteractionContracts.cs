@@ -8,6 +8,7 @@ public enum DesktopInteractionAction
 {
     Click,
     Fill,
+    Type,
     Press,
     Check,
     Uncheck,
@@ -24,6 +25,7 @@ public static class DesktopInteractionActionWire
     {
         DesktopInteractionAction.Click => "click",
         DesktopInteractionAction.Fill => "fill",
+        DesktopInteractionAction.Type => "type",
         DesktopInteractionAction.Press => "press",
         DesktopInteractionAction.Check => "check",
         DesktopInteractionAction.Uncheck => "uncheck",
@@ -128,7 +130,7 @@ public sealed record BrowserInteractRequest
 
         switch (Action)
         {
-            case DesktopInteractionAction.Fill or DesktopInteractionAction.Press when Text is null:
+            case DesktopInteractionAction.Fill or DesktopInteractionAction.Press or DesktopInteractionAction.Type when Text is null:
                 throw new ArgumentException($"Action '{DesktopInteractionActionWire.NameOf(Action)}' requires text.", nameof(Text));
 
             case DesktopInteractionAction.Select when Values is null || Values.Count == 0:

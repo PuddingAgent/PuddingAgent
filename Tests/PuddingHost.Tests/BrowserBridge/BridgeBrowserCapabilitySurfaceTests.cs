@@ -640,6 +640,22 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         Assert.Equal(4, result.Value.Element.PageVersion.Value);
     }
 
+    [Fact]
+    public async Task Interact_Type_ReachesTheRuntimeTypeApi()
+    {
+        // 加宽 #7：契约新增 type 动作；它与 fill 语义不同（逐字输入），必须走运行时的 TypeAsync。
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Type, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "input"), text: "hello"), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.Equal("hello", page.LastTyped);
+    }
+
     private static BridgeBrowserCapabilitySurface Create(FakePage page) => new(new FakeRuntime(page));
 
     private static BridgeBrowserCapabilitySurface Create(FakeRuntime runtime) => new(runtime);
@@ -750,6 +766,8 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public ScrollOptions? LastScroll { get; private set; }
 
+        public string? LastTyped { get; private set; }
+
         public Func<Uri, NavigationResult>? Navigate { get; init; }
 
         public Func<BrowserScript, BrowserScriptValue>? Script { get; init; }
@@ -837,7 +855,12 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public Task FillAsync(Locator locator, string value, FillOptions options, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct) => throw new NotSupportedException();
+        public Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct)
+        {
+            LastTyped = text;
+            Version++;
+            return Task.CompletedTask;
+        }
 
         public Task PressAsync(Locator locator, string key, KeyOptions options, CancellationToken ct) => throw new NotSupportedException();
 

@@ -16,7 +16,7 @@ public sealed class InteractContractTests
     public void ActionLineNames_AreFrozenAndUnknownIsRejected()
     {
         Assert.Equal(
-            ["click", "fill", "press", "check", "uncheck", "select", "hover", "scroll", "focus"],
+            ["click", "fill", "type", "press", "check", "uncheck", "select", "hover", "scroll", "focus"],
             Enum.GetValues<DesktopInteractionAction>().Select(DesktopInteractionActionWire.NameOf).ToArray());
 
         Assert.True(DesktopInteractionActionWire.TryParse("uncheck", out var uncheck));

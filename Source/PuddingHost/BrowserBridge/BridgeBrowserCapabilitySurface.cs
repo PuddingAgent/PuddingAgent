@@ -553,6 +553,9 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
             case DesktopInteractionAction.Fill:
                 await page.FillAsync(locator, request.Text!, new FillOptions(), cancellationToken).ConfigureAwait(false);
                 break;
+            case DesktopInteractionAction.Type:
+                await page.TypeAsync(locator, request.Text!, new TypeOptions(), cancellationToken).ConfigureAwait(false);
+                break;
             case DesktopInteractionAction.Press:
                 await page.PressAsync(locator, request.Text!, new KeyOptions(), cancellationToken).ConfigureAwait(false);
                 break;
