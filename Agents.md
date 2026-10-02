@@ -153,6 +153,68 @@ python dev-up.py --status
 - **日志是摘要不是证据仓库**：完整证据留在 `Docs/14_reports/`、`Docs/16_qa/`，日志只链接；敏感信息（apiKey、ControlToken、隐私数据）不入日志。
 - 已写入的日志**追加式、可更正、不抹除**；更正写成「更正（YYYY-MM-DD）：…」。
 
+## Docs 目录与文档规范（强制）
+
+**目录地图**（一级目录统一 `NN_english_snake`；新增目录必须编号 + 英文小写，并在 `Docs/README.md` 登记）：
+
+| 目录 | 放什么 |
+|------|--------|
+| `Docs/00_changelog/` | 修改日志（唯一去处；规则见其 README） |
+| `Docs/01_message_channels/` · `02_agent_runtime/` · `03_multi_agent/` · `04_tools_and_skills/` · `05_providers_and_models/` | 主题文档：渠道 / 智能体运行时 / 多智能体 / 工具与技能 / 服务商与模型 |
+| `Docs/06_config/` | 配置说明（hooks、pudding-yaml 等） |
+| `Docs/07_architecture/` | 架构分册与 ADR（含 `design/`） |
+| `Docs/08_how_debuge/` | 调试与诊断手册（主索引 README + 分册） |
+| `Docs/09_audit/` | 审计清单 |
+| `Docs/10_conventions/` | 规程与约定（组件化交付、仓库卫生、SUBAGENTS、协作协议） |
+| `Docs/11_design/` | 设计规格与视觉/UI 设计 |
+| `Docs/12_features/` | 设计方案、施工计划、任务书（面向未来施工） |
+| `Docs/13_runbooks/` | 运行手册、部署/回滚/一次性操作 |
+| `Docs/14_reports/` | 诊断 / 验收 / 评测报告（一次性证据） |
+| `Docs/15_tasks/` | 任务、待办、路线图、历史任务卡 |
+| `Docs/16_qa/` | 验收记录与审阅索引 |
+| `Docs/17_memory/` | 记忆快照 |
+| `Docs/18_superpowers/` | 外部方法论资料（plans / specs） |
+| `Docs/19_references/` | 外部参考项目研究（deepseek_harness 等） |
+| `Docs/20_resources/` | 图片等静态资源 |
+| `Docs/90_archive/` | 归档（只加不改） |
+
+**硬性规则**：
+
+1. **Docs 根目录只允许 `README.md`**（目录地图与规范入口）。新文档按性质放进上面的目录，禁止新增根文件。
+2. **文件名保留语义名**（中文主题、日期均可）：重命名文件必须同步全仓库引用；重命名/移动目录必须脚本化改写同步 190+ 处引用，并用链接检查脚本验证。
+3. **站内引用必须真实可解析**：优先相对路径；写完用 `python Tools/Docs/check_md_links.py`（检查 Docs/，`--all-repo` 可全仓库；有失效目标或锚点即非零退出）自查。
+4. **第三方参考仓库只放 `external/references/<name>`，并以 git submodule 管理**（同步 `.gitmodules`）；**禁止修改子仓库内容**，其内部链接失效属上游问题。
+5. **Front Matter**：每个 `Docs/**/*.md` 开头必须有标准 Front Matter（见下节），新增文档即刻补齐。
+6. **归档与日志**：`00_changelog/` 追加式（不抹除历史）；`90_archive/` 只加不改。
+
+## Markdown Front Matter 规则（强制）
+
+**每个 `Docs/**/*.md` 开头必须有 Front Matter**，字段固定 12 项：
+
+```yaml
+---
+title: <标题（取首个 H1）>
+author: <作者（git 首次提交作者）>
+date: 2026-10-02                 # 创建日期（git 首次提交）
+last_reviewed: 2026-10-02        # 最近复核/改动日期（git 最后提交）
+status: active                   # draft | proposed | active | deprecated | archived
+description: "<概要：首个段落 / 引用块 / 表首行>"
+categories: [docs, features]     # [docs, <所属目录>]
+tags: [adr, desktop, shell]
+related_docs: [Docs/14_reports/X.md]                            # 文内引用的其他文档（仓库相对路径）
+related_files: [Source/PuddingDesktop/PuddingDesktop.csproj]     # 关联文件
+slug: features-adr-desktop-shell-webui-separate-core-2026-09-29
+draft: false
+---
+```
+
+- **校验/补齐工具**：`python Tools/Docs/front_matter.py --check`（不合规非零退出，可作门禁）；
+  `--fix` 只补缺失字段、不覆盖已有值（`--force` 才覆盖非法值），幂等可重复执行；
+  另有 `--dry-run` 预览、`--paths` 限定范围、`--report` 输出 JSON 明细、`--all-repo` 扩展到全仓库。
+- `related_docs` / `related_files` 允许为空列表（确实无引用）；`categories` / `tags` 不得为空。
+- `status` 取值受限：时间序日志（`00_changelog/20xxYear/**`）与 `90_archive/**` 用 `archived`，其余默认 `active`。
+- 新增/移动文档后**必须**让 `--check` 通过；门禁失败即视为任务未完成。
+
 ## 运行时配置
 
 > 这里指的是pudding的运行时配置，主要是指运行时的环境变量和工作目录。而不是你的或者项目开发代码的。

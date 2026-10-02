@@ -4,94 +4,120 @@ author: hyfree
 date: 2026-02-12
 last_reviewed: 2026-10-02
 status: active
-description: 这里是 Pudding Agent 的设计入口。当前产品主线是 Windows First 的 PuddingDesktop.exe：WPF 负责 Windows 11 Shell、WebView2 和进程监督，独立的 ASP.NET Core 子进程继续承载 API、Controller、Runtime、Connector 和 SQLite。现有 Web Workbench 通过内置静态资源复用
+description: "这里是 Pudding Agent 的设计入口。当前产品主线是 Windows First 的 PuddingDesktop.exe：WinUI 3 Shell 承载窗口/托盘/WebView2 与独立 ASP.NET Core 子进程监督，Core 继续承载 API、Controller、Runtime、Connector 与 SQLite。"
 categories: [docs]
 tags: [readme]
-related_docs: [Docs/00_changelog/README.md, code_map.md, Agents.md, Docs/00_changelog/2026Year/10/2026-10-02-Docs-README迁出的按日期进展记录.md]
-related_files: [code_map.md, Agents.md, Docs/07_architecture/架构.md, Docs/07_architecture/README.md, Docs/15_tasks/Tasks.md, Docs/06_config/hooks.md, Docs/06_config/pudding-yaml.md, Docs/07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md, Docs/07_architecture/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md, Docs/07_architecture/68抖音接入与通用WebView2自动化开发实施规格.md, Docs/07_architecture/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md, Docs/07_architecture/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md, Docs/07_architecture/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md, Docs/07_architecture/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md, Docs/07_architecture/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md, Docs/07_architecture/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md, Docs/07_architecture/75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md, Docs/07_architecture/76Phase2A-3通用WebView2页面操作实施验收报告.md, Docs/07_architecture/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md, Docs/07_architecture/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md]
+related_docs: [Docs/00_changelog/README.md, code_map.md, Agents.md, Docs/07_architecture/架构.md, Docs/07_architecture/README.md]
+related_files: [code_map.md, Agents.md, Tools/Docs/front_matter.py, Docs/00_changelog/README.md]
 slug: docs-readme
 draft: false
 ---
 
 # Pudding Agent Network 文档索引
 
-> **修改日志请写 [`00Changelog/`](00_changelog/README.md)，不要写进本文件。** 本文件是文档索引；日志规则见 [00Changelog/README.md](00_changelog/README.md)，代码索引规则见根 [`code_map.md`](../code_map.md) 与 [`Agents.md`](../Agents.md)。
-> 本文件只做文档索引（放什么、在哪、怎么读）。**按日期的进展、状态与验收结论请写 `Docs/00_changelog/`**；原先堆积在这里的按日期进展已迁至 [`00Changelog/2026Year/10/2026-10-02-Docs-README迁出的按日期进展记录.md`](00_changelog/2026Year/10/2026-10-02-Docs-README迁出的按日期进展记录.md)。
+> 本文件是 **Docs 目录地图与规范入口**：放什么、在哪、怎么命名、怎么校验。
+> **修改日志写 [`00_changelog/`](00_changelog/README.md)，不写进本文件**；代码索引见根 [`code_map.md`](../code_map.md)；强制规则见 [`Agents.md`](../Agents.md) 的「Docs 目录与文档规范」与「Markdown Front Matter 规则」。
 
-## 文档定位
+## 目录地图
 
-这里是 Pudding Agent 的设计入口。当前产品主线是 Windows First 的 `PuddingDesktop.exe`：WPF 负责 Windows 11 Shell、WebView2 和进程监督，独立的 ASP.NET Core 子进程继续承载 API、Controller、Runtime、Connector 和 SQLite。现有 Web Workbench 通过内置静态资源复用，产品运行不依赖命令行、Python 或 Node。
+一级目录统一 `NN_english_snake`（新增目录必须编号 + 英文小写，并在此表登记）。
+
+| 目录 | 放什么 | 入口 |
+|------|--------|------|
+| `00_changelog/` | 修改日志（唯一去处，按 `<YYYY>Year/<MM>/` 分层） | [README](00_changelog/README.md) |
+| `01_message_channels/` | 消息渠道（飞书等） | — |
+| `02_agent_runtime/` | 智能体与智能体运行时 | — |
+| `03_multi_agent/` | 多智能体协作 | — |
+| `04_tools_and_skills/` | 工具系统与技能 | — |
+| `05_providers_and_models/` | 服务商与模型 | — |
+| `06_config/` | 配置说明（hooks、pudding-yaml） | [hooks](06_config/hooks.md) · [pudding-yaml](06_config/pudding-yaml.md) |
+| `07_architecture/` | 架构分册与 ADR（含 `design/`） | [架构总览](07_architecture/架构.md) · [分册入口](07_architecture/README.md) |
+| `08_how_debuge/` | 调试与诊断手册（主索引 + 01～15 分册） | [README](08_how_debuge/README.md) |
+| `09_audit/` | 审计清单 | — |
+| `10_conventions/` | 规程与约定（组件化交付、仓库卫生、SUBAGENTS、协作协议） | [组件化交付规程](10_conventions/组件化交付规程.md) · [Agents-Hygiene](10_conventions/Agents-Hygiene.md) |
+| `11_design/` | 设计规格与视觉/UI 设计 | — |
+| `12_features/` | 设计方案、施工计划、任务书（面向未来施工） | — |
+| `13_runbooks/` | 运行手册、部署/回滚/一次性操作 | — |
+| `14_reports/` | 诊断 / 验收 / 评测报告（一次性证据） | — |
+| `15_tasks/` | 任务、待办、路线图、历史任务卡 | [Tasks](15_tasks/Tasks.md) · [待办](15_tasks/待办.md) · [路线图](15_tasks/路线图.md) |
+| `16_qa/` | 验收记录与审阅索引 | [Review](16_qa/Review.md) |
+| `17_memory/` | 记忆快照 | — |
+| `18_superpowers/` | 外部方法论资料（`plans/`、`specs/`） | — |
+| `19_references/` | 外部参考项目研究（`deepseek_harness/` 等） | — |
+| `20_resources/` | 图片等静态资源（`Images/`） | — |
+| `90_archive/` | 归档（只加不改） | — |
+
+**Docs 根目录只允许本文件（`README.md`）**；新文档按性质进入上表目录，禁止新增根文件。
+**第三方参考仓库**统一放在 `external/references/<name>` 并以 git submodule 管理（禁止修改其内容）。
+
+## 放什么 → 去哪（决策表）
+
+| 内容 | 去处 |
+|------|------|
+| 「这轮改了什么、验证到哪」 | `00_changelog/`（追加式，不抹除） |
+| 长期有效的架构决策 | `07_architecture/`（ADR） |
+| 面向未来的设计方案 / 施工计划 | `12_features/` |
+| 设计规格、视觉/UI 设计 | `11_design/` |
+| 一次性诊断 / 验收 / 评测证据 | `14_reports/`、`16_qa/` |
+| 操作手册、部署/回滚步骤 | `13_runbooks/` |
+| 规程、门禁、交付纪律 | `10_conventions/` |
+| 任务、待办、路线图 | `15_tasks/` |
+| 外部项目的对照研究 | `19_references/` |
+| 过期但需留痕的材料 | `90_archive/` |
+
+## 命名与 Front Matter
+
+- **文件名保留语义名**（中文主题、日期均可）；重命名/移动必须脚本化同步全仓库引用。
+- **每个 md 开头必须有 Front Matter**（12 个字段：`title / author / date / last_reviewed / status / description / categories / tags / related_docs / related_files / slug / draft`），规则与示例见 [`Agents.md`](../Agents.md)「Markdown Front Matter 规则（强制）」。
+- 门禁命令：
+
+```bash
+python Tools/Docs/front_matter.py --check          # 不合规非零退出
+python Tools/Docs/front_matter.py --fix --dry-run  # 预览将补齐的内容
+python Tools/Docs/front_matter.py --fix            # 补齐（只补缺失，不覆盖已有值）
+```
 
 ## 建议阅读顺序
 
-1. `Docs/07_architecture/架构.md`
-	 - 架构总览、分层边界与阅读地图。
-2. `Docs/07_architecture/README.md`
-	 - 模块级架构分册入口，包含 Runtime、Controller、Platform、治理、数据模型与 V1 落地说明。
-	 - 其中 `10事件系统与事件总线.md` 负责解释统一事件模型、订阅、唤醒、重放与死信策略。
-	 - `11工作流与任务图.md` 负责解释工作流节点类型、触发方式、任务图表达与 Agent 生命周期。
-
-3. `Docs/15_tasks/Tasks.md`
-	 - 全局任务入口与 V1 目标，任务状态通过 Todo API 实时查询，不依赖硬编码表格。
+1. [`07_architecture/架构.md`](07_architecture/架构.md) — 架构总览、分层边界与阅读地图。
+2. [`07_architecture/README.md`](07_architecture/README.md) — 模块级分册入口（Runtime / Controller / Platform / 治理 / 数据模型 / V1 落地）。
+3. [`15_tasks/Tasks.md`](15_tasks/Tasks.md) — 全局任务入口；任务状态以任务看板为准，不硬编码。
+4. [`08_how_debuge/README.md`](08_how_debuge/README.md) — 需要调试、找日志埋点时从这里进。
 
 ## 主题文档分组
 
 ### 1. 渠道、网关与接入
 
-- `Docs/06智能体网关/`
-- `Docs/06_config/hooks.md`
-- `Docs/06_config/pudding-yaml.md`
-- `Docs/07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md`
-- `Docs/07_architecture/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md`
-- `Docs/07_architecture/68抖音接入与通用WebView2自动化开发实施规格.md`
-- `Docs/07_architecture/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md`
-- `Docs/07_architecture/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md`
-- `Docs/07_architecture/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md`
-- `Docs/07_architecture/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md`
-- `Docs/07_architecture/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md`
-- `Docs/07_architecture/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md`
-- `Docs/07_architecture/75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md`
-- `Docs/07_architecture/76Phase2A-3通用WebView2页面操作实施验收报告.md`
-- `Docs/07_architecture/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md`
-- `Docs/07_architecture/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md`
-- `Docs/07_architecture/79Phase2A-3C真实Agent会话WebView2控制闭环开发工作指令.md`
+- [`01_message_channels/`](01_message_channels/)
+- [`06_config/hooks.md`](06_config/hooks.md) · [`06_config/pudding-yaml.md`](06_config/pudding-yaml.md)
+- [`07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md`](07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md)
+- Browser / WebView2 系列规格：`07_architecture/67`～`79`（ADR-066 抖音接入、Phase 2A-1/2/3 工作指令与验收报告）
 
 ### 2. 智能体、运行时与协作
 
-- `Docs/02_agent_runtime/`
-- `Docs/03_multi_agent/`
-- `Docs/04_tools_and_skills/`
-- `Docs/07_architecture/`
+- [`02_agent_runtime/`](02_agent_runtime/) · [`03_multi_agent/`](03_multi_agent/) · [`04_tools_and_skills/`](04_tools_and_skills/) · [`07_architecture/`](07_architecture/)
 
 ### 2.1 上下文、缓存与输入压缩
 
-- `Docs/07_architecture/18上下文缓存可观测性ADR.md`
-- `Docs/07_architecture/43ADR-042上下文自动压缩与主动Compact命令ADR.md`
-- `Docs/07_architecture/44ADR-043缓存统计闭环ADR.md`
-- `Docs/07_architecture/104ADR-090上下文压缩触发口径来源标注与收益准入收敛ADR.md`
-- `Docs/12_features/上下文自动压缩与Compact命令设计方案.md`
-- `Docs/12_features/上下文Token效率缓存命中与分级压缩优化设计方案.md`
+- [`07_architecture/18上下文缓存可观测性ADR.md`](07_architecture/18上下文缓存可观测性ADR.md)
+- [`07_architecture/43ADR-042上下文自动压缩与主动Compact命令ADR.md`](07_architecture/43ADR-042上下文自动压缩与主动Compact命令ADR.md)
+- [`07_architecture/44ADR-043缓存统计闭环ADR.md`](07_architecture/44ADR-043缓存统计闭环ADR.md)
+- [`07_architecture/104ADR-090上下文压缩触发口径来源标注与收益准入收敛ADR.md`](07_architecture/104ADR-090上下文压缩触发口径来源标注与收益准入收敛ADR.md)
+- [`12_features/上下文自动压缩与Compact命令设计方案.md`](12_features/上下文自动压缩与Compact命令设计方案.md)
+- [`12_features/上下文Token效率缓存命中与分级压缩优化设计方案.md`](12_features/上下文Token效率缓存命中与分级压缩优化设计方案.md)
 
-该主题用于跟踪 token 成本治理、服务商前缀缓存命中、工具输出/日志/文件/RAG 块进入 LLM 前的压缩策略，以及 Headroom 作为参考项目或可选适配器的评估结果。
+用于跟踪 token 成本治理、服务商前缀缓存命中，以及工具输出/日志/文件/RAG 块进入 LLM 前的压缩策略。
 
 ### 3. 历史任务与设计演进记录
 
-- `Docs/15_tasks/task04-swarm.md` 到 `Docs/15_tasks/task18-positioning.md`
-- `Docs/15_tasks/task19-coding-agent-blueprint.md`
-- `Docs/15_tasks/task20-cli-ui-ux.md`
-- `Docs/15_tasks/task21-subconscious-dual-llm.md`
-- `Docs/15_tasks/task22-agent-roles-orchestration.md`
-- `Docs/15_tasks/task23-central-lock-coordination.md`
+- [`15_tasks/`](15_tasks/) 下的 `task04-swarm.md` ～ `task23-central-lock-coordination.md` 等历史任务卡与阶段总结。
 
-这些文档仍然有价值，但需要放在新的 Platform / Runtime / Workspace 治理主线下理解，不能再单独代表产品总方向。
+这些文档仍可参考，但要在当前 Platform / Runtime / Workspace 治理主线下阅读，不能单独代表产品方向。
 
 ## 当前架构基线
 
-- V1 目标：`PuddingDesktop.exe` 双击启动并监督独立 ASP.NET Core 子进程
-- WPF 提供 Windows 11 Shell、Workbench WebView2、Agent Browser、运行中心和存储管理
-- Core 继续承载 Web UI 静态资源、Controller、Runtime、Connector 与 SQLite
-- Desktop 托管的 Core 使用 `system.json` 可配置固定端口（默认 8080）绑定 `0.0.0.0`；Desktop 控制流固定走同端口 `127.0.0.1`
-- 支持 LLM 多轮对话（带工具调用）
-- 支持 P2P 节点发现与直连通信（mDNS + HTTP/gRPC）
-- Console Host 只作为开发和诊断入口
-- 任务管理已迁移至 Todo API（`python .github/skills/todo-api/todo_api.py`）
+- 产品入口：`PuddingDesktop.exe`（**WinUI 3 Shell**）双击启动，负责窗口、托盘、系统集成与 Core 子进程监督。
+- Core 作为独立 ASP.NET Core 子进程（`core/PuddingAgent.exe --desktop-child`）承载 Web UI 静态资源、API/Controller、Runtime、Connector 与 SQLite。
+- Web 业务界面保留在 WebView2 中承载；DesktopHome/`desktop.json` 存 DataRoot/Core 路径/窗口与关闭行为，`<DataRoot>/config/system.json` 存端口、ControlToken、启动超时与恢复策略。
+- `dev-up.py`（`Tools/Dev/dev-up.py`，根目录为转发 shim）只用于源码开发态，不进入交付包，也不替代 Desktop 的进程主管职责。
+- Console Host 只作开发与诊断入口；Phase 1A/1B-R/1B-S 与 Phase 2A-1/2/3 的确定性实现已验收，真实模型 smoke 与进程外验收按需单独判定。
