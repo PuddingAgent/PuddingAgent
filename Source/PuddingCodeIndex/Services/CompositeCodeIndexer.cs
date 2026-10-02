@@ -33,7 +33,7 @@ namespace PuddingCodeIndex.Services;
 /// <see cref="RemoveWorkspaceIndexAsync"/> requires <b>all</b> languages to succeed.
 /// </para>
 /// </remarks>
-public sealed class CompositeCodeIndexer : ICodeIndexer, ICodeIndexFileUpdater
+public sealed class CompositeCodeIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIndexFileBatchUpdater
 {
     /// <summary>Separator of the per-language messages merged into <see cref="CodeIndexResult.Message"/>.</summary>
     internal const string MessageSeparator = " | ";
@@ -159,6 +159,182 @@ public sealed class CompositeCodeIndexer : ICodeIndexer, ICodeIndexFileUpdater
         // The owner's result is returned unchanged — including its Failed, whose message is the owner's own
         // diagnosis ("Node.js not available", "File does not exist", …). Nothing is merged at this level.
         return updater.IndexFileAsync(workspace, filePath, cancellationToken);
+    }
+
+    /// <summary>
+    /// Processes a batch by routing every path to its single owning language (D3, 2026-10-02).
+    /// <para>
+    /// Routing outcomes are explicit and never conflated:
+    /// <list type="bullet">
+    ///   <item><description>No registered language owns the extension ⇒ <see cref="CodeIndexConsumerStatus.NotApplicable"/>.
+    ///     That is a capability-routing result — a Markdown note is not "a source file that failed".</description></item>
+    ///   <item><description>The owner implements this batch port ⇒ its outcomes are returned unchanged
+    ///     (Applied payloads, Retryable reasons, ScopeRunRequired included).</description></item>
+    ///   <item><description>The owner has only the per-file capability ⇒ it is called once for that path and its
+    ///     result is mapped (success ⇒ Applied, failure ⇒ Retryable with the owner's own diagnosis), so a
+    ///     language-level failure becomes a retry instead of a whole-repository run.</description></item>
+    ///   <item><description>The owner has neither ⇒ <see cref="CodeIndexConsumerStatus.ScopeRunRequired"/> with a
+    ///     reason the caller can act on.</description></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// One language throwing is contained per path: the remaining paths (and languages) still get their result.
+    /// </para>
+    /// </summary>
+    /// <inheritdoc />
+    public async Task<CodeIndexFileBatchResult> UpdateFilesAsync(
+        CodeWorkspaceDescriptor workspace,
+        IReadOnlyCollection<string> filePaths,
+        CodeIndexBatchContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var paths = (filePaths ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (paths.Length == 0)
+            return new CodeIndexFileBatchResult([], context.ConfigurationFingerprint, SessionKey: null);
+
+        // Group by owner so one batch port call per language covers all of its files: a language that
+        // reuses an engine/compile snapshot must not be invoked once per path.
+        var byOwner = new Dictionary<ILanguageCodeIndexer, List<string>>();
+        var outcomes = new List<CodeFileIndexOutcome>(paths.Length);
+        var sessionKeyParts = new List<string>();
+
+        foreach (var path in paths)
+        {
+            var owner = FindOwner(path);
+
+            if (owner is null)
+            {
+                outcomes.Add(new CodeFileIndexOutcome(
+                    path,
+                    CodeIndexConsumerStatus.NotApplicable,
+                    Reason: "no registered language owns the file"));
+                continue;
+            }
+
+            if (owner is not ICodeIndexFileBatchUpdater)
+            {
+                outcomes.Add(await RouteWithoutBatchCapabilityAsync(workspace, owner, path, cancellationToken)
+                    .ConfigureAwait(false));
+                continue;
+            }
+
+            if (!byOwner.TryGetValue(owner, out var owned))
+            {
+                owned = [];
+                byOwner[owner] = owned;
+            }
+
+            owned.Add(path);
+        }
+
+        foreach (var (owner, owned) in byOwner)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var result = await ((ICodeIndexFileBatchUpdater)owner)
+                    .UpdateFilesAsync(workspace, owned, context, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (result?.SessionKey is { Length: > 0 } key)
+                    sessionKeyParts.Add($"{owner.Language}:{key}");
+
+                var reported = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var outcome in result?.Outcomes ?? [])
+                {
+                    if (outcome is null || string.IsNullOrWhiteSpace(outcome.FilePath))
+                        continue;
+
+                    outcomes.Add(outcome);
+                    reported.Add(outcome.FilePath);
+                }
+
+                // A language that silently drops a requested path would lose the change; report it as retryable.
+                foreach (var path in owned.Where(path => !reported.Contains(path)))
+                {
+                    outcomes.Add(new CodeFileIndexOutcome(
+                        path,
+                        CodeIndexConsumerStatus.Retryable,
+                        Reason: $"{owner.Language} did not report a result for this file"));
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Language indexer {Language} threw during a batch update.", owner.Language);
+
+                foreach (var path in owned)
+                {
+                    outcomes.Add(new CodeFileIndexOutcome(
+                        path,
+                        CodeIndexConsumerStatus.Retryable,
+                        Reason: $"{owner.Language} threw: {ex.Message}"));
+                }
+            }
+        }
+
+        // Stable order: callers (and tests) must not depend on dictionary iteration.
+        var ordered = outcomes
+            .OrderBy(outcome => outcome.FilePath, StringComparer.Ordinal)
+            .ToArray();
+
+        return new CodeIndexFileBatchResult(
+            ordered,
+            context.ConfigurationFingerprint,
+            sessionKeyParts.Count == 0 ? null : string.Join(MessageSeparator, sessionKeyParts));
+    }
+
+    /// <summary>
+    /// Routes one path to an owner that has no batch capability: per-file capability becomes an Applied/Retryable
+    /// result, and its absence becomes <see cref="CodeIndexConsumerStatus.ScopeRunRequired"/> (the caller decides).
+    /// </summary>
+    private async Task<CodeFileIndexOutcome> RouteWithoutBatchCapabilityAsync(
+        CodeWorkspaceDescriptor workspace,
+        ILanguageCodeIndexer owner,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        if (owner is not ICodeIndexFileUpdater updater)
+        {
+            return new CodeFileIndexOutcome(
+                filePath,
+                CodeIndexConsumerStatus.ScopeRunRequired,
+                Reason: $"the owning language indexer ({owner.Language}) has no per-file or batch capability");
+        }
+
+        try
+        {
+            // The per-file port writes to the store itself, so no payload travels back: the caller only
+            // needs to know whether it succeeded.
+            var result = await updater.IndexFileAsync(workspace, filePath, cancellationToken).ConfigureAwait(false);
+
+            return result.Success
+                ? new CodeFileIndexOutcome(filePath, CodeIndexConsumerStatus.Applied, Payload: null)
+                : new CodeFileIndexOutcome(filePath, CodeIndexConsumerStatus.Retryable, Reason: result.Message);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Language indexer {Language} threw for {FilePath}.", owner.Language, filePath);
+            return new CodeFileIndexOutcome(
+                filePath,
+                CodeIndexConsumerStatus.Retryable,
+                Reason: $"{owner.Language} threw: {ex.Message}");
+        }
     }
 
     /// <summary>Finds the single language implementation that owns <paramref name="filePath"/>.</summary>

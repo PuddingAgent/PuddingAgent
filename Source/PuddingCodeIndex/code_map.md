@@ -22,6 +22,7 @@
 | `ICodeIndexer.cs` | 索引器端口（实现在 Intelligence）；**只含全量** `IndexWorkspaceAsync` / `RemoveWorkspaceIndexAsync` |
 | `ICodeIndexFileUpdater.cs` | **U3-B3** 按文件增量**可选能力端口**（`IndexFileAsync(descriptor, filePath)`）：故意不放进 `ICodeIndexer` —— 给全量端口加成员会破坏**每一个**实现者（实测 2026-09-24：成员版直接弄坏了禁写路径 `Tests/PuddingHost.Tests` 的替身）；不实现该能力 ⇒ 调用方升级为 scope 级重索引 |
 | `ICodeIndexScheduler.cs` | 后台调度端口（成员语义未变） |
+| `CodeIndexBatchContracts.cs` | **D3/D4 语言侧批量接缝**（2026-10-02）：`CodeIndexConsumerStatus` 四态（`Applied` / **`NotApplicable`＝能力路由结果** / `Retryable`＝按路径退避 / `ScopeRunRequired`＝只能给项目级结论，交调用方决定）；`CodeFileIndexPayload`（提取结果，**由调用方原子提交**，不在这里写库）；`CodeFileIndexOutcome`；`CodeIndexBatchContext`（配置/策略指纹 + 世代号，批内复用一个工程快照的键）；`CodeIndexFileBatchResult`（含 `SessionKey`，供「批内是否重复打开工程」诊断）；`ICodeIndexFileBatchUpdater` |
 | `ICodeIndexSchedulerDriver.cs` | **U3-B1** 显式泵端口（`ProcessPendingAsync` + 每 scope `Desired/Committed` 水位） |
 | `ICodeIndexMaintenance.cs` | **U3-B1** 变更驱动维护服务的生命周期/只读观测契约 + `CodeIndexMaintenanceScopeStatus`（**U3-B3** 状态增 `RemovedFileCount` / `IncrementallyIndexedFileCount` / `ScopeEscalationCount`；**U3-C** 再增 `SweptFileCount` / `CalibrationRunCount` / `RejectedCalibrationRunCount` / `LastCalibrationAtUtc`；**U3-D** `CalibrationRunCount` 计入常规（周期）校准；`LastCalibrationAtUtc` 同时是常规时钟的锚） |
 | `ICodeIndexScopeRegistry.cs` | 范围注册端口 |
@@ -58,6 +59,8 @@
 | 文件 | 用途 |
 |------|------|
 | `CodeIndexScheduler.cs` | 索引调度器（**U3-B1：显式驱动，无自建后台线程**；in-flight 期间到达的请求置脏并在结束后重新入队，不再丢弃）；**U3-G1：取消分支不再“什么都不写”** —— 保持 `Status=Registering`（语义不变，“仍欠一次完整运行”）的前提下盖章一句可区分的 `StatusMessage`（含 `interrupted` / `cancelled`）；**仅当该行确实处于 `Registering` 时才盖章**（在认领该行之前就被取消的运行不得被记成“被中断”，已 `Removed`/`Active` 的行也绝不能被翻回 `Registering`）。未新增状态枚举值，未动附着判据 |
+| `CompositeCodeIndexer.cs` | 聚合：把「注册的 `ICodeIndexer`」变成「所有注册语言」；全量运行**至少一个语言成功即成功**（缺少可选工具链是环境事实，不得让已索引好的 scope 变 Failed），删除运行要求**所有**语言成功。**逐文件路由**（U3-B3）：`IndexFileAsync` 把文件交给唯一 owner（`SupportedExtensions` 是「这是源文件」的唯一真源），无 owner/无按文件能力 ⇒ `Failed`（调用方据此升级，合同未变）。**批量路由**（D3，2026-10-02）：`UpdateFilesAsync` 按 owner 分组，**同一语言一次调用**（批内复用一个工程快照）；无 owner ⇒ `NotApplicable`（能力路由结果，不是失败）；owner 只有逐文件能力 ⇒ 调它并映射为 `Applied`/`Retryable`；两者都没有 ⇒ `ScopeRunRequired`；语言抛错/静默丢路径按路径转成 `Retryable`（都带原因），绝不因此升级整仓 |
+| `CodeFileSemanticDiff.cs` | **D3 语义差异（纯函数）**（2026-10-02）：新旧符号集 → 需要让依赖方重新绑定的符号 id（消失 ∪ 名称/种类/签名/容器变化）；**行号变化不算**；**新增符号不算**（没有旧依赖方）；首次索引（无基线）返回空（图里还没有依赖方） |
 | `CodeIndexScopeRegistry.cs` | 范围注册表（幂等 ensure / 父子覆盖 / 生命周期） |
 | `CodeIndexScopeResolver.cs` | 范围解析器（已注册范围优先，否则根探测 + 自动注册） |
 | `CodeProjectRegistry.cs` | 项目注册（`ICodeProjectRegistry` 实现） |
@@ -89,7 +92,7 @@
 ## 测试
 
 **`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
-**261 用例**（2026-10-02 实测；含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**，**U3-G1 后 114 → 116：+2 条取消标记 + 对照用例**；**高磁盘读取修复 C 后 +7：4 条入边/出边/自引用/跨 scope 语义 + 3 条删除计划与 VDBE 工作量用例**；**D2 第一阶段 +25：源指纹 / 三源变更判定 / 删除可证实性 / 水位规则**；**D2 第二阶段 +15：账本捕获版本、消费者水位、扫描水位前置条件、世代作废与退避阶梯**；**D2 存储 +14：manifest/账本往返、单事务原子性、删除连带水位、回退写入拒绝**；**D2 校准 +17：元数据扫描器 8 条（忽略剪枝/不完整/触顶/规则异常）+ 校准服务 9 条（增删改候选、水位不推进、根不可用不删、能力缺失降级）**；**D4 原子替换 +10：同事务提交、所有权重建、稳定入边保留、消失目标报告依赖方、批次回滚、分块删除**；**D3 更新计划 +15：动作映射与顺序、只沿已知符号变化扩展、退避不驱动依赖方、扩展触顶 Truncated、图查询分块与双来源**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+**280 用例**（2026-10-02 实测；含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**，**U3-G1 后 114 → 116：+2 条取消标记 + 对照用例**；**高磁盘读取修复 C 后 +7：4 条入边/出边/自引用/跨 scope 语义 + 3 条删除计划与 VDBE 工作量用例**；**D2 第一阶段 +25：源指纹 / 三源变更判定 / 删除可证实性 / 水位规则**；**D2 第二阶段 +15：账本捕获版本、消费者水位、扫描水位前置条件、世代作废与退避阶梯**；**D2 存储 +14：manifest/账本往返、单事务原子性、删除连带水位、回退写入拒绝**；**D2 校准 +17：元数据扫描器 8 条（忽略剪枝/不完整/触顶/规则异常）+ 校准服务 9 条（增删改候选、水位不推进、根不可用不删、能力缺失降级）**；**D4 原子替换 +10：同事务提交、所有权重建、稳定入边保留、消失目标报告依赖方、批次回滚、分块删除**；**D3 更新计划 +15：动作映射与顺序、只沿已知符号变化扩展、退避不驱动依赖方、扩展触顶 Truncated、图查询分块与双来源**；**D3 批量路由与语义差异 +19：能力路由四态（NotApplicable/Retryable/ScopeRunRequired）、同语言单次批量调用、抛错与静默丢路径按路径收容、语义差异只认消失与签名变化**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
 `InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；

@@ -324,9 +324,10 @@ public sealed class CompositeCodeIndexerTests
 
 /// <summary>
 /// Language implementation double: records every call and can be scripted to succeed, fail or throw. It
-/// implements the per-file port as well, like the three production implementations do.
+/// implements the per-file port as well, like the three production implementations do, and the batch port
+/// (D3) so routing/containment behaviour can be asserted without Roslyn.
 /// </summary>
-internal sealed class FakeLanguageIndexer : ILanguageCodeIndexer, ICodeIndexFileUpdater
+internal sealed class FakeLanguageIndexer : ILanguageCodeIndexer, ICodeIndexFileUpdater, ICodeIndexFileBatchUpdater
 {
     public FakeLanguageIndexer(string language, params string[] supportedExtensions)
     {
@@ -337,6 +338,40 @@ internal sealed class FakeLanguageIndexer : ILanguageCodeIndexer, ICodeIndexFile
     public string Language { get; }
 
     public IReadOnlyCollection<string> SupportedExtensions { get; }
+
+    /// <summary>Scripted batch outcomes; null means "Applied for every requested path".</summary>
+    public IReadOnlyList<CodeFileIndexOutcome>? BatchOutcomes { get; set; }
+
+    /// <summary>When set, the batch call throws (containment is asserted per path).</summary>
+    public Exception? BatchException { get; set; }
+
+    /// <summary>Reported session key (diagnostics: one engine snapshot per batch).</summary>
+    public string? BatchSessionKey { get; set; }
+
+    public List<string[]> BatchCalls { get; } = [];
+
+    public IReadOnlyCollection<string>? LastBatchFilePaths { get; private set; }
+
+    public CodeIndexBatchContext? LastBatchContext { get; private set; }
+
+    public Task<CodeIndexFileBatchResult> UpdateFilesAsync(
+        CodeWorkspaceDescriptor workspace,
+        IReadOnlyCollection<string> filePaths,
+        CodeIndexBatchContext context,
+        CancellationToken cancellationToken = default)
+    {
+        BatchCalls.Add(filePaths.ToArray());
+        LastBatchFilePaths = filePaths;
+        LastBatchContext = context;
+
+        if (BatchException is { } thrown)
+            throw thrown;
+
+        var outcomes = BatchOutcomes
+            ?? filePaths.Select(path => new CodeFileIndexOutcome(path, CodeIndexConsumerStatus.Applied)).ToArray();
+
+        return Task.FromResult(new CodeIndexFileBatchResult(outcomes, context.ConfigurationFingerprint, BatchSessionKey));
+    }
 
     public bool WorkspaceSuccess { get; set; } = true;
 
