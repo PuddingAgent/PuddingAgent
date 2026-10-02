@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
   </ItemGroup>
 </Project>

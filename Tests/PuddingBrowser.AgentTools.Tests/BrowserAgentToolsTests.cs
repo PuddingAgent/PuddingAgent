@@ -1,3 +1,5 @@
+using Pudding.Contracts;
+using Pudding.Contracts.Desktop;
 ﻿using System.Runtime.CompilerServices;
 using System.Text.Json;
 using PuddingBrowser.Abstractions;
@@ -19,7 +21,7 @@ public sealed class BrowserAgentToolsTests
             new BrowserTabsTool(runtime, _originAccessor),
             new BrowserNavigateTool(runtime, _originAccessor),
             new BrowserSnapshotTool(runtime, _originAccessor),
-            new BrowserLocateTool(runtime, _originAccessor),
+            new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserInteractTool(runtime, _originAccessor),
             new BrowserWaitForTool(runtime, _originAccessor)
         };
@@ -148,7 +150,7 @@ public sealed class BrowserAgentToolsTests
 
         var snapshot = await ExecuteAsync(new BrowserSnapshotTool(runtime, _originAccessor),
             $$"""{"page_id":"{{page.Id.Value}}","context_id":"ctx-1","max_nodes":100}""");
-        var locate = await ExecuteAsync(new BrowserLocateTool(runtime, _originAccessor),
+        var locate = await ExecuteAsync(new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             JsonSerializer.Serialize(new
             {
                 page_id = page.Id.Value,
@@ -198,7 +200,7 @@ public sealed class BrowserAgentToolsTests
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
-        var result = await ExecuteAsync(new BrowserLocateTool(runtime, _originAccessor),
+        var result = await ExecuteAsync(new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             JsonSerializer.Serialize(new
             {
                 page_id = page.Id.Value,
@@ -240,6 +242,151 @@ public sealed class BrowserAgentToolsTests
         using var document = JsonDocument.Parse(json);
         return document.RootElement.GetProperty(property).Clone();
     }
+}
+
+/// <summary>
+/// 窄端口的测试替身：把请求**委托**给同一个 FakeBrowserRuntime（而不是返回罐头值），
+/// 因此迁移后的工具测试仍然在验证真实行为。只有 locate 用到的三个方法有实现。
+/// </summary>
+internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopBrowserCapabilitySurface
+{
+    public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
+        DesktopCallContext call, CancellationToken ct = default)
+    {
+        var contexts = new List<DesktopContextInfo>();
+        var observed = 0L;
+        foreach (var summary in await runtime.ListContextsAsync(ct))
+        {
+            if (await runtime.GetContextAsync(summary.Id, ct) is not { } context)
+            {
+                continue;
+            }
+
+            var pages = new List<DesktopPageInfo>();
+            foreach (var page in await context.ListPagesAsync(ct))
+            {
+                if (page.PageVersion <= 0)
+                {
+                    continue;
+                }
+
+                pages.Add(new DesktopPageInfo(
+                    new DesktopPageTarget(summary.Id.Value, page.Id.Value),
+                    DesktopPageVersion.Require(page.PageVersion),
+                    page.Title,
+                    Uri.TryCreate(page.Url, UriKind.Absolute, out var url) ? url : null));
+                observed = Math.Max(observed, page.PageVersion);
+            }
+
+            contexts.Add(new DesktopContextInfo(summary.Id.Value, DesktopContextTrust.Untrusted, pages));
+        }
+
+        return CapabilityResult<DesktopContexts>.Success(new DesktopContexts(
+            contexts, observed > 0 ? DesktopPageVersion.Require(observed) : default));
+    }
+
+    public async Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
+        DesktopPageTarget target, DesktopCallContext call, CancellationToken ct = default)
+    {
+        if (await ResolvePageAsync(target, ct) is not { } page)
+        {
+            return CapabilityResult<DesktopPageState>.Failure(
+                DesktopCapabilityError.InvalidTarget($"page '{target.Key}' is not known"));
+        }
+
+        return CapabilityResult<DesktopPageState>.Success(new DesktopPageState(
+            target,
+            Uri.TryCreate(page.Info.Url, UriKind.Absolute, out var url) ? url : null,
+            page.PageVersion > 0 ? DesktopPageVersion.Require(page.PageVersion) : DesktopPageVersion.Unknown,
+            page.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown));
+    }
+
+    public async Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
+        BrowserLocateRequest request, DesktopCallContext call, CancellationToken ct = default)
+    {
+        if (await ResolvePageAsync(request.Target, ct) is not { } page)
+        {
+            return CapabilityResult<DesktopLocateResult>.Failure(
+                DesktopCapabilityError.InvalidTarget($"page '{request.Target.Key}' is not known"));
+        }
+
+        var version = page.PageVersion > 0 ? DesktopPageVersion.Require(page.PageVersion) : DesktopPageVersion.Unknown;
+        if (request.ExpectedPageVersion.IsKnown && version.IsKnown
+            && request.ExpectedPageVersion.Value != version.Value)
+        {
+            return CapabilityResult<DesktopLocateResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"page '{request.Target.Key}' is at v{version.Value}, request pinned v{request.ExpectedPageVersion.Value}"));
+        }
+
+        var locator = new Locator
+        {
+            Kind = Enum.Parse<LocatorKind>(request.Locator.Kind.ToString()),
+            Value = request.Locator.Value,
+            Name = request.Locator.Name,
+            Exact = request.Locator.Exact,
+            Nth = request.Locator.Nth,
+            HasText = request.Locator.HasText,
+        };
+
+        var handles = await page.QueryAllAsync(locator, ct);
+        var elements = handles
+            .Select(handle => new DesktopElementRef(
+                handle.Id.Value,
+                handle.Info.Tag,
+                DesktopPageVersion.Require(handle.PageVersion),
+                handle.Info.Role,
+                handle.Info.Name,
+                handle.Info.Text,
+                handle.Info.Visible,
+                handle.Info.Enabled,
+                handle.Info.Checked))
+            .ToArray();
+
+        return CapabilityResult<DesktopLocateResult>.Success(
+            new DesktopLocateResult(request.Target, request.Locator, elements, false, version));
+    }
+
+    public Task<CapabilityResult<NavigateResult>> NavigateAsync(
+        NavigateRequest request, DesktopCallContext call, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+    public Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
+        BrowserTabsRequest request, DesktopCallContext call, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
+        BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
+        BrowserInteractRequest request, DesktopCallContext call, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
+        BrowserWaitForRequest request, DesktopCallContext call, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public Task<CapabilityResult<JavascriptResult>> ExecuteJavascriptAsync(
+        JavascriptRequest request, DesktopCallContext call, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    private async Task<IBrowserPage?> ResolvePageAsync(DesktopPageTarget target, CancellationToken ct)
+    {
+        if (await runtime.GetContextAsync(new BrowserContextId(target.ContextId), ct) is not { } context)
+        {
+            return null;
+        }
+
+        return await context.GetPageAsync(new PageId(target.PageId), ct);
+    }
+}
+
+internal sealed class FakeCallContextFactory : IDesktopCapabilityCallContextFactory
+{
+    public DesktopCallContext? TryCreate(TimeSpan? timeout = null) => new(
+        new DesktopInstanceId("desk-test"),
+        OperationId.NewId(),
+        DateTimeOffset.UtcNow.AddMinutes(1));
 }
 
 internal sealed class FakeBrowserRuntime : IBrowserRuntime
