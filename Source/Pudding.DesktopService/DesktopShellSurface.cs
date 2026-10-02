@@ -4,7 +4,8 @@ using Pudding.Contracts.Desktop;
 namespace Pudding.DesktopService;
 
 /// <summary>
-/// 把 <see cref="IDesktopShellFacilities"/>（WinUI 实现）适配成 Desktop 表面的 Shell 部分。
+/// 把 <see cref="IDesktopShellFacilities"/>（WinUI 实现）与 <see cref="IDesktopShellHostFacilities"/>
+/// （Shell 实现）适配成 Desktop 表面的 Shell 部分。
 ///
 /// 适配层只做三件平台无关的事，因而可以脱离 UI 环境测试：
 /// ① <b>预算纵深防御</b>：即使设施实现没守预算，剪贴板也会被截断并如实标注；
@@ -14,10 +15,14 @@ namespace Pudding.DesktopService;
 public sealed class DesktopShellSurface
 {
     private readonly IDesktopShellFacilities _facilities;
+    private readonly IDesktopShellHostFacilities _hostFacilities;
 
-    public DesktopShellSurface(IDesktopShellFacilities facilities)
+    public DesktopShellSurface(
+        IDesktopShellFacilities facilities,
+        IDesktopShellHostFacilities hostFacilities)
     {
         _facilities = facilities ?? throw new ArgumentNullException(nameof(facilities));
+        _hostFacilities = hostFacilities ?? throw new ArgumentNullException(nameof(hostFacilities));
     }
 
     public Task<CapabilityResult<DesktopDialogResult>> RequestDialogAsync(
@@ -60,6 +65,32 @@ public sealed class DesktopShellSurface
         // 纵深防御：设施漏了预算，这里也要收敛（含硬上限）。
         return CapabilityResult<DesktopClipboardContent>.Success(
             DesktopCapabilityBudgets.Apply(result.Value, request.MaxCharacters));
+    }
+
+    /// <summary>显示系统通知；未弹出（<c>Shown=false</c>）是结果而不是失败。</summary>
+    public Task<CapabilityResult<DesktopNotificationResult>> ShowNotificationAsync(
+        DesktopCallContext context, DesktopNotificationRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        return ForwardAsync(
+            () => _hostFacilities.ShowNotificationAsync(context, request, cancellationToken),
+            "notification");
+    }
+
+    /// <summary>
+    /// 只读 Shell 状态（窗口形态/托盘可见性）；自动化状态与打开页面数由 DesktopService 覆盖，
+    /// 因此这里**不做**补齐，避免两处状态互相漂移。
+    /// </summary>
+    public Task<CapabilityResult<DesktopShellStatus>> GetShellStatusAsync(
+        DesktopCallContext context, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return ForwardAsync(
+            () => _hostFacilities.GetShellStatusAsync(context, cancellationToken),
+            "shell_status");
     }
 
     private static async Task<CapabilityResult<T>> ForwardAsync<T>(
