@@ -163,8 +163,25 @@ await host.StartAsync(cancellationToken);
 // 目标注册表由浏览器控制器在页面创建/关闭时更新；页面版本由 surface 在导航/交互后推进
 ```
 
-未完成项：`WebView2DesktopUiSurface` 尚未实现（需真实 `CoreWebView2`）；`WinUiDesktopUiDispatcher`
-已实现并 0 警告 0 错误编译通过，但**线程访问验证必须在真实 DispatcherQueue 下做**。
+### 5.1 实际落地形态（2026-10-02，提交 `cd2e1d9`）
+
+上面的示意已过期，**实际形态**是：Shell 只提供「只有它知道的事实 + 调一次」，判定与装配都在可脱 UI
+测试的组件里（`Pudding.DesktopService.DesktopCapabilityChannelComposition`）：
+
+- 端点描述：`CoreProcessSession.CapabilityEndpoint`（由就绪信号搬运，不含凭据）；
+- 表面：`DesktopSurfaceComposition`（浏览器 9 项 → `BrowserRuntimeDesktopSurface`；
+  Shell 5 项 → `DesktopShellSurface`，后者包 `WinUiShellFacilities` + `WinUiShellHostFacilities`）；
+- 调度器：`WinUiDesktopUiDispatcher(UiThread.Queue)`；
+- 注册表驱动：`DesktopApplicationCoordinator.Capability.cs` 的 `AttachBrowserTargets`
+  （订阅 `Tabs.CollectionChanged` / `PropertyChanged` → `BrowserWorkspaceTargetBridge`）；
+- 生命周期：Core 就绪时启动；Core 不再就绪（停止/退出/重启/熔断）时释放单实例传输名额；
+- 通知落在托盘气泡（`DesktopTrayIcon.ShowBalloon`），没弹出来返回 `Shown=false` 的成功结果。
+
+`WebView2DesktopUiSurface` 这个东西**最终没有做，也不需要做**：浏览器动作表面直接映射到既有的
+`IBrowserRuntime`（七个浏览器工具本就在用它），避免为能力通道再造一套 WebView2 包装。
+
+**仍未验证**（属本手册第 6 节的窗口期动作）：启用态真实 `DispatcherQueue` 线程访问、拨入握手、
+Desktop 退出后 Core 侧注册表清空与管道释放、关闭态逐字无变化。
 
 ## 6. 重启窗口内的验收清单（外部控制器执行）
 

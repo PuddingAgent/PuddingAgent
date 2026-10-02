@@ -197,7 +197,8 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 | 项 | 结果 |
 |---|---|
 | 组件独立测试合计 | **537 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、**DesktopService 170**、DesktopSurface.Browser 54、CapabilityBroker 78、CapabilityBroker.AspNetCore 39） |
-| 桌面启动器侧测试 | **273 全绿**（`PuddingDesktop.Tests`；含能力通道文件段的跨侧缺省值一致性断言；不计入上面 7 套） |
+| 桌面启动器侧测试 | **279 全绿**（`PuddingDesktop.Tests`；含能力通道文件段的跨侧缺省值一致性断言与"Core 产出→Desktop 解析→预检"的端到端契约断言；不计入上面 7 套） |
+| Shell 接线 | **Desktop 侧接线已完成**（`cd2e1d9`）：默认关闭、fail closed、Core 不再就绪即释放传输；Shell 构建 0 错误。**启用态与生命周期仍待外部控制器在重启窗口内验收** |
 | 真实端点探针 | **53/53 通过，exit 0**（Named Pipe 与 Loopback h2c 各一轮；含跨侧能力集合一致性守卫） |
 | WinUI 适配器工程 | 0 警告 0 错误（无线程访问验证，需真实 `DispatcherQueue`） |
 | Shell 组合根前提 | `PuddingDesktop` 已放行并引用 Desktop 侧能力通道组件，**0 错误**；restore 后可离线完成，运行时程序集（`Grpc.Net.Client` 等）已确认落进输出目录 |

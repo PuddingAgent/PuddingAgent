@@ -231,27 +231,38 @@ await host.StartAsync(lifetimeToken);
 | 7 | **回写观察到的页面版本**（`ExecuteAsync` 拆出 `ExecuteCoreAsync`，唯一出口记录） | DesktopService | 同套件（+10）：准入按注册表版本判 `page_version_mismatch`，此前无人回写 ⇒ **第一个带版本的操作就被拒**（通道"握手成功却什么也做不了"）；已按能力逐项钉住 |
 | 8 | `desktop.json` 能力通道段（§8.3 **方案 A** 已落地） | WpfArchive + 桌面测试 | `PuddingDesktop.Tests` **273/273**（+7）：缺席 ⇒ 关闭、段名可两文件复制、**文件缺省值 == 组件缺省值**、缺席段保存时不出现 |
 | 9 | `IDesktopShellHostFacilities` 的 WinUI 实现 | CapabilityHost | 0 警告 0 错误（并核对产物时间戳确认真的编译了新代码） |
+| 10 | **Shell 接线完成**：页面生命周期驱动注册表 + 组合根调用点 | `DesktopApplicationCoordinator(.Capability).cs`、`MainWindow`（只暴露宿主事实）、`DesktopTrayIcon.ShowBalloon`、`CoreProcessSession.CapabilityEndpoint` | Shell **exit 0 / 0 错误**，我的文件 0 警告；**启用态本身待外部窗口验收**（见 §8.2） |
 
 合计 7 套件 **537** 用例（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、**DesktopService 170**、
 DesktopSurface.Browser 54、CapabilityBroker 78、CapabilityBroker.AspNetCore 39）
-+ 真实端点探针 **53/53**；另 `PuddingDesktop.Tests` **273**（桌面启动器侧，不计入上面 7 套）。
++ 真实端点探针 **53/53**；另 `PuddingDesktop.Tests` **279**（桌面启动器侧，不计入上面 7 套）。
 
-### 8.2 剩余（**唯一尚未接线的一段**，全部在 Shell 内）
+### 8.2 剩余（**Desktop 侧接线已完成**；剩下的只有外部窗口验收）
 
-1. 在 `MainWindow` 拿到 `IBrowserRuntime` 与 `BrowserWorkspaceController` 之后：
-   建两个注册表 → 交给 `BrowserWorkspaceTargetBridge` → 在页面创建/激活/关闭/Agent 目标变更处各调一行
-   （**版本不需要在这里喂**：第 7 项已让 `DesktopService` 在唯一出口回写结果里的版本）；
-2. 组合根调用点：`_bootstrapSettings.Desktop?.CapabilityChannel` 映射为
-   `DesktopCapabilityChannelSettings`（纯字段拷贝，第 8 项已提供文件形态与缺省值一致性保证）→
-   端点描述取自 `CoreReadyMessage.CapabilityEndpoint` →
-   `DesktopCapabilityChannelComposition.StartAsync(...)`；退出路径 `DisposeAsync()`。
+Shell 内两处接线已于 2026-10-02 落地（提交 `cd2e1d9`）：
 
-> **并发注意（不是技术难题，是工程约束）**：`Source/PuddingDesktop/MainWindow.xaml.cs` 与
-> `MainWindow.xaml` 当前有**另一方 AI 的未提交改动**（运行中心内存口径：专用工作集 + 副标题），
-> 且本轮期间该方仍在继续改（`Source/PuddingDesktop/code_map.md`、根 `code_map.md` 正被整篇改写、
-> `Docs/00Changelog/` 同时处于脏状态）。上述第 1、2 步必须改同一个文件，因此
-> **接手前先确认该改动已提交或已确定归属**，否则提交时会把他方 WIP 一起带进去（违反仓库卫生纪律）。
-> 该文件的改动区（约第 195 行 `UpdateRuntimeMetrics`）与接线区（约第 926 行浏览器工作区初始化）不重叠。
+1. **页面生命周期驱动目标注册表** — `DesktopApplicationCoordinator.Capability.cs` 的
+   `AttachBrowserTargets` 订阅控制器 `Tabs.CollectionChanged` 与 `PropertyChanged`，
+   把创建/关闭/激活/Agent 目标变更翻译给 `BrowserWorkspaceTargetBridge`；
+   页面版本**登记为"尚未观测"**，由 `DesktopService` 在唯一出口用能力结果回写。
+2. **组合根调用点** — Core 就绪时 `OnRuntimeChanged` 触发
+   `StartCapabilityChannelAsync(session, token)`：读 `desktop.json` 段 → 组装
+   `DesktopSurfaceComposition` → `DesktopCapabilityChannelComposition.StartAsync`；
+   Core 不再就绪时 `StopCapabilityChannelAsync` 释放单实例传输名额。
+   端点描述来自 `CoreProcessSession.CapabilityEndpoint`（就绪信号搬运，不含凭据）。
+
+**仍然只能由外部控制器判定**（Agent 不能验收承载自身的生命周期）：启用态真实 `DispatcherQueue`
+线程访问、拨入握手与世代、Desktop 退出后 Core 侧注册表清空与管道释放、以及关闭态逐字无变化。
+⇒ 验收动作仍以接线手册 §6 的 8 步为准。
+
+**另注**：Core 侧授权器仍是 `DenyAll`（等切片 D 的调用点提供可信调用方身份），
+因此启用态下**能力会被 Core 拒绝**——这是既定的 fail-closed 设计，不是缺陷。
+
+> **并发注意（工程约束）**：`Source/PuddingDesktop/MainWindow.xaml.cs` 与 `MainWindow.xaml` 里仍有
+> 另一方 AI 未提交的运行中心内存口径改动。本轮接线用 `git apply --cached` **只暂存自己的 hunk**
+> 并核对暂存 blob 不含他方代码；`MainWindow.xaml` 完全未纳入。后续若再改这两个文件，同样需要这样处理。
+> `Source/PuddingDesktop/code_map.md` 等索引文件当期正被他方批量迁移，索引登记待其落地后补。
+
 
 ### 8.3 `desktop.json` 段形态（**已裁定并落地 = 方案 A**）
 
