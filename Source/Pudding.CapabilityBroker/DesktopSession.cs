@@ -12,7 +12,7 @@ namespace Pudding.CapabilityBroker;
 ///
 /// 与 Desktop 侧对称但方向相反：Core 写命令、读结果/事件；两侧各自持有自己的状态机与待完成表。
 /// </summary>
-public sealed class DesktopSession : IAsyncDisposable
+public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapabilitySurface
 {
     private readonly ICoreDesktopChannel _channel;
     private readonly DesktopCapabilityPolicy _policy;
