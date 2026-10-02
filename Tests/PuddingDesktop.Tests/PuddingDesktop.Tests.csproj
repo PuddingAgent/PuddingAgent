@@ -26,6 +26,10 @@
          能力通道的文件段在 WpfArchive，组件设置类型在 Pudding.DesktopService，
          两边各写一份缺省值就有漂移风险（"没配置"被当成"配错了"）。 -->
     <ProjectReference Include="..\..\Source\Pudding.DesktopService\Pudding.DesktopService.csproj" />
+    <!-- 只为 Core→Desktop 就绪描述这条字符串契约的**端到端**断言：
+         产出侧在 Pudding.CapabilityBroker.AspNetCore（Core 适配器），解析侧在 WpfArchive。
+         探针验证的是解析器而不是 Core 真正打出的那一行，所以这条链必须另有测试。 -->
+    <ProjectReference Include="..\..\Source\Pudding.CapabilityBroker.AspNetCore\Pudding.CapabilityBroker.AspNetCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>
