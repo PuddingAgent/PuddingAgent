@@ -77,8 +77,10 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
-    public async Task Navigate_WhenRuntimeFails_DoesNotLeakTheErrorText()
+    public async Task Navigate_WhenRuntimeReportsFailure_CarriesTheFactsAsAResult()
     {
+        // 语义更正（2026-10-02，缺口 #5）：导航"没成功"是**结果事实**，不是能力失败 ——
+        // 上层要能区分"这个地址去不了"与"运行时坏了"，且迁移前的工具正是把 ok/status 作为结果字段返回。
         var page = new FakePage
         {
             Navigate = _ => new NavigationResult
@@ -86,7 +88,7 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
                 Url = new Uri("https://example.test/a"),
                 Ok = false,
                 StatusCode = 502,
-                ErrorText = "failed at https://example.test/a?token=SECRET",
+                ErrorText = "gateway said no",
             },
         };
         var surface = Create(page);
@@ -94,10 +96,26 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         var result = await surface.NavigateAsync(
             new NavigateRequest(Target, new Uri("https://example.test/a")), Call);
 
-        Assert.True(result.IsFailure);
-        Assert.DoesNotContain("SECRET", result.Error!.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("token", result.Error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("502", result.Error.Message, StringComparison.Ordinal);
+        Assert.False(result.IsFailure);
+        Assert.False(result.Value.Ok);
+        Assert.Equal(502, result.Value.StatusCode);
+        Assert.Equal("gateway said no", result.Value.ErrorText);
+    }
+
+    [Fact]
+    public async Task Navigate_Back_ReachesTheRuntimeHistoryApiAndReportsNoFabricatedFacts()
+    {
+        var page = new FakePage { Version = 5 };
+        var surface = Create(page);
+
+        var result = await surface.NavigateAsync(
+            new NavigateRequest(Target, action: DesktopNavigationAction.Back), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.Equal(1, page.BackCount);
+        // 运行时不返回 ok/status ⇒ 如实留空，绝不编造。
+        Assert.Null(result.Value.Ok);
+        Assert.Null(result.Value.StatusCode);
     }
 
     [Fact]
@@ -768,6 +786,14 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public string? LastTyped { get; private set; }
 
+        public int BackCount { get; private set; }
+
+        public int ForwardCount { get; private set; }
+
+        public int ReloadCount { get; private set; }
+
+        public int StopCount { get; private set; }
+
         public Func<Uri, NavigationResult>? Navigate { get; init; }
 
         public Func<BrowserScript, BrowserScriptValue>? Script { get; init; }
@@ -811,13 +837,33 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
             return Task.CompletedTask;
         }
 
-        public Task GoBackAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task GoBackAsync(CancellationToken ct)
+        {
+            BackCount++;
+            Version++;
+            return Task.CompletedTask;
+        }
 
-        public Task GoForwardAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task GoForwardAsync(CancellationToken ct)
+        {
+            ForwardCount++;
+            Version++;
+            return Task.CompletedTask;
+        }
 
-        public Task ReloadAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task ReloadAsync(CancellationToken ct)
+        {
+            ReloadCount++;
+            Version++;
+            return Task.CompletedTask;
+        }
 
-        public Task StopAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task StopAsync(CancellationToken ct)
+        {
+            StopCount++;
+            Version++;
+            return Task.CompletedTask;
+        }
 
         public Task<PageSnapshot> SnapshotAsync(SnapshotOptions options, CancellationToken ct)
         {

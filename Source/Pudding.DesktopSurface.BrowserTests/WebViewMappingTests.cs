@@ -40,8 +40,13 @@ public sealed class WebViewMappingTests
     }
 
     [Fact]
-    public async Task FailedNavigationIsATargetErrorNotAnInternalError()
+    public async Task FailedNavigationIsAFactNotAFailure()
     {
+        // 语义更正（2026-10-02，缺口 #5）：导航"没成功"现在作为**结果事实**回带
+        // （Ok=false + StatusCode + ErrorText），而不是能力失败。理由：
+        // ① 上层要能区分"这个地址去不了"与"运行时坏了"——结果事实比错误码表达得更准；
+        // ② 迁移前的 browser_navigate 工具正是把 ok/status 当结果字段返回，
+        //    若这里仍升级为失败，两条传输的 Agent 可见行为就会分叉。
         var runtime = Runtime(pageVersion: 6, advanceTo: 7, navigation: new NavigationResult
         {
             Url = new Uri("https://example.test/target"),
@@ -52,10 +57,10 @@ public sealed class WebViewMappingTests
         var result = await Surface(runtime).NavigateAsync(
             Call, new NavigateRequest(Target, new Uri("https://example.test/target")), CancellationToken.None);
 
-        Assert.True(result.IsFailure);
-        // 上层必须能区分"这个地址去不了"与"运行时坏了"。
-        Assert.Equal(DesktopCapabilityErrorCode.InvalidTarget, result.Error!.Code);
-        Assert.Contains("502", result.Error.Message, StringComparison.Ordinal);
+        Assert.False(result.IsFailure);
+        Assert.False(result.Value.Ok);
+        Assert.Equal(502, result.Value.StatusCode);
+        Assert.Equal(NavigateDisposition.Completed, result.Value.Disposition);
     }
 
     [Fact]

@@ -37,8 +37,11 @@ internal static class CoreCommandEncoder
                 command.Navigate = new Proto.NavigateCommand
                 {
                     Target = EncodeTarget(navigate.Target),
-                    Url = navigate.Url.AbsoluteUri,
+                    // 非 goto 动作没有地址（地址由页面自己决定）⇒ 空串表示"无地址"。
+                    Url = navigate.Url?.AbsoluteUri ?? string.Empty,
                     ExpectedPageVersion = navigate.ExpectedPageVersion.Value,
+                    Action = DesktopNavigationActionWire.NameOf(navigate.Action),
+                    TimeoutMs = navigate.TimeoutMs,
                 };
                 break;
 
@@ -216,7 +219,7 @@ internal static class CoreCommandEncoder
         canonical.Append('|').Append(request switch
         {
             _ when request.Navigate is { } navigate =>
-                $"navigate:{navigate.Target.Key}:{navigate.Url.AbsoluteUri}:{navigate.ExpectedPageVersion.Value}",
+                $"navigate:{navigate.Target.Key}:{navigate.Url?.AbsoluteUri ?? string.Empty}:{DesktopNavigationActionWire.NameOf(navigate.Action)}:{navigate.TimeoutMs}:{navigate.ExpectedPageVersion.Value}",
             _ when request.Javascript is { } javascript =>
                 $"javascript:{javascript.Target.Key}:{javascript.Script}:{javascript.ExpectedPageVersion.Value}:{javascript.MaxResultBytes}",
             _ when request.Notification is { } notification =>
@@ -324,7 +327,13 @@ internal static class DesktopResultDecoder
 
                 return CapabilityResult<DesktopCapabilityResponse>.Success(
                     DesktopCapabilityResponse.FromNavigate(new NavigateResult(
-                        disposition.Value, currentUrl, ToPageVersion(result.Navigate.PageVersion))));
+                        disposition.Value,
+                        currentUrl,
+                        ToPageVersion(result.Navigate.PageVersion),
+                        // optional：没设 presence 就是"不知道"，保持 null（不猜）。
+                        result.Navigate.HasNavigationOk ? result.Navigate.NavigationOk : null,
+                        result.Navigate.HasStatusCode ? result.Navigate.StatusCode : null,
+                        NullIfEmpty(result.Navigate.ErrorText))));
             }
 
             case Proto.OperationResult.OutcomeOneofCase.ExecuteJavascript:

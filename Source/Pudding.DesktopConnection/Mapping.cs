@@ -101,7 +101,16 @@ internal static class CoreFrameMapping
                         DesktopCapabilityError.InvalidTarget("webview.navigate requires an explicit context_id/page_id target"));
                 }
 
-                if (string.IsNullOrWhiteSpace(payload.Url) || !Uri.TryCreate(payload.Url, UriKind.Absolute, out var url))
+                if (!DesktopNavigationActionWire.TryParse(payload.Action, out var navigationAction))
+                {
+                    return FailRequest($"navigate action '{payload.Action}' is not registered");
+                }
+
+                // 只有 goto 需要地址；其余动作作用于当前页（地址由页面自己决定）。
+                Uri? navigateUrl = null;
+                if (navigationAction == DesktopNavigationAction.Goto
+                    && (string.IsNullOrWhiteSpace(payload.Url)
+                        || !Uri.TryCreate(payload.Url, UriKind.Absolute, out navigateUrl)))
                 {
                     return FailRequest("navigate url must be an absolute URL");
                 }
@@ -111,9 +120,20 @@ internal static class CoreFrameMapping
                     return FailRequest("expected_page_version must not be negative");
                 }
 
-                return CapabilityResult<DesktopCapabilityRequest>.Success(
-                    DesktopCapabilityRequest.ForNavigate(
-                        new NavigateRequest(target, url, ToPageVersion(payload.ExpectedPageVersion))));
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForNavigate(new NavigateRequest(
+                            target,
+                            navigateUrl,
+                            ToPageVersion(payload.ExpectedPageVersion),
+                            navigationAction,
+                            payload.TimeoutMs == 0 ? NavigateRequest.DefaultTimeoutMs : payload.TimeoutMs)));
+                }
+                catch (ArgumentOutOfRangeException ex)
+                {
+                    return FailRequest($"navigate timeout is out of range ({ex.ParamName})");
+                }
             }
 
             case DesktopCapability.WebViewExecuteJavascript:
@@ -715,12 +735,26 @@ internal static class DesktopFrameMapping
             switch (capability.Capability)
             {
                 case DesktopCapability.WebViewNavigate when response.Navigate is { } navigate:
-                    result.Navigate = new Proto.NavigateOutcome
+                    var wireNavigate = new Proto.NavigateOutcome
                     {
                         Disposition = ToWire(navigate.Disposition),
                         CurrentUrl = navigate.CurrentUrl?.AbsoluteUri ?? string.Empty,
                         PageVersion = navigate.PageVersion.Value,
+                        ErrorText = WireText.Truncate(navigate.ErrorText, 512),
                     };
+
+                    // proto3 optional：只有确实知道结果时才设 presence（不知道 ≠ false）。
+                    if (navigate.Ok is { } navigateOk)
+                    {
+                        wireNavigate.NavigationOk = navigateOk;
+                    }
+
+                    if (navigate.StatusCode is { } navigateStatus)
+                    {
+                        wireNavigate.StatusCode = navigateStatus;
+                    }
+
+                    result.Navigate = wireNavigate;
                     break;
 
                 case DesktopCapability.WebViewExecuteJavascript when response.Javascript is { } javascript:

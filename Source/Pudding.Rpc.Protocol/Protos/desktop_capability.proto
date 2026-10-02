@@ -80,6 +80,12 @@ message NavigateCommand {
   string url = 2;
   // 期望的当前页面版本；0 = 不校验。
   int64 expected_page_version = 3;
+  // 导航动作线名（加宽 2026-10-02，缺口 #3）：goto/back/forward/reload/stop。
+  // 与交互动作同一模式：字符串 + 冻结线名表 ⇒ 新增动作不需要新的 oneof 分支。
+  // 空字符串按 goto 处理（兼容旧帧）。
+  string action = 4;
+  // 导航超时（毫秒，缺口 #4）；0 = 用运行时默认。
+  int32 timeout_ms = 5;
 }
 
 message ExecuteJavascriptCommand {
@@ -340,6 +346,11 @@ message NavigateOutcome {
   NavigateDisposition disposition = 1;
   string current_url = 2;
   int64 page_version = 3;
+  // 导航本身的结果事实（加宽 2026-10-02，缺口 #5）：不回带这些，上层就分不清
+  // "这个地址去不了" 与 "运行时坏了"。三者在未知时都不设 presence。
+  optional bool navigation_ok = 4;
+  optional int32 status_code = 5;
+  string error_text = 6;
 }
 
 enum JavascriptValueKind {

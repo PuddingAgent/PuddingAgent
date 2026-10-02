@@ -635,21 +635,49 @@ public sealed class BrowserRuntimeDesktopSurface
                 retryable: true));
         }
 
-        var navigation = await browserPage
-            .GotoAsync(request.Url, new NavigationOptions(), cancellationToken).ConfigureAwait(false);
-
-        if (!navigation.Ok)
+        if (request.Action == DesktopNavigationAction.Goto)
         {
-            // 只带状态码：错误文案可能包含页面/网络细节，不必外传。
-            return CapabilityResult<NavigateResult>.Failure(DesktopCapabilityError.InvalidTarget(
-                navigation.StatusCode is { } status
-                    ? $"navigation to '{request.Url}' failed with HTTP {status}"
-                    : $"navigation to '{request.Url}' failed"));
+            var navigation = await browserPage
+                .GotoAsync(
+                    request.Url!,
+                    new NavigationOptions { TimeoutMs = request.TimeoutMs },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            // "导航没成功"是**结果事实**而不是能力失败：上层要能区分"这个地址去不了"与"运行时坏了"。
+            // 这也与迁移前的工具行为一致（它把 ok/status 作为结果字段返回）。
+            return CapabilityResult<NavigateResult>.Success(new NavigateResult(
+                NavigateDisposition.Completed,
+                navigation.Url,
+                LiveVersion(browserPage.PageVersion),
+                navigation.Ok,
+                navigation.StatusCode,
+                navigation.ErrorText));
         }
 
+        switch (request.Action)
+        {
+            case DesktopNavigationAction.Back:
+                await browserPage.GoBackAsync(cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopNavigationAction.Forward:
+                await browserPage.GoForwardAsync(cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopNavigationAction.Reload:
+                await browserPage.ReloadAsync(cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopNavigationAction.Stop:
+                await browserPage.StopAsync(cancellationToken).ConfigureAwait(false);
+                break;
+            default:
+                return CapabilityResult<NavigateResult>.Failure(DesktopCapabilityError.InvalidRequest(
+                    $"navigation action '{DesktopNavigationActionWire.NameOf(request.Action)}' has no implementation"));
+        }
+
+        // 这四个动作在运行时没有等价返回值 ⇒ ok/status/error **未知**，如实留空（不猜）。
         return CapabilityResult<NavigateResult>.Success(new NavigateResult(
             NavigateDisposition.Completed,
-            navigation.Url,
+            ParseUrl(browserPage.Info.Url),
             LiveVersion(browserPage.PageVersion)));
     }
 
