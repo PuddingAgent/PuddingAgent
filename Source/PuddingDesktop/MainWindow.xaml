@@ -503,6 +503,9 @@
       <CheckBox x:Name="AutoStartBox" Content="打开 Desktop 时启动 Core" IsChecked="True"/>
       <CheckBox x:Name="TrayBox" Content="关闭窗口时最小化到托盘" IsChecked="True"/>
       <ComboBox x:Name="ThemeBox" Header="外观" SelectedIndex="0" SelectionChanged="OnTheme"><ComboBoxItem Content="跟随系统"/><ComboBoxItem Content="浅色"/><ComboBoxItem Content="深色"/></ComboBox>
+      <!-- §13.x：两个外观开关并存时，范围必须能一眼分清。这里说明 Shell 侧管什么、
+           Web 侧另有开关；对应 Web 顶栏那个按钮已标明"仅 Web 工作台"。 -->
+      <TextBlock Text="影响窗口、工具区与底部状态条。Web 工作台（聊天页）顶部另有独立的外观开关，只改 Web。" TextWrapping="Wrap" FontSize="11" Opacity="0.6"/>
       <Button Content="保存启动设置" Click="OnSave"/>
       <TextBlock x:Name="SettingsStatus" TextWrapping="Wrap"/>
      </StackPanel>
