@@ -990,6 +990,60 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
 
             try
             {
+                if (_sourceMaintenanceMode == CodeSourceMaintenanceMode.Coordinator)
+                {
+                    // D4（2026-10-02）：周期性校准也走协调器 —— 只有它同时维护 manifest 与账本。
+                    // 两条链路并存会让「索引」与「manifest」对同一路径给出不同结论。
+                    var sweep = await CalibrateViaSourceMaintenanceAsync(key.WorkspaceId, key.ScopeId, entry, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (!sweep.RootUsable)
+                    {
+                        entry.State.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.CalibrationRootUnavailable);
+
+                        lock (_gate)
+                        {
+                            entry.CalibrationRunCount++;
+                            entry.RejectedCalibrationRunCount++;
+                            entry.LastCalibrationAtUtc = nowUtc;
+                        }
+
+                        var refusedByCoordinator = RegisterCalibrationFailure(entry);
+
+                        _logger?.LogError(
+                            "[CodeIndexMaintenance] Scope {ScopeId}: source-maintenance calibration was refused ({Reason}); the scope stays flagged and no file was removed. Consecutive unusable-root outcome {Failures}; next attempt no earlier than {NextAttemptAtUtc}.",
+                            key.ScopeId, sweep.Reason ?? "unspecified", refusedByCoordinator.Failures, refusedByCoordinator.NextAttemptAtUtc);
+                        continue;
+                    }
+
+                    lock (_gate)
+                    {
+                        entry.CalibrationRunCount++;
+                        entry.SweptFileCount += sweep.DeletedFileCount;
+                        entry.LastCalibrationAtUtc = nowUtc;
+                    }
+
+                    if (!sweep.Complete)
+                    {
+                        // 不完整 ≠ 已完成：本轮没看的路径不算「磁盘上没有」，标位留给后续轮次。
+                        entry.State.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.CalibrationTruncated);
+                        ResetCalibrationBackoff(entry, key.ScopeId);
+
+                        _logger?.LogWarning(
+                            "[CodeIndexMaintenance] Scope {ScopeId}: source-maintenance calibration was incomplete; the scope stays flagged for a later run.",
+                            key.ScopeId);
+                        continue;
+                    }
+
+                    entry.State.ClearNeedsReconcile();
+                    ResetCalibrationBackoff(entry, key.ScopeId);
+
+                    _logger?.LogInformation(
+                        "[CodeIndexMaintenance] Scope {ScopeId}: source-maintenance calibration swept {Swept} stale file(s) ({Unresolved} unresolved); the reconcile flag is cleared.",
+                        key.ScopeId, sweep.DeletedFileCount, sweep.UnresolvedFileCount);
+                    continue;
+                }
+
                 result = await _calibration.CalibrateAsync(
                     new CodeIndexCalibrationRequest(
                         key.WorkspaceId,
@@ -1069,6 +1123,49 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
                 "[CodeIndexMaintenance] Scope {ScopeId}: calibration swept {Swept} stale file(s) ({Absent} of {Scanned} indexed path(s) are not on disk, {Protected} left alone as recently observed); the reconcile flag is cleared.",
                 key.ScopeId, result.SweptFileCount, result.AbsentFileCount, result.ScannedFileCount, result.ProtectedFileCount);
         }
+    }
+
+    /// <summary>
+    /// D4：周期性校准在 `Coordinator` 模式下的形态 —— **完整**扫描（<c>Targeted=false</c>），
+    /// 由协调器同时维护索引、manifest 与账本。
+    /// </summary>
+    /// <returns>根是否可用 / 扫描是否完整 / 清掉多少陈旧文件 / 未解决路径数 / 原因。</returns>
+    private async Task<(bool RootUsable, bool Complete, int DeletedFileCount, int UnresolvedFileCount, string? Reason)>
+        CalibrateViaSourceMaintenanceAsync(
+            string workspaceId,
+            string scopeId,
+            ScopeEntry entry,
+            CancellationToken cancellationToken)
+    {
+        if (_sourceMaintenance is null || _consumerInputs is null)
+            return (true, false, 0, 0, "source maintenance is not assembled");
+
+        var descriptor = await _resolver.ResolveWorkspaceAsync(workspaceId, scopeId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var inputs = await _consumerInputs
+            .GetConsumerInputsAsync(workspaceId, scopeId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = await _sourceMaintenance.RunAsync(
+                workspaceId,
+                scopeId,
+                entry.RootPath,
+                new CodeSourceMaintenanceRunOptions(
+                    inputs,
+                    ProjectFilePaths: descriptor?.ProjectFilePaths,
+                    // 周期性校准没有提示：必须完整枚举，否则丢失的删除永远没人发现。
+                    WatcherHints: null,
+                    Targeted: false),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return (
+            result.RootUsable,
+            result.ScanComplete && !result.CapabilityMissing,
+            result.DeletedFileCount,
+            result.RetryableFileCount + result.DeferredFileCount,
+            result.CapabilityMissing ? "the store has no source-maintenance capability" : null);
     }
 
     /// <summary>

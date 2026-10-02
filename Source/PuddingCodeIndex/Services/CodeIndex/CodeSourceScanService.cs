@@ -133,7 +133,8 @@ public sealed class CodeSourceScanService
             changeSet,
             capturedVersion,
             scanStartedUtc,
-            CapabilityMissing: _store is null);
+            CapabilityMissing: _store is null,
+            RootUsable: outcome.RootUsable);
     }
 
     /// <summary>

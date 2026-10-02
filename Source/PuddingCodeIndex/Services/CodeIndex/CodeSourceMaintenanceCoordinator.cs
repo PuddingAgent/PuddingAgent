@@ -42,6 +42,7 @@ public sealed record CodeSourceMaintenanceRunOptions(
 /// <param name="LedgerOutcome">账本提交结果。</param>
 /// <param name="LanguageSessionKey">语言侧本批复用的工程/编译快照标识（为空表示退化成逐文件）。</param>
 /// <param name="InvalidatedDependentFilePaths">因符号消失而需要重新绑定的依赖方文件。</param>
+/// <param name="RootUsable">本轮扫描根是否可用（false ⇒ 周期校准要按「被拒」处理：保持标位 + 走退避）。</param>
 public sealed record CodeSourceMaintenanceRunResult(
     bool CapabilityMissing,
     int ExtractedFileCount,
@@ -54,7 +55,8 @@ public sealed record CodeSourceMaintenanceRunResult(
     bool ScanWatermarkAdvanced,
     CodeSourceCommitOutcome? LedgerOutcome,
     string? LanguageSessionKey,
-    IReadOnlyList<string> InvalidatedDependentFilePaths);
+    IReadOnlyList<string> InvalidatedDependentFilePaths,
+    bool RootUsable = true);
 
 /// <summary>
 /// **源维护协调器**（D4，2026-10-02）：把已经独立交付的各件串成一条链并保证顺序与失败语义：
@@ -155,13 +157,13 @@ public sealed class CodeSourceMaintenanceCoordinator
             _logger?.LogWarning(
                 "[CodeSourceMaintenance] Scope {ScopeId}: the store has no source-maintenance capability; nothing was written.",
                 projectId);
-            return EmptyResult(capabilityMissing: true, scanRun.ChangeSet.ScanComplete);
+            return EmptyResult(capabilityMissing: true, scanRun.ChangeSet.ScanComplete, scanRun.RootUsable);
         }
 
         if (scanRun.ChangeSet.Changes.Count == 0)
         {
             // 没有任何需要动作的路径：不递增版本、不写库、不动水位。
-            return EmptyResult(capabilityMissing: false, scanRun.ChangeSet.ScanComplete);
+            return EmptyResult(capabilityMissing: false, scanRun.ChangeSet.ScanComplete, scanRun.RootUsable);
         }
 
         // 扫描已经把「期望版本」登记进账本；重新读回来，避免用陈旧快照提交。
@@ -373,7 +375,8 @@ public sealed class CodeSourceMaintenanceCoordinator
             ScanWatermarkAdvanced: commitOutcome == CodeSourceCommitOutcome.Committed,
             LedgerOutcome: commitOutcome,
             LanguageSessionKey: extraction.SessionKey,
-            InvalidatedDependentFilePaths: invalidated);
+            InvalidatedDependentFilePaths: invalidated,
+            RootUsable: scanRun.RootUsable);
     }
 
     /// <summary>调用一次语言批量接缝（一批一次），把结果按路径摊平。</summary>
@@ -447,7 +450,7 @@ public sealed class CodeSourceMaintenanceCoordinator
                     capturedVersion))
                 .ToArray());
 
-    private static CodeSourceMaintenanceRunResult EmptyResult(bool capabilityMissing, bool scanComplete) =>
+    private static CodeSourceMaintenanceRunResult EmptyResult(bool capabilityMissing, bool scanComplete, bool rootUsable) =>
         new(
             capabilityMissing,
             ExtractedFileCount: 0,
@@ -460,7 +463,8 @@ public sealed class CodeSourceMaintenanceCoordinator
             ScanWatermarkAdvanced: false,
             LedgerOutcome: null,
             LanguageSessionKey: null,
-            InvalidatedDependentFilePaths: []);
+            InvalidatedDependentFilePaths: [],
+            RootUsable: rootUsable);
 
     /// <summary>没有反向依赖图时的空实现：不做依赖扩展（不猜影响面）。</summary>
     private sealed class EmptyGraph : ICodeGraphDependencyQuery

@@ -19,6 +19,48 @@ namespace PuddingCodeIndexTests.Services.CodeIndex;
 public sealed class CodeSourceMaintenanceDriverSwitchTests
 {
     [TestMethod]
+    public async Task CoordinatorModeRoutineCalibrationSweepsStaleRowsThroughTheCoordinator()
+    {
+        using var harness = new SwitchHarness();
+        await harness.StartAsync();
+
+        // 「索引里有、磁盘上没有」的陈旧行 + 一条 manifest 记录。
+        var gone = Path.Combine(harness.Root, "Gone.cs");
+        await harness.SeedIndexedAbsoluteAsync(gone);
+        await harness.SeedManifestAsync(gone);
+
+        // 常规校准钟（默认 15 分钟）到期后才校准。
+        harness.Advance(CodeIndexMaintenanceService.DefaultCalibrationPeriod + TimeSpan.FromMinutes(1));
+        await harness.Service.ProcessDueBatchesAsync();
+
+        Assert.IsEmpty(
+            await harness.Store.GetSymbolsByFileAsync(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, gone),
+            "陈旧行的清理必须走协调器（索引与 manifest 一起变）");
+        Assert.IsFalse(
+            (await harness.Store.LoadSourceMaintenanceAsync(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId))
+                .Manifest.ContainsKey(gone),
+            "manifest 记录必须与索引一起消失，否则两条链路会分叉");
+        Assert.IsTrue(harness.Status().SweptFileCount >= 1);
+        Assert.IsFalse(harness.Status().NeedsReconcile, "完整扫描完成后标位应被清除");
+    }
+
+    [TestMethod]
+    public async Task CoordinatorModeRefusedRootKeepsTheScopeFlagged()
+    {
+        using var harness = new SwitchHarness();
+        var missingRoot = Path.Combine(harness.Root, "not-mounted");
+        await harness.StartWithRootAsync(missingRoot);
+
+        harness.Advance(CodeIndexMaintenanceService.DefaultCalibrationPeriod + TimeSpan.FromMinutes(1));
+        await harness.Service.ProcessDueBatchesAsync();
+
+        var status = harness.Status();
+        Assert.IsTrue(status.NeedsReconcile, "根不可用 ⇒ 必须保持标位（绝不把「读不到」当成「没有陈旧行」）");
+        Assert.IsTrue(status.RejectedCalibrationRunCount >= 1);
+        Assert.AreEqual(0, status.SweptFileCount, "根不可用时一个文件都不许删");
+    }
+
+    [TestMethod]
     public async Task CoordinatorModeRunsTheChainAndDoesNotEscalateTheScope()
     {
         using var harness = new SwitchHarness();
@@ -196,14 +238,45 @@ public sealed class CodeSourceMaintenanceDriverSwitchTests
             return path;
         }
 
-        public async Task StartAsync()
+        public async Task StartAsync() => await StartWithRootAsync(Root);
+
+        public async Task StartWithRootAsync(string root)
         {
             await _fixture.Store.UpsertProjectAsync(new CodeProjectRecord(
-                MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, Root, CodeProjectStatus.Active));
+                MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, root, CodeProjectStatus.Active));
 
             await Service.StartAsync();
-            Assert.IsTrue(Service.EnsureScope(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, Root));
+            Assert.IsTrue(Service.EnsureScope(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, root));
         }
+
+        /// <summary>种一条陈旧索引行（磁盘上并不存在该文件）。</summary>
+        public async Task SeedIndexedAbsoluteAsync(string filePath)
+        {
+            await _fixture.Store.UpsertFilesAsync(
+                MaintenanceTestData.WorkspaceId,
+                MaintenanceTestData.ScopeId,
+                [new CodeFileRecord(
+                    MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, filePath, "C#", _clock.GetUtcNow())]);
+
+            await _fixture.Store.UpsertSymbolsAsync(
+                MaintenanceTestData.WorkspaceId,
+                MaintenanceTestData.ScopeId,
+                [new CodeSymbolRecord(
+                    MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, filePath,
+                    $"seed:{filePath}", "Stale", CodeSymbolKind.Class, 1, 2, "class Stale", null)]);
+        }
+
+        public Task SeedManifestAsync(string filePath) =>
+            _fixture.Store.SaveSourceManifestAsync(
+                MaintenanceTestData.WorkspaceId,
+                MaintenanceTestData.ScopeId,
+                [new CodeSourceEntry(
+                    filePath,
+                    new SourceFingerprint(_clock.GetUtcNow(), 10, "seeded"),
+                    [new AppliedFileVersion("C#", "policy-1", "semantic-1", 1)])],
+                []);
+
+        public void Advance(TimeSpan delta) => _clock.Advance(delta);
 
         public void PublishChange(string relativePath, IndexChangeKind kind)
         {

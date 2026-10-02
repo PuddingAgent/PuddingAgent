@@ -100,7 +100,8 @@ public sealed record CodeSourceScanRun(
     CodeSourceChangeSet ChangeSet,
     long CapturedVersion,
     DateTimeOffset ScanStartedUtc,
-    bool CapabilityMissing);
+    bool CapabilityMissing,
+    bool RootUsable = true);
 
 /// <summary>一次校准运行的输入（除范围与根之外的事实）。</summary>
 /// <param name="WatcherHints">watcher 提示过的路径（低延迟提示，不保证覆盖）。</param>
