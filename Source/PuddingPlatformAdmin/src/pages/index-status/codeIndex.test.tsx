@@ -10,12 +10,18 @@ import {
   CODE_INDEX_PROJECT_FIELDS,
   CODE_INDEX_VISIBLE_PROJECT_LIMIT,
   MAINTENANCE_REASON_TEXT,
+  SOURCE_COMMIT_OUTCOME_WORD,
+  SOURCE_MAINTENANCE_COPY,
+  SOURCE_MAINTENANCE_MODE_WORD,
   deriveCalibrationFreshnessRatio,
   deriveCodeIndexBlock,
   deriveCodeIndexProjectMarks,
+  deriveSourceMaintenanceMarks,
   describeMaintenanceReason,
   describeMaintenanceStatus,
   describeMaintenanceWord,
+  describeSourceCommitOutcome,
+  describeSourceMaintenanceMode,
   rawFieldText,
   summarizeCodeIndexProjects,
 } from './health';
@@ -106,6 +112,22 @@ const AUTHORITATIVE_MAINTENANCE_FIELDS = [
   'watcherAttached',
 ] as const;
 
+/**
+ * `CodeIndexMaintenanceScopeStatus` 记录**尾部追加**的 9 个 D4「源维护」字段（顺序逐字对齐 C# 记录）。
+ * 真源：`Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs`（record 末尾 9 个默认参数）。
+ */
+const D4_SOURCE_MAINTENANCE_FIELDS = [
+  'sourceMaintenanceMode',
+  'sourceMaintenanceRunCount',
+  'sourceMaintenanceExtractedFileCount',
+  'sourceMaintenanceReusedFileCount',
+  'sourceMaintenanceOrphanFileCount',
+  'sourceMaintenanceUnresolvedPathCount',
+  'sourceMaintenanceDeletedFileCount',
+  'lastSourceMaintenanceCommitOutcome',
+  'lastSourceMaintenanceSessionKey',
+] as const;
+
 // ══ 夹具 ═══════════════════════════════════════════════════════════════
 
 function maintenanceFixture(
@@ -135,6 +157,16 @@ function maintenanceFixture(
     lastCalibrationAtUtc: new Date(NOW).toISOString(),
     recentObservationCount: 13,
     watcherAttached: true,
+    // ── D4「源维护」9 字段：夹具基线 = Coordinator · 已跑过且快照复用 · 无未定论路径 ──
+    sourceMaintenanceMode: 1,
+    sourceMaintenanceRunCount: 3,
+    sourceMaintenanceExtractedFileCount: 20,
+    sourceMaintenanceReusedFileCount: 7,
+    sourceMaintenanceOrphanFileCount: 0,
+    sourceMaintenanceUnresolvedPathCount: 0,
+    sourceMaintenanceDeletedFileCount: 2,
+    lastSourceMaintenanceCommitOutcome: 0,
+    lastSourceMaintenanceSessionKey: 'sess-abc',
     ...overrides,
   };
 }
@@ -232,11 +264,35 @@ describe('契约常量：字段名与顺序从后端反读（页面不得手写�
     ]);
   });
 
-  it('维护态：**恰好 23** 个 camelCase 字段，顺序逐字等于 SA2 A5 的断言数组', () => {
-    expect(CODE_INDEX_MAINTENANCE_FIELDS).toHaveLength(23);
-    expect(CODE_INDEX_MAINTENANCE_FIELDS.map((field) => field.key)).toEqual([
-      ...AUTHORITATIVE_MAINTENANCE_FIELDS,
+  it('I1 · 冻结核心：维护态字段表前 23 名（同序前缀）逐字不变（改名/删除/重排 ⇒ 红）', () => {
+    // ⛔ 不再写死「恰好 23 项」；改为「slice(0, 23) = 冻结名单」（与后端 A5 修法同构，可增长）。
+    expect(
+      CODE_INDEX_MAINTENANCE_FIELDS.slice(0, AUTHORITATIVE_MAINTENANCE_FIELDS.length).map(
+        (field) => field.key,
+      ),
+    ).toEqual([...AUTHORITATIVE_MAINTENANCE_FIELDS]);
+  });
+
+  it('I2 · 完整性：9 个 D4「源维护」字段全部在表内、追加在末尾、顺序一致、无重复', () => {
+    const keys = CODE_INDEX_MAINTENANCE_FIELDS.map((field) => field.key);
+    for (const key of D4_SOURCE_MAINTENANCE_FIELDS) {
+      expect(keys).toContain(key);
+    }
+    // 9 个新字段**只能**在末尾（顺序与 §2.1 表逐位一致）
+    expect(keys.slice(AUTHORITATIVE_MAINTENANCE_FIELDS.length)).toEqual([
+      ...D4_SOURCE_MAINTENANCE_FIELDS,
     ]);
+    expect(CODE_INDEX_MAINTENANCE_FIELDS).toHaveLength(
+      AUTHORITATIVE_MAINTENANCE_FIELDS.length + D4_SOURCE_MAINTENANCE_FIELDS.length,
+    );
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('I2b · 每个字段 key 都能在 types.ts 的接口里找到（源码文本核对）', () => {
+    const source = readSource(path.join(__dirname, 'types.ts'));
+    for (const key of CODE_INDEX_MAINTENANCE_FIELDS.map((field) => field.key)) {
+      expect(new RegExp(`^\\s*${key}\\s*:`, 'm').test(source)).toBe(true);
+    }
   });
 
   it('字段清单里每个字段都有中文标签（L2 列标题可读，不是裸 key）', () => {
@@ -373,10 +429,23 @@ describe('D3：注册态（索引注册表）与维护态（维护驱动）分�
     expect(marks.registrationHint).not.toBe(marks.maintenanceHint);
   });
 
-  it('维护态 tooltip 是 23 行，行序 = 契约常量顺序（字段名不得手写）', () => {
+  it('维护态 tooltip：字段行 = 契约常量（冻结 23 前缀 + 9 源维护），末尾追加派生说明', () => {
     const lines = describeMaintenanceStatus(maintenanceFixture()).split('\n');
-    expect(lines).toHaveLength(23);
-    expect(lines.map((line) => line.split(':')[0])).toEqual([...AUTHORITATIVE_MAINTENANCE_FIELDS]);
+    const fieldLineCount = CODE_INDEX_MAINTENANCE_FIELDS.length;
+    const fieldLines = lines.slice(0, fieldLineCount);
+    // 前 23 行仍是那 23 个冻结名（同序前缀）
+    expect(
+      fieldLines.slice(0, AUTHORITATIVE_MAINTENANCE_FIELDS.length).map((line) => line.split(':')[0]),
+    ).toEqual([...AUTHORITATIVE_MAINTENANCE_FIELDS]);
+    // 所有字段行逐位 = 契约常量顺序（字段名不得手写）
+    expect(fieldLines.map((line) => line.split(':')[0])).toEqual(
+      CODE_INDEX_MAINTENANCE_FIELDS.map((field) => field.key),
+    );
+    // 派生说明行在字段行之后（`▸ ` 前缀），且含「源维护」事实
+    const derivedLines = lines.slice(fieldLineCount);
+    expect(derivedLines.length).toBeGreaterThan(0);
+    for (const line of derivedLines) expect(line.startsWith('▸ ')).toBe(true);
+    expect(lines.join('\n')).toContain('sourceMaintenanceMode');
   });
 
   it('maintenance 为 null ⇒「维护态缺席」（有如实原因），与「已挂接但空闲」是不同呈现', () => {
@@ -660,5 +729,153 @@ describe('rawFieldText：未知 ≠ 否 ≠ 0，空数组 ≠ 未知', () => {
     expect(rawFieldText('list', ['a', 'b'])).toBe('a；b');
     expect(rawFieldText('nested', { a: 1 })).toContain('见下方表');
     expect(rawFieldText('nested', null)).toBe('未知');
+  });
+});
+
+// ══ D4「源维护」9 字段 + 派生信号（I3~I8）═══════════════════════════════
+// 动机（D10 教训）：这 9 个字段让「索引可能不全」读得到 —— 未定论路径 / 提交被取代 / 世代过期 /
+// 退化成逐文件提取。丢了它们，就会把「索引不全」误读成「代码不存在」（D5 两次误判的根因）。
+// 三态纪律：`null` = 未知 ≠ `false` ≠ `0`；未登记的枚举取值**原样显示数字**，不得当成 Legacy/Committed。
+
+describe('D4「源维护」派生信号（未定论路径 / 提交结果 / 退化提取）', () => {
+  const marks = (overrides: Partial<CodeIndexMaintenanceStatus> = {}) =>
+    deriveSourceMaintenanceMarks(maintenanceFixture(overrides));
+
+  it('枚举词表与逐字文案常量在册（未登记取值走「未知取值 <n>」分支）', () => {
+    expect(SOURCE_MAINTENANCE_MODE_WORD[0]).toBe('Legacy（逐文件）');
+    expect(SOURCE_MAINTENANCE_MODE_WORD[1]).toBe('Coordinator（源维护协调器）');
+    expect(SOURCE_COMMIT_OUTCOME_WORD[0]).toBe('Committed（本轮提交已接受）');
+    expect(describeSourceMaintenanceMode(3)).toBe('未知取值 3');
+    expect(describeSourceMaintenanceMode(null)).toBe('未知');
+    expect(describeSourceCommitOutcome(0)).toContain('Committed');
+    expect(describeSourceCommitOutcome(7)).toBe(
+      `${SOURCE_MAINTENANCE_COPY.outcomeUnknownPrefix}7`,
+    );
+  });
+
+  it('I3 · sourceMaintenanceMode：1 ⇒ Coordinator（源维护协调器），0 ⇒ Legacy（逐文件）', () => {
+    expect(marks({ sourceMaintenanceMode: 1 }).modeWord).toBe('Coordinator（源维护协调器）');
+    expect(marks({ sourceMaintenanceMode: 0 }).modeWord).toBe('Legacy（逐文件）');
+    // 两者都能读出来 ⇒ 组合 level 是 ok（其余字段取夹具基线：无未定论路径 / Committed）
+    expect(marks({ sourceMaintenanceMode: 1 }).level).toBe('ok');
+    expect(marks({ sourceMaintenanceMode: 0 }).level).toBe('ok');
+  });
+
+  it('I4 · sourceMaintenanceMode = 7（未登记取值）⇒ 含「未知取值 7」且 level 不是 ok', () => {
+    const m = marks({ sourceMaintenanceMode: 7 });
+    expect(m.modeWord).toBe('未知取值 7');
+    expect(m.level).not.toBe('ok');
+    expect(m.level).toBe('unknown');
+    expect(m.hint).toContain('未知取值 7');
+  });
+
+  it('I5 · lastSourceMaintenanceCommitOutcome：0⇒ok / 1⇒warn / 2⇒warn / null⇒未知 / 9⇒未知取值', () => {
+    const committed = marks({ lastSourceMaintenanceCommitOutcome: 0 });
+    expect(committed.commitOutcomeLevel).toBe('ok');
+    expect(committed.level).toBe('ok');
+
+    const superseded = marks({ lastSourceMaintenanceCommitOutcome: 1 });
+    expect(superseded.commitOutcomeLevel).toBe('warn');
+    expect(superseded.level).toBe('warn');
+    expect(superseded.commitOutcomeWord).toBe(SOURCE_MAINTENANCE_COPY.superseded);
+    expect(superseded.hint).toContain('需继续补跑');
+
+    const staleEpoch = marks({ lastSourceMaintenanceCommitOutcome: 2 });
+    expect(staleEpoch.commitOutcomeLevel).toBe('warn');
+    expect(staleEpoch.level).toBe('warn');
+    expect(staleEpoch.commitOutcomeWord).toBe(SOURCE_MAINTENANCE_COPY.staleEpoch);
+    expect(staleEpoch.hint).toContain('结果未记入');
+
+    // `null` = 从未跑过 ⇒ 未知（**不是** ok，也不得折叠成 Committed）
+    const absent = marks({ lastSourceMaintenanceCommitOutcome: null });
+    expect(absent.commitOutcomeLevel).toBe('unknown');
+    expect(absent.level).toBe('unknown');
+    expect(absent.level).not.toBe('ok');
+    expect(absent.commitOutcomeWord).toContain('无记录');
+
+    // 未登记的数字化取值 ⇒ 未知 + 原样显示数字（不得当成 Committed / Legacy）
+    const unknownValue = marks({ lastSourceMaintenanceCommitOutcome: 9 });
+    expect(unknownValue.commitOutcomeLevel).toBe('unknown');
+    expect(unknownValue.level).toBe('unknown');
+    expect(unknownValue.commitOutcomeWord).toBe(
+      `${SOURCE_MAINTENANCE_COPY.outcomeUnknownPrefix}9`,
+    );
+    expect(unknownValue.hint).toContain('原始取值 9');
+  });
+
+  it('I6 · 未定论路径：3 ⇒ warn 且文案含「3」；0 ⇒ 不告警（level 不为 warn）', () => {
+    const dirty = marks({ sourceMaintenanceUnresolvedPathCount: 3 });
+    expect(dirty.unresolvedPaths).toBe(true);
+    expect(dirty.level).toBe('warn');
+    expect(dirty.hint).toContain('3');
+    expect(dirty.unresolvedText).toContain('3');
+    expect(dirty.unresolvedText).toContain('索引可能不全');
+
+    const clean = marks({ sourceMaintenanceUnresolvedPathCount: 0 });
+    expect(clean.unresolvedPaths).toBe(false);
+    expect(clean.level).not.toBe('warn');
+    expect(clean.level).toBe('ok');
+    expect(clean.unresolvedText).toBeNull();
+  });
+
+  it('I6b · 未定论路径数读不出来（契约漂移）⇒ 未知（不当作 0，也不告警）', () => {
+    const m = deriveSourceMaintenanceMarks(
+      maintenanceFixture({
+        sourceMaintenanceUnresolvedPathCount: undefined as unknown as number,
+      }),
+    );
+    expect(m.unresolvedPaths).toBeNull();
+    expect(m.level).toBe('unknown');
+    expect(m.level).not.toBe('warn');
+    expect(m.hint).toContain('未知');
+  });
+
+  it('I7 · runCount>0 且 sessionKey=null ⇒ tooltip 含「逐文件提取」，但 level 不变（不告警）', () => {
+    const m = marks({ sourceMaintenanceRunCount: 5, lastSourceMaintenanceSessionKey: null });
+    expect(m.degenerateExtraction).toBe(true);
+    expect(m.degenerateText).toBe(SOURCE_MAINTENANCE_COPY.degenerate);
+    expect(m.hint).toContain('逐文件提取');
+    expect(m.level).toBe('ok');
+    expect(m.level).not.toBe('warn');
+
+    const reused = marks({ sourceMaintenanceRunCount: 5, lastSourceMaintenanceSessionKey: 'sess-1' });
+    expect(reused.degenerateExtraction).toBe(false);
+    expect(reused.degenerateText).toBeNull();
+    expect(reused.hint).not.toContain('逐文件提取');
+
+    // runCount = 0 ⇒ 还没跑过，不算「退化」
+    const neverRan = marks({ sourceMaintenanceRunCount: 0, lastSourceMaintenanceSessionKey: null });
+    expect(neverRan.degenerateExtraction).toBe(false);
+  });
+
+  it('I7b · 行级 level：有未定论路径 ⇒ 行升格 warn；仅「不可知」不污染行级 level', () => {
+    const warnRow = deriveCodeIndexProjectMarks(
+      projectFixture({
+        maintenance: maintenanceFixture({ sourceMaintenanceUnresolvedPathCount: 2 }),
+      }),
+    );
+    expect(warnRow.level).toBe('warn');
+
+    const unknownRow = deriveCodeIndexProjectMarks(
+      projectFixture({
+        maintenance: maintenanceFixture({ lastSourceMaintenanceCommitOutcome: null }),
+      }),
+    );
+    // 「不可知」≠「坏」：不把一票普通项目集体染灰（只在 deriveSourceMaintenanceMarks().level 体现）
+    expect(unknownRow.level).toBe('ok');
+  });
+
+  it('I8 · index.tsx 不再出现字面量 23，且维护态列数由契约常量推导', () => {
+    const source = readSource(PAGE_PATH);
+    expect(source).not.toMatch(/23\s*字段/);
+    expect(source).not.toMatch(/23字段/);
+    expect(source).not.toMatch(/，\s*23\s/);
+    // 表头列数由常量推导（回退成写死 ⇒ 红）
+    expect(source).toContain('${CODE_INDEX_MAINTENANCE_FIELDS.length} 列');
+    // 维护态表格的列同样由常量 `.map` 生成 ⇒ 渲染出的列数 === 常量长度（23 冻结 + 9 D4）
+    expect(source).toContain('CODE_INDEX_MAINTENANCE_FIELDS.map');
+    expect(CODE_INDEX_MAINTENANCE_FIELDS.length).toBeGreaterThan(
+      AUTHORITATIVE_MAINTENANCE_FIELDS.length,
+    );
   });
 });

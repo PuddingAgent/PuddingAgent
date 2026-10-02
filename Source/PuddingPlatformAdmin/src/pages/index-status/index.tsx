@@ -525,7 +525,7 @@ const IndexStatusPage: React.FC = () => {
                     </>
                   ) : null}
 
-                  {/* 态四：已观测到项目 —— 计数 + 逐项目行（原始 23 字段只在 tooltip 与 L2） */}
+                  {/* 态四：已观测到项目 —— 计数 + 逐项目行（原始字段只在 tooltip 与 L2） */}
                   {codeIndex.state === 'observed' && codeIndexCounts !== null ? (
                     <>
                       <div className="vs-metrics">
@@ -764,7 +764,7 @@ const IndexStatusPage: React.FC = () => {
                       />
 
                       <Typography.Text strong style={{ display: 'block', margin: '12px 0 4px' }}>
-                        {`维护态（maintenance，23 字段原样透传；可画表 ${maintenanceRows.length} 项）· ${CODE_INDEX_MAINTENANCE_FIELDS.length} 列`}
+                        {`维护态（maintenance 原样透传；可画表 ${maintenanceRows.length} 项）· ${CODE_INDEX_MAINTENANCE_FIELDS.length} 列`}
                       </Typography.Text>
                       {maintenanceRows.length === 0 ? (
                         <Alert

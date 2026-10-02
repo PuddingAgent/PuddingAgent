@@ -878,10 +878,15 @@ export interface CodeIndexProjectMarks {
 export function deriveCodeIndexProjectMarks(entry: CodeIndexProjectStatus): CodeIndexProjectMarks {
   const maintenance = entry.maintenance;
   const rejected = maintenance !== null && maintenance.rejectedCalibrationRunCount > 0;
+  // D4「源维护」派生信号：仅在**确定不安全**（有未定论路径 / 提交被取代 / 世代过期）时升格为
+  // warn；「不可知」（未登记枚举取值 / 提交结果无记录）**不**污染行级 level（否则一票普通项目会
+  // 集体变灰），它只在 `deriveSourceMaintenanceMarks(...).level === 'unknown'` 与 tooltip 里体现。
+  const sourceWarn =
+    maintenance !== null && deriveSourceMaintenanceMarks(maintenance).level === 'warn';
   // 取证取向（与 §2 矩阵一致）：已知坏 > 进行中 > 正常。顺序不可调换。
   const level: IndexHealthLevel = !entry.rootPathExists
     ? 'error'
-    : entry.stale || rejected
+    : entry.stale || rejected || sourceWarn
       ? 'warn'
       : maintenance?.indexInFlight === true
         ? 'busy'
@@ -998,7 +1003,7 @@ const CODE_INDEX_PROJECT_FIELD_META: Record<
   stale: { label: '陈旧', kind: 'bool' },
 };
 
-/** 维护态 23 字段 —— **顺序逐位对齐后端 A5 断言**（见 `types.ts` 的路径引用）。 */
+/** 维护态 32 字段 —— **前 23 个顺序逐位对齐后端 A5 断言**（见 `types.ts` 的路径引用）；后 9 个是 D4「源维护」。 */
 const CODE_INDEX_MAINTENANCE_FIELD_META: Record<
   keyof CodeIndexMaintenanceStatus,
   { label: string; kind: FieldKind }
@@ -1026,6 +1031,16 @@ const CODE_INDEX_MAINTENANCE_FIELD_META: Record<
   lastCalibrationAtUtc: { label: '最近校准时刻', kind: 'timestamp' },
   recentObservationCount: { label: '宽限窗口观测数', kind: 'count' },
   watcherAttached: { label: 'watcher 已挂接', kind: 'bool' },
+  // ── D4「源维护」（追加在末尾，不改前 23 个名字/顺序）──
+  sourceMaintenanceMode: { label: '源维护模式（枚举）', kind: 'count' },
+  sourceMaintenanceRunCount: { label: '源维护轮数', kind: 'count' },
+  sourceMaintenanceExtractedFileCount: { label: '源维护提取文件数', kind: 'count' },
+  sourceMaintenanceReusedFileCount: { label: '源维护复用文件数', kind: 'count' },
+  sourceMaintenanceOrphanFileCount: { label: '源维护孤儿清理数', kind: 'count' },
+  sourceMaintenanceUnresolvedPathCount: { label: '最近未定论路径数', kind: 'count' },
+  sourceMaintenanceDeletedFileCount: { label: '最近确认删除文件数', kind: 'count' },
+  lastSourceMaintenanceCommitOutcome: { label: '最近提交结果（枚举）', kind: 'count' },
+  lastSourceMaintenanceSessionKey: { label: '最近工程快照标识', kind: 'text' },
 };
 
 function fieldDescriptors<K extends string>(
@@ -1042,7 +1057,7 @@ export const CODE_INDEX_BLOCK_FIELDS: readonly FieldDescriptor<keyof CodeIndexSt
 export const CODE_INDEX_PROJECT_FIELDS: readonly FieldDescriptor<keyof CodeIndexProjectStatus>[] =
   fieldDescriptors(CODE_INDEX_PROJECT_FIELD_META);
 
-/** 维护态**23 列**（顺序 = wire 顺序；与后端 A5 断言逐位一致）。 */
+/** 维护态**32 列**（前 23 与后端 A5 断言逐位一致；后 9 个 D4「源维护」；顺序 = wire 顺序）。 */
 export const CODE_INDEX_MAINTENANCE_FIELDS: readonly FieldDescriptor<
   keyof CodeIndexMaintenanceStatus
 >[] = fieldDescriptors(CODE_INDEX_MAINTENANCE_FIELD_META);
@@ -1081,11 +1096,175 @@ export function rawFieldText(kind: FieldKind, value: unknown): string {
 }
 
 /**
- * 维护态 23 字段的 tooltip（字段名 + 顺序**由契约常量生成**；页面不得手写）。
- * 这是「原始 23 字段只出现在 hover tooltip 与 L2」的**唯一**入口。
+ * 维护态字段的 tooltip（字段名 + 顺序**由契约常量生成**；页面不得手写）。
+ * 这是「原始字段只出现在 hover tooltip 与 L2」的**唯一**入口。
+ *
+ * 前 23 行 = 冻结核心（同序前缀，不得改名/删除/重排）；第 24~32 行 = D4「源维护」字段；
+ * 末尾追加 `deriveSourceMaintenanceMarks` 的逐字**派生说明**（`▸ ` 前缀，与字段行区分）——
+ * 让「索引可能不全 / 本轮提交被取代 / 退化成逐文件提取」在 tooltip 里也读得到。
  */
 export function describeMaintenanceStatus(status: CodeIndexMaintenanceStatus): string {
-  return CODE_INDEX_MAINTENANCE_FIELDS.map(
+  const fieldLines = CODE_INDEX_MAINTENANCE_FIELDS.map(
     (field) => `${field.key}: ${rawFieldText(field.kind, status[field.key])}`,
-  ).join('\n');
+  );
+  const derivedLines = deriveSourceMaintenanceMarks(status)
+    .hint.split('\n')
+    .map((line) => `▸ ${line}`);
+  return [...fieldLines, ...derivedLines].join('\n');
+}
+
+// ══ D4「源维护」派生信号（2026-10-02）═══════════════════════════════════
+// 动机：D10 起维护态多了 9 个「源维护」字段。其中三条恰好是本会话反复缺失的信号 ——
+// 「本轮有未定论路径 ⇒ 索引可能不全」「本轮提交被取代 / 世代过期 ⇒ 结果未记入」
+// 「没有工程快照复用 ⇒ 退化成逐文件提取」。缺了它们，会把「索引不全」误读成「代码不存在」。
+//
+// 三态纪律（同本文件其余部分）：`null` = 未知 ≠ `false` ≠ `0`；**禁止** `?? 0` 折叠。
+// 枚举在 wire 上是 **number**（宿主未注册 `JsonStringEnumConverter`，见 `types.ts` 的说明）；
+// 未登记的取值**原样显示数字**，既不猜成 Legacy/Committed，也不当成 0。
+
+/** `sourceMaintenanceMode` 的已知取值 → 逐字中文词（未登记取值给「未知取值 `<n>`」）。 */
+export const SOURCE_MAINTENANCE_MODE_WORD: Record<number, string> = {
+  0: 'Legacy（逐文件）',
+  1: 'Coordinator（源维护协调器）',
+};
+
+/** `lastSourceMaintenanceCommitOutcome` 的已知取值 → 逐字中文词。 */
+export const SOURCE_COMMIT_OUTCOME_WORD: Record<number, string> = {
+  0: 'Committed（本轮提交已接受）',
+  1: 'Superseded（本轮提交被后续变化取代）',
+  2: 'StaleEpoch（世代过期）',
+};
+
+/** 「源维护」派生信号的逐字文案（**不得改写**）。 */
+export const SOURCE_MAINTENANCE_COPY = {
+  /** 未定论路径 `> 0` 的前缀（后接 `<n>`）。 */
+  unresolvedPrefix: '未定论路径 ',
+  /** 未定论路径 `> 0` 的后缀：索引可能不全。 */
+  unresolvedSuffix: ' 条 · 索引可能不全（下一轮完整扫描会兜住）',
+  /** 未定论路径数**读不出来**（未知 ≠ 0）。 */
+  unresolvedUnknown: '未定论路径数未知 · 索引是否可能不全无法判定',
+  /** `Superseded = 1`。 */
+  superseded: '本轮提交被后续变化取代 · 需继续补跑',
+  /** `StaleEpoch = 2`。 */
+  staleEpoch: '世代过期（scope 重建后的旧批次）· 结果未记入',
+  /** 提交结果**未登记的数字化取值**（后接 `<n>`）。 */
+  outcomeUnknownPrefix: '提交结果未知 · 原始取值 ',
+  /** 提交结果 `null`（从未跑过）。 */
+  outcomeAbsent: '提交结果未知 · 无记录（从未跑过）',
+  /** 没有工程快照复用 ⇒ 退化成逐文件提取。 */
+  degenerate: '本轮退化为逐文件提取（无工程快照复用）',
+} as const;
+
+/** `sourceMaintenanceMode` 三态词：已知 ⇒ 中文词；`null`/`undefined` ⇒ 未知；其它数字 ⇒ `未知取值 <n>`。 */
+export function describeSourceMaintenanceMode(value: number | null | undefined): string {
+  if (value === null || value === undefined) return UNKNOWN_TEXT;
+  const known = SOURCE_MAINTENANCE_MODE_WORD[value];
+  return known !== undefined ? known : `未知取值 ${value}`;
+}
+
+/** `lastSourceMaintenanceCommitOutcome` 三态词（`null` ⇒ 「无记录」，未登记数字 ⇒ 原样显示数字）。 */
+export function describeSourceCommitOutcome(value: number | null | undefined): string {
+  if (value === null || value === undefined) return SOURCE_MAINTENANCE_COPY.outcomeAbsent;
+  if (value === 0) return SOURCE_COMMIT_OUTCOME_WORD[0];
+  if (value === 1) return SOURCE_MAINTENANCE_COPY.superseded;
+  if (value === 2) return SOURCE_MAINTENANCE_COPY.staleEpoch;
+  return `${SOURCE_MAINTENANCE_COPY.outcomeUnknownPrefix}${value}`;
+}
+
+/** 单个维护态的「源维护」派生信号（`level` **不含 busy/error**：这里只有 ok / warn / unknown）。 */
+export interface SourceMaintenanceMarks {
+  /** 组合 level：warn（不确定的坏）/ unknown（不可知）/ ok。 */
+  level: IndexHealthLevel;
+  /** 链路词（`Legacy（逐文件）` / `Coordinator（源维护协调器）` / `未知取值 <n>` / 未知）。 */
+  modeWord: string;
+  /** `sourceMaintenanceUnresolvedPathCount > 0` ⇒ true；`=== 0` ⇒ false；不可读 ⇒ null。 */
+  unresolvedPaths: boolean | null;
+  /** 未定论路径的逐字说明；**确实是 0** 时为 `null`（不需要告警文案）。 */
+  unresolvedText: string | null;
+  /** 提交结果原值（`0`/`1`/`2` / 其它数字 / `null`）。 */
+  commitOutcome: number | null;
+  /** 提交结果词（含「未知取值 `<n>`」/「无记录」）。 */
+  commitOutcomeWord: string;
+  /** 提交结果的 level：`0` ⇒ ok · `1`/`2` ⇒ warn · `null`/未登记 ⇒ unknown。 */
+  commitOutcomeLevel: IndexHealthLevel;
+  /** 运行过源维护（`runCount > 0`）但没有工程快照复用 ⇒ 该轮退化成逐文件提取（**中性事实，不进告警**）。 */
+  degenerateExtraction: boolean;
+  /** 退化说明（逐字）；未退化时为 `null`。 */
+  degenerateText: string | null;
+  /** tooltip / 纯文本用的多行说明（派生事实，中文逐字）。 */
+  hint: string;
+}
+
+/** 单个维护态的「源维护」派生信号（维护态缺席 ⇒ 全未知，`level = unknown`）。 */
+export function deriveSourceMaintenanceMarks(
+  maintenance: CodeIndexMaintenanceStatus | null | undefined,
+): SourceMaintenanceMarks {
+  if (maintenance === null || maintenance === undefined) {
+    return {
+      level: 'unknown',
+      modeWord: UNKNOWN_TEXT,
+      unresolvedPaths: null,
+      unresolvedText: SOURCE_MAINTENANCE_COPY.unresolvedUnknown,
+      commitOutcome: null,
+      commitOutcomeWord: SOURCE_MAINTENANCE_COPY.outcomeAbsent,
+      commitOutcomeLevel: 'unknown',
+      degenerateExtraction: false,
+      degenerateText: null,
+      hint: `${UNKNOWN_TEXT}（维护态缺席）`,
+    };
+  }
+
+  const modeWord = describeSourceMaintenanceMode(maintenance.sourceMaintenanceMode);
+  const modeKnown =
+    SOURCE_MAINTENANCE_MODE_WORD[maintenance.sourceMaintenanceMode] !== undefined;
+
+  const unresolvedCount = maintenance.sourceMaintenanceUnresolvedPathCount;
+  // 后端该字段是**不可空** `long`；但 wire 上若缺键会变 `undefined`（契约漂移）⇒ 也按三态处理。
+  const unresolvedPaths: boolean | null =
+    typeof unresolvedCount === 'number' ? unresolvedCount > 0 : null;
+  const unresolvedText =
+    unresolvedPaths === null
+      ? SOURCE_MAINTENANCE_COPY.unresolvedUnknown
+      : unresolvedPaths
+        ? `${SOURCE_MAINTENANCE_COPY.unresolvedPrefix}${unresolvedCount}${SOURCE_MAINTENANCE_COPY.unresolvedSuffix}`
+        : null;
+
+  const commitOutcome = maintenance.lastSourceMaintenanceCommitOutcome;
+  const commitOutcomeWord = describeSourceCommitOutcome(commitOutcome);
+  const commitOutcomeLevel: IndexHealthLevel =
+    commitOutcome === 0 ? 'ok' : commitOutcome === 1 || commitOutcome === 2 ? 'warn' : 'unknown';
+
+  const runCount = maintenance.sourceMaintenanceRunCount;
+  const degenerateExtraction =
+    typeof runCount === 'number' && runCount > 0 && maintenance.lastSourceMaintenanceSessionKey === null;
+  const degenerateText = degenerateExtraction ? SOURCE_MAINTENANCE_COPY.degenerate : null;
+
+  // 组合 level：已知坏（warn）> 不可知（unknown）> ok。顺序不可调换。
+  const level: IndexHealthLevel =
+    unresolvedPaths === true || commitOutcomeLevel === 'warn'
+      ? 'warn'
+      : unresolvedPaths === null || commitOutcomeLevel === 'unknown' || !modeKnown
+        ? 'unknown'
+        : 'ok';
+
+  const hint = [
+    `源维护模式 sourceMaintenanceMode = ${modeWord}`,
+    `源维护轮数 sourceMaintenanceRunCount = ${formatTriStateCount(runCount)}`,
+    unresolvedText !== null ? unresolvedText : '本轮未定论路径 0 条',
+    commitOutcomeWord,
+    ...(degenerateText !== null ? [degenerateText] : []),
+  ].join('\n');
+
+  return {
+    level,
+    modeWord,
+    unresolvedPaths,
+    unresolvedText,
+    commitOutcome,
+    commitOutcomeWord,
+    commitOutcomeLevel,
+    degenerateExtraction,
+    degenerateText,
+    hint,
+  };
 }

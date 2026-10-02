@@ -122,16 +122,21 @@ export interface FullTextIndexStatusDetail {
 
 // ══ 符号索引块（S-A2 / P3 新增）════════════════════════════════════════
 // 唯一契约 = 后端 `Source/PuddingHost/Services/CodeIndexStatusProbe.cs`（探针 + 两个 record）。
-// 权威字段名清单（含「维护态**恰好 23 个** camelCase 字段」的逐个点名断言）：
+// 权威字段名清单（含「维护态**前 23 个** camelCase 字段 = 冻结前缀」的逐个点名断言）：
 //   · `Tests/PuddingHost.Tests/Hosting/SA2CodeIndexStatusTests.cs`（A5 / A6，第 205~250 行）
 //   · `Tests/PuddingHost.Tests/Hosting/SA2CodeIndexTestDoubles.cs`（`Sa2Samples.MaintenanceStatus` 逐字段赋值，第 120~150 行）
 // ⇒ 本节的字段名与**声明顺序**都是**从后端反读**的，不是猜的；顺序即 wire 顺序（ASP.NET camelCase）。
 
 /**
- * 维护态（`ICodeIndexMaintenance.GetScopeStatuses` 的 23 字段记录，后端**原样透传**）。
+ * 维护态（`ICodeIndexMaintenance.GetScopeStatuses` 的记录，后端**原样透传**）。
  *
- * ⚠️ 字段顺序与 `SA2CodeIndexStatusTests.A5` 的断言数组**逐位一一对应** ——
- * L2 证据层的列即由此顺序生成（见 `health.ts` 的 `CODE_INDEX_MAINTENANCE_FIELDS`）。
+ * ⚠️ **前 23 个字段是冻结核心**：名字、顺序、可空性与 `SA2CodeIndexStatusTests.A5` 的断言数组
+ * **逐位一一对应**，不得改名 / 删除 / 重排；L2 证据层的列即由此顺序生成
+ * （见 `health.ts` 的 `CODE_INDEX_MAINTENANCE_FIELDS`）。
+ * 末尾 9 个是 D4「源维护」追加字段（对应后端 `CodeIndexMaintenanceScopeStatus` 记录尾部的默认参数）。
+ *
+ * ⚠️ 枚举字段（`sourceMaintenanceMode` / `lastSourceMaintenanceCommitOutcome`）在 wire 上是
+ * **number**（ASP.NET Core 默认枚举序列化；宿主未注册 `JsonStringEnumConverter`）。
  */
 export interface CodeIndexMaintenanceStatus {
   /** 拥有该 scope 的 workspace。 */
@@ -180,6 +185,26 @@ export interface CodeIndexMaintenanceStatus {
   recentObservationCount: number;
   /** 是否已挂接变更源（watcher）；`false` ⇒ 不会被增量感知。 */
   watcherAttached: boolean;
+
+  // ── D4「源维护」（2026-10-02）：让「索引可能不全」读得到，而不是只能翻日志 ──
+  /** 本轮生效的变更施用链路（枚举 **number**：`0 = Legacy` 逐文件 / `1 = Coordinator` 源维护协调器）。 */
+  sourceMaintenanceMode: number;
+  /** 源维护协调器已运行轮数（仅在 `Coordinator` 模式递增）。 */
+  sourceMaintenanceRunCount: number;
+  /** 累计「提取并原子提交」的文件数。 */
+  sourceMaintenanceExtractedFileCount: number;
+  /** 累计「内容指纹一致 ⇒ 跳过提取、只刷新消费者视图」的文件数。 */
+  sourceMaintenanceReusedFileCount: number;
+  /** 累计清掉的索引孤儿行数。 */
+  sourceMaintenanceOrphanFileCount: number;
+  /** **最近一轮**的未定论路径数（失败 + 本轮没有定论）；`> 0` ⇒ 索引**可能不全**。 */
+  sourceMaintenanceUnresolvedPathCount: number;
+  /** **最近一轮**确认删除的文件数。 */
+  sourceMaintenanceDeletedFileCount: number;
+  /** **最近一轮**账本提交结果（枚举 **number**：`0 = Committed` / `1 = Superseded` / `2 = StaleEpoch`；`null` = 从未跑过）。 */
+  lastSourceMaintenanceCommitOutcome: number | null;
+  /** **最近一轮**语言侧复用的工程/编译快照标识；**为 `null` ⇒ 这一轮退化成逐文件提取**。 */
+  lastSourceMaintenanceSessionKey: string | null;
 }
 
 /**

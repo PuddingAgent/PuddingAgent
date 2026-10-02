@@ -481,3 +481,12 @@ S-A2 的 `A5_..._With_All_23_Fields` 断言由绿转红（失败 1 / 通过 24 /
 
 **仍未修（可见性缺口）**：前端 `src/pages/index-status/types.ts` + L2 证据层仍按 23 字段建模 ⇒
 新增 9 个「源维护」事实**不会出现在面板上**（TS 静默忽略多余字段）。待办：补齐 9 字段（前端改动**无需重启 Core**）。
+
+**D10 下半场已关闭（2026-10-03，P4）**：前端 `types.ts` / `health.ts` / `index.tsx` / `codeIndex.test.tsx` 已消费 9 个新字段，
+`CODE_INDEX_MAINTENANCE_FIELDS` 由 23 → **32 列**；并派生成「覆盖可信度」信号
+（未定论路径 > 0 ⇒ warn；`Superseded`/`StaleEpoch` ⇒ warn；`null` ⇒ 未知；未知枚举取值 ⇒ 「未知取值 n」**不得**当作 Legacy/Committed）。
+前端已 build + deploy（逐文件字节比对通过、`/index-status` 200、**无需重启 Core**）。
+⚠️ 但因**后端仍未部署**（`/api/admin/index/status` 404），面板对 `codeIndex` 仍显示「未接入」⇒ 该 9 字段的可见性要等 Core 部署后才真正生效。
+⚠️ 另登记：`src/pages/chat/components/serviceStatus.ts:18` 引用 `index-status/health` ⇒ `health.ts` 进 `common-async`（本刀使 common +4139 B）；
+「改 index-status 不影响 chat」的旧结论**已不成立**，后续应把共享纯函数下沉到独立模块。
+详见 `Docs/00_changelog/2026Year/10/2026-10-03-P4-面板消费源维护9字段.md`。
