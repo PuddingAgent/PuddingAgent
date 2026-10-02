@@ -24,6 +24,23 @@
 - Shell 侧：IMG11/IMG12（`96d5356`：新增 Foundation `ToolAvailabilityCatalog`（kind→可用性纯映射，卡片「可用/待接入」标签与标签页 Availability 同源）+ `MainWindow.xaml` 五张卡片可用性标签（文案由代码写入）；工具首页正常时不再输出泛泛的「就绪」）；IMG05（`53c2f1b`：Foundation `LauncherOnlyWidthRatio=0.32` + `InitialRatioWithoutPreference`/`DefaultRatioFor`/`ResolveLoadedRatio` 纯函数，已保存比例一律优先、切标签不重算比例；`DesktopBootstrapSettings.ToolWorkspace` 改可空以区分「未配置 vs 保存了默认值」；分割线补 Tooltip）。Shell 改动不涉及前端产物，前端版本号不变。
 - §13.6 的代码项（P0 + P1，含 Shell 两批）已全部落地。**静态外观已获像素复核**（Docs/Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md：聊天区 `#11100d`→`#11151b`、助手卡片去底色后与背景同色、输入区 `#1c1a16`→`#1a2029`、**消息区右侧白轨道与上下箭头消失**、页角徽标 `v6.1.3 · 97fb4d2` 可见、工具卡片可用/待接入标签可见）。**未完成的是验收**：SCROLL-001 QA 表、§12 整窗与 WebView2 真实验收（§12 V/F/S/A/P/SEC/D、§13.6 IMG-V*、§14.5 表）中的交互、浅色主题、DPI/缩放与性能项。同轮登记两处缺口：IMG03 的「帮助」在共享组件 `PuddingGlobalActions`（chat 变体），IMG07 的窄标签首列症状未被该截图覆盖。
 
+## 2026-10-01：WinUI Shell 设施实现（第 68 轮，WinUI 薄层第 1 块）
+
+- 新增 `PuddingDesktop.CapabilityHost/WinUiShellFacilities.cs`：`IDesktopShellFacilities` 的 WinUI 实现
+  （对话框 / 文件选择器 / 剪贴板）——**整个能力通道里唯一依赖 Windows App SDK 的部分**。
+  放在 CapabilityHost 是合规的：它只依赖 `Pudding.Contracts`（该工程的编译期边界）。
+- 三条已确认的 WinUI 陷阱均已在实现中处理：
+  ①`ContentDialog` 必须设 `XamlRoot`（否则抛异常；窗口未就绪时如实返回 `ui_unavailable`）；
+  ②非打包应用的文件选择器必须先 `InitializeWithWindow.Initialize(picker, hwnd)`（否则 COMException）；
+  ③剪贴板非文本内容 ⇒ **"无文本"的成功结果**（不是错误）。
+- 取消语义：对话框 `ContentDialogResult.None`（ESC/点遮罩）⇒ **`Cancel`**；选择器返回 `null`/空 ⇒ **`Canceled=true`**；
+  两者都是**结果而不是失败**。
+- 按钮组合映射显式写清（Ok/OkCancel/YesNo/YesNoCancel → Primary/Secondary/Close 文本与选择），
+  避免"点了按钮却被静默忽略"的假成功。
+- 预算收敛**不在这里重复实现**：由平台无关的 `DesktopShellSurface` 统一做（避免两处口径漂移）。
+- 验证：`PuddingDesktop.CapabilityHost` 编译通过、**0 警告**（该工程 `TreatWarningsAsErrors=true`）。
+- 构建注意事项（实测）：清空 `temp\build` 后该 WinUI 工程会触发重新 restore，而当前环境 **NuGet 不可达**
+  （`NU1301` SSL/EOF）⇒ 用工程既有还原产物 `--no-restore` 构建验证（输出落在工程 bin/obj，均已 gitignore）。
 ## 2026-10-01：Desktop 侧通道启动判定（第 67 轮）
 
 - 新增 `DesktopCapabilityChannelPreflight.Evaluate(settings, processInstanceId, authentication, endpointDescription)`
