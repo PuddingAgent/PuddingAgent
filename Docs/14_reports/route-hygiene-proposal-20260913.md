@@ -1,3 +1,18 @@
+---
+title: "[路由卫生] `deepseek-v4-flash` 未注册引用清理 · 提案（2026-09-13）"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "已注册（父级给定 list_llm_providers，本次未复查；另经实测 D:\\data\\config\\llm.providers.json 348 行交叉确认）"
+categories: [docs, reports]
+tags: [route, hygiene, proposal, reports]
+related_docs: []
+related_files: [Source/PuddingRuntime/Tools/BuiltIns/SmartWorkflow/SmartExploreTool.cs, Source/PuddingRuntime/Services/CroppedLayersProvider.cs, Source/PuddingRuntime/Tools/BuiltIns/Management/LlmResourcePoolTool.cs, Docs/10_conventions/agent-collaboration-agreement.md, Tools/Diagnostics/README.md, Source/PuddingPlatformAdmin/src/pages/llm-resource-pool/providerTemplates.ts, Source/PuddingPlatformAdmin/src/pages/chat/utils/chatDiagnostics.test.ts, Docs/README.md, Docs/12_features/上下文Token效率缓存命中与分级压缩优化设计方案.md, Docs/12_features/原生视觉理解与多模态意图同步规划-2026-09-12.md, Docs/08_how_debuge/README.md, Source/PuddingPlatformAdmin/src/.umi-test/appData.json, code_map.md]
+slug: reports-route-hygiene-proposal-20260913
+draft: false
+---
+
 # [路由卫生] `deepseek-v4-flash` 未注册引用清理 · 提案（2026-09-13）
 
 > 任务卡：`0278f10610d74a0cbb4d70a0ebf2a3d5`

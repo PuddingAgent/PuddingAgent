@@ -1,3 +1,18 @@
+---
+title: Task 22 - Agent 角色与编排系统方案（Pudding）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 状态：design 优先级：P0 最后更新：2026-02-20
+categories: [docs, tasks]
+tags: [task22, agent, roles, orchestration, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task22-agent-roles-orchestration
+draft: false
+---
+
 # Task 22 - Agent 角色与编排系统方案（Pudding）
 状态：`design`  
 优先级：`P0`  

@@ -1,3 +1,18 @@
+---
+title: 21 子代理工作空间与运行归档 ADR
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: ADR-019 已经推进了配置目录、事件系统、执行引擎和会话层。下一步应该进入子代理系统，因为它是多 Agent 平台能力的关键验证点：
+categories: [docs, architecture]
+tags: [子代理工作空, 间与运行归档, architecture]
+related_docs: [Docs/07_architecture/19架构基础设施增强下一步ADR.md, Docs/07_architecture/20会话状态机与事件规范ADR.md, Docs/07_architecture/61ADR-060子代理运行可观测性与会话事件投影ADR.md]
+related_files: []
+slug: architecture-21子代理工作空间与运行归档adr
+draft: false
+---
+
 # 21 子代理工作空间与运行归档 ADR
 
 > 状态：**done**（Phase A-D 完成，Phase E Admin UI 待后续 UI 阶段）

@@ -1,3 +1,18 @@
+---
+title: Task 12 — 感官过滤设计方案 (Output Distillation)
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 设计原则 三层数据流模型 过滤策略 三段式断路器 自适应过滤规则 异构模型压缩链 LLM 感知技能 UI 双轨制显示 核心实现 实现路线
+categories: [docs, tasks]
+tags: [task12, sensory, filter, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task12-sensory-filter
+draft: false
+---
+
 # Task 12 — 感官过滤设计方案 (Output Distillation)
 
 > **状态：** ✏️ 设计中

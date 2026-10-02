@@ -1,3 +1,18 @@
+---
+title: 36 ADR-035 登录页与 Chat 视觉统一
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 登录页是用户进入 Pudding Runtime 的第一个页面。浏览器评审选中的当前页面使用深色玻璃拟态、强紫色渐变、16px 大圆角、发光阴影和居中营销式品牌卡片：
+categories: [docs, architecture]
+tags: [登录页与, 视觉统一, architecture]
+related_docs: [Docs/07_architecture/20AdminChat简约克制界面ADR.md, Docs/07_architecture/34ADR-033AdminChatComposer浮层重设计ADR.md, Docs/12_features/Login页与Chat视觉统一设计方案.md, Docs/15_tasks/task14-skill-plugin.md]
+related_files: []
+slug: architecture-36adr-035登录页与chat视觉统一adr
+draft: false
+---
+
 # 36 ADR-035 登录页与 Chat 视觉统一
 
 > 状态：**accepted**  

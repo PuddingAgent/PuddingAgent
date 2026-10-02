@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 持续优化执行台账
+author: hyfree
+date: 2026-09-12
+last_reviewed: 2026-10-02
+status: active
+description: 用户于 2026-09-05 授权继续负责全部已登记优化，并已允许停机重启。本台账是后续自动唤醒与人工轮次的恢复入口；不是新的产品运行时调度器。Codex 的既有 puddingagent heartbeat 已更新为每 30 分钟推进当前线程，有可执行工作就做一个有界步骤，无变化且无行动时安静。
+categories: [docs, reports]
+tags: [持续优化执行, 台账, reports]
+related_docs: []
+related_files: [Source/PuddingPlatformTests/Services/StorageInventorySamplerQueryTests.cs]
+slug: reports-puddingagent持续优化执行台账-2026-09-05
+draft: false
+---
+
 # PuddingAgent 持续优化执行台账
 
 用户于 2026-09-05 授权继续负责全部已登记优化，并已允许停机重启。本台账是后续自动唤醒与人工轮次的恢复入口；不是新的产品运行时调度器。Codex 的既有 `puddingagent` heartbeat 已更新为每 30 分钟推进当前线程，有可执行工作就做一个有界步骤，无变化且无行动时安静。

@@ -1,3 +1,18 @@
+---
+title: 统一 Scheduler 内核现状核查报告（2026-09-13）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "PP\\Services\\Scheduling\\TaskAutoDispatchEvaluator.cs:167 | public sealed class TaskAutoDispatchEvaluator( IDbContextFactory<PlatformDbContext> dbFactory, ITaskDependencyStore dependencyStore, IAgentAva"
+categories: [docs, reports]
+tags: [scheduler, kernel, current, state, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/Scheduling/TaskAutoDispatchEvaluator.cs, Source/PuddingAgent/appsettings.json]
+slug: reports-scheduler-kernel-current-state-20260913
+draft: false
+---
+
 # 统一 Scheduler 内核现状核查报告（2026-09-13）
 
 ## 0. 结论摘要

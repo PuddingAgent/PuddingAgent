@@ -1,3 +1,18 @@
+---
+title: Agent Harness 兼容与工具调用效率修复设计方案
+author: hyfree
+date: 2026-08-26
+last_reviewed: 2026-10-02
+status: active
+description: 模型后训练时熟悉的 Harness 与 Pudding Runtime 不同。模型经常按已有先验尝试 rg、exec_command、write_stdin、Codex patch 或 pwsh 参数，而 Pudding 暴露的是 search_grep、shell、terminal_input 和自己的参数名。协议差异会产生三类浪费：
+categories: [docs, features]
+tags: [兼容与工具调, 用效率修复设, 计方案, features]
+related_docs: [Docs/07_architecture/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md]
+related_files: []
+slug: features-agentharness兼容与工具调用效率修复设计方案
+draft: false
+---
+
 # Agent Harness 兼容与工具调用效率修复设计方案
 
 > 日期：2026-08-26  

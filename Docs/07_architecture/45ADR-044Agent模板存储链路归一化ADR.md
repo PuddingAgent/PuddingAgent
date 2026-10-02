@@ -1,3 +1,18 @@
+---
+title: 45 ADR-044 Agent 模板存储链路归一化
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: ADR-036 已经决定全局 Agent 模板属于系统级配置，唯一事实来源应为：
+categories: [docs, architecture]
+tags: [模板存储链路, 归一化, architecture]
+related_docs: [Docs/07_architecture/37ADR-036系统级配置文件唯一来源ADR.md, Docs/07_architecture/41ADR-040Agent模板编辑SettingsSidebarNavigationADR.md, Docs/07_architecture/35ADR-034Agent头像服务端管理与模板绑定ADR.md]
+related_files: []
+slug: architecture-45adr-044agent模板存储链路归一化adr
+draft: false
+---
+
 # 45 ADR-044 Agent 模板存储链路归一化
 
 > 状态：**accepted / P0-P3 implemented, P4 partial**  

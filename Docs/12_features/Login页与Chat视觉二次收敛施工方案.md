@@ -1,3 +1,18 @@
+---
+title: Login 页与 Chat 视觉二次收敛施工方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前登录页已经不是旧的深色玻璃风格，但它偏成了“森林工坊插画入口”。本方案给 Dev 的施工目标是：保留 Runtime Entry 的左右分栏和登录转场，把视觉语言收敛回 /admin/chat 的 Quiet Runtime 工作台。
+categories: [docs, features]
+tags: [页与, 视觉二次收敛, 施工方案, features]
+related_docs: [Docs/07_architecture/40ADR-039登录页与Chat视觉二次收敛ADR.md]
+related_files: [Source/PuddingPlatformAdmin/src/pages/user/login/index.tsx, Source/PuddingPlatformAdmin/src/pages/user/login/login.test.tsx]
+slug: features-login页与chat视觉二次收敛施工方案
+draft: false
+---
+
 # Login 页与 Chat 视觉二次收敛施工方案
 
 > 日期：2026-05-23  

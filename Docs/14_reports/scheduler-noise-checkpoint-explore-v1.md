@@ -1,3 +1,18 @@
+---
+title: Scheduler Noise — Explore Checkpoint (checkpoint-v1)
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "复算命令（可复核）： certutil -hashfile \"Source\\PuddingMemoryEngine\\Services\\SubconsciousJobQueue.cs\" SHA256"
+categories: [docs, reports]
+tags: [scheduler, noise, checkpoint, explore, v1, reports]
+related_docs: []
+related_files: [Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs, Source/PuddingRuntime/Services/Background/SubconsciousJobScheduler.cs, Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs, Source/PuddingMemoryEngineTests/SubconsciousJobQueueTests.cs]
+slug: reports-scheduler-noise-checkpoint-explore-v1
+draft: false
+---
+
 # Scheduler Noise — Explore Checkpoint (checkpoint-v1)
 
 | field | value |

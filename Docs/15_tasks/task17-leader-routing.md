@@ -1,3 +1,18 @@
+---
+title: "Task 17: Leader 动态路由设计方案 (Smart Routing)"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 背景与问题 设计目标 核心架构：Plan-then-Execute 任务评估与分解引擎 Worker 能力匹配与路由 结果汇聚模式 通信协议改进 可观测性增强 Swarm 视觉表现 Leader System Prompt 设计 实现路线图
+categories: [docs, tasks]
+tags: [task17, leader, routing, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task17-leader-routing
+draft: false
+---
+
 # Task 17: Leader 动态路由设计方案 (Smart Routing)
 
 > **状态：** ✏️ 设计中 · **优先级：** 🟠 P1 · **依赖：** Task 04, Task 09, Task 10, D08

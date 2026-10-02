@@ -1,3 +1,18 @@
+---
+title: ADR-077：主代理原生视觉理解与多模态消息链路
+author: hyfree
+date: 2026-08-22
+last_reviewed: 2026-10-02
+status: active
+description: 本 ADR 冻结以下决策：
+categories: [docs, architecture]
+tags: [主代理原生视, 觉理解与多模, 态消息链路, architecture]
+related_docs: [Docs/14_reports/原生视觉流式上下文与ImageReader修复-2026-09-15.md, Docs/07_architecture/102ADR-088原生视觉取图与截图统一链路ADR.md, Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md, Docs/14_reports/原生视觉优化看板修订-2026-09-12.md, Docs/14_reports/图片请求官方限制与预处理恢复修复-2026-09-19.md]
+related_files: [Source/PuddingCore/Platform/ConversationTurnContracts.cs, Source/PuddingCore/Models/ChatMessage.cs, Source/PuddingCore/Tools/PuddingToolContracts.cs, Source/PuddingCore/Runtime/ITurnExecutor.cs, Source/PuddingHost/Tools/ImageReaderTool.cs, code_map.md, Docs/08_how_debuge/README.md]
+slug: architecture-92adr-077主代理原生视觉理解与多模态消息链路adr
+draft: false
+---
+
 # ADR-077：主代理原生视觉理解与多模态消息链路
 
 > **2026-09-15 实施更新**：`image_reader` 已按 ADR-088 移除工具内 helper 调用与 mode 参数，仅取图并交回调用模型；Streaming 每次读取 LLM 流时重新绑定冻结视觉上下文。下文原始 helper 流程仅为历史记录。验证与部署情况见[修复记录](../14_reports/原生视觉流式上下文与ImageReader修复-2026-09-15.md)。

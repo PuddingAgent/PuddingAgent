@@ -1,3 +1,18 @@
+---
+title: RuntimeEntryShell 统一入口设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前文件：
+categories: [docs, features]
+tags: [统一入口设计, 方案, features]
+related_docs: [Docs/07_architecture/39ADR-038RuntimeEntryShell统一入口体验ADR.md]
+related_files: []
+slug: features-runtimeentryshell统一入口设计方案
+draft: false
+---
+
 # RuntimeEntryShell 统一入口设计方案
 
 > 日期：2026-05-23  

@@ -1,3 +1,18 @@
+---
+title: ADR-071 通用 Agent 编排平台完整设计方案
+author: hyfree
+date: 2026-08-11
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 应当实现前端蓝图编辑器，但它不是新的运行时，也不是业务事实源。完整产品采用以下分工：
+categories: [docs, architecture]
+tags: [通用, 编排平台完整, 设计方案, architecture]
+related_docs: [Docs/07_architecture/80ADR-069MOA子代理设计委员会编排核心ADR.md, Docs/07_architecture/81ADR-070通用Agent编排图基础架构ADR.md, Docs/07_architecture/83通用Agent编排后端执行内核与ControlPlane施工图.md, Docs/07_architecture/84通用Agent编排蓝图编辑器与组件系统施工图.md, Docs/07_architecture/85通用Agent编排交付测试与运维验收图册.md, Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md]
+related_files: []
+slug: architecture-82adr-071通用agent编排平台完整设计方案adr
+draft: false
+---
+
 # ADR-071 通用 Agent 编排平台完整设计方案
 
 > 状态：**design-baseline；不表示后续施工已经完成**  

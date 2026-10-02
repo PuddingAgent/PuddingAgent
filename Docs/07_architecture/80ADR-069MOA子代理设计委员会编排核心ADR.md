@@ -1,3 +1,18 @@
+---
+title: ADR-069 MOA 子代理设计委员会编排核心
+author: hyfree
+date: 2026-08-09
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 已有 spawn_sub_agent、批量子代理调用、任务规划上下文、运行归档和会话投影，但这些基础设施只解决“怎样执行一个子代理”。它们没有定义多个不同模型怎样围绕同一个设计问题独立工作、互相批判，并形成可审计结论。
+categories: [docs, architecture]
+tags: [子代理设计委, 员会编排核心, architecture]
+related_docs: [Docs/07_architecture/11工作流与任务图.md, Docs/07_architecture/21子代理工作空间与运行归档ADR.md, Docs/07_architecture/24核心架构组件边界与执行引擎拆分ADR.md, Docs/07_architecture/81ADR-070通用Agent编排图基础架构ADR.md]
+related_files: [Source/PuddingCore/Orchestration/SubAgentOrchestrationModels.cs, Source/PuddingCore/Orchestration/DesignCouncilPlanCompiler.cs, Source/PuddingCoreTests/Orchestration/DesignCouncilPlanCompilerTests.cs, Source/PuddingCore/Orchestration/SubAgentOrchestrationRuntimeModels.cs, Source/PuddingCore/Orchestration/DesignCouncilRunStateMachine.cs, Source/PuddingCoreTests/Orchestration/DesignCouncilRunStateMachineTests.cs, Source/PuddingCore/Orchestration/SubAgentOrchestrationRuntimeContracts.cs, Source/PuddingRuntime/Services/InMemorySubAgentOrchestrationRunStore.cs, Source/PuddingRuntime/Services/DesignCouncilRuntimeService.cs, Source/PuddingRuntimeTests/Services/DesignCouncilRuntimeServiceTests.cs, Source/PuddingCore/Orchestration/AgentOrchestrationModels.cs, Source/PuddingCore/Orchestration/AgentOrchestrationGraphCompiler.cs, Source/PuddingCore/Orchestration/DesignCouncilOrchestrationGraphAdapter.cs]
+slug: architecture-80adr-069moa子代理设计委员会编排核心adr
+draft: false
+---
+
 # ADR-069 MOA 子代理设计委员会编排核心
 
 > 状态：**phase-3-implemented; generic-graph-adapter-implemented**

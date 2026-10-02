@@ -1,3 +1,18 @@
+---
+title: Agent Context Envelope Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Define a unified message contract for text that is delivered to an agent, starting with asynchronous sub-agent completion notifications."
+categories: [docs, superpowers]
+tags: [agent, context, envelope, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-06-13-agent-context-envelope-design
+draft: false
+---
+
 # Agent Context Envelope Design
 
 ## Goal

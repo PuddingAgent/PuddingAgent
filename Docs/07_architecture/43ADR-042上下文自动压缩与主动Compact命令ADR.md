@@ -1,3 +1,18 @@
+---
+title: ADR-042 上下文自动压缩与主动 Compact 命令
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Proposed
+categories: [docs, architecture]
+tags: [上下文自动压, 缩与主动, 命令, architecture]
+related_docs: []
+related_files: [Source/PuddingRuntime/Services/CompactionCoordinator.cs, Docs/15_tasks/task40-context-compaction.md, Source/PuddingRuntime/Services/ContextPipeline.cs, Source/PuddingRuntime/Services/CanonicalChatTranscriptSynchronizer.cs, Source/PuddingRuntime/Services/ContextWindowManager.cs, Source/PuddingRuntime/Services/ContextAssemblyService.cs, Source/PuddingMemoryEngine/Entities/MessageEntity.cs, Source/PuddingPlatform/Controllers/Api/SessionEventsController.cs, Source/PuddingPlatformAdmin/src/pages/chat/components/CommandPalette.tsx, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts, Source/PuddingPlatformAdmin/src/services/platform/api.ts]
+slug: architecture-43adr-042上下文自动压缩与主动compact命令adr
+draft: false
+---
+
 # ADR-042 上下文自动压缩与主动 Compact 命令
 
 ## 状态

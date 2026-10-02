@@ -1,3 +1,18 @@
+---
+title: OpenHanako 项目评估
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Hanako 是一个个人 AI Agent 平台，运行在桌面端 (Electron)、后台服务 (Node.js Daemon) 和 CLI 三种模式。核心特点：
+categories: [docs, references]
+tags: [readme, openhanako]
+related_docs: []
+related_files: []
+slug: references-readme
+draft: false
+---
+
 # OpenHanako 项目评估
 
 > 来源：[liliMozi/openhanako](https://github.com/liliMozi/openhanako)  

@@ -1,3 +1,18 @@
+---
+title: SUBAGENTS.md
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Pudding uses this document as the stable delegation contract for parent agents that call spawn_sub_agent. The goal is to stop encoding sub-agent work as loose natural language, and instead make delega"
+categories: [docs, conventions]
+tags: [subagents, conventions]
+related_docs: []
+related_files: []
+slug: conventions-subagents
+draft: false
+---
+
 # SUBAGENTS.md
 
 ## Purpose

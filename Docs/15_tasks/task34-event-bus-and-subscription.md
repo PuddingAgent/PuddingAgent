@@ -1,3 +1,18 @@
+---
+title: task34 - 统一事件总线、订阅治理与直接唤醒
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-03-18
+categories: [docs, tasks]
+tags: [task34, event, bus, and, subscription, tasks]
+related_docs: [Docs/07_architecture/04PuddingController与Gateway.md, Docs/07_architecture/03PuddingRuntime.md, Docs/07_architecture/07协作网络与治理.md, Docs/07_architecture/08数据模型与配置.md, Docs/07_architecture/10事件系统与事件总线.md, Docs/15_tasks/task26-runtime-foundation.md, Docs/15_tasks/task27-controller-routing-session.md, Docs/15_tasks/task29-agent-template-and-audit.md, Docs/15_tasks/task30-knowledge-infrastructure.md, Docs/15_tasks/task32-observability-integration.md, Docs/15_tasks/task33-embedded-runtime-host.md]
+related_files: []
+slug: tasks-task34-event-bus-and-subscription
+draft: false
+---
+
 # task34 - 统一事件总线、订阅治理与直接唤醒
 
 最后更新：2026-03-18

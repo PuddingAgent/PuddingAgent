@@ -1,3 +1,18 @@
+---
+title: 当前底座（已就绪）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Code Map V0.1 → V0.2 施工任务"
+categories: [docs, tasks]
+tags: [code, map, v0, plan, task-plans]
+related_docs: []
+related_files: [Source/PuddingRuntime/Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs, Source/PuddingRuntime/Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs, Source/PuddingRuntime/Tools/BuiltIns/CodeIntelligence/ProjectMapTool.cs]
+slug: tasks-code-map-v0.2-plan
+draft: false
+---
+
 ﻿# Code Map V0.1 → V0.2 施工任务
 
 ## 当前底座（已就绪）

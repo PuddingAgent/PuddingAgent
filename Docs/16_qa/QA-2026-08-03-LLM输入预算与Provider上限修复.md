@@ -1,3 +1,18 @@
+---
+title: LLM 输入预算与 Provider 上限修复验收
+author: hyfree
+date: 2026-08-03
+last_reviewed: 2026-10-02
+status: active
+description: "Qwen 返回 HTTP 400：Range of input length should be [1, 983616]。模型配置只声明 1,000,000 总上下文，运行时没有表达 983,616 的单次输入硬上限；本地估算还遗漏部分 reasoning/tool-call payload，且曾允许较小估算覆盖 Provider usage。"
+categories: [docs, qa]
+tags: [qa, 输入预算与, 上限修复]
+related_docs: []
+related_files: []
+slug: qa-qa-2026-08-03-llm输入预算与provider上限修复
+draft: false
+---
+
 # LLM 输入预算与 Provider 上限修复验收
 
 ## 问题

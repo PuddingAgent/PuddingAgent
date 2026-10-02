@@ -1,3 +1,18 @@
+---
+title: ADR-064：Codex 独立执行服务与 Pudding 自修复重启
+author: hyfree
+date: 2026-07-27
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 作为 MCP Client 直接启动 codex mcp-server 时，Codex 是 Pudding 的 stdio 子进程。 正常关闭 Pudding 会释放 MCP Client Session，并由官方 SDK 终止 Codex 子进程。这对普通 MCP Server 是正确的生命周期，但无法支持“Pudding 请求 Codex 修补自身，随后由 Codex 编译并重
+categories: [docs, architecture]
+tags: [独立执行服务, 自修复重启, architecture]
+related_docs: []
+related_files: []
+slug: architecture-64adr-064codex独立执行服务与pudding自修复重启adr
+draft: false
+---
+
 # ADR-064：Codex 独立执行服务与 Pudding 自修复重启
 
 > 状态：Accepted  

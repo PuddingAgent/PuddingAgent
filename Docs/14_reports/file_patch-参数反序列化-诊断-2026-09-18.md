@@ -1,3 +1,18 @@
+---
+title: file_patch 参数反序列化缺陷 —— 只读诊断（2026-09-18）
+author: hyfree
+date: 2026-09-18
+last_reviewed: 2026-10-02
+status: active
+description: 经子代理 plan 反查 + 父级亲自复核，本诊断除末尾「待验证 V1–V4」外，核心根因推断不成立：
+categories: [docs, reports]
+tags: [file, patch, 参数反序列化, 诊断, reports]
+related_docs: []
+related_files: [Source/PuddingRuntime/Tools/BuiltIns/Files/FilePatchTool.cs]
+slug: reports-file-patch-参数反序列化-诊断-2026-09-18
+draft: false
+---
+
 # file_patch 参数反序列化缺陷 —— 只读诊断（2026-09-18）
 
 > 关联卡：`f1d45a1501f04b62bc25e6c2afedf8f0`（p0 Ready，父卡范围混杂：终端生命周期 + 引号转义 + 工作目录隔离 + 本项）

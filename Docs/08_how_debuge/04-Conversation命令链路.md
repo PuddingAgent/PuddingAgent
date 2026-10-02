@@ -1,3 +1,18 @@
+---
+title: Conversation 命令链路
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 当前主链路：
+categories: [docs, how-debug]
+tags: [命令链路, how_debuge]
+related_docs: [Docs/08_how_debuge/README.md]
+related_files: []
+slug: how-debuge-04-conversation命令链路
+draft: false
+---
+
 # Conversation 命令链路
 
 > 本文档是 [How-Debuge 调试与诊断手册](README.md)（主索引）的主题分册，由原根目录 `How-Debuge.md` 于 2026-10-02 按主题拆分而来。

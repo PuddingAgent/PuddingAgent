@@ -1,3 +1,18 @@
+---
+title: 阶段感知模型路由 — Step 4 Test Checkpoint（checkpoint-v1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId tg-0992b9b323e3c4e4a38f7fa51407f55d｜iteration 5｜stepNode tn-f52ec596f2061f24a721047fb2e4c39a（Test, seq 4/5） step objective 逐字：\"Run focused verification and capture reproducible evidence and "
+categories: [docs, reports]
+tags: [route, policy, test, step4, checkpoint, r1, reports]
+related_docs: []
+related_files: []
+slug: reports-route-policy-test-step4-checkpoint-r1
+draft: false
+---
+
 # 阶段感知模型路由 — Step 4 Test Checkpoint（checkpoint-v1）
 
 - goalRunId `tg-0992b9b323e3c4e4a38f7fa51407f55d`｜iteration 5｜stepNode `tn-f52ec596f2061f24a721047fb2e4c39a`（**Test**, seq 4/5）

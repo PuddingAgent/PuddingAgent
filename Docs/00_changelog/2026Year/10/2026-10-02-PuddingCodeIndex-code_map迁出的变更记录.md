@@ -1,3 +1,18 @@
+---
+title: 从 Source/PuddingCodeIndex/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
+author: hyfree
+date: 2026-09-23
+last_reviewed: 2026-10-02
+status: archived
+description: 〔原文第 86–92 行：U3-B2a 更新（2026-09-23）— 队列泵已接入宿主〕
+categories: [docs, changelog]
+tags: [puddingcodeindex, code, 迁出的变更记]
+related_docs: []
+related_files: [Source/PuddingCodeIndex/code_map.md, Docs/00_changelog/README.md, code_map.md, Source/PuddingHost/Storage/StorageMaintenanceQueries.cs, Source/PuddingPlatformAdmin/src/services/platform/api.ts, TestScripts/e2e/helpers/evidence.ts, Docs/12_features/ADR-089-索引策略优先级-2026-09-24.md, Source/PuddingCodeIntelligence/TypeScript/TypeScriptIndexer.cs, Source/PuddingCodeIntelligence/Python/PythonIndexer.cs]
+slug: changelog-2026-10-02-puddingcodeindex-code-map迁出的变更记录
+draft: false
+---
+
 # 从 Source/PuddingCodeIndex/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
 
 > **为什么在这里**：`Source/PuddingCodeIndex/code_map.md` 只保留索引（关键概念 · 组件 · 关键文件 · 用途）。原先按轮次/日期堆叠在其中的变更、门禁与验收记录迁出到本文件。日志规则见 `Docs/00_changelog/README.md`。

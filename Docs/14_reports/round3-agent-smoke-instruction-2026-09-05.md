@@ -1,3 +1,18 @@
+---
+title: round3-agent-smoke-instruction-2026-09-05
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 这是用户授权的第三轮部署后只读功能验收。请在本轮直接完成，不续做旧会话里的开发任务。
+categories: [docs, reports]
+tags: [round3, agent, smoke, instruction, reports]
+related_docs: []
+related_files: []
+slug: reports-round3-agent-smoke-instruction-2026-09-05
+draft: false
+---
+
 这是用户授权的第三轮部署后只读功能验收。请在本轮直接完成，不续做旧会话里的开发任务。
 
 使用 file_read 读取以下文件：

@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 夜间工作效率、缓存与 RSI 评估
+author: hyfree
+date: 2026-09-21
+last_reviewed: 2026-10-02
+status: active
+description: "结论：这一夜的编码产出较高，DeepSeek 缓存已接近 99%；更明显的短板是任务身份与验收闭环、同目标失败止损，以及自改进评测的可信度。 已有一项可量化的运行收益：后台 skip 汇总把对应写入行数降低了 99.66%。新增分类器等后半夜代码有测试产出，但尚未进入当前 Core，不能计作已上线能力。"
+categories: [docs, reports]
+tags: [夜间效率与, 评估, reports]
+related_docs: [Docs/13_runbooks/安全分类器部署与回滚运行手册-2026-09-21.md, Docs/12_features/夜间效率问题登记与第一性原理优化方案-2026-09-21.md]
+related_files: [TestScripts/test-pudding-suite-gates.ps1]
+slug: reports-puddingagent夜间效率与rsi评估-2026-09-21
+draft: false
+---
+
 # PuddingAgent 夜间工作效率、缓存与 RSI 评估
 
 结论：**这一夜的编码产出较高，DeepSeek 缓存已接近 99%；更明显的短板是任务身份与验收闭环、同目标失败止损，以及自改进评测的可信度。** 已有一项可量化的运行收益：后台 skip 汇总把对应写入行数降低了 99.66%。新增分类器等后半夜代码有测试产出，但尚未进入当前 Core，不能计作已上线能力。

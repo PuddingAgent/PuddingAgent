@@ -1,3 +1,18 @@
+---
+title: Agent-to-Agent Message Fabric V1 Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build the observable V1 path where one agent sends a public room-visible message to another agent, a direct delivery is persisted, and a subscription-driven dispatcher claims and executes the de"
+categories: [docs, superpowers]
+tags: [agent, to, message, fabric, v1, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Models/MessageFabricModels.cs, Source/PuddingCore/Abstractions/IMessageInbox.cs, Source/PuddingCore/Abstractions/IAgentRosterProvider.cs, Source/PuddingPlatform/Services/MessageFabric/MessageFabricStore.cs, Source/PuddingPlatform/Services/MessageFabric/MessageFabricSchemaBootstrapper.cs, Source/PuddingPlatform/Services/WorkspaceAgentRosterProvider.cs, Source/PuddingRuntime/Tools/BuiltIns/Messaging/SendMessageTool.cs, Source/PuddingRuntime/Tools/BuiltIns/Messaging/ListAgentsTool.cs, Source/PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs, Source/PuddingRuntime/Services/WorkspaceAgentsContextBuilder.cs, Source/PuddingRuntime/Services/ContextPipeline.cs, Source/PuddingAgent/Program.cs, external/github.hyfree.GM/github.hyfree.GM/github.hyfree.GM.csproj, Source/PuddingCore/Abstractions/IAgentExecutionAvailabilityProvider.cs, Source/PuddingRuntimeTests/Services/MessageDeliveryDispatcherTests.cs, Source/PuddingPlatformTests/Services/MessageFabric/MessageFabricStoreTests.cs, Source/PuddingPlatform/Services/MessageFabric/MessageSystem.cs, Source/PuddingPlatform/Data/Entities/MessageDeliveryEntity.cs, Source/PuddingPlatform/Data/PlatformDbContext.cs, Source/PuddingRuntime/Tools/BuiltIns/Messaging/ReceiveMessagesTool.cs]
+slug: superpowers-2026-06-07-agent-to-agent-message-fabric-v1
+draft: false
+---
+
 # Agent-to-Agent Message Fabric V1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

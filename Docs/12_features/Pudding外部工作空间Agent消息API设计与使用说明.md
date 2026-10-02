@@ -1,3 +1,18 @@
+---
+title: Pudding 外部工作空间、Agent 与消息 API 设计与使用说明
+author: hyfree
+date: 2026-09-02
+last_reviewed: 2026-10-02
+status: active
+description: External API v1 现在除任务看板外，还提供授权工作空间发现、Agent 目录和 Agent 文本消息异步执行。推荐客户端流程：
+categories: [docs, features]
+tags: [外部工作空间, 消息, 设计与使用说, features]
+related_docs: [Docs/07_architecture/96ADR-082Pudding外部工作空间Agent消息APIADR.md, Docs/07_architecture/90ADR-075第三方任务看板AccessToken与外部APIADR.md]
+related_files: []
+slug: features-pudding外部工作空间agent消息api设计与使用说明
+draft: false
+---
+
 # Pudding 外部工作空间、Agent 与消息 API 设计与使用说明
 
 > 状态：Source Implemented / Desktop Loopback Smoke Passed  

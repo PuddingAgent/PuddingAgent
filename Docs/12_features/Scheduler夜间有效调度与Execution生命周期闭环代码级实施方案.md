@@ -1,3 +1,18 @@
+---
+title: Scheduler 夜间有效调度与 Execution 生命周期闭环代码级实施方案
+author: hyfree
+date: 2026-09-02
+last_reviewed: 2026-10-02
+status: active
+description: 本方案处理的不是“后台 Worker 是否醒着”，而是调度器能否形成可核验的有效执行闭环。2026-08-31 晚间至 2026-09-01 早间的运行事实显示：
+categories: [docs, features]
+tags: [夜间有效调度, 生命周期闭环, 代码级实施方, features]
+related_docs: [Docs/12_features/任务规划与实施分工及存量看板施工方案-2026-09-20.md, Docs/12_features/任务调度器与Goal用户控制面设计.md]
+related_files: [Source/PuddingPlatform/Services/Scheduling/TaskExecutionTracker.cs, Source/PuddingCore/Scheduling/TaskExecutionTrackingContracts.cs, Source/PuddingPlatform/Services/Scheduling/TaskExecutionRepairCoordinator.cs, Source/PuddingPlatform/Data/Entities/ExecutionRunEntity.cs, Source/PuddingPlatformTests/Services/Scheduling/TaskExecutionTrackerTests.cs, Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx, Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskDetailsDrawer.tsx, Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskTable.tsx, Source/PuddingPlatformAdmin/src/pages/workspace-tasks/index.tsx, Source/PuddingPlatform/Controllers/Api/TaskController.cs, Source/PuddingPlatformTests/Services/Scheduling/TaskSchedulingCoordinatorTests.cs, Source/PuddingPlatformTests/Services/Scheduling/TaskSchedulerDecisionsAndStagedModeTests.cs, code_map.md, Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs, Source/PuddingRuntime/Services/Background/SubconsciousJobScheduler.cs, Source/PuddingCore/Storage/StorageAdministrationContracts.cs, Docs/14_reports/scheduler-noise-checkpoint-explore-v1.md, Docs/14_reports/scheduler-noise-plan-step2-r1.md, Docs/14_reports/scheduler-noise-baseline-r1.md, Docs/14_reports/scheduler-noise-closeout-r1.md]
+slug: features-scheduler夜间有效调度与execution生命周期闭环代码级实施方案
+draft: false
+---
+
 # Scheduler 夜间有效调度与 Execution 生命周期闭环代码级实施方案
 
 > **2026-09-20 看板复核补充**：[规划与实施分工施工方案](任务规划与实施分工及存量看板施工方案-2026-09-20.md) 补齐 TaskImplementationBrief、需求到检查映射、阶段模型路由和无进展升级。本文的34个Backlog、零Plan等数字为9月1日历史快照，不是当前现场。新的计划/路由机制仍待实现；Task步骤仅由Task系统管理，Goal边界以ADR-092第二版为准。运行中任务以评论接收指导，不修改冻结版本或自动追加预算。

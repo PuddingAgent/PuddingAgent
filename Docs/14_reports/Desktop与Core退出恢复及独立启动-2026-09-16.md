@@ -1,3 +1,18 @@
+---
+title: Desktop 与 Core 退出恢复及独立启动（2026-09-16）
+author: hyfree
+date: 2026-09-16
+last_reviewed: 2026-10-02
+status: active
+description: "07:33 检查时 Desktop/Core 均不在运行。Core 最新系统日志止于 07:28:31.936，之前仍正常提供 HTTP200，没有 shutdown 或异常终止堆栈。 Windows System 的 WindowsUpdateClient 43/19 记录：07:28:32 开始更新、07:28:35 安装完成 9PLM9XGG6VKS-OpenAI.Codex。退出与更新同秒"
+categories: [docs, reports]
+tags: [退出恢复及独, 立启动, reports]
+related_docs: []
+related_files: [TestScripts/start-pudding-desktop-independent.ps1]
+slug: reports-desktop与core退出恢复及独立启动-2026-09-16
+draft: false
+---
+
 # Desktop 与 Core 退出恢复及独立启动（2026-09-16）
 
 ## 本次证据

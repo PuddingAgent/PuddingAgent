@@ -1,3 +1,18 @@
+---
+title: Agent Template Storage Chain Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Make global Agent template editing round-trip every configurable field through the canonical file-backed storage chain."
+categories: [docs, superpowers]
+tags: [agent, template, storage, chain, plans]
+related_docs: []
+related_files: [Source/PuddingPlatformAdmin/src/pages/global-agent-template/index.tsx, Source/PuddingPlatformAdmin/src/pages/agent-template-settings/sections/BasicSection.tsx, Source/PuddingPlatformAdmin/src/pages/agent-template-settings/sections/GuardrailSection.tsx, Source/PuddingPlatformAdmin/src/pages/agent-template-settings/sections/PromptPersonaSection.tsx, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingCore/Configuration/PuddingConfigModels.cs, Source/PuddingPlatform/Services/AgentTemplateFileService.cs, Source/PuddingPlatform/Controllers/Api/GlobalAgentTemplateApiController.cs, Source/PuddingPlatformAdmin/src/pages/global-agent-template/globalAgentTemplateSave.test.tsx, Source/PuddingPlatformTests/Services/AgentTemplateFileServiceTests.cs]
+slug: superpowers-2026-05-24-agent-template-storage-chain
+draft: false
+---
+
 # Agent Template Storage Chain Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

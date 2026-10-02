@@ -1,3 +1,18 @@
+---
+title: ADR-041 Chat 暗色主题语义 Token 收敛
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Proposed
+categories: [docs, architecture]
+tags: [暗色主题语义, 收敛, architecture]
+related_docs: []
+related_files: [Source/PuddingPlatformAdmin/src/components/ThemeMode/index.tsx, Source/PuddingPlatformAdmin/src/global.style.ts, Source/PuddingPlatformAdmin/src/pages/chat/styles.ts, Source/PuddingPlatformAdmin/src/pages/chat/index.tsx]
+slug: architecture-42adr-041chat暗色主题语义token收敛adr
+draft: false
+---
+
 # ADR-041 Chat 暗色主题语义 Token 收敛
 
 ## 状态

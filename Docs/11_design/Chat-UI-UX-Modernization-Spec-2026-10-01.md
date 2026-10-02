@@ -1,3 +1,18 @@
+---
+title: Chat 前端现代化 UI / UX 实施规格
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-10-01。状态：设计交付，待实施与产品验收。本文件不代表前端已改造或已通过视觉验收。
+categories: [docs, design]
+tags: [chat, ui, ux, modernization, spec, design]
+related_docs: [Docs/12_features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md, Docs/11_design/message-card-ui-design-2026-08-13.md, Docs/11_design/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md, Docs/10_conventions/组件化交付规程.md, Docs/14_reports/Chat-UI-Modernization-Acceptance-2026-10-02.md]
+related_files: [Source/PuddingDesktop.Foundation/ToolWorkspaceLayout.cs, Source/PuddingDesktop/MainWindow.xaml.cs, Source/PuddingPlatformAdmin/src/app.tsx]
+slug: design-chat-ui-ux-modernization-spec-2026-10-01
+draft: false
+---
+
 # Chat 前端现代化 UI / UX 实施规格
 
 日期：2026-10-01。状态：设计交付，待实施与产品验收。本文件不代表前端已改造或已通过视觉验收。

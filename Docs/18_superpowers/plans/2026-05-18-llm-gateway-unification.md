@@ -1,3 +1,18 @@
+---
+title: LLM Gateway Unification Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Route Runtime direct LLM sync and stream calls through the same OpenAI-compatible gateway path with traceable activity records."
+categories: [docs, superpowers]
+tags: [llm, gateway, unification, plans]
+related_docs: []
+related_files: [Source/PuddingRuntime/Services/DirectLlmClient.cs]
+slug: superpowers-2026-05-18-llm-gateway-unification
+draft: false
+---
+
 # LLM Gateway Unification Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,18 @@
+---
+title: 零、当前推进规则
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 记忆系统 v2 核心需求"
+categories: [docs, features]
+tags: [memory, system, v2, requirements, memory-design]
+related_docs: []
+related_files: [Docs/18_superpowers/specs/2026-07-01-memory-v2-foundation-prerequisites.md, Docs/18_superpowers/specs/2026-07-04-memory-v2-wiki-book-v1-simplification.md, Docs/18_superpowers/specs/2026-07-05-memory-v2-minimal-v1-necessity-design.md, Source/PuddingPlatformAdmin/config/routes.ts, Docs/18_superpowers/specs/2026-06-30-hook-system-v2-design.md, Docs/18_superpowers/plans/2026-07-01-memory-v2-f3-worker-scheduling-plan.md, Docs/18_superpowers/specs/2026-07-01-memory-v2-f5-write-coordinator-design.md, Docs/18_superpowers/plans/2026-07-01-memory-v2-f5-write-coordinator-plan.md, Docs/18_superpowers/specs/2026-07-03-memory-v2-f9-reset-repair-admin-tools-design.md]
+slug: features-memory-system-v2-requirements
+draft: false
+---
+
 ﻿# 记忆系统 v2 核心需求
 
 > 创建时间: 2026-06-30

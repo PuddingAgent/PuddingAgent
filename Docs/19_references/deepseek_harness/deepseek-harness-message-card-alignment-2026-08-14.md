@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 消息、推理与工具调用 UI 对齐方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: PuddingAgent 不复制 deepseek-harness 的品牌外观，而采用它已经验证过的行式执行流信息架构：消息正文保持 Pudding 的暖色气泡和头像体系；推理、工具调用、错误与运行状态统一为紧凑、可展开、可审计的行。
+categories: [docs, references]
+tags: [deepseek, harness, message, card, alignment, deepseek_harness]
+related_docs: [Docs/07_architecture/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md]
+related_files: [Docs/11_design/message-card-ui-design-2026-08-13.md]
+slug: references-deepseek-harness-message-card-alignment-2026-08-14
+draft: false
+---
+
 # PuddingAgent 消息、推理与工具调用 UI 对齐方案
 
 > 日期：2026-08-14

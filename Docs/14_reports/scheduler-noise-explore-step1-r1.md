@@ -1,3 +1,18 @@
+---
+title: P2 Scheduler 遥测降噪 — Step 1 Explore 证据（checkpoint-v1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId tg-59f90cc6ee8713427f3c7bc5130d68ab｜task 06898d5dfe004c69ab6d5baf18b2674a（v21，InProgress）｜stepNode tn-77de109db49badc89461226ee678c403（Explore, seq 1/5） step objective 逐字：\"Collect canonical "
+categories: [docs, reports]
+tags: [scheduler, noise, explore, step1, r1, reports]
+related_docs: []
+related_files: [Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs, Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs, Source/PuddingRuntime/Services/Background/SubconsciousJobScheduler.cs, Docs/14_reports/PuddingAgent-Autonomy-Audit-2026-09-12/01-自主工作轨迹与自改进审计.md, Source/PuddingPlatform/Services/Scheduling/TaskExecutionTracker.cs, Source/PuddingHost/Services/HeartbeatService.cs]
+slug: reports-scheduler-noise-explore-step1-r1
+draft: false
+---
+
 # P2 Scheduler 遥测降噪 — Step 1 Explore 证据（checkpoint-v1）
 
 - goalRunId `tg-59f90cc6ee8713427f3c7bc5130d68ab`｜task `06898d5dfe004c69ab6d5baf18b2674a`（v21，InProgress）｜stepNode `tn-77de109db49badc89461226ee678c403`（**Explore**, seq 1/5）

@@ -1,3 +1,18 @@
+---
+title: Task 16 — 服务商与模型管理设计方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 设计原则 模型元数据结构 能力标签系统 成本预估与预算控制 动态路由决策 抽样评分机制 UI 交互设计 核心实现 与现有架构集成 实现路线
+categories: [docs, tasks]
+tags: [task16, provider, model, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task16-provider-model
+draft: false
+---
+
 # Task 16 — 服务商与模型管理设计方案
 
 > **状态：** ✏️ 设计中

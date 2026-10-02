@@ -1,3 +1,18 @@
+---
+title: P2 Scheduler 遥测降噪 — Step 2 Plan（r1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId tg-59f90cc6ee8713427f3c7bc5130d68ab｜task 06898d5dfe004c69ab6d5baf18b2674a（v24, InProgress） 输入：step1 Explore 证据 Docs/14_reports/scheduler-noise-explore-step1-r1.md（含 §6 A07 逐字约束）；A07 原文 Docs/"
+categories: [docs, reports]
+tags: [scheduler, noise, plan, step2, r1, reports]
+related_docs: []
+related_files: [Docs/14_reports/scheduler-noise-explore-step1-r1.md, Docs/14_reports/PuddingAgent-Autonomy-Audit-2026-09-12/01-自主工作轨迹与自改进审计.md, Source/PuddingRuntime/Services/Background/SubconsciousJobScheduler.cs, Source/PuddingRuntime/Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs]
+slug: reports-scheduler-noise-plan-step2-r1
+draft: false
+---
+
 # P2 Scheduler 遥测降噪 — Step 2 Plan（r1）
 
 - goalRunId `tg-59f90cc6ee8713427f3c7bc5130d68ab`｜task `06898d5dfe004c69ab6d5baf18b2674a`（v24, InProgress）

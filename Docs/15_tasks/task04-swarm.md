@@ -1,3 +1,18 @@
+---
+title: "Task 04: 蜂群模式设计方案 (Swarm Mode)"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 背景与动机 核心架构：契约驱动 + Leader-Worker 模型 契约优先开发流程 蜂群编排协议 Worker 角色与作用域隔离 Git Worktree 隔离机制 P2P 分布式蜂群 自治与选举机制 任务看板与通信机制 与现有架构的集成 成本控制策略 实现路线图
+categories: [docs, tasks]
+tags: [task04, swarm, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task04-swarm
+draft: false
+---
+
 # Task 04: 蜂群模式设计方案 (Swarm Mode)
 
 > **目标：** 为 PuddingCode 设计去中心化的多智能体协作架构。核心理念：**像人类团队一样开发**——Leader 定义契约（接口/类名/方法签名），Worker 各自负责自己的模块，禁止越界修改。蜂群支持本地并行和跨机器 P2P 分布式协作。

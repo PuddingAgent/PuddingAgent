@@ -1,3 +1,18 @@
+---
+title: ADR-075：第三方任务看板 Access Token 与外部 API
+author: hyfree
+date: 2026-08-22
+last_reviewed: 2026-10-02
+status: active
+description: PuddingAgent 已有五列 Workspace Task Board、Task Ledger、CAS 状态更新、评论、Command 与 SSE Watch。当前 HTTP API 统一使用 Admin 登录 JWT；JWT 面向交互式用户会话，不具备第三方凭据所需的按 Token scope、workspace allow-list、独立到期、撤销、最后使用和审计。
+categories: [docs, architecture]
+tags: [第三方任务看, 与外部, architecture]
+related_docs: [Docs/12_features/第三方任务看板AccessToken与外部API详细设计方案.md, Docs/07_architecture/96ADR-082Pudding外部工作空间Agent消息APIADR.md, Docs/07_architecture/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md, Docs/07_architecture/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md, Docs/07_architecture/88任务看板施工合同冻结v1.md, Docs/07_architecture/89ADR-074Goal持久目标自主续行与自动压缩ADR.md]
+related_files: []
+slug: architecture-90adr-075第三方任务看板accesstoken与外部apiadr
+draft: false
+---
+
 # ADR-075：第三方任务看板 Access Token 与外部 API
 
 > 状态：Proposed（P1/P3 已实现）

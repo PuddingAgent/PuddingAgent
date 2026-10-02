@@ -1,3 +1,18 @@
+---
+title: 隔夜缓存命中评估与 Harness / Reasonix 优化方案
+author: hyfree
+date: 2026-09-17
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-17。状态：诊断和设计完成，优化项待实施。此次只读分析运行数据，没有修改产品代码、运行配置或数据库，没有发起模型测试请求。沿用 ADR-084 和现有 Composition 所有者。
+categories: [docs, reports]
+tags: [隔夜缓存命中, 评估与, 优化方案, reports]
+related_docs: [Docs/07_architecture/98ADR-084稳定请求前缀与缓存99验收ADR.md, Docs/14_reports/缓存命中诊断与修复方案-2026-09-16.md]
+related_files: []
+slug: reports-隔夜缓存命中评估与harness-reasonix优化方案-2026-09-17
+draft: false
+---
+
 # 隔夜缓存命中评估与 Harness / Reasonix 优化方案
 
 日期：2026-09-17。状态：诊断和设计完成，优化项待实施。此次只读分析运行数据，没有修改产品代码、运行配置或数据库，没有发起模型测试请求。沿用 ADR-084 和现有 Composition 所有者。

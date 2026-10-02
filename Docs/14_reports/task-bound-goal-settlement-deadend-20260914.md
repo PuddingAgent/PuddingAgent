@@ -1,3 +1,18 @@
+---
+title: Task-bound Goal 结算单向死胡同：canonical 通道被结算自身关闭
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-14（BJT） 关联卡：3bd2a4b0ef5f4bff8f175fb7655927ad（P0 统一 Scheduler 内核，当前 Blocked）·e2c35d6eeae244c191ed508ccd85b6fe（P0 单向闩锁）·2b60040d6eb94db7800d0522698e3975（P0 派发未注入 ActiveTask） 取证方式：生产库只读投影（mana
+categories: [docs, reports]
+tags: [task, bound, goal, settlement, deadend, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/Goals/GoalSettlementStore.cs, Source/PuddingPlatform/Services/Goals/ConservativeGoalIterationVerifier.cs, Source/PuddingPlatform/Services/Tasks/TaskAgentCommandService.cs, Source/PuddingRuntime/Services/TaskTools/TaskToolModels.cs, Source/PuddingRuntime/Services/AgentInvocationDispatchFactory.cs, Source/PuddingRuntimeTests/Services/AgentExecutionWakeupActiveTaskPreservationTests.cs, Source/PuddingCore/Runtime/ITurnExecutor.cs, Source/PuddingPlatform/Services/Goals/GoalContinuationWorker.cs, Source/PuddingPlatform/Services/ExecutionCommandReader.cs, Source/PuddingCore/Platform/IExecutionCommandReader.cs, Source/PuddingCore/Tasks/ActiveTaskRuntimeContext.cs, Source/PuddingCore/Tasks/ActiveTaskMetadata.cs, Source/PuddingPlatform/Services/AgentChat/ExecutionRunCoordinator.cs, Source/PuddingRuntime/Services/TurnExecutorAdapter.cs, Source/PuddingPlatform/PuddingPlatform.csproj]
+slug: reports-task-bound-goal-settlement-deadend-20260914
+draft: false
+---
+
 # Task-bound Goal 结算单向死胡同：canonical 通道被结算自身关闭
 
 - 日期：2026-09-14（BJT）

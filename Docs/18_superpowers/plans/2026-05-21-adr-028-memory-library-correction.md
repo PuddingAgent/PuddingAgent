@@ -1,3 +1,18 @@
+---
+title: ADR-028 Memory Library Correction Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Bring ADR-028 from partially implemented to verifiably implemented by fixing failing tests, closing workspace isolation, synchronizing schema initialization, generalizing pointers, routing subco"
+categories: [docs, superpowers]
+tags: [adr, memory, library, correction, plans]
+related_docs: []
+related_files: [Docs/07_architecture/29ADR-028记忆图书馆基础设施重构ADR.md, Docs/90_archive/context.md, Source/PuddingMemoryEngine/Data/MemoryLibrary.cs, Source/PuddingMemoryEngine/Schema/init_library.sql, Source/PuddingMemoryEngine/Data/MemoryLibraryDbInitializer.cs, Source/PuddingCore/Abstractions/IMemoryLibrary.cs, Source/PuddingCore/Abstractions/MemoryLibraryDtos.cs, Source/PuddingMemoryEngine/Entities/LibraryEntities.cs, Source/PuddingCore/Abstractions/IMemoryLibrarian.cs, Source/PuddingMemoryEngine/Services/MemoryLibrarian.cs, Source/PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs, Source/PuddingMemoryEngine/Services/MemoryRecallService.cs, Source/PuddingMemoryEngineTests/MemoryLibraryTests.cs, Docs/07_architecture/30ADR-029记忆图书馆ADR-028纠偏与验收闭环方案.md]
+slug: superpowers-2026-05-21-adr-028-memory-library-correction
+draft: false
+---
+
 # ADR-028 Memory Library Correction Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

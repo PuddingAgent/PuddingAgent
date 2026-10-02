@@ -1,3 +1,18 @@
+---
+title: Desktop 图标与启动样式修复（2026-10-01）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 复用 Source/PuddingPlatformAdmin/public/assets/images/logo.png 的 Pudding 品牌头像，转换为 Source/PuddingDesktop/Assets/Pudding.ico，含 16、20、24、32、40、48、64、128、256px 九档 PNG 帧。原图为 128px；256px 帧为缩放版本。TestScripts/up
+categories: [docs, reports]
+tags: [desktop, icons, and, startup, fix, reports]
+related_docs: []
+related_files: [Source/PuddingPlatformAdmin/public/assets/images/logo.png, Source/PuddingDesktop/Assets/Pudding.ico, TestScripts/update-pudding-desktop-icon.ps1, TestScripts/test-pudding-desktop-launcher.ps1]
+slug: reports-desktop-icons-and-startup-fix-2026-10-01
+draft: false
+---
+
 # Desktop 图标与启动样式修复（2026-10-01）
 
 ## 改动

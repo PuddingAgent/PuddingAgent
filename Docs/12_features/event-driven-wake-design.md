@@ -1,3 +1,18 @@
+---
+title: 事件驱动唤醒设计稿（任务 2）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "状态：Proposed（待实施） 日期：2026-08-03 作者：蜜糖（链路测绘：sub-26723b93，全部结论带 file:line 证据）"
+categories: [docs, features]
+tags: [event, driven, wake, design, features]
+related_docs: []
+related_files: []
+slug: features-event-driven-wake-design
+draft: false
+---
+
 # 事件驱动唤醒设计稿（任务 2）
 
 状态：Proposed（待实施）

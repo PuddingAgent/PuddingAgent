@@ -1,3 +1,18 @@
+---
+title: 15 潜意识 LLM 子代理系统 (Subconscious LLM Sub-Agent System)
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 方案对比
+categories: [docs, architecture]
+tags: [潜意识, 子代理系统, architecture]
+related_docs: [Docs/07_architecture/02PuddingCore.md, Docs/07_architecture/03PuddingRuntime.md, Docs/07_architecture/05PuddingPlatform.md, Docs/07_architecture/12记忆图书馆基础设施.md, Docs/07_architecture/13记忆与会话数据层.md]
+related_files: []
+slug: architecture-15潜意识llm子代理系统adr
+draft: false
+---
+
 # 15 潜意识 LLM 子代理系统 (Subconscious LLM Sub-Agent System)
 
 > 状态：**proposed**

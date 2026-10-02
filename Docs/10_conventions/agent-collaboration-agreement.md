@@ -1,3 +1,18 @@
+---
+title: 多 Agent 合作协议与分工机制（v1.3 · 2026-09-21）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 用户指示 → 蜜糖规划+裁决 → 看板登记 → 6a8 执行（设计/实施） → 交付物落盘 → 6a8 静态验收 → 蜜糖终审（实读核实，不采信摘要） → 通过则登记/放行，退回则附条款修订 → 循环至定稿
+categories: [docs, conventions]
+tags: [agent, collaboration, agreement, conventions]
+related_docs: []
+related_files: [code_map.md]
+slug: conventions-agent-collaboration-agreement
+draft: false
+---
+
 # 多 Agent 合作协议与分工机制（v1.3 · 2026-09-21）
 
 > **状态**：v1.0（蜜糖 2026-08-21 起草）**已由默认助手（6a8）确认**（2026-09-21，依用户「请与其他agent 协商并定义协作规则」指示）。

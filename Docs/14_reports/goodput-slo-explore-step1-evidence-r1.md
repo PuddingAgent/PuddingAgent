@@ -1,3 +1,18 @@
+---
+title: Goodput SLO Explore Step-1 证据（r1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "卡：P1 调度控制面与 Goodput SLO（Task→Goal→WorkUnit→模型→成本全链路对账） 范围：只读；Source/PuddingPlatform/Services/{Goals,Scheduling}、Services 根（Token/Llm）、Data/Entities、PuddingCore/{Goals,Scheduling,Abstractions}、PuddingR"
+categories: [docs, reports]
+tags: [goodput, slo, explore, step1, evidence, r1, reports]
+related_docs: []
+related_files: [Source/PuddingCore/Goals/GoalVerificationContracts.cs, Source/PuddingCore/Goals/GoalEventTypes.cs, Source/PuddingPlatform/Services/Scheduling/TaskSchedulerDecisionCodes.cs, Source/PuddingCore/Scheduling/TaskExecutionTrackingContracts.cs, Source/PuddingCore/Goals/GoalRunOptions.cs, Source/PuddingCore/Abstractions/ITokenUsageRecorder.cs, Source/PuddingPlatformTests/Services/Goals/GoalSettlementAcceptanceRegressionTests.cs]
+slug: reports-goodput-slo-explore-step1-evidence-r1
+draft: false
+---
+
 # Goodput SLO Explore Step-1 证据（r1）
 
 - 卡：P1 调度控制面与 Goodput SLO（Task→Goal→WorkUnit→模型→成本全链路对账）

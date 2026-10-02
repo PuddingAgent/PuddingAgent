@@ -1,3 +1,18 @@
+---
+title: Pudding.Contracts 与 Desktop gRPC 能力通道技术方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-10-01。 状态：Proposed；2026-10-01 更新：切片 A+B 已实施（Contracts / Rpc.Protocol / DesktopConnection / IPC 技术探针，见实施报告）；切片 C–F 未实施，未接入任何宿主，旧 Bridge 仍在运行。 基线：Shell / Web / 独立 Core ADR、恢复报告、组件化交付规程。
+categories: [docs, features]
+tags: [desktop, contracts, grpc, capability, plan, features]
+related_docs: [Docs/14_reports/Desktop-Contracts-Rpc-SliceABC-2026-10-01.md, Docs/12_features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md, Docs/14_reports/Desktop-Shell-Recovery-2026-09-29.md, Docs/10_conventions/组件化交付规程.md, Docs/12_features/Desktop-Capability-Channel-Wiring-Runbook-2026-10-01.md]
+related_files: [Source/PuddingBrowser.WinUI/WinUiBrowserSurfaceHost.cs, Source/PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs, code_map.md]
+slug: features-desktop-contracts-grpc-capability-plan-2026-10-01
+draft: false
+---
+
 # Pudding.Contracts 与 Desktop gRPC 能力通道技术方案
 
 - 日期：2026-10-01。

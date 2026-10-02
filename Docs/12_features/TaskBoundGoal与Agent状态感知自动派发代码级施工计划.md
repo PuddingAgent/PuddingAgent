@@ -1,3 +1,18 @@
+---
+title: Task-bound Goal 与 Agent 状态感知自动派发代码级施工计划
+author: hyfree
+date: 2026-08-22
+last_reviewed: 2026-10-02
+status: active
+description: 目标链不是“晚上定时给 Agent 发一条消息”，而是：
+categories: [docs, features]
+tags: [状态感知自动, 派发代码级施, 工计划, features]
+related_docs: [Docs/07_architecture/89ADR-074Goal持久目标自主续行与自动压缩ADR.md, Docs/07_architecture/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md, Docs/12_features/Goal持久目标自主续行与自动压缩完整设计方案.md]
+related_files: [Source/PuddingCore/Tasks/WorkspaceTaskModels.cs, Source/PuddingCore/Scheduling/IWorkAdmissionFence.cs, Source/PuddingPlatform/Services/Tasks/TaskCommandService.cs, Source/PuddingPlatform/Services/Tasks/TaskDispatcher.cs, Source/PuddingPlatform/Services/Tasks/ManualAlwaysAllowFence.cs, Source/PuddingCore/Abstractions/IAgentExecutionAvailabilityProvider.cs, Source/PuddingRuntime/Services/Messaging/AgentExecutionStateRegistry.cs, Source/PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs, Source/PuddingRuntime/Services/GoalMode/GoalModeService.cs, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingPlatform/Services/ConversationAcceptanceStore.cs, Source/PuddingPlatform/Services/AgentChat/ChatExecutionWorker.cs, Source/PuddingRuntime/Services/TurnExecutorAdapter.cs, Source/PuddingCore/Scheduling/AgentAvailabilityModels.cs, Source/PuddingCore/Scheduling/ExecutionWindowModels.cs, Source/PuddingCore/Tasks/ActiveTaskRuntimeContext.cs, Source/PuddingCore/Goals/GoalContracts.cs, Source/PuddingCore/Goals/GoalStateMachine.cs, Source/PuddingCore/Goals/GoalVerificationContracts.cs, Source/PuddingCore/Goals/TaskBoundGoalContracts.cs]
+slug: features-taskboundgoal与agent状态感知自动派发代码级施工计划
+draft: false
+---
+
 # Task-bound Goal 与 Agent 状态感知自动派发代码级施工计划
 
 > 状态：实施中；G2/G3、Task-bound Goal 原子启动、结构化 Agent 路由、版本化 WorkUnit、调用边界 Token/成本硬预算、五分钟 Tracker/repair、全 Agent Availability 扫描与 provider/model 低价窗口 Resolver 已落源码；2026-08-29 已由 Desktop 构建并加载新程序集，完成一次真实自动派发 smoke；事件驱动唤醒、Goal 成本/后代工具归因、缓存 >99% 与七夜生产验收仍未完成

@@ -1,3 +1,18 @@
+---
+title: ADR-060：子代理运行可观测性与会话事件投影
+author: hyfree
+date: 2026-07-19
+last_reviewed: 2026-10-02
+status: active
+description: 状态：已实施第一纵向切片（2026-07-19）；终态与角色工具边界加固（2026-07-28）
+categories: [docs, architecture]
+tags: [子代理运行可, 观测性与会话, 事件投影, architecture]
+related_docs: []
+related_files: []
+slug: architecture-61adr-060子代理运行可观测性与会话事件投影adr
+draft: false
+---
+
 # ADR-060：子代理运行可观测性与会话事件投影
 
 状态：已实施第一纵向切片（2026-07-19）；终态与角色工具边界加固（2026-07-28）

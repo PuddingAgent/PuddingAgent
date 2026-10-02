@@ -1,3 +1,18 @@
+---
+title: ADR-055 Chat Message Viewport Runtime 设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Accepted（核心运行时已实现；进程外部署与产品内性能 smoke 待验收）
+categories: [docs, architecture]
+tags: [设计方案, architecture]
+related_docs: []
+related_files: []
+slug: architecture-56adr-055chatmessageviewportruntime设计方案
+draft: false
+---
+
 # ADR-055 Chat Message Viewport Runtime 设计方案
 
 ## 状态

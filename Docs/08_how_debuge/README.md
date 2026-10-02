@@ -1,3 +1,18 @@
+---
+title: How-Debuge — Pudding 调试与诊断手册（主索引）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 先按下面的《主题索引》找到分册；时间紧时直接看 03-五分钟快速分诊。 按症状找：05-常见症状排查；按耗时找：06-延迟问题定位。 要跑最少验证集合：10-修改后的最低验收；要按层进源码：08-代码调试入口。 历史一次性案例按日期归档在 15-按日期归档的诊断记录。
+categories: [docs, how-debug]
+tags: [readme, how_debuge]
+related_docs: [Docs/08_how_debuge/03-五分钟快速分诊.md, Docs/08_how_debuge/05-常见症状.md, Docs/08_how_debuge/06-延迟问题定位.md, Docs/08_how_debuge/10-修改后的最低验收.md, Docs/08_how_debuge/08-代码调试入口.md, Docs/08_how_debuge/15-按日期归档的诊断记录.md, Docs/08_how_debuge/01-定位与基本原则.md, Docs/08_how_debuge/02-日志位置与埋点约束.md, Docs/08_how_debuge/04-Conversation命令链路.md, Docs/08_how_debuge/07-浏览器与WebView2验收.md, Docs/08_how_debuge/09-测试诊断与门禁.md, Docs/08_how_debuge/11-案例-桌面与Core启动.md, Docs/08_how_debuge/12-案例-平台与会话.md, Docs/08_how_debuge/13-案例-浏览器Bridge与Chat.md, Docs/08_how_debuge/14-案例-调度与Token内核.md]
+related_files: []
+slug: how-debuge-readme
+draft: false
+---
+
 # How-Debuge — Pudding 调试与诊断手册（主索引）
 
 > **2026-10-02 用户裁定**：原根目录单文件 `How-Debuge.md`（4034 行 / 322 KB）按主题拆分为本目录下的分册，本文件是**唯一入口**。原路径 `How-Debuge.md` 已废弃，请勿再引用或新增内容到已删除的根文件。

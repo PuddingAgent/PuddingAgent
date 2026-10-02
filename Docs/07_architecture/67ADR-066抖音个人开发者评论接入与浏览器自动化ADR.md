@@ -1,3 +1,18 @@
+---
+title: 67 ADR-066 抖音个人开发者评论接入与通用 WebView2 自动化 ADR
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: 继续沿用通用 WebView2 + Core 侧 Douyin Adapter，Playwright 仅作语义参考，不新增 Sidecar 或兼容层。下文“WPF 进程内启动 ASP.NET Core”“共享 DI 和进程生命周期”已被 68 实施规格与 Agents.md 的独立 Core 子进程方案取代：WPF 不承载业务，二者通过认证 Bridge 通信。
+categories: [docs, architecture]
+tags: [抖音个人开发, 者评论接入与, 浏览器自动化, architecture]
+related_docs: [Docs/07_architecture/68抖音接入与通用WebView2自动化开发实施规格.md, Docs/07_architecture/46ADR-045双向消息系统与聊天室客户端ADR.md, Docs/07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md, Docs/14_reports/DouyinCreatorTools-WebView2复用与看板方案-2026-09-12.md]
+related_files: []
+slug: architecture-67adr-066抖音个人开发者评论接入与浏览器自动化adr
+draft: false
+---
+
 # 67 ADR-066 抖音个人开发者评论接入与通用 WebView2 自动化 ADR
 
 > - 状态：**proposed**

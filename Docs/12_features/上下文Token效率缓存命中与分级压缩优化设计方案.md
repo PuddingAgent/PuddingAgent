@@ -1,3 +1,18 @@
+---
+title: 上下文 Token 效率、缓存命中与分级压缩优化设计方案
+author: hyfree
+date: 2026-08-17
+last_reviewed: 2026-10-02
+status: active
+description: "Pudding 的主要成本问题不是输出 Token，而是大体积历史在每轮重放、工具结果被长期重复回放，以及稳定前缀在 system prompt 或 tool schema 变化后失去缓存。7 天 DeepSeek 账单口径的缓存命中率为 95.8218%；达到 99% 需要把约 92,719,263 个输入 Token 从未命中转为命中。"
+categories: [docs, features]
+tags: [上下文, 效率缓存命中, 与分级压缩优, 化设计方案, features]
+related_docs: [Docs/07_architecture/43ADR-042上下文自动压缩与主动Compact命令ADR.md, Docs/12_features/上下文自动压缩与Compact命令设计方案.md, Docs/07_architecture/18上下文缓存可观测性ADR.md, Docs/07_architecture/44ADR-043缓存统计闭环ADR.md]
+related_files: [TestScripts/deepseek-cache-e2e.py, TestScripts/deepseek-cache-hitrate.py, Source/PuddingCore/Platform/LlmOptions.cs, Source/PuddingCore/Platform/EntropyProbe.cs, Source/PuddingCore/Runtime/PrefixCacheContracts.cs, Source/PuddingPlatform/Data/Entities/TokenUsageEventEntity.cs, Source/PuddingPlatform/Data/Entities/LlmGatewayUsageEventEntity.cs, Source/PuddingPlatform/Services/TokenUsageRecorder.cs, Source/PuddingPlatform/Services/LlmGatewayUsageRecorder.cs, Source/PuddingRuntime/Services/ContextCompactionService.cs, Source/PuddingRuntime/Services/ContextWindowManager.cs, Source/PuddingPlatform/Services/ChatMessageRepository.cs, Source/PuddingRuntime/Services/AgentExecution/ToolResultContextPolicy.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs, Source/PuddingRuntime/Tools/BuiltIns/Files/FileTools.cs, Source/PuddingRuntime/Tools/BuiltIns/Search/SearchGrepTool.cs, Source/PuddingRuntimeTests/Tools/SearchGrepToolTests.cs, Source/PuddingRuntime/Services/SystemPromptBuilder.cs, Source/PuddingRuntime/Services/ContextPipeline.cs]
+slug: features-上下文token效率缓存命中与分级压缩优化设计方案
+draft: false
+---
+
 # 上下文 Token 效率、缓存命中与分级压缩优化设计方案
 
 > 状态：分批实施中；2026-08-28 源码修复已完成定向验证，尚未部署或通过连续 7 日生产验收

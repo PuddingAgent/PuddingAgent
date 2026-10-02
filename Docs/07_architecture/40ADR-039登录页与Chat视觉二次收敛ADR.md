@@ -1,3 +1,18 @@
+---
+title: 40 ADR-039 登录页与 Chat 视觉二次收敛
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: /admin/user/login 已经从旧的深色玻璃拟态切换为浅色 Runtime Entry 页面，并保留了左右分栏、登录卡片、entering-chat 转场和 history.replace 跳转。这一方向是正确的。
+categories: [docs, architecture]
+tags: [登录页与, 视觉二次收敛, architecture]
+related_docs: [Docs/07_architecture/36ADR-035登录页与Chat视觉统一ADR.md, Docs/07_architecture/39ADR-038RuntimeEntryShell统一入口体验ADR.md, Docs/12_features/Login页与Chat视觉二次收敛施工方案.md]
+related_files: []
+slug: architecture-40adr-039登录页与chat视觉二次收敛adr
+draft: false
+---
+
 # 40 ADR-039 登录页与 Chat 视觉二次收敛
 
 > 状态：**accepted**  

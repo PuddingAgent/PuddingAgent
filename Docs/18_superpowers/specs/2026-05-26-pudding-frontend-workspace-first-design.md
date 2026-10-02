@@ -1,3 +1,18 @@
+---
+title: Pudding 前端 Workspace First 改造设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 当前前端的实际入口仍以 Chat 为中心：/ 和 /welcome 最终进入 /chat，用户会直接面对单个 Agent 的对话界面。新的产品模型已经发生变化：Workspace 是用户的工作场所，Workspace 内包含多个 Agent；Chat 只是用户选中某个 Agent 后的对话详情页。
+categories: [docs, superpowers]
+tags: [pudding, frontend, workspace, first, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-05-26-pudding-frontend-workspace-first-design
+draft: false
+---
+
 # Pudding 前端 Workspace First 改造设计
 
 > 状态：**Retired（2026-08-09）**

@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 的 RSI 能力：现状核查与建设设计
+author: hyfree
+date: 2026-09-19
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-19 ｜ 关联：用户提出的「收集器 / 数据处理器 / 优化器」三环诉求
+categories: [docs, reports]
+tags: [puddingagent, rsi, 现状与设计, reports]
+related_docs: []
+related_files: [Agents.md, Source/PuddingCore/Platform/SubconsciousDtos.cs, Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs, Source/PuddingRuntime/Tools/BuiltIns/Management/SubconsciousTriggerTool.cs, Source/PuddingRuntime/Services/Skills/ConversationSkillEvolutionTrajectorySource.cs, Source/PuddingRuntime/Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs, Tools/Diagnostics/run_benchmarks.py]
+slug: reports-puddingagent-rsi-现状与设计-2026-09-19
+draft: false
+---
+
 # PuddingAgent 的 RSI 能力：现状核查与建设设计
 
 日期：2026-09-19 ｜ 关联：用户提出的「收集器 / 数据处理器 / 优化器」三环诉求

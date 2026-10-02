@@ -1,3 +1,18 @@
+---
+title: 14 消息管线规范化 + 终端代理 + 前端优化 综合架构 ADR
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前 ServerSentEventFrame 只有 4 种字符串事件名，前端消费 6 种（含 metadata/cancelled/error）：
+categories: [docs, architecture]
+tags: [消息管线与终, 端代理与前端, 优化, architecture]
+related_docs: [Docs/07_architecture/57ADR-056聊天消息受理与可靠事件流架构ADR.md, Docs/07_architecture/02PuddingCore.md, Docs/07_architecture/03PuddingRuntime.md, Docs/07_architecture/04PuddingController与Gateway.md, Docs/07_architecture/05PuddingPlatform.md, Docs/07_architecture/10事件系统与事件总线.md, Docs/07_architecture/12多轮会话与工具调用执行.md]
+related_files: []
+slug: architecture-14消息管线与终端代理与前端优化adr
+draft: false
+---
+
 # 14 消息管线规范化 + 终端代理 + 前端优化 综合架构 ADR
 
 > **演进说明（2026-07-13）**：本 ADR 定义的 SSE 事件类型和跨边界透传协议继续有效；“Runtime → Controller → Platform → 前端”的逐层 SSE relay 不再作为同进程内部默认编排方式。聊天命令受理、Host Worker、单一事件写入口、持久化后发布及断线追赶由 [ADR-056 聊天消息受理与可靠事件流架构](57ADR-056聊天消息受理与可靠事件流架构ADR.md) 收敛。跨进程场景仍可使用 SSE Adapter。

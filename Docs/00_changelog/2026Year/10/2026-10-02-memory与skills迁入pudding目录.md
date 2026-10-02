@@ -1,3 +1,18 @@
+---
+title: 2026-10-02 memory/ 与 skills/ 迁入 .pudding/ 并移出版本控制
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: 按用户 2026-10-02 裁定（第 5 条「memory、skills 等目录放到 .pudding 目录，同时将 .pudding 目录写入 git 忽略文件」）：
+categories: [docs, changelog]
+tags: [迁入, 目录]
+related_docs: []
+related_files: [Docs/10_conventions/goal-md-snapshot-policy.md, Tools/Dev/dev-up.py, Source/PuddingCore/Configuration/PuddingDataPaths.cs]
+slug: changelog-2026-10-02-memory与skills迁入pudding目录
+draft: false
+---
+
 # 2026-10-02 memory/ 与 skills/ 迁入 .pudding/ 并移出版本控制
 
 ## 改了什么

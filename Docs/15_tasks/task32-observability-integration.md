@@ -1,3 +1,18 @@
+---
+title: task32 - 可观测性、集成验收与阶段收口
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-03-15
+categories: [docs, tasks]
+tags: [task32, observability, integration, tasks]
+related_docs: [Docs/07_architecture/09V1落地与验收.md, Docs/07_architecture/07协作网络与治理.md, Docs/15_tasks/task26-runtime-foundation.md, Docs/15_tasks/task27-controller-routing-session.md, Docs/15_tasks/task28-platform-workspace-governance.md, Docs/15_tasks/task29-agent-template-and-audit.md, Docs/15_tasks/task30-knowledge-infrastructure.md, Docs/15_tasks/task31-client-surfaces.md, Docs/15_tasks/task34-event-bus-and-subscription.md]
+related_files: []
+slug: tasks-task32-observability-integration
+draft: false
+---
+
 # task32 - 可观测性、集成验收与阶段收口
 
 最后更新：2026-03-15

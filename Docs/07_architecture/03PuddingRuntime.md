@@ -1,3 +1,18 @@
+---
+title: 定位
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Agent Runtime（进程内模块）"
+categories: [docs, architecture]
+tags: [architecture]
+related_docs: []
+related_files: []
+slug: architecture-03puddingruntime
+draft: false
+---
+
 ﻿# Agent Runtime（进程内模块）
 
 > **2026-05-02 简化**：Runtime 不再是独立进程，而是 Pudding Agent 内的一个模块。1 进程 = 1 Agent = 1 Runtime 实例。

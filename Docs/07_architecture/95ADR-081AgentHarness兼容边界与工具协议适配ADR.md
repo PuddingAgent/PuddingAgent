@@ -1,3 +1,18 @@
+---
+title: ADR-081：Agent Harness 兼容边界与工具协议适配
+author: hyfree
+date: 2026-08-26
+last_reviewed: 2026-10-02
+status: active
+description: LLM 在后训练 Harness 中形成了 rg、exec_command、write_stdin、Codex patch 与特定终态表达的强先验。Pudding 的 canonical 工具协议不同，近期主代理和子代理轨迹中已出现工具名/参数猜测、no-match 误判、补丁重试和完整报告后额外续轮。这是 Harness 适配问题，不应归因于模型“不会使用工具”。
+categories: [docs, architecture]
+tags: [兼容边界与工, 具协议适配, architecture]
+related_docs: [Docs/07_architecture/100ADR-086长程执行预算与运行内核收敛ADR.md, Docs/12_features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md, Docs/12_features/AgentHarness兼容与工具调用效率修复设计方案.md]
+related_files: []
+slug: architecture-95adr-081agentharness兼容边界与工具协议适配adr
+draft: false
+---
+
 # ADR-081：Agent Harness 兼容边界与工具协议适配
 
 > **2026-09-12 后续方向修订**：[ADR-086](100ADR-086长程执行预算与运行内核收敛ADR.md)及[新阶段设计](../12_features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md)要求收敛到canonical工具合同，按调用者清单迁移/删除历史别名猜测、正文工具执行与测试专用fallback；不再默认扩充兼容面。下文为已有决策与实现记录，删除完成须有源码及产品证据。用户已明确否定WorkUnit 25–40轮限制，长程子代理和managed WorkUnit支持任意合法正整数轮次（ADR-087 口径），600 仅为系统 profile 默认示例；本ADR的成本治理不得被解释为恢复小轮数截断。

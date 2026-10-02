@@ -1,3 +1,18 @@
+---
+title: 索引与检索 · 状态面板 UI 原型设计（2026-10-01）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "要解决什么 | 索引静默失效（2026-10-01：E: 盘消失 ⇒ 索引 225 → 0 条目）只能靠「搜不到」发现 | 设计目标 | 让「检索好不好用」从需要理解变成不需要理解：一行结论 + 坏了自己找上门 | 信息架构 | L0 结论条（常驻 1 行）→ L1 四张诊断卡 → L2 原始字段（默认折叠） | 面板形态 | Admin 独立路由（详情唯一真源）+ chat 一行入口（跳转） |"
+categories: [docs, features]
+tags: [index, status, panel, ui, prototype, features]
+related_docs: []
+related_files: []
+slug: features-index-status-panel-ui-prototype-2026-10-01
+draft: false
+---
+
 # 索引与检索 · 状态面板 UI 原型设计（2026-10-01）
 
 > 交付物：本文件 + 两张线框图（同目录）

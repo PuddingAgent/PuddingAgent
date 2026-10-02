@@ -1,3 +1,18 @@
+---
+title: Task 20 - CLI/TUI 交互与信息架构设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 状态：partial（UI v1/v2/v3 已落地，UI v4 与 UI v5 最小版已落地） 优先级：P0 最后更新：2026-02-20
+categories: [docs, tasks]
+tags: [task20, cli, ui, ux, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task20-cli-ui-ux
+draft: false
+---
+
 # Task 20 - CLI/TUI 交互与信息架构设计
 状态：`partial`（UI v1/v2/v3 已落地，UI v4 与 UI v5 最小版已落地）  
 优先级：`P0`  

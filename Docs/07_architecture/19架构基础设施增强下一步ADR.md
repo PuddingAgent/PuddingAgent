@@ -1,3 +1,18 @@
+---
+title: 19 架构基础设施增强下一步 ADR
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前系统已经具备单进程运行、Runtime、Controller、Platform、SQLite、Agent 执行、记忆、连接器和管理后台能力，但架构基础设施仍存在几个核心问题：
+categories: [docs, architecture]
+tags: [架构基础设施, 增强下一步, architecture]
+related_docs: [Docs/07_architecture/18上下文缓存可观测性ADR.md, Docs/15_tasks/Tasks.md, Docs/07_architecture/20会话状态机与事件规范ADR.md]
+related_files: []
+slug: architecture-19架构基础设施增强下一步adr
+draft: false
+---
+
 # 19 架构基础设施增强下一步 ADR
 
 > 状态：**in-progress**（Phase 1-4 基础骨架已完成，Git: `21f6057`）

@@ -1,3 +1,18 @@
+---
+title: P2 Scheduler 降噪 — 改造前基线（baseline-r1，R3 收口）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "采集时刻：2026-09-20T13:29:08Z（BJT 21:29），采样 63.367 s Goal / Task：tg-59f90cc6ee8713427f3c7bc5130d68ab / 06898d5dfe004c69ab6d5baf18b2674a 探针：temp/sched-baseline-probe.py（只读 file:…?mode=ro；gitignored 临时件，不入库"
+categories: [docs, reports]
+tags: [scheduler, noise, baseline, r1, reports]
+related_docs: []
+related_files: []
+slug: reports-scheduler-noise-baseline-r1
+draft: false
+---
+
 # P2 Scheduler 降噪 — 改造前基线（baseline-r1，R3 收口）
 
 - 采集时刻：**2026-09-20T13:29:08Z**（BJT 21:29），采样 **63.367 s**

@@ -1,3 +1,18 @@
+---
+title: task35 - Workspace 协作驾驶舱与共享工具台
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-03-18
+categories: [docs, tasks]
+tags: [task35, workspace, cockpit, and, collaboration, tools, tasks]
+related_docs: [Docs/07_architecture/05PuddingPlatform.md, Docs/07_architecture/07协作网络与治理.md, Docs/07_architecture/11工作流与任务图.md, Docs/07_architecture/08数据模型与配置.md, Docs/15_tasks/task32-observability-integration.md, Docs/15_tasks/task30-knowledge-infrastructure.md]
+related_files: []
+slug: tasks-task35-workspace-cockpit-and-collaboration-tools
+draft: false
+---
+
 # task35 - Workspace 协作驾驶舱与共享工具台
 
 最后更新：2026-03-18

@@ -1,3 +1,18 @@
+---
+title: ppt-master 集成 + Office 读写能力建设 · 实施规划
+author: hyfree
+date: 2026-09-21
+last_reviewed: 2026-10-02
+status: active
+description: P1 底座（与 ppt-master 无关，可独立交付） ① Office 工具层增强（读：补 .pptx/.csv/.doc 降级策略；写：新增 docx/xlsx） ② 文档制品链路（存储 + 端点 + 下发工具 + 前端渲染） ← C3 缺口 3 验收闭环：读 docx → 写 docx → 用户在聊天里收到并下载
+categories: [docs, reports]
+tags: [ppt, 集成与, 能力建设规划, reports]
+related_docs: []
+related_files: [Source/PuddingRuntime/PuddingRuntime.csproj]
+slug: reports-ppt-master集成与office能力建设规划-2026-09-21
+draft: false
+---
+
 # ppt-master 集成 + Office 读写能力建设 · 实施规划
 
 > 日期：2026-09-21 ｜ 作者：dsh(0e0) ｜ 状态：**规划（未实施）**

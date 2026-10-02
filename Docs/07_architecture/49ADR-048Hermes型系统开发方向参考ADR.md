@@ -1,3 +1,18 @@
+---
+title: ADR-048：Hermes 型系统开发方向参考
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 正在从单 Agent Chat 应用演进为 Hermes 型本地 Agent OS。Hermes 型系统的核心不是“更多入口”或“更多 Agent”，而是让消息、事件、记忆、工具、连接器和 UI projection 形成可追踪、可恢复、可扩展的系统闭环。
+categories: [docs, architecture]
+tags: [型系统开发方, 向参考, architecture]
+related_docs: [Docs/07_architecture/10事件系统与事件总线.md, Docs/07_architecture/46ADR-045双向消息系统与聊天室客户端ADR.md, Docs/07_architecture/47ADR-046事件驱动多AgentOS交互体验架构ADR.md, Docs/07_architecture/48ADR-047记忆图书馆知识图谱演进ADR.md]
+related_files: []
+slug: architecture-49adr-048hermes型系统开发方向参考adr
+draft: false
+---
+
 # ADR-048：Hermes 型系统开发方向参考
 
 > 状态：**Draft**  

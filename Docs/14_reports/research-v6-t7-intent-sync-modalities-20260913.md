@@ -1,3 +1,18 @@
+---
+title: "[V6-T7] 调研报告：意图同步新模态——从「聊天」升级为「共享工作物」"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "日期 / 联网访问日期：2026-09-13 作者：sub-9107afae（V6-T7 只读调研代理） 任务来源：V6「原生视觉理解与多模态意图同步」主线第 5 条需求 范围：只读仓库 + 联网调研；未改任何源码、未建卡、未 push 证据规则：所有产品/论文/URL 均来自本次真实联网检索（doubao_search / anysearch_search / http_fetch），检索日期 "
+categories: [docs, reports]
+tags: [research, v6, t7, intent, sync, modalities, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/RawSessionLogService.cs, Source/PuddingRuntime/Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs, Source/PuddingRuntime/Services/TaskTools/ManageTasksTool.cs, Source/PuddingRuntime/Tools/BuiltIns/Memory/SaveMemoryTool.cs, Source/PuddingMemoryEngine/Data/MemoryLibrary.cs, Source/PuddingPlatform/Controllers/Api/MemoryLibraryAdminController.cs, Source/PuddingPlatform/Services/MemoryLibraryAdminService.cs, Source/PuddingPlatformAdmin/src/pages/memory-library/index.tsx, Source/PuddingPlatformAdmin/src/pages/memory-library/components/MemoryPageEditor.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ContextMenu.tsx, Source/PuddingPlatform/Services/Goals/GoalCommandService.cs, Source/PuddingPlatform/Controllers/Api/GoalCommandsController.cs, Source/PuddingPlatform/Services/Goals/GoalContinuationWorker.cs, Source/PuddingCore/Goals/GoalCommandTextParser.cs, Source/PuddingFullTextIndex/Contracts/IFullTextSearchEngine.cs, Source/PuddingFullTextIndex/Infrastructure/Text/JiebaAnalyzer.cs, Source/PuddingMemoryEngine/Infrastructure/Text/Fts5QueryBuilder.cs]
+slug: reports-research-v6-t7-intent-sync-modalities-20260913
+draft: false
+---
+
 # [V6-T7] 调研报告：意图同步新模态——从「聊天」升级为「共享工作物」
 
 - **日期 / 联网访问日期**：2026-09-13

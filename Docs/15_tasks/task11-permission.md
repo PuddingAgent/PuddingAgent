@@ -1,9 +1,24 @@
+---
+title: Task 11 — 权限与安全沙盒设计方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 借鉴 Claude Code 的 hasPermissionsToUseToolInner() 权限评估管道：
+categories: [docs, tasks]
+tags: [task11, permission, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task11-permission
+draft: false
+---
+
 # Task 11 — 权限与安全沙盒设计方案
 
 > **状态：** ✏️ 设计中
 > **依赖：** Task 10 (Agent 能力体系)、D02 (ShellTool / FileTool)
 > **目标：** 为 Agent 的文件访问和命令执行建立路径沙盒、指令分级白名单和人工授权机制，防止 AI 产生非预期破坏
-> **参考：** [Claude Code EP07 Permission Pipeline](../claude-reviews-claude/architecture/07-permission-pipeline.md) — 7 层纵深防御、fail-closed/fail-open 判定原则
+> **参考：** [Claude Code EP07 Permission Pipeline](../../external/references/claude-reviews-claude/architecture/07-permission-pipeline.md) — 7 层纵深防御、fail-closed/fail-open 判定原则
 
 ---
 

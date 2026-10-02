@@ -1,3 +1,18 @@
+---
+title: 密钥保管箱 (Key Vault) — 功能设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Agent 在执行工具调用时需要各种密钥（API Key、Token、密码等），目前这些密钥只能： 硬编码在系统提示词中（泄露风险） 通过环境变量注入（不灵活，不可通过 UI 管理） 出现在 LLM 上下文和记忆中（明文泄露风险）
+categories: [docs, features]
+tags: [keyvaultfeature, features]
+related_docs: []
+related_files: []
+slug: features-keyvaultfeature
+draft: false
+---
+
 # 密钥保管箱 (Key Vault) — 功能设计
 
 > **状态**: 设计中 | **日期**: 2026-05-02 | **作者**: lead

@@ -1,3 +1,18 @@
+---
+title: 修改日志（Changelog）使用规则
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日志 = 按时间记录「这轮做了什么改动、为什么、验证到哪一步」。 属于日志的内容：
+categories: [docs, changelog]
+tags: [readme, changelog]
+related_docs: [code_map.md, Agents.md, Docs/00_changelog/2026Year/10/2026-10-02-根code_map迁出历史记录.md]
+related_files: [code_map.md, Agents.md, Docs/README.md, Docs/07_architecture/架构.md, Docs/10_conventions/Agents-Hygiene.md, Source/PuddingRuntime/code_map.md, Source/PuddingFullTextIndex/code_map.md, Source/PuddingCodeIndex/code_map.md, Source/PuddingPlatformAdmin/code_map.md, Source/PuddingHost/code_map.md]
+slug: changelog-readme
+draft: false
+---
+
 # 修改日志（Changelog）使用规则
 
 > 本文件是 `Docs/00_changelog/` 的规则入口。**修改日志类内容只放这里**，不放 `code_map.md`，不放 `Docs/` 根目录，不放 ADR 正文。

@@ -1,3 +1,18 @@
+---
+title: ADR-085：Memory 主导的长程任务连续性
+author: hyfree
+date: 2026-09-12
+last_reviewed: 2026-10-02
+status: active
+description: "2026-09-15 部分实施：572c394删除固定128K自动压缩cap，两条压力入口共享默认80%；Provider实报不再混入本地高估，压缩代际之前的usage失效。已由Desktop部署并完成只读功能smoke，见修复报告。本ADR整体仍为Proposed；Memory快照、有界首轮装配、无收益候选抑制和长期运行验收未因此完成。"
+categories: [docs, architecture]
+tags: [主导的长程任, 务连续性, architecture]
+related_docs: [Docs/14_reports/百万上下文频繁压缩修复-2026-09-15.md, Docs/12_features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md, Docs/12_features/Memory快照索引与历史溯源设计-2026-09-14.md]
+related_files: []
+slug: architecture-99adr-085memory主导的长程任务连续性adr
+draft: false
+---
+
 # ADR-085：Memory 主导的长程任务连续性
 
 2026-09-15 部分实施：572c394删除固定128K自动压缩cap，两条压力入口共享默认80%；Provider实报不再混入本地高估，压缩代际之前的usage失效。已由Desktop部署并完成只读功能smoke，见[修复报告](../14_reports/百万上下文频繁压缩修复-2026-09-15.md)。本ADR整体仍为Proposed；Memory快照、有界首轮装配、无收益候选抑制和长期运行验收未因此完成。

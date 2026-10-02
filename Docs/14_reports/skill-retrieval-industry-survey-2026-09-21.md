@@ -1,3 +1,18 @@
+---
+title: 业界调研：智能体技能/工具的「渐进披露 + 语义检索 + 有效性统计」
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 调研日期：2026-09-21 范围：公开资料（官方文档 / 论文 / 开源仓库），聚焦 2024–2026 的 agent skills、tool retrieval、progressive disclosure、skill library。 方法：anysearch_search（多轮）+ http_fetch 打开一手原文 + github_search 定位仓库，再以 raw.github
+categories: [docs, reports]
+tags: [skill, retrieval, industry, survey, reports]
+related_docs: []
+related_files: []
+slug: reports-skill-retrieval-industry-survey-2026-09-21
+draft: false
+---
+
 # 业界调研：智能体技能/工具的「渐进披露 + 语义检索 + 有效性统计」
 
 - 调研日期：2026-09-21

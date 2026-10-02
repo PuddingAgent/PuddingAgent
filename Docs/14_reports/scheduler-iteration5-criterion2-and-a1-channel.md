@@ -1,3 +1,18 @@
+---
+title: Scheduler 迭代 5 证据：验收标准 2 实测 + A1 契约提案通道不可达（2026-09-20）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "GoalRun tg-2efcdf7d329d8387632a67bcbfbdbe2b｜task 3bd2a4b0ef5f4bff8f175fb7655927ad｜iteration 5 数据源：D:\\data\\databases\\pudding_platform.db（只读 mode=ro）｜探针 temp/db-probe-criterion2.py"
+categories: [docs, reports]
+tags: [scheduler, iteration5, criterion2, and, a1, channel, reports]
+related_docs: []
+related_files: []
+slug: reports-scheduler-iteration5-criterion2-and-a1-channel
+draft: false
+---
+
 # Scheduler 迭代 5 证据：验收标准 2 实测 + A1 契约提案通道不可达（2026-09-20）
 
 - GoalRun `tg-2efcdf7d329d8387632a67bcbfbdbe2b`｜task `3bd2a4b0ef5f4bff8f175fb7655927ad`｜iteration 5

@@ -1,3 +1,18 @@
+---
+title: 73 Phase 2A-1 验收证据收口与 Phase 2A-2 准入工作指令
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: Phase 2A-1 已完成并通过准入验收。本文后续“当前缺口”和执行指令保留为验收前历史快照，不能再用来判断当前源码状态。
+categories: [docs, architecture]
+tags: [验收证据收口, 准入工作指令, architecture]
+related_docs: [Docs/07_architecture/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md, Docs/07_architecture/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md]
+related_files: [TestScripts/start-phase2a1-browser-smoke.ps1, Docs/08_how_debuge/README.md]
+slug: architecture-73phase2a-1验收证据收口与phase2a-2准入工作指令
+draft: false
+---
+
 # 73 Phase 2A-1 验收证据收口与 Phase 2A-2 准入工作指令
 
 > - 状态：**completed / Phase 2A-1 accepted（2026-08-02）**

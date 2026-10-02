@@ -1,3 +1,18 @@
+---
+title: FastRouter 资源池配置（2026-09-18）
+author: hyfree
+date: 2026-09-18
+last_reviewed: 2026-10-02
+status: active
+description: "按用户提供的 OpenCode 配置，将独立服务商 fastrouter（FastRouter）追加至本机 D:\\data\\config\\llm.providers.json，端点为 https://fastrouter.cloud/v1。API Key 仅写入运行时配置，本文及版本库不保存凭据。"
+categories: [docs, reports]
+tags: [资源池配置, reports]
+related_docs: []
+related_files: []
+slug: reports-fastrouter资源池配置-2026-09-18
+draft: false
+---
+
 # FastRouter 资源池配置（2026-09-18）
 
 按用户提供的 OpenCode 配置，将独立服务商 `fastrouter`（FastRouter）追加至本机 `D:\data\config\llm.providers.json`，端点为 `https://fastrouter.cloud/v1`。API Key 仅写入运行时配置，本文及版本库不保存凭据。

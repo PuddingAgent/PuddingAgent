@@ -1,3 +1,18 @@
+---
+title: 案例：桌面与 Core 启动
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 先 dry-run 检查服务端当前识别出的 deterministic cases；该操作不会调用付费模型：
+categories: [docs, how-debug]
+tags: [案例, 桌面与, 启动, how_debuge]
+related_docs: [Docs/08_how_debuge/README.md]
+related_files: [Source/PuddingPlatformAdmin/dist/index.html]
+slug: how-debuge-11-案例-桌面与core启动
+draft: false
+---
+
 # 案例：桌面与 Core 启动
 
 > 本文档是 [How-Debuge 调试与诊断手册](README.md)（主索引）的主题分册，由原根目录 `How-Debuge.md` 于 2026-10-02 按主题拆分而来。

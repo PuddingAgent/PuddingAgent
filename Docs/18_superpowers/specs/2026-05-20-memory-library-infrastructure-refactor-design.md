@@ -1,3 +1,18 @@
+---
+title: Memory Library Infrastructure Refactor Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 本阶段目标是把记忆图书馆重构为稳定的树状数据基础设施，让它像数据库和文件系统一样提供存储、索引、查询、修改、移除、目录、指针和溯源能力，而不是在底层写死业务整理规则。
+categories: [docs, superpowers]
+tags: [memory, library, infrastructure, refactor, design, specs]
+related_docs: [Docs/07_architecture/29ADR-028记忆图书馆基础设施重构ADR.md]
+related_files: [Docs/07_architecture/12记忆图书馆基础设施.md, Source/PuddingCore/Abstractions/IMemoryLibrary.cs, Source/PuddingCore/Abstractions/MemoryLibraryDtos.cs, Source/PuddingMemoryEngine/Data/MemoryLibrary.cs, Source/PuddingMemoryEngine/Data/MemoryLibraryDbContext.cs, Source/PuddingMemoryEngine/Entities/LibraryEntities.cs, Source/PuddingCore/Abstractions/IMemoryLibrarian.cs, Source/PuddingMemoryEngine/Services/MemoryLibrarian.cs]
+slug: superpowers-2026-05-20-memory-library-infrastructure-refactor-design
+draft: false
+---
+
 # Memory Library Infrastructure Refactor Design
 
 > 日期：2026-05-20

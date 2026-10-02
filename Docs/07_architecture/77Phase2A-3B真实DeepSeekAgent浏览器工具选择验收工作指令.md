@@ -1,3 +1,18 @@
+---
+title: Phase 2A-3B：真实 DeepSeek Agent 浏览器工具选择验收工作指令
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: "使用一个由用户明确选择、已经配置 DeepSeek 模型的测试 Agent，通过真实 PuddingDesktop -> Core -> Agent Runtime -> Browser Tools -> authenticated BrowserBridge -> WebView2 链路，自主完成本地 TestSite 表单任务。"
+categories: [docs, architecture]
+tags: [真实, 浏览器工具选, 择验收工作指, architecture]
+related_docs: [Docs/07_architecture/76Phase2A-3通用WebView2页面操作实施验收报告.md]
+related_files: [Docs/README.md, Docs/07_architecture/README.md]
+slug: architecture-77phase2a-3b真实deepseekagent浏览器工具选择验收工作指令
+draft: false
+---
+
 # Phase 2A-3B：真实 DeepSeek Agent 浏览器工具选择验收工作指令
 
 > 状态：待执行  

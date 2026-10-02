@@ -1,3 +1,18 @@
+---
+title: 44 ADR-043：DeepSeek 上下文硬盘缓存统计闭环
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 已实现 ADR-018 的全部 14 项任务，包括 TokenUsageDto 缓存字段、chat 状态栏缓存命中率、/api/stats/tokens/monthly 和 /admin/stats/tokens 页面。
+categories: [docs, architecture]
+tags: [缓存统计闭环, architecture]
+related_docs: [Docs/07_architecture/18上下文缓存可观测性ADR.md, Docs/07_architecture/05PuddingPlatform.md]
+related_files: []
+slug: architecture-44adr-043缓存统计闭环adr
+draft: false
+---
+
 # 44 ADR-043：DeepSeek 上下文硬盘缓存统计闭环
 
 > 状态：**accepted / implemented**

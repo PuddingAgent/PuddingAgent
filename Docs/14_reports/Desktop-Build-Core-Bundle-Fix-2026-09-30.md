@@ -1,3 +1,18 @@
+---
+title: 普通 Desktop 构建缺少 Core：修复记录
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 用户在 VS 的普通 Debug 输出启动 WinUI，工作台提示 Cannot find PuddingAgent.exe。恢复实现只在 Publish 后打包 Core，普通 Build 没有配套子进程。上轮 smoke 显式配置了其他构建的 Core 路径，因此未覆盖这条路径。
+categories: [docs, reports]
+tags: [desktop, build, core, bundle, fix, reports]
+related_docs: []
+related_files: [TestScripts/test-pudding-desktop-launcher.ps1]
+slug: reports-desktop-build-core-bundle-fix-2026-09-30
+draft: false
+---
+
 # 普通 Desktop 构建缺少 Core：修复记录
 
 ## 问题与原因

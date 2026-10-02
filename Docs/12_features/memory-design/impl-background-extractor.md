@@ -1,3 +1,18 @@
+---
+title: 一、现有基础设施（惊喜）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 实施规约：Background Extractor（后台事实搬运工）"
+categories: [docs, features]
+tags: [impl, background, extractor, memory-design]
+related_docs: []
+related_files: []
+slug: features-impl-background-extractor
+draft: false
+---
+
 ﻿# 实施规约：Background Extractor（后台事实搬运工）
 
 > 版本：v1.0 | 日期：2026-07-11

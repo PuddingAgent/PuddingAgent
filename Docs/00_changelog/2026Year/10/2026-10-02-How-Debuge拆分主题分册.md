@@ -1,3 +1,18 @@
+---
+title: 2026-10-02 How-Debuge.md 拆分为 Docs/08_how_debuge/ 主题分册
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: 按用户 2026-10-02 裁定（第 3 条「放到 Docs 目录，新建 How-Debuge 子目录，按主题拆分成不同子 md，主 md 引用子 md」）：
+categories: [docs, changelog]
+tags: [how, 拆分主题分册]
+related_docs: []
+related_files: [README.md, Docs/08_how_debuge/README.md, Agents.md, code_map.md, Docs/19_references/deepseek-reference-architecture-master-plan-2026-08-14.md]
+slug: changelog-2026-10-02-how-debuge拆分主题分册
+draft: false
+---
+
 # 2026-10-02 How-Debuge.md 拆分为 Docs/08_how_debuge/ 主题分册
 
 ## 改了什么

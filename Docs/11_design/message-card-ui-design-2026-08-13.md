@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 消息卡片 UI 设计方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "布局：消息呈「行式」而非气泡，强调扫描效率；提供 清晰（spacious）/紧凑（compact）两档密度，紧凑档隐藏头像、压缩行距（slack.com help: 213893898）。 头像与发送者：清晰模式头像（约 36–40px 圆形）+ 发送者名 + 时间同行置顶；连续同人消息合并后仅首条显示头像与名称。 时间戳：可全局配置显示/隐藏，支持 24 小时制；hover 展示完整日期时间。 "
+categories: [docs, design]
+tags: [message, card, ui, design]
+related_docs: []
+related_files: []
+slug: design-message-card-ui-design-2026-08-13
+draft: false
+---
+
 # PuddingAgent 消息卡片 UI 设计方案
 
 > 日期：2026-08-13 ｜ 类型：前端设计调研 + 现状差距分析 + 可落地改造方案

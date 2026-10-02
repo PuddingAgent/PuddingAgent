@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 效率、调度、工具与代码审计
+author: hyfree
+date: 2026-09-12
+last_reviewed: 2026-10-02
+status: active
+description: "审计日期：2026-09-05，Asia/Shanghai；实时取样约 07:16–07:29。七日统计窗口为 2026-08-29 00:00 ≤ t < 2026-09-05 00:00，当天数据另列。本次是评估与审计，未实施产品修复、重启、派发、任务状态变更或令牌变更。"
+categories: [docs, reports]
+tags: [效率与代码审, reports]
+related_docs: []
+related_files: [TestScripts/deepseek-cache-hitrate.py]
+slug: reports-puddingagent效率与代码审计-2026-09-05
+draft: false
+---
+
 # PuddingAgent 效率、调度、工具与代码审计
 
 > 2026-09-05 修正：本次历史快照的 SQL 预筛选把带 `T/+08:00` 的字符串与数据库 UTC 空格分隔时间直接比较，漏掉目标窗口开头 8 小时。下文七日用量数字保留为原始审计证据，不再作为完整七日验收口径。修复脚本按显式 UTC 半开区间重查后，DeepSeek 为 1,105 请求、76,456,907 输入、6,231,627 miss，命中率 91.849%，有记录 6/7 日。详见 `PuddingAgent首轮修复与验证-2026-09-05.md`；差异不是优化收益。

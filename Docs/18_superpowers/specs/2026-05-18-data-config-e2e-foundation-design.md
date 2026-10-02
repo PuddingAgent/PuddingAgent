@@ -1,3 +1,18 @@
+---
+title: "Data, Configuration, and E2E Foundation Design"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Date: 2026-05-18 Status: Proposed Scope: System configuration, LLM/provider configuration, agent file layout, Docker data mount layout, and automated end-to-end testing."
+categories: [docs, superpowers]
+tags: [data, config, e2e, foundation, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-05-18-data-config-e2e-foundation-design
+draft: false
+---
+
 # Data, Configuration, and E2E Foundation Design
 
 **Date:** 2026-05-18  

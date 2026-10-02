@@ -1,3 +1,18 @@
+---
+title: task30 - 知识库、统一存储与知识图谱
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-03-15
+categories: [docs, tasks]
+tags: [task30, knowledge, infrastructure, tasks]
+related_docs: [Docs/07_architecture/07协作网络与治理.md, Docs/07_architecture/08数据模型与配置.md, Docs/15_tasks/task28-platform-workspace-governance.md, Docs/15_tasks/task31-client-surfaces.md, Docs/15_tasks/task26-runtime-foundation.md]
+related_files: []
+slug: tasks-task30-knowledge-infrastructure
+draft: false
+---
+
 # task30 - 知识库、统一存储与知识图谱
 
 最后更新：2026-03-15

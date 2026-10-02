@@ -1,3 +1,18 @@
+---
+title: 案例：调度与 Token 内核
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 调度、Goal、Runtime 测试共同引用 Platform/Runtime 产物并会创建 SQLite 夹具。不要并行运行 PuddingRuntimeTests 与 PuddingPlatformTests：并行构建会争用 PuddingPlatform.dll，并可能把临时 SQLite I/O 或外键错误伪装成功能回归。应先完成一次构建，再串行运行聚焦集和全量集；测试夹具必须创建真实 S
+categories: [docs, how-debug]
+tags: [案例, 调度与, 内核, how_debuge]
+related_docs: [Docs/08_how_debuge/README.md]
+related_files: [Source/PuddingHost/PuddingHost.csproj, TestScripts/test-pudding-deployment-gates.ps1, TestScripts/invoke-pudding-desktop-deployment.ps1, TestScripts/measure-pudding-process-baseline.ps1, TestScripts/dev_up_tests.py]
+slug: how-debuge-14-案例-调度与token内核
+draft: false
+---
+
 # 案例：调度与 Token 内核
 
 > 本文档是 [How-Debuge 调试与诊断手册](README.md)（主索引）的主题分册，由原根目录 `How-Debuge.md` 于 2026-10-02 按主题拆分而来。

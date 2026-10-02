@@ -1,3 +1,18 @@
+---
+title: ADR-056 聊天消息受理与可靠事件流架构
+author: hyfree
+date: 2026-07-14
+last_reviewed: 2026-10-02
+status: active
+description: Proposed
+categories: [docs, architecture]
+tags: [聊天消息受理, 与可靠事件流, 架构, architecture]
+related_docs: [Docs/07_architecture/14消息管线与终端代理与前端优化ADR.md, Docs/07_architecture/16会话状态层与客户端解耦ADR.md, Docs/07_architecture/32ADR-031聊天历史转录持久化与事件日志回放边界.md, Docs/07_architecture/51ADR-050会话层统一投影与前端观察者模型ADR.md, Docs/07_architecture/54ADR-053前端会话引用生命周期与SSE清理边界ADR.md]
+related_files: []
+slug: architecture-57adr-056聊天消息受理与可靠事件流架构adr
+draft: false
+---
+
 # ADR-056 聊天消息受理与可靠事件流架构
 
 ## 状态

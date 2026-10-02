@@ -1,3 +1,18 @@
+---
+title: 看板快照（批量关闭前留档）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "导出时间：2026-09-20T08:09:05.287659+08:00"
+categories: [docs, reports]
+tags: [board, snapshot, before, bulk, close, reports]
+related_docs: []
+related_files: []
+slug: reports-board-snapshot-before-bulk-close-2026-09-20
+draft: false
+---
+
 # 看板快照（批量关闭前留档）
 
 导出时间：2026-09-20T08:09:05.287659+08:00

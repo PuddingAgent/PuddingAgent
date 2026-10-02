@@ -1,3 +1,18 @@
+---
+title: ADR-062 前端 Chat UI 模块化审计与渐进拆分
+author: hyfree
+date: 2026-07-21
+last_reviewed: 2026-10-02
+status: active
+description: "PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts 同时承担工作区与 Agent 选择、Session 生命周期、SSE/replay、消息发送、compaction、通知、队列与 UI 状态。 该文件在本轮开始时有 6,209 行，任何局部修改都需要理解多个不同生命周期，纯函数也 无法在不加载主 hook 的情况下独立测试。"
+categories: [docs, architecture]
+tags: [前端, 模块化审计与, 渐进拆分, architecture]
+related_docs: []
+related_files: []
+slug: architecture-62adr-062前端chatui模块化审计与渐进拆分adr
+draft: false
+---
+
 # ADR-062 前端 Chat UI 模块化审计与渐进拆分
 
 > 状态：Accepted，Implementation In Progress  

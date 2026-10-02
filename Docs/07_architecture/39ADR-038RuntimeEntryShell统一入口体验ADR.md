@@ -1,3 +1,18 @@
+---
+title: 39 ADR-038 Runtime Entry Shell 统一入口体验
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前 /admin/bootstrap 首次初始化页仍使用深蓝黑背景、玻璃卡片、强紫色渐变按钮和居中 Hero 式表单。用户在浏览器评审中建议：
+categories: [docs, architecture]
+tags: [统一入口体验, architecture]
+related_docs: [Docs/07_architecture/36ADR-035登录页与Chat视觉统一ADR.md, Docs/07_architecture/37ADR-036AdminConsole去AntDesignPro化与Pudding设计语言统一ADR.md, Docs/12_features/RuntimeEntryShell统一入口设计方案.md, Docs/12_features/LoginFeature.md]
+related_files: []
+slug: architecture-39adr-038runtimeentryshell统一入口体验adr
+draft: false
+---
+
 # 39 ADR-038 Runtime Entry Shell 统一入口体验
 
 > 状态：**accepted**  

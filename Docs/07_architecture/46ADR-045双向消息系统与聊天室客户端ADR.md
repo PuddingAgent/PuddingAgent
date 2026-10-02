@@ -1,3 +1,18 @@
+---
+title: ADR-045：双向消息系统与聊天室客户端架构
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Agent 目标投递新增服务端权威 handling_mode，把“传递事实”和“请求执行”拆开：
+categories: [docs, architecture]
+tags: [双向消息系统, 与聊天室客户, architecture]
+related_docs: [Docs/07_architecture/10事件系统与事件总线.md, Docs/07_architecture/16会话状态层与客户端解耦ADR.md, Docs/07_architecture/24核心架构组件边界与执行引擎拆分ADR.md, Docs/07_architecture/32ADR-031聊天历史转录持久化与事件日志回放边界.md, Docs/07_architecture/49ADR-048Hermes型系统开发方向参考ADR.md, Docs/07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md]
+related_files: []
+slug: architecture-46adr-045双向消息系统与聊天室客户端adr
+draft: false
+---
+
 # ADR-045：双向消息系统与聊天室客户端架构
 
 > 状态：**Proposed**  

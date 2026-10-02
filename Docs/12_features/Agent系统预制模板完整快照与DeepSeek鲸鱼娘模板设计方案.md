@@ -1,3 +1,18 @@
+---
+title: Agent 系统预制模板完整快照与 DeepSeek 鲸鱼娘模板设计方案
+author: hyfree
+date: 2026-09-02
+last_reviewed: 2026-10-02
+status: active
+description: 本方案同时解决三个问题：
+categories: [docs, features]
+tags: [系统预制模板, 完整快照与, 鲸鱼娘模板设, 计方案, features]
+related_docs: [Docs/07_architecture/97ADR-083Agent系统预制模板版本化快照与DeepSeek鲸鱼娘模板ADR.md]
+related_files: []
+slug: features-agent系统预制模板完整快照与deepseek鲸鱼娘模板设计方案
+draft: false
+---
+
 # Agent 系统预制模板完整快照与 DeepSeek 鲸鱼娘模板设计方案
 
 > 状态：Proposed（设计完成，未实施）  

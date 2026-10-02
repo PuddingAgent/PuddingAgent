@@ -1,3 +1,18 @@
+---
+title: "任务书：找出 PuddingAgent **最值得修改的 5 个架构级问题**"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "你是一名架构评审者，不是修 bug 的人。任务书要求输出架构级问题，不是零散缺陷。 严格只读：不得修改/删除/移动任何文件；不得 git add/commit/push；不得构建或重启。 唯一允许的写入：最终报告文件（见 §5）。 允许的工具行为：file_read / file_search / search_grep / code_outline / code_symbol_search / "
+categories: [docs, reports]
+tags: [archreview, gpt6astra, taskbook, reports]
+related_docs: []
+related_files: [Agents.md, code_map.md, Source/PuddingPlatform/code_map.md, Source/PuddingRuntime/code_map.md, Source/PuddingHost/code_map.md, Source/PuddingCore/code_map.md, Source/PuddingPlatformAdmin/code_map.md, Tests/PuddingHost.Tests/Hosting/ControllerConstructorDependencyResolutionTests.cs, Docs/12_features/Chat前端架构设计方案-2026-09-22.md]
+slug: reports-archreview-gpt6astra-2026-09-23.taskbook
+draft: false
+---
+
 # 任务书：找出 PuddingAgent **最值得修改的 5 个架构级问题**
 
 ## 0. 你的角色与硬约束

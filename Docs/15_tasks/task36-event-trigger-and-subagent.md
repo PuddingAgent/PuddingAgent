@@ -1,10 +1,25 @@
+---
+title: task36 — 事件触发、外部协议接入与子代理模型（调研）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-05-03
+categories: [docs, tasks]
+tags: [task36, event, trigger, and, subagent, tasks]
+related_docs: [Docs/07_architecture/架构.md]
+related_files: []
+slug: tasks-task36-event-trigger-and-subagent
+draft: false
+---
+
 # task36 — 事件触发、外部协议接入与子代理模型（调研）
 
 最后更新：2026-05-03
 
 > **参考：**
-> - [Claude Code EP03 Coordinator](../claude-reviews-claude/architecture/03-coordinator.md) — Coordinator/Worker 上下文隔离、受限工具集
-> - [Claude Code EP08 Agent Swarms](../claude-reviews-claude/architecture/08-agent-swarms.md) — 文件邮箱 IPC、7 种任务类型、锁文件并发控制
+> - [Claude Code EP03 Coordinator](../../external/references/claude-reviews-claude/architecture/03-coordinator.md) — Coordinator/Worker 上下文隔离、受限工具集
+> - [Claude Code EP08 Agent Swarms](../../external/references/claude-reviews-claude/architecture/08-agent-swarms.md) — 文件邮箱 IPC、7 种任务类型、锁文件并发控制
 
 ---
 

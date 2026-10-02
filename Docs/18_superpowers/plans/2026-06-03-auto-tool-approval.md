@@ -1,3 +1,18 @@
+---
+title: Auto Tool Approval Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build the first working slice of automatic high-risk tool approval: structured tickets, reviewer abstraction, ticket-store abstraction, request tool, and execution-time ticket matching."
+categories: [docs, superpowers]
+tags: [auto, tool, approval, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Tools/ToolApproval.cs, Source/PuddingRuntimeTests/Tools/PuddingToolInfrastructureTests.cs, Source/PuddingPlatform/Services/WorkspaceAgentFileService.cs, Source/PuddingAgent/Program.cs, Source/PuddingPlatformTests/Services/WorkspaceAgentFileServiceTests.cs, Source/PuddingAgent/appsettings.json, Source/PuddingCore/Abstractions/ILlmConfigService.cs, Source/PuddingCore/Configuration/PuddingFileLlmConfigService.cs, Source/PuddingCore/Abstractions/JsonLlmConfigService.cs, Source/PuddingRuntime/Services/LlmProfileResolver.cs, Source/PuddingCoreTests/Configuration/PuddingFileLlmConfigServiceTests.cs, Source/PuddingRuntime/DependencyInjection.cs]
+slug: superpowers-2026-06-03-auto-tool-approval
+draft: false
+---
+
 # Auto Tool Approval Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

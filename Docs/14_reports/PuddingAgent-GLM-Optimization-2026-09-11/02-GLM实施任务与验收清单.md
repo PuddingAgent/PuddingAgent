@@ -1,3 +1,18 @@
+---
+title: GLM 实施任务与验收清单
+author: hyfree
+date: 2026-09-12
+last_reviewed: 2026-10-02
+status: active
+description: "日期：2026-09-11 这是原施工任务分解。完整原理与约束见同目录 01-代码审阅与优化设计.md；当前复审状态以下方说明及 04/05 文档为准。 先从 F01、S01、T01、A01 的小范围变更开始；C01/C02 冻结合同后，开始缓存观测。 > 2026-09-11 独立审计：既有 91 项回归通过，新增 10 个边界探针失败。F01/S01-A/T01 needs_changes，优"
+categories: [docs, reports]
+tags: [实施任务与验, 收清单]
+related_docs: []
+related_files: []
+slug: reports-02-glm实施任务与验收清单
+draft: false
+---
+
 # GLM 实施任务与验收清单
 
 日期：2026-09-11  

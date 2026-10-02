@@ -1,3 +1,18 @@
+---
+title: Agent Workbench UI Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Turn the current chat page into an Agent Workbench with a center timeline, bottom multimodal intent console, and right-side Agent presence rail that integrates browser microphone input, voice ou"
+categories: [docs, superpowers]
+tags: [agent, workbench, ui, plans]
+related_docs: []
+related_files: [Docs/18_superpowers/specs/2026-05-28-agent-workbench-interaction-design.md, Docs/18_superpowers/specs/2026-05-28-agent-workbench-ui-blueprint.md, Docs/07_architecture/47ADR-046事件驱动多AgentOS交互体验架构ADR.md, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/InputArea.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/VoiceConversationPanel.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/AgentAvatarRuntimeView.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/CameraInputModal.tsx, Source/PuddingPlatformAdmin/src/pages/chat/styles.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatMain.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/types.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageRow.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/UserMessageBubble.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/UserMessageBubble.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/VoiceConversationPanel.test.tsx]
+slug: superpowers-2026-05-28-agent-workbench-ui
+draft: false
+---
+
 # Agent Workbench UI Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

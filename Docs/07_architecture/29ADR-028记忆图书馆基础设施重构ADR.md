@@ -1,3 +1,18 @@
+---
+title: 29 ADR-028 记忆图书馆基础设施重构方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 已经有第一版记忆图书馆基础设施：
+categories: [docs, architecture]
+tags: [记忆图书馆基, 础设施重构, architecture]
+related_docs: [Docs/07_architecture/12记忆图书馆基础设施.md, Docs/07_architecture/13记忆与会话数据层.md, Docs/07_architecture/15潜意识LLM子代理系统ADR.md, Docs/07_architecture/28ADR-027Hook事件潜意识学习闭环ADR.md, Docs/15_tasks/task38-subconscious-memory-engine.md, Docs/15_tasks/task42-hook-event-subconscious-learning.md, Docs/18_superpowers/specs/2026-05-20-memory-library-infrastructure-refactor-design.md]
+related_files: []
+slug: architecture-29adr-028记忆图书馆基础设施重构adr
+draft: false
+---
+
 # 29 ADR-028 记忆图书馆基础设施重构方案
 
 > 状态：**partially-implemented**（基础结构已部分落地；workspace scope、schema 初始化、Pointer 泛化、Librarian 分层、source-aware recall 和测试验收由 ADR-029 收敛）

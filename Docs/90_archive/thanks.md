@@ -1,3 +1,18 @@
+---
+title: thanks
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: "﻿# 感谢 / Acknowledgments"
+categories: [docs, archive]
+tags: [thanks, archive]
+related_docs: []
+related_files: []
+slug: archive-thanks
+draft: false
+---
+
 ﻿# 感谢 / Acknowledgments
 
 Pudding 的设计深受以下项目和研究的启发。

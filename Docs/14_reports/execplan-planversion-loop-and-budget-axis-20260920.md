@@ -1,3 +1,18 @@
+---
+title: 计划版本自毁循环 + 预算轴实测（2026-09-20，只读取证）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "关联：GoalRun tg-dab61d6e65ba7c0b5d3b355077b7c5e5（本卡）与 tg-2efcdf7d329d8387632a67bcbfbdbe2b（Scheduler） 数据源：D:\\data\\databases\\pudding_platform.db 只读｜探针 temp/db-probe-blocker-axis.py、db-probe-blocker-axis2."
+categories: [docs, reports]
+tags: [execplan, planversion, loop, and, budget, axis, reports]
+related_docs: []
+related_files: [Source/PuddingCore/Scheduling/TaskExecutionPlanContracts.cs, Source/PuddingPlatform/Services/ExecutionCommandReader.cs, Source/PuddingPlatform/Services/Scheduling/TaskExecutionPlanCompiler.cs, Source/PuddingRuntime/Services/AgentExecution/ExecutionUsageBudgetTracker.cs, Source/PuddingPlatform/Services/Goals/GoalSettlementStore.cs, Source/PuddingCore/Scheduling/TaskExecutionTrackingContracts.cs]
+slug: reports-execplan-planversion-loop-and-budget-axis-20260920
+draft: false
+---
+
 # 计划版本自毁循环 + 预算轴实测（2026-09-20，只读取证）
 
 - 关联：GoalRun `tg-dab61d6e65ba7c0b5d3b355077b7c5e5`（本卡）与 `tg-2efcdf7d329d8387632a67bcbfbdbe2b`（Scheduler）

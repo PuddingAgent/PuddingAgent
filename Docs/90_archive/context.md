@@ -1,3 +1,18 @@
+---
+title: QA 交错调度
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: "﻿# 历史调用记录"
+categories: [docs, archive]
+tags: [context, archive]
+related_docs: []
+related_files: [Docs/18_superpowers/plans/2026-06-11-code-intelligence-mvp.md, Docs/18_superpowers/plans/2026-06-12-code-intelligence-core-mvp.md]
+slug: archive-context
+draft: false
+---
+
 ﻿# 历史调用记录
 
 > Lead 在此维护 QA 交错调度记录和 Architect 领航审查记录，用于调度决策。

@@ -1,8 +1,23 @@
+---
+title: 参考设计：CLAUDE.md 多层记忆体系
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Task 08 — 记忆系统设计方案"
+categories: [docs, tasks]
+tags: [task08, memory, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task08-memory
+draft: false
+---
+
 ﻿# Task 08 — 记忆系统设计方案
 
 > **状态：** ✏️ 设计中
 > **依赖：** Task 09 (Agent 生命周期)
-> **参考：** [Claude Code EP10 Context Assembly](../claude-reviews-claude/architecture/10-context-assembly.md) — CLAUDE.md 6 层记忆体系
+> **参考：** [Claude Code EP10 Context Assembly](../../external/references/claude-reviews-claude/architecture/10-context-assembly.md) — CLAUDE.md 6 层记忆体系
 
 ---
 

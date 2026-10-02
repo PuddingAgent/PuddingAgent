@@ -1,3 +1,18 @@
+---
+title: 核心文档
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 记忆文件索引"
+categories: [docs, features]
+tags: [index, memory-design]
+related_docs: []
+related_files: []
+slug: features-index
+draft: false
+---
+
 ﻿# 记忆文件索引
 
 > 自动维护。记录 `memory/` 目录下的所有持久化文件。

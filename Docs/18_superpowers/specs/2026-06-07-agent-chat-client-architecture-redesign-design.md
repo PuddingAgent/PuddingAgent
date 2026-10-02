@@ -1,3 +1,18 @@
+---
+title: Agent Chat Client Architecture Redesign
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Redesign /admin/chat as an Agent-first client application built with Web technology. The browser page must behave like a SPA client with its own state machine, durable local cache, recovery model, and"
+categories: [docs, superpowers]
+tags: [agent, chat, client, architecture, redesign, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-06-07-agent-chat-client-architecture-redesign-design
+draft: false
+---
+
 # Agent Chat Client Architecture Redesign
 
 ## Goal

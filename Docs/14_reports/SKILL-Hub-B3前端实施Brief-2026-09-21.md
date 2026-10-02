@@ -1,3 +1,18 @@
+---
+title: SKILL Hub · B3 人类管理界面 · 实施 Brief（原子委派用）
+author: hyfree
+date: 2026-09-21
+last_reviewed: 2026-10-02
+status: active
+description: B1（后端）与 B2（Agent 工具）已交付并推送，B3 是 SKILL Hub 交付链的最后一环。 设计文档 §7 已给出界面规格与函数签名，但缺三类实施细节：①前端调用惯例 ②验收方式 ③交付与提交规约。本文件补齐，使 B3 可被一次委派、一次验收。
+categories: [docs, reports]
+tags: [skill, hub, 前端实施, reports]
+related_docs: []
+related_files: [Docs/12_features/SKILL-Hub技能中心与EVO-MAP设计方案-2026-09-21.md, Source/PuddingPlatformAdmin/src/pages/skill-management/index.tsx, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingHost/Hosting/PuddingApplicationInitializer.cs, code_map.md, Source/PuddingPlatformAdmin/code_map.md]
+slug: reports-skill-hub-b3前端实施brief-2026-09-21
+draft: false
+---
+
 # SKILL Hub · B3 人类管理界面 · 实施 Brief（原子委派用）
 
 > 状态：**已冻结，可一击执行** ｜ 作者：dsh(0e0) ｜ 日期：2026-09-21

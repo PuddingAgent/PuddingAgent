@@ -1,3 +1,18 @@
+---
+title: Pudding Agent — 任务看板
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-05-20（ADR-027 ADR-026 终验阻塞修复与证据链强制闭环方案）
+categories: [docs, tasks]
+tags: [tasks]
+related_docs: [Docs/07_architecture/19架构基础设施增强下一步ADR.md, Docs/07_architecture/24核心架构组件边界与执行引擎拆分ADR.md, Docs/18_superpowers/plans/2026-05-20-core-architecture-boundaries-refactor-plan.md, Docs/07_architecture/26ADR-025验收阻塞修复与执行闭环方案.md, Docs/07_architecture/27ADR-026终验阻塞修复与证据链强制闭环方案.md, Docs/07_architecture/22架构基础设施硬化与行动路线ADR.md, Docs/18_superpowers/plans/2026-05-19-architecture-foundation-hardening-roadmap.md]
+related_files: []
+slug: tasks-tasks
+draft: false
+---
+
 # Pudding Agent — 任务看板
 
 > **链接核查（2026-10-02）：本文件中的 QA/... 引用指向已删除的历史 QA 文件（Docs/16_qa/ 现存 3 份，被引用的 21 份均不存在），原文保留以备追溯，但点击不可达。**

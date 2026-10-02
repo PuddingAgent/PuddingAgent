@@ -1,3 +1,18 @@
+---
+title: P2 Scheduler 遥测降噪：五分钟汇总 schedule_skip，停止双库每两秒空轮询写入
+author: hyfree
+date: 2026-09-13
+last_reviewed: 2026-10-02
+status: active
+description: 任务卡：06898d5dfe004c69ab6d5baf18b2674a（p1，Blocked；父任务 6f49d33e900c4e7e960c630fa7d7c2fb） 权威设计：Docs/12_features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md + ADR-084/085/086/087 审计来源：Docs/14_reports/PuddingAg
+categories: [docs, features]
+tags: [p2, 遥测降噪, 代码级设计, features]
+related_docs: []
+related_files: [Docs/12_features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md, Docs/14_reports/PuddingAgent-Autonomy-Audit-2026-09-12/01-自主工作轨迹与自改进审计.md, Docs/12_features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md, Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs, Source/PuddingPlatform/Services/StorageManagement/StorageDataClassCatalog.cs, Source/PuddingPlatform/Services/ContextLayerDailyRollupService.cs]
+slug: features-p2-scheduler遥测降噪-代码级设计
+draft: false
+---
+
 # P2 Scheduler 遥测降噪：五分钟汇总 schedule_skip，停止双库每两秒空轮询写入
 
 - **任务卡**：`06898d5dfe004c69ab6d5baf18b2674a`（p1，Blocked；父任务 `6f49d33e900c4e7e960c630fa7d7c2fb`）

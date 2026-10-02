@@ -1,3 +1,18 @@
+---
+title: Bidirectional Message Fabric Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Replace patch-style chat fan-out with a bidirectional message fabric where users, agents, connectors, and system jobs are first-class room participants and message endpoints."
+categories: [docs, superpowers]
+tags: [bidirectional, message, fabric, plans]
+related_docs: []
+related_files: [Docs/07_architecture/46ADR-045双向消息系统与聊天室客户端ADR.md, Source/PuddingPlatformAdmin/src/pages/chat/hooks/chatRouting.ts, Source/PuddingCore/Platform/MessageContracts.cs, Source/PuddingCoreTests/PuddingCoreTests.csproj, Source/PuddingPlatformTests/PuddingPlatformTests.csproj, Source/PuddingCore/Models/MessageFabricModels.cs, Source/PuddingCore/Abstractions/IMessageSystem.cs, Source/PuddingCore/Abstractions/IMessageRouter.cs, Source/PuddingCore/Abstractions/IMessageInbox.cs, Source/PuddingCoreTests/MessageFabric/MessageFabricModelTests.cs, Source/PuddingPlatform/Services/MessageFabric/WorkspaceRoomParticipantResolver.cs, Source/PuddingPlatform/Services/MessageFabric/MessageRouter.cs, Source/PuddingPlatformTests/Services/MessageFabric/WorkspaceRoomParticipantResolverTests.cs, Source/PuddingPlatformTests/Services/MessageFabric/MessageRouterTests.cs, Source/PuddingPlatform/Data/Entities/RoomMessageEntity.cs, Source/PuddingPlatform/Data/Entities/MessageDeliveryEntity.cs, Source/PuddingPlatform/Data/Entities/RoomParticipantEntity.cs, Source/PuddingPlatform/Data/PlatformDbContext.cs, Source/PuddingPlatform/Services/MessageFabric/MessageFabricStore.cs, Source/PuddingPlatform/Services/MessageFabric/MessageFabricSchemaBootstrapper.cs]
+slug: superpowers-2026-05-28-bidirectional-message-fabric
+draft: false
+---
+
 # Bidirectional Message Fabric Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

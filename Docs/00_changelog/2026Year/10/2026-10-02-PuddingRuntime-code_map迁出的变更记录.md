@@ -1,3 +1,18 @@
+---
+title: 从 Source/PuddingRuntime/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: 〔原文第 261–272 行：变更（2026-09-24，ADR-089 U4-5a）：search_grep 新增 backend 路由参数〕
+categories: [docs, changelog]
+tags: [puddingruntime, code, 迁出的变更记]
+related_docs: []
+related_files: [Source/PuddingRuntime/code_map.md, Docs/00_changelog/README.md, Source/PuddingRuntimeTests/Tools/SearchGrepToolTests.cs, Source/PuddingCodeIndex/code_map.md, Docs/12_features/Index-Retrieval-Known-Defects-2026-10-01.md]
+slug: changelog-2026-10-02-puddingruntime-code-map迁出的变更记录
+draft: false
+---
+
 # 从 Source/PuddingRuntime/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
 
 > **为什么在这里**：`Source/PuddingRuntime/code_map.md` 只保留索引（关键概念 · 组件 · 关键文件 · 用途）。原先按轮次/日期堆叠在其中的变更、门禁与验收记录迁出到本文件。日志规则见 `Docs/00_changelog/README.md`。

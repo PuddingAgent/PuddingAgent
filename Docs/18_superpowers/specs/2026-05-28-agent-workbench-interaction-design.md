@@ -1,3 +1,18 @@
+---
+title: Pudding Agent 工作台交互体验设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 不应把语音能力做成聊天输入框里的一个麦克风按钮。只要用户开始说话、Agent 开始发声，产品形态就从“文本聊天”变成了一个实时协作工作台。用户会期待 Agent 能听见、等待、打断、回应、朗读，并且能清楚表现自己当前在做什么。
+categories: [docs, superpowers]
+tags: [agent, workbench, interaction, design, specs]
+related_docs: []
+related_files: [Docs/18_superpowers/specs/2026-05-26-pudding-frontend-workspace-first-design.md, Docs/07_architecture/47ADR-046事件驱动多AgentOS交互体验架构ADR.md, Docs/12_features/PuddingUiUxRedesign.md]
+slug: superpowers-2026-05-28-agent-workbench-interaction-design
+draft: false
+---
+
 # Pudding Agent 工作台交互体验设计
 
 > 日期：2026-05-28

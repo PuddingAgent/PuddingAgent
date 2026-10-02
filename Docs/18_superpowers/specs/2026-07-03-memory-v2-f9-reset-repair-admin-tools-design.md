@@ -1,3 +1,18 @@
+---
+title: "Memory System v2 F9 Reset, Repair & Admin Tools Design"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: F9 的目标是把 Memory v2 从“后端管道可运行”推进到“可重置、可诊断、可被人类和 Agent 管理验证”的状态。
+categories: [docs, superpowers]
+tags: [memory, v2, f9, reset, repair, admin, tools, design]
+related_docs: []
+related_files: [Source/PuddingPlatformAdmin/config/routes.ts, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingPlatform/Controllers/Api/MemoryLibraryAdminController.cs, Source/PuddingPlatform/Services/MemoryLibraryAdminService.cs]
+slug: superpowers-2026-07-03-memory-v2-f9-reset-repair-admin-tools-design
+draft: false
+---
+
 # Memory System v2 F9 Reset, Repair & Admin Tools Design
 
 > Date: 2026-07-03

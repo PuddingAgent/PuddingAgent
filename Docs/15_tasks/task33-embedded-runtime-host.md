@@ -1,3 +1,18 @@
+---
+title: task33 - 嵌入式 Runtime 宿主与桌面软件节点
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-03-15
+categories: [docs, tasks]
+tags: [task33, embedded, runtime, host, tasks]
+related_docs: [Docs/07_architecture/03PuddingRuntime.md, Docs/07_architecture/06PuddingAgent与客户端.md, Docs/07_architecture/07协作网络与治理.md, Docs/15_tasks/task26-runtime-foundation.md, Docs/15_tasks/task27-controller-routing-session.md, Docs/15_tasks/task29-agent-template-and-audit.md, Docs/15_tasks/task30-knowledge-infrastructure.md, Docs/15_tasks/task31-client-surfaces.md]
+related_files: []
+slug: tasks-task33-embedded-runtime-host
+draft: false
+---
+
 # task33 - 嵌入式 Runtime 宿主与桌面软件节点
 
 最后更新：2026-03-15

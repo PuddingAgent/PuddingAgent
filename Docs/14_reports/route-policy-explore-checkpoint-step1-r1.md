@@ -1,3 +1,18 @@
+---
+title: 阶段感知模型路由 Explore — Step 1 Checkpoint (checkpoint-v1)
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: goalRunId tg-0992b9b323e3c4e4a38f7fa51407f55d｜iteration 1｜objectiveVersion 1 taskId cec285c367324e4a90ef62dbef1b0404｜assignmentId f1dfa79d62fc44808a074b77d4e254e1｜已认领（v14 → v15，InProgress） planId tp-c
+categories: [docs, reports]
+tags: [route, policy, explore, checkpoint, step1, r1, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/Scheduling/TaskAutoDispatchEvaluator.cs, Source/PuddingPlatform/Services/Scheduling/TaskAgentRouteMatcher.cs, Source/PuddingCore/Platform/ExecutionRunContracts.cs, Source/PuddingCore/Orchestration/AgentOrchestrationModels.cs, Source/PuddingCore/Orchestration/AgentOrchestrationGraphCompiler.cs, Source/PuddingRuntime/Services/FrozenVisionContextAccessor.cs, Source/PuddingPlatform/Services/FileLlmResolver.cs, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingRuntime/Services/DirectLlmClient.cs]
+slug: reports-route-policy-explore-checkpoint-step1-r1
+draft: false
+---
+
 # 阶段感知模型路由 Explore — Step 1 Checkpoint (checkpoint-v1)
 
 - goalRunId `tg-0992b9b323e3c4e4a38f7fa51407f55d`｜iteration 1｜objectiveVersion 1

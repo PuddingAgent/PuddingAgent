@@ -1,3 +1,18 @@
+---
+title: 71 Phase 2A-1 验收补丁：真实 Browser Workspace 与 Bridge 可靠性工作指令
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: text 请完整执行 Docs/07_architecture/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md。
+categories: [docs, architecture]
+tags: [验收补丁真实, 可靠性工作指, architecture]
+related_docs: [Docs/07_architecture/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md, Docs/07_architecture/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md]
+related_files: [Docs/08_how_debuge/README.md, Agents.md]
+slug: architecture-71phase2a-1验收补丁真实browserworkspace与bridge可靠性工作指令
+draft: false
+---
+
 # 71 Phase 2A-1 验收补丁：真实 Browser Workspace 与 Bridge 可靠性工作指令
 
 > - 状态：**completed / accepted（2026-08-02，经 73 最终验收）**

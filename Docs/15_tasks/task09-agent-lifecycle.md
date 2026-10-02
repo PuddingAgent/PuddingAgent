@@ -1,3 +1,18 @@
+---
+title: task09 - Agent 生命周期与运行态管理
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-03-19
+categories: [docs, tasks]
+tags: [task09, agent, lifecycle, tasks]
+related_docs: [Docs/07_architecture/03PuddingRuntime.md, Docs/07_architecture/06PuddingAgent与客户端.md, Docs/07_architecture/08数据模型与配置.md, Docs/07_architecture/10事件系统与事件总线.md, Docs/15_tasks/task26-runtime-foundation.md, Docs/15_tasks/task29-agent-template-and-audit.md, Docs/15_tasks/task34-event-bus-and-subscription.md, Docs/15_tasks/task32-observability-integration.md, Docs/15_tasks/task30-knowledge-infrastructure.md]
+related_files: []
+slug: tasks-task09-agent-lifecycle
+draft: false
+---
+
 # task09 - Agent 生命周期与运行态管理
 
 最后更新：2026-03-19

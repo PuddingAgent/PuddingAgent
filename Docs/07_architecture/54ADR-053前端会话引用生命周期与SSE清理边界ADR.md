@@ -1,3 +1,18 @@
+---
+title: ADR-053 前端会话引用生命周期与 SSE 清理边界
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: "Admin Chat 旧状态管理同时维护 selectedSessionId、mainSessionId、sessionIdRef、sseSessionIdRef 等多个 session 引用。删除、归档或后端返回 404 后，部分引用和 replay poll timer 可能继续持有旧 session，导致前端持续请求已不存在的 /api/sessions/{id}/replay 或 SSE "
+categories: [docs, architecture]
+tags: [前端会话引用, 生命周期与, 清理边界, architecture]
+related_docs: [Docs/07_architecture/57ADR-056聊天消息受理与可靠事件流架构ADR.md]
+related_files: []
+slug: architecture-54adr-053前端会话引用生命周期与sse清理边界adr
+draft: false
+---
+
 # ADR-053 前端会话引用生命周期与 SSE 清理边界
 
 > **恢复协议补充（2026-07-13）**：SSE 重连除遵守本 ADR 的 session 作用域清理边界外，还必须按 [ADR-056 聊天消息受理与可靠事件流架构](57ADR-056聊天消息受理与可靠事件流架构ADR.md) 保存最后确认的 `sequenceNum`，通过 `Last-Event-ID` 或 `afterSequence` 追赶。网络错误不得仅重建 live Channel 而跳过订阅间隙内的持久事件。

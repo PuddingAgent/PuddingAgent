@@ -1,3 +1,18 @@
+---
+title: 1. 背景与问题
+author: hyfree
+date: 2026-08-06
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# ADR-067 会话级语义记忆（全会话向量索引）"
+categories: [docs, architecture]
+tags: [会话级语义记, 全会话向量索, architecture]
+related_docs: []
+related_files: []
+slug: architecture-68adr-067会话级语义记忆-全会话向量索引-adr
+draft: false
+---
+
 ﻿# ADR-067 会话级语义记忆（全会话向量索引）
 
 - 状态：已实施（代码入库，待发布激活）

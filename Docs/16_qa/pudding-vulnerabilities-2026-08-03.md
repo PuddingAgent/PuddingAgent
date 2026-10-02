@@ -1,3 +1,18 @@
+---
+title: A. 子代理 / Agent 执行子系统（本次重点）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Pudding 脆弱性清单（2026-08-03，任务 2 事件驱动唤醒施工中暴露）"
+categories: [docs, qa]
+tags: [pudding, vulnerabilities, qa]
+related_docs: []
+related_files: [Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs]
+slug: qa-pudding-vulnerabilities-2026-08-03
+draft: false
+---
+
 ﻿# Pudding 脆弱性清单（2026-08-03，任务 2 事件驱动唤醒施工中暴露）
 
 记录人：蜜糖。来源：事件驱动唤醒任务全链路调查 + 测试矩阵自验 + 子代理诊断。

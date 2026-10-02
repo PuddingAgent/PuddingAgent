@@ -1,3 +1,18 @@
+---
+title: 浏览器与 WebView2 验收
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 每次修改聊天链路后至少完成：
+categories: [docs, how-debug]
+tags: [浏览器与, 验收, how_debuge]
+related_docs: [Docs/08_how_debuge/README.md]
+related_files: []
+slug: how-debuge-07-浏览器与webview2验收
+draft: false
+---
+
 # 浏览器与 WebView2 验收
 
 > 本文档是 [How-Debuge 调试与诊断手册](README.md)（主索引）的主题分册，由原根目录 `How-Debuge.md` 于 2026-10-02 按主题拆分而来。

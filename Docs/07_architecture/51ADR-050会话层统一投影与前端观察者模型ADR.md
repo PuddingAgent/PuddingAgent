@@ -1,3 +1,18 @@
+---
+title: ADR-050 会话层统一投影与前端观察者模型
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Admin Chat 当前同时消费多类事实和投影：
+categories: [docs, architecture]
+tags: [会话层统一投, 影与前端观察, 者模型, architecture]
+related_docs: [Docs/07_architecture/57ADR-056聊天消息受理与可靠事件流架构ADR.md, Docs/07_architecture/16会话状态层与客户端解耦ADR.md, Docs/07_architecture/20会话状态机与事件规范ADR.md, Docs/07_architecture/32ADR-031聊天历史转录持久化与事件日志回放边界.md, Docs/07_architecture/46ADR-045双向消息系统与聊天室客户端ADR.md, Docs/07_architecture/47ADR-046事件驱动多AgentOS交互体验架构ADR.md]
+related_files: []
+slug: architecture-51adr-050会话层统一投影与前端观察者模型adr
+draft: false
+---
+
 # ADR-050 会话层统一投影与前端观察者模型
 
 > **可靠输入补充（2026-07-13）**：[ADR-056 聊天消息受理与可靠事件流架构](57ADR-056聊天消息受理与可靠事件流架构ADR.md) 为本 ADR 的 ConversationProjection 提供稳定的 `turnId/messageId/sequenceNum`、committed-before-publish 事件输入、投影检查点以及 replay+live 追赶协议。前端观察者模型不得把易失 Channel 或 optimistic state 当作事实源。

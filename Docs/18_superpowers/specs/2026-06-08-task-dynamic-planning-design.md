@@ -1,3 +1,18 @@
+---
+title: Task Dynamic Planning Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: PuddingAgent 已具备 Agent 模板、Workspace Agent、子代理、Agent 间消息投递和运行归档等基础能力。下一步需要把这些能力组织成一个任务动态规划系统：Leader Agent 接收任务后，能基于当前团队和模板能力进行研究、拆解、委派、追踪、回收和重规划。
+categories: [docs, superpowers]
+tags: [task, dynamic, planning, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-06-08-task-dynamic-planning-design
+draft: false
+---
+
 # Task Dynamic Planning Design
 
 > 日期：2026-06-08

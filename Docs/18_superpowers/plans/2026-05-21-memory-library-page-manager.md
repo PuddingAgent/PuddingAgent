@@ -1,3 +1,18 @@
+---
+title: Memory Library Page Manager Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build a Notion-style memory library manager inside PuddingPlatformAdmin for browsing, searching, tracing, and guarded editing of MemoryTreeNode, Book, Chapter, SourceReference, and Pointer data."
+categories: [docs, superpowers]
+tags: [memory, library, page, manager, plans]
+related_docs: []
+related_files: [Source/PuddingPlatform/Controllers/Api/MemoryLibraryAdminController.cs, Source/PuddingPlatform/Services/MemoryLibraryAdminService.cs, Source/PuddingPlatformTests/Services/MemoryLibraryAdminServiceTests.cs, Source/PuddingWebApiTests/MemoryLibraryAdminApiControllerTests.cs, Source/PuddingPlatformAdmin/src/pages/memory-library/index.tsx, Source/PuddingPlatformAdmin/src/pages/memory-library/components/MemoryPageTree.tsx, Source/PuddingPlatformAdmin/src/pages/memory-library/components/MemoryPageEditor.tsx, Source/PuddingPlatformAdmin/src/pages/memory-library/components/MemoryInspector.tsx, Source/PuddingPlatformAdmin/src/pages/memory-library/components/MemorySearchResults.tsx, Source/PuddingPlatformAdmin/src/pages/memory-library/types.ts, Source/PuddingPlatformAdmin/src/pages/memory-library/styles.less, Source/PuddingAgent/Program.cs, Source/PuddingPlatformAdmin/config/routes.ts, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingPlatformAdmin/src/locales/zh-CN/menu.ts, Source/PuddingPlatformAdmin/src/locales/en-US/menu.ts]
+slug: superpowers-2026-05-21-memory-library-page-manager
+draft: false
+---
+
 # Memory Library Page Manager Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,18 @@
+---
+title: 第三方任务看板 Access Token 与外部 API 详细设计方案
+author: hyfree
+date: 2026-08-22
+last_reviewed: 2026-10-02
+status: active
+description: 本方案为 PuddingAgent 的任务看板增加一套专门面向第三方调用方的认证、授权与稳定 API 边界。冻结的核心结论如下：
+categories: [docs, features]
+tags: [第三方任务看, 与外部, 详细设计方案, features]
+related_docs: [Docs/07_architecture/90ADR-075第三方任务看板AccessToken与外部APIADR.md, Docs/07_architecture/96ADR-082Pudding外部工作空间Agent消息APIADR.md, Docs/12_features/Pudding外部工作空间Agent消息API设计与使用说明.md, Docs/07_architecture/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md, Docs/07_architecture/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md, Docs/07_architecture/88任务看板施工合同冻结v1.md]
+related_files: [Source/PuddingHost/Hosting/PuddingApplicationHost.cs, Source/PuddingHost/Extensions/PuddingWebApplicationExtensions.cs, Source/PuddingPlatform/Controllers/Api/AuthApiController.cs, Source/PuddingPlatformAdmin/src/app.tsx, Source/PuddingPlatform/Controllers/Api/TaskController.cs, Source/PuddingPlatform/Controllers/Api/TaskDtos.cs, Source/PuddingCore/Tasks/WorkspaceTaskModels.cs, Source/PuddingCore/Tasks/TaskPersistenceContracts.cs, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingPlatformAdmin/config/routes.ts, Source/PuddingPlatformAdmin/src/pages/user-management/index.tsx, Source/PuddingCore/Security/ExternalAccessTokenContracts.cs, Source/PuddingCore/Security/ExternalTaskApiScopes.cs, Source/PuddingCore/Tasks/TaskEvaluationContracts.cs, Source/PuddingHost/Extensions/PuddingServiceCollectionExtensions.Platform.cs, Source/PuddingPlatformTests/Controllers/ExternalTaskApiV1Tests.cs]
+slug: features-第三方任务看板accesstoken与外部api详细设计方案
+draft: false
+---
+
 # 第三方任务看板 Access Token 与外部 API 详细设计方案
 
 > 状态：Design Complete / P1+P3+P2(基本功能) Implemented

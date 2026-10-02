@@ -1,3 +1,18 @@
+---
+title: ADR：WinUI Shell、既有 Web UI 与独立 Core 进程
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "日期：2026-09-29。 状态：Accepted（用户已裁定）；恢复主线已实现；验证覆盖与未覆盖项见恢复报告。 用户裁定：“WINUI只承当Shell，界面和Core还是保持不变……Core还是保持一个独立进程。” 取代范围：2026-09-27 的全量原生界面迁移、Desktop 进程内 Core DLL 和原生业务直调方案，以及 2026-09-29 此前“最终移除 Web Chat / "
+categories: [docs, features]
+tags: [adr, desktop, shell, webui, separate, core, features]
+related_docs: [Docs/14_reports/Desktop-Shell-Recovery-2026-09-29.md]
+related_files: [Source/PuddingDesktop/PuddingDesktop.csproj, Source/PuddingHost/Hosting/PuddingHostOptionsFactory.cs]
+slug: features-adr-desktop-shell-webui-separate-core-2026-09-29
+draft: false
+---
+
 # ADR：WinUI Shell、既有 Web UI 与独立 Core 进程
 
 - 日期：2026-09-29。

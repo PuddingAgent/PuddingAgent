@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 第四轮：有界采样与流结束后阻塞
+author: hyfree
+date: 2026-09-12
+last_reviewed: 2026-10-02
+status: active
+description: StorageInventorySampler：组合 MIN+MAX 改为两个索引端点 seek，验证完整/BINARY/首列索引，拒绝部分、表达式和非首列索引。目录枚举改为惰性深度优先，根、目录、不匹配文件、reparse point 均消耗同一 2000-entry 上限；取消可观察、枚举器必释放、不跟随链接。100ms 仍是 slice 目标而非硬实时保证。 TokenUsageRecord
+categories: [docs, reports]
+tags: [第四轮有界查, 询与流空档修, reports]
+related_docs: []
+related_files: []
+slug: reports-puddingagent第四轮有界查询与流空档修复-2026-09-05
+draft: false
+---
+
 # PuddingAgent 第四轮：有界采样与流结束后阻塞
 
 ## 源码修复与验证

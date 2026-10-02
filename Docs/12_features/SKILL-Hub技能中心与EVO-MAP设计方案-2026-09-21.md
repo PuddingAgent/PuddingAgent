@@ -1,3 +1,18 @@
+---
+title: SKILL Hub 技能中心与 EVO MAP 进化图谱 · 设计方案（实施契约）
+author: hyfree
+date: 2026-09-21
+last_reviewed: 2026-10-02
+status: active
+description: 集中式技能库：技能内容（manifest + SKILL.md + 附件）入库，可检索、可版本化、可跨 Agent 共享。 上传 / 下载：Agent 可 publish 自己觉得有用的技能/经验；其他 Agent 可 install。 更新与进化：版本可更新；支持带进化动作的新版本（patch/split/compress/retire/merge/fork），并记录血缘。 EVO MAP：技能
+categories: [docs, features]
+tags: [skill, 技能中心与, 设计方案, features]
+related_docs: []
+related_files: [Source/PuddingPlatform/Controllers/Api/SkillHubController.cs, Source/PuddingRuntime/Tools/BuiltIns/Skills/SkillHubTool.cs, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingPlatformAdmin/src/pages/skill-management/index.tsx, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingRuntime/Tools/BuiltIns/Skills/AgentSkillTool.cs]
+slug: features-skill-hub技能中心与evo-map设计方案-2026-09-21
+draft: false
+---
+
 # SKILL Hub 技能中心与 EVO MAP 进化图谱 · 设计方案（实施契约）
 
 > 版本：v1.0 · 2026-09-21 · 状态：**待实施（契约已冻结）**

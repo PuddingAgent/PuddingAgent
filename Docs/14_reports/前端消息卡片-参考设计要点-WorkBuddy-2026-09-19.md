@@ -1,3 +1,18 @@
+---
+title: 前端消息卡片输出效果 · 参考设计要点（来源：WorkBuddy，2026-09-19）
+author: hyfree
+date: 2026-09-19
+last_reviewed: 2026-10-02
+status: active
+description: 「详细的命令行会折叠」 —— 指向步骤行 List workspace folders and files。 「点击之后展开」 —— 指向同一行，展开后显示 bash 代码块（真实命令全文）+ 底部 ✓ 运行成功。 「整体的配色和字体很好」 —— 明确正向认可配色与字体。 「这里会显示最新的状态」 —— 指向底部状态行中的 正在准备执行命令。
+categories: [docs, reports]
+tags: [workbuddy, 前端消息卡片, 参考设计要点, reports]
+related_docs: []
+related_files: [Source/PuddingAgent/bin/Debug/net10.0/wwwroot/admin/index.html, Source/PuddingPlatformAdmin/src/services/platform/api.ts]
+slug: reports-前端消息卡片-参考设计要点-workbuddy-2026-09-19
+draft: false
+---
+
 # 前端消息卡片输出效果 · 参考设计要点（来源：WorkBuddy，2026-09-19）
 
 > 来源：用户提供的 6 张 WorkBuddy 界面截图 + 4 处红字批注。

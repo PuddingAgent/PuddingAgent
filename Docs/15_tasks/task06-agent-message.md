@@ -1,3 +1,18 @@
+---
+title: 1. 目标
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Task 06 - Agent 消息系统（与中心锁协同） 状态：design 优先级：P1 最后更新：2026-02-20"
+categories: [docs, tasks]
+tags: [task06, agent, message, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task06-agent-message
+draft: false
+---
+
 ﻿# Task 06 - Agent 消息系统（与中心锁协同）
 状态：`design`  
 优先级：`P1`  

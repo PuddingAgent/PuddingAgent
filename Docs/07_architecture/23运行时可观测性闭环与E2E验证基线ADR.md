@@ -1,3 +1,18 @@
+---
+title: 23 运行时可观测性闭环与 E2E 验证基线 ADR
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: ADR-019、ADR-021、ADR-022 已经完成基础设施骨架：
+categories: [docs, architecture]
+tags: [运行时可观测, 性闭环与, 验证基线, architecture]
+related_docs: [Docs/07_architecture/19架构基础设施增强下一步ADR.md, Docs/07_architecture/20会话状态机与事件规范ADR.md, Docs/07_architecture/21子代理工作空间与运行归档ADR.md, Docs/07_architecture/22架构基础设施硬化与行动路线ADR.md]
+related_files: [Docs/15_tasks/Tasks.md]
+slug: architecture-23运行时可观测性闭环与e2e验证基线adr
+draft: false
+---
+
 # 23 运行时可观测性闭环与 E2E 验证基线 ADR
 
 > 状态：**done**（Phase 1-5 完成）

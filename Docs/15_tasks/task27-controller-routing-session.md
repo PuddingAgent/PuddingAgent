@@ -1,3 +1,18 @@
+---
+title: 任务目标
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# task27 - PuddingController 路由与会话基础"
+categories: [docs, tasks]
+tags: [task27, controller, routing, session, tasks]
+related_docs: [Docs/07_architecture/04PuddingController与Gateway.md, Docs/07_architecture/07协作网络与治理.md, Docs/07_architecture/08数据模型与配置.md, Docs/07_architecture/10事件系统与事件总线.md, Docs/15_tasks/task26-runtime-foundation.md, Docs/15_tasks/task29-agent-template-and-audit.md, Docs/15_tasks/task34-event-bus-and-subscription.md]
+related_files: []
+slug: tasks-task27-controller-routing-session
+draft: false
+---
+
 ﻿# task27 - PuddingController 路由与会话基础
 
 > **V1 简化**（2026-05-02）：移除审批链、Gateway Adapter Plugin、LLM 代发路由、事件总线订阅治理。V1 聚焦 MessageIngress → SessionRouter → RuntimeDispatcher 链路。

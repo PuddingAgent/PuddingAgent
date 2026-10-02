@@ -1,3 +1,18 @@
+---
+title: 一、总体定位差异
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 竞品调研：Claude Code vs Hermes Agent — 记忆与学习机制对比"
+categories: [docs, features]
+tags: [competitive, analysis, memory-design]
+related_docs: []
+related_files: []
+slug: features-competitive-analysis
+draft: false
+---
+
 ﻿# 竞品调研：Claude Code vs Hermes Agent — 记忆与学习机制对比
 
 > 调研时间：2026-07-11

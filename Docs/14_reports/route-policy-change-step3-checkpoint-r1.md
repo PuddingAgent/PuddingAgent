@@ -1,3 +1,18 @@
+---
+title: 阶段感知模型路由 — Step 3 Change Checkpoint（checkpoint-v1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId tg-0992b9b323e3c4e4a38f7fa51407f55d｜iteration 4｜stepNode tn-0c94c3c67f904a6f3810860d2e0609fa（Change, seq 3/5） step objective 逐字：\"Apply the bounded implementation changes within the declared "
+categories: [docs, reports]
+tags: [route, policy, change, step3, checkpoint, r1, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/Scheduling/ModelRoutePolicyContracts.cs, Source/PuddingPlatform/Services/Scheduling/ModelRoutePolicyEvaluator.cs, Source/PuddingPlatformTests/Services/Scheduling/ModelRoutePolicyEvaluatorTests.cs, code_map.md]
+slug: reports-route-policy-change-step3-checkpoint-r1
+draft: false
+---
+
 # 阶段感知模型路由 — Step 3 Change Checkpoint（checkpoint-v1）
 
 - goalRunId `tg-0992b9b323e3c4e4a38f7fa51407f55d`｜iteration 4｜stepNode `tn-0c94c3c67f904a6f3810860d2e0609fa`（**Change**, seq 3/5）

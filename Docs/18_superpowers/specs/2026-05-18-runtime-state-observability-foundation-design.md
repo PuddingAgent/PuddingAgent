@@ -1,3 +1,18 @@
+---
+title: Runtime State And Observability Foundation Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-05-18 状态：待评审 范围：事件系统、执行引擎、会话层、子代理系统、基础可观测性 不在本阶段范围：完整 SQLite 持久事件队列替换、LLM gateway 全量重构、潜意识 LLM recall 重排、前端大规模信息架构重做
+categories: [docs, superpowers]
+tags: [runtime, state, observability, foundation, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-05-18-runtime-state-observability-foundation-design
+draft: false
+---
+
 # Runtime State And Observability Foundation Design
 
 日期：2026-05-18  

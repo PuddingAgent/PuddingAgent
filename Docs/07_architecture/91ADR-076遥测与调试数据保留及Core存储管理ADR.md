@@ -1,3 +1,18 @@
+---
+title: ADR-076：遥测与调试数据保留及 Core 存储管理
+author: hyfree
+date: 2026-08-22
+last_reviewed: 2026-10-02
+status: active
+description: pudding_platform.db 中的 telemetry_metric_events、context_layer_metric_events 和 runtime_activity 会随模型调用、上下文分层和组件执行持续增长。这些数据主要用于性能分析和 Debug，不应无限保留，也不应与会话正文、执行事实、计费账本、记忆和配置采用同一清理策略。
+categories: [docs, architecture]
+tags: [遥测与调试数, 据保留及, 存储管理, architecture]
+related_docs: [Docs/12_features/遥测调试数据自动过期与Web存储管理设计方案.md]
+related_files: []
+slug: architecture-91adr-076遥测与调试数据保留及core存储管理adr
+draft: false
+---
+
 # ADR-076：遥测与调试数据保留及 Core 存储管理
 
 > - 状态：**Proposed**

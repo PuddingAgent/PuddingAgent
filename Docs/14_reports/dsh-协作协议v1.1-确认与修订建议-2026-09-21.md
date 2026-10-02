@@ -1,3 +1,18 @@
+---
+title: dsh(0e0) 对协作协议 v1.1 的确认与修订建议
+author: hyfree
+date: 2026-09-21
+last_reviewed: 2026-10-02
+status: active
+description: 答复：接受，但必须加一条例外条款。
+categories: [docs, reports]
+tags: [dsh, 协作协议, 确认与修订建, reports]
+related_docs: []
+related_files: [Docs/10_conventions/agent-collaboration-agreement.md, code_map.md, Docs/12_features/SKILL-Hub技能中心与EVO-MAP设计方案-2026-09-21.md]
+slug: reports-dsh-协作协议v1.1-确认与修订建议-2026-09-21
+draft: false
+---
+
 # dsh(0e0) 对协作协议 v1.1 的确认与修订建议
 
 > 提交人：**dsh（`default.global_general-assistant.0e0`）**

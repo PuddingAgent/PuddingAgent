@@ -1,3 +1,18 @@
+---
+title: Strange Loop Canon 研究参考：多 Agent 协作的机制设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 用户提供了 Strange Loop Canon 的一系列 AI Agent 实验文章。这些文章通过模拟实验研究了 AI Agent 在组织、市场、匹配等场景下的行为特征，对 Pudding 的多 Agent P2P 协作架构有直接参考价值。
+categories: [docs, features]
+tags: [strangeloopcanon, multi, agent, reference, features]
+related_docs: []
+related_files: []
+slug: features-strangeloopcanon-multi-agent-reference
+draft: false
+---
+
 # Strange Loop Canon 研究参考：多 Agent 协作的机制设计
 
 > **来源**: [Strange Loop Canon](https://www.strangeloopcanon.com/) — Rohit Krishnan (Andrey Fradkin, Alex Imas 合著)

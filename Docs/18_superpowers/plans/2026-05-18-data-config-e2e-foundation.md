@@ -1,3 +1,18 @@
+---
+title: Data Config E2E Foundation Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Replace hidden .env/database-centered configuration with file-backed JSON/Markdown configuration, deterministic directories, and an E2E-ready test foundation."
+categories: [docs, superpowers]
+tags: [data, config, e2e, foundation, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Configuration/PuddingDataPaths.cs, Source/PuddingCore/Configuration/PuddingConfigModels.cs, Source/PuddingCore/Configuration/PuddingFileConfigLoader.cs, Source/PuddingCore/Configuration/LlmProfileResolver.cs, Source/PuddingCore/Agents/AgentProfileProvider.cs, Source/PuddingCoreTests/Configuration/PuddingDataPathsTests.cs, Source/PuddingCoreTests/Configuration/PuddingFileConfigLoaderTests.cs, Source/PuddingCoreTests/Configuration/LlmProfileResolverTests.cs, Source/PuddingCoreTests/Agents/AgentProfileProviderTests.cs, Source/PuddingRuntime/Services/PuddingConfigLoader.cs, Source/PuddingRuntime/Services/DirectLlmClient.cs, Source/PuddingAgent/Program.cs]
+slug: superpowers-2026-05-18-data-config-e2e-foundation
+draft: false
+---
+
 # Data Config E2E Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

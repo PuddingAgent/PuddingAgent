@@ -1,3 +1,18 @@
+---
+title: Code Intelligence Core MVP Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Implement the core code intelligence path: project skeleton, SQLite code graph, LSP service integration boundary, initial project directory add/remove/list, project directory resolution and inde"
+categories: [docs, superpowers]
+tags: [code, intelligence, core, mvp, plans]
+related_docs: []
+related_files: [Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj, Source/PuddingCodeIntelligence/Contracts/ICodeQueryService.cs, Source/PuddingCodeIntelligence/Contracts/ILanguageServerService.cs, Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj, Source/PuddingCodeIntelligenceTests/Contracts/CodeIntelligenceContractTests.cs, Source/PuddingCodeIntelligence/Services/CodeQueryService.cs, Source/PuddingCodeIntelligence/Lsp/NoOpLanguageServerService.cs, Source/PuddingCodeIntelligence/DependencyInjection.cs, Source/PuddingCodeIntelligenceTests/Services/CodeProjectRegistryTests.cs, Source/PuddingCodeIntelligenceTests/Services/DefaultCodeWorkspaceResolverTests.cs, Source/PuddingCodeIntelligenceTests/Lsp/NoOpLanguageServerServiceTests.cs, Source/PuddingCodeIntelligence/CSharp/RoslynWorkspaceBootstrapper.cs, Source/PuddingCodeIntelligence/CSharp/RoslynSymbolId.cs, Source/PuddingCodeIntelligence/CSharp/RoslynCSharpIndexer.cs, Source/PuddingCodeIntelligenceTests/CSharp/RoslynCSharpIndexerTests.cs, Source/PuddingRuntime/PuddingRuntime.csproj, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingRuntimeTests/Tools/PuddingToolInfrastructureTests.cs, Docs/17_memory/2026-06-12.md, Docs/90_archive/context.md]
+slug: superpowers-2026-06-12-code-intelligence-core-mvp
+draft: false
+---
+
 # Code Intelligence Core MVP Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan serially. Steps use checkbox (`- [ ]`) syntax for tracking.

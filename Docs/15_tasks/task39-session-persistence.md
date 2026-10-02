@@ -1,10 +1,25 @@
+---
+title: task39 — 会话持久化设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 设计并实现 Pudding Agent 的会话持久化层，支持会话的全量保存、快速恢复（resume）、分支（fork）和跨会话搜索。
+categories: [docs, tasks]
+tags: [task39, session, persistence, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task39-session-persistence
+draft: false
+---
+
 # task39 — 会话持久化设计
 
 > **创建日期：** 2026-05-03
 > **优先级：** P0（L1 记忆基础）
 > **状态：** ✏️ 设计中
 > **依赖：** task26 (Runtime 基础宿主)、task08 (记忆系统)
-> **参考：** [Claude Code EP09 Session Persistence](../claude-reviews-claude/architecture/09-session-persistence.md) — JSONL 追加写入、parent-UUID 链、双写路径
+> **参考：** [Claude Code EP09 Session Persistence](../../external/references/claude-reviews-claude/architecture/09-session-persistence.md) — JSONL 追加写入、parent-UUID 链、双写路径
 
 ---
 

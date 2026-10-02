@@ -1,3 +1,18 @@
+---
+title: Memory System v2 Wiki Book v1 Simplification
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Memory v2 V1 不再以 reuse_existing / append_new / supersede_existing / merge_candidates 作为潜意识 LLM 的 plan 操作语义。
+categories: [docs, superpowers]
+tags: [memory, v2, wiki, book, v1, simplification, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-07-04-memory-v2-wiki-book-v1-simplification
+draft: false
+---
+
 # Memory System v2 Wiki Book v1 Simplification
 
 > Date: 2026-07-04

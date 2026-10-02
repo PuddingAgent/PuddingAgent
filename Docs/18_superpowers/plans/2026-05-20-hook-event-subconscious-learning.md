@@ -1,3 +1,18 @@
+---
+title: Hook Event Subconscious Learning Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Move subconscious learning after Agent completion onto the unified event pipeline, with persistent background jobs and idle-aware execution."
+categories: [docs, superpowers]
+tags: [hook, event, subconscious, learning, plans]
+related_docs: []
+related_files: [Source/PuddingMemoryEngine/Data/MemoryLibraryDbInitializer.cs, Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs, Source/PuddingMemoryEngine/Data/MemoryDbContext.cs, Source/PuddingMemoryEngine/Schema/init_memory.sql, Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingAgent/Program.cs, Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj]
+slug: superpowers-2026-05-20-hook-event-subconscious-learning
+draft: false
+---
+
 # Hook Event Subconscious Learning Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

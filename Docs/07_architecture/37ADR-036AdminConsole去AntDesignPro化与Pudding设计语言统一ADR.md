@@ -1,3 +1,18 @@
+---
+title: 37 ADR-036 Admin Console 去 Ant Design Pro 化与 Pudding 设计语言统一
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: /admin/chat 已经通过“静谧书斋式 AI Agent”的方向逐步脱离 Ant Design Pro 的后台模板感；但 /admin/workspace 等 Console 页面仍明显继承 Ant Design Pro：
+categories: [docs, architecture]
+tags: [化与, 设计语言统一, architecture]
+related_docs: [Docs/07_architecture/20AdminChat简约克制界面ADR.md, Docs/12_features/PuddingUiUxRedesign.md, Docs/12_features/AdminConsole去AntDesignPro化代码级设计方案.md]
+related_files: [Source/PuddingPlatformAdmin/src/app.tsx, Source/PuddingPlatformAdmin/config/defaultSettings.ts, Source/PuddingPlatformAdmin/src/global.style.ts, Source/PuddingPlatformAdmin/src/pages/workspace/index.tsx, Source/PuddingPlatformAdmin/src/components/Footer/index.tsx, Source/PuddingPlatformAdmin/README.md]
+slug: architecture-37adr-036adminconsole去antdesignpro化与pudding设计语言统一adr
+draft: false
+---
+
 # 37 ADR-036 Admin Console 去 Ant Design Pro 化与 Pudding 设计语言统一
 
 > 状态：**proposed**  

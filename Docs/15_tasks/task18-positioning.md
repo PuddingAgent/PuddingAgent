@@ -1,3 +1,18 @@
+---
+title: PuddingCode 产品设计文档
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 核心关注：文件树、Diff 对比、终端输出
+categories: [docs, tasks]
+tags: [task18, positioning, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task18-positioning
+draft: false
+---
+
 # PuddingCode 产品设计文档
 
 > **定位：** 从"程序员的生产力工具"向"人类的数字化代理"的范式转移。PuddingCode 是用户的"数字化布丁管家"，对标 OpenClaw，追求更懂用户、更具视觉吸引力。

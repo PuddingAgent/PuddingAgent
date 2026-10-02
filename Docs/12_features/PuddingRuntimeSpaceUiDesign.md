@@ -1,3 +1,18 @@
+---
+title: Pudding Runtime Space UI 设计语言与页面方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 的 UI 应像一个安静运行的 AI Runtime：用户在 Agent Console 注入意图，系统在 Runtime Timeline 中检索、思考、调用工具、组织信息，最终答案从运行过程里逐渐凝聚出来。
+categories: [docs, features]
+tags: [puddingruntimespaceuidesign, features]
+related_docs: [Docs/12_features/PuddingUiUxRedesign.md, Docs/12_features/ChatUIRedesign.md, Docs/12_features/LoginFeature.md]
+related_files: []
+slug: features-puddingruntimespaceuidesign
+draft: false
+---
+
 # Pudding Runtime Space UI 设计语言与页面方案
 
 > 日期：2026-05-13  

@@ -1,3 +1,18 @@
+---
+title: T05 P0-A callId 身份闭环 · 实施方案（2026-08-14）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 目标： callId 不可变、全链路透传（修执行层身份断裂） SSE 帧携带 toolCallId（前端可按 id 配对，替代 P1-1 按序同名过渡策略） T00 最小子集：ToolCallId 值对象 + 事件信封最小增强
+categories: [docs, references]
+tags: [deepseek, harness, tool, p0a, callid, implementation, plan, deepseek_harness]
+related_docs: []
+related_files: []
+slug: references-deepseek-harness-tool-p0a-callid-implementation-plan-2026-08-14
+draft: false
+---
+
 # T05 P0-A callId 身份闭环 · 实施方案（2026-08-14）
 
 > 出方案：蜜糖 ｜ 施工：默认助手（用户指定分工）

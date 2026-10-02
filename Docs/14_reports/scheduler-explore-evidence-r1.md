@@ -1,3 +1,18 @@
+---
+title: Scheduler 只读勘查证据（r1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Observed HEAD: 2bc81fcc2a521c91c9a91aa3cd12789f09f04d83 取证方式：.git/HEAD = ref: refs/heads/master；.git/refs/heads/master = 上述 SHA。 本次无 shell/terminal 工具，未执行 git rev-parse HEAD；未排除 packed-refs 覆盖情形。 时间：2"
+categories: [docs, reports]
+tags: [scheduler, explore, evidence, r1, reports]
+related_docs: []
+related_files: [Source/PuddingAgent/appsettings.json, code_map.md, Source/PuddingCore/Scheduling/TaskAutoDispatchContracts.cs, Source/PuddingPlatform/Services/Scheduling/TaskAutoDispatchEvaluator.cs, Source/PuddingPlatform/Services/Scheduling/TaskAutoDispatchWorker.cs, Source/PuddingPlatform/Services/Goals/TaskGoalDispatchTransactionStore.cs, Source/PuddingCore/Goals/TaskBoundGoalContracts.cs, Source/PuddingPlatform/Services/Tasks/TaskDispatcher.cs, Source/PuddingPlatform/Services/Scheduling/TaskBoundGoalOptions.cs, Source/PuddingCore/Goals/GoalRunOptions.cs, Source/PuddingHost/default-data/config/system.json, Source/PuddingHost/Extensions/PuddingServiceCollectionExtensions.Platform.cs, Source/PuddingHost/Hosting/PuddingApplicationHost.cs, Source/PuddingAgent/bin/Debug/net10.0/data/config/system.json, Source/PuddingPlatform/Services/Goals/TaskGoalLaunchService.cs, Source/PuddingHost/Hosting/PuddingApplicationInitializer.cs, Source/PuddingPlatformTests/Services/Scheduling/TaskSchedulerIntentOutcomeStoreTests.cs, Docs/12_features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md, Source/PuddingPlatform/Data/Entities/GoalRunEntity.cs, Source/PuddingPlatform/Services/Scheduling/TaskExecutionPlanCompiler.cs]
+slug: reports-scheduler-explore-evidence-r1
+draft: false
+---
+
 # Scheduler 只读勘查证据（r1）
 
 - Observed HEAD: `2bc81fcc2a521c91c9a91aa3cd12789f09f04d83`

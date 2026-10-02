@@ -1,3 +1,18 @@
+---
+title: 遥测、调试数据自动过期与 Web 存储管理设计方案
+author: hyfree
+date: 2026-08-22
+last_reviewed: 2026-10-02
+status: active
+description: 本方案让 PuddingAgent 自行控制高频遥测与调试数据的增长，同时允许管理员按“数据类型 + 时间”预览并清理非关键数据。
+categories: [docs, features]
+tags: [遥测调试数据, 自动过期与, 存储管理设计, 方案, features]
+related_docs: [Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md]
+related_files: [Source/PuddingCore/Storage/StorageMaintenanceContracts.cs, Source/PuddingPlatform/Services/StorageManagement/StorageDataClassCatalog.cs, Source/PuddingPlatform/Services/StorageManagement/StorageInventorySampler.cs, Source/PuddingPlatform/Services/StorageManagement/StorageInventorySnapshotStore.cs, Source/PuddingPlatform/Services/StorageManagement/StorageMaintenanceCoordinator.cs, Source/PuddingPlatform/Services/StorageManagement/StorageCleanupExecutor.cs, Source/PuddingPlatform/Services/StorageManagement/StorageMaintenanceJobStore.cs, Source/PuddingPlatform/Services/StorageManagement/StorageRetentionPolicyService.cs, Source/PuddingPlatform/Services/RetentionPruningService.cs, Source/PuddingHost/Storage/StorageMaintenanceService.cs, Source/PuddingHost/Controllers/StorageManagementController.cs, Source/PuddingHost/Extensions/PuddingServiceCollectionExtensions.Platform.cs, Source/PuddingPlatformAdmin/config/routes.ts, Source/PuddingPlatformAdmin/src/pages/storage/index.tsx, Source/PuddingPlatformAdmin/src/pages/storage/StorageOverviewCharts.tsx, Source/PuddingPlatformAdmin/src/pages/storage/api.ts, Source/PuddingPlatformAdmin/src/pages/storage/types.ts, Source/PuddingPlatformAdmin/src/pages/storage/StoragePolicyDrawer.tsx, Source/PuddingPlatformAdmin/src/pages/storage/CleanupPreviewModal.tsx]
+slug: features-遥测调试数据自动过期与web存储管理设计方案
+draft: false
+---
+
 # 遥测、调试数据自动过期与 Web 存储管理设计方案
 
 > - 状态：**Proposed（设计完成，尚未实现或验收）**

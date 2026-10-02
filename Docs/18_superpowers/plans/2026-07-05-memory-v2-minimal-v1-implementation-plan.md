@@ -1,3 +1,18 @@
+---
+title: Memory v2 Minimal V1 Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build the minimal Memory v2 V1 loop from compaction memoryNotes to subconscious page update and deterministic Book/Page upsert replace."
+categories: [docs, superpowers]
+tags: [memory, v2, minimal, v1, implementation, plan, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Runtime/ContextCompactionContracts.cs, Source/PuddingCore/Platform/SubconsciousDtos.cs, Source/PuddingRuntime/Services/AgentContextCompactionSummaryGenerator.cs, Source/PuddingRuntime/Services/ContextCompactionService.cs, Source/PuddingRuntime/Services/Hooks/SessionCompressedMemoryMaintenanceHook.cs, Source/PuddingRuntimeTests/Services/SessionCompressedMemoryMaintenanceHookTests.cs, Source/PuddingRuntime/Services/MemoryWikiPageUpdateService.cs, Source/PuddingRuntimeTests/Services/MemoryWikiPageUpdateServiceTests.cs, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingRuntime/Services/WikiPageWriteEntry.cs, Source/PuddingRuntimeTests/Services/WikiPageWriteEntryTests.cs, Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs, Source/PuddingRuntimeTests/Services/SubconsciousWorkerServiceTests.cs]
+slug: superpowers-2026-07-05-memory-v2-minimal-v1-implementation-plan
+draft: false
+---
+
 # Memory v2 Minimal V1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

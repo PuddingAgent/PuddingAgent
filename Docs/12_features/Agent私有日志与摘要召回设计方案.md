@@ -1,3 +1,18 @@
+---
+title: Agent 私有日志与摘要召回设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前 Pudding 已具备以下基础：
+categories: [docs, features]
+tags: [私有日志与摘, 要召回设计方, features]
+related_docs: [Docs/07_architecture/52ADR-051Agent私有日志与摘要召回ADR.md]
+related_files: []
+slug: features-agent私有日志与摘要召回设计方案
+draft: false
+---
+
 # Agent 私有日志与摘要召回设计方案
 
 > 日期：2026-06-16  

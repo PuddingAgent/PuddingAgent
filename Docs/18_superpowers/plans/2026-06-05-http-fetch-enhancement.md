@@ -1,3 +1,18 @@
+---
+title: HTTP Fetch Enhancement Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Enhance http_fetch with a thin replaceable web client, Flurl-backed default transport, and context-friendly raw/Markdown/text/JSON output formats."
+categories: [docs, superpowers]
+tags: [http, fetch, enhancement, plans]
+related_docs: []
+related_files: [Source/PuddingRuntimeTests/Tools/PuddingToolInfrastructureTests.cs, Source/PuddingRuntime/Tools/BuiltIns/Http/HttpFetchContracts.cs, Source/PuddingRuntime/Tools/BuiltIns/Http/HttpFetchContentFormatter.cs, Source/PuddingRuntime/Tools/BuiltIns/Http/HtmlContentExtractor.cs, Source/PuddingRuntime/Tools/BuiltIns/Http/HttpFetchSkill.cs, Source/PuddingRuntime/Tools/BuiltIns/Http/FlurlWebClient.cs, Source/PuddingRuntime/Tools/BuiltIns/Http/ReverseMarkdownHtmlToMarkdownConverter.cs, Source/PuddingRuntime/PuddingRuntime.csproj, Source/PuddingRuntime/Tools/Platform/PuddingToolServiceCollectionExtensions.cs, Source/PuddingAgent/Program.cs, Source/PuddingRuntime/Tools/Platform/PuddingToolRegistry.cs]
+slug: superpowers-2026-06-05-http-fetch-enhancement
+draft: false
+---
+
 # HTTP Fetch Enhancement Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,18 @@
+---
+title: ADR-080：任务看板分层读取、子任务与命令化拖拽
+author: hyfree
+date: 2026-08-26
+last_reviewed: 2026-10-02
+status: active
+description: 现有任务看板已经具备十二态任务状态机、五列投影、Internal/External API、Agent/管理工具、评论和列内虚拟化，但出现了六类产品缺口：
+categories: [docs, architecture]
+tags: [任务看板分层, 读取子任务与, 命令化拖拽, architecture]
+related_docs: [Docs/12_features/任务看板状态机子任务渐进披露与高性能拖拽优化设计方案.md]
+related_files: []
+slug: architecture-94adr-080任务看板分层读取子任务与命令化拖拽adr
+draft: false
+---
+
 # ADR-080：任务看板分层读取、子任务与命令化拖拽
 
 > 状态：Proposed

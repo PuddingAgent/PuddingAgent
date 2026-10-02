@@ -1,3 +1,18 @@
+---
+title: Agent-First Main Session Chat Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Convert /admin/chat from a session-first interface into an Agent-first lightweight chat experience with one workspace-scoped main session per Agent."
+categories: [docs, superpowers]
+tags: [agent, first, main, session, chat, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Platform/SessionRecord.cs, Source/PuddingController/Controllers/SessionController.cs, Source/PuddingController/Services/InMemorySessionRepository.cs, Source/PuddingPlatform/Services/PlatformApiClient.cs, Source/PuddingPlatform/Controllers/Api/SessionApiController.cs, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatLayout.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx, Source/PuddingWebApiTests/SessionApiControllerTests.cs, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.recovery.test.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatLayout.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageProcessSummary.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageProcessSummary.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/SessionSidebar.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatMain.test.tsx, Source/PuddingWebApiTests/MessageApiControllerTests.cs]
+slug: superpowers-2026-06-06-agent-first-main-session-chat
+draft: false
+---
+
 # Agent-First Main Session Chat Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

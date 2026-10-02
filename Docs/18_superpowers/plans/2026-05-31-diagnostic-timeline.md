@@ -1,3 +1,18 @@
+---
+title: Diagnostic Timeline Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Add backend/server diagnostic timeline logging and a standalone Python SQLite/log query toolkit for diagnosing slow chat rendering."
+categories: [docs, superpowers]
+tags: [diagnostic, timeline, plans]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/Diagnostics/SessionTimelineRecorder.cs, Source/PuddingPlatformTests/Services/SessionTimelineRecorderTests.cs, Source/PuddingAgent/Program.cs, Source/PuddingPlatform/Controllers/Api/SessionEventsController.cs, TestScripts/dev_up_tests.py, Tools/Diagnostics/README.md, Tools/Diagnostics/inspect_schema.py, Tools/Diagnostics/query_timeline.py, Tools/Diagnostics/export_session_bundle.py, Tools/Diagnostics/tests/test_query_timeline.py, README.md]
+slug: superpowers-2026-05-31-diagnostic-timeline
+draft: false
+---
+
 # Diagnostic Timeline Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,18 @@
+---
+title: Model-visible means logged 补强方案（2026-08-14）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 不变量处于「半满足/双流分裂」：思维链✅/工具调用✅/子代理委派生命周期✅/compaction 摘要✅；系统提示词与 context 各层正文❌、steering 正文❌、子代理内部轨迹⚠️旁路；横切三缺：按来源查看缺统一 source 维度、恢复/分叉/检索/回放不共享同一流（6 处旁路数据源）、仅追加性被 RetentionPruningService DELETE 破坏。
+categories: [docs, features]
+tags: [model, visible, means, logged, reinforcement, plan, features]
+related_docs: []
+related_files: []
+slug: features-model-visible-means-logged-reinforcement-plan-2026-08-14
+draft: false
+---
+
 # Model-visible means logged 补强方案（2026-08-14）
 
 > 出方案：蜜糖 ｜ 施工：默认助手 ｜ 用户强制不变量（2026-08-14 11:22）

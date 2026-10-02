@@ -1,3 +1,18 @@
+---
+title: Agent Chat Client Architecture Redesign Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Rebuild /admin/chat as an Agent-first single-user SPA client with server-owned Agent execution, local cache, explicit run state, stable React rendering, and a reserved owner field for future com"
+categories: [docs, superpowers]
+tags: [agent, chat, client, architecture, redesign, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Platform/AgentRunRecord.cs, Source/PuddingCore/Platform/AgentProjectionDtos.cs, Source/PuddingPlatform/Services/AgentChat/AgentRunProjectionService.cs, Source/PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs, Source/PuddingPlatform/Controllers/Api/AgentChatApiController.cs, Source/PuddingWebApiTests/AgentChatApiControllerTests.cs, Source/PuddingPlatformAdmin/src/pages/chat/client/types.ts, Source/PuddingPlatformAdmin/src/pages/chat/client/agentChatApi.ts, Source/PuddingPlatformAdmin/src/pages/chat/client/clientIdentity.ts, Source/PuddingPlatformAdmin/src/pages/chat/client/localCache.ts, Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts, Source/PuddingPlatformAdmin/src/pages/chat/client/syncEngine.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useAgentChatClient.ts, Source/PuddingPlatformAdmin/src/pages/chat/index.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/SessionSidebar.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx, Source/PuddingPlatformAdmin/src/pages/chat/client/agentChatApi.test.ts, Source/PuddingPlatformAdmin/src/pages/chat/client/localCache.test.ts, Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.test.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useAgentChatClient.test.tsx]
+slug: superpowers-2026-06-07-agent-chat-client-architecture-redesign
+draft: false
+---
+
 # Agent Chat Client Architecture Redesign Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

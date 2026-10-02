@@ -1,3 +1,18 @@
+---
+title: 任务调度器与 Goal 用户控制面设计
+author: hyfree
+date: 2026-09-02
+last_reviewed: 2026-10-02
+status: active
+description: "2026-08-31 16:09–16:34 的产品日志证明 TaskAutoDispatch 正以 authoritative 模式每五分钟扫描：工作区 default 有 3 个 Agent，2 个 Idle、1 个 Busy，但每轮 candidates=0 / eligible=0 / started=0。同一时刻数据库中 34 个 Backlog 和唯一 Ready Task 的 aut"
+categories: [docs, features]
+tags: [任务调度器与, 用户控制面设, features]
+related_docs: [Docs/12_features/任务规划与实施分工及存量看板施工方案-2026-09-20.md, Docs/12_features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md]
+related_files: []
+slug: features-任务调度器与goal用户控制面设计
+draft: false
+---
+
 # 任务调度器与 Goal 用户控制面设计
 
 > **2026-09-20 规划与实施分工**：补充[施工合同与看板复核](任务规划与实施分工及存量看板施工方案-2026-09-20.md) §2/§9。后续控制面应展示需求覆盖、规划产物版本、阶段实际路由、升级理由和待验收项；Task级requiredModel是硬约束，不能替代Plan/Change阶段偏好。合同缺失、依赖不可用、预算不足分别展示原因；不因Agent回复DONE或报告存在自动完成。

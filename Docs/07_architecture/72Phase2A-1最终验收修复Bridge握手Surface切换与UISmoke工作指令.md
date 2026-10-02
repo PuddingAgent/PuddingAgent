@@ -1,3 +1,18 @@
+---
+title: 72 Phase 2A-1 最终验收修复：Bridge 握手、Surface 切换与 UI Smoke 工作指令
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: text 请完整执行 Docs/07_architecture/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md。
+categories: [docs, architecture]
+tags: [最终验收修复, 握手, 切换与, 工作指令, architecture]
+related_docs: [Docs/07_architecture/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md, Docs/07_architecture/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md]
+related_files: [TestScripts/start-phase2a1-browser-smoke.ps1, Agents.md, Docs/08_how_debuge/README.md]
+slug: architecture-72phase2a-1最终验收修复bridge握手surface切换与uismoke工作指令
+draft: false
+---
+
 # 72 Phase 2A-1 最终验收修复：Bridge 握手、Surface 切换与 UI Smoke 工作指令
 
 > - 状态：**completed / accepted（2026-08-02，经 73 最终验收）**

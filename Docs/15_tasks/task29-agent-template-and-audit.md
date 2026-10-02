@@ -1,3 +1,18 @@
+---
+title: 任务目标
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# task29 - AgentTemplate 定义"
+categories: [docs, tasks]
+tags: [task29, agent, template, and, audit, tasks]
+related_docs: [Docs/07_architecture/06PuddingAgent与客户端.md, Docs/07_architecture/07协作网络与治理.md, Docs/07_architecture/08数据模型与配置.md, Docs/15_tasks/task28-platform-workspace-governance.md, Docs/15_tasks/task30-knowledge-infrastructure.md, Docs/15_tasks/task26-runtime-foundation.md, Docs/15_tasks/task27-controller-routing-session.md]
+related_files: []
+slug: tasks-task29-agent-template-and-audit
+draft: false
+---
+
 ﻿# task29 - AgentTemplate 定义
 
 > **V1 简化**（2026-05-02）：移除审计 Agent 模板、审批链对接、冻结链对接。V1 聚焦 AgentTemplate 的 CRUD 管理与 Runtime 装配。

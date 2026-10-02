@@ -1,3 +1,18 @@
+---
+title: Architecture Foundation Hardening Roadmap Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Harden the runtime infrastructure delivered by ADR-019 and ADR-021 so that sub-agent run archives, event schemas, diagnostics APIs, permissions, and E2E tests are stable enough for Admin observa"
+categories: [docs, superpowers]
+tags: [architecture, foundation, hardening, roadmap, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Serialization/PuddingJsonContracts.cs, Source/PuddingCore/Abstractions/ISubAgentRunStore.cs, Source/PuddingCore/SubAgents/SubAgentRunModels.cs, Source/PuddingCore/Events/EventSchemaRegistry.cs, Source/PuddingCore/Agents/IAgentWorkspaceGuard.cs, Source/PuddingPlatform/Services/FileSubAgentRunStore.cs, Source/PuddingPlatform/Services/SubAgentManager.cs, Source/PuddingPlatform/Controllers/Api/SubAgentRunController.cs, Source/PuddingPlatform/Controllers/Api/EventDiagnosticsController.cs, Source/PuddingPlatform/Services/SessionStateManager.cs, Source/PuddingRuntime/Services/AgentExecutionService.cs, Source/PuddingCore/Tools/FileTool.cs, Source/PuddingCore/Tools/ShellTool.cs, Source/PuddingCoreTests/Serialization/PuddingJsonContractsTests.cs, Source/PuddingCoreTests/Events/EventSchemaRegistryScopeTests.cs, Source/PuddingCoreTests/Agents/AgentWorkspaceGuardTests.cs, Source/PuddingCoreTests/SubAgents/SubAgentRunModelsTests.cs, Source/PuddingWebApiTests/FakeLlmControllerTests.cs, Docs/07_architecture/22架构基础设施硬化与行动路线ADR.md, Docs/15_tasks/Tasks.md]
+slug: superpowers-2026-05-19-architecture-foundation-hardening-roadmap
+draft: false
+---
+
 # Architecture Foundation Hardening Roadmap Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,18 @@
+---
+title: Pudding UI/UX 风格与交互改造
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 的主界面不是后台系统，而是本地运行的私人 AI 代理。整体风格定义为“静谧书斋式 AI Agent”：安静、克制、专业、私有、有温度。
+categories: [docs, features]
+tags: [puddinguiuxredesign, features]
+related_docs: []
+related_files: []
+slug: features-puddinguiuxredesign
+draft: false
+---
+
 # Pudding UI/UX 风格与交互改造
 
 > 日期：2026-05-03  

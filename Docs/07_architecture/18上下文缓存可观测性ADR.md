@@ -1,3 +1,18 @@
+---
+title: 18 上下文缓存可观测性体系 (Context Cache Observability)
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: DeepSeek（及多数 OpenAI 兼容服务商）实现了服务端自动前缀缓存（KV Cache）：
+categories: [docs, architecture]
+tags: [上下文缓存可, 观测性, architecture]
+related_docs: [Docs/07_architecture/02PuddingCore.md, Docs/07_architecture/03PuddingRuntime.md, Docs/07_architecture/05PuddingPlatform.md, Docs/07_architecture/06PuddingAgent与客户端.md, Docs/07_architecture/16会话状态层与客户端解耦ADR.md]
+related_files: []
+slug: architecture-18上下文缓存可观测性adr
+draft: false
+---
+
 # 18 上下文缓存可观测性体系 (Context Cache Observability)
 
 > 状态：**accepted**（2026-05-18 归档，14/14 任务全部完成）

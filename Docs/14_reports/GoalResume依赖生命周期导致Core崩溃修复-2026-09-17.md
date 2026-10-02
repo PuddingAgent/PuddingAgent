@@ -1,3 +1,18 @@
+---
+title: GoalResume 依赖生命周期导致 Core 崩溃修复（2026-09-17）
+author: hyfree
+date: 2026-09-17
+last_reviewed: 2026-10-02
+status: active
+description: "Desktop 运行中心报告 Core 自动恢复熔断，最后 PID 37776，退出码 -532462766。Windows Application / .NET Runtime 在 07:52:18、07:52:24、07:52:31、07:52:43 记录相同未处理异常："
+categories: [docs, reports]
+tags: [依赖生命周期, 导致, 崩溃修复, reports]
+related_docs: []
+related_files: []
+slug: reports-goalresume依赖生命周期导致core崩溃修复-2026-09-17
+draft: false
+---
+
 # GoalResume 依赖生命周期导致 Core 崩溃修复（2026-09-17）
 
 ## 现场与根因

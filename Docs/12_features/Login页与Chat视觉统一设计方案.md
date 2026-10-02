@@ -1,3 +1,18 @@
+---
+title: Login 页与 Chat 视觉统一设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 本方案用于指导 Dev 重做浏览器评审中选中的登录页。
+categories: [docs, features]
+tags: [页与, 视觉统一设计, 方案, features]
+related_docs: [Docs/07_architecture/36ADR-035登录页与Chat视觉统一ADR.md]
+related_files: [Source/PuddingPlatformAdmin/src/pages/user/login/index.tsx, Source/PuddingPlatformAdmin/src/pages/user/login/login.test.tsx]
+slug: features-login页与chat视觉统一设计方案
+draft: false
+---
+
 # Login 页与 Chat 视觉统一设计方案
 
 > 日期：2026-05-23  

@@ -1,3 +1,18 @@
+---
+title: Persistent Event Queue Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Replace the in-memory priority event queue with a SQLite-backed queue that survives process restarts and supports lease, retry, and dead-letter states."
+categories: [docs, superpowers]
+tags: [persistent, event, queue, plans]
+related_docs: []
+related_files: [Source/PuddingPlatform/Data/Entities/EventQueueEntity.cs, Source/PuddingPlatform/Data/PlatformDbContext.cs, Source/PuddingAgent/Program.cs, Source/PuddingCore/Models/InternalEvent.cs, Source/PuddingRuntime/Services/Events/EventDispatcher.cs]
+slug: superpowers-2026-05-18-persistent-event-queue
+draft: false
+---
+
 # Persistent Event Queue Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

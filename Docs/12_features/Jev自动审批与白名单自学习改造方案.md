@@ -1,3 +1,18 @@
+---
+title: Jev 自动审批与白名单自学习 —— 改造方案（v1，2026-09-20）
+author: hyfree
+date: 2026-09-20
+last_reviewed: 2026-10-02
+status: active
+description: Jev 速度毫秒级、擅长决策判断 ⇒ 用于权限自动审批，取代原来的审批审计员。 Jev 直接审计 Agent 输出的指令（工具调用 + Shell 指令）与背景信息，判断是否放行。 通过 Jev 判断该指令是否适合加入白名单，避免每次工具/命令请求都调用 Jev。
+categories: [docs, features]
+tags: [自动审批与白, 名单自学习改, 造方案, features]
+related_docs: []
+related_files: [Docs/12_features/安全分类器与工具调用准入方案-v2.md, Source/PuddingRuntime/Services/AgentFirewall.cs, Source/PuddingRuntime/Tools/Platform/PuddingToolRegistry.cs, Source/PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs, Source/PuddingCore/Tools/ToolApproval.cs, Source/PuddingRuntime/Tools/Approval/InMemoryToolApprovalService.cs, Source/PuddingRuntime/Tools/Approval/LlmToolApprovalReviewer.cs, Source/PuddingCore/Abstractions/IJevDecisionService.cs, Source/PuddingRuntime/Services/JevDecisionService.cs, Source/PuddingRuntime/Services/JevDecisionOptionsProvider.cs, Source/PuddingRuntime/Tools/Approval/JevToolApprovalReviewer.cs, Source/PuddingRuntime/code_map.md]
+slug: features-jev自动审批与白名单自学习改造方案
+draft: false
+---
+
 # Jev 自动审批与白名单自学习 —— 改造方案（v1，2026-09-20）
 
 > ⚠️ **本文件部分条目已被取代（2026-09-20）**：请先读 `Docs/12_features/安全分类器与工具调用准入方案-v2.md`。

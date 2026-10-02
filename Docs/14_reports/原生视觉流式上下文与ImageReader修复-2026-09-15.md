@@ -1,3 +1,18 @@
+---
+title: 原生视觉流式上下文与 Image Reader 修复（2026-09-15）
+author: hyfree
+date: 2026-09-15
+last_reviewed: 2026-10-02
+status: active
+description: 用户报告 Session 206a9b48ec904ebb93e7541131fbb835、页面 Message ID 2783ac83412746baa4e6c88ea85403d4 出现 Visual inputs require a workspace and a vision-capable route.。只读查询 canonical 记录确认，该 ID 是 message_id；实际 t
+categories: [docs, reports]
+tags: [原生视觉流式, 上下文与, 修复, reports]
+related_docs: []
+related_files: []
+slug: reports-原生视觉流式上下文与imagereader修复-2026-09-15
+draft: false
+---
+
 # 原生视觉流式上下文与 Image Reader 修复（2026-09-15）
 
 ## 故障与证据

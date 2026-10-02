@@ -1,3 +1,18 @@
+---
+title: 真实会话消息加载延迟评估（2026-10-01）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 用户反馈：切换/打开默认助手时，消息区长时间停留骨架屏。编译器报错已由用户重启编译器解决。本轮仅测量与诊断，未修改产品代码、数据库、配置或索引，未重启 Desktop/Core，未发送聊天消息或调用模型。
+categories: [docs, reports]
+tags: [chat, message, load, latency, reports]
+related_docs: [Docs/14_reports/Chat-Frontend-Performance-Measurement-2026-10-01.md]
+related_files: []
+slug: reports-chat-message-load-latency-2026-10-01
+draft: false
+---
+
 # 真实会话消息加载延迟评估（2026-10-01）
 
 用户反馈：切换/打开默认助手时，消息区长时间停留骨架屏。编译器报错已由用户重启编译器解决。本轮仅测量与诊断，未修改产品代码、数据库、配置或索引，未重启 Desktop/Core，未发送聊天消息或调用模型。

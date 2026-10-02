@@ -1,3 +1,18 @@
+---
+title: Memory Graph Phase 1 Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Add a read-only local knowledge graph projection to the Memory Library admin page without adding graph database tables or risky graph write operations."
+categories: [docs, superpowers]
+tags: [memory, graph, phase1, plans]
+related_docs: []
+related_files: [Source/PuddingAgent/Program.cs, Source/PuddingPlatformAdmin/src/pages/memory-library/types.ts, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingPlatformAdmin/src/pages/memory-library/index.tsx, Source/PuddingPlatformAdmin/src/pages/memory-library/styles.less, Source/PuddingMemoryEngine/Entities/LibraryEntities.cs, Source/PuddingMemoryEngine/Entities/SubconsciousEntities.cs]
+slug: superpowers-2026-06-03-memory-graph-phase1
+draft: false
+---
+
 # Memory Graph Phase 1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

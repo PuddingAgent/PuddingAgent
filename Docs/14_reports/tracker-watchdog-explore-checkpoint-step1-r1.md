@@ -1,3 +1,18 @@
+---
+title: Task Tracker/Watchdog Explore — Step 1 Checkpoint (checkpoint-v1)
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: goalRunId tg-cbdced5fef984688c568d8aa045cfe77｜iteration 1｜objectiveVersion 1 taskId 77883a50d4c8453cbd05c38ee1719f0e｜assignmentId 19290b6f37ed4718b01bc94de439e946｜已认领（v26 → v27，InProgress） planId tp-6
+categories: [docs, reports]
+tags: [tracker, watchdog, explore, checkpoint, step1, r1, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/Scheduling/TaskExecutionTracker.cs, Source/PuddingPlatformTests/Services/Scheduling/TaskExecutionTrackerTests.cs, Source/PuddingCore/Scheduling/TaskExecutionTrackingContracts.cs]
+slug: reports-tracker-watchdog-explore-checkpoint-step1-r1
+draft: false
+---
+
 # Task Tracker/Watchdog Explore — Step 1 Checkpoint (checkpoint-v1)
 
 - goalRunId `tg-cbdced5fef984688c568d8aa045cfe77`｜iteration 1｜objectiveVersion 1

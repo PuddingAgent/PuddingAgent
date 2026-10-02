@@ -1,3 +1,18 @@
+---
+title: Admin Chat 简约克制设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 本方案用于指导 /admin/chat 下一轮 UI 优化。
+categories: [docs, features]
+tags: [简约克制设计, 方案, features]
+related_docs: [Docs/07_architecture/20AdminChat简约克制界面ADR.md, Docs/12_features/ChatUIRedesign.md]
+related_files: []
+slug: features-adminchat简约克制设计方案
+draft: false
+---
+
 # Admin Chat 简约克制设计方案
 
 > 日期：2026-05-18  

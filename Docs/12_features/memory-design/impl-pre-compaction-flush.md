@@ -1,3 +1,18 @@
+---
+title: 一、要做什么
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 实施规约：Pre-Compaction Flush（借鉴 Claude Code）"
+categories: [docs, features]
+tags: [impl, pre, compaction, flush, memory-design]
+related_docs: []
+related_files: []
+slug: features-impl-pre-compaction-flush
+draft: false
+---
+
 ﻿# 实施规约：Pre-Compaction Flush（借鉴 Claude Code）
 
 > 版本：v1.0 | 日期：2026-07-11

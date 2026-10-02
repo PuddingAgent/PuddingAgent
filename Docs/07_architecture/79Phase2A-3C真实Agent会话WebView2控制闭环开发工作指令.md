@@ -1,3 +1,18 @@
+---
+title: Phase 2A-3C：真实 Agent 会话到 WebView2 控制闭环开发工作指令
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: 下一步是完成“真实 Agent 控制 WebView2”的产品闭环，但不是重新实现 BrowserBridge 或 Playwright 兼容层。
+categories: [docs, architecture]
+tags: [真实, 会话, 控制闭环开发, 工作指令, architecture]
+related_docs: [Docs/07_architecture/76Phase2A-3通用WebView2页面操作实施验收报告.md, Docs/07_architecture/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md]
+related_files: [Docs/07_architecture/README.md, Docs/README.md]
+slug: architecture-79phase2a-3c真实agent会话webview2控制闭环开发工作指令
+draft: false
+---
+
 # Phase 2A-3C：真实 Agent 会话到 WebView2 控制闭环开发工作指令
 
 > 状态：待开发  

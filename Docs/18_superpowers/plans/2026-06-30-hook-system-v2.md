@@ -1,3 +1,18 @@
+---
+title: Hook System v2 Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build the first shippable Hook System v2 slice: a typed hook publisher, a registered session.compressed event, and an observable internal memory-maintenance handler that does not call the subcon"
+categories: [docs, superpowers]
+tags: [hook, system, v2, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Abstractions/IHookPublisher.cs, Source/PuddingCore/Models/HookEventNames.cs, Source/PuddingCore/Events/EventSchemaRegistry.cs, Source/PuddingCore/Observability/RuntimeActivity.cs, Source/PuddingRuntime/Services/Hooks/HookPublisher.cs, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingAgent/Program.cs, Source/PuddingPlatform/Controllers/Api/SessionEventsController.cs, Source/PuddingRuntimeTests/Services/HookPublisherTests.cs, Source/PuddingWebApiTests/SessionEventsControllerTests.cs, Docs/06_config/hooks.md]
+slug: superpowers-2026-06-30-hook-system-v2
+draft: false
+---
+
 # Hook System v2 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,18 @@
+---
+title: Pudding 耗时诊断的代码实施与验证记录
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-10-01。上游诊断：Agent-Harness-Latency-Diagnosis-2026-10-01.md（提交 2f1e7f0）。本文只记录已落地的代码/配置变更、可复现证据与明确边界；未做真实模型 A/B，未做部署后 smoke。
+categories: [docs, reports]
+tags: [agent, harness, latency, implementation, reports]
+related_docs: [Docs/14_reports/Agent-Harness-Latency-Diagnosis-2026-10-01.md]
+related_files: [Docs/08_how_debuge/README.md, code_map.md, Source/PuddingHost/default-data/agent-template-presets/general-assistant.json, Docs/12_features/Index-Retrieval-Known-Defects-2026-10-01.md, Source/PuddingRuntime/PuddingRuntime.csproj, Docs/14_reports/Regression-Baseline-2026-09-22.md, TestScripts/known-red-dispositions.md]
+slug: reports-agent-harness-latency-implementation-2026-10-01
+draft: false
+---
+
 # Pudding 耗时诊断的代码实施与验证记录
 
 日期：2026-10-01。上游诊断：[Agent-Harness-Latency-Diagnosis-2026-10-01.md](Agent-Harness-Latency-Diagnosis-2026-10-01.md)（提交 `2f1e7f0`）。本文只记录**已落地的代码/配置变更、可复现证据与明确边界**；未做真实模型 A/B，未做部署后 smoke。

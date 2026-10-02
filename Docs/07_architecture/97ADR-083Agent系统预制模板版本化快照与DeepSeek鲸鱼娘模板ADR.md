@@ -1,3 +1,18 @@
+---
+title: 97 ADR-083 Agent 系统预制模板版本化快照与 DeepSeek 鲸鱼娘模板
+author: hyfree
+date: 2026-09-02
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 已经确立三层配置边界：
+categories: [docs, architecture]
+tags: [系统预制模板, 版本化快照与, 鲸鱼娘模板, architecture]
+related_docs: [Docs/12_features/Agent系统预制模板完整快照与DeepSeek鲸鱼娘模板设计方案.md, Docs/07_architecture/37ADR-036系统级配置文件唯一来源ADR.md, Docs/07_architecture/41ADR-040Agent模板编辑SettingsSidebarNavigationADR.md, Docs/07_architecture/45ADR-044Agent模板存储链路归一化ADR.md, Docs/07_architecture/53ADR-052插件化工具系统契约冻结ADR.md, Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md]
+related_files: []
+slug: architecture-97adr-083agent系统预制模板版本化快照与deepseek鲸鱼娘模板adr
+draft: false
+---
+
 # 97 ADR-083 Agent 系统预制模板版本化快照与 DeepSeek 鲸鱼娘模板
 
 > 状态：**Proposed**  

@@ -1,3 +1,18 @@
+---
+title: 能力通道接线手册（切片 C-3 收尾 · 需重启窗口）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: KestrelServerOptions.Listen 会覆盖 UseUrls（本系列实测）：一旦调用 ListenForCapabilityChannel，原先由 UseUrls 绑定的 REST 端点会静默消失。 ⇒ 组合根必须显式绑定两者（REST 的 Listen(...) + 能力通道的 ListenForCapabilityChannel(...)）， 或在保持 REST 现有绑定的前
+categories: [docs, features]
+tags: [desktop, capability, channel, wiring, runbook, features]
+related_docs: [Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md, Source/Pudding.CapabilityBroker.AspNetCore/code_map.md]
+related_files: [Source/PuddingHost/Hosting/DesktopCapabilityChannelWiring.cs]
+slug: features-desktop-capability-channel-wiring-runbook-2026-10-01
+draft: false
+---
+
 # 能力通道接线手册（切片 C-3 收尾 · 需重启窗口）
 
 > 状态：**全部代码已就绪并通过独立验证**（385 用例 + 真实端点探针 47/47），本手册描述的是

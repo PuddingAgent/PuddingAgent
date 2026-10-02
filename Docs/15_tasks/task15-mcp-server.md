@@ -1,3 +1,18 @@
+---
+title: Task 15 — MCP 服务器集成方案 (Model Context Protocol)
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 设计原则 架构定位 支持层级 协议对接 技能自动发现 权限桥接 自适应进化 MCP 管理面板 核心实现 实现路线
+categories: [docs, tasks]
+tags: [task15, mcp, server, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task15-mcp-server
+draft: false
+---
+
 # Task 15 — MCP 服务器集成方案 (Model Context Protocol)
 
 > **状态：** ✏️ 设计中

@@ -1,3 +1,18 @@
+---
+title: 右侧多 Tab 工具工作区设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-10-01。状态：第一阶段（统一分栏 / Tab 容器 / 工具入口 / 收起 / 拖动宽度 / 浏览器适配）已实现，见 第一阶段实现记录；第二、三阶段（成果与输出预览、受控交互面板、终端会话）仍为设计建议。
+categories: [docs, features]
+tags: [agent, browser, right, panel, design, features]
+related_docs: [Docs/14_reports/Desktop-Right-Tool-Workspace-2026-10-01.md]
+related_files: []
+slug: features-agent-browser-right-panel-design-2026-10-01
+draft: false
+---
+
 # 右侧多 Tab 工具工作区设计
 
 日期：2026-10-01。状态：**第一阶段（统一分栏 / Tab 容器 / 工具入口 / 收起 / 拖动宽度 / 浏览器适配）已实现**，见 [第一阶段实现记录](../14_reports/Desktop-Right-Tool-Workspace-2026-10-01.md)；第二、三阶段（成果与输出预览、受控交互面板、终端会话）仍为设计建议。

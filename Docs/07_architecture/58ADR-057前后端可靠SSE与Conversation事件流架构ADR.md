@@ -1,3 +1,18 @@
+---
+title: ADR-057 前后端可靠 SSE 与 Conversation 事件流架构
+author: hyfree
+date: 2026-07-15
+last_reviewed: 2026-10-02
+status: active
+description: Proposed
+categories: [docs, architecture]
+tags: [前后端可靠, 事件流架构, architecture]
+related_docs: [Docs/07_architecture/62ADR-062前端ChatUI模块化审计与渐进拆分ADR.md, Docs/07_architecture/16会话状态层与客户端解耦ADR.md, Docs/07_architecture/32ADR-031聊天历史转录持久化与事件日志回放边界.md, Docs/07_architecture/51ADR-050会话层统一投影与前端观察者模型ADR.md, Docs/07_architecture/54ADR-053前端会话引用生命周期与SSE清理边界ADR.md, Docs/07_architecture/57ADR-056聊天消息受理与可靠事件流架构ADR.md]
+related_files: [Source/PuddingCore/Platform/SessionEventContracts.cs, Source/PuddingCore/Runtime/ITurnExecutor.cs, Source/PuddingCore/Runtime/RuntimeControlService.cs, Source/PuddingRuntime/Services/AgentExecutionService.cs, Source/PuddingPlatform/Services/AgentChat/ChatExecutionWorker.cs, Source/PuddingPlatform/Services/SessionStateManager.cs, Source/PuddingPlatform/Services/SessionEventStreamService.cs, Source/PuddingPlatform/Controllers/Api/SessionEventsController.cs, Source/PuddingPlatform/Services/PlatformApiClient.cs, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts, Source/PuddingPlatformAdmin/src/services/platform/api.ts]
+slug: architecture-58adr-057前后端可靠sse与conversation事件流架构adr
+draft: false
+---
+
 # ADR-057 前后端可靠 SSE 与 Conversation 事件流架构
 
 ## 状态

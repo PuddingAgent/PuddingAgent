@@ -1,3 +1,18 @@
+---
+title: Visual Studio Core 还原 NU1105 修复（2026-10-01）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Visual Studio 在 PuddingHost、PuddingAgent 及其测试项目中报告 NU1105，无法取得 src/HarnessAgent/Core/HarnessAgent.Core.csproj 的项目信息。该文件有效且已被 PuddingHost 引用，但 PuddingAgentNetwork.slnx 漏登了它；单独命令行构建可递归发现引用，不能覆盖 Visual S
+categories: [docs, reports]
+tags: [core, vs, restore, fix, reports]
+related_docs: []
+related_files: []
+slug: reports-core-vs-restore-fix-2026-10-01
+draft: false
+---
+
 # Visual Studio Core 还原 NU1105 修复（2026-10-01）
 
 ## 问题与修复

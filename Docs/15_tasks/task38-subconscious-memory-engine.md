@@ -1,3 +1,18 @@
+---
+title: Task 38 — 潜意识记忆引擎研究与设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Agent 记忆是整个 AI 行业最被低估的难题之一。当前的记忆系统（Task 08）已定义了短期/工作/长期三层记忆结构，但缺少一个自动化、后台运行的记忆处理引擎。现有方案依赖显式指令触发记忆写入，无法实现以下能力：
+categories: [docs, tasks]
+tags: [task38, subconscious, memory, engine, tasks]
+related_docs: [Docs/07_architecture/01总览与分层.md]
+related_files: []
+slug: tasks-task38-subconscious-memory-engine
+draft: false
+---
+
 # Task 38 — 潜意识记忆引擎研究与设计
 
 > **任务ID：** task-20260502-030

@@ -1,3 +1,18 @@
+---
+title: Goal 持久目标、自主续行与自动压缩完整设计方案
+author: hyfree
+date: 2026-08-22
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 应把 /goal 实现为一个持久、可恢复、可暂停、有证据门禁和有限预算的 GoalRun，而不是把“继续做”塞进 Heartbeat，也不是把现有单次 Agent Loop 的 MaxRounds 简单改成 256。
+categories: [docs, features]
+tags: [持久目标自主, 续行与自动压, 缩完整设计方, features]
+related_docs: [Docs/12_features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md, Docs/07_architecture/106ADR-092目标驱动执行与分层验证闭环ADR.md, Docs/07_architecture/89ADR-074Goal持久目标自主续行与自动压缩ADR.md, Docs/12_features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md]
+related_files: [Source/PuddingCore/Tools/ToolAuthorization.cs, Source/PuddingPlatform/Controllers/Api/SystemCommandsController.cs, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts, Source/PuddingHost/Services/MessageGatewayIngress.cs, Source/PuddingPlatform/Services/Conversation/SystemCommandHandler.cs, Source/PuddingPlatform/Services/ConversationAcceptanceStore.cs, Source/PuddingPlatform/Services/AgentChat/ChatExecutionWorker.cs, Source/PuddingRuntime/Services/AgentExecutionService.cs, Source/PuddingRuntime/Services/AgentLoop/CompletionPolicy.cs, Source/PuddingRuntime/Services/ContextWindowManager.cs, Source/PuddingCore/Runtime/ContextCompactionContracts.cs, Source/PuddingCore/Platform/ConversationEventContracts.cs, Source/PuddingCore/Goals/GoalContracts.cs, Source/PuddingCore/Goals/GoalStateMachine.cs, Source/PuddingCore/Goals/GoalVerificationContracts.cs, Source/PuddingCore/Goals/IGoalCommandService.cs, Source/PuddingCore/Goals/GoalEventTypes.cs, Source/PuddingCore/Platform/ConversationContracts.cs, Source/PuddingCore/Platform/MessageContracts.cs, Source/PuddingCore/Runtime/ITurnExecutor.cs]
+slug: features-goal持久目标自主续行与自动压缩完整设计方案
+draft: false
+---
+
 # Goal 持久目标、自主续行与自动压缩完整设计方案
 
 > **2026-09-17 历史方案提示**：当前权威为 [Goal模式简化设计](Goal目标驱动执行与分层验证闭环设计-2026-09-15.md) 与ADR-092第二版。本文保留历史背景，不再按旧步骤耦合/状态组合扩建。Agent `goal.md` 与Goal模式存储独立；本提示不是新实现已生效的声明。

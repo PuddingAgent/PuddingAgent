@@ -1,3 +1,18 @@
+---
+title: ADR-074 Goal 持久目标、自主续行与自动压缩
+author: hyfree
+date: 2026-08-22
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 将 /goal 实现为 Conversation 之上的持久 GoalRun 控制面。它以已提交的 Turn 终态事件驱动下一次 Goal Iteration，复用现有 Conversation 命令链、Agent 执行内核和上下文压缩能力，不依赖 Heartbeat。
+categories: [docs, architecture]
+tags: [持久目标自主, 续行与自动压, architecture]
+related_docs: [Docs/07_architecture/106ADR-092目标驱动执行与分层验证闭环ADR.md, Docs/12_features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md, Docs/12_features/Goal持久目标自主续行与自动压缩完整设计方案.md, Docs/12_features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md, Docs/07_architecture/43ADR-042上下文自动压缩与主动Compact命令ADR.md, Docs/07_architecture/60ADR-059Conversation执行内核与可靠命令链路ADR.md, Docs/07_architecture/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md]
+related_files: [Docs/12_features/任务调度器与Goal用户控制面设计.md]
+slug: architecture-89adr-074goal持久目标自主续行与自动压缩adr
+draft: false
+---
+
 # ADR-074 Goal 持久目标、自主续行与自动压缩
 
 > **2026-09-17 设计优先级更新**：Goal运行语义以 [ADR-092第二版](106ADR-092目标驱动执行与分层验证闭环ADR.md) 为准。本文保留历史决策；冲突的步骤耦合、状态组合和恢复口径已被修订。`goal.md`是Agent自身目标存储，Goal模式使用自己的持久数据。新设计尚未完成实施验收。

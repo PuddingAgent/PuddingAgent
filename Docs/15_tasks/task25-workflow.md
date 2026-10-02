@@ -1,3 +1,18 @@
+---
+title: task25 - Workflow / TaskMap 设计与执行
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-03-18
+categories: [docs, tasks]
+tags: [task25, workflow, tasks]
+related_docs: [Docs/07_architecture/11工作流与任务图.md, Docs/07_architecture/07协作网络与治理.md, Docs/07_architecture/03PuddingRuntime.md]
+related_files: []
+slug: tasks-task25-workflow
+draft: false
+---
+
 # task25 - Workflow / TaskMap 设计与执行
 
 最后更新：2026-03-18

@@ -1,3 +1,18 @@
+---
+title: Chat 暗色主题修复施工方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: "修复 http://localhost/admin/chat 的暗色模式失效和配色异常问题。"
+categories: [docs, features]
+tags: [暗色主题修复, 施工方案, features]
+related_docs: []
+related_files: [Source/PuddingPlatformAdmin/src/components/ThemeMode/index.tsx, Source/PuddingPlatformAdmin/src/pages/chat/styles.ts]
+slug: features-chat暗色主题修复施工方案
+draft: false
+---
+
 # Chat 暗色主题修复施工方案
 
 ## 目标

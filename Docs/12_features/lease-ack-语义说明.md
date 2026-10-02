@@ -1,3 +1,18 @@
+---
+title: 概述
+author: hyfree
+date: 2026-08-03
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Lease / Ack 投递语义说明"
+categories: [docs, features]
+tags: [lease, ack, 语义说明, features]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/MessageFabric/MessageFabricStore.cs, Source/PuddingPlatform/Services/MessageFabric/MessageSystem.cs, Source/PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs, Source/PuddingCore/Models/MessageFabricModels.cs, Source/PuddingHost/Connectors/FeishuConnector.cs]
+slug: features-lease-ack-语义说明
+draft: false
+---
+
 ﻿# Lease / Ack 投递语义说明
 
 > 基于 `MessageFabricStore` 实现，文档化 `receive_messages`→`ack` 的完整状态机与重投语义。

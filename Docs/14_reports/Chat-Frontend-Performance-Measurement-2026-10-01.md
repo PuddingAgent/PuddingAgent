@@ -1,3 +1,18 @@
+---
+title: Chat 前端性能实测报告（长消息 · 滚动 · 活动回合更新）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-10-01 范围：对 Chat 前端性能诊断报告 的源码推断做运行时实测验证。 状态：仅新增测量脚手架与本文档，未修改任何产品代码、未重启 Desktop/Core、未写入数据库、未调用 LLM。
+categories: [docs, reports]
+tags: [chat, frontend, performance, measurement, reports]
+related_docs: [Docs/14_reports/Chat-Frontend-Performance-Diagnosis-2026-10-01.md, TestScripts/perf/README.md]
+related_files: [Source/PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx]
+slug: reports-chat-frontend-performance-measurement-2026-10-01
+draft: false
+---
+
 # Chat 前端性能实测报告（长消息 · 滚动 · 活动回合更新）
 
 日期：2026-10-01

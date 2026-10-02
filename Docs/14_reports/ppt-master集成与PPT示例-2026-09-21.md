@@ -1,3 +1,18 @@
+---
+title: ppt-master 集成与 PPT 示例 — 交付记录
+author: hyfree
+date: 2026-09-21
+last_reviewed: 2026-10-02
+status: active
+description: "日期：2026-09-21 ｜ 执行：dsh(0e0) ｜ 上游：https://github.com/hugohe3/ppt-master （MIT，SKILL 版本 6.6.0）"
+categories: [docs, reports]
+tags: [ppt, 集成与, 示例, reports]
+related_docs: []
+related_files: []
+slug: reports-ppt-master集成与ppt示例-2026-09-21
+draft: false
+---
+
 # ppt-master 集成与 PPT 示例 — 交付记录
 
 日期：2026-09-21 ｜ 执行：dsh(0e0) ｜ 上游：https://github.com/hugohe3/ppt-master （MIT，SKILL 版本 6.6.0）

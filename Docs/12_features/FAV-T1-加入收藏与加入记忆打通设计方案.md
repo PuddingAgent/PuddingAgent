@@ -1,3 +1,18 @@
+---
+title: FAV-T1「加入收藏」与「加入记忆」打通设计方案
+author: hyfree
+date: 2026-09-13
+last_reviewed: 2026-10-02
+status: active
+description: 任务看板卡：FAV-T1（70700a1fc70f4787ac430232e9ceaafc，p1） 状态：设计定稿（待评审）｜ 日期：2026-09-12 范围：纯设计文档，零源码改动。实施拆分见 §9。 事实基线：temp/recon-favorite-memory-menu.md（父级右键菜单全链路测绘，2026-09-12；本文件关键行号已对当前磁盘复核）
+categories: [docs, features]
+tags: [fav, t1, 加入收藏与加, 入记忆打通设, 计方案, features]
+related_docs: []
+related_files: [Docs/12_features/AdminChatComposer浮层重设计方案.md, Docs/12_features/Chat图片消息回放与前端旧Bundle缓存修复方案.md, Source/PuddingPlatformAdmin/src/pages/chat/components/ContextMenu.tsx, Source/PuddingPlatform/Controllers/Api/MemoryLibraryAdminController.cs, Source/PuddingPlatform/Services/MemoryLibraryAdminService.cs, Source/PuddingRuntime/Tools/BuiltIns/Memory/SaveMemoryTool.cs, Source/PuddingPlatform/Services/ImportantMemoryService.cs, Source/PuddingRuntime/Tools/BuiltIns/Memory/MemoryLibraryTool.cs, Source/PuddingPlatform/Services/ConversationProjector.cs, Source/PuddingPlatform/Data/Entities/ChatMessageEntity.cs, Source/PuddingPlatform/Controllers/Api/MessageApiController.cs, Source/PuddingPlatform/Services/ChatMessageSchemaBootstrapper.cs, Source/PuddingPlatform/Data/PlatformDbContext.cs, code_map.md]
+slug: features-fav-t1-加入收藏与加入记忆打通设计方案
+draft: false
+---
+
 # FAV-T1「加入收藏」与「加入记忆」打通设计方案
 
 - 任务看板卡：`FAV-T1`（`70700a1fc70f4787ac430232e9ceaafc`，p1）

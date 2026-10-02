@@ -1,3 +1,18 @@
+---
+title: 通用 Agent 编排蓝图编辑器与组件系统施工图
+author: hyfree
+date: 2026-08-11
+last_reviewed: 2026-10-02
+status: active
+description: 需要。理由不是“低代码看起来直观”，而是编排图存在普通表单难以可靠表达的关系：
+categories: [docs, architecture]
+tags: [通用, 编排蓝图编辑, 器与组件系统, 施工图, architecture]
+related_docs: [Docs/07_architecture/82ADR-071通用Agent编排平台完整设计方案ADR.md, Docs/07_architecture/83通用Agent编排后端执行内核与ControlPlane施工图.md, Docs/07_architecture/85通用Agent编排交付测试与运维验收图册.md]
+related_files: []
+slug: architecture-84通用agent编排蓝图编辑器与组件系统施工图
+draft: false
+---
+
 # 通用 Agent 编排蓝图编辑器与组件系统施工图
 
 > 状态：**construction-blueprint；尚未全部实现**  

@@ -1,3 +1,18 @@
+---
+title: 工作区 TODO 与峰谷节能任务编排设计方案
+author: hyfree
+date: 2026-08-17
+last_reviewed: 2026-10-02
+status: active
+description: 本需求不应实现成“给 Agent 一段提示词，让 Agent 自觉等到非高峰期”，也不应继续扩展当前进程内 CronSchedulerService 形成第二套调度中心。推荐增加一个工作区级 Workspace Task Control Plane，并复用现有 Message Fabric、Agent 执行单写者、通用编排的 claim/lease/fencing token 和事件投影能力。
+categories: [docs, features]
+tags: [工作区, 与峰谷节能任, 务编排设计方, features]
+related_docs: []
+related_files: [Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md, Docs/18_superpowers/specs/2026-06-08-task-dynamic-planning-design.md, Docs/18_superpowers/specs/2026-06-07-agent-to-agent-message-fabric-design.md, Docs/07_architecture/82ADR-071通用Agent编排平台完整设计方案ADR.md, Docs/07_architecture/83通用Agent编排后端执行内核与ControlPlane施工图.md, Docs/07_architecture/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md]
+slug: features-工作区todo与峰谷节能任务编排设计方案
+draft: false
+---
+
 # 工作区 TODO 与峰谷节能任务编排设计方案
 
 > 日期：2026-08-15

@@ -1,3 +1,18 @@
+---
+title: 1. 问题定义
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 滑动窗口熔断机制 — 详细设计 V1"
+categories: [docs, architecture]
+tags: [sliding, window, fuse, v1, design]
+related_docs: []
+related_files: []
+slug: architecture-sliding-window-fuse-v1
+draft: false
+---
+
 ﻿# 滑动窗口熔断机制 — 详细设计 V1
 
 > 状态: draft

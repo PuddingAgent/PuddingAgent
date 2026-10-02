@@ -1,3 +1,18 @@
+---
+title: Admin Chat 页面 UI 重设计方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "布局： ┌──────────┬──────────────────────────────────────┐ │ 左侧栏 │ 聊天区 │ │ │ │ │ Session │ ┌─ 头像 用户名 时间 ──────────────┐ │ │ 列表 │ │ 消息内容（紧凑） │ │ │ (200px) │ └────────────────────────────────┘ │ │ │ ┌─ 头像 "
+categories: [docs, features]
+tags: [chatuiredesign, features]
+related_docs: []
+related_files: []
+slug: features-chatuiredesign
+draft: false
+---
+
 # Admin Chat 页面 UI 重设计方案
 
 > **日期**: 2026-05-05

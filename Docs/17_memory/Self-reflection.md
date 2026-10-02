@@ -1,3 +1,18 @@
+---
+title: 前端功能移除：全面检查引用链
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 经验沉淀"
+categories: [docs, memory]
+tags: [self, reflection, memory]
+related_docs: []
+related_files: [Docs/07_architecture/架构.md, Docs/07_architecture/README.md]
+slug: memory-self-reflection
+draft: false
+---
+
 ﻿# 经验沉淀
 
 ## 前端功能移除：全面检查引用链

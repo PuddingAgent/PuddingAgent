@@ -1,3 +1,18 @@
+---
+title: "ADR-064: 自进化 PuddingAgent vs Hermes Agent 对比与落地"
+author: hyfree
+date: 2026-07-30
+last_reviewed: 2026-10-02
+status: active
+description: PuddingAgent 的“仅 Skill”自进化采用以下闭环：
+categories: [docs, architecture]
+tags: [vs, hermes, 自进化, 对比分析, architecture]
+related_docs: []
+related_files: []
+slug: architecture-65adr-064自进化puddingagent-vs-hermes-agent对比分析adr
+draft: false
+---
+
 # ADR-064: 自进化 PuddingAgent vs Hermes Agent 对比与落地
 
 | 属性 | 值 |

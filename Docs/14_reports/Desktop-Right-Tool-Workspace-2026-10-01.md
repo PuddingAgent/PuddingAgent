@@ -1,3 +1,18 @@
+---
+title: 右侧多 Tab 工具工作区 · 第一阶段实现记录
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-10-01。关联设计：右侧多 Tab 工具工作区设计（6a6dab8 仅设计，本次为代码实现）。
+categories: [docs, reports]
+tags: [desktop, right, tool, workspace, reports]
+related_docs: [Docs/12_features/Agent-Browser-Right-Panel-Design-2026-10-01.md]
+related_files: [Source/PuddingDesktop/MainWindow.xaml, Source/PuddingDesktop.Foundation/ToolWorkspaceLayout.cs, Source/PuddingDesktop.Foundation/ToolWorkspaceTabs.cs, Source/PuddingDesktop/ToolTabItem.cs, Source/PuddingDesktop/SplitterHandle.cs, Source/PuddingDesktop/MainWindow.xaml.cs, TestScripts/test-pudding-desktop-launcher.ps1]
+slug: reports-desktop-right-tool-workspace-2026-10-01
+draft: false
+---
+
 # 右侧多 Tab 工具工作区 · 第一阶段实现记录
 
 日期：2026-10-01。关联设计：[右侧多 Tab 工具工作区设计](../12_features/Agent-Browser-Right-Panel-Design-2026-10-01.md)（`6a6dab8` 仅设计，本次为代码实现）。

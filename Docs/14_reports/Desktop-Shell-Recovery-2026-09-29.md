@@ -1,3 +1,18 @@
+---
+title: Desktop 恢复主线：执行与验证记录
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 用户授权：完整保存当前成果到 B，从 765b964f5aedf621fe9d9ffd04b5a4a9bf64924e 重建 master，仅迁入 WinUI Shell UI，保留独立 Core 和 Web，筛选必要修复并验证。 B（分支说明“桌面开发”）指向 a23ebf3e8ec90c65d37b8a9fbd46ceb139445220。父提交为原 master 7132536；原有提交历史
+categories: [docs, reports]
+tags: [desktop, shell, recovery, reports]
+related_docs: []
+related_files: [TestScripts/test-pudding-desktop-launcher.ps1]
+slug: reports-desktop-shell-recovery-2026-09-29
+draft: false
+---
+
 # Desktop 恢复主线：执行与验证记录
 
 ## 分支与保存

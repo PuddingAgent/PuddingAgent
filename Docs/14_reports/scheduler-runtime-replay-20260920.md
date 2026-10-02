@@ -1,3 +1,18 @@
+---
+title: Scheduler 运行时回放（2026-09-20）—— 待决项 (3) 收口 + Plan 前置结论
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "关联：GoalRun tg-2efcdf7d329d8387632a67bcbfbdbe2b｜task 3bd2a4b0ef5f4bff8f175fb7655927ad 数据源：D:\\data\\databases\\pudding_platform.db（只读 mode=ro）；探针 temp/db-probe-sched-attrib.py、temp/db-probe-sched-attrib2."
+categories: [docs, reports]
+tags: [scheduler, runtime, replay, reports]
+related_docs: []
+related_files: []
+slug: reports-scheduler-runtime-replay-20260920
+draft: false
+---
+
 # Scheduler 运行时回放（2026-09-20）—— 待决项 (3) 收口 + Plan 前置结论
 
 - 关联：GoalRun `tg-2efcdf7d329d8387632a67bcbfbdbe2b`｜task `3bd2a4b0ef5f4bff8f175fb7655927ad`

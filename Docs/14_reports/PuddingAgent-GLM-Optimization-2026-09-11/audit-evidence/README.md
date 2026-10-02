@@ -1,3 +1,18 @@
+---
+title: 独立审计证据与复跑
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 对应 2026-09-11 04-批次1独立审计与下一步.md。这不是修复补丁；探针按应满足的合同断言，当前源码结果为 10 失败，原相关测试为 91 通过。测试源码均置于临时目录，未修改 Source/Tests 项目文件。
+categories: [docs, reports]
+tags: [readme, audit-evidence]
+related_docs: []
+related_files: []
+slug: reports-readme
+draft: false
+---
+
 # 独立审计证据与复跑
 
 对应 2026-09-11 `04-批次1独立审计与下一步.md`。这不是修复补丁；探针按应满足的合同断言，当前源码结果为 **10 失败**，原相关测试为 **91 通过**。测试源码均置于临时目录，未修改 Source/Tests 项目文件。

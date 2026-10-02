@@ -1,3 +1,18 @@
+---
+title: Memory System v2 F5 Write Coordinator Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: F5 的长期目标是建立唯一的记忆写入协调层。所有来自显意识工具、潜意识计划、Admin/API 的写入、取代、合并、归档、删除请求，最终都必须进入同一套规则。
+categories: [docs, superpowers]
+tags: [memory, v2, f5, write, coordinator, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-07-01-memory-v2-f5-write-coordinator-design
+draft: false
+---
+
 # Memory System v2 F5 Write Coordinator Design
 
 > Date: 2026-07-01

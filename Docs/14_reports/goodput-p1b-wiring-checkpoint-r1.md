@@ -1,3 +1,18 @@
+---
+title: Goodput SLO — P1b 接线 checkpoint（源码交付）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: goalRunId tg-9ec9d27543747ec6849a52aae10d9f31｜task 0b16740022f84b58a9532a87f1bc5509 目的：消除 step3 checkpoint §7 自述的「尚未接线」风险（我在路由卡 Review 中把「新增件是死代码」列为缺陷，必须对自己适用同一标准）。
+categories: [docs, reports]
+tags: [goodput, p1b, wiring, checkpoint, r1, reports]
+related_docs: []
+related_files: [Source/PuddingCore/Abstractions/IGoodputAttributionService.cs, Source/PuddingPlatform/Services/GoodputAttributionService.cs, Source/PuddingRuntime/Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs, Source/PuddingHost/Extensions/PuddingServiceCollectionExtensions.Platform.cs, Source/PuddingPlatformTests/Services/GoodputAttributionServiceTests.cs]
+slug: reports-goodput-p1b-wiring-checkpoint-r1
+draft: false
+---
+
 # Goodput SLO — P1b 接线 checkpoint（源码交付）
 
 - goalRunId `tg-9ec9d27543747ec6849a52aae10d9f31`｜task `0b16740022f84b58a9532a87f1bc5509`

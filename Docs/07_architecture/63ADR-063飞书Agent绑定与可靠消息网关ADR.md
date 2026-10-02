@@ -1,3 +1,18 @@
+---
+title: ADR-063：飞书 Agent 绑定与可靠消息网关
+author: hyfree
+date: 2026-07-26
+last_reviewed: 2026-10-02
+status: active
+description: V1 将飞书作为 Pudding 的主要且唯一第三方聊天渠道。当前约束是：
+categories: [docs, architecture]
+tags: [飞书, 绑定与可靠消, 息网关, architecture]
+related_docs: [Docs/07_architecture/46ADR-045双向消息系统与聊天室客户端ADR.md, Docs/07_architecture/58ADR-057前后端可靠SSE与Conversation事件流架构ADR.md, Docs/07_architecture/60ADR-059Conversation执行内核与可靠命令链路ADR.md]
+related_files: []
+slug: architecture-63adr-063飞书agent绑定与可靠消息网关adr
+draft: false
+---
+
 # ADR-063：飞书 Agent 绑定与可靠消息网关
 
 > 状态：**Accepted（入站 `post` 富文本 Markdown 已实现）**

@@ -1,3 +1,18 @@
+---
+title: File Search Provider Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 为 file_search 增加“文件搜索服务商”概念，让 agent 仍然只调用一个工具，但可以显式选择底层检索实现。
+categories: [docs, superpowers]
+tags: [file, search, provider, design, specs]
+related_docs: [Docs/07_architecture/tool-infrastructure-layering.md]
+related_files: [Source/PuddingRuntimeTests/Tools/PuddingToolInfrastructureTests.cs]
+slug: superpowers-2026-06-03-file-search-provider-design
+draft: false
+---
+
 # File Search Provider Design
 
 > 日期：2026-06-03

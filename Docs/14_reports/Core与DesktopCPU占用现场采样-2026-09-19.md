@@ -1,3 +1,18 @@
+---
+title: Core 与 Desktop CPU 占用现场采样（2026-09-19）
+author: hyfree
+date: 2026-09-19
+last_reviewed: 2026-10-02
+status: active
+description: "截图显示 PuddingAgent 15.4%、PuddingDesktop 14.9%。现场随后采样未复现这两个峰值：Core 已回落，Desktop 本进程仍有约 2%–3% 的稳定消耗，热点线程属于 WPF 图形模块。不能把随后低占用样本用来否定截图，也不能把单次截图解释为全天持续高占用。"
+categories: [docs, reports]
+tags: [占用现场采样, reports]
+related_docs: []
+related_files: []
+slug: reports-core与desktopcpu占用现场采样-2026-09-19
+draft: false
+---
+
 # Core 与 Desktop CPU 占用现场采样（2026-09-19）
 
 ## 结论

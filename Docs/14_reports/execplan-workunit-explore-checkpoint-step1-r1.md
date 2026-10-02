@@ -1,3 +1,18 @@
+---
+title: ExecutionPlan/WorkUnit Explore — Step 1 Checkpoint (checkpoint-v1)
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId: tg-dab61d6e65ba7c0b5d3b355077b7c5e5｜objectiveVersion: 1｜iteration: 2 taskId: 8df6a4d6d66d4c0cb6b02e838ea2e6c3｜assignmentId: c0c832fbf3b9448db93dc487bc8d75f0｜task expectedVersion: 19（InProgr"
+categories: [docs, reports]
+tags: [execplan, workunit, explore, checkpoint, step1, r1, reports]
+related_docs: []
+related_files: [Source/PuddingCore/Scheduling/TaskExecutionPlanContracts.cs, Source/PuddingRuntime/Services/LlmRequestBudgetGuard.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionLlmInvoker.cs, Source/PuddingCore/Runtime/SubAgentInvocationContracts.cs, Source/PuddingCore/Platform/IExecutionCommandReader.cs, Source/PuddingCore/Runtime/ITurnExecutor.cs, Docs/14_reports/默认助手停滞修复与预算接管-2026-09-14.md]
+slug: reports-execplan-workunit-explore-checkpoint-step1-r1
+draft: false
+---
+
 # ExecutionPlan/WorkUnit Explore — Step 1 Checkpoint (checkpoint-v1)
 
 - goalRunId: `tg-dab61d6e65ba7c0b5d3b355077b7c5e5`｜objectiveVersion: 1｜iteration: 2

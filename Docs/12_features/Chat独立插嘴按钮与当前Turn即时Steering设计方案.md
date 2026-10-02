@@ -1,3 +1,18 @@
+---
+title: Chat 独立“⚡ 插嘴”按钮与当前 Turn 即时 Steering 设计方案
+author: hyfree
+date: 2026-08-27
+last_reviewed: 2026-10-02
+status: active
+description: 2026-09-11 审计增量见GLM 前端首批交互审计与下一步。下文“当前事实”表保留原设计时点的基线，后续施工以本设计合同与本轮审计缺口共同验收，不以按钮已出现作为完成证据。
+categories: [docs, features]
+tags: [独立插嘴按钮, 与当前, 即时, 设计方案, features]
+related_docs: [Docs/14_reports/GLM前端首批交互审计与下一步-2026-09-11.md]
+related_files: [Docs/18_superpowers/specs/2026-06-06-runtime-steering-queue-design.md, Docs/07_architecture/60ADR-059Conversation执行内核与可靠命令链路ADR.md, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useMessageInteractionQueue.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts, Source/PuddingPlatformAdmin/src/pages/chat/index.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatLayout.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.tsx, Source/PuddingPlatformAdmin/src/pages/chat/styles/composer.styles.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageQueueDropdown.tsx]
+slug: features-chat独立插嘴按钮与当前turn即时steering设计方案
+draft: false
+---
+
 # Chat 独立“⚡ 插嘴”按钮与当前 Turn 即时 Steering 设计方案
 
 > 日期：2026-08-26

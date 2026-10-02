@@ -1,3 +1,18 @@
+---
+title: Agent 头像服务端管理设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 本方案用于指导 Dev 将 Agent 头像从前端静态资源改为服务端管理，并打通模板配置到聊天界面的头像展示链路。
+categories: [docs, features]
+tags: [头像服务端管, 理设计方案, features]
+related_docs: [Docs/07_architecture/35ADR-034Agent头像服务端管理与模板绑定ADR.md]
+related_files: []
+slug: features-agent头像服务端管理设计方案
+draft: false
+---
+
 # Agent 头像服务端管理设计方案
 
 > 日期：2026-05-23  

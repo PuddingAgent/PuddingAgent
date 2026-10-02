@@ -1,3 +1,18 @@
+---
+title: Pudding 工具系统增强代码级设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: "日期: 2026-06-24"
+categories: [docs, tools-and-skills]
+tags: [工具系统增强, 参考设计, tools_and_skills]
+related_docs: []
+related_files: [Source/PuddingCore/Tools/PuddingToolContracts.cs, Source/PuddingRuntime/Tools/Platform/PuddingToolRegistry.cs]
+slug: tools-and-skills-pudding工具系统增强-codewhale参考设计
+draft: false
+---
+
 # Pudding 工具系统增强代码级设计方案
 
 日期: 2026-06-24

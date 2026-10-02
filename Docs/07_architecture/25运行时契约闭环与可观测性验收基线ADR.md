@@ -1,3 +1,18 @@
+---
+title: 25 运行时契约闭环与可观测性验收基线 ADR
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: ADR-024 创建了 6 个 Core 契约和 4 个 facade 实现，但存在以下未闭合问题：
+categories: [docs, architecture]
+tags: [运行时契约闭, 环与可观测性, 验收基线, architecture]
+related_docs: [Docs/07_architecture/24核心架构组件边界与执行引擎拆分ADR.md, Docs/07_architecture/23运行时可观测性闭环与E2E验证基线ADR.md]
+related_files: []
+slug: architecture-25运行时契约闭环与可观测性验收基线adr
+draft: false
+---
+
 # 25 运行时契约闭环与可观测性验收基线 ADR
 
 > 状态：**proposed**

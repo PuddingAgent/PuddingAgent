@@ -1,3 +1,18 @@
+---
+title: "Agent 自主进入 Goal 模式：`task_goal_start` 工具设计"
+author: hyfree
+date: 2026-09-16
+last_reviewed: 2026-10-02
+status: active
+description: "日期：2026-09-16 状态：设计定稿（待实现） 触发者需求（原话）：「你可以升级一个工具，让你自己可以自主的进入 Goal 模式。而不是绕过 admin 的 API 的授权机制。」 前置事实：本文所有 file:line 均来自本轮只读侦察（temp 外的原文证据见 .pudding/context-tool-results/.../smart_explore.txt，侦察结论已逐条复核）"
+categories: [docs, features]
+tags: [自主进入, 模式工具设计, features]
+related_docs: [Docs/12_features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md]
+related_files: [Source/PuddingCore/Tasks/TaskGoalLaunchContracts.cs, Source/PuddingPlatform/Services/Goals/TaskGoalLaunchService.cs, Source/PuddingRuntime/Services/TaskTools/TaskGoalStartTool.cs, Source/PuddingCore/Tasks/ActiveTaskRuntimeContext.cs]
+slug: features-agent自主进入goal模式工具设计-2026-09-16
+draft: false
+---
+
 # Agent 自主进入 Goal 模式：`task_goal_start` 工具设计
 
 > **2026-09-17 上位设计更新**：受授权Task启动入口保留，启动后的Goal生命周期、合同和Task适配以 [Goal模式简化设计](Goal目标驱动执行与分层验证闭环设计-2026-09-15.md) 为准。不得为本工具另建续行循环或绕过任务权限；本文历史代码位置与实现状态需按当前源码复核。

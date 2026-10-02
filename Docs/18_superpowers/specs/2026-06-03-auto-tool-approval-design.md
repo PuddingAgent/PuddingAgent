@@ -1,3 +1,18 @@
+---
+title: 自动权限审查与危险操作防火墙统一设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 本版本按用户 2026-08-20 设计方向，否决原「工单制 + reviewer 审批」架构核心，改写为「系统侧自动审查 + 无感放行/质询」架构。关键变化：
+categories: [docs, superpowers]
+tags: [auto, tool, approval, design, specs]
+related_docs: [Docs/07_architecture/105ADR-091自动审计与执行准入闭环ADR.md, Docs/12_features/自动审计与执行准入闭环设计-2026-09-15.md]
+related_files: [Source/PuddingRuntime/Services/AgentFirewall.cs, Source/PuddingRuntime/Tools/Platform/ToolInvocationService.cs, Source/PuddingCore/Tools/PuddingToolContracts.cs, Source/PuddingRuntime/Tools/Approval/InMemoryToolAuthorizationService.cs, Source/PuddingCore/Runtime/RuntimeControlService.cs, Source/PuddingCore/Tools/ToolApproval.cs, Source/PuddingRuntime/Tools/Approval/RequestToolApprovalTool.cs, Source/PuddingRuntime/Tools/Approval/WorkspaceAuditAgentProvider.cs, Source/PuddingRuntime/Tools/Approval/ToolApprovalCommandFirewall.cs, Source/PuddingRuntime/Tools/BuiltIns/Memory/SaveMemoryTool.cs]
+slug: superpowers-2026-06-03-auto-tool-approval-design
+draft: false
+---
+
 # 自动权限审查与危险操作防火墙统一设计
 
 > **2026-09-15 后续设计优先**：[ADR-091](../../07_architecture/105ADR-091自动审计与执行准入闭环ADR.md) 与[代码级方案](../../12_features/自动审计与执行准入闭环设计-2026-09-15.md) 在冲突处取代下文。保留静态规则→系统事实→单次隔离模型原则；取消整体 rebase e716829、空 Evidence、默认工单/审计 Agent 实例依赖及新旧执行链回退。新增执行许可原子消费、依赖等待、事件驱动行为审计和独立验收的自修复闭环。下文状态和提交信息为历史记录，不作为当前已实现能力；总任务仍为 e187a8bbd2d640bb87b96fd3cf548966。

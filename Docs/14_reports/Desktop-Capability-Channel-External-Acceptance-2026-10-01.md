@@ -1,3 +1,18 @@
+---
+title: 桌面能力通道：交付交接与外部验收单（ready-for-external-deploy）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 能力通道（Desktop 主动 gRPC 双向流 + Core 下发能力命令）的全部组件、协议、双侧配置、 集中不变量、可执行验收手段已完成并验证；唯一剩余动作是组合根装配 + 重启验收， 它必须由外部控制器在重启窗口内执行。
+categories: [docs, reports]
+tags: [desktop, capability, channel, external, acceptance, reports]
+related_docs: [Docs/12_features/Desktop-Capability-Channel-Wiring-Runbook-2026-10-01.md]
+related_files: [Docs/12_features/Index-Retrieval-Known-Defects-2026-10-01.md]
+slug: reports-desktop-capability-channel-external-acceptance-2026-10-01
+draft: false
+---
+
 # 桌面能力通道：交付交接与外部验收单（ready-for-external-deploy）
 
 > 状态：**`ready-for-external-deploy`**（2026-10-01，第 49 轮）

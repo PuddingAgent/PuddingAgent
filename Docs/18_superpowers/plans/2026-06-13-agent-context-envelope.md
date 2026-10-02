@@ -1,3 +1,18 @@
+---
+title: Agent Context Envelope Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Protocolize async sub-agent completion notifications with a unified agent-readable context envelope."
+categories: [docs, superpowers]
+tags: [agent, context, envelope, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Models/AgentContextEnvelope.cs, Source/PuddingCore/Services/AgentContextEnvelopeRenderer.cs, Source/PuddingCoreTests/Services/AgentContextEnvelopeRendererTests.cs, Source/PuddingPlatform/Services/SubAgentManager.cs, Source/PuddingPlatformTests/Services/SubAgentManagerMessageTests.cs, Source/PuddingRuntimeTests/Services/MessageDeliveryDispatcherTests.cs, TestScripts/diagnose_session_logs.py, TestScripts/diagnose_session_logs_tests.py, Source/PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs]
+slug: superpowers-2026-06-13-agent-context-envelope
+draft: false
+---
+
 # Agent Context Envelope Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

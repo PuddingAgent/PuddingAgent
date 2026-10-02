@@ -1,3 +1,18 @@
+---
+title: File Search Provider Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Extend file_search with explicit file search providers, including BuiltInRecursiveFileSearch and an Everything SDK provider."
+categories: [docs, superpowers]
+tags: [file, search, provider, plans]
+related_docs: []
+related_files: [Source/PuddingRuntime/PuddingRuntime.csproj, Source/PuddingRuntime/runtimes/win-x64/native/Everything64.dll, Source/PuddingRuntimeTests/Tools/PuddingToolInfrastructureTests.cs, Docs/07_architecture/tool-infrastructure-layering.md, Docs/18_superpowers/specs/2026-06-03-file-search-provider-design.md]
+slug: superpowers-2026-06-03-file-search-provider
+draft: false
+---
+
 # File Search Provider Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

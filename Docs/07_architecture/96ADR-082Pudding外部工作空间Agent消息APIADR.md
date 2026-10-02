@@ -1,3 +1,18 @@
+---
+title: ADR-082：Pudding 外部工作空间、Agent 与消息 API
+author: hyfree
+date: 2026-09-02
+last_reviewed: 2026-10-02
+status: active
+description: ADR-075 已建立 opaque Access Token、独立认证 scheme、scope/workspace 双重授权、HTTPS 门禁和 /api/external/v1 版本边界，但资源范围只覆盖 Task。集成系统仍无法发现已授权工作空间与 Agent，也无法把消息 送入 Pudding 的 canonical Agent 执行链。
+categories: [docs, architecture]
+tags: [外部工作空间, 消息, architecture]
+related_docs: [Docs/07_architecture/90ADR-075第三方任务看板AccessToken与外部APIADR.md, Docs/12_features/Pudding外部工作空间Agent消息API设计与使用说明.md]
+related_files: []
+slug: architecture-96adr-082pudding外部工作空间agent消息apiadr
+draft: false
+---
+
 # ADR-082：Pudding 外部工作空间、Agent 与消息 API
 
 > 状态：Accepted（源码实现与 Desktop Loopback 真实模型 smoke 已通过；远程部署门禁待验收）  

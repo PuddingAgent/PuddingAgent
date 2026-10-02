@@ -1,3 +1,18 @@
+---
+title: ADR-073 任务看板优先的 Agent 工作台、完整轨迹与实时指标施工方案
+author: hyfree
+date: 2026-08-17
+last_reviewed: 2026-10-02
+status: active
+description: 任务看板是后续工程推进的基础控制面，采用一个“先纵向闭环、后扩展自动化”的交付顺序：
+categories: [docs, architecture]
+tags: [任务看板优先, 工作台轨迹与, 实时指标施工, architecture]
+related_docs: [Docs/07_architecture/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md, Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md, Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md]
+related_files: []
+slug: architecture-87adr-073任务看板优先的agent工作台轨迹与实时指标施工adr
+draft: false
+---
+
 # ADR-073 任务看板优先的 Agent 工作台、完整轨迹与实时指标施工方案
 
 > 状态：Proposed；施工排序与跨文档冲突裁决基线，不表示已经实现

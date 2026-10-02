@@ -1,3 +1,18 @@
+---
+title: Memory System v2 F5 Write Coordinator Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build the first F5 Write Coordinator layer so all memory write intents can be validated, dry-run, audited, and later routed to a single execution path."
+categories: [docs, superpowers]
+tags: [memory, v2, f5, write, coordinator, plan, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Models/MemoryWriteCommandModels.cs, Source/PuddingCore/PuddingCore.csproj, Source/PuddingCoreTests/Memory/MemoryWriteCommandValidatorTests.cs, Source/PuddingRuntime/Services/MemoryWriteCoordinator.cs, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingRuntimeTests/Services/MemoryWriteCoordinatorTests.cs, Source/PuddingRuntime/Services/MemoryMaintenancePlanWriteCommandMapper.cs, Source/PuddingRuntimeTests/Services/MemoryMaintenancePlanWriteCommandMapperTests.cs, Docs/18_superpowers/specs/2026-07-01-memory-v2-f5-write-coordinator-design.md, Docs/18_superpowers/specs/2026-07-01-memory-v2-foundation-prerequisites.md, Source/PuddingRuntime/Services/SubconsciousPlanGenerationService.cs, Source/PuddingRuntimeTests/Services/SubconsciousPlanGenerationServiceTests.cs]
+slug: superpowers-2026-07-01-memory-v2-f5-write-coordinator-plan
+draft: false
+---
+
 # Memory System v2 F5 Write Coordinator Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

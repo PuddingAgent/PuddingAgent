@@ -1,3 +1,18 @@
+---
+title: 一、现有基础设施总览（复用清单）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 实施规约：Auto-Dream（定期记忆整理）"
+categories: [docs, features]
+tags: [impl, auto, dream, memory-design]
+related_docs: []
+related_files: []
+slug: features-impl-auto-dream
+draft: false
+---
+
 ﻿# 实施规约：Auto-Dream（定期记忆整理）
 
 > 版本：v1.0 | 日期：2026-07-11

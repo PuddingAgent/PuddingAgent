@@ -1,3 +1,18 @@
+---
+title: Runtime State Observability Foundation Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build the first-stage runtime state and observability foundation for session events, agent execution, internal events, and sub-agent lifecycle."
+categories: [docs, superpowers]
+tags: [runtime, state, observability, foundation, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Observability/RuntimeTraceContext.cs, Source/PuddingCore/Observability/RuntimeActivity.cs, Source/PuddingRuntime/Services/Observability/AmbientRuntimeTraceAccessor.cs, Source/PuddingPlatform/Data/Entities/RuntimeActivityEntity.cs, Source/PuddingPlatform/Services/RuntimeActivitySink.cs, Source/PuddingPlatform/Controllers/Api/RuntimeDiagnosticsController.cs, Source/PuddingPlatform/Data/PlatformDbContext.cs, Source/PuddingPlatform/Services/SessionStateManager.cs, Source/PuddingRuntime/Services/Events/InternalEventBus.cs, Source/PuddingRuntime/Services/Events/EventDispatcher.cs, Source/PuddingPlatform/Services/SubAgentManager.cs, Source/PuddingAgent/Program.cs, Source/PuddingCoreTests/Observability/RuntimeTraceContextTests.cs, Source/PuddingCoreTests/Observability/StartupSchemaSafetyTests.cs, Source/PuddingCore/Abstractions/ISessionStateManager.cs, Source/PuddingCore/Models/InternalEvent.cs]
+slug: superpowers-2026-05-18-runtime-state-observability-foundation
+draft: false
+---
+
 # Runtime State Observability Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

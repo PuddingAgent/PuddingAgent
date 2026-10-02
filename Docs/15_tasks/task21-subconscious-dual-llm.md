@@ -1,3 +1,18 @@
+---
+title: Task 21 - 潜意识/显意识双模型设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 状态：partial（v1 minimum implemented） 优先级：P0 最后更新：2026-02-20
+categories: [docs, tasks]
+tags: [task21, subconscious, dual, llm, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task21-subconscious-dual-llm
+draft: false
+---
+
 # Task 21 - 潜意识/显意识双模型设计
 
 状态：`partial`（v1 minimum implemented）  

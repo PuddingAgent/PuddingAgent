@@ -1,3 +1,18 @@
+---
+title: WinUI 3 骨架实施记录（2026-09-27）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 原地重建 Source/PuddingDesktop，产品名仍为 PuddingDesktop.exe；原 WPF 移入 WpfArchive，仅保留迁移与回归基线。Foundation 先独立测试后登记解决方案。
+categories: [docs, reports]
+tags: [desktop, winui3, skeleton, reports]
+related_docs: [Docs/14_reports/Desktop-Shell-Recovery-2026-09-29.md]
+related_files: []
+slug: reports-desktop-winui3-skeleton-2026-09-27
+draft: false
+---
+
 # WinUI 3 骨架实施记录（2026-09-27）
 
 > 历史记录：下列原生演示、脚本与进程内 Core 接入方向已被 2026-09-29 恢复裁定取代。原成果保存在 B；当前 master 的实现及验证见[恢复报告](Desktop-Shell-Recovery-2026-09-29.md)。

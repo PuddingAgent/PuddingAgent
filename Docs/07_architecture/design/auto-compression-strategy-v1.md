@@ -1,3 +1,18 @@
+---
+title: 1. 问题定义
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 自动压缩优化策略 — 详细设计 V1"
+categories: [docs, architecture]
+tags: [auto, compression, strategy, v1, design]
+related_docs: []
+related_files: []
+slug: architecture-auto-compression-strategy-v1
+draft: false
+---
+
 ﻿# 自动压缩优化策略 — 详细设计 V1
 
 > 状态: draft

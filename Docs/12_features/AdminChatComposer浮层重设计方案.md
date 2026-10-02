@@ -1,3 +1,18 @@
+---
+title: Admin Chat Composer 浮层重设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 本方案用于指导 Dev 重做截图中被选中的 Composer 浮层。
+categories: [docs, features]
+tags: [浮层重设计方, features]
+related_docs: [Docs/07_architecture/34ADR-033AdminChatComposer浮层重设计ADR.md]
+related_files: []
+slug: features-adminchatcomposer浮层重设计方案
+draft: false
+---
+
 # Admin Chat Composer 浮层重设计方案
 
 > 日期：2026-05-23  

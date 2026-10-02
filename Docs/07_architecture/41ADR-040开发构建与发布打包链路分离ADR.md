@@ -1,3 +1,18 @@
+---
+title: ADR-040：开发构建与发布打包链路分离
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前开发和打包主要通过仓库根目录的 build-and-up.ps1 完成。该脚本在非 -Restart 模式下始终执行：
+categories: [docs, architecture]
+tags: [开发构建与发, 布打包链路分, architecture]
+related_docs: [Docs/07_architecture/38ADR-037AdminSPA静态产物装配归一化ADR.md, Docs/07_architecture/33ADR-032构建门禁与运行态漂移修复方案.md]
+related_files: [Source/PuddingPlatformAdmin/config/proxy.ts, Source/PuddingAgent/PuddingAgent.csproj, README.md, README_zh-CN.md]
+slug: architecture-41adr-040开发构建与发布打包链路分离adr
+draft: false
+---
+
 # ADR-040：开发构建与发布打包链路分离
 
 > 状态：**Superseded（Docker 部分）** —— 2026-10-02 用户裁定：Docker 部署链路已废弃并移除（`build-and-up.ps1`、两个 `Dockerfile`、`.dockerignore`、`run-docker-smoke.ps1` 已删除）；本 ADR 中关于宿主机 `dev-up` 开发链路的结论仍然有效。  

@@ -1,3 +1,18 @@
+---
+title: ADR-079：Agent 消息交错内容流与最新行为组披露
+author: hyfree
+date: 2026-08-25
+last_reviewed: 2026-10-02
+status: active
+description: 当前 Chat 曾先后出现以下失败形态：
+categories: [docs, architecture]
+tags: [消息交错内容, 流与最新行为, 组披露, architecture]
+related_docs: [Docs/12_features/Agent消息交错内容流与最新行为组披露完整实施方案.md]
+related_files: [Docs/11_design/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md]
+slug: architecture-93adr-079agent消息交错内容流与最新行为组披露adr
+draft: false
+---
+
 # ADR-079：Agent 消息交错内容流与最新行为组披露
 
 > 状态：Accepted（设计决策已冻结；实现与生产验收尚未完成）  

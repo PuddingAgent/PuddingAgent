@@ -1,3 +1,18 @@
+---
+title: Pudding Agent Web 用户认证系统
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Pudding Agent 使用基于 Web UI 的 JWT 认证系统，通过 Bootstrap 引导初始化 → 登录 → 受控用户管理 三阶段流程，替代了早期传统桌面端登录窗口。公开注册被禁止，仅 admin 用户可创建其他用户。
+categories: [docs, features]
+tags: [loginfeature, features]
+related_docs: []
+related_files: [Source/PuddingPlatform/Controllers/Api/BootstrapApiController.cs, Source/PuddingPlatform/Services/BootstrapStateService.cs, Source/PuddingAgent/Program.cs, Source/PuddingPlatformAdmin/src/pages/bootstrap/index.tsx, Source/PuddingPlatformAdmin/src/pages/user/login/index.tsx, Source/PuddingPlatformAdmin/src/app.tsx]
+slug: features-loginfeature
+draft: false
+---
+
 # Pudding Agent Web 用户认证系统
 
 > **关联任务**：task-20260502-011  

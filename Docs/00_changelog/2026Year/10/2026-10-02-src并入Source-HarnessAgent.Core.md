@@ -1,3 +1,18 @@
+---
+title: "2026-10-02 `src/` 并入 `Source/`（HarnessAgent.Core 归位）"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: 按用户 2026-10-02 裁定（第 4 条）：
+categories: [docs, changelog]
+tags: [harnessagent, core, 并入]
+related_docs: []
+related_files: [Source/HarnessAgent.Core/HarnessAgent.Core.csproj, Source/PuddingHost/PuddingHost.csproj, Tests/HarnessAgent.Cli/HarnessAgent.Cli.csproj, Tests/HarnessAgent.Core.Tests/HarnessAgent.Core.Tests.csproj, code_map.md, Source/PuddingHost/code_map.md, Docs/14_reports/Core-VS-Restore-Fix-2026-10-01.md, Docs/14_reports/模块清单-module_map-2026-09-18.md, Docs/10_conventions/组件化交付规程.md]
+slug: changelog-2026-10-02-src并入source-harnessagent.core
+draft: false
+---
+
 # 2026-10-02 `src/` 并入 `Source/`（HarnessAgent.Core 归位）
 
 ## 改了什么

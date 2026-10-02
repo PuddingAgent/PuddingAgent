@@ -1,3 +1,18 @@
+---
+title: Session Benchmark Diagnostics Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build an MVP that turns one Pudding chat session into a structured Hermes/Pudding benchmark diagnostics report."
+categories: [docs, superpowers]
+tags: [session, benchmark, diagnostics, plans]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/Diagnostics/SessionBenchmarkDiagnosticsService.cs, Source/PuddingPlatformTests/Services/SessionBenchmarkDiagnosticsServiceTests.cs, Source/PuddingPlatform/Controllers/Api/DiagnosticsTimelineController.cs, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/SessionBenchmarkDrawer.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageProcessSummary.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageProcessSummary.test.tsx]
+slug: superpowers-2026-06-05-session-benchmark-diagnostics
+draft: false
+---
+
 # Session Benchmark Diagnostics Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

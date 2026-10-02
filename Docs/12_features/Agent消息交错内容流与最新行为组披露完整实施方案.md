@@ -1,3 +1,18 @@
+---
+title: Agent 消息交错内容流与最新行为组披露完整实施方案
+author: hyfree
+date: 2026-08-25
+last_reviewed: 2026-10-02
+status: active
+description: 同一个 Agent 回合必须以一个大卡片承载，并按 canonical 发生顺序 append：
+categories: [docs, features]
+tags: [消息交错内容, 流与最新行为, 组披露完整实, 施方案, features]
+related_docs: [Docs/07_architecture/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md, Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md, Docs/11_design/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md, Docs/07_architecture/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md, Docs/14_reports/长消息卡片阅读优化-2026-09-15.md]
+related_files: [Source/PuddingCore/Platform/AgentProjectionDtos.cs, Source/PuddingPlatform/Services/AgentChat/TurnOutputChunker.cs, Source/PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs, Source/PuddingPlatformTests/Services/TurnOutputChunkerPayloadOwnershipTests.cs, code_map.md, Docs/07_architecture/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md, Source/PuddingPlatformAdmin/code_map.md, Source/PuddingCore/code_map.md, Source/PuddingPlatform/code_map.md]
+slug: features-agent消息交错内容流与最新行为组披露完整实施方案
+draft: false
+---
+
 # Agent 消息交错内容流与最新行为组披露完整实施方案
 
 > 日期：2026-08-25  

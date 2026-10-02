@@ -1,3 +1,18 @@
+---
+title: GLM交接入口：自主工作效率与自改进闭环
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 先读 01-自主工作轨迹与自改进审计.md 的结论、窗口外进展和§9设计，再按 02-任务看板登记与实施顺序.md 执行。
+categories: [docs, reports]
+tags: [readme]
+related_docs: []
+related_files: []
+slug: reports-readme
+draft: false
+---
+
 # GLM交接入口：自主工作效率与自改进闭环
 
 先读 `01-自主工作轨迹与自改进审计.md` 的结论、窗口外进展和§9设计，再按 `02-任务看板登记与实施顺序.md` 执行。

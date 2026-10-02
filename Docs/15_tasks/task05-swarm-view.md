@@ -1,3 +1,18 @@
+---
+title: Task 05 — Swarm 视图设计方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 注意：我们已经移除桌面端，我们需要在CLI实现，请对齐文档。
+categories: [docs, tasks]
+tags: [task05, swarm, view, tasks]
+related_docs: [Docs/15_tasks/task18-positioning.md]
+related_files: []
+slug: tasks-task05-swarm-view
+draft: false
+---
+
 # Task 05 — Swarm 视图设计方案
 
 > **状态：** ✏️ 设计中

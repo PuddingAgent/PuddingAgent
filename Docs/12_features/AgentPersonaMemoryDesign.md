@@ -1,3 +1,18 @@
+---
+title: Agent 个性与记忆系统 — 设计方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 为 Pudding Agent 赋予个性（Persona）和记忆（Memory）能力，使每个 Agent 人格具备： 名字、风格、语气（IDENTITY + SOUL） 工具使用约定（TOOLS） 用户画像感知（USER） 首次引导仪式（BOOTSTRAP） 长期记忆 + 每日笔记（MEMORY） 会话压缩时自动记忆提取
+categories: [docs, features]
+tags: [agentpersonamemorydesign, features]
+related_docs: []
+related_files: []
+slug: features-agentpersonamemorydesign
+draft: false
+---
+
 # Agent 个性与记忆系统 — 设计方案
 
 > **参考**: OpenClaw 智能体工作区引导文件模型（AGENTS/SOUL/TOOLS/IDENTITY/USER/MEMORY）

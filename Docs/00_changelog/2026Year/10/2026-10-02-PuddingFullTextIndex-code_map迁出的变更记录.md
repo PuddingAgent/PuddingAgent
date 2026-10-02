@@ -1,3 +1,18 @@
+---
+title: 从 Source/PuddingFullTextIndex/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
+author: hyfree
+date: 2026-08-07
+last_reviewed: 2026-10-02
+status: archived
+description: 〔原文第 34–52 行：变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）〕
+categories: [docs, changelog]
+tags: [puddingfulltextindex, code, 迁出的变更记]
+related_docs: []
+related_files: [Source/PuddingFullTextIndex/code_map.md, Docs/00_changelog/README.md, Docs/10_conventions/组件化交付规程.md, Source/PuddingFullTextIndexTests/ComponentBoundaryTests.cs, Source/PuddingFullTextIndexTests/CrossPathMutexTests.cs, Source/PuddingFullTextIndexTests/CrossPathExclusionFixTests.cs, Source/PuddingFullTextIndex.Cli/SupplyCliHost.cs]
+slug: changelog-2026-10-02-puddingfulltextindex-code-map迁出的变更记录
+draft: false
+---
+
 # 从 Source/PuddingFullTextIndex/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
 
 > **为什么在这里**：`Source/PuddingFullTextIndex/code_map.md` 只保留索引（关键概念 · 组件 · 关键文件 · 用途）。原先按轮次/日期堆叠在其中的变更、门禁与验收记录迁出到本文件。日志规则见 `Docs/00_changelog/README.md`。

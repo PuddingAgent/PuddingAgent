@@ -1,3 +1,18 @@
+---
+title: 28 ADR-027 Hook 事件与潜意识学习闭环方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前系统已经具备三组可复用基础设施：
+categories: [docs, architecture]
+tags: [事件潜意识学, 习闭环, architecture]
+related_docs: [Docs/07_architecture/10事件系统与事件总线.md, Docs/07_architecture/15潜意识LLM子代理系统ADR.md, Docs/07_architecture/20会话状态机与事件规范ADR.md, Docs/15_tasks/task41-hook-system.md, Docs/15_tasks/task38-subconscious-memory-engine.md]
+related_files: [Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md, Source/PuddingMemoryEngine/Data/MemoryLibraryDbInitializer.cs, Source/PuddingMemoryEngine/Schema/init_memory.sql]
+slug: architecture-28adr-027hook事件潜意识学习闭环adr
+draft: false
+---
+
 # 28 ADR-027 Hook 事件与潜意识学习闭环方案
 
 > 状态：**proposed**

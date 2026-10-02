@@ -1,3 +1,18 @@
+---
+title: Task Dynamic Planning Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build a durable task dynamic planning layer where a Leader Agent can create a task plan, split it into auditable task nodes, delegate nodes to itself, workspace agents, or sub agents, enforce a "
+categories: [docs, superpowers]
+tags: [task, dynamic, planning, plans]
+related_docs: []
+related_files: [Docs/18_superpowers/specs/2026-06-08-task-dynamic-planning-design.md, Docs/18_superpowers/plans/2026-06-07-agent-to-agent-message-fabric-v1.md, Source/PuddingRuntime/Services/ContextPipeline.cs, Source/PuddingRuntime/Services/WorkspaceAgentsContextBuilder.cs, Source/PuddingCore/Abstractions/ISubAgentManager.cs, Source/PuddingPlatform/Services/WorkspaceAgentFileService.cs, Source/PuddingCore/Models/TaskPlanningModels.cs, Source/PuddingCore/Configuration/TaskPlanningOptions.cs, Source/PuddingCore/Abstractions/ITaskPlanStore.cs, Source/PuddingCore/Abstractions/ITaskPlanService.cs, Source/PuddingCore/Abstractions/ITaskAssignmentService.cs, Source/PuddingCore/Abstractions/ITaskDelegationPolicy.cs, Source/PuddingCoreTests/TaskPlanning/TaskPlanningModelTests.cs, Source/PuddingPlatform/Data/Entities/TaskPlanRunEntity.cs, Source/PuddingPlatform/Data/Entities/TaskNodeEntity.cs, Source/PuddingPlatform/Data/PlatformDbContext.cs, Source/PuddingPlatform/Services/TaskPlanning/TaskPlanStore.cs, Source/PuddingPlatform/Services/TaskPlanning/TaskPlanningSchemaBootstrapper.cs, Source/PuddingAgent/Program.cs, Source/PuddingPlatformTests/Services/TaskPlanning/TaskPlanStoreTests.cs]
+slug: superpowers-2026-06-08-task-dynamic-planning
+draft: false
+---
+
 # Task Dynamic Planning Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

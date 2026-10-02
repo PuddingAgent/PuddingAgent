@@ -1,3 +1,18 @@
+---
+title: Image Reader 预处理实施记录
+author: hyfree
+date: 2026-09-15
+last_reviewed: 2026-10-02
+status: active
+description: 需求与合同见 原生阅读与预处理。本轮扩展原生取图工具，移除残留 helper 路由合同；同时修复 low 在 Files 场景下失效的问题，保留聊天原图并在模型请求边界统一处理。
+categories: [docs, reports]
+tags: [预处理实施记, reports]
+related_docs: [Docs/12_features/ImageReader原生阅读与预处理-2026-09-15.md]
+related_files: []
+slug: reports-imagereader预处理实施记录-2026-09-15
+draft: false
+---
+
 # Image Reader 预处理实施记录
 
 需求与合同见 [原生阅读与预处理](../12_features/ImageReader原生阅读与预处理-2026-09-15.md)。本轮扩展原生取图工具，移除残留 helper 路由合同；同时修复 low 在 Files 场景下失效的问题，保留聊天原图并在模型请求边界统一处理。

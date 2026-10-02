@@ -1,3 +1,18 @@
+---
+title: 2026-09-12 复核与看板回读
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 主报告：../../06-实施进度复核与看板状态修订-2026-09-12.md。
+categories: [docs, reports]
+tags: [readme, 2026-09-12]
+related_docs: []
+related_files: []
+slug: reports-readme
+draft: false
+---
+
 # 2026-09-12 复核与看板回读
 
 主报告：../../06-实施进度复核与看板状态修订-2026-09-12.md。

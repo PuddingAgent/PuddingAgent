@@ -1,3 +1,18 @@
+---
+title: Chat Message Viewport Runtime Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Rebuild chat message virtualization, history loading, send-time scroll intent, viewport scrolling, scrollbar behavior, and bottom anchoring around a single Message Viewport Runtime."
+categories: [docs, superpowers]
+tags: [chat, message, viewport, runtime, plans]
+related_docs: []
+related_files: [Source/PuddingPlatformAdmin/src/pages/chat/viewport/types.ts, Source/PuddingPlatformAdmin/src/pages/chat/viewport/messageProjection.ts, Source/PuddingPlatformAdmin/src/pages/chat/viewport/messageProjection.test.ts, Source/PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts, Source/PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageList.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.selection.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.recovery.test.ts, Source/PuddingPlatformAdmin/src/pages/chat/styles.ts, Source/PuddingPlatformAdmin/src/pages/chat/perf/chatPerfScenario.test.tsx, Docs/07_architecture/56ADR-055ChatMessageViewportRuntime设计方案.md]
+slug: superpowers-2026-06-27-chat-message-viewport-runtime
+draft: false
+---
+
 # Chat Message Viewport Runtime Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

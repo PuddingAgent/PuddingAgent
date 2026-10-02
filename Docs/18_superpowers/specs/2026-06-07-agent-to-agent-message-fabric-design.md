@@ -1,3 +1,18 @@
+---
+title: Agent-to-Agent Message Fabric V1 Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Build a minimal observable agent-to-agent message path.
+categories: [docs, superpowers]
+tags: [agent, to, message, fabric, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-06-07-agent-to-agent-message-fabric-design
+draft: false
+---
+
 # Agent-to-Agent Message Fabric V1 Design
 
 ## Goal

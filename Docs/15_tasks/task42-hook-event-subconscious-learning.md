@@ -1,3 +1,18 @@
+---
+title: task42 — Hook 事件与潜意识学习闭环
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 把 Agent Loop 完成后的潜意识学习从“Hook 直接写 Channel”改造为“Hook 发布标准事件，事件系统排队派发，潜意识消费者持久化 Job，后台空闲执行学习”的闭环。
+categories: [docs, tasks]
+tags: [task42, hook, event, subconscious, learning, tasks]
+related_docs: [Docs/07_architecture/28ADR-027Hook事件潜意识学习闭环ADR.md]
+related_files: []
+slug: tasks-task42-hook-event-subconscious-learning
+draft: false
+---
+
 # task42 — Hook 事件与潜意识学习闭环
 
 > **创建日期：** 2026-05-20

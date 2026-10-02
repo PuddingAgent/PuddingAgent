@@ -1,3 +1,18 @@
+---
+title: ADR-072 工作区 TODO、峰谷 Auto 派发与定时任务第一阶段
+author: hyfree
+date: 2026-08-17
+last_reviewed: 2026-10-02
+status: active
+description: 第一阶段实现一个工作区级 Workspace Task Control Plane，交付以下完整基础闭环：
+categories: [docs, architecture]
+tags: [工作区, 峰谷, 派发与定时任, 务第一阶段, architecture]
+related_docs: [Docs/12_features/工作区TODO与峰谷节能任务编排设计方案.md, Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md, Docs/07_architecture/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md, Docs/07_architecture/89ADR-074Goal持久目标自主续行与自动压缩ADR.md]
+related_files: [Docs/12_features/工作区TODO与峰谷节能任务编排设计方案.md, Docs/18_superpowers/specs/2026-06-07-agent-to-agent-message-fabric-design.md, Docs/07_architecture/82ADR-071通用Agent编排平台完整设计方案ADR.md, Docs/07_architecture/83通用Agent编排后端执行内核与ControlPlane施工图.md, Docs/07_architecture/20AdminChat简约克制界面ADR.md, Docs/12_features/任务调度器与Goal用户控制面设计.md]
+slug: architecture-86adr-072工作区todo峰谷auto派发与定时任务第一阶段adr
+draft: false
+---
+
 # ADR-072 工作区 TODO、峰谷 Auto 派发与定时任务第一阶段
 
 > 状态：Proposed；第一阶段施工基线，不表示已经实现

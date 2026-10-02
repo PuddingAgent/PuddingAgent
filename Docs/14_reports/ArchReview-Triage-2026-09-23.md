@@ -1,3 +1,18 @@
+---
+title: 架构评审 5 条的处置裁决（2026-09-23）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 用途：本文件是 temp/arch-review-gpt-20260923.md（GPT-6 Astra 只读评审，33 请求 / 325 万 token） 在落地阶段的边界裁决记录。存在的唯一目的是防止三类返工：
+categories: [docs, reports]
+tags: [archreview, triage, reports]
+related_docs: []
+related_files: [Docs/07_architecture/107ADR-093子代理运行归档权威链水位与降级台账ADR.md, Docs/07_architecture/108ADR-094Host启动配置单一来源与生效来源审计ADR.md, Source/PuddingRuntime/code_map.md, Source/PuddingHost/Hosting/PuddingApplicationHost.cs, Docs/14_reports/ArchReview-GPT6Astra-2026-09-23.md]
+slug: reports-archreview-triage-2026-09-23
+draft: false
+---
+
 # 架构评审 5 条的处置裁决（2026-09-23）
 
 **用途**：本文件是 `temp/arch-review-gpt-20260923.md`（GPT-6 Astra 只读评审，33 请求 / 325 万 token）

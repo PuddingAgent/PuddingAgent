@@ -1,3 +1,18 @@
+---
+title: Task 24 - Platform V1 首条垂直切片细化任务
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 状态：design 优先级：P0 最后更新：2026-03-15
+categories: [docs, tasks]
+tags: [task24, platform, v1, first, slice, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task24-platform-v1-first-slice
+draft: false
+---
+
 # Task 24 - Platform V1 首条垂直切片细化任务
 
 状态：`design`

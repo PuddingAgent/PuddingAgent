@@ -1,3 +1,18 @@
+---
+title: ADR-047：记忆图书馆知识图谱演进方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 的记忆图书馆当前已经形成两条并行能力：
+categories: [docs, architecture]
+tags: [记忆图书馆知, 识图谱演进, architecture]
+related_docs: [Docs/07_architecture/29ADR-028记忆图书馆基础设施重构ADR.md, Docs/07_architecture/30ADR-029记忆图书馆ADR-028纠偏与验收闭环方案.md, Docs/07_architecture/31ADR-030记忆图书馆Page管理器ADR.md, Docs/07_architecture/15潜意识LLM子代理系统ADR.md]
+related_files: []
+slug: architecture-48adr-047记忆图书馆知识图谱演进adr
+draft: false
+---
+
 # ADR-047：记忆图书馆知识图谱演进方案
 
 > 状态：**Proposed**  

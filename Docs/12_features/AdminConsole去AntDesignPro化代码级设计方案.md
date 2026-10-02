@@ -1,3 +1,18 @@
+---
+title: Admin Console 去 Ant Design Pro 化代码级设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 把当前 Admin Console 从 Ant Design Pro 模板外观改为 Pudding 自有设计语言，同时保留 Ant Design 的表单、表格、弹窗等工程能力。
+categories: [docs, features]
+tags: [化代码级设计, 方案, features]
+related_docs: [Docs/07_architecture/37ADR-036AdminConsole去AntDesignPro化与Pudding设计语言统一ADR.md]
+related_files: [Source/PuddingPlatformAdmin/package.json, Source/PuddingPlatformAdmin/src/app.tsx, Source/PuddingPlatformAdmin/src/components/Footer/index.tsx, Source/PuddingPlatformAdmin/config/defaultSettings.ts, Source/PuddingPlatformAdmin/src/pages/workspace/index.tsx, Source/PuddingPlatformAdmin/src/global.style.ts, Source/PuddingPlatformAdmin/src/components/ThemeMode/index.tsx, Source/PuddingPlatformAdmin/src/pages/workspace/styles.ts, Source/PuddingPlatformAdmin/scripts/scan-ant-pro-template.cjs, Source/PuddingPlatformAdmin/e2e/admin-console-branding.spec.ts, Source/PuddingPlatformAdmin/e2e/admin-workspace-responsive.spec.ts]
+slug: features-adminconsole去antdesignpro化代码级设计方案
+draft: false
+---
+
 # Admin Console 去 Ant Design Pro 化代码级设计方案
 
 > 日期：2026-05-23  

@@ -1,3 +1,18 @@
+---
+title: ADR-094：Host 启动配置的单一来源与生效来源审计
+author: hyfree
+date: 2026-09-23
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-23。状态：Proposed（C-1 已实施）。决策责任：Host 组合与启动顺序、日志早期启动、URL/CORS/环境名等启动期边界；外部控制器负责部署与生命周期验收。
+categories: [docs, architecture]
+tags: [启动配置单一, 来源与生效来, 源审计, architecture]
+related_docs: [Docs/14_reports/ArchReview-Triage-2026-09-23.md, Docs/14_reports/ArchReview-GPT6Astra-2026-09-23.md]
+related_files: [Source/PuddingHost/Hosting/PuddingApplicationHost.cs, Source/PuddingHost/Hosting/StartupConfigurationAudit.cs, Tests/PuddingHost.Tests/Hosting/StartupConfigurationAuditTests.cs]
+slug: architecture-108adr-094host启动配置单一来源与生效来源审计adr
+draft: false
+---
+
 # ADR-094：Host 启动配置的单一来源与生效来源审计
 
 日期：2026-09-23。状态：**Proposed**（C-1 已实施）。决策责任：Host 组合与启动顺序、日志早期启动、URL/CORS/环境名等启动期边界；外部控制器负责部署与生命周期验收。

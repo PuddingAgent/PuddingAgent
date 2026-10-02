@@ -1,3 +1,18 @@
+---
+title: Agents-Hygiene.md — 仓库卫生通用规范
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 以下类别默认禁止进入版本库（除非有明确、书面化的理由，并在 commit message 中说明）：
+categories: [docs, conventions]
+tags: [agents, hygiene, conventions]
+related_docs: []
+related_files: []
+slug: conventions-agents-hygiene
+draft: false
+---
+
 # Agents-Hygiene.md — 仓库卫生通用规范
 
 > 本文件面向在本仓库内工作的所有 Agent（以及人工协作者）。

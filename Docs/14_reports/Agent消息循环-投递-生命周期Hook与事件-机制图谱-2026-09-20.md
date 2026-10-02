@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 消息循环 / 消息投递 / 生命周期 Hook 与事件 —— 机制图谱
+author: hyfree
+date: 2026-09-20
+last_reviewed: 2026-10-02
+status: active
+description: "消息循环的物理载体 | 不是循环，而是「投递 → 受理 → Turn → 事件」的链；Agent 侧的\"循环\"是 Turn 内 LLM⇄工具的多轮 | 心跳如何进入 Agent | 合成 MessageEnvelope（From=system/heartbeat）→ 消息管道 → durable delivery → canonical Turn → Agent Run | 心跳的 Turn 落在"
+categories: [docs, reports]
+tags: [消息循环, 投递, 生命周期, 与事件, 机制图谱, reports]
+related_docs: []
+related_files: [Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md, code_map.md]
+slug: reports-agent消息循环-投递-生命周期hook与事件-机制图谱-2026-09-20
+draft: false
+---
+
 # PuddingAgent 消息循环 / 消息投递 / 生命周期 Hook 与事件 —— 机制图谱
 
 > 取证日期：2026-09-20

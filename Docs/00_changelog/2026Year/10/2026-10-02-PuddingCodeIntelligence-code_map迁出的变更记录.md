@@ -1,3 +1,18 @@
+---
+title: 从 Source/PuddingCodeIntelligence/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
+author: hyfree
+date: 2026-08-07
+last_reviewed: 2026-10-02
+status: archived
+description: 〔原文第 49–53 行：变更（2026-09-25，ADR-089 U4-2b）〕
+categories: [docs, changelog]
+tags: [puddingcodeintelligence, code, 迁出的变更记]
+related_docs: []
+related_files: [Source/PuddingCodeIntelligence/code_map.md, Docs/00_changelog/README.md, Source/PuddingCodeIndex/code_map.md]
+slug: changelog-2026-10-02-puddingcodeintelligence-code-map迁出的变更记录
+draft: false
+---
+
 # 从 Source/PuddingCodeIntelligence/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
 
 > **为什么在这里**：`Source/PuddingCodeIntelligence/code_map.md` 只保留索引（关键概念 · 组件 · 关键文件 · 用途）。原先按轮次/日期堆叠在其中的变更、门禁与验收记录迁出到本文件。日志规则见 `Docs/00_changelog/README.md`。

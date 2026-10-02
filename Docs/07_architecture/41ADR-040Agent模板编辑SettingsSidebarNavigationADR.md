@@ -1,3 +1,18 @@
+---
+title: 41 ADR-040 Agent 模板编辑 Settings Sidebar Navigation
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: "Agent 模板编辑表单已经从简单 CRUD 演进为运行画像配置页。当前 /admin/global-agent-template 的编辑抽屉在 Source/PuddingPlatformAdmin/src/pages/global-agent-template/index.tsx 中使用 width={600} 的单列 Drawer + ProForm，字段从基础信息一路堆叠到能力、Skill"
+categories: [docs, architecture]
+tags: [模板编辑, architecture]
+related_docs: []
+related_files: [Source/PuddingPlatformAdmin/src/pages/global-agent-template/index.tsx]
+slug: architecture-41adr-040agent模板编辑settingssidebarnavigationadr
+draft: false
+---
+
 # 41 ADR-040 Agent 模板编辑 Settings Sidebar Navigation
 
 > 状态：accepted（Workspace Agent 分组切换与配置密度优化已实现）

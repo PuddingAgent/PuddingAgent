@@ -1,3 +1,18 @@
+---
+title: Code Intelligence MVP Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Build the first C#-first code intelligence slice for PuddingAgent: multi-project directory registration, semantic indexing, SQLite-backed symbol graph queries, LSP service integration scaffoldin"
+categories: [docs, superpowers]
+tags: [code, intelligence, mvp, plans]
+related_docs: []
+related_files: [Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj, Source/PuddingCodeIntelligence/Contracts/ICodeQueryService.cs, Source/PuddingCodeIntelligence/Contracts/ILanguageServerService.cs, Source/PuddingCodeIntelligence/CSharp/RoslynWorkspaceBootstrapper.cs, Source/PuddingCodeIntelligence/CSharp/RoslynSymbolId.cs, Source/PuddingCodeIntelligence/CSharp/RoslynCSharpIndexer.cs, Source/PuddingCodeIntelligence/Lsp/NoOpLanguageServerService.cs, Source/PuddingCodeIntelligence/Services/CodeQueryService.cs, Source/PuddingCodeIntelligence/DependencyInjection.cs, Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj, Source/PuddingCodeIntelligenceTests/Contracts/CodeIntelligenceContractTests.cs, Source/PuddingCodeIntelligenceTests/CSharp/RoslynCSharpIndexerTests.cs, Source/PuddingCodeIntelligenceTests/Services/CodeProjectRegistryTests.cs, Source/PuddingCodeIntelligenceTests/Lsp/NoOpLanguageServerServiceTests.cs, Source/PuddingRuntime/PuddingRuntime.csproj, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingRuntimeTests/Tools/PuddingToolInfrastructureTests.cs, Docs/07_architecture/50ADR-049代码语义索引与LSP编辑服务ADR.md, Docs/17_memory/2026-06-11.md, Source/PuddingCodeIntelligenceTests/Services/DefaultCodeWorkspaceResolverTests.cs]
+slug: superpowers-2026-06-11-code-intelligence-mvp
+draft: false
+---
+
 # Code Intelligence MVP Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

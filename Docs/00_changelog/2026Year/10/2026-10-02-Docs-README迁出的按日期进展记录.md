@@ -1,3 +1,18 @@
+---
+title: 从 Docs/README.md 迁出的按日期进展记录（迁出日 2026-10-02）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: 〔原文第 5–8 行：2026-10-01 Chat 前端 UI / UX 现代化设计〕
+categories: [docs, changelog]
+tags: [docs, 迁出的按日期, 进展记录]
+related_docs: [Docs/11_design/Chat-UI-UX-Modernization-Spec-2026-10-01.md, Docs/14_reports/Chat-UI-Modernization-Acceptance-2026-10-02.md, Docs/14_reports/Desktop-Build-Core-Bundle-Fix-2026-09-30.md, Docs/12_features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md, Docs/14_reports/Desktop-Shell-Recovery-2026-09-29.md, Docs/12_features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md, Docs/07_architecture/106ADR-092目标驱动执行与分层验证闭环ADR.md, Docs/14_reports/blocked-recovery-channel-decision-20260914.md, Docs/14_reports/blocked-one-way-latch-20260914.md, Docs/14_reports/task-bound-goal-settlement-deadend-20260914.md, Docs/14_reports/ADR-089-U0审阅与返工意见-2026-09-13.md, Docs/14_reports/ADR-089-U0返工验收-2026-09-13.md, Docs/14_reports/ADR-089-U0残差glob统一验收-2026-09-13.md, Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md, Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md, Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md, Docs/07_architecture/102ADR-088原生视觉取图与截图统一链路ADR.md, Docs/14_reports/原生视觉优化看板修订-2026-09-12.md, Docs/12_features/子代理弹性预算与双向交互设计-2026-09-12.md, Docs/14_reports/子代理弹性交互看板修订-2026-09-12.md]
+related_files: [Docs/README.md, Docs/00_changelog/README.md, Docs/14_reports/PuddingAgent持续优化执行台账-2026-09-05.md, Docs/14_reports/PuddingAgent第四轮有界查询与流空档修复-2026-09-05.md, Docs/14_reports/PuddingAgent效率与代码审计-2026-09-05.md, Docs/14_reports/PuddingAgent首轮修复与验证-2026-09-05.md, Docs/14_reports/PuddingAgent第二轮前端修复与发布验证-2026-09-05.md, Docs/14_reports/PuddingAgent第三轮部署与产品验收-2026-09-05.md, Docs/12_features/Chat独立插嘴按钮与当前Turn即时Steering设计方案.md, Docs/18_superpowers/specs/2026-06-06-runtime-steering-queue-design.md, Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md, Docs/12_features/AgentHarness兼容与工具调用效率修复设计方案.md, Docs/07_architecture/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md, Docs/12_features/Agent系统预制模板完整快照与DeepSeek鲸鱼娘模板设计方案.md, Docs/07_architecture/97ADR-083Agent系统预制模板版本化快照与DeepSeek鲸鱼娘模板ADR.md, Docs/12_features/Agent消息交错内容流与最新行为组披露完整实施方案.md, Docs/07_architecture/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md, Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md, Docs/12_features/Chat图片消息回放与前端旧Bundle缓存修复方案.md, Docs/12_features/子代理活动轨迹实时回放与运行检查器修复方案.md]
+slug: changelog-2026-10-02-docs-readme迁出的按日期进展记录
+draft: false
+---
+
 # 从 Docs/README.md 迁出的按日期进展记录（迁出日 2026-10-02）
 
 > **为什么在这里**：`Docs/README.md` 是文档索引，原先按日期堆叠的进展/状态段落，以及「当前主线文档」里各文档的状态批注与「当前实现状态说明」，全部迁出到本文件。日志规则见 `Docs/00_changelog/README.md`。

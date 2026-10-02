@@ -1,3 +1,18 @@
+---
+title: 聊天页缺陷诊断：回复「晚一条」+ 正文渲染不全（2026-09-22）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 症状两条，互相独立： 缺陷 A（晚一条）：新一轮的回复在本轮不显示，须等下一次发送才出现。 缺陷 B（渲染不全）：卡片正文从开头渲染到中途截断；同一卡片上下各出现一次 8 段思考 · 17 次工具；页面无滚动条。
+categories: [docs, reports]
+tags: [chat, reply, delay, and, truncation, diagnosis, reports]
+related_docs: []
+related_files: []
+slug: reports-chat-reply-delay-and-truncation-diagnosis-2026-09-22
+draft: false
+---
+
 # 聊天页缺陷诊断：回复「晚一条」+ 正文渲染不全（2026-09-22）
 
 > 状态：**诊断中（未修复）**。本文只记录**已核实的事实**与**已被证伪的假设**，防止重复走死路。

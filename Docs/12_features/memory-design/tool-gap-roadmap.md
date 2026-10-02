@@ -1,3 +1,18 @@
+---
+title: 总览
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Pudding 工具缺口路线图"
+categories: [docs, features]
+tags: [tool, gap, roadmap, memory-design]
+related_docs: []
+related_files: []
+slug: features-tool-gap-roadmap
+draft: false
+---
+
 ﻿# Pudding 工具缺口路线图
 
 > 最后更新: 2026-07-12

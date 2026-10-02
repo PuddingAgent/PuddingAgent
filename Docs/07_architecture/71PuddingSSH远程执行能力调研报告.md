@@ -1,3 +1,18 @@
+---
+title: 1. 结论摘要
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 71 Pudding 接入 SSH 远程执行能力调研报告"
+categories: [docs, architecture]
+tags: [远程执行能力, 调研报告, architecture]
+related_docs: []
+related_files: [Source/PuddingRuntime/Tools/BuiltIns/Shell/HostShellTool.cs, Source/PuddingRuntime/Services/TerminalSecurity.cs, Source/PuddingCore/Tools/PuddingToolContracts.cs, Source/PuddingRuntime/Tools/BuiltIns/Terminal/TerminalTools.cs]
+slug: architecture-71puddingssh远程执行能力调研报告
+draft: false
+---
+
 ﻿# 71 Pudding 接入 SSH 远程执行能力调研报告
 
 > - 状态：**research-only**（调研完成，暂不实现）

@@ -1,3 +1,18 @@
+---
+title: S1c 实施规格（G92-1 slice0a 持久化续作）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: （待写）
+categories: [docs, reports]
+tags: [g92, s1c, implementation, spec, reports]
+related_docs: []
+related_files: []
+slug: reports-g92-1-s1c-implementation-spec-2026-09-18
+draft: false
+---
+
 # S1c 实施规格（G92-1 slice0a 持久化续作）
 > 日期：2026-09-18。依据：temp/s1c-spec-brief-v2-2026-09-18.md + temp/s1c-facts.md + Docs/14_reports/G92-1-S1c-slice0a-persistence-review-2026-09-18.md。
 > 上限 150 行；结论带 file:line，无锚点处标【推断】；信息分区：【事实】/【建议】/【已批准决策】。

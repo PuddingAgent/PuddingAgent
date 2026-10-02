@@ -1,3 +1,18 @@
+---
+title: ADR-054 前端 Chat Runtime 与 UI 性能体验重构设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Admin Chat 已经从单一会话聊天演进为多 Agent 工作台，包含 workspace/agent 选择、main session、legacy SSE、agent conversation projection、replay poll、消息历史、工具过程、子代理卡片、语音/相机输入、DevPanel 诊断和本地缓存。当前功能已经可用，但状态和渲染复杂度集中在少数巨型模块中，导致性能治理、
+categories: [docs, architecture]
+tags: [前端, 性能体验重构, 设计方案, architecture]
+related_docs: [Docs/07_architecture/62ADR-062前端ChatUI模块化审计与渐进拆分ADR.md]
+related_files: [Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts, Source/PuddingPlatformAdmin/src/pages/chat/index.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageItem.tsx, Source/PuddingPlatformAdmin/src/pages/chat/styles.ts, Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts, Docs/07_architecture/54ADR-053前端会话引用生命周期与SSE清理边界ADR.md, Source/PuddingPlatformAdmin/src/services/platform/api.sessionEvents.test.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.selection.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/runtime/types.ts, Source/PuddingPlatformAdmin/src/pages/chat/runtime/selectors.ts, Source/PuddingPlatformAdmin/src/pages/chat/runtime/sessionLifecycleStore.ts, Source/PuddingPlatformAdmin/src/pages/chat/runtime/sessionLifecycleStore.test.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/sessionRuntimeCleanup.ts, Source/PuddingPlatformAdmin/src/pages/chat/runtime/sessionEventStream.ts, Source/PuddingPlatformAdmin/src/pages/chat/runtime/sessionEventStream.test.ts, Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingPlatformAdmin/src/pages/chat/runtime/messageRuntimeStore.ts, Source/PuddingPlatformAdmin/src/pages/chat/runtime/messageRuntimeStore.test.ts, Source/PuddingPlatformAdmin/src/pages/chat/types.ts]
+slug: architecture-55adr-054前端chatruntime与ui性能体验重构设计方案
+draft: false
+---
+
 # ADR-054 前端 Chat Runtime 与 UI 性能体验重构设计方案
 
 > 状态：Proposed  

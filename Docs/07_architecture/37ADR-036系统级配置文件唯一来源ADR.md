@@ -1,3 +1,18 @@
+---
+title: 37 ADR-036 系统级配置文件唯一来源
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 已经引入 data/config/.json、PuddingDataPaths、PuddingFileConfigLoader、AgentProfileProvider 和 LlmProfileResolver，但平台内仍存在大量数据库主源配置：
+categories: [docs, architecture]
+tags: [系统级配置文, 件唯一来源, architecture]
+related_docs: [Docs/07_architecture/08数据模型与配置.md, Docs/07_architecture/33ADR-032构建门禁与运行态漂移修复方案.md, Docs/07_architecture/35ADR-034Agent头像服务端管理与模板绑定ADR.md, Docs/12_features/系统级配置文件化实施方案.md, Docs/18_superpowers/specs/2026-05-18-data-config-e2e-foundation-design.md]
+related_files: []
+slug: architecture-37adr-036系统级配置文件唯一来源adr
+draft: false
+---
+
 # 37 ADR-036 系统级配置文件唯一来源
 
 > 状态：**accepted**  

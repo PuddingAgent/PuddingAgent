@@ -1,3 +1,18 @@
+---
+title: MCP 客户端集成（V1）
+author: hyfree
+date: 2026-07-26
+last_reviewed: 2026-10-02
+status: active
+description: Pudding V1 作为 MCP Client，把 Workspace 中启用的 MCP Server 工具接入统一 IPuddingTool 执行链。实现基于官方 .NET SDK ModelContextProtocol.Core 1.4.1，支持 Streamable HTTP、legacy SSE、HTTP 自动探测和本地 stdio 子进程；V1 不实现 MCP Resources、P
+categories: [docs, tools-and-skills]
+tags: [客户端集成, tools_and_skills]
+related_docs: []
+related_files: [TestScripts/codex_service_smoke.py]
+slug: tools-and-skills-mcp客户端集成
+draft: false
+---
+
 # MCP 客户端集成（V1）
 
 ## 1. 范围

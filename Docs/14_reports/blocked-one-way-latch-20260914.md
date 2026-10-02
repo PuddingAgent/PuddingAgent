@@ -1,3 +1,18 @@
+---
+title: Blocked 单向闩锁：修复器只写 Blocked，worker 侧永不可恢复
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "日期：2026-09-14 03:10 BJT 类型：平台可靠性缺陷（代码级审计 + 生产事件链取证） 缺陷卡：e2c35d6eeae244c191ed508ccd85b6fe（P0） 关联卡：bf7ef5f5e2d04d23ac3aed224ee539c3（打通 Blocked 逃生通道 / 16 张僵死卡）、813ad427c0d54fd6a67e9bd39b03d4c4（Blocked+ac"
+categories: [docs, reports]
+tags: [blocked, one, way, latch, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/Scheduling/TaskExecutionRepairCoordinator.cs, Source/PuddingRuntime/Services/TaskTools/TaskClaimTool.cs, Source/PuddingRuntime/Services/TaskTools/TaskUpdateTool.cs, Source/PuddingAgent/appsettings.json]
+slug: reports-blocked-one-way-latch-20260914
+draft: false
+---
+
 # Blocked 单向闩锁：修复器只写 Blocked，worker 侧永不可恢复
 
 - 日期：2026-09-14 03:10 BJT

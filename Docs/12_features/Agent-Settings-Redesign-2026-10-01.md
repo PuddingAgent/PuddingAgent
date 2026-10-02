@@ -1,3 +1,18 @@
+---
+title: Agent 编辑工作台设计方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-10-01。 状态：一期已实施（见文末「实施记录」与偏差说明）；二期未开始。 范围：截图中的工作区 Agent 编辑界面，重点为「角色与 Prompt」。 架构：在既有 Web UI 中实现，沿用 WinUI Shell + WebView2 + 独立 Core 的边界。 配套：桌面布局示意。示意中的 Agent 名称、文本、字数和状态均为设计示例，不代表实际配置。
+categories: [docs, features]
+tags: [agent, settings, redesign, features]
+related_docs: []
+related_files: ["Source/PuddingPlatformAdmin/src/pages/workspace/[id]/WorkspaceAgentSettingsDrawer.tsx", Source/PuddingPlatformAdmin/src/pages/agent-template-settings/AgentTemplateSettingsNav.tsx, Source/PuddingPlatformAdmin/src/pages/agent-template-settings/styles.ts, "Source/PuddingPlatformAdmin/src/pages/workspace/[id]/promptDocuments.ts", "Source/PuddingPlatformAdmin/src/pages/workspace/[id]/AgentPromptCatalog.tsx", "Source/PuddingPlatformAdmin/src/pages/workspace/[id]/AgentPromptEditor.tsx", "Source/PuddingPlatformAdmin/src/pages/workspace/[id]/MarkdownPreview.tsx", "Source/PuddingPlatformAdmin/src/pages/workspace/[id]/workbenchStyles.ts"]
+slug: features-agent-settings-redesign-2026-10-01
+draft: false
+---
+
 # Agent 编辑工作台设计方案
 
 - 日期：2026-10-01。

@@ -1,3 +1,18 @@
+---
+title: Hooks 配置（v1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-02-20
+categories: [docs, config]
+tags: [hooks, config]
+related_docs: []
+related_files: [Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md]
+slug: config-hooks
+draft: false
+---
+
 # Hooks 配置（v1）
 
 最后更新：2026-02-20

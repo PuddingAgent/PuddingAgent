@@ -1,3 +1,18 @@
+---
+title: 技能近重复检测（只读）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "生成时间：2026-09-21 18:44:00 +08:00"
+categories: [docs, reports]
+tags: [skill, near, duplicate, reports]
+related_docs: []
+related_files: []
+slug: reports-skill-near-duplicate-2026-09-21
+draft: false
+---
+
 # 技能近重复检测（只读）
 
 生成时间：2026-09-21 18:44:00 +08:00

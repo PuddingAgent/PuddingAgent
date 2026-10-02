@@ -1,3 +1,18 @@
+---
+title: 52 ADR-051 Agent 私有日志与摘要召回
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 当前存在三类历史数据：
+categories: [docs, architecture]
+tags: [私有日志与摘, 要召回, architecture]
+related_docs: [Docs/07_architecture/15潜意识LLM子代理系统ADR.md, Docs/07_architecture/32ADR-031聊天历史转录持久化与事件日志回放边界.md, Docs/07_architecture/43ADR-042上下文自动压缩与主动Compact命令ADR.md, Docs/12_features/Agent私有日志与摘要召回设计方案.md]
+related_files: []
+slug: architecture-52adr-051agent私有日志与摘要召回adr
+draft: false
+---
+
 # 52 ADR-051 Agent 私有日志与摘要召回
 
 > 状态：**proposed**  

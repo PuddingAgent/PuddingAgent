@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 模块清单（module_map）
+author: hyfree
+date: 2026-09-18
+last_reviewed: 2026-10-02
+status: active
+description: "顺带记账：Source/build/、Source/tmp/、Source/_search_prompts.ps1、Source/.pudding/、PuddingPlatformAdmin/{dist,dist-dev,.tmp,.tmp-test-out,public} 等属生成物/临时物；Source/PuddingAgent/temp/ 曾出现非代码数据目录。"
+categories: [docs, reports]
+tags: [module, map, 模块清单, reports]
+related_docs: []
+related_files: [code_map.md, Source/PuddingGit.Tools/PuddingGit.Tools.csproj, Source/_search_prompts.ps1]
+slug: reports-模块清单-module-map-2026-09-18
+draft: false
+---
+
 # PuddingAgent 模块清单（module_map）
 
 > 日期：2026-09-18｜作者：dsh（`default.global_general-assistant.0e0`）

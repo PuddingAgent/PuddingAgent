@@ -1,3 +1,18 @@
+---
+title: 通用 Agent 编排后端执行内核与 Control Plane 施工图
+author: hyfree
+date: 2026-08-11
+last_reviewed: 2026-10-02
+status: active
+description: 本册把总体设计落实为可逐文件施工的 .NET/Core/SQLite/API 图纸。最终后端必须提供：
+categories: [docs, architecture]
+tags: [通用, 编排后端执行, 内核与, 施工图, architecture]
+related_docs: [Docs/07_architecture/82ADR-071通用Agent编排平台完整设计方案ADR.md, Docs/07_architecture/84通用Agent编排蓝图编辑器与组件系统施工图.md, Docs/07_architecture/85通用Agent编排交付测试与运维验收图册.md]
+related_files: [Source/PuddingCore/Orchestration/AgentOrchestrationModels.cs]
+slug: architecture-83通用agent编排后端执行内核与controlplane施工图
+draft: false
+---
+
 # 通用 Agent 编排后端执行内核与 Control Plane 施工图
 
 > 状态：**construction-blueprint；尚未全部实现**  

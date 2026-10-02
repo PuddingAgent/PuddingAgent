@@ -1,3 +1,18 @@
+---
+title: ADR-065：可重复 Agent 评估基线
+author: hyfree
+date: 2026-08-01
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 复用已有 Hermes case catalog、workspace seed、benchmark run 和 Session diagnostics，建立一条可重复的评估闭环：
+categories: [docs, architecture]
+tags: [可重复, 评估基线, architecture]
+related_docs: []
+related_files: [Tools/Diagnostics/run_benchmarks.py]
+slug: architecture-66adr-065可重复agent评估基线adr
+draft: false
+---
+
 # ADR-065：可重复 Agent 评估基线
 
 > 状态：P2 已实施  

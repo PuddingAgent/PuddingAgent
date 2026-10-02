@@ -1,3 +1,18 @@
+---
+title: 运行时数据存储纪律 + goal.md 快照规范
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 判据一句话：「换一台开发机、重新 clone 仓库，这个文件还需要存在吗？」 不需要 → 运行时数据 → 数据目录。需要（因为它是开发资产）→ 项目目录。
+categories: [docs, conventions]
+tags: [goal, md, snapshot, policy, conventions]
+related_docs: []
+related_files: [Agents.md, code_map.md]
+slug: conventions-goal-md-snapshot-policy
+draft: false
+---
+
 # 运行时数据存储纪律 + goal.md 快照规范
 
 > 落定：2026-09-16 ｜ 依据：用户裁定（两条）

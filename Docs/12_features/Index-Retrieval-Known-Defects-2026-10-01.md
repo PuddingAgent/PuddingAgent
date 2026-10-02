@@ -1,3 +1,18 @@
+---
+title: 索引/检索 已知缺陷登记（2026-10-01）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 现象 code_index_list_projects 只列 4 条，不含 scope-6526fb344e33 与 scope-0ca100c528ef；但：
+categories: [docs, features]
+tags: [index, retrieval, known, defects, features]
+related_docs: []
+related_files: [Source/PuddingRuntimeTests/Tools/CodeIndexStatusRegistryGateTests.cs, Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs, Source/PuddingCodeIndex/Contracts/Retrieval/ScopeOverlap.cs, Source/PuddingAgent/bin/Debug/net10.0/PuddingAgent.exe, Source/PuddingCore/Configuration/PuddingBuildOutputSync.cs, Source/PuddingDesktop.WpfArchive/Bootstrap/DesktopBootstrapSignalService.cs, Source/PuddingHost/Services/CodeIndexStatusProbe.cs, Source/PuddingHost/Controllers/IndexAdminController.cs, Source/PuddingHost/Hosting/FullTextIndexSupplyAccessor.cs, Source/PuddingRuntime/Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs, Source/PuddingRuntimeTests/Tools/CodeSymbolSearchStalePathGateTests.cs]
+slug: features-index-retrieval-known-defects-2026-10-01
+draft: false
+---
+
 # 索引/检索 已知缺陷登记（2026-10-01）
 
 > 本文件记录**检索面上**已复现、尚未修复的缺陷：证据、复现步骤、影响面、修复方向、未验证项。

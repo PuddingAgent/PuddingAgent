@@ -1,3 +1,18 @@
+---
+title: Task 13 — 上下文预热设计方案 (Context Pre-warming)
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 设计原则 三级预热机制 并发启动 认知资产预处理 后台索引引擎 认知包结构 功耗控制 视觉反馈 核心实现 实现路线
+categories: [docs, tasks]
+tags: [task13, context, warmup, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task13-context-warmup
+draft: false
+---
+
 # Task 13 — 上下文预热设计方案 (Context Pre-warming)
 
 > **状态：** ✏️ 设计中

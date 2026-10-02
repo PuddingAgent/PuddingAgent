@@ -1,3 +1,18 @@
+---
+title: PuddingAgent Tool 任务卡
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 参考 Claude Code 42 Tools 架构，为 PuddingAgent 建立以下 Tool 任务卡。
+categories: [docs, tasks]
+tags: [tool, tasks]
+related_docs: []
+related_files: []
+slug: tasks-tool-tasks
+draft: false
+---
+
 # PuddingAgent Tool 任务卡
 
 参考 Claude Code 42 Tools 架构，为 PuddingAgent 建立以下 Tool 任务卡。

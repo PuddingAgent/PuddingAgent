@@ -1,3 +1,18 @@
+---
+title: 76 Phase 2A-3 通用 WebView2 页面操作实施验收报告
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: Phase 2A-3 的通用页面观察和操作链路已经实现，并通过自动化测试、真实 WebView2 TestSite、Release publish 与可见 Desktop smoke：
+categories: [docs, architecture]
+tags: [通用, 页面操作实施, 验收报告, architecture]
+related_docs: [Docs/07_architecture/75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md, Docs/07_architecture/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md, Docs/07_architecture/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md]
+related_files: [TestScripts/start-phase2a3-webview2-smoke.ps1]
+slug: architecture-76phase2a-3通用webview2页面操作实施验收报告
+draft: false
+---
+
 # 76 Phase 2A-3 通用 WebView2 页面操作实施验收报告
 
 > - 状态：**automated accepted / real DeepSeek smoke pending（2026-08-02）**

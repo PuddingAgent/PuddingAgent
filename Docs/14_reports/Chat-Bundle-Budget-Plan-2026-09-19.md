@@ -1,3 +1,18 @@
+---
+title: PuddingPlatformAdmin Chat 路由体积门禁决策 Plan（2026-09-19）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 本 Plan 只讨论 Source/PuddingPlatformAdmin 的 Chat 路由首屏 chunk，不涉及后端或其他路由。门禁脚本从 source map 中定位包含 src/pages/chat/index.tsx 的 chunk，按 JS 文件字节数检查；同时检查同步入口总量、common-async 泄漏，以及三个已登记的惰性源是否仍落在 Chat/common chunk。当
+categories: [docs, reports]
+tags: [chat, bundle, budget, plan, reports]
+related_docs: []
+related_files: [Source/PuddingPlatformAdmin/scripts/check-chat-bundle-budget.cjs]
+slug: reports-chat-bundle-budget-plan-2026-09-19
+draft: false
+---
+
 # PuddingPlatformAdmin Chat 路由体积门禁决策 Plan（2026-09-19）
 
 ## 1. 现状与证据

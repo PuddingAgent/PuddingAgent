@@ -1,3 +1,18 @@
+---
+title: Memory System v2 F4 Subconscious Plan Protocol
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: F4 的目标是把潜意识 LLM 的输出固定为可校验计划，而不是直接写 MemoryLibrary。
+categories: [docs, superpowers]
+tags: [memory, v2, f4, subconscious, plan, protocol, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-07-01-memory-v2-f4-subconscious-plan-protocol
+draft: false
+---
+
 # Memory System v2 F4 Subconscious Plan Protocol
 
 > Date: 2026-07-01

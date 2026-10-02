@@ -1,10 +1,25 @@
+---
+title: task41 — Hook 系统设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 设计并实现 Pudding Agent 的 Hook 系统——让用户和插件可以在 Agent 生命周期的关键节点插入自定义逻辑。V1 实现核心的 PreToolUse/PostToolUse Hook，V1.5 扩展到完整 20 种事件。
+categories: [docs, tasks]
+tags: [task41, hook, system, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task41-hook-system
+draft: false
+---
+
 # task41 — Hook 系统设计
 
 > **创建日期：** 2026-05-03
 > **优先级：** P1.5（V1 基础框架，V1.5 完善）
 > **状态：** ✏️ 设计中
 > **依赖：** task10 (Agent 能力体系)、task11 (权限沙盒)
-> **参考：** [Claude Code EP05 Hook System](../claude-reviews-claude/architecture/05-hook-system.md) — 20 种事件 Hook、PreToolUse/PostToolUse 拦截
+> **参考：** [Claude Code EP05 Hook System](../../external/references/claude-reviews-claude/architecture/05-hook-system.md) — 20 种事件 Hook、PreToolUse/PostToolUse 拦截
 
 ---
 

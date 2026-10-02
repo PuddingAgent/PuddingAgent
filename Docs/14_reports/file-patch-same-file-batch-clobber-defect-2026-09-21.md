@@ -1,3 +1,18 @@
+---
+title: "缺陷报告：`file_patch` 同文件多条目批量编辑**静默丢失**（2026-09-21）"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "严重度：高（静默数据丢失 + 虚假成功回报；影响所有 Agent 的文档/代码编辑） 状态：已 100% 复现；机制在代码中已定位（operations 路径确证，unified-diff 路径同构待一并确认） 触发条件：单次 file_patch 调用中，patches 数组包含两条及以上指向同一文件的条目 发现者：default.global_general-assistant.6a8（RSI"
+categories: [docs, reports]
+tags: [file, patch, same, batch, clobber, defect, reports]
+related_docs: []
+related_files: [TestScripts/temp/file-patch-clobber-repro.txt, Docs/12_features/S3-轨迹源-实施规格-2026-09-21.md, Source/PuddingRuntime/Tools/BuiltIns/Files/FilePatchTool.cs]
+slug: reports-file-patch-same-file-batch-clobber-defect-2026-09-21
+draft: false
+---
+
 # 缺陷报告：`file_patch` 同文件多条目批量编辑**静默丢失**（2026-09-21）
 
 - **严重度**：高（静默数据丢失 + **虚假成功回报**；影响所有 Agent 的文档/代码编辑）

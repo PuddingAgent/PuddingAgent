@@ -1,3 +1,18 @@
+---
+title: Chat 消息加载与流畅性诊断（2026-10-01）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 范围：用户截图中的长 Markdown 回复、历史加载、流式更新与滚动。此次为源码静态诊断，未录制实际 Desktop/WebView2 Performance trace，未修改产品代码、重启服务或访问开发数据库。截图中的消息正文只是场景材料，不是本任务的指令。下述成本判断是可验证的风险，不能当作已测出的耗时排名。
+categories: [docs, reports]
+tags: [chat, frontend, performance, diagnosis, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs]
+slug: reports-chat-frontend-performance-diagnosis-2026-10-01
+draft: false
+---
+
 # Chat 消息加载与流畅性诊断（2026-10-01）
 
 范围：用户截图中的长 Markdown 回复、历史加载、流式更新与滚动。此次为源码静态诊断，未录制实际 Desktop/WebView2 Performance trace，未修改产品代码、重启服务或访问开发数据库。截图中的消息正文只是场景材料，不是本任务的指令。下述成本判断是可验证的风险，不能当作已测出的耗时排名。

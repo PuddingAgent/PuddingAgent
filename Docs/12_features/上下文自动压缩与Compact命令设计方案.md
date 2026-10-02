@@ -1,3 +1,18 @@
+---
+title: 上下文自动压缩与 Compact 命令设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: PuddingAgent 已经具备以下基础：
+categories: [docs, features]
+tags: [上下文自动压, 缩与, 命令设计方案, features]
+related_docs: [Docs/07_architecture/43ADR-042上下文自动压缩与主动Compact命令ADR.md]
+related_files: [Source/PuddingRuntime/Services/AgentExecution/ToolResultContextPolicy.cs, Source/PuddingRuntimeTests/Services/ToolResultContextPolicyTests.cs]
+slug: features-上下文自动压缩与compact命令设计方案
+draft: false
+---
+
 # 上下文自动压缩与 Compact 命令设计方案
 
 > 日期：2026-05-23  

@@ -1,3 +1,18 @@
+---
+title: Memory System v2 Minimal V1 Necessity Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: V1 的判断标准：
+categories: [docs, superpowers]
+tags: [memory, v2, minimal, v1, necessity, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-07-05-memory-v2-minimal-v1-necessity-design
+draft: false
+---
+
 # Memory System v2 Minimal V1 Necessity Design
 
 > Date: 2026-07-05

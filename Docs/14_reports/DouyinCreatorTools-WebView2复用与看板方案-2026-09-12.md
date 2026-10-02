@@ -1,3 +1,18 @@
+---
+title: douyin-creator-tools 调研与 WebView2 续建方案
+author: hyfree
+date: 2026-09-12
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-12。性质：源码研究与任务设计，未实施产品代码、未运行抖音操作、未重新执行 Desktop/真实模型验收。现有权威边界沿用 ADR-066 与 68 实施规格；本文补充当前差距和实施顺序，不批准跳过 Phase 2A-3B/3C 准入。
+categories: [docs, reports]
+tags: [douyincreatortools, 复用与看板方, reports]
+related_docs: []
+related_files: []
+slug: reports-douyincreatortools-webview2复用与看板方案-2026-09-12
+draft: false
+---
+
 # douyin-creator-tools 调研与 WebView2 续建方案
 
 日期：2026-09-12。性质：源码研究与任务设计，未实施产品代码、未运行抖音操作、未重新执行 Desktop/真实模型验收。现有权威边界沿用 ADR-066 与 68 实施规格；本文补充当前差距和实施顺序，不批准跳过 Phase 2A-3B/3C 准入。

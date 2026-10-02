@@ -1,3 +1,18 @@
+---
+title: 0. 产品战略定位
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 68 抖音接入与通用 WebView2 自动化开发实施规格"
+categories: [docs, architecture]
+tags: [抖音接入与通, 自动化开发实, 施规格, architecture]
+related_docs: [Docs/07_architecture/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md, Docs/07_architecture/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md, Docs/14_reports/DouyinCreatorTools-WebView2复用与看板方案-2026-09-12.md]
+related_files: [Docs/08_how_debuge/README.md]
+slug: architecture-68抖音接入与通用webview2自动化开发实施规格
+draft: false
+---
+
 ﻿# 68 抖音接入与通用 WebView2 自动化开发实施规格
 
 > - 状态：**Phase 1A implemented / Phase 1B-R/S implemented / Phase 2A-1/2 accepted / Phase 2A-3 automated accepted（真实 DeepSeek smoke pending，2026-08-02）**

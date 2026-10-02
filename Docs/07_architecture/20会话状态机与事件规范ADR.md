@@ -1,3 +1,18 @@
+---
+title: 20 会话状态机与事件规范 ADR
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: "mermaid stateDiagram-v2 [] --> Streaming : 新消息到达 Streaming --> StreamCompleted : done / error / cancelled 帧 StreamCompleted --> Closed : AllSubAgentsComplete StreamCompleted --> Closed : 主动关闭 Closed -"
+categories: [docs, architecture]
+tags: [会话状态机与, 事件规范, architecture]
+related_docs: [Docs/07_architecture/16会话状态层与客户端解耦ADR.md, Docs/07_architecture/14消息管线与终端代理与前端优化ADR.md, Docs/07_architecture/15潜意识LLM子代理系统ADR.md]
+related_files: [Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md]
+slug: architecture-20会话状态机与事件规范adr
+draft: false
+---
+
 # 20 会话状态机与事件规范 ADR
 
 > 状态：**proposed**

@@ -1,3 +1,18 @@
+---
+title: Tool Infrastructure Layering
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Tool authors should only depend on the Tool SDK contracts, declare metadata, and implement execution logic. Discovery, catalog exposure, permission filtering, schema generation, runtime execution, and"
+categories: [docs, architecture]
+tags: [tool, infrastructure, layering, architecture]
+related_docs: []
+related_files: [Source/PuddingRuntime/Tools/BuiltIns/Files/FileSearchTool.cs]
+slug: architecture-tool-infrastructure-layering
+draft: false
+---
+
 # Tool Infrastructure Layering
 
 ## Goal

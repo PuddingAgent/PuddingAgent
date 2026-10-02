@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 架构评审（2026-09-23）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "范围：E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent。本评审只读完成，未构建、未测试、未重启、未执行 Git 操作。排序按修复价值（故障半径、数据/状态不可恢复性、跨层返工成本、验收可判定性）排列。"
+categories: [docs, reports]
+tags: [archreview, gpt6astra, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/FileSubAgentRunStore.cs, Source/PuddingRuntime/Services/AgentExecution/ToolResultContextPolicy.cs, Source/PuddingRuntime/Services/Skills/SkillEnforcerService.cs, Source/PuddingRuntime/code_map.md, Docs/12_features/上下文自动压缩与Compact命令设计方案.md, Source/PuddingHost/Hosting/PuddingApplicationHost.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs]
+slug: reports-archreview-gpt6astra-2026-09-23
+draft: false
+---
+
 # PuddingAgent 架构评审（2026-09-23）
 
 > **来源与验证状态（provenance）—— 请先读这段再引用本文结论**

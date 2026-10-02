@@ -1,3 +1,18 @@
+---
+title: Pudding Agent Network 文档索引
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 这里是 Pudding Agent 的设计入口。当前产品主线是 Windows First 的 PuddingDesktop.exe：WPF 负责 Windows 11 Shell、WebView2 和进程监督，独立的 ASP.NET Core 子进程继续承载 API、Controller、Runtime、Connector 和 SQLite。现有 Web Workbench 通过内置静态资源复用
+categories: [docs]
+tags: [readme]
+related_docs: [Docs/00_changelog/README.md, code_map.md, Agents.md, Docs/00_changelog/2026Year/10/2026-10-02-Docs-README迁出的按日期进展记录.md]
+related_files: [code_map.md, Agents.md, Docs/07_architecture/架构.md, Docs/07_architecture/README.md, Docs/15_tasks/Tasks.md, Docs/06_config/hooks.md, Docs/06_config/pudding-yaml.md, Docs/07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md, Docs/07_architecture/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md, Docs/07_architecture/68抖音接入与通用WebView2自动化开发实施规格.md, Docs/07_architecture/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md, Docs/07_architecture/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md, Docs/07_architecture/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md, Docs/07_architecture/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md, Docs/07_architecture/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md, Docs/07_architecture/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md, Docs/07_architecture/75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md, Docs/07_architecture/76Phase2A-3通用WebView2页面操作实施验收报告.md, Docs/07_architecture/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md, Docs/07_architecture/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md]
+slug: docs-readme
+draft: false
+---
+
 # Pudding Agent Network 文档索引
 
 > **修改日志请写 [`00Changelog/`](00_changelog/README.md)，不要写进本文件。** 本文件是文档索引；日志规则见 [00Changelog/README.md](00_changelog/README.md)，代码索引规则见根 [`code_map.md`](../code_map.md) 与 [`Agents.md`](../Agents.md)。

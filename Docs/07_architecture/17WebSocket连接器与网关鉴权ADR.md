@@ -1,3 +1,18 @@
+---
+title: ADR-017：WebSocket连接器与网关鉴权层
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: "状态: draft → ready 日期: 2026-05-16 决策者: Lead Agent (Claude 4.7)"
+categories: [docs, architecture]
+tags: [连接器与网关, 鉴权, architecture]
+related_docs: []
+related_files: [Source/PuddingGateway/Models/ConnectionIdentity.cs, TestScripts/PuddingWsTest/Program.cs]
+slug: architecture-17websocket连接器与网关鉴权adr
+draft: false
+---
+
 # ADR-017：WebSocket连接器与网关鉴权层
 
 **状态**: draft → ready

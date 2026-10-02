@@ -1,3 +1,18 @@
+---
+title: Hook System v2 Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "2026-06-30 implementation status:"
+categories: [docs, superpowers]
+tags: [hook, system, v2, design, specs]
+related_docs: []
+related_files: [Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md, Docs/06_config/hooks.md]
+slug: superpowers-2026-06-30-hook-system-v2-design
+draft: false
+---
+
 # Hook System v2 Design
 
 > Date: 2026-06-30

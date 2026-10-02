@@ -1,3 +1,18 @@
+---
+title: ADR-070 通用 Agent 编排图基础架构
+author: hyfree
+date: 2026-08-11
+last_reviewed: 2026-10-02
+status: active
+description: "Pudding 将 Agent Orchestration 提升为 Core 的基础能力。主代理可以根据用户请求产生声明式任务图，Pudding 负责校验、版本化、激活、调度、恢复和投影；Agent 不直接提交可执行 C#、JavaScript、Shell 或任意表达式。"
+categories: [docs, architecture]
+tags: [通用, 编排图基础架, architecture]
+related_docs: [Docs/07_architecture/11工作流与任务图.md, Docs/07_architecture/57ADR-056聊天消息受理与可靠事件流架构ADR.md, Docs/07_architecture/61ADR-060子代理运行可观测性与会话事件投影ADR.md, Docs/07_architecture/80ADR-069MOA子代理设计委员会编排核心ADR.md, Docs/07_architecture/82ADR-071通用Agent编排平台完整设计方案ADR.md, Docs/07_architecture/83通用Agent编排后端执行内核与ControlPlane施工图.md, Docs/07_architecture/84通用Agent编排蓝图编辑器与组件系统施工图.md, Docs/07_architecture/85通用Agent编排交付测试与运维验收图册.md]
+related_files: [Source/PuddingCore/Orchestration/AgentOrchestrationPersistenceContracts.cs, Source/PuddingPlatform/Services/Orchestration/AgentOrchestrationSchemaBootstrapper.cs, Source/PuddingPlatform/Services/Orchestration/SqliteAgentOrchestrationStore.cs, Source/PuddingPlatform/Services/Orchestration/AgentOrchestrationCommittedEventSignal.cs, Source/PuddingPlatform/Services/Orchestration/AgentOrchestrationEventFollower.cs, Source/PuddingPlatform/Controllers/Api/AgentOrchestrationApiController.cs, Source/PuddingPlatform/Controllers/Api/AgentOrchestrationLayoutApiController.cs]
+slug: architecture-81adr-070通用agent编排图基础架构adr
+draft: false
+---
+
 # ADR-070 通用 Agent 编排图基础架构
 
 > 状态：**phase-4d-graph-management-implemented；完整施工设计见 ADR-071**  

@@ -1,3 +1,18 @@
+---
+title: Memory v2 F3 Worker Scheduling Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Add a scheduling gate in front of durable SubconsciousJobs execution so background memory maintenance respects idle windows, workspace limits, budgets, and diagnostics before any subconscious LL"
+categories: [docs, superpowers]
+tags: [memory, v2, f3, worker, scheduling, plan, plans]
+related_docs: []
+related_files: [Tools/Diagnostics/query_metrics.py, Docs/18_superpowers/specs/2026-07-01-memory-v2-foundation-prerequisites.md, Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs, Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs, Source/PuddingCore/Configuration/SubconsciousOptions.cs, Source/PuddingCore/Platform/SubconsciousDtos.cs, Source/PuddingCore/Abstractions/ISubconsciousOrchestrator.cs, Source/PuddingRuntime/Services/Background/SubconsciousJobScheduler.cs, Source/PuddingRuntimeTests/Services/SubconsciousJobSchedulerTests.cs, Source/PuddingMemoryEngineTests/SubconsciousJobQueueTests.cs, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingAgent/Program.cs, Source/PuddingRuntimeTests/Services/RuntimeServiceExtensionsTests.cs, Tools/Diagnostics/tests/test_query_metrics.py]
+slug: superpowers-2026-07-01-memory-v2-f3-worker-scheduling-plan
+draft: false
+---
+
 # Memory v2 F3 Worker Scheduling Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

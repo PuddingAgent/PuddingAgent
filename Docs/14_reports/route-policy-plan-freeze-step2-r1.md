@@ -1,3 +1,18 @@
+---
+title: 阶段感知模型路由 — Step 2 Plan Freeze（checkpoint-v1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId tg-0992b9b323e3c4e4a38f7fa51407f55d｜iteration 3｜stepNode tn-a89688d2b34b57c73043e71252b74695（Plan, seq 2/5） 上轮 verdict：outcome=blocked、blockerCode=work_unit_budget_exhausted、unmetCriteria=[]"
+categories: [docs, reports]
+tags: [route, policy, plan, freeze, step2, r1, reports]
+related_docs: []
+related_files: []
+slug: reports-route-policy-plan-freeze-step2-r1
+draft: false
+---
+
 # 阶段感知模型路由 — Step 2 Plan Freeze（checkpoint-v1）
 
 - goalRunId `tg-0992b9b323e3c4e4a38f7fa51407f55d`｜iteration 3｜stepNode `tn-a89688d2b34b57c73043e71252b74695`（Plan, seq 2/5）

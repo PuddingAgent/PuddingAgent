@@ -1,3 +1,18 @@
+---
+title: ADR-089：Agent 统一检索与渐进展开工具链
+author: hyfree
+date: 2026-09-13
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-13。状态：Proposed（U0 部分实施，独立审阅 needs_changes；整体未部署、未验收）。48 项定向测试通过，但旧索引文本、正则超时、覆盖与结果上限门禁仍待修复，见 U0 审阅报告。
+categories: [docs, architecture]
+tags: [统一检索与渐, 进展开工具链, architecture]
+related_docs: [Docs/14_reports/ADR-089-U0审阅与返工意见-2026-09-13.md, Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md]
+related_files: []
+slug: architecture-103adr-089agent统一检索与渐进展开工具链adr
+draft: false
+---
+
 # ADR-089：Agent 统一检索与渐进展开工具链
 
 日期：2026-09-13。状态：Proposed（U0 部分实施，独立审阅 needs_changes；整体未部署、未验收）。48 项定向测试通过，但旧索引文本、正则超时、覆盖与结果上限门禁仍待修复，见 [U0 审阅报告](../14_reports/ADR-089-U0审阅与返工意见-2026-09-13.md)。

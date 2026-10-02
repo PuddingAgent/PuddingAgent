@@ -1,3 +1,18 @@
+---
+title: G5-a 去噪影响评估（只读预演）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "生成时间：2026-09-21 18:36:41 +08:00 技能根目录：D:\\data\\agents\\default.global_general-assistant.6a8\\skills"
+categories: [docs, reports]
+tags: [skill, keyword, denoise, impact, reports]
+related_docs: []
+related_files: []
+slug: reports-skill-keyword-denoise-impact-2026-09-21
+draft: false
+---
+
 # G5-a 去噪影响评估（只读预演）
 
 生成时间：2026-09-21 18:36:41 +08:00

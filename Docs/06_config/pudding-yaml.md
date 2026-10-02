@@ -1,3 +1,18 @@
+---
+title: Pudding YAML 配置（跨平台）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-02-20
+categories: [docs, config]
+tags: [pudding, yaml, config]
+related_docs: []
+related_files: []
+slug: config-pudding-yaml
+draft: false
+---
+
 # Pudding YAML 配置（跨平台）
 
 最后更新：2026-02-20

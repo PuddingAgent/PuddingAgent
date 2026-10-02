@@ -1,3 +1,18 @@
+---
+title: P2 Scheduler 降噪 — 收尾报告 v2（closeout-r2 / Plan 修正 + 最终遗留）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "迭代 30 / 32（剩 2 轮）；task 06898d5dfe004c69ab6d5baf18b2674a（v30，progress 75%） 本轮性质：收尾轮，不新增生产代码；只做一次有界只读核实，用于修正 step2 Plan 的落点裁定"
+categories: [docs, reports]
+tags: [scheduler, noise, closeout, r2, reports]
+related_docs: []
+related_files: [Source/PuddingCore/Storage/StorageAdministrationContracts.cs]
+slug: reports-scheduler-noise-closeout-r2
+draft: false
+---
+
 # P2 Scheduler 降噪 — 收尾报告 v2（closeout-r2 / Plan 修正 + 最终遗留）
 
 - 迭代 30 / 32（剩 2 轮）；task `06898d5dfe004c69ab6d5baf18b2674a`（v30，progress 75%）

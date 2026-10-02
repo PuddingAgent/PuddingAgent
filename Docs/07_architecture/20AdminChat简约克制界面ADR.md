@@ -1,3 +1,18 @@
+---
+title: 20 Admin Chat 简约克制界面 ADR
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: /admin/chat 当前已具备完整的 Agent Chat 骨架：
+categories: [docs, architecture]
+tags: [简约克制界面, architecture]
+related_docs: [Docs/07_architecture/06PuddingAgent与客户端.md, Docs/07_architecture/14消息管线与终端代理与前端优化ADR.md, Docs/07_architecture/18上下文缓存可观测性ADR.md, Docs/12_features/PuddingUiUxRedesign.md, Docs/12_features/ChatUIRedesign.md, Docs/12_features/AdminChat简约克制设计方案.md]
+related_files: [Source/PuddingPlatformAdmin/src/pages/chat/styles.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/InputArea.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/StatusBarTokenIndicator.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ContextMenu.tsx]
+slug: architecture-20adminchat简约克制界面adr
+draft: false
+---
+
 # 20 Admin Chat 简约克制界面 ADR
 
 > 状态：**accepted**  

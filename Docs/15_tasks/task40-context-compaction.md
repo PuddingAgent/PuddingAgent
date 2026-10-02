@@ -1,10 +1,25 @@
+---
+title: task40 — 上下文压缩设计
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "设计并实现 Pudding Agent 的上下文压缩系统，使 Agent 能在 Token 预算范围内维持\"无限对话\"的体验——在上下文接近上限时自动压缩历史，同时保留关键信息。"
+categories: [docs, tasks]
+tags: [task40, context, compaction, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task40-context-compaction
+draft: false
+---
+
 # task40 — 上下文压缩设计
 
 > **创建日期：** 2026-05-03
 > **优先级：** P1（L1 记忆重要）
 > **状态：** ✏️ 设计中
 > **依赖：** task26 (Runtime 基础宿主)、task39 (会话持久化)
-> **参考：** [Claude Code EP11 Compact System](../claude-reviews-claude/architecture/11-compact-system.md) — 3 层压缩（Micro→Session→Full）、Token 预算管理
+> **参考：** [Claude Code EP11 Compact System](../../external/references/claude-reviews-claude/architecture/11-compact-system.md) — 3 层压缩（Micro→Session→Full）、Token 预算管理
 
 ---
 

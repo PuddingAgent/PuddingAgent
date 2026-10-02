@@ -1,3 +1,18 @@
+---
+title: 定位
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# PuddingCore"
+categories: [docs, architecture]
+tags: [architecture]
+related_docs: []
+related_files: []
+slug: architecture-02puddingcore
+draft: false
+---
+
 ﻿# PuddingCore
 
 > **2026-05-02**：Core 仍然是共享抽象与协议层。不受部署模型变更影响。

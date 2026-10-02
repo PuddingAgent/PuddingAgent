@@ -1,3 +1,18 @@
+---
+title: 案例：浏览器 Bridge 与 Chat
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 2026-08-23 新增。Desktop 设置页新增「调试模式（开发者）」卡片，启用并重启 Core 后：
+categories: [docs, how-debug]
+tags: [案例, 浏览器, how_debuge]
+related_docs: [Docs/08_how_debuge/README.md]
+related_files: []
+slug: how-debuge-13-案例-浏览器bridge与chat
+draft: false
+---
+
 # 案例：浏览器 Bridge 与 Chat
 
 > 本文档是 [How-Debuge 调试与诊断手册](README.md)（主索引）的主题分册，由原根目录 `How-Debuge.md` 于 2026-10-02 按主题拆分而来。

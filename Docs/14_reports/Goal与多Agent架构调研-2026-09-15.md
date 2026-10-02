@@ -1,3 +1,18 @@
+---
+title: Goal 机制与多 Agent 架构调研（2026-09-15）
+author: hyfree
+date: 2026-09-15
+last_reviewed: 2026-10-02
+status: active
+description: "一个会话同时只有一个目标；命令集 /goal（查看）、/goal <目标>（设定，已有目标时替换）、 /goal replace、/goal pause、/goal resume、/goal clear。[官方] 可校验性是第一等要求：目标越具体越可校验，每轮判断越准。正例「把 pnpm test 跑通， 并且首屏加载控制在 2 秒内」；反例「优化一下性能」。适合\"一句话说得清、但要多轮才能做完\""
+categories: [docs, reports]
+tags: [与多, 架构调研, reports]
+related_docs: []
+related_files: []
+slug: reports-goal与多agent架构调研-2026-09-15
+draft: false
+---
+
 # Goal 机制与多 Agent 架构调研（2026-09-15）
 
 > 目的：为 ADR-092（两级校验 + 受控 `IGoalCheckRunner` + 统一结算）与 G92-1 提供外部对照，

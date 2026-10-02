@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 工具系统对齐 deepseek-harness 优化方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: PuddingAgent 不应照搬 deepseek-harness 的 TypeScript 插件框架，但应采用它围绕 DeepSeek 模型形成的工具协议：同一份类型定义同时约束模型输入、程序返回、模型可见结果、可回放 UI 和执行策略。
+categories: [docs, references]
+tags: [deepseek, harness, tool, system, alignment, deepseek_harness]
+related_docs: []
+related_files: [Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md, Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md, Source/PuddingCore/Tools/PuddingToolContracts.cs, Source/PuddingRuntime/Tools/Platform/ToolInvocationService.cs, Source/PuddingRuntime/Tools/Platform/PuddingToolRegistry.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs, Source/PuddingCore/Models/ToolParameterSchema.cs]
+slug: references-deepseek-harness-tool-system-alignment-2026-08-14
+draft: false
+---
+
 # PuddingAgent 工具系统对齐 deepseek-harness 优化方案
 
 > 日期：2026-08-14

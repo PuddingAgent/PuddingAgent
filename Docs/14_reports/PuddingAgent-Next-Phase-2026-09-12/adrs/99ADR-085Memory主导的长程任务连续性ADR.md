@@ -1,3 +1,18 @@
+---
+title: ADR-085：Memory 主导的长程任务连续性
+author: hyfree
+date: 2026-09-12
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-12 状态：Proposed；设计交付，未宣称运行中已实现。 详细设计：长程自治设计 §4–5、§8 关系：修订 ADR-042/ADR-074 中把会话压缩承担为续行主通道的范围；保留显式compact、压力压缩、canonical原文导入与覆盖证明。沿用 Wiki Book v1 简单写入合同，不重新启用F0–F10。
+categories: [docs, reports]
+tags: [主导的长程任, 务连续性, adrs]
+related_docs: [Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/01-设计方案.md]
+related_files: []
+slug: reports-99adr-085memory主导的长程任务连续性adr
+draft: false
+---
+
 # ADR-085：Memory 主导的长程任务连续性
 
 - 日期：2026-09-12

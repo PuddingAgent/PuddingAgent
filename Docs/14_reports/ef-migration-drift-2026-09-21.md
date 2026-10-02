@@ -1,3 +1,18 @@
+---
+title: EF 迁移机制性不可用 —— 现场测量与方案取舍（2026-09-21）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 任务卡：9c25d3ec57f6446eb6ddaa80e9233117（P2·基础设施，6a8 施工域） 来源：dsh(0e0) 实测报告 Docs/14_reports/dsh-协作协议v1.1-确认与修订建议-2026-09-21.md §A5（commit fe43e9e） 测量方式：纯静态（不编译、不连库、不改任何数据库结构）—— 脚本 TestScripts/ef-migration-
+categories: [docs, reports]
+tags: [ef, migration, drift, reports]
+related_docs: []
+related_files: [Docs/14_reports/dsh-协作协议v1.1-确认与修订建议-2026-09-21.md, TestScripts/ef-migration-audit.py, Source/PuddingHost/Hosting/PuddingApplicationInitializer.cs, Source/PuddingPlatform/Data/PlatformDbContext.cs, Source/PuddingPlatformTests/Services/SchemaBootstrapperFreshDatabaseColumnTests.cs]
+slug: reports-ef-migration-drift-2026-09-21
+draft: false
+---
+
 # EF 迁移机制性不可用 —— 现场测量与方案取舍（2026-09-21）
 
 - 任务卡：`9c25d3ec57f6446eb6ddaa80e9233117`（P2·基础设施，6a8 施工域）

@@ -1,3 +1,18 @@
+---
+title: 任务目标
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# task28 - Platform 工作空间治理与服务暴露"
+categories: [docs, tasks]
+tags: [task28, platform, workspace, governance, tasks]
+related_docs: [Docs/07_architecture/05PuddingPlatform.md, Docs/07_architecture/07协作网络与治理.md, Docs/07_architecture/08数据模型与配置.md, Docs/15_tasks/task27-controller-routing-session.md, Docs/15_tasks/task29-agent-template-and-audit.md, Docs/15_tasks/task30-knowledge-infrastructure.md, Docs/15_tasks/task25-workflow.md]
+related_files: []
+slug: tasks-task28-platform-workspace-governance
+draft: false
+---
+
 ﻿# task28 - Platform 工作空间治理与服务暴露
 
 > **V1 简化**（2026-05-02）：移除知识库/图谱/存储（V3）、审计治理策略（V2）、协作驾驶舱（V3）、共享工具台（V3）。V1 聚焦 Workspace CRUD 与 AgentTemplate 管理。

@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 插件、Hook、生命周期与事件驱动自学习架构方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 应把现有“工具就是插件”的思路扩展为：除最小 Microkernel 外，所有业务能力都是插件贡献项。这同时包括标准 Profile 强制要求的 Model、Agent Loop、Session、Storage、Sandbox、Scheduler，也包括可选的 Tool、Skill、Prompt、Hook、事件订阅者、Connector、学习阶段和声明式 UI presentati
+categories: [docs, references]
+tags: [deepseek, harness, pi, plugin, hook, event, architecture, deepseek_harness]
+related_docs: []
+related_files: [Docs/18_superpowers/specs/2026-06-30-hook-system-v2-design.md, Docs/07_architecture/28ADR-027Hook事件潜意识学习闭环ADR.md, Docs/12_features/memory-design/learning-mechanism-design.md, Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md, Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md, Source/PuddingRuntime/Services/Plugins/PluginManifestCatalog.cs, Source/PuddingRuntime/Services/Plugins/PluginPackageInstaller.cs, Source/PuddingCore/Abstractions/IInternalEventBus.cs, Source/PuddingRuntime/Services/Events/InternalEventBus.cs, Source/PuddingPlatform/Services/PriorityEventQueue.cs, Source/PuddingRuntime/Services/Events/EventDispatcher.cs, Source/PuddingRuntime/Services/Hooks/HookPublisher.cs, Source/PuddingRuntime/Services/Hooks/SessionCompressedMemoryMaintenanceHook.cs, Source/PuddingHost/Services/HeartbeatService.cs, Source/PuddingRuntime/IdleDetector.cs, Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs, Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs]
+slug: references-deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14
+draft: false
+---
+
 # PuddingAgent 插件、Hook、生命周期与事件驱动自学习架构方案
 
 > 首次提出：2026-08-14

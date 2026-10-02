@@ -1,3 +1,18 @@
+---
+title: Goodput SLO — Step 1 Explore Checkpoint（checkpoint-v1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId tg-9ec9d27543747ec6849a52aae10d9f31｜task 0b16740022f84b58a9532a87f1bc5509（已认领 v21→22）｜stepNode tn-619c1dff9dafa61598a18756a13a376c（Explore, seq 1/5） step objective 逐字：\"Collect canonical repo"
+categories: [docs, reports]
+tags: [goodput, slo, explore, step1, checkpoint, r1, reports]
+related_docs: []
+related_files: [Docs/14_reports/goodput-slo-explore-step1-evidence-r1.md, Docs/14_reports/tracker-watchdog-step2-heartbeatoutcome-design-r1.md]
+slug: reports-goodput-slo-explore-step1-checkpoint-r1
+draft: false
+---
+
 # Goodput SLO — Step 1 Explore Checkpoint（checkpoint-v1）
 
 - goalRunId `tg-9ec9d27543747ec6849a52aae10d9f31`｜task `0b16740022f84b58a9532a87f1bc5509`（已认领 v21→22）｜stepNode `tn-619c1dff9dafa61598a18756a13a376c`（**Explore**, seq 1/5）

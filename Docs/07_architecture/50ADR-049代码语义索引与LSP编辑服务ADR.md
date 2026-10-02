@@ -1,3 +1,18 @@
+---
+title: ADR-049 代码语义索引与 LSP 编辑服务
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Draft
+categories: [docs, architecture]
+tags: [代码语义索引, 编辑服务, architecture]
+related_docs: []
+related_files: []
+slug: architecture-50adr-049代码语义索引与lsp编辑服务adr
+draft: false
+---
+
 # ADR-049 代码语义索引与 LSP 编辑服务
 
 ## 状态

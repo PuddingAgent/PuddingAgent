@@ -1,3 +1,18 @@
+---
+title: 聊天消息排队延迟与状态显示修复
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 2026-09-30，用户报告默认助手数分钟没有响应。仅凭 Core 的 21.5 秒启动耗时、996 MiB 工作集或低 CPU，不能判断本条消息卡在启动或模型推理。
+categories: [docs, reports]
+tags: [chat, queue, response, fix, reports]
+related_docs: []
+related_files: [Source/PuddingAgent/bin/Debug/net10.0/PuddingAgent.exe]
+slug: reports-chat-queue-response-fix-2026-09-30
+draft: false
+---
+
 # 聊天消息排队延迟与状态显示修复
 
 ## 现场结论

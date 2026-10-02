@@ -1,3 +1,18 @@
+---
+title: 技能组合盘点（G1 · 只读）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "生成时间：2026-09-21 18:30:11 +08:00 技能根目录：D:\\data\\agents\\default.global_general-assistant.6a8\\skills"
+categories: [docs, reports]
+tags: [skill, portfolio, g1, reports]
+related_docs: []
+related_files: [Source/PuddingRuntime/Services/Skills/SkillEnforcerService.cs]
+slug: reports-skill-portfolio-g1-2026-09-21
+draft: false
+---
+
 # 技能组合盘点（G1 · 只读）
 
 生成时间：2026-09-21 18:30:11 +08:00

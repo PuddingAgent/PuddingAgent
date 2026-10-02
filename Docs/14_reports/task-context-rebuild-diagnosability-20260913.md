@@ -1,3 +1,18 @@
+---
+title: "task_claim/task_update 反查失败归因丢失：四类根因被压成同一句 `task.active_context_missing`"
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "类型：平台缺陷报告（诊断可解释性）+ 最小修复规格 日期：2026-09-13 04:5x BJT · 报告人：默认助手（default.global-general-assistant.6a8） 复现次数：3 次（跨 3 个不同 run 形态），并已造成连续三轮错误归因（已写入 goal.md 与 Memory，需按本报告校正） 关联：缺陷族「重启恢复链断裂 / lease_lost / 父 T"
+categories: [docs, reports]
+tags: [task, context, rebuild, diagnosability, reports]
+related_docs: []
+related_files: [Docs/14_reports/PuddingAgent-Autonomy-Audit-2026-09-12/02-任务看板登记与实施顺序.md, Source/PuddingRuntime/Services/TaskTools/TaskClaimTool.cs, Source/PuddingRuntime/Services/TaskTools/TaskUpdateTool.cs, Source/PuddingRuntime/Services/TaskTools/TaskToolModels.cs, Source/PuddingCore/Tasks/TaskAgentCommandContracts.cs, Source/PuddingRuntimeTests/Tools/TaskToolsTests.cs, Source/PuddingCore/code_map.md, Source/PuddingRuntime/code_map.md]
+slug: reports-task-context-rebuild-diagnosability-20260913
+draft: false
+---
+
 # task_claim/task_update 反查失败归因丢失：四类根因被压成同一句 `task.active_context_missing`
 
 - **类型**：平台缺陷报告（诊断可解释性）+ 最小修复规格

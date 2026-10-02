@@ -1,3 +1,18 @@
+---
+title: Agent Runtime SKILL Filesystem Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Date: 2026-06-16"
+categories: [docs, superpowers]
+tags: [agent, runtime, skill, filesystem, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-06-16-agent-runtime-skill-filesystem-design
+draft: false
+---
+
 # Agent Runtime SKILL Filesystem Design
 
 Date: 2026-06-16

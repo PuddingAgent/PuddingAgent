@@ -1,3 +1,18 @@
+---
+title: task37 — 连接器基础设施与 Webhook 连接器实现
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-05-02
+categories: [docs, tasks]
+tags: [task37, connector, infra, webhook, tasks]
+related_docs: [Docs/15_tasks/task36-event-trigger-and-subagent.md, Docs/07_architecture/架构.md, Docs/07_architecture/04PuddingController与Gateway.md]
+related_files: []
+slug: tasks-task37-connector-infra-webhook
+draft: false
+---
+
 # task37 — 连接器基础设施与 Webhook 连接器实现
 
 最后更新：2026-05-02

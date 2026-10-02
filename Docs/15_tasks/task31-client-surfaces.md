@@ -1,3 +1,18 @@
+---
+title: task31 - Web Chat、CLI 与控制客户端
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-03-18
+categories: [docs, tasks]
+tags: [task31, client, surfaces, tasks]
+related_docs: [Docs/07_architecture/06PuddingAgent与客户端.md, Docs/07_architecture/09V1落地与验收.md, Docs/15_tasks/task32-observability-integration.md]
+related_files: []
+slug: tasks-task31-client-surfaces
+draft: false
+---
+
 # task31 - Web Chat、CLI 与控制客户端
 
 最后更新：2026-03-18

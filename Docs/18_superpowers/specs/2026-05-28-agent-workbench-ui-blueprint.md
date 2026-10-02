@@ -1,3 +1,18 @@
+---
+title: Agent 工作台 UI 施工蓝图
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 当前代码里已经存在多模态能力的雏形：
+categories: [docs, superpowers]
+tags: [agent, workbench, ui, blueprint, specs]
+related_docs: []
+related_files: [Docs/18_superpowers/specs/2026-05-28-agent-workbench-interaction-design.md, Source/PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/InputArea.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/VoiceConversationPanel.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/AgentAvatarRuntimeView.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/CameraInputModal.tsx, Source/PuddingPlatformAdmin/src/pages/chat/styles.ts]
+slug: superpowers-2026-05-28-agent-workbench-ui-blueprint
+draft: false
+---
+
 # Agent 工作台 UI 施工蓝图
 
 > 日期：2026-05-28

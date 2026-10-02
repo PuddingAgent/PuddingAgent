@@ -1,3 +1,18 @@
+---
+title: WinUI 运行中心诊断与自适应日志
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 运行中心导航从左下角移到工作台、浏览器之后，启动设置继续位于底部。
+categories: [docs, reports]
+tags: [desktop, runtime, center, reports]
+related_docs: []
+related_files: []
+slug: reports-desktop-runtime-center-2026-09-30
+draft: false
+---
+
 # WinUI 运行中心诊断与自适应日志
 
 运行中心导航从左下角移到工作台、浏览器之后，启动设置继续位于底部。

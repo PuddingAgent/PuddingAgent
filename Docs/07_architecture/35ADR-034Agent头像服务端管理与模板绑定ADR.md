@@ -1,3 +1,18 @@
+---
+title: 35 ADR-034 Agent 头像服务端管理与模板绑定
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前头像资源位于前端目录：
+categories: [docs, architecture]
+tags: [头像服务端管, 理与模板绑定, architecture]
+related_docs: [Docs/12_features/Agent头像服务端管理设计方案.md]
+related_files: [Source/PuddingPlatformAdmin/src/assets/avatars/avatars.json, Source/PuddingPlatformAdmin/src/pages/global-agent-template/index.tsx]
+slug: architecture-35adr-034agent头像服务端管理与模板绑定adr
+draft: false
+---
+
 # 35 ADR-034 Agent 头像服务端管理与模板绑定
 
 > 状态：**proposed**  

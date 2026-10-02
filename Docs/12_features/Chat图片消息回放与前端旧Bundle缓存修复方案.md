@@ -1,3 +1,18 @@
+---
+title: Chat 图片消息回放与前端旧 Bundle 缓存修复方案
+author: hyfree
+date: 2026-08-27
+last_reviewed: 2026-10-02
+status: active
+description: 修复 Chat 中“用户上传图片后，历史消息只显示 picture 图标和‘图片’文字，不显示真实图片”的问题，并消除前端发布后仍运行旧 Bundle 的缓存漂移。
+categories: [docs, features]
+tags: [图片消息回放, 与前端旧, 缓存修复方案, features]
+related_docs: [Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md]
+related_files: [Source/PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs, Source/PuddingPlatformAdmin/src/pages/chat/client/types.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx, Source/PuddingPlatformAdmin/src/pages/chat/types.ts, Source/PuddingPlatformAdmin/dist/index.html, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageList.test.tsx, Source/PuddingPlatformAdmin/src/pages/chat/client/localCache.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionHistoryProjection.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/UserMessageBubble.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageRow.tsx, Source/PuddingPlatformAdmin/src/global.tsx, Source/PuddingPlatformAdmin/src/service-worker.js, Source/PuddingHost/Extensions/PuddingWebApplicationExtensions.cs]
+slug: features-chat图片消息回放与前端旧bundle缓存修复方案
+draft: false
+---
+
 # Chat 图片消息回放与前端旧 Bundle 缓存修复方案
 
 > 状态：Proposed（现场诊断完成，尚未实施）  

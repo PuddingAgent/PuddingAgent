@@ -1,3 +1,18 @@
+---
+title: Phase 2A-3B：外部验收控制器与脱敏 Browser Activity 证据开发工作指令
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: 补齐两个可开发、可单测、但必须由外部进程最终验收的能力：
+categories: [docs, architecture]
+tags: [外部验收控制, 器与脱敏, 证据开发工作, 指令, architecture]
+related_docs: [Docs/07_architecture/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md]
+related_files: []
+slug: architecture-78phase2a-3b外部验收控制器与脱敏browseractivity证据开发工作指令
+draft: false
+---
+
 # Phase 2A-3B：外部验收控制器与脱敏 Browser Activity 证据开发工作指令
 
 > 执行者：运行在当前 Pudding 内的开发 Agent  

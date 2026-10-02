@@ -1,3 +1,18 @@
+---
+title: Agent 模板
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Agent 模板与客户端"
+categories: [docs, architecture]
+tags: [与客户端, architecture]
+related_docs: [Docs/07_architecture/97ADR-083Agent系统预制模板版本化快照与DeepSeek鲸鱼娘模板ADR.md]
+related_files: []
+slug: architecture-06puddingagent与客户端
+draft: false
+---
+
 ﻿# Agent 模板与客户端
 
 > **2026-07-18**：客户端 = 内嵌 Web UI。Agent 模板统一为全局模板库；

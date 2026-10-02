@@ -1,3 +1,18 @@
+---
+title: Desktop 空闲 CPU 与日志展示修复（2026-09-21）
+author: hyfree
+date: 2026-09-21
+last_reviewed: 2026-10-02
+status: active
+description: 现场高占用主要在 Desktop 的 WPF 图形线程。真正使隐藏页面仍持续消耗 CPU 的，是 WebView2CompositionControl 的 D3D 图像仍连接在 WPF 渲染链上；运行中心每秒全量属性通知和托盘更新是独立的放大因素。另外实测确认 IdleDetector 在空闲状态每5秒重复打印同一状态。三项修复分别提交：3fe4ccb、834f281、5f23db5。
+categories: [docs, reports]
+tags: [空闲, 与日志展示修, reports]
+related_docs: []
+related_files: [TestScripts/measure-pudding-process-baseline.ps1]
+slug: reports-desktop空闲cpu与日志展示修复-2026-09-21
+draft: false
+---
+
 # Desktop 空闲 CPU 与日志展示修复（2026-09-21）
 
 ## 结论与证据边界

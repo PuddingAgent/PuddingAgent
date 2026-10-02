@@ -1,3 +1,18 @@
+---
+title: Goodput SLO — Step 3 Change Checkpoint（checkpoint-v1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId tg-9ec9d27543747ec6849a52aae10d9f31｜task 0b16740022f84b58a9532a87f1bc5509｜stepNode tn-ac79b4913b4ded0cdb1e1b72eae5240e（Change, seq 3/5） step objective 逐字：\"Apply the bounded implementation ch"
+categories: [docs, reports]
+tags: [goodput, slo, change, step3, checkpoint, r1, reports]
+related_docs: []
+related_files: [Source/PuddingPlatform/Services/GoodputAttributionService.cs, Source/PuddingPlatformTests/Services/GoodputAttributionServiceTests.cs, Source/PuddingPlatform/code_map.md]
+slug: reports-goodput-slo-change-step3-checkpoint-r1
+draft: false
+---
+
 # Goodput SLO — Step 3 Change Checkpoint（checkpoint-v1）
 
 - goalRunId `tg-9ec9d27543747ec6849a52aae10d9f31`｜task `0b16740022f84b58a9532a87f1bc5509`｜stepNode `tn-ac79b4913b4ded0cdb1e1b72eae5240e`（**Change**, seq 3/5）

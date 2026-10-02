@@ -1,3 +1,18 @@
+---
+title: 技能与开放标准（Agent Skills spec）符合性检查 — 2026-09-21
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "检查对象：D:\\data\\agents\\default.global_general-assistant.6a8\\skills（144 个技能目录） 检查工具：官方校验器 agentskills/agentskills 仓库的 skills-ref（Python 包，Apache-2.0） 方式：只读批量校验（skills_ref.validate），未修改任何技能文件 触发：RSI 设计文档 §"
+categories: [docs, reports]
+tags: [skill, spec, conformance, reports]
+related_docs: []
+related_files: [TestScripts/skill-spec/fix-skill-frontmatter.py, Source/PuddingRuntime/Services/Skills/AgentSkillFileService.cs, Source/PuddingRuntimeTests/Services/AgentSkillFileServiceTests.cs, TestScripts/skill-spec/repair-skill-summaries.py]
+slug: reports-skill-spec-conformance-2026-09-21
+draft: false
+---
+
 # 技能与开放标准（Agent Skills spec）符合性检查 — 2026-09-21
 
 - 检查对象：`D:\data\agents\default.global_general-assistant.6a8\skills`（144 个技能目录）

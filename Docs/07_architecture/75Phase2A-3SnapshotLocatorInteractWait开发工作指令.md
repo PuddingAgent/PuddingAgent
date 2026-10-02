@@ -1,3 +1,18 @@
+---
+title: 75 Phase 2A-3 Snapshot、Locator、Interact、Wait 开发工作指令
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: 新增四个 Bridge 命令面和四个 Agent Tool：
+categories: [docs, architecture]
+tags: [开发工作指令, architecture]
+related_docs: [Docs/07_architecture/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md, Docs/07_architecture/76Phase2A-3通用WebView2页面操作实施验收报告.md]
+related_files: []
+slug: architecture-75phase2a-3snapshotlocatorinteractwait开发工作指令
+draft: false
+---
+
 # 75 Phase 2A-3 Snapshot、Locator、Interact、Wait 开发工作指令
 
 > - 状态：**automated accepted / real DeepSeek smoke pending（2026-08-02）**

@@ -1,3 +1,18 @@
+---
+title: ADR-059：Conversation 执行内核与可靠命令链路
+author: hyfree
+date: 2026-07-18
+last_reviewed: 2026-10-02
+status: active
+description: 状态：已实施（主链路 2026-07-18；Turn Steering 扩展 2026-08-26）
+categories: [docs, architecture]
+tags: [执行内核与可, 靠命令链路, architecture]
+related_docs: []
+related_files: []
+slug: architecture-60adr-059conversation执行内核与可靠命令链路adr
+draft: false
+---
+
 # ADR-059：Conversation 执行内核与可靠命令链路
 
 状态：已实施（主链路 2026-07-18；Turn Steering 扩展 2026-08-26）

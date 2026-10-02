@@ -1,3 +1,18 @@
+---
+title: NeedsReview 批量收敛记录（2026-09-19）
+author: hyfree
+date: 2026-09-19
+last_reviewed: 2026-10-02
+status: active
+description: 看板指标：NeedsReview 17 → 13。
+categories: [docs, reports]
+tags: [needsreview, 批量收敛记录, reports]
+related_docs: []
+related_files: [Source/PuddingRuntime/Services/AgentInvocationDispatchFactory.cs, Source/PuddingCore/Tasks/ActiveTaskMetadata.cs, Source/PuddingPlatformTests/Services/Goals/GoalContinuationTests.cs, Source/PuddingCore/Goals/GoalContractProposal.cs, Source/PuddingCore/Platform/ExecutionRunContracts.cs, Source/PuddingCore/Runtime/ITurnExecutor.cs, Source/PuddingPlatform/Services/Goals/GoalContractProposalValidator.cs, Source/PuddingPlatform/Services/Goals/GoalContractRefinementStore.cs, Source/PuddingRuntime/Services/AgentLoop/AgentLoopResponse.cs]
+slug: reports-needsreview-批量收敛记录-2026-09-19
+draft: false
+---
+
 # NeedsReview 批量收敛记录（2026-09-19）
 
 > 目的：为「卡面陈旧」型卡片的收敛提供持久、可审计的证据留档。

@@ -1,3 +1,18 @@
+---
+title: Task 23 - 中心锁与协同通知总线（Swarm 冲突治理）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 状态：design 优先级：P1 最后更新：2026-02-20
+categories: [docs, tasks]
+tags: [task23, central, lock, coordination, tasks]
+related_docs: []
+related_files: [Docs/15_tasks/task06-agent-message.md]
+slug: tasks-task23-central-lock-coordination
+draft: false
+---
+
 # Task 23 - 中心锁与协同通知总线（Swarm 冲突治理）
 状态：`design`  
 优先级：`P1`  

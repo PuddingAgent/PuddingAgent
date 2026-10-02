@@ -1,3 +1,18 @@
+---
+title: ADR-078：PuddingDesktop 调试模式——源码启动前后端与本机反向代理
+author: hyfree
+date: 2026-08-23
+last_reviewed: 2026-10-02
+status: active
+description: "Desktop 新增调试模式（设置页开关，持久化在 %LOCALAPPDATA%\\Pudding\\desktop.json 的 debug 节，配置文件优先）。启用并重启 Core 后，Desktop 用 dotnet build 从源码构建后端、用 pnpm run start:dev 拉起前端开发服务器，并在 http://127.0.0.1:{ProxyPort}（默认 80）提供反向代理统"
+categories: [docs, architecture]
+tags: [调试模式源码, 启动与反向代, architecture]
+related_docs: []
+related_files: [Source/PuddingAgent/PuddingAgent.csproj, Source/PuddingPlatformAdmin/package.json, Docs/08_how_debuge/README.md, Source/PuddingDesktop/bin/Debug/net10.0-windows10.0.17763.0/PuddingDesktop.dll]
+slug: architecture-92adr-078desktop调试模式源码启动与反向代理adr
+draft: false
+---
+
 # ADR-078：PuddingDesktop 调试模式——源码启动前后端与本机反向代理
 
 > 状态：Accepted（代码与单元/集成测试已落地；真实 pnpm/dotnet 端到端 smoke 由开发者手动执行）

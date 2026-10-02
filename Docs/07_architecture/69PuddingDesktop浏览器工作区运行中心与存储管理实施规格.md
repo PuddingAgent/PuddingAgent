@@ -1,3 +1,18 @@
+---
+title: 69 PuddingDesktop 浏览器工作区、运行中心与存储管理实施规格
+author: hyfree
+date: 2026-08-02
+last_reviewed: 2026-10-02
+status: active
+description: 必须增加多标签页、地址栏、后退、前进、刷新/停止和新建标签页，但这些浏览器控件只属于新增的 Agent Browser 页面，不包裹现有 Workbench。
+categories: [docs, architecture]
+tags: [浏览器工作区, 运行中心与存, 储管理实施规, architecture]
+related_docs: [Docs/07_architecture/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md, Docs/07_architecture/68抖音接入与通用WebView2自动化开发实施规格.md, Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md, Docs/12_features/遥测调试数据自动过期与Web存储管理设计方案.md, Docs/14_reports/Desktop空闲CPU与日志展示修复-2026-09-21.md, Docs/07_architecture/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md, Docs/07_architecture/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md, Docs/07_architecture/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md, Docs/07_architecture/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md, Docs/07_architecture/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md, Docs/07_architecture/75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md, Docs/07_architecture/76Phase2A-3通用WebView2页面操作实施验收报告.md]
+related_files: [Source/PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj]
+slug: architecture-69puddingdesktop浏览器工作区运行中心与存储管理实施规格
+draft: false
+---
+
 # 69 PuddingDesktop 浏览器工作区、运行中心与存储管理实施规格
 
 > - 状态：**Phase 1B-R / Phase 1B-S 已完成；Phase 1B-S2 Core 数据库与索引管理 API 已完成自动验收（外部部署后 UI smoke pending）；Desktop 固定端口与 IPv4 全网卡监听已完成（2026-08-09）；Phase 2A-1/2 accepted；Phase 2A-3 automated accepted（真实 DeepSeek smoke pending）**

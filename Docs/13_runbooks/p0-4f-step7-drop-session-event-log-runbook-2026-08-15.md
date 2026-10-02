@@ -1,3 +1,18 @@
+---
+title: P0-4f 第⑦步「归档删表 session_event_log」操作记录 / 回滚手册
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 物理删除旧流 session_event_log 表及其全部代码引用，使 conversation_events 成为唯一 canonical 事实源。
+categories: [docs, runbooks]
+tags: [p0, step7, drop, session, event, log, runbook, runbooks]
+related_docs: []
+related_files: []
+slug: runbooks-p0-4f-step7-drop-session-event-log-runbook-2026-08-15
+draft: false
+---
+
 # P0-4f 第⑦步「归档删表 session_event_log」操作记录 / 回滚手册
 
 > 生成时间：2026-08-15

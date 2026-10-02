@@ -1,3 +1,18 @@
+---
+title: P2 Scheduler 遥测降噪 — 收尾报告（closeout-r1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 本轮（28）新增：本收尾报告；并把「判据缺陷」转为可追踪看板卡（详见 §4.1）。
+categories: [docs, reports]
+tags: [scheduler, noise, closeout, r1, reports]
+related_docs: []
+related_files: []
+slug: reports-scheduler-noise-closeout-r1
+draft: false
+---
+
 # P2 Scheduler 遥测降噪 — 收尾报告（closeout-r1）
 
 | 字段 | 值 |

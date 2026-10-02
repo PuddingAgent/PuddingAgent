@@ -1,3 +1,18 @@
+---
+title: 从 Source/PuddingHost/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
+author: hyfree
+date: 2026-08-07
+last_reviewed: 2026-10-02
+status: archived
+description: 〔原文第 74–82 行：U3-B2a（2026-09-23）— 代码索引维护的宿主生命周期驱动〕
+categories: [docs, changelog]
+tags: [puddinghost, code, 迁出的变更记]
+related_docs: []
+related_files: [Source/PuddingHost/code_map.md, Docs/00_changelog/README.md, Source/PuddingDesktop/MainWindow.xaml.cs]
+slug: changelog-2026-10-02-puddinghost-code-map迁出的变更记录
+draft: false
+---
+
 # 从 Source/PuddingHost/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
 
 > **为什么在这里**：`Source/PuddingHost/code_map.md` 只保留索引（关键概念 · 组件 · 关键文件 · 用途）。原先按轮次/日期堆叠在其中的变更、门禁与验收记录迁出到本文件。日志规则见 `Docs/00_changelog/README.md`。

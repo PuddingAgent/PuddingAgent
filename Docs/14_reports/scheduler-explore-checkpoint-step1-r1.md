@@ -1,3 +1,18 @@
+---
+title: Scheduler Explore — Step 1 Checkpoint (checkpoint-v1)
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId: tg-2efcdf7d329d8387632a67bcbfbdbe2b｜objectiveVersion: 1｜iteration: 1 taskId: 3bd2a4b0ef5f4bff8f175fb7655927ad｜assignmentId: d800b31c76644659b9d647a3c97428b0 stepNodeId: tn-3ced31d2fa84e6c2f"
+categories: [docs, reports]
+tags: [scheduler, explore, checkpoint, step1, r1, reports]
+related_docs: []
+related_files: [Docs/14_reports/scheduler-explore-evidence-r1.md, Source/PuddingAgent/appsettings.json, Source/PuddingPlatform/Services/Scheduling/TaskSchedulingCoordinator.cs]
+slug: reports-scheduler-explore-checkpoint-step1-r1
+draft: false
+---
+
 # Scheduler Explore — Step 1 Checkpoint (checkpoint-v1)
 
 - goalRunId: `tg-2efcdf7d329d8387632a67bcbfbdbe2b`｜objectiveVersion: 1｜iteration: 1

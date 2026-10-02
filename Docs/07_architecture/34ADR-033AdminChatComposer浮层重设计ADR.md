@@ -1,3 +1,18 @@
+---
+title: 34 ADR-033 Admin Chat Composer 浮层重设计
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 当前 /admin/chat 已按 ADR-020 完成一轮“Quiet Chat”收敛：输入区默认只保留输入框、发送/停止、语音和 + 更多入口，运行状态从常驻状态栏进入 Popover。
+categories: [docs, architecture]
+tags: [浮层重设计, architecture]
+related_docs: [Docs/07_architecture/20AdminChat简约克制界面ADR.md, Docs/12_features/AdminChat简约克制设计方案.md, Docs/12_features/AdminChatComposer浮层重设计方案.md]
+related_files: [Source/PuddingPlatformAdmin/src/pages/chat/components/InputArea.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ComposerActionMenu.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/ComposerStatusDetails.tsx, Source/PuddingPlatformAdmin/src/pages/chat/styles.ts, Source/PuddingPlatformAdmin/src/pages/chat/types.ts]
+slug: architecture-34adr-033adminchatcomposer浮层重设计adr
+draft: false
+---
+
 # 34 ADR-033 Admin Chat Composer 浮层重设计
 
 > 状态：**proposed**  

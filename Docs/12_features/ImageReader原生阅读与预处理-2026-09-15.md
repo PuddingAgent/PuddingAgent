@@ -1,3 +1,18 @@
+---
+title: Image Reader 原生阅读与预处理
+author: hyfree
+date: 2026-09-15
+last_reviewed: 2026-10-02
+status: active
+description: 依据 DeepSeek 图像理解文档（2026-09-15 核验）：low 缩放到 512×512，high / original / auto 当前保持原图；Responses 工具输出可带 input_image；Files file_id 忽略 detail。请求体上限 48 MiB、inline 单图 32 MiB、Files 单图 64 MiB，混合文件引用的图片合计上限 200 MiB
+categories: [docs, features]
+tags: [原生阅读与预, 处理, features]
+related_docs: [Docs/14_reports/ImageReader预处理实施记录-2026-09-15.md]
+related_files: []
+slug: features-imagereader原生阅读与预处理-2026-09-15
+draft: false
+---
+
 # Image Reader 原生阅读与预处理
 
 ## 决策与参考

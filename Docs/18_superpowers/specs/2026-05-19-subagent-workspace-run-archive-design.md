@@ -1,3 +1,18 @@
+---
+title: SubAgent Workspace Run Archive Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 下一阶段目标是让子代理成为可审计、可隔离、可重放的运行单元，而不是只作为父会话中的一段文本输出存在。
+categories: [docs, superpowers]
+tags: [subagent, workspace, run, archive, design, specs]
+related_docs: [Docs/07_architecture/21子代理工作空间与运行归档ADR.md]
+related_files: []
+slug: superpowers-2026-05-19-subagent-workspace-run-archive-design
+draft: false
+---
+
 # SubAgent Workspace Run Archive Design
 
 > 日期：2026-05-19

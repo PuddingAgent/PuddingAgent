@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 对齐 DeepSeek Harness / Pi 的总设计与施工蓝图
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\07_architecture\\87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md 产品级施工入口；先完成任务看板闭环，再做 Auto/Cron、完整轨迹、实时指标和插件化收口。 汇总目标、优先级、工作量、难度、依赖、里程碑和具体设计位置。"
+categories: [docs, references]
+tags: [deepseek, reference, architecture, master, plan, references]
+related_docs: []
+related_files: [Source/PuddingCore/Platform/ConversationEventContracts.cs, Source/PuddingCore/Platform/IConversationEventStore.cs, Source/PuddingCore/Platform/SessionEventContracts.cs, Source/PuddingRuntime/Services/AgentExecutionService.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs, Source/PuddingRuntime/Services/LlmInvocationService.cs, Source/PuddingRuntime/Services/DirectLlmClient.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionLlmInvoker.cs, Source/PuddingCore/Tools/PuddingToolContracts.cs, Source/PuddingHost/Services/HeartbeatService.cs, Source/PuddingPlatform/Services/SubAgentManager.cs, Source/PuddingCore/Runtime/ToolInvocationContracts.cs, Source/PuddingRuntime/Tools/Platform/PuddingToolRegistry.cs, Source/PuddingRuntime/Tools/Platform/ToolInvocationService.cs, Source/PuddingPlatform/Services/ConversationEventStore.cs, Source/PuddingRuntime/Services/SystemPromptBuilder.cs, Source/PuddingRuntime/Services/ContextPipeline.cs, Source/PuddingRuntime/Services/ContextPipelineOrchestrator.cs, Source/PuddingRuntime/Services/Plugins/PluginManifestCatalog.cs]
+slug: references-deepseek-reference-architecture-master-plan-2026-08-14
+draft: false
+---
+
 # PuddingAgent 对齐 DeepSeek Harness / Pi 的总设计与施工蓝图
 
 > 日期：2026-08-14  

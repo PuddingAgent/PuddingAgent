@@ -1,3 +1,18 @@
+---
+title: 从 Source/PuddingRetrievalEval/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: 〔原文第 70–80 行：U4-6 验收：根 scope 索引 + 全 80 条覆盖（2026-09-24）〕
+categories: [docs, changelog]
+tags: [puddingretrievaleval, code, 迁出的变更记]
+related_docs: []
+related_files: [Source/PuddingRetrievalEval/code_map.md, Docs/00_changelog/README.md, Agents.md]
+slug: changelog-2026-10-02-puddingretrievaleval-code-map迁出的变更记录
+draft: false
+---
+
 # 从 Source/PuddingRetrievalEval/code_map.md 迁出的历史变更记录（迁出日 2026-10-02）
 
 > **为什么在这里**：`Source/PuddingRetrievalEval/code_map.md` 只保留索引（关键概念 · 组件 · 关键文件 · 用途）。原先按轮次/日期堆叠在其中的变更、门禁与验收记录迁出到本文件。日志规则见 `Docs/00_changelog/README.md`。

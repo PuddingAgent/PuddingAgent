@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 第三轮：部署、进程基线与产品验收
+author: hyfree
+date: 2026-09-12
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-05（北京时间）。用户已明确授权停机/重启。看板跟踪卡：4b904200a4ff4bbc8303285d4f5ee720。本报告区分制品加载、单次功能 smoke、资源采样和持续调度验收，不以源码测试或 Delivery ACK 替代产品结果。
+categories: [docs, reports]
+tags: [第三轮部署与, 产品验收, reports]
+related_docs: []
+related_files: []
+slug: reports-puddingagent第三轮部署与产品验收-2026-09-05
+draft: false
+---
+
 # PuddingAgent 第三轮：部署、进程基线与产品验收
 
 日期：2026-09-05（北京时间）。用户已明确授权停机/重启。看板跟踪卡：`4b904200a4ff4bbc8303285d4f5ee720`。本报告区分制品加载、单次功能 smoke、资源采样和持续调度验收，不以源码测试或 Delivery ACK 替代产品结果。

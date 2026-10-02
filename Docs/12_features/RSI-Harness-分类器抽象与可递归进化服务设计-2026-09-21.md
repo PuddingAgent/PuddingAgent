@@ -1,3 +1,18 @@
+---
+title: RSI-Harness：分类器抽象与可递归进化服务设计（讨论稿）
+author: hyfree
+date: 2026-09-21
+last_reviewed: 2026-10-02
+status: active
+description: 把判定能力从工具审批专用提升为平台级基础设施，并在其上实现一个可递归自我改进（RSI）的独立服务：
+categories: [docs, features]
+tags: [rsi, harness, 分类器抽象与, 可递归进化服, 务设计, features]
+related_docs: []
+related_files: [Docs/14_reports/PuddingAgent夜间效率与RSI评估-2026-09-21.md, Docs/12_features/S1a-判定算子基础设施-实施规格-2026-09-21.md, Source/PuddingPlatformAdmin/src/pages/chat/classifier/autoReviewClassifier.ts, Source/PuddingCore/Classification/ToolCallClassification.cs, Docs/14_reports/skill-portfolio-G1-2026-09-21.md, Docs/12_features/RSI-G7-任务书-2026-09-22.md, Docs/12_features/RSI-G6-验收记录-2026-09-22.md, Docs/12_features/RSI-G8-任务书-2026-09-22.md, Docs/12_features/S3-轨迹源-实施规格-2026-09-21.md, Source/PuddingRuntimeTests/Services/SkillMergeEligibilityRealIndexProbeTests.cs, Source/PuddingCoreTests/Improvement/ImprovementContractTests.cs, Docs/14_reports/skill-near-duplicate-2026-09-21.md, Docs/12_features/RSI-G4-任务书-2026-09-22.md, Docs/14_reports/skill-keyword-denoise-impact-2026-09-21.md, Docs/12_features/技能加载与检索-渐进披露-遥测与负信号设计-2026-09-21.md]
+slug: features-rsi-harness-分类器抽象与可递归进化服务设计-2026-09-21
+draft: false
+---
+
 # RSI-Harness：分类器抽象与可递归进化服务设计（讨论稿）
 
 | 属性 | 值 |

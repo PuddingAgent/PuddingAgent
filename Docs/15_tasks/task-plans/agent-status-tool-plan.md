@@ -1,3 +1,18 @@
+---
+title: 目标
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Agent Status 工具 — 施工规划"
+categories: [docs, tasks]
+tags: [agent, status, tool, plan, task-plans]
+related_docs: []
+related_files: [Source/PuddingRuntime/Tools/BuiltIns/Agents/AgentStatusTool.cs, Source/PuddingRuntime/Services/AgentWakeQueue.cs]
+slug: tasks-agent-status-tool-plan
+draft: false
+---
+
 ﻿# Agent Status 工具 — 施工规划
 
 ## 目标

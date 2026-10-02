@@ -1,3 +1,18 @@
+---
+title: 1) 探活
+author: hyfree
+date: 2026-08-06
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# ADR-068：桌面引导式自举闭环（重建-重启）"
+categories: [docs, architecture]
+tags: [桌面引导式自, 举闭环, architecture]
+related_docs: []
+related_files: [Source/PuddingAgent/PuddingAgent.csproj]
+slug: architecture-69adr-068桌面引导式自举闭环adr
+draft: false
+---
+
 ﻿# ADR-068：桌面引导式自举闭环（重建-重启）
 
 - **状态**：已接受（2026-08-29 修订：Codex 可调用的 Desktop 本机制品控制面）

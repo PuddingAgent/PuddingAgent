@@ -1,9 +1,24 @@
+---
+title: Task 10 — Agent 能力体系设计方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 借鉴 Claude Code 的 buildTool() 工厂模式——默认值是保守的，忘记声明 = 更严格的安全约束：
+categories: [docs, tasks]
+tags: [task10, agent, capability, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task10-agent-capability
+draft: false
+---
+
 # Task 10 — Agent 能力体系设计方案
 
 > **状态：** ✏️ 设计中
 > **依赖：** Task 04 (蜂群模式)、Task 09 (Agent 生命周期)
 > **目标：** 定义 Agent 技能的三层架构、内置能力清单、权限模型及自适应 Token 优化策略
-> **参考：** [Claude Code EP02 Tool System](../claude-reviews-claude/architecture/02-tool-system.md) — 30+ 方法 Tool 接口、fail-closed 默认值
+> **参考：** [Claude Code EP02 Tool System](../../external/references/claude-reviews-claude/architecture/02-tool-system.md) — 30+ 方法 Tool 接口、fail-closed 默认值
 
 ---
 

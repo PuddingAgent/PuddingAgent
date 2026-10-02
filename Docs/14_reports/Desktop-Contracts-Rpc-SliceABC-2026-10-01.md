@@ -1,3 +1,18 @@
+---
+title: Desktop Contracts / gRPC 能力通道：切片 A+B+C 实施报告
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-10-01。 方案：Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md。 范围：方案 §8 的 A（Contracts）+ B（Protocol / Connection）+ IPC 技术探针，以及 C（DesktopService 主体）。 明确未做：未接入宿主（不改 PuddingHost/PuddingAgent/Pudd
+categories: [docs, reports]
+tags: [desktop, contracts, rpc, sliceabc, reports]
+related_docs: [Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md]
+related_files: []
+slug: reports-desktop-contracts-rpc-sliceabc-2026-10-01
+draft: false
+---
+
 # Desktop Contracts / gRPC 能力通道：切片 A+B+C 实施报告
 
 - 日期：2026-10-01。

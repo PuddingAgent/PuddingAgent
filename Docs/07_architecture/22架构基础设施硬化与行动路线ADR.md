@@ -1,3 +1,18 @@
+---
+title: 22 架构基础设施硬化与行动路线 ADR
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 上一轮已经完成三个关键阶段：
+categories: [docs, architecture]
+tags: [架构基础设施, 硬化与行动路, architecture]
+related_docs: [Docs/07_architecture/19架构基础设施增强下一步ADR.md, Docs/07_architecture/20会话状态机与事件规范ADR.md, Docs/07_architecture/21子代理工作空间与运行归档ADR.md]
+related_files: []
+slug: architecture-22架构基础设施硬化与行动路线adr
+draft: false
+---
+
 # 22 架构基础设施硬化与行动路线 ADR
 
 > 状态：**done**（ARCH-HARDEN-001~007 完成）

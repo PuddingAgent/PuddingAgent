@@ -1,3 +1,18 @@
+---
+title: Scheduler 迭代 6 证据：per-intent 幂等核对（通过）+ 可用性自锁数据（2026-09-20）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "GoalRun tg-2efcdf7d329d8387632a67bcbfbdbe2b｜task 3bd2a4b0ef5f4bff8f175fb7655927ad 数据源：D:\\data\\databases\\pudding_platform.db（只读 mode=ro）｜探针 temp/db-probe-idempotency-avail.py"
+categories: [docs, reports]
+tags: [scheduler, iteration6, idempotency, and, availability, reports]
+related_docs: []
+related_files: []
+slug: reports-scheduler-iteration6-idempotency-and-availability
+draft: false
+---
+
 # Scheduler 迭代 6 证据：per-intent 幂等核对（通过）+ 可用性自锁数据（2026-09-20）
 
 - GoalRun `tg-2efcdf7d329d8387632a67bcbfbdbe2b`｜task `3bd2a4b0ef5f4bff8f175fb7655927ad`

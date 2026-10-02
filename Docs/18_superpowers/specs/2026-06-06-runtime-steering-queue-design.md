@@ -1,3 +1,18 @@
+---
+title: Runtime Steering Queue Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Allow users to keep interacting while an Agent is running. Normal messages wait in a visible queue; urgent guidance is injected into the next Agent LLM context assembly inside the current run.
+categories: [docs, superpowers]
+tags: [runtime, steering, queue, design, specs]
+related_docs: []
+related_files: [Docs/12_features/Chat独立插嘴按钮与当前Turn即时Steering设计方案.md]
+slug: superpowers-2026-06-06-runtime-steering-queue-design
+draft: false
+---
+
 # Runtime Steering Queue Design
 
 ## Goal

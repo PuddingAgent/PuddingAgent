@@ -1,9 +1,24 @@
+---
+title: Task 14 — SKILL 插件化设计方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "借鉴 Claude Code 的 Skill 格式——Skill 是\"prompt as code\"："
+categories: [docs, tasks]
+tags: [task14, skill, plugin, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task14-skill-plugin
+draft: false
+---
+
 # Task 14 — SKILL 插件化设计方案
 
 > **状态：** ✏️ 设计中
 > **依赖：** Task 10 (Agent 能力体系)、Task 11 (权限沙盒)、Task 13 (上下文预热)
 > **目标：** 将 Agent 能力从硬编码解耦为可热插拔的插件架构，支持内置插件、外部 DLL 加载和环境自适应探活
-> **参考：** [Claude Code EP04 Plugin System](../claude-reviews-claude/architecture/04-plugin-system.md) — Skill = YAML frontmatter + Markdown、6 种 skill 来源
+> **参考：** [Claude Code EP04 Plugin System](../../external/references/claude-reviews-claude/architecture/04-plugin-system.md) — Skill = YAML frontmatter + Markdown、6 种 skill 来源
 
 ---
 

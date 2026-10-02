@@ -1,3 +1,18 @@
+---
+title: S1-c Slice-0a 只读评审：新增受控文本断言检查类型（TextAssertion）——持久化与身份协议落地清单
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "目标：为 G92-1 / S1-c「新增受控文本断言检查类型」确认接线面 + 身份协议，不含实现。 方法：只读源码 + 检索取证；每条结论附 file:line；无法取证者标【未证实】。 约束遵守：仅写本文件；未调用 save_memory/manage_memory/goal_update/agent_state/manage_tasks；未做 git 写/build/test。 既有事实（输入"
+categories: [docs, reports]
+tags: [g92, s1c, slice0a, persistence, review, reports]
+related_docs: []
+related_files: [Source/PuddingCore/Goals/GoalVerificationContracts.cs, Source/PuddingCore/Goals/GoalCheckContracts.cs, Source/PuddingPlatform/Services/Goals/GoalCheckDefinitionRegistry.cs, Source/PuddingPlatform/Services/Goals/GoalCheckRunner.cs, Source/PuddingCore/Goals/GoalCheckEvidencePolicy.cs, Source/PuddingPlatform/Services/Goals/GoalCheckRecordStore.cs, Source/PuddingPlatform/Services/Goals/GoalSettlementStore.cs, Source/PuddingPlatformAdmin/src/pages/chat/components/goalBlockerCodes.ts, Source/PuddingPlatformTests/Services/Goals/GoalCheckRunnerTests.cs, Source/PuddingRuntime/Services/TurnExecutorAdapter.cs, Source/PuddingCore/Platform/ConversationTranscriptFold.cs, Source/PuddingPlatform/Services/RawSessionLogService.cs, Source/PuddingCore/Platform/ConversationContracts.cs, Source/PuddingPlatform/Services/FileSubAgentRunStore.cs]
+slug: reports-g92-1-s1c-slice0a-persistence-review-2026-09-18
+draft: false
+---
+
 # S1-c Slice-0a 只读评审：新增受控文本断言检查类型（TextAssertion）——持久化与身份协议落地清单
 
 - 目标：为 G92-1 / S1-c「新增受控文本断言检查类型」确认**接线面 + 身份协议**，不含实现。

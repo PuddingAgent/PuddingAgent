@@ -1,3 +1,18 @@
+---
+title: 技能内容审计（只读）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "生成时间：2026-09-21 18:39:53 +08:00 技能根目录：D:\\data\\agents\\default.global_general-assistant.6a8\\skills"
+categories: [docs, reports]
+tags: [skill, content, audit, reports]
+related_docs: []
+related_files: []
+slug: reports-skill-content-audit-2026-09-21
+draft: false
+---
+
 # 技能内容审计（只读）
 
 生成时间：2026-09-21 18:39:53 +08:00

@@ -1,3 +1,18 @@
+---
+title: 全仓回归基线报告（2026-09-22）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "全仓共 14 个测试工程（file_search 枚举 + search_grep 'Microsoft.NET.Test.Sdk|MSTest.Sdk|IsTestProject' 交叉验证）。"
+categories: [docs, reports]
+tags: [regression, baseline, reports]
+related_docs: []
+related_files: [external/github.hyfree.GM/.git, Source/PuddingAgent/bin/Debug/net10.0/PuddingAgent.dll, Source/PuddingMemoryEngineTests/MemoryLibraryTests.cs, Tests/PuddingHost.Tests/Platform/UserAvatarApiControllerTests.cs]
+slug: reports-regression-baseline-2026-09-22
+draft: false
+---
+
 # 全仓回归基线报告（2026-09-22）
 
 > 建立者：`default.global_general-assistant.0e0`（dsh）｜HEAD：`a313337`｜时间：2026-09-22 13:16 (+08:00)

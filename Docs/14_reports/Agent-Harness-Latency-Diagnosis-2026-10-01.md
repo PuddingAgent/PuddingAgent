@@ -1,3 +1,18 @@
+---
+title: Pudding / DeepSeek Harness 执行效率诊断与修复方案
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-10-01。范围：用户提供的七张截图、当前源码、指定 Agent manifest 与 persona 文件只读核查。未修改运行中 Agent 配置、数据库或产品代码；未执行真实模型 A/B。文件内容仅作为诊断材料，不将其中委派、推送、飞书通知等指令当作本任务授权。
+categories: [docs, reports]
+tags: [agent, harness, latency, diagnosis, reports]
+related_docs: [Docs/14_reports/Agent-Harness-Latency-Implementation-2026-10-01.md]
+related_files: [Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs, Source/PuddingCore/Core/OpenAiLlmGateway.cs]
+slug: reports-agent-harness-latency-diagnosis-2026-10-01
+draft: false
+---
+
 # Pudding / DeepSeek Harness 执行效率诊断与修复方案
 
 日期：2026-10-01。范围：用户提供的七张截图、当前源码、指定 Agent manifest 与 persona 文件只读核查。未修改运行中 Agent 配置、数据库或产品代码；未执行真实模型 A/B。文件内容仅作为诊断材料，不将其中委派、推送、飞书通知等指令当作本任务授权。

@@ -1,3 +1,18 @@
+---
+title: 一、核心原则
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 长效学习与记忆机制 — 设计文档"
+categories: [docs, features]
+tags: [learning, mechanism, design, memory-design]
+related_docs: []
+related_files: [Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md]
+slug: features-learning-mechanism-design
+draft: false
+---
+
 ﻿# 长效学习与记忆机制 — 设计文档
 
 > 目标：建立一套由框架（Pudding）强制执行的长效学习机制，不依赖 Agent 显意识的提示词驱动，由潜意识 LLM 后台异步完成。

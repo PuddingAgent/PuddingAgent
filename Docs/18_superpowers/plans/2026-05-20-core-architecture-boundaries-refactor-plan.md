@@ -1,3 +1,18 @@
+---
+title: Core Architecture Boundaries Refactor Implementation Plan
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "Goal: Gradually split Pudding's execution engine into clear contracts and focused services without rewriting the working runtime loop."
+categories: [docs, superpowers]
+tags: [core, architecture, boundaries, refactor, plan, plans]
+related_docs: []
+related_files: [Source/PuddingCore/Runtime/ExecutionLifecycleContracts.cs, Source/PuddingCore/Runtime/ContextAssemblyContracts.cs, Source/PuddingCore/Runtime/LlmInvocationContracts.cs, Source/PuddingCore/Runtime/ToolInvocationContracts.cs, Source/PuddingCore/Runtime/SubAgentInvocationContracts.cs, Source/PuddingCore/Runtime/SessionOutputContracts.cs, Source/PuddingCoreTests/Runtime/RuntimeContractTests.cs, Source/PuddingPlatform/Services/RuntimeActivityExecutionLifecycleRecorder.cs, Source/PuddingRuntime/Services/ContextAssemblyService.cs, Source/PuddingRuntime/Services/LlmInvocationService.cs, Source/PuddingRuntime/Services/SubAgentInvocationService.cs, Source/PuddingPlatform/Services/SessionOutputWriter.cs, Source/PuddingAgent/Program.cs, Source/PuddingRuntime/DependencyInjection.cs, Source/PuddingRuntime/Services/AgentExecutionService.cs, Source/PuddingRuntime/Services/ContextPipeline.cs, Source/PuddingPlatform/Services/SessionStateManager.cs, Source/PuddingCore/Observability/RuntimeActivity.cs, Source/PuddingPlatformTests/Services/RuntimeActivityExecutionLifecycleRecorderTests.cs, Source/PuddingCoreTests/PuddingCoreTests.csproj]
+slug: superpowers-2026-05-20-core-architecture-boundaries-refactor-plan
+draft: false
+---
+
 # Core Architecture Boundaries Refactor Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

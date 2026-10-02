@@ -1,3 +1,18 @@
+---
+title: Memory System v2 Foundation Prerequisites
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Memory System v2 的长期目标不是把 save_memory 修得更聪明，而是建立一条由 Pudding 框架自动维护的记忆生产线。
+categories: [docs, superpowers]
+tags: [memory, v2, foundation, prerequisites, specs]
+related_docs: []
+related_files: [Docs/18_superpowers/specs/2026-07-04-memory-v2-wiki-book-v1-simplification.md, Docs/18_superpowers/specs/2026-07-05-memory-v2-minimal-v1-necessity-design.md]
+slug: superpowers-2026-07-01-memory-v2-foundation-prerequisites
+draft: false
+---
+
 # Memory System v2 Foundation Prerequisites
 
 > Date: 2026-07-01

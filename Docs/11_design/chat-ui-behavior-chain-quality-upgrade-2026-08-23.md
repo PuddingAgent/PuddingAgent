@@ -1,3 +1,18 @@
+---
+title: 聊天前端「行为链 + 质感」升级设计与实施
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 对照 deepseek-harness 与业界 agent 聊天前端（Hermes Agent / Manus / Claude / ChatGPT），Pudding 聊天前端存在三类差距：
+categories: [docs, design]
+tags: [chat, ui, behavior, chain, quality, upgrade, design]
+related_docs: []
+related_files: [Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md, Docs/12_features/Agent消息交错内容流与最新行为组披露完整实施方案.md, Docs/07_architecture/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md]
+slug: design-chat-ui-behavior-chain-quality-upgrade-2026-08-23
+draft: false
+---
+
 # 聊天前端「行为链 + 质感」升级设计与实施
 
 > 日期：2026-08-23

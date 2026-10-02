@@ -1,3 +1,18 @@
+---
+title: ADR-037：Admin SPA 静态产物装配归一化
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Admin 前端 PuddingPlatformAdmin 使用 Umi/Max 构建，运行路径固定为：
+categories: [docs, architecture]
+tags: [静态产物装配, 归一化, architecture]
+related_docs: [Docs/07_architecture/33ADR-032构建门禁与运行态漂移修复方案.md, Docs/07_architecture/06PuddingAgent与客户端.md]
+related_files: [Source/PuddingAgent/PuddingAgent.csproj, Source/PuddingAgent/Program.cs, Source/PuddingPlatformAdmin/config/config.ts]
+slug: architecture-38adr-037adminspa静态产物装配归一化adr
+draft: false
+---
+
 # ADR-037：Admin SPA 静态产物装配归一化
 
 > 状态：**Proposed**  

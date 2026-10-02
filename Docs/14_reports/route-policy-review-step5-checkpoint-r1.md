@@ -1,3 +1,18 @@
+---
+title: 阶段感知模型路由 — Step 5 Review Checkpoint（checkpoint-v1）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "goalRunId tg-0992b9b323e3c4e4a38f7fa51407f55d｜iteration 6｜stepNode tn-8dbf91fb1ed92ef468657d1b5ce9514b（Review, seq 5/5） step objective 逐字：\"Review acceptance evidence, unresolved risk and completion pr"
+categories: [docs, reports]
+tags: [route, policy, review, step5, checkpoint, r1, reports]
+related_docs: []
+related_files: [Docs/14_reports/route-policy-explore-checkpoint-step1-r1.md, Docs/14_reports/route-policy-plan-freeze-step2-r1.md, code_map.md]
+slug: reports-route-policy-review-step5-checkpoint-r1
+draft: false
+---
+
 # 阶段感知模型路由 — Step 5 Review Checkpoint（checkpoint-v1）
 
 - goalRunId `tg-0992b9b323e3c4e4a38f7fa51407f55d`｜iteration 6｜stepNode `tn-8dbf91fb1ed92ef468657d1b5ce9514b`（**Review**, seq 5/5）

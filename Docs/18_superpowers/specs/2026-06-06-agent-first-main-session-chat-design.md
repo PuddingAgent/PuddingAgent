@@ -1,3 +1,18 @@
+---
+title: Agent-First Main Session Chat Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: Redesign /admin/chat around Agents as first-class product objects. Sessions become the work timeline behind each Agent or Group instead of the primary navigation object.
+categories: [docs, superpowers]
+tags: [agent, first, main, session, chat, design, specs]
+related_docs: []
+related_files: []
+slug: superpowers-2026-06-06-agent-first-main-session-chat-design
+draft: false
+---
+
 # Agent-First Main Session Chat Design
 
 ## Goal

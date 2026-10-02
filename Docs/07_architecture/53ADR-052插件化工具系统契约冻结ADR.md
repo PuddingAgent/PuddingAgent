@@ -1,3 +1,18 @@
+---
+title: 53 ADR-052 插件化工具系统契约冻结
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 目前已经具备统一工具基础设施：
+categories: [docs, architecture]
+tags: [插件化工具系, 统契约冻结, architecture]
+related_docs: [Docs/07_architecture/tool-infrastructure-layering.md, Docs/07_architecture/51ADR-050会话层统一投影与前端观察者模型ADR.md, Docs/04_tools_and_skills/Pudding工具系统增强-CodeWhale参考设计.md, Docs/15_tasks/task14-skill-plugin.md]
+related_files: []
+slug: architecture-53adr-052插件化工具系统契约冻结adr
+draft: false
+---
+
 # 53 ADR-052 插件化工具系统契约冻结
 
 > 状态：**accepted / Phase 1 implementing**  

@@ -1,3 +1,18 @@
+---
+title: ADR-046：事件驱动多 Agent OS 交互体验架构
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 的目标不只是一个聊天页，而是一个基于事件驱动、多 Agent 架构的本地 AI OS。上层交互必须能表达底层系统能力：
+categories: [docs, architecture]
+tags: [事件驱动多, 交互体验架构, architecture]
+related_docs: [Docs/07_architecture/37ADR-036AdminConsole去AntDesignPro化与Pudding设计语言统一ADR.md, Docs/07_architecture/42ADR-041Chat暗色主题语义Token收敛ADR.md, Docs/07_architecture/46ADR-045双向消息系统与聊天室客户端ADR.md, Docs/07_architecture/49ADR-048Hermes型系统开发方向参考ADR.md]
+related_files: []
+slug: architecture-47adr-046事件驱动多agentos交互体验架构adr
+draft: false
+---
+
 # ADR-046：事件驱动多 Agent OS 交互体验架构
 
 > 状态：**Proposed**  

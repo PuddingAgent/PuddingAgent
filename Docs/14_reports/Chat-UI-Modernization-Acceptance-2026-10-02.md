@@ -1,3 +1,18 @@
+---
+title: Chat UI/UX 现代化：静态外观像素复核（2026-10-02）
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "对象：Docs/11_design/Chat-UI-UX-Modernization-Spec-2026-10-01.md 的 §13（IMG01–IMG12）与 §14（SCROLL-001）。 构建标识：页角版本徽标实测为 v6.1.3 · 97fb4d2 · 2026-10-01 23:58（对应提交 97fb4d2，前端 6.1.3）。 证据来源：用户提供的运行截图（2560×1344，s"
+categories: [docs, reports]
+tags: [chat, ui, modernization, acceptance, reports]
+related_docs: []
+related_files: [Docs/11_design/Chat-UI-UX-Modernization-Spec-2026-10-01.md]
+slug: reports-chat-ui-modernization-acceptance-2026-10-02
+draft: false
+---
+
 # Chat UI/UX 现代化：静态外观像素复核（2026-10-02）
 
 对象：`Docs/11_design/Chat-UI-UX-Modernization-Spec-2026-10-01.md` 的 §13（IMG01–IMG12）与 §14（SCROLL-001）。

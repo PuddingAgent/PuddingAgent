@@ -1,3 +1,18 @@
+---
+title: 2026-10-02 更正：Ref 定位在 Bridge 侧有等价物；并识别出工具迁移的缺失前置件
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: archived
+description: "上一轮我在 BridgeBrowserCapabilitySurface 里把 DesktopLocatorKind.Ref 当成\"Bridge 侧无等价物\" 而明确拒绝，并写进了 §8.4/§8.5 的不对称清单。这个判断是错的："
+categories: [docs, changelog]
+tags: [更正, 定位在, 侧有等价物]
+related_docs: []
+related_files: [Source/PuddingHost/BrowserBridge/BridgeBrowserCapabilitySurface.cs, Tests/PuddingHost.Tests/BrowserBridge/BridgeBrowserCapabilitySurfaceTests.cs, Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md]
+slug: changelog-2026-10-02-更正ref定位在bridge侧有等价物
+draft: false
+---
+
 # 2026-10-02 更正：Ref 定位在 Bridge 侧有等价物；并识别出工具迁移的缺失前置件
 
 ## 更正（2026-10-02）：Bridge 侧**支持** `Ref` 定位

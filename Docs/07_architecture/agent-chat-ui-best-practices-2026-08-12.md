@@ -1,3 +1,18 @@
+---
+title: SUMMARY
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# 业界 Agent Chat 界面最佳实践调研与技术方案"
+categories: [docs, architecture]
+tags: [agent, chat, ui, best, practices, architecture]
+related_docs: []
+related_files: [Source/PuddingPlatformAdmin/src/services/platform/api.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useTypewriterStreaming.ts, Source/PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/MessageProcessSummary.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/processPreview.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/ContextMemoryIndicator.tsx, Source/PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx, Source/PuddingPlatformAdmin/src/pages/chat/client/types.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useMessageInteractionQueue.ts, Source/PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.tsx, Source/PuddingPlatformAdmin/src/pages/tool-approval/allowlist/index.tsx]
+slug: architecture-agent-chat-ui-best-practices-2026-08-12
+draft: false
+---
+
 ﻿# 业界 Agent Chat 界面最佳实践调研与技术方案
 
 > 调研日期: 2026-08-12 | 委托: 子代理 (workspace-task-agent)

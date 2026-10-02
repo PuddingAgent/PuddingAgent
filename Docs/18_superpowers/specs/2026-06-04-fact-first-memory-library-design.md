@@ -1,3 +1,18 @@
+---
+title: Fact-First Memory Library Design
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 旧版记忆图书馆把管理员可读结构放在中心：图书馆、目录节点、书、章节。这个模型适合浏览和编辑文本块，但不适合作为长期记忆的底层事实库：
+categories: [docs, superpowers]
+tags: [fact, first, memory, library, design, specs]
+related_docs: []
+related_files: [Docs/07_architecture/48ADR-047记忆图书馆知识图谱演进ADR.md, Docs/18_superpowers/plans/2026-06-03-memory-graph-phase1.md]
+slug: superpowers-2026-06-04-fact-first-memory-library-design
+draft: false
+---
+
 # Fact-First Memory Library Design
 
 > 状态：Draft  

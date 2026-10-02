@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 下一阶段实施包 · 2026-09-12
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 用户明确600不是统一默认/下限/上限；短轮次及任意合法正整数可配置。已修订6张任务、新增4张，保留前次任务登记/消息为历史快照。以最新子代理方案、ADR-087及本次看板修订为准；修订通知见执行回执。
+categories: [docs, reports]
+tags: [readme]
+related_docs: [Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/子代理弹性预算与双向交互设计-2026-09-12.md, Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/adrs/101ADR-087子代理托管运行与持久问答ADR.md, Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/04-子代理任务修订.md, Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/followup/执行修订回执.md, Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/01-设计方案.md, Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/02-路线与任务看板.md, Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/adrs/98ADR-084稳定请求前缀与缓存99验收ADR.md, Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/adrs/99ADR-085Memory主导的长程任务连续性ADR.md, Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/adrs/100ADR-086长程执行预算与运行内核收敛ADR.md]
+related_files: [Docs/12_features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md]
+slug: reports-readme
+draft: false
+---
+
 # PuddingAgent 下一阶段实施包 · 2026-09-12
 
 ## 后续修订：弹性子代理与双向交互

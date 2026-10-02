@@ -1,3 +1,18 @@
+---
+title: Controller 模块
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: "﻿# Controller、Connector 与 P2P 网络（进程内模块）"
+categories: [docs, architecture]
+tags: [architecture]
+related_docs: [Docs/15_tasks/task36-event-trigger-and-subagent.md]
+related_files: []
+slug: architecture-04puddingcontroller与gateway
+draft: false
+---
+
 ﻿# Controller、Connector 与 P2P 网络（进程内模块）
 
 > **2026-05-02 简化**：Controller 和 Gateway 不再是独立进程，而是 Pudding Agent 内的模块。

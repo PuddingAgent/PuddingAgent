@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 自修复代码任务书（Flash 执行版）
+author: hyfree
+date: 2026-09-14
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-14。状态：A1 已由 Codex 接管实现（990673e）、定向测试并部署；A2 压力口径修复已于9月15日部署（572c394），无收益抑制仍待完成；A3–A4 尚待分批实施，长程 task-bound 验收尚未完成。
+categories: [docs, reports]
+tags: [自修复代码任, 务书, reports]
+related_docs: [Docs/14_reports/默认助手停滞修复与预算接管-2026-09-14.md, Docs/14_reports/PuddingAgent最近24小时工作效率评估-2026-09-14.md, Docs/14_reports/百万上下文频繁压缩修复-2026-09-15.md, Docs/14_reports/上下文频繁压缩诊断-2026-09-13.md]
+related_files: [Source/PuddingCore/Runtime/ITurnExecutor.cs, Source/PuddingRuntime/Services/AgentExecution/ExecutionUsageBudgetTracker.cs, Source/PuddingRuntime/Services/SubAgentInvocationService.cs, Source/PuddingCore/Runtime/SubAgentInvocationContracts.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs, Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs, Source/PuddingRuntime/Services/LlmRequestBudgetGuard.cs, Source/PuddingCore/Scheduling/TaskExecutionPlanContracts.cs, Source/PuddingCore/Platform/IExecutionCommandReader.cs, Source/PuddingPlatform/Services/Scheduling/TaskExecutionPlanCompiler.cs, Source/PuddingCore/Platform/LlmOptions.cs]
+slug: reports-puddingagent自修复代码任务书-2026-09-14
+draft: false
+---
+
 # PuddingAgent 自修复代码任务书（Flash 执行版）
 
 日期：2026-09-14。状态：A1 已由 Codex 接管实现（990673e）、定向测试并部署；A2 压力口径修复已于9月15日部署（572c394），无收益抑制仍待完成；A3–A4 尚待分批实施，长程 task-bound 验收尚未完成。

@@ -1,3 +1,18 @@
+---
+title: 只读根因定位：调度器批量派发已终态卡
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "缺陷卡：be2608ee21bb4018a19ade685e99f5b4（P2） 仓库：E:\\github\\AgentNetworkPlan\\PuddingAgent（branch master） 方式：纯静态只读 + 平台库只读 SQL 探针（sqlite3 mode=ro）。未改任何产品文件、未做任何 git/看板写操作。 复现事件：Docs/14_reports/G92-1-验收证据与缺口矩"
+categories: [docs, reports]
+tags: [dispatch, terminal, card, rca, reports]
+related_docs: []
+related_files: [Docs/14_reports/G92-1-验收证据与缺口矩阵-2026-09-17.md, Source/PuddingPlatform/Services/Scheduling/TaskAutoDispatchEvaluator.cs, Source/PuddingPlatform/Services/Scheduling/TaskSchedulingCoordinator.cs, Source/PuddingPlatform/Services/Tasks/TaskDispatcher.cs, Source/PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs, Source/PuddingRuntimeTests/Services/MessageDeliveryDispatcherTests.cs]
+slug: reports-dispatch-terminal-card-rca-2026-09-19
+draft: false
+---
+
 # 只读根因定位：调度器批量派发已终态卡
 
 - 缺陷卡：`be2608ee21bb4018a19ade685e99f5b4`（P2）

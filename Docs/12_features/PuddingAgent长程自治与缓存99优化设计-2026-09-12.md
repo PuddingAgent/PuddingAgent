@@ -1,3 +1,18 @@
+---
+title: "PuddingAgent 下一阶段：缓存 >99%、Memory 主导的长程自治与架构收敛"
+author: hyfree
+date: 2026-09-12
+last_reviewed: 2026-10-02
+status: active
+description: 日期：2026-09-12。状态：设计已交付，待实施及验收。本文件是本阶段的实施主线；设计状态不代表现有产品已具备这些能力。
+categories: [docs, features]
+tags: [长程自治与缓, 优化设计, features]
+related_docs: [Docs/12_features/Memory快照索引与历史溯源设计-2026-09-14.md, Docs/12_features/子代理弹性预算与双向交互设计-2026-09-12.md, Docs/07_architecture/98ADR-084稳定请求前缀与缓存99验收ADR.md, Docs/07_architecture/99ADR-085Memory主导的长程任务连续性ADR.md, Docs/07_architecture/100ADR-086长程执行预算与运行内核收敛ADR.md, Docs/14_reports/PuddingAgent-Next-Phase-2026-09-12/README.md, Docs/14_reports/缓存命中诊断与修复方案-2026-09-16.md, Docs/14_reports/百万上下文频繁压缩修复-2026-09-15.md]
+related_files: []
+slug: features-puddingagent长程自治与缓存99优化设计-2026-09-12
+draft: false
+---
+
 # PuddingAgent 下一阶段：缓存 >99%、Memory 主导的长程自治与架构收敛
 
 > **2026-09-14 Memory定位纠偏：** [Memory快照索引与历史溯源设计](Memory快照索引与历史溯源设计-2026-09-14.md)是§4–5的最新补充。Memory是Agent主动维护的当前知识快照、多级索引和外部正文引用；记忆图书馆复用Book/Page/Pointer；聊天与向量命中只提供候选证据，不能代表最终裁决。先M02最小写读，再M01移除默认日志召回/整摘要，C03完善按需溯源；此前性能报告的日志优先路线不再适用。设计已明确，运行时尚未按此修改。

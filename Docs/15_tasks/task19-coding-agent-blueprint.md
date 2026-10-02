@@ -1,3 +1,18 @@
+---
+title: Task 19 - Coding Agent 总体架构蓝图
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 状态：design 优先级：P0 最后更新：2026-02-20
+categories: [docs, tasks]
+tags: [task19, coding, agent, blueprint, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task19-coding-agent-blueprint
+draft: false
+---
+
 # Task 19 - Coding Agent 总体架构蓝图
 
 状态：`design`  

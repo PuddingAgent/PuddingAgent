@@ -1,3 +1,18 @@
+---
+title: task07-agent-naming
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 这是一个非常棒的主意！在 Swarm 视图中，如果全是 worker-1、worker-2，界面会显得非常冰冷。给它们起一些有性格的中文名字，能瞬间让你的“布丁实验室”充满温度。
+categories: [docs, tasks]
+tags: [task07, agent, naming, tasks]
+related_docs: []
+related_files: []
+slug: tasks-task07-agent-naming
+draft: false
+---
+
 这是一个非常棒的主意！在 Swarm 视图中，如果全是 `worker-1`、`worker-2`，界面会显得非常冰冷。给它们起一些有性格的中文名字，能瞬间让你的“布丁实验室”充满温度。
 
 我们可以实现一个 **`PuddingNameGenerator`**，结合“萌系词库”和“随机组合逻辑”。

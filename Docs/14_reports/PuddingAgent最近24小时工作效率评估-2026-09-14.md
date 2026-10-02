@@ -1,3 +1,18 @@
+---
+title: PuddingAgent 最近 24 小时工作效率评估
+author: hyfree
+date: 2026-09-14
+last_reviewed: 2026-10-02
+status: active
+description: "统计窗口：2026-09-13 19:55 至 2026-09-14 19:55，Asia/Shanghai，左闭右开。对象为默认助手 default.global_general-assistant.6a8、主会话 206a9b48ec904ebb93e7541131fbb835、其 7 个子代理 Run，以及账本中相关后台模型调用。"
+categories: [docs, reports]
+tags: [最近, 小时工作效率, 评估, reports]
+related_docs: []
+related_files: []
+slug: reports-puddingagent最近24小时工作效率评估-2026-09-14
+draft: false
+---
+
 # PuddingAgent 最近 24 小时工作效率评估
 
 统计窗口：**2026-09-13 19:55 至 2026-09-14 19:55，Asia/Shanghai**，左闭右开。对象为默认助手 `default.global_general-assistant.6a8`、主会话 `206a9b48ec904ebb93e7541131fbb835`、其 7 个子代理 Run，以及账本中相关后台模型调用。

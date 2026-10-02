@@ -1,3 +1,18 @@
+---
+title: Agent 模板编辑 Settings Sidebar Navigation 代码级设计方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 主要入口：
+categories: [docs, features]
+tags: [模板编辑, 代码级设计方, features]
+related_docs: []
+related_files: [Docs/07_architecture/41ADR-040Agent模板编辑SettingsSidebarNavigationADR.md, Source/PuddingPlatformAdmin/src/pages/global-agent-template/index.tsx, Source/PuddingPlatformAdmin/src/pages/workspace-agent-template/index.tsx, "Source/PuddingPlatformAdmin/src/pages/workspace/[id]/index.tsx"]
+slug: features-agent模板编辑settingssidebarnavigation代码级设计方案
+draft: false
+---
+
 # Agent 模板编辑 Settings Sidebar Navigation 代码级设计方案
 
 > 日期：2026-05-23

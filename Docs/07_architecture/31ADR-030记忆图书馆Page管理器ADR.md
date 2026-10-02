@@ -1,3 +1,18 @@
+---
+title: 31 ADR-030 记忆图书馆 Page 管理器方案
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: 记忆图书馆不是普通数据库表，也不是单纯的向量库。它的长期形态更接近一棵可自然生长的 page tree：
+categories: [docs, architecture]
+tags: [记忆图书馆, 管理器, architecture]
+related_docs: [Docs/07_architecture/29ADR-028记忆图书馆基础设施重构ADR.md, Docs/07_architecture/30ADR-029记忆图书馆ADR-028纠偏与验收闭环方案.md]
+related_files: []
+slug: architecture-31adr-030记忆图书馆page管理器adr
+draft: false
+---
+
 # 31 ADR-030 记忆图书馆 Page 管理器方案
 
 > 状态：**proposed**

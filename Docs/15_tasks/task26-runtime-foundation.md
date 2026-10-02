@@ -1,10 +1,25 @@
+---
+title: task26 - PuddingRuntime 基础宿主
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: 最后更新：2026-05-03
+categories: [docs, tasks]
+tags: [task26, runtime, foundation, tasks]
+related_docs: [Docs/07_architecture/03PuddingRuntime.md, Docs/07_architecture/01总览与分层.md, Docs/15_tasks/task27-controller-routing-session.md, Docs/15_tasks/task29-agent-template-and-audit.md, Docs/15_tasks/task34-event-bus-and-subscription.md]
+related_files: []
+slug: tasks-task26-runtime-foundation
+draft: false
+---
+
 # task26 - PuddingRuntime 基础宿主
 
 最后更新：2026-05-03
 
 ## 参考设计
 
-> 详见 [Claude Code EP01 QueryEngine](../claude-reviews-claude/architecture/01-query-engine.md) — 12 步状态机主循环。
+> 详见 [Claude Code EP01 QueryEngine](../../external/references/claude-reviews-claude/architecture/01-query-engine.md) — 12 步状态机主循环。
 
 ### Agent 主循环（参考 Claude Code）
 

@@ -1,3 +1,18 @@
+---
+title: Blocked + active assignment 的 canonical 恢复通道：设计裁定
+author: hyfree
+date: 2026-10-02
+last_reviewed: 2026-10-02
+status: active
+description: "日期：2026-09-14 范围：Source/PuddingRuntime/Services/TaskTools/（重建守卫）；Source/PuddingCore/Tasks/TaskStateMachine.cs 为权威状态机，本次未改 关联卡：813ad427c0d54fd6a67e9bd39b03d4c4（本裁定）、bf7ef5f5e2d04d23ac3aed224ee539c3（16 "
+categories: [docs, reports]
+tags: [blocked, recovery, channel, decision, reports]
+related_docs: []
+related_files: [Source/PuddingCore/Tasks/TaskStateMachine.cs, Docs/14_reports/scheduler-kernel-current-state-20260913.md, Source/PuddingRuntimeTests/Services/TaskE2E/TaskActiveTaskFourChainE2ETests.cs, Source/PuddingRuntime/code_map.md]
+slug: reports-blocked-recovery-channel-decision-20260914
+draft: false
+---
+
 # Blocked + active assignment 的 canonical 恢复通道：设计裁定
 
 - 日期：2026-09-14

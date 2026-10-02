@@ -1,3 +1,18 @@
+---
+title: 24 核心架构组件边界与执行引擎拆分 ADR
+author: hyfree
+date: 2026-02-12
+last_reviewed: 2026-10-02
+status: active
+description: Pudding 当前架构方向是合理的：单进程、data 目录透明配置、SQLite 查询索引、JSONL 回放、事件持久化、子代理 run archive、Admin 诊断。这套设计适合 V1 的部署目标，也适合后续多 Agent、多 LLM provider、显意识 LLM、潜意识 LLM、记忆图书馆、连接器扩展。
+categories: [docs, architecture]
+tags: [核心架构组件, 边界与执行引, 擎拆分, architecture]
+related_docs: [Docs/07_architecture/19架构基础设施增强下一步ADR.md, Docs/07_architecture/22架构基础设施硬化与行动路线ADR.md, Docs/07_architecture/23运行时可观测性闭环与E2E验证基线ADR.md]
+related_files: [Source/PuddingCore/Runtime/ExecutionLifecycleContracts.cs, Source/PuddingCore/Runtime/ContextAssemblyContracts.cs, Source/PuddingCore/Runtime/LlmInvocationContracts.cs, Source/PuddingCore/Runtime/ToolInvocationContracts.cs, Source/PuddingCore/Runtime/SubAgentInvocationContracts.cs, Source/PuddingCore/Runtime/SessionOutputContracts.cs]
+slug: architecture-24核心架构组件边界与执行引擎拆分adr
+draft: false
+---
+
 # 24 核心架构组件边界与执行引擎拆分 ADR
 
 > 状态：**partially-implemented**（契约已创建，部分 facade 已接入执行路径，剩余接入和闭环见 ADR-025）
