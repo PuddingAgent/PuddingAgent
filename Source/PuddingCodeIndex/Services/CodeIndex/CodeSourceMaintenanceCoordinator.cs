@@ -42,6 +42,7 @@ public sealed record CodeSourceMaintenanceRunOptions(
 /// <param name="LedgerOutcome">账本提交结果。</param>
 /// <param name="LanguageSessionKey">语言侧本批复用的工程/编译快照标识（为空表示退化成逐文件）。</param>
 /// <param name="InvalidatedDependentFilePaths">因符号消失而需要重新绑定的依赖方文件。</param>
+/// <param name="ReusedFileCount">因内容指纹与已提交记录一致而**跳过提取**（只刷新消费者视图）的文件数。</param>
 /// <param name="RootUsable">本轮扫描根是否可用（false ⇒ 周期校准要按「被拒」处理：保持标位 + 走退避）。</param>
 public sealed record CodeSourceMaintenanceRunResult(
     bool CapabilityMissing,
@@ -56,7 +57,8 @@ public sealed record CodeSourceMaintenanceRunResult(
     CodeSourceCommitOutcome? LedgerOutcome,
     string? LanguageSessionKey,
     IReadOnlyList<string> InvalidatedDependentFilePaths,
-    bool RootUsable = true);
+    bool RootUsable = true,
+    int ReusedFileCount = 0);
 
 /// <summary>
 /// **源维护协调器**（D4，2026-10-02）：把已经独立交付的各件串成一条链并保证顺序与失败语义：
@@ -186,21 +188,50 @@ public sealed class CodeSourceMaintenanceCoordinator
                 workspaceId, projectId, scanRun.ChangeSet, semanticChanges: null, retryPaths: backingOff, cancellationToken)
             .ConfigureAwait(false);
 
-        var extractPaths = firstPlan.Items
+        var candidates = firstPlan.Items
             .Where(item => item.Action == CodeSourceUpdateAction.Extract)
             .Select(item => item.FilePath)
             .ToArray();
 
+        // ① 先**稳定读**候选路径再决定是否真的需要提取（指纹先判、再动手）：
+        //    提示只说明「这个路径可能变了」，内容 hash 与已提交指纹一致就没必要惊动语言侧
+        //    （一次 Roslyn/ts-morph/Node 装载的代价远高于一次读盘）。读本身仍要做 ——
+        //    那正是「提示 ⇒ 必须核验内容」这条不变量的代价。
+        var fingerprints = new Dictionary<string, SourceFingerprint>(CodePathIdentity.PathComparer);
+        var reusedPaths = new List<string>();
+        var failures = new List<(string FilePath, string Reason)>();
+
+        foreach (var path in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var read = await _fingerprintReader.ReadAsync(path, cancellationToken).ConfigureAwait(false);
+
+            if (!read.Stable)
+            {
+                failures.Add((path, read.Reason ?? "unstable read"));
+                continue;
+            }
+
+            if (IsUnchangedSinceLastCommit(path, read.Fingerprint!, snapshot.Manifest, consumerInputs))
+            {
+                reusedPaths.Add(path);
+                continue;
+            }
+
+            fingerprints[path] = read.Fingerprint!;
+        }
+
+        // ② 只对真正需要重新提取的路径调用语言批量接缝（一批一次）。
         var extraction = await ExtractAsync(
-                workspaceId, projectId, rootPath, options, extractPaths, scanRun.CapturedVersion, cancellationToken)
+                workspaceId, projectId, rootPath, options, fingerprints.Keys.ToArray(), scanRun.CapturedVersion, cancellationToken)
             .ConfigureAwait(false);
 
         var outcomes = extraction.Outcomes;
 
-        // 稳定读取 + 旧符号差异 + 组装替换批次。
+        // ③ 旧符号差异 + 组装替换批次（指纹用①里读到的那一份）。
         var replacements = new List<CodeSourceFileReplacement>();
         var notApplicable = new List<CodeSourceEntry>();
-        var failures = new List<(string FilePath, string Reason)>();
         var semanticChanges = new List<CodeFileSemanticChange>();
         var extractedPaths = new List<string>();
 
@@ -230,10 +261,11 @@ public sealed class CodeSourceMaintenanceCoordinator
             }
 
             var payload = outcome.Payload;
-            var fileRead = await _fingerprintReader.ReadAsync(payload.FilePath, cancellationToken).ConfigureAwait(false);
-            if (!fileRead.Stable)
+
+            if (!fingerprints.TryGetValue(payload.FilePath, out var fileFingerprint))
             {
-                failures.Add((payload.FilePath, fileRead.Reason ?? "unstable read"));
+                // 没有可提交的指纹就绝不写索引：宁可下一轮重来（指纹必须来自真正读到的那份内容）。
+                failures.Add((payload.FilePath, "no verified source fingerprint for this file"));
                 continue;
             }
 
@@ -249,7 +281,7 @@ public sealed class CodeSourceMaintenanceCoordinator
                 payload.Symbols,
                 payload.References,
                 payload.Relations,
-                BuildEntry(payload.FilePath, fileRead.Fingerprint!, scanRun.CapturedVersion, consumerInputs, payload.Language)));
+                BuildEntry(payload.FilePath, fileFingerprint, scanRun.CapturedVersion, consumerInputs, payload.Language)));
 
             extractedPaths.Add(payload.FilePath);
         }
@@ -283,10 +315,17 @@ public sealed class CodeSourceMaintenanceCoordinator
         }
 
         // ② 只重绑：索引不变，只把消费者视图推进到捕获版本（含指纹未变的路径）。
-        if (rebindPaths.Length > 0)
+        //    「指纹未变被跳过提取」的路径也在这里刷新 manifest：内容确实没变，但消费者视图要推进，
+        //    否则它每一轮都会被当成待处理（无谓读盘）。
+        var rebindTargets = rebindPaths
+            .Concat(reusedPaths)
+            .Distinct(CodePathIdentity.PathComparer)
+            .ToArray();
+
+        if (rebindTargets.Length > 0)
         {
             var entries = new List<CodeSourceEntry>();
-            foreach (var path in rebindPaths)
+            foreach (var path in rebindTargets)
             {
                 var fingerprint = snapshot.Manifest.TryGetValue(path, out var existing)
                     ? existing.Fingerprint
@@ -376,7 +415,51 @@ public sealed class CodeSourceMaintenanceCoordinator
             LedgerOutcome: commitOutcome,
             LanguageSessionKey: extraction.SessionKey,
             InvalidatedDependentFilePaths: invalidated,
-            RootUsable: scanRun.RootUsable);
+            RootUsable: scanRun.RootUsable,
+            ReusedFileCount: reusedPaths.Count);
+    }
+
+    /// <summary>
+    /// 该路径的内容是否与「上次已提交」完全一致（长度 + 内容 hash），且所有消费者都已登记其上？
+    /// <para>
+    /// 只用于**提示驱动**的候选：提示只说明「可能变了」，指纹一致就没有必要惊动语言侧。
+    /// 判定刻意保守：少了任何一条（没有记录、记录不完整、某消费者没有已应用版本）都返回 false ⇒ 照常提取。
+    /// </para>
+    /// </summary>
+    private static bool IsUnchangedSinceLastCommit(
+        string filePath,
+        SourceFingerprint observed,
+        IReadOnlyDictionary<string, CodeSourceEntry> manifest,
+        IReadOnlyCollection<CodeConsumerInputFingerprint> consumerInputs)
+    {
+        if (!manifest.TryGetValue(filePath, out var entry) || !entry.Complete)
+            return false;
+
+        if (entry.Fingerprint.Length != observed.Length
+            || !string.Equals(entry.Fingerprint.ContentHash, observed.ContentHash, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        foreach (var input in consumerInputs ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(input.ProviderId))
+                continue;
+
+            var applied = entry.AppliedVersions.FirstOrDefault(version =>
+                string.Equals(version.ProviderId, input.ProviderId, StringComparison.Ordinal));
+
+            if (applied is null
+                || !string.Equals(applied.ParserPolicyFingerprint, input.ParserPolicyFingerprint, StringComparison.Ordinal)
+                || !string.Equals(applied.SemanticInputFingerprint, input.SemanticInputFingerprint, StringComparison.Ordinal))
+            {
+                // 消费者输入变了 ⇒ 需要的是重新绑定，不是重新提取；交给计划里的 RebindOnly 分支，
+                // 这里返回 false 只会让它多走一次提取，所以这种情形按「未变」处理。
+                continue;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>调用一次语言批量接缝（一批一次），把结果按路径摊平。</summary>
