@@ -14,17 +14,40 @@ namespace PuddingCodeIntelligence.CSharp;
 /// C# code indexer that extracts declarations, Contains/Calls relations, and references
 /// from Roslyn compilations and persists them through <see cref="ICodeIndexStore"/>.
 /// </summary>
-public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, ILanguageCodeIndexer
+public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIndexFileBatchUpdater, ILanguageCodeIndexer
 {
 
 
     private readonly ICodeIndexStore _store;
     private readonly ILogger _logger;
+    private readonly Func<CodeWorkspaceDescriptor, CancellationToken, Task<Workspace>> _workspaceOpener;
 
     public RoslynCSharpIndexer(ICodeIndexStore store, ILogger<RoslynCSharpIndexer> logger)
+        : this(store, logger, workspaceOpener: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates the indexer with an optional **workspace opener**.
+    /// <para>
+    /// The seam exists so that the batch seam can be exercised end to end (including the
+    /// "one workspace per batch" contract) without MSBuild, and so an alternative host can supply its own
+    /// loader. Production passes null and gets <see cref="RoslynWorkspaceBootstrapper"/>.
+    /// </para>
+    /// </summary>
+    /// <param name="store">Index store (batch updates never write to it).</param>
+    /// <param name="logger">Logger.</param>
+    /// <param name="workspaceOpener">Optional workspace opener (null ⇒ the production bootstrapper).</param>
+    public RoslynCSharpIndexer(
+        ICodeIndexStore store,
+        ILogger<RoslynCSharpIndexer> logger,
+        Func<CodeWorkspaceDescriptor, CancellationToken, Task<Workspace>>? workspaceOpener)
     {
         _store = store;
         _logger = logger;
+        _workspaceOpener = workspaceOpener
+            ?? ((descriptor, cancellationToken) =>
+                new RoslynWorkspaceBootstrapper(_logger).OpenWorkspaceAsync(descriptor, cancellationToken));
     }
 
     /// <inheritdoc />
@@ -273,6 +296,157 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
         List<CodeSymbolRecord> Symbols,
         List<CodeRelationRecord> Relations,
         List<CodeReferenceRecord> References);
+
+    /// <summary>
+    /// **批量更新**（D4，2026-10-02）：一个批次只打开一次工程/编译快照，逐文件提取并返回结果，
+    /// <b>不写任何索引</b> —— 由调用方把 payload 与源指纹在同一个事务里提交。
+    /// <para>
+    /// 结果语义：非 <c>.cs</c>、噪声路径、不在已加载工作区里的文件都是
+    /// <see cref="CodeIndexConsumerStatus.NotApplicable"/>（能力路由，不是失败）；
+    /// 工程根缺失、工作区打不开、单文件提取抛错都是 <see cref="CodeIndexConsumerStatus.Retryable"/>
+    /// （带路径级原因，按退避重试，而不是升级成整仓重建）。
+    /// </para>
+    /// <para>
+    /// 语义差异（哪些符号消失/签名变了）**不在这里计算**：那需要「上一次已提交的符号」，
+    /// 由调用方用自己的持久状态与 <c>CodeFileSemanticDiff</c> 得出，语言侧不读旧索引。
+    /// </para>
+    /// </summary>
+    /// <inheritdoc />
+    public async Task<CodeIndexFileBatchResult> UpdateFilesAsync(
+        CodeWorkspaceDescriptor workspace,
+        IReadOnlyCollection<string> filePaths,
+        CodeIndexBatchContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var paths = (filePaths ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (paths.Length == 0)
+            return new CodeIndexFileBatchResult([], context.ConfigurationFingerprint, SessionKey: null);
+
+        var outcomes = new List<CodeFileIndexOutcome>(paths.Length);
+        var csharpPaths = new List<string>();
+
+        foreach (var path in paths)
+        {
+            if (!CSharpFileExtensions.Contains(Path.GetExtension(path)))
+            {
+                outcomes.Add(new CodeFileIndexOutcome(
+                    path, CodeIndexConsumerStatus.NotApplicable, Reason: "not a C# file"));
+                continue;
+            }
+
+            if (IsNoiseFile(path, workspace.ProjectPath))
+            {
+                outcomes.Add(new CodeFileIndexOutcome(
+                    path, CodeIndexConsumerStatus.NotApplicable, Reason: "excluded from indexing"));
+                continue;
+            }
+
+            csharpPaths.Add(path);
+        }
+
+        if (csharpPaths.Count == 0)
+            return new CodeIndexFileBatchResult(Order(outcomes), context.ConfigurationFingerprint, SessionKey: null);
+
+        if (string.IsNullOrWhiteSpace(workspace.ProjectPath) || !Directory.Exists(workspace.ProjectPath))
+        {
+            var reason = $"Project path does not exist: {workspace.ProjectPath}";
+            foreach (var path in csharpPaths)
+                outcomes.Add(new CodeFileIndexOutcome(path, CodeIndexConsumerStatus.Retryable, Reason: reason));
+
+            return new CodeIndexFileBatchResult(Order(outcomes), context.ConfigurationFingerprint, SessionKey: null);
+        }
+
+        var sessionKey = $"roslyn:{workspace.ProjectPath}:{context.ConfigurationFingerprint}";
+
+        try
+        {
+            // ⚠️ 整个批次只打开一次工作区：这是本接缝存在的理由（逐文件打开工程就是被诊断出来的放大）。
+            using var roslynWorkspace = await _workspaceOpener(workspace, cancellationToken).ConfigureAwait(false);
+            var solution = roslynWorkspace.CurrentSolution;
+
+            foreach (var path in csharpPaths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    outcomes.Add(await BuildBatchOutcomeAsync(
+                            solution, workspace.WorkspaceId, workspace.ProjectId, path, cancellationToken)
+                        .ConfigureAwait(false));
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Extracting {FilePath} in a batch failed", path);
+                    outcomes.Add(new CodeFileIndexOutcome(
+                        path,
+                        CodeIndexConsumerStatus.Retryable,
+                        Reason: $"C# extraction failed: {ex.Message}"));
+                }
+            }
+
+            return new CodeIndexFileBatchResult(Order(outcomes), context.ConfigurationFingerprint, sessionKey);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Opening the C# workspace for a batch failed");
+
+            foreach (var path in csharpPaths)
+            {
+                outcomes.Add(new CodeFileIndexOutcome(
+                    path,
+                    CodeIndexConsumerStatus.Retryable,
+                    Reason: $"C# workspace could not be opened: {ex.Message}"));
+            }
+
+            return new CodeIndexFileBatchResult(Order(outcomes), context.ConfigurationFingerprint, SessionKey: null);
+        }
+    }
+
+    private static IReadOnlyList<CodeFileIndexOutcome> Order(List<CodeFileIndexOutcome> outcomes) =>
+        outcomes.OrderBy(outcome => outcome.FilePath, StringComparer.OrdinalIgnoreCase).ToArray();
+
+    /// <summary>Extracts one file from an already-open solution and returns it as a payload (writes nothing).</summary>
+    private static async Task<CodeFileIndexOutcome> BuildBatchOutcomeAsync(
+        Solution solution,
+        string workspaceId,
+        string projectId,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        var (compilation, syntaxTree) = await FindCompilationForFileAsync(solution, filePath, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (compilation is null || syntaxTree is null)
+        {
+            return new CodeFileIndexOutcome(
+                filePath,
+                CodeIndexConsumerStatus.NotApplicable,
+                Reason: $"File is not part of the loaded C# workspace: {filePath}");
+        }
+
+        var extracted = await ExtractFileAsync(compilation, syntaxTree, workspaceId, projectId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new CodeFileIndexOutcome(
+            filePath,
+            CodeIndexConsumerStatus.Applied,
+            new CodeFileIndexPayload(filePath, extracted.Symbols, extracted.References, extracted.Relations));
+    }
 
     /// <summary>Extracts the records of one syntax tree. Reads no cross-file state and writes nothing.</summary>
     private static async Task<FileExtraction> ExtractFileAsync(

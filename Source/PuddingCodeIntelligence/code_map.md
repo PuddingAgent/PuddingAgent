@@ -8,7 +8,7 @@
 
 | 目录 | 语言 | 说明 |
 |------|------|------|
-| `CSharp/` | C# | `RoslynCSharpIndexer`（`ICodeIndexer` 实现）· `RoslynSymbolId` · `RoslynWorkspaceBootstrapper` |
+| `CSharp/` | C# | `RoslynCSharpIndexer`（`ICodeIndexer` + `ICodeIndexFileUpdater` + **`ICodeIndexFileBatchUpdater`**）· `RoslynSymbolId` · `RoslynWorkspaceBootstrapper` |
 | `TypeScript/` | TypeScript | `TypeScriptIndexer`（`ICodeIndexer`）· `TypeScriptFileOutliner` |
 | `Python/` | Python | `PythonIndexer`（`ICodeIndexer`）· `PythonFileOutliner` |
 | `Cpp/` | C++ | outliner |
@@ -23,6 +23,7 @@
 
 | 文件 | 用途 |
 |------|------|
+| `CSharp/RoslynCSharpIndexer.cs` | C# 语言索引器。**两条路径分工**：`IndexWorkspaceAsync`/`IndexFileAsync`（旧接缝，自己写库）；**`UpdateFilesAsync` 批量接缝**（2026-10-02）：**一个批次只打开一次工程/编译快照**，逐文件提取后以 `CodeFileIndexPayload` 返回，**不写任何索引**（由调用方经 `ReplaceFilesAsync` 与源指纹同事务提交）。路由：非 `.cs`/噪声路径/不在已加载工作区 ⇒ `NotApplicable`；工程根缺失、工作区打不开、单文件提取抛错 ⇒ `Retryable` 带路径级原因（按退避重试，不升级整仓）。语义差异（消失/签名变化）**不在这里算**（需要上次已提交符号，由调用方用自己的持久状态 + `CodeFileSemanticDiff` 得出）。构造器可注入 workspace opener（默认 `RoslynWorkspaceBootstrapper`），使「批内只打开一次工程」可被测试断言 |
 | `Services/CodeQueryService.cs` | 代码查询服务（只读索引，`ICodeQueryService`） |
 | `Services/FileOutlinerRegistry.cs` | 文件大纲注册（按扩展名派发） |
 | `Lsp/IndexBasedLanguageServerService.cs` | 基于索引的 LSP 视图（hover / definition / references） |
