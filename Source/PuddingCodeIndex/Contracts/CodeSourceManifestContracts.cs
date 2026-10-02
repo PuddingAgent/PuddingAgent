@@ -281,6 +281,74 @@ public sealed record CodeSourceMaintenanceLedgerState(
     DateTimeOffset? ScanWatermarkUtc,
     bool DirtyAgain);
 
+/// <summary>一个 scope 的源维护状态：持久 manifest + 维护账本。</summary>
+/// <param name="Manifest">规范化路径 → 该路径的源状态与消费者水位（无记录表示首次没有基线）。</param>
+/// <param name="Ledger">该 scope 的维护账本快照（没有持久记录时是默认值：世代 0、各水位 0、无待重试）。</param>
+public sealed record CodeSourceMaintenanceSnapshot(
+    IReadOnlyDictionary<string, CodeSourceEntry> Manifest,
+    CodeSourceMaintenanceLedgerState Ledger);
+
+/// <summary>
+/// 源维护状态的**可选持久化能力端口**（D2，2026-10-02）。
+/// <para>
+/// 故意不把成员加到 <see cref="ICodeIndexStore"/>：给共享端口加成员会破坏每一个实现者
+/// （组件外的测试替身也在内），而「谁能持久化 manifest/账本」本来就是可选能力。
+/// 维护链路按能力检测使用它；实现者不实现时保持既有行为，不引入兼容适配层。
+/// </para>
+/// <para>
+/// 三条语义要求：
+/// <list type="bullet">
+///   <item><description><see cref="SaveSourceManifestAsync"/> 必须**单事务**：一批 upsert 与删除要么全成，要么全不成，
+///     不允许出现「manifest 更新了但旧行还在」的中间态。</description></item>
+///   <item><description>删除一个路径必须同时移除它的消费者水位（否则新文件会继承旧文件的已应用版本）。</description></item>
+///   <item><description><see cref="SaveMaintenanceLedgerAsync"/> 必须拒绝**回退写入**（世代更旧、或同世代期望版本更旧），
+///     并整体替换待重试集合 —— 账本是单调版本，不能因一次迟到写入而倒退。</description></item>
+/// </list>
+/// </para>
+/// </summary>
+public interface ICodeSourceMaintenanceStore
+{
+    /// <summary>读取一个 scope 的 manifest 与账本（没有记录时返回空 manifest 与默认账本）。</summary>
+    /// <param name="workspaceId">工作空间。</param>
+    /// <param name="projectId">范围（store 的 project id）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task<CodeSourceMaintenanceSnapshot> LoadSourceMaintenanceAsync(
+        string workspaceId,
+        string projectId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>单事务写入一批 manifest 行并删除给定路径（删除同时移除其消费者水位）。</summary>
+    /// <param name="workspaceId">工作空间。</param>
+    /// <param name="projectId">范围。</param>
+    /// <param name="entries">要 upsert 的路径（含指纹与各消费者已应用版本）。</param>
+    /// <param name="removedFilePaths">要删除的路径。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>受影响的 manifest 行数（upsert + 删除）。</returns>
+    Task<int> SaveSourceManifestAsync(
+        string workspaceId,
+        string projectId,
+        IReadOnlyCollection<CodeSourceEntry> entries,
+        IReadOnlyCollection<string> removedFilePaths,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 写入账本（版本、扫描水位、待重试集合）：整体替换该 scope 的待重试行。
+    /// </summary>
+    /// <param name="workspaceId">工作空间。</param>
+    /// <param name="projectId">范围。</param>
+    /// <param name="state">账本快照。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>
+    /// <c>true</c> 表示写入被接受；<c>false</c> 表示这是一次**回退写入**（世代更旧，或同世代期望版本更旧）
+    /// 已被拒绝，存储保持原值。
+    /// </returns>
+    Task<bool> SaveMaintenanceLedgerAsync(
+        string workspaceId,
+        string projectId,
+        CodeSourceMaintenanceLedgerState state,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>一个路径的变更判定结果。</summary>
 /// <param name="FilePath">绝对路径（保留请求里给的大小写）。</param>
 /// <param name="Action">最终期望动作。</param>

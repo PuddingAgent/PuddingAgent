@@ -8,7 +8,7 @@ namespace PuddingCodeIndex.Storage;
 /// <summary>
 /// SQLite-backed store for workspace-registered code projects and their semantic graph.
 /// </summary>
-public sealed class SqliteCodeIndexStore : ICodeIndexStore
+public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceMaintenanceStore
 {
     private readonly string _databasePath;
     private bool _initialized;
@@ -148,6 +148,9 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
                     cancellationToken).ConfigureAwait(false);
             }
             catch (SqliteException) { /* column already exists */ }
+
+            // 源维护状态（D2）：持久 manifest / 消费者水位 / 维护账本 / 待重试。
+            await EnsureSourceMaintenanceSchemaAsync(connection, cancellationToken).ConfigureAwait(false);
 
             _initialized = true;
         }
