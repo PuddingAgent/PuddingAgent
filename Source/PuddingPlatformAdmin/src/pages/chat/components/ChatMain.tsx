@@ -12,6 +12,7 @@ import {
 import { Alert, Button, Divider, Dropdown, Select, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkspaceNavigationHeader } from '@/components';
+import { buildGlobalHelpMenuItem } from '@/components/GlobalActions';
 import type {
   WorkspaceAgentDto,
   WorkspaceWithPermDto,
@@ -543,6 +544,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
             style={{ marginBottom: 0, borderRadius: 0 }}
           />
         )}
+        {/* IMG03：帮助是低频项，并入下面的「更多」，顶部不再单留一个问号图标 */}
         <WorkspaceNavigationHeader
           leading={
             !sidebarOpen ? (
@@ -556,6 +558,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
             ) : undefined
           }
           crumbs={[]}
+          hideGlobalHelp
           controls={
             <>
               <Select
@@ -644,14 +647,14 @@ const ChatMain: React.FC<ChatMainProps> = ({
                 />
               </Tooltip>
               {/* IMG03（设计规格 §13.2 / §4 矩阵）：顶部只留高频动作
-                  （任务看板 / 搜索 / 快照 / 余额数字），低频开关（自动朗读、
-                  开发者模式）收进“更多”。开关状态不能跟着一起藏起来：
+                  （任务看板 / 搜索 / 快照 / 余额数字），低频项（自动朗读、
+                  开发者模式、帮助）收进“更多”。开关状态不能跟着一起藏起来：
                   Tooltip 写明两项当前状态；开发者模式开启时触发器额外高亮
                   （自动朗读默认开启，若也据此高亮则触发器恒亮、反而失去信号）。 */}
               <Tooltip
                 title={`更多：自动朗读（${
                   autoTtsEnabled ? '已开启' : '已关闭'
-                }）、开发者模式（${devMode ? '已开启' : '已关闭'}）`}
+                }）、开发者模式（${devMode ? '已开启' : '已关闭'}）、帮助`}
               >
                 <Dropdown
                   trigger={['click']}
@@ -677,6 +680,9 @@ const ChatMain: React.FC<ChatMainProps> = ({
                           : '开发者模式（已关闭）',
                         onClick: () => setDevMode(!devMode),
                       },
+                      { type: 'divider' as const },
+                      // 帮助项由共享组件提供，与内联问号图标共用同一 URL 真源
+                      buildGlobalHelpMenuItem(),
                     ],
                   }}
                 >

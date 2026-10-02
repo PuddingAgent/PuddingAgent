@@ -20,6 +20,11 @@ export interface WorkspaceNavigationHeaderProps {
   primaryAction?: React.ReactNode;
   extraActions?: React.ReactNode;
   puddingPath?: string;
+  /**
+   * Chat 顶栏把低频的「帮助」并入自己的「更多」下拉时置为 true，
+   * 避免右侧同时出现一个孤立的帮助图标（IMG03）。仅作用于 chat 变体的全局操作区。
+   */
+  hideGlobalHelp?: boolean;
 }
 
 export const headerStyles: Record<string, React.CSSProperties> = {
@@ -141,6 +146,7 @@ const WorkspaceNavigationHeader: React.FC<WorkspaceNavigationHeaderProps> = ({
   primaryAction,
   extraActions,
   puddingPath = buildWorkspacePath(),
+  hideGlobalHelp,
 }) => {
   const { initialState } = useModel('@@initialState');
   const canOpenSystemConsole = initialState?.currentUser?.access === 'admin';
@@ -177,7 +183,7 @@ const WorkspaceNavigationHeader: React.FC<WorkspaceNavigationHeaderProps> = ({
             />
           </Tooltip>
         )}
-        <PuddingGlobalActions variant="chat" />
+        <PuddingGlobalActions variant="chat" hideHelp={hideGlobalHelp} />
       </div>
     </header>
   );

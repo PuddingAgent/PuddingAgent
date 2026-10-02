@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
+import { PUDDING_HELP_URL } from '@/components/RightContent';
 import ChatMain from './ChatMain';
 
 const mockHistoryPush = jest.fn();
@@ -519,6 +520,22 @@ describe('ChatMain workbench header', () => {
     // 自动朗读默认开启：断言“带明确状态后缀”的菜单项而非固定档位
     expect(await screen.findByText(/^自动朗读（已(开启|关闭)）$/)).toBeTruthy();
     expect(screen.getByText(/^开发者模式（已(开启|关闭)）$/)).toBeTruthy();
+  });
+
+  it('IMG03：帮助并入同一“更多”，顶部不再单留问号图标', async () => {
+    renderChatMain();
+
+    const helpLinks = () =>
+      document.querySelectorAll(`a[href="${PUDDING_HELP_URL}"]`);
+
+    // 顶部只剩高频动作：帮助不在顶栏内联出现
+    expect(helpLinks().length).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+
+    expect(await screen.findByText(/^帮助（GitHub 仓库）$/)).toBeTruthy();
+    expect(helpLinks().length).toBe(1);
+    expect(helpLinks()[0].getAttribute('target')).toBe('_blank');
   });
 
   it('IMG03：更多里的开关切换后选中语义跟着变化，不丢失开关能力', async () => {
