@@ -91,4 +91,4 @@ C01-B 继续做单调 revision、可复用 contentId 与 CAS head；A→B→A �
 | C02 | `a8e5340ebb9f421bac7c8b3babb768bc` |
 | 缓存总卡 | `af25d72c75634aae8579ec2c0a26ce08` |
 
-结构化回读：[board-receipts.json](audit-evidence/2026-09-12/board-receipts.json)，含最终状态/版本、完整修订描述/验收条款、评论及评价 ID，不包含令牌或整个工作区看板。
+结构化回读：[board-receipts.json](../evidence/board-receipts.json)，含最终状态/版本、完整修订描述/验收条款、评论及评价 ID，不包含令牌或整个工作区看板。

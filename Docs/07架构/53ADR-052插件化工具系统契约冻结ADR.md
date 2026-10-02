@@ -6,7 +6,7 @@
 > 关联：  
 > - [tool-infrastructure-layering](tool-infrastructure-layering.md)  
 > - [51ADR-050会话层统一投影与前端观察者模型ADR](51ADR-050会话层统一投影与前端观察者模型ADR.md)  
-> - [2026-06-24-Pudding工具系统增强-CodeWhale参考设计](../04工具与技能/2026-06-24-Pudding工具系统增强-CodeWhale参考设计.md)  
+> - [2026-06-24-Pudding工具系统增强-CodeWhale参考设计](../04工具与技能/Pudding工具系统增强-CodeWhale参考设计.md)  
 > - [Task 14 - SKILL 插件化设计方案](../Tasks/task14-skill-plugin.md)
 
 ---

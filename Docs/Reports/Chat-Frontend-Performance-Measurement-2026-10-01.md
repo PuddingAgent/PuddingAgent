@@ -43,7 +43,7 @@
 | 数据源 | CDP `Fetch` 域拦截 `GET /api/workspaces/{ws}/agents/{ag}/conversation`，返回合成 `AgentConversationView`；其余链路全真实 |
 | 不改动 | 不写 IndexedDB 之外的内容、不写数据库、不调用 LLM、不改产品代码、不重启服务 |
 | 埋点 | 生产构建自带 `?perf=1` 诊断（`window.__PUDDING_PERF__.snapshot()`），含 longtask / layout-shift / fetch / workflow.step / commit / paint |
-| 脚手架 | [TestScripts/perf](../TestScripts/perf)（`record.mjs` + 6 个定向诊断脚本，零第三方依赖） |
+| 脚手架 | [TestScripts/perf](../../TestScripts/perf)（`record.mjs` + 6 个定向诊断脚本，零第三方依赖） |
 
 **场景**（每场景自成闭环：清 IndexedDB → 装桩 → 回应用根 → 进 chat → 测量）：
 
@@ -236,7 +236,7 @@ node TestScripts/perf/diag-flexshrink.mjs  # 验证 flex-shrink:0
 node TestScripts/perf/diag-layoutcost.mjs  # content-visibility A/B
 ```
 
-结果写入 `temp/perf/out/`。详见 [TestScripts/perf/README.md](../TestScripts/perf/README.md)。
+结果写入 `temp/perf/out/`。详见 [TestScripts/perf/README.md](../../TestScripts/perf/README.md)。
 
 ---
 

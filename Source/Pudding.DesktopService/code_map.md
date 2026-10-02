@@ -4,6 +4,7 @@
 > 依赖：`Pudding.Contracts`（平台无关契约）+ `Pudding.DesktopConnection`（执行器接缝）。
 > 编译期 Target `EnforceDesktopServiceBoundary` 禁止引用 Host/Runtime/Desktop/Browser 工程与 ASP.NET Core/WinUI/WebView2 包。
 > 测试：`Source/Pudding.DesktopServiceTests`（**81 用例**；假 UI 调度器与假监督器确定性验证，不需要 WinUI 应用）
+> 历史变更与门禁记录已迁至 [`Docs/00Changelog/2026Year/10/2026-10-02-Pudding.DesktopService-code_map迁出的变更记录.md`](../../Docs/00Changelog/2026Year/10/2026-10-02-Pudding.DesktopService-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
 
 ## 职责边界
 
@@ -57,9 +58,3 @@
   命令路径与只读直连 API（`GetPageStateAsync`）共用同一套校验与调度。
 - **WinUI `DispatcherQueue` 适配器**在 `Source/PuddingDesktop.CapabilityHost`（只引用 Contracts、无独立可测逻辑，
   契约由本组件的假调度器测试覆盖）；在 PuddingDesktop 里构造它并装配宿主属于切片 C-3/D。
-
-## 门禁（2026-10-01 实测）
-
-- 独立构建：`dotnet build Source\Pudding.DesktopService -c Release` ⇒ 0 警告 / 0 错误。
-- 独立测试：`Pudding.DesktopServiceTests` ⇒ **76/76 通过**（含 5 条边界断言、策略表快照、宿主启停与单实例占用、端点描述解析）。
-- 边界强制：csproj 只允许 `Pudding.Contracts` + `Pudding.DesktopConnection`、零包引用，由 Target 取红。

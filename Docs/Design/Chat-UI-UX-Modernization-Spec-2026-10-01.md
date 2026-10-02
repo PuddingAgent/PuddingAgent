@@ -514,7 +514,7 @@ Shell `MainWindow.xaml.cs` 的 `OnTheme` 当前设置 `Root.RequestedTheme` 并�
 
 ### 13.7 实施状态（2026-10-01，P0 项）
 
-> **2026-10-02 静态外观像素复核**：见 [验收记录](Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)。以用户提供的运行截图为证据，在同一布局、深色主题下对照改动前后取色——聊天区 `#11100d`→`#11151b`、助手消息卡 `#1b2339`→ 与聊天区背景一致（IMG06 生效）、输入区 `#1c1a16`→`#1a2029`、**消息区右侧滚动条的白轨道与上下箭头消失（该区域扫描近白像素为 0）**、页角徽标 `v6.1.3 · 97fb4d2` 可见。据此，§13.8–§13.12 中**仅静态外观类**的结论已获实测支撑；**交互、浅色主题、DPI/缩放、性能与可访问性仍未验收**，各节末尾的「未验收」清单仍然有效。
+> **2026-10-02 静态外观像素复核**：见 [验收记录](../Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)。以用户提供的运行截图为证据，在同一布局、深色主题下对照改动前后取色——聊天区 `#11100d`→`#11151b`、助手消息卡 `#1b2339`→ 与聊天区背景一致（IMG06 生效）、输入区 `#1c1a16`→`#1a2029`、**消息区右侧滚动条的白轨道与上下箭头消失（该区域扫描近白像素为 0）**、页角徽标 `v6.1.3 · 97fb4d2` 可见。据此，§13.8–§13.12 中**仅静态外观类**的结论已获实测支撑；**交互、浅色主题、DPI/缩放、性能与可访问性仍未验收**，各节末尾的「未验收」清单仍然有效。
 >
 > 该轮复核同时登记两处**新增缺口**（详见验收记录 §4）：① IMG03 点名的「帮助」入口与主题/字号/用户同属共享组件 `PuddingGlobalActions` 的 chat 变体，当时未动——**已由 `1c97f57` 补齐**（帮助并入 ChatMain 已有的「更多」，不新增第二个 ⋮；帮助 URL 收敛为唯一真源；pro-layout/Console 变体保持内联不变）；② IMG07 的原始症状（短标签首列被挤成多行）**未被该轮截图中的表覆盖**（该表首列是序号 `#`），需要另找一张窄标签表复核，不能据此宣告 IMG07 通过。
 >
@@ -714,7 +714,7 @@ Shell 侧改动，不涉及前端产物，前端版本号不变。
 |---|---|---|---|
 | SCROLL-001-WEB | 代码已落地 | `2430f97` | `src/global.style.ts` 声明 `color-scheme:light/dark`（选择器用 ThemeMode 实际写入的 `[data-pudding-theme]`）；新增 `--pudding-scroll-thumb/-hover/-active`（浅 #738197/#526174/#2458d3，深 #65758c/#8b9db5/#91b3ff，即 §14.2 目标表）；应用统一滚动条皮肤：轨道 `transparent`（渲染结果 = 所属容器背景）、10px gutter 内 6px 圆角 thumb（2px 透明边 + `background-clip:content-box`）、hover/active 只换色、不绘制箭头、`forced-colors` 恢复系统绘制、非 Chromium 走 `@supports` 回退；未全局声明非 auto 的 `scrollbar-*`（避免 §14.3 第 4 步禁止的策略互相覆盖）。`scrollTokens.ts`/`composer`/`message` 的细条着色统一到同一组 token。新增 `scroll001.test.ts` 7 项不变量回归。 |
 | SCROLL-001-SHELL | 代码已落地 | `6bf5b16`、`d106368` | Foundation `WorkbenchAppearance`（BCL-only）解析外观选择 → 生效配色 → 预绘制背景 ARGB，颜色对齐 Web 的 `colorBgLayout`（**浅 `#F7F8FA` / 深 `#11151B`**，IMG01 后为 §3 中性色，见 `WorkbenchAppearanceTests.Background_uses_the_web_layout_truth_source_colors`）；`MainWindow` 以 `ApplyWorkbenchAppearance` 为唯一落点，启动恢复、下拉切换、`ActualThemeChanged`、WebView2 首次创建共用；WebView2 首帧前铺主题底色消除加载闪白；`PreferredColorScheme` 按选择设置且「跟随系统」映射为 `Auto`。**`d106368` 把该落点扩到全部宿主表面**：① 标题栏按钮（`ExtendsContentIntoTitleBar` 后不再自动跟随应用主题，此前从未设置过 `TitleBar.Button*Color`，浅色下白字白底不可辨）；② 工具区浏览器表面（`IBrowserSurfaceHost.ApplyAppearance`，新建表面自动继承，修掉浅色下 `about:blank` 的 `#121212` 黑画布）。 |
-| SCROLL-001-QA | **部分完成** | — | 同窗口前后截图已获得并由**像素对照**登记在 [验收记录](Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)（深色 + 浅色：聊天区右缘近白像素 0、浅色 `#f7f8fa` 与 §3 基准一致、卡片与徽标核对）。**仍未完成**：§14.5 表的其余项（弹层/textarea/Shell 原生滚动区、键盘与拖拽、150/200% DPI、系统高对比恢复）、录制/trace，以及 §12 的 V/F/S/A/P/SEC/D 门禁。 |
+| SCROLL-001-QA | **部分完成** | — | 同窗口前后截图已获得并由**像素对照**登记在 [验收记录](../Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)（深色 + 浅色：聊天区右缘近白像素 0、浅色 `#f7f8fa` 与 §3 基准一致、卡片与徽标核对）。**仍未完成**：§14.5 表的其余项（弹层/textarea/Shell 原生滚动区、键盘与拖拽、150/200% DPI、系统高对比恢复）、录制/trace，以及 §12 的 V/F/S/A/P/SEC/D 门禁。 |
 
 已获得的证据（SCROLL-001 切片提交时的实测值；后续切片新增测试后的最新数字见 §13.7）：
 - `pnpm jest src/pages/chat` → 1115 passed / 3 failed；3 项均为语音相关测试（`InputArea`、`IntentConsole`），已在本轮改动前的 pristine 文件上复现，与本缺陷无关。
@@ -731,7 +731,7 @@ Desktop 构建证据（2026-10-01 第三轮补齐）：
 - `dotnet test Tests/PuddingDesktop.Tests` → 259 passed / 0 failed；`dotnet test Source/PuddingDesktop.FoundationTests` → 57 passed / 0 failed。
 
 仍未获得、因而不能声称通过的证据：
-- **WebView2 真实窗口验收**（§12 D01、§14.5 表、§13.6 IMG-V02）：**深色主题下的静态外观已由 2026-10-02 像素复核确认**（聊天区右缘近白像素为 0，滚动条呈圆角滑块贴背景色；见 [验收记录](Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)），但 §14.5 要求其余各项——深浅切换、corner、textarea/代码/表格/弹层与 Shell 原生滚动区、键盘与拖拽、150/200% DPI、系统高对比恢复——**仍未实测**。CSS 与单元测试不能替代该结论，缺陷不因这条静态证据而关闭。
+- **WebView2 真实窗口验收**（§12 D01、§14.5 表、§13.6 IMG-V02）：**深色主题下的静态外观已由 2026-10-02 像素复核确认**（聊天区右缘近白像素为 0，滚动条呈圆角滑块贴背景色；见 [验收记录](../Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)），但 §14.5 要求其余各项——深浅切换、corner、textarea/代码/表格/弹层与 Shell 原生滚动区、键盘与拖拽、150/200% DPI、系统高对比恢复——**仍未实测**。CSS 与单元测试不能替代该结论，缺陷不因这条静态证据而关闭。
 
 已知待复核项（实施中引入，需在上述验收里确认）：
 1. `PreferredColorScheme` 会影响 WebView2 内 `prefers-color-scheme` 的取值；当 Shell 显式选择浅/深、而 Web 侧 ThemeMode 为「跟随系统」时，Web 将跟随 Shell 选择而非 Windows 偏好。这是 §13.4「宿主提供外观入口」的预期对齐，但需在实际窗口确认符合产品意图。

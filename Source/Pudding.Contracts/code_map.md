@@ -6,6 +6,7 @@
 > UI / HTTP / gRPC / Protobuf / DI / 数据库 / 宿主引用一律属于传输适配器，不属于这里。
 > 命名空间：`Pudding.Contracts`（原语与横切）/ `Pudding.Contracts.Desktop`（能力 DTO）/ `Pudding.Contracts.Audit`
 > 测试：`Source/Pudding.ContractsTests`（只引用本组件；含 5 条边界/形状断言）
+> 历史变更与门禁记录已迁至 [`Docs/00Changelog/2026Year/10/2026-10-02-Pudding.Contracts-code_map迁出的变更记录.md`](../../Docs/00Changelog/2026Year/10/2026-10-02-Pudding.Contracts-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
 
 ## 身份与调用上下文（`Pudding.Contracts`）
 
@@ -69,9 +70,3 @@
 | `DesktopCapabilityOutcome` | 终态分类：Succeeded / Failed / Rejected / Cancelled / DeadlineExceeded / Disconnected |
 | `DesktopCapabilityAuditRecord` | TraceId、OperationId、Generation、能力线名、排队/执行时长、终态与错误码。**没有**脚本、URL、剪贴板、Token、页面数据字段 —— 「不泄密」由类型形状保证，`AuditContractShapeTests` 用反射断言 |
 | `IDesktopCapabilityAuditSink` / `NullDesktopCapabilityAuditSink` | 审计出口；审计失败不得影响调用结果 |
-
-## 门禁（2026-10-01 实测）
-
-- 独立构建：`dotnet build Source\Pudding.Contracts\Pudding.Contracts.csproj -c Release` ⇒ 0 警告 / 0 错误。
-- 独立测试：`Pudding.ContractsTests` ⇒ **52/52 通过**（行覆盖 90.41%）。
-- 边界取红：临时加入 `PackageReference Google.Protobuf` ⇒ 构建失败并输出 `EnforceContractsBoundary` 的 BCL-only 错误；移除后 `git hash-object` 逐位复原。

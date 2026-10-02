@@ -41,7 +41,7 @@ browser.snapshot / browser.locate / browser.interact / browser.wait_for / browse
 ## 4. 外部控制器需执行的步骤
 
 详细补丁位置与配置样例见
-[接线手册](Desktop-Capability-Channel-Wiring-Runbook-2026-10-01.md)。摘要：
+[接线手册](../Features/Desktop-Capability-Channel-Wiring-Runbook-2026-10-01.md)。摘要：
 
 1. **装配（Core 侧已应用，2026-10-01）**：`PuddingApplicationHost` 绑定
    `Desktop:CapabilityChannel` 配置 → `AddCapabilityChannel` → **显式绑定 REST 与能力通道两者**
