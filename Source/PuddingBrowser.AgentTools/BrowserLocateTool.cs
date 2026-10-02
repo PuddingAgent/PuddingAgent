@@ -39,19 +39,23 @@ public sealed class BrowserLocateTool(
                     "browser_not_connected", "No Desktop is connected for browser capabilities");
             }
 
-            var contexts = await surface.GetContextsAsync(call, ct);
-            if (contexts.IsFailure)
+            // 调用方给了上下文就直接用，**不要**先去列清单：那是多余且更重的一跳
+            // （宿主集成测试按调用序列断言，正好抓出了这一点）。
+            var contextId = string.IsNullOrWhiteSpace(args.ContextId) ? null : args.ContextId!.Trim();
+            if (contextId is null)
             {
-                return Failure(contexts.Error!);
-            }
+                // 只有省略上下文时，才沿用「用第一个可用上下文」的既有语义。
+                var contexts = await surface.GetContextsAsync(call, ct);
+                if (contexts.IsFailure)
+                {
+                    return Failure(contexts.Error!);
+                }
 
-            // 上下文可省略：沿用「不给就用第一个可用上下文」的既有语义（与迁移前一致）。
-            var contextId = string.IsNullOrWhiteSpace(args.ContextId)
-                ? contexts.Value.Contexts.Count > 0 ? contexts.Value.Contexts[0].ContextId : null
-                : args.ContextId!.Trim();
-            if (string.IsNullOrWhiteSpace(contextId))
-            {
-                return BrowserToolResponse.Failure("browser_context_not_found", "No browser context is available");
+                contextId = contexts.Value.Contexts.Count > 0 ? contexts.Value.Contexts[0].ContextId : null;
+                if (string.IsNullOrWhiteSpace(contextId))
+                {
+                    return BrowserToolResponse.Failure("browser_context_not_found", "No browser context is available");
+                }
             }
 
             var target = new DesktopPageTarget(contextId, args.PageId.Trim());
@@ -96,17 +100,9 @@ public sealed class BrowserLocateTool(
         catch (BrowserOperationException ex) { return BrowserToolResponse.FromException(ex); }
     }
 
-    /// <summary>能力路径的失败 → 工具错误码。**版本不符对定位而言就是"引用过期"**（沿用既有错误码）。</summary>
-    private static ToolExecutionResult Failure(DesktopCapabilityError error) => BrowserToolResponse.Failure(
-        error.Code switch
-        {
-            DesktopCapabilityErrorCode.InvalidTarget => "browser_page_not_found",
-            DesktopCapabilityErrorCode.PageVersionMismatch => "stale_element_reference",
-            DesktopCapabilityErrorCode.InvalidRequest => "browser_invalid_arguments",
-            DesktopCapabilityErrorCode.UnsupportedCapability => "browser_unsupported",
-            _ => "browser_locate_failed",
-        },
-        error.Message);
+    /// <summary>定位的版本不符语义是"引用过期"（沿用既有错误码）；映射表集中在共享辅助里。</summary>
+    private static ToolExecutionResult Failure(DesktopCapabilityError error) =>
+        BrowserCapabilityFailure.From(error, "browser_locate_failed", "stale_element_reference");
 
     private static BrowserElementToolValue ToValue(DesktopElementRef element) => new()
     {

@@ -20,7 +20,7 @@ public sealed class BrowserAgentToolsTests
             new BrowserContextTool(runtime, _originAccessor),
             new BrowserTabsTool(runtime, _originAccessor),
             new BrowserNavigateTool(runtime, _originAccessor),
-            new BrowserSnapshotTool(runtime, _originAccessor),
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserInteractTool(runtime, _originAccessor),
             new BrowserWaitForTool(runtime, _originAccessor)
@@ -148,7 +148,7 @@ public sealed class BrowserAgentToolsTests
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
-        var snapshot = await ExecuteAsync(new BrowserSnapshotTool(runtime, _originAccessor),
+        var snapshot = await ExecuteAsync(new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             $$"""{"page_id":"{{page.Id.Value}}","context_id":"ctx-1","max_nodes":100}""");
         var locate = await ExecuteAsync(new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             JsonSerializer.Serialize(new
@@ -347,6 +347,38 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
             new DesktopLocateResult(request.Target, request.Locator, elements, false, version));
     }
 
+    public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
+        BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken ct = default)
+    {
+        if (await ResolvePageAsync(request.Target, ct) is not { } page)
+        {
+            return CapabilityResult<DesktopSnapshot>.Failure(
+                DesktopCapabilityError.InvalidTarget($"page '{request.Target.Key}' is not known"));
+        }
+
+        var options = request.Options;
+        var snapshot = await page.SnapshotAsync(new SnapshotOptions
+        {
+            IncludeDom = options.IncludeDom,
+            IncludeAccessibilityTree = options.IncludeAccessibilityTree,
+            IncludeHidden = options.IncludeHidden,
+            IncludeIframes = options.IncludeIframes,
+            IncludeShadowDom = options.IncludeShadowDom,
+            IncludeHtml = options.IncludeHtml,
+            MaxNodes = options.MaxNodes,
+            MaxTextLength = options.MaxTextLength,
+            MaxDepth = options.MaxDepth,
+        }, ct);
+
+        return CapabilityResult<DesktopSnapshot>.Success(new DesktopSnapshot(
+            request.Target,
+            snapshot.DomText,
+            snapshot.AccessibilityTree,
+            snapshot.Html,
+            snapshot.Truncated,
+            snapshot.NodeCount,
+            page.PageVersion > 0 ? DesktopPageVersion.Require(page.PageVersion) : DesktopPageVersion.Unknown));
+    }
     public Task<CapabilityResult<NavigateResult>> NavigateAsync(
         NavigateRequest request, DesktopCallContext call, CancellationToken ct = default) =>
         throw new NotSupportedException();
@@ -354,9 +386,6 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
         BrowserTabsRequest request, DesktopCallContext call, CancellationToken ct = default) =>
         throw new NotSupportedException();
 
-    public Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
-        BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken ct = default) =>
-        throw new NotSupportedException();
 
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken ct = default) =>
