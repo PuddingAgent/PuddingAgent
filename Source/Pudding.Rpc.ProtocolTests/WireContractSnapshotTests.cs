@@ -176,7 +176,9 @@ public sealed class WireContractSnapshotTests
         AssertFieldNumbers(WaitOutcome.Descriptor,
             ("timed_out", 1), ("condition_kind", 2), ("condition_value", 3), ("page", 4), ("error", 5));
         AssertFieldNumbers(SnapshotBudget.Descriptor,
-            ("include_dom", 1), ("include_accessibility_tree", 2), ("include_html", 3), ("max_nodes", 4), ("max_text_length", 5));
+            ("include_dom", 1), ("include_accessibility_tree", 2), ("include_html", 3), ("max_nodes", 4),
+            ("max_text_length", 5), ("include_hidden", 6), ("include_iframes", 7),
+            ("include_shadow_dom", 8), ("max_depth", 9));
     }
 
     [Fact]

@@ -406,6 +406,10 @@ public sealed class BrowserRuntimeDesktopSurface
             IncludeHtml = request.Options.IncludeHtml,
             MaxNodes = request.Options.MaxNodes,
             MaxTextLength = request.Options.MaxTextLength,
+            IncludeHidden = request.Options.IncludeHidden,
+            IncludeIframes = request.Options.IncludeIframes,
+            IncludeShadowDom = request.Options.IncludeShadowDom,
+            MaxDepth = request.Options.MaxDepth,
         }, cancellationToken).ConfigureAwait(false);
 
         var mapped = new DesktopSnapshot(

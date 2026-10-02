@@ -281,6 +281,12 @@ message SnapshotBudget {
   bool include_html = 3;
   int32 max_nodes = 4;
   int32 max_text_length = 5;
+  // 加宽（2026-10-02）：browser_snapshot 工具一直暴露这四个旋钮，而契约/线缆没有它们 ⇒
+  // 走能力通道就取不到、走 Bridge 才取得到。默认值与运行时默认一致。
+  bool include_hidden = 6;
+  bool include_iframes = 7;
+  bool include_shadow_dom = 8;
+  int32 max_depth = 9;
 }
 
 // Core → Desktop 的能力命令。payload 用 oneof 白名单化，禁止「字符串命令名 + 任意 JSON」。

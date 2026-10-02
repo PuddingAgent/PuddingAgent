@@ -246,6 +246,10 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
                 IncludeHtml = options.IncludeHtml,
                 MaxNodes = options.MaxNodes,
                 MaxTextLength = options.MaxTextLength,
+                IncludeHidden = options.IncludeHidden,
+                IncludeIframes = options.IncludeIframes,
+                IncludeShadowDom = options.IncludeShadowDom,
+                MaxDepth = options.MaxDepth,
             },
             cancellationToken).ConfigureAwait(false);
 

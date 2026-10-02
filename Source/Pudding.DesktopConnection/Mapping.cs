@@ -236,7 +236,11 @@ internal static class CoreFrameMapping
                             : budget.MaxNodes,
                         maxTextLength: budget is null || budget.MaxTextLength == 0
                             ? DesktopSnapshotOptions.DefaultMaxTextLength
-                            : budget.MaxTextLength);
+                            : budget.MaxTextLength,
+                        includeHidden: budget?.IncludeHidden ?? false,
+                        includeIframes: budget?.IncludeIframes ?? true,
+                        includeShadowDom: budget?.IncludeShadowDom ?? true,
+                        maxDepth: budget is null || budget.MaxDepth == 0 ? 24 : budget.MaxDepth);
                 }
                 catch (ArgumentOutOfRangeException ex)
                 {

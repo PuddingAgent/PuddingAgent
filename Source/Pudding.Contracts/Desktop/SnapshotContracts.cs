@@ -19,7 +19,11 @@ public sealed record DesktopSnapshotOptions
         bool includeAccessibilityTree = true,
         bool includeHtml = false,
         int maxNodes = DefaultMaxNodes,
-        int maxTextLength = DefaultMaxTextLength)
+        int maxTextLength = DefaultMaxTextLength,
+        bool includeHidden = false,
+        bool includeIframes = true,
+        bool includeShadowDom = true,
+        int maxDepth = 24)
     {
         if (maxNodes is < 1 or > MaxMaxNodes)
         {
@@ -38,6 +42,10 @@ public sealed record DesktopSnapshotOptions
         IncludeHtml = includeHtml;
         MaxNodes = maxNodes;
         MaxTextLength = maxTextLength;
+        IncludeHidden = includeHidden;
+        IncludeIframes = includeIframes;
+        IncludeShadowDom = includeShadowDom;
+        MaxDepth = maxDepth;
     }
 
     public bool IncludeDom { get; }
@@ -49,6 +57,18 @@ public sealed record DesktopSnapshotOptions
     public int MaxNodes { get; }
 
     public int MaxTextLength { get; }
+
+    /// <summary>是否包含隐藏元素（加宽 2026-10-02：工具侧一直有这个旋钮）。</summary>
+    public bool IncludeHidden { get; }
+
+    /// <summary>是否进入 iframe。</summary>
+    public bool IncludeIframes { get; }
+
+    /// <summary>是否进入 shadow DOM。</summary>
+    public bool IncludeShadowDom { get; }
+
+    /// <summary>遍历深度上限。</summary>
+    public int MaxDepth { get; }
 
     /// <summary>至少需要一种内容，否则快照没有意义（fail closed，不做无内容调用）。</summary>
     public bool HasContent => IncludeDom || IncludeAccessibilityTree || IncludeHtml;

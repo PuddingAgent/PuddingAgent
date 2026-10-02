@@ -190,6 +190,10 @@ internal static class CoreCommandEncoder
                         IncludeHtml = snapshot.Options.IncludeHtml,
                         MaxNodes = snapshot.Options.MaxNodes,
                         MaxTextLength = snapshot.Options.MaxTextLength,
+                        IncludeHidden = snapshot.Options.IncludeHidden,
+                        IncludeIframes = snapshot.Options.IncludeIframes,
+                        IncludeShadowDom = snapshot.Options.IncludeShadowDom,
+                        MaxDepth = snapshot.Options.MaxDepth,
                     },
                 };
                 break;
