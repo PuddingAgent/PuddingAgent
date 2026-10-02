@@ -380,6 +380,7 @@ Core 侧实现是 `Source/PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs`，
 | 10 | 定位结果 `BoundingBox` | 结果 | `DesktopElementRef` |
 | 11 | ~~等待 `TimeoutMs`~~ | — | **已更正（2026-10-02）：不是契约缺口**——契约 `BrowserWaitForRequest.TimeoutMs`、线缆 `WaitForCommand.timeout_ms`、Core 与 Desktop 两侧映射本来都带它，缺口只在 Bridge 适配器（未传，已修并加测试） |
 | 12 | `DesktopPageState.Title` | 结果 | **新发现（2026-10-02，迁移第二、三个工具时）**：`browser_navigate` / `browser_wait_for` / `browser_interact` / `browser_tabs` 的结果里 `BrowserTabToolValue.Title` 是**必填**，而契约 `DesktopPageState` 只有 Target/Url/Version/Readiness，**没有标题** ⇒ 迁移这四个工具前必须补（proto `PageStateOutcome.title` + 契约 + 两侧映射 + 两侧实现），否则等于削掉标题 |
+| 13 | `fill`/`type` 的**空文本** | 请求 | **迁移 `browser_interact` 时发现（2026-10-02）**：契约要求 `text` 非空（`BrowserInteractRequest` 把空串归一化为 `null` 后即报错），而 proto3 的 `string text` **无法区分空串与未设** ⇒ 「用空文本清空输入框」这个用法在能力通道上表达不了。当前选择**明确拒绝**（`browser_invalid_arguments`），不静默当成清空；若要恢复该用法，需把 `text` 改成 `optional string` 或另加一个显式标志 |
 
 > 说明：`BrowserTabToolValue.Title` 在契约里是 `string?`，而工具值为 `required string`
 > ⇒ 迁移时回退空串即可，**不算缺口**（但要在实现里显式处理，不能假定非空）。

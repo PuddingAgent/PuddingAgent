@@ -22,7 +22,7 @@ public sealed class BrowserAgentToolsTests
             new BrowserNavigateTool(runtime, _originAccessor),
             new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
-            new BrowserInteractTool(runtime, _originAccessor),
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserWaitForTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor)
         };
 
@@ -173,7 +173,7 @@ public sealed class BrowserAgentToolsTests
         var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
         const string secret = "do-not-echo-this-value";
 
-        var interact = await ExecuteAsync(new BrowserInteractTool(runtime, _originAccessor),
+        var interact = await ExecuteAsync(new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             JsonSerializer.Serialize(new
             {
                 action = "fill",
@@ -411,6 +411,73 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
                 page.Info.Title),
             result.Error));
     }
+    public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
+        BrowserInteractRequest request, DesktopCallContext call, CancellationToken ct = default)
+    {
+        if (await ResolvePageAsync(request.Target, ct) is not { } page)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(
+                DesktopCapabilityError.InvalidTarget($"page '{request.Target.Key}' is not known"));
+        }
+
+        var locator = request.Locator is null
+            ? null
+            : new Locator
+            {
+                Kind = Enum.Parse<LocatorKind>(request.Locator.Kind.ToString()),
+                Value = request.Locator.Value,
+                Name = request.Locator.Name,
+                Exact = request.Locator.Exact,
+                Nth = request.Locator.Nth,
+                HasText = request.Locator.HasText,
+            };
+
+        switch (request.Action)
+        {
+            case DesktopInteractionAction.Click:
+                await page.ClickAsync(locator!, new ClickOptions(), ct);
+                break;
+            case DesktopInteractionAction.Fill:
+                await page.FillAsync(locator!, request.Text!, new FillOptions(), ct);
+                break;
+            case DesktopInteractionAction.Type:
+                await page.TypeAsync(locator!, request.Text!, new TypeOptions(), ct);
+                break;
+            case DesktopInteractionAction.Press:
+                await page.PressAsync(locator!, request.Text!, new KeyOptions(), ct);
+                break;
+            case DesktopInteractionAction.Hover:
+                await page.HoverAsync(locator!, new PointerOptions(), ct);
+                break;
+            case DesktopInteractionAction.Select:
+                await page.SelectAsync(locator!, request.Values!, ct);
+                break;
+            case DesktopInteractionAction.Check:
+                await page.CheckAsync(locator!, true, ct);
+                break;
+            case DesktopInteractionAction.Uncheck:
+                await page.CheckAsync(locator!, false, ct);
+                break;
+            case DesktopInteractionAction.Scroll:
+                await page.ScrollAsync(new ScrollOptions { DeltaX = request.DeltaX, DeltaY = request.DeltaY }, ct);
+                break;
+            default:
+                return CapabilityResult<DesktopInteractionResult>.Failure(
+                    DesktopCapabilityError.UnsupportedCapability($"action '{request.Action}' has no fake equivalent"));
+        }
+
+        var version = page.PageVersion > 0
+            ? DesktopPageVersion.Require(page.PageVersion)
+            : DesktopPageVersion.Unknown;
+        return CapabilityResult<DesktopInteractionResult>.Success(new DesktopInteractionResult(
+            request.Target,
+            new DesktopPageState(
+                request.Target,
+                Uri.TryCreate(page.Info.Url, UriKind.Absolute, out var url) ? url : null,
+                version,
+                DesktopPageReadiness.Unknown,
+                page.Info.Title)));
+    }
     public Task<CapabilityResult<NavigateResult>> NavigateAsync(
         NavigateRequest request, DesktopCallContext call, CancellationToken ct = default) =>
         throw new NotSupportedException();
@@ -419,9 +486,6 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
         throw new NotSupportedException();
 
 
-    public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
-        BrowserInteractRequest request, DesktopCallContext call, CancellationToken ct = default) =>
-        throw new NotSupportedException();
 
 
     public Task<CapabilityResult<JavascriptResult>> ExecuteJavascriptAsync(
