@@ -205,6 +205,82 @@ public static class CodeSourceChangeReasons
     public const string RootUnusable = "root_unusable";
 }
 
+/// <summary>一个待重试路径的账本记录（持久待办）。</summary>
+/// <param name="FilePath">绝对路径。</param>
+/// <param name="Reason">最近一次失败原因（<see cref="CodeSourceChangeReasons"/> 或执行层给出的原因串）。</param>
+/// <param name="Attempts">连续失败次数（成功提交后清零）。</param>
+/// <param name="FirstFailedAtUtc">第一次失败时刻。</param>
+/// <param name="NextAttemptAtUtc">下一次允许尝试的时刻（退避阶梯）。</param>
+public sealed record CodeSourceRetry(
+    string FilePath,
+    string Reason,
+    int Attempts,
+    DateTimeOffset FirstFailedAtUtc,
+    DateTimeOffset NextAttemptAtUtc);
+
+/// <summary>一个消费者推进到的水位（按消费者分别记录）。</summary>
+/// <param name="ProviderId">消费者标识。</param>
+/// <param name="AppliedVersion">该消费者已提交的维护版本。</param>
+public sealed record CodeSourceProviderAdvance(string ProviderId, long AppliedVersion);
+
+/// <summary>
+/// 一轮提交要回报给账本的事实。**提交只确认被捕获的那个版本**：
+/// 较新的变化由账本置为「又有变化」，由调用方继续补跑。
+/// </summary>
+/// <param name="Epoch">捕获该批次时的账本世代；与当前世代不符 ⇒ 该结果已过期，不得记入。</param>
+/// <param name="CapturedVersion">批次开始时捕获的 <c>DesiredVersion</c>。</param>
+/// <param name="ProviderAdvances">本轮真正提交成功的消费者水位。</param>
+/// <param name="ScanStartedUtc">本轮扫描开始时刻（watcher-only 批次为 null）。</param>
+/// <param name="ScanComplete">本轮是否完整枚举了语义范围且根可用。</param>
+/// <param name="UnresolvedPathCount">本轮没能定论/没能提交的路径数（大于 0 时水位不得推进）。</param>
+public sealed record CodeSourceCommitCompletion(
+    long Epoch,
+    long CapturedVersion,
+    IReadOnlyList<CodeSourceProviderAdvance> ProviderAdvances,
+    DateTimeOffset? ScanStartedUtc,
+    bool ScanComplete,
+    int UnresolvedPathCount);
+
+/// <summary>一轮提交的结果。</summary>
+public enum CodeSourceCommitOutcome
+{
+    /// <summary>提交被接受：捕获版本与当前期望一致，且没有未解决路径。</summary>
+    Committed = 0,
+
+    /// <summary>
+    /// 提交被接受，但执行期间又出现了新变化（或仍有未解决路径）：已提交的消费者水位照常推进，
+    /// 账本标记「又有变化」，调用方必须继续补跑。
+    /// </summary>
+    Superseded = 1,
+
+    /// <summary>世代已过期（scope 被重建/重置后又在跑的旧批次）：结果不得记入，也不得推进任何水位。</summary>
+    StaleEpoch = 2,
+}
+
+/// <summary>账本的只读快照（可序列化持久化；本阶段只定义形状与语义）。</summary>
+/// <param name="WorkspaceId">工作空间。</param>
+/// <param name="ScopeId">范围（也是 store 的 project id）。</param>
+/// <param name="Epoch">世代：scope 重建/重置时递增，旧世代的在途批次一律作废。</param>
+/// <param name="DesiredVersion">已观察到的期望版本（每次记录变化批次递增）。</param>
+/// <param name="CommittedVersion">已提交版本（只前进，且只确认被捕获的版本）。</param>
+/// <param name="ConsumerAppliedVersions">各消费者水位（全文/语言 provider 分别推进）。</param>
+/// <param name="PendingRetries">待重试路径（失败退避；成功提交后移除）。</param>
+/// <param name="ScanWatermarkUtc">
+/// 成功扫描水位：只有「完整 + 根可用 + 没有未解决路径 + 捕获版本即当前期望」的轮次才推进；
+/// 否则保持旧值（宁可重放，不可漏掉）。
+/// </param>
+/// <param name="DirtyAgain">执行期间又出现了新变化：调用方必须继续补跑。</param>
+public sealed record CodeSourceMaintenanceLedgerState(
+    string WorkspaceId,
+    string ScopeId,
+    long Epoch,
+    long DesiredVersion,
+    long CommittedVersion,
+    IReadOnlyDictionary<string, long> ConsumerAppliedVersions,
+    IReadOnlyDictionary<string, CodeSourceRetry> PendingRetries,
+    DateTimeOffset? ScanWatermarkUtc,
+    bool DirtyAgain);
+
 /// <summary>一个路径的变更判定结果。</summary>
 /// <param name="FilePath">绝对路径（保留请求里给的大小写）。</param>
 /// <param name="Action">最终期望动作。</param>
