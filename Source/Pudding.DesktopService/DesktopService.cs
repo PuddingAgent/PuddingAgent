@@ -92,6 +92,30 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        var response = await ExecuteCoreAsync(capability, request, context, cancellationToken)
+            .ConfigureAwait(false);
+
+        // **唯一的**「记录观察到的页面版本」落点。
+        // 为什么必须有：准入按注册表里的版本判 `page_version_mismatch`（见 ValidateAsync），
+        // 而 Core 钉的版本来自上一次能力结果。若这里不记录，注册表会永远停在页面创建时的版本，
+        // 于是**第一个带版本的操作就会被判版本不符** —— 通道"握手成功却什么也做不了"。
+        // 放在唯一出口而不是逐个分支里：新增能力时不会漏改
+        //（这类「漏改某个聚合点」的缺陷本系列已踩过多次，探针抓到过两例）。
+        RecordObservedPageVersion(response, request);
+
+        return response;
+    }
+
+    /// <summary>
+    /// 能力分支本体。**不要**在这里把结果直接返回给调用方：
+    /// 观察到的页面版本由 <see cref="ExecuteAsync"/> 在唯一出口记录。
+    /// </summary>
+    private async Task<DesktopCapabilityResponse> ExecuteCoreAsync(
+        DesktopCapabilityDescriptor capability,
+        DesktopCapabilityRequest request,
+        DesktopCallContext context,
+        CancellationToken cancellationToken)
+    {
         var descriptor = capability.Capability;
 
         switch (descriptor)
@@ -471,6 +495,79 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         _ when state.IsPaused => DesktopAutomationState.Paused,
         _ => DesktopAutomationState.Free,
     };
+
+    /// <summary>
+    /// 把成功结果里携带的页面版本登记进目标注册表——它是准入比较 `expectedPageVersion` 的**基准**。
+    ///
+    /// 只有「带版本含义」的能力才记录：<c>execute_javascript</c> 的返回值里没有页面版本，
+    /// 而按设计脚本**不推进版本**，因此既不需要也不能凭空推一个。
+    /// 就绪度只在结果确实携带了页面状态时更新（<c>navigate</c>/<c>snapshot</c>/<c>locate</c> 不带就绪度，
+    /// 此时保留原值而不猜）。
+    ///
+    /// 未登记或已关闭的页面**不补登记**：注册表的存在性只由 Shell 的页面生命周期说了算
+    /// （本服务凭空造目标会让准入对一个并不存在的页面放行）。
+    /// </summary>
+    private void RecordObservedPageVersion(DesktopCapabilityResponse response, DesktopCapabilityRequest request)
+    {
+        if (response.IsFailure)
+        {
+            return;
+        }
+
+        DesktopPageTarget? target;
+        DesktopPageVersion version;
+        DesktopPageReadiness? readiness;
+
+        if (response.Navigate is { } navigate)
+        {
+            // NavigateResult 只带处置结果、URL 与版本（**不带目标**）⇒ 目标取自请求；
+            // 目标与请求一致已由准入保证（它就是在请求的目标上校验版本与可信级别的）。
+            (target, version, readiness) = (request.Navigate?.Target, navigate.PageVersion, null);
+        }
+        else if (response.PageState is { } pageState)
+        {
+            (target, version, readiness) = (pageState.Target, pageState.Version, pageState.Readiness);
+        }
+        else if (response.Snapshot is { } snapshot)
+        {
+            (target, version, readiness) = (snapshot.Target, snapshot.PageVersion, null);
+        }
+        else if (response.Locate is { } locate)
+        {
+            (target, version, readiness) = (locate.Target, locate.PageVersion, null);
+        }
+        else if (response.Interact is { } interact)
+        {
+            (target, version, readiness) = (interact.Target, interact.Page.Version, interact.Page.Readiness);
+        }
+        else if (response.Wait is { } wait)
+        {
+            (target, version, readiness) = (wait.Target, wait.Page.Version, wait.Page.Readiness);
+        }
+        else if (response.Tabs is { } tabs)
+        {
+            (target, version, readiness) = (tabs.Target, tabs.Page.Version, tabs.Page.Readiness);
+        }
+        else
+        {
+            // contexts / clipboard / dialog / file_picker / notification / shell_status：
+            // 它们不对应单一页面目标，没有可登记的版本。
+            return;
+        }
+
+        if (target is null || !version.IsKnown)
+        {
+            return;
+        }
+
+        if (Targets.Resolve(target) is not { } state)
+        {
+            return;
+        }
+
+        // UpdatePage 自身拒绝版本回退：迟到的旧结果不会把版本拉回去。
+        Targets.UpdatePage(target, version, readiness ?? state.Readiness);
+    }
 
     // ── 只读直连 API（UI 侧门面复用；本切片不经 wire 命令） ────────────────
 
