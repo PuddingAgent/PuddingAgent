@@ -246,3 +246,25 @@ await host.StartAsync(lifetimeToken);
 > 上述第 2 步必须改动同一个文件，因此**接手前先确认该改动已提交或已确定归属**，
 > 否则提交时会把他方 WIP 一起带进去（违反仓库卫生纪律）。
 > 该文件的改动区（约第 195 行 `UpdateRuntimeMetrics`）与接线区（约第 926 行浏览器工作区初始化）不重叠。
+
+### 8.3 第 3 步里唯一需要**先定形态**的一处（本轮实读后留下的裁定点，不猜）
+
+`DesktopCapabilityChannelSettings.SectionName` 常量已经写着 `Desktop:CapabilityChannel`
+（与 Core 侧同名段对称）。但 Desktop 的配置文件是 `desktop.json`，其现有段（`Window` / `ToolWorkspace` /
+`Debug`）**都在根上**，没有 `Desktop` 这一层。两种形态都说得通，必须选定一种再写：
+
+| 方案 | desktop.json 形态 | 优点 | 代价 |
+|---|---|---|---|
+| **A（推荐）** | `{ "desktop": { "capabilityChannel": { "enabled": true } } }` | 与 `SectionName` 常量、与 Core 的 `system.json` 完全同名 ⇒ **同一段配置可在两个文件之间原样复制**，运维只需记一个段名 | `desktop.json` 里多一层 `desktop`（因为整个文件本身就是 Desktop 的配置） |
+| B | `{ "capabilityChannel": { "enabled": true } }` | 与 `desktop.json` 既有段风格一致 | 与 `SectionName` 常量不一致 ⇒ 两文件段名不同，运维容易写错 |
+
+**另有一处必须一并验证**（本轮未做，故不写代码）：`desktop.json` 的落盘由
+`FileDesktopBootstrapSettingsStore` 整体序列化 `DesktopBootstrapSettings`。新增一个非空段
+会让**用户没写过的字段在下次保存时出现在文件里**（`Debug` 段已有此行为，`ToolWorkspace` 用
+`null` 区分「从未配置」）。`Enabled` 是**安全相关**的开关，落盘时应当只写用户显式配置过的内容——
+因此建议该段用**可空**表示（缺席即关闭），并同时确认序列化器的 `WhenWritingNull` 行为，
+`Enabled=false` 与「段缺席」在语义上等价但**不应互相改写**。
+（Desktop 侧的文件形态 DTO 应放在 `PuddingDesktop.WpfArchive/Configuration`；
+映射成 `DesktopCapabilityChannelSettings` 的代码只能待在 Shell ——
+`Pudding.DesktopService` 的边界目标禁止引用任何含 `PuddingDesktop` 的项目，故映射不可下沉到组件。）
+
