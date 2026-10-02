@@ -1,0 +1,11 @@
+{
+  "id": "markdown-front-matter",
+  "name": "Markdown Front Matter 规范与校验",
+  "version": "1.0.0",
+  "description": "为 Docs 下的 md 补齐/校验标准 Front Matter（12 字段），用 Tools/Docs/front_matter.py 做门禁与批量修复",
+  "author": "hyfree",
+  "created": "2026-10-02",
+  "tags": ["markdown", "front-matter", "docs", "metadata", "validation"],
+  "keywords": ["front matter", "frontmatter", "文档头", "元数据", "Docs", "校验", "补齐", "slug", "categories", "related_docs"],
+  "source_session": "docs-structure-and-front-matter-2026-10-02"
+}

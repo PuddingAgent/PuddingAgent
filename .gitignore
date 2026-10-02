@@ -20,9 +20,8 @@ build_output*.txt
 tmp/
 temp/
 .pnpm-store
-# Agent / Harness 本地状态（含 2026-10-02 迁入的 memory/、skills/、agents/）：不入库
-# 不加前导斜杠：仓库内任意层级的 .pudding（含 Source/*/.pudding）都忽略
-.pudding/
+# Agent / Harness 仓库级资料（skills/、memory/ 等）：2026-10-02 用户裁定纳入版本控制
+# 不加前导斜杠：仓库内任意层级的 .pudding（含 Source/*/.pudding）一并纳入
 
 # 临时输出物/临时脚本：一律输出到 temp/，禁止提交到 git（2026-08-19 用户明确要求）
 *_output.txt
@@ -432,8 +431,8 @@ pub/
 *.db-wal
 
 # Agent runtime data (private, not source)
-# 2026-10-02 用户裁定：根目录 memory/ 与 skills/ 已迁入 .pudding/（本块规则保留，
-# 防止工具或旧流程在仓库根原地重建同名目录；新产物一律落 .pudding/）
+# 2026-10-02 用户裁定：根目录 memory/ 与 skills/ 迁入 .pudding/，而 .pudding/ 本身已纳入版本控制
+# （见本文件上方注释）；本块规则保留，仅用于防止工具或旧流程在仓库根原地重建同名目录。
 /agents/
 /memory/
 /skills/
