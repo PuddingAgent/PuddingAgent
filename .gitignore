@@ -21,7 +21,8 @@ tmp/
 temp/
 .pnpm-store
 # Agent / Harness 本地状态（含 2026-10-02 迁入的 memory/、skills/、agents/）：不入库
-/.pudding/
+# 不加前导斜杠：仓库内任意层级的 .pudding（含 Source/*/.pudding）都忽略
+.pudding/
 
 # 临时输出物/临时脚本：一律输出到 temp/，禁止提交到 git（2026-08-19 用户明确要求）
 *_output.txt

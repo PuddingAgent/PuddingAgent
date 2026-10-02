@@ -282,35 +282,4 @@ Shell 内两处接线已于 2026-10-02 落地（提交 `cd2e1d9`）：
 `Pudding.DesktopService` 的边界目标禁止引用任何含 `PuddingDesktop` 的项目，故映射不可下沉到组件；
 文件形态因此是独立值对象，缺省值一致性由 `PuddingDesktop.Tests` 的跨侧断言钉住。
 
-### 8.4 切片 D 不能靠「替换 `IBrowserRuntime` 实现」完成（实读后的结论，改变下一步做法）
-
-七个浏览器工具（`Source/PuddingBrowser.AgentTools/`）都通过主构造函数拿 `IBrowserRuntime`
-（`BrowserContextTool` / `BrowserTabsTool` / `BrowserNavigateTool` / `BrowserSnapshotTool` /
-`BrowserLocateTool` / `BrowserInteractTool` / `BrowserWaitForTool`），
-Core 侧实现是 `Source/PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs`，
-在 DI 里注册为 `services.AddSingleton<IBrowserRuntime>(sp => sp.GetRequiredService<RemoteBrowserRuntime>())`。
-
-因此很自然会想：**换掉这个注册**就等于迁移完成。实读后确认**不可行**：
-
-| 面 | 成员规模 | 能力通道覆盖 |
-|---|---|---|
-| `IBrowserRuntime` + `IBrowserContext` | 约 12 | 部分（上下文**只读**可映射；创建/关闭上下文无对应能力） |
-| `IBrowserPage` | **约 35**（CDP / 截图 / PDF / DevTools / 订阅 / 拖拽 / 选择 / 勾选 / 上传文件 / cookie / 权限 / 前进后退 / 刷新 / 停止 / 置前 / 句柄求值…） | 约 12（九项浏览器能力对应的操作） |
-
-⇒ 任何"直接实现 `IBrowserRuntime`"的适配器都有二十多个成员必须抛 `NotSupported`：
-工具会在运行期被打成半残，而**编译期完全看不出来**。正确做法是**按操作迁移**——
-为七个工具实际执行的操作提供窄端口（或逐能力替换调用点），
-让「能力通道覆盖不到的操作」在**类型层面**就不存在，而不是留在一个宽接口里等运行期爆炸。
-
-**下一步建议顺序**：① 先给七个工具实际用到的操作抽窄端口（`contexts`/`tabs`/`navigate`/`snapshot`/
-`locate`/`interact`/`wait_for` 各自的最小面）；② 用 `DesktopSession` 的对应方法实现该端口
-（它已经暴露了这 14 个类型化调用）；③ 由组合根按开关选择「窄端口走能力通道 vs 既有 Bridge」，
-**不做跨传输回退**。①②③ 每一步都可独立测试，不需要一次性替换整个宽接口。
-
-> 相关：`DesktopSession`（`Source/Pudding.CapabilityBroker/DesktopSession.cs`）已公开
-> `NavigateAsync` / `SnapshotAsync` / `LocateAsync` / `InteractAsync` / `WaitForAsync` /
-> `GetContextsAsync` / `TabsAsync` / `ExecuteJavascriptAsync` 等类型化调用，
-> 因此第 ② 步不需要新的协议能力。
-
-
 
