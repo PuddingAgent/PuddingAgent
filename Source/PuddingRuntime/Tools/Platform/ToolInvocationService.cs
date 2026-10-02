@@ -101,7 +101,8 @@ public sealed class ToolInvocationService : IToolInvocationService
         }
 
         // 权限检查
-        var guardDenied = CheckGuardDenied(request);
+        // 第一阶段（观察期）：评估并**记录**权限结论；判定行为与以前逐字相同。
+        var permissionEvidence = EvaluatePermissionEvidence(request, out var guardDenied);
         if (guardDenied is not null)
         {
             _runtimeControl?.RecordError(
@@ -124,6 +125,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 AgentTemplateId = request.AgentTemplateId,
                 Trace = request.Trace,
                 ToolCallId = request.ToolCallId,
+                PermissionEvidence = permissionEvidence,
                 ExecutionDeadlineUtc = request.ExecutionDeadlineUtc,
                 DelegationDepth = request.DelegationDepth,
                 MaxDelegationDepth = request.MaxDelegationDepth,
@@ -271,10 +273,30 @@ public sealed class ToolInvocationService : IToolInvocationService
         }
     }
 
-    private ToolInvocationResult? CheckGuardDenied(ToolInvocationRequest request)
+    /// <summary>
+    /// 评估本次调用的权限并**记录证据**（权限证据链第一阶段：只记录，不改变任何判定）。
+    ///
+    /// <para>
+    /// 判定语义与重构前**逐字相同**：guard 拒绝 ⇒ 返回同形的失败结果（<paramref name="denied"/> 非空），
+    /// 调用方照旧立即返回；guard 允许 ⇒ 携带 <c>allowed</c> 证据继续执行。
+    /// </para>
+    /// <para>
+    /// **未配置 guard 时返回 <c>null</c>（= 未评估）**，不得写成 <c>not-required</c> ——
+    /// 那会谎称"策略判定无需审批"。缺失必须是可表达的状态（<see cref="ToolPermissionEvidence.IsAbsent"/>）。
+    /// </para>
+    /// </summary>
+    /// <param name="request">本次工具调用请求。</param>
+    /// <param name="denied">guard 拒绝时的失败结果；未拒绝为 <c>null</c>。</param>
+    /// <returns>权限证据；未评估时为 <c>null</c>。</returns>
+    private ToolPermissionEvidence? EvaluatePermissionEvidence(
+        ToolInvocationRequest request,
+        out ToolInvocationResult? denied)
     {
+        denied = null;
         if (_workspaceGuard is null)
+        {
             return null;
+        }
 
         var decision = _workspaceGuard.CanExecuteTool(request.AgentInstanceId, request.ToolName);
         if (!decision.Allowed)
@@ -283,7 +305,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 "[ToolInvocation] Tool denied tool={ToolName} agent={AgentInstanceId} reason={Reason}",
                 request.ToolName, request.AgentInstanceId, decision.Reason);
 
-            return new ToolInvocationResult
+            denied = new ToolInvocationResult
             {
                 Success = false,
                 ToolCallId = request.ToolCallId,
@@ -294,9 +316,10 @@ public sealed class ToolInvocationService : IToolInvocationService
                 DurationMs = 0,
                 ArgsHash = ComputeArgsHash(request.ArgumentsJson),
             };
+            return new ToolPermissionEvidence(request.ToolCallId, "denied", Source: "workspace-guard");
         }
 
-        return null;
+        return new ToolPermissionEvidence(request.ToolCallId, "allowed", Source: "workspace-guard");
     }
 
     private static string ComputeArgsHash(string argumentsJson)
