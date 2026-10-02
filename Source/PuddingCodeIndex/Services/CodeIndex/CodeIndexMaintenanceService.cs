@@ -311,6 +311,11 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     /// <inheritdoc />
     public bool IsRunning => Volatile.Read(ref _running) != 0;
 
+    /// <summary>
+    /// 当前生效的变更施用链路（诊断/验收用）：请求 `Coordinator` 但零件未装配齐时这里是 `Legacy`。
+    /// </summary>
+    public CodeSourceMaintenanceMode SourceMaintenanceMode => _sourceMaintenanceMode;
+
     /// <inheritdoc />
     public long BatchesProcessed => Interlocked.Read(ref _batchesProcessed);
 

@@ -70,6 +70,7 @@ using PuddingHost.Hosting;
 using PuddingHost.Storage;
 using System.Threading.Channels;
 using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Services.CodeIndex;
 using PuddingCodeIndex.Storage;
 
 namespace PuddingAgent.Services;
@@ -444,6 +445,15 @@ public static partial class PuddingServiceCollectionExtensions
                 Directory.CreateDirectory(dir);
             return new SqliteCodeIndexStore(dbPath);
         });
+        builder.Services.AddPuddingCodeIntelligence();
+
+        // D4（2026-10-02）**接入**：产品宿主把代码索引的变更施用链路切到新的「源维护协调器」
+        // （完整清单校准 → 真实变更集 → 更新计划 → 语言批量接缝 → 稳定读指纹 → 原子替换 → 账本提交）。
+        // 它取代了旧的逐文件路径与「一个文件不认就重跑整个 scope」的升级策略；提示驱动的轮次只做
+        // 按路径观测、周期性校准走完整扫描、单路径失败按退避重试、删除只由完整扫描确认。
+        // 必须注册在 AddPuddingCodeIntelligence 之前（组件用 TryAdd，先注册者胜）。
+        // 回退：删掉下面这一行即回到旧的逐文件路径（组件默认 Legacy）。
+        builder.Services.AddSingleton(new CodeIndexMaintenanceOptions(CodeSourceMaintenanceMode.Coordinator));
         builder.Services.AddPuddingCodeIntelligence();
 
         // U3-B2a / P0 closure: the lifecycle driver of the code-index maintenance component. U3-B1 removed the

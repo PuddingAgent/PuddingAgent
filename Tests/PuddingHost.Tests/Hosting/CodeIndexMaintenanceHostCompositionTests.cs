@@ -264,7 +264,16 @@ public sealed class CodeIndexMaintenanceHostCompositionTests
                 app.Services.GetRequiredService<ICodeIndexer>() is ICodeIndexFileBatchUpdater,
                 "the aggregate indexer must implement the batch seam");
 
-            // 驱动权仍在旧路径：这条断言是「本笔没有改变运行行为」的证据。
+            // D4（2026-10-02）**接入**：产品宿主要求走新的源维护协调器，且组件确实收到了该要求
+            // （零件缺失时组件会退回 Legacy，因此这条断言同时覆盖「零件齐备」）。
+            Assert.Equal(
+                CodeSourceMaintenanceMode.Coordinator,
+                app.Services.GetRequiredService<CodeIndexMaintenanceOptions>().SourceMaintenance);
+            Assert.Equal(
+                CodeSourceMaintenanceMode.Coordinator,
+                ((PuddingCodeIndex.Services.CodeIndex.CodeIndexMaintenanceService)
+                    app.Services.GetRequiredService<ICodeIndexMaintenance>()).SourceMaintenanceMode);
+
             Assert.IsType<PuddingCodeIndex.Services.CodeIndex.CodeIndexMaintenanceService>(
                 app.Services.GetRequiredService<ICodeIndexMaintenance>());
         }
