@@ -227,44 +227,48 @@ await host.StartAsync(lifetimeToken);
 | 3 | `IDesktopShellHostFacilities`（窗口/托盘/通知端口）+ `DesktopShellSurface` 扩到 5 项 | Contracts / DesktopService | DesktopService 150/150（通知未弹出是结果、只读状态不重复补齐、异常不越界） |
 | 4 | `DesktopSurfaceComposition`（14 项各归其位） | DesktopSurface.Browser | 54/54：用 Shell 侧哨兵把「接错协作者」变成可判定 |
 | 5 | 目标注册表驱动桥 + **撤销 Agent 目标** | DesktopSurface.Browser | 54/54（14 项新用例）；`SetAgentTarget` 关闭了「Agent 目标只增不减」的授权漏洞 |
+| 6 | **组合根做成可测试组件调用**（`DesktopCapabilityChannelComposition`） | DesktopService | DesktopService **170/170**（+10）：关闭 = 什么都不做、启用却起不来 = **明确失败**、不做跨传输回退；顺带验证「没有真实 Core 时也能安全启动与停止」 |
+| 7 | **回写观察到的页面版本**（`ExecuteAsync` 拆出 `ExecuteCoreAsync`，唯一出口记录） | DesktopService | 同套件（+10）：准入按注册表版本判 `page_version_mismatch`，此前无人回写 ⇒ **第一个带版本的操作就被拒**（通道"握手成功却什么也做不了"）；已按能力逐项钉住 |
+| 8 | `desktop.json` 能力通道段（§8.3 **方案 A** 已落地） | WpfArchive + 桌面测试 | `PuddingDesktop.Tests` **273/273**（+7）：缺席 ⇒ 关闭、段名可两文件复制、**文件缺省值 == 组件缺省值**、缺席段保存时不出现 |
+| 9 | `IDesktopShellHostFacilities` 的 WinUI 实现 | CapabilityHost | 0 警告 0 错误（并核对产物时间戳确认真的编译了新代码） |
 
-合计 7 套件 517 用例 + 真实端点探针 53/53。
+合计 7 套件 **537** 用例（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、**DesktopService 170**、
+DesktopSurface.Browser 54、CapabilityBroker 78、CapabilityBroker.AspNetCore 39）
++ 真实端点探针 **53/53**；另 `PuddingDesktop.Tests` **273**（桌面启动器侧，不计入上面 7 套）。
 
 ### 8.2 剩余（**唯一尚未接线的一段**，全部在 Shell 内）
 
-1. `IDesktopShellHostFacilities` 的 Shell 实现：窗口形态/托盘可见性 + 托盘气泡通知
-   （通知需要托盘图标的 HWND 与 uID，因此实现方必须是 Shell 本身，见 `DesktopTrayIcon`）；
-2. 在 `MainWindow` 拿到 `IBrowserRuntime` 与 `BrowserWorkspaceController` 之后，
-   把 `DesktopTargetRegistry` + `BrowserTargetRegistry` 交给 `BrowserWorkspaceTargetBridge`，
-   并在页面创建/激活/关闭/版本推进/Agent 目标变更这几处各调一行；
-3. 组合根：读 `desktop.json` 的 `Desktop:CapabilityChannel` → 从 `CoreReadyMessage.CapabilityEndpoint`
-   取描述 → `DesktopCapabilityChannelPreflight.Evaluate` → `ShouldStart` 时
-   `DesktopCapabilityHostFactory.Create` → `StartAsync`；退出路径 `StopAsync`。
+1. 在 `MainWindow` 拿到 `IBrowserRuntime` 与 `BrowserWorkspaceController` 之后：
+   建两个注册表 → 交给 `BrowserWorkspaceTargetBridge` → 在页面创建/激活/关闭/Agent 目标变更处各调一行
+   （**版本不需要在这里喂**：第 7 项已让 `DesktopService` 在唯一出口回写结果里的版本）；
+2. 组合根调用点：`_bootstrapSettings.Desktop?.CapabilityChannel` 映射为
+   `DesktopCapabilityChannelSettings`（纯字段拷贝，第 8 项已提供文件形态与缺省值一致性保证）→
+   端点描述取自 `CoreReadyMessage.CapabilityEndpoint` →
+   `DesktopCapabilityChannelComposition.StartAsync(...)`；退出路径 `DisposeAsync()`。
 
 > **并发注意（不是技术难题，是工程约束）**：`Source/PuddingDesktop/MainWindow.xaml.cs` 与
-> `MainWindow.xaml` 当前有**另一方 AI 的未提交改动**（运行中心内存口径：专用工作集 + 副标题）。
-> 上述第 2 步必须改动同一个文件，因此**接手前先确认该改动已提交或已确定归属**，
-> 否则提交时会把他方 WIP 一起带进去（违反仓库卫生纪律）。
+> `MainWindow.xaml` 当前有**另一方 AI 的未提交改动**（运行中心内存口径：专用工作集 + 副标题），
+> 且本轮期间该方仍在继续改（`Source/PuddingDesktop/code_map.md`、根 `code_map.md` 正被整篇改写、
+> `Docs/00Changelog/` 同时处于脏状态）。上述第 1、2 步必须改同一个文件，因此
+> **接手前先确认该改动已提交或已确定归属**，否则提交时会把他方 WIP 一起带进去（违反仓库卫生纪律）。
 > 该文件的改动区（约第 195 行 `UpdateRuntimeMetrics`）与接线区（约第 926 行浏览器工作区初始化）不重叠。
 
-### 8.3 第 3 步里唯一需要**先定形态**的一处（本轮实读后留下的裁定点，不猜）
+### 8.3 `desktop.json` 段形态（**已裁定并落地 = 方案 A**）
 
-`DesktopCapabilityChannelSettings.SectionName` 常量已经写着 `Desktop:CapabilityChannel`
-（与 Core 侧同名段对称）。但 Desktop 的配置文件是 `desktop.json`，其现有段（`Window` / `ToolWorkspace` /
-`Debug`）**都在根上**，没有 `Desktop` 这一层。两种形态都说得通，必须选定一种再写：
+`DesktopCapabilityChannelSettings.SectionName` 常量写着 `Desktop:CapabilityChannel`（与 Core 同名段对称），
+而 `desktop.json` 现有段（`Window`/`ToolWorkspace`/`Debug`）都在根上、没有 `Desktop` 这一层。两种形态都说得通：
 
-| 方案 | desktop.json 形态 | 优点 | 代价 |
-|---|---|---|---|
-| **A（推荐）** | `{ "desktop": { "capabilityChannel": { "enabled": true } } }` | 与 `SectionName` 常量、与 Core 的 `system.json` 完全同名 ⇒ **同一段配置可在两个文件之间原样复制**，运维只需记一个段名 | `desktop.json` 里多一层 `desktop`（因为整个文件本身就是 Desktop 的配置） |
-| B | `{ "capabilityChannel": { "enabled": true } }` | 与 `desktop.json` 既有段风格一致 | 与 `SectionName` 常量不一致 ⇒ 两文件段名不同，运维容易写错 |
+| 方案 | desktop.json 形态 | 结论 |
+|---|---|---|
+| **A** | `{ "desktop": { "capabilityChannel": { "enabled": true } } }` | **已采纳**：与 `SectionName`、与 Core 的 `system.json` 完全同名 ⇒ 同一段配置可在两文件间原样复制 |
+| B | `{ "capabilityChannel": { "enabled": true } }` | 不采纳：与常量不一致 ⇒ 两文件段名不同，运维容易写错 |
 
-**另有一处必须一并验证**（本轮未做，故不写代码）：`desktop.json` 的落盘由
-`FileDesktopBootstrapSettingsStore` 整体序列化 `DesktopBootstrapSettings`。新增一个非空段
-会让**用户没写过的字段在下次保存时出现在文件里**（`Debug` 段已有此行为，`ToolWorkspace` 用
-`null` 区分「从未配置」）。`Enabled` 是**安全相关**的开关，落盘时应当只写用户显式配置过的内容——
-因此建议该段用**可空**表示（缺席即关闭），并同时确认序列化器的 `WhenWritingNull` 行为，
-`Enabled=false` 与「段缺席」在语义上等价但**不应互相改写**。
-（Desktop 侧的文件形态 DTO 应放在 `PuddingDesktop.WpfArchive/Configuration`；
-映射成 `DesktopCapabilityChannelSettings` 的代码只能待在 Shell ——
-`Pudding.DesktopService` 的边界目标禁止引用任何含 `PuddingDesktop` 的项目，故映射不可下沉到组件。）
+落盘取舍也已按预判处理：`FileDesktopBootstrapSettingsStore` 整体序列化且**没有** `WhenWritingNull`，
+因此该段做成**可空**（缺席 = 从未配置 = 关闭），避免用户没写过的安全相关开关因为「保存了一次设置」
+就出现在文件里；`Enabled=false` 与「段缺席」语义等价但**不互相改写**。
+
+映射成 `DesktopCapabilityChannelSettings` 的代码**只能待在 Shell**——
+`Pudding.DesktopService` 的边界目标禁止引用任何含 `PuddingDesktop` 的项目，故映射不可下沉到组件；
+文件形态因此是独立值对象，缺省值一致性由 `PuddingDesktop.Tests` 的跨侧断言钉住。
+
 

@@ -196,7 +196,8 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 
 | 项 | 结果 |
 |---|---|
-| 组件独立测试合计 | **517 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 150、DesktopSurface.Browser 54、CapabilityBroker 78、CapabilityBroker.AspNetCore 39） |
+| 组件独立测试合计 | **537 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、**DesktopService 170**、DesktopSurface.Browser 54、CapabilityBroker 78、CapabilityBroker.AspNetCore 39） |
+| 桌面启动器侧测试 | **273 全绿**（`PuddingDesktop.Tests`；含能力通道文件段的跨侧缺省值一致性断言；不计入上面 7 套） |
 | 真实端点探针 | **53/53 通过，exit 0**（Named Pipe 与 Loopback h2c 各一轮；含跨侧能力集合一致性守卫） |
 | WinUI 适配器工程 | 0 警告 0 错误（无线程访问验证，需真实 `DispatcherQueue`） |
 | Shell 组合根前提 | `PuddingDesktop` 已放行并引用 Desktop 侧能力通道组件，**0 错误**；restore 后可离线完成，运行时程序集（`Grpc.Net.Client` 等）已确认落进输出目录 |
@@ -213,10 +214,11 @@ foreach ($p in @('Pudding.ContractsTests','Pudding.Rpc.ProtocolTests','Pudding.D
 dotnet temp\build\recovery\bin\Pudding.Rpc.IpcProbe\release\Pudding.Rpc.IpcProbe.dll
 ```
 
-口径说明：本表的数字为**最近一次干净运行实测**（本轮复核：517 = 96+20+80+150+54+78+39，探针 53/53，
+口径说明：本表的数字为**最近一次干净运行实测**（本轮复核：537 = 96+20+80+170+54+78+39，探针 53/53，
 `PuddingHost`/`PuddingAgent`/`PuddingDesktop`（含新引用）/`PuddingDesktop.CapabilityHost` 编译通过；
 该表**每轮都要随实测更新**，此前两次滞后的教训见 §10.2 的同类问题）。
-根 `code_map.md` 各轮条目里的「测试合计」是**历史记录**，可能与当下不一致——以本表为准。
+`code_map.md` 各轮条目里的「测试合计」是**历史记录**，可能与当下不一致——以本表为准；
+自 2026-10-02 起过程记录改放 `Docs/00Changelog/`（见 AGENTS.md「修改日志使用规则」），索引里不再追加时间线。
 本次复核即发现并修正了一处漂移：此前多处写的「374 用例」是累加笔误，实际为 365。
 
 ### 10.2 真实端点探针抓到并已修复的缺陷（四次，均为单测无法发现）
