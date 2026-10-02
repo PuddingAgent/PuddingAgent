@@ -521,7 +521,7 @@ Shell `MainWindow.xaml.cs` 的 `OnTheme` 当前设置 `Root.RequestedTheme` 并�
 > **第二批截图（浅色 + 工具区 + 窄标签表）**见验收记录 §6：
 > - **浅色首次核对合格**：Web 聊天区 `#f7f8fa` 与 §3 的 `LightBackgroundArgb = 0xFFF7F8FA` 完全一致，左栏/顶栏 `#fdfdfe`、输入区 `#ffffff`；深色下仍是 `#11151b/#191f28/#1a2029`。
 > - **新缺口已修（前端 6.1.5，`95055f1`）**：Web 主题开关此前没有标明作用范围。实测浅色下 Web 全白而 **Shell 工具区在深浅两张图里完全相同**（工具顶栏 `#27272b`、内容 `#121212`、底部状态条 `#1a2226`），即该开关只改 Web —— 正是本节禁止的「看似全局却范围不明」。现 tooltip 明写「仅 Web 工作台，右侧工具区由 Desktop 外观设置决定」，`aria-label` 由「切换主题」改为「切换 Web 工作台主题」，并有 4 项测试钉住。Desktop 侧外观入口是否也需标注范围，属 Shell 批次。
-> - **IMG07 需修正（未完成）**：窄标签表（`项 | 结果`，首列为「心跳间隔/偏好固化/本轮动作」）实测标签各自占一行，症状不在；但**归因不成立**——上批给**所有**表格首列加的 `min-width: 7em` 实测未生效（该列约 4em < 7em），且与 §13.5 明文冲突：「只用于具有短标签首列的规格/状态表，不能全局套在任意数据表」。⇒ 应移除全局首列规则，改为选择性的 `chatLabelTable`（当前代码中并不存在），或仅保留「允许换行 + 容器横滚」的默认行为。
+> - **IMG07 已修正（前端 6.1.6，`4ab177f`）**：窄标签表（`项 | 结果`，首列为「心跳间隔/偏好固化/本轮动作」）实测标签各自占一行，症状不在；但初版给**所有**表格首列加的 `min-width: 7em` 两条都不成立——违反 §13.5「只用于具有短标签首列的规格/状态表，不能全局套在任意数据表」，且实测未生效（该列约 4em）。现删除全局规则，改为规格原文的类作用域 `chatLabelTable`（`min-width: 7em` + `white-space: nowrap`），由 `MarkdownBlock.isLabelTable` 按表头词判定后套用；未判中的 LLM 数据表保持默认（允许换行 + 容器横滚）。
 
 | 项 | 状态 | 提交 | 落地内容 / 证据 |
 |---|---|---|---|
@@ -545,7 +545,7 @@ IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--p
 | 项 | 状态 | 提交 | 落地内容 |
 |---|---|---|---|
 | IMG06（助手长文巨底色矩形） | 代码已落地，未验收 | `7c2ad16` | `agentTurnCard` 去掉大面积有色底：原值 `color-mix(accent 3%, --pudding-admin-surface)` 就是截图里那块巨大矩形（深色下实测约 `#1b2339`），改为透明填充、回合分隔交给 1px 边界，边界同时从 admin token 换回 chat token。行内代码由「6px 圆角 + misty-blue 混色」改为 `surface-muted` + 4px + 常规字重 + `overflow-wrap`；块引用按 §5 改为 3px 左线 + `surface-muted` 底；链接由 `--sky-soft`（浅色下近乎白色、实际读不出来）改为主题强调色。代码块仍保留更深底作为局部锚点，未动。 |
-| IMG07（表格拥挤/首列过窄/正文过密） | 代码已落地，未验收 | `7c2ad16` | 单元格内边距 10/12；`th`/`td` 分隔线改用 `--pudding-chat-border`（原 `color-mix(--text-primary 25/10%)`）；首列给 `7em` 最小宽，避免「可部署产物」这类短标签被挤成一字一行；长内容列仍可换行、整表超宽由既有容器横滚；正文段落间距 8 → 12。 |
+| IMG07（表格拥挤/首列过窄/正文过密） | 代码已落地，未验收 | `7c2ad16`、`4ab177f` | 单元格内边距 10/12；`th`/`td` 分隔线改用 `--pudding-chat-border`（原 `color-mix(--text-primary 25/10%)`）；长内容列可换行、整表超宽由既有容器横滚；正文段落间距 8 → 12。**首列最小宽按 §13.5 改为类作用域**（`4ab177f`）：初版误做成全局 `min-width: 7em`——既违反本节"不能全局套在任意数据表"的限定，实测在 Chromium 自动表格布局下也不生效（真实会话该列约 4em）；现由 `MarkdownBlock.isLabelTable` 按表头词（项/项目/字段/标签/键/属性）判定后套 `chatLabelTable`（`min-width: 7em` + `white-space: nowrap`），并提供反向守卫测试防止全局规则回归。 |
 | 旧底 token 收敛（附带） | 代码已落地 | `7c2ad16` | 把仍在用旧蓝灰/暖黄底的 5 处选中态与悬停态收敛到 §3 token（CommandPalette 的 `<mark>` 高亮与选中行、MentionPalette 选中项、ContextMenu hover、用户头像、focus view 头像）。`message`/`markdown` 样式现已不含 `--sky-soft` / `--misty-blue` / `--pale-yellow-sunlight`。 |
 
 本批证据：新增 4 项不变量测试（助手卡片无有色底且不再取 admin token、链接用 accent、行内代码用 surface-muted、表格 10/12 + 7em + 段落 12）；`pnpm jest` 全量 **1607 passed / 3 failed**（3 项为语音相关既有失败）；`biome lint` 无新增（CommandPalette 未用参数、ContextMenu 数组 index key 均为 HEAD 既有，已用 pristine 文件核对）；`pnpm run build` + chat bundle budget ok。**前端版本 6.1.0 → 6.1.1**：这是 AGENTS.md「前端版本管理」生效后第一次按规则递增版本号，部署后页角徽标显示 `v6.1.1 · 7c2ad16 · 2026-10-01 23:48`，并已在运行中的 Core 所服务的产物里核对到 `6.1.1` / `7c2ad16` / `dirty:!1`。
