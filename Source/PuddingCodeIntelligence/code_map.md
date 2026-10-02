@@ -10,7 +10,7 @@
 |------|------|------|
 | `CSharp/` | C# | `RoslynCSharpIndexer`（`ICodeIndexer` + `ICodeIndexFileUpdater` + **`ICodeIndexFileBatchUpdater`**）· `RoslynSymbolId` · `RoslynWorkspaceBootstrapper` |
 | `TypeScript/` | TypeScript | `TypeScriptIndexer`（`ICodeIndexer` + `ICodeIndexFileUpdater` + **`ICodeIndexFileBatchUpdater`**）· `TypeScriptFileOutliner`。**批量路径**（2026-10-02）：一个批次只跑**一次**项目级提取进程，逐文件产出 payload、**不写索引**；非 TS/JS 与噪声路径 ⇒ `NotApplicable`；工程根缺失 / Node 不可用 / 资产缺失 ⇒ `Retryable`；项目模式没覆盖的路径退化逐文件提取并把 `SessionKey` 置空（如实反映「这一批没有复用同一快照」）。**投影函数已改为只读**：清旧符号移到 `IndexWorkspaceAsync` 调用方（`ClearProjectModeFilesAsync`），语义不变但使批量接缝能复用同一投影 |
-| `Python/` | Python | `PythonIndexer`（`ICodeIndexer`）· `PythonFileOutliner` |
+| `Python/` | Python | `PythonIndexer`（`ICodeIndexer` + `ICodeIndexFileUpdater` + **`ICodeIndexFileBatchUpdater`**）· `PythonFileOutliner`。**批量路径**（2026-10-02，与 TS 同形状）：一个批次只跑**一次**项目级提取进程、逐文件 payload、**不写索引**；非 `.py` 与噪声 ⇒ `NotApplicable`；根缺失 / Python 不可用 / 资产缺失 ⇒ `Retryable`；未覆盖路径退化逐文件并把 `SessionKey` 置空。投影同样改为只读（清旧符号移到 `ClearProjectModeFilesAsync`） |
 | `Cpp/` | C++ | outliner |
 | `Json/` | JSON | outliner |
 | `Yaml/` | YAML | outliner |
