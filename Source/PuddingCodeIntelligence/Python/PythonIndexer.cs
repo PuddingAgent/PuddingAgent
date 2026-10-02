@@ -461,7 +461,8 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIn
                         path,
                         symbols,
                         [],
-                        allRelations.Where(relation => IsSamePath(relation.SourceFilePath, path)).ToList());
+                        allRelations.Where(relation => IsSamePath(relation.SourceFilePath, path)).ToList(),
+                        Language);
                 }
             }
 
@@ -505,7 +506,7 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIn
                 outcomes.Add(new CodeFileIndexOutcome(
                     path,
                     CodeIndexConsumerStatus.Applied,
-                    new CodeFileIndexPayload(path, fileSymbols, [], fileRelations)));
+                    new CodeFileIndexPayload(path, fileSymbols, [], fileRelations, Language)));
             }
 
             return new CodeIndexFileBatchResult(OrderOutcomes(outcomes), context.ConfigurationFingerprint, sessionKey);

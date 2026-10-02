@@ -469,7 +469,8 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICo
                         path,
                         symbols,
                         [],
-                        allRelations.Where(relation => IsSamePath(relation.SourceFilePath, path)).ToList());
+                        allRelations.Where(relation => IsSamePath(relation.SourceFilePath, path)).ToList(),
+                        GetLanguage(path));
                 }
             }
 
@@ -514,7 +515,7 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICo
                 outcomes.Add(new CodeFileIndexOutcome(
                     path,
                     CodeIndexConsumerStatus.Applied,
-                    new CodeFileIndexPayload(path, fileSymbols, [], fileRelations)));
+                    new CodeFileIndexPayload(path, fileSymbols, [], fileRelations, GetLanguage(path))));
             }
 
             return new CodeIndexFileBatchResult(OrderOutcomes(outcomes), context.ConfigurationFingerprint, sessionKey);

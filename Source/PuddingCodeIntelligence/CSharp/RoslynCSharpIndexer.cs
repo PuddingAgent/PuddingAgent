@@ -378,7 +378,7 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
                 try
                 {
                     outcomes.Add(await BuildBatchOutcomeAsync(
-                            solution, workspace.WorkspaceId, workspace.ProjectId, path, cancellationToken)
+                            solution, workspace.WorkspaceId, workspace.ProjectId, path, Language, cancellationToken)
                         .ConfigureAwait(false));
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -426,6 +426,7 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
         string workspaceId,
         string projectId,
         string filePath,
+        string language,
         CancellationToken cancellationToken)
     {
         var (compilation, syntaxTree) = await FindCompilationForFileAsync(solution, filePath, cancellationToken)
@@ -445,7 +446,7 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
         return new CodeFileIndexOutcome(
             filePath,
             CodeIndexConsumerStatus.Applied,
-            new CodeFileIndexPayload(filePath, extracted.Symbols, extracted.References, extracted.Relations));
+            new CodeFileIndexPayload(filePath, extracted.Symbols, extracted.References, extracted.Relations, language));
     }
 
     /// <summary>Extracts the records of one syntax tree. Reads no cross-file state and writes nothing.</summary>

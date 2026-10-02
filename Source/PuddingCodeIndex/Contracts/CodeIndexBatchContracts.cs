@@ -41,11 +41,16 @@ public enum CodeIndexConsumerStatus
 /// <param name="Symbols">提取到的符号（空表示该文件没有可索引符号）。</param>
 /// <param name="References">该文件拥有的引用。</param>
 /// <param name="Relations">该文件拥有的关系。</param>
+/// <param name="Language">
+/// 产出该 payload 的语言标签（如 <c>C#</c> / <c>TypeScript</c> / <c>Python</c>），写进文件记录；
+/// 没有时调用方可按扩展名自己解析。
+/// </param>
 public sealed record CodeFileIndexPayload(
     string FilePath,
     IReadOnlyList<CodeSymbolRecord> Symbols,
     IReadOnlyList<CodeReferenceRecord> References,
-    IReadOnlyList<CodeRelationRecord> Relations);
+    IReadOnlyList<CodeRelationRecord> Relations,
+    string? Language = null);
 
 /// <summary>一个文件的处理结果。</summary>
 /// <param name="FilePath">绝对路径。</param>
