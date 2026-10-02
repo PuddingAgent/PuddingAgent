@@ -1,4 +1,6 @@
 using PuddingHost.Hosting;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 // ── PuddingAgent Console/DesktopChild Host (thin entry point) ──────
 // All composition root logic lives in PuddingHost;
@@ -69,9 +71,17 @@ phases.Mark(StartupPhases.Ready);
 if (isDesktopChild)
 {
     // Emit PUDDING_DESKTOP_READY signal on stdout so Desktop can parse it
-    var readyJson = $$"""
-        {"protocolVersion":1,"processId":{{Environment.ProcessId}},"baseAddress":"{{address}}"}
-        """;
+    // capabilityEndpoint 只在能力通道启用时出现（null 被忽略）⇒ 关闭时这一行与今天逐字一致。
+    // 用序列化器而不是手写 JSON：端点描述是 Core→Desktop 唯一的字符串契约，手写容易产生
+    // 只有「打开开关」时才暴露的格式漂移。
+    var readyJsonOptions = new JsonSerializerOptions
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+    var capabilityEndpoint = PuddingApplicationHost.GetCapabilityEndpointDescription(app.Services);
+    var readyJson = JsonSerializer.Serialize(
+        new { protocolVersion = 1, processId = Environment.ProcessId, baseAddress = address, capabilityEndpoint },
+        readyJsonOptions);
     Console.WriteLine($"PUDDING_DESKTOP_READY {readyJson}");
 
     // Register shutdown endpoint for Desktop

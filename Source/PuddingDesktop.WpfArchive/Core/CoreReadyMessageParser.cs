@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingDesktop.Core;
 
@@ -61,6 +61,10 @@ public static class CoreReadyMessageParser
             ProtocolVersion = raw.ProtocolVersion,
             ProcessId = raw.ProcessId,
             BaseAddress = address,
+            // 空白视同缺席：Core 关闭能力通道时整个字段不出现，这里不能把 "" 当成一个描述传下去。
+            CapabilityEndpoint = string.IsNullOrWhiteSpace(raw.CapabilityEndpoint)
+                ? null
+                : raw.CapabilityEndpoint,
         };
     }
 

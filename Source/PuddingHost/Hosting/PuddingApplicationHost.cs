@@ -407,6 +407,18 @@ public static class PuddingApplicationHost
     }
 
     /// <summary>
+    /// 能力通道启用时返回「可供 Desktop 严格解析」的端点描述，关闭时返回 <c>null</c>。
+    ///
+    /// 放在这里而不是让 <c>Program.cs</c> 直接读 DI：<see cref="DesktopCapabilityChannelRuntime"/>
+    /// 是本程序集的内部类型（它的<b>存在</b>即表示通道已启用），入口点只需要一个字符串。
+    /// 关闭时返回 null ⇒ 就绪信号里不出现该字段 ⇒ 行为与今天逐字一致。
+    /// </summary>
+    public static string? GetCapabilityEndpointDescription(IServiceProvider services) =>
+        services.GetService<DesktopCapabilityChannelRuntime>() is { } runtime
+            ? CapabilityChannelReadySignal.Describe(runtime.Description)
+            : null;
+
+    /// <summary>
     /// Phase 4: Capture server bound addresses (ONLY valid after StartAsync).
     /// Resolves a loopback control address from the bound HTTP listener. A wildcard
     /// listener is projected to 127.0.0.1 with the same port for trusted local calls.
@@ -431,9 +443,9 @@ public static class PuddingApplicationHost
                 addresses, runtime.ExpectedRestAddresses, runtime.Description);
 
             Console.WriteLine($"[CapabilityChannel] {preflight.Summary}");
-            Console.WriteLine(
-                $"[CapabilityChannel] 就绪端点描述（不含凭据）：{runtime.Description.Kind}:{runtime.Description.Address}"
-                + $"|v{runtime.Description.ProtocolVersion}|{runtime.Description.ServerInstanceId}");
+            // 就绪端点描述**必须能被 Desktop 侧的严格解析器接受**：这里的文本既是人读日志，
+            // 也是 PUDDING_DESKTOP_READY 里 capabilityEndpoint 字段的来源（同一个函数，杜绝两套格式）。
+            Console.WriteLine(CapabilityChannelReadySignal.DescribeLogLine(runtime.Description));
 
             if (!preflight.IsHealthy)
             {

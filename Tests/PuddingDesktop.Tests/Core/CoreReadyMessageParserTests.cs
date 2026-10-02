@@ -1,4 +1,4 @@
-﻿using PuddingDesktop.Core;
+using PuddingDesktop.Core;
 
 namespace PuddingDesktop.Tests.Core;
 
@@ -74,5 +74,54 @@ public class CoreReadyMessageParserTests
         Assert.NotNull(result);
         Assert.Equal(5678, result.ProcessId);
         Assert.Equal(9000, result.BaseAddress.Port);
+    }
+
+    [Fact]
+    public void TryParse_WithoutCapabilityEndpoint_LeavesItNull()
+    {
+        // 能力通道默认关闭：Core 不输出该字段，Desktop 侧必须是 null 而不是空串
+        // （空串会被下游当成「有个描述可以解析」）。
+        var line = """PUDDING_DESKTOP_READY {"protocolVersion":1,"processId":1,"baseAddress":"http://127.0.0.1:9001"}""";
+
+        var result = CoreReadyMessageParser.TryParse(line);
+
+        Assert.NotNull(result);
+        Assert.Null(result.CapabilityEndpoint);
+    }
+
+    [Fact]
+    public void TryParse_WithCapabilityEndpoint_CarriesDescriptionVerbatim()
+    {
+        // 字段名与 Core 侧 CapabilityChannelReadySignal.FieldName 一致；
+        // 描述原文必须逐字搬运（是否可用由 DesktopCapabilityChannelPreflight 判定）。
+        var line = """PUDDING_DESKTOP_READY {"protocolVersion":1,"processId":2,"baseAddress":"http://127.0.0.1:9002","capabilityEndpoint":"named-pipe:pudding-capability-abc|1|core-7"}""";
+
+        var result = CoreReadyMessageParser.TryParse(line);
+
+        Assert.NotNull(result);
+        Assert.Equal("named-pipe:pudding-capability-abc|1|core-7", result.CapabilityEndpoint);
+    }
+
+    [Fact]
+    public void TryParse_BlankCapabilityEndpoint_TreatedAsAbsent()
+    {
+        var line = """PUDDING_DESKTOP_READY {"protocolVersion":1,"processId":3,"baseAddress":"http://127.0.0.1:9003","capabilityEndpoint":"  "}""";
+
+        var result = CoreReadyMessageParser.TryParse(line);
+
+        Assert.NotNull(result);
+        Assert.Null(result.CapabilityEndpoint);
+    }
+
+    [Fact]
+    public void TryParse_UnknownExtraField_IsIgnored()
+    {
+        // 就绪协议必须能向前兼容：旧 Desktop 读到新字段不能失败。
+        var line = """PUDDING_DESKTOP_READY {"protocolVersion":1,"processId":4,"baseAddress":"http://127.0.0.1:9004","somethingNew":42}""";
+
+        var result = CoreReadyMessageParser.TryParse(line);
+
+        Assert.NotNull(result);
+        Assert.Equal(4, result.ProcessId);
     }
 }
