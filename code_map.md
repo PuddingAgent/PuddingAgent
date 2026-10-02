@@ -64,7 +64,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.DesktopConnection/` | Desktop 侧 gRPC 双向流适配：连接状态机、命令关联、取消/期限/背压、重连 | [code_map](Source/Pudding.DesktopConnection/code_map.md) |
 | `Source/Pudding.DesktopService/` | Desktop 侧能力服务：目标/可信级别/版本校验、准入、入队后竞态复检、UI 调度边界、宿主装配与生命周期 | [code_map](Source/Pudding.DesktopService/code_map.md) |
 | `Source/PuddingDesktop.CapabilityHost/` | WinUI 侧平台适配：`DispatcherQueue` 调度实现（只引用 Contracts） | [code_map](Source/PuddingDesktop.CapabilityHost/code_map.md) |
-| `Source/Pudding.DesktopSurface.Browser/` | 浏览器侧 Desktop 表面与目标注册表桥（`BrowserWorkspaceTargetBridge` 等） | —（待补 code_map） |
+| `Source/Pudding.DesktopSurface.Browser/` | 浏览器侧 Desktop 表面与目标注册表桥（九项能力映射、表面组装、`BrowserWorkspaceTargetBridge`）；**不含任何 UI 代码**，整条链路可脱 UI 测试 | [code_map](Source/Pudding.DesktopSurface.Browser/code_map.md) |
 | `Source/PuddingDesktop.Foundation/` | BCL-only 布局与外观偏好（`ShellLayout`、`WorkbenchAppearance`、`SkeletonSettingsStore`） | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
 | `Source/PuddingDesktop.WpfArchive/` | 旧 WPF 产品入口/验证基线；**无 UI 的启动器与协议源文件由 WinUI 项目链接编译**，不是产品进程 | [code_map](Source/PuddingDesktop.WpfArchive/code_map.md) |
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Kestrel Named Pipe / h2c 服务端替身，退出码 0/1） | — |
