@@ -1,5 +1,7 @@
 # Pudding Agent Network 文档索引
 
+> **修改日志请写 [`00Changelog/`](00Changelog/README.md)，不要写进本文件。** 本文件是文档索引；日志规则见 [00Changelog/README.md](00Changelog/README.md)，代码索引规则见根 [`code_map.md`](../code_map.md) 与 [`Agents.md`](../Agents.md)。
+
 ## 2026-10-01 Chat 前端 UI / UX 现代化设计
 
 [实施规格](Design/Chat-UI-UX-Modernization-Spec-2026-10-01.md)：保留现有 Chat 功能与入口，规定视觉 token、布局、消息/过程渲染、输入交互、示例代码、实施切片及验收门禁。设计已交付，产品实现与验收待完成。已补浅/深色实图分析（§13）及滚动条缺陷 SCROLL-001：前端与 Shell 修复方案、分工和关闭门禁（§14）。P0 批次代码已完成：SCROLL-001 WEB/SHELL（`2430f97`、`6bf5b16`，见 §14.6）、IMG01/IMG04 色彩统一（`28dca85`）、IMG03 顶部工具栏分层（`7e38284`，见 §13.7）；Desktop 构建与测试证据已补齐（重定向输出构建 0 错误、Desktop 259 + Foundation 57 测试通过）。**§13.6 列出的代码项已全部落地**：前端七批（IMG06/IMG07 `7c2ad16`、IMG08 `5d53030`、IMG09/IMG10 `97fb4d2`、IMG03 帮助归组 `1c97f57`、Web 主题范围披露 `95055f1`、IMG07 标签表修正 `4ab177f`，见 §13.7–§13.10，前端版本 **6.1.6** + 页角版本徽标 `4749fd9`）与 Shell 两批（IMG11/IMG12 `96d5356`、IMG05 `53c2f1b`，见 §13.11–§13.12）。**深浅两套主题的静态外观已获像素复核**（[验收记录](Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)：底色收敛到 §3、滚动条白条消失、浅色 `#f7f8fa` 与 §3 基准一致、页角徽标与卡片可用性标签实测可见），但 §12 V/F/S/A/P/SEC/D、§13.6 IMG-V*、§14.5 滚动条验收表所需的**交互、DPI/缩放与性能**仍未实测。

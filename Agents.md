@@ -114,9 +114,41 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 - 数据存储: `D:\data` 开发环境数据存储的目录（见PathHelper，dev-up指定的环境变量或启动参数确定）
 - 工作空间: `D:\data\workspaces\default`
 - 编译入口: `dotnet build PuddingRuntime`
-- 代码地图: `code_map.md`  这是项目根目录下的代码快速索引，要求必须在开始前阅读，并在任务结束后维护。
+- 代码地图: `code_map.md`  根目录**主索引**（登记每个子项目及其 `code_map.md`）；子项目索引在 `Source/<项目>/code_map.md`。开始任务前必读，任务结束前必维护，规则见下文「code_map.md 使用规则（强制）」。
+- 修改日志: `Docs/00Changelog/<YYYY>Year/<MM>/`  **日志类内容的唯一去处**，规则见下文「修改日志使用规则（强制）」。
 - 文档: `Docs`  这是项目的架构文档目录，要求必须在开始前阅读，并在任务结束后维护。
 - 临时编译，重定向编译必须使用`temp\builder`目录。
+
+## code_map.md 使用规则（强制）
+
+**定位**：`code_map.md` 是**代码地图/索引**，用来快速回答「这个概念、组件、文件在项目的哪里」。根目录 `code_map.md` 是**主索引**，登记每个子项目及其 `code_map.md`；子项目索引在 `Source/<项目>/code_map.md`，负责该项目内部的文件级索引。
+
+**正向例子（只写这四类内容）**：
+
+1. **关键概念**：概念 → 权威位置 → 用途/不变量。例：`canonical Turn 围栏 | Source/PuddingRuntime/Services/AgentExecution/ | 用 [CURRENT USER TURN input_sha256=…] 围住本轮输入，缺失即 fail-closed`。
+2. **组件 / 子项目**：程序集 → 一句话用途 → 该项目 `code_map.md` 链接。例：`Source/PuddingCodeIndex/ | 🔑 索引组件：契约/存储/变更捕获管线/调度；不得引用 PuddingCodeIntelligence | [code_map](Source/PuddingCodeIndex/code_map.md)`。
+3. **关键文件（相对路径）**：`相对路径` + 用途。路径必须是仓库内真实存在的相对路径，改完自查链接可解析。
+4. **调用链路 / 测试工程 / 设计文档入口**：端到端数据流、契约边界、测试项目清单、关键 ADR 与设计文档链接。
+
+**反向例子（严禁）**：把 `code_map.md` 当台账/日志用 —— 不断追加「## YYYY-MM-DD：…」条目、轮次记录（「第 N 轮」）、提交号、测试与门禁数字、部署/验收结论、性能实测、缺陷排查时间线。**这些一律写 `Docs/00Changelog/`**，索引里只保留「现在是什么」。
+
+**维护时机（强制）**：
+
+- 开始任务前**必读**根 `code_map.md`，再进相关子项目的 `code_map.md` 定位文件。
+- 任务结束前**必须维护**：新增/移动/删除关键文件 → 更新对应子项目 `code_map.md`；新增子项目 → 在根 `code_map.md` §2 登记并链接其 `code_map.md`；概念/链路变化 → 更新根 §3/§4。
+- **只更新受影响的条目**（就地改写），不得在文件末尾追加时间线；过程记录走修改日志规则。
+- 子项目 `code_map.md` 里已存在的「变更（YYYY-MM-DD）」小节属于历史日志，按 `Docs/00Changelog/README.md` §6 逐步迁出，不要继续追加。
+
+## 修改日志使用规则（强制）
+
+**唯一去处**：`Docs/00Changelog/<YYYY>Year/<MM>/`（例：`Docs/00Changelog/2026Year/10/2026-10-02-<主题>.md`）。完整规则、文件格式与目录边界见 **`Docs/00Changelog/README.md`**。
+
+- **命名**：`YYYY-MM-DD-<主题>.md`，日期是**记录日期**；同一天多个主题就写多个文件，不要堆成一个巨型文件。
+- **时机**：每个原子任务完成并通过验证后写一条，与该任务的代码改动放在**同一个 commit**。
+- **必含**：日期主题、改了什么（含相对路径）、验证状态（实际跑了什么/结果数字；没验证就写「未验证」并说明原因）、未完成部分、关联 ADR/报告/任务 id。
+- **禁止写入**：`code_map.md`（根与子项目）、`Docs/README.md`、ADR 正文，以及 `Docs/` 根目录。
+- **日志是摘要不是证据仓库**：完整证据留在 `Docs/Reports/`、`Docs/QA/`，日志只链接；敏感信息（apiKey、ControlToken、隐私数据）不入日志。
+- 已写入的日志**追加式、可更正、不抹除**；更正写成「更正（YYYY-MM-DD）：…」。
 
 ## 运行时配置
 
