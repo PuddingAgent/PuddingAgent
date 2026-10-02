@@ -20,7 +20,7 @@ namespace PuddingCodeIntelligence.TypeScript;
 /// Supports two modes: project-level extraction (--project) for cross-file references,
 /// and per-file extraction as a fallback.
 /// </summary>
-public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater, ILanguageCodeIndexer
+public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIndexFileBatchUpdater, ILanguageCodeIndexer
 {
     // Uses centralized IndexExcludePatterns.NoiseDirNames for directory exclusion.
 
@@ -134,6 +134,14 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater, ILa
                     "TypeScript project-mode extraction for {ProjectId}: {FileCount} files, {CrossRefCount} cross-references",
                     descriptor.ProjectId, projectResult.Files.Count,
                     projectResult.CrossReferences?.Count ?? 0);
+
+                // 清旧符号仍留在**调用方**：投影函数保持只读（批量接缝复用同一投影时绝不能写库）。
+                // 顺序与原实现等价：现在的清全部发生在写入之前，而原实现在同一次遍历里交错清理，
+                // 每次清理只作用于该文件自己，之后才统一 upsert，因此结果一致。
+                await ClearProjectModeFilesAsync(
+                        descriptor.WorkspaceId, descriptor.ProjectId, descriptor.ProjectPath,
+                        projectResult, cancellationToken)
+                    .ConfigureAwait(false);
 
                 ProcessProjectExtraction(descriptor.WorkspaceId, descriptor.ProjectId,
                     descriptor.ProjectPath, projectResult, allSymbols, allRelations, allFiles, now);
@@ -341,6 +349,216 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater, ILa
         }
     }
 
+    /// <summary>
+    /// **批量更新**（D4，2026-10-02）：一个批次只跑**一次**项目级提取进程（ts-morph 装载整个工程），
+    /// 逐文件产出 payload，<b>不写任何索引</b>。
+    /// <para>
+    /// 逐文件跑一次项目级提取是这里最贵的放大（每次都要重新装载工程/依赖），因此批内复用的
+    /// <see cref="CodeIndexFileBatchResult.SessionKey"/> 只在**真的**用项目模式时才有值：
+    /// 它让调用方与验收能区分「批次复用了一次快照」与「退化成逐文件提取」。
+    /// </para>
+    /// <para>
+    /// 路由：非 TS/JS、噪声路径、工程根缺失 ⇒ `NotApplicable`/`Retryable`；
+    /// Node 不可用或提取器资产缺失 ⇒ 全部 `Retryable`（按退避重试，不升级整仓）；
+    /// 项目模式没覆盖到的请求路径退化为**逐文件提取**（并如实把 SessionKey 置空）。
+    /// </para>
+    /// </summary>
+    /// <inheritdoc />
+    public async Task<CodeIndexFileBatchResult> UpdateFilesAsync(
+        CodeWorkspaceDescriptor descriptor,
+        IReadOnlyCollection<string> filePaths,
+        CodeIndexBatchContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var paths = (filePaths ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (paths.Length == 0)
+            return new CodeIndexFileBatchResult([], context.ConfigurationFingerprint, SessionKey: null);
+
+        var outcomes = new List<CodeFileIndexOutcome>(paths.Length);
+        var applicable = new List<string>();
+
+        foreach (var path in paths)
+        {
+            if (!SupportedExtensions.Contains(Path.GetExtension(path)))
+            {
+                outcomes.Add(new CodeFileIndexOutcome(
+                    path, CodeIndexConsumerStatus.NotApplicable, Reason: "not a TypeScript/JavaScript file"));
+                continue;
+            }
+
+            if (IndexExcludePatterns.IsNoisePathBelow(descriptor.ProjectPath, path))
+            {
+                outcomes.Add(new CodeFileIndexOutcome(
+                    path, CodeIndexConsumerStatus.NotApplicable, Reason: "excluded from indexing"));
+                continue;
+            }
+
+            applicable.Add(path);
+        }
+
+        if (applicable.Count == 0)
+            return new CodeIndexFileBatchResult(OrderOutcomes(outcomes), context.ConfigurationFingerprint, SessionKey: null);
+
+        if (string.IsNullOrWhiteSpace(descriptor.ProjectPath) || !Directory.Exists(descriptor.ProjectPath))
+        {
+            AddRetryable(
+                outcomes, applicable, $"Project path does not exist: {descriptor.ProjectPath}");
+            return new CodeIndexFileBatchResult(OrderOutcomes(outcomes), context.ConfigurationFingerprint, SessionKey: null);
+        }
+
+        if (!IsNodeAvailable())
+        {
+            AddRetryable(outcomes, applicable, "Node.js not available");
+            return new CodeIndexFileBatchResult(OrderOutcomes(outcomes), context.ConfigurationFingerprint, SessionKey: null);
+        }
+
+        var assets = _assetResolver.Resolve(ExtractorAssetKind.TypeScriptScript);
+        if (!assets.Success)
+        {
+            AddRetryable(outcomes, applicable, assets.Message);
+            return new CodeIndexFileBatchResult(OrderOutcomes(outcomes), context.ConfigurationFingerprint, SessionKey: null);
+        }
+
+        var scriptPath = assets.ScriptPath!;
+        var nodeModulesPath = assets.NodeModulesPath;
+        var now = DateTimeOffset.UtcNow;
+        string? sessionKey = null;
+
+        try
+        {
+            // ⚠️ 整个批次只跑一次项目级提取：这就是本接缝存在的理由。
+            var projectResult = await RunProjectExtractionAsync(scriptPath, nodeModulesPath, descriptor.ProjectPath, cancellationToken)
+                .ConfigureAwait(false);
+
+            var payloads = new Dictionary<string, CodeFileIndexPayload>(StringComparer.OrdinalIgnoreCase);
+            var covered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (projectResult is not null && projectResult.Files is { Count: > 0 })
+            {
+                sessionKey = $"typescript:project:{descriptor.ProjectPath}:{context.ConfigurationFingerprint}";
+
+                var allSymbols = new List<CodeSymbolRecord>();
+                var allRelations = new List<CodeRelationRecord>();
+                var allFiles = new List<CodeFileRecord>();
+
+                // 只读投影：任何持久化都由调用方经 ReplaceFilesAsync 完成。
+                ProcessProjectExtraction(
+                    descriptor.WorkspaceId, descriptor.ProjectId, descriptor.ProjectPath,
+                    projectResult, allSymbols, allRelations, allFiles, now);
+
+                foreach (var file in allFiles)
+                    covered.Add(file.FilePath);
+
+                foreach (var path in applicable)
+                {
+                    var symbols = allSymbols
+                        .Where(symbol => IsSamePath(symbol.FilePath, path))
+                        .ToList();
+
+                    if (symbols.Count == 0)
+                        continue;
+
+                    payloads[path] = new CodeFileIndexPayload(
+                        path,
+                        symbols,
+                        [],
+                        allRelations.Where(relation => IsSamePath(relation.SourceFilePath, path)).ToList());
+                }
+            }
+
+            foreach (var path in applicable)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (payloads.TryGetValue(path, out var payload))
+                {
+                    outcomes.Add(new CodeFileIndexOutcome(path, CodeIndexConsumerStatus.Applied, payload));
+                    continue;
+                }
+
+                // 项目模式没覆盖它（也可能项目模式不可用）：退化为逐文件提取，并如实清空 SessionKey。
+                if (covered.Contains(path))
+                {
+                    // 项目模式看到了这个文件但没有任何符号：它是「已处理、无符号」，不是失败。
+                    outcomes.Add(new CodeFileIndexOutcome(
+                        path,
+                        CodeIndexConsumerStatus.Applied,
+                        new CodeFileIndexPayload(path, [], [], [])));
+                    continue;
+                }
+
+                sessionKey = null;
+
+                var extraction = await RunExtractionScriptAsync(scriptPath, nodeModulesPath, path, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (extraction is null)
+                {
+                    outcomes.Add(new CodeFileIndexOutcome(
+                        path, CodeIndexConsumerStatus.Retryable,
+                        Reason: $"Extraction produced no usable output for {path}"));
+                    continue;
+                }
+
+                var fileSymbols = new List<CodeSymbolRecord>();
+                var fileRelations = new List<CodeRelationRecord>();
+                ConvertToRecords(descriptor.WorkspaceId, descriptor.ProjectId, path, extraction, fileSymbols, fileRelations);
+
+                outcomes.Add(new CodeFileIndexOutcome(
+                    path,
+                    CodeIndexConsumerStatus.Applied,
+                    new CodeFileIndexPayload(path, fileSymbols, [], fileRelations)));
+            }
+
+            return new CodeIndexFileBatchResult(OrderOutcomes(outcomes), context.ConfigurationFingerprint, sessionKey);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "TypeScript batch update failed for {ProjectId}", descriptor.ProjectId);
+            AddRetryable(outcomes, applicable, $"TypeScript batch update failed: {ex.Message}");
+            return new CodeIndexFileBatchResult(OrderOutcomes(outcomes), context.ConfigurationFingerprint, SessionKey: null);
+        }
+    }
+
+    private static void AddRetryable(
+        List<CodeFileIndexOutcome> outcomes,
+        IReadOnlyCollection<string> paths,
+        string reason)
+    {
+        foreach (var path in paths)
+            outcomes.Add(new CodeFileIndexOutcome(path, CodeIndexConsumerStatus.Retryable, Reason: reason));
+    }
+
+    private static IReadOnlyList<CodeFileIndexOutcome> OrderOutcomes(List<CodeFileIndexOutcome> outcomes) =>
+        outcomes.OrderBy(outcome => outcome.FilePath, StringComparer.OrdinalIgnoreCase).ToArray();
+
+    private static bool IsSamePath(string? candidate, string filePath)
+    {
+        if (string.IsNullOrEmpty(candidate))
+            return false;
+
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(candidate), Path.GetFullPath(filePath), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
     /// <inheritdoc />
     public async Task<CodeIndexResult> RemoveWorkspaceIndexAsync(
         string workspaceId,
@@ -478,8 +696,39 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater, ILa
     }
 
     /// <summary>
+    /// Clears the previous symbol graph of every file the project-mode extraction covers.
+    /// <para>
+    /// Deliberately the <b>caller's</b> job: the projection itself is read-only so the batch seam can reuse it
+    /// without writing anything (the batch hands its payload to the caller's atomic replace).
+    /// </para>
+    /// </summary>
+    private async Task ClearProjectModeFilesAsync(
+        string workspaceId,
+        string projectId,
+        string projectRoot,
+        TsProjectOutput projectOutput,
+        CancellationToken cancellationToken)
+    {
+        if (projectOutput.Files is null)
+            return;
+
+        foreach (var fileEntry in projectOutput.Files)
+        {
+            if (string.IsNullOrEmpty(fileEntry.File))
+                continue;
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var absolutePath = Path.GetFullPath(Path.Combine(projectRoot, fileEntry.File));
+            await _store.ClearSymbolsForFileAsync(workspaceId, projectId, absolutePath, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
     /// Processes project-mode extraction output: converts file entries to symbol/file records
-    /// and cross-references to relation records.
+    /// and cross-references to relation records. <b>Reads and writes nothing</b> — all persistence is the
+    /// caller's job.
     /// </summary>
     private void ProcessProjectExtraction(
         string workspaceId,
@@ -503,10 +752,6 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater, ILa
                 continue;
 
             var absolutePath = Path.GetFullPath(Path.Combine(projectRoot, fileEntry.File));
-
-            // Clear stale symbols for this file
-            _store.ClearSymbolsForFileAsync(workspaceId, projectId, absolutePath, CancellationToken.None)
-                .GetAwaiter().GetResult();
 
             if (fileEntry.Symbols is { Count: > 0 })
             {
