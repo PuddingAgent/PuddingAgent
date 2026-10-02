@@ -189,7 +189,18 @@ public static class CodeSourceChangeReasons
     /// <summary>manifest 有、磁盘未见，但本次扫描不完整或根不可用。</summary>
     public const string ScanIncomplete = "scan_incomplete";
 
-    /// <summary>扫描期间该路径又发生变化：最终状态未知。</summary>
+    /// <summary>
+    /// 扫描期间该路径又发生变化：最终状态未知。
+    /// <para>
+    /// <b>生产来源现状（2026-10-02 复核结论）</b>：维护驱动目前**不注入**这一事实，因为可观测的窗口
+    /// 实际上是空的 —— watcher 的事件先被合并器折叠进批次（同一路径只保留最新一次），
+    /// 因此「批次捕获之后才发布的事件」在协调器开始跑之前基本不存在；而协调器开始跑之后的真实竞争
+    /// 由三条更强的规则兜住：① 稳定读发现 stat 前后不一致 ⇒ 弃用本轮；② 提交前复核 stat
+    /// （提取可能耗时）⇒ 不一致就不提交；③ 删除只能由完整且根可用的扫描得出，观察到的消失只作提示。
+    /// 这三点都有独立用例（`CodeSourceMaintenanceReviewFixesTests`）。
+    /// 若将来改为「扫描期很长的一次枚举」，应把合并器里**尚未折叠的**路径作为本事实注入。
+    /// </para>
+    /// </summary>
     public const string ChangedDuringScan = "changed_during_scan";
 
     /// <summary>

@@ -115,6 +115,75 @@ public sealed class CodeSourceMaintenanceReviewFixesTests : IDisposable
     }
 
     [TestMethod]
+    public async Task AFileDeletedDuringExtractionKeepsTheOldStateAndStaysPending()
+    {
+        var file = WriteFile("A.cs", "class A { }");
+        var (coordinator, updater) = Arrange();
+
+        // 先索引一次，让 manifest 与索引里有它的旧状态。
+        var initial = await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(true, file));
+        Assert.AreEqual(1, initial.ExtractedFileCount);
+        var before = await _store.LoadSourceMaintenanceAsync(WorkspaceId, ScopeId);
+        var oldHash = before.Manifest[file].Fingerprint.ContentHash;
+
+        // 提取期间文件被删掉：这一轮没有任何可用结论，必须保持旧状态并把该路径记成待办。
+        // 前置条件是这一轮**真的会去提取**：先让内容变掉（否则「指纹一致 ⇒ 跳过提取」会让钩子根本不触发），
+        // 再用提示驱动的轮次把它作为候选送进执行组。
+        File.WriteAllText(file, "class A { int Changed; }");
+        updater.TouchFileDuringExtraction = path => File.Delete(path);
+        _now = _now.AddMinutes(1);
+
+        var tick = _now;
+        var result = await coordinator.RunAsync(
+            WorkspaceId,
+            ScopeId,
+            _scopeRoot,
+            new CodeSourceMaintenanceRunOptions(
+                [new CodeConsumerInputFingerprint("C#", "policy-1", "semantic-1")],
+                WatcherHints: [file],
+                Targeted: true));
+
+        Assert.IsNotNull(tick);
+        Assert.AreEqual(1, result.RetryableFileCount, "本轮没有定论 ⇒ 计为未解决");
+        Assert.AreEqual(0, result.DeletedFileCount, "「提取期间消失」不构成删除结论");
+
+        var after = await _store.LoadSourceMaintenanceAsync(WorkspaceId, ScopeId);
+        Assert.IsTrue(after.Manifest.ContainsKey(file), "旧记录必须原样保留（不确认删除）");
+        Assert.AreEqual(oldHash, after.Manifest[file].Fingerprint.ContentHash, "旧指纹不得被改写");
+        Assert.IsTrue(after.Ledger.PendingRetries.ContainsKey(file), "该路径必须留待后续轮次");
+        Assert.IsFalse(result.ScanWatermarkAdvanced, "没有定论就不推进水位");
+    }
+
+    [TestMethod]
+    public async Task AFileRecreatedAfterAConfirmedDeletionIsIndexedAgainOnTheNextRun()
+    {
+        var file = WriteFile("A.cs", "class A { }");
+        var (coordinator, _) = Arrange();
+
+        await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(true, file));
+
+        // 完整扫描确认删除。
+        File.Delete(file);
+        _now = _now.AddMinutes(1);
+        var deletion = await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(targeted: false));
+        Assert.AreEqual(1, deletion.DeletedFileCount);
+        Assert.IsFalse(
+            (await _store.LoadSourceMaintenanceAsync(WorkspaceId, ScopeId)).Manifest.ContainsKey(file));
+
+        // 文件随后又被重建（编辑器撤销 / 检出）⇒ 下一轮必须把它当作新文件索引回来，绝不静默丢失。
+        File.WriteAllText(file, "class A { int Again; }");
+        _now = _now.AddMinutes(1);
+
+        var reindexed = await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(targeted: false));
+
+        Assert.AreEqual(1, reindexed.ExtractedFileCount, "重建的文件必须被重新索引");
+        Assert.IsTrue(
+            (await _store.LoadSourceMaintenanceAsync(WorkspaceId, ScopeId)).Manifest.ContainsKey(file),
+            "指纹必须重新落地");
+        Assert.IsTrue((await _store.GetSymbolsByFileAsync(WorkspaceId, ScopeId, file)).Count > 0);
+    }
+
+    [TestMethod]
     public async Task AHintedPathThatVanishedIsNotDeletedAndStaysPendingWorkNotSilentlyLost()
     {
         var file = WriteFile("A.cs", "class A { }");
