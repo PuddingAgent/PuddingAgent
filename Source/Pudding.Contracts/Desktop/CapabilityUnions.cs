@@ -22,6 +22,8 @@ public sealed record DesktopCapabilityRequest
         DesktopDialogRequest? dialog = null,
         DesktopFilePickerRequest? filePicker = null,
         bool contexts = false,
+        BrowserContextCreateRequest? contextCreate = null,
+        BrowserContextCloseRequest? contextClose = null,
         bool shellStatus = false)
     {
         Navigate = navigate;
@@ -37,6 +39,8 @@ public sealed record DesktopCapabilityRequest
         Dialog = dialog;
         FilePicker = filePicker;
         Contexts = contexts;
+        ContextCreate = contextCreate;
+        ContextClose = contextClose;
         ShellStatus = shellStatus;
     }
 
@@ -75,6 +79,12 @@ public sealed record DesktopCapabilityRequest
 
     /// <summary>浏览器上下文清单查询：无参数（浏览器作用域，不接受调用方指定目标）。</summary>
     public bool Contexts { get; }
+
+    /// <summary>创建上下文（缺口 #1，变更类）。</summary>
+    public BrowserContextCreateRequest? ContextCreate { get; }
+
+    /// <summary>关闭上下文（缺口 #1，破坏性变更类）。</summary>
+    public BrowserContextCloseRequest? ContextClose { get; }
 
     /// <summary>只读 Shell 状态查询：无参数（Shell 是窗口作用域）。</summary>
     public bool ShellStatus { get; }
@@ -116,6 +126,12 @@ public sealed record DesktopCapabilityRequest
         new(filePicker: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForContexts() => new(contexts: true);
+
+    public static DesktopCapabilityRequest ForContextCreate(BrowserContextCreateRequest request) =>
+        new(contextCreate: request ?? throw new ArgumentNullException(nameof(request)));
+
+    public static DesktopCapabilityRequest ForContextClose(BrowserContextCloseRequest request) =>
+        new(contextClose: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForShellStatus() => new(shellStatus: true);
 
@@ -178,6 +194,8 @@ public sealed record DesktopCapabilityResponse
         DesktopClipboardContent? clipboard = null,
         DesktopDialogResult? dialog = null,
         DesktopFilePickerResult? filePicker = null,
+        DesktopContextInfo? contextCreated = null,
+        DesktopContextClosed? contextClosed = null,
         DesktopCapabilityError? error = null)
     {
         var payloadCount = (navigate is null ? 0 : 1)
@@ -193,7 +211,9 @@ public sealed record DesktopCapabilityResponse
             + (tabs is null ? 0 : 1)
             + (clipboard is null ? 0 : 1)
             + (dialog is null ? 0 : 1)
-            + (filePicker is null ? 0 : 1);
+            + (filePicker is null ? 0 : 1)
+            + (contextCreated is null ? 0 : 1)
+            + (contextClosed is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -214,6 +234,8 @@ public sealed record DesktopCapabilityResponse
         Clipboard = clipboard;
         Dialog = dialog;
         FilePicker = filePicker;
+        ContextCreated = contextCreated;
+        ContextClosed = contextClosed;
         Error = error;
     }
 
@@ -241,6 +263,12 @@ public sealed record DesktopCapabilityResponse
 
     /// <summary>上下文与页面清单。</summary>
     public DesktopContexts? Contexts { get; }
+
+    /// <summary>新建的上下文摘要（缺口 #1）。</summary>
+    public DesktopContextInfo? ContextCreated { get; }
+
+    /// <summary>被关闭的上下文 id（缺口 #1）。</summary>
+    public DesktopContextClosed? ContextClosed { get; }
 
     /// <summary>标签页操作结果（含剩余清单）。</summary>
     public DesktopTabsResult? Tabs { get; }
@@ -290,6 +318,12 @@ public sealed record DesktopCapabilityResponse
 
     public static DesktopCapabilityResponse FromTabs(DesktopTabsResult result) =>
         new(tabs: result ?? throw new ArgumentNullException(nameof(result)));
+
+    public static DesktopCapabilityResponse FromContextCreated(DesktopContextInfo context) =>
+        new(contextCreated: context ?? throw new ArgumentNullException(nameof(context)));
+
+    public static DesktopCapabilityResponse FromContextClosed(DesktopContextClosed closed) =>
+        new(contextClosed: closed ?? throw new ArgumentNullException(nameof(closed)));
 
     public static DesktopCapabilityResponse FromClipboard(DesktopClipboardContent content) =>
         new(clipboard: content ?? throw new ArgumentNullException(nameof(content)));
