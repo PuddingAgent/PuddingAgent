@@ -113,3 +113,31 @@
 ⇒ 该键帽**不属于应用**：它是纯白、不随主题（应用内同类元素都会走 caption/border token），且只在某一两张截图里出现。最可能是**截图/录制软件叠加的按键提示或标注**。结论登记在此，避免后续再重复排查；若它确实来自某款工具，确认一下即可。
 
 （保留一句诚实的余地：截图是唯一证据来源，无法排除"某个只在特定交互后出现的应用元素"。如果你在实机里看到它、并能给出触发步骤，我按步骤复现后再定位。）
+
+## 8. 第四批截图：浅色模式两处宿主表面缺陷（2026-10-02）
+
+第四批截图（设置页 + 两处标注"颜色"）暴露了**两个真实缺陷，根因是同一个**：`ApplyWorkbenchAppearance()` 只作用在**主工作台那一个 WebView2** 上，标题栏按钮与工具区浏览器表面都没被覆盖。
+
+### 8.1 缺陷一：浅色下标题栏按钮与白色高度相似、无法分辨（用户报告）
+
+窗口使用 `ExtendsContentIntoTitleBar = true` + `SetTitleBar(TitleBar)`，此时最小化/最大化/关闭**不再自动跟随应用主题**；系统深色 + 应用浅色时就是白色字形画在浅色标题栏上。仓库里**从未设置过** `TitleBar.Button*Color`（全仓 grep 无命中）。
+
+**修复**（`d106368`）：由外观落点显式给出两套值——字形 / 非激活字形 / hover 与按下背景（背景透明让 Mica 透出），取值来自 Foundation 新增的 `CaptionGlyphArgb`、`CaptionInactiveGlyphArgb`、`CaptionHoverBackgroundArgb`、`CaptionPressedBackgroundArgb`。测试断言：字形必须完全不透明、浅色方案用深字形且相对亮度 < 0.2、深色方案相反，**对比度 ≥ 7:1**；hover/按下背景必须半透明。
+
+### 8.2 缺陷二：浅色下工具区浏览器是一片纯黑（上张截图标注"浅色模式下的颜色"）
+
+实测同一张浅色截图里：Shell 工具首页 `#f6fafc`、工具工具栏 `#fdfdfe`，而**浏览器内容区 `#121212`** —— 那是 Chromium 在 UA 深色下的 `about:blank` 画布。工具区浏览器走 `WebView2BrowserRuntime` 的**独立** WebView2（`WinUiBrowserSurfaceHost`），从未拿到 `DefaultBackgroundColor` / `PreferredColorScheme`。
+
+**修复**（`d106368`）：WinUI 版 `IBrowserSurfaceHost` 增加 `ApplyAppearance(argb, scheme)`（WPF/archive 版接口不动，`Tests/PuddingDesktop.Tests` 的替身不受影响）；`WinUiBrowserSurfaceHost` 记住最近一次设置、对**新建表面自动继承**（避免"先开浏览器再切主题"复现黑画布）；`MainWindow` 在浏览器就绪后立刻同步一次，并在每次外观变化时同步。
+
+### 8.3 同一份判断
+
+新增 Foundation `WorkbenchPreferredColorScheme` + `PreferredColorSchemeFor`（**System 必须映射为 UA `Auto`**，不能把宿主选择冒充成系统偏好），`MainWindow` 的 `ToColor` / `ToWebView2Scheme` 是唯一映射点，三处宿主表面（标题栏按钮、工具区浏览器、主工作台）共用同一份判断。
+
+### 8.4 证据与未验收
+
+`dotnet test Source/PuddingDesktop.FoundationTests` → **90 passed / 0 failed**（+4）；`dotnet test Tests/PuddingDesktop.Tests` → **259 passed / 0 failed**；Desktop 完整链接构建（重定向输出避开运行中实例文件锁）→ **0 错误**。
+
+**未验收**：两处修复都只在"宿主表面"层面，**必须重启 Desktop 才能看到**（本机运行中的实例未被停止或重启）。需要复核：浅色/深色下标题栏按钮的字形与 hover 观感；浅色/深色下工具区浏览器（含 `about:blank` 与真实网页）的画布颜色；切换主题时两者是否同步变化。§8.1 的**根因判断**（ExtendsContentIntoTitleBar 导致不再跟随主题 + 从未显式设置）有代码证据，但最终确认仍需这次重启。
+
+另：本批截图的右上角又出现 `Esc` 键帽（位置随光标移动）——与 §7.3 的结论一致（截图/录制工具叠加），应用产物中 chat 页无任何源渲染它。
