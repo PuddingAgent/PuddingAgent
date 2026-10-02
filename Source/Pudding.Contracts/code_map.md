@@ -1,3 +1,18 @@
+---
+title: Pudding.Contracts CodeMAP
+author: hyfree
+date: 2026-10-01
+last_reviewed: 2026-10-02
+status: active
+description: "CapabilityResult<T>：成功携带类型化输出，失败携带结构化领域错误。不用异常表达业务失败，因为跨进程失败需要区分「未执行 / 可能已产生副作用 / 可重试」。 default(CapabilityResult<T>) 是未初始化状态：IsSuccess=false、读 Error/Value 取红（抓「忘记赋值」）。"
+categories: [docs]
+tags: [code, map]
+related_docs: [Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md, Docs/00_changelog/2026Year/10/2026-10-02-Pudding.Contracts-code_map迁出的变更记录.md]
+related_files: [Docs/00_changelog/2026Year/10/2026-10-02-Pudding.Contracts-code_map迁出的变更记录.md]
+slug: code-map
+draft: false
+---
+
 # Pudding.Contracts CodeMAP
 
 > 平台与传输无关的**契约叶程序集**：接口 · 不可变 DTO · 能力标识 · 错误语义 · 审计形状
@@ -33,8 +48,8 @@
 
 | 成员 | 用途 |
 |------|------|
-| `DesktopCapabilityRequest` | 四选一：`ForNavigate` / `ForJavascript` / `ForNotification` / `ForPageState`；`Target` 从分支取（通知类为 `null`），`ExpectedPageVersion` 只对前两者有意义 |
-| `DesktopCapabilityResponse` | 五选一（四类类型化输出 + `Failure`）；构造期拒绝「成功 + 错误」歧义。存在理由：让执行器接缝（`IDesktopCapabilityExecutor`）与 UI 实现**都不依赖 proto** |
+| `DesktopCapabilityRequest` | 判别联合（每个能力一个分支 + 工厂 `For*`）：导航/脚本/通知/页面状态/快照/定位/交互/等待/标签页/上下文清单/剪贴板/对话框/Picker/Shell 状态。`Target` 从分支取（无页面目标的为 `null`）；构造期保证「恰好一个分支非空」 |
+| `DesktopCapabilityResponse` | 判别联合（每个能力一个类型化输出 + `Failure`）；构造期拒绝「成功 + 错误」歧义。存在理由：让执行器接缝与 UI 实现**都不依赖 proto**；新增能力在此追加分支与 `From*` 工厂 |
 
 ## 错误语义（`CapabilityErrors.cs`）
 
@@ -59,6 +74,14 @@
 | `ApiInterfaces.cs` | `IPuddingDesktopApi` → `IPuddingDesktopWebViewApi`（Navigate / ExecuteJavascript / GetPageState）+ `IPuddingDesktopShellApi`（ShowNotification）。全部带 `DesktopCallContext` 与 `CancellationToken` |
 | `Desktop/LocateContracts.cs` | 元素定位契约：`DesktopLocatorKind`（10 策略 + 线名真源）、`DesktopLocator`、`BrowserLocateRequest`（**Ref 必须携带来源 PageVersion**，构造期强制）、`DesktopElementRef`（必须带有效版本）、`DesktopLocateResult`（命中 0 ≠ 被截断） |
 | `CapabilityEndpoint.cs` | Core 发布的**能力通道端点描述**：形态（NamedPipe / LoopbackHttp2 / Tls）+ 地址 + 协议版本 + Core 实例 ID；`ToEndpointString()`/`TryParse` 严格解析。**没有任何凭据字段**（凭据由 Desktop 主机侧注入），地址形态受约束（明文只允许回环、TLS 只能 https、URI 不许带凭据/查询/片段） |
+
+| `Desktop/BrowserCapabilitySurface.cs` | **窄端口** `IDesktopBrowserCapabilitySurface`：能力通道**能覆盖**的九个浏览器操作。刻意窄（`IBrowserPage` 约 35 个成员 ⇒ 宽接口整替会让二十多个成员只能在运行期抛 `NotSupported`）。约定：参数顺序与 `DesktopSession` 同名方法一致、结果一律 `CapabilityResult<T>` 不抛异常、两个实现必须给出**同形**结果 |
+
+| `Desktop/DesktopCapabilityCallContextFactory.cs` | `IDesktopCapabilityCallContextFactory`：为一次能力调用产生 `DesktopCallContext`（实例 ID 来自活动会话/Bridge 连接、每次新 `OperationId`、期限来自配置）。工具侧只有业务参数，这三个字段不能由调用方猜。**不产生调用方身份** |
+
+| `Desktop/ContextManagementContracts.cs` | 上下文**管理**（缺口 #1 的契约齿轮，**待接线**）：`BrowserContextCreateRequest`/`BrowserContextCloseRequest`/`DesktopContextClosed` + 窄端口 `IDesktopContextCapabilitySurface`（两个写操作）。单开端口而非并入上面那个：现有九个操作是页面作用域，这两个是上下文作用域 |
+
+
 
 > 与方案初稿的差异（有意）：初稿示例写 `Task<NavigateResult>`；实际返回 `Task<CapabilityResult<NavigateResult>>`，
 > 否则领域错误只能靠异常穿越流边界，丢「未执行/可能已生效/可重试」语义。

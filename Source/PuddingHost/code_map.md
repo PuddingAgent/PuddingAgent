@@ -1,3 +1,18 @@
+---
+title: PuddingHost CodeMAP
+author: hyfree
+date: 2026-08-07
+last_reviewed: 2026-10-02
+status: active
+description: 飞书 WS 底座在 ../../src/HarnessAgent/Core/Connectors/Feishu/FeishuWebSocket.cs：端点发现 HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 Starting 100s。
+categories: [docs]
+tags: [code, map]
+related_docs: [Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md]
+related_files: [Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md]
+slug: code-map
+draft: false
+---
+
 # PuddingHost CodeMAP
 
 > 唯一 Host 组合根 | Console 与 Desktop 共用 DI · Browser Bridge · 飞书连接器
@@ -26,7 +41,13 @@
 | `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge） |
 | `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 代理 |
 | `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理 |
-| `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（仅 DesktopChild + BrowserAutomationEnabled） |
+| `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（仅 DesktopChild + BrowserAutomationEnabled）；同时注册**窄端口**（路由实现）与能力调用上下文工厂 |
+
+| `BrowserBridge/BridgeBrowserCapabilitySurface.cs` | 窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败） |
+
+| `BrowserBridge/TransportRoutedBrowserCapabilitySurface.cs` | 组合根按 `DesktopTransportRouting` **二选一**（通道就绪走通道，否则 Bridge，两者都不可用则如实失败）；同文件含 `DesktopTransportUsageTracker`（退役判据的计数来源）。硬要求：**同一次操作绝不执行两次** |
+
+| `Hosting/ConnectedDesktopCallContextFactory.cs` | 能力调用上下文工厂实现：Desktop 实例 ID 有两个**真实来源**（活动能力通道会话 → Bridge 当前连接），都没有则返回 `null`（不猜实例 ID） |
 
 ## 飞书连接器
 
