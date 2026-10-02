@@ -74,28 +74,61 @@ internal sealed class TransportRoutedBrowserCapabilitySurface(
     // ── 上下文管理（缺口 #1）：同一套决策；组合根传入的两个实现都实现了这个端口。──
 
     /// <summary>
-    /// 第一阶段观测：副作用类能力在缺失权限证据时**只记录**，不拒绝
-    /// （入口与证据来源见 Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md）。
+    /// **第二阶段**：副作用类能力的权限证据闸门（fail closed）。
+    ///
+    /// <para>
+    /// 放行：`decision=allowed`（guard 批准）与 `decision=not-required`（未配置 guard ⇒ 策略上无人要求审批）。
+    /// 拒绝：证据缺失（`null` ⇒ 本次调用**没有走工具层**）或证据为 `denied`/无法识别。
+    /// </para>
+    /// <para>
+    /// 为什么只在这里拦：能力接缝是本进程内唯一的派发点，而 Desktop 侧看不到 Core 的审批结论
+    /// （见 Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md 的方案取舍）。
+    /// </para>
     /// </summary>
-    private void ObserveEvidence(DesktopCallContext call)
+    /// <typeparam name="T">能力结果类型。</typeparam>
+    /// <returns>拒绝结果；放行时为 <c>null</c>。</returns>
+    private CapabilityResult<T>? RejectWithoutEvidence<T>(DesktopCallContext call)
     {
-        if (string.IsNullOrEmpty(call.PermissionEvidenceSummary))
+        var summary = call.PermissionEvidenceSummary;
+        if (string.IsNullOrEmpty(summary))
         {
+            // 同一计数沿用第一阶段：干净窗口里它应当是 0，非 0 即"有调用方绕过工具层"。
             usage.RecordMissingEvidence();
+            return CapabilityResult<T>.Failure(DesktopCapabilityError.Unauthorized(
+                "side-effecting capability requires permission evidence; " +
+                "this call did not originate from the approved tool layer"));
         }
+
+        // 摘要形态：decision=<值>;source=<来源>（见 BrowserAgentToolBase.CurrentPermissionEvidenceSummary）。
+        if (!summary.Contains("decision=allowed", StringComparison.Ordinal)
+            && !summary.Contains("decision=not-required", StringComparison.Ordinal))
+        {
+            return CapabilityResult<T>.Failure(DesktopCapabilityError.Unauthorized(
+                $"permission evidence does not permit this capability ({summary})"));
+        }
+
+        return null;
     }
 
     public Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
         BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
     {
-        ObserveEvidence(call);
+        if (RejectWithoutEvidence<DesktopContextInfo>(call) is { } rejected)
+        {
+            return Task.FromResult(rejected);
+        }
+
         return InvokeContextAsync((surface, ct) => surface.CreateContextAsync(request, call, ct), cancellationToken);
     }
 
     public Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
         BrowserContextCloseRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
     {
-        ObserveEvidence(call);
+        if (RejectWithoutEvidence<DesktopContextClosed>(call) is { } rejected)
+        {
+            return Task.FromResult(rejected);
+        }
+
         return InvokeContextAsync((surface, ct) => surface.CloseContextAsync(request, call, ct), cancellationToken);
     }
 
@@ -135,14 +168,22 @@ internal sealed class TransportRoutedBrowserCapabilitySurface(
     public Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
         BrowserTabsRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
     {
-        ObserveEvidence(call);
+        if (RejectWithoutEvidence<DesktopTabsResult>(call) is { } rejected)
+        {
+            return Task.FromResult(rejected);
+        }
+
         return InvokeAsync((surface, ct) => surface.TabsAsync(request, call, ct), cancellationToken);
     }
 
     public Task<CapabilityResult<NavigateResult>> NavigateAsync(
         NavigateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
     {
-        ObserveEvidence(call);
+        if (RejectWithoutEvidence<NavigateResult>(call) is { } rejected)
+        {
+            return Task.FromResult(rejected);
+        }
+
         return InvokeAsync((surface, ct) => surface.NavigateAsync(request, call, ct), cancellationToken);
     }
 
@@ -157,7 +198,11 @@ internal sealed class TransportRoutedBrowserCapabilitySurface(
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
     {
-        ObserveEvidence(call);
+        if (RejectWithoutEvidence<DesktopInteractionResult>(call) is { } rejected)
+        {
+            return Task.FromResult(rejected);
+        }
+
         return InvokeAsync((surface, ct) => surface.InteractAsync(request, call, ct), cancellationToken);
     }
 
@@ -168,7 +213,11 @@ internal sealed class TransportRoutedBrowserCapabilitySurface(
     public Task<CapabilityResult<JavascriptResult>> ExecuteJavascriptAsync(
         JavascriptRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
     {
-        ObserveEvidence(call);
+        if (RejectWithoutEvidence<JavascriptResult>(call) is { } rejected)
+        {
+            return Task.FromResult(rejected);
+        }
+
         return InvokeAsync((surface, ct) => surface.ExecuteJavascriptAsync(request, call, ct), cancellationToken);
     }
 
