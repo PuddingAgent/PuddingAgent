@@ -15,17 +15,31 @@ public sealed class SessionEventStreamService : ISessionEventStream
     private readonly ICommittedEventSignal _signal;
     private readonly ILogger<SessionEventStreamService> _logger;
     private readonly StreamMetrics _metrics;
+    private readonly TimeSpan _pollInterval;
+    private readonly TimeSpan _heartbeatInterval;
+
+    /// <summary>Durable-poll cadence of the live phase (ADR-057: the shared channel may drop a notification).</summary>
+    public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>Heartbeat cadence of the live phase.</summary>
+    public static readonly TimeSpan DefaultHeartbeatInterval = TimeSpan.FromSeconds(15);
 
     public SessionEventStreamService(
         IConversationEventStore eventStore,
         ICommittedEventSignal signal,
         ILogger<SessionEventStreamService> logger,
-        StreamMetrics metrics)
+        StreamMetrics metrics,
+        TimeSpan? pollInterval = null,
+        TimeSpan? heartbeatInterval = null)
     {
         _eventStore = eventStore;
         _signal = signal;
         _logger = logger;
         _metrics = metrics;
+        // Deliberately injectable so the live phase (durable poll, heartbeat, waiter replacement) is testable
+        // without a 15-second test; production keeps the defaults above.
+        _pollInterval = pollInterval ?? DefaultPollInterval;
+        _heartbeatInterval = heartbeatInterval ?? DefaultHeartbeatInterval;
     }
 
     /// <summary>
@@ -55,63 +69,71 @@ public sealed class SessionEventStreamService : ISessionEventStream
 
         _metrics.RecordConnectionOpen();
 
-        // Phase 1: Read current head and replay from Event Store.
-        var nextAfter = afterExclusive;
-        var bounds = await _eventStore.GetBoundsAsync(sessionId, ct);
-        var head = bounds.MaxSequence ?? 0;
-        var replayCount = 0L;
+        // Phase 1: subscribe BEFORE reading the head. A commit that happens while this connection is being
+        // set up then has a waiter already listening, instead of depending on one notification that may have
+        // been broadcast (and consumed elsewhere) before the waiter existed.
+        var (notificationCts, notificationTask) = StartNotificationWaiter(sessionId, afterExclusive, ct);
 
-        while (nextAfter < head && !ct.IsCancellationRequested)
+        try
         {
-            var batch = await _eventStore.ReadForwardAsync(
-                sessionId, nextAfter, throughInclusive: head, limit: 256, ct);
+            var nextAfter = afterExclusive;
 
-            if (batch.Events.Count == 0) break;
+            // The replay's upper bound is read ONCE and frozen. Re-reading it after every 256-event batch is
+            // what made a reconnect read the whole conversation index over and over: the frozen bound plus the
+            // live phase below still delivers everything, but each batch no longer re-walks the session.
+            var bounds = await _eventStore.GetBoundsAsync(sessionId, ct);
+            var replayThrough = bounds.MaxSequence ?? 0;
+            var replayCount = 0L;
 
-            foreach (var evt in batch.Events)
+            while (nextAfter < replayThrough && !ct.IsCancellationRequested)
             {
-                if (ct.IsCancellationRequested) yield break;
-                if (evt.Sequence <= nextAfter) { _metrics.RecordDuplicateEvent(); continue; }
-                // Phase 1 = 连接建立时的历史追赶：帧上显式标记 replay，消费端据此区分
-                // 「历史事件」与「此刻发生的事件」（两者原本在帧上不可区分）。
-                yield return ToEnvelope(evt) with { IsReplay = true };
-                nextAfter = evt.Sequence;
-                replayCount++;
+                var batch = await _eventStore.ReadForwardAsync(
+                    sessionId, nextAfter, throughInclusive: replayThrough, limit: 256, ct);
+
+                if (batch.Events.Count == 0) break;
+
+                foreach (var evt in batch.Events)
+                {
+                    if (ct.IsCancellationRequested) yield break;
+                    if (evt.Sequence <= nextAfter) { _metrics.RecordDuplicateEvent(); continue; }
+                    // Phase 1 = 连接建立时的历史追赶：帧上显式标记 replay，消费端据此区分
+                    // 「历史事件」与「此刻发生的事件」（两者原本在帧上不可区分）。
+                    yield return ToEnvelope(evt) with { IsReplay = true };
+                    nextAfter = evt.Sequence;
+                    replayCount++;
+                }
+
+                // A short batch is the end of this replay; the frozen bound is never refreshed here — events
+                // appended while replaying belong to the live phase, which is entered right below.
+                if (batch.Events.Count < 256) break;
             }
 
-            if (batch.Events.Count < 256) break;
-            bounds = await _eventStore.GetBoundsAsync(sessionId, ct);
-            head = bounds.MaxSequence ?? 0;
-        }
+            _metrics.RecordReplayEvents(replayCount);
 
-        _metrics.RecordReplayEvents(replayCount);
+            // Phase 2: Live — notification-driven reads + periodic head poll + inline heartbeat.
+            // The durable poll stays: CommittedEventSignal hands each broadcast to a single reader of a shared
+            // channel, so no subscriber may assume it receives every notification.
+            var lastHeartbeat = DateTimeOffset.UtcNow;
+            var heartbeatInterval = _heartbeatInterval;
+            var pollInterval = _pollInterval;
 
-        // Phase 2: Live — notification-driven reads + periodic head poll + inline heartbeat.
-        var lastHeartbeat = DateTimeOffset.UtcNow;
-        var heartbeatInterval = TimeSpan.FromSeconds(15);
-        var pollInterval = TimeSpan.FromSeconds(1);
-
-        // Start notification waiter
-        var notificationTask = WaitForNotificationAsync(sessionId, nextAfter, ct);
-
-        while (!ct.IsCancellationRequested)
-        {
-            var delayTask = Task.Delay(pollInterval, ct);
-            var completed = await Task.WhenAny(notificationTask, delayTask);
-            if (ct.IsCancellationRequested) break;
-
-            if (completed == notificationTask)
+            while (!ct.IsCancellationRequested)
             {
-                // Notification received or completed (possibly from cancellation)
-                bounds = await _eventStore.GetBoundsAsync(sessionId, ct);
-                var newHead = bounds.MaxSequence ?? 0;
+                var delayTask = Task.Delay(pollInterval, ct);
+                var completed = await Task.WhenAny(notificationTask, delayTask);
+                if (ct.IsCancellationRequested) break;
 
-                if (newHead > nextAfter)
+                if (completed == notificationTask)
                 {
-                    while (nextAfter < newHead && !ct.IsCancellationRequested)
+                    // Freeze this drain's upper bound too: events appended after it are picked up by the next
+                    // notification or by the poll below, instead of extending this loop's head forever.
+                    var newHead = (await _eventStore.GetBoundsAsync(sessionId, ct)).MaxSequence ?? 0;
+                    var drainThrough = newHead;
+
+                    while (nextAfter < drainThrough && !ct.IsCancellationRequested)
                     {
                         var batch = await _eventStore.ReadForwardAsync(
-                            sessionId, nextAfter, throughInclusive: newHead, limit: 256, ct);
+                            sessionId, nextAfter, throughInclusive: drainThrough, limit: 256, ct);
 
                         if (batch.Events.Count == 0) break;
 
@@ -125,46 +147,109 @@ public sealed class SessionEventStreamService : ISessionEventStream
                         }
 
                         if (batch.Events.Count < 256) break;
-                        bounds = await _eventStore.GetBoundsAsync(sessionId, ct);
-                        newHead = bounds.MaxSequence ?? 0;
                     }
+
+                    // Re-subscribe: the completed waiter is cancelled and awaited first, so it cannot keep
+                    // consuming notifications this new waiter is waiting for.
+                    (notificationCts, notificationTask) = await ReplaceNotificationWaiterAsync(
+                        sessionId, nextAfter, ct, notificationCts, notificationTask).ConfigureAwait(false);
+                    lastHeartbeat = DateTimeOffset.UtcNow;
                 }
-
-                // Re-subscribe
-                notificationTask = WaitForNotificationAsync(sessionId, nextAfter, ct);
-                lastHeartbeat = DateTimeOffset.UtcNow;
-            }
-            else
-            {
-                // Poll timeout — check for new events (in case notification was dropped) and heartbeat
-                bounds = await _eventStore.GetBoundsAsync(sessionId, ct);
-                var pollHead = bounds.MaxSequence ?? 0;
-
-                if (pollHead > nextAfter)
+                else
                 {
-                    // Events available but notification didn't fire — catch up
-                    var batch = await _eventStore.ReadForwardAsync(
-                        sessionId, nextAfter, throughInclusive: pollHead, limit: 256, ct);
+                    // Poll timeout — check for new events (in case notification was dropped) and heartbeat
+                    var pollHead = (await _eventStore.GetBoundsAsync(sessionId, ct)).MaxSequence ?? 0;
 
-                    foreach (var evt in batch.Events)
+                    if (pollHead > nextAfter)
                     {
-                        if (ct.IsCancellationRequested) yield break;
-                        if (evt.Sequence <= nextAfter) continue;
-                        yield return ToEnvelope(evt);
-                        nextAfter = evt.Sequence;
-                    }
+                        // Events available but notification didn't fire — catch up, bounded by the head read
+                        // above, then re-subscribe since we consumed events.
+                        var drainThrough = pollHead;
 
-                    // Re-subscribe since we consumed events
-                    notificationTask = WaitForNotificationAsync(sessionId, nextAfter, ct);
-                    lastHeartbeat = DateTimeOffset.UtcNow;
-                }
-                else if (DateTimeOffset.UtcNow - lastHeartbeat > heartbeatInterval)
-                {
-                    yield return HeartbeatEnvelope(sessionId, nextAfter);
-                    lastHeartbeat = DateTimeOffset.UtcNow;
+                        while (nextAfter < drainThrough && !ct.IsCancellationRequested)
+                        {
+                            var batch = await _eventStore.ReadForwardAsync(
+                                sessionId, nextAfter, throughInclusive: drainThrough, limit: 256, ct);
+
+                            if (batch.Events.Count == 0) break;
+
+                            foreach (var evt in batch.Events)
+                            {
+                                if (ct.IsCancellationRequested) yield break;
+                                if (evt.Sequence <= nextAfter) continue;
+                                yield return ToEnvelope(evt);
+                                nextAfter = evt.Sequence;
+                            }
+
+                            if (batch.Events.Count < 256) break;
+                        }
+
+                        (notificationCts, notificationTask) = await ReplaceNotificationWaiterAsync(
+                            sessionId, nextAfter, ct, notificationCts, notificationTask).ConfigureAwait(false);
+                        lastHeartbeat = DateTimeOffset.UtcNow;
+                    }
+                    else if (DateTimeOffset.UtcNow - lastHeartbeat > heartbeatInterval)
+                    {
+                        yield return HeartbeatEnvelope(sessionId, nextAfter);
+                        lastHeartbeat = DateTimeOffset.UtcNow;
+                    }
                 }
             }
         }
+        finally
+        {
+            // Client disconnect / shutdown: release this wait cycle so no waiter outlives the connection.
+            try
+            {
+                notificationCts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // already replaced and disposed
+            }
+
+            notificationCts.Dispose();
+        }
+    }
+
+    /// <summary>Starts one wait cycle: its own linked CTS plus the waiter task using that CTS's token.</summary>
+    private (CancellationTokenSource Cts, Task Task) StartNotificationWaiter(
+        string sessionId,
+        long knownHead,
+        CancellationToken ct)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        return (cts, WaitForNotificationAsync(sessionId, knownHead, cts.Token));
+    }
+
+    /// <summary>
+    /// Replaces the wait cycle of this connection: the previous waiter is cancelled and awaited before the new
+    /// one subscribes, so a stale waiter can no longer steal a broadcast (a shared channel hands each value to
+    /// exactly one reader, so a dropped-but-running waiter would consume the notification the new one needs).
+    /// </summary>
+    private async Task<(CancellationTokenSource Cts, Task Task)> ReplaceNotificationWaiterAsync(
+        string sessionId,
+        long knownHead,
+        CancellationToken ct,
+        CancellationTokenSource previousCts,
+        Task previousTask)
+    {
+        previousCts.Cancel();
+
+        try
+        {
+            await previousTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected: the wait cycle was replaced. Cancellation is not a successful preparation.
+        }
+        finally
+        {
+            previousCts.Dispose();
+        }
+
+        return StartNotificationWaiter(sessionId, knownHead, ct);
     }
 
     private async Task WaitForNotificationAsync(string sessionId, long knownHead, CancellationToken ct)
