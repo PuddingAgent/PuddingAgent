@@ -11,7 +11,7 @@ export { buildLongMarkdown };
 
 const BASE = process.env.PUDDING_BASE || 'http://localhost';
 const PORT = process.env.CDP_PORT || '9333';
-// 输出固定在仓库 temp/ 下（Agents-Hygiene.md：测试输出 → temp/test-out，临时产物 → temp/）
+// 输出固定在仓库 temp/ 下（Docs/Conventions/Agents-Hygiene.md：测试输出 → temp/test-out，临时产物 → temp/）
 const OUT = process.env.PERF_OUT || 'temp/perf/out';
 mkdirSync(OUT, { recursive: true });
 

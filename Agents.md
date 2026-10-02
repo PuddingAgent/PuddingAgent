@@ -88,15 +88,17 @@ dev-up 是源码开发环境的调试和代理 Python 工具，方便快速启�
 
 ```bash
 # 只启动前端端，然后使用命令行启动后端，用于调试后端服务：
-python E:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --frontend-only
+python dev-up.py --frontend-only
 # 关闭（如果你想手动启动，那么先down，否则会占用端口）
-python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
+python dev-up.py --down
 # 重启
- python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --restart
- # 重新编译，用于排除编译缓存问题：
- python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --rebuild
- python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --status
+python dev-up.py --restart
+# 重新编译，用于排除编译缓存问题：
+python dev-up.py --rebuild
+python dev-up.py --status
 ```
+
+脚本本体在 `Tools/Dev/dev-up.py`（2026-10-02 归位）；仓库根 `dev-up.py` / `dev-up.ps1` 是转发 shim，两种入口等价。
 
 ## 开发环境约定
 
@@ -192,7 +194,7 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 
 ## 仓库卫生与提交纪律（强制）
 
-完整规范见根目录 `Agents-Hygiene.md`；本节只列必须在每个任务里执行的动作。
+完整规范见 `Docs/Conventions/Agents-Hygiene.md`；本节只列必须在每个任务里执行的动作。
 
 1. **任务完成即提交**：每个原子任务完成并通过验证后立刻 `git commit`，禁止把多个任务的改动攒在一起；中断/转交前先提交已验证部分。**工作树不允许长期处于脏状态。**
 2. **精确暂存**：使用 `git add <明确文件路径列表>`，禁止裸 `git add -A` / `git add .`（工作树常混有他方并行 WIP）。

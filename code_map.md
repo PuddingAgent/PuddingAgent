@@ -27,8 +27,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 - 产品入口 `PuddingDesktop.exe` = **WinUI 3 Shell + WebView2 承载既有 Web UI**，以子进程方式启动并监督独立 ASP.NET Core。
 - 业务逻辑、Agent、Connector、数据库、Runtime 全在 **Core**（`core/PuddingAgent.exe --desktop-child`）；Shell 只负责窗口、系统集成与进程监督。
-- Console 入口仅用于开发/诊断；`dev-up.py` 只服务源码开发调试，不进入交付包。
-- 架构第一原则（组件独立 · 依赖方向由编译期强制 · 可测性优先 · 边界显式）、兼容性与补丁约定、仓库卫生纪律：见 [`Agents.md`](Agents.md) 与 [`Agents-Hygiene.md`](Agents-Hygiene.md)。
+- Console 入口仅用于开发/诊断；`dev-up.py`（本体 `Tools/Dev/dev-up.py`，根目录为转发 shim）只服务源码开发调试，不进入交付包。
+- 架构第一原则（组件独立 · 依赖方向由编译期强制 · 可测性优先 · 边界显式）、兼容性与补丁约定、仓库卫生纪律：见 [`Agents.md`](Agents.md) 与 [`Agents-Hygiene.md`](Docs/Conventions/Agents-Hygiene.md)。
 
 ## 2. 子项目索引
 
@@ -248,7 +248,7 @@ Chat first paint → AgentConversationProjectionService（最近 20 条可见消
 
 | 文档 | 主题 |
 |------|------|
-| [`Agents.md`](Agents.md) / [`Agents-Hygiene.md`](Agents-Hygiene.md) / [`How-Debuge.md`](How-Debuge.md) | 仓库级开发与提交纪律 / 调试与日志诊断入口 |
+| [`Agents.md`](Agents.md) / [`Agents-Hygiene.md`](Docs/Conventions/Agents-Hygiene.md) / [`How-Debuge.md`](How-Debuge.md) | 仓库级开发与提交纪律 / 调试与日志诊断入口 |
 | [`Docs/README.md`](Docs/README.md) | 文档总索引与建议阅读顺序 |
 | [`Docs/架构.md`](Docs/架构.md) | 架构总览与阅读地图 |
 | [`Docs/07架构/README.md`](Docs/07架构/README.md) | 模块级架构分册与 **ADR 全表**（按编号查 ADR 走这里） |

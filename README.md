@@ -198,6 +198,7 @@ Runtime user data is stored under the configured DataRoot and must not be used a
 - [Orchestration backend execution plan](Docs/07架构/83通用Agent编排后端执行内核与ControlPlane施工图.md)
 - [Orchestration editor and component UI plan](Docs/07架构/84通用Agent编排蓝图编辑器与组件系统施工图.md)
 - [Workspace TODO, off-peak automation, questioner, and Goal mode](Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md)
+- [Acknowledgments / 致谢](Docs/thanks.md)
 
 ## License
 

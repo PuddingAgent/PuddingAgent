@@ -1,0 +1,38 @@
+# ============================================================
+# Pudding Agent - local development startup wrapper
+# ============================================================
+# Python owns the process management and reverse proxy logic.
+#
+# Usage:
+#   .\dev-up.ps1              # start
+#   .\dev-up.ps1 -Status      # show status
+#   .\dev-up.ps1 -Logs        # follow logs
+#   .\dev-up.ps1 -Down        # stop
+#   .\dev-up.ps1 -Restart     # restart
+#   .\dev-up.ps1 -Rebuild     # stop, rebuild backend, start
+#   .\dev-up.ps1 -Clear       # clear repository-local logs/temp after stop
+
+param(
+    [switch]$Down,
+    [switch]$Logs,
+    [switch]$Status,
+    [switch]$Restart,
+    [switch]$Rebuild,
+    [switch]$Clear,
+    [switch]$NoInstall
+)
+
+$ErrorActionPreference = "Stop"
+$Root = $PSScriptRoot
+$ArgsList = @()
+
+if ($Down) { $ArgsList += "--down" }
+if ($Logs) { $ArgsList += "--logs" }
+if ($Status) { $ArgsList += "--status" }
+if ($Restart) { $ArgsList += "--restart" }
+if ($Rebuild) { $ArgsList += "--rebuild" }
+if ($Clear) { $ArgsList += "--clear" }
+if ($NoInstall) { $ArgsList += "--no-install" }
+
+python (Join-Path $Root "dev-up.py") @ArgsList
+exit $LASTEXITCODE
