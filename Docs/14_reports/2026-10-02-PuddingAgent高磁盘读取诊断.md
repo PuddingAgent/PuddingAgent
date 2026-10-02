@@ -7,8 +7,8 @@ status: active
 description: 发送消息后的零游标 SSE 回放和边界扫描，以及后台代码索引逐符号关系清理，共同造成读取放大。
 categories: [docs, reports]
 tags: [diagnostics, sqlite, code-index, disk-io]
-related_docs: [Docs/08_how_debuge/05-常见症状.md]
-related_files: [Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs, Source/PuddingCodeIndex/Services/CompositeCodeIndexer.cs, Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs, Source/PuddingCodeIntelligence/CSharp/RoslynCSharpIndexer.cs, Source/PuddingPlatform/Services/ConversationEventStore.cs, Source/PuddingPlatform/Services/SessionEventStreamService.cs, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts]
+related_docs: [Docs/08_how_debuge/05-常见症状.md, Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md]
+related_files: [Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs, Source/PuddingCodeIndex/Contracts/CodeFileRecord.cs, Source/PuddingCodeIndex/Services/CompositeCodeIndexer.cs, Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs, Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs, Source/PuddingCodeIntelligence/CSharp/RoslynCSharpIndexer.cs, Source/PuddingFullTextIndex/Contracts/FullTextChangeSet.cs, Source/PuddingFullTextIndex/Infrastructure/Maintenance/MTimeComparison.cs, Source/PuddingPlatform/Services/ConversationEventStore.cs, Source/PuddingPlatform/Services/SessionEventStreamService.cs, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts, Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts]
 slug: reports-puddingagent-high-disk-read-2026-10-02
 draft: false
 ---
@@ -163,7 +163,7 @@ FROM conversation_events WHERE conversation_id=@cid;
 
 1. **发送消息的 SSE 游标与边界查询**：已有会话在发送前使用权威 bootstrap/checkpoint 游标，不能因投影路径未初始化 cursor 而从 0 重放全部历史；确认 send 与 projection-owned 状态的职责及重连逻辑。bounds 改用索引首尾查询，replay 固定有界快照 head，后续事件由 live 阶段连续衔接，避免每 256 条重新扫全部索引。覆盖新会话、已有长会话、发送前后开流、跨会话切换、重连、bootstrap 落后、空会话、非连续序号、裁剪缺口及并发追加。
 2. **代码索引清理 SQL**：Source/Target 删除拆成同一事务内两次索引精确删除，或设计等价的有界批量删除；覆盖入边、出边、自引用、跨文件符号、事务回滚、零符号文件与 RemoveFiles。先在独立 PuddingCodeIndex 组件测试，再接入。生产数据上的删除验证只能用 `temp/test-out` SQLite 在线备份副本。
-3. **无关文件导致全量重建**：区分“不属于任何支持语言的普通文件”与“支持语言但索引失败/项目配置变更”。Markdown 等普通文档变更不应升级全仓语言索引；项目文件、依赖配置、目录变更等仍需保留适当 reconcile。需覆盖混合语言、rename/delete 和真正失败的补偿路径。
+3. **精确索引维护**：按既定 C# FileSystemWatcher + 文件修改时间扫描方案，合并变化提示、比较持久文件指纹、形成真实变更集，再更新相应消费者及必要的语义依赖范围。Markdown 更新其全文内容，代码修改更新对应文件及受影响绑定，配置变更重新计算项目输入与覆盖集合的差异。遗漏通知、目录变更和失败通过校准与局部重试恢复，不再以“没有语言 owner/配置变化/增量失败”自动升级全仓重建。详见末尾 D。
 4. **性能收敛**：待上述修复后评估批量清理/连接缓存，避免只减少日志或放慢 worker 掩盖查询放大。
 
 交付后必须由外部控制器明确部署新 Core，再测静置、文档变更、单个代码文件变更、长会话 SSE 四种场景。对比相同时间窗口的进程读次数/字节、物理磁盘活动、索引水位与功能正确性。本任务没有执行修复或部署，不能宣称高读取已消除。
@@ -177,7 +177,7 @@ FROM conversation_events WHERE conversation_id=@cid;
 
 ## 代码级修复方案（待实施）
 
-本节是施工方案，示例用于明确算法与合同，**尚未修改产品代码、运行修复测试或部署**。建议拆成四个原子改动：A 边界 SQL、B SSE 回放/游标、C 索引关系删除、D 文件变更分类。A/C 可先各自在现有组件内独立验证；宿主接入与部署放在组件门禁之后。以下路径均相对仓库根。
+本节是施工方案，示例用于明确算法与合同，**本报告任务尚未修改产品代码、运行修复测试或部署**。建议分为 A 边界 SQL、B SSE 回放/游标、C 索引关系删除、D 精确索引维护；D 再按其组件边界分步交付。A/C 可先各自在现有组件内独立验证；宿主接入与部署放在组件门禁之后。以下路径均相对仓库根。
 
 ### A. 将事件边界查询改为两次索引端点查找
 
@@ -301,32 +301,97 @@ WHERE WorkspaceId=$workspaceId AND ProjectId=$projectId
 
 扩展现有 `Source/PuddingCodeIndexTests/Storage/SqliteCodeIndexStoreTests.cs` 和 `SqliteCodeIndexStoreRemoveFilesTests.cs`：多符号文件、入边/出边/自引用、同 ID 不同 scope、无关图保留、重复删除幂等、零符号文件、批内异常/取消回滚。大量无关关系夹具应证明删除代价由目标符号关联规模决定，不随整个 project 图规模重复线性增长。真实数据删除对照只在 SQLite 在线备份副本执行。
 
-### D. 为变更分类增加组件内显式能力
+### D. 优化 Watcher + 修改时间扫描，实现精确索引维护
 
-不要把 `CompositeCodeIndexer` 对所有不支持文件的 Failed 直接改成 Success；现有 `ICodeIndexFileUpdater` 明确约定拒绝文件是失败，改 Success 会虚增增量索引数并掩盖真实语言失败。也不要在 watcher 内另建 `.cs/.ts/.py` 白名单，避免与 `ILanguageCodeIndexer.SupportedExtensions` 产生第二真源。
+#### D1. 沿用既定设计，补齐已有功能
 
-建议在 `Source/PuddingCodeIndex/Contracts/` 新增可选分类端口 `ICodeIndexChangeClassifier` 和 disposition：
+以 [统一检索设计 §10](../12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md) 为依据：C# `FileSystemWatcher` 提供及时提示，修改时间/stat 扫描补漏，持久 manifest 与内容 hash 判定实际变化，既有 worker 执行局部提交。**撤销上一版“扩展名分类 → Ignore / Incremental / 全量 Reconcile”的施工建议**；配置变化和失败不再直接映射为全仓索引任务。`Reconcile` 的含义应是核对磁盘与 manifest 后生成差异，不能等同 `IndexWorkspaceAsync`。
 
-```csharp
-public enum CodeIndexChangeDisposition { Ignore, Incremental, Reconcile }
-public interface ICodeIndexChangeClassifier
-{
-    CodeIndexChangeDisposition ClassifyChangedFile(string filePath);
-}
+已检查的基础与缺口：
+
+- `CodeIndexWatcher` 已有轻量回调、噪声过滤和有界队列；`CodeIndexMaintenanceService` 已有合并/防抖。优化这条维护链路，不另起并行 worker，也不在回调里读文件或数据库。
+- `CodeIndexCalibrationService` 当前主要枚举**已索引路径**并清理消失记录，不能发现漏通知的新增文件，也没有完整的修改识别。扩展为磁盘清单与 manifest 的差异扫描，保留其删除保护和预算。
+- `CodeFileRecord` 当前只有路径、语言、`LastIndexedAtUtc` 等信息；“索引时间”不是源文件修改时间，不能作为源版本。需补源指纹和各消费者提交版本。
+- 全文组件已有 `FullTextChangeSet`、`MTimeComparison`、`MaintenanceCorpusScan` 和局部 `ApplyChangesAsync`：三源合流、重叠窗口、完整扫描才清理、扫描开始时间水位等机制应沿用。代码侧补齐等价合同；不让 `PuddingCodeIndex` 反向依赖 `PuddingCodeIntelligence`，也不为复用几行逻辑直接引用整个全文引擎。
+
+Git 的可借鉴点是先比较缓存 stat，再对必要候选比较内容，而不是每次读取全部文件。Git 自身也处理同时间粒度、同大小但内容改变的 racy 情况；Pudding 使用自身 manifest，不调用 `git status` 作为真源，未提交、未跟踪和非 Git 工作区同样必须维护。参见 [Git stat 与 racy 处理](https://git-scm.com/docs/racy-git)、[git update-index 的 refresh](https://git-scm.com/docs/git-update-index)。
+
+#### D2. 三源生成同一种变更集，指纹决定是否执行
+
+```text
+FileSystemWatcher → 合并路径提示 ─────┐
+启动/周期 mtime + stat 扫描 ──────────┼→ 候选路径 → 稳定读取/hash
+溢出/目录变化/深度分片校验 ───────────┘           → 内容/配置差异
+                                                → 消费者与语义影响计划
+                                                → 局部原子提交 + manifest
 ```
 
-由 `CompositeCodeIndexer` 实现：已注册语言的 `SupportedExtensions` 唯一决定 Incremental；组件内显式项目/依赖配置规则决定 Reconcile；其余普通文件 Ignore。配置名单应覆盖 `.sln/.slnx/.csproj/.props/.targets`、`Directory.Build.*`、`global.json/NuGet.config`、`tsconfig*.json/jsconfig*.json`、`package.json/pnpm-lock.yaml/pnpm-workspace.yaml`、`pyproject.toml/requirements*.txt/setup.py/setup.cfg`、`.gitignore/.editorconfig` 等实际影响已有语言索引的输入，并在测试中逐条说明范围。规则仅放一处，名单按语言工具链需求审阅，不能把所有 `.json/.yaml/.md` 泛化为项目配置。
+在代码索引合同/存储中增加持久 manifest 与维护待办。下面是**拟新增模型示意**，实际可拆为文件表和 provider 状态表，不能用一个成功标记替代所有消费者的提交状态：
 
-`CodeIndexMaintenanceService.IndexChangedFilesAsync` 在 directory/vanished 的既有处理之后、解析 descriptor 与调用 indexer之前，检查 `_fileUpdater is ICodeIndexChangeClassifier`：
+```csharp
+// 源状态：按 scope + 规范化路径登记；首次没有基线时必须处理。
+record SourceFingerprint(DateTimeOffset LastWriteTimeUtc, long Length,
+    string ContentHash); // hash 来自实际参与提取/解析的同一份内容
+// 消费者状态：全文与各语言 provider 分别推进。
+record AppliedFileVersion(string ProviderId, string ParserPolicyFingerprint,
+    string SemanticInputFingerprint, long AppliedVersion);
+// 持久维护账本另存 epoch、desiredVersion、待重试路径和成功扫描水位。
+```
 
-- Ignore：跳过普通文档，记录有界 Debug 或独立 ignored 计数；不增加 `IncrementallyIndexedFileCount`，不 enqueue scope。
-- Incremental：执行原逐文件更新；真实失败仍升级 reconcile。
-- Reconcile：交给原有全量调度器；同批多个配置变更折叠成一次。
-- updater 没有可选分类能力：保留原 fail-safe 行为。这是能力检测，不为旧 API 增加兼容适配层。
+判定顺序与不变量：
 
-删除/改名仍保留 `RemoveFilesAsync`，即使新扩展不被支持，也先清掉旧路径索引；目录变更、watcher 溢出、batch reconcile 的补偿不被 Ignore 覆盖。不修改 Host/Runtime DI；maintenance 在现有 updater 上检测可选接口，`PuddingCodeIndex` 不反向引用语言智能。
+1. **Watcher 是提示**：同路径重复 Changed 合并，处理时核对最终状态。rename 核对旧路径与新路径；目录变化校准相应子树/最近可读父目录。队列满、溢出和失去监听标记待校准，再由同一 worker 处理。
+2. **扫描优先读取元数据**：枚举实际文件与持久 manifest；新路径即使 mtime 很旧也必须处理，已知路径比较 LastWriteTimeUtc/Length 等 stat。mtime 使用 `>= scanStartWatermark - overlap` 保留边界候选，逐文件 stat 差异也独立产生候选，不能仅按“大于上次索引时间”跳过。无基线/时钟回拨触发范围核对，已有指纹仍可避免重复解析。
+3. **内容校验有预算**：stat 未变、没有通知、配置/解析器版本未变且不在深度核验/racy 窗口时，直接复用已提交结果；不重新读取文件正文或打开语言 workspace。Watcher 提示、stat 差异、可疑时间窗口及深度核验的路径稳定读取并计算 hash。hash 相同且语义输入相同，只刷新必要的源元数据，不改索引文档/图。
+4. **mtime 不是绝对证明**：保留时间戳的同大小编辑可绕过纯 stat；收到通知仍核验内容，漏通知由有预算的周期深度核验补偿。按既定设计保留查询时有界 current 验证和 stale/partial 状态，不能声称只靠 mtime 实时发现所有更改，也不能为此每轮 hash 全仓。
+5. **稳定读取再解析**：读取前后 stat、观察版本和 epoch 校验；内容在读取/解析期间改变则放弃结果、重新排队。支持语言绑定时，还校验参与解析的项目输入/依赖版本；不能 hash 磁盘新版本却提交 Roslyn 旧快照。时间戳相同的竞争由观察版本及必要内容复核补足。
+6. **删除需要可证实**：完整成功扫描才将“manifest 有、磁盘未见”转成删除；失败子树/离线根保留记录并标 incomplete。扫描期间变化的路径暂缓清理、重新核对，不能把 `File.Exists=false` 或权限错误当删除。目录校准不能调用全仓语言重建。
+7. **水位不掩盖失败**：成功补偿扫描使用扫描开始时刻作下一水位；扫描不完整或候选未成功提交，保留失败待办并按既有策略不推进该消费者扫描水位。Watcher 批次不推进扫描水位，文件提交版本与全范围水位分开。部分路径成功后可凭指纹跳过重复工作，失败路径退避重试。
 
-扩展已有 `CompositeCodeIndexerTests.cs`、`CodeIndexMaintenanceServiceTests.cs`：`.md` 不触发 scheduler；支持语言文件只增量更新；项目/依赖配置触发一次 scope；同批普通文档和代码不互相阻断；语言真正失败仍补偿；rename 到不支持扩展删除旧记录；目录/溢出 reconcile 保持。更新旧“无 owner 必须导致 scope”的测试，区分直接调用 IndexFileAsync 的 Failed 合同与 maintenance 的 Ignore 决策。
+#### D3. 从真实差异计算消费者和语义影响范围
+
+`CompositeCodeIndexer` 使用已注册语言能力与项目归属规划更新，维护服务不另建扩展名白名单。消费者可以返回 `NotApplicable`，这是能力路由结果，不是索引成功、失败或“忽略整个文件”的同义词。语言解析失败返回有路径/项目原因的待重试结果，不自动 enqueue 全仓。
+
+| 实际变化 | 精确更新计划 |
+|---|---|
+| Markdown 内容变更 | 向适用的全文消费者提交该文档更新；语言消费者无能力时 NotApplicable。若某语言工具链实际把该文档作为生成输入，沿其声明的依赖更新受影响输出 |
+| 代码内容变更 | 更新所属语言文件；根据符号/签名/导入等差异及反向依赖扩大到受影响文件/编译单元。正文 hash 不变但绑定输入变了，也需重新绑定 |
+| 项目/依赖/解析配置变更 | 语言侧重新评估受影响项目的源集合、引用与解析选项，比较配置/语义输入指纹，生成增删文件及重新绑定范围；全文只处理实际内容/覆盖差异 |
+| 排除规则变更 | 重新核对规则作用子树，按旧/新覆盖集合差异新增或移除各消费者记录；仍覆盖且内容/语义未变的文件不重写 |
+| 文件/目录 rename、删除、原子替换 | 根据最终磁盘事实和旧 manifest 清理旧路径、更新新路径及必要的路径/导入依赖，不要求每个子文件都有通知 |
+| 丢通知、启动恢复或 Watcher 溢出 | 执行 metadata 清单核对，派发新增/修改/可证实删除及尚未提交的语义待办；不重新解析所有未变文件 |
+
+语言工具链声明项目配置输入与依赖关系，不能以“某类配置扩展名”直接选全 scope。C# 的 `Directory.Build.props` 等确实可能影响多个项目，需由 MSBuild 评估给出影响范围；配置内容变化但有效输入未变可不重新绑定。类型签名变化可能让源文件未改的引用方失效，不能把“精确”误解为只处理发生 Changed 的路径。
+
+若某个语言 provider 暂时只能保证**受影响项目**的语义正确，明确返回项目级计划、原因和实际成本；该项目内文件可能全部受影响。这是能力边界，不能静默当成精确单文件或扩大到无关项目/全文。初次建立索引、不可兼容 schema/损坏索引重建仍走明确的初始化/重建操作，与日常补漏分开；普通失败不能借此退回全仓。
+
+#### D4. 同一解析批次与原子替换，避免“增量”重复打开全工程
+
+`RoslynCSharpIndexer.IndexFileAsync` 当前每次打开 workspace，且先 `ClearSymbolsForFileAsync`，之后分别 upsert 文件/符号/关系/引用。即使只调用逐文件 API，仍可能反复加载工程，并在失败时丢失旧结果；需要优化这条功能链路：
+
+- 新增语言侧批量更新接缝：按项目/配置版本复用一个有界 Roslyn workspace/编译快照，同批候选统一装载变更；无候选的 metadata 扫描不打开 MSBuild。项目评估变化时刷新相应快照，资源由既有维护所有者管理和释放。
+- 在内存中完成稳定内容提取和影响规划，再通过 `ICodeIndexStore` 的拟新增 `ReplaceFilesAsync` 事务接缝提交文件记录、符号、引用/关系及该消费者已应用指纹。事务失败保留旧完整产物，标 stale 并重试；不能提前 clear 后再提取。实现只依赖组件合同，不将 Roslyn 类型引入 CodeIndex。
+- 精确替换要区分引用/关系的**所有权**与目标依赖：重建该文件拥有的出边；稳定符号仍存在时保留其他文件拥有的有效入边，移除/改变目标符号则同步使依赖方失效并安排重新绑定。C 节拆 OR 可优化现有删除合同，但“删掉所有入边后只写回本文件出边”不能作为新精确替换合同。实际文件删除仍清除关联图并修复依赖，所有图查询都有 scope+索引约束。
+- 全文继续使用已有局部提取 → update/delete → commit → reader 刷新链路；SQLite 与 Lucene 分别提交，各自推进 provider 水位，不声称跨存储原子事务。失败侧幂等重试，已成功侧不反复重建。
+- 执行期间新变化推进 desiredVersion/dirtyAgain；提交只确认捕获的版本，较新变化继续补跑。多批语义更新完成前保持受影响范围 stale，必要时使用既定 generation 发布机制，不能把单个批次完成当整个项目 current。
+
+建议施工顺序：**源 manifest/变更判定纯逻辑 → 完整清单校准与持久待办 → store 原子替换 → 语言批量/依赖计划 → 既有维护链路接入**。各阶段先在 `PuddingCodeIndexTests`、`PuddingFullTextIndexTests`、`PuddingCodeIntelligenceTests` 对应边界独立验证，接入前维护相关子项目 code_map；不抽取反向依赖组件、不保留旧分类补丁作为新方案的终态。
+
+#### D5. 验收针对真实索引结果和工作量
+
+| 场景 | 必须观察到的后置条件 |
+|---|---|
+| 稳定基线、无修改的普通扫描 | 无内容解析、无索引文档/图改写、不开语言 workspace；允许有预算的 stat 枚举与账本写入，深度核验单独计量 |
+| 一条 Markdown 修改 | 正文搜索结果更新；只处理该文档及确有声明的依赖，不能以“没有语言 owner”失败或全仓重建 |
+| 一个代码正文/签名修改 | 符号与引用结果正确；受影响绑定完整更新，无关项目不重建；重复保存相同内容不重复解析 |
+| 项目配置修改 | 有效输入/覆盖差异决定更新范围，验证无效配置变动不重写、共享配置影响多个项目时不漏更新 |
+| 漏掉所有 Watcher 通知 | 扫描仍发现新增、修改、删除；新文件旧 mtime、mtime 相等边界、回拨均覆盖 |
+| 同大小同 mtime 内容修改 | 有通知时内容核验发现；无通知时深度预算扫描最终发现，发现前 current 验证不误报精确新鲜 |
+| rename/目录移动/删除重建 | 旧路径命中消失、新路径可检索，跨文件引用无悬挂；最终重新出现的文件不被 sweep |
+| 读取/解析失败、扫描不全、提交取消 | 旧完整结果保留且可见 stale，失败范围重试、不错误删除、不自动全仓重建 |
+| 解析期间再次修改、崩溃重启 | 旧任务不确认新版本；持久待办/启动校准恢复，索引与已应用指纹一致 |
+
+用可计数的文件访问/语言 updater/store 接缝断言读正文、解析文件、工程装载、图删除范围和 provider 提交次数；再在隔离真实索引验证新增/修改/删除后的搜索与引用结果。不能只断言 scheduler 没被调用或把事件队列清空当精确更新完成。
 
 ### 交付、部署与验收
 
@@ -335,12 +400,12 @@ public interface ICodeIndexChangeClassifier
 | A 边界 SQL | Platform 隔离 SQLite 功能与读取成本测试 | 长会话 bounds 查询不再读完整事件索引 |
 | B 游标与 SSE | Platform 事件流测试；前端 pnpm/Jest 连接、回放和发送测试 | 旧会话首次发送、第二次发送、刷新、断线重连无零游标全回放，且事件不丢失 |
 | C 图删除 | PuddingCodeIndex 独立 store/事务测试，真实数据备份副本对照 | 单文件代码变更及必要全量索引无逐符号全 scope 扫描 |
-| D 分类 | PuddingCodeIndex 独立 composite/maintenance/边界测试 | Markdown 变更不启动全仓语言索引，项目配置变更仍补偿 |
+| D 精确维护 | manifest/stat/hash 判定、三源变更集、原子替换、语言依赖计划与故障恢复的组件门禁 | 文档、代码、配置均按真实差异和受影响范围更新；漏通知扫描补足，无关文件不重复解析/改写 |
 
 本次仅补文档，不递增前端版本。实施 B 时按当时 `package.json` 版本递增修订号，不在方案里硬编码版本；用 pnpm 构建，将产物部署至新 Core 的 `wwwroot/admin`，核对页角版本/哈希。A/C/D 不改前端版本。
 
 构建/测试输出隔离到 `temp/build`、`temp/test-out`；涉及 Desktop 的 build/test/publish 串行，使用约定 `--artifacts-path temp/build/recovery`，先 restore/build，再同目录 `--no-restore`。已有组件修复在各自边界先测，不为本方案抽新宿主依赖或重构业务。每个原子任务更新受影响 code_map、写日志、精确暂存并独立提交。
 
-外部控制器部署到明确的新构建后，固定同一长会话与采样区间，分别验证空闲 60 秒、发送短消息、刷新/重连、改一个 Markdown、改一个代码文件、改一个项目配置。先用隔离 DataRoot/备份数据完成正确性验收，再做用户开发实例的受控性能复核；避免 dev-up 与 Desktop 同时持有同 DataRoot。
+外部控制器部署到明确的新构建后，固定同一长会话与采样区间，分别验证空闲 60 秒、发送短消息、刷新/重连、改一个 Markdown、改一个代码文件、改一个项目配置，以及 D5 的遗漏通知与失败恢复。先用隔离 DataRoot/备份数据完成正确性验收，再做用户开发实例的受控性能复核；避免 dev-up 与 Desktop 同时持有同 DataRoot。
 
-验收同时收集按文件的 platform/code-index 读取、进程增量、物理磁盘增量、SSE cursor/replayCount 与索引升级原因。目标是消除**随全部历史/全部关系量增长的重复扫描**，不能承诺每次聊天绝对固定字节数；真实补偿缺口、模型上下文、工具读取仍会有必要 I/O。未拿到文件级跟踪时单独列出该证据缺口，不能用进程总读取量证明某个数据库的改进。
+验收同时收集按文件的 platform/code-index 读取、进程增量、物理磁盘增量、SSE cursor/replayCount、stat/hash/解析文件数、项目装载数、影响计划原因及各 provider 提交水位。目标是消除**随全部历史/全部关系量增长的重复扫描**，同时证明真实变化没有遗漏；不能承诺每次聊天绝对固定字节数，真实补偿缺口、模型上下文、工具读取仍会有必要 I/O。未拿到文件级跟踪时单独列出该证据缺口，不能用进程总读取量证明某个数据库的改进。
