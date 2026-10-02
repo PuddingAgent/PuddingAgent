@@ -57,6 +57,8 @@ public static class DependencyInjection
         // The single driver of the change-capture pipeline *and* of the scheduler queue. It stays a plain
         // component service: hosting (IHostedService) is wired in PuddingHost, because the component must
         // not depend on the Host.
+        // 选项默认 Legacy（逐文件旧路径）：切到 Coordinator 是行为变化，必须由组合根显式覆盖本注册。
+        services.TryAddSingleton(new CodeIndexMaintenanceOptions());
         services.TryAddSingleton<ICodeIndexMaintenance, CodeIndexMaintenanceService>();
 
         // ── D4 source maintenance (2026-10-02) ─────────────────────────
@@ -80,13 +82,19 @@ public static class DependencyInjection
                 "ICodeIndexStore must also implement ICodeGraphDependencyQuery: reverse-dependency expansion " +
                 "reads the relation/reference graph from it."));
 
-        services.TryAddSingleton<ICodeIndexFileBatchUpdater>(sp =>
-            sp.GetRequiredService<ICodeIndexer>() as ICodeIndexFileBatchUpdater
-            ?? throw new InvalidOperationException(
-                "ICodeIndexer must also implement ICodeIndexFileBatchUpdater: the batch seam is what keeps a " +
-                "batch to a single workspace/compile snapshot."));
-
-        services.TryAddSingleton<CodeSourceMaintenanceCoordinator>();
+        // 批量接缝的能力探测放在协调器工厂里做**安全转换**而不是抛异常：宿主/测试完全可以替换
+        // ICodeIndexer（例如只做全量索引的替身），那时「没有批量能力」是正常事实，不该让容器解析失败
+        // （本仓库有「注册了但构造依赖不可解析 ⇒ ValidateOnBuild 崩掉 Core」的事故史）。
+        services.TryAddSingleton<CodeSourceMaintenanceCoordinator>(sp =>
+            new CodeSourceMaintenanceCoordinator(
+                sp.GetRequiredService<CodeSourceScanService>(),
+                sp.GetRequiredService<ICodeIndexStore>(),
+                sp.GetService<ICodeIndexStore>() as ICodeSourceMaintenanceStore,
+                sp.GetService<ICodeIndexer>() as ICodeIndexFileBatchUpdater,
+                sp.GetService<ICodeIndexStore>() as ICodeGraphDependencyQuery,
+                sp.GetService<CodeSourceFingerprintReader>(),
+                sp.GetService<TimeProvider>(),
+                sp.GetService<ILogger<CodeSourceMaintenanceCoordinator>>()));
 
         // 消费者集合（每个注册的语言实现 = 一个消费者）+ 语义输入指纹（工程/配置文件的内容 hash）。
         // 缺了它，协调器无法区分「配置变了只需重绑」与「内容变了必须重读」。

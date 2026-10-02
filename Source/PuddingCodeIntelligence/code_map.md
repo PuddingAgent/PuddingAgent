@@ -32,7 +32,7 @@
 | `Contracts/ICodeQueryService.cs` | 查询契约 |
 | `Contracts/IFileOutliner.cs` | outliner 契约（`OutlineNode.Kind` 复用 `PuddingCodeIndex.Contracts.CodeSymbolKind`） |
 | `Contracts/ILanguageServerService.cs` + `Contracts/LanguageServerContracts.cs` | LSP 契约 |
-| `DependencyInjection.cs` | `AddPuddingCodeIntelligence()` 组合根（同时注册 `PuddingCodeIndex` 侧实现：scheduler · scope registry/resolver · project registry · workspace resolver · root detector · `ICodeIndexer`）。**D4 源维护链（2026-10-02）**：忽略规则（`WorkspaceCodeSourceIgnoreRules`）· `ICodeSourceScanner`（`FileSystemCodeSourceScanner`）· `CodeSourceScanService` · `CodeSourceFingerprintReader` · 能力端口（`ICodeSourceMaintenanceStore` / `ICodeGraphDependencyQuery` / `ICodeIndexFileBatchUpdater`，**都 fail-closed 到同一个 `ICodeIndexStore`/`ICodeIndexer` 实例**）· `CodeSourceMaintenanceCoordinator`。**只登记装配、暂不驱动**：驱动权仍在 `ICodeIndexMaintenance` 旧路径，运行行为未变 |
+| `DependencyInjection.cs` | `AddPuddingCodeIntelligence()` 组合根（同时注册 `PuddingCodeIndex` 侧实现：scheduler · scope registry/resolver · project registry · workspace resolver · root detector · `ICodeIndexer`）。**D4 源维护链（2026-10-02）**：忽略规则（`WorkspaceCodeSourceIgnoreRules`）· `ICodeSourceScanner`（`FileSystemCodeSourceScanner`）· `CodeSourceScanService` · `CodeSourceFingerprintReader` · 能力端口（`ICodeSourceMaintenanceStore` / `ICodeGraphDependencyQuery` 指向**同一个** `ICodeIndexStore`；批量接缝在协调器工厂里**安全探测** `ICodeIndexer`，替换索引器的宿主/测试不会因此解析失败）· `CodeSourceMaintenanceCoordinator` · `ICodeSourceConsumerInputProvider`。**驱动开关**：`CodeIndexMaintenanceOptions.SourceMaintenance` 默认 `Legacy`（旧逐文件路径，运行行为未变）；设为 `Coordinator` 才启用新链 |
 
 ## 已迁出（→ `Source/PuddingCodeIndex`，切片 1）
 

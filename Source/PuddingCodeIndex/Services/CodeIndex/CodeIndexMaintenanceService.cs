@@ -206,6 +206,9 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     private readonly ICodeWorkspaceResolver _resolver;
     private readonly ILogger<CodeIndexMaintenanceService>? _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly CodeSourceMaintenanceMode _sourceMaintenanceMode;
+    private readonly CodeSourceMaintenanceCoordinator? _sourceMaintenance;
+    private readonly ICodeSourceConsumerInputProvider? _consumerInputs;
     private readonly int _queueCapacity;
     private readonly TimeSpan _silenceWindow;
     private readonly TimeSpan _maxWait;
@@ -254,7 +257,10 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         TimeSpan? maxWait = null,
         TimeSpan? pollInterval = null,
         TimeSpan? stopTimeout = null,
-        CodeIndexCalibrationService? calibration = null)
+        CodeIndexCalibrationService? calibration = null,
+        CodeIndexMaintenanceOptions? options = null,
+        CodeSourceMaintenanceCoordinator? sourceMaintenance = null,
+        ICodeSourceConsumerInputProvider? consumerInputs = null)
     {
         ArgumentNullException.ThrowIfNull(scheduler);
         ArgumentNullException.ThrowIfNull(watcherFactory);
@@ -282,6 +288,24 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         _silenceWindow = silenceWindow ?? CodeIndexChangeCoalescer.DefaultSilenceWindow;
         _maxWait = maxWait ?? CodeIndexChangeCoalescer.DefaultMaxWait;
         _calibration = calibration ?? new CodeIndexCalibrationService(store, _timeProvider, logger: logger);
+        _sourceMaintenance = sourceMaintenance;
+        _consumerInputs = consumerInputs;
+
+        // 打开开关但零件没装配齐 ⇒ 明确退回旧路径（并告警），绝不假装新链路在跑。
+        var requestedMode = options?.SourceMaintenance ?? CodeSourceMaintenanceMode.Legacy;
+        _sourceMaintenanceMode = requestedMode == CodeSourceMaintenanceMode.Coordinator
+            && sourceMaintenance is not null
+            && consumerInputs is not null
+                ? CodeSourceMaintenanceMode.Coordinator
+                : CodeSourceMaintenanceMode.Legacy;
+
+        if (requestedMode == CodeSourceMaintenanceMode.Coordinator
+            && _sourceMaintenanceMode == CodeSourceMaintenanceMode.Legacy)
+        {
+            _logger?.LogWarning(
+                "[CodeIndexMaintenance] Source maintenance was requested in Coordinator mode but the coordinator " +
+                "and/or the consumer-input provider are not assembled; staying on the legacy per-file path.");
+        }
     }
 
     /// <inheritdoc />
@@ -604,7 +628,9 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
 
         // Removal paths are really removed (U3-B3): the store deletes the file record, its symbols and the
         // graph rows owned by them in one transaction. A path that is not indexed stays a safe no-op.
-        if (batch.PathsToRemove.Count > 0)
+        // D4（2026-10-02）：新链路下**不在这里删** —— watcher 观察到的消失只是候选，
+        // 「删除只能由完整且根可用的扫描确认」；这些路径作为提示交给协调器，下一轮完整扫描定论。
+        if (batch.PathsToRemove.Count > 0 && _sourceMaintenanceMode == CodeSourceMaintenanceMode.Legacy)
         {
             var removed = await _store.RemoveFilesAsync(
                 batch.WorkspaceId, batch.ScopeId, batch.PathsToRemove, cancellationToken).ConfigureAwait(false);
@@ -644,8 +670,16 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         // declines (or a directory change, whose subtree can hold files the batch never mentioned) escalates
         // to a scope-level run instead of being dropped.
         var escalate = batch.ReconcileRequired;
-        if (!escalate && batch.PathsToReindex.Count > 0)
+        if (!escalate && _sourceMaintenanceMode == CodeSourceMaintenanceMode.Coordinator)
+        {
+            // D4 新链路：整批交给协调器（校准 → 计划 → 批量提取 → 稳定读 → 原子替换 → 账本提交）。
+            // 单路径失败按退避重试，**不升级整仓** —— 这正是旧路径「一个文件不认就重跑整个 scope」的替代。
+            escalate = !await ApplySourceMaintenanceAsync(entry, batch, cancellationToken).ConfigureAwait(false);
+        }
+        else if (!escalate && batch.PathsToReindex.Count > 0)
+        {
             escalate = !await IndexChangedFilesAsync(entry, batch, cancellationToken).ConfigureAwait(false);
+        }
 
         if (escalate)
         {
@@ -670,6 +704,91 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             _logger?.LogWarning(
                 "[CodeIndexMaintenance] Scope {ScopeId} batch v{Version} produced no completed indexing run (scope missing/removed, or the run was cancelled).",
                 batch.ScopeId, batch.Version);
+        }
+    }
+
+    /// <summary>
+    /// D4 新链路（<see cref="CodeSourceMaintenanceMode.Coordinator"/>）：把这一批的路径作为**提示**交给协调器，
+    /// 由它做完整清单校准，并按「真实变更集」提取 / 重绑 / 删除。
+    /// <para>
+    /// 返回值语义与旧路径**故意不同**：只有「这一批根本没被处理」（维护能力缺失、描述符解析不出、
+    /// 协调器抛错）才返回 <c>false</c>（升级为 scope 级运行）；单路径失败/不稳定读由协调器记退避、下轮重试，
+    /// 返回 <c>true</c> —— 一个文件坏掉不应该让整个 scope 重跑。
+    /// </para>
+    /// </summary>
+    /// <returns><c>true</c> 表示这一批已被新链路处理（无需升级）。</returns>
+    private async Task<bool> ApplySourceMaintenanceAsync(
+        ScopeEntry entry,
+        CodeIndexChangeBatch batch,
+        CancellationToken cancellationToken)
+    {
+        if (_sourceMaintenance is null || _consumerInputs is null)
+            return false;
+
+        var descriptor = await _resolver.ResolveWorkspaceAsync(
+            batch.WorkspaceId, batch.ScopeId, cancellationToken).ConfigureAwait(false);
+
+        if (descriptor is null)
+        {
+            _logger?.LogWarning(
+                "[CodeIndexMaintenance] Scope {ScopeId}: workspace descriptor could not be resolved; the batch stays on the scope-level path.",
+                batch.ScopeId);
+            return false;
+        }
+
+        var hints = batch.PathsToReindex
+            .Concat(batch.PathsToRemove ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(CodePathIdentity.PathComparer)
+            .ToArray();
+
+        try
+        {
+            var inputs = await _consumerInputs
+                .GetConsumerInputsAsync(batch.WorkspaceId, batch.ScopeId, cancellationToken)
+                .ConfigureAwait(false);
+
+            var result = await _sourceMaintenance.RunAsync(
+                    batch.WorkspaceId,
+                    batch.ScopeId,
+                    entry.RootPath,
+                    new CodeSourceMaintenanceRunOptions(
+                        inputs,
+                        ProjectFilePaths: descriptor.ProjectFilePaths,
+                        WatcherHints: hints),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (result.CapabilityMissing)
+            {
+                _logger?.LogWarning(
+                    "[CodeIndexMaintenance] Scope {ScopeId}: the store has no source-maintenance capability; the batch stays on the scope-level path.",
+                    batch.ScopeId);
+                return false;
+            }
+
+            lock (_gate)
+            {
+                entry.IncrementallyIndexedFileCount += result.ExtractedFileCount;
+            }
+
+            _logger?.LogInformation(
+                "[CodeIndexMaintenance] Scope {ScopeId} batch v{Version} (source maintenance): {Extract} extracted, {Rebind} rebound, {Delete} deleted, {Unresolved} unresolved; ledger {Outcome}, watermark advanced={Watermark}.",
+                batch.ScopeId, batch.Version, result.ExtractedFileCount, result.ReboundFileCount,
+                result.DeletedFileCount, result.RetryableFileCount, result.LedgerOutcome, result.ScanWatermarkAdvanced);
+
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex,
+                "[CodeIndexMaintenance] Scope {ScopeId} batch v{Version}: the source-maintenance chain failed; falling back to a scope-level run.",
+                batch.ScopeId, batch.Version);
+            return false;
         }
     }
 

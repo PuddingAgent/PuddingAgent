@@ -257,10 +257,12 @@ public sealed class CodeIndexMaintenanceHostCompositionTests
             Assert.Same(store, app.Services.GetRequiredService<ICodeSourceMaintenanceStore>());
             Assert.Same(store, app.Services.GetRequiredService<ICodeGraphDependencyQuery>());
 
-            // 批量接缝必须就是那个聚合索引器（同批复用一个工程快照的唯一入口）。
-            Assert.Same(
-                app.Services.GetRequiredService<ICodeIndexer>(),
-                app.Services.GetRequiredService<ICodeIndexFileBatchUpdater>());
+            // 生产装配下聚合索引器必须自带批量接缝（同批复用一个工程快照的唯一入口）。
+            // 断言放在聚合器上而不是容器的 ICodeIndexFileBatchUpdater 上：宿主/测试替换 ICodeIndexer
+            // 时「没有批量能力」是正常事实，不应让容器解析失败。
+            Assert.True(
+                app.Services.GetRequiredService<ICodeIndexer>() is ICodeIndexFileBatchUpdater,
+                "the aggregate indexer must implement the batch seam");
 
             // 驱动权仍在旧路径：这条断言是「本笔没有改变运行行为」的证据。
             Assert.IsType<PuddingCodeIndex.Services.CodeIndex.CodeIndexMaintenanceService>(
