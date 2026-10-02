@@ -188,7 +188,7 @@ public sealed record CodeIndexStatusArgs
 [Tool(
     id: "code_symbol_search",
     name: "Search code symbols",
-    description: "按名称在已登记项目中搜索代码符号（symbol search），结果包含符号种类、文件位置与签名。【何时用】定位某个类/方法/属性的定义与签名时使用；也是 code_callers/code_callees/code_impact 的前置步骤——先用它拿到 symbol_id。【怎么用】传 query（符号名关键词）；可选 project_id 限定项目（不传则跨全部已登记项目搜索）、kind 过滤符号种类、limit 控制数量（默认50）、include_parameters=true 可包含参数符号。【坑】依赖项目已登记且索引完成，否则搜不到；未登记项目直接 fail-closed（status=not_registered）；索引命中会校验文件存在且落在登记项目根目录内，失效命中被计入 stale_skipped 并从结果中剔除——此时 results 为空不等于“符号不存在”，需重登记重建索引或在当前仓库用 search_grep 实时搜索；不传 project_id 时跨项目搜索，重名结果较多；参数与未知符号默认被过滤。",
+    description: "按名称在已登记项目中搜索代码符号（symbol search），结果包含符号种类、文件位置与签名。【何时用】定位某个类/方法/属性的定义与签名时使用；也是 code_callers/code_callees/code_impact 的前置步骤——先用它拿到 symbol_id。【怎么用】传 query（符号名关键词）；可选 project_id 限定项目（不传则跨全部已登记项目搜索）、kind 过滤符号种类、limit 控制数量（默认50）、include_parameters=true 可包含参数符号。【坑】依赖项目已登记且索引完成，否则搜不到；未登记项目直接 fail-closed（status=not_registered）；索引命中会校验文件存在且落在登记项目根目录内，失效命中被计入 stale_skipped 并从结果中剔除——此时 results 为空不等于“符号不存在”，需重登记重建索引或在当前仓库用 search_grep 实时搜索；不传 project_id 时跨项目搜索，重名结果较多；参数与未知符号默认被过滤。【索引新鲜度】返回体新增 index_freshness 字段；0 命中时若其 state 为 rebuilding/pending/needs-reconcile，则空结果可能只是暂时的（索引正在重建/待重建/需校准），并不代表符号不存在，此时文本末尾会附一行诚实说明。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -204,15 +204,18 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
     private readonly ICodeQueryService? _queryService;
     private readonly ICodeIndexScopeResolver? _resolver;
     private readonly ICodeProjectRegistry? _registry;
+    private readonly ICodeIndexMaintenance? _maintenance;
 
     public CodeSymbolSearchTool(
         ICodeQueryService? queryService = null,
         ICodeIndexScopeResolver? resolver = null,
-        ICodeProjectRegistry? registry = null)
+        ICodeProjectRegistry? registry = null,
+        ICodeIndexMaintenance? maintenance = null)
     {
         _queryService = queryService;
         _resolver = resolver;
         _registry = registry;
+        _maintenance = maintenance;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -309,6 +312,77 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             .Select(s => new { file_path = s.Detail.Symbol.FilePath, project_id = s.Detail.Symbol.ProjectId, reason = s.Reason })
             .ToList();
 
+        // T1：索引新鲜度信号（只增不改）。诚实优先：取不到事实就给 unknown，绝不猜成 idle/正常。
+        string freshnessState;
+        string? freshnessReason = null;
+        bool? freshnessIndexPending = null;
+        bool? freshnessIndexInFlight = null;
+        bool? freshnessNeedsReconcile = null;
+        bool? freshnessWatcherAttached = null;
+        string? freshnessReconcileReason = null;
+        string? freshnessLastCalibration = null;
+        long? freshnessUnresolved = null;
+
+        if (_maintenance is null)
+        {
+            freshnessState = "unknown";
+            freshnessReason = "maintenance service not registered";
+        }
+        else if (projectId is not null)
+        {
+            var scopeStatus = _maintenance.GetScopeStatus(context.WorkspaceId, projectId);
+            if (scopeStatus is null)
+            {
+                freshnessState = "unknown";
+                freshnessReason = "scope not attached to the maintenance driver";
+            }
+            else
+            {
+                (freshnessState, freshnessReason) = MapScopeFreshnessState(scopeStatus);
+                freshnessIndexPending = scopeStatus.IndexPending;
+                freshnessIndexInFlight = scopeStatus.IndexInFlight;
+                freshnessNeedsReconcile = scopeStatus.NeedsReconcile;
+                freshnessWatcherAttached = scopeStatus.WatcherAttached;
+                freshnessReconcileReason = scopeStatus.ReconcileReason;
+                freshnessLastCalibration = scopeStatus.LastCalibrationAtUtc?.ToString("O");
+                freshnessUnresolved = scopeStatus.SourceMaintenanceUnresolvedPathCount;
+            }
+        }
+        else
+        {
+            var scopeStatuses = _maintenance.GetScopeStatuses();
+            if (scopeStatuses.Count == 0)
+            {
+                freshnessState = "unknown";
+                freshnessReason = "no scope attached to the maintenance driver";
+            }
+            else
+            {
+                // 跨 scope 保守聚合：布尔位取「任一为 true」；计数类字段留 null（跨 scope 求和会误导）。
+                freshnessIndexPending = scopeStatuses.Any(s => s.IndexPending);
+                freshnessIndexInFlight = scopeStatuses.Any(s => s.IndexInFlight);
+                freshnessNeedsReconcile = scopeStatuses.Any(s => s.NeedsReconcile);
+                freshnessWatcherAttached = scopeStatuses.Any(s => s.WatcherAttached);
+                freshnessReconcileReason = scopeStatuses
+                    .Select(s => s.ReconcileReason)
+                    .FirstOrDefault(r => !string.IsNullOrWhiteSpace(r));
+
+                if (freshnessIndexInFlight == true)
+                    freshnessState = "rebuilding";
+                else if (freshnessIndexPending == true)
+                    freshnessState = "pending";
+                else if (freshnessNeedsReconcile == true)
+                    freshnessState = "needs-reconcile";
+                else if (scopeStatuses.All(s => s.WatcherAttached))
+                    freshnessState = "idle";
+                else
+                {
+                    freshnessState = "unknown";
+                    freshnessReason = "scopes attached but watchers not attached";
+                }
+            }
+        }
+
         var output = JsonSerializer.Serialize(new
         {
             workspace_id = context.WorkspaceId,
@@ -323,6 +397,19 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             stale_examples = staleExamples,
             results = list,
             results_include_stale = includeStale,
+            // T1：新增字段——既有字段名与语义一律未动。
+            index_freshness = new
+            {
+                state = freshnessState,
+                index_pending = freshnessIndexPending,
+                index_in_flight = freshnessIndexInFlight,
+                needs_reconcile = freshnessNeedsReconcile,
+                reconcile_reason = freshnessReconcileReason,
+                watcher_attached = freshnessWatcherAttached,
+                last_calibration_at_utc = freshnessLastCalibration,
+                unresolved_source_path_count = freshnessUnresolved,
+                reason = freshnessReason,
+            },
         }, JsonOptions);
 
         if (stale.Count > 0)
@@ -348,7 +435,45 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             output += hint;
         }
 
+        // T1：0 命中 + 索引非 idle 时，如实说明「空结果可能只是暂时的」，
+        // 让调用方不再把「重建中的空结果」误读成「代码不存在」。有结果/已 idle 时保持寂静。
+        if (list.Count == 0)
+        {
+            var searchedScope = projectId ?? "(all registered projects in workspace)";
+            if (freshnessState is "rebuilding" or "pending" or "needs-reconcile")
+            {
+                var reasonSuffix = string.IsNullOrWhiteSpace(freshnessReconcileReason)
+                    ? string.Empty
+                    : $" (last reconcile reason: {freshnessReconcileReason})";
+                output += $"\n\nℹ️ 0 hit(s), but the index for \"{searchedScope}\" is {freshnessState}{reasonSuffix}"
+                    + " ⇒ the empty result may be temporary and does NOT mean the symbol is absent; "
+                    + "retry later, or use search_grep for a live scan.";
+            }
+            else if (freshnessState == "unknown")
+            {
+                output += $"\n\nℹ️ 0 hit(s); index freshness is unknown ({freshnessReason})"
+                    + " ⇒ the empty result is not proof that the symbol does not exist.";
+            }
+        }
+
         return Ok(output);
+    }
+
+    /// <summary>
+    /// T1：单 scope 的新鲜度映射。只把记录里的可证伪事实翻成一个保守状态；
+    /// 取不到「watcher 已附着」时就返回 unknown，绝不猜成 idle（诚实优先）。
+    /// </summary>
+    private static (string State, string? Reason) MapScopeFreshnessState(CodeIndexMaintenanceScopeStatus s)
+    {
+        if (s.IndexInFlight)
+            return ("rebuilding", null);
+        if (s.IndexPending)
+            return ("pending", null);
+        if (s.NeedsReconcile)
+            return ("needs-reconcile", null);
+        if (s.WatcherAttached)
+            return ("idle", null);
+        return ("unknown", "scope attached but watcher not attached");
     }
 
     /// <summary>

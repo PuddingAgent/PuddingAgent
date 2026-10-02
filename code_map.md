@@ -178,7 +178,7 @@ CodeIndexScheduler → PuddingCodeIndex（变更捕获管线 / 调度 / 存储 /
   → PuddingFullTextIndex（Lucene）/ PuddingVectorIndex（就地 int8 扫描 + 有界 top-k）
   → PuddingPathFiltering（唯一路径忽略真源：噪声目录名 + .gitignore 语义）
   → PuddingRetrievalEval（检索质量与性能仪器，σ 只依赖 ISearchProbe 端口）
-  → search_grep / code_symbol_search / workspace_* 查询；未登记项目 fail-closed
+  → search_grep / code_symbol_search / workspace_* 查询；未登记项目 fail-closed；code_symbol_search 返回体附 index_freshness（rebuilding/pending/needs-reconcile/idle/unknown），0 命中且索引非 idle 时追加“空结果可能只是暂时的”诚实说明 —— 未知不猜成正常
 
 8) 浏览器自动化
 Agent Loop → search_tools → Browser Tools（PuddingBrowser.AgentTools）
