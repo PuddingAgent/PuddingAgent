@@ -516,13 +516,13 @@ Shell `MainWindow.xaml.cs` 的 `OnTheme` 当前设置 `Root.RequestedTheme` 并�
 
 > **2026-10-02 静态外观像素复核**：见 [验收记录](Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)。以用户提供的运行截图为证据，在同一布局、深色主题下对照改动前后取色——聊天区 `#11100d`→`#11151b`、助手消息卡 `#1b2339`→ 与聊天区背景一致（IMG06 生效）、输入区 `#1c1a16`→`#1a2029`、**消息区右侧滚动条的白轨道与上下箭头消失（该区域扫描近白像素为 0）**、页角徽标 `v6.1.3 · 97fb4d2` 可见。据此，§13.8–§13.12 中**仅静态外观类**的结论已获实测支撑；**交互、浅色主题、DPI/缩放、性能与可访问性仍未验收**，各节末尾的「未验收」清单仍然有效。
 >
-> 该轮复核同时登记两处**新增缺口**（详见验收记录 §4）：① IMG03 点名的「帮助」入口与主题/字号/用户同属共享组件 `PuddingGlobalActions` 的 chat 变体，本批未动——该变体当前仅由 ChatMain 消费，所以「低频项收进更多」可以做成**受影响面受限**的独立切片，但需连同 Console 变体一起回归；② IMG07 的原始症状（短标签首列被挤成多行）**未被本轮截图中的表覆盖**（该表首列是序号 `#`），需要另找一张窄标签表复核，不能据此宣告 IMG07 通过。
+> 该轮复核同时登记两处**新增缺口**（详见验收记录 §4）：① IMG03 点名的「帮助」入口与主题/字号/用户同属共享组件 `PuddingGlobalActions` 的 chat 变体，当时未动——**已由 `1c97f57` 补齐**（帮助并入 ChatMain 已有的「更多」，不新增第二个 ⋮；帮助 URL 收敛为唯一真源；pro-layout/Console 变体保持内联不变）；② IMG07 的原始症状（短标签首列被挤成多行）**未被该轮截图中的表覆盖**（该表首列是序号 `#`），需要另找一张窄标签表复核，不能据此宣告 IMG07 通过。
 
 | 项 | 状态 | 提交 | 落地内容 / 证据 |
 |---|---|---|---|
 | IMG01（色彩不统一） | 代码已落地，未验收 | `28dca85` | 主题真源 `global.style.ts` 的暖米色 + 紫色强调与 runtime/admin/antd 派生 token 收敛到 §3（bg/surface/text/border/accent/状态色），紫色光晕改蓝；`ThemeMode` 的 antd token 同步；消息/计划卡/语音/状态详情的硬编码紫与暖色字面量改 token；Shell `WorkbenchAppearance` 预绘制背景同步 §3。 |
 | IMG02（深色白条） | 代码已落地，未验收 | `2430f97`、`6bf5b16` | 见 §14.6（color-scheme + 滚动条皮肤 + WebView2 预绘制背景）。 |
-| IMG03（顶部图标密集） | 代码已落地，未验收 | `7e38284` | 顶部常驻任务看板 / 搜索 / 快照 / 余额数字；自动朗读与开发者模式收进“更多”下拉，每项带名称与“已开启/已关闭”状态与选中勾；Tooltip 明写两项状态，开发者模式开启时触发器高亮；未删除任何入口，DevPanel 仍懒加载。 |
+| IMG03（顶部图标密集） | 代码已落地，未验收 | `7e38284`、`1c97f57` | 顶部常驻任务看板 / 搜索 / 快照 / 余额数字；自动朗读与开发者模式收进“更多”下拉，每项带名称与“已开启/已关闭”状态与选中勾；Tooltip 明写状态，开发者模式开启时触发器高亮；未删除任何入口，DevPanel 仍懒加载。**`1c97f57` 补齐规格同时点名的「帮助」**：并入 ChatMain 已有的同一个「更多」（不新增第二个 ⋮），帮助 URL 收敛为唯一真源 `PUDDING_HELP_URL`，`PuddingGlobalActions` chat 变体支持 `hideHelp` 而 pro-layout/Console 保持内联；语言（umi SelectLang，自带下拉）与主题/用户仍按高频全局操作留在顶栏，理由与后续做法见 §13.7 注。 |
 | IMG04（暗色图标/统计/placeholder 偏暗） | 代码已落地，未验收 | `28dca85` | 文本四档（text/secondary/tertiary/caption）按 §3 重新标定，浅色 caption #6E7A88、过程文字 #5C6B7A，深色 #8B98A9 / #9AA8BB；状态色取 §3 三态。 |
 
 IMG01 一并向发现的一类真实缺陷做了修复：`--pudding-text`、`--pudding-text-muted`、`--pudding-accent`、`--pudding-danger`、`--pudding-surface-soft`、`--pudding-chat-primary`、`--pudding-chat-panel-bg`、`--muted-text`、`--text-tertiary`、`--border-subtle` 被 30+ 处以 `var(短名, 暖色字面量)` 引用但从未定义，实际渲染的一直是回退的暖灰/紫（#1d1b24 / #756b5f / #8b5cf6 / #b5543c / #f5f5f5）。已在主题真源补齐集中的 §3 别名并修正明确笔误的调用点。未定义引用由 12 项降至 6 项，余下 4 项为 JSX 运行时设置（`--bx/--by/--particle-drift/--pudding-state-dot-size`）、1 项为测试字符串拼接（`--pudding-status-`）、1 项 `--composer-feedback-fill` 无明确意图（`backgroundImage` 引用而从未设置，仅记录不改）。审计脚本：`temp/token-audit.mjs`。
