@@ -23,7 +23,7 @@ public sealed class BrowserAgentToolsTests
             new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserInteractTool(runtime, _originAccessor),
-            new BrowserWaitForTool(runtime, _originAccessor)
+            new BrowserWaitForTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor)
         };
 
         Assert.Equal(
@@ -182,7 +182,7 @@ public sealed class BrowserAgentToolsTests
                 locator = new { kind = "label", value = "Name" },
                 text = secret
             }));
-        var wait = await ExecuteAsync(new BrowserWaitForTool(runtime, _originAccessor),
+        var wait = await ExecuteAsync(new BrowserWaitForTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             $$"""{"page_id":"{{page.Id.Value}}","context_id":"ctx-1","selector":"#saved","timeout_ms":1000}""");
 
         Assert.True(interact.Success);
@@ -379,6 +379,38 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
             snapshot.NodeCount,
             page.PageVersion > 0 ? DesktopPageVersion.Require(page.PageVersion) : DesktopPageVersion.Unknown));
     }
+    public async Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
+        BrowserWaitForRequest request, DesktopCallContext call, CancellationToken ct = default)
+    {
+        if (await ResolvePageAsync(request.Target, ct) is not { } page)
+        {
+            return CapabilityResult<DesktopWaitResult>.Failure(
+                DesktopCapabilityError.InvalidTarget($"page '{request.Target.Key}' is not known"));
+        }
+
+        var result = await page.WaitForAsync(new WaitCondition
+        {
+            Selector = request.Condition.Kind == DesktopWaitConditionKind.Selector ? request.Condition.Value : null,
+            SelectorToHide = request.Condition.Kind == DesktopWaitConditionKind.SelectorHidden ? request.Condition.Value : null,
+            UrlPattern = request.Condition.Kind == DesktopWaitConditionKind.UrlPattern ? request.Condition.Value : null,
+            TimeoutMs = request.TimeoutMs,
+        }, ct);
+
+        var version = page.PageVersion > 0
+            ? DesktopPageVersion.Require(page.PageVersion)
+            : DesktopPageVersion.Unknown;
+        return CapabilityResult<DesktopWaitResult>.Success(new DesktopWaitResult(
+            request.Target,
+            request.Condition,
+            result.TimedOut,
+            new DesktopPageState(
+                request.Target,
+                Uri.TryCreate(page.Info.Url, UriKind.Absolute, out var url) ? url : null,
+                version,
+                DesktopPageReadiness.Unknown,
+                page.Info.Title),
+            result.Error));
+    }
     public Task<CapabilityResult<NavigateResult>> NavigateAsync(
         NavigateRequest request, DesktopCallContext call, CancellationToken ct = default) =>
         throw new NotSupportedException();
@@ -391,9 +423,6 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken ct = default) =>
         throw new NotSupportedException();
 
-    public Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
-        BrowserWaitForRequest request, DesktopCallContext call, CancellationToken ct = default) =>
-        throw new NotSupportedException();
 
     public Task<CapabilityResult<JavascriptResult>> ExecuteJavascriptAsync(
         JavascriptRequest request, DesktopCallContext call, CancellationToken ct = default) =>
