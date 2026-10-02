@@ -120,6 +120,38 @@ public sealed class BrowserTargetRegistry : IDesktopBrowserTargetRegistry
         }
     }
 
+    /// <summary>
+    /// 设置/清除「已授权的 Agent 目标页」（<c>null</c> 表示当前没有 Agent 目标）。
+    ///
+    /// 为什么必须有这个方法：<see cref="RegisterPage"/> 只能<b>增加</b> Agent 目标（传 false 不会移除）。
+    /// 于是「用户接管浏览器」或「Agent 目标换到另一页」之后，旧页面会永远留着
+    /// <c>IsAgentTarget=true</c>——注册表就会**替一个已经不该被驱动的页面继续背书**，
+    /// 而这是只读状态无法自证的（能力调用看起来完全合法）。撤销必须是一等操作。
+    /// </summary>
+    public void SetAgentTarget(string? contextId, string? pageId)
+    {
+        lock (_sync)
+        {
+            foreach (var targets in _agentTargets.Values)
+            {
+                targets.Clear();
+            }
+
+            if (string.IsNullOrWhiteSpace(contextId) || string.IsNullOrWhiteSpace(pageId))
+            {
+                return;
+            }
+
+            if (!_agentTargets.TryGetValue(contextId, out var set))
+            {
+                set = new HashSet<string>(StringComparer.Ordinal);
+                _agentTargets[contextId] = set;
+            }
+
+            set.Add(pageId);
+        }
+    }
+
     public void Clear()
     {
         lock (_sync)
