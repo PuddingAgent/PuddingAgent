@@ -514,6 +514,10 @@ Shell `MainWindow.xaml.cs` 的 `OnTheme` 当前设置 `Root.RequestedTheme` 并�
 
 ### 13.7 实施状态（2026-10-01，P0 项）
 
+> **2026-10-02 静态外观像素复核**：见 [验收记录](Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)。以用户提供的运行截图为证据，在同一布局、深色主题下对照改动前后取色——聊天区 `#11100d`→`#11151b`、助手消息卡 `#1b2339`→ 与聊天区背景一致（IMG06 生效）、输入区 `#1c1a16`→`#1a2029`、**消息区右侧滚动条的白轨道与上下箭头消失（该区域扫描近白像素为 0）**、页角徽标 `v6.1.3 · 97fb4d2` 可见。据此，§13.8–§13.12 中**仅静态外观类**的结论已获实测支撑；**交互、浅色主题、DPI/缩放、性能与可访问性仍未验收**，各节末尾的「未验收」清单仍然有效。
+>
+> 该轮复核同时登记两处**新增缺口**（详见验收记录 §4）：① IMG03 点名的「帮助」入口与主题/字号/用户同属共享组件 `PuddingGlobalActions` 的 chat 变体，本批未动——该变体当前仅由 ChatMain 消费，所以「低频项收进更多」可以做成**受影响面受限**的独立切片，但需连同 Console 变体一起回归；② IMG07 的原始症状（短标签首列被挤成多行）**未被本轮截图中的表覆盖**（该表首列是序号 `#`），需要另找一张窄标签表复核，不能据此宣告 IMG07 通过。
+
 | 项 | 状态 | 提交 | 落地内容 / 证据 |
 |---|---|---|---|
 | IMG01（色彩不统一） | 代码已落地，未验收 | `28dca85` | 主题真源 `global.style.ts` 的暖米色 + 紫色强调与 runtime/admin/antd 派生 token 收敛到 §3（bg/surface/text/border/accent/状态色），紫色光晕改蓝；`ThemeMode` 的 antd token 同步；消息/计划卡/语音/状态详情的硬编码紫与暖色字面量改 token；Shell `WorkbenchAppearance` 预绘制背景同步 §3。 |
@@ -722,7 +726,7 @@ Desktop 构建证据（2026-10-01 第三轮补齐）：
 - `dotnet test Tests/PuddingDesktop.Tests` → 259 passed / 0 failed；`dotnet test Source/PuddingDesktop.FoundationTests` → 57 passed / 0 failed。
 
 仍未获得、因而不能声称通过的证据：
-- **WebView2 真实窗口验收**（§12 D01、§14.5 表、§13.6 IMG-V02）：轨道/corner/thumb、textarea、弹层、Shell 原生滚动区在深浅切换下的实际表现，以及加载与失败阶段是否仍闪白，均未实测。CSS 与单元测试不能替代该结论。
+- **WebView2 真实窗口验收**（§12 D01、§14.5 表、§13.6 IMG-V02）：**深色主题下的静态外观已由 2026-10-02 像素复核确认**（聊天区右缘近白像素为 0，滚动条呈圆角滑块贴背景色；见 [验收记录](Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md)），但 §14.5 要求其余各项——深浅切换、corner、textarea/代码/表格/弹层与 Shell 原生滚动区、键盘与拖拽、150/200% DPI、系统高对比恢复——**仍未实测**。CSS 与单元测试不能替代该结论，缺陷不因这条静态证据而关闭。
 
 已知待复核项（实施中引入，需在上述验收里确认）：
 1. `PreferredColorScheme` 会影响 WebView2 内 `prefers-color-scheme` 的取值；当 Shell 显式选择浅/深、而 Web 侧 ThemeMode 为「跟随系统」时，Web 将跟随 Shell 选择而非 Windows 偏好。这是 §13.4「宿主提供外观入口」的预期对齐，但需在实际窗口确认符合产品意图。
