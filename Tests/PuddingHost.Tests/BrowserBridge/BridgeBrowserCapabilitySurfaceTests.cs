@@ -216,16 +216,118 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
+    public async Task Locate_ReturnsReferencesWithLiveVersionsAndHonestFlags()
+    {
+        var page = new FakePage
+        {
+            Version = 7,
+            QueryAll = _ =>
+            [
+                new FakeElementHandle
+                {
+                    Version = 7,
+                    Info = new BrowserElementInfo
+                    {
+                        Ref = "e1", Tag = "button", Role = "button", Name = "提交", Visible = true, Enabled = false,
+                    },
+                },
+            ],
+        };
+        var surface = Create(page);
+
+        var result = await surface.LocateAsync(
+            new BrowserLocateRequest(Target, new DesktopLocator(DesktopLocatorKind.Css, "button")), Call);
+
+        Assert.False(result.IsFailure);
+        var element = Assert.Single(result.Value.Elements);
+        Assert.Equal("e1", element.Reference);
+        Assert.Equal("button", element.Tag);
+        Assert.Equal(7, element.PageVersion.Value);
+        Assert.True(element.Visible);
+        Assert.False(element.Enabled);
+        Assert.Equal(7, result.Value.PageVersion.Value);
+        Assert.False(result.Value.Truncated);
+    }
+
+    [Fact]
+    public async Task Locate_WhenExpectedVersionDiffers_IsPageVersionMismatch()
+    {
+        // 与 Desktop 侧同一套语义：版本不符就明确拒绝，而不是让调用方拿到陈旧引用。
+        var surface = Create(new FakePage { Version = 7 });
+
+        var result = await surface.LocateAsync(
+            new BrowserLocateRequest(
+                Target, new DesktopLocator(DesktopLocatorKind.Css, "button"), DesktopPageVersion.Require(3)), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, result.Error!.Code);
+    }
+
+    [Fact]
+    public async Task Locate_WithSnapshotReferenceLocator_IsRejectedInsteadOfGuessed()
+    {
+        // Ref 只在 Desktop 的快照注册表里有意义：Bridge 侧没有等价物 ⇒ 明确拒绝，不猜选择器。
+        var surface = Create(new FakePage { Version = 7 });
+
+        var result = await surface.LocateAsync(
+            new BrowserLocateRequest(
+                Target, new DesktopLocator(DesktopLocatorKind.Ref, "e1"), DesktopPageVersion.Require(7)), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InvalidRequest, result.Error!.Code);
+    }
+
+    [Fact]
+    public async Task Locate_OverMaxResults_IsTruncatedAndFlagged()
+    {
+        var page = new FakePage
+        {
+            Version = 2,
+            QueryAll = _ =>
+            [
+                new FakeElementHandle { Version = 2, Info = new BrowserElementInfo { Ref = "e1", Tag = "a" } },
+                new FakeElementHandle { Version = 2, Info = new BrowserElementInfo { Ref = "e2", Tag = "a" } },
+                new FakeElementHandle { Version = 2, Info = new BrowserElementInfo { Ref = "e3", Tag = "a" } },
+            ],
+        };
+        var surface = Create(page);
+
+        var result = await surface.LocateAsync(
+            new BrowserLocateRequest(Target, new DesktopLocator(DesktopLocatorKind.Css, "a"), maxResults: 1), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.True(result.Value.Truncated);
+        Assert.Single(result.Value.Elements);
+    }
+
+    [Fact]
+    public async Task Locate_ElementWithoutLiveVersion_FailsLoudly()
+    {
+        // 与 Desktop 侧同一条规则：元素没有活版本 ⇒ 响亮失败，绝不静默丢弃。
+        var page = new FakePage
+        {
+            Version = 2,
+            QueryAll = _ => [new FakeElementHandle { Version = 0, Info = new BrowserElementInfo { Ref = "e1", Tag = "a" } }],
+        };
+        var surface = Create(page);
+
+        var result = await surface.LocateAsync(
+            new BrowserLocateRequest(Target, new DesktopLocator(DesktopLocatorKind.Css, "a")), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InternalError, result.Error!.Code);
+    }
+
+    [Fact]
     public async Task OperationsNotYetMigrated_FailLoudlyInsteadOfPretending()
     {
         var surface = Create(new FakePage());
 
         var snapshot = await surface.SnapshotAsync(new BrowserSnapshotRequest(Target, DesktopPageVersion.Require(1)), Call);
-        var locate = await surface.LocateAsync(new BrowserLocateRequest(Target, new DesktopLocator(DesktopLocatorKind.Css, "a")), Call);
         var wait = await surface.WaitForAsync(
             new BrowserWaitForRequest(Target, new DesktopWaitCondition(DesktopWaitConditionKind.UrlPattern, "/done")), Call);
 
-        foreach (var error in new[] { snapshot.Error, locate.Error, wait.Error })
+        foreach (var error in new[] { snapshot.Error, wait.Error })
         {
             Assert.NotNull(error);
             Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, error!.Code);
@@ -304,6 +406,29 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class FakeElementHandle : IElementHandle
+    {
+        public long Version { get; init; } = 1;
+
+        public BrowserElementInfo Info { get; init; } = new() { Ref = "e0", Tag = "div" };
+
+        public ElementHandleId Id => new(Info.Ref);
+
+        public PageId PageId { get; } = new("page-1");
+
+        public int? BackendNodeId => null;
+
+        public string LocatorFingerprint => "css=a";
+
+        long IElementHandle.PageVersion => Version;
+
+        public Task<BoundingBox?> GetBoundingBoxAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class FakePage : IBrowserPage
     {
         public long Version { get; init; } = 1;
@@ -319,6 +444,8 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         public Func<Uri, NavigationResult>? Navigate { get; init; }
 
         public Func<BrowserScript, BrowserScriptValue>? Script { get; init; }
+
+        public Func<Locator, IReadOnlyList<IElementHandle>>? QueryAll { get; init; }
 
         public PageId Id { get; init; } = new("page-1");
 
@@ -361,7 +488,8 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct) =>
+            Task.FromResult(QueryAll?.Invoke(locator) ?? (IReadOnlyList<IElementHandle>)[]);
 
         public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
 

@@ -191,9 +191,72 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         NotMigrated<DesktopSnapshot>(DesktopCapability.BrowserSnapshot);
 
-    public Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
-        BrowserLocateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        NotMigrated<DesktopLocateResult>(DesktopCapability.BrowserLocate);
+    public async Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
+        BrowserLocateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false) is not { } page)
+        {
+            return NotFound<DesktopLocateResult>(request.Target);
+        }
+
+        var version = LiveVersion(page);
+        if (!version.IsKnown)
+        {
+            // 元素引用必须带活版本（契约硬要求）；没有就**响亮**失败，不返回无版本引用。
+            return CapabilityResult<DesktopLocateResult>.Failure(DesktopCapabilityError.Internal(
+                "page has no live version; element references would be unusable"));
+        }
+
+        // 与 Desktop 侧同一套语义：期望版本不符 ⇒ 明确拒绝（而不是让调用方拿到陈旧引用）。
+        if (request.ExpectedPageVersion.IsKnown && request.ExpectedPageVersion.Value != version.Value)
+        {
+            return CapabilityResult<DesktopLocateResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"expected page version {request.ExpectedPageVersion.Value} but the page is at {version.Value}; re-acquire state"));
+        }
+
+        if (ToRuntimeLocator(request.Locator) is not { } locator)
+        {
+            // 快照引用（Ref）在 Bridge 侧没有等价物：引用只在 Desktop 的快照注册表里有意义。
+            return CapabilityResult<DesktopLocateResult>.Failure(DesktopCapabilityError.InvalidRequest(
+                $"locator kind '{DesktopLocatorKindWire.NameOf(request.Locator.Kind)}' has no bridge equivalent"));
+        }
+
+        var matches = await page.QueryAllAsync(locator, cancellationToken).ConfigureAwait(false);
+        var elements = new List<DesktopElementRef>(matches.Count);
+        foreach (var handle in matches)
+        {
+            if (handle.PageVersion <= 0)
+            {
+                // 元素没有活版本 ⇒ 响亮失败（与 Desktop 侧同一条规则：绝不静默丢弃）。
+                return CapabilityResult<DesktopLocateResult>.Failure(DesktopCapabilityError.Internal(
+                    "element reference has no live page version"));
+            }
+
+            elements.Add(new DesktopElementRef(
+                handle.Id.Value,
+                handle.Info.Tag,
+                DesktopPageVersion.Require(handle.PageVersion),
+                handle.Info.Role,
+                handle.Info.Name,
+                handle.Info.Text,
+                handle.Info.Visible,
+                handle.Info.Enabled,
+                handle.Info.Checked));
+        }
+
+        // 预算：超出请求上限就截断并**如实标注**。
+        var truncated = elements.Count > request.MaxResults;
+        if (truncated)
+        {
+            elements = elements.GetRange(0, request.MaxResults);
+        }
+
+        return CapabilityResult<DesktopLocateResult>.Success(
+            new DesktopLocateResult(request.Target, request.Locator, elements, truncated, version));
+    }
 
     public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
@@ -271,6 +334,39 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
         "string" => JavascriptValueKind.String,
         _ => value.Value is null ? JavascriptValueKind.Undefined : JavascriptValueKind.Json,
     };
+
+    /// <summary>
+    /// 能力形状的定位描述符 → 运行时定位器。**Ref 没有等价物**（快照引用只在 Desktop 的注册表里有意义），
+    /// 因此返回 <c>null</c> 让调用方明确拒绝，而不是猜一个选择器出来。
+    /// </summary>
+    private static Locator? ToRuntimeLocator(DesktopLocator locator)
+    {
+        var kind = locator.Kind switch
+        {
+            DesktopLocatorKind.Css => LocatorKind.Css,
+            DesktopLocatorKind.XPath => LocatorKind.XPath,
+            DesktopLocatorKind.Text => LocatorKind.Text,
+            DesktopLocatorKind.Role => LocatorKind.Role,
+            DesktopLocatorKind.Label => LocatorKind.Label,
+            DesktopLocatorKind.Placeholder => LocatorKind.Placeholder,
+            DesktopLocatorKind.AltText => LocatorKind.AltText,
+            DesktopLocatorKind.Title => LocatorKind.Title,
+            DesktopLocatorKind.TestId => LocatorKind.TestId,
+            _ => (LocatorKind?)null,
+        };
+
+        return kind is not { } resolved
+            ? null
+            : new Locator
+            {
+                Kind = resolved,
+                Value = locator.Value,
+                Name = locator.Name,
+                Exact = locator.Exact,
+                Nth = locator.Nth,
+                HasText = locator.HasText,
+            };
+    }
 
     private static CapabilityResult<T> NotFound<T>(DesktopPageTarget target) =>
         CapabilityResult<T>.Failure(DesktopCapabilityError.InvalidTarget(
