@@ -58,7 +58,7 @@ public sealed record CodeIndexStatusDetailSnapshot(
 /// <b>原始生命周期状态</b>（<see cref="CodeProjectStatus"/>：含 <c>Registering</c> —— 注册表契约把这个字面量
 /// 投影掉了，只有原始记录还留着它）。两者同源不同投影，因此都给出，而不是二选一。</item>
 /// <item><see cref="Maintenance"/> —— <b>维护态</b>。真源是维护驱动进程内状态
-/// （<see cref="ICodeIndexMaintenance.GetScopeStatuses"/> 的 23 字段记录，**原样透传**，
+/// （<see cref="ICodeIndexMaintenance.GetScopeStatuses"/> 的 32 字段记录（23 冻结核心 + 9 个 D4「源维护」追加字段），**原样透传**，
 /// 其中 <c>indexPending</c> 就是 D3 里那个与 <c>Registering</c> 混为一谈的 <c>Pending</c>），
 /// 未挂到驱动上时为 <c>null</c> 并由 <see cref="MaintenanceReason"/> 如实说明原因。</item>
 /// </list>
@@ -77,7 +77,7 @@ public sealed record CodeIndexStatusDetailSnapshot(
 /// <param name="RegistrationState">注册态（注册表投影，<see cref="ScopeState"/> 名）；未登记为 <c>null</c>。</param>
 /// <param name="RegistrationStatus">注册态（项目记录原始 <see cref="CodeProjectStatus"/> 名，含 <c>Registering</c>）。</param>
 /// <param name="RegistrationSource">scope 来源（<see cref="ScopeSource"/> 名：Manual/Auto/Pinned）。</param>
-/// <param name="Maintenance">维护态 23 字段（原样透传）；未挂到驱动上为 <c>null</c>。</param>
+/// <param name="Maintenance">维护态 32 字段（原样透传）；未挂到驱动上为 <c>null</c>。</param>
 /// <param name="MaintenanceReason">维护态缺席时的如实原因；正常为 <c>null</c>。</param>
 /// <param name="RootPathExists">对 <paramref name="RootPath"/> 做的**目录存在性**判定（D2 的判定输入）。</param>
 /// <param name="Stale">陈旧：未登记 <b>或</b> 根路径不存在。</param>

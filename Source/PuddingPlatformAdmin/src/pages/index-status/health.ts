@@ -871,7 +871,7 @@ export interface CodeIndexProjectMarks {
   calibrationRejected: boolean;
   /** **注册态** tooltip（D3 第一半；真源 = 索引注册表）。 */
   registrationHint: string;
-  /** **维护态** tooltip（D3 第二半；真源 = 维护驱动；23 字段由契约常量生成）。 */
+  /** **维护态** tooltip（D3 第二半；真源 = 维护驱动；23 冻结核心 + 9 个 D4「源维护」= 32 字段，由契约常量生成）。 */
   maintenanceHint: string;
 }
 
@@ -919,7 +919,7 @@ export function deriveCodeIndexProjectMarks(entry: CodeIndexProjectStatus): Code
 }
 
 /**
- * 维护态的单字结论（**只在行内用**；23 字段逐条在 tooltip 与 L2 证据层）。
+ * 维护态的单字结论（**只在行内用**；32 字段逐条在 tooltip 与 L2 证据层）。
  * 优先级：索引中 > 待重建 > 待索引 > 空闲（先报「正在动」，再报「要动什么」）。
  */
 export type MaintenanceWord = '索引中' | '待重建' | '待索引' | '空闲';

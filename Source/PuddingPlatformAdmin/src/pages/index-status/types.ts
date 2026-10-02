@@ -234,7 +234,7 @@ export interface CodeIndexProjectStatus {
   registrationStatus: string | null;
   /** scope 来源（`Manual` / `Auto` / `Pinned`）；未知为 `null`。 */
   registrationSource: string | null;
-  /** 维护态 23 字段原样透传；**未挂到驱动为 `null`**（原因见 `maintenanceReason`）。 */
+  /** 维护态 32 字段（23 冻结核心 + 9 个 D4「源维护」）原样透传；**未挂到驱动为 `null`**（原因见 `maintenanceReason`）。 */
   maintenance: CodeIndexMaintenanceStatus | null;
   /** 维护态缺席时的**如实原因**（`scope-not-attached` / `maintenance-driver-not-running`）；正常为 `null`。 */
   maintenanceReason: string | null;
