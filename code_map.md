@@ -51,7 +51,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingPlatformAdmin/` | React 管理前端（Chat 工作台、任务看板、编排编辑器、/storage、/index-status 等）；`dist` 经 `PuddingHostContent.props` 部署到 Core `wwwroot/admin` | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
 | `Source/PuddingTaskRecall.Cli/` | 历史脏数据一次性诊断/修复 CLI（默认 dry-run，`--apply` 才写库） | [code_map](Source/PuddingTaskRecall.Cli/code_map.md) |
 | `Source/PuddingGit.Tools/` | Git 工具声明（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
-| `src/HarnessAgent/Core/` | Harness Agent 核心库（与主线并列的 Harness 实现） | — |
+| `Source/HarnessAgent.Core/` | Harness Agent 核心库（与主线并列的 Harness 实现） | — |
 
 ### 2.2 Desktop ↔ Core 能力通道（平台/传输无关组件）
 
@@ -95,7 +95,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 ### 2.5 代码地图缺口
 
-下列程序集尚无 `code_map.md`（新增文件时顺手补一份，并在 §2 登记）：`Source/Pudding.DesktopSurface.Browser`、`Source/Pudding.Rpc.IpcProbe`、`Source/PuddingRetrievalEvalProbe`、`Source/PuddingMemoryEngineBenchmarks`、`src/HarnessAgent/Core`、`Tests/*`（见 §5）、`external/github.hyfree.GM`。
+下列程序集尚无 `code_map.md`（新增文件时顺手补一份，并在 §2 登记）：`Source/Pudding.DesktopSurface.Browser`、`Source/Pudding.Rpc.IpcProbe`、`Source/PuddingRetrievalEvalProbe`、`Source/PuddingMemoryEngineBenchmarks`、`Source/HarnessAgent.Core`、`Tests/*`（见 §5）、`external/github.hyfree.GM`。
 
 ## 3. 关键概念与组件
 

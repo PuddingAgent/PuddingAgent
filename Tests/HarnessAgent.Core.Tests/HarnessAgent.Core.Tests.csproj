@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\HarnessAgent\Core\HarnessAgent.Core.csproj" />
+    <ProjectReference Include="..\..\Source\HarnessAgent.Core\HarnessAgent.Core.csproj" />
   </ItemGroup>
 
 </Project>

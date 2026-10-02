@@ -1,7 +1,7 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\HarnessAgent\Core\HarnessAgent.Core.csproj" />
+    <ProjectReference Include="..\..\Source\HarnessAgent.Core\HarnessAgent.Core.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
