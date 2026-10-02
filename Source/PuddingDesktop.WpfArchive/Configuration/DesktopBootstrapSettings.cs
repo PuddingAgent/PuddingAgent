@@ -20,6 +20,54 @@ public sealed record DesktopBootstrapSettings
     /// </summary>
     public DesktopToolWorkspaceSettings? ToolWorkspace { get; init; }
     public DesktopDebugSettings Debug { get; init; } = new();
+
+    /// <summary>
+    /// 镜像 Core 侧 <c>system.json</c> 的 <c>Desktop</c> 段（切片 C-3 能力通道，见
+    /// <c>Docs/Features/Desktop-Surface-Browser-Mapping-2026-10-01.md</c> §8.3）。
+    ///
+    /// 段名与 Core 侧一致（<c>Desktop:CapabilityChannel</c>）⇒ 同一段配置可以在两个文件之间
+    /// 原样复制，运维只需记一个段名。
+    ///
+    /// <b>null = 用户从未配置过</b>（缺省即关闭，继续走既有 WebSocket Bridge）。
+    /// 之所以用可空而不是像 <c>Debug</c> 那样给默认值：<c>Enabled</c> 是**安全相关**开关，
+    /// 用户没写过的字段不应该因为「保存了一次设置」就出现在文件里（<c>ToolWorkspace</c> 同此约定）。
+    /// </summary>
+    public DesktopSectionSettings? Desktop { get; init; }
+}
+
+/// <summary>
+/// <c>desktop.json</c> 里的 <c>desktop</c> 段：目前只承载能力通道，形态刻意与
+/// Core 的 <c>system.json</c> 同名段保持可复制。
+/// </summary>
+public sealed record DesktopSectionSettings
+{
+    public DesktopCapabilityChannelFileSettings? CapabilityChannel { get; init; }
+}
+
+/// <summary>
+/// <c>Desktop:CapabilityChannel</c> 的**文件形态**（纯值对象，<b>不含任何凭据</b>）。
+///
+/// 缺省值必须与组件侧的 <c>Pudding.DesktopService.DesktopCapabilityChannelSettings</c> 一致，
+/// 否则「用户没配」会被当成「配错了」（两侧一致性由测试钉住）。
+/// 本工程不得引用 <c>Pudding.DesktopService</c>（它的边界目标禁止引用任何含 <c>PuddingDesktop</c> 的项目），
+/// 因此这里是**独立的值对象**，由 Shell 组合根完成到组件设置类型的映射。
+/// </summary>
+public sealed record DesktopCapabilityChannelFileSettings
+{
+    /// <summary>唯一开关；缺省 false = 完全不启用（不注册、不连接、不改行为）。</summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>必须与 Core 侧配置的同一值一致（握手时校验，不接受对端自称）。</summary>
+    public string DesktopId { get; init; } = "default";
+
+    /// <summary>
+    /// 承载控制令牌的 Header 名。Core 同时接受既有产品 Header 与 Desktop 侧缺省值，
+    /// 因此缺省即可用；显式配置时必须落在 Core 接受的两个名字之一。
+    /// </summary>
+    public string ControlTokenHeader { get; init; } = "x-pudding-control-token";
+
+    /// <summary>握手超时（秒）：组件侧限定在 [1, 120]，越界会被组件判为无效配置（不是崩溃）。</summary>
+    public int HandshakeTimeoutSeconds { get; init; } = 15;
 }
 
 /// <summary>

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
@@ -22,6 +22,10 @@
     <ProjectReference Include="..\..\Source\PuddingDesktop.WpfArchive\PuddingDesktop.WpfArchive.csproj" />
     <ProjectReference Include="..\..\Source\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
     <ProjectReference Include="..\..\Source\PuddingBrowser.Protocol\PuddingBrowser.Protocol.csproj" />
+    <!-- 只为「文件形态的缺省值必须与组件缺省值一致」这条跨侧一致性断言：
+         能力通道的文件段在 WpfArchive，组件设置类型在 Pudding.DesktopService，
+         两边各写一份缺省值就有漂移风险（"没配置"被当成"配错了"）。 -->
+    <ProjectReference Include="..\..\Source\Pudding.DesktopService\Pudding.DesktopService.csproj" />
   </ItemGroup>
 
   <ItemGroup>
