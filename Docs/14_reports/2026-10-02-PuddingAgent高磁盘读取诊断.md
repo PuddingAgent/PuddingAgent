@@ -2,7 +2,7 @@
 title: PuddingAgent 高磁盘读取诊断
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-03
 status: active
 description: 发送消息后的零游标 SSE 回放和边界扫描，以及后台代码索引逐符号关系清理，共同造成读取放大。
 categories: [docs, reports]
@@ -409,3 +409,66 @@ record AppliedFileVersion(string ProviderId, string ParserPolicyFingerprint,
 外部控制器部署到明确的新构建后，固定同一长会话与采样区间，分别验证空闲 60 秒、发送短消息、刷新/重连、改一个 Markdown、改一个代码文件、改一个项目配置，以及 D5 的遗漏通知与失败恢复。先用隔离 DataRoot/备份数据完成正确性验收，再做用户开发实例的受控性能复核；避免 dev-up 与 Desktop 同时持有同 DataRoot。
 
 验收同时收集按文件的 platform/code-index 读取、进程增量、物理磁盘增量、SSE cursor/replayCount、stat/hash/解析文件数、项目装载数、影响计划原因及各 provider 提交水位。目标是消除**随全部历史/全部关系量增长的重复扫描**，同时证明真实变化没有遗漏；不能承诺每次聊天绝对固定字节数，真实补偿缺口、模型上下文、工具读取仍会有必要 I/O。未拿到文件级跟踪时单独列出该证据缺口，不能用进程总读取量证明某个数据库的改进。
+
+## 2026-10-03 复测现场与归因（旧构建，不构成修复验证）
+
+用户提供「发送一句话后」的进程-文件磁盘监控快照（2026-10-03 约 07:38～07:42）。本节只记录该快照的归因、新取证与只读探针事实，**不声称任何修复已被验证**。
+
+### 运行实例身份：跑的是 10-01 的旧构建
+
+| 事实 | 值 |
+|---|---|
+| 进程 | PID 34672，启动 2026-10-02 18:08:17 |
+| 映像 | `Source/PuddingAgent/bin/Debug/net10.0/PuddingAgent.exe` |
+| `PuddingPlatform.dll` / `PuddingHost.dll` / `PuddingAgent.exe` 落盘时间 | 2026-10-01 11:06:10 / 11:14:26 / 11:14:27 |
+| A/B/C 提交时间 | 2026-10-02 12:31（`d6c5159`/`bdfac81`/`bf636c5`） |
+| D 提交时间 | 2026-10-02 13:40～13:46（`9961e8b`/`e7c2e3d`） |
+
+进程在提交之后启动，但加载的是提交之前的程序集：**A/B2/C/D 全部不在该进程内**，所以这张快照既不能证明修复有效，也不能作为修复前基线去对比——它只是旧构建的又一次现场。
+
+### 快照归因
+
+`PuddingAgent.exe` 自身的行只有：
+
+- `D:\Data\databases\pudding_platform.db`：读 **577.45 kB/s**（第二读数 464 kB/s），窗口累计读 **26.5 MB**，无写入列。
+- `code-index\code_index.db`：读 409 B/s、写 8 kB/s；累计读 36 kB、写 892 kB；另有 4 条 `code_index.db-wal` 写行（4.8/1.92/7.71/2.36 kB/s，各 48～356 kB）。
+- `pudding_memory.db` 读 91 B/s + `-wal` 写 9.24 kB/s（416 kB）。
+- `D:\$LogFile` 写 75.8 kB/s（4.74 MB）、`D:\$Mft` 546 B/s：自身写入的 NTFS 日志与元数据。
+
+快照里占绝大多数行的是**并发构建**，不是应用：`System`(PID 4)、`dotnet.exe`、`VBCSCompiler.exe`、`XamlCompiler.exe`、`Unknown process`，路径集中在 `temp\build\desktop-launcher-core\**`、`temp\build\winui3\**`、`PuddingPlatformAdmin\dist\**`、`Source\PuddingAgent\bin\**\wwwroot\admin\**`、`PuddingDesktop.WpfArchive\**\*.tmpdir\**`。归因这类行时不得算到 Core 头上。
+
+窗口内 `PuddingAgent.exe` **没有读取任何工作区源文件**：原始症状里的「全仓/大批源文件读取」在这段窗口没有复现。但窗口长度未知、无文件级 ETW，这只是单次观测，不能当作治愈证据。
+
+### 新取证：零游标回放已不再发生（客户端行为）
+
+同一进程（10-01 构建，10-02 18:08 启动）在 10-01/10-02 日志里反复记录：
+
+```
+[SessionEvents] SSE subscribed session=206a9b48… cursor=0 phase=replay-from-zero head=1644341
+```
+
+而 2026-10-03 的全部 `pudding-20261003_*.log`（001～012）中 `SessionEvents` 出现 **0 次**；当天 `wwwroot/admin` 部署的是 `umi.beea2d5c.js`（2026-10-03 03:55:40，前端 `package.json` 6.2.2）。即：今天的发送路径不再以 0 游标订阅会话事件流，`replay-from-zero` 没再出现——**服务端 A/B2 仍未部署，这只能是客户端侧的行为变化**。包体经压缩混淆，不能据此断言是哪一次前端提交；按行为观测记录。
+
+当日 07:40:29 的 `[SubmitTurn]` → `[AcceptStore] Committed … seq=[1663426,1663426]` 说明该会话 head 已涨到 **1,663,426**；随后是 21 s 的 warm-prefix 压缩与 `ConversationProjector` 投影，属于正常发送流程。
+
+### 只读库头探针（`mode=ro`）
+
+| 库 | 页数×页大小 | 空闲页 | WAL 模式/阈值 | 其他 |
+|---|---|---|---|---|
+| `pudding_platform.db` | 2,456,069×4096 = **9.37 GiB** | 0 | wal / autocheckpoint 1000 页（3.9 MB） | `cache_size=-2000`、`mmap_size=0`；磁盘上 `-wal` **40,376,032 B** |
+| `code_index.db` | 692,558×4096 = **2.64 GiB** | 397,564 页（**1.52 GiB，57%**） | wal / 1000 页 | `auto_vacuum=0`，文件不会自行收缩 |
+| `pudding_memory.db` | 84,944×4096 = 332 MiB | 0 | wal / 1000 页 | — |
+
+`conversation_events` 上存在 9 个索引，含 `IX_conversation_events_conversation_id_sequence`，与 §「SQL 与只读对照」一致：`MIN/MAX` 形式仍会遍历该会话的索引分区；当前库无空闲页，说明 9.37 GiB 是实打实的数据量。
+
+两条值得单独立项的观测（本次未改代码）：
+
+1. **WAL 达 40 MB，是 3.9 MB 自动检查点阈值的 10 倍**：存在长期读快照或检查点长期未完成，`-wal` 无法截断。重启到新构建后可直接把「WAL 是否回落到 ≤ 约 4 MB」当作一条廉价复核指标。
+2. **`code_index.db` 57% 是空闲页**：与 C 的逐符号关系删除放大、且 `auto_vacuum=0` 一致，磁盘占用不会随删除回收；是否 VACUUM/重建属于独立决策，不在本诊断的四个修复范围内。
+
+### 证据缺口与下一步
+
+- 快照采样区间未标注，第二读数含义（缓存/其他）未确认，因此**不能把 26.5 MB 精确分解**到某个调用。
+- 无文件级 ETW（`wpr` 在本机被拒绝），仍未获得按文件的读取占比。
+- 未测当前构建 `GetBoundsAsync` 的单次字节成本；该成本已在 §「SQL 与只读对照」用只读探针测得（head 1,644,340 时 81,702,912 B/次）。
+- 外部控制器重启到**明确的新 Core 构建**后，用同一监控、固定并标注采样区间复跑：空闲 60 s、发送短消息、刷新/重连、改一个 Markdown、改一个代码文件、改一个项目配置；同时收集按文件读写、`[SessionEvents] SSE subscribed … head=` 与 `[AcceptStore] Committed` 行、以及 `-wal` 大小。目标是消除**随全部历史/关系量增长的重复扫描**，而非承诺每次聊天固定字节数。
