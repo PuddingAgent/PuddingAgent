@@ -160,6 +160,30 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         /// <summary>Guarded by the service gate. Files re-indexed one by one instead of by a full run.</summary>
         public long IncrementallyIndexedFileCount;
 
+        /// <summary>Guarded by the service gate. D4：源维护协调器已运行轮数。</summary>
+        public long SourceMaintenanceRunCount;
+
+        /// <summary>Guarded by the service gate. D4：累计提取并原子提交的文件数。</summary>
+        public long SourceMaintenanceExtractedFileCount;
+
+        /// <summary>Guarded by the service gate. D4：累计「指纹一致 ⇒ 跳过提取」的文件数。</summary>
+        public long SourceMaintenanceReusedFileCount;
+
+        /// <summary>Guarded by the service gate. D4：累计清掉的索引孤儿行数。</summary>
+        public long SourceMaintenanceOrphanFileCount;
+
+        /// <summary>Guarded by the service gate. D4：最近一轮的未解决路径数。</summary>
+        public long SourceMaintenanceUnresolvedPathCount;
+
+        /// <summary>Guarded by the service gate. D4：最近一轮确认删除的文件数。</summary>
+        public long SourceMaintenanceDeletedFileCount;
+
+        /// <summary>Guarded by the service gate. D4：最近一轮的账本提交结果。</summary>
+        public CodeSourceCommitOutcome? LastSourceMaintenanceCommitOutcome;
+
+        /// <summary>Guarded by the service gate. D4：最近一轮语言侧复用的工程/编译快照标识。</summary>
+        public string? LastSourceMaintenanceSessionKey;
+
         /// <summary>Guarded by the service gate. Batches that had to escalate to a scope-level run.</summary>
         public long ScopeEscalationCount;
 
@@ -674,7 +698,9 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         // Per-file increment: a changed file no longer forces a full scope re-index. Whatever the indexer
         // declines (or a directory change, whose subtree can hold files the batch never mentioned) escalates
         // to a scope-level run instead of being dropped.
-        var escalate = batch.ReconcileRequired;
+        // D4：`Coordinator` 模式下 reconcile 也由协调器的**完整扫描**承担（见 ApplySourceMaintenanceAsync），
+        // 因此这里不再预先置升级位；旧路径保持原样（reconcile 一律升级为 scope 级运行）。
+        var escalate = batch.ReconcileRequired && _sourceMaintenanceMode == CodeSourceMaintenanceMode.Legacy;
         if (!escalate && _sourceMaintenanceMode == CodeSourceMaintenanceMode.Coordinator)
         {
             // D4 新链路：整批交给协调器（校准 → 计划 → 批量提取 → 稳定读 → 原子替换 → 账本提交）。
@@ -747,6 +773,11 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             .Distinct(CodePathIdentity.PathComparer)
             .ToArray();
 
+        // D4：`ReconcileRequired` 的批次（重组/溢出）必须走**完整**扫描 —— 细粒度捕获已不可信，
+        // 只有完整校准能重新对齐索引与 manifest。这里由协调器承担，而不是让它升级成旧的 scope 级运行：
+        // 后者直接写索引却不更新 manifest，会让两条链路对同一路径给出不同结论。
+        var fullScan = batch.ReconcileRequired || hints.Length == 0;
+
         try
         {
             var inputs = await _consumerInputs
@@ -760,10 +791,10 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
                     new CodeSourceMaintenanceRunOptions(
                         inputs,
                         ProjectFilePaths: descriptor.ProjectFilePaths,
-                        WatcherHints: hints,
-                        // 提示驱动的批次只做按路径观测：全树枚举是周期性校准的事，
+                        WatcherHints: fullScan ? null : hints,
+                        // 提示驱动的批次只做按路径观测：全树枚举是周期性校准与重组批次的事，
                         // 每一次「保存一个文件」都遍历整棵树会让新链路比旧路径更费磁盘。
-                        Targeted: hints.Length > 0),
+                        Targeted: !fullScan),
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -778,6 +809,16 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             lock (_gate)
             {
                 entry.IncrementallyIndexedFileCount += result.ExtractedFileCount;
+
+                // D4：把协调器的每轮结果落到 scope 状态，验收可以直接读事实而不是翻日志。
+                entry.SourceMaintenanceRunCount++;
+                entry.SourceMaintenanceExtractedFileCount += result.ExtractedFileCount;
+                entry.SourceMaintenanceReusedFileCount += result.ReusedFileCount;
+                entry.SourceMaintenanceOrphanFileCount += result.OrphanFileCount;
+                entry.SourceMaintenanceUnresolvedPathCount = result.RetryableFileCount;
+                entry.SourceMaintenanceDeletedFileCount = result.DeletedFileCount;
+                entry.LastSourceMaintenanceCommitOutcome = result.LedgerOutcome;
+                entry.LastSourceMaintenanceSessionKey = result.LanguageSessionKey;
             }
 
             _logger?.LogInformation(
@@ -1369,7 +1410,16 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             rejectedCalibrationRunCount,
             lastCalibrationAtUtc,
             entry.RecentObservations.Count,
-            entry.Watcher is not null);
+            entry.Watcher is not null,
+            _sourceMaintenanceMode,
+            entry.SourceMaintenanceRunCount,
+            entry.SourceMaintenanceExtractedFileCount,
+            entry.SourceMaintenanceReusedFileCount,
+            entry.SourceMaintenanceOrphanFileCount,
+            entry.SourceMaintenanceUnresolvedPathCount,
+            entry.SourceMaintenanceDeletedFileCount,
+            entry.LastSourceMaintenanceCommitOutcome,
+            entry.LastSourceMaintenanceSessionKey);
     }
 
     private KeyValuePair<(string WorkspaceId, string ScopeId), ScopeEntry>[] SnapshotScopeEntries()

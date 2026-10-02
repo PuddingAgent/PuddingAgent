@@ -25,7 +25,7 @@ public sealed class CodeSourceMaintenanceIoProfileTests : IDisposable
     private string _root = null!;
     private string _scopeRoot = null!;
     private SqliteCodeIndexStore _store = null!;
-    private DateTimeOffset _now = new(2026, 10, 2, 9, 0, 0, TimeSpan.Zero);
+    private DateTimeOffset _now = DateTimeOffset.UtcNow.AddHours(1);
 
     [TestInitialize]
     public void Initialize()

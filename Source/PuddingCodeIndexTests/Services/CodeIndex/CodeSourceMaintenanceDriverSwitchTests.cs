@@ -61,6 +61,57 @@ public sealed class CodeSourceMaintenanceDriverSwitchTests
     }
 
     [TestMethod]
+    public async Task CoordinatorModeRoutesAReconcileBatchThroughAFullScanInsteadOfTheOldScopeRun()
+    {
+        using var harness = new SwitchHarness();
+        var file = harness.WriteFile("A.cs", "class A { }");
+        await harness.StartAsync();
+
+        // 队列溢出 ⇒ 细粒度捕获不可信 ⇒ 必须完整扫描；旧的升级路径会直接跑 scope 级索引而不更新 manifest。
+        harness.MarkNeedsReconcile();
+        harness.PublishChange("A.cs", IndexChangeKind.Changed);
+        harness.AdvancePastDebounce();
+
+        await harness.Service.ProcessDueBatchesAsync();
+
+        var (full, probe) = harness.ScanCounts();
+        Assert.IsTrue(full >= 1, "reconcile 批次必须走完整枚举");
+        Assert.AreEqual(0, probe, "不得退化成按路径观测");
+        Assert.AreEqual(0, harness.Status().ScopeEscalationCount, "不再升级成旧的 scope 级运行");
+        Assert.IsTrue(
+            (await harness.Store.GetSymbolsByFileAsync(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, file)).Count > 0,
+            "完整扫描同样把索引写进去");
+    }
+
+    [TestMethod]
+    public async Task ScopeStatusExposesSourceMaintenanceFactsForAcceptance()
+    {
+        using var harness = new SwitchHarness();
+        var file = harness.WriteFile("A.cs", "class A { }");
+        await harness.StartAsync();
+        harness.PublishChange("A.cs", IndexChangeKind.Changed);
+        harness.AdvancePastDebounce();
+
+        await harness.Service.ProcessDueBatchesAsync();
+
+        var status = harness.Status();
+        Assert.AreEqual(CodeSourceMaintenanceMode.Coordinator, status.SourceMaintenanceMode);
+        Assert.AreEqual(1, status.SourceMaintenanceRunCount);
+        Assert.AreEqual(1, status.SourceMaintenanceExtractedFileCount);
+        Assert.AreEqual(0, status.SourceMaintenanceUnresolvedPathCount, "这一轮没有未解决路径");
+        Assert.AreEqual("switch-session", status.LastSourceMaintenanceSessionKey, "语言侧复用的快照标识可读");
+
+        // 第二轮（提示相同但内容未变）：复用计数上升、提取计数不变。
+        harness.PublishChange("A.cs", IndexChangeKind.Changed);
+        harness.AdvancePastDebounce();
+        await harness.Service.ProcessDueBatchesAsync();
+
+        status = harness.Status();
+        Assert.AreEqual(2, status.SourceMaintenanceRunCount);
+        Assert.AreEqual(1, status.SourceMaintenanceExtractedFileCount, "内容未变 ⇒ 不再提取");
+        Assert.AreEqual(1, status.SourceMaintenanceReusedFileCount, "指纹一致 ⇒ 跳过提取");
+    }
+    [TestMethod]
     public async Task CoordinatorModeRunsTheChainAndDoesNotEscalateTheScope()
     {
         using var harness = new SwitchHarness();
@@ -169,11 +220,12 @@ public sealed class CodeSourceMaintenanceDriverSwitchTests
         private readonly CodeIndexCalibrationService _calibration;
         private readonly CodeSourceMaintenanceCoordinator? _coordinator;
         private readonly FakeCodeIndexWatcherFactory _watcherFactory = new();
+        private readonly CountingScanner? _scanner;
 
         public SwitchHarness(CodeSourceMaintenanceMode mode = CodeSourceMaintenanceMode.Coordinator)
         {
             _fixture = CodeIndexFixture.Create();
-            _clock = new MutableTimeProvider(new DateTimeOffset(2026, 10, 2, 0, 0, 0, TimeSpan.Zero));
+            _clock = new MutableTimeProvider(DateTimeOffset.UtcNow.AddHours(1));
             _indexer = new RecordingCodeIndexer();
             Updater = new ScriptedBatchUpdater();
 
@@ -183,8 +235,10 @@ public sealed class CodeSourceMaintenanceDriverSwitchTests
 
             if (mode == CodeSourceMaintenanceMode.Coordinator)
             {
+                _scanner = new CountingScanner(new FileSystemCodeSourceScanner(new PermissiveIgnoreRules()));
+
                 var scanService = new CodeSourceScanService(
-                    new FileSystemCodeSourceScanner(new PermissiveIgnoreRules()),
+                    _scanner,
                     _fixture.Store,
                     _clock,
                     logger: NullLogger<CodeSourceScanService>.Instance);
@@ -290,11 +344,43 @@ public sealed class CodeSourceMaintenanceDriverSwitchTests
 
         public void AdvancePastDebounce() => _clock.Advance(TimeSpan.FromSeconds(3));
 
+        public void MarkNeedsReconcile() =>
+            _watcherFactory.Watcher.State.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.QueueOverflow);
+
+        /// <summary>全树枚举 / 按路径观测各自的次数（用来断言 reconcile 走的是完整扫描）。</summary>
+        public (int Full, int Probe) ScanCounts() =>
+            _scanner is null ? (0, 0) : (_scanner.FullScanCount, _scanner.ProbeCount);
+
         public CodeIndexMaintenanceScopeStatus Status() =>
             Service.GetScopeStatus(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId)
             ?? throw new InvalidOperationException("scope not attached");
 
 
+    }
+
+    /// <summary>计数装饰器：分别记录全树枚举与按路径观测的次数。</summary>
+    private sealed class CountingScanner : ICodeSourceScanner, ICodeSourcePathProbe
+    {
+        private readonly FileSystemCodeSourceScanner _inner;
+
+        public CountingScanner(FileSystemCodeSourceScanner inner) => _inner = inner;
+
+        public int FullScanCount { get; private set; }
+
+        public int ProbeCount { get; private set; }
+
+        public Task<CodeSourceScanOutcome> ScanAsync(string rootPath, CancellationToken cancellationToken = default)
+        {
+            FullScanCount++;
+            return _inner.ScanAsync(rootPath, cancellationToken);
+        }
+
+        public Task<CodeSourceScanOutcome> ObserveAsync(
+            IReadOnlyCollection<string> absolutePaths, CancellationToken cancellationToken = default)
+        {
+            ProbeCount++;
+            return _inner.ObserveAsync(absolutePaths, cancellationToken);
+        }
     }
 
     private sealed class ScriptedBatchUpdater : ICodeIndexFileBatchUpdater

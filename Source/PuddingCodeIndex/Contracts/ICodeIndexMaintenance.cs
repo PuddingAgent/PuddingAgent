@@ -1,3 +1,4 @@
+using PuddingCodeIndex.Services.CodeIndex;
 namespace PuddingCodeIndex.Contracts;
 
 /// <summary>
@@ -113,4 +114,23 @@ public sealed record CodeIndexMaintenanceScopeStatus(
     long RejectedCalibrationRunCount,
     DateTimeOffset? LastCalibrationAtUtc,
     long RecentObservationCount,
-    bool WatcherAttached);
+    bool WatcherAttached,
+    // ── D4 源维护（2026-10-02）：让验收读得到事实，而不是只能翻日志 ──
+    /// <summary>本轮生效的变更施用链路（`Legacy` 逐文件 / `Coordinator` 源维护协调器）。</summary>
+    CodeSourceMaintenanceMode SourceMaintenanceMode = CodeSourceMaintenanceMode.Legacy,
+    /// <summary>源维护协调器已运行轮数（仅在 `Coordinator` 模式递增）。</summary>
+    long SourceMaintenanceRunCount = 0,
+    /// <summary>累计「提取并原子提交」的文件数。</summary>
+    long SourceMaintenanceExtractedFileCount = 0,
+    /// <summary>累计「内容指纹一致 ⇒ 跳过提取、只刷新消费者视图」的文件数。</summary>
+    long SourceMaintenanceReusedFileCount = 0,
+    /// <summary>累计清掉的索引孤儿行数。</summary>
+    long SourceMaintenanceOrphanFileCount = 0,
+    /// <summary>最近一轮的未解决路径数（失败 + 本轮没有定论）。</summary>
+    long SourceMaintenanceUnresolvedPathCount = 0,
+    /// <summary>最近一轮确认删除的文件数。</summary>
+    long SourceMaintenanceDeletedFileCount = 0,
+    /// <summary>最近一轮的账本提交结果（`null` 表示还没跑过）。</summary>
+    CodeSourceCommitOutcome? LastSourceMaintenanceCommitOutcome = null,
+    /// <summary>最近一轮语言侧复用的工程/编译快照标识（为空表示这一轮退化成逐文件提取）。</summary>
+    string? LastSourceMaintenanceSessionKey = null);
