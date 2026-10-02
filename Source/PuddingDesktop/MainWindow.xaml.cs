@@ -36,6 +36,8 @@ public sealed partial class MainWindow : Window
     private Microsoft.UI.Xaml.Controls.WebView2? _web;
     private CoreWebView2Environment? _webEnvironment;
     private BrowserWorkspaceController? _browser;
+    /// <summary>工具区里的浏览器表面宿主：与主工作台是两个 WebView2，外观必须一起同步。</summary>
+    private WinUiBrowserSurfaceHost? _browserSurfaces;
     private DesktopTrayIcon? _tray;
     private Uri? _webOrigin;
     private long _webGeneration;
@@ -914,11 +916,14 @@ public sealed partial class MainWindow : Window
             if (_browser is not null) return true;
             var dispatcher = new WinUiDispatcher(DispatcherQueue);
             var surfaces = new WinUiBrowserSurfaceHost(dispatcher, BrowserSurfaceHostPanel);
+            _browserSurfaces = surfaces;
             var runtime = new WebView2BrowserRuntime(dispatcher, surfaces, dataRoot);
             var browser = new BrowserWorkspaceController(runtime, surfaces, dispatcher);
             try { await browser.InitializeAsync(dataRoot, ct); }
             catch { await browser.DisposeAsync(); throw; }
             _browser = browser;
+            // 外观必须在浏览器表面就绪后立刻同步一次：此后新建的页面会自动继承。
+            ApplyBrowserSurfaceAppearance();
             _coordinator.BridgeDispatcher.SetHandler(browser);
             _coordinator.BridgeDispatcher.ActivityChanged += async (_, e) =>
             { try { await browser.ApplyActivityAsync(e.Snapshot, _lifetime.Token); } catch (OperationCanceledException) { } catch (Exception ex) { App.WriteDiagnostic(ex); } };
@@ -1161,24 +1166,77 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void ApplyWorkbenchAppearance()
     {
-        var web = _web;
-        if (web is null) return;
-
         var preference = WorkbenchAppearance.PreferenceFromComboIndex(ThemeBox.SelectedIndex);
         // 生效配色取 ActualTheme：RequestedTheme 为 Default 时即系统实际主题
         var scheme = WorkbenchAppearance.Resolve(preference, Root.ActualTheme == ElementTheme.Dark);
-        var (alpha, red, green, blue) = WorkbenchAppearance.ToArgbParts(
-            WorkbenchAppearance.BackgroundArgb(scheme));
-        web.DefaultBackgroundColor = Windows.UI.Color.FromArgb(alpha, red, green, blue);
+
+        // 三处宿主表面共用同一份判断：标题栏按钮、工具区里的浏览器表面、主工作台。
+        // 前两处不依赖 _web，所以放在它的 null 早退之前。
+        ApplyCaptionButtonColors(scheme);
+        ApplyBrowserSurfaceAppearance();
+
+        var web = _web;
+        if (web is null) return;
+        web.DefaultBackgroundColor = ToColor(WorkbenchAppearance.BackgroundArgb(scheme));
 
         if (web.CoreWebView2 is null) return;
-        web.CoreWebView2.Profile.PreferredColorScheme = preference switch
+        web.CoreWebView2.Profile.PreferredColorScheme = ToWebView2Scheme(
+            WorkbenchAppearance.PreferredColorSchemeFor(preference));
+    }
+
+    /// <summary>
+    /// 标题栏按钮配色。窗口用了 <c>ExtendsContentIntoTitleBar</c>，最小化/最大化/关闭
+    /// **不再自动跟随应用主题**：系统深色 + 应用浅色时，白色字形画在浅色标题栏上，
+    /// 用户实测"与白色高度相似、对比度无法分辨"。背景给透明让 Mica 透出。
+    /// </summary>
+    private void ApplyCaptionButtonColors(WorkbenchColorScheme scheme)
+    {
+        var titleBar = AppWindow.TitleBar;
+        titleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.ButtonForegroundColor = ToColor(WorkbenchAppearance.CaptionGlyphArgb(scheme));
+        titleBar.ButtonInactiveForegroundColor = ToColor(
+            WorkbenchAppearance.CaptionInactiveGlyphArgb(scheme));
+        titleBar.ButtonHoverBackgroundColor = ToColor(
+            WorkbenchAppearance.CaptionHoverBackgroundArgb(scheme));
+        titleBar.ButtonHoverForegroundColor = ToColor(
+            WorkbenchAppearance.CaptionGlyphArgb(scheme));
+        titleBar.ButtonPressedBackgroundColor = ToColor(
+            WorkbenchAppearance.CaptionPressedBackgroundArgb(scheme));
+        titleBar.ButtonPressedForegroundColor = ToColor(
+            WorkbenchAppearance.CaptionGlyphArgb(scheme));
+    }
+
+    /// <summary>
+    /// 工具区浏览器表面的外观（预绘制背景 + UA 配色），与主工作台共用同一份
+    /// <see cref="WorkbenchAppearance"/> 判断。浏览器页面里的 <c>about:blank</c>
+    /// 在 UA 深色下画布是 Chromium 的 #121212，浅色宿主里会显得像一块黑屏。
+    /// </summary>
+    private void ApplyBrowserSurfaceAppearance()
+    {
+        if (_browserSurfaces is null) return;
+        var preference = WorkbenchAppearance.PreferenceFromComboIndex(ThemeBox.SelectedIndex);
+        var scheme = WorkbenchAppearance.Resolve(preference, Root.ActualTheme == ElementTheme.Dark);
+        _browserSurfaces.ApplyAppearance(
+            WorkbenchAppearance.BackgroundArgb(scheme),
+            ToWebView2Scheme(WorkbenchAppearance.PreferredColorSchemeFor(preference)));
+    }
+
+    /// <summary>ARGB → UI 颜色（避免在 Foundation 里引入 UI 类型）。</summary>
+    private static Windows.UI.Color ToColor(uint argb)
+    {
+        var (alpha, red, green, blue) = WorkbenchAppearance.ToArgbParts(argb);
+        return Windows.UI.Color.FromArgb(alpha, red, green, blue);
+    }
+
+    /// <summary>Foundation 的配色意图 → WebView2 的 UA 配色（唯一映射点）。</summary>
+    private static CoreWebView2PreferredColorScheme ToWebView2Scheme(
+        WorkbenchPreferredColorScheme scheme) => scheme switch
         {
-            WorkbenchThemePreference.Light => CoreWebView2PreferredColorScheme.Light,
-            WorkbenchThemePreference.Dark => CoreWebView2PreferredColorScheme.Dark,
+            WorkbenchPreferredColorScheme.Light => CoreWebView2PreferredColorScheme.Light,
+            WorkbenchPreferredColorScheme.Dark => CoreWebView2PreferredColorScheme.Dark,
             _ => CoreWebView2PreferredColorScheme.Auto,
         };
-    }
     internal async Task RequestCloseAsync(bool explicitExit)
     {
         if (_closing) return;

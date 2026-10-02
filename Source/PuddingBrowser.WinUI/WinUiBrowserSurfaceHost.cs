@@ -38,6 +38,16 @@ public interface IBrowserSurfaceHost
         CoreWebView2Environment environment, PageCreateOptions options, CancellationToken ct);
     Task ActivateAsync(PageId pageId, CancellationToken ct);
     Task CloseAsync(PageId pageId, CancellationToken ct);
+
+    /// <summary>
+    /// 同步宿主外观到**每一个**浏览器表面（含之后新建的）：预绘制背景 + UA 配色。
+    /// <para>
+    /// 浏览器页面是独立的 WebView2，与主工作台不是同一个实例；漏掉就会出现
+    /// 「浅色应用里一块纯黑画布」——UA 处于深色时 <c>about:blank</c> 的画布是
+    /// Chromium 的 #121212。调用方必须在 UI 线程调用。
+    /// </para>
+    /// </summary>
+    void ApplyAppearance(uint backgroundColorArgb, CoreWebView2PreferredColorScheme scheme);
 }
 
 public interface IBrowserSurface : IAsyncDisposable
@@ -49,6 +59,11 @@ public interface IBrowserSurface : IAsyncDisposable
 public sealed class WinUiBrowserSurfaceHost(IWebView2UiDispatcher dispatcher, Panel container) : IBrowserSurfaceHost
 {
     private readonly Dictionary<PageId, Surface> _surfaces = new();
+
+    // 最近一次宿主外观：新建表面自动继承，避免"先开浏览器再切主题"出现黑画布。
+    private uint _appearanceArgb = 0xFFFFFFFF;
+    private CoreWebView2PreferredColorScheme _appearanceScheme = CoreWebView2PreferredColorScheme.Auto;
+
     public Task<IBrowserSurface> CreateAsync(BrowserContextId contextId, PageId pageId,
         CoreWebView2Environment environment, PageCreateOptions options, CancellationToken ct) =>
         dispatcher.InvokeAsync<IBrowserSurface>(async () =>
@@ -62,11 +77,30 @@ public sealed class WinUiBrowserSurfaceHost(IWebView2UiDispatcher dispatcher, Pa
                 ct.ThrowIfCancellationRequested();
                 var surface = new Surface(pageId, control);
                 _surfaces.Add(pageId, surface);
+                ApplyAppearance(surface);
                 control.Visibility = Visibility.Collapsed;
                 return surface;
             }
             catch { container.Children.Remove(control); control.Close(); throw; }
         }, ct);
+
+    public void ApplyAppearance(uint backgroundColorArgb, CoreWebView2PreferredColorScheme scheme)
+    {
+        _appearanceArgb = backgroundColorArgb;
+        _appearanceScheme = scheme;
+        foreach (var surface in _surfaces.Values) ApplyAppearance(surface);
+    }
+
+    private void ApplyAppearance(Surface surface)
+    {
+        var (alpha, red, green, blue) = (
+            (byte)(_appearanceArgb >> 24),
+            (byte)(_appearanceArgb >> 16),
+            (byte)(_appearanceArgb >> 8),
+            (byte)_appearanceArgb);
+        surface.Control.DefaultBackgroundColor = Windows.UI.Color.FromArgb(alpha, red, green, blue);
+        if (surface.Control.CoreWebView2 is { } core) core.Profile.PreferredColorScheme = _appearanceScheme;
+    }
 
     public Task ActivateAsync(PageId pageId, CancellationToken ct) => dispatcher.InvokeAsync(() =>
     {
