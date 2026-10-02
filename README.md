@@ -1,7 +1,7 @@
 # Pudding Agent
 
 <p align="center">
-  <img src="me.png" alt="Pudding" width="200"/>
+  <img src="Docs/Resources/Images/me-200.png" alt="Pudding" width="200"/>
 </p>
 
 <p align="center">

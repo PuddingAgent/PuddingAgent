@@ -397,7 +397,8 @@ FodyWeavers.xsd
 .env
 
 # jieba.NET dictionary files (auto-copied from NuGet cache)
-Resources/
+# 仅锚定仓库根的 Resources/（2026-10-02：改为根锚定，避免误伤 Docs/Resources/** 资源目录）
+/Resources/
 /.codex-out
 
 # 联网调研缓存与流程锁（2026-08-28 清理：不属于仓库内容）
@@ -423,7 +424,7 @@ pub/
 # 根级运行时临时文件（仅锚定根目录，避免误伤同名资源）
 /$null
 /checkpoint.json
-/me.png
+# /me.png 规则已移除（2026-10-02）：图片已入库到 Docs/Resources/Images/me.png（README 用小图 me-200.png）
 
 # db-shm/db-wal runtime temp files
 *.db-shm
