@@ -15,7 +15,7 @@
 |---|---|---|
 | 项目代码 / 文档 / 规范 | **项目目录** | `Source/**`、`Docs/**`、本文件 |
 | 预制数据 / 预制配置 | **项目目录** | `appsettings*.json`、agent 模板、seeds、fixtures |
-| 项目开发定义的特殊文件 | **项目目录** | `code_map.md`、`Agents.md`、**项目记忆**（`memory/projects/**`）、代码索引产物 |
+| 项目开发定义的特殊文件 | **项目目录** | `code_map.md`、`Agents.md`、**项目记忆**（2026-10-02 起为 `.pudding/memory/projects/**`）、代码索引产物 |
 | **Agent 运行时数据** | **数据目录** | Agent memory 归档、`goal.md`、会话、日志、临时产物、运行时索引、归档报告 |
 
 判据一句话：**「换一台开发机、重新 clone 仓库，这个文件还需要存在吗？」**
@@ -106,3 +106,4 @@
 - `goal_read` 超 16 KB 只返回尾部 + 告警 —— **这就是丢需求的直接机制**，不是提示性问题。
 - 写 `D:\data\**` 的 `file_write` 被审批依赖拦截 ⇒ 改 `goal.md` 只能走 `goal_update`；改**其它**数据目录文件走 shell 或带 `working_directory` 的子代理。
 - 项目目录 `memory/` 为 2026-09-16 裁定前的历史落点，正在迁移至 `D:\data\workspaces\default\memory\`；迁移后项目目录只保留 `memory/projects/**` 等项目记忆。
+  **2026-10-02 更新（用户裁定）**：仓库根 `memory/`、`skills/`、`agents/` 已整体迁入被 git 忽略的 `.pudding/`（`.pudding/memory/`、`.pudding/skills/`、`.pudding/agents/`），仓库根不再保留这些目录；权威运行时记忆仍是 `D:\data\workspaces\default\memory\`。
