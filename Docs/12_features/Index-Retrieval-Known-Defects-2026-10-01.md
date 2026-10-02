@@ -458,3 +458,26 @@ CLI 的命令面为：`index / search / status / watch / definition / references
   （code-index 维护系列 + 前端 6.2.0 Debug 按钮）。**不替他人推送**，仅登记事实。
 - **文档目录已重组**：本文件原路径 `Docs/Features/…` 实测 `File not found`，现位于
   **`Docs/12_features/Index-Retrieval-Known-Defects-2026-10-01.md`**。引用本文档的旧记录（含 `goal.md`）需按新路径复核。
+
+---
+
+## D10 · 上游契约扩展打破「恰好 23 字段」断言（2026-10-02，**已修**）
+
+**现象**：他人 10-02 落地 D4 源维护后，`CodeIndexMaintenanceScopeStatus` 由 **23 → 32 字段**，
+S-A2 的 `A5_..._With_All_23_Fields` 断言由绿转红（失败 1 / 通过 24 / 总计 25）。
+
+**性质**：这是**合法契约增长**被**过紧断言**误报，不是端点丢字段 ——
+`CodeIndexStatusProbe` 两处构造均为 `Maintenance: maintenance`（同一引用），源码已复核。
+
+**修法（两条互补断言）**：
+① 冻结核心：上线时那 23 个名字必须原样、**同序**留在最前（前端按名取值 ⇒ 只增不改不删/不重排）；
+② 原样透传：序列化字段集 == 契约**反射**所得 camelCase 名集（丢字段/挑拣 ⇒ 红；合法增字段 ⇒ 绿）。
+测试更名 `A5_Maintenance_Status_Is_Passed_Through_Verbatim_With_All_Contract_Fields`。
+
+**证据**：修后 `PuddingHost.Tests` **25/25**、`PuddingRuntimeTests` D1 gate **4/4**（均 exit 0）；
+变异 M1（`Maintenance = maintenance with { }`）⇒ A5 **FAIL**（产物 `FD24B6C5…`）；
+复原后源码 blob == `HEAD:` blob（`923f034d…`）、`-t:Rebuild` 产物 `226295C8…`、复跑 **25/25 绿**、残留 0。
+详见 `Docs/00_changelog/2026Year/10/2026-10-02-上游契约扩展打破S-A2字段断言.md`。
+
+**仍未修（可见性缺口）**：前端 `src/pages/index-status/types.ts` + L2 证据层仍按 23 字段建模 ⇒
+新增 9 个「源维护」事实**不会出现在面板上**（TS 静默忽略多余字段）。待办：补齐 9 字段（前端改动**无需重启 Core**）。

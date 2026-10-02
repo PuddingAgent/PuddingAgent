@@ -16,7 +16,7 @@ namespace PuddingHost.Tests.Hosting;
 /// A2 注册表 4 个项目全部出现且登记态正确（同时是 A3/A4 的**活对照**：登记且路径存在 ⇒ 不陈旧）；
 /// A3 未登记 scope（D1）⇒ 出现在列表里且 <c>stale = true</c>；
 /// A4 根路径不存在（D2）⇒ <c>rootPathExists = false</c> 且 <c>stale = true</c>；
-/// A5 维护态 23 字段**原样透传**（同一引用 + 23 个 camelCase 字段名逐个点名）；
+/// A5 维护态**原样透传**（同一引用 + 字段集与契约反射集逐名一致 + 冻结的 23 个字段名原样同序保留）；
 /// A6 D3：注册态与维护态是两个字段、两个真源，不合并；
 /// A7 驱动计数 + 降级（读不出来时如实报 <c>null</c> 而不是 0）。
 /// </para>
@@ -205,11 +205,20 @@ public sealed class SA2CodeIndexStatusTests
     // ── A5：维护态 23 字段原样透传 ──────────────────────────────────────
 
     /// <summary>
-    /// A5：<c>Maintenance</c> 是组件记录的**同一引用**（没有挑拣、没有重建），
-    /// 序列化后恰好是那 23 个 camelCase 字段（逐个点名，少一个/多一个都红），且值逐项一致。
+    /// A5：<c>Maintenance</c> 是组件记录的**同一引用**（没有挑拣、没有重建），且值逐项一致。
+    /// <para>
+    /// 字段名用**两条互补断言**守，而不是一份人工维护的名单：
+    /// ① <b>冻结核心</b>：2026-10-01（S-A2 上线）时的 23 个名字必须原样、同序留在最前（前端已按它们取值 ⇒ 只增不改不删）；
+    /// ② <b>原样透传</b>：序列化字段集与<a href="契约本身">反射得到的 camelCase 名集</a>逐名一致
+    /// （端点若在投影时挑拣/丢字段，本断言红；组件**合法增字段**不会误报）。
+    /// </para>
+    /// <para>
+    /// 2026-10-02 修订：原断言写死「恰好 23 个」，被同一日的 D4 源维护（组件追加 9 个字段）打破 ——
+    /// 那是一次**合法扩展**，旧断言把「契约增长」误报成「投影出错」。两条互补断言可同时满足这两个目标。
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task A5_Maintenance_Status_Is_Passed_Through_Verbatim_With_All_23_Fields()
+    public async Task A5_Maintenance_Status_Is_Passed_Through_Verbatim_With_All_Contract_Fields()
     {
         using var fixture = new Sa2DataRootFixture();
 
@@ -231,18 +240,15 @@ public sealed class SA2CodeIndexStatusTests
             .GetProperty("projects")[0]
             .GetProperty("maintenance");
 
+        var actualFieldNames = maintenance.EnumerateObject().Select(static p => p.Name).ToArray();
+
+        // ① 冻结核心（同序前缀）：前端 2026-10-01 已按这 23 个名字取值 ⇒ 不得改名/删除/重排。
         Assert.Equal(
-            new[]
-            {
-                "workspaceId", "scopeId", "rootPath", "observedVersion", "desiredVersion",
-                "committedVersion", "markedWhileInFlightCount", "indexPending", "indexInFlight",
-                "needsReconcile", "reconcileReason", "reconcileRequestCount", "removalObservationCount",
-                "lastRemovalPaths", "removedFileCount", "incrementallyIndexedFileCount",
-                "scopeEscalationCount", "sweptFileCount", "calibrationRunCount",
-                "rejectedCalibrationRunCount", "lastCalibrationAtUtc", "recentObservationCount",
-                "watcherAttached",
-            },
-            maintenance.EnumerateObject().Select(static p => p.Name));
+            FrozenLegacyMaintenanceFieldNames,
+            actualFieldNames.Take(FrozenLegacyMaintenanceFieldNames.Length));
+
+        // ② 原样透传：字段集 == 契约反射集（丢字段/挑拣 ⇒ 红；组件合法增字段 ⇒ 绿）。
+        Assert.Equal(ContractMaintenanceFieldNames(), actualFieldNames);
 
         Assert.True(maintenance.GetProperty("indexPending").GetBoolean());
         Assert.Equal(10, maintenance.GetProperty("committedVersion").GetInt64());
@@ -366,6 +372,31 @@ public sealed class SA2CodeIndexStatusTests
         Assert.NotNull(degraded.Note);
         Assert.Contains("code-index-status-unavailable", degraded.Note!, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// 2026-10-01（S-A2 上线）时冻结的 23 个维护态字段名，**按契约声明顺序**。
+    /// 前端已按这些名字取值 ⇒ 只增不改不删；新增字段一律追加在末尾。
+    /// </summary>
+    private static readonly string[] FrozenLegacyMaintenanceFieldNames =
+    [
+        "workspaceId", "scopeId", "rootPath", "observedVersion", "desiredVersion",
+        "committedVersion", "markedWhileInFlightCount", "indexPending", "indexInFlight",
+        "needsReconcile", "reconcileReason", "reconcileRequestCount", "removalObservationCount",
+        "lastRemovalPaths", "removedFileCount", "incrementallyIndexedFileCount",
+        "scopeEscalationCount", "sweptFileCount", "calibrationRunCount",
+        "rejectedCalibrationRunCount", "lastCalibrationAtUtc", "recentObservationCount",
+        "watcherAttached",
+    ];
+
+    /// <summary>
+    /// 维护态契约当前的全部字段名（camelCase，按声明顺序）—— 真源是
+    /// <see cref="CodeIndexMaintenanceScopeStatus"/> 自身，而不是测试里抄的一份名单。
+    /// </summary>
+    private static string[] ContractMaintenanceFieldNames() =>
+        typeof(CodeIndexMaintenanceScopeStatus)
+            .GetProperties()
+            .Select(static p => JsonNamingPolicy.CamelCase.ConvertName(p.Name))
+            .ToArray();
 
     // ── 局部夹具 ────────────────────────────────────────────────────────
 
