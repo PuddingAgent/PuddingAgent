@@ -522,13 +522,15 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
     }
 
     /// <summary>
-    /// 能力形状的定位描述符 → 运行时定位器。**Ref 没有等价物**（快照引用只在 Desktop 的注册表里有意义），
-    /// 因此返回 <c>null</c> 让调用方明确拒绝，而不是猜一个选择器出来。
+    /// 能力形状的定位描述符 → 运行时定位器（十种一一对应，含 <c>Ref</c>——运行时的 <c>LocatorKind</c>
+    /// 本身就支持快照引用，因此"Ref 无等价物"是**纠正过的**早先判断）。
+    /// 未知/未登记的 kind 返回 <c>null</c>，由调用方明确拒绝。
     /// </summary>
     private static Locator? ToRuntimeLocator(DesktopLocator locator)
     {
         var kind = locator.Kind switch
         {
+            DesktopLocatorKind.Ref => LocatorKind.Ref,
             DesktopLocatorKind.Css => LocatorKind.Css,
             DesktopLocatorKind.XPath => LocatorKind.XPath,
             DesktopLocatorKind.Text => LocatorKind.Text,

@@ -264,17 +264,30 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
-    public async Task Locate_WithSnapshotReferenceLocator_IsRejectedInsteadOfGuessed()
+    public async Task Locate_WithSnapshotReferenceLocator_MapsToTheRuntimeRefKind()
     {
-        // Ref 只在 Desktop 的快照注册表里有意义：Bridge 侧没有等价物 ⇒ 明确拒绝，不猜选择器。
-        var surface = Create(new FakePage { Version = 7 });
+        // 更正（2026-10-02）：早先判断"Ref 在 Bridge 侧无等价物"是**错的**——
+        // 运行时的 LocatorKind 本身就支持 Ref，因此这里必须映射过去，而不是拒绝。
+        Locator? seen = null;
+        var page = new FakePage
+        {
+            Version = 7,
+            QueryAll = locator =>
+            {
+                seen = locator;
+                return [];
+            },
+        };
+        var surface = Create(page);
 
         var result = await surface.LocateAsync(
             new BrowserLocateRequest(
                 Target, new DesktopLocator(DesktopLocatorKind.Ref, "e1"), DesktopPageVersion.Require(7)), Call);
 
-        Assert.True(result.IsFailure);
-        Assert.Equal(DesktopCapabilityErrorCode.InvalidRequest, result.Error!.Code);
+        Assert.False(result.IsFailure);
+        Assert.NotNull(seen);
+        Assert.Equal(LocatorKind.Ref, seen!.Kind);
+        Assert.Equal("e1", seen.Value);
     }
 
     [Fact]
