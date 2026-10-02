@@ -23,6 +23,7 @@ public sealed class StorageAdminController(
     StorageMaintenanceCoordinator coordinator,
     StorageMaintenanceJobStore jobStore,
     StorageRetentionPolicyService policyService,
+    StorageDatabaseSpaceService databaseSpace,
     ILogger<StorageAdminController> logger) : ControllerBase
 {
     // ─── Overview / Catalog ───────────────────────────────────────
@@ -37,6 +38,20 @@ public sealed class StorageAdminController(
     [ProducesResponseType(typeof(IReadOnlyList<StorageDataClassDto>), StatusCodes.Status200OK)]
     public ActionResult<IReadOnlyList<StorageDataClassDto>> GetDataClasses()
         => Ok(StorageDataClassCatalog.ToDataClassDtos().ToList());
+
+    /// <summary>
+    /// **按数据类**的数据库占用（platform / code-index / memory / controller）。
+    /// <para>
+    /// 与 <c>overview</c> 的区别：overview 只读后台缓存快照（它的设计明确不触发 dbstat / 目录遍历），
+    /// 本接口是**用户显式动作**触发的一次只读测量 —— dbstat 要遍历 B 树页，在 9 GB 级库上不适合轮询。
+    /// 只读打开、毫秒级、不加写锁；拿不到 dbstat 时如实返回 <c>perTableAvailable = false</c> 且不给猜测明细。
+    /// </para>
+    /// </summary>
+    [HttpGet("database-space")]
+    [ProducesResponseType(typeof(IReadOnlyList<StorageDatabaseSpaceDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<StorageDatabaseSpaceDto>>> GetDatabaseSpace(
+        CancellationToken cancellationToken)
+        => Ok(await databaseSpace.MeasureAsync(cancellationToken));
 
     [HttpGet("protected-objects")]
     [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK)]

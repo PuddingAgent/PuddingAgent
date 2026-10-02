@@ -25,7 +25,9 @@ public sealed record DatabaseSpaceReport(
     long PageSize,
     long PageCount,
     bool PerTableAvailable,
-    IReadOnlyList<DatabaseTableSpace> Tables)
+    IReadOnlyList<DatabaseTableSpace> Tables,
+    /// <summary>拿不到按表明细时的原因（诊断用；可用时为 null）。</summary>
+    string? PerTableUnavailableReason = null)
 {
     /// <summary>按表明细的字节合计（<paramref name="PerTableAvailable"/> 为 false 时为 0）。</summary>
     public long TablesBytes => Tables.Sum(table => table.Bytes);
@@ -82,7 +84,7 @@ public sealed class DatabaseSpaceProbe
         var pageSize = await ScalarAsync(connection, "PRAGMA page_size;", cancellationToken).ConfigureAwait(false);
         var pageCount = await ScalarAsync(connection, "PRAGMA page_count;", cancellationToken).ConfigureAwait(false);
 
-        var (perTableAvailable, tables) = await TryReadPerTableAsync(connection, cancellationToken)
+        var (perTableAvailable, tables, unavailableReason) = await TryReadPerTableAsync(connection, cancellationToken)
             .ConfigureAwait(false);
 
         return new DatabaseSpaceReport(
@@ -91,13 +93,14 @@ public sealed class DatabaseSpaceProbe
             PageSize: pageSize,
             PageCount: pageCount,
             PerTableAvailable: perTableAvailable,
-            Tables: tables);
+            Tables: tables,
+            PerTableUnavailableReason: unavailableReason);
     }
 
     /// <summary>
     /// 按表明细。dbstat 不可用时返回 <c>(false, [])</c> —— **不抛、不降级成猜测**。
     /// </summary>
-    private static async Task<(bool Available, IReadOnlyList<DatabaseTableSpace> Tables)> TryReadPerTableAsync(
+    private static async Task<(bool Available, IReadOnlyList<DatabaseTableSpace> Tables, string? Reason)> TryReadPerTableAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
     {
@@ -135,12 +138,12 @@ public sealed class DatabaseSpaceProbe
             }
 
             tables.Sort(static (left, right) => right.Bytes.CompareTo(left.Bytes));
-            return (true, tables);
+            return (true, tables, null);
         }
-        catch (SqliteException)
+        catch (SqliteException ex)
         {
-            // 该 SQLite 构型没有 dbstat 虚表（编译期选项）⇒ 如实报告"拿不到按表明细"。
-            return (false, []);
+            // 该 SQLite 构型没有 dbstat 虚表（编译期选项）⇒ 如实报告"拿不到按表明细"，并带上原因。
+            return (false, [], ex.Message);
         }
     }
 
