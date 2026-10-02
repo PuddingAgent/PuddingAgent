@@ -158,3 +158,33 @@ export async function saveAgentAccessLevel(
     return false;
   }
 }
+
+/** 服务端日志级别快照（Debug 按钮的数据源；接口见 PuddingHost 的 DiagnosticsLogLevelController）。 */
+export interface ServerLogLevelSnapshot {
+  /** 当前生效级别（Serilog 正式名）。 */
+  level: string;
+  /** 是否处于会放大日志量的档位（Verbose/Debug）。 */
+  isVerbose: boolean;
+  /** 可切换的级别。 */
+  supportedLevels: string[];
+  /** 持久化文件路径（便于用户知道改到哪去了）。 */
+  configFile: string;
+}
+
+/** 读取服务端日志级别。 */
+export async function loadServerLogLevel(): Promise<ServerLogLevelSnapshot> {
+  return request('/api/admin/diagnostics/log-level', { method: 'GET' });
+}
+
+/**
+ * 切换服务端日志级别。
+ * 服务端"先落盘、后生效"：失败会返回错误，且不会出现"界面显示已开启、实际没生效"的假象。
+ */
+export async function setServerLogLevel(
+  level: string,
+): Promise<ServerLogLevelSnapshot> {
+  return request('/api/admin/diagnostics/log-level', {
+    method: 'PUT',
+    data: { level },
+  });
+}

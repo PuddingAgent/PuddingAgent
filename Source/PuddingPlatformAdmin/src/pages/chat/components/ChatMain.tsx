@@ -31,6 +31,7 @@ import { useGoal } from '../hooks/useGoal';
 import { useInitialIdleReady } from '../hooks/useInitialIdleReady';
 import { useNotificationSound } from '../hooks/useNotificationSound';
 import { useProviderBalance } from '../hooks/useProviderBalance';
+import { useServerLogLevel } from '../hooks/useServerLogLevel';
 import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import { useChatStyles } from '../styles';
 import type {
@@ -322,6 +323,9 @@ const ChatMain: React.FC<ChatMainProps> = ({
     useState<TranscriptMode>('normal');
   /** P2#8：Focus view 单行折叠模式 */
   const [focusView, setFocusView] = useState(false);
+  // 服务端日志级别（Debug 按钮）：级别是**服务端**的全进程状态，界面必须显示当前值，
+  // 否则用户会以为「我点过 Debug 了」却在日志里什么也看不到。
+  const serverLog = useServerLogLevel();
   const rawEvents = useDevRuntimeEvents(devMode, turns);
   const [inferredSessionId, setInferredSessionId] = useState<string | null>(
     null,
@@ -654,7 +658,9 @@ const ChatMain: React.FC<ChatMainProps> = ({
               <Tooltip
                 title={`更多：自动朗读（${
                   autoTtsEnabled ? '已开启' : '已关闭'
-                }）、开发者模式（${devMode ? '已开启' : '已关闭'}）、帮助`}
+                }）、开发者模式（${devMode ? '已开启' : '已关闭'}）、服务端日志（${
+                  serverLog.isVerbose ? 'Debug' : serverLog.level
+                }）${serverLog.error ? `，上次失败：${serverLog.error}` : ''}、帮助`}
               >
                 <Dropdown
                   trigger={['click']}
@@ -679,6 +685,21 @@ const ChatMain: React.FC<ChatMainProps> = ({
                           ? '开发者模式（已开启）'
                           : '开发者模式（已关闭）',
                         onClick: () => setDevMode(!devMode),
+                      },
+                      // 服务端日志开关：切到 Debug 才能看到详细链路日志（常驻进程无需重启）。
+                      // 失败时**不乐观更新**（后端先落盘后生效），标签保持服务端返回的事实。
+                      {
+                        key: 'server-log-level',
+                        disabled: serverLog.busy,
+                        icon: serverLog.isVerbose ? (
+                          <CheckOutlined />
+                        ) : (
+                          <BugOutlined />
+                        ),
+                        label: serverLog.isVerbose
+                          ? `服务端日志（Debug：${serverLog.level}）`
+                          : `服务端日志（${serverLog.level}）`,
+                        onClick: () => void serverLog.toggle(),
                       },
                       { type: 'divider' as const },
                       // 帮助项由共享组件提供，与内联问号图标共用同一 URL 真源
