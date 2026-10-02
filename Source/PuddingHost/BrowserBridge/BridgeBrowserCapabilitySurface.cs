@@ -258,13 +258,72 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
             new DesktopLocateResult(request.Target, request.Locator, elements, truncated, version));
     }
 
-    public Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
-        BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        NotMigrated<DesktopInteractionResult>(DesktopCapability.BrowserInteract);
+    public async Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
+        BrowserWaitForRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
 
-    public Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
-        BrowserWaitForRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        NotMigrated<DesktopWaitResult>(DesktopCapability.BrowserWaitFor);
+        if (await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false) is not { } page)
+        {
+            return NotFound<DesktopWaitResult>(request.Target);
+        }
+
+        var result = await page.WaitForAsync(ToRuntimeWaitCondition(request.Condition), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.Error is not null)
+        {
+            // 运行时错误文本可能含选择器/URL ⇒ 不透传，只表示"等失败了"（超时不算失败，见下）。
+            return CapabilityResult<DesktopWaitResult>.Failure(
+                DesktopCapabilityError.Internal("wait failed in the bridge runtime"));
+        }
+
+        // **超时是结果而不是失败**（与 Desktop 侧一致）。
+        return CapabilityResult<DesktopWaitResult>.Success(new DesktopWaitResult(
+            request.Target, request.Condition, result.TimedOut, BuildPageState(request.Target, page)));
+    }
+
+    public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
+        BrowserInteractRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false) is not { } page)
+        {
+            return NotFound<DesktopInteractionResult>(request.Target);
+        }
+
+        var live = LiveVersion(page);
+        if (!live.IsKnown)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(DesktopCapabilityError.Internal(
+                "page has no live version; interaction cannot be acted on safely"));
+        }
+
+        if (live.Value != request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"expected page version {request.ExpectedPageVersion.Value} but the page is at {live.Value}; re-acquire state"));
+        }
+
+        if (await ApplyInteractionAsync(page, request, cancellationToken).ConfigureAwait(false) is { } error)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(error);
+        }
+
+        var state = BuildPageState(request.Target, page);
+
+        // 变更类能力的**结果不变量**：版本必须严格推进（Desktop 侧的同一条检查才是权威，
+        // 这里是 Bridge 路径上的纵深防御——不诚实的版本会让旧引用重新"有效"）。
+        if (!state.Version.IsKnown || state.Version.Value <= request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(DesktopCapabilityError.Internal(
+                "mutating capability returned a page version that did not advance"));
+        }
+
+        return CapabilityResult<DesktopInteractionResult>.Success(new DesktopInteractionResult(request.Target, state));
+    }
 
     // ── 内部 ───────────────────────────────────────────────────────────
 
@@ -334,6 +393,71 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
         "string" => JavascriptValueKind.String,
         _ => value.Value is null ? JavascriptValueKind.Undefined : JavascriptValueKind.Json,
     };
+
+    /// <summary>能力形状的等待条件 → 运行时等待条件（三种一一对应）。</summary>
+    private static WaitCondition ToRuntimeWaitCondition(DesktopWaitCondition condition) => condition.Kind switch
+    {
+        DesktopWaitConditionKind.Selector => new WaitCondition { Selector = condition.Value },
+        DesktopWaitConditionKind.SelectorHidden => new WaitCondition { SelectorToHide = condition.Value },
+        _ => new WaitCondition { UrlPattern = condition.Value },
+    };
+
+    /// <summary>
+    /// 执行交互。返回 <c>null</c> 表示成功；返回错误表示**明确拒绝**（不支持的动作用
+    /// <c>unsupported_capability</c>，与 Desktop 侧对 `focus` 的处理一致）。
+    /// 动作所需的字段已由 <see cref="BrowserInteractRequest"/> 自身按动作校验，因此这里不再重复判空。
+    /// </summary>
+    private static async Task<DesktopCapabilityError?> ApplyInteractionAsync(
+        IBrowserPage page, BrowserInteractRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Action == DesktopInteractionAction.Scroll)
+        {
+            await page.ScrollAsync(new ScrollOptions { DeltaY = request.DeltaY ?? 0 }, cancellationToken)
+                .ConfigureAwait(false);
+            return null;
+        }
+
+        if (request.Action == DesktopInteractionAction.Focus)
+        {
+            // 运行时没有 focus API，且不拿脚本绕过注入限制 ⇒ 明确拒绝（与 Desktop 侧同一口径）。
+            return DesktopCapabilityError.UnsupportedCapability("focus has no bridge runtime equivalent");
+        }
+
+        if (ToRuntimeLocator(request.Locator!) is not { } locator)
+        {
+            return DesktopCapabilityError.InvalidRequest(
+                $"locator kind '{DesktopLocatorKindWire.NameOf(request.Locator!.Kind)}' has no bridge equivalent");
+        }
+
+        switch (request.Action)
+        {
+            case DesktopInteractionAction.Click:
+                await page.ClickAsync(locator, new ClickOptions(), cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Fill:
+                await page.FillAsync(locator, request.Text!, new FillOptions(), cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Press:
+                await page.PressAsync(locator, request.Text!, new KeyOptions(), cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Check:
+            case DesktopInteractionAction.Uncheck:
+                await page.CheckAsync(locator, request.Action == DesktopInteractionAction.Check, cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Select:
+                await page.SelectAsync(locator, request.Values!, cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Hover:
+                await page.HoverAsync(locator, new PointerOptions(), cancellationToken).ConfigureAwait(false);
+                break;
+            default:
+                return DesktopCapabilityError.UnsupportedCapability(
+                    $"interaction action '{DesktopInteractionActionWire.NameOf(request.Action)}' has no bridge equivalent");
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// 能力形状的定位描述符 → 运行时定位器。**Ref 没有等价物**（快照引用只在 Desktop 的注册表里有意义），

@@ -319,19 +319,112 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
+    public async Task WaitFor_TimeoutIsAResultNotAFailure()
+    {
+        var page = new FakePage { Version = 4, Wait = _ => new WaitResult { TimedOut = true } };
+        var surface = Create(page);
+
+        var result = await surface.WaitForAsync(
+            new BrowserWaitForRequest(Target, new DesktopWaitCondition(DesktopWaitConditionKind.Selector, "#slow")), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.True(result.Value.TimedOut);
+        Assert.Equal(4, result.Value.Page.Version.Value);
+    }
+
+    [Fact]
+    public async Task WaitFor_RuntimeErrorIsAFailureWithoutLeakingTheText()
+    {
+        var page = new FakePage
+        {
+            Version = 4,
+            Wait = _ => new WaitResult { Error = "timeout on #slow at https://example.test/a?token=SECRET" },
+        };
+        var surface = Create(page);
+
+        var result = await surface.WaitForAsync(
+            new BrowserWaitForRequest(Target, new DesktopWaitCondition(DesktopWaitConditionKind.Selector, "#slow")), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.DoesNotContain("SECRET", result.Error!.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("token", result.Error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Interact_Click_AdvancesTheVersionAndReturnsTheNewState()
+    {
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "button")), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.Equal(4, result.Value.Page.Version.Value);
+        Assert.Equal(1, page.ClickCount);
+    }
+
+    [Fact]
+    public async Task Interact_WithStaleExpectedVersion_IsRejectedBeforeActing()
+    {
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(1),
+                new DesktopLocator(DesktopLocatorKind.Css, "button")), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.PageVersionMismatch, result.Error!.Code);
+        // 版本不符时**绝不能已经动过页面**：前置检查必须在动作之前。
+        Assert.Equal(0, page.ClickCount);
+    }
+
+    [Fact]
+    public async Task Interact_WhenVersionDoesNotAdvance_FailsLoudly()
+    {
+        // 变更类能力的硬不变量：结果版本必须严格推进，否则旧引用会重新"有效"。
+        var page = new FakePage { Version = 3, AdvanceVersionOnClick = false };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "button")), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InternalError, result.Error!.Code);
+        Assert.Equal(1, page.ClickCount);
+    }
+
+    [Fact]
+    public async Task Interact_Focus_IsRejectedAsUnsupported()
+    {
+        // 运行时没有 focus API，且不拿脚本绕过注入限制 ⇒ 与 Desktop 侧同一口径：明确拒绝。
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Focus, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "input")), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, result.Error!.Code);
+    }
+
+    [Fact]
     public async Task OperationsNotYetMigrated_FailLoudlyInsteadOfPretending()
     {
         var surface = Create(new FakePage());
 
         var snapshot = await surface.SnapshotAsync(new BrowserSnapshotRequest(Target, DesktopPageVersion.Require(1)), Call);
-        var wait = await surface.WaitForAsync(
-            new BrowserWaitForRequest(Target, new DesktopWaitCondition(DesktopWaitConditionKind.UrlPattern, "/done")), Call);
 
-        foreach (var error in new[] { snapshot.Error, wait.Error })
-        {
-            Assert.NotNull(error);
-            Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, error!.Code);
-        }
+        Assert.NotNull(snapshot.Error);
+        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, snapshot.Error!.Code);
     }
 
     private static BrowserContextInfo Summary(string contextId) =>
@@ -431,7 +524,7 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
     private sealed class FakePage : IBrowserPage
     {
-        public long Version { get; init; } = 1;
+        public long Version { get; set; } = 1;
 
         public bool IsLoading { get; init; }
 
@@ -441,11 +534,17 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public bool CanGoForward { get; init; }
 
+        public bool AdvanceVersionOnClick { get; init; } = true;
+
+        public int ClickCount { get; private set; }
+
         public Func<Uri, NavigationResult>? Navigate { get; init; }
 
         public Func<BrowserScript, BrowserScriptValue>? Script { get; init; }
 
         public Func<Locator, IReadOnlyList<IElementHandle>>? QueryAll { get; init; }
+
+        public Func<WaitCondition, WaitResult>? Wait { get; init; }
 
         public PageId Id { get; init; } = new("page-1");
 
@@ -499,7 +598,19 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public Task UnsubscribeAsync(BrowserSubscriptionId subscriptionId, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct) => throw new NotSupportedException();
+        public Task<WaitResult> WaitForAsync(WaitCondition condition, CancellationToken ct) =>
+            Task.FromResult(Wait?.Invoke(condition) ?? new WaitResult());
+
+        public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct)
+        {
+            ClickCount++;
+            if (AdvanceVersionOnClick)
+            {
+                Version++;
+            }
+
+            return Task.CompletedTask;
+        }
 
         public Task FillAsync(Locator locator, string value, FillOptions options, CancellationToken ct) => throw new NotSupportedException();
 
@@ -518,8 +629,6 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         public Task CheckAsync(Locator locator, bool isChecked, CancellationToken ct) => throw new NotSupportedException();
 
         public Task SetInputFilesAsync(Locator locator, IReadOnlyList<string> paths, CancellationToken ct) => throw new NotSupportedException();
-
-        public Task<WaitResult> WaitForAsync(WaitCondition condition, CancellationToken ct) => throw new NotSupportedException();
 
         public Task<ScreenshotResult> ScreenshotAsync(ScreenshotOptions options, CancellationToken ct) => throw new NotSupportedException();
 
