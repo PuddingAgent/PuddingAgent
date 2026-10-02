@@ -33,6 +33,40 @@ internal sealed class DesktopTrayIcon : IDisposable
         Icon = _icon, Tip = "Pudding · 打开工作台", Info = "", InfoTitle = ""
     };
     private void Add() { var data = Create(); Available = Shell_NotifyIcon(0, ref data); }
+
+    /// <summary>
+    /// 托盘气泡通知（能力通道 `shell.notification` 的落点）。
+    /// **没弹出来返回 false 而不是抛**：调用方据此回 `Shown=false` 的成功结果
+    /// （「通知没到」与「能力不可用」必须能区分）。长度上限由 NOTIFYICONDATA 的定长字段决定，
+    /// 超长会被截断——这里显式截断，避免 marshal 期异常。
+    /// </summary>
+    internal bool ShowBalloon(string title, string message)
+    {
+        if (_disposed || !Available)
+        {
+            return false;
+        }
+
+        const int maxInfo = 255;
+        const int maxTitle = 63;
+        var data = Create();
+        data.Flags = NifInfo;
+        data.Info = Truncate(message, maxInfo);
+        data.InfoTitle = Truncate(title, maxTitle);
+        data.InfoFlags = NIIF_INFO;
+        data.Timeout = 10_000;
+        return Shell_NotifyIcon(1 /* NIM_MODIFY */, ref data);
+    }
+
+    private static string Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return value.Length <= maxLength ? value : value[..maxLength];
+    }
     private IntPtr OnMessage(IntPtr hwnd, uint message, nuint w, nint l, nuint id, nuint reference)
     {
         if (message == _taskbarCreated) Add();
@@ -78,6 +112,8 @@ internal sealed class DesktopTrayIcon : IDisposable
         public uint InfoFlags; public Guid Guid; public IntPtr BalloonIcon;
     }
     [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
+    private const uint NifInfo = 0x00000010;
+    private const uint NIIF_INFO = 0x00000001;
     private delegate IntPtr SubclassProc(IntPtr hwnd, uint message, nuint w, nint l, nuint id, nuint reference);
     [DllImport("comctl32.dll")] private static extern bool SetWindowSubclass(IntPtr hwnd, SubclassProc callback, nuint id, nuint reference);
     [DllImport("comctl32.dll")] private static extern bool RemoveWindowSubclass(IntPtr hwnd, SubclassProc callback, nuint id);

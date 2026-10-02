@@ -12,7 +12,7 @@ namespace PuddingDesktop.Hosting;
 /// <summary>
 /// Coordinates the always-available WinUI launcher and an isolated ASP.NET Core child process.
 /// </summary>
-public sealed class DesktopApplicationCoordinator : IAsyncDisposable
+public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
 {
     private readonly ICoreProcessSupervisor _supervisor;
     private readonly IDesktopBootstrapSettingsStore _bootstrapStore;
@@ -751,6 +751,8 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                             : DesktopStartupState.DebugFailed,
                         _coreAddress);
                     QueueBridgeIntent(connect: true, _coreAddress);
+                    // 能力通道（切片 C-3）：默认关闭时该方法立刻返回，不改任何行为。
+                    _ = StartCapabilityChannelAsync(e.Current.Session, _lifetimeCts?.Token ?? CancellationToken.None);
                     break;
                 case DesktopRuntimeState.Stopping:
                     QueueBridgeIntent(connect: false, null);
@@ -776,6 +778,12 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                     _coreAddress = null;
                     TransitionTo(DesktopStartupState.CoreFailed, error: e.Current.LastError);
                     break;
+            }
+
+            // Core 不再就绪（停止/退出/重启/熔断）⇒ 释放能力通道，归还单实例传输名额。
+            if (e.Current.State != DesktopRuntimeState.Ready)
+            {
+                _ = StopCapabilityChannelAsync();
             }
 
             RuntimeChanged?.Invoke(this, e);

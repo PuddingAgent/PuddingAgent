@@ -36,6 +36,8 @@ public sealed partial class MainWindow : Window
     private Microsoft.UI.Xaml.Controls.WebView2? _web;
     private CoreWebView2Environment? _webEnvironment;
     private BrowserWorkspaceController? _browser;
+    /// <summary>Browser workspace runtime (WebView2)：能力通道的浏览器表面映射与页面版本读取都来自它。</summary>
+    private WebView2BrowserRuntime? _browserRuntime;
     /// <summary>工具区里的浏览器表面宿主：与主工作台是两个 WebView2，外观必须一起同步。</summary>
     private WinUiBrowserSurfaceHost? _browserSurfaces;
     private DesktopTrayIcon? _tray;
@@ -45,6 +47,31 @@ public sealed partial class MainWindow : Window
     private bool _restartRequired, _loadingAppearance;
     private string? _stateError;
     private readonly PuddingDesktop.Foundation.SkeletonSettingsStore _appearance = new(Path.Combine(App.StateRoot, "appearance"));
+
+    // ── 能力通道接线所需的「宿主事实」（切片 C-3）─────────────────────────────
+    // 这里只暴露**只有 Shell 知道**的事实；判定、装配与生命周期都在
+    // DesktopApplicationCoordinator（组合根）与 Pudding.DesktopService（组件）里，
+    // 本窗口不写任何能力通道的业务判断。
+    internal WebView2BrowserRuntime? BrowserRuntime => _browserRuntime;
+
+    internal BrowserWorkspaceController? BrowserWorkspace => _browser;
+
+    internal nint CapabilityWindowHandle => WinRT.Interop.WindowNative.GetWindowHandle(this);
+
+    internal Microsoft.UI.Xaml.XamlRoot? CapabilityXamlRoot => Content?.XamlRoot;
+
+    internal bool CapabilityTrayVisible => _tray is not null;
+
+    internal Pudding.Contracts.Desktop.DesktopWindowState CapabilityWindowState =>
+        _closing || _closed
+            ? Pudding.Contracts.Desktop.DesktopWindowState.Closing
+            : AppWindow.IsVisible
+                ? Pudding.Contracts.Desktop.DesktopWindowState.Visible
+                : Pudding.Contracts.Desktop.DesktopWindowState.HiddenToTray;
+
+    /// <summary>系统通知：走托盘气泡；**没弹出来返回 false 而不是抛**（调用方据此回 Shown=false）。</summary>
+    internal bool ShowCapabilityNotification(string title, string message) =>
+        _tray?.ShowBalloon(title, message) ?? false;
 
     // Right tool workspace: instance tabs plus a layout preference that survives restart.
     private readonly ToolWorkspaceTabs _toolTabs = new();
@@ -918,6 +945,7 @@ public sealed partial class MainWindow : Window
             var surfaces = new WinUiBrowserSurfaceHost(dispatcher, BrowserSurfaceHostPanel);
             _browserSurfaces = surfaces;
             var runtime = new WebView2BrowserRuntime(dispatcher, surfaces, dataRoot);
+            _browserRuntime = runtime;
             var browser = new BrowserWorkspaceController(runtime, surfaces, dispatcher);
             try { await browser.InitializeAsync(dataRoot, ct); }
             catch { await browser.DisposeAsync(); throw; }

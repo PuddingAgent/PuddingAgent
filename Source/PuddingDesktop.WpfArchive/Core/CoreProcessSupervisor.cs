@@ -132,6 +132,7 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
                     ListenAddress = new Uri(CreateListenUrl(options.Port)),
                     StartedAt = startedAt,
                     ReadyAt = DateTimeOffset.UtcNow,
+                    CapabilityEndpoint = readyMessage.CapabilityEndpoint,
                 };
 
                 _logBuffer.Append($"[Desktop] Core healthy: {readyMessage.BaseAddress}");
