@@ -17,7 +17,7 @@ public sealed class BrowserAgentToolsTests
         var runtime = new FakeBrowserRuntime();
         var tools = new IPuddingTool[]
         {
-            new BrowserContextTool(runtime, _originAccessor),
+            new BrowserContextTool(new FakeCapabilitySurface(runtime), new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserTabsTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserNavigateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
@@ -39,7 +39,7 @@ public sealed class BrowserAgentToolsTests
     public async Task BrowserContext_CreateListGetAndClose_UseRuntimeAbstraction()
     {
         var runtime = new FakeBrowserRuntime();
-        var tool = new BrowserContextTool(runtime, _originAccessor);
+        var tool = new BrowserContextTool(new FakeCapabilitySurface(runtime), new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor);
 
         var created = await ExecuteAsync(tool, """{"action":"create","context_id":"ctx-1"}""");
         var listed = await ExecuteAsync(tool, """{"action":"list"}""");
@@ -120,7 +120,7 @@ public sealed class BrowserAgentToolsTests
         };
 
         var result = await ExecuteAsync(
-            new BrowserContextTool(runtime, _originAccessor),
+            new BrowserContextTool(new FakeCapabilitySurface(runtime), new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             """{"action":"list"}""");
 
         Assert.False(result.Success);
@@ -136,7 +136,7 @@ public sealed class BrowserAgentToolsTests
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            ExecuteAsync(new BrowserContextTool(new FakeBrowserRuntime(), _originAccessor),
+            ExecuteAsync(new BrowserContextTool(new FakeCapabilitySurface(new FakeBrowserRuntime()), new FakeCapabilitySurface(new FakeBrowserRuntime()), new FakeCallContextFactory(), _originAccessor),
                 """{"action":"list"}""", cts.Token));
     }
 
@@ -248,7 +248,8 @@ public sealed class BrowserAgentToolsTests
 /// 窄端口的测试替身：把请求**委托**给同一个 FakeBrowserRuntime（而不是返回罐头值），
 /// 因此迁移后的工具测试仍然在验证真实行为。只有 locate 用到的三个方法有实现。
 /// </summary>
-internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopBrowserCapabilitySurface
+internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
+    : IDesktopBrowserCapabilitySurface, IDesktopContextCapabilitySurface
 {
     public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext call, CancellationToken ct = default)
@@ -478,6 +479,36 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime) : IDesktopB
                 DesktopPageReadiness.Unknown,
                 page.Info.Title)));
     }
+    public async Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
+        BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken ct = default)
+    {
+        var created = await runtime.CreateContextAsync(
+            new BrowserContextOptions
+            {
+                Id = request.ContextId is { } id ? new BrowserContextId(id) : null,
+                Persistent = request.Persistent,
+            }, ct);
+        return CapabilityResult<DesktopContextInfo>.Success(
+            new DesktopContextInfo(created.Info.Id.Value, DesktopContextTrust.Untrusted, [])
+            {
+                Persistent = request.Persistent,
+            });
+    }
+
+    public async Task<CapabilityResult<DesktopContextClosed>> CloseContextAsync(
+        BrowserContextCloseRequest request, DesktopCallContext call, CancellationToken ct = default)
+    {
+        var id = new BrowserContextId(request.ContextId);
+        if (await runtime.GetContextAsync(id, ct) is null)
+        {
+            return CapabilityResult<DesktopContextClosed>.Failure(
+                DesktopCapabilityError.InvalidTarget($"context '{request.ContextId}' is not known"));
+        }
+
+        await runtime.CloseContextAsync(id, ct);
+        return CapabilityResult<DesktopContextClosed>.Success(new DesktopContextClosed(request.ContextId));
+    }
+
     public async Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
         BrowserTabsRequest request, DesktopCallContext call, CancellationToken ct = default)
     {

@@ -21,7 +21,7 @@ draft: false
 
 | 文件 | 工具 | 用途 |
 |------|------|------|
-| `BrowserContextTool.cs` | `browser_context` | 获取浏览器上下文 |
+| `BrowserContextTool.cs` | `browser_context` | 创建/列出/查看/关闭浏览器上下文（create/close 走上下文管理窄端口） |
 | `BrowserTabsTool.cs` | `browser_tabs` | 标签页管理 |
 | `BrowserNavigateTool.cs` | `browser_navigate` | 页面导航 |
 | `BrowserSnapshotTool.cs` | `browser_snapshot` | 页面快照 / 无障碍树 |
@@ -44,13 +44,14 @@ draft: false
 ## 调用链
 
 ```
-Agent Loop → search_tools → Browser*Tool
-  已迁移（locate/snapshot/wait_for/interact/navigate/tabs）
-    → IDesktopBrowserCapabilitySurface（窄端口）+ IDesktopCapabilityCallContextFactory
-      → 组合根路由：能力通道会话 / Bridge 实现（二选一，不回退）
-  未迁移（browser_context）
-    → BrowserToolRuntimeResolver → IBrowserRuntime
+Agent Loop → search_tools → Browser*Tool（七项**全部**已迁移）
+  → IDesktopBrowserCapabilitySurface（窄端口）+ IDesktopCapabilityCallContextFactory
+    上下文管理（browser_context 的 create/close）另走 IDesktopContextCapabilitySurface
+  → 组合根路由：能力通道会话 / Bridge 实现（二选一，不回退）
 ```
+
+> 七项工具均已脱离进程内 `IBrowserRuntime`；`BrowserToolRuntimeResolver` 因此**没有调用方**，
+> 退役它需连同 DI 注册一起清理。
 
 ## 测试
 

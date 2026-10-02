@@ -41,12 +41,20 @@ public static class BrowserBridgeServiceCollectionExtensions
         // 优先级与规则来自 CapabilityBroker 的 DesktopTransportRouting：能力通道就绪就走通道，
         // 否则走既有 Bridge，两条都不可用就**如实失败**（绝不换一条重试——那会把操作再做一遍）。
         services.AddSingleton<DesktopTransportUsageTracker>();
-        services.AddSingleton<IDesktopBrowserCapabilitySurface>(sp =>
+        services.AddSingleton<TransportRoutedBrowserCapabilitySurface>(sp =>
             new TransportRoutedBrowserCapabilitySurface(
                 new BridgeBrowserCapabilitySurface(sp.GetRequiredService<IBrowserRuntime>()),
                 () => sp.GetService<Pudding.CapabilityBroker.CapabilityBroker>()?.Sessions.FirstOrDefault(),
                 () => sp.GetService<IDesktopBrowserConnectionRegistry>()?.IsDesktopConnected ?? false,
                 sp.GetRequiredService<DesktopTransportUsageTracker>()));
+
+        services.AddSingleton<IDesktopBrowserCapabilitySurface>(sp =>
+            sp.GetRequiredService<TransportRoutedBrowserCapabilitySurface>());
+
+        // 缺口 #1：上下文管理端口由**同一个**路由实例实现 ⇒ 两个接口指向同一对象
+        //（否则用量计数会分裂，退役 Bridge 的判据就不准了）。
+        services.AddSingleton<IDesktopContextCapabilitySurface>(sp =>
+            sp.GetRequiredService<TransportRoutedBrowserCapabilitySurface>());
 
         // Desktop 实例 ID 有**两个真实来源**，都来自各自的握手，绝不猜：
         //   ① 能力通道已启用 ⇒ 活动会话的 DesktopId；

@@ -55,12 +55,44 @@ public sealed class BrowserAgentToolBridgeIntegrationTests
                         {
                             ContextId = "ctx-visible",
                             UserDataDirectory = "C:/isolated-browser",
-                            PageCount = 2
+                            PageCount = 0
                         }
                     ]
                 }, BrowserBridgeTestJson.Options)
             }, BrowserBridgeTestJson.Options)
         });
+
+        // 迁移后 list 走窄端口 ⇒ 与 Desktop 侧"同形"要求适配器逐层解析实体
+        // （context.getInfo → page.list → 每页 page.getInfo）。替身按真实 Desktop 的方式逐条应答；
+        // 列表里 0 页 ⇒ 恰好两条后续命令。
+        for (var answered = 0; answered < 2; answered++)
+        {
+            var followUpEnvelope = await BrowserBridgeTestHost.ReceiveEnvelopeAsync(socket);
+            var followUpCommand = BrowserBridgeSerializer.DeserializePayload<BrowserBridgeCommand>(followUpEnvelope);
+            var followUpValue = followUpCommand.Name == BrowserBridgeCommandNames.PageList
+                ? JsonSerializer.SerializeToElement(
+                    new BrowserPageListDescriptor { Pages = [] }, BrowserBridgeTestJson.Options)
+                : JsonSerializer.SerializeToElement(new BrowserContextDescriptor
+                {
+                    ContextId = "ctx-visible",
+                    UserDataDirectory = "C:/isolated-browser",
+                    PageCount = 0
+                }, BrowserBridgeTestJson.Options);
+
+            await BrowserBridgeTestHost.SendEnvelopeAsync(socket, new BrowserBridgeEnvelope
+            {
+                MessageId = Guid.NewGuid(),
+                CorrelationId = followUpCommand.OperationId,
+                Kind = BrowserBridgeMessageKind.CommandResult,
+                CreatedAt = DateTimeOffset.UtcNow,
+                Payload = JsonSerializer.SerializeToElement(new BrowserBridgeCommandResult
+                {
+                    OperationId = followUpCommand.OperationId,
+                    Success = true,
+                    Value = followUpValue
+                }, BrowserBridgeTestJson.Options)
+            });
+        }
 
         var result = await invocation;
 
