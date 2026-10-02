@@ -88,6 +88,13 @@ public static class DependencyInjection
 
         services.TryAddSingleton<CodeSourceMaintenanceCoordinator>();
 
+        // 消费者集合（每个注册的语言实现 = 一个消费者）+ 语义输入指纹（工程/配置文件的内容 hash）。
+        // 缺了它，协调器无法区分「配置变了只需重绑」与「内容变了必须重读」。
+        services.TryAddSingleton<ICodeSourceConsumerInputProvider>(sp =>
+            new LanguageCodeSourceConsumerInputProvider(
+                sp.GetServices<ILanguageCodeIndexer>(),
+                sp.GetService<ICodeProjectRegistry>()));
+
         services.TryAddSingleton<ICodeQueryService, CodeQueryService>();
         services.TryAddSingleton<ILanguageServerService, IndexBasedLanguageServerService>();
 
