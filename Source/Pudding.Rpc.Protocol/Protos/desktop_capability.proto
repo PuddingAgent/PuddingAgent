@@ -173,7 +173,8 @@ message InteractCommand {
   int64 expected_page_version = 2;
   string action = 3;
   LocatorSpec locator = 4;
-  string text = 5;
+  // optional（缺口 #13）：区分「没给文本」与「给了空文本」——fill/type 用空文本表示清空输入框。
+  optional string text = 5;
   repeated string values = 6;
   optional bool checked = 7;
   double delta_x = 8;

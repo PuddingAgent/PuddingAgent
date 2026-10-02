@@ -118,7 +118,10 @@ internal static class CoreCommandEncoder
 
                 if (interact.Text is { } text)
                 {
-                    command.Interact.Text = text;
+                    if (interact.Text is { } interactText)
+                {
+                    command.Interact.Text = interactText;
+                }
                 }
 
                 if (interact.Values is { Count: > 0 } values)

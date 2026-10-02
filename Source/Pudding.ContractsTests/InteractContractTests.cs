@@ -13,6 +13,18 @@ public sealed class InteractContractTests
     private static DesktopLocator Button => new(DesktopLocatorKind.Css, "button");
 
     [Fact]
+    public void EmptyFillIsAllowedButEmptyPressIsNot()
+    {
+        // 缺口 #13：空文本是 fill/type 的合法输入（清空输入框）；press 的键不能为空。
+        var fill = new BrowserInteractRequest(
+            Target, DesktopInteractionAction.Fill, DesktopPageVersion.Require(3), Button, text: string.Empty);
+        Assert.Equal(string.Empty, fill.Text);
+
+        Assert.Throws<ArgumentException>(() => new BrowserInteractRequest(
+            Target, DesktopInteractionAction.Press, DesktopPageVersion.Require(3), Button, text: string.Empty));
+    }
+
+    [Fact]
     public void ActionLineNames_AreFrozenAndUnknownIsRejected()
     {
         Assert.Equal(

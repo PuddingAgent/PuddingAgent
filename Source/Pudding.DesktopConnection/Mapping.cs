@@ -391,7 +391,7 @@ internal static class CoreFrameMapping
                             action,
                             ToPageVersion(command.Interact.ExpectedPageVersion),
                             locator,
-                            string.IsNullOrEmpty(command.Interact.Text) ? null : command.Interact.Text,
+                            command.Interact.HasText ? command.Interact.Text : null,
                             command.Interact.Values.Count == 0 ? null : command.Interact.Values.ToArray(),
                             command.Interact.HasChecked ? command.Interact.Checked : null,
                             command.Interact.DeltaX == 0 ? null : command.Interact.DeltaX,

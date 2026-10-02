@@ -90,7 +90,7 @@ public sealed record BrowserInteractRequest
         Action = action;
         ExpectedPageVersion = expectedPageVersion;
         Locator = locator;
-        Text = string.IsNullOrEmpty(text) ? null : text;
+        Text = text;
         Values = values;
         IsChecked = isChecked;
         DeltaX = deltaX;
@@ -130,7 +130,11 @@ public sealed record BrowserInteractRequest
 
         switch (Action)
         {
-            case DesktopInteractionAction.Fill or DesktopInteractionAction.Press or DesktopInteractionAction.Type when Text is null:
+            // fill/type 允许**空文本**（= 清空输入框，缺口 #13）；press 的「键」不能为空。
+            case DesktopInteractionAction.Fill or DesktopInteractionAction.Type when Text is null:
+                throw new ArgumentException($"Action '{DesktopInteractionActionWire.NameOf(Action)}' requires text.", nameof(Text));
+
+            case DesktopInteractionAction.Press when string.IsNullOrEmpty(Text):
                 throw new ArgumentException($"Action '{DesktopInteractionActionWire.NameOf(Action)}' requires text.", nameof(Text));
 
             case DesktopInteractionAction.Select when Values is null || Values.Count == 0:
