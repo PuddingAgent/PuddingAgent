@@ -493,7 +493,7 @@ S-A2 的 `A5_..._With_All_23_Fields` 断言由绿转红（失败 1 / 通过 24 /
 
 ---
 
-## D11 · 面板入口 URL 一直报错（2026-10-03，**已纠正 + 已登记**）
+## D11 · 基座外深链永久停在加载壳（2026-10-03，**前端侧已修复**）
 
 **事实**：管理端 SPA 的 umi `base = '/admin/'`（`Source/PuddingPlatformAdmin/config/config.ts:94`），
 路由 `path: '/index-status'`（`config/routes.ts:132`）在基座下注册 ⇒ **正确入口 = `http://127.0.0.1/admin/index-status`（需登录）**。
@@ -507,7 +507,26 @@ S-A2 的 `A5_..._With_All_23_Fields` 断言由绿转红（失败 1 / 通过 24 /
 "前端已上线"的判据必须是：① 在**正确基座**下访问 ② 页面**挂载成功**（出现预期 DOM）③ 需鉴权的路由注明**需登录**。
 
 **D11（UX，低危）**：基座外的未知路径返回 200 + 永久加载壳，既非 404 也非跳转，**看起来像系统坏了**。
-修复方向（未实施）：Core 对非 `/admin`/`/api`/静态资产的未知路径 302 → `/admin/`，或返回明确 404。
+
+**P6 真因（2026-10-03 实测，三重）**：
+① Core 的 catch-all 回退（`Source/PuddingHost/Extensions/PuddingWebApplicationExtensions.cs:283`，注释名「Chat SPA fallback」）
+对**任意**未命中非 API 路径返回 `outputWwwRoot/index.html`；而 `/admin/{*path:nonfile}` 另有回退指向 `outputWwwRoot/admin/index.html`
+⇒ 同一宿主同时存在两份 shell：基座外 = `wwwroot/index.html`（**523 B `EF1C303E…`，旧构建遗留副本**，实测与 `/index-status` 响应逐字节相等）；
+基座内 = `wwwroot/admin/index.html`（534 B `EEB04A1C…` == `dist/index.html`）。
+② 根脚本 `public/scripts/root-redirect.js` 原本**只处理 `pathname === '/'` 精确匹配** ⇒ 其余基座外路径不重定向，
+而 umi 路由 base = `/admin/` ⇒ 永不匹配 ⇒ 加载壳。
+③ 该静态资源只回 `ETag`/`Last-Modified`、**无 `Cache-Control`** ⇒ 浏览器按启发式新鲜度**长期复用缓存旧脚本**
+（实测：脚本改好并部署、哈希逐字节确认后，同一浏览器 reload 仍不跳转）。
+
+**修复（P6，已部署 + 浏览器实拍）**：脚本泛化为「凡不在 `/admin/` 基座内 ⇒ 带 search+hash 回基座」
+（含 `/admin` 早退防自噬、前导斜杠归一、`/` 既有行为不变）；`headScripts` 的脚本 URL 拼**内容哈希**
+`?v=<sha256 前 8 位>`（内容变 ⇒ URL 变 ⇒ 必然缓存未命中，且无需人工维护版本号）；
+环境侧把陈腐 `wwwroot/index.html` 覆盖为当前 `dist/index.html`（523 B → 534 B，原文件已备份，可回滚）。
+实拍：`/index-status` ⇒ `http://127.0.0.1/admin/user/login`（登录页），页脚戳由 `d7f219a · 02:44` → **`0f9b266 · 03:50`**（新构建）；`/` 同样落登录页。
+详见 `Docs/00_changelog/2026Year/10/2026-10-03-P6-深链入口归一.md`。
+
+**仍待（Core 侧，需部署）**：catch-all 回退的正解是 Core 把非 `/admin`/`/api`/静态资产的未命中路径 302 → `/admin/<path>`，
+或让该回退也指向 `admin/index.html`；`wwwroot/404.html` 与替换前的 `index.html` 是**同一陈腐字节**，本轮未动。
 
 **仍未验证（留白）**：已登录态下的真实渲染与 `codeIndex` 显示（依赖 Core 部署 + 用户会话）。
 

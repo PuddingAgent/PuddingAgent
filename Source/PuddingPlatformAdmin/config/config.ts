@@ -1,6 +1,7 @@
 // https://umijs.org/config/
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from '@umijs/max';
@@ -34,6 +35,33 @@ const OUTPUT_PATH = process.env.PUDDING_ADMIN_OUTPUT_PATH || (IS_DEV ? 'dist-dev
  * - 取不到 git（无仓库/受限环境）时不抛错，降级为 unknown，避免构建被环境卡死。
  */
 const ADMIN_ROOT = join(__dirname, '..');
+
+/**
+ * `root-redirect.js` 的**内容寻址版本**（D11 的交付层修复）。
+ *
+ * 该文件位于 `public/` 下，构建时**原样发布**；宿主静态中间件只回 `ETag`/`Last-Modified`
+ * （**没有 `Cache-Control`**）⇒ 浏览器按启发式新鲜度（≈ `Last-Modified` 距今的 10%，本例可达数天）
+ * **直接复用缓存旧副本、连条件请求都不发**。实测：脚本改好并部署后，同一浏览器 reload
+ * 仍停在加载壳（旧脚本继续生效）。
+ * 因此把**内容哈希**拼进 `<script src>`：内容一变 URL 就变 ⇒ 必然缓存未命中，
+ * 且**无需人工维护版本号**（改了内容忘了改版本这种腐化不会发生）。
+ * 取不到文件时降级为空串（不抛错，避免构建被环境卡死）。
+ */
+const readRootRedirectVersion = (): string => {
+  try {
+    return createHash('sha256')
+      .update(
+        readFileSync(join(ADMIN_ROOT, 'public', 'scripts', 'root-redirect.js')),
+      )
+      .digest('hex')
+      .slice(0, 8);
+  } catch {
+    return '';
+  }
+};
+
+const ROOT_REDIRECT_VERSION = readRootRedirectVersion();
+
 
 const readAdminPackageVersion = (): string => {
   try {
@@ -200,7 +228,12 @@ export default defineConfig({
    * @description 配置 <head> 中额外的 script
    */
   headScripts: [
-    { src: `${PUBLIC_PATH}scripts/root-redirect.js` },
+    {
+      // `?v=` = 脚本内容哈希 ⇒ 改内容即让旧缓存失效（见 ROOT_REDIRECT_VERSION 注释）
+      src: `${PUBLIC_PATH}scripts/root-redirect.js${
+        ROOT_REDIRECT_VERSION ? `?v=${ROOT_REDIRECT_VERSION}` : ''
+      }`,
+    },
     // 解决首次加载时白屏的问题
     { src: `${PUBLIC_PATH}scripts/loading.js`, async: true },
   ],

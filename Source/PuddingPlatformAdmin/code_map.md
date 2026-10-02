@@ -16,7 +16,7 @@
 |------|------|
 | `src/` | 前端源码 |
 | `config/` | Umi 配置 |
-| `public/` | 静态资源 |
+| `public/` | 静态资源；`public/scripts/root-redirect.js` 是**基座外深链归一**脚本（`<head>` 同步加载、只写 ES5），由 `config/config.ts` 以 `?v=<脚本内容 sha256 前 8 位>` 引用 —— 内容变 URL 变，破解宿主静态资源“无 Cache-Control”导致的启发式长期缓存。见 D11 / P6 |
 | `mock/` | 模拟数据 |
 | `tests/` | 测试 |
 | `e2e/` | 端到端测试 |
@@ -75,6 +75,7 @@
 
 | 文件 | 职责与加载边界 |
 |------|----------------|
+| `tests/root-redirect.test.ts` | 深链入口归一的**行为矩阵**测试（读源码文本 + 注入假 `window` 在 `new Function` 沙箱执行；I1~I7 可失败） |
 | `config/config.ts` | Umi 基础配置；不得重新启用全局 `layout` 插件，否则 Chat 会重新承担管理壳运行时 |
 | `config/routes.ts` | 将 `/chat`、登录、Bootstrap 和工作空间列表等独立体验与 `adminRoutes` 分组；管理路由统一挂到异步 `AdminLayout` 父路由；已移除 Workspace Studio 深链与旧入口 |
 | `src/app.tsx` | 全应用认证、初始状态、主题和 request；不得静态导入管理壳的 ProLayout、头像区或 SettingDrawer |
