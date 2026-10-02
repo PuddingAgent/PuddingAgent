@@ -50,6 +50,19 @@ def headings(path: str) -> set:
     return out
 
 
+def scan_lines(path: str):
+    """产出「去掉围栏代码块与行内代码」后的行，避免把代码块里的示例链接当成真链接。"""
+    in_fence = False
+    for raw in io.open(path, encoding='utf-8', errors='replace'):
+        line = raw.rstrip('\n')
+        if re.match(r'^\s*(`{3,}|~{3,})', line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        yield re.sub(r'`[^`]*`', '``', line)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--all-repo', action='store_true')
@@ -75,7 +88,8 @@ def main() -> int:
     for path in files:
         rel = os.path.relpath(path, root).replace(os.sep, '/')
         base = os.path.dirname(path)
-        for m in LINK_RE.finditer(io.open(path, encoding='utf-8', errors='replace').read()):
+        matches = [m for line in scan_lines(path) for m in LINK_RE.finditer(line)]
+        for m in matches:
             raw = m.group(1)
             if re.match(r'^(https?:|mailto:|file:|data:)', raw):
                 continue
