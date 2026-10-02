@@ -1,6 +1,6 @@
 # ADR-040：开发构建与发布打包链路分离
 
-> 状态：**Proposed**  
+> 状态：**Superseded（Docker 部分）** —— 2026-10-02 用户裁定：Docker 部署链路已废弃并移除（`build-and-up.ps1`、两个 `Dockerfile`、`.dockerignore`、`run-docker-smoke.ps1` 已删除）；本 ADR 中关于宿主机 `dev-up` 开发链路的结论仍然有效。  
 > 日期：2026-05-23  
 > 范围：`dev-up.ps1`、`build-and-up.ps1`、Docker Compose、`Source/PuddingAgent/Dockerfile`、`PuddingPlatformAdmin` 前端开发链路、`PuddingAgent` 后端开发链路  
 > 关联：[38ADR-037AdminSPA静态产物装配归一化ADR](38ADR-037AdminSPA静态产物装配归一化ADR.md)、[33ADR-032构建门禁与运行态漂移修复方案](33ADR-032构建门禁与运行态漂移修复方案.md)

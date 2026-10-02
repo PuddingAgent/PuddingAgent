@@ -1,4 +1,4 @@
-﻿# Pudding Agent — 任务看板
+# Pudding Agent — 任务看板
 
 最后更新：2026-05-20（ADR-027 ADR-026 终验阻塞修复与证据链强制闭环方案）
 
@@ -114,7 +114,7 @@ python .github/skills/todo-api/todo_api.py kanban --group-by stage --project Pud
 |--------|------|--------|
 | ARCH-E2E-001 | 修复/稳定 Web API 测试发现与运行 | `PuddingWebApiTests` 可稳定 list/run tests |
 | ARCH-E2E-002 | 外部 E2E 测试框架 | Playwright 或 Python 浏览器自动化脚本，覆盖登录、建会话、发消息、流式响应 |
-| ARCH-E2E-003 | Docker E2E 测试 | `build-and-up.ps1` 后自动健康检查与核心路径验证 |
+| ARCH-E2E-003 | ~~Docker E2E 测试~~（2026-10-02 废弃） | Docker 链路已移除；健康检查改在宿主机源码开发栈/产品态 Desktop 上运行 |
 | ARCH-E2E-004 | 前端调试模式 | URL flag 或配置开关开启 debug panel、mock action、trace overlay |
 | ARCH-E2E-005 | 前端自动化测试钩子 | 稳定 test id、debug API、状态快照导出 |
 | ARCH-E2E-006 | E2E 测试数据种子 | 默认 workspace、agent、LLM fake provider、session seed |

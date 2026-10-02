@@ -21,7 +21,6 @@
 | `tests/` | 测试 |
 | `e2e/` | 端到端测试 |
 | `scripts/` | 构建脚本 |
-| `docker/` | Docker 配置 |
 | `dist/` | 构建产物 |
 
 ## 关键文件
@@ -32,7 +31,6 @@
 | `tsconfig.json` | TypeScript 配置 |
 | `biome.json` | 代码格式化 |
 | `jest.config.ts` | 测试配置 |
-| `Dockerfile` | Docker 构建 |
 
 ## Token 统计
 

@@ -1,4 +1,4 @@
-﻿# PuddingAgent CodeMAP
+# PuddingAgent CodeMAP
 
 > 入口项目（薄壳） | Console / DesktopChild 双模式宿主入口 · DI 组合扩展 · 全部业务实现在 PuddingHost/Runtime/Platform
 
@@ -20,7 +20,6 @@
 | 文件 | 用途 |
 |------|------|
 | `appsettings.json` | 运行配置 |
-| `Dockerfile` | 容器部署 |
 | `Properties/launchSettings.json` | VS 启动配置 |
 
 ## 说明
