@@ -143,3 +143,106 @@ export function formatUtcTime(value: string | null | undefined): string {
   if (Number.isNaN(parsed.getTime())) return UNKNOWN_TEXT;
   return `${parsed.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
 }
+
+// ── P5 新增：失败态诚实化（**只增不改**：上面既有函数的签名与行为一律不动）──────
+// 目的：把「宿主尚未部署该端点(404)」「未授权(401/403)」「网络层失败」「其它」区分开，
+// 并且**取不到状态码时绝不猜成 404** —— 否则「不知道」会被读成「未部署」这一具体事实。
+
+/** 端点路径的**唯一真源**：页面文案与报错提示都必须引用它，不得各自再写一遍字面量。 */
+export const INDEX_STATUS_ENDPOINT = '/api/admin/index/status';
+
+/** 失败分类：`not-deployed` = 端点不存在（宿主没部署）· `unauthorized` = 未授权 · `network` = 网络层 · `unknown` = 其余未知。 */
+export type IndexStatusFailureKind = 'not-deployed' | 'unauthorized' | 'network' | 'unknown';
+
+/** `classifyIndexStatusFailure` 的归一化结果（供 Alert 文案与排查使用）。 */
+export interface IndexStatusFailure {
+  kind: IndexStatusFailureKind;
+  /** 能取到就给真实 HTTP 状态码；取不到 ⇒ `null`（**绝不**猜成 404）。 */
+  httpStatus: number | null;
+  /** 原始错误文本（原样保留，供排查；不得吞）。 */
+  rawMessage: string;
+}
+
+/** 是否为「非 null 的对象」（含数组/函数外的一切 object，用于安全取字段）。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** 原始错误文本：字符串 / 带 `message` 的对象（含 Error）/ 其余 ⇒ 空串。 */
+function readRawMessage(raw: unknown): string {
+  if (typeof raw === 'string') return raw;
+  if (isRecord(raw) && typeof raw.message === 'string') return raw.message;
+  return '';
+}
+
+/** 归一化 HTTP 状态码：仅接受 100..599 的整数；其余（含字符串 `"404"`）一律视为「取不到」。 */
+function normalizeHttpStatus(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599) {
+    return value;
+  }
+  return null;
+}
+
+/**
+ * 防御式取码（本仓 umi `request` 的报错形状**未在本机验证** ⇒ 不得只读一条路径）：
+ * 依次尝试 `response.status` → `status` → `statusCode` → 从 `message` 抠 `status code NNN` / 裸 `4xx|5xx`。
+ * 任一步拿到的不是 100..599 的整数都当作「取不到」⇒ 返回 `null`（**绝不**猜成 404）。
+ */
+function readHttpStatus(raw: unknown): number | null {
+  if (isRecord(raw)) {
+    const response = raw.response;
+    const candidates: unknown[] = [
+      isRecord(response) ? response.status : undefined,
+      raw.status,
+      raw.statusCode,
+    ];
+    for (const candidate of candidates) {
+      const parsed = normalizeHttpStatus(candidate);
+      if (parsed !== null) return parsed;
+    }
+  }
+  const message = readRawMessage(raw);
+  const matched = /status code (\d{3})/i.exec(message) ?? /\b([45]\d\d)\b/.exec(message);
+  if (matched) return normalizeHttpStatus(Number(matched[1]));
+  return null;
+}
+
+/** 错误码（如 axios 的 `ERR_NETWORK`）；取不到 ⇒ `null`。 */
+function readErrorCode(raw: unknown): string | null {
+  return isRecord(raw) && typeof raw.code === 'string' ? raw.code : null;
+}
+
+/** 是否**带**一个可用的 HTTP 响应对象（`response` 是非 null 对象）。
+ *  `{}` ⇒ false；`{ response: {} }` ⇒ true（响应在，只是状态码不可知）。 */
+function hasUsableHttpResponse(raw: unknown): boolean {
+  return isRecord(raw) && isRecord(raw.response);
+}
+
+/**
+ * 把任意请求异常归一成 {@link IndexStatusFailure}（纯函数，可单测）。
+ * 硬性分类规则：
+ *   · HTTP 404 ⇒ `not-deployed`（端点不存在）
+ *   · HTTP 401 / 403 ⇒ `unauthorized`
+ *   · **完全没有** HTTP 响应（`response` 缺失 / `code === 'ERR_NETWORK'` / 消息含 `Network Error` / 消息含 `timeout`）⇒ `network`
+ *   · 其余（含取不到的 5xx、取不到状态码的一切）⇒ `unknown`
+ * 取不到状态码时 `httpStatus` 一律 `null`，**不得**折叠成 404。
+ */
+export function classifyIndexStatusFailure(raw: unknown): IndexStatusFailure {
+  const rawMessage = readRawMessage(raw);
+  const httpStatus = readHttpStatus(raw);
+
+  if (httpStatus === 404) return { kind: 'not-deployed', httpStatus, rawMessage };
+  if (httpStatus === 401 || httpStatus === 403) return { kind: 'unauthorized', httpStatus, rawMessage };
+
+  // 只有在**完全没有响应对象**时才可能判网络层失败；`{ response: {} }` 属于「响应在但状态码不可知」⇒ unknown。
+  if (!hasUsableHttpResponse(raw) && isRecord(raw)) {
+    const missingResponseField = !('response' in raw);
+    const networkByCode = readErrorCode(raw) === 'ERR_NETWORK';
+    const networkByMessage = /network error/i.test(rawMessage) || /timeout/i.test(rawMessage);
+    if (missingResponseField || networkByCode || networkByMessage) {
+      return { kind: 'network', httpStatus: null, rawMessage };
+    }
+  }
+
+  return { kind: 'unknown', httpStatus, rawMessage };
+}

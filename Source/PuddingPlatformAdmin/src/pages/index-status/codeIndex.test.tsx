@@ -27,6 +27,7 @@ import {
 } from './health';
 import { MARK_WORDS, PathBrokenMark, RippleMark, StaleMark, StatusOrb, UnregisteredMark } from './visuals';
 import { CodeIndexProjectRow } from './codeIndexRow';
+import { classifyIndexStatusFailure } from './api';
 import type {
   CodeIndexMaintenanceStatus,
   CodeIndexProjectStatus,
@@ -877,5 +878,48 @@ describe('D4「源维护」派生信号（未定论路径 / 提交结果 / 退�
     expect(CODE_INDEX_MAINTENANCE_FIELDS.length).toBeGreaterThan(
       AUTHORITATIVE_MAINTENANCE_FIELDS.length,
     );
+  });
+});
+
+// ── P5 新增：失败态诚实化（源码文本级断言；本页不作 jsdom 页面级渲染断言）──────
+// 命题：页面在「读不到」时不得说「正在读取」；404 这一可行动事实必须与端点路径一起出现；
+// 无快照时不得凭空提及「保留上一次成功快照」。M1/M2 变异各自能让 I4/I7 转红。
+
+describe('P5 失败态诚实化：文案与撒谎路径（源码文本断言）', () => {
+  const source = readSource(PAGE_PATH);
+
+  it('I4 · 「正在读取」只出现一次，且唯一受 loading 守卫（error 分支不得含该字样）', () => {
+    // (a) 唯一性：若复制到 error 分支就会出现第二次 ⇒ 红
+    expect(source.split('正在读取').length - 1).toBe(1);
+    // (b) 守卫必须是 `loading`：`loading ? ( <Alert ... message="正在读取"`
+    expect(source).toMatch(/loading\s*\?\s*\(\s*<Alert[\s\S]{0,300}?message="正在读取"/);
+    // (c) 紧邻「正在读取」之前不得出现 error（`loading || error !== null ?` 式改动 ⇒ 红）
+    const idx = source.indexOf('正在读取');
+    const guardWindow = source.slice(Math.max(0, idx - 120), idx);
+    expect(guardWindow).toContain('loading ? (');
+    expect(guardWindow).not.toMatch(/error/);
+  });
+
+  it('I5 · 404 文案与端点常量齐备，旧的裸路径「正在读取 GET …」已清除', () => {
+    expect(source).toContain('后端未接入该端点（HTTP 404）');
+    expect(source).toContain('INDEX_STATUS_ENDPOINT');
+    // 旧文案（字面量裸路径）必须已被模板常量替换 ⇒ 回退即红
+    expect(source).not.toContain('正在读取 GET /api/admin/index/status');
+  });
+
+  it('I7 · not-deployed 文案同时含 404 与端点路径（可行动），且分类器确实把 404 判为未部署', () => {
+    expect(source).toContain('后端未接入该端点（HTTP 404）');
+    expect(source).toContain('GET ${INDEX_STATUS_ENDPOINT} 在运行中的宿主里不存在');
+    // M1（把 404 并入 unknown）⇒ 本条红
+    expect(classifyIndexStatusFailure({ response: { status: 404 } }).kind).toBe('not-deployed');
+  });
+
+  it('§3.3 · 无快照时不得凭空提及「保留上一次成功快照」', () => {
+    expect(source).not.toContain('页面保留上一次成功快照仅作参考');
+  });
+
+  it('§3.2 · 失败且无快照时给出明确说法（不是空白、也不是「正在读取」）', () => {
+    expect(source).toContain('读取失败，尚未取到任何快照（详见上方提示）。');
+    expect(source).toContain('端点返回了空快照（既不是错误，也不是零值）。');
   });
 });

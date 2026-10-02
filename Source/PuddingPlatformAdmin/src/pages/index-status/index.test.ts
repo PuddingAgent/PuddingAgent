@@ -1,6 +1,8 @@
 import {
   EMPTY_TEXT,
+  INDEX_STATUS_ENDPOINT,
   UNKNOWN_TEXT,
+  classifyIndexStatusFailure,
   formatJobsReason,
   formatTriStateBoolean,
   formatTriStateBytes,
@@ -119,5 +121,90 @@ describe('formatJobsReason（台账为空时必须给中文解释）', () => {
     const text = formatJobsReason('brand-new-reason');
     expect(text).toContain('brand-new-reason');
     expect(text).toContain('未登记');
+  });
+});
+
+// ── P5 新增：失败态诚实化（**只增不改**：上面既有断言一字未动）──────────────
+// 命题：把「宿主尚未部署该端点(404)」「未授权(401/403)」「网络层失败(无响应)」「其它未知」区分开，
+// 且**取不到状态码时绝不猜成 404**（否则「不知道」会被读成「未部署」这一具体事实）。
+// 页面渲染由浏览器 smoke 覆盖（jsdom 下 antd Table 测量循环不稳定，不作页面级断言）。
+
+describe('classifyIndexStatusFailure（P5 失败分类：未知绝不猜成 404）', () => {
+  it('I1 · HTTP 404 ⇒ not-deployed，且保留真实状态码 404（消息兜底路径同判）', () => {
+    expect(classifyIndexStatusFailure({ response: { status: 404 } })).toEqual({
+      kind: 'not-deployed',
+      httpStatus: 404,
+      rawMessage: '',
+    });
+    // axios/umi 风格的消息兜底：从 message 抠「status code 404」也能判为未部署
+    expect(classifyIndexStatusFailure({ message: 'Request failed with status code 404' })).toEqual({
+      kind: 'not-deployed',
+      httpStatus: 404,
+      rawMessage: 'Request failed with status code 404',
+    });
+  });
+
+  it('I2 · HTTP 401 ⇒ unauthorized；HTTP 403 ⇒ unauthorized；状态码原样保留', () => {
+    expect(classifyIndexStatusFailure({ response: { status: 401 } })).toEqual({
+      kind: 'unauthorized',
+      httpStatus: 401,
+      rawMessage: '',
+    });
+    expect(classifyIndexStatusFailure({ status: 403 })).toEqual({
+      kind: 'unauthorized',
+      httpStatus: 403,
+      rawMessage: '',
+    });
+  });
+
+  it('I3 · 没有 HTTP 响应 ⇒ network 且 httpStatus === null', () => {
+    for (const raw of [
+      {},
+      { message: 'Network Error' },
+      { code: 'ERR_NETWORK' },
+      { message: 'timeout of 10000ms exceeded' },
+    ]) {
+      const failure = classifyIndexStatusFailure(raw);
+      expect(failure.kind).toBe('network');
+      expect(failure.httpStatus).toBeNull();
+    }
+  });
+
+  it('I6 · 三态纪律：null / 字符串 / 空 response ⇒ unknown 且 httpStatus === null（不得是 not-deployed）', () => {
+    for (const raw of [null, undefined, 'boom', { response: {} }]) {
+      const failure = classifyIndexStatusFailure(raw);
+      expect(failure.kind).toBe('unknown');
+      expect(failure.httpStatus).toBeNull();
+      expect(failure.kind).not.toBe('not-deployed');
+    }
+  });
+
+  it('防护式取码：非法 / 越界的状态码一律视为取不到（不得猜成 404）', () => {
+    expect(classifyIndexStatusFailure({ response: { status: '404' } })).toEqual({
+      kind: 'unknown',
+      httpStatus: null,
+      rawMessage: '',
+    });
+    expect(classifyIndexStatusFailure({ response: { status: 0 } })).toEqual({
+      kind: 'unknown',
+      httpStatus: null,
+      rawMessage: '',
+    });
+    expect(classifyIndexStatusFailure({ response: { statusCode: 999 } })).toEqual({
+      kind: 'unknown',
+      httpStatus: null,
+      rawMessage: '',
+    });
+  });
+
+  it('rawMessage 原样保留（不吞），5xx 取不到语义一律回落 unknown', () => {
+    const failure = classifyIndexStatusFailure({ response: { status: 500 }, message: 'boom' });
+    expect(failure.rawMessage).toBe('boom');
+    expect(failure.kind).toBe('unknown');
+    expect(failure.httpStatus).toBe(500);
+  });
+
+  it('端点路径常量是唯一真源（页面/报错都引用它）', () => {
+    expect(INDEX_STATUS_ENDPOINT).toBe('/api/admin/index/status');
   });
 });

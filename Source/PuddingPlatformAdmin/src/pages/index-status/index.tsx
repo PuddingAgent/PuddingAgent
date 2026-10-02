@@ -17,7 +17,9 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   EMPTY_TEXT,
+  INDEX_STATUS_ENDPOINT,
   UNKNOWN_TEXT,
+  classifyIndexStatusFailure,
   formatRelativeTime,
   formatTriStateBoolean,
   formatTriStateBytes,
@@ -28,6 +30,7 @@ import {
   formatUtcTime,
   getIndexStatus,
 } from './api';
+import type { IndexStatusFailure } from './api';
 import {
   CODE_INDEX_BLOCK_FIELDS,
   CODE_INDEX_MAINTENANCE_FIELDS,
@@ -282,10 +285,48 @@ function toSparkBar(job: FullTextIndexJobStatus, maxElapsedMs: number): SparkBar
 }
 
 
+/**
+ * P5：失败态诚实化 —— 把分类结果映射成失败 Alert 的三元组（文案逐字见任务书 §3.1）。
+ * `hasSnapshot` 为真（确实存在上一次快照）时才补「快照仅作参考」的说明；
+ * 无快照时不得凭空提及快照（§3.3：那句话只在 snapshot !== null 时出现）。
+ */
+function failureAlert(
+  failure: IndexStatusFailure,
+  hasSnapshot: boolean,
+): { type: 'error' | 'warning'; message: string; description: string } {
+  const snapshotNote = hasSnapshot ? '（页面不使用上一次快照冒充当前真值）' : '';
+  switch (failure.kind) {
+    case 'not-deployed':
+      return {
+        type: 'warning',
+        message: '后端未接入该端点（HTTP 404）',
+        description: `GET ${INDEX_STATUS_ENDPOINT} 在运行中的宿主里不存在 ⇒ 面板没有数据可显示。这通常意味着宿主尚未部署包含该端点的构建；部署 Core 后本页自动就绪。`,
+      };
+    case 'unauthorized':
+      return {
+        type: 'error',
+        message: '未授权（HTTP 401/403）',
+        description: '需要有效的 Admin 登录态：请重新登录后点「刷新」。',
+      };
+    case 'network':
+      return {
+        type: 'error',
+        message: '无法连接后端',
+        description: `${failure.rawMessage}${snapshotNote}`,
+      };
+    default:
+      return {
+        type: 'error',
+        message: '索引状态读取失败',
+        description: `${failure.rawMessage}${snapshotNote}`,
+      };
+  }
+}
+
 const IndexStatusPage: React.FC = () => {
   const [snapshot, setSnapshot] = useState<FullTextIndexStatusSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<IndexStatusFailure | null>(null);
   const [showRawFields, setShowRawFields] = useState<boolean>(RAW_FIELDS_DEFAULT_EXPANDED);
 
   const load = useCallback(async () => {
@@ -293,8 +334,9 @@ const IndexStatusPage: React.FC = () => {
       setSnapshot(await getIndexStatus());
       setError(null);
     } catch (err) {
-      // 读不到就如实报读不到，不用上一次的快照冒充当前真值。
-      setError(err instanceof Error ? err.message : String(err));
+      // P5：读不到就**如实分类**报读不到（404 / 未授权 / 网络层 / 其它），
+      // 取不到状态码时绝不猜成 404，也不用上一次的快照冒充当前真值。
+      setError(classifyIndexStatusFailure(err));
     }
   }, []);
 
@@ -389,23 +431,33 @@ const IndexStatusPage: React.FC = () => {
       }}
     >
       <Spin spinning={loading}>
-        {error ? (
-          <Alert
-            type="error"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="索引状态读取失败"
-            description={`${error}（页面保留上一次成功快照仅作参考，不代表当前真值）`}
-          />
+        {error !== null ? (
+          <Alert {...failureAlert(error, snapshot !== null)} showIcon style={{ marginBottom: 12 }} />
         ) : null}
 
         {snapshot === null ? (
-          <Alert
-            type="info"
-            showIcon
-            message="尚无快照"
-            description="正在读取 GET /api/admin/index/status …"
-          />
+          loading ? (
+            <Alert
+              type="info"
+              showIcon
+              message="正在读取"
+              description={`GET ${INDEX_STATUS_ENDPOINT} …`}
+            />
+          ) : error !== null ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="尚无快照"
+              description="读取失败，尚未取到任何快照（详见上方提示）。"
+            />
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              message="尚无快照"
+              description="端点返回了空快照（既不是错误，也不是零值）。"
+            />
+          )
         ) : (
           <>
             <Typography.Text
