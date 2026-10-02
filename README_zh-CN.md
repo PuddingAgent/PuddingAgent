@@ -191,13 +191,30 @@ dotnet build Source\PuddingDesktop\PuddingDesktop.csproj --no-restore --nologo
 
 运行时用户数据位于配置的 DataRoot，不能作为构建或测试输出目录。
 
-## 设计文档
+## 文档
+
+文档地图入口：**[Docs/README.md](Docs/README.md)** —— 列出 `Docs/` 下每个目录放什么、命名规则与 Markdown Front Matter 门禁。
+
+| 入口 | 内容 |
+|------|------|
+| [Docs/README.md](Docs/README.md) | 文档地图：什么放哪里，索引与修改日志的分工 |
+| [Docs/07_architecture/架构.md](Docs/07_architecture/架构.md) | 架构总览、分层边界与阅读地图 |
+| [Docs/07_architecture/README.md](Docs/07_architecture/README.md) | 架构分册与 ADR 全表 |
+| [Docs/08_how_debuge/README.md](Docs/08_how_debuge/README.md) | 调试与诊断手册（日志位置、埋点、分诊） |
+| [Docs/10_conventions/组件化交付规程.md](Docs/10_conventions/组件化交付规程.md) | 组件化交付门禁（S1–S5）与接入前 checklist |
+| [Docs/10_conventions/Agents-Hygiene.md](Docs/10_conventions/Agents-Hygiene.md) | 仓库卫生与提交纪律（完整规范） |
+| [Docs/00_changelog/README.md](Docs/00_changelog/README.md) | 修改日志规则（按日期的记录在 `Docs/00_changelog/`） |
+| [code_map.md](code_map.md) | 代码地图：根主索引 + 各子项目 `code_map.md` |
+| [Agents.md](Agents.md) | 仓库规则：架构、文档、构建、卫生 |
+
+选定的设计文档：
 
 - [插件、Hook、Event、Agent Loop 与函数图总架构](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md)
 - [通用 Agent 编排 ADR](Docs/07_architecture/82ADR-071通用Agent编排平台完整设计方案ADR.md)
 - [编排后端执行内核施工图](Docs/07_architecture/83通用Agent编排后端执行内核与ControlPlane施工图.md)
 - [编排编辑器与组件 UI 施工图](Docs/07_architecture/84通用Agent编排蓝图编辑器与组件系统施工图.md)
 - [工作区 TODO、峰谷自动化、质询器与 Goal 模式](Docs/12_features/工作区TODO与峰谷节能任务编排设计方案.md)
+- [致谢 / Acknowledgments](Docs/90_archive/thanks.md)
 
 ## License
 

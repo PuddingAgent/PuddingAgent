@@ -191,7 +191,23 @@ dotnet build Source\PuddingDesktop\PuddingDesktop.csproj --no-restore --nologo
 
 Runtime user data is stored under the configured DataRoot and must not be used as build or test output.
 
-## Design documents
+## Documentation
+
+Start with the documentation map: **[Docs/README.md](Docs/README.md)** — it lists every `Docs/` directory, what belongs there, the naming rules, and the Markdown Front Matter gate.
+
+| Entry point | What it covers |
+|-------------|----------------|
+| [Docs/README.md](Docs/README.md) | Documentation map: what lives where, and the gap between index and change log |
+| [Docs/07_architecture/架构.md](Docs/07_architecture/架构.md) | Architecture overview, layering boundaries and reading map |
+| [Docs/07_architecture/README.md](Docs/07_architecture/README.md) | Architecture volumes and the full ADR index |
+| [Docs/08_how_debuge/README.md](Docs/08_how_debuge/README.md) | Debugging and diagnostics manual (log locations, instrumentation, triage) |
+| [Docs/10_conventions/组件化交付规程.md](Docs/10_conventions/组件化交付规程.md) | Component delivery gate (S1–S5) and pre-integration checklist |
+| [Docs/10_conventions/Agents-Hygiene.md](Docs/10_conventions/Agents-Hygiene.md) | Repository hygiene and commit discipline (full spec) |
+| [Docs/00_changelog/README.md](Docs/00_changelog/README.md) | Change-log rules (dated records live under `Docs/00_changelog/`) |
+| [code_map.md](code_map.md) | Code map: root index plus each project's own `code_map.md` |
+| [Agents.md](Agents.md) | Repository rules: architecture, docs, build, hygiene |
+
+Selected design documents:
 
 - [Plugin, Hook, Event, Agent Loop, and function-graph architecture](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md)
 - [General Agent orchestration ADR](Docs/07_architecture/82ADR-071通用Agent编排平台完整设计方案ADR.md)
