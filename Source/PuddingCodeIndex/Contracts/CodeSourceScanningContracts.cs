@@ -20,9 +20,14 @@ public sealed record CodeSourceDiskEntry(
 /// <summary>
 /// 路径忽略规则的**注入端口**（D3，2026-10-02）。
 /// <para>
-/// 组件不反向引用 <c>PuddingPathFiltering</c>：<c>PuddingCodeIndex</c> 必须保持
-/// <c>ProjectReference = 0</c> 的叶子，路径忽略的唯一真源由宿主适配后从这里注入
-/// （与既有「组件定义端口、实现留在上层」一致），组件内不另建扩展名/目录白名单。
+/// 规则集的**唯一真源**在叶子组件 <c>PuddingPathFiltering</c>（名字级噪声名单 + 与
+/// <c>git check-ignore</c> 对齐的 .gitignore 语义），组件只通过本端口消费，不在这里另建名单；
+/// 否则两套名单必然漂移，而漏枚举一个路径就等于「索引悄悄少了文件」。
+/// </para>
+/// <para>
+/// 更正（2026-10-02）：本注释此前写成「组件不反向引用 PuddingPathFiltering」。事实上
+/// <c>PuddingCodeIndex</c> 已把它作为允许的叶子依赖引用（<c>IndexExcludePatterns</c> 等），
+/// 因此默认实现 <c>WorkspaceCodeSourceIgnoreRules</c> 就放在组件内；宿主要换规则时替换本端口即可。
 /// </para>
 /// </summary>
 public interface ICodeSourceIgnoreRules

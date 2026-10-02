@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using PuddingCode.Configuration;
 using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Services.CodeIndex;
 using PuddingHost.Hosting;
 
 namespace PuddingHost.Tests.Hosting;
@@ -223,6 +224,51 @@ public sealed class CodeIndexMaintenanceHostCompositionTests
         {
             Cleanup(dataRoot);
             Cleanup(projectRoot);
+        }
+    }
+
+    /// <summary>
+    /// D4（2026-10-02）**登记 + 装配**：新的源维护链（忽略规则 / 磁盘枚举 / 校准 / 稳定读 / 协调器）
+    /// 必须在宿主容器里可解析，且**共用同一个 store 实例**（两个 store 就是两个写者）。
+    /// <para>
+    /// 本步故意**没有驱动者**：驱动权仍在 <see cref="ICodeIndexMaintenance"/> 的旧路径手里，
+    /// 因此这一笔对运行中实例是零行为变化；把驱动切到协调器是独立的一步，需要外部重启验收。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Host_Composition_Registers_The_Source_Maintenance_Chain_Without_Driving_It()
+    {
+        var dataRoot = NewDataRoot();
+        try
+        {
+            await using var app = BuildHost(dataRoot);
+
+            var store = app.Services.GetRequiredService<ICodeIndexStore>();
+
+            var ignoreRules = app.Services.GetRequiredService<ICodeSourceIgnoreRules>();
+            Assert.IsType<WorkspaceCodeSourceIgnoreRules>(ignoreRules);
+
+            Assert.IsType<FileSystemCodeSourceScanner>(app.Services.GetRequiredService<ICodeSourceScanner>());
+            Assert.NotNull(app.Services.GetRequiredService<CodeSourceScanService>());
+            Assert.NotNull(app.Services.GetRequiredService<CodeSourceFingerprintReader>());
+            Assert.NotNull(app.Services.GetRequiredService<CodeSourceMaintenanceCoordinator>());
+
+            // 能力端口必须解析到同一个 store：否则 manifest/账本/原子替换会落在另一个连接池上。
+            Assert.Same(store, app.Services.GetRequiredService<ICodeSourceMaintenanceStore>());
+            Assert.Same(store, app.Services.GetRequiredService<ICodeGraphDependencyQuery>());
+
+            // 批量接缝必须就是那个聚合索引器（同批复用一个工程快照的唯一入口）。
+            Assert.Same(
+                app.Services.GetRequiredService<ICodeIndexer>(),
+                app.Services.GetRequiredService<ICodeIndexFileBatchUpdater>());
+
+            // 驱动权仍在旧路径：这条断言是「本笔没有改变运行行为」的证据。
+            Assert.IsType<PuddingCodeIndex.Services.CodeIndex.CodeIndexMaintenanceService>(
+                app.Services.GetRequiredService<ICodeIndexMaintenance>());
+        }
+        finally
+        {
+            Cleanup(dataRoot);
         }
     }
 

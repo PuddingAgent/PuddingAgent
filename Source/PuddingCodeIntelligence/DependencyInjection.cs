@@ -59,6 +59,35 @@ public static class DependencyInjection
         // not depend on the Host.
         services.TryAddSingleton<ICodeIndexMaintenance, CodeIndexMaintenanceService>();
 
+        // ── D4 source maintenance (2026-10-02) ─────────────────────────
+        // 登记 + 装配（S5）：新链路的零件在这里装配成对象图，**暂时没有驱动者** ——
+        // 因此运行中实例的行为一字未变；把驱动从旧路径切到协调器是独立的一步，需要外部重启验收。
+        services.TryAddSingleton<ICodeSourceIgnoreRules, WorkspaceCodeSourceIgnoreRules>();
+        services.TryAddSingleton<ICodeSourceScanner, FileSystemCodeSourceScanner>();
+        services.TryAddSingleton<CodeSourceScanService>();
+        services.TryAddSingleton<CodeSourceFingerprintReader>();
+
+        // 能力端口都用**同一个** store 实例：两个 store 就是两个写者（与 scheduler/pump 的同一实例约束同理）。
+        services.TryAddSingleton<ICodeSourceMaintenanceStore>(sp =>
+            sp.GetRequiredService<ICodeIndexStore>() as ICodeSourceMaintenanceStore
+            ?? throw new InvalidOperationException(
+                "ICodeIndexStore must also implement ICodeSourceMaintenanceStore: the source-maintenance " +
+                "chain persists manifest/ledger/atomic replacements through that port."));
+
+        services.TryAddSingleton<ICodeGraphDependencyQuery>(sp =>
+            sp.GetRequiredService<ICodeIndexStore>() as ICodeGraphDependencyQuery
+            ?? throw new InvalidOperationException(
+                "ICodeIndexStore must also implement ICodeGraphDependencyQuery: reverse-dependency expansion " +
+                "reads the relation/reference graph from it."));
+
+        services.TryAddSingleton<ICodeIndexFileBatchUpdater>(sp =>
+            sp.GetRequiredService<ICodeIndexer>() as ICodeIndexFileBatchUpdater
+            ?? throw new InvalidOperationException(
+                "ICodeIndexer must also implement ICodeIndexFileBatchUpdater: the batch seam is what keeps a " +
+                "batch to a single workspace/compile snapshot."));
+
+        services.TryAddSingleton<CodeSourceMaintenanceCoordinator>();
+
         services.TryAddSingleton<ICodeQueryService, CodeQueryService>();
         services.TryAddSingleton<ILanguageServerService, IndexBasedLanguageServerService>();
 
