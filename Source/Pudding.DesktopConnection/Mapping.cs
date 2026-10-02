@@ -457,6 +457,36 @@ internal static class CoreFrameMapping
                     return Mismatch(descriptor);
                 }
 
+                if (!DesktopTabActionWire.TryParse(command.Tabs.Action, out var tabAction))
+                {
+                    return FailRequest("tab action is missing or not registered");
+                }
+
+                if (tabAction == DesktopTabAction.New)
+                {
+                    // 新建：没有目标页、也不钉版本；上下文由 context_id 指明。
+                    if (string.IsNullOrWhiteSpace(command.Tabs.ContextId))
+                    {
+                        return FailRequest("creating a tab requires a context_id");
+                    }
+
+                    if (command.Tabs.ExpectedPageVersion != 0)
+                    {
+                        return FailRequest("creating a tab must not pin an expected_page_version");
+                    }
+
+                    Uri? newTabUrl = null;
+                    if (!string.IsNullOrEmpty(command.Tabs.Url)
+                        && !Uri.TryCreate(command.Tabs.Url, UriKind.Absolute, out newTabUrl))
+                    {
+                        return FailRequest("tab url must be an absolute URL");
+                    }
+
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForTabs(BrowserTabsRequest.New(
+                            command.Tabs.ContextId, newTabUrl, command.Tabs.Activate)));
+                }
+
                 var tabsTarget = DecodeTarget(command.Tabs.Target);
                 if (tabsTarget is null)
                 {
@@ -469,14 +499,9 @@ internal static class CoreFrameMapping
                     return FailRequest("tab operation must pin a valid expected_page_version");
                 }
 
-                if (!DesktopTabActionWire.TryParse(command.Tabs.Action, out var tabAction))
-                {
-                    return FailRequest("tab action is missing or not registered");
-                }
-
                 return CapabilityResult<DesktopCapabilityRequest>.Success(
                     DesktopCapabilityRequest.ForTabs(new BrowserTabsRequest(
-                        tabsTarget, tabAction, ToPageVersion(command.Tabs.ExpectedPageVersion))));
+                        tabsTarget, tabAction, ToPageVersion(command.Tabs.ExpectedPageVersion), activate: command.Tabs.Activate)));
             }
 
             case DesktopCapability.ShellClipboard:

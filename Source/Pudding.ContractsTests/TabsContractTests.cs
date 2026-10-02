@@ -14,7 +14,7 @@ public sealed class TabsContractTests
     public void TabActionLineNames_AreFrozenAndUnknownIsRejected()
     {
         Assert.Equal(
-            ["activate", "close"],
+            ["new", "activate", "close"],
             Enum.GetValues<DesktopTabAction>().Select(DesktopTabActionWire.NameOf).ToArray());
 
         Assert.True(DesktopTabActionWire.TryParse("close", out var close));

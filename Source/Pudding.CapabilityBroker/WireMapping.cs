@@ -153,9 +153,13 @@ internal static class CoreCommandEncoder
             case DesktopCapability.BrowserTabs when request.Tabs is { } requestTabs:
                 command.Tabs = new Proto.TabsCommand
                 {
-                    Target = EncodeTarget(requestTabs.Target),
+                    // 新建标签页没有目标页 ⇒ 不设 target，改用 context_id。
+                    Target = requestTabs.Target is { } tabsTarget ? EncodeTarget(tabsTarget) : null,
                     ExpectedPageVersion = requestTabs.ExpectedPageVersion.Value,
                     Action = DesktopTabActionWire.NameOf(requestTabs.Action),
+                    ContextId = requestTabs.ContextId,
+                    Url = requestTabs.Url?.AbsoluteUri ?? string.Empty,
+                    Activate = requestTabs.Activate,
                 };
                 break;
 
@@ -226,7 +230,7 @@ internal static class CoreCommandEncoder
                 $"notification:{notification.Title}:{notification.Message}:{notification.Priority}",
             _ when request.PageState is { } target => $"page_state:{target.Key}",
             _ when request.Tabs is { } requestTabs =>
-                $"tabs:{requestTabs.Action}:{requestTabs.Target.Key}:{requestTabs.ExpectedPageVersion.Value}",
+                $"tabs:{requestTabs.Action}:{requestTabs.Target?.Key ?? requestTabs.ContextId}:{requestTabs.ExpectedPageVersion.Value}:{requestTabs.Url?.AbsoluteUri}:{requestTabs.Activate}",
             _ when request.Clipboard is { } clipboard => $"clipboard:{clipboard.MaxCharacters}",
             _ when request.Dialog is { } dialog =>
                 $"dialog:{dialog.Buttons}:{dialog.Title}:{dialog.Message}",

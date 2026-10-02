@@ -238,6 +238,11 @@ message TabsCommand {
   CommandTarget target = 1;
   int64 expected_page_version = 2;
   string action = 3;
+  // 新建标签页（加宽 2026-10-02，缺口 #6）：动作 action="new" 时 target 可以不设，
+  // 用 context_id 指明在哪个上下文新建；url 是初始地址（可空），activate 表示是否切为活动页。
+  string context_id = 4;
+  string url = 5;
+  bool activate = 6;
 }
 
 message TabsOutcome {

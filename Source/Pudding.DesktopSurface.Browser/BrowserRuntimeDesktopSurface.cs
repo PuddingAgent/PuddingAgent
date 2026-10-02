@@ -146,7 +146,52 @@ public sealed class BrowserRuntimeDesktopSurface
                 DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
         }
 
-        var target = request.Target;
+        if (request.Action == DesktopTabAction.New)
+        {
+            // 新建标签页：没有既有页面 ⇒ 不钉版本；上下文来自请求本身。
+            var newTabContext = await _runtime
+                .GetContextAsync(new BrowserContextId(request.ContextId), cancellationToken).ConfigureAwait(false);
+            if (newTabContext is null)
+            {
+                return CapabilityResult<DesktopTabsResult>.Failure(
+                    DesktopCapabilityError.InvalidTarget($"context '{request.ContextId}' is not known"));
+            }
+
+            var created = await newTabContext
+                .NewPageAsync(new PageCreateOptions(), cancellationToken).ConfigureAwait(false);
+            if (request.Url is { } initialUrl)
+            {
+                await created
+                    .GotoAsync(initialUrl, new NavigationOptions(), cancellationToken).ConfigureAwait(false);
+            }
+
+            if (request.Activate)
+            {
+                await created.BringToFrontAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var afterNew = await GetContextsAsync(context, cancellationToken).ConfigureAwait(false);
+            if (afterNew.IsFailure)
+            {
+                return CapabilityResult<DesktopTabsResult>.Failure(afterNew.Error);
+            }
+
+            var createdTarget = new DesktopPageTarget(request.ContextId, created.Id.Value);
+            return CapabilityResult<DesktopTabsResult>.Success(new DesktopTabsResult(
+                createdTarget,
+                request.Action,
+                new DesktopPageState(
+                    createdTarget,
+                    ParseUrl(created.Info.Url),
+                    LiveVersion(created.PageVersion),
+                    created.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown,
+                    created.Info.Title),
+                tabClosed: false,
+                afterNew.Value));
+        }
+
+        // 其余动作作用于既有页面（新建分支已返回 ⇒ 这里 Target 必非空）。
+        var target = request.Target!;
         var browserContext = await _runtime
             .GetContextAsync(new BrowserContextId(target.ContextId), cancellationToken).ConfigureAwait(false);
         if (browserContext is null)

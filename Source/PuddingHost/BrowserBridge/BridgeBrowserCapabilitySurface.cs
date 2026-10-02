@@ -196,20 +196,58 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (await ResolveContextAsync(request.Target, cancellationToken).ConfigureAwait(false) is not { } context
-            || await context.GetPageAsync(new PageId(request.Target.PageId), cancellationToken).ConfigureAwait(false) is not { } page)
+        if (request.Action == DesktopTabAction.New)
         {
-            return NotFound<DesktopTabsResult>(request.Target);
+            // 新建标签页：没有既有页面 ⇒ 不钉版本；上下文来自请求本身（与 Desktop 侧同一语义）。
+            if (await _runtime
+                    .GetContextAsync(new BrowserContextId(request.ContextId), cancellationToken)
+                    .ConfigureAwait(false) is not { } newTabContext)
+            {
+                return CapabilityResult<DesktopTabsResult>.Failure(DesktopCapabilityError.InvalidTarget(
+                    $"context '{request.ContextId}' is not known"));
+            }
+
+            var created = await newTabContext
+                .NewPageAsync(new PageCreateOptions(), cancellationToken)
+                .ConfigureAwait(false);
+            if (request.Url is { } initialUrl)
+            {
+                await created.GotoAsync(initialUrl, new NavigationOptions(), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (request.Activate)
+            {
+                await created.BringToFrontAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var afterNew = await GetContextsAsync(call, cancellationToken).ConfigureAwait(false);
+            if (afterNew.IsFailure)
+            {
+                return CapabilityResult<DesktopTabsResult>.Failure(afterNew.Error!);
+            }
+
+            var createdTarget = new DesktopPageTarget(request.ContextId, created.Id.Value);
+            return CapabilityResult<DesktopTabsResult>.Success(new DesktopTabsResult(
+                createdTarget, request.Action, BuildPageState(createdTarget, created), tabClosed: false, afterNew.Value));
+        }
+
+        // 其余动作作用于既有页面（新建分支已返回 ⇒ Target 必非空）。
+        var tabsTarget = request.Target!;
+        if (await ResolveContextAsync(tabsTarget, cancellationToken).ConfigureAwait(false) is not { } context
+            || await context.GetPageAsync(new PageId(tabsTarget.PageId), cancellationToken).ConfigureAwait(false) is not { } page)
+        {
+            return NotFound<DesktopTabsResult>(tabsTarget);
         }
 
         // 变更类（切换/关闭）必须固定版本：不符说明目标页在等待期间已变化，动的可能是另一个页面。
-        if (VersionGate(request.Target.Key, page.PageVersion, request.ExpectedPageVersion, required: true) is { } tabsGate)
+        if (VersionGate(tabsTarget.Key, page.PageVersion, request.ExpectedPageVersion, required: true) is { } tabsGate)
         {
             return CapabilityResult<DesktopTabsResult>.Failure(tabsGate);
         }
 
         // 状态要在**操作之前**取：关闭之后页面就没了，那时再读 Info 不可靠。
-        var state = BuildPageState(request.Target, page);
+        var state = BuildPageState(tabsTarget, page);
 
         var tabClosed = false;
         switch (request.Action)
@@ -234,7 +272,7 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
         }
 
         return CapabilityResult<DesktopTabsResult>.Success(
-            new DesktopTabsResult(request.Target, request.Action, state, tabClosed, remaining.Value));
+            new DesktopTabsResult(tabsTarget, request.Action, state, tabClosed, remaining.Value));
     }
 
     /// <summary>

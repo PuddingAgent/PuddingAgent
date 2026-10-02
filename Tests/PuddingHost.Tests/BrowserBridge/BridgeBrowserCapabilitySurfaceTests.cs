@@ -674,6 +674,24 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         Assert.Equal("hello", page.LastTyped);
     }
 
+    [Fact]
+    public async Task Tabs_New_CreatesATabInTheNamedContextAndActivatesIt()
+    {
+        // 缺口 #6：新建标签页没有既有页面 ⇒ 不钉版本，上下文来自请求本身。
+        var context = new FakeContext(new FakePage { Version = 3 });
+        var surface = Create(new FakeRuntime(contexts: [Summary("ctx-1")], context: context));
+
+        var result = await surface.TabsAsync(
+            BrowserTabsRequest.New("ctx-1", new Uri("https://example.test/new"), activate: true), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.Equal(DesktopTabAction.New, result.Value.Action);
+        Assert.False(result.Value.TabClosed);
+        Assert.Equal(1, context.CreatedPageCount);
+        // 新建的页面就是结果里的活动页（版本来自运行时的事实，不编造）。
+        Assert.Equal("page-2", result.Value.Page.Target.PageId);
+    }
+
     private static BridgeBrowserCapabilitySurface Create(FakePage page) => new(new FakeRuntime(page));
 
     private static BridgeBrowserCapabilitySurface Create(FakeRuntime runtime) => new(runtime);
@@ -706,7 +724,7 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
     private sealed class FakeContext(params IBrowserPage[] pages) : IBrowserContext
     {
-        private readonly IReadOnlyList<IBrowserPage> _pages = pages;
+        private readonly List<IBrowserPage> _pages = [.. pages];
 
         public int BringToFrontCount { get; private set; }
 
@@ -716,7 +734,15 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public BrowserContextInfo Info => throw new NotSupportedException();
 
-        public Task<IBrowserPage> NewPageAsync(PageCreateOptions options, CancellationToken ct) => throw new NotSupportedException();
+        public int CreatedPageCount { get; private set; }
+
+        public Task<IBrowserPage> NewPageAsync(PageCreateOptions options, CancellationToken ct)
+        {
+            CreatedPageCount++;
+            var created = new FakePage { Id = new PageId($"page-{CreatedPageCount + 1}"), Version = 1 };
+            _pages.Add(created);
+            return Task.FromResult<IBrowserPage>(created);
+        }
 
         public Task<IBrowserPage?> GetPageAsync(PageId id, CancellationToken ct) =>
             Task.FromResult(_pages.FirstOrDefault(p => p.Id == id));
@@ -772,7 +798,7 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public bool IsLoading { get; init; }
 
-        public string Url { get; init; } = "https://example.test/a";
+        public string Url { get; set; } = "https://example.test/a";
 
         public bool CanGoBack { get; init; }
 
@@ -825,8 +851,11 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         bool IBrowserPage.IsLoading => IsLoading;
 
-        public Task<NavigationResult> GotoAsync(Uri url, NavigationOptions options, CancellationToken ct) =>
-            Task.FromResult(Navigate?.Invoke(url) ?? new NavigationResult { Url = url, Ok = true });
+        public Task<NavigationResult> GotoAsync(Uri url, NavigationOptions options, CancellationToken ct)
+        {
+            Url = url.AbsoluteUri;
+            return Task.FromResult(Navigate?.Invoke(url) ?? new NavigationResult { Url = url, Ok = true });
+        }
 
         public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct) =>
             Task.FromResult(Script?.Invoke(script) ?? new BrowserScriptValue());
