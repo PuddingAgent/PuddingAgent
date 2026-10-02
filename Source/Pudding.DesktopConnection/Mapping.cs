@@ -595,6 +595,11 @@ internal static class DesktopFrameMapping
     /// <summary>单条快照文本字段的硬上限（超过即截断并标注 truncated）。</summary>
     private const int SnapshotTextLimit = 2_000_000;
 
+    /// <summary>契约包围盒 → 线缆包围盒（null 就是 null——0 值不等于"没有"）。</summary>
+    private static Proto.ElementBox? ToWireBox(DesktopElementBox? box) => box is null
+        ? null
+        : new Proto.ElementBox { X = box.X, Y = box.Y, Width = box.Width, Height = box.Height };
+
     private static Proto.ContextsOutcome BuildContexts(DesktopContexts contexts)
     {
         var outcome = new Proto.ContextsOutcome();
@@ -769,6 +774,7 @@ internal static class DesktopFrameMapping
                             Visible = element.Visible,
                             Enabled = element.Enabled,
                             PageVersion = element.PageVersion.Value,
+                            BoundingBox = ToWireBox(element.BoundingBox),
                         };
 
                         // proto3 optional：只有确实知道勾选状态时才设 presence（不知道 ≠ false）。
@@ -805,6 +811,7 @@ internal static class DesktopFrameMapping
                             Visible = interacted.Visible,
                             Enabled = interacted.Enabled,
                             PageVersion = interacted.PageVersion.Value,
+                            BoundingBox = ToWireBox(interacted.BoundingBox),
                         };
 
                         if (interacted.IsChecked is { } isChecked)

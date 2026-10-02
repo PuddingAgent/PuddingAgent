@@ -151,7 +151,7 @@ public sealed class WireContractSnapshotTests
         AssertFieldNumbers(LocatorSpec.Descriptor,
             ("kind", 1), ("value", 2), ("name", 3), ("exact", 4), ("nth", 5), ("has_text", 6));
         AssertFieldNumbers(ElementRef.Descriptor,
-            ("ref", 1), ("tag", 2), ("role", 3), ("name", 4), ("text", 5), ("visible", 6), ("enabled", 7), ("checked", 8), ("page_version", 9));
+            ("ref", 1), ("tag", 2), ("role", 3), ("name", 4), ("text", 5), ("visible", 6), ("enabled", 7), ("checked", 8), ("page_version", 9), ("bounding_box", 10));
         AssertFieldNumbers(LocateOutcome.Descriptor, ("elements", 1), ("truncated", 2), ("page_version", 3));
         AssertFieldNumbers(InteractCommand.Descriptor,
             ("target", 1), ("expected_page_version", 2), ("action", 3), ("locator", 4), ("text", 5),

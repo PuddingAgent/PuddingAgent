@@ -167,6 +167,12 @@ public sealed record BrowserLocateRequest
 }
 
 /// <summary>
+/// 元素包围盒（可选）。加宽（2026-10-02）：工具侧 <c>BrowserElementToolValue.BoundingBox</c> 一直存在，
+/// 而契约/线缆此前没有 ⇒ 能力通道拿不到、Bridge 拿得到。
+/// </summary>
+public sealed record DesktopElementBox(double X, double Y, double Width, double Height);
+
+/// <summary>
 /// 元素引用（按值元数据，不含 DOM 句柄/表单值/凭据）。
 /// <b>不变量</b>：<see cref="PageVersion"/> 必须有效；交互提交后不得复用旧 Ref。
 /// </summary>
@@ -210,6 +216,9 @@ public sealed record DesktopElementRef
         Enabled = enabled;
         IsChecked = isChecked;
     }
+
+    /// <summary>元素包围盒（不知道时为 <c>null</c>——绝不用 0 假装知道）。</summary>
+    public DesktopElementBox? BoundingBox { get; init; }
 
     public string Reference { get; }
 

@@ -322,7 +322,10 @@ public sealed class BrowserRuntimeDesktopSurface
             text: info.Text,
             visible: info.Visible,
             enabled: info.Enabled,
-            isChecked: info.Checked));
+            isChecked: info.Checked)
+            {
+                BoundingBox = info.BoundingBox is { } b ? new DesktopElementBox(b.X, b.Y, b.Width, b.Height) : null,
+            });
     }
 
     private static DesktopPageVersion LiveVersion(long value) =>

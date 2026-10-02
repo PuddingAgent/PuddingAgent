@@ -306,7 +306,10 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime) : 
                 handle.Info.Text,
                 handle.Info.Visible,
                 handle.Info.Enabled,
-                handle.Info.Checked));
+                handle.Info.Checked)
+            {
+                BoundingBox = handle.Info.BoundingBox is { } b ? new DesktopElementBox(b.X, b.Y, b.Width, b.Height) : null,
+            });
         }
 
         // 预算：超出请求上限就截断并**如实标注**。

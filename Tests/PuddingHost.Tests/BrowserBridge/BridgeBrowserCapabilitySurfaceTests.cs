@@ -230,6 +230,7 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
                     Info = new BrowserElementInfo
                     {
                         Ref = "e1", Tag = "button", Role = "button", Name = "提交", Visible = true, Enabled = false,
+                        BoundingBox = new BoundingBox { X = 12, Y = 34, Width = 56, Height = 78 },
                     },
                 },
             ],
@@ -246,6 +247,8 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         Assert.Equal(7, element.PageVersion.Value);
         Assert.True(element.Visible);
         Assert.False(element.Enabled);
+        Assert.Equal(12d, element.BoundingBox!.X);
+        Assert.Equal(78d, element.BoundingBox.Height);
         Assert.Equal(7, result.Value.PageVersion.Value);
         Assert.False(result.Value.Truncated);
     }

@@ -559,7 +559,10 @@ internal static class DesktopResultDecoder
                                 NullIfEmpty(interacted.Text),
                                 interacted.Visible,
                                 interacted.Enabled,
-                                interacted.HasChecked ? interacted.Checked : null);
+                                interacted.HasChecked ? interacted.Checked : null)
+                            {
+                                BoundingBox = FromWireBox(interacted.BoundingBox),
+                            };
                         }
                         catch (ArgumentException)
                         {
@@ -602,7 +605,10 @@ internal static class DesktopResultDecoder
                                 NullIfEmpty(element.Text),
                                 element.Visible,
                                 element.Enabled,
-                                element.HasChecked ? element.Checked : null));
+                                element.HasChecked ? element.Checked : null)
+                            {
+                                BoundingBox = FromWireBox(element.BoundingBox),
+                            });
                         }
                         catch (ArgumentException)
                         {
@@ -686,6 +692,11 @@ internal static class DesktopResultDecoder
         var code = DesktopCapabilityErrorCodes.ParseOrInternalError(outcome.Code);
         return new DesktopCapabilityError(code, outcome.Message, outcome.Retryable, outcome.MayHaveSideEffects);
     }
+
+    /// <summary>线缆包围盒 → 契约包围盒（缺省 presence = 不知道，不填 0 假装知道）。</summary>
+    private static DesktopElementBox? FromWireBox(Proto.ElementBox? box) => box is null
+        ? null
+        : new DesktopElementBox(box.X, box.Y, box.Width, box.Height);
 
     private static CapabilityResult<DesktopContexts> DecodeContexts(Proto.ContextsOutcome? outcome)
     {

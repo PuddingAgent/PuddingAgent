@@ -148,6 +148,16 @@ message ElementRef {
   bool enabled = 7;
   optional bool checked = 8;
   int64 page_version = 9;
+  // 元素包围盒（可选）。加宽（2026-10-02）：工具侧 BrowserElementToolValue.BoundingBox 一直存在，
+  // 而线缆此前没有 ⇒ 能力通道取不到、Bridge 取得到。用消息字段表达 presence（缺省 = 不知道，不是 0,0,0,0）。
+  ElementBox bounding_box = 10;
+}
+
+message ElementBox {
+  double x = 1;
+  double y = 2;
+  double width = 3;
+  double height = 4;
 }
 
 // 元素交互（切片 D 唯一变更类能力）：必须固定 expected_page_version；
