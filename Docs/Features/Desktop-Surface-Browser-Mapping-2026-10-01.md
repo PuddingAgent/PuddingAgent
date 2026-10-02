@@ -147,3 +147,71 @@ public readonly record struct ElementHandleId(string Value);
    同时**在页面生命周期回调里驱动 `BrowserTargetRegistry`**（创建即登记信任级别、关闭即注销、切换即设活动页）。
 
 > 上述 4 步是**唯一会改变产品行为**的部分，必须在重启窗口内由外部控制器验收（见外部验收单）。
+## 7. 组合根配方（第 69 轮实读 `DesktopCapabilityHost` 后确定）
+
+### 7.1 宿主的确切契约（实读，不凭记忆）
+
+```csharp
+// 构造：选项 + 监督器工厂
+new DesktopCapabilityHost(DesktopCapabilityHostOptions options, Func<IDesktopConnectionSupervisor> supervisorFactory);
+
+public sealed record DesktopCapabilityHostOptions {
+    public required DesktopInstanceId DesktopId { get; init; }
+    public DesktopCapabilityTransportMode Mode { get; init; } = DesktopCapabilityTransportMode.GrpcCapabilityChannel;
+    public TimeSpan StopTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public bool EnforceSingleActiveTransport { get; init; } = true;   // 同一 DesktopId 只允许一个活动传输
+}
+
+// 真实监督器（gRPC 双向流 + 退避重连）
+DesktopCapabilityHost.CreateGrpcSupervisorFactory(
+    IDesktopChannelStreamFactory streamFactory,      // GrpcDesktopChannelStreamFactory
+    IDesktopCapabilityExecutor executor,              // DesktopService 一侧的执行器接缝
+    DesktopConnectionOptions connectionOptions,       // 来自 DesktopCapabilityChannelSettings.CreateConnectionOptions
+    TimeSpan? initialBackoff = null, TimeSpan? maxBackoff = null, double jitter = 0.2);
+
+host.StateChanged += state => ...;   // 状态变化（转发自监督器）
+await host.StartAsync(ct);           // 返回时监督循环已在运行（不等待握手）
+await host.StopAsync(ct);            // 可重复调用；释放单实例占用
+```
+
+### 7.2 **必须避开的陷阱**（实读发现）
+
+`DesktopCapabilityHost.StartAsync` 在 `Mode == LegacyWebSocketBridge` 时**直接抛 `InvalidOperationException`**
+（"不因为 gRPC 没起来就静默切回旧 Bridge"）。
+
+⇒ 组合根的正确形态是：**关闭时根本不构造、不启动宿主**，而不是"构造后用旧模式启动"。
+这与 `DesktopCapabilityChannelPreflight.Evaluate(...).ShouldStart == false` 的分支天然吻合：
+
+```csharp
+var preflight = DesktopCapabilityChannelPreflight.Evaluate(settings, processInstanceId, authentication, endpointDescription);
+if (!preflight.ShouldStart) {
+    // 什么都不做：继续走既有 WebSocket Bridge，行为与今天一致（回滚即回到这里）。
+    log(preflight.Summary);
+    return;
+}
+var connectionOptions = settings.CreateConnectionOptions(processInstanceId, authentication).Value;
+var host = new DesktopCapabilityHost(
+    new DesktopCapabilityHostOptions { DesktopId = new DesktopInstanceId(settings.DesktopId) },
+    DesktopCapabilityHost.CreateGrpcSupervisorFactory(streamFactory, executor, connectionOptions));
+host.StateChanged += state => log($"[CapabilityChannel] {state}");   // 不含页面内容/凭据
+await host.StartAsync(lifetimeToken);
+```
+
+### 7.3 装配清单（`PuddingDesktop` 组合根，默认关闭）
+
+1. 读 `desktop.json` 的 `Desktop:CapabilityChannel`（映射为 `DesktopCapabilityChannelSettings`；缺省即关闭）；
+2. 解析 Core 发布的**端点描述**（就绪协议/stdout；由 Core 侧打印，格式 `kind:address|protocolVersion|coreInstanceId`）；
+3. 调 `DesktopCapabilityChannelPreflight.Evaluate(...)`；`ShouldStart == false` ⇒ 只记日志、**什么都不做**；
+4. 启动时组装：`WinUiDesktopUiDispatcher(DispatcherQueue)`（已在 CapabilityHost）+
+   `WinUiShellFacilities(主窗口句柄, XamlRoot 访问器)`（本轮已实现）+ 浏览器表面（`BrowserRuntimeDesktopSurface` +
+   既有 `WebView2BrowserRuntime`）+ `BrowserTargetRegistry`（在页面生命周期回调里驱动）；
+5. 退出路径：`await host.StopAsync()`（在 Desktop 退出/切回旧传输时），确保单实例占用被释放。
+
+> 其中第 4 步的"浏览器表面 + 注册表驱动"需要 `PuddingDesktop` 的 WebView2 宿主与页面生命周期接入点；
+> 第 1~3、5 步只依赖已完成的平台无关件。
+
+### 7.4 仍需在重启窗口内由外部控制器判定的项
+
+- 关闭态：REST 正常、无新端点、无 `pudding-capability-*` 管道（行为与今天逐字一致）；
+- 启用态：握手成功、无凭据被拒、Desktop 退出后 Core 侧注册表清空且管道释放；
+- 真实 `DispatcherQueue` 下的线程访问（`HasThreadAccess` 分支要真的被走到）。

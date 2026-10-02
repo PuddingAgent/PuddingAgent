@@ -24,6 +24,19 @@
 - Shell 侧：IMG11/IMG12（`96d5356`：新增 Foundation `ToolAvailabilityCatalog`（kind→可用性纯映射，卡片「可用/待接入」标签与标签页 Availability 同源）+ `MainWindow.xaml` 五张卡片可用性标签（文案由代码写入）；工具首页正常时不再输出泛泛的「就绪」）；IMG05（`53c2f1b`：Foundation `LauncherOnlyWidthRatio=0.32` + `InitialRatioWithoutPreference`/`DefaultRatioFor`/`ResolveLoadedRatio` 纯函数，已保存比例一律优先、切标签不重算比例；`DesktopBootstrapSettings.ToolWorkspace` 改可空以区分「未配置 vs 保存了默认值」；分割线补 Tooltip）。Shell 改动不涉及前端产物，前端版本号不变。
 - §13.6 的代码项（P0 + P1，含 Shell 两批）已全部落地。**静态外观已获像素复核**（Docs/Reports/Chat-UI-Modernization-Acceptance-2026-10-02.md：聊天区 `#11100d`→`#11151b`、助手卡片去底色后与背景同色、输入区 `#1c1a16`→`#1a2029`、**消息区右侧白轨道与上下箭头消失**、页角徽标 `v6.1.3 · 97fb4d2` 可见、工具卡片可用/待接入标签可见）。**未完成的是验收**：SCROLL-001 QA 表、§12 整窗与 WebView2 真实验收（§12 V/F/S/A/P/SEC/D、§13.6 IMG-V*、§14.5 表）中的交互、浅色主题、DPI/缩放与性能项。同轮登记两处缺口：IMG03 的「帮助」在共享组件 `PuddingGlobalActions`（chat 变体），IMG07 的窄标签首列症状未被该截图覆盖。
 
+## 2026-10-01：组合根配方与一处关键陷阱（第 69 轮，实读 DesktopCapabilityHost）
+
+- 实读 `DesktopCapabilityHost` 得到**确切契约**：`new(options, supervisorFactory)`；
+  `DesktopCapabilityHostOptions { required DesktopId, Mode, StopTimeout, EnforceSingleActiveTransport }`；
+  `CreateGrpcSupervisorFactory(streamFactory, executor, connectionOptions, 退避参数...)`；
+  `StartAsync`（返回时循环已在运行，不等握手）/`StopAsync`（可重复、释放单实例占用）/`StateChanged`。
+- **关键陷阱（会写错的地方）**：`StartAsync` 在 `Mode == LegacyWebSocketBridge` 时**直接抛异常**
+  （"不因 gRPC 没起来就静默切回旧 Bridge"）⇒ 组合根的正确形态是**关闭时根本不构造/不启动宿主**，
+  而不是"构造后用旧模式启动"。这与 `DesktopCapabilityChannelPreflight.ShouldStart == false` 的分支天然吻合。
+- 规格新增 §7：确切契约、陷阱与正确分支写法、装配清单（5 步，其中 1~3/5 步只依赖已完成的平台无关件）、
+  以及仍需外部控制器判定的三项。
+- 本轮只做实读与规格（未改产品行为）：组合根是本方案中**唯一会改变产品行为**的一步，
+  必须在能完整验证的上下文里一次写完，避免留下半成品。
 ## 2026-10-01：WinUI Shell 设施实现（第 68 轮，WinUI 薄层第 1 块）
 
 - 新增 `PuddingDesktop.CapabilityHost/WinUiShellFacilities.cs`：`IDesktopShellFacilities` 的 WinUI 实现
