@@ -74,6 +74,47 @@ public sealed class CodeSourceMaintenanceReviewFixesTests : IDisposable
             Targeted: targeted);
 
     [TestMethod]
+    public async Task ACompleteScanRemovesIndexOrphanRowsThatTheManifestNeverKnewAbout()
+    {
+        // 旧链路时代被索引、但从未进过 manifest（例如后来被 .gitignore 忽略、或已被删除）的行：
+        // 新链路永远枚举不到它们，只能由完整扫描轮次清理（否则它们永久占着索引）。
+        var orphan = Path.Combine(_scopeRoot, "Legacy", "Gone.cs");
+        await _store.UpsertFilesAsync(
+            WorkspaceId,
+            ScopeId,
+            [new CodeFileRecord(WorkspaceId, ScopeId, orphan, "C#", _now)]);
+
+        await _store.UpsertSymbolsAsync(
+            WorkspaceId,
+            ScopeId,
+            [new CodeSymbolRecord(WorkspaceId, ScopeId, orphan, $"sym:{orphan}", "Ghost",
+                CodeSymbolKind.Class, 1, 2, "class Ghost", null)]);
+
+        var (coordinator, _) = Arrange();
+        var result = await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(targeted: false));
+
+        Assert.AreEqual(1, result.OrphanFileCount, "完整扫描必须清掉孤儿行");
+        Assert.IsEmpty(
+            await _store.GetSymbolsByFileAsync(WorkspaceId, ScopeId, orphan),
+            "孤儿行连同它的符号都要消失");
+        Assert.IsEmpty(await _store.ListFilesAsync(WorkspaceId, ScopeId));
+    }
+
+    [TestMethod]
+    public async Task AHintedRunNeverSweepsOrphans()
+    {
+        var orphan = Path.Combine(_scopeRoot, "Legacy", "Gone.cs");
+        await _store.UpsertFilesAsync(
+            WorkspaceId, ScopeId, [new CodeFileRecord(WorkspaceId, ScopeId, orphan, "C#", _now)]);
+
+        var (coordinator, _) = Arrange();
+        var result = await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(true, orphan));
+
+        Assert.AreEqual(0, result.OrphanFileCount, "不完整观测无法证明「它不在磁盘上」⇒ 绝不清理");
+        Assert.HasCount(1, await _store.ListFilesAsync(WorkspaceId, ScopeId));
+    }
+
+    [TestMethod]
     public async Task AHintedPathThatVanishedIsNotDeletedAndStaysPendingWorkNotSilentlyLost()
     {
         var file = WriteFile("A.cs", "class A { }");

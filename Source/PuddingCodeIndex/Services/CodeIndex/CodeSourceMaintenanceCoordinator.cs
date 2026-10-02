@@ -43,6 +43,7 @@ public sealed record CodeSourceMaintenanceRunOptions(
 /// <param name="LanguageSessionKey">语言侧本批复用的工程/编译快照标识（为空表示退化成逐文件）。</param>
 /// <param name="InvalidatedDependentFilePaths">因符号消失而需要重新绑定的依赖方文件。</param>
 /// <param name="ReusedFileCount">因内容指纹与已提交记录一致而**跳过提取**（只刷新消费者视图）的文件数。</param>
+/// <param name="OrphanFileCount">在完整扫描轮次里被清掉的**索引孤儿行**数（索引有、manifest 无、本轮也枚举不到）。</param>
 /// <param name="RootUsable">本轮扫描根是否可用（false ⇒ 周期校准要按「被拒」处理：保持标位 + 走退避）。</param>
 public sealed record CodeSourceMaintenanceRunResult(
     bool CapabilityMissing,
@@ -58,7 +59,8 @@ public sealed record CodeSourceMaintenanceRunResult(
     string? LanguageSessionKey,
     IReadOnlyList<string> InvalidatedDependentFilePaths,
     bool RootUsable = true,
-    int ReusedFileCount = 0);
+    int ReusedFileCount = 0,
+    int OrphanFileCount = 0);
 
 /// <summary>
 /// **源维护协调器**（D4，2026-10-02）：把已经独立交付的各件串成一条链并保证顺序与失败语义：
@@ -165,7 +167,18 @@ public sealed class CodeSourceMaintenanceCoordinator
         if (scanRun.ChangeSet.Changes.Count == 0)
         {
             // 没有任何需要动作的路径：不递增版本、不写库、不动水位。
-            return EmptyResult(capabilityMissing: false, scanRun.ChangeSet.ScanComplete, scanRun.RootUsable);
+            // 但**孤儿行清理仍需执行** —— 「索引里有、manifest 里没有、本轮也枚举不到」的路径
+            // 恰恰不会产生任何变更集条目，只能在这里被清掉。
+            var manifest = await _maintenanceStore
+                .LoadSourceMaintenanceAsync(workspaceId, projectId, cancellationToken)
+                .ConfigureAwait(false);
+
+            var orphanOnly = await SweepOrphansAsync(
+                    workspaceId, projectId, scanRun, manifest.Manifest, options, cancellationToken)
+                .ConfigureAwait(false);
+
+            return EmptyResult(
+                capabilityMissing: false, scanRun.ChangeSet.ScanComplete, scanRun.RootUsable, orphanOnly);
         }
 
         // 扫描已经把「期望版本」登记进账本；重新读回来，避免用陈旧快照提交。
@@ -422,6 +435,11 @@ public sealed class CodeSourceMaintenanceCoordinator
                 .ConfigureAwait(false);
         }
 
+        // ③b 孤儿行清理（只在**完整且根可用**的扫描轮次做）。
+        var orphanCount = await SweepOrphansAsync(
+                workspaceId, projectId, scanRun, snapshot.Manifest, options, cancellationToken)
+            .ConfigureAwait(false);
+
         // ④ 账本：本轮**确实处理过**的路径一律清退避（不管走的是哪条分支：提取、删除、只重绑、
         //    指纹一致复用、无消费者认领）—— 只在提取/删除时清会让一个从此走 Rebind/NotApplicable
         //    的路径永远挂着待重试，从而永久冻结水位。
@@ -503,9 +521,56 @@ public sealed class CodeSourceMaintenanceCoordinator
             LanguageSessionKey: extraction.SessionKey,
             InvalidatedDependentFilePaths: invalidated,
             RootUsable: scanRun.RootUsable,
-            ReusedFileCount: reusedPaths.Count);
+            ReusedFileCount: reusedPaths.Count,
+            OrphanFileCount: orphanCount);
     }
 
+    /// <summary>
+    /// 孤儿行清理：索引里有、manifest 里没有、本轮变更集里也没有的路径。
+    /// <para>
+    /// 它们没有被枚举到（例如已被 .gitignore 忽略、或旧链路时代留下的行），新链路永远看不到它们；
+    /// 删掉它们就是旧校准的「清理陈旧行」，只是现在与 manifest 一致（manifest 是权威）。
+    /// 只在**完整且根可用**的非提示轮次做：不完整观测无法证明「它不在磁盘上」。
+    /// </para>
+    /// </summary>
+    private async Task<int> SweepOrphansAsync(
+        string workspaceId,
+        string projectId,
+        CodeSourceScanRun scanRun,
+        IReadOnlyDictionary<string, CodeSourceEntry> manifest,
+        CodeSourceMaintenanceRunOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (options.Targeted || !scanRun.ChangeSet.ScanComplete || !scanRun.RootUsable)
+            return 0;
+
+        var known = new HashSet<string>(
+            scanRun.ChangeSet.Changes.Select(change => change.FilePath), CodePathIdentity.PathComparer);
+
+        foreach (var path in manifest.Keys)
+            known.Add(path);
+
+        var orphanPaths = new List<string>();
+
+        foreach (var file in await _store.ListFilesAsync(workspaceId, projectId, cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!string.IsNullOrWhiteSpace(file.FilePath) && !known.Contains(file.FilePath))
+                orphanPaths.Add(file.FilePath);
+        }
+
+        if (orphanPaths.Count == 0)
+            return 0;
+
+        await _store.RemoveFilesAsync(workspaceId, projectId, orphanPaths, cancellationToken).ConfigureAwait(false);
+
+        _logger?.LogInformation(
+            "[CodeSourceMaintenance] Scope {ScopeId}: removed {OrphanCount} index orphan row(s) that no complete scan can see any more.",
+            projectId, orphanPaths.Count);
+
+        return orphanPaths.Count;
+    }
     /// <summary>提交前确认文件的 stat 仍与读到的那份指纹一致（提取可能耗时，期间文件可能被改写）。</summary>
     private static bool StillMatches(SourceFingerprint fingerprint, string filePath)
     {
@@ -641,7 +706,7 @@ public sealed class CodeSourceMaintenanceCoordinator
                     capturedVersion))
                 .ToArray());
 
-    private static CodeSourceMaintenanceRunResult EmptyResult(bool capabilityMissing, bool scanComplete, bool rootUsable) =>
+    private static CodeSourceMaintenanceRunResult EmptyResult(bool capabilityMissing, bool scanComplete, bool rootUsable, int orphanFileCount = 0) =>
         new(
             capabilityMissing,
             ExtractedFileCount: 0,
@@ -655,7 +720,8 @@ public sealed class CodeSourceMaintenanceCoordinator
             LedgerOutcome: null,
             LanguageSessionKey: null,
             InvalidatedDependentFilePaths: [],
-            RootUsable: rootUsable);
+            RootUsable: rootUsable,
+            OrphanFileCount: orphanFileCount);
 
     /// <summary>没有反向依赖图时的空实现：不做依赖扩展（不猜影响面）。</summary>
     private sealed class EmptyGraph : ICodeGraphDependencyQuery
