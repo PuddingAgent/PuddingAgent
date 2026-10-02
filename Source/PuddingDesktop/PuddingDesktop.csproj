@@ -31,17 +31,28 @@
     <ProjectReference Include="../PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
     <ProjectReference Include="../PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj" />
     <ProjectReference Include="../PuddingBrowser.WinUI/PuddingBrowser.WinUI.csproj" />
+    <!-- Desktop 侧能力通道（切片 C-3 接线）：Shell 是产品组合根，必须亲自装配这些平台无关组件。
+         每个组件都在自己的 csproj 里禁止反向引用 PuddingDesktop，故不构成环。 -->
+    <ProjectReference Include="../Pudding.Contracts/Pudding.Contracts.csproj" />
+    <ProjectReference Include="../Pudding.DesktopConnection/Pudding.DesktopConnection.csproj" />
+    <ProjectReference Include="../Pudding.DesktopService/Pudding.DesktopService.csproj" />
+    <ProjectReference Include="../Pudding.DesktopSurface.Browser/Pudding.DesktopSurface.Browser.csproj" />
+    <ProjectReference Include="../PuddingDesktop.CapabilityHost/PuddingDesktop.CapabilityHost.csproj" />
     <Compile Include="../PuddingDesktop.WpfArchive/Core/*.cs;../PuddingDesktop.WpfArchive/Configuration/*.cs;../PuddingDesktop.WpfArchive/Browser/*.cs;../PuddingDesktop.WpfArchive/Bootstrap/*.cs;../PuddingDesktop.WpfArchive/Debug/*.cs;../PuddingDesktop.WpfArchive/Diagnostics/*.cs;../PuddingDesktop.WpfArchive/Runtime/*.cs;../PuddingDesktop.WpfArchive/Hosting/DesktopLocalEndpointResolver.cs;../PuddingDesktop.WpfArchive/Hosting/DesktopStartupState.cs;../PuddingDesktop.WpfArchive/Hosting/DesktopStateChangedEventArgs.cs"
       Exclude="../PuddingDesktop.WpfArchive/Runtime/DesktopTrayIconService.cs" Link="Launcher/%(RecursiveDir)%(Filename)%(Extension)" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
   </ItemGroup>
+  <!-- Shell 是产品组合根，但**不得**在进程内装配 Core 宿主（2026-09-29 恢复裁定）。
+       允许名单 = 启动器配置契约 + 浏览器适配器 + Desktop 侧能力通道的平台无关组件；
+       它们都已在各自 csproj 里禁止反向引用 PuddingDesktop。仍然禁止 PuddingHost / PuddingRuntime /
+       PuddingPlatform / PuddingAgent —— 也就是「进程内组合根」本身。 -->
   <Target Name="EnforceShellBoundary" BeforeTargets="ResolveReferences">
     <ItemGroup>
-      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation' And '%(Filename)' != 'PuddingCore' And '%(Filename)' != 'PuddingBrowser.Abstractions' And '%(Filename)' != 'PuddingBrowser.Protocol' And '%(Filename)' != 'PuddingBrowser.WinUI'" />
+      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation' And '%(Filename)' != 'PuddingDesktop.CapabilityHost' And '%(Filename)' != 'PuddingCore' And '%(Filename)' != 'PuddingBrowser.Abstractions' And '%(Filename)' != 'PuddingBrowser.Protocol' And '%(Filename)' != 'PuddingBrowser.WinUI' And '%(Filename)' != 'Pudding.Contracts' And '%(Filename)' != 'Pudding.DesktopConnection' And '%(Filename)' != 'Pudding.DesktopService' And '%(Filename)' != 'Pudding.DesktopSurface.Browser'" />
     </ItemGroup>
-    <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="Shell may reference launcher configuration contracts and browser adapters, never PuddingHost, Runtime, Platform or an in-process composition root." />
+    <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="Shell may reference launcher configuration contracts, browser adapters and the Desktop-side capability channel, never PuddingHost, Runtime, Platform or an in-process composition root." />
   </Target>
   <Target Name="BuildCoreBundle" AfterTargets="Build"
           Condition="'$(DesignTimeBuild)' != 'true' And '$(IsCrossTargetingBuild)' != 'true'">
