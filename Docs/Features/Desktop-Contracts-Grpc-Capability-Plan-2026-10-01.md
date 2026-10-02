@@ -196,10 +196,11 @@ IPC 是 HTTP/2 的底层传输，不是把 gRPC 改成裸管道自定义协议�
 
 | 项 | 结果 |
 |---|---|
-| 组件独立测试合计 | **470 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 129、DesktopSurface.Browser 36、CapabilityBroker 78、CapabilityBroker.AspNetCore 31） |
+| 组件独立测试合计 | **517 用例全绿**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、DesktopService 150、DesktopSurface.Browser 54、CapabilityBroker 78、CapabilityBroker.AspNetCore 39） |
 | 真实端点探针 | **53/53 通过，exit 0**（Named Pipe 与 Loopback h2c 各一轮；含跨侧能力集合一致性守卫） |
 | WinUI 适配器工程 | 0 警告 0 错误（无线程访问验证，需真实 `DispatcherQueue`） |
-| 运行中的产品 | **未受影响**：本轮系列全程未重启或改动运行中的 Core/Desktop；组合根装配仍待重启窗口 |
+| Shell 组合根前提 | `PuddingDesktop` 已放行并引用 Desktop 侧能力通道组件，**0 错误**；restore 后可离线完成，运行时程序集（`Grpc.Net.Client` 等）已确认落进输出目录 |
+| 运行中的产品 | **未受影响**：本轮系列全程未重启或改动运行中的 Core/Desktop；`Enabled` 缺省 false，无任何代码路径使用新装配 |
 
 复现命令（干净重建，输出只落 `temp\`）：
 
@@ -212,7 +213,9 @@ foreach ($p in @('Pudding.ContractsTests','Pudding.Rpc.ProtocolTests','Pudding.D
 dotnet temp\build\recovery\bin\Pudding.Rpc.IpcProbe\release\Pudding.Rpc.IpcProbe.dll
 ```
 
-口径说明：本表的数字为**最近一次干净运行实测**（第 63 轮复核：470 = 96+20+80+129+36+78+31，探针 53/53，PuddingHost/PuddingAgent/PuddingDesktop.CapabilityHost 编译通过；该表**每轮都要随实测更新**，此前两次滞后的教训见 §10.2 的同类问题）。
+口径说明：本表的数字为**最近一次干净运行实测**（本轮复核：517 = 96+20+80+150+54+78+39，探针 53/53，
+`PuddingHost`/`PuddingAgent`/`PuddingDesktop`（含新引用）/`PuddingDesktop.CapabilityHost` 编译通过；
+该表**每轮都要随实测更新**，此前两次滞后的教训见 §10.2 的同类问题）。
 根 `code_map.md` 各轮条目里的「测试合计」是**历史记录**，可能与当下不一致——以本表为准。
 本次复核即发现并修正了一处漂移：此前多处写的「374 用例」是累加笔误，实际为 365。
 
@@ -227,3 +230,26 @@ dotnet temp\build\recovery\bin\Pudding.Rpc.IpcProbe\release\Pudding.Rpc.IpcProbe
 
 > 结论：这类「新增分支/结果类型时漏改某个聚合点」的错误只能由**跨路径的真实端点断言**发现。
 > 因此探针不是可选项，而是本方案的门禁核心；每次新增能力都必须同时新增探针断言。
+
+### 10.3 探针**也**抓不到的一类缺陷：跨侧字符串契约与「只差一个 DLL」（本轮新增）
+
+探针自己构造端点描述，因此它验证的是**解析器**，而不是 Core 真正打到 stdout 的那一行。
+本轮因此出现了两个「53/53 全绿、真实启用却必然失败」的缺陷，只能靠读码 + 双向契约测试发现：
+
+5. **就绪端点描述不可解析 ⇒ 启用后通道永不启动**（已修，`640bb55`）。
+   Core 曾打成 `kind:address|v1|core-x`，而 Desktop 的严格解析器要求第二段是**整数**；
+   `v1` 解析失败 ⇒ 预检判「描述缺失」⇒ Desktop 只记一条日志并保持旧 Bridge，
+   表现像「配置没生效」。**只在打开开关后才暴露**，而默认关闭的路径永远绿。
+   修法：抽出 `CapabilityChannelReadySignal`（产出 + 用同一套严格解析器自检 + 日志与就绪信号共用同一份文本），
+   就绪信号改由 `JsonSerializer` 产出并新增 `capabilityEndpoint` 字段（关闭时字段缺席，那一行与今天逐字一致）；
+   Desktop 侧 `CoreReadyMessage` 只做搬运（是否可用由预检单一入口判定）。
+   两侧各自新增测试钉住：版本段必须是整数、`v` 前缀必须被拒、字段名必须一致、未知字段必须向前兼容。
+6. **「能编译」再次不等于「能运行」**：Shell 加了 `ProjectReference` 后 `--no-restore` 构建**编译通过**，
+   但 `Grpc.Net.Client.dll`/`Grpc.Core.Api.dll` **没有**被复制到输出目录
+   （Shell 的 `project.assets.json` 不认识新引入的传递包）⇒ 组合根一跑就是 `FileNotFoundException`，
+   同样只在启用通道时才走到。修法：对 Shell 跑一次 `dotnet restore`（**实测可离线完成**，
+   与早前记录的 `NU1301` 无关），并逐个核对输出目录里的程序集。
+
+> 结论：「组件测试全绿 + 探针全绿 + 编译通过」仍不足以证明**启用路径**可用。
+> 这正是两段式验收存在的原因：启用路径必须由外部控制器在重启窗口内实测（第 6 节 8 步）。
+

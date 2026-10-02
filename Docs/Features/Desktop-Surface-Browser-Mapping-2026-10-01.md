@@ -215,3 +215,34 @@ await host.StartAsync(lifetimeToken);
 - 关闭态：REST 正常、无新端点、无 `pudding-capability-*` 管道（行为与今天逐字一致）；
 - 启用态：握手成功、无凭据被拒、Desktop 退出后 Core 侧注册表清空且管道释放；
 - 真实 `DispatcherQueue` 下的线程访问（`HasThreadAccess` 分支要真的被走到）。
+
+## 8. 本轮（第 73 轮）进展与剩余（逐项实测，不推测）
+
+### 8.1 已落地并通过验证
+
+| # | 内容 | 落点 | 验证 |
+|---|---|---|---|
+| 1 | 就绪端点描述变成**可解析**（并进 `PUDDING_DESKTOP_READY`） | `CapabilityChannelReadySignal`、`PuddingApplicationHost`、`PuddingAgent/Program.cs`、`CoreReadyMessage(Parser)` | 适配器 39/39（含版本段必须为整数、`v` 前缀必须被拒）；Desktop 266/266（含未知字段向前兼容）。**此前启用后通道永不启动** |
+| 2 | Shell 放行并引用 Desktop 侧能力通道组件 | `PuddingDesktop.csproj` | Shell 0 错误；restore 后确认 `Grpc.Net.Client`/`Grpc.Core.Api` 等已进输出目录 |
+| 3 | `IDesktopShellHostFacilities`（窗口/托盘/通知端口）+ `DesktopShellSurface` 扩到 5 项 | Contracts / DesktopService | DesktopService 150/150（通知未弹出是结果、只读状态不重复补齐、异常不越界） |
+| 4 | `DesktopSurfaceComposition`（14 项各归其位） | DesktopSurface.Browser | 54/54：用 Shell 侧哨兵把「接错协作者」变成可判定 |
+| 5 | 目标注册表驱动桥 + **撤销 Agent 目标** | DesktopSurface.Browser | 54/54（14 项新用例）；`SetAgentTarget` 关闭了「Agent 目标只增不减」的授权漏洞 |
+
+合计 7 套件 517 用例 + 真实端点探针 53/53。
+
+### 8.2 剩余（**唯一尚未接线的一段**，全部在 Shell 内）
+
+1. `IDesktopShellHostFacilities` 的 Shell 实现：窗口形态/托盘可见性 + 托盘气泡通知
+   （通知需要托盘图标的 HWND 与 uID，因此实现方必须是 Shell 本身，见 `DesktopTrayIcon`）；
+2. 在 `MainWindow` 拿到 `IBrowserRuntime` 与 `BrowserWorkspaceController` 之后，
+   把 `DesktopTargetRegistry` + `BrowserTargetRegistry` 交给 `BrowserWorkspaceTargetBridge`，
+   并在页面创建/激活/关闭/版本推进/Agent 目标变更这几处各调一行；
+3. 组合根：读 `desktop.json` 的 `Desktop:CapabilityChannel` → 从 `CoreReadyMessage.CapabilityEndpoint`
+   取描述 → `DesktopCapabilityChannelPreflight.Evaluate` → `ShouldStart` 时
+   `DesktopCapabilityHostFactory.Create` → `StartAsync`；退出路径 `StopAsync`。
+
+> **并发注意（不是技术难题，是工程约束）**：`Source/PuddingDesktop/MainWindow.xaml.cs` 与
+> `MainWindow.xaml` 当前有**另一方 AI 的未提交改动**（运行中心内存口径：专用工作集 + 副标题）。
+> 上述第 2 步必须改动同一个文件，因此**接手前先确认该改动已提交或已确定归属**，
+> 否则提交时会把他方 WIP 一起带进去（违反仓库卫生纪律）。
+> 该文件的改动区（约第 195 行 `UpdateRuntimeMetrics`）与接线区（约第 926 行浏览器工作区初始化）不重叠。

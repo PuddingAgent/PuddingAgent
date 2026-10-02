@@ -2220,3 +2220,55 @@ VisionRequestPolicy默认8、VisionCapabilityContract上限钳制、PuddingFileC
 - 证据与修复顺序：Docs/Reports/Agent-Harness-Latency-Diagnosis-2026-10-01.md。
 - 定位入口：AgentExecutionService.Streaming.cs（FIRST_TOKEN 实为请求前 context-ready）、ContextPipelineOrchestrator.cs（上下文阶段）、SearchGrepTool.cs（默认扫描边界）、CacheDiagnosticsService.cs（窗口加权缓存率）、IntentConsole / ComposerStatusDetails（已有诊断入口）。
 - 核查指定 Agent manifest 与 persona：额外上下文恢复/检视/调研规则、旧路径索引回退；仅交付诊断，未修改运行配置或产品代码。
+
+---
+
+## 2026-10-02 Desktop 能力通道接线（第 73 轮）：修两个「全绿但启用必失败」的缺陷 + 补齐组合根前的平台无关件
+
+**任务**：执行 `Docs/Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md` 的切片 C-3 收尾——
+把能力通道接进 Desktop 组合根。本轮先做「不接线就没意义」的前置修复，并按纪律逐项提交（4 个提交）。
+
+**缺陷 1（真缺陷，`640bb55`）：就绪端点描述不可解析 ⇒ 启用后通道永不启动。**
+`PuddingApplicationHost.CaptureBoundAddresses` 曾把描述打成 `kind:address|v1|core-x`，
+而 Desktop 侧 `DesktopCapabilityEndpoint.TryParse` 要求第二段是**整数**（`int.TryParse`，`NumberStyles.None`）
+⇒ 解析失败 ⇒ 预检判「描述缺失」⇒ Desktop 只记一条日志并保持旧 Bridge。
+**默认关闭的路径永远绿，只有打开开关才暴露**，表现像「配置没生效」。
+修法：新增 `Pudding.CapabilityBroker.AspNetCore.CapabilityChannelReadySignal`（产出 + 用**同一个**严格解析器自检 +
+日志与就绪信号共用同一份文本）；`PUDDING_DESKTOP_READY` 改由 `JsonSerializer` 产出并新增 `capabilityEndpoint`
+字段（`WhenWritingNull` ⇒ 关闭时那一行与今天**逐字一致**）；Desktop 侧 `CoreReadyMessage(Parser)` 只做逐字搬运
+（可用性由 `DesktopCapabilityChannelPreflight` 单一入口判定）。
+
+**缺陷 2（工程教训）：Shell 加引用后「能编译 ≠ 能运行」。**
+只加 `ProjectReference` 时 `--no-restore` **编译通过**，但 `Grpc.Net.Client.dll`/`Grpc.Core.Api.dll`
+**没有**复制到 Shell 输出（Shell 的 `project.assets.json` 不认识新引入的传递包）⇒ 组合根一跑就
+`FileNotFoundException`，同样只在启用通道时走到。修法：对 Shell 跑一次 `dotnet restore`
+（**实测可离线完成**，与早前 `NU1301` 无关），并逐个核对输出目录程序集（`edaa3df`）。
+`EnforceShellBoundary` 按「只放宽、不放行被禁止那一类」扩了 5 个允许项，
+`PuddingHost`/`PuddingRuntime`/`PuddingPlatform`/`PuddingAgent` 仍被禁止。
+
+**平台无关件补齐（`bb79812`）**：新端口 `IDesktopShellHostFacilities`（窗口形态/托盘可见性/系统通知）——
+之所以与 `IDesktopShellFacilities` 分开：前者是**宿主自我描述与告知**（只有 Shell 知道窗口是否在托盘，
+通知需要托盘图标所有权），后者是**用户交互**（WinUI 中间层即可）。
+`DesktopShellSurface` 扩到 5 项并沿用同一套归一（异常→`internal_error`、取消原样传播），
+**刻意不补齐**自动化状态/页面数（那是 `DesktopService` 用自身权威状态覆盖的）。
+新增 `DesktopSurfaceComposition` 把 14 个成员各归其位，用「Shell 侧哨兵」把「接错协作者」变成可判定。
+
+**目标注册表驱动（`69aafac`）**：写驱动时发现 `BrowserTargetRegistry.RegisterPage(isAgentTarget: false)`
+**只增不减** ⇒ 用户接管/目标换页后旧页面**永远**是 `IsAgentTarget=true`，
+注册表替一个不该再被驱动的页面继续背书，而只读状态无法自证 ⇒ 新增 `SetAgentTarget`（撤销是一等操作）。
+新增 `BrowserWorkspaceTargetBridge` 把页面生命周期翻译成**两个**注册表的更新，语义全部可脱 UI 测试：
+未登记上下文 `Untrusted`（fail closed）、先页面后上下文直接抛、版本只前进、版本事件不凭空造目标、
+关闭/清空不留悬空引用。**这批测试当场抓出本桥自身缺陷**：`OnContextCreated` 最初只登记了一个注册表，
+另一个因此判「上下文未登记」——只登记一边就等于让两个注册表互相矛盾。
+
+**门禁（本轮实测）**：7 套件 **517/517**（Contracts 96、Rpc.Protocol 20、DesktopConnection 80、
+DesktopService 150、DesktopSurface.Browser 54、CapabilityBroker 78、CapabilityBroker.AspNetCore 39）；
+真实端点探针 **53/53 exit 0**；`PuddingHost`/`PuddingAgent`/`PuddingDesktop`（含新引用）/
+`PuddingDesktop.CapabilityHost` 编译通过。运行中的 Core/Desktop **全程未重启未改动**。
+
+**诚实留白（唯一剩余，全部在 Shell 内）**：① `IDesktopShellHostFacilities` 的 Shell 实现
+（窗口/托盘状态 + 托盘气泡通知）；② 在 `MainWindow` 拿到 `IBrowserRuntime`/控制器之后把注册表交给
+`BrowserWorkspaceTargetBridge` 并在各事件点各调一行；③ 组合根 preflight → factory → `StartAsync`/`StopAsync`。
+**注意**：`Source/PuddingDesktop/MainWindow.xaml.cs` 与 `MainWindow.xaml` 当前有**另一方 AI 的未提交改动**
+（运行中心内存口径），第 ② 步必须改同一文件 ⇒ 接手前先确认归属，避免把他方 WIP 带进提交。
+细节见 `Docs/Features/Desktop-Surface-Browser-Mapping-2026-10-01.md` §8。
