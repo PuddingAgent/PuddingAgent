@@ -46,7 +46,7 @@ draft: false
 
 | `BrowserBridge/BridgeBrowserCapabilitySurface.cs` | 窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败） |
 
-| `BrowserBridge/TransportRoutedBrowserCapabilitySurface.cs` | 组合根按 `DesktopTransportRouting` **二选一**（通道就绪走通道，否则 Bridge，两者都不可用则如实失败）；同文件含 `DesktopTransportUsageTracker`（退役判据的计数来源）。硬要求：**同一次操作绝不执行两次** |
+| `BrowserBridge/TransportRoutedBrowserCapabilitySurface.cs` | 组合根按 `DesktopTransportRouting` **二选一**（通道就绪走通道，否则 Bridge，两者都不可用则如实失败）；同文件含 `DesktopTransportUsageTracker`（退役判据计数 + `MissingEvidenceCalls` 观测）。硬要求：**同一次操作绝不执行两次**；**副作用类能力要求权限证据**（缺失或 `denied` ⇒ `Unauthorized`，只读能力不受影响；见 `Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md`） |
 
 | `Hosting/ConnectedDesktopCallContextFactory.cs` | 能力调用上下文工厂实现：Desktop 实例 ID 有两个**真实来源**（活动能力通道会话 → Bridge 当前连接），都没有则返回 `null`（不猜实例 ID） |
 

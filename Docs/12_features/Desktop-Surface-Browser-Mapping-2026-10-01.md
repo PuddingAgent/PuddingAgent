@@ -386,7 +386,40 @@ Core 侧实现是 `Source/PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs`，
 > ⇒ 迁移时回退空串即可，**不算缺口**（但要在实现里显式处理，不能假定非空）。
 > 每项都属于跨侧协议变更 ⇒ 必须**两侧同提交**并补探针断言（本系列的门禁核心）。
 
+#### 8.5.2 缺口清单施工结果（2026-10-02，逐项实测）
 
+上表的 14 项**全部处理完毕**；逐项落点如下（详细证据见 `Docs/00_changelog/2026Year/10/`，此处只记"现在是什么"）。
 
+| # | 状态 | 落点 |
+|---|---|---|
+| 1 | ✅ | 上下文创建/关闭用**新能力名** `browser.context.create` / `browser.context.close`（proto payload oneof `24`/`25`、outcome `25`/`26`；目录 + 策略表 + 声明集合 + 两侧实现 + 四个端口的实现/转发）——目录规则要求改变同名能力语义必须换名，故 `browser.contexts` 保持只读 |
+| 2 | ✅ | `ContextInfo.persistent` 贯通两侧 |
+| 3 | ✅ | 导航 `back`/`forward`/`reload`/`stop`：`NavigateCommand.action` + 冻结线名 |
+| 4 | ✅ | 导航 `TimeoutMs`：`NavigateCommand.timeout_ms` |
+| 5 | ✅ | 导航结果事实：`NavigateOutcome.navigation_ok` / `status_code` / `error_text`（+ 标题，见 #14）。导航被拒仍是**事实**而非失败 |
+| 6 | ✅ | 标签页 `new`：`TabsCommand.context_id` / `url` / `activate`；两侧一次性建页（`PageCreateOptions.InitialUrl/Activate`），不再"先建后导航再置前" |
+| 7 | ✅ | 交互 `type`：`DesktopInteractionAction` + 线名 |
+| 8 | ✅ | **不是契约缺口**：proto 与 Desktop 侧本就带 `delta_x`，缺口在 Bridge 适配器（只映射 `DeltaY`）⇒ 已修并加测试 |
+| 9 | ✅ | 快照四旋钮：`SnapshotBudget` +6..+9 |
+| 10 | ✅ | 定位结果 `BoundingBox`：`ElementRef.bounding_box` + `ElementBox` |
+| 11 | ✅ | **不是契约缺口**：契约/线缆/两侧映射本就带超时，缺口在 Bridge 适配器未传 ⇒ 已修并加测试 |
+| 12 | ✅ | 页状态标题：`PageStateOutcome.title` + 两侧；工具值仍按 `string?` 防御性处理 |
+| 13 | ✅ | `fill`/`type` 空文本：`InteractCommand.text` 改为 **`optional string`**（presence 区分"没给"与"给了空串"）⇒ 空文本 = 清空输入框；`press` 仍要求非空键 |
+| 14 | ✅ | `NavigateResult.Title`：复用 `PageStateOutcome.title` |
 
+**工具迁移**：七个 Browser Agent Tools **全部**走窄端口（`IDesktopBrowserCapabilitySurface` /
+`IDesktopContextCapabilitySurface`）+ 上下文工厂 + 组合根路由（通道就绪走通道，否则 Bridge，二选一且**不回退**）；
+旧的静态解析器已删除。
 
+**剩余（不是缺口，且都需要外部窗口）**：
+
+- 能力通道**默认开启**与**退役 WebSocket Bridge 的 Browser 部分**：判据是"窗口内通道调用 > 0 且旧 Bridge
+  回退 = 0"，证据面已就绪（`GET /api/admin/transport/status`），执行步骤见
+  `Docs/13_runbooks/能力通道外部验收运行手册-2026-10-02.md`；
+- 真实 Desktop 会话端到端与生命周期（启动/重启/崩溃/退出回收）：**只能由进程外控制器判定**。
+
+**权限证据链**（本次工作副产物的加固项）：证据类型/生产者/携带者/观察者/第二阶段闸门已落地，
+第三阶段与会话层闸门**有意暂缓**（理由见 `Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md`）。
+
+**验证基线**：九个套件全绿，合计 **810** 用例（协议 20 / 契约 97 / 能力代理 90 + 43 / Desktop 连接 80 /
+Desktop 服务 170 / 浏览器表面 54 / Host 239 / 工具 17）。
