@@ -293,12 +293,13 @@ public static class PuddingApplicationHost
             var capabilityAuthenticator =
                 new ControlTokenCapabilityAuthenticator(new DesktopControlTokenValidator(dataRoot));
 
-            // 授权：**默认拒绝**（DenyAll）。RPC 可达 ≠ 获得桌面操作授权；
-            // 待切片 D 在调用点提供可信运行身份后，再把授权器接到 Tool Runtime 准入判定。
+            // 授权：由**可信运行上下文**取调用方身份，再按能力 traits 逐条判定（全部 fail closed）。
+            // 这是「身份门禁」阶段：把 Tool Runtime 的权限/审批链也接进来属切片 D 的调用点迁移；
+            // 在接好之前不放行来源不明的调用（也不用 AllowAll 顶上）。
             builder.Services.AddCapabilityChannel(
                 channelOptions,
                 capabilityAuthenticator,
-                DenyAllDesktopCapabilities.Instance);
+                new TrustedCallerDesktopCapabilityAuthorizer(new RuntimeTraceContextCallerIdentityProvider()));
 
             builder.Services.AddSingleton(capabilityChannel);
             builder.Services.AddSingleton(new DesktopCapabilityChannelRuntime(
