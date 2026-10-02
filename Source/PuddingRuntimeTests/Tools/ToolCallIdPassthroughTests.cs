@@ -11,7 +11,7 @@ namespace PuddingRuntimeTests.Tools;
 
 /// <summary>
 /// T05 P0-A：callId 身份闭环——执行层全链路透传（不可变）+ SSE 帧携带 toolCallId。
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md B:87-93、B:227-254。
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md B:87-93、B:227-254。
 /// </summary>
 [TestClass]
 public sealed class ToolCallIdPassthroughTests

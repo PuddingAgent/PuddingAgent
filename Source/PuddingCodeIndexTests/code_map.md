@@ -4,7 +4,7 @@
 > 目的：让 `PuddingCodeIndex` 的测试运行在**只引用它自己**的工程里
 > —— 从而"**不重启宿主即可测试与开发**"（规程 R1），且测试进程**不加载** Roslyn / MSBuild / 上层程序集。
 > 命名空间：`PuddingCodeIndexTests` / `PuddingCodeIndexTests.Services` / `PuddingCodeIndexTests.Services.CodeIndex` / `PuddingCodeIndexTests.Storage`
-> 历史变更与门禁记录已迁至 [`Docs/00Changelog/2026Year/10/2026-10-02-PuddingCodeIndexTests-code_map迁出的变更记录.md`](../../Docs/00Changelog/2026Year/10/2026-10-02-PuddingCodeIndexTests-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
+> 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndexTests-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndexTests-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
 
 ## 边界（编译期 + 运行期双重强制）
 

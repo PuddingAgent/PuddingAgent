@@ -5,7 +5,7 @@ namespace PuddingCode.Tools.Definitions;
 /// <summary>
 /// 工具结果的无损 JSON 物化器（lossless JSON materializer）。
 /// <para>
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6 约束 3 ——
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6 约束 3 ——
 /// Registry 对工具主体返回值做 lossless JSON materialize、output schema 校验和冻结，再执行 renderer。
 /// 本类型只负责其中第一步（materialize），不涉及 render/finalize/pipeline。
 /// </para>

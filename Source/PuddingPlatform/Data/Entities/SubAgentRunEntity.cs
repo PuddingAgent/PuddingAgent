@@ -6,7 +6,7 @@ namespace PuddingPlatform.Data.Entities;
 /// <summary>
 /// 子代理运行归档的数据库索引实体。
 /// 文件系统为主存储（run.json / events.jsonl / tools.jsonl），此表仅做索引查询。
-/// 关联 ADR：Docs/07架构/21子代理工作空间与运行归档ADR.md
+/// 关联 ADR：Docs/07_architecture/21子代理工作空间与运行归档ADR.md
 /// </summary>
 [Table("sub_agent_runs")]
 public class SubAgentRunEntity

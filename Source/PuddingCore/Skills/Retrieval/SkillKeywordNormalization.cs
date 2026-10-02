@@ -4,7 +4,7 @@ namespace PuddingCode.Skills.Retrieval;
 /// 技能关键词**归一**的唯一定义（RSI-G4 任务书 §2.4：G7-C3 与 G4 守卫必须共享同一来源，⛔ 不得各写一份）。
 /// <para>
 /// 它逐字复现原 <c>SkillEnforcerService.CollectKeywords</c> 的行为。那个行为不是"随手写的工具函数"，
-/// 而是只读盘点报告 `Docs/Reports/skill-portfolio-G1-2026-09-21.md` 里 **165**（被 ≥2 技能共享的关键词数）
+/// 而是只读盘点报告 `Docs/14_reports/skill-portfolio-G1-2026-09-21.md` 里 **165**（被 ≥2 技能共享的关键词数）
 /// 与 **1735**（被先到先得挤掉的注入机会数）这两个数的**唯一口径**。
 /// </para>
 /// <para>

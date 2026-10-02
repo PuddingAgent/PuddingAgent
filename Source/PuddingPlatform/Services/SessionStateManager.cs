@@ -164,7 +164,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     ///   2. 再写 JSONL（fire-and-forget 备份）— 失败仅记录 Warning，不影响 SQLite 侧成功
     ///   3. 推送到内存 Channel（实时推送）
     /// 
-    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+    /// 关联 ADR：Docs/07_architecture/20会话状态机与事件规范ADR.md §6
     /// </summary>
     public async Task<long> AppendAsync(
         string sessionId, string workspaceId,
@@ -1383,7 +1383,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     /// 获取会话级 Trace 聚合报告。
     /// 从 canonical conversation_events 查询该会话的所有事件，按 traceId、component 等维度聚合。
     /// Status / Summary / Error / usage / toolcall / subagent 解析一律走共享投影器，禁止自行解析 Payload。
-    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+    /// 关联 ADR：Docs/07_architecture/20会话状态机与事件规范ADR.md §6
     /// </summary>
     public async Task<SessionTraceReport> GetTraceReportAsync(string sessionId, bool includeSubAgents = false, CancellationToken ct = default)
     {

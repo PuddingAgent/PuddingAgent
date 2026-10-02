@@ -1,7 +1,7 @@
 # U4-0 检索评测基线报告（2026-09-24）
 
 > 本目录下的报告由 `PuddingRetrievalEval`（测量仪器）+ `temp/U4-0-probe/PuddingRetrievalEvalProbe`（真实检索面适配器）
-> 生成，**只报原始数字，不内置任何"达标阈值"**。阈值是产品决策（见 `Docs/Features/ADR-089-检索增强需求落地方案-2026-09-24.md` §4），
+> 生成，**只报原始数字，不内置任何"达标阈值"**。阈值是产品决策（见 `Docs/12_features/ADR-089-检索增强需求落地方案-2026-09-24.md` §4），
 > 不属于仪器。
 >
 > 每次报告都是 `Markdown`（人读）+ `JSON`（机器比对，用于回归）。JSON 里含每条 case 的命中列表与每次调用的耗时原始值。
@@ -37,7 +37,7 @@
 `compare-puddingcodeindex-outline-p0p1.{md,json}` | 同 S2，但只索引 P0（outline）+ P1（注释），不要代码正文 |
 
 四轴汇总表与结论在 `compare-puddingcodeindex.md`（每个“更好/更差”的说法都带两组数字）；受版本控制的正式结论追加在
-`Docs/Features/ADR-089-索引策略优先级-2026-09-24.md` §5；完整证据链 `temp/U4-1a-REPORT.md`。
+`Docs/12_features/ADR-089-索引策略优先级-2026-09-24.md` §5；完整证据链 `temp/U4-1a-REPORT.md`。
 运行方式：`pwsh -NoProfile -File temp/run-u4-1a-matrix.ps1`（会把每步原始 stdout 落到 `temp/U4-1a-logs/`）。
 
 ## 头部数字（原始值，未判定）

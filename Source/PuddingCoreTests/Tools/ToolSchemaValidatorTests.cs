@@ -5,7 +5,7 @@ namespace PuddingCoreTests.Tools;
 
 /// <summary>
 /// T05 P0-B-3：input/output schema validator 单测。
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6 约束 3。
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6 约束 3。
 /// 覆盖：通过/失败正反例（required 缺失、类型错误、enum 不匹配、嵌套属性路径错误、output schema 校验失败）、
 /// IsValidInput/IsValidOutput、null 防御、schema 缺失时的明确错误。
 /// </summary>

@@ -13,7 +13,7 @@ namespace PuddingRuntimeTests.Tools;
 /// 已登记项目必须**逐字不变**（回归线，见 <see cref="Registered_Project_Output_Is_Frozen_Byte_For_Byte"/>）。
 /// 另一半（<c>code_symbol_search</c> 的陈旧死路径，D2）是独立切片，本文件刻意不涉及。
 /// <para>
-/// 缺陷登记：<c>Docs/Features/Index-Retrieval-Known-Defects-2026-10-01.md</c> D1。
+/// 缺陷登记：<c>Docs/12_features/Index-Retrieval-Known-Defects-2026-10-01.md</c> D1。
 /// </para>
 /// <para>
 /// 本文件全部为**假实现**（不碰 SQLite、不碰索引库），因此可在宿主运行时并行跑，不触发 database is locked。

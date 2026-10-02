@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 /// <summary>
 /// Jev 决策模型驱动的工具审批评审器（<see cref="IToolApprovalReviewer"/> 的可切换实现，
 /// 与 <see cref="LlmToolApprovalReviewer"/> 互为替代；开关 <c>ToolApproval:Reviewer=jev</c>）。
-/// <para>方案：Docs/Features/Jev自动审批与白名单自学习改造方案.md §3.1。</para>
+/// <para>方案：Docs/12_features/Jev自动审批与白名单自学习改造方案.md §3.1。</para>
 /// <para>
 /// 安全不变量（由 JevToolApprovalReviewerTests 逐条锁定）：
 /// I1 确定性 deny 前置——命中 <see cref="ToolApprovalCommandFirewall"/> 危险模式时绝不调用 Jev；

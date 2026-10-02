@@ -20,7 +20,7 @@
 
 .EXAMPLE
   pwsh -NoProfile -File "TestScripts\report-skill-portfolio.ps1"
-  pwsh -NoProfile -File "TestScripts\report-skill-portfolio.ps1" -OutFile "Docs\Reports\skills-G1.md"
+  pwsh -NoProfile -File "TestScripts\report-skill-portfolio.ps1" -OutFile "Docs\14_reports\skills-G1.md"
 #>
 [CmdletBinding()]
 param(

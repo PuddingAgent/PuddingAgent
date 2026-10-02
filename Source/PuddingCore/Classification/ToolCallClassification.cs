@@ -144,7 +144,7 @@ public sealed record ToolCallClassificationContext
 /// <para>
 /// 系统只依赖本抽象，不依赖任何具体实现；实现必须 fail-safe——
 /// 禁止向调用方冒泡异常，不可用时按降级契约返回确定结论（见
-/// <c>Docs/Features/安全分类器与工具调用准入方案-v2.md</c> §4 / §14.7）。
+/// <c>Docs/12_features/安全分类器与工具调用准入方案-v2.md</c> §4 / §14.7）。
 /// </para>
 /// </summary>
 public interface IToolCallClassifier

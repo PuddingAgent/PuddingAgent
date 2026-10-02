@@ -3,7 +3,7 @@ namespace PuddingCode.SubAgents;
 /// <summary>
 /// 子代理权限边界定义 — 控制子代理对文件系统、工具和网络的访问范围。
 /// 默认禁止写入系统配置和数据目录。
-/// 关联 ADR：Docs/07架构/21子代理工作空间与运行归档ADR.md
+/// 关联 ADR：Docs/07_architecture/21子代理工作空间与运行归档ADR.md
 /// </summary>
 public sealed record SubAgentPermissions
 {

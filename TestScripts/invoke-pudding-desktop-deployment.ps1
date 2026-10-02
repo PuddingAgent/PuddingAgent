@@ -3,7 +3,7 @@
 param(
     [Parameter(Mandatory)][ValidateSet('StopAndBackup','Deploy','Verify')][string]$Action,
     [string]$BackupManifestPath,
-    [string]$ManifestPath = 'Docs/Reports/pudding-agent-round2-build-2026-09-05.json',
+    [string]$ManifestPath = 'Docs/14_reports/pudding-agent-round2-build-2026-09-05.json',
     [string]$OutputPath = 'temp/test-out/efficiency-results/round3-deployment.json'
 )
 function Test-CoreQuiescent {

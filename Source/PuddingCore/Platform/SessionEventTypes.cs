@@ -8,8 +8,8 @@ namespace PuddingCode.Platform;
 ///   · 前端 AdminChatStreamEvent 联合类型
 ///   · ServerSentEventFrame.Event 字段
 /// 
-/// 关联 ADR：Docs/07架构/14消息管线与终端代理与前端优化ADR.md（SSE 基础类型）
-///           Docs/07架构/16会话状态层与客户端解耦ADR.md（本次扩展）
+/// 关联 ADR：Docs/07_architecture/14消息管线与终端代理与前端优化ADR.md（SSE 基础类型）
+///           Docs/07_architecture/16会话状态层与客户端解耦ADR.md（本次扩展）
 /// </summary>
 public static class SessionEventTypes
 {

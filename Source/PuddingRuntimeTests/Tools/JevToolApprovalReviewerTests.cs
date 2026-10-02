@@ -12,7 +12,7 @@ namespace PuddingRuntimeTests.Tools;
 /// <summary>
 /// <see cref="JevToolApprovalReviewer"/> 的离线单元测试（不触网，Jev 端口全部用 fake）。
 /// <para>
-/// 逐条锁定方案安全不变量 I1–I6（Docs/Features/Jev自动审批与白名单自学习改造方案.md §2）、
+/// 逐条锁定方案安全不变量 I1–I6（Docs/12_features/Jev自动审批与白名单自学习改造方案.md §2）、
 /// §3.1 决策映射表、以及组合根开关（§3.2）。既有审批测试不在此重复。
 /// </para>
 /// </summary>

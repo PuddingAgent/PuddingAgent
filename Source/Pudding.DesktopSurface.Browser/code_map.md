@@ -1,7 +1,7 @@
 # Pudding.DesktopSurface.Browser — 代码地图
 
 > 项目定位与边界见根 [`code_map.md`](../../code_map.md) §2.2；施工规格见
-> [`Docs/Features/Desktop-Surface-Browser-Mapping-2026-10-01.md`](../../Docs/Features/Desktop-Surface-Browser-Mapping-2026-10-01.md)。
+> [`Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md`](../../Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md)。
 
 ## 1. 这个项目是什么
 
@@ -13,7 +13,7 @@
 `PuddingHost` / `PuddingRuntime` / `PuddingDesktop` / `PuddingBrowser.WebView2` /
 `PuddingBrowser.AgentTools` / `PuddingAgent`，以及 `Microsoft.AspNetCore` / `Microsoft.UI` / `WebView2` 包。
 
-参考：[映射规格](../../Docs/Features/Desktop-Surface-Browser-Mapping-2026-10-01.md)（九个操作的映射表与语义）。
+参考：[映射规格](../../Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md)（九个操作的映射表与语义）。
 
 ## 2. 关键文件
 

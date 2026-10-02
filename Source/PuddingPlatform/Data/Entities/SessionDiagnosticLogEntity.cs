@@ -7,7 +7,7 @@ namespace PuddingPlatform.Data.Entities;
 /// 会话诊断日志 — 记录会话和子代理生命周期各阶段的时间戳和耗时。
 /// 
 /// 用途：前端 DevPanel / 管理面板的诊断视图。
-/// 关联 ADR：Docs/07架构/16会话状态层与客户端解耦ADR.md
+/// 关联 ADR：Docs/07_architecture/16会话状态层与客户端解耦ADR.md
 /// </summary>
 [Table("session_diagnostic_log")]
 public class SessionDiagnosticLogEntity

@@ -5,7 +5,7 @@ namespace PuddingCoreTests.Runtime;
 
 /// <summary>
 /// T00 最小子集：ToolCallId 值对象契约单测。
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md B:227-254。
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md B:227-254。
 /// </summary>
 [TestClass]
 public sealed class ToolCallIdTests

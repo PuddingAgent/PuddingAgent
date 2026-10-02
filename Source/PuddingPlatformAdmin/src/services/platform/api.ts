@@ -4441,7 +4441,7 @@ export async function getCompactionStatus(sessionId: string): Promise<{ activeCo
 }
 
 // ─── Skill Hub API ─────────────────────────────────────────────
-// 契约来源：Docs/Features/SKILL-Hub技能中心与EVO-MAP设计方案-2026-09-21.md §5（冻结，不得改名）
+// 契约来源：Docs/12_features/SKILL-Hub技能中心与EVO-MAP设计方案-2026-09-21.md §5（冻结，不得改名）
 // 函数签名：同文档 §7.2（冻结）；调用惯例与本文件既有段落完全一致。
 
 export interface HubSkillSummaryDto {

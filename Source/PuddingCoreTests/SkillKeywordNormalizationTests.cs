@@ -6,7 +6,7 @@ namespace PuddingCoreTests;
 /// <summary>
 /// SkillKeywordNormalization 契约用例。
 /// <para>
-/// 这些用例钉的不是"代码好不好看"，而是**口径本身**：G1 报告（`Docs/Reports/skill-portfolio-G1-2026-09-21.md`）
+/// 这些用例钉的不是"代码好不好看"，而是**口径本身**：G1 报告（`Docs/14_reports/skill-portfolio-G1-2026-09-21.md`）
 /// 的 165 / 1735 两个数就是从这个函数的输出算出来的。任何一条被改坏，G4 的验收数字都会**静默**换一套口径
 /// （数字照样算得出来），所以每条都必须能在实现被改坏时变红。
 /// </para>

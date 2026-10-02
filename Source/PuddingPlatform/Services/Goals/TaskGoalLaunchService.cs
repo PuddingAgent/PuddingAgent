@@ -10,7 +10,7 @@ namespace PuddingPlatform.Services.Goals;
 
 /// <summary>
 /// 「Agent 自主进入 Goal 模式」(<c>task_goal_start</c>) 的平台层实现
-/// （设计 <c>Docs/Features/Agent自主进入Goal模式工具设计-2026-09-16.md</c> §5/§6）。
+/// （设计 <c>Docs/12_features/Agent自主进入Goal模式工具设计-2026-09-16.md</c> §5/§6）。
 /// <para>
 /// 只复用 canonical 调度链：开关走 <see cref="IWorkspaceTaskAdminService.UpdateTaskAsync"/> →
 /// <c>TaskCommandService.PatchAsync</c>，评估走 <see cref="ITaskAutoDispatchEvaluator"/>，

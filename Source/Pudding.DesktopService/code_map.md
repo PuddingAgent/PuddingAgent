@@ -4,7 +4,7 @@
 > 依赖：`Pudding.Contracts`（平台无关契约）+ `Pudding.DesktopConnection`（执行器接缝）。
 > 编译期 Target `EnforceDesktopServiceBoundary` 禁止引用 Host/Runtime/Desktop/Browser 工程与 ASP.NET Core/WinUI/WebView2 包。
 > 测试：`Source/Pudding.DesktopServiceTests`（**81 用例**；假 UI 调度器与假监督器确定性验证，不需要 WinUI 应用）
-> 历史变更与门禁记录已迁至 [`Docs/00Changelog/2026Year/10/2026-10-02-Pudding.DesktopService-code_map迁出的变更记录.md`](../../Docs/00Changelog/2026Year/10/2026-10-02-Pudding.DesktopService-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
+> 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-Pudding.DesktopService-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-Pudding.DesktopService-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
 
 ## 职责边界
 

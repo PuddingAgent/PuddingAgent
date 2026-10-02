@@ -2,7 +2,7 @@ namespace PuddingCode.Tasks;
 
 /// <summary>
 /// 「Agent 自主进入 Goal 模式」(<c>task_goal_start</c>) 的跨层契约
-/// （设计 <c>Docs/Features/Agent自主进入Goal模式工具设计-2026-09-16.md</c> §3/§4/§5）。
+/// （设计 <c>Docs/12_features/Agent自主进入Goal模式工具设计-2026-09-16.md</c> §3/§4/§5）。
 /// <para>
 /// 与 <see cref="ITodoStore"/> / <see cref="IWorkspaceTaskAdminService"/> 同模式：接口定义在
 /// PuddingCore，由 PuddingPlatform 的 <c>TaskGoalLaunchService</c> 实现；PuddingRuntime 的

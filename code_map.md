@@ -2,10 +2,10 @@
 
 > **本文件是代码地图，不是日志。** 只放四类东西：**关键概念 · 组件 · 关键文件（相对路径）· 用途**。
 > 使用与维护规则见 [`Agents.md`](Agents.md) →「code_map.md 使用规则」。
-> 任务记录、提交号、测试数字、验收结论一律写 [`Docs/00Changelog/`](Docs/00Changelog/README.md)，**禁止**追加到本文件。
+> 任务记录、提交号、测试数字、验收结论一律写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)，**禁止**追加到本文件。
 >
 > 本文件是**主索引**：每个子项目自己的 `code_map.md` 负责该项目内部的文件级索引。
-> 最近一次整理：2026-10-02（当时从本文件迁出的全部历史日志见 [`2026-10-02-根code_map迁出历史记录.md`](Docs/00Changelog/2026Year/10/2026-10-02-根code_map迁出历史记录.md)）。
+> 最近一次整理：2026-10-02（当时从本文件迁出的全部历史日志见 [`2026-10-02-根code_map迁出历史记录.md`](Docs/00_changelog/2026Year/10/2026-10-02-根code_map迁出历史记录.md)）。
 
 ## 0. 怎么用（30 秒）
 
@@ -17,9 +17,9 @@
 | 测试放哪、覆盖什么 | §5 测试工程索引 |
 | 设计决策与规格文档 | §6 架构与设计文档索引 |
 | 运行时数据与配置文件在哪 | §7 运行时目录与构建入口 |
-| 为什么这么改、哪一轮做的 | `Docs/00Changelog/`（日志）、`Docs/Reports/`（诊断/验收报告） |
+| 为什么这么改、哪一轮做的 | `Docs/00_changelog/`（日志）、`Docs/14_reports/`（诊断/验收报告） |
 
-**改完代码后**：只更新受影响的条目（新增文件就补进对应子项目的 `code_map.md`，新增子项目就登记进 §2），过程记录写 `Docs/00Changelog/`。
+**改完代码后**：只更新受影响的条目（新增文件就补进对应子项目的 `code_map.md`，新增子项目就登记进 §2），过程记录写 `Docs/00_changelog/`。
 
 ## 1. 项目定位
 
@@ -28,7 +28,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 - 产品入口 `PuddingDesktop.exe` = **WinUI 3 Shell + WebView2 承载既有 Web UI**，以子进程方式启动并监督独立 ASP.NET Core。
 - 业务逻辑、Agent、Connector、数据库、Runtime 全在 **Core**（`core/PuddingAgent.exe --desktop-child`）；Shell 只负责窗口、系统集成与进程监督。
 - Console 入口仅用于开发/诊断；`dev-up.py`（本体 `Tools/Dev/dev-up.py`，根目录为转发 shim）只服务源码开发调试，不进入交付包。
-- 架构第一原则（组件独立 · 依赖方向由编译期强制 · 可测性优先 · 边界显式）、兼容性与补丁约定、仓库卫生纪律：见 [`Agents.md`](Agents.md) 与 [`Agents-Hygiene.md`](Docs/Conventions/Agents-Hygiene.md)。
+- 架构第一原则（组件独立 · 依赖方向由编译期强制 · 可测性优先 · 边界显式）、兼容性与补丁约定、仓库卫生纪律：见 [`Agents.md`](Agents.md) 与 [`Agents-Hygiene.md`](Docs/10_conventions/Agents-Hygiene.md)。
 
 ## 2. 子项目索引
 
@@ -106,15 +106,15 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **Message Fabric / send_message** | `Source/PuddingPlatform/Services/` | `MessageDeliveryPolicy` + `MessageDeliveryDispatcher` + `ConversationReplyProjectionWorker`：`inform/report_result` = notify（不建 Turn、不调模型），只有 `ask/request_review/delegate` = execute；`agent_reply` 永远被动，切断 A→B→A 回声 |
 | **Task 自动派发 / Goal / WorkUnit** | `Source/PuddingPlatform/Services/Scheduling/` | `TaskAutoDispatchWorker` → `AgentAvailabilityProjectionStore` → `BacklogRefinementEvaluator` → `TaskAutoDispatchEvaluator` → `TaskExecutionPlanCompiler` → `TaskExecutionTracker` → `GoalContinuationWorker` → `GoalSettlementStore`。五态跟踪：Binding/Assignment/Reservation/Goal/Iteration；promotion/start/repair 只有一个 CAS/fencing 写入者 |
 | **工具系统与强制委派** | `Source/PuddingRuntime/Tools/` | 首次工具调用前判定 Direct / Delegated；复杂任务前三次内进入 `smart_*` 或 `spawn_sub_agent`；`smart_explore` 是统一入口（已退役 `smart_search` / `smart_query_session_log`）；工具结果完整原文落 `.pudding/context-tool-results`，模型只收有界摘要 |
-| **工具审批与权限防火墙** | `Source/PuddingRuntime/Tools/`、[自动审批设计](Docs/superpowers/specs/2026-06-03-auto-tool-approval-design.md) | `ToolApprovalCommandFirewall` 引号/管道感知解析：已知只读/构建/测试秒放、危险秒拒、未知形态交 LLM 审批；参数级风险由 descriptor + 实际参数 + 系统证据派生，Agent 不能自我降级；用户审批是最后手段 |
-| **代码索引组件族** | §2.3 + [ADR-089](Docs/07架构/103ADR-089Agent统一检索与渐进展开工具链ADR.md) | 依赖方向由编译期强制：`PuddingCodeIndex` 不得反向引用 `PuddingCodeIntelligence`；叶子组件 `ProjectReference/PackageReference = 0`；边界由 `ComponentBoundaryTests` 在运行期三重断言 |
-| **Desktop ↔ Core 能力通道** | §2.2 + [能力通道计划](Docs/Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | 两端只经 `Pudding.Contracts`（DTO）与 `Pudding.Rpc.Protocol`（wire）通信；启用前必须过 `DesktopCapabilityChannelPreflight`；描述解析失败 ⇒ 保持旧 Bridge（fail-safe）。启动顺序：先 preflight 判定，再决定是否构造宿主 |
+| **工具审批与权限防火墙** | `Source/PuddingRuntime/Tools/`、[自动审批设计](Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md) | `ToolApprovalCommandFirewall` 引号/管道感知解析：已知只读/构建/测试秒放、危险秒拒、未知形态交 LLM 审批；参数级风险由 descriptor + 实际参数 + 系统证据派生，Agent 不能自我降级；用户审批是最后手段 |
+| **代码索引组件族** | §2.3 + [ADR-089](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) | 依赖方向由编译期强制：`PuddingCodeIndex` 不得反向引用 `PuddingCodeIntelligence`；叶子组件 `ProjectReference/PackageReference = 0`；边界由 `ComponentBoundaryTests` 在运行期三重断言 |
+| **Desktop ↔ Core 能力通道** | §2.2 + [能力通道计划](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | 两端只经 `Pudding.Contracts`（DTO）与 `Pudding.Rpc.Protocol`（wire）通信；启用前必须过 `DesktopCapabilityChannelPreflight`；描述解析失败 ⇒ 保持旧 Bridge（fail-safe）。启动顺序：先 preflight 判定，再决定是否构造宿主 |
 | **Core 启动与就绪契约** | `Source/PuddingHost/Hosting/`、`Source/PuddingDesktop/Hosting/` | Core 初始化期每 5s 发 `PUDDING_DESKTOP_STARTING`（协议/PID/单调序号），全部 hosted service `StartAsync` 返回后才发 `PUDDING_DESKTOP_READY`；租约不能替代 Ready、PID 校验或 `/health/ready` |
 | **浏览器自动化链路** | `Source/PuddingHost/BrowserBridge/`、`Source/PuddingBrowser.WebView2/` | Snapshot ref 必须携带 `PageVersion`；交互提交后不得重查旧 Locator，后续状态用 Wait 或新 Snapshot。底层保持通用，抖音等能力只在上层适配器 |
-| **多模态视觉链路** | `Source/PuddingRuntime/` + [ADR-077](Docs/07架构/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) | typed `ContentPart{type=image, artifactId, detail}` 同事务写入 `ChatMessages.ContentPartsJson`；主模型带 vision 时原生进请求，文本模型只收 `artifact://` 占位；`image_reader` 只有 native 一条路径，调用模型无视觉能力即 fail-closed |
+| **多模态视觉链路** | `Source/PuddingRuntime/` + [ADR-077](Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) | typed `ContentPart{type=image, artifactId, detail}` 同事务写入 `ChatMessages.ContentPartsJson`；主模型带 vision 时原生进请求，文本模型只收 `artifact://` 占位；`image_reader` 只有 native 一条路径，调用模型无视觉能力即 fail-closed |
 | **记忆（Memory）** | `Source/PuddingMemoryEngine/` | Library/Book/Chapter 是 Agent 主动维护的当前结论与索引；聊天/向量命中只是候选证据。正文唯一存放在外部文件或 Book/Page，历史按需查看 |
-| **存储治理与保留策略** | `Source/PuddingHost/Storage/` + [ADR-076](Docs/07架构/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) | `StorageMaintenanceCoordinator` 是唯一在线维护 writer（双优先级队列 + `maintenance.lock`）；保留策略读 `<DataRoot>/config/system.json`，CAS + fail-closed；在线全库 VACUUM 已移除 |
-| **插件 / Hook / 事件 / 投影** | `Source/PuddingCore/` + [参考架构](Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md) | Plugin/Function/Hook/Event/Projection 五类合同；Typed Hook（Guard/Transform/Around）同步有界干预；状态提交 + transactional outbox → durable DomainEventLog → per-consumer checkpoint/retry/dead-letter → UI 投影 |
+| **存储治理与保留策略** | `Source/PuddingHost/Storage/` + [ADR-076](Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) | `StorageMaintenanceCoordinator` 是唯一在线维护 writer（双优先级队列 + `maintenance.lock`）；保留策略读 `<DataRoot>/config/system.json`，CAS + fail-closed；在线全库 VACUUM 已移除 |
+| **插件 / Hook / 事件 / 投影** | `Source/PuddingCore/` + [参考架构](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md) | Plugin/Function/Hook/Event/Projection 五类合同；Typed Hook（Guard/Transform/Around）同步有界干预；状态提交 + transactional outbox → durable DomainEventLog → per-consumer checkpoint/retry/dead-letter → UI 投影 |
 | **Chat 前端投影与虚拟化** | `Source/PuddingPlatformAdmin/src/pages/chat/` | 服务端 `AgentConversationProjectionService` 出 canonical 事件；前端 `TurnSurfaceStore`（turnId 别名归并、eventId 幂等）→ `ExecutionFlowProjectionIndex`（只重投影 dirty Turn）→ `MessageViewportRuntime`（虚拟化/锚点/贴底）→ `TurnContentStream`（TextBlock ⇄ ActivityGroup 交错） |
 | **认证与外部 API** | `Source/PuddingPlatform/Security/` | 第三方任务看板 Access Token（`pdt_v1_` opaque、摘要存储）、External API v1（ETag/幂等/`202 + Location`）、Desktop Loopback ControlToken 双通道鉴权 |
 | **前端构建与版本** | `Source/PuddingPlatformAdmin/package.json`、`Source/PuddingPlatformAdmin/config/config.ts` | 版本号唯一真源 = `package.json` 的 `version`；构建期注入 `__PUDDING_FRONTEND__` → `Source/PuddingPlatformAdmin/src/utils/frontendBuild.ts` → 页角版本徽标（`Source/PuddingPlatformAdmin/src/components/FrontendVersionBadge`）；改前端必须递增版本并**重新构建部署** `wwwroot/admin`（规则见 `Agents.md`） |
@@ -248,31 +248,31 @@ Chat first paint → AgentConversationProjectionService（最近 20 条可见消
 
 | 文档 | 主题 |
 |------|------|
-| [`Agents.md`](Agents.md) / [`Agents-Hygiene.md`](Docs/Conventions/Agents-Hygiene.md) / [`Docs/How-Debuge/README.md`](Docs/How-Debuge/README.md) | 仓库级开发与提交纪律 / 调试与日志诊断入口 |
+| [`Agents.md`](Agents.md) / [`Agents-Hygiene.md`](Docs/10_conventions/Agents-Hygiene.md) / [`Docs/08_how_debuge/README.md`](Docs/08_how_debuge/README.md) | 仓库级开发与提交纪律 / 调试与日志诊断入口 |
 | [`Docs/README.md`](Docs/README.md) | 文档总索引与建议阅读顺序 |
-| [`Docs/架构.md`](Docs/架构.md) | 架构总览与阅读地图 |
-| [`Docs/07架构/README.md`](Docs/07架构/README.md) | 模块级架构分册与 **ADR 全表**（按编号查 ADR 走这里） |
-| [`Docs/Conventions/组件化交付规程.md`](Docs/Conventions/组件化交付规程.md) | 组件化交付 S1–S5 门禁与接入前 checklist（强制） |
-| [`Docs/Features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md`](Docs/Features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md) | 产品架构裁定：WinUI Shell + Web UI + 独立 Core 子进程 |
-| [`Docs/Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md`](Docs/Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | Desktop ↔ Core 能力通道（gRPC）切片计划与端点命名 |
-| [`Docs/07架构/103ADR-089Agent统一检索与渐进展开工具链ADR.md`](Docs/07架构/103ADR-089Agent统一检索与渐进展开工具链ADR.md) + [`Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md`](Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md) | 统一检索入口、索引组件拆分与后台维护 |
-| [`Docs/07架构/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md`](Docs/07架构/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) + [`Docs/Features/原生视觉与统一取图截图优化设计-2026-09-12.md`](Docs/Features/原生视觉与统一取图截图优化设计-2026-09-12.md) | 原生视觉、typed parts、Artifact 与截图链路 |
-| [`Docs/07架构/91ADR-076遥测与调试数据保留及Core存储管理ADR.md`](Docs/07架构/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) + [`Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md`](Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md) | 存储治理、语义目录、保留策略 |
-| [`Docs/07架构/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md`](Docs/07架构/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md) + [`Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md`](Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md) | Agent 回合单一有序内容流与披露 owner |
-| [`Docs/07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md`](Docs/07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md) + [`Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md`](Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md) | 持久 GoalRun、证据验证、Task-bound Goal |
-| [`Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md`](Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md) + [`Docs/Features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md`](Docs/Features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md) | 自动派发、夜间有效调度与 Execution 生命周期闭环 |
-| [`Docs/07架构/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md`](Docs/07架构/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md) | 产品施工总表（30 项产品任务 + T00–T16 底座任务） |
-| [`Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md`](Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md) | Token 成本治理、分级压缩与缓存命中验收合同 |
-| [`Docs/Features/AgentHarness兼容与工具调用效率修复设计方案.md`](Docs/Features/AgentHarness兼容与工具调用效率修复设计方案.md) + [`Docs/07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md`](Docs/07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md) | Harness 兼容边界与工具协议适配 |
-| [`Docs/07架构/tool-infrastructure-layering.md`](Docs/07架构/tool-infrastructure-layering.md) | Tool 分层、强制委派合同、Smart 参数与结果合同 |
-| [`Docs/deepseek-reference-architecture-master-plan-2026-08-14.md`](Docs/deepseek-reference-architecture-master-plan-2026-08-14.md) | 「一切业务能力皆插件」参考架构总蓝图（T00–T16） |
-| [`Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`](Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md) | Plugin/Function/Hook/Event/Projection 五类合同与统一生命周期 |
-| [`Docs/deepseek-harness-tool-system-alignment-2026-08-14.md`](Docs/deepseek-harness-tool-system-alignment-2026-08-14.md) | 工具 canonical output / callId / 结构化错误 / spill / presentation |
-| [`Docs/deepseek-harness-message-card-alignment-2026-08-14.md`](Docs/deepseek-harness-message-card-alignment-2026-08-14.md) | 消息、推理、工具调用与委派的 UI 投影合同 |
-| [`Docs/superpowers/specs/2026-06-03-auto-tool-approval-design.md`](Docs/superpowers/specs/2026-06-03-auto-tool-approval-design.md) | 自动工具审批唯一设计入口 |
-| [`Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md`](Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md) | 余额徽标与多服务商计费展示适配器 |
-| [`Docs/00Changelog/`](Docs/00Changelog/README.md) | **修改日志唯一去处**（规则见其 README） |
-| `Docs/Reports/` · `Docs/QA/` · `Docs/Tasks/` · `Docs/Tasks.md` | 诊断/验收报告 · 验收记录 · 历史任务与设计演进（只读证据，不是索引） |
+| [`Docs/07_architecture/架构.md`](Docs/07_architecture/架构.md) | 架构总览与阅读地图 |
+| [`Docs/07_architecture/README.md`](Docs/07_architecture/README.md) | 模块级架构分册与 **ADR 全表**（按编号查 ADR 走这里） |
+| [`Docs/10_conventions/组件化交付规程.md`](Docs/10_conventions/组件化交付规程.md) | 组件化交付 S1–S5 门禁与接入前 checklist（强制） |
+| [`Docs/12_features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md`](Docs/12_features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md) | 产品架构裁定：WinUI Shell + Web UI + 独立 Core 子进程 |
+| [`Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md`](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | Desktop ↔ Core 能力通道（gRPC）切片计划与端点命名 |
+| [`Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md`](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) + [`Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md`](Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md) | 统一检索入口、索引组件拆分与后台维护 |
+| [`Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md`](Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) + [`Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md`](Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md) | 原生视觉、typed parts、Artifact 与截图链路 |
+| [`Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md`](Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) + [`Docs/12_features/遥测调试数据自动过期与Web存储管理设计方案.md`](Docs/12_features/遥测调试数据自动过期与Web存储管理设计方案.md) | 存储治理、语义目录、保留策略 |
+| [`Docs/07_architecture/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md`](Docs/07_architecture/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md) + [`Docs/12_features/Agent消息交错内容流与最新行为组披露完整实施方案.md`](Docs/12_features/Agent消息交错内容流与最新行为组披露完整实施方案.md) | Agent 回合单一有序内容流与披露 owner |
+| [`Docs/07_architecture/89ADR-074Goal持久目标自主续行与自动压缩ADR.md`](Docs/07_architecture/89ADR-074Goal持久目标自主续行与自动压缩ADR.md) + [`Docs/12_features/Goal持久目标自主续行与自动压缩完整设计方案.md`](Docs/12_features/Goal持久目标自主续行与自动压缩完整设计方案.md) | 持久 GoalRun、证据验证、Task-bound Goal |
+| [`Docs/12_features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md`](Docs/12_features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md) + [`Docs/12_features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md`](Docs/12_features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md) | 自动派发、夜间有效调度与 Execution 生命周期闭环 |
+| [`Docs/07_architecture/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md`](Docs/07_architecture/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md) | 产品施工总表（30 项产品任务 + T00–T16 底座任务） |
+| [`Docs/12_features/上下文Token效率缓存命中与分级压缩优化设计方案.md`](Docs/12_features/上下文Token效率缓存命中与分级压缩优化设计方案.md) | Token 成本治理、分级压缩与缓存命中验收合同 |
+| [`Docs/12_features/AgentHarness兼容与工具调用效率修复设计方案.md`](Docs/12_features/AgentHarness兼容与工具调用效率修复设计方案.md) + [`Docs/07_architecture/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md`](Docs/07_architecture/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md) | Harness 兼容边界与工具协议适配 |
+| [`Docs/07_architecture/tool-infrastructure-layering.md`](Docs/07_architecture/tool-infrastructure-layering.md) | Tool 分层、强制委派合同、Smart 参数与结果合同 |
+| [`Docs/19_references/deepseek-reference-architecture-master-plan-2026-08-14.md`](Docs/19_references/deepseek-reference-architecture-master-plan-2026-08-14.md) | 「一切业务能力皆插件」参考架构总蓝图（T00–T16） |
+| [`Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md) | Plugin/Function/Hook/Event/Projection 五类合同与统一生命周期 |
+| [`Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md`](Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md) | 工具 canonical output / callId / 结构化错误 / spill / presentation |
+| [`Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md`](Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md) | 消息、推理、工具调用与委派的 UI 投影合同 |
+| [`Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md`](Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md) | 自动工具审批唯一设计入口 |
+| [`Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md`](Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md) | 余额徽标与多服务商计费展示适配器 |
+| [`Docs/00_changelog/`](Docs/00_changelog/README.md) | **修改日志唯一去处**（规则见其 README） |
+| `Docs/14_reports/` · `Docs/16_qa/` · `Docs/15_tasks/` · `Docs/15_tasks/Tasks.md` | 诊断/验收报告 · 验收记录 · 历史任务与设计演进（只读证据，不是索引） |
 
 ## 7. 运行时目录与构建入口
 

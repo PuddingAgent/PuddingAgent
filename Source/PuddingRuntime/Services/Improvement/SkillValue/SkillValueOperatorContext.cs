@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Improvement.SkillValue;
 /// <list type="bullet">
 /// <item><b>回合结局</b>：遥测只记录命中 / 注入 / 读失败，当前没有任何 turn outcome 事实。
 /// 它的来源是 canonical 对话事件，而既有数据访问层只暴露成功命令（见
-/// <c>Docs/Features/S3-轨迹源-侦察结论-2026-09-21.md</c>）—— 因此它进入打分输入的时点是 S3，不是本片。</item>
+/// <c>Docs/12_features/S3-轨迹源-侦察结论-2026-09-21.md</c>）—— 因此它进入打分输入的时点是 S3，不是本片。</item>
 /// <item><b>重叠度</b>：关键词共享度是 G5「定词」的产物，尚未产出。</item>
 /// </list>
 /// 这些字段<b>不得</b>以 0 / false / 空集合「预先占位」：任何公式里一个默认 0 都会静默变成

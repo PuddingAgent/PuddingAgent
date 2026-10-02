@@ -7,7 +7,7 @@ namespace PuddingPlatform.Data.Entities;
 /// 子代理状态追踪实体。
 /// 追踪异步子代理从 spawned → running → completed/failed 的生命周期。
 /// 
-/// 关联 ADR：Docs/07架构/16会话状态层与客户端解耦ADR.md §4.2
+/// 关联 ADR：Docs/07_architecture/16会话状态层与客户端解耦ADR.md §4.2
 /// </summary>
 [Table("session_sub_agents")]
 public class SessionSubAgentEntity

@@ -23,7 +23,7 @@ public sealed record DesktopBootstrapSettings
 
     /// <summary>
     /// 镜像 Core 侧 <c>system.json</c> 的 <c>Desktop</c> 段（切片 C-3 能力通道，见
-    /// <c>Docs/Features/Desktop-Surface-Browser-Mapping-2026-10-01.md</c> §8.3）。
+    /// <c>Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md</c> §8.3）。
     ///
     /// 段名与 Core 侧一致（<c>Desktop:CapabilityChannel</c>）⇒ 同一段配置可以在两个文件之间
     /// 原样复制，运维只需记一个段名。

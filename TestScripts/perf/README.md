@@ -1,10 +1,10 @@
 # TestScripts/perf —— Chat 前端性能实测脚手架
 
 用途：在**真实生产构建**上录制 Chat 长消息渲染、滚动、历史分页与活动回合更新链路的运行时耗时，
-把 [Chat 前端性能诊断报告](../../Docs/Reports/Chat-Frontend-Performance-Diagnosis-2026-10-01.md)
+把 [Chat 前端性能诊断报告](../../Docs/14_reports/Chat-Frontend-Performance-Diagnosis-2026-10-01.md)
 中的源码推断升级为实测结论。
 
-实测结论见 [Chat 前端性能实测报告](../../Docs/Reports/Chat-Frontend-Performance-Measurement-2026-10-01.md)。
+实测结论见 [Chat 前端性能实测报告](../../Docs/14_reports/Chat-Frontend-Performance-Measurement-2026-10-01.md)。
 
 ## 前置条件
 

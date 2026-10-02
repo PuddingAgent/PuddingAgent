@@ -1,7 +1,7 @@
 # PuddingFullTextIndex CodeMAP
 
 > 通用全文索引引擎 | 文件内容提取 · 搜索
-> 历史变更与门禁记录已迁至 [`Docs/00Changelog/2026Year/10/2026-10-02-PuddingFullTextIndex-code_map迁出的变更记录.md`](../../Docs/00Changelog/2026Year/10/2026-10-02-PuddingFullTextIndex-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
+> 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingFullTextIndex-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingFullTextIndex-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
 
 ## 契约（Contracts/）
 

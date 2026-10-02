@@ -5,7 +5,7 @@ namespace PuddingCoreTests.Tools;
 
 /// <summary>
 /// T05 P0-B-3：lossless JSON materializer 单测。
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6 约束 3。
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6 约束 3。
 /// 覆盖：JsonElement 透传、null→Null、string 合法 JSON（结构化保留）、string 非法 JSON（包装为 string 值不丢失原文）、
 /// CLR 匿名对象/Dictionary/List 序列化、嵌套对象、数字精度（大整数/小数不丢精度）。
 /// </summary>

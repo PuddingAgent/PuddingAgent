@@ -1,7 +1,7 @@
 // ── Slice P1：Admin「索引与检索」页的聚合健康态（纯函数 + 文案常量）──────────
-// 规格真源：`Docs/Features/Index-Status-Panel-UI-Prototype-2026-10-01.md`
+// 规格真源：`Docs/12_features/Index-Status-Panel-UI-Prototype-2026-10-01.md`
 //   §2 状态矩阵（**首条命中即生效**）· §3 文案表（逐字）· §4 渲染纪律（三态贯穿）
-//   线框：`Docs/Features/index-status-prototype/admin-wireframe.svg`
+//   线框：`Docs/12_features/index-status-prototype/admin-wireframe.svg`
 //   wire 契约：`./types.ts`（**不改**）
 //
 // 三条纪律：

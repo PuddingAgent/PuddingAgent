@@ -8,7 +8,7 @@ using PuddingFullTextIndex.Infrastructure;
 namespace PuddingFullTextIndexTests;
 
 /// <summary>
-/// <b>S4 边界与安全断言</b>（<c>Docs/Conventions/组件化交付规程.md</c> §3 的 S4 判据）：把
+/// <b>S4 边界与安全断言</b>（<c>Docs/10_conventions/组件化交付规程.md</c> §3 的 S4 判据）：把
 /// 「<c>PuddingFullTextIndex</c> 是叶子级别、<b>无宿主</b>的独立组件」从注释里的<b>承诺</b>
 /// 变成<b>能失败的机械检查</b>。
 /// <para>

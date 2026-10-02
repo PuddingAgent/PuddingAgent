@@ -36,7 +36,7 @@ public sealed class SkillKeywordOwnershipRealIndexProbeTests
     private const string AgentIdVariable = "PUDDING_G4_AGENT_ID";
 
     /// <summary>
-    /// G1 报告（<c>Docs/Reports/skill-portfolio-G1-2026-09-21.md</c>）之后**新建**的技能
+    /// G1 报告（<c>Docs/14_reports/skill-portfolio-G1-2026-09-21.md</c>）之后**新建**的技能
     /// （由技能目录创建时间实测：2026-09-21 20:27~20:29 四个 + 2026-09-22 01:20 一个）。
     /// 把它们从当前索引里剔除，就得到 G1 当时的 144 技能快照 —— 用于「口径漂移探测器」。
     /// </summary>

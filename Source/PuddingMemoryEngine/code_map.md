@@ -39,7 +39,7 @@
 | `Services/SkillCurationGate.cs` | 🆕 G7 提炼契约门禁（**纯判定层**：零 IO / 零 LLM / 零裸阈值，阈值全来自 `SkillCurationPolicy`）：C1 证据不丢；C2 一般性不降（口径 = **max(单个被取代者的 `source-session:` 去重数)**，**不是并集**）；C3 关键词唯一（判定域**排除本次被取代者**，否则合并自身关键词必交集 ⇒ 静默过度阻断）；C4 价值不降（复用 G3 `SkillScoreSnapshot` 两态，`Unavailable` **不得**当 0）；C5 可回滚（`Apply` 缺 `RollbackHandle` ⇒ 构造期拒绝）。理由码 10 条 + 降级码 3 条（`curation:*` / `cold_start:*` / `score_scale_mismatch:*`，见 `SkillCurationGate.cs:126-162`）。⚠️ 本层**无写盘职权**（落点属 L3-b）；用例见 `PuddingMemoryEngineTests/SkillCurationGateTests.cs` |
 | `Services/SubconsciousJobQueue.cs` | 潜意识任务队列（~29KB）；schedule_skip 按 (workspace, 5 分钟窗口) 内存聚合，窗口滚动时只写一条 `subconscious_job.schedule_skip.summary`（telemetry 为唯一 authoritative owner，不再逐事件双写 activity+metric）；明细仅保留派发/错误/状态变化。可控时钟 TimeProvider 可注入 |
 
-目标演进：保留持久 Job 的 lease/retry/dead-letter，把 Pre-Compaction Flush、后台提取、Auto-Dream、经验转 Skill、Skill Self-Improvement 拆为事件驱动 learning stage plugins；统一经过 signal → candidate → immutable proposal → evaluation → approval/canary → activation → monitoring/rollback，详见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
+目标演进：保留持久 Job 的 lease/retry/dead-letter，把 Pre-Compaction Flush、后台提取、Auto-Dream、经验转 Skill、Skill Self-Improvement 拆为事件驱动 learning stage plugins；统一经过 signal → candidate → immutable proposal → evaluation → approval/canary → activation → monitoring/rollback，详见 `Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
 
 ## 基础设施
 

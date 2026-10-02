@@ -1,0 +1,126 @@
+﻿# Agent 模板与客户端
+
+> **2026-07-18**：客户端 = 内嵌 Web UI。Agent 模板统一为全局模板库；
+> Workspace 只管理自包含 Agent 实例，不再暴露 Workspace 级模板管理。
+
+## Agent 模板
+
+Agent 模板只有一个全局层级，配置主源为 `data/agent-templates/{templateId}/`：
+
+### 系统预制模板（AgentTemplatePreset）
+
+系统预制模板是软件随包资源，不属于用户数据目录的主源。ADR-083 目标格式改为与正式模板同构的版本化目录包：
+
+- 源码位置：`Source/PuddingHost/default-data/agent-template-presets/{presetId}/`
+- 运行位置：应用输出目录 `default-data/agent-template-presets/{presetId}/`
+- 读取方式：`/api/global-agent-templates/presets` 直接读取软件输出物
+- 导入方式：用户在 `/global-agent-template` 点击“导入预制”，系统把目录包快照转成正式全局模板并写入 `data/agent-templates/{templateId}/`
+
+预制目录包包含版本、来源、许可、Prompt Markdown、能力、Skill、模型、记忆与护栏；服务端按规范化内容计算 SHA-256。预制模板不复制到启动参数指定的 `data` 目录。`data` 目录只保存已导入、可编辑、可备份的正式模板。预制升级必须显式预览/确认，不得静默覆盖已导入模板或既有 Agent。完整决策见 [ADR-083](97ADR-083Agent系统预制模板版本化快照与DeepSeek鲸鱼娘模板ADR.md)。
+
+首批系统预制模板：
+
+- `general-assistant`：通用助手，Service
+- `research-assistant`：研究助手，Service
+- `code-assistant`：代码助手，Service
+- `workspace-audit-assistant`：审计助手，Audit；用于审计工作空间内其他 Agent 的计划、执行过程、工具调用、证据链和风险，不是代码审计模板
+- `deepseek-whalechan`：DeepSeek 鲸鱼娘（社区角色），Service；使用原创文本人设与中性头像，不打包上游角色图片、Skill 文本或 Prompt 原文
+
+### 全局 Agent 模板（GlobalAgentTemplate）
+
+定义系统内置 Agent 的角色、系统提示词、默认能力和偏好，对所有 Workspace 可见：
+
+- 角色类型：Service / Task / Audit / Custom
+- 系统提示词
+- 首选模型与提供商
+- 能力（Capability）引用
+- Skill Package 引用
+- 记忆策略与执行护栏
+
+前端页面：`/global-agent-template`
+
+Workspace 内只创建和管理 Agent 实例。全局模板只在创建时作为蓝图：
+`WorkspaceAgentFileService` 把模板配置、Markdown 内容和 LLM Binding 复制到
+`data/agents/{agentId}/`。创建完成后，Agent 独立编辑、独立演进；运行时不得回查模板。
+
+> **2026-06-12 变更**：Workspace 详情页移除“模板管理”Tab，`/workspace-agent-template` 旧入口保留隐藏重定向用于兼容旧链接。旧版 `/agent-template` 统一模板页面已移除，其 API（`listAgentTemplates`、`getAgentTemplate`、`AgentTemplateType`、`AgentTemplateDefinition`）同步清理。详见 [QA-2026-05-03-RemoveOldAgentTemplate](../16_qa/QA-2026-05-03-RemoveOldAgentTemplate.md)。
+
+### 模板与 Agent 实例字段归属
+
+全局模板负责可复用的蓝图字段：
+
+- 模板 ID、模板名称、角色类型、模板描述
+- 模板角色定义、默认语气与边界、工具使用约定
+- 能力与 Skill 授权、执行护栏
+- 默认模型策略、默认记忆搜索模式
+- 默认头像、模板启用状态、排序权重
+
+Workspace Agent 实例负责场景化与个性化字段：
+
+- Agent 名称、实例职责、所属 Workspace
+- 来源全局模板 ID（只用于审计来源，创建后只读，不是运行时外键）
+- 角色类型、头像、系统与用户 Prompt、Markdown 角色文件
+- 能力、Skill、模型路由、记忆策略、Smart 子代理角色模型
+- 最大轮次、最大耗时、最大工具调用、运行环境等执行护栏
+- 实例启用状态、运行状态、记忆归属
+
+创建请求未填写某个可复制字段时，创建服务可以使用模板值完成一次性填充；
+实例创建后，读取、更新和执行均以 Agent 实例目录为配置源，不再产生继承关系。
+
+Workspace Agent 创建页选择来源模板后，应获取单一 `AgentTemplateCreationSnapshot`，原子填充基础信息、能力与 Skill、角色与 Prompt、模型与记忆、Smart 子代理和执行护栏；创建请求携带来源版本与内容哈希。模板选择后发生变化时必须提示重新加载，不能静默混用两个版本。系统预制或全局模板更新不修改既有 Agent。
+
+### Agent 实例配置边界
+
+Agent 实例目录保存：
+
+- `manifest.json`：身份、角色、权限、Skill、执行护栏、主模型显式引用和 Smart 角色模型；
+  其中 `preferredProviderId + preferredModelId` 是主 Agent 执行模型的唯一真相源；第三方渠道只记录
+  `channelIds` 引用，不保存渠道账号或密钥
+- `data/channels/{channelId}/manifest.json`：独立于 Agent 的渠道实例配置、飞书凭据、渠道级权限与回复策略
+- `data/config/channel.providers.json`：已安装渠道服务商及 Connector 能力目录
+- `config/llm.json`：潜意识/管理兼容配置；不得覆盖主 Agent 的 manifest 模型引用
+- `SOUL.md`、`AGENTS.md`、`TOOLS.md`、`BOOTSTRAP.md`、`MEMORY.md`
+- `heartbeatPrompt.md`
+
+Workspace Agent 编辑器应覆盖上述 Agent 可编辑字段，并按“基础信息、能力与 Skill、
+角色与 Prompt、模型与记忆、Smart 子代理、执行护栏”切换显示；Markdown 角色文件和高级运行环境
+默认折叠，校验失败跳到对应分组，关闭脏表单前要求确认。来源模板在编辑模式只读。
+
+渠道配置不进入 Agent 编辑器。Workspace 的“渠道服务商”管理已安装 Connector，“渠道管理”维护
+机器人账号、Secret、特权用户、回复策略并选择绑定 Agent；绑定操作只回写 Agent `channelIds`。
+
+实例的最大轮次、最大耗时和最大工具调用数必须进入 `AgentExecutionSnapshot`，
+再由 `TurnExecutionContext` 传给 Runtime。平台 `AgentExecutionGuardrails` 是硬上限，
+实例只能收紧上限，不能突破平台安全边界。
+
+`maxContextTokens`、`maxInputTokens` 与模型最大输出能力不属于 Agent 实例配置。模型容量的唯一运行时来源是
+`data/config/llm.providers.json` 中选中 Provider Model 的配置，执行快照通过
+provider/model 引用解析容量，禁止在 Agent manifest、Agent DTO 或 LLM Binding 中复制这些值。
+其中 `maxInputTokens` 用于表达 Provider 单次输入硬上限；有效输入预算统一取
+`min(maxInputTokens, maxContextTokens - maxOutputTokens - safetyBuffer)`。Agent manifest 的
+`maxReplyTokens` 只负责收紧本次执行的输出上限，并必须下传为 Provider 请求的 `max_tokens`。
+Responses 协议对应下传字段为 `max_output_tokens`；它包含模型的思考与可见输出，不只是最终答复文本。
+Provider 返回 `status=incomplete` 时是有 usage/output 的截断终态，不属于 HTTP/Provider 故障：网关必须保留
+可展示文本、思考内容、usage 和 opaque output items，并把 `max_output_tokens` 映射为 `finishReason=length`。
+长度截断时可能存在未闭合的 function call 参数；这类调用只能保留用于审计/回放，当前轮禁止执行。
+
+## 内嵌 Web UI
+
+- 前端使用 React/TypeScript 开发
+- 构建产物嵌入 ASP.NET Core 的 wwwroot
+- 一个进程同时提供 API 和 UI
+- 用户双击启动后浏览器直接打开
+
+### 交互入口分层
+
+> **2026-05-03**：Chat 页从后台 ProLayout 中剥离，作为 Pudding 的主交互界面独立呈现。
+
+- `/chat` 是用户登录后的主界面，使用独立 Chat Shell，不继承后台侧栏、顶栏、Footer 或水印。
+- 后台管理区定位为 Pudding Console，仅承载 Agent、工作空间、技能、模型资源和运行时配置。
+- Workspace 详情页只保留配置与管理 Tab，不再内嵌 Chat；后台对话统一进入 `/admin/chat`（前端路由 `/chat`）。
+- Chat 页通过轻量“控制台”入口进入管理区，避免后台菜单干扰日常对话。
+- 登录页、Chat 页和后台应共享 Pudding 品牌风格，但信息密度按“主交互 → 管理工具箱”递增。
+
+## 客户端
+
+不再有独立的 CLI/Web 客户端项目。Web UI 就是唯一的客户端。

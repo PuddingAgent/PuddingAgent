@@ -5,7 +5,7 @@ namespace PuddingCode.Tools.Definitions;
 /// <summary>
 /// 工具输入/输出 schema 校验器。
 /// <para>
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6 约束 3 ——
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6 约束 3 ——
 /// Registry 对返回值做 lossless JSON materialize、output schema 校验和冻结，再执行 renderer。
 /// 本类型只负责其中的 schema 校验（input/output），不涉及 render/finalize/pipeline。
 /// </para>

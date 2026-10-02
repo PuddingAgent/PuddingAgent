@@ -4,7 +4,7 @@
 // 后端负责各厂商 balance 端点的查询与响应归一化（DTO 已含通用 Currency/BalanceInfos 字段），
 // 前端只需按 providerId 决定「是否展示徽标 + 展示名 + 货币符号」。
 // 新增服务商（Qwen/GLM/Kimi 等）扩展步骤见
-// Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md。
+// Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md。
 
 /** 前端余额展示适配器：命中 providerId 才在 UI 渲染余额徽标。 */
 export interface ProviderBillingDisplayAdapter {

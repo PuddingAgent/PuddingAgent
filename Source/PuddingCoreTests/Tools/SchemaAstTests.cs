@@ -6,7 +6,7 @@ namespace PuddingCoreTests.Tools;
 
 /// <summary>
 /// T05 P0-B-1：Core 不可变 Schema AST 节点契约单测。
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6.1（Schema 能力清单）。
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6.1（Schema 能力清单）。
 /// 覆盖：各类型节点构造、ToolParameterSchema↔JsonSchema 兼容转换、基础验证（类型/required/enum/pattern/min-max）、
 /// 以及 <c>$.field: ...</c> 路径错误格式。
 /// </summary>

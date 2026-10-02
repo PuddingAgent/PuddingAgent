@@ -18,7 +18,7 @@ namespace PuddingCode.Abstractions;
 ///   · 所有客户端通过此接口获取实时事件和历史事件
 ///   · Channel 生命周期 = 会话完全关闭，而非 HTTP 连接断开
 /// 
-/// 关联 ADR：Docs/07架构/16会话状态层与客户端解耦ADR.md
+/// 关联 ADR：Docs/07_architecture/16会话状态层与客户端解耦ADR.md
 /// </summary>
 public interface ISessionStateManager
 {
@@ -302,7 +302,7 @@ public sealed record SubAgentTokenSummary
 /// <summary>
 /// 会话级 Trace 聚合报告。
 /// 从 conversation_events 查询该会话的所有事件，按 traceId 和 component 聚合。
-/// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+/// 关联 ADR：Docs/07_architecture/20会话状态机与事件规范ADR.md §6
 /// </summary>
 public sealed record SessionTraceReport
 {

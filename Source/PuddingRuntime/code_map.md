@@ -1,7 +1,7 @@
 # PuddingRuntime CodeMAP
 
 > 运行时核心 | Agent Loop · LLM 调用 · 工具系统 · 上下文管线 · Git 20 工具
-> 历史变更与门禁记录已迁至 [`Docs/00Changelog/2026Year/10/2026-10-02-PuddingRuntime-code_map迁出的变更记录.md`](../../Docs/00Changelog/2026Year/10/2026-10-02-PuddingRuntime-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
+> 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingRuntime-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingRuntime-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
 
 ## 入口 & 配置
 
@@ -34,7 +34,7 @@
 
 ## 上下文管线
 
-2026-09-15：`AgentSessionManager` 的可见工具有序投影贯穿 `BuildFrozenToolManifest`、Streaming/Buffered 发现边界和 Composition 恢复。`ContextPipelineLayers` 拆分稳定规则与可变目录，`ContextPipelineOrchestrator.BuildCatalogUpdate` 按模型可见历史的最新完整目录去重，更新仅追加 User tail，固定记忆裁剪不受目录去重影响。见[修复记录](../../Docs/Reports/主代理缓存前缀修复-2026-09-15.md)。
+2026-09-15：`AgentSessionManager` 的可见工具有序投影贯穿 `BuildFrozenToolManifest`、Streaming/Buffered 发现边界和 Composition 恢复。`ContextPipelineLayers` 拆分稳定规则与可变目录，`ContextPipelineOrchestrator.BuildCatalogUpdate` 按模型可见历史的最新完整目录去重，更新仅追加 User tail，固定记忆裁剪不受目录去重影响。见[修复记录](../../Docs/14_reports/主代理缓存前缀修复-2026-09-15.md)。
 
 | 文件 | 用途 |
 |------|------|
@@ -120,7 +120,7 @@
 | `Services/TaskTools/TaskClaimTool.cs` | `task_claim` 工具（领取任务；ActiveTask 丢失时经服务端反查归属安全重建上下文，缺陷 3f8df399）|
 | `Services/TaskTools/TaskUpdateTool.cs` | `task_update` 工具（状态迁移/disposition；ActiveTask 丢失时同上重建，须 InProgress 或 Blocked（卡 813ad427）；Blocked 下仅 `todo`→Ready 合法，其余由服务端 fail closed）|
 | `Services/TaskTools/ManageTasksTool.cs` | `manage_tasks` 工具（管理者视角跨 Agent 看板 CRUD + 命令；list 支持 children_of/include_child_summary；create/update 支持 parent_task_id、depends_on_task_ids（看板卡依赖，fail-closed 错误码 task.dependency_invalid / task.dependency_task_not_found）、task_type（可选透传，不传=general，小写归一 ≤64 字符）；get 返回 dependencies/dependency_tree，include_children=true 时内联子卡）|
-| `Services/TaskTools/TaskToolModels.cs` | 工具参数/结果模型 + `TaskToolErrors` + `TaskToolGuard`（`ValidateActiveTaskOrRebuildAsync`：ActiveTask==null 时按 mine 归属+assignment 匹配+状态门槛+版本 CAS 重建等效上下文；注入路径不做 expected_version 快照比对（缺陷 2d5a2ebe，服务端活版本 CAS 唯一裁决）；重建失败时在 `task.active_context_missing` 上附加非泄露诊断 `context_rebuild{attempted,stage,outcome}`——inputs/incomplete_inputs、lookup/not_visible、ownership/agent_mismatch（卡 3133b149）；卡 813ad427（2026-09-14 裁定）：update 路径状态门槛放宽为 `InProgress｜Blocked`（仍需 active assignment 归属调用方 + 版本 CAS），disposition 合法性仍由服务端状态机 fail closed 裁决，裁定与测试见 `Docs/Reports/blocked-recovery-channel-decision-20260914.md`）|
+| `Services/TaskTools/TaskToolModels.cs` | 工具参数/结果模型 + `TaskToolErrors` + `TaskToolGuard`（`ValidateActiveTaskOrRebuildAsync`：ActiveTask==null 时按 mine 归属+assignment 匹配+状态门槛+版本 CAS 重建等效上下文；注入路径不做 expected_version 快照比对（缺陷 2d5a2ebe，服务端活版本 CAS 唯一裁决）；重建失败时在 `task.active_context_missing` 上附加非泄露诊断 `context_rebuild{attempted,stage,outcome}`——inputs/incomplete_inputs、lookup/not_visible、ownership/agent_mismatch（卡 3133b149）；卡 813ad427（2026-09-14 裁定）：update 路径状态门槛放宽为 `InProgress｜Blocked`（仍需 active assignment 归属调用方 + 版本 CAS），disposition 合法性仍由服务端状态机 fail closed 裁决，裁定与测试见 `Docs/14_reports/blocked-recovery-channel-decision-20260914.md`）|
 
 ## 记忆 & 知识
 
@@ -174,7 +174,7 @@
 
 ## 安全分类器与准入（Classification，2026-09-21）
 
-依据方案 v2 §14（`Docs/Features/安全分类器与工具调用准入方案-v2.md`）。**抽象在 PuddingCore，实现全在 PuddingRuntime**；消费方只依赖 `IToolCallClassifier` 抽象，不得直接依赖任何厂商实现。
+依据方案 v2 §14（`Docs/12_features/安全分类器与工具调用准入方案-v2.md`）。**抽象在 PuddingCore，实现全在 PuddingRuntime**；消费方只依赖 `IToolCallClassifier` 抽象，不得直接依赖任何厂商实现。
 
 | 文件 | 用途 |
 |------|------|

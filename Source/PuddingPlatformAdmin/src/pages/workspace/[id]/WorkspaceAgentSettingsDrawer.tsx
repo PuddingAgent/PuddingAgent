@@ -124,7 +124,7 @@ export interface WorkspaceAgentSettingsDrawerProps {
 /**
  * 工作区 Agent 编辑工作台。
  *
- * 设计依据：Docs/Features/Agent-Settings-Redesign-2026-10-01.md
+ * 设计依据：Docs/12_features/Agent-Settings-Redesign-2026-10-01.md
  * 结构：顶部身份与保存状态 → 左侧设置导航 → Prompt 文档目录 → 大面积正文编辑器。
  *
  * 一期不改变字段含义与保存合同：仍然一次保存整个 Agent 表单，仍然复用既有分区组件。

@@ -192,7 +192,7 @@
 | `Observability/` | 观测抽象 |
 | `Diagnostics/` | 诊断抽象 |
 
-目标新增 `Plugins/`、`Hooks/`、`Lifecycle/` 与 `Events/DomainEventContracts.cs`，分别承载 PluginActivation/Scope、Guard/Transform/Around、各 aggregate 状态机，以及 durable event envelope；详见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
+目标新增 `Plugins/`、`Hooks/`、`Lifecycle/` 与 `Events/DomainEventContracts.cs`，分别承载 PluginActivation/Scope、Guard/Transform/Around、各 aggregate 状态机，以及 durable event envelope；详见 `Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
 
 ## 判定算子与分类契约（Operators/ · Classification/，2026-09-21）
 
@@ -220,7 +220,7 @@ S1a/S1b 已落地（`f577add` / `7cfc198`）。抽象在 PuddingCore，实现全
 ## 改进落点契约（Improvement/ · L3-a，2026-09-21）
 
 L3-a 已落地（纯类型 + 守卫测试，**零行为**：不写技能、不写记忆、不调任何服务）。设计依据见
-`Docs/Features/RSI-Harness-分类器抽象与可递归进化服务设计-2026-09-21.md` §15.4 / §15.6。
+`Docs/12_features/RSI-Harness-分类器抽象与可递归进化服务设计-2026-09-21.md` §15.4 / §15.6。
 
 **立场**：改进的输出货币是**变更**，不是新增物——于是「更新 / 合并 / 取代 / 淘汰既有资产」与「新增」
 在同一份契约里并列，且**新增必须自证为什么不能更新或合并**。

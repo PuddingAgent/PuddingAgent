@@ -1,5 +1,5 @@
 // ADR-089 U0-S3：FileSearchTool 统一覆盖合同接入 + 「Everything 清单遗漏新文件」差分基线测试。
-// 设计依据：Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md
+// 设计依据：Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md
 //   L128：专门验证"Everything 清单遗漏新文件"不被误报为 no_match；基线与索引辅助路径同一匹配合同。
 // 覆盖声明单点产出用计数断言锁定（U0-S2 教训：Contains 断言锁不住"同一声明输出两遍"，见 ff79f3b）。
 using System.Text.Json;

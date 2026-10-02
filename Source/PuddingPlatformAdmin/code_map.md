@@ -61,7 +61,7 @@
 | `src/pages/chat/utils/providerBilling.ts` | 展示适配器注册表 `{id,match,displayName,fallbackCurrencySymbol}` + `resolveBillingAdapter`/`currencySymbolFor`（CNY→¥/USD→$）；providerId 未命中不渲染徽标；新服务商在此加一项即可 |
 | `src/pages/chat/hooks/useProviderBalance.ts` | 余额拉取：providerId 变化即取 + 5min 低频轮询（`usePollingLoader` 页面隐藏自动暂停）+ 手动 `refresh`；任何失败静默降级为 `balance=undefined` + `errorText`，不抛错 |
 | `src/pages/chat/components/ProviderBalanceIndicator.tsx` | 品牌图标（DeepSeek/Mimo 内联 SVG）+ `¥xx.xx` 徽标；`detail` prop 进 Tooltip 第二行（错误原因/刷新提示） |
-| `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 Goal 状态控件：无 Goal 可开始，Active 可暂停/停止，Paused/Blocked 可恢复/停止，终态可新建；顶栏紧凑按钮显示 phase/iteration，Popover 承载完整 objective、原因与终态时间。`GoalStepsPanel` 惰性化（仅 Popover 内需要）：生产走 `React.lazy(loadGoalStepsPanel)` + `React.Suspense` 轻量 fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使 Chat 路由首屏 chunk 507842 → 496132 B（见 `Docs/Reports/Chat-Bundle-Budget-Plan-2026-09-19.md`） |
+| `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 Goal 状态控件：无 Goal 可开始，Active 可暂停/停止，Paused/Blocked 可恢复/停止，终态可新建；顶栏紧凑按钮显示 phase/iteration，Popover 承载完整 objective、原因与终态时间。`GoalStepsPanel` 惰性化（仅 Popover 内需要）：生产走 `React.lazy(loadGoalStepsPanel)` + `React.Suspense` 轻量 fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使 Chat 路由首屏 chunk 507842 → 496132 B（见 `Docs/14_reports/Chat-Bundle-Budget-Plan-2026-09-19.md`） |
 | `src/pages/chat/utils/goalContinuationMessage.ts` + `types.ts` + `projections/messageProjection.ts` | 仅对服务端 `goal_managed + goal_continuation` 消息解析 `<goal_payload>`；历史 `\\uXXXX` 由 JSON parser 还原为可读 Goal/Task/工作单元文本，普通用户消息与损坏 payload 均原样保留 |
 | `src/pages/workspace-tasks/SchedulerDrawer.tsx` | Task 看板“调度中心”：权威状态、候选决策码、Pause/Resume/Scan/Repair、revision CAS 策略表单与 Authoritative 前置门禁 |
 | `src/pages/workspace-tasks/TaskEditorDrawer.tsx` + `TaskCard.tsx` + `TaskDetailsDrawer.tsx` | 暴露 Task 自动调度 opt-in、taskType/capability/provider/model/fallback/window；卡片显示“自动”标记并提供纳入/退出、Blocked Resume/Requeue 等用户干预 |
@@ -69,7 +69,7 @@
 | `src/pages/chat/components/ChatMain.tsx` | Goal 状态控件挂到 WorkspaceNavigationHeader 的「任务看板」旁；消息首屏不再被 Goal 长正文下推；其余余额/推断辅助请求继续 idle 后启动 |
 | `src/services/platform/api.ts` | `getLlmProviderBalance` → `GET /api/llm/providers/{id}/balance`；`LlmProviderBalanceDto`/`LlmBalanceInfoDto` 类型 |
 
-后端查询适配器注册表（`ILlmBalanceProvider`/`DeepSeekLlmBalanceProvider`）见 `PuddingPlatform/code_map.md` 提供商配置节；完整设计与扩展步骤见 `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md`。
+后端查询适配器注册表（`ILlmBalanceProvider`/`DeepSeekLlmBalanceProvider`）见 `PuddingPlatform/code_map.md` 提供商配置节；完整设计与扩展步骤见 `Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md`。
 
 ## 路由与壳层加载边界
 
@@ -112,7 +112,7 @@
 
 ## Chat 流式 UI（deepseek-harness 对齐，2026-08-23）
 
-参考 `E:\github\deepseek\deepseek-harness`（dsh-0.1.1-rc.2）流式 UI 设计 + `Docs/deepseek-harness-message-card-alignment-2026-08-14.md`；保留 Pudding 色板/头像身份，采用 harness 的信息架构与流式渲染模式。行为链质感演进记录见 `Docs/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md`；2026-08-25 后续施工以 `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md` + ADR-079 为权威合同。
+参考 `E:\github\deepseek\deepseek-harness`（dsh-0.1.1-rc.2）流式 UI 设计 + `Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md`；保留 Pudding 色板/头像身份，采用 harness 的信息架构与流式渲染模式。行为链质感演进记录见 `Docs/11_design/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md`；2026-08-25 后续施工以 `Docs/12_features/Agent消息交错内容流与最新行为组披露完整实施方案.md` + ADR-079 为权威合同。
 
 | 文件 | 职责与边界 |
 |------|------------|
@@ -173,7 +173,7 @@
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；Agent 行通过根滚动容器 IntersectionObserver 在 600px 预取区注册可见 turn；直接接收本 Turn 的 Projection 对象，任一其他 Turn/全局 selector revision 不得击穿历史行 memo |
 | `src/pages/chat/components/execution-flow/TurnContentStream.tsx` / `ActivityGroup.tsx` | 超长单 Turn 的二级 DOM 预算：默认最新 40 个内容块、每组最新 24 个行为节点；旧内容每次 40/24 项渐进揭示，折叠组成员完全卸载 |
 | `src/pages/chat/components/MessageProcessSummary.tsx` | 思考/工具过程摘要；折叠时不得构建完整 rounds、trace chips 和展示项 |
-| `../../Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | Chat 执行流目标设计：同一 assistant turn 内用 TurnStatus、ReasoningDisclosureRow、ToolCallRow、DelegationRow 分层呈现，按 toolCallId 配对并复用实时/历史 projector |
+| `../../Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md` | Chat 执行流目标设计：同一 assistant turn 内用 TurnStatus、ReasoningDisclosureRow、ToolCallRow、DelegationRow 分层呈现，按 toolCallId 配对并复用实时/历史 projector |
 | `src/pages/chat/components/MessageItem.tsx` | 消息文本轻量壳；立即显示纯文本 fallback，并异步加载 Markdown 增强器 |
 | `src/pages/chat/components/MarkdownBlock.tsx` | ReactMarkdown、KaTeX、HTML parser 和 Prism 的独立按需 chunk |
 | `src/pages/chat/reducer/subAgentReducer.ts` | 子代理事件与状态快照的统一投影；即使页面漏收 `created/started`，也会按状态接口的 canonical `runId` 重建缺失运行；`budget_exhausted` 是可恢复终态，任何终态进入后不得被迟到事件降级；`subagent.llm.completed.reasoning_preview` 作为实际“模型推理”展示，旧字符数占位不再生成 |
@@ -205,7 +205,7 @@
 
 ## 工作区 Agent 编辑工作台（2026-10-01）
 
-设计依据 `Docs/Features/Agent-Settings-Redesign-2026-10-01.md`（一期：编辑效率与状态完整性）。
+设计依据 `Docs/12_features/Agent-Settings-Redesign-2026-10-01.md`（一期：编辑效率与状态完整性）。
 
 | 文件 | 职责与边界 |
 |------|------------|

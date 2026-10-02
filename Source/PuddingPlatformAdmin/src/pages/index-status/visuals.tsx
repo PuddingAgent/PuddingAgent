@@ -2,10 +2,10 @@ import React from 'react';
 import type { IndexHealthLevel, StatusTone } from './health';
 
 // ── Slice P2 · 索引与检索面板「视觉语言」组件（规格 §9 · 视觉优先）────────
-// 规格真源：`Docs/Features/Index-Status-Panel-UI-Prototype-2026-10-01.md` **§9**（视觉语言与动效）
-// 线框真源：`Docs/Features/index-status-prototype/visual-language.svg`（图 3：L0 四视觉单元 +
+// 规格真源：`Docs/12_features/Index-Status-Panel-UI-Prototype-2026-10-01.md` **§9**（视觉语言与动效）
+// 线框真源：`Docs/12_features/index-status-prototype/visual-language.svg`（图 3：L0 四视觉单元 +
 //           五态编码矩阵（形状×动效×容器）+ L1 四卡视觉）
-//           `Docs/Features/index-status-prototype/motion-tokens.svg`（图 4：动效三档 + 语义色板
+//           `Docs/12_features/index-status-prototype/motion-tokens.svg`（图 4：动效三档 + 语义色板
 //           token + 尺度层次 + 红线）
 //
 // 三条纪律（逐条对应 §9.1 / §9.3 / §9.7）：

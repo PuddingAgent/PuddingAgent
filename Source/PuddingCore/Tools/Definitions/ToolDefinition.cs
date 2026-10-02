@@ -6,7 +6,7 @@ namespace PuddingCode.Tools.Definitions;
 /// <summary>
 /// 工具可回放展示意图的 provider-neutral 词汇表。
 /// <para>
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §14（Tool-owned presentation 与回放）：
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §14（Tool-owned presentation 与回放）：
 /// <c>generic | terminal | diff | search | read | web | delegation | job</c>。
 /// </para>
 /// <para>
@@ -117,7 +117,7 @@ public sealed record ToolPermissionFacts
 /// <summary>
 /// 工具输出合同：output schema + 模型渲染器 + 可选的可回放展示元数据投影器。
 /// <para>
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6 ——
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6 ——
 /// first-party 工具必须声明 input 和 output schema；renderer 只负责模型可见内容，
 /// presentation projector 只负责可回放 UI 元数据。
 /// </para>
@@ -141,7 +141,7 @@ public sealed record ToolOutputDefinition
 /// <summary>
 /// 新工具定义合同：声明模型协议和执行策略的事实源。
 /// <para>
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6 ——
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6 ——
 /// ToolDefinition（Id/Description/InputSchema/Output/权限/超时/IsConcurrencySafe/Present）。
 /// </para>
 /// <para>

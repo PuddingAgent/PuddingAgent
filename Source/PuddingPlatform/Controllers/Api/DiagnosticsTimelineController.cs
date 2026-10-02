@@ -7,7 +7,7 @@ namespace PuddingPlatform.Controllers.Api;
 
 /// <summary>
 /// 运行时诊断 Timeline API — 提供泛用 Timeline 查询、会话 Timeline、组件健康状态和 E2E 证据导出。
-/// 关联 ADR：Docs/07架构/23运行时可观测性闭环与E2E验证基线ADR.md
+/// 关联 ADR：Docs/07_architecture/23运行时可观测性闭环与E2E验证基线ADR.md
 /// </summary>
 [ApiController]
 [Route("api/diagnostics")]

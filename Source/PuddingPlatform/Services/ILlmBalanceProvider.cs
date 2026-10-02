@@ -7,7 +7,7 @@ namespace PuddingPlatform.Services;
 /// 服务商余额查询适配器（多服务商计费抽象）。
 /// 每个厂商实现一个适配器并经 DI 注册进注册表，由 LlmProviderFileService.GetBalanceAsync
 /// 按 <see cref="CanHandle"/> 分发——扩展新服务商见
-/// Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md。
+/// Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md。
 /// </summary>
 public interface ILlmBalanceProvider
 {

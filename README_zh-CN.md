@@ -1,7 +1,7 @@
 # Pudding Agent
 
 <p align="center">
-  <img src="Docs/Resources/Images/me-200.png" alt="Pudding" width="200"/>
+  <img src="Docs/20_resources/Images/me-200.png" alt="Pudding" width="200"/>
 </p>
 
 <p align="center">
@@ -193,11 +193,11 @@ dotnet build Source\PuddingDesktop\PuddingDesktop.csproj --no-restore --nologo
 
 ## 设计文档
 
-- [插件、Hook、Event、Agent Loop 与函数图总架构](Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md)
-- [通用 Agent 编排 ADR](Docs/07架构/82ADR-071通用Agent编排平台完整设计方案ADR.md)
-- [编排后端执行内核施工图](Docs/07架构/83通用Agent编排后端执行内核与ControlPlane施工图.md)
-- [编排编辑器与组件 UI 施工图](Docs/07架构/84通用Agent编排蓝图编辑器与组件系统施工图.md)
-- [工作区 TODO、峰谷自动化、质询器与 Goal 模式](Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md)
+- [插件、Hook、Event、Agent Loop 与函数图总架构](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md)
+- [通用 Agent 编排 ADR](Docs/07_architecture/82ADR-071通用Agent编排平台完整设计方案ADR.md)
+- [编排后端执行内核施工图](Docs/07_architecture/83通用Agent编排后端执行内核与ControlPlane施工图.md)
+- [编排编辑器与组件 UI 施工图](Docs/07_architecture/84通用Agent编排蓝图编辑器与组件系统施工图.md)
+- [工作区 TODO、峰谷自动化、质询器与 Goal 模式](Docs/12_features/工作区TODO与峰谷节能任务编排设计方案.md)
 
 ## License
 

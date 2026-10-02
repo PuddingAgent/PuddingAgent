@@ -57,7 +57,7 @@ public class JsonlSessionWriter : IAsyncDisposable
     /// <summary>
     /// 将事件帧追加写入 JSONL 文件（用于双写一致性策略）。
     /// 写入顺序：SQLite 成功后再调用此方法；失败不阻断主路径。
-    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+    /// 关联 ADR：Docs/07_architecture/20会话状态机与事件规范ADR.md §6
     /// </summary>
     public void WriteEventLine(string sessionId, string eventType, string data, long sequenceNum, string recordedAt)
     {

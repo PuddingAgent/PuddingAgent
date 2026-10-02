@@ -1,6 +1,6 @@
 // ── terminalBodyAlignment：终态正文与权威全文的对齐（2026-09-23）────────────
 //
-// 背景（父级实测，见 Docs/Features/Chat前端架构设计方案-2026-09-22.md §12 第 4 项）：
+// 背景（父级实测，见 Docs/12_features/Chat前端架构设计方案-2026-09-22.md §12 第 4 项）：
 //   投影正文短于权威全文时，界面只渲染投影那份 —— 因为
 //     (a) AgentMessageBubble 只要投影存在任一非空 message 节点，就关闭承载完整
 //         answerMarkdown 的兜底气泡（避免"轨迹块 + 正文块"两段式 UI）；

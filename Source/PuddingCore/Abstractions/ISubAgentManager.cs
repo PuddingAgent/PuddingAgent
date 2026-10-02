@@ -13,7 +13,7 @@ namespace PuddingCode.Abstractions;
 ///   4. 级联取消（父代理停止 → 标记所有子代理 cancelled）
 /// 
 /// 替代原先分散在 SubAgentTool / SessionStateManager / AgentEventHandler 中的子代理逻辑。
-/// 关联 ADR：Docs/07架构/16会话状态层与客户端解耦ADR.md
+/// 关联 ADR：Docs/07_architecture/16会话状态层与客户端解耦ADR.md
 /// </summary>
 public interface ISubAgentManager
 {

@@ -3,7 +3,7 @@ import { createStyles } from 'antd-style';
 /**
  * 工作区 Agent 编辑工作台专用样式。
  *
- * 设计依据：Docs/Features/Agent-Settings-Redesign-2026-10-01.md 第 3 / 8 节。
+ * 设计依据：Docs/12_features/Agent-Settings-Redesign-2026-10-01.md 第 3 / 8 节。
  *
  * 刻意与 `agent-template-settings/styles.ts` 分离：全局 Agent 模板抽屉复用同一套
  * 184px 导航布局，本文件只服务工作区实例编辑，避免改工作区外观时影响模板编辑

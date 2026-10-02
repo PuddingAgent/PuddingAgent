@@ -1,5 +1,5 @@
 // ADR-089 U0-S1：统一检索查询合同与覆盖合同（纯新增，未接入任何既有工具）。
-// 契约来源：Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md
+// 契约来源：Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md
 // 切片任务书：temp/adr089-u0-s1-taskbook-20260913.md（U0-S1）。
 using System.Collections.Generic;
 

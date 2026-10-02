@@ -45,7 +45,7 @@ public sealed class NoiseDirectoryRulesTests
         foreach (var path in new[]
                  {
                      "Source/PuddingCore/Tools/Retrieval/RetrievalMatcher.cs",
-                     "Docs/Conventions/组件化交付规程.md",
+                     "Docs/10_conventions/组件化交付规程.md",
                      "Source/PuddingPlatformAdmin/src/pages/chat/client/syncEngine.ts",
                  })
         {

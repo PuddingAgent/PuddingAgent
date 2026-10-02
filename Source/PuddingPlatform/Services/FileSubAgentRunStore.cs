@@ -17,7 +17,7 @@ namespace PuddingPlatform.Services;
 /// <summary>
 /// ISubAgentRunStore 的文件系统实现。
 /// 运行归档以文件为主存储（run.json / events.jsonl / tools.jsonl / output.md），数据库仅做索引。
-/// 关联 ADR：Docs/07架构/21子代理工作空间与运行归档ADR.md
+/// 关联 ADR：Docs/07_architecture/21子代理工作空间与运行归档ADR.md
 /// </summary>
 public class FileSubAgentRunStore : ISubAgentRunStore
 {

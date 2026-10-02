@@ -10,7 +10,7 @@ namespace Pudding.DesktopSurface.Browser;
 /// （<see cref="IBrowserRuntime"/>），而不是重建 WebView2 逻辑——现有七个浏览器工具正基于该抽象工作。
 ///
 /// 本轮只实现 <see cref="GetContextsAsync"/>（清单是"先看清有什么"的入口，且不需要任何 DOM 交互），
-/// 其余操作按 [映射规格](../../Docs/Features/Desktop-Surface-Browser-Mapping-2026-10-01.md) 逐步补齐。
+/// 其余操作按 [映射规格](../../Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md) 逐步补齐。
 /// </summary>
 public sealed class BrowserRuntimeDesktopSurface
 {

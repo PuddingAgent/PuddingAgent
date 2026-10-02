@@ -12,7 +12,7 @@
 
   <!--
     架构第一原则：Pudding.Contracts 是平台与传输无关的叶程序集（
-    Docs/Features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md §3）。
+    Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md §3）。
 
     只允许 BCL。UI、HTTP、gRPC、Protobuf、DI、数据库与宿主引用在这里编译期取红：
     ProjectReference = 0、PackageReference = 0。

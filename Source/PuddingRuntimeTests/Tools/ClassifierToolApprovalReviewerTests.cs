@@ -7,7 +7,7 @@ namespace PuddingRuntimeTests.Tools;
 /// <summary>
 /// <see cref="ClassifierToolApprovalReviewer"/> 的离线单元测试（零网络，分类器端口用 fake stub）。
 /// <para>
-/// 逐条锁定 S3b 适配器契约（Docs/Features/安全分类器与工具调用准入方案-v2.md §14.5/§14.7/§14.13）：
+/// 逐条锁定 S3b 适配器契约（Docs/12_features/安全分类器与工具调用准入方案-v2.md §14.5/§14.7/§14.13）：
 /// 四选一映射表、Unknown ⇒ DeferredDependency（绝不折叠）、异常降级、外层取消传播、
 /// 审计 Reason / ReviewerModel 溯源、单次调用纪律与幂等性。
 /// </para>

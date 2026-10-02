@@ -5,7 +5,7 @@ namespace PuddingCoreTests.Tools;
 
 /// <summary>
 /// T06 P0-B-2：工具定义合同 ToolDefinition 单测。
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6 / §14。
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6 / §14。
 /// 覆盖：ToolDefinition/ToolOutputDefinition 构造、权限事实默认值、renderer/meta 委托调用、
 /// presentation 词汇表、Present 投影，以及 first-party 合同校验（Id/Description/input+output schema/render）。
 /// </summary>

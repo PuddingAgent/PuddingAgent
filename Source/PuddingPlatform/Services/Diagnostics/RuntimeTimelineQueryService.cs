@@ -12,7 +12,7 @@ namespace PuddingPlatform.Services.Diagnostics;
 /// 四个数据源统一投影为 RuntimeTimelineItemDto，按 StartedAtUtc 降序排序并分页返回。
 /// 
 /// 注入 IDbContextFactory&lt;PlatformDbContext&gt; 以支持被 Singleton service 消费。
-/// 关联 ADR：Docs/07架构/23运行时可观测性闭环与E2E验证基线ADR.md
+/// 关联 ADR：Docs/07_architecture/23运行时可观测性闭环与E2E验证基线ADR.md
 /// </summary>
 public class RuntimeTimelineQueryService
 {

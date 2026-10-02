@@ -5,7 +5,7 @@ namespace PuddingCode.Abstractions;
 /// <summary>
 /// 子代理运行归档存储 — 管理子代理单次运行的完整生命周期：创建、追加事件/工具审计、完成、查询。
 /// 运行归档以文件为主，数据库仅做索引。
-/// 关联 ADR：Docs/07架构/21子代理工作空间与运行归档ADR.md
+/// 关联 ADR：Docs/07_architecture/21子代理工作空间与运行归档ADR.md
 /// </summary>
 public interface ISubAgentRunStore
 {

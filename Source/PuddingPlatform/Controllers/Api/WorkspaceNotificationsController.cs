@@ -14,7 +14,7 @@ namespace PuddingPlatform.Controllers.Api;
 ///   · Cron 作业触发新会话
 ///   · 连接器收到新消息
 /// 
-/// 关联 ADR：Docs/07架构/16会话状态层与客户端解耦ADR.md §5 ADR-016-D
+/// 关联 ADR：Docs/07_architecture/16会话状态层与客户端解耦ADR.md §5 ADR-016-D
 /// </summary>
 [Authorize]
 [ApiController]

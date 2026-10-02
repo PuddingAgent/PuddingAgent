@@ -6,7 +6,7 @@
 
 产品架构为 **WinUI 3 Shell + WebView2 承载既有 Web UI + 独立 ASP.NET Core 子进程**。业务界面保留 Web，Desktop 负责窗口、系统集成与 Core 启动器；不得装配进程内 PuddingHost，不继续原生聊天或业务设置迁移。配置沿用 DesktopHome/desktop.json 与 DataRoot/config/system.json。数据目录设置界面默认建议 `D:\data`，已保存目录优先。
 
-权威决策见 [Shell / Web / Core ADR](Docs/Features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md)，恢复与验证记录见 [恢复报告](Docs/Reports/Desktop-Shell-Recovery-2026-09-29.md)。`Source/PuddingDesktop.WpfArchive` 保留旧 UI 验证基线，其无 UI 的启动器/协议源文件由 WinUI 项目链接编译，共用逻辑；不将 WPF 放入 WinUI 产品进程。
+权威决策见 [Shell / Web / Core ADR](Docs/12_features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md)，恢复与验证记录见 [恢复报告](Docs/14_reports/Desktop-Shell-Recovery-2026-09-29.md)。`Source/PuddingDesktop.WpfArchive` 保留旧 UI 验证基线，其无 UI 的启动器/协议源文件由 WinUI 项目链接编译，共用逻辑；不将 WPF 放入 WinUI 产品进程。
 
 构建使用 `--artifacts-path temp/build/recovery`，先 restore/build 后同目录 `--no-restore`；Desktop 构建、测试与发布串行。生命周期验证脚本 `TestScripts/test-pudding-desktop-launcher.ps1` 使用隔离 DesktopHome、DataRoot 与端口。数据兼容性只在 `temp/test-out` 下的 SQLite 在线备份副本验证，不直接在 `D:\data` 试跑旧代码。Console / DesktopChild 共用 `.pudding-host.lock` 文件句柄租约，不删除锁文件绕过互斥。
 
@@ -25,10 +25,10 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层�
 - 能做成独立组件就做成独立组件；拆分的**第一目的是可测试**（例：让索引管线的测试进程不必加载 Roslyn / MSBuild 这类必须**进程级一次性注册**的重依赖）。
 - 依赖方向**不得靠文档约定**，要由**编译器强制**：新抽出的组件**不得反向引用**其调用方；规则以「**编译期失败**」为判据，而不是写在文档里等人遵守。
 - 归属存疑的文件留在**引用方**一侧（宁可少拆），并逐条记录回退原因；禁止在抽取时顺手重构或改变行为。
-- 落地实例：`PuddingCodeIndex`（索引组件：契约/管线/存储/调度）独立于 `PuddingCodeIntelligence`（语言智能与查询），设计见 `Docs/Features/ADR-089-索引组件拆分设计-2026-09-23.md`。
+- 落地实例：`PuddingCodeIndex`（索引组件：契约/管线/存储/调度）独立于 `PuddingCodeIntelligence`（语言智能与查询），设计见 `Docs/12_features/ADR-089-索引组件拆分设计-2026-09-23.md`。
 
 **组件交付顺序：先独立测试，再接入 PuddingAgent（用户裁定 2026-09-23）。** 组件先在自己的边界内完成构建与测试，通过门禁后才登记进解决方案与 DI；顺序不可颠倒。收益：① **不重启宿主即可开发调试**（独立程序集不碰运行中 Core 的文件锁）；② 保护接入后质量（接入只剩“登记+装配”）；③ 边界由**编译期**强制；④ PuddingAgent = 组件的组合。
-⇒ 完整门禁、自检清单与反例见 **`Docs/Conventions/组件化交付规程.md`**（含 S1~S5 五步与接入前 checklist）。**S5（接入）之前的任何一步都不得改动宿主。**
+⇒ 完整门禁、自检清单与反例见 **`Docs/10_conventions/组件化交付规程.md`**（含 S1~S5 五步与接入前 checklist）。**S5（接入）之前的任何一步都不得改动宿主。**
 
 ## PuddingDesktop 产品边界
 
@@ -54,10 +54,10 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层�
 
 重置开发环境之后，需要访问Bootstrap页面，完成初始化。当然，也需要重新配置一下配置文件，因为Bootstrap是根据配置文件(Bootstrap.Initialized=true)判断是否可以初始化的。
 
-# Docs/How-Debuge/（调试与诊断手册）
+# Docs/08_how_debuge/（调试与诊断手册）
 
-可以读取 `Docs/How-Debuge/README.md`（主索引），了解如何调试 Agent、去哪里诊断和过滤错误日志。
-将调试和日志的经验写入**对应主题分册**（`Docs/How-Debuge/01`～`15`），新主题才新建分册并在主索引登记；
+可以读取 `Docs/08_how_debuge/README.md`（主索引），了解如何调试 Agent、去哪里诊断和过滤错误日志。
+将调试和日志的经验写入**对应主题分册**（`Docs/08_how_debuge/01`～`15`），新主题才新建分册并在主索引登记；
 包括关键的日志埋点等，在哪里找 Error 日志。原根目录单文件 `How-Debuge.md` 已于 2026-10-02 按主题拆分并删除。
 
 ## 版本号约定
@@ -118,7 +118,7 @@ python dev-up.py --status
 - 工作空间: `D:\data\workspaces\default`
 - 编译入口: `dotnet build PuddingRuntime`
 - 代码地图: `code_map.md`  根目录**主索引**（登记每个子项目及其 `code_map.md`）；子项目索引在 `Source/<项目>/code_map.md`。开始任务前必读，任务结束前必维护，规则见下文「code_map.md 使用规则（强制）」。
-- 修改日志: `Docs/00Changelog/<YYYY>Year/<MM>/`  **日志类内容的唯一去处**，规则见下文「修改日志使用规则（强制）」。
+- 修改日志: `Docs/00_changelog/<YYYY>Year/<MM>/`  **日志类内容的唯一去处**，规则见下文「修改日志使用规则（强制）」。
 - 文档: `Docs`  这是项目的架构文档目录，要求必须在开始前阅读，并在任务结束后维护。
 - 临时编译，重定向编译必须使用`temp\builder`目录。
 
@@ -133,24 +133,24 @@ python dev-up.py --status
 3. **关键文件（相对路径）**：`相对路径` + 用途。路径必须是仓库内真实存在的相对路径，改完自查链接可解析。
 4. **调用链路 / 测试工程 / 设计文档入口**：端到端数据流、契约边界、测试项目清单、关键 ADR 与设计文档链接。
 
-**反向例子（严禁）**：把 `code_map.md` 当台账/日志用 —— 不断追加「## YYYY-MM-DD：…」条目、轮次记录（「第 N 轮」）、提交号、测试与门禁数字、部署/验收结论、性能实测、缺陷排查时间线。**这些一律写 `Docs/00Changelog/`**，索引里只保留「现在是什么」。
+**反向例子（严禁）**：把 `code_map.md` 当台账/日志用 —— 不断追加「## YYYY-MM-DD：…」条目、轮次记录（「第 N 轮」）、提交号、测试与门禁数字、部署/验收结论、性能实测、缺陷排查时间线。**这些一律写 `Docs/00_changelog/`**，索引里只保留「现在是什么」。
 
 **维护时机（强制）**：
 
 - 开始任务前**必读**根 `code_map.md`，再进相关子项目的 `code_map.md` 定位文件。
 - 任务结束前**必须维护**：新增/移动/删除关键文件 → 更新对应子项目 `code_map.md`；新增子项目 → 在根 `code_map.md` §2 登记并链接其 `code_map.md`；概念/链路变化 → 更新根 §3/§4。
 - **只更新受影响的条目**（就地改写），不得在文件末尾追加时间线；过程记录走修改日志规则。
-- 子项目 `code_map.md` 里已存在的「变更（YYYY-MM-DD）」小节属于历史日志，按 `Docs/00Changelog/README.md` §6 逐步迁出，不要继续追加。
+- 子项目 `code_map.md` 里已存在的「变更（YYYY-MM-DD）」小节属于历史日志，按 `Docs/00_changelog/README.md` §6 逐步迁出，不要继续追加。
 
 ## 修改日志使用规则（强制）
 
-**唯一去处**：`Docs/00Changelog/<YYYY>Year/<MM>/`（例：`Docs/00Changelog/2026Year/10/2026-10-02-<主题>.md`）。完整规则、文件格式与目录边界见 **`Docs/00Changelog/README.md`**。
+**唯一去处**：`Docs/00_changelog/<YYYY>Year/<MM>/`（例：`Docs/00_changelog/2026Year/10/2026-10-02-<主题>.md`）。完整规则、文件格式与目录边界见 **`Docs/00_changelog/README.md`**。
 
 - **命名**：`YYYY-MM-DD-<主题>.md`，日期是**记录日期**；同一天多个主题就写多个文件，不要堆成一个巨型文件。
 - **时机**：每个原子任务完成并通过验证后写一条，与该任务的代码改动放在**同一个 commit**。
 - **必含**：日期主题、改了什么（含相对路径）、验证状态（实际跑了什么/结果数字；没验证就写「未验证」并说明原因）、未完成部分、关联 ADR/报告/任务 id。
 - **禁止写入**：`code_map.md`（根与子项目）、`Docs/README.md`、ADR 正文，以及 `Docs/` 根目录。
-- **日志是摘要不是证据仓库**：完整证据留在 `Docs/Reports/`、`Docs/QA/`，日志只链接；敏感信息（apiKey、ControlToken、隐私数据）不入日志。
+- **日志是摘要不是证据仓库**：完整证据留在 `Docs/14_reports/`、`Docs/16_qa/`，日志只链接；敏感信息（apiKey、ControlToken、隐私数据）不入日志。
 - 已写入的日志**追加式、可更正、不抹除**；更正写成「更正（YYYY-MM-DD）：…」。
 
 ## 运行时配置
@@ -195,7 +195,7 @@ python dev-up.py --status
 
 ## 仓库卫生与提交纪律（强制）
 
-完整规范见 `Docs/Conventions/Agents-Hygiene.md`；本节只列必须在每个任务里执行的动作。
+完整规范见 `Docs/10_conventions/Agents-Hygiene.md`；本节只列必须在每个任务里执行的动作。
 
 1. **任务完成即提交**：每个原子任务完成并通过验证后立刻 `git commit`，禁止把多个任务的改动攒在一起；中断/转交前先提交已验证部分。**工作树不允许长期处于脏状态。**
 2. **精确暂存**：使用 `git add <明确文件路径列表>`，禁止裸 `git add -A` / `git add .`（工作树常混有他方并行 WIP）。

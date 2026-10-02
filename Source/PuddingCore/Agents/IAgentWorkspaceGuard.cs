@@ -3,7 +3,7 @@ namespace PuddingCode.Agents;
 /// <summary>
 /// Agent 工作空间权限守卫 — 基于 glob 规则的路径和工具权限检查。
 /// 由 AgentWorkspaceGuard 实现，接入 FileTool/ShellTool 执行前拦截。
-/// 关联 ADR：Docs/07架构/21子代理工作空间与运行归档ADR.md
+/// 关联 ADR：Docs/07_architecture/21子代理工作空间与运行归档ADR.md
 /// </summary>
 public interface IAgentWorkspaceGuard
 {

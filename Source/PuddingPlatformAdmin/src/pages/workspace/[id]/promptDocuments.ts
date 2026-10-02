@@ -3,7 +3,7 @@ import type { AgentTemplateSectionKey } from '../../agent-template-settings/type
 /**
  * 角色与 Prompt 分区的文档目录元数据。
  *
- * 设计依据：Docs/Features/Agent-Settings-Redesign-2026-10-01.md 第 4 节。
+ * 设计依据：Docs/12_features/Agent-Settings-Redesign-2026-10-01.md 第 4 节。
  * 目录只是现有表单字段的编辑入口，调整显示顺序不改变 Runtime 的 Prompt 组合顺序。
  */
 

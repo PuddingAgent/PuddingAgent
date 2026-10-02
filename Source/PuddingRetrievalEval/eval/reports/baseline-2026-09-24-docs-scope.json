@@ -214,7 +214,7 @@
       "Case": {
         "Query": "PuddingCodeIndex",
         "ExpectedHits": [
-          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+          "Docs/10_conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
         ],
         "Kind": "Symbol",
         "Language": "Markdown"
@@ -262,7 +262,7 @@
       "Case": {
         "Query": "InternalsVisibleTo",
         "ExpectedHits": [
-          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+          "Docs/10_conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
         ],
         "Kind": "Symbol",
         "Language": "Markdown"
@@ -305,7 +305,7 @@
       "Case": {
         "Query": "CodeIndexMaintenanceHostedService",
         "ExpectedHits": [
-          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+          "Docs/10_conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
         ],
         "Kind": "Symbol",
         "Language": "Markdown"
@@ -343,7 +343,7 @@
       "Case": {
         "Query": "IndexExcludePatterns",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
         ],
         "Kind": "Symbol",
         "Language": "Markdown"
@@ -381,7 +381,7 @@
       "Case": {
         "Query": "MemoryRecallService",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
         ],
         "Kind": "Symbol",
         "Language": "Markdown"
@@ -444,7 +444,7 @@
       "Case": {
         "Query": "SearchGrepTool",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
         ],
         "Kind": "Symbol",
         "Language": "Markdown"
@@ -512,7 +512,7 @@
       "Case": {
         "Query": "NoiseDirNames",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
         ],
         "Kind": "Symbol",
         "Language": "Markdown"
@@ -545,7 +545,7 @@
       "Case": {
         "Query": "IndexBasedLanguageServerService",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
         ],
         "Kind": "Symbol",
         "Language": "Markdown"
@@ -588,7 +588,7 @@
       "Case": {
         "Query": "why is the gitignore parser dead code",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
         ],
         "Kind": "Intent",
         "Language": "Markdown"
@@ -666,7 +666,7 @@
       "Case": {
         "Query": "how many different exclude rule sets exist in the repository",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
         ],
         "Kind": "Intent",
         "Language": "Markdown"
@@ -784,7 +784,7 @@
       "Case": {
         "Query": "how should the full solution build gate be run after a namespace change",
         "ExpectedHits": [
-          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+          "Docs/10_conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
         ],
         "Kind": "Intent",
         "Language": "Markdown"
@@ -892,7 +892,7 @@
       "Case": {
         "Query": "where is the retrieval evaluation design described",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
         ],
         "Kind": "Intent",
         "Language": "Markdown"
@@ -985,7 +985,7 @@
       "Case": {
         "Query": "how is the index component delivered as an independent component",
         "ExpectedHits": [
-          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+          "Docs/10_conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
         ],
         "Kind": "Intent",
         "Language": "Markdown"
@@ -1098,7 +1098,7 @@
       "Case": {
         "Query": "what are the U4 slices and in which order are they built",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
         ],
         "Kind": "Intent",
         "Language": "Markdown"
@@ -1211,8 +1211,8 @@
       "Case": {
         "Query": "PuddingCodeIndex",
         "ExpectedHits": [
-          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
-          "Docs/Features/ADR-089-\u7D22\u5F15\u7EC4\u4EF6\u62C6\u5206\u8BBE\u8BA1-2026-09-23.md"
+          "Docs/10_conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Docs/12_features/ADR-089-\u7D22\u5F15\u7EC4\u4EF6\u62C6\u5206\u8BBE\u8BA1-2026-09-23.md"
         ],
         "Kind": "Crossref",
         "Language": "Markdown"
@@ -1260,8 +1260,8 @@
       "Case": {
         "Query": "search_grep",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
-          "Docs/Reports/ArchReview-GPT6Astra-2026-09-23.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
+          "Docs/14_reports/ArchReview-GPT6Astra-2026-09-23.md"
         ],
         "Kind": "Crossref",
         "Language": "Markdown"
@@ -1384,8 +1384,8 @@
       "Case": {
         "Query": "InternalsVisibleTo",
         "ExpectedHits": [
-          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
-          "Docs/Reports/ADR-089-U0\u6B8B\u5DEEglob\u7EDF\u4E00\u9A8C\u6536-2026-09-13.md"
+          "Docs/10_conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Docs/14_reports/ADR-089-U0\u6B8B\u5DEEglob\u7EDF\u4E00\u9A8C\u6536-2026-09-13.md"
         ],
         "Kind": "Crossref",
         "Language": "Markdown"
@@ -1428,8 +1428,8 @@
       "Case": {
         "Query": "\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B",
         "ExpectedHits": [
-          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
-          "Docs/Features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
+          "Docs/10_conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Docs/12_features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
         ],
         "Kind": "Crossref",
         "Language": "Markdown"
@@ -1462,8 +1462,8 @@
       "Case": {
         "Query": "IndexBasedLanguageServerService",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
-          "Docs/Features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
+          "Docs/12_features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
         ],
         "Kind": "Crossref",
         "Language": "Markdown"
@@ -1506,8 +1506,8 @@
       "Case": {
         "Query": "MemoryRecallService",
         "ExpectedHits": [
-          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
-          "Docs/Features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
+          "Docs/12_features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
+          "Docs/12_features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
         ],
         "Kind": "Crossref",
         "Language": "Markdown"

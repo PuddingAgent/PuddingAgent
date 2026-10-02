@@ -11,7 +11,7 @@ import LegacySkillPackages from './LegacySkillPackages';
 /**
  * SKILL Hub 管理台（六 Tab）：
  * ① 概览 ② 技能库 ③ EVO MAP 进化图谱 ④ 安装台账 ⑤ 事件审计 ⑥ 技能包（旧，zip 上传功能原样保留）。
- * 契约：Docs/Features/SKILL-Hub技能中心与EVO-MAP设计方案-2026-09-21.md §7（6 Tab 以表格为准）。
+ * 契约：Docs/12_features/SKILL-Hub技能中心与EVO-MAP设计方案-2026-09-21.md §7（6 Tab 以表格为准）。
  * `menu.skillManagement` i18n 键保持不变。
  */
 const SkillManagementPage: React.FC = () => {

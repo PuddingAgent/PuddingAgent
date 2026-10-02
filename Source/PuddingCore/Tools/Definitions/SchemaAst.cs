@@ -7,7 +7,7 @@ namespace PuddingCode.Tools.Definitions;
 /// <summary>
 /// JSON Schema 标量类型。覆盖工具输入/输出 Schema 的核心类型系统。
 /// <para>
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6.1（Schema 能力清单）：
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6.1（Schema 能力清单）：
 /// <c>string/number/integer/boolean/null/array/object</c>。
 /// </para>
 /// </summary>
@@ -25,7 +25,7 @@ public enum JsonSchemaType
 /// <summary>
 /// Core 不可变 Schema AST 节点。作为工具输入/输出 Schema 的统一核心类型。
 /// <para>
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md §6.1（Schema 能力清单）。
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md §6.1（Schema 能力清单）。
 /// 需要支持：nested properties/items、required、enum、const、oneOf、
 /// minimum/maximum、minLength/maxLength、pattern、显式 additionalProperties，
 /// 以及属性路径明确的验证错误（如 <c>$.timeout_seconds: must be &lt;= 600</c>）。

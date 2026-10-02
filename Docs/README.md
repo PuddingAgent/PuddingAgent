@@ -1,7 +1,7 @@
 # Pudding Agent Network 文档索引
 
-> **修改日志请写 [`00Changelog/`](00Changelog/README.md)，不要写进本文件。** 本文件是文档索引；日志规则见 [00Changelog/README.md](00Changelog/README.md)，代码索引规则见根 [`code_map.md`](../code_map.md) 与 [`Agents.md`](../Agents.md)。
-> 本文件只做文档索引（放什么、在哪、怎么读）。**按日期的进展、状态与验收结论请写 `Docs/00Changelog/`**；原先堆积在这里的按日期进展已迁至 [`00Changelog/2026Year/10/2026-10-02-Docs-README迁出的按日期进展记录.md`](00Changelog/2026Year/10/2026-10-02-Docs-README迁出的按日期进展记录.md)。
+> **修改日志请写 [`00Changelog/`](00_changelog/README.md)，不要写进本文件。** 本文件是文档索引；日志规则见 [00Changelog/README.md](00_changelog/README.md)，代码索引规则见根 [`code_map.md`](../code_map.md) 与 [`Agents.md`](../Agents.md)。
+> 本文件只做文档索引（放什么、在哪、怎么读）。**按日期的进展、状态与验收结论请写 `Docs/00_changelog/`**；原先堆积在这里的按日期进展已迁至 [`00Changelog/2026Year/10/2026-10-02-Docs-README迁出的按日期进展记录.md`](00_changelog/2026Year/10/2026-10-02-Docs-README迁出的按日期进展记录.md)。
 
 ## 文档定位
 
@@ -9,14 +9,14 @@
 
 ## 建议阅读顺序
 
-1. `Docs/架构.md`
+1. `Docs/07_architecture/架构.md`
 	 - 架构总览、分层边界与阅读地图。
-2. `Docs/07架构/README.md`
+2. `Docs/07_architecture/README.md`
 	 - 模块级架构分册入口，包含 Runtime、Controller、Platform、治理、数据模型与 V1 落地说明。
 	 - 其中 `10事件系统与事件总线.md` 负责解释统一事件模型、订阅、唤醒、重放与死信策略。
 	 - `11工作流与任务图.md` 负责解释工作流节点类型、触发方式、任务图表达与 Agent 生命周期。
 
-3. `Docs/Tasks.md`
+3. `Docs/15_tasks/Tasks.md`
 	 - 全局任务入口与 V1 目标，任务状态通过 Todo API 实时查询，不依赖硬编码表格。
 
 ## 主题文档分组
@@ -24,49 +24,49 @@
 ### 1. 渠道、网关与接入
 
 - `Docs/06智能体网关/`
-- `Docs/Config/hooks.md`
-- `Docs/Config/pudding-yaml.md`
-- `Docs/07架构/63ADR-063飞书Agent绑定与可靠消息网关ADR.md`
-- `Docs/07架构/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md`
-- `Docs/07架构/68抖音接入与通用WebView2自动化开发实施规格.md`
-- `Docs/07架构/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md`
-- `Docs/07架构/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md`
-- `Docs/07架构/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md`
-- `Docs/07架构/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md`
-- `Docs/07架构/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md`
-- `Docs/07架构/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md`
-- `Docs/07架构/75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md`
-- `Docs/07架构/76Phase2A-3通用WebView2页面操作实施验收报告.md`
-- `Docs/07架构/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md`
-- `Docs/07架构/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md`
-- `Docs/07架构/79Phase2A-3C真实Agent会话WebView2控制闭环开发工作指令.md`
+- `Docs/06_config/hooks.md`
+- `Docs/06_config/pudding-yaml.md`
+- `Docs/07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md`
+- `Docs/07_architecture/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md`
+- `Docs/07_architecture/68抖音接入与通用WebView2自动化开发实施规格.md`
+- `Docs/07_architecture/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md`
+- `Docs/07_architecture/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md`
+- `Docs/07_architecture/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md`
+- `Docs/07_architecture/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md`
+- `Docs/07_architecture/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md`
+- `Docs/07_architecture/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md`
+- `Docs/07_architecture/75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md`
+- `Docs/07_architecture/76Phase2A-3通用WebView2页面操作实施验收报告.md`
+- `Docs/07_architecture/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md`
+- `Docs/07_architecture/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md`
+- `Docs/07_architecture/79Phase2A-3C真实Agent会话WebView2控制闭环开发工作指令.md`
 
 ### 2. 智能体、运行时与协作
 
-- `Docs/02智能体与智能体运行时/`
-- `Docs/03多智能体/`
-- `Docs/04工具与技能/`
-- `Docs/07架构/`
+- `Docs/02_agent_runtime/`
+- `Docs/03_multi_agent/`
+- `Docs/04_tools_and_skills/`
+- `Docs/07_architecture/`
 
 ### 2.1 上下文、缓存与输入压缩
 
-- `Docs/07架构/18上下文缓存可观测性ADR.md`
-- `Docs/07架构/43ADR-042上下文自动压缩与主动Compact命令ADR.md`
-- `Docs/07架构/44ADR-043缓存统计闭环ADR.md`
-- `Docs/07架构/104ADR-090上下文压缩触发口径来源标注与收益准入收敛ADR.md`
-- `Docs/Features/上下文自动压缩与Compact命令设计方案.md`
-- `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md`
+- `Docs/07_architecture/18上下文缓存可观测性ADR.md`
+- `Docs/07_architecture/43ADR-042上下文自动压缩与主动Compact命令ADR.md`
+- `Docs/07_architecture/44ADR-043缓存统计闭环ADR.md`
+- `Docs/07_architecture/104ADR-090上下文压缩触发口径来源标注与收益准入收敛ADR.md`
+- `Docs/12_features/上下文自动压缩与Compact命令设计方案.md`
+- `Docs/12_features/上下文Token效率缓存命中与分级压缩优化设计方案.md`
 
 该主题用于跟踪 token 成本治理、服务商前缀缓存命中、工具输出/日志/文件/RAG 块进入 LLM 前的压缩策略，以及 Headroom 作为参考项目或可选适配器的评估结果。
 
 ### 3. 历史任务与设计演进记录
 
-- `Docs/Tasks/task04-swarm.md` 到 `Docs/Tasks/task18-positioning.md`
-- `Docs/Tasks/task19-coding-agent-blueprint.md`
-- `Docs/Tasks/task20-cli-ui-ux.md`
-- `Docs/Tasks/task21-subconscious-dual-llm.md`
-- `Docs/Tasks/task22-agent-roles-orchestration.md`
-- `Docs/Tasks/task23-central-lock-coordination.md`
+- `Docs/15_tasks/task04-swarm.md` 到 `Docs/15_tasks/task18-positioning.md`
+- `Docs/15_tasks/task19-coding-agent-blueprint.md`
+- `Docs/15_tasks/task20-cli-ui-ux.md`
+- `Docs/15_tasks/task21-subconscious-dual-llm.md`
+- `Docs/15_tasks/task22-agent-roles-orchestration.md`
+- `Docs/15_tasks/task23-central-lock-coordination.md`
 
 这些文档仍然有价值，但需要放在新的 Platform / Runtime / Workspace 治理主线下理解，不能再单独代表产品总方向。
 

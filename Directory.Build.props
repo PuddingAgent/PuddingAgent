@@ -30,7 +30,7 @@
     实测证据（PuddingPathFilteringTests）：
       - obj/project.assets.json 中 Moq / coverlet.collector / coverlet.msbuild 计数均为 0
       - dotnet msbuild -getProperty:CollectCoverage 返回空字符串
-    文档依据：Docs/Conventions/质量门禁与Harness架构标准-2026-09-24.md §4（S1）
+    文档依据：Docs/10_conventions/质量门禁与Harness架构标准-2026-09-24.md §4（S1）
 
     ⇒ 共享测试引用与覆盖率属性统一放在 Directory.Build.targets（评估时机更晚）。
   -->

@@ -73,5 +73,4 @@
   <Folder Name="/TestScripts/">
     <Project Path="TestScripts/PuddingWsTest/PuddingWsTest.csproj" />
   </Folder>
-  <Project Path="Docs/Docs.shproj" Id="405d8746-dcfa-4492-8b75-ae58b99dea44" />
 </Solution>

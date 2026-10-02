@@ -13,7 +13,7 @@ namespace PuddingPlatform.Controllers.Api;
 
 /// <summary>
 /// 子代理运行诊断 API — 查询运行列表、详情、事件、工具审计和输出。
-/// 关联 ADR：Docs/07架构/21子代理工作空间与运行归档ADR.md
+/// 关联 ADR：Docs/07_architecture/21子代理工作空间与运行归档ADR.md
 /// ARCH-HARDEN-004：所有端点返回专用 DTO，不直接暴露 EF Entity 或匿名结构。
 /// </summary>
 [ApiController]

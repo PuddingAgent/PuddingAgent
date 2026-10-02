@@ -36,7 +36,7 @@ import {
 // ── Slice P1 定向测试：L0 聚合健康态（规格 §2 状态矩阵 / §3 文案 / §4 渲染纪律）──
 // 断言对象 = `health.ts` 的**纯函数**（不碰 DOM、不读真实时钟：`nowMs` 一律注入）。
 //
-// 规格真源：`Docs/Features/Index-Status-Panel-UI-Prototype-2026-10-01.md`
+// 规格真源：`Docs/12_features/Index-Status-Panel-UI-Prototype-2026-10-01.md`
 //   §2 状态矩阵（首条命中即生效）· §3 文案表（逐字）· §4 三态纪律 / unknown 字段清单
 //
 // 本文件的用例**全部可失败**：凡把状态矩阵顺序打乱、或把三态折叠成 `?? 0` / `?? false`

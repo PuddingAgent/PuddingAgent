@@ -2,7 +2,7 @@
 
 只做四类**机械**修复，不改任何字段语义（平台侧不解析 SKILL.md frontmatter：
 Source/ 下无任何 C# 代码读取 frontmatter 的 tags/version，只有 DeriveSummary 读 description，
-见 Docs/Reports/skill-spec-conformance-2026-09-21.md §10）：
+见 Docs/14_reports/skill-spec-conformance-2026-09-21.md §10）：
 
   1. ``tags: [a, b]`` 流式数组  → 块序列（每行 ``- item``）
   2. 外层 ```` ```markdown ```` 代码围栏 → 删除（frontmatter 被关在代码块里，同时模型读到的也是代码块）

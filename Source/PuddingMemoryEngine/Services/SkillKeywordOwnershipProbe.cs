@@ -159,7 +159,7 @@ public sealed record SkillKeywordOwnershipReport
 /// ⛔ 探针<b>不套用</b>既有合并通道 <c>ConsolidateExistingAsync</c> 的评审窗口（<c>.Take(50)</c>）——
 /// 窗口内的结论与全量结论可能不同，把窗口偷偷混进来会让"被挤掉多少次"取决于技能恰好排在第几行。
 /// <para>
-/// <b>与 G1 报告的关系</b>：G1 报告（<c>Docs/Reports/skill-portfolio-G1-2026-09-21.md</c>）的 165 / 1735
+/// <b>与 G1 报告的关系</b>：G1 报告（<c>Docs/14_reports/skill-portfolio-G1-2026-09-21.md</c>）的 165 / 1735
 /// 用的就是同一口径（逐字对齐原 <c>CollectKeywords</c>）。真实索引上的逐数复核属 D4c。
 /// </para>
 /// <para>

@@ -17,7 +17,7 @@ namespace PuddingPlatform.Controllers.Api;
 /// 会话事件 API — 历史加载（REST）与实时订阅（SSE）。
 /// 
 /// 替代旧 ChatApiController 的临时 Channel 模式。
-/// 关联 ADR：Docs/07架构/16会话状态层与客户端解耦ADR.md §5
+/// 关联 ADR：Docs/07_architecture/16会话状态层与客户端解耦ADR.md §5
 /// </summary>
 [Authorize]
 [ApiController]
@@ -778,7 +778,7 @@ public class SessionEventsController : ControllerBase
     /// 获取会话级 Trace 聚合报告。
     /// GET /api/sessions/{sessionId}/trace-report
     /// 包含 traceId 列表、组件时序、LLM 调用、工具调用、子代理调用树及 token 总量。
-    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+    /// 关联 ADR：Docs/07_architecture/20会话状态机与事件规范ADR.md §6
     /// </summary>
     [HttpGet("{sessionId}/trace-report")]
         public async Task<ActionResult<SessionTraceReport>> GetTraceReport(
@@ -869,7 +869,7 @@ public class SessionEventsController : ControllerBase
     /// 验证 session 是否在系统中存在，并返回其状态。
     /// 先查 Platform API（最快），失败后查本地 DB 中的历史证据（ConversationEvents / ChatMessages / SessionSubAgents）。
     /// 用于防止对已删除的幻影 session 进行 replay 或 SSE 订阅。
-    /// 关联 ADR：Docs/07架构/54ADR-053前端会话引用生命周期与SSE清理边界ADR.md
+    /// 关联 ADR：Docs/07_architecture/54ADR-053前端会话引用生命周期与SSE清理边界ADR.md
     /// </summary>
     /// <returns>SessionStatus 如果存在；null 如果不存在。</returns>
     private async Task<SessionStatus?> GetSessionStatusAsync(string sessionId, CancellationToken ct)

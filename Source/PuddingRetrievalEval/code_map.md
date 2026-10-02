@@ -1,8 +1,8 @@
 # PuddingRetrievalEval — 检索评测组件（叶子）
 
-> 上游：`Docs/Features/ADR-089-检索增强需求落地方案-2026-09-24.md` §4（U4-0）。
+> 上游：`Docs/12_features/ADR-089-检索增强需求落地方案-2026-09-24.md` §4（U4-0）。
 > 组件化交付规程：S1 独立工程 → S2 独立测试 → S3 无宿主验证 → S4 边界断言 → S5 接入（本刀未接入）。
-> 历史变更与门禁记录已迁至 [`Docs/00Changelog/2026Year/10/2026-10-02-PuddingRetrievalEval-code_map迁出的变更记录.md`](../../Docs/00Changelog/2026Year/10/2026-10-02-PuddingRetrievalEval-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
+> 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingRetrievalEval-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingRetrievalEval-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
 
 ## 职责
 

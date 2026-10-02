@@ -236,7 +236,7 @@
 | `Services/ChannelConfigurationFileService.cs` | 渠道配置（21KB） |
 | `Services/VoiceProviderFileService.cs` | 语音提供商（18KB） |
 
-余额链路测试：`PuddingPlatformTests/Services/DeepSeekLlmBalanceProviderTests.cs`（8 用例：解析//v1 剥离/Bearer/非 2xx/网络错误/CanHandle 矩阵）+ `LlmProviderBalanceDispatchTests.cs`（4 用例：暂不支持/委托与密钥/404/400）；扩展步骤见 `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md`。
+余额链路测试：`PuddingPlatformTests/Services/DeepSeekLlmBalanceProviderTests.cs`（8 用例：解析//v1 剥离/Bearer/非 2xx/网络错误/CanHandle 矩阵）+ `LlmProviderBalanceDispatchTests.cs`（4 用例：暂不支持/委托与密钥/404/400）；扩展步骤见 `Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md`。
 
 ## Token 计量
 

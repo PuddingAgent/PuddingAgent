@@ -6,7 +6,7 @@ namespace PuddingPlatform.Data.Entities;
 /// <summary>
 /// P1-B Scan Run 持久化：task_scheduler_scan_runs 表实体 — 工作区级调度扫描摘要审计。
 /// <para>
-/// 列集合 = 实施方案 §7.1 DDL（Docs/Features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md）。
+/// 列集合 = 实施方案 §7.1 DDL（Docs/12_features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md）。
 /// status 用 wire 字符串 running/succeeded/failed/abandoned（见
 /// <see cref="PuddingPlatform.Services.Scheduling.TaskSchedulerScanRunStatuses"/>）；
 /// started_at_utc / completed_at_utc 存固定宽度 UTC ISO-8601 TEXT，与

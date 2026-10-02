@@ -6,7 +6,7 @@ namespace PuddingCode.Runtime;
 /// <summary>
 /// 工具调用身份值对象（T00 最小子集）。
 /// <para>
-/// 契约来源：Docs/deepseek-harness-tool-system-alignment-2026-08-14.md B:227-254。
+/// 契约来源：Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md B:227-254。
 /// 一次调用只有一个外部 callId，跨层不得重新生成；一旦进入 Agent Loop 即不可更换。
 /// Provider 缺失时由协议适配器稳定合成（见 <see cref="NewToolCallId"/>）。
 /// </para>

@@ -1,6 +1,6 @@
 """一次性数据迁移：修复 Agent SKILL 的垃圾 summary（"name: <skillId>"）。
 
-背景（Docs/Reports/skill-spec-conformance-2026-09-21.md §6.2 / §7 / §8.4）：
+背景（Docs/14_reports/skill-spec-conformance-2026-09-21.md §6.2 / §7 / §8.4）：
   AgentSkillFileService.DeriveSummary 原本只跳过 '---' 行、不跳过 YAML frontmatter 的字段行，
   于是只要 SKILL.md 带 frontmatter，派生摘要就变成 "name: <skillId>"。
   该缺陷已在平台上修复（只影响未来的 Create/Update），但**存量 manifest 仍是垃圾值**。

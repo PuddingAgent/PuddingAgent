@@ -1,7 +1,7 @@
 # Pudding Agent
 
 <p align="center">
-  <img src="Docs/Resources/Images/me-200.png" alt="Pudding" width="200"/>
+  <img src="Docs/20_resources/Images/me-200.png" alt="Pudding" width="200"/>
 </p>
 
 <p align="center">
@@ -193,12 +193,12 @@ Runtime user data is stored under the configured DataRoot and must not be used a
 
 ## Design documents
 
-- [Plugin, Hook, Event, Agent Loop, and function-graph architecture](Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md)
-- [General Agent orchestration ADR](Docs/07架构/82ADR-071通用Agent编排平台完整设计方案ADR.md)
-- [Orchestration backend execution plan](Docs/07架构/83通用Agent编排后端执行内核与ControlPlane施工图.md)
-- [Orchestration editor and component UI plan](Docs/07架构/84通用Agent编排蓝图编辑器与组件系统施工图.md)
-- [Workspace TODO, off-peak automation, questioner, and Goal mode](Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md)
-- [Acknowledgments / 致谢](Docs/thanks.md)
+- [Plugin, Hook, Event, Agent Loop, and function-graph architecture](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md)
+- [General Agent orchestration ADR](Docs/07_architecture/82ADR-071通用Agent编排平台完整设计方案ADR.md)
+- [Orchestration backend execution plan](Docs/07_architecture/83通用Agent编排后端执行内核与ControlPlane施工图.md)
+- [Orchestration editor and component UI plan](Docs/07_architecture/84通用Agent编排蓝图编辑器与组件系统施工图.md)
+- [Workspace TODO, off-peak automation, questioner, and Goal mode](Docs/12_features/工作区TODO与峰谷节能任务编排设计方案.md)
+- [Acknowledgments / 致谢](Docs/90_archive/thanks.md)
 
 ## License
 
