@@ -66,7 +66,7 @@
 
 | 日期 | 触发原因 | 审查范围 | 产出 | 备注 |
 |------|---------|---------|------|------|
-| 0503 | Claude Code 架构评估 | 全局架构 | 架构.md 新增参考章节 + 3 个新任务卡 + 9 个文档修订 | [Docs/claude-reviews-claude/](../claude-reviews-claude) 作为子模块引入 |
+| 0503 | Claude Code 架构评估 | 全局架构 | 架构.md 新增参考章节 + 3 个新任务卡 + 9 个文档修订 | [external/references/claude-reviews-claude/](../../external/references/claude-reviews-claude) 作为子模块引入 |
 | 0504 | Anthropic Building Effective Agents 对比审查 | 全模块 Agent 模式 | 10 个新任务卡 (task-010~019)：3×P0 Eval-Opt/Routing/ACI + 4×P1 规划可见性/人机检查点/上下文压缩/PromptChaining + 3×P2 并行Voting/容错降级/抽象审计 | [Docs/90_archive/context.md](context.md) 本记录 |
 | 0505 | 累计12+任务卡完成 + 记忆引擎方向 | 全局架构（记忆与会话数据层） | ADR-013 (Docs/07_architecture/13记忆与会话数据层.md) + 25 个新任务卡 (task-20260505-007~031) 分4个Phase：P0 基础持久化8个/P1 向量检索7个/P2 知识图谱+压缩7个/P2+ 退场清理3个。另 Agent 个性层6个 (task-20260505-001~006) 互补。 | 参考 OpenClaw 智能体设计模型，适配 Pudding 多 Agent 多场景架构 |
 | 0505 | Chat UI 评估与重设计 | Admin Chat 页面完整交互设计 | 设计方案 (Docs/12_features/ChatUIRedesign.md) 含 3 方案对比 (Discord/ChatGPT/混合分层)+18 个新任务卡 (task-20260505-034~051)：Phase UI-1 基础重构4个P0 + BE-Chat 支撑3个P1 + Phase UI-2 交互增强4个P1 + Phase UI-3 Agent特性4个P1+ + Phase UI-4 高级功能3个P2。方案 C 混合分层推荐。 | 参考 Discord/WhatsApp/Slack/ChatGPT/Cursor 设计；依赖 ADR-013 消息树底座 |

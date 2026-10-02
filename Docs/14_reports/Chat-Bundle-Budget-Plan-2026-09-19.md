@@ -109,7 +109,7 @@ Map 逐来源归因覆盖率 99.9%，Chat chunk 共 147 个来源（129 个 Chat
 
 ## 8. 停止条件
 
-本 Plan 已按简报第六节完成八个部分并写入指定文件。按任务约束，本阶段不修改任何源码或门禁常量、不执行 git 提交、不重跑构建，也不修改 `Docs/IndepthCoding-Guide` 或 `Docs/claude-reviews-claude`。候选使用点已通过 `search_grep`/`file_read` 实际核实；未发现“GoalStepsPanel 并非 Popover 罕见路径”或其他会推翻简报关键决策的冲突。后续实施必须由父代理复核本文件、执行真实构建并在用户批准后进行最后定档。
+本 Plan 已按简报第六节完成八个部分并写入指定文件。按任务约束，本阶段不修改任何源码或门禁常量、不执行 git 提交、不重跑构建，也不修改 `external/references/IndepthCoding-Guide` 或 `external/references/claude-reviews-claude`。候选使用点已通过 `search_grep`/`file_read` 实际核实；未发现“GoalStepsPanel 并非 Popover 罕见路径”或其他会推翻简报关键决策的冲突。后续实施必须由父代理复核本文件、执行真实构建并在用户批准后进行最后定档。
 
 ## 9. 父代理探针实测补充（2026-09-19，探针改动已还原、未入库）
 
