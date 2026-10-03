@@ -10,8 +10,13 @@ namespace PuddingPlatform.Services.StorageManagement;
 /// <param name="FileBytes">主文件 + WAL + SHM 字节数。</param>
 /// <param name="PageSize">SQLite 页大小。</param>
 /// <param name="PageCount">SQLite 页数。</param>
-/// <param name="PerTableAvailable">是否拿到按表明细（依赖 SQLite dbstat）。</param>
-/// <param name="DataClasses">按数据类归并的占用（降序；"未归类"恒排最后）。</param>
+/// <param name="PerTableAvailable">是否拿到 **dbstat** 的按表明细。</param>
+/// <param name="SpaceSource">
+/// 这些数字**从哪来**（机器可读，便于界面与排障判断可信度）：
+/// <c>dbstat</c>（按 B 树精确）、<c>rowcount-sample</c>（精确行数 × 抽样平均行长，见
+/// <see cref="DatabaseTableEstimator"/> 的已知偏差）、<c>unavailable</c>（库不存在）。
+/// </param>
+/// <param name="DataClasses">按数据类归并的占用（降序；「未归类」恒排最后）。</param>
 public sealed record StorageDatabaseSpaceDto(
     string Key,
     string DisplayName,
@@ -21,6 +26,7 @@ public sealed record StorageDatabaseSpaceDto(
     long PageSize,
     long PageCount,
     bool PerTableAvailable,
+    string SpaceSource,
     IReadOnlyList<StorageDataClassSpace> DataClasses);
 
 /// <summary>
@@ -29,7 +35,12 @@ public sealed record StorageDatabaseSpaceDto(
 /// <para>
 /// 与 <c>StorageInventorySampler</c> 的分工：采样器在**后台**按节拍维护缓存快照，overview 只读缓存
 /// （它的注释明确写着"不触发扫描、COUNT(*)、dbstat 或目录遍历"）。本服务是**显式动作**（用户点"查看数据库占用"）
-/// 时才有的一次只读测量：dbstat 要遍历 B 树页，在 9 GB 级库上不适合放进热路径轮询。
+/// 时才有的一次只读测量。
+/// </para>
+/// <para>
+/// **两种数据源，同一种形状**：dbstat 可用就用它（精确到 B 树页，含索引归属）；不可用则退回
+/// 「每表精确行数 × 抽样平均行长」的估算（本仓库的 SQLite **没有 dbstat**，2026-10-03 实测确认）。
+/// 归并器因此不需要知道数据来源。
 /// </para>
 /// <para>
 /// 数据库清单与采样器保持一致（platform / code-index / memory / controller）：
@@ -38,8 +49,18 @@ public sealed record StorageDatabaseSpaceDto(
 /// </summary>
 public sealed class StorageDatabaseSpaceService(
     PuddingDataPaths paths,
-    DatabaseSpaceProbe probe)
+    DatabaseSpaceProbe probe,
+    DatabaseTableEstimator estimator)
 {
+    /// <summary>数据来源：dbstat 按 B 树精确测量。</summary>
+    public const string SpaceSourceDbstat = "dbstat";
+
+    /// <summary>数据来源：精确行数 × 抽样平均行长（含已知偏差）。</summary>
+    public const string SpaceSourceRowCountSample = "rowcount-sample";
+
+    /// <summary>数据来源：库不存在，没有数字。</summary>
+    public const string SpaceSourceUnavailable = "unavailable";
+
     /// <summary>被测量的数据库（键 + 展示名 + 相对 DatabasesRoot 的文件名）。</summary>
     private static readonly (string Key, string DisplayName, string RelativeFile)[] Databases =
     [
@@ -66,7 +87,7 @@ public sealed class StorageDatabaseSpaceService(
                 results.Add(new StorageDatabaseSpaceDto(
                     key, displayName, Path.GetFullPath(fullPath),
                     Exists: false, FileBytes: 0, PageSize: 0, PageCount: 0,
-                    PerTableAvailable: false, DataClasses: []));
+                    PerTableAvailable: false, SpaceSource: SpaceSourceUnavailable, DataClasses: []));
                 continue;
             }
 
@@ -75,6 +96,22 @@ public sealed class StorageDatabaseSpaceService(
                 .Where(definition => definition.DatabaseFile is not null
                     && PathEquals(definition.DatabaseFile!, relativeFile))
                 .ToArray();
+
+            IReadOnlyList<DatabaseTableSpace> tableSpaces;
+            string spaceSource;
+            if (report.PerTableAvailable)
+            {
+                tableSpaces = report.Tables;
+                spaceSource = SpaceSourceDbstat;
+            }
+            else
+            {
+                var estimates = await estimator
+                    .EstimateAsync(report.DatabaseFile, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+                tableSpaces = DatabaseTableEstimator.ToTableSpaces(estimates);
+                spaceSource = SpaceSourceRowCountSample;
+            }
 
             results.Add(new StorageDatabaseSpaceDto(
                 key,
@@ -85,9 +122,8 @@ public sealed class StorageDatabaseSpaceService(
                 PageSize: report.PageSize,
                 PageCount: report.PageCount,
                 PerTableAvailable: report.PerTableAvailable,
-                DataClasses: report.PerTableAvailable
-                    ? StorageDataClassSpaceMapper.Map(report.Tables, definitions)
-                    : []));
+                SpaceSource: spaceSource,
+                DataClasses: StorageDataClassSpaceMapper.Map(tableSpaces, definitions)));
         }
 
         return results;

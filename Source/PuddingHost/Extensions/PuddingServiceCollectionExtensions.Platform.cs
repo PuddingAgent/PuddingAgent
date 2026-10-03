@@ -496,6 +496,10 @@ public static partial class PuddingServiceCollectionExtensions
         // 「按数据类占用」：**显式动作**（用户点按钮）时的一次只读测量。
         // 不放进 overview/采样器热路径的原因见 DatabaseSpaceProbe 的文档：dbstat 要遍历 B 树页。
         builder.Services.AddSingleton<DatabaseSpaceProbe>();
+        // 无 dbstat 时的兜底数据源（精确行数 × 抽样平均行长）。
+        builder.Services.AddSingleton<DatabaseTableEstimator>();
+        // 无 dbstat 时的兜底数据源（精确行数 × 抽样平均行长）。
+        builder.Services.AddSingleton<DatabaseTableEstimator>();
         builder.Services.AddSingleton<StorageDatabaseSpaceService>();
         // StorageInventorySampler 既作为 hosted service 运行，也被 StorageAdminController 直接注入具体类型；
         // 必须先以具体类型注册单例，再由该单例派生 IHostedService —— .NET 的 AddHostedService<T>()
