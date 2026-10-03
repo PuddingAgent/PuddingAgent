@@ -501,29 +501,77 @@ const isPendingLocalTurn = (turn: ChatTurn): boolean =>
   turn.assistant.status === 'streaming';
 
 const SERVER_PROJECTION_CLOCK_SKEW_MS = 1_000;
-const hasProjectedUserTurn = (
+
+/**
+ * 回复正文等价比较（跨来源去重的比较基准）。
+ * 同一条回复在「直播/运行快照」与「持久化投影」两份表示里常在不可见空白上不一致
+ * （尾部换行、段落间的多余空行、行尾空格）。用严格 `===` 比较会让去重失效，把同一
+ * 条回复渲染成两张卡片（用户实证「生产了2个卡片」）。只归一化空白，不改变任何
+ * 可见字符 —— 不猜内容，只消除格式噪声。
+ */
+const normalizeReplyMarkdown = (text: string | undefined | null): string =>
+  (text ?? '').replace(/\s+/g, ' ').trim();
+
+/** @internal 导出仅供定向单测消费（同一条回复不得渲染成两张卡片）。 */
+export const hasProjectedUserTurn = (
   projectedTurns: ChatTurn[],
   localTurn: ChatTurn,
 ): boolean => {
+  const localId = localTurn.userMessage.id;
+  const localTurnId = localTurn.turnId;
   const localText = localTurn.userMessage.text.trim();
-  if (!localText) return false;
   const localTimestamp = localTurn.userMessage.timestamp;
   return projectedTurns.some(
     (turn) =>
-      turn.userMessage.id === localTurn.userMessage.id ||
-      // 本地 SSE turn 在 POST 确认后 turnId 迁移为服务端 turnId，与投影 user
-      // turn 的 turnId（message.turnId/runId/messageId）一致——这是「同一
-      // 条回复」的稳定锚点。若只按 text+timestamp 匹配（≤1s 容差），时钟偏差、
-      // outbox 延迟 flush 或客户端/服务端 id 体系不同都会失配，导致本地 turn
-      // 被追加到投影 turn 之后，同一条回复渲染成多张卡片（用户实证三张）。
-      turn.turnId === localTurn.turnId ||
-      (turn.userMessage.text.trim() === localText &&
+      // 身份锚点必须优先于「有没有用户正文」：agent 主动回合、SSE 恢复 turn、
+      // activeRun 快照 turn 的 userMessage.text 恒为空，旧实现一进来就 return
+      // false，哪怕 turnId 完全一致也判为「投影里没有这一轮」，本地 turn 被
+      // 追加到末位 —— 同一条回复因此渲染成第二张卡片（用户实证「生产了2个卡片」）。
+      (Boolean(localId) && turn.userMessage.id === localId) ||
+      (Boolean(localTurnId) && turn.turnId === localTurnId) ||
+      // 文本 + 时间戳只是兜底：时钟偏差、outbox 延迟 flush 或客户端/服务端 id
+      // 体系不同都会失配，所以只在两个 id 锚点都不可用时才用。
+      (localText.length > 0 &&
+        turn.userMessage.text.trim() === localText &&
         Math.abs(turn.userMessage.timestamp - localTimestamp) <=
           SERVER_PROJECTION_CLOCK_SKEW_MS),
   );
 };
 
-const mergeLocalTurnsAwaitingProjection = (
+/**
+ * 内容判重的时间窗：同一轮回复的两份表示（实时快照 / 持久化投影）时间戳几乎一致；
+ * 超出该窗口的「相同正文」属于不同轮次的巧合重复（例如两次都问 2+2），
+ * 此时归并会把新一轮整轮吞掉，所以必须放弃内容判重、按新轮渲染。
+ */
+const REPLY_DEDUP_MAX_SKEW_MS = 10 * 60 * 1000;
+
+const withinSameTurnWindow = (a: number, b: number): boolean =>
+  Number.isFinite(a) &&
+  Number.isFinite(b) &&
+  Math.abs(a - b) <= REPLY_DEDUP_MAX_SKEW_MS;
+
+/**
+ * 本地 turn 是否是「已经物化的同一条回复」的直播影子（shadow）。
+ * 判据：本地 turn 仍在运行，而投影里已经有一条终态、同轮次（时间窗内）且正文
+ * （归一化后）完全相同的回复。终态投影是服务端权威，影子不得再追加成第二张卡片。
+ */
+const isShadowOfMaterializedReply = (
+  turns: ChatTurn[],
+  localTurn: ChatTurn,
+): boolean => {
+  const localReply = normalizeReplyMarkdown(localTurn.assistant.answerMarkdown);
+  if (!localReply) return false;
+  const localAt = localTurn.userMessage.timestamp;
+  return turns.some(
+    (turn) =>
+      !isPendingLocalTurn(turn) &&
+      withinSameTurnWindow(turn.userMessage.timestamp, localAt) &&
+      normalizeReplyMarkdown(turn.assistant.answerMarkdown) === localReply,
+  );
+};
+
+/** @internal 导出仅供定向单测消费（本地直播 turn 不得追加成第二张卡片）。 */
+export const mergeLocalTurnsAwaitingProjection = (
   projectedTurns: ChatTurn[],
   localTurns: ChatTurn[],
 ): ChatTurn[] => {
@@ -537,6 +585,10 @@ const mergeLocalTurnsAwaitingProjection = (
 
     if (isPendingLocalTurn(localTurn)) {
       if (projectedUserIndex < 0) {
+        // 投影里没有同身份的 turn，但这可能只是身份锚点缺失（agent 主动回合、
+        // SSE 恢复 turn、activeRun 快照 turn 没有用户正文）。若投影里已有一条
+        // 终态且正文相同的回复，本地 turn 就是它的直播影子：丢弃，不追加。
+        if (isShadowOfMaterializedReply(merged, localTurn)) continue;
         merged = [...merged, localTurn];
         continue;
       }
@@ -721,28 +773,68 @@ const isTerminalAssistantStatus = (
   status === 'success' || status === 'error' || status === 'cancelled';
 
 /**
- * 查找与 activeRun 内容完全一致的已完成（terminal）turn。
+ * 查找与 activeRun 内容一致的已完成（terminal）turn。
  * 历史已完成消息与 activeRun 可能是同一条回复的两份表示：历史投影 turn 的
  * turnId 来自 message.turnId/runId/messageId，而 activeRun.runId 是另一个
  * 稳定 ID，二者不一致时按 turnId 匹配不到；若该 turn 已完成（非 pending），
  * 也无法通过 pending 挂载路径合并。此时按内容判重，把 activeRun 合并到最近
  * 一条内容相同的 terminal turn，避免同一条 assistant 回复渲染成两行。
+ * 比较用 normalizeReplyMarkdown（空白无关）：直播正文与持久化正文的差异
+ * 常常只是空白，严格相等会让判重失效（用户实证「生产了2个卡片」）。
  * 返回 -1 表示没有可合并的 turn（内容不同或 activeRun 尚无可比内容）。
  */
 const findTerminalTurnWithSameMarkdown = (
   turns: ChatTurn[],
   activeAnswer: string,
+  activeStartedAt: number,
 ): number => {
-  const trimmed = activeAnswer.trim();
-  if (!trimmed) return -1;
+  const normalized = normalizeReplyMarkdown(activeAnswer);
+  if (!normalized) return -1;
   for (let i = turns.length - 1; i >= 0; i--) {
     const turn = turns[i];
     if (
       !isPendingLocalTurn(turn) &&
-      turn.assistant.answerMarkdown.trim() === trimmed
+      withinSameTurnWindow(turn.userMessage.timestamp, activeStartedAt) &&
+      normalizeReplyMarkdown(turn.assistant.answerMarkdown) === normalized
     ) {
       return i;
     }
+  }
+  return -1;
+};
+
+/**
+ * 查找「同一个发送命令（commandClientId）已经物化出终态回复」的 turn。
+ * 服务端把用户消息行（turn_id 为空）与助手消息行（turn_id 有值）投影成两条
+ * turn：用户行带 commandClientId 对应的 userMessage.id，助手行紧随其后。
+ * 旧实现只按 runId / pending 匹配，两行都不满足时 activeRun 被追加成第二张
+ * 卡片，用户看到同一条回复两张卡（截图实证）。这里按命令身份把 activeRun
+ * 归并回它已经物化的那一轮。
+ * 返回 -1 表示该命令还没有终态回复可归并。
+ */
+const findMaterializedCommandTurn = (
+  turns: ChatTurn[],
+  commandClientId: string | null | undefined,
+): number => {
+  if (!commandClientId) return -1;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i].userMessage.id !== commandClientId) continue;
+    if (
+      !isPendingLocalTurn(turns[i]) &&
+      Boolean(turns[i].assistant.answerMarkdown.trim())
+    ) {
+      return i;
+    }
+    // 用户行与助手行被拆成两条 turn：回复物化在紧邻的下一条。
+    const next = turns[i + 1];
+    if (
+      next &&
+      !isPendingLocalTurn(next) &&
+      Boolean(next.assistant.answerMarkdown.trim())
+    ) {
+      return i + 1;
+    }
+    return -1;
   }
   return -1;
 };
@@ -776,7 +868,30 @@ export const mergeActiveRunAssistant = (
   };
 };
 
-const mergeActiveRunIntoTurns = (
+/**
+ * 把 activeRun 快照归并到已存在的第 index 条 turn（原地更新，不新增行）。
+ * 身份保持既有 turn 的 assistant.id，避免投影刷新重挂载可见气泡。
+ */
+const mergeActiveRunIntoIndex = (
+  turns: ChatTurn[],
+  index: number,
+  activeTurn: ChatTurn,
+): ChatTurn[] =>
+  turns.map((turn, turnIndex) =>
+    turnIndex === index
+      ? {
+          ...turn,
+          assistant: mergeActiveRunAssistant(
+            turn.assistant,
+            activeTurn.assistant,
+          ),
+          source: activeTurn.source,
+        }
+      : turn,
+  );
+
+/** @internal 导出仅供定向单测消费（同一条回复不得渲染成两张卡片）。 */
+export const mergeActiveRunIntoTurns = (
   turns: ChatTurn[],
   activeRun: AgentConversationView['activeRun'],
   agentName: string,
@@ -792,34 +907,12 @@ const mergeActiveRunIntoTurns = (
     (turn) => turn.turnId === activeRun.runId,
   );
   if (existingIndex >= 0) {
-    return turns.map((turn, index) =>
-      index === existingIndex
-        ? {
-            ...turn,
-            assistant: mergeActiveRunAssistant(
-              turn.assistant,
-              activeTurn.assistant,
-            ),
-            source: activeTurn.source,
-          }
-        : turn,
-    );
+    return mergeActiveRunIntoIndex(turns, existingIndex, activeTurn);
   }
 
   const matchingPendingIndex = findActiveRunPendingTurnIndex(turns, activeRun);
   if (matchingPendingIndex >= 0) {
-    return turns.map((turn, index) =>
-      index === matchingPendingIndex
-        ? {
-            ...turn,
-            assistant: mergeActiveRunAssistant(
-              turn.assistant,
-              activeTurn.assistant,
-            ),
-            source: activeTurn.source,
-          }
-        : turn,
-    );
+    return mergeActiveRunIntoIndex(turns, matchingPendingIndex, activeTurn);
   }
 
   const lastTurn = turns[turns.length - 1];
@@ -849,20 +942,20 @@ const mergeActiveRunIntoTurns = (
   const sameMarkdownIndex = findTerminalTurnWithSameMarkdown(
     turns,
     activeTurn.assistant.answerMarkdown,
+    activeTurn.userMessage.timestamp,
   );
   if (sameMarkdownIndex >= 0) {
-    return turns.map((turn, index) =>
-      index === sameMarkdownIndex
-        ? {
-            ...turn,
-            assistant: mergeActiveRunAssistant(
-              turn.assistant,
-              activeTurn.assistant,
-            ),
-            source: activeTurn.source,
-          }
-        : turn,
-    );
+    return mergeActiveRunIntoIndex(turns, sameMarkdownIndex, activeTurn);
+  }
+
+  // 正文比较失配（空白差异、快照只剩进程摘要等）时的身份兜底：该命令已经
+  // 物化出终态回复 → activeRun 是同一轮的滞后快照，归并而不是追加第二张卡。
+  const materializedIndex = findMaterializedCommandTurn(
+    turns,
+    activeRun.commandClientId,
+  );
+  if (materializedIndex >= 0) {
+    return mergeActiveRunIntoIndex(turns, materializedIndex, activeTurn);
   }
 
   return [...turns, activeTurn];

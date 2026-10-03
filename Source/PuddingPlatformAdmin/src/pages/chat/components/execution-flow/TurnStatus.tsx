@@ -186,8 +186,9 @@ export const TurnStatus: React.FC<TurnStatusProps> = ({
           className={styles.turnStatusElapsed}
           data-testid="turn-status-elapsed"
         >
-          {/* 回答正在流式产出时是「运行」而非「等待」；等待语义保留给连接/排队阶段。 */}
-          · {status.phase === 'answering' ? '已运行' : '已等待'}{' '}
+          {/* 回答正在流式产出时是「运行」而非「等待」；等待语义保留给连接/排队阶段。
+              计时改为胶囊内的独立 chip（视觉重设计），分隔点由胶囊间距承担。 */}
+          {status.phase === 'answering' ? '已运行' : '已等待'}{' '}
           {formatElapsed(elapsedSeconds)}
         </span>
       )}

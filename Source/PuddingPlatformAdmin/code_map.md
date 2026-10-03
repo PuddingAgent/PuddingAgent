@@ -126,9 +126,9 @@
 | `src/pages/chat/components/IntentConsole.tsx` | Composer §6.2：Sandbox/Auto-review 收敛进设置 Popover（活动态角标浮出）；执行偏好/权限/语音/发送保持直达 |
 | `src/pages/chat/styles/agent.styles.ts` | `agentBubbleNew` 平铺化：透明背景/无边框阴影/15px 1.75（对齐 harness 助手无气泡全宽正文）；`agentActiveOutputSurface` 退化为兼容类名 |
 | `src/pages/chat/styles/user.styles.ts` | `userBubbleNew` 右侧 22px 圆角胶囊（harness 数值）：accent 淡染、无边框无阴影 |
-| `src/pages/chat/styles/execution-flow.styles.ts` | 行式 chrome：28px 行高、16px leading、14/22 标题（secondary 档）、2×2 分隔点（caption 档）、22px 展开缩进、TurnStatus 文字 shimmer；行为链升级新增：`rowSweep` 运行行扫光（reduced-motion 降级）、`duration` 折叠行尾部计量槽、`reasoningChip` 段时长 chip、`statsLine/statsDot` 终态计量行、`timelineList` 交错时间线容器 |
+| `src/pages/chat/styles/execution-flow.styles.ts` | 行式 chrome：28px 行高、16px leading、14/22 标题（secondary 档）、2×2 分隔点（caption 档）、22px 展开缩进、TurnStatus 文字 shimmer；行为链升级新增：`rowSweep` 运行行扫光（reduced-motion 降级）、`duration` 折叠行尾部计量槽、`reasoningChip` 段时长 chip、`statsLine/statsDot` 终态计量行、`timelineList` 交错时间线容器；`turnStatusRow` = 运行态**胶囊状态条**（fit-content、status-running 8% 淡染 + 18% 描边 + 呼吸光晕，reduced-motion 只留静态底色），`turnStatusElapsed` = 胶囊内计时 chip（tabular-nums，宽度不随秒数跳动） |
 | `src/pages/chat/styles/markdown.styles.ts` | 表格仅横向分隔线（th 加粗下边线/td 弱底线/无竖线网格，对齐 harness MarkdownText）；代码块圆角 12px、行内 code 圆角 6px |
-| `src/pages/chat/components/messageTurnMerge.test.ts` | BUG2 守卫单测：终态不回退、同 messageId 不追加第二卡 |
+| `src/pages/chat/components/messageTurnMerge.test.ts` | 消息归并守卫单测：BUG2（终态不回退、同 messageId 不追加第二卡）+ BUG3「同一条回复两张卡片」（无用户正文的本地 turn 仍按 turnId 身份匹配、直播影子不追加、activeRun 正文只差空白/只差身份时归并、真正的下一轮仍追加） |
 | `src/pages/chat/components/MessageItem.streaming.test.tsx` | BUG1 单测：完整表格渲染 `<table>`、流式尾段表格走 markdown、纯文本尾段保留打字机 |
 | `src/pages/chat/projections/turnContentBlocks.ts` | 把 canonical nodes 解释为 TextBlock ⇄ ActivityGroupBlock；每个最大连续非正文区间一组，不重排；组 key 锚定首节点，摘要/运行态/Stats 纯派生 |
 | `src/pages/chat/components/execution-flow/TurnContentStream.tsx` | AgentTurnCard 唯一内容渲染器；按 ADR-079 逆向寻找最后 ActivityGroup，不能把“整个块流最后一块”当最新行为组；只有尾部开放正文段走打字机 |
@@ -148,7 +148,7 @@
 | `src/pages/chat/hooks/useTurnSurfaceStore.ts` | 可见 turn 懒水合调度器：最多 2 个并发槽，任一完成继续排空队列；可见性由 MessageRow 的滚动容器 IntersectionObserver（600px 预取）注册，组件挂载不再等同可见；会话切换丢弃迟到响应，同轮失败项跳过并在下一服务端投影重试 |
 | `src/pages/chat/utils/chatStateUtils.ts` | `resolveTerminalAssistantMarkdown` 分叉兜底：current 与终态 reply 完全分叉且无后缀衔接时返回 reply（服务端 canonical），不再整段拼接（旧实现任何一次流内偏差都会让正文显示两遍） |
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | stale-stable 守卫：`stableTextRef` 镜像已提交前缀，`text` 不再以其开头（快照/终态改写）时整体重置 stable/live 游标，杜绝 stale stable + 新 live 同段双渲染 |
-| `src/pages/chat/components/execution-flow/TurnStatus.tsx` | 单行运行态（唯一 aria-live）；leading 槽渲染阶段墨球 TurnStatusOrb（pending/五阶段 → breathing/connecting/working/solving/weaving/composing） |
+| `src/pages/chat/components/execution-flow/TurnStatus.tsx` | 单行运行态（唯一 aria-live）：胶囊状态条内 = leading 阶段墨球 TurnStatusOrb（pending/五阶段 → breathing/connecting/working/solving/weaving/composing）+ 阶段文案（text-shimmer）+ ≥15s 计时 chip（「已运行/已等待 Xs\|Xm」按测试 id `turn-status-elapsed` 取用）；终态立即不渲染；文案只来自已知事件事实 |
 | `src/pages/chat/components/execution-flow/TurnStatusOrb.tsx` | thinking-orbs 20px 单色墨球包装：阶段映射 + `data-pudding-theme` 显式主题绑定（MutationObserver 跟随）；全局仅 TurnStatus 一颗动画，其余行保持静态 StateDot + 扫光（不喧宾夺主） |
 | `src/pages/chat/components/ComposerTextInput.tsx` | 输入叶子组件（输入框卡顿修复）：textarea+草稿态+IME 组合守卫+「/」命令面板全部下沉，按键只重渲染本叶子（memo）；非组合逐键 lift、组合期不 lift（compositionEnd 一次性）、`lastLiftedRef` 自 lift 回显抑制（父级滞后 prop 不误判为外部改写）；ref API（setValue/getValue/focus）供语音转写/组图提示词/清空复用 |
 | `src/pages/chat/components/IntentConsole.tsx` | Composer 壳：不再持有草稿态/面板态（下沉叶子），仅订阅低频事件（focus 变化、hasText 空↔非空翻转）；外部改写走 textInputRef.setValue；发送门控用 composerHasText |
@@ -169,7 +169,7 @@
 | 文件 | 职责与性能边界 |
 |------|----------------|
 | `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；相同状态轮询必须短路，不重复写缓存或通知订阅者 |
-| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；把已水合 turn 的 execution-flow render weight 附到 viewport item；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；保留终态守卫、同 messageId 原地更新与三源去重 |
+| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；把已水合 turn 的 execution-flow render weight 附到 viewport item；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；保留终态守卫、同 messageId 原地更新与三源去重。**同一条回复只允许一张卡片**（`visibleTurns`）：`hasProjectedUserTurn` 以 `userMessage.id` / `turnId` 身份优先匹配（没有用户正文的 agent 主动回合、SSE 恢复 turn、activeRun 快照 turn 不得被当成新 turn），文本+时间戳（≤1s）只是兜底；`normalizeReplyMarkdown` 做空白无关的正文等价比较并配 `REPLY_DEDUP_MAX_SKEW_MS`(10min) 同轮时间窗（防止把两轮相同的短回复误并）；`mergeLocalTurnsAwaitingProjection` 丢弃「已物化回复的直播影子」，`mergeActiveRunIntoTurns` 按正文或 `commandClientId` 身份归并（用户行/助手行被服务端拆成两条 turn 时命中后者），只有真正的下一轮才追加 |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；Agent 行通过根滚动容器 IntersectionObserver 在 600px 预取区注册可见 turn；直接接收本 Turn 的 Projection 对象，任一其他 Turn/全局 selector revision 不得击穿历史行 memo |
 | `src/pages/chat/components/execution-flow/TurnContentStream.tsx` / `ActivityGroup.tsx` | 超长单 Turn 的二级 DOM 预算：默认最新 40 个内容块、每组最新 24 个行为节点；旧内容每次 40/24 项渐进揭示，折叠组成员完全卸载 |

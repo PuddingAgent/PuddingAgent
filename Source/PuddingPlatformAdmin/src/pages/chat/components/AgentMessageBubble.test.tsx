@@ -390,8 +390,13 @@ describe('AgentMessageBubble streaming presentation', () => {
       );
 
       // CU-05：主行只显示单行 + ≥15s 时钟（Xm 格式）；不展示「复杂推理/深入分析」等推断文案。
+      // 2026-10-03 视觉重设计：计时从「· 已等待 10m」正文变成胶囊内的独立 chip，
+      // 分隔点由胶囊间距承担。头部 TurnElapsedLabel 与状态条现在同为「已等待 10m」，
+      // 因此按状态条自己的测试 id 断言，而不是按全文档唯一文本取元素。
       expect(screen.getByText('Pudding 等待执行反馈')).toBeTruthy();
-      expect(screen.getByText('· 已等待 10m')).toBeTruthy();
+      expect(screen.getByTestId('turn-status-elapsed').textContent).toBe(
+        '已等待 10m',
+      );
       expect(screen.queryByText('模型正在进行复杂推理')).toBeNull();
       expect(screen.queryByText('深入分析')).toBeNull();
     } finally {

@@ -140,12 +140,49 @@ export const useExecutionFlowStyles = createStyles(() => ({
     maxWidth: '100%',
   },
 
-  // ── TurnStatus（CU-05 §5.1）──
-  /** 单行运行态：与执行流行共享同一内容列与左边界（§6.1），不套气泡壳 */
+  // ── TurnStatus（CU-05 §5.1；2026-10-03 视觉重设计：胶囊状态条）──
+  /**
+   * 单行运行态：胶囊状态条（用户批注「需要美化，重新设计」）。
+   *  - 结构：运行墨球 + 阶段文案 + 计时 chip；整体 fit-content，与过程行/正文左对齐
+   *  - 语义不变：仍是唯一 aria-live=polite 区域；终态（succeeded/failed/cancelled）不渲染
+   *  - 动效纪律不变：只有这一颗动画；reduced-motion 降级为静态底色（无动画无光晕）
+   */
   turnStatusRow: {
+    position: 'relative',
+    alignSelf: 'flex-start',
+    width: 'fit-content',
     maxWidth: '100%',
+    minHeight: 30,
+    padding: '2px 10px 2px 6px',
+    gap: 8,
+    borderRadius: 999,
+    background:
+      'color-mix(in srgb, var(--pudding-status-running) 8%, var(--pudding-chat-surface))',
+    border:
+      '1px solid color-mix(in srgb, var(--pudding-status-running) 18%, transparent)',
+    boxShadow:
+      '0 1px 2px color-mix(in srgb, var(--pudding-status-running) 12%, transparent)',
+    overflow: 'hidden',
+    animation: 'executionFlowStatusPillIn 260ms ease-out both',
+    // 呼吸光晕：只做明暗，不做位移/缩放（不喧宾夺主，也不改变行高）
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+      background:
+        'radial-gradient(120% 140% at 0% 50%, color-mix(in srgb, var(--pudding-status-running) 16%, transparent), transparent 62%)',
+      pointerEvents: 'none',
+      animation: 'executionFlowStatusBreathe 2.4s ease-in-out infinite',
+    },
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+      '&::before': {
+        animation: 'none',
+        opacity: 0.5,
+      },
+    },
   },
-  /** 墨球宿主槽：20px inline 档，-2px 光学居中于 16px leading 槽（两侧各溢 2px 吃进行 padding） */
+  /** 墨球宿主槽：20px inline 档（-2px 光学居中于 leading 槽两侧各溢 2px，由胶囊内边距吸收） */
   orbHost: {
     flexShrink: 0,
     display: 'inline-flex',
@@ -155,7 +192,8 @@ export const useExecutionFlowStyles = createStyles(() => ({
     height: 20,
     marginLeft: -2,
   },
-  /** 「{agentName} 正在运行」/ 阶段文案：text-shimmer（对齐 harness TurnStatus shimmer），reduced-motion 降级静态 */
+  /** 阶段文案（正在连接模型/正在推理/正在执行工具/正在等待子代理/正在生成回答）：
+   *  text-shimmer 保留（harness TurnStatus 语义），reduced-motion 降级为静态字色 */
   turnStatusLabel: {
     fontSize: 14,
     fontWeight: 500,
@@ -176,9 +214,18 @@ export const useExecutionFlowStyles = createStyles(() => ({
       color: 'var(--pudding-chat-text)',
     },
   },
-  /** 「· 已等待 Xs/Xm」（≥15s 才渲染；基于持久化 turn start，刷新不归零） */
+  /** 「已等待 Xs/Xm」/「已运行 Xs/Xm」（≥15s 才渲染；基于持久化 turn start，刷新不归零）
+   *  计时 chip：tabular-nums 保证秒数跳动不推动胶囊宽度 */
   turnStatusElapsed: {
-    color: 'var(--pudding-chat-text-caption)',
+    flexShrink: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    height: 20,
+    padding: '0 8px',
+    borderRadius: 999,
+    background:
+      'color-mix(in srgb, var(--pudding-status-running) 10%, transparent)',
+    color: 'var(--pudding-chat-text-secondary)',
     fontSize: 11,
     lineHeight: '20px',
     fontVariantNumeric: 'tabular-nums' as const,
@@ -187,6 +234,14 @@ export const useExecutionFlowStyles = createStyles(() => ({
   '@keyframes executionFlowTextShimmer': {
     '0%': { backgroundPosition: '200% 0' },
     '100%': { backgroundPosition: '-200% 0' },
+  },
+  '@keyframes executionFlowStatusPillIn': {
+    '0%': { opacity: 0, transform: 'translateY(2px)' },
+    '100%': { opacity: 1, transform: 'none' },
+  },
+  '@keyframes executionFlowStatusBreathe': {
+    '0%,100%': { opacity: 0.55 },
+    '50%': { opacity: 1 },
   },
 
   // ── ReasoningDisclosureRow（CU-06 §5.1 + §6.1 + 行为链 §3.3 计量 chip）──
