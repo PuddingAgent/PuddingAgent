@@ -181,3 +181,32 @@ export interface StorageCleanupJobEvent {
   counters?: Record<string, number> | null;
   message?: string | null;
 }
+
+// ── 数据库占用（按数据类）────────────────────────────────────────
+// 来源：GET /api/admin/storage/database-space（显式动作触发的一次只读测量）。
+
+/** 一个语义数据类在一个库里的占用。 */
+export interface StorageDataClassSpace {
+  targetId: string;
+  displayName: string;
+  safetyLevel: string;
+  manualCleanupAllowed: boolean;
+  bytes: number;
+  pages: number;
+  tables: string[];
+}
+
+/** 单个数据库文件的按数据类占用。 */
+export interface StorageDatabaseSpace {
+  key: string;
+  displayName: string;
+  databaseFile: string;
+  exists: boolean;
+  fileBytes: number;
+  pageSize: number;
+  pageCount: number;
+  perTableAvailable: boolean;
+  /** dbstat / rowcount-sample / unavailable */
+  spaceSource: string;
+  dataClasses: StorageDataClassSpace[];
+}

@@ -5,6 +5,7 @@ import type {
   StorageCleanupPreview,
   StorageCleanupPreviewRequest,
   StorageDataClass,
+  StorageDatabaseSpace,
   StorageInventoryRefreshStatus,
   StorageInventorySnapshot,
   StorageInventoryTrendPoint,
@@ -72,6 +73,10 @@ export async function confirmCleanupJob(jobId: string): Promise<void> {
 
 export async function getCleanupJobEvents(jobId: string): Promise<StorageCleanupJobEvent[]> {
   return request(`/api/admin/storage/cleanup/jobs/${jobId}/events`, { method: 'GET' });
+}
+
+export async function getDatabaseSpace(): Promise<StorageDatabaseSpace[]> {
+  return request('/api/admin/storage/database-space', { method: 'GET' });
 }
 
 // ── 展示工具 ────────────────────────────────────────────────────

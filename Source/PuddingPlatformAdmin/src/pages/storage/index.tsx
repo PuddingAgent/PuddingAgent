@@ -57,6 +57,7 @@ import type {
 import { StorageClassDonut, StorageTrendChart, classColor } from './StorageOverviewCharts';
 import { StoragePolicyDrawer } from './StoragePolicyDrawer';
 import { CleanupPreviewModal } from './CleanupPreviewModal';
+import { DatabaseSpacePanel } from './DatabaseSpacePanel';
 
 // ── ADR-076 Web 存储管理页 ─────────────────────────────────────
 // 首屏只读缓存快照；刷新是异步 202 请求（页面保持可交互）；
@@ -582,7 +583,7 @@ const StoragePage: React.FC = () => {
             </Card>
           </Col>
           <Col span={24}>
-            <Card size="small" title="分类统计报表" extra={<Typography.Text type="secondary">全部为估算约数（≈）</Typography.Text>}>
+            <Card size="small" title="分类统计报表">
               <Table<ClassRow>
                 size="small"
                 rowKey="targetId"
@@ -591,6 +592,9 @@ const StoragePage: React.FC = () => {
                 columns={reportColumns}
               />
             </Card>
+          </Col>
+          <Col span={24}>
+            <DatabaseSpacePanel />
           </Col>
           <Col xs={24} lg={14}>
             <Card
