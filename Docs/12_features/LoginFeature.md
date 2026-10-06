@@ -2,13 +2,13 @@
 title: Pudding Agent Web 用户认证系统
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-06
 status: active
 description: Pudding Agent 使用基于 Web UI 的 JWT 认证系统，通过 Bootstrap 引导初始化 → 登录 → 受控用户管理 三阶段流程，替代了早期传统桌面端登录窗口。公开注册被禁止，仅 admin 用户可创建其他用户。
 categories: [docs, features]
 tags: [loginfeature, features]
 related_docs: []
-related_files: [Source/PuddingPlatform/Controllers/Api/BootstrapApiController.cs, Source/PuddingPlatform/Services/BootstrapStateService.cs, Source/PuddingAgent/Program.cs, Source/PuddingPlatformAdmin/src/pages/bootstrap/index.tsx, Source/PuddingPlatformAdmin/src/pages/user/login/index.tsx, Source/PuddingPlatformAdmin/src/app.tsx]
+related_files: [Source/PuddingPlatform/Controllers/Api/BootstrapApiController.cs, Source/PuddingPlatform/Services/BootstrapStateService.cs, Source/PuddingPlatform/Services/JwtTokenFactory.cs, Source/PuddingHost/default-data/config/security.json, Source/PuddingAgent/Program.cs, Source/PuddingPlatformAdmin/src/pages/bootstrap/index.tsx, Source/PuddingPlatformAdmin/src/pages/user/login/index.tsx, Source/PuddingPlatformAdmin/src/app.tsx]
 slug: features-loginfeature
 draft: false
 ---
@@ -104,7 +104,10 @@ graph TD
 ## 安全特性
 
 - 密码使用 PBKDF2 哈希存储（`PasswordHasher.Hash`）
-- JWT Bearer 认证（可配置 Key / Issuer / Audience / ExpiryHours）
+- JWT Bearer 认证：密钥 / Issuer / Audience / 有效期只来自配置链的 `Jwt:*` 键，
+  真源是 `<DataRoot>/config/security.json` 的 `jwt` 段（**有效期缺省 7 天 = 168 小时**）；
+  签发统一走 `JwtTokenFactory`（登录与 Bootstrap 首次初始化共用），代码内**没有**硬编码密钥兜底——
+  密钥缺失或短于 16 字符即启动失败（fail closed），错误信息直接指出该文件与字段
 - 公开注册禁止，用户管理仅限 admin
 - Bootstrap 初始化密钥在首次启动时由 CSPRNG 自动生成
 - Session Cookie `HttpOnly` + `SameSite=None`
@@ -114,5 +117,8 @@ graph TD
 
 - Bootstrap 初始化密钥在首次启动时自动生成（`data/bootstrap-state.json`），无需手动配置
 - admin 创建成功后，`bootstrap-state.json` 的 `Bootstrap:Initialized` 自动置为 `true`，后续 bootstrap API 返回 403
-- `JWT_KEY` 必须替换为高强度随机密钥（≥ 32 字符）
+- **JWT 签名密钥**：随包模板 `security.json` 的 `jwt.key` 为空；首次启动由 `PuddingDataRootBootstrapper`
+  生成 48 字节随机密钥并原子写回 `<DataRoot>/config/security.json`（占位符/过短值同样会被替换，其余字段保留）。
+  因此无需手工配置；如需轮换，改该文件的 `jwt.key` 后重启 Core 即可（历史令牌全部失效）。密钥内容不写日志。
+- 前端不解析令牌 `exp`、也没有刷新令牌：到期表现为下一个请求返回 401，被 `requestErrorHandler` 清除本地令牌并跳回登录页
 - Bootstrap 成功后即可通过登录页使用已创建的 admin 账号

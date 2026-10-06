@@ -63,7 +63,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Controllers/Api/AuthApiController.cs` | 登录、JWT/Session 当前用户投影；认证成功/失败按 Information 记录且不记录用户标识、密码长度或账户存在性；`/api/currentUser` 异步读取 `AppUsers.Avatar`（空值回退自有 `/admin/assets/images/me.png`），刷新/重登后头像保持数据库最新值 |
+| `Controllers/Api/AuthApiController.cs` | 登录、JWT/Session 当前用户投影；签发统一委托 `JwtTokenFactory`（密钥/有效期只来自配置，登录响应不返回到期时间）；认证成功/失败按 Information 记录且不记录用户标识、密码长度或账户存在性；`/api/currentUser` 异步读取 `AppUsers.Avatar`（空值回退自有 `/admin/assets/images/me.png`），刷新/重登后头像保持数据库最新值 |
+| `Services/JwtTokenFactory.cs` | 登录态 JWT 的唯一配置解析（`PuddingJwtSettings`：`Jwt:Key/Issuer/Audience/ExpiryHours`，缺省 168 小时 = 7 天，密钥缺失/过短即 fail closed，无硬编码兜底）与唯一签发入口（HS256 + `sm2_sig` 载荷签名）；登录与 Bootstrap 首次初始化共用 |
 | `Controllers/Api/UserAvatarApiController.cs` | 头像唯一上传契约 `POST /api/users/{userId}/avatar`（multipart 字段 `file`，返回 `{ avatar }`）；上传自己需登录、为他人上传需 Admin（403）；统一 PNG/JPG/WebP、5 MiB 上限；`SaveForUserAsync` 复用落盘/写库/旧文件清理；`GET` 匿名查任意用户头像 |
 | `Controllers/Api/AppUserApiController.cs` | 用户管理 CRUD/密码/角色，收紧为 `[Authorize(Roles = "admin")]`；`AppUserDto` 携带 `Avatar` |
 | `Services/UserAvatarStorageService.cs` | 头像落盘 `wwwroot/user-avatars/`（userId 前缀防穿越、原子写、TryDelete 限根内）；允许 MIME 仅 PNG/JPEG/WebP（GIF 已移除） |

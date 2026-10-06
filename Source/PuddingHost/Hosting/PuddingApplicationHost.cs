@@ -64,8 +64,11 @@ public static class PuddingApplicationHost
         // Product/user-owned runtime policy lives below DataRoot. Add it after
         // the packaged appsettings defaults, then restore environment/CLI as
         // the highest-precedence operational overrides.
+        // security.json 是登录态 JWT 密钥与有效期的配置入口（此前只被 PuddingFileConfigLoader
+        // 反序列化、从未进入配置链，导致"文件里写了却不生效"）；这里把它接入同一配置链。
         builder.Configuration
             .AddJsonFile(dataPaths.SystemConfigFile("system.json"), optional: true, reloadOnChange: true)
+            .AddJsonFile(dataPaths.SystemConfigFile("security.json"), optional: true, reloadOnChange: true)
             .AddEnvironmentVariables();
         if (args.Length > 0)
             builder.Configuration.AddCommandLine(args);
@@ -154,8 +157,15 @@ public static class PuddingApplicationHost
             .AddApplicationPart(typeof(PuddingRuntime.Controllers.RuntimeSessionController).Assembly);
 
         // ── JWT ──────────────────────────────────────────────
-        var jwtKey = builder.Configuration["Jwt:Key"]
-            ?? "Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!";
+        // 签名密钥与有效期只来自配置链（<DataRoot>/config/security.json 的 jwt 段，
+        // 环境变量/命令行可覆盖）；代码内不再保留硬编码密钥兜底：缺失即启动失败（fail closed）。
+        var jwtSettings = PuddingJwtSettings.FromConfiguration(builder.Configuration);
+        Log.Information(
+            "[Auth:Jwt] ExpiryHours={ExpiryHours} Issuer={Issuer} Audience={Audience} Key={KeyFingerprint}",
+            jwtSettings.ExpiryHours,
+            jwtSettings.Issuer,
+            jwtSettings.Audience,
+            StartupConfigurationAudit.Fingerprint(jwtSettings.Key));
 
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(jwtOpts =>
@@ -163,12 +173,12 @@ public static class PuddingApplicationHost
                 jwtOpts.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
-                    ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "pudding-platform",
+                    ValidIssuer = jwtSettings.Issuer,
                     ValidateAudience = true,
-                    ValidAudience = builder.Configuration["Jwt:Audience"] ?? "pudding-admin",
+                    ValidAudience = jwtSettings.Audience,
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key)),
                     ClockSkew = TimeSpan.FromMinutes(1),
                 };
             })

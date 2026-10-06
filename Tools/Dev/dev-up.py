@@ -933,10 +933,8 @@ def backend_environment() -> dict[str, str]:
             "DOTNET_USE_POLLING_FILE_WATCHER": "1",
             "PUDDING_DATA_ROOT": r"D:\data",
             "PUDDING_REPOSITORY_ROOT": str(ROOT),
-            "Jwt__Key": "Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!",
-            "Jwt__Issuer": "pudding-platform",
-            "Jwt__Audience": "pudding-admin",
-            "Jwt__ExpiryHours": "8",
+            # 登录态 JWT 的密钥与有效期不再由这里注入：唯一来源是 <DataRoot>/config/security.json 的
+            # jwt 段（引导期缺省自动生成密钥），避免"环境变量盖住配置文件"造成两份口径。
             "ConnectionStrings__Default": r"Data Source=D:\data\databases\pudding_platform.db",
             "PUDDING_LOG_LEVEL": "Debug",
             "PUDDING_DEBUG": "1",

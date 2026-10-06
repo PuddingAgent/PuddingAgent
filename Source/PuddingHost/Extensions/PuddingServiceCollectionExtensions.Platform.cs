@@ -634,7 +634,9 @@ builder.Services.AddScoped<IGoodputAttributionService>(sp => sp.GetRequiredServi
         builder.Services.AddDistributedMemoryCache();
         builder.Services.AddSession(options =>
         {
-            options.IdleTimeout = TimeSpan.FromHours(8);
+            // 与登录态 JWT 的有效期口径一致（7 天）：Session 只是 JWT 缺失时的兼容回退，
+            // 不应比 JWT 更早失效而让"刚登录就被踢回登录页"。
+            options.IdleTimeout = TimeSpan.FromDays(7);
             options.Cookie.HttpOnly = true;
             options.Cookie.IsEssential = true;
             options.Cookie.SameSite = SameSiteMode.Lax;

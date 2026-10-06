@@ -1,12 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 using System.Data;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using PuddingCode.Configuration;
 using PuddingCode.Platform;
@@ -117,7 +112,14 @@ public partial class BootstrapApiController(
             await stateService.SetInitializedAsync();
             logger.LogInformation("[Bootstrap] Created first admin account userId={UserId}", entity.UserId);
 
-            var token = GenerateJwt(entity.UserId, entity.DisplayName ?? entity.UserId, entity.Email, "admin");
+            // 签发统一走 JwtTokenFactory：密钥与有效期只来自配置（security.json 的 jwt 段）。
+            var token = JwtTokenFactory.CreateToken(
+                config,
+                sm2JwtSigner,
+                entity.UserId,
+                entity.DisplayName ?? entity.UserId,
+                entity.Email,
+                "admin");
 
             HttpContext.Session.SetString("username", entity.UserId);
             HttpContext.Session.SetString("authority", "admin");
@@ -203,7 +205,14 @@ public partial class BootstrapApiController(
                 providerResult.ProviderId,
                 workspace.WorkspaceId);
 
-            var token = GenerateJwt(admin.UserId, admin.DisplayName ?? admin.UserId, admin.Email, "admin");
+            // 签发统一走 JwtTokenFactory：密钥与有效期只来自配置（security.json 的 jwt 段）。
+            var token = JwtTokenFactory.CreateToken(
+                config,
+                sm2JwtSigner,
+                admin.UserId,
+                admin.DisplayName ?? admin.UserId,
+                admin.Email,
+                "admin");
 
             HttpContext.Session.SetString("username", admin.UserId);
             HttpContext.Session.SetString("authority", "admin");
@@ -428,54 +437,6 @@ public partial class BootstrapApiController(
             MaxConcurrentRequests: null));
 
         return normalized;
-    }
-
-    private string GenerateJwt(string userId, string displayName, string email, string authority)
-    {
-        var key = config["Jwt:Key"] ?? "Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!";
-        var issuer = config["Jwt:Issuer"] ?? "pudding-platform";
-        var audience = config["Jwt:Audience"] ?? "pudding-admin";
-        var expiryHours = int.TryParse(config["Jwt:ExpiryHours"], out var h) ? h : 8;
-        var utcNow = DateTime.UtcNow;
-        var expiresAt = utcNow.AddHours(expiryHours);
-        var jti = Guid.NewGuid().ToString();
-
-        var secKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
-        var creds = new SigningCredentials(secKey, SecurityAlgorithms.HmacSha256);
-
-        var sm2Payload = new SortedDictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["aud"] = audience,
-            ["email"] = email,
-            ["exp"] = new DateTimeOffset(expiresAt).ToUnixTimeSeconds().ToString(),
-            ["iss"] = issuer,
-            ["jti"] = jti,
-            ["name"] = displayName,
-            ["nameid"] = userId,
-            ["role"] = authority,
-            ["sub"] = userId,
-        };
-        var sm2Signature = sm2JwtSigner.SignPayload(JsonSerializer.Serialize(sm2Payload));
-
-        var claims = new[]
-        {
-            new Claim(JwtRegisteredClaimNames.Sub, userId),
-            new Claim(JwtRegisteredClaimNames.Jti, jti),
-            new Claim(ClaimTypes.NameIdentifier, userId),
-            new Claim(ClaimTypes.Name, displayName),
-            new Claim(ClaimTypes.Email, email),
-            new Claim(ClaimTypes.Role, authority),
-            new Claim("sm2_sig", sm2Signature),
-        };
-
-        var token = new JwtSecurityToken(
-            issuer: issuer,
-            audience: audience,
-            claims: claims,
-            expires: expiresAt,
-            signingCredentials: creds);
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     [GeneratedRegex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$")]

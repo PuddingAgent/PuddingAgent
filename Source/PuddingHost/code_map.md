@@ -85,7 +85,8 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 | `Services/IndexPrebuildService.cs` | 索引预构建 |
 | `Hosting/PuddingHostOptionsFactory.cs` | DesktopChild 固定 `0.0.0.0:<port>` 启动约束 |
 | `Hosting/PuddingServerAddressAccessor.cs` | 全网卡监听地址投影为同端口 Loopback 控制地址 |
-| `Hosting/PuddingApplicationHost.cs` | 组合根、Kestrel 地址绑定与本机控制地址捕获；在发布包 appsettings 默认之上加载 `<DataRoot>/config/system.json` 并支持 hot reload，环境变量/命令行仍为最高优先级；注册 ADR-075/082 External Token 的 tasks/workspaces/agents/messages scope+workspace Policies |
+| `Hosting/PuddingApplicationHost.cs` | 组合根、Kestrel 地址绑定与本机控制地址捕获；在发布包 appsettings 默认之上加载 `<DataRoot>/config/system.json` 与 `<DataRoot>/config/security.json`（登录态 JWT 密钥/有效期来源）并支持 hot reload，环境变量/命令行仍为最高优先级；JWT 密钥缺失即启动失败（无硬编码兜底）；注册 ADR-075/082 External Token 的 tasks/workspaces/agents/messages scope+workspace Policies |
+| `Hosting/PuddingDataRootBootstrapper.cs` | DataRoot 解析与引导：复制 default-data 缺省文件、建运行时目录、确保 `config/security.json` 存在可用的 JWT 签名密钥（缺失/过短/占位符时生成 48 字节 CSPRNG 密钥并原子写回，其余字段保留）、建默认 Agent 实例 |
 | `Config/` | 默认配置 |
 | `Prompts/` | 系统提示模板 |
 | `P2P/` | P2P 通信 |

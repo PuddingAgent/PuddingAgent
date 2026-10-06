@@ -35,7 +35,34 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
         _previousDataRoot = Environment.GetEnvironmentVariable("PUDDING_DATA_ROOT");
         _dataRoot = Path.Combine(Path.GetTempPath(), "pudding-webapi-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_dataRoot);
+        SeedSecurityConfig(_dataRoot);
         Environment.SetEnvironmentVariable("PUDDING_DATA_ROOT", _dataRoot);
+    }
+
+    /// <summary>
+    /// 落盘 <c>config/security.json</c>：登录态 JWT 密钥只来自配置（生产代码已无硬编码兜底），
+    /// 这里写入与 <see cref="JwtHelper.TestKey"/> 相同的确定性密钥，让测试令牌可被宿主校验通过。
+    /// </summary>
+    private static void SeedSecurityConfig(string dataRoot)
+    {
+        var configDir = Path.Combine(dataRoot, "config");
+        Directory.CreateDirectory(configDir);
+        File.WriteAllText(
+            Path.Combine(configDir, "security.json"),
+            $$"""
+            {
+              "jwt": {
+                "issuer": "pudding-platform",
+                "audience": "pudding-admin",
+                "expiryHours": 168,
+                "key": "{{JwtHelper.TestKey}}"
+              },
+              "keyVault": {
+                "mode": "local-file",
+                "masterKeyRef": "local"
+              }
+            }
+            """);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

@@ -280,6 +280,7 @@ Chat first paint → AgentConversationProjectionService（最近 20 条可见消
 |------|------|
 | `D:\data` | 开发环境 DataRoot（由 `dev-up.py` 的环境变量/启动参数决定，见 PathHelper） |
 | `<DataRoot>/config/system.json` | Core 系统配置：端口、ControlToken、启动超时、保留策略、ToolReview 覆盖 |
+| `<DataRoot>/config/security.json` | 登录态 JWT 配置真源（`jwt.key/issuer/audience/expiryHours`，缺省 7 天）；密钥缺失时由引导期生成并写回，代码内无硬编码兜底 |
 | `<DataRoot>/config/llm.providers.json` | LLM 服务商/模型配置真源（apiKey 支持 `${ENV}` / vault 引用，不回显） |
 | `D:\data\workspaces\default` | 默认工作空间 |
 | `.pudding/context-tool-results/` | 工具结果的完整原文（模型输入只含 8 KiB 有界摘要） |

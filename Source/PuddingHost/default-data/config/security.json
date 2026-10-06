@@ -2,8 +2,8 @@
   "jwt": {
     "issuer": "pudding-platform",
     "audience": "pudding-admin",
-    "expiryHours": 8,
-    "key": "local-dev-key-change-me-32plus"
+    "expiryHours": 168,
+    "key": ""
   },
   "keyVault": {
     "mode": "local-file",

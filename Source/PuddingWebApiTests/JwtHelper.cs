@@ -7,11 +7,13 @@ namespace PuddingWebApiTests;
 
 /// <summary>
 /// 测试用 JWT 令牌生成工具。
-/// 使用与开发环境一致的密钥和配置。
+/// 密钥必须与测试 DataRoot 的 <c>config/security.json</c>（由
+/// <see cref="CustomWebApplicationFactory"/> 落盘）一致——生产代码已无硬编码密钥兜底。
+/// 注意：不要使用历史上的开发态字面量，它被引导期列为占位符并会被重新生成。
 /// </summary>
 public static class JwtHelper
 {
-    private const string TestKey = "Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!";
+    public const string TestKey = "pudding-webapi-tests-jwt-signing-key-0123456789";
     private const string Issuer = "pudding-platform";
     private const string Audience = "pudding-admin";
 

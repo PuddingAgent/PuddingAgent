@@ -380,7 +380,9 @@ public sealed record PuddingJwtConfig
 {
     public string Issuer { get; init; } = "pudding-platform";
     public string Audience { get; init; } = "pudding-admin";
-    public int ExpiryHours { get; init; } = 8;
+
+    /// <summary>登录态 JWT 有效期（小时）。缺省 168 = 7 天。</summary>
+    public int ExpiryHours { get; init; } = 168;
     public string? Key { get; init; }
 }
 
