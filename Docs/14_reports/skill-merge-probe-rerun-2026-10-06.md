@@ -89,3 +89,49 @@ Assert.AreEqual failed. Expected:<17>.  Actual:<16>.    （FourConditionBaseline
 - 面板/工具侧**不受影响**：`SkillCurate` 是报告型，本裁决不改变其"超限 ⇒ 出审查请求"的行为。
 - "合并"这条路**当前没有自动化空间**（叠加面 0）；可行的只有**人工审查 10 家族 / 75 对**，
   且必须先解决"用哪份判据给审查人排序"的问题（现状：median 0.198，紧贴 0.20，阈值不稳健）。
+
+## 7. 追加发现：家族评审路径在生产上**从未被喂过策略**（机制休眠，且是设计使然）
+
+### 7.1 证据链
+
+| # | 事实 | 位置 |
+|---|---|---|
+| 1 | `if (familyPolicy is null \|\| portfolioPolicy is null) return (0, 0);`，注释明示这是"尾随可选参数默认 `null` ⇒ 零回归"的实现点 | `Source/PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs:1823,1827` |
+| 2 | 生产调用点 **①** 不传这两个策略：`SkillCurateAsync(workspaceId, agentInstanceId, memoryLlmConfig, ct: ct)` | `Source/PuddingRuntime/Tools/BuiltIns/Management/SubconsciousTriggerTool.cs:152` |
+| 3 | 生产调用点 **②** 同样不传 | `Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs:280` |
+| 4 | 全仓检索 `SkillFamilyPolicy.Create` / `SkillPortfolioPolicy.Create` / `new SkillFamilyPolicy` **仅命中测试**（`SubconsciousWorkerServiceTests`、`SubconsciousTriggerToolTests`）⇒ 生产侧无策略来源 | ⚠️ 该检索 `coverage: partial`（scanned 856/2000）⇒ **强证据，非完全证明** |
+| 5 | 手动触发路径的响应体**不含**该事实：只返回 `action/duration_ms/n_before/n_after/not_reduced_reason/candidate_count/retire_suggestion_count/summary`。只有 Worker 的 `metadata["family_review_count"]` 带它 | `SubconsciousTriggerTool.RunSkillCurateAsync` vs `SubconsciousWorkerService` |
+
+**净效果**：`SkillCurationReport.FamilyReviewCount ≡ 0`；`notReducedReason` 里
+"Additionally N family merge review request(s) …" 那段分支**永不执行**；系统对外报"未发现冗余"，
+而**家族上限检查根本没跑**。这与本项目一直在修的同类毛病同源：**把"未知"报成"正常"**。
+
+### 7.2 为什么这不是"改一行就能修"的 bug（关键）
+
+`SkillCurationPolicy` 的类型文档**刻意拒绝提供默认值**：
+
+> `MinRetainedValueRatio` 的下限**没有**可论证的默认值……**禁止**写一个"看起来合理"的数字进产品；
+> `Create` 的所有旋钮都必须由调用方显式给出。
+
+而同源规则（探针注释所引任务书 §2.5-3）又明确：
+
+> **禁止静默保留一个永不触发的判据。**
+
+⇒ 现状**同时**踩中后者（判据永不触发）与前者（阈值不可由编码者自定）：
+编码者既不能让它继续静默、也不能自己填数。**这是一处决策缺口，不是编码缺口。**
+
+### 7.3 需要人工裁决的两个量（即当前阻塞）
+
+| 需要裁决 | 载体 | 说明 |
+|---|---|---|
+| 家族内上限 | `SkillPortfolioPolicy.PerFamilyCap` | 测试里用过 `1` 作为**探针值**，⛔ 不是产品结论 |
+| 合并后价值保留比例下限 | `SkillCurationPolicy.MinRetainedValueRatio` | 类型文档明确"下限是治理结论，需人工裁决" |
+
+决策所需语料（本轮实测）：**10 家族 / 33 成员 / 最大簇 11**，
+最大簇 = `async-sub-agent-delegation-with-memory-checkpointing`（11 条）。
+
+### 7.4 本轮未做（边界）
+
+- ⛔ 未新增任何"默认策略"（那正是类型文档禁止的）；⛔ 未改任何调用点
+  ——因为唯一正确的方向是"把人工裁决的结果接进去"，而不是"由编码者猜一个数"。
+- ⛔ 未跑 `SkillCurateAsync`（只做静态取证 + 既有探针复跑）。
