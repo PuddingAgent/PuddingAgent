@@ -52,10 +52,14 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
     /// 在 Core 侧授权链路给出可信调用方身份之前，对话框/Picker/剪贴板一律不开放（手册 §3）。
     /// </summary>
     public static DesktopServiceOptions CreateDefaultServiceOptions(
-        DesktopContextTrust shellCallerTrust = DesktopContextTrust.Untrusted) => new()
+        DesktopContextTrust shellCallerTrust = DesktopContextTrust.Untrusted,
+        DesktopContextTrust browserContextCallerTrust = DesktopContextTrust.AgentAuthorized) => new()
         {
             AllowedCapabilities = DesktopCapabilityChannelSettings.DeclaredCapabilities,
             ShellCallerTrust = shellCallerTrust,
+            // 浏览器上下文作用域单独给一份来源：它们是 Agent 工具层的调用，不是 Shell UI 动作
+            // （外部审查 P1-1：沿用 Shell 信任会让 browser_context list/create/close 全被默认拒绝）。
+            BrowserContextCallerTrust = browserContextCallerTrust,
         };
 
     /// <summary>

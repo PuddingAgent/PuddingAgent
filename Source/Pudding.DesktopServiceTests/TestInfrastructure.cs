@@ -465,7 +465,8 @@ internal sealed class ServiceHarness
         DesktopContextTrust shellCallerTrust = DesktopContextTrust.Untrusted,
         bool hasThreadAccess = false,
         Action<ManualUiDispatcher>? configureDispatcher = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        DesktopServiceOptions? options = null)
     {
         var dispatcher = new ManualUiDispatcher { HasThreadAccess = hasThreadAccess };
         configureDispatcher?.Invoke(dispatcher);
@@ -478,7 +479,10 @@ internal sealed class ServiceHarness
         registry.RegisterContext("ctx-work", DesktopContextTrust.Workbench);
         registry.RegisterPage(WorkbenchPage, DesktopPageVersion.Require(2), DesktopPageReadiness.Complete);
 
-        var options = new DesktopServiceOptions
+        // options 显式传入时**完全采用它**：这样用例可以拿"产品缺省装配"
+        // （DesktopCapabilityChannelComposition.CreateDefaultServiceOptions()）来验证准入，
+        // 而不是只能靠测试自己放宽过的选项 —— 后者会掩盖产品默认装配下的拒绝（外部审查 P1-1 的要求）。
+        var effectiveOptions = options ?? new DesktopServiceOptions
         {
             AllowedCapabilities = allowed
                 ?? (DesktopCapability.WebViewNavigate
@@ -490,7 +494,7 @@ internal sealed class ServiceHarness
 
         var testClock = clock as TestTimeProvider ?? new TestTimeProvider();
         var surface = new RecordingUiSurface();
-        var service = new DesktopService(dispatcher, surface, registry, options, testClock);
+        var service = new DesktopService(dispatcher, surface, registry, effectiveOptions, testClock);
         return new ServiceHarness(dispatcher, surface, testClock, service);
     }
 

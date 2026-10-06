@@ -56,6 +56,18 @@ public static class DesktopCapabilityPolicy
         [DesktopCapability.BrowserContextClose] = [DesktopContextTrust.AgentAuthorized],
     };
 
+    /// <summary>
+    /// 该能力是否属于**浏览器上下文作用域**（无页面目标、由 Agent 浏览器工具层发起）。
+    /// <para>
+    /// 存在的意义：准入需要知道「无页面目标时该用哪一份调用方信任」—— 这个集合必须是**单一定义**，
+    /// 否则策略表、准入与测试三处会各写一份并逐渐漂移。
+    /// </para>
+    /// </summary>
+    public static bool IsBrowserContextScoped(DesktopCapability capability) => capability
+        is DesktopCapability.BrowserContexts
+        or DesktopCapability.BrowserContextCreate
+        or DesktopCapability.BrowserContextClose;
+
     public static bool IsAllowedForTrust(DesktopCapability capability, DesktopContextTrust trust) =>
         AllowedTrust.TryGetValue(capability, out var allowed) && Array.IndexOf(allowed, trust) >= 0;
 

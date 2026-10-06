@@ -782,7 +782,13 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             return DesktopCapabilityError.UnsupportedCapability(DesktopCapabilities.NameOf(capability));
         }
 
-        var trust = _options.ShellCallerTrust;
+        // 无页面目标的能力有两种来源，可信级别**来源不同**：
+        // · 浏览器上下文作用域（Agent 工具层发起、无页面目标）⇒ BrowserContextCallerTrust；
+        // · Shell 自身能力（对话框 / Picker / 剪贴板）⇒ ShellCallerTrust（默认 Untrusted，fail closed）。
+        // 有页面目标的能力稍后会被 pageState.Trust 覆盖。
+        var trust = DesktopCapabilityPolicy.IsBrowserContextScoped(capability)
+            ? _options.BrowserContextCallerTrust
+            : _options.ShellCallerTrust;
         if (DesktopCapabilityPolicy.RequiresPageTarget(capability))
         {
             if (target is null)
