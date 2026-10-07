@@ -39,6 +39,8 @@
   <ItemGroup>
         <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
+    <!-- 可诊断基础设施叶子组件：失败因果分类 / 有界证据 / 事故投影 / 呈现与复制载荷。 -->
+    <ProjectReference Include="..\PuddingDiagnostics\PuddingDiagnostics.csproj" />
   </ItemGroup>
 
   <ItemGroup>

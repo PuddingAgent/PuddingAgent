@@ -16,4 +16,10 @@
     <PackageReference Include="Serilog" Version="4.2.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 可诊断基础设施的因果码/阶段由该叶子组件提供（它只依赖 BCL，方向依旧向下）。
+         契约层需要它，是因为「请求体字节数 / 派发次数 / 失败阶段」这类事实只有网关知道。 -->
+    <ProjectReference Include="..\PuddingDiagnostics\PuddingDiagnostics.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -12,7 +12,7 @@ namespace PuddingCode.Diagnostics;
 /// ③ URL 查询串一律剥离（query 里常见 token）。
 /// </para>
 /// </summary>
-public static class DiagnosticRedactor
+public static class DiagnosticEvidenceRedactor
 {
     public const string RedactedValue = "***REDACTED***";
     public const string TruncatedSuffix = "…[truncated]";

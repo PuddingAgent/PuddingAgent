@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Core;
+using PuddingCode.Diagnostics;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
@@ -492,6 +493,15 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 using var watchdogLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(effectiveCt, watchdog.Token);
                 watchdog.Start();
 
+                // 每次尝试一个独立的诊断作用域：网关在其中写入「请求体字节数/派发次数/阶段」，
+                // 失败时分类器据此给出稳定因果码与阶段（见可诊断基础设施设计 §7 Stage 3）。
+                using var diagnosticScope = LlmCallDiagnosticsScope.Begin();
+                diagnosticScope.ProviderId = config.ProviderId;
+                diagnosticScope.ModelId = config.Model;
+                diagnosticScope.EndpointHost = LlmCallDiagnosticsScope.HostOf(config.Endpoint);
+                diagnosticScope.Attempt = retryAttempt + 1;
+                diagnosticScope.MaxRetries = maxRetries;
+
                 enumerator = gateway.ChatStreamAsync(messages, toolSpecs, watchdogLinkedCts.Token)
                     .GetAsyncEnumerator(watchdogLinkedCts.Token);
                 Exception? retryException = null;
@@ -511,6 +521,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     }
                     catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
                     {
+                        diagnosticScope.UserCancelled = true;
                         terminalRecorded = true;
                         sw.Stop();
                         if (!hasYieldedDelta)
@@ -534,6 +545,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     }
                     catch (OperationCanceledException ex) when (firstChunkTimeoutCts.IsCancellationRequested)
                     {
+                        diagnosticScope.FirstChunkTimeout = true;
                         terminalRecorded = true;
                         sw.Stop();
                         streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
@@ -602,6 +614,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                         retryAttempt < maxRetries &&
                         IsTransientError(ex, isTimeout: true))
                     {
+                        diagnosticScope.HttpClientTimeout = true;
                         retryException = ex;
                         break;
                     }
@@ -609,6 +622,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     {
                         // HttpClient.Timeout 触发的 TaskCanceledException
                         // （既不是外部取消也不是流式超时策略，归类为 HTTP 层超时）
+                        diagnosticScope.HttpClientTimeout = true;
                         terminalRecorded = true;
                         sw.Stop();
                         if (!hasYieldedDelta)
@@ -646,7 +660,18 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                         sw.Stop();
                         if (!hasYieldedDelta)
                             streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
-                        _logger.LogError(ex, "[DirectLlm] STREAM ERROR elapsed={Elapsed}ms", sw.ElapsedMilliseconds);
+                        var terminalCause = LlmFailureDiagnostics.Classify(ex, diagnosticScope);
+                        _logger.LogError(ex,
+                            "[DirectLlm] STREAM ERROR provider={Provider} model={Model} elapsed={Elapsed}ms cause={Cause} phase={Phase} retryable={Retryable} requestBytes={RequestBytes} attempt={Attempt}/{MaxRetries}",
+                            config.ProviderId,
+                            config.Model,
+                            sw.ElapsedMilliseconds,
+                            terminalCause.Code,
+                            DiagnosticPhases.ToWire(terminalCause.Phase),
+                            terminalCause.Retryable,
+                            terminalCause.Evidence.GetValueOrDefault("request_bytes", ""),
+                            diagnosticScope.Attempt,
+                            maxRetries);
                         var metadata = MergeMetadata(
                             BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                             streamDiagnostics.ToMetadata());
@@ -672,6 +697,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             config.ProviderId, config.Model, sw.ElapsedMilliseconds);
                     }
                     hasYieldedDelta = true;
+                    diagnosticScope.HasYieldedDelta = true;
                     firstChunkTimeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
                     watchdog.Feed();
                     yield return delta;
@@ -683,12 +709,17 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 await enumerator.DisposeAsync();
                 enumerator = null;
                 retryAttempt++;
+                var retryCause = LlmFailureDiagnostics.Classify(retryException, diagnosticScope);
                 _logger.LogWarning(
                     retryException,
-                    "[DirectLlm] STREAM RETRY before first delta attempt={Attempt}/{Max} provider={Provider}",
+                    "[DirectLlm] STREAM RETRY before first delta attempt={Attempt}/{Max} provider={Provider} cause={Cause} phase={Phase} requestBytes={RequestBytes} dispatchCount={DispatchCount}",
                     retryAttempt,
                     maxRetries,
-                    config.ProviderId);
+                    config.ProviderId,
+                    retryCause.Code,
+                    DiagnosticPhases.ToWire(retryCause.Phase),
+                    retryCause.Evidence.GetValueOrDefault("request_bytes", ""),
+                    retryCause.Evidence.GetValueOrDefault("dispatch_count", ""));
                 var retryMetadata = MergeMetadata(
                     BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                     streamDiagnostics.ToMetadata());
@@ -1005,9 +1036,13 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         CancellationToken ct,
         string? activityId = null)
     {
+        // 因果分类在**唯一出口**做：任何失败路径都得到稳定因果码，而不是各调用点各写一套日志字符串。
+        var cause = error is null ? null : LlmFailureDiagnostics.Classify(error, LlmCallDiagnosticsScope.Current);
+        var effectiveMetadata = cause is null ? metadata : LlmFailureDiagnostics.MergeInto(metadata, cause);
+
         if (_activitySink is null)
         {
-            await RecordLlmMetricAsync(trace, operation, status, startedAt, durationMs, summary, metadata, error, ct);
+            await RecordLlmMetricAsync(trace, operation, status, startedAt, durationMs, summary, effectiveMetadata, error, ct);
             return;
         }
 
@@ -1025,12 +1060,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 DurationMs = durationMs,
                 Severity = error is null ? "info" : "error",
                 Summary = summary,
-                Metadata = metadata,
-                ErrorCode = error?.GetType().Name,
+                Metadata = effectiveMetadata,
+                ErrorCode = cause?.Code ?? error?.GetType().Name,
                 ErrorMessage = error?.Message,
             }, ct);
 
-            await RecordLlmMetricAsync(trace, operation, status, startedAt, durationMs, summary, metadata, error, ct);
+            await RecordLlmMetricAsync(trace, operation, status, startedAt, durationMs, summary, effectiveMetadata, error, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

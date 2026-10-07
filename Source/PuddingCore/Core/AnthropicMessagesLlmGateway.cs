@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PlatformLlmOptions = PuddingCode.Platform.Options.LlmOptions;
 
 namespace PuddingCode.Core;
@@ -65,6 +66,8 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
     {
         var requestBody = await BuildRequestBodyAsync(messages, tools, stream: true, ct);
         using var request = CreateRequest(requestBody);
+        // 请求体字节数只有网关知道：上传阶段的诊断事实在这里落袋。
+        LlmCallDiagnosticsScope.Current?.MarkDispatch(Encoding.UTF8.GetByteCount(requestBody));
         var timing = new ProviderStreamTiming();
         timing.MarkDispatch();
         using var response = await httpClient.SendAsync(
@@ -72,6 +75,8 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
             HttpCompletionOption.ResponseHeadersRead,
             ct);
         timing.MarkHeaders();
+        LlmCallDiagnosticsScope.Current?.MarkHeaders();
+        LlmCallDiagnosticsScope.Current?.MarkReadStream();
         var headersMs = timing.HeadersMs;
 
         if (!response.IsSuccessStatusCode)

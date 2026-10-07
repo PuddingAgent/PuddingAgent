@@ -35,14 +35,14 @@ public static class DiagnosticEvidenceKeys
 /// ② 单值 ≤ <see cref="MaxValueChars"/>（超出加 <c>…[truncated]</c>）；
 /// ③ 总量 ≤ <see cref="MaxTotalChars"/>，触顶后停止收集并写入
 ///    <see cref="DiagnosticEvidenceKeys.EvidenceTruncated"/>=true（**不静默丢弃**）。
-/// 另外：所有值在入口处过 <see cref="DiagnosticRedactor"/>，因此脱敏不可能被某个调用点绕过。
+/// 另外：所有值在入口处过 <see cref="DiagnosticEvidenceRedactor"/>，因此脱敏不可能被某个调用点绕过。
 /// 键名与输出顺序都是 ordinal 排序，保证落库/断言可复现。
 /// </para>
 /// </summary>
 public sealed class DiagnosticEvidenceBuilder
 {
     public const int MaxKeys = 32;
-    public const int MaxValueChars = DiagnosticRedactor.MaxValueChars;
+    public const int MaxValueChars = DiagnosticEvidenceRedactor.MaxValueChars;
     public const int MaxTotalChars = 8192;
 
     private readonly SortedDictionary<string, string> _values = new(StringComparer.Ordinal);
@@ -66,7 +66,7 @@ public sealed class DiagnosticEvidenceBuilder
         if (_values.Count >= MaxKeys)
             return MarkTruncated();
 
-        var sanitized = DiagnosticRedactor.Sanitize(key, value);
+        var sanitized = DiagnosticEvidenceRedactor.Sanitize(key, value);
         if (sanitized.Length == 0)
             return this;
 

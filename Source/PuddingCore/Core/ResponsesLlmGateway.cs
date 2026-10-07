@@ -5,7 +5,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using PuddingCode.Abstractions;
+using PuddingCode.Diagnostics;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PlatformLlmOptions = PuddingCode.Platform.Options.LlmOptions;
 
 namespace PuddingCode.Core;
@@ -162,6 +164,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         var timing = new ProviderStreamTiming();
         using var response = await SendWithFileRebuildAsync(messages, tools, stream: true, ct, timing);
         var headersMs = timing.HeadersMs;
+        LlmCallDiagnosticsScope.Current?.MarkReadStream();
 
         if (!response.IsSuccessStatusCode)
         {
@@ -230,11 +233,26 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
 
     private HttpRequestMessage CreateRequest(string requestBody)
     {
+        var requestBytes = Encoding.UTF8.GetByteCount(requestBody);
         if ((string.Equals(ProviderId, "deepseek", StringComparison.OrdinalIgnoreCase)
                 || new Uri(_responsesEndpoint).Host.Equals("api.deepseek.com", StringComparison.OrdinalIgnoreCase))
-            && Encoding.UTF8.GetByteCount(requestBody) > 48L * 1024 * 1024)
+            && requestBytes > 48L * 1024 * 1024)
+        {
+            // 本地体积闸门：把稳定因果码交给诊断作用域，使终态诊断能说清「是体积超限而不是网络问题」。
+            if (LlmCallDiagnosticsScope.Current is { } limited)
+            {
+                limited.CauseCodeOverride = DiagnosticCauseCode.RequestTooLarge;
+                limited.OverrideRetryable = false;
+                limited.OverridePhase = DiagnosticPhaseKind.Serialize;
+            }
+
             throw new VisionPipelineException(VisionErrorCodes.RequestLimitExceeded,
                 "DeepSeek request body exceeds 48 MiB. Preprocess images or use Files API references.");
+        }
+
+        // 请求体字节数与真实派发次数只有网关知道：这是「上传阶段」诊断的关键事实。
+        LlmCallDiagnosticsScope.Current?.MarkDispatch(requestBytes);
+
         var request = new HttpRequestMessage(HttpMethod.Post, _responsesEndpoint)
         {
             Content = new StringContent(requestBody, Encoding.UTF8, "application/json"),
@@ -263,6 +281,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             ? await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
             : await httpClient.SendAsync(request, ct);
         timing?.MarkHeaders();
+        LlmCallDiagnosticsScope.Current?.MarkHeaders();
 
         if (response.IsSuccessStatusCode || !CanRebuildFileReferences(fileImages))
             return response;
@@ -300,6 +319,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             ? await httpClient.SendAsync(rebuiltRequest, HttpCompletionOption.ResponseHeadersRead, ct)
             : await httpClient.SendAsync(rebuiltRequest, ct);
         timing?.MarkHeaders();
+        LlmCallDiagnosticsScope.Current?.MarkHeaders();
         if (!rebuiltResponse.IsSuccessStatusCode)
         {
             var rebuiltError = await rebuiltResponse.Content.ReadAsStringAsync(ct);

@@ -107,6 +107,25 @@ public sealed class FaultScenarioTests
     }
 
     /// <summary>
+    /// 生产第二条判据：网关的**阶段记账**（MarkDispatch/MarkHeaders）比堆栈指纹更可靠，
+    /// 因此「阶段=上传请求体 + 连接被重置」必须独立定性为上传重置 —— 真实系统里异常链可能
+    /// 被重建（丢失框架帧），但阶段提示始终在。
+    /// </summary>
+    [TestMethod]
+    public void ResetWithUploadPhaseHint_ClassifiesAsRequestUploadReset()
+    {
+        var cause = LlmFailureClassifier.Default.Classify(
+            FaultScenarios.CreateUploadResetChain(),
+            FaultScenarios.IncidentReplica.Context with { PhaseHint = DiagnosticPhaseKind.RequestUpload });
+
+        Assert.AreEqual(DiagnosticCauseCode.RequestUploadReset, cause.Code);
+        Assert.AreEqual("phase_hint:request_upload", cause.Rule);
+        Assert.AreEqual(DiagnosticPhaseKind.RequestUpload, cause.Phase);
+        Assert.AreEqual("10054", cause.Evidence[DiagnosticEvidenceKeys.SocketErrorCode]);
+        Assert.IsTrue(cause.Retryable);
+    }
+
+    /// <summary>
     /// 重试安全边界（Docs/08_how_debuge/06-延迟问题定位.md §7.9）：已产出增量后，
     /// 传输类瞬态失败一律不可重试。
     /// </summary>

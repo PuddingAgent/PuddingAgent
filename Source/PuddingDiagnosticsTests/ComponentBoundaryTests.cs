@@ -117,7 +117,7 @@ public sealed class ComponentBoundaryTests
         var flagged = FindForbiddenSourceTokens(offending);
 
         CollectionAssert.AreEquivalent(new[] { "DbContext", "Serilog", "new HttpClient" }, flagged.ToArray());
-        Assert.IsEmpty(FindForbiddenSourceTokens("public static class DiagnosticRedactor { }"));
+        Assert.IsEmpty(FindForbiddenSourceTokens("public static class DiagnosticEvidenceRedactor { }"));
     }
 
     [TestMethod]

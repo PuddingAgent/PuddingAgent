@@ -185,6 +185,15 @@ public sealed class LlmFailureClassifier : IDiagnosticCauseClassifier
 
             if (ExceptionChainInspector.IsConnectionReset(socketCode))
             {
+                // 阶段提示来自网关自己的记账（MarkDispatch 紧跟在请求体交给 HttpClient 之前，
+                // MarkHeaders 只在收到响应头之后调用），比堆栈指纹更可靠；
+                // 两者任一成立即可定性为「上传阶段被重置」。
+                if (context.PhaseHint == DiagnosticPhaseKind.RequestUpload)
+                {
+                    return ResolvedCause.Of(DiagnosticCauseCode.RequestUploadReset, "phase_hint:request_upload",
+                        DiagnosticPhaseKind.RequestUpload, "context_hint", null, null, socketCode);
+                }
+
                 // 有 RST 但没有阶段指纹、也没收到响应头：如实标为未定性，阶段按现场提示。
                 var phase = context.PhaseHint == DiagnosticPhaseKind.Unknown
                     ? DiagnosticPhaseKind.AwaitResponseHeaders

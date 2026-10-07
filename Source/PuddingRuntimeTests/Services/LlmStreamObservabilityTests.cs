@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
+using PuddingCode.Diagnostics;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
@@ -944,6 +946,87 @@ public sealed class LlmStreamObservabilityTests
 
         public void Reload(object config)
         {
+        }
+    }
+
+    /// <summary>
+    /// Stage 3 门禁：写请求体阶段被对端重置时，**活动元数据必须携带稳定因果码、阶段、尝试、
+    /// 请求体字节数**（2026-10-07 事故正是「只有异常字符串、没有这些事实」）。
+    /// </summary>
+    [TestMethod]
+    public async Task ChatStreamAsync_WhenRequestUploadReset_RecordsStableCauseAndRequestBytes()
+    {
+        var activities = new RecordingActivitySink();
+        var handler = new UploadResetHandler();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(maxRetries: 1, retryDelaySeconds: 0, protocol: "responses"),
+            NullLogger<DirectLlmClient>.Instance,
+            activitySink: activities);
+
+        await Assert.ThrowsExactlyAsync<HttpRequestException>(async () =>
+        {
+            await foreach (var _ in client.ChatStreamAsync(
+                               "default",
+                               "session-upload-reset",
+                               "template-1",
+                               [new ChatMessage(ChatRole.User, "hello")],
+                               llmConfig: new LlmConfig
+                               {
+                                   Endpoint = "https://provider.test/v1",
+                                   ApiKey = "test-key",
+                                   ModelId = "test-model",
+                               }))
+            {
+            }
+        });
+
+        Assert.AreEqual(2, handler.RequestCount, "无增量前的传输失败必须重试一次");
+
+        var retried = activities.Activities.Last(activity => activity.Status == RuntimeActivityStatuses.Retried);
+        var failed = activities.Activities.Last(activity =>
+            activity.Operation == "chat_stream" && activity.Status == RuntimeActivityStatuses.Failed);
+
+        Assert.AreEqual(DiagnosticCauseCode.RequestUploadReset, failed.ErrorCode,
+            "活动的 ErrorCode 必须是稳定因果码，而不是 CLR 类型名");
+        Assert.AreEqual(DiagnosticCauseCode.RequestUploadReset, failed.Metadata!["cause_code"]);
+        Assert.AreEqual("transport", failed.Metadata["cause_category"]);
+        Assert.AreEqual("request_upload", failed.Metadata["cause_phase"]);
+        Assert.AreEqual("true", failed.Metadata["cause_retryable"]);
+        Assert.AreEqual("2", failed.Metadata["attempt"], "终态失败发生在第 2 次尝试（第 1 次已重试）");
+        Assert.AreEqual("1", retried.Metadata!["attempt"]);
+        Assert.AreEqual("10054", failed.Metadata["socket_error_code"]);
+        Assert.IsGreaterThan(0L, long.Parse(failed.Metadata["request_bytes"], CultureInfo.InvariantCulture),
+            "请求体字节数必须被记录（网关在派发前写入诊断作用域）");
+        Assert.IsGreaterThanOrEqualTo(1, int.Parse(failed.Metadata["dispatch_count"], CultureInfo.InvariantCulture));
+
+        Assert.AreEqual(DiagnosticCauseCode.RequestUploadReset, retried.Metadata!["cause_code"]);
+        Assert.AreEqual("request_upload", retried.Metadata["cause_phase"]);
+    }
+
+    private sealed class RecordingActivitySink : IRuntimeActivitySink
+    {
+        public List<RuntimeActivity> Activities { get; } = [];
+
+        public Task RecordAsync(RuntimeActivity activity, CancellationToken ct = default)
+        {
+            Activities.Add(activity);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<RuntimeActivity>> QueryAsync(RuntimeActivityQuery query, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<RuntimeActivity>>(Activities);
+    }
+
+    /// <summary>复刻 2026-10-07 的异常链（HttpRequestException ← IOException ← SocketException(10054)）。</summary>
+    private sealed class UploadResetHandler : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            RequestCount++;
+            return Task.FromException<HttpResponseMessage>(FaultScenarios.CreateUploadResetChain());
         }
     }
 }

@@ -24,7 +24,7 @@
 | 因果分类 | `Classification/LlmFailureClassifier.cs` | 纯函数；判定顺序 透传码 → 取消 → 看门狗超时 → HTTP/传输/协议 → 诚实兜底；`Retryable` 已结合「是否产出增量」（Docs/08 §7.9） |
 | 异常链与帧指纹 | `Classification/ExceptionChainInspector.cs` | 展开内因链、取 socket 错误码 / `HttpRequestError`；`DefaultUploadFrames` 是 2026-10-07 实测帧名（有断言锚定） |
 | 有界证据 | `Contracts/DiagnosticEvidence.cs` | ≤32 键、单值 ≤512 字符、总量 ≤8 KiB；触顶写 `evidence_truncated=true`；键与输出 ordinal 排序 |
-| 写入期脱敏 | `Redaction/DiagnosticRedactor.cs` | 键名**子串**匹配（修既有整串相等的穿透）、值形态检查、URL query 剥离；所有证据值必经此处 |
+| 写入期脱敏 | `Redaction/DiagnosticEvidenceRedactor.cs` | 键名**子串**匹配（修既有整串相等的穿透）、值形态检查、URL query 剥离；所有证据值必经此处。类型名刻意避开既有 `DiagnosticRedactor`：`PuddingCode.Diagnostics` 命名空间已被 PuddingCore 的 DTO 占用，重名会让同时 import 两个命名空间的消费方编译失败（实测 `PuddingHost` CS0104） |
 | 事故投影 | `Projection/IncidentProjector.cs` + `Projection/DiagnosticFact.cs` | 事实 → `IncidentView`（尝试明细 / 根因 / 阶段 / 体积 / 结论句 / 证据定位）；无证据时报 unknown 而不是 healthy |
 | 查询契约 | `Query/DiagnosticFactQuery.cs` | 过滤维度 + 分页 + **显式截断标记**（修既有「Limit 静默 clamp 后当时间窗结论」） |
 | 界面呈现 | `Presentation/ErrorPresentation.cs` | 标题/大概原因/严重度/可重试/建议动作/原码；标题禁出现异常类型名与英文原文，未知码原样显示 |
@@ -40,7 +40,7 @@
 | `Contracts/DiagnosticContext.cs` | 分类器输入（提供者/模型/尝试/阶段提示/耗时/体积/取消与超时标志/透传码） |
 | `Contracts/IDiagnosticCauseClassifier.cs` | 分类器契约（实现必须是纯函数） |
 | `Classification/LlmFailureClassifier.cs` | LLM 调用链分类器（生产用 `Default`，测试可注入帧指纹） |
-| `Redaction/DiagnosticRedactor.cs` · `Contracts/DiagnosticEvidence.cs` | 脱敏与证据预算 |
+| `Redaction/DiagnosticEvidenceRedactor.cs` · `Contracts/DiagnosticEvidence.cs` | 脱敏与证据预算 |
 | `Projection/*` · `Query/*` · `Scenarios/*` · `Presentation/*` | 事故投影、查询契约、故障场景表、界面呈现与复制现场载荷 |
 
 ## 4. 测试
@@ -53,8 +53,8 @@
 
 | 消费方 | 状态 |
 |---|---|
-| `Source/PuddingCore` 网关族（openai/responses/anthropic） | 待接入（设计文档 §7 Stage 3） |
-| `Source/PuddingRuntime`（`DirectLlmClient` / `AgentExecutionService`） | 待接入（Stage 3） |
-| `Source/PuddingPlatform`（事实落库/投影/API/诊断包） | 待接入（Stage 4） |
+| `Source/PuddingCore` 网关族（openai/responses/anthropic） | ✅ 已接入（Stage 3）：`LlmCallDiagnosticsScope` 记录请求体字节数 / 真实派发次数 / 失败阶段；体积闸门置 `provider.request_too_large` |
+| `Source/PuddingRuntime`（`DirectLlmClient`） | 🟡 部分接入（Stage 3）：`LlmFailureDiagnostics` + 每次流式尝试一个诊断作用域 + `RecordActivityAsync` 唯一出口分类（失败活动 `ErrorCode` 已是稳定因果码）+ 失败/重试日志带因果字段；`ChatAsync`（非流式）作用域待做 |
+| `Source/PuddingPlatform`（事实落库/投影/API/诊断包） | 待接入（Stage 4）：`cause_*` / `request_bytes` 目前进 `metadata_json`，尚无索引列 |
 | `Source/PuddingHost`（组合根装配、日志路由） | 待接入（Stage 3/4） |
-| `Source/PuddingPlatformAdmin`（按码本地化） | 待接入（Stage 4） |
+| `Source/PuddingPlatformAdmin`（按码本地化 + 复制/下载） | 待接入（Stage 4） |

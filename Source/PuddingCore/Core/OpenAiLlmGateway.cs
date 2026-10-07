@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PlatformLlmOptions = PuddingCode.Platform.Options.LlmOptions;
 
 namespace PuddingCode.Core;
@@ -87,6 +88,8 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var requestBody = await BuildRequestBody(messages, tools, stream: true, ct);
+        // 请求体字节数只有网关知道：上传阶段的诊断事实在这里落袋。
+        LlmCallDiagnosticsScope.Current?.MarkDispatch(Encoding.UTF8.GetByteCount(requestBody));
         var request = new HttpRequestMessage(HttpMethod.Post, _chatEndpoint)
         {
             Content = new StringContent(requestBody, Encoding.UTF8, "application/json")
@@ -98,6 +101,8 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         using var response = await httpClient.SendAsync(request,
             HttpCompletionOption.ResponseHeadersRead, ct);
         timing.MarkHeaders();
+        LlmCallDiagnosticsScope.Current?.MarkHeaders();
+        LlmCallDiagnosticsScope.Current?.MarkReadStream();
         var headersMs = timing.HeadersMs;
 
         if (!response.IsSuccessStatusCode)

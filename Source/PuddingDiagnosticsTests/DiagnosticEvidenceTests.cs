@@ -12,27 +12,27 @@ public sealed class DiagnosticEvidenceTests
         // 现状实测缺口：既有 DiagnosticRedactor 用「键名整串相等」，llm.apiKey 之类会穿透。
         foreach (var key in new[] { "apiKey", "api_key", "llm.apiKey", "authorization_header", "myToken", "client_secret" })
         {
-            Assert.IsTrue(DiagnosticRedactor.ShouldRedactKey(key), $"{key} 必须被判定为敏感键");
-            Assert.AreEqual(DiagnosticRedactor.RedactedValue, DiagnosticRedactor.Sanitize(key, "whatever"));
+            Assert.IsTrue(DiagnosticEvidenceRedactor.ShouldRedactKey(key), $"{key} 必须被判定为敏感键");
+            Assert.AreEqual(DiagnosticEvidenceRedactor.RedactedValue, DiagnosticEvidenceRedactor.Sanitize(key, "whatever"));
         }
 
         foreach (var key in new[] { "provider_id", "model_id", "request_bytes", "phase" })
-            Assert.IsFalse(DiagnosticRedactor.ShouldRedactKey(key), $"{key} 不应被判定为敏感键");
+            Assert.IsFalse(DiagnosticEvidenceRedactor.ShouldRedactKey(key), $"{key} 不应被判定为敏感键");
     }
 
     [TestMethod]
     public void SecretShapedValues_AreRedacted_EvenUnderInnocentKeys()
     {
         // 夹具用一眼可辨的假值（形如 sk-…），避免与真实密钥混淆。
-        Assert.AreEqual(DiagnosticRedactor.RedactedValue, DiagnosticRedactor.Sanitize("note", "sk-FIXTURE-not-a-real-key"));
-        Assert.AreEqual(DiagnosticRedactor.RedactedValue, DiagnosticRedactor.Sanitize("note", "Bearer FIXTURE.not-a-real.token"));
-        Assert.IsFalse(DiagnosticRedactor.LooksLikeSecret("deepseek-flash"));
+        Assert.AreEqual(DiagnosticEvidenceRedactor.RedactedValue, DiagnosticEvidenceRedactor.Sanitize("note", "sk-FIXTURE-not-a-real-key"));
+        Assert.AreEqual(DiagnosticEvidenceRedactor.RedactedValue, DiagnosticEvidenceRedactor.Sanitize("note", "Bearer FIXTURE.not-a-real.token"));
+        Assert.IsFalse(DiagnosticEvidenceRedactor.LooksLikeSecret("deepseek-flash"));
     }
 
     [TestMethod]
     public void UrlQueryStrings_AreStripped()
     {
-        var sanitized = DiagnosticRedactor.Sanitize("endpoint", "https://api.example.com/v1/responses?q=FIXTUREVALUE&x=1");
+        var sanitized = DiagnosticEvidenceRedactor.Sanitize("endpoint", "https://api.example.com/v1/responses?q=FIXTUREVALUE&x=1");
 
         Assert.AreEqual("https://api.example.com/v1/responses?<redacted>", sanitized);
         StringAssert.DoesNotMatch(sanitized, new System.Text.RegularExpressions.Regex("FIXTUREVALUE"));
@@ -43,10 +43,10 @@ public sealed class DiagnosticEvidenceTests
     {
         var value = new string('x', DiagnosticEvidenceBuilder.MaxValueChars + 50);
 
-        var sanitized = DiagnosticRedactor.Sanitize("message", value);
+        var sanitized = DiagnosticEvidenceRedactor.Sanitize("message", value);
 
-        Assert.AreEqual(DiagnosticEvidenceBuilder.MaxValueChars + DiagnosticRedactor.TruncatedSuffix.Length, sanitized.Length);
-        StringAssert.EndsWith(sanitized, DiagnosticRedactor.TruncatedSuffix);
+        Assert.AreEqual(DiagnosticEvidenceBuilder.MaxValueChars + DiagnosticEvidenceRedactor.TruncatedSuffix.Length, sanitized.Length);
+        StringAssert.EndsWith(sanitized, DiagnosticEvidenceRedactor.TruncatedSuffix);
     }
 
     [TestMethod]
@@ -89,6 +89,6 @@ public sealed class DiagnosticEvidenceTests
         var joined = string.Join("|", evidence.Values);
 
         StringAssert.DoesNotMatch(joined, new System.Text.RegularExpressions.Regex("sk-FIXTURE"));
-        Assert.AreEqual(DiagnosticRedactor.RedactedValue, evidence["authorization"]);
+        Assert.AreEqual(DiagnosticEvidenceRedactor.RedactedValue, evidence["authorization"]);
     }
 }

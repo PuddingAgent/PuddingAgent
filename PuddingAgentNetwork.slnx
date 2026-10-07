@@ -24,6 +24,7 @@
   <Project Path="Source/Pudding.DesktopSurface.Browser/Pudding.DesktopSurface.Browser.csproj" />
   <Project Path="Source/Pudding.DesktopSurface.BrowserTests/Pudding.DesktopSurface.BrowserTests.csproj" />
     <Project Path="Source/PuddingDesktop.WpfArchive/PuddingDesktop.WpfArchive.csproj" />
+    <Project Path="Source/PuddingDiagnostics/PuddingDiagnostics.csproj" />
     <Project Path="Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj" />
     <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
     <Project Path="Source/PuddingHost/PuddingHost.csproj" />
@@ -60,6 +61,7 @@
     <Project Path="Source/PuddingCodeIndexTests/PuddingCodeIndexTests.csproj" />
     <Project Path="Source/PuddingCodexServiceTests/PuddingCodexServiceTests.csproj" />
     <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />
+    <Project Path="Source/PuddingDiagnosticsTests/PuddingDiagnosticsTests.csproj" />
     <Project Path="Source/PuddingIndexChunkingTests/PuddingIndexChunkingTests.csproj" />
     <Project Path="Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests.csproj" />
     <Project Path="Source/PuddingPathFilteringTests/PuddingPathFilteringTests.csproj" />
