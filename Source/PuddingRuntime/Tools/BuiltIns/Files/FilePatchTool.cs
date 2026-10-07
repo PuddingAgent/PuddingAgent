@@ -1123,8 +1123,9 @@ internal sealed record UnifiedDiffLine(char Kind, string Text);
 /// cursor walk that skips common lines and recognises pure insertions/deletions, so inserting one
 /// line is reported as exactly one added row. The previous renderer compared oldLines[i] with
 /// newLines[i], which turned a single insertion into a cascade of bogus replacements and burned
-/// the whole 10-row budget before reaching the real edits. Preview only: nothing here is ever fed
-/// back into the writer.
+/// the whole 10-change-group budget before reaching the real edits. Beyond ten groups the preview
+/// stops and appends `... (more changes)`; the cap is preview-only and never affects what is
+/// written. Preview only: nothing here is ever fed back into the writer.
 /// </summary>
 internal static class SimpleLineDiff
 {

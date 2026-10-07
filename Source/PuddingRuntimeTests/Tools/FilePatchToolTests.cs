@@ -668,6 +668,73 @@ public sealed class FilePatchToolTests
         Assert.AreEqual("alpha\nTARGET\nbeta\n", ReadFile("scoped-lf.txt"));
     }
 
+    // ── D9: preview-diff truncation semantics (SimpleLineDiff.MaxChangeGroups) ──
+
+    [TestMethod]
+    public async Task Preview_ExactlyTenChangeGroups_IsNotMarkedAsTruncated()
+    {
+        // The preview budget is 10 change groups; a diff with exactly ten must fit untouched,
+        // otherwise the marker would lie about every ordinary patch.
+        WriteFile("many.txt", NumberedLines(20));
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "many.txt",
+            ["operations"] = NumberedReplacements(10),
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(
+            result.Output.Contains("... (more changes)"),
+            "ten groups fit the budget exactly, so no truncation marker may appear");
+        StringAssert.Contains(result.Output, "ROW-10", "the tenth group must still be rendered");
+    }
+
+    [TestMethod]
+    public async Task Preview_ElevenChangeGroups_IsTruncatedAfterTenWithMarker()
+    {
+        var before = NumberedLines(20);
+        WriteFile("many.txt", before);
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "many.txt",
+            ["operations"] = NumberedReplacements(11),
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(
+            result.Output,
+            "... (more changes)",
+            "the eleventh group exceeds the budget and must be announced as truncated");
+        Assert.IsFalse(
+            result.Output.Contains("ROW-11"),
+            "the truncated group's content must not leak into the preview");
+        Assert.IsTrue(
+            ReadFile("many.txt").Contains("ROW-11"),
+            "truncation is preview-only: the eleventh change must still have been written");
+    }
+
+    private static string NumberedLines(int count)
+    {
+        var sb = new StringBuilder();
+        for (var i = 1; i <= count; i++) sb.Append("row-").Append(i.ToString("00")).Append('\n');
+        return sb.ToString();
+    }
+
+    private static object[] NumberedReplacements(int count)
+    {
+        var operations = new object[count];
+        for (var i = 1; i <= count; i++)
+        {
+            operations[i - 1] = new Dictionary<string, object?>
+            {
+                ["type"] = "replace",
+                ["old_text"] = "row-" + i.ToString("00"),
+                ["new_text"] = "ROW-" + i.ToString("00"),
+            };
+        }
+        return operations;
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();
