@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=dc2ba84b0ee2 · 条目数: 350 · 最近整理: 2026-10-07
+> 源指纹: Source/PuddingRuntime/**=2f9a13331725 · 条目数: 350 · 最近整理: 2026-10-08
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -355,7 +355,7 @@
 | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | `anysearch_search`：通用网页搜索 | `AnySearchSearchTool` | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | `doubao_search`：豆包搜索 | `DoubaoSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/GitHubSearchTool.cs` | `github_search`：GitHub 仓库与代码检索 | `GitHubSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
-| `Tools/BuiltIns/Search/SearchGrepTool.cs` | `search_grep`：工作区文本检索 | `SearchGrepTool` | `Services/Search/SearchAttemptLedger.cs` | 索引只产候选，匹配以磁盘当前内容为准 |
+| `Tools/BuiltIns/Search/SearchGrepTool.cs` | `search_grep`：工作区文本检索 | `SearchGrepTool` | `Services/Search/SearchAttemptLedger.cs` | 索引只产候选，匹配以磁盘当前内容为准；`backend=index` 未建索引报 `dependency_wait`（环境前置），引擎故障报 `contract_error` |
 | `Tools/BuiltIns/Search/SearchToolsTool.cs` | `search_tools`：工具目录检索与加载 | `SearchToolsTool` | `Services/Tools/ToolExposurePlanner.cs` | 只返回权限过滤后的条目 |
 | `Tools/BuiltIns/Search/ZhihuGlobalSearchTool.cs` | `zhihu_global_search`：全网检索 | `ZhihuGlobalSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
 | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | 知乎检索的共享配置与渲染 | `ZhihuSearchShared` | `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | — |

@@ -479,10 +479,25 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
         if (!engineResult.Success)
         {
+            // 「scope 尚未建索引」与「引擎故障」必须分开报：前者是**环境前置未就绪**——报
+            // dependency_wait（不计入失败账本、不触发熔断），而不是 contract_error，否则调用方会把
+            // "这里还没建索引"读成"我的参数写错了"，甚至把空结果当成"这些东西不在代码里"。
+            // 后者才是需要排查的运行时故障，保持 contract_error。
+            if (!_searchEngine.HasIndex(scopeDirectory))
+            {
+                ReportIndexBackendTelemetry(context, scopeDirectory, "not_indexed", total.ElapsedMilliseconds);
+                return ToolExecutionResult.Fail(
+                    $"Index backend: scope '{scopeDirectory}' has no index yet - nothing was searched, so this is "
+                    + "NOT evidence that the pattern is absent. Build this scope's index first, or omit 'backend' "
+                    + "(or pass 'scan') to use the managed scan path.",
+                    status: ToolResultStatuses.DependencyWait);
+            }
+
             ReportIndexBackendTelemetry(context, scopeDirectory, "unavailable", total.ElapsedMilliseconds);
             return ToolExecutionResult.Fail(
                 $"Index backend unavailable for scope '{scopeDirectory}': {engineResult.Error ?? "engine reported failure"}. "
-                + "The scope must be indexed first; omit 'backend' (or pass 'scan') to use the managed scan path.",
+                + "The scope is indexed but the engine reported failure - this is not a parameter problem. "
+                + "Omit 'backend' (or pass 'scan') to use the managed scan path while it is investigated.",
                 status: ToolResultStatuses.ContractError);
         }
 

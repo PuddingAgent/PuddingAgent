@@ -1881,8 +1881,9 @@ public sealed class SearchGrepToolTests
         try
         {
             Directory.SetCurrentDirectory(tempDir);
-            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
-                false, [], $"Directory '{tempDir}' is not indexed.", 0, 3));
+            var engine = new RecordingFullTextSearchEngine(
+                new FullTextSearchResult(false, [], $"Directory '{tempDir}' is not indexed.", 0, 3),
+                hasIndex: false);
             var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
 
             var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
@@ -1893,9 +1894,48 @@ public sealed class SearchGrepToolTests
 
             // fail-closed：不得静默回落到扫描（否则索引坏了也看不出来，且调用方无从得知覆盖度）
             Assert.IsFalse(result.Success, "索引后端不可用时必须显式失败，不得静默降级");
-            StringAssert.Contains(result.Error, "Index backend unavailable");
+            // 未建索引 = 环境前置未就绪（dependency_wait），不是参数错误：报 contract_error 会把排障
+            // 方向带向“我参数写错了”，且会把“尚未搜索”读成“代码里没有”。
+            Assert.AreEqual(ToolResultStatuses.DependencyWait, result.Status);
+            StringAssert.Contains(result.Error, "has no index yet");
+            StringAssert.Contains(result.Error, "NOT evidence that the pattern is absent");
             StringAssert.Contains(result.Error, "omit 'backend'");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Reports_Engine_Failure_Distinctly_From_Not_Indexed()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-index-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a.txt"), "NEEDLE here\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            // 索引存在（HasIndex=true）但引擎报错 ⇒ 这是需要排查的运行时故障，
+            // 必须与“尚未建索引”分开报，否则两种截然不同的处置会被混为一种。
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                false, [], "engine blew up while opening the index", 0, 7));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = tempDir,
+            });
+
+            Assert.IsFalse(result.Success);
             Assert.AreEqual(ToolResultStatuses.ContractError, result.Status);
+            StringAssert.Contains(result.Error, "Index backend unavailable");
+            StringAssert.Contains(result.Error, "engine blew up while opening the index");
+            Assert.IsFalse(result.Error.Contains("has no index yet"),
+                "已建索引的 scope 不得被误报为“未建索引”");
         }
         finally
         {
@@ -2204,8 +2244,13 @@ public sealed class SearchGrepToolTests
     {
         private readonly FullTextSearchResult? _result;
         private readonly Func<string, int, FullTextSearchResult>? _selector;
+        private readonly bool _hasIndex;
 
-        public RecordingFullTextSearchEngine(FullTextSearchResult result) => _result = result;
+        public RecordingFullTextSearchEngine(FullTextSearchResult result, bool hasIndex = true)
+        {
+            _result = result;
+            _hasIndex = hasIndex;
+        }
 
         /// <summary>按 (query, 调用序号) 选择结果——用于断言降级重试真的发生了不同的调用。</summary>
         public RecordingFullTextSearchEngine(Func<string, int, FullTextSearchResult> selector) => _selector = selector;
@@ -2219,7 +2264,7 @@ public sealed class SearchGrepToolTests
         public int LastMaxResults { get; private set; }
         public string? LastExtensionFilter { get; private set; }
 
-        public bool HasIndex(string d) => true;
+        public bool HasIndex(string d) => _hasIndex;
 
         public Task<FullTextSearchResult> SearchAsync(
             string q,
