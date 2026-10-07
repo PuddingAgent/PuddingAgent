@@ -1904,6 +1904,16 @@ public sealed partial class AgentExecutionService
                 errorLocation = terminalStreamError?.Location,
                 errorTimestampUtc = terminalStreamError?.TimestampUtc,
                 errorCode = terminalStreamError?.ErrorCode,
+                // 界面按因果码本地化（标题/大概原因/建议动作），并可直接取 error.reportText / error.reportJson
+                // 作为「复制诊断信息」「下载 JSON」的载荷（可诊断基础设施设计 §12）。
+                causeCode = terminalStreamError?.CauseCode,
+                causeTitle = terminalStreamError?.CauseTitle,
+                causeShortCause = terminalStreamError?.CauseShortCause,
+                remediationHint = terminalStreamError?.RemediationHint,
+                retryable = terminalStreamError?.Retryable,
+                causePhase = terminalStreamError?.CausePhase,
+                errorReportVersion = terminalStreamError?.ReportVersion,
+                errorEvidence = terminalStreamError?.EvidenceJson,
                 toolFailureCount,
                 toolOutputTruncatedCount,
                 toolOutputChars,

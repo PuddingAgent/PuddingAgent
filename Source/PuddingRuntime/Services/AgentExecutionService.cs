@@ -16,6 +16,7 @@ using PuddingCode.Tools;
 using PuddingMemoryEngine.Data;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
+using PuddingRuntime.Services.Diagnostics;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.Tools;
 using PuddingCode.Observability;
@@ -1614,6 +1615,30 @@ public sealed partial class AgentExecutionService
             ? $"HTTP_{httpStatusCode.Value}"
             : exception is VisionPipelineException vision ? vision.Code : exception.GetType().Name;
 
+        // 投影与导出：给界面「标题 + 大概原因 + 建议动作」，给用户「一键复制完整现场」的载荷。
+        var export = TerminalDiagnosticExport.Build(
+            exception,
+            LlmCallDiagnosticsScope.Current,
+            new TerminalDiagnosticExport.Input
+            {
+                TimestampUtc = timestampUtc,
+                SessionId = request.SessionId,
+                TurnId = request.MessageId,
+                MessageId = request.MessageId,
+                TraceId = traceId,
+                ErrorId = null,
+                WorkspaceId = request.WorkspaceId,
+                AgentTemplateId = request.AgentTemplateId,
+                AgentInstanceId = agentInstanceId,
+                // 已知缺口：providerId 需要从 LLM 路由快照一路传到这里，本层拿不到（不猜，留空并登记）。
+                ProviderId = null,
+                ModelId = llmConfig?.ModelId,
+                EndpointHost = SafeHost(llmConfig?.Endpoint),
+                Round = round,
+                MaxRounds = maxRounds,
+                ConsecutiveFailures = consecutiveFailures,
+            });
+
         return new StreamErrorDiagnostic
         {
             IsError = true,
@@ -1637,6 +1662,17 @@ public sealed partial class AgentExecutionService
             ProviderId = null,
             ModelId = llmConfig?.ModelId,
             EndpointHost = SafeHost(llmConfig?.Endpoint),
+            CauseCode = export.CauseCode,
+            CauseTitle = export.Presentation.Title,
+            CauseShortCause = export.Presentation.ShortCause,
+            RemediationHint = export.Cause.RemediationHint,
+            Severity = export.Presentation.Severity,
+            Retryable = export.Presentation.Retryable,
+            CausePhase = export.Phase,
+            ReportVersion = export.ReportVersion,
+            EvidenceJson = export.EvidenceJson,
+            ReportText = export.ReportText,
+            ReportJson = export.ReportJson,
         };
     }
 
@@ -1646,11 +1682,20 @@ public sealed partial class AgentExecutionService
         {
             "## 请求失败",
             "",
-            error.Message,
-            "",
-            "### 诊断信息",
-            $"- Session ID: `{error.SessionId}`",
         };
+
+        // 先给用户看得懂的东西：标题 + 大概原因（技术细节在下面的诊断信息与复制载荷里）。
+        if (!string.IsNullOrWhiteSpace(error.CauseTitle))
+            lines.Add($"**{error.CauseTitle}**");
+        if (!string.IsNullOrWhiteSpace(error.CauseShortCause))
+            lines.Add(error.CauseShortCause);
+        if (!string.IsNullOrWhiteSpace(error.CauseTitle) || !string.IsNullOrWhiteSpace(error.CauseShortCause))
+            lines.Add("");
+
+        lines.Add(error.Message);
+        lines.Add("");
+        lines.Add("### 诊断信息");
+        lines.Add($"- Session ID: `{error.SessionId}`");
 
         if (!string.IsNullOrWhiteSpace(error.TurnId))
             lines.Add($"- Message ID / Turn ID: `{error.TurnId}`");
@@ -1662,6 +1707,15 @@ public sealed partial class AgentExecutionService
         lines.Add($"- Location: `{error.Location}`");
         lines.Add($"- Error Code: `{error.ErrorCode}`");
         lines.Add($"- Round: `{error.Round}/{error.MaxRounds}`");
+
+        if (!string.IsNullOrWhiteSpace(error.CauseCode))
+            lines.Add($"- 因果码: `{error.CauseCode}`");
+        if (!string.IsNullOrWhiteSpace(error.CausePhase))
+            lines.Add($"- 失败阶段: `{error.CausePhase}`");
+        if (!string.IsNullOrWhiteSpace(error.CauseCode))
+            lines.Add($"- 可重试: `{(error.Retryable ? "是" : "否")}`");
+        if (!string.IsNullOrWhiteSpace(error.RemediationHint))
+            lines.Add($"- 处置建议: {error.RemediationHint}");
 
         if (!string.IsNullOrWhiteSpace(error.ProviderId))
             lines.Add($"- Provider: `{error.ProviderId}`");
@@ -1699,6 +1753,28 @@ public sealed partial class AgentExecutionService
         public string? ProviderId { get; init; }
         public string? ModelId { get; init; }
         public string? EndpointHost { get; init; }
+
+        // ── 可诊断基础设施 §12：界面呈现 + 可复制的完整现场 ──
+        /// <summary>稳定因果码（界面按它本地化，而不是回显原始异常文本）。</summary>
+        public string? CauseCode { get; init; }
+        public string? CauseTitle { get; init; }
+        public string? CauseShortCause { get; init; }
+        public string? RemediationHint { get; init; }
+        public string? Severity { get; init; }
+        public bool Retryable { get; init; }
+        public string? CausePhase { get; init; }
+
+        /// <summary>复制载荷的 schema 版本（前端据此决定如何解析/展示）。</summary>
+        public string? ReportVersion { get; init; }
+
+        /// <summary>有界证据 JSON（已脱敏、已限长，含异常链）。</summary>
+        public string? EvidenceJson { get; init; }
+
+        /// <summary>「复制诊断信息」的文本（人读、可直接粘贴给维护者）。</summary>
+        public string? ReportText { get; init; }
+
+        /// <summary>「下载 JSON」的载荷（机器读）。</summary>
+        public string? ReportJson { get; init; }
     }
 
     private static CapabilityPolicy MergeCapability(CapabilityPolicy? db, CapabilityPolicy? template)

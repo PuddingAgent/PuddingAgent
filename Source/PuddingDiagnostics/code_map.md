@@ -54,7 +54,7 @@
 | 消费方 | 状态 |
 |---|---|
 | `Source/PuddingCore` 网关族（openai/responses/anthropic） | ✅ 已接入（Stage 3）：`LlmCallDiagnosticsScope` 记录请求体字节数 / 真实派发次数 / 失败阶段；体积闸门置 `provider.request_too_large` |
-| `Source/PuddingRuntime`（`DirectLlmClient`） | 🟡 部分接入（Stage 3）：`LlmFailureDiagnostics` + 每次流式尝试一个诊断作用域 + `RecordActivityAsync` 唯一出口分类（失败活动 `ErrorCode` 已是稳定因果码）+ 失败/重试日志带因果字段；`ChatAsync`（非流式）作用域待做 |
+| `Source/PuddingRuntime`（`DirectLlmClient` / `AgentExecutionService`） | ✅ 已接入（Stage 3+4a）：采集（作用域 + 唯一出口分类 + 因果码挂载到异常）与**投影/导出**（`TerminalDiagnosticExport`：终态 DTO 带 `CauseCode/CauseTitle/CauseShortCause/RemediationHint/EvidenceJson/ReportText/ReportJson`，markdown 首屏给标题与大概原因，`done` 帧带扁平因果键）；`ChatAsync` 作用域与多次尝试明细待做 |
 | `Source/PuddingPlatform`（事实落库/投影/API/诊断包） | 待接入（Stage 4）：`cause_*` / `request_bytes` 目前进 `metadata_json`，尚无索引列 |
 | `Source/PuddingHost`（组合根装配、日志路由） | 待接入（Stage 3/4） |
 | `Source/PuddingPlatformAdmin`（按码本地化 + 复制/下载） | 待接入（Stage 4） |

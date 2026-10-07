@@ -605,9 +605,13 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             error: ex,
                             CancellationToken.None);
                         await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
-                        throw new TimeoutException(
-                            "LLM stream stopped producing chunks before the watchdog deadline.",
-                            ex);
+                        // 抛出的新异常也要带上因果结论，否则上层看不到「看门狗空闲超时」这个阶段事实。
+                        var idleCause = LlmFailureDiagnostics.TryGet(ex, out var attachedIdleCause)
+                            ? attachedIdleCause
+                            : LlmFailureDiagnostics.Classify(ex, diagnosticScope);
+                        throw LlmFailureDiagnostics.Attach(
+                            new TimeoutException("LLM stream stopped producing chunks before the watchdog deadline.", ex),
+                            idleCause);
                     }
                     catch (OperationCanceledException ex) when (
                         !hasYieldedDelta &&
@@ -1039,6 +1043,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         // 因果分类在**唯一出口**做：任何失败路径都得到稳定因果码，而不是各调用点各写一套日志字符串。
         var cause = error is null ? null : LlmFailureDiagnostics.Classify(error, LlmCallDiagnosticsScope.Current);
         var effectiveMetadata = cause is null ? metadata : LlmFailureDiagnostics.MergeInto(metadata, cause);
+
+        // 结论随异常向上传递（Agent 执行循环要据此生成界面呈现与「复制现场」载荷）。
+        if (cause is not null && error is not null)
+            LlmFailureDiagnostics.Attach(error, cause);
 
         if (_activitySink is null)
         {

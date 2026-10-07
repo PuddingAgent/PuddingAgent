@@ -30,6 +30,38 @@ internal static class LlmFailureDiagnostics
 
     private static readonly IDiagnosticCauseClassifier Classifier = LlmFailureClassifier.Default;
 
+    /// <summary>
+    /// 因果结论随异常一起穿过边界（`DirectLlmClient` → Agent 执行循环）。
+    /// 用 <see cref="Exception.Data"/> 而不是新异常类型：现有代码在终态判定里要读
+    /// <c>HttpRequestException.StatusCode</c> 与 <c>VisionPipelineException.Code</c>，
+    /// 包装异常会打断这些既有语义；`Data` 逐实例携带且 `throw;` 不丢。
+    /// </summary>
+    private const string CauseDataKey = "pudding.diagnostic.cause";
+
+    /// <summary>把因果结论挂到异常上，供上层投影/导出使用。</summary>
+    public static TException Attach<TException>(TException error, DiagnosticCause cause)
+        where TException : Exception
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        ArgumentNullException.ThrowIfNull(cause);
+
+        error.Data[CauseDataKey] = cause;
+        return error;
+    }
+
+    /// <summary>读取挂载的因果结论；没有则返回 false（上层可自行重新分类）。</summary>
+    public static bool TryGet(Exception? error, out DiagnosticCause cause)
+    {
+        if (error?.Data[CauseDataKey] is DiagnosticCause attached)
+        {
+            cause = attached;
+            return true;
+        }
+
+        cause = null!;
+        return false;
+    }
+
     /// <summary>对一次失败做因果分类；现场来自当前作用域（可能为空）。</summary>
     public static DiagnosticCause Classify(
         Exception error,
