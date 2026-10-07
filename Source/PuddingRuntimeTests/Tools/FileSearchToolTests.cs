@@ -511,6 +511,111 @@ public sealed class FileSearchToolTests
         public bool RemoveIndex(string directoryPath) => true;
     }
 
+    // ── 参数合同失败带 contract_error；运行时状态失败不得误报为 contract_error ──
+
+    [TestMethod]
+    public async Task UnknownProvider_ReportsContractError()
+    {
+        var tool = new FileSearchTool([new CountingBuiltInProvider()]);
+
+        var result = await ExecuteAsync(tool, """
+        {
+          "provider": "NoSuchProvider",
+          "directory": "."
+        }
+        """);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "File search provider not found");
+        Assert.AreEqual(ToolResultStatuses.ContractError, result.Status);
+    }
+
+    [TestMethod]
+    public async Task BuiltInProviderWithoutDirectory_ReportsContractError()
+    {
+        var tool = new FileSearchTool([new CountingBuiltInProvider()]);
+
+        var result = await ExecuteAsync(tool, """
+        {
+          "provider": "BuiltInRecursiveFileSearch",
+          "pattern": "*.txt"
+        }
+        """);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "Directory is required");
+        Assert.AreEqual(
+            ToolResultStatuses.ContractError,
+            result.Status,
+            "omitting the directory is a malformed request");
+    }
+
+    [TestMethod]
+    public async Task EverythingWithoutDirectory_ReportsContractError()
+    {
+        var tool = new FileSearchTool([new EverythingSearchProvider(new StubEverythingSdk([]))]);
+
+        var result = await ExecuteAsync(tool, """
+        {
+          "pattern": "*.txt"
+        }
+        """);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "Everything requires an absolute directory");
+        Assert.AreEqual(ToolResultStatuses.ContractError, result.Status);
+    }
+
+    [TestMethod]
+    public async Task UnsupportedDoubleStarPattern_ReportsContractError()
+    {
+        var root = CreateTempDir("hb16-glob-");
+        try
+        {
+            var tool = new FileSearchTool([new CountingBuiltInProvider()]);
+
+            var result = await ExecuteAsync(tool, $$"""
+            {
+              "provider": "BuiltInRecursiveFileSearch",
+              "directory": "{{JsonEscape(root)}}",
+              "pattern": "**"
+            }
+            """);
+
+            Assert.IsFalse(result.Success);
+            StringAssert.Contains(result.Error, "contains '**'");
+            Assert.AreEqual(
+                ToolResultStatuses.ContractError,
+                result.Status,
+                "an unsupported glob is the caller's argument, not a runtime failure");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task MissingDirectoryTarget_IsNotReportedAsContractError()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "hb16-missing-" + Guid.NewGuid().ToString("N"));
+        var tool = new FileSearchTool([new CountingBuiltInProvider()]);
+
+        var result = await ExecuteAsync(tool, $$"""
+        {
+          "provider": "BuiltInRecursiveFileSearch",
+          "directory": "{{JsonEscape(missing)}}"
+        }
+        """);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "Directory not found");
+        Assert.AreNotEqual(
+            ToolResultStatuses.ContractError,
+            result.Status,
+            "a missing target directory is runtime state, not a malformed request");
+    }
+
     private static void DeleteDir(string dir)
     {
         if (Directory.Exists(dir))

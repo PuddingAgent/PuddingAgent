@@ -51,7 +51,9 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             provider = _providers.FirstOrDefault(p =>
                 string.Equals(p.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
             if (provider == null)
-                return ToolExecutionResult.Fail($"File search provider not found: {providerId}");
+                return ToolExecutionResult.Fail(
+                    $"File search provider not found: {providerId}",
+                    status: ToolResultStatuses.ContractError);
             if (!provider.IsAvailable)
             {
                 if (requireProvider)
@@ -103,13 +105,16 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
         {
             return ToolExecutionResult.Fail(
                 "Directory is required for provider BuiltInRecursiveFileSearch. " +
-                "Use provider=Everything to search with the default directory, or pass an existing directory.");
+                "Use provider=Everything to search with the default directory, or pass an existing directory.",
+                status: ToolResultStatuses.ContractError);
         }
 
         if (IsEverythingProvider(providerId))
         {
             if (string.IsNullOrWhiteSpace(args.Directory))
-                return ToolExecutionResult.Fail(BuildEverythingDirectoryGuidance("Everything requires an absolute directory."));
+                return ToolExecutionResult.Fail(
+                    BuildEverythingDirectoryGuidance("Everything requires an absolute directory."),
+                    status: ToolResultStatuses.ContractError);
 
             // 相对目录不直接拒绝：先按与 BuiltIn 分支同源的方式归一化为 workspace 绝对路径，
             // 只有最终无效/不存在的路径才会在下方 Directory.Exists 检查处返回 allowed roots 提示。
@@ -141,7 +146,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             return ToolExecutionResult.Fail(
                 $"Pattern '{pattern}' contains '**' which is not supported by Windows file search. " +
                 "Use '*' for single-directory wildcard (e.g. '*.cs') or set recursive=true to search subdirectories. " +
-                "Example: directory='<absolute-or-workspace-relative-directory>', pattern='*stats*', recursive=true");
+                "Example: directory='<absolute-or-workspace-relative-directory>', pattern='*stats*', recursive=true",
+                status: ToolResultStatuses.ContractError);
         }
 
         try
