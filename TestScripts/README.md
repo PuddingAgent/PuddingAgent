@@ -300,3 +300,78 @@ resolves to `$PSHOME\pwsh` (`...\WindowsPowerShell\v1.0\pwsh`) - a path that doe
 This is reported, **not patched**: pointing the launcher at `powershell.exe` would change which engine
 runs a gate (and the exit-code-reliability measurements above were taken under `pwsh`), so the switch
 needs an explicit decision from the gate's owner rather than a silent edit.
+
+---
+
+## ⚠️ 已知缺陷：**4/18 脚本在 Windows PowerShell 5.1 下无法解析**（2026-10-08 实测）
+
+**根因（已证，非猜测）**：这些脚本是 **UTF-8 无 BOM**、正文含中文；**PowerShell 5.1 在没有 BOM 时按 ANSI(GBK) 解码**，中文字节吃掉了字符串字面量的闭合引号 ⇒ **解析失败**。
+
+| 脚本 | 按字节读（5.1 默认） | 按 UTF-8 文本读 | 结论 |
+|---|---|---|---|
+| `check-circular-deps.ps1` | **4 个语法错误** | **0** | **不可执行**（实跑已证：`exit -1`，ParserError） |
+| `report-skill-portfolio.ps1` | **191** | **0** | **不可执行** |
+| `test-platform-api.ps1` | **11** | **0** | **不可执行** |
+| **`test-pudding-suite-gates.ps1`** | **31** | **0** | **不可执行（套件身份门禁）** |
+| `test-operators-architecture-gates.ps1` | 0 | 0 | 可解析 |
+| `test-capability-channel-window.ps1`（**全仓唯一带 BOM**） | 0 | 0 | 可执行 |
+
+> **"按 UTF-8 文本读 = 0 错误"是关键判别**：它证明失败**纯粹是编码**，**不存在 PS7 专有语法** ⇒ **修法就是加 BOM**（3 字节），不需要改代码。
+
+**实测复现（只解析、不执行，无副作用）**：
+```powershell
+powershell -NoProfile -File TestScripts\check-circular-deps.ps1   # => ParserError / exit -1
+
+Get-ChildItem TestScripts\*.ps1 | ForEach-Object {
+  $e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$null,[ref]$e)
+  '{0,-46} errors={1}' -f $_.Name, @($e).Count }
+
+# 判别根因（编码 vs 语法）：
+$t=[IO.File]::ReadAllText($p,[Text.Encoding]::UTF8); $e=$null
+[void][System.Management.Automation.Language.Parser]::ParseInput($t,[ref]$null,[ref]$e); @($e).Count   # => 0
+```
+
+**修法（3 字节/文件；未由本代理执行，留待 owner 决定）**：
+```powershell
+foreach($n in @('check-circular-deps.ps1','report-skill-portfolio.ps1','test-platform-api.ps1','test-pudding-suite-gates.ps1')){
+  $p = Join-Path 'TestScripts' $n; $b = [IO.File]::ReadAllBytes($p)
+  if (-not ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)) {
+    [IO.File]::WriteAllBytes($p, ([byte[]](0xEF,0xBB,0xBF)) + $b); "fixed $n" } }
+```
+
+### `check-circular-deps.ps1` 的另外四个独立缺陷（**修好编码也不可用**）
+
+1. `$cyclesFound` **从不递增** ⇒ 结尾永远打印"未发现循环依赖" ⇒ **假 PASS**（最危险的一条）。
+2. `$root` 多剥了一层目录（3× `Split-Path -Parent`）⇒ `$sourceDir` 指向仓库**外**（实测 `Test-Path D:\CodeProject\PuddingAgent\Source` = **False**）。
+3. 只扫 `Source\`，**不覆盖 `Tests\`**（仓库级还有 ≥5 个测试工程）。
+4. `Split-Path -LeafBase` 是 **PS 6+ 参数**（本机实测报"找不到与参数名称 LeafBase 匹配的参数"）。
+5. **无退出码约定** ⇒ 不能作为 CI 判据（无论好坏都返回 0/解析错误）。
+
+### ✅ 替代实现：`check-project-layering.ps1`（新增 2026-10-08）
+
+- **C-1**：全仓库 `*.csproj` 依赖图**无环**（覆盖 `Source` + `Tests`）。
+- **C-4**：**生产工程不得引用测试工程**（`*Tests`）。
+- `-SelfTest`：**变异自检**——注入 ①合成环 ②合成 `生产 -> 测试` 引用，断言检查器**必须报错**（对应标准 §4"故意反向依赖能被捕获"的验收精神）。
+- **退出码（fail-closed）**：`0`=PASS · `1`=FAIL · `3`=INSTRUMENT_FAILURE（枚举到 0 个工程时**拒绝报绿**）· `4`=SELFTEST_FAIL。
+- **ASCII-only**：从设计上免疫上述编码缺陷（本文件不含任何非 ASCII 字节）。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\check-project-layering.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\check-project-layering.ps1 -SelfTest
+```
+
+**实测输出（2026-10-08，本机 PS 5.1；两次运行均 exit 0）**：
+```
+PROJECT_COUNT = 81        EDGE_COUNT = 131
+EXTERNAL_TREE_PROJECTS = 4 (vendored; still checked by C-1/C-4; governance undecided: D-5)
+  ext: github.hyfree.GM / github.hyfree.GM.ConsoleApp / github.hyfree.GMTests / PerformanceTest
+PASS C-1: dependency graph is acyclic
+PASS C-4: no production project references a test project
+INFO: 2 edge(s) into undecided fixture/probe projects (D-6, NOT enforced):
+  PuddingDesktop.Tests -> PuddingDesktop.WpfArchive
+  PuddingPlatformTests -> Mcp.Cli
+RESULT: PASS
+```
+- 变异自检（`-SelfTest`）：`SELFTEST ok: injected cycle detected -> __ZZ_CycleA -> __ZZ_CycleB -> __ZZ_CycleA` · `SELFTEST ok: injected production->test reference detected` · `SELFTEST: PASS`。
+- 本文件自身：**`NONASCII=0` / `PARSE_ERRORS=0`** ⇒ 从设计上免疫上述编码缺陷。
+- **新发现（D-5 的证据）**：`github.hyfree.GM` 等 **4 个工程位于仓库 `external\` 目录树内** ⇒ 它们是**内嵌的外部源码树**，不是普通本仓工程；治理口径（是否纳入层级/边界断言）需人工裁决。
