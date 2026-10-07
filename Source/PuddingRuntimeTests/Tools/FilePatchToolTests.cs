@@ -253,14 +253,15 @@ public sealed class FilePatchToolTests
     private string ReadFile(string name) =>
         File.ReadAllText(GetPath(name), Encoding.UTF8);
 
-    // ── D4: a leading line break in old_text must never be consumed unless new_text restores it ──
+    // ── D4: a line break is never split in half; an omitted leading break is an explicit deletion ──
 
     [TestMethod]
-    public async Task Replace_LeadingNewlineAnchoredOldText_DoesNotMergeRows()
+    public async Task Replace_LeadingNewlineAnchoredOldText_NeverSplitsCrlfAndDeletesBreakWhenOmitted()
     {
-        // Measured in the field on 2026-10-07: anchoring old_text with a leading newline made the
-        // match span swallow the previous line's CRLF, merging two markdown table rows into one
-        // line and leaving an orphan CR behind.
+        // Field-measured on 2026-10-07: anchoring old_text with a leading newline used to match only the
+        // LF half of the CRLF before the row, leaving an orphan CR behind. The span now always covers the
+        // whole CRLF pair, and the parameters are executed faithfully: new_text supplies no leading break,
+        // so the break is deleted (the two lines are joined) instead of being silently restored.
         WriteFile("table.md", "| a | b |\r\n|---|---|\r\n| keep | one |\r\n| target | two |\r\n| tail | three |\r\n");
         var result = await ExecuteAsync(new Dictionary<string, object?>
         {
@@ -279,10 +280,15 @@ public sealed class FilePatchToolTests
         Assert.IsTrue(result.Success, result.Error);
         var actual = ReadFile("table.md");
         Assert.AreEqual(
-            "| a | b |\r\n|---|---|\r\n| keep | one |\r\n| target | two |\r\n| ins1 | x |\r\n| tail | three |\r\n",
+            "| a | b |\r\n|---|---|\r\n| keep | one || target | two |\r\n| ins1 | x |\r\n| tail | three |\r\n",
             actual,
-            "the row before the anchor must keep its terminator (no merged rows, no orphan CR)");
+            "the whole CRLF is consumed and new_text is written verbatim: an omitted leading break deletes it");
         Assert.IsFalse(actual.Contains("|\r|", StringComparison.Ordinal), "no orphan CR may survive");
+        Assert.IsFalse(actual.Contains("\r\r\n", StringComparison.Ordinal), "no CRCRLF may be produced");
+        StringAssert.Contains(
+            result.Output,
+            "starts with a line break",
+            "the deleted line boundary must be reported to the caller");
     }
 
     [TestMethod]
@@ -311,8 +317,10 @@ public sealed class FilePatchToolTests
     }
 
     [TestMethod]
-    public async Task Replace_LeadingNewlineAnchoredOldText_ReportsAnIssueNotice()
+    public async Task Replace_LeadingNewlineAnchoredOldText_ReportedDeletionMatchesWrittenBytes()
     {
+        // The reporting contract of the case above: the caller is told the boundary was deleted, and the
+        // notice never claims a preservation that did not happen.
         WriteFile("table.md", "| keep | one |\r\n| target | two |\r\n");
         var result = await ExecuteAsync(new Dictionary<string, object?>
         {
@@ -329,14 +337,16 @@ public sealed class FilePatchToolTests
         });
 
         Assert.IsTrue(result.Success, result.Error);
+        var actual = ReadFile("table.md");
         Assert.AreEqual(
-            "| keep | one |\r\n| target | three |\r\n",
-            ReadFile("table.md"),
-            "the preceding line must keep its terminator while the row is still replaced");
+            "| keep | one || target | three |\r\n",
+            actual,
+            "new_text supplies no leading break, so the break is deleted exactly as requested");
+        Assert.IsFalse(actual.Contains("\r\r\n", StringComparison.Ordinal), "no CRCRLF may be produced");
         StringAssert.Contains(
             result.Output,
             "starts with a line break",
-            "an asymmetric leading line break must be reported instead of silently kept");
+            "the caller must be told that an asymmetric leading line break deleted the boundary");
     }
 
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)

@@ -367,28 +367,21 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
 
             var replacementSuppliedLeadingBreak = StartsWithLineBreak(newText);
 
-            // A line break must never be split and must never be swallowed: widen a span that
-            // starts on the LF half of a CRLF to the whole pair, then give back to new_text any
-            // leading line break the span consumes. Without this, a lone LF at the start of
-            // old_text matches the LF half of a CRLF, the previous line loses its terminator and
-            // two lines merge with an orphan CR left behind (defect measured 2026-10-07).
+            // A line break must never be split in half: widen a span that starts (or ends) on one half
+            // of a CRLF to the whole pair. Without this, a lone LF at the start of old_text matched only
+            // the LF half of the CRLF before it and left an orphan CR behind (defect measured 2026-10-07).
+            // The span is then replaced verbatim: a leading line break that new_text does not supply is an
+            // explicit deletion (the two lines are joined), not something the tool may silently restore.
             for (var i = 0; i < candidates.Count; i++)
                 candidates[i] = WidenToWholeLineBreak(original, candidates[i]);
-
-            if (candidates.Count > 0
-                && IsLineBreakChar(original[candidates[0].Index])
-                && !replacementSuppliedLeadingBreak)
-            {
-                newText = LeadingLineBreakOf(original, candidates[0]) + newText;
-            }
 
             if (StartsWithLineBreak(oldText) && !replacementSuppliedLeadingBreak)
             {
                 errors.Add(
                     $"old_string starts with a line break but new_text does not in {relPath} " +
-                    $"(L{GetLineNumberOf(original, candidates[0].Index)}): the preceding line break was " +
-                    "kept to avoid merging two lines; include the leading line break in new_text if you " +
-                    "intended to consume it.");
+                    $"(L{GetLineNumberOf(original, candidates[0].Index)}): the matched line break was " +
+                    "deleted as written, joining the two lines; include the leading line break in " +
+                    "new_text if you intended to keep them separate.");
             }
 
             if (op.ReplaceAll == true)
@@ -536,13 +529,6 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             && original[match.Index - 1] == '\r'
             ? new TextMatch(match.Index - 1, match.Length + 1, match.Strategy)
             : match;
-
-    // The exact line-break text a consumed span starts with, so new_text can give it back
-    // byte-for-byte (CRLF host text must not be rewritten as a lone LF).
-    private static string LeadingLineBreakOf(string original, TextMatch match)
-        => match.Length > 1 && original[match.Index] == '\r' && original[match.Index + 1] == '\n'
-            ? "\r\n"
-            : original[match.Index].ToString();
 
     private static bool IsAmbiguousBlockPattern(string oldText, string original)
     {
