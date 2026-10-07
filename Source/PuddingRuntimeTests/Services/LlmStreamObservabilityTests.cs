@@ -1004,6 +1004,45 @@ public sealed class LlmStreamObservabilityTests
         Assert.AreEqual("request_upload", retried.Metadata["cause_phase"]);
     }
 
+    /// <summary>
+    /// 非流式 `chat`（子代理走的就是这条路）同样必须带上「体积 / 阶段 / 因果码」——
+    /// 2026-10-07 事故里子代理的失败也是同一族。
+    /// </summary>
+    [TestMethod]
+    public async Task ChatAsync_WhenRequestUploadReset_RecordsCauseAndRequestBytes()
+    {
+        var activities = new RecordingActivitySink();
+        var handler = new UploadResetHandler();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(maxRetries: 0, retryDelaySeconds: 0, protocol: "responses"),
+            NullLogger<DirectLlmClient>.Instance,
+            activitySink: activities);
+
+        await Assert.ThrowsExactlyAsync<HttpRequestException>(async () =>
+            await client.ChatAsync(
+                "default",
+                "session-chat-upload-reset",
+                "template-1",
+                [new ChatMessage(ChatRole.User, "hello")],
+                llmConfig: new LlmConfig
+                {
+                    Endpoint = "https://provider.test/v1",
+                    ApiKey = "test-key",
+                    ModelId = "test-model",
+                }));
+
+        var failed = activities.Activities.Last(activity =>
+            activity.Operation == "chat" && activity.Status == RuntimeActivityStatuses.Failed);
+
+        Assert.AreEqual(DiagnosticCauseCode.RequestUploadReset, failed.ErrorCode);
+        Assert.AreEqual("request_upload", failed.Metadata!["cause_phase"]);
+        Assert.AreEqual("10054", failed.Metadata["socket_error_code"]);
+        Assert.AreEqual("1", failed.Metadata["attempt"]);
+        Assert.IsGreaterThan(0L, long.Parse(failed.Metadata["request_bytes"], CultureInfo.InvariantCulture),
+            "非流式路径同样必须记录请求体字节数");
+    }
+
     private sealed class RecordingActivitySink : IRuntimeActivitySink
     {
         public List<RuntimeActivity> Activities { get; } = [];

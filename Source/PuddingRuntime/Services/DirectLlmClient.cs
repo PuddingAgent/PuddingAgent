@@ -181,6 +181,14 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
             CancellationToken effectiveCt = linkedCts.Token;
 
+            // 非流式路径（子代理走的就是它）同样需要现场：没有作用域就只会有「异常字符串」。
+            using var diagnosticScope = LlmCallDiagnosticsScope.Begin();
+            diagnosticScope.ProviderId = config.ProviderId;
+            diagnosticScope.ModelId = config.Model;
+            diagnosticScope.EndpointHost = LlmCallDiagnosticsScope.HostOf(config.Endpoint);
+            diagnosticScope.Attempt = attempt + 1;
+            diagnosticScope.MaxRetries = maxRetries;
+
             try
             {
                 // ── 并发限流（按模型粒度，同一 Provider 不同模型独立限流）──
@@ -233,6 +241,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
             {
                 // 外部取消 — 不重试
+                diagnosticScope.UserCancelled = true;
                 sw.Stop();
                 await RecordActivityAsync(
                     trace,
@@ -251,6 +260,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             {
                 // 瞬态错误 → 记录熔断失败
                 var isTimeout = timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested;
+                diagnosticScope.FirstChunkTimeout = isTimeout;
                 lock (circuit)
                 {
                     circuit.RecordFailure(
