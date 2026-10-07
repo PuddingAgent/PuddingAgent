@@ -295,7 +295,7 @@
 | `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | Roslyn 语法树的顶层结构遍历 | `OutlineSyntaxVisitor` | `Tools/BuiltIns/CodeIntelligence/OutlineNode.cs` | — |
 | `Tools/BuiltIns/CodeIntelligence/ProjectMapTool.cs` | `project_map`：项目模块概览 | `ProjectMapTool` | `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` | — |
 | `Tools/BuiltIns/Context/SessionCompactTool.cs` | `compact_session`：会话上下文的手动压缩 | `SessionCompactTool` | `Services/ContextCompactionService.cs` | 当前轮围栏守卫优先于手动压缩 |
-| `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | `agent_diagnostics`：Agent 自我诊断 | `AgentDiagnosticsTool` | `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 数据源不可用时显式报出，不当作无问题 |
+| `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | `agent_diagnostics`：Agent 自我诊断（含 runtime_identity 运行身份核实） | `AgentDiagnosticsTool` | `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 数据源不可用时显式报出，不当作无问题；运行身份只报磁盘事实，读不到时报 error 不编造 |
 | `Tools/BuiltIns/Documents/ReadOfficeDocumentTool.cs` | `read_office_document`：办公文档读取 | `ReadOfficeDocumentTool` | `Tools/BuiltIns/Files/FileChunkService.cs` | — |
 | `Tools/BuiltIns/Events/EventSubscriptionTool.cs` | `event_subscribe`：事件类型的订阅与退订 | `EventSubscriptionTool` | `Services/Events/EventDispatcher.cs` | — |
 | `Tools/BuiltIns/Files/FileChunkService.cs` | 大文件的分块与流式窗口 | `FileChunkService` | `Tools/BuiltIns/Files/FileTools.cs` | — |

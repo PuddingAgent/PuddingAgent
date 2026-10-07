@@ -1,3 +1,7 @@
+using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Models;
@@ -28,6 +32,8 @@ namespace PuddingRuntime.Services.Tools;
 ///   - token_breakdown: 返回当前（或指定 session_id）最近一次请求的分层 token 分解（MessageTokens/ToolDefinitionTokens/SystemMessageTokens/HistoryMessageTokens）
 ///   - entropy_probe: 返回当前（或指定 session_id）最近一次请求各层的 gzip 压缩比（SystemMessage/HistoryMessage/ToolDefinition）
 ///   - context_health: 返回当前会话的上下文健康状态（用量比例、状态、剩余 token 等，对齐 ContextHealthSnapshot）
+///   - runtime_identity: 返回当前进程与其已加载程序集的身份事实（PID/启动时间、程序集路径/大小/写入时间/
+///     SHA-256/MVID/InformationalVersion），用于核实「重启后到底加载了哪份产物」；不回显凭据或环境变量
 ///   - diagnose: 汇总工具/缓存/上下文/子代理四个维度并运行确定性诊断引擎，
 ///     返回带证据的判定（healthy/degraded/critical/unknown）与 findings；
 ///     证据不足时一律给 unknown，并把「跳过了哪些检查、为什么」一并返回
@@ -78,8 +84,9 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             "token_breakdown" => await GetTokenBreakdownAsync(args, context, ct),
             "entropy_probe" => await GetEntropyProbeAsync(args, context, ct),
             "context_health" => await GetContextHealthAsync(args, context, ct),
+            "runtime_identity" => GetRuntimeIdentity(args),
             "diagnose" => await GetDiagnosisAsync(args, context, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, goodput_attribution, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health, diagnose." })
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, goodput_attribution, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health, runtime_identity, diagnose." })
         };
 
         return ToolExecutionResult.Ok(result);
@@ -856,11 +863,163 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         if (string.IsNullOrWhiteSpace(message)) return "(empty)";
         return message.Length > 120 ? message[..120] + "..." : message;
     }
+
+    // P2「运行身份」：外部控制器部署 / 重启之后，Agent 必须能独立核实「当前进程到底加载了哪份产物」，
+    // 否则「重启了但没换程序集」这类缺口只能靠外部探针发现。这里只报告进程与已加载程序集的事实
+    // （路径、大小、写入时间、SHA-256、MVID、InformationalVersion），不回显凭据、环境变量或机器标识。
+    private static string GetRuntimeIdentity(AgentDiagnosticsArgs args)
+    {
+        using var process = Process.GetCurrentProcess();
+        var assemblies = new List<AssemblyIdentity>();
+        var entry = Assembly.GetEntryAssembly();
+        if (entry is not null)
+            assemblies.Add(DescribeAssemblyIdentity(entry, "entry"));
+        assemblies.Add(DescribeAssemblyIdentity(typeof(AgentDiagnosticsTool).Assembly, "runtime"));
+
+        var report = new RuntimeIdentityReport(
+            new ProcessIdentity(
+                process.Id,
+                TryGetProcessStartUtc(process),
+                Environment.Is64BitProcess,
+                process.WorkingSet64,
+                AppContext.BaseDirectory),
+            new RuntimeHostIdentity(
+                RuntimeInformation.FrameworkDescription,
+                RuntimeInformation.OSDescription,
+                RuntimeInformation.ProcessArchitecture.ToString(),
+                Environment.Version.ToString()),
+            assemblies,
+            DescribeTargetIdentity(args.AssemblyPath));
+
+        return JsonSerializer.Serialize(report, RuntimeIdentityJsonOptions);
+    }
+
+    // 待核实的对象文件（通常是部署目录里的目标产物）：路径缺失或不可读时如实报 error，
+    // 不编造大小与哈希，让调用方无法把「读不到」误当成「一致」。
+    private static AssemblyTargetIdentity? DescribeTargetIdentity(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        var file = DescribeFileIdentity(path);
+        return new AssemblyTargetIdentity(
+            path,
+            file,
+            file is null ? "file not found or unreadable" : null);
+    }
+
+    private static AssemblyIdentity DescribeAssemblyIdentity(Assembly assembly, string role)
+    {
+        var name = assembly.GetName();
+        string? location = null;
+        try
+        {
+            location = string.IsNullOrWhiteSpace(assembly.Location) ? null : assembly.Location;
+        }
+        catch (NotSupportedException)
+        {
+            location = null;
+        }
+
+        string? informationalVersion = null;
+        string? mvid = null;
+        try
+        {
+            informationalVersion = assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            mvid = assembly.ManifestModule.ModuleVersionId.ToString("D");
+        }
+        catch (NotSupportedException)
+        {
+            // 动态程序集没有清单模块：保持 null，不猜测。
+        }
+
+        return new AssemblyIdentity(
+            role, name.Name ?? "unknown", location, DescribeFileIdentity(location), informationalVersion, mvid);
+    }
+
+    private static FileIdentity? DescribeFileIdentity(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return null;
+
+        try
+        {
+            var info = new FileInfo(path);
+            using var stream = File.OpenRead(path);
+            return new FileIdentity(
+                info.FullName,
+                info.Length,
+                info.LastWriteTimeUtc.ToString("O"),
+                Convert.ToHexString(SHA256.HashData(stream)));
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetProcessStartUtc(Process process)
+    {
+        try
+        {
+            return process.StartTime.ToUniversalTime().ToString("O");
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    private static readonly JsonSerializerOptions RuntimeIdentityJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 }
+
+// ── 运行身份（deployment identity）：只承载可核对的事实，不承载推断 ──
+internal sealed record FileIdentity(string Path, long Bytes, string LastWriteTimeUtc, string Sha256);
+
+internal sealed record AssemblyIdentity(
+    string Role,
+    string Name,
+    string? Location,
+    FileIdentity? File,
+    string? InformationalVersion,
+    string? Mvid);
+
+internal sealed record AssemblyTargetIdentity(string Path, FileIdentity? File, string? Error);
+
+internal sealed record ProcessIdentity(
+    int Pid,
+    string? StartedAtUtc,
+    bool Is64Bit,
+    long WorkingSetBytes,
+    string BaseDirectory);
+
+internal sealed record RuntimeHostIdentity(
+    string Framework,
+    string Os,
+    string ProcessArchitecture,
+    string RuntimeVersion);
+
+internal sealed record RuntimeIdentityReport(
+    ProcessIdentity Process,
+    RuntimeHostIdentity Runtime,
+    IReadOnlyList<AssemblyIdentity> Assemblies,
+    AssemblyTargetIdentity? Target);
 
 public sealed record AgentDiagnosticsArgs
 {
-    [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, goodput_attribution, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, or context_health")]
+    [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, goodput_attribution, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health, runtime_identity, or diagnose")]
     public string? Action { get; init; }
 
     [ToolParam("tool name to query (for tool_stats action)")]
@@ -889,4 +1048,7 @@ public sealed record AgentDiagnosticsArgs
 
     [ToolParam("goal run id (for goodput_attribution action; required) —— 例如 tg-xxxxxxxx")]
     public string? GoalRunId { get; init; }
+
+    [ToolParam("file path to verify on disk, e.g. a deployed assembly (for runtime_identity action; optional)")]
+    public string? AssemblyPath { get; init; }
 }

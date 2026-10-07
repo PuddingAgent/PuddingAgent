@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Runtime;
@@ -236,6 +237,160 @@ public sealed class AgentDiagnosticsToolTests
             StringAssert.Contains(
                 doc.RootElement.GetProperty("error").GetString()!,
                 "diagnose");
+        }
+    }
+
+    // ── runtime_identity：部署核实（P2）────────────────────────────
+
+    [TestMethod]
+    public async Task RuntimeIdentity_ReportsLoadedAssembliesWithHashVerifiableOnDisk()
+    {
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: null,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(tool, """{"action":"runtime_identity"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+
+        using var doc = JsonDocument.Parse(result.Output);
+        var root = doc.RootElement;
+
+        Assert.AreEqual(Environment.ProcessId, root.GetProperty("process").GetProperty("pid").GetInt32());
+        Assert.IsFalse(
+            string.IsNullOrWhiteSpace(root.GetProperty("runtime").GetProperty("framework").GetString()));
+
+        var runtimeAssembly = typeof(AgentDiagnosticsTool).Assembly;
+        var runtimeEntry = root.GetProperty("assemblies").EnumerateArray()
+            .Single(a => a.GetProperty("role").GetString() == "runtime");
+
+        Assert.AreEqual(runtimeAssembly.GetName().Name, runtimeEntry.GetProperty("name").GetString());
+
+        var location = runtimeEntry.GetProperty("location").GetString();
+        Assert.AreEqual(runtimeAssembly.Location, location);
+
+        // 哈希必须与磁盘字节一一对应，否则「核实部署到底加载了哪份产物」这句话没有意义。
+        using var stream = File.OpenRead(location!);
+        var expectedHash = Convert.ToHexString(SHA256.HashData(stream));
+        var file = runtimeEntry.GetProperty("file");
+        Assert.AreEqual(expectedHash, file.GetProperty("sha256").GetString());
+        Assert.AreEqual(new FileInfo(location!).Length, file.GetProperty("bytes").GetInt64());
+
+        // MVID / InformationalVersion 必须报出来，且 MVID 形状可判别（Guid "D" 格式）。
+        var mvid = runtimeEntry.GetProperty("mvid").GetString();
+        Assert.AreEqual(runtimeAssembly.ManifestModule.ModuleVersionId.ToString("D"), mvid);
+        Assert.AreEqual(36, mvid!.Length);
+        Assert.IsFalse(
+            string.IsNullOrWhiteSpace(runtimeEntry.GetProperty("informationalVersion").GetString()));
+    }
+
+    [TestMethod]
+    public async Task RuntimeIdentity_TargetFile_ReportsHashMatchingDiskBytes()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"pd-runtime-identity-{Guid.NewGuid():N}.bin");
+        var payload = new byte[4096];
+        for (var i = 0; i < payload.Length; i++)
+            payload[i] = (byte)(i % 251);
+        await File.WriteAllBytesAsync(path, payload);
+
+        try
+        {
+            var services = new ServiceCollection();
+            using var provider = services.BuildServiceProvider();
+            var tool = new AgentDiagnosticsTool(
+                activitySink: null,
+                scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+            var result = await ExecuteAsync(
+                tool,
+                $$"""{"action":"runtime_identity","assembly_path":{{JsonSerializer.Serialize(path)}}}""");
+
+            Assert.IsTrue(result.Success, result.Error);
+
+            using var doc = JsonDocument.Parse(result.Output);
+            var target = doc.RootElement.GetProperty("target");
+            Assert.IsNull(
+                target.GetProperty("error").GetString(),
+                "an existing target file must not be reported as an error");
+
+            var file = target.GetProperty("file");
+            Assert.AreEqual(
+                Convert.ToHexString(SHA256.HashData(payload)),
+                file.GetProperty("sha256").GetString());
+            Assert.AreEqual(payload.Length, file.GetProperty("bytes").GetInt64());
+            Assert.IsTrue(
+                string.Equals(
+                    Path.GetFullPath(path),
+                    file.GetProperty("path").GetString(),
+                    StringComparison.OrdinalIgnoreCase),
+                "the target must be reported with its on-disk full path");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeIdentity_MissingTargetPath_ReportsErrorWithoutInventingIdentity()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"pd-missing-{Guid.NewGuid():N}.bin");
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: null,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(
+            tool,
+            $$"""{"action":"runtime_identity","assembly_path":{{JsonSerializer.Serialize(path)}}}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+
+        using var doc = JsonDocument.Parse(result.Output);
+        var target = doc.RootElement.GetProperty("target");
+        Assert.AreEqual("file not found or unreadable", target.GetProperty("error").GetString());
+        Assert.AreEqual(
+            JsonValueKind.Null,
+            target.GetProperty("file").ValueKind,
+            "a missing file must not be described with invented size or hash");
+    }
+
+    [TestMethod]
+    public async Task RuntimeIdentity_DoesNotEchoSecretsOrEnvironmentVariables()
+    {
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: null,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(tool, """{"action":"runtime_identity"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+
+        var lowered = result.Output.ToLowerInvariant();
+        foreach (var forbidden in new[] { "token", "secret", "password", "apikey", "api_key", "connectionstring" })
+        {
+            Assert.IsFalse(
+                lowered.Contains(forbidden, StringComparison.Ordinal),
+                $"runtime_identity must not echo '{forbidden}'");
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeIdentity_UnknownActionMessageListsRuntimeIdentity()
+    {
+        var resolver = new FakeContextCapacityResolver();
+        var compaction = new FakeContextCompactionService();
+        var tool = CreateTool(resolver, compaction, out var provider);
+        using (provider)
+        {
+            var result = await ExecuteAsync(tool, """{"action":"nope"}""");
+
+            StringAssert.Contains(result.Output, "runtime_identity");
         }
     }
 
