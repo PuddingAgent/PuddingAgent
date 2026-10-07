@@ -497,6 +497,13 @@ export interface SubAgentCard {
   success?: boolean;
   /** 最近的运行活动，供运行坞和详情检查器消费。 */
   activities?: SubAgentActivity[];
+  /**
+   * 运行事实的同步状态。
+   * - `live`：由 canonical 事件（bootstrap 快照 / SSE / 缺口重放）折叠而来；
+   * - `awaiting`：只有会话状态端点物化的占位，事件尚未送达 ——
+   *   此时轮次 / Token / 工具数是**未知**，UI 必须显示 `—` 而不是 0。
+   */
+  eventSync?: 'live' | 'awaiting';
 }
 
 /** 子代理卡片注册表：turnId → SubAgentCard */

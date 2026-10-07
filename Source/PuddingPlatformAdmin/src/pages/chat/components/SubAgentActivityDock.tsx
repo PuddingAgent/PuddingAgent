@@ -60,6 +60,11 @@ interface SubAgentActivityDockProps {
   onInspectorOpenChange: (open: boolean) => void;
   selectedRunId?: string | null;
   onSelectedRunIdChange: (runId: string | null) => void;
+  /**
+   * 父会话 canonical 事件通道的重连计数（来自 useSessionEventConnection）。
+   * 用于把「运行事实尚未同步」与「通道正在重连」区分开，而不是把未知显示成 0。
+   */
+  reconnectCount?: number;
 }
 
 type InspectorFilter = 'active' | 'recent' | 'errors' | 'all';
@@ -87,6 +92,16 @@ const SUCCESS_LINGER_MS = 12_000;
 const ERROR_LINGER_MS = 30_000;
 const DOCK_VISIBLE_LIMIT = 4;
 const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * 占位运行（只有会话状态端点物化、事件尚未送达）超过这个时长仍无事件时，
+ * 明确提示「同步未就绪」，而不是继续把未知渲染成 0（2026-10-06 诊断）。
+ */
+const SUBAGENT_SYNC_STALL_MS = 20_000;
+/** 事件未送达时任何计数指标都是**未知**，不得用 0 冒充测量值。 */
+const UNKNOWN_METRIC = '—';
+/** 该运行视图是否只是「存在性占位」，过程与用量都还没被事件证实。 */
+const isEventSyncPending = (run: SubAgentCard): boolean =>
+  run.eventSync === 'awaiting';
 
 const activeStatuses = new Set<SubAgentCardStatus>(['spawning', 'running']);
 const errorStatuses = new Set<SubAgentCardStatus>([
@@ -509,6 +524,11 @@ const taskSummary = (run: SubAgentCard): string => {
 };
 
 const currentActivity = (run: SubAgentCard): string => {
+  // 占位运行：还没有任何 canonical 事件，phase 是本地默认值而不是服务端事实，
+  // 因此不得说成「正在启动子代理运行时」（那会让 0 看起来像测量值）。
+  if (isEventSyncPending(run) && !terminalStatuses.has(run.status)) {
+    return '正在同步运行事件';
+  }
   if (run.activeToolName) return `正在执行 ${run.activeToolName}`;
   switch (run.phase) {
     case 'created':
@@ -554,6 +574,7 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
   onInspectorOpenChange,
   selectedRunId,
   onSelectedRunIdChange,
+  reconnectCount = 0,
 }) => {
   const { styles, cx } = useStyles();
   const visibleSinceRef = useRef(Date.now());
@@ -589,6 +610,11 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
   );
   const activeRuns = useMemo(
     () => runs.filter((run) => activeStatuses.has(run.status)),
+    [runs],
+  );
+  /** 只有状态端点占位、事件尚未送达的运行数（标题栏据此不再谎报「实时事件已连接」）。 */
+  const awaitingRunCount = useMemo(
+    () => runs.filter(isEventSyncPending).length,
     [runs],
   );
   const freshTerminalRuns = useMemo(
@@ -801,6 +827,7 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
       0,
       now - (run.lastActivityAt ?? run.spawnedAt),
     );
+    const syncPending = isEventSyncPending(run);
     return (
       <div className={styles.popover}>
         <div className={styles.previewTitle}>
@@ -820,17 +847,23 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
               color: 'var(--pudding-chat-text-subtle)',
             }}
           >
-            最后事件 {formatDuration(lastActivityAge)} 前
+            {syncPending
+              ? '运行事件尚未送达'
+              : `最后事件 ${formatDuration(lastActivityAge)} 前`}
           </div>
         </div>
         <div className={styles.previewMeta}>
           <span>模型：{run.modelId ?? '-'}</span>
           <span>
-            轮次：{run.currentRound ?? 0}
-            {run.maxRounds ? `/${run.maxRounds}` : ''}
+            轮次：
+            {syncPending ? UNKNOWN_METRIC : (run.currentRound ?? 0)}
+            {!syncPending && run.maxRounds ? `/${run.maxRounds}` : ''}
           </span>
           <span>耗时：{formatDuration(elapsedMs)}</span>
-          <span>Token：{formatTokens(run.totalTokens)}</span>
+          <span>
+            Token：
+            {syncPending ? UNKNOWN_METRIC : formatTokens(run.totalTokens)}
+          </span>
         </div>
         <Space style={{ marginTop: 10 }}>
           <Button
@@ -881,6 +914,14 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
       timeoutMs > 0 && activeStatuses.has(run.status)
         ? Math.min(100, Math.round((elapsedMs / timeoutMs) * 100))
         : undefined;
+    // 事件未送达的占位：过程与用量都是未知。归档**已加载**时以归档为准（终态才有）。
+    // 注意：活动运行也会把 runArchive 置成 { runId, status: 'idle' }，
+    // 因此判据必须是 loaded，而不是「runId 相同」。
+    const archiveLoaded = archiveMatches && runArchive.status === 'loaded';
+    const syncPending = isEventSyncPending(run) && !archiveLoaded;
+    const syncStalled =
+      syncPending &&
+      now - (run.lastActivityAt ?? run.spawnedAt) >= SUBAGENT_SYNC_STALL_MS;
     return (
       <div
         className={styles.detailLayout}
@@ -921,14 +962,19 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
               <span>模型：{run.modelId ?? '-'}</span>
               <span>Provider：{run.providerId ?? '-'}</span>
               <span>
-                轮次：{displayRounds}
-                {run.maxRounds ? `/${run.maxRounds}` : ''}
+                轮次：{syncPending ? UNKNOWN_METRIC : displayRounds}
+                {!syncPending && run.maxRounds ? `/${run.maxRounds}` : ''}
               </span>
               <span>耗时：{formatDuration(displayDurationMs)}</span>
-              <span>Token：{formatTokens(run.totalTokens)}</span>
               <span>
-                工具：{displayTools}
-                {run.failedToolCount ? ` / 失败 ${run.failedToolCount}` : ''}
+                Token：
+                {syncPending ? UNKNOWN_METRIC : formatTokens(run.totalTokens)}
+              </span>
+              <span>
+                工具：{syncPending ? UNKNOWN_METRIC : displayTools}
+                {!syncPending && run.failedToolCount
+                  ? ` / 失败 ${run.failedToolCount}`
+                  : ''}
               </span>
             </div>
             <div className={styles.identifierGrid}>
@@ -1042,6 +1088,25 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
                 ),
               }))}
             />
+          ) : isEventSyncPending(run) && !archiveLoaded ? (
+            // 占位运行：事件尚未送达 ≠ 「没有事件」。显示同步状态，绝不显示
+            // 「暂无运行事件」把未知断言成空（2026-10-06 诊断）。
+            <div
+              className={styles.resultHint}
+              data-testid="subagent-timeline-syncing"
+            >
+              <LoadingOutlined spin style={{ marginRight: 8 }} />
+              正在同步运行事件…
+              {syncStalled && (
+                <div style={{ marginTop: 6 }} data-testid="subagent-sync-stalled">
+                  已等待 {formatDuration(now - (run.lastActivityAt ?? run.spawnedAt))}
+                  仍未收到该运行的事件。
+                  {reconnectCount > 0
+                    ? `父会话事件通道正在重连（第 ${reconnectCount} 次）。`
+                    : '若持续如此，刷新页面会重新建立父会话事件通道。'}
+                </div>
+              )}
+            </div>
           ) : (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -1161,10 +1226,24 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
           <Space>
             <RobotOutlined style={{ color: 'var(--pudding-chat-accent)' }} />
             <span>子代理运行检查器</span>
-            <Tag color={activeRuns.length ? 'green' : 'default'}>
+            <Tag
+              color={
+                activeRuns.length
+                  ? 'green'
+                  : awaitingRunCount
+                    ? 'gold'
+                    : reconnectCount > 0
+                      ? 'orange'
+                      : 'default'
+              }
+            >
               {activeRuns.length
                 ? `${activeRuns.length} 运行中`
-                : '实时事件已连接'}
+                : awaitingRunCount
+                  ? `${awaitingRunCount} 个运行正在同步事件`
+                  : reconnectCount > 0
+                    ? `事件通道重连中（第 ${reconnectCount} 次）`
+                    : '实时事件已连接'}
             </Tag>
           </Space>
         }

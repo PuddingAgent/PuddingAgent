@@ -343,14 +343,20 @@ describe('useSessionEventConnection ensureSessionEventStream', () => {
     unmount();
   });
 
-  it('never opens a raw SSE for a projection-owned session and still reports ok', async () => {
+  // 诊断 2026-10-06：这里曾经断言「projection-owned 会话永不开流」并直接返回。
+  // 那正是运行坞只剩「启动中 / 0 / 0 / 暂无运行事件」占位的原因 —— 主消息可以由
+  // Agent 投影承担，但子代理事实只有 canonical 事件这一条通道。
+  // 现在：投影会话照样先准备游标（顺带装载 subAgentEvents 快照）再开流，
+  // 主消息的重复投影交给投影层的「会话域」过滤。
+  it('still opens the canonical stream for a projection-owned session so subagent facts keep flowing', async () => {
     const { result, unmount } = renderHook(() => useSessionEventConnection());
     const cursorRef = { current: createSessionEventCursorState() };
-    const syncCompletedHistoryEventCursor = jest.fn(async () => ({
-      ok: true as const,
-      cursor: 0,
-      turns: [],
-    }));
+    const syncCompletedHistoryEventCursor = jest.fn(
+      async (sessionId: string) => {
+        markSessionEventCursorReady(cursorRef.current, sessionId, 42);
+        return { ok: true as const, cursor: 42, turns: [] };
+      },
+    );
 
     bindPorts(result, {
       sessionEventCursorRef: cursorRef,
@@ -366,13 +372,21 @@ describe('useSessionEventConnection ensureSessionEventStream', () => {
       );
     });
 
-    expect(ensureResult).toEqual({
-      ok: true,
-      opened: false,
-      reason: 'projection-owned',
-    });
-    expect(syncCompletedHistoryEventCursor).not.toHaveBeenCalled();
-    expect(subscribeSessionEvents).not.toHaveBeenCalled();
+    expect(ensureResult).toEqual({ ok: true, opened: true });
+    // 首载顺序不能反：先快照（含 subagent.* 事件与权威游标），再按该游标订阅。
+    expect(syncCompletedHistoryEventCursor).toHaveBeenCalledWith(
+      'session-projected',
+      expect.anything(),
+      expect.objectContaining({ isCurrent: expect.any(Function) }),
+    );
+    expect(subscribeSessionEvents).toHaveBeenCalledWith(
+      'session-projected',
+      expect.any(Function),
+      expect.any(AbortSignal),
+      expect.objectContaining({ afterSequence: 42 }),
+    );
+    // 开流会带出 replay-poll / watchdog 定时器；不显式停流会泄漏到后续用例。
+    act(() => result.current.stopSessionEventStream());
     unmount();
   });
 

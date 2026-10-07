@@ -56,6 +56,85 @@ describe('SubAgentActivityDock', () => {
     jest.clearAllMocks();
   });
 
+  // 诊断 2026-10-06：占位运行（只有会话状态端点、事件尚未送达）不得把「未知」
+  // 显示成真实的 0，也不得显示「暂无运行事件」。
+  it('renders an unsynced placeholder as syncing with unknown metrics instead of zeros', () => {
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen
+        onInspectorOpenChange={jest.fn()}
+        selectedRunId="run-await"
+        onSelectedRunIdChange={jest.fn()}
+        subAgentCards={{
+          awaiting: {
+            turnId: 'awaiting',
+            runId: 'run-await',
+            subSessionId: 'session-sub-await',
+            parentSessionId: 'session',
+            status: 'running',
+            phase: 'starting',
+            role: 'worker',
+            taskSummary: '等待事件同步',
+            currentRound: 0,
+            maxRounds: 600,
+            totalTokens: 0,
+            toolCount: 0,
+            spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+            lastActivityAt: Date.parse('2026-07-19T00:00:00.000Z'),
+            activities: [],
+            eventSync: 'awaiting',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('subagent-timeline-syncing')).toBeTruthy();
+    expect(screen.queryByText('暂无运行事件')).toBeNull();
+    // 轮次 / Token / 工具都必须显示为未知，而不是 0。
+    expect(screen.getByText('轮次：—')).toBeTruthy();
+    expect(screen.getByText('Token：—')).toBeTruthy();
+    expect(screen.getByText('工具：—')).toBeTruthy();
+  });
+
+  it('escalates a stalled unsynced run to a reconnect hint using the channel state', () => {
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen
+        onInspectorOpenChange={jest.fn()}
+        selectedRunId="run-stalled"
+        onSelectedRunIdChange={jest.fn()}
+        reconnectCount={3}
+        subAgentCards={{
+          stalled: {
+            turnId: 'stalled',
+            runId: 'run-stalled',
+            subSessionId: 'session-sub-stalled',
+            parentSessionId: 'session',
+            status: 'running',
+            phase: 'starting',
+            taskSummary: '卡住的占位',
+            spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+            lastActivityAt: Date.parse('2026-07-19T00:00:00.000Z'),
+            activities: [],
+            eventSync: 'awaiting',
+          },
+        }}
+      />,
+    );
+
+    // 系统时间固定在 00:00:10，运行自 00:00:00 起一直没事件 → 未达 20s 停滞阈值。
+    expect(screen.queryByTestId('subagent-sync-stalled')).toBeNull();
+
+    act(() => {
+      jest.advanceTimersByTime(25_000);
+    });
+
+    const stalled = screen.getByTestId('subagent-sync-stalled');
+    expect(stalled.textContent).toContain('父会话事件通道正在重连（第 3 次）');
+  });
+
   it('shows factual live activity and opens the selected run inspector', () => {
     const onOpenChange = jest.fn();
     const onSelectedRunIdChange = jest.fn();

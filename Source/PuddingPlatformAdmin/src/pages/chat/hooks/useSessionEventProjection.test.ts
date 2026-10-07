@@ -3,7 +3,10 @@ import type { MutableRefObject } from 'react';
 import type { AdminChatStreamEvent } from '@/services/platform/api';
 import type { ChatTurn, TimelineItem } from '../types';
 import { useSessionEventProjection } from './useSessionEventProjection';
-import type { SessionEventCursorState } from './sessionEventCursor';
+import {
+  type SessionEventCursorState,
+  markSessionEventCursorReady,
+} from './sessionEventCursor';
 
 // ── CU-03：bootstrap / gap recovery / live SSE 统一输入 ──────────────
 // 验收点：重复 eventId 幂等、终态单调（不被迟到 progress 降级）、
@@ -51,9 +54,14 @@ interface Harness {
   turnsRef: MutableRefObject<ChatTurn[]>;
   completedTurnsRef: MutableRefObject<Set<string>>;
   sseSessionIdRef: MutableRefObject<string | null>;
+  sessionEventCursorRef: MutableRefObject<SessionEventCursorState>;
+  lastSequenceNumRef: MutableRefObject<number>;
 }
 
-function setup(initialTurns: ChatTurn[] = [makeRunningTurn()]): Harness {
+function setup(
+  initialTurns: ChatTurn[] = [makeRunningTurn()],
+  isProjectionOwnedSession?: (sessionId: string | null) => boolean,
+): Harness {
   const sseSessionIdRef = {
     current: 'session-1',
   } as MutableRefObject<string | null>;
@@ -105,6 +113,7 @@ function setup(initialTurns: ChatTurn[] = [makeRunningTurn()]): Harness {
         sseSessionIdRef,
         selectedSessionIdRef,
         sessionIdRef,
+        isProjectionOwnedSession,
       },
       turns: {
         turnsRef,
@@ -133,7 +142,14 @@ function setup(initialTurns: ChatTurn[] = [makeRunningTurn()]): Harness {
       },
     }),
   );
-  return { result, turnsRef, completedTurnsRef, sseSessionIdRef };
+  return {
+    result,
+    turnsRef,
+    completedTurnsRef,
+    sseSessionIdRef,
+    sessionEventCursorRef,
+    lastSequenceNumRef,
+  };
 }
 
 /** 只读快照：避免 Jest 打印 timeline 大对象时超长。 */
@@ -393,5 +409,103 @@ describe('useSessionEventProjection — CU-03 unified input', () => {
     const gapFacts = callFacts(gap.turnsRef.current[0].assistant.timelineItems);
     expect(gapFacts).toEqual(liveFacts);
     expect(liveFacts.length).toBe(2);
+  });
+});
+
+// ── 诊断 2026-10-06：项目会话的事件域 ────────────────────────────────
+// Agent 投影承担主消息（projection-owned）时，canonical SSE 仍然订阅，但只能消费
+// `subagent.*` 事实：主消息正文若也投影一次就会出现两份；而子代理事实没有第二条
+// 通道，漏掉就只剩状态端点物化的「启动中 / 0 / 0 / 暂无运行事件」占位。
+describe('useSessionEventProjection — 会话域（projection-owned）', () => {
+  const subAgentEvent = (overrides: Record<string, unknown>) =>
+    event({
+      eventId: 'sa-evt-1',
+      runId: 'run-1',
+      subAgentId: 'sub-1',
+      sub_agent_id: 'sub-1',
+      taskSummary: '整理资料',
+      sequenceNum: 2,
+      occurredAt: '2026-10-06T15:05:22Z',
+      ...overrides,
+    });
+
+  it('只消费 subagent.*：主消息增量不落盘到本地 turn，子代理事实照常折叠', () => {
+    const owned = setup(undefined, () => true);
+    owned.result.current.hydrateSessionReplayRef.current = true;
+
+    act(() => {
+      // 主消息增量：若未被域过滤，hydrate 直通会把它写进 answerMarkdown。
+      owned.result.current.applySessionEvent(
+        makeTurnEvent('message.content.appended', {
+          eventId: 'msg-evt-1',
+          sequenceNum: 1,
+          delta: '主消息正文',
+        }),
+      );
+      owned.result.current.applySessionEvent(
+        makeTurnEvent('turn.completed', {
+          eventId: 'msg-evt-2',
+          sequenceNum: 2,
+          reply: '主消息终态',
+        }),
+      );
+    });
+
+    expect(owned.turnsRef.current[0].assistant.answerMarkdown).toBe('');
+    expect(owned.turnsRef.current[0].assistant.status).toBe('thinking');
+
+    act(() => {
+      owned.result.current.applySessionEvent(
+        subAgentEvent({ type: 'subagent.run.created' }),
+      );
+    });
+    expect(owned.result.current.subAgentCards['sa-run-1']).toMatchObject({
+      runId: 'run-1',
+      status: 'spawning',
+      taskSummary: '整理资料',
+      eventSync: 'live',
+    });
+  });
+
+  it('被域过滤的事件仍推进权威游标，避免游标落后导致全量重放', () => {
+    const owned = setup(undefined, () => true);
+    markSessionEventCursorReady(
+      owned.sessionEventCursorRef.current,
+      'session-1',
+      0,
+    );
+
+    act(() => {
+      owned.result.current.applySessionEvent(
+        makeTurnEvent('message.content.appended', {
+          eventId: 'msg-evt-1',
+          sequenceNum: 77,
+          delta: 'x',
+        }),
+      );
+    });
+
+    // 数值镜像（重放起点）与带身份的游标都必须前进到该事件。
+    expect(owned.lastSequenceNumRef.current).toBe(77);
+    expect(owned.sessionEventCursorRef.current.sequence).toBe(77);
+  });
+
+  it('非投影会话不受影响：同一条主消息增量照常投影', () => {
+    const plain = setup(undefined, () => false);
+    plain.result.current.hydrateSessionReplayRef.current = true;
+
+    act(() => {
+      plain.result.current.applySessionEvent(
+        makeTurnEvent('message.content.appended', {
+          eventId: 'msg-evt-1',
+          sequenceNum: 1,
+          delta: '主消息正文',
+        }),
+      );
+    });
+
+    expect(plain.turnsRef.current[0].assistant.answerMarkdown).toBe(
+      '主消息正文',
+    );
   });
 });

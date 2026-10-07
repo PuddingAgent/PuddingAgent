@@ -1,9 +1,35 @@
 import {
+  mergeSubAgentRunSnapshots,
   projectSubAgentRunsToCards,
   reconcileSubAgentRunStatuses,
   reduceSubAgentRunEvent,
   type SubAgentRunMap,
 } from './subAgentReducer';
+
+/** 会话状态端点物化的占位：只有存在性，没有过程与用量。 */
+const placeholderRun = (runId: string, lastActivityAt: number): SubAgentRunMap => ({
+  [runId]: {
+    runId,
+    subSessionId: `${runId}-sub`,
+    taskSummary: '占位任务',
+    status: 'running',
+    phase: 'starting',
+    currentRound: 0,
+    startedAt: lastActivityAt,
+    lastActivityAt,
+    llmDurationMs: 0,
+    toolDurationMs: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    cacheHitTokens: 0,
+    cacheMissTokens: 0,
+    tools: [],
+    activities: [],
+    appliedEventIds: [],
+    eventSync: 'awaiting',
+  },
+});
 
 describe('subAgentReducer', () => {
   it('projects a complete Smart tool child run by stable runId', () => {
@@ -333,5 +359,132 @@ describe('subAgentReducer', () => {
     });
 
     expect(started['run-merge'].invocationMode).toBe('sync');
+  });
+});
+
+// ── 诊断 2026-10-06：截图里的「启动中 / 0 轮 / 0 工具 / 暂无运行事件」 ──
+// 会话状态端点只能证明 run 存在，不能证明它的过程与用量。占位必须自报
+// `awaiting`，事件一到就转 `live`；快照合并也必须以证据量为准。
+describe('subAgentReducer — 运行事实的同步状态', () => {
+  it('状态端点物化的运行自报 awaiting，任何事件折入后转 live', () => {
+    const reconciled = reconcileSubAgentRunStatuses({}, [
+      {
+        runId: 'run-await',
+        parentSessionId: 'parent-session',
+        subSessionId: 'parent-session-sub-await',
+        status: 'running',
+        taskSummary: '等待事件',
+        spawnedAt: '2026-10-06T15:05:22Z',
+      },
+    ]);
+
+    expect(reconciled['run-await']).toMatchObject({
+      eventSync: 'awaiting',
+      currentRound: 0,
+      totalTokens: 0,
+    });
+    expect(
+      projectSubAgentRunsToCards(reconciled)['sa-run-await'].eventSync,
+    ).toBe('awaiting');
+
+    const live = reduceSubAgentRunEvent(reconciled, {
+      eventId: 'event-round-1',
+      type: 'subagent.round.started',
+      occurredAt: '2026-10-06T15:05:30Z',
+      run_id: 'run-await',
+      sub_agent_id: 'parent-session-sub-await',
+      round: 1,
+    });
+
+    expect(live['run-await']).toMatchObject({
+      eventSync: 'live',
+      currentRound: 1,
+    });
+    expect(projectSubAgentRunsToCards(live)['sa-run-await'].eventSync).toBe(
+      'live',
+    );
+  });
+
+  it('同一 eventId 重复折入不重复累计 Token（快照/重放/live 重叠）', () => {
+    const first = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-llm-1',
+        type: 'subagent.llm.completed',
+        occurredAt: '2026-10-06T15:05:30Z',
+        run_id: 'run-dedupe',
+        sub_agent_id: 'run-dedupe-sub',
+        total_tokens: 1500,
+      },
+    );
+    const replayed = reduceSubAgentRunEvent(first, {
+      eventId: 'event-llm-1',
+      type: 'subagent.llm.completed',
+      occurredAt: '2026-10-06T15:05:30Z',
+      run_id: 'run-dedupe',
+      sub_agent_id: 'run-dedupe-sub',
+      total_tokens: 1500,
+    });
+
+    expect(replayed).toBe(first);
+    expect(replayed['run-dedupe'].totalTokens).toBe(1500);
+    expect(replayed['run-dedupe'].activities).toHaveLength(1);
+  });
+
+  it('快照合并按证据量取舍：更新的占位不得顶掉更丰富的事件视图', () => {
+    const eventDerived = reduceSubAgentRunEvent(
+      reduceSubAgentRunEvent(
+        {},
+        {
+          eventId: 'event-created',
+          type: 'subagent.run.created',
+          occurredAt: '2026-10-06T15:05:22Z',
+          run_id: 'run-evidence',
+          sub_agent_id: 'run-evidence-sub',
+          task_summary: '真实任务',
+        },
+      ),
+      {
+        eventId: 'event-llm',
+        type: 'subagent.llm.completed',
+        occurredAt: '2026-10-06T15:05:25Z',
+        run_id: 'run-evidence',
+        sub_agent_id: 'run-evidence-sub',
+        total_tokens: 900,
+        round: 1,
+      },
+    );
+    // 占位时间戳更新（例如状态端点在事件之后才被轮询到），但证据量为 0。
+    const placeholder = placeholderRun(
+      'run-evidence',
+      Date.parse('2026-10-06T15:06:00Z'),
+    );
+
+    const merged = mergeSubAgentRunSnapshots(placeholder, eventDerived);
+
+    expect(merged['run-evidence']).toMatchObject({
+      eventSync: 'live',
+      totalTokens: 900,
+      taskSummary: '真实任务',
+    });
+    expect(merged['run-evidence'].appliedEventIds).toHaveLength(2);
+  });
+
+  it('快照合并保留只存在于本地的运行，不因快照缺项而丢视图', () => {
+    const localOnly = placeholderRun('run-local', 1);
+    const fromSnapshot = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-created',
+        type: 'subagent.run.created',
+        occurredAt: '2026-10-06T15:05:22Z',
+        run_id: 'run-snapshot',
+        sub_agent_id: 'run-snapshot-sub',
+      },
+    );
+
+    const merged = mergeSubAgentRunSnapshots(localOnly, fromSnapshot);
+
+    expect(Object.keys(merged).sort()).toEqual(['run-local', 'run-snapshot']);
   });
 });

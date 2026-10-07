@@ -70,6 +70,17 @@ export interface SubAgentRunView {
   activities: SubAgentActivity[];
   /** Conversation event ids already folded into this run. Prevents bootstrap/replay/live overlap from double-counting usage. */
   appliedEventIds: string[];
+  /**
+   * 该运行视图的证据来源（诊断：截图里「启动中 / 0 轮 / 0 工具 / 暂无运行事件」）。
+   *
+   * - `live`：视图由 canonical 事件（bootstrap 快照 / SSE / 缺口重放）折叠而来，
+   *   轮次、Token、工具数都是**已观测事实**（可以真的是 0）；
+   * - `awaiting`：视图只由「会话状态端点」物化的占位（`reconcileSubAgentRunStatuses`），
+   *   事件通道尚未送达任何事实 —— 此时 0 是**未知**，不是测量值，UI 不得显示成 0。
+   *
+   * 任何一条 canonical 事件被折叠进来就会转成 `live`（见 `reduceSubAgentRunEvent`）。
+   */
+  eventSync: 'live' | 'awaiting';
   output?: string;
   error?: string;
 }
@@ -162,6 +173,9 @@ export function reconcileSubAgentRunStatuses(
       tools: [],
       activities: [],
       appliedEventIds: [],
+      // 会话状态端点只能证明「这个 run 存在 / 已终态」，证明不了过程与用量：
+      // 先标 awaiting，事件快照或实时事件到达后转 live。
+      eventSync: 'awaiting',
       output: status === 'completed' ? snapshot.resultSummary : undefined,
       error:
         isTerminal && status !== 'completed'
@@ -202,6 +216,44 @@ export function reconcileSubAgentRunStatuses(
   }
 
   return changed ? next : runs;
+}
+
+/**
+ * 合并「事件折叠出的运行视图」与「快照折叠出的运行视图」。
+ *
+ * 诊断背景：`syncCompletedHistoryEventCursor` 会先用 `/bootstrap` 的
+ * `subAgentEvents` 重建运行视图，再与会话内已有的视图合并。旧实现只比
+ * `lastActivityAt`：由状态端点物化的占位（0 轮 / 0 工具 / 空时间线）只要时间戳
+ * 稍新就会顶掉真正带时间线的快照，界面于是退回「暂无运行事件」。
+ *
+ * 现在的判据是**证据量**：`appliedEventIds` 更多的视图胜出；证据量相同才比
+ * `lastActivityAt`。两条都是纯数据比较，不做时间/网络启发式猜测。
+ */
+export function mergeSubAgentRunSnapshots(
+  current: SubAgentRunMap,
+  snapshot: SubAgentRunMap,
+): SubAgentRunMap {
+  const merged: SubAgentRunMap = { ...snapshot };
+  for (const [runId, run] of Object.entries(current)) {
+    const incoming = merged[runId];
+    if (!incoming) {
+      merged[runId] = run;
+      continue;
+    }
+    const runEvidence = run.appliedEventIds.length;
+    const incomingEvidence = incoming.appliedEventIds.length;
+    if (runEvidence > incomingEvidence) {
+      merged[runId] = run;
+      continue;
+    }
+    if (
+      runEvidence === incomingEvidence &&
+      run.lastActivityAt > incoming.lastActivityAt
+    ) {
+      merged[runId] = run;
+    }
+  }
+  return merged;
 }
 
 const read = (event: SubAgentConversationEvent, ...keys: string[]): unknown => {
@@ -463,6 +515,8 @@ const createRun = (
   tools: [],
   activities: [],
   appliedEventIds: [],
+  // canonical 事件本身就是事实来源：从这里建出来的视图一律 live。
+  eventSync: 'live',
 });
 
 const mergeIdentity = (
@@ -537,7 +591,8 @@ export function reduceSubAgentRunEvent(
   const at = timestamp(event);
   let next = mergeIdentity(current ?? createRun(event, runId, at), event);
   if (next.runId !== runId) next = { ...next, runId };
-  next = { ...next, lastActivityAt: at };
+  // 占位（awaiting）一旦折进真实事件就转 live：此后 0 才是测量值。
+  next = { ...next, lastActivityAt: at, eventSync: 'live' };
 
   switch (event.type) {
     case 'subagent.run.started':
@@ -753,6 +808,7 @@ export function projectSubAgentRunsToCards(
       success: run.status === 'completed',
       error: run.error,
       activities: run.activities,
+      eventSync: run.eventSync,
     };
   }
   return cards;

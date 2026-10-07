@@ -173,13 +173,15 @@ export type SessionEventCursorPreparation =
 /**
  * 统一开流入口的结果。
  * - `ok=false`：游标准备失败/被拒 —— 调用方不得继续以 0 兜底；
- * - `ok=true, opened=false`：无需或不该开原始流（投影自有的会话、或连接已健康）。
+ * - `ok=true, opened=false`：无需开流（连接已健康，或游标在准备与开流之间被清掉）。
+ *
+ * 注意：**不存在**「因为是投影会话所以不开流」这一分支（2026-10-06 诊断修正）——
+ * 投影会话的主消息由 Agent 投影负责，但子代理事实只能走 canonical 事件通道。
  */
 export interface SessionEventStreamEnsureResult {
   ok: boolean;
   opened: boolean;
   reason?:
-    | 'projection-owned'
     | 'already-connected'
     | 'cursor-preparation-failed'
     | 'stale-request'

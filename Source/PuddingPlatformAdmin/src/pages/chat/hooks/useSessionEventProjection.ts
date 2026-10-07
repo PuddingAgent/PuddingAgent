@@ -74,6 +74,14 @@ interface ProjectionIdentityPort {
   sseSessionIdRef: MutableRefObject<string | null>;
   selectedSessionIdRef: MutableRefObject<string | null>;
   sessionIdRef: MutableRefObject<string | undefined>;
+  /**
+   * 该会话的主消息是否由 Agent 投影承担（`projectionOwnedSessionIdsRef`）。
+   *
+   * 是 ⇒ 本 hook 对该会话只消费 canonical 的 `subagent.*` 事实并推进游标，
+   * 主消息/轮次/压缩一律不投影（那部分由 Agent 投影负责，重复投影会把正文叠加两次）。
+   * 省略时按 `false`（全量域）处理，保持既有调用点行为不变。
+   */
+  isProjectionOwnedSession?: (sessionId: string | null) => boolean;
 }
 
 interface ProjectionTurnsPort {
@@ -144,6 +152,7 @@ export function useSessionEventProjection({
     sseSessionIdRef,
     selectedSessionIdRef,
     sessionIdRef,
+    isProjectionOwnedSession,
   } = identity;
   const {
     turnsRef,
@@ -1095,10 +1104,26 @@ export function useSessionEventProjection({
       const applyStart = performance.now();
       const eventType = String(ev.type);
       const anyEv = ev as Record<string, unknown>;
+      const isSubAgentEvent = isSubAgentConversationEvent(eventType);
+      // 会话域：projection-owned（主消息由 Agent 投影承担）的会话在这里只消费
+      // `subagent.*` 事实。主消息正文/轮次/压缩由 Agent 投影负责，重复投影会把正文
+      // 叠加两次；而子代理事实**没有**第二条通道（ADR-060 禁止活动期轮询运行归档，
+      // 否则 sharing violation 会杀死运行中的子代理），必须继续由 canonical 事件送达。
+      const projectionOwnedSessionId =
+        sseSessionIdRef.current ??
+        selectedSessionIdRef.current ??
+        sessionIdRef.current ??
+        null;
+      const subagentOnly =
+        isProjectionOwnedSession?.(projectionOwnedSessionId) === true;
+      // 被域过滤掉的事件没有任何副作用（只有幂等的游标推进），因此不占用
+      // eventId 去重集合：否则一个投影会话的整条正文增量流会把集合撑到无界。
+      const dedupeApplies = !subagentOnly || isSubAgentEvent;
+
       // CU-03：bootstrap/gap/live 三路输入统一进入同一投影。同一 eventId
       // 重复到达（断线重连 replay 兜底与 SSE 重放重叠）只消费一次（幂等）。
       const canonicalEventId = getCanonicalEventId(ev);
-      if (canonicalEventId) {
+      if (canonicalEventId && dedupeApplies) {
         const dedupeKey = `${sseSessionIdRef.current ?? selectedSessionIdRef.current ?? ''}:${canonicalEventId}`;
         if (seenEventIdsRef.current.has(dedupeKey)) {
           recordPerfEvent(
@@ -1115,14 +1140,30 @@ export function useSessionEventProjection({
         seenEventIdsRef.current.add(dedupeKey);
       }
 
-      if (isExecutionFlowProjectionEnabled()) {
+      if (subagentOnly && !isSubAgentEvent) {
+        const skippedCount = (eventCountsRef.current.get(eventType) ?? 0) + 1;
+        eventCountsRef.current.set(eventType, skippedCount);
+        updateLastSequence(ev);
+        recordPerfEvent(
+          'chat.event.skipped.projectionOwned',
+          {
+            eventType,
+            count: skippedCount,
+            sessionId: projectionOwnedSessionId,
+            sequenceNum: (ev as { sequenceNum?: number }).sequenceNum,
+          },
+          { throttleMs: 1_000 },
+        );
+        return;
+      }
+
+      if (!subagentOnly && isExecutionFlowProjectionEnabled()) {
         const collected = collectExecutionEvents([ev]);
         const accepted = executionFlowProjectionIndexRef.current.enqueue(
           collected.events as ExecutionFlowEvent[],
         );
         if (accepted > 0) scheduleExecutionFlowProjection();
       }
-      const isSubAgentEvent = isSubAgentConversationEvent(eventType);
       if (isSubAgentEvent) {
         setSubAgentRuns((current) =>
           reduceSubAgentRunEvent(current, {
@@ -1764,6 +1805,7 @@ export function useSessionEventProjection({
       appendChatInteractionRuntimeEvent,
       handleCompactionLifecycleEvent,
       scheduleExecutionFlowProjection,
+      isProjectionOwnedSession,
     ],
   );
 

@@ -80,7 +80,13 @@ export interface SessionEventConnectionPorts {
   selectedSessionIdRef: MutableRefObject<string | null>;
   sessionIdRef: MutableRefObject<string | undefined>;
   turnsRef: MutableRefObject<ChatTurn[]>;
-  /** 该会话是否由消息/活动投影承担实时更新（是则不开原始 SSE）。 */
+  /**
+   * 该会话是否由消息/活动投影承担**主消息**实时更新。
+   *
+   * 注意：这不等于「不开流」。投影会话仍然必须订阅 canonical 事件 —— 主消息的重复
+   * 投影由 `useSessionEventProjection` 的会话域过滤掉，而子代理事实只能走这条通道
+   * （诊断 2026-10-06）。此端口现在只用于诊断标记该流的存在理由。
+   */
   isProjectionOwnedSession: (sessionId: string) => boolean;
 }
 
@@ -582,7 +588,8 @@ export function useSessionEventConnection() {
   /**
    * 统一的开流入口（B1）：先保证该会话有**权威游标**，再开流。
    * <para>
-   * - 会话由消息/活动投影承担实时更新 ⇒ 不开第二条原始 SSE（`ok=true, opened=false`）；
+   * - 投影会话（Agent 投影承担主消息）同样开流：帧在投影层按会话域过滤，
+   *   只消费 `subagent.*`（诊断 2026-10-06：此处曾经直接跳开，子代理时间线因此失联）；
    * - 已有健康连接 ⇒ 复用（`ok=true, opened=false`）；
    * - 游标未就绪 ⇒ 通过 `syncCompletedHistoryEventCursor` 同步（同会话请求合并，generation+AbortSignal
    *   复检防止 A 的迟到 bootstrap 修改 B 的游标）；
@@ -598,13 +605,18 @@ export function useSessionEventConnection() {
 
       const ports = portsRef.current;
 
+      // 诊断（2026-10-06）：这里曾对 projection-owned 会话直接 `return`，于是
+      // **子代理事实**也失去了唯一的实时通道 —— 主消息由 Agent 投影负责，但
+      // `subagent.*` 没有第二条通道（ADR-060 禁止活动期轮询运行归档），界面只剩
+      // 状态端点物化的占位（启动中 / 0 轮 / 0 工具 / 暂无运行事件）。
+      // 现在投影会话同样开流：主消息的重复投影由 useSessionEventProjection 的
+      // 「会话域」过滤掉（只消费 subagent.*），不再靠「不开流」来避免重复。
       if (ports.isProjectionOwnedSession(sessionId)) {
         recordPerfEvent(
-          'chat.sse.ensureSkipped',
+          'chat.sse.ensureSubagentChannel',
           { sessionId, reason: 'projection-owned' },
           { throttleMs: 1_000 },
         );
-        return { ok: true, opened: false, reason: 'projection-owned' };
       }
 
       // 重连必须重新建立流：此时旧连接可能仍在（只是收到了 503/超时），复用等于什么都不做。
@@ -677,10 +689,12 @@ export function useSessionEventConnection() {
         }
 
         const opened = startSessionEventStream(sessionId);
+        // `opened=false` 现在只剩「游标在准备与开流之间被清掉」一种可能，
+        // 不再是「这是投影会话所以不开流」。
         return {
           ok: true,
           opened,
-          reason: opened ? undefined : 'projection-owned',
+          reason: opened ? undefined : 'cursor-not-ready',
         };
       })();
 

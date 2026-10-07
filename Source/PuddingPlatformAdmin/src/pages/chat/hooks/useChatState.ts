@@ -22,7 +22,6 @@ import {
 } from '@/services/platform/api';
 import {
   isPerfDiagnosticsEnabled,
-  recordPerfEvent,
   recordPerfStep,
 } from '@/utils/perfEventRuntime';
 import {
@@ -529,6 +528,21 @@ export function useChatState(
     messageApi,
   });
 
+  /**
+   * 会话域判据（诊断 2026-10-06）：必须**稳定**。
+   *
+   * 它读的是 ref，所以 `[]` 依赖是正确的；但绝不能写成内联箭头——那会让
+   * `applySessionEvent` 每次渲染都换身份，进而让 `syncCompletedHistoryEventCursor`
+   * / `handleSelectSession` / `ensureAgentMainSession` 全部失去稳定性，最终让
+   * 「主线会话自动重建」effect 多跑一次、把刚被删除的会话重新选回来
+   * （useChatState.selection 的 handleSessionNotFound 用例就是这么被抓到的）。
+   */
+  const isProjectionOwnedSession = useCallback(
+    (sessionId: string | null) =>
+      sessionId != null && projectionOwnedSessionIdsRef.current.has(sessionId),
+    [],
+  );
+
   const {
     workingAgentIds,
     subAgentRuns,
@@ -564,6 +578,9 @@ export function useChatState(
       sseSessionIdRef,
       selectedSessionIdRef,
       sessionIdRef,
+      // 会话域：agent 主会话的主消息由 Agent 投影承担 ⇒ 本 hook 对该会话
+      // 只消费 canonical 的 subagent.* 事实（诊断 2026-10-06）。
+      isProjectionOwnedSession,
     },
     turns: {
       turnsRef,
@@ -1279,19 +1296,12 @@ export function useChatState(
       stopSessionEventStream();
       return;
     }
-    if (projectionOwnedSessionIdsRef.current.has(selectedSessionId)) {
-      stopSessionEventStream();
-      recordPerfEvent(
-        'chat.sse.skipped',
-        {
-          sessionId: selectedSessionId,
-          reason: 'agent projection owns message loading',
-        },
-        { throttleMs: 1_000 },
-      );
-      return;
-    }
-    // 统一入口：游标未就绪时先 bootstrap，绝不以 0 兜底开流。
+    // 投影会话（agent 主会话）同样订阅 canonical 流：主消息由 Agent 投影负责并
+    // 在投影层按会话域过滤掉，但子代理事实只有这条通道（诊断 2026-10-06：
+    // 此前这里 stopSessionEventStream + 连接层再拒绝，运行坞只剩「启动中 / 0 /
+    // 0 / 暂无运行事件」的占位）。
+    // 统一入口：游标未就绪时先 bootstrap（顺带装载 subAgentEvents 快照），
+    // 绝不以 0 兜底开流。
     void ensureSessionEventStream(selectedSessionId);
     return () => {
       stopSessionEventStream();

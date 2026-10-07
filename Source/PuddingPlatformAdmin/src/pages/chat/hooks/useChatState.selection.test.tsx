@@ -191,7 +191,7 @@ describe('useChatState session selection races', () => {
     }) as jest.Mock;
   });
 
-  it('lets the agent projection own initial main-session loading', async () => {
+  it('lets the agent projection own initial main-session loading while keeping the canonical event channel', async () => {
     (listSessionMessages as jest.Mock).mockResolvedValue(
       messagePage('legacy-history'),
     );
@@ -208,9 +208,17 @@ describe('useChatState session selection races', () => {
       expect(result.current.selectedSessionId).toBe('session-a'),
     );
 
+    // 主消息仍由 Agent 投影承担：这里不得回退到历史消息加载。
     expect(listSessionMessages).not.toHaveBeenCalled();
-    expect(subscribeSessionEvents).not.toHaveBeenCalled();
     expect(result.current.turns).toEqual([]);
+    // 但 canonical 事件流必须订阅：主消息在投影层按会话域过滤，子代理事实
+    // 只有这一条通道（诊断 2026-10-06：此处不开流会让运行坞只剩 0 占位）。
+    expect(subscribeSessionEvents).toHaveBeenCalledWith(
+      'session-a',
+      expect.any(Function),
+      expect.any(AbortSignal),
+      expect.objectContaining({ afterSequence: expect.any(Number) }),
+    );
   });
 
   it('keeps the latest agent session when an older history request resolves later', async () => {
@@ -368,7 +376,7 @@ describe('useChatState session selection races', () => {
     expect(result.current.mainSessionId).toBe('session-b');
   });
 
-  it('does not start legacy session SSE when agent projection owns message loading', async () => {
+  it('subscribes the canonical channel for a projection-owned main session without loading legacy history', async () => {
     (listSessionMessages as jest.Mock).mockResolvedValue(
       messagePage('history'),
     );
@@ -382,6 +390,7 @@ describe('useChatState session selection races', () => {
     });
     (ensureMainSession as jest.Mock).mockResolvedValueOnce(sessions[1]);
     (subscribeSessionEvents as jest.Mock).mockClear();
+    (listSessionMessages as jest.Mock).mockClear();
 
     await act(async () => {
       await result.current.ensureAgentMainSession('default', 'agent-b', {
@@ -392,7 +401,12 @@ describe('useChatState session selection races', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(result.current.selectedSessionId).toBe('session-b');
-    expect(subscribeSessionEvents).not.toHaveBeenCalled();
+    // 订阅的是这个投影会话本身的事件流（子代理事实的唯一通道）……
+    expect(
+      (subscribeSessionEvents as jest.Mock).mock.calls.map((call) => call[0]),
+    ).toContain('session-b');
+    // ……但主消息绝不再回到历史加载路径。
+    expect(listSessionMessages).not.toHaveBeenCalled();
   });
 
   it('does not pull focus back when a background agent send returns after switching away', async () => {

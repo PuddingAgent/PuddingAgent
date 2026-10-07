@@ -822,6 +822,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       onInspectorOpenChange={setSubAgentInspectorOpen}
                       selectedRunId={selectedSubAgentRunId}
                       onSelectedRunIdChange={setSelectedSubAgentRunId}
+                      reconnectCount={reconnectCount}
                     />
                   </React.Suspense>
                 )}

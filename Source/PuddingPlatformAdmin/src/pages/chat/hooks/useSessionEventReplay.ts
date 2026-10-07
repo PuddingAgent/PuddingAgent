@@ -8,6 +8,7 @@ import {
 } from '@/services/platform/api';
 import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import {
+  mergeSubAgentRunSnapshots,
   reconcileSubAgentRunStatuses,
   reduceSubAgentRunEvent,
   type SubAgentRunMap,
@@ -185,16 +186,14 @@ export function useSessionEventReplay({
             type: event.type,
           });
         }
-        setSubAgentRuns((current) => {
-          const merged = { ...snapshotRuns };
-          for (const [runId, run] of Object.entries(current)) {
-            const snapshot = merged[runId];
-            if (!snapshot || run.lastActivityAt > snapshot.lastActivityAt) {
-              merged[runId] = run;
-            }
-          }
-          return reconcileSubAgentRunStatuses(merged, statuses);
-        });
+        setSubAgentRuns((current) =>
+          // 证据量优先的合并：会话状态端点物化的占位（0 轮 / 0 工具 / 空时间线）
+          // 不得因为时间戳稍新就顶掉带真实时间线的事件快照（2026-10-06 诊断）。
+          reconcileSubAgentRunStatuses(
+            mergeSubAgentRunSnapshots(current, snapshotRuns),
+            statuses,
+          ),
+        );
         const cursor = Number(bootstrap.snapshotCursor);
         if (!Number.isFinite(cursor) || cursor < 0) {
           markSessionEventCursorFailed(sessionEventCursorRef.current, sessionId);
