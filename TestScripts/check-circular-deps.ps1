@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 检测 PuddingAgent 解决方案中的项目循环依赖
 #>

@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 7.0
 <#
 .SYNOPSIS
   统一测试门禁：跑「声明过的套件列表」，按**用例身份**（而非失败数量）判定，输出结构化结论。

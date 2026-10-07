@@ -331,7 +331,7 @@ $t=[IO.File]::ReadAllText($p,[Text.Encoding]::UTF8); $e=$null
 [void][System.Management.Automation.Language.Parser]::ParseInput($t,[ref]$null,[ref]$e); @($e).Count   # => 0
 ```
 
-**修法（3 字节/文件；未由本代理执行，留待 owner 决定）**：
+**修法（3 字节/文件）—— ✅ 已于 2026-10-08 施加并复验**：
 ```powershell
 foreach($n in @('check-circular-deps.ps1','report-skill-portfolio.ps1','test-platform-api.ps1','test-pudding-suite-gates.ps1')){
   $p = Join-Path 'TestScripts' $n; $b = [IO.File]::ReadAllBytes($p)
@@ -375,3 +375,53 @@ RESULT: PASS
 - 变异自检（`-SelfTest`）：`SELFTEST ok: injected cycle detected -> __ZZ_CycleA -> __ZZ_CycleB -> __ZZ_CycleA` · `SELFTEST ok: injected production->test reference detected` · `SELFTEST: PASS`。
 - 本文件自身：**`NONASCII=0` / `PARSE_ERRORS=0`** ⇒ 从设计上免疫上述编码缺陷。
 - **新发现（D-5 的证据）**：`github.hyfree.GM` 等 **4 个工程位于仓库 `external\` 目录树内** ⇒ 它们是**内嵌的外部源码树**，不是普通本仓工程；治理口径（是否纳入层级/边界断言）需人工裁决。
+
+---
+
+### ✅ 编码缺陷已修复（2026-10-08）+ 新增 C-5 机检脚本 `check-script-encodings.ps1`
+
+**修复动作**：对上节 4 个文件各前置 **3 字节 UTF-8 BOM**（`EF BB BF`），**内容零改动**。
+
+| 文件 | 字节 | 修复前 SHA-256（前 12） | 修复后（前 12） |
+|---|---|---|---|
+`check-circular-deps.ps1` | 3,609 → **3,612** | `BC5B88AF0BA5` | `5DABACA3F70A` |
+`report-skill-portfolio.ps1` | 51,092 → **51,095** | `1506657130A4` | `2120B7A6B501` |
+`test-platform-api.ps1` | 23,571 → **23,574** | `DCAE3E83B326` | `763F57357B2E` |
+`test-pudding-suite-gates.ps1` | 31,575 → **31,578** | `5F43684B5319` | `7D8898498C78` |
+
+**「内容零改动」的量化取证**：`git diff --numstat -- TestScripts` ⇒ 4 个文件**各 `1 1`**（只动首行），汇总 `4 files changed, 4 insertions(+), 4 deletions(-)`。
+
+> ⚠️ **注意**：修复**只解决「能加载」**。`check-circular-deps.ps1` 的 **5 个逻辑缺陷仍在**（尤其 `$cyclesFound` 假 PASS）⇒ 它**依然不得作为门禁判据**，替代实现仍是 `check-project-layering.ps1`。
+
+### `check-script-encodings.ps1`（C-5：脚本可加载性机检）
+
+- **判据**：范围内每个 `.ps1` **必须能被本机唯一的 PowerShell 引擎（Windows PowerShell 5.1）加载**。
+- **实现**：进程内**复刻 5.1 的解码规则**（起始 `EF BB BF` → UTF-8 去 BOM；否则 → `[Text.Encoding]::Default`＝ANSI），再把解码文本交给**真实 PS 解析器**。解析错误 ⇒ 该脚本**无法执行**（即便在 UTF-8 编辑器里看起来完全正常）。
+- **判据不是「必须有 BOM」**：**ASCII-only 且无 BOM 完全合法**（本文件与 `check-project-layering.ps1` 均如此）。BOM / 非 ASCII 仅作为**事实**报告。
+- **`-SelfTest`＝纯内存夹具，不写任何文件**：阳性对照（UTF-8 无 BOM + 单个中文字符入单引号串）**必须被测出**；两个阴性对照（同内容加 BOM、纯 ASCII）**必须干净**。
+- **退出码（fail-closed）**：`0`=PASS · `1`=FAIL · `3`=FAIL-CLOSED（范围内枚举到 **0** 个脚本时**拒绝报绿**）· `4`=SELFTEST_FAIL。
+- **默认范围**＝`TestScripts` **顶层**（**20 个已跟踪脚本**；早前记「18」作废）；`temp/`、`node_modules/` 等草稿区默认排除。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\check-script-encodings.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\check-script-encodings.ps1 -SelfTest
+```
+
+**实测（2026-10-08，本机 PS `5.1.26100.9444`）**
+
+`-SelfTest`：
+```
+POSCTRL errors=1 first=TerminatorExpectedAtEndOfString@L1C6
+BOMCTRL errors=0
+ASCIICTRL errors=0
+SELFTEST PASS
+```
+
+修复**前**扫描：`FILES=20 BOM=1 NONASCII=7 BROKEN=4` → `RESULT: FAIL`（exit 1），4 例与上节登记**逐字一致**。
+同时产出**3 个阴性对照**（含非 ASCII 但解析 0 错）⇒ 证明判据**不是**「见中文就报错」：
+`start-phase2a3b-external-acceptance.ps1` · `test-operators-architecture-gates.ps1` · `test-capability-channel-window.ps1`（后者有 BOM）。
+
+修复**后**扫描：`FILES=20 BOM=5 NONASCII=7 BROKEN=0` → `RESULT: PASS`（exit 0）。
+
+**范围外的残留（已记录，未修）**：递归全扫后仅剩 **2 例**，**均在 `TestScripts\temp\`**（`.gitignore` 覆盖的草稿区）⇒ 判定**不在门禁范围**：
+`temp\post-restart-verify-dsh.ps1`（5 错） · `temp\skill-hub-publish\publish-ppt-master.ps1`（1 错）。
