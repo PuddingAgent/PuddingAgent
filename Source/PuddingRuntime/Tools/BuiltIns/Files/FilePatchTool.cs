@@ -227,7 +227,9 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 summaries.Add($"{relPath}: (dry_run=true - preview only, no changes written)\n{diff}");
             }
 
-            return ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries));
+            return ToolExecutionResult.Ok(
+                string.Join(Environment.NewLine, summaries),
+                status: FilePatchStatus.ClassifyApplied(batchResults.Any(r => r.Original != r.Current)));
         }
 
         // Write phase with rollback on any failure
@@ -291,7 +293,9 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             }
         }
 
-        return ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries));
+        return ToolExecutionResult.Ok(
+            string.Join(Environment.NewLine, summaries),
+            status: FilePatchStatus.ClassifyApplied(batchResults.Any(r => r.Original != r.Current)));
     }
 
     private ToolExecutionResult ApplyUnifiedDiffPatch(FilePatchArgs args, ToolExecutionContext context)
@@ -1210,6 +1214,18 @@ internal static class SimpleLineDiff
     }
 }
 
+/// <summary>
+/// file_patch 的结构化状态判定（对齐 file_search / search_grep 的 no_match 约定）：目标范围已完整
+/// 处理、但没有任何文件真正被改动时上报 no_match（成功态，与失败严格区分）；只要有一个文件变化
+/// 就是 ok。这样调用方不必再从自由文本里猜「这次补丁到底改动了什么」。
+/// 放在文件级是因为同文件的 UnifiedDiffPatchRunner 也要用它，而 FilePatchTool 的私有成员对它不可见。
+/// </summary>
+internal static class FilePatchStatus
+{
+    internal static string ClassifyApplied(bool anyFileChanged) =>
+        anyFileChanged ? ToolResultStatuses.Ok : ToolResultStatuses.NoMatch;
+}
+
 internal static class UnifiedDiffPatchRunner
 {
     public static ToolExecutionResult Apply(
@@ -1280,7 +1296,9 @@ internal static class UnifiedDiffPatchRunner
             .ToArray();
 
         if (isDryRun)
-            return ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries));
+            return ToolExecutionResult.Ok(
+                string.Join(Environment.NewLine, summaries),
+                status: FilePatchStatus.ClassifyApplied(touchedFiles.Any(f => f.Original != f.Current)));
 
         var sw = Stopwatch.StartNew();
         var backups = new List<(string FullPath, string BackupPath, OperationZone Zone, string RequestedPath)>();
@@ -1306,7 +1324,9 @@ internal static class UnifiedDiffPatchRunner
                     file.Patch.Path, reason, true, sw.ElapsedMilliseconds, context.Trace);
             }
 
-            return ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries));
+            return ToolExecutionResult.Ok(
+                string.Join(Environment.NewLine, summaries),
+                status: FilePatchStatus.ClassifyApplied(touchedFiles.Any(f => f.Original != f.Current)));
         }
         catch (Exception ex)
         {

@@ -735,6 +735,99 @@ public sealed class FilePatchToolTests
         return operations;
     }
 
+    // ── D10: structured result status (file_search / search_grep alignment) ──
+
+    [TestMethod]
+    public async Task Patch_AppliedChange_ReportsStatusOk()
+    {
+        WriteFile("status.txt", "alpha\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "status.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "alpha", ["new_text"] = "beta" }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(ToolResultStatuses.Ok, result.Status, "a patch that really rewrote a file is a plain ok");
+    }
+
+    [TestMethod]
+    public async Task Patch_MatchedNothing_ReportsNoMatchWithoutFailing()
+    {
+        const string before = "alpha\n";
+        WriteFile("status.txt", before);
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "status.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "nowhere", ["new_text"] = "x" }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(
+            ToolResultStatuses.NoMatch,
+            result.Status,
+            "nothing was rewritten: that is a successful no_match, not a failure and not a plain ok");
+        StringAssert.Contains(result.Output, "not found", "the reason must stay visible in the output");
+        Assert.AreEqual(before, ReadFile("status.txt"));
+    }
+
+    [TestMethod]
+    public async Task DryRun_PreviewWithChange_ReportsStatusOk()
+    {
+        WriteFile("status.txt", "alpha\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "status.txt",
+            ["dry_run"] = true,
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "alpha", ["new_text"] = "beta" }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(ToolResultStatuses.Ok, result.Status, "a preview that would change the file is an ok result");
+        Assert.AreEqual("alpha\n", ReadFile("status.txt"));
+    }
+
+    [TestMethod]
+    public async Task DryRun_PreviewWithoutChange_ReportsStatusNoMatch()
+    {
+        WriteFile("status.txt", "alpha\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "status.txt",
+            ["dry_run"] = true,
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "nowhere", ["new_text"] = "x" }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(ToolResultStatuses.NoMatch, result.Status, "an empty preview is a no_match in dry-run too");
+    }
+
+    [TestMethod]
+    public async Task UnifiedDiff_AppliedPatch_ReportsStatusOk()
+    {
+        WriteFile("status.txt", "alpha\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["patch_text"] = "--- a/status.txt\n+++ b/status.txt\n@@ -1 +1 @@\n-alpha\n+beta\n"
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(ToolResultStatuses.Ok, result.Status, "the patch_text path shares the same status contract");
+        Assert.AreEqual("beta\n", ReadFile("status.txt"));
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();
