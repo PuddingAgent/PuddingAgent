@@ -41,10 +41,17 @@ P2 计划中的「运行身份」项一直悬空。它的痛点在本机反复�
   - 变异 B（缺失目标不再报 error）：失败 1 / 通过 11，恰好 `RuntimeIdentity_MissingTargetPath_ReportsErrorWithoutInventingIdentity`；
   - 两次复原 sha256 均与基线 `2ea89b4f5e01fbce0c5b7bf8b8283dcb939519d08bf79d8198bd202aa0aca729` 逐位一致；复原后全绿 12/12。`VERDICT=PASS`。
 - 聚焦测试：`dotnet test --filter FullyQualifiedName~AgentDiagnostics` → 失败 0 / 通过 12。
-- 全量回归：`PuddingRuntimeTests` 1978 例 → 失败 1 / 通过 1971 / 跳过 6。唯一失败为 `HostShellExecutor_WslMode_UsesWindowsWorkingDirectoryMapping`（`exit code -1`），属环境型：本机 `wsl -e pwd` 同样提示缺少已安装的 Linux 发行版，与本次改动无交集。
+- 全量回归（首次，本机 WSL 发行版缺失时）：`PuddingRuntimeTests` 1978 例 → 失败 1 / 通过 1971 / 跳过 6。唯一失败为 `HostShellExecutor_WslMode_UsesWindowsWorkingDirectoryMapping`（`exit code -1`），属环境型：当刻 `wsl -e pwd` 同样提示缺少已安装的 Linux 发行版，与本次改动无交集。
+- 全量回归（复测，用户告知 WSL 已安装后）：现场实测 `wsl --status` → 默认分发 Ubuntu / 默认版本 2，`wsl -l -v` → `* Ubuntu Running 2`，`wsl -e pwd` → `/mnt/d/CodeProject/PuddingAgent/PuddingAgent`（rc=0）；同一条测试转绿，全量 **失败 0 / 通过 1972 / 跳过 6 / 总计 1978**（通过数 1971→1972 的差量精确对应那条 WSL 测试）。
 - `python Tools\Docs\code_map_check.py`：本次改动后 `error 0 / warn 1 / gate PASS`；warn 为既有的 `stale-fingerprint`（对 HEAD 版 `code_map.md` 做对照校验同样 warn 1，且该工具 read-only，无 stamp 能力）。
 
 ## 遗留
 
 - `runtime_identity` 要在宿主里真正可用，必须先完成自举重启（当前宿主仍加载旧程序集）；重启会终止所有运行中的子代理，需用户点头后触发。
 - `code_map.md` 顶部 `源指纹 …=dc2ba84b0ee2` 长期 stale（基线即 stale），本次未一并刷新。
+
+## 复测补记（环境变更）
+
+初稿把 `HostShellExecutor_WslMode_UsesWindowsWorkingDirectoryMapping` 的失败标为「环境型（本机 WSL 发行版缺失）」—— 该判定在写入时点（10-07 22:57）为真，当刻探测确实提示需 `wsl.exe --install <Distro>`；环境在当日晚间被用户改变（Ubuntu 已安装且 `Running`，版本 2）。按同一命令复跑全量得 0 失败。
+
+**教训：环境型判定必须带时点，并在环境可能变化后复测；用户纠正环境事实时，先现场实测再改记录。**
