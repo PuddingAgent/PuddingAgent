@@ -342,7 +342,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 continue;
             }
 
-            var candidates = FindReplacementCandidates(original, oldText)
+            var candidates = FindReplacementCandidates(original, oldText, newText)
                 .Where(match => match.Index >= scopeStart && match.Index + match.Length <= scopeEnd)
                 .Where(match => !usedRanges.Any(r => match.Index < r.End && match.Index + match.Length > r.Start))
                 .ToList();
@@ -363,6 +363,32 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 }
                 errors.Add($"old_string not found in {relPath}: \"{snippet.Replace("\n", "\\n").Replace("\r", "\\r")}\"{hint}");
                 continue;
+            }
+
+            var replacementSuppliedLeadingBreak = StartsWithLineBreak(newText);
+
+            // A line break must never be split and must never be swallowed: widen a span that
+            // starts on the LF half of a CRLF to the whole pair, then give back to new_text any
+            // leading line break the span consumes. Without this, a lone LF at the start of
+            // old_text matches the LF half of a CRLF, the previous line loses its terminator and
+            // two lines merge with an orphan CR left behind (defect measured 2026-10-07).
+            for (var i = 0; i < candidates.Count; i++)
+                candidates[i] = WidenToWholeLineBreak(original, candidates[i]);
+
+            if (candidates.Count > 0
+                && IsLineBreakChar(original[candidates[0].Index])
+                && !replacementSuppliedLeadingBreak)
+            {
+                newText = LeadingLineBreakOf(original, candidates[0]) + newText;
+            }
+
+            if (StartsWithLineBreak(oldText) && !replacementSuppliedLeadingBreak)
+            {
+                errors.Add(
+                    $"old_string starts with a line break but new_text does not in {relPath} " +
+                    $"(L{GetLineNumberOf(original, candidates[0].Index)}): the preceding line break was " +
+                    "kept to avoid merging two lines; include the leading line break in new_text if you " +
+                    "intended to consume it.");
             }
 
             if (op.ReplaceAll == true)
@@ -420,7 +446,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         return crlfCount > lfOnlyCount ? normalized.Replace("\n", "\r\n") : normalized;
     }
 
-    private static IReadOnlyList<TextMatch> FindReplacementCandidates(string original, string oldText)
+    private static IReadOnlyList<TextMatch> FindReplacementCandidates(string original, string oldText, string newText)
     {
         var exact = FindLiteralMatches(original, oldText, "exact");
         if (exact.Count > 0)
@@ -456,22 +482,24 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             }
         }
 
-        return ExpandLeadingWhitespace(original, oldText, candidates);
+        return ExpandLeadingWhitespace(original, oldText, newText, candidates);
     }
 
     // Normalized matching skips whitespace, so the match span starts at the first content
     // character. When old_text itself begins with whitespace (typical snippet indentation), the
     // original line's leading indent would survive the replacement and stack with the indent
     // inside new_text (+4/+8/+12 drift). Extend the span left over the same-line indent run —
-    // plus one preceding newline when old_text starts with a newline — so the replacement swaps
-    // the whole region including its indentation.
-    private static List<TextMatch> ExpandLeadingWhitespace(string original, string oldText, List<TextMatch> matches)
+    // plus one preceding newline — but only when old_text starts with a newline AND new_text
+    // supplies a line break back. Consuming a line break that the replacement does not restore
+    // silently merges the previous line with the replacement and leaves an orphan CR in CRLF
+    // files (defect measured in the field on 2026-10-07).
+    private static List<TextMatch> ExpandLeadingWhitespace(
+        string original, string oldText, string newText, List<TextMatch> matches)
     {
         if (matches.Count == 0 || !char.IsWhiteSpace(oldText[0]))
             return matches;
 
-        var includeNewline = oldText[0] == '\n'
-            || (oldText[0] == '\r' && oldText.Length > 1 && oldText[1] == '\n');
+        var includeNewline = StartsWithLineBreak(oldText) && StartsWithLineBreak(newText);
 
         for (var i = 0; i < matches.Count; i++)
         {
@@ -492,6 +520,29 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
 
         return matches;
     }
+
+    private static bool StartsWithLineBreak(string text)
+        => text.Length > 0 && IsLineBreakChar(text[0]);
+
+    private static bool IsLineBreakChar(char c) => c == '\n' || c == '\r';
+
+    // A span that begins on the LF half of a CRLF pair would split the pair in two and leave an
+    // orphan CR behind, so widen it to cover the whole line break.
+    private static TextMatch WidenToWholeLineBreak(string original, TextMatch match)
+        => match.Length > 0
+            && match.Index >= 1
+            && match.Index < original.Length
+            && original[match.Index] == '\n'
+            && original[match.Index - 1] == '\r'
+            ? new TextMatch(match.Index - 1, match.Length + 1, match.Strategy)
+            : match;
+
+    // The exact line-break text a consumed span starts with, so new_text can give it back
+    // byte-for-byte (CRLF host text must not be rewritten as a lone LF).
+    private static string LeadingLineBreakOf(string original, TextMatch match)
+        => match.Length > 1 && original[match.Index] == '\r' && original[match.Index + 1] == '\n'
+            ? "\r\n"
+            : original[match.Index].ToString();
 
     private static bool IsAmbiguousBlockPattern(string oldText, string original)
     {

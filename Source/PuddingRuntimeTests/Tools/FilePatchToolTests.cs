@@ -253,6 +253,92 @@ public sealed class FilePatchToolTests
     private string ReadFile(string name) =>
         File.ReadAllText(GetPath(name), Encoding.UTF8);
 
+    // ── D4: a leading line break in old_text must never be consumed unless new_text restores it ──
+
+    [TestMethod]
+    public async Task Replace_LeadingNewlineAnchoredOldText_DoesNotMergeRows()
+    {
+        // Measured in the field on 2026-10-07: anchoring old_text with a leading newline made the
+        // match span swallow the previous line's CRLF, merging two markdown table rows into one
+        // line and leaving an orphan CR behind.
+        WriteFile("table.md", "| a | b |\r\n|---|---|\r\n| keep | one |\r\n| target | two |\r\n| tail | three |\r\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "table.md",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "\n| target | two |",
+                    ["new_text"] = "| target | two |\n| ins1 | x |",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        var actual = ReadFile("table.md");
+        Assert.AreEqual(
+            "| a | b |\r\n|---|---|\r\n| keep | one |\r\n| target | two |\r\n| ins1 | x |\r\n| tail | three |\r\n",
+            actual,
+            "the row before the anchor must keep its terminator (no merged rows, no orphan CR)");
+        Assert.IsFalse(actual.Contains("|\r|", StringComparison.Ordinal), "no orphan CR may survive");
+    }
+
+    [TestMethod]
+    public async Task Replace_LeadingNewlineAnchoredOldText_ConsumesBreakWhenNewTextRestoresIt()
+    {
+        WriteFile("table.md", "| keep | one |\r\n| target | two |\r\n| tail | three |\r\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "table.md",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "\n| target | two |",
+                    ["new_text"] = "\n| target | two |\n| ins1 | x |",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(
+            "| keep | one |\r\n| target | two |\r\n| ins1 | x |\r\n| tail | three |\r\n",
+            ReadFile("table.md"),
+            "a symmetric replacement may consume the preceding break because it supplies it back");
+    }
+
+    [TestMethod]
+    public async Task Replace_LeadingNewlineAnchoredOldText_ReportsAnIssueNotice()
+    {
+        WriteFile("table.md", "| keep | one |\r\n| target | two |\r\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "table.md",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "\n| target | two |",
+                    ["new_text"] = "| target | three |",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(
+            "| keep | one |\r\n| target | three |\r\n",
+            ReadFile("table.md"),
+            "the preceding line must keep its terminator while the row is still replaced");
+        StringAssert.Contains(
+            result.Output,
+            "starts with a line break",
+            "an asymmetric leading line break must be reported instead of silently kept");
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();
