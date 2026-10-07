@@ -21,7 +21,8 @@ namespace PuddingRuntime.Services.Tools;
 /// 实现自我观察 → 自我优化的反馈闭环。
 ///
 /// 支持十种诊断模式：
-///   - tool_stats: 查询指定工具的调用统计（成功率、耗时、常见错误）
+///   - tool_stats: 查询指定工具的调用统计（成功率、耗时、常见错误）；统计覆盖样本内**全部**匹配活动，
+///     limit 只决定每次向 sink 的采样量，不得截断统计口径，并随附 sample 块上报样本边界
 ///   - slowest_tools: 列出最慢的 N 个工具
 ///   - cache_health: 查询缓存命中率和 prefix churn 来源
 ///   - goodput_attribution: 按 GoalRunId 只读归因用量账本（SourceId 中段 TraceId → goal_iterations/execution_runs），
@@ -102,13 +103,20 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         if (_activitySink is null)
             return JsonSerializer.Serialize(new { error = "Runtime activity sink is not available in this environment." });
 
+        var requestedSampleLimit = Math.Max(limit * 10, 500);
         var query = new RuntimeActivityQuery
         {
             Component = null, // query all components — Smart* tools use SmartToolWrapper, traditional tools use ToolRunner
-            Limit = Math.Max(limit * 10, 500)
+            Limit = requestedSampleLimit
         };
 
         var activities = await _activitySink.QueryAsync(query, ct);
+
+        // 采样上限：IRuntimeActivitySink 的实现（RuntimeActivitySink.QueryAsync）在查询层把 Limit 夹到 [1,500]，
+        // 所以无论 limit 传多大，样本都不会超过 500 条。这个边界必须如实上报，否则“统计”看起来是全量、
+        // 实际只是最近 500 条活动。
+        const int SinkLimitCeiling = 500;
+        var effectiveSampleLimit = Math.Min(requestedSampleLimit, SinkLimitCeiling);
 
         if (activities.Count == 0)
             return JsonSerializer.Serialize(new
@@ -119,12 +127,15 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 diagnostics = new { total_activities_in_db = 0, query_component = RuntimeActivityComponents.ToolRunner }
             });
 
+        // 统计必须覆盖**全部匹配活动**，不得被 limit 截断：limit 只决定「每次向 sink 采样多少条」，
+        // 不决定该工具的统计口径。修复前这里紧跟一个 .Take(limit)，于是 tool_stats(limit=2) 会把
+        // total_calls / success_rate / 耗时全部算成「最近 2 次」的样子，而调用方读到的是「该工具的全量
+        // 统计」—— 诊断仪器自身失真（缺陷确认于 2026-10-08）。
         var toolActivities = activities
             .Where(a =>
                 (a.Metadata is not null && a.Metadata.TryGetValue("tool_name", out var name) &&
                  name.Contains(toolName, StringComparison.OrdinalIgnoreCase))
                 || (a.Operation is not null && a.Operation.Contains(toolName, StringComparison.OrdinalIgnoreCase)))
-            .Take(limit)
             .ToList();
 
         if (toolActivities.Count == 0)
@@ -161,6 +172,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             .Where(a => !string.IsNullOrWhiteSpace(a.ErrorMessage))
             .GroupBy(a => TruncateError(a.ErrorMessage!))
             .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.Ordinal) // 同计数时给稳定次序，避免每次查询顺序漂移
             .Take(5)
             .Select(g => new { message = g.Key, count = g.Count() })
             .ToList();
@@ -176,7 +188,16 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 : 0,
             avg_duration_ms = Math.Round(avgDuration, 1),
             max_duration_ms = maxDuration,
-            common_errors = errors
+            common_errors = errors,
+            // 统计口径：上面的数字覆盖「本样本内匹配到的全部活动」，不是「最近 limit 次」。
+            sample = new
+            {
+                activities_queried = activities.Count,
+                sample_limit_requested = requestedSampleLimit,
+                sample_limit_effective = effectiveSampleLimit,
+                tool_activities_matched = toolActivities.Count,
+                sample_truncated_by_sink_limit = activities.Count >= effectiveSampleLimit,
+            }
         });
     }
 

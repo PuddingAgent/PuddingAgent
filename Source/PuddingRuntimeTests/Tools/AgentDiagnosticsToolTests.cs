@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using PuddingCode.Observability;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingRuntime.Services.Tools;
@@ -473,5 +474,119 @@ public sealed class AgentDiagnosticsToolTests
             ContextCompactionRequest request,
             CancellationToken ct = default)
             => throw new NotSupportedException();
+    }
+
+    // ── tool_stats：统计口径不得被 limit 截断（2026-10-08 缺陷修复）────────────────
+
+    [TestMethod]
+    public async Task ToolStats_StatisticsCoverEveryMatchedActivity_NotJustTheFirstLimit()
+    {
+        var sink = new FakeActivitySink(
+        [
+            Activity("file_patch", RuntimeActivityStatuses.Succeeded, 10),
+            Activity("file_patch", RuntimeActivityStatuses.Succeeded, 20),
+            Activity("file_patch", RuntimeActivityStatuses.Failed, 30, "boom"),
+            Activity("file_patch", RuntimeActivityStatuses.Failed, 40, "boom"),
+            Activity("file_patch", RuntimeActivityStatuses.Succeeded, 50),
+            Activity("file_patch", RuntimeActivityStatuses.Succeeded, 60),
+        ]);
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: sink,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        // limit=2：修复前这里只统计「最近 2 条」——total_calls 会报成 2，成功率/耗时同样被截断。
+        var result = await ExecuteAsync(tool, """{"action":"tool_stats","tool_name":"file_patch","limit":2}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var doc = JsonDocument.Parse(result.Output);
+        var root = doc.RootElement;
+
+        Assert.AreEqual(6, root.GetProperty("total_calls").GetInt32(),
+            "统计必须覆盖样本内全部匹配活动；limit 只约束采样量，不得截断统计口径");
+        Assert.AreEqual(4, root.GetProperty("success_count").GetInt32());
+        Assert.AreEqual(2, root.GetProperty("failure_count").GetInt32());
+        Assert.AreEqual(0.667, root.GetProperty("success_rate").GetDouble(), 0.001);
+        Assert.AreEqual(1, root.GetProperty("common_errors").GetArrayLength(), "两条 boom 应聚成一条");
+        Assert.AreEqual(2, root.GetProperty("common_errors")[0].GetProperty("count").GetInt32());
+
+        var sample = root.GetProperty("sample");
+        Assert.AreEqual(6, sample.GetProperty("activities_queried").GetInt32());
+        Assert.AreEqual(6, sample.GetProperty("tool_activities_matched").GetInt32());
+        Assert.IsFalse(sample.GetProperty("sample_truncated_by_sink_limit").GetBoolean(),
+            "6 条活动远低于 sink 上限，不得报「已截断」");
+    }
+
+    [TestMethod]
+    public async Task ToolStats_SampleBlockReportsSinkLimitAndStableErrorOrdering()
+    {
+        var activities = new List<RuntimeActivity>();
+        for (var i = 0; i < 500; i++)
+            activities.Add(Activity("search_grep", RuntimeActivityStatuses.Succeeded, 5));
+
+        // 两条同计数的错误：稳定次序须按 message 字典序（alpha 在前），否则同一份数据每次查询顺序都可能漂移。
+        activities.Add(Activity("search_grep", RuntimeActivityStatuses.Failed, 7, "zeta failure"));
+        activities.Add(Activity("search_grep", RuntimeActivityStatuses.Failed, 9, "alpha failure"));
+        var sink = new FakeActivitySink(activities);
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: sink,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(tool, """{"action":"tool_stats","tool_name":"search_grep","limit":200}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var doc = JsonDocument.Parse(result.Output);
+        var root = doc.RootElement;
+
+        Assert.AreEqual(502, root.GetProperty("total_calls").GetInt32());
+
+        var sample = root.GetProperty("sample");
+        Assert.AreEqual(502, sample.GetProperty("activities_queried").GetInt32());
+        Assert.AreEqual(500, sample.GetProperty("sample_limit_effective").GetInt32(),
+            "sink 实现在查询层把 Limit 夹到 500，必须如实上报该上限");
+        Assert.IsTrue(sample.GetProperty("sample_truncated_by_sink_limit").GetBoolean(),
+            "样本数达到有效上限时必须标注已截断，否则统计看起来像全量");
+
+        var errors = root.GetProperty("common_errors");
+        Assert.AreEqual(2, errors.GetArrayLength());
+        Assert.AreEqual("alpha failure", errors[0].GetProperty("message").GetString());
+        Assert.AreEqual("zeta failure", errors[1].GetProperty("message").GetString());
+    }
+
+    private static RuntimeActivity Activity(
+        string toolName, string status, long durationMs, string? error = null)
+        => new()
+        {
+            Trace = RuntimeTraceContext.CreateNew(sessionId: "session-1", workspaceId: "default"),
+            Component = RuntimeActivityComponents.ToolRunner,
+            Operation = $"tool.{toolName}",
+            Status = status,
+            DurationMs = durationMs,
+            ErrorMessage = error,
+            Metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["tool_name"] = toolName },
+        };
+
+    private sealed class FakeActivitySink : IRuntimeActivitySink
+    {
+        private readonly IReadOnlyList<RuntimeActivity> _activities;
+
+        public FakeActivitySink(IReadOnlyList<RuntimeActivity> activities) => _activities = activities;
+
+        public RuntimeActivityQuery? LastQuery { get; private set; }
+
+        public Task RecordAsync(RuntimeActivity activity, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task<IReadOnlyList<RuntimeActivity>> QueryAsync(
+            RuntimeActivityQuery query, CancellationToken ct = default)
+        {
+            LastQuery = query;
+            return Task.FromResult(_activities);
+        }
     }
 }
