@@ -828,6 +828,116 @@ public sealed class FilePatchToolTests
         Assert.AreEqual("beta\n", ReadFile("status.txt"));
     }
 
+    // ── D11: argument-contract failures carry contract_error (runtime state does not) ──
+
+    [TestMethod]
+    public async Task ContractError_NoPatches_ReportsContractError()
+    {
+        var result = await ExecuteAsync(new Dictionary<string, object?>());
+
+        Assert.IsFalse(result.Success, "an empty request must fail, not silently no-op");
+        Assert.AreEqual(ToolResultStatuses.ContractError, result.Status);
+    }
+
+    [TestMethod]
+    public async Task ContractError_UnknownOperationType_ReportsContractError()
+    {
+        WriteFile("status.txt", "alpha\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "status.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "frobnicate",
+                    ["old_text"] = "alpha",
+                    ["new_text"] = "beta"
+                }
+            }
+        });
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(
+            ToolResultStatuses.ContractError,
+            result.Status,
+            "an unknown operation type is the caller's arguments, not a runtime failure");
+        Assert.AreEqual("alpha\n", ReadFile("status.txt"));
+    }
+
+    [TestMethod]
+    public async Task ContractError_ReplaceWithoutOldText_ReportsContractError()
+    {
+        WriteFile("status.txt", "alpha\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "status.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["new_text"] = "beta" }
+            }
+        });
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(ToolResultStatuses.ContractError, result.Status, "omitting old_text is a malformed request");
+        Assert.AreEqual("alpha\n", ReadFile("status.txt"));
+    }
+
+    [TestMethod]
+    public async Task ContractError_RegexReplaceWithoutReplacement_ReportsContractError()
+    {
+        WriteFile("status.txt", "alpha\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "status.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "regexReplace", ["pattern"] = "alpha" }
+            }
+        });
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(
+            ToolResultStatuses.ContractError,
+            result.Status,
+            "omitting replacement is a malformed request");
+        Assert.AreEqual("alpha\n", ReadFile("status.txt"));
+    }
+
+    [TestMethod]
+    public async Task ContractError_InvalidUnifiedDiff_ReportsContractError()
+    {
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["patch_text"] = "this is not a unified diff\n"
+        });
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(
+            ToolResultStatuses.ContractError,
+            result.Status,
+            "an unparsable patch_text is a malformed request");
+    }
+
+    [TestMethod]
+    public async Task FileNotFound_IsNotReportedAsContractError()
+    {
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "does-not-exist.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "alpha", ["new_text"] = "beta" }
+            }
+        });
+
+        Assert.IsFalse(result.Success);
+        Assert.AreNotEqual(
+            ToolResultStatuses.ContractError,
+            result.Status,
+            "a missing target is runtime state, not a malformed request");
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();

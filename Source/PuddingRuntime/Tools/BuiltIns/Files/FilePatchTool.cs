@@ -94,7 +94,9 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
 
         var patches = ResolvePatches(args).ToArray();
         if (patches.Length == 0)
-            return ToolExecutionResult.Fail($"At least one patch with operations is required.");
+            return ToolExecutionResult.Fail(
+                $"At least one patch with operations is required.",
+                status: ToolResultStatuses.ContractError);
 
         var summaries = new List<string>();
         var batchResults = new List<(string FullPath, string Original, string Current, OperationZone Zone, string RelPath, int ReplacementCount, List<string> Errors, string RequestedPath, long ElapsedMs)>();
@@ -109,7 +111,9 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             {
                 _audit.Write(OperationZone.External, "file_patch", context.AgentInstanceId,
                     patch.Path, args.Reason, false, 0, context.Trace);
-                return ToolExecutionResult.Fail(resolveError);
+                return ToolExecutionResult.Fail(
+                    resolveError,
+                    status: ToolResultStatuses.ContractError);
             }
 
             if (!File.Exists(fullPath))
@@ -129,7 +133,8 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 _audit.Write(zone2, "file_patch", context.AgentInstanceId,
                     patch.Path, args.Reason, false, 0, context.Trace);
                 return ToolExecutionResult.Fail(
-                    "Patching agent private files requires a 'reason' parameter. Please explain the purpose of this patch.");
+                    "Patching agent private files requires a 'reason' parameter. Please explain the purpose of this patch.",
+                    status: ToolResultStatuses.ContractError);
             }
 
             var sw = Stopwatch.StartNew();
@@ -153,12 +158,18 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             {
                 var opType = (op.Type ?? "replace").Trim();
                 if (opType.ToLowerInvariant() is not ("replace" or "insert" or "delete" or "replace_lines" or "regexreplace"))
-                    return ToolExecutionResult.Fail($"Unknown operation type '{opType}' in {relPath}.");
+                    return ToolExecutionResult.Fail(
+                        $"Unknown operation type '{opType}' in {relPath}.",
+                        status: ToolResultStatuses.ContractError);
                 if (opType.ToLowerInvariant() is "replace" or "insert" or "replace_lines"
                     && op.NewText is null)
-                    return ToolExecutionResult.Fail($"{opType} operation in {relPath} requires 'new_text' (or 'newText'). Use an explicit empty string to delete text; omitted or null text is not a deletion.");
+                    return ToolExecutionResult.Fail(
+                        $"{opType} operation in {relPath} requires 'new_text' (or 'newText'). Use an explicit empty string to delete text; omitted or null text is not a deletion.",
+                        status: ToolResultStatuses.ContractError);
                 if (opType.Equals("regexReplace", StringComparison.OrdinalIgnoreCase) && op.Replacement is null)
-                    return ToolExecutionResult.Fail($"regexReplace operation in {relPath} requires 'replacement'. Use an explicit empty string to delete text.");
+                    return ToolExecutionResult.Fail(
+                        $"regexReplace operation in {relPath} requires 'replacement'. Use an explicit empty string to delete text.",
+                        status: ToolResultStatuses.ContractError);
                 if (opType.Equals("replace", StringComparison.OrdinalIgnoreCase))
                 {
                     if (string.IsNullOrEmpty(op.OldText))
@@ -166,7 +177,8 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                         return ToolExecutionResult.Fail(
                             $"replace operation in {relPath} requires 'old_text' (or 'oldText'). " +
                             "Provide the exact text to find before replacing. " +
-                            "Example: operations=[{type='replace', old_text='old code', new_text='new code'}]");
+                            "Example: operations=[{type='replace', old_text='old code', new_text='new code'}]",
+                            status: ToolResultStatuses.ContractError);
                     }
                 }
                 if (opType.Contains("regex", StringComparison.OrdinalIgnoreCase))
@@ -176,7 +188,8 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                         return ToolExecutionResult.Fail(
                             $"regexReplace operation in {relPath} requires 'pattern'. " +
                             "Provide the regex pattern to match. " +
-                            "Example: operations=[{type='regexReplace', pattern='Console.WriteLine', replacement='logger.Log'}]");
+                            "Example: operations=[{type='regexReplace', pattern='Console.WriteLine', replacement='logger.Log'}]",
+                            status: ToolResultStatuses.ContractError);
                     }
                 }
             }
@@ -184,7 +197,9 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 var refusals = new List<string>();
                 var replacements = CollectReplacements(original, ops, ref replacementCount, errors, ref refusals, relPath, scopeStartLine, scopeEndLine);
                 if (refusals.Count > 0)
-                    return ToolExecutionResult.Fail(string.Join(Environment.NewLine, refusals));
+                    return ToolExecutionResult.Fail(
+                        string.Join(Environment.NewLine, refusals),
+                        status: ToolResultStatuses.ContractError);
                 var current = ApplyReplacements(original, replacements);
 
                 foreach (var op in ops)
@@ -1239,7 +1254,9 @@ internal static class UnifiedDiffPatchRunner
     {
         var parsed = UnifiedDiffParser.Parse(patchText);
         if (!parsed.Success)
-            return ToolExecutionResult.Fail(parsed.Error ?? "Invalid unified diff.");
+            return ToolExecutionResult.Fail(
+                parsed.Error ?? "Invalid unified diff.",
+                status: ToolResultStatuses.ContractError);
 
         var touchedFiles = new List<(UnifiedDiffFile Patch, string FullPath, string Original, string Current, OperationZone Zone)>();
         foreach (var patch in parsed.Files)
@@ -1253,7 +1270,9 @@ internal static class UnifiedDiffPatchRunner
             {
                 audit.Write(OperationZone.External, toolId, context.AgentInstanceId,
                     patch.Path, reason, false, 0, context.Trace);
-                return ToolExecutionResult.Fail(resolveError);
+                return ToolExecutionResult.Fail(
+                    resolveError,
+                    status: ToolResultStatuses.ContractError);
             }
 
             if (!File.Exists(fullPath))
@@ -1272,7 +1291,8 @@ internal static class UnifiedDiffPatchRunner
                 audit.Write(fileZone, toolId, context.AgentInstanceId,
                     patch.Path, reason, false, 0, context.Trace);
                 return ToolExecutionResult.Fail(
-                    "Patching agent private files requires a 'reason' parameter. Please explain the purpose of this patch.");
+                    "Patching agent private files requires a 'reason' parameter. Please explain the purpose of this patch.",
+                    status: ToolResultStatuses.ContractError);
             }
 
             // Large file check: patch logic requires full text for hunk matching; log size for diagnostics

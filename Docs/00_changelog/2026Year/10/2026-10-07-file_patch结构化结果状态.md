@@ -7,7 +7,7 @@ status: archived
 description: "给 file_patch 的 4 个成功返回点接上结构化 status：目标范围已完整处理却没有任何文件被改动时上报 no_match（成功态），与 ok 和失败严格区分；用双向变异取红证明 5 个新测试各自守护一个方向。"
 categories: [docs, changelog]
 tags: [file_patch, tool-contract, structured-status, mutation-testing]
-related_docs: [Docs/00_changelog/2026Year/10/2026-10-07-file-patch预览diff截断语义补测.md]
+related_docs: [Docs/00_changelog/2026Year/10/2026-10-07-file-patch预览diff截断语义补测.md, Docs/00_changelog/2026Year/10/2026-10-07-file_patch失败路径contract_error归类.md]
 related_files: [Source/PuddingRuntime/Tools/BuiltIns/Files/FilePatchTool.cs, Source/PuddingRuntimeTests/Tools/FilePatchToolTests.cs, Source/PuddingCore/Tools/PuddingToolContracts.cs]
 slug: changelog-file-patch-structured-status-2026-10-07
 draft: false
@@ -54,5 +54,5 @@ draft: false
 ## 边界与遗留
 
 - `no_match` 的判据是「**一个文件都没被改写**」，不是「有文件没匹配上」：批量补丁里只要有一处真正落盘，整体仍是 `ok`（更细的逐文件状态需要 `ToolContentParts` 之类的结构化通道，属另一项设计）。
-- `Fail` 路径的 `contract_error` 归类未做（缺 `new_text`、未知 op、歧义边界拒绝等目前仍是不带 status 的失败）。
+- `Fail` 路径的 `contract_error` 归类**已在后续完成**：12 个参数合同类失败点接上 `status: contract_error`，6 个运行时状态失败点保持 `null`，见 `Docs/00_changelog/2026Year/10/2026-10-07-file_patch失败路径contract_error归类.md`。
 - 宿主仍运行 2026-10-06 22:57 构建的程序集，本次改动需部署后才在生产 Agent 上生效。
