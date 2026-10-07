@@ -11,11 +11,8 @@
 
 ## 关键设计：只依赖端口
 
-```
-PuddingRetrievalEval ──依赖──▶ ISearchProbe（本组件定义的端口）
-                                      ▲
-                                      └── 实现：测试里的替身 / temp/U4-0-probe 的 LuceneFullTextProbe
-```
+依赖方向：`PuddingRetrievalEval ──▶ ISearchProbe`（本组件定义的端口）；实现在端口之外 ——
+测试替身，或 `temp/U4-0-probe` 的 `LuceneFullTextProbe`。
 
 - 组件**不引用任何检索引擎**（`ProjectReference = 0`、`PackageReference = 0`），因此换引擎不改评测。
 - 真实检索引擎只出现在**适配器**里；适配器不属于组件边界，放在 `temp/U4-0-probe/`（见

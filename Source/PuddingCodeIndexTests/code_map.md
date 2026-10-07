@@ -34,9 +34,7 @@
 
 ## 运行
 
-```
-dotnet test Source\PuddingCodeIndexTests\PuddingCodeIndexTests.csproj
-```
+`dotnet test Source\PuddingCodeIndexTests\PuddingCodeIndexTests.csproj`
 
 **不需要**启动 Core / Desktop / 任何后台服务；可在宿主运行中并发执行（不争宿主文件锁）。
 

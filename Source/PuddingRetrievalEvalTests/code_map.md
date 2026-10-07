@@ -25,9 +25,7 @@
 
 ## 验证
 
-```
-dotnet test Source\PuddingRetrievalEvalTests\PuddingRetrievalEvalTests.csproj -p:CollectCoverage=false
-```
+`dotnet test Source\PuddingRetrievalEvalTests\PuddingRetrievalEvalTests.csproj -p:CollectCoverage=false`
 78/78 通过、exit 0（不启动 Core/Desktop，不需要任何后台服务）。
 
 ## 变异取红（都实测过，原始输出在 `temp/test-out/`）
