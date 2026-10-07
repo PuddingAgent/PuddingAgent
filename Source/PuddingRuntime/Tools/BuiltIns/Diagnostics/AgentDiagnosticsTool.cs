@@ -21,8 +21,9 @@ namespace PuddingRuntime.Services.Tools;
 /// 实现自我观察 → 自我优化的反馈闭环。
 ///
 /// 支持十种诊断模式：
-///   - tool_stats: 查询指定工具的调用统计（成功率、耗时、常见错误）；统计覆盖样本内**全部**匹配活动，
-///     limit 只决定每次向 sink 的采样量，不得截断统计口径，并随附 sample 块上报样本边界
+///   - tool_stats: 查询工具调用统计（成功率、耗时、常见错误）；传入 tool_name 看单个工具，缺省或 `all` 看按失败数排名的全局总览。
+///     统计覆盖样本内**全部**匹配活动，limit 只决定每次向 sink 的采样量与返回条数，不得截断统计口径，
+///     并随附 sample 块上报样本边界
 ///   - slowest_tools: 列出最慢的 N 个工具
 ///   - cache_health: 查询缓存命中率和 prefix churn 来源
 ///   - goodput_attribution: 按 GoalRunId 只读归因用量账本（SourceId 中段 TraceId → goal_iterations/execution_runs），
@@ -97,9 +98,6 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
 
     private async Task<string> GetToolStatsAsync(string toolName, int limit, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(toolName))
-            return JsonSerializer.Serialize(new { error = "tool_name is required for tool_stats action." });
-
         if (_activitySink is null)
             return JsonSerializer.Serialize(new { error = "Runtime activity sink is not available in this environment." });
 
@@ -117,6 +115,14 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         // 实际只是最近 500 条活动。
         const int SinkLimitCeiling = 500;
         var effectiveSampleLimit = Math.Min(requestedSampleLimit, SinkLimitCeiling);
+
+        // 概览模式：tool_name 缺省 / "all" / "*" ⇒ 按工具聚合排名（先看全局、再下钻到单个工具）。
+        if (string.IsNullOrWhiteSpace(toolName)
+            || string.Equals(toolName, "all", StringComparison.OrdinalIgnoreCase)
+            || toolName == "*")
+        {
+            return BuildToolStatsOverview(activities, limit, requestedSampleLimit, effectiveSampleLimit);
+        }
 
         if (activities.Count == 0)
             return JsonSerializer.Serialize(new
@@ -196,6 +202,81 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 sample_limit_requested = requestedSampleLimit,
                 sample_limit_effective = effectiveSampleLimit,
                 tool_activities_matched = toolActivities.Count,
+                sample_truncated_by_sink_limit = activities.Count >= effectiveSampleLimit,
+            }
+        });
+    }
+
+    /// <summary>
+    /// <c>tool_stats</c> 概览：把样本内**全部**带 <c>tool_name</c> 元数据的活动按工具聚合排名。
+    /// <para>
+    /// 排序稳定：失败数降序 → 调用数降序 → 工具名（OrdinalIgnoreCase）升序；<c>limit</c> 只约束返回的工具条数，
+    /// 不改变聚合口径。缺少 <c>tool_name</c> 元数据的活动不入排名，但其数量如实上报
+    /// （<c>activities_without_tool_name</c>），不假装它们不是工具调用。
+    /// </para>
+    /// </summary>
+    private static string BuildToolStatsOverview(
+        IReadOnlyList<RuntimeActivity> activities,
+        int limit,
+        int requestedSampleLimit,
+        int effectiveSampleLimit)
+    {
+        var named = activities
+            .Where(a => a.Metadata is not null
+                        && a.Metadata.TryGetValue("tool_name", out var n)
+                        && !string.IsNullOrWhiteSpace(n))
+            .Select(a => new { Name = a.Metadata!["tool_name"], Activity = a })
+            .ToList();
+
+        var tools = named
+            .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new
+            {
+                tool_name = g.Key,
+                total_calls = g.Count(),
+                success_count = g.Count(x => string.Equals(
+                    x.Activity.Status, RuntimeActivityStatuses.Succeeded, StringComparison.OrdinalIgnoreCase)),
+                failure_count = g.Count(x => string.Equals(
+                    x.Activity.Status, RuntimeActivityStatuses.Failed, StringComparison.OrdinalIgnoreCase)),
+                avg_duration_ms = Math.Round(g.Average(x => x.Activity.DurationMs ?? 0), 1),
+                max_duration_ms = g.Max(x => x.Activity.DurationMs ?? 0),
+            })
+            .Select(x => new
+            {
+                x.tool_name,
+                x.total_calls,
+                x.success_count,
+                x.failure_count,
+                success_rate = x.total_calls > 0
+                    ? Math.Round((double)x.success_count / x.total_calls, 3)
+                    : 0,
+                x.avg_duration_ms,
+                x.max_duration_ms,
+            })
+            .OrderByDescending(x => x.failure_count)
+            .ThenByDescending(x => x.total_calls)
+            .ThenBy(x => x.tool_name, StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .ToList();
+
+        return JsonSerializer.Serialize(new
+        {
+            mode = "overview",
+            tools,
+            tool_count_returned = tools.Count,
+            tools_in_sample = named
+                .Select(x => x.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count(),
+            activities_without_tool_name = activities.Count - named.Count,
+            hint = tools.Count == 0
+                ? "No activity in the sample carries a 'tool_name' metadata entry, so no per-tool ranking can be produced."
+                : null,
+            sample = new
+            {
+                activities_queried = activities.Count,
+                sample_limit_requested = requestedSampleLimit,
+                sample_limit_effective = effectiveSampleLimit,
                 sample_truncated_by_sink_limit = activities.Count >= effectiveSampleLimit,
             }
         });
@@ -1043,7 +1124,7 @@ public sealed record AgentDiagnosticsArgs
     [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, goodput_attribution, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health, runtime_identity, or diagnose")]
     public string? Action { get; init; }
 
-    [ToolParam("tool name to query (for tool_stats action)")]
+    [ToolParam("tool name to query (for tool_stats action; omit it or pass 'all' / '*' to get a per-tool overview ranked by failures)")]
     public string? ToolName { get; init; }
 
     [ToolParam("number of results (default: 20, max: 200)")]

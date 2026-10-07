@@ -558,6 +558,97 @@ public sealed class AgentDiagnosticsToolTests
         Assert.AreEqual("zeta failure", errors[1].GetProperty("message").GetString());
     }
 
+    // ── tool_stats 总览/排名模式（2026-10-08）────────────────────────────────
+
+    [TestMethod]
+    public async Task ToolStats_OverviewRanksByFailuresThenCallsAndSkipsUntaggedActivities()
+    {
+        var sink = new FakeActivitySink(
+        [
+            // code_outline：调用数最多但零失败
+            Activity("code_outline", RuntimeActivityStatuses.Succeeded, 5),
+            Activity("code_outline", RuntimeActivityStatuses.Succeeded, 6),
+            Activity("code_outline", RuntimeActivityStatuses.Succeeded, 7),
+            Activity("code_outline", RuntimeActivityStatuses.Succeeded, 8),
+            Activity("code_outline", RuntimeActivityStatuses.Succeeded, 9),
+            Activity("code_outline", RuntimeActivityStatuses.Succeeded, 10),
+            // file_patch：调用数少但有失败
+            Activity("file_patch", RuntimeActivityStatuses.Succeeded, 10),
+            Activity("file_patch", RuntimeActivityStatuses.Succeeded, 20),
+            Activity("file_patch", RuntimeActivityStatuses.Succeeded, 30),
+            Activity("file_patch", RuntimeActivityStatuses.Failed, 40, "boom"),
+            Activity("file_patch", RuntimeActivityStatuses.Failed, 50, "boom"),
+            // search_grep：偶发一次
+            Activity("search_grep", RuntimeActivityStatuses.Succeeded, 1),
+            // 无 tool_name 元数据：不入排名，但必须如实计数
+            UntaggedActivity(RuntimeActivityStatuses.Succeeded, 2),
+        ]);
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: sink,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        // 不传 tool_name ⇒ 总览模式
+        var result = await ExecuteAsync(tool, """{"action":"tool_stats"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var doc = JsonDocument.Parse(result.Output);
+        var root = doc.RootElement;
+
+        Assert.AreEqual("overview", root.GetProperty("mode").GetString());
+
+        var tools = root.GetProperty("tools");
+        Assert.AreEqual(3, tools.GetArrayLength());
+        Assert.AreEqual(3, root.GetProperty("tools_in_sample").GetInt32());
+
+        // 第一排序键是失败数：失败 2 次的 file_patch 排在调用数最多（6）但零失败的 code_outline 之前
+        Assert.AreEqual("file_patch", tools[0].GetProperty("tool_name").GetString());
+        Assert.AreEqual(5, tools[0].GetProperty("total_calls").GetInt32());
+        Assert.AreEqual(2, tools[0].GetProperty("failure_count").GetInt32());
+        Assert.AreEqual(0.6, tools[0].GetProperty("success_rate").GetDouble(), 0.001);
+
+        // 第二排序键是调用数（同为 0 失败时）
+        Assert.AreEqual("code_outline", tools[1].GetProperty("tool_name").GetString());
+        Assert.AreEqual(6, tools[1].GetProperty("total_calls").GetInt32());
+        Assert.AreEqual("search_grep", tools[2].GetProperty("tool_name").GetString());
+
+        Assert.AreEqual(1, root.GetProperty("activities_without_tool_name").GetInt32(),
+            "无 tool_name 元数据的活动不得隐式归入某个工具，也不得被静默丢弃");
+        Assert.AreEqual(13, root.GetProperty("sample").GetProperty("activities_queried").GetInt32());
+    }
+
+    [TestMethod]
+    public async Task ToolStats_OverviewAcceptsAllAliasAndHonoursLimit()
+    {
+        var sink = new FakeActivitySink(
+        [
+            Activity("file_patch", RuntimeActivityStatuses.Failed, 10, "boom"),
+            Activity("search_grep", RuntimeActivityStatuses.Succeeded, 10),
+            Activity("code_outline", RuntimeActivityStatuses.Succeeded, 10),
+        ]);
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: sink,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(tool, """{"action":"tool_stats","tool_name":"all","limit":2}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var doc = JsonDocument.Parse(result.Output);
+        var root = doc.RootElement;
+
+        Assert.AreEqual("overview", root.GetProperty("mode").GetString());
+        Assert.AreEqual(2, root.GetProperty("tool_count_returned").GetInt32(),
+            "limit 只约束返回的工具条数");
+        Assert.AreEqual(3, root.GetProperty("tools_in_sample").GetInt32(),
+            "limit 不得改变聚合口径：样本里仍是 3 个工具");
+        Assert.AreEqual("file_patch", root.GetProperty("tools")[0].GetProperty("tool_name").GetString());
+    }
+
     private static RuntimeActivity Activity(
         string toolName, string status, long durationMs, string? error = null)
         => new()
@@ -569,6 +660,17 @@ public sealed class AgentDiagnosticsToolTests
             DurationMs = durationMs,
             ErrorMessage = error,
             Metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["tool_name"] = toolName },
+        };
+
+    private static RuntimeActivity UntaggedActivity(string status, long durationMs)
+        => new()
+        {
+            Trace = RuntimeTraceContext.CreateNew(sessionId: "session-1", workspaceId: "default"),
+            Component = RuntimeActivityComponents.ToolRunner,
+            Operation = "tool.unknown",
+            Status = status,
+            DurationMs = durationMs,
+            Metadata = null,
         };
 
     private sealed class FakeActivitySink : IRuntimeActivitySink
