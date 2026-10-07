@@ -23,6 +23,13 @@ temp/
 # Agent / Harness 仓库级资料（skills/、memory/ 等）：2026-10-02 用户裁定纳入版本控制
 # 不加前导斜杠：仓库内任意层级的 .pudding（含 Source/*/.pudding）一并纳入
 
+# 例外：context-tool-results 是工具结果的运行时缓存（每次工具调用落盘一个 artifact），
+# 随会话无限增长（2026-10-07 实测 616 文件 / 9.5 MB，散布在仓库根与 Source/* 下），
+# 并且永不参与构建或运行 ⇒ 整目录忽略；skills/ 与 memory/ 仍按上一段裁定入库。
+# 注意：含中间斜杠的模式锚定在 .gitignore 自身层级（不加前导斜杠并不等于任意层级），
+# 只写 `.pudding/...` 时 Source/.pudding/... 仍会漏网 —— 必须显式加 `**/` 前缀。
+**/.pudding/context-tool-results/
+
 # 临时输出物/临时脚本：一律输出到 temp/，禁止提交到 git（2026-08-19 用户明确要求）
 *_output.txt
 *_result.txt
