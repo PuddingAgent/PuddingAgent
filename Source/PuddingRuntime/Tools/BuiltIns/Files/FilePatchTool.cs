@@ -238,7 +238,13 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             {
                 if (current == original)
                 {
-                    summaries.Add($"{relPath}: unchanged");
+                    // The dry-run preview already reports why nothing changed, but the real write path
+                    // swallowed those issues: a patch that matched nothing looked exactly like a no-op
+                    // and the caller never learned that scope or context was the reason (measured 2026-10-07).
+                    var unchangedMsg = $"{relPath}: unchanged";
+                    if (errors.Count > 0)
+                        unchangedMsg += $"\n  {errors.Count} issue(s):\n    " + string.Join("\n    ", errors);
+                    summaries.Add(unchangedMsg);
                     continue;
                 }
 
@@ -324,7 +330,12 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         int scopeStart = 0, scopeEnd = original.Length;
         if (scopeStartLine.HasValue || scopeEndLine.HasValue)
         {
-            var slines = original.Replace("\r\n", "\n").Split('\n');
+            // Scope offsets are character offsets into `original`, and the match offsets produced by
+            // FindReplacementCandidates are measured on that same text. Computing them from an
+            // EOL-normalized copy folded every CRLF down to LF, so each preceding line shortened the
+            // window by one character and a match that carried its own line break fell outside the very
+            // scope it belonged to (defect measured 2026-10-07).
+            var slines = original.Split('\n');
             if (scopeStartLine.HasValue && scopeStartLine.Value > 0)
                 scopeStart = slines.Take(scopeStartLine.Value - 1).Sum(l => l.Length + 1);
             if (scopeEndLine.HasValue && scopeEndLine.Value <= slines.Length)

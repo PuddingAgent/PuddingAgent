@@ -586,6 +586,88 @@ public sealed class FilePatchToolTests
         return lines.ToArray();
     }
 
+    // ── D8: scope line ranges must be measured on the original text (P1) ──
+
+    [TestMethod]
+    public async Task Replace_ScopeLineRangeOnCrlfFile_CountsTheCarriageReturnsInTheOffset()
+    {
+        // The scope offsets were computed on an EOL-normalized copy (CRLF folded to LF) while the match
+        // offsets come from the original text; every preceding row shrank the window by one character, so
+        // a match that carried its own line break fell outside the very scope it belonged to.
+        WriteFile("scoped.txt", "alpha\r\ntarget\r\nbeta\r\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "scoped.txt",
+            ["scope_start_line"] = 2,
+            ["scope_end_line"] = 2,
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "target\r\n",
+                    ["new_text"] = "TARGET\r\n",
+                }
+            }
+        });
+
+        Assert.AreEqual(
+            "alpha\r\nTARGET\r\nbeta\r\n",
+            ReadFile("scoped.txt"),
+            "line 2 lies inside the declared scope, so the patch must be applied");
+    }
+
+    [TestMethod]
+    public async Task Replace_ScopeLineRange_StillRejectsMatchesOutsideTheScope()
+    {
+        // Control for the fix above: correcting the offsets must not disable scoping altogether.
+        const string before = "alpha\r\ntarget\r\nbeta\r\n";
+        WriteFile("scoped.txt", before);
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "scoped.txt",
+            ["scope_start_line"] = 3,
+            ["scope_end_line"] = 3,
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "target\r\n",
+                    ["new_text"] = "TARGET\r\n",
+                }
+            }
+        });
+
+        Assert.AreEqual(before, ReadFile("scoped.txt"), "a match outside the scope must never be applied");
+        StringAssert.Contains(result.Output, "not found", "the out-of-scope match must be reported as not found");
+    }
+
+    [TestMethod]
+    public async Task Replace_ScopeLineRangeOnLfFile_KeepsWorking()
+    {
+        // LF files were never skewed by the normalization; they must stay unaffected by the fix.
+        WriteFile("scoped-lf.txt", "alpha\ntarget\nbeta\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "scoped-lf.txt",
+            ["scope_start_line"] = 2,
+            ["scope_end_line"] = 2,
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "target\n",
+                    ["new_text"] = "TARGET\n",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("alpha\nTARGET\nbeta\n", ReadFile("scoped-lf.txt"));
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();
