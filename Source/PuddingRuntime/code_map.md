@@ -1,260 +1,413 @@
 # PuddingRuntime CodeMAP
 
-> 运行时核心 | Agent Loop · LLM 调用 · 工具系统 · 上下文管线 · Git 20 工具
-> 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingRuntime-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingRuntime-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
+> 源指纹: Source/PuddingRuntime/**=dc2ba84b0ee2 · 条目数: 350 · 最近整理: 2026-10-07
+> 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
+> 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
+> 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
 
-## 入口 & 配置
+## 入口与配置
 
-| 文件 | 用途 |
-|------|------|
-| `DependencyInjection.cs` | Runtime 服务注册入口；含 `FrozenVisionContextAccessor` singleton（V5 视觉冻结快照通道，DependencyInjection.cs:119）；🆕 G7 注册 `ISkillDistillationSource → NullSkillDistillationSource`（`:112`，空生产者 ⇒ curate 报告逐字段零回归），并**刻意不注册** `SkillCurationPolicy`（`:111` 注释：阈值须经论证后由版本化策略对象提供，不得由组合根凭空编造） |
-| `Services/PuddingConfigLoader.cs` | JSON 配置加载 |
-| `Services/PuddingJsonConfig.cs` | 配置模型定义 |
-| `Services/RuntimeExecutionConfigService.cs` | 执行配置：忠实加载 runtime.execution.json（`Math.Max(1, cfg)`，已删除 600/2400/24h 强抬 normalize）；600/2400/24h 仅为系统 profile 默认（非下限/上限/强制统一值）；20 轮/30 分钟收尾宽限；规范化临时子代理目录保留/隔离参数；请求级预算覆盖见 SubAgentInvocationContracts（int? MaxRounds 等） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `DependencyInjection.cs` | Runtime 全部服务的注册入口 | `RuntimeServiceExtensions` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 阈值策略对象须由版本化实现提供，组合根不得凭空编造 |
+| `PuddingRuntime.csproj` | 项目文件：目标框架与包引用 | — | — | — |
+| `Properties/launchSettings.json` | 本机开发启动档案 | — | — | — |
+| `IdleDetector.cs` | 运行时最近活动时间的空闲判定 | `IIdleDetector` | `Services/Background/SubconsciousJobScheduler.cs` | — |
+| `Models/GoalQueueState.cs` | Goal 队列的持久化状态模型 | `GoalQueueState` | `Services/GoalMode/GoalModeService.cs` | — |
+| `Models/HeartbeatPreference.cs` | 心跳频率的持久化偏好模型 | `HeartbeatPreference` | `Tools/BuiltIns/Agents/AgentSleepTool.cs` | — |
+| `Models/MemoryCropModels.cs` | 记忆裁剪前后的原始数据包模型 | `RawContentBundle` | `Services/CroppedLayersProvider.cs` | — |
+| `Models/SessionRuntimeRecord.cs` | 会话运行时记录模型 | `SessionRuntimeRecord` | `Services/InMemoryRuntimeSessionStore.cs` | — |
+| `Controllers/NativeCapabilityController.cs` | 原生能力执行 API 的入口 | `NativeCapabilityController` | `Services/NativeCapabilityExecutor.cs` | 权限与审批校验完成后才转发执行 |
+| `Controllers/PluginCatalogController.cs` | 插件目录的只读 API | `PluginCatalogController` | `Services/Plugins/PluginManifestCatalog.cs` | — |
+| `Controllers/RuntimeExecuteController.cs` | Runtime 执行 API 的请求入口 | `RuntimeExecuteController` | `Services/TurnExecutorAdapter.cs` | — |
+| `Controllers/RuntimeSessionController.cs` | Runtime 会话 API 的入口 | `RuntimeSessionController` | `Services/AgentSessionManager.cs` | — |
+| `Services/PuddingConfigLoader.cs` | JSON 配置文件的加载器 | `PuddingConfigLoader` | `Services/PuddingJsonConfig.cs` | — |
+| `Services/PuddingJsonConfig.cs` | 服务商与工作区等的配置模型定义 | `PuddingJsonConfig` | `Services/PuddingConfigLoader.cs` | — |
+| `Services/RuntimeExecutionConfigService.cs` | 运行时执行配置的加载与规范化 | `IRuntimeExecutionConfigService` | `Services/AgentLoop/AgentExecutionGuardrails.cs` | 请求级轮次与预算覆盖以调用参数为准，配置文件只给默认 |
+| `Services/DefaultExecutionEnvironmentProvider.cs` | 执行环境信息的默认提供者 | `IExecutionEnvironmentProvider` | `Services/SandboxExecutor.cs` | — |
+| `Services/StartupEnvironmentInfo.cs` | 启动环境信息的一次性采集与注入 | `StartupEnvironmentInfo` | `Services/SystemPromptBuilder.cs` | — |
 
-## Agent Loop
+## 安全分类器 · 判定算子 · 阈值判据
 
-| 文件 | 用途 |
-|------|------|
-| `Services/AgentExecutionService.cs` | 🔑 执行编排入口，session 单写者，liveness/progress 报告；把日期、召回和 inbound context 与当前消息组成 volatile User tail；同一 prefix epoch 冻结 message-zero system bytes，真实稳定头变化一次性提交并显式归因；以 `CURRENT USER TURN/input_sha256` 围栏当前输入；提供 Harness 对齐的 warm-prefix checkpoint（原样 replay、有效缩小时原子提交、失败保留 history、每 dispatch 一次）和 compaction Token 归因；构造注入 `FrozenVisionContextAccessor`（V5 视觉冻结快照，AgentExecutionService.cs:97/:159/:207） |
-| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial）；共用冻结 system 与 warm-prefix checkpoint；dispatch 冻结 tool catalog/schema，`search_tools` 激活在下一 LLM round 单调生效并标记 `tool_spec_changed`；prefix-v2 事件带 history anchor/reason/serialization；预算裁剪后以当前轮围栏 fail-closed；canonical 相同调用第二次得到不变失败时转 `execution_stalled`；最终回复边界命中 late Steering 时继续同一 Turn；ExecuteAsync 入口 `Push(CallerLlmSnapshot)` 冻结视觉上下文（V5，AgentExecutionService.Buffered.cs:50） |
-| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；与 Buffered 共用 round-boundary 动态工具激活、冻结 system、warm-prefix checkpoint、prefix-v2、当前轮围栏、canonical Token attribution 与失败熔断；direct Token 先提交、usage SSE 后发布；provider length/incomplete 只允许一次立即行动恢复，再截断显式失败；最终流式回复边界命中 late Steering 时继续同一 Turn；ExecuteStreamAsync 入口 `Push(CallerLlmSnapshot)` 冻结视觉上下文（V5，AgentExecutionService.Streaming.cs:38） |
-| `Services/AgentExecution/FailedToolCallTracker.cs` | 第一层止损：对 canonical tool+args 的有界失败结果做 SHA-256 指纹；第二次不变失败标记 `execution_stalled`，后续阻断；参数变化后的同失败族由 Core `RuntimeControlService` 第 5 次熔断 |
-| `Services/AgentExecution/ToolDiscoveryLoopTracker.cs` | 动态工具发现止损；不同查询文本仍归一为 discovery-only 进展族，连续 8 次只调用 `search_tools` 而不执行已发现业务工具时触发 `tool_discovery_stalled`，任一实际业务工具会重置计数 |
-| `Services/AgentExecution/ExecutionUsageBudgetTracker.cs` | WorkUnit 调用边界 input/output/cache-hit/cost 累计账本；生成剩余预算供工具/子代理继承并输出含同步后代的累计 usage；provider/child call 后先记账，再决定工具/下一 LLM round，Buffered/Streaming 共用；剩余值诚实归零并打 IsDerivedRemainder 标（含单轮峰值输入追踪），0 值轴=父级已耗尽 |
-| `Services/AgentExecution/ToolResultContextPolicy.cs` | 工具结果进入模型历史前的统一 8 KiB 边界；完整原文作为 workspace-scoped artifact 保存，sidecar manifest 固化 SHA-256、UTF-8 字节、行数和 session/tool/call 身份；模型输入不做脱敏并提供渐进读取路径，存储失败时**不**放弃边界：重试 1 次后返回仍有界的降级预览并携带 `error=context_materialization_failed`（durability 尽力而为、budget 不可协商；2026-09-23 更正） |
-| `Services/Messaging/MessageDeliveryDispatcher.cs` | durable Message Fabric 投递；`execute` 按 deliveryId 精确领取，**所有**投递（用户/Agent/心跳/sub-agent 结果）一律经 `AcceptCanonicalConversationTurnAsync` 受理 canonical Turn：身份由 `ResolveCanonicalTurnIdentityAsync` 显式给出——sub-agent 结果的会话归属取持久父身份（`parent_conversation_id/parent_session_id/parent_session/conversation_id`），解析失败即 retry/dead-letter，绝不回退 `profile.MainSessionId`、绝不落 `msg-*`；其 `client_request_id/client_message_id` 均由确定性 resultId（`claimed.MessageId`）派生（`fabric-subagent-result*`，不含 deliveryId），与 acceptance 层 `(workspace_id, client_request_id)` 幂等键两层同源；受理成功即 ACK；父/子执行身份（`parent_turn_id/parent_command_id/child_run_id/result_id`）按白名单透传进 turn metadata；`notify` 按 workspace/Agent 跨 room 一次领取最多 20 条，逐条写 Conversation 消息事实后 ACK，Busy 时也可排空且不唤醒模型；Busy/foreground heartbeat ACK/drop；恢复扫描 claim=null 时淘汰无 durable row 的 stale target，避免每 10 秒永久 `no_claim` |
-| `Tools/BuiltIns/Messaging/SendMessageTool.cs` | Agent 发消息；默认 `intent=inform, requires_response=false`，只有 ask/request_review/delegate 创建对方执行；未知 intent fail closed，终态回复由平台一次性投影 |
-| `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | workspace/agent 级前后台准入协调器；用户 Turn/Connector handoff 形成 foreground demand，抢占活动后台投递并阻止 recovery/idle drain 抢跑 |
-| `Services/AgentExecution/AgentToolArguments.cs` | tool-call JSON → 参数转换 |
-| `Services/AgentLoop/CanonicalWorkReport.cs` | 子代理五段报告解析/校验；无 native tool call、非结构化响应且完整满足 canonical 合同时同轮提升 DONE，显式结构化 CONTINUE 不被覆盖 |
-| `Services/AgentLoop/AgentOutputTruncationPolicy.cs` | provider `length/incomplete` 输出的有界恢复策略；仅允许一次“不重放 reasoning、立即工具行动”的短恢复，再次截断显式失败 |
-| `Services/GoalMode/` | 🆕 Goal 模式 v2 执行器 |
-| `Services/TurnExecutorAdapter.cs` | Turn 执行适配器；用户 Turn 获取 foreground admission，Busy 等待采用 100ms→1s 有界指数退避与 10 秒节流日志；透传 canonical TaskPlan/TaskNode/ParentNode identity 到 RuntimeDispatchRequest |
+> 抽象在 `PuddingCore`，实现全在本工程；消费方只依赖抽象端口。准入链路的规则与闸门见 `Services/AgentFirewall.cs`。
 
-## 上下文管线
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Classification/AgentFullAccessGrantService.cs` | 临时「完全访问模式」授予的签发与失效判定 | `IAgentFullAccessGrantService` | `Services/AgentFirewall.cs` | 只放宽授权与审批闸门；不放宽 Yolo、沙箱、工作区与资源边界 |
+| `Classification/ClassificationRuleCurator.cs` | 白名单规则的落库策展与同键冲突裁决 | `ClassificationRuleCurator` | `Tools/Approval/ToolApprovalPortalService.cs` | 五元组规则键禁止通配；同键相反 Effect 时 deny 胜 |
+| `Classification/ClassifierArbiterRegistrationState.cs` | 仲裁位注册状态的进程内记录 | `ClassifierArbiterRegistrationState` | `Tools/Approval/ClassifierStatusTool.cs` | — |
+| `Classification/ClassifierHealthReporter.cs` | 分类器连续 deferred 计数的健康分档与退避 | `IClassifierHealthReporter` | `Classification/OperatorSceneKeys.cs` | 成功返回即清零该分类器全部键 |
+| `Classification/OperatorSceneKeys.cs` | 健康计数场景键的取值与归一 | `OperatorSceneKeys.Normalize` | `Classification/ClassifierHealthReporter.cs` | 默认键赋具名常量，绝不使用空串 |
+| `Classification/SystemRuleClassifier.cs` | 零网络的规则快路径分类器 | `SystemRuleClassifier` | `Classification/ClassificationRuleCurator.cs` | 未命中一律 `Unknown`，绝不默认放行 |
+| `Classification/ToolCallClassifierPipeline.cs` | 规则与仲裁的求值序编排 | `ToolCallClassifierPipeline` | `Classification/SystemRuleClassifier.cs` | 永久类须达逐分类可信度门槛；仲裁不可用不得折叠为 Deny |
+| `Operators/OperatorBase.cs` | 算子的横切基类：超时、异常兜底与审计旁挂 | `OperatorBase<TCtx,TResult>` | `Operators/OperatorEnvironment.cs` | 审计写入失败不改变已定裁决 |
+| `Operators/ProjectionBases.cs` | 打分、判定与分类三类投影基类 | `ScorerBase<TCtx>` | `Operators/OperatorBase.cs` | 非虚，不引入新抽象成员 |
+| `Operators/OperatorEnvironment.cs` | 算子运行环境的端口集合与判定缓存 | `OperatorEnvironment` | `Operators/OperatorBase.cs` | — |
+| `Operators/OperatorRegistry.cs` | 场景算子的注册表与注册期守卫 | `IOperatorRegistry` | `Operators/OperatorEnvironment.cs` | 同场景重复注册或一型多端口一律拒绝 |
+| `Operators/Adapters/ToolApprovalOperatorAdapter.cs` | 既有审批分类器到算子端口的适配 | `ToolApprovalOperatorAdapter` | `Tools/Approval/ClassifierToolApprovalReviewer.cs` | 被包装者行为逐位不变；无分数就留空，不伪造 |
+| `Operators/Adapters/ToolApprovalOperatorContext.cs` | 审批输入的算子上下文包装 | `ToolApprovalOperatorContext` | `Tools/Approval/ToolApprovalPromptBuilder.cs` | `InputDigest` 只在单一位置计算，否则缓存键失效 |
+| `Operators/Adapters/OperatorHealthObserverAdapter.cs` | 算子健康接缝到既有健康面的生产接线 | `OperatorHealthObserverAdapter` | `Classification/ClassifierHealthReporter.cs` | 吞掉自身异常但记 Warning 并可探查 |
+| `Operators/Adapters/OperatorAuditSinkAdapter.cs` | 算子审计接缝到既有审计存储的生产接线 | `OperatorAuditSinkAdapter` | `Tools/Platform/AuditLogger.cs` | 存储未接线时丢弃但只记一次 Warning |
+| `Thresholds/AcceptanceThresholdPolicyCatalog.cs` | 三个逐标签验收门槛的 id 与默认值定义 | `AcceptanceThresholdPolicyIds` | `Thresholds/DefaultAcceptanceThresholdPolicyProvider.cs` | id 留在运行时层，契约层不得出现供应商名词 |
+| `Thresholds/DefaultAcceptanceThresholdPolicyProvider.cs` | 判据解析端口：配置缺失时回落到内置默认 | `IAcceptanceThresholdPolicyProvider` | `Thresholds/AcceptanceThresholdPolicyCatalog.cs` | 未知 id 抛错，不得静默返回默认值 |
 
-2026-09-15：`AgentSessionManager` 的可见工具有序投影贯穿 `BuildFrozenToolManifest`、Streaming/Buffered 发现边界和 Composition 恢复。`ContextPipelineLayers` 拆分稳定规则与可变目录，`ContextPipelineOrchestrator.BuildCatalogUpdate` 按模型可见历史的最新完整目录去重，更新仅追加 User tail，固定记忆裁剪不受目录去重影响。见[修复记录](../../Docs/14_reports/主代理缓存前缀修复-2026-09-15.md)。
+## Agent Loop · 上下文管线
 
-| 文件 | 用途 |
-|------|------|
-| `Services/ContextPipeline.cs` | 🔑 上下文组装管线；区分执行 `AgentInstanceId` 与持久 `ConfigurationAgentInstanceId`，私有 Skill/人格/记忆/日志只读稳定身份；稳定 system prefix 与本轮 User tail 分离；已在模型可见历史中的完全相同 L6 recall 不再重复注入，召回变化或历史被压缩时仍正常追加；Tool 层强制 Direct/Delegated 判定与前三次调用委派合同；L1 TOOLS 层索引文本从 session 已加载工具集合（append-only）生成（Core ∪ Loaded 不收缩），消除每轮全量重建导致的 prefix 漂移；Skills 层只在 `search_tools` 实际可见时声明可用递延发现；已拆为 `ContextPipelineLayers.cs`（层装配）与 `ContextPipelineOrchestrator.cs`（编排执行）两个 partial |
-| `Services/Skills/AgentSkillFileService.cs` | Agent 私有 Skill 文件服务；缺失索引的 Get/List 为无副作用空读取，只有显式初始化或写操作创建目录 |
-| `Services/Skills/SkillEnforcerService.cs` | PreMessageHook：在 LLM 调用前按关键词把匹配到的 `SKILL.md` 正文注入历史。关键词空间 = Keywords ∪ Tags ∪ SkillId ∪ Name ∪ Name 分词（OrdinalIgnoreCase），同关键词先到先得（后注册技能静默失去该槽位）。RSI-G2 起构造器尾部可注入 `ISkillUsageTelemetrySink`，对每个命中技能恰好留一条终态记录（注入成功 / 正文为空 / 读正文失败），采集为旁路、fail-open，且不改匹配判定与注入顺序 |
-| `Services/Skills/Telemetry/*.cs` | 🆕 RSI-G2 技能使用遥测：`SkillUsageRecord`（含 MatchedKeywords/Injected/ContentBytes/FailureReason，Outcome 为显式两值枚举）、`ISkillUsageTelemetrySink`、`JsonlSkillUsageTelemetrySink`（追加写 `skill-usage-YYYYMMDD.jsonl`：UTC 分片、逐行独立 JSON、UTF-8 无 BOM、SemaphoreSlim 串行化；任何 IO/序列化异常仅 LogWarning 绝不抛，遥测失败不得影响对话）。用于回答「哪些技能真被用过 / 从未命中 / 读正文失败」 |
-| `Services/Improvement/SkillValue/*.cs` | 🆕 RSI-T2 技能价值打分器（`IScorer` 的**首个真实消费者**）：`SkillValueScene`（场景键/刻度串/打分常量**唯一来源**，刻度串给打分函数版本化）、`SkillValueOperatorContext`（只含**真实存在**的事实；**故意不含**回合结局与重叠度，且不用 0 占位）、`SkillValueScorer`（`ScorerBase<SkillValueOperatorContext>`）。**纯确定性、无 LLM**：问题集为空 ⇒ 基类 `ResolveJudgementAsync` 返回「无判断且**无失败**」，内核照常执行（**无模型 ≠ 降级**）。刻度 `skill-value.v1/0..1`；无观测数据走 `skill-value.v1/insufficient-data` + 原因码 `skill_value_insufficient_data`（**无数据 ≠ 低分**，Score=0 仅占位）；打分器**不含阈值**（阈值必须外置）。 ⚠️ 该目录**不在**算子架构门禁扫描范围（门禁只扫 `PuddingCore/Operators/**` 与 `PuddingRuntime/Operators/**`）⇒ 门禁 PASS **不构成**对本目录的纯净性证据 |
-| `Services/Improvement/Rsi/*.cs` | 🆕 RSI-S3 轨迹源**纯函数层**（零 IO / 零 DI / 不抛异常）：`RsiToolOutcome{Unknown=0,Completed=1,Failed=2}`（Unknown 占 0 ⇒ 缺省值落在「未知」而非「成功」）、`RsiTypes`（`RsiToolStep`/`RsiTrajectory`/`RsiEventRow`/`RsiTurnSlice`；**B4 新增字段** `ErrorPreview`/`ErrorChars`、`OutputPreview`/`OutputChars`/`OutputBytes`、`ArgsHash`）、`RsiToolOutcomeDeriver.Derive`（Failed ⇔ exitCode 非 0 或 error 非空；Completed ⇔ exitCode==0 且 error 为空；**两者皆缺 ⇒ Unknown**；payload null/空/非法 JSON 一律 Unknown 且**不抛异常**）、`RsiTrajectoryAssembler.Assemble`（`tool.call.completed`/`failed` 才生成 step，按 `Sequence` 升序，`failed` 事件**强制** Failed，**失败步不丢弃** —— 刻意**不模仿** ADR-064 的「任一步失败即整条作废」；零工具步的 turn 跳过）。**B4 冻结**：①截断预览（缺失⇒`null`；≤512 原样；>512 取前 **511** + `…` U+2026；`Chars` 按**截断前** UTF-16 计数、`OutputBytes` 按**截断前 UTF-8 字节**、⛔ 缺失不得压平成空串）②`ArgsHash` = SHA-256(`arguments` **原文** UTF-8) 小写 hex 64 位、**零归一化**（不 trim / 不重序列化）、缺失或纯空白⇒`null`，⛔ 不得照抄 `ConversationSkillEvolutionTrajectorySource.cs:115` 的 `?? "{}"` 兜底 ③与 `requested` 配对按**工具名 FIFO**（键 Ordinal），**配对前必须按 `Sequence` 升序稳定排序**（⛔ 不得吃输入数组顺序），**缺失参数的 `requested` 仍占槽位**（跳过会让后继 `completed` 配到更早的调用）⚠️ `tool.call.completed` 的 payload 由运行时帧写入方决定（`TurnExecutorAdapter.ConvertFrame` 原样透传）⇒ 必须同时认 `exitCode`/`exit_code` 且**数值与数字字符串都要认**；**解析不出不得落到 Completed**（否则把「读不懂」当「成功」，在错误正面信号上学习且无报错）。用例：A 13/13、B1 10/10、B4 12/12（O1–O5 + A1–A7）、`~Rsi` **147/147**（2026-09-22 实测，父代理自跑；13 条变异逐条取红 ⇒ 冻结项均有断言守护。其中 A7 系父代理独立变异「删掉配对前排序」实测 **21/21 全绿零红** 抓到的静默漏项后补入 —— 尾部 `steps.Sort` 会掩盖上游排序的删除，故必须专门构造「`completed` 排在它的 `requested` 之前」的输入）。⛔ 生产消费者**尚未接线**（S4 `RsiClassifier` 系首个消费者）|
-| `Services/ContextWindowManager.cs` | Token 窗口管理；DB/JSONL 回填与内存裁剪已从扁平截断改为 `ContextTierPlanner` 分级填充（T0 全保 → T4 先弃，保新弃旧）；memory DB 冷水合先在 session 压缩锁内同步 canonical `ChatMessages`，同步不可用时 fail-closed；按稳定 turn/message 身份排除当前 Turn，避免与围栏输入重复；非空 live history 不被 assistant 投影前的 DB 快照覆盖，自动压缩刷新只合并 opening/closing 与 64 位 hash 完整的 live 当前轮，禁止把无围栏历史 user 提升为当前 Turn；JSONL 冷启动路径经 `CompactionCoverageFilter` 过滤已压缩消息 |
-| `Services/CanonicalChatTranscriptSynchronizer.cs` | platform `ChatMessages` → memory `Messages` 的共享增量同步器；session metadata 持久高水位、稳定 `chat-{session}-{platformId}` 恢复兜底，按 256 条分页幂等追平并越过非语义空行；保存 canonical turn/message 身份，正文与 typed parts 共同参与 hash，供压缩与冷水合共同使用 |
-| `Services/CompactionCoverageFilter.cs` | 压缩覆盖过滤器；加载 session 最新 `CompactionCoverageManifest`（SourceMessageIds/SourceHashes）为覆盖集合，供 JSONL 冷启动路径去重；null factory / 无 manifest / 非法 JSON 均 no-op；P1-2 起亦供 `SubconsciousRecallPipeline` 管道内 covered 过滤（hash 命中覆盖集合 → 丢弃 recall 片段） |
-| `Services/ContextAssemblyService.cs` | 上下文装配 |
-| `Services/ContextBudgetAllocator.cs` | 预算分配 |
-| `Services/ContextCompactionService.cs` | 压缩服务；压缩前调用共享 canonical 转录同步器；若当前有围栏 Turn 或最后一个未围栏 user 消息落入压缩候选，`CurrentTurnCompactionGuard` 在任何摘要/数据库写入前 fail-closed 并返回 `current_turn_in_compaction_scope`；active 消息按页全量读取，80 条仅作为 Map-Reduce 块大小；所有待压缩消息进入 map 输入并通过覆盖校验后才写 `CompactedBy`；同一事务写 `CompactionCoverageManifests` 覆盖清单（OmittedCount==0 门禁）与 session 递增 `CompactionGeneration`（Source/TargetGeneration） |
-| `Services/ContextHealthEvaluator.cs` | 健康评估 |
-| `Services/SystemPromptBuilder.cs` | 系统提示构建（24KB） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/AgentCompactionNotifier.cs` | 压缩生命周期通知的对外发布 | `AgentCompactionNotifier` | `Services/ContextCompactionService.cs` | — |
+| `Services/AgentContextCompactionSummaryGenerator.cs` | 由当前运行时 Agent 生成压缩摘要 | `IContextCompactionSummaryGenerator` | `Services/FlashContextCompactionSummaryGenerator.cs` | — |
+| `Services/AgentExecution/AgentExecutionLlmInvoker.cs` | LLM 调用的统一封装（facade 与 legacy 两条路径） | `AgentExecutionLlmInvoker` | `Services/LlmInvocationService.cs` | — |
+| `Services/AgentExecution/AgentExecutionResponseHandler.cs` | LLM 输出解析为 Loop 响应并评估终态 | `AgentExecutionResponseHandler` | `Services/AgentLoop/CompletionPolicy.cs` | — |
+| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | 工具目录在 dispatch 时冻结，新发现定义只在下一次 LLM round 生效 |
+| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 与 Buffered 共用冻结前缀与止损语义 |
+| `Services/AgentExecution/AgentToolArguments.cs` | tool-call JSON 到参数的纯转换 | `AgentToolArguments` | `Tools/BuiltIns/Skills/AgentSkillTool.cs` | 纯函数，不读写状态 |
+| `Services/AgentExecution/AgentTurnTimingCollector.cs` | 单轮耗时检查点的采集 | `AgentTurnTimingCollector` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | — |
+| `Services/AgentExecution/ExecutionUsageBudgetTracker.cs` | 单次 dispatch 的 Token 与成本账本 | `ExecutionUsageBudgetTracker` | `Services/SubAgentInvocationService.cs` | 剩余值诚实归零并带派生标记，零值轴表示父级已耗尽 |
+| `Services/AgentExecution/FailedToolCallTracker.cs` | 同一工具与参数的不变失败检测 | `FailedToolCallTracker` | `Services/AgentLoop/ExecutionJournal.cs` | 指纹按 canonical 工具与参数计算 |
+| `Services/AgentExecution/NoOpKeyVaultService.cs` | 无密钥库宿主的降级实现 | `NoOpKeyVaultService` | `Services/JevDecisionOptionsProvider.cs` | — |
+| `Services/AgentExecution/StreamPipelineDiagnosticsAccumulator.cs` | 流式热路径诊断量的线程安全聚合 | `StreamPipelineDiagnosticsAccumulator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | — |
+| `Services/AgentExecution/ToolDiscoveryLoopTracker.cs` | 只发现不执行的循环检测 | `ToolDiscoveryLoopTracker` | `Tools/BuiltIns/Search/SearchToolsTool.cs` | 不同查询文本归入同一进展族 |
+| `Services/AgentExecution/ToolResultContextPolicy.cs` | 工具结果进入模型历史前的体积边界 | `ToolResultContextPolicy` | `Tools/Platform/ToolInvocationService.cs` | 边界不可协商；存储失败也必须返回有界预览 |
+| `Services/AgentExecutionService.cs` | 执行编排入口与 session 单写者 | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 本轮输入须以 `CURRENT USER TURN/input_sha256` 围栏，缺失即 fail-closed |
+| `Services/AgentFirewall.cs` | 八道闸门的顺序准入 | `AgentFirewall` | `Classification/AgentFullAccessGrantService.cs` | 完全访问授予只放宽授权与审批闸门 |
+| `Services/AgentInvocationDispatchFactory.cs` | 由消息元数据构造执行请求 | `IAgentInvocationDispatchFactory` | `Services/RuntimeAgentDispatcher.cs` | 父身份解析失败即报错，不伪造会话 id |
+| `Services/AgentLoop/AgentExecutionGuardrails.cs` | Agent Loop 的执行预算与护栏配置 | `AgentExecutionGuardrails` | `Services/RuntimeExecutionConfigService.cs` | — |
+| `Services/AgentLoop/AgentExecutionOutcomePolicy.cs` | 名义成功转降级判定的启发式 | `AgentExecutionOutcomePolicy` | `Services/AgentLoop/CompletionPolicy.cs` | — |
+| `Services/AgentLoop/AgentLoopResponse.cs` | Agent Loop 单轮响应的模型 | `AgentLoopResponse` | `Services/AgentExecution/AgentExecutionResponseHandler.cs` | — |
+| `Services/AgentLoop/AgentOutputTruncationPolicy.cs` | provider 截断输出的有界恢复策略 | `AgentOutputTruncationPolicy` | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | 只允许一次立即行动恢复，再次截断即显式失败 |
+| `Services/AgentLoop/CanonicalWorkReport.cs` | 五段式工作报告的解析与校验 | `CanonicalWorkReport` | `Tools/BuiltIns/Agents/SubAgentTool.cs` | 显式 CONTINUE 不得被同轮 DONE 提升覆盖 |
+| `Services/AgentLoop/CompletionPolicy.cs` | 完成判定的裁定枚举 | `CompletionVerdict` | `Services/AgentLoop/CanonicalWorkReport.cs` | — |
+| `Services/AgentLoop/ExecutionControlRegistry.cs` | 每会话的取消与冻结标志注册表 | `ExecutionControlRegistry` | `Services/SessionExecutionGate.cs` | — |
+| `Services/AgentLoop/ExecutionJournal.cs` | 执行轮次的流水记录模型 | `TurnRecord` | `Services/AgentExecution/FailedToolCallTracker.cs` | — |
+| `Services/AgentLoop/IAgentLoopHook.cs` | Loop 生命周期的钩子契约 | `IAgentLoopHook` | `Services/AgentLoop/LoggingAgentLoopHook.cs` | — |
+| `Services/AgentLoop/LoggingAgentLoopHook.cs` | Loop 各阶段事件写入结构化日志 | `LoggingAgentLoopHook` | `Services/AgentLoop/IAgentLoopHook.cs` | — |
+| `Services/AgentLoop/SubAgentBudgetLifecycle.cs` | 子代理预算窗口的状态机 | `SubAgentBudgetLifecycle` | `Services/SubAgentInvocationService.cs` | 通知档位与收尾宽限不可跳过 |
+| `Services/AgentMemorySummaryContextBuilder.cs` | 由会话摘要文件构造历史上下文层 | `AgentMemorySummaryContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
+| `Services/AgentSessionManager.cs` | 活跃 Agent 实例的会话管理 | `AgentSessionManager` | `Services/AgentExecutionService.cs` | — |
+| `Services/AgentWakeQueue.cs` | 心跳唤醒队列的到期判定与出队 | `AgentWakeQueue` | `Tools/BuiltIns/Agents/AgentSleepTool.cs` | 出队须扫描全部已到期项，不得只看队首 |
+| `Services/Background/SubconsciousConsolidationHook.cs` | 主对话完成后投递后台整合任务 | `SubconsciousConsolidationHook` | `Services/Background/SubconsciousWorkerService.cs` | — |
+| `Services/Background/SubconsciousDiagnosticLog.cs` | 潜意识管道诊断日志的选项与写入 | `SubconsciousDiagnosticLogOptions` | `Tools/BuiltIns/Management/SubconsciousTriggerTool.cs` | — |
+| `Services/Background/SubconsciousJobScheduler.cs` | 潜意识作业的可租约窗口决策 | `SubconsciousJobScheduler` | `IdleDetector.cs` | — |
+| `Services/Background/SubconsciousRuntimeControlService.cs` | 潜意识管道的运行时开关 | `ISubconsciousRuntimeControl` | `Tools/BuiltIns/Management/SubconsciousTriggerTool.cs` | — |
+| `Services/Background/SubconsciousWorkerService.cs` | 持久潜意识作业的消费循环 | `SubconsciousWorkerService` | `Services/SubconsciousPlanGenerationService.cs` | — |
+| `Services/CanonicalChatTranscriptSynchronizer.cs` | 平台转录到记忆库的增量镜像 | `CanonicalChatTranscriptSynchronizer` | `../PuddingMemoryEngine/` | 高水位持久化加分页幂等，可重复执行 |
+| `Services/CompactionCoordinator.cs` | 会话压缩的单飞锁与冷却限流 | `CompactionCoordinator` | `Services/ContextCompactionService.cs` | — |
+| `Services/CompactionCoverageFilter.cs` | 压缩覆盖集合的加载与片段过滤 | `CompactionCoverageFilter` | `Services/ContextCompactionService.cs` | 清单缺失或非法时按无覆盖处理 |
+| `Services/CompositeContextCompactionSummaryGenerator.cs` | 组合式压缩摘要生成器 | `CompositeContextCompactionSummaryGenerator` | `Services/AgentContextCompactionSummaryGenerator.cs` | — |
+| `Services/CompositionRecoveryService.cs` | 由持久化 Composition 水合工具集合 | `CompositionRecoveryService` | `Services/PersistentCompositionVersionRegistry.cs` | 恢复失败须显式报出，不得静默降级为空集合 |
+| `Services/CompositionSnapshot.cs` | 逐请求的提示词与工具投影哈希归因 | `CompositionSnapshot` | `Services/SqliteCompositionStore.cs` | — |
+| `Services/ContextAssemblyService.cs` | 上下文合成的稳定对外契约 | `IContextAssemblyService` | `Services/ContextPipeline.cs` | — |
+| `Services/ContextBudgetAllocator.cs` | 上下文预算的算术与压缩档位 | `ContextBudgetAllocator` | `Services/ContextWindowManager.cs` | — |
+| `Services/ContextCompactionOptions.cs` | 上下文压缩的配置选项 | `ContextCompactionOptions` | `Services/ContextCompactionService.cs` | — |
+| `Services/ContextCompactionService.cs` | 上下文压缩执行与覆盖清单写入 | `IContextCompactionService` | `Services/CurrentTurnCompactionGuard.cs` | 围栏 Turn 落入候选时须在任何写入前 fail-closed |
+| `Services/ContextCompactionService.TokenEstimation.cs` | 压缩服务的 Token 估算（partial） | `ContextCompactionService` | `Services/ContextCompactionService.cs` | — |
+| `Services/ContextCompactionStrategy.cs` | 压缩策略的选择与分级填充 | `ContextCompactionStrategy` | `Services/ContextWindowManager.cs` | — |
+| `Services/ContextHealthEvaluator.cs` | 上下文健康度的评估 | `ContextHealthEvaluator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | — |
+| `Services/ContextLayerContracts.cs` | 上下文分层的契约模型 | `ContextLayerContracts` | `Services/ContextPipelineLayers.cs` | — |
+| `Services/ContextPipeline.cs` | 分层上下文组装的对外实现 | `ContextPipeline` | `Services/ContextPipelineLayers.cs` | 稳定 system prefix 与本轮 User tail 必须分离 |
+| `Services/ContextPipelineLayers.cs` | 上下文各层的装配 | `ContextPipelineLayers` | `Services/ContextPipelineOrchestrator.cs` | — |
+| `Services/ContextPipelineOrchestrator.cs` | 上下文组装编排与分层占比快照 | `ContextPipelineOrchestrator` | `Services/ContextPipelineLayers.cs` | — |
+| `Services/ContextWindowConstants.cs` | 上下文窗口的命名常量 | `ContextWindowConstants` | `Services/ContextWindowManager.cs` | — |
+| `Services/ContextWindowManager.cs` | 上下文窗口与会话历史的裁剪 | `ContextWindowManager` | `Services/ContextCompactionService.cs` | 压缩三态事件必须携带同一 compactionId |
+| `Services/ControllerRoutedLlmClient.cs` | 经 Controller 中转的 LLM 客户端 | `ControllerRoutedLlmClient` | `Services/LlmInvocationService.cs` | — |
+| `Services/CroppedLayersProvider.cs` | 用 Flash 模型裁剪记忆原始层 | `CroppedLayersProvider` | `Models/MemoryCropModels.cs` | — |
+| `Services/CurrentTurnCompactionGuard.cs` | 当前轮是否落入压缩候选的守卫 | `CurrentTurnCompactionGuard` | `Services/ContextCompactionService.cs` | — |
 
-## LLM 调用
+## LLM 调用 · 多模态 · 会话事件 · 记忆写入
 
-| 文件 | 用途 |
-|------|------|
-| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本；operation 按 `chat[:approval|:compaction]` 区分任务数据面与控制面；流式路径分别记录 rate-limit wait 与 provider first-chunk wait；V5 视觉单源化：构造可选注入 `FrozenVisionContextAccessor`（:38/:56/:76），`supportsVision` 只读冻结快照 `frozenRoute?.SupportsVision ?? false`（:863-864，无冻结上下文 fail closed，删除原热目录 CapabilityTags 二次判定），三个 Gateway（Responses/OpenAI/Anthropic）注入快照 `VisionPolicy`（:879） |
-| `Services/FrozenVisionContextAccessor.cs` | 🆕 V5 视觉冻结上下文通道（AsyncLocal）；`Current` / `Push(LlmRouteSnapshot?)` 返回 IDisposable scope（:14/:29），Buffered 入口写入；Streaming 每次 LLM MoveNext 通过 `MoveNextAsync` 重绑快照并恢复调用方上下文，避免 yield 后丢失；DirectLlmClient 读取；无上下文 = null = fail closed |
-| `Services/CompositionSnapshot.cs` | 前缀缓存归因：逐请求计算 systemPromptHash/toolSpecHash/prefixHash（SHA-256 小写 hex）与 compositionVersion（进程内按 session 递增） |
-| `Services/SqliteCompositionStore.cs` | 🆕 P0-5 `ICompositionStore` SQLite 实现：落 `CompositionSnapshots` 表（MemoryDbContext 同库），append-only（版本严格递增，重写/乱序抛 InvalidOperationException）、写穿、GetLatest 取最大版本 |
-| `Services/LlmInvocationService.cs` | LLM 调用编排；把模型配置解析出的 protocol 传给 Direct/Controller 路径，并以 invocation purpose scope 透传非模型可见计费归因 |
-| `Services/LlmInvocationPurposeAccessor.cs` | AsyncLocal LLM purpose scope；默认 `agent`，嵌套调用完成后恢复，供 provider ledger 区分 approval/compaction |
-| `Services/LlmProfileResolver.cs` | Profile 解析 |
-| `Services/LlmRequestBudgetGuard.cs` | 预算守卫 |
-| `Services/WarmPrefixCompaction.cs` | 长循环压缩计划与 checkpoint 合同；复用当前 warm prefix，固定尾部摘要指令，只接受真实缩小结果 |
-| `Services/ProviderRateLimiter.cs` | Provider/model 并发速率限制；租约携带等待时长与 acquire 前后可用槽位的只读诊断 |
-| `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 🆕 确定性诊断引擎（服务 `agent_diagnostics action=diagnose`）：纯函数、无 I/O、无时钟，把工具/缓存/上下文/子代理四维聚合量转成带证据的 findings（code/severity/category/observation/evidence/suggested_action）。三条诚实性硬规则：①无证据（或所有检查因样本不足跳过）判 `unknown`，绝不判 `healthy`；②`checks_skipped` 逐条记录被跳过的检查及原因；③四个数据源未全通时 `coverage.scope=partial` 且不得声称整体健康。阈值：失败率 0.20/0.50、错误集中度 0.60、耗时离群 3× 中位数、缓存命中 0.50/0.20、上下文占用 0.80/0.92、子代理失败率 0.25、最小样本 5 次 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/DashScopeAsrProvider.cs` | 百炼 DashScope 语音识别 Provider | `IAsrHttpRecognizer` | `Services/VoiceProviderFactory.cs` | — |
+| `Services/DashScopeTtsProvider.cs` | 百炼 DashScope 语音合成 Provider | `ITtsProvider` | `Services/VoiceProviderFactory.cs` | — |
+| `Services/Demo/DemoDesktopHostBridge.cs` | 演示用的嵌入式宿主桥接实现 | `DemoDesktopHostBridge` | `Services/INativeHostBridge.cs` | — |
+| `Services/DesignCouncilRuntimeService.cs` | MOA 设计委员会的运行时适配与状态持久化 | `IDesignCouncilRuntimeService` | `Services/InMemorySubAgentOrchestrationRunStore.cs` | 派发为只读，结果由调用方回填 |
+| `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 四维运行时指标的确定性诊断 | `RuntimeDiagnosisEngine` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 无证据判 unknown，绝不判 healthy |
+| `Services/DirectLlmClient.cs` | 按选中模型协议直连 LLM 的客户端 | `DirectLlmClient` | `Services/FrozenVisionContextAccessor.cs` | 视觉能力只读冻结快照，无快照即 fail-closed |
+| `Services/DirectMemoryLlmClient.cs` | 面向记忆的独立配置 LLM 客户端 | `IMemoryLlmClient` | `Services/LlmInvocationService.cs` | — |
+| `Services/EmbeddingGenerationHook.cs` | 在 Loop 节点为章节生成嵌入向量 | `EmbeddingGenerationHook` | `Services/OpenAiEmbeddingService.cs` | — |
+| `Services/Events/EventDispatcher.cs` | 持久事件队列的出队与分发 | `EventDispatcher` | `Services/Events/InternalEventBus.cs` | — |
+| `Services/Events/EventPreprocessor.cs` | 事件的去重与批处理窗口 | `IEventPreprocessor` | `Services/Events/EventDispatcher.cs` | — |
+| `Services/Events/InternalEventBus.cs` | 进程内即时事件总线 | `IInternalEventBus` | `Services/Events/EventDispatcher.cs` | 只承载非关键在线通知 |
+| `Services/FlashContextCompactionSummaryGenerator.cs` | 用 Flash 模型生成压缩结构化摘要 | `FlashContextCompactionSummaryGenerator` | `Services/CompositeContextCompactionSummaryGenerator.cs` | — |
+| `Services/FrozenVisionContextAccessor.cs` | 视觉路由快照的调用链冻结通道 | `FrozenVisionContextAccessor` | `Services/DirectLlmClient.cs` | 无上下文即 null，fail-closed |
+| `Services/GoalMode/GoalModeOptions.cs` | Goal 模式的配置选项 | `GoalModeOptions` | `Services/GoalMode/GoalModeService.cs` | 默认关闭，不改变既有 Agent 行为 |
+| `Services/GoalMode/GoalModeService.cs` | 连续自主目标循环的实现 | `IGoalModeService` | `Services/TaskTools/GoalResumeTool.cs` | — |
+| `Services/GoalMode/IGoalModeService.cs` | Goal 模式的服务契约 | `IGoalModeService` | `Services/GoalMode/GoalModeService.cs` | — |
+| `Services/HeartbeatService.cs` | 超时会话的资源清理扫描 | `HeartbeatService` | `Services/AgentSessionManager.cs` | 只管会话超时清理，不是 Agent 自主心跳编排 |
+| `Services/HistoryPrefixReconciler.cs` | 规范化历史与 canonical 转录的对齐 | `HistoryPrefixReconciler` | `Services/AgentExecutionService.cs` | — |
+| `Services/Hooks/HookPublisher.cs` | 生命周期事件到内部事件总线的薄适配 | `IHookPublisher` | `Services/Events/InternalEventBus.cs` | — |
+| `Services/Hooks/SessionCompressedMemoryMaintenanceHook.cs` | 会话压缩事件到持久维护作业的桥接 | `SessionCompressedMemoryMaintenanceHook` | `Services/Background/SubconsciousWorkerService.cs` | — |
+| `Services/Improvement/Rsi/IRsiTrajectorySource.cs` | 轨迹取数的身份上下文契约 | `RsiScope` | `Services/Improvement/Rsi/RsiTrajectorySource.cs` | 身份由调用方给出，本层不推导 |
+| `Services/Improvement/Rsi/RsiToolOutcome.cs` | 工具调用结局的三态枚举 | `RsiToolOutcome` | `Services/Improvement/Rsi/RsiToolOutcomeDeriver.cs` | Unknown 占零值，缺省落在未知而非成功 |
+| `Services/Improvement/Rsi/RsiToolOutcomeDeriver.cs` | 由退出码与错误字段推导工具结局 | `RsiToolOutcomeDeriver` | `Services/Improvement/Rsi/RsiToolOutcome.cs` | 两者皆缺一律 Unknown，不抛异常 |
+| `Services/Improvement/Rsi/RsiTrajectoryAssembler.cs` | 事件行装配为带结局标注的轨迹 | `RsiTrajectoryAssembler` | `Services/Improvement/Rsi/RsiTypes.cs` | 失败步不丢弃；配对前须按序号稳定排序 |
+| `Services/Improvement/Rsi/RsiTrajectorySource.cs` | 会话级轨迹源实现 | `IRsiTrajectorySource` | `Services/Improvement/Rsi/RsiTrajectoryAssembler.cs` | 只编排，不重写 |
+| `Services/Improvement/Rsi/RsiTypes.cs` | 轨迹的步骤与事件行模型 | `RsiToolStep` | `Services/Improvement/Rsi/RsiTrajectoryAssembler.cs` | — |
+| `Services/Improvement/SkillValue/SkillValueOperatorContext.cs` | 技能价值打分的场景输入 | `SkillValueOperatorContext` | `Services/Improvement/SkillValue/SkillValueScorer.cs` | 只承载真实存在的事实，不用零值占位 |
+| `Services/Improvement/SkillValue/SkillValueScene.cs` | 技能价值场景的常量与刻度定义 | `SkillValueScene` | `Services/Improvement/SkillValue/SkillValueScorer.cs` | — |
+| `Services/Improvement/SkillValue/SkillValueScorer.cs` | 技能价值的纯确定性打分器 | `SkillValueScorer` | `Services/Improvement/SkillValue/SkillValueScene.cs` | 无观测数据走不足档，不等于低分；阈值必须外置 |
+| `Services/INativeHostBridge.cs` | 宿主原生能力桥接契约 | `INativeHostBridge` | `Controllers/NativeCapabilityController.cs` | — |
+| `Services/InMemoryRuntimeSessionStore.cs` | 会话运行时记录的进程内存储 | `InMemoryRuntimeSessionStore` | `Models/SessionRuntimeRecord.cs` | — |
+| `Services/InMemorySubAgentOrchestrationRunStore.cs` | MOA run 快照的进程内存储 | `ISubAgentOrchestrationRunStore` | `Services/DesignCouncilRuntimeService.cs` | 版本 CAS 防重复领取，不做跨重启恢复 |
+| `Services/IRuntimeLlmClient.cs` | LLM 客户端抽象 | `IRuntimeLlmClient` | `Services/DirectLlmClient.cs` | — |
+| `Services/JevDecisionOptionsProvider.cs` | Jev 连接参数的解析（资源池优先） | `IJevDecisionOptionsProvider` | `Services/JevDecisionService.cs` | 未配置即报错，绝不返回空端点；密钥不入日志 |
+| `Services/JevDecisionService.cs` | Jev 决策模型的 HTTP 适配器 | `JevDecisionService` | `Tools/Approval/JevToolCallClassifier.cs` | 返回结构化决策数据；非 2xx 一律 fail-closed |
+| `Services/KnowledgeAccessRuntime.cs` | Runtime 侧知识基础设施的访问桥接 | `KnowledgeAccessRuntime` | `Tools/BuiltIns/Memory/MemoryLibraryTool.cs` | — |
+| `Services/LlmInvocationPurposeAccessor.cs` | 单次 LLM 调用的计费归因作用域 | `LlmInvocationPurposeAccessor` | `Services/DirectLlmClient.cs` | 嵌套调用完成后必须恢复外层作用域 |
+| `Services/LlmInvocationService.cs` | LLM 调用的稳定对外门面 | `ILlmInvocationService` | `Services/IRuntimeLlmClient.cs` | — |
+| `Services/LlmProfileResolver.cs` | provider 与 profile 到完整配置的解析 | `ILlmProfileResolver` | `Services/PuddingJsonConfig.cs` | — |
+| `Services/LlmRequestBudgetGuard.cs` | 请求级预算守卫与软压缩触发 | `LlmRequestBudgetGuard` | `Services/ContextCompactionService.cs` | — |
+| `Services/ManagedOggOpusTranscoder.cs` | 频道短音频的纯托管转码 | `IAudioTranscoder` | `Services/DashScopeTtsProvider.cs` | — |
+| `Services/MemoryLlmInvocationClient.cs` | 面向记忆的共享门面 LLM 客户端 | `IMemoryLlmClient` | `Services/LlmInvocationService.cs` | — |
+| `Services/MemoryMaintenancePlanWriteCommandMapper.cs` | 记忆维护方案到写命令的映射 | `MemoryMaintenancePlanWriteCommandMapper` | `Services/SubconsciousPlanGenerationService.cs` | — |
+| `Services/MemoryQualityFilter.cs` | 记忆质量检查与拒收判定 | `MemoryQualityResult` | `Tools/BuiltIns/Memory/SaveMemoryTool.cs` | — |
+| `Services/MemorySnippetRelevanceCalculator.cs` | 记忆线索关联度的计算 | `MemorySnippetRelevanceCalculator` | `Services/CroppedLayersProvider.cs` | — |
+| `Services/MemoryWikiPageUpdateService.cs` | 记忆 Wiki 页面的更新 | `MemoryWikiPageUpdateService` | `Services/WikiPageWriteEntry.cs` | — |
+| `Services/MemoryWriteCoordinator.cs` | 记忆写入的协调 | `MemoryWriteCoordinator` | `Tools/BuiltIns/Memory/SaveMemoryTool.cs` | — |
+| `Services/MessageLogStripper.cs` | 消息日志中的隐私内容剥离 | `MessageLogStripper` | `Services/Messaging/MessageDeliveryDispatcher.cs` | — |
+| `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | 前后台投递的准入与抢占协调 | `AgentExecutionAdmissionCoordinator` | `Services/Messaging/AgentExecutionStateRegistry.cs` | 前台需求到达时抢占活动后台投递 |
+| `Services/Messaging/AgentExecutionStateRegistry.cs` | Agent 执行状态的进程内注册表 | `IAgentExecutionStateRegistry` | `Services/Messaging/DefaultAgentExecutionAvailabilityProvider.cs` | — |
+| `Services/Messaging/DefaultAgentExecutionAvailabilityProvider.cs` | 由执行状态注册表派生可用性 | `IAgentExecutionAvailabilityProvider` | `Services/Messaging/AgentExecutionStateRegistry.cs` | 投影缺失报 unknown，不由队列缺席推导空闲 |
+| `Services/Messaging/MessageDeliveryDispatcher.cs` | 持久消息投递的领取与受理 | `MessageDeliveryDispatcher` | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | 会话身份解析失败即重试或死信，绝不回落到主会话 |
 
-## 工具系统
+## 子代理 · 编排 · 任务 · 会话存储 · 技能
 
-| 文件 | 用途 |
-|------|------|
-| `Tools/BuiltIns/` | 内置工具（Git 20 工具在此） |
-| `Tools/BuiltIns/Llm/ListLlmProvidersTool.cs` | `list_llm_providers` LLM 路由表查询；数据来自 ILlmConfigService 内存快照（llm.providers.json），输出 providerId/modelId/route/protocol/capabilityTags/价格/isEnabled/isDeprecated 与 ambiguous_model_ids 歧义清单（与 FileLlmResolver 裸 modelId 解析语义一致）；严禁输出 apiKey/baseUrl；已入 ToolExposurePlanner.CoreToolIds 常驻可见，spawn_sub_agent 描述同步指向 |
-| `Tools/BuiltIns/Search/SearchGrepTool.cs` | 代码文本搜索（ADR-089 U0，含 R1–R4 返工与 G2 glob 统一）；Lucene **仅产出去重候选路径**并按存在性/scope/完整 glob/扩展名/排除五重准入，随后读取**当前内容**重新匹配（不输出索引旧文本、不预填去重键）；候选与枚举共用 `processedFiles` 与 `RetrievalMatcher`；**入口唯一 deadline**（默认 10s 可注入）覆盖候选/枚举/扫描，行间检查取消，正则超时 → `Timeout` 绝不落 `no_match`；覆盖完整性 = `errors==0 && 子目录枚举失败==0 && !timedOut && !regexTimedOut && !enumerationTruncated && !scanBudgetExceeded && !maxResultsReached && !totalCapReached && skippedLargeFiles==0`；`max_results` 统一作用于**合并后结果集**（恰好达上限且自然结束仍为 Complete）；排除目录在枚举前裁剪；默认额外排除 `.pudding`，结果默认 20 条/16 KiB。**G2**：glob 判定统一走 `PuddingCode.Tools.Retrieval.RetrievalGlobMatcher`（`ignoreCase: true`，Windows First）；候选与枚举**共用同一准入谓词** `IsAdmissiblePath`（存在性/scope/排除目录/glob/扩展名）；枚举不再把 glob 交给 Win32——目录内取全部文件后由 matcher 过滤，`MaxEnumeratedFiles` **只统计命中文件**（matched-only，杜绝假截断）；含分隔符 glob 按 cwd 相对路径匹配且 `*` 不跨 `/`；扫描循环内重复扩展名过滤已删除 |
-| `Tools/BuiltIns/Files/FileSearchTool.cs` | 文件名搜索工具（ADR-089 U0-S3 + **G3 glob 统一**）；Everything 清单不可自证时差分补足内置枚举——`no_match` 仅在覆盖 Complete 时输出，非 Complete 附恰好一次覆盖声明；auto 模式降级显式声明 fallbackFrom/fallbackReason。**G3**：文件级过滤统一由 `FileSearchPatternMatcher` 承担并二分——含通配符走共享 `PuddingCode.Tools.Retrieval.RetrievalGlobMatcher`（`ignoreCase: true`，`*`/`?` 不跨 `/`），**不含通配符保留大小写不敏感子串包含（not-glob 契约，U1 拆参迁移点）**；本地 `GlobLikeMatch`（`*` 跨 `/` 旧语义）与 `**/` 剥离正则已删；legacy `BuiltInRecursiveFileSearchProvider.SearchAsync` 改为 `"*"` 全量枚举 → matcher 过滤 → `Take`（**先过滤再截断**，消除 Win32 前导匹配怪癖 `*.txt` 命中 `a.txtx` 与截断漏文件）；零调用方的 provider 级 `ToDirectorySearchPattern` 及专属 `using System.Text.RegularExpressions` 已删除 |
-| `Tools/BuiltIns/Git/GitCommitTool.cs` | git_commit 提交工具；files 数组反序列化兼容 `string` 与 `string[]`（`StringOrStringArrayConverter`） |
-| `Tools/BuiltIns/Files/FileChunkService.cs` | Runtime 文件工具的大文件分块/流式读取服务；不再反向依赖 Platform |
-| `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | Agent 自我诊断工具，十种 action：tool_stats / slowest_tools / cache_health / sub_agent_stats / compaction_stats / latency_breakdown / token_breakdown / entropy_probe / context_health / **diagnose**；`diagnose` 先采集四维聚合量（活动流一次查询后内存分组、缓存按会话、上下带走 capacity+health、子代理带 HoursBack）再交给 `Services/Diagnostics/RuntimeDiagnosisEngine` 做确定性判定，任一数据源不可用时以 `source.unavailable` + `checks_skipped` 显式报出，而非当作无问题 |
-| `Tools/BuiltIns/Management/BootstrapRebootTool.cs` | `bootstrap_reboot` 点火遥控；默认请求 Desktop `desktop-build` 构建+事务部署+哈希校验，也支持 `prebuilt-artifact` 交付 Agent 已编译产物与显式 `restart-only` |
-| `Tools/BuiltIns/SmartWorkflow/` | 七个角色化 Smart 入口；统一 `task` schema、历史参数归一化、子代理报告校验；`SmartWorkflowToolBase.cs` 校验失败时 partial-salvage：附验证说明后原样返回子代理实际产出，父 Agent 仍可用 |
-| `Tools/Platform/` | 平台工具实现 |
-| `Tools/Platform/ToolInvocationService.cs` | 统一调用入口；模型 callId、执行身份、CapabilityPolicy、deadline、剩余 usage budget 与 delegated cumulative usage 的双向传递边界；Harness 别名和参数在 RuntimeControl/WorkspaceGuard/Firewall/哈希/执行前归一化；目标协议要求 callId 进入 Registry 后保持不变 |
-| `Tools/Platform/HarnessToolCompatibilityAdapter.cs` | `rg/exec_command/write_stdin/read_file/write_file/list_directory/apply_patch/pwsh/WSL` 的窄范围 deterministic 兼容；保持 canonical 工具唯一并识别搜索 exit 1 no_match；统一入口记录 requested/canonical/adaptation/version 遥测 |
-| `Tools/Platform/ToolLoopInstructionBuilder.cs` | 按当前真实可见 descriptor 生成稳定工具循环指引；只有 `search_tools` 可见时才宣称可发现 deferred tools |
-| `Tools/Platform/PuddingToolRegistry.cs` | Tool Registry、LLM schema 投影、AgentFirewall 门控与统一执行服务；canonical output/结构化错误/分阶段执行管线的主要改造入口 |
-| `Services/Tools/` | 工具运行时服务 |
-| `Services/Tools/ToolExposurePlanner.cs` | Provider 无关的工具暴露规划；名称稳定排序，超过阈值时保留核心工具并通过 `search_tools` 激活能力；当前 provider request 冻结，已发现定义在下一 LLM round 单调生效（不是下一外部 Turn），由 AgentSessionManager 在 live session 内 append-only 保持 |
-| `Services/TerminalProcessManager.cs` | 终端进程管理 |
-| `Services/TerminalSecurity.cs` | 终端安全 |
-| `Tools/BuiltIns/Terminal/TerminalTools.cs` | terminal_start/wait/read/status/cancel/input 六件套；`terminal_wait` 阻塞语义（2026-08-22 能耗修复）：等到任务退出或输出超过预览上限才返回，wait_seconds 0-600 默认 60，禁止短等待轮询（旧轮询语义曾占全库 16% token） |
-| `Tools/Approval/JevToolApprovalReviewer.cs` | 🔑 Jev 决策模型驱动的审批评审器（`IToolApprovalReviewer` 可切换实现，取代 LLM 审批评审器；开关 `ToolApproval:Reviewer=jev`，未配置时容器已注册 `IJevDecisionService` 即自动选 jev，否则旧行为 llm）：一次 round trip 四问（decision/risk/scope/allowlist）共享 state（argumentsJson 截断默认 8KiB）；I1 确定性 deny 前置——命中 `ToolApprovalCommandFirewall` 危险模式绝不调 Jev（`jev_skipped_deny_rule`）；I2 不可用/超时/坏答案一律 `DeferredDependency`（fail-closed，`jev_unavailable`/`jev_invalid_response`）；I3 白名单提案仅精确匹配（含 `; & \| > < $ `` ( ) { } * ? ~`、反斜杠、换行即拒绝提案）；I4 校准概率低于阈值（默认 0.90）不提案；I5 提案 Reason 携带模型/概率/风险 provenance。配套 `Tools/Approval/JevToolApprovalOptions.cs`（节 `ToolApproval:Jev`：Enabled/AllowlistProbabilityThreshold/StateTruncateBytes=8192/ReviewTimeoutSeconds=30/MaxQuestions）；注册点 `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` 工厂；离线测试 `PuddingRuntimeTests/Tools/JevToolApprovalReviewerTests.cs` |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/NativeCapabilityExecutor.cs` | 宿主原生能力执行前的本地守门 | `NativeCapabilityExecutor` | `Services/SandboxExecutor.cs` | — |
+| `Services/NoOpTerminalProcessManager.cs` | 终端进程管理器的空实现降级 | `NoOpTerminalProcessManager` | `Services/TerminalProcessManager.cs` | — |
+| `Services/Observability/AmbientRuntimeTraceAccessor.cs` | 环境运行时追踪的访问器 | `IRuntimeTraceAccessor` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | — |
+| `Services/OpenAiEmbeddingService.cs` | OpenAI 兼容的嵌入向量生成 | `IEmbeddingService` | `Services/SessionChunkIndexer.cs` | — |
+| `Services/Orchestration/AgentOrchestrationNodeInputResolver.cs` | 由图输入与上游端口解析节点输入 | `AgentOrchestrationNodeInputResolver` | `Services/Orchestration/AgentOrchestrationWorkerService.cs` | 未实现的 sourcePath 与 targetKey 一律拒绝 |
+| `Services/Orchestration/AgentOrchestrationWorkerService.cs` | 编排节点的领取与原子推进 | `AgentOrchestrationWorkerService` | `Services/Orchestration/AgentOrchestrationNodeInputResolver.cs` | 续租与 fence 提交保证单写者 |
+| `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | 图像生成节点的执行器 | `IAgentOrchestrationNodeExecutor` | `Services/VolcengineArkImageGenerationProvider.cs` | 使用稳定幂等键，避免重复计费 |
+| `Services/Orchestration/ImagePreviewOrchestrationNodeExecutor.cs` | 图像预览节点的执行器 | `ImagePreviewOrchestrationNodeExecutor` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | 只引用上游 Artifact，不复写图片字节 |
+| `Services/Orchestration/SubAgentOrchestrationNodeExecutor.cs` | 子代理节点的只读执行器 | `SubAgentOrchestrationNodeExecutor` | `Services/SubAgentInvocationService.cs` | 角色与模板冻结后不得改写 |
+| `Services/PersistentCompositionVersionRegistry.cs` | Composition 版本的持久化与恢复结果 | `ICompositionVersionRegistry` | `Services/CompositionRecoveryService.cs` | 恢复失败必须可被调用方观察 |
+| `Services/Plugins/PluginDiagnosticsSink.cs` | 插件基础设施诊断证据的写入 | `PluginDiagnosticsSink` | `Services/Plugins/PluginManifestCatalog.cs` | — |
+| `Services/Plugins/PluginManifestCatalog.cs` | 数据根下插件描述符的目录 | `IPluginManifestCatalog` | `Controllers/PluginCatalogController.cs` | 本阶段只读清单，不加载插件代码 |
+| `Services/Plugins/PluginPackageInstaller.cs` | 插件 ZIP 包的安全安装 | `PluginPackageInstaller` | `Services/Plugins/PluginManifestCatalog.cs` | 安装前校验路径与包结构 |
+| `Services/PreCompactionFlushService.cs` | 压缩前的会话冲洗 | `IPreCompactionFlushService` | `Services/ContextCompactionService.cs` | — |
+| `Services/ProviderRateLimiter.cs` | 按 Provider 与模型名的并发限流 | `ProviderRateLimiter` | `Services/DirectLlmClient.cs` | — |
+| `Services/RuntimeAgentDispatcher.cs` | 运行时 Agent 的派发 | `IRuntimeAgentDispatcher` | `Services/AgentInvocationDispatchFactory.cs` | — |
+| `Services/RuntimeSelfRegistrationService.cs` | 节点向 Controller 的自注册与续约 | `RuntimeSelfRegistrationService` | `Controllers/RuntimeExecuteController.cs` | — |
+| `Services/SandboxExecutor.cs` | 沙箱执行的二级门控入口 | `SandboxExecutor` | `Services/AgentFirewall.cs` | — |
+| `Services/Search/SearchAttemptLedger.cs` | 搜索尝试的失败账本与短路判定 | `SearchAttemptOutcome` | `Tools/BuiltIns/Search/SearchGrepTool.cs` | — |
+| `Services/SessionArchiver.cs` | 会话原始记录到 Markdown 的导出 | `SessionArchiver` | `Services/SessionSummaryStore.cs` | — |
+| `Services/SessionChunkBackfillService.cs` | 会话块向量的存量回填作业 | `SessionChunkBackfillService` | `Services/SessionChunkIndexer.cs` | — |
+| `Services/SessionChunkIndexer.cs` | 会话块切分与向量写入 | `ISessionChunkIndexer` | `Services/OpenAiEmbeddingService.cs` | 不回查到哈希时按源文本现算兜底 |
+| `Services/SessionExecutionGate.cs` | 会话状态的进程内单写者门控 | `SessionExecutionGate` | `Services/AgentSessionManager.cs` | — |
+| `Services/SessionSummaryStore.cs` | 会话压缩摘要的持久化 | `SessionSummaryStore` | `Services/AgentMemorySummaryContextBuilder.cs` | — |
+| `Services/Skills/AgentSkillEvolutionStore.cs` | 技能演进记录的存储 | `AgentSkillEvolutionStore` | `Services/Skills/AgentSkillFileService.cs` | — |
+| `Services/Skills/AgentSkillFileService.cs` | Agent 私有技能文件的读写 | `AgentSkillFileService` | `Tools/BuiltIns/Skills/AgentSkillTool.cs` | 读取缺失索引时无副作用，只有显式写操作才建目录 |
+| `Services/Skills/ConversationSkillEvolutionTrajectorySource.cs` | 对话侧技能演进轨迹源 | `ConversationSkillEvolutionTrajectorySource` | `Services/Improvement/Rsi/RsiTrajectorySource.cs` | — |
+| `Services/Skills/SkillEnforcerService.cs` | 关键词命中技能正文的注入 | `SkillEnforcerService` | `Services/Skills/AgentSkillFileService.cs` | 遥测为旁路且 fail-open，不改匹配判定 |
+| `Services/Skills/Telemetry/ISkillUsageTelemetrySink.cs` | 技能使用遥测的落点契约 | `ISkillUsageTelemetrySink` | `Services/Skills/Telemetry/JsonlSkillUsageTelemetrySink.cs` | — |
+| `Services/Skills/Telemetry/JsonlSkillUsageTelemetrySink.cs` | 遥测记录按 UTC 分片的 JSONL 落盘 | `JsonlSkillUsageTelemetrySink` | `Services/Skills/Telemetry/SkillUsageRecord.cs` | 任何 IO 或序列化异常只记警告，绝不外抛 |
+| `Services/Skills/Telemetry/SkillUsageRecord.cs` | 技能使用遥测的终态模型 | `SkillUsageOutcome` | `Services/Skills/Telemetry/ISkillUsageTelemetrySink.cs` | — |
+| `Services/SqliteCompositionStore.cs` | Composition 快照的 SQLite 存储 | `ICompositionStore` | `Services/CompositionSnapshot.cs` | 追加写且版本严格递增，乱序即抛错 |
+| `Services/SseEventForwarder.cs` | 流式事件到 SSE 帧的转发 | `SseEventForwarder` | `Controllers/RuntimeExecuteController.cs` | — |
+| `Services/StreamingEventBus.cs` | 基于通道的流式事件总线 | `IStreamingEventBus` | `Services/SseEventForwarder.cs` | — |
+| `Services/StreamWatchdog.cs` | 流式响应卡死的滑动窗口检测 | `StreamWatchdog` | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | — |
+| `Services/SubAgentInvocationService.cs` | 子代理调用的门面 | `ISubAgentInvocationService` | `Services/AgentLoop/SubAgentBudgetLifecycle.cs` | 批量预算等分不可行时整批拒绝 |
+| `Services/SubAgents/MemoryExplorerSubAgent.cs` | 检索不足时的深入记忆探索 | `MemoryExplorerSubAgent` | `Services/SubconsciousRecallPipeline.cs` | — |
+| `Services/SubconsciousPlanGenerationService.cs` | 后台维护任务的生成与校验 | `SubconsciousPlanGenerationService` | `Services/MemoryMaintenancePlanWriteCommandMapper.cs` | 只生成与校验，不执行 |
+| `Services/SubconsciousRecallPipeline.cs` | 潜意识召回管道 | `SubconsciousRecallPipeline` | `Services/CompactionCoverageFilter.cs` | 已覆盖片段与同源哈希片段不得重复注入 |
+| `Services/SubconsciousTextProcessingService.cs` | 日摘要与滚动摘要的文本处理门面 | `SubconsciousTextProcessingService` | `Services/MemoryLlmInvocationClient.cs` | — |
+| `Services/SystemPromptBuilder.cs` | 分层系统提示的拼装 | `SystemPromptBuilder` | `Services/ContextPipeline.cs` | — |
+| `Services/TaskPlanning/TaskDelegationPolicy.cs` | 任务委派的准入策略 | `ITaskDelegationPolicy` | `Tools/BuiltIns/Agents/SubAgentTool.cs` | — |
+| `Services/TaskPlanning/TaskPlannerContextBuilder.cs` | 任务规划上下文层的构造 | `TaskPlannerContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
+| `Services/TaskTools/GoalLifecycleTools.cs` | Goal 生命周期工具的结果映射 | `GoalLifecycleTools` | `Services/TaskTools/GoalResumeTool.cs` | — |
+| `Services/TaskTools/GoalResumeTool.cs` | `goal_resume`：自主恢复暂停或阻塞的目标 | `GoalResumeTool` | `Tools/BuiltIns/Agents/GoalReadTool.cs` | 只允许 paused 或 blocked 转活跃 |
+| `Services/TaskTools/ManageTasksTool.cs` | `manage_tasks`：跨 Agent 的看板管理 | `ManageTasksTool` | `Services/TaskTools/TaskToolModels.cs` | 依赖非法即 fail-closed 并给错误码 |
+| `Services/TaskTools/TaskClaimTool.cs` | `task_claim`：认领分配给我的任务 | `TaskClaimTool` | `Services/TaskTools/TaskToolModels.cs` | 活动上下文缺失时按归属安全重建 |
+| `Services/TaskTools/TaskGetTool.cs` | `task_get`：单任务的完整详情 | `TaskGetTool` | `Services/TaskTools/TaskToolModels.cs` | — |
+| `Services/TaskTools/TaskGoalStartTool.cs` | `task_goal_start`：单卡进入 Goal 模式 | `TaskGoalStartTool` | `Services/GoalMode/GoalModeService.cs` | — |
+| `Services/TaskTools/TaskListTool.cs` | `task_list`：按范围列出任务 | `TaskListTool` | `Services/TaskTools/TaskToolModels.cs` | — |
+| `Services/TaskTools/TaskToolModels.cs` | 任务工具的共享参数模型与守卫 | `TaskToolGuard` | `Services/TaskTools/TaskUpdateTool.cs` | 上下文重建失败只附加非泄露诊断 |
+| `Services/TaskTools/TaskUpdateTool.cs` | `task_update`：提交状态迁移与处置 | `TaskUpdateTool` | `Services/TaskTools/TaskToolModels.cs` | 状态与处置合法性一律由服务端状态机裁决 |
+| `Services/TerminalProcessManager.cs` | OS 级进程的完整生命周期管理 | `ITerminalProcessManager` | `Tools/BuiltIns/Terminal/TerminalTools.cs` | — |
+| `Services/TerminalSecurity.cs` | 终端命令的白名单与危险模式拦截 | `ITerminalCommandPolicy` | `Tools/BuiltIns/Shell/HostShellTool.cs` | — |
+| `Services/TimeClusterAnalyzer.cs` | 会话间隔的时间聚类分析 | `TimeClusterAnalyzer` | `Services/ContextPipeline.cs` | — |
+| `Services/TodoTools/TodoCheckTool.cs` | `todo_check`：勾选单项待办状态 | `TodoCheckTool` | `Services/TodoTools/TodoToolModels.cs` | — |
+| `Services/TodoTools/TodoReadTool.cs` | `todo_read`：读取某作用域的待办表 | `TodoReadTool` | `Services/TodoTools/TodoToolModels.cs` | — |
+| `Services/TodoTools/TodoToolModels.cs` | 待办三工具的共享参数模型 | `TodoToolJson` | `Services/TodoTools/TodoWriteTool.cs` | — |
+| `Services/TodoTools/TodoWriteTool.cs` | `todo_write`：全量替换待办表 | `TodoWriteTool` | `Services/TodoTools/TodoReadTool.cs` | — |
+| `Services/Tools/ToolExposurePlanner.cs` | 与 Provider 无关的工具暴露规划 | `ToolExposurePlanner` | `Tools/Platform/PuddingToolRegistry.cs` | 当前请求的目录冻结，新定义只在下一次 LLM round 生效 |
+| `Services/TurnExecutorAdapter.cs` | Turn 执行的门控与请求适配 | `TurnExecutorAdapter` | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | 后台忙碌时采用有界退避与节流日志 |
+| `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
+| `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |
+| `Services/VolcengineArkImageGenerationProvider.cs` | 火山方舟的图片生成适配 | `VolcengineArkImageGenerationProvider` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | — |
+| `Services/WarmPrefixCompaction.cs` | 长循环的暖前缀压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | 只接受真实缩小的结果 |
+| `Services/WikiPageWriteEntry.cs` | 记忆 Wiki 页面的确定性写入入口 | `WikiPageWriteRequest` | `Services/MemoryWikiPageUpdateService.cs` | — |
+| `Services/WorkspaceAgentsContextBuilder.cs` | 工作区 Agent 名册上下文层的构造 | `WorkspaceAgentsContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
+| `Services/YoloSignalService.cs` | 监听工作区 yolo.signal 的后台服务 | `YoloSignalService` | `Services/AgentFirewall.cs` | 只读文件信号，不放宽任何资源边界 |
 
-## 子代理 & 计划
+## 工具审批与准入实现
 
-| 文件 | 用途 |
-|------|------|
-| `Services/SubAgentInvocationService.cs` | 子代理调用；继承父剩余 usage budget，批量任务等分预算（诚实除法+派生标记，除后份额过可执行性判据，不可行拒绝整批 sub_agent_batch_budget_infeasible），返回同步 child 累计 usage，并把公开 `resume_sub_agent_id` 映射为稳定 SubSessionId 续跑 |
-| `Services/AgentLoop/SubAgentBudgetLifecycle.cs` | 子代理预算状态机：启动/80%/50% 通知、10-50 轮收尾宽限、可恢复终止判定 |
-| `Services/DesignCouncilRuntimeService.cs` | MOA 运行时适配器；精确 provider/model 路由、可见性裁剪、只读派发、结果回填与暂停输入 |
-| `Services/InMemorySubAgentOrchestrationRunStore.cs` | 进程内 MOA run 快照 store；Version CAS 防止重复 claim，不支持跨重启恢复 |
-| `Services/Orchestration/AgentOrchestrationWorkerService.cs` | 通用编排 Runtime worker；领取已注册 executor 的 Ready 节点，90 秒续租 5 分钟 claim，以 fence 提交按端口输出/真实 child 身份并原子推进后继与 Run 终态 |
-| `Services/Orchestration/AgentOrchestrationNodeInputResolver.cs` | 从冻结 Graph Inputs 与上游 `outputs[sourcePortId]` 解析节点输入；当前显式支持 `$`、Replace/Append、inline text 与 Artifact 列表，拒绝未实现 sourcePath/targetKey |
-| `Services/Orchestration/SubAgentOrchestrationNodeExecutor.cs` | 只读 `pudding.agent.subagent` executor；冻结 role/template/provider/model，复用 `ISubAgentInvocationService` 与系统预算，提交 `result` 文本和 child Run/SubSession；用 workspace/graph 派生安全 archive owner，不把审计主体当目录 |
-| `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | `pudding.media.image-generate` executor；经共享 resolver 读取 prompt/参考图，复用 `IImageGenerationService`，使用稳定 paid-call idempotency key，并把 Artifact 列表写入 `outputs.images` |
-| `Services/Orchestration/ImagePreviewOrchestrationNodeExecutor.cs` | `pudding.media.image-preview` executor；经共享 resolver 读取上游 `images` Artifact 列表，并以同一引用写入自己的 `outputs.images`，不复制或内联图片 bytes |
-| `Services/SubconsciousRecallPipeline.cs` | 潜意识召回管道（25KB）；P1-2：`SearchHit` 携带 `CanonicalContentHash/SourceMessageId`，注入前经 `CompactionCoverageFilter` 过滤 covered 片段 + 同轮内 hash 去重（同一 source hash 的多个 chunk 只注入 1 条） |
-| `Services/SubconsciousPlanGenerationService.cs` | 计划生成 |
-| `Services/TaskPlanning/` | 任务规划 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Tools/Approval/ClassifierStatusTool.cs` | `classifier_status`：分类器健康面的只读探查 | `ClassifierStatusTool` | `Classification/ClassifierHealthReporter.cs` | 只读探查，不授予权限也不触发分类器调用 |
+| `Tools/Approval/ClassifierToolApprovalReviewer.cs` | 分类器驱动的审批评审适配器 | `IToolApprovalReviewer` | `Classification/ToolCallClassifierPipeline.cs` | 未知结论一律 deferred，不折叠为拒绝 |
+| `Tools/Approval/FakeToolApprovalReviewer.cs` | 硬化规则集的审批评审器 | `FakeToolApprovalReviewer` | `Tools/Approval/InMemoryToolApprovalService.cs` | — |
+| `Tools/Approval/FileToolApprovalStores.cs` | 审批票据与规则的文件存储 | `IToolApprovalTicketStore` | `Tools/Approval/InMemoryToolApprovalTicketStore.cs` | — |
+| `Tools/Approval/InMemoryToolApprovalAllowlistStore.cs` | 白名单规则的进程内存储 | `IToolApprovalAllowlistStore` | `Classification/ClassificationRuleCurator.cs` | — |
+| `Tools/Approval/InMemoryToolApprovalAuditStore.cs` | 审批审计事件的进程内存储 | `IToolApprovalAuditStore` | `Operators/Adapters/OperatorAuditSinkAdapter.cs` | — |
+| `Tools/Approval/InMemoryToolApprovalService.cs` | 审批判定的主实现与检查次序 | `InMemoryToolApprovalService` | `Services/AgentFirewall.cs` | 授权与审批的判定次序不可调换 |
+| `Tools/Approval/InMemoryToolApprovalTicketStore.cs` | 审批票据的进程内存储 | `IToolApprovalTicketStore` | `Tools/Approval/FileToolApprovalStores.cs` | — |
+| `Tools/Approval/InMemoryToolAuthorizationService.cs` | 工具授权的进程内服务 | `IToolAuthorizationService` | `Tools/Approval/InMemoryToolApprovalService.cs` | — |
+| `Tools/Approval/JevToolApprovalOptions.cs` | Jev 评审的配置选项 | `JevToolApprovalOptions` | `Tools/Approval/JevToolApprovalReviewer.cs` | — |
+| `Tools/Approval/JevToolApprovalReviewer.cs` | Jev 决策模型驱动的审批评审器 | `JevToolApprovalReviewer` | `Services/JevDecisionService.cs` | 危险模式命中即不调用模型；不可用一律 deferred |
+| `Tools/Approval/JevToolCallClassifier.cs` | Jev 仲裁分类器 | `JevToolCallClassifier` | `Services/JevDecisionService.cs` | 解析失败即 Unknown；每次至多请求一次 |
+| `Tools/Approval/ListToolApprovalsTool.cs` | `list_tool_approvals`：待审批票据查询 | `ListToolApprovalsTool` | `Tools/Approval/InMemoryToolApprovalTicketStore.cs` | — |
+| `Tools/Approval/LlmToolApprovalReviewer.cs` | 由 LLM 出题的审批评审器 | `LlmToolApprovalReviewer` | `Tools/Approval/InMemoryToolApprovalService.cs` | 保留为可配置回退路径，不删除 |
+| `Tools/Approval/RequestToolApprovalTool.cs` | `request_tool_approval`：发起一次性授权请求 | `RequestToolApprovalTool` | `Tools/Approval/InMemoryToolApprovalService.cs` | — |
+| `Tools/Approval/ToolApprovalBuiltInAllowlistRules.cs` | 内置白名单规则集 | `ToolApprovalBuiltInAllowlistRules` | `Classification/ClassificationRuleCurator.cs` | — |
+| `Tools/Approval/ToolApprovalClassifierOptions.cs` | 分类器降级配置 | `ToolApprovalClassifierOptions` | `Classification/ClassifierHealthReporter.cs` | 只新增键，不改既有默认 |
+| `Tools/Approval/ToolApprovalCommandFirewall.cs` | 危险命令行模式的确定性拒绝 | `ToolApprovalCommandFirewall` | `Tools/Approval/JevToolApprovalReviewer.cs` | — |
+| `Tools/Approval/ToolApprovalPortalService.cs` | 分类门户：分类与规则管理 | `ToolApprovalPortalService` | `Classification/ClassificationRuleCurator.cs` | 人工规则绝不冒充分类器终局 |
+| `Tools/Approval/ToolApprovalPromptBuilder.cs` | 审批出题单的构造 | `ToolApprovalPromptBuilder` | `Tools/Approval/LlmToolApprovalReviewer.cs` | — |
+| `Tools/Approval/ToolApprovalReviewParser.cs` | 评审答复的解析 | `ToolApprovalReviewParser` | `Tools/Approval/LlmToolApprovalReviewer.cs` | — |
+| `Tools/Approval/ToolDefinitionHash.cs` | 工具定义的 canonical 哈希 | `ToolDefinitionHash` | `Tools/Platform/PuddingToolRegistry.cs` | — |
+| `Tools/Approval/WorkspaceAuditAgentProvider.cs` | 工作区审计 Agent 的运行时侧适配 | `IWorkspaceAuditAgentProvider` | `Services/AgentFirewall.cs` | — |
+| `Tools/Legacy/AgentSkillPackageRegistry.cs` | 运行时技能包注册表 | `AgentSkillPackageRegistry` | `Tools/Legacy/SkillRuntime.cs` | — |
+| `Tools/Legacy/IAgentSkill.cs` | 运行时侧 Agent 技能接口 | `IAgentSkill` | `Tools/Legacy/SkillRuntime.cs` | — |
+| `Tools/Legacy/SkillPackageDownloadService.cs` | 技能包下载与解压 | `SkillPackageDownloadService` | `Tools/Legacy/AgentSkillPackageRegistry.cs` | — |
+| `Tools/Legacy/SkillRuntime.cs` | 可供 Agent 调用的技能套件管理 | `SkillRuntime` | `Tools/BuiltIns/Skills/AgentSkillTool.cs` | — |
 
-## 任务工具（TaskTools）
+## 内置工具（Tools/BuiltIns）
 
-| 文件 | 用途 |
-|------|------|
-| `Services/TaskTools/TaskListTool.cs` | `task_list` 工具（按 workspace/过滤列查询）|
-| `Services/TaskTools/TaskGetTool.cs` | `task_get` 工具（单任务查询）|
-| `Services/TaskTools/TaskClaimTool.cs` | `task_claim` 工具（领取任务；ActiveTask 丢失时经服务端反查归属安全重建上下文，缺陷 3f8df399）|
-| `Services/TaskTools/TaskUpdateTool.cs` | `task_update` 工具（状态迁移/disposition；ActiveTask 丢失时同上重建，须 InProgress 或 Blocked（卡 813ad427）；Blocked 下仅 `todo`→Ready 合法，其余由服务端 fail closed）|
-| `Services/TaskTools/ManageTasksTool.cs` | `manage_tasks` 工具（管理者视角跨 Agent 看板 CRUD + 命令；list 支持 children_of/include_child_summary；create/update 支持 parent_task_id、depends_on_task_ids（看板卡依赖，fail-closed 错误码 task.dependency_invalid / task.dependency_task_not_found）、task_type（可选透传，不传=general，小写归一 ≤64 字符）；get 返回 dependencies/dependency_tree，include_children=true 时内联子卡）|
-| `Services/TaskTools/TaskToolModels.cs` | 工具参数/结果模型 + `TaskToolErrors` + `TaskToolGuard`（`ValidateActiveTaskOrRebuildAsync`：ActiveTask==null 时按 mine 归属+assignment 匹配+状态门槛+版本 CAS 重建等效上下文；注入路径不做 expected_version 快照比对（缺陷 2d5a2ebe，服务端活版本 CAS 唯一裁决）；重建失败时在 `task.active_context_missing` 上附加非泄露诊断 `context_rebuild{attempted,stage,outcome}`——inputs/incomplete_inputs、lookup/not_visible、ownership/agent_mismatch（卡 3133b149）；卡 813ad427（2026-09-14 裁定）：update 路径状态门槛放宽为 `InProgress｜Blocked`（仍需 active assignment 归属调用方 + 版本 CAS），disposition 合法性仍由服务端状态机 fail closed 裁决，裁定与测试见 `Docs/14_reports/blocked-recovery-channel-decision-20260914.md`）|
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Tools/BuiltIns/Agents/AgentSleepTool.cs` | `sleep`：Agent 自适应心跳间隔设置 | `AgentSleepTool` | `Services/AgentWakeQueue.cs` | 空闲间隔被夹取在合法区间内 |
+| `Tools/BuiltIns/Agents/AgentStatusTool.cs` | `agent_status`：工作区 Agent 状态的只读查询 | `AgentStatusTool` | `Services/Messaging/DefaultAgentExecutionAvailabilityProvider.cs` | 投影缺失或过期一律报 unknown |
+| `Tools/BuiltIns/Agents/AgentTestTool.cs` | `test_tool`：工具试跑入口 | `AgentTestTool` | `Tools/Platform/ToolInvocationService.cs` | — |
+| `Tools/BuiltIns/Agents/GoalReadTool.cs` | `goal_read`：读取调用方私有的目标文件 | `GoalReadTool` | `Services/GoalMode/GoalModeService.cs` | — |
+| `Tools/BuiltIns/Agents/GoalUpdateTool.cs` | `goal_update`：追加或整体覆盖目标文件 | `GoalUpdateTool` | `Tools/BuiltIns/Agents/GoalReadTool.cs` | — |
+| `Tools/BuiltIns/Agents/QuerySubAgentsTool.cs` | `query_sub_agents`：查询子代理状态 | `QuerySubAgentsTool` | `Services/SubAgentInvocationService.cs` | — |
+| `Tools/BuiltIns/Agents/SubAgentTool.cs` | `spawn_sub_agent`：派生子代理执行任务 | `SubAgentTool` | `Services/SubAgentInvocationService.cs` | 模型须写全 providerId 与 modelId；大交付物写外部文件 |
+| `Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs` | `code_outline`：文件顶层结构的树形输出 | `CodeOutlineTool` | `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | — |
+| `Tools/BuiltIns/CodeIntelligence/CodeProjectManagementTools.cs` | 代码索引项目的注册与查询工具 | `CodeProjectAddTool` | `Services/Tools/ToolExposurePlanner.cs` | — |
+| `Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` | 符号检索与调用关系查询工具集 | `CodeQueryToolHelper` | `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` | — |
+| `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` | `code_summary`：文件用途摘要的快速抽取 | `CodeSummaryTool` | `Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` | — |
+| `Tools/BuiltIns/CodeIntelligence/OutlineNode.cs` | 大纲节点的模型 | `OutlineNode` | `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | — |
+| `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | Roslyn 语法树的顶层结构遍历 | `OutlineSyntaxVisitor` | `Tools/BuiltIns/CodeIntelligence/OutlineNode.cs` | — |
+| `Tools/BuiltIns/CodeIntelligence/ProjectMapTool.cs` | `project_map`：项目模块概览 | `ProjectMapTool` | `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` | — |
+| `Tools/BuiltIns/Context/SessionCompactTool.cs` | `compact_session`：会话上下文的手动压缩 | `SessionCompactTool` | `Services/ContextCompactionService.cs` | 当前轮围栏守卫优先于手动压缩 |
+| `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | `agent_diagnostics`：Agent 自我诊断 | `AgentDiagnosticsTool` | `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 数据源不可用时显式报出，不当作无问题 |
+| `Tools/BuiltIns/Documents/ReadOfficeDocumentTool.cs` | `read_office_document`：办公文档读取 | `ReadOfficeDocumentTool` | `Tools/BuiltIns/Files/FileChunkService.cs` | — |
+| `Tools/BuiltIns/Events/EventSubscriptionTool.cs` | `event_subscribe`：事件类型的订阅与退订 | `EventSubscriptionTool` | `Services/Events/EventDispatcher.cs` | — |
+| `Tools/BuiltIns/Files/FileChunkService.cs` | 大文件的分块与流式窗口 | `FileChunkService` | `Tools/BuiltIns/Files/FileTools.cs` | — |
+| `Tools/BuiltIns/Files/FileMutationQueue.cs` | 同一文件写入的串行队列 | `FileMutationQueue` | `Tools/BuiltIns/Files/FilePatchTool.cs` | — |
+| `Tools/BuiltIns/Files/FilePatchTool.cs` | `file_patch`：文本文件的增量补丁 | `FilePatchTool` | `Tools/BuiltIns/Files/FileMutationQueue.cs` | 删除匹配文本须显式给出空替换 |
+| `Tools/BuiltIns/Files/FileSearchTool.cs` | `file_search`：按文件名检索 | `FileSearchTool` | `Tools/BuiltIns/Search/SearchGrepTool.cs` | 无命中只在覆盖完整时输出 |
+| `Tools/BuiltIns/Files/FileTools.cs` | 文件读写与目录列举工具集 | `HostFileToolPaths` | `Tools/BuiltIns/Files/FilePatchTool.cs` | 相对路径解析到工作区根 |
+| `Tools/BuiltIns/Git/GitAddTool.cs` | `git_add`：暂存指定文件 | `GitAddTool` | `Tools/BuiltIns/Git/GitConstants.cs` | — |
+| `Tools/BuiltIns/Git/GitBlameTool.cs` | `git_blame`：逐行归属查询 | `GitBlameTool` | `Tools/BuiltIns/Git/GitConstants.cs` | — |
+| `Tools/BuiltIns/Git/GitBranchCreateTool.cs` | `git_branch_create`：创建分支 | `GitBranchCreateTool` | `Tools/BuiltIns/Git/GitBranchSwitchTool.cs` | — |
+| `Tools/BuiltIns/Git/GitBranchListTool.cs` | `git_branch_list`：列出分支与工作树 | `GitBranchListTool` | `Tools/BuiltIns/Git/GitConstants.cs` | — |
+| `Tools/BuiltIns/Git/GitBranchSwitchTool.cs` | `git_branch_switch`：切换分支 | `GitBranchSwitchTool` | `Tools/BuiltIns/Git/GitCheckoutTool.cs` | — |
+| `Tools/BuiltIns/Git/GitCheckoutTool.cs` | `git_checkout`：检出文件或提交 | `GitCheckoutTool` | `Tools/BuiltIns/Git/GitResetTool.cs` | — |
+| `Tools/BuiltIns/Git/GitCloneTool.cs` | `git_clone`：克隆仓库 | `GitCloneTool` | `Tools/BuiltIns/Git/GitInitTool.cs` | — |
+| `Tools/BuiltIns/Git/GitCommitTool.cs` | `git_commit`：提交暂存内容 | `GitCommitTool` | `Tools/BuiltIns/Git/GitAddTool.cs` | files 参数同时接受字符串与字符串数组 |
+| `Tools/BuiltIns/Git/GitConstants.cs` | Git 工具的共享常量 | `GitConstants` | `Tools/BuiltIns/Git/GitStatusTool.cs` | — |
+| `Tools/BuiltIns/Git/GitDiffTool.cs` | `git_diff`：差异输出 | `GitDiffTool` | `Tools/BuiltIns/Git/GitStatusTool.cs` | — |
+| `Tools/BuiltIns/Git/GitFetchTool.cs` | `git_fetch`：抓取远端更新 | `GitFetchTool` | `Tools/BuiltIns/Git/GitPullTool.cs` | — |
+| `Tools/BuiltIns/Git/GitInitTool.cs` | `git_init`：初始化仓库 | `GitInitTool` | `Tools/BuiltIns/Git/GitCloneTool.cs` | — |
+| `Tools/BuiltIns/Git/GitLogTool.cs` | `git_log`：提交历史查询 | `GitLogTool` | `Tools/BuiltIns/Git/GitBlameTool.cs` | — |
+| `Tools/BuiltIns/Git/GitMergeTool.cs` | `git_merge`：合并分支 | `GitMergeTool` | `Tools/BuiltIns/Git/GitPullTool.cs` | — |
+| `Tools/BuiltIns/Git/GitPullTool.cs` | `git_pull`：拉取并合并 | `GitPullTool` | `Tools/BuiltIns/Git/GitFetchTool.cs` | — |
+| `Tools/BuiltIns/Git/GitPushTool.cs` | `git_push`：推送本地提交 | `GitPushTool` | `Tools/BuiltIns/Git/GitRemoteTool.cs` | — |
+| `Tools/BuiltIns/Git/GitRemoteTool.cs` | `git_remote`：远端配置的查看与设置 | `GitRemoteTool` | `Tools/BuiltIns/Git/GitCloneTool.cs` | — |
+| `Tools/BuiltIns/Git/GitResetTool.cs` | `git_reset`：重置暂存区或提交 | `GitResetTool` | `Tools/BuiltIns/Git/GitCheckoutTool.cs` | — |
+| `Tools/BuiltIns/Git/GitStashTool.cs` | `git_stash`：工作区暂存与恢复 | `GitStashTool` | `Tools/BuiltIns/Git/GitStatusTool.cs` | — |
+| `Tools/BuiltIns/Git/GitStatusTool.cs` | `git_status`：工作区状态查询 | `GitStatusTool` | `Tools/BuiltIns/Git/GitDiffTool.cs` | — |
+| `Tools/BuiltIns/Git/GitTagTool.cs` | `git_tag`：标签管理 | `GitTagTool` | `Tools/BuiltIns/Git/GitLogTool.cs` | — |
+| `Tools/BuiltIns/Http/FlurlWebClient.cs` | 基于 Flurl 的 HTTP 传输实现 | `IWebClient` | `Tools/BuiltIns/Http/HttpFetchContracts.cs` | — |
+| `Tools/BuiltIns/Http/HtmlContentExtractor.cs` | HTML 正文的抽取 | `HtmlContentExtractor` | `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | — |
+| `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | 抓取结果到可读文本的格式化 | `IHttpFetchContentFormatter` | `Tools/BuiltIns/Http/HtmlContentExtractor.cs` | — |
+| `Tools/BuiltIns/Http/HttpFetchContracts.cs` | HTTP 抓取的端口与数据契约 | `IWebClient` | `Tools/BuiltIns/Http/HttpFetchSkill.cs` | — |
+| `Tools/BuiltIns/Http/HttpFetchSkill.cs` | `http_fetch`：发起 HTTP 请求并返回正文 | `HttpFetchSkill` | `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | — |
+| `Tools/BuiltIns/Http/ReverseMarkdownHtmlToMarkdownConverter.cs` | HTML 到 Markdown 的转换适配 | `IHtmlToMarkdownConverter` | `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | — |
+| `Tools/BuiltIns/Llm/ListLlmProvidersTool.cs` | `list_llm_providers`：资源池路由表查询 | `ListLlmProvidersTool` | `Services/LlmProfileResolver.cs` | 严禁输出 apiKey 与 baseUrl |
+| `Tools/BuiltIns/Management/AgentStateTool.cs` | `agent_state`：Agent 私有状态的读写 | `AgentStateTool` | `Services/AgentSessionManager.cs` | — |
+| `Tools/BuiltIns/Management/BootstrapRebootTool.cs` | `bootstrap_reboot`：点火式重建重启 | `BootstrapRebootTool` | `Services/RuntimeSelfRegistrationService.cs` | 默认走构建与事务部署并校验哈希 |
+| `Tools/BuiltIns/Management/LlmResourcePoolTool.cs` | `llm_resource_pool`：服务商与模型清单 | `LlmResourcePoolTool` | `Tools/BuiltIns/Llm/ListLlmProvidersTool.cs` | — |
+| `Tools/BuiltIns/Management/SubconsciousTriggerTool.cs` | `subconscious_trigger`：手动触发潜意识管道 | `SubconsciousTriggerTool` | `Services/Background/SubconsciousWorkerService.cs` | — |
+| `Tools/BuiltIns/Memory/GrepMemoryTool.cs` | `grep_memory`：记忆全文与混合检索 | `GrepMemoryTool` | `Tools/BuiltIns/Memory/MemoryLibraryTool.cs` | — |
+| `Tools/BuiltIns/Memory/Handlers/BookHandler.cs` | 记忆 Book 的创建与列举删除 | `BookHandler` | `Tools/BuiltIns/Memory/ManageMemoryTool.cs` | — |
+| `Tools/BuiltIns/Memory/Handlers/ChapterHandler.cs` | 记忆 Chapter 的增删改查 | `ChapterHandler` | `Tools/BuiltIns/Memory/ManageMemoryTool.cs` | — |
+| `Tools/BuiltIns/Memory/Handlers/DedupHandler.cs` | Book 去重与章节合并 | `DedupHandler` | `Tools/BuiltIns/Memory/Handlers/BookHandler.cs` | — |
+| `Tools/BuiltIns/Memory/Handlers/GraphHandler.cs` | 知识图谱关联的增列查 | `GraphHandler` | `Tools/BuiltIns/Memory/ManageMemoryTool.cs` | — |
+| `Tools/BuiltIns/Memory/Handlers/ReferenceHandler.cs` | 引用指针的增列 | `ReferenceHandler` | `Tools/BuiltIns/Memory/ManageMemoryTool.cs` | — |
+| `Tools/BuiltIns/Memory/ManageMemoryTool.cs` | `manage_memory`：记忆操作的 action 分发 | `ManageMemoryTool` | `Tools/BuiltIns/Memory/Handlers/BookHandler.cs` | 只做分发，逻辑在 Handler |
+| `Tools/BuiltIns/Memory/MemoryLibraryTool.cs` | `search_memory`：记忆库检索 | `MemoryLibraryTool` | `Tools/BuiltIns/Memory/GrepMemoryTool.cs` | — |
+| `Tools/BuiltIns/Memory/MemoryToolArgs.cs` | 记忆工具的参数模型 | `SaveMemoryArgs` | `Tools/BuiltIns/Memory/ManageMemoryTool.cs` | — |
+| `Tools/BuiltIns/Memory/MemoryToolHelper.cs` | 记忆工具的共享辅助 | `MemoryToolHelper` | `Tools/BuiltIns/Memory/MemoryLibraryTool.cs` | — |
+| `Tools/BuiltIns/Memory/MemoryTools.cs` | 记忆工具的聚合注册 | `MemoryTools` | `Tools/BuiltIns/Memory/MemoryLibraryTool.cs` | — |
+| `Tools/BuiltIns/Memory/MemoryToolsHelpers.cs` | 记忆工具辅助类型的归集 | `MemoryToolsHelpers` | `Tools/BuiltIns/Memory/MemoryTools.cs` | — |
+| `Tools/BuiltIns/Memory/SaveMemoryTool.cs` | `save_memory`：主动写入事实与摘要 | `SaveMemoryTool` | `Services/MemoryQualityFilter.cs` | — |
+| `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | `save_preference`：用户偏好的写入 | `SavePreferenceTool` | `Services/UserPreferenceService.cs` | — |
+| `Tools/BuiltIns/Messaging/ListAgentsTool.cs` | `list_agents`：消息可达 Agent 名册 | `ListAgentsTool` | `Services/Messaging/MessageDeliveryDispatcher.cs` | — |
+| `Tools/BuiltIns/Messaging/ReceiveMessagesTool.cs` | `receive_messages`：拉取收件箱 | `ReceiveMessagesTool` | `Services/Messaging/MessageDeliveryDispatcher.cs` | — |
+| `Tools/BuiltIns/Messaging/SendMessageTool.cs` | `send_message`：向其他 Agent 或用户发消息 | `SendMessageTool` | `Services/Messaging/MessageDeliveryDispatcher.cs` | 默认只通知；未知 intent fail-closed |
+| `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | `anysearch_search`：通用网页搜索 | `AnySearchSearchTool` | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | — |
+| `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | `doubao_search`：豆包搜索 | `DoubaoSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
+| `Tools/BuiltIns/Search/GitHubSearchTool.cs` | `github_search`：GitHub 仓库与代码检索 | `GitHubSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
+| `Tools/BuiltIns/Search/SearchGrepTool.cs` | `search_grep`：工作区文本检索 | `SearchGrepTool` | `Services/Search/SearchAttemptLedger.cs` | 索引只产候选，匹配以磁盘当前内容为准 |
+| `Tools/BuiltIns/Search/SearchToolsTool.cs` | `search_tools`：工具目录检索与加载 | `SearchToolsTool` | `Services/Tools/ToolExposurePlanner.cs` | 只返回权限过滤后的条目 |
+| `Tools/BuiltIns/Search/ZhihuGlobalSearchTool.cs` | `zhihu_global_search`：全网检索 | `ZhihuGlobalSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
+| `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | 知乎检索的共享配置与渲染 | `ZhihuSearchShared` | `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | — |
+| `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | `zhihu_search`：知乎站内检索 | `ZhihuSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
+| `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | `query_session_logs`：原始会话日志检索 | `QuerySessionLogsTool` | `Services/SessionArchiver.cs` | — |
+| `Tools/BuiltIns/Sessions/QuerySessionsTool.cs` | `query_sessions`：会话消息转录查询 | `QuerySessionsTool` | `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | — |
+| `Tools/BuiltIns/Shell/HostShellExecutor.cs` | 宿主命令的直执行与输出收集 | `HostShellExecutor` | `Services/TerminalSecurity.cs` | — |
+| `Tools/BuiltIns/Shell/HostShellTool.cs` | `shell`：短命令的宿主执行 | `HostShellTool` | `Tools/BuiltIns/Shell/HostShellExecutor.cs` | — |
+| `Tools/BuiltIns/Skills/AgentSkillTool.cs` | `agent_skill`：技能文件的读取与增改 | `AgentSkillTool` | `Services/Skills/AgentSkillFileService.cs` | — |
+| `Tools/BuiltIns/Skills/SkillHubTool.cs` | `skill_hub`：技能市场清单与安装 | `SkillHubTool` | `Services/Skills/AgentSkillFileService.cs` | — |
+| `Tools/BuiltIns/SmartWorkflow/SmartDeployTool.cs` | `smart_deploy`：部署角色入口 | `SmartDeployTool` | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | — |
+| `Tools/BuiltIns/SmartWorkflow/SmartDevelopTool.cs` | `smart_develop`：开发角色入口 | `SmartDevelopTool` | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | — |
+| `Tools/BuiltIns/SmartWorkflow/SmartExploreTool.cs` | `smart_explore`：探索角色入口 | `SmartExploreTool` | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | 只读探索，不产生副作用 |
+| `Tools/BuiltIns/SmartWorkflow/SmartPlanTool.cs` | `smart_plan`：方案角色入口 | `SmartPlanTool` | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | — |
+| `Tools/BuiltIns/SmartWorkflow/SmartResearchTool.cs` | `smart_research`：调研角色入口 | `SmartResearchTool` | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | — |
+| `Tools/BuiltIns/SmartWorkflow/SmartReviewTool.cs` | `smart_review`：审阅角色入口 | `SmartReviewTool` | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | — |
+| `Tools/BuiltIns/SmartWorkflow/SmartTestTool.cs` | `smart_test`：测试角色入口 | `SmartTestTool` | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | — |
+| `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | 角色化工作流工具的公共基类 | `SmartWorkflowToolBase<TArgs>` | `Tools/BuiltIns/Agents/SubAgentTool.cs` | 校验失败时原样返回子代理产出并附说明 |
+| `Tools/BuiltIns/Terminal/TerminalSkill.cs` | 终端命令执行的技能封装 | `TerminalSkill` | `Tools/BuiltIns/Terminal/TerminalTools.cs` | — |
+| `Tools/BuiltIns/Terminal/TerminalTools.cs` | `terminal_*`：终端任务的完整工具集 | `TerminalToolJson` | `Services/TerminalProcessManager.cs` | 长任务用阻塞式等待，禁止秒级轮询 |
 
-## 记忆 & 知识
+## 工具平台与展示投影
 
-| 文件 | 用途 |
-|------|------|
-| `Services/MemoryWriteCoordinator.cs` | 记忆写入协调 |
-| `Services/UserPreferenceService.cs` | 用户偏好管理：Prefetch 会话启动注入 System Prompt + save_preference 工具 Sync 存储 |
-| `Services/KnowledgeAccessRuntime.cs` | 知识访问 |
-| `Services/AgentLogRecallService.cs` | 日志召回 |
-| `Services/SessionChunkIndexer.cs` | P1-2 会话块向量索引写侧：索引时回查 Messages 补齐 `CanonicalContentHash/ContextGeneration` 冗余列（T2），查不到时对 SourceText 现算 SHA-256 兜底，幂等语义不变 |
-| `../PuddingMemoryEngine/Data/MemoryLibrary.cs` | P1-2 第 5 路召回查询侧：`SearchSessionChunksByVectorAsync` 同库 LEFT JOIN Messages 取 hash/generation/CompactedBy，默认过滤 covered chunk（`includeCovered=false`），返回专用 DTO `SessionChunkRankedResult`（含 MessageId/hash/generation/IsCovered） |
-| `../PuddingCore/Abstractions/IMemoryRecallService.cs` | P1-2 契约：`RecalledMemory` 新增 `SourceMessageId/CanonicalContentHash/ContextGeneration`（可空向后兼容），chunk-vector 路召回项透传溯源元数据供 assembler 同源去重 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Tools/Platform/AuditLogger.cs` | 工具与审批审计事件的写入 | `AuditLogger` | `Tools/Approval/InMemoryToolApprovalAuditStore.cs` | — |
+| `Tools/Platform/HarnessToolCompatibilityAdapter.cs` | 训练框架别名到 canonical 工具的适配 | `HarnessToolCompatibilityAdapter` | `Tools/Platform/ToolInvocationService.cs` | canonical 工具保持唯一；搜索退出码 1 识别为无命中 |
+| `Tools/Platform/JsonElementExtensions.cs` | JsonElement 的读取扩展 | `JsonElementExtensions` | `Tools/BuiltIns/Memory/MemoryToolArgs.cs` | — |
+| `Tools/Platform/OperationZone.cs` | 工具操作分区的枚举 | `OperationZone` | `Tools/Platform/ToolPermissionPolicyService.cs` | — |
+| `Tools/Platform/PuddingToolRegistry.cs` | 工具注册表与 schema 投影 | `IPuddingToolRegistry` | `Services/Tools/ToolExposurePlanner.cs` | 内置工具在进程生命周期内保持稳定 |
+| `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 工具与分类器的装配注册 | `PuddingToolServiceCollectionExtensions` | `DependencyInjection.cs` | 新增注册一律追加，不改既有注册行 |
+| `Tools/Platform/ToolInvocationService.cs` | 工具调用的统一执行边界 | `IToolInvocationService` | `Services/AgentFirewall.cs` | callId 进入注册表后保持不变 |
+| `Tools/Platform/ToolLoopInstructionBuilder.cs` | 工具循环指引的稳定生成 | `ToolLoopInstructionBuilder` | `Services/Tools/ToolExposurePlanner.cs` | 只在 `search_tools` 可见时才宣称可发现延迟工具 |
+| `Tools/Platform/ToolPermissionPolicyService.cs` | 默认的工具权限策略 | `IToolPermissionPolicyService` | `Services/AgentFirewall.cs` | — |
+| `Tools/Presentation/ToolPresentationCatalog.cs` | 工具展示声明的登记表 | `ToolPresentationCatalog` | `Tools/Presentation/ToolPresentationProjector.cs` | — |
+| `Tools/Presentation/ToolPresentationJson.cs` | 展示投影用的 JSON 读取助手 | `ToolPresentationJson` | `Tools/Presentation/ToolPresentationCatalog.cs` | 只读事实，不猜值 |
+| `Tools/Presentation/ToolPresentationProjector.cs` | 工具调用的展示投影器 | `IToolPresentationProjector` | `Tools/Presentation/ToolPresentationCatalog.cs` | — |
 
-## 多媒体
+## 本项目约束与坑
 
-| 文件 | 用途 |
-|------|------|
-| `Services/DashScopeAsrProvider.cs` | 语音识别 |
-| `Services/DashScopeTtsProvider.cs` | 语音合成 |
-| `Services/VolcengineArkImageGenerationProvider.cs` | 图片生成 |
-| `Services/JevDecisionService.cs` | 🔑 Jev 决策模型适配器（POST `{baseUrl}/api/v1/decide`，Bearer 鉴权）：返回**结构化决策数据**（choice/score/noul + probabilities + confidence + usage），不做自然语言解析；非 2xx fail-closed 抛 `JevDecisionException`（错误体截断 ≤4096 字符），502/503/504 按 `MaxRetries` 指数退避重试；端点/密钥/模型经 `IJevDecisionOptionsProvider` 每次调用前解析，密钥不入日志 |
-| `Services/JevDecisionOptionsProvider.cs` | Jev 连接参数解析默认实现——**资源池优先**：端点取 `llm.providers.json` 的 provider `jev`.baseUrl，模型取该 provider 下首个未废弃模型（按 sortOrder），密钥链为 池 `apiKeyRef`→KeyVaultId 经 KeyVault → **池 `apiKey`（支持 `${ENV}` 占位）** → `Jev:ApiKey`/`JEV_API_KEY` → `Jev:ApiKeyRef`；逐项回退 `Jev` 配置节与环境变量；未配置时抛 `jev.not_configured`，绝不返回空端点。换解析来源只需注册另一个 `IJevDecisionOptionsProvider` |
-| `Services/ManagedOggOpusTranscoder.cs` | 音频转码 |
+- 并发与单写者：`Services/AgentExecutionService.cs` 是会话的单写者；`Services/SessionExecutionGate.cs` 提供进程内门控；跨进程互斥靠租约与 fence。
+- 输入围栏：本轮输入以 `CURRENT USER TURN/input_sha256` 围栏，缺失即 fail-closed；压缩候选命中本轮时在任何写入前 fail-closed。
+- 前缀稳定：稳定 system 前缀只被真实稳定头变化打破；召回与 inbound 内容只能进本轮 User tail，否则缓存命中率会掉。
+- 能力边界：`Services/AgentFirewall.cs` 的完全访问授予只放宽授权与审批闸门；Yolo、沙箱、工作区与资源边界不受影响。
+- 判定与留痕：算子与分类器的审计写入失败只记警告，不改变已定裁决；健康计数成功返回后按分类器维度重置。
+- 未命中不放大：`Unknown` 表示无证据或不可判定，绝不折叠为放行或拒绝；分类器健康面同样如此。
+- 预算与止损：预算裁剪、失败指纹、发现循环三类止损各自有阈值；剩余预算诚实归零并带派生标记。
+- 长任务执行：终端与构建类任务走后台作业加阻塞式等待，不进行秒级轮询。
+- 心跳职责：`Services/HeartbeatService.cs` 只做会话超时清理；Agent 自主心跳编排在 `Services/Background/` 与 `Services/AgentWakeQueue.cs`。
 
-## 会话 & 事件
+## 观察项（observe，不写语义）
 
-| 文件 | 用途 |
-|------|------|
-| `Services/AgentSessionManager.cs` | 会话管理 |
-| `Services/CompositionRecoveryService.cs` | P0-5 步骤 5：跨 1h 超时/Core 重启从持久化 Composition 水合工具集合（append-only） |
-| `Services/SessionExecutionGate.cs` | 执行门控 |
-| `Services/SessionArchiver.cs` | 会话归档 |
-| `Services/HeartbeatService.cs` | 会话超时资源清理（**不是** Agent 自主心跳编排） |
-| `Tools/BuiltIns/Agents/AgentStatusTool.cs` | Agent 状态只读诊断；优先返回持久 Availability version/reason/active Task/Goal/SubAgent，投影缺失或过期报告 unknown，不从 wake queue 缺席推导 idle |
-| `Services/AgentInvocationDispatchFactory.cs` | 服务端 message metadata → Runtime dispatch；`WorkspaceAgentInvocation.ParentConversationId` 与 `ResolvePersistedParentConversationId` 固化父身份键优先级 `parent_conversation_id→parent_session_id→parent_session→conversation_id`，stream dispatch 按 显式父身份→元数据→事件 session→主会话 解析并输出 `sessionSource`，缺失时抛错而非伪造 `msg-*` 会话；Task-bound Goal 透传 task/assignment/version 与 reservation fencing token 到 ActiveTask |
-| `Services/AgentWakeQueue.cs` | 唤醒队列（内存态，重启即空）。优先级键 = `LatestWakeAt`，而“是否到期”由 `EarliestWakeAt` 判定；`TryDequeueAsync` 整体扫描取已到期且最早者，**不得只判队首**（否则队首未到期会阻塞其后已到期条目）。自定义 `sleep` 标记在出队时清除 |
-| `Services/StreamWatchdog.cs` | 流看门狗 |
-| `Services/Events/InternalEventBus.cs` | 当前进程内 fire-and-forget pub/sub；目标只保留 non-critical live notification 或作为 durable publisher adapter |
-| `Services/Events/EventDispatcher.cs` | 当前 SQLite 队列 dispatcher；目标按 consumer group 独立 checkpoint/retry/dead-letter |
-| `Services/Hooks/HookPublisher.cs` | 当前生命周期事件 publisher adapter；目标正名为 LifecycleEventPublisher，真正同步干预由 Typed Hook Dispatcher 承担 |
-
-## 插件 & 后台学习
-
-| 文件/目录 | 用途 |
-|------|------|
-| `Services/Plugins/PluginManifestCatalog.cs` | 当前 `pudding-plugin/v1` manifest-only Tool catalog；目标 v2 多 contribution + dependency/scope/activation |
-| `Services/Plugins/PluginPackageInstaller.cs` | 插件 ZIP 安全安装；目标增加签名/grant/staging activation/rollback |
-| `Services/Background/SubconsciousWorkerService.cs` | 持久潜意识 Job 消费 + 当前周期入队循环；目标按 learning stage plugin 拆分，Timer 只产生幂等 Command；🆕 G7 起 `skill.curate` 作业结果 metadata 写入 `curated_products`/`curated_shadow`/`curated_rejected` 三计数（`:336` `CreateSkillCurationResultEnvelope`）⇒ “裁决被记录”在作业结果层可观测（此前只进报告与日志） |
-| `Services/Background/SubconsciousJobScheduler.cs` | 空闲、并发和预算约束下的 Job lease 决策 |
-| `Services/Hooks/SessionCompressedMemoryMaintenanceHook.cs` | 当前 `session.compressed` 事件到持久 Job 桥；目标作为 durable event consumer 重命名，不再称 Hook |
-
-## 安全分类器与准入（Classification，2026-09-21）
-
-依据方案 v2 §14（`Docs/12_features/安全分类器与工具调用准入方案-v2.md`）。**抽象在 PuddingCore，实现全在 PuddingRuntime**；消费方只依赖 `IToolCallClassifier` 抽象，不得直接依赖任何厂商实现。
-
-| 文件 | 用途 |
-|------|------|
-| `Classification/ClassificationRuleCurator.cs` | 规则策展器：五元组规则键（workspace/tool/subject/working_directory/shell，**禁通配**）；尽窄校验 6 条（命中即**拒绝落永久规则**、退化为单次）；幂等读改写（HitCount++ / FirstSeen 不变 / LastSeen 刷新）；同键相反 Effect ⇒ **deny 胜** + `RuleConflictDetected`；溯源字段；禁用不硬删除（保审计链）；store 异常不冒泡（fail-closed），`OperationCanceledException` 照常传播 |
-| `Classification/SystemRuleClassifier.cs` | 零网络规则分类器（`ClassifierId="system-rules"`）：复用策展器 `BuildKey`；allow 命中 ⇒ `AllowOnce`；**deny 命中 ⇒ 候选 `DenyOnce`**（不执行覆盖、**绝不返回永久类**）；未命中 ⇒ **`Unknown`**（绝不默认放行）；store 异常 ⇒ `Unknown`/`store_error` |
-| `Classification/ToolCallClassifierPipeline.cs` | 分类器管线（`ClassifierId="pipeline"`，**本身即实现 `IToolCallClassifier`**）：§14.13.2 求值序 ①规则 allow 命中 ⇒ 终局且**零仲裁调用** ②deny 候选 ⇒ 必须给仲裁一次覆盖机会 ③全 `Unknown` ⇒ 仲裁 ④仲裁不可用 ⇒ `Unknown` + `arbiter_unavailable`/`override_unavailable`（**不折叠为 Deny、不放行**）；永久类须逐分类可信度 ≥0.90，否则降级单次；**覆盖必落 `ClassifierInvoked` 审计**（写入失败**不改变已定裁决**——「裁决先于留痕成立」，但**不静默**：可选注入 `ILogger<ToolCallClassifierPipeline>`，失败记 **Warning** 带 tool/候选/终局/分类器 id，供运维探查）；防循环（`Source=Classifier` 的候选 deny 复用自身裁决）；独立链接 CTS 3000ms |
-| `Classification/AgentFullAccessGrantService.cs` | 临时「完全访问」授予服务：TTL 默认=上限=300s（**>300 拒绝，绝不截断**）；服务端 `TimeProvider` 计时（读取时判定失效、不信客户端时刻）；进程重启即失效；作用域=workspace+agent 精确匹配；**仅 `AllowOnce`/`AllowPermanent` 可授予**；审计五类（Requested / Granted / Denied / Expired **at-most-once** / Revoked 幂等）；拒绝抛 `AgentFullAccessGrantRejectedException`（因契约 `GrantAsync` 返回非可空所致）。**S5b 已接线**：DI 单例注册（`TryAddSingleton`），消费方 `Services/AgentFirewall.cs` Gate 4 |
-| `Classification/ClassifierHealthReporter.cs` | 分类器健康面（S6a，§8.2/§14.9.2）：进程内单例（同时转发 `IClassifierHealthReporter`）；分类器侧上报 `(classifier, tool_id, args_hash)` 连续 deferred 计数——3 次 ⇒ `Degraded`、5 次 ⇒ `Unavailable`（1–2 次未达档 ⇒ Unknown 最保守）；成功返回 ⇒ 清零该分类器全部键并恢复 `Healthy`（§14.9.2「仅在成功后被重置」的最保守解释，防残留计数永久降级）；退避档 `base × 2^(n-1)` 封顶 60s（基数读 `ToolApproval:Classifier:UnavailableBackoffBaseMs`，默认 2000）；`Snapshot()` 覆盖 DI 组装时 `EnsureRegistered` 登记的全部实现（未上报 ⇒ Unknown）；零网络、不发起分类器调用 |
-| `Classification/ClassifierArbiterRegistrationState.cs` | 仲裁位注册状态记录（S6a）：管线组装时写入（是否已注册 + 仲裁 `ClassifierId` 数据），供 `classifier_status` 在未注册时展示 fail-closed 占位（`arbiter.not-registered`）；只承载数据，不感知任何厂商 |
-| `Tools/Approval/ClassifierToolApprovalReviewer.cs` | 审批评审器（`IToolApprovalReviewer` 适配器，S3b/S3c-1）：出题单 ⇒ `ToolCallClassificationContext` ⇒ 抽象 `IToolCallClassifier`；四选一映射（AllowOnce⇒Approved+Once 无提案、AllowPermanent⇒Approved+Once+allow 提案、DenyOnce⇒Denied、DenyPermanent⇒Denied+deny 提案、Unknown⇒`DeferredDependency` 绝不折叠）；提案效果由 `ToolApprovalAllowlistProposal.Effect` **结构化承载**（S3c-1 契约补齐，`Reason` 不再用 `effect=…` 文本约定）；异常 ⇒ Deferred + `service_unavailable`；单次评审至多请求分类器一次；S6a：可选注入健康面，评审后旁路上报 deferred/成功（只记健康数据，**绝不改变决策与原因码**，ADR-091 §4.4）；`Reviewer=classifier` 显式选中（注册点 `Tools/Platform/PuddingToolServiceCollectionExtensions.cs`） |
-| `Tools/Approval/JevToolCallClassifier.cs` | Jev 仲裁分类器（`IToolCallClassifier` 模型实现，S3d）：一次 round trip 五问（outcome + 四个逐分类校准概率，共享 state）；C1 解析失败 ⇒ Unknown（fail-closed 绝不默认 allow/deny）；C2 永久类缺可信度 ⇒ 防御性降级单次；C3 异常/自身超时 ⇒ Unknown 不冒泡（外层 OCE 照常传播）；C4 每次 `ClassifyAsync` 至多请求一次；C5 Reason/ReasonCode/ClassifierId 必非空；`ToolApproval:Jev:Enabled=false` ⇒ Unknown（`classifier.jev.disabled`） |
-| `Tools/Approval/ToolApprovalPortalService.cs` | 分类门户（S4）：`classify`（调管线分类 + 策展落规则）、`rules_list`/`rules_update`（人工规则=候选权威 `Source=Human`，绝不冒充分类器终局）；分类器缺失 ⇒ deferred（`classifier.not_configured`）；命中缓存复用 + `ClassifierInvoked`/`ClassifierUnavailable` 审计；离线测试 `PuddingRuntimeTests/Tools/ToolApprovalPortalTests.cs` |
-| `Tools/Approval/ClassifierStatusTool.cs` | 只读探查工具（S6a，§8.2/§14.10 D5）：`classifier_status` 输出各分类器 `ClassifierId`+健康、最近失败原因码、per-key 连续 deferred 计数与退避档、仲裁位注册状态（未注册 ⇒ fail-closed 占位可见）、生效阈值（永久类门槛 0.90 / 仲裁超时 3000ms / 退避基数与 3/5 档位）与当前 `Reviewer` 取值；**只读：不授予权限、不落规则、不触发分类器网络调用**（探查健康 ≠ 触发判断）；输出脱敏（参数仅 64 位 hex 哈希，无任何密钥字段）；`ToolSafetyFlags.ReadOnly\|ConcurrencySafe`，`TryAddEnumerable` 注册 |
-| `Tools/Approval/ToolApprovalClassifierOptions.cs` | 分类器降级配置（S6a，§14.9）：节 `ToolApproval:Classifier`；`UnavailableBackoffBaseMs`（默认 2000）驱动健康面退避档；`OnClassifierUnavailable` 仅承载配置形状（默认 `deferred`，判定路径不变）；只新增键，不改任何既有默认 |
-| `Classification/OperatorSceneKeys.cs` | 场景键的**稳定取值与归一**（S2b 新增）：默认场景键 `operator.default`（具名常量，**永不为空串**——空键会让不同来源重新混进同一桶，正是本切片要消灭的计数污染）+ 纯函数 `Normalize`（`null`/空/空白 ⇒ 默认键；其余原样返回，不裁剪不改写调用方身份）。与 S2a 的 `AcceptanceThresholdPolicyIds` 同一「常量只定义一处」风格 |
-
-> **S2b（2026-09-21，未提交）**：健康计数按**场景键**分区（`Classification/ClassifierHealthReporter.cs`：`DeferredKey` 加 `SceneKey`，`DeferredKeyCounterSnapshot` / `DeferredReport` 追加 `SceneKey`；`SnapshotDeferredCounters()` 每键计数现在按场景隔离）；新增**场景内**只读视图 `HealthForScene(classifierId, sceneKey)`（跨场景聚合语义仍由 `Snapshot()` 承担，**未动**）。**`classifier_status` 工具未改**：它的输出是逐字段显式映射，故既有 JSON 形状不变——代价是它目前不展示 `sceneKey`（已登记为后续缺口）。
-
-> **接线与生效状态（2026-09-21 翻转后）**：DI 已注册 `IToolCallClassifier` 单例——`SystemRuleClassifier`（规则快路径）+ 仲裁位（Jev 端口已注册 ⇒ `JevToolCallClassifier`，未注册 ⇒ fail-closed 占位返回 Unknown）+ 审计存储 ⇒ `ToolCallClassifierPipeline`（注册点 `Tools/Platform/PuddingToolServiceCollectionExtensions.cs`，`TryAddSingleton` 可覆盖）。
->
-> **`ToolApproval:Reviewer` 默认值已翻转为 `classifier`**（提交 `3b92fdf4`，原为 `llm`）⇒ 提交审批闸门现在走分类器管线（规则快路径 + Jev 仲裁），实现与测试齐备。
-> **回退（无需重新构建）**：配置 `ToolApproval:Reviewer=llm`（或 `jev`）；`LlmToolApprovalReviewer` 按方案 v2 §14.13.7 保留不删。
-> **部署状态：待重启才生效**（选项/DI 在启动时读取）——翻转已入 master，但进程仍是旧语义，除非已重启/部署。
-> **S5b 已接线（2026-09-21）**：完全访问授予的生效路径落在 `Services/AgentFirewall.cs` Gate 4（AuthorizationGate）——策略确认需授权后、授权/审批检查前查 `IAgentFullAccessGrantService.GetActiveAsync`；活跃授予 ⇒ 直接放行并落独立审计事件 `FullAccessGateBypass`（枚举末尾追加，`TicketId` 携带 GrantId、`ReviewerModel=full-access-grant`、`ClassifierId=null`，事后审计可区分授予放行与分类器裁定）。**语义边界：只放宽授权/审批闸门，不放宽 Yolo/沙箱/工作区/资源边界**（授予 ≠ Yolo）；授予缺席/过期/撤销时代码路径与原来完全一致；审计依赖缺席时 fail-closed 不消费授予。`InMemoryToolApprovalService.CheckAsync` 既有判定顺序未改动（§14.12.8）。
-> **PuddingCore 侧**：`Tools/ToolApproval.cs` 的 `ToolApprovalAuditEventType` 末尾追加 `FullAccessGateBypass`（append-only，N01）。
-> **部署状态：待重启才生效**（DI 单例在启动时组装）——授予消费接线已入工作区，但进程仍是旧语义，除非已重启/部署。
-> **PuddingCore 侧**：`Tools/ToolApproval.cs` 的 `ToolApprovalAllowlistRule` 追加 9 个可空溯源/键分量属性；`ToolApprovalAuditEvent` 追加 `ClassifierId?`/`ClassifierConfidence?`；`ToolApprovalAllowlistRuleSource` 末尾追加 `Classifier`（均为 append-only）。稳定原因码单一来源 = `Tools/ToolApprovalWire.cs`。
-> 派发与验收详见任务书 `temp/s4-portal-task.md`（门户切片 S4）；切分与状态见方案 v2 §14.10。
->
-> **S6a 已落地（2026-09-21，已入 master；**未部署**）**：健康面（`ClassifierHealthReporter`，服务端权威、进程内计数、§14.9.2 3/5 档映射）+ `classifier_status` 只读探查工具 + `ToolApproval:Classifier:UnavailableBackoffBaseMs`（默认 2000，新增键不改既有默认）；仲裁位未注册时工具输出可见 fail-closed 占位。S6b（前端提示 UI + Platform 只读健康 API）未做。
-
-## 判定算子基础设施（Operators，2026-09-21）
-
-S1a/S1b 已落地（`f577add` / `7cfc198`，**已推送；需重启才生效**）。契约在 `PuddingCore/Operators`（见 PuddingCore code_map），实现全在本目录。
-
-**分层规则**：基础设施内 ≤2 层（`OperatorBase` 横切 + 投影基类），**场景层恰好 1 层**；场景算子唯一可变点为 `ClassifyCoreAsync`，其余 6 项（场景键 / 问句+版本 / 输出形状 / 阈值 / 输入投影 / 结果映射）为 `abstract`，**缺一不编译**——**不得给默认值**，否则基类会变成上帝类、把场景差异压成开关。
-
-**接线**：`Tools/Platform/PuddingToolServiceCollectionExtensions.cs` 追加注册（适配器 + 注册表）；既有注册行**未改动**。
-
-**测试**：`../PuddingRuntimeTests/Operators/` —— 契约 / 基类与横切 / 注册表守卫 / 适配器**等价性**合计 **44/44 ✅**（2026-09-21 父级独立复跑）。
-
-| 文件 | 用途 |
-|------|------|
-| `Operators/OperatorBase.cs` | 横切基类（**全部非虚**）：独立超时与取消、异常兜底（**禁止向调用方冒泡**，转降级结论 + 稳定 `ReasonCode`）、模型调用封装、健康上报、**审计旁挂**、判定缓存指纹。⭐ **不可回退的既有契约**：审计**不得**成为同步必经环节——写入失败**不改变已定裁决**，只记 Warning（「裁决先于留痕」） |
-| `Operators/ProjectionBases.cs` | `ScorerBase` / `JudgeBase` / `ClassifierBase`：各自固定一个投影契约，不引入新抽象成员，**非虚** |
-| `Operators/OperatorEnvironment.cs` | 算子运行环境依赖 + `InMemoryOperatorJudgementCache`（当前仅内存实现） |
-| `Operators/OperatorRegistry.cs` | 场景注册表实现。三条 **fail-closed 注册守卫**：① 同 `sceneKey` 重复注册拒绝；② **同一算子类型实现多于一个原语端口拒绝**（把「不得同时是 `IJudge` 与 `IScorer`」从文档约定变成注册期强制）；③ `sceneKey` 空/空白拒绝 |
-| `Operators/Adapters/ToolApprovalOperatorAdapter.cs` | 工具审批适配器（S1b）：**包装**既有 `IToolCallClassifier` 为 `IClassifier`——**被包装者一行不改、行为逐位不变**（依赖倒置的正确用法是适配器，而不是重构安全关键路径）。`PrimaryLabel` 复用既有**文档化规范键**（`allow_once`/`allow_permanent`/`deny_once`/`deny_permanent`/`unknown`，不另造命名）；`NormalizeLabel` 为**纯函数**，未知枚举值 fail-safe 归 `unknown` **不抛异常**；**`Score`/`ScoreScale`/`Threshold`/`Outcome` 一律留空**（审批裁决无单一分数、其阈值尚未以 `ThresholdPolicy` 暴露；伪造分数会让下游把「无分数」误读成「低分」）；`ConfidenceKind` **恒为 `ModelSelfReported`**；`SourceEventIds`/`SourceSha` 留空（**无来源，不编造**）；`OperatorId` 取被包装者 `ClassifierId`（不自造身份，否则审计溯源与既有记录断开）；上下文类型不匹配 / 被包装者抛异常 / 取消 ⇒ 一律转降级 |
-| `Operators/Adapters/ToolApprovalOperatorContext.cs` | 审批输入的算子上下文包装 + **`InputDigest` 的单一计算入口**（固定字段顺序 SHA-256，仅含稳定字段；若各调用方自行拼装，缓存键与去重会失效） |
-| `Operators/Adapters/OperatorHealthObserverAdapter.cs` | 健康旁挂的**生产实现**（S2b）：把 S1a 接缝 `IOperatorHealthObserver` 接到**既有**健康面 `ClassifierHealthReporter`，按 `(SceneKey, OperatorId)` 分区；成功 ⇒ `RecordSuccess`（既有语义：分类器维度重置）、失败 ⇒ `RecordDeferred`（工具位用具名常量 `operator` 占位、参数位 `null`——算子采样**无**工具/参数维度，不伪造）。**吞掉自身异常但绝不静默**：记 Warning + 暴露 `SwallowedFailureCount` / `LastSwallowedFailure`。**两层兜底的分工**：权威兜底在 `OperatorBase`（包住任意实现，是契约被违反时的唯一防线），本适配器是纵深防御第二层且是**唯一记日志层**（自己吞掉后基类看不到 ⇒ 不会两层各记一条） |
-| `Operators/Adapters/OperatorAuditSinkAdapter.cs` | 审计旁挂的**生产实现**（S2b）：把 S1a 接缝 `IOperatorAuditSink` 接到既有审计存储（`IToolApprovalAuditStore`）；**「裁决先于留痕」不回退**——写入失败只记 Warning、不上抛、不改裁决；`EventId` 取判定的确定性 id（重复写入不产生语义不同的两条记录）、`ClassifierId` 承载算子标识、场景键以 `key=value` 前缀落在 `Reason`（既有事件无场景字段）；同步端口 ↔ 异步存储用线程池 + 同步等待桥接（必须等待才能观测失败；必须离开调用方上下文以免带同步上下文的宿主自锁）；存储未接线 ⇒ 丢弃但**只记一次 Warning** + 可探查 |
-
-> **S2b 已落地（2026-09-21，未提交）**：S1a 的两个旁挂接缝（`IOperatorHealthObserver` / `IOperatorAuditSink`）此前在生产中**没有任何实现**（定义了端口但没人实现 ⇒ 永远是死代码），现已由上面两个适配器接上（DI 追加注册，不改任何既有注册行）；同时健康计数键加入**场景维度**：由 `(ClassifierId, ToolId, ArgumentsHash)` 变为 `(ClassifierId, SceneKey, ToolId, ArgumentsHash)`，缺失场景键归一到具名常量 `OperatorSceneKeys.Default`（不是空串键）——见 `Classification/ClassifierHealthReporter.cs` 与 `Classification/OperatorSceneKeys.cs`。`Snapshot()` / `ClassifierStatus` 的既有字段、条目基数与语义（跨场景聚合）**一律未动**。
-
-> **已知缺口**：审批路径的阈值尚未以 `ThresholdPolicy` 暴露（S2 处理）；适配器不参与 S1a 判定缓存（既有审批链路自带缓存/审计），故 `Cached` 恒为 false。
-
-## 阈值判据（Thresholds，2026-09-21）
-
-S2a 已落地（`578c3c0`，**已推送；需重启才生效**）：把三处硬编码判据收敛为**可版本化的判据对象**，未配置时逐位等于既有常量。
-
-| 文件 | 用途 |
-|------|------|
-| `Thresholds/AcceptanceThresholdPolicyCatalog.cs` | 三个逐标签验收门槛的**稳定 id + 版本 + 默认值**的唯一定义处（`AcceptanceThresholdPolicyIds` / `AcceptanceThresholdPolicies`）：永久类结论逐分类可信度（既有默认 0.90）、规则沉淀置信度（0.95）、白名单提案校准概率（0.90）；`BuiltInVersion = 1`（判据被移动过必须递增，否则历史结果无法自证用的是哪一版）。id 放**运行时层**而非契约层：其中一项天然携带供应商段，而 `PuddingCore/Operators` 受架构门禁约束、不得出现供应商名词 |
-| `Thresholds/DefaultAcceptanceThresholdPolicyProvider.cs` | 默认判据解析端口（`IAcceptanceThresholdPolicyProvider`，S2a）：从配置 / 既有 options 取值；**未配置 ⇒ 返回内置默认（等于既有常量）** ⇒ 「不配置 = 行为逐位不变」是可验证事实；未知 id 抛 `KeyNotFound`（不静默返回默认，避免把「写错 id」静默当成「用默认值」） |
-
-## 测试
-
-对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅；安全分类器域：契约 7/7 ✅、策展器 22/22 ✅、零网络分类器 10/10 ✅、管线 15/15 ✅、完全访问授予 12/12 ✅（`~Classification` 合计 64/64）；审批链路适配器 `~ClassifierToolApprovalReviewer` 12/12 ✅、Jev 仲裁分类器 `~JevToolCallClassifier` 16/16 ✅（含 1 例 `[TestCategory("Live")]` 真链路探针，无密钥时 Inconclusive 跳过）、激活接线 `~ClassifierActivationWiringTests` 11/11 ✅、分类门户 `~ToolApprovalPortal` 25/25 ✅；翻转守护网 `~ToolApproval` 155/155 ✅、`~JevToolApprovalReviewer` 36/36 ✅、`~Reviewer` 67/67 ✅、`~PuddingToolInfrastructureTests` 148/148 ✅（2026-09-21 S6a 实测，注册清单守护已含 `classifier_status`）；S5b 接线网 `~AgentFirewallFullAccessGrantTests` 10/10 ✅（基线一致性/放行+审计/不记分类器裁定/到期/撤销/双作用域隔离/资源边界不放宽/端到端 IsYoloMode 不变/无授予 403）；S6a 健康面 `~ClassifierHealthReporter` 9/9 ✅ + `~ClassifierStatusTool` 6/6 ✅（默认值/3⇒Degraded/5⇒Unavailable/成功重置/键隔离/退避档/配置覆盖/deferred 不折叠/字段齐全无厂商名/fail-closed 占位/脱敏/Reviewer 取值）；**S2b 旁挂泛化（2026-09-21 实测）**：`~ClassifierHealthReporterSceneKey` 3/3 ✅（场景隔离 / 单场景回归 / 场景键归一）+ `~OperatorSidecarAdapter` 7/7 ✅（审计写失败裁决不变+Warning / 正常留痕映射 / 抛异常观测器不影响裁决 / 健康适配器场景分区映射 / 适配器内部失败吞掉可探查 / 未接线可见 / DI 端口解析）；全量实测 Runtime **1741/1741**（0 失败）、Platform **1363/1363**（0 失败）
-
-## 上下文压缩生命周期事件的活性契约（2026-09-19）
-
-**症状**：未触发压缩却出现压缩 UI——会话内卡片显示「正在压缩上下文」、顶部 toast 不消失、状态文案长期停在压缩中，turn 显示「已运行 60m+」，而上下文用量远低于自动压缩阈值。
-
-**根因**：压缩 UI 只由一个前端状态驱动（一个 `compaction:<id>` 生命周期 turn，assistant.status='executing' 且时间线含 `status='compacting'`），它只在 `context.compaction.started` 创建、只被携带同一 `compactionId` 的终态事件清除，中间没有任何活性保证。
-
-| 文件 | 职责与边界 |
-|------|------------|
-| `src/pages/chat/utils/chatStateUtils.ts` | `resolveRunningCompactionId(events)`：按顺序取最后一个压缩生命周期事件，**仅当它是带非空 id 的 `started`** 才返回该 id。bootstrap 的 `lifecycleEvents` 不区分压缩是否仍在运行，判活必须由前端自查；payload 可能是对象/JSON 字符串/已展平事件，解析异常一律返回 null（宁可不点亮，不误报运行中） |
-| `src/pages/chat/hooks/useCompaction.ts` | ① `replay===true` 且 started 的 id ≠ `runningCompactionId` → **整条忽略**（不建 turn、不 `setLoading`、不 `setCompactionStatus`、不弹 toast）；重放的 started 即使命中判活也**永不弹 toast**，只有实时 SSE 才弹。② `COMPACTION_LIVENESS_TIMEOUT_MS`（10min）活性 TTL：点亮运行态即挂表，超时由 `convergeStaleCompactions` 把仍为 executing 的压缩 turn 收敛为「压缩未完成（无终态记录）」并同步收敛 lifecycle map 副本（防 merge 复活）、清 loading/状态文案、destroy toast；终态事件/`resetCompaction`/卸载时清表。禁止「`duration: 0` 弹了就不管」 |
-| `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放：先算 `runningCompactionId`，再以 `{allowSessionSwitch:false, notify:false, replay:true, runningCompactionId}` 逐事件下发；缺口重放与历史尾部重放一律 `applySessionEvent(event, {replay:true})`——历史 started 一律不点亮，真在跑的压缩由 live SSE 补亮（已知取舍：SSE 断档期间恰逢压缩启动时会出现漏亮，不再出现假运行态） |
-| `src/pages/chat/hooks/useSessionEventProjection.ts` | `applySessionEvent(ev, options?)` 仅把 `replay` 语义透传给压缩三个事件的分发，其余投影行为不变 |
-| `PuddingRuntime/Services/ContextWindowManager.cs` | Auto 压缩三态（started/completed/failed）必须携带**同一 compactionId**：`compactionId` 提升到 try 之外声明，catch 的 `context.compaction.failed` payload 此前漏发 id（异常发生在 id 赋值前时为 null） |
-| `PuddingRuntimeTests/Services/ContextWindowManagerTests.cs` | `TrimHistoryAsync_FailedCompaction_EmitsFailedEventWithCompactionId`：断言 started→failed 顺序且 failed payload 携带与 started 相同的 compactionId |
+- `build_output.txt`
+- `PuddingRuntime.csproj.lscache`
+- `runtimes/win-x64/native/Everything64.dll`
