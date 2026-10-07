@@ -300,7 +300,7 @@
 | `Tools/BuiltIns/Events/EventSubscriptionTool.cs` | `event_subscribe`：事件类型的订阅与退订 | `EventSubscriptionTool` | `Services/Events/EventDispatcher.cs` | — |
 | `Tools/BuiltIns/Files/FileChunkService.cs` | 大文件的分块与流式窗口 | `FileChunkService` | `Tools/BuiltIns/Files/FileTools.cs` | — |
 | `Tools/BuiltIns/Files/FileMutationQueue.cs` | 同一文件写入的串行队列 | `FileMutationQueue` | `Tools/BuiltIns/Files/FilePatchTool.cs` | — |
-| `Tools/BuiltIns/Files/FilePatchTool.cs` | `file_patch`：文本文件的增量补丁 | `FilePatchTool` | `Tools/BuiltIns/Files/FileMutationQueue.cs` | 删除须显式空替换；行尾等价匹配；new_text 未带换行即删除；容忍歧义边界拒绝写入 |
+| `Tools/BuiltIns/Files/FilePatchTool.cs` | `file_patch`：文本文件的增量补丁 | `FilePatchTool` | `Tools/BuiltIns/Files/FileMutationQueue.cs` | 删除须显式空替换；行尾等价匹配；new_text 未带换行即删除；容忍歧义边界拒绝写入；预览 diff 按行对齐 |
 | `Tools/BuiltIns/Files/FileSearchTool.cs` | `file_search`：按文件名检索 | `FileSearchTool` | `Tools/BuiltIns/Search/SearchGrepTool.cs` | 无命中只在覆盖完整时输出 |
 | `Tools/BuiltIns/Files/FileTools.cs` | 文件读写与目录列举工具集 | `HostFileToolPaths` | `Tools/BuiltIns/Files/FilePatchTool.cs` | 相对路径解析到工作区根 |
 | `Tools/BuiltIns/Git/GitAddTool.cs` | `git_add`：暂存指定文件 | `GitAddTool` | `Tools/BuiltIns/Git/GitConstants.cs` | — |

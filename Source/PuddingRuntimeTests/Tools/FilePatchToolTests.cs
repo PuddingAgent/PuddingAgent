@@ -468,6 +468,124 @@ public sealed class FilePatchToolTests
         StringAssert.Contains(result.Output, "eol-equivalent", "an EOL-only match must be reported as such");
     }
 
+    // ── D7: the preview diff must align lines instead of comparing them by index (P1) ──
+
+    [TestMethod]
+    public async Task Diff_SingleLineInsertion_IsReportedAsOneAddedLine()
+    {
+        // The old renderer compared old[i] with new[i]; one inserted line shifted every following
+        // line, so the preview claimed the whole tail had been replaced.
+        WriteFile("list.txt", "alpha\r\nbeta\r\ngamma\r\ndelta\r\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "list.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "beta\r\n",
+                    ["new_text"] = "beta\r\ninserted\r\n",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.AreEqual(
+            new[] { "+ inserted" },
+            DiffLines(result.Output),
+            "one inserted line is one added line; no deletion may be invented");
+    }
+
+    [TestMethod]
+    public async Task Diff_SingleLineDeletion_IsReportedAsOneRemovedLine()
+    {
+        WriteFile("list.txt", "alpha\r\nbeta\r\ngamma\r\ndelta\r\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "list.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "gamma\r\n",
+                    ["new_text"] = "",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.AreEqual(
+            new[] { "- gamma" },
+            DiffLines(result.Output),
+            "one deleted line is one removed line; no addition may be invented");
+    }
+
+    [TestMethod]
+    public async Task Diff_MultiLineInsertion_ShowsEveryAddedLineWithoutDeletions()
+    {
+        WriteFile("list.txt", "alpha\r\nbeta\r\ngamma\r\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "list.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "beta\r\n",
+                    ["new_text"] = "beta\r\none\r\ntwo\r\nthree\r\n",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.AreEqual(
+            new[] { "+ one", "+ two", "+ three" },
+            DiffLines(result.Output),
+            "three inserted lines are three added lines and nothing else");
+    }
+
+    [TestMethod]
+    public async Task Diff_InPlaceReplacement_StillShowsOneRemovedAndOneAddedLine()
+    {
+        // Guard against over-correction: a genuine same-line edit must keep its -/+ pair.
+        WriteFile("list.txt", "alpha\r\nbeta\r\ngamma\r\ndelta\r\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "list.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "gamma",
+                    ["new_text"] = "GAMMA",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.AreEqual(
+            new[] { "- gamma", "+ GAMMA" },
+            DiffLines(result.Output),
+            "an in-place edit keeps exactly one removed and one added line");
+    }
+
+    /// <summary>Only the preview's own diff rows, so surrounding summary prose cannot mask a miss.</summary>
+    private static string[] DiffLines(string? output)
+    {
+        var text = (output ?? string.Empty).Replace("\r\n", "\n");
+        var lines = new List<string>();
+        foreach (var line in text.Split('\n'))
+        {
+            if (line.StartsWith("- ", StringComparison.Ordinal) || line.StartsWith("+ ", StringComparison.Ordinal))
+                lines.Add(line);
+        }
+        return lines.ToArray();
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();

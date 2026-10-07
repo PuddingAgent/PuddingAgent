@@ -223,7 +223,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                     continue;
                 }
 
-                var diff = GenerateSimpleDiff(original, current);
+                var diff = SimpleLineDiff.Render(original, current);
                 summaries.Add($"{relPath}: (dry_run=true - preview only, no changes written)\n{diff}");
             }
 
@@ -248,7 +248,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
 
                 File.WriteAllText(fullPath, current, new UTF8Encoding(false));
 
-                var diff = GenerateSimpleDiff(original, current);
+                var diff = SimpleLineDiff.Render(original, current);
                 var successMsg = $"{relPath}: patched ({replacementCount} replacements)";
                 if (errors.Count > 0)
                     successMsg += $"\n  {errors.Count} issue(s):\n    " + string.Join("\n    ", errors);
@@ -986,24 +986,6 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         return prev[a.Length];
     }
 
-    private static string GenerateSimpleDiff(string original, string current)
-    {
-        var sb = new StringBuilder();
-        var oldLines = original.Split('\n');
-        var newLines = current.Split('\n');
-        int maxShow = 10, shown = 0;
-        for (int i = 0; i < Math.Max(oldLines.Length, newLines.Length) && shown < maxShow; i++)
-        {
-            var o = i < oldLines.Length ? oldLines[i].TrimEnd('\r') : null;
-            var n = i < newLines.Length ? newLines[i].TrimEnd('\r') : null;
-            if (o == n) continue;
-            shown++;
-            if (o != null) sb.AppendLine($"- {o}");
-            if (n != null) sb.AppendLine($"+ {n}");
-        }
-        if (shown >= maxShow) sb.AppendLine("... (more changes)");
-        return sb.Length > 0 ? sb.ToString() : "(no visible line changes)";
-    }
 
     private static int GetLineNumberOf(string content, int charIndex)
     {
@@ -1125,6 +1107,97 @@ internal sealed record UnifiedDiffHunk(int OldStart, int OldCount, int NewStart,
 
 internal sealed record UnifiedDiffLine(char Kind, string Text);
 
+/// <summary>
+/// Renders the human-readable preview diff that file_patch echoes back. Rows are aligned by a
+/// cursor walk that skips common lines and recognises pure insertions/deletions, so inserting one
+/// line is reported as exactly one added row. The previous renderer compared oldLines[i] with
+/// newLines[i], which turned a single insertion into a cascade of bogus replacements and burned
+/// the whole 10-row budget before reaching the real edits. Preview only: nothing here is ever fed
+/// back into the writer.
+/// </summary>
+internal static class SimpleLineDiff
+{
+    private const int MaxChangeGroups = 10;
+    private const int MaxLookahead = 200;
+
+    public static string Render(string original, string current)
+    {
+        var script = BuildScript(SplitLines(original), SplitLines(current));
+
+        var sb = new StringBuilder();
+        var groups = 0;
+        var truncated = false;
+        for (var i = 0; i < script.Count;)
+        {
+            var start = i;
+            while (i < script.Count && script[i].Kind == '-') i++;
+            while (i < script.Count && script[i].Kind == '+') i++;
+            if (i == start) { i++; continue; }
+
+            if (groups == MaxChangeGroups) { truncated = true; break; }
+            for (var k = start; k < i; k++)
+                sb.AppendLine($"{script[k].Kind} {script[k].Text}");
+            groups++;
+        }
+
+        if (truncated) sb.AppendLine("... (more changes)");
+        return sb.Length > 0 ? sb.ToString() : "(no visible line changes)";
+    }
+
+    private static string[] SplitLines(string text)
+    {
+        var raw = text.Split('\n');
+        for (var i = 0; i < raw.Length; i++)
+            raw[i] = raw[i].TrimEnd('\r');
+        return raw;
+    }
+
+    private static List<(char Kind, string Text)> BuildScript(string[] oldLines, string[] newLines)
+    {
+        var script = new List<(char Kind, string Text)>();
+        int i = 0, j = 0;
+        while (i < oldLines.Length && j < newLines.Length)
+        {
+            if (string.Equals(oldLines[i], newLines[j], StringComparison.Ordinal)) { i++; j++; continue; }
+
+            // Delete or insert whichever side reaches a shared line with the shorter skip: that is
+            // the edit that actually happened. When neither side can catch up, treat the row pair
+            // as a plain replacement.
+            var oldSkip = IndexOfLine(oldLines, i, newLines[j]);
+            var newSkip = IndexOfLine(newLines, j, oldLines[i]);
+
+            if (newSkip >= 0 && (oldSkip < 0 || newSkip < oldSkip))
+            {
+                script.Add(('+', newLines[j]));
+                j++;
+            }
+            else if (oldSkip >= 0)
+            {
+                script.Add(('-', oldLines[i]));
+                i++;
+            }
+            else
+            {
+                script.Add(('-', oldLines[i]));
+                script.Add(('+', newLines[j]));
+                i++;
+                j++;
+            }
+        }
+        while (i < oldLines.Length) script.Add(('-', oldLines[i++]));
+        while (j < newLines.Length) script.Add(('+', newLines[j++]));
+        return script;
+    }
+
+    private static int IndexOfLine(string[] lines, int from, string value)
+    {
+        var limit = Math.Min(lines.Length, from + MaxLookahead);
+        for (var k = from; k < limit; k++)
+            if (string.Equals(lines[k], value, StringComparison.Ordinal)) return k;
+        return -1;
+    }
+}
+
 internal static class UnifiedDiffPatchRunner
 {
     public static ToolExecutionResult Apply(
@@ -1191,7 +1264,7 @@ internal static class UnifiedDiffPatchRunner
 
         var isDryRun = dryRun == true;
         var summaries = touchedFiles
-            .Select(file => $"{Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, file.FullPath)}: {(isDryRun ? "dry_run=true - preview only, no changes written" : "patched")}\n{GenerateSimpleDiff(file.Original, file.Current)}")
+            .Select(file => $"{Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, file.FullPath)}: {(isDryRun ? "dry_run=true - preview only, no changes written" : "patched")}\n{SimpleLineDiff.Render(file.Original, file.Current)}")
             .ToArray();
 
         if (isDryRun)
@@ -1254,24 +1327,6 @@ internal static class UnifiedDiffPatchRunner
         }
     }
 
-    private static string GenerateSimpleDiff(string original, string current)
-    {
-        var sb = new StringBuilder();
-        var oldLines = original.Split('\n');
-        var newLines = current.Split('\n');
-        int maxShow = 10, shown = 0;
-        for (int i = 0; i < Math.Max(oldLines.Length, newLines.Length) && shown < maxShow; i++)
-        {
-            var o = i < oldLines.Length ? oldLines[i].TrimEnd('\r') : null;
-            var n = i < newLines.Length ? newLines[i].TrimEnd('\r') : null;
-            if (o == n) continue;
-            shown++;
-            if (o != null) sb.AppendLine($"- {o}");
-            if (n != null) sb.AppendLine($"+ {n}");
-        }
-        if (shown >= maxShow) sb.AppendLine("... (more changes)");
-        return sb.Length > 0 ? sb.ToString() : "(no visible line changes)";
-    }
 }
 
 internal static class UnifiedDiffParser
