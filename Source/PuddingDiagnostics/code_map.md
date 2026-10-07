@@ -27,6 +27,8 @@
 | 写入期脱敏 | `Redaction/DiagnosticRedactor.cs` | 键名**子串**匹配（修既有整串相等的穿透）、值形态检查、URL query 剥离；所有证据值必经此处 |
 | 事故投影 | `Projection/IncidentProjector.cs` + `Projection/DiagnosticFact.cs` | 事实 → `IncidentView`（尝试明细 / 根因 / 阶段 / 体积 / 结论句 / 证据定位）；无证据时报 unknown 而不是 healthy |
 | 查询契约 | `Query/DiagnosticFactQuery.cs` | 过滤维度 + 分页 + **显式截断标记**（修既有「Limit 静默 clamp 后当时间窗结论」） |
+| 界面呈现 | `Presentation/ErrorPresentation.cs` | 标题/大概原因/严重度/可重试/建议动作/原码；标题禁出现异常类型名与英文原文，未知码原样显示 |
+| 复制现场 | `Presentation/DiagnosticReportDocument.cs` | 版本化 schema + 捕获时间 + errorId/traceId/turnId/sessionId + 因果码/阶段 + 尝试明细 + 证据（含异常链）+ 日志定位提示；`RenderText()` 人读、`RenderJson()` 机器读；64 KiB 显式截断 |
 | 故障场景资产 | `Scenarios/FaultScenarios.cs` | 「注入的失败 → 期望结论」对照表；新增码缺场景即取红 |
 
 ## 3. 关键文件
@@ -39,13 +41,13 @@
 | `Contracts/IDiagnosticCauseClassifier.cs` | 分类器契约（实现必须是纯函数） |
 | `Classification/LlmFailureClassifier.cs` | LLM 调用链分类器（生产用 `Default`，测试可注入帧指纹） |
 | `Redaction/DiagnosticRedactor.cs` · `Contracts/DiagnosticEvidence.cs` | 脱敏与证据预算 |
-| `Projection/*` · `Query/*` · `Scenarios/*` | 事故投影、查询契约、故障场景表 |
+| `Projection/*` · `Query/*` · `Scenarios/*` · `Presentation/*` | 事故投影、查询契约、故障场景表、界面呈现与复制现场载荷 |
 
 ## 4. 测试
 
 | 工程 | 覆盖 |
 |---|---|
-| `Source/PuddingDiagnosticsTests/` | 24 例：场景对照表全量、事故复刻（含证据字段）、指纹锚定、无阶段信号时的诚实兜底、增量后禁止重试、码表漂移、脱敏与证据预算、事故投影、S1–S4 边界断言（含探测器自检与取红） |
+| `Source/PuddingDiagnosticsTests/` | 30 例：场景对照表全量、事故复刻（含证据字段）、指纹锚定、无阶段信号时的诚实兜底、增量后禁止重试、码表漂移、脱敏与证据预算、事故投影、界面呈现与复制现场（标题友好性/未知码原码/定位四件套/JSON 稳定性/截断/不泄露密钥）、S1–S4 边界断言（含探测器自检与取红） |
 
 ## 5. 消费方（接入进度）
 

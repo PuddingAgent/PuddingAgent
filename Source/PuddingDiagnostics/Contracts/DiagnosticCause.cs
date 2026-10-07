@@ -141,8 +141,8 @@ public static class DiagnosticCauseCatalog
         => TryGet(code, out var descriptor) ? descriptor : descriptor;
 
     private static DiagnosticCauseDescriptor Fallback(string? code)
-        => code is not null && code.StartsWith(DiagnosticCauseCode.VisionPrefix, StringComparison.Ordinal)
-            ? new DiagnosticCauseDescriptor(code, false,
+        => DiagnosticCauseCode.IsVisionCode(code)
+            ? new DiagnosticCauseDescriptor(code!, false,
                 "本次图片处理链路失败。",
                 "检查图片/来源可访问性；文字对话不受影响。")
             : new DiagnosticCauseDescriptor(

@@ -86,6 +86,9 @@ public static class DiagnosticCauseCode
         if (string.IsNullOrWhiteSpace(code))
             return DiagnosticCauseCategory.Unknown;
 
+        if (IsVisionCode(code))
+            return DiagnosticCauseCategory.Vision;
+
         var separator = code.IndexOf('.');
         var prefix = separator < 0 ? code : code[..separator];
         return prefix switch
@@ -98,10 +101,19 @@ public static class DiagnosticCauseCode
         };
     }
 
+    /// <summary>
+    /// 是否为视觉链路码。兼容两种命名：文档约定 `<c>vision.xxx</c>` 与既有的
+    /// `<c>vision_xxx</c>`（`VisionErrorCodes` 实际取值）。
+    /// </summary>
+    public static bool IsVisionCode(string? code)
+        => !string.IsNullOrWhiteSpace(code)
+           && (code.StartsWith(VisionPrefix, StringComparison.Ordinal)
+               || code.StartsWith("vision_", StringComparison.Ordinal));
+
     /// <summary>是否为已登记（有目录条目）的码。未登记的码说明码表与目录漂移。</summary>
     public static bool IsRegistered(string? code)
         => !string.IsNullOrWhiteSpace(code)
-           && (DiagnosticCauseCatalog.Codes.Contains(code) || code.StartsWith(VisionPrefix, StringComparison.Ordinal));
+           && (DiagnosticCauseCatalog.Codes.Contains(code) || IsVisionCode(code));
 }
 
 /// <summary>稳定类别名。</summary>
