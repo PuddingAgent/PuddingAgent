@@ -26,7 +26,13 @@ public sealed record DiagnosticReportDocument
     public const int MaxRenderedChars = 64 * 1024;
 
     public string Schema { get; init; } = SchemaVersion;
-    public required DateTimeOffset CapturedAtUtc { get; init; }
+
+    /// <summary>
+    /// 捕获时刻。渲染时同时输出**原偏移（本地）**与 **UTC**：日志时间戳是本地时间，
+    /// 而汇报给维护者需要无歧义的 UTC —— 两者都给，才不至于在现场对不上时间。
+    /// </summary>
+    public required DateTimeOffset CapturedAt { get; init; }
+
     public required ErrorPresentation Presentation { get; init; }
 
     public string? TerminalStatus { get; init; }
@@ -54,7 +60,7 @@ public sealed record DiagnosticReportDocument
     /// <summary>由一次事故投影生成报告载荷；证据取自终态事实。</summary>
     public static DiagnosticReportDocument FromIncident(
         IncidentView incident,
-        DateTimeOffset capturedAtUtc,
+        DateTimeOffset capturedAt,
         IReadOnlyDictionary<string, string>? evidence = null,
         string? providerId = null,
         string? modelId = null,
@@ -73,7 +79,7 @@ public sealed record DiagnosticReportDocument
 
         return new DiagnosticReportDocument
         {
-            CapturedAtUtc = capturedAtUtc,
+            CapturedAt = capturedAt,
             Presentation = presentation,
             TerminalStatus = incident.TerminalStatus,
             SessionId = sessionId,
@@ -133,7 +139,8 @@ public sealed record DiagnosticReportDocument
     {
         var builder = new StringBuilder();
         builder.AppendLine($"== Pudding 错误报告（{Schema}） ==");
-        builder.AppendLine($"捕获时间(UTC): {CapturedAtUtc:O}");
+        builder.AppendLine($"捕获时间(本地): {CapturedAt:O}");
+        builder.AppendLine($"捕获时间(UTC): {CapturedAt.ToUniversalTime():O}");
         builder.AppendLine($"标题: {Presentation.Title}");
         builder.AppendLine($"大概原因: {Presentation.ShortCause}");
         builder.AppendLine($"可重试: {(Presentation.Retryable ? "是" : "否")}    建议动作: {Presentation.PrimaryAction}");
