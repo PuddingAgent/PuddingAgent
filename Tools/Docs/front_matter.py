@@ -217,6 +217,29 @@ def categories_for(rel: str) -> list:
     return ['docs']
 
 
+def cjk_chunks(run: str, size: int = 6) -> list:
+    """把一段连续汉字切成不超过 size 字的块，**保证不丢字**。
+
+    历史缺陷：此处原为 `re.findall(r'[\u4e00-\u9fff]{2,6}', stem)`。贪婪的 {2,6} 在
+    「长度 ≡ 1 (mod 6)」的汉字串上会留下 **1 字余尾**，而余尾不满足下限 2 ⇒ 被静默丢弃：
+    例 `索引新鲜度信号` → `索引新鲜度信`（丢「号」）、`迁出的变更记录` → `迁出的变更记`（丢「录」）。
+    实测 Docs/ 下 721 个 md 中 127 个命中该形态。
+
+    修法：仍按 size 切块（**非丢字场景的输出逐字不变**，避免影响既有 front matter），
+    仅当最后一块只剩 1 字时把它并入前一块（最多 size+1 字），从而不丢字。
+
+    注：长度为 1 的独立汉字串（如 `Shell侧Debug服务` 的「侧」）仍不产生 tag ——
+    这是有意的下限（单字无检索价值），与「把 token 尾部截断」不同。
+    """
+    chunks = [run[i:i + size] for i in range(0, len(run), size)]
+    if len(chunks) >= 2 and len(chunks[-1]) == 1:
+        # 不要写成 `chunks[-2] += chunks.pop()`：RHS 的 pop() 会先缩短列表，
+        # 导致索引 -2 错位（实测产生「重复 + 丢字」）。必须先 pop 再取 [-1]。
+        tail = chunks.pop()
+        chunks[-1] += tail
+    return chunks
+
+
 def tags_for(rel: str, title: str) -> list:
     stem = os.path.splitext(os.path.basename(rel))[0]
     stem = re.sub(r'^\d+[-_]', '', stem)
@@ -224,7 +247,11 @@ def tags_for(rel: str, title: str) -> list:
     stem = re.sub(r'^\d+[-_.]', '', stem)
     raw = [t for t in re.split(r'[-_\s.]+', stem) if len(t) > 1]
     ascii_tags = [t.lower() for t in raw if re.match(r'^[A-Za-z][A-Za-z0-9+]*$', t)]
-    cjk = re.findall(r'[\u4e00-\u9fff]{2,6}', stem)
+    cjk = []
+    for run in re.findall(r'[\u4e00-\u9fff]+', stem):
+        if len(run) == 1:
+            continue  # 单字不成 tag（保留原有 >=2 下限；与「截断 token 尾部」不同）
+        cjk.extend(cjk_chunks(run))
     tags = []
     for t in ascii_tags + cjk:
         if t not in tags:
