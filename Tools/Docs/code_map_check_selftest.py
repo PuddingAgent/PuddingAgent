@@ -464,6 +464,37 @@ def stage_api_contract(mod, rep):
           and "globs_declared" in rep["fingerprint_check"])
 
 
+def stage_anti_pattern_prose_scope(mod, dirs):
+    """§6 词表只针对 prose：行内代码跨度与链接目标里的词不算命中。
+
+    真因（Card B/C 误报）：`anti-pattern` 是逐行裸子串匹配，于是
+      * `\`TodoCheckTool\`` 这类**标识符**里的 TODO 被算成「演进叙事」；
+      * `[施工计划](...施工计划.md)` 这种**链接目标文件名**里的「计划」被算成「路线图」。
+    本 stage 左侧两行必须 0 命中，第三行的裸 prose 必须仍命中（反过度抑制的对照组）。
+    """
+    d = tempfile.mkdtemp(prefix="code_map_ap_scope_")
+    write_lines(os.path.join(d, "code_map.md"), [
+        "# Fixture AP Prose Scope",
+        "",
+        "| 文件 | 用途 | 关键符号 | 关联 | 约束 |",
+        "|------|------|----------|------|------|",
+        "| `Services/TodoTools/TodoCheckTool.cs` | `todo_check`：勾选单项待办 | `TodoCheckTool` | `Services/TodoTools/TodoWriteTool.cs` | — |",
+        "| `a.cs` | 见 [施工方案](Docs/12_features/施工计划.md) | `S1` | `b.cs` | — |",
+        "| `b.cs` | 见 [施工计划](Docs/12_features/plan.md) | `S2` | `c.cs` | — |",
+        "| `c.cs` | 本次修复了边界 | `S3` | `d.cs` | — |",
+        "",
+    ])
+    rep = mod.run_check(d)
+    viols = [v for v in rep["violations"] if v["rule"] == "anti-pattern"]
+    non_prose = [v for v in viols if v["line"] in (5, 6)]
+    prose = [v for v in viols if v["line"] in (7, 8)]
+    check("anti-pattern: words inside code spans / link targets are not hits",
+          not non_prose,
+          "hits=%s" % [(v["line"], v["detail"]) for v in non_prose])
+    check("anti-pattern: link labels and bare prose still hit (control)",
+          len(prose) >= 2, "hits=%s" % [(v["line"], v["detail"]) for v in prose])
+
+
 def main():
     if not os.path.isfile(CHECKER):
         print("[FAIL] checker not found: %s" % CHECKER)
@@ -486,6 +517,7 @@ def main():
         rep_c = stage_missing_metadata_red(mod, dirs)
         stage_rule_coverage(mod, rep_a, rep_c)
         stage_fingerprint_algorithm(mod, dirs)
+        stage_anti_pattern_prose_scope(mod, dirs)
 
         repo_files = mod.find_code_maps(REPO_ROOT)
         mirror_root = dirs["mirror"]

@@ -122,6 +122,17 @@ ANTI_PATTERN_CATEGORY_SEVERITY = {
 # §6 空值写法：窄口径（规范没有给出可枚举的占位集合，这里只认显式占位串）
 PLACEHOLDER_RE = re.compile(r"^(?:暂无|待补|待定|tbd|todo|--)$", re.IGNORECASE)
 
+# §6 词表只针对自然语言断言：行内代码跨度（标识符/字面量）与 Markdown 链接目标（文件名/URL）
+# 先剔除再扫词。否则 `TodoCheckTool` 里的 TODO 会被算成「演进叙事」、
+# `[施工计划](…施工计划.md)` 里的「计划」会被算成「路线图」（实测曾致 Card B/C 误报）。
+AP_LINK_TARGET_RE = re.compile(r"\]\([^)]*\)")
+AP_INLINE_CODE_RE = re.compile(r"`[^`]*`")
+
+
+def prose_only(line: str) -> str:
+    """剔除链接目标与行内代码跨度，剩下的才算 §6 要判的 prose。"""
+    return AP_INLINE_CODE_RE.sub("``", AP_LINK_TARGET_RE.sub("]()", line))
+
 SPEC_REL = "Docs/10_conventions/code-map-规范-v2.md"
 CODE_MAP_NAME = "code_map.md"
 SCHEMA_ID = "pudding.code_map_check/1"
@@ -680,15 +691,16 @@ def analyze_file(root: str, path: str, col_samples, global_unmapped):
                                    "header=%s count=%d limit=%d"
                                    % (key, cnt, LIMITS["MAX_TABLE_HEADER_REPEAT"])))
 
-    # §6 词表（逐行）
+    # §6 词表（逐行，只扫 prose：链接目标与行内代码跨度已剔除）
     for idx, line in enumerate(lines, start=1):
-        low = line.lower()
+        scan = prose_only(line)
+        low = scan.lower()
         for category in ANTI_PATTERN_WORDS:
             for w in ANTI_PATTERN_WORDS[category]:
                 if w.lower() in low:
                     violations.append(_ap_vio(rel, idx, category, "word=%s" % w))
         for w in SKIP_BYPASS_WORDS:
-            if w in line:
+            if w in scan:
                 violations.append(_ap_vio(rel, idx, "逐文件免检旁路", "word=%s" % w))
 
     # §5 头部元数据
