@@ -21,6 +21,12 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <!-- NU1903 remediation (2026-10-07): Microsoft.Data.Sqlite 10.0.9 floors SQLitePCLRaw.bundle_e_sqlite3
+         at 2.1.11, which resolves SQLitePCLRaw.lib.e_sqlite3 2.1.11 (advisory GHSA-2m69-gcr7-jv3q).
+         Pin the same bundle version PuddingMemoryEngine already uses (2.1.13) so the whole app ships
+         a single native e_sqlite3 build. Evidence: dotnet restore of this project reports 0x NU1903,
+         and project.assets.json resolves SQLitePCLRaw.lib.e_sqlite3/2.1.13. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
   </ItemGroup>
 
