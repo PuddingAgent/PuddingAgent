@@ -468,6 +468,20 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         if (IsAmbiguousBlockPattern(oldText, original))
             return [];
 
+        // P0-1: line endings are not content. A snippet authored with LF must match CRLF text (and a
+        // CRLF snippet must match LF text) as an exact match modulo EOL, *before* the strategies that
+        // ignore whitespace: those also ignore indentation, guess the span and refuse an ambiguous
+        // boundary (P0-2). Only \r\n and \n fold to \n here — every other character, indentation
+        // included, must still match. A lone \r is dropped by this normalization, so it never invents a
+        // match; such text falls through to the tolerant path with its refusal guard.
+        var eolEquivalent = FindNormalizedMatches(
+            original,
+            oldText,
+            "eol-equivalent",
+            static c => c == '\r' ? null : c == '\n' ? "\n" : c.ToString());
+        if (eolEquivalent.Count > 0)
+            return eolEquivalent;
+
         List<TextMatch> candidates = FindNormalizedMatches(
             original,
             oldText,
@@ -563,42 +577,53 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         return count;
     }
 
-    // P0-2: only an exact match carries its boundary literally. Every tolerant strategy normalizes
-    // whitespace away while searching, so the span it returns is a guess about where the replacement
-    // may start and end: a space in old_text can stand for a line break in the file. When old_text and
-    // new_text disagree about the line-break shape of that boundary, or when the guessed span covers
-    // line breaks old_text does not account for, the write is refused instead of guessed — the caller
-    // gets ambiguous_boundary_change and the file keeps its bytes.
+    // P0-2: an exact or EOL-equivalent match carries its boundary literally; every other (tolerant)
+    // strategy normalizes whitespace away while searching, so the span it returns is a guess — a space
+    // in old_text can stand for a line break in the file. Whatever the strategy, the span must account
+    // for exactly the line breaks old_text carries; a guessed span must additionally agree with new_text
+    // about the leading and trailing break shape. Otherwise the write is refused instead of guessed:
+    // the caller gets ambiguous_boundary_change and the file keeps its bytes.
     private static string? DescribeAmbiguousBoundaryChange(
         string original, string oldText, string newText, TextMatch match, string relPath)
     {
-        if (match.Strategy.Equals("exact", StringComparison.Ordinal))
-            return null;
-
         var span = original.Substring(match.Index, match.Length);
         var oldLeading = StartsWithLineBreak(oldText);
         var newLeading = StartsWithLineBreak(newText);
         var oldTrailing = EndsWithLineBreak(oldText);
         var newTrailing = EndsWithLineBreak(newText);
         var oldBreaks = CountLineBreaks(oldText);
-
-        // A span may only start with a line break when it had to consume one to reach the anchored
-        // content; that single extra break is the only expansion the tolerant path is allowed.
-        var expectedBreaks = oldBreaks + (StartsWithLineBreak(span) ? 1 : 0);
         var spanBreaks = CountLineBreaks(span);
-        if (oldLeading == newLeading && oldTrailing == newTrailing && spanBreaks == expectedBreaks)
+
+        // The break a tolerant span consumed to reach the anchored content is old_text's own leading
+        // break, so it is already counted in oldBreaks — never add a second allowance for it.
+        var literal = match.Strategy.Equals("exact", StringComparison.Ordinal)
+            || match.Strategy.Equals("eol-equivalent", StringComparison.Ordinal);
+        var breaksMatch = spanBreaks == oldBreaks;
+        var shapeMatches = oldLeading == newLeading && oldTrailing == newTrailing;
+        if (breaksMatch && (literal || shapeMatches))
             return null;
 
+        if (!breaksMatch)
+        {
+            return $"ambiguous_boundary_change: old_string matched in {relPath} using {match.Strategy} " +
+                   $"matching at L{GetLineNumberOf(original, match.Index)}, but the matched span carries " +
+                   $"{spanBreaks} line break(s) while old_text carries {oldBreaks}: that strategy rewrote " +
+                   "a line boundary old_text does not account for. Nothing was written. Set old_text to the " +
+                   "text as it appears in the file, or match the text exactly.";
+        }
+
         return $"ambiguous_boundary_change: old_string matched in {relPath} using {match.Strategy} " +
-               $"matching at L{GetLineNumberOf(original, match.Index)}, but the line-break boundary of " +
-               $"that match is ambiguous (old_text breaks={oldBreaks}, matched span breaks={spanBreaks}, " +
-               $"leading break old/new={oldLeading}/{newLeading}, trailing break old/new=" +
-               $"{oldTrailing}/{newTrailing}). Nothing was written. Give the boundary explicitly: match " +
-               "the text exactly (including its line breaks), or repeat the same line breaks in new_text.";
+               $"matching at L{GetLineNumberOf(original, match.Index)}, and old_text/new_text disagree " +
+               $"about the line-break shape of that boundary (leading break old/new=" +
+               $"{oldLeading}/{newLeading}, trailing break old/new={oldTrailing}/{newTrailing}). Nothing " +
+               "was written. Repeat the same line breaks in new_text as old_text has, or match the text " +
+               "exactly so the boundary is not guessed.";
     }
 
     // A span that begins on the LF half of a CRLF pair would split the pair in two and leave an
-    // orphan CR behind, so widen it to cover the whole line break.
+    // orphan CR behind, so widen it to cover the whole line break. Only the start needs widening: every
+    // strategy reaches its span through a canonical index that maps a break to its LF byte (the CR byte
+    // is dropped there), so a span can never end between the CR and the LF either.
     private static TextMatch WidenToWholeLineBreak(string original, TextMatch match)
         => match.Length > 0
             && match.Index >= 1

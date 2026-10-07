@@ -404,6 +404,70 @@ public sealed class FilePatchToolTests
         Assert.AreEqual(before, ReadFile("code.txt"), "a refused patch must leave the file byte-identical");
     }
 
+    // ── D6: line endings are not content — an LF-authored snippet must match CRLF text (P0-1) ──
+
+    [TestMethod]
+    public async Task Replace_LfAuthoredSnippet_MatchesCrlfFileAsEolEquivalent()
+    {
+        // The field incident of 2026-10-07 was authored exactly this way: old_text/new_text written with
+        // LF on a CRLF file. A single-line snippet still finds a literal match on the LF half of a CRLF,
+        // but a snippet spanning two rows does not — its break is preceded by a real character, so the
+        // literal search fails. Only the line endings differ, so the match must be exact modulo EOL; it
+        // must neither fall into the whitespace-tolerant strategy (which also ignores indentation and
+        // guesses the span, and refuses this shape as an ambiguous boundary) nor be refused at all.
+        WriteFile("table.md", "| a | b |\r\n| keep | one |\r\n| target | two |\r\n| tail | three |\r\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "table.md",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "\n| target | two |\n| tail | three |",
+                    ["new_text"] = "\n| target | three |\n| tail | four |",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        var actual = ReadFile("table.md");
+        Assert.AreEqual(
+            "| a | b |\r\n| keep | one |\r\n| target | three |\r\n| tail | four |\r\n",
+            actual,
+            "the two-row LF snippet replaces the CRLF rows in place: whole pairs consumed, no orphan CR");
+        Assert.IsFalse(actual.Contains("|\r|", StringComparison.Ordinal), "no orphan CR may survive");
+        Assert.IsFalse(actual.Contains("\r\r\n", StringComparison.Ordinal), "no CRCRLF may be produced");
+        StringAssert.Contains(result.Output, "eol-equivalent", "an EOL-only match must be reported as such");
+        Assert.IsFalse(
+            result.Output.Contains("whitespace-tolerant", StringComparison.Ordinal),
+            "the tolerant strategy must not be reached when only line endings differ");
+    }
+
+    [TestMethod]
+    public async Task Replace_CrlfAuthoredSnippet_MatchesLfFileAsEolEquivalent()
+    {
+        const string before = "alpha\nbeta\ngamma\n";
+        WriteFile("notes.txt", before);
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "notes.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "beta\r\ngamma",
+                    ["new_text"] = "beta\r\ndelta",
+                }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("alpha\nbeta\ndelta\n", ReadFile("notes.txt"), "the LF file keeps its own endings");
+        StringAssert.Contains(result.Output, "eol-equivalent", "an EOL-only match must be reported as such");
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();
