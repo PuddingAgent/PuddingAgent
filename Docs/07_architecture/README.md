@@ -2,18 +2,22 @@
 title: 07架构
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-07
 status: active
 description: ADR-092第二版（Proposed）及简化设计：独立Goal存储、一个决策入口、两类执行工作；移除Goal步骤树与两级Verifier，Task可选适配，等待无模型轮询。Agent goal.md管理独立。整体替代ADR-092第一版，保留历史任务记录；实现和运行验收待完成。
 categories: [docs, architecture]
 tags: [readme, architecture]
-related_docs: [Docs/07_architecture/106ADR-092目标驱动执行与分层验证闭环ADR.md, Docs/12_features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md, Docs/14_reports/Goal持续执行方案与任务修订-2026-09-15.md, Docs/07_architecture/105ADR-091自动审计与执行准入闭环ADR.md, Docs/12_features/自动审计与执行准入闭环设计-2026-09-15.md, Docs/14_reports/自动审计方案与派发记录-2026-09-15.md, Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md, Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md, Docs/07_architecture/102ADR-088原生视觉取图与截图统一链路ADR.md, Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md, Docs/14_reports/原生视觉优化看板修订-2026-09-12.md, Docs/07_architecture/101ADR-087子代理托管运行与持久问答ADR.md, Docs/07_architecture/98ADR-084稳定请求前缀与缓存99验收ADR.md, Docs/07_architecture/99ADR-085Memory主导的长程任务连续性ADR.md, Docs/07_architecture/100ADR-086长程执行预算与运行内核收敛ADR.md, Docs/07_architecture/01总览与分层.md, Docs/07_architecture/02PuddingCore.md, Docs/07_architecture/03PuddingRuntime.md, Docs/07_architecture/12多轮会话与工具调用执行.md, Docs/07_architecture/04PuddingController与Gateway.md]
+related_docs: [Docs/07_architecture/109ADR-095会话上下文维护与首增量延迟治理ADR.md, Docs/12_features/首Token等待与上下文指示器修复方案-2026-10-07.md, Docs/07_architecture/106ADR-092目标驱动执行与分层验证闭环ADR.md, Docs/12_features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md, Docs/14_reports/Goal持续执行方案与任务修订-2026-09-15.md, Docs/07_architecture/105ADR-091自动审计与执行准入闭环ADR.md, Docs/12_features/自动审计与执行准入闭环设计-2026-09-15.md, Docs/14_reports/自动审计方案与派发记录-2026-09-15.md, Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md, Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md, Docs/07_architecture/102ADR-088原生视觉取图与截图统一链路ADR.md, Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md, Docs/14_reports/原生视觉优化看板修订-2026-09-12.md, Docs/07_architecture/101ADR-087子代理托管运行与持久问答ADR.md, Docs/07_architecture/98ADR-084稳定请求前缀与缓存99验收ADR.md, Docs/07_architecture/99ADR-085Memory主导的长程任务连续性ADR.md, Docs/07_architecture/100ADR-086长程执行预算与运行内核收敛ADR.md, Docs/07_architecture/01总览与分层.md, Docs/07_architecture/02PuddingCore.md, Docs/07_architecture/03PuddingRuntime.md, Docs/07_architecture/12多轮会话与工具调用执行.md, Docs/07_architecture/04PuddingController与Gateway.md]
 related_files: []
 slug: architecture-readme
 draft: false
 ---
 
 # 07架构
+
+## 会话上下文维护与首增量延迟
+
+[ADR-095](109ADR-095会话上下文维护与首增量延迟治理ADR.md)（Proposed）与[修复施工方案](../12_features/首Token等待与上下文指示器修复方案-2026-10-07.md)：Session按容量及候选变化持续维护，软摘要移到终态后的空闲期，硬预算逐请求保护；统一候选提交、checkpoint恢复、请求实测与估算归因、前端事实展示。保留ADR-090的收益准入与无收益抑制，扩展Session级异步候选的版本校验；实现与产品验收待完成。
 
 ## 2026-09-17 Goal单一状态机与证据驱动续行
 
