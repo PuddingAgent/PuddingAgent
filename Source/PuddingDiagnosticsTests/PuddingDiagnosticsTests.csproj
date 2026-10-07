@@ -1,0 +1,21 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- PuddingDiagnostics 的独立测试工程（组件化交付规程 S2/S3）。
+
+       边界规则：本工程**只引用 PuddingDiagnostics**（唯一 ProjectReference、零 PackageReference）。
+       分类器 / 证据预算 / 脱敏 / 事故投影的场景用例必须在不启动 Core、不加载 PuddingRuntime /
+       PuddingPlatform / PuddingHost / PuddingCore 的进程里跑绿 —— 这正是「宿主运行中也能迭代诊断规则」
+       的兑现方式。边界由 ComponentBoundaryTests 断言（含探测器自检与 csproj 反读）。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingDiagnostics\PuddingDiagnostics.csproj" />
+  </ItemGroup>
+
+</Project>

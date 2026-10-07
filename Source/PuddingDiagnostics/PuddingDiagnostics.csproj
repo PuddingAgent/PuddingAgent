@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PuddingCode.Diagnostics</RootNamespace>
+  </PropertyGroup>
+
+  <!-- 可诊断基础设施叶子组件（Docs/12_features/可诊断基础设施设计-2026-10-07.md §4）。
+
+       边界由构造决定，而不是靠约定：
+         * ProjectReference = 0 —— 不认识 PuddingCore / PuddingRuntime / PuddingPlatform / PuddingHost /
+           PuddingAgent，也不认识任何其他 Pudding 组件；
+         * PackageReference = 0 —— 不引入日志框架、EF Core、ASP.NET、JSON 扩展或测试框架；
+         * 不读配置、不写文件、不建连接 —— 只有纯计算（分类 / 证据预算 / 脱敏 / 投影）。
+
+       与 PuddingVectorIndex 的「零 HTTP」边界不同，本组件**必须**能识别 System.Net.Http 与
+       System.Net.Sockets 的异常类型（HttpRequestException / SocketException / HttpIOException），
+       因此不移除 System.Net.Http 的 implicit using；边界断言相应地断言「零 Pudding 依赖 + 零第三方包 +
+       零 IO 类型」，见 PuddingDiagnosticsTests/ComponentBoundaryTests.cs。 -->
+
+</Project>
