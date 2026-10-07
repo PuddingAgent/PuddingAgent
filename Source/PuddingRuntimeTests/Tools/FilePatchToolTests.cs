@@ -349,6 +349,61 @@ public sealed class FilePatchToolTests
             "the caller must be told that an asymmetric leading line break deleted the boundary");
     }
 
+    // ── D5: a tolerant match may not guess a line boundary (P0-2, fail-closed) ──
+
+    [TestMethod]
+    public async Task Replace_TolerantMatchWithAsymmetricLeadingBreak_RefusedWithoutWriting()
+    {
+        // The file indents with 4 spaces while old_text carries 8, so only the whitespace-tolerant
+        // strategy can match. old_text anchors with a leading line break that new_text does not supply:
+        // the tolerant span is a guess about that boundary, so nothing may be written at all.
+        const string before = "a\r\n    target();\r\nb\r\n";
+        WriteFile("code.cs", before);
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "code.cs",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "\n        target();",
+                    ["new_text"] = "    replacement();",
+                }
+            }
+        });
+
+        Assert.IsFalse(result.Success, "an ambiguous tolerant boundary must fail closed");
+        StringAssert.Contains(result.Error, "ambiguous_boundary_change");
+        Assert.AreEqual(before, ReadFile("code.cs"), "a refused patch must leave the file byte-identical");
+    }
+
+    [TestMethod]
+    public async Task Replace_TolerantMatchCollapsingALineBreak_RefusedWithoutWriting()
+    {
+        // old_text joins two statements with spaces while the file separates them with a CRLF; the
+        // tolerant normalization would silently reflow two lines into one, so the write is refused.
+        const string before = "alpha();\r\n    beta();\r\n";
+        WriteFile("code.txt", before);
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "code.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "replace",
+                    ["old_text"] = "alpha();  beta();",
+                    ["new_text"] = "alpha(); beta();",
+                }
+            }
+        });
+
+        Assert.IsFalse(result.Success, "a tolerant match that crosses a line boundary must fail closed");
+        StringAssert.Contains(result.Error, "ambiguous_boundary_change");
+        Assert.AreEqual(before, ReadFile("code.txt"), "a refused patch must leave the file byte-identical");
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();

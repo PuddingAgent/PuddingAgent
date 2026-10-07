@@ -181,7 +181,10 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 }
             }
 
-            var replacements = CollectReplacements(original, ops, ref replacementCount, errors, relPath, scopeStartLine, scopeEndLine);
+                var refusals = new List<string>();
+                var replacements = CollectReplacements(original, ops, ref replacementCount, errors, ref refusals, relPath, scopeStartLine, scopeEndLine);
+                if (refusals.Count > 0)
+                    return ToolExecutionResult.Fail(string.Join(Environment.NewLine, refusals));
                 var current = ApplyReplacements(original, replacements);
 
                 foreach (var op in ops)
@@ -313,7 +316,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
 
     private List<(int Index, int Length, string NewText)> CollectReplacements(
         string original, IReadOnlyList<FilePatchOperation> ops, ref int replacementCount,
-        List<string> errors, string relPath, int? scopeStartLine, int? scopeEndLine)
+        List<string> errors, ref List<string> refusals, string relPath, int? scopeStartLine, int? scopeEndLine)
     {
         var matches = new List<(int Index, int Length, string NewText)>();
         var usedRanges = new SortedSet<(int Start, int End)>();
@@ -374,6 +377,23 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             // explicit deletion (the two lines are joined), not something the tool may silently restore.
             for (var i = 0; i < candidates.Count; i++)
                 candidates[i] = WidenToWholeLineBreak(original, candidates[i]);
+
+            // P0-2: a tolerant match guessed the boundary — refuse instead of rewriting a line
+            // boundary the caller never asked about. Every span is checked, so replace_all cannot
+            // slip one ambiguous candidate through.
+            var ambiguous = new List<string>();
+            foreach (var candidate in candidates)
+            {
+                var refusal = DescribeAmbiguousBoundaryChange(original, oldText, newText, candidate, relPath);
+                if (refusal is not null)
+                    ambiguous.Add(refusal);
+            }
+
+            if (ambiguous.Count > 0)
+            {
+                refusals.AddRange(ambiguous);
+                continue;
+            }
 
             if (StartsWithLineBreak(oldText) && !replacementSuppliedLeadingBreak)
             {
@@ -482,10 +502,10 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
     // character. When old_text itself begins with whitespace (typical snippet indentation), the
     // original line's leading indent would survive the replacement and stack with the indent
     // inside new_text (+4/+8/+12 drift). Extend the span left over the same-line indent run —
-    // plus one preceding newline — but only when old_text starts with a newline AND new_text
-    // supplies a line break back. Consuming a line break that the replacement does not restore
-    // silently merges the previous line with the replacement and leaves an orphan CR in CRLF
-    // files (defect measured in the field on 2026-10-07).
+    // plus one preceding newline, and only when both old_text and new_text start with a line break
+    // so that the break stays symmetric. The asymmetric shape never reaches this method: the tolerant
+    // path refuses it as an ambiguous boundary before the span is used — see
+    // DescribeAmbiguousBoundaryChange (P0-2, defect measured in the field on 2026-10-07).
     private static List<TextMatch> ExpandLeadingWhitespace(
         string original, string oldText, string newText, List<TextMatch> matches)
     {
@@ -518,6 +538,64 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         => text.Length > 0 && IsLineBreakChar(text[0]);
 
     private static bool IsLineBreakChar(char c) => c == '\n' || c == '\r';
+
+    private static bool EndsWithLineBreak(string text)
+        => text.Length > 0 && IsLineBreakChar(text[^1]);
+
+    // Counts logical line breaks: \r\n counts once, a lone \r or \n counts once.
+    private static int CountLineBreaks(string text)
+    {
+        var count = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\r')
+            {
+                count++;
+                if (i + 1 < text.Length && text[i + 1] == '\n')
+                    i++;
+            }
+            else if (text[i] == '\n')
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    // P0-2: only an exact match carries its boundary literally. Every tolerant strategy normalizes
+    // whitespace away while searching, so the span it returns is a guess about where the replacement
+    // may start and end: a space in old_text can stand for a line break in the file. When old_text and
+    // new_text disagree about the line-break shape of that boundary, or when the guessed span covers
+    // line breaks old_text does not account for, the write is refused instead of guessed — the caller
+    // gets ambiguous_boundary_change and the file keeps its bytes.
+    private static string? DescribeAmbiguousBoundaryChange(
+        string original, string oldText, string newText, TextMatch match, string relPath)
+    {
+        if (match.Strategy.Equals("exact", StringComparison.Ordinal))
+            return null;
+
+        var span = original.Substring(match.Index, match.Length);
+        var oldLeading = StartsWithLineBreak(oldText);
+        var newLeading = StartsWithLineBreak(newText);
+        var oldTrailing = EndsWithLineBreak(oldText);
+        var newTrailing = EndsWithLineBreak(newText);
+        var oldBreaks = CountLineBreaks(oldText);
+
+        // A span may only start with a line break when it had to consume one to reach the anchored
+        // content; that single extra break is the only expansion the tolerant path is allowed.
+        var expectedBreaks = oldBreaks + (StartsWithLineBreak(span) ? 1 : 0);
+        var spanBreaks = CountLineBreaks(span);
+        if (oldLeading == newLeading && oldTrailing == newTrailing && spanBreaks == expectedBreaks)
+            return null;
+
+        return $"ambiguous_boundary_change: old_string matched in {relPath} using {match.Strategy} " +
+               $"matching at L{GetLineNumberOf(original, match.Index)}, but the line-break boundary of " +
+               $"that match is ambiguous (old_text breaks={oldBreaks}, matched span breaks={spanBreaks}, " +
+               $"leading break old/new={oldLeading}/{newLeading}, trailing break old/new=" +
+               $"{oldTrailing}/{newTrailing}). Nothing was written. Give the boundary explicitly: match " +
+               "the text exactly (including its line breaks), or repeat the same line breaks in new_text.";
+    }
 
     // A span that begins on the LF half of a CRLF pair would split the pair in two and leave an
     // orphan CR behind, so widen it to cover the whole line break.
