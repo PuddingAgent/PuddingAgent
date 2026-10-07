@@ -231,3 +231,72 @@ Known limitation of the patterns: `\bToolApproval\b` is a **word-boundary** matc
 (`ToolApprovalPortalService`) and the snake-case scene key `tool_approval` do **not** match. The check
 catches bare-word mentions, not every dependency on the approval domain - widen it deliberately if that
 matters (the adapter slice relies on this: it wraps the approval classifier on purpose).
+
+## Coverage: the invocation that actually produces a report (measured 2026-10-07)
+
+> **Why this section exists**: `Directory.Build.targets` declares `CollectCoverage=true`,
+> `CoverletOutputFormat=cobertura,json` and `CoverletOutput=$(MSBuildProjectDirectory)/TestResults/`,
+> and both `coverlet.collector` and `coverlet.msbuild` are restored. Those settings are **not
+> sufficient** - measured on 2026-10-07, the coverlet.msbuild path never runs.
+
+```
+dotnet test Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj -c Debug ^
+  --collect:"XPlat Code Coverage" --results-directory <outputDir>
+```
+
+Measured evidence (same project, same machine, same day):
+
+| invocation | coverage artifact |
+|---|---|
+| `dotnet test <proj>` (props already say `CollectCoverage=true`) | **none** (no `coverage.cobertura.xml`, no `coverage.json`, no `TestResults/`) |
+| `dotnet test <proj> -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura -v:n` | **none**; `GenerateCoverageResultAfterTest` appears **0 times** in 1121 verbose log lines |
+| `dotnet test <proj> --collect:"XPlat Code Coverage" --results-directory <dir>` | **`coverage.cobertura.xml` (25,285,961 B)** |
+
+So the working mechanism in this repo is `coverlet.collector` + `--collect`, **not** the msbuild properties.
+Root cause of the msbuild path not running is **not established** (candidates: interaction with
+`Microsoft.Testing.Platform 2.0.1` / `MSTest 4.0.1` / `Microsoft.NET.Test.Sdk 18.0.0`, property evaluation
+order, `dotnet test` execution path). Do not assume it works just because the props and packages are present.
+
+**Reading the report**: with no `--include`/`--exclude` filter the report aggregates every *loaded*
+assembly, including ones the suite never exercises. Measured 2026-10-07 on `PuddingMemoryEngineTests`:
+
+| package | line-rate | branch-rate |
+|---|---|---|
+| `PuddingMemoryEngine` | 0.6112 | 0.4545 |
+| `PuddingCore` | 0.0682 | 0.0477 |
+| `PuddingRuntime` | 0.0572 | 0.0397 |
+| `PuddingFullTextIndex` | 0.0127 | 0.0079 |
+| `PuddingCodeIndex` / `PuddingCodeIntelligence` / `PuddingPathFiltering` | 0 | 0 |
+
+Aggregate root value was `line-rate=0.0883` / `branch-rate=0.06` (10533/119222 lines) - **do not use the
+aggregate as a gate metric**; take the value per package, and freeze the invocation (including filters)
+before comparing two runs.
+
+## Environment note: `pwsh` does not exist on the Windows dev host (measured 2026-10-07)
+
+Every recipe in this README (and the usage comments inside the scripts) is written as
+`pwsh -File TestScripts\...`. Measured on this host on 2026-10-07:
+
+```
+Get-Command pwsh   -> not found
+where.exe pwsh     -> (empty)
+$PSVersionTable    -> 5.1.26100.9444, PSEdition = Desktop
+```
+
+So **use `powershell -File ...` when driving these scripts on this Windows box**; keep `pwsh` for
+CI/Linux runners where it is the PowerShell name.
+
+**Consequence inside the gate itself** - `test-pudding-suite-gates.ps1:516`:
+
+```powershell
+$pwshExe = Join-Path $PSHOME $(if ($IsWindows) { 'pwsh.exe' } else { 'pwsh' })
+& $pwshExe -NoProfile -File $operatorsGatePath -RepoRoot $repoRoot
+```
+
+`$IsWindows` is an automatic variable **only in PowerShell 6+**; under 5.1 it is `$null`, so this
+resolves to `$PSHOME\pwsh` (`...\WindowsPowerShell\v1.0\pwsh`) - a path that does not exist, because
+`pwsh` is not installed at all. **The OperatorsGate step therefore cannot be launched on this host.**
+
+This is reported, **not patched**: pointing the launcher at `powershell.exe` would change which engine
+runs a gate (and the exit-code-reliability measurements above were taken under `pwsh`), so the switch
+needs an explicit decision from the gate's owner rather than a silent edit.
