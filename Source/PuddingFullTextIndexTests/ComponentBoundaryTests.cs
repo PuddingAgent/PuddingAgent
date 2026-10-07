@@ -577,9 +577,19 @@ public sealed class ComponentBoundaryTests
         var engineSource = SanitizeSource(ReadComponentSource(EngineSourceRelativePath), removeStringLiterals: false);
 
         var writer = SliceMethod(engineSource, "private async Task WriteLastIndexedAsync(");
-        var reader = SliceMethod(engineSource, "private async Task<LastIndexedStamp?> ReadLastIndexedAsync(");
+        // A23（2026-10-08）：读取侧的 JSON 解析已从 ReadLastIndexedAsync 收敛到**单一真源**
+        // TryParseLastIndexed（异步增量路径与同步新鲜度探针共用同一处，避免同一份形状两处解析）。
+        // ⇒ 本断言的检视目标随之改为该真源，**并加强**：ReadLastIndexedAsync 体内不得再残留 GetProperty。
+        // 加强的理由：若允许第二处解析，则「读到的新鲜度」与「引擎实际用的增量基准」会静默分叉，
+        // 而旧断言只会看 ReadLastIndexedAsync —— 真源里的第三个键反而抓不到（假绿）。
+        var reader = SliceMethod(engineSource, "private static LastIndexedStamp? TryParseLastIndexed(");
+        var readerCaller = SliceMethod(engineSource, "private async Task<LastIndexedStamp?> ReadLastIndexedAsync(");
         Assert.IsTrue(writer.Length > 0, "control: 必须能从磁盘切出 .last_indexed 的写入方法");
-        Assert.IsTrue(reader.Length > 0, "control: 必须能从磁盘切出 .last_indexed 的读取方法");
+        Assert.IsTrue(reader.Length > 0, "control: 必须能从磁盘切出 .last_indexed 的解析真源（TryParseLastIndexed）");
+        Assert.IsTrue(readerCaller.Length > 0, "control: 必须能从磁盘切出 .last_indexed 的异步调用方（ReadLastIndexedAsync）");
+        Assert.IsFalse(
+            Regex.IsMatch(readerCaller, @"GetProperty\("),
+            "ReadLastIndexedAsync 体内不得再出现 GetProperty —— 解析必须只经 TryParseLastIndexed 这一处真源");
 
         var serializedObject = Regex.Match(writer, @"JsonSerializer\.Serialize\(new\s*\{([^}]*)\}\)");
         Assert.IsTrue(serializedObject.Success, "control: 写入方法里必须存在 `JsonSerializer.Serialize(new { ... })`");
