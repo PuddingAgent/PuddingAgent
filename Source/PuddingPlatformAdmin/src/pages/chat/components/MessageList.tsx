@@ -38,6 +38,7 @@ import type {
   TimelineItem,
 } from '../types';
 import { inboundDebug } from '../utils/inboundDebug';
+import { buildChatDiagnosticCopyPayload } from '../utils/chatDiagnostics';
 import { getExecutionFlowRenderWeight } from '../viewport/executionFlowRenderWeight';
 import { buildVirtualMessageItems } from '../viewport/messageProjection';
 import type { ScrollIntent, VirtualMessageItem } from '../viewport/types';
@@ -1437,23 +1438,19 @@ const MessageList: React.FC<MessageListProps> = ({
                   size="small"
                   type="link"
                   onClick={() => {
-                    const payload = {
-                      timestamp: new Date().toISOString(),
-                      userAgent: navigator.userAgent,
-                      url: window.location.href,
+                    // 复制的是「完整现场」：优先用后端给出的 reportText（含时间/errorId/traceId/
+                    // 因果码/阶段/证据/日志定位提示），拿不到再本地拼一份同样可定位的文本
+                    // （可诊断基础设施设计 §12）。
+                    const payload = buildChatDiagnosticCopyPayload({
                       sessionId: sessionId ?? null,
                       agentId: agentId ?? null,
-                      turnsCount: turns.length,
-                      lastTurnStatus:
-                        turns.length > 0
-                          ? ((turns[turns.length - 1] as { status?: string })
-                              .status ?? null)
-                          : null,
-                      error,
+                      errorMessage: error ?? null,
+                      userAgent: navigator.userAgent,
+                      url: window.location.href,
                       recentPerfEvents: getPerfEvents().slice(-5),
-                    };
+                    });
                     navigator.clipboard
-                      .writeText(JSON.stringify(payload, null, 2))
+                      .writeText(payload.text)
                       .then(() => {
                         setDiagCopied(true);
                         setTimeout(() => setDiagCopied(false), 2000);

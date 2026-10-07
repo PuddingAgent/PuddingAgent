@@ -81,6 +81,21 @@ export function formatChatErrorDiagnostic(
 
   const message =
     readDiagnosticText(event, 'message', 'error', 'reply') ?? '请求处理失败。';
+  // 后端契约（可诊断基础设施设计 §12）：标题 + 大概原因 + 稳定因果码 + 阶段 + 处置建议。
+  const causeTitle = readDiagnosticText(event, 'causeTitle', 'cause_title');
+  const causeShortCause = readDiagnosticText(
+    event,
+    'causeShortCause',
+    'cause_short_cause',
+  );
+  const causeCode = readDiagnosticText(event, 'causeCode', 'cause_code');
+  const causePhase = readDiagnosticText(event, 'causePhase', 'cause_phase');
+  const retryable = readDiagnosticText(event, 'retryable');
+  const remediationHint = readDiagnosticText(
+    event,
+    'remediationHint',
+    'remediation_hint',
+  );
   const sessionId =
     readDiagnosticText(event, 'sessionId', 'session_id') ??
     fallback.sessionId ??
@@ -98,6 +113,9 @@ export function formatChatErrorDiagnostic(
     ['Error ID', readDiagnosticText(event, 'errorId', 'error_id')],
     ['Location', readDiagnosticText(event, 'location')],
     ['Error Code', readDiagnosticText(event, 'errorCode', 'error_code')],
+    ['因果码', causeCode],
+    ['失败阶段', causePhase],
+    ['可重试', retryable === undefined ? undefined : retryable === 'true' ? '是' : '否'],
     [
       'Round',
       round ? (maxRounds ? `${round}/${maxRounds}` : round) : undefined,
@@ -119,9 +137,101 @@ export function formatChatErrorDiagnostic(
   return [
     '## 请求失败',
     '',
+    // 第一眼就要能认出「哪一类错误」，而不是一行英文异常。
+    ...(causeTitle ? [`**${causeTitle}**`, ''] : []),
+    ...(causeShortCause ? [causeShortCause, ''] : []),
     message,
     ...(lookupLines.length > 0 ? ['', '### 诊断信息', ...lookupLines] : []),
+    ...(remediationHint ? ['', `- 处置建议: ${remediationHint}`] : []),
   ].join('\n');
+}
+
+/**
+ * 「复制诊断信息」的载荷（可诊断基础设施设计 §12）。
+ *
+ * 优先使用后端给出的完整现场（`reportText` / `reportJson`，含时间、errorId、traceId、因果码、
+ * 阶段、证据与日志定位提示）；后端未提供时，用本地可见字段拼出同样可定位的文本，
+ * 保证用户点「复制」拿到的永远是**能贴给维护者的完整信息**，而不是一行英文异常。
+ */
+export function buildChatDiagnosticCopyPayload(input: {
+  event?: ChatErrorDiagnosticEvent | null;
+  sessionId?: string | null;
+  turnId?: string | null;
+  agentId?: string | null;
+  errorMessage?: string | null;
+  userAgent?: string | null;
+  url?: string | null;
+  recentPerfEvents?: unknown[];
+}): { text: string; json: string } {
+  const event = input.event ?? {};
+  const reply = readDiagnosticText(event, 'reply');
+  const backendReport =
+    readDiagnosticText(event, 'reportText', 'report_text') ??
+    (reply && looksLikePersistedErrorDiagnostic(reply) ? reply : undefined);
+  const backendJson = readDiagnosticText(event, 'reportJson', 'report_json');
+  const evidence = readDiagnosticText(
+    event,
+    'errorEvidence',
+    'error_evidence',
+    'evidenceJson',
+    'evidence_json',
+  );
+
+  const structured = {
+    exportedAt: new Date().toISOString(),
+    reportVersion:
+      readDiagnosticText(event, 'errorReportVersion', 'reportVersion') ?? null,
+    sessionId: input.sessionId ?? readDiagnosticText(event, 'sessionId') ?? null,
+    turnId: input.turnId ?? readDiagnosticText(event, 'turnId') ?? null,
+    agentId: input.agentId ?? null,
+    causeCode:
+      readDiagnosticText(event, 'causeCode', 'cause_code') ?? null,
+    causeTitle:
+      readDiagnosticText(event, 'causeTitle', 'cause_title') ?? null,
+    causeShortCause:
+      readDiagnosticText(event, 'causeShortCause', 'cause_short_cause') ?? null,
+    causePhase:
+      readDiagnosticText(event, 'causePhase', 'cause_phase') ?? null,
+    remediationHint:
+      readDiagnosticText(event, 'remediationHint', 'remediation_hint') ?? null,
+    errorId: readDiagnosticText(event, 'errorId', 'error_id') ?? null,
+    traceId: readDiagnosticText(event, 'traceId', 'trace_id') ?? null,
+    errorCode: readDiagnosticText(event, 'errorCode', 'error_code') ?? null,
+    timestampUtc:
+      readDiagnosticText(event, 'timestampUtc', 'timestamp_utc') ?? null,
+    errorMessage:
+      input.errorMessage ??
+      readDiagnosticText(event, 'errorMessage', 'message') ??
+      null,
+    evidence: evidence ?? null,
+    userAgent: input.userAgent ?? null,
+    url: input.url ?? null,
+    recentPerfEvents: input.recentPerfEvents ?? [],
+  };
+
+  const text =
+    backendReport ??
+    [
+      '== Pudding 错误报告（前端导出） ==',
+      `导出时间(本地): ${structured.exportedAt}`,
+      `标题: ${structured.causeTitle ?? '(未提供)'}`,
+      `大概原因: ${structured.causeShortCause ?? '(未提供)'}`,
+      `因果码: ${structured.causeCode ?? '(未提供)'}`,
+      `失败阶段: ${structured.causePhase ?? '(未提供)'}`,
+      `errorId: ${structured.errorId ?? '(未提供)'}`,
+      `traceId: ${structured.traceId ?? '(未提供)'}`,
+      `会话 / 回合: ${structured.sessionId ?? '(未提供)'} / ${structured.turnId ?? '(未提供)'}`,
+      `Error Code: ${structured.errorCode ?? '(未提供)'}`,
+      `时间(UTC): ${structured.timestampUtc ?? '(未提供)'}`,
+      `原始消息: ${structured.errorMessage ?? '(未提供)'}`,
+      ...(structured.remediationHint ? [`处置建议: ${structured.remediationHint}`] : []),
+      ...(structured.evidence ? ['', '-- 证据 --', structured.evidence] : []),
+    ].join('\n');
+
+  return {
+    text,
+    json: backendJson ?? JSON.stringify(structured, null, 2),
+  };
 }
 
 export function toChatDiagValue(value: unknown, depth = 0): unknown {
