@@ -21,7 +21,7 @@ namespace PuddingFullTextIndex.Infrastructure.Search;
 /// 每个目录对应一个独立的 Lucene 索引目录。
 /// 使用 jieba 分词（JiebaAnalyzer）对内容做索引和搜索。
 /// </summary>
-public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
+public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIndexFreshnessProbe, IDisposable
 {
     private static readonly LuceneVersion MatchVersion = LuceneVersion.LUCENE_48;
 
@@ -245,6 +245,26 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
         try
         {
             var json = await File.ReadAllTextAsync(path, ct);
+            return TryParseLastIndexed(json);
+        }
+        catch
+        {
+            return null; // 损坏的 .last_indexed → 视为无
+        }
+    }
+
+    /// <summary>
+    /// <c>.last_indexed</c> 的**协议解析真源**（A23 抽出）：异步增量路径与新增的同步新鲜度探针共用同一处，
+    /// 避免同一份 JSON 形状出现两处解析（形状一旦分叉，「读到的新鲜度」与「引擎实际用的增量基准」会悄悄不一致）。
+    /// </summary>
+    /// <remarks>
+    /// 解析失败 / 形状不符一律返回 <c>null</c>（调用方一律当作<b>读不出</b>，不得伪报为时间）。
+    /// 与抽出前的行为逐字等价：原实现同样把整个解析块包在 <c>catch</c> 里返回 <c>null</c>。
+    /// </remarks>
+    private static LastIndexedStamp? TryParseLastIndexed(string json)
+    {
+        try
+        {
             using var doc = JsonDocument.Parse(json);
             var t = doc.RootElement.GetProperty("t").GetDateTime();
             var p = doc.RootElement.GetProperty("p").GetString() ?? "";
@@ -252,7 +272,7 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
         }
         catch
         {
-            return null; // 损坏的 .last_indexed → 视为无
+            return null; // 损坏 / 形状不符的 .last_indexed → 视为无
         }
     }
 
@@ -729,6 +749,63 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
             // 但本探针不把「读不出」与「确实是 0 文档」合并成 false，因为供给的回归闸门必须区分两者。
             return new IndexDocumentProbe(Exists: true, Documents: null);
         }
+    }
+
+    /// <summary>
+    /// 新鲜度探针（A23）：上报「该 scope 索引的上次扫描时刻 + 该 scope <b>自己的</b> live 索引目录 mtime」。
+    /// <para>
+    /// <b>用途</b>：调用方（如 <c>search_grep</c> 的 index 后端）在<b>命中 0 条</b>时能区分「索引里真的没有」
+    /// 与「索引本身陈旧」—— 陈旧索引的 0 命中<b>不得</b>被读成「语料里不存在」，这是假否定防线的一部分。
+    /// </para>
+    /// <para>
+    /// <b>只读且不碰 Lucene</b>：<b>不</b>打开 reader（不占文件句柄、不影响 Windows 下目录 Move/Delete），
+    /// 只读 <c>.last_indexed</c> 与目录 mtime；路径经 <see cref="GetIndexDirectoryPath"/>（命名哈希单一真源）。
+    /// 三态见 <see cref="FullTextIndexFreshnessState"/>。
+    /// </para>
+    /// </summary>
+    FullTextIndexFreshness IFullTextIndexFreshnessProbe.ProbeFreshness(string corpusRootPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(corpusRootPath);
+        var indexDir = GetIndexDirectoryPath(corpusRootPath);
+
+        if (!Directory.Exists(indexDir))
+            return new FullTextIndexFreshness(FullTextIndexFreshnessState.Missing, null, null, null);
+
+        // 目录 mtime：读不到就如实 null（不伪报）；方向由调用方裁决
+        // （IndexPrebuildFreshness 的既有方向是「读不到 ⇒ 重置纪元 ⇒ 重建」）。
+        DateTimeOffset? dirMtime;
+        try
+        {
+            dirMtime = new DateTimeOffset(Directory.GetLastWriteTimeUtc(indexDir));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            dirMtime = null;
+        }
+
+        var stampPath = GetLastIndexedFilePath(indexDir);
+        if (!File.Exists(stampPath))
+            return new FullTextIndexFreshness(FullTextIndexFreshnessState.StampUnreadable, null, null, dirMtime);
+
+        LastIndexedStamp? stamp;
+        try
+        {
+            stamp = TryParseLastIndexed(File.ReadAllText(stampPath));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            stamp = null;
+        }
+
+        return stamp is { } s
+            ? new FullTextIndexFreshness(
+                FullTextIndexFreshnessState.Available,
+                // 写入方是 DateTime.UtcNow（JSON 带 Z）⇒ 显式钉住 Utc：
+                // 若 Kind 意外为 Unspecified，DateTimeOffset 会按本地时区解释，把新鲜度整体平移 8 小时。
+                new DateTimeOffset(DateTime.SpecifyKind(s.Timestamp, DateTimeKind.Utc)),
+                s.PatternHash,
+                dirMtime)
+            : new FullTextIndexFreshness(FullTextIndexFreshnessState.StampUnreadable, null, null, dirMtime);
     }
 
 
