@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-REPO = Path(r"E:\github\AgentNetworkPlan\PuddingAgent")
+REPO = Path(__file__).resolve().parents[1]
 PROJECTS = {
     "PuddingPlatform": REPO / "Source" / "PuddingPlatform",
 }

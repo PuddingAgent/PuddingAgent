@@ -11,7 +11,9 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEV_UP = ROOT / "dev-up.py"
+# 本体已归位到 Tools/Dev/dev-up.py（2026-10-02）；根目录 dev-up.py 只是转发 shim，
+# 用 spec_from_file_location 加载它会以 run_name="__main__" 执行 runpy，导入即跑 main()。
+DEV_UP = ROOT / "Tools" / "Dev" / "dev-up.py"
 
 
 def load_dev_up_module():
@@ -340,7 +342,7 @@ class DevUpSupervisorTests(unittest.TestCase):
 
                 parent_lookup.return_value = (
                     456,
-                    r"python E:\github\AgentNetworkPlan\PuddingAgent\dev-up.py",
+                    f"python {DEV_UP}",
                 )
                 self.assertEqual(456, dev_up.find_legacy_supervisor_pid())
 
