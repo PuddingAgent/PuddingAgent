@@ -729,3 +729,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\run-gates.ps1 -R
 修法：只匹配**标签前缀**（`PROJECT_COUNT` / `EDGE_COUNT`），不要求紧跟等号。
 
 > 📌 **教训**：**门禁自己的 `PASS` 也必须带分母。** 判定绿不绿只是"结论"，"看过多少"才是"证据"；两者不同时出现，绿色就是不可信的。
+
+---
+
+## 「PASS 必须带分母」已从**文档规则**升为**机检**（2026-10-08）
+
+上一轮发现：**分母静默缺失**会让一个"其实什么都没扫"的 `PASS` 看起来完全正常。文档里写规则没用 —— 它必须能让**自己**失败。
+
+### 机检设计
+
+| 机制 | 行为 |
+|---|---|
+`Get-GateScope` | 分母提取抽成**具名函数**（可被控制验证），识别 `FILES=` / `PROJECT_COUNT` / `EDGE_COUNT` 前缀 |
+扫描模式 | 某个门禁**退出 0 但没有任何分母行** ⇒ 打印 `scope: !! NO DENOMINATOR LINE RECOGNISED !!`、计入 **`DENOM_MISSING`**，并把它**升为仪器失败（exit 3）** —— 因为这样的 `PASS` 与"什么都没扫"**无法区分** |
+`-SelfTest` | **豁免**（门禁的自检本身不产生文件计数），但**检测器自己**有三项控制：`DENOM_CTRL_EMPTY` / `DENOM_CTRL_SPACED` / `DENOM_CTRL_PLAIN` ⇒ 检测器不会悄悄失效 |
+
+### 四组实测（`PS 5.1.26100.9444` · `RG_BYTES=11147` · `RG_NONASCII=0`）
+
+| 组 | 输入 | 结果 |
+|---|---|---|
+**A** 默认扫描 | 真实门禁 | `EXIT=1` · `DENOM_MISSING=0` · 三门禁分母全在（`PROJECT_COUNT = 81` / `EDGE_COUNT = 131` / `FILES=22` / `FILES=22`） |
+**B** `-RepoWide` | 真实门禁 | `EXIT=1` · `DENOM_MISSING=0` · `FILES=28`（C-5 FAIL / C-6 PASS） |
+**C** `-SelfTest` | 三门禁自检 | `EXIT=0` · **`DENOM_CTRL_EMPTY=True DENOM_CTRL_SPACED=True DENOM_CTRL_PLAIN=True`** |
+**D** ⭐**负向控制** | fixture：3 个只 `exit 0`、什么都不打印的**静默门禁** | **`FIXTURE_EXIT=3`** · **3 条 `!! NO DENOMINATOR LINE RECOGNISED !!`** · **`DENOM_MISSING=3`** · `AGGREGATE_EXIT=3` · `RESULT: FAIL` |
+
+> ⭐ **D 组是关键**：三个门禁**都退出 0（PASS）**，聚合层**仍然拒绝变绿**（exit 3）。
+> 这正是上一轮那个假 `PASS` 的**复发疫苗** —— 而且它现在有**控制**，不靠"记得去看"。
+
+> 📌 **规则**：**门禁自己的 `PASS` 也必须带分母。** 绿不绿是「结论」，「看过多少」才是「证据」；两者不同时出现，绿色就不可信 —— 这条现在是**机检**，不是文档里的善意提醒。

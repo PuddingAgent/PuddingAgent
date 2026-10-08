@@ -32,6 +32,12 @@
     echoes each gate's own denominator line (FILES= / PROJECT_COUNT=). A gate that PASSes
     because it scanned nothing must be visible as such, never hidden behind a green verdict.
 
+    In scan mode that contract is also ENFORCED: a gate that exits PASS while reporting no
+    denominator line is promoted to an instrument failure (exit 3), because such a PASS is
+    indistinguishable from "it scanned nothing". Self-test mode is exempt, since the gates'
+    controls intentionally produce no file counts. The detector itself has controls which run
+    under -SelfTest, so it cannot rot silently.
+
 .PARAMETER SelfTest
     Run each gate's own -SelfTest instead of its real scan. All controls are in-memory
     and write no files. This is the runner's own meta-check: it answers "are the gates
@@ -61,7 +67,8 @@
 .EXIT CODES
     0 = every registered gate reported PASS
     1 = at least one gate reported FAIL
-    3 = no gate FAILed, but at least one gate failed closed (broken instrument)
+    3 = no gate FAILed, but a gate failed closed (broken instrument), or a PASS carried no
+        denominator line
     4 = no gate FAILed, but at least one gate's SELF-TEST did not detect the planted
         defect (expected mainly in -SelfTest mode)
   255 = the runner could not find or start a registered gate script
@@ -119,6 +126,12 @@ function Test-Skipped {
     return $false
 }
 
+function Get-GateScope {
+    param([object[]]$Output)
+    if ($null -eq $Output) { return @() }
+    return @($Output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_.StartsWith('FILES=') -or $_.StartsWith('PROJECT_COUNT') -or $_.StartsWith('EDGE_COUNT') })
+}
+
 Write-Output ('RUNNER = ' + $MyInvocation.MyCommand.Name)
 Write-Output ('MODE   = ' + $(if ($SelfTest) { 'SELFTEST (each gate runs its own controls)' } else { 'SCAN (each gate runs its real check)' }))
 Write-Output ('ENGINE = ' + $PSVersionTable.PSVersion.ToString())
@@ -160,7 +173,8 @@ foreach ($g in $gates) {
 
     Write-Output ('    exit={0}  {1}' -f $code, $verdict)
 
-    $scope = @($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_.StartsWith('FILES=') -or $_.StartsWith('PROJECT_COUNT') -or $_.StartsWith('EDGE_COUNT') })
+    $scope = Get-GateScope -Output $output
+    if ($scope.Count -eq 0 -and -not $SelfTest) { Write-Output '    scope: !! NO DENOMINATOR LINE RECOGNISED !!' }
     foreach ($s in $scope) { Write-Output ('    scope: ' + $s) }
 
     $tail = @($output | ForEach-Object { $_.ToString() })
@@ -169,6 +183,18 @@ foreach ($g in $gates) {
 
     Write-Output ''
     [void]$results.Add((New-Object PSObject -Property @{ Id = $g.Id; Script = $g.Script; ExitCode = $code; Skipped = $false; Scope = $scope }))
+}
+
+if ($SelfTest) {
+    $cEmpty  = @(Get-GateScope -Output @('hello', 'world'))
+    $cSpaced = @(Get-GateScope -Output @('  PROJECT_COUNT = 81  '))
+    $cPlain  = @(Get-GateScope -Output @('FILES=22 BOM=4'))
+    Write-Output ('DENOM_CTRL_EMPTY={0} DENOM_CTRL_SPACED={1} DENOM_CTRL_PLAIN={2}' -f ($cEmpty.Count -eq 0), ($cSpaced.Count -eq 1), ($cPlain.Count -eq 1))
+    if ($cEmpty.Count -ne 0 -or $cSpaced.Count -ne 1 -or $cPlain.Count -ne 1) {
+        Write-Output 'RESULT: SELFTEST FAIL (denominator detector did not classify its own controls)'
+        exit $EXIT_SELFTEST
+    }
+    Write-Output ''
 }
 
 Write-Output '=== SUMMARY ==='
@@ -185,6 +211,14 @@ foreach ($r in $results) {
 
 $ran = @($results | Where-Object { -not $_.Skipped })
 $codes = @($ran | ForEach-Object { $_.ExitCode })
+
+# A PASS carrying no denominator cannot be told apart from "it scanned nothing". That is
+# the exact false-PASS class this suite exists to eliminate, so it is not allowed to stay
+# invisible: in scan mode it is counted and promoted to an instrument failure.
+$denomMissing = 0
+if (-not $SelfTest) {
+    $denomMissing = @($ran | Where-Object { $_.ExitCode -eq $EXIT_PASS -and @($_.Scope).Count -eq 0 }).Count
+}
 
 $aggregate = $EXIT_PASS
 if ($missing -gt 0) {
@@ -204,8 +238,13 @@ else {
     if ($other.Count -gt 0) { $aggregate = $EXIT_FAIL }
 }
 
+if (-not $SelfTest -and $denomMissing -gt 0 -and $aggregate -eq $EXIT_PASS) {
+    $aggregate = $EXIT_INSTRUMENT
+}
+
 Write-Output ''
 Write-Output ('GATES_RUN={0} SKIPPED={1} MISSING={2}' -f $ran.Count, (@($results | Where-Object { $_.Skipped }).Count), $missing)
+Write-Output ('DENOM_MISSING={0}' -f $denomMissing)
 Write-Output ('AGGREGATE_EXIT={0}' -f $aggregate)
 if ($aggregate -eq $EXIT_PASS) {
     Write-Output 'RESULT: PASS'
