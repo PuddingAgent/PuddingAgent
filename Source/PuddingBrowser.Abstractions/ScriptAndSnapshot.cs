@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingBrowser.Abstractions;
 
@@ -41,6 +41,12 @@ public sealed record SnapshotOptions
 
     /// <summary>与上次读取的修订标识比较（§145）；由**持有基线的那一侧**解释。</summary>
     public string? SinceRevision { get; init; }
+
+    /// <summary>
+    /// 是否提取**正文语义块**（设计方案 §6.1 的 <c>mode=text</c>）：驱动只回答「哪块是正文」，
+    /// markdown 组装在 C# 侧（纯函数、可完整验证）。
+    /// </summary>
+    public bool IncludeContentBlocks { get; init; }
 }
 
 public sealed record PageSnapshot
@@ -59,6 +65,9 @@ public sealed record PageSnapshot
 
     /// <summary>行级差异；形状在 Abstractions 里保持中立（本组件不得引用 Contracts）。</summary>
     public TextDiff? Diff { get; init; }
+
+    /// <summary>正文语义块（每行一个 JSON 对象）；未请求时为 <c>null</c>。</summary>
+    public string? ContentBlocks { get; init; }
 }
 
 /// <summary>

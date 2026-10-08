@@ -86,7 +86,8 @@ internal static partial class WebView2DomClient
             normalized.MaxNodes,
             normalized.MaxTextLength,
             normalized.MaxDepth,
-            scopeRef = options.ScopeRef
+            scopeRef = options.ScopeRef,
+            includeContentBlocks = options.IncludeContentBlocks
         }, ct);
 
         EnsureSuccess(result.Ok, result.Code, result.Message);
@@ -96,6 +97,7 @@ internal static partial class WebView2DomClient
             DomText = result.DomText,
             AccessibilityTree = result.AccessibilityTree,
             Html = result.Html,
+            ContentBlocks = result.ContentBlocks,
             Truncated = result.Truncated,
             NodeCount = result.NodeCount
         };
@@ -230,6 +232,9 @@ internal static partial class WebView2DomClient
         public string? Html { get; init; }
         public bool Truncated { get; init; }
         public int NodeCount { get; init; }
+
+        /// <summary>正文语义块（每行一个 JSON 对象）；由 <c>ArticleMarkdown</c> 组装成 markdown。</summary>
+        public string? ContentBlocks { get; init; }
     }
 
     private record ScriptResult
@@ -379,8 +384,91 @@ internal static partial class WebView2DomClient
     target.push(line);
     textLength += line.length + 1;
   };
-  const visit = (el, depth, framePrefix) => {
-    if (truncated || !el || depth > input.maxDepth) { if (depth > input.maxDepth) truncated = true; return; }
+  // 正文语义块提取（设计 §6.1 mode=text）：**只回答"哪块是正文"**，markdown 由 C# 侧组装
+  // （那边的结构/预算/分页是纯函数，可被完整验证）。
+  // 顺序：任务明确选定的 scope > article > main > [role=main] > 普通块回退；
+  // 不写站点专用选择器；去导航/页脚噪声；表格/代码空白/链接目的地址都保留。
+  const extractBlocks = scopeRoot => {
+    const article = scopeRoot === document.documentElement
+      ? (document.querySelector('article') || document.querySelector('main')
+         || document.querySelector('[role=main]') || document.documentElement)
+      : scopeRoot;
+    const noise = el => {
+      const tag = el.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEMPLATE'
+          || tag === 'NAV' || tag === 'FOOTER' || tag === 'ASIDE') return true;
+      if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return true;
+      const role = el.getAttribute('role');
+      return role === 'navigation' || role === 'banner' || role === 'contentinfo';
+    };
+    // 行内内容：链接**带上目的地址**、行内代码带反引号、<br> 保留换行。
+    const inline = el => {
+      let out = '';
+      for (const node of el.childNodes) {
+        if (node.nodeType === 3) { out += node.nodeValue; continue; }
+        if (node.nodeType !== 1) continue;
+        if (noise(node)) continue;
+        const tag = node.tagName;
+        if (tag === 'BR') { out += '\n'; continue; }
+        if (tag === 'A' && node.getAttribute('href')) {
+          out += `[${normalize(node.innerText || node.textContent)}](${node.href})`; continue;
+        }
+        if (tag === 'CODE') { out += '`' + (node.textContent || '') + '`'; continue; }
+        out += inline(node);
+      }
+      return out;
+    };
+    const listDepth = el => {
+      let depth = 1;
+      for (let node = el.parentElement; node && node !== article; node = node.parentElement) {
+        if (node.tagName === 'UL' || node.tagName === 'OL') depth++;
+      }
+      return depth;
+    };
+    const blocks = [];
+    const push = value => { if (blocks.length < 5000) blocks.push(JSON.stringify(value)); };
+    const walk = el => {
+      for (const child of el.children) {
+        if (noise(child)) continue;
+        const tag = child.tagName;
+        if (/^H[1-6]$/.test(tag)) { push({k: tag.toLowerCase(), t: normalize(inline(child))}); continue; }
+        if (tag === 'P') { const t = normalize(inline(child)); if (t) push({k: 'p', t}); continue; }
+        if (tag === 'LI') {
+          const t = normalize(inline(child));
+          if (t) push({k: 'li', t, d: listDepth(child)});
+          walk(child); continue;
+        }
+        if (tag === 'PRE') { push({k: 'pre', t: child.textContent || ''}); continue; }
+        if (tag === 'BLOCKQUOTE') {
+          const t = normalize(inline(child));
+          if (t) push({k: 'quote', t});
+          walk(child); continue;
+        }
+        if (tag === 'HR') { push({k: 'hr'}); continue; }
+        if (tag === 'TABLE') {
+          push({k: 'table', r: [...child.querySelectorAll('tr')].slice(0, 200)
+            .map(tr => [...tr.children].map(td => normalize(td.innerText || td.textContent)))});
+          continue;
+        }
+        if (tag === 'UL' || tag === 'OL') { walk(child); continue; }
+        if (tag === 'A' && child.getAttribute('href')) {
+          push({k: 'a', t: normalize(child.innerText || child.textContent), h: child.href}); continue;
+        }
+        if (tag === 'DIV' || tag === 'SECTION' || tag === 'ARTICLE' || tag === 'MAIN'
+            || tag === 'HEADER' || tag === 'FIGURE' || tag === 'SPAN' || tag === 'BODY') {
+          walk(child); continue;
+        }
+        // 兜底：没有已知块级子元素 ⇒ 把它的文本当一个段落（**不丢内容**）。
+        if (!child.querySelector('p,li,h1,h2,h3,h4,h5,h6,pre,table,blockquote,ul,ol,div,section')) {
+          const t = normalize(inline(child));
+          if (t) push({k: 'p', t});
+        }
+      }
+    };
+    walk(article);
+    return blocks.join('\n');
+  };
+  const visit = (el, depth, framePrefix) => {    if (truncated || !el || depth > input.maxDepth) { if (depth > input.maxDepth) truncated = true; return; }
     if (++nodeCount > input.maxNodes) { truncated = true; return; }
     const isVisible = visible(el);
     if (input.includeHidden || isVisible) {
@@ -416,9 +504,14 @@ internal static partial class WebView2DomClient
     html = root.outerHTML || '';
     if (html.length > input.maxTextLength) { html = html.slice(0, input.maxTextLength); truncated = true; }
   }
+  // 正文语义块（设计 §6.1 mode=text）：驱动只负责"哪块是正文"，markdown 由 C# 侧组装。
+  // 顺序：任务明确选定的 scope > article > main > [role=main] > 普通块回退；
+  // **不写站点专用选择器**；去导航/页脚噪声；表格/代码空白/链接地址保持结构。
+  let contentBlocks = null;
+  if (input.includeContentBlocks && root) contentBlocks = extractBlocks(root);
   return { ok:true, domText: input.includeDom ? dom.join('\n') : null,
     accessibilityTree: input.includeAccessibilityTree ? ax.join('\n') : null,
-    html, truncated, nodeCount: Math.min(nodeCount, input.maxNodes) };
+    html, truncated, nodeCount: Math.min(nodeCount, input.maxNodes), contentBlocks};
 })()
 """;
 

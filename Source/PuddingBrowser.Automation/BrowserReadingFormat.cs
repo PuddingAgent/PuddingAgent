@@ -46,7 +46,14 @@ public sealed record BrowserReadingResult(
     int Bytes,
     bool Truncated,
     BrowserReadingTruncation Truncation,
-    int? NextCursor);
+    int? NextCursor)
+{
+    /// <summary>
+    /// 组装时被**如实计数**的丢弃块（非法行、空块、超出块数上限）。
+    /// 「无丢段」是可审计的：这个数不为 0 就说明有内容没进结果，而不是装作完整。
+    /// </summary>
+    public int SkippedBlocks { get; init; }
+}
 
 /// <summary>阅读模式与截断原因 ↔ 线名（fail closed：未登记值取红）。</summary>
 public static class BrowserReadingFormatWire

@@ -116,6 +116,33 @@ public sealed class WebView2DomClientTests
     }
 
     [Fact]
+    public void SnapshotScript_ExtractsArticleBlocks_WithoutSiteSpecificSelectors()
+    {
+        // 设计 §6.1（mode=text）：正文提取先用 article/main/语义地标，再普通块回退；
+        // **不写站点专用选择器**；表格/代码空白/链接目的地址保持结构。
+        // ⚠️ 脚本结构断言：真机提取效果需 WebView2.Smoke 复核。
+        var script = WebView2DomClient.SnapshotScript;
+
+        Assert.Contains("input.includeContentBlocks", script);
+        Assert.Contains("extractBlocks", script);
+
+        // 语义地标的优先顺序（且不出现任何站点专用选择器）。
+        Assert.Contains("querySelector('article')", script);
+        Assert.Contains("querySelector('main')", script);
+        Assert.Contains("querySelector('[role=main]')", script);
+
+        // 噪声去除与结构保真。
+        Assert.Contains("role === 'navigation'", script);
+        Assert.Contains("JSON.stringify", script);            // 一行一个 JSON 对象（转义天然正确）
+        Assert.Contains("child.textContent", script);          // pre 保留原始空白
+        Assert.Contains("node.href", script);                  // 链接目的地址
+
+        // 不得出现"整页 innerText 当正文"的写法（设计明确禁止）。
+        Assert.DoesNotContain("body.innerText", script);
+        Assert.DoesNotContain("documentElement.innerText", script);
+    }
+
+    [Fact]
     public void SnapshotScript_ScopesTheScan_AndNeverFallsBackToTheWholePage()
     {
         // 设计 §151：scope(locator/ref) —— 只读该元素子树。
