@@ -691,3 +691,41 @@ C-6 | `FILES=29 … CMD_MISSING=2 CMD_UNRESOLVED=2 PARAM_MISSING=0` · exit **1*
 上一轮记录过：过滤结果**等于总数**时要怀疑过滤器失效。
 这一轮是它的**镜像**：过滤器**生效**（29→28）会**立刻暴露一个真实缺陷**；而**不做修复前后对照**，就会把 `.venv` 的 2 条噪声当成"仓库里有 2 个坏脚本"报出去。
 ⇒ **任何"修好之后"的结论，必须配一次"修好之前"的实测**。
+
+---
+
+## `-RepoWide` 与「分母回显」：让**空扫描的 PASS** 无处可藏（2026-10-08）
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\run-gates.ps1 -RepoWide
+```
+
+`-RepoWide` 把**仓库根**而不是 `TestScripts` 作为扫描根传给接受脚本扫描根的门禁（C-5、C-6）；C-1/C-4 恒等分析整个仓库，不受影响。
+
+### 三模式实测（`PS 5.1.26100.9444` · `RG_BYTES=9261` · `RG_NONASCII=0`）
+
+| 模式 | SCOPE | C-1/C-4 | C-5 | C-6 | 聚合 |
+|---|---|---|---|---|---|
+默认扫描 | `TestScripts only` | PASS `PROJECT_COUNT = 81` · `EDGE_COUNT = 131` | **FAIL** `FILES=22 … UNRUNNABLE=5` | PASS `FILES=22 … CMD_MISSING=0` | **exit 1** |
+`-RepoWide` | `REPO-WIDE` | PASS `PROJECT_COUNT = 81` | **FAIL** `FILES=28 … UNRUNNABLE=5` | PASS `FILES=28 … CMD_MISSING=0` | **exit 1** |
+`-SelfTest` | （不适用） | PASS | PASS | PASS | **exit 0** |
+
+### ⚠️ 交付即被自己抓到的严重缺陷：`-RepoWide` 会**假 PASS**
+
+`-RepoWide` 的第一版**没有把 `-Recurse` 传给子门禁**。仓库根**不是扁平目录**，于是门禁只扫到根下**约 1 个** `.ps1`，**什么都没发现却报 `PASS`**：
+
+```
+=== 第一版 -RepoWide（有缺陷） ===
+  SCOPE  = REPO-WIDE (D:\CodeProject\PuddingAgent\PuddingAgent)
+  C-5              PASS       exit=0      ← 与同机独立实测的 C-5 仓库级 FAIL 直接矛盾
+```
+
+**这正是本套件一直想消灭的失败模式：绿色结论掩盖"其实什么都没看"。**
+⇒ 修法两条：① 接受扫描根的门禁**恒定带 `-Recurse`**；② 聚合层**回显每个门禁自己的分母**（`FILES=` / `PROJECT_COUNT`）。
+
+### ⚠️ 第二个自身缺陷：分母行的过滤器**永不命中**
+
+第一版过滤器写的是 `StartsWith('PROJECT_COUNT=')`，而 C-1/C-4 实际打印的是 **`PROJECT_COUNT = 81`（等号两边有空格）** ⇒ C-1/C-4 的分母**永远显示不出来**，等于"想防空扫描的那个门禁恰好防不住"。
+修法：只匹配**标签前缀**（`PROJECT_COUNT` / `EDGE_COUNT`），不要求紧跟等号。
+
+> 📌 **教训**：**门禁自己的 `PASS` 也必须带分母。** 判定绿不绿只是"结论"，"看过多少"才是"证据"；两者不同时出现，绿色就是不可信的。

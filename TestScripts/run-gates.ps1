@@ -28,10 +28,28 @@
     to check-project-layering.ps1 (2026-10-08), so registering it would double-count
     C-1/C-4. Run it directly if you need to prove the shim still works.
 
+    A gate's PASS is only meaningful next to WHAT IT ACTUALLY LOOKED AT, so the summary
+    echoes each gate's own denominator line (FILES= / PROJECT_COUNT=). A gate that PASSes
+    because it scanned nothing must be visible as such, never hidden behind a green verdict.
+
 .PARAMETER SelfTest
     Run each gate's own -SelfTest instead of its real scan. All controls are in-memory
     and write no files. This is the runner's own meta-check: it answers "are the gates
     themselves still detecting planted defects?" rather than "is the repo clean?".
+
+.PARAMETER RepoWide
+    Pass the repository root instead of TestScripts as the scan root to the gates that
+    accept a script-scan root (C-5, C-6). Without it those gates only see the TestScripts
+    folder; with it they see every .ps1 in the repository that their own ExcludeDir
+    defaults do not filter out. Measured on 2026-10-08: that is 28 files, not 1179 -
+    the rest sit under bin/obj/node_modules/temp and are filtered by the gates themselves.
+
+    Those gates always receive -Recurse, so this switch cannot silently degrade into a
+    scan of one flat folder - without -Recurse the repository root yields about one file
+    and an empty scan still reports PASS.
+
+    Gates that do not accept a script-scan root (C-1/C-4, which always analyses the
+    repository) are unaffected by this switch.
 
 .PARAMETER Skip
     Gate name fragments to skip, for example -Skip C-5. Matched case-insensitively
@@ -63,6 +81,7 @@
 [CmdletBinding()]
 param(
     [switch]$SelfTest,
+    [switch]$RepoWide,
     [string[]]$Skip = @(),
     [int]$MaxTail = 8
 )
@@ -77,6 +96,12 @@ $EXIT_MISSING = 255
 
 $here = $PSScriptRoot
 if (-not $here) { $here = (Get-Location).Path }
+$repoRoot = Split-Path -Parent $here
+$scanRoot = $here
+if ($RepoWide) {
+    if ([string]::IsNullOrWhiteSpace($repoRoot)) { $repoRoot = $here }
+    $scanRoot = $repoRoot
+}
 
 $gates = @(
     (New-Object PSObject -Property @{ Id = 'C-1/C-4'; Script = 'check-project-layering.ps1';        PassRoot = $false })
@@ -97,6 +122,7 @@ function Test-Skipped {
 Write-Output ('RUNNER = ' + $MyInvocation.MyCommand.Name)
 Write-Output ('MODE   = ' + $(if ($SelfTest) { 'SELFTEST (each gate runs its own controls)' } else { 'SCAN (each gate runs its real check)' }))
 Write-Output ('ENGINE = ' + $PSVersionTable.PSVersion.ToString())
+Write-Output ('SCOPE  = ' + $(if ($RepoWide) { 'REPO-WIDE (' + $scanRoot + ')' } else { 'TestScripts only (' + $here + ')' }))
 Write-Output ('GATES  = ' + $gates.Count + ' registered')
 Write-Output ''
 
@@ -104,9 +130,10 @@ $results = New-Object System.Collections.ArrayList
 $missing = 0
 
 foreach ($g in $gates) {
+    $scope = @()
     if (Test-Skipped -Id $g.Id -Script $g.Script -Patterns $Skip) {
         Write-Output ('--- {0}  {1}  SKIPPED' -f $g.Id, $g.Script)
-        [void]$results.Add((New-Object PSObject -Property @{ Id = $g.Id; Script = $g.Script; ExitCode = -1; Skipped = $true }))
+        [void]$results.Add((New-Object PSObject -Property @{ Id = $g.Id; Script = $g.Script; ExitCode = -1; Skipped = $true; Scope = @() }))
         continue
     }
 
@@ -116,13 +143,13 @@ foreach ($g in $gates) {
     if (-not (Test-Path -LiteralPath $path)) {
         Write-Output ('    FAIL-CLOSED: gate script not found: ' + $path)
         $missing++
-        [void]$results.Add((New-Object PSObject -Property @{ Id = $g.Id; Script = $g.Script; ExitCode = $EXIT_MISSING; Skipped = $false }))
+        [void]$results.Add((New-Object PSObject -Property @{ Id = $g.Id; Script = $g.Script; ExitCode = $EXIT_MISSING; Skipped = $false; Scope = @() }))
         continue
     }
 
     $childArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $path)
     if ($SelfTest) { $childArgs += '-SelfTest' }
-    elseif ($g.PassRoot) { $childArgs += @('-Root', $here) }
+    elseif ($g.PassRoot) { $childArgs += @('-Root', $scanRoot, '-Recurse') }
 
     $output = @(& powershell @childArgs 2>&1)
     $code = $LASTEXITCODE
@@ -133,12 +160,15 @@ foreach ($g in $gates) {
 
     Write-Output ('    exit={0}  {1}' -f $code, $verdict)
 
+    $scope = @($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_.StartsWith('FILES=') -or $_.StartsWith('PROJECT_COUNT') -or $_.StartsWith('EDGE_COUNT') })
+    foreach ($s in $scope) { Write-Output ('    scope: ' + $s) }
+
     $tail = @($output | ForEach-Object { $_.ToString() })
     if ($tail.Count -gt $MaxTail) { $tail = @($tail[($tail.Count - $MaxTail)..($tail.Count - 1)]) }
     foreach ($line in $tail) { Write-Output ('    | ' + $line) }
 
     Write-Output ''
-    [void]$results.Add((New-Object PSObject -Property @{ Id = $g.Id; Script = $g.Script; ExitCode = $code; Skipped = $false }))
+    [void]$results.Add((New-Object PSObject -Property @{ Id = $g.Id; Script = $g.Script; ExitCode = $code; Skipped = $false; Scope = $scope }))
 }
 
 Write-Output '=== SUMMARY ==='
@@ -150,6 +180,7 @@ foreach ($r in $results) {
     elseif ($r.ExitCode -eq $EXIT_SELFTEST) { $tag = 'SELFTEST_FAIL' }
     elseif ($r.ExitCode -ne 0) { $tag = 'ERROR' }
     Write-Output ('{0,-16} {1,-10} exit={2}' -f $r.Id, $tag, $r.ExitCode)
+    foreach ($s in @($r.Scope)) { Write-Output ('    scope: ' + $s) }
 }
 
 $ran = @($results | Where-Object { -not $_.Skipped })
