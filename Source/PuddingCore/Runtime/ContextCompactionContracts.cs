@@ -344,6 +344,77 @@ public interface IContextCompactionService
     Task<ContextCompactionResult> CompactAsync(
         ContextCompactionRequest request,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// F2：把 warm-prefix checkpoint **落库** —— 精确到行的 <c>CompactedBy</c> 覆盖标注 +
+    /// 摘要行（<c>ContentType = compact_summary</c>）+ 覆盖清单 + <c>Session.CompactionGeneration</c> 自增，
+    /// 全部在**同一个 <c>SaveChangesAsync</c> 事务**里完成（要么全写、要么全不写）。
+    /// <para>
+    /// 与 <see cref="CompactAsync"/> 的分工：候选与摘要内容由调用方（Runtime 的 warm-prefix 路径，
+    /// 已经过 CAS 校验与真实重算）产出；本方法**只负责持久化**，不重新选候选、不调用模型。
+    /// </para>
+    /// <para>
+    /// 调用方**必须**已持有压缩提交单飞租约（ADR-095 D4）—— 本方法不再自行取锁，
+    /// 否则会与已持有的租约形成自死锁。
+    /// </para>
+    /// <para>
+    /// 默认实现返回 <see cref="WarmPrefixCheckpointCommitStatus.Unsupported"/>：既有实现者（测试替身）
+    /// 无需同步修改；调用方据此**降级为内存-only** 并如实上报 <c>durableCheckpoint = false</c>，
+    /// 绝不假装已持久化。真实实现在 <c>ContextCompactionService</c>。
+    /// </para>
+    /// </summary>
+    Task<WarmPrefixCheckpointCommitResult> CommitWarmPrefixCheckpointAsync(
+        WarmPrefixCheckpointCommitRequest request,
+        CancellationToken ct = default)
+        => Task.FromResult(new WarmPrefixCheckpointCommitResult(WarmPrefixCheckpointCommitStatus.Unsupported));
+}
+
+/// <summary>warm-prefix checkpoint 落库结果状态。判据显式，调用方不得把「非 Committed」当成功。</summary>
+public enum WarmPrefixCheckpointCommitStatus
+{
+    /// <summary>已提交：摘要行、覆盖标注、覆盖清单与代际在同一事务里写入成功。</summary>
+    Committed,
+
+    /// <summary>该实现不支持持久化（默认实现）：调用方降级为内存-only。</summary>
+    Unsupported,
+
+    /// <summary>会话行不存在（尚未落库的会话）：无可提交的持久基线。</summary>
+    SessionNotFound,
+
+    /// <summary>代际 CAS 失败：候选冻结时的代际与当前不一致，不得用旧候选覆盖新的持久事实。</summary>
+    GenerationMismatch,
+
+    /// <summary>覆盖集合中有 id 在当前库里找不到（消息未落库/已删除）：一律不写，绝不部分标注。</summary>
+    CoveredMessagesNotFound,
+
+    /// <summary>覆盖集合中有消息已被别的摘要覆盖：合并会串链，一律不写。</summary>
+    AlreadyCovered,
+}
+
+/// <summary>warm-prefix checkpoint 落库请求（F2）：只传事实与 id。</summary>
+public sealed record WarmPrefixCheckpointCommitRequest(
+    string SessionId,
+    string WorkspaceId,
+    string? AgentId,
+    string CompactionId,
+    int ExpectedSourceGeneration,
+    IReadOnlyList<string> CoveredMessageIds,
+    string Summary,
+    int MessagesBefore,
+    int MessagesAfter,
+    long TokensBefore,
+    int MeasuredTokensAfter,
+    string Reason);
+
+/// <summary>warm-prefix checkpoint 落库结果。</summary>
+public sealed record WarmPrefixCheckpointCommitResult(
+    WarmPrefixCheckpointCommitStatus Status,
+    string? SummaryMessageId = null,
+    int TargetGeneration = 0,
+    int CoveredCount = 0,
+    IReadOnlyList<string>? ProblemMessageIds = null)
+{
+    public bool Committed => Status == WarmPrefixCheckpointCommitStatus.Committed;
 }
 
 public interface IContextCompactionSummaryGenerator

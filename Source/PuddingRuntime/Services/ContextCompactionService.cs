@@ -348,6 +348,151 @@ public sealed class ContextCompactionService : IContextCompactionService
         }
     }
 
+    /// <summary>
+    /// F2：把 warm-prefix checkpoint 落库。**不取锁**（调用方已持压缩提交单飞租约，再取会自死锁），
+    /// **不调用模型**（候选与摘要由调用方产出），只做「同一事务写入」。
+    /// </summary>
+    public async Task<WarmPrefixCheckpointCommitResult> CommitWarmPrefixCheckpointAsync(
+        WarmPrefixCheckpointCommitRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Summary);
+
+        var coveredIds = request.CoveredMessageIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (coveredIds.Length == 0)
+            return new WarmPrefixCheckpointCommitResult(
+                WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound,
+                ProblemMessageIds: []);
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        var session = await db.Sessions.FirstOrDefaultAsync(s => s.SessionId == request.SessionId, ct);
+        if (session is null)
+            return new WarmPrefixCheckpointCommitResult(WarmPrefixCheckpointCommitStatus.SessionNotFound);
+
+        // 代际 CAS（D5）：候选冻结时的代际与当前不一致 ⇒ 一律不写。
+        if (session.CompactionGeneration != request.ExpectedSourceGeneration)
+            return new WarmPrefixCheckpointCommitResult(
+                WarmPrefixCheckpointCommitStatus.GenerationMismatch,
+                TargetGeneration: session.CompactionGeneration);
+
+        var rows = await db.Messages
+            .Where(m => m.SessionId == request.SessionId && coveredIds.Contains(m.MessageId))
+            .ToListAsync(ct);
+        var foundIds = rows.Select(r => r.MessageId).ToHashSet(StringComparer.Ordinal);
+        var missing = coveredIds.Where(id => !foundIds.Contains(id)).ToArray();
+        if (missing.Length > 0)
+        {
+            // 绝不能只标注「找得到的那部分」：那会让跨度与摘要脱节，等于静默隐藏/重复内容。
+            return new WarmPrefixCheckpointCommitResult(
+                WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound,
+                ProblemMessageIds: missing);
+        }
+
+        var alreadyCovered = rows.Where(r => !string.IsNullOrEmpty(r.CompactedBy))
+            .Select(r => r.MessageId)
+            .ToArray();
+        if (alreadyCovered.Length > 0)
+            return new WarmPrefixCheckpointCommitResult(
+                WarmPrefixCheckpointCommitStatus.AlreadyCovered,
+                ProblemMessageIds: alreadyCovered);
+
+        var sourceGeneration = session.CompactionGeneration;
+        var targetGeneration = sourceGeneration + 1;
+        var summaryMessageId = Guid.NewGuid().ToString("N");
+        var summaryHash = CompositionSnapshot.Sha256Hex(request.Summary);
+        var summarySequence = (await db.Messages
+            .Where(m => m.SessionId == request.SessionId)
+            .MaxAsync(m => (long?)m.Sequence, ct) ?? 0L) + 1;
+
+        var summaryMessage = new MessageEntity
+        {
+            MessageId = summaryMessageId,
+            SessionId = request.SessionId,
+            Sequence = summarySequence,
+            Role = "system",
+            ContentType = ContextWindowConstants.CompactSummaryContentType,
+            Content = request.Summary,
+            CanonicalContentHash = summaryHash,
+            Source = "warm_prefix_checkpoint",
+            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Metadata = JsonSerializer.Serialize(new
+            {
+                compactionId = request.CompactionId,
+                mode = "WarmPrefix",
+                reason = request.Reason,
+                coveredMessageCount = rows.Count,
+                messagesBefore = request.MessagesBefore,
+                messagesAfter = request.MessagesAfter,
+                tokensBefore = request.TokensBefore,
+                measuredTokensAfter = request.MeasuredTokensAfter,
+                coverageComplete = true,
+                sourceGeneration,
+                targetGeneration,
+            }, JsonOptions),
+        };
+
+        var manifestEntity = new CompactionCoverageManifestEntity
+        {
+            CompactionId = request.CompactionId,
+            SessionId = request.SessionId,
+            SourceGeneration = sourceGeneration,
+            TargetGeneration = targetGeneration,
+            SourceMessageIds = JsonSerializer.Serialize(coveredIds, JsonOptions),
+            SourceHashes = JsonSerializer.Serialize(
+                rows.Select(r => r.CanonicalContentHash ?? CompositionSnapshot.Sha256Hex(r.Content ?? string.Empty)).ToArray(),
+                JsonOptions),
+            CoveredCount = rows.Count,
+            OmittedCount = 0,
+            DuplicateCount = coveredIds.Length - rows.Count,
+            RawUtf8BytesBefore = rows.Sum(r => Utf8ByteCount(r.Content ?? string.Empty)),
+            RawUtf8BytesAfter = Utf8ByteCount(request.Summary),
+            TokensBefore = request.TokensBefore,
+            TokensAfter = request.MeasuredTokensAfter,
+            FinalSummaryId = summaryMessageId,
+            FinalSummaryHash = summaryHash,
+            Generator = "warm_prefix_checkpoint",
+            Degraded = false,
+            FailureReason = null,
+            CreatedAtUtc = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+
+        db.Messages.Add(summaryMessage);
+        db.CompactionCoverageManifests.Add(manifestEntity);
+        foreach (var row in rows)
+        {
+            row.CompactedBy = summaryMessageId;
+            row.CanonicalContentHash ??= CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty);
+        }
+
+        session.CompactionGeneration = targetGeneration;
+
+        // 一个事务：摘要行 + 覆盖标注 + 覆盖清单 + 代际，要么全写、要么全不写。
+        await db.SaveChangesAsync(ct);
+
+        // 不调用 InvalidateHistory：调用方（warm-prefix）的内存历史已经是压缩后的版本，
+        // 失效会强制从 DB 重水合并丢掉本次延迟收益；DB 与内存此时是一致的。
+        _logger.LogInformation(
+            "[ContextCompaction] Warm-prefix checkpoint committed session={Session} compactionId={CompactionId} summaryId={SummaryId} covered={Covered} generation={Source}->{Target}",
+            request.SessionId,
+            request.CompactionId,
+            summaryMessageId,
+            rows.Count,
+            sourceGeneration,
+            targetGeneration);
+
+        return new WarmPrefixCheckpointCommitResult(
+            WarmPrefixCheckpointCommitStatus.Committed,
+            summaryMessageId,
+            targetGeneration,
+            rows.Count);
+    }
+
     public async Task<ContextCompactionResult> CompactAsync(
         ContextCompactionRequest request,
         CancellationToken ct = default)
