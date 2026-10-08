@@ -34,7 +34,7 @@
   Scan subdirectories too. Default: top level only.
 
 .PARAMETER ExcludeDir
-  Directory names (any path segment) to skip. Default: temp, node_modules, .git, bin, obj, dist, .pudding
+  Directory names (any path segment) to skip. Default: temp, node_modules, .git, bin, obj, dist, .venv, .pudding
 
 .PARAMETER AllowUnrunnable
   Do not fail on satisfied-by-another-engine findings; report them as INFO.
@@ -53,7 +53,7 @@
 param(
     [string]$Root = 'TestScripts',
     [switch]$Recurse,
-    [string[]]$ExcludeDir = @('temp', 'node_modules', '.git', 'bin', 'obj', 'dist', '.pudding'),
+    [string[]]$ExcludeDir = @('temp', 'node_modules', '.git', 'bin', 'obj', 'dist', '.venv', '.pudding'),
     [switch]$AllowUnrunnable,
     [switch]$SelfTest,
     [int]$MaxReport = 100

@@ -640,3 +640,54 @@ C-6       PASS  exit=0    （仅 2 条 CMD_UNRESOLVED 警告，已判定为假�
 优先级：`255 > 1 > 3 > 4`。
 
 > ⚠️ 非零退出**是门禁的结论，不是 runner 出错**。runner 会在末尾显式打印这句，避免被误读为工具故障。
+
+---
+
+## 仓库级扫描（`-Root <repo> -Recurse`）：范围实测与一次默认排除缺陷修复（2026-10-08）
+
+### 一、真实范围是多少（被上一轮的转义坑挡住的问题）
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\check-script-encodings.ps1 -Root <repo> -Recurse
+```
+
+**`FILES=28`**（修复后；修复前 29）—— 仓库内 **1,179** 个 `.ps1` 里，**只有 28 个属于"应纳入门禁"**，其余全部落在 `bin` / `obj` / `node_modules` / `temp` / `.venv` 等**构建或依赖目录**，被门禁自带的 `ExcludeDir` 默认挡掉。
+
+**28 个的构成**：`TestScripts` **22** + 仓库其它位置 **6**：
+`dev-up.ps1`（根）· `Tools\Dev\dev-up.ps1` · `Source\_search_prompts.ps1` · `Source\PuddingPlatformAdmin\scripts\run-orch-jest.ps1` · `Source\PuddingPlatformAdmin\scripts\run-orch-tsc.ps1` · `Tests\e2e\healthcheck.ps1`
+
+⇒ **"C-6 扩面"不是一个大工程**：`TestScripts` 之外的 PowerShell 面只有 **6 个文件**，且实测**全部干净**。
+
+### 二、⚠️ 仓库级扫描立刻抓到一个**默认排除缺陷**
+
+首跑（修复前）C-6 在 **`.venv\Scripts\Activate.ps1`** 报 **2 条 `CMD_MISSING`**：
+`L216 deactivate` · `L234 _OLD_VIRTUAL_PROMPT`。
+
+**判定：这是噪声，不是缺陷。** 三条独立证据：
+
+| 证据 | 实测 |
+|---|---|
+`git check-ignore -v` | 命中 `.venv/.gitignore:1:*` ⇒ **该文件被 git 忽略** |
+是否被跟踪 | `git ls-files .venv/Scripts/Activate.ps1` ⇒ **`TRACKED=0`** |
+性质 | Python **虚拟环境生成物**（与 `node_modules` 同类），**不是本仓代码** |
+
+⇒ **缺陷在门禁的默认排除表，不在仓库**：`ExcludeDir` 原本含 `node_modules`，**却没有 `.venv`**。
+
+**修复**：`check-script-encodings.ps1`（C-5）与 `check-script-runtime-compat.ps1`（C-6）的 `ExcludeDir` 默认值各加 **`.venv`**（头注释同步）。
+
+### 三、修复前后对照（同一条命令，同一台机器）
+
+| | 修复前 | 修复后 |
+|---|---|---|
+C-5 | `FILES=29 BOM=7 NONASCII=10 BROKEN=0 UNRUNNABLE=5 RUNNABLE=24` · exit **1** | `FILES=28 … BROKEN=0 UNRUNNABLE=5 RUNNABLE=23` · exit **1** |
+C-6 | `FILES=29 … CMD_MISSING=2 CMD_UNRESOLVED=2 PARAM_MISSING=0` · exit **1** | `FILES=28 … **CMD_MISSING=0** CMD_UNRESOLVED=2 PARAM_MISSING=0` · exit **0** |
+`venv` 残留提及 | 有 | **`C5_VENV_MENTION=0` · `C6_VENV_MENTION=0`** |
+
+> ⭐ **C-6 仓库级由 FAIL 转 PASS**（唯一残留是 2 条 `CMD_UNRESOLVED` 警告 —— `test-pudding-deployment-gates.ps1` 的运行时动态注入，已单独判定为假阳性）。
+> ⭐ **C-5 仓库级仍 FAIL，且失败原因被收窄到唯一一处**：`TestScripts` 里 5 个脚本的 `#requires -Version 7.0` —— 全仓库**再无第二个**问题。
+
+### 四、这轮又被证明了一次的教训
+
+上一轮记录过：过滤结果**等于总数**时要怀疑过滤器失效。
+这一轮是它的**镜像**：过滤器**生效**（29→28）会**立刻暴露一个真实缺陷**；而**不做修复前后对照**，就会把 `.venv` 的 2 条噪声当成"仓库里有 2 个坏脚本"报出去。
+⇒ **任何"修好之后"的结论，必须配一次"修好之前"的实测**。
