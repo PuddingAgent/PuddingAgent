@@ -6,6 +6,8 @@ using PuddingDesktop.Core;
 using PuddingDesktop.Debug;
 using PuddingDesktop.Diagnostics;
 using PuddingDesktop.Runtime;
+using Pudding.Contracts;
+using Pudding.DesktopService;
 
 namespace PuddingDesktop.Hosting;
 
@@ -20,7 +22,17 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private readonly IDesktopControlTokenService _tokenService;
     private readonly IDesktopRuntimeOrchestrator _runtime;
     private readonly DesktopBackgroundModeService _backgroundMode = new();
-    private readonly BrowserBridgeCommandDispatcher _bridgeDispatcher = new();
+
+    /// <summary>
+    /// 进程内**唯一**的浏览器自动化事实源（控制权 + 两个注册表 + 关闭清理点）。
+    /// Bridge 闸门（默认路径）与能力通道（可选路径）必须读同一个实例
+    /// —— 审计 2026-10-08 结论 #1：闸门各自持有标志时，UI 上的"人工接管"对 Agent 无约束力。
+    /// </summary>
+    private readonly BrowserPageLifecycle _browserAutomation = BrowserPageLifecycle.Create(
+        new DesktopInstanceId("default"),
+        new DesktopProcessInstanceId($"desktop-{Environment.ProcessId}"));
+
+    private readonly BrowserBridgeCommandDispatcher _bridgeDispatcher;
     private readonly DesktopBrowserBridgeClient _bridgeClient;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private readonly SemaphoreSlim _bridgeOperationLock = new(1, 1);
@@ -56,6 +68,9 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     public BrowserBridgeCommandDispatcher BridgeDispatcher => _bridgeDispatcher;
     public IDesktopBrowserBridgeClient BridgeClient => _bridgeClient;
 
+    /// <summary>唯一的浏览器自动化事实源：Bridge 闸门与能力通道共用它。</summary>
+    public BrowserPageLifecycle BrowserAutomation => _browserAutomation;
+
     public Task<string> GetDesktopControlTokenAsync(CancellationToken cancellationToken)
     {
         var dataRoot = _bootstrapSettings?.DataRoot;
@@ -74,6 +89,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         _tokenService = new DesktopControlTokenService(_systemConfigService);
         _supervisor = new CoreProcessSupervisor();
         _runtime = new DesktopRuntimeOrchestrator(_supervisor);
+        _bridgeDispatcher = new BrowserBridgeCommandDispatcher(_browserAutomation);
         _bridgeClient = new DesktopBrowserBridgeClient(_bridgeDispatcher);
         _runtime.Changed += OnRuntimeChanged;
     }

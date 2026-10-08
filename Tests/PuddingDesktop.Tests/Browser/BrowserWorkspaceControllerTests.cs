@@ -175,7 +175,7 @@ public class BrowserWorkspaceControllerTests
     [Fact]
     public async Task Dispatcher_WithController_SuccessPath()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         var runtime = new FakeBrowserRuntime();
         var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
         dispatcher.SetHandler(controller);
@@ -202,7 +202,7 @@ public class BrowserWorkspaceControllerTests
     [Fact]
     public async Task Dispatcher_Paused_RejectsCommand()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         var runtime = new FakeBrowserRuntime();
         var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
         dispatcher.SetHandler(controller);
@@ -231,7 +231,7 @@ public class BrowserWorkspaceControllerTests
     [Fact]
     public async Task Dispatcher_UserTakeover_RejectsCommand()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         var runtime = new FakeBrowserRuntime();
         var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
         dispatcher.SetHandler(controller);
@@ -260,7 +260,7 @@ public class BrowserWorkspaceControllerTests
     [Fact]
     public async Task Dispatcher_DuplicateOperationId_ReturnsCached()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         var runtime = new FakeBrowserRuntime();
         var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
         dispatcher.SetHandler(controller);
@@ -536,7 +536,7 @@ public class BrowserWorkspaceControllerTests
     [Fact]
     public async Task Dispatcher_PublishesStartAndCompletion_AndClearHandlerRejectsNewCommands()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         var handler = new SuccessfulBrowserHandler();
         dispatcher.SetHandler(handler);
         var snapshots = new List<AgentBrowserActivitySnapshot>();
@@ -565,7 +565,7 @@ public class BrowserWorkspaceControllerTests
     [Fact]
     public async Task Dispatcher_DisconnectFailsActiveCommandWithDisconnectedCode()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         var handler = new BlockingBrowserHandler();
         dispatcher.SetHandler(handler);
         var command = new BrowserBridgeCommand

@@ -66,11 +66,9 @@ public sealed partial class DesktopApplicationCoordinator
                 return;
             }
 
-            // 进程内唯一事实源 + 两个注册表 + 关闭清理点 = 一个生命周期端口（设计方案 §3.1/§3.3）。
-            // 三者必须同源：分别构造就会出现"注册表更新了但授权没撤"这类分叉。
-            var lifecycle = BrowserPageLifecycle.Create(
-                new DesktopInstanceId(settings.DesktopId),
-                new DesktopProcessInstanceId($"desktop-{Environment.ProcessId}"));
+            // 复用协调器的那一个事实源（Bridge 闸门用的也是它）：分别构造就会出现
+            // "用户在 UI 上接管、Bridge 与能力通道看法不一致"这类分叉（审计 2026-10-08 结论 #1）。
+            var lifecycle = _browserAutomation;
             var bridge = new BrowserWorkspaceTargetBridge(lifecycle);
             AttachBrowserTargets(workspace, bridge);
 

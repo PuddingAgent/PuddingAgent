@@ -106,7 +106,7 @@ public class DispatcherControllerStateTests
     [Fact]
     public async Task Dispatcher_ProjectsOriginIntoActivityWithoutArguments()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         dispatcher.SetHandler(new SuccessfulBrowserHandler());
 
         var snapshots = new List<AgentBrowserActivitySnapshot>();
@@ -163,7 +163,7 @@ public class DispatcherControllerStateTests
     [Fact]
     public async Task Dispatcher_TracksConcurrentActiveOperationCount()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         var handler = new GatedBrowserHandler();
         dispatcher.SetHandler(handler);
 
@@ -211,7 +211,7 @@ public class DispatcherControllerStateTests
     [Fact]
     public async Task PausedCommand_ProducesSanitizedFailureActivity()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         dispatcher.SetHandler(new SuccessfulBrowserHandler());
         dispatcher.SetPaused(true);
 
@@ -264,7 +264,7 @@ public class DispatcherControllerStateTests
     [Fact]
     public async Task UserTakeoverCommand_ProducesSanitizedFailureActivity()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         dispatcher.SetHandler(new SuccessfulBrowserHandler());
         dispatcher.SetUserTakeover(true);
 
@@ -455,7 +455,7 @@ public class DispatcherControllerStateTests
     [Fact]
     public async Task ViewDispose_UnsubscribesOperationStateEvents()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         dispatcher.SetHandler(new SuccessfulBrowserHandler());
 
         // Simulate a View that subscribes to OperationStateChanged
@@ -556,7 +556,7 @@ public class DispatcherControllerStateTests
     [Fact]
     public async Task SensitiveSentinel_NotInActivitySerialization_AfterFullDispatch()
     {
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         dispatcher.SetHandler(new SuccessfulBrowserHandler());
 
         var snapshots = new List<AgentBrowserActivitySnapshot>();

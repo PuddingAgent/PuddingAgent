@@ -80,6 +80,24 @@ public sealed class BrowserPageLifecycle
     /// <summary>页面目标注册表（准入读的那一份：版本 / 就绪度 / page 级目标标记）。</summary>
     public DesktopTargetRegistry PageTargets => _pageTargets;
 
+    // ── 控制面门面 ────────────────────────────────────────────────────────
+    // Shell 侧（Bridge 闸门、窗口控制器）只需要"读两个轴 + 写两个轴"。
+    // 直接暴露 Authority 会迫使每个消费方都引用 Automation 组件；而 Shell 本来就不该关心
+    // 授权/租约/世代这些内部模型 —— 于是这里给出**同一事实源**的最小门面。
+
+    /// <summary>是否被暂停（读权威快照）。</summary>
+    public bool IsPaused => _authority.Capture().IsPaused;
+
+    /// <summary>是否被用户接管（读权威快照）。</summary>
+    public bool IsUserTakeover => _authority.Capture().IsUserTakeover;
+
+    /// <summary>暂停/恢复；写的是同一个权威实例。</summary>
+    public void SetPaused(bool paused, string? reason = null) => _authority.SetPaused(paused, reason);
+
+    /// <summary>用户接管开关；写的是同一个权威实例（接管**不**撤销阅读授权，§3.1）。</summary>
+    public void SetUserTakeover(bool takenOver, string? reason = null) =>
+        _authority.SetUserTakeover(takenOver, reason);
+
     /// <summary>关闭一个页面：两个注册表 + 该页全部授权 + 该页写租约。</summary>
     public BrowserLifecycleOutcome ClosePage(DesktopPageTarget target)
     {

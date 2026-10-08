@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Pudding.DesktopService;
 using PuddingBrowser.Protocol;
 
 namespace PuddingDesktop.Browser;
@@ -10,7 +11,8 @@ namespace PuddingDesktop.Browser;
 ///
 /// 本类是 <see cref="IBrowserAutomationGate"/> 的实现之一：它的 pause/takeover 就是**执行闸门本身**。
 /// 在它只是"自己的一个字段"时，Shell 的接管开关从来不写它，于是 Bridge 路径上的人工接管无效
-/// （审计 2026-10-08 结论 #1）。
+/// （审计 2026-10-08 结论 #1）。现在它的控制状态**不再自己持有**：读写的是进程内唯一权威实例
+/// （经由 <see cref="BrowserPageLifecycle"/>，与能力通道、生命周期清理点同一个对象）。
 /// </summary>
 public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
 {
@@ -18,16 +20,26 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeOperations = new();
     private readonly ConcurrentDictionary<Guid, (string Code, string Message)> _forcedFailures = new();
     private readonly ConcurrentQueue<AgentBrowserActivity> _activities = new();
+    private readonly BrowserPageLifecycle _lifecycle;
     private const int MaxActivities = 100;
-
-    private volatile bool _paused;
-    private volatile bool _userTakeover;
 
     // Will be set when BrowserWorkspaceController is available (Task 5)
     private IBrowserCommandHandler? _handler;
 
-    public bool IsPaused => _paused;
-    public bool IsUserTakeover => _userTakeover;
+    /// <summary>
+    /// 只接受生命周期端口：它是**唯一**权威实例的所有者。Bridge 路径是默认路径，
+    /// 因此这里必须读同一份状态，否则用户在 UI 上接管后 Bridge 命令照旧执行。
+    /// </summary>
+    public BrowserBridgeCommandDispatcher(BrowserPageLifecycle lifecycle)
+    {
+        _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
+    }
+
+    /// <summary>本闸门读写的唯一事实源（诊断用）。</summary>
+    public BrowserPageLifecycle Lifecycle => _lifecycle;
+
+    public bool IsPaused => _lifecycle.IsPaused;
+    public bool IsUserTakeover => _lifecycle.IsUserTakeover;
     public IReadOnlyCollection<AgentBrowserActivitySnapshot> RecentActivities
         => _activities.Select(activity => activity.Snapshot()).ToArray();
     public event EventHandler<AgentBrowserActivityChangedEventArgs>? ActivityChanged;
@@ -45,8 +57,10 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
             _handler = null;
     }
 
-    public void SetPaused(bool paused) => _paused = paused;
-    public void SetUserTakeover(bool takeover) => _userTakeover = takeover;
+    public void SetPaused(bool paused) => _lifecycle.SetPaused(paused, "bridge gate");
+
+    public void SetUserTakeover(bool takeover) =>
+        _lifecycle.SetUserTakeover(takeover, "bridge gate");
 
     public async Task<BrowserBridgeCommandResult> DispatchAsync(
         BrowserBridgeCommand command,
@@ -60,7 +74,7 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
 
         // Gate: pause/takeover rejects new Agent commands.
         // Record a failed activity so Agent and user understand the rejection (doc 6.1).
-        if (_paused)
+        if (IsPaused)
         {
             var pausedActivity = new AgentBrowserActivity(
                 command.OperationId, command.Name,
@@ -71,7 +85,7 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
                 BrowserBridgeErrorCodes.BrowserPaused, "Browser is paused"));
         }
 
-        if (_userTakeover)
+        if (IsUserTakeover)
         {
             var takeoverActivity = new AgentBrowserActivity(
                 command.OperationId, command.Name,

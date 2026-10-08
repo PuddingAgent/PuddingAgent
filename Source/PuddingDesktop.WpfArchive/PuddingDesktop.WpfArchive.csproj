@@ -22,6 +22,8 @@
     <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
     <ProjectReference Include="..\PuddingBrowser.Protocol\PuddingBrowser.Protocol.csproj" />
     <ProjectReference Include="..\PuddingBrowser.WebView2\PuddingBrowser.WebView2.csproj" />
+    <!-- 控制权/生命周期的事实源（Bridge 闸门与能力通道必须读同一个实例，审计 2026-10-08 结论 #1）。 -->
+    <ProjectReference Include="..\Pudding.DesktopService\Pudding.DesktopService.csproj" />
   </ItemGroup>
 
   <ItemGroup>

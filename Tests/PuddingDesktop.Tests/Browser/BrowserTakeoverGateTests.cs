@@ -40,7 +40,7 @@ public sealed class BrowserTakeoverGateTests
         CreateWired()
     {
         var gates = new BrowserAutomationGateSync();
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         dispatcher.SetHandler(new SuccessfulBrowserHandler());
         gates.Register(dispatcher);
 
@@ -232,6 +232,59 @@ public sealed class BrowserTakeoverGateTests
     {
         Assert.Throws<ArgumentNullException>(() => new DelegateAutomationGate(null!, _ => { }));
         Assert.Throws<ArgumentNullException>(() => new DelegateAutomationGate(_ => { }, null!));
+    }
+
+    // ── Bridge 闸门不再自己持有标志：读写的是同一个权威实例（结论 #1 收尾）──────
+
+    [Fact]
+    public void BridgeDispatcher_ReadsTheSharedAuthority_NotItsOwnFlag()
+    {
+        // 用**不经过调度器**的路径写控制状态（Shell 的接管开关、生命周期端口都会这么做），
+        // 调度器必须立刻反映出来 —— 否则它又是"自己的一个字段"，人工接管对 Bridge 命令没有约束力。
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
+
+        lifecycle.SetUserTakeover(true, "user clicked");
+
+        Assert.True(dispatcher.IsUserTakeover);
+        Assert.False(dispatcher.IsPaused);
+    }
+
+    [Fact]
+    public async Task BridgeDispatcher_RejectsCommands_WhenTheSharedAuthorityIsTakenOver()
+    {
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
+        lifecycle.SetUserTakeover(true, "user clicked");
+
+        var result = await dispatcher.DispatchAsync(GotoCommand(), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserUserTakeover, result.ErrorCode);
+    }
+
+    [Fact]
+    public void BridgeDispatcher_WritesTheSharedAuthority()
+    {
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
+
+        dispatcher.SetPaused(true);
+        dispatcher.SetUserTakeover(true);
+
+        // 同一实例：能力通道与生命周期清理点读到的就是这两个值。
+        Assert.True(lifecycle.IsPaused);
+        Assert.True(lifecycle.IsUserTakeover);
+
+        dispatcher.SetPaused(false);
+        Assert.False(lifecycle.IsPaused);
+        Assert.True(lifecycle.IsUserTakeover, "解除暂停不得连带解除接管（两轴独立）");
+    }
+
+    [Fact]
+    public void Constructor_RejectsMissingLifecyclePort()
+    {
+        Assert.Throws<ArgumentNullException>(() => new BrowserBridgeCommandDispatcher(null!));
     }
 
     private sealed class RecordingGate : IBrowserAutomationGate

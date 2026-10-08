@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -66,7 +66,7 @@ public sealed class DesktopBrowserBridgeClientTests
     public async Task Command_IsDispatched_AndResultPreservesEnvelopeCorrelation()
     {
         var socket = new FakeDesktopBrowserWebSocket(HelloAckMode.Accept);
-        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var dispatcher = BrowserTestState.CreateDispatcher();
         dispatcher.SetHandler(new SuccessfulCommandHandler());
         var client = CreateClient(new QueueWebSocketFactory(socket), dispatcher);
         await client.ConnectAsync(new Uri("http://127.0.0.1:12345"), "secret-token", CancellationToken.None);
@@ -217,7 +217,7 @@ public sealed class DesktopBrowserBridgeClientTests
         IBrowserBridgeClock? clock = null,
         DesktopBrowserBridgeClientOptions? options = null)
         => new(
-            dispatcher ?? new BrowserBridgeCommandDispatcher(),
+            dispatcher ?? BrowserTestState.CreateDispatcher(),
             factory,
             clock ?? new SystemBrowserBridgeClock(),
             options ?? TestOptions);
