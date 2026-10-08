@@ -110,33 +110,33 @@
 
 ## Agent Availability 与自动派发（Services/Scheduling/，2026-08-26）
 
-| 文件 | 用途 |
-|------|------|
-| `Services/Scheduling/AgentAvailabilityProjectionStore.cs` | 从配置、Task/Goal、Chat command、Message delivery、SubAgent 与 Reservation 的持久事实保守重建 Agent 状态；仅 canonical active assignment 的非终态 Task 占用 Agent，终态历史脏 attempt 不再造成 false-busy；Unknown/过期不接 Auto |
-| `Services/Scheduling/AgentExecutionReservationStore.cs` | 单 Agent/Task active 自动工作槽、lease、fencing token、renew/release/expiry |
-| `Services/Scheduling/ConservativeExecutionWindowResolver.cs` | `anytime` allow；`inherit/off_peak_only` 在路由价格档案缺失时 Unknown/fail-closed |
-| `Services/Scheduling/ProviderModelExecutionWindowResolver.cs` | 生产 Resolver；按 Agent 实际 provider/model 和 `llm.providers.json` 版本化价格窗口解析时区/跨午夜/边界；`inherit/off_peak_only` 未知即 fail closed |
-| `Services/Scheduling/TaskAutoDispatchEvaluator.cs` | 无副作用确定性候选评估；每轮每 Agent 只重建一次 Availability 并让全部候选共享同一 version fence；结构化 TaskTypeRoute/能力/provider/model、首选亲和、显式 fallback、依赖、5 分钟 idle grace、窗口与同轮单 Agent 单任务 |
-| `Services/Scheduling/TaskAgentRouteMatcher.cs` | 不读任务标题的确定性 Agent 路由；类型规则与任务显式约束取交集，输出 provider/model/capability 解释和 SHA-256 快照；投影 CreatedAt/UpdatedAt 不进入原子路由指纹 |
-| `Services/Scheduling/ModelRoutePolicyContracts.cs` | 阶段感知模型路由的声明式契约：`RoutePolicy`/`ModelCapabilityProfile`/`WorkUnitRouteContext`/`ModelRouteDecision` 与按 (taskType, phase) 的默认策略目录（Explore/triage 低成本、Plan/review 高质量、Change/Test/deploy 要求工具协议、Verify 固定 isolated-readonly 隔离只读）；只承载结构化字段，模型身份不由自由文本决定 |
-| `Services/Scheduling/ModelRoutePolicyEvaluator.cs` | 纯函数确定性模型路由求值：硬门顺序 capability→context→tool protocol→quality floor→security，失败返回机器可读码（`capability_missing:{tag}`/`context_window_too_small`/`tool_protocol_unsupported`/`quality_floor_not_met`/`security_tier_mismatch`），选中时 Reason 由枚举化 token 拼接；Fingerprint 为 SHA-256 且**与候选顺序无关**；无候选通过硬门时不静默回退（`no_compatible_route` + 拒绝码 + 理由 + 指纹） |
-| `Services/Scheduling/TaskExecutionPlanCompiler.cs` | 不读任务正文的纯 WorkUnit 计划编译器；按 taskType 生成有界 DAG，将依赖/能力/冲突范围/预算冻结为 SHA-256；未知类型 fail closed |
-| `Services/Scheduling/TaskBacklogRefinementEvaluator.cs` | 每五分钟只读检查已 opt-in Backlog 的描述、验收标准、任务类型与兼容 Agent；Shadow 输出 ReadyCandidate/NeedsRefinement，不改状态 |
-| `Services/Scheduling/TaskBacklogRefinementStore.cs` | future authoritative 的 Backlog→Ready 唯一 CAS 写入者；重验任务、Agent、TaskTypeRoute 与路由 SHA-256，原子写 canonical `TaskReady/backlog_refined` |
-| `Services/Scheduling/TaskExecutionTracker.cs` | 五分钟只读关联 Task/Plan/当前 WorkUnit/Assignment/Reservation fencing/Binding/Goal/Iteration/ExecutionCommand/Run/outbox；同时跟踪 legacy Delivery→Execution 断链；输出 Healthy/Waiting/Stalled/Inconsistent/CleanupRequired；Blocked Goal 仍持 active binding 为 `blocked_binding_still_active`，Delivery 已确认但超时无 execution claim 为 `legacy_assignment_execution_missing`，终态 Delivery 无 execution 为即时 cleanup |
-| `Services/Scheduling/TaskExecutionRepairCoordinator.cs` | authoritative 五分钟确定性 repair；Serializable 重读 fence 后清理终态或 Blocked Goal 遗留 binding/assignment/reservation，以及超时未被 execution claim 的 legacy assignment（Task 保持 Blocked）；回收过期 continuation lease、补建安全可证明缺失的 continuation intent；不猜 Task 成功、不续过期 reservation、不合成 Turn |
-| `Services/Scheduling/TaskAutoDispatchWorker.cs` + `TaskAutoDispatchScanRunner.cs` | `IOptionsMonitor` 驱动的低频恢复扫描；周期轮次与 Admin 立即扫描复用同一 runner，严格按 tracking/repair → 全 Agent Availability 重建 → Backlog refinement/Ready route → dispatch；按 workspace gate 串行并输出结构化摘要 |
-| `Services/Scheduling/TaskSchedulerControlService.cs` + `Controllers/Api/TaskSchedulingController.cs` | Admin 调度控制面：权威 status、revision CAS 策略热加载、workspace pause/resume、立即 scan/repair；原子写回 `<DataRoot>/config/system.json` 的 `taskAutoDispatch`，不创建浏览器状态机，控制端点限 admin |
-| `Services/Scheduling/TaskBoundGoalOptions.cs` | Task-bound Goal 独立安全开关、Iteration 预算与 Reservation lease（默认关闭） |
-| `Services/Scheduling/TaskSchedulingSchemaBootstrapper.cs` | Availability、Reservation、Task dependency 三表与唯一索引幂等建表 |
-| `Services/Scheduling/TaskSchedulerIntentStore.cs` | P0 事件驱动层 durable intent 队列（task_scheduler_intents）：INSERT OR IGNORE 幂等入队、事务内单 UPDATE 抢占式 Dequeue（pending/过期 lease 回收+attempt 自增）、Complete/Fail（超限→dead）、GetTailCursor；时间列固定宽度 UTC TEXT 保证 SQL 字典序=时间序 |
-| `Services/Scheduling/TaskSchedulerIntentSchemaBootstrapper.cs` | task_scheduler_intents 幂等建表（UNIQUE(source,source_event_id) 等 4 索引），注册于 PuddingApplicationInitializer |
-| `Services/Scheduling/TaskAutoDispatchStarter.cs` | 事件驱动派发启动器：围栏字段校验+二次 window fence+原子 StartAsync+LostRace 容忍；从动态策略读取 MaxStarts/MinimumIdle |
-| `Services/Scheduling/TaskEventLedgerTailBridge.cs` | 账本尾游标桥：IntentPollInterval 轮询 task_events/conversation_events 新行（游标=账本 MAX 懒初始化，不回放历史），按事件清单过滤入队 intent；动态响应 enabled/event/mode/pause，shadow 只推进游标不入队 |
-| `Services/Scheduling/TaskSchedulingCoordinator.cs` | 事件驱动协调器（authoritative-only）：Dequeue→按 workspace 合并→goal 终态先重建 Availability→Evaluate→Starter 派发→Complete/Fail（超限 dead）；动态 pause 后不消费该 workspace intent |
-| `Data/Entities/AgentAvailabilityProjectionEntity.cs` | 持久 Availability 投影实体 |
-| `Data/Entities/AgentExecutionReservationEntity.cs` | 自动工作租约与单调 fencing 实体 |
-| `Data/Entities/TaskDependencyEntity.cs` | Task finish-to-start 依赖边实体 |
+| 文件 | 用途 | 关键符号 | 关联 | 约束 |
+|------|------|------|------|------|
+| `Services/Scheduling/AgentAvailabilityProjectionStore.cs` | 从持久事实保守重建 Agent 可用性 | `AgentAvailabilityProjectionStore` | `IWorkspaceAgentCatalog` | 仅 canonical active assignment 的非终态 Task 占用 Agent，终态历史脏 attempt 不再造成 false-busy；Unknown/过期不参与自动派发 |
+| `Services/Scheduling/AgentExecutionReservationStore.cs` | Agent 自动工作槽与租约存储 | `AgentExecutionReservationStore` | `Data/Entities/AgentExecutionReservationEntity.cs` | 单 Agent/Task 一个 active 工作槽；lease 与 fencing token 单调，支持 renew/release/expiry |
+| `Services/Scheduling/ConservativeExecutionWindowResolver.cs` | 保守执行窗口判定 | `ConservativeExecutionWindowResolver` | `Services/Scheduling/ProviderModelExecutionWindowResolver.cs` | `anytime` 直接放行；`inherit`/`off_peak_only` 在路由价格档案缺失时返回 Unknown（fail closed） |
+| `Services/Scheduling/ProviderModelExecutionWindowResolver.cs` | 按 provider/model 价格档案解析执行窗口 | `ProviderModelExecutionWindowResolver` | `IWorkspaceAgentCatalog` | 按 Agent 实际 provider/model 与 `llm.providers.json` 版本化价格窗口处理时区/跨午夜/边界；未知即 fail closed |
+| `Services/Scheduling/TaskAutoDispatchEvaluator.cs` | 无副作用的自动派发候选评估 | `TaskAutoDispatchEvaluator` / `TaskAutoDispatchOptions` / `TaskTypeRouteOptions` | `IWorkspaceAgentCatalog` | 每轮每 Agent 只重建一次 Availability，全部候选共享同一 version fence；另受依赖、5 分钟 idle grace、窗口与同轮单 Agent 单任务约束 |
+| `Services/Scheduling/TaskAgentRouteMatcher.cs` | 不读任务标题的确定性 Agent 路由 | `TaskAgentRouteMatcher` / `TaskAgentRouteMatch` | — | 任务类型规则与任务显式约束取交集，输出 provider/model/capability 解释与 SHA-256 快照；`CreatedAt`/`UpdatedAt` 不进入原子路由指纹 |
+| `Services/Scheduling/ModelRoutePolicyContracts.cs` | 阶段感知模型路由的声明式契约 | `RoutePolicy` / `ModelCapabilityProfile` / `RoutePolicyCatalog` | `Services/Scheduling/ModelRoutePolicyEvaluator.cs` | 按 (taskType, phase) 给默认策略，Explore/triage 低成本、Verify 固定 isolated-readonly；模型身份只由结构化字段决定，不由自由文本决定 |
+| `Services/Scheduling/ModelRoutePolicyEvaluator.cs` | 确定性的模型路由求值 | `ModelRoutePolicyEvaluator` | `Services/Scheduling/ModelRoutePolicyContracts.cs` | 硬门顺序 capability → context → tool protocol → quality floor → security，失败返回机器可读码；Fingerprint 为 SHA-256 且与候选顺序无关；无候选通过时不静默回退 |
+| `Services/Scheduling/TaskExecutionPlanCompiler.cs` | 不读任务正文的 WorkUnit 编译 | `TaskExecutionPlanCompiler` | `Data/Entities/TaskDependencyEntity.cs` | 按 taskType 生成有界 DAG，把依赖/能力/冲突范围/预算冻结为 SHA-256；未知类型 fail closed |
+| `Services/Scheduling/TaskBacklogRefinementEvaluator.cs` | Backlog 精化候选的只读评估 | `TaskBacklogRefinementEvaluator` | `IWorkspaceAgentCatalog` | 每五分钟只读检查已 opt-in Backlog 的描述/验收标准/任务类型/兼容 Agent，输出 ReadyCandidate 或 NeedsRefinement，不改任务状态 |
+| `Services/Scheduling/TaskBacklogRefinementStore.cs` | Backlog→Ready 的唯一 CAS 写入者 | `TaskBacklogRefinementStore` | `Services/Scheduling/TaskBacklogRefinementEvaluator.cs` | 写入前重验任务、Agent、TaskTypeRoute 与路由 SHA-256；原子写 canonical `TaskReady/backlog_refined` |
+| `Services/Scheduling/TaskExecutionTracker.cs` | Task 执行链的只读一致性巡检 | `TaskExecutionTracker` | `Services/Scheduling/TaskExecutionRepairCoordinator.cs` | Blocked Goal 仍持 active binding 判为 `blocked_binding_still_active`（不可直接清 binding）；终态 Delivery 无 execution 属即时 cleanup |
+| `Services/Scheduling/TaskExecutionRepairCoordinator.cs` | 终态遗留与超时的确定性修复 | `TaskExecutionRepairCoordinator` | `Services/Scheduling/TaskExecutionTracker.cs` | Serializable 重读 fence 后才清理，范围限终态或 Blocked Goal 的遗留记录与超时未被 claim 的 legacy assignment；禁止猜 Task 成功、续过期 reservation、合成 Turn |
+| `Services/Scheduling/TaskAutoDispatchWorker.cs` / `Services/Scheduling/TaskAutoDispatchScanRunner.cs` | 低频恢复扫描 | `TaskAutoDispatchWorker` | `TaskAutoDispatchScanRunner` | 周期与 Admin 立即扫描复用同一 runner，顺序固定 tracking/repair → Availability 重建 → refinement → dispatch；按 workspace gate 串行 |
+| `Services/Scheduling/TaskSchedulerControlService.cs` / `Controllers/Api/TaskSchedulingController.cs` | Admin 调度控制面 | `TaskSchedulerControlService` | — | revision CAS 策略热加载、workspace pause/resume、立即 scan/repair 与权威 status；原子写回 `<DataRoot>/config/system.json` 的 `taskAutoDispatch`；控制端点限 admin |
+| `Services/Scheduling/TaskBoundGoalOptions.cs` | Task-bound Goal 的安全开关与预算 | `TaskBoundGoalOptions` | — | 默认关闭；开启后才允许 Task 绑定 Goal 并使用 Iteration 预算与 Reservation lease |
+| `Services/Scheduling/TaskSchedulingSchemaBootstrapper.cs` | 调度三表与索引的幂等建表 | `TaskSchedulingSchemaBootstrapper` | `Data/Entities/AgentAvailabilityProjectionEntity.cs` | Availability、Reservation、Task dependency 三表与唯一索引幂等建表 |
+| `Services/Scheduling/TaskSchedulerIntentStore.cs` | durable intent 队列存储 | `TaskSchedulerIntentStore` / `ITaskSchedulerIntentStore` | `TaskSchedulerIntentSchemaBootstrapper` | `INSERT OR IGNORE` 幂等入队；事务内单 UPDATE 抢占式 Dequeue（回收过期 lease、attempt 自增）；Complete/Fail 超限转 dead；时间列固定宽度 UTC TEXT，保证字典序=时间序 |
+| `Services/Scheduling/TaskSchedulerIntentSchemaBootstrapper.cs` | intent 队列的幂等建表 | `TaskSchedulerIntentSchemaBootstrapper` | `Services/Scheduling/TaskSchedulerIntentStore.cs` | 建 `task_scheduler_intents` 与 `UNIQUE(source, source_event_id)` 等 4 个索引 |
+| `Services/Scheduling/TaskAutoDispatchStarter.cs` | 事件驱动的派发启动 | `TaskAutoDispatchStarter` / `ITaskAutoDispatchStarter` | `Services/Scheduling/TaskSchedulingCoordinator.cs` | 围栏字段校验 + 二次 window fence + 原子 StartAsync，LostRace 容忍；MaxStarts/MinimumIdle 从动态策略读取 |
+| `Services/Scheduling/TaskEventLedgerTailBridge.cs` | 账本尾游标到 intent 的桥 | `TaskEventLedgerTailBridge` | `ITaskSchedulerIntentStore` | 按 `IntentPollInterval` 轮询 `task_events`/`conversation_events` 新行，游标取账本 MAX 懒初始化且不回放历史；按事件清单过滤入队；shadow 只推进游标不入队 |
+| `Services/Scheduling/TaskSchedulingCoordinator.cs` | 事件驱动的调度协调 | `TaskSchedulingCoordinator` | `ITaskAutoDispatchStarter` | Dequeue → 按 workspace 合并 → goal 终态先重建 Availability → Evaluate → Starter 派发 → Complete/Fail（超限 dead）；动态 pause 后不消费该 workspace intent |
+| `Data/Entities/AgentAvailabilityProjectionEntity.cs` | 持久 Availability 投影实体 | `AgentAvailabilityProjectionEntity` | `Services/Scheduling/AgentAvailabilityProjectionStore.cs` | — |
+| `Data/Entities/AgentExecutionReservationEntity.cs` | 自动工作租约与单调 fencing 实体 | `AgentExecutionReservationEntity` | `Services/Scheduling/AgentExecutionReservationStore.cs` | — |
+| `Data/Entities/TaskDependencyEntity.cs` | Task finish-to-start 依赖边实体 | `TaskDependencyEntity` | `Services/Scheduling/TaskExecutionPlanCompiler.cs` | — |
 
 ## Goal 持久控制面（Services/Goals/ · ADR-074 G1–G3 + Task-bound 原子启动源码链）
 

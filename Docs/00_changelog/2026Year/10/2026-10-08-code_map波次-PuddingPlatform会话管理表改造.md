@@ -1,10 +1,10 @@
 ---
-title: 2026-10-08 PuddingPlatform code_map 会话管理表列式改造（波次 1-2/15 表：error 118 → 101）
+title: 2026-10-08 PuddingPlatform code_map 会话管理表列式改造（波次 1-3/15 表：error 118 → 80）
 author: hyfree
 date: 2026-10-08
 last_reviewed: 2026-10-08
 status: active
-description: "把 Source/PuddingPlatform/code_map.md 的「会话管理」表（8 行）从 2 列改造成规范 v2 的 5 列 schema：用途压回一条职责命题，关键符号取自源码实测的类型与 ctor 依赖，关联只写真实存在的同工程路径，约束只保留「不可从代码推断且删掉会导致误改」的两条并压到 ≤160 字符。检查器 error 118 → 113 → 101、warn 50 → 48 → 46（波次 1-2）；本文件归并记录该目标文件的全部波次，文件名保留首波次命名。目的不是清数字，而是把该表从正文堆积改回可导航索引；本文件是 15 张表中的第 1 张。"
+description: "把 Source/PuddingPlatform/code_map.md 的「会话管理」表（8 行）从 2 列改造成规范 v2 的 5 列 schema：用途压回一条职责命题，关键符号取自源码实测的类型与 ctor 依赖，关联只写真实存在的同工程路径，约束只保留「不可从代码推断且删掉会导致误改」的两条并压到 ≤160 字符。检查器 error 118 → 113 → 101 → 80、warn 50 → 48 → 46 → 35（波次 1-3）；本文件归并记录该目标文件的全部波次，文件名保留首波次命名。目的不是清数字，而是把该表从正文堆积改回可导航索引；本文件是 15 张表中的第 1 张。"
 categories: [docs, code-map, condensation]
 tags: [code-map, spec-v2, schema, condensation]
 related_docs: [Docs/10_conventions/code-map-规范-v2.md, Docs/00_changelog/2026Year/10/2026-10-07-code_map规范v2与自检.md, Docs/00_changelog/2026Year/10/2026-10-08-code_map波次1-PuddingCodeIndex契约表列式改造.md]
@@ -92,8 +92,38 @@ warn | 48 | **46** |
 - L46：剥离"照抄 `SkillEvolutionDataAccess` 模式"的同类引用、测试文件路径与 `EXPLAIN QUERY PLAN` 断言细节；**保留**索引不足以给出完全有序、第二排序键走 `TEMP B-TREE`、代价受行数上界约束、limit 放大到千行级必须重评。
 - L36：去掉 `🔑` 标记与"（FeishuImageArtifactProjection 等）"式举例，改为在关键符号列列出实测类型。
 
+## 波次 3：Agent Availability 与自动派发表（25 行）
+
+范围 `## Agent Availability 与自动派发（Services/Scheduling/，2026-08-26）`（L115–L139，**25 行**，本轮错误密度最高的一张表）。
+
+| 指标 | 波次 2 后 | 波次 3 后 |
+|---|---|---|
+error | 101 | **80**（field-too-long 86 → 68、line-too-long 15 → 12） |
+warn | 46 | **35** |
+该表最长行 | 466（L125 旧约束格） | **299** |
+字节 | 45204 | 46337 |
+行数 / 条目行 | 268 / 181 | **268 / 181（不变）** |
+改造区间违规 | — | **L115..L139 = 0**（对报告 JSON 独立复核） |
+
+25 行中存在 2 个**多文件行**（`TaskAutoDispatchWorker.cs` + `TaskAutoDispatchScanRunner.cs`；`TaskSchedulerControlService.cs` + `Controllers/Api/TaskSchedulingController.cs`）。
+
+### 写前断言取红（三轮，均未写入）
+
+1. 第一轮：`约束` 格 211 / 186 > 160（L126、L127），整行 365 / 347 / 337 > 300（L126、L127、L128）。
+2. 第二轮修正后仍红：L128 = 304 > 300。
+3. 第三轮通过（longest = 299）。
+4. token 零丢失检查：唯一差异 `TaskAutoDispatchScanRunner.cs` —— 原单元格是**裸文件名**，本轮补全为 `Services/Scheduling/TaskAutoDispatchScanRunner.cs`（实测存在），登记为例外而非丢弃。
+5. **区间零违规断言额外抓到 1 条 warn**：改造后 L115..L139 仍有 1 条 `anti-pattern`（category 路线图，word=`计划`）—— 来自 L123 用途格的「WorkUnit 计划编译」。`Tools/Docs/code_map_check.py:107` 的 `ANTI_PATTERN_WORDS` 把 `计划` 无条件归入路线图词表，此处「计划」是领域名词（WorkUnit 的计划/编排），属**词表口径下的命中**。处置：改写为「不读任务正文的 WorkUnit 编译」（语义不变），复跑后区间命中 0、全局 warn 46 → 35。该 warn 不是本轮引入（旧文本同样是“计划编译器”），但既然本轮重写了该行，就一并修掉。
+
+### 本轮剥离内容（披露，均为"可从代码读取/演进叙事"）
+- L126：剥离 12 个关联对象的清单（Task/Plan/WorkUnit/Assignment/…/outbox）与五态枚举的具体触发条件叙述；**保留** `blocked_binding_still_active`（Blocked Goal 仍持 active binding）与"终态 Delivery 无 execution 属即时 cleanup"两条判据。
+- L127：剥离 binding/assignment/reservation 三项枚举与"回收过期 continuation lease"的展开；**保留** Serializable 重读 fence 的前提、清理范围（含 Task 保持 Blocked）、以及"禁止猜 Task 成功、续过期 reservation、合成 Turn"三条禁令。
+- L128：剥离 `IOptionsMonitor 驱动`（可由构造函数推断）与 `refinement/Ready route` 的重复表述；**保留**固定顺序与 workspace gate 串行。
+- L129：剥离"权威 status"的措辞重复，保留 revision CAS、pause/resume、写回路径与控制端点限 admin。
+
 ## 遗留（后续波次）
 
-- 其余 **13 张表 / 159 行**：对话 & 聊天 9、Agent 管理 6、认证与当前用户 6、子代理 & 诊断 8、任务系统 20、Agent Availability 与自动派发 25、Goal 持久控制面 16、外部访问令牌 19、安全审批 2、持久化 18、多媒体 6、提供商配置 6、Token 计量 18。
+- 其余 **12 张表 / 134 行**：对话 & 聊天 9、Agent 管理 6、认证与当前用户 6、子代理 & 诊断 8、任务系统 20、Goal 持久控制面 16、外部访问令牌 19、安全审批 2、持久化 18、多媒体 6、提供商配置 6、Token 计量 18。
 - 既有缺陷待裁定（波次 1 登记，仍未处理）：①`Services/SessionStateManager.cs` 在 L9 与 L84 重复登记；②同表头重复 14 次 > 上限 8 与固定列序冲突；③缺 §5 源指纹（待专用一波用 `glob_fingerprint` 实测后写）。
-- 本轮新增登记：`Services/MessageFabric/MessageFabricStore.cs` 的**裸文件名路径**已完成修正；同表的 `Services/MessageFabric/` 与 `Services/Conversation/` 目录行未展开为逐文件条目（是否值得展开需按 §4 成本判据裁定）。
+- 波次 2 / 3 登记的路径问题（`MessageFabricStore.cs`、`TaskAutoDispatchScanRunner.cs` 的裸文件名）**已随改造修正**；同表目录行未展开为逐文件条目（按 §4 成本判据待裁定）。
+- 全文件仍存的反模式命中（不在本波次区间）：`anti_pattern_categories = {清单型 F: 29, 演进叙事: 3, 路线图: 1}`（路线图 1 条不在 L115..L139），留待后续波次逐表清理。
