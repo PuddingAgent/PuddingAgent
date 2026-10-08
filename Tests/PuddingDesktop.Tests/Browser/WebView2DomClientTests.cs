@@ -5,6 +5,11 @@ namespace PuddingDesktop.Tests.Browser;
 
 public sealed class WebView2DomClientTests
 {
+    /// <summary>驱动侧的页面作用域 token（ref 前缀的一部分）。</summary>
+    private const string PageToken = "0123456789abcdef0123456789abcdef";
+
+    private static Locator Ref(string value) => new() { Kind = LocatorKind.Ref, Value = value };
+
     [Fact]
     public void Normalize_ClampsSnapshotBudgets()
     {
@@ -22,23 +27,53 @@ public sealed class WebView2DomClientTests
 
     [Fact]
     public void ValidateLocator_AcceptsCurrentVersionRef()
-        => WebView2DomClient.ValidateLocator(new Locator
-        {
-            Kind = LocatorKind.Ref,
-            Value = "v7-n12"
-        }, pageVersion: 7);
+        => WebView2DomClient.ValidateLocator(
+            Ref($"p{PageToken}-v7-n12"), pageVersion: 7, pageToken: PageToken);
 
     [Fact]
     public void ValidateLocator_RejectsStaleRefWithStableCode()
     {
         var exception = Assert.Throws<BrowserOperationException>(() =>
-            WebView2DomClient.ValidateLocator(new Locator
-            {
-                Kind = LocatorKind.Ref,
-                Value = "v6-n12"
-            }, pageVersion: 7));
+            WebView2DomClient.ValidateLocator(
+                Ref($"p{PageToken}-v6-n12"), pageVersion: 7, pageToken: PageToken));
 
         Assert.Equal("stale_element_reference", exception.Code);
+    }
+
+    [Fact]
+    public void ValidateLocator_RejectsARefFromAnotherPage_EvenAtTheSameVersion()
+    {
+        // 设计点名的情况：ref 序号是**每页独立**生成的，所以「页面 A 的 v7-n3」与
+        // 「页面 B 的 v7-n3」会同时存在。只比版本号时跨页引用会静默命中另一个页面的元素。
+        var exception = Assert.Throws<BrowserOperationException>(() =>
+            WebView2DomClient.ValidateLocator(
+                Ref("pffffffffffffffffffffffffffffffff-v7-n3"), pageVersion: 7, pageToken: PageToken));
+
+        Assert.Equal("stale_element_reference", exception.Code);
+
+        // 提示必须只说「重新观察」，不得暗示可以重绑到同名节点。
+        Assert.Contains("re-observe", exception.Message);
+        Assert.Contains("never re-bound", exception.Message);
+    }
+
+    [Fact]
+    public void ValidateLocator_RejectsTheLegacyUnscopedRefFormat()
+    {
+        // 旧格式没有页面作用域 ⇒ 无法证明它属于本页，必须拒绝（不做静默兼容层）。
+        var exception = Assert.Throws<BrowserOperationException>(() =>
+            WebView2DomClient.ValidateLocator(Ref("v7-n12"), pageVersion: 7, pageToken: PageToken));
+
+        Assert.Equal("browser_invalid_arguments", exception.Code);
+    }
+
+    [Fact]
+    public void ValidateLocator_DoesNotLeakThePageTokenInTheMessage()
+    {
+        var exception = Assert.Throws<BrowserOperationException>(() =>
+            WebView2DomClient.ValidateLocator(
+                Ref("pffffffffffffffffffffffffffffffff-v7-n3"), pageVersion: 7, pageToken: PageToken));
+
+        Assert.DoesNotContain(PageToken, exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -58,7 +93,7 @@ public sealed class WebView2DomClientTests
                 Kind = LocatorKind.Css,
                 Value = "button",
                 Frame = new FrameSelector { Name = "payment" }
-            }, pageVersion: 1));
+            }, pageVersion: 1, pageToken: PageToken));
 
         Assert.Equal("browser_operation_not_supported", exception.Code);
     }

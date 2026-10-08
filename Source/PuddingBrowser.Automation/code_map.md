@@ -77,9 +77,12 @@
 - `BrowserMutationPostcondition` 目前只在**没有**显式后置条件的情况下判定成功/失败；
   `BrowserInteractRequest` 还没有 `expect` 参数，因此 `DocumentNavigation` 目前只被 navigate 使用。
   工具层暴露 `expect` 属后续切片。
-- **`BrowserRefRegistry` 尚未被驱动消费**（2026-10-08，诚实登记）：它是设计 §5 的契约与判据层，
-  驱动侧目前仍只按 `v{pageVersion}-n{seq}` 校验版本、身份仍取自页面可自写的 `data-pudding-ref`。
-  接入需要两件事，属后续切片：① 宿主绑定的节点键（CDP `backendNodeId`；CDP 在本驱动里仍是
-  `NotSupportedException("CDP not in Phase 2A-1")`，过渡期可用驱动侧 `IElementHandle.Id`）；
-  ② `WebView2BrowserPage` 持有登记表并把自己的 scope / 三个事实传进 `WebView2DomClient.ValidateLocator`。
-  在此之前，跨页/跨 frame 同版本号的引用仍会被接受 —— 这是**已知缺口**，不是已修复项。
+- **`BrowserRefRegistry` 尚未被驱动消费**（2026-10-08，诚实登记）：它是设计 §5 的契约与判据层。
+  驱动侧**已**用同语义的**页面作用域 token** 关掉了「跨页/跨 frame 同版本号命中」这一条
+  （ref 线格式 `p{页面token}-v{文档世代}-n{序号}`，见 `Source/PuddingBrowser.WebView2/` 的 code_map），
+  但**尚未**消费本登记表，因此以下两点仍未闭合：
+  ① **宿主绑定的节点身份**：节点标记仍是页面可自写的 `data-pudding-ref`；真正的宿主身份需要
+  CDP `backendNodeId`，而 CDP 在本驱动里仍是 `NotSupportedException("CDP not in Phase 2A-1")`（属 B3）；
+  ② **宿主存活校验**（节点是否仍 connected / 仍在同一文档）与三个事实的分别维护。
+  接入方式：`WebView2BrowserPage` 持有登记表，在 snapshot/locate 返回 ref 时按自己的 scope 登记，
+  交互前用 `Validate`/`ValidateForCoordinates` 复检；届时驱动内那份 token 校验可以退化为快速路径。

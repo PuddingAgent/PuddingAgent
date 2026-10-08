@@ -1,4 +1,4 @@
-﻿using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
 
 namespace PuddingBrowser.WebView2;
@@ -22,11 +22,21 @@ public sealed class WebView2BrowserPage : IBrowserPage
     private bool _isLoading;
     private bool _disposed;
 
+    /// <summary>
+    /// 页面级 ref 作用域 token（设计 §5）：由**驱动侧**生成，页面脚本写不出来。
+    /// ref 形如 <c>p{token}-v{版本}-n{序号}</c>；因为序号是每页独立生成的，
+    /// 没有它就无法区分「页面 A 的 v7-n3」与「页面 B 的 v7-n3」。
+    /// </summary>
+    private readonly string _refScopeToken = Guid.NewGuid().ToString("N");
+
     public PageId Id { get; }
     public BrowserContextId ContextId { get; }
     public IBrowserSurface? Surface { get; }
 
     public long PageVersion => Interlocked.Read(ref _pageVersion);
+
+    /// <summary>页面级 ref 作用域 token（诊断/测试用；不进工具输出，避免被当作可复用标识）。</summary>
+    internal string RefScopeToken => _refScopeToken;
     public PageInfo Info { get; private set; }
     public bool CanGoBack => _canGoBack;
     public bool CanGoForward => _canGoForward;
@@ -244,7 +254,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         ArgumentNullException.ThrowIfNull(options);
         var webView = RequireWebView();
         return await _dispatcher.InvokeAsync(
-            () => WebView2DomClient.SnapshotAsync(webView, PageVersion, options, ct), ct);
+            () => WebView2DomClient.SnapshotAsync(webView, PageVersion, _refScopeToken, options, ct), ct);
     }
 
     public async Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
@@ -257,7 +267,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         var webView = RequireWebView();
         var version = PageVersion;
         var elements = await _dispatcher.InvokeAsync(
-            () => WebView2DomClient.LocateAsync(webView, version, locator, ct), ct);
+            () => WebView2DomClient.LocateAsync(webView, version, _refScopeToken, locator, ct), ct);
         var fingerprint = $"{locator.Kind}:{locator.Value}:{locator.Name}:{locator.Nth}:{locator.HasText}";
         return elements.Select(info => (IElementHandle)new WebView2ElementHandle(
             Id, version, fingerprint, info)).ToArray();
@@ -365,7 +375,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         {
             _ = await _dispatcher.InvokeAsync(
                 () => WebView2DomClient.InteractAsync(
-                    webView, PageVersion, action, locator, value, deltaX, deltaY, ct), ct);
+                    webView, PageVersion, _refScopeToken, action, locator, value, deltaX, deltaY, ct), ct);
         }
         finally
         {

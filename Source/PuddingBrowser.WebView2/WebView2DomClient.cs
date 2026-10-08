@@ -16,7 +16,16 @@ internal static partial class WebView2DomClient
         MaxDepth = Math.Clamp(options.MaxDepth, 1, 64)
     };
 
-    internal static void ValidateLocator(Locator locator, long pageVersion)
+    /// <summary>
+    /// 校验 ref 是否属于**这个页面与这一版文档**（设计方案 §5）。
+    ///
+    /// 为什么必须带 <paramref name="pageToken"/>：ref 的序号是**每页独立**生成的，
+    /// 所以「页面 A 的 v7-n3」与「页面 B 的 v7-n3」会同时存在。只比版本号时，
+    /// 跨页使用同一版本号的引用会**静默命中另一个页面的元素**（点错目标），
+    /// 这正是设计点名「即使两页都恰好处于 v7」的情形。
+    /// token 由驱动侧生成、页面无法伪造，因此跨页/跨 frame 的引用在这里被拒绝。
+    /// </summary>
+    internal static void ValidateLocator(Locator locator, long pageVersion, string pageToken)
     {
         ArgumentNullException.ThrowIfNull(locator);
         if (string.IsNullOrWhiteSpace(locator.Value))
@@ -32,19 +41,25 @@ internal static partial class WebView2DomClient
             return;
 
         var match = BrowserRefRegex().Match(locator.Value.Trim());
-        if (!match.Success || !long.TryParse(match.Groups[1].Value, out var expected))
+        if (!match.Success || !long.TryParse(match.Groups[2].Value, out var expected))
             throw new BrowserOperationException("browser_invalid_arguments", "Invalid browser ref format");
-        if (expected != pageVersion)
+
+        // 作用域（页面 token）与文档世代任一不符 ⇒ 引用过期。
+        // 提示只说「重新观察」，**不**回指任何节点（禁止自动重绑，设计 §1.1）。
+        if (!string.Equals(match.Groups[1].Value, pageToken, StringComparison.OrdinalIgnoreCase)
+            || expected != pageVersion)
         {
             throw new BrowserOperationException(
                 "stale_element_reference",
-                $"Browser ref belongs to page version {expected}; current version is {pageVersion}");
+                "Browser ref does not belong to this page's current document;"
+                + " re-observe the page and locate a fresh ref (refs are never re-bound to another node)");
         }
     }
 
     internal static async Task<PageSnapshot> SnapshotAsync(
         CoreWebView2 webView,
         long pageVersion,
+        string pageToken,
         SnapshotOptions options,
         CancellationToken ct)
     {
@@ -52,6 +67,7 @@ internal static partial class WebView2DomClient
         var result = await ExecuteAsync<SnapshotScriptResult>(webView, SnapshotScript, new
         {
             pageVersion,
+            pageToken,
             normalized.IncludeDom,
             normalized.IncludeAccessibilityTree,
             normalized.IncludeHidden,
@@ -76,13 +92,15 @@ internal static partial class WebView2DomClient
     internal static async Task<IReadOnlyList<BrowserElementInfo>> LocateAsync(
         CoreWebView2 webView,
         long pageVersion,
+        string pageToken,
         Locator locator,
         CancellationToken ct)
     {
-        ValidateLocator(locator, pageVersion);
+        ValidateLocator(locator, pageVersion, pageToken);
         var result = await ExecuteAsync<LocateScriptResult>(webView, LocateScript, new
         {
             pageVersion,
+            pageToken,
             locator = ToPayload(locator),
             maxResults = 101
         }, ct);
@@ -93,6 +111,7 @@ internal static partial class WebView2DomClient
     internal static async Task<BrowserElementInfo?> InteractAsync(
         CoreWebView2 webView,
         long pageVersion,
+        string pageToken,
         string action,
         Locator? locator,
         object? value,
@@ -101,10 +120,11 @@ internal static partial class WebView2DomClient
         CancellationToken ct)
     {
         if (locator is not null)
-            ValidateLocator(locator, pageVersion);
+            ValidateLocator(locator, pageVersion, pageToken);
         var result = await ExecuteAsync<InteractScriptResult>(webView, InteractScript, new
         {
             pageVersion,
+            pageToken,
             action,
             locator = locator is null ? null : ToPayload(locator),
             value,
@@ -184,7 +204,11 @@ internal static partial class WebView2DomClient
             string.IsNullOrWhiteSpace(message) ? "Browser DOM operation failed" : message);
     }
 
-    [GeneratedRegex("^v(\\d+)-n\\d+$", RegexOptions.CultureInvariant)]
+    /// <summary>
+    /// ref 线格式：<c>p{页面 token}-v{文档世代}-n{序号}</c>。
+    /// 页面 token 由驱动生成（页面写不出来），因此跨页/跨 frame 的引用无法通过校验。
+    /// </summary>
+    [GeneratedRegex("^p([0-9a-fA-F]{32})-v(\\d+)-n\\d+$", RegexOptions.CultureInvariant)]
     private static partial Regex BrowserRefRegex();
 
     private sealed record SnapshotScriptResult
@@ -245,7 +269,7 @@ internal static partial class WebView2DomClient
     || (el.labels && [...el.labels].map(x => x.innerText).join(' ')) || el.innerText || el.textContent);
   const interactive = el => el.matches('a[href],button,input,textarea,select,summary,[role],[contenteditable="true"],[tabindex]');
   const ensureRef = el => {
-    const prefix = `v${input.pageVersion}-n`;
+    const prefix = `p${input.pageToken}-v${input.pageVersion}-n`;
     let ref = el.getAttribute('data-pudding-ref');
     if (!ref || !ref.startsWith(prefix)) {
       ref = `${prefix}${++refState.next}`;
@@ -333,9 +357,10 @@ internal static partial class WebView2DomClient
   if (locator.hasText) elements = elements.filter(el => matchText(el.innerText || el.textContent, locator.hasText));
   if (locator.nth !== null && locator.nth !== undefined) elements = locator.nth >= 0 && locator.nth < elements.length ? [elements[locator.nth]] : [];
   const refState = globalThis.__puddingRefState?.version === input.pageVersion
+    && globalThis.__puddingRefState?.pageToken === input.pageToken
     ? globalThis.__puddingRefState
-    : (globalThis.__puddingRefState = {version: input.pageVersion, next: 0});
-  const prefix = `v${input.pageVersion}-n`;
+    : (globalThis.__puddingRefState = {version: input.pageVersion, pageToken: input.pageToken, next: 0});
+  const prefix = `p${input.pageToken}-v${input.pageVersion}-n`;
   const describe = el => {
     let ref=el.getAttribute('data-pudding-ref'); if(!ref||!ref.startsWith(prefix)){ref=`${prefix}${++refState.next}`;el.setAttribute('data-pudding-ref',ref);}
     const r=el.getBoundingClientRect();
@@ -394,7 +419,7 @@ internal static partial class WebView2DomClient
     case'check':el.checked=Boolean(input.value);fire('input');fire('change');break;
     default:return{ok:false,code:'browser_operation_not_supported',message:`Unsupported interaction: ${input.action}`};
   }} catch(error){return{ok:false,code:'browser_operation_failed',message:String(error)};}
-  const refState=globalThis.__puddingRefState?.version===input.pageVersion?globalThis.__puddingRefState:(globalThis.__puddingRefState={version:input.pageVersion,next:0});let ref=el.getAttribute('data-pudding-ref');const prefix=`v${input.pageVersion}-n`;if(!ref||!ref.startsWith(prefix)){ref=`${prefix}${++refState.next}`;el.setAttribute('data-pudding-ref',ref);}const r=el.getBoundingClientRect();
+  const refState=globalThis.__puddingRefState?.version===input.pageVersion&&globalThis.__puddingRefState?.pageToken===input.pageToken?globalThis.__puddingRefState:(globalThis.__puddingRefState={version:input.pageVersion,pageToken:input.pageToken,next:0});let ref=el.getAttribute('data-pudding-ref');const prefix=`p${input.pageToken}-v${input.pageVersion}-n`;if(!ref||!ref.startsWith(prefix)){ref=`${prefix}${++refState.next}`;el.setAttribute('data-pudding-ref',ref);}const r=el.getBoundingClientRect();
   return{ok:true,element:{ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}}};
 })()
 """;
