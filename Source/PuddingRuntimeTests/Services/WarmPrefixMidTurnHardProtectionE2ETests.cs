@@ -243,6 +243,80 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             "终态后的可选维护必须仍然执行（不得因移出关键路径而消失）");
     }
 
+    /// <summary>
+    /// 并发面回归：终态后的维护（不再独占租约）可能与**下一个 Turn** 并发 —— 断言这种交错下
+    /// 持久状态不出现不一致（无悬挂覆盖标注、摘要数 ≤ 1、代际单调、下一轮正常终态）。
+    /// 断言口径刻意与交错顺序无关，因此不依赖谁先抢到锁。
+    /// </summary>
+    [TestMethod]
+    public async Task PostTurnMaintenance_RacingNextTurn_KeepsDurableStateConsistent()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 36, charsPerMessage: 3_000);
+        }
+
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(DoneJson, DoneJson);
+        var tools = new RecordingToolInvocationService();
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var service = CreateService(llm, tools, manager, new ContextUsageSnapshotStore(), factory, log);
+
+        var history = manager.GetOrCreateHistory(SessionId);
+        var hydration = await manager.TryHydrateStreamHistoryFromDbAsync(
+            SessionId, history, 200_000, CancellationToken.None);
+        Assert.IsTrue(hydration.Succeeded, "水合必须成功，否则本用例不成立");
+
+        // 第 1 轮：允许终态后维护（它会在返回后被调度，并可能与下一轮并发）。
+        var first = await service.ExecuteAsync(CreateDispatchRequest(suppressAutoCompaction: false));
+        Assert.AreEqual(AgentExecutionState.Completed, first.ExecutionState);
+
+        // 第 2 轮：紧接着开始，制造「维护 vs 活着的 Turn」交错；本轮抑制维护以免噪声。
+        var second = await service.ExecuteAsync(CreateDispatchRequest(suppressAutoCompaction: true));
+        Assert.AreEqual(AgentExecutionState.Completed, second.ExecutionState, "并发维护不得影响下一轮终态");
+
+        // 等维护收尾（若已被抢占也算收尾）。
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline
+               && !log.Lines.Any(l => l.Contains("[PostTurnMaintenance]", StringComparison.Ordinal)))
+        {
+            await Task.Delay(50);
+        }
+
+        await using var verify = new MemoryDbContext(options);
+
+        // ① 摘要行数 ≤ 1（一次维护最多一个 checkpoint）。
+        var summaries = await verify.Messages
+            .Where(m => m.SessionId == SessionId && m.ContentType == "compact_summary")
+            .ToListAsync();
+        Assert.IsTrue(summaries.Count <= 1, $"摘要行不得重复写入，实际 {summaries.Count}");
+
+        // ② 无悬挂覆盖：每个 CompactedBy 都必须指向本会话真实存在的摘要行。
+        var summaryIds = summaries.Select(s => s.MessageId).ToHashSet(StringComparer.Ordinal);
+        var covered = await verify.Messages
+            .Where(m => m.SessionId == SessionId && m.CompactedBy != null)
+            .Select(m => m.CompactedBy!)
+            .ToListAsync();
+        foreach (var coveredBy in covered)
+        {
+            Assert.IsTrue(
+                summaryIds.Contains(coveredBy),
+                $"覆盖标注悬挂：CompactedBy={coveredBy} 在本会话没有对应摘要行");
+        }
+
+        // ③ 代际单调且与实际提交一致（0 或 1）。
+        var session = await verify.Sessions.SingleAsync(s => s.SessionId == SessionId);
+        Assert.IsTrue(session.CompactionGeneration is 0 or 1,
+            $"代际必须单调且最多推进一次，实际 {session.CompactionGeneration}");
+        if (summaries.Count == 1)
+            Assert.AreEqual(1, session.CompactionGeneration, "有摘要就必须推进过一次代际");
+    }
+
     // ── 装配 ────────────────────────────────────────────────────────────────
 
     private static RuntimeDispatchRequest CreateDispatchRequest(bool suppressAutoCompaction = true) => new()

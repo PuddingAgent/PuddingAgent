@@ -69,6 +69,66 @@ public sealed class ContextCompactionCommitRollbackTests
 
     // ─────────────────────────────── 帮助方法 ───────────────────────────────
 
+    /// <summary>
+    /// **取消/抢占落在提交点**：终态后的维护会被更新的请求抢占（协作取消），若取消恰好落在写入边界，
+    /// 必须和异常一样「零残留」——否则就会留下「摘要行没写、却已经打标」或「代际推了但没摘要」的半提交。
+    /// </summary>
+    [TestMethod]
+    public async Task CompactAsync_CancelledAtCommitPoint_LeavesZeroPartialWrites()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var seedOptions = CreateOptions(connection, interceptFault: false);
+        await using (var db = new MemoryDbContext(seedOptions))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedMessagesAsync(db, SessionId, 26);
+        }
+
+        using var cts = new CancellationTokenSource();
+        var cancellationInterceptor = new CommitPointCancellationInterceptor(cts);
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(CreateCancellationOptions(connection, cancellationInterceptor)),
+            new FixedSummaryGenerator("## 用户目标\n取消注入摘要。"),
+            NullLogger<ContextCompactionService>.Instance,
+            contentSummaryService: null,
+            dataPaths: null);
+
+        // 是否向上抛由实现决定；本用例只约束「不能留下部分写入」。
+        try
+        {
+            await service.CompactAsync(CreateRequest(), cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // 预期路径之一
+        }
+
+        Assert.IsTrue(
+            cancellationInterceptor.Fired,
+            "拦截器必须在压缩提交点真正触发过，否则本用例是真空通过（没有走到写入边界）");
+
+        await using var verify = new MemoryDbContext(seedOptions);
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m =>
+            m.SessionId == SessionId && m.ContentType == "compact_summary"), "取消不得留下摘要行");
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m =>
+            m.SessionId == SessionId && m.CompactedBy != null), "取消不得留下覆盖标注");
+        Assert.AreEqual(0, await verify.CompactionCoverageManifests.CountAsync(), "取消不得留下覆盖清单");
+        Assert.AreEqual(
+            0,
+            (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration,
+            "取消不得推进代际");
+    }
+
+    private static DbContextOptions<MemoryDbContext> CreateCancellationOptions(
+        SqliteConnection connection,
+        CommitPointCancellationInterceptor interceptor)
+        => new DbContextOptionsBuilder<MemoryDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
     private static DbContextOptions<MemoryDbContext> CreateOptions(SqliteConnection connection, bool interceptFault)
     {
         var builder = new DbContextOptionsBuilder<MemoryDbContext>()
@@ -86,6 +146,46 @@ public sealed class ContextCompactionCommitRollbackTests
             Mode: ContextCompactionMode.Manual,
             Level: ContextCompactionLevel.Full,
             Reason: "P0-TXN Phase 2 commit rollback");
+
+    /// <summary>在压缩提交点取消（模拟被更新的维护请求抢占），并让 SaveChanges 观察到取消。</summary>
+    private sealed class CommitPointCancellationInterceptor(CancellationTokenSource cts) : SaveChangesInterceptor
+    {
+        /// <summary>是否真的在提交点触发过（防止取消用例真空通过）。</summary>
+        public bool Fired { get; private set; }
+
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData,
+            InterceptionResult<int> result)
+        {
+            ThrowIfCompactSummaryStaged(eventData.Context);
+            return base.SavingChanges(eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfCompactSummaryStaged(eventData.Context);
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+
+        private void ThrowIfCompactSummaryStaged(DbContext? context)
+        {
+            if (context is null)
+                return;
+
+            var staging = context.ChangeTracker.Entries<MessageEntity>()
+                .Any(entry => entry.State == EntityState.Added
+                    && string.Equals(entry.Entity.ContentType, "compact_summary", StringComparison.OrdinalIgnoreCase));
+            if (!staging)
+                return;
+
+            Fired = true;
+            cts.Cancel();
+            throw new OperationCanceledException("simulated maintenance preemption at commit point", cts.Token);
+        }
+    }
 
     /// <summary>
     /// 仅在压缩提交点触发：暂存了 compact_summary 摘要行（ContextCompactionService 的
