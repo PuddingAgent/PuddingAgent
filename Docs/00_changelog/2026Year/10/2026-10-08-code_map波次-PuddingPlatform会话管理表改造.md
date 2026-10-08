@@ -1,10 +1,10 @@
 ---
-title: 2026-10-08 PuddingPlatform code_map 会话管理表列式改造（波次 1-4/15 表：error 118 → 71）
+title: 2026-10-08 PuddingPlatform code_map 会话管理表列式改造（波次 1-5/15 表：error 118 → 59）
 author: hyfree
 date: 2026-10-08
 last_reviewed: 2026-10-08
 status: active
-description: "把 Source/PuddingPlatform/code_map.md 的「会话管理」表（8 行）从 2 列改造成规范 v2 的 5 列 schema：用途压回一条职责命题，关键符号取自源码实测的类型与 ctor 依赖，关联只写真实存在的同工程路径，约束只保留「不可从代码推断且删掉会导致误改」的两条并压到 ≤160 字符。检查器 error 118 → 113 → 101 → 80 → 71、warn 50 → 48 → 46 → 35 → 31（波次 1-4）；本文件归并记录该目标文件的全部波次，文件名保留首波次命名。目的不是清数字，而是把该表从正文堆积改回可导航索引；本文件是 15 张表中的第 1 张。"
+description: "把 Source/PuddingPlatform/code_map.md 的「会话管理」表（8 行）从 2 列改造成规范 v2 的 5 列 schema：用途压回一条职责命题，关键符号取自源码实测的类型与 ctor 依赖，关联只写真实存在的同工程路径，约束只保留「不可从代码推断且删掉会导致误改」的两条并压到 ≤160 字符。检查器 error 118 → 113 → 101 → 80 → 71 → 59、warn 50 → 48 → 46 → 35 → 31 → 27（波次 1-5）；本文件归并记录该目标文件的全部波次，文件名保留首波次命名。目的不是清数字，而是把该表从正文堆积改回可导航索引；本文件是 15 张表中的第 1 张。"
 categories: [docs, code-map, condensation]
 tags: [code-map, spec-v2, schema, condensation]
 related_docs: [Docs/10_conventions/code-map-规范-v2.md, Docs/00_changelog/2026Year/10/2026-10-07-code_map规范v2与自检.md, Docs/00_changelog/2026Year/10/2026-10-08-code_map波次1-PuddingCodeIndex契约表列式改造.md]
@@ -147,9 +147,44 @@ warn | 35 | **31** |
 - L94：剥离构造函数依赖清单；**保留** 发送前重验 owner、dead-letter 判据、MaxAttempts、ActiveTask 注入方式。
 - L104：将 `GET /tasks/watch`(SSE) 提为关键符号（端点身份），正文只留约束。
 
+## 波次 5：外部访问令牌与 Agent 消息 API 表（19 行 → 20 行）
+
+范围 `## 外部访问令牌与 Agent 消息 API（ADR-075 / ADR-082）`（L168–L186）。
+
+| 指标 | 波次 4 后 | 波次 5 后 |
+|---|---|---|
+error | 71 | **59**（field-too-long 60 → 49、line-too-long 11 → 10） |
+warn | 31 | **27** |
+该表最长行 | 293（L177 旧用途格） | **300**（row11，恰好等于上限，未越界） |
+字节 | 47899 | 49899 |
+条目行 | 181 | **182（+1，见下）** |
+总行数 | 268 | **269（+1）** |
+改造区间违规 | — | **L168..L187 = 0**（对报告 JSON 独立复核） |
+
+### 结构性修正：glob 文件列展开（本条是本波最重要的一处）
+
+L184 原文件列写的是 **glob** `Data/Entities/ExternalAccessToken*.cs`（不是可导航路径；检查器的路径存在性无法通过它定位任一实体）。按磁盘实测展开为 4 个真实实体文件，并按「文件列 ≤120 字符」拆为两行：
+
+- `Data/Entities/ExternalAccessTokenEntity.cs` + `Data/Entities/ExternalAccessTokenScopeEntity.cs`
+- `Data/Entities/ExternalAccessTokenWorkspaceEntity.cs` + `Data/Entities/ExternalAccessTokenAuditEventEntity.cs`
+
+⇒ 条目行 181 → **182**、总行数 268 → **269**，属**有意的结构性变化**（不是漂移），`entries-exceed` 上限 400 仍远未触及。这是本 campaign 第一次改动条目数。
+
+### 写前断言取红（三轮，均未写入）
+
+1. 第一轮：约束格 179 > 160（L177），五行 333 / 335 / 325 / 353 / 364 > 300（L171、L177、L178、L180、L186）。
+2. 第二轮：仅 row11 = 301 > 300。
+3. 第三轮通过（longest = 300）。
+4. token 零丢失检查三项差异，全部登记为例外并逐条说明：`ExternalWorkspaceAgentDtos.cs`（原单元格缺 `Controllers/External/V1/` 前缀，属**路径补全**）、`Controllers/ExternalTaskApiV1Tests.cs` 与 `Controllers/ExternalWorkspaceAgentApiV1Tests.cs`（测试用例清单改为**入口登记**，见下）。
+
+### 本轮剥离 / 改造内容（披露）
+
+- **测试行（L186）改为跨工程入口登记**：原行列出 `PuddingPlatformTests/**` 4 类 glob 并携带"聚焦回归 45/45"的**测试计数投影**（会随用例增删腐烂）。实测磁盘为 9 个测试文件（Security 5、Controllers 2、Services 2），改为文件列登记 `Source/PuddingPlatformTests/Security/`、`.../Controllers/` 两个目录 + 关键测试类名，并写入边界约束"本表只登记入口，不复制用例清单"。
+- L169 / L170 / L171 / L173 / L177 / L178：剥离 `ADR-082 增加 workspaces/agents/messages Policies`、端点清单（可由控制器读出）、`（无 admin role）`→保留、组件复用叙事等；**保留** 令牌格式 `pdt_v1_<keyId>.<secret>`、SHA-256 固定时间比较、90d/365d 生命周期、fail-closed 六类认证失败、ordinal 比较、`If-Match`→CAS 的 428/412 与快照、`Idempotency-Key` 强制、无 delete、Actor/Origin 注入、幂等 key 的四段拼接、评价与事件同事务、audit append-only。
+
 ## 遗留（后续波次）
 
-- 其余 **11 张表 / 114 行**：对话 & 聊天 9、Agent 管理 6、认证与当前用户 6、子代理 & 诊断 8、Goal 持久控制面 16、外部访问令牌 19、安全审批 2、持久化 18、多媒体 6、提供商配置 6、Token 计量 18。
+- 其余 **10 张表 / 95 行**：对话 & 聊天 9、Agent 管理 6、认证与当前用户 6、子代理 & 诊断 8、Goal 持久控制面 16、安全审批 2、持久化 18、多媒体 6、提供商配置 6、Token 计量 18。
+- ⚠️ 自本波起，本表之后的各表行号 **+1**（269 行），后续波次的锚点必须现场重测，不得沿用旧行号。
 - 既有缺陷待裁定（波次 1 登记，仍未处理）：①`Services/SessionStateManager.cs` 在 L9 与 L84 重复登记；②同表头重复 14 次 > 上限 8 与固定列序冲突；③缺 §5 源指纹（待专用一波用 `glob_fingerprint` 实测后写）。
-- 波次 2 / 3 登记的路径问题（`MessageFabricStore.cs`、`TaskAutoDispatchScanRunner.cs` 的裸文件名）**已随改造修正**；同表目录行未展开为逐文件条目（按 §4 成本判据待裁定）。
-- 全文件仍存的反模式命中（不再落在已改造区间）：以报告 `anti_pattern_categories` 为准，留待后续波次逐表清理。
+- 波次 2 / 3 / 5 登记的路径问题（`MessageFabricStore.cs`、`TaskAutoDispatchScanRunner.cs`、`ExternalWorkspaceAgentDtos.cs` 的裸文件名）**已随改造修正**；波次 5 的 glob 行已展开为真实文件。

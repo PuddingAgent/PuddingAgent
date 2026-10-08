@@ -163,27 +163,28 @@
 
 ## 外部访问令牌与 Agent 消息 API（ADR-075 / ADR-082）
 
-| 文件 | 用途 |
-|------|------|
-| `Services/Security/ExternalAccessTokenStore.cs` | Token 持久化：`external_access_tokens` + scopes/workspaces/audit 四表、CAS rename/revoke、按 keyId 索引查询、last-used 合并写落库 |
-| `Services/Security/ExternalAccessTokenService.cs` | 领域服务：RNG 生成 `pdt_v1_<keyId>.<secret>`、SHA-256 摘要固定时间比较、生命周期规则（默认 90d/上限 365d/每人 Active 上限）、认证 fail-closed（malformed/unknown/bad-secret/revoked/expired/owner-disabled）、auth-fail 节流审计 |
-| `Services/Security/ExternalAccessTokenHandler.cs` | `PuddingExternalAccessToken` ASP.NET Core 认证 scheme（AuthenticationHandler）：Header 解析 → 验证 → ClaimsPrincipal（无 admin role）；成功投递 last-used 合并器 |
-| `Services/Security/ExternalAccessTokenAuthorization.cs` | ExternalScopeRequirement/ExternalWorkspaceRequirement + Policy 名称；handler 校验 scheme 身份 + scope/workspace claim（ordinal）；ADR-082 增加 workspaces/agents/messages Policies |
-| `Services/Security/ExternalAccessTokenUsageCoalescer.cs` | last-used 有界合并写（首次立即、之后每 5 分钟至多一次；停机 force flush）|
-| `Services/Security/ExternalAccessTokenSchemaBootstrapper.cs` | 四张 Token 表幂等建表（与 EF 实体列名一致）|
-| `Services/Security/ExternalTaskApiOptionsProvider.cs` | `config/system.json` externalTaskApi 节读取（30s 缓存）+ 启动期越界校验 |
-| `Controllers/Api/AdminAccessTokenController.cs` | JWT-admin-only 管理 API：status/list/create（明文仅 201 一次）/detail/rename(CAS)/revoke(CAS)；不提供 reveal/unrevoke/删除/扩权 |
-| `Controllers/External/V1/ExternalTokenInfoController.cs` | `GET /api/external/v1/token` whoami 自检（ExternalApiGateFilter 门控）|
-| `Controllers/External/V1/ExternalTaskController.cs` | External Task API v1（ADR-075 P2 基本功能）：list/get/create/patch(If-Match→CAS，428/412+currentTask 快照)/comments/evaluations/commands(白名单)；Actor=access-token:{tokenId}、Origin=external.api 注入；mutation 要求 Idempotency-Key；无 delete；RateLimiter/SSE Watch/OpenAPI 未实现 |
-| `Controllers/External/V1/ExternalWorkspaceAgentController.cs` | ADR-082：授权 Workspace/Agent 安全目录；消息以 connector/access-token actor 进入 Message Fabric，强制 Idempotency-Key；`202 + Location` 与 Token-owned receipt 分离 delivery acceptance 和 canonical Agent terminal reply |
-| `Controllers/External/V1/ExternalApiGateFilter.cs` | External API 门控：Enabled=false → 404；非 Loopback 明文 HTTP → 400 |
-| `Controllers/External/V1/ExternalTaskDtos.cs` / `ExternalWorkspaceAgentDtos.cs` | V1 稳定 wire DTO（与 Internal DTO/EF Entity 分 namespace）；Workspace/Agent 投影排除成员、Profile、Prompt、MainSessionId 和 Secret |
-| `Services/ExternalApi/TaskEvaluationStore.cs` | 追加式评价：task_evaluations + task.evaluated 事件同事务；score/verdict/taskVersionObserved/supersedes 校验；不改 Task 状态/version |
-| `Services/ExternalApi/ExternalApiIdempotencyStore.cs` | 简化幂等：key=SHA-256(token+method+route+key)、claim-then-execute、replay/409/失败释放、保留期顺带清理 |
-| `Services/ExternalApi/ExternalTaskApiSchemaBootstrapper.cs` | task_evaluations + external_api_idempotency 幂等建表 |
-| `Data/Entities/ExternalAccessToken*.cs` | 主表/scope/workspace/audit 四实体（复合主键联结 + append-only 审计）|
-| `Data/Entities/TaskEvaluationEntity.cs` / `Data/Entities/ExternalApiIdempotencyEntity.cs` | 评价 + 幂等实体 |
-| 测试 | `PuddingPlatformTests/Security/ExternalAccessToken*Tests.cs` + `Controllers/ExternalTaskApiV1Tests.cs` + `Controllers/ExternalWorkspaceAgentApiV1Tests.cs` + 评价/幂等 Store 测试；ADR-082 新增 5 项，External API 相关聚焦回归 45/45 |
+| 文件 | 用途 | 关键符号 | 关联 | 约束 |
+|------|------|------|------|------|
+| `Services/Security/ExternalAccessTokenStore.cs` | 外部访问令牌的持久化 | `ExternalAccessTokenStore` / `ExternalAccessTokenMutationResult` | `Data/Entities/ExternalAccessTokenEntity.cs` | `external_access_tokens` 与 scopes/workspaces/audit 四表；CAS rename/revoke；按 keyId 索引查询；last-used 合并写落库 |
+| `Services/Security/ExternalAccessTokenService.cs` | 外部令牌的签发与认证 | `ExternalAccessTokenService` / `ExternalAccessTokenAuthFailureReason` | `Services/Security/ExternalAccessTokenStore.cs` | RNG 生成 `pdt_v1_<keyId>.<secret>`；SHA-256 摘要固定时间比较；默认 90d、上限 365d；认证 fail-closed 六类原因；auth-fail 节流审计 |
+| `Services/Security/ExternalAccessTokenHandler.cs` | 外部令牌的 ASP.NET 认证 scheme | `ExternalAccessTokenHandler` / `ExternalAccessTokenOptions` | `Services/Security/ExternalAccessTokenService.cs` | Header 解析 → 验证 → `ClaimsPrincipal`（不带 admin role）；成功时投递 last-used 合并器 |
+| `Services/Security/ExternalAccessTokenAuthorization.cs` | 外部令牌的 requirement 与 Policy | `ExternalAccessTokenPolicyNames` / `ExternalWorkspaceRequirement` | `Services/Security/ExternalAccessTokenHandler.cs` | handler 校验 scheme 身份与 scope/workspace claim（ordinal 比较） |
+| `Services/Security/ExternalAccessTokenUsageCoalescer.cs` | last-used 的有界合并写 | `ExternalAccessTokenUsageCoalescer` | `Services/Security/ExternalAccessTokenStore.cs` | 首次立即写，之后每 5 分钟至多一次；停机时 force flush |
+| `Services/Security/ExternalAccessTokenSchemaBootstrapper.cs` | 四张 Token 表的幂等建表 | `ExternalAccessTokenSchemaBootstrapper` | `Data/Entities/ExternalAccessTokenEntity.cs` | 列名与 EF 实体一致 |
+| `Services/Security/ExternalTaskApiOptionsProvider.cs` | externalTaskApi 配置读取 | `ExternalTaskApiOptionsProvider` | `<DataRoot>/config/system.json` | 读 `externalTaskApi` 节（30s 缓存），并在启动期做越界校验 |
+| `Controllers/Api/AdminAccessTokenController.cs` | JWT-admin-only 的令牌管理 API | `AdminAccessTokenController` | `Services/Security/ExternalAccessTokenService.cs` | status/list/create（明文仅 201 返回一次）/detail/rename(CAS)/revoke(CAS)；不提供 reveal、unrevoke、删除与扩权 |
+| `Controllers/External/V1/ExternalTokenInfoController.cs` | whoami 自检端点 | `ExternalTokenInfoController` / `GET /api/external/v1/token` | `Controllers/External/V1/ExternalApiGateFilter.cs` | — |
+| `Controllers/External/V1/ExternalTaskController.cs` | External Task API v1 | `ExternalTaskController` | `Controllers/External/V1/ExternalTaskDtos.cs` | 写入要求 `Idempotency-Key`；patch 走 `If-Match` → CAS（428/412 带 currentTask 快照）；无 delete；Actor=`access-token:{tokenId}`、Origin=`external.api` |
+| `Controllers/External/V1/ExternalWorkspaceAgentController.cs` | External Workspace 与 Agent API v1 | `ExternalWorkspaceAgentController` | `IWorkspaceAgentCatalog` | 消息以 connector/access-token actor 进入 Message Fabric 并强制 `Idempotency-Key`；`202 + Location` 与 Token-owned receipt 分离受理与 terminal reply |
+| `Controllers/External/V1/ExternalApiGateFilter.cs` | External API 门控过滤器 | `ExternalApiGateFilter` | `Controllers/External/V1/ExternalTaskController.cs` | `Enabled=false` 一律 404；非 Loopback 的明文 HTTP 一律 400 |
+| `Controllers/External/V1/ExternalTaskDtos.cs` / `Controllers/External/V1/ExternalWorkspaceAgentDtos.cs` | External V1 的稳定 wire DTO | `ExternalTaskDto` / `ExternalCreateTaskRequest` | `ExternalTaskController` | 与 Internal DTO / EF Entity 分 namespace；投影排除成员、Profile、Prompt、MainSessionId 与 Secret |
+| `Services/ExternalApi/TaskEvaluationStore.cs` | 追加式任务评价存储 | `TaskEvaluationStore` | `Data/Entities/TaskEvaluationEntity.cs` | `task_evaluations` 与 `task.evaluated` 事件同事务；校验 score/verdict/taskVersionObserved/supersedes；不改 Task 状态与 version |
+| `Services/ExternalApi/ExternalApiIdempotencyStore.cs` | External API 的幂等存储 | `ExternalApiIdempotencyStore` | `Data/Entities/ExternalApiIdempotencyEntity.cs` | key = SHA-256(token + method + route + key)；claim-then-execute；replay 与 409；失败释放；保留期顺带清理 |
+| `Services/ExternalApi/ExternalTaskApiSchemaBootstrapper.cs` | 评价与幂等表的幂等建表 | `ExternalTaskApiSchemaBootstrapper` | `Data/Entities/ExternalApiIdempotencyEntity.cs` | 建 `task_evaluations` 与 `external_api_idempotency` |
+| `Data/Entities/ExternalAccessTokenEntity.cs` / `Data/Entities/ExternalAccessTokenScopeEntity.cs` | 令牌主表与 scope 联结实体 | `ExternalAccessTokenEntity` / `ExternalAccessTokenScopeEntity` | `Services/Security/ExternalAccessTokenStore.cs` | 复合主键联结（token 与 scope 多对多） |
+| `Data/Entities/ExternalAccessTokenWorkspaceEntity.cs` / `Data/Entities/ExternalAccessTokenAuditEventEntity.cs` | 令牌 workspace 联结与审计实体 | `ExternalAccessTokenWorkspaceEntity` / `ExternalAccessTokenAuditEventEntity` | `Services/Security/ExternalAccessTokenStore.cs` | audit 表 append-only（不更新、不删除） |
+| `Data/Entities/TaskEvaluationEntity.cs` / `Data/Entities/ExternalApiIdempotencyEntity.cs` | 评价与幂等实体 | `TaskEvaluationEntity` / `ExternalApiIdempotencyEntity` | `Services/ExternalApi/TaskEvaluationStore.cs` | — |
+| `Source/PuddingPlatformTests/Security/` / `Source/PuddingPlatformTests/Controllers/` | 外部令牌与 External API 的回归测试入口 | `ExternalAccessTokenServiceTests` / `ExternalTaskApiV1Tests` | `ExternalAccessTokenService` | 测试位于独立工程 `Source/PuddingPlatformTests/`，本表只登记入口，不复制用例清单 |
 
 ## 安全审批管理 API 与分类器健康（2026-09-21）
 
