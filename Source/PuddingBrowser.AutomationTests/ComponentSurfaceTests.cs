@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts.Desktop;
+using Pudding.Contracts.Desktop;
 using PuddingBrowser.Automation;
 
 namespace PuddingBrowser.AutomationTests;
@@ -20,6 +20,9 @@ public sealed class ComponentSurfaceTests
         "ArticleCursor",
         "BudgetVerdict",
         "ContentSize",
+        "Answer",
+        "Kind",
+        "ScriptDialogPolicy",
         "ScreenshotPlan",
         "ArticlePaging",
         "PageResult",
@@ -71,11 +74,15 @@ public sealed class ComponentSurfaceTests
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
-        CollectionAssert.AreEquivalent(
-            ExpectedPublicTypes,
-            exported,
+        // 差异直接写进消息：只报"数量不符"会让人反复数列表（这是我自己踩过的坑）。
+        var added = exported.Except(ExpectedPublicTypes).ToArray();
+        var removed = ExpectedPublicTypes.Except(exported).ToArray();
+
+        Assert.IsTrue(
+            added.Length == 0 && removed.Length == 0,
             "the public surface of PuddingBrowser.Automation changed; update the contract consumers (S5)"
-            + " and this frozen list together");
+            + " and this frozen list together"
+            + $"; added=[{string.Join(", ", added)}] removed=[{string.Join(", ", removed)}]");
     }
 
     [TestMethod]
@@ -150,6 +157,7 @@ public sealed class ComponentSurfaceTests
             ["ArticleCompactJsonTests"] = 8,
             ["ArticleCursorTests"] = 7,
             ["ScreenshotPlanTests"] = 9,
+            ["ScriptDialogPolicyTests"] = 6,
             ["BrowserNodeIdentityTests"] = 10,
             ["NativeInputSequenceTests"] = 10,
             ["BrowserAssertionRedactionTests"] = 11,

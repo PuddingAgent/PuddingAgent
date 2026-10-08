@@ -39,6 +39,15 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
     /// <summary>页面级 ref 作用域 token（诊断/测试用；不进工具输出，避免被当作可复用标识）。</summary>
     internal string RefScopeToken => _refScopeToken;
+
+    /// <summary>
+    /// 最近一次被自动处理的页面脚本对话框摘要（有界、无敏感内容）；没有过则为 <c>null</c>。
+    /// **不用于继续交互**，只用于说明"刚才有个弹窗被处理了，所以页面没卡住"。
+    /// </summary>
+    internal string? LastScriptDialog { get; private set; }
+
+    /// <summary>被自动处理的页面脚本对话框累计次数（诊断用）。</summary>
+    internal int ScriptDialogCount { get; private set; }
     public PageInfo Info { get; private set; }
     public bool CanGoBack => _canGoBack;
     public bool CanGoForward => _canGoForward;
@@ -80,6 +89,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         coreWebView.DocumentTitleChanged += OnDocumentTitleChanged;
         coreWebView.SourceChanged += OnSourceChanged;
         coreWebView.ProcessFailed += OnProcessFailed;
+        coreWebView.ScriptDialogOpening += OnScriptDialogOpening;
     }
 
     private void UnsubscribeCoreWebViewEvents(CoreWebView2 coreWebView)
@@ -89,6 +99,39 @@ public sealed class WebView2BrowserPage : IBrowserPage
         coreWebView.DocumentTitleChanged -= OnDocumentTitleChanged;
         coreWebView.SourceChanged -= OnSourceChanged;
         coreWebView.ProcessFailed -= OnProcessFailed;
+        coreWebView.ScriptDialogOpening -= OnScriptDialogOpening;
+    }
+
+    /// <summary>
+    /// 页面脚本对话框（<c>alert</c>/<c>confirm</c>/<c>prompt</c>/<c>beforeunload</c>）。
+    ///
+    /// **必须处理**：不处理时 WebView2 会弹一个模态框并**卡住页面脚本**，之后所有动作都会莫名失败
+    /// （这类"悬停不动"的故障最难排查）。这里按 <see cref="ScriptDialogPolicy"/> 确定性作答，
+    /// 并把有界的事实摘要留在页面上（<see cref="LastScriptDialog"/>），供回执/诊断说明"刚发生了什么"。
+    /// </summary>
+    private void OnScriptDialogOpening(object? sender, CoreWebView2ScriptDialogOpeningEventArgs e)
+    {
+        var kind = e.Kind switch
+        {
+            CoreWebView2ScriptDialogKind.Alert => ScriptDialogPolicy.Kind.Alert,
+            CoreWebView2ScriptDialogKind.Confirm => ScriptDialogPolicy.Kind.Confirm,
+            CoreWebView2ScriptDialogKind.Prompt => ScriptDialogPolicy.Kind.Prompt,
+            _ => ScriptDialogPolicy.Kind.Alert,
+        };
+
+        var answer = ScriptDialogPolicy.Decide(kind);
+
+        // 接管：本版本的 API 没有 `Handled` 属性，语义是「**调用 Accept 即为接受，不调用即为取消**」，
+        // 且事件被处理后 WebView2 不再弹默认模态框（页面不会被卡住）。
+        if (answer == ScriptDialogPolicy.Answer.Accept)
+        {
+            e.Accept();
+        }
+
+        // prompt 的回填文本**永远不提供**（编一个文本替用户提交等于伪造输入）。
+        var summary = ScriptDialogPolicy.Describe(kind, e.Message, answer);
+        LastScriptDialog = summary;
+        ScriptDialogCount++;
     }
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
