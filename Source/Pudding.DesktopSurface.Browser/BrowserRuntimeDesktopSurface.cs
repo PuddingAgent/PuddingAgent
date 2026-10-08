@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopService;
 using PuddingBrowser.Abstractions;
@@ -656,17 +656,16 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                     $"native input is not implemented for action '{DesktopInteractionActionWire.NameOf(request.Action)}'"));
         }
 
-        // 原生滚动只覆盖**按位移滚动**：到达类目标（to_top/to_bottom/to_ref）需要"滚到边界/滚到某元素"
-        // 的判定，本轮明确拒绝（fail closed），绝不悄悄退回 DOM —— 那会让调用方以为走的是真实输入。
+        // 原生滚动覆盖**按位移滚动**与**到达类目标（to_top/to_bottom）**：后者由驱动按步送轮，
+        // 并用收敛策略决定何时停（G8：必须能停，且不得把"没动"当成滚成功）。
+        // `to_ref` 仍需先解析参考点位置 ⇒ **仍明确拒绝**（fail closed），绝不悄悄退回 DOM。
         if (request.InputMode == DesktopInputMode.Native
             && request.Action == DesktopInteractionAction.Scroll
-            && request.EffectiveScrollTarget is DesktopScrollTarget.ToTop
-                or DesktopScrollTarget.ToBottom or DesktopScrollTarget.ToRef)
+            && request.EffectiveScrollTarget == DesktopScrollTarget.ToRef)
         {
             return CapabilityResult<DesktopInteractionResult>.Failure(
                 DesktopCapabilityError.UnsupportedCapability(
-                    $"native scroll does not implement target '{request.EffectiveScrollTarget}' yet;"
-                    + " use input_mode=dom for to_top/to_bottom/to_ref"));
+                    "native scroll does not implement target 'to_ref' yet; use input_mode=dom for to_ref"));
         }
 
         if (_runtime.State != BrowserRuntimeState.Ready)

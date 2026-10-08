@@ -102,7 +102,7 @@ public sealed class InteractMappingTests
     }
 
     [Fact]
-    public async Task NativeScroll_CarriesTheMode_AndRefusesArrivalTargets()
+    public async Task NativeScroll_CarriesTheMode_SupportsArrivalAndRefusesToRef()
     {
         // §7：原生滚动是"发真实滚轮事件"，因此只覆盖**按位移滚动**；
         // 到达类目标（to_top/to_bottom/to_ref）在原生路径下明确拒绝，不悄悄退回 DOM。
@@ -124,7 +124,9 @@ public sealed class InteractMappingTests
         Assert.False(native.IsFailure);
         Assert.Equal(InputMode.Native, runtime.Pages["ctx-1/p-1"].LastScroll!.InputMode);
 
-        var refused = await surface.InteractAsync(
+        // 到达类目标：to_bottom 现在**走原生**（驱动按步送轮 + 收敛策略决定何时停）；
+        // to_ref 仍需先解析参考点位置 ⇒ 仍明确拒绝（fail closed，不悄悄退回 DOM）。
+        var arrival = await surface.InteractAsync(
             Call,
             new BrowserInteractRequest(
                 Target,
@@ -137,8 +139,25 @@ public sealed class InteractMappingTests
                 scrollTarget: DesktopScrollTarget.ToBottom),
             CancellationToken.None);
 
+        Assert.False(arrival.IsFailure);
+        Assert.Equal(ScrollTarget.ToBottom, runtime.Pages["ctx-1/p-1"].LastScroll!.Target);
+        Assert.Equal(InputMode.Native, runtime.Pages["ctx-1/p-1"].LastScroll!.InputMode);
+
+        var refused = await surface.InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target,
+                DesktopInteractionAction.Scroll,
+                DesktopPageVersion.Require(6),
+                locator: Button,
+                deltaX: null,
+                deltaY: null,
+                inputMode: DesktopInputMode.Native,
+                scrollTarget: DesktopScrollTarget.ToRef),
+            CancellationToken.None);
+
         Assert.True(refused.IsFailure);
-        Assert.Contains("native scroll", refused.Error!.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("to_ref", refused.Error!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

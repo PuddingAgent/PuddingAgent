@@ -468,10 +468,110 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// 落点规则：有元素目标 ⇒ 元素中心（滚轮作用在指针下的可滚动祖先）；页面目标 ⇒ 视口中心
     /// （视口尺寸来自 CDP <c>Page.getLayoutMetrics</c>，不猜窗口大小）。
     /// </summary>
+    /// <summary>
+    /// **滚到顶/底**（§7/G8）：按步送真实滚轮事件，每步回读位置与几何后问策略是否继续。
+    ///
+    /// 三个必须停的理由（策略给出）：到限 / 位置不再变化 / 步数封顶。这里额外加一道**本地硬上限**
+    /// 兜底：即使策略被换成有缺陷的实现，也不可能把一次交互变成无限循环。
+    /// 回读不到几何 ⇒ **明确失败**（拿不到"到没到"就不猜）。
+    /// </summary>
+    private async Task ScrollToArrivalAsync(
+        CoreWebView2 webView, bool toBottom, double pointX, double pointY, CancellationToken ct)
+    {
+        const int HardStepCap = 64;
+
+        double? previous = null;
+
+        for (var steps = 0; ; steps++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var geometry = await ReadScrollGeometryAsync(webView, ct).ConfigureAwait(false)
+                ?? throw new BrowserOperationException(
+                    "browser_operation_failed",
+                    "the page did not report scroll geometry, so an arrival scroll cannot be verified");
+
+            var step = Policy.PlanArrivalStep(
+                toBottom, geometry.Position, previous, geometry.ViewportHeight, geometry.ContentHeight, steps)
+                ?? throw new BrowserOperationException(
+                    "browser_input_mode_not_supported",
+                    "native arrival scroll is not available on this surface; use input_mode=dom");
+
+            if (!step.ShouldContinue)
+            {
+                break;
+            }
+
+            if (steps >= HardStepCap)
+            {
+                // 策略没有自己封顶时的兜底（不静默继续）。
+                break;
+            }
+
+            var plan = Policy.PlanScroll(pointX, pointY, 0, step.Delta)
+                ?? throw new BrowserOperationException(
+                    "browser_input_mode_not_supported",
+                    "native scroll is not available on this surface; use input_mode=dom");
+
+            foreach (var call in plan)
+            {
+                ct.ThrowIfCancellationRequested();
+                var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
+                using var _ = await SendCdpAsync(call.Method, parameters, ct).ConfigureAwait(false);
+            }
+
+            previous = geometry.Position;
+        }
+    }
+
+    /// <summary>回读滚动位置与几何（<c>scrollY</c>/<c>scrollHeight</c>/<c>innerHeight</c>）；读不到返回 null。</summary>
+    private async Task<(double Position, double ViewportHeight, double ContentHeight)?> ReadScrollGeometryAsync(
+        CoreWebView2 webView, CancellationToken ct)
+    {
+        const string Script =
+            "(function(){var d=document.scrollingElement||document.documentElement;"
+            + "return JSON.stringify({y:(window.scrollY||d.scrollTop||0),"
+            + "sh:(d?d.scrollHeight:0),ih:(window.innerHeight||0)});})()";
+
+        var raw = await _dispatcher.InvokeAsync(
+            async () => await webView.ExecuteScriptAsync(Script), ct).ConfigureAwait(false);
+
+        try
+        {
+            // ExecuteScriptAsync 返回的是 JS 值的 JSON 编码 ⇒ 需要解两层。
+            using var outer = JsonDocument.Parse(raw);
+            if (outer.RootElement.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            using var inner = JsonDocument.Parse(outer.RootElement.GetString() ?? string.Empty);
+            if (!TryReadDouble(inner.RootElement, "y", out var position)
+                || !TryReadDouble(inner.RootElement, "sh", out var contentHeight)
+                || !TryReadDouble(inner.RootElement, "ih", out var viewportHeight))
+            {
+                return null;
+            }
+
+            return (position, viewportHeight, contentHeight);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryReadDouble(JsonElement element, string name, out double value)
+    {
+        value = 0;
+        return element.TryGetProperty(name, out var property)
+            && property.ValueKind == JsonValueKind.Number
+            && property.TryGetDouble(out value);
+    }
+
     private async Task<ScrollOutcome> ScrollNativelyAsync(
         CoreWebView2 webView, ScrollOptions options, CancellationToken ct)
-    {
-        double pointX;
+    {        double pointX;
         double pointY;
 
         if (options.Target == ScrollTarget.Element && options.Locator is { } locator)
@@ -496,16 +596,30 @@ public sealed class WebView2BrowserPage : IBrowserPage
         var deltaX = options.DeltaX ?? 0;
         var deltaY = options.DeltaY ?? 0;
 
-        var plan = Policy.PlanScroll(pointX, pointY, deltaX, deltaY)
-            ?? throw new BrowserOperationException(
-                "browser_input_mode_not_supported",
-                "native scroll is not available on this surface; use input_mode=dom");
-
-        foreach (var call in plan)
+        // 到达类目标（to_top/to_bottom）：原生滚轮没有原子"滚到底"，只能按步送并**必须能停**。
+        // 每步都问策略"继续还是停、为什么停"，位置与几何**从页面回读**（不猜）。
+        if (options.Target is ScrollTarget.ToTop or ScrollTarget.ToBottom)
         {
-            ct.ThrowIfCancellationRequested();
-            var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
-            using var _ = await SendCdpAsync(call.Method, parameters, ct).ConfigureAwait(false);
+            await ScrollToArrivalAsync(
+                webView,
+                toBottom: options.Target == ScrollTarget.ToBottom,
+                pointX,
+                pointY,
+                ct).ConfigureAwait(false);
+        }
+        else
+        {
+            var plan = Policy.PlanScroll(pointX, pointY, deltaX, deltaY)
+                ?? throw new BrowserOperationException(
+                    "browser_input_mode_not_supported",
+                    "native scroll is not available on this surface; use input_mode=dom");
+
+            foreach (var call in plan)
+            {
+                ct.ThrowIfCancellationRequested();
+                var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
+                using var _ = await SendCdpAsync(call.Method, parameters, ct).ConfigureAwait(false);
+            }
         }
 
         Interlocked.Increment(ref _pageVersion);
