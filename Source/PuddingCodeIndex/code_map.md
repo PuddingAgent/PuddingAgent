@@ -8,32 +8,32 @@
 
 ## 契约（Contracts/ → `PuddingCodeIndex.Contracts`）
 
-| 文件 | 用途 |
-|------|------|
-| `CodeFileRecord.cs` | 文件记录 |
-| `CodeIndexContracts.cs` | `CodeIndexStatus` / `CodeIndexResult` |
-| `CodeIndexScopeContracts.cs` | `ScopeSource` / `ScopeState` / `CodeIndexScope` |
-| `CodeProjectContracts.cs` | `CodeProjectStatus` / `CodeProjectRecord` / Add·Remove 请求 |
-| `CodeSymbolContracts.cs` | `CodeSymbolKind` / `CodeSymbolRecord` / 搜索请求 / 详情 |
-| `CodeReferenceRecord.cs` | 引用记录 |
-| `CodeRelationContracts.cs` | `CodeRelationKind` / `CodeRelationRecord` |
-| `CodeWorkspaceDescriptor.cs` | 工作区描述符（索引器输入） |
-| `ICodeIndexStore.cs` | 索引存储端口；**U3-B3** 增 `RemoveFilesAsync`（按文件事务性清除：文件记录 + 符号 + 其关联图/引用；幂等，返回真正删除的文件数） |
-| `ICodeIndexer.cs` | 索引器端口（实现在 Intelligence）；**只含全量** `IndexWorkspaceAsync` / `RemoveWorkspaceIndexAsync` |
-| `ICodeIndexFileUpdater.cs` | **U3-B3** 按文件增量**可选能力端口**（`IndexFileAsync(descriptor, filePath)`）：故意不放进 `ICodeIndexer` —— 给全量端口加成员会破坏**每一个**实现者（实测 2026-09-24：成员版直接弄坏了禁写路径 `Tests/PuddingHost.Tests` 的替身）；不实现该能力 ⇒ 调用方升级为 scope 级重索引 |
-| `ICodeIndexScheduler.cs` | 后台调度端口（成员语义未变） |
-| `CodeIndexBatchContracts.cs` | **D3/D4 语言侧批量接缝**（2026-10-02）：`CodeIndexConsumerStatus` 四态（`Applied` / **`NotApplicable`＝能力路由结果** / `Retryable`＝按路径退避 / `ScopeRunRequired`＝只能给项目级结论，交调用方决定）；`CodeFileIndexPayload`（提取结果，**由调用方原子提交**，不在这里写库）；`CodeFileIndexOutcome`；`CodeIndexBatchContext`（配置/策略指纹 + 世代号，批内复用一个工程快照的键）；`CodeIndexFileBatchResult`（含 `SessionKey`，供「批内是否重复打开工程」诊断）；`ICodeIndexFileBatchUpdater` |
-| `ICodeIndexSchedulerDriver.cs` | **U3-B1** 显式泵端口（`ProcessPendingAsync` + 每 scope `Desired/Committed` 水位） |
-| `ICodeIndexMaintenance.cs` | **U3-B1** 变更驱动维护服务的生命周期/只读观测契约 + `CodeIndexMaintenanceScopeStatus`（**U3-B3** 状态增 `RemovedFileCount` / `IncrementallyIndexedFileCount` / `ScopeEscalationCount`；**U3-C** 再增 `SweptFileCount` / `CalibrationRunCount` / `RejectedCalibrationRunCount` / `LastCalibrationAtUtc`；**U3-D** `CalibrationRunCount` 计入常规（周期）校准；`LastCalibrationAtUtc` 同时是常规时钟的锚） |
-| `ICodeIndexScopeRegistry.cs` | 范围注册端口 |
-| `ICodeIndexScopeResolver.cs` | 范围解析端口 + `ScopeResolution` |
-| `ICodeProjectRegistry.cs` | 项目注册端口 |
-| `ICodeWorkspaceResolver.cs` | 工作区解析端口 |
-| `ICodeSourceMaintenanceStore`（同 `CodeSourceManifestContracts.cs`） | **可选持久化/维护写能力端口**（2026-10-02）：`LoadSourceMaintenanceAsync` / `SaveSourceManifestAsync`（单事务 upsert+删除，删除同时清消费者水位）/ `SaveMaintenanceLedgerAsync`（整体替换消费者水位与待重试，**拒绝回退写入**）/ `ReplaceFilesAsync`（**原子文件替换**：索引结果 + 源指纹同事务；见下）。故意不加进 `ICodeIndexStore`（给共享端口加成员会破坏每一个实现者，含组件外替身） |
-| `CodeSourceScanningContracts.cs` | **D2 磁盘枚举与校准合同**（2026-10-02）：`CodeSourceDiskEntry`（只含元数据，stat 读不到就是 null）、`ICodeSourceIgnoreRules`（忽略规则**注入端口**，组件不反向引用 `PuddingPathFiltering`）、`ICodeSourceScanner` + `CodeSourceScanOutcome`（`RootUsable` / `Complete` / 原因）、`CodeSourceScanRun`（变更集 + 捕获版本 + 扫描开始时刻 + 能力缺失）、`CodeSourceScanOptions`、`CodeSourceScanReasons` |
-| `ICodeProjectRootDetector.cs` | 项目根探测端口 |
-| `CodeSourceUpdateContracts.cs` | **D3 更新计划合同**（2026-10-02）：`CodeFileSemanticChange`（真正提取出的符号变化，空列表=无影响）、`ICodeGraphDependencyQuery`（反向依赖查询端口；实现留在存储）、`CodeSourceUpdateAction`（Extract/RebindOnly/Delete/RetryLater）、`CodeSourceUpdateItem` / `CodeSourceUpdatePlan`（计数 + `Truncated`）、`CodeSourceUpdateReasons` |
-| `CodeSourceManifestContracts.cs` | **D2 源状态与变更判定合同**（2026-10-02）：`SourceFingerprint`（mtime/length/内容 hash，hash 必须来自实际参与提取的那份内容）、`AppliedFileVersion`（**每个消费者分别推进**的水位 + 解析器策略/语义输入指纹）、`CodeSourceEntry`（持久 manifest 行，`Complete=false` 不得当作已应用）、`CodeSourceObservation`（stat 读不到就是 null，不得顶替）、`CodeConsumerInputFingerprint`、`CodeSourceAction`（Reuse / RefreshFingerprintOnly / RebindConsumers / ReindexContent / Delete / Deferred）、`CodeSourceChangeSource` 三源位标、`CodeSourceChange` / `CodeSourceScanRequest` / `CodeSourceChangeSet`（含扫描完整性、建议水位与各动作计数） |
+| 文件 | 用途 | 关键符号 | 关联 | 约束 |
+|------|------|------|------|------|
+| `CodeFileRecord.cs` | 单个文件在索引中的记录 | `CodeFileRecord` | — | — |
+| `CodeIndexContracts.cs` | 索引状态与结果的契约类型 | `CodeIndexStatus` / `CodeIndexResult` | — | — |
+| `CodeIndexScopeContracts.cs` | 索引范围的定义类型 | `ScopeSource` / `ScopeState` / `CodeIndexScope` | — | — |
+| `CodeProjectContracts.cs` | 项目注册记录与增删请求的类型定义 | `CodeProjectStatus` / `CodeProjectRecord` / 增删请求 | — | — |
+| `CodeSymbolContracts.cs` | 符号与搜索请求的契约类型 | `CodeSymbolKind` / `CodeSymbolRecord` / 搜索请求 | — | — |
+| `CodeReferenceRecord.cs` | 引用记录的契约类型 | `CodeReferenceRecord` | — | — |
+| `CodeRelationContracts.cs` | 符号关系的契约类型 | `CodeRelationKind` / `CodeRelationRecord` | — | — |
+| `CodeWorkspaceDescriptor.cs` | 索引器输入的工作区描述符 | `CodeWorkspaceDescriptor` | — | — |
+| `ICodeIndexStore.cs` | 索引存储端口 | `ICodeIndexStore` / `RemoveFilesAsync` | — | 按文件清除必须与文件记录、符号及其关联图/引用同事务；幂等且回报真实删除数 |
+| `ICodeIndexer.cs` | 工作区级索引器端口 | `ICodeIndexer` / `IndexWorkspaceAsync` / `RemoveWorkspaceIndexAsync` | `Source/PuddingCodeIntelligence/code_map.md` | 只含全量操作；给共享端口加成员会破坏每个实现者（含组件外替身），增量能力必须另开端口 |
+| `ICodeIndexFileUpdater.cs` | 按文件增量的可选能力端口 | `ICodeIndexFileUpdater` / `IndexFileAsync` | `ICodeIndexer.cs` | 实现方未提供该能力时，调用方必须升级为 scope 级重索引，不得静默跳过文件 |
+| `ICodeIndexScheduler.cs` | 后台索引调度端口 | `ICodeIndexScheduler` | — | — |
+| `CodeIndexBatchContracts.cs` | 语言侧按批索引的接缝契约 | `CodeIndexConsumerStatus` / `CodeFileIndexPayload` / `ICodeIndexFileBatchUpdater` | — | `NotApplicable` 是能力路由结果；`ScopeRunRequired` 只给项目级结论并交调用方决定；载荷由调用方原子提交，本层不写库 |
+| `ICodeIndexSchedulerDriver.cs` | 调度器的显式泵端口 | `ICodeIndexSchedulerDriver` / `ProcessPendingAsync` | — | — |
+| `ICodeIndexMaintenance.cs` | 变更驱动维护服务的生命周期与只读观测契约 | `ICodeIndexMaintenance` / `CodeIndexMaintenanceScopeStatus` | — | `LastCalibrationAtUtc` 同时是常规校准时钟的锚；`RejectedCalibrationRunCount` 只计被拒的校准 |
+| `ICodeIndexScopeRegistry.cs` | 范围注册端口 | `ICodeIndexScopeRegistry` | — | — |
+| `ICodeIndexScopeResolver.cs` | 范围解析端口 | `ICodeIndexScopeResolver` / `ScopeResolution` | — | — |
+| `ICodeProjectRegistry.cs` | 项目注册端口 | `ICodeProjectRegistry` | — | — |
+| `ICodeWorkspaceResolver.cs` | 工作区解析端口 | `ICodeWorkspaceResolver` | — | — |
+| `ICodeSourceMaintenanceStore`（同 `CodeSourceManifestContracts.cs`） | 源清单与维护账本的可选持久化端口 | `LoadSourceMaintenanceAsync` / `SaveSourceManifestAsync` / `SaveMaintenanceLedgerAsync` | — | 账本写入拒绝回退；`ReplaceFilesAsync` 必须把索引结果与源指纹放在同一事务 |
+| `CodeSourceScanningContracts.cs` | 磁盘枚举与校准的合同 | `CodeSourceDiskEntry` / `ICodeSourceIgnoreRules` / `ICodeSourceScanner` | `Source/PuddingPathFiltering/code_map.md` | `CodeSourceDiskEntry` 只含元数据、stat 读不到即为 null；忽略规则经注入端口提供，本组件不反向引用 `PuddingPathFiltering` |
+| `ICodeProjectRootDetector.cs` | 项目根探测端口 | `ICodeProjectRootDetector` | — | — |
+| `CodeSourceUpdateContracts.cs` | 源变更到索引动作的更新计划合同 | `CodeFileSemanticChange` / `ICodeGraphDependencyQuery` / `CodeSourceUpdateAction` | — | 空符号变化列表表示无影响；计划可被 `Truncated` 截断 |
+| `CodeSourceManifestContracts.cs` | 源状态与变更判定合同 | `SourceFingerprint` / `AppliedFileVersion` / `CodeSourceEntry` | — | hash 必须取自实际参与提取的那份内容；水位按消费者分别推进；`Complete=false` 的行不得当作已应用；stat 读不到不得顶替 |
 
 ## 变更捕获管线（Services/CodeIndex/ → `PuddingCodeIndex.Services.CodeIndex`）
 
