@@ -72,6 +72,24 @@ public sealed class AutomationDriverPolicy : IBrowserDriverPolicy
     public IReadOnlyList<DriverCall>? ReleaseModifiers(int modifiers) =>
         Map(NativeInputSequence.ReleaseModifiers(modifiers));
 
+    public DriverArrivalStep? PlanArrivalStep(
+        bool toBottom,
+        double position,
+        double? previousPosition,
+        double viewportHeight,
+        double contentHeight,
+        int stepsTaken)
+    {
+        var step = ArrivalScroll.Plan(
+            toBottom ? ArrivalTarget.Bottom : ArrivalTarget.Top,
+            position,
+            previousPosition,
+            viewportHeight,
+            contentHeight,
+            stepsTaken);
+
+        return new DriverArrivalStep(step.Delta, step.ShouldContinue, step.StopReason);
+    }
     public string? BuildFileUploadDocumentParameters() => FileUploadPlan.BuildDocumentParameters();
 
     public string? BuildFileUploadQueryParameters(int rootNodeId, string elementRef) =>

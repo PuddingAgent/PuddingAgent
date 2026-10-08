@@ -69,6 +69,17 @@ public interface IBrowserDriverPolicy
         int? quality, bool fullPage, double contentX, double contentY, double contentWidth, double contentHeight);
 
     /// <summary>
+    /// **到达滚动（to_top/to_bottom）的一步决策**（§7/G8）：原生滚轮没有原子"滚到底"，
+    /// 只能按步送并**必须能停**。返回 <c>null</c> 表示该面不支持到达滚动 ⇒ 驱动明确 unsupported。
+    /// </summary>
+    DriverArrivalStep? PlanArrivalStep(
+        bool toBottom,
+        double position,
+        double? previousPosition,
+        double viewportHeight,
+        double contentHeight,
+        int stepsTaken);
+    /// <summary>
     /// **文件上传的三步 CDP 参数**（见 Automation 的 FileUploadPlan）：
     /// 拿根节点 → 按元素引用查节点 → 把文件交给节点。
     /// 任一返回 <c>null</c> 表示该面不支持上传 ⇒ 驱动明确 unsupported（不假装成功）。
@@ -84,6 +95,9 @@ public interface IBrowserDriverPolicy
 
 /// <summary>一次驱动调用：CDP 方法名 + 已序列化的参数。</summary>
 public readonly record struct DriverCall(string Method, string ParametersJson);
+
+/// <summary>到达滚动的一步：位移 + 是否继续 + 停止原因（继续时原因无意义）。</summary>
+public readonly record struct DriverArrivalStep(double Delta, bool ShouldContinue, string? StopReason);
 
 /// <summary>
 /// 页面事件日志（有界、连续重复合并）。<see cref="Entries"/> 给出**可直接输出**的摘要
@@ -151,6 +165,13 @@ public sealed class NullBrowserDriverPolicy : IBrowserDriverPolicy
 
     public IReadOnlyList<DriverCall>? ReleaseModifiers(int modifiers) => null;
 
+    public DriverArrivalStep? PlanArrivalStep(
+        bool toBottom,
+        double position,
+        double? previousPosition,
+        double viewportHeight,
+        double contentHeight,
+        int stepsTaken) => null;
     public string? BuildFileUploadDocumentParameters() => null;
 
     public string? BuildFileUploadQueryParameters(int rootNodeId, string elementRef) => null;
