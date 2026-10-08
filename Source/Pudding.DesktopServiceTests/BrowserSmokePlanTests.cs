@@ -1,0 +1,138 @@
+using Pudding.DesktopService;
+
+namespace DesktopServiceTests;
+
+/// <summary>
+/// 外部 smoke 清单（把散落的"真机未验证"收拢成可执行观察项）：
+/// 覆盖全部门禁、Id 唯一、每条都有观察与期望、不许把进程内能测的混进来冒充真机。
+/// </summary>
+public sealed class BrowserSmokePlanTests
+{
+    [Fact]
+    public void TheCanonicalPlanIsValidAndCoversEveryGate()
+    {
+        Assert.Empty(BrowserSmokePlan.Validate(BrowserSmokePlan.Checks));
+
+        var gates = BrowserSmokePlan.Checks.Select(check => check.Gate).ToHashSet(StringComparer.Ordinal);
+        foreach (var required in BrowserSmokePlan.RequiredGates)
+        {
+            Assert.Contains(required, gates);
+        }
+    }
+
+    [Fact]
+    public void EveryCheckStatesAnObservationAndAnExpectation()
+    {
+        Assert.All(BrowserSmokePlan.Checks, check =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(check.Id));
+            Assert.False(string.IsNullOrWhiteSpace(check.Action));
+            Assert.False(string.IsNullOrWhiteSpace(check.Expected));
+            Assert.True(check.RequiresRealDevice, $"{check.Id} 不是真机观察项，不该放进 smoke 清单");
+        });
+    }
+
+    [Fact]
+    public void AMissingGateMakesThePlanIncomplete()
+    {
+        // 去掉 G8（滚动）⇒ 必须报"未覆盖"。
+        var withoutScroll = BrowserSmokePlan.Checks.Where(check => check.Gate != "G8").ToArray();
+        var problems = BrowserSmokePlan.Validate(withoutScroll);
+
+        Assert.Contains(problems, problem => problem.Contains("G8", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DuplicateIdsAndMissingFieldsAreRefused()
+    {
+        var duplicated = new List<BrowserSmokeCheck>(BrowserSmokePlan.Checks)
+        {
+            BrowserSmokePlan.Checks[0],
+        };
+
+        Assert.Contains(
+            BrowserSmokePlan.Validate(duplicated),
+            problem => problem.Contains("duplicate", StringComparison.Ordinal));
+
+        var blank = new List<BrowserSmokeCheck>
+        {
+            new("S-X", "G1", "区域", "  ", "期望"),
+        };
+        Assert.Contains(
+            BrowserSmokePlan.Validate(blank),
+            problem => problem.Contains("must state", StringComparison.Ordinal));
+
+        Assert.Contains(
+            BrowserSmokePlan.Validate([]),
+            problem => problem.Contains("at least one", StringComparison.Ordinal));
+        Assert.NotEmpty(BrowserSmokePlan.Validate(null));
+    }
+
+    [Fact]
+    public void ACheckThatNeedsNoRealDeviceMustNameItsAutomatedCoverage()
+    {
+        // 不许"既不需要真机、又说不清被什么覆盖" —— 那是最容易蒙混的一种。
+        var sneaky = new List<BrowserSmokeCheck>
+        {
+            new("S-Y", "G1", "区域", "动作", "期望", RequiresRealDevice: false),
+        };
+
+        Assert.Contains(
+            BrowserSmokePlan.Validate(sneaky),
+            problem => problem.Contains("automated coverage", StringComparison.Ordinal));
+
+        var honest = new List<BrowserSmokeCheck>
+        {
+            new("S-Z", "G1", "区域", "动作", "期望", RequiresRealDevice: false, AutomatedCoverage: "SomeTests.Case"),
+        };
+
+        // 单条清单当然覆盖不全门禁（那是另一条规则），但**不该**再报"没写清自动化覆盖"。
+        Assert.DoesNotContain(
+            BrowserSmokePlan.Validate(honest),
+            problem => problem.Contains("automated coverage", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheRenderedPlanListsEveryCheckAndFlagsAutomatedCoverage()
+    {
+        var markdown = BrowserSmokePlan.ToMarkdown();
+
+        foreach (var check in BrowserSmokePlan.Checks)
+        {
+            Assert.Contains(check.Id, markdown);
+            Assert.Contains(check.Expected.Split('；')[0], markdown);
+        }
+
+        Assert.Contains("| 项 | 门禁 | 区域 | 怎么触发 | 看到什么才算过 |", markdown);
+        Assert.Contains("已有自动化覆盖", markdown);
+        Assert.Contains("AutomationTests.SubAgentDelegation", markdown);
+    }
+
+    [Fact]
+    public void TheCommittedChecklistDoesNotDriftFromThePlan()
+    {
+        // 留痕清单（Docs/14_reports）必须与代码里的唯一真源一致：
+        // 每条观察项都要出现在文档里（防止"代码加了项、文档没跟上"）。
+        var path = Path.Combine(
+            RepoLayout.Root, "Docs", "14_reports", "2026-10-09-浏览器自动化外部smoke清单.md");
+        Assert.True(File.Exists(path), $"找不到 smoke 清单文档：{path}");
+
+        var markdown = File.ReadAllText(path);
+
+        foreach (var check in BrowserSmokePlan.Checks)
+        {
+            Assert.Contains($"| {check.Id} |", markdown);
+            Assert.Contains(check.Gate, markdown);
+        }
+
+        // 反向：文档里不该出现代码里没有的观察项编号。
+        var documentedIds = System.Text.RegularExpressions.Regex
+            .Matches(markdown, @"^\| (S-\d+) \|", System.Text.RegularExpressions.RegexOptions.Multiline)
+            .Select(match => match.Groups[1].Value)
+            .ToArray();
+
+        Assert.Equal(
+            BrowserSmokePlan.Checks.Select(check => check.Id).OrderBy(id => id, StringComparer.Ordinal),
+            documentedIds.OrderBy(id => id, StringComparer.Ordinal));
+    }
+}
