@@ -8,7 +8,7 @@
 |------|------|
 | `WebView2BrowserRuntime.cs` | 浏览器运行时实现 |
 | `WebView2BrowserContext.cs` | 浏览器上下文管理 |
-| `WebView2BrowserPage.cs` | 页面实现（核心，16KB） |
+| `WebView2BrowserPage.cs` | 页面实现（核心，16KB）。**CDP 传输已实现**：`SendCdpAsync` 走 WebView2 自带的 `CallDevToolsProtocolMethodAsync`（不必另开调试端口），参数原样透传、返回 JSON 由调用方解释；`SubscribeCdpAsync`（事件订阅）**仍明确 unsupported**——它需要另外的事件泵，不假装支持。原生输入的动作序列由 `PuddingBrowser.Automation.NativeInputSequence` 规划，这里只负责按序发 CDP |
 | `WebView2BrowserSurface.cs` | 浏览器表面 |
 
 ## DOM 操作

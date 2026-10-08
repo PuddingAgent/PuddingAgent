@@ -276,8 +276,30 @@ public sealed class WebView2BrowserPage : IBrowserPage
         => throw new NotSupportedException("CDP not in Phase 2A-1");
     public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct)
         => throw new NotSupportedException("CDP not in Phase 2A-1");
-    public Task<System.Text.Json.JsonDocument> SendCdpAsync(string method, System.Text.Json.JsonElement? parameters, CancellationToken ct)
-        => throw new NotSupportedException("CDP not in Phase 2A-1");
+    /// <summary>
+    /// 发一条 **CDP** 命令（设计方案 §7 的原生输入路径就靠它）。
+    ///
+    /// WebView2 自带 <c>CallDevToolsProtocolMethodAsync</c>，因此这里不需要另开调试端口；
+    /// 参数原样透传（调用方负责序列化），返回的 JSON 由调用方解释。
+    /// <c>SubscribeCdpAsync</c>（事件订阅）仍明确 unsupported —— 它需要另外的事件泵，
+    /// 本轮不假装支持。
+    /// </summary>
+    public async Task<System.Text.Json.JsonDocument> SendCdpAsync(
+        string method, System.Text.Json.JsonElement? parameters, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentException.ThrowIfNullOrWhiteSpace(method);
+
+        var webView = RequireWebView();
+        var payload = parameters is { ValueKind: System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null }
+            ? "{}"
+            : parameters!.Value.GetRawText();
+
+        var result = await _dispatcher.InvokeAsync(
+            () => webView.CallDevToolsProtocolMethodAsync(method, payload), ct).ConfigureAwait(false);
+
+        return System.Text.Json.JsonDocument.Parse(result);
+    }
     public Task<BrowserSubscriptionId> SubscribeCdpAsync(string eventName, CancellationToken ct)
         => throw new NotSupportedException("CDP not in Phase 2A-1");
     public Task UnsubscribeAsync(BrowserSubscriptionId sid, CancellationToken ct)

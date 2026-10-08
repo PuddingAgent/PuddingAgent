@@ -18,7 +18,10 @@ public sealed class ComponentSurfaceTests
         "ArticleBlock",
         "ArticleMarkdown",
         "BrowserActionEvidence",
-        "BrowserAutomationAuthority",
+        "CdpCall",
+        "InputTarget",
+        "KeyStroke",
+        "NativeInputSequence",        "BrowserAutomationAuthority",
         "BrowserGrantIssuancePolicy",
         "BrowserInteractionEvidence",
         "BrowserInteractionReceipt",
@@ -134,6 +137,7 @@ public sealed class ComponentSurfaceTests
         var expected = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["ArticleMarkdownFormatTests"] = 13,
+            ["NativeInputSequenceTests"] = 10,
             ["BrowserAssertionRedactionTests"] = 11,
             ["BrowserControlAuthorityTests"] = 16,
             ["BrowserInteractionReceiptTests"] = 24,
