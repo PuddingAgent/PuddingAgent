@@ -58,7 +58,10 @@ if ($Action -eq 'StopAndBackup') {
             Copy-Item -LiteralPath (Join-Path $dataRoot $dir) -Destination (Join-Path $backupRoot $dir) -Recurse
         }
         Copy-Item -LiteralPath $targetRoot -Destination (Join-Path $backupRoot 'core') -Recurse
-        Copy-Item -LiteralPath 'C:\Users\huany\AppData\Local\Pudding\desktop.json' -Destination (Join-Path $backupRoot 'desktop.json')
+        # Machine-independent: the desktop state file lives in the current user's profile.
+        # It used to be hard-coded to another user's profile, so this backup step threw on
+        # every other machine on this host (C-7 check-script-paths.ps1 reported MISSING_PATH).
+        Copy-Item -LiteralPath (Join-Path $env:LOCALAPPDATA 'Pudding\desktop.json') -Destination (Join-Path $backupRoot 'desktop.json')
         $checks = @(Get-ChildItem -LiteralPath (Join-Path $dataRoot 'databases') -File | ForEach-Object {
             $copy = Join-Path $backupRoot ('databases\' + $_.Name)
             $hash = (Get-FileHash -LiteralPath $_.FullName).Hash
