@@ -109,6 +109,33 @@ public sealed class BrowserSmokePlanTests
     }
 
     [Fact]
+    public void TheExternalScriptMirrorsThePlan()
+    {
+        // round-76 登记的风险：外部验收脚本里的观察项编号是 BrowserSmokePlan 的**镜像**（跨语言无法共享常量），
+        // 当时没有门禁。这条测试把镜像关系变成可验证的。
+        var path = Path.Combine(RepoLayout.Root, "TestScripts", "external-acceptance.ps1");
+        Assert.True(File.Exists(path), $"找不到外部验收脚本：{path}");
+
+        var script = File.ReadAllText(path);
+
+        var scriptIds = System.Text.RegularExpressions.Regex
+            .Matches(script, @"Id = ""(S-\d+)""")
+            .Select(match => match.Groups[1].Value)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            BrowserSmokePlan.Checks.Select(check => check.Id).OrderBy(id => id, StringComparer.Ordinal),
+            scriptIds);
+
+        // 生命周期步骤同样必须齐全（脚本据此写骨架）。
+        foreach (var step in DeliveryManifest.RequiredLifecycleSteps)
+        {
+            Assert.Contains(step, script);
+        }
+    }
+
+    [Fact]
     public void TheCommittedChecklistDoesNotDriftFromThePlan()
     {
         // 留痕清单（Docs/14_reports）必须与代码里的唯一真源一致：
