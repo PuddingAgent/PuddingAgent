@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- PuddingContextPolicy: 上下文容量与压缩候选的**纯策略**组件（ADR-095 / 修复方案 §6.1）。
+       边界硬规则（组件化交付规程 §2.2，编译期强制）：
+         · 本项目 **ProjectReference 数量必须为 0**，且只依赖 BCL；
+         · 不得引用 PuddingCore / PuddingRuntime / PuddingMemoryEngine / PuddingHost /
+           PuddingAgent / PuddingPlatform 或任何 LLM SDK；
+         · 不负责计时器、数据库、网络、Session 锁、后台任务与事件发布 —— 那些留在引用方（Runtime）。
+       因此本组件可以在宿主运行中独立 build + test（规程 R1），并可在 S5 之前交付。
+       边界由 PuddingContextPolicyTests/ComponentBoundaryTests 在运行期断言（S4）。 -->
+  <ItemGroup>
+    <!-- 只用 BCL：无 PackageReference、无 ProjectReference。 -->
+  </ItemGroup>
+
+</Project>

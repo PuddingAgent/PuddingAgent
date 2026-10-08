@@ -1,0 +1,20 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- PuddingContextPolicy 的独立测试工程（组件化交付规程 S2/S3）。
+       边界规则：本工程**只引用 PuddingContextPolicy**（+ 测试框架）。
+       不得引用 PuddingCore / PuddingRuntime / PuddingMemoryEngine / PuddingHost / PuddingAgent /
+       PuddingPlatform，也不得引用其它组件 —— 这样策略组件可以在宿主运行中独立构建与测试（R1）。
+       边界由 ComponentBoundaryTests 在运行期断言（S4）。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingContextPolicy\PuddingContextPolicy.csproj" />
+  </ItemGroup>
+
+</Project>
