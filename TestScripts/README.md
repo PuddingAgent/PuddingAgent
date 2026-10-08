@@ -612,6 +612,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\run-gates.ps1 -S
 **C-1/C-4** | `check-project-layering.ps1` | 依赖图无环 · 生产工程不引用测试工程 |
 **C-5** | `check-script-encodings.ps1` | 每个脚本**可加载**且未声明本机没有的引擎 |
 **C-6** | `check-script-runtime-compat.ps1` | 脚本内每个命令/具名参数在**本引擎**可解析 |
+**C-7** | `check-script-paths.ps1` | 脚本内每个**绝对路径字面量**在本机可解析（盘符存在、路径存在） |
 
 ### 实跑结果（本机 `PS 5.1.26100.9444`，2026-10-08）
 
@@ -920,3 +921,66 @@ runner -RepoWide EXIT=1
 
 - **未修那 2 个受害文件**：`dev-up.ps1` 在仓库根、可能属他人/并行工作流 ⇒ **不擅自加 BOM**（那是改他人文件的字节）。已上报，待裁决。
 - 静默门禁端到端 fixture 仍未仓库化 · 仍未接线 CI。
+
+---
+
+## C-7 —— 脚本**绝对路径字面量**门禁（`check-script-paths.ps1`，2026-10-09 新增）
+
+### 触发事件：仓库**整体迁移了路径**，而前三道门禁都看不见这件事
+
+**2026-10-09 实测**：仓库已从 `E:\github\AgentNetworkPlan\PuddingAgent` 迁到 `D:\CodeProject\PuddingAgent\PuddingAgent`，且 **`E:` 盘在本机已不存在**（实测盘符 **C / D / F / H**）。
+
+后果：任何仍写死 `E:\...` 的脚本**在本机必然死**，但它
+
+| 检查 | 结果 | 为什么看不见 |
+|---|---|---|
+C-5 可加载性 | `errors=0` PASS | 字节解码与解析都不关心路径 |
+C-6 运行期兼容性 | `CMD_MISSING=0` PASS | 命令与参数都解析得到 |
+**C-7** | **`MISSING_DRIVE=2` FAIL** | **只有它检查路径本身** |
+
+**⇒ 三层判据「能加载 ⟶ 能运行 ⟶ 判定正确」之外，还有第四层：「它指向的东西还在不在」。**
+
+### 它做什么
+
+对范围内每个 `.ps1` / `.py`：
+
+1. `.ps1`：**从 AST 取字符串字面量**（`StringConstantExpressionAst` + `ExpandableStringExpressionAst`）
+   ⇒ **注释、注释型帮助、here-string 永不参与**（否则每个帮助示例都会被当成写死的路径）
+2. `.py`：逐行扫引号内字符串，**整行 `#` 注释先置空**（保持行号不变）
+3. 用 `(?<![A-Za-z0-9_])([A-Za-z]):[\\/]...` 匹配**盘符绝对路径**，并裁掉 `?query` / `#fragment`
+4. 判级：
+
+| 判定 | 含义 | 处置 |
+|---|---|---|
+**`MISSING_DRIVE`** | 字面量的盘符**本机不存在** | 🔴 **FAIL**（任何脚本都无法穿过一个不存在的盘） |
+`MISSING_PATH` | 盘符在、路径不在 | 🟡 **WARN**（`-StrictPaths` 升为 FAIL） |
+`OK` | 路径可解析 | — |
+
+`MISSING_PATH` **有意只作警告**：输出目录、备份根、密钥目录**本来就是首次运行时才创建**，它们不存在**不构成腐烂的证据**；而**盘符不存在则是确证**。
+
+### 自检（8 组控制，纯内存 + 只读 `Test-Path`，不写文件）
+
+`CTRL_A_MISSING_DRIVE` · `CTRL_B_OK`（现有仓库根**不得**误报）· `CTRL_C_RELATIVE` · `CTRL_D_NONABS`（URL / `%TEMP%` / `~` / 裸 `C:`）· `CTRL_E_MISSING_PATH` · `CTRL_F_COUNT`（**单条发现必须计为 1**）· `CTRL_G_COMMENTS`（注释文本不得贡献字面量）· `CTRL_H_URL_SCHEME`（URL scheme 不是盘符，但行内真实路径仍要抓）
+
+> ⚠️ **首跑即抓到本脚本自己的两个缺陷，均为控制捕获**：
+> ① **`https://` 里的 `s:` 被当成盘符** ⇒ `CTRL_D` FAIL。修法＝盘符前加负向断言 `(?<![A-Za-z0-9_])`；**若没有这个控制，全仓每个 URL 都会被报成「缺盘」**。
+> ② 一次补丁把注释与赋值**并到了同一行**，`$hText` 永不赋值 ⇒ `CTRL_H` 报「expected 1, got 0」。修法＝拆行。**控制的价值正在于此：它在我改错时不肯变绿。**
+
+### 实测（本机 `PS 5.1.26100.9444`，`-Root TestScripts -Recurse`）
+
+```
+FILES=41 ANALYSED=41 UNANALYSABLE=0 LITERALS=19 OK_PATHS=10 MISSING_DRIVE=2 MISSING_PATH=7
+FAIL: 2 literal(s) name a drive that does not exist on this machine
+  - dev_up_tests.py:343   E:\github\AgentNetworkPlan\PuddingAgent\dev-up.py
+  - ef-migration-audit.py:20  E:\github\AgentNetworkPlan\PuddingAgent
+```
+
+**这 2 条就是仓库迁移的真实受害点**（两者都是可执行脚本，不是文档）。
+
+### 已知边界（打印在报告尾部，不隐藏）
+
+`.ps1` 字面量来自解析器 ⇒ 注释/here-string 除外；`.py` 为逐行扫描，整行 `#` 注释置空、**docstring 未特殊排除**；`%ENV%` / `$env:` / `~` / 相对路径**不是**绝对路径字面量；**超过 400 字符的 token** 与**裸盘符前缀**跳过；存在性用 `Test-Path -LiteralPath`（通配符按字面处理）。
+
+### 退出码
+
+`0` PASS · `1` 至少一条 `MISSING_DRIVE`（或 `-StrictPaths` 下的 `MISSING_PATH`）· `2` 范围内 `.ps1` 无法解析故无法检查 · `3` **枚举到 0 个脚本 ⇒ 拒绝报绿** · `4` 自检未检出植入缺陷。

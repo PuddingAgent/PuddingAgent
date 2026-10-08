@@ -130,6 +130,7 @@ $gates = @(
     (New-Object PSObject -Property @{ Id = 'C-1/C-4'; Script = 'check-project-layering.ps1';      PassRoot = $false; Labels = @('PROJECT_COUNT', 'EDGE_COUNT') })
     (New-Object PSObject -Property @{ Id = 'C-5';     Script = 'check-script-encodings.ps1';      PassRoot = $true;  Labels = @('FILES=') })
     (New-Object PSObject -Property @{ Id = 'C-6';     Script = 'check-script-runtime-compat.ps1'; PassRoot = $true;  Labels = @('FILES=') })
+    (New-Object PSObject -Property @{ Id = 'C-7';     Script = 'check-script-paths.ps1';          PassRoot = $true;  Labels = @('FILES=') })
 )
 
 function Test-Skipped {
