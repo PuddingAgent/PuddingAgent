@@ -1313,95 +1313,59 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
-    public async Task Snapshot_RevisionAnswersWhetherContentChanged_AndRefusesToCompareIncomparableBaselines()
+    public async Task Snapshot_RendersTheHostJudgedRevisionChangedAndDiff()
     {
-        // 设计 §145：「diff 绑定 baseline 和同一文档；基线缺失返回 refresh_required，不伪造变化」。
+        // §145：判定**只有一份**（持有基线的宿主侧解析器）。工具只负责原样透传与渲染，
+        // 因此这里钉住的是：since_revision 下传、revision/changed/diff 上屏。
         var runtime = new FakeBrowserRuntime();
         var context = await runtime.CreateContextAsync(
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
         var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.SnapshotRevision = "r1-3-abcdefgh-ijklmnop";
+        page.SnapshotChanged = true;
+        page.SnapshotDiff = new TextDiff
+        {
+            Added = ["button ref=v1-n9 name=\"New\""],
+            Removed = [],
+            AddedCount = 7,
+            RemovedCount = 0,
+            Truncated = true,
+        };
         var surface = new FakeCapabilitySurface(runtime);
-        var tool = new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor);
 
-        string Args(object extra) => JsonSerializer.Serialize(extra);
+        var result = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "outline",
+                since_revision = "r1-3-abcdefgh-ijklmnop"
+            }));
 
-        var first = await ExecuteAsync(tool, Args(new { page_id = page.Id.Value, context_id = "ctx-1", mode = "outline" }));
-        Assert.True(first.Success);
-        var firstValue = GetJson(first.Output, "value");
-        var revision = firstValue.GetProperty("revision").GetString();
-        Assert.False(string.IsNullOrEmpty(revision));
+        Assert.True(result.Success);
 
-        // 没给 since_revision ⇒ **不比较**，也就不声称"没变"（changed = null）。
-        Assert.Equal(JsonValueKind.Null, firstValue.GetProperty("changed").ValueKind);
+        // since_revision 原样下传（判定在宿主侧做）。
+        Assert.Equal("r1-3-abcdefgh-ijklmnop", surface.LastSnapshotRequest!.Options.SinceRevision);
 
-        // 同一内容 ⇒ 明确回答"没变"（这是内容哈希的证据，不是猜测）。
-        var unchanged = await ExecuteAsync(tool, Args(new
-        {
-            page_id = page.Id.Value,
-            context_id = "ctx-1",
-            mode = "outline",
-            since_revision = revision
-        }));
-        Assert.True(unchanged.Success);
-        Assert.False(GetJson(unchanged.Output, "value").GetProperty("changed").GetBoolean());
+        var value = GetJson(result.Output, "value");
+        Assert.Equal("r1-3-abcdefgh-ijklmnop", value.GetProperty("revision").GetString());
+        Assert.True(value.GetProperty("changed").GetBoolean());
 
-        // 内容真的变了 ⇒ 明确回答"变了"。
-        page.SnapshotText = "document name=\"Example\"\nheading name=\"Changed\"\nbutton ref=v1-n1 name=\"Save\"";
-        var changed = await ExecuteAsync(tool, Args(new
-        {
-            page_id = page.Id.Value,
-            context_id = "ctx-1",
-            mode = "outline",
-            since_revision = revision
-        }));
-        Assert.True(changed.Success);
-        Assert.True(GetJson(changed.Output, "value").GetProperty("changed").GetBoolean());
+        // 差异如实呈现：真实计数与"被预算截断"都要在（不能把 7 条说成 1 条）。
+        var diff = value.GetProperty("diff");
+        Assert.Equal(7, diff.GetProperty("addedCount").GetInt32());
+        Assert.Equal(0, diff.GetProperty("removedCount").GetInt32());
+        Assert.True(diff.GetProperty("truncated").GetBoolean());
+        Assert.Single(diff.GetProperty("added").EnumerateArray());
 
-        // 换了查询（不同 mode/fields）⇒ **不可比**：refresh_required，且不发明"变化"。
-        var otherQuery = await ExecuteAsync(tool, Args(new
-        {
-            page_id = page.Id.Value,
-            context_id = "ctx-1",
-            mode = "interactive",
-            since_revision = revision
-        }));
-        Assert.False(otherQuery.Success);
-        using (var document = JsonDocument.Parse(otherQuery.Error!))
-        {
-            Assert.Equal("refresh_required", document.RootElement.GetProperty("error").GetProperty("code").GetString());
-        }
+        // 没给 since_revision ⇒ changed 为 null（不比较就不声称"没变"）。
+        page.SnapshotChanged = null;
+        var plain = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", mode = "outline" }));
 
-        // 来自**别的版本**的修订 ⇒ 同样不可比。
-        var otherVersion = BrowserReadingRevision.Create(
-                page.PageVersion + 1,
-                BrowserReadingRevision.QueryFingerprintOf("outline", null, null),
-                "whatever")
-            .Encode();
-        var stale = await ExecuteAsync(tool, Args(new
-        {
-            page_id = page.Id.Value,
-            context_id = "ctx-1",
-            mode = "outline",
-            since_revision = otherVersion
-        }));
-        Assert.False(stale.Success);
-        using (var document = JsonDocument.Parse(stale.Error!))
-        {
-            Assert.Equal("refresh_required", document.RootElement.GetProperty("error").GetProperty("code").GetString());
-        }
-
-        // 格式坏掉 ⇒ **参数错**（不是"内容变了"，也不是"基线不可比"）。
-        var malformed = await ExecuteAsync(tool, Args(new
-        {
-            page_id = page.Id.Value,
-            context_id = "ctx-1",
-            since_revision = "not-a-revision"
-        }));
-        Assert.False(malformed.Success);
-        using (var document = JsonDocument.Parse(malformed.Error!))
-        {
-            Assert.Equal("browser_invalid_arguments", document.RootElement.GetProperty("error").GetProperty("code").GetString());
-        }
+        Assert.Equal(JsonValueKind.Null, GetJson(plain.Output, "value").GetProperty("changed").ValueKind);
     }
 
     /// <summary>断言某字段**不在**输出里（要么缺键，要么显式为 null）。</summary>
@@ -1753,7 +1717,16 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
             snapshot.Html,
             snapshot.Truncated,
             snapshot.NodeCount,
-            page.PageVersion > 0 ? DesktopPageVersion.Require(page.PageVersion) : DesktopPageVersion.Unknown));
+            page.PageVersion > 0 ? DesktopPageVersion.Require(page.PageVersion) : DesktopPageVersion.Unknown)
+        {
+            // 与真实传输同形：宿主编出的修订/变化/差异随结果回来（判定不在工具侧）。
+            Revision = snapshot.Revision,
+            Changed = snapshot.Changed,
+            Diff = snapshot.Diff is { } diff
+                ? BrowserTextDiff.FromParts(
+                    diff.Added, diff.Removed, diff.AddedCount, diff.RemovedCount, diff.Truncated)
+                : null,
+        });
     }
     public async Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
         BrowserWaitForRequest request, DesktopCallContext call, CancellationToken ct = default)
@@ -2277,12 +2250,23 @@ internal sealed class FakeBrowserPage : IBrowserPage
                 ?? "document name=\"Example\"\nheading name=\"Form\"\n"
                 + "button ref=v1-n1 name=\"Save\"\ntextbox ref=v1-n2 name=\"Search\"",
             NodeCount = 4,
-            Truncated = SnapshotTruncated
+            Truncated = SnapshotTruncated,
+            Revision = SnapshotRevision,
+            Changed = SnapshotChanged,
+            Diff = SnapshotDiff
         });
     }
 
     /// <summary>让替身改变读取内容（用于验证"内容变了吗"是**基于内容哈希的证据**）。</summary>
     public string? SnapshotText { get; set; }
+
+    /// <summary>让替身报告"宿主编出来的"修订与差异（§145）。</summary>
+    public string? SnapshotRevision { get; set; }
+
+    public bool? SnapshotChanged { get; set; }
+
+    public TextDiff? SnapshotDiff { get; set; }
+
     public async Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
         => (await QueryAllAsync(locator, ct)).FirstOrDefault();
     public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct)

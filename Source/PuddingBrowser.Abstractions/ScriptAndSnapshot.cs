@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace PuddingBrowser.Abstractions;
 
@@ -38,6 +38,9 @@ public sealed record SnapshotOptions
     /// <c>null</c> = 整页；引用过期由驱动明确拒绝（<c>stale_element_reference</c>），不退化成正页。
     /// </summary>
     public string? ScopeRef { get; init; }
+
+    /// <summary>与上次读取的修订标识比较（§145）；由**持有基线的那一侧**解释。</summary>
+    public string? SinceRevision { get; init; }
 }
 
 public sealed record PageSnapshot
@@ -47,6 +50,28 @@ public sealed record PageSnapshot
     public string? Html { get; init; }
     public bool Truncated { get; init; }
     public int NodeCount { get; init; }
+
+    /// <summary>本次读取的修订标识（§145）；由**持有基线的那一侧**签发。</summary>
+    public string? Revision { get; init; }
+
+    /// <summary>与调用方给的修订相比内容是否变化；未要求比较时为 <c>null</c>。</summary>
+    public bool? Changed { get; init; }
+
+    /// <summary>行级差异；形状在 Abstractions 里保持中立（本组件不得引用 Contracts）。</summary>
+    public TextDiff? Diff { get; init; }
+}
+
+/// <summary>
+/// 行级差异的中立形状（Abstractions）：契约层的 <c>BrowserTextDiff</c> 是它的对外投影。
+/// 计数是真实的，列表可能因预算被截断。
+/// </summary>
+public sealed record TextDiff
+{
+    public IReadOnlyList<string> Added { get; init; } = [];
+    public IReadOnlyList<string> Removed { get; init; } = [];
+    public int AddedCount { get; init; }
+    public int RemovedCount { get; init; }
+    public bool Truncated { get; init; }
 }
 
 public sealed record BoundingBox

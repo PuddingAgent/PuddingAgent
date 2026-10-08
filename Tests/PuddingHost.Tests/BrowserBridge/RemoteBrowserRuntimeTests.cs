@@ -300,7 +300,18 @@ public sealed class RemoteBrowserRuntimeTests
                 {
                     AccessibilityTree = "table ref=v1-n2 name=\"Rows\"",
                     NodeCount = 1,
-                    PageVersion = 1
+                    PageVersion = 1,
+                    // 宿主编出的修订与差异（§145）：Core 侧只做形状搬运。
+                    Revision = "r1-1-abcdefgh-ijklmnop",
+                    Changed = true,
+                    Diff = new BrowserTextDiffDescriptor
+                    {
+                        Added = ["row ref=v1-n9 name=\"New\""],
+                        Removed = [],
+                        AddedCount = 3,
+                        RemovedCount = 0,
+                        Truncated = false,
+                    },
                 }),
                 _ => Failure(command, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
             };
@@ -310,13 +321,26 @@ public sealed class RemoteBrowserRuntimeTests
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
         var snapshot = await page.SnapshotAsync(
-            new SnapshotOptions { IncludeDom = false, IncludeAccessibilityTree = true, ScopeRef = "p1-v1-n2" },
+            new SnapshotOptions
+            {
+                IncludeDom = false,
+                IncludeAccessibilityTree = true,
+                ScopeRef = "p1-v1-n2",
+                SinceRevision = "r1-1-abcdefgh-ijklmnop",
+            },
             CancellationToken.None);
 
         Assert.Equal(1, snapshot.NodeCount);
 
+        // 修订/变化/差异原样到达 Core（判定在宿主，搬运不能失真）。
+        Assert.Equal("r1-1-abcdefgh-ijklmnop", snapshot.Revision);
+        Assert.True(snapshot.Changed);
+        Assert.Equal(["row ref=v1-n9 name=\"New\""], snapshot.Diff!.Added);
+        Assert.Equal(3, snapshot.Diff.AddedCount);
+
         using var document = JsonDocument.Parse(sent!.Arguments.GetRawText());
         Assert.Equal("p1-v1-n2", document.RootElement.GetProperty("scopeRef").GetString());
+        Assert.Equal("r1-1-abcdefgh-ijklmnop", document.RootElement.GetProperty("sinceRevision").GetString());
         Assert.False(document.RootElement.GetProperty("includeDom").GetBoolean());
         Assert.True(document.RootElement.GetProperty("includeAccessibilityTree").GetBoolean());
     }

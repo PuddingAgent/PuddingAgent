@@ -92,6 +92,36 @@ public sealed record BrowserSnapshotToolValue
     /// （不比较就不能声称"没变"）。不可比时整个调用以 `refresh_required` 失败，而不是在这里猜一个值。
     /// </summary>
     public bool? Changed { get; init; }
+
+    /// <summary>行级差异（要求比较且基线可用时给出）；计数真实，列表可能被预算截断。</summary>
+    public BrowserDiffToolValue? Diff { get; init; }
+}
+
+/// <summary>
+/// 行级差异的工具投影（§145）：**变化了什么**，而不是"变了/没变"。
+/// </summary>
+public sealed record BrowserDiffToolValue
+{
+    public IReadOnlyList<string> Added { get; init; } = [];
+    public IReadOnlyList<string> Removed { get; init; } = [];
+
+    /// <summary>真实总数（可能大于列表长度——超预算时列表被截断且 <see cref="Truncated"/> 为真）。</summary>
+    public int AddedCount { get; init; }
+    public int RemovedCount { get; init; }
+
+    /// <summary>差异本身是否被预算截断（不静默砍掉）。</summary>
+    public bool Truncated { get; init; }
+
+    public static BrowserDiffToolValue? From(BrowserTextDiff? diff) => diff is null
+        ? null
+        : new BrowserDiffToolValue
+        {
+            Added = diff.Added,
+            Removed = diff.Removed,
+            AddedCount = diff.AddedCount,
+            RemovedCount = diff.RemovedCount,
+            Truncated = diff.Truncated,
+        };
 }
 
 public sealed record BrowserElementToolValue

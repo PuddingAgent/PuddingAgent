@@ -62,11 +62,17 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
     }
     private readonly IBrowserRuntime _runtime;
     private readonly IDesktopBrowserTargetRegistry _targets;
+    private readonly BrowserReadingBaselineStore _readings;
 
-    public BrowserRuntimeDesktopSurface(IBrowserRuntime runtime, IDesktopBrowserTargetRegistry targets)
+    public BrowserRuntimeDesktopSurface(
+        IBrowserRuntime runtime,
+        IDesktopBrowserTargetRegistry targets,
+        BrowserReadingBaselineStore? readings = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _targets = targets ?? throw new ArgumentNullException(nameof(targets));
+        // 生产侧传入生命周期端口持有的那一份（页面关闭时会清）；省略则自建一份（测试/独立使用）。
+        _readings = readings ?? new BrowserReadingBaselineStore();
     }
 
     /// <summary>
@@ -529,9 +535,33 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             LiveVersion(browserPage.PageVersion));
 
         // 纵深防御：运行时没守预算时也要在这里收敛（含硬上限）。
-        return CapabilityResult<DesktopSnapshot>.Success(
-            DesktopCapabilityBudgets.Apply(mapped, request.Options));
+        var budgeted = DesktopCapabilityBudgets.Apply(mapped, request.Options);
+
+        // 修订与行级差异（§145）：判定只有一份（DesktopService 的解析器），
+        // 用的内容与**返回给调用方的内容**一致（否则 diff 会描述一份调用方看不到的文本）。
+        var reading = BrowserReadingDiffResolver.Resolve(
+            _readings,
+            request.Target,
+            request.Options,
+            budgeted.PageVersion,
+            PrimaryText(budgeted));
+
+        if (reading.IsFailure)
+        {
+            return CapabilityResult<DesktopSnapshot>.Failure(reading.Failure!);
+        }
+
+        return CapabilityResult<DesktopSnapshot>.Success(budgeted with
+        {
+            Revision = reading.Revision,
+            Changed = reading.Changed,
+            Diff = reading.Diff,
+        });
     }
+
+    /// <summary>作为基线/差异载体的**主表示**：无障碍树优先（outline 读的就是它），其次 DOM 文本、HTML。</summary>
+    private static string? PrimaryText(DesktopSnapshot snapshot) =>
+        snapshot.AccessibilityTree ?? snapshot.DomText ?? snapshot.Html;
     /// <summary>
     /// 等待条件满足。核心语义：**超时不是失败**——用 <see cref="DesktopWaitResult.TimedOut"/> 如实标注，
     /// 并照样回带等待结束时的页面状态（版本可能是等待期间推进后的版本），

@@ -71,6 +71,9 @@ public sealed record PageSnapshotArguments
     /// <c>null</c> = 整页。引用过期由宿主明确拒绝，**不退化成正页**。
     /// </summary>
     public string? ScopeRef { get; init; }
+
+    /// <summary>与上次读取的修订标识比较（§145）；由**持有基线的宿主侧**解释。</summary>
+    public string? SinceRevision { get; init; }
 }
 
 public sealed record PageLocateArguments
@@ -153,6 +156,25 @@ public sealed record BrowserSnapshotDescriptor
     public bool Truncated { get; init; }
     public int NodeCount { get; init; }
     public long PageVersion { get; init; }
+
+    /// <summary>本次读取的修订标识（§145）；回传给下次的 <c>sinceRevision</c>。</summary>
+    public string? Revision { get; init; }
+
+    /// <summary>与调用方给的修订相比内容是否变化；未要求比较时为 <c>null</c>。</summary>
+    public bool? Changed { get; init; }
+
+    /// <summary>行级差异（要求比较且基线可用时给出）。计数是**真实**的，列表可能因预算被截断。</summary>
+    public BrowserTextDiffDescriptor? Diff { get; init; }
+}
+
+/// <summary>行级差异的线缆形态（§145）：「变化了什么」而不是"变了/没变」。</summary>
+public sealed record BrowserTextDiffDescriptor
+{
+    public IReadOnlyList<string> Added { get; init; } = [];
+    public IReadOnlyList<string> Removed { get; init; } = [];
+    public int AddedCount { get; init; }
+    public int RemovedCount { get; init; }
+    public bool Truncated { get; init; }
 }
 
 public sealed record BrowserBoundingBoxDescriptor

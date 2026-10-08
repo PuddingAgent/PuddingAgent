@@ -41,6 +41,21 @@ public sealed record BrowserTextDiff
     public int RemovedCount { get; private init; }
 
     /// <summary>
+    /// 由**已经算好的两侧**构造（用于把另一层算出的差异投影成本形状，例如桥接宿主算完后搬运）。
+    /// 计数默认为列表长度；调用方给出真实总数时可覆盖。
+    /// </summary>
+    public static BrowserTextDiff FromParts(
+        IReadOnlyList<string> added,
+        IReadOnlyList<string> removed,
+        int? addedCount = null,
+        int? removedCount = null,
+        bool truncated = false) => new(added, removed, truncated)
+        {
+            AddedCount = addedCount ?? added.Count,
+            RemovedCount = removedCount ?? removed.Count,
+        };
+
+    /// <summary>
     /// 计算 <paramref name="baseline"/> → <paramref name="current"/> 的差异。
     /// 两侧都必须已经被规范化成"行数组"（空文本 ⇒ 0 行，而不是 1 个空串）。
     /// </summary>

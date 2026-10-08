@@ -961,7 +961,10 @@ public sealed partial class MainWindow : Window
             // （审计 2026-10-08 结论 #1）。能力通道启用后由协调器再挂它自己的闸门。
             _automationGates = new BrowserAutomationGateSync();
             _automationGates.Register(_coordinator.BridgeDispatcher);
-            var browser = new BrowserWorkspaceController(runtime, surfaces, dispatcher, _automationGates);
+            // 读取基线（§145）与生命周期端口**同一份**：页面关闭时会随授权/租约一起清。
+            var browser = new BrowserWorkspaceController(
+                runtime, surfaces, dispatcher, _automationGates,
+                _coordinator.BridgeDispatcher.Lifecycle.Readings);
             try { await browser.InitializeAsync(dataRoot, ct); }
             catch { await browser.DisposeAsync(); throw; }
             _browser = browser;

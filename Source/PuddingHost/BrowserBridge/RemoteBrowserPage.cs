@@ -112,7 +112,8 @@ public sealed class RemoteBrowserPage : IBrowserPage
                 MaxNodes = options.MaxNodes,
                 MaxTextLength = options.MaxTextLength,
                 MaxDepth = options.MaxDepth,
-                ScopeRef = options.ScopeRef
+                ScopeRef = options.ScopeRef,
+                SinceRevision = options.SinceRevision
             },
             ContextId, Id, TimeSpan.FromSeconds(30), ct);
         return new PageSnapshot
@@ -121,7 +122,20 @@ public sealed class RemoteBrowserPage : IBrowserPage
             AccessibilityTree = result.AccessibilityTree,
             Html = result.Html,
             Truncated = result.Truncated,
-            NodeCount = result.NodeCount
+            NodeCount = result.NodeCount,
+            // 修订与差异由宿主（真正读到内容的那一侧）判定，这里只做形状搬运。
+            Revision = result.Revision,
+            Changed = result.Changed,
+            Diff = result.Diff is { } diff
+                ? new TextDiff
+                {
+                    Added = diff.Added,
+                    Removed = diff.Removed,
+                    AddedCount = diff.AddedCount,
+                    RemovedCount = diff.RemovedCount,
+                    Truncated = diff.Truncated,
+                }
+                : null
         };
     }
 

@@ -2,6 +2,9 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Pudding.Contracts;
+using Pudding.Contracts.Desktop;
+using Pudding.DesktopService;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Protocol;
 using PuddingBrowser.WebView2;
@@ -114,6 +117,7 @@ public sealed class BrowserWorkspaceController :
     private readonly IBrowserSurfaceHost _surfaceHost;
     private readonly IWebView2UiDispatcher _uiDispatcher;
     private readonly BrowserAutomationGateSync? _automationGates;
+    private readonly BrowserReadingBaselineStore _readings;
 
     private IBrowserContext? _context;
     private PageId? _activePageId;
@@ -192,12 +196,15 @@ public sealed class BrowserWorkspaceController :
         IBrowserRuntime runtime,
         IBrowserSurfaceHost surfaceHost,
         IWebView2UiDispatcher uiDispatcher,
-        BrowserAutomationGateSync? automationGates = null)
+        BrowserAutomationGateSync? automationGates = null,
+        BrowserReadingBaselineStore? readings = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _surfaceHost = surfaceHost ?? throw new ArgumentNullException(nameof(surfaceHost));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _automationGates = automationGates;
+        // 生产侧传入生命周期端口持有的那一份（页面关闭时会清）；省略则自建（测试/独立使用）。
+        _readings = readings ?? new BrowserReadingBaselineStore();
     }
 
     /// <summary>
@@ -881,6 +888,39 @@ public sealed class BrowserWorkspaceController :
             // 过期引用由驱动明确拒绝（stale_element_reference），不退化成正页快照。
             ScopeRef = args.ScopeRef
         }, ct);
+
+        // 修订与行级差异（§145）：判定只有一份（DesktopService 的解析器），基线在本进程内，
+        // 用的内容与要回给调用方的一致（否则 diff 会描述一份调用方看不到的文本）。
+        var options = new DesktopSnapshotOptions(
+            includeDom: args.IncludeDom,
+            includeAccessibilityTree: args.IncludeAccessibilityTree,
+            includeHtml: args.IncludeHtml,
+            maxNodes: args.MaxNodes,
+            maxTextLength: args.MaxTextLength,
+            includeHidden: args.IncludeHidden,
+            includeIframes: args.IncludeIframes,
+            includeShadowDom: args.IncludeShadowDom,
+            maxDepth: args.MaxDepth,
+            scopeRef: args.ScopeRef,
+            sinceRevision: args.SinceRevision);
+
+        var reading = BrowserReadingDiffResolver.Resolve(
+            _readings,
+            new DesktopPageTarget(page.ContextId.Value, pageId.Value),
+            options,
+            // 没有活版本时传 Unknown（解析器会如实处理：不比较就不给修订，要比较就 refresh_required），
+            // 绝不用 Require(0) 抛异常——那会把"页面还没版本"变成一次命令失败。
+            page.PageVersion > 0 ? DesktopPageVersion.Require(page.PageVersion) : DesktopPageVersion.Unknown,
+            snapshot.AccessibilityTree ?? snapshot.DomText ?? snapshot.Html);
+
+        if (reading.IsFailure)
+        {
+            return Error(
+                command.OperationId,
+                BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                reading.Failure!.Message);
+        }
+
         return Success(command.OperationId, new BrowserSnapshotDescriptor
         {
             DomText = snapshot.DomText,
@@ -888,7 +928,19 @@ public sealed class BrowserWorkspaceController :
             Html = snapshot.Html,
             Truncated = snapshot.Truncated,
             NodeCount = snapshot.NodeCount,
-            PageVersion = page.PageVersion
+            PageVersion = page.PageVersion,
+            Revision = reading.Revision,
+            Changed = reading.Changed,
+            Diff = reading.Diff is { } diff
+                ? new BrowserTextDiffDescriptor
+                {
+                    Added = diff.Added,
+                    Removed = diff.Removed,
+                    AddedCount = diff.AddedCount,
+                    RemovedCount = diff.RemovedCount,
+                    Truncated = diff.Truncated,
+                }
+                : null
         });
     }
 

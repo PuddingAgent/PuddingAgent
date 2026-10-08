@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
@@ -366,7 +366,16 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
         var html = Clamp(snapshot.Html, options.MaxTextLength, ref truncated);
 
         return CapabilityResult<DesktopSnapshot>.Success(new DesktopSnapshot(
-            request.Target, domText, accessibilityTree, html, truncated, snapshot.NodeCount, version));
+            request.Target, domText, accessibilityTree, html, truncated, snapshot.NodeCount, version)
+        {
+            // 修订与差异由宿主判定（基线在它那里）；这里只做**形状搬运**，绝不重算。
+            Revision = snapshot.Revision,
+            Changed = snapshot.Changed,
+            Diff = snapshot.Diff is { } diff
+                ? BrowserTextDiff.FromParts(
+                    diff.Added, diff.Removed, diff.AddedCount, diff.RemovedCount, diff.Truncated)
+                : null,
+        });
     }
 
     /// <summary>纵深防御：超出预算就截断并**如实**把 <paramref name="truncated"/> 置真。</summary>
