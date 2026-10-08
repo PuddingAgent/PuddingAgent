@@ -1,4 +1,4 @@
-namespace Pudding.Contracts.Desktop;
+﻿namespace Pudding.Contracts.Desktop;
 
 /// <summary>
 /// 交互动作（与既有 Bridge 的 <c>page.interact</c> 动作等价；线名为 kebab-case 真源）。
@@ -157,6 +157,16 @@ public sealed record DesktopScrollReport
 /// <summary>交互动作线名（真源在本文件，快照由契约测试断言）。</summary>
 public static class DesktopInteractionActionWire
 {
+    /// <summary>
+    /// **原生输入覆盖哪些动作**——唯一真源（§7）：工具层与能力通道都查这里，避免两份清单漂移。
+    /// 判据是"键鼠能不能真实表达"：click/fill/type/press/hover/check/uncheck/scroll/drag；
+    /// 其余（select/focus）在原生路径下**明确不支持**，绝不静默回落成 DOM。
+    /// </summary>
+    public static bool SupportsNativeInput(DesktopInteractionAction action) => action is
+        DesktopInteractionAction.Click or DesktopInteractionAction.Fill or DesktopInteractionAction.Type
+        or DesktopInteractionAction.Press or DesktopInteractionAction.Hover
+        or DesktopInteractionAction.Check or DesktopInteractionAction.Uncheck
+        or DesktopInteractionAction.Scroll or DesktopInteractionAction.Drag;
     public static string NameOf(DesktopInteractionAction action) => action switch
     {
         DesktopInteractionAction.Click => "click",

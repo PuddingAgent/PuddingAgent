@@ -41,6 +41,19 @@ public sealed class InteractContractTests
     }
 
     [Fact]
+    public void NativeInputCoverage_IsOneFrozenTruth()
+    {
+        // §7：哪些动作支持原生输入**只有一份清单**（工具层与能力通道都查这里，避免两份漂移）。
+        Assert.True(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Click));
+        Assert.True(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Drag));
+        Assert.True(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Scroll));
+        Assert.True(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Type));
+
+        // 键鼠表达不了的：明确不支持（绝不静默回落成 DOM）。
+        Assert.False(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Select));
+        Assert.False(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Focus));
+    }
+    [Fact]
     public void InputModeLineNames_AreFrozenAndUnknownIsRejected()
     {
         // 设计 §7：inputMode 必须显式；未登记的线名 fail closed，不猜测。

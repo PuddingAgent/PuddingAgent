@@ -648,7 +648,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
 
         // 原生输入（§7）不支持的动作**明确拒绝**（返回能力错误，不是抛异常）：
         // 静默回落成 DOM 会让调用方以为走了真实输入路径。
-        if (request.InputMode == DesktopInputMode.Native && !SupportsNativeInput(request.Action))
+        if (request.InputMode == DesktopInputMode.Native
+            && !DesktopInteractionActionWire.SupportsNativeInput(request.Action))
         {
             return CapabilityResult<DesktopInteractionResult>.Failure(
                 DesktopCapabilityError.UnsupportedCapability(
@@ -753,15 +754,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Input mode is not mapped."),
     };
 
-    /// <summary>
-    /// 原生输入**支持哪些动作**（§7）：键鼠能表达的那些。不支持的动作必须**明确拒绝**，
-    /// 而不是静默回落成 DOM —— 那会让调用方以为用了真实输入路径。
-    /// </summary>
-    private static bool SupportsNativeInput(DesktopInteractionAction action) => action is
-        DesktopInteractionAction.Click or DesktopInteractionAction.Fill or DesktopInteractionAction.Type
-        or DesktopInteractionAction.Press or DesktopInteractionAction.Hover
-        or DesktopInteractionAction.Check or DesktopInteractionAction.Uncheck or DesktopInteractionAction.Scroll
-        or DesktopInteractionAction.Drag;
+
 
     private static async Task<ScrollOutcome?> PerformAsync(
         IBrowserPage page, BrowserInteractRequest request, Locator? locator, CancellationToken cancellationToken)

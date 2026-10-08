@@ -1,4 +1,4 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 
@@ -119,12 +119,12 @@ public sealed class BrowserInteractTool(
                     "browser_invalid_arguments", "input_mode must be one of dom or native");
             }
 
-            if (inputMode == DesktopInputMode.Native && !SupportsNativeInput(action))
+            if (inputMode == DesktopInputMode.Native && !DesktopInteractionActionWire.SupportsNativeInput(MapAction(action, args.Checked)))
             {
                 // **绝不静默降级成 dom**：那会让调用方以为走了真实输入路径。
                 // 原生输入目前覆盖键鼠能表达的动作；其余动作在这里明确 unsupported。
                 const string hint =
-                    "native input covers click/fill/type/press/check/hover/scroll; use input_mode=dom for this action";
+                    "native input covers click/fill/type/press/check/hover/scroll/drag; use input_mode=dom for this action";
                 return BrowserToolResponse.Failure(
                     "browser_input_mode_not_supported",
                     $"native input is not implemented for action '{action}'",
@@ -499,11 +499,5 @@ public sealed class BrowserInteractTool(
             });
     }
 
-    /// <summary>
-    /// 原生输入（§7）覆盖哪些动作：键鼠能表达的那些。**其余动作必须明确拒绝**，不静默回落成 DOM。
-    /// 与能力通道的判定保持同一份清单（两处都拒绝，谁都不会悄悄改语义）。
-    /// </summary>
-    private static bool SupportsNativeInput(string action) =>
-        action is "click" or "fill" or "type" or "press" or "hover" or "check" or "scroll" or "drag";
 }
 
