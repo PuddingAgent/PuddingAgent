@@ -425,3 +425,47 @@ SELFTEST PASS
 
 **范围外的残留（已记录，未修）**：递归全扫后仅剩 **2 例**，**均在 `TestScripts\temp\`**（`.gitignore` 覆盖的草稿区）⇒ 判定**不在门禁范围**：
 `temp\post-restart-verify-dsh.ps1`（5 错） · `temp\skill-hub-publish\publish-ppt-master.ps1`（1 错）。
+
+---
+
+### ⚠️ C-5 扩展与同日更正：**第二类「无法运行」= 引擎要求不符**（2026-10-08 第二轮）
+
+**触发**：编码修复后直接复验套件身份门禁，**两个入口都失败**：
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\test-pudding-suite-gates.ps1 -SelfTest   # exit 1
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\test-pudding-suite-gates.ps1 -ListOnly   # exit 1
+stderr: cannot be run because it contained a "#requires" statement for Windows PowerShell 7.0
+        ... ScriptRequiresUnmatchedPSVersion
+```
+
+> ⇒ **`#requires` 由引擎在执行前强制**；**解析干净 ≠ 能运行**。
+> ⇒ **更正**：编码缺陷与引擎要求是**两个彼此独立的障碍**——修好前者**不解除**后者。本文件上一节末尾及标准 §12.3 中「唯一障碍已解除」的表述**作废**。
+
+**判据已并入 `check-script-encodings.ps1`**：解析 `#requires -Version X.Y` 并与**当前引擎主版本**比较；`X > 当前主版本` ⇒ 记 **`UNRUNNABLE`**。
+新增列 `req=`、汇总项 `UNRUNNABLE=` / `RUNNABLE=`；**退出码**：`1` 现覆盖 **`BROKEN` 或 `UNRUNNABLE`**；新增 `-AllowUnrunnable`（降级为 INFO，仅在有意面向另一引擎时使用）。
+**自检同步扩展**：`REQFUTURE req=7.0 unsat=True` · `REQCURRENT req=5.0 unsat=False`（夹具相对当前引擎构造 ⇒ 在 5.1 与 7+ 下均成立）。
+
+**实测清册（本机 `PS 5.1.26100.9444`，`PWSH_PRESENT=False`）**
+
+```
+FILES=20 BOM=5 NONASCII=7 BROKEN=0 UNRUNNABLE=5 RUNNABLE=15
+RESULT: FAIL (exit 1)
+```
+
+**5 个 `UNRUNNABLE`（全部 `#requires -Version 7.0`）**
+
+| 脚本 | 性质 |
+|---|---|
+`test-pudding-suite-gates.ps1` | **套件用例身份门禁**（本轮原本要复验的对象） |
+`test-operators-architecture-gates.ps1` | 架构门禁 |
+`test-pudding-deployment-gates.ps1` | 部署门禁 |
+`measure-pudding-process-baseline.ps1` | 进程基线量测 |
+`invoke-pudding-desktop-deployment.ps1` | 桌面部署 |
+
+**显式声明且可满足**：`goal-rotate.ps1`（5.1）· `start-pudding-desktop-independent.ps1`（5.1）。
+**未声明引擎要求 = 13 个**：按「可加载性」判据全部解析干净（含本轮修复的 3 个）。
+
+**结论**：本机可运行的顶层门禁脚本 = **15/20**；另 5 个**不可运行的原因不是编码，而是引擎要求**。
+**处置选项（需人工裁决）**：① **装 PowerShell 7**（最小改动，5 个脚本全部恢复）② 改 5 个脚本为**引擎中立**（可能依赖 7.x 专有语法，工作量大）③ 有意只在 CI/他机运行（则 `#requires` 是**正确设计**，本机属环境缺口）。
+⚠️ 因 `.github/workflows` **实测不存在**，选项 ③ 当前等于**永久不可运行** ⇒ 建议至少执行 ①。
