@@ -716,31 +716,16 @@ public sealed partial class AgentExecutionService
                             workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
                             logger: _logger);
                     }
-                    catch (LlmInputBudgetExceededException) when (
-                        WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(history.Count, hardProtectionAttempted))
+                    catch (LlmInputBudgetExceededException ex)
                     {
-                        var rescue = await TryWarmPrefixCompactionAsync(
-                            request,
-                            instance.AgentInstanceId,
-                            history,
-                            untrimmedOutbound,
-                            llmTools,
-                            effectiveLlmConfig,
-                            round,
-                            ct);
-                        hardProtectionAttempted = rescue.Plan is not null;
-                        if (!rescue.Compacted)
-                            throw;
-                        roundPrefixChangeReason = PrefixChangeReasons.CompactionCheckpoint;
-                        injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
-                        budgetedRequest = LlmRequestBudgetGuard.Prepare(
-                            _contextUsageSnapshotStore,
+                        // 硬保护救不了这种请求：warm-prefix 与 Prepare 共用同一个受保护尾部地板，
+                        // 而 Prepare 额外做工具载荷驱逐 ⇒ 压缩后的整请求只会更大。保持 fail-closed。
+                        _logger.LogError(
+                            "[AgentExec:ContextBudget] Outbound request exceeds input limit beyond the untrimmable floor; warm-prefix compaction cannot help session={Session} round={Round} error={Error}",
                             request.SessionId,
-                            injectedHistory,
-                            llmTools,
-                            effectiveLlmConfig,
-                            workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
-                            logger: _logger);
+                            round + 1,
+                            ex.Message);
+                        throw;
                     }
 
                     injectedHistory = budgetedRequest.Messages.ToList();

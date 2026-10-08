@@ -829,33 +829,18 @@ public sealed partial class AgentExecutionService
                             workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
                             logger: _logger);
                     }
-                    catch (LlmInputBudgetExceededException) when (
-                        WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(history.Count, hardProtectionAttempted))
+                    catch (LlmInputBudgetExceededException ex)
                     {
-                        // 连请求副本裁剪都不够：在 fail-closed 之前先做一次确定性同步压缩。
-                        var rescue = await TryWarmPrefixCompactionAsync(
-                            request,
-                            instance.AgentInstanceId,
-                            history,
-                            untrimmedOutbound,
-                            llmTools,
-                            effectiveLlmConfig,
-                            round,
-                            ct);
-                        turnTimings.RegisterCompactionAttempt(rescue.DurationMs, rescue.Compacted, rescue.DeferredSoft);
-                        hardProtectionAttempted = rescue.Plan is not null;
-                        if (!rescue.Compacted)
-                            throw; // 压缩不可用 ⇒ 保持既有 fail-closed 语义
-                        roundPrefixChangeReason = PrefixChangeReasons.CompactionCheckpoint;
-                        injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
-                        budgetedRequest = LlmRequestBudgetGuard.Prepare(
-                            _contextUsageSnapshotStore,
+                        // **硬保护救不了这种请求**：warm-prefix 候选与 Prepare 共用同一个受保护尾部地板
+                        // （同一个 ComputeProtectedTailStart），而 Prepare 额外做了工具载荷驱逐（token 更少）。
+                        // 因此凡 Prepare 抛超限，压缩后的整请求只会比裁剪后**更大** ⇒ 不做无谓的摘要调用，
+                        // 直接保持 fail-closed（异常自带不可裁剪地板分解，便于归因）。
+                        _logger.LogError(
+                            "[AgentExec:ContextBudget] Outbound request exceeds input limit beyond the untrimmable floor; warm-prefix compaction cannot help session={Session} round={Round} error={Error}",
                             request.SessionId,
-                            injectedHistory,
-                            llmTools,
-                            effectiveLlmConfig,
-                            workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
-                            logger: _logger);
+                            round + 1,
+                            ex.Message);
+                        throw;
                     }
 
                     injectedHistory = budgetedRequest.Messages.ToList();

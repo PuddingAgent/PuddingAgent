@@ -1,3 +1,6 @@
+using PuddingCode.Configuration;
+using PuddingCode.Models;
+using PuddingCode.Platform;
 using PuddingRuntime.Services;
 
 namespace PuddingRuntimeTests.Services;
@@ -67,5 +70,53 @@ public sealed class WarmPrefixMaintenanceAdmissionTests
     {
         Assert.IsTrue(WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(HistoryWithMaintenance, softAttemptedThisDispatch: false));
         Assert.IsTrue(WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(HistoryWithMaintenance, hardProtectionAttemptedThisDispatch: false));
+    }
+
+    /// <summary>
+    /// 不变量（本轮更正）：**Prepare 抛超限时，warm-prefix 压缩不可能救**。
+    /// 两者共用同一个受保护尾部地板（同一个 ComputeProtectedTailStart），而 Prepare 还额外做
+    /// 工具载荷驱逐（token 更少）⇒ 压缩后（地板 + 摘要）只会比裁剪后更大。
+    /// 因此执行路径上的「异常时先压缩再重试」分支是死代码，已在 Streaming/Buffered 移除，
+    /// 由本用例把这条不变量固定下来（防止有人再把那个分支加回来）。
+    /// </summary>
+    [TestMethod]
+    public void ExceptionPath_WarmPrefixCannotRescue_WhenUntrimmableFloorExceedsLimit()
+    {
+        var store = new ContextUsageSnapshotStore();
+        // 巨大 system（不可裁剪）+ 可裁剪中间段 + 受保护尾部；上限极小 ⇒ 裁到地板仍超限。
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, new string('s', 60_000)),
+        };
+        for (var i = 0; i < 20; i++)
+        {
+            history.Add(new ChatMessage(ChatRole.User, new string('a', 4_000) + i));
+            history.Add(new ChatMessage(ChatRole.Assistant, new string('a', 4_000) + i));
+        }
+
+        var config = new LlmConfig
+        {
+            ModelId = "test-model",
+            MaxContextTokens = 12_000,
+            MaxOutputTokens = 1_000,
+        };
+
+        // ① 硬预算裁剪到地板仍不够 ⇒ fail-closed。
+        Assert.ThrowsExactly<LlmInputBudgetExceededException>(() =>
+            LlmRequestBudgetGuard.Prepare(store, "session-floor", history, tools: null, config));
+
+        // ② 候选仍能形成（中间段可裁剪），但加入摘要后整请求依然越界 ⇒ 应用边界必须拒绝。
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(
+            store, "session-floor", history, history, tools: null, config,
+            triggerRatio: 0.65, targetRatio: 0.5, out var plan));
+        Assert.IsNotNull(plan);
+        Assert.IsTrue(plan!.RequiresSynchronousProtection);
+
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            store, "session-floor", history, tools: null, config, plan, new string('x', 120));
+
+        Assert.IsFalse(verification.CanApply);
+        Assert.AreEqual("after_summary_exceeds_hard_limit", verification.Reason);
+        Assert.IsNull(verification.AppliedMessages);
     }
 }
