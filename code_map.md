@@ -130,6 +130,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | [`Docs/README.md`](Docs/README.md) · [`Agents.md`](Agents.md) · [`Agents-Hygiene.md`](Docs/10_conventions/Agents-Hygiene.md) | 文档总索引与阅读顺序 · 开发与提交纪律 · 仓库卫生 |
 | [`组件化交付规程`](Docs/10_conventions/组件化交付规程.md) · [`调试入口`](Docs/08_how_debuge/README.md) · [`架构`](Docs/07_architecture/架构.md) · [`ADR 全表`](Docs/07_architecture/README.md) | 组件化交付 S1–S5 门禁（强制）· 调试与日志诊断 · 架构总览与模块分册 |
 | [可诊断基础设施设计](Docs/12_features/可诊断基础设施设计-2026-10-07.md) | 诊断事实/类型化因果/事故查询面/故障场景资产：叶子组件边界、S1–S5 施工与门禁、查询与脱敏的强制项 |
+| [浏览器自动化可靠性与渐进阅读设计](Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md) | 浏览器控制权与页面授权、动作回执、稳定 ref、渐进 DOM/markdown 阅读、截图视觉和受约束委派的目标设计与交付门禁（提案） |
 | [ADR-095](Docs/07_architecture/109ADR-095会话上下文维护与首增量延迟治理ADR.md) · [上下文维护施工方案](Docs/12_features/首Token等待与上下文指示器修复方案-2026-10-07.md) | Proposed：Session软维护与逐请求硬保护、唯一候选提交/checkpoint、请求实测与估算分离；独立策略组件先行，尚未接入 |
 | [`ADR-089`](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [检索设计](Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md) · [`ADR-077`](Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) · [视觉设计](Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md) | 统一检索入口与索引组件拆分 · 原生视觉、typed parts 与截图链路 |
 | [`ADR-076`](Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) · [存储设计](Docs/12_features/遥测调试数据自动过期与Web存储管理设计方案.md) | 存储治理、语义目录、保留策略 |
