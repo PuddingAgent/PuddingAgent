@@ -14,6 +14,51 @@ public sealed class ScreenshotPlanTests
     private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;
 
     [TestMethod]
+    public void ElementScreenshotUsesTheElementBoxAsClip()
+    {
+        var json = ScreenshotPlan.BuildForElement(x: 12, y: 34, width: 200, height: 50);
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        Assert.AreEqual("png", root.GetProperty("format").GetString());
+
+        var clip = root.GetProperty("clip");
+        Assert.AreEqual(12d, clip.GetProperty("x").GetDouble());
+        Assert.AreEqual(34d, clip.GetProperty("y").GetDouble());
+        Assert.AreEqual(200d, clip.GetProperty("width").GetDouble());
+        Assert.AreEqual(50d, clip.GetProperty("height").GetDouble());
+        Assert.AreEqual(1d, clip.GetProperty("scale").GetDouble());
+
+        // 有损格式：quality 走同一套规则（与整页截图一致）。
+        using var jpeg = JsonDocument.Parse(ScreenshotPlan.BuildForElement(0, 0, 10, 10, quality: 60));
+        Assert.AreEqual("jpeg", jpeg.RootElement.GetProperty("format").GetString());
+        Assert.AreEqual(60, jpeg.RootElement.GetProperty("quality").GetInt32());
+    }
+
+    [TestMethod]
+    public void AnEmptyElementBoxIsRefusedInsteadOfCapturingNothing()
+    {
+        // 0×0（隐藏/未布局）不是一个能截的元素：拒绝，而不是截一张空图交差。
+        Assert.ThrowsExactly<ArgumentException>(() => ScreenshotPlan.BuildForElement(0, 0, 0, 10));
+        Assert.ThrowsExactly<ArgumentException>(() => ScreenshotPlan.BuildForElement(0, 0, 10, 0));
+        Assert.ThrowsExactly<ArgumentException>(() => ScreenshotPlan.BuildForElement(0, 0, -5, 10));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+            () => ScreenshotPlan.BuildForElement(0, 0, 10, 10, quality: 101));
+    }
+
+    [TestMethod]
+    public void ElementBoxIsReadFromTheBoundingBoxOrRefused()
+    {
+        using var box = JsonDocument.Parse("""{"x":1,"y":2,"width":3,"height":4}""");
+        Assert.IsTrue(ScreenshotPlan.TryReadElementBox(box.RootElement, out var parsed));
+        Assert.AreEqual(1d, parsed.X);
+        Assert.AreEqual(4d, parsed.Height);
+
+        using var missing = JsonDocument.Parse("""{"x":1,"y":2}""");
+        Assert.IsFalse(ScreenshotPlan.TryReadElementBox(missing.RootElement, out _));
+    }
+
+    [TestMethod]
     public void DefaultsToPngWithoutQuality()
     {
         var root = Parse(ScreenshotPlan.Build());

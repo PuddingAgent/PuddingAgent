@@ -174,7 +174,7 @@ public sealed class ComponentSurfaceTests
             ["ArticleMarkdownFormatTests"] = 13,
             ["ArticleCompactJsonTests"] = 8,
             ["ArticleCursorTests"] = 7,
-            ["ScreenshotPlanTests"] = 9,
+            ["ScreenshotPlanTests"] = 12,
             ["FileUploadPlanTests"] = 4,
             ["SubAgentDelegationTests"] = 10,
             ["SubAgentDelegationLeaseTests"] = 9,

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace PuddingBrowser.Automation;
 
@@ -70,6 +70,52 @@ public static class ScreenshotPlan
         }
 
         return JsonSerializer.Serialize(payload);
+    }
+
+    /// <summary>
+    /// **元素级截图**（设计方案 §6 的视觉观察）：把某个元素的外接矩形当作 clip。
+    ///
+    /// 与整页截图的关键差别：整页的 clip 来自布局指标（内容尺寸），元素级来自**元素的盒子**。
+    /// 两种"看起来都对"的错误在这里被拒绝：
+    /// ① 0×0 或负尺寸的盒子 ⇒ 那不是一个能截的元素（隐藏/未布局），必须拒绝而不是截一张空图；
+    /// ② 坐标是**视口坐标**：滚动位置不同会得到不同区域，因此调用方必须用刚观测到的盒子
+    ///    （引用过期由元素身份与页面版本负责，本函数不猜）。
+    /// </summary>
+    public static string BuildForElement(
+        double x,
+        double y,
+        double width,
+        double height,
+        int? quality = null)
+    {
+        if (width <= 0 || height <= 0)
+        {
+            throw new ArgumentException(
+                "an element screenshot needs a box with positive width and height"
+                + " (a 0x0 box means the element is hidden or not laid out); refusing to capture an empty area",
+                nameof(width));
+        }
+
+        ContentSize box = new(x, y, width, height);
+        return Build(quality, fullPage: true, contentSize: box);
+    }
+
+    /// <summary>从元素盒子构造内容尺寸（供 <see cref="BuildForElement"/> 与调用方复用）。</summary>
+    public static bool TryReadElementBox(
+        JsonElement boundingBox,
+        out ContentSize box)
+    {
+        box = default;
+        if (!boundingBox.TryGetProperty("x", out var x)
+            || !boundingBox.TryGetProperty("y", out var y)
+            || !boundingBox.TryGetProperty("width", out var width)
+            || !boundingBox.TryGetProperty("height", out var height))
+        {
+            return false;
+        }
+
+        box = new ContentSize(x.GetDouble(), y.GetDouble(), width.GetDouble(), height.GetDouble());
+        return true;
     }
 
     /// <summary>从 <c>Page.getLayoutMetrics</c> 的返回里取内容尺寸（缺字段即拒绝，不补 0）。</summary>
