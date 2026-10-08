@@ -1,6 +1,7 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
+using PuddingBrowser.Automation;
 
 namespace Pudding.DesktopService;
 
@@ -114,8 +115,14 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
         }
 
         var streamFactory = new GrpcDesktopChannelStreamFactory(transport.Value, authentication);
+
+        // 进程内唯一控制权/授权事实源（设计方案 §3.1）。装配点就在这里：
+        // 关闭态不构造服务，因此也不会留下一个没人读的权威实例。
+        var authority = new BrowserAutomationAuthority(
+            new DesktopInstanceId(settings.DesktopId), processInstanceId);
+
         var service = new DesktopService(
-            dispatcher, surface, pageTargets, serviceOptions ?? CreateDefaultServiceOptions());
+            dispatcher, surface, pageTargets, serviceOptions ?? CreateDefaultServiceOptions(), authority);
 
         // 顺序与「关闭时不构造」的判据由 DesktopCapabilityHostFactory 与组合顺序测试钉住：
         // 关闭 ⇒ 明确失败且不构造宿主；启用 ⇒ 只构造不启动（启动名额留给这里）。

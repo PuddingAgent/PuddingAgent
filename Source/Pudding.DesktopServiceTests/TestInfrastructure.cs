@@ -1,8 +1,9 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
 using Pudding.DesktopService;
+using PuddingBrowser.Automation;
 using Proto = Pudding.Rpc.Protocol.V1;
 
 namespace DesktopServiceTests;
@@ -497,7 +498,9 @@ internal sealed class ServiceHarness
 
         var testClock = clock as TestTimeProvider ?? new TestTimeProvider();
         var surface = new RecordingUiSurface();
-        var service = new DesktopService(dispatcher, surface, registry, effectiveOptions, testClock);
+        var authority = new BrowserAutomationAuthority(
+            new DesktopInstanceId("desk-test"), new DesktopProcessInstanceId("proc-test"), testClock);
+        var service = new DesktopService(dispatcher, surface, registry, effectiveOptions, authority, testClock);
         return new ServiceHarness(dispatcher, surface, testClock, service);
     }
 

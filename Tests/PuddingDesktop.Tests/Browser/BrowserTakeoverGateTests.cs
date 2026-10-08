@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Pudding.DesktopService;
+using PuddingBrowser.Automation;
 using PuddingBrowser.Protocol;
 using PuddingDesktop.Browser;
 using PuddingDesktop.Hosting;
@@ -18,6 +19,14 @@ namespace PuddingDesktop.Tests.Browser;
 /// </summary>
 public sealed class BrowserTakeoverGateTests
 {
+    /// <summary>
+    /// 控制面的事实源是进程内唯一权威实例（设计方案 §3.1）：闸门写的是它，
+    /// <c>DesktopInteractionState</c> 只是读投影。
+    /// </summary>
+    private static DesktopInteractionState NewInteractionState() => new(new BrowserAutomationAuthority(
+        new Pudding.Contracts.DesktopInstanceId("desk-test"),
+        new Pudding.Contracts.DesktopProcessInstanceId("proc-test")));
+
     private static BrowserBridgeCommand GotoCommand() => new()
     {
         OperationId = Guid.NewGuid(),
@@ -188,7 +197,7 @@ public sealed class BrowserTakeoverGateTests
     [Fact]
     public void DelegateGate_MapsTakeoverAndPauseOntoTheInteractionState()
     {
-        var state = new DesktopInteractionState();
+        var state = NewInteractionState();
         var gate = new DelegateAutomationGate(state.SetUserTakeover, state.SetPaused);
 
         gate.SetUserTakeover(true);
@@ -208,7 +217,7 @@ public sealed class BrowserTakeoverGateTests
     {
         // 两条传输必须同时失效：否则用户接管后，走另一条路的 Agent 动作照旧执行。
         var (controller, dispatcher, _) = CreateWired();
-        var interaction = new DesktopInteractionState();
+        var interaction = NewInteractionState();
         controller.RegisterAutomationGate(
             new DelegateAutomationGate(interaction.SetUserTakeover, interaction.SetPaused));
 

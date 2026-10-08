@@ -29,6 +29,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         IDesktopUiSurface surface,
         DesktopTargetRegistry targets,
         DesktopServiceOptions options,
+        BrowserAutomationAuthority authority,
         TimeProvider? timeProvider = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
@@ -36,6 +37,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         Targets = targets ?? throw new ArgumentNullException(nameof(targets));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _options.Validate();
+        Authority = authority ?? throw new ArgumentNullException(nameof(authority));
+        Interaction = new DesktopInteractionState(Authority);
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -44,7 +47,14 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
 
     public DesktopTargetRegistry Targets { get; }
 
-    public DesktopInteractionState Interaction { get; } = new();
+    /// <summary>
+    /// 进程内**唯一**的控制权/授权事实源（设计方案 §3.1）。Desktop 侧不再各自维护
+    /// takeover/paused 标志：<see cref="Interaction"/> 是它的读投影，Shell 的接管开关与
+    /// 能力通道准入都写/读同一份状态。
+    /// </summary>
+    public BrowserAutomationAuthority Authority { get; }
+
+    public DesktopInteractionState Interaction { get; }
 
     public bool IsClosed => Volatile.Read(ref _closed) != 0;
 
@@ -55,6 +65,9 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         {
             return;
         }
+
+        // 窗口都没了 ⇒ 自动化不再成立：把权威置为关闭（Admit/写租约随之全部拒绝）。
+        Authority.Close("desktop window closed");
 
         try
         {

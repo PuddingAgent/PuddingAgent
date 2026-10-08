@@ -1,7 +1,8 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
 using Pudding.DesktopService;
+using PuddingBrowser.Automation;
 
 namespace DesktopServiceTests;
 
@@ -130,7 +131,9 @@ public sealed class DesktopCapabilityChannelCompositionTests
             new ManualUiDispatcher(),
             new RecordingUiSurface(),
             new DesktopTargetRegistry(),
-            options);
+            options,
+            new BrowserAutomationAuthority(
+                new DesktopInstanceId("desk-test"), new DesktopProcessInstanceId("proc-test")));
         Assert.False(service.IsClosed);
     }
 

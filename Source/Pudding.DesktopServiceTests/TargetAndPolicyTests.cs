@@ -1,6 +1,7 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopService;
+using PuddingBrowser.Automation;
 
 namespace DesktopServiceTests;
 
@@ -251,7 +252,21 @@ public sealed class TargetAndPolicyTests
             new ManualUiDispatcher(),
             new RecordingUiSurface(),
             new DesktopTargetRegistry(),
-            new DesktopServiceOptions { AllowedCapabilities = DesktopCapability.None }));
+            new DesktopServiceOptions { AllowedCapabilities = DesktopCapability.None },
+            new BrowserAutomationAuthority(
+                new DesktopInstanceId("desk-test"), new DesktopProcessInstanceId("proc-test"))));
+    }
+
+    [Fact]
+    public void Authority_IsRequired_FailClosed()
+    {
+        // 没有权威实例就没有唯一事实源：宁可构造失败，也不要退化成「各自维护标志」。
+        Assert.Throws<ArgumentNullException>(() => new DesktopService(
+            new ManualUiDispatcher(),
+            new RecordingUiSurface(),
+            new DesktopTargetRegistry(),
+            new DesktopServiceOptions { AllowedCapabilities = DesktopCapability.BrowserSnapshot },
+            null!));
     }
 }
 

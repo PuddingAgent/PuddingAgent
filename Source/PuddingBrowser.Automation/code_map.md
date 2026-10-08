@@ -4,7 +4,10 @@
 > 设计依据：[浏览器自动化可靠性与渐进阅读设计方案](../../Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md)（§3/§4，切片 **B0**）。
 > 交付状态：**S1–S4 已完成；S5 已部分落地（2026-10-08）** —— 组件与其测试工程已登记
 > `PuddingAgentNetwork.slnx`，`Pudding.DesktopService` 与 `PuddingHost` 已加显式引用（共用同一份
-> 变更类后置条件）。DI 组合根装配唯一 `IBrowserAutomationAuthority` 实例仍属后续切片。
+> 变更类后置条件）。**唯一事实源已在 Desktop 组合根装配**（`DesktopCapabilityChannelComposition`
+> 创建 `BrowserAutomationAuthority` 并注入 `DesktopService`，接管/暂停收敛为投影）；仍属后续：
+> `Admit`/`Revalidate` 与写租约接入准入路径、grant 签发（需要 Core 侧的可信调用方身份）、
+> `IBrowserAutomationControl` 的 UI 侧驱动者。
 
 ## 1. 边界（编译期强制）
 
