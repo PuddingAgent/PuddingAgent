@@ -1,10 +1,10 @@
 ---
-title: 2026-10-08 PuddingPlatform code_map 会话管理表列式改造（波次 1-3/15 表：error 118 → 80）
+title: 2026-10-08 PuddingPlatform code_map 会话管理表列式改造（波次 1-4/15 表：error 118 → 71）
 author: hyfree
 date: 2026-10-08
 last_reviewed: 2026-10-08
 status: active
-description: "把 Source/PuddingPlatform/code_map.md 的「会话管理」表（8 行）从 2 列改造成规范 v2 的 5 列 schema：用途压回一条职责命题，关键符号取自源码实测的类型与 ctor 依赖，关联只写真实存在的同工程路径，约束只保留「不可从代码推断且删掉会导致误改」的两条并压到 ≤160 字符。检查器 error 118 → 113 → 101 → 80、warn 50 → 48 → 46 → 35（波次 1-3）；本文件归并记录该目标文件的全部波次，文件名保留首波次命名。目的不是清数字，而是把该表从正文堆积改回可导航索引；本文件是 15 张表中的第 1 张。"
+description: "把 Source/PuddingPlatform/code_map.md 的「会话管理」表（8 行）从 2 列改造成规范 v2 的 5 列 schema：用途压回一条职责命题，关键符号取自源码实测的类型与 ctor 依赖，关联只写真实存在的同工程路径，约束只保留「不可从代码推断且删掉会导致误改」的两条并压到 ≤160 字符。检查器 error 118 → 113 → 101 → 80 → 71、warn 50 → 48 → 46 → 35 → 31（波次 1-4）；本文件归并记录该目标文件的全部波次，文件名保留首波次命名。目的不是清数字，而是把该表从正文堆积改回可导航索引；本文件是 15 张表中的第 1 张。"
 categories: [docs, code-map, condensation]
 tags: [code-map, spec-v2, schema, condensation]
 related_docs: [Docs/10_conventions/code-map-规范-v2.md, Docs/00_changelog/2026Year/10/2026-10-07-code_map规范v2与自检.md, Docs/00_changelog/2026Year/10/2026-10-08-code_map波次1-PuddingCodeIndex契约表列式改造.md]
@@ -121,9 +121,35 @@ warn | 46 | **35** |
 - L128：剥离 `IOptionsMonitor 驱动`（可由构造函数推断）与 `refinement/Ready route` 的重复表述；**保留**固定顺序与 workspace gate 串行。
 - L129：剥离"权威 status"的措辞重复，保留 revision CAS、pause/resume、写回路径与控制端点限 admin。
 
+## 波次 4：任务系统表（20 行）
+
+范围 `## 任务系统（Tasks）`（L90–L109，20 行）。
+
+| 指标 | 波次 3 后 | 波次 4 后 |
+|---|---|---|
+error | 80 | **71**（field-too-long 68 → 60、line-too-long 12 → 11） |
+warn | 35 | **31** |
+该表最长行 | 253（L99 旧约束格） | **281** |
+字节 | 46331 | 47899 |
+行数 / 条目行 | 268 / 181 | **268 / 181（不变）** |
+改造区间违规 | — | **L90..L109 = 0**（对报告 JSON 独立复核） |
+
+### 写前断言
+
+- 一轮通过：20 行全部 ≤281 字符，各格均在列上限内；0 个 token 丢失（本表 20 行文件路径全部保真，无需例外登记）。
+- 表格锚点用唯一小节标题 `## 任务系统（Tasks）`（+2 = 表头），并断言表头 / 分隔行 / 首行身份与行区间 L90..L109。
+
+### 本轮剥离内容（披露，均为"可从代码读取 / 版本编号 / 演进叙事"）
+
+- L90：剥离「snake_case 列」（可由实体与建表语句读出）与列清单枚举；**保留** CAS、Task+Event 原子提交、硬删语义、keyset 分页、结构化路由列同表持久化。
+- L100 / L101：剥离 `ADR-077 V3-S2b-1` 的版本编号（属演进叙事，且编号可由文档检索到）；**保留** `ON CONFLICT DO UPDATE` 幂等 upsert、BEGIN IMMEDIATE + status CAS、近过期（<300s）不分配、`RemoteFileId` 只存不打印。
+- L99：剥离「`IWorkspaceTaskAdminService` 实现」与「复用 Store/CommandService/WireMaps」的复用叙事；**保留** 详情读投影的单一事实源、写侧 fail-closed 错误码、`include_children` 单次查询复用。
+- L94：剥离构造函数依赖清单；**保留** 发送前重验 owner、dead-letter 判据、MaxAttempts、ActiveTask 注入方式。
+- L104：将 `GET /tasks/watch`(SSE) 提为关键符号（端点身份），正文只留约束。
+
 ## 遗留（后续波次）
 
-- 其余 **12 张表 / 134 行**：对话 & 聊天 9、Agent 管理 6、认证与当前用户 6、子代理 & 诊断 8、任务系统 20、Goal 持久控制面 16、外部访问令牌 19、安全审批 2、持久化 18、多媒体 6、提供商配置 6、Token 计量 18。
+- 其余 **11 张表 / 114 行**：对话 & 聊天 9、Agent 管理 6、认证与当前用户 6、子代理 & 诊断 8、Goal 持久控制面 16、外部访问令牌 19、安全审批 2、持久化 18、多媒体 6、提供商配置 6、Token 计量 18。
 - 既有缺陷待裁定（波次 1 登记，仍未处理）：①`Services/SessionStateManager.cs` 在 L9 与 L84 重复登记；②同表头重复 14 次 > 上限 8 与固定列序冲突；③缺 §5 源指纹（待专用一波用 `glob_fingerprint` 实测后写）。
 - 波次 2 / 3 登记的路径问题（`MessageFabricStore.cs`、`TaskAutoDispatchScanRunner.cs` 的裸文件名）**已随改造修正**；同表目录行未展开为逐文件条目（按 §4 成本判据待裁定）。
-- 全文件仍存的反模式命中（不在本波次区间）：`anti_pattern_categories = {清单型 F: 29, 演进叙事: 3, 路线图: 1}`（路线图 1 条不在 L115..L139），留待后续波次逐表清理。
+- 全文件仍存的反模式命中（不再落在已改造区间）：以报告 `anti_pattern_categories` 为准，留待后续波次逐表清理。

@@ -85,28 +85,28 @@
 
 ## 任务系统（Tasks）
 
-| 文件 | 用途 |
-|------|------|
-| `Services/Tasks/SqliteWorkspaceTaskStore.cs` | SQLite Task Ledger：`workspace_tasks` + `task_events` 两表、snake_case 列、CAS 乐观并发、Task+Event 原子提交、结构化 taskType/capability/provider/model/fallback 与 auto-dispatch opt-in、硬删语义、keyset 分页 |
-| `Services/Tasks/WorkspaceTaskSchemaBootstrapper.cs` | Task 表/事件/评论启动建表；对既有 SQLite 幂等补齐结构化路由与 `auto_dispatch_enabled` 列 |
-| `Services/Tasks/TaskAgentCommandService.cs` | task_* 工具命令服务：claim/update 原子写回 Task+Attempt+Event+Binding 四表 |
-| `Services/Tasks/TaskCommandService.cs` | PATCH/ApplyCommand 原子语义；无 Assignment 的人工完成写 `TaskCompleted/manual_without_execution`，active Assignment 禁止 PATCH 伪完成，`mark_failed` 原子释放 attempt；`DeleteTaskAsync` 智能删除 |
-| `Services/Tasks/TaskDispatcher.cs` | 任务派发（RuntimeDispatchRequest.ActiveTask 注入到派发链）；发送前重验 Task/Assignment owner，stale 与确定性终态冲突 dead-letter，其他失败受 MaxAttempts 限制 |
-| `Services/Tasks/TaskDispatchOutboxStore.cs` | 派发 outbox 持久化 |
-| `Services/Tasks/TaskDispatchSchemaBootstrapper.cs` | 派发 schema 幂等建表 |
-| `Services/Tasks/TaskDispatchSerialization.cs` | 派发序列化 |
-| `Services/Tasks/TaskDependencyStore.cs` | finish-to-start Task 依赖图；同 Workspace 校验、幂等增删、环检测与 Satisfied/Waiting/Broken 评估；ListAsync 排序在客户端完成（SQLite/EF 不支持 DateTimeOffset ORDER BY 翻译，语义不变）|
-| `Services/Tasks/WorkspaceTaskAdminService.cs` | `IWorkspaceTaskAdminService` 实现（manage_tasks 服务面）：复用 Store/CommandService/WireMaps，详情构造含依赖读投影（前置链 BFS 展开 + 后继 EvaluateAsync，单一事实源）与依赖树文本生成；写侧依赖建立复用 TaskDependencyStore.AddAsync（幂等 + 环检测，fail-closed 转结构化错误码）；include_children 复用单次 ListChildrenAsync 结果内联子卡 |
-| `Services/Files/SqliteProviderFileRefStore.cs` | ADR-077 V3-S2b-1 `IFileRefStore` SQLite 实现（llm_provider_file_refs）：原始 SQL + 参数化、`ON CONFLICT DO UPDATE` 幂等 upsert、BEGIN IMMEDIATE + status CAS 并发防重复、近过期（<300s）不分配；RemoteFileId 只存不打印 |
-| `Services/Files/ProviderFileRefSchemaBootstrapper.cs` | ADR-077 V3-S2b-1 `llm_provider_file_refs` 幂等建表（唯一主键 + status/expires_at 索引）|
-| `Services/Tasks/TaskWireMaps.cs` | 枚举↔wire 双向映射 + ErrorCode→wire/HTTP |
-| `Services/Tasks/ManualAlwaysAllowFence.cs` | manual always allow fence |
-| `Controllers/Api/TaskController.cs` | Control Plane 13 端点 + `GET /tasks/watch` SSE（快照+游标+Last-Event-ID）+ boardColumn 五列过滤；`DELETE` 智能删除返回 200 deleted/archived |
-| `Controllers/Api/TaskSchedulingController.cs` | 认证调度诊断：Agent Availability query/rebuild、Auto evaluate-only、Task 依赖增删与评估 |
-| `Controllers/Api/TaskDtos.cs` | 8 个 wire DTO |
-| `Data/Entities/WorkspaceTaskEntity.cs` | `workspace_tasks` 实体（28 列）|
-| `Data/Entities/TaskEventEntity.cs` | `task_events` 实体（long Id 自增 + 18 业务列）|
-| `Data/Entities/TaskAssignmentAttemptEntity.cs` | `task_assignment_attempts` 实体 + partial unique index（task_id WHERE released_at_utc IS NULL）|
+| 文件 | 用途 | 关键符号 | 关联 | 约束 |
+|------|------|------|------|------|
+| `Services/Tasks/SqliteWorkspaceTaskStore.cs` | Task Ledger 的 SQLite 存储 | `SqliteWorkspaceTaskStore` | `Data/Entities/WorkspaceTaskEntity.cs` | CAS 乐观并发；Task 与 Event 原子提交；硬删语义（无软删）；keyset 分页；结构化路由列与 auto-dispatch opt-in 同表持久化 |
+| `Services/Tasks/WorkspaceTaskSchemaBootstrapper.cs` | Task 相关表的幂等建表与补列 | `WorkspaceTaskSchemaBootstrapper` | `Data/Entities/TaskEventEntity.cs` | 对既有 SQLite 幂等补齐结构化路由列与 `auto_dispatch_enabled` |
+| `Services/Tasks/TaskAgentCommandService.cs` | task_* 工具的命令服务 | `TaskAgentCommandService` | `Services/Tasks/TaskCommandService.cs` | claim/update 原子写回 Task、Attempt、Event、Binding 四表 |
+| `Services/Tasks/TaskCommandService.cs` | Task 写命令的原子语义 | `TaskCommandService` | `Services/Tasks/TaskAgentCommandService.cs` | 无 Assignment 的人工完成写 `TaskCompleted/manual_without_execution`；active Assignment 禁止 PATCH 伪完成；`mark_failed` 原子释放 attempt |
+| `Services/Tasks/TaskDispatcher.cs` | 任务派发与 outbox 投递 | `TaskDispatcher` / `TaskDispatcherOptions` | `Services/Tasks/TaskDispatchOutboxStore.cs` | 发送前重验 Task/Assignment owner；stale 与确定性终态冲突走 dead-letter，其他失败受 MaxAttempts 限制；ActiveTask 以 `RuntimeDispatchRequest.ActiveTask` 注入派发链 |
+| `Services/Tasks/TaskDispatchOutboxStore.cs` | 派发 outbox 持久化 | `TaskDispatchOutboxStore` / `TaskDispatchOutboxStatuses` | `Services/Tasks/TaskDispatcher.cs` | — |
+| `Services/Tasks/TaskDispatchSchemaBootstrapper.cs` | 派发 outbox 的幂等建表 | `TaskDispatchSchemaBootstrapper` | `Services/Tasks/TaskDispatchOutboxStore.cs` | — |
+| `Services/Tasks/TaskDispatchSerialization.cs` | 派发载荷序列化 | `TaskDispatchSerialization` | `Services/Tasks/TaskDispatchOutboxStore.cs` | — |
+| `Services/Tasks/TaskDependencyStore.cs` | finish-to-start 依赖图存储 | `TaskDependencyStore` | `Data/Entities/TaskDependencyEntity.cs` | 同 Workspace 校验、幂等增删、环检测与 Satisfied/Waiting/Broken 评估；`ListAsync` 排序在客户端完成（SQLite/EF 不支持 `DateTimeOffset` 的 ORDER BY 翻译） |
+| `Services/Tasks/WorkspaceTaskAdminService.cs` | manage_tasks 的管理者服务面 | `WorkspaceTaskAdminService` | `Services/Tasks/TaskDependencyStore.cs` | 详情含前置链 BFS 展开与后继 `EvaluateAsync`（单一事实源）；写侧依赖复用 `AddAsync`（幂等 + 环检测，fail-closed 转结构化错误码）；`include_children` 复用单次 `ListChildrenAsync` |
+| `Services/Files/SqliteProviderFileRefStore.cs` | provider 文件引用的 SQLite 存储 | `SqliteProviderFileRefStore` | `Services/Files/ProviderFileRefSchemaBootstrapper.cs` | `ON CONFLICT DO UPDATE` 幂等 upsert；BEGIN IMMEDIATE + status CAS 防重复分配；近过期（<300s）不分配；`RemoteFileId` 只存不打印 |
+| `Services/Files/ProviderFileRefSchemaBootstrapper.cs` | `llm_provider_file_refs` 的幂等建表 | `ProviderFileRefSchemaBootstrapper` | `Services/Files/SqliteProviderFileRefStore.cs` | 唯一主键 + status/expires_at 索引 |
+| `Services/Tasks/TaskWireMaps.cs` | 枚举与 wire 的双向映射 | `TaskWireMaps` | `Controllers/Api/TaskDtos.cs` | `ErrorCode` 到 wire/HTTP 状态码的映射也在此处，新增错误码必须同步 |
+| `Services/Tasks/ManualAlwaysAllowFence.cs` | 人工命令的 always-allow 围栏 | `ManualAlwaysAllowFence` | `Services/Tasks/TaskCommandService.cs` | — |
+| `Controllers/Api/TaskController.cs` | Task Control Plane 的 HTTP 面 | `TaskController` / `GET /tasks/watch`(SSE) | `Services/Tasks/TaskCommandService.cs` | 13 个端点；watch 走快照 + 游标 + Last-Event-ID；`boardColumn` 五列过滤；`DELETE` 智能删除返回 200 deleted/archived |
+| `Controllers/Api/TaskSchedulingController.cs` | 认证的调度诊断端点 | `TaskSchedulingController` | `Services/Scheduling/TaskSchedulerControlService.cs` | Agent Availability query/rebuild、Auto evaluate-only、Task 依赖增删与评估 |
+| `Controllers/Api/TaskDtos.cs` | Task 的 wire DTO 集合 | `TaskDto` / `CreateTaskDto` / `PatchTaskDto` | `Controllers/Api/TaskController.cs` | — |
+| `Data/Entities/WorkspaceTaskEntity.cs` | `workspace_tasks` 实体 | `WorkspaceTaskEntity` | `Services/Tasks/SqliteWorkspaceTaskStore.cs` | 共 28 列，结构化路由列与 `auto_dispatch_enabled` 同表 |
+| `Data/Entities/TaskEventEntity.cs` | `task_events` 实体 | `TaskEventEntity` | `Services/Tasks/SqliteWorkspaceTaskStore.cs` | long 自增 Id + 18 业务列 |
+| `Data/Entities/TaskAssignmentAttemptEntity.cs` | `task_assignment_attempts` 实体 | `TaskAssignmentAttemptEntity` / `AssignmentAttemptStatus` | `Services/Tasks/TaskCommandService.cs` | partial unique index（`task_id` WHERE `released_at_utc IS NULL`）保证单 Task 单 active attempt |
 
 ## Agent Availability 与自动派发（Services/Scheduling/，2026-08-26）
 
