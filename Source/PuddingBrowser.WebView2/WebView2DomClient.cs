@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
@@ -162,6 +162,40 @@ internal static partial class WebView2DomClient
         }, ct);
         EnsureSuccess(result.Ok, result.Code, result.Message);
         return result.Matched;
+    }
+
+    /// <summary>
+    /// 页面当前元素数（用于**内容增长**等待，门禁 G8 的无限滚动）：等到元素数超过基线即满足。
+    /// 读不到就返回 <c>null</c>（调用方按"条件未知"处理，**不猜 0** —— 猜 0 会让任何页面都算"增长了"）。
+    /// </summary>
+    internal static async Task<int?> EvaluateNodeCountAsync(CoreWebView2 webView, CancellationToken ct)
+    {
+        const string Script =
+            "(function(){try{return document.getElementsByTagName('*').length;}catch(e){return -1;}})()";
+
+        ct.ThrowIfCancellationRequested();
+#if WINUI_BROWSER
+        var raw = await webView.ExecuteScriptAsync(Script).AsTask(ct);
+#else
+        var raw = await webView.ExecuteScriptAsync(Script).WaitAsync(ct);
+#endif
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var trimmed = raw.Trim().Trim('"');
+
+        // ExecuteScriptAsync 对数字返回其字面量；解析不出来（含 null/undefined）就如实表示"读不到"。
+        return int.TryParse(
+                trimmed,
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var count)
+            && count >= 0
+            ? count
+            : null;
     }
 
     internal static bool WildcardMatch(string input, string pattern)

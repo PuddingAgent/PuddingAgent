@@ -584,6 +584,16 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
         }
 
+        // 内容增长的基线必须在**映射前**校验：映射函数不该靠抛异常表达"参数不对"
+        // （那会穿透到调用方变成未处理异常，而不是一个可判定的失败结果）。
+        if (request.Condition.Kind == DesktopWaitConditionKind.ContentGrows
+            && !IsValidBaselineNodeCount(request.Condition.Value))
+        {
+            return CapabilityResult<DesktopWaitResult>.Failure(DesktopCapabilityError.InvalidRequest(
+                $"wait condition 'content-grows' requires a non-negative integer baseline node count,"
+                + $" got '{request.Condition.Value}'."));
+        }
+
         var page = await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false);
         if (page.IsFailure)
         {
@@ -623,8 +633,39 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         Selector = request.Condition.Kind == DesktopWaitConditionKind.Selector ? request.Condition.Value : null,
         SelectorToHide = request.Condition.Kind == DesktopWaitConditionKind.SelectorHidden ? request.Condition.Value : null,
         UrlPattern = request.Condition.Kind == DesktopWaitConditionKind.UrlPattern ? request.Condition.Value : null,
+        // 内容增长（G8 无限滚动）：值是基线元素数。解析不出来 ⇒ **明确失败**（不静默当成"无基线"）。
+        BaselineNodeCount = request.Condition.Kind == DesktopWaitConditionKind.ContentGrows
+            ? ParseBaselineNodeCount(request.Condition.Value)
+            : null,
         TimeoutMs = request.TimeoutMs,
     };
+
+    /// <summary>内容增长的基线是否为非负整数（校验与映射共用同一判定）。</summary>
+    private static bool IsValidBaselineNodeCount(string value) =>
+        int.TryParse(
+            value,
+            System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var baseline)
+        && baseline >= 0;
+
+    /// <summary>解析内容增长等待的基线元素数；不是非负整数就抛参数异常（fail closed，不猜）。</summary>
+    private static int? ParseBaselineNodeCount(string value)
+    {
+        if (int.TryParse(
+                value,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var baseline)
+            && baseline >= 0)
+        {
+            return baseline;
+        }
+
+        throw new ArgumentException(
+            $"wait condition 'content-grows' requires a non-negative integer baseline node count, got '{value}'.",
+            nameof(value));
+    }
     /// <summary>
     /// 执行交互（切片 D 唯一会改变页面状态的能力）。要点：
     /// ①**必须固定版本**且版本不符即拒绝——否则可能操作到另一个页面；

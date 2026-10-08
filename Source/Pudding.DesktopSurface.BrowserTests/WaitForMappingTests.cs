@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopSurface.Browser;
 using PuddingBrowser.Abstractions;
@@ -14,6 +14,34 @@ public sealed class WaitForMappingTests
         DateTimeOffset.UtcNow.AddSeconds(30));
 
     private static readonly DesktopPageTarget Target = new("ctx-1", "p-1");
+
+    [Fact]
+    public async Task ContentGrowsCondition_CarriesTheBaseline_AndABadBaselineIsRefused()
+    {
+        // G8 无限滚动：等"元素数超过基线"。值是基线元素数（非负整数）。
+        var runtime = Runtime(pageVersion: 6, wait: new WaitResult { TimedOut = false });
+        var result = await Surface(runtime).WaitForAsync(
+            Call,
+            new BrowserWaitForRequest(
+                Target,
+                new DesktopWaitCondition(DesktopWaitConditionKind.ContentGrows, "1234")),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        Assert.Equal(1234, runtime.Pages["ctx-1/p-1"].LastCondition!.BaselineNodeCount);
+        Assert.Null(runtime.Pages["ctx-1/p-1"].LastCondition!.Selector);
+
+        // 基线不是非负整数 ⇒ 明确失败（不静默当成"没有基线"）。
+        var bad = await Surface(Runtime(pageVersion: 6, wait: new WaitResult { TimedOut = false })).WaitForAsync(
+            Call,
+            new BrowserWaitForRequest(
+                Target,
+                new DesktopWaitCondition(DesktopWaitConditionKind.ContentGrows, "many")),
+            CancellationToken.None);
+
+        Assert.True(bad.IsFailure);
+        Assert.Contains("baseline", bad.Error!.Message, StringComparison.OrdinalIgnoreCase);
+    }
 
     [Fact]
     public async Task SatisfiedWaitReturnsSuccessAndMapsTheConditionByKind()

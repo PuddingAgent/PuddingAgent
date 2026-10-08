@@ -14,6 +14,15 @@ public sealed record BrowserWaitForArgs
     public string? Selector { get; init; }
     public string? SelectorToHide { get; init; }
     public string? UrlPattern { get; init; }
+
+    /// <summary>
+    /// 等**内容增长**：等到页面元素数**超过**这个基线（门禁 G8 的无限滚动——等新增内容/条目数，
+    /// 而不是把"没加载出新内容"当成滚动失败）。基线的取法：滚动/触发加载后先快照一次，用当时的
+    /// `nodeCount` 作为基线再等。
+    /// </summary>
+    [ToolParam("Baseline node count; wait until the page has MORE elements than this (infinite scroll).")]
+    public int? ContentGrowsAboveNodes { get; init; }
+
     public int TimeoutMs { get; init; } = 30_000;
 }
 
@@ -35,7 +44,9 @@ public sealed class BrowserWaitForTool(
         if (args.TimeoutMs is < 1 or > 120_000
             || (string.IsNullOrWhiteSpace(args.Selector)
                 && string.IsNullOrWhiteSpace(args.SelectorToHide)
-                && string.IsNullOrWhiteSpace(args.UrlPattern)))
+                && string.IsNullOrWhiteSpace(args.UrlPattern)
+                && args.ContentGrowsAboveNodes is null)
+            || args.ContentGrowsAboveNodes is < 0)
             return BrowserToolResponse.Failure("browser_invalid_arguments", "wait condition or timeout is invalid");
         try
         {
@@ -95,13 +106,20 @@ public sealed class BrowserWaitForTool(
         catch (BrowserOperationException ex) { return BrowserToolResponse.FromException(ex); }
     }
 
-    /// <summary>三个可选条件 → 契约的单一条件；优先级与运行时字段顺序一致（选择器 → 消失 → URL）。</summary>
+    /// <summary>
+    /// 四个可选条件 → 契约的单一条件；优先级：选择器 → 消失 → URL → **内容增长**。
+    /// （内容增长放最后是因为它需要基线，通常与"滚一下再看"搭配使用。）
+    /// </summary>
     private static DesktopWaitCondition BuildCondition(BrowserWaitForArgs args) =>
         !string.IsNullOrWhiteSpace(args.Selector)
             ? new DesktopWaitCondition(DesktopWaitConditionKind.Selector, args.Selector!)
             : !string.IsNullOrWhiteSpace(args.SelectorToHide)
                 ? new DesktopWaitCondition(DesktopWaitConditionKind.SelectorHidden, args.SelectorToHide!)
-                : new DesktopWaitCondition(DesktopWaitConditionKind.UrlPattern, args.UrlPattern!);
+                : !string.IsNullOrWhiteSpace(args.UrlPattern)
+                    ? new DesktopWaitCondition(DesktopWaitConditionKind.UrlPattern, args.UrlPattern!)
+                    : new DesktopWaitCondition(
+                        DesktopWaitConditionKind.ContentGrows,
+                        args.ContentGrowsAboveNodes!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     private static ToolExecutionResult Failure(DesktopCapabilityError error) =>
         BrowserCapabilityFailure.From(error, "browser_wait_for_failed", "stale_page_version");

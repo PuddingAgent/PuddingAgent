@@ -11,6 +11,12 @@ public enum DesktopWaitConditionKind
 
     /// <summary>等待地址匹配（子串或模式）。</summary>
     UrlPattern,
+
+    /// <summary>
+    /// 等待**内容增长**（门禁 G8 的无限滚动：等新增内容/条目数，不能把"没加载出新内容"当成滚动失败）。
+    /// 值是**基线元素数**：等到页面元素数**超过**该基线即满足。
+    /// </summary>
+    ContentGrows,
 }
 
 /// <summary>等待条件线名（真源在本文件，快照由契约测试断言）。</summary>
@@ -21,6 +27,7 @@ public static class DesktopWaitConditionKindWire
         DesktopWaitConditionKind.Selector => "selector",
         DesktopWaitConditionKind.SelectorHidden => "selector-hidden",
         DesktopWaitConditionKind.UrlPattern => "url-pattern",
+        DesktopWaitConditionKind.ContentGrows => "content-grows",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Wait condition kind is not registered."),
     };
 

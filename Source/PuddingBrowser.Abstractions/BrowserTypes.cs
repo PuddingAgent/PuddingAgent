@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingBrowser.Abstractions;
 
@@ -234,6 +234,13 @@ public sealed record WaitCondition
     public string? Selector { get; init; }
     public string? SelectorToHide { get; init; }
     public string? UrlPattern { get; init; }
+
+    /// <summary>
+    /// 内容增长等待的**基线元素数**：等到页面元素数**超过**它即满足（门禁 G8 的无限滚动）。
+    /// 为 <c>null</c> 表示不使用该条件。
+    /// </summary>
+    public int? BaselineNodeCount { get; init; }
+
     public int TimeoutMs { get; init; } = 30_000;
 }
 

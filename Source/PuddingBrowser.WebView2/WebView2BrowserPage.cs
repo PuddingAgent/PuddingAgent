@@ -767,10 +767,12 @@ public sealed class WebView2BrowserPage : IBrowserPage
         ArgumentNullException.ThrowIfNull(c);
         if (string.IsNullOrWhiteSpace(c.Selector)
             && string.IsNullOrWhiteSpace(c.SelectorToHide)
-            && string.IsNullOrWhiteSpace(c.UrlPattern))
+            && string.IsNullOrWhiteSpace(c.UrlPattern)
+            && c.BaselineNodeCount is null)
         {
             throw new BrowserOperationException(
-                "browser_invalid_arguments", "A selector, selectorToHide, or urlPattern is required");
+                "browser_invalid_arguments",
+                "A selector, selectorToHide, urlPattern, or baselineNodeCount is required");
         }
 
         var timeout = TimeSpan.FromMilliseconds(Math.Clamp(c.TimeoutMs, 1, 120_000));
@@ -794,6 +796,14 @@ public sealed class WebView2BrowserPage : IBrowserPage
             }
             if (!string.IsNullOrWhiteSpace(c.UrlPattern))
                 matched &= WebView2DomClient.WildcardMatch(Info.Url, c.UrlPattern);
+            if (matched && c.BaselineNodeCount is { } baseline)
+            {
+                // 内容增长（G8 无限滚动）：读到元素数才算数；读不到 ⇒ 条件**未知**，本轮不满足（不猜）。
+                var count = await _dispatcher.InvokeAsync(
+                    () => WebView2DomClient.EvaluateNodeCountAsync(webView, ct), ct);
+                matched = count is { } actual && actual > baseline;
+            }
+
             if (matched)
                 return new WaitResult { TimedOut = false };
             await Task.Delay(100, ct);
