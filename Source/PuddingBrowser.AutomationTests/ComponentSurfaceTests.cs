@@ -1,4 +1,4 @@
-using Pudding.Contracts.Desktop;
+﻿using Pudding.Contracts.Desktop;
 using PuddingBrowser.Automation;
 
 namespace PuddingBrowser.AutomationTests;
@@ -18,6 +18,9 @@ public sealed class ComponentSurfaceTests
         "ArticleBlock",
         "ArticleMarkdown",
         "BrowserActionEvidence",
+        "BrowserNodeIdentity",
+        "Identity",
+        "Verdict",
         "CdpCall",
         "InputTarget",
         "KeyStroke",
@@ -137,6 +140,7 @@ public sealed class ComponentSurfaceTests
         var expected = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["ArticleMarkdownFormatTests"] = 13,
+            ["BrowserNodeIdentityTests"] = 10,
             ["NativeInputSequenceTests"] = 10,
             ["BrowserAssertionRedactionTests"] = 11,
             ["BrowserControlAuthorityTests"] = 16,
