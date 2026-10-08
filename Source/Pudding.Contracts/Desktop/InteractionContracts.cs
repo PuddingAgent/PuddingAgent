@@ -1,4 +1,4 @@
-namespace Pudding.Contracts.Desktop;
+﻿namespace Pudding.Contracts.Desktop;
 
 /// <summary>
 /// 交互动作（与既有 Bridge 的 <c>page.interact</c> 动作等价；线名为 kebab-case 真源）。
@@ -126,7 +126,8 @@ public sealed record DesktopScrollReport
         double consumedDeltaX = 0,
         double consumedDeltaY = 0,
         bool atBoundary = false,
-        bool contentChanged = false)
+        bool contentChanged = false,
+        string? stopReason = null)
     {
         Container = string.IsNullOrWhiteSpace(container) ? "document" : container;
         BeforeX = beforeX;
@@ -136,6 +137,7 @@ public sealed record DesktopScrollReport
         ConsumedDeltaX = consumedDeltaX;
         ConsumedDeltaY = consumedDeltaY;
         AtBoundary = atBoundary;
+        StopReason = stopReason;
         ContentChanged = contentChanged;
     }
 
@@ -154,6 +156,12 @@ public sealed record DesktopScrollReport
     public bool AtBoundary { get; }
 
     /// <summary>滚动前后是否观察到内容变化（新增内容/条目）。<b>false 不是失败</b>。</summary>
+    /// <summary>
+    /// **到达滚动为什么停**（到达类目标才有）：到限 / 位置不再变化 / 步数封顶。
+    /// 只有到达滚动会填；按位移滚动为 <c>null</c>（不编造）。
+    /// </summary>
+    public string? StopReason { get; }
+
     public bool ContentChanged { get; }
 }
 

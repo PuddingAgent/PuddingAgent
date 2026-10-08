@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopSurface.Browser;
 using PuddingBrowser.Abstractions;
@@ -142,6 +142,9 @@ public sealed class InteractMappingTests
         Assert.False(arrival.IsFailure);
         Assert.Equal(ScrollTarget.ToBottom, runtime.Pages["ctx-1/p-1"].LastScroll!.Target);
         Assert.Equal(InputMode.Native, runtime.Pages["ctx-1/p-1"].LastScroll!.InputMode);
+
+        // 到达滚动"为什么停"必须回给调用方：驱动报了就如实带上（否则"停在边界"与"滚不动"没法区分）。
+        Assert.Equal("already at the bottom", arrival.Value.Scroll!.StopReason);
 
         var refused = await surface.InteractAsync(
             Call,
@@ -429,6 +432,7 @@ public sealed class InteractMappingTests
                     AfterY = 4000,
                     AtBoundary = true,
                     ContentChanged = false,
+                    StopReason = "already at the bottom",
                 });
             }
 

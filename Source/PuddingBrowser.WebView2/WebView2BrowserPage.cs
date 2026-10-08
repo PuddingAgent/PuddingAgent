@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
 
@@ -475,7 +475,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// 兜底：即使策略被换成有缺陷的实现，也不可能把一次交互变成无限循环。
     /// 回读不到几何 ⇒ **明确失败**（拿不到"到没到"就不猜）。
     /// </summary>
-    private async Task ScrollToArrivalAsync(
+    private async Task<string?> ScrollToArrivalAsync(
         CoreWebView2 webView, bool toBottom, double pointX, double pointY, CancellationToken ct)
     {
         const int HardStepCap = 64;
@@ -499,13 +499,13 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
             if (!step.ShouldContinue)
             {
-                break;
+                return step.StopReason;
             }
 
             if (steps >= HardStepCap)
             {
-                // 策略没有自己封顶时的兜底（不静默继续）。
-                break;
+                // 策略没有自己封顶时的兜底（不静默继续，也如实说明是谁停的）。
+                return $"stopped after the driver's hard cap of {HardStepCap} steps";
             }
 
             var plan = Policy.PlanScroll(pointX, pointY, 0, step.Delta)
@@ -598,9 +598,11 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
         // 到达类目标（to_top/to_bottom）：原生滚轮没有原子"滚到底"，只能按步送并**必须能停**。
         // 每步都问策略"继续还是停、为什么停"，位置与几何**从页面回读**（不猜）。
+        string? arrivalStopReason = null;
+
         if (options.Target is ScrollTarget.ToTop or ScrollTarget.ToBottom)
         {
-            await ScrollToArrivalAsync(
+            arrivalStopReason = await ScrollToArrivalAsync(
                 webView,
                 toBottom: options.Target == ScrollTarget.ToBottom,
                 pointX,
@@ -625,7 +627,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         Interlocked.Increment(ref _pageVersion);
 
         // 只读回读：位移 0 的"滚动"不改任何东西，只把前后位置/边界/内容变化取回来。
-        return await _dispatcher.InvokeAsync(
+        var outcome = await _dispatcher.InvokeAsync(
             () => WebView2DomClient.ScrollAsync(
                 webView,
                 PageVersion,
@@ -633,6 +635,9 @@ public sealed class WebView2BrowserPage : IBrowserPage
                 new ScrollOptions { Target = options.Target, Locator = options.Locator, DeltaX = 0, DeltaY = 0 },
                 ct),
             ct).ConfigureAwait(false);
+
+        // 到达滚动为什么要停必须回给调用方：否则"停在边界"和"滚不动"没法区分。
+        return arrivalStopReason is null ? outcome : outcome with { StopReason = arrivalStopReason };
     }
 
     /// <summary>

@@ -179,6 +179,11 @@ public sealed record ScrollOutcome
     public double ConsumedDeltaX { get; init; }
     public double ConsumedDeltaY { get; init; }
 
+    /// <summary>
+    /// **到达滚动为什么停**（`to_top`/`to_bottom` 专用；按位移滚动为 <c>null</c>）。
+    /// 到限 / 位置不再变化 / 步数封顶 —— 如实回给调用方，避免把"停在边界"和"滚不动"混为一谈。
+    /// </summary>
+    public string? StopReason { get; init; }
     /// <summary>是否已到边界（滚不动且方向一致）。</summary>
     public bool AtBoundary { get; init; }
 

@@ -742,7 +742,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                         scrollOutcome.ConsumedDeltaX,
                         scrollOutcome.ConsumedDeltaY,
                         scrollOutcome.AtBoundary,
-                        scrollOutcome.ContentChanged)));
+                        scrollOutcome.ContentChanged,
+                        scrollOutcome.StopReason)));
     }
 
     /// <summary>契约的输入路径 → 运行时输入路径（两套枚举必须一一对应）。</summary>
