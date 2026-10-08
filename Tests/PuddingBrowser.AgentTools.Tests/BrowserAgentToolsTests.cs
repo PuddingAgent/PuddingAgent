@@ -480,6 +480,132 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Interact_Failure_CarriesAReceipt_SoDispatchFactsAreNotLost()
+    {
+        // 设计 §4.1：`unknown`/`blocked`/`failed` 都是 ok=false，但**不能丢失已经派发的事实**。
+        // 只给 code/message 会让调用方把"可能已经执行"误读成"没执行"（然后重做一次副作用）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        // 未知页面 ⇒ InvalidTarget：动作未开始、无副作用；该码在错误目录里**不可重试**（目标不会自己出现）。
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "fill",
+                page_id = "page-does-not-exist",
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Name" },
+                text = "Pudding"
+            }));
+
+        Assert.False(result.Success);
+        using var document = JsonDocument.Parse(result.Error!);
+        Assert.Equal("browser_page_not_found",
+            document.RootElement.GetProperty("error").GetProperty("code").GetString());
+
+        // 失败同样带结构化回执：调用方能看出"确实没执行"（而不是靠猜）。
+        var receipt = document.RootElement.GetProperty("value");
+        Assert.Equal("failed", receipt.GetProperty("completion").GetString());
+        Assert.Equal("not_started", receipt.GetProperty("execution").GetString());
+        Assert.False(receipt.GetProperty("mayHaveSideEffects").GetBoolean());
+        Assert.Equal("not_retryable", receipt.GetProperty("retryDisposition").GetString());
+    }
+
+    [Fact]
+    public async Task Interact_Failure_ThatIsSafeToRetry_SaysSo()
+    {
+        // 连接不可用：明确未开始 + 可重试 + 无副作用 ⇒ 这是唯一允许自动重试的组合（设计 §4.3）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime)
+        {
+            InteractFailure = DesktopCapabilityError.NotConnected("desktop not connected"),
+        };
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "fill",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Name" },
+                text = "Pudding"
+            }));
+
+        Assert.False(result.Success);
+        using var document = JsonDocument.Parse(result.Error!);
+        var receipt = document.RootElement.GetProperty("value");
+        Assert.Equal("failed", receipt.GetProperty("completion").GetString());
+        Assert.Equal("not_started", receipt.GetProperty("execution").GetString());
+        Assert.True(receipt.GetProperty("safeToRetry").GetBoolean());
+        Assert.Equal("safe_to_retry", receipt.GetProperty("retryDisposition").GetString());
+    }
+
+    [Fact]
+    public async Task Interact_Failure_OnAGateDenial_IsBlocked_NotJustFailed()
+    {
+        // 闸门拒绝（接管/暂停/授权）与普通失败语义不同：不得自动重试，要先重新准入。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime)
+        {
+            InteractFailure = DesktopCapabilityError.Unauthorized("not the agent target"),
+        };
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "fill",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Name" },
+                text = "Pudding"
+            }));
+
+        Assert.False(result.Success);
+        using var document = JsonDocument.Parse(result.Error!);
+        var receipt = document.RootElement.GetProperty("value");
+        Assert.Equal("blocked", receipt.GetProperty("completion").GetString());
+        Assert.Equal("not_retryable", receipt.GetProperty("retryDisposition").GetString());
+        Assert.False(receipt.GetProperty("mayHaveSideEffects").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Interact_Success_CarriesTheRetryDisposition()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "click",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Name" }
+            }));
+
+        Assert.True(result.Success);
+        var value = GetJson(result.Output, "value");
+        // click 没有声明期望 ⇒ dispatched ⇒ 先观察，勿重做。
+        Assert.Equal("dispatched", value.GetProperty("completion").GetString());
+        Assert.Equal("dispatched_observe_only", value.GetProperty("retryDisposition").GetString());
+        Assert.True(value.GetProperty("requiresFollowUp").GetBoolean());
+    }
+
+    [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
         var runtime = new FakeBrowserRuntime();
@@ -580,6 +706,9 @@ public sealed class BrowserAgentToolsTests
 internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     : IDesktopBrowserCapabilitySurface, IDesktopContextCapabilitySurface
 {
+    /// <summary>让替身直接以某个领域错误结束交互（用于验证闸门拒绝 vs 普通失败的回执差异）。</summary>
+    public DesktopCapabilityError? InteractFailure { get; init; }
+
     public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext call, CancellationToken ct = default)
     {
@@ -746,6 +875,11 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        if (InteractFailure is not null)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(InteractFailure);
+        }
+
         if (await ResolvePageAsync(request.Target, ct) is not { } page)
         {
             return CapabilityResult<DesktopInteractionResult>.Failure(

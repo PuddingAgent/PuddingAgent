@@ -222,11 +222,10 @@ public sealed class BrowserInteractTool(
                 ct);
 
             if (interaction.IsFailure)
-
             {
-
-                return Failure(interaction.Error!);
-
+                // 失败也必须给出回执：调用方需要知道「执行到哪一步、是否可能已产生副作用、能否重试」。
+                // 只给 code/message 会把"可能已经执行"误读成"没执行"（设计 §4.1）。
+                return Failure(interaction.Error!, action, args, contextId);
             }
 
 
@@ -249,6 +248,7 @@ public sealed class BrowserInteractTool(
                 ObservedChecked: element?.IsChecked,
                 Execution: BrowserActionExecution.Completed,
                 Target: new DesktopPageTarget(contextId, args.PageId.Trim())));
+            var retry = BrowserRetryPolicy.Decide(receipt);
 
             return BrowserToolResponse.Success(
 
@@ -282,6 +282,8 @@ public sealed class BrowserInteractTool(
 
                     Ok = receipt.Ok,
                     Completion = BrowserActionCompletionWire.NameOf(receipt.Completion),
+                    Execution = BrowserActionExecutionWire.NameOf(receipt.Execution),
+                    Verification = BrowserActionVerificationWire.NameOf(receipt.Verification),
                     Assertions = receipt.Assertions
                         .Select(assertion => new BrowserAssertionToolValue
                         {
@@ -293,6 +295,9 @@ public sealed class BrowserInteractTool(
                         .ToArray(),
                     MayHaveSideEffects = receipt.MayHaveSideEffects,
                     SafeToRetry = receipt.SafeToRetry,
+                    RequiresFollowUp = receipt.RequiresFollowUp,
+                    RetryDisposition = BrowserRetryDispositionWire.NameOf(retry.Disposition),
+                    RetryDetail = retry.Detail,
 
                 },
 
@@ -368,9 +373,41 @@ public sealed class BrowserInteractTool(
 
 
 
-    private static ToolExecutionResult Failure(DesktopCapabilityError error) =>
+    /// <summary>
+    /// 交互失败：把错误判成**回执**（执行阶段由错误目录推导）并随失败一起返回。
+    /// 关键事实是「是否已经派发」——超时/断连可能已经产生副作用，绝不能只给一个 code 就完事。
+    /// </summary>
+    private static ToolExecutionResult Failure(
+        DesktopCapabilityError error,
+        string? action = null,
+        BrowserInteractArgs? args = null,
+        string? contextId = null)
+    {
+        var receipt = BrowserInteractionReceipt.Build(new BrowserInteractionEvidence(
+            new OperationId(Guid.NewGuid().ToString("N")),
+            MapAction(action ?? "click", args?.Checked),
+            ExpectedValue: args?.ExpectValue,
+            Execution: BrowserInteractionReceipt.ExecutionFor(error),
+            Target: contextId is null ? null : new DesktopPageTarget(contextId, args!.PageId.Trim()),
+            Error: error));
+        var retry = BrowserRetryPolicy.Decide(receipt);
 
-        BrowserCapabilityFailure.From(error, "browser_interact_failed", "stale_element_reference");
-
+        return BrowserCapabilityFailure.From(
+            error,
+            "browser_interact_failed",
+            "stale_element_reference",
+            value: new BrowserReceiptToolValue
+            {
+                Operation = receipt.Operation.ToString(),
+                Completion = BrowserActionCompletionWire.NameOf(receipt.Completion),
+                Execution = BrowserActionExecutionWire.NameOf(receipt.Execution),
+                Verification = BrowserActionVerificationWire.NameOf(receipt.Verification),
+                MayHaveSideEffects = receipt.MayHaveSideEffects,
+                SafeToRetry = receipt.SafeToRetry,
+                RequiresFollowUp = receipt.RequiresFollowUp,
+                RetryDisposition = BrowserRetryDispositionWire.NameOf(retry.Disposition),
+                RetryDetail = retry.Detail,
+            });
+    }
 }
 

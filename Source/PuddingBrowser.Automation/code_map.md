@@ -25,13 +25,13 @@
 |------|----------------|
 | `BrowserAutomationAuthority.cs` | 实现 `IBrowserAutomationAuthority` + `IBrowserAutomationControl`：唯一事实源。接管/暂停/恢复/关闭/连接世代改变推进**控制世代**；撤销授权、切目标、关闭、世代改变推进**授权世代**；接管**不**推进授权世代。`Admit` 在入队前校验并签发写租约，`Revalidate` 在触碰页面前复检租约世代 ⇒ 「验证通过 → 期间被接管」必然被拦下。同一页面同时只有一个写租约；授权被撤销时租约随之释放。 |
 | `BrowserGrantIssuancePolicy.cs` | 子代理授权的**上界**判据：子代理 grant 的范围必须 ⊆ 父任务在同一页面/同一 frame 的 grant；父任务无授权 ⇒ 子代理不得凭空获得。失败时抛 `ArgumentException`（fail closed）。 |
-| `BrowserReceiptJudge.cs` | 证据 → 回执。只按「执行阶段 + 声明的后置断言」判定，**不按动作名推断导航**；未执行/结果不明 ⇒ `not_requested`；需要断言但拿不到 ⇒ `unverified`；有未通过断言 ⇒ `failed`。 |
+| `BrowserReceiptJudge.cs` | 证据 → 回执。只按「执行阶段 + 声明的后置断言」判定，**不按动作名推断导航**；未执行/结果不明 ⇒ `not_requested`；需要断言但拿不到 ⇒ `unverified`；有未通过断言 ⇒ `failed`。同文件的重试裁定 `BrowserRetryPolicy`：`unknown` ⇒ 结果不明、`blocked`/`verified` ⇒ 不可重试、**真跑过（dispatched/completed）却没通过验证 ⇒ `dispatched_observe_only`（先观察、勿重做）**，其余按「未开始 + 可重试 + 无副作用」才 `safe_to_retry` |
 | `BrowserOperationLedger.cs` | operationId 账本：键 = 调用身份 + 连接世代 + operationId，另存请求摘要。在途项**永不因容量被淘汰**（容量耗尽拒新写请求）；终态 tombstone 保留到容量压力出现，因此过期重传返回 `receipt_expired` 而不是被当成新动作。默认 5 分钟 / 1,024 项。 |
 | `BrowserMutationPostcondition.cs` | 变更类动作的**后置条件**（取代「所有 mutating 结果版本必须严格递增」）：没有活版本是真失败；观测到文档提交即满足任何期望；<b>未声明后置条件时版本不推进不算失败</b>（fill/click 开菜单/SPA 更新）；只有显式声明 `DocumentNavigation` 未满足才报 `outcome_unknown`。`ValidateTabs` 不拿「另一页的版本推进」当证据，改为校验 `close` 是否真的关掉、`activate`/`new` 是否回带活版本。 |
 | `BrowserRefIdentity.cs` | 引用身份模型（设计 §5 / G4）：`BrowserRefScope`（context/page/frame 三元组，frame=null 即顶层）、`BrowserObservationRevisions`（**三个分开的事实**：文档世代 / DOM 修订 / 视口修订）、`BrowserRevisionPolicy`（只读**不推进任何**事实；文档提交推三者；DOM 变更只推 dom；滚动只推 viewport）、`BrowserRefInvalidation`（分类作废）、`BrowserRefDenial` + 线名、`BrowserRefToken`（宿主绑定节点键 + 最小刷新提示）、`BrowserRefDecision` |
 | `BrowserRefRegistry.cs` | 宿主绑定的引用登记表：身份用**宿主侧**节点键（`data-pudding-ref` 之类页面可自写属性只能当提示）；校验同时看作用域与文档世代 ⇒ **跨页/跨 frame 即使版本号相同也拒绝**；撤销**分类**（整页 / 单 frame / 单引用），而普通 DOM 变更与滚动**不作废任何**引用；reference 值不可解析，**绝不按键名/角色自动重绑** |
 | `BrowserReadingFormat.cs` | 阅读面收敛（设计 §6.1/§6.2、G5）：把驱动的无障碍树按模式（`outline` 默认＝可交互行＋标题/地标行，`interactive`＝仅带 `ref=` 的行，`full`＝全量不设预算，`text` 未实现）**只做投影不编造**；**输出预算（50 行 / 4096 UTF-8 字节）与内部扫描预算（10k 节点 / 64 层 / 200k 文本）分开**；截断如实区分 `incomplete_scan`（可能缺整片区域）与 `output_budget`（可用 `nextCursor` 续读）。`BrowserReadingFormatWire` 提供线名与 fail-closed 解析 |
-| `BrowserInteractionReceipt.cs` | 交互回执**判定**（设计 §4.1/§4.2、G7）：把「调用方声明的期望 + 驱动回读的观测值」判成断言与完成度。① 不按动作名推断成功——只有声明了期望（显式 `expect_value`，或 select 的 `values`、check/uncheck 的 `checked` 这类调用方自给的目标值）才有断言，否则如实报 `dispatched`；② **表单值一律不回显**（value/selectedValues 只给 matched 与长度）；③ 期望存在但拿不到观测 ⇒ `unverified`（不是 failed）。`ExecutionFor(error)` 由错误目录推导执行阶段 |
+| `BrowserInteractionReceipt.cs` | 交互回执**判定**（设计 §4.1/§4.2、G7）：把「调用方声明的期望 + 驱动回读的观测值」判成断言与完成度。① 不按动作名推断成功——只有声明了期望（显式 `expect_value`，或 select 的 `values`、check/uncheck 的 `checked` 这类调用方自给的目标值）才有断言，否则如实报 `dispatched`；② **表单值一律不回显**（value/selectedValues 只给 matched 与长度）；③ 期望存在但拿不到观测 ⇒ `unverified`（不是 failed）。`ExecutionFor(error)` 由错误目录推导执行阶段（未开始/已派发/结果不明），`IsGateDenial(error)` 把**接管/暂停/授权**三种拒绝判成 `blocked`（未开始、无副作用、不得自动重试）而不是普通 `failed` |
 
 ## 3. 契约落点（在 `Pudding.Contracts/Desktop/`，BCL-only）
 
@@ -58,7 +58,7 @@
 
 ## 5. 测试
 
-`Source/PuddingBrowser.AutomationTests/`（只引用本组件）：187 用例。
+`Source/PuddingBrowser.AutomationTests/`（只引用本组件）：192 用例。
 
 | 文件 | 覆盖 |
 |------|------|

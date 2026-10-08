@@ -295,6 +295,117 @@ public sealed class BrowserInteractionReceiptTests
         Assert.IsFalse(receipt.SafeToRetry);
     }
 
+    // ── 闸门拒绝 vs 失败：语义不同，重试裁定也不同（§3.2/§4.3）───────────────
+
+    [TestMethod]
+    public void GateDenials_AreBlocked_AndTheRetryPolicyRefusesAutoRetry()
+    {
+        // 接管/暂停/授权三者语义一致：未开始、无副作用、**不得自动重试**
+        // （自动重试等于绕过用户的接管意图）。
+        var denials = new[]
+        {
+            new DesktopCapabilityError(DesktopCapabilityErrorCode.UserTakeover, "user took over"),
+            new DesktopCapabilityError(DesktopCapabilityErrorCode.Paused, "paused"),
+            DesktopCapabilityError.Unauthorized("page is not the agent target"),
+        };
+
+        foreach (var denial in denials)
+        {
+            Assert.IsTrue(BrowserInteractionReceipt.IsGateDenial(denial), denial.Code.ToString());
+
+            var receipt = BrowserInteractionReceipt.Build(Evidence(
+                DesktopInteractionAction.Fill,
+                expectedValue: "x",
+                execution: BrowserInteractionReceipt.ExecutionFor(denial),
+                error: denial));
+
+            Assert.AreEqual(BrowserActionCompletion.Blocked, receipt.Completion, denial.Code.ToString());
+            Assert.IsFalse(receipt.Ok);
+            Assert.AreEqual(
+                BrowserRetryDisposition.NotRetryable,
+                BrowserRetryPolicy.Decide(receipt).Disposition,
+                denial.Code.ToString());
+        }
+    }
+
+    [TestMethod]
+    public void OrdinaryFailures_AreNotBlocked_AndStayRetryableWhenNothingWasDispatched()
+    {
+        var failure = new DesktopCapabilityError(
+            DesktopCapabilityErrorCode.PageVersionMismatch, "page moved on");
+
+        Assert.IsFalse(BrowserInteractionReceipt.IsGateDenial(failure));
+
+        var receipt = BrowserInteractionReceipt.Build(Evidence(
+            DesktopInteractionAction.Fill,
+            expectedValue: "x",
+            execution: BrowserInteractionReceipt.ExecutionFor(failure),
+            error: failure));
+
+        Assert.AreEqual(BrowserActionCompletion.Failed, receipt.Completion);
+        Assert.IsTrue(receipt.SafeToRetry);
+        Assert.AreEqual(
+            BrowserRetryDisposition.SafeToRetry,
+            BrowserRetryPolicy.Decide(receipt).Disposition);
+    }
+
+    [TestMethod]
+    public void DispatchedThenDeadline_KeepsTheDispatchFact_AndIsNeverRetried()
+    {
+        // 设计 §4.1 的硬要求：不能丢失"已经派发"的事实。
+        // 声明了期望却超时 ⇒ execution 仍是 dispatched（事实），completion 是 failed（断言未满足）。
+        var timeout = DesktopCapabilityError.DeadlineExceeded(mayHaveSideEffects: true);
+
+        var receipt = BrowserInteractionReceipt.Build(Evidence(
+            DesktopInteractionAction.Fill,
+            expectedValue: "x",
+            execution: BrowserInteractionReceipt.ExecutionFor(timeout),
+            error: timeout));
+
+        Assert.AreEqual(BrowserActionExecution.Dispatched, receipt.Execution);
+        Assert.AreEqual(BrowserActionCompletion.Failed, receipt.Completion);
+        Assert.IsTrue(receipt.MayHaveSideEffects);
+        Assert.IsFalse(receipt.SafeToRetry);
+
+        // 已跑过但没通过验证 ⇒ 指引必须说"先观察、勿重做"（不是干巴巴的"不可重试"）。
+        var decision = BrowserRetryPolicy.Decide(receipt);
+        Assert.AreEqual(BrowserRetryDisposition.DispatchedObserveOnly, decision.Disposition);
+        Assert.IsNotNull(decision.Detail);
+    }
+
+    [TestMethod]
+    public void DispatchedWithoutExpectation_IsObserved_NotClaimedVerified()
+    {
+        var timeout = DesktopCapabilityError.DeadlineExceeded(mayHaveSideEffects: true);
+
+        var receipt = BrowserInteractionReceipt.Build(Evidence(
+            DesktopInteractionAction.Click,
+            execution: BrowserInteractionReceipt.ExecutionFor(timeout),
+            error: timeout));
+
+        Assert.AreEqual(BrowserActionCompletion.Dispatched, receipt.Completion);
+        Assert.AreEqual(
+            BrowserRetryDisposition.DispatchedObserveOnly,
+            BrowserRetryPolicy.Decide(receipt).Disposition);
+    }
+
+    [TestMethod]
+    public void UnknownOutcome_IsNeverTreatedAsNotExecuted()
+    {
+        var unknown = DesktopCapabilityError.OutcomeUnknown("connection dropped");
+
+        var receipt = BrowserInteractionReceipt.Build(Evidence(
+            DesktopInteractionAction.Click,
+            execution: BrowserInteractionReceipt.ExecutionFor(unknown),
+            error: unknown));
+
+        Assert.AreEqual(BrowserActionCompletion.Unknown, receipt.Completion);
+        Assert.IsFalse(receipt.Ok);
+        Assert.AreEqual(
+            BrowserRetryDisposition.UnknownOutcome,
+            BrowserRetryPolicy.Decide(receipt).Disposition);
+    }
+
     private static BrowserActionAssertion AssertSingle(BrowserActionReceipt receipt)
     {
         Assert.AreEqual(1, receipt.Assertions.Count);

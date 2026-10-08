@@ -133,7 +133,7 @@ public sealed class ComponentSurfaceTests
         {
             ["BrowserAssertionRedactionTests"] = 11,
             ["BrowserControlAuthorityTests"] = 16,
-            ["BrowserInteractionReceiptTests"] = 17,
+            ["BrowserInteractionReceiptTests"] = 22,
             ["BrowserMutationPostconditionTests"] = 12,
             ["BrowserOperationLedgerTests"] = 15,
             ["BrowserOperationPolicyTests"] = 10,

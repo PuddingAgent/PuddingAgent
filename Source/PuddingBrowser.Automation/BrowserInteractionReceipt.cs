@@ -22,7 +22,8 @@ public sealed record BrowserInteractionEvidence(
     DesktopPageTarget? Target = null,
     BrowserObservationStamp? Before = null,
     BrowserObservationStamp? After = null,
-    DesktopCapabilityError? Error = null);
+    DesktopCapabilityError? Error = null,
+    bool IsBlocked = false);
 
 /// <summary>
 /// 交互回执的**判定**（设计方案 §4.1/§4.2、门禁 G7）：
@@ -65,7 +66,9 @@ public static class BrowserInteractionReceipt
             evidence.Execution,
             assertions,
             RequiresAssertions: expectationDeclared,
-            IsBlocked: false,
+            // 「被闸门拒绝」与「失败」必须分开：前者要求调用方在闸门解除后**显式重新准入**，
+            // 后者才是可以按重试裁定处理的失败（设计方案 §3.2/§4.3）。
+            IsBlocked: evidence.IsBlocked || IsGateDenial(evidence.Error),
             UnableToVerify: unableToVerify,
             Target: evidence.Target,
             Before: evidence.Before,
@@ -73,6 +76,17 @@ public static class BrowserInteractionReceipt
             Effects: BrowserActionEffectSummary.None,
             Error: evidence.Error));
     }
+
+    /// <summary>
+    /// 该错误是不是**闸门**拒绝（接管/暂停/授权）。这三个码语义一致：
+    /// 动作**未开始**、没有任何副作用，且**不得自动重试**（接管与暂停是用户意图，
+    /// 自动重试等于绕过它；授权要等重新准入）。其他失败（目标不存在、版本不符、参数错、
+    /// 连接不可用…）归 <c>failed</c>，按重试裁定处理。
+    /// </summary>
+    public static bool IsGateDenial(DesktopCapabilityError? error) =>
+        error?.Code is DesktopCapabilityErrorCode.UserTakeover
+            or DesktopCapabilityErrorCode.Paused
+            or DesktopCapabilityErrorCode.Unauthorized;
 
     /// <summary>执行阶段：由驱动/传输的错误语义推导，不需要额外知识（见错误目录的 retryable/sideEffects）。</summary>
     public static BrowserActionExecution ExecutionFor(DesktopCapabilityError? error)

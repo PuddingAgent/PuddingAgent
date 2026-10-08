@@ -127,12 +127,45 @@ public sealed record BrowserInteractionToolValue
     /// <summary>完成度线名：verified / dispatched / blocked / failed / unknown。</summary>
     public required string Completion { get; init; }
 
+    /// <summary>执行阶段线名：not_started / dispatched / completed / unknown。</summary>
+    public string? Execution { get; init; }
+
+    /// <summary>验证结论线名：passed / failed / unverified / not_requested。</summary>
+    public string? Verification { get; init; }
+
     /// <summary>后置断言证据。表单值只给 matched 与长度，绝不回显内容。</summary>
     public IReadOnlyList<BrowserAssertionToolValue> Assertions { get; init; } = [];
 
     public bool MayHaveSideEffects { get; init; }
 
     public bool SafeToRetry { get; init; }
+
+    /// <summary>是否应先观察（已派发未验证 / 结果不明）。</summary>
+    public bool RequiresFollowUp { get; init; }
+
+    /// <summary>重试裁定线名：safe_to_retry / dispatched_observe_only / unknown_outcome / not_retryable。</summary>
+    public string? RetryDisposition { get; init; }
+
+    /// <summary>裁定理由（例如"已派发但效果未验证，先观察"）。</summary>
+    public string? RetryDetail { get; init; }
+}
+
+/// <summary>
+/// 失败时的回执投影（放进失败的 <c>value</c>）。与成功路径同名字段，因此调用方读法一致：
+/// 失败同样能看出「执行到哪一步、是否可能已产生副作用、能不能重试」。
+/// </summary>
+public sealed record BrowserReceiptToolValue
+{
+    public required string Operation { get; init; }
+    public required string Completion { get; init; }
+    public string? Execution { get; init; }
+    public string? Verification { get; init; }
+    public bool MayHaveSideEffects { get; init; }
+    public bool SafeToRetry { get; init; }
+    public bool RequiresFollowUp { get; init; }
+    public string? RetryDisposition { get; init; }
+    public string? RetryDetail { get; init; }
+    public IReadOnlyList<BrowserAssertionToolValue> Assertions { get; init; } = [];
 }
 
 /// <summary>
@@ -186,12 +219,18 @@ internal static class BrowserToolResponse
         string code,
         string message,
         BrowserContextId? contextId = null,
-        PageId? pageId = null)
+        PageId? pageId = null,
+        object? value = null,
+        IReadOnlyList<string>? warnings = null)
         => ToolExecutionResult.Fail(JsonSerializer.Serialize(new BrowserToolResult<object>
         {
             Ok = false,
             ContextId = contextId?.Value,
             PageId = pageId?.Value,
+            // 失败也要能带结构化证据：交互失败时"是否已经派发"必须随错误一起给出，
+            // 否则调用方只能看到 code/message，把"可能已经执行"当成"没执行"（设计 §4.1）。
+            Value = value,
+            Warnings = warnings ?? [],
             Error = new BrowserToolError { Code = code, Message = message }
         }, s_jsonOptions));
 

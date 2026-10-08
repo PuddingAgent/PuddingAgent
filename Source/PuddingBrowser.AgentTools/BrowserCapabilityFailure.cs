@@ -15,7 +15,9 @@ internal static class BrowserCapabilityFailure
     public static ToolExecutionResult From(
         DesktopCapabilityError error,
         string fallbackCode,
-        string versionMismatchCode) => BrowserToolResponse.Failure(
+        string versionMismatchCode,
+        object? value = null,
+        IReadOnlyList<string>? warnings = null) => BrowserToolResponse.Failure(
         error.Code switch
         {
             DesktopCapabilityErrorCode.InvalidTarget => "browser_page_not_found",
@@ -24,5 +26,7 @@ internal static class BrowserCapabilityFailure
             DesktopCapabilityErrorCode.UnsupportedCapability => "browser_unsupported",
             _ => fallbackCode,
         },
-        error.Message);
+        error.Message,
+        value: value,
+        warnings: warnings);
 }

@@ -118,11 +118,18 @@ public static class BrowserRetryPolicy
         var disposition = receipt.Completion switch
         {
             BrowserActionCompletion.Unknown => BrowserRetryDisposition.UnknownOutcome,
-            BrowserActionCompletion.Dispatched => BrowserRetryDisposition.DispatchedObserveOnly,
             BrowserActionCompletion.Verified => BrowserRetryDisposition.NotRetryable,
             // 被闸门拒绝时**不自动重试**：接管/暂停是用户意图，必须由调用方在恢复后显式重新准入，
             // 否则自动重试就成了绕过接管的旁路（方案 §3.1）。
             BrowserActionCompletion.Blocked => BrowserRetryDisposition.NotRetryable,
+            // 动作**确实跑过**（dispatched/completed）却没通过验证 ⇒ 先观察、勿重做：
+            // 「断言没过」不代表动作没发生（例如 fill 之后页面重渲染把值改回去了）。
+            // 漏掉这一条会让调用方得到"不可重试"却没有任何提示——而它其实需要先去看一眼页面。
+            // 注意：这里只看执行阶段，不看 mayHaveSideEffects —— 后者与 NotStarted 同时出现是
+            // 自相矛盾的回执（无法判断到底跑没跑），保守地按不可重试处理，不谎称"已派发"。
+            _ when receipt.Execution is BrowserActionExecution.Dispatched or BrowserActionExecution.Completed
+                => BrowserRetryDisposition.DispatchedObserveOnly,
+            BrowserActionCompletion.Dispatched => BrowserRetryDisposition.DispatchedObserveOnly,
             _ => receipt.SafeToRetry ? BrowserRetryDisposition.SafeToRetry : BrowserRetryDisposition.NotRetryable,
         };
 
