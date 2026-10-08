@@ -313,6 +313,34 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
+    public async Task Locate_MapsIncludeHiddenOntoTheRuntimeLocator()
+    {
+        // 桥接路径是活路径：includeHidden 必须真的到达驱动（默认 false），
+        // 否则"默认少噪音"只写在契约上（设计 §6.2）。
+        Locator? seen = null;
+        var page = new FakePage
+        {
+            Version = 7,
+            QueryAll = locator =>
+            {
+                seen = locator;
+                return [];
+            },
+        };
+        var surface = Create(page);
+
+        var result = await surface.LocateAsync(
+            new BrowserLocateRequest(
+                Target,
+                new DesktopLocator(DesktopLocatorKind.Css, ".item", includeHidden: true),
+                DesktopPageVersion.Require(7)),
+            Call);
+
+        Assert.False(result.IsFailure);
+        Assert.True(seen!.IncludeHidden);
+    }
+
+    [Fact]
     public async Task Locate_CarriesTheFormValueReadback()
     {
         // 桥接路径必须把驱动回读的表单值带到能力结果里，否则「fill 是否写入成功」在工具层无据可依

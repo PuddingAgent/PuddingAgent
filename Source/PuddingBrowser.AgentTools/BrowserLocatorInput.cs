@@ -23,6 +23,13 @@ public sealed record BrowserLocatorInput
 
     [ToolParam("Optional text that the matched element must contain.")]
     public string? HasText { get; init; }
+
+    /// <summary>
+    /// 是否把隐藏元素也算作匹配（默认 <c>false</c>，设计方案 §6.2）。
+    /// 只排除隐藏元素；屏外但有尺寸的元素仍可定位。
+    /// </summary>
+    [ToolParam("Include hidden elements in the matches (default false; off-screen but sized elements are always locatable).")]
+    public bool IncludeHidden { get; init; }
 }
 
 internal static class BrowserLocatorInputMapper
@@ -43,7 +50,7 @@ internal static class BrowserLocatorInputMapper
                 $"locator kind '{input.Kind}' has no capability equivalent");
         }
 
-        return new DesktopLocator(kind, input.Value, input.Name, input.Exact, input.Nth, input.HasText);
+        return new DesktopLocator(kind, input.Value, input.Name, input.Exact, input.Nth, input.HasText, input.IncludeHidden);
     }
 
     private static LocatorKind ParseKind(BrowserLocatorInput input)
@@ -84,7 +91,8 @@ internal static class BrowserLocatorInputMapper
             Name = input.Name,
             Exact = input.Exact,
             Nth = input.Nth,
-            HasText = input.HasText
+            HasText = input.HasText,
+            IncludeHidden = input.IncludeHidden
         };
     }
 }

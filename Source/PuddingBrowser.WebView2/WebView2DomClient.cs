@@ -361,6 +361,8 @@ internal static partial class WebView2DomClient
     }
   } catch (error) { return {ok:false,code:'browser_invalid_arguments',message:String(error),elements:[]}; }
   elements = [...new Set(elements)];
+  // 默认排除隐藏元素（设计方案 §6.2）：屏外但有尺寸的元素**仍然保留**（那是 inViewport，不是 hidden）。
+  if (!locator.includeHidden) elements = elements.filter(el => visible(el));
   if (locator.hasText) elements = elements.filter(el => matchText(el.innerText || el.textContent, locator.hasText));
   if (locator.nth !== null && locator.nth !== undefined) elements = locator.nth >= 0 && locator.nth < elements.length ? [elements[locator.nth]] : [];
   const refState = globalThis.__puddingRefState?.version === input.pageVersion
@@ -407,7 +409,7 @@ internal static partial class WebView2DomClient
       case'testid':out=all().filter(el=>match(el.getAttribute('data-testid'),locator.value));break;
       default:return [];
     }}catch{return [];}
-    out=[...new Set(out)]; if(locator.hasText)out=out.filter(el=>match(el.innerText||el.textContent,locator.hasText));
+    out=[...new Set(out)]; if(!locator.includeHidden)out=out.filter(visible); if(locator.hasText)out=out.filter(el=>match(el.innerText||el.textContent,locator.hasText));
     if(locator.nth!==null&&locator.nth!==undefined)out=locator.nth>=0&&locator.nth<out.length?[out[locator.nth]]:[];
     return out;
   };

@@ -745,6 +745,44 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Locate_PassesIncludeHiddenThroughToTheCapabilityLayer()
+    {
+        // 设计 §6.2：locate 默认 includeHidden=false（少噪音），显式打开才带上隐藏元素。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var byDefault = await ExecuteAsync(
+            new BrowserLocateTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "css", value = ".item" }
+            }));
+
+        Assert.True(byDefault.Success);
+        Assert.False(surface.LastLocateRequest!.Locator.IncludeHidden);
+
+        var explicitHidden = await ExecuteAsync(
+            new BrowserLocateTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                // ⚠️ 嵌套字段必须用 camelCase：工具框架的 snake_case 归一化**只作用于顶层参数**
+                // （PuddingToolContracts.DeserializeArgs 只重写 RootElement 的属性名），
+                // `locator.include_hidden` 不会被绑定。
+                locator = new { kind = "css", value = ".item", includeHidden = true }
+            }));
+
+        Assert.True(explicitHidden.Success);
+        Assert.True(surface.LastLocateRequest!.Locator.IncludeHidden);
+    }
+
+    [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
         var runtime = new FakeBrowserRuntime();

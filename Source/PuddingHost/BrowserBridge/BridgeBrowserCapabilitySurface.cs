@@ -720,6 +720,8 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
                 Exact = locator.Exact,
                 Nth = locator.Nth,
                 HasText = locator.HasText,
+                // 默认排除隐藏元素（设计方案 §6.2）；屏外但有尺寸的元素仍可定位。
+                IncludeHidden = locator.IncludeHidden,
             };
     }
 

@@ -65,4 +65,10 @@ public sealed record Locator
     public FrameSelector? Frame { get; init; }
     public Locator? Has { get; init; }
     public string? HasText { get; init; }
+
+    /// <summary>
+    /// 是否把隐藏元素也算作匹配（默认 <c>false</c>，见设计方案 §6.2）。
+    /// 只排除**隐藏**（display/visibility/opacity 或零尺寸）；屏外但有尺寸的元素仍可定位。
+    /// </summary>
+    public bool IncludeHidden { get; init; }
 }

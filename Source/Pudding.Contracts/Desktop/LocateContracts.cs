@@ -68,7 +68,8 @@ public sealed record DesktopLocator
         string? name = null,
         bool exact = false,
         int? nth = null,
-        string? hasText = null)
+        string? hasText = null,
+        bool includeHidden = false)
     {
         if (!Enum.IsDefined(kind))
         {
@@ -102,6 +103,7 @@ public sealed record DesktopLocator
         Exact = exact;
         Nth = nth;
         HasText = string.IsNullOrEmpty(hasText) ? null : hasText;
+        IncludeHidden = includeHidden;
     }
 
     public DesktopLocatorKind Kind { get; }
@@ -115,6 +117,15 @@ public sealed record DesktopLocator
     public int? Nth { get; }
 
     public string? HasText { get; }
+
+    /// <summary>
+    /// 是否把隐藏元素也算作匹配（设计方案 §6.2：locate 默认 <c>false</c>）。
+    ///
+    /// 与 <c>visible</c>/<c>inViewport</c> 的关系：<c>false</c> 只排除**隐藏**元素
+    /// （display/visibility/opacity 或零尺寸）；**屏外但有尺寸**的元素仍可定位 ——
+    /// 「在视口内」是另一个事实，不能混为一谈。
+    /// </summary>
+    public bool IncludeHidden { get; }
 
     /// <summary>Ref 定位是「凭快照引用」：调用方必须保证引用来自同一个 PageVersion。</summary>
     public bool IsReference => Kind == DesktopLocatorKind.Ref;

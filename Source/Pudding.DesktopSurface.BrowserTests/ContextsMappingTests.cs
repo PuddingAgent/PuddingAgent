@@ -714,6 +714,24 @@ public sealed class LocateMappingTests
     }
 
     [Fact]
+    public async Task IncludeHiddenIsMappedOntoTheRuntimeLocator()
+    {
+        // Desktop 侧（能力通道路径）与桥接侧必须映射同一个修饰：默认 false，显式才为 true（设计 §6.2）。
+        var runtime = Runtime(pageVersion: 4, handles: [Handle("e1", "button", version: 4)]);
+        var surface = Surface(runtime);
+
+        await surface.LocateAsync(
+            Call,
+            new BrowserLocateRequest(
+                Target,
+                new DesktopLocator(DesktopLocatorKind.Css, ".item", includeHidden: true),
+                DesktopPageVersion.Require(4)),
+            CancellationToken.None);
+
+        Assert.True(runtime.Pages["ctx-1/p-1"].LastLocator!.IncludeHidden);
+    }
+
+    [Fact]
     public async Task StaleReferenceIsRejectedWithoutQuerying()
     {
         var runtime = Runtime(pageVersion: 9, handles: [Handle("e1", "button", version: 9)]);
@@ -917,6 +935,9 @@ public sealed class LocateMappingTests
 
         public bool Queried { get; private set; }
 
+        /// <summary>最近一次定位用的运行时定位符（用于断言 includeHidden 等修饰确实到达驱动）。</summary>
+        public Locator? LastLocator { get; private set; }
+
         public PageId Id { get; }
 
         public BrowserContextId ContextId { get; }
@@ -940,6 +961,7 @@ public sealed class LocateMappingTests
         public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct)
         {
             Queried = true;
+            LastLocator = locator;
             return Task.FromResult<IReadOnlyList<IElementHandle>>(_handles.Cast<IElementHandle>().ToArray());
         }
 

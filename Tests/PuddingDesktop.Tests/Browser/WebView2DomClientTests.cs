@@ -100,6 +100,22 @@ public sealed class WebView2DomClientTests
     }
 
     [Fact]
+    public void LocateScripts_ExcludeHiddenElementsByDefault()
+    {
+        // 设计 §6.2：locate 默认 includeHidden=false；只排除**隐藏**（display/visibility/opacity/零尺寸），
+        // 屏外但有尺寸的元素仍可定位（那是 inViewport，不是 hidden）。
+        // ⚠️ 同样是脚本文本断言：真机过滤行为需 WebView2.Smoke 复核。
+        Assert.Contains(
+            "if (!locator.includeHidden) elements = elements.filter(el => visible(el));",
+            WebView2DomClient.LocateScript);
+
+        // 交互脚本有一份自己的 locate：过滤必须一致，否则"定位不歧义、交互却歧义"。
+        Assert.Contains(
+            "if(!locator.includeHidden)out=out.filter(visible);",
+            WebView2DomClient.InteractScript);
+    }
+
+    [Fact]
     public void ValidateLocator_RejectsFrameAndCompoundHasUntilSupported()
     {
         var exception = Assert.Throws<BrowserOperationException>(() =>
