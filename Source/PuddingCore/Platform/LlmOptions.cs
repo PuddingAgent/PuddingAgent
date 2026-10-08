@@ -134,6 +134,54 @@ namespace PuddingCode.Platform
     }
 
     /// <summary>
+    /// LLM 调用的用途。它决定这次 Provider usage 是否可以改写 session 的
+    /// <c>currentPreparedRequest</c> 与安全校准（ADR-095 D6）。
+    /// </summary>
+    public static class LlmCallPurposes
+    {
+        /// <summary>主 Agent 调用：唯一允许改写 prepared 快照并参与安全校准的用途。</summary>
+        public const string Agent = "agent";
+
+        /// <summary>压缩摘要调用：单独归因，不得改写主请求的估算或校准。</summary>
+        public const string Compaction = "compaction";
+
+        /// <summary>审批/分类等辅助调用。</summary>
+        public const string Approval = "approval";
+
+        /// <summary>其它辅助调用。</summary>
+        public const string Auxiliary = "auxiliary";
+
+        /// <summary>是否属于「主请求」用途（缺省视为主请求，保持既有调用者语义）。</summary>
+        public static bool IsMainCall(string? purpose)
+            => string.IsNullOrWhiteSpace(purpose)
+               || string.Equals(purpose, Agent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 一次**已完成**的 Provider 调用实测，存放在与「本轮准备估算」分离的槽位里。
+    /// <para>
+    /// 归因纪律（ADR-095 D6）：<c>currentPreparedRequest</c>（本次准备，随请求身份）与
+    /// <c>lastMeasuredRequest</c>（最近一次**主请求**实测）必须分开保存；迟到、交错、取消
+    /// 或辅助调用的 usage 只能写自己的槽位，不得覆盖更晚的准备快照，也不得参与出站安全校准。
+    /// </para>
+    /// </summary>
+    public sealed record MeasuredRequestUsage(
+        string SessionId,
+        string Purpose,
+        string? InvocationId,
+        string? AttemptId,
+        int? ProviderPromptTokens,
+        int? ProviderCompletionTokens,
+        int? ProviderTotalTokens,
+        int RawEstimatedTokens,
+        DateTimeOffset RecordedAtUtc)
+    {
+        /// <summary>Provider <c>Total</c> 含 completion，**不得**当作「实测输入」使用。</summary>
+        public bool HasProviderUsage =>
+            ProviderPromptTokens is > 0 || ProviderTotalTokens is > 0;
+    }
+
+    /// <summary>
     /// 保存每个 Session 最近一次最终 LLM 请求的输入上下文估算。
     /// 该值用于保护下一轮发送，不是历史累计 token 账本。
     /// </summary>
@@ -143,6 +191,12 @@ namespace PuddingCode.Platform
         private static readonly ConcurrentDictionary<string, Tokenizer> Tokenizers = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, ContextUsageSnapshot> _snapshots = new();
         private readonly ConcurrentDictionary<string, double> _promptCalibrationRatios = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>最近一次**主请求**的 Provider 实测（与 prepared 快照分离的槽位）。</summary>
+        private readonly ConcurrentDictionary<string, MeasuredRequestUsage> _lastMeasuredRequests = new(StringComparer.Ordinal);
+
+        /// <summary>最近一次辅助/摘要调用的实测；单独归因，永不写进上面的槽位。</summary>
+        private readonly ConcurrentDictionary<string, MeasuredRequestUsage> _lastAuxiliaryMeasurements = new(StringComparer.Ordinal);
 
         public void Set(ContextUsageSnapshot snapshot)
         {
@@ -160,6 +214,28 @@ namespace PuddingCode.Platform
         }
 
         public ContextUsageSnapshot CaptureLlmRequest(
+            string sessionId,
+            IReadOnlyList<ChatMessage> messages,
+            IReadOnlyList<LlmToolDefinition>? tools,
+            string? modelId = null)
+        {
+            var snapshot = MeasureLlmRequest(sessionId, messages, tools, modelId);
+            Set(snapshot);
+            return snapshot;
+        }
+
+        /// <summary>
+        /// 只计量、**不发布**：用于候选/多方案测量，避免把测量结果写成 session 的
+        /// <c>currentPreparedRequest</c>。
+        /// <para>
+        /// 为什么必须分开（诊断 2026-10-07 §5.1 的归因缺陷）：软压缩候选在挑选过程中会对
+        /// 「移除后的保留列表」反复计量；若这些计量顺带发布，session 快照就会被留在**压缩后**
+        /// 的形状上，随后压缩请求的 `FreezeRequestContext` 取到的就是压缩后的 shape
+        /// （DB 实测 176,873 ≈ 326,392/1.845，而判据输入是 583,691），并且摘要调用的
+        /// `RecordProviderUsage` 会拿 Provider 报数去比这个错误的 raw。
+        /// </para>
+        /// </summary>
+        public ContextUsageSnapshot MeasureLlmRequest(
             string sessionId,
             IReadOnlyList<ChatMessage> messages,
             IReadOnlyList<LlmToolDefinition>? tools,
@@ -272,13 +348,28 @@ namespace PuddingCode.Platform
                 HistoryMessageEntropy = EntropyProbe.ComputeGzipRatio(historyText.ToString()),
                 ToolDefinitionEntropy = EntropyProbe.ComputeGzipRatio(toolText),
             };
-            Set(snapshot);
             return snapshot;
         }
 
+        /// <summary>
+        /// 记录一次已完成的 Provider 调用实测。
+        /// <para>
+        /// 只有**主请求**用途（<see cref="LlmCallPurposes.IsMainCall"/>）才允许：
+        /// ① 用 Provider 报数改写 session 的 <c>currentPreparedRequest</c>；
+        /// ② 更新安全校准系数；③ 写入 <c>lastMeasuredRequest</c>。
+        /// 辅助/摘要调用（压缩、审批……）单独归因：它们既不能改写主请求的估算，
+        /// 也不能抬高出站硬门禁用的保守系数（ADR-095 D6）。
+        /// </para>
+        /// </summary>
+        /// <param name="purpose">调用用途；缺省 = 主请求，保持既有调用者语义。</param>
+        /// <param name="invocationId">逻辑调用身份（重试复用）。</param>
+        /// <param name="attemptId">物理尝试身份（重试产生新值）。</param>
         public ContextUsageSnapshot RecordProviderUsage(
             string sessionId,
-            TokenUsageDto usage)
+            TokenUsageDto usage,
+            string purpose = LlmCallPurposes.Agent,
+            string? invocationId = null,
+            string? attemptId = null)
         {
             if (string.IsNullOrWhiteSpace(sessionId))
             {
@@ -292,6 +383,33 @@ namespace PuddingCode.Platform
             }
 
             var existing = TryGet(sessionId, out var found) ? found : null;
+
+            if (!LlmCallPurposes.IsMainCall(purpose))
+            {
+                // 辅助/摘要调用：只写自己的槽位。不发布、不改写、不校准。
+                _lastAuxiliaryMeasurements[sessionId] = new MeasuredRequestUsage(
+                    sessionId,
+                    purpose,
+                    invocationId,
+                    attemptId,
+                    usage.PromptTokens,
+                    usage.CompletionTokens,
+                    usage.TotalTokens,
+                    existing?.RawEstimatedTokens ?? 0,
+                    DateTimeOffset.UtcNow);
+
+                return existing ?? new ContextUsageSnapshot
+                {
+                    SessionId = sessionId,
+                    RecordedAt = DateTimeOffset.UtcNow,
+                    Source = "provider_usage_auxiliary",
+                    Confidence = "provider_reported",
+                    ProviderPromptTokens = usage.PromptTokens,
+                    ProviderCompletionTokens = usage.CompletionTokens,
+                    ProviderTotalTokens = usage.TotalTokens,
+                };
+            }
+
             var providerPromptTokens = Math.Max(0, usage.PromptTokens ?? 0);
             var rawEstimatedTokens = existing?.RawEstimatedTokens > 0
                 ? existing.RawEstimatedTokens
@@ -349,7 +467,35 @@ namespace PuddingCode.Platform
                 PromptCalibrationRatio = calibrationRatio,
             };
             Set(snapshot);
+            // 实测与准备分离：主请求实测写入自己的槽位，不回写 raw estimate，
+            // 也不因为迟到而覆盖更晚的准备快照（两者本就不同槽位）。
+            _lastMeasuredRequests[sessionId] = new MeasuredRequestUsage(
+                sessionId,
+                purpose,
+                invocationId,
+                attemptId,
+                usage.PromptTokens,
+                usage.CompletionTokens,
+                usage.TotalTokens,
+                rawEstimatedTokens,
+                DateTimeOffset.UtcNow);
             return snapshot;
+        }
+
+        /// <summary>最近一次**主请求**的 Provider 实测；null = 尚未观察到（不得用 0 冒充）。</summary>
+        public bool TryGetLastMeasuredRequest(string sessionId, out MeasuredRequestUsage? measured)
+        {
+            var ok = _lastMeasuredRequests.TryGetValue(sessionId, out var found);
+            measured = found;
+            return ok;
+        }
+
+        /// <summary>最近一次辅助/摘要调用的实测；单独归因，不参与主请求口径。</summary>
+        public bool TryGetLastAuxiliaryMeasurement(string sessionId, out MeasuredRequestUsage? measured)
+        {
+            var ok = _lastAuxiliaryMeasurements.TryGetValue(sessionId, out var found);
+            measured = found;
+            return ok;
         }
 
         /// <summary>

@@ -2250,6 +2250,10 @@ public sealed partial class AgentExecutionService
         {
             MaxOutputTokens = summaryOutputTokens,
         };
+        // F1 归因：本次要发出的是**压缩前**的 outbound 形状（候选测量只计量、不发布）。
+        // 明确发布它，随后冻结的请求级归因才会与摘要请求的 Provider 报数配对到同一个 raw；
+        // 否则摘要 usage 会去比「移除后」的 raw 并污染安全校准（诊断 2026-10-07 §5.1）。
+        _contextUsageSnapshotStore.Set(plan.InitialSnapshot);
         // S01-B：请求准备边界——冻结本次 compaction 请求的上下文归因。
         var summaryRequestContext = FreezeRequestContext(request.SessionId);
         var summaryInvocationId = BuildLlmInvocationId(request, round, "compaction");

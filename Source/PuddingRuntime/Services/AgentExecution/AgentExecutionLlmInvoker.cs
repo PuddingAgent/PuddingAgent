@@ -140,7 +140,12 @@ internal sealed class AgentExecutionLlmInvoker
             {
                 ContextWindowTokens = effectiveLlmConfig?.MaxContextTokens ?? 0,
             };
-            _contextUsageSnapshotStore?.RecordProviderUsage(request.SessionId, usage);
+            // F1 归因：usage 必须带用途落账。压缩/审批等辅助调用不得改写主请求的
+            // currentPreparedRequest，也不得参与出站安全校准（ADR-095 D6）。
+            _contextUsageSnapshotStore?.RecordProviderUsage(
+                request.SessionId,
+                usage,
+                purpose);
         }
 
         return AgentExecutionLlmInvocationResult.CreateSuccess(llmResp, usage);

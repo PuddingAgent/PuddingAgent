@@ -95,6 +95,7 @@ internal static class WarmPrefixCompaction
             summaryRequest,
             retained,
             selection.Snapshot,
+            selection.InitialSnapshot,
             selection.EffectiveInputLimit,
             selection.InitialUsedTokens,
             selection.InitialMessageCount,
@@ -129,6 +130,12 @@ internal sealed record WarmPrefixCompactionPlan(
     IReadOnlyList<ChatMessage> SummaryRequestMessages,
     IReadOnlyList<ChatMessage> RetainedMessages,
     ContextUsageSnapshot EstimatedRetainedSnapshot,
+    /// <summary>
+    /// 压缩前（即将发出的摘要请求）的完整测量。调用方必须把它发布为 session 的
+    /// <c>currentPreparedRequest</c>：候选测量是只计量的，不会自动发布，
+    /// 否则请求级归因会落到「移除后」的形状上（诊断 2026-10-07 §5.1）。
+    /// </summary>
+    ContextUsageSnapshot InitialSnapshot,
     int EffectiveInputLimit,
     int InitialUsedTokens,
     int InitialMessageCount,

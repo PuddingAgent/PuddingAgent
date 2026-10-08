@@ -52,7 +52,7 @@
 | `ChatMessage.cs` + `LlmContentPart.cs` + `ChatMessageMultimodalNormalizer.cs` | 消息模型；ADR-077 有序 typed 内容部件（text/image→Artifact 引用+detail）与 v1 信封 `ContentPartsEnvelope`，Gateway 渲染统一经 normalizer（旧 VisualArtifactIds 派生 original） |
 | `LlmResponse.cs` | LLM 响应 |
 | `LlmContinuationState.cs` | Provider opaque output items 跨工具轮次回放契约 |
-| `LlmOptions.cs` | LLM 选项、最近请求的 ContextUsageSnapshot、Tokenizer 校准和工具 schema 的 UTF-8/GZIP 归因（不保存正文） |
+| `LlmOptions.cs` | LLM 选项、最近请求的 ContextUsageSnapshot、Tokenizer 校准和工具 schema 的 UTF-8/GZIP 归因（不保存正文）。**请求归因分离（F1）**：`MeasureLlmRequest` 只计量不发布（候选测量不得改写准备快照）；`CaptureLlmRequest` = 计量 + 发布 `currentPreparedRequest`；`RecordProviderUsage` 带 `LlmCallPurposes`，只有主请求用途才允许改写准备快照/参与安全校准/写 `MeasuredRequestUsage`（`lastMeasuredRequest`），辅助与摘要调用单独落 `TryGetLastAuxiliaryMeasurement`；`Total` 与 `Prompt` 分开保存 |
 | `StreamDelta.cs` | 流式增量 |
 | `ToolCall.cs` | 工具调用 |
 | `ToolParameterSchema.cs` | 工具参数 Schema（JSON Schema） |

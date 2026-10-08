@@ -14,6 +14,12 @@ public sealed record LlmRequestBudgetResult(
     int RemovedMessageCount);
 
 /// <summary>软压缩结果：携带压缩前估算，供运行事件与日志归档。</summary>
+/// <param name="Snapshot">**移除后、尚未加入摘要**的保留侧测量。它不是提交后的真实值。</param>
+/// <param name="InitialSnapshot">
+/// 压缩前（即本次要发出的请求）的完整测量。调用方应把它发布为 session 的
+/// <c>currentPreparedRequest</c>，否则请求级归因会取到「移除后」的形状
+/// （诊断 2026-10-07 §5.1 的归因缺陷）。
+/// </param>
 public sealed record LlmSoftCompactionResult(
     IReadOnlyList<ChatMessage> Messages,
     ContextUsageSnapshot Snapshot,
@@ -21,7 +27,8 @@ public sealed record LlmSoftCompactionResult(
     bool Compacted,
     int RemovedMessageCount,
     int InitialUsedTokens,
-    int InitialMessageCount);
+    int InitialMessageCount,
+    ContextUsageSnapshot InitialSnapshot);
 
 /// <summary>
 /// 超限请求的「不可裁剪地板」分解（原始估算口径：不含 provider 校准比）。
@@ -216,11 +223,15 @@ public static partial class LlmRequestBudgetGuard
         // 还要包含 WorkUnit 输入容量，否则软阈值会在比真实硬边界更宽的分母上判断。
         var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens, workUnitInputCapacity);
         var working = messages.ToList();
-        var snapshot = usageStore.CaptureLlmRequest(
+        // 候选测量一律**只计量、不发布**：软压缩会在挑选过程中对「移除后的保留列表」反复计量，
+        // 若顺带发布，session 的 currentPreparedRequest 就会被留在压缩后的形状上，压缩请求的
+        // 请求级归因与摘要 usage 校准都会取错 raw（诊断 2026-10-07 §5.1）。
+        var initialSnapshot = usageStore.MeasureLlmRequest(
             sessionId,
             working,
             tools,
             config?.ModelId);
+        var snapshot = initialSnapshot;
         var initialUsedTokens = snapshot.UsedTokens;
 
         var trigger = effectiveInputLimit * Math.Clamp(triggerRatio, 0.1, 1.0);
@@ -233,14 +244,15 @@ public static partial class LlmRequestBudgetGuard
                 Compacted: false,
                 RemovedMessageCount: 0,
                 InitialUsedTokens: initialUsedTokens,
-                InitialMessageCount: messages.Count);
+                InitialMessageCount: messages.Count,
+                InitialSnapshot: initialSnapshot);
         }
 
         var target = effectiveInputLimit * Math.Clamp(targetRatio, 0.05, Math.Clamp(triggerRatio, 0.05, 1.0));
         while (snapshot.UsedTokens > target && RemoveOldestConversationUnit(working))
         {
             working = LlmMessageSequenceNormalizer.Normalize(working).Messages.ToList();
-            snapshot = usageStore.CaptureLlmRequest(
+            snapshot = usageStore.MeasureLlmRequest(
                 sessionId,
                 working,
                 tools,
@@ -255,7 +267,8 @@ public static partial class LlmRequestBudgetGuard
             Compacted: removed > 0,
             RemovedMessageCount: removed,
             InitialUsedTokens: initialUsedTokens,
-            InitialMessageCount: messages.Count);
+            InitialMessageCount: messages.Count,
+            InitialSnapshot: initialSnapshot);
     }
 
     public static bool TryGetProviderMaxInputTokens(Exception exception, out int maxInputTokens)

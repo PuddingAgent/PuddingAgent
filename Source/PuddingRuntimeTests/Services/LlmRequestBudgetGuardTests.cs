@@ -376,6 +376,65 @@ public sealed class LlmRequestBudgetGuardTests
         return plan!;
     }
 
+    /// <summary>
+    /// 回归（诊断 2026-10-07 §5.1）：软压缩挑选候选时对「移除后列表」的计量**不得发布**，
+    /// 否则 session 的准备快照会被留在压缩后的形状上，压缩请求的请求级归因与摘要 usage
+    /// 都会取错 raw（DB 实测 176,873 ≈ 326,392/1.845，而判据输入是 583,691）。
+    /// </summary>
+    [TestMethod]
+    public void PrepareSoftCompaction_DoesNotPublishRetainedShapeAsPreparedRequest()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        // 上游真实路径：先按出站请求发布准备快照。
+        var prepared = store.CaptureLlmRequest("session-attribution", history, tools: null, "test-model");
+
+        var selection = LlmRequestBudgetGuard.PrepareSoftCompaction(
+            store, "session-attribution", history, tools: null, BuildConfig(),
+            triggerRatio: 0.65, targetRatio: 0.5);
+
+        Assert.IsTrue(selection.Compacted, "该历史必须触发软压缩");
+        Assert.IsTrue(selection.Snapshot.UsedTokens < selection.InitialUsedTokens);
+
+        Assert.IsTrue(store.TryGet("session-attribution", out var stored));
+        Assert.AreSame(prepared, stored, "候选测量不得发布；准备快照必须仍是压缩前的形状");
+        Assert.AreEqual(prepared.MessageCount, stored!.MessageCount);
+
+        // 初始测量本身也要被带出来，供调用方在冻结归因之前显式发布。
+        Assert.AreEqual(selection.InitialUsedTokens, selection.InitialSnapshot.UsedTokens);
+        Assert.AreEqual(history.Count, selection.InitialSnapshot.MessageCount);
+        Assert.IsTrue(selection.InitialSnapshot.UsedTokens > selection.Snapshot.UsedTokens);
+    }
+
+    /// <summary>plan 必须把压缩前测量带出来，供压缩请求的归因冻结使用。</summary>
+    [TestMethod]
+    public void WarmPrefixPlan_ExposesInitialSnapshotForRequestAttribution()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(
+            store, "session-plan-attribution", history, history, tools: null, BuildConfig(),
+            triggerRatio: 0.65, targetRatio: 0.5, out var plan));
+
+        Assert.IsNotNull(plan);
+        Assert.AreEqual(plan!.InitialUsedTokens, plan.InitialSnapshot.UsedTokens);
+        Assert.AreEqual(history.Count, plan.InitialSnapshot.MessageCount);
+        Assert.AreNotSame(plan.EstimatedRetainedSnapshot, plan.InitialSnapshot);
+        Assert.IsTrue(plan.EstimatedRetainedSnapshot.UsedTokens < plan.InitialSnapshot.UsedTokens);
+
+        // 冻结归因：发布压缩前形状后，冻结出来的 shape 必须是压缩前的 MessageTokens。
+        store.Set(plan.InitialSnapshot);
+        var frozen = PuddingCode.Abstractions.RequestContextAttribution.Capture(
+            assemblyStore: null, store, "session-plan-attribution");
+        Assert.IsNotNull(frozen);
+        Assert.AreEqual(
+            PuddingCode.Abstractions.RequestContextAttributionSources.RequestPrepareFrozen,
+            frozen!.Source);
+        Assert.AreEqual(plan.InitialSnapshot.MessageTokens, frozen.MessageTokens);
+        Assert.AreEqual(plan.InitialSnapshot.ToolDefinitionTokens, frozen.ToolDefinitionTokens);
+    }
+
     [TestMethod]
     public void FrozenSystemPrompt_MaintainsSameEpochBytes_AndPreservesHydratedCheckpoint()
     {
