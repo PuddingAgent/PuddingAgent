@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingBrowser.Automation;
 
@@ -103,4 +103,37 @@ public static class ScreenshotPlan
 
         return Convert.FromBase64String(base64);
     }
+
+    /// <summary>截图的字节预算判定结果。</summary>
+    public enum BudgetVerdict
+    {
+        /// <summary>没设预算，或没超。</summary>
+        Within,
+
+        /// <summary>超了预算：**不能**截断图片（半张图比没有更危险），只能明确报资源耗尽。</summary>
+        Exceeded,
+    }
+
+    /// <summary>
+    /// 字节预算判定。截图与文本不同：**不能**「截断到预算内」（半张图会让读者得出错误结论），
+    /// 因此超了就如实报资源耗尽，由调用方决定降画质/改视口重拍，还是提高预算。
+    /// </summary>
+    public static BudgetVerdict CheckBudget(int byteCount, int? maxBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
+
+        if (maxBytes is not { } limit)
+        {
+            return BudgetVerdict.Within;
+        }
+
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        return byteCount <= limit ? BudgetVerdict.Within : BudgetVerdict.Exceeded;
+    }
+
+    /// <summary>超预算时的说明（不含图片内容，只说事实与可行做法）。</summary>
+    public static string DescribeBudget(int byteCount, int maxBytes) =>
+        $"screenshot is {byteCount} bytes, over the {maxBytes}-byte budget;"
+        + " lower the quality, capture the viewport instead of the full page, or raise the budget"
+        + " (a screenshot is never truncated to fit: half an image invites wrong conclusions)";
 }

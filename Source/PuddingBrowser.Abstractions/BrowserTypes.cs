@@ -196,6 +196,11 @@ public sealed record ScreenshotOptions
     public string? FilePath { get; init; }
     public bool FullPage { get; init; }
     public int? Quality { get; init; }
+
+    /// <summary>
+    /// 截图的字节上限。**超了不截断图片**（半张图会让读者得出错误结论），而是明确报资源耗尽。
+    /// </summary>
+    public int? MaxBytes { get; init; }
 }
 
 public sealed record ScreenshotResult

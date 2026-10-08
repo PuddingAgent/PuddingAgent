@@ -73,6 +73,29 @@ public sealed class ScreenshotPlanTests
     }
 
     [TestMethod]
+    public void BudgetIsCheckedWithoutTruncatingTheImage()
+    {
+        // 截图**不能**"截断到预算内"：半张图比没有更危险。超了就报资源耗尽。
+        Assert.AreEqual(
+            ScreenshotPlan.BudgetVerdict.Within, ScreenshotPlan.CheckBudget(1_000, maxBytes: 1_000));
+        Assert.AreEqual(
+            ScreenshotPlan.BudgetVerdict.Exceeded, ScreenshotPlan.CheckBudget(1_001, maxBytes: 1_000));
+        Assert.AreEqual(
+            ScreenshotPlan.BudgetVerdict.Within, ScreenshotPlan.CheckBudget(10_000_000, maxBytes: null));
+
+        var description = ScreenshotPlan.DescribeBudget(2_048, 1_024);
+        StringAssert.Contains(description, "2048");
+        StringAssert.Contains(description, "never truncated");
+    }
+
+    [TestMethod]
+    public void BudgetRejectsNonsenseInputs()
+    {
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => ScreenshotPlan.CheckBudget(-1, 100));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => ScreenshotPlan.CheckBudget(1, maxBytes: 0));
+    }
+
+    [TestMethod]
     public void DecodeReturnsTheBytes()
     {
         var payload = Convert.ToBase64String([1, 2, 3, 4]);

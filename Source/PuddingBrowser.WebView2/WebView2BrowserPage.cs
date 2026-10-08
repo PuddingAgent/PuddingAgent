@@ -508,6 +508,14 @@ public sealed class WebView2BrowserPage : IBrowserPage
             await System.IO.File.WriteAllBytesAsync(path, bytes, ct).ConfigureAwait(false);
         }
 
+        // 字节预算：**绝不截断图片**（半张图会让读者得出错误结论），超了如实报资源耗尽。
+        if (ScreenshotPlan.CheckBudget(bytes.Length, o.MaxBytes) == ScreenshotPlan.BudgetVerdict.Exceeded)
+        {
+            throw new BrowserOperationException(
+                "browser_resource_exhausted",
+                ScreenshotPlan.DescribeBudget(bytes.Length, o.MaxBytes!.Value));
+        }
+
         return new ScreenshotResult { Bytes = bytes, FilePath = o.FilePath };
     }
     public Task<PdfResult> PrintToPdfAsync(PdfOptions o, CancellationToken ct)
