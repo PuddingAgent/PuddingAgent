@@ -4,16 +4,16 @@
 
 ## 会话管理
 
-| 文件 | 用途 |
-|------|------|
-| `Services/SessionStateManager.cs` | 🔑 会话状态管理（88KB，核心） |
-| `Services/SessionEventStreamService.cs` | 会话事件流；`SessionEventStreamStart.Resolve(explicitCursor, head)` 决定订阅起点（S4，2026-09-19）：**无游标 → live-only**（从 head 起只推实时帧，历史交给 `/bootstrap` 快照），**显式游标（含 0）→ 回放**。`SessionEventsController.EventsStream` 按 ADR-057 用 `SnapshotRequiredCheck.HasMissingEvents` 判 410 `snapshot_required`，并把相位记入日志（`live-only` / `replay-from-zero` / `replay-after` + head）。**追赶读取规模有界**（2026-10-02）：先订阅再读 head，replay 冻结 `replayThrough`、live 每个通知/轮询冻结 `drainThrough`，批内不再刷新 head（旧行为每 256 条重扫一次边界）；等待者按周期各自持 linked CTS，替换前先取消并等待旧等待者（共享 Channel 单读者，旧 waiter 会吞掉新通知）；`pollInterval`/`heartbeatInterval` 可注入（默认 1s / 15s） |
-| `Services/SnapshotRequiredCheck.cs` | ADR-057 快照必需判定（S4 剩余项，2026-09-19）。判据是「客户端游标之后**确实缺失**事件」＝`cursor + 1 < minAvailableSequence`，**不是**「低于最小可用序号」：序号从 1 起，故显式游标 0 与 min=1 之间并无缺失，合法的全量回放不得被判为需要快照；同时消除旧判据在 `cursor == min-1`（连续无缺口）时的假阳性。控制器与流服务共用此一处判据 |
-| `Services/SessionStateStore.cs` | 会话状态持久化 |
-| `Services/SessionSteeringService.cs` | 当前 Turn Steering durable queue；以不可变 `target_turn_id` 精确消费，支持优先级、consume-once、过期与注入状态持久化 |
-| `Services/SessionSteeringSchemaBootstrapper.cs` | existing SQLite 原地补 `target_turn_id` 和新索引；无法绑定 Turn 的历史 pending 行 fail closed 为 expired |
-| `Services/SessionCompactionEventEmitter.cs` | 压缩事件发射 |
-| `Services/SessionTitleService.cs` | 会话标题 |
+| 文件 | 用途 | 关键符号 | 关联 | 约束 |
+|------|------|------|------|------|
+| `Services/SessionStateManager.cs` | 会话状态与事件扇出 | `SessionStateManager` / `SessionChannelFanout` / `SessionEventBatchBuffer` | `Services/SessionStateStore.cs` / `Services/SessionEventStreamService.cs` | 88KB 核心（1757 行），状态与扇出混在一处；ctor 末两个依赖是可选参数（`rawLogMirror` / `configuration`），不得改成必填 |
+| `Services/SessionEventStreamService.cs` | 会话事件流的订阅起点与有界追赶 | `SessionEventStreamService` / `IConversationEventStore` / `ICommittedEventSignal` | `Services/SnapshotRequiredCheck.cs` | 无游标 → live-only（历史交给 `/bootstrap` 快照），显式游标含 0 → 回放；追赶有界：先订阅再读 head，冻结 `replayThrough`/`drainThrough` 后批内不刷新 head |
+| `Services/SnapshotRequiredCheck.cs` | 快照必需判定 | `SnapshotRequiredCheck.HasMissingEvents` | `Services/SessionEventStreamService.cs` | 判据是 `cursor + 1 < minAvailableSequence`（序号从 1 起，显式游标 0 与 min=1 之间不算缺失）；不得改回「低于最小可用序号」，否则合法的全量回放会被判成需要快照 |
+| `Services/SessionStateStore.cs` | 会话状态持久化 | `SessionStateStore` | `Services/SessionStateManager.cs` | — |
+| `Services/SessionSteeringService.cs` | 当前 Turn 的 Steering 队列 | `SessionSteeringService` / `CreateSessionSteeringMessage` | `Services/SessionSteeringSchemaBootstrapper.cs` | 以不可变 `target_turn_id` 精确消费、同一条只被目标 Turn 取走一次；带优先级与过期，注入状态需持久化 |
+| `Services/SessionSteeringSchemaBootstrapper.cs` | Steering 表的存量库迁移 | `SessionSteeringSchemaBootstrapper` | `Services/SessionSteeringService.cs` | 在既有 SQLite 上原地补 `target_turn_id` 与索引；无法绑定 Turn 的历史 pending 行 fail closed 为 expired，不回填、不猜目标 |
+| `Services/SessionCompactionEventEmitter.cs` | 压缩事件发射 | `SessionCompactionEventEmitter` | `Services/ConversationEventStore.cs` | — |
+| `Services/SessionTitleService.cs` | 会话标题生成 | `SessionTitleService` | — | — |
 
 ## 对话 & 聊天
 
