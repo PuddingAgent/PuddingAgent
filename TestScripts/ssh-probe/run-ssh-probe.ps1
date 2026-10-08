@@ -69,7 +69,15 @@ function Invoke-Wsl([string[]]$Arguments) {
 }
 
 function ConvertTo-WslPath([string]$Path) {
-    $full = (Resolve-Path -LiteralPath $Path).Path
+    # 目标可能还不存在（例如要交给 WSL 去创建的 known_hosts 变体），所以不能只靠 Resolve-Path。
+    if (Test-Path -LiteralPath $Path) {
+        $full = (Resolve-Path -LiteralPath $Path).Path
+    }
+    else {
+        $rooted = if ([System.IO.Path]::IsPathRooted($Path)) { $Path } else { Join-Path $repo $Path }
+        $full = [System.IO.Path]::GetFullPath($rooted)
+    }
+
     $drive = $full.Substring(0, 1).ToLowerInvariant()
     return "/mnt/$drive" + ($full.Substring(2) -replace '\\', '/')
 }
@@ -115,6 +123,14 @@ function Get-AcceptedCount {
     $number = $lines | Where-Object { $_ -match '^\s*\d+\s*$' } | Select-Object -Last 1
     if (-not $number) { return 0 }
     return [int]$number.Trim()
+}
+
+# A4：客户端密钥指纹也来自服务端日志，用于证明「哪个 .ssh 目录的密钥被真的用了」。
+function Get-AcceptedFingerprints {
+    $lines = @(Invoke-Wsl @('-u', 'root', '-e', 'bash', '-lc', "grep 'Accepted publickey' $FixtureRoot/sshd.log 2>/dev/null || true"))
+    return @($lines | Where-Object { $_ -is [string] } | ForEach-Object {
+        if ($_ -match 'SHA256:(\S+)') { $Matches[1] }
+    })
 }
 
 try {
@@ -163,6 +179,49 @@ try {
 
     $identityPath = Join-Path $keyDir 'id_ed25519'
 
+    # --- A4 夹具：两类 .ssh 形态的目录 + 撤销/换 key 的 known_hosts ---
+    # 上一轮给两个目录里的私钥收紧过 ACL（只读），所以先复位 ACL 再重建目录，否则 WSL 写不进去。
+    $scopeOut = Join-Path $repo 'temp/build/ssh/scope'
+    if (Test-Path $scopeOut) {
+        icacls $scopeOut /reset /T /C /Q | Out-Null
+        Remove-Item -Recurse -Force $scopeOut -ErrorAction SilentlyContinue
+    }
+    New-Item -ItemType Directory -Force -Path $scopeOut | Out-Null
+    $scopeScript = ConvertTo-WslPath (Join-Path $PSScriptRoot 'prepare-scope-dirs.sh')
+    $scopeInfo = Invoke-Wsl @('-u', 'root', '-e', 'bash', $scopeScript, (ConvertTo-WslPath $scopeOut), "$Port")
+    $scopeInfo | Where-Object { $_ -match '=' } | ForEach-Object { Write-Log "scope $_" }
+
+    $scopeA = Join-Path $scopeOut 'scope-a'
+    $scopeB = Join-Path $scopeOut 'scope-b'
+    $rotatedKnownHosts = Join-Path $scopeOut 'scope-b-rotated/known_hosts'
+    foreach ($key in @((Join-Path $scopeA 'id_ed25519'), (Join-Path $scopeB 'id_ed25519'))) {
+        icacls $key /inheritance:r /grant:r "$($env:USERNAME):R" | Out-Null
+    }
+
+    function Get-ScopeValue([string]$line) {
+        $match = $scopeInfo | Where-Object { $_ -match "^$line=" } | Select-Object -First 1
+        if (-not $match) { return '' }
+        return ($match -replace "^$line=", '').Trim()
+    }
+
+    $scopeAFp = Get-ScopeValue 'scope_a_client_fp'
+    $scopeBFp = Get-ScopeValue 'scope_b_client_fp'
+
+    # 撤销记录：真实 ssh-keyscan 记录 + @revoked 标记（指向同一把主机公钥）。
+    $revokedKnownHosts = Join-Path $scopeA 'known_hosts.revoked'
+    Get-Content (Join-Path $scopeA 'known_hosts') | ForEach-Object {
+        if ($_ -match 'ssh-ed25519' -and $_ -match '\[127\.0\.0\.1\]:') { "@revoked $_" } else { $_ }
+    } | Set-Content -Path $revokedKnownHosts -Encoding ASCII
+
+    # 哈希主机记录：由 prepare-scope-dirs.sh 用 OpenSSH 自己的 `ssh-keygen -H` 生成（`|1|salt|hash`）。
+    $hashedKnownHosts = Join-Path $scopeA 'known_hosts.hashed'
+    if (-not (Select-String -Path $hashedKnownHosts -Pattern '^\|1\|' -Quiet)) {
+        Add-Failure "knownhosts-hashed: ssh-keygen -H did not produce a |1|salt|hash record"
+    }
+
+    $scopeCommon = @('--host', '127.0.0.1', '--port', "$Port", '--user', 'root',
+        '--identity', (Join-Path $scopeA 'id_ed25519'), '--fingerprint', $fingerprint)
+
     # Decoy fingerprint: flip the middle character of the expected one (used by hostkey/reject).
     $fingerprintB64 = $fingerprint -replace '^SHA256:', ''
     $middle = [int]($fingerprintB64.Length / 2)
@@ -178,21 +237,24 @@ try {
         $logFile = Join-Path $outPath "probe-$Name.log"
         Write-Log "--- scenario $Name"
         $before = Get-AcceptedCount
+        $beforeFingerprints = @(Get-AcceptedFingerprints)
         $result = Invoke-NativeCommand $probeExePath $ProbeArgs
         $after = Get-AcceptedCount
+        $afterFingerprints = @(Get-AcceptedFingerprints)
         $output = @($result.Text)
         Initialize-OutDir
         $output | Tee-Object -FilePath $logFile | ForEach-Object { Write-Host "    $_" }
         Add-Content -Path $transcript -Value ($output -join [Environment]::NewLine)
 
         $delta = $after - $before
-        Write-Log "scenario=$Name exit=$($result.Exit) accepted_publickey_delta=$delta"
+        $newFingerprints = @($afterFingerprints | Select-Object -Skip $beforeFingerprints.Count)
+        Write-Log "scenario=$Name exit=$($result.Exit) accepted_publickey_delta=$delta client_keys=$($newFingerprints -join ',')"
         $summary["$Name.exit"] = $result.Exit
         $summary["$Name.auth_delta"] = $delta
         if ($result.Exit -ne 0) { Add-Failure "scenario $Name exit=$($result.Exit)" }
         if (-not ($output -match '^SUMMARY failures=0$')) { Add-Failure "scenario $Name has failing probe assertions" }
 
-        return @{ Exit = $result.Exit; AuthDelta = $delta; Output = $output }
+        return @{ Exit = $result.Exit; AuthDelta = $delta; Output = $output; ClientKeys = $newFingerprints }
     }
 
     $common = @('--host', '127.0.0.1', '--port', "$Port", '--user', 'root', '--identity', $identityPath,
@@ -230,6 +292,44 @@ try {
     #    the wrong-pin and invalid-request operations must NOT authenticate.
     $r = Invoke-Scenario 'coordinator' (@('coordinator') + $common)
     if ($r.AuthDelta -ne 3) { Add-Failure "coordinator: expected 3 successful authentications, got $($r.AuthDelta)" }
+
+    # 9) Real known_hosts records end-to-end (A4): accept works; @revoked and rotated key are refused pre-auth.
+    $r = Invoke-Scenario 'knownhosts-accept' (@('knownhosts', '--known-hosts', (Join-Path $scopeA 'known_hosts'), '--expect', 'accept') + $scopeCommon)
+    if ($r.AuthDelta -ne 1) { Add-Failure "knownhosts-accept: expected 1 authentication, got $($r.AuthDelta)" }
+
+    $r = Invoke-Scenario 'knownhosts-revoked' (@('knownhosts', '--known-hosts', $revokedKnownHosts, '--expect', 'revoked') + $scopeCommon)
+    if ($r.AuthDelta -ne 0) { Add-Failure "knownhosts-revoked: a revoked host key still authenticated (delta=$($r.AuthDelta))" }
+
+    $r = Invoke-Scenario 'knownhosts-rotated' (@('knownhosts', '--known-hosts', $rotatedKnownHosts, '--expect', 'rotated') + $scopeCommon)
+    if ($r.AuthDelta -ne 0) { Add-Failure "knownhosts-rotated: a changed host key still authenticated (delta=$($r.AuthDelta))" }
+
+    # 9b) Hashed host records produced by OpenSSH's own `ssh-keygen -H` must match on a live server.
+    $r = Invoke-Scenario 'knownhosts-hashed' (@('knownhosts', '--known-hosts', $hashedKnownHosts, '--expect', 'accept') + $scopeCommon)
+    if ($r.AuthDelta -ne 1) { Add-Failure "knownhosts-hashed: expected 1 authentication, got $($r.AuthDelta)" }
+
+    # 10) Two .ssh scopes (current_user / agent_private shapes): each key authenticates exactly once,
+    #     a missing identity file never falls back, and a rotated trust file is refused.
+    $r = Invoke-Scenario 'dirs' (@('dirs', '--scope-a', $scopeA, '--scope-b', $scopeB,
+        '--rotated-known-hosts', $rotatedKnownHosts) + $scopeCommon)
+    if ($r.AuthDelta -ne 2) { Add-Failure "dirs: expected 2 authentications (one per scope), got $($r.AuthDelta)" }
+    $usedA = @($r.ClientKeys | Where-Object { $_ -eq ($scopeAFp -replace '^SHA256:', '') }).Count
+    $usedB = @($r.ClientKeys | Where-Object { $_ -eq ($scopeBFp -replace '^SHA256:', '') }).Count
+    if ($usedA -ne 1) { Add-Failure "dirs: scope A client key should be used exactly once, got $usedA (keys=$($r.ClientKeys -join ','))" }
+    if ($usedB -ne 1) { Add-Failure "dirs: scope B client key should be used exactly once, got $usedB (keys=$($r.ClientKeys -join ','))" }
+    $summary['dirs.scope_a_client_fp'] = $scopeAFp
+    $summary['dirs.scope_b_client_fp'] = $scopeBFp
+
+    # 11) Server ignores TERM: must stay unknown (remote process may still be alive).
+    $r = Invoke-Scenario 'ignoreterm' (@('ignoreterm') + $common)
+    if ($r.AuthDelta -ne 2) { Add-Failure "ignoreterm: expected 2 authentications, got $($r.AuthDelta)" }
+
+    # 12) Connection killed mid-command: connection_lost + unknown state, never replayed.
+    $r = Invoke-Scenario 'disconnect' (@('disconnect') + $common)
+    if ($r.AuthDelta -ne 1) { Add-Failure "disconnect: expected 1 authentication, got $($r.AuthDelta)" }
+
+    # 13) Wrong account: authentication_failed, no submission. The last --user wins in the probe's parser.
+    $r = Invoke-Scenario 'auth' (@('auth') + $common + @('--user', 'nosuchuser_xyz'))
+    if ($r.AuthDelta -ne 0) { Add-Failure "auth: a wrong account still authenticated (delta=$($r.AuthDelta))" }
 
     # Cross-check: the fingerprint the probe observed must equal OpenSSH's own.
     $observedLine = Get-Content (Join-Path $outPath 'probe-fingerprint.log') |

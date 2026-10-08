@@ -68,20 +68,20 @@ internal sealed class ProbeHostKeyVerifier(string? expectedFingerprint, bool alw
 }
 
 /// <summary>
-/// 探针身份提供者：直接从显式路径读字节。交付路径的目录解析与 ACL/owner 校验属于 A2/Runtime；
-/// 探针不搜寻其他身份、不跨作用域回退。
+/// 探针身份提供者：**只**按请求里冻结的（绝对目录 + 文件名）读取，不搜索其他身份、不跨作用域回退。
+/// 交付路径的目录解析与 ACL/owner 校验属于 A2/Runtime；探针只复刻「目录由外部决定」这一形状。
 /// </summary>
-internal sealed class ProbeIdentityProvider(string path) : ISshIdentityProvider
+internal sealed class ProbeIdentityProvider : ISshIdentityProvider
 {
     public ValueTask<SshIdentityMaterial> GetIdentityAsync(
         SshIdentityRequest request,
         CancellationToken cancellationToken)
     {
-        var full = Path.GetFullPath(path);
+        var path = Path.Combine(request.AbsoluteSshDirectory, request.IdentityFileName);
         var material = new SshIdentityMaterial(
-            Path.GetDirectoryName(full) ?? string.Empty,
-            Path.GetFileName(full),
-            File.ReadAllBytes(full));
+            request.AbsoluteSshDirectory,
+            request.IdentityFileName,
+            File.ReadAllBytes(path));
         return ValueTask.FromResult(material);
     }
 }

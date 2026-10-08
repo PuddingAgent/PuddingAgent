@@ -51,7 +51,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
 | `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的**纯策略**组件（BCL-only，`ProjectReference`/`PackageReference` 均为 0）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定；不负责计时器/数据库/网络/锁/后台任务。**S1–S4 已交付，尚未 S5 接入**（未登记 slnx、未进 DI） | [code_map](Source/PuddingContextPolicy/code_map.md) |
-| `Source/PuddingSsh/` | 🔑 SSH 远程执行组件（叶子，`ProjectReference=0`，唯一包引用 `SSH.NET` 2026.0.0）：公开合同/端口、known_hosts/pin 信任验证、POSIX 执行封装、错误分类、**`ISshClient` 协调器（并发准入/排队/deadline/停止）**、SSH.NET 适配的独占连接/双流有界采集/终止；不解析 DataRoot 与 Agent 主体、不做审批与持久化。**A1–A3 / S1–S3 已交付，尚未 S5 接入**（未登记 slnx、无消费方） | [code_map](Source/PuddingSsh/code_map.md) |
+| `Source/PuddingSsh/` | 🔑 SSH 远程执行组件（叶子，`ProjectReference=0`，唯一包引用 `SSH.NET` 2026.0.0）：公开合同/端口、known_hosts/pin 信任验证、POSIX 执行封装、错误分类、**`ISshClient` 协调器（并发准入/排队/deadline/停止）**、SSH.NET 适配的独占连接/双流有界采集/终止；不解析 DataRoot 与 Agent 主体、不做审批与持久化。**A1–A4 / S1–S4 已交付，尚未 S5 接入**（未登记 slnx、无消费方） | [code_map](Source/PuddingSsh/code_map.md) |
 | `Source/PuddingCodeIntelligence/` | 语言智能与查询：Roslyn 与 TypeScript 抽取及 outliner 与符号查询 | [code_map](Source/PuddingCodeIntelligence/code_map.md) |
 | `Source/PuddingIndexChunking/` | 分块组件：源文件 → 可独立索引的块（叶子，outline 由 `IOutlineSource` 注入） | [code_map](Source/PuddingIndexChunking/code_map.md) |
 | `Source/PuddingPathFiltering/` | 路径忽略合同的权威实现（噪声目录名 + `.gitignore` 语义） | [code_map](Source/PuddingPathFiltering/code_map.md) |
@@ -124,8 +124,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingBrowser.AutomationTests/` | 浏览器自动化可靠性组件独立测试：控制权/接管与世代、页面授权与子代理范围、回执与重试裁定、变更类后置条件、交互回执、引用身份与三个观察事实、operationId 账本、S1–S4 边界断言与用例守恒 |
 | `Source/PuddingPathFilteringTests/` · `Source/PuddingVectorIndexTests/` · `Source/PuddingFullTextIndexTests/` · `Source/PuddingMemoryEngineBenchmarks/` · `Tests/PuddingBrowser.WebView2.Smoke/` | 路径忽略、向量与全文索引叶子组件 · BenchmarkDotNet 基准 · 浏览器 smoke |
 | `Source/PuddingRetrievalEvalTests/` · `Source/PuddingRetrievalEvalProbe/` · `Source/PuddingFullTextIndex.Cli.Tests/` | 检索评测（`ISearchProbe` 端口）与全文索引 CLI |
-| `Source/PuddingSshTests/` | SSH 组件独立测试（只引用组件，**122 例**）：known_hosts 明文/逗号/哈希/撤销与 pin 验证（**真实 OpenSSH fixture**）、POSIX 封装与请求校验、错误分类矩阵、有界采集白盒、**假传输故障矩阵（准入/排队/deadline/清理/停止）**、S1–S4 边界断言（含变异取红） |
-| `Source/PuddingSsh.Probe/`（+ `TestScripts/ssh-probe/`） | SSH 组件的**真实协议探针**：只引用 `PuddingSsh`；`run-ssh-probe.ps1` 起受控 WSL OpenSSH 夹具，8 个场景（含 `coordinator` 全链路）逐场景核对认证次数（拒绝场景必须为 0）、取消的远端证据、双流输出预算与驻留内存；`make-known-hosts-fixtures.sh` 生成 known_hosts fixture |
+| `Source/PuddingSshTests/` | SSH 组件独立测试（只引用组件，**122 例**）：known_hosts 明文/逗号/哈希/撤销与 pin 验证（**真实 OpenSSH fixture**）、POSIX 封装与请求校验、错误分类矩阵、有界采集白盒、**假传输故障矩阵（准入/排队/deadline/清理/停止）**、S1–S4 边界断言（变异取红两次均 3/5 红） |
+| `Source/PuddingSsh.Probe/`（+ `TestScripts/ssh-probe/`） | SSH 组件的**真实协议探针**：只引用 `PuddingSsh`；`run-ssh-probe.ps1` 起受控 WSL OpenSSH 夹具，**16 个场景**（含 `coordinator` 全链路、`knownhosts` 明文/哈希/撤销/换 key、两类 `.ssh` 的 `dirs`、`ignoreterm`、`disconnect`、错账号 `auth`）逐场景核对认证次数与实际使用的客户端密钥指纹、取消的远端证据、双流输出预算与驻留内存；`make-known-hosts-fixtures.sh` 生成 known_hosts fixture |
 | `Source/PuddingCodeIntelligenceTests/` · `Source/PuddingCodexServiceTests/` · `Source/PuddingBrowser.WinUITests/` · `Source/PuddingDesktop.FoundationTests/` | 语言智能层 · Codex MCP Service · WinUI 浏览器表面 · Foundation 纯逻辑 |
 | `Source/Pudding.ContractsTests/` · `Source/Pudding.Rpc.ProtocolTests/` · `Source/Pudding.DesktopSurface.BrowserTests/` | 契约与 wire 协议形状断言 · 浏览器表面 |
 | `Source/Pudding.DesktopConnectionTests/` · `Source/Pudding.DesktopServiceTests/` · `Source/Pudding.CapabilityBrokerTests/` · `Source/Pudding.CapabilityBroker.AspNetCoreTests/` | 能力通道四个组件的独立测试（假服务端 / 假 UI 调度器 / 自托管 Kestrel） |
@@ -139,6 +139,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | [`Docs/README.md`](Docs/README.md) · [`Agents.md`](Agents.md) · [`Agents-Hygiene.md`](Docs/10_conventions/Agents-Hygiene.md) | 文档总索引与阅读顺序 · 开发与提交纪律 · 仓库卫生 |
 | [`组件化交付规程`](Docs/10_conventions/组件化交付规程.md) · [`调试入口`](Docs/08_how_debuge/README.md) · [`架构`](Docs/07_architecture/架构.md) · [`ADR 全表`](Docs/07_architecture/README.md) | 组件化交付 S1–S5 门禁（强制）· 调试与日志诊断 · 架构总览与模块分册 |
 | [可诊断基础设施设计](Docs/12_features/可诊断基础设施设计-2026-10-07.md) | 诊断事实/类型化因果/事故查询面/故障场景资产：叶子组件边界、S1–S5 施工与门禁、查询与脱敏的强制项 |
+| [工具插件化架构与实施方案](Docs/12_features/工具插件化架构与实施方案-2026-10-09.md) | 提案：插件包/SDK/Core 能力接口、Worker 故障隔离、启动元数据扫描、Agent 动态挂载与卸载、诊断与 Web 管理及组件交付门禁 |
 | [浏览器自动化可靠性与渐进阅读设计](Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md) | 浏览器控制权与页面授权、动作回执、稳定 ref、渐进 DOM/markdown 阅读、截图视觉和受约束委派的目标设计与交付门禁（提案） |
 | [Agent 生成式交互界面与浏览器应用运行时](Docs/12_features/Agent生成式交互界面与浏览器应用运行时设计方案-2026-10-08.md) | HTML/表单/SVG/图表/涂鸦作品、页面 SDK、持久状态、实时版本更新、具名 JS 调用与用户提交闭环的目标设计（提案） |
 | [ADR-095](Docs/07_architecture/109ADR-095会话上下文维护与首增量延迟治理ADR.md) · [上下文维护施工方案](Docs/12_features/首Token等待与上下文指示器修复方案-2026-10-07.md) | Proposed：Session软维护与逐请求硬保护、唯一候选提交/checkpoint、请求实测与估算分离；独立策略组件先行，尚未接入 |

@@ -10,12 +10,27 @@ internal sealed record ProbeOptions(
     string Username,
     string IdentityPath,
     string? ExpectedFingerprint,
-    bool ExpectAccept,
+    string Expectation,
     int OutputBudgetBytes,
     int OperationTimeoutSeconds,
     int ConnectTimeoutSeconds,
-    string RemoteTempDirectory)
+    string RemoteTempDirectory,
+    string? KnownHostsPath,
+    string? IdentityDirectory,
+    string? IdentityFileName,
+    string? ScopeADirectory,
+    string? ScopeBDirectory,
+    string? RotatedKnownHostsPath)
 {
+    /// <summary>冻结的绝对 `.ssh` 目录（默认为 <c>--identity</c> 的所在目录）。</summary>
+    public string EffectiveIdentityDirectory =>
+        IdentityDirectory ?? Path.GetDirectoryName(Path.GetFullPath(IdentityPath)) ?? "/";
+
+    /// <summary>冻结的 identity 文件名（默认为 <c>--identity</c> 的文件名）。</summary>
+    public string EffectiveIdentityFileName => IdentityFileName ?? Path.GetFileName(IdentityPath);
+
+    public SshIdentityRequest IdentityRequest => new(EffectiveIdentityDirectory, EffectiveIdentityFileName);
+
     public const string Usage = """
         用法: PuddingSsh.Probe <scenario> [选项]
 
@@ -27,6 +42,11 @@ internal sealed record ProbeOptions(
           cancel       取消一个长时间命令：必须受限、且远端证据符合预期
           throughput   双流大输出：捕获必须受限、计数必须完整
           coordinator  经 ISshClient 协调器走完整链路（ssh_test / 成功执行 / 错指纹 / 非零退出 / 非法请求）
+          knownhosts   真实 known_hosts 记录端到端：--expect accept|revoked|rotated（撤销/换 key 必须被拒）
+          dirs         两类 .ssh 目录（current_user / agent_private 形态）互不回退，且组件不写这两个目录
+          ignoreterm   服务端忽略 TERM：取消后不得声称远端已退出（execution_state 必须 unknown）
+          disconnect   命令执行中连接被服务端切断：必须是 connection_lost + 状态未知、绝不重放
+          auth         错误账号：必须 authentication_failed，且不得发生命令提交
           matrix       顺序执行上面全部（默认）
 
         选项:
@@ -34,8 +54,14 @@ internal sealed record ProbeOptions(
           --port <端口>            默认 22122
           --user <账号>            默认 root
           --identity <私钥路径>    必填（Windows 绝对路径）
-          --fingerprint <SHA256:..>  期望指纹（hostkey 场景必填）
-          --expect <accept|reject>  hostkey 场景的期望结果
+          --identity-dir <目录>    冻结的 .ssh 目录（默认取 --identity 的目录）
+          --identity-name <文件名> 冻结的 identity 文件名（默认取 --identity 的文件名）
+          --fingerprint <SHA256:..>  期望指纹（hostkey / coordinator 场景）
+          --expect <accept|reject|revoked|rotated>  hostkey / knownhosts 场景的期望结果
+          --known-hosts <路径>     knownhosts 场景的信任文件
+          --scope-a <目录>         dirs 场景的第一个 .ssh 目录（默认 = identity 目录）
+          --scope-b <目录>         dirs 场景的第二个 .ssh 目录
+          --rotated-known-hosts <路径>  dirs 场景的「换 key」信任文件
           --budget <字节>          捕获预算，默认 65536
           --timeout <秒>           单次操作超时，默认 60
           --connect-timeout <秒>   建连 deadline，默认 15
@@ -59,6 +85,7 @@ internal sealed record ProbeOptions(
 
         var scenario = args[0].ToLowerInvariant();
         string? host = null, user = null, identity = null, fingerprint = null, expect = null, remoteTmp = null;
+        string? knownHosts = null, identityDir = null, identityName = null, scopeA = null, scopeB = null, rotatedKnownHosts = null;
         var port = 22122;
         var budget = 64 * 1024;
         var timeout = 60;
@@ -83,8 +110,14 @@ internal sealed record ProbeOptions(
                 case "--port": port = int.Parse(Next()); break;
                 case "--user": user = Next(); break;
                 case "--identity": identity = Next(); break;
+                case "--identity-dir": identityDir = Next(); break;
+                case "--identity-name": identityName = Next(); break;
                 case "--fingerprint": fingerprint = Next(); break;
                 case "--expect": expect = Next(); break;
+                case "--known-hosts": knownHosts = Next(); break;
+                case "--scope-a": scopeA = Next(); break;
+                case "--scope-b": scopeB = Next(); break;
+                case "--rotated-known-hosts": rotatedKnownHosts = Next(); break;
                 case "--budget": budget = int.Parse(Next()); break;
                 case "--timeout": timeout = int.Parse(Next()); break;
                 case "--connect-timeout": connectTimeout = int.Parse(Next()); break;
@@ -93,7 +126,8 @@ internal sealed record ProbeOptions(
             }
         }
 
-        if (scenario is not ("fingerprint" or "hostkey" or "encrypted" or "deadline" or "cancel" or "throughput" or "coordinator" or "matrix"))
+        if (scenario is not ("fingerprint" or "hostkey" or "encrypted" or "deadline" or "cancel" or "throughput"
+            or "coordinator" or "knownhosts" or "dirs" or "ignoreterm" or "disconnect" or "auth" or "matrix"))
         {
             throw new ProbeUsageException($"未知 scenario {scenario}");
         }
@@ -113,9 +147,14 @@ internal sealed record ProbeOptions(
             throw new ProbeUsageException("hostkey 场景必须给出 --fingerprint（reject 时给一个不匹配的诱饵指纹）");
         }
 
-        if (expect is not null and not ("accept" or "reject"))
+        if (scenario == "knownhosts" && knownHosts is null)
         {
-            throw new ProbeUsageException("--expect 只能是 accept 或 reject");
+            throw new ProbeUsageException("knownhosts 场景必须给出 --known-hosts");
+        }
+
+        if (expect is not null and not ("accept" or "reject" or "revoked" or "rotated"))
+        {
+            throw new ProbeUsageException("--expect 只能是 accept / reject / revoked / rotated");
         }
 
         return new ProbeOptions(
@@ -125,11 +164,17 @@ internal sealed record ProbeOptions(
             user ?? "root",
             identity,
             fingerprint,
-            expect != "reject",
+            expect ?? "accept",
             budget,
             timeout,
             connectTimeout,
-            remoteTmp ?? "/tmp/pudding-ssh-probe");
+            remoteTmp ?? "/tmp/pudding-ssh-probe",
+            knownHosts,
+            identityDir,
+            identityName,
+            scopeA,
+            scopeB,
+            rotatedKnownHosts);
     }
 }
 

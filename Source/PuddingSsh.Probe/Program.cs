@@ -11,7 +11,7 @@ namespace PuddingSsh.Probe;
 /// A1 / S1 的库能力探针（设计 §3「S1 内必须验证」与 §12 A1 判据）。它只使用组件公开合同，
 /// 因此测到的就是交付路径；断言失败以退出码 1 表达，命令行用法错误以退出码 2 表达。
 /// </summary>
-internal static class Program
+internal static partial class Program
 {
     private const long ThroughputStdoutBytes = 64L * 1024 * 1024;
     private const long ThroughputStderrBytes = 16L * 1024 * 1024;
@@ -45,7 +45,7 @@ internal static class Program
                     await RunFingerprintAsync(options, log);
                     break;
                 case "hostkey":
-                    await RunHostKeyAsync(options, log, options.ExpectedFingerprint!, options.ExpectAccept);
+                    await RunHostKeyAsync(options, log, options.ExpectedFingerprint!, options.Expectation == "accept");
                     break;
                 case "encrypted":
                     await RunEncryptedKeyAsync(options, log);
@@ -62,6 +62,21 @@ internal static class Program
                 case "coordinator":
                     await RunCoordinatorAsync(options, log);
                     break;
+                case "knownhosts":
+                    await RunKnownHostsAsync(options, log);
+                    break;
+                case "dirs":
+                    await RunScopeDirsAsync(options, log);
+                    break;
+                case "ignoreterm":
+                    await RunIgnoreTermAsync(options, log);
+                    break;
+                case "disconnect":
+                    await RunDisconnectAsync(options, log);
+                    break;
+                case "auth":
+                    await RunAuthFailureAsync(options, log);
+                    break;
                 case "matrix":
                     await RunFingerprintAsync(options, log);
                     if (options.ExpectedFingerprint is { Length: > 0 } fingerprint)
@@ -75,6 +90,10 @@ internal static class Program
                     await RunCancelAsync(options, log);
                     await RunThroughputAsync(options, log);
                     await RunCoordinatorAsync(options, log);
+                    await RunKnownHostsAsync(options, log);
+                    await RunScopeDirsAsync(options, log);
+                    await RunIgnoreTermAsync(options, log);
+                    await RunDisconnectAsync(options, log);
                     break;
             }
         }
@@ -89,18 +108,23 @@ internal static class Program
     private static SshTransportConnectRequest ConnectRequest(
         ProbeOptions options,
         ISshHostKeyVerifier verifier,
-        ISshIdentityProvider identityProvider)
+        SshIdentityRequest identity)
     {
-        var identity = identityProvider.GetIdentityAsync(
-            new SshIdentityRequest(Path.GetDirectoryName(Path.GetFullPath(options.IdentityPath)) ?? "/", Path.GetFileName(options.IdentityPath)),
-            CancellationToken.None).AsTask().GetAwaiter().GetResult();
+        var material = new ProbeIdentityProvider()
+            .GetIdentityAsync(identity, CancellationToken.None)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
 
         return new SshTransportConnectRequest(
             options.Target,
-            identity,
+            material,
             verifier,
             TimeSpan.FromSeconds(options.ConnectTimeoutSeconds));
     }
+
+    private static SshTransportConnectRequest ConnectRequest(ProbeOptions options, ISshHostKeyVerifier verifier) =>
+        ConnectRequest(options, verifier, options.IdentityRequest);
 
     /// <summary>观测模式下出示的指纹：必须与 OpenSSH 自己算出来的一致（否则信任原语不一致）。</summary>
     private static async Task RunFingerprintAsync(ProbeOptions options, ProbeLog log)
@@ -112,7 +136,7 @@ internal static class Program
         try
         {
             await using var session = await factory.ConnectAsync(
-                ConnectRequest(options, verifier, new ProbeIdentityProvider(options.IdentityPath)),
+                ConnectRequest(options, verifier, options.IdentityRequest),
                 CancellationToken.None);
             log.Assert(scenario, "rejected", false, "默认拒绝模式下竟然建连成功");
         }
@@ -143,7 +167,7 @@ internal static class Program
         try
         {
             await using var session = await factory.ConnectAsync(
-                ConnectRequest(options, verifier, new ProbeIdentityProvider(options.IdentityPath)),
+                ConnectRequest(options, verifier, options.IdentityRequest),
                 CancellationToken.None);
 
             if (!expectAccept)
@@ -183,7 +207,10 @@ internal static class Program
         try
         {
             await using var session = await factory.ConnectAsync(
-                ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), new ProbeIdentityProvider(encPath)),
+                ConnectRequest(
+                    options,
+                    new ProbeHostKeyVerifier(options.ExpectedFingerprint),
+                    new SshIdentityRequest(Path.GetDirectoryName(Path.GetFullPath(encPath)) ?? "/", Path.GetFileName(encPath))),
                 CancellationToken.None);
             log.Assert(scenario, "passphrase_required", false, "加密私钥竟然直接建连成功");
             _ = session;
@@ -213,8 +240,7 @@ internal static class Program
             await using var session = await factory.ConnectAsync(
                 new SshTransportConnectRequest(
                     blackhole,
-                    new ProbeIdentityProvider(options.IdentityPath).GetIdentityAsync(
-                        new SshIdentityRequest(".", "id"), CancellationToken.None).AsTask().GetAwaiter().GetResult(),
+                    new ProbeIdentityProvider().GetIdentityAsync(options.IdentityRequest, CancellationToken.None).AsTask().GetAwaiter().GetResult(),
                     new ProbeHostKeyVerifier(options.ExpectedFingerprint),
                     TimeSpan.FromSeconds(options.ConnectTimeoutSeconds)),
                 CancellationToken.None);
@@ -254,7 +280,7 @@ internal static class Program
         var cancelled = (SshExecuteResult?)null;
         var stopwatch = Stopwatch.StartNew();
         var session = await factory.ConnectAsync(
-            ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), new ProbeIdentityProvider(options.IdentityPath)),
+            ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), options.IdentityRequest),
             CancellationToken.None);
 
         await using (session)
@@ -287,7 +313,7 @@ internal static class Program
         // 远端证据：等 2 秒后查 PID 与标记文件；命令若还活着，sleep 会继续并在 30 秒后写标记。
         await Task.Delay(2000);
         await using var probeSession = await factory.ConnectAsync(
-            ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), new ProbeIdentityProvider(options.IdentityPath)),
+            ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), options.IdentityRequest),
             CancellationToken.None);
 
         var evidence = await probeSession.ExecuteAsync(
@@ -322,7 +348,7 @@ internal static class Program
         }
 
         var transport = new SshNetTransportFactory();
-        var identities = new ProbeIdentityProvider(options.IdentityPath);
+        var identities = new ProbeIdentityProvider();
         await using var coordinator = new SshOperationCoordinator(transport, identities);
 
         SshHostContext Host(string pin, string? defaultCwd = null) => new(
@@ -334,9 +360,7 @@ internal static class Program
                 MaxOutputBytes = options.OutputBudgetBytes,
                 MaxConcurrentOperations = 2,
             },
-            new SshIdentityRequest(
-                Path.GetDirectoryName(Path.GetFullPath(options.IdentityPath)) ?? "/",
-                Path.GetFileName(options.IdentityPath)),
+            options.IdentityRequest,
             SshTrustSnapshot.FromPin("ssh-ed25519", pin),
             defaultCwd);
 
@@ -457,7 +481,7 @@ internal static class Program
 
         // Unicode 分块：预算故意小于单条输出，截断处不得出现替换字符（不许破坏字符）。
         var unicodeSession = await factory.ConnectAsync(
-            ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), new ProbeIdentityProvider(options.IdentityPath)),
+            ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), options.IdentityRequest),
             CancellationToken.None);
         await using (unicodeSession)
         {
@@ -490,7 +514,7 @@ internal static class Program
     {
         const string scenario = "throughput";
         var session = await factory.ConnectAsync(
-            ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), new ProbeIdentityProvider(options.IdentityPath)),
+            ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), options.IdentityRequest),
             CancellationToken.None);
 
         await using (session)

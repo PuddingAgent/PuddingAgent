@@ -2,7 +2,7 @@
 
 > 设计依据：[SSH 工具组件化设计与实施方案](../../Docs/12_features/SSH工具组件化设计与实施方案-2026-10-08.md)
 > （§4 组件与依赖边界、§6 凭据与主机验证、§7 工具合同、§9 并发/输出/超时、§10 诊断合同、§12 实施顺序）。
-> 交付规程状态：**A1–A3 / S1–S3 已交付，S5 未接入**（真实全矩阵 A4、宿主接入 A5 未做）。
+> 交付规程状态：**A1–A4 / S1–S4 已交付，S5 未接入**（宿主接入与三个 Agent 工具未做）。
 >
 > 边界硬规则（`Docs/10_conventions/组件化交付规程.md` §2.2，判据是**编译期失败**）：
 > `ProjectReference` **必须为 0**；不得引用 `PuddingCore` / `PuddingRuntime` / `PuddingPlatform` /
@@ -86,7 +86,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Source/PuddingSshTests/SshOperationCoordinatorFaultMatrixTests.cs` + `SshFakes.cs` | 假 `ISshTransportFactory`/会话/身份提供者：每主机 2 与 Core 8 的准入、队列满 `ssh.busy`、排队取消/到期、revision 分门、凭据失败、建连失败/拒绝/到期、提交前后抛错的区别、恶意会话在宽限后被放弃、停止与释放有界 |
 | `Source/PuddingSshTests/Fixtures/` | **真实 OpenSSH** 产物：`ssh-keyscan` 明文记录、`ssh-keygen -H` 哈希记录、`@revoked` 变体、不支持形态、`ssh-keygen -lf -E sha256` 指纹与 `ssh-keygen -F` 交叉核对结论 |
 | `TestScripts/ssh-probe/make-known-hosts-fixtures.sh` | fixture 生成器（含 port-22/IPv6 真实扫描与 derived 标注），证明期望值来自 OpenSSH 而非本组件 |
-| `Source/PuddingSsh.Probe/` + `TestScripts/ssh-probe/run-ssh-probe.ps1` | 真实协议探针 8 个场景（`fingerprint`/`hostkey`/`encrypted`/`deadline`/`cancel`/`throughput`/**`coordinator`**），并用 sshd 日志核对每个场景的认证次数（拒绝场景必须为 0） |
+| `Source/PuddingSsh.Probe/` + `TestScripts/ssh-probe/run-ssh-probe.ps1` | 真实协议探针 **16 个场景**（`fingerprint`/`hostkey`/`encrypted`/`deadline`/`cancel`/`throughput`/`coordinator`/**`knownhosts`(accept/revoked/rotated/hashed)**/**`dirs`**/**`ignoreterm`**/**`disconnect`**/**`auth`**），并核对每个场景的服务端认证次数与**实际使用的客户端密钥指纹**（拒绝场景必须为 0） |
 
 命令（输出只进 `temp/`）：
 
@@ -104,10 +104,14 @@ powershell -File TestScripts/ssh-probe/run-ssh-probe.ps1
   240 MiB 双流下捕获恒为 64 KiB、驻留托管内存 < 0.4 MiB。
 - A2 独立测试：哈希主机记录匹配通过（等价于我们的 HMAC-SHA1 host token 与 OpenSSH 一致）；
   我们算的 SHA256 与 `ssh-keygen -lf` 逐字相同。
-- A3 假传输矩阵：**122/122 通过**（含 35 例故障矩阵）；**真实协议 8 场景 `failures = 0`**，
-  其中 `coordinator` 场景的 `accepted_publickey` 增量恰为 3（错指纹与非法请求都没有认证）。
-- **变异取红**：给测试工程或组件加一条指向 `PuddingContextPolicy` 的 `ProjectReference` ⇒ 边界套 3 条 / 2 条变红；
-  复原后 csproj 哈希逐位相同、全绿。
+- A3 假传输矩阵：**122/122 通过**（含 35 例故障矩阵）；真实协议 `coordinator` 场景的 `accepted_publickey` 增量恰为 3
+  （错指纹与非法请求都没有认证）。
+- A4 真实全矩阵：**16 场景 `failures = 0`**；`knownhosts-revoked`/`knownhosts-rotated` 各 **0 次认证**；
+  `knownhosts-hashed`（OpenSSH `ssh-keygen -H`）通过；`dirs` 场景服务端日志显示两类目录的**客户端密钥各被用一次**、
+  缺文件 ⇒ `credential_unavailable`、两目录快照逐字节不变；`ignoreterm` 得到 `execution_state=unknown` 且远端进程
+  仍 `SHELL_ALIVE`；`disconnect` ⇒ `connection_lost` + `unknown` + 不可重试；`auth` ⇒ `authentication_failed`。
+- **变异取红**（A4 复跑）：给测试工程或组件加一条指向 `PuddingContextPolicy` 的 `ProjectReference` ⇒ 边界套两次都
+  **3/5 变红**；复原后 csproj 哈希逐位相同、全量复绿。
 
 **已知测量事实与限制**：
 
@@ -115,10 +119,10 @@ powershell -File TestScripts/ssh-probe/run-ssh-probe.ps1
   （可回收，非驻留）；共享捕获预算由先填满的流独占，stderr 可能捕获为 0 字节。
 - `SshOperationCoordinator` 的每主机门按 `hostId + hostRevision` 存在字典里，**不做淘汰**：条目数随「配置 revision 的
   历史数量」增长（每次改配置 +1，单条目极小）。连接复用与租约/失效策略属设计 §11.2 的切片 D，届时一并设计。
+- 「两类 `.ssh`」在组件侧只到**形状**层面（目录/文件名由引用方冻结传入、互不回退、组件只读）；真实路径解析与
+  ACL/owner 检查属 Runtime（A5）。Windows OpenSSH 服务端（编码/引号合同）按设计另行交付。
 
-## 5. 尚未交付（A4–A5）
+## 5. 尚未交付（A5）
 
-- **A4**：真实 OpenSSH 全矩阵（两类 `.ssh` 目录、撤销/换 key 的端到端拒绝、错误账号、断线、服务端忽略 TERM、
-  Windows OpenSSH 服务端编码）与组件侧变异取红。
 - **A5（S5）**：登记 `PuddingAgentNetwork.slnx`、Runtime 主机目录/ACL/revision/凭据适配（含 identity 文件名与 path 逃逸校验）、
-  三个 Agent 工具（`ssh_hosts`/`ssh_test`/`ssh_execute`）与 DI 装配。
+  三个 Agent 工具（`ssh_hosts`/`ssh_test`/`ssh_execute`）与 DI 装配、宿主组合测试。
