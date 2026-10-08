@@ -1,0 +1,25 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!--
+    Component tests for PuddingBrowser.Automation (组件化交付规程 S2/S3)。
+
+    Boundary rule: this test project MUST reference PuddingBrowser.Automation ONLY.
+    It must never reference PuddingHost / PuddingRuntime / PuddingAgent / Pudding.DesktopService /
+    PuddingDesktop / PuddingBrowser.WebView2, so the control-authority and receipt logic can be
+    built and tested without a running host, a WebView2 runtime, or a UI thread
+    (规程 R1: 不重启宿主即可开发调试)。
+    The boundary is asserted at runtime by ComponentBoundaryTests.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj" />
+  </ItemGroup>
+
+</Project>

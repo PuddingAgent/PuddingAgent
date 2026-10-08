@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>PuddingBrowser.Automation</RootNamespace>
+    <AssemblyName>PuddingBrowser.Automation</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Browser automation component（设计方案 §2「PuddingBrowser.Automation（拟新增）」）。
+
+    边界（组件化交付规程 S1/S4）：本工程是纯逻辑组件，只允许引用更低层的
+    Pudding.Contracts（BCL-only 叶子，ProjectReference = 0）。
+    它**不得**引用 UI、Host、Runtime、浏览器驱动或任何消费方：
+      UI/驱动 = PuddingBrowser.WebView2 / PuddingBrowser.WinUI / PuddingDesktop*
+      映射   = Pudding.DesktopService / Pudding.DesktopSurface.Browser
+      宿主   = PuddingHost / PuddingRuntime / PuddingAgent
+    依赖方向由编译期强制（下面的 EnforceAutomationBoundary 目标），不靠文档约定。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+  </ItemGroup>
+
+  <!-- 组件测试需要断言注册表/租约的失败路径，因此只对组件测试工程开放 internals。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingBrowser.AutomationTests" />
+  </ItemGroup>
+
+  <!--
+    编译期边界门禁：ProjectReference 只允许 Pudding.Contracts，且禁止任何 PackageReference。
+    故意让它可「取红」：临时加一条指向消费方的引用 ⇒ 本工程立刻构建失败。
+  -->
+  <Target Name="EnforceAutomationBoundary" BeforeTargets="ResolveReferences">
+    <ItemGroup>
+      <ForbiddenAutomationReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'Pudding.Contracts'" />
+    </ItemGroup>
+    <Error Condition="'@(ForbiddenAutomationReference)' != ''"
+           Text="PuddingBrowser.Automation may reference Pudding.Contracts ONLY (component boundary, S1/S4). Forbidden reference(s): @(ForbiddenAutomationReference)" />
+    <Error Condition="'@(PackageReference)' != ''"
+           Text="PuddingBrowser.Automation is a pure-logic component and must stay package-free. Forbidden PackageReference: @(PackageReference)" />
+  </Target>
+
+</Project>
