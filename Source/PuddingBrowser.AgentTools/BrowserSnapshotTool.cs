@@ -1,4 +1,4 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
@@ -38,9 +38,12 @@ public sealed record BrowserSnapshotArgs
     [ToolParam("Maximum UTF-8 bytes of outline text to return (default 4096; outline/interactive only).")]
     public int? MaxBytes { get; init; }
 
-    /// <summary>游标：从上次结果给出的 <c>nextCursor</c> 继续读（仅 outline/interactive）。</summary>
-    [ToolParam("Cursor from a previous result's nextCursor to continue reading (outline/interactive only).")]
-    public int? Cursor { get; init; }
+    /// <summary>
+    /// 游标：把上一次结果里的 <c>nextCursor</c> **原样回传**即可续读。
+    /// 游标里带着"由哪种表示产生"的标识，因此**跨表示误用会被明确拒绝**（而不是静默跳段）。
+    /// </summary>
+    [ToolParam("Opaque pagination cursor from a previous snapshot's nextCursor. Pass it back unchanged; cursors are bound to the representation that produced them.")]
+    public string? Cursor { get; init; }
 
     /// <summary>
     /// 只返回这些输出字段（设计方案 §151 的 <c>fields</c>）：键名与输出里的 JSON 键一致。
@@ -150,6 +153,36 @@ public sealed class BrowserSnapshotTool(
             return BrowserToolResponse.Failure(
                 "browser_invalid_arguments",
                 "full mode must select at least one representation (accessibilityTree, domText or html)");
+        }
+
+        // 游标（§6.1）：不透明、**绑定产生它的表示**。跨表示误用必须明确拒绝 ——
+        // 两种正文表示的页边界不同，拿错游标会**静默跳过**若干块（最难发现的一类数据丢失）。
+        var cursor = 0;
+        if (!string.IsNullOrWhiteSpace(args.Cursor))
+        {
+            if (!ArticleCursor.TryParse(args.Cursor, out var cursorKind, out var cursorIndex))
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments",
+                    "cursor is not a valid snapshot cursor; pass back the nextCursor from a previous snapshot unchanged");
+            }
+
+            var expectedKind = mode == BrowserReadingMode.Text
+                ? (string.Equals(args.Format?.Trim(), "compact_json", StringComparison.OrdinalIgnoreCase)
+                    ? ArticleCursor.CompactJsonKind
+                    : ArticleCursor.MarkdownKind)
+                : ArticleCursor.LinesKind;
+
+            if (cursorKind != expectedKind)
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments",
+                    $"cursor belongs to a different representation ('{cursorKind}');"
+                    + $" re-read with format={ArticleCursor.FormatOfKind(cursorKind)}"
+                    + " (or omit the cursor to start from the beginning)");
+            }
+
+            cursor = cursorIndex;
         }
 
         try
@@ -262,17 +295,18 @@ public sealed class BrowserSnapshotTool(
             // 结构、预算与分页都是纯函数，因此可被完整验证（ArticleMarkdownTests）。
             if (mode == BrowserReadingMode.Text)
             {
-                // §151：format 决定表示。两种表示**共用同一套分页语义**（同一个游标可以互换续读）。
+                // §151：format 决定表示；两种表示的成本不同 ⇒ 页边界不同 ⇒ 游标**绑定表示**。
                 var compactJson = string.Equals(args.Format?.Trim(), "compact_json", StringComparison.OrdinalIgnoreCase);
+                var kind = compactJson ? ArticleCursor.CompactJsonKind : ArticleCursor.MarkdownKind;
                 var article = compactJson
                     ? ArticleCompactJson.Compose(
                         snapshot.Value.ContentBlocks,
                         args.MaxBytes ?? ArticleCompactJson.DefaultMaxBytes,
-                        args.Cursor ?? 0)
+                        cursor)
                     : ArticleMarkdown.Compose(
                         snapshot.Value.ContentBlocks,
                         args.MaxBytes ?? ArticleMarkdown.DefaultMaxBytes,
-                        args.Cursor ?? 0);
+                        cursor);
 
                 return BrowserToolResponse.Success(
                     new BrowserSnapshotToolValue
@@ -282,7 +316,7 @@ public sealed class BrowserSnapshotTool(
                         Content = article.Text,
                         Truncated = article.Truncated,
                         TruncationReason = BrowserReadingFormatWire.TruncationNameOf(article.Truncation),
-                        NextCursor = article.NextCursor,
+                        NextCursor = article.NextCursor is { } next ? ArticleCursor.Encode(kind, next) : null,
                         ReturnedLines = article.ReturnedLines,
                         Bytes = article.Bytes,
                         NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
@@ -310,7 +344,9 @@ public sealed class BrowserSnapshotTool(
                     AccessibilityTree = fields.Includes("accessibilityTree") ? composed.Text : null,
                     Truncated = composed.Truncated,
                     TruncationReason = BrowserReadingFormatWire.TruncationNameOf(composed.Truncation),
-                    NextCursor = composed.NextCursor,
+                    NextCursor = composed.NextCursor is { } lineNext
+                        ? ArticleCursor.Encode(ArticleCursor.LinesKind, lineNext)
+                        : null,
                     ReturnedLines = fields.Includes("returnedLines") ? composed.ReturnedLines : null,
                     Bytes = fields.Includes("bytes") ? composed.Bytes : null,
                     NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
@@ -352,7 +388,6 @@ public sealed class BrowserSnapshotTool(
 
         var limit = args.Limit ?? BrowserReadingFormat.DefaultLineLimit;
         var maxBytes = args.MaxBytes ?? BrowserReadingFormat.DefaultMaxBytes;
-        var cursor = args.Cursor ?? 0;
 
         if (limit is < 1 or > 500)
         {
@@ -366,13 +401,8 @@ public sealed class BrowserSnapshotTool(
             return false;
         }
 
-        if (cursor < 0)
-        {
-            error = "snapshot cursor must not be negative";
-            return false;
-        }
-
-        request = new BrowserReadingRequest(mode, limit, maxBytes, cursor);
+        // 游标在这里不解释（它由外层按模式/表示解析），只需要"给了就是合法的"。
+        request = new BrowserReadingRequest(mode, limit, maxBytes, 0);
         return true;
     }
 

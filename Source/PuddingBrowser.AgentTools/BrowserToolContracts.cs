@@ -69,8 +69,12 @@ public sealed record BrowserSnapshotToolValue
     /// </summary>
     public string? TruncationReason { get; init; }
 
-    /// <summary>继续读取的游标；仅在 <c>output_budget</c> 截断时给出。</summary>
-    public int? NextCursor { get; init; }
+    /// <summary>
+    /// 继续读取的游标；仅在 <c>output_budget</c> 截断时给出。
+    /// **不透明**且绑定产生它的表示（<c>md:3</c>/<c>json:5</c>/<c>lines:50</c>）：
+    /// 跨表示误用会被明确拒绝，而不是静默跳段。
+    /// </summary>
+    public string? NextCursor { get; init; }
 
     /// <summary>本次返回的行数（outline/interactive）。</summary>
     public int? ReturnedLines { get; init; }

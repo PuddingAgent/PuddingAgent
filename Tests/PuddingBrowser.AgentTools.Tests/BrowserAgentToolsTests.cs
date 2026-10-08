@@ -479,6 +479,69 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Snapshot_CursorFromAnotherRepresentation_IsRefusedInsteadOfSkippingBlocks()
+    {
+        // 两种正文表示的页边界不同：拿 markdown 的游标去读 compact_json 会**静默跳过**若干块。
+        // 游标里带表示标识，因此这种误用必须被明确拒绝（这是最难发现的一类数据丢失）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.ContentBlocks = string.Join('\n',
+            Enumerable.Range(1, 6).Select(index => $$"""{"k":"p","t":"paragraph-{{index}}-xxxxxxxx"}"""));
+        var surface = new FakeCapabilitySurface(runtime);
+
+        // 先拿一个 markdown 游标。
+        var markdown = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                max_bytes = 80
+            }));
+
+        Assert.True(markdown.Success, markdown.Error);
+        var markdownCursor = GetJson(markdown.Output, "value").GetProperty("nextCursor").GetString()!;
+        Assert.StartsWith("md:", markdownCursor, StringComparison.Ordinal);
+
+        // 拿它去读 compact_json ⇒ 拒绝，并给出该用哪个 format。
+        var misused = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                format = "compact_json",
+                cursor = markdownCursor
+            }));
+
+        Assert.False(misused.Success);
+        using (var document = JsonDocument.Parse(misused.Error!))
+        {
+            Assert.Equal(
+                "browser_invalid_arguments",
+                document.RootElement.GetProperty("error").GetProperty("code").GetString());
+            Assert.Contains("format=markdown", document.RootElement.GetProperty("error").GetProperty("message").GetString()!);
+        }
+
+        // 畸形游标同样 fail closed（不猜、不当成从头开始）。
+        var malformed = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                cursor = "3"
+            }));
+
+        Assert.False(malformed.Success);
+    }
+
+    [Fact]
     public async Task Snapshot_TextMode_CompactJsonFormat_ReturnsParseableBlocks()
     {
         // §151：mode 决定读什么，format 决定**表示成什么**。compact_json 给程序读，且必须可解析。
@@ -620,7 +683,7 @@ public sealed class BrowserAgentToolsTests
         Assert.True(first.Success, first.Error);
         var value = GetJson(first.Output, "value");
         Assert.True(value.GetProperty("truncated").GetBoolean());
-        var cursor = value.GetProperty("nextCursor").GetInt32();
+        var cursor = value.GetProperty("nextCursor").GetString();
 
         var second = await ExecuteAsync(
             new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
@@ -658,7 +721,7 @@ public sealed class BrowserAgentToolsTests
         var limitedValue = GetJson(limited.Output, "value");
         Assert.True(limitedValue.GetProperty("truncated").GetBoolean());
         Assert.Equal("output_budget", limitedValue.GetProperty("truncationReason").GetString());
-        Assert.Equal(1, limitedValue.GetProperty("nextCursor").GetInt32());
+        Assert.Equal("lines:1", limitedValue.GetProperty("nextCursor").GetString());
 
         // ② 扫描侧被截断 ⇒ incomplete_scan，且不给游标（续读也保证不了完整）。
         var truncatedPage = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);

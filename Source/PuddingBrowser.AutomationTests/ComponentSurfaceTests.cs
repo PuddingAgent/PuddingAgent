@@ -17,6 +17,7 @@ public sealed class ComponentSurfaceTests
     [
         "ArticleBlock",
         "ArticleCompactJson",
+        "ArticleCursor",
         "ArticlePaging",
         "PageResult",
         "ArticleMarkdown",
@@ -144,6 +145,7 @@ public sealed class ComponentSurfaceTests
         {
             ["ArticleMarkdownFormatTests"] = 13,
             ["ArticleCompactJsonTests"] = 8,
+            ["ArticleCursorTests"] = 5,
             ["BrowserNodeIdentityTests"] = 10,
             ["NativeInputSequenceTests"] = 10,
             ["BrowserAssertionRedactionTests"] = 11,
