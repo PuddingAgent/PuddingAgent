@@ -814,3 +814,48 @@ G | 故意破坏检测器（fixture） | **`BROKEN_FIXTURE_EXIT=4`** · `DENOM_C
 ```
 
 > 📌 **「有控制」才算证明。** 一个判定的正确性如果只由**仓库外的一次性 fixture**支撑，那它在 CI 里等于**没有被证明过**。
+
+---
+
+## 标签契约：**声明**而非**猜测**（2026-10-09）
+
+### 问题
+
+`Get-GateScope` 曾**硬编码三个前缀**（`FILES=` / `PROJECT_COUNT` / `EDGE_COUNT`）。于是一个**新增门禁**如果输出别的标签（例如 `SCANNED=`），它的分母**会静默消失** —— 只有 `DENOM_MISSING` 会在下游兜住判 exit 3，而**「该写哪个标签」永远是 runner 里的一句隐含约定**。
+
+### 修法：注册表**声明** + 启动期**强制**
+
+```powershell
+$gates = @(
+    (New-Object PSObject -Property @{ Id = 'C-1/C-4'; Script = 'check-project-layering.ps1';      PassRoot = $false; Labels = @('PROJECT_COUNT', 'EDGE_COUNT') })
+    (New-Object PSObject -Property @{ Id = 'C-5';     Script = 'check-script-encodings.ps1';      PassRoot = $true;  Labels = @('FILES=') })
+    (New-Object PSObject -Property @{ Id = 'C-6';     Script = 'check-script-runtime-compat.ps1'; PassRoot = $true;  Labels = @('FILES=') })
+)
+```
+
+- **只有门禁自己知道它的分母行长什么样**，所以由门禁**声明**，runner 不再猜。
+- `Get-GateScope -Output ... -Labels $g.Labels`：只提取**本门禁声明的**标签。
+- `Get-UnlabelledGates` + 启动期检查：**未声明任何标签的注册被拒绝运行**（`REGISTRATION INCOMPLETE: ...` + `exit 3`）——在**跑任何门禁之前**。
+- 提取为空时，告警文案**点名期望的标签**：`declared label(s): FILES=`。
+
+### 实测
+
+| 组 | 命令 | 修前 | 修后 |
+|---|---|---|---|
+**J** | 无标签注册（fixture） | 三门禁照跑 ⇒ `DENOM_MISSING=3` ⇒ exit 3 | **`REGISTRATION INCOMPLETE: C-1/C-4 declare no denominator label.`** ⇒ exit 3 · **`J_GATE_RAN=False`** |
+**C** | `-SelfTest` | — | `EXIT=0` · `LABEL_CTRL_MISSING=True DECLARED=True BLANK=True` · `DENOM_CTRL_UNDECLARED=True` |
+**A** | 默认 | — | `EXIT=1` · C-1/C-4 两个标签都照常提取 |
+**B** | `-RepoWide` | — | `EXIT=1` |
+
+### ⭐ 自检控制**抓住了我自己的两处回归**
+
+1. **签名变更未同步**：改了 `Get-GateScope`（新增 `-Labels`）却没改 `-SelfTest` 里对它的调用 ⇒ `DENOM_CTRL_SPACED/PLAIN=False` ⇒ **exit 4**。
+2. **单元素解包陷阱**：`$unlabelled = Get-UnlabelledGates ...` 返回**单个对象**时被解包，`New-Object PSObject` **没有 `.Count` 垫片** ⇒ `$unlabelled.Count -gt 0` 恒为假 ⇒ **启动检查根本没生效**（J 组第一轮实测「照常跑完」正是这个原因）。
+
+⇒ **控制的价值不在于它证明了我做对了，而在于它在我做错时不肯变绿。**
+
+### 未证 / 留白
+
+- 标签**仍然要人手写**：现在它**声明在一处、缺失即拒绝运行**，但「门禁输出哪个标签」这件事本身**无法自动推断**。
+- 静默门禁 fixture 仍未仓库化（端到端路径仍只有仓库外证据）。
+- 仍未接线 CI。

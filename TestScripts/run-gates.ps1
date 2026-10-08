@@ -40,6 +40,13 @@
     in-memory controls too (DENOM_ENFORCE_CTRL_*), so it does not depend on the external
     fixture directory to stay honest.
 
+    The label contract is DECLARED per gate in the registration table and enforced: only a
+    gate knows what its own denominator line looks like, so guessing it in the runner - as
+    three hardcoded prefixes used to do - meant a new gate with a different label lost its
+    denominator in silence. A registration that declares no label is now refused at
+    startup (exit 3), and a gate that emits none of its declared labels names them in the
+    message.
+
 .PARAMETER SelfTest
     Run each gate's own -SelfTest instead of its real scan. All controls are in-memory
     and write no files. This is the runner's own meta-check: it answers "are the gates
@@ -120,9 +127,9 @@ if ($RepoWide) {
 }
 
 $gates = @(
-    (New-Object PSObject -Property @{ Id = 'C-1/C-4'; Script = 'check-project-layering.ps1';        PassRoot = $false })
-    (New-Object PSObject -Property @{ Id = 'C-5';     Script = 'check-script-encodings.ps1';        PassRoot = $true  })
-    (New-Object PSObject -Property @{ Id = 'C-6';     Script = 'check-script-runtime-compat.ps1';   PassRoot = $true  })
+    (New-Object PSObject -Property @{ Id = 'C-1/C-4'; Script = 'check-project-layering.ps1';      PassRoot = $false; Labels = @('PROJECT_COUNT', 'EDGE_COUNT') })
+    (New-Object PSObject -Property @{ Id = 'C-5';     Script = 'check-script-encodings.ps1';      PassRoot = $true;  Labels = @('FILES=') })
+    (New-Object PSObject -Property @{ Id = 'C-6';     Script = 'check-script-runtime-compat.ps1'; PassRoot = $true;  Labels = @('FILES=') })
 )
 
 function Test-Skipped {
@@ -149,9 +156,17 @@ function Get-SkipPatterns {
 }
 
 function Get-GateScope {
-    param([object[]]$Output)
+    param([object[]]$Output, [string[]]$Labels)
     if ($null -eq $Output) { return @() }
-    return @($Output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_.StartsWith('FILES=') -or $_.StartsWith('PROJECT_COUNT') -or $_.StartsWith('EDGE_COUNT') })
+    $out = @()
+    foreach ($raw in $Output) {
+        $line = $raw.ToString().Trim()
+        foreach ($lbl in @($Labels)) {
+            if ([string]::IsNullOrWhiteSpace($lbl)) { continue }
+            if ($line.StartsWith($lbl)) { $out += $line; break }
+        }
+    }
+    return $out
 }
 
 function Get-DenomMissingCount {
@@ -161,11 +176,29 @@ function Get-DenomMissingCount {
     return @($Ran | Where-Object { $_.ExitCode -eq 0 -and @($_.Scope).Count -eq 0 }).Count
 }
 
+function Get-UnlabelledGates {
+    param([object[]]$Gates)
+    if ($null -eq $Gates) { return @() }
+    return @($Gates | Where-Object { @($_.Labels | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 0 })
+}
+
 Write-Output ('RUNNER = ' + $MyInvocation.MyCommand.Name)
 Write-Output ('MODE   = ' + $(if ($SelfTest) { 'SELFTEST (each gate runs its own controls)' } else { 'SCAN (each gate runs its real check)' }))
 Write-Output ('ENGINE = ' + $PSVersionTable.PSVersion.ToString())
 Write-Output ('SCOPE  = ' + $(if ($RepoWide) { 'REPO-WIDE (' + $scanRoot + ')' } else { 'TestScripts only (' + $here + ')' }))
 Write-Output ('GATES  = ' + $gates.Count + ' registered')
+
+# The label contract is the one thing the runner cannot infer: only the gate knows what
+# its denominator line looks like. So every gate DECLARES it, and a registration that
+# declares nothing is refused here instead of quietly producing a PASS with no evidence.
+$unlabelled = @(Get-UnlabelledGates -Gates $gates)
+if ($unlabelled.Count -gt 0) {
+    Write-Output ''
+    Write-Output ('REGISTRATION INCOMPLETE: ' + (@($unlabelled | ForEach-Object { $_.Id }) -join ', ') + ' declare no denominator label.')
+    Write-Output 'A gate must declare the prefix(es) its own denominator line starts with, otherwise its'
+    Write-Output 'PASS cannot be told apart from a scan that looked at nothing. Refusing to run.'
+    exit $EXIT_INSTRUMENT
+}
 Write-Output ''
 
 $results = New-Object System.Collections.ArrayList
@@ -204,8 +237,10 @@ foreach ($g in $gates) {
 
     Write-Output ('    exit={0}  {1}' -f $code, $verdict)
 
-    $scope = Get-GateScope -Output $output
-    if ($scope.Count -eq 0 -and -not $SelfTest) { Write-Output '    scope: !! NO DENOMINATOR LINE RECOGNISED !!' }
+    $scope = Get-GateScope -Output $output -Labels $g.Labels
+    if ($scope.Count -eq 0 -and -not $SelfTest) {
+        Write-Output ('    scope: !! NO DENOMINATOR LINE RECOGNISED (declared label(s): ' + (@($g.Labels) -join ', ') + ') !!')
+    }
     foreach ($s in $scope) { Write-Output ('    scope: ' + $s) }
 
     $tail = @($output | ForEach-Object { $_.ToString() })
@@ -228,11 +263,12 @@ if ($skipUnmatched.Count -gt 0) {
 }
 
 if ($SelfTest) {
-    $cEmpty  = @(Get-GateScope -Output @('hello', 'world'))
-    $cSpaced = @(Get-GateScope -Output @('  PROJECT_COUNT = 81  '))
-    $cPlain  = @(Get-GateScope -Output @('FILES=22 BOM=4'))
-    Write-Output ('DENOM_CTRL_EMPTY={0} DENOM_CTRL_SPACED={1} DENOM_CTRL_PLAIN={2}' -f ($cEmpty.Count -eq 0), ($cSpaced.Count -eq 1), ($cPlain.Count -eq 1))
-    if ($cEmpty.Count -ne 0 -or $cSpaced.Count -ne 1 -or $cPlain.Count -ne 1) {
+    $cEmpty  = @(Get-GateScope -Output @('hello', 'world') -Labels @('PROJECT_COUNT', 'FILES='))
+    $cSpaced = @(Get-GateScope -Output @('  PROJECT_COUNT = 81  ') -Labels @('PROJECT_COUNT'))
+    $cPlain  = @(Get-GateScope -Output @('FILES=22 BOM=4') -Labels @('FILES='))
+    $cOther  = @(Get-GateScope -Output @('EDGE_COUNT    = 131') -Labels @('FILES='))
+    Write-Output ('DENOM_CTRL_EMPTY={0} DENOM_CTRL_SPACED={1} DENOM_CTRL_PLAIN={2} DENOM_CTRL_UNDECLARED={3}' -f ($cEmpty.Count -eq 0), ($cSpaced.Count -eq 1), ($cPlain.Count -eq 1), ($cOther.Count -eq 0))
+    if ($cEmpty.Count -ne 0 -or $cSpaced.Count -ne 1 -or $cPlain.Count -ne 1 -or $cOther.Count -ne 0) {
         Write-Output 'RESULT: SELFTEST FAIL (denominator detector did not classify its own controls)'
         exit $EXIT_SELFTEST
     }
@@ -249,6 +285,17 @@ if ($SelfTest) {
     Write-Output ('DENOM_ENFORCE_CTRL_SILENT_PASS={0} WITH_DENOM={1} FAIL_NO_DENOM={2} SELFTEST_EXEMPT={3}' -f ($nSilent -eq 1), ($nGood -eq 0), ($nFail -eq 0), ($nExempt -eq 0))
     if ($nSilent -ne 1 -or $nGood -ne 0 -or $nFail -ne 0 -or $nExempt -ne 0) {
         Write-Output 'RESULT: SELFTEST FAIL (denominator enforcement control did not classify its own cases)'
+        exit $EXIT_SELFTEST
+    }
+
+    # Label contract: a registration with no declared label must be refused, and a
+    # whitespace-only label counts as absent.
+    $uMissing = @(Get-UnlabelledGates -Gates @((New-Object PSObject -Property @{ Id = 'X-GATE'; Script = 'x.ps1' })))
+    $uOk      = @(Get-UnlabelledGates -Gates @((New-Object PSObject -Property @{ Id = 'Y-GATE'; Script = 'y.ps1'; Labels = @('FILES=') })))
+    $uBlank   = @(Get-UnlabelledGates -Gates @((New-Object PSObject -Property @{ Id = 'Z-GATE'; Script = 'z.ps1'; Labels = @('   ') })))
+    Write-Output ('LABEL_CTRL_MISSING={0} DECLARED={1} BLANK={2}' -f ($uMissing.Count -eq 1), ($uOk.Count -eq 0), ($uBlank.Count -eq 1))
+    if ($uMissing.Count -ne 1 -or $uOk.Count -ne 0 -or $uBlank.Count -ne 1) {
+        Write-Output 'RESULT: SELFTEST FAIL (label contract control did not classify its own cases)'
         exit $EXIT_SELFTEST
     }
     Write-Output ''
