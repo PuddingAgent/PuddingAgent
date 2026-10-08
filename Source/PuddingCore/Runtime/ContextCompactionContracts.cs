@@ -422,7 +422,17 @@ public sealed record WarmPrefixCheckpointCommitRequest(
     int MessagesAfter,
     long TokensBefore,
     int MeasuredTokensAfter,
-    string Reason);
+    string Reason,
+    /// <summary>
+    /// 被替换跨度的**内容键**（角色 + 正文）。与 <see cref="CoveredMessageIds"/> 并存，作为
+    /// **权威回退**：内存历史对象在归一化/渲染等环节会被复制，按引用或按内存表解析都可能失效，
+    /// 而库里的行是唯一权威。服务端只在「键 → 行」**唯一匹配**时才认，重复内容一律视为不可解析。
+    /// 全为 null/空则只按 id 解析（保持既有语义）。
+    /// </summary>
+    IReadOnlyList<WarmPrefixSpanKey>? SpanKeys = null);
+
+/// <summary>跨度实体的内容键（用于在库里回退解析持久 MessageId）。</summary>
+public sealed record WarmPrefixSpanKey(string Role, string Content);
 
 /// <summary>warm-prefix checkpoint 落库结果。</summary>
 public sealed record WarmPrefixCheckpointCommitResult(

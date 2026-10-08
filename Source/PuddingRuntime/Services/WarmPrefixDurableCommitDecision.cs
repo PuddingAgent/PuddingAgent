@@ -23,11 +23,20 @@ internal static class WarmPrefixDurableCommitDecision
 
     internal const string UnresolvedIdentitiesPrefix = "unresolved_durable_identities:";
 
-    /// <summary>是否可以尝试落库。</summary>
-    internal static bool ShouldAttempt(bool compactionServiceAvailable, DurableSpanResolution resolution)
+    /// <summary>
+    /// 是否可以尝试落库。
+    /// <para>
+    /// 内存身份解析成功当然可以；**解析失败但有内容键**同样可以 —— 服务端会拿内容键在库里
+    /// **唯一匹配**地回退解析（内存对象在归一化/渲染后会被复制，按引用解析可能整体失效：
+    /// 流式路径实测 29 条全部 unresolved）。重复内容一律判为不可解析，因此放宽这一步不会引入错标。
+    /// </para>
+    /// </summary>
+    internal static bool ShouldAttempt(
+        bool compactionServiceAvailable,
+        DurableSpanResolution resolution,
+        int spanKeyCount = 0)
         => compactionServiceAvailable
-           && resolution.AllResolved
-           && resolution.MessageIds.Count > 0;
+           && ((resolution.AllResolved && resolution.MessageIds.Count > 0) || spanKeyCount > 0);
 
     /// <summary>不可落库时的原因码；可以落库时返回 null。</summary>
     internal static string? ResolveSkipReason(bool compactionServiceAvailable, DurableSpanResolution resolution)

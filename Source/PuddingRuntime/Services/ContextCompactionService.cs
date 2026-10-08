@@ -361,6 +361,28 @@ public sealed class ContextCompactionService : IContextCompactionService
     }
 
     /// <summary>
+    /// 跨度回退解析用的行键：角色 + 正文。
+    /// <para>
+    /// 角色必须**规范化成与内存侧同一个 token**，否则两侧永远匹配不上：库里的 Role 是字符串
+    /// （`user` / `agent` / `system` / `tool`），而调用方给的是 <c>ChatRole</c> 枚举名
+    /// （`User` / `Assistant` / …）。这里的映射与 <c>ContextWindowManager.ParseChatRole</c>
+    /// **保持同一套语义**（`agent` 等价于 `assistant`；未知角色按 user 处理），
+    /// 改成枚举名作为规范 token。
+    /// </para>
+    /// </summary>
+    private static string ActiveRowKey(MessageEntity row)
+        => $"{CanonicalRoleToken(row.Role)}\u001f{row.Content ?? string.Empty}";
+
+    private static string CanonicalRoleToken(string? dbRole)
+        => (dbRole ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "assistant" or "agent" => nameof(ChatRole.Assistant),
+            "system" => nameof(ChatRole.System),
+            "tool" => nameof(ChatRole.Tool),
+            _ => nameof(ChatRole.User),
+        };
+
+    /// <summary>
     /// F2：把 warm-prefix checkpoint 落库。**不取锁**（调用方已持压缩提交单飞租约，再取会自死锁），
     /// **不调用模型**（候选与摘要由调用方产出），只做「同一事务写入」。
     /// </summary>
@@ -376,7 +398,15 @@ public sealed class ContextCompactionService : IContextCompactionService
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        if (coveredIds.Length == 0)
+
+        // 内容键回退解析：内存历史对象会被归一化/渲染复制，按引用解析可能全失效（流式路径实测
+        // unresolved_durable_identities:29）。库里的行才是权威 —— 但**只在唯一匹配时**才认，
+        // 重复内容宁可判为不可解析（绑错行 = 静默隐藏真实消息）。
+        var spanKeys = (request.SpanKeys ?? [])
+            .Where(k => !string.IsNullOrWhiteSpace(k.Content))
+            .ToArray();
+
+        if (coveredIds.Length == 0 && spanKeys.Length == 0)
             return new WarmPrefixCheckpointCommitResult(
                 WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound,
                 ProblemMessageIds: []);
@@ -392,6 +422,43 @@ public sealed class ContextCompactionService : IContextCompactionService
             return new WarmPrefixCheckpointCommitResult(
                 WarmPrefixCheckpointCommitStatus.GenerationMismatch,
                 TargetGeneration: session.CompactionGeneration);
+
+        if (spanKeys.Length > 0)
+        {
+            var activeRows = await db.Messages
+                .Where(m => m.SessionId == request.SessionId && m.CompactedBy == null)
+                .ToListAsync(ct);
+            var byKey = activeRows
+                .GroupBy(ActiveRowKey, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+            var resolved = new List<string>(spanKeys.Length);
+            var unresolvedKeys = new List<string>(spanKeys.Length);
+            foreach (var key in spanKeys)
+            {
+                var lookup = $"{key.Role}\u001f{key.Content}";
+                if (!byKey.TryGetValue(lookup, out var matches) || matches.Count != 1)
+                {
+                    // 0 个匹配或重复内容（>1）都不可解析 —— 后者会绑错行。
+                    unresolvedKeys.Add($"{key.Role}:{(key.Content.Length > 40 ? key.Content[..40] + "…" : key.Content)}");
+                    continue;
+                }
+
+                resolved.Add(matches[0].MessageId);
+            }
+
+            if (unresolvedKeys.Count > 0)
+                return new WarmPrefixCheckpointCommitResult(
+                    WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound,
+                    ProblemMessageIds: unresolvedKeys);
+
+            coveredIds = resolved.Distinct(StringComparer.Ordinal).ToArray();
+        }
+
+        if (coveredIds.Length == 0)
+            return new WarmPrefixCheckpointCommitResult(
+                WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound,
+                ProblemMessageIds: []);
 
         var rows = await db.Messages
             .Where(m => m.SessionId == request.SessionId && coveredIds.Contains(m.MessageId))

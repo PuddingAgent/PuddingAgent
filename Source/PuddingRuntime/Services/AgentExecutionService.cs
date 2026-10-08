@@ -2409,7 +2409,13 @@ public sealed partial class AgentExecutionService
                 var spanResolution = _contextManager.ResolveDurableSpan(
                     request.SessionId,
                     verification.RemovedMessages ?? []);
-                if (WarmPrefixDurableCommitDecision.ShouldAttempt(_contextCompactionService is not null, spanResolution))
+                // 内容键回退（权威在库侧：唯一匹配才认）：内存对象在归一化/渲染后会被复制，
+                // 按引用解析可能整体失效（流式路径实测 29 条全 unresolved）。
+                var spanKeys = (verification.RemovedMessages ?? [])
+                    .Select(m => new WarmPrefixSpanKey(m.Role.ToString(), m.Content ?? string.Empty))
+                    .ToArray();
+                if (WarmPrefixDurableCommitDecision.ShouldAttempt(
+                        _contextCompactionService is not null, spanResolution, spanKeys.Length))
                 {
                     var commit = await _contextCompactionService!.CommitWarmPrefixCheckpointAsync(
                         new WarmPrefixCheckpointCommitRequest(
@@ -2424,7 +2430,8 @@ public sealed partial class AgentExecutionService
                             MessagesAfter: durableHistory.Count,
                             TokensBefore: plan.InitialUsedTokens,
                             MeasuredTokensAfter: verification.AfterSnapshot!.UsedTokens,
-                            Reason: plan.RequiresSynchronousProtection ? "hard_protection" : "soft_maintenance"),
+                            Reason: plan.RequiresSynchronousProtection ? "hard_protection" : "soft_maintenance",
+                            SpanKeys: spanKeys),
                         ct);
                     (durableCheckpoint, durableSkipReason) =
                         WarmPrefixDurableCommitDecision.Interpret(commit);

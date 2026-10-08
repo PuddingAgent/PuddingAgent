@@ -279,6 +279,124 @@ public sealed class WarmPrefixCheckpointCommitTests
             "代际必须随事务回滚");
     }
 
+    /// <summary>
+    /// **内容键回退解析**（流式路径的落库缺口修复）：内存对象在归一化/渲染后会被复制，
+    /// 按引用解析会整体失效，此时必须能靠「角色 + 正文」在库里**唯一匹配**地解析出持久行。
+    /// </summary>
+    [TestMethod]
+    public async Task Commit_WithSpanKeysOnly_ResolvesRowsFromDatabase()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var seed = new MemoryDbContext(options))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            await SeedAsync(seed, 6);
+        }
+
+        var service = CreateService(options);
+
+        // 完全不传 id，只传内容键（模拟「内存身份全部失效」的流式路径）。
+        var request = CreateRequest(expectedGeneration: 0, coveredMessageIds: []) with
+        {
+            SpanKeys =
+            [
+                new WarmPrefixSpanKey("User", "message m1"),
+                new WarmPrefixSpanKey("Assistant", "message m2"),
+                new WarmPrefixSpanKey("User", "message m3"),
+            ],
+        };
+
+        var result = await service.CommitWarmPrefixCheckpointAsync(request);
+
+        Assert.AreEqual(WarmPrefixCheckpointCommitStatus.Committed, result.Status);
+        Assert.AreEqual(3, result.CoveredCount);
+
+        await using var verify = new MemoryDbContext(options);
+        var covered = await verify.Messages
+            .Where(m => m.SessionId == SessionId && m.CompactedBy != null)
+            .Select(m => m.MessageId)
+            .OrderBy(id => id)
+            .ToListAsync();
+        CollectionAssert.AreEqual(new[] { "m1", "m2", "m3" }, covered, "内容键必须解析到正确的行");
+        // 库里的 role 是 "agent"，调用方给的是枚举名 "Assistant" ⇒ 两侧 token 必须已经归一化。
+        Assert.IsTrue(covered.Contains("m2"));
+    }
+
+    /// <summary>内容重复（键不唯一）⇒ 一律判为不可解析：宁可不写，也不许绑错行。</summary>
+    [TestMethod]
+    public async Task Commit_WithAmbiguousSpanKeys_WritesNothing()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var seed = new MemoryDbContext(options))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            await SeedAsync(seed, 4);
+            // 复制一条同角色同正文的行 ⇒ 该键不再唯一。
+            seed.Messages.Add(new MessageEntity
+            {
+                MessageId = "m5",
+                SessionId = SessionId,
+                Sequence = 7,
+                Role = "user",
+                ContentType = "text",
+                Content = "message m1",
+                CreatedAt = 7,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+        var request = CreateRequest(expectedGeneration: 0, coveredMessageIds: []) with
+        {
+            SpanKeys = [new WarmPrefixSpanKey("User", "message m1")],
+        };
+
+        var result = await service.CommitWarmPrefixCheckpointAsync(request);
+
+        Assert.AreEqual(WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound, result.Status);
+        Assert.AreEqual(1, result.ProblemMessageIds!.Count);
+
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.CompactedBy != null), "歧义时不得标注任何行");
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.ContentType == "compact_summary"));
+        Assert.AreEqual(0, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration);
+    }
+
+    /// <summary>内容键在库里找不到 ⇒ 拒绝（不得只写「找得到的那部分」）。</summary>
+    [TestMethod]
+    public async Task Commit_WithUnknownSpanKey_WritesNothing()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var seed = new MemoryDbContext(options))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            await SeedAsync(seed, 4);
+        }
+
+        var service = CreateService(options);
+        var request = CreateRequest(expectedGeneration: 0, coveredMessageIds: []) with
+        {
+            SpanKeys =
+            [
+                new WarmPrefixSpanKey("User", "message m1"),
+                new WarmPrefixSpanKey("User", "message that never existed"),
+            ],
+        };
+
+        var result = await service.CommitWarmPrefixCheckpointAsync(request);
+
+        Assert.AreEqual(WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound, result.Status);
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.CompactedBy != null));
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.ContentType == "compact_summary"));
+    }
+
     private static WarmPrefixCheckpointCommitRequest CreateRequest(
         int expectedGeneration,
         IReadOnlyList<string> coveredMessageIds) =>

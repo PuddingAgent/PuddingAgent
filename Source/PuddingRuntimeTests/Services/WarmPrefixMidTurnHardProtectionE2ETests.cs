@@ -384,11 +384,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
                 $"historyCount={history.Count} requests=[{sizes}]\n  相关日志:\n  {logLines}");
         }
         Assert.AreEqual(1, summaryCalls, $"流式路径的逐轮硬保护必须恰好压缩一次，实际 {summaryCalls}");
-        // ② 落库要么**完整**、要么**明确降级**，绝不允许部分写入。
-        //    已知缺口（见 changelog「未完成」）：流式路径当前会走到
-        //    `durableSkipReason=unresolved_durable_identities:N` 的降级分支 —— 这不是本次新增的缺陷，
-        //    而是 F2 提交边界的安全默认在真实 Turn 里被触发；下面的断言把「安全」钉住，
-        //    同时把「流式仍未持久化」这一事实显式记录下来（不允许它悄悄变成部分标注）。
+        // ② 流式路径也必须**完整落库**：内容键回退（库里唯一匹配）让「归一化复制掉身份」不再阻止落库。
         await using (var verify = new MemoryDbContext(options))
         {
             var summaries = await verify.Messages
@@ -398,34 +394,24 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
                 .Where(m => m.SessionId == SessionId && m.CompactedBy != null)
                 .ToListAsync();
             var session = await verify.Sessions.SingleAsync(s => s.SessionId == SessionId);
-
             var committedLogs = log.Lines.Where(l =>
                 l.Contains("Warm-prefix checkpoint committed", StringComparison.Ordinal)).ToList();
-            Assert.AreEqual(1, committedLogs.Count, "流式路径必须恰好提交一次压缩结果");
 
-            if (summaries.Count == 1)
+            Assert.AreEqual(1, committedLogs.Count, "流式路径必须恰好提交一次压缩结果");
+            if (summaries.Count != 1)
             {
-                // 完整落库：摘要行 + 逐行覆盖标注 + 代际推进，三者必须一致。
-                Assert.AreEqual("warm_prefix_checkpoint", summaries[0].Source);
-                Assert.IsTrue(coveredRows.Count > 0, "有摘要就必须有覆盖标注");
-                Assert.IsTrue(coveredRows.All(m => m.CompactedBy == summaries[0].MessageId));
-                Assert.AreEqual(1, session.CompactionGeneration);
+                var compactionLogs = string.Join(
+                    "\n  ",
+                    log.Lines.Where(l => l.Contains("Compaction", StringComparison.Ordinal)));
+                Assert.Fail($"流式路径必须落库。相关日志:\n  {compactionLogs}");
             }
-            else
-            {
-                // 降级：必须一条都不写，且日志给出显式原因（不得静默、不得半写）。
-                Assert.AreEqual(0, summaries.Count, "降级时不得留下摘要行");
-                Assert.AreEqual(0, coveredRows.Count, "降级时不得留下任何覆盖标注（部分标注=静默隐藏真实消息）");
-                Assert.AreEqual(0, session.CompactionGeneration, "降级时不得推进代际");
-                StringAssert.Contains(
-                    committedLogs[0],
-                    "durableCheckpoint=False",
-                    "降级必须在日志里显式标注 durableCheckpoint=False");
-                StringAssert.Contains(
-                    committedLogs[0],
-                    "durableSkipReason=",
-                    "降级必须给出原因码，便于归因");
-            }
+
+            Assert.AreEqual("warm_prefix_checkpoint", summaries[0].Source);
+            Assert.IsTrue(coveredRows.Count > 0, "有摘要就必须有覆盖标注");
+            Assert.IsTrue(
+                coveredRows.All(m => m.CompactedBy == summaries[0].MessageId),
+                "所有覆盖标注必须指向本次摘要行");
+            Assert.AreEqual(1, session.CompactionGeneration, "落库必须推进代际");
         }
 
         // ③ 枚举结束（= 终态已交付）时 Turn 租约必须已释放。
