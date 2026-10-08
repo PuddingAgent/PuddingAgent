@@ -41,6 +41,13 @@ public sealed record BrowserElementInfo
     /// <summary><c>select</c> 当前选中的值；非 select 为 <c>null</c>。</summary>
     public IReadOnlyList<string>? SelectedValues { get; init; }
 
+    /// <summary>
+    /// 元素是否与视口相交（设计方案 §6.2：<b>与 <see cref="Visible"/> 是两个不同的事实</b>）。
+    /// 屏外但**有尺寸**的元素可见（<c>visible=true</c>）却不在视口内；
+    /// 写操作要求元素真的能被人看到 ⇒ 需要先滚入可见区域。未观测为 <c>null</c>。
+    /// </summary>
+    public bool? InViewport { get; init; }
+
     public BoundingBox? BoundingBox { get; init; }
 }
 
@@ -71,4 +78,7 @@ public sealed record Locator
     /// 只排除**隐藏**（display/visibility/opacity 或零尺寸）；屏外但有尺寸的元素仍可定位。
     /// </summary>
     public bool IncludeHidden { get; init; }
+
+    /// <summary>只返回**与视口相交**的元素（默认 <c>false</c>）。与 <see cref="IncludeHidden"/> 正交。</summary>
+    public bool InViewportOnly { get; init; }
 }

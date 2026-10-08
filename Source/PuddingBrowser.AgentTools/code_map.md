@@ -36,7 +36,7 @@ draft: false
 | `BrowserAgentToolBase.cs` | 工具基类 |
 | `BrowserAgentToolIds.cs` | 工具 ID 常量 |
 | `BrowserToolContracts.cs` | 工具输入/输出契约；失败载荷也支持 `value`（失败必须能带结构化证据，不能只有 code/message）；**元素展示投影的唯一实现**（`Element(...)`：text==name 省略、bbox 一位小数、checked/value 显式请求）——两个工具共用，规则不会各写一份 |
-| `BrowserOperationFailure.cs` | 驱动异常（`BrowserOperationException`）→ 失败回执：异常码映射成领域错误 + 是否可重试 + **最小修复提示**。§6.2 的动作拒绝三态分别给建议：`browser_locator_ambiguous` ⇒ 不可重试 + 「用 nth 或更具体的定位」（**绝不静默选第一个**）；`browser_element_not_visible`/`browser_element_disabled` ⇒ 不可重试 + 滚入可见/等待可用；`browser_element_not_found` ⇒ **可重试** + 等待或重新观察（零命中不等于"定位方式全坏"）；`stale_element_reference` ⇒ 不可重试 + 重新观察再定位；未登记异常码保守按 `internal_error`（可能已产生副作用） |
+| `BrowserOperationFailure.cs` | 驱动异常（`BrowserOperationException`）→ 失败回执：异常码映射成领域错误 + 是否可重试 + **最小修复提示**。§6.2 的动作拒绝分别给建议：`browser_locator_ambiguous` ⇒ 不可重试 + 「用 nth 或更具体的定位」（**绝不静默选第一个**）；`browser_element_not_visible`/`browser_element_disabled`/`browser_element_not_in_viewport` ⇒ 不可重试 + 滚入可见/等待可用/调整滚动（最后一条=驱动已尝试滚入仍失败）；`browser_element_not_found` ⇒ **可重试** + 等待或重新观察（零命中不等于"定位方式全坏"）；`stale_element_reference` ⇒ 不可重试 + 重新观察再定位；未登记异常码保守按 `internal_error`（可能已产生副作用） |
 | `BrowserLocatorInput.cs` | 定位器输入模型。⚠️ **嵌套字段必须用 camelCase**（`includeHidden`，不是 `include_hidden`）：工具框架的 snake_case 归一化只作用于**顶层参数**（`PuddingToolContracts.DeserializeArgs` 只重写根对象的属性名） |
 
 | `BrowserCapabilityFailure.cs` | **唯一一张**能力错误 → 工具错误码映射表（每工具各写一份必然漂移）；版本不符的语义按工具给出（定位=引用过期、快照/页状态=页面已变） |

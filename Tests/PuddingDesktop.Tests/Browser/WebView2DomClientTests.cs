@@ -116,6 +116,24 @@ public sealed class WebView2DomClientTests
     }
 
     [Fact]
+    public void Scripts_ReportInViewportAndGateWritesOnIt()
+    {
+        // 设计 §6.2：visible 与 inViewport 是两个事实；写操作要求后者为真（先滚入可见区域并复检）。
+        // ⚠️ 同样是脚本文本断言：真机滚动/复检行为需 WebView2.Smoke 复核。
+        foreach (var script in new[] { WebView2DomClient.LocateScript, WebView2DomClient.InteractScript })
+        {
+            Assert.Contains("const inViewport = el =>", script);
+            Assert.Contains("inViewport:inViewport(el)", script);
+        }
+
+        Assert.Contains("if (locator.inViewportOnly) elements = elements.filter(el => inViewport(el));", WebView2DomClient.LocateScript);
+
+        // 写操作先滚入、再复检；仍不满足就明确拒绝（不是静默点一个看不见的节点）。
+        Assert.Contains("if(mutating&&!inViewport(el)){try{el.scrollIntoView(", WebView2DomClient.InteractScript);
+        Assert.Contains("browser_element_not_in_viewport", WebView2DomClient.InteractScript);
+    }
+
+    [Fact]
     public void ValidateLocator_RejectsFrameAndCompoundHasUntilSupported()
     {
         var exception = Assert.Throws<BrowserOperationException>(() =>

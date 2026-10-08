@@ -652,6 +652,7 @@ public sealed class BrowserAgentToolsTests
     [InlineData("browser_element_not_visible", "not_retryable", "scroll")]
     [InlineData("browser_element_disabled", "not_retryable", "enabled")]
     [InlineData("browser_element_not_found", "safe_to_retry", "wait")]
+    [InlineData("browser_element_not_in_viewport", "not_retryable", "scrolled into view")]
     public async Task Interact_DriverRejections_MapToTheRightRetryAdvice(
         string driverCode, string expectedDisposition, string expectedHintFragment)
     {
@@ -780,6 +781,36 @@ public sealed class BrowserAgentToolsTests
 
         Assert.True(explicitHidden.Success);
         Assert.True(surface.LastLocateRequest!.Locator.IncludeHidden);
+    }
+
+    [Fact]
+    public async Task Locate_SeparatesVisibleFromInViewport_AndPassesInViewportOnly()
+    {
+        // 设计 §6.2：visible 与 inViewport 是两个事实；inViewportOnly 是正交的筛选。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var located = await ExecuteAsync(
+            new BrowserLocateTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save", inViewportOnly = true }
+            }));
+
+        Assert.True(located.Success);
+
+        // 两个事实都出现在输出里（不是一个代替另一个）。
+        var element = GetJson(located.Output, "value").GetProperty("elements")[0];
+        Assert.True(element.GetProperty("visible").GetBoolean());
+        Assert.True(element.GetProperty("inViewport").GetBoolean());
+
+        // inViewportOnly 真的传到了能力层（默认 false）。
+        Assert.True(surface.LastLocateRequest!.Locator.InViewportOnly);
     }
 
     [Fact]
@@ -983,7 +1014,8 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
                 handle.Info.Enabled,
                 handle.Info.Checked,
                 handle.Info.Value,
-                handle.Info.SelectedValues)
+                handle.Info.SelectedValues,
+                handle.Info.InViewport)
             {
                 // 驱动会带上几何（展示层再收敛到一位小数）；替身也必须给，否则定位输出永远没有 bbox。
                 BoundingBox = handle.Info.BoundingBox is { } b
@@ -1544,6 +1576,8 @@ internal sealed class FakeBrowserPage : IBrowserPage
                 Text = "Save",
                 Visible = true,
                 Enabled = true,
+                // 视口内与可见是两个独立事实（设计 §6.2）：替身报告"在视口内"。
+                InViewport = true,
                 // 表单回读（设计方案 §6.2）：text 不含表单值，只有它能让调用方确认写入成功。
                 Value = "Pudding",
                 BoundingBox = new BoundingBox { X = 10.25, Y = 20.5, Width = 80.04, Height = 30.75 }

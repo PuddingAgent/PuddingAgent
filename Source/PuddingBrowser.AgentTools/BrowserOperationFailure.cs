@@ -52,6 +52,12 @@ internal static class BrowserOperationFailure
             new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidTarget, message, retryable: false),
             "the matched element is not visible: scroll it into view or choose a different target"),
 
+        // 滚入之后仍不在视口内（被遮挡、容器不可滚、固定定位等）：驱动已经尝试过一次，
+        // 再发同样的请求也不会变好 ⇒ 不可自动重试，提示调用方自己调整。
+        "browser_element_not_in_viewport" => (
+            new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidTarget, message, retryable: false),
+            "the element could not be scrolled into view: adjust the container/scroll position or choose another target"),
+
         "browser_element_disabled" => (
             new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidRequest, message, retryable: false),
             "the matched element is disabled: wait until it becomes enabled"),

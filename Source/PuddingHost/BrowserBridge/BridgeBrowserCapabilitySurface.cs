@@ -449,7 +449,8 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
                 handle.Info.Enabled,
                 handle.Info.Checked,
                 handle.Info.Value,
-                handle.Info.SelectedValues)
+                handle.Info.SelectedValues,
+                handle.Info.InViewport)
             {
                 BoundingBox = handle.Info.BoundingBox is { } b ? new DesktopElementBox(b.X, b.Y, b.Width, b.Height) : null,
             });

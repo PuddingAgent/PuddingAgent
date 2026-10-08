@@ -409,7 +409,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             enabled: info.Enabled,
             isChecked: info.Checked,
             value: info.Value,
-            selectedValues: info.SelectedValues)
+            selectedValues: info.SelectedValues,
+            inViewport: info.InViewport)
             {
                 BoundingBox = info.BoundingBox is { } b ? new DesktopElementBox(b.X, b.Y, b.Width, b.Height) : null,
             });

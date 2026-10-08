@@ -714,6 +714,22 @@ public sealed class LocateMappingTests
     }
 
     [Fact]
+    public async Task VisibleAndInViewportAreMappedAsSeparateFacts()
+    {
+        // 设计 §6.2：both 都要如实带出；用 inViewport 判定写操作能不能做，不能只看 visible。
+        var runtime = Runtime(pageVersion: 4, handles: [Handle("e1", "button", version: 4)]);
+        var result = await Surface(runtime).LocateAsync(
+            Call,
+            new BrowserLocateRequest(Target, new DesktopLocator(DesktopLocatorKind.Css, ".item"), DesktopPageVersion.Require(4)),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        var element = Assert.Single(result.Value.Elements);
+        Assert.True(element.Visible);
+        Assert.True(element.InViewport);
+    }
+
+    [Fact]
     public async Task IncludeHiddenIsMappedOntoTheRuntimeLocator()
     {
         // Desktop 侧（能力通道路径）与桥接侧必须映射同一个修饰：默认 false，显式才为 true（设计 §6.2）。
@@ -801,6 +817,8 @@ public sealed class LocateMappingTests
         Ref = reference,
         Tag = tag,
         Visible = true,
+        // 屏外但有尺寸也可以是 visible；两个事实分开报告（设计 §6.2）。
+        InViewport = true,
         Enabled = true,
     };
 

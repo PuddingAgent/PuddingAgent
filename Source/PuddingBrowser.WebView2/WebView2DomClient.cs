@@ -335,6 +335,8 @@ internal static partial class WebView2DomClient
   // 输入是否写入成功的唯一可靠回执（设计方案 §4.2/§6.2）：text 不含表单值。
   const readValue = el => { if (el.isContentEditable) return el.textContent ?? ''; return typeof el.value === 'string' ? el.value : null; };
   const readSelectedValues = el => el.tagName === 'SELECT' && el.options ? [...el.options].filter(o => o.selected).map(o => o.value) : null;
+  // 「在视口内」与「可见」是两个独立事实（设计 §6.2）：屏外但有尺寸 ⇒ visible 真、inViewport 假。
+  const inViewport = el => { const r=el.getBoundingClientRect(); return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<(window.innerHeight||0)&&r.left<(window.innerWidth||0); };
   const roots = [];
   const addRoots = root => { roots.push(root); for (const el of root.querySelectorAll('*')) { if (el.shadowRoot) addRoots(el.shadowRoot); if (el.tagName==='IFRAME') { try { if (el.contentDocument) addRoots(el.contentDocument); } catch {} } } };  addRoots(document);
   const all = () => [...new Set(roots.flatMap(root => [...root.querySelectorAll('*')]))];
@@ -363,6 +365,8 @@ internal static partial class WebView2DomClient
   elements = [...new Set(elements)];
   // 默认排除隐藏元素（设计方案 §6.2）：屏外但有尺寸的元素**仍然保留**（那是 inViewport，不是 hidden）。
   if (!locator.includeHidden) elements = elements.filter(el => visible(el));
+  // inViewportOnly 是**正交**的另一个筛选：只有显式要求时才按视口过滤。
+  if (locator.inViewportOnly) elements = elements.filter(el => inViewport(el));
   if (locator.hasText) elements = elements.filter(el => matchText(el.innerText || el.textContent, locator.hasText));
   if (locator.nth !== null && locator.nth !== undefined) elements = locator.nth >= 0 && locator.nth < elements.length ? [elements[locator.nth]] : [];
   const refState = globalThis.__puddingRefState?.version === input.pageVersion
@@ -373,7 +377,7 @@ internal static partial class WebView2DomClient
   const describe = el => {
     let ref=el.getAttribute('data-pudding-ref'); if(!ref||!ref.startsWith(prefix)){ref=`${prefix}${++refState.next}`;el.setAttribute('data-pudding-ref',ref);}
     const r=el.getBoundingClientRect();
-    return {ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,value:readValue(el),selectedValues:readSelectedValues(el),boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}};
+    return {ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),inViewport:inViewport(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,value:readValue(el),selectedValues:readSelectedValues(el),boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}};
   };
   return {ok:true,elements:elements.slice(0,input.maxResults).map(describe)};
 })()
@@ -390,6 +394,8 @@ internal static partial class WebView2DomClient
   // 交互回执的输入证据：fill/type/select/check 之后回读**同一节点**的值（不重定位）。
   const readValue = el => { if (el.isContentEditable) return el.textContent ?? ''; return typeof el.value === 'string' ? el.value : null; };
   const readSelectedValues = el => el.tagName === 'SELECT' && el.options ? [...el.options].filter(o => o.selected).map(o => o.value) : null;
+  // 「在视口内」与「可见」是两个独立事实（设计 §6.2）：写操作要求前者为真（先滚入再复检）。
+  const inViewport = el => { const r=el.getBoundingClientRect(); return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<(window.innerHeight||0)&&r.left<(window.innerWidth||0); };
   const roots=[]; const addRoots=root=>{roots.push(root);for(const el of root.querySelectorAll('*')){if(el.shadowRoot)addRoots(el.shadowRoot);if(el.tagName==='IFRAME'){try{if(el.contentDocument)addRoots(el.contentDocument);}catch{}}}}; addRoots(document);
   const all=()=>[...new Set(roots.flatMap(root=>[...root.querySelectorAll('*')]))];
   const locate = locator => {
@@ -419,6 +425,11 @@ internal static partial class WebView2DomClient
   if(matches.length>1)return{ok:false,code:'browser_locator_ambiguous',message:`Locator matched ${matches.length} elements`};
   const el=matches[0];
   if(input.action!=='scroll'&&!visible(el))return{ok:false,code:'browser_element_not_visible',message:'Matched element is not visible'};
+  // 写操作要求元素**真的在视口内**（设计 §6.2：先滚入可见区域并复检）。
+  // 只读观察（hover/press 之外的检查）不需要，但"看起来在屏外"绝不能当成写成功。
+  const mutating=input.action==='click'||input.action==='fill'||input.action==='type'||input.action==='select'||input.action==='check'||input.action==='press'||input.action==='drag';
+  if(mutating&&!inViewport(el)){try{el.scrollIntoView({block:'center',inline:'center'});}catch{}}
+  if(mutating&&!inViewport(el))return{ok:false,code:'browser_element_not_in_viewport',message:'Matched element could not be scrolled into view'};
   if(el.disabled)return{ok:false,code:'browser_element_disabled',message:'Matched element is disabled'};
   const fire=(name,options={})=>el.dispatchEvent(new Event(name,{bubbles:true,...options}));
   try { switch(input.action){
@@ -433,7 +444,7 @@ internal static partial class WebView2DomClient
     default:return{ok:false,code:'browser_operation_not_supported',message:`Unsupported interaction: ${input.action}`};
   }} catch(error){return{ok:false,code:'browser_operation_failed',message:String(error)};}
   const refState=globalThis.__puddingRefState?.version===input.pageVersion&&globalThis.__puddingRefState?.pageToken===input.pageToken?globalThis.__puddingRefState:(globalThis.__puddingRefState={version:input.pageVersion,pageToken:input.pageToken,next:0});let ref=el.getAttribute('data-pudding-ref');const prefix=`p${input.pageToken}-v${input.pageVersion}-n`;if(!ref||!ref.startsWith(prefix)){ref=`${prefix}${++refState.next}`;el.setAttribute('data-pudding-ref',ref);}const r=el.getBoundingClientRect();
-  return{ok:true,element:{ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,value:readValue(el),selectedValues:readSelectedValues(el),boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}}};
+  return{ok:true,element:{ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),inViewport:inViewport(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,value:readValue(el),selectedValues:readSelectedValues(el),boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}}};
 })()
 """;
 

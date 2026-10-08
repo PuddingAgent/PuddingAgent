@@ -69,7 +69,8 @@ public sealed record DesktopLocator
         bool exact = false,
         int? nth = null,
         string? hasText = null,
-        bool includeHidden = false)
+        bool includeHidden = false,
+        bool inViewportOnly = false)
     {
         if (!Enum.IsDefined(kind))
         {
@@ -104,6 +105,7 @@ public sealed record DesktopLocator
         Nth = nth;
         HasText = string.IsNullOrEmpty(hasText) ? null : hasText;
         IncludeHidden = includeHidden;
+        InViewportOnly = inViewportOnly;
     }
 
     public DesktopLocatorKind Kind { get; }
@@ -126,6 +128,9 @@ public sealed record DesktopLocator
     /// 「在视口内」是另一个事实，不能混为一谈。
     /// </summary>
     public bool IncludeHidden { get; }
+
+    /// <summary>只返回**与视口相交**的元素（默认 <c>false</c>）。与 <see cref="IncludeHidden"/> 正交。</summary>
+    public bool InViewportOnly { get; }
 
     /// <summary>Ref 定位是「凭快照引用」：调用方必须保证引用来自同一个 PageVersion。</summary>
     public bool IsReference => Kind == DesktopLocatorKind.Ref;
@@ -200,7 +205,8 @@ public sealed record DesktopElementRef
         bool enabled = true,
         bool? isChecked = null,
         string? value = null,
-        IReadOnlyList<string>? selectedValues = null)
+        IReadOnlyList<string>? selectedValues = null,
+        bool? inViewport = null)
     {
         if (string.IsNullOrWhiteSpace(reference))
         {
@@ -230,6 +236,7 @@ public sealed record DesktopElementRef
         IsChecked = isChecked;
         Value = value;
         SelectedValues = selectedValues;
+        InViewport = inViewport;
     }
 
     /// <summary>元素包围盒（不知道时为 <c>null</c>——绝不用 0 假装知道）。</summary>
@@ -246,6 +253,13 @@ public sealed record DesktopElementRef
 
     /// <summary><c>select</c> 当前选中的值；非 select 为 <c>null</c>。</summary>
     public IReadOnlyList<string>? SelectedValues { get; }
+
+    /// <summary>
+    /// 元素是否与视口相交。**与 <see cref="Visible"/> 是两个不同的事实**（设计方案 §6.2）：
+    /// 屏外但有尺寸的元素可见却不在视口内；写操作要求先滚入可见区域，因此不能只看 visible。
+    /// 未观测为 <c>null</c>（绝不用 <c>false</c> 假装观测过）。
+    /// </summary>
+    public bool? InViewport { get; }
 
     public string Reference { get; }
 

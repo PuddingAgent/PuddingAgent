@@ -375,6 +375,39 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
+    public async Task Locate_CarriesInViewportSeparatelyFromVisible()
+    {
+        // 桥接路径必须把两个事实都带出来（设计 §6.2）：写操作看的是 inViewport，不是 visible。
+        var page = new FakePage
+        {
+            Version = 2,
+            QueryAll = _ =>
+            [
+                new FakeElementHandle
+                {
+                    Version = 2,
+                    Info = new BrowserElementInfo
+                    {
+                        Ref = "e1",
+                        Tag = "button",
+                        Visible = true,
+                        InViewport = false,
+                    },
+                },
+            ],
+        };
+        var surface = Create(page);
+
+        var result = await surface.LocateAsync(
+            new BrowserLocateRequest(Target, new DesktopLocator(DesktopLocatorKind.Css, "button")), Call);
+
+        Assert.False(result.IsFailure);
+        var element = Assert.Single(result.Value.Elements);
+        Assert.True(element.Visible);
+        Assert.False(element.InViewport);
+    }
+
+    [Fact]
     public async Task Locate_OverMaxResults_IsTruncatedAndFlagged()
     {
         var page = new FakePage

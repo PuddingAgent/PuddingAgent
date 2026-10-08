@@ -30,6 +30,13 @@ public sealed record BrowserLocatorInput
     /// </summary>
     [ToolParam("Include hidden elements in the matches (default false; off-screen but sized elements are always locatable).")]
     public bool IncludeHidden { get; init; }
+
+    /// <summary>
+    /// 只返回**与视口相交**的元素（默认 <c>false</c>）。与 <see cref="IncludeHidden"/> 正交：
+    /// 隐藏与屏外是两个不同的事实（设计方案 §6.2）。
+    /// </summary>
+    [ToolParam("Only return elements that intersect the viewport (default false; orthogonal to includeHidden).")]
+    public bool InViewportOnly { get; init; }
 }
 
 internal static class BrowserLocatorInputMapper
@@ -50,7 +57,7 @@ internal static class BrowserLocatorInputMapper
                 $"locator kind '{input.Kind}' has no capability equivalent");
         }
 
-        return new DesktopLocator(kind, input.Value, input.Name, input.Exact, input.Nth, input.HasText, input.IncludeHidden);
+        return new DesktopLocator(kind, input.Value, input.Name, input.Exact, input.Nth, input.HasText, input.IncludeHidden, input.InViewportOnly);
     }
 
     private static LocatorKind ParseKind(BrowserLocatorInput input)
@@ -92,7 +99,8 @@ internal static class BrowserLocatorInputMapper
             Exact = input.Exact,
             Nth = input.Nth,
             HasText = input.HasText,
-            IncludeHidden = input.IncludeHidden
+            IncludeHidden = input.IncludeHidden,
+            InViewportOnly = input.InViewportOnly
         };
     }
 }

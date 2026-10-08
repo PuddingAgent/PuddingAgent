@@ -90,6 +90,14 @@ public sealed record BrowserElementToolValue
     public string? Name { get; init; }
     public string? Text { get; init; }
     public bool Visible { get; init; }
+
+    /// <summary>
+    /// 是否与视口相交。与 <see cref="Visible"/> **分开**（设计方案 §6.2）：
+    /// 屏外但有尺寸的元素 <c>visible=true</c> 而 <c>inViewport=false</c>；
+    /// 写操作要求前者为真（驱动会先滚入可见区域并复检）。
+    /// </summary>
+    public bool? InViewport { get; init; }
+
     public bool Enabled { get; init; }
     public bool? Checked { get; init; }
 
@@ -265,6 +273,7 @@ internal static class BrowserToolResponse
         Name = info.Name,
         Text = info.Text,
         Visible = info.Visible,
+        InViewport = info.InViewport,
         Enabled = info.Enabled,
         Checked = info.Checked,
         Value = info.Value,
@@ -292,6 +301,7 @@ internal static class BrowserToolResponse
         Name = element.Name,
         Text = SameAsName(element.Text, element.Name) ? null : element.Text,
         Visible = element.Visible,
+        InViewport = element.InViewport,
         Enabled = element.Enabled,
         Checked = includeChecked ? element.IsChecked : null,
         Value = includeValue ? element.Value : null,
