@@ -121,6 +121,28 @@ public sealed class InteractionStateTests
     }
 
     [Fact]
+    public void BooleanSetters_AreTheExecutionGateFormOfTheSameState()
+    {
+        // 执行闸门端口（IBrowserAutomationGate）走的是布尔形态；它必须与
+        // Notify/Clear/Pause/Resume 完全等价，否则两条路径会读出不一致的控制状态。
+        var state = new Pudding.DesktopService.DesktopInteractionState();
+
+        state.SetUserTakeover(true);
+        Assert.True(state.IsUserTakeover);
+
+        state.SetPaused(true);
+        Assert.True(state.IsPaused);
+
+        state.SetUserTakeover(false);
+        Assert.False(state.IsUserTakeover);
+        Assert.True(state.IsPaused, "两个轴相互独立：撤销接管不得顺手恢复暂停");
+
+        state.SetPaused(false);
+        Assert.False(state.IsPaused);
+        Assert.Null(state.Reason);
+    }
+
+    [Fact]
     public async Task TakeoverWhileQueued_IsDetectedAfterQueueing()
     {
         var harness = ServiceHarness.Create();

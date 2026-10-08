@@ -27,6 +27,8 @@ public sealed partial class DesktopApplicationCoordinator
     private readonly SemaphoreSlim _capabilityGate = new(1, 1);
     private readonly SemaphoreSlim _capabilityStartGate = new(1, 1);
     private DesktopCapabilityChannelComposition? _capabilityChannel;
+    /// <summary>能力通道的执行闸门（挂在浏览器工作区的唯一控制权写入点上）。</summary>
+    private IBrowserAutomationGate? _capabilityInteractionGate;
 
     private void LogCapability(string message) => CoreLogBuffer.Append($"[CapabilityChannel] {message}");
 
@@ -118,6 +120,20 @@ public sealed partial class DesktopApplicationCoordinator
 
             _capabilityChannel = result.Value;
             _capabilityChannel.Host.StateChanged += state => LogCapability($"连接状态：{state}");
+
+            // 把能力通道的执行闸门挂到**同一个**控制权写入点上（审计 2026-10-08 结论 #1）：
+            // 不挂的话，用户在 UI 上接管浏览器，gRPC 路径上的 Agent 动作照旧执行。
+            // 只在这个路径真的启动后挂；RegisterAutomationGate 会自动与当前控制状态对齐
+            // （用户可能在通道启动之前就已经接管）。
+            if (_capabilityInteractionGate is null)
+            {
+                // DesktopInteractionState 属于更低层，不能反向引用本组件的端口 ⇒ 用委托闸门映射。
+                var interaction = _capabilityChannel.Service.Interaction;
+                _capabilityInteractionGate =
+                    new DelegateAutomationGate(interaction.SetUserTakeover, interaction.SetPaused);
+                workspace.RegisterAutomationGate(_capabilityInteractionGate);
+            }
+
             LogCapability("已启动：启用即走能力通道，不回退旧 Bridge");
         }
         catch (OperationCanceledException)
@@ -143,6 +159,13 @@ public sealed partial class DesktopApplicationCoordinator
             if (_capabilityChannel is not { } channel)
             {
                 return;
+            }
+
+            // 先撤闸门再停通道：避免向已释放的路径继续推送控制状态。
+            if (_capabilityInteractionGate is { } gate)
+            {
+                _mainWindow?.BrowserWorkspace?.UnregisterAutomationGate(gate);
+                _capabilityInteractionGate = null;
             }
 
             _capabilityChannel = null;

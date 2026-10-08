@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using PuddingBrowser.Protocol;
 
@@ -7,8 +7,12 @@ namespace PuddingDesktop.Browser;
 /// <summary>
 /// Dispatches incoming Bridge commands to the appropriate browser operation handler.
 /// Enforces idempotency via result cache, pause/takeover gating, and deadline checks.
+///
+/// 本类是 <see cref="IBrowserAutomationGate"/> 的实现之一：它的 pause/takeover 就是**执行闸门本身**。
+/// 在它只是"自己的一个字段"时，Shell 的接管开关从来不写它，于是 Bridge 路径上的人工接管无效
+/// （审计 2026-10-08 结论 #1）。
 /// </summary>
-public sealed class BrowserBridgeCommandDispatcher
+public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
 {
     private readonly BrowserOperationResultCache _resultCache = new();
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeOperations = new();

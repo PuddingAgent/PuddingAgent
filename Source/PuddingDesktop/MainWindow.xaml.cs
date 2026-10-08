@@ -40,6 +40,8 @@ public sealed partial class MainWindow : Window
     private WebView2BrowserRuntime? _browserRuntime;
     /// <summary>工具区里的浏览器表面宿主：与主工作台是两个 WebView2，外观必须一起同步。</summary>
     private WinUiBrowserSurfaceHost? _browserSurfaces;
+    /// <summary>接管/暂停的执行闸门集合（唯一写入点由浏览器工作区控制器驱动）。</summary>
+    private BrowserAutomationGateSync? _automationGates;
     private DesktopTrayIcon? _tray;
     private Uri? _webOrigin;
     private long _webGeneration;
@@ -55,6 +57,9 @@ public sealed partial class MainWindow : Window
     internal WebView2BrowserRuntime? BrowserRuntime => _browserRuntime;
 
     internal BrowserWorkspaceController? BrowserWorkspace => _browser;
+
+    /// <summary>接管/暂停的执行闸门集合；能力通道启用时由协调器再挂一个闸门。</summary>
+    internal BrowserAutomationGateSync? AutomationGates => _automationGates;
 
     internal nint CapabilityWindowHandle => WinRT.Interop.WindowNative.GetWindowHandle(this);
 
@@ -951,7 +956,12 @@ public sealed partial class MainWindow : Window
             _browserSurfaces = surfaces;
             var runtime = new WebView2BrowserRuntime(dispatcher, surfaces, dataRoot);
             _browserRuntime = runtime;
-            var browser = new BrowserWorkspaceController(runtime, surfaces, dispatcher);
+            // 接管/暂停的**唯一写入点**：控制状态推给所有执行闸门。
+            // 这里先挂 Bridge dispatcher（默认传输路径）——不挂就等于「人工接管」按钮对 Agent 无效
+            // （审计 2026-10-08 结论 #1）。能力通道启用后由协调器再挂它自己的闸门。
+            _automationGates = new BrowserAutomationGateSync();
+            _automationGates.Register(_coordinator.BridgeDispatcher);
+            var browser = new BrowserWorkspaceController(runtime, surfaces, dispatcher, _automationGates);
             try { await browser.InitializeAsync(dataRoot, ct); }
             catch { await browser.DisposeAsync(); throw; }
             _browser = browser;

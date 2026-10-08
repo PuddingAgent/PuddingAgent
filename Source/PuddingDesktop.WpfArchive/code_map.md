@@ -1,4 +1,4 @@
-﻿# PuddingDesktop CodeMAP
+# PuddingDesktop CodeMAP
 
 > Windows WPF 产品入口 | 单实例 · Core 子进程管理 · Browser 工作区 · 运行中心
 
@@ -42,8 +42,9 @@
 | 文件 | 用途 |
 |------|------|
 | `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client，HelloAck、heartbeat、重连 |
-| `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity |
-| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target 唯一 UI 状态源 |
+| `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate`（它的 pause/takeover 就是**执行闸门本身**） |
+| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target 唯一 UI 状态源；**接管/暂停的唯一写入点**：`SetUserTakeoverAsync`/`SetPausedAsync` 把状态推给所有已注册的执行闸门（不推 ⇒ 「人工接管」按钮对 Agent 无效） |
+| `Browser/BrowserAutomationGateSync.cs` | `IBrowserAutomationGate` 端口 + 闸门集合 + `DelegateAutomationGate`：注册/撤销、逐一推送、单个闸门抛异常不影响其余（接管是安全动作，不得半途失效） |
 | `Views/BrowserWorkspaceView.xaml(.cs)` | 双标签、地址栏、Surface、Agent Activity Pane |
 
 ## 运行中心 & 诊断

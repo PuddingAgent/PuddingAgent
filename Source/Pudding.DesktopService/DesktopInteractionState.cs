@@ -138,6 +138,33 @@ public sealed class DesktopInteractionState
         }
     }
 
+    /// <summary>
+    /// 布尔形态的接管写入（供执行闸门端口调用）。<c>true</c> 等价于
+    /// <see cref="NotifyUserTakeover"/>，<c>false</c> 等价于 <see cref="ClearUserTakeover"/>。
+    /// </summary>
+    public void SetUserTakeover(bool takenOver)
+    {
+        if (takenOver)
+        {
+            NotifyUserTakeover("takeover");
+            return;
+        }
+
+        ClearUserTakeover();
+    }
+
+    /// <summary>布尔形态的暂停写入（供执行闸门端口调用）。</summary>
+    public void SetPaused(bool paused)
+    {
+        if (paused)
+        {
+            Pause("paused");
+            return;
+        }
+
+        Resume();
+    }
+
     private static string Normalize(string? reason) =>
         string.IsNullOrWhiteSpace(reason) ? "unspecified" : reason.Trim();
 }

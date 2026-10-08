@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -113,6 +113,7 @@ public sealed class BrowserWorkspaceController :
     private readonly IBrowserRuntime _runtime;
     private readonly IBrowserSurfaceHost _surfaceHost;
     private readonly IWebView2UiDispatcher _uiDispatcher;
+    private readonly BrowserAutomationGateSync? _automationGates;
 
     private IBrowserContext? _context;
     private PageId? _activePageId;
@@ -190,12 +191,38 @@ public sealed class BrowserWorkspaceController :
     public BrowserWorkspaceController(
         IBrowserRuntime runtime,
         IBrowserSurfaceHost surfaceHost,
-        IWebView2UiDispatcher uiDispatcher)
+        IWebView2UiDispatcher uiDispatcher,
+        BrowserAutomationGateSync? automationGates = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _surfaceHost = surfaceHost ?? throw new ArgumentNullException(nameof(surfaceHost));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
+        _automationGates = automationGates;
     }
+
+    /// <summary>
+    /// 注册一个**执行闸门**并立即与当前控制状态对齐。
+    ///
+    /// 为什么注册点在这里：`SetUserTakeoverAsync`/`SetPausedAsync` 是本组件唯一的控制权写入点，
+    /// 把所有闸门挂在它下面，任何调用方（UI 开关、能力通道启停、未来的接口）都不可能只写一半
+    /// （审计 2026-10-08 结论 #1：Shell 只写了 UI 状态机，两条执行闸门读不到它）。
+    /// </summary>
+    public void RegisterAutomationGate(IBrowserAutomationGate gate)
+    {
+        ArgumentNullException.ThrowIfNull(gate);
+
+        if (_automationGates is null)
+        {
+            return;
+        }
+
+        _automationGates.Register(gate);
+        _automationGates.ApplyTo(gate, _userTakeover, _paused);
+    }
+
+    /// <summary>撤销执行闸门（能力通道停止时调用）。</summary>
+    public bool UnregisterAutomationGate(IBrowserAutomationGate gate) =>
+        _automationGates?.Unregister(gate) ?? false;
 
     /// <summary>
     /// Initializes the persistent Agent Browser context.
@@ -489,6 +516,8 @@ public sealed class BrowserWorkspaceController :
     {
         _userTakeover = enabled;
         RecalculateControlState();
+        // 唯一写入点：把接管推给所有执行闸门。否则按钮只改 UI 状态机（审计结论 #1）。
+        _automationGates?.ApplyUserTakeover(enabled);
         return Task.CompletedTask;
     }
 
@@ -496,6 +525,7 @@ public sealed class BrowserWorkspaceController :
     {
         _paused = paused;
         RecalculateControlState();
+        _automationGates?.ApplyPaused(paused);
         return Task.CompletedTask;
     }
 
