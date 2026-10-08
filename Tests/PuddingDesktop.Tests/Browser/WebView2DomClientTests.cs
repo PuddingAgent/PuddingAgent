@@ -85,6 +85,21 @@ public sealed class WebView2DomClientTests
         => Assert.Equal(expected, WebView2DomClient.WildcardMatch(input, pattern));
 
     [Fact]
+    public void LocateAndInteractScripts_ReportFormValueAndSelectedValues()
+    {
+        // 表单回读是「输入是否写入成功」的唯一可靠回执（设计 §4.2/§6.2）。
+        // ⚠️ 这里只钉**脚本文本**：真实执行需要 WebView2 与可见窗口（WebView2.Smoke 才有），
+        // 因此这条断言防的是「有人把回读删掉」，不构成运行时验收。
+        foreach (var script in new[] { WebView2DomClient.LocateScript, WebView2DomClient.InteractScript })
+        {
+            Assert.Contains("value:readValue(el)", script);
+            Assert.Contains("selectedValues:readSelectedValues(el)", script);
+            Assert.Contains("const readValue = el =>", script);
+            Assert.Contains("const readSelectedValues = el =>", script);
+        }
+    }
+
+    [Fact]
     public void ValidateLocator_RejectsFrameAndCompoundHasUntilSupported()
     {
         var exception = Assert.Throws<BrowserOperationException>(() =>

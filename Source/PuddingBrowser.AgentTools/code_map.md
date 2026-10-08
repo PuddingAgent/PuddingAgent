@@ -25,7 +25,7 @@ draft: false
 | `BrowserTabsTool.cs` | `browser_tabs` | 标签页管理 |
 | `BrowserNavigateTool.cs` | `browser_navigate` | 页面导航 |
 | `BrowserSnapshotTool.cs` | `browser_snapshot` | 页面快照 / 无障碍树 |
-| `BrowserLocateTool.cs` | `browser_locate` | 元素定位 |
+| `BrowserLocateTool.cs` | `browser_locate` | 元素定位；`include_value=true` 时附带表单当前值（`value`/`selectedValues`）——**默认不带**以守住输出预算，需要确认「fill 是否写入成功」时显式打开（唯一可靠回执，`text` 不含表单值） |
 | `BrowserInteractTool.cs` | `browser_interact` | 元素交互（点击/输入） |
 | `BrowserWaitForTool.cs` | `browser_wait_for` | 等待条件满足 |
 

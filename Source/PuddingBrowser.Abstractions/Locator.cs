@@ -1,4 +1,4 @@
-﻿namespace PuddingBrowser.Abstractions;
+namespace PuddingBrowser.Abstractions;
 
 /// <summary>Locator strategy for finding DOM elements.</summary>
 public enum LocatorKind
@@ -19,6 +19,11 @@ public enum LocatorKind
 /// Safe, by-value metadata returned by locator resolution. It contains no DOM object,
 /// JavaScript handle, form value, cookie, or authentication secret.
 /// </summary>
+/// <remarks>
+/// <see cref="Value"/>/<see cref="SelectedValues"/> 是**输入是否写入成功**的唯一可靠回执
+/// （设计方案 §6.2/§4.2）：<c>text</c> 不含表单值，导航前的 URL 也推不出填了什么。
+/// 它们是普通按值字符串，因此上层必须按敏感策略处理（脱敏/只留长度），不得直接回显到日志或工具回执。
+/// </remarks>
 public sealed record BrowserElementInfo
 {
     public required string Ref { get; init; }
@@ -29,6 +34,13 @@ public sealed record BrowserElementInfo
     public bool Visible { get; init; }
     public bool Enabled { get; init; }
     public bool? Checked { get; init; }
+
+    /// <summary>input/textarea/contenteditable 的当前值；非表单元素为 <c>null</c>。</summary>
+    public string? Value { get; init; }
+
+    /// <summary><c>select</c> 当前选中的值；非 select 为 <c>null</c>。</summary>
+    public IReadOnlyList<string>? SelectedValues { get; init; }
+
     public BoundingBox? BoundingBox { get; init; }
 }
 

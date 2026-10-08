@@ -187,7 +187,9 @@ public sealed record DesktopElementRef
         string? text = null,
         bool visible = true,
         bool enabled = true,
-        bool? isChecked = null)
+        bool? isChecked = null,
+        string? value = null,
+        IReadOnlyList<string>? selectedValues = null)
     {
         if (string.IsNullOrWhiteSpace(reference))
         {
@@ -215,10 +217,24 @@ public sealed record DesktopElementRef
         Visible = visible;
         Enabled = enabled;
         IsChecked = isChecked;
+        Value = value;
+        SelectedValues = selectedValues;
     }
 
     /// <summary>元素包围盒（不知道时为 <c>null</c>——绝不用 0 假装知道）。</summary>
     public DesktopElementBox? BoundingBox { get; init; }
+
+    /// <summary>
+    /// input/textarea/contenteditable 的当前值；非表单元素为 <c>null</c>。
+    ///
+    /// 为什么必须有（设计方案 §4.2/§6.2）：<c>Text</c> 不含表单值，因此「fill 到底写进去了没有」
+    /// 在仅有 text/URL 时无法判定。回执按**敏感策略**处理它：密码类只留长度与 matched，
+    /// 普通值有长度上限（见 <c>BrowserActionAssertion</c>）。
+    /// </summary>
+    public string? Value { get; }
+
+    /// <summary><c>select</c> 当前选中的值；非 select 为 <c>null</c>。</summary>
+    public IReadOnlyList<string>? SelectedValues { get; }
 
     public string Reference { get; }
 

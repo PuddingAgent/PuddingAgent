@@ -313,6 +313,40 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
+    public async Task Locate_CarriesTheFormValueReadback()
+    {
+        // 桥接路径必须把驱动回读的表单值带到能力结果里，否则「fill 是否写入成功」在工具层无据可依
+        // （设计方案 §4.2/§6.2）。Desktop 侧同字段由映射测试覆盖。
+        var page = new FakePage
+        {
+            Version = 2,
+            QueryAll = _ =>
+            [
+                new FakeElementHandle
+                {
+                    Version = 2,
+                    Info = new BrowserElementInfo
+                    {
+                        Ref = "e1",
+                        Tag = "input",
+                        Role = "textbox",
+                        Value = "Pudding",
+                        SelectedValues = null,
+                    },
+                },
+            ],
+        };
+        var surface = Create(page);
+
+        var result = await surface.LocateAsync(
+            new BrowserLocateRequest(Target, new DesktopLocator(DesktopLocatorKind.Css, "input")), Call);
+
+        Assert.False(result.IsFailure);
+        var element = Assert.Single(result.Value.Elements);
+        Assert.Equal("Pudding", element.Value);
+    }
+
+    [Fact]
     public async Task Locate_OverMaxResults_IsTruncatedAndFlagged()
     {
         var page = new FakePage

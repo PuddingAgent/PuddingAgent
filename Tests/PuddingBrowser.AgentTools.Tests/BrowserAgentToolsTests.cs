@@ -165,6 +165,39 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Locate_OmitsFormValueByDefault_AndReturnsItWhenRequested()
+    {
+        // 设计方案 §6.2：value/selectedValues 是「输入是否写入成功」的唯一可靠回执，
+        // 但**只在显式请求时**返回（默认省掉才能守住输出预算）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var locator = new { kind = "role", value = "button", name = "Save" };
+        var byDefault = await ExecuteAsync(
+            new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", locator }));
+
+        var requested = await ExecuteAsync(
+            new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", locator, include_value = true }));
+
+        Assert.True(byDefault.Success);
+        Assert.True(requested.Success);
+
+        var defaultElement = GetJson(byDefault.Output, "value").GetProperty("elements")[0];
+        var requestedElement = GetJson(requested.Output, "value").GetProperty("elements")[0];
+
+        // 默认：字段为 null（契约里 null = 未请求/未知），且输出里**不含**真实值。
+        Assert.Equal(JsonValueKind.Null, defaultElement.GetProperty("value").ValueKind);
+        Assert.DoesNotContain("Pudding", byDefault.Output, StringComparison.Ordinal);
+
+        // 显式请求：回读到真实值。
+        Assert.Equal("Pudding", requestedElement.GetProperty("value").GetString());
+    }
+
+    [Fact]
     public async Task InteractAndWait_UsePageAbstractionWithoutEchoingFillValue()
     {
         var runtime = new FakeBrowserRuntime();
@@ -383,7 +416,9 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
                 handle.Info.Text,
                 handle.Info.Visible,
                 handle.Info.Enabled,
-                handle.Info.Checked))
+                handle.Info.Checked,
+                handle.Info.Value,
+                handle.Info.SelectedValues))
             .ToArray();
 
         return CapabilityResult<DesktopLocateResult>.Success(
@@ -904,6 +939,8 @@ internal sealed class FakeBrowserPage : IBrowserPage
                 Text = "Save",
                 Visible = true,
                 Enabled = true,
+                // 表单回读（设计方案 §6.2）：text 不含表单值，只有它能让调用方确认写入成功。
+                Value = "Pudding",
                 BoundingBox = new BoundingBox { X = 10, Y = 20, Width = 80, Height = 30 }
             })
         ]);

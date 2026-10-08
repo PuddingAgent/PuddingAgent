@@ -15,7 +15,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `WebView2DomClient.cs` | DOM 客户端（核心，22KB）。ref 线格式 **`p{页面token}-v{文档世代}-n{序号}`**：token 由 `WebView2BrowserPage` 生成（页面写不出来），因此**跨页/跨 frame 的引用即使版本号相同也被拒**（`stale_element_reference` + 只说「重新观察」的提示）；序号是**每页独立**生成的，只比版本号会让 A 页的 `v7-n3` 命中 B 页元素 |
+| `WebView2DomClient.cs` | DOM 客户端（核心，22KB）。ref 线格式 **`p{页面token}-v{文档世代}-n{序号}`**：token 由 `WebView2BrowserPage` 生成（页面写不出来），因此**跨页/跨 frame 的引用即使版本号相同也被拒**（`stale_element_reference` + 只说「重新观察」的提示）；序号是**每页独立**生成的，只比版本号会让 A 页的 `v7-n3` 命中 B 页元素。定位/交互脚本还回读**表单当前值**（`value`/`selectedValues`）——这是「fill 是否写入成功」的唯一可靠回执（设计方案 §4.2/§6.2） |
 | `WebView2ElementHandle.cs` | 元素句柄 |
 
 ## WPF 集成

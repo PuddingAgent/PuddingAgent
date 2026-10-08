@@ -319,7 +319,12 @@ internal static partial class WebView2DomClient
 })()
 """;
 
-    private const string LocateScript = """
+    /// <summary>
+    /// 定位脚本。除常规字段外还回读**表单当前值**（<c>value</c>/<c>selectedValues</c>）：
+    /// <c>text</c> 不含表单值，只有它能回答「fill 到底写进去了没有」（设计方案 §4.2/§6.2）。
+    /// 可见性仅供测试断言（真实运行需要 WebView2，见 <c>WebView2.Smoke</c>）。
+    /// </summary>
+    internal const string LocateScript = """
 (() => {
   const input = __PUDDING_INPUT__;
   const locator = input.locator;
@@ -327,9 +332,11 @@ internal static partial class WebView2DomClient
   const visible = el => { const s=getComputedStyle(el), r=el.getBoundingClientRect(); return s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)!==0&&r.width>0&&r.height>0; };
   const roleOf = el => el.getAttribute('role') || ({A:'link',BUTTON:'button',INPUT:el.type==='checkbox'?'checkbox':el.type==='radio'?'radio':'textbox',SELECT:'combobox',TEXTAREA:'textbox',IMG:'img'}[el.tagName] || null);
   const nameOf = el => normalize(el.getAttribute('aria-label')||el.getAttribute('alt')||el.getAttribute('title')||el.getAttribute('placeholder')||(el.labels&&[...el.labels].map(x=>x.innerText).join(' '))||el.innerText||el.textContent);
+  // 输入是否写入成功的唯一可靠回执（设计方案 §4.2/§6.2）：text 不含表单值。
+  const readValue = el => { if (el.isContentEditable) return el.textContent ?? ''; return typeof el.value === 'string' ? el.value : null; };
+  const readSelectedValues = el => el.tagName === 'SELECT' && el.options ? [...el.options].filter(o => o.selected).map(o => o.value) : null;
   const roots = [];
-  const addRoots = root => { roots.push(root); for (const el of root.querySelectorAll('*')) { if (el.shadowRoot) addRoots(el.shadowRoot); if (el.tagName==='IFRAME') { try { if (el.contentDocument) addRoots(el.contentDocument); } catch {} } } };
-  addRoots(document);
+  const addRoots = root => { roots.push(root); for (const el of root.querySelectorAll('*')) { if (el.shadowRoot) addRoots(el.shadowRoot); if (el.tagName==='IFRAME') { try { if (el.contentDocument) addRoots(el.contentDocument); } catch {} } } };  addRoots(document);
   const all = () => [...new Set(roots.flatMap(root => [...root.querySelectorAll('*')]))];
   const matchText = (actual, expected) => locator.exact ? normalize(actual) === normalize(expected) : normalize(actual).toLowerCase().includes(normalize(expected).toLowerCase());
   let elements = [];
@@ -364,19 +371,23 @@ internal static partial class WebView2DomClient
   const describe = el => {
     let ref=el.getAttribute('data-pudding-ref'); if(!ref||!ref.startsWith(prefix)){ref=`${prefix}${++refState.next}`;el.setAttribute('data-pudding-ref',ref);}
     const r=el.getBoundingClientRect();
-    return {ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}};
+    return {ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,value:readValue(el),selectedValues:readSelectedValues(el),boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}};
   };
   return {ok:true,elements:elements.slice(0,input.maxResults).map(describe)};
 })()
 """;
 
-    private const string InteractScript = """
+    /// <summary>交互脚本：动作之后**在同一节点上**回读 value/selectedValues（不重定位），作为输入证据。</summary>
+    internal const string InteractScript = """
 (() => {
   const input = __PUDDING_INPUT__;
   const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim();
   const visible = el => { const s=getComputedStyle(el), r=el.getBoundingClientRect(); return s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)!==0&&r.width>0&&r.height>0; };
   const roleOf = el => el.getAttribute('role') || ({A:'link',BUTTON:'button',INPUT:el.type==='checkbox'?'checkbox':el.type==='radio'?'radio':'textbox',SELECT:'combobox',TEXTAREA:'textbox',IMG:'img'}[el.tagName] || null);
   const nameOf = el => normalize(el.getAttribute('aria-label')||el.getAttribute('alt')||el.getAttribute('title')||el.getAttribute('placeholder')||(el.labels&&[...el.labels].map(x=>x.innerText).join(' '))||el.innerText||el.textContent);
+  // 交互回执的输入证据：fill/type/select/check 之后回读**同一节点**的值（不重定位）。
+  const readValue = el => { if (el.isContentEditable) return el.textContent ?? ''; return typeof el.value === 'string' ? el.value : null; };
+  const readSelectedValues = el => el.tagName === 'SELECT' && el.options ? [...el.options].filter(o => o.selected).map(o => o.value) : null;
   const roots=[]; const addRoots=root=>{roots.push(root);for(const el of root.querySelectorAll('*')){if(el.shadowRoot)addRoots(el.shadowRoot);if(el.tagName==='IFRAME'){try{if(el.contentDocument)addRoots(el.contentDocument);}catch{}}}}; addRoots(document);
   const all=()=>[...new Set(roots.flatMap(root=>[...root.querySelectorAll('*')]))];
   const locate = locator => {
@@ -420,7 +431,7 @@ internal static partial class WebView2DomClient
     default:return{ok:false,code:'browser_operation_not_supported',message:`Unsupported interaction: ${input.action}`};
   }} catch(error){return{ok:false,code:'browser_operation_failed',message:String(error)};}
   const refState=globalThis.__puddingRefState?.version===input.pageVersion&&globalThis.__puddingRefState?.pageToken===input.pageToken?globalThis.__puddingRefState:(globalThis.__puddingRefState={version:input.pageVersion,pageToken:input.pageToken,next:0});let ref=el.getAttribute('data-pudding-ref');const prefix=`p${input.pageToken}-v${input.pageVersion}-n`;if(!ref||!ref.startsWith(prefix)){ref=`${prefix}${++refState.next}`;el.setAttribute('data-pudding-ref',ref);}const r=el.getBoundingClientRect();
-  return{ok:true,element:{ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}}};
+  return{ok:true,element:{ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,value:readValue(el),selectedValues:readSelectedValues(el),boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}}};
 })()
 """;
 

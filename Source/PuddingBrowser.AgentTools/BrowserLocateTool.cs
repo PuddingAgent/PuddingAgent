@@ -12,6 +12,14 @@ public sealed record BrowserLocateArgs
     public required string PageId { get; init; }
     public string? ContextId { get; init; }
     public required BrowserLocatorInput Locator { get; init; }
+
+    /// <summary>
+    /// 是否返回表单当前值（默认 <c>false</c>，见设计方案 §6.2）。
+    /// 需要确认「fill 到底写进去了没有」时显式打开——这是唯一的可靠回执，
+    /// 因为 <c>text</c> 不含表单值、URL 也推不出填了什么。
+    /// </summary>
+    [ToolParam("Include the current form value/selected values for each match (default false; use it to confirm a fill actually wrote).")]
+    public bool IncludeValue { get; init; }
 }
 
 [Tool(
@@ -82,7 +90,7 @@ public sealed class BrowserLocateTool(
             }
 
             var elements = located.Value.Elements;
-            var values = elements.Take(100).Select(ToValue).ToArray();
+            var values = elements.Take(100).Select(element => ToValue(element, args.IncludeValue)).ToArray();
             return BrowserToolResponse.Success(
                 new BrowserLocateToolValue
                 {
@@ -104,7 +112,12 @@ public sealed class BrowserLocateTool(
     private static ToolExecutionResult Failure(DesktopCapabilityError error) =>
         BrowserCapabilityFailure.From(error, "browser_locate_failed", "stale_element_reference");
 
-    private static BrowserElementToolValue ToValue(DesktopElementRef element) => new()
+    /// <summary>
+    /// 表单值与选中值**只在显式请求时**返回（设计方案 §6.2）：默认省掉它们才能守住输出预算，
+    /// 而需要确认写入时它们又是唯一的可靠证据。敏感值不得在此直接回显——
+    /// 交互回执走 <c>BrowserActionAssertion</c> 的脱敏路径。
+    /// </summary>
+    private static BrowserElementToolValue ToValue(DesktopElementRef element, bool includeValue) => new()
     {
         Ref = element.Reference,
         Tag = element.Tag,
@@ -114,6 +127,8 @@ public sealed class BrowserLocateTool(
         Visible = element.Visible,
         Enabled = element.Enabled,
         Checked = element.IsChecked,
+        Value = includeValue ? element.Value : null,
+        SelectedValues = includeValue ? element.SelectedValues : null,
         BoundingBox = element.BoundingBox is { } box
             ? new PuddingBrowser.Abstractions.BoundingBox
             {

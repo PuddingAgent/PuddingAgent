@@ -65,6 +65,17 @@ public sealed record BrowserElementToolValue
     public bool Visible { get; init; }
     public bool Enabled { get; init; }
     public bool? Checked { get; init; }
+
+    /// <summary>
+    /// 表单当前值（显式请求才返回，见设计方案 §6.2）。
+    /// 它是「输入是否写入成功」的唯一可靠回执：<c>text</c> 不含表单值。
+    /// 敏感输入按策略只给长度/是否匹配，不回显原文。
+    /// </summary>
+    public string? Value { get; init; }
+
+    /// <summary><c>select</c> 当前选中的值（显式请求才返回）。</summary>
+    public IReadOnlyList<string>? SelectedValues { get; init; }
+
     public BoundingBox? BoundingBox { get; init; }
 }
 
@@ -156,6 +167,8 @@ internal static class BrowserToolResponse
         Visible = info.Visible,
         Enabled = info.Enabled,
         Checked = info.Checked,
+        Value = info.Value,
+        SelectedValues = info.SelectedValues,
         BoundingBox = info.BoundingBox
     };
 }
