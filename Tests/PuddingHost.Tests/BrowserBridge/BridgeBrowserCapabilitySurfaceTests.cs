@@ -1062,11 +1062,16 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task ScrollAsync(ScrollOptions options, CancellationToken ct)
+        public Task<ScrollOutcome> ScrollAsync(ScrollOptions options, CancellationToken ct)
         {
             LastScroll = options;
             Version++;
-            return Task.CompletedTask;
+            return Task.FromResult(new ScrollOutcome
+            {
+                Container = options.Target == ScrollTarget.Page ? "document" : "element",
+                ConsumedDeltaY = options.DeltaY ?? 0,
+                AfterY = options.DeltaY ?? 0,
+            });
         }
 
         public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => throw new NotSupportedException();

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Protocol;
 using PuddingBrowser.WebView2;
@@ -947,7 +947,12 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public Task TypeAsync(Locator l, string t, TypeOptions o, CancellationToken ct) => Task.CompletedTask;
     public Task PressAsync(Locator l, string k, KeyOptions o, CancellationToken ct) => Task.CompletedTask;
     public Task HoverAsync(Locator l, PointerOptions o, CancellationToken ct) => Task.CompletedTask;
-    public Task ScrollAsync(ScrollOptions o, CancellationToken ct) => Task.CompletedTask;
+    public Task<ScrollOutcome> ScrollAsync(ScrollOptions o, CancellationToken ct) =>
+        Task.FromResult(new ScrollOutcome
+        {
+            Container = o.Target == ScrollTarget.Page ? "document" : "element",
+            ConsumedDeltaY = o.DeltaY ?? 0,
+        });
     public Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct) => throw new NotSupportedException();
     public Task SelectAsync(Locator l, IReadOnlyList<string> v, CancellationToken ct) => Task.CompletedTask;
     public Task CheckAsync(Locator l, bool c, CancellationToken ct) => Task.CompletedTask;

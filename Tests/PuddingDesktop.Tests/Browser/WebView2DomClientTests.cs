@@ -153,6 +153,53 @@ public sealed class WebView2DomClientTests
     }
 
     [Fact]
+    public void ScrollScript_ImplementsTheTargetModel_AndReportsFactsInsteadOfGuessing()
+    {
+        // 设计 §7：目标模型 page/element/to_ref/to_top/to_bottom；返回目标容器、前后位置、
+        // consumedDelta、atBoundary、contentChanged；"无内容加载"不是失败。
+        // ⚠️ 脚本文本断言：真机滚动行为需 WebView2.Smoke 复核。
+        var script = WebView2DomClient.ScrollScript;
+
+        foreach (var mode in new[] { "page", "element", "to_ref", "to_top", "to_bottom" })
+        {
+            Assert.Contains($"'{mode}'", script);
+        }
+
+        // 元素滚动会先看元素自身、必要时上溯最近可滚动祖先（不盲目滚另一个区域）。
+        Assert.Contains("nearestScrollable", script);
+
+        // 结果事实：容器/前后位置/消耗位移/边界/内容变化。
+        Assert.Contains("consumedDeltaX", script);
+        Assert.Contains("consumedDeltaY", script);
+        Assert.Contains("atBoundary", script);
+        Assert.Contains("contentChanged", script);
+
+        // 目标模型线名由 C# 侧统一给出（枚举 → 线名），未知目标 fail closed。
+        Assert.Equal("page", WebView2DomClient.ScrollTargetWire(ScrollTarget.Page));
+        Assert.Equal("to_ref", WebView2DomClient.ScrollTargetWire(ScrollTarget.ToRef));
+        Assert.Equal("to_bottom", WebView2DomClient.ScrollTargetWire(ScrollTarget.ToBottom));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WebView2DomClient.ScrollTargetWire((ScrollTarget)99));
+    }
+
+    [Fact]
+    public void ScrollTargets_DescribeWhatTheScriptNeeds_AndElementTargetsRequireRefs()
+    {
+        // 元素类目标必须给 ref：脚本按宿主 ref 精确匹配，不做二次定位（否则"滚了另一个区域"）。
+        Assert.Throws<BrowserOperationException>(() => WebView2DomClient.DescribeScroll(
+            new ScrollOptions { Target = ScrollTarget.ToRef, Locator = new Locator { Kind = LocatorKind.Css, Value = ".x" } }));
+
+        var described = WebView2DomClient.DescribeScroll(new ScrollOptions
+        {
+            Target = ScrollTarget.ToRef,
+            Locator = new Locator { Kind = LocatorKind.Ref, Value = "p1-v2-n3" },
+        });
+        Assert.Equal(("to_ref", "p1-v2-n3", null, null), described);
+
+        var document = WebView2DomClient.DescribeScroll(new ScrollOptions { DeltaY = 100 });
+        Assert.Equal(("page", null, null, 100d), document);
+    }
+
+    [Fact]
     public void ValidateLocator_RejectsFrameAndCompoundHasUntilSupported()
     {
         var exception = Assert.Throws<BrowserOperationException>(() =>

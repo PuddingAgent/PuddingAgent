@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingBrowser.Abstractions;
 
@@ -72,11 +72,69 @@ public sealed record PointerOptions
     public int TimeoutMs { get; init; } = 5_000;
 }
 
+/// <summary>
+/// 滚动目标模型（设计方案 §7）：<c>page/element/to_ref/to_top/to_bottom</c>。
+/// 「无 locator 时检查 <c>document.scrollingElement</c>；元素滚动优先明确指定，
+/// 必要时定位最近可滚动祖先」——**不盲目滚另一个区域**。
+/// </summary>
+public enum ScrollTarget
+{
+    /// <summary>滚动文档本身（无 locator）。</summary>
+    Page,
+
+    /// <summary>滚动**指定元素自身**的滚动盒（需要 locator）。</summary>
+    Element,
+
+    /// <summary>把指定元素滚入可见区域（需要 locator）。</summary>
+    ToRef,
+
+    /// <summary>滚到顶部：无 locator 时是文档，有 locator 时是它最近的可滚动祖先。</summary>
+    ToTop,
+
+    /// <summary>滚到底部：无 locator 时是文档，有 locator 时是它最近的可滚动祖先。</summary>
+    ToBottom,
+}
+
 public sealed record ScrollOptions
 {
     public int TimeoutMs { get; init; } = 5_000;
     public double? DeltaX { get; init; }
     public double? DeltaY { get; init; }
+
+    /// <summary>目标模型；默认滚文档（与迁移前一致）。</summary>
+    public ScrollTarget Target { get; init; } = ScrollTarget.Page;
+
+    /// <summary><see cref="ScrollTarget.Element"/> / <see cref="ScrollTarget.ToRef"/> 需要的元素定位。</summary>
+    public Locator? Locator { get; init; }
+}
+
+/// <summary>
+/// 一次滚动的**结果事实**（设计方案 §7）：目标容器、前后位置、实际消耗的位移、是否到边界、
+/// 是否观察到内容变化。
+///
+/// 「无限滚动另等新增内容/条目数，**不能把无内容加载当滚动失败**」⇒
+/// <see cref="ContentChanged"/> 为 <c>false</c> **不是失败**；调用方可据
+/// <see cref="ConsumedDeltaY"/>/<see cref="AtBoundary"/> 判断"是不是滚不动了"。
+/// </summary>
+public sealed record ScrollOutcome
+{
+    /// <summary>实际滚动的容器：<c>document</c> / <c>element</c> / <c>scrollable-ancestor</c>。</summary>
+    public required string Container { get; init; }
+
+    public double BeforeX { get; init; }
+    public double BeforeY { get; init; }
+    public double AfterX { get; init; }
+    public double AfterY { get; init; }
+
+    /// <summary>实际消耗的位移（请求值 - 未生效部分）；为 0 表示"滚不动"。</summary>
+    public double ConsumedDeltaX { get; init; }
+    public double ConsumedDeltaY { get; init; }
+
+    /// <summary>是否已到边界（滚不动且方向一致）。</summary>
+    public bool AtBoundary { get; init; }
+
+    /// <summary>滚动前后是否观察到内容变化（新增内容/条目）。<b>false 不是失败</b>。</summary>
+    public bool ContentChanged { get; init; }
 }
 
 public sealed record DragOptions

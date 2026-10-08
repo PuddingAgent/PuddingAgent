@@ -292,8 +292,20 @@ public sealed class WebView2BrowserPage : IBrowserPage
         => ExecuteInteractionAsync("press", l, k, deltaX: null, deltaY: null, ct);
     public Task HoverAsync(Locator l, PointerOptions o, CancellationToken ct)
         => ExecuteInteractionAsync("hover", l, value: null, deltaX: null, deltaY: null, ct);
-    public Task ScrollAsync(ScrollOptions o, CancellationToken ct)
-        => ExecuteInteractionAsync("scroll", locator: null, value: null, o.DeltaX, o.DeltaY, ct);
+    public async Task<ScrollOutcome> ScrollAsync(ScrollOptions o, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(o);
+        var webView = RequireWebView();
+
+        // 与其它动作一致：把脚本执行排到 UI 线程上（跨线程访问 WebView2 会直接失败）。
+        var outcome = await _dispatcher.InvokeAsync(
+            () => WebView2DomClient.ScrollAsync(webView, PageVersion, _refScopeToken, o, ct), ct)
+            .ConfigureAwait(false);
+
+        Interlocked.Increment(ref _pageVersion);
+        return outcome;
+    }
     public Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct)
         => throw new NotSupportedException("DOM not in Phase 2A-1");
     public Task SelectAsync(Locator l, IReadOnlyList<string> v, CancellationToken ct)

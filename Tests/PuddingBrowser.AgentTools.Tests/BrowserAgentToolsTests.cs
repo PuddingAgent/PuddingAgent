@@ -965,6 +965,94 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Interact_ScrollReportsFacts_AndNoNewContentIsNotAFailure()
+    {
+        // 设计 §7：「无限滚动另等新增内容/条目数，**不能把无内容加载当滚动失败**」。
+        // 这里构造一个最容易被误判的场景：滚到边界、一个像素都没动、也没加载出新内容。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.ScrollResult = new ScrollOutcome
+        {
+            Container = "document",
+            BeforeY = 4000,
+            AfterY = 4000,
+            ConsumedDeltaX = 0,
+            ConsumedDeltaY = 0,
+            AtBoundary = true,
+            ContentChanged = false,
+        };
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "scroll",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                delta_y = 800,
+                scroll_target = "to_bottom"
+            }));
+
+        // 事实如实带回：容器、前后位置、消耗位移、边界、内容变化。
+        var value = GetJson(result.Output, "value");
+        var scroll = value.GetProperty("scroll");
+        Assert.Equal("document", scroll.GetProperty("container").GetString());
+        Assert.Equal(4000, scroll.GetProperty("afterY").GetDouble());
+        Assert.Equal(0, scroll.GetProperty("consumedDeltaY").GetDouble());
+        Assert.True(scroll.GetProperty("atBoundary").GetBoolean());
+        Assert.False(scroll.GetProperty("contentChanged").GetBoolean());
+        Assert.True(scroll.GetProperty("notScrolled").GetBoolean());
+
+        // **但这不是失败**：动作确实派发并完成了，只是没有新内容可等。
+        Assert.True(result.Success);
+        Assert.True(value.GetProperty("ok").GetBoolean());
+        Assert.Equal("completed", value.GetProperty("execution").GetString());
+
+        // 目标模型确实下传到了驱动（to_bottom 覆盖了推导结果）。
+        Assert.Equal(ScrollTarget.ToBottom, page.LastScroll!.Target);
+    }
+
+    [Fact]
+    public async Task Interact_ScrollTargetIsDerivedWhenOmitted()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "scroll",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                delta_y = 500
+            }));
+
+        Assert.True(result.Success);
+        // 无 locator ⇒ page（不是"随手滚一个容器"）。
+        Assert.Equal(ScrollTarget.Page, page.LastScroll!.Target);
+
+        var badTarget = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "scroll",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                delta_y = 500,
+                scroll_target = "wheel"
+            }));
+
+        Assert.False(badTarget.Success);
+        using var document = JsonDocument.Parse(badTarget.Error!);
+        Assert.Equal("browser_invalid_arguments", document.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
         var runtime = new FakeBrowserRuntime();
@@ -1277,6 +1365,8 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
                 HasText = request.Locator.HasText,
             };
 
+        DesktopScrollReport? scroll = null;
+
         switch (request.Action)
         {
             case DesktopInteractionAction.Click:
@@ -1304,7 +1394,26 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
                 await page.CheckAsync(locator!, false, ct);
                 break;
             case DesktopInteractionAction.Scroll:
-                await page.ScrollAsync(new ScrollOptions { DeltaX = request.DeltaX, DeltaY = request.DeltaY }, ct);
+                // 与真实传输同形：把驱动报告的滚动事实带进结果（§7）。
+                var scrollFacts = await page.ScrollAsync(
+                    new ScrollOptions
+                    {
+                        DeltaX = request.DeltaX,
+                        DeltaY = request.DeltaY,
+                        Target = (ScrollTarget)(int)request.EffectiveScrollTarget,
+                        Locator = locator,
+                    },
+                    ct);
+                scroll = new DesktopScrollReport(
+                    scrollFacts.Container,
+                    scrollFacts.BeforeX,
+                    scrollFacts.BeforeY,
+                    scrollFacts.AfterX,
+                    scrollFacts.AfterY,
+                    scrollFacts.ConsumedDeltaX,
+                    scrollFacts.ConsumedDeltaY,
+                    scrollFacts.AtBoundary,
+                    scrollFacts.ContentChanged);
                 break;
             default:
                 return CapabilityResult<DesktopInteractionResult>.Failure(
@@ -1329,14 +1438,14 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
             : null;
 
         return CapabilityResult<DesktopInteractionResult>.Success(new DesktopInteractionResult(
-            request.Target,
-            new DesktopPageState(
+            request.Target,            new DesktopPageState(
                 request.Target,
                 Uri.TryCreate(page.Info.Url, UriKind.Absolute, out var url) ? url : null,
                 version,
                 DesktopPageReadiness.Unknown,
                 page.Info.Title),
-            element));
+            element,
+            scroll));
     }
     public async Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
         BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken ct = default)
@@ -1665,6 +1774,12 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public string? LastAction { get; private set; }
     public object? LastValue { get; private set; }
 
+    /// <summary>最近一次滚动选项（用于断言滚动目标模型确实传到了驱动）。</summary>
+    public ScrollOptions? LastScroll { get; private set; }
+
+    /// <summary>让滚动替身返回指定的事实（例如"到边界但没加载出新内容"）。</summary>
+    public ScrollOutcome? ScrollResult { get; set; }
+
     /// <summary>让驱动替身按真实驱动的拒绝语义抛异常（歧义/零命中/不可见/禁用）。</summary>
     public BrowserOperationException? ActionFailure { get; set; }
 
@@ -1753,7 +1868,18 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct) => Record("type", text, ct, locator);
     public Task PressAsync(Locator locator, string key, KeyOptions options, CancellationToken ct) => Record("press", key, ct, locator);
     public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct) => Record("hover", null, ct, locator);
-    public Task ScrollAsync(ScrollOptions options, CancellationToken ct) => Record("scroll", null, ct);
+    public Task<ScrollOutcome> ScrollAsync(ScrollOptions options, CancellationToken ct)
+    {
+        Record("scroll", null, ct);
+        LastScroll = options;
+        return Task.FromResult(ScrollResult ?? new ScrollOutcome
+        {
+            Container = options.Target == ScrollTarget.Page ? "document" : "element",
+            ConsumedDeltaX = options.DeltaX ?? 0,
+            ConsumedDeltaY = options.DeltaY ?? 0,
+            AfterY = options.DeltaY ?? 0,
+        });
+    }
     public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => Unsupported();
     public Task SelectAsync(Locator locator, IReadOnlyList<string> values, CancellationToken ct) => Record("select", values, ct, locator);
     public Task CheckAsync(Locator locator, bool isChecked, CancellationToken ct) => Record("check", isChecked, ct, locator);

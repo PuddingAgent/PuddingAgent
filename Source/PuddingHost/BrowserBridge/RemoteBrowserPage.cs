@@ -153,8 +153,17 @@ public sealed class RemoteBrowserPage : IBrowserPage
         => InteractAsync("press", locator, key, null, null, null, null, ct);
     public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct)
         => InteractAsync("hover", locator, null, null, null, null, null, ct);
-    public Task ScrollAsync(ScrollOptions options, CancellationToken ct)
-        => InteractAsync("scroll", null, null, null, null, options.DeltaX, options.DeltaY, ct);
+    /// <summary>
+    /// 桥接路径的滚动。**尚未把滚动结果模型带回来**（远端只回元素/页面结果），因此这里
+    /// **不编造事实**：容器标为 <c>unreported</c>，位移一律 0 —— 消费方据此知道"没有结果事实"
+    /// 而不是"滚了 0 像素"。目标模型（§7）与结果回执在能力通道路径已完整；
+    /// 桥接命令/响应扩属后续切片。
+    /// </summary>
+    public async Task<ScrollOutcome> ScrollAsync(ScrollOptions options, CancellationToken ct)
+    {
+        await InteractAsync("scroll", null, null, null, null, options.DeltaX, options.DeltaY, ct).ConfigureAwait(false);
+        return new ScrollOutcome { Container = "unreported" };
+    }
     public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => Unsupported();
     public Task SelectAsync(Locator locator, IReadOnlyList<string> values, CancellationToken ct)
         => InteractAsync("select", locator, null, values, null, null, null, ct);

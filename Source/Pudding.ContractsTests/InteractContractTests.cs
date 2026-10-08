@@ -75,6 +75,61 @@ public sealed class InteractContractTests
     }
 
     [Fact]
+    public void ScrollTarget_LineNamesAreFrozen_AndDerivedWhenOmitted()
+    {
+        // 设计 §7：滚动目标模型是 page/element/to_ref/to_top/to_bottom。
+        Assert.Equal(
+            ["page", "element", "to_ref", "to_top", "to_bottom"],
+            Enum.GetValues<DesktopScrollTarget>().Select(DesktopScrollTargetWire.NameOf).ToArray());
+
+        Assert.True(DesktopScrollTargetWire.TryParse("to_bottom", out var toBottom));
+        Assert.Equal(DesktopScrollTarget.ToBottom, toBottom);
+        Assert.False(DesktopScrollTargetWire.TryParse("wheel", out _));
+
+        // 省略时按参数推导：无 locator ⇒ page；有 locator 有位移 ⇒ element；有 locator 无位移 ⇒ to_ref。
+        Assert.Equal(DesktopScrollTarget.Page, Scroll(locator: null, deltaY: 100).EffectiveScrollTarget);
+        Assert.Equal(DesktopScrollTarget.Element, Scroll(locator: Button, deltaY: 100).EffectiveScrollTarget);
+        Assert.Equal(DesktopScrollTarget.ToRef, Scroll(locator: Button, deltaY: null).EffectiveScrollTarget);
+        Assert.Equal(
+            DesktopScrollTarget.ToBottom,
+            Scroll(locator: null, deltaY: null, target: DesktopScrollTarget.ToBottom).EffectiveScrollTarget);
+    }
+
+    [Fact]
+    public void ScrollTarget_ValidatesShapeInsteadOfGuessing()
+    {
+        // 元素类目标必须给定位。
+        Assert.Throws<ArgumentException>(() => Scroll(locator: null, deltaY: null, target: DesktopScrollTarget.ToRef));
+        Assert.Throws<ArgumentException>(() => Scroll(locator: null, deltaY: 10, target: DesktopScrollTarget.Element));
+
+        // 明确要求滚文档时不得再给定位（"到底滚哪一个"不可判定 ⇒ 拒绝，而不是静默忽略）。
+        Assert.Throws<ArgumentException>(() => Scroll(locator: Button, deltaY: 10, target: DesktopScrollTarget.Page));
+
+        // 位移类目标需要非零位移；"到位"语义（to_ref/to_top/to_bottom）不需要。
+        Assert.Throws<ArgumentException>(() => Scroll(locator: null, deltaY: null));
+        _ = Scroll(locator: null, deltaY: null, target: DesktopScrollTarget.ToTop);
+        _ = Scroll(locator: null, deltaY: null, target: DesktopScrollTarget.ToBottom);
+
+        // 未登记的枚举值 fail closed。
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => Scroll(locator: null, deltaY: null, target: (DesktopScrollTarget)99));
+    }
+
+    private static BrowserInteractRequest Scroll(
+        DesktopLocator? locator,
+        double? deltaY,
+        DesktopScrollTarget? target = null) =>
+        new(
+            Target,
+            DesktopInteractionAction.Scroll,
+            DesktopPageVersion.Require(3),
+            locator,
+            deltaX: null,
+            deltaY: deltaY,
+            inputMode: DesktopInputMode.Dom,
+            scrollTarget: target);
+
+    [Fact]
     public void Interaction_MustPinThePageVersion()
     {
         // 变更类能力没有版本固定就无法判定「操作的是哪一版」⇒ 构造期拒绝。

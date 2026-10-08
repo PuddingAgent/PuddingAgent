@@ -59,6 +59,98 @@ public static class DesktopInputModeWire
     }
 }
 
+/// <summary>
+/// 滚动目标模型（设计方案 §7）：<c>page/element/to_ref/to_top/to_bottom</c>。
+/// 「无 locator 时检查 <c>document.scrollingElement</c>；元素滚动优先明确指定，
+/// 必要时定位最近可滚动祖先」——**不盲目滚另一个区域**。
+/// </summary>
+public enum DesktopScrollTarget
+{
+    Page,
+    Element,
+    ToRef,
+    ToTop,
+    ToBottom,
+}
+
+/// <summary>滚动目标线名（真源在本文件）。</summary>
+public static class DesktopScrollTargetWire
+{
+    public static string NameOf(DesktopScrollTarget target) => target switch
+    {
+        DesktopScrollTarget.Page => "page",
+        DesktopScrollTarget.Element => "element",
+        DesktopScrollTarget.ToRef => "to_ref",
+        DesktopScrollTarget.ToTop => "to_top",
+        DesktopScrollTarget.ToBottom => "to_bottom",
+        _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Scroll target is not registered."),
+    };
+
+    /// <summary>严格解析：不知道的线名不猜测、不回退（fail closed）。</summary>
+    public static bool TryParse(string? name, out DesktopScrollTarget target)
+    {
+        foreach (var candidate in Enum.GetValues<DesktopScrollTarget>())
+        {
+            if (string.Equals(NameOf(candidate), name, StringComparison.Ordinal))
+            {
+                target = candidate;
+                return true;
+            }
+        }
+
+        target = default;
+        return false;
+    }
+}
+
+/// <summary>
+/// 一次滚动的**结果事实**（设计方案 §7）：目标容器、前后位置、实际消耗位移、是否到边界、内容是否变化。
+///
+/// 「无限滚动另等新增内容/条目数，**不能把无内容加载当滚动失败**」⇒
+/// <see cref="ContentChanged"/> 为 <c>false</c> **不是失败**。
+/// </summary>
+public sealed record DesktopScrollReport
+{
+    public DesktopScrollReport(
+        string container,
+        double beforeX = 0,
+        double beforeY = 0,
+        double afterX = 0,
+        double afterY = 0,
+        double consumedDeltaX = 0,
+        double consumedDeltaY = 0,
+        bool atBoundary = false,
+        bool contentChanged = false)
+    {
+        Container = string.IsNullOrWhiteSpace(container) ? "document" : container;
+        BeforeX = beforeX;
+        BeforeY = beforeY;
+        AfterX = afterX;
+        AfterY = afterY;
+        ConsumedDeltaX = consumedDeltaX;
+        ConsumedDeltaY = consumedDeltaY;
+        AtBoundary = atBoundary;
+        ContentChanged = contentChanged;
+    }
+
+    /// <summary>实际滚动的容器：<c>document</c> / <c>element</c> / <c>scrollable-ancestor</c>。</summary>
+    public string Container { get; }
+
+    public double BeforeX { get; }
+    public double BeforeY { get; }
+    public double AfterX { get; }
+    public double AfterY { get; }
+
+    /// <summary>实际消耗的位移；为 0 表示"滚不动"（配合 <see cref="AtBoundary"/> 判读）。</summary>
+    public double ConsumedDeltaX { get; }
+    public double ConsumedDeltaY { get; }
+
+    public bool AtBoundary { get; }
+
+    /// <summary>滚动前后是否观察到内容变化（新增内容/条目）。<b>false 不是失败</b>。</summary>
+    public bool ContentChanged { get; }
+}
+
 /// <summary>交互动作线名（真源在本文件，快照由契约测试断言）。</summary>
 public static class DesktopInteractionActionWire
 {
@@ -114,7 +206,8 @@ public sealed record BrowserInteractRequest
         bool? isChecked = null,
         double? deltaX = null,
         double? deltaY = null,
-        DesktopInputMode inputMode = DesktopInputMode.Dom)
+        DesktopInputMode inputMode = DesktopInputMode.Dom,
+        DesktopScrollTarget? scrollTarget = null)
     {
         if (!Enum.IsDefined(action))
         {
@@ -124,6 +217,12 @@ public sealed record BrowserInteractRequest
         if (!Enum.IsDefined(inputMode))
         {
             throw new ArgumentOutOfRangeException(nameof(inputMode), inputMode, "Input mode is not registered.");
+        }
+
+        if (scrollTarget is { } requestedTarget && !Enum.IsDefined(requestedTarget))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(scrollTarget), requestedTarget, "Scroll target is not registered.");
         }
 
         if (expectedPageVersion.Value <= 0)
@@ -143,6 +242,7 @@ public sealed record BrowserInteractRequest
         DeltaX = deltaX;
         DeltaY = deltaY;
         InputMode = inputMode;
+        ScrollTarget = scrollTarget;
 
         ValidateShape();
     }
@@ -171,6 +271,18 @@ public sealed record BrowserInteractRequest
     /// 当前实现只有 <see cref="DesktopInputMode.Dom"/>；请求 <c>Native</c> 必须明确失败。
     /// </summary>
     public DesktopInputMode InputMode { get; }
+
+    /// <summary>
+    /// 滚动目标（§7，仅对 <see cref="DesktopInteractionAction.Scroll"/> 有意义）。
+    /// <c>null</c> 表示按参数推导：有 locator ⇒ <c>to_ref</c>（无位移）或 <c>element</c>（有位移）；
+    /// 无 locator ⇒ <c>page</c>。
+    /// </summary>
+    public DesktopScrollTarget? ScrollTarget { get; }
+
+    /// <summary>实际生效的滚动目标（显式优先，否则按上面的规则推导）。</summary>
+    public DesktopScrollTarget EffectiveScrollTarget => ScrollTarget ?? (Locator is null
+        ? DesktopScrollTarget.Page
+        : DeltaX is null && DeltaY is null ? DesktopScrollTarget.ToRef : DesktopScrollTarget.Element);
 
     /// <summary>元素作用域动作必须有定位；<c>scroll</c> 可作用于页面本身。</summary>
     public bool RequiresLocator => Action != DesktopInteractionAction.Scroll;
@@ -201,8 +313,39 @@ public sealed record BrowserInteractRequest
             case DesktopInteractionAction.Uncheck when IsChecked != false:
                 throw new ArgumentException("Action 'uncheck' requires isChecked=false.", nameof(IsChecked));
 
-            case DesktopInteractionAction.Scroll when (DeltaX ?? 0) == 0 && (DeltaY ?? 0) == 0:
-                throw new ArgumentException("Action 'scroll' requires a non-zero delta.", nameof(DeltaX));
+            case DesktopInteractionAction.Scroll:
+                ValidateScroll();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 滚动目标的参数一致性（§7）：<b>不盲目滚另一个区域</b>，也不接受有歧义的组合。
+    /// </summary>
+    private void ValidateScroll()
+    {
+        var target = EffectiveScrollTarget;
+        var name = DesktopScrollTargetWire.NameOf(target);
+
+        // 元素类目标必须给定位（否则无从知道滚哪里）。
+        if (target is DesktopScrollTarget.Element or DesktopScrollTarget.ToRef && Locator is null)
+        {
+            throw new ArgumentException($"scroll target '{name}' requires an element locator.", nameof(Locator));
+        }
+
+        // 明确要求滚**文档**时不得再给定位：那会让"到底滚哪一个"变得不可判定（静默忽略更是禁止）。
+        if (target == DesktopScrollTarget.Page && Locator is not null)
+        {
+            throw new ArgumentException(
+                "scroll target 'page' must not carry a locator; use a container target (element/to_ref/to_top) instead.",
+                nameof(Locator));
+        }
+
+        // 位移类目标需要非零位移；to_ref/to_top/to_bottom 是"到位"语义，不需要位移。
+        if (target is DesktopScrollTarget.Page or DesktopScrollTarget.Element
+            && (DeltaX ?? 0) == 0 && (DeltaY ?? 0) == 0)
+        {
+            throw new ArgumentException($"scroll target '{name}' requires a non-zero delta.", nameof(DeltaX));
         }
     }
 
@@ -218,11 +361,16 @@ public sealed record BrowserInteractRequest
 /// </summary>
 public sealed record DesktopInteractionResult
 {
-    public DesktopInteractionResult(DesktopPageTarget target, DesktopPageState page, DesktopElementRef? element = null)
+    public DesktopInteractionResult(
+        DesktopPageTarget target,
+        DesktopPageState page,
+        DesktopElementRef? element = null,
+        DesktopScrollReport? scroll = null)
     {
         Target = target ?? throw new ArgumentNullException(nameof(target));
         Page = page ?? throw new ArgumentNullException(nameof(page));
         Element = element;
+        Scroll = scroll;
     }
 
     public DesktopPageTarget Target { get; }
@@ -230,6 +378,9 @@ public sealed record DesktopInteractionResult
     public DesktopPageState Page { get; }
 
     public DesktopElementRef? Element { get; }
+
+    /// <summary>滚动动作的结果事实（§7）；非滚动动作或驱动未报告时为 <c>null</c>。</summary>
+    public DesktopScrollReport? Scroll { get; }
 
     public override string ToString() =>
         $"interact @{Target} → v{Page.Version.Value}{(Element is { } element ? $" ({element})" : string.Empty)}";

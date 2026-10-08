@@ -631,7 +631,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             }
         }
 
-        await PerformAsync(browserPage, request, locator, cancellationToken).ConfigureAwait(false);
+        var scrollOutcome = await PerformAsync(browserPage, request, locator, cancellationToken).ConfigureAwait(false);
 
         // 交互后的页面状态：版本取**交互之后**的事实（旧 Ref 由此作废）。
         var state = new DesktopPageState(
@@ -653,10 +653,26 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         }
 
         return CapabilityResult<DesktopInteractionResult>.Success(
-            new DesktopInteractionResult(request.Target, state, element));
+            new DesktopInteractionResult(
+                request.Target,
+                state,
+                element,
+                // 只滚动动作才有结果事实；驱动未报告时为 null（不编造）。
+                scrollOutcome is null
+                    ? null
+                    : new DesktopScrollReport(
+                        scrollOutcome.Container,
+                        scrollOutcome.BeforeX,
+                        scrollOutcome.BeforeY,
+                        scrollOutcome.AfterX,
+                        scrollOutcome.AfterY,
+                        scrollOutcome.ConsumedDeltaX,
+                        scrollOutcome.ConsumedDeltaY,
+                        scrollOutcome.AtBoundary,
+                        scrollOutcome.ContentChanged)));
     }
 
-    private static async Task PerformAsync(
+    private static async Task<ScrollOutcome?> PerformAsync(
         IBrowserPage page, BrowserInteractRequest request, Locator? locator, CancellationToken cancellationToken)
     {
         switch (request.Action)
@@ -686,14 +702,34 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 await page.HoverAsync(locator!, new PointerOptions(), cancellationToken).ConfigureAwait(false);
                 break;
             case DesktopInteractionAction.Scroll:
-                await page.ScrollAsync(
-                    new ScrollOptions { DeltaX = request.DeltaX, DeltaY = request.DeltaY }, cancellationToken)
-                    .ConfigureAwait(false);
-                break;
+                // 滚动目标模型（§7）：显式目标优先，否则按 locator/位移推导；
+                // 结果事实（容器/前后位置/消耗位移/边界/内容变化）如实带回。
+                return await page.ScrollAsync(
+                    new ScrollOptions
+                    {
+                        DeltaX = request.DeltaX,
+                        DeltaY = request.DeltaY,
+                        Target = MapScrollTarget(request.EffectiveScrollTarget),
+                        Locator = locator,
+                    },
+                    cancellationToken).ConfigureAwait(false);
             default:
                 throw new ArgumentOutOfRangeException(nameof(request), request.Action, "Interaction action is not mapped.");
         }
+
+        return null;
     }
+
+    /// <summary>契约的滚动目标 → 运行时目标（两套枚举必须一一对应）。</summary>
+    private static ScrollTarget MapScrollTarget(DesktopScrollTarget target) => target switch
+    {
+        DesktopScrollTarget.Page => ScrollTarget.Page,
+        DesktopScrollTarget.Element => ScrollTarget.Element,
+        DesktopScrollTarget.ToRef => ScrollTarget.ToRef,
+        DesktopScrollTarget.ToTop => ScrollTarget.ToTop,
+        DesktopScrollTarget.ToBottom => ScrollTarget.ToBottom,
+        _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Scroll target is not mapped."),
+    };
     /// <summary>
     /// 导航（变更类）：固定版本不符即拒绝；运行时报 `Ok=false` 时映射为**可判定的目标错误**
     /// （而不是一律 internal_error —— 上层要能区分"这个地址去不了"与"运行时坏了"）。

@@ -237,6 +237,98 @@ internal static partial class WebView2DomClient
         public BrowserElementInfo? Element { get; init; }
     }
 
+    private sealed record ScrollScriptResult : ScriptResult
+    {
+        public ScrollScriptOutcome? Scroll { get; init; }
+    }
+
+    private sealed record ScrollScriptOutcome
+    {
+        public string? Container { get; init; }
+        public double BeforeX { get; init; }
+        public double BeforeY { get; init; }
+        public double AfterX { get; init; }
+        public double AfterY { get; init; }
+        public double ConsumedDeltaX { get; init; }
+        public double ConsumedDeltaY { get; init; }
+        public bool AtBoundary { get; init; }
+        public bool ContentChanged { get; init; }
+        public bool? InViewport { get; init; }
+    }
+
+    /// <summary>滚动目标模型的线名（脚本内的判据）。</summary>
+    internal static string ScrollTargetWire(ScrollTarget target) => target switch
+    {
+        ScrollTarget.Page => "page",
+        ScrollTarget.Element => "element",
+        ScrollTarget.ToRef => "to_ref",
+        ScrollTarget.ToTop => "to_top",
+        ScrollTarget.ToBottom => "to_bottom",
+        _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Scroll target is not registered."),
+    };
+
+    /// <summary>
+    /// 执行滚动并返回**结果事实**（设计方案 §7）。元素类目标要求 ref 定位：
+    /// 脚本按宿主 ref 精确匹配，不做二次定位（避免"滚了另一个区域"）。
+    /// </summary>
+    internal static async Task<ScrollOutcome> ScrollAsync(
+        CoreWebView2 webView,
+        long pageVersion,
+        string pageToken,
+        ScrollOptions options,
+        CancellationToken ct)
+    {
+        var (target, locatorRef, deltaX, deltaY) = DescribeScroll(options);
+
+        var result = await ExecuteAsync<ScrollScriptResult>(
+            webView,
+            ScrollScript,
+            new { pageVersion, pageToken, target, locatorRef, deltaX, deltaY },
+            ct).ConfigureAwait(false);
+
+        EnsureSuccess(result.Ok, result.Code, result.Message);
+        var scroll = result.Scroll;
+        return new ScrollOutcome
+        {
+            Container = scroll?.Container ?? "document",
+            BeforeX = scroll?.BeforeX ?? 0,
+            BeforeY = scroll?.BeforeY ?? 0,
+            AfterX = scroll?.AfterX ?? 0,
+            AfterY = scroll?.AfterY ?? 0,
+            ConsumedDeltaX = scroll?.ConsumedDeltaX ?? 0,
+            ConsumedDeltaY = scroll?.ConsumedDeltaY ?? 0,
+            AtBoundary = scroll?.AtBoundary ?? false,
+            ContentChanged = scroll?.ContentChanged ?? false,
+        };
+    }
+
+    /// <summary>
+    /// 把 <see cref="ScrollOptions"/> 规范化成脚本能用的四元组。
+    /// 元素类目标**必须是 ref**：脚本按宿主 ref 精确匹配；其它定位方式在这里明确拒绝，
+    /// 而不是先滚一个"看起来像"的区域。
+    /// </summary>
+    internal static (string Target, string? LocatorRef, double? DeltaX, double? DeltaY) DescribeScroll(ScrollOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var needsElement = options.Target is ScrollTarget.Element or ScrollTarget.ToRef;
+        if (needsElement)
+        {
+            if (options.Locator is not { Kind: LocatorKind.Ref } locator)
+            {
+                throw new BrowserOperationException(
+                    "browser_invalid_arguments",
+                    $"scroll target '{ScrollTargetWire(options.Target)}' requires a ref locator (re-locate first)");
+            }
+
+            return (ScrollTargetWire(options.Target), locator.Value, options.DeltaX, options.DeltaY);
+        }
+
+        // page/to_top/to_bottom：可以带 ref（表示"滚它最近的可滚动祖先"），也可以不带（滚文档）。
+        var reference = options.Locator is { Kind: LocatorKind.Ref } refLocator ? refLocator.Value : null;
+        return (ScrollTargetWire(options.Target), reference, options.DeltaX, options.DeltaY);
+    }
+
     private sealed record WaitScriptResult : ScriptResult
     {
         public bool Matched { get; init; }
@@ -392,6 +484,71 @@ internal static partial class WebView2DomClient
     return {ref,tag:el.tagName.toLowerCase(),role:roleOf(el),name:nameOf(el).slice(0,500),text:normalize(el.innerText||el.textContent).slice(0,1000),visible:visible(el),inViewport:inViewport(el),enabled:!el.disabled,checked:typeof el.checked==='boolean'?el.checked:null,value:readValue(el),selectedValues:readSelectedValues(el),boundingBox:{x:r.x,y:r.y,width:r.width,height:r.height}};
   };
   return {ok:true,elements:elements.slice(0,input.maxResults).map(describe)};
+})()
+""";
+
+    /// <summary>
+    /// 滚动脚本（设计方案 §7）：实现 <c>page/element/to_ref/to_top/to_bottom</c> 五种目标，
+    /// 并如实报告**结果事实**（目标容器、前后位置、实际消耗位移、是否到边界、内容是否变化）。
+    ///
+    /// 「无 locator 时检查 <c>document.scrollingElement</c>」；<c>element</c> 优先滚元素自身的滚动盒，
+    /// 必要时上溯**最近可滚动祖先**；**不盲目滚另一个区域**。内容没变化**不是失败**。
+    /// </summary>
+    internal const string ScrollScript = """
+(() => {
+  const input = __PUDDING_INPUT__;
+  const doc = document.scrollingElement || document.documentElement;
+  const all = () => { const roots=[document]; for(const el of document.querySelectorAll('*')){ if(el.shadowRoot)roots.push(el.shadowRoot); } return [...new Set(roots.flatMap(root=>[...root.querySelectorAll('*')]))]; };
+  const byRef = ref => ref ? (all().find(el => el.getAttribute('data-pudding-ref') === ref) || null) : null;
+  const isScrollable = el => { const s=getComputedStyle(el); return /(auto|scroll|overlay)/.test(s.overflowY + s.overflowX); };
+  const nearestScrollable = el => { let node=el; while(node && node!==document.documentElement){ if(isScrollable(node) && (node.scrollHeight>node.clientHeight || node.scrollWidth>node.clientWidth)) return node; node=node.parentElement; } return doc; };
+  const readPos = el => el===doc ? {x:Number(window.scrollX||0), y:Number(window.scrollY||0)} : {x:Number(el.scrollLeft||0), y:Number(el.scrollTop||0)};
+  const readSize = el => el===doc ? {h:Number(doc.scrollHeight||0), w:Number(doc.scrollWidth||0)} : {h:Number(el.scrollHeight||0), w:Number(el.scrollWidth||0)};
+
+  // 目标解析：不盲目滚另一个区域（§7）——只有明确给了 locator 才会去碰容器。
+  const element = byRef(input.locatorRef);
+  let container = 'document', box = doc;
+  if (input.target === 'to_ref') {
+    if (!element) return {ok:false,code:'browser_element_not_found',message:'No element matched the locator'};
+    container = 'element';
+  } else if (input.target === 'element') {
+    if (!element) return {ok:false,code:'browser_element_not_found',message:'No element matched the locator'};
+    box = isScrollable(element) ? element : nearestScrollable(element);
+    container = box === element ? 'element' : 'scrollable-ancestor';
+  } else if (input.target === 'to_top' || input.target === 'to_bottom') {
+    if (input.locatorRef) {
+      if (!element) return {ok:false,code:'browser_element_not_found',message:'No element matched the locator'};
+      box = nearestScrollable(element);
+      container = 'scrollable-ancestor';
+    }
+  } else if (input.target !== 'page') {
+    // 未登记的目标 fail closed（不在驱动里"猜一个"）。
+    return {ok:false,code:'browser_invalid_arguments',message:`unsupported scroll target '${input.target}'`};
+  }
+
+  try {
+    if (input.target === 'to_ref') {
+      element.scrollIntoView({block:'center',inline:'center'});
+      const r = element.getBoundingClientRect();
+      const visible = r.width>0 && r.height>0 && r.bottom>0 && r.right>0 && r.top<(window.innerHeight||0) && r.left<(window.innerWidth||0);
+      return {ok:true,scroll:{container,beforeX:0,beforeY:0,afterX:0,afterY:0,consumedDeltaX:0,consumedDeltaY:0,atBoundary:false,contentChanged:false,inViewport:visible}};
+    }
+
+    const before = readPos(box), beforeSize = readSize(box);
+    const dx = Number(input.deltaX || 0), dy = Number(input.deltaY || 0);
+    if (input.target === 'to_top') { if (box===doc) window.scrollTo(0,0); else { box.scrollLeft=0; box.scrollTop=0; } }
+    else if (input.target === 'to_bottom') { const maxY=readSize(box).h; if (box===doc) window.scrollTo(0, maxY); else { box.scrollLeft=box.scrollWidth; box.scrollTop=box.scrollHeight; } }
+    else if (box===doc) window.scrollBy(dx, dy);
+    else { box.scrollLeft += dx; box.scrollTop += dy; }
+
+    const after = readPos(box), afterSize = readSize(box);
+    const consumedX = after.x - before.x, consumedY = after.y - before.y;
+    // 「滚不动」= 请求了位移但一个像素都没动（或方向相反）。不是"失败"，而是边界事实。
+    const atBoundary = (dy !== 0 && Math.sign(consumedY) !== Math.sign(dy)) || (dx !== 0 && Math.sign(consumedX) !== Math.sign(dx));
+    // 内容变化是**独立事实**：没有新增内容不等于滚动失败（§7）。
+    const contentChanged = afterSize.h !== beforeSize.h || afterSize.w !== beforeSize.w;
+    return {ok:true,scroll:{container,beforeX:before.x,beforeY:before.y,afterX:after.x,afterY:after.y,consumedDeltaX:consumedX,consumedDeltaY:consumedY,atBoundary,contentChanged}};
+  } catch (error) { return {ok:false,code:'browser_operation_failed',message:String(error)}; }
 })()
 """;
 

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingBrowser.Abstractions;
 
@@ -85,7 +85,7 @@ public interface IBrowserPage : IAsyncDisposable
     Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct);
     Task PressAsync(Locator locator, string key, KeyOptions options, CancellationToken ct);
     Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct);
-    Task ScrollAsync(ScrollOptions options, CancellationToken ct);
+    Task<ScrollOutcome> ScrollAsync(ScrollOptions options, CancellationToken ct);
     Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct);
     Task SelectAsync(Locator locator, IReadOnlyList<string> values, CancellationToken ct);
     Task CheckAsync(Locator locator, bool isChecked, CancellationToken ct);

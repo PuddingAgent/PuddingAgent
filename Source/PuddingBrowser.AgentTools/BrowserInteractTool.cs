@@ -57,6 +57,14 @@ public sealed record BrowserInteractArgs
     /// </summary>
     [ToolParam("Input path: dom (default, verified DOM events) or native (real browser input). native is not implemented yet and fails explicitly instead of silently falling back.")]
     public string? InputMode { get; init; }
+
+    /// <summary>
+    /// 滚动目标模型（§7，仅对 <c>scroll</c> 有意义）：<c>page</c>（滚文档，默认无 locator 时）/
+    /// <c>element</c>（滚指定元素的滚动盒）/ <c>to_ref</c>（把元素滚入视野）/ <c>to_top</c> / <c>to_bottom</c>。
+    /// 省略时按参数推导（有 locator 无位移 ⇒ <c>to_ref</c>，有 locator 有位移 ⇒ <c>element</c>，无 locator ⇒ <c>page</c>）。
+    /// </summary>
+    [ToolParam("Scroll target: page | element | to_ref | to_top | to_bottom. Derived from the locator/delta when omitted. Element targets require a ref locator.")]
+    public string? ScrollTarget { get; init; }
 }
 
 
@@ -126,6 +134,26 @@ public sealed class BrowserInteractTool(
             }
         }
 
+        // 滚动目标：显式优先；未登记线名 fail closed（不猜测、不回退）。
+        DesktopScrollTarget? scrollTarget = null;
+        if (!string.IsNullOrWhiteSpace(args.ScrollTarget))
+        {
+            if (!DesktopScrollTargetWire.TryParse(args.ScrollTarget.Trim(), out var parsedScrollTarget))
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments",
+                    "scroll_target must be one of page, element, to_ref, to_top or to_bottom");
+            }
+
+            if (action != "scroll")
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments", "scroll_target is only valid for the scroll action");
+            }
+
+            scrollTarget = parsedScrollTarget;
+        }
+
         try
 
         {
@@ -143,7 +171,6 @@ public sealed class BrowserInteractTool(
                 return BrowserToolResponse.Failure("browser_invalid_arguments", "text key is required for press");
 
             if (action == "select" && args.Values is not { Count: > 0 })
-
                 return BrowserToolResponse.Failure("browser_invalid_arguments", "values are required for select");
 
             if (action == "check" && args.Checked is null)
@@ -255,7 +282,10 @@ public sealed class BrowserInteractTool(
 
                     // 输入路径随请求下传：驱动将来据它决定走 DOM 还是 CDP；
                     // 实际用了哪条路径由回执的 inputBackend 如实报告。
-                    inputMode),
+                    inputMode,
+
+                    // 滚动目标：显式优先，否则由契约按 locator/位移推导。
+                    scrollTarget),
 
                 call,
 
@@ -340,6 +370,10 @@ public sealed class BrowserInteractTool(
                     RetryDetail = retry.Detail,
                     // 实际 backend：本切片只有 DOM 路径（请求 native 已在入口明确失败）。
                     InputBackend = DesktopInputModeWire.NameOf(inputMode),
+
+                    // 滚动结果事实（§7）：容器/位移/边界/内容变化。**内容没变不是失败**，
+                    // 因此这里只如实报告，不据此改判 completion。
+                    Scroll = interaction.Value.Scroll is { } scroll ? BrowserScrollToolValue.From(scroll) : null,
 
                 },
 

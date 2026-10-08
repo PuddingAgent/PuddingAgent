@@ -163,6 +163,9 @@ public sealed record BrowserInteractionToolValue
     /// 当前实现只有 <c>dom</c>；请求 <c>native</c> 会明确失败，因此这里不会出现"请求 native、报告 dom"的成功。
     /// </summary>
     public string? InputBackend { get; init; }
+
+    /// <summary>滚动结果事实（§7，仅 <c>scroll</c> 动作且驱动报告了时存在）。</summary>
+    public BrowserScrollToolValue? Scroll { get; init; }
 }
 
 /// <summary>
@@ -183,7 +186,47 @@ public sealed record BrowserReceiptToolValue
 
     /// <summary>实际使用的输入路径（目前只有 <c>dom</c>）。</summary>
     public string? InputBackend { get; init; }
+
+    /// <summary>滚动结果事实（§7，仅 <c>scroll</c> 动作且驱动报告了时存在）。</summary>
+    public BrowserScrollToolValue? Scroll { get; init; }
     public IReadOnlyList<BrowserAssertionToolValue> Assertions { get; init; } = [];
+}
+
+/// <summary>
+/// 滚动结果事实（设计 §7）：目标容器、前后位置、消耗位移、边界、内容变化。
+/// <b><see cref="ContentChanged"/> 为 false 不是失败</b>——「无限滚动另等新增内容/条目数」。
+/// </summary>
+public sealed record BrowserScrollToolValue
+{
+    public string? Container { get; init; }
+    public double BeforeX { get; init; }
+    public double BeforeY { get; init; }
+    public double AfterX { get; init; }
+    public double AfterY { get; init; }
+    public double ConsumedDeltaX { get; init; }
+    public double ConsumedDeltaY { get; init; }
+
+    /// <summary>是否已到边界（请求了位移但滚不动）。到边界是**事实**，不是失败。</summary>
+    public bool AtBoundary { get; init; }
+
+    /// <summary>滚动前后是否观察到内容变化（新增内容/条目）。</summary>
+    public bool ContentChanged { get; init; }
+
+    /// <summary>请求了位移但一个像素都没动（"滚不动"）：可据此决定要不要换 native wheel。</summary>
+    public bool NotScrolled => ConsumedDeltaX == 0 && ConsumedDeltaY == 0;
+
+    public static BrowserScrollToolValue From(DesktopScrollReport report) => new()
+    {
+        Container = report.Container,
+        BeforeX = report.BeforeX,
+        BeforeY = report.BeforeY,
+        AfterX = report.AfterX,
+        AfterY = report.AfterY,
+        ConsumedDeltaX = report.ConsumedDeltaX,
+        ConsumedDeltaY = report.ConsumedDeltaY,
+        AtBoundary = report.AtBoundary,
+        ContentChanged = report.ContentChanged,
+    };
 }
 
 /// <summary>

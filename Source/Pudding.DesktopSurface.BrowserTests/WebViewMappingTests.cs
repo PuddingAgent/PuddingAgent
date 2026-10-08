@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopSurface.Browser;
@@ -304,7 +304,7 @@ public sealed class WebViewMappingTests
 
         public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task ScrollAsync(ScrollOptions options, CancellationToken ct) => throw new NotSupportedException();
+        public Task<ScrollOutcome> ScrollAsync(ScrollOptions options, CancellationToken ct) => throw new NotSupportedException();
 
         public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => throw new NotSupportedException();
 

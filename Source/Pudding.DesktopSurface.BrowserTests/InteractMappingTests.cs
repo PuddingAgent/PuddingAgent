@@ -61,6 +61,39 @@ public sealed class InteractMappingTests
     }
 
     [Fact]
+    public async Task ScrollCarriesTheTargetModelAndReportsTheOutcome()
+    {
+        // 设计 §7：滚动目标（page/element/to_ref/to_top/to_bottom）必须显式下传，
+        // 结果事实（容器/前后位置/消耗位移/边界/内容变化）必须如实带回——而不是只回一个"成功"。
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: null);
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target,
+                DesktopInteractionAction.Scroll,
+                DesktopPageVersion.Require(7),
+                locator: null,
+                deltaX: null,
+                deltaY: null,
+                inputMode: DesktopInputMode.Dom,
+                scrollTarget: DesktopScrollTarget.ToBottom),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+
+        // 目标模型到达驱动（to_bottom 覆盖"无位移"的推导）。
+        Assert.Equal(ScrollTarget.ToBottom, runtime.Pages["ctx-1/p-1"].LastScroll!.Target);
+
+        // 结果事实原样带回。
+        var report = result.Value.Scroll;
+        Assert.NotNull(report);
+        Assert.Equal("document", report!.Container);
+        Assert.Equal(0, report.ConsumedDeltaY);
+        Assert.True(report.AtBoundary);
+        Assert.False(report.ContentChanged);
+    }
+
+    [Fact]
     public async Task FocusIsUnsupportedInsteadOfBeingFakedWithScripts()
     {
         var runtime = Runtime(pageVersion: 4, advanceTo: 5, handle: Handle("e3", version: 4));
@@ -257,7 +290,36 @@ public sealed class InteractMappingTests
 
         public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct) { Advance("hover"); return Task.CompletedTask; }
 
-        public Task ScrollAsync(ScrollOptions options, CancellationToken ct) { Advance($"scroll:{options.DeltaY}"); return Task.CompletedTask; }
+        public Task<ScrollOutcome> ScrollAsync(ScrollOptions options, CancellationToken ct)
+        {
+            Advance($"scroll:{options.DeltaY}");
+            LastScroll = options;
+
+            // 与真实驱动同形：报告**实际**容器与消耗位移（这里是记录用的替身）。
+            // to_bottom 场景刻意模拟"到底了、也没加载出新内容"——它不是失败。
+            if (options.Target == ScrollTarget.ToBottom)
+            {
+                return Task.FromResult(new ScrollOutcome
+                {
+                    Container = "document",
+                    BeforeY = 4000,
+                    AfterY = 4000,
+                    AtBoundary = true,
+                    ContentChanged = false,
+                });
+            }
+
+            return Task.FromResult(new ScrollOutcome
+            {
+                Container = options.Target == ScrollTarget.Page ? "document" : "element",
+                ConsumedDeltaX = options.DeltaX ?? 0,
+                ConsumedDeltaY = options.DeltaY ?? 0,
+                AfterY = options.DeltaY ?? 0,
+            });
+        }
+
+        /// <summary>最近一次滚动选项（断言目标模型确实到达驱动）。</summary>
+        public ScrollOptions? LastScroll { get; private set; }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
