@@ -1,4 +1,4 @@
-using Pudding.DesktopService;
+﻿using Pudding.DesktopService;
 
 // 交付清单采集入口（B7 内部一侧）。
 //
@@ -15,7 +15,7 @@ var arguments = ParseArguments(args);
 if (arguments is null || arguments.ContainsKey("help"))
 {
     Console.WriteLine("""
-        用法：Pudding.DeliveryManifest.Cli --build <id> --commit <sha> --publish <dir> --results <dir> --changelog <dir> [--extra-unverified <text>]... [--out <file>]
+        用法：Pudding.DeliveryManifest.Cli --build <id> --commit <sha> --publish <dir> --results <dir> --changelog <dir> [--extra-unverified <text>]... [--out <file>] [--report <file>]
 
         采集三类事实并产出交付清单：
           --publish    发布目录（取其中的 .exe/.dll 作为产物，只记录文件名）
@@ -23,7 +23,7 @@ if (arguments is null || arguments.ContainsKey("help"))
           --changelog  修改日志目录（提取"内部证明不了的结论"）
           --build      构建标识   --commit 提交号
           --extra-unverified  额外补充的未验证项（可多次）
-          --out        同时写入该文件
+          --out        同时写入该文件（JSON）`r`n          --report     同时渲染留痕报告（markdown + Front Matter）到该文件
         """);
     return arguments is null ? 1 : 0;
 }
@@ -56,6 +56,26 @@ if (DeliveryFactCollector.TryCollect(request, out var manifest, out var problems
     {
         File.WriteAllText(outputPath, json);
         Console.WriteLine($"# 已写入 {outputPath}");
+    }
+
+    // --report：把清单渲染成**留痕报告**（markdown + Front Matter），逐字带上未验证项。
+    if (arguments.TryGetValue("report", out var reportPath) && !string.IsNullOrWhiteSpace(reportPath))
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var markdown = DeliveryManifestReport.Render(
+            manifest!,
+            arguments.GetValueOrDefault("report-title") ?? $"浏览器自动化能力交付清单（{manifest!.BuildId}）",
+            today,
+            arguments.GetValueOrDefault("report-slug") ?? $"reports-delivery-manifest-{today:yyyy-MM-dd}-{manifest!.Commit}");
+
+        var directory = Path.GetDirectoryName(reportPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(reportPath, markdown);
+        Console.WriteLine($"# 报告已写入 {reportPath}");
     }
 
     Console.WriteLine($"# stage: {DesktopAcceptance.NameOf(manifest!.Stage)}");

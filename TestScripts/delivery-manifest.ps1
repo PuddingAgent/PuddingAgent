@@ -28,6 +28,9 @@ param(
     [string]$ResultsDirectory = "temp/test-out/trx",
     [string]$ChangelogDirectory = "Docs/00_changelog/2026Year/10",
     [string]$Out = "temp/test-out/delivery-manifest.json",
+    # When set, also render the manifest into a durable markdown report at this path
+    # (Front Matter included), e.g. Docs/14_reports/<date>-<topic>.md
+    [string]$Report = "",
     [string[]]$Suites = @(
         "Source/PuddingBrowser.AutomationTests/PuddingBrowser.AutomationTests.csproj",
         "Tests/PuddingBrowser.AgentTools.Tests/PuddingBrowser.AgentTools.Tests.csproj",
@@ -97,6 +100,13 @@ try {
         "--changelog", (Join-Path $repositoryRoot $ChangelogDirectory),
         "--out", (Join-Path $repositoryRoot $Out)
     )
+
+    if (-not [string]::IsNullOrWhiteSpace($Report)) {
+        # Keep this script ASCII-only: Windows PowerShell 5.1 reads a BOM-less UTF-8 .ps1 as ANSI,
+        # so non-ASCII literals here turn into a parse error (learned the hard way).
+        $cliArguments += @("--report", (Join-Path $repositoryRoot $Report))
+    }
+
     & dotnet @cliArguments
 
     $exitCode = $LASTEXITCODE
