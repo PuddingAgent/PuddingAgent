@@ -148,7 +148,7 @@ public sealed class ComponentSurfaceTests
         {
             ["ArticleMarkdownFormatTests"] = 13,
             ["ArticleCompactJsonTests"] = 8,
-            ["ArticleCursorTests"] = 5,
+            ["ArticleCursorTests"] = 7,
             ["ScreenshotPlanTests"] = 9,
             ["BrowserNodeIdentityTests"] = 10,
             ["NativeInputSequenceTests"] = 10,

@@ -479,6 +479,55 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Snapshot_CursorFromAnotherPageOrVersion_IsRefused()
+    {
+        // 游标只在**同一页同一版**内有效：换页面/文档被改过后，同一索引指向的是另一份内容。
+        // 照读会"看起来读到了"，实际接不上——这种静默错位必须被挡住。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.ContentBlocks = string.Join('\n',
+            Enumerable.Range(1, 6).Select(index => $$"""{"k":"p","t":"paragraph-{{index}}-xxxxxxxx"}"""));
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var first = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                max_bytes = 80
+            }));
+
+        Assert.True(first.Success, first.Error);
+        var cursor = GetJson(first.Output, "value").GetProperty("nextCursor").GetString()!;
+
+        // 把游标用到**另一页**上 ⇒ 拒绝续读（身份不符时索引指向的是别的内容）。
+        var other = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        other.ContentBlocks = page.ContentBlocks;
+        var stale = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = other.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                cursor
+            }));
+
+        Assert.False(stale.Success);
+        using var document = JsonDocument.Parse(stale.Error!);
+        Assert.Equal(
+            "browser_invalid_arguments",
+            document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        Assert.Contains(
+            "another page or an older version",
+            document.RootElement.GetProperty("error").GetProperty("message").GetString()!);
+    }
+
+    [Fact]
     public async Task Snapshot_CursorFromAnotherRepresentation_IsRefusedInsteadOfSkippingBlocks()
     {
         // 两种正文表示的页边界不同：拿 markdown 的游标去读 compact_json 会**静默跳过**若干块。
@@ -721,7 +770,8 @@ public sealed class BrowserAgentToolsTests
         var limitedValue = GetJson(limited.Output, "value");
         Assert.True(limitedValue.GetProperty("truncated").GetBoolean());
         Assert.Equal("output_budget", limitedValue.GetProperty("truncationReason").GetString());
-        Assert.Equal("lines:1", limitedValue.GetProperty("nextCursor").GetString());
+        // 游标绑定**页面身份与版本**（跨页面/跨版本续读会被拒绝），因此这里是前缀断言。
+        Assert.StartsWith("lines:1@", limitedValue.GetProperty("nextCursor").GetString(), StringComparison.Ordinal);
 
         // ② 扫描侧被截断 ⇒ incomplete_scan，且不给游标（续读也保证不了完整）。
         var truncatedPage = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);

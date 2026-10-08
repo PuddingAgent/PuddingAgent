@@ -158,9 +158,10 @@ public sealed class BrowserSnapshotTool(
         // 游标（§6.1）：不透明、**绑定产生它的表示**。跨表示误用必须明确拒绝 ——
         // 两种正文表示的页边界不同，拿错游标会**静默跳过**若干块（最难发现的一类数据丢失）。
         var cursor = 0;
+        string? cursorPageIdentity = null;
         if (!string.IsNullOrWhiteSpace(args.Cursor))
         {
-            if (!ArticleCursor.TryParse(args.Cursor, out var cursorKind, out var cursorIndex))
+            if (!ArticleCursor.TryParse(args.Cursor, out var cursorKind, out var cursorIndex, out var cursorIdentity))
             {
                 return BrowserToolResponse.Failure(
                     "browser_invalid_arguments",
@@ -182,6 +183,8 @@ public sealed class BrowserSnapshotTool(
                     + " (or omit the cursor to start from the beginning)");
             }
 
+            // 页面/版本身份在**拿到快照之后**核对（那时才知道当前版本）——见下面的检查。
+            cursorPageIdentity = cursorIdentity;
             cursor = cursorIndex;
         }
 
@@ -265,6 +268,20 @@ public sealed class BrowserSnapshotTool(
                 return Failure(snapshot.Error!);
             }
 
+            // 游标的页面/版本身份在这里核对：只有拿到快照才知道**当前**版本。
+            // 不符就明确拒绝（换页面或文档被改过后，同一个索引指向的是另一份内容——
+            // 照读会"看起来读到了"，实际接不上，这种静默错位必须挡住）。
+            if (cursorPageIdentity is { Length: > 0 }
+                && snapshot.Value.PageVersion.IsKnown
+                && !ArticleCursor.MatchesPage(
+                    cursorPageIdentity, args.PageId.Trim(), snapshot.Value.PageVersion.Value))
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments",
+                    "cursor belongs to another page or an older version of this page;"
+                    + " re-read from the beginning (cursors are bound to the page and version that produced them)");
+            }
+
             if (mode == BrowserReadingMode.Full)
             {
                 // 表示集合是**唯一判定**：抓取与输出用同一个列表，不会出现"抓了却没说"。
@@ -316,7 +333,9 @@ public sealed class BrowserSnapshotTool(
                         Content = article.Text,
                         Truncated = article.Truncated,
                         TruncationReason = BrowserReadingFormatWire.TruncationNameOf(article.Truncation),
-                        NextCursor = article.NextCursor is { } next ? ArticleCursor.Encode(kind, next) : null,
+                        NextCursor = article.NextCursor is { } next && snapshot.Value.PageVersion.IsKnown
+                            ? ArticleCursor.Encode(kind, next, ArticleCursor.PageIdentityOf(args.PageId.Trim(), snapshot.Value.PageVersion.Value))
+                            : null,
                         ReturnedLines = article.ReturnedLines,
                         Bytes = article.Bytes,
                         NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
@@ -344,8 +363,10 @@ public sealed class BrowserSnapshotTool(
                     AccessibilityTree = fields.Includes("accessibilityTree") ? composed.Text : null,
                     Truncated = composed.Truncated,
                     TruncationReason = BrowserReadingFormatWire.TruncationNameOf(composed.Truncation),
-                    NextCursor = composed.NextCursor is { } lineNext
-                        ? ArticleCursor.Encode(ArticleCursor.LinesKind, lineNext)
+                    NextCursor = composed.NextCursor is { } lineNext && snapshot.Value.PageVersion.IsKnown
+                        ? ArticleCursor.Encode(
+                            ArticleCursor.LinesKind, lineNext,
+                            ArticleCursor.PageIdentityOf(args.PageId.Trim(), snapshot.Value.PageVersion.Value))
                         : null,
                     ReturnedLines = fields.Includes("returnedLines") ? composed.ReturnedLines : null,
                     Bytes = fields.Includes("bytes") ? composed.Bytes : null,
