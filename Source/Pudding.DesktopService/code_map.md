@@ -25,6 +25,12 @@
 | `DesktopCapabilityPolicy.cs` | 能力 × 可信级别准入表（8 能力 × 3 级别，快照断言）：脚本注入仅 `AgentAuthorized`；对话框/Picker/剪贴板仅 `Workbench`；`Workbench` **永不**允许脚本注入 |
 | `DesktopInteractionState.cs` | 暂停与用户接管两个**独立轴**：变更类能力被拒（`Paused`/`UserTakeover`，接管优先），只读能力仍可用（观测不打断用户）。**这两个轴不再是本类私有字段**：唯一事实源是 `DesktopService.Authority`（进程内那一个 `BrowserAutomationAuthority`），本类只是读投影 + 写入口（设计方案 §3.1）；原因标签按轴保留（权威只有一个 reason 槽位），仅用于显示，不参与判定。交互槽位（对话框/Picker 单窗口互斥）仍由本类持有 |
 | `DesktopServiceOptions.cs` | `AllowedCapabilities`、`ShellCallerTrust`（默认 `Untrusted` ⇒ 对话框/Picker/剪贴板默认不开放） |
+| `DesktopAcceptance.cs` | 两段式验收**判定**（强制规则的可执行版本）：`ready-for-external-deploy` / `in-product-functional-complete` / `external-lifecycle-verified` 各自的证据要求；**明确拒绝**「在可能仍跑旧代码的进程上声称新构建功能完成」与「内部 Agent 声称生命周期已验证」 |
+| `DeliveryManifest.cs` | **交付清单**（机器可读交接事实）+ `DeliveryManifestValidator`：缺构建/提交、有失败项、`knownUnverified` 为 null（=没想过）、外部步骤未覆盖生命周期四步、内部声明后续阶段 ⇒ 一律不放行 |
+| `DeliveryManifestBuilder.cs` | 清单**生成器**：事实 → 清单 → **同一套校验自检**（不合格不产出）；未验证项来自日志提取，生命周期四步自动补齐 |
+| `KnownUnverifiedExtractor.cs` | 从修改日志提取「内部证明不了的结论」（保守词表、去重保序有界、**永不返回 null**） |
+| `TrxTestResultParser.cs` | 从 TRX 读**真实**测试计数（读不出来就失败，不猜 0；多套件全有或全无） |
+| `DeliveryFactCollector.cs` | 交付链**入口（内部一侧）**：从发布目录 / TRX 结果目录 / 日志目录采集事实 → 生成并自检清单；目录或事实缺失一律明确失败（产物只写文件名，不泄露本机路径） |
 | `DesktopCapabilityHost.cs` | 宿主组合（切片 C-2）：只依赖 `IDesktopConnectionSupervisor` 端口 + `DesktopService`；启动时**二选一传输**（选旧 Bridge 则拒绝启动，不做跨传输回退）；同一 DesktopId **只允许一个活动传输**（进程级占用，停止即释放）；`StartAsync`/`StopAsync`/`WaitForStateAsync`；停止超时仍释放占用 |
 | `DesktopChannelTransportResolver.cs` | 把 Core 发布的端点描述解析成 Desktop 传输（计划 §7）：版本不支持 / 形态未知 / 地址不可用一律明确失败；**凭据不从描述里取**（描述没有凭据字段，凭据只能由主机侧注入） |
 | `DesktopCapabilityChannelSettings.cs` | `desktop.json` 对应段的**值对象**（不读配置文件，由宿主映射进来）：`Enabled` 缺省 false（继续走旧 Bridge）、`SectionName = "Desktop:CapabilityChannel"`、`DeclaredCapabilities` 是**代码事实**（实现即声明，不从配置放宽）、`CreateConnectionOptions` / `ResolveTransportFromDescription` |
