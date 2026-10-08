@@ -1053,6 +1053,111 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Locate_FieldsWhitelist_TrimsThePayloadAndUnknownNamesAreRejected()
+    {
+        // 设计 §6.2：locate 提供 fields —— 只回调用方要的字段（payload 大头是 text/name/bbox）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var trimmed = await ExecuteAsync(
+            new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" },
+                fields = new[] { "name" }
+            }));
+
+        Assert.True(trimmed.Success);
+        var element = GetJson(trimmed.Output, "value").GetProperty("elements")[0];
+
+        // 要的留下，没要的**真的不在**（不是"恰好为空"）。
+        Assert.Equal("Save", element.GetProperty("name").GetString());
+        AssertAbsent(element, "text");
+        AssertAbsent(element, "boundingBox");
+        AssertAbsent(element, "role");
+        AssertAbsent(element, "inViewport");
+
+        // 核心字段恒在：ref 是继续操作的唯一把手。
+        Assert.False(string.IsNullOrEmpty(element.GetProperty("ref").GetString()));
+        Assert.True(element.GetProperty("visible").GetBoolean());
+        Assert.True(element.GetProperty("enabled").GetBoolean());
+
+        // 白名单就是权威：列了 value 就等于要值（不必再传 include_value）。
+        var withValue = await ExecuteAsync(
+            new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" },
+                fields = new[] { "value" }
+            }));
+
+        Assert.Equal("Pudding", GetJson(withValue.Output, "value").GetProperty("elements")[0].GetProperty("value").GetString());
+
+        // 未知字段名明确拒绝，并把合法清单告诉调用方。
+        var unknown = await ExecuteAsync(
+            new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" },
+                fields = new[] { "nope" }
+            }));
+
+        Assert.False(unknown.Success);
+        using var document = JsonDocument.Parse(unknown.Error!);
+        var error = document.RootElement.GetProperty("error");
+        Assert.Equal("browser_invalid_arguments", error.GetProperty("code").GetString());
+        Assert.Contains("nope", error.GetProperty("message").GetString()!, StringComparison.Ordinal);
+        Assert.Contains("boundingBox", error.GetProperty("message").GetString()!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Locate_FieldNamesMatchTheOutputKeys()
+    {
+        // 契约里的字段名必须就是输出里的 JSON 键：调用方照着看到的键名写就得能用。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var result = await ExecuteAsync(
+            new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" },
+                include_value = true,
+                include_checked = true,
+                fields = BrowserElementFields.All.ToArray()
+            }));
+
+        Assert.True(result.Success);
+        var element = GetJson(result.Output, "value").GetProperty("elements")[0];
+
+        foreach (var name in BrowserElementFields.All)
+        {
+            Assert.True(element.TryGetProperty(name, out _), $"字段名 '{name}' 与输出键不对应");
+        }
+    }
+
+    /// <summary>断言某字段**不在**输出里（要么缺键，要么显式为 null）。</summary>
+    private static void AssertAbsent(JsonElement element, string name)
+    {
+        if (element.TryGetProperty(name, out var value))
+        {
+            Assert.Equal(JsonValueKind.Null, value.ValueKind);
+        }
+    }
+
+    [Fact]
     public async Task Locate_PagesWithCursor_AndExpiredCursorSaysReRead()
     {
         // 设计 §6.2：locate 提供 cursor 分页；旧游标（版本/查询变了）必须**明确过期**，

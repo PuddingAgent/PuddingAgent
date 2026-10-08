@@ -347,33 +347,47 @@ internal static class BrowserToolResponse
     /// ② <c>checked</c> 属于「可显式请求」的状态，默认不给；
     /// ③ bbox 保留**最多一位小数**（驱动内部仍是原精度；这里只用于展示，
     ///    真实点击走 ref，绝不使用四舍五入后的坐标）。
+    ///
+    /// 另有 <paramref name="fields"/> 白名单（§6.2 的 <c>fields</c>）：给了就**只回它要的**。
+    /// 核心字段（ref/tag/visible/enabled）恒在——没有 <c>ref</c> 的定位结果无法继续操作。
     /// </summary>
     public static BrowserElementToolValue Element(
         DesktopElementRef element,
         bool includeValue = false,
-        bool includeChecked = false) => new()
+        bool includeChecked = false,
+        BrowserElementFields? fields = null)
     {
-        Ref = element.Reference,
-        Tag = element.Tag,
-        Role = element.Role,
-        Name = element.Name,
-        Text = SameAsName(element.Text, element.Name) ? null : element.Text,
-        Visible = element.Visible,
-        InViewport = element.InViewport,
-        Enabled = element.Enabled,
-        Checked = includeChecked ? element.IsChecked : null,
-        Value = includeValue ? element.Value : null,
-        SelectedValues = includeValue ? element.SelectedValues : null,
-        BoundingBox = element.BoundingBox is { } box
-            ? new BoundingBox
-            {
-                X = Round1(box.X),
-                Y = Round1(box.Y),
-                Width = Round1(box.Width),
-                Height = Round1(box.Height),
-            }
-            : null,
-    };
+        var set = fields ?? BrowserElementFields.Default;
+
+        // 显式白名单时它**就是权威**：列了 value 就等于要值（不必再传 include_value）。
+        var wantValue = set.IsExplicit ? set.Includes("value") : includeValue;
+        var wantSelected = set.IsExplicit ? set.Includes("selectedValues") : includeValue;
+        var wantChecked = set.IsExplicit ? set.Includes("checked") : includeChecked;
+
+        return new()
+        {
+            Ref = element.Reference,
+            Tag = element.Tag,
+            Role = set.Includes("role") ? element.Role : null,
+            Name = set.Includes("name") ? element.Name : null,
+            Text = set.Includes("text") && !SameAsName(element.Text, element.Name) ? element.Text : null,
+            Visible = element.Visible,
+            InViewport = set.Includes("inViewport") ? element.InViewport : null,
+            Enabled = element.Enabled,
+            Checked = wantChecked ? element.IsChecked : null,
+            Value = wantValue ? element.Value : null,
+            SelectedValues = wantSelected ? element.SelectedValues : null,
+            BoundingBox = set.Includes("boundingBox") && element.BoundingBox is { } box
+                ? new BoundingBox
+                {
+                    X = Round1(box.X),
+                    Y = Round1(box.Y),
+                    Width = Round1(box.Width),
+                    Height = Round1(box.Height),
+                }
+                : null,
+        };
+    }
 
     private static bool SameAsName(string? text, string? name) =>
         text is not null && name is not null && string.Equals(text, name, StringComparison.Ordinal);

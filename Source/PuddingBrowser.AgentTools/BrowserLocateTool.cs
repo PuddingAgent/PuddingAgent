@@ -29,6 +29,14 @@ public sealed record BrowserLocateArgs
     public string? Cursor { get; init; }
 
     /// <summary>
+    /// 只返回这些字段（设计方案 §6.2 的 <c>fields</c>）：键名与输出里的 JSON 键一致。
+    /// 给了就是**权威白名单**（列了 <c>value</c> 就等于要值）；核心字段 ref/tag/visible/enabled 恒在。
+    /// 未知字段名明确拒绝，不静默忽略。
+    /// </summary>
+    [ToolParam("Only return these element fields (JSON key names, e.g. ref, name, text, boundingBox). Core fields ref/tag/visible/enabled are always returned. Unknown names are rejected.")]
+    public IReadOnlyList<string>? Fields { get; init; }
+
+    /// <summary>
     /// 是否返回表单当前值（默认 <c>false</c>，见设计方案 §6.2）。
     /// 需要确认「fill 到底写进去了没有」时显式打开——这是唯一的可靠回执，
     /// 因为 <c>text</c> 不含表单值、URL 也推不出填了什么。
@@ -66,6 +74,15 @@ public sealed class BrowserLocateTool(
                 return BrowserToolResponse.Failure(
                     "browser_invalid_arguments",
                     $"locator limit must be between 1 and {BrowserLocateRequest.MaxMaxResults}");
+            }
+
+            // 字段白名单：未知名字必须**明确拒绝**（静默忽略会让调用方以为字段真的没了/真的在）。
+            if (!BrowserElementFields.TryParse(args.Fields, out var fields, out var unknownField))
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments",
+                    $"unknown element field '{unknownField}'; valid fields: {BrowserElementFields.SelectableList}"
+                    + $" (always returned: {string.Join(", ", BrowserElementFields.Core)})");
             }
 
             if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
@@ -125,7 +142,7 @@ public sealed class BrowserLocateTool(
             var elements = located.Value.Elements;
             var values = elements
                 .Take(BrowserLocateRequest.MaxMaxResults)
-                .Select(element => ToValue(element, args.IncludeValue, args.IncludeChecked))
+                .Select(element => ToValue(element, args.IncludeValue, args.IncludeChecked, fields))
                 .ToArray();
             return BrowserToolResponse.Success(
                 new BrowserLocateToolValue
@@ -165,6 +182,6 @@ public sealed class BrowserLocateTool(
     /// 敏感值不得在此直接回显——交互回执走 <c>BrowserActionAssertion</c> 的脱敏路径。
     /// </summary>
     private static BrowserElementToolValue ToValue(
-        DesktopElementRef element, bool includeValue, bool includeChecked) =>
-        BrowserToolResponse.Element(element, includeValue, includeChecked);
+        DesktopElementRef element, bool includeValue, bool includeChecked, BrowserElementFields fields) =>
+        BrowserToolResponse.Element(element, includeValue, includeChecked, fields);
 }
