@@ -99,3 +99,8 @@ draft: false
 - 本次**未**验证：known_hosts 解析、`.ssh` 目录与权限检查、并发准入、Windows OpenSSH 服务端、
   产品态（新构建已被运行实例加载）验收 —— 均属上述后续步骤。
 - 未提交任何 `temp/` 产物；`D:\data` 未被读写，未使用生产主机。
+
+更正（2026-10-08，A2 提交内）：探针的 `retained_memory_sublinear` 断言原写成
+`retained_3x < retained_1x * 2 + 4 MiB`。强制 GC 后的驻留差值**可以为负**（回收了上一阶段的对象，实测 `retained_1x = −1,917,160`），
+此时该相对比较会误报失败。已改为对符号稳健的差值形式：`retained_3x − retained_1x < 4 MiB`
+（同时保留两条 `< 8 MiB` 的绝对上界）。结论未变：驻留内存与输出量无关，1×/3× 两次都在 0 附近。

@@ -7,6 +7,15 @@ namespace PuddingSsh.Diagnostics;
 public static class SshErrorCodes
 {
     public const string ConfigInvalid = "ssh.config_invalid";
+
+    /// <summary>
+    /// 请求形状非法（缺 command、command 超 16 KiB 或含 NUL、cwd 非 POSIX 绝对路径等）。
+    /// 设计 §10 表未列该码：请求参数拒绝属于工具层职责，但组件在 A2 引入 POSIX 封装与请求校验后
+    /// 必须能**自己**fail-closed，而不是抛 BCL 异常让上层猜。语义与 <c>config_invalid</c>（主机配置非法）
+    /// 明确分离：一个来自调用参数，一个来自冻结配置。
+    /// </summary>
+    public const string RequestInvalid = "ssh.request_invalid";
+
     public const string HostUnavailable = "ssh.host_unavailable";
     public const string TargetChanged = "ssh.target_changed";
     public const string CredentialUnavailable = "ssh.credential_unavailable";

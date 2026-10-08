@@ -9,6 +9,10 @@
 # is executed by WSL bash over /mnt/<drive>/...
 *.sh text eol=lf
 
+# known_hosts fixture 是**真实 OpenSSH 产物**，生成时是 LF；固定为 LF 以免检出后
+# 与 ssh-keygen 的实际输出形态不一致（我们的解析器容错 CRLF，但 fixture 应保持原样）。
+Source/PuddingSshTests/Fixtures/** text eol=lf
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #

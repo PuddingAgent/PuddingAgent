@@ -1,0 +1,26 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- PuddingSsh 的独立测试工程（组件化交付规程 S2/S3）。
+       边界规则：本工程**只引用 PuddingSsh**（+ 测试框架）。
+       不得引用 PuddingCore / PuddingRuntime / PuddingPlatform / PuddingHost / PuddingAgent /
+       PuddingDesktop，也不得引用其它组件 —— 这样 SSH 组件可以在宿主运行中独立构建与测试（R1）。
+       边界由 ComponentBoundaryTests 在运行期断言（S4 预置，A4 追加变异取红）。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingSsh\PuddingSsh.csproj" />
+  </ItemGroup>
+
+  <!-- 真实 OpenSSH fixture（由 TestScripts/ssh-probe/make-known-hosts-fixtures.sh 生成）：
+       测试**不**依赖 sshd、不依赖网络，只读这些文件。 -->
+  <ItemGroup>
+    <Content Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

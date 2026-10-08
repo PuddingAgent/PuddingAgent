@@ -27,22 +27,57 @@ public sealed class SshHostKeyRejectedException : SshComponentException
     }
 }
 
+/// <summary>分类输入事实：**最后可靠的 phase** 与命令是否已提交到远端（设计 §7.3/§10）。</summary>
+public sealed record SshFailureFacts(SshPhase Phase, bool CommandSubmitted);
+
+/// <summary>分类输出：稳定错误码 + phase + 是否可安全再次尝试。</summary>
+public sealed record SshFailure(string ErrorCode, SshPhase Phase, bool RetrySafe);
+
 /// <summary>
-/// A1 的最小异常分类器：输入**异常类别 + 提交事实**，输出稳定错误码（设计 §10）。
-/// A2 会在此之上补齐目录/known_hosts/脱敏等分类；这里不靠异常文本猜语义。
+/// 异常分类器（设计 §10）：输入**异常类别 + 执行事实**，输出稳定错误码。
+/// 不用异常文本做语义判断，也不把第三方文本透传给用户。
 /// </summary>
 public static class SshFailureClassifier
 {
-    /// <param name="exception">第三方或 BCL 异常。</param>
-    /// <param name="commandSubmitted">命令是否已经提交到远端（提交后断线 ⇒ 状态可能未知）。</param>
-    public static string Classify(Exception exception, bool commandSubmitted)
+    /// <summary>A1 调用点的兼容入口：只给「是否已提交」。</summary>
+    public static string Classify(Exception exception, bool commandSubmitted) =>
+        Classify(exception, new SshFailureFacts(SshPhase.Validation, commandSubmitted)).ErrorCode;
+
+    public static SshFailure Classify(Exception exception, SshFailureFacts facts)
     {
         ArgumentNullException.ThrowIfNull(exception);
+        ArgumentNullException.ThrowIfNull(facts);
 
+        var code = ResolveCode(exception, facts);
+        return new SshFailure(code, facts.Phase, IsRetrySafe(code, facts.CommandSubmitted));
+    }
+
+    /// <summary>
+    /// 可安全再次尝试只可能发生在**确定未提交**且失败属连通/排队类别时（设计 §9.2）；
+    /// 密钥不可信、认证失败、命令已提交后的任何失败都不在此列。
+    /// </summary>
+    public static bool IsRetrySafe(string errorCode, bool commandSubmitted)
+    {
+        if (commandSubmitted)
+        {
+            return false;
+        }
+
+        return errorCode is SshErrorCodes.DnsFailed or SshErrorCodes.ConnectFailed or SshErrorCodes.Busy;
+    }
+
+    public static bool IsRetrySafe(Exception exception, bool commandSubmitted) =>
+        IsRetrySafe(Classify(exception, commandSubmitted), commandSubmitted);
+
+    private static string ResolveCode(Exception exception, SshFailureFacts facts)
+    {
         switch (exception)
         {
             case SshComponentException component:
                 return component.ErrorCode;
+
+            case System.OperationCanceledException:
+                return SshErrorCodes.Cancelled;
 
             case Renci.SshNet.Common.SshPassPhraseNullOrEmptyException:
                 return SshErrorCodes.PassphraseRequired;
@@ -51,10 +86,11 @@ public static class SshFailureClassifier
                 return SshErrorCodes.AuthenticationFailed;
 
             case Renci.SshNet.Common.SshOperationTimeoutException:
+            case TimeoutException:
                 return SshErrorCodes.Timeout;
 
             case Renci.SshNet.Common.SshConnectionException:
-                return commandSubmitted ? SshErrorCodes.ConnectionLost : SshErrorCodes.ConnectFailed;
+                return facts.CommandSubmitted ? SshErrorCodes.ConnectionLost : SshErrorCodes.ConnectFailed;
 
             case System.Net.Sockets.SocketException socket:
                 return socket.SocketErrorCode is System.Net.Sockets.SocketError.HostNotFound
@@ -64,25 +100,23 @@ public static class SshFailureClassifier
                     : SshErrorCodes.ConnectFailed;
 
             case Renci.SshNet.Common.SshException:
-                return commandSubmitted ? SshErrorCodes.ConnectionLost : SshErrorCodes.TransportFault;
+                return facts.CommandSubmitted ? SshErrorCodes.ConnectionLost : SshErrorCodes.TransportFault;
 
-            case System.IO.IOException or System.IO.FileNotFoundException or UnauthorizedAccessException:
-                return SshErrorCodes.CredentialUnavailable;
+            case ObjectDisposedException:
+                return SshErrorCodes.TransportFault;
+
+            // 凭据阶段的读/解析失败 = 选定私钥不可用；其他阶段的 IO 属传输/连接问题。
+            // 注意：FileNotFoundException 派生自 IOException，不单列（单列即不可达 case）。
+            case System.IO.IOException:
+            case UnauthorizedAccessException:
+            case FormatException:
+            case ArgumentException:
+                return facts.Phase == SshPhase.Credentials
+                    ? SshErrorCodes.CredentialUnavailable
+                    : facts.CommandSubmitted ? SshErrorCodes.ConnectionLost : SshErrorCodes.TransportFault;
 
             default:
                 return SshErrorCodes.TransportFault;
         }
-    }
-
-    /// <summary>建连失败（未提交）是否可安全再次尝试。命令一旦提交过，一律为 <see langword="false"/>。</summary>
-    public static bool IsRetrySafe(Exception exception, bool commandSubmitted)
-    {
-        if (commandSubmitted)
-        {
-            return false;
-        }
-
-        var code = Classify(exception, commandSubmitted: false);
-        return code is SshErrorCodes.DnsFailed or SshErrorCodes.ConnectFailed or SshErrorCodes.Busy;
     }
 }

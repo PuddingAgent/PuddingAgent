@@ -24,4 +24,11 @@
     <PackageReference Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 只对**本组件的**测试工程开放内部可见性（白盒断言：有界采集器、known_hosts/pin 验证器）。
+         组件化交付规程 §3.2 禁止的是「向上层调用方开放 InternalsVisibleTo」；
+         测试工程不是调用方、也不是上层，且它只引用本组件（S2）。 -->
+    <InternalsVisibleTo Include="PuddingSshTests" />
+  </ItemGroup>
+
 </Project>

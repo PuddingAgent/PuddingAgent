@@ -1,0 +1,6 @@
+*.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII41aIygVJFsSOZpsII5+vPg9FKZO+sTy6K2Csz5Hmkq
+!bad.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII41aIygVJFsSOZpsII5+vPg9FKZO+sTy6K2Csz5Hmkq
+@cert-authority corp.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII41aIygVJFsSOZpsII5+vPg9FKZO+sTy6K2Csz5Hmkq
+|2|abcdef|ZGVhZGJlZWY= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII41aIygVJFsSOZpsII5+vPg9FKZO+sTy6K2Csz5Hmkq
+malformed-line-with-too-few-fields
+host ssh-ed25519 not-base64!!!

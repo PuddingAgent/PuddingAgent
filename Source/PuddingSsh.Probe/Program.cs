@@ -327,6 +327,7 @@ internal static class Program
 
             // 捕获预算固定 64 KiB ⇒ 操作后**驻留**托管内存不得随输出量增长。
             // 托管「总分配量」是 churn（可回收），线性增长属库内部按包缓冲，单独作为事实记录。
+            // 注意：强制 GC 后的驻留差值可为负（回收了上一阶段的对象），所以比较用**差值**而不是比值。
             log.Assert(
                 scenario,
                 "retained_memory_bounded_1x",
@@ -340,8 +341,8 @@ internal static class Program
             log.Assert(
                 scenario,
                 "retained_memory_sublinear",
-                bigPass.Retained < (smallPass.Retained * 2) + (4L * 1024 * 1024),
-                $"retained_1x={smallPass.Retained} retained_3x={bigPass.Retained}");
+                bigPass.Retained - smallPass.Retained < 4L * 1024 * 1024,
+                $"retained_1x={smallPass.Retained} retained_3x={bigPass.Retained}（3× 输出不得多驻留 ≥4 MiB）");
         }
 
         // Unicode 分块：预算故意小于单条输出，截断处不得出现替换字符（不许破坏字符）。

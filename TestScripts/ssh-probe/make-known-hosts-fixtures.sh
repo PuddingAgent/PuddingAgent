@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# PuddingSsh A2 夹具生成器：用**真实 OpenSSH**产出 known_hosts fixture。
+#
+# 为什么需要它：设计 §12.2 要求「实现须以真实 OpenSSH 生成的 hashed 记录及撤销 fixture 验证，
+# 不靠自己生成的样例自证」。因此：
+#   · 明文记录来自 `ssh-keyscan`（真实握手取回的主机公钥与真实的 [host]:port 写法）；
+#   · 哈希记录来自 `ssh-keygen -H`（OpenSSH 自己的 |1|salt|hash 编码）；
+#   · 并对每个主机 token 跑 `ssh-keygen -F` 交叉核对「OpenSSH 认为该主机存在于文件中」；
+#   · 指纹来自 `ssh-keygen -lf -E sha256`，供测试断言「我们算的 SHA256 == OpenSSH 算的」。
+#
+# 用法（在 WSL 内以 root 运行，先跑过 setup-wsl-sshd.sh）：
+#   bash make-known-hosts-fixtures.sh <windows-out-dir-as-wsl-path> [port]
+set -euo pipefail
+
+OUT="${1:?usage: make-known-hosts-fixtures.sh <wsl-path-to-fixture-dir> [port]}"
+PORT="${2:-22122}"
+ROOT=/tmp/pudding-ssh-probe
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+mkdir -p "$OUT"
+[ -f "$ROOT/hostkey_ed25519" ] || { echo "missing fixture keys; run setup-wsl-sshd.sh first" >&2; exit 1; }
+
+# --- 一份诱饵密钥：用于「撤销的是另一把密钥」这条 per-key 契约的 fixture ---
+ssh-keygen -q -t ed25519 -N "" -f "$WORK/decoy_ed25519" -C pudding-decoy >/dev/null
+DECOY_B64="$(awk '{print $2}' "$WORK/decoy_ed25519.pub")"
+
+# --- 端口 22 的第二个 sshd 实例（复用同一批主机密钥）---
+# 目的是拿到 OpenSSH 对「默认端口 22」（裸主机名）与「IPv6 + 默认端口」（[::1]:22）的真实写法。
+POR22_STARTED=0
+if ss -lnt | grep -q ':22 '; then
+  echo "WARN: port 22 already in use; port-22 lines will be derived instead of scanned" >&2
+else
+  cat > "$WORK/sshd22.conf" <<EOF
+ListenAddress 127.0.0.1:22
+ListenAddress [::1]:22
+ListenAddress [::1]:$PORT
+HostKey $ROOT/hostkey_ed25519
+HostKey $ROOT/hostkey_rsa
+PidFile $WORK/sshd22.pid
+AuthorizedKeysFile $ROOT/authorized_keys
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+StrictModes no
+PrintMotd no
+LogLevel ERROR
+EOF
+  if /usr/sbin/sshd -t -f "$WORK/sshd22.conf" 2>/dev/null && /usr/sbin/sshd -f "$WORK/sshd22.conf" -E "$WORK/sshd22.log" 2>/dev/null; then
+    POR22_STARTED=1
+    sleep 1
+  else
+    echo "WARN: could not start the port-22 fixture sshd; deriving those lines" >&2
+  fi
+fi
+
+cleanup_sshd22() {
+  if [ "$POR22_STARTED" = "1" ] && [ -f "$WORK/sshd22.pid" ]; then
+    kill "$(cat "$WORK/sshd22.pid")" 2>/dev/null || true
+  fi
+}
+trap 'cleanup_sshd22; rm -rf "$WORK"' EXIT
+
+# --- 真实 ssh-keyscan 记录 ---
+scan() { ssh-keyscan -T 5 "$@" 2>/dev/null; }
+
+MERGED="$WORK/merged"
+: > "$MERGED"
+scan -p "$PORT" 127.0.0.1 >> "$MERGED"
+[ "$POR22_STARTED" = "1" ] && scan 127.0.0.1 >> "$MERGED"
+scan -p "$PORT" ::1 >> "$MERGED" || true
+[ "$POR22_STARTED" = "1" ] && { scan -6 ::1 >> "$MERGED" || scan ::1 >> "$MERGED" || true; }
+
+# 兜底（只在对应扫描拿不到记录时）：用真实主机密钥改写主机字段，并在 provenance 里标注为 derived。
+ED25519_B64="$(awk '{print $2}' "$ROOT/hostkey_ed25519.pub")"
+RSA_B64="$(awk '{print $2}' "$ROOT/hostkey_rsa.pub")"
+DERIVED_NOTE=""
+ensure_line() { # ensure_line <host-field> <keytype> <b64>
+  if ! awk -v h="$1" '$1==h' "$MERGED" | grep -q .; then
+    printf '%s %s %s\n' "$1" "$2" "$3" >> "$MERGED"
+    DERIVED_NOTE="${DERIVED_NOTE}${1} (${2}) derived from the fixture host key"$'\n'
+  fi
+}
+ensure_line "[127.0.0.1]:$PORT" ssh-ed25519 "$ED25519_B64"
+ensure_line "127.0.0.1" ssh-ed25519 "$ED25519_B64"
+ensure_line "[::1]:$PORT" ssh-ed25519 "$ED25519_B64"
+ensure_line "[::1]:22" ssh-ed25519 "$ED25519_B64"
+
+# 去掉 ssh-keyscan 的注释行，得到纯粹的 known_hosts；再补上 RSA 记录（同一主机的第二把密钥）。
+grep -v '^#' "$MERGED" | awk '!seen[$0]++' > "$WORK/plain"
+scan -p "$PORT" -t rsa 127.0.0.1 2>/dev/null | grep -v '^#' >> "$WORK/plain" || true
+printf '127.0.0.1 ssh-rsa %s\n' "$RSA_B64" >> "$WORK/plain"
+
+sort -u "$WORK/plain" > "$OUT/known_hosts.plain"
+
+# --- 哈希记录（OpenSSH 自己算的 |1|salt|hash）---
+cp "$OUT/known_hosts.plain" "$WORK/hashing"
+ssh-keygen -q -H -f "$WORK/hashing"
+grep -v '^#' "$WORK/hashing" | grep -v '^$' > "$OUT/known_hosts.hashed"
+
+# --- 撤销 fixture ---
+# 1) 撤销「出示的那把密钥」⇒ 必须被拒
+{ cat "$OUT/known_hosts.plain"; printf '@revoked 127.0.0.1 ssh-ed25519 %s\n' "$ED25519_B64"; } > "$OUT/known_hosts.revoked_same_key"
+# 2) 撤销「另一把密钥」⇒ 出示的已登记密钥仍应被信任（撤销按密钥生效，与 OpenSSH 一致）
+{ cat "$OUT/known_hosts.plain"; printf '@revoked 127.0.0.1 ssh-ed25519 %s\n' "$DECOY_B64"; } > "$OUT/known_hosts.revoked_other_key"
+# 3) 哈希记录的撤销：用 `ssh-keygen -F` 自己挑出 127.0.0.1 对应的那条哈希记录再加标记，
+#    这样测试知道它撤销的是哪个 token（不靠我们自己猜行序）。
+HASHED_127="$(ssh-keygen -F 127.0.0.1 -f "$OUT/known_hosts.hashed" 2>/dev/null | grep -v '^#' | head -1)"
+if [ -n "$HASHED_127" ]; then
+  printf '@revoked %s\n' "$HASHED_127" > "$OUT/known_hosts.revoked_hashed"
+else
+  echo "WARN: no hashed record for 127.0.0.1 found; revoked_hashed fixture skipped" >&2
+fi
+
+# --- 不支持形态 fixture（首期必须 fail-closed 的东西）---
+{
+  printf '*.example.com ssh-ed25519 %s\n' "$ED25519_B64"
+  printf '!bad.example.com ssh-ed25519 %s\n' "$ED25519_B64"
+  printf '@cert-authority corp.example.com ssh-ed25519 %s\n' "$ED25519_B64"
+  printf '|2|abcdef|ZGVhZGJlZWY= ssh-ed25519 %s\n' "$ED25519_B64"
+  printf 'malformed-line-with-too-few-fields\n'
+  printf 'host ssh-ed25519 not-base64!!!\n'
+} > "$OUT/known_hosts.unsupported"
+
+# --- 指纹与交叉核对证据 ---
+{
+  echo "# generated by TestScripts/ssh-probe/make-known-hosts-fixtures.sh"
+  echo "# os: $(. /etc/os-release; echo "$PRETTY_NAME")"
+  echo "# ssh: $(/usr/sbin/sshd -V 2>&1 | head -1)"
+  echo "# keyscan_port: $PORT"
+  echo "# port22_instance: $POR22_STARTED"
+  echo "# derived_lines:"
+  if [ -n "$DERIVED_NOTE" ]; then printf '%s' "$DERIVED_NOTE" | sed 's/^/#   /'; else echo "#   none"; fi
+  echo "#"
+  echo "# host_key_ed25519 $(ssh-keygen -lf "$ROOT/hostkey_ed25519.pub" -E sha256)"
+  echo "# host_key_rsa     $(ssh-keygen -lf "$ROOT/hostkey_rsa.pub" -E sha256)"
+  echo "#"
+  for token in "127.0.0.1" "[127.0.0.1]:$PORT" "[::1]:22" "[::1]:$PORT"; do
+    found="$(ssh-keygen -F "$token" -f "$OUT/known_hosts.plain" 2>/dev/null | grep -v '^#' | head -1 || true)"
+    if [ -n "$found" ]; then
+      echo "match $token -> present"
+    else
+      echo "match $token -> absent"
+    fi
+  done
+  echo "#"
+  echo "# hashed-file ssh-keygen -F results (hostnames are hashed, -F must still find them):"
+  for token in "127.0.0.1" "[127.0.0.1]:$PORT" "[::1]:22" "[::1]:$PORT"; do
+    if ssh-keygen -F "$token" -f "$OUT/known_hosts.hashed" >/dev/null 2>&1; then
+      echo "match-hashed $token -> present"
+    else
+      echo "match-hashed $token -> absent"
+    fi
+  done
+} > "$OUT/fingerprints.txt"
+
+echo "fixtures written to $OUT"
+ls -l "$OUT"
+cat "$OUT/fingerprints.txt"

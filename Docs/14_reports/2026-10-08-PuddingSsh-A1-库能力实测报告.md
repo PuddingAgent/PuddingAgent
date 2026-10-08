@@ -108,3 +108,10 @@ powershell -File TestScripts/ssh-probe/run-ssh-probe.ps1
   `TestScripts/check-script-encodings.ps1` 是这条门禁；本机 PowerShell 为 5.1，`pwsh` 7 不在 PATH。
 - 夹具每次重建密钥；如残留旧夹具 sshd 占用端口，运行器会先按配置路径终止它（否则指纹交叉核对会（正确地）失败）。
 - 探针的观测模式（记录后一律拒绝）只存在于探针内，**不在交付路径**；交付路径不提供首次信任。
+
+## 8. 后续覆盖（2026-10-08 A2）
+
+§6 列为「未覆盖」的 known_hosts 明文/逗号/哈希/撤销与 pin 语义、以及错误分类器，已在 **A2** 用
+**真实 OpenSSH fixture** 覆盖（87 个独立用例、边界变异取红），见
+[A2 报告](2026-10-08-PuddingSsh-A2-独立测试与信任验证报告.md)。
+仍未覆盖：并发准入（A3）、`.ssh` 目录与 ACL/权限、服务端侧撤销端到端复现（A4/A5）、产品态验收（A6）。

@@ -69,6 +69,7 @@ internal sealed class SshNetTransportSession : ISshTransportSession
         int? exitCode = null;
         string? exitSignal = null;
         var submitted = false;
+        var retrySafe = false;
 
         SshCommand? sshCommand = null;
         try
@@ -114,7 +115,9 @@ internal sealed class SshNetTransportSession : ISshTransportSession
             catch (Exception ex)
             {
                 status = SshExecutionStatus.Failed;
-                errorCode = SshFailureClassifier.Classify(ex, submitted);
+                var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(phase, submitted));
+                errorCode = failure.ErrorCode;
+                retrySafe = failure.RetrySafe;
                 diagnostic = ex.GetType().Name + ": " + ex.Message;
             }
 
@@ -157,7 +160,9 @@ internal sealed class SshNetTransportSession : ISshTransportSession
         catch (Exception ex)
         {
             status = SshExecutionStatus.Failed;
-            errorCode = SshFailureClassifier.Classify(ex, submitted);
+            var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(phase, submitted));
+            errorCode = failure.ErrorCode;
+            retrySafe = failure.RetrySafe;
             diagnostic = ex.GetType().Name + ": " + ex.Message;
             if (submitted)
             {
@@ -197,7 +202,7 @@ internal sealed class SshNetTransportSession : ISshTransportSession
             CapturedBytes = collector.CapturedBytes,
             ReceivedBytes = collector.ReceivedBytes,
             OutputTruncated = collector.IsTruncated,
-            RetrySafe = status == SshExecutionStatus.Failed && !submitted,
+            RetrySafe = retrySafe,
             ErrorCode = errorCode,
             Phase = phase,
             Diagnostic = diagnostic,
