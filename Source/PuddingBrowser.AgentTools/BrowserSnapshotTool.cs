@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
@@ -21,6 +21,14 @@ public sealed record BrowserSnapshotArgs
     /// </summary>
     [ToolParam("Reading mode: outline (default: interactive nodes + headings/landmarks), interactive (only interactive nodes), or full (complete DOM + accessibility tree, for troubleshooting). text is not implemented yet.")]
     public string? Mode { get; init; }
+
+    /// <summary>
+    /// 表示格式（设计方案 §151：<c>mode</c> 决定读什么，<c>format</c> 决定**表示成什么**）。
+    /// 目前仅正文模式支持：<c>markdown</c>（默认）或 <c>compact_json</c>（给程序读的紧凑 JSON）。
+    /// 未登记的线名 fail closed。
+    /// </summary>
+    [ToolParam("Representation format for mode=text: markdown (default) or compact_json.")]
+    public string? Format { get; init; }
 
     /// <summary>输出行数上限（仅 outline/interactive 生效，默认 50）。</summary>
     [ToolParam("Maximum outline lines to return (default 50; outline/interactive only).")]
@@ -104,6 +112,27 @@ public sealed class BrowserSnapshotTool(
         if (!TryBuildReadingRequest(args, mode, out var reading, out var readingError))
         {
             return BrowserToolResponse.Failure("browser_invalid_arguments", readingError!);
+        }
+
+        // format（§151）：未登记的线名 fail closed；目前只有正文模式有第二种表示。
+        if (!string.IsNullOrWhiteSpace(args.Format))
+        {
+            var format = args.Format.Trim();
+            var known = format.Equals("markdown", StringComparison.OrdinalIgnoreCase)
+                || format.Equals("compact_json", StringComparison.OrdinalIgnoreCase);
+            if (!known)
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments", "format must be one of markdown or compact_json");
+            }
+
+            if (mode != BrowserReadingMode.Text)
+            {
+                // 别假装支持：outline/interactive 只有一种文本表示，full 回的是原始表示而不是格式。
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments",
+                    "format applies to mode=text only (outline/interactive have a single text representation)");
+            }
         }
 
         // 输出字段白名单：未知名字明确拒绝（静默忽略会让调用方以为字段真的没了）。
@@ -233,16 +262,23 @@ public sealed class BrowserSnapshotTool(
             // 结构、预算与分页都是纯函数，因此可被完整验证（ArticleMarkdownTests）。
             if (mode == BrowserReadingMode.Text)
             {
-                var article = ArticleMarkdown.Compose(
-                    snapshot.Value.ContentBlocks,
-                    args.MaxBytes ?? ArticleMarkdown.DefaultMaxBytes,
-                    args.Cursor ?? 0);
+                // §151：format 决定表示。两种表示**共用同一套分页语义**（同一个游标可以互换续读）。
+                var compactJson = string.Equals(args.Format?.Trim(), "compact_json", StringComparison.OrdinalIgnoreCase);
+                var article = compactJson
+                    ? ArticleCompactJson.Compose(
+                        snapshot.Value.ContentBlocks,
+                        args.MaxBytes ?? ArticleCompactJson.DefaultMaxBytes,
+                        args.Cursor ?? 0)
+                    : ArticleMarkdown.Compose(
+                        snapshot.Value.ContentBlocks,
+                        args.MaxBytes ?? ArticleMarkdown.DefaultMaxBytes,
+                        args.Cursor ?? 0);
 
                 return BrowserToolResponse.Success(
                     new BrowserSnapshotToolValue
                     {
                         Mode = BrowserReadingFormatWire.NameOf(mode),
-                        Representation = "markdown",
+                        Representation = compactJson ? "compact_json" : "markdown",
                         Content = article.Text,
                         Truncated = article.Truncated,
                         TruncationReason = BrowserReadingFormatWire.TruncationNameOf(article.Truncation),

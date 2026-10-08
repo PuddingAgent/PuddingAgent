@@ -16,6 +16,7 @@ public sealed class ComponentSurfaceTests
     private static readonly string[] ExpectedPublicTypes =
     [
         "ArticleBlock",
+        "ArticleCompactJson",
         "ArticleMarkdown",
         "BrowserActionEvidence",
         "BrowserNodeIdentity",
@@ -140,6 +141,7 @@ public sealed class ComponentSurfaceTests
         var expected = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["ArticleMarkdownFormatTests"] = 13,
+            ["ArticleCompactJsonTests"] = 7,
             ["BrowserNodeIdentityTests"] = 10,
             ["NativeInputSequenceTests"] = 10,
             ["BrowserAssertionRedactionTests"] = 11,

@@ -479,6 +479,84 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Snapshot_TextMode_CompactJsonFormat_ReturnsParseableBlocks()
+    {
+        // §151：mode 决定读什么，format 决定**表示成什么**。compact_json 给程序读，且必须可解析。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.ContentBlocks = string.Join('\n',
+            """{"k":"h1","t":"Title"}""",
+            """{"k":"li","t":"Item","d":2}""");
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                format = "compact_json"
+            }));
+
+        Assert.True(snapshot.Success, snapshot.Error);
+        var value = GetJson(snapshot.Output, "value");
+        Assert.Equal("compact_json", value.GetProperty("representation").GetString());
+
+        using var document = JsonDocument.Parse(value.GetProperty("content").GetString()!);
+        var blocks = document.RootElement.GetProperty("blocks");
+        Assert.Equal(2, blocks.GetArrayLength());
+        Assert.Equal("h1", blocks[0].GetProperty("k").GetString());
+        Assert.Equal(2, blocks[1].GetProperty("d").GetInt32());
+        Assert.False(document.RootElement.GetProperty("truncated").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Snapshot_FormatIsFailClosed_UnknownValueOrWrongMode()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        // 未登记的线名 ⇒ fail closed（不猜、不默认）。
+        var unknown = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", mode = "text", format = "yaml" }));
+
+        Assert.False(unknown.Success);
+        using (var document = JsonDocument.Parse(unknown.Error!))
+        {
+            Assert.Equal(
+                "browser_invalid_arguments",
+                document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        }
+
+        // outline/interactive 只有一种文本表示 ⇒ 不假装支持第二种。
+        var wrongMode = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "outline",
+                format = "compact_json"
+            }));
+
+        Assert.False(wrongMode.Success);
+        using (var document = JsonDocument.Parse(wrongMode.Error!))
+        {
+            Assert.Equal(
+                "browser_invalid_arguments",
+                document.RootElement.GetProperty("error").GetProperty("code").GetString());
+            Assert.Contains("mode=text", document.RootElement.GetProperty("error").GetProperty("message").GetString()!);
+        }
+    }
+
+    [Fact]
     public async Task Snapshot_TextMode_ComposesArticleMarkdown()
     {
         // §6.1 mode=text：驱动只给语义块，markdown 由读取侧组装（结构/预算/分页是纯函数，另有专项测试）。

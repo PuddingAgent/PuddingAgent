@@ -207,6 +207,16 @@ public static class ArticleMarkdown
             .Replace("|", "\\|", StringComparison.Ordinal)
             .Trim();
 
+    /// <summary>
+    /// 解析语义块（供 markdown 与 compact_json 两种表示共用）。
+    /// **两种表示必须用同一份解析与同一套分页决策**，否则续读会在表示之间错位。
+    /// </summary>
+    public static (IReadOnlyList<ArticleBlock> Blocks, int Skipped) Parse(string? blocks)
+    {
+        var parsed = ParseBlocks(blocks);
+        return (parsed.Blocks, parsed.Skipped);
+    }
+
     private static (List<ArticleBlock> Blocks, int Skipped) ParseBlocks(string? blocks)
     {
         var list = new List<ArticleBlock>();

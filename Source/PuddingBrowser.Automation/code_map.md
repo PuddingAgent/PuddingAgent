@@ -1,4 +1,4 @@
-# PuddingBrowser.Automation — code_map
+﻿# PuddingBrowser.Automation — code_map
 
 > 浏览器自动化**可靠性**组件（叶子）：统一控制权、页面授权、执行租约、证据化回执与重试裁定。
 > 设计依据：[浏览器自动化可靠性与渐进阅读设计方案](../../Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md)（§3/§4，切片 **B0**）。
@@ -33,6 +33,7 @@
 | `BrowserReadingFormat.cs` | 阅读面收敛（设计 §6.1/§6.2、G5）：把驱动的无障碍树按模式（`outline` 默认＝可交互行＋标题/地标行，`interactive`＝仅带 `ref=` 的行，`full`＝全量不设预算，`text` 未实现）**只做投影不编造**；**输出预算（50 行 / 4096 UTF-8 字节）与内部扫描预算（10k 节点 / 64 层 / 200k 文本）分开**；截断如实区分 `incomplete_scan`（可能缺整片区域）与 `output_budget`（可用 `nextCursor` 续读）。`BrowserReadingFormatWire` 提供线名与 fail-closed 解析 |
 | `BrowserNodeIdentity.cs` | **引用的宿主绑定身份与判定**（§1.1/§5 禁止自动重绑）：现有 ref 只绑「页面 token + 版本 + 序号」，SPA 原地重渲染（版本计数没动）时同一序号会指向**另一个节点**。这里补上宿主侧身份（CDP `backendNodeId`，编码为 `p…-v3-n7-b42`）与判定表：`Valid`（都一致）/`Replaced`（位置一致但**节点被换掉**，必须拒绝）/`StaleVersion`/`WrongPage`/`Unverifiable`（任一侧无身份：**不声称有效、也不凭空判死**）。判定是纯函数，驱动只负责采集事实；`IsSafeToProceed` 允许 Unverifiable 继续，但调用方必须当"未证明"而非"已证明相同" |
 | `NativeInputSequence.cs` | **原生输入（CDP 键鼠）的调用序列规划**（§7 `inputMode=native`）：把"点击/悬停/滚动/填入/逐键输入/按键"翻译成 CDP 调用清单。要点是**状态不留残**——点击必定 移动→按下→抬起（成对）、组合键按 CDP 位掩码（Alt=1/Control=2/Meta=4/Shift=8）并在 keyDown 前按下、keyUp 后抬起、`ReleaseModifiers` 供**取消时清理**（一次被取消的 Ctrl+点击不能让页面以为 Ctrl 一直按着）；`fill` 用 `Input.insertText`（清空则 Ctrl+A→Delete），`type` 逐字符 keyDown/keyUp（页面才收得到 input），未知按键**拒绝而不是猜**。本组件不引用 Abstractions，几何用自己的 `InputTarget` |
+| `ArticleCompactJson.cs` | **正文的 compact_json 表示**（§151 的 `format`）：与 markdown **共用同一份块解析与同一套分页决策**（两种表示的页边界一致，游标可互换续读），区别只在形状——给程序读的 `{blocks:[{k,t,d,h,r}],truncated,nextCursor}`。硬性要求：**截断后仍是合法 JSON**（先选块再一次性序列化，括号永远成对；边写边截会产出半截 JSON） |
 | `ArticleMarkdown.cs` | **正文 markdown 组装**（设计 §6.1 的 `mode=text`）：驱动只输出**语义块**（一行一个 JSON 对象：h1-h6/p/li/pre/quote/a/table/hr），这里组装成 markdown。三条承诺（G6）：**不丢段不重复**（每块要么渲染要么计入 `SkippedBlocks`；分页只落**块边界**，不做块内切分）、**结构保真**（标题层级/列表缩进/表格行列/代码空白/链接目的地址）、**输出始终合法 markdown**（非法/未知输入不抛异常，未知块只要有文本就降级成段落）。单块超预算时整块给出并如实标注 `output_budget`（宁可超一点也不静默截断正文） |
 | `BrowserInteractionReceipt.cs` | 交互回执**判定**（设计 §4.1/§4.2、G7）：把「调用方声明的期望 + 驱动回读的观测值」判成断言与完成度。① 不按动作名推断成功——只有声明了期望（显式 `expect_value`，或 select 的 `values`、check/uncheck 的 `checked` 这类调用方自给的目标值）才有断言，否则如实报 `dispatched`；② **表单值一律不回显**（value/selectedValues 只给 matched 与长度）；③ 期望存在但拿不到观测 ⇒ `unverified`（不是 failed）。`ExecutionFor(error)` 由错误目录推导执行阶段（未开始/已派发/结果不明），`IsGateDenial(error)` 把**接管/暂停/授权**三种拒绝判成 `blocked`（未开始、无副作用、不得自动重试）而不是普通 `failed` |
 
