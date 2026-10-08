@@ -17,6 +17,8 @@ public sealed class ComponentSurfaceTests
     [
         "ArticleBlock",
         "ArticleCompactJson",
+        "ArticlePaging",
+        "PageResult",
         "ArticleMarkdown",
         "BrowserActionEvidence",
         "BrowserNodeIdentity",
@@ -141,7 +143,7 @@ public sealed class ComponentSurfaceTests
         var expected = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["ArticleMarkdownFormatTests"] = 13,
-            ["ArticleCompactJsonTests"] = 7,
+            ["ArticleCompactJsonTests"] = 8,
             ["BrowserNodeIdentityTests"] = 10,
             ["NativeInputSequenceTests"] = 10,
             ["BrowserAssertionRedactionTests"] = 11,

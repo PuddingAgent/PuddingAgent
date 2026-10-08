@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 
 namespace PuddingBrowser.Automation;
@@ -30,43 +30,90 @@ public static class ArticleCompactJson
         ArgumentOutOfRangeException.ThrowIfLessThan(maxBytes, 64);
         ArgumentOutOfRangeException.ThrowIfNegative(cursor);
 
-        // 复用 ArticleMarkdown 的"整块、成对"分页：先把 markdown 表示算出来只是为了拿到
-        // **同一份**块解析与分页决策（两种表示的页边界必须一致，否则续读会在表示之间错位）。
-        var reference = ArticleMarkdown.Compose(blocks, maxBytes, cursor);
+        // 按 **JSON 自己真实的字节数**分页：块成本 = 序列化后的字节（含引号与转义），
+        // 分隔符是逗号，包装（{"blocks":[…],"truncated":…,"nextCursor":…}）也计入预算。
+        // 用最坏情况的包装长度做估计，再在序列化后做一次**精确复核**（见下），
+        // 这样既能提前分页，又保证"不超预算"这个承诺是真的。
         var parsed = ArticleMarkdown.Parse(blocks);
-
         if (parsed.Blocks.Count == 0)
         {
-            return new BrowserReadingResult(null, 0, 0, 0, reference.SkippedBlocks > 0,
-                reference.SkippedBlocks > 0 ? BrowserReadingTruncation.IncompleteScan : BrowserReadingTruncation.None, null)
+            return new BrowserReadingResult(
+                null, 0, 0, 0, parsed.Skipped > 0,
+                parsed.Skipped > 0 ? BrowserReadingTruncation.IncompleteScan : BrowserReadingTruncation.None, null)
             {
-                SkippedBlocks = reference.SkippedBlocks,
+                SkippedBlocks = parsed.Skipped,
             };
         }
 
-        var from = Math.Min(cursor, parsed.Blocks.Count);
-        var taken = Math.Max(0, reference.ReturnedLines);
-        var selected = parsed.Blocks.Skip(from).Take(taken).ToArray();
+        var wrapper = WrapperBytes(parsed.Blocks.Count, cursor);
+        var page = ArticlePaging.Page(
+            parsed.Blocks,
+            cursor,
+            maxBytes,
+            block => BlockBytes(block),
+            ArticlePaging.JsonSeparatorBytes,
+            wrapper);
 
-        var json = Serialize(selected, truncated: reference.Truncated, nextCursor: reference.NextCursor);
+        var from = page.From;
+        var count = page.Count;
+        var selected = parsed.Blocks.Skip(from).Take(count).ToArray();
+        var truncated = !page.ConsumedAll;
+        var json = Serialize(selected, truncated, truncated ? from + count : null);
 
-        // 序列化后的**真实**字节数与行数（不沿用 markdown 的估算：JSON 有转义与结构开销）。
+        // 精确复核：包装里的 nextCursor 位数是分页之后才知道的，可能比估计更长。
+        // 超出就**丢掉最后一块**再试（块边界不变，游标语义不变），直到装下或只剩一块。
+        while (Encoding.UTF8.GetByteCount(json) > maxBytes && selected.Length > 1)
+        {
+            selected = selected[..^1];
+            truncated = true;
+            json = Serialize(selected, truncated, from + selected.Length);
+        }
+
         var bytes = Encoding.UTF8.GetByteCount(json);
-        var overBudget = bytes > maxBytes;
+        var overBudget = bytes > maxBytes;   // 只剩一块仍超预算 ⇒ 整块给出并如实标注
+        var nextCursor = truncated ? from + selected.Length : (int?)null;
+        var reason = parsed.Skipped > 0 && !truncated && !overBudget
+            ? BrowserReadingTruncation.IncompleteScan
+            : !truncated && !overBudget
+                ? BrowserReadingTruncation.None
+                : BrowserReadingTruncation.OutputBudget;
 
         return new BrowserReadingResult(
             json,
             parsed.Blocks.Count,
             selected.Length,
             bytes,
-            reference.Truncated || overBudget,
-            reference.Truncation == BrowserReadingTruncation.None && overBudget
-                ? BrowserReadingTruncation.OutputBudget
-                : reference.Truncation,
-            reference.NextCursor)
+            truncated || overBudget || parsed.Skipped > 0,
+            reason,
+            nextCursor)
         {
-            SkippedBlocks = reference.SkippedBlocks,
+            SkippedBlocks = parsed.Skipped,
         };
+    }
+
+    /// <summary>包装的字节数估计：用最坏情况的游标位数（10 位）与固定字段。</summary>
+    private static int WrapperBytes(int blockCount, int cursor)
+    {
+        // {"blocks":[],"truncated":true,"nextCursor":4294967295}
+        var skeleton = blockCount == 0 && cursor == 0
+            ? """{"blocks":[],"truncated":false,"nextCursor":null}"""
+            : """{"blocks":[],"truncated":true,"nextCursor":4294967295}""";
+        return Encoding.UTF8.GetByteCount(skeleton);
+    }
+
+    /// <summary>单块的 JSON 字节数（用同一套序列化器算，**不另写一份估算**，避免两处漂移）。</summary>
+    private static int BlockBytes(ArticleBlock block) =>
+        Encoding.UTF8.GetByteCount(SerializeBlock(block));
+
+    private static string SerializeBlock(ArticleBlock block)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
+        {
+            WriteBlock(writer, block);
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static string Serialize(IReadOnlyList<ArticleBlock> blocks, bool truncated, int? nextCursor)
@@ -80,42 +127,7 @@ public static class ArticleCompactJson
 
             foreach (var block in blocks)
             {
-                writer.WriteStartObject();
-                writer.WriteString("k", block.Kind);
-                if (block.Text is { } text)
-                {
-                    writer.WriteString("t", text);
-                }
-
-                if (block.Kind == "li")
-                {
-                    writer.WriteNumber("d", Math.Max(1, block.Depth));
-                }
-
-                if (block.Href is { } href)
-                {
-                    writer.WriteString("h", href);
-                }
-
-                if (block.Rows is { Count: > 0 } rows)
-                {
-                    writer.WritePropertyName("r");
-                    writer.WriteStartArray();
-                    foreach (var row in rows)
-                    {
-                        writer.WriteStartArray();
-                        foreach (var cell in row)
-                        {
-                            writer.WriteStringValue(cell);
-                        }
-
-                        writer.WriteEndArray();
-                    }
-
-                    writer.WriteEndArray();
-                }
-
-                writer.WriteEndObject();
+                WriteBlock(writer, block);
             }
 
             writer.WriteEndArray();
@@ -135,5 +147,46 @@ public static class ArticleCompactJson
         }
 
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    /// <summary>单块写入（序列化与成本估算共用同一段代码 ⇒ 两者不可能漂移）。</summary>
+    private static void WriteBlock(Utf8JsonWriter writer, ArticleBlock block)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("k", block.Kind);
+        if (block.Text is { } text)
+        {
+            writer.WriteString("t", text);
+        }
+
+        if (block.Kind == "li")
+        {
+            writer.WriteNumber("d", Math.Max(1, block.Depth));
+        }
+
+        if (block.Href is { } href)
+        {
+            writer.WriteString("h", href);
+        }
+
+        if (block.Rows is { Count: > 0 } rows)
+        {
+            writer.WritePropertyName("r");
+            writer.WriteStartArray();
+            foreach (var row in rows)
+            {
+                writer.WriteStartArray();
+                foreach (var cell in row)
+                {
+                    writer.WriteStringValue(cell);
+                }
+
+                writer.WriteEndArray();
+            }
+
+            writer.WriteEndArray();
+        }
+
+        writer.WriteEndObject();
     }
 }

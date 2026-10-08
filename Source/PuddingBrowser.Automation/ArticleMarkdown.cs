@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 
 namespace PuddingBrowser.Automation;
@@ -60,31 +60,20 @@ public static class ArticleMarkdown
         }
 
         var from = Math.Min(cursor, parsed.Blocks.Count);
-        var pieces = new List<string>();
-        var bytes = 0;
-        var index = from;
 
-        for (; index < parsed.Blocks.Count; index++)
-        {
-            var piece = Render(parsed.Blocks[index]);
-            var cost = Encoding.UTF8.GetByteCount(piece) + (pieces.Count == 0 ? 0 : 2); // 空行分隔
+        // 按**本表示真实输出的字节数**分页（markdown 的块成本 = 渲染后的字节数；空行分隔 2 字节）。
+        var page = ArticlePaging.Page(
+            parsed.Blocks,
+            cursor,
+            maxBytes,
+            block => Encoding.UTF8.GetByteCount(Render(block)),
+            ArticlePaging.MarkdownSeparatorBytes);
 
-            // 块边界分页：装不下就停在这里，**不切块**（切块会造成续读重复或丢半段）。
-            // 例外：第一块本身就超预算 ⇒ 整块给出（宁可超一点，也不静默截断正文）。
-            if (pieces.Count > 0 && bytes + cost > maxBytes)
-            {
-                break;
-            }
-
-            pieces.Add(piece);
-            bytes += cost;
-        }
-
-        var consumedAll = index >= parsed.Blocks.Count;
-
-        // 单块就超预算时我们**整块给出**（不在块内切，避免续读重复/丢半段），
-        // 但必须如实标注"这份输出超出了请求的预算"，否则调用方会以为它在预算内。
-        var overBudget = bytes > maxBytes;
+        var pieces = parsed.Blocks.Skip(page.From).Take(page.Count).Select(Render).ToList();
+        var bytes = page.ContentBytes;
+        var index = page.From + page.Count;
+        var consumedAll = page.ConsumedAll;
+        var overBudget = page.OverBudget;
         var truncated = !consumedAll || overBudget || skipped > 0;
         var reason = skipped > 0 && consumedAll && !overBudget
             ? BrowserReadingTruncation.IncompleteScan

@@ -61,18 +61,21 @@ public sealed class ArticleCompactJsonTests
     }
 
     [TestMethod]
-    public void CursorContinuesWithoutGapsOrRepeats_AndAgreesWithMarkdownPaging()
+    public void EachRepresentationPagesByItsOwnBytes_AndStillCoversEverything()
     {
+        // 两种形状的块成本不同（JSON 有结构/转义/包装开销），因此**页边界本来就该不同**：
+        // 强行共用 markdown 的分页会让 JSON 超出调用方请求的预算。
+        // 真正要保的是：各自的输出都不超预算（单块超预算除外），且各自续读能覆盖全部、不重复。
         var lines = Enumerable.Range(1, 8).Select(index => $$"""{"k":"p","t":"paragraph-{{index}}-xxxxxxxx"}""").ToArray();
         var all = Blocks(lines);
 
         var markdown = ArticleMarkdown.Compose(all, maxBytes: 96);
         var compact = ArticleCompactJson.Compose(all, maxBytes: 96);
 
-        // 同一预算下两种表示的**页边界必须一致**，否则在表示之间续读会错位。
-        Assert.AreEqual(markdown.ReturnedLines, compact.ReturnedLines);
-        Assert.AreEqual(markdown.NextCursor, compact.NextCursor);
+        Assert.IsTrue(markdown.Bytes <= 96, $"markdown 超预算：{markdown.Bytes}");
+        Assert.IsTrue(compact.Bytes <= 96, $"compact_json 超预算：{compact.Bytes}");
 
+        // 各自续读：拼接后每段**恰好出现一次**（不重复、不丢段）。
         var second = ArticleCompactJson.Compose(all, maxBytes: 5_000, cursor: compact.NextCursor!.Value);
         var combined = compact.Text! + second.Text!;
         for (var index = 1; index <= 8; index++)
@@ -81,6 +84,20 @@ public sealed class ArticleCompactJsonTests
         }
 
         Assert.AreEqual(8, compact.ReturnedLines + second.ReturnedLines);
+    }
+
+    [TestMethod]
+    public void SingleBlockOverBudget_IsEmittedWholeAndFlagged()
+    {
+        // 与 markdown 同一条规则：宁可整块给出（并如实标注），也不在块内切。
+        var big = new string('x', 400);
+        var result = ArticleCompactJson.Compose(Blocks($$"""{"k":"p","t":"{{big}}"}"""), maxBytes: 64);
+
+        Assert.AreEqual(1, result.ReturnedLines);
+        Assert.IsTrue(result.Bytes > 64);
+        Assert.IsTrue(result.Truncated);
+        Assert.AreEqual(BrowserReadingTruncation.OutputBudget, result.Truncation);
+        Parse(result.Text!);   // 仍然是合法 JSON
     }
 
     [TestMethod]
