@@ -1,4 +1,4 @@
-﻿using PuddingBrowser.Abstractions;
+using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
 
 namespace Pudding.DesktopService.Browser;
@@ -90,6 +90,18 @@ public sealed class AutomationDriverPolicy : IBrowserDriverPolicy
 
         return new DriverArrivalStep(step.Delta, step.ShouldContinue, step.StopReason);
     }
+
+    public DriverArrivalStep? PlanToRefStep(
+        double elementTop,
+        double elementBottom,
+        double? previousTop,
+        double viewportHeight,
+        int stepsTaken)
+    {
+        var step = ArrivalScroll.PlanToRef(elementTop, elementBottom, previousTop, viewportHeight, stepsTaken);
+        return new DriverArrivalStep(step.Delta, step.ShouldContinue, step.StopReason);
+    }
+
     public string? BuildFileUploadDocumentParameters() => FileUploadPlan.BuildDocumentParameters();
 
     public string? BuildFileUploadQueryParameters(int rootNodeId, string elementRef) =>

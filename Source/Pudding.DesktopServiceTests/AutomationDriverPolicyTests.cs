@@ -55,11 +55,37 @@ public sealed class AutomationDriverPolicyTests
     }
 
     [Fact]
+    public void ToRefStepDelegatesToThePurePolicy()
+    {
+        // 元素在视口下方 ⇒ 继续（正位移）；已可见 ⇒ 停。
+        var below = Policy.PlanToRefStep(
+            elementTop: 900, elementBottom: 950, previousTop: null, viewportHeight: 800, stepsTaken: 0);
+
+        Assert.NotNull(below);
+        Assert.True(below!.Value.ShouldContinue);
+        Assert.True(below.Value.Delta > 0);
+
+        var visible = Policy.PlanToRefStep(
+            elementTop: 100, elementBottom: 140, previousTop: null, viewportHeight: 800, stepsTaken: 0);
+
+        Assert.False(visible!.Value.ShouldContinue);
+        Assert.Contains("already visible", visible.Value.StopReason);
+
+        // 元素在视口上方 ⇒ 负位移。
+        var above = Policy.PlanToRefStep(
+            elementTop: -300, elementBottom: -250, previousTop: null, viewportHeight: 800, stepsTaken: 0);
+        Assert.True(above!.Value.Delta < 0);
+    }
+
+    [Fact]
     public void TheNullPolicyRefusesArrivalScrolling()
     {
         // 没有策略注入的表面：明确"不支持"（null），而不是假装能滚。
         Assert.Null(NullBrowserDriverPolicy.Instance.PlanArrivalStep(
             toBottom: true, position: 0, previousPosition: null,
             viewportHeight: 800, contentHeight: 5_000, stepsTaken: 0));
+
+        Assert.Null(NullBrowserDriverPolicy.Instance.PlanToRefStep(
+            elementTop: 900, elementBottom: 950, previousTop: null, viewportHeight: 800, stepsTaken: 0));
     }
 }

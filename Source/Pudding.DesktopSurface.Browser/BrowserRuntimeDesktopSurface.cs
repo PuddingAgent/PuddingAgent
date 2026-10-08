@@ -697,17 +697,9 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                     $"native input is not implemented for action '{DesktopInteractionActionWire.NameOf(request.Action)}'"));
         }
 
-        // 原生滚动覆盖**按位移滚动**与**到达类目标（to_top/to_bottom）**：后者由驱动按步送轮，
-        // 并用收敛策略决定何时停（G8：必须能停，且不得把"没动"当成滚成功）。
-        // `to_ref` 仍需先解析参考点位置 ⇒ **仍明确拒绝**（fail closed），绝不悄悄退回 DOM。
-        if (request.InputMode == DesktopInputMode.Native
-            && request.Action == DesktopInteractionAction.Scroll
-            && request.EffectiveScrollTarget == DesktopScrollTarget.ToRef)
-        {
-            return CapabilityResult<DesktopInteractionResult>.Failure(
-                DesktopCapabilityError.UnsupportedCapability(
-                    "native scroll does not implement target 'to_ref' yet; use input_mode=dom for to_ref"));
-        }
+        // 原生滚动覆盖**全部目标模型**（设计 §7）：按位移滚动、到达类（to_top/to_bottom）、
+        // 以及把参考元素滚进视口（to_ref）。三者都由驱动实现并**必须能停**（G8）。
+        // 这里不再有"原生拒绝到达目标"的分支：目标模型已完整。
 
         if (_runtime.State != BrowserRuntimeState.Ready)
         {

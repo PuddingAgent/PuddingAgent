@@ -30,6 +30,77 @@ public sealed record ArrivalStep(double Delta, bool ShouldContinue, string? Stop
 /// </summary>
 public static class ArrivalScroll
 {
+    /// <summary>
+    /// **把参考元素滚进视口**（`to_ref`）的一步决策。
+    ///
+    /// 与滚到顶/底的区别：目标不是一个"极限位置"，而是"某个元素可见"。因此判定基于元素相对视口的
+    /// 上下边（`getBoundingClientRect` 的 top/bottom）：
+    /// <list type="bullet">
+    ///   <item><b>已经可见</b> ⇒ 停（完全可见；或元素本身比视口还高时"顶边已进入视口"）；</item>
+    ///   <item><b>在视口上方/下方</b> ⇒ 朝该方向滚"刚好够到"的距离（受单步上限约束）；</item>
+    ///   <item><b>位置不再变化</b> ⇒ 停（元素不在任何可滚动容器里、或被固定层挡住）；</item>
+    ///   <item><b>步数封顶</b> ⇒ 停。</item>
+    /// </list>
+    /// </summary>
+    /// <param name="elementTop">元素上边相对视口顶部的偏移（负值表示在视口上方）。</param>
+    /// <param name="elementBottom">元素下边相对视口顶部的偏移。</param>
+    /// <param name="previousTop">上一轮的上边偏移（第一轮传 <c>null</c>）。</param>
+    /// <param name="viewportHeight">视口高度。</param>
+    /// <param name="stepsTaken">已执行步数。</param>
+    /// <param name="stepPixels">单步位移上限。</param>
+    /// <param name="margin">"刚好够到"时预留的边距（避免元素贴着边缘）。</param>
+    public static ArrivalStep PlanToRef(
+        double elementTop,
+        double elementBottom,
+        double? previousTop,
+        double viewportHeight,
+        int stepsTaken,
+        double stepPixels = DefaultStepPixels,
+        double margin = DefaultRefMargin)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(stepPixels);
+        ArgumentOutOfRangeException.ThrowIfNegative(stepsTaken);
+        ArgumentOutOfRangeException.ThrowIfNegative(margin);
+
+        if (viewportHeight <= 0)
+        {
+            return ArrivalStep.Stop("the page did not report a usable viewport height");
+        }
+
+        if (stepsTaken >= MaxSteps)
+        {
+            return ArrivalStep.Stop($"stopped after {MaxSteps} steps (the page may scroll forever)");
+        }
+
+        if (previousTop is { } previous && Math.Abs(elementTop - previous) <= PositionEpsilon)
+        {
+            // 元素没有跟着动 ⇒ 它不在可滚动区域里（或被固定/覆盖层挡住）：继续送轮没有意义。
+            return ArrivalStep.Stop("the target element did not move while scrolling");
+        }
+
+        var fullyVisible = elementTop >= -PositionEpsilon && elementBottom <= viewportHeight + PositionEpsilon;
+        var tallerThanViewport = (elementBottom - elementTop) > viewportHeight;
+
+        if (fullyVisible || (tallerThanViewport && elementTop >= -PositionEpsilon))
+        {
+            return ArrivalStep.Stop("the target element is already visible");
+        }
+
+        if (elementBottom < 0)
+        {
+            // 在视口上方：向上滚"刚好够到"（元素下边回到视口内 + 边距）。
+            var distance = -elementBottom + margin;
+            return ArrivalStep.Continue(-Math.Min(stepPixels, distance));
+        }
+
+        // 在视口下方：向下滚"刚好够到"（元素上边进入视口 + 边距）。
+        var downDistance = elementTop - viewportHeight + margin;
+        return ArrivalStep.Continue(Math.Min(stepPixels, downDistance));
+    }
+
+    /// <summary>"刚好够到"时预留的边距（像素）。</summary>
+    public const double DefaultRefMargin = 8;
+
     /// <summary>单步滚轮位移（像素）。</summary>
     public const double DefaultStepPixels = 600;
 

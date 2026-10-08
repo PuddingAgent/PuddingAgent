@@ -569,6 +569,104 @@ public sealed class WebView2BrowserPage : IBrowserPage
             && property.TryGetDouble(out value);
     }
 
+    /// <summary>
+    /// **把参考元素滚进视口**（§7 `to_ref`）：与滚到顶/底同构 —— 每步回读元素相对视口的上下边，
+    /// 问策略"继续/停/为什么"，按步送真实滚轮事件；本地硬上限兜底。
+    /// </summary>
+    private async Task<string?> ScrollToRefAsync(
+        CoreWebView2 webView, string elementRef, double pointX, double pointY, CancellationToken ct)
+    {
+        const int HardStepCap = 64;
+
+        double? previousTop = null;
+
+        for (var steps = 0; ; steps++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var rect = await ReadElementRectAsync(webView, elementRef, ct).ConfigureAwait(false)
+                ?? throw new BrowserOperationException(
+                    "browser_element_not_found",
+                    "the to_ref target element is not in the page (it may have been replaced); re-observe the page");
+
+            var step = Policy.PlanToRefStep(
+                rect.Top, rect.Bottom, previousTop, rect.ViewportHeight, steps)
+                ?? throw new BrowserOperationException(
+                    "browser_input_mode_not_supported",
+                    "native to_ref scroll is not available on this surface; use input_mode=dom");
+
+            if (!step.ShouldContinue)
+            {
+                return step.StopReason;
+            }
+
+            if (steps >= HardStepCap)
+            {
+                return $"stopped after the driver's hard cap of {HardStepCap} steps";
+            }
+
+            var plan = Policy.PlanScroll(pointX, pointY, 0, step.Delta)
+                ?? throw new BrowserOperationException(
+                    "browser_input_mode_not_supported",
+                    "native scroll is not available on this surface; use input_mode=dom");
+
+            foreach (var call in plan)
+            {
+                ct.ThrowIfCancellationRequested();
+                var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
+                using var _ = await SendCdpAsync(call.Method, parameters, ct).ConfigureAwait(false);
+            }
+
+            previousTop = rect.Top;
+        }
+    }
+
+    /// <summary>回读参考元素相对视口的上下边与视口高度；元素不在或读不到返回 null。</summary>
+    private async Task<(double Top, double Bottom, double ViewportHeight)?> ReadElementRectAsync(
+        CoreWebView2 webView, string elementRef, CancellationToken ct)
+    {
+        // 引用属性上的引号/反斜杠必须转义，否则选择器无效或选错元素（与上传路径同一规则）。
+        var escaped = elementRef.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
+
+        var script =
+            "(function(){var el=document.querySelector('[data-pudding-ref=\"" + escaped + "\"]');"
+            + "if(!el){return \"null\";}var r=el.getBoundingClientRect();"
+            + "return JSON.stringify({t:r.top,b:r.bottom,ih:(window.innerHeight||0)});})()";
+
+        var raw = await _dispatcher.InvokeAsync(
+            async () => await webView.ExecuteScriptAsync(script), ct).ConfigureAwait(false);
+
+        try
+        {
+            using var outer = JsonDocument.Parse(raw);
+            if (outer.RootElement.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var payload = outer.RootElement.GetString();
+            if (string.IsNullOrWhiteSpace(payload) || payload == "null")
+            {
+                return null;
+            }
+
+            using var inner = JsonDocument.Parse(payload);
+            if (!TryReadDouble(inner.RootElement, "t", out var top)
+                || !TryReadDouble(inner.RootElement, "b", out var bottom)
+                || !TryReadDouble(inner.RootElement, "ih", out var viewportHeight))
+            {
+                return null;
+            }
+
+            return (top, bottom, viewportHeight);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private async Task<ScrollOutcome> ScrollNativelyAsync(
         CoreWebView2 webView, ScrollOptions options, CancellationToken ct)
     {        double pointX;
@@ -608,6 +706,18 @@ public sealed class WebView2BrowserPage : IBrowserPage
                 pointX,
                 pointY,
                 ct).ConfigureAwait(false);
+        }
+        else if (options.Target == ScrollTarget.ToRef)
+        {
+            // to_ref 需要参考元素：契约层已经强制必须有 locator（这里再确认一次，不猜）。
+            var elementRef = options.Locator?.Name;
+            if (string.IsNullOrWhiteSpace(elementRef))
+            {
+                throw new BrowserOperationException(
+                    "browser_invalid_arguments", "scroll target 'to_ref' requires an element locator");
+            }
+
+            arrivalStopReason = await ScrollToRefAsync(webView, elementRef, pointX, pointY, ct).ConfigureAwait(false);
         }
         else
         {

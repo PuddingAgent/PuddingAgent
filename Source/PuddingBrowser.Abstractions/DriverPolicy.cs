@@ -79,6 +79,17 @@ public interface IBrowserDriverPolicy
         double viewportHeight,
         double contentHeight,
         int stepsTaken);
+
+    /// <summary>
+    /// **把参考元素滚进视口（to_ref）的一步决策**（§7）：与滚到顶/底不同，目标是"某元素可见"。
+    /// 返回 <c>null</c> 表示该面不支持 ⇒ 驱动明确 unsupported。
+    /// </summary>
+    DriverArrivalStep? PlanToRefStep(
+        double elementTop,
+        double elementBottom,
+        double? previousTop,
+        double viewportHeight,
+        int stepsTaken);
     /// <summary>
     /// **文件上传的三步 CDP 参数**（见 Automation 的 FileUploadPlan）：
     /// 拿根节点 → 按元素引用查节点 → 把文件交给节点。
@@ -171,6 +182,13 @@ public sealed class NullBrowserDriverPolicy : IBrowserDriverPolicy
         double? previousPosition,
         double viewportHeight,
         double contentHeight,
+        int stepsTaken) => null;
+
+    public DriverArrivalStep? PlanToRefStep(
+        double elementTop,
+        double elementBottom,
+        double? previousTop,
+        double viewportHeight,
         int stepsTaken) => null;
     public string? BuildFileUploadDocumentParameters() => null;
 

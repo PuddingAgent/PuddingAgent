@@ -178,7 +178,7 @@ public sealed class ComponentSurfaceTests
             ["FileUploadPlanTests"] = 4,
             ["SubAgentDelegationTests"] = 10,
             ["SubAgentDelegationLeaseTests"] = 9,
-            ["ArrivalScrollTests"] = 8,
+            ["ArrivalScrollTests"] = 11,
             ["PageEventLogTests"] = 6,
             ["PageEventPolicyTests"] = 7,
             ["ScriptDialogPolicyTests"] = 6,

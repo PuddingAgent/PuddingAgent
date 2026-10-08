@@ -1,4 +1,4 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopSurface.Browser;
 using PuddingBrowser.Abstractions;
@@ -102,7 +102,7 @@ public sealed class InteractMappingTests
     }
 
     [Fact]
-    public async Task NativeScroll_CarriesTheMode_SupportsArrivalAndRefusesToRef()
+    public async Task NativeScroll_CarriesTheMode_ForEveryTargetModel()
     {
         // §7：原生滚动是"发真实滚轮事件"，因此只覆盖**按位移滚动**；
         // 到达类目标（to_top/to_bottom/to_ref）在原生路径下明确拒绝，不悄悄退回 DOM。
@@ -146,7 +146,8 @@ public sealed class InteractMappingTests
         // 到达滚动"为什么停"必须回给调用方：驱动报了就如实带上（否则"停在边界"与"滚不动"没法区分）。
         Assert.Equal("already at the bottom", arrival.Value.Scroll!.StopReason);
 
-        var refused = await surface.InteractAsync(
+        // to_ref（把参考元素滚进视口）现在也走原生：目标模型（设计 §7）在原生路径上已完整。
+        var toRef = await surface.InteractAsync(
             Call,
             new BrowserInteractRequest(
                 Target,
@@ -159,8 +160,9 @@ public sealed class InteractMappingTests
                 scrollTarget: DesktopScrollTarget.ToRef),
             CancellationToken.None);
 
-        Assert.True(refused.IsFailure);
-        Assert.Contains("to_ref", refused.Error!.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(toRef.IsFailure);
+        Assert.Equal(ScrollTarget.ToRef, runtime.Pages["ctx-1/p-1"].LastScroll!.Target);
+        Assert.Equal(InputMode.Native, runtime.Pages["ctx-1/p-1"].LastScroll!.InputMode);
     }
 
     [Fact]
