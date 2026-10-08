@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -28,6 +28,8 @@
       （只引用 Pudding.Contracts，无 UI / 驱动 / WebView2 依赖），不越过下面的边界门禁。
     -->
     <ProjectReference Include="..\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj" />
+    <!-- 驱动策略注入（§7/§8）：驱动源码只依赖 Abstractions，适配器放在双方都能引用的这一层。 -->
+    <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
   </ItemGroup>
 
   <Target Name="EnforceDesktopServiceBoundary" BeforeTargets="ResolveReferences">

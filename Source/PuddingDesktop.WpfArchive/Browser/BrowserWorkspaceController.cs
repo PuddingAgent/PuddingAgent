@@ -5,6 +5,7 @@ using System.Text.Json;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopService;
+using Pudding.DesktopService.Browser;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Protocol;
 using PuddingBrowser.WebView2;
@@ -250,7 +251,9 @@ public sealed class BrowserWorkspaceController :
             _context = await _runtime.CreateContextAsync(new BrowserContextOptions
             {
                 Persistent = true,
-                UserDataDirectory = agentUdf
+                UserDataDirectory = agentUdf,
+                // 驱动策略注入（§7/§8）：驱动源码只依赖 Abstractions，这里把 Automation 的纯策略接上。
+                DriverPolicy = AutomationDriverPolicy.Instance
             }, ct);
 
             _activeContextId = _context.Id;
@@ -279,7 +282,9 @@ public sealed class BrowserWorkspaceController :
             _context = await _runtime.CreateContextAsync(new BrowserContextOptions
             {
                 Persistent = true,
-                UserDataDirectory = agentUdf
+                UserDataDirectory = agentUdf,
+                // 驱动策略注入（§7/§8）：驱动源码只依赖 Abstractions，这里把 Automation 的纯策略接上。
+                DriverPolicy = AutomationDriverPolicy.Instance
             }, ct);
 
             _activeContextId = _context.Id;

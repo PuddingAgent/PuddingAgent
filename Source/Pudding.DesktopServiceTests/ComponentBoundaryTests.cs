@@ -74,6 +74,11 @@ public sealed class ComponentBoundaryTests
                 // 它是叶子级纯逻辑（只引用 Pudding.Contracts，无 UI/驱动/WebView2），
                 // 不越过 EnforceDesktopServiceBoundary 的禁止项。
                 @"..\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj",
+                // 驱动策略注入（2026-10-08）：驱动的策略注入点定义在 PuddingBrowser.Abstractions（叶子，
+                // 无 UI/驱动依赖）；两个浏览器宿主（WPF 归档与 WinUI Shell）都编译 BrowserWorkspaceController，
+                // 因此把 Automation 策略适配进注入点的适配器必须放在双方都能引用的这一层。
+                // Abstractions 是叶子，不越过 EnforceDesktopServiceBoundary 的禁止项。
+                @"..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj",
             ],
             ReadAttributes(content, "<ProjectReference", "Include=\""));
         Assert.Empty(ReadAttributes(content, "<PackageReference", "Include=\""));
