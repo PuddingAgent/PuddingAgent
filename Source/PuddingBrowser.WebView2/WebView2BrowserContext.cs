@@ -14,6 +14,7 @@ public sealed class WebView2BrowserContext : IBrowserContext
     private readonly IBrowserSurfaceHost? _surfaceHost;
     private readonly CoreWebView2Environment _environment;
     private readonly Dictionary<PageId, WebView2BrowserPage> _pages = new();
+    private readonly IBrowserDriverPolicy? _driverPolicy;
     private bool _disposed;
 
     public BrowserContextId Id { get; }
@@ -32,6 +33,7 @@ public sealed class WebView2BrowserContext : IBrowserContext
         _environment = environment ?? throw new ArgumentNullException(nameof(environment));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _surfaceHost = surfaceHost;
+        _driverPolicy = options.DriverPolicy;
 
         Info = new BrowserContextInfo
         {
@@ -64,6 +66,10 @@ public sealed class WebView2BrowserContext : IBrowserContext
             }
 
             var page = new WebView2BrowserPage(pageId, Id, surface, _dispatcher, OnPageNavigationChangedAsync);
+
+        // 驱动策略由宿主注入（§7/§8）：驱动源码只依赖 Abstractions，策略实现由 Desktop 侧适配。
+        // 未注入时用安全默认（页面同样不会被卡住）。
+        page.Policy = _driverPolicy ?? NullBrowserDriverPolicy.Instance;
             _pages[pageId] = page;
 
             if (options.InitialUrl is not null)

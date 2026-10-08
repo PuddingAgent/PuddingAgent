@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
 #if !WINUI_BROWSER
@@ -45,13 +45,16 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// <summary>页面级 ref 作用域 token（诊断/测试用；不进工具输出，避免被当作可复用标识）。</summary>
     internal string RefScopeToken => _refScopeToken;
 
-#if !WINUI_BROWSER
     /// <summary>
     /// 被自动处理的页面事件（脚本对话框/权限请求/新窗口/下载）**有界日志**：随快照回给调用方，
     /// 让上层知道「刚才发生了什么、页面为什么没卡住」。**不用于继续交互**。
     /// </summary>
+#if !WINUI_BROWSER
     internal PageEventLog PageEvents { get; } = new();
 #endif
+
+    /// <summary>注入的驱动策略；未注入时用安全默认（页面同样不会被卡住）。</summary>
+    internal IBrowserDriverPolicy Policy { get; set; } = NullBrowserDriverPolicy.Instance;
 
     /// <summary>被自动处理的页面脚本对话框累计次数（诊断用）。</summary>
     internal int ScriptDialogCount { get; private set; }
@@ -99,13 +102,10 @@ public sealed class WebView2BrowserPage : IBrowserPage
         coreWebView.DocumentTitleChanged += OnDocumentTitleChanged;
         coreWebView.SourceChanged += OnSourceChanged;
         coreWebView.ProcessFailed += OnProcessFailed;
-#if !WINUI_BROWSER
-        // 事件接管依赖 Automation 里的策略组件；WinUI 面只允许引用 Abstractions，故暂不订阅。
         coreWebView.ScriptDialogOpening += OnScriptDialogOpening;
         coreWebView.PermissionRequested += OnPermissionRequested;
         coreWebView.NewWindowRequested += OnNewWindowRequested;
         coreWebView.DownloadStarting += OnDownloadStarting;
-#endif
     }
 
     private void UnsubscribeCoreWebViewEvents(CoreWebView2 coreWebView)
@@ -115,15 +115,12 @@ public sealed class WebView2BrowserPage : IBrowserPage
         coreWebView.DocumentTitleChanged -= OnDocumentTitleChanged;
         coreWebView.SourceChanged -= OnSourceChanged;
         coreWebView.ProcessFailed -= OnProcessFailed;
-#if !WINUI_BROWSER
         coreWebView.ScriptDialogOpening -= OnScriptDialogOpening;
         coreWebView.PermissionRequested -= OnPermissionRequested;
         coreWebView.NewWindowRequested -= OnNewWindowRequested;
         coreWebView.DownloadStarting -= OnDownloadStarting;
-#endif
     }
 
-#if !WINUI_BROWSER
     /// <summary>
     /// 权限请求（摄像头/麦克风/定位/通知/剪贴板…）：**一律拒绝**并如实记录。
     /// 不处理时 WebView2 会弹权限询问等人点，自动化流程就卡在那里；而"默认允许"更糟——
@@ -131,11 +128,12 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// </summary>
     private void OnPermissionRequested(object? sender, CoreWebView2PermissionRequestedEventArgs e)
     {
-        var verdict = PageEventPolicy.DecidePermission(e.PermissionKind.ToString());
         e.State = CoreWebView2PermissionState.Deny;
         e.Handled = true;
 
-        PageEvents.Add(PageEventPolicy.DescribePermission(e.PermissionKind.ToString(), e.Uri, verdict));
+#if !WINUI_BROWSER
+        PageEvents.Add(Policy.DescribePermissionRequest(e.PermissionKind.ToString(), e.Uri));
+#endif
         PageEventCount++;
     }
 
@@ -145,10 +143,11 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// </summary>
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
-        var verdict = PageEventPolicy.DecideWindow();
         e.Handled = true;
 
-        PageEvents.Add(PageEventPolicy.DescribeWindow(e.Uri, verdict));
+#if !WINUI_BROWSER
+        PageEvents.Add(Policy.DescribeWindowRequest(e.Uri));
+#endif
         PageEventCount++;
     }
 
@@ -158,17 +157,15 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// </summary>
     private void OnDownloadStarting(object? sender, CoreWebView2DownloadStartingEventArgs e)
     {
-        var verdict = PageEventPolicy.DecideDownload();
         e.Cancel = true;
         e.Handled = true;
 
-        PageEvents.Add(PageEventPolicy.DescribeDownload(
-            e.ResultFilePath, e.DownloadOperation?.Uri, verdict));
+#if !WINUI_BROWSER
+        PageEvents.Add(Policy.DescribeDownloadRequest(e.ResultFilePath, e.DownloadOperation?.Uri));
+#endif
         PageEventCount++;
     }
-#endif
 
-#if !WINUI_BROWSER
     /// <summary>
     /// 页面脚本对话框（<c>alert</c>/<c>confirm</c>/<c>prompt</c>/<c>beforeunload</c>）。
     ///
@@ -180,26 +177,26 @@ public sealed class WebView2BrowserPage : IBrowserPage
     {
         var kind = e.Kind switch
         {
-            CoreWebView2ScriptDialogKind.Alert => ScriptDialogPolicy.Kind.Alert,
-            CoreWebView2ScriptDialogKind.Confirm => ScriptDialogPolicy.Kind.Confirm,
-            CoreWebView2ScriptDialogKind.Prompt => ScriptDialogPolicy.Kind.Prompt,
-            _ => ScriptDialogPolicy.Kind.Alert,
+            CoreWebView2ScriptDialogKind.Alert => "Alert",
+            CoreWebView2ScriptDialogKind.Confirm => "Confirm",
+            CoreWebView2ScriptDialogKind.Prompt => "Prompt",
+            _ => "Alert",
         };
 
-        var answer = ScriptDialogPolicy.Decide(kind);
+        var decision = Policy.AnswerScriptDialog(kind, e.Message);
 
         // 接管：本版本的 API 没有 `Handled` 属性，语义是「**调用 Accept 即为接受，不调用即为取消**」，
         // 且事件被处理后 WebView2 不再弹默认模态框（页面不会被卡住）。
-        if (answer == ScriptDialogPolicy.Answer.Accept)
+        if (decision.Accept)
         {
             e.Accept();
         }
 
         // prompt 的回填文本**永远不提供**（编一个文本替用户提交等于伪造输入）。
-        var summary = ScriptDialogPolicy.Describe(kind, e.Message, answer);
-        PageEvents.Add(summary);
-    }
+#if !WINUI_BROWSER
+        PageEvents.Add(decision.Summary);
 #endif
+    }
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
@@ -452,7 +449,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
                 .Select(entry => entry.Count > 1 ? $"{entry.Summary} (x{entry.Count})" : entry.Summary)
                 .ToArray();
 #else
-    // WinUI 面尚未接管页面事件（需要把策略注入进来，见 code_map 的边界说明）。
+    // WinUI 面：事件接管照常（策略由宿主注入），但**事实上报**需要 Automation 的日志，尚未接入。
     private IReadOnlyList<string>? DescribePageEvents() => null;
 #endif
 
