@@ -2493,7 +2493,9 @@ public sealed partial class AgentExecutionService
             summaryStartedAt,
             WarmPrefixCompactionDisposition.Applied,
             appliedDurationMs,
-            SkipReason: null);
+            SkipReason: null,
+            // 只有真实计量过的 after 才允许出口；调用方的日志/事件/子代理事件都必须用它。
+            AppliedAfterUsedTokens: afterUsedTokens);
     }
 
     /// <summary>

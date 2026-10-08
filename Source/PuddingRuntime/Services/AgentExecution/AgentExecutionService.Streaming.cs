@@ -622,6 +622,8 @@ public sealed partial class AgentExecutionService
                 BuildCurrentUserChatMessage(request, null).SourceContentHash,
                 request.CallerLlmSnapshot?.VisionPolicy?.MaxImagesPerRequest ?? VisionRequestPolicy.Default.MaxImagesPerRequest);
             var warmPrefixCompactionAttempted = false;
+            // F3：硬保护与软维护分开封顶 —— 软维护每 dispatch 一次；硬保护逐轮重新评估。
+            var hardProtectionAttempted = false;
             var toolSpecChangedForNextRound = false;
             var outputTruncationRecoveryAttempts = 0;
 
@@ -789,7 +791,7 @@ public sealed partial class AgentExecutionService
                     // 与 Buffered 共用 warm-prefix checkpoint；失败保留原历史，不再静默驱逐。
                     // ADR-095 D2：候选只来自软阈值且请求仍安全时，摘要生成不进入发送关键路径
                     // （outcome.Disposition = DeferredSoft），此处只做归因，不产生等待。
-                    if (history.Count > 12 && !warmPrefixCompactionAttempted)
+                    if (WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(history.Count, warmPrefixCompactionAttempted))
                     {
                         var compaction = await TryWarmPrefixCompactionAsync(
                             request,
@@ -812,14 +814,50 @@ public sealed partial class AgentExecutionService
                         }
                     }
 
-                    var budgetedRequest = LlmRequestBudgetGuard.Prepare(
-                        _contextUsageSnapshotStore,
-                        request.SessionId,
-                        injectedHistory,
-                        llmTools,
-                        effectiveLlmConfig,
-                        workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
-                        logger: _logger);
+                    // F3 逐轮硬保护：未裁剪的 outbound 必须在 Prepare 之前留存
+                    // （Prepare 只返回新列表，不改动输入列表）。
+                    var untrimmedOutbound = injectedHistory;
+                    LlmRequestBudgetResult budgetedRequest;
+                    try
+                    {
+                        budgetedRequest = LlmRequestBudgetGuard.Prepare(
+                            _contextUsageSnapshotStore,
+                            request.SessionId,
+                            untrimmedOutbound,
+                            llmTools,
+                            effectiveLlmConfig,
+                            workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
+                            logger: _logger);
+                    }
+                    catch (LlmInputBudgetExceededException) when (
+                        WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(history.Count, hardProtectionAttempted))
+                    {
+                        // 连请求副本裁剪都不够：在 fail-closed 之前先做一次确定性同步压缩。
+                        var rescue = await TryWarmPrefixCompactionAsync(
+                            request,
+                            instance.AgentInstanceId,
+                            history,
+                            untrimmedOutbound,
+                            llmTools,
+                            effectiveLlmConfig,
+                            round,
+                            ct);
+                        turnTimings.RegisterCompactionAttempt(rescue.DurationMs, rescue.Compacted, rescue.DeferredSoft);
+                        hardProtectionAttempted = rescue.Plan is not null;
+                        if (!rescue.Compacted)
+                            throw; // 压缩不可用 ⇒ 保持既有 fail-closed 语义
+                        roundPrefixChangeReason = PrefixChangeReasons.CompactionCheckpoint;
+                        injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
+                        budgetedRequest = LlmRequestBudgetGuard.Prepare(
+                            _contextUsageSnapshotStore,
+                            request.SessionId,
+                            injectedHistory,
+                            llmTools,
+                            effectiveLlmConfig,
+                            workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
+                            logger: _logger);
+                    }
+
                     injectedHistory = budgetedRequest.Messages.ToList();
                     contextUsageSnapshot = budgetedRequest.Snapshot;
                     if (budgetedRequest.RemovedMessageCount > 0)
@@ -833,6 +871,44 @@ public sealed partial class AgentExecutionService
                             budgetedRequest.Snapshot.RawEstimatedTokens,
                             budgetedRequest.EffectiveInputLimit,
                             budgetedRequest.Snapshot.PromptCalibrationRatio);
+
+                        // F3：`RemovedMessageCount > 0` 就是「未裁剪请求已越过有效上限」的证据
+                        // （无需额外计量）。此时同步压缩比每轮裁剪请求副本更能保住会话记忆连续性；
+                        // 软维护的「每 dispatch 一次」封顶**不得**屏蔽硬保护。
+                        if (WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(history.Count, hardProtectionAttempted))
+                        {
+                            var hard = await TryWarmPrefixCompactionAsync(
+                                request,
+                                instance.AgentInstanceId,
+                                history,
+                                untrimmedOutbound,
+                                llmTools,
+                                effectiveLlmConfig,
+                                round,
+                                ct);
+                            turnTimings.RegisterCompactionAttempt(hard.DurationMs, hard.Compacted, hard.DeferredSoft);
+                            hardProtectionAttempted = hard.Plan is not null;
+                            if (hard.Compacted)
+                            {
+                                roundPrefixChangeReason = PrefixChangeReasons.CompactionCheckpoint;
+                                injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
+                                var rePrepared = LlmRequestBudgetGuard.Prepare(
+                                    _contextUsageSnapshotStore,
+                                    request.SessionId,
+                                    injectedHistory,
+                                    llmTools,
+                                    effectiveLlmConfig,
+                                    workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
+                                    logger: _logger);
+                                injectedHistory = rePrepared.Messages.ToList();
+                                contextUsageSnapshot = rePrepared.Snapshot;
+                                _logger.LogInformation(
+                                    "[AgentExec:ContextBudget] Hard-protection compaction applied mid-turn session={Session} round={Round} remainingTrim={RemainingTrim}",
+                                    request.SessionId,
+                                    round + 1,
+                                    rePrepared.RemovedMessageCount);
+                            }
+                        }
                     }
                 }
 

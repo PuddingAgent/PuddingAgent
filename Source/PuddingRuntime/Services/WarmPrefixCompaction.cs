@@ -421,7 +421,12 @@ internal sealed record WarmPrefixCompactionOutcome(
     DateTimeOffset? StartedAtUtc,
     WarmPrefixCompactionDisposition Disposition = WarmPrefixCompactionDisposition.NotNeeded,
     long? DurationMs = null,
-    string? SkipReason = null)
+    string? SkipReason = null,
+    /// <summary>
+    /// 提交成功时**加入真实摘要后重新计量**的 after；未提交（延期/失败/无收益/陈旧）为 null。
+    /// 调用方一律用本字段报告 after，**不得**改用 <c>Plan.EstimatedRetainedSnapshot</c>（那是未含摘要的计划估算）。
+    /// </summary>
+    int? AppliedAfterUsedTokens = null)
 {
     internal static WarmPrefixCompactionOutcome NotNeeded { get; } =
         new(false, null, 0, 0, null, WarmPrefixCompactionDisposition.NotNeeded);

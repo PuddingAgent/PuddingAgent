@@ -493,6 +493,8 @@ public sealed partial class AgentExecutionService
             BuildCurrentUserChatMessage(request, null).SourceContentHash,
             request.CallerLlmSnapshot?.VisionPolicy?.MaxImagesPerRequest ?? VisionRequestPolicy.Default.MaxImagesPerRequest);
         var warmPrefixCompactionAttempted = false;
+        // F3：硬保护与软维护分开封顶 —— 软维护每 dispatch 一次；硬保护逐轮重新评估。
+        var hardProtectionAttempted = false;
         var toolSpecChangedForNextRound = false;
 
         try
@@ -665,7 +667,7 @@ public sealed partial class AgentExecutionService
                     // Warm-prefix checkpoint：原样重放当前 provider 请求并只在尾部追加固定摘要
                     // 指令；摘要成功且确实缩小时才一次性替换旧历史。失败保留原 surface，
                     // 禁止旧实现直接逐轮删除历史头部造成语义丢失和全前缀 miss。
-                    if (history.Count > 12 && !warmPrefixCompactionAttempted)
+                    if (WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(history.Count, warmPrefixCompactionAttempted))
                     {
                         var compaction = await TryWarmPrefixCompactionAsync(
                             request,
@@ -690,7 +692,9 @@ public sealed partial class AgentExecutionService
                                 messages_before = compaction.Plan.InitialMessageCount,
                                 messages_after = history.Count,
                                 estimated_tokens_before = compaction.Plan.InitialUsedTokens,
-                                estimated_tokens_after = compaction.Plan.EstimatedRetainedSnapshot.UsedTokens,
+                                // 必须用**加入真实摘要后重新计量**的 after；计划估算另字段标注。
+                                measured_tokens_after = compaction.AppliedAfterUsedTokens,
+                                plan_estimate_excluding_summary_tokens = compaction.Plan.EstimatedRetainedSnapshot.UsedTokens,
                                 effective_input_limit = compaction.Plan.EffectiveInputLimit,
                                 trigger_ratio = compaction.TriggerRatio,
                                 target_ratio = compaction.TargetRatio,
@@ -698,14 +702,47 @@ public sealed partial class AgentExecutionService
                         }
                     }
 
-                    var budgetedRequest = LlmRequestBudgetGuard.Prepare(
-                        _contextUsageSnapshotStore,
-                        request.SessionId,
-                        injectedHistory,
-                        llmTools,
-                        effectiveLlmConfig,
-                        workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
-                        logger: _logger);
+                    // F3 逐轮硬保护：未裁剪的 outbound 必须在 Prepare 之前留存。
+                    var untrimmedOutbound = injectedHistory;
+                    LlmRequestBudgetResult budgetedRequest;
+                    try
+                    {
+                        budgetedRequest = LlmRequestBudgetGuard.Prepare(
+                            _contextUsageSnapshotStore,
+                            request.SessionId,
+                            untrimmedOutbound,
+                            llmTools,
+                            effectiveLlmConfig,
+                            workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
+                            logger: _logger);
+                    }
+                    catch (LlmInputBudgetExceededException) when (
+                        WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(history.Count, hardProtectionAttempted))
+                    {
+                        var rescue = await TryWarmPrefixCompactionAsync(
+                            request,
+                            instance.AgentInstanceId,
+                            history,
+                            untrimmedOutbound,
+                            llmTools,
+                            effectiveLlmConfig,
+                            round,
+                            ct);
+                        hardProtectionAttempted = rescue.Plan is not null;
+                        if (!rescue.Compacted)
+                            throw;
+                        roundPrefixChangeReason = PrefixChangeReasons.CompactionCheckpoint;
+                        injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
+                        budgetedRequest = LlmRequestBudgetGuard.Prepare(
+                            _contextUsageSnapshotStore,
+                            request.SessionId,
+                            injectedHistory,
+                            llmTools,
+                            effectiveLlmConfig,
+                            workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
+                            logger: _logger);
+                    }
+
                     injectedHistory = budgetedRequest.Messages.ToList();
                     contextUsageSnapshot = budgetedRequest.Snapshot;
                     if (budgetedRequest.RemovedMessageCount > 0)
@@ -719,6 +756,42 @@ public sealed partial class AgentExecutionService
                             budgetedRequest.Snapshot.RawEstimatedTokens,
                             budgetedRequest.EffectiveInputLimit,
                             budgetedRequest.Snapshot.PromptCalibrationRatio);
+
+                        // F3：`RemovedMessageCount > 0` 即「未裁剪请求已越过有效上限」的证据；
+                        // 软维护的每 dispatch 一次封顶不得屏蔽硬保护。
+                        if (WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(history.Count, hardProtectionAttempted))
+                        {
+                            var hard = await TryWarmPrefixCompactionAsync(
+                                request,
+                                instance.AgentInstanceId,
+                                history,
+                                untrimmedOutbound,
+                                llmTools,
+                                effectiveLlmConfig,
+                                round,
+                                ct);
+                            hardProtectionAttempted = hard.Plan is not null;
+                            if (hard.Compacted)
+                            {
+                                roundPrefixChangeReason = PrefixChangeReasons.CompactionCheckpoint;
+                                injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
+                                var rePrepared = LlmRequestBudgetGuard.Prepare(
+                                    _contextUsageSnapshotStore,
+                                    request.SessionId,
+                                    injectedHistory,
+                                    llmTools,
+                                    effectiveLlmConfig,
+                                    workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
+                                    logger: _logger);
+                                injectedHistory = rePrepared.Messages.ToList();
+                                contextUsageSnapshot = rePrepared.Snapshot;
+                                _logger.LogInformation(
+                                    "[AgentExec:ContextBudget] Hard-protection compaction applied mid-turn session={Session} round={Round} remainingTrim={RemainingTrim}",
+                                    request.SessionId,
+                                    round + 1,
+                                    rePrepared.RemovedMessageCount);
+                            }
+                        }
                     }
                 }
 
