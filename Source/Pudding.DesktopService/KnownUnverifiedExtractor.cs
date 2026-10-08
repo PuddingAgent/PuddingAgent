@@ -53,8 +53,33 @@ public static partial class KnownUnverifiedExtractor
                 continue;
             }
 
+            // 跳过 YAML front matter：它的 description/tags 里也会出现"未验证"字样，
+            // 但那是**文档摘要**不是边界条目（实测会把摘要混进交接清单）。
+            var inFrontMatter = false;
+            var frontMatterClosed = false;
+
             foreach (var rawLine in document.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
             {
+                var trimmedLine = rawLine.Trim();
+
+                if (!frontMatterClosed && trimmedLine == "---")
+                {
+                    if (!inFrontMatter)
+                    {
+                        inFrontMatter = true;
+                        continue;
+                    }
+
+                    inFrontMatter = false;
+                    frontMatterClosed = true;
+                    continue;
+                }
+
+                if (inFrontMatter)
+                {
+                    continue;
+                }
+
                 var line = Clean(rawLine);
                 if (line.Length == 0 || !Markers.Any(marker => line.Contains(marker, StringComparison.OrdinalIgnoreCase)))
                 {

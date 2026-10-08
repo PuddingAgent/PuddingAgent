@@ -1,4 +1,4 @@
-<Solution>
+﻿<Solution>
   <Folder Name="/Source/">
     <Project Path="Source/HarnessAgent.Core/HarnessAgent.Core.csproj" />
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
@@ -22,6 +22,7 @@
     <Project Path="Source/PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
     <Project Path="Source/Pudding.DesktopConnection/Pudding.DesktopConnection.csproj" />
     <Project Path="Source/Pudding.DesktopService/Pudding.DesktopService.csproj" />
+  <Project Path="Source/Pudding.DeliveryManifest.Cli/Pudding.DeliveryManifest.Cli.csproj" />
     <Project Path="Source/PuddingDesktop.CapabilityHost/PuddingDesktop.CapabilityHost.csproj" />
   <Project Path="Source/Pudding.DesktopSurface.Browser/Pudding.DesktopSurface.Browser.csproj" />
   <Project Path="Source/Pudding.DesktopSurface.BrowserTests/Pudding.DesktopSurface.BrowserTests.csproj" />

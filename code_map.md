@@ -42,7 +42,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.CapabilityBroker/` | Core 侧能力 Broker：握手协商与会话世代的命令关联入口 | [code_map](Source/Pudding.CapabilityBroker/code_map.md) |
 | `Source/Pudding.CapabilityBroker.AspNetCore/` | Core 侧宿主适配：gRPC 服务与服务端流及 Kestrel 装配 | [code_map](Source/Pudding.CapabilityBroker.AspNetCore/code_map.md) |
 | `Source/Pudding.DesktopConnection/` | Desktop 侧 gRPC 双向流适配：连接状态机与命令关联（含取消与重连） | [code_map](Source/Pudding.DesktopConnection/code_map.md) |
-| `Source/Pudding.DesktopService/` | Desktop 侧能力服务：准入与 UI 调度边界及宿主装配 | [code_map](Source/Pudding.DesktopService/code_map.md) |
+| `Source/Pudding.DesktopService/` | Desktop 侧能力服务：准入与 UI 调度边界及宿主装配；另含两段式验收判定（`DesktopAcceptance`）与交付清单链（`DeliveryManifest` / 生成器 / TRX 解析 / 日志提取 / 目录采集） | [code_map](Source/Pudding.DesktopService/code_map.md) |
+| `Source/Pudding.DeliveryManifest.Cli/` | 交付清单**采集入口**（B7 内部一侧）：目录 → 自检清单 → JSON；不合格以退出码 2 拒绝产出。配合 `TestScripts/delivery-manifest.ps1` 使用 | — |
 | `Source/PuddingDesktop.CapabilityHost/` | WinUI 侧平台适配：`DispatcherQueue` 调度实现（只引用 Contracts） | [code_map](Source/PuddingDesktop.CapabilityHost/code_map.md) |
 | `Source/Pudding.DesktopSurface.Browser/` | 浏览器侧 Desktop 表面与目标注册表桥；不含 UI 代码，可脱 UI 测试 | [code_map](Source/Pudding.DesktopSurface.Browser/code_map.md) |
 | `Source/PuddingDesktop.Foundation/` | BCL-only 布局与外观偏好（`ShellLayout`、`WorkbenchAppearance`） | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
