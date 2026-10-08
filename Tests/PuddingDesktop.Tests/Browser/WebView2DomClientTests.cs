@@ -116,6 +116,32 @@ public sealed class WebView2DomClientTests
     }
 
     [Fact]
+    public void InteractScript_RejectsObstructedWriteTargets()
+    {
+        // 设计 §6.2：「隐藏/禁用/**遮挡**目标不按成功处理」。
+        // 写操作前做命中测试；被别的节点挡住 ⇒ 明确拒绝，绝不"照点不误"。
+        // ⚠️ 脚本文本断言：真机遮挡行为需 WebView2.Smoke 复核。
+        var script = WebView2DomClient.InteractScript;
+
+        Assert.Contains("browser_element_obstructed", script);
+        Assert.Contains("elementFromPoint", script);
+        // shadow DOM 里命中会返回宿主，直接用 document 会误判 ⇒ 必须问元素所在根。
+        Assert.Contains("getRootNode()", script);
+
+        // 结构断言（仅查关键词会被"守卫被禁用"骗过）：命中测试必须**真的在写操作守卫内**，
+        // 且在 disabled 检查之前执行。
+        var guard = script.IndexOf("if(mutating){", StringComparison.Ordinal);
+        var hitTest = script.IndexOf("root.elementFromPoint(", StringComparison.Ordinal);
+        var reject = script.IndexOf("browser_element_obstructed", StringComparison.Ordinal);
+        var disabled = script.IndexOf("if(el.disabled)", StringComparison.Ordinal);
+
+        Assert.True(guard >= 0, "写操作守卫 `if(mutating){` 必须存在（禁用守卫等于放弃遮挡判定）");
+        Assert.True(hitTest > guard, "命中测试必须在写操作守卫内");
+        Assert.True(reject > hitTest, "命中不通过必须在命中测试之后立即拒绝");
+        Assert.True(disabled > reject, "遮挡判定必须发生在 disabled 检查之前（否则会先报禁用）");
+    }
+
+    [Fact]
     public void Scripts_KeepOnlyTheMinimalTextMatch_AndDistinguishFilteredZeroHits()
     {
         // 设计 §6.2：text 定位必须取**最小匹配节点**（否则祖先也含文本 ⇒ "返回整页"），

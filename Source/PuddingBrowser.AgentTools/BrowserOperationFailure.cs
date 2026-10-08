@@ -64,6 +64,12 @@ internal static class BrowserOperationFailure
             new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidTarget, message, retryable: false),
             "the element could not be scrolled into view: adjust the container/scroll position or choose another target"),
 
+        // **遮挡**（设计 §6.2：遮挡目标不按成功处理）：元素在视口内、可见、可用，
+        // 但中心点命中的是别的节点（浮层/固定头/模态框）。绝不"照点不误"当成成功。
+        "browser_element_obstructed" => (
+            new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidTarget, message, retryable: false),
+            "the target is covered by another element: dismiss the overlay (or scroll it away) and re-observe; do not retry unchanged"),
+
         "browser_element_disabled" => (
             new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidRequest, message, retryable: false),
             "the matched element is disabled: wait until it becomes enabled"),

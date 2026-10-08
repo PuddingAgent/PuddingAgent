@@ -653,6 +653,7 @@ public sealed class BrowserAgentToolsTests
     [InlineData("browser_element_disabled", "not_retryable", "enabled")]
     [InlineData("browser_element_not_found", "safe_to_retry", "wait")]
     [InlineData("browser_element_not_in_viewport", "not_retryable", "scrolled into view")]
+    [InlineData("browser_element_obstructed", "not_retryable", "covered by another element")]
     [InlineData("browser_locator_matches_filtered", "not_retryable", "includeHidden")]
     public async Task Interact_DriverRejections_MapToTheRightRetryAdvice(
         string driverCode, string expectedDisposition, string expectedHintFragment)

@@ -606,6 +606,15 @@ internal static partial class WebView2DomClient
   const mutating=input.action==='click'||input.action==='fill'||input.action==='type'||input.action==='select'||input.action==='check'||input.action==='press'||input.action==='drag';
   if(mutating&&!inViewport(el)){try{el.scrollIntoView({block:'center',inline:'center'});}catch{}}
   if(mutating&&!inViewport(el))return{ok:false,code:'browser_element_not_in_viewport',message:'Matched element could not be scrolled into view'};
+  // 遮挡判定（设计 §6.2「隐藏/禁用/**遮挡**目标不按成功处理」）：写操作前做命中测试。
+  // 用元素所在根（含 shadow root）的 elementFromPoint，避免 Shadow DOM 里误判成"被挡住"。
+  if(mutating){
+    const r0=el.getBoundingClientRect();
+    const root=(el.getRootNode&&el.getRootNode().elementFromPoint)?el.getRootNode():document;
+    const hit=root.elementFromPoint(r0.left+r0.width/2,r0.top+r0.height/2);
+    const reachable=hit===el||(hit&&el.contains(hit))||(hit&&hit.contains(el));
+    if(!reachable)return{ok:false,code:'browser_element_obstructed',message:'The target is covered by another element'};
+  }
   if(el.disabled)return{ok:false,code:'browser_element_disabled',message:'Matched element is disabled'};
   const fire=(name,options={})=>el.dispatchEvent(new Event(name,{bubbles:true,...options}));
   try { switch(input.action){
