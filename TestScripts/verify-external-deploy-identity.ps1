@@ -19,7 +19,10 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot)
+    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
+    # 可选的隔离构建输出根（如 temp\build\deploy）。给了就一并核对它里面的 wwwroot\admin，
+    # 这样**旧实例还在跑**时也能先验证新构建的身份（Core 的 bin 被占用时用 --artifacts-path 构建）。
+    [string]$ArtifactsRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -131,12 +134,28 @@ $servedRoot = if ($servedCandidates.Count -gt 0) { $servedCandidates[0].FullName
 $servedIdentity = if ($servedRoot) { Get-InjectedIdentity -Root $servedRoot -Label 'served(wwwroot/admin)' } `
                   else { [pscustomobject]@{ Label = 'served(wwwroot/admin)'; Found = $false; Version = $null; CommitShort = $null; Dirty = $null; BuiltAt = $null; Source = $null } }
 
+# 可选：隔离构建输出（--artifacts-path）里的 wwwroot/admin。旧实例还在跑时，Core 的 bin 被占用，
+# 只能往隔离目录构建；这样也能在**不停旧实例**的前提下先核对新构建身份。
+$artifactIdentity = $null
+if ($ArtifactsRoot -and (Test-Path $ArtifactsRoot)) {
+    $artifactCandidates = @(
+        Get-ChildItem $ArtifactsRoot -Recurse -Directory -Filter 'admin' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'wwwroot\\admin$' } |
+            Sort-Object LastWriteTime -Descending
+    )
+    $artifactRoot = if ($artifactCandidates.Count -gt 0) { $artifactCandidates[0].FullName } else { $null }
+    $artifactIdentity = if ($artifactRoot) { Get-InjectedIdentity -Root $artifactRoot -Label 'artifacts(wwwroot/admin)' } `
+                        else { [pscustomobject]@{ Label = 'artifacts(wwwroot/admin)'; Found = $false; Version = $null; CommitShort = $null; Dirty = $null; BuiltAt = $null; Source = $null } }
+}
+
 Write-Host "== 源码 ==" -ForegroundColor Cyan
 Write-Host ("  package.json version : {0}" -f $sourceVersion)
 Write-Host ("  HEAD                 : {0}" -f (git -C $RepoRoot rev-parse --short HEAD))
 Write-Host ("  工作树是否脏         : {0}" -f (@(git -C $RepoRoot status --porcelain).Count -gt 0))
 
-foreach ($identity in @($distIdentity, $servedIdentity)) {
+$identityList = @($distIdentity, $servedIdentity)
+if ($artifactIdentity) { $identityList += $artifactIdentity }
+foreach ($identity in $identityList) {
     Write-Host ("== {0} ==" -f $identity.Label) -ForegroundColor Cyan
     if ($identity.Found) {
         Write-Host ("  版本/短哈希/构建时间 : {0} / {1} / {2}" -f $identity.Version, $identity.CommitShort, $identity.BuiltAt)
@@ -169,6 +188,23 @@ if (-not $servedIdentity.Found) {
     }
     if ($servedIdentity.CommitShort -ne $distIdentity.CommitShort) {
         $problems.Add("served 短哈希 $($servedIdentity.CommitShort) ≠ dist 短哈希 $($distIdentity.CommitShort)")
+    }
+}
+
+# 隔离构建产物（可选）：必须与 dist 同版本同短哈希；带 dirty 同样不算交付产物。
+if ($artifactIdentity) {
+    if (-not $artifactIdentity.Found) {
+        $problems.Add('隔离构建产物里没有构建身份：wwwroot/admin 未被复制（检查 PuddingHostContent.props 与构建配置）')
+    } else {
+        if (-not $distIdentity.Found -or $artifactIdentity.Version -ne $distIdentity.Version) {
+            $problems.Add("artifacts 版本 $($artifactIdentity.Version) ≠ dist 版本 $($distIdentity.Version)（Core 构建早于前端构建，复制的是旧 dist）")
+        }
+        if ($artifactIdentity.CommitShort -ne $distIdentity.CommitShort) {
+            $problems.Add("artifacts 短哈希 $($artifactIdentity.CommitShort) ≠ dist 短哈希 $($distIdentity.CommitShort)")
+        }
+        if ($artifactIdentity.Dirty -eq 'true') {
+            $problems.Add('artifacts 带 +dirty：产物来自脏工作树，不得作为交付构建')
+        }
     }
 }
 
