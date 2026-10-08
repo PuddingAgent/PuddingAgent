@@ -99,6 +99,12 @@ public sealed partial class AgentExecutionService
     // V5：冻结视觉上下文通道（进程内 AsyncLocal）。执行入口 push 冻结路由快照，DirectLlmClient 单源消费。
     private readonly FrozenVisionContextAccessor? _frozenVisionContext;
 
+    /// <summary>
+    /// F2：warm-prefix checkpoint 的持久化通道。为 null（未注册/测试替身默认实现）时只做内存替换，
+    /// 并如实上报 <c>durableCheckpoint=false</c> + 原因码，绝不假装已持久化。
+    /// </summary>
+    private readonly IContextCompactionService? _contextCompactionService;
+
     // LLM 调用提取（审计 P0 #1）
     private AgentExecutionLlmInvoker? _llmInvoker;
     private AgentExecutionLlmInvoker LlmInvoker => _llmInvoker ??= new AgentExecutionLlmInvoker(
@@ -160,7 +166,8 @@ public sealed partial class AgentExecutionService
                 IRuntimeExecutionConfigService? runtimeExecutionConfig = null,
         ContextAssemblyStore? contextAssemblyStore = null,
         FrozenVisionContextAccessor? frozenVisionContext = null,
-        IToolPresentationProjector? toolPresentationProjector = null)
+        IToolPresentationProjector? toolPresentationProjector = null,
+        IContextCompactionService? contextCompactionService = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -212,6 +219,7 @@ public sealed partial class AgentExecutionService
         _skillEnforcer             = skillEnforcer;
         _executionProgress         = executionProgress;
         _toolPresentationProjector = toolPresentationProjector;
+        _contextCompactionService = contextCompactionService;
         _conversationEventStore    = conversationEventStore;
         _compositionRecovery       = compositionRecovery;
         _runtimeExecutionConfig    = runtimeExecutionConfig;
@@ -2135,6 +2143,8 @@ public sealed partial class AgentExecutionService
             return WarmPrefixCompactionOutcome.NotNeeded;
 
         var (trigger, target) = ResolveContextSoftCompactionRatios();
+        // F2：冻结候选时读**真实持久代际**，落库前再 CAS 一次（详见 GetCompactionGenerationAsync）。
+        var sourceGeneration = await _contextManager.GetCompactionGenerationAsync(request.SessionId, ct);
         if (!WarmPrefixCompaction.TryCreatePlan(
                 _contextUsageSnapshotStore,
                 request.SessionId,
@@ -2145,7 +2155,8 @@ public sealed partial class AgentExecutionService
                 trigger,
                 target,
                 out var plan,
-                workUnitInputCapacity: request.UsageBudget?.MaxInputTokens)
+                workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
+                sourceGeneration: sourceGeneration)
             || plan is null)
         {
             return WarmPrefixCompactionOutcome.NotNeeded;
@@ -2364,6 +2375,9 @@ public sealed partial class AgentExecutionService
         // 生命周期事件在租约释放后发布：事件写入失败不得撤销已提交历史（ADR-095 D5）。
         WarmPrefixApplyVerification verification;
         WarmPrefixCompactionDisposition rejectedDisposition = WarmPrefixCompactionDisposition.NotNeeded;
+        // F2：本次 checkpoint 是否真的落库（权威事实），以及未落库时的原因码。
+        var durableCheckpoint = false;
+        string? durableSkipReason = null;
         await using (var compactionCommitLease =
             await _contextManager.AcquireCompactionCommitLeaseAsync(request.SessionId, ct))
         {
@@ -2381,6 +2395,40 @@ public sealed partial class AgentExecutionService
                 // 校验通过：在**同一临界区**内替换内存历史。
                 durableHistory.Clear();
                 durableHistory.AddRange(verification.AppliedMessages!);
+
+                // F2：把 checkpoint 落库（摘要行 + 精确到行的 CompactedBy + 覆盖清单 + 代际，
+                // 单事务）。跨度里有任何「没有持久行」的消息就**不落库**（错标等于静默隐藏真实消息），
+                // 降级为内存-only 并如实上报；降级不撤销本次运行期压缩。
+                var spanResolution = _contextManager.ResolveDurableSpan(
+                    request.SessionId,
+                    verification.RemovedMessages ?? []);
+                if (WarmPrefixDurableCommitDecision.ShouldAttempt(_contextCompactionService is not null, spanResolution))
+                {
+                    var commit = await _contextCompactionService!.CommitWarmPrefixCheckpointAsync(
+                        new WarmPrefixCheckpointCommitRequest(
+                            SessionId: request.SessionId,
+                            WorkspaceId: request.WorkspaceId,
+                            AgentId: agentInstanceId,
+                            CompactionId: warmPrefixCompactionId,
+                            ExpectedSourceGeneration: sourceGeneration,
+                            CoveredMessageIds: spanResolution.MessageIds,
+                            Summary: safeSummary,
+                            MessagesBefore: plan.InitialMessageCount,
+                            MessagesAfter: durableHistory.Count,
+                            TokensBefore: plan.InitialUsedTokens,
+                            MeasuredTokensAfter: verification.AfterSnapshot!.UsedTokens,
+                            Reason: plan.RequiresSynchronousProtection ? "hard_protection" : "soft_maintenance"),
+                        ct);
+                    (durableCheckpoint, durableSkipReason) =
+                        WarmPrefixDurableCommitDecision.Interpret(commit);
+                }
+                else
+                {
+                    durableSkipReason = WarmPrefixDurableCommitDecision.ResolveSkipReason(
+                        _contextCompactionService is not null,
+                        spanResolution);
+                }
+
                 // 只有真的改写了历史才登记完成（冷却 + 清除无收益抑制）。
                 _contextManager.RecordCompactionCommitCompleted(request.SessionId);
             }
@@ -2459,7 +2507,7 @@ public sealed partial class AgentExecutionService
         var afterUsedTokens = verification.AfterSnapshot!.UsedTokens;
         var appliedDurationMs = verifyDurationMs;
         _logger.LogInformation(
-            "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} compactionId={CompactionId} removed={Removed} messages={Before}->{After} measuredBefore={BeforeTokens} measuredAfter={AfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} meetsTarget={MeetsTarget} durationMs={DurationMs}",
+            "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} compactionId={CompactionId} removed={Removed} messages={Before}->{After} measuredBefore={BeforeTokens} measuredAfter={AfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} meetsTarget={MeetsTarget} durationMs={DurationMs} durableCheckpoint={DurableCheckpoint} durableSkipReason={DurableSkipReason}",
             request.SessionId,
             round + 1,
             warmPrefixCompactionId,
@@ -2471,7 +2519,9 @@ public sealed partial class AgentExecutionService
             plan.EstimatedRetainedSnapshot.UsedTokens,
             verification.ReclaimTokens,
             verification.MeetsTarget,
-            appliedDurationMs);
+            appliedDurationMs,
+            durableCheckpoint,
+            durableSkipReason);
         await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
             request.SessionId,
             request.WorkspaceId,
@@ -2499,7 +2549,10 @@ public sealed partial class AgentExecutionService
                 messageCountAfter = durableHistory.Count,
                 durationMs = appliedDurationMs,
                 round = round + 1,
-                durableCheckpoint = false,
+                // F2：权威事实。false 表示只改了内存（DB 仍是完整历史），并给出原因码；
+                // 前端不得把 durableCheckpoint=false 当作"已持久压缩"（ADR-095 D7）。
+                durableCheckpoint,
+                durableSkipReason,
             },
             request.ExecutionIdentity?.TraceId,
             CancellationToken.None);

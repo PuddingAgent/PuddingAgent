@@ -167,6 +167,50 @@ public sealed class DurableMessageIdentityTests
         Assert.AreEqual(0, resolution.MessageIds.Count);
     }
 
+    /// <summary>F2：冻结候选时必须能读到**真实持久代际**（落库前 CAS 的输入）。</summary>
+    [TestMethod]
+    public async Task GetCompactionGeneration_ReadsDurableColumn()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, ("user", "u1"));
+        }
+
+        var manager = CreateManager(new Factory(options));
+        Assert.AreEqual(0, await manager.GetCompactionGenerationAsync(SessionId, CancellationToken.None));
+
+        await using (var db = new MemoryDbContext(options))
+        {
+            var session = await db.Sessions.SingleAsync(s => s.SessionId == SessionId);
+            session.CompactionGeneration = 5;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.AreEqual(5, await manager.GetCompactionGenerationAsync(SessionId, CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task GetCompactionGeneration_UnknownSessionOrNoDatabase_IsZero()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var manager = CreateManager(new Factory(options));
+        Assert.AreEqual(0, await manager.GetCompactionGenerationAsync("no-such-session", CancellationToken.None));
+
+        var databaseLess = CreateManager(memoryDbFactory: null);
+        Assert.AreEqual(0, await databaseLess.GetCompactionGenerationAsync(SessionId, CancellationToken.None));
+    }
+
     private static DbContextOptions<MemoryDbContext> CreateOptions(SqliteConnection connection) =>
         new DbContextOptionsBuilder<MemoryDbContext>()
             .UseSqlite(connection)

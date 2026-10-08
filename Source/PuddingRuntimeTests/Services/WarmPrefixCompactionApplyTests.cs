@@ -58,8 +58,7 @@ public sealed class WarmPrefixCompactionApplyTests
 
     /// <summary>通过校验时必须给出**重新计量**的 after，而不是「未含摘要」的计划估算。</summary>
     [TestMethod]
-    public void VerifyApplication_AppliesAndReportsReMeasuredAfter()
-    {
+    public void VerifyApplication_AppliesAndReportsReMeasuredAfter()    {
         var store = new ContextUsageSnapshotStore();
         var history = BuildHistory(pairs: 40);
         var plan = CreatePlan(store, history);
@@ -166,5 +165,60 @@ public sealed class WarmPrefixCompactionApplyTests
         Assert.AreNotEqual(
             WarmPrefixCompaction.ComputeRevisionHash([first]),
             WarmPrefixCompaction.ComputeRevisionHash([first, different]));
+    }
+
+    /// <summary>
+    /// F2 持久化：通过校验时必须带出**被替换跨度的原始对象**（供调用方解析持久 MessageId）。
+    /// 用引用相等断言，确保切分准确 —— 切错会去标注错误的库行（= 静默隐藏真实消息）。
+    /// </summary>
+    [TestMethod]
+    public void VerifyApplication_ExposesRemovedSpanObjects_ForDurableCommit()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        var plan = CreatePlan(store, history);
+        var summary = "## Current Work\n- continue implementation\n## Next Step\n- run tests";
+
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            store, SessionId, history, tools: null, BuildConfig(), plan, summary);
+
+        Assert.IsTrue(verification.CanApply, verification.Reason);
+        Assert.IsNotNull(verification.RemovedMessages);
+        Assert.AreEqual(plan.RemovedMessageCount, verification.RemovedMessages!.Count);
+
+        // 冻结布局：leading system 前缀 → removed span → retained suffix（见 TryCreatePlan）。
+        var expected = history
+            .Skip(plan.LeadingSystemMessageCount)
+            .Take(plan.RemovedMessageCount)
+            .ToList();
+        CollectionAssert.AreEqual(expected, verification.RemovedMessages!.ToList());
+        for (var i = 0; i < expected.Count; i++)
+        {
+            Assert.AreSame(expected[i], verification.RemovedMessages![i],
+                "必须是跨度里的**同一个对象**，调用方才能按引用解析持久身份");
+        }
+
+        // 被替换跨度不得出现在提交后的历史里；前导 system 与保留后缀必须还在。
+        foreach (var removed in verification.RemovedMessages!)
+            Assert.IsFalse(verification.AppliedMessages!.Contains(removed), "被替换的消息不应留在提交后的历史中");
+        Assert.AreSame(history[0], verification.AppliedMessages![0], "前导 system 必须原样保留");
+        Assert.AreEqual(plan.RetainedMessages.Count + 1, verification.AppliedMessages!.Count);
+    }
+
+    /// <summary>被拒绝时不得带出跨度对象（调用方据此不落库）。</summary>
+    [TestMethod]
+    public void VerifyApplication_WhenRejected_ExposesNoRemovedSpan()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        var plan = CreatePlan(store, history);
+
+        // 空摘要 ⇒ summary_no_gain，历史原样。
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            store, SessionId, history, tools: null, BuildConfig(), plan, rawSummary: "   ");
+
+        Assert.IsFalse(verification.CanApply);
+        Assert.IsNull(verification.RemovedMessages);
+        Assert.IsNull(verification.AppliedMessages);
     }
 }

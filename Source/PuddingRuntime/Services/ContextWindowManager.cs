@@ -1332,6 +1332,23 @@ public sealed class ContextWindowManager
             ct);
 
     /// <summary>
+    /// 读取会话的**持久**压缩代际（<c>Session.CompactionGeneration</c>）；会话不存在或无库时为 0。
+    /// F2：warm-prefix 冻结候选时必须带上它，落库前再 CAS 一次 —— 否则「仅代次变化」这一路
+    /// 抓不到（durable compaction 与 warm-prefix 交错时会用旧候选覆盖新事实）。
+    /// </summary>
+    internal async Task<int> GetCompactionGenerationAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (_memoryDbFactory is null)
+            return 0;
+
+        await using var db = await _memoryDbFactory.CreateDbContextAsync(ct);
+        return await db.Sessions
+            .Where(s => s.SessionId == sessionId)
+            .Select(s => (int?)s.CompactionGeneration)
+            .FirstOrDefaultAsync(ct) ?? 0;
+    }
+
+    /// <summary>
     /// 获取**压缩提交单飞租约**（ADR-095 D4）：把「候选校验 + 内存历史替换」放进同一个短临界区。
     /// <para>
     /// 为什么 warm-prefix 必须接这个锁：DB 水合（本类 298 行）与自动/手动压缩都走

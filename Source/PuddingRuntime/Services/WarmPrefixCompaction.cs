@@ -48,7 +48,13 @@ internal static class WarmPrefixCompaction
         double triggerRatio,
         double targetRatio,
         out WarmPrefixCompactionPlan? plan,
-        long? workUnitInputCapacity = null)
+        long? workUnitInputCapacity = null,
+        /// <summary>
+        /// 冻结候选时读到的**持久会话代际**（`Session.CompactionGeneration`）。默认 0 仅为兼容既有调用；
+        /// 生产路径必须传入真实值，否则「仅代次变化」这一路 CAS 抓不到（durable compaction 与
+        /// warm-prefix 交错时会用旧候选覆盖新事实）。
+        /// </summary>
+        int sourceGeneration = 0)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
         ArgumentNullException.ThrowIfNull(durableHistory);
@@ -115,7 +121,7 @@ internal static class WarmPrefixCompaction
             targetRatio,
             // 持久代次要等 checkpoint/generation 落库后才能提供；当前恒为 0，
             // 因此「仅代次变化」这一路今天抓不到（见 changelog「未完成」）。
-            SourceGeneration: 0);
+            SourceGeneration: sourceGeneration);
         return true;
     }
 
@@ -241,13 +247,21 @@ internal static class WarmPrefixCompaction
         }
 
         var target = (int)Math.Floor(plan.EffectiveInputLimit * Math.Clamp(plan.TargetRatio, 0.05, 1.0));
+        // F2 持久化：把「被替换跨度」的**对象**带出去，供调用方解析持久 MessageId。
+        // CAS 已保证跨度与保留后缀原样存在，因此按冻结时的布局切分是安全的
+        // （leading system 前缀 → removed span → retained suffix，见 TryCreatePlan）。
+        var removedMessages = currentDurableHistory
+            .Skip(plan.LeadingSystemMessageCount)
+            .Take(plan.RemovedMessageCount)
+            .ToArray();
         return new WarmPrefixApplyVerification(
             CanApply: true,
             Reason: "applied",
             AppliedMessages: checkpoint,
             AfterSnapshot: afterSnapshot,
             ReclaimTokens: reclaim,
-            MeetsTarget: afterSnapshot.UsedTokens <= target);
+            MeetsTarget: afterSnapshot.UsedTokens <= target,
+            RemovedMessages: removedMessages);
     }
 
     /// <summary>稳定的消息身份（内容 + 角色 + 工具配对元数据），用于严格 CAS 与指纹；不展开密钥。</summary>
@@ -356,7 +370,12 @@ internal sealed record WarmPrefixApplyVerification(
     IReadOnlyList<ChatMessage>? AppliedMessages,
     ContextUsageSnapshot? AfterSnapshot,
     int ReclaimTokens,
-    bool MeetsTarget)
+    bool MeetsTarget,
+    /// <summary>
+    /// 被替换跨度的**消息对象**（仅 <see cref="CanApply"/> 为 true 时有值）。
+    /// 调用方据此解析持久 `MessageId` 去做覆盖标注；解析不全即必须放弃落库、降级为内存-only。
+    /// </summary>
+    IReadOnlyList<ChatMessage>? RemovedMessages = null)
 {
     /// <summary>拒绝提交：历史保持原样，原因码进入日志与生命周期事件。</summary>
     internal static WarmPrefixApplyVerification Rejected(
