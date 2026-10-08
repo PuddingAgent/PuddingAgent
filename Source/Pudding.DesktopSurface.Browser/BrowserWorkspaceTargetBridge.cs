@@ -136,12 +136,17 @@ public sealed class BrowserWorkspaceTargetBridge
     ///
     /// 撤销必须真的发生：注册表若继续对旧页面回答 <c>IsAgentTarget=true</c>，
     /// 就等于替一个不该再被驱动的页面背书，而只读状态无法自证这件事。
+    ///
+    /// <b>两个注册表都要更新</b>：页面注册表不再只是「版本/就绪度」——它同时承载准入所需的
+    /// page 级目标标记（<see cref="DesktopTargetRegistry.SetAgentTarget"/>）。只更新一边，
+    /// 就会出现「UI 说这是目标页、准入说不是」这种最难排查的漂移（本类存在的理由）。
     /// </summary>
     public void OnAgentTargetChanged(string? contextId, string? pageId)
     {
         lock (_sync)
         {
             _browserTargets.SetAgentTarget(contextId, pageId);
+            _pageTargets.SetAgentTarget(contextId, pageId);
         }
     }
 

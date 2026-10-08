@@ -119,6 +119,46 @@ public sealed class BrowserWorkspaceTargetBridgeTests
     }
 
     [Fact]
+    public void AgentTarget_IsMirroredIntoThePageRegistryThatAdmissionReads()
+    {
+        // 两个注册表都要更新：准入读的是**页面**注册表的 page 级标记。
+        // 只更新一边就会出现「UI 说这是目标页、准入说不是」这种最难排查的漂移。
+        var (bridge, _, pages) = Create();
+        bridge.OnContextCreated(ContextId);
+        bridge.OnPageCreated(ContextId, "page-a", DesktopPageVersion.Require(1));
+        bridge.OnPageCreated(ContextId, "page-b", DesktopPageVersion.Require(1));
+
+        bridge.OnAgentTargetChanged(ContextId, "page-b");
+
+        Assert.False(pages.Resolve(new DesktopPageTarget(ContextId, "page-a"))!.IsAgentTarget);
+        Assert.True(pages.Resolve(new DesktopPageTarget(ContextId, "page-b"))!.IsAgentTarget);
+
+        bridge.OnAgentTargetChanged(ContextId, "page-a");
+        Assert.True(pages.Resolve(new DesktopPageTarget(ContextId, "page-a"))!.IsAgentTarget);
+        Assert.False(pages.Resolve(new DesktopPageTarget(ContextId, "page-b"))!.IsAgentTarget);
+
+        // 撤销同理（用户接管 / 会话结束）。
+        bridge.OnAgentTargetChanged(null, null);
+        Assert.False(pages.Resolve(new DesktopPageTarget(ContextId, "page-a"))!.IsAgentTarget);
+    }
+
+    [Fact]
+    public void ClosedPage_TakesTheAgentTargetMarkWithIt()
+    {
+        var (bridge, browser, pages) = Create();
+        bridge.OnContextCreated(ContextId);
+        bridge.OnPageCreated(ContextId, PageId, DesktopPageVersion.Require(1));
+        bridge.OnAgentTargetChanged(ContextId, PageId);
+
+        bridge.OnPageClosed(ContextId, PageId);
+
+        Assert.False(browser.IsAgentTarget(ContextId, PageId));
+        Assert.Null(pages.Resolve(new DesktopPageTarget(ContextId, PageId)));
+        // 不凭已关闭的 id 重新标记。
+        Assert.False(pages.SetAgentTarget(ContextId, PageId));
+    }
+
+    [Fact]
     public void ClosedPage_DisappearsFromBothRegistries()
     {
         var (bridge, browser, pages) = Create();

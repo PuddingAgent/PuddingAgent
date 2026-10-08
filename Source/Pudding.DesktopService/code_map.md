@@ -33,6 +33,8 @@
 | `DesktopCapabilityChannelComposition.cs` | **组合根**（唯一会改变产品行为的一步）：判定 → 构造 → `StartAsync` → `DisposeAsync` 一次调用完成。关闭 ⇒ `Success(null)` 什么都不做；启用却起不来 ⇒ **明确失败**（不是只记日志）；不做跨传输回退；缺省服务策略 fail-closed |
 | `DesktopShellSurface.cs` | 把两个 Shell 端口（交互设施 + 宿主告知）适配成表面：预算纵深防御（剪贴板二次截断）、异常折叠为 `internal_error`、取消原样传播；**不补齐**自动化状态与页面数（那是 `DesktopService` 的权威状态） |
 | `BrowserTargetRegistry.cs` | 浏览器目标注册表（`IDesktopBrowserTargetRegistry` 实现）：上下文可信级别 / Agent 目标 / 活动页。`SetAgentTarget` 是**撤销的**一等操作（`RegisterPage(isAgentTarget:false)` 只增不减，撤销缺失会让注册表替不该被驱动的页面背书） |
+| `DesktopTargetRegistry.cs` | 页面/上下文目标登记表（准入读的那一份）：版本只前进、可信级别不可由调用方声明；另承载**用户选定的 Agent 目标页**（`SetAgentTarget`，同一时刻至多一个，未登记/已关闭的 id 不标记）——准入的 page 级闸门读它 |
+| `DesktopCapabilityPolicy.cs` | 能力 × 目标可信级别的准入策略表；`RequiresAgentTarget` 由信任表**推导**（需要页面目标且只对 AgentAuthorized 开放），避免出现第二份真源 |
 
 > 变更类后置条件已**移出**本组件：原 `DesktopMutationInvariants.cs`（「所有 mutating 结果版本必须严格递增」）
 > 于 2026-10-08 删除，改由 `PuddingBrowser.Automation` 的 `BrowserMutationPostcondition` 统一判定，
@@ -46,6 +48,7 @@
 |---|---|
 | 目标未登记/已关闭 | `invalid_target`（不触碰 UI） |
 | 可信级别不足（含工作台脚本注入） | `unauthorized` |
+| **页面不是用户选定的 Agent 目标页**（page 级闸门） | `unauthorized`（不触碰 UI；只影响「需要页面目标且只对 AgentAuthorized 开放」的能力） |
 | 期望页面版本不符 | `page_version_mismatch`（入队前与入队后各判一次） |
 | 暂停 / 用户接管 | `paused` / `user_takeover`（接管优先） |
 | 窗口关闭（含排队中关闭） | `ui_unavailable`，**排队中的调用必须结束而不是悬挂** |
@@ -63,3 +66,10 @@
   命令路径与只读直连 API（`GetPageStateAsync`）共用同一套校验与调度。
 - **WinUI `DispatcherQueue` 适配器**在 `Source/PuddingDesktop.CapabilityHost`（只引用 Contracts、无独立可测逻辑，
   契约由本组件的假调度器测试覆盖）；在 PuddingDesktop 里构造它并装配宿主属于切片 C-3/D。
+- **page 级闸门（2026-10-08）只覆盖「只对 AgentAuthorized 开放」且需要页面目标的能力**：
+  `webview.execute_javascript`、`browser.snapshot/locate/interact/wait_for/tabs`。
+  `webview.navigate` 与 `webview.page_state` 对普通网页与工作台也开放（通用浏览），**刻意不在**闸门内；
+  把导航也收紧到「目标页」属于设计 §3.2 的写权限/grant 切片。
+  ⚠️ **这是产品行为变更**：未选定 Agent 目标页时，上述能力一律 `unauthorized`
+  （设计 §3.2「默认只授权用户选定的目标页」）。Shell 侧由
+  `DesktopApplicationCoordinator.Capability` 把 `workspace.AgentTargetPageId` 同步进注册表。

@@ -823,6 +823,18 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                 $"{DesktopCapabilities.NameOf(capability)} is not allowed for {trust} targets");
         }
 
+        // page 级闸门（审计 2026-10-08 结论 #2 / 设计 §3.2）：可信级别是 **context 级**，
+        // 不能把整个 AgentAuthorized 上下文当作「里面所有页面都已获授权」——
+        // 否则同上下文的非目标页同样能通过准入，UI 上的「Agent 目标」就只是暗示。
+        if (DesktopCapabilityPolicy.RequiresAgentTarget(capability)
+            && pageState is { } gated
+            && !gated.IsAgentTarget)
+        {
+            return DesktopCapabilityError.Unauthorized(
+                $"{DesktopCapabilities.NameOf(capability)} requires the page to be the designated agent target;"
+                + $" '{gated.Target.Key}' is in an {trust} context but is not the agent target");
+        }
+
         var automation = ValidateAutomation(capability);
         if (automation is not null)
         {

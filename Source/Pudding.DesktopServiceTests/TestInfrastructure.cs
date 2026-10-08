@@ -474,6 +474,9 @@ internal sealed class ServiceHarness
         var registry = new DesktopTargetRegistry();
         registry.RegisterContext("ctx-agent", DesktopContextTrust.AgentAuthorized);
         registry.RegisterPage(AgentPage, DesktopPageVersion.Require(1), DesktopPageReadiness.Interactive);
+        // AgentPage 按定义就是用户选定的 Agent 目标页：page 级准入闸门要求它是目标，
+        // 否则所有 Agent 浏览器能力都会被拒（审计 2026-10-08 结论 #2）。
+        registry.SetAgentTarget(AgentPage.ContextId, AgentPage.PageId);
         registry.RegisterContext("ctx-web", DesktopContextTrust.Untrusted);
         registry.RegisterPage(WebPage, DesktopPageVersion.Require(5), DesktopPageReadiness.Complete);
         registry.RegisterContext("ctx-work", DesktopContextTrust.Workbench);

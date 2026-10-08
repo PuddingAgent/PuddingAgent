@@ -76,6 +76,24 @@ public static class DesktopCapabilityPolicy
         DesktopCapabilities.TryGet(capability, out var descriptor)
         && descriptor.Traits.HasFlag(DesktopCapabilityTraits.RequiresPageTarget);
 
+    /// <summary>
+    /// 该能力是否要求页面是**用户选定的 Agent 目标页**（page 级闸门）。
+    ///
+    /// 为什么必须单独有这一条（审计 2026-10-08 结论 #2 / 设计 §3.2）：可信级别是<b>context 级</b>，
+    /// 于是「在 AgentAuthorized 上下文里」被当成了「这个页面已获授权」——
+    /// 同一上下文里的**非目标页**同样能通过准入，UI 上的「Agent 目标」因此只是暗示。
+    ///
+    /// 判据直接从信任表推导，避免出现第二份真源：
+    /// 要求页面目标，且**只对 AgentAuthorized 开放**（对 Untrusted / Workbench 都不开放）。
+    /// 因此 `webview.navigate` 与 `webview.page_state` 不在其列 —— 它们对普通网页与工作台也开放，
+    /// 属通用浏览能力（把导航也收紧到「目标页」属 grant 模型切片，见设计 §3.2 的写权限行）。
+    /// </summary>
+    public static bool RequiresAgentTarget(DesktopCapability capability) =>
+        RequiresPageTarget(capability)
+        && IsAllowedForTrust(capability, DesktopContextTrust.AgentAuthorized)
+        && !IsAllowedForTrust(capability, DesktopContextTrust.Untrusted)
+        && !IsAllowedForTrust(capability, DesktopContextTrust.Workbench);
+
     /// <summary>工作台页面绝不允许脚本注入（策略表之外的硬不变式）。</summary>
     public static bool DeniesWorkbenchScriptInjection(DesktopCapability capability, DesktopContextTrust trust) =>
         capability == DesktopCapability.WebViewExecuteJavascript && trust == DesktopContextTrust.Workbench;

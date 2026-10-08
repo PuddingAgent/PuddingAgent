@@ -200,6 +200,51 @@ public sealed class TargetAndPolicyTests
     }
 
     [Fact]
+    public void RequiresAgentTarget_AppliesOnlyToAgentAuthorizedOnlyPageCapabilities()
+    {
+        // 被闸门覆盖：需要页面目标 + **只**对 AgentAuthorized 开放。
+        foreach (var gated in new[]
+                 {
+                     DesktopCapability.WebViewExecuteJavascript,
+                     DesktopCapability.BrowserSnapshot,
+                     DesktopCapability.BrowserLocate,
+                     DesktopCapability.BrowserInteract,
+                     DesktopCapability.BrowserWaitFor,
+                     DesktopCapability.BrowserTabs,
+                 })
+        {
+            Assert.True(DesktopCapabilityPolicy.RequiresAgentTarget(gated), $"{gated} 应要求 Agent 目标页");
+        }
+
+        // 通用浏览能力：对普通网页/工作台也开放，因此**不**收紧到目标页
+        // （把导航也收紧属 grant 模型切片，见设计 §3.2 写权限行）。
+        Assert.False(DesktopCapabilityPolicy.RequiresAgentTarget(DesktopCapability.WebViewNavigate));
+        Assert.False(DesktopCapabilityPolicy.RequiresAgentTarget(DesktopCapability.WebViewPageState));
+
+        // 无页面目标的能力没有「哪个页面」可判。
+        Assert.False(DesktopCapabilityPolicy.RequiresAgentTarget(DesktopCapability.BrowserContexts));
+        Assert.False(DesktopCapabilityPolicy.RequiresAgentTarget(DesktopCapability.BrowserContextCreate));
+        Assert.False(DesktopCapabilityPolicy.RequiresAgentTarget(DesktopCapability.BrowserContextClose));
+        Assert.False(DesktopCapabilityPolicy.RequiresAgentTarget(DesktopCapability.ShellNotification));
+    }
+
+    [Fact]
+    public void RequiresAgentTarget_IsDerivedFromTheTrustTable_NotASecondSourceOfTruth()
+    {
+        // 推导规则：要求页面目标，且对 Untrusted / Workbench 都不开放。
+        // 这条断言保证新增能力时不会出现「信任表收紧、目标闸门忘了跟」的漂移。
+        foreach (var capability in DesktopCapabilities.All.Select(descriptor => descriptor.Capability))
+        {
+            var expected = DesktopCapabilityPolicy.RequiresPageTarget(capability)
+                && DesktopCapabilityPolicy.IsAllowedForTrust(capability, DesktopContextTrust.AgentAuthorized)
+                && !DesktopCapabilityPolicy.IsAllowedForTrust(capability, DesktopContextTrust.Untrusted)
+                && !DesktopCapabilityPolicy.IsAllowedForTrust(capability, DesktopContextTrust.Workbench);
+
+            Assert.Equal(expected, DesktopCapabilityPolicy.RequiresAgentTarget(capability));
+        }
+    }
+
+    [Fact]
     public void Options_RejectEmptyCapabilitySet()
     {
         Assert.Throws<ArgumentException>(() => new DesktopService(
@@ -231,6 +276,69 @@ public sealed class TargetRegistryTests
     {
         var registry = new DesktopTargetRegistry();
         Assert.Throws<ArgumentException>(() => registry.RegisterContext("  ", DesktopContextTrust.Untrusted));
+    }
+
+    [Fact]
+    public void SetAgentTarget_KeepsAtMostOneTargetAndClearsThePrevious()
+    {
+        var registry = new DesktopTargetRegistry();
+        var first = new DesktopPageTarget("ctx-1", "page-1");
+        var second = new DesktopPageTarget("ctx-1", "page-2");
+        registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+        registry.RegisterPage(first);
+        registry.RegisterPage(second);
+
+        Assert.True(registry.SetAgentTarget(first.ContextId, first.PageId));
+        Assert.True(registry.Resolve(first)!.IsAgentTarget);
+        Assert.False(registry.Resolve(second)!.IsAgentTarget);
+
+        Assert.True(registry.SetAgentTarget(second.ContextId, second.PageId));
+        Assert.False(registry.Resolve(first)!.IsAgentTarget);
+        Assert.True(registry.Resolve(second)!.IsAgentTarget);
+
+        // 撤销必须真的发生：否则注册表会继续替旧页面背书。
+        Assert.False(registry.SetAgentTarget(null, null));
+        Assert.False(registry.Resolve(second)!.IsAgentTarget);
+    }
+
+    [Fact]
+    public void SetAgentTarget_DoesNotInventAPageThatWasNeverRegistered()
+    {
+        var registry = new DesktopTargetRegistry();
+        registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+        registry.RegisterPage(new DesktopPageTarget("ctx-1", "page-1"));
+
+        // 不凭一个 id 凭空造出目标（fail closed）。
+        Assert.False(registry.SetAgentTarget("ctx-1", "page-unknown"));
+        Assert.False(registry.SetAgentTarget("ctx-unknown", "page-1"));
+        Assert.False(registry.Resolve(new DesktopPageTarget("ctx-1", "page-1"))!.IsAgentTarget);
+    }
+
+    [Fact]
+    public void SetAgentTarget_OnAClosedPageMarksNothing()
+    {
+        var registry = new DesktopTargetRegistry();
+        var target = new DesktopPageTarget("ctx-1", "page-1");
+        registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+        registry.RegisterPage(target, isAgentTarget: true);
+        registry.ClosePage(target);
+
+        Assert.False(registry.SetAgentTarget(target.ContextId, target.PageId));
+    }
+
+    [Fact]
+    public void RegisterPage_CanMarkTheAgentTargetDirectly()
+    {
+        var registry = new DesktopTargetRegistry();
+        var target = new DesktopPageTarget("ctx-1", "page-1");
+        registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+        registry.RegisterPage(target, isAgentTarget: true);
+
+        Assert.True(registry.Resolve(target)!.IsAgentTarget);
+        // 缺省仍是不标记（fail closed）。
+        var other = new DesktopPageTarget("ctx-1", "page-2");
+        registry.RegisterPage(other);
+        Assert.False(registry.Resolve(other)!.IsAgentTarget);
     }
 
     [Fact]
