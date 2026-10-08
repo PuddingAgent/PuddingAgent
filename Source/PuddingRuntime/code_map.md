@@ -355,7 +355,7 @@
 | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | `anysearch_search`：通用网页搜索 | `AnySearchSearchTool` | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | `doubao_search`：豆包搜索 | `DoubaoSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/GitHubSearchTool.cs` | `github_search`：GitHub 仓库与代码检索 | `GitHubSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
-| `Tools/BuiltIns/Search/SearchGrepTool.cs` | `search_grep`：工作区文本检索 | `SearchGrepTool` | `Services/Search/SearchAttemptLedger.cs` | 索引只产候选，匹配以磁盘当前内容为准；`backend=index` 未建索引报 `dependency_wait`（环境前置），引擎故障报 `contract_error` |
+| `Tools/BuiltIns/Search/SearchGrepTool.cs` | `search_grep`：工作区文本检索 | `SearchGrepTool` | `Services/Search/SearchAttemptLedger.cs` | 索引只产候选，匹配以磁盘当前内容为准；`backend=index` 未建索引报 `dependency_wait`（环境前置），引擎故障报 `contract_error`；可选注入 `IFullTextIndexFreshnessProbe`，未注册时输出逐字不变，注册后摘要追加 `indexFreshness/lastIndexed/indexAge/indexDirMtime`，且 0 命中而新鲜度不可核实时报「不是不存在的证据」 |
 | `Tools/BuiltIns/Search/SearchToolsTool.cs` | `search_tools`：工具目录检索与加载 | `SearchToolsTool` | `Services/Tools/ToolExposurePlanner.cs` | 只返回权限过滤后的条目 |
 | `Tools/BuiltIns/Search/ZhihuGlobalSearchTool.cs` | `zhihu_global_search`：全网检索 | `ZhihuGlobalSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
 | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | 知乎检索的共享配置与渲染 | `ZhihuSearchShared` | `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | — |

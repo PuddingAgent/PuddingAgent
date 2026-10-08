@@ -163,6 +163,19 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.Configure<FullTextIndexSupplyOptions>(
             builder.Configuration.GetSection(FullTextIndexSupplyOptions.SectionName));
         builder.Services.AddSingleton<IFullTextSearchEngine, LuceneSearchEngine>();
+        // A23 S5（2026-10-08）：把**同一个** LuceneSearchEngine 实例再暴露为「索引新鲜度只读探针」，
+        // 供 search_grep 的 backend=index 上报「这次查询读的索引有多旧 / 新鲜度能否核实」——
+        // 否则索引缺失或构建时刻读不出时，0 命中会被读成「语料里没有」（假否定，ADR-089 §8）。
+        // 必须是**查询侧同一实例**（否则会读到别的索引根/缓存），故「解析既有注册再转型」而不是再 new 一个。
+        // 转型 fail-closed：实现若摘掉该接口，在**解析时**就抛错，而不是让新鲜度静默变 null（功能静默不生效）。
+        builder.Services.AddSingleton<IFullTextIndexFreshnessProbe>(sp =>
+        {
+            if (sp.GetRequiredService<IFullTextSearchEngine>() is not IFullTextIndexFreshnessProbe probe)
+                throw new InvalidOperationException(
+                    "A23 S5：IFullTextSearchEngine 的实现必须同时实现 IFullTextIndexFreshnessProbe，"
+                    + "否则 search_grep 的 backend=index 无法上报索引新鲜度（查询本身仍可用，但会失去假否定防护）。");
+            return probe;
+        });
         // S5（2026-09-25）：全文索引供给组合的**惰性**工厂 —— 宿主唯一的「拿到协调器」入口。
         // 为什么不直接注册 IFullTextIndexSupplyCoordinator：默认（Enabled=false）下必须
         // 「不解析 scope、不构造协调器组合、不 touch 索引根」；注册成工厂就把

@@ -1,3 +1,18 @@
+---
+title: "2026-10-03 · `code_symbol_search` 增加索引新鲜度（index_freshness）诚实信号"
+author: hyfree
+date: 2026-10-03
+last_reviewed: 2026-10-03
+status: archived
+description: 本会话反复踩到同一个坑：索引重建期间的「0 命中」被误读成「代码不存在」。
+categories: [docs, changelog]
+tags: [code, symbol, 索引新鲜度信]
+related_docs: []
+related_files: [Source/PuddingRuntime/Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs, Source/PuddingRuntimeTests/Tools/CodeSymbolSearchIndexFreshnessTests.cs, Docs/12_features/Index-Retrieval-Known-Defects-2026-10-01.md, Docs/13_runbooks/Core部署决策包与验收清单-2026-10-03.md]
+slug: changelog-2026-10-03-code-symbol-search索引新鲜度信号
+draft: false
+---
+
 # 2026-10-03 · `code_symbol_search` 增加索引新鲜度（index_freshness）诚实信号
 
 ## 背景 / 动机

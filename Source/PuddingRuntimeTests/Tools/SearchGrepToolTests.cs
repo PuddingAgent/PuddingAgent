@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
@@ -2224,6 +2225,220 @@ public sealed class SearchGrepToolTests
         }
     }
 
+
+    // ===== A23 S5：backend=index 的索引新鲜度上报（探针是可选接缝，未注册时输出逐字不变）=====
+
+    [TestMethod]
+    public async Task Backend_Index_Reports_Index_Freshness_Facts_When_Probe_Is_Injected()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var scopeDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-fresh-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scopeDir);
+        var hit = Path.Combine(scopeDir, "hit.txt");
+        await File.WriteAllTextAsync(hit, "NEEDLE\n");
+
+        try
+        {
+            var stamp = new DateTimeOffset(2026, 10, 6, 22, 57, 38, TimeSpan.Zero);
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                true, [new FullTextSearchMatch(hit, 1, "NEEDLE")], null, 1, 12));
+            var probe = new StubIndexFreshnessProbe(new FullTextIndexFreshness(
+                FullTextIndexFreshnessState.Available, stamp, "abc123def456", stamp.AddMinutes(5)));
+            var tool = new SearchGrepTool(
+                NullLogger<SearchGrepTool>.Instance, engine, freshnessProbe: probe);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = scopeDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "indexFreshness=available");
+            StringAssert.Contains(result.Output, "lastIndexed=2026-10-06T22:57:38.0000000Z");
+            StringAssert.Contains(result.Output, "pattern=abc123def456");
+            StringAssert.Contains(result.Output, "indexDirMtime=2026-10-06T23:02:38.0000000Z");
+            StringAssert.Contains(result.Output, "indexAge=");
+            // 探针必须按**本次查询的 scope** 读，否则上报的是别的 scope 的新鲜度
+            Assert.AreEqual(Path.GetFullPath(scopeDir), probe.LastCorpusRootPath);
+            Assert.AreEqual(1, probe.CallCount);
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, scopeDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Zero_Hits_With_Unreadable_Freshness_Is_Not_Reported_As_Absence()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var scopeDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-fresh-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scopeDir);
+
+        try
+        {
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(true, [], null, 0, 7));
+            var probe = new StubIndexFreshnessProbe(new FullTextIndexFreshness(
+                FullTextIndexFreshnessState.StampUnreadable, null, null,
+                new DateTimeOffset(2026, 10, 6, 22, 57, 38, TimeSpan.Zero)));
+            var tool = new SearchGrepTool(
+                NullLogger<SearchGrepTool>.Instance, engine, freshnessProbe: probe);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = scopeDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, result.Status);
+            StringAssert.Contains(result.Output, "indexFreshness=stamp-unreadable");
+            StringAssert.Contains(result.Output, "lastIndexed=<null>");
+            StringAssert.Contains(result.Output, "indexAge=<null>");
+            StringAssert.Contains(result.Output, "NOT evidence that the pattern is absent");
+            Assert.IsFalse(result.Output.StartsWith("(no matches)\n"),
+                "新鲜度读不出时不得只回一句空洞的 no matches（那正是让调用方打转的假否定）");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, scopeDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Zero_Hits_With_Missing_Index_Reports_Missing()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var scopeDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-fresh-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scopeDir);
+
+        try
+        {
+            // 竞态：HasIndex 通过之后索引被删（或换成 staging 目录）⇒ 引擎仍成功但探针报 missing。
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(true, [], null, 0, 7));
+            var probe = new StubIndexFreshnessProbe(new FullTextIndexFreshness(
+                FullTextIndexFreshnessState.Missing, null, null, null));
+            var tool = new SearchGrepTool(
+                NullLogger<SearchGrepTool>.Instance, engine, freshnessProbe: probe);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = scopeDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "indexFreshness=missing");
+            StringAssert.Contains(result.Output, "NOT evidence that the pattern is absent");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, scopeDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Without_Probe_Omits_Freshness_Facts()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var scopeDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-fresh-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scopeDir);
+        var hit = Path.Combine(scopeDir, "hit.txt");
+        await File.WriteAllTextAsync(hit, "NEEDLE\n");
+
+        try
+        {
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                true, [new FullTextSearchMatch(hit, 1, "NEEDLE")], null, 1, 9));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = scopeDir,
+            });
+
+            StringAssert.Contains(result.Output, "backend=index");
+            Assert.IsFalse(result.Output.Contains("indexFreshness"),
+                "未注册探针时输出必须逐字不变（零行为变化）");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, scopeDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Probe_Failure_Does_Not_Break_The_Search()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var scopeDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-fresh-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scopeDir);
+        var hit = Path.Combine(scopeDir, "hit.txt");
+        await File.WriteAllTextAsync(hit, "NEEDLE\n");
+
+        try
+        {
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                true, [new FullTextSearchMatch(hit, 1, "NEEDLE")], null, 1, 9));
+            var tool = new SearchGrepTool(
+                NullLogger<SearchGrepTool>.Instance, engine, freshnessProbe: new ThrowingIndexFreshnessProbe());
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = scopeDir,
+            });
+
+            Assert.IsTrue(result.Success, "探针抛异常不得把可选观测变成硬依赖: " + result.Error);
+            StringAssert.Contains(result.Output, "hit.txt:1: NEEDLE");
+            StringAssert.Contains(result.Output, "indexFreshness=probe-error");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, scopeDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Probe_Is_Injected_Through_Dependency_Injection()
+    {
+        // 宿主只做「注册接口」这一件事；这里断言机制本身：可选构造参数在注册后真的被 DI 填入
+        // （未注册则保持 null）。否则宿主那行写错了也看不出来 —— 功能会静默不生效。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var scopeDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-fresh-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scopeDir);
+
+        try
+        {
+            var stamp = new DateTimeOffset(2026, 10, 6, 22, 57, 38, TimeSpan.Zero);
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(true, [], null, 0, 4));
+            var probe = new StubIndexFreshnessProbe(new FullTextIndexFreshness(
+                FullTextIndexFreshnessState.Available, stamp, "f00dfeed", stamp));
+            using var provider = new ServiceCollection()
+                .AddLogging()
+                .AddSingleton<IFullTextSearchEngine>(engine)
+                .AddSingleton<IFullTextIndexFreshnessProbe>(probe)
+                .AddSingleton<SearchGrepTool>()
+                .BuildServiceProvider();
+
+            var tool = provider.GetRequiredService<SearchGrepTool>();
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = scopeDir,
+            });
+
+            StringAssert.Contains(result.Output, "indexFreshness=available");
+            Assert.AreEqual(1, probe.CallCount, "DI 注入的探针必须真的被调用");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, scopeDir);
+        }
+    }
+
     private static void RestoreAndDelete(string previousCwd, string tempDir)
     {
         Directory.SetCurrentDirectory(previousCwd);
@@ -2289,4 +2504,27 @@ public sealed class SearchGrepToolTests
 
         public bool RemoveIndex(string d) => true;
     }
+
+    /// <summary>A23 S5：按固定读数回答的探针桩（记录调用事实，便于断言 scope 与调用次数）。</summary>
+    private sealed class StubIndexFreshnessProbe : IFullTextIndexFreshnessProbe
+    {
+        private readonly FullTextIndexFreshness _freshness;
+        public StubIndexFreshnessProbe(FullTextIndexFreshness freshness) => _freshness = freshness;
+        public int CallCount { get; private set; }
+        public string? LastCorpusRootPath { get; private set; }
+        public FullTextIndexFreshness ProbeFreshness(string corpusRootPath)
+        {
+            CallCount++;
+            LastCorpusRootPath = corpusRootPath;
+            return _freshness;
+        }
+    }
+
+    /// <summary>A23 S5：必抛异常的探针桩——证明可选观测的故障不会变成检索的硬失败。</summary>
+    private sealed class ThrowingIndexFreshnessProbe : IFullTextIndexFreshnessProbe
+    {
+        public FullTextIndexFreshness ProbeFreshness(string corpusRootPath) =>
+            throw new IOException("probe boom");
+    }
+
 }

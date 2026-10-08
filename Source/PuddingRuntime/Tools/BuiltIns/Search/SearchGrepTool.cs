@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using PuddingCode.Models;
 using PuddingCode.Observability;
@@ -28,6 +29,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 {
     private readonly ILogger<SearchGrepTool> _logger;
     private readonly IFullTextSearchEngine _searchEngine;
+    // A23 S5：索引新鲜度只读探针（可选接缝）。未注册时保持 null ⇒ 输出与既有行为逐字不变。
+    private readonly IFullTextIndexFreshnessProbe? _freshnessProbe;
     private readonly ITelemetryMetricSink? _telemetry;
     private readonly ISearchAttemptLedger _ledger;
     private readonly TimeSpan _searchTimeout;
@@ -77,10 +80,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         IFullTextSearchEngine searchEngine,
         ITelemetryMetricSink? telemetry = null,
         ISearchAttemptLedger? ledger = null,
-        TimeSpan? searchTimeout = null)
+        TimeSpan? searchTimeout = null,
+        IFullTextIndexFreshnessProbe? freshnessProbe = null)
     {
         _logger = logger;
         _searchEngine = searchEngine;
+        _freshnessProbe = freshnessProbe;
         _telemetry = telemetry;
         _ledger = ledger ?? new SearchAttemptLedger();
         // ADR-089 U0 R2：单次调用预算可注入（测试用小预算验证候选+扫描共享同一 deadline），
@@ -573,6 +578,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         var indexLimitReason = truncated
             ? "max_results"
             : staleSkipped > 0 ? "stale_index_paths" : "none";
+        // A23 S5：索引新鲜度读数（只读事实）。backend=index 查的是**索引快照**——
+        // 索引缺失或构建时刻读不出时，0 命中与「语料里确实没有」在输出上同形，
+        // 故必须把「这次查询读的索引有多旧 / 新鲜度是否可核实」一并给出。
+        var (freshnessFragment, freshnessVerified) = ProbeIndexFreshness(scopeDirectory, DateTimeOffset.UtcNow);
+
         var summary = $"(backend=index: scope={scopeDirectory}, lines={lines.Count}, engineMatches={engineMatchCount}, "
             + $"engineTotalMatches={engineResult.TotalMatches}, engineMs={engineResult.ElapsedMs}, totalMs={total.ElapsedMilliseconds}"
             + $", complete={indexComplete.ToString().ToLowerInvariant()}, limit_reason={indexLimitReason}"
@@ -580,6 +590,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             + (staleSkipped > 0 ? $", staleSkipped={staleSkipped}" : string.Empty)
             + (firstStaleRawPath is not null ? $", firstStaleRawPath={firstStaleRawPath}" : string.Empty)
             + (queryFallback is not null ? $", queryFallback=\"{queryFallback}\"" : string.Empty)
+            + freshnessFragment
             + "; single Lucene query-parser call, no managed scan — the 2000-file/64MB/10s caps do not apply, "
             + "coverage = files indexed under this scope, line text comes from the index snapshot)";
 
@@ -593,7 +604,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 ? $"(no matches — every one of the {staleSkipped} index hit(s) was skipped as stale: "
                   + "the index snapshot for this scope points at paths that no longer exist; rebuild this scope's index, "
                   + "or omit 'backend' to use the managed scan path)\n" + summary
-                : queryFallback is not null
+                : !freshnessVerified
+                    ? "(no matches — this scope's index freshness could NOT be verified for this query "
+                      + "(see indexFreshness= in the summary line below), so 0 hits are NOT evidence that the pattern is absent. "
+                      + "Rebuild this scope's index, or omit 'backend' to use the managed scan path, which reads the working tree directly)\n" + summary
+                    : queryFallback is not null
                     ? $"(no matches — this query contains Lucene query-syntax characters, which the index backend "
                       + $"interprets with Lucene semantics, not as a regex; it was retried as '{queryFallback}' "
                       + "(explicit OR) and still returned 0 hits. Split the terms with spaces, use explicit 'OR'/'AND', "
@@ -603,6 +618,68 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         return ToolExecutionResult.Ok(output,
             status: lines.Count == 0 ? ToolResultStatuses.NoMatch
                 : truncated ? ToolResultStatuses.Truncated : null);
+    }
+
+    /// <summary>
+    /// A23 S5：读该 scope 的索引新鲜度，产出摘要片段与「新鲜度是否可核实」。
+    /// <para>
+    /// 为什么必须区分「可核实」：<c>backend=index</c> 查的是**索引快照**。索引缺失、或构建时刻读不出时，
+    /// 0 命中与「语料里确实没有」在输出上完全同形 —— 那正是 ADR-089 §8 明禁的假否定。
+    /// 未注入探针（含既有替身/桩）时返回空片段且视为可核实 ⇒ **输出逐字不变**。
+    /// </para>
+    /// <para>
+    /// 探针只读且属**附属事实**：它抛异常不得让检索失败（那会把可选观测变成硬依赖），
+    /// 但也<b>不得</b>静默 —— 如实标 <c>indexFreshness=probe-error</c> 并记日志。
+    /// </para>
+    /// </summary>
+    /// <returns>摘要片段（无探针时为空串）与该次读数是否可核实。</returns>
+    private (string Fragment, bool Verified) ProbeIndexFreshness(string scopeDirectory, DateTimeOffset nowUtc)
+    {
+        if (_freshnessProbe is null)
+            return (string.Empty, true);
+
+        FullTextIndexFreshness freshness;
+        try
+        {
+            freshness = _freshnessProbe.ProbeFreshness(scopeDirectory);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SearchGrep] index freshness probe failed for scope {Scope}", scopeDirectory);
+            return (", indexFreshness=probe-error", false);
+        }
+
+        var state = freshness.State switch
+        {
+            FullTextIndexFreshnessState.Missing => "missing",
+            FullTextIndexFreshnessState.StampUnreadable => "stamp-unreadable",
+            _ => "available",
+        };
+        var fragment = new StringBuilder(", indexFreshness=")
+            .Append(state)
+            .Append(", lastIndexed=").Append(FormatUtcTimestamp(freshness.LastIndexedAtUtc))
+            .Append(", indexAge=").Append(FormatIndexAge(freshness.StampAgeAt(nowUtc)))
+            .Append(", pattern=").Append(freshness.PatternFingerprint ?? "<null>")
+            .Append(", indexDirMtime=").Append(FormatUtcTimestamp(freshness.IndexDirectoryLastWriteUtc))
+            .ToString();
+        return (fragment, freshness.State == FullTextIndexFreshnessState.Available);
+    }
+
+    /// <summary>UTC 时刻的固定格式（不用区域数字格式，消息不随区域变化）。</summary>
+    private static string FormatUtcTimestamp(DateTimeOffset? value) =>
+        value?.UtcDateTime.ToString("O", CultureInfo.InvariantCulture) ?? "<null>";
+
+    /// <summary>
+    /// 年龄的固定格式。读不出时为 <c>&lt;null&gt;</c>；时钟回拨（负年龄）报 <c>0s</c> 而不是负数
+    /// —— 宁可少报也不谎报，且绝不把「未知」写成某个具体年龄。
+    /// </summary>
+    private static string FormatIndexAge(TimeSpan? age)
+    {
+        if (age is not { } value) return "<null>";
+        if (value < TimeSpan.Zero) return "0s";
+        return value.TotalHours >= 1
+            ? value.TotalHours.ToString("0.0", CultureInfo.InvariantCulture) + "h"
+            : value.TotalMinutes.ToString("0.0", CultureInfo.InvariantCulture) + "m";
     }
 
     /// <summary>
