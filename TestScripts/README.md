@@ -582,3 +582,61 @@ RESULT: FAIL   (exit 1)
 
 ⚠️ **保留的历史痕迹**：`check-circular-deps.ps1` 曾在 2026-10-08 两次被"修"（① 加 BOM 解编码障碍；② 本轮改为委托器）。
 第一修**未解决**任何逻辑缺陷——这正是「**能加载 ≠ 能运行 ≠ 判定正确**」三层区分的实证教材。
+
+---
+
+## 统一入口：`run-gates.ps1`（2026-10-08 新增）
+
+**一条命令跑完已登记门禁，并转发聚合结论。**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\run-gates.ps1            # 真实扫描
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\run-gates.ps1 -SelfTest  # 各门禁自己的控制
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\run-gates.ps1 -Skip C-6
+```
+
+### 设计要点
+
+| 决定 | 理由 |
+|---|---|
+**每个门禁跑独立子进程**（`powershell -File`） | 所有门禁都以 `exit <code>` 收尾 —— **在进程内跑会让第一个门禁把 runner 自己终止**；子进程还能隔离作用域/状态/`$ErrorActionPreference` |
+**不新增任何策略** | 不重新解释门禁输出、不压制门禁、不把某条判为"可忽略"；**每个门禁的判据仍写在它自己文件里** |
+**未登记 `check-circular-deps.ps1`** | 它已退场为只转发 `check-project-layering.ps1` 的 shim ⇒ 登记它会**重复计数 C-1/C-4**；需要证明 shim 仍可用时**直接跑它** |
+**默认 `MaxTail=8`** | 只回显每个门禁输出的尾部 8 行；**不影响判定**（判定只取退出码） |
+**ASCII-only** | 同 C-5/C-6 的理由：PS 5.1 把无 BOM 文件按 ANSI 解码 |
+
+### 已登记门禁
+
+| ID | 脚本 | 判据 |
+|---|---|---|
+**C-1/C-4** | `check-project-layering.ps1` | 依赖图无环 · 生产工程不引用测试工程 |
+**C-5** | `check-script-encodings.ps1` | 每个脚本**可加载**且未声明本机没有的引擎 |
+**C-6** | `check-script-runtime-compat.ps1` | 脚本内每个命令/具名参数在**本引擎**可解析 |
+
+### 实跑结果（本机 `PS 5.1.26100.9444`，2026-10-08）
+
+**① 自检模式 —— `AGGREGATE_EXIT=0 · RESULT: PASS`**
+
+```
+C-1/C-4   PASS  exit=0    注入「生产→测试」引用被检出
+C-5       PASS  exit=0    POSCTRL errors=1 · BOMCTRL 0 · ASCIICTRL 0 · REQFUTURE req=7.0 unsat=True
+C-6       PASS  exit=0    LEAFBASE_EXISTS=False ⇒ -LeafBase 被正确报出
+```
+
+**② 扫描模式 —— `AGGREGATE_EXIT=1 · RESULT: FAIL`**
+
+```
+C-1/C-4   PASS  exit=0
+C-5       FAIL  exit=1    FILES=22 BROKEN=0 UNRUNNABLE=5   ← 唯一 FAIL
+C-6       PASS  exit=0    （仅 2 条 CMD_UNRESOLVED 警告，已判定为假阳性）
+```
+
+> ⭐ **这就是聚合层的价值**：跑到一条命令就能看出「**唯一的红点是 C-5 的 5 个 `#requires` 引擎要求**」，而这正是**待裁决项**（装 PS7 / 改 `#requires`）。
+> 换言之：**门禁套件现在能自己指出"当前唯一未决事项是什么"。**
+
+### 退出码
+
+`0` 全部 PASS · `1` 至少一门禁 FAIL · `3` 无 FAIL 但有门禁 fail-closed（仪器坏）· `4` 无 FAIL 但有门禁**自检未检出植入缺陷** · `255` 找不到/起不动某个门禁脚本。
+优先级：`255 > 1 > 3 > 4`。
+
+> ⚠️ 非零退出**是门禁的结论，不是 runner 出错**。runner 会在末尾显式打印这句，避免被误读为工具故障。
