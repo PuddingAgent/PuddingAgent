@@ -202,6 +202,84 @@ public sealed class RemoteBrowserRuntimeTests
             broker.Commands.Select(command => command.Name));
     }
 
+    [Fact]
+    public async Task RemotePage_ScrollCarriesTheTargetModel_AndReadsBackTheFacts()
+    {
+        // 设计 §7：桥接路径也要携带滚动目标模型，并把宿主报告的结果事实带回来。
+        BrowserBridgeCommand? sent = null;
+        var broker = new RecordingBrowserBroker(command =>
+        {
+            sent = command;
+            return command.Name switch
+            {
+                BrowserBridgeCommandNames.ContextCreate => Success(command, Context("ctx-1", 1)),
+                BrowserBridgeCommandNames.PageCreate => Success(command, Page("ctx-1", "page-1", "https://example.test/")),
+                BrowserBridgeCommandNames.PageInteract => Success(command, new BrowserInteractionResultDescriptor
+                {
+                    Element = null,
+                    Page = Page("ctx-1", "page-1", "https://example.test/"),
+                    // 宿主如实报告：滚到边界、0 位移、没有新内容 —— 事实，不是失败。
+                    Scroll = new BrowserScrollReportDescriptor
+                    {
+                        Container = "document",
+                        BeforeY = 4000,
+                        AfterY = 4000,
+                        AtBoundary = true,
+                        ContentChanged = false,
+                    },
+                }),
+                _ => Failure(command, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
+            };
+        });
+        await using var runtime = new RemoteBrowserRuntime(broker);
+        var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var outcome = await page.ScrollAsync(
+            new ScrollOptions { Target = ScrollTarget.ToBottom, DeltaY = 800 },
+            CancellationToken.None);
+
+        // 事实原样带回（不是"滚了 0 像素"的编造，也不是 unreported）。
+        Assert.Equal("document", outcome.Container);
+        Assert.Equal(4000, outcome.AfterY);
+        Assert.Equal(0, outcome.ConsumedDeltaY);
+        Assert.True(outcome.AtBoundary);
+        Assert.False(outcome.ContentChanged);
+
+        // 目标模型确实上了线（断言线缆上的真实字段名）。
+        using var document = JsonDocument.Parse(sent!.Arguments.GetRawText());
+        var args = document.RootElement;
+        Assert.Equal("scroll", args.GetProperty("action").GetString());
+        Assert.Equal("to_bottom", args.GetProperty("scrollTarget").GetString());
+        Assert.Equal(800, args.GetProperty("deltaY").GetDouble());
+    }
+
+    [Fact]
+    public async Task RemotePage_ScrollWithoutHostFacts_IsMarkedUnreported()
+    {
+        // 宿主没报告事实时**不能编造**：容器标 unreported，位移全 0。
+        var broker = new RecordingBrowserBroker(command => command.Name switch
+        {
+            BrowserBridgeCommandNames.ContextCreate => Success(command, Context("ctx-1", 1)),
+            BrowserBridgeCommandNames.PageCreate => Success(command, Page("ctx-1", "page-1", "https://example.test/")),
+            BrowserBridgeCommandNames.PageInteract => Success(command, new BrowserInteractionResultDescriptor
+            {
+                Element = null,
+                Page = Page("ctx-1", "page-1", "https://example.test/"),
+            }),
+            _ => Failure(command, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
+        });
+        await using var runtime = new RemoteBrowserRuntime(broker);
+        var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var outcome = await page.ScrollAsync(new ScrollOptions { DeltaY = 500 }, CancellationToken.None);
+
+        Assert.Equal("unreported", outcome.Container);
+        Assert.Equal(0, outcome.ConsumedDeltaY);
+        Assert.False(outcome.AtBoundary);
+    }
+
     private static BrowserContextDescriptor Context(string contextId, int pageCount) => new()
     {
         ContextId = contextId,

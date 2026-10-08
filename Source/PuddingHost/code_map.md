@@ -41,7 +41,7 @@ draft: false
 |------|------|
 | `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge） |
 | `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 代理 |
-| `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理 |
+| `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理：把 `IBrowserPage` 调用翻译成桥接命令，并**如实回传宿主事实**（不编造）。滚动走 `PageInteract(action=scroll)`，携带目标模型线名与 ref 定位，并把宿主报告的 `scroll` 事实读回成 `ScrollOutcome`；宿主未报告时标 `unreported`（"没有事实"≠"滚了 0 像素"） |
 | `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（仅 DesktopChild + BrowserAutomationEnabled）；同时注册**窄端口**（路由实现）与能力调用上下文工厂 |
 
 | `BrowserBridge/BridgeBrowserCapabilitySurface.cs` | 窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败） |

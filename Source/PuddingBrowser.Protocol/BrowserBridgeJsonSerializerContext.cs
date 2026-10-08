@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace PuddingBrowser.Protocol;
 
@@ -33,6 +33,7 @@ namespace PuddingBrowser.Protocol;
 [JsonSerializable(typeof(BrowserElementDescriptor))]
 [JsonSerializable(typeof(BrowserLocateResultDescriptor))]
 [JsonSerializable(typeof(BrowserInteractionResultDescriptor))]
+[JsonSerializable(typeof(BrowserScrollReportDescriptor))]
 [JsonSerializable(typeof(BrowserWaitResultDescriptor))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

@@ -686,6 +686,79 @@ public class BrowserWorkspaceControllerTests
     }
 
     [Fact]
+    public async Task PageInteract_ScrollCarriesTargetAndReturnsFactsOverTheBridge()
+    {
+        // 设计 §7：桥接路径也要走同一套滚动目标模型，并把宿主报告的事实带回 Core。
+        var runtime = new FakeBrowserRuntime();
+        var controller = new BrowserWorkspaceController(
+            runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+            var pageId = await controller.CreatePageAsync(activate: true, ct: CancellationToken.None);
+
+            var scroll = await controller.ExecuteAsync(MakeCommand(
+                BrowserBridgeCommandNames.PageInteract, pageId.Value, args: new PageInteractArguments
+                {
+                    Action = "scroll",
+                    DeltaY = 800,
+                    ScrollTarget = "to_bottom"
+                }), CancellationToken.None);
+
+            Assert.True(scroll.Success, $"{scroll.ErrorCode}: {scroll.ErrorMessage}");
+
+            // 目标模型到达驱动（to_bottom 覆盖"有位移 ⇒ element"的推导）。
+            var page = runtime.Pages.Single();
+            Assert.Equal(ScrollTarget.ToBottom, page.LastScroll!.Target);
+
+            // 事实原样回传：到底了、0 位移、没有新内容 —— 是事实，不是失败。
+            var report = scroll.Value!.Value.GetProperty("scroll");
+            Assert.Equal("document", report.GetProperty("container").GetString());
+            Assert.True(report.GetProperty("atBoundary").GetBoolean());
+            Assert.False(report.GetProperty("contentChanged").GetBoolean());
+            Assert.Equal(0, report.GetProperty("consumedDeltaY").GetDouble());
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task PageInteract_UnknownScrollTargetIsRejectedInsteadOfGuessed()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var controller = new BrowserWorkspaceController(
+            runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+            var pageId = await controller.CreatePageAsync(activate: true, ct: CancellationToken.None);
+
+            var scroll = await controller.ExecuteAsync(MakeCommand(
+                BrowserBridgeCommandNames.PageInteract, pageId.Value, args: new PageInteractArguments
+                {
+                    Action = "scroll",
+                    DeltaY = 800,
+                    ScrollTarget = "wheel"
+                }), CancellationToken.None);
+
+            // 未登记的目标不猜测、不回退（fail closed），且驱动一次都没被调用。
+            Assert.False(scroll.Success);
+            Assert.Equal(BrowserBridgeErrorCodes.BrowserInvalidCommand, scroll.ErrorCode);
+            Assert.Null(runtime.Pages.Single().LastScroll);
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public async Task BridgeSnapshotLocateInteractAndWait_DelegateToPageAndReturnTypedResults()
     {
         var runtime = new FakeBrowserRuntime();
@@ -754,6 +827,10 @@ internal sealed class FakeBrowserRuntime : IBrowserRuntime
     private readonly Dictionary<BrowserContextId, FakeBrowserContext> _contexts = new();
     private readonly FakeBrowserSurfaceHost? _surfaceHost;
 
+    /// <summary>已创建上下文的全部页面（测试用：断言驱动侧观察到的滚动选项等）。</summary>
+    public IReadOnlyList<FakeBrowserPage> Pages =>
+        _contexts.Values.SelectMany(context => context.Pages).ToList();
+
     public bool FailNextContextCreation { get; set; }
     public int ContextCount => _contexts.Count;
 
@@ -809,6 +886,9 @@ internal sealed class FakeBrowserRuntime : IBrowserRuntime
 internal sealed class FakeBrowserContext : IBrowserContext
 {
     private readonly Dictionary<PageId, FakeBrowserPage> _pages = new();
+
+    /// <summary>本上下文里创建过的页面（测试用：断言驱动侧的滚动目标等）。</summary>
+    public IReadOnlyList<FakeBrowserPage> Pages => _pages.Values.ToList();
 
     public BrowserContextId Id { get; }
     public BrowserContextInfo Info { get; private set; }
@@ -947,12 +1027,28 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public Task TypeAsync(Locator l, string t, TypeOptions o, CancellationToken ct) => Task.CompletedTask;
     public Task PressAsync(Locator l, string k, KeyOptions o, CancellationToken ct) => Task.CompletedTask;
     public Task HoverAsync(Locator l, PointerOptions o, CancellationToken ct) => Task.CompletedTask;
-    public Task<ScrollOutcome> ScrollAsync(ScrollOptions o, CancellationToken ct) =>
-        Task.FromResult(new ScrollOutcome
-        {
-            Container = o.Target == ScrollTarget.Page ? "document" : "element",
-            ConsumedDeltaY = o.DeltaY ?? 0,
-        });
+    public Task<ScrollOutcome> ScrollAsync(ScrollOptions o, CancellationToken ct)
+    {
+        LastScroll = o;
+        // to_bottom 场景刻意模拟"到底了、也没加载出新内容"——它不是失败（设计 §7）。
+        return Task.FromResult(o.Target == ScrollTarget.ToBottom
+            ? new ScrollOutcome
+            {
+                Container = "document",
+                BeforeY = 4000,
+                AfterY = 4000,
+                AtBoundary = true,
+                ContentChanged = false,
+            }
+            : new ScrollOutcome
+            {
+                Container = o.Target == ScrollTarget.Page ? "document" : "element",
+                ConsumedDeltaY = o.DeltaY ?? 0,
+            });
+    }
+
+    /// <summary>最近一次滚动选项（断言目标模型经桥接到驱动）。</summary>
+    public ScrollOptions? LastScroll { get; private set; }
     public Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct) => throw new NotSupportedException();
     public Task SelectAsync(Locator l, IReadOnlyList<string> v, CancellationToken ct) => Task.CompletedTask;
     public Task CheckAsync(Locator l, bool c, CancellationToken ct) => Task.CompletedTask;

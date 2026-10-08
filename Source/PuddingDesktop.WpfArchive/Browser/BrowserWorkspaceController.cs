@@ -921,6 +921,7 @@ public sealed class BrowserWorkspaceController :
         if (string.IsNullOrWhiteSpace(action))
             return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand, "Missing action");
         var locator = args?.Locator is null ? null : ToLocator(args.Locator);
+        ScrollOutcome? scroll = null;
         switch (action)
         {
             case "click" when locator is not null:
@@ -939,7 +940,15 @@ public sealed class BrowserWorkspaceController :
                 await page.HoverAsync(locator, new PointerOptions(), ct);
                 break;
             case "scroll":
-                await page.ScrollAsync(new ScrollOptions { DeltaX = args?.DeltaX, DeltaY = args?.DeltaY }, ct);
+                scroll = await page.ScrollAsync(
+                    new ScrollOptions
+                    {
+                        DeltaX = args?.DeltaX,
+                        DeltaY = args?.DeltaY,
+                        // 目标模型来自调用方；未给时按"有无 locator/位移"推导（与能力通道同一套规则）。
+                        Target = ResolveScrollTarget(args?.ScrollTarget, locator, args?.DeltaX, args?.DeltaY),
+                        Locator = locator,
+                    }, ct);
                 break;
             case "select" when locator is not null && args?.Values is { Count: > 0 }:
                 await page.SelectAsync(locator, args.Values, ct);
@@ -963,8 +972,54 @@ public sealed class BrowserWorkspaceController :
             // press and form actions may already have navigated or replaced the node;
             // a post-action lookup would misreport success as a stale-reference error.
             Element = null,
-            Page = BuildPageDescriptor(page, pageId)
+            Page = BuildPageDescriptor(page, pageId),
+
+            // 滚动事实如实回传（§7）：没滚过就没有事实（null），而不是"滚了 0 像素"。
+            Scroll = scroll is null
+                ? null
+                : new BrowserScrollReportDescriptor
+                {
+                    Container = scroll.Container,
+                    BeforeX = scroll.BeforeX,
+                    BeforeY = scroll.BeforeY,
+                    AfterX = scroll.AfterX,
+                    AfterY = scroll.AfterY,
+                    ConsumedDeltaX = scroll.ConsumedDeltaX,
+                    ConsumedDeltaY = scroll.ConsumedDeltaY,
+                    AtBoundary = scroll.AtBoundary,
+                    ContentChanged = scroll.ContentChanged,
+                }
         });
+    }
+
+    /// <summary>
+    /// 解析滚动目标（设计方案 §7）：显式线名优先，否则按"有 locator 有位移 ⇒ element、
+    /// 有 locator 无位移 ⇒ to_ref、无 locator ⇒ page"推导。未登记的线名**不猜测**，一律拒绝。
+    /// </summary>
+    private static ScrollTarget ResolveScrollTarget(
+        string? wire, Locator? locator, double? deltaX, double? deltaY)
+    {
+        if (!string.IsNullOrWhiteSpace(wire))
+        {
+            return wire.Trim().ToLowerInvariant() switch
+            {
+                "page" => ScrollTarget.Page,
+                "element" => ScrollTarget.Element,
+                "to_ref" => ScrollTarget.ToRef,
+                "to_top" => ScrollTarget.ToTop,
+                "to_bottom" => ScrollTarget.ToBottom,
+                _ => throw new BrowserOperationException(
+                    BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                    $"Unsupported scroll target '{wire}'"),
+            };
+        }
+
+        if (locator is null)
+        {
+            return ScrollTarget.Page;
+        }
+
+        return deltaX is null && deltaY is null ? ScrollTarget.ToRef : ScrollTarget.Element;
     }
 
     private async Task<BrowserBridgeCommandResult> HandlePageWaitForAsync(

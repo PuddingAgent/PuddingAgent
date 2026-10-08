@@ -154,16 +154,57 @@ public sealed class RemoteBrowserPage : IBrowserPage
     public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct)
         => InteractAsync("hover", locator, null, null, null, null, null, ct);
     /// <summary>
-    /// 桥接路径的滚动。**尚未把滚动结果模型带回来**（远端只回元素/页面结果），因此这里
-    /// **不编造事实**：容器标为 <c>unreported</c>，位移一律 0 —— 消费方据此知道"没有结果事实"
-    /// 而不是"滚了 0 像素"。目标模型（§7）与结果回执在能力通道路径已完整；
-    /// 桥接命令/响应扩属后续切片。
+    /// 桥接路径的滚动：**目标模型与结果事实都过线**（§7）。
+    /// 远端未报告事实时返回 <c>unreported</c>（不编造"滚了 0 像素"）。
     /// </summary>
     public async Task<ScrollOutcome> ScrollAsync(ScrollOptions options, CancellationToken ct)
     {
-        await InteractAsync("scroll", null, null, null, null, options.DeltaX, options.DeltaY, ct).ConfigureAwait(false);
-        return new ScrollOutcome { Container = "unreported" };
+        EnsureNotDisposed();
+        ArgumentNullException.ThrowIfNull(options);
+
+        var result = await _runtime.ExecuteAsync<BrowserInteractionResultDescriptor>(
+            BrowserBridgeCommandNames.PageInteract,
+            new PageInteractArguments
+            {
+                Action = "scroll",
+                Locator = options.Locator is null ? null : ToDescriptor(options.Locator),
+                DeltaX = options.DeltaX,
+                DeltaY = options.DeltaY,
+                ScrollTarget = ScrollTargetWire(options.Target),
+            },
+            ContextId,
+            Id,
+            TimeSpan.FromSeconds(30),
+            ct).ConfigureAwait(false);
+
+        Apply(result.Page);
+
+        return result.Scroll is { } scroll
+            ? new ScrollOutcome
+            {
+                Container = scroll.Container,
+                BeforeX = scroll.BeforeX,
+                BeforeY = scroll.BeforeY,
+                AfterX = scroll.AfterX,
+                AfterY = scroll.AfterY,
+                ConsumedDeltaX = scroll.ConsumedDeltaX,
+                ConsumedDeltaY = scroll.ConsumedDeltaY,
+                AtBoundary = scroll.AtBoundary,
+                ContentChanged = scroll.ContentChanged,
+            }
+            : new ScrollOutcome { Container = "unreported" };
     }
+
+    /// <summary>滚动目标线名（与能力通道同一套字面量）。</summary>
+    private static string ScrollTargetWire(ScrollTarget target) => target switch
+    {
+        ScrollTarget.Page => "page",
+        ScrollTarget.Element => "element",
+        ScrollTarget.ToRef => "to_ref",
+        ScrollTarget.ToTop => "to_top",
+        ScrollTarget.ToBottom => "to_bottom",
+        _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Scroll target is not registered."),
+    };
     public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => Unsupported();
     public Task SelectAsync(Locator locator, IReadOnlyList<string> values, CancellationToken ct)
         => InteractAsync("select", locator, null, values, null, null, null, ct);

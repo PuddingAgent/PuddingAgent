@@ -43,7 +43,7 @@
 |------|------|
 | `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client，HelloAck、heartbeat、重连 |
 | `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate`（它的 pause/takeover 就是**执行闸门本身**）。构造时只接受 `BrowserPageLifecycle`：**控制状态不再自己持有**，读写的是进程内唯一权威实例（与能力通道、生命周期清理点同一个对象）—— 只读快照、只写同一事实源，Bridge 是默认路径，因此这里读错就等于人工接管无效 |
-| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target 唯一 UI 状态源；**接管/暂停的唯一写入点**：`SetUserTakeoverAsync`/`SetPausedAsync` 把状态推给所有已注册的执行闸门（不推 ⇒ 「人工接管」按钮对 Agent 无效） |
+| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target 唯一 UI 状态源；**接管/暂停的唯一写入点**：`SetUserTakeoverAsync`/`SetPausedAsync` 把状态推给所有已注册的执行闸门（不推 ⇒ 「人工接管」按钮对 Agent 无效）。桥接命令的宿主侧执行者：`page.interact` 的 `scroll` 会解析 `ScrollTarget`（显式线名优先，否则按 locator/位移推导；**未登记线名拒绝而不猜测**）并把驱动的滚动事实回传到响应 |
 | `Browser/BrowserAutomationGateSync.cs` | `IBrowserAutomationGate` 端口 + 闸门集合 + `DelegateAutomationGate`：注册/撤销、逐一推送、单个闸门抛异常不影响其余（接管是安全动作，不得半途失效） |
 | `Views/BrowserWorkspaceView.xaml(.cs)` | 双标签、地址栏、Surface、Agent Activity Pane |
 

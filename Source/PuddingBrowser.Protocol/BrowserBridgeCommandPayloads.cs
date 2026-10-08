@@ -1,4 +1,4 @@
-﻿namespace PuddingBrowser.Protocol;
+namespace PuddingBrowser.Protocol;
 
 /// <summary>
 /// Strongly-typed command argument and result DTOs for the Browser Bridge protocol.
@@ -81,6 +81,12 @@ public sealed record PageInteractArguments
     public bool? Checked { get; init; }
     public double? DeltaX { get; init; }
     public double? DeltaY { get; init; }
+
+    /// <summary>
+    /// 滚动目标模型（设计方案 §7）：<c>page|element|to_ref|to_top|to_bottom</c>。
+    /// 省略时宿主按 locator/位移推导（与能力通道路径同一套规则）。
+    /// </summary>
+    public string? ScrollTarget { get; init; }
 }
 
 public sealed record PageWaitForArguments
@@ -175,6 +181,29 @@ public sealed record BrowserInteractionResultDescriptor
 {
     public BrowserElementDescriptor? Element { get; init; }
     public required BrowserPageDescriptor Page { get; init; }
+
+    /// <summary>
+    /// 滚动结果事实（设计方案 §7）。非滚动动作或宿主未报告时为 <c>null</c> ——
+    /// 消费方据此知道"没有事实"，而不是"滚了 0 像素"。
+    /// </summary>
+    public BrowserScrollReportDescriptor? Scroll { get; init; }
+}
+
+/// <summary>
+/// 滚动结果事实的线缆形态（设计方案 §7）：目标容器、前后位置、消耗位移、是否到边界、内容是否变化。
+/// 「无内容加载不是失败」由消费方判读，不在线缆上编造。
+/// </summary>
+public sealed record BrowserScrollReportDescriptor
+{
+    public required string Container { get; init; }
+    public double BeforeX { get; init; }
+    public double BeforeY { get; init; }
+    public double AfterX { get; init; }
+    public double AfterY { get; init; }
+    public double ConsumedDeltaX { get; init; }
+    public double ConsumedDeltaY { get; init; }
+    public bool AtBoundary { get; init; }
+    public bool ContentChanged { get; init; }
 }
 
 public sealed record BrowserWaitResultDescriptor
