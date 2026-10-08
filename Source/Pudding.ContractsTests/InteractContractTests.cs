@@ -41,6 +41,40 @@ public sealed class InteractContractTests
     }
 
     [Fact]
+    public void InputModeLineNames_AreFrozenAndUnknownIsRejected()
+    {
+        // 设计 §7：inputMode 必须显式；未登记的线名 fail closed，不猜测。
+        Assert.Equal(
+            ["dom", "native"],
+            Enum.GetValues<DesktopInputMode>().Select(DesktopInputModeWire.NameOf).ToArray());
+
+        Assert.True(DesktopInputModeWire.TryParse("native", out var native));
+        Assert.Equal(DesktopInputMode.Native, native);
+        Assert.False(DesktopInputModeWire.TryParse("cdp", out _));
+        Assert.False(DesktopInputModeWire.TryParse(null, out _));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DesktopInputModeWire.NameOf((DesktopInputMode)99));
+    }
+
+    [Fact]
+    public void Interaction_DefaultsToDomInput_AndRejectsUnregisteredModes()
+    {
+        var request = new BrowserInteractRequest(
+            Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3), Button);
+
+        // 默认是 DOM 路径：调用方必须显式要求 native（而不是"默认当作 native"）。
+        Assert.Equal(DesktopInputMode.Dom, request.InputMode);
+
+        var native = new BrowserInteractRequest(
+            Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3), Button,
+            inputMode: DesktopInputMode.Native);
+        Assert.Equal(DesktopInputMode.Native, native.InputMode);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new BrowserInteractRequest(
+            Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3), Button,
+            inputMode: (DesktopInputMode)99));
+    }
+
+    [Fact]
     public void Interaction_MustPinThePageVersion()
     {
         // 变更类能力没有版本固定就无法判定「操作的是哪一版」⇒ 构造期拒绝。

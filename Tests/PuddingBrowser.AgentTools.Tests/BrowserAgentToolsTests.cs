@@ -867,6 +867,104 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Interact_NativeInputMode_FailsExplicitly_InsteadOfSilentlyFallingBackToDom()
+    {
+        // 设计 §7：native 不可用时**明确 unsupported**，不静默切换语义 ——
+        // 否则调用方会以为走了真实输入路径，而实际只是 DOM 事件。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "click",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" },
+                input_mode = "native"
+            }));
+
+        Assert.False(result.Success);
+        using var document = JsonDocument.Parse(result.Error!);
+        var root = document.RootElement;
+
+        Assert.Equal("browser_input_mode_not_supported", root.GetProperty("error").GetProperty("code").GetString());
+        Assert.Contains("not implemented", root.GetProperty("error").GetProperty("message").GetString()!, StringComparison.OrdinalIgnoreCase);
+
+        // 明确拒绝同时给回执：未开始、无副作用、不可重试（不是"观察一下"）。
+        var receipt = root.GetProperty("value");
+        Assert.Equal("not_started", receipt.GetProperty("execution").GetString());
+        Assert.False(receipt.GetProperty("mayHaveSideEffects").GetBoolean());
+        Assert.Equal("not_retryable", receipt.GetProperty("retryDisposition").GetString());
+
+        // 修复路径直接写进提示（warnings + retryDetail 都带）。
+        Assert.Contains(
+            "input_mode=dom",
+            receipt.GetProperty("retryDetail").GetString()!,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "input_mode=dom",
+            string.Join(' ', root.GetProperty("warnings").EnumerateArray().Select(item => item.GetString())),
+            StringComparison.OrdinalIgnoreCase);
+
+        // **一次驱动调用都没发生**：拒绝发生在触达页面之前。
+        Assert.Null(page.LastAction);
+    }
+
+    [Fact]
+    public async Task Interact_ReportsTheActualInputBackend()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var byDefault = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "click",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" }
+            }));
+
+        var explicitDom = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "click",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" },
+                input_mode = "dom"
+            }));
+
+        var unknown = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "click",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" },
+                input_mode = "cdp"
+            }));
+
+        // 回执报告的是**实际** backend，而不是请求值。
+        Assert.Equal("dom", GetJson(byDefault.Output, "value").GetProperty("inputBackend").GetString());
+        Assert.Equal("dom", GetJson(explicitDom.Output, "value").GetProperty("inputBackend").GetString());
+
+        // 未登记的线名 fail closed。
+        Assert.False(unknown.Success);
+        using var document = JsonDocument.Parse(unknown.Error!);
+        Assert.Equal("browser_invalid_arguments", document.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
         var runtime = new FakeBrowserRuntime();

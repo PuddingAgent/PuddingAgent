@@ -157,6 +157,12 @@ public sealed record BrowserInteractionToolValue
 
     /// <summary>裁定理由（例如"已派发但效果未验证，先观察"）。</summary>
     public string? RetryDetail { get; init; }
+
+    /// <summary>
+    /// **实际使用的**输入路径（设计方案 §7：回执报告实际 backend，而不是请求值）。
+    /// 当前实现只有 <c>dom</c>；请求 <c>native</c> 会明确失败，因此这里不会出现"请求 native、报告 dom"的成功。
+    /// </summary>
+    public string? InputBackend { get; init; }
 }
 
 /// <summary>
@@ -174,6 +180,9 @@ public sealed record BrowserReceiptToolValue
     public bool RequiresFollowUp { get; init; }
     public string? RetryDisposition { get; init; }
     public string? RetryDetail { get; init; }
+
+    /// <summary>实际使用的输入路径（目前只有 <c>dom</c>）。</summary>
+    public string? InputBackend { get; init; }
     public IReadOnlyList<BrowserAssertionToolValue> Assertions { get; init; } = [];
 }
 

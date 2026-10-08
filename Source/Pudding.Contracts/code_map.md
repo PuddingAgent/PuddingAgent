@@ -73,6 +73,7 @@ draft: false
 | `ShellContracts.cs` | `DesktopNotificationPriority`、`DesktopNotificationRequest`（标题 ≤128 / 正文 ≤1024）、`DesktopNotificationResult` |
 | `ApiInterfaces.cs` | `IPuddingDesktopApi` → `IPuddingDesktopWebViewApi`（Navigate / ExecuteJavascript / GetPageState）+ `IPuddingDesktopShellApi`（ShowNotification）。全部带 `DesktopCallContext` 与 `CancellationToken` |
 | `Desktop/LocateContracts.cs` | 元素定位契约：`DesktopLocatorKind`（10 策略 + 线名真源）、`DesktopLocator`（`IncludeHidden` 默认 false：只排除**隐藏**元素；`InViewportOnly` 默认 false：只留视口内 —— 两者**正交**，隐藏与屏外是两个事实）、`BrowserLocateRequest`（**Ref 必须携带来源 PageVersion**，构造期强制）、`DesktopElementRef`（必须带有效版本；`Visible` 与 `InViewport` 分开报告）、`DesktopLocateResult`（命中 0 ≠ 被截断） |
+| `Desktop/InteractionContracts.cs` | 交互契约：`DesktopInteractionAction`（10 动作 + 线名真源）、`DesktopInputMode`（`dom`/`native` + 线名、fail-closed 解析；**默认 dom**，请求 native 必须明确失败而不是静默降级，§7）、`BrowserInteractRequest`（**必须固定页面版本**、按动作校验参数、携带 `InputMode`）、`DesktopInteractionResult` |
 | `CapabilityEndpoint.cs` | Core 发布的**能力通道端点描述**：形态（NamedPipe / LoopbackHttp2 / Tls）+ 地址 + 协议版本 + Core 实例 ID；`ToEndpointString()`/`TryParse` 严格解析。**没有任何凭据字段**（凭据由 Desktop 主机侧注入），地址形态受约束（明文只允许回环、TLS 只能 https、URI 不许带凭据/查询/片段） |
 
 | `Desktop/BrowserCapabilitySurface.cs` | **窄端口** `IDesktopBrowserCapabilitySurface`：能力通道**能覆盖**的九个浏览器操作。刻意窄（`IBrowserPage` 约 35 个成员 ⇒ 宽接口整替会让二十多个成员只能在运行期抛 `NotSupported`）。约定：参数顺序与 `DesktopSession` 同名方法一致、结果一律 `CapabilityResult<T>` 不抛异常、两个实现必须给出**同形**结果 |

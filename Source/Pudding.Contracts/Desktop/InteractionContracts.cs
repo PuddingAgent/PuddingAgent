@@ -18,6 +18,47 @@ public enum DesktopInteractionAction
     Focus,
 }
 
+/// <summary>
+/// 交互输入路径（设计方案 §7）：「驱动增加明确 <c>inputMode=dom/native</c>，面向用户网页优先使用
+/// 真实浏览器输入路径，DOM 模拟用于已验证适用的动作；<b>native 不可用时明确 unsupported，
+/// 不静默切换语义</b>」。
+/// </summary>
+public enum DesktopInputMode
+{
+    /// <summary>DOM 事件/属性写入。语义确定但只在已验证适用的动作上使用。</summary>
+    Dom,
+
+    /// <summary>真实浏览器输入（CDP 键鼠）。本切片尚未实现 ⇒ 请求它必须**明确失败**，不降级成 Dom。</summary>
+    Native,
+}
+
+/// <summary>输入路径线名（真源在本文件）。</summary>
+public static class DesktopInputModeWire
+{
+    public static string NameOf(DesktopInputMode mode) => mode switch
+    {
+        DesktopInputMode.Dom => "dom",
+        DesktopInputMode.Native => "native",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Input mode is not registered."),
+    };
+
+    /// <summary>严格解析：不知道的线名不猜测、不回退（fail closed）。</summary>
+    public static bool TryParse(string? name, out DesktopInputMode mode)
+    {
+        foreach (var candidate in Enum.GetValues<DesktopInputMode>())
+        {
+            if (string.Equals(NameOf(candidate), name, StringComparison.Ordinal))
+            {
+                mode = candidate;
+                return true;
+            }
+        }
+
+        mode = default;
+        return false;
+    }
+}
+
 /// <summary>交互动作线名（真源在本文件，快照由契约测试断言）。</summary>
 public static class DesktopInteractionActionWire
 {
@@ -72,11 +113,17 @@ public sealed record BrowserInteractRequest
         IReadOnlyList<string>? values = null,
         bool? isChecked = null,
         double? deltaX = null,
-        double? deltaY = null)
+        double? deltaY = null,
+        DesktopInputMode inputMode = DesktopInputMode.Dom)
     {
         if (!Enum.IsDefined(action))
         {
             throw new ArgumentOutOfRangeException(nameof(action), action, "Interaction action is not registered.");
+        }
+
+        if (!Enum.IsDefined(inputMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(inputMode), inputMode, "Input mode is not registered.");
         }
 
         if (expectedPageVersion.Value <= 0)
@@ -95,6 +142,7 @@ public sealed record BrowserInteractRequest
         IsChecked = isChecked;
         DeltaX = deltaX;
         DeltaY = deltaY;
+        InputMode = inputMode;
 
         ValidateShape();
     }
@@ -116,6 +164,13 @@ public sealed record BrowserInteractRequest
     public double? DeltaX { get; }
 
     public double? DeltaY { get; }
+
+    /// <summary>
+    /// 请求的输入路径（§7）。**它只是请求**：实际用哪条路径由驱动的能力决定，
+    /// 并必须在回执里如实报告（见 <c>BrowserInteractionToolValue.InputBackend</c>）。
+    /// 当前实现只有 <see cref="DesktopInputMode.Dom"/>；请求 <c>Native</c> 必须明确失败。
+    /// </summary>
+    public DesktopInputMode InputMode { get; }
 
     /// <summary>元素作用域动作必须有定位；<c>scroll</c> 可作用于页面本身。</summary>
     public bool RequiresLocator => Action != DesktopInteractionAction.Scroll;

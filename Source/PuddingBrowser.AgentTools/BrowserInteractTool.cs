@@ -50,6 +50,13 @@ public sealed record BrowserInteractArgs
     [ToolParam("Optional expected element value after the action; when set, the receipt reports verified/failed instead of dispatched. The value itself is never echoed.")]
     public string? ExpectValue { get; init; }
 
+    /// <summary>
+    /// 输入路径（设计方案 §7）：<c>dom</c>（默认，已验证适用）或 <c>native</c>（真实浏览器输入）。
+    /// <b>native 尚未实现 ⇒ 请求它必须明确失败</b>，绝不静默降级成 dom 再回一个"成功"——
+    /// 否则调用方会以为走了真实输入路径（设计明确禁止"静默切换语义"）。
+    /// </summary>
+    [ToolParam("Input path: dom (default, verified DOM events) or native (real browser input). native is not implemented yet and fails explicitly instead of silently falling back.")]
+    public string? InputMode { get; init; }
 }
 
 
@@ -89,6 +96,35 @@ public sealed class BrowserInteractTool(
         if (action is not ("click" or "fill" or "type" or "press" or "hover" or "scroll" or "select" or "check"))
 
             return BrowserToolResponse.Failure("browser_invalid_arguments", "unsupported interaction action");
+
+        // 输入路径必须显式且被尊重（§7）。未登记的线名 fail closed。
+        var inputMode = DesktopInputMode.Dom;
+        if (!string.IsNullOrWhiteSpace(args.InputMode))
+        {
+            if (!DesktopInputModeWire.TryParse(args.InputMode.Trim(), out inputMode))
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments", "input_mode must be one of dom or native");
+            }
+
+            if (inputMode == DesktopInputMode.Native)
+            {
+                // **绝不静默降级成 dom**：那会让调用方以为走了真实输入路径。
+                // 真实输入需要 CDP（尚未实现），因此这里明确 unsupported，且一次驱动调用都不发生。
+                return BrowserToolResponse.Failure(
+                    "browser_input_mode_not_supported",
+                    "native input is not implemented yet; the driver has no CDP input path",
+                    value: BrowserOperationFailure.Receipt(
+                        new DesktopCapabilityError(
+                            DesktopCapabilityErrorCode.UnsupportedCapability,
+                            "native input is not implemented yet",
+                            retryable: false),
+                        "use input_mode=dom (verified DOM events), or wait for the native/CDP input slice",
+                        MapAction(action, args.Checked),
+                        args.ExpectValue),
+                    warnings: ["use input_mode=dom (verified DOM events), or wait for the native/CDP input slice"]);
+            }
+        }
 
         try
 
@@ -215,7 +251,11 @@ public sealed class BrowserInteractTool(
 
                     args.DeltaX,
 
-                    args.DeltaY),
+                    args.DeltaY,
+
+                    // 输入路径随请求下传：驱动将来据它决定走 DOM 还是 CDP；
+                    // 实际用了哪条路径由回执的 inputBackend 如实报告。
+                    inputMode),
 
                 call,
 
@@ -298,6 +338,8 @@ public sealed class BrowserInteractTool(
                     RequiresFollowUp = receipt.RequiresFollowUp,
                     RetryDisposition = BrowserRetryDispositionWire.NameOf(retry.Disposition),
                     RetryDetail = retry.Detail,
+                    // 实际 backend：本切片只有 DOM 路径（请求 native 已在入口明确失败）。
+                    InputBackend = DesktopInputModeWire.NameOf(inputMode),
 
                 },
 
