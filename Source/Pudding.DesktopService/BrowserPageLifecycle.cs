@@ -98,6 +98,104 @@ public sealed class BrowserPageLifecycle
     public void SetUserTakeover(bool takenOver, string? reason = null) =>
         _authority.SetUserTakeover(takenOver, reason);
 
+    // ── 创建侧（§3.3：创建与关闭必须同一个所有者）────────────────────────
+    // 设计要求「人工 UI 和两种传输均通过该端口创建/关闭 context/tab」，
+    // 且「登记失败需回收新资源或明确报告不完整，**不返回可操作页面**」。
+
+    /// <summary>
+    /// 登记上下文（两个注册表一起，可信级别创建时确定）。同级别重复登记幂等，换级别抛异常。
+    /// </summary>
+    public void RegisterContext(string contextId, DesktopContextTrust trust)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contextId);
+
+        lock (_sync)
+        {
+            // 顺序：先"视图侧"（浏览器目标），后"准入侧"（页面注册表）。
+            // 准入侧只认已登记的上下文，因此它若失败就必须**回收**视图侧，绝不留下半登记状态。
+            _browserTargets.RegisterContext(contextId, trust);
+            try
+            {
+                _pageTargets.RegisterContext(contextId, trust);
+            }
+            catch
+            {
+                _browserTargets.UnregisterContext(contextId);
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 登记页面（两个注册表一起）。
+    ///
+    /// <paramref name="isAgentTarget"/> 为 <c>null</c> 表示"不表态"（保留原值）——
+    /// 页面创建事件重复触发时不得清掉用户已选定的目标页。
+    ///
+    /// <b>原子性</b>（§3.3）：任一侧登记失败都必须回收另一侧并抛出，
+    /// 因此调用方**永远拿不到一个"半登记"的页面**（视图侧有、准入侧没有，或反之）。
+    /// </summary>
+    public void RegisterPage(
+        DesktopPageTarget target,
+        DesktopPageVersion version = default,
+        DesktopPageReadiness readiness = DesktopPageReadiness.Unknown,
+        bool? isAgentTarget = null,
+        bool isActive = false)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+
+        lock (_sync)
+        {
+            _browserTargets.RegisterPage(target.ContextId, target.PageId, isAgentTarget: false, isActive: isActive);
+            try
+            {
+                // 上下文未登记时这里会抛（"先有页面后有上下文"说明写入顺序错了，
+                // 静默补登记会让不可信上下文被当成可信）。
+                _pageTargets.RegisterPage(target, version, readiness, isAgentTarget);
+            }
+            catch
+            {
+                _browserTargets.UnregisterPage(target.ContextId, target.PageId);
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 设置/撤销「用户选定的 Agent 目标页」（两个注册表一起）。
+    ///
+    /// 切换目标时**撤销旧目标的执行权**（Write/Manage）并推进授权世代，但**保留只读授权**
+    /// （§3.2：用户切走目标不等于把旧页面从"可读"里删掉）。<c>null</c> 表示不再有目标。
+    /// </summary>
+    public BrowserLifecycleOutcome SetAgentTarget(string? contextId, string? pageId)
+    {
+        lock (_sync)
+        {
+            var previous = _pageTargets.AgentTarget;
+
+            var marked = _pageTargets.SetAgentTarget(contextId, pageId);
+            _browserTargets.SetAgentTarget(contextId, pageId);
+
+            var scopeRevoked = false;
+            if (previous is not null
+                && (pageId is null || !string.Equals(previous.PageId, pageId, StringComparison.Ordinal)))
+            {
+                _authority.RevokeExecutionScope(previous);
+                scopeRevoked = true;
+            }
+
+            return new BrowserLifecycleOutcome(
+                contextId ?? string.Empty,
+                previous,
+                WasRegistered: marked,
+                PagesCleared: 0,
+                GrantsRevoked: 0,
+                LeaseReleased: false,
+                ExecutionScopeRevoked: scopeRevoked,
+                GrantEpoch: _authority.Capture().GrantEpoch);
+        }
+    }
+
     /// <summary>关闭一个页面：两个注册表 + 该页全部授权 + 该页写租约。</summary>
     public BrowserLifecycleOutcome ClosePage(DesktopPageTarget target)
     {

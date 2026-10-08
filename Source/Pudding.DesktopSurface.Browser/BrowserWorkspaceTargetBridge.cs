@@ -48,9 +48,8 @@ public sealed class BrowserWorkspaceTargetBridge
         {
             // **两个**注册表都要登记：页面注册表用它校验"先有上下文后有页面"，
             // 浏览器目标注册表用它决定可信级别。只登记一边会让另一边把页面当成非法目标
-            // （这一处正是本类测试第一轮抓出来的缺陷）。
-            _pageTargets.RegisterContext(contextId, trust);
-            _browserTargets.RegisterContext(contextId, trust);
+            // （这一处正是本类测试第一轮抓出来的缺陷）。原子性与回收由生命周期端口负责。
+            _lifecycle.RegisterContext(contextId, trust);
             _contexts.Add(contextId);
         }
     }
@@ -88,8 +87,14 @@ public sealed class BrowserWorkspaceTargetBridge
 
         lock (_sync)
         {
-            _pageTargets.RegisterPage(new DesktopPageTarget(contextId, pageId), version, isAgentTarget: null);
-            _browserTargets.RegisterPage(contextId, pageId, isAgentTarget: false, isActive: isActive);
+            // 原子性由端口保证：任一侧登记失败都会回收另一侧并抛出，
+            // 因此调用方拿不到"半登记"的页面（视图侧有、准入侧没有，或反之）。
+            _lifecycle.RegisterPage(
+                new DesktopPageTarget(contextId, pageId),
+                version,
+                readiness: DesktopPageReadiness.Unknown,
+                isAgentTarget: null,
+                isActive: isActive);
         }
     }
 
@@ -150,13 +155,15 @@ public sealed class BrowserWorkspaceTargetBridge
     /// <b>两个注册表都要更新</b>：页面注册表不再只是「版本/就绪度」——它同时承载准入所需的
     /// page 级目标标记（<see cref="DesktopTargetRegistry.SetAgentTarget"/>）。只更新一边，
     /// 就会出现「UI 说这是目标页、准入说不是」这种最难排查的漂移（本类存在的理由）。
+    ///
+    /// 另外切换目标时必须**撤销旧目标的执行权**（§3.2）：由生命周期端口在切换时推进授权世代，
+    /// 只保留旧页面的只读授权。
     /// </summary>
     public void OnAgentTargetChanged(string? contextId, string? pageId)
     {
         lock (_sync)
         {
-            _browserTargets.SetAgentTarget(contextId, pageId);
-            _pageTargets.SetAgentTarget(contextId, pageId);
+            _lifecycle.SetAgentTarget(contextId, pageId);
         }
     }
 
@@ -167,10 +174,11 @@ public sealed class BrowserWorkspaceTargetBridge
         {
             _browserTargets.Clear();
 
-            // 页面注册表没有整表清空：逐个注销本桥登记过的上下文（各上下文会带走自己的页面）。
+            // 页面注册表没有整表清空：逐个关闭本桥登记过的上下文
+            // （走生命周期端口 ⇒ 授权与租约也一起撤，不是只清登记）。
             foreach (var contextId in _contexts.ToArray())
             {
-                _pageTargets.CloseContext(contextId);
+                _lifecycle.CloseContext(contextId);
             }
 
             _contexts.Clear();

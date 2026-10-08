@@ -168,9 +168,110 @@ public sealed class BrowserLifecycleTests
         Assert.Equal(0, pages.ContextCount);
     }
 
+    // ── 创建侧（§3.3：创建与关闭必须同一个所有者，且登记失败不得留半登记状态）──────
+
     [Fact]
-    public void CloseContext_DoesNotTouchAnotherContext()
+    public void CreateThroughThePort_RegistersBothRegistries()
     {
+        var browser = new BrowserTargetRegistry();
+        var pages = new DesktopTargetRegistry();
+        var lifecycle = new BrowserPageLifecycle(browser, pages, TestAuthorities.Create());
+        var page = new DesktopPageTarget("ctx-1", "page-1");
+
+        lifecycle.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+        lifecycle.RegisterPage(page, DesktopPageVersion.Require(2), isActive: true);
+
+        // 准入侧（版本/目标标记）与视图侧（可信级别/活动页）都在册。
+        Assert.NotNull(pages.Resolve(page));
+        Assert.Equal(2, pages.Resolve(page)!.Version.Value);
+        Assert.True(browser.IsRegistered("ctx-1", "page-1"));
+        Assert.Equal(DesktopContextTrust.AgentAuthorized, browser.TrustFor("ctx-1"));
+        Assert.Equal(("ctx-1", "page-1"), browser.ActivePage);
+
+        // 目标切换也走同一个端口。
+        var outcome = lifecycle.SetAgentTarget("ctx-1", "page-1");
+        Assert.True(outcome.WasRegistered);
+        Assert.True(pages.Resolve(page)!.IsAgentTarget);
+        Assert.True(browser.IsAgentTarget("ctx-1", "page-1"));
+    }
+
+    [Fact]
+    public void RegisterPage_WithUnknownContext_LeavesNoHalfRegisteredState()
+    {
+        // §3.3「登记失败需回收新资源…不返回可操作页面」：页面登记失败后，
+        // **视图侧也不能留下它**（否则 UI 会列出一个准入永远看不见的页面）。
+        var browser = new BrowserTargetRegistry();
+        var pages = new DesktopTargetRegistry();
+        var lifecycle = new BrowserPageLifecycle(browser, pages, TestAuthorities.Create());
+
+        // 只登记视图侧，人为造出"视图有、准入没有"的上下文。
+        browser.RegisterContext("ctx-orphan", DesktopContextTrust.AgentAuthorized);
+
+        Assert.Throws<InvalidOperationException>(
+            () => lifecycle.RegisterPage(new DesktopPageTarget("ctx-orphan", "page-1")));
+
+        Assert.False(browser.IsRegistered("ctx-orphan", "page-1"));
+        Assert.Null(pages.Resolve(new DesktopPageTarget("ctx-orphan", "page-1")));
+    }
+
+    [Fact]
+    public void RegisterContext_Failure_DoesNotLeaveTheViewSideRegistered()
+    {
+        var browser = new BrowserTargetRegistry();
+        var pages = new DesktopTargetRegistry();
+        var lifecycle = new BrowserPageLifecycle(browser, pages, TestAuthorities.Create());
+
+        lifecycle.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+
+        // 换可信级别必须显式先关闭（否则是静默提权路径）：失败后两侧都保持原样。
+        Assert.Throws<InvalidOperationException>(
+            () => lifecycle.RegisterContext("ctx-1", DesktopContextTrust.Untrusted));
+
+        Assert.Equal(DesktopContextTrust.AgentAuthorized, browser.TrustFor("ctx-1"));
+
+        // 上下文仍然有效：仍能登记页面（说明失败的回滚没有把它清掉）。
+        lifecycle.RegisterPage(new DesktopPageTarget("ctx-1", "page-1"));
+        Assert.NotNull(pages.Resolve(new DesktopPageTarget("ctx-1", "page-1")));
+    }
+
+    [Fact]
+    public void SetAgentTarget_SwitchingRevokesTheOldTargetsExecutionScope_ButKeepsRead()
+    {
+        // §3.2：切换「Agent 目标」撤销旧页的执行权并推进 grant epoch，但**保留只读授权**
+        // （用户切走目标不等于把旧页面从"可读"里删掉）。
+        var (lifecycle, authority, pages, _, page) = Create();
+        var second = new DesktopPageTarget(ContextId, "page-2");
+        pages.RegisterPage(second, DesktopPageVersion.Require(1));
+        Grant(authority, page, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write);
+        Grant(authority, second, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write);
+
+        var before = authority.Capture().GrantEpoch;
+        var outcome = lifecycle.SetAgentTarget(ContextId, second.PageId);
+
+        Assert.True(outcome.ExecutionScopeRevoked);
+        Assert.True(authority.Capture().GrantEpoch.Value > before.Value, "切换目标必须推进授权世代");
+
+        var oldTargetGrant = authority.ActiveGrants.Single(grant => grant.TargetsSamePage(page));
+        Assert.Equal(BrowserPageGrantScope.Read, oldTargetGrant.Scope);
+
+        var newTargetGrant = authority.ActiveGrants.Single(grant => grant.TargetsSamePage(second));
+        Assert.Equal(BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, newTargetGrant.Scope);
+    }
+
+    [Fact]
+    public void SetAgentTarget_ClearingAlsoRevokesTheExecutionScope()
+    {
+        var (lifecycle, authority, _, _, page) = Create();
+        Grant(authority, page, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write);
+
+        var outcome = lifecycle.SetAgentTarget(null, null);
+
+        Assert.True(outcome.ExecutionScopeRevoked);
+        Assert.Equal(BrowserPageGrantScope.Read, Assert.Single(authority.ActiveGrants).Scope);
+    }
+
+    [Fact]
+    public void CloseContext_DoesNotTouchAnotherContext()    {
         var (lifecycle, authority, pages, _, page) = Create();
         var otherPage = new DesktopPageTarget("ctx-2", "page-9");
         pages.RegisterContext("ctx-2", DesktopContextTrust.AgentAuthorized);

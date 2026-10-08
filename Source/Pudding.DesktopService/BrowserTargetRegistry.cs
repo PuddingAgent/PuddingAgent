@@ -200,6 +200,19 @@ public sealed class BrowserTargetRegistry : IDesktopBrowserTargetRegistry
         }
     }
 
+    /// <summary>
+    /// 该页面是否已在本注册表登记。
+    /// 用途之一（§3.3）：验证"登记失败不得留下半登记状态"——失败后必须两边都没有。
+    /// </summary>
+    public bool IsRegistered(string contextId, string pageId)
+    {
+        lock (_sync)
+        {
+            return _pages.TryGetValue(contextId ?? string.Empty, out var pages)
+                && pages.Contains(pageId ?? string.Empty);
+        }
+    }
+
     public (string ContextId, string PageId)? ActivePage
     {
         get

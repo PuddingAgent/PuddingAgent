@@ -261,6 +261,23 @@ public sealed class DesktopTargetRegistry
     }
 
     /// <summary>
+    /// 当前被标记为「用户选定的 Agent 目标」的页面；没有目标时为 <c>null</c>。
+    /// 切换目标时先取它，才能对**旧目标**撤销执行权（§3.2）。
+    /// </summary>
+    public DesktopPageTarget? AgentTarget
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _pages.Values
+                    .FirstOrDefault(page => page.IsAgentTarget)
+                    ?.Target;
+            }
+        }
+    }
+
+    /// <summary>
     /// 其中被标记为「用户选定的 Agent 目标」的数量。
     /// 设计方案 §3.3 要求**目标数与授权数分别统计**（不混为一项）：授权数属于 grant 模型，
     /// 目前尚未接入（见 code_map 已知缺口），因此这里只给出目标数。

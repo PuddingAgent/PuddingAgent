@@ -21,7 +21,7 @@
 |------|---------------|
 | `BrowserRuntimeDesktopSurface.cs` | 九项浏览器能力 → `IBrowserRuntime` 调用。语义：页面版本来自身为一等成员的 `IBrowserPage.PageVersion`；缺失即 `Unknown`（**不伪造**）；超预算结果**如实标注** `Truncated`；`locate` 遇版本不符**跳过**陈旧引用查询；元素无活版本即 `internal_error`（不静默丢弃）；`interact` 的 `focus` 无运行时 API ⇒ `unsupported_capability`；`wait_for` 超时是结果不是失败；`page_state` 只报 `IsLoading` 能支持的 `Loading`/`Unknown`（**从不**声称 Interactive/Complete） |
 | `DesktopSurfaceComposition.cs` | 把协作方组装成 `DesktopService` 需要的**单一** `IDesktopUiSurface`：浏览器 9 项 → `BrowserRuntimeDesktopSurface`，Shell 5 项 → `DesktopShellSurface`。组装层无逻辑，唯一可能的缺陷是**接错协作者**（编译期查不出、表现是"能调用但做错事"），故由测试逐个钉住 |
-| `BrowserWorkspaceTargetBridge.cs` | **页面生命周期 → 两个目标注册表**的唯一翻译点。`DesktopTargetRegistry` 管页面版本/就绪度（准入与「引用随版本失效」的依据），`BrowserTargetRegistry` 管可信级别 / Agent 目标 / 活动页。不撒谎语义：未登记上下文 `Untrusted`（fail closed）；先页面后上下文**直接抛**（不静默补登记）；版本只前进；版本事件对未知页面**不凭空造目标**；关闭/清空不留悬空引用。**只接受 `BrowserPageLifecycle`**（唯一权威 + 两个注册表 + 关闭清理点的所有者）：关闭事件交给它，于是"注册表清了但授权/租约没撤"在类型层面不可能发生 |
+| `BrowserWorkspaceTargetBridge.cs` | **页面生命周期 → 生命周期端口**的唯一翻译点。版本推进（`OnPageActivated`/`OnPageVersionAdvanced`）仍直接写页面注册表；**创建、目标切换与关闭全部交给 `BrowserPageLifecycle`**，因此"登记原子性/关闭清理（授权+租约）"只有一个所有者。不撒谎语义：未登记上下文 `Untrusted`（fail closed）；先页面后上下文**直接抛**（不静默补登记）；版本只前进；版本事件对未知页面**不凭空造目标**；关闭/清空不留悬空引用 |
 
 ## 3. 与其它组件的边界
 
