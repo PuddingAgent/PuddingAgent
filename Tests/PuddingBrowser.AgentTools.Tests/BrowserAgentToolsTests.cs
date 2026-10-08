@@ -653,6 +653,7 @@ public sealed class BrowserAgentToolsTests
     [InlineData("browser_element_disabled", "not_retryable", "enabled")]
     [InlineData("browser_element_not_found", "safe_to_retry", "wait")]
     [InlineData("browser_element_not_in_viewport", "not_retryable", "scrolled into view")]
+    [InlineData("browser_locator_matches_filtered", "not_retryable", "includeHidden")]
     public async Task Interact_DriverRejections_MapToTheRightRetryAdvice(
         string driverCode, string expectedDisposition, string expectedHintFragment)
     {
@@ -814,6 +815,58 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Locate_DistinguishesZeroHitFromMatchesThatWereFilteredAway()
+    {
+        // 设计 §6.2：「不能把一次零命中推广成所有 text 定位都坏」。
+        // 「命中了但全被隐藏/视口筛掉」是**这次筛选没用对**，与"真的没有"下一步完全不同。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var zeroHit = await ExecuteAsync(
+            new BrowserLocateTool(
+                new FakeCapabilitySurface(runtime)
+                {
+                    LocateFailure = new BrowserOperationException(
+                        "browser_element_not_found", "No element matched the locator"),
+                },
+                new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "css", value = ".missing" }
+            }));
+
+        var filtered = await ExecuteAsync(
+            new BrowserLocateTool(
+                new FakeCapabilitySurface(runtime)
+                {
+                    LocateFailure = new BrowserOperationException(
+                        "browser_locator_matches_filtered",
+                        "Matched 3 element(s) but all were hidden or outside the viewport"),
+                },
+                new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "text", value = "Learn more" }
+            }));
+
+        Assert.False(zeroHit.Success);
+        Assert.False(filtered.Success);
+
+        // 真的没命中：可等可重试，提示指向"等待或重新观察"。
+        Assert.Contains("wait", zeroHit.Error!, StringComparison.OrdinalIgnoreCase);
+
+        // 命中了但被筛掉：不可自动重试，提示直接指向筛选参数。
+        Assert.Contains("includeHidden", filtered.Error!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("3 element", filtered.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
         var runtime = new FakeBrowserRuntime();
@@ -920,6 +973,9 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     /// <summary>最近一次定位请求（用于断言默认 limit 等参数确实传到了能力层）。</summary>
     public BrowserLocateRequest? LastLocateRequest { get; private set; }
 
+    /// <summary>让驱动替身按真实驱动的拒绝语义抛异常（与交互侧的 ActionFailure 对称）。</summary>
+    public BrowserOperationException? LocateFailure { get; init; }
+
     public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext call, CancellationToken ct = default)
     {
@@ -975,6 +1031,11 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
         BrowserLocateRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
         LastLocateRequest = request;
+
+        if (LocateFailure is not null)
+        {
+            throw LocateFailure;
+        }
 
         if (await ResolvePageAsync(request.Target, ct) is not { } page)
         {

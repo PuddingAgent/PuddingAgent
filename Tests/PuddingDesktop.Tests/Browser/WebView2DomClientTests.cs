@@ -116,6 +116,25 @@ public sealed class WebView2DomClientTests
     }
 
     [Fact]
+    public void Scripts_KeepOnlyTheMinimalTextMatch_AndDistinguishFilteredZeroHits()
+    {
+        // 设计 §6.2：text 定位必须取**最小匹配节点**（否则祖先也含文本 ⇒ "返回整页"），
+        // 且零命中要分清"真的没有"与"命中了但全被隐藏/视口筛掉"。
+        // ⚠️ 脚本文本断言：真机行为需 WebView2.Smoke 复核。
+        foreach (var script in new[] { WebView2DomClient.LocateScript, WebView2DomClient.InteractScript })
+        {
+            Assert.Contains("el.contains(other)", script);
+            Assert.Contains("browser_locator_matches_filtered", script);
+            Assert.Contains("matchedBeforeFilters", script);
+        }
+
+        // 定位脚本的最小节点规则只在 text 定位上生效。
+        Assert.Contains("if (locator.kind === 'text')", WebView2DomClient.LocateScript);
+        // 交互脚本与定位脚本共用同一套语义（否则"定位不歧义、交互却歧义"）。
+        Assert.Contains("if(locator.kind==='text')", WebView2DomClient.InteractScript);
+    }
+
+    [Fact]
     public void Scripts_ReportInViewportAndGateWritesOnIt()
     {
         // 设计 §6.2：visible 与 inViewport 是两个事实；写操作要求后者为真（先滚入可见区域并复检）。

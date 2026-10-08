@@ -127,7 +127,16 @@ public sealed class BrowserLocateTool(
                     : null);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (BrowserOperationException ex) { return BrowserToolResponse.FromException(ex); }
+        catch (BrowserOperationException ex)
+        {
+            // 定位是只读的，没有"是否已派发"的语义（因此不带执行回执）；
+            // 但**最小修复提示**必须带出来：零命中 与 "命中了但全被隐藏/视口筛掉" 的下一步完全不同。
+            var (_, hint) = BrowserOperationFailure.Map(ex.Code, ex.Message);
+            return BrowserToolResponse.Failure(
+                ex.Code,
+                ex.Message,
+                warnings: hint is null ? null : [hint]);
+        }
     }
 
     /// <summary>定位的版本不符语义是"引用过期"（沿用既有错误码）；映射表集中在共享辅助里。</summary>

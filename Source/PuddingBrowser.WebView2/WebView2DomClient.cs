@@ -363,10 +363,22 @@ internal static partial class WebView2DomClient
     }
   } catch (error) { return {ok:false,code:'browser_invalid_arguments',message:String(error),elements:[]}; }
   elements = [...new Set(elements)];
+  // text 的**最小匹配节点**（设计 §6.2）：祖先也包含同一段文本，若留着它就会"返回整页"。
+  // 只保留不包含其它匹配的节点；文档顺序保证祖先在前，因此这就是最内层的那一批。
+  if (locator.kind === 'text') {
+    const matched = elements;
+    elements = matched.filter(el => !matched.some(other => other !== el && el.contains(other)));
+  }
+  const matchedBeforeFilters = elements.length;
   // 默认排除隐藏元素（设计方案 §6.2）：屏外但有尺寸的元素**仍然保留**（那是 inViewport，不是 hidden）。
   if (!locator.includeHidden) elements = elements.filter(el => visible(el));
   // inViewportOnly 是**正交**的另一个筛选：只有显式要求时才按视口过滤。
   if (locator.inViewportOnly) elements = elements.filter(el => inViewport(el));
+  // 零命中要**分清原因**（设计 §6.2：不能把一次零命中推广成"这种定位方式坏了"）：
+  // 命中了但全被隐藏/视口筛掉，与真的一个都没命中，是两件不同的事。
+  if (elements.length === 0 && matchedBeforeFilters > 0) {
+    return {ok:false,code:'browser_locator_matches_filtered',message:`Matched ${matchedBeforeFilters} element(s) but all were hidden or outside the viewport`,elements:[]};
+  }
   if (locator.hasText) elements = elements.filter(el => matchText(el.innerText || el.textContent, locator.hasText));
   if (locator.nth !== null && locator.nth !== undefined) elements = locator.nth >= 0 && locator.nth < elements.length ? [elements[locator.nth]] : [];
   const refState = globalThis.__puddingRefState?.version === input.pageVersion
@@ -398,6 +410,7 @@ internal static partial class WebView2DomClient
   const inViewport = el => { const r=el.getBoundingClientRect(); return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<(window.innerHeight||0)&&r.left<(window.innerWidth||0); };
   const roots=[]; const addRoots=root=>{roots.push(root);for(const el of root.querySelectorAll('*')){if(el.shadowRoot)addRoots(el.shadowRoot);if(el.tagName==='IFRAME'){try{if(el.contentDocument)addRoots(el.contentDocument);}catch{}}}}; addRoots(document);
   const all=()=>[...new Set(roots.flatMap(root=>[...root.querySelectorAll('*')]))];
+  let matchedBeforeFilters=0;
   const locate = locator => {
     if (!locator) return [];
     const match=(a,e)=>locator.exact?normalize(a)===normalize(e):normalize(a).toLowerCase().includes(normalize(e).toLowerCase());
@@ -415,12 +428,18 @@ internal static partial class WebView2DomClient
       case'testid':out=all().filter(el=>match(el.getAttribute('data-testid'),locator.value));break;
       default:return [];
     }}catch{return [];}
-    out=[...new Set(out)]; if(!locator.includeHidden)out=out.filter(visible); if(locator.hasText)out=out.filter(el=>match(el.innerText||el.textContent,locator.hasText));
+    out=[...new Set(out)];
+    // 与定位脚本同一套语义：text 取最小匹配节点，并记录筛除前的命中数（零命中要分清原因）。
+    if(locator.kind==='text'){const m=out;out=m.filter(el=>!m.some(other=>other!==el&&el.contains(other)));}
+    matchedBeforeFilters=out.length;
+    if(!locator.includeHidden)out=out.filter(visible); if(locator.hasText)out=out.filter(el=>match(el.innerText||el.textContent,locator.hasText));
     if(locator.nth!==null&&locator.nth!==undefined)out=locator.nth>=0&&locator.nth<out.length?[out[locator.nth]]:[];
     return out;
   };
   if(input.action==='scroll'&&!input.locator){window.scrollBy(Number(input.deltaX||0),Number(input.deltaY||0));return{ok:true,element:null};}
   const matches=locate(input.locator);
+  // 命中了但全被隐藏/视口筛掉 ≠ 没命中（设计 §6.2：不能把一次零命中推广成"这种定位方式坏了"）。
+  if(matches.length===0&&matchedBeforeFilters>0)return{ok:false,code:'browser_locator_matches_filtered',message:`Matched ${matchedBeforeFilters} element(s) but all were hidden or outside the viewport`};
   if(matches.length===0)return{ok:false,code:'browser_element_not_found',message:'No element matched the locator'};
   if(matches.length>1)return{ok:false,code:'browser_locator_ambiguous',message:`Locator matched ${matches.length} elements`};
   const el=matches[0];

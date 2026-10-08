@@ -47,6 +47,12 @@ internal static class BrowserOperationFailure
             new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidTarget, message, retryable: true),
             "no element matched: wait for it (browser_wait_for) or re-observe the page and re-locate"),
 
+        // **命中了但全被筛掉**：文本确实在页面里（多半是模板/隐藏副本）。这是"这次没用对筛选"
+        // 而不是"这种定位方式坏了"（设计 §6.2），因此给出可操作的下一步而不是泛泛的重试建议。
+        "browser_locator_matches_filtered" => (
+            new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidTarget, message, retryable: false),
+            "elements matched but were hidden or outside the viewport: pass includeHidden/inViewportOnly explicitly, or scroll the container"),
+
         // 不可见的写目标不算成功：§6.2 要求写操作先滚入可见区域并复检。
         "browser_element_not_visible" => (
             new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidTarget, message, retryable: false),

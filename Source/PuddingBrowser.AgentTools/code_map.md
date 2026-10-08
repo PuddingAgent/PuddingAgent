@@ -25,7 +25,7 @@ draft: false
 | `BrowserTabsTool.cs` | `browser_tabs` | 标签页管理 |
 | `BrowserNavigateTool.cs` | `browser_navigate` | 页面导航 |
 | `BrowserSnapshotTool.cs` | `browser_snapshot` | 页面快照；`mode` 默认 **outline**（只请求无障碍树，DOM 树不采集；输出按 50 行/4096 字节收敛，超预算给 `nextCursor`）；`interactive` 只列可交互节点；`full` 排障用（显式开启，沿用调用方预算）；`text`（正文 markdown）**未实现**，返回明确 unsupported 而非静默降级；截断原因区分 `incomplete_scan` 与 `output_budget` |
-| `BrowserLocateTool.cs` | `browser_locate` | 元素定位。**输出按设计 §6.2 收敛**：`limit` 默认 10（最多 100）、`text` 与 `name` 相同时省略、bbox 展示最多一位小数（驱动内部保留精度）、`checked` 与 `value`/`selectedValues` 都要**显式请求**（`include_value`/`include_checked`，默认不带以守住预算，需要确认「fill 是否写入成功」时显式打开——唯一可靠回执，`text` 不含表单值） |
+| `BrowserLocateTool.cs` | `browser_locate` | 元素定位。**输出按设计 §6.2 收敛**：`limit` 默认 10（最多 100）、`text` 与 `name` 相同时省略、bbox 展示最多一位小数（驱动内部保留精度）、`checked` 与 `value`/`selectedValues` 都要**显式请求**（`include_value`/`include_checked`，默认不带以守住预算，需要确认「fill 是否写入成功」时显式打开——唯一可靠回执，`text` 不含表单值）。**失败也带最小修复提示**（`warnings`）：只读、无执行回执，但"真的没命中"与"命中了但被筛掉"的下一步完全不同 |
 | `BrowserInteractTool.cs` | `browser_interact` | 元素交互（点击/输入）；`expect_value` 声明期望后**一次调用即可确认写入成功**——输出带 `ok`/`completion`/`execution`/`verification`/`assertions`/`mayHaveSideEffects`/`safeToRetry`/`retryDisposition`（判定在 `PuddingBrowser.Automation`，两条传输天然同形）；表单值只以 matched+长度回传。**失败也带回执**（能力失败与**驱动异常**两条路径都带，放进失败的 `value`）：「是否已经派发」不能因为失败就丢失，`blocked`（接管/暂停/授权）与 `failed` 分开，且不可重试时附最小修复提示 |
 | `BrowserWaitForTool.cs` | `browser_wait_for` | 等待条件满足 |
 
@@ -36,7 +36,7 @@ draft: false
 | `BrowserAgentToolBase.cs` | 工具基类 |
 | `BrowserAgentToolIds.cs` | 工具 ID 常量 |
 | `BrowserToolContracts.cs` | 工具输入/输出契约；失败载荷也支持 `value`（失败必须能带结构化证据，不能只有 code/message）；**元素展示投影的唯一实现**（`Element(...)`：text==name 省略、bbox 一位小数、checked/value 显式请求）——两个工具共用，规则不会各写一份 |
-| `BrowserOperationFailure.cs` | 驱动异常（`BrowserOperationException`）→ 失败回执：异常码映射成领域错误 + 是否可重试 + **最小修复提示**。§6.2 的动作拒绝分别给建议：`browser_locator_ambiguous` ⇒ 不可重试 + 「用 nth 或更具体的定位」（**绝不静默选第一个**）；`browser_element_not_visible`/`browser_element_disabled`/`browser_element_not_in_viewport` ⇒ 不可重试 + 滚入可见/等待可用/调整滚动（最后一条=驱动已尝试滚入仍失败）；`browser_element_not_found` ⇒ **可重试** + 等待或重新观察（零命中不等于"定位方式全坏"）；`stale_element_reference` ⇒ 不可重试 + 重新观察再定位；未登记异常码保守按 `internal_error`（可能已产生副作用） |
+| `BrowserOperationFailure.cs` | 驱动异常（`BrowserOperationException`）→ 失败回执：异常码映射成领域错误 + 是否可重试 + **最小修复提示**。§6.2 的动作拒绝分别给建议：`browser_locator_ambiguous` ⇒ 不可重试 + 「用 nth 或更具体的定位」（**绝不静默选第一个**）；`browser_element_not_visible`/`browser_element_disabled`/`browser_element_not_in_viewport` ⇒ 不可重试 + 滚入可见/等待可用/调整滚动（最后一条=驱动已尝试滚入仍失败）；`browser_element_not_found` ⇒ **可重试** + 等待或重新观察（零命中不等于"定位方式全坏"）；**`browser_locator_matches_filtered`** ⇒ 不可重试 + 「命中了但被隐藏/视口筛掉：显式传 includeHidden/inViewportOnly 或滚动容器」（把"这次筛选没用对"与"这种定位方式坏了"分开）；`stale_element_reference` ⇒ 不可重试 + 重新观察再定位；未登记异常码保守按 `internal_error`（可能已产生副作用） |
 | `BrowserLocatorInput.cs` | 定位器输入模型。⚠️ **嵌套字段必须用 camelCase**（`includeHidden`，不是 `include_hidden`）：工具框架的 snake_case 归一化只作用于**顶层参数**（`PuddingToolContracts.DeserializeArgs` 只重写根对象的属性名） |
 
 | `BrowserCapabilityFailure.cs` | **唯一一张**能力错误 → 工具错误码映射表（每工具各写一份必然漂移）；版本不符的语义按工具给出（定位=引用过期、快照/页状态=页面已变） |
