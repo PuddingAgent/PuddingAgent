@@ -170,7 +170,7 @@ public sealed class RemoteBrowserPage : IBrowserPage
                 Locator = options.Locator is null ? null : ToDescriptor(options.Locator),
                 DeltaX = options.DeltaX,
                 DeltaY = options.DeltaY,
-                ScrollTarget = ScrollTargetWire(options.Target),
+                ScrollTarget = ScrollTargetWire.NameOf(options.Target),
             },
             ContextId,
             Id,
@@ -195,16 +195,7 @@ public sealed class RemoteBrowserPage : IBrowserPage
             : new ScrollOutcome { Container = "unreported" };
     }
 
-    /// <summary>滚动目标线名（与能力通道同一套字面量）。</summary>
-    private static string ScrollTargetWire(ScrollTarget target) => target switch
-    {
-        ScrollTarget.Page => "page",
-        ScrollTarget.Element => "element",
-        ScrollTarget.ToRef => "to_ref",
-        ScrollTarget.ToTop => "to_top",
-        ScrollTarget.ToBottom => "to_bottom",
-        _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Scroll target is not registered."),
-    };
+    // 滚动目标线名由 Abstractions 的 ScrollTargetWire 统一给出（此处曾自己写一份 switch）。
     public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => Unsupported();
     public Task SelectAsync(Locator locator, IReadOnlyList<string> values, CancellationToken ct)
         => InteractAsync("select", locator, null, values, null, null, null, ct);

@@ -95,6 +95,40 @@ public enum ScrollTarget
     ToBottom,
 }
 
+/// <summary>
+/// 滚动目标 ↔ 线名（**唯一真源**）：驱动的滚动脚本与桥接命令都从这里取字面量。
+/// 之前 Core、Desktop、驱动各写一份 switch，加/改目标时必须同时改三处——那正是漂移的来源。
+/// 与契约层的 <c>DesktopScrollTargetWire</c> 必须逐项一致，由跨层契约测试钉住。
+/// </summary>
+public static class ScrollTargetWire
+{
+    public static string NameOf(ScrollTarget target) => target switch
+    {
+        ScrollTarget.Page => "page",
+        ScrollTarget.Element => "element",
+        ScrollTarget.ToRef => "to_ref",
+        ScrollTarget.ToTop => "to_top",
+        ScrollTarget.ToBottom => "to_bottom",
+        _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Scroll target is not registered."),
+    };
+
+    /// <summary>严格解析：不知道的线名不猜测、不回退（fail closed）。</summary>
+    public static bool TryParse(string? name, out ScrollTarget target)
+    {
+        foreach (var candidate in Enum.GetValues<ScrollTarget>())
+        {
+            if (string.Equals(NameOf(candidate), name, StringComparison.Ordinal))
+            {
+                target = candidate;
+                return true;
+            }
+        }
+
+        target = default;
+        return false;
+    }
+}
+
 public sealed record ScrollOptions
 {
     public int TimeoutMs { get; init; } = 5_000;

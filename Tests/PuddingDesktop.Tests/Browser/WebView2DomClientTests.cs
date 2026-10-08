@@ -200,11 +200,11 @@ public sealed class WebView2DomClientTests
         Assert.Contains("atBoundary", script);
         Assert.Contains("contentChanged", script);
 
-        // 目标模型线名由 C# 侧统一给出（枚举 → 线名），未知目标 fail closed。
-        Assert.Equal("page", WebView2DomClient.ScrollTargetWire(ScrollTarget.Page));
-        Assert.Equal("to_ref", WebView2DomClient.ScrollTargetWire(ScrollTarget.ToRef));
-        Assert.Equal("to_bottom", WebView2DomClient.ScrollTargetWire(ScrollTarget.ToBottom));
-        Assert.Throws<ArgumentOutOfRangeException>(() => WebView2DomClient.ScrollTargetWire((ScrollTarget)99));
+        // 目标模型线名由 Abstractions 的 ScrollTargetWire 统一给出（驱动与 Core 共用一份）。
+        Assert.Equal("page", ScrollTargetWire.NameOf(ScrollTarget.Page));
+        Assert.Equal("to_ref", ScrollTargetWire.NameOf(ScrollTarget.ToRef));
+        Assert.Equal("to_bottom", ScrollTargetWire.NameOf(ScrollTarget.ToBottom));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ScrollTargetWire.NameOf((ScrollTarget)99));
     }
 
     [Fact]

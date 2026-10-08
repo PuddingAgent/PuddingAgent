@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
@@ -256,16 +256,8 @@ internal static partial class WebView2DomClient
         public bool? InViewport { get; init; }
     }
 
-    /// <summary>滚动目标模型的线名（脚本内的判据）。</summary>
-    internal static string ScrollTargetWire(ScrollTarget target) => target switch
-    {
-        ScrollTarget.Page => "page",
-        ScrollTarget.Element => "element",
-        ScrollTarget.ToRef => "to_ref",
-        ScrollTarget.ToTop => "to_top",
-        ScrollTarget.ToBottom => "to_bottom",
-        _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Scroll target is not registered."),
-    };
+    // 滚动目标线名由 Abstractions 的 ScrollTargetWire 统一给出
+    // （这里、Core 与 Desktop 曾各写一份 switch —— 那正是漂移的来源）。
 
     /// <summary>
     /// 执行滚动并返回**结果事实**（设计方案 §7）。元素类目标要求 ref 定位：
@@ -318,15 +310,15 @@ internal static partial class WebView2DomClient
             {
                 throw new BrowserOperationException(
                     "browser_invalid_arguments",
-                    $"scroll target '{ScrollTargetWire(options.Target)}' requires a ref locator (re-locate first)");
+                    $"scroll target '{ScrollTargetWire.NameOf(options.Target)}' requires a ref locator (re-locate first)");
             }
 
-            return (ScrollTargetWire(options.Target), locator.Value, options.DeltaX, options.DeltaY);
+            return (ScrollTargetWire.NameOf(options.Target), locator.Value, options.DeltaX, options.DeltaY);
         }
 
         // page/to_top/to_bottom：可以带 ref（表示"滚它最近的可滚动祖先"），也可以不带（滚文档）。
         var reference = options.Locator is { Kind: LocatorKind.Ref } refLocator ? refLocator.Value : null;
-        return (ScrollTargetWire(options.Target), reference, options.DeltaX, options.DeltaY);
+        return (ScrollTargetWire.NameOf(options.Target), reference, options.DeltaX, options.DeltaY);
     }
 
     private sealed record WaitScriptResult : ScriptResult
