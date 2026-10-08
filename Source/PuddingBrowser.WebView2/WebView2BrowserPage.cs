@@ -452,8 +452,64 @@ public sealed class WebView2BrowserPage : IBrowserPage
         }
         return new WaitResult { TimedOut = true, Error = "Timeout" };
     }
-    public Task<ScreenshotResult> ScreenshotAsync(ScreenshotOptions o, CancellationToken ct)
-        => throw new NotSupportedException("Not in Phase 2A-1");
+    /// <summary>
+    /// **截图**（设计方案 §6 的视觉观察）：走 CDP <c>Page.captureScreenshot</c>（WebView2 自带 CDP 通道），
+    /// 不自己拼 canvas —— 那是"看起来像截图"的另一回事（漏跨域资源、漏系统渲染）。
+    ///
+    /// 语义选择：
+    /// ① <c>FullPage</c> ⇒ 用 <c>Page.getLayoutMetrics</c> 的内容尺寸做 clip 并 <c>captureBeyondViewport</c>，
+    ///    因此**整页**而不是"当前视口"；
+    /// ② 带 <c>Quality</c> ⇒ JPEG（画质参数只对有损格式有意义，PNG 上给了是无效输入，因此**明确拒绝**）；
+    /// ③ <c>FilePath</c> 由调用方给出的路径写盘；写盘失败不吞掉（截图拿到了就是拿到了，写盘错误原样抛出）。
+    /// </summary>
+    public async Task<ScreenshotResult> ScreenshotAsync(ScreenshotOptions o, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(o);
+
+        if (o.Quality is { } quality and (< 0 or > 100))
+        {
+            throw new BrowserOperationException(
+                "browser_invalid_arguments", "screenshot quality must be between 0 and 100");
+        }
+
+        // 参数语义（格式/quality/整页 clip）由 ScreenshotPlan 一处决定并单独测试。
+        ScreenshotPlan.ContentSize? contentSize = null;
+        if (o.FullPage)
+        {
+            using var metrics = await SendCdpAsync("Page.getLayoutMetrics", null, ct).ConfigureAwait(false);
+            if (!ScreenshotPlan.TryReadContentSize(metrics.RootElement, out var size))
+            {
+                throw new BrowserOperationException(
+                    "browser_operation_failed",
+                    "the browser did not report a content size, so a full-page screenshot cannot be taken honestly");
+            }
+
+            contentSize = size;
+        }
+
+        var json = ScreenshotPlan.Build(o.Quality, o.FullPage, contentSize);
+        using var document = JsonDocument.Parse(json);
+        using var captured = await SendCdpAsync(
+            "Page.captureScreenshot", document.RootElement.Clone(), ct).ConfigureAwait(false);
+
+        byte[] bytes;
+        try
+        {
+            bytes = ScreenshotPlan.Decode(captured.RootElement);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or FormatException)
+        {
+            throw new BrowserOperationException("browser_operation_failed", exception.Message);
+        }
+
+        if (o.FilePath is { Length: > 0 } path)
+        {
+            await System.IO.File.WriteAllBytesAsync(path, bytes, ct).ConfigureAwait(false);
+        }
+
+        return new ScreenshotResult { Bytes = bytes, FilePath = o.FilePath };
+    }
     public Task<PdfResult> PrintToPdfAsync(PdfOptions o, CancellationToken ct)
         => throw new NotSupportedException("Not in Phase 2A-1");
 
