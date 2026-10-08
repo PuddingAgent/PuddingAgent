@@ -21,6 +21,14 @@ public sealed record BrowserLocateArgs
     public int? Limit { get; init; }
 
     /// <summary>
+    /// 上一次定位返回的分页游标（<c>nextCursor</c>）：原样回传即可取下一页。
+    /// **对模型不透明**——不要拼装或修改；页面变化或换了定位条件后旧游标会过期
+    /// （工具会明确返回 <c>cursor_expired</c>，此时重新定位即可）。
+    /// </summary>
+    [ToolParam("Opaque pagination cursor from a previous locate's nextCursor. Pass it back unchanged to get the next page; it expires when the page or the locator changes.")]
+    public string? Cursor { get; init; }
+
+    /// <summary>
     /// 是否返回表单当前值（默认 <c>false</c>，见设计方案 §6.2）。
     /// 需要确认「fill 到底写进去了没有」时显式打开——这是唯一的可靠回执，
     /// 因为 <c>text</c> 不含表单值、URL 也推不出填了什么。
@@ -102,7 +110,13 @@ public sealed class BrowserLocateTool(
             }
 
             var located = await surface.LocateAsync(
-                new BrowserLocateRequest(target, locator, expectedPageVersion, args.Limit ?? BrowserLocateArgs.DefaultLimit), call, ct);
+                new BrowserLocateRequest(
+                    target,
+                    locator,
+                    expectedPageVersion,
+                    args.Limit ?? BrowserLocateArgs.DefaultLimit,
+                    args.Cursor),
+                call, ct);
             if (located.IsFailure)
             {
                 return Failure(located.Error!);
@@ -117,7 +131,9 @@ public sealed class BrowserLocateTool(
                 new BrowserLocateToolValue
                 {
                     Count = elements.Count,
-                    Elements = values
+                    Elements = values,
+                    // 分页游标：原样回传宿主的令牌（模型不解释它），取完即 null。
+                    NextCursor = located.Value.NextCursor
                 },
                 new PuddingBrowser.Abstractions.BrowserContextId(contextId),
                 new PuddingBrowser.Abstractions.PageId(args.PageId.Trim()),

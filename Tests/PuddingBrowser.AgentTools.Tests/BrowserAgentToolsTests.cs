@@ -1053,6 +1053,73 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Locate_PagesWithCursor_AndExpiredCursorSaysReRead()
+    {
+        // 设计 §6.2：locate 提供 cursor 分页；旧游标（版本/查询变了）必须**明确过期**，
+        // 并给出"重新读取"的入口，而不是拿旧游标去套新内容。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var surface = new FakeCapabilitySurface(runtime)
+        {
+            LocateNextCursor = BrowserLocateCursor.Create(
+                page.PageVersion,
+                BrowserLocateCursor.FingerprintOf(new DesktopLocator(DesktopLocatorKind.Css, ".item", includeHidden: false, inViewportOnly: false)),
+                10).Encode(),
+        };
+
+        var first = await ExecuteAsync(
+            new BrowserLocateTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "css", value = ".item", includeHidden = false, inViewportOnly = false }
+            }));
+
+        // 宿主签发的游标原样出现在输出里（模型只回传、不解释）。
+        Assert.NotNull(surface.LocateNextCursor);
+        Assert.Equal(surface.LocateNextCursor, GetJson(first.Output, "value").GetProperty("nextCursor").GetString());
+
+        // 原样回传 ⇒ 到达能力层。
+        var second = await ExecuteAsync(
+            new BrowserLocateTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "css", value = ".item", includeHidden = false, inViewportOnly = false },
+                cursor = surface.LocateNextCursor
+            }));
+
+        Assert.True(second.Success);
+        Assert.Equal(surface.LocateNextCursor, surface.LastLocateRequest!.Cursor);
+
+        // 过期游标（换了查询条件）⇒ 独立的 cursor_expired，并提示重新读取。
+        var expired = await ExecuteAsync(
+            new BrowserLocateTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "css", value = ".other", includeHidden = false, inViewportOnly = false },
+                cursor = surface.LocateNextCursor
+            }));
+
+        Assert.False(expired.Success);
+        using var document = JsonDocument.Parse(expired.Error!);
+        Assert.Equal("cursor_expired", document.RootElement.GetProperty("error").GetProperty("code").GetString());
+
+        // 提示进 warnings（"重新读取"，而不是重试同一个请求）。
+        Assert.Contains(
+            "re-read",
+            string.Join(' ', document.RootElement.GetProperty("warnings").EnumerateArray().Select(item => item.GetString())),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
         var runtime = new FakeBrowserRuntime();
@@ -1161,6 +1228,9 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
 
     /// <summary>让驱动替身按真实驱动的拒绝语义抛异常（与交互侧的 ActionFailure 对称）。</summary>
     public BrowserOperationException? LocateFailure { get; init; }
+
+    /// <summary>让替身报告"还有下一页"（宿主签发的游标）。</summary>
+    public string? LocateNextCursor { get; init; }
 
     public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext call, CancellationToken ct = default)
@@ -1271,8 +1341,20 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
             })
             .ToArray();
 
+        // 游标语义（§6.2）由真实宿主实现；替身按同一套规则响应：带游标就返回它的下一页结论。
+        if (request.Cursor is { Length: > 0 } cursor)
+        {
+            if (!BrowserLocateCursor.TryParse(cursor, out var parsed)
+                || !parsed.Matches(version.IsKnown ? version.Value : 0, BrowserLocateCursor.FingerprintOf(request.Locator)))
+            {
+                return CapabilityResult<DesktopLocateResult>.Failure(new DesktopCapabilityError(
+                    DesktopCapabilityErrorCode.CursorExpired,
+                    "the locate cursor was issued for a different page version or locator"));
+            }
+        }
+
         return CapabilityResult<DesktopLocateResult>.Success(
-            new DesktopLocateResult(request.Target, request.Locator, elements, false, version));
+            new DesktopLocateResult(request.Target, request.Locator, elements, false, version, LocateNextCursor));
     }
 
     public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(

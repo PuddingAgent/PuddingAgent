@@ -30,6 +30,7 @@ public sealed class ErrorTaxonomyTests
             "ui_unavailable",
             "invalid_request",
             "internal_error",
+            "cursor_expired",
         ];
 
         Assert.Equal(expected, actual);
@@ -81,9 +82,22 @@ public sealed class ErrorTaxonomyTests
             "UiUnavailable|retry=True|side=False",
             "InvalidRequest|retry=False|side=False",
             "InternalError|retry=False|side=True",
+            // 旧游标只能靠"重新读取"解决，重试同一个请求没有意义（§6.2）。
+            "CursorExpired|retry=False|side=False",
         ];
 
         Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void CursorExpired_SaysReReadInsteadOfRetrying()
+    {
+        var error = new DesktopCapabilityError(DesktopCapabilityErrorCode.CursorExpired, "cursor is stale");
+
+        Assert.Equal("cursor_expired", error.WireCode);
+        Assert.False(error.Retryable);
+        Assert.False(error.MayHaveSideEffects);
+        Assert.False(error.IsSafeToRetry);
     }
 
     [Fact]

@@ -12,6 +12,10 @@ namespace PuddingBrowser.AgentTools;
 /// </summary>
 internal static class BrowserCapabilityFailure
 {
+    /// <summary>游标过期时唯一的正确动作是重新读取，不是重试同一个请求（§6.2）。</summary>
+    internal const string CursorExpiredHint =
+        "the cursor belongs to an older page version or a different locator: re-read (call again without the cursor) and page from the fresh result";
+
     public static ToolExecutionResult From(
         DesktopCapabilityError error,
         string fallbackCode,
@@ -24,9 +28,13 @@ internal static class BrowserCapabilityFailure
             DesktopCapabilityErrorCode.PageVersionMismatch => versionMismatchCode,
             DesktopCapabilityErrorCode.InvalidRequest => "browser_invalid_arguments",
             DesktopCapabilityErrorCode.UnsupportedCapability => "browser_unsupported",
+            // 游标过期是**独立错误码**（§6.2）：必须与"参数错""没找到"区分开。
+            DesktopCapabilityErrorCode.CursorExpired => "cursor_expired",
             _ => fallbackCode,
         },
         error.Message,
         value: value,
-        warnings: warnings);
+        warnings: warnings ?? (error.Code == DesktopCapabilityErrorCode.CursorExpired
+            ? [CursorExpiredHint]
+            : null));
 }

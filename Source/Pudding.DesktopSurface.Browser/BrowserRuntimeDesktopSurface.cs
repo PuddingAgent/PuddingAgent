@@ -369,10 +369,38 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         }
 
         var handles = await browserPage.QueryAllAsync(runtimeLocator, cancellationToken).ConfigureAwait(false);
-        var truncated = handles.Count > request.MaxResults;
-        var elements = new List<DesktopElementRef>(Math.Min(handles.Count, request.MaxResults));
 
-        foreach (var handle in handles.Take(request.MaxResults))
+        // 分页游标（§6.2）：绑定「页面版本 + 查询指纹 + 已消费偏移」。
+        // 旧游标用在变了的内容上 ⇒ 过期（重新读取），绝不返回错位结果。
+        var fingerprint = BrowserLocateCursor.FingerprintOf(
+            request.Locator, request.Locator.IncludeHidden, request.Locator.InViewportOnly);
+        var offset = 0;
+        if (request.Cursor is { } wire)
+        {
+            if (!BrowserLocateCursor.TryParse(wire, out var cursor))
+            {
+                return CapabilityResult<DesktopLocateResult>.Failure(new DesktopCapabilityError(
+                    DesktopCapabilityErrorCode.InvalidRequest,
+                    "the locate cursor is malformed; omit it to start from the beginning"));
+            }
+
+            if (!cursor.Matches(pageVersion, fingerprint))
+            {
+                return CapabilityResult<DesktopLocateResult>.Failure(new DesktopCapabilityError(
+                    DesktopCapabilityErrorCode.CursorExpired,
+                    $"the locate cursor was issued for v{cursor.PageVersion} / a different locator, "
+                    + $"but the page is at v{pageVersion}",
+                    retryable: false));
+            }
+
+            offset = cursor.Offset;
+        }
+
+        var window = handles.Skip(offset).ToArray();
+        var truncated = window.Length > request.MaxResults;
+        var elements = new List<DesktopElementRef>(Math.Min(window.Length, request.MaxResults));
+
+        foreach (var handle in window.Take(request.MaxResults))
         {
             var mapped = MapHandle(handle);
             if (mapped.IsFailure)
@@ -383,8 +411,13 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             elements.Add(mapped.Value);
         }
 
+        // 只有"还有下一页且驱动窗口里确实有"才发游标；取完即 null（不是"取不到"）。
+        var next = truncated
+            ? BrowserLocateCursor.Create(pageVersion, fingerprint, offset + elements.Count).Encode()
+            : null;
+
         return CapabilityResult<DesktopLocateResult>.Success(new DesktopLocateResult(
-            request.Target, request.Locator, elements, truncated, LiveVersion(pageVersion)));
+            request.Target, request.Locator, elements, truncated, LiveVersion(pageVersion), next));
     }
 
     /// <summary>把元素句柄映射成按值引用；**版本取元素自身**（缺失即报错，不静默丢弃）。</summary>

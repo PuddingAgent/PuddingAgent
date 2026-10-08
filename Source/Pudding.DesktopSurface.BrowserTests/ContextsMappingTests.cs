@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopSurface.Browser;
 using PuddingBrowser.Abstractions;
@@ -711,6 +711,87 @@ public sealed class LocateMappingTests
         Assert.Equal(8, element.PageVersion.Value);
         Assert.Equal(9, result.Value.PageVersion.Value);
         Assert.False(result.Value.Truncated);
+    }
+
+    [Fact]
+    public async Task CursorPagesThroughMatches_AndTheLastPageHasNoNextCursor()
+    {
+        // 设计 §6.2：locate 提供 cursor 分页；取完时 nextCursor 为 null（不是"取不到"）。
+        var runtime = Runtime(pageVersion: 4, handles:
+        [
+            Handle("e1", "a", version: 4),
+            Handle("e2", "a", version: 4),
+            Handle("e3", "a", version: 4),
+        ]);
+        var surface = Surface(runtime);
+
+        var first = await surface.LocateAsync(
+            Call,
+            new BrowserLocateRequest(Target, new DesktopLocator(DesktopLocatorKind.Css, ".item"), DesktopPageVersion.Require(4), maxResults: 2),
+            CancellationToken.None);
+
+        Assert.False(first.IsFailure);
+        Assert.True(first.Value.Truncated);
+        Assert.Equal(2, first.Value.Elements.Count);
+        Assert.NotNull(first.Value.NextCursor);
+
+        // 原样回传游标 ⇒ 拿到剩下的那一条，且**没有**下一页。
+        var second = await surface.LocateAsync(
+            Call,
+            new BrowserLocateRequest(
+                Target,
+                new DesktopLocator(DesktopLocatorKind.Css, ".item"),
+                DesktopPageVersion.Require(4),
+                maxResults: 2,
+                cursor: first.Value.NextCursor),
+            CancellationToken.None);
+
+        Assert.False(second.IsFailure);
+        Assert.Single(second.Value.Elements);
+        Assert.False(second.Value.Truncated);
+        Assert.Null(second.Value.NextCursor);
+    }
+
+    [Fact]
+    public async Task CursorFromAnotherVersionOrLocator_ExpiresInsteadOfReturningShiftedResults()
+    {
+        // §6.2「不能把旧游标用于新内容」：版本不符或换了查询都必须**过期**，而不是给错位结果。
+        var runtime = Runtime(pageVersion: 4, handles: [Handle("e1", "a", version: 4)]);
+        var surface = Surface(runtime);
+        var locator = new DesktopLocator(DesktopLocatorKind.Css, ".item");
+
+        // 旧版本签发的游标。
+        var staleVersion = BrowserLocateCursor.Create(
+            pageVersion: 1, BrowserLocateCursor.FingerprintOf(locator), 0).Encode();
+        var versionFailure = await surface.LocateAsync(
+            Call,
+            new BrowserLocateRequest(Target, locator, DesktopPageVersion.Require(4), cursor: staleVersion),
+            CancellationToken.None);
+
+        Assert.True(versionFailure.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.CursorExpired, versionFailure.Error!.Code);
+
+        // 同一版本但换了查询条件签发的游标。
+        var otherQuery = BrowserLocateCursor.Create(
+            pageVersion: 4,
+            BrowserLocateCursor.FingerprintOf(new DesktopLocator(DesktopLocatorKind.Css, ".other")),
+            0).Encode();
+        var queryFailure = await surface.LocateAsync(
+            Call,
+            new BrowserLocateRequest(Target, locator, DesktopPageVersion.Require(4), cursor: otherQuery),
+            CancellationToken.None);
+
+        Assert.True(queryFailure.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.CursorExpired, queryFailure.Error!.Code);
+
+        // 格式坏掉的游标是**参数错**，不是过期（两类必须分开）。
+        var malformed = await surface.LocateAsync(
+            Call,
+            new BrowserLocateRequest(Target, locator, DesktopPageVersion.Require(4), cursor: "not-a-cursor"),
+            CancellationToken.None);
+
+        Assert.True(malformed.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InvalidRequest, malformed.Error!.Code);
     }
 
     [Fact]

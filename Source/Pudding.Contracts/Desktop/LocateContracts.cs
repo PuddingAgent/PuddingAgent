@@ -150,7 +150,8 @@ public sealed record BrowserLocateRequest
         DesktopPageTarget target,
         DesktopLocator locator,
         DesktopPageVersion expectedPageVersion = default,
-        int maxResults = DefaultMaxResults)
+        int maxResults = DefaultMaxResults,
+        string? cursor = null)
     {
         if (maxResults is < 1 or > MaxMaxResults)
         {
@@ -171,6 +172,7 @@ public sealed record BrowserLocateRequest
         Locator = locator ?? throw new ArgumentNullException(nameof(locator));
         ExpectedPageVersion = expectedPageVersion;
         MaxResults = maxResults;
+        Cursor = string.IsNullOrWhiteSpace(cursor) ? null : cursor.Trim();
     }
 
     public DesktopPageTarget Target { get; }
@@ -180,6 +182,12 @@ public sealed record BrowserLocateRequest
     public DesktopPageVersion ExpectedPageVersion { get; }
 
     public int MaxResults { get; }
+
+    /// <summary>
+    /// 分页游标（对模型不透明，由宿主签发与解释；见 <see cref="BrowserLocateCursor"/>）。
+    /// 传旧游标去匹配新内容会被拒绝（<c>cursor_expired</c>），而不是返回错位的结果。
+    /// </summary>
+    public string? Cursor { get; }
 }
 
 /// <summary>
@@ -291,13 +299,15 @@ public sealed record DesktopLocateResult
         DesktopLocator locator,
         IReadOnlyList<DesktopElementRef> elements,
         bool truncated,
-        DesktopPageVersion pageVersion)
+        DesktopPageVersion pageVersion,
+        string? nextCursor = null)
     {
         Target = target ?? throw new ArgumentNullException(nameof(target));
         Locator = locator ?? throw new ArgumentNullException(nameof(locator));
         Elements = elements ?? throw new ArgumentNullException(nameof(elements));
         Truncated = truncated;
         PageVersion = pageVersion;
+        NextCursor = string.IsNullOrWhiteSpace(nextCursor) ? null : nextCursor;
     }
 
     public DesktopPageTarget Target { get; }
@@ -309,6 +319,12 @@ public sealed record DesktopLocateResult
     public bool Truncated { get; }
 
     public DesktopPageVersion PageVersion { get; }
+
+    /// <summary>
+    /// 下一页游标；<c>null</c> 表示**已经取完**（不是"取不到"）。
+    /// 与 <see cref="Truncated"/> 分开：截断也可能是"驱动扫描窗口用尽"，那种情况同样给不出游标。
+    /// </summary>
+    public string? NextCursor { get; }
 
     /// <summary>命中数量为 0 不是错误：调用方据此决定等待还是改定位策略。</summary>
     public bool IsEmpty => Elements.Count == 0;

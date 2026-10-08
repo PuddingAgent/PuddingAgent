@@ -118,6 +118,12 @@ public sealed record BrowserLocateToolValue
 {
     public required int Count { get; init; }
     public required IReadOnlyList<BrowserElementToolValue> Elements { get; init; }
+
+    /// <summary>
+    /// 下一页游标（原样回传给 <c>browser_locate.cursor</c>）；<c>null</c> 表示**已取完**。
+    /// 对模型不透明：只回传，不解释。
+    /// </summary>
+    public string? NextCursor { get; init; }
 }
 
 public sealed record BrowserInteractionToolValue

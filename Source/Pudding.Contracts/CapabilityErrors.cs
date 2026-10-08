@@ -50,6 +50,12 @@ public enum DesktopCapabilityErrorCode
 
     /// <summary>未归类的内部故障。</summary>
     InternalError,
+
+    /// <summary>
+    /// 游标过期：它绑定的页面版本（或匹配集合）已经变了，不能把旧游标用于新内容（设计方案 §6.2/§7）。
+    /// 调用方必须**重新读取**再分页；这不是"重试同一个请求"能解决的。
+    /// </summary>
+    CursorExpired,
 }
 
 /// <summary>
@@ -75,6 +81,8 @@ public static class DesktopCapabilityErrorCodes
         (DesktopCapabilityErrorCode.UiUnavailable, "ui_unavailable", true, false),
         (DesktopCapabilityErrorCode.InvalidRequest, "invalid_request", false, false),
         (DesktopCapabilityErrorCode.InternalError, "internal_error", false, true),
+        // 旧游标绝不能用于新内容（§6.2）：过期后唯一的正确动作是重新读取，因此不可重试。
+        (DesktopCapabilityErrorCode.CursorExpired, "cursor_expired", false, false),
     ];
 
     private static readonly Dictionary<DesktopCapabilityErrorCode, (string Wire, bool Retryable, bool MayHaveSideEffects)> ByCode =
