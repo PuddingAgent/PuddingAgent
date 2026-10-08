@@ -4,11 +4,12 @@ import React from 'react';
 import type { TurnTimings } from '@/services/platform/api';
 import { useChatStyles } from '../styles';
 import type { ChatStatus } from './InputArea';
-import type {
-  BackgroundMemoryStatus,
-  ContextServiceStatus,
-  IndexServiceStatus,
-  ModelServiceStatus,
+import {
+  describeInputUnavailableReason,
+  type BackgroundMemoryStatus,
+  type ContextServiceStatus,
+  type IndexServiceStatus,
+  type ModelServiceStatus,
 } from './serviceStatus';
 import TurnTimingPanel from './TurnTimingPanel';
 
@@ -22,7 +23,11 @@ export interface ComposerRuntimeSummary {
   token?: {
     used: number;
     limit: number;
-    /** 有效输入窗口（模型窗口 − 预留输出）；剩余与百分比的口径依据。 */
+    /**
+     * 有效输入窗口（服务端 `effectiveWindowTokens`）；剩余与百分比的口径依据。
+     * **不要**把它与 `limit − effectiveLimit` 当成输出预留：这个差值还可能来自
+     * Provider 输入上限或安全余量（诊断报告 §4.4），来源未标注时按未知处理。
+     */
     effectiveLimit?: number;
     percentage: number;
     remaining?: number;
@@ -78,6 +83,8 @@ const SERVICE_COLOR: Record<string, string> = {
   running: 'var(--pudding-status-success)',
   building: 'var(--pudding-status-warning)',
   warning: 'var(--pudding-status-warning)',
+  // 容量压力用「需注意」的橙色，**不用**故障红：上下文该整理了，服务并没有坏。
+  capacity: 'var(--pudding-status-warning)',
   error: 'var(--pudding-status-error)',
   disabled: 'var(--pudding-chat-border-strong)',
   // `unknown`（没采到）沿用 `disabled` 的中性灰：它既不是故障，也不是「关」。
@@ -91,6 +98,9 @@ const SERVICE_LABEL: Record<string, string> = {
   running: '运行中',
   building: '建立中',
   warning: '需注意',
+  // 容量压力必须与故障区分文案：旧文案「上下文服务异常」把 75% 输入压力
+  // 说成了服务故障（诊断报告 §4.2），会让用户去排查一个没坏的服务。
+  capacity: '建议整理上下文',
   error: '异常',
   disabled: '未启用',
   // 「没采到」必须与「未启用」不同文案，否则不可知会被读成关。
@@ -153,7 +163,15 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
     summary.token?.effectiveLimit && summary.token.effectiveLimit > 0
       ? summary.token.effectiveLimit
       : windowLimit;
-  const reservedOutput = Math.max(windowLimit - effectiveLimit, 0);
+  /**
+   * 窗口里**不可用于输入**的那部分。它不等于输出预留：`windowLimit − effectiveLimit`
+   * 还可能来自 Provider 输入上限或安全余量（诊断报告 §4.4）。当前 `ContextHealthSnapshot`
+   * 只给 `contextWindowTokens` / `effectiveWindowTokens`，**没有**输出预算、Provider
+   * 输入上限或安全余量字段，因此这里没有可用的来源可标注 ⇒ 按「来源未知」显示，
+   * 不冒充「预留输出」。
+   */
+  const unavailableForInput = Math.max(windowLimit - effectiveLimit, 0);
+  const unavailableForInputLabel = describeInputUnavailableReason(undefined);
   const cacheHitScopeLabel = formatCacheHitRateScope(
     summary.cacheHitRateScope,
     summary.cacheHitRateSampleCount,
@@ -193,11 +211,16 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
                 {fmtTokens(effectiveLimit)}
               </span>
             </div>
-            {reservedOutput > 0 && (
+            {unavailableForInput > 0 && (
               <div className={styles.composerStatusDetailRow}>
-                <span className={styles.composerStatusDetailLabel}>预留输出</span>
+                <span
+                  className={styles.composerStatusDetailLabel}
+                  data-testid="unavailable-for-input-label"
+                >
+                  {unavailableForInputLabel}
+                </span>
                 <span className={styles.composerStatusDetailValue}>
-                  {fmtTokens(reservedOutput)}
+                  {fmtTokens(unavailableForInput)}
                 </span>
               </div>
             )}

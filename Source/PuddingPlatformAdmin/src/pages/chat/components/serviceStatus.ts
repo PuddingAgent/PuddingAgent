@@ -12,6 +12,14 @@
 //       modelService     ← GET /api/llm/providers（isEnabled && hasApiKey）
 //   · 入参一律是 `Promise.allSettled` 的结果本身 ⇒ 「请求失败」与「还没请求」在类型上可分，
 //     且这些函数可离线单测（不 mock 网络）。
+//
+// 纪律延伸（2026-10-07 诊断 §4.2）：「容量压力」不是「服务故障」。
+//   有效输入窗口压力（默认 75% 阈值）说明**上下文该整理了**，它没有证明网络/API/
+//   上下文服务出错；把它显示成 `error`（旧文案「上下文服务异常」）会让用户去排查
+//   一个并未失败的服务。因此 Unhealthy/Critical/Blocking 一律映射为 `capacity`，
+//   `'error'` 在上下文健康度这条链路上**不可达**（保留在联合类型里是因为索引/模型
+//   服务等其它信号确实有真实的失败证据）；采集失败保持 `unknown`，既不是 `error`
+//   也不是 `capacity` —— 「没采到」不证明故障，也不证明有压力。
 import {
   deriveIndexHealth,
   type IndexHealthLevel,
@@ -23,10 +31,17 @@ import type {
   SubconsciousRuntimeControlSnapshotDto,
 } from '@/services/platform/api';
 
-/** 上下文服务取值域。`warning`（需注意）与 `unknown`（未采集）是新增的如实取值。 */
+/**
+ * 上下文服务取值域。`warning`（需注意）与 `unknown`（未采集）是新增的如实取值。
+ *
+ * `capacity`（容量压力）与 `error`（服务故障）必须分开：前者是「上下文用满了，
+ * 建议整理」，后者才是「服务/采集出了问题」。`error` 保留在联合类型里，供索引、
+ * 模型服务等**有真实失败证据**的信号使用；上下文健康度这条链路不再产出它。
+ */
 export type ContextServiceStatus =
   | 'available'
   | 'warning'
+  | 'capacity'
   | 'idle'
   | 'disabled'
   | 'error'
@@ -71,7 +86,15 @@ export const UNKNOWN_SERVICE_SIGNALS: RuntimeServiceSignals = {
   modelService: 'unknown',
 };
 
-/** 上下文健康态 → 摘要取值域（Healthy→可用 · Warning→需注意 · 其余恶化档→异常）。 */
+/**
+ * 上下文健康态 → 摘要取值域。
+ *
+ * Healthy → 可用 · Warning → 需注意 · Unhealthy/Critical/Blocking → **容量压力**
+ * （`capacity`，文案「建议整理上下文」）· 未知/缺失 → `unknown`。
+ *
+ * 这里**绝不**返回 `'error'`：诊断报告 §4.2 的 76.4% 有效输入压力只是容量信号，
+ * 不构成服务故障证据；把它标成故障会让用户去排查一个并没有坏的服务。
+ */
 export function mapContextHealthState(
   state: ContextHealthSnapshot['state'] | undefined,
 ): ContextServiceStatus {
@@ -83,7 +106,7 @@ export function mapContextHealthState(
     case 'Unhealthy':
     case 'Critical':
     case 'Blocking':
-      return 'error';
+      return 'capacity';
     default:
       return 'unknown';
   }
@@ -94,7 +117,8 @@ export function mapContextHealthState(
  *
  * 请求被拒（含 409 `context_window_unresolved`：当前会话的窗口暂时解析不出来，
  * 那不是上下文服务的故障）或还没数据 ⇒ 一律 `unknown`；
- * `error` 只能来自真实采到的 Unhealthy/Critical/Blocking。
+ * 采到的 Unhealthy/Critical/Blocking ⇒ `capacity`（容量压力，不是故障）。
+ * 本函数**不可能**返回 `'error'`：没有采到任何「服务失败」的证据。
  */
 export function deriveContextServiceStatus(
   result: PromiseSettledResult<ContextHealthSnapshot> | undefined,
@@ -102,6 +126,18 @@ export function deriveContextServiceStatus(
   if (!result || result.status !== 'fulfilled') return 'unknown';
   return mapContextHealthState(result.value?.state);
 }
+
+/**
+ * 「窗口里不可用于输入的那部分」的来源。
+ *
+ * 实现已移到叶子模块 `./inputUnavailable`（`ContextUsageRing` 只需要这个文案映射，
+ * 不该为此继承本文件通往 `index-status` 与 umi 应用链的依赖）。此处**重新导出**，
+ * 保持既有引用与测试不破。
+ */
+export {
+  describeInputUnavailableReason,
+  type InputUnavailableReason,
+} from './inputUnavailable';
 
 /**
  * 索引健康层级 → 摘要取值域。

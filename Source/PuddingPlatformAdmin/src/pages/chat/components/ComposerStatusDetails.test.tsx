@@ -162,6 +162,41 @@ describe('ComposerStatusDetails', () => {
     expect(screen.queryByText('可用')).toBeNull();
   });
 
+  it('renders capacity pressure as 建议整理上下文, never as a service fault', () => {
+    render(
+      <ComposerStatusDetails
+        summary={{ ...baseSummary, contextService: 'capacity' }}
+      />,
+    );
+
+    // 诊断 §4.2：75% 有效输入压力是容量信号，不是网络/API/服务故障。
+    expect(screen.getByText('建议整理上下文')).toBeTruthy();
+    expect(screen.queryByText('上下文服务异常')).toBeNull();
+    expect(screen.queryByText('异常')).toBeNull();
+  });
+
+  it('labels the window-minus-effective difference as an unknown remainder, not 预留输出', () => {
+    render(
+      <ComposerStatusDetails
+        summary={{
+          ...baseSummary,
+          token: {
+            used: 463_800,
+            limit: 1_000_000,
+            effectiveLimit: 606_784,
+            percentage: 76.4,
+          },
+        }}
+      />,
+    );
+
+    // 诊断 §4.4：这个差值还可能来自 Provider 输入上限/安全余量，来源未知时不许猜。
+    expect(screen.getByTestId('unavailable-for-input-label').textContent).toBe(
+      '不可用于输入（来源未知）',
+    );
+    expect(screen.queryByText('预留输出')).toBeNull();
+  });
+
   it('renders the this-turn timing panel inside 本轮摘要 and never fakes 0', () => {
     render(
       <ComposerStatusDetails

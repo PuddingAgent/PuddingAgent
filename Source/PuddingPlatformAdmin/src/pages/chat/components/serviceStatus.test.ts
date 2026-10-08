@@ -10,6 +10,7 @@ import {
   deriveContextServiceStatus,
   deriveIndexServiceStatus,
   deriveModelServiceStatus,
+  describeInputUnavailableReason,
   mapContextHealthState,
   mapIndexHealthLevel,
 } from './serviceStatus';
@@ -42,10 +43,32 @@ describe('serviceStatus · contextService', () => {
   it('maps only real health states, and treats every unavailable signal as unknown', () => {
     expect(mapContextHealthState('Healthy')).toBe('available');
     expect(mapContextHealthState('Warning')).toBe('warning');
-    expect(mapContextHealthState('Unhealthy')).toBe('error');
-    expect(mapContextHealthState('Critical')).toBe('error');
-    expect(mapContextHealthState('Blocking')).toBe('error');
+    // 诊断 §4.2：容量压力（≥75% 有效输入）是「建议整理上下文」，不是服务故障。
+    expect(mapContextHealthState('Unhealthy')).toBe('capacity');
+    expect(mapContextHealthState('Critical')).toBe('capacity');
+    expect(mapContextHealthState('Blocking')).toBe('capacity');
     expect(mapContextHealthState(undefined)).toBe('unknown');
+  });
+
+  it('never maps any context health value to a service error', () => {
+    // `'error'` 语义是「有失败证据的服务故障」；上下文健康度只报容量，报不了故障。
+    const states: Array<ContextHealthSnapshot['state'] | undefined> = [
+      'Healthy',
+      'Warning',
+      'Unhealthy',
+      'Critical',
+      'Blocking',
+      undefined,
+    ];
+    for (const state of states) {
+      expect(mapContextHealthState(state)).not.toBe('error');
+    }
+    // 采集失败也只能是「未知」：既不是故障，也不是容量压力。
+    const rejected: PromiseSettledResult<ContextHealthSnapshot> = {
+      status: 'rejected',
+      reason: new Error('boom'),
+    };
+    expect(deriveContextServiceStatus(rejected)).toBe('unknown');
   });
 
   it('never reports available when the fetch failed or never ran', () => {
@@ -68,7 +91,20 @@ describe('serviceStatus · contextService', () => {
     ).toBe('available');
     expect(
       deriveContextServiceStatus({ status: 'fulfilled', value: contextSnapshot('Blocking') }),
-    ).toBe('error');
+    ).toBe('capacity');
+  });
+});
+
+describe('serviceStatus · input-unavailable reason', () => {
+  it('names the reason only when a source is actually known', () => {
+    expect(describeInputUnavailableReason('reserved_output')).toBe('预留输出');
+    expect(describeInputUnavailableReason('provider_input_limit')).toBe(
+      'Provider 输入上限',
+    );
+    expect(describeInputUnavailableReason('safety_margin')).toBe('安全余量');
+    // 没来源时不许猜成「预留输出」。
+    expect(describeInputUnavailableReason(undefined)).toBe('不可用于输入（来源未知）');
+    expect(describeInputUnavailableReason(null)).toBe('不可用于输入（来源未知）');
   });
 });
 

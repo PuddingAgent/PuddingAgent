@@ -9,12 +9,16 @@
 import { Popover, Tooltip } from 'antd';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useChatStyles } from '../styles';
+import {
+  describeInputUnavailableReason,
+  type InputUnavailableReason,
+} from './inputUnavailable';
 
 export interface ContextUsageRingProps {
-  /** 模型上下文窗口总量；0/缺失 = 未配置（不伪造数值）。 */
+  /** 模型上下文窗口总量（总窗口占用率的分母）；0/缺失 = 未配置（不伪造数值）。 */
   tLimit: number;
   tUsed: number;
-  /** 已使用百分比（0-100）。 */
+  /** 已使用百分比（0-100）；仅在 `tLimit <= 0`（未配置）时作为回退口径使用。 */
   tPct: number;
   /** 注意：缓存命中率不在此展示 —— 同面板运行状态块已有一行，避免同值两处。 */
   /** 来自 useCompaction 的压缩状态文案（如「上次压缩：2分钟前」）。 */
@@ -25,8 +29,20 @@ export interface ContextUsageRingProps {
   subAgentsRunning?: number;
   /** 打开子代理管理器（原轻反馈带的 onClick 入口，避免移除胶囊后丢失入口）。 */
   onOpenSubAgents?: () => void;
-  /** 有效输入窗口（模型窗口 − 预留输出）；用于把「系统预留」段画出来。 */
+  /** 有效输入窗口（服务端 `effectiveWindowTokens`）：有效输入压力的**分母**。
+   *  与 `tLimit` 是两个不同分母，绝不可混用（诊断报告 §4.1）。 */
   tEffective?: number;
+  /**
+   * 「窗口里不可用于输入的那部分」的**来源**。
+   *
+   * `tLimit − tEffective` **不普遍等于输出预留**：差值还可能来自 Provider 输入
+   * 上限或安全余量（诊断报告 §4.4）。当前 `ContextHealthSnapshot` 只有
+   * `contextWindowTokens` / `effectiveWindowTokens`，**缺少**输出预算
+   * （requestedOutputBudget）、Provider 输入上限（providerInputLimit）与
+   * 安全余量（safetyMargin）字段，所以调用方现在只能不传 ⇒ 渲染成「来源未知」。
+   * 后端补齐这些字段后由调用方传入，本组件只负责按来源命名，不自己猜。
+   */
+  tUnavailableReason?: InputUnavailableReason | null;
   /** 请求组装时的分层归因；缺失或全 0 时回落单色条。 */
   tBreakdown?: ContextUsageBreakdown | null;
   /** 用量数据来源/置信度：面板据此显示「数据来源」，让百分比可判断可信度。 */
@@ -66,10 +82,13 @@ const CONTEXT_SEGMENT_DEFS: ReadonlyArray<{
 ];
 
 /**
- * 系统预留（输出预留）：窗口里**不可用于输入**的部分。
- * 用户诉求（2026-09-19）：置于进度条**最右端**，用斜纹 /// + 灰色表示「不可使用」，
- * 从而让中间那段真正可用的空间一眼可辨 —— 此前它夹在「已使用」与「可用余量」之间，
- * 无法从条上读出哪一段能用。
+ * 窗口里**不可用于输入**的那段（斜纹 + 灰）。
+ *
+ * 旧实现把 `tLimit − tEffective` 直接叫作「系统预留（输出预留）」，但那只是**猜测**：
+ * 有效输入上限还可能由 Provider 输入上限或安全余量封顶（诊断报告 §4.4）。现在按
+ * `tUnavailableReason` 的来源命名；来源未知时如实写「不可用于输入（来源未知）」，
+ * 绝不冒充输出预留。用户诉求（2026-09-19）：置于进度条**最右端**，用斜纹 /// +
+ * 灰色表示「不可使用」，从而让中间那段真正可用的空间一眼可辨。
  */
 const CONTEXT_RESERVED_HATCH =
   'repeating-linear-gradient(45deg, rgba(185,169,155,0.95) 0 2px, rgba(185,169,155,0.28) 2px 5px)';
@@ -116,6 +135,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   tUsed,
   tPct,
   tEffective,
+  tUnavailableReason,
   tBreakdown,
   usageRecordedAt,
   usageSource,
@@ -131,7 +151,17 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   const { styles } = useChatStyles();
   const [open, setOpen] = useState(false);
   const configured = tLimit > 0;
+  // **总窗口占用率**（分母 = 模型上下文窗口）：圆环弧长与色阶都用它，颜色语义不变。
   const pct = clampPct(tLimit > 0 ? (tUsed / tLimit) * 100 : tPct);
+  /**
+   * **有效输入压力**（分母 = 服务端 effectiveWindowTokens）。它与总窗口占用率是两个
+   * 不同的事实（诊断 §4.1：46.4% vs 76.4%），必须各自标注分母，不能合成一个数字。
+   * 分母缺失/非正 ⇒ undefined（不伪造分母，也不拿总窗口顶替）。
+   */
+  const effectivePct =
+    typeof tEffective === 'number' && Number.isFinite(tEffective) && tEffective > 0
+      ? (tUsed / tEffective) * 100
+      : undefined;
   // 方案 2（用户 2026-09-19）：无有效数据时不给错的信息。
   //  - 会话还没任何消息 → 视为「未开始」，不展示用量；
   //  - confidence 不是 provider_reported（本地估算 / DB 回退）→ 只能标为估算值，
@@ -165,18 +195,26 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
           };
         }).filter((segment) => segment.tokens > 0)
       : [];
-  const reservedTokens =
+  // 不可用于输入的那段：只按「窗口 − 有效输入」算宽度，**名称来自显式来源**。
+  // 来源由调用方给出（`tUnavailableReason`）；没给 ⇒ 明确写「来源未知」。
+  const inputUnavailableTokens =
     tEffective && tEffective > 0 && tEffective < tLimit
       ? tLimit - tEffective
       : 0;
-  const reservedPercent = tLimit > 0 ? (reservedTokens / tLimit) * 100 : 0;
-  // 可用余量 = 窗口里既未被使用、也不属于预留的部分（条上表现为底色）。
+  const inputUnavailablePercent =
+    tLimit > 0 ? (inputUnavailableTokens / tLimit) * 100 : 0;
+  const inputUnavailableLabel = describeInputUnavailableReason(tUnavailableReason);
+  // 可用余量 = 窗口里既未被使用、也不属于「不可用于输入」的部分（条上表现为底色）。
   const availablePercent =
-    tLimit > 0 ? Math.max(0, 100 - pct - reservedPercent) : 0;
+    tLimit > 0 ? Math.max(0, 100 - pct - inputUnavailablePercent) : 0;
 
   const hoverSummary =
     configured && !notStarted
-      ? `${authoritative ? '' : '≈'}${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 上下文已使用（非压缩进度）${authoritative ? '' : '（估算）'}`
+      ? `${authoritative ? '' : '≈'}${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 模型窗口已使用（非压缩进度）${authoritative ? '' : '（估算）'}${
+          effectivePct !== undefined
+            ? `；有效输入压力 ${authoritative ? '' : '≈'}${effectivePct.toFixed(1)}%（分母 ${formatTokens(tEffective as number)}）`
+            : ''
+        }`
       : error
         ? `上下文用量获取失败：${error}`
         : notStarted
@@ -211,13 +249,18 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
           </div>
         ) : (
           <>
-            <div className={styles.contextUsagePanelHeadline}>
+            {/* 两个分母必须各自标注（诊断 §4.1）：这里是**总窗口占用**，
+                分母是模型上下文窗口，不是有效输入窗口。 */}
+            <div
+              className={styles.contextUsagePanelHeadline}
+              data-testid="context-usage-window-occupancy"
+            >
               <span className={styles.contextUsagePanelPct}>
                 {authoritative ? '' : '≈'}
                 {pct.toFixed(1)}%
               </span>
               <span className={styles.contextUsagePanelUsed}>
-                已使用 {formatTokens(tUsed)}/{formatTokens(tLimit)}
+                模型窗口占用 {formatTokens(tUsed)}/{formatTokens(tLimit)}
                 {authoritative ? '' : '（估算）'}
               </span>
             </div>
@@ -235,17 +278,18 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                       title={`${segment.label} ${formatTokens(segment.tokens)}`}
                     />
                   ))}
-                  {/* 系统预留固定贴条最右端（marginLeft:auto 吃掉中间的可用余量），
-                      使「可用」与「不可用」在空间上一分为二。 */}
-                  {reservedPercent > 0 && (
+                  {/* 「不可用于输入」固定贴条最右端（marginLeft:auto 吃掉中间的可用余量），
+                      使「可用」与「不可用」在空间上一分为二。名称按**来源**给出：
+                      只有来源确实是输出预算时才叫「预留输出」。 */}
+                  {inputUnavailablePercent > 0 && (
                     <span
                       className={styles.contextUsagePanelSegment}
                       style={{
-                        width: `${reservedPercent}%`,
+                        width: `${inputUnavailablePercent}%`,
                         marginLeft: 'auto',
                         backgroundImage: CONTEXT_RESERVED_HATCH,
                       }}
-                      title={`系统预留（不可用） ${formatTokens(reservedTokens)}`}
+                      title={`${inputUnavailableLabel} ${formatTokens(inputUnavailableTokens)}`}
                     />
                   )}
                 </div>
@@ -270,7 +314,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                       </span>
                     </div>
                   ))}
-                  {reservedPercent > 0 && (
+                  {inputUnavailablePercent > 0 && (
                     <>
                       <div className={styles.contextUsagePanelLegendRow}>
                         <span
@@ -287,16 +331,19 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                           {availablePercent.toFixed(1)}%
                         </span>
                       </div>
-                      <div className={styles.contextUsagePanelLegendRow}>
+                      <div
+                        className={styles.contextUsagePanelLegendRow}
+                        data-testid="context-usage-unavailable-legend"
+                      >
                         <span
                           className={styles.contextUsagePanelLegendDot}
                           style={{ backgroundImage: CONTEXT_RESERVED_HATCH }}
                         />
                         <span className={styles.contextUsagePanelLegendLabel}>
-                          系统预留（不可用）
+                          {inputUnavailableLabel}
                         </span>
                         <span className={styles.contextUsagePanelLegendValue}>
-                          {reservedPercent.toFixed(1)}%
+                          {inputUnavailablePercent.toFixed(1)}%
                         </span>
                       </div>
                     </>
@@ -316,6 +363,36 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                   剩余与缓存命中在同面板下方运行状态块里（且剩余是服务端口径：
                   已扣掉输出预算 reserve，与 tLimit-tUsed 并不相等 —— 这里不能
                   自己算一个与之打架的数字）。 */}
+              {/* 第二个分母：**有效输入压力** = usedTokens / effectiveWindowTokens。
+                  它与上面的总窗口占用率分母不同（诊断 §4.1 的 46.4% vs 76.4%），
+                  所以必须单独成行并写明分母；分母未知时整行不渲染，不拿总窗口顶替。 */}
+              {effectivePct !== undefined && (
+                <div
+                  className={styles.contextUsagePanelRow}
+                  data-testid="context-usage-effective-pressure"
+                >
+                  <span className={styles.contextUsagePanelLabel}>有效输入压力</span>
+                  <span className={styles.contextUsagePanelValue}>
+                    {authoritative ? '' : '≈'}
+                    {effectivePct.toFixed(1)}%（分母{' '}
+                    {formatTokens(tEffective as number)}）
+                  </span>
+                </div>
+              )}
+              {/* 「不可用于输入」的来源：只有后端给出容量来源时才敢按来源命名，
+                  现在只能照实写「来源未知」（诊断 §4.4）。 */}
+              {inputUnavailablePercent > 0 && (
+                <div className={styles.contextUsagePanelRow}>
+                  <span className={styles.contextUsagePanelLabel}>
+                    {inputUnavailableLabel}
+                  </span>
+                  <span className={styles.contextUsagePanelValue}>
+                    {formatTokens(inputUnavailableTokens)}（
+                    {formatTokens(tLimit)} −{' '}
+                    {formatTokens(tEffective as number)}）
+                  </span>
+                </div>
+              )}
               {/* 数据来源：同一面板的百分比在不同回退源之间口径并不一致（DB 回退按
                   TotalTokens 含 completion，本地估算走字典），不标来源则「86% 但
                   剩余 0」这类组合无法判断。 */}
@@ -402,16 +479,20 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       color,
       compactionStatus,
       configured,
+      effectivePct,
       error,
       handleOpenSubAgents,
+      inputUnavailableLabel,
+      inputUnavailablePercent,
+      inputUnavailableTokens,
       notStarted,
       onOpenSubAgents,
       pct,
-      reservedPercent,
       runtimeDetails,
       segments,
       styles,
       subAgentsRunning,
+      tEffective,
       tLimit,
       tUsed,
       usageConfidence,
