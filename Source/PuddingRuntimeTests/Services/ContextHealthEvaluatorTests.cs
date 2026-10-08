@@ -202,4 +202,88 @@ public sealed class ContextHealthEvaluatorTests
         Assert.AreEqual(0.85, custom.GateThresholds.Trigger, 1e-9);
         Assert.AreEqual(0.60, custom.GateThresholds.Warning, 1e-9);
     }
+
+    /// <summary>
+    /// 方案 §2.5 / 诊断 §4.4：容量 DTO 必须分别输出模型窗口、Provider 输入上限、实际请求输出预算、
+    /// 安全余量与有效输入上限**及各自来源**。UI 不得再用 `windowLimit − effectiveLimit` 猜「预留输出」。
+    /// </summary>
+    [TestMethod]
+    public void Evaluate_ReportsCapacityComponents_ForRealOutputBudgetPlusSafetyMargin()
+    {
+        var health = new ContextHealthEvaluator().Evaluate(
+            "session-1",
+            usedTokens: 50_000,
+            contextWindowTokens: 200_000,
+            maxOutputTokens: 50_000,
+            safetyBufferTokens: 1_024,
+            requestedOutputBudgetTokens: 50_000);
+
+        Assert.AreEqual(200_000, health.ContextWindowTokens);
+        Assert.AreEqual(200_000 - 50_000 - 1_024, health.EffectiveWindowTokens);
+        Assert.IsNull(health.ProviderInputLimitTokens, "未配置 Provider 输入上限时必须为 null，不伪造");
+        Assert.AreEqual(50_000, health.RequestedOutputBudgetTokens);
+        Assert.AreEqual(1_024, health.SafetyBufferTokens);
+        Assert.AreEqual(ContextEffectiveWindowSources.OutputReserveAndSafetyMargin, health.EffectiveWindowSource);
+    }
+
+    /// <summary>Provider 输入上限参与取小时，来源必须指向它，且上报该上限。</summary>
+    [TestMethod]
+    public void Evaluate_ProviderInputLimitWins_AsEffectiveWindowSource()
+    {
+        var health = new ContextHealthEvaluator().Evaluate(
+            "session-1",
+            usedTokens: 10_000,
+            contextWindowTokens: 1_000_000,
+            maxOutputTokens: 384_000,
+            safetyBufferTokens: 1_024,
+            maxInputTokens: 200_000,
+            requestedOutputBudgetTokens: 384_000);
+
+        // 模型窗口推导值 = 1,000,000 − 384,000 − 1,024 = 614,976 > 200,000 ⇒ Provider 上限生效。
+        Assert.AreEqual(200_000, health.EffectiveWindowTokens);
+        Assert.AreEqual(200_000, health.ProviderInputLimitTokens);
+        Assert.AreEqual(ContextEffectiveWindowSources.ProviderInputLimit, health.EffectiveWindowSource);
+        Assert.AreEqual(384_000, health.RequestedOutputBudgetTokens);
+    }
+
+    /// <summary>
+    /// 容量没给出输出预算时，门禁用的回退预留**不得**被报告成用户预算：
+    /// 预算字段为 null，来源明确记为 fallback（诊断 §4.4 的 393.2K 归属问题）。
+    /// </summary>
+    [TestMethod]
+    public void Evaluate_FallbackOutputReserve_IsNotReportedAsConfiguredBudget()
+    {
+        var health = new ContextHealthEvaluator().Evaluate(
+            "session-1",
+            usedTokens: 10_000,
+            contextWindowTokens: 200_000,
+            maxOutputTokens: 2_048,
+            safetyBufferTokens: 1_024,
+            requestedOutputBudgetTokens: null,
+            outputBudgetIsFallback: true);
+
+        Assert.IsNull(health.RequestedOutputBudgetTokens, "回退值不是容量给出的预算");
+        Assert.AreEqual(1_024, health.SafetyBufferTokens);
+        Assert.AreEqual(200_000 - 2_048 - 1_024, health.EffectiveWindowTokens);
+        Assert.AreEqual(ContextEffectiveWindowSources.FallbackOutputReserve, health.EffectiveWindowSource);
+    }
+
+    /// <summary>没有任何预留时来源是模型窗口本身；只有安全余量时来源是安全余量。</summary>
+    [TestMethod]
+    public void Evaluate_NoReservationAndSafetyMarginOnly_SourcesAreExplicit()
+    {
+        var evaluator = new ContextHealthEvaluator();
+
+        var noReservation = evaluator.Evaluate("session-1", 10_000, 200_000, maxOutputTokens: 0);
+        Assert.AreEqual(200_000, noReservation.EffectiveWindowTokens);
+        Assert.AreEqual(ContextEffectiveWindowSources.ModelWindow, noReservation.EffectiveWindowSource);
+        Assert.IsNull(noReservation.RequestedOutputBudgetTokens);
+        Assert.IsNull(noReservation.ProviderInputLimitTokens);
+        Assert.AreEqual(0, noReservation.SafetyBufferTokens);
+
+        var safetyOnly = evaluator.Evaluate(
+            "session-1", 10_000, 200_000, maxOutputTokens: 0, safetyBufferTokens: 1_024);
+        Assert.AreEqual(200_000 - 1_024, safetyOnly.EffectiveWindowTokens);
+        Assert.AreEqual(ContextEffectiveWindowSources.SafetyMargin, safetyOnly.EffectiveWindowSource);
+    }
 }

@@ -109,6 +109,7 @@
 | `Runtime/PrefixCacheContracts.cs` | `prefix-v2` 请求前缀快照；稳定 system/tool/envelope version 加首条非 system `HistoryAnchorHash`，区分正常尾部 append 与 rehydrate/checkpoint 造成的历史 epoch 变化 |
 | `Runtime/LlmInvocationContracts.cs` | 统一 LLM invocation 合同；`Purpose` 以非模型可见方式区分 agent/approval/compaction 计费与诊断 |
 | `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同（`<compact_summary>` 持久摘要 + `<compacted-summary>` warm-prefix checkpoint）；`ContainsMarker` 供计量分层与 UI 摘要桶同源识别。请求消息无 `ContentType`，只认其中一个标记会把另一条路径的摘要误计入对话桶（诊断 2026-10-07 §4.3） |
+| `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约；快照除用量分层外还输出容量**分量与来源**（`ProviderInputLimitTokens`/`RequestedOutputBudgetTokens`/`SafetyBufferTokens`/`EffectiveWindowSource` + `ContextEffectiveWindowSources` 常量），使 UI 能解释「有效输入上限为什么比模型窗口小」而不必用窗口差值反推「预留输出」 |
 
 ## 子代理编排（Orchestration/）
 

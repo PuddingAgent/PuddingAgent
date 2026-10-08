@@ -136,6 +136,7 @@ export function deriveContextServiceStatus(
  */
 export {
   describeInputUnavailableReason,
+  toInputUnavailableReason,
   type InputUnavailableReason,
 } from './inputUnavailable';
 

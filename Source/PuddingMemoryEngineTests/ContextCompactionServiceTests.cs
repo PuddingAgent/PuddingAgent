@@ -63,8 +63,12 @@ public sealed class ContextCompactionServiceTests
             maxOutputTokens: 20_000);
 
         Assert.AreEqual(90_000, health.UsedTokens);
-        Assert.AreEqual(110_000, health.EffectiveWindowTokens);
-        Assert.AreEqual(20_000, health.RemainingTokens);
+        // 方案 §2.5：健康口径与出站硬门禁共享安全余量（此前健康口径不含该缓冲，
+        // 同一次请求会出现「有效输入约 606,784 / 日志硬上限 605,760」两个数，诊断 §4.4）。
+        var expectedEffective =
+            130_000 - 20_000 - LlmRequestBudgetGuard.DefaultSafetyBufferTokens;
+        Assert.AreEqual(expectedEffective, health.EffectiveWindowTokens);
+        Assert.AreEqual(expectedEffective - 90_000, health.RemainingTokens);
         Assert.AreEqual(ContextHealthState.Critical, health.State);
         Assert.IsTrue(health.ShouldAutoCompact);
     }
@@ -101,7 +105,18 @@ public sealed class ContextCompactionServiceTests
             contextWindowTokens: 1_000_000,
             maxOutputTokens: 384_000);
 
-        Assert.AreEqual(616_000, health.EffectiveWindowTokens);
+        // 方案 §2.5：有效输入上限 = 模型窗口 − 实际输出预算 − 安全余量，且与出站硬门禁同源。
+        Assert.AreEqual(
+            1_000_000 - 384_000 - LlmRequestBudgetGuard.DefaultSafetyBufferTokens,
+            health.EffectiveWindowTokens);
+        Assert.AreEqual(
+            LlmRequestBudgetGuard.DefaultSafetyBufferTokens,
+            health.SafetyBufferTokens);
+        // 容量给出了真实输出预算 ⇒ 来源可归因到「预留输出 + 安全余量」，不是回退值。
+        Assert.AreEqual(384_000, health.RequestedOutputBudgetTokens);
+        Assert.AreEqual(
+            ContextEffectiveWindowSources.OutputReserveAndSafetyMargin,
+            health.EffectiveWindowSource);
         Assert.AreEqual(ContextHealthState.Healthy, health.State);
         Assert.IsFalse(health.ShouldAutoCompact);
     }
@@ -177,7 +192,9 @@ public sealed class ContextCompactionServiceTests
             maxOutputTokens: 20_000);
 
         Assert.AreEqual(175_000, health.UsedTokens);
-        Assert.AreEqual(5_000, health.RemainingTokens);
+        Assert.AreEqual(
+            200_000 - 20_000 - LlmRequestBudgetGuard.DefaultSafetyBufferTokens - 175_000,
+            health.RemainingTokens);
         Assert.AreEqual("provider_usage", health.UsageSource);
         Assert.AreEqual("provider_reported", health.UsageConfidence);
         Assert.AreEqual(150_000, health.ProviderPromptTokens);

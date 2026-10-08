@@ -9,6 +9,7 @@ import {
   type BackgroundMemoryStatus,
   type ContextServiceStatus,
   type IndexServiceStatus,
+  type InputUnavailableReason,
   type ModelServiceStatus,
 } from './serviceStatus';
 import TurnTimingPanel from './TurnTimingPanel';
@@ -31,6 +32,11 @@ export interface ComposerRuntimeSummary {
     effectiveLimit?: number;
     percentage: number;
     remaining?: number;
+    /**
+     * 「窗口里不可用于输入的那部分」的**来源**（后端 `effectiveWindowSource`，见方案 §2.5）。
+     * 缺失 ⇒ 按未知处理，不猜成「预留输出」。
+     */
+    unavailableReason?: InputUnavailableReason;
   };
   /** 上下文详情打开时会按需刷新；没有 token 数据时用该状态解释当前空白。 */
   contextUsageStatus?: 'idle' | 'loading' | 'ready' | 'error';
@@ -164,14 +170,15 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
       ? summary.token.effectiveLimit
       : windowLimit;
   /**
-   * 窗口里**不可用于输入**的那部分。它不等于输出预留：`windowLimit − effectiveLimit`
-   * 还可能来自 Provider 输入上限或安全余量（诊断报告 §4.4）。当前 `ContextHealthSnapshot`
-   * 只给 `contextWindowTokens` / `effectiveWindowTokens`，**没有**输出预算、Provider
-   * 输入上限或安全余量字段，因此这里没有可用的来源可标注 ⇒ 按「来源未知」显示，
-   * 不冒充「预留输出」。
+   * 窗口里**不可用于输入**的那部分（`windowLimit − effectiveLimit`）。
+   * 它的**名称来自后端容量来源**（`effectiveWindowSource` → `unavailableReason`）：
+   * 该差值可能来自实际输出预算、Provider 输入上限、安全余量或三者的叠加，也可能只是
+   * 门禁在容量未给预算时用的内置回退预留 —— 因此只有来源明确时才按来源命名（方案 §2.5）。
    */
   const unavailableForInput = Math.max(windowLimit - effectiveLimit, 0);
-  const unavailableForInputLabel = describeInputUnavailableReason(undefined);
+  const unavailableForInputLabel = describeInputUnavailableReason(
+    summary.token?.unavailableReason,
+  );
   const cacheHitScopeLabel = formatCacheHitRateScope(
     summary.cacheHitRateScope,
     summary.cacheHitRateSampleCount,

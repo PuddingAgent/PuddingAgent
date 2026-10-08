@@ -13,6 +13,7 @@ import {
   describeInputUnavailableReason,
   mapContextHealthState,
   mapIndexHealthLevel,
+  toInputUnavailableReason,
 } from './serviceStatus';
 
 const contextSnapshot = (
@@ -97,14 +98,33 @@ describe('serviceStatus · contextService', () => {
 
 describe('serviceStatus · input-unavailable reason', () => {
   it('names the reason only when a source is actually known', () => {
-    expect(describeInputUnavailableReason('reserved_output')).toBe('预留输出');
+    // 取值与后端 ContextEffectiveWindowSources 逐字对齐，前端不另造词汇。
+    expect(describeInputUnavailableReason('output_reserve')).toBe('预留输出');
     expect(describeInputUnavailableReason('provider_input_limit')).toBe(
       'Provider 输入上限',
     );
     expect(describeInputUnavailableReason('safety_margin')).toBe('安全余量');
+    expect(describeInputUnavailableReason('output_reserve_and_safety_margin')).toBe(
+      '预留输出 + 安全余量',
+    );
+    // 门禁用的内置回退预留不得冒充用户配置的「预留输出」。
+    expect(describeInputUnavailableReason('fallback_output_reserve')).toBe(
+      '内置回退预留（未配置输出预算）',
+    );
     // 没来源时不许猜成「预留输出」。
     expect(describeInputUnavailableReason(undefined)).toBe('不可用于输入（来源未知）');
     expect(describeInputUnavailableReason(null)).toBe('不可用于输入（来源未知）');
+  });
+
+  it('maps only known backend sources and leaves unknown values unmapped', () => {
+    expect(toInputUnavailableReason('provider_input_limit')).toBe('provider_input_limit');
+    expect(toInputUnavailableReason('fallback_output_reserve')).toBe(
+      'fallback_output_reserve',
+    );
+    // model_window 表示「没有预留」，不构成一个不可用来源；未知字符串同样保持未知。
+    expect(toInputUnavailableReason('model_window')).toBeUndefined();
+    expect(toInputUnavailableReason('unknown')).toBeUndefined();
+    expect(toInputUnavailableReason(undefined)).toBeUndefined();
   });
 });
 

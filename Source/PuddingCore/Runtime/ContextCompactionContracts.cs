@@ -89,6 +89,40 @@ public enum ContextCompactionOutcome
     Failed,
 }
 
+/// <summary>
+/// 有效输入上限（<see cref="ContextHealthSnapshot.EffectiveWindowTokens"/>）**为什么**比模型窗口小。
+/// <para>
+/// UI 不能用 `windowLimit − effectiveLimit` 反推「预留输出」：这个差值可能来自实际输出预算、
+/// Provider 输入上限、安全余量，或者三者叠加（诊断 2026-10-07 §4.4）。字段未知时必须显式写未知。
+/// </para>
+/// </summary>
+public static class ContextEffectiveWindowSources
+{
+    /// <summary>仅由实际请求输出预算限制。</summary>
+    public const string OutputReserve = "output_reserve";
+
+    /// <summary>仅由 Provider 输入上限限制。</summary>
+    public const string ProviderInputLimit = "provider_input_limit";
+
+    /// <summary>仅由安全余量限制。</summary>
+    public const string SafetyMargin = "safety_margin";
+
+    /// <summary>由输出预算 + 安全余量共同限制（最常见）。</summary>
+    public const string OutputReserveAndSafetyMargin = "output_reserve_and_safety_margin";
+
+    /// <summary>
+    /// 门禁用**内置回退输出预算**计算（容量没给出实际输出预算），因此这份「预留」不可归因到真实配置。
+    /// 与 <see cref="OutputReserve"/> 区分：后者是配置里真实存在的预算。
+    /// </summary>
+    public const string FallbackOutputReserve = "fallback_output_reserve";
+
+    /// <summary>没有任何预留：有效输入上限就是模型窗口。</summary>
+    public const string ModelWindow = "model_window";
+
+    /// <summary>来源未知（调用方未提供分量）。</summary>
+    public const string Unknown = "unknown";
+}
+
 public sealed record ContextHealthSnapshot(
     string SessionId,
     int UsedTokens,
@@ -107,6 +141,25 @@ public sealed record ContextHealthSnapshot(
     /// 评估器会把本次实际生效的触发阈值写回 <see cref="ContextHealthThresholds.Trigger"/>。
     /// </summary>
     public ContextHealthThresholds GateThresholds { get; init; } = ContextHealthThresholds.Default;
+
+    /// <summary>Provider 的输入 token 上限；null = 未配置/未知（此时该约束不参与取小）。</summary>
+    public int? ProviderInputLimitTokens { get; init; }
+
+    /// <summary>
+    /// 容量侧给出的**实际请求输出预算**（真实配置值）。
+    /// null = 容量没有给出预算，门禁退回内置回退值计算（见 <see cref="EffectiveWindowSource"/> 的
+    /// <see cref="ContextEffectiveWindowSources.FallbackOutputReserve"/>）——不得把回退值冒充用户预算。
+    /// </summary>
+    public int? RequestedOutputBudgetTokens { get; init; }
+
+    /// <summary>参与门禁计算的安全余量（与出站硬预算同一冻结参数）。</summary>
+    public int? SafetyBufferTokens { get; init; }
+
+    /// <summary>
+    /// 有效输入上限的受限来源，取值见 <see cref="ContextEffectiveWindowSources"/>。
+    /// UI 据此为「窗口里不可用于输入的那段」命名，而不是一律猜成「预留输出」。
+    /// </summary>
+    public string EffectiveWindowSource { get; init; } = ContextEffectiveWindowSources.Unknown;
 
     public string UsageSource { get; init; } = "unknown";
     public string UsageConfidence { get; init; } = "estimated";

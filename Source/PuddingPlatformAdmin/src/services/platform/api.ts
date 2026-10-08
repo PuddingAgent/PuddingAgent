@@ -2655,6 +2655,19 @@ export interface ContextHealthSnapshot {
   /** provider_reported = 可直接采信；estimated = 估算值。 */
   usageConfidence?: string;
   usageRecordedAtUtc?: string | null;
+  /** Provider 输入 token 上限；undefined = 未配置/未知（该约束不参与取小）。 */
+  providerInputLimitTokens?: number | null;
+  /** 容量侧给出的**实际请求输出预算**；null = 容量没给（门禁用内置回退值，见 effectiveWindowSource 的 fallback_output_reserve）。 */
+  requestedOutputBudgetTokens?: number | null;
+  /** 参与门禁计算的安全余量（与出站硬预算同一冻结参数）。 */
+  safetyBufferTokens?: number | null;
+  /**
+   * 有效输入上限（effectiveWindowTokens）**为什么**比 contextWindowTokens 小。
+   * 取值：output_reserve / provider_input_limit / safety_margin /
+   * output_reserve_and_safety_margin / fallback_output_reserve / model_window / unknown。
+   * UI 据此为「不可用于输入」的那段命名，**不得**用窗口差值反推「预留输出」。
+   */
+  effectiveWindowSource?: string;
 }
 
 export interface CompactSessionRequest {

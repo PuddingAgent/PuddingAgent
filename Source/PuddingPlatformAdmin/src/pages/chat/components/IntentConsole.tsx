@@ -71,6 +71,7 @@ import {
   deriveContextServiceStatus,
   deriveIndexServiceStatus,
   deriveModelServiceStatus,
+  toInputUnavailableReason,
 } from './serviceStatus';
 import PermissionModeSelector from './PermissionModeSelector';
 import MessageQueueDropdown from './MessageQueueDropdown';
@@ -830,6 +831,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           effectiveLimit: contextHealth.effectiveWindowTokens,
           percentage: refreshedContextPct ?? 0,
           remaining: contextHealth.remainingTokens,
+          // 后端已输出容量来源（方案 §2.5）：按来源命名「不可用于输入」的那段，
+          // 而不是用 limit − effectiveLimit 猜成「预留输出」。未知取值 ⇒ undefined。
+          unavailableReason: toInputUnavailableReason(contextHealth.effectiveWindowSource),
         }
       : undefined;
 
@@ -1184,6 +1188,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               tUsed={contextHealth?.usedTokens ?? tUsed}
               tPct={effectiveContextUsagePercentage ?? 0}
               tEffective={contextHealth?.effectiveWindowTokens}
+              tUnavailableReason={toInputUnavailableReason(
+                contextHealth?.effectiveWindowSource,
+              )}
               tBreakdown={
                 contextHealth
                   ? {

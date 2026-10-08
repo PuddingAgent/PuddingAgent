@@ -23,6 +23,13 @@ public sealed class ContextCompactionService : IContextCompactionService
     private const int CanonicalTranscriptEstimateSampleSize = 500;
     private const int MaxHealthEstimateSampleSize = 2000;
     private const int DefaultMaxVerbatimMessageBytes = 16 * 1024;
+
+    /// <summary>
+    /// 容量未给出输出预算时，健康门禁使用的回退预留。这是**历史门禁行为**（保持不放宽硬保护），
+    /// 不是用户配置的实际输出预算；快照经 <c>RequestedOutputBudgetTokens = null</c> +
+    /// <c>EffectiveWindowSource = fallback_output_reserve</c> 如实区分（诊断 2026-10-07 §4.4）。
+    /// </summary>
+    private const int DefaultOutputReserveTokens = 2_048;
     private const string CompactionRequestedEventType = "context.compaction.requested";
     // A2 无收益抑制：候选窗口指纹版本号（算法演进时递增，旧指纹自然失效）。
     private const string CompactionCandidateFingerprintVersion = "v1";
@@ -101,9 +108,17 @@ public sealed class ContextCompactionService : IContextCompactionService
             sessionId,
             usage.UsedTokens,
             contextWindowTokens: contextWindowTokens.Value,
-            maxOutputTokens: maxOutputTokens ?? 2_048,
+            maxOutputTokens: maxOutputTokens ?? DefaultOutputReserveTokens,
+            // 方案 §2.5：健康口径与出站硬门禁共享同一冻结参数。此前健康口径不含安全余量，
+            // 而 LlmRequestBudgetGuard 含 DefaultSafetyBufferTokens(1,024)，于是同一次请求会
+            // 出现「有效输入约 606,784 / 日志硬上限 605,760」两个数（诊断 §4.4）。这里统一。
+            safetyBufferTokens: LlmRequestBudgetGuard.DefaultSafetyBufferTokens,
             maxInputTokens: maxInputTokens,
-            compactionThreshold: threshold);
+            compactionThreshold: threshold,
+            // 回退值只为保持既有门禁行为，它不是容量给出的预算 ⇒ 如实报告为 null，
+            // 让 EffectiveWindowSource 落到 fallback_output_reserve 而不是谎称「预留输出」。
+            requestedOutputBudgetTokens: maxOutputTokens,
+            outputBudgetIsFallback: maxOutputTokens is not > 0);
 
         return snapshot with
         {

@@ -83,7 +83,14 @@ describe('two explicit denominators', () => {
 });
 
 describe('unavailable-for-input region is labelled by source', () => {
-  const renderWithReason = (tUnavailableReason?: 'reserved_output' | 'provider_input_limit' | 'safety_margin') =>
+  const renderWithReason = (
+    tUnavailableReason?:
+      | 'output_reserve'
+      | 'provider_input_limit'
+      | 'safety_margin'
+      | 'output_reserve_and_safety_margin'
+      | 'fallback_output_reserve',
+  ) =>
     render(
       <ContextUsageRing
         tLimit={SAMPLE_LIMIT}
@@ -107,7 +114,7 @@ describe('unavailable-for-input region is labelled by source', () => {
   });
 
   it('names 预留输出 only when the capacity source really says so', () => {
-    renderWithReason('reserved_output');
+    renderWithReason('output_reserve');
     expect(screen.getAllByText('预留输出').length).toBeGreaterThan(0);
     expect(screen.queryByText('不可用于输入（来源未知）')).toBeNull();
   });
