@@ -26,6 +26,12 @@ public static class SseEventTypes
     /// 与 failed 区分：skipped 表示「本轮不需要或不值得做」，不是错误。
     /// </summary>
     public const string ContextCompactionSkipped = "context.compaction.skipped";
+    /// <summary>
+    /// **本次请求副本**被出站硬预算裁剪的独立事实（修复方案 §2）。
+    /// 它与持久摘要压缩是**不同操作**：完整会话记录仍然保留，只影响这一次出站副本；
+    /// 因此不得复用 context.compaction.* 的语义（前端也不得据此显示「已压缩」）。
+    /// </summary>
+    public const string ContextRequestTrimmed = "context.request.trimmed";
     public const string VoiceCaptureStatus = "voice_capture_status";
     public const string VoicePlaybackStatus = "voice_playback_status";
     public const string CameraCaptureStatus = "camera_capture_status";

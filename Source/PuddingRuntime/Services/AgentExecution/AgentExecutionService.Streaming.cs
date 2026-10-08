@@ -624,6 +624,8 @@ public sealed partial class AgentExecutionService
             var warmPrefixCompactionAttempted = false;
             // F3：硬保护与软维护分开封顶 —— 软维护每 dispatch 一次；硬保护逐轮重新评估。
             var hardProtectionAttempted = false;
+            // 请求副本裁剪的 canonical 事件每次 dispatch 只发一次（有界）。
+            var requestTrimEventEmitted = false;
             var toolSpecChangedForNextRound = false;
             var outputTruncationRecoveryAttempts = 0;
 
@@ -847,6 +849,9 @@ public sealed partial class AgentExecutionService
                     contextUsageSnapshot = budgetedRequest.Snapshot;
                     if (budgetedRequest.RemovedMessageCount > 0)
                     {
+                        // 请求副本裁剪是**独立事实**：完整会话记录仍在，只影响这一次出站副本。
+                        // 计时与事件都单独登记，不与「已压缩」混用。
+                        turnTimings.RegisterRequestTrim(budgetedRequest.RemovedMessageCount);
                         _logger.LogWarning(
                             "[AgentExec:ContextBudget] Trimmed outbound history session={Session} round={Round} removed={Removed} estimated={Estimated} rawEstimated={RawEstimated} inputLimit={InputLimit} calibration={Calibration:F3}",
                             request.SessionId,
@@ -856,6 +861,32 @@ public sealed partial class AgentExecutionService
                             budgetedRequest.Snapshot.RawEstimatedTokens,
                             budgetedRequest.EffectiveInputLimit,
                             budgetedRequest.Snapshot.PromptCalibrationRatio);
+
+                        // 事件**每次 dispatch 只发一次**（有界）：后续轮次的裁剪计入计时聚合，
+                        // 不重复发 canonical 事件（诊断 §4.1 记录过连续 15+ 轮 removed=91 的噪声）。
+                        if (!requestTrimEventEmitted)
+                        {
+                            requestTrimEventEmitted = true;
+                            await _contextManager.EmitRequestCopyTrimmedAsync(
+                                request.SessionId,
+                                request.WorkspaceId,
+                                new
+                                {
+                                    sessionId = request.SessionId,
+                                    round = round + 1,
+                                    invocationId = BuildLlmInvocationId(request, round, "agent"),
+                                    removedMessages = budgetedRequest.RemovedMessageCount,
+                                    estimatedAfterTokens = budgetedRequest.Snapshot.UsedTokens,
+                                    rawEstimatedTokens = budgetedRequest.Snapshot.RawEstimatedTokens,
+                                    effectiveInputLimit = budgetedRequest.EffectiveInputLimit,
+                                    calibration = budgetedRequest.Snapshot.PromptCalibrationRatio,
+                                    // 明确区分：这不是持久摘要压缩，完整会话记录仍然保留。
+                                    durableCompaction = false,
+                                    completeSessionHistoryRetained = true,
+                                },
+                                request.ExecutionIdentity?.TraceId,
+                                CancellationToken.None);
+                        }
 
                         // F3：`RemovedMessageCount > 0` 就是「未裁剪请求已越过有效上限」的证据
                         // （无需额外计量）。此时同步压缩比每轮裁剪请求副本更能保住会话记忆连续性；

@@ -144,4 +144,39 @@ public sealed class AgentTurnTimingCollectorTests
         Assert.AreEqual(1, payload["deferredSoftCompactions"]);
         Assert.AreEqual(1, payload["appliedCompactions"]);
     }
+
+    /// <summary>
+    /// 请求副本裁剪是**独立事实**（不是持久摘要压缩）：与压缩计数分开登记，
+    /// 未裁剪时保持 0/0 且首裁时刻为 null（不用 0 冒充已测量）。
+    /// </summary>
+    [TestMethod]
+    public void RequestTrimFacts_AreAggregatedSeparatelyFromCompaction()
+    {
+        var collector = new AgentTurnTimingCollector();
+
+        var untouched = collector.ToPayload();
+        Assert.AreEqual(0, untouched["requestTrimmedRounds"]);
+        Assert.AreEqual(0, untouched["requestTrimmedMessages"]);
+        Assert.IsNull(untouched["firstRequestTrimMs"], "从未裁剪时首裁时刻必须是 null");
+        Assert.IsNull(untouched["compactionMs"], "请求副本裁剪不得让压缩耗时变成 0");
+
+        // 一条非正数不构成裁剪事实。
+        collector.RegisterRequestTrim(0);
+        collector.RegisterRequestTrim(-3);
+        Assert.AreEqual(0, collector.RequestTrimmedRounds);
+        Assert.AreEqual(0, collector.RequestTrimmedMessages);
+
+        collector.RegisterRequestTrim(1);
+        collector.RegisterRequestTrim(76);
+        Assert.AreEqual(2, collector.RequestTrimmedRounds);
+        Assert.AreEqual(77, collector.RequestTrimmedMessages);
+        Assert.IsNotNull(collector.FirstRequestTrimMs, "首次裁剪后必须记录时刻");
+        Assert.IsNull(collector.CompactionMs, "请求副本裁剪不得写成压缩耗时");
+
+        var payload = collector.ToPayload();
+        Assert.AreEqual(2, payload["requestTrimmedRounds"]);
+        Assert.AreEqual(77, payload["requestTrimmedMessages"]);
+        Assert.AreEqual(0, payload["compactionAttempts"]);
+        Assert.AreEqual(0, payload["appliedCompactions"]);
+    }
 }

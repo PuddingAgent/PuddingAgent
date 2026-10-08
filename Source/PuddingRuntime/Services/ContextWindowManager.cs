@@ -1230,6 +1230,25 @@ public sealed class ContextWindowManager
             traceId,
             ct);
 
+    /// <summary>
+    /// 发布「**本次请求副本**被出站硬预算裁剪」这一独立事实（修复方案 §2）。
+    /// 它不是持久摘要压缩：完整会话记录仍在，只影响这一次出站副本；因此走同一个 canonical 管道，
+    /// 但事件类型与文案都不得与 <c>context.compaction.*</c> 混用。
+    /// </summary>
+    internal Task EmitRequestCopyTrimmedAsync(
+        string sessionId,
+        string? workspaceId,
+        object payload,
+        string? traceId,
+        CancellationToken ct)
+        => EmitCompactionLifecycleEventAsync(
+            sessionId,
+            workspaceId ?? string.Empty,
+            SseEventTypes.ContextRequestTrimmed,
+            payload,
+            traceId,
+            ct);
+
     private async Task EmitCompactionLifecycleEventAsync(
         string sessionId,
         string workspaceId,

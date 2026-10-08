@@ -2613,6 +2613,26 @@ export interface TurnTimings {
   modelCalls?: number | null;
   /** 本 Turn 的工具调用次数。 */
   toolCalls?: number | null;
+  /**
+   * 同步（硬保护）压缩累计耗时；**未观察到为 null**（不用 0 掩盖）。
+   * 压缩是串行阶段、能解释「受理→首增量」，但不是主模型耗时（不计入 `modelMs`）。
+   */
+  compactionMs?: number | null;
+  /** 本 Turn 内 warm-prefix 压缩尝试次数（含延期、失败与无收益）。 */
+  compactionAttempts?: number | null;
+  /** 被移出发送关键路径的软维护次数（延期，不是失败，也不是「已压缩」）。 */
+  deferredSoftCompactions?: number | null;
+  /** 真正替换会话历史（applied）的同步压缩次数。 */
+  appliedCompactions?: number | null;
+  /**
+   * **本次请求副本**被出站硬预算裁剪的消息条数 / 轮数（F4/F5 接缝）。
+   * 它与压缩不同：完整会话记录仍然保留，只影响这一次出站副本；
+   * 采到 0 表示确实没有裁剪（不许折叠成「未采集」）。
+   */
+  requestTrimmedMessages?: number | null;
+  requestTrimmedRounds?: number | null;
+  /** 首次裁剪发生的时刻（相对提交）；从未裁剪为 null。 */
+  firstRequestTrimMs?: number | null;
   /** Turn 进入终态的时刻（相对提交）。 */
   completedMs?: number | null;
 }

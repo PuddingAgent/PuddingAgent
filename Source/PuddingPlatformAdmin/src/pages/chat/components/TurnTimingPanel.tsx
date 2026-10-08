@@ -81,6 +81,22 @@ export function formatTtftSplit(timings?: TurnTimings): string | undefined {
   return parts.join(' · ');
 }
 
+/**
+ * 请求副本裁剪三态（F4/F5 接缝）。它与「压缩」是**不同操作**：
+ *   · 未采集 ⇒ 「未采集」（旧后端/未完成一轮）；
+ *   · 采到 0 ⇒ 「0 条」（真的没有裁剪，是好事实，不许折叠成未采集）；
+ *   · 采到 >0 ⇒ `N 条 · M 轮`，并明说**完整会话记录仍保留**，避免被读成「历史被删/已压缩」。
+ */
+export function formatRequestTrim(
+  removedMessages: number | null | undefined,
+  removedRounds: number | null | undefined,
+): string {
+  if (!isCollected(removedMessages)) return NOT_COLLECTED_TEXT;
+  if (removedMessages <= 0) return '0 条';
+  const rounds = isCollected(removedRounds) && removedRounds > 0 ? `${removedRounds} 轮 · ` : '';
+  return `${removedMessages} 条（${rounds}完整会话记录仍保留）`;
+}
+
 const TurnTimingPanel: React.FC<TurnTimingPanelProps> = ({ timings, usage }) => {
   const { styles } = useChatStyles();
 
@@ -114,6 +130,13 @@ const TurnTimingPanel: React.FC<TurnTimingPanelProps> = ({ timings, usage }) => 
       {ttftSplit !== undefined && row('ttft-split', '首包拆分', ttftSplit)}
       {row('model-calls', '模型调用', formatTimingCount(timings?.modelCalls))}
       {row('tool-calls', '工具调用', formatTimingCount(timings?.toolCalls))}
+      {/* 压缩耗时与请求副本裁剪分列：一个是会话历史被摘要替换，一个只是本次出站少带旧上下文。 */}
+      {row('compaction', '同步压缩耗时', formatTimingMs(timings?.compactionMs))}
+      {row(
+        'request-trim',
+        '本次请求裁剪旧上下文',
+        formatRequestTrim(timings?.requestTrimmedMessages, timings?.requestTrimmedRounds),
+      )}
       {row('input-tokens', '输入 Token', formatTimingTokens(usage?.promptTokens))}
       {row('output-tokens', '输出 Token', formatTimingTokens(usage?.completionTokens))}
     </>

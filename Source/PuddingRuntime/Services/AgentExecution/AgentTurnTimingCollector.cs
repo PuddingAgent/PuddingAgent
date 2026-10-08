@@ -85,6 +85,32 @@ internal sealed class AgentTurnTimingCollector
     public int AppliedCompactions { get; private set; }
 
     /// <summary>
+    /// 本轮 dispatch 内因**出站硬预算**裁剪请求副本的轮数（0 = 从未裁剪）。
+    /// 这是**请求副本**裁剪，不是持久摘要压缩：完整会话记录仍然保留。
+    /// </summary>
+    public int RequestTrimmedRounds { get; private set; }
+
+    /// <summary>被裁剪的消息总数（各轮累加）；同样只是本次出站副本的裁剪量。</summary>
+    public int RequestTrimmedMessages { get; private set; }
+
+    /// <summary>首次裁剪发生的时刻（相对提交）；从未裁剪时为 null（不用 0 掩盖）。</summary>
+    public long? FirstRequestTrimMs { get; private set; }
+
+    /// <summary>
+    /// 记录一次出站请求副本裁剪（硬预算保护）。与 <see cref="RegisterCompactionAttempt"/> 分开：
+    /// 前者是「这一次请求少带了旧上下文」，后者是「会话历史真的被摘要替换了」。
+    /// </summary>
+    public void RegisterRequestTrim(int removedMessages)
+    {
+        if (removedMessages <= 0)
+            return;
+
+        RequestTrimmedRounds++;
+        RequestTrimmedMessages += removedMessages;
+        FirstRequestTrimMs ??= ElapsedMs;
+    }
+
+    /// <summary>
     /// 记录一次 warm-prefix 压缩尝试的归因事实。
     /// </summary>
     /// <param name="durationMs">
@@ -219,6 +245,9 @@ internal sealed class AgentTurnTimingCollector
         ["compactionAttempts"] = CompactionAttempts,
         ["deferredSoftCompactions"] = DeferredSoftCompactions,
         ["appliedCompactions"] = AppliedCompactions,
+        ["requestTrimmedRounds"] = RequestTrimmedRounds,
+        ["requestTrimmedMessages"] = RequestTrimmedMessages,
+        ["firstRequestTrimMs"] = FirstRequestTrimMs,
         ["toolMs"] = ToolMs,
         ["modelCalls"] = ModelCalls,
         ["toolCalls"] = ToolCalls,

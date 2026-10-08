@@ -119,6 +119,12 @@ public static class ConversationEventTypes
     /// </summary>
     public const string ContextCompactionSkipped = "context.compaction.skipped";
 
+    /// <summary>
+    /// 本次请求副本被出站硬预算裁剪（**不是**持久摘要压缩）：完整会话记录仍在，
+    /// 只影响这一次出站副本。目录投影保持原状态，也不得激活任何「压缩中」动画。
+    /// </summary>
+    public const string ContextRequestTrimmed = "context.request.trimmed";
+
     /// <summary>P0-1: 模型实际所见的 context 各层正文（脱敏后）快照。</summary>
     public const string ContextAssembled = "context.assembled";
 

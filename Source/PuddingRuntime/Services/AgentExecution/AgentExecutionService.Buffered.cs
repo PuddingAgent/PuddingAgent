@@ -495,6 +495,8 @@ public sealed partial class AgentExecutionService
         var warmPrefixCompactionAttempted = false;
         // F3：硬保护与软维护分开封顶 —— 软维护每 dispatch 一次；硬保护逐轮重新评估。
         var hardProtectionAttempted = false;
+        // 请求副本裁剪的 canonical 事件每次 dispatch 只发一次（有界）。
+        var requestTrimEventEmitted = false;
         var toolSpecChangedForNextRound = false;
 
         try
@@ -741,6 +743,30 @@ public sealed partial class AgentExecutionService
                             budgetedRequest.Snapshot.RawEstimatedTokens,
                             budgetedRequest.EffectiveInputLimit,
                             budgetedRequest.Snapshot.PromptCalibrationRatio);
+
+                        // 请求副本裁剪是独立事实（不是持久摘要压缩）；事件每次 dispatch 只发一次（有界）。
+                        if (!requestTrimEventEmitted)
+                        {
+                            requestTrimEventEmitted = true;
+                            await _contextManager.EmitRequestCopyTrimmedAsync(
+                                request.SessionId,
+                                request.WorkspaceId,
+                                new
+                                {
+                                    sessionId = request.SessionId,
+                                    round = round + 1,
+                                    invocationId = BuildLlmInvocationId(request, round, "agent"),
+                                    removedMessages = budgetedRequest.RemovedMessageCount,
+                                    estimatedAfterTokens = budgetedRequest.Snapshot.UsedTokens,
+                                    rawEstimatedTokens = budgetedRequest.Snapshot.RawEstimatedTokens,
+                                    effectiveInputLimit = budgetedRequest.EffectiveInputLimit,
+                                    calibration = budgetedRequest.Snapshot.PromptCalibrationRatio,
+                                    durableCompaction = false,
+                                    completeSessionHistoryRetained = true,
+                                },
+                                request.ExecutionIdentity?.TraceId,
+                                CancellationToken.None);
+                        }
 
                         // F3：`RemovedMessageCount > 0` 即「未裁剪请求已越过有效上限」的证据；
                         // 软维护的每 dispatch 一次封顶不得屏蔽硬保护。
