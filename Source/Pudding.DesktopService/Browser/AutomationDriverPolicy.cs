@@ -72,6 +72,13 @@ public sealed class AutomationDriverPolicy : IBrowserDriverPolicy
     public IReadOnlyList<DriverCall>? ReleaseModifiers(int modifiers) =>
         Map(NativeInputSequence.ReleaseModifiers(modifiers));
 
+    public string? BuildFileUploadDocumentParameters() => FileUploadPlan.BuildDocumentParameters();
+
+    public string? BuildFileUploadQueryParameters(int rootNodeId, string elementRef) =>
+        FileUploadPlan.BuildQueryParameters(rootNodeId, elementRef);
+
+    public string? BuildFileUploadSetFilesParameters(int nodeId, IReadOnlyList<string> files) =>
+        FileUploadPlan.BuildSetFilesParameters(nodeId, files);
     public string? BuildScreenshotParameters(
         int? quality, bool fullPage, double contentX, double contentY, double contentWidth, double contentHeight) =>
         ScreenshotPlan.Build(

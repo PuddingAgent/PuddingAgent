@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 
@@ -33,6 +33,10 @@ public sealed record BrowserInteractArgs
     /// <summary>拖拽终点（仅 action=drag 使用）。</summary>
     [ToolParam("Target locator for action=drag (required together with locator).")]
     public BrowserLocatorInput? ToLocator { get; init; }
+
+    /// <summary>上传的文件（绝对路径；仅 action=upload 使用）。</summary>
+    [ToolParam("Absolute file paths to upload (action=upload only).")]
+    public List<string>? Files { get; init; }
 
     [ToolParam("Text for fill/type, or key for press. Values are never returned in activity logs.")]
 
@@ -180,7 +184,25 @@ public sealed class BrowserInteractTool(
                 return BrowserToolResponse.Failure(
                     "browser_invalid_arguments", "action=drag requires both locator (source) and to_locator (target)");
 
-            if (action == "press" && string.IsNullOrWhiteSpace(args.Text))
+            if (action == "upload")
+        {
+            var files = args.Files?.Where(file => !string.IsNullOrWhiteSpace(file)).Select(file => file.Trim()).ToArray();
+            if (files is not { Length: > 0 })
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments", "action=upload requires files (absolute paths)");
+            }
+
+            var relative = files.FirstOrDefault(file => !Path.IsPathFullyQualified(file));
+            if (relative is not null)
+            {
+                // 相对路径的含义取决于浏览器进程的工作目录——那是别人的目录，猜一个基准是不诚实的。
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments", $"upload requires absolute file paths; '{relative}' is relative");
+            }
+        }
+
+        if (action == "press" && string.IsNullOrWhiteSpace(args.Text))
 
                 return BrowserToolResponse.Failure("browser_invalid_arguments", "text key is required for press");
 
@@ -302,7 +324,10 @@ public sealed class BrowserInteractTool(
                     scrollTarget,
 
                     // 拖拽终点（仅 action=drag；契约层强制两个端点都给）。
-                    toLocator),
+                    toLocator,
+
+                    // 上传文件（仅 action=upload；契约层强制至少一个）。
+                    args.Files),
 
                 call,
 
@@ -443,6 +468,8 @@ public sealed class BrowserInteractTool(
         "scroll" => DesktopInteractionAction.Scroll,
 
         "drag" => DesktopInteractionAction.Drag,
+
+        "upload" => DesktopInteractionAction.Upload,
 
         "select" => DesktopInteractionAction.Select,
 

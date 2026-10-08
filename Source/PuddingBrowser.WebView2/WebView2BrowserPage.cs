@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
 
@@ -574,8 +574,74 @@ public sealed class WebView2BrowserPage : IBrowserPage
         => ExecuteInteractionAsync("select", l, v, deltaX: null, deltaY: null, ct);
     public Task CheckAsync(Locator l, bool c, CancellationToken ct)
         => ExecuteInteractionAsync("check", l, c, deltaX: null, deltaY: null, ct);
-    public Task SetInputFilesAsync(Locator l, IReadOnlyList<string> p, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+    /// <summary>
+    /// **上传文件**（§7）：三步 CDP —— 拿根节点 → 按元素上的 data-pudding-ref 查节点 → 把文件交给节点。
+    ///
+    /// 为什么不是"往页面里塞 files"：页面脚本**无权**设置 <c>input.files</c>（浏览器安全模型），
+    /// 因此这条路只能走浏览器自身的 CDP；做不到时明确 unsupported，绝不假装成功。
+    /// </summary>
+    public async Task SetInputFilesAsync(Locator l, IReadOnlyList<string> p, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(l);
+        ArgumentNullException.ThrowIfNull(p);
+
+        if (p.Count == 0)
+        {
+            throw new BrowserOperationException("browser_invalid_arguments", "upload requires at least one file path");
+        }
+
+        // 先确认元素存在（否则后面的 querySelector 只会返回 0，报错含义会模糊）。
+        _ = await QueryAsync(l, ct).ConfigureAwait(false)
+            ?? throw new BrowserOperationException("browser_element_not_found", "no element matches the upload target");
+
+        var documentParameters = Policy.BuildFileUploadDocumentParameters()
+            ?? throw new BrowserOperationException(
+                "browser_input_mode_not_supported", "file upload is not available on this surface");
+
+        using var documentJson = JsonDocument.Parse(documentParameters);
+        using (var document = await SendCdpAsync(
+            "DOM.getDocument", documentJson.RootElement.Clone(), ct).ConfigureAwait(false))
+        {
+            if (!document.RootElement.TryGetProperty("root", out var root)
+                || !root.TryGetProperty("nodeId", out var rootIdElement)
+                || !rootIdElement.TryGetInt32(out var rootId))
+            {
+                throw new BrowserOperationException(
+                    "browser_operation_failed", "the browser did not report a document root node");
+            }
+
+            var queryParameters = Policy.BuildFileUploadQueryParameters(rootId, l.Value)
+                ?? throw new BrowserOperationException(
+                    "browser_input_mode_not_supported", "file upload is not available on this surface");
+
+            using var queryJson = JsonDocument.Parse(queryParameters);
+            int nodeId;
+            using (var query = await SendCdpAsync(
+                "DOM.querySelector", queryJson.RootElement.Clone(), ct).ConfigureAwait(false))
+            {
+                if (!query.RootElement.TryGetProperty("nodeId", out var nodeIdElement)
+                    || !nodeIdElement.TryGetInt32(out nodeId)
+                    || nodeId == 0)
+                {
+                    // 查不到节点 ⇒ 引用已经不对了（节点被换掉/页面变了）：按引用过期处理。
+                    throw new BrowserOperationException(
+                        "stale_element_reference",
+                        "the upload target node could not be resolved from its ref; re-observe the page");
+                }
+            }
+
+            var setParameters = Policy.BuildFileUploadSetFilesParameters(nodeId, p)
+                ?? throw new BrowserOperationException(
+                    "browser_input_mode_not_supported", "file upload is not available on this surface");
+
+            using var setJson = JsonDocument.Parse(setParameters);
+            using var _ = await SendCdpAsync(
+                "DOM.setFileInputFiles", setJson.RootElement.Clone(), ct).ConfigureAwait(false);
+        }
+
+        Interlocked.Increment(ref _pageVersion);
+    }
     public async Task<WaitResult> WaitForAsync(WaitCondition c, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

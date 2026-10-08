@@ -1,4 +1,4 @@
-﻿namespace PuddingBrowser.Abstractions;
+namespace PuddingBrowser.Abstractions;
 
 /// <summary>
 /// **驱动策略注入点**（设计方案 §7/§8）。
@@ -67,6 +67,19 @@ public interface IBrowserDriverPolicy
     /// </summary>
     string? BuildScreenshotParameters(
         int? quality, bool fullPage, double contentX, double contentY, double contentWidth, double contentHeight);
+
+    /// <summary>
+    /// **文件上传的三步 CDP 参数**（见 Automation 的 FileUploadPlan）：
+    /// 拿根节点 → 按元素引用查节点 → 把文件交给节点。
+    /// 任一返回 <c>null</c> 表示该面不支持上传 ⇒ 驱动明确 unsupported（不假装成功）。
+    /// </summary>
+    string? BuildFileUploadDocumentParameters();
+
+    /// <summary>上传第 2 步：按元素引用查询节点。</summary>
+    string? BuildFileUploadQueryParameters(int rootNodeId, string elementRef);
+
+    /// <summary>上传第 3 步：把文件交给节点。</summary>
+    string? BuildFileUploadSetFilesParameters(int nodeId, IReadOnlyList<string> files);
 }
 
 /// <summary>一次驱动调用：CDP 方法名 + 已序列化的参数。</summary>
@@ -137,6 +150,12 @@ public sealed class NullBrowserDriverPolicy : IBrowserDriverPolicy
     public IReadOnlyList<DriverCall>? PlanPress(string? key) => null;
 
     public IReadOnlyList<DriverCall>? ReleaseModifiers(int modifiers) => null;
+
+    public string? BuildFileUploadDocumentParameters() => null;
+
+    public string? BuildFileUploadQueryParameters(int rootNodeId, string elementRef) => null;
+
+    public string? BuildFileUploadSetFilesParameters(int nodeId, IReadOnlyList<string> files) => null;
 
     public string? BuildScreenshotParameters(
         int? quality, bool fullPage, double contentX, double contentY, double contentWidth, double contentHeight)

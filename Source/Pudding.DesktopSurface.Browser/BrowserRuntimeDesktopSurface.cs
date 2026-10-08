@@ -791,6 +791,10 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 // 拖拽（§7）：两端都必须由调用方给出（契约层已强制），驱动负责原生分步拖拽。
                 await page.DragAsync(locator!, ToRuntimeLocator(request.ToLocator!), new DragOptions { InputMode = inputMode }, cancellationToken).ConfigureAwait(false);
                 break;
+            case DesktopInteractionAction.Upload:
+                // 上传（§7）：把本地文件交给文件输入元素；只有原生面能做（页面脚本无权设置 files）。
+                await page.SetInputFilesAsync(locator!, request.FilePaths!, cancellationToken).ConfigureAwait(false);
+                break;
             case DesktopInteractionAction.Scroll:
                 // 滚动目标模型（§7）：显式目标优先，否则按 locator/位移推导；
                 // 结果事实（容器/前后位置/消耗位移/边界/内容变化）如实带回。

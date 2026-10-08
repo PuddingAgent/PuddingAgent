@@ -1,4 +1,4 @@
-﻿namespace Pudding.Contracts.Desktop;
+namespace Pudding.Contracts.Desktop;
 
 /// <summary>
 /// 交互动作（与既有 Bridge 的 <c>page.interact</c> 动作等价；线名为 kebab-case 真源）。
@@ -18,6 +18,9 @@ public enum DesktopInteractionAction
 
     /// <summary>拖拽：从 <c>Locator</c> 拖到 <c>ToLocator</c>（两者都必须给）。</summary>
     Drag,
+
+    /// <summary>上传文件：把 <c>FilePaths</c> 交给 <c>Locator</c> 指向的文件输入元素。</summary>
+    Upload,
     Focus,
 }
 
@@ -166,7 +169,9 @@ public static class DesktopInteractionActionWire
         DesktopInteractionAction.Click or DesktopInteractionAction.Fill or DesktopInteractionAction.Type
         or DesktopInteractionAction.Press or DesktopInteractionAction.Hover
         or DesktopInteractionAction.Check or DesktopInteractionAction.Uncheck
-        or DesktopInteractionAction.Scroll or DesktopInteractionAction.Drag;
+        or DesktopInteractionAction.Scroll or DesktopInteractionAction.Drag
+        // 上传不是「合成事件」，而是让浏览器把本地文件交给元素（真实浏览器路径，CDP）⇒ 同样算原生面。
+        or DesktopInteractionAction.Upload;
     public static string NameOf(DesktopInteractionAction action) => action switch
     {
         DesktopInteractionAction.Click => "click",
@@ -179,6 +184,7 @@ public static class DesktopInteractionActionWire
         DesktopInteractionAction.Hover => "hover",
         DesktopInteractionAction.Scroll => "scroll",
         DesktopInteractionAction.Drag => "drag",
+        DesktopInteractionAction.Upload => "upload",
         DesktopInteractionAction.Focus => "focus",
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Interaction action is not registered."),
     };
@@ -222,7 +228,8 @@ public sealed record BrowserInteractRequest
         double? deltaY = null,
         DesktopInputMode inputMode = DesktopInputMode.Dom,
         DesktopScrollTarget? scrollTarget = null,
-        DesktopLocator? toLocator = null)
+        DesktopLocator? toLocator = null,
+        IReadOnlyList<string>? filePaths = null)
     {
         if (!Enum.IsDefined(action))
         {
@@ -259,6 +266,7 @@ public sealed record BrowserInteractRequest
         InputMode = inputMode;
         ScrollTarget = scrollTarget;
         ToLocator = toLocator;
+        FilePaths = filePaths;
 
         ValidateShape();
     }
@@ -297,6 +305,9 @@ public sealed record BrowserInteractRequest
 
     /// <summary>拖拽终点（仅 <c>Drag</c> 使用）。</summary>
     public DesktopLocator? ToLocator { get; }
+
+    /// <summary>上传的文件路径（仅 <c>Upload</c> 使用；必须是绝对路径）。</summary>
+    public IReadOnlyList<string>? FilePaths { get; }
 
     /// <summary>实际生效的滚动目标（显式优先，否则按上面的规则推导）。</summary>
     public DesktopScrollTarget EffectiveScrollTarget => ScrollTarget ?? (Locator is null
@@ -337,6 +348,11 @@ public sealed record BrowserInteractRequest
                 break;
 
             // 拖拽必须**两个端点都给**：只有一个端点无法表达"拖到哪儿"，猜一个目标是不诚实的。
+            // 上传必须有文件清单（空清单无法表达「上传什么」）。
+            case DesktopInteractionAction.Upload when FilePaths is not { Count: > 0 }:
+                throw new ArgumentException(
+                    "Action 'upload' requires at least one file path.", nameof(FilePaths));
+
             case DesktopInteractionAction.Drag when Locator is null || ToLocator is null:
                 throw new ArgumentException(
                     "Action 'drag' requires both a source locator and a target locator.", nameof(ToLocator));
