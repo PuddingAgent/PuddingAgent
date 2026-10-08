@@ -787,3 +787,30 @@ H | `-Skip C-99`（拼错） | `EXIT=1` · **`SKIP PATTERNS MATCHED NO REGISTERE
 G | 故意破坏检测器（fixture） | **`BROKEN_FIXTURE_EXIT=4`** · `DENOM_CTRL_EMPTY=False` · `RESULT: SELFTEST FAIL` |
 
 **回归**：默认 `EXIT=1` · `-SelfTest` `EXIT=0` · `-RepoWide` `EXIT=1` · `RG_BYTES=12653` · `RG_NONASCII=0`。
+
+---
+
+## 执行决策**自身**的控制：不再依赖仓库外的 fixture（2026-10-08）
+
+「PASS 无分母 ⇒ 仪器失败（exit 3）」这条**判定**，上一轮只靠**仓库外**的 `probe-baseline\gatefixture\` 证明过 —— 那是**一次性证据**，**不能被 CI 复用**，也**会随主脚本改动而过期**。
+⇒ 本轮把判定抽成具名函数 `Get-DenomMissingCount`，并给它**仓库内、纯内存、不写文件**的四项控制：
+
+| 控制 | 构造 | 期望 | 含义 |
+|---|---|---|---|
+`SILENT_PASS` | `ExitCode=0` · `Scope=@()` | **必须计为违规** | 静默 PASS 正是要抓的 |
+`WITH_DENOM` | `ExitCode=0` · `Scope=@('FILES=22')` | 不计违规 | 有分母就不冤 |
+`FAIL_NO_DENOM` | `ExitCode=1` · `Scope=@()` | **不计违规** | 它**已经是红的**，不必再算一次 |
+`SELFTEST_EXEMPT` | 同 `SILENT_PASS` + `-SelfTest` | 不计违规 | 自检不产生文件计数 |
+
+实测（`PS 5.1.26100.9444` · `RG_BYTES=14085` · `RG_NONASCII=0`）：
+
+```
+-SelfTest   EXIT=0
+  DENOM_CTRL_EMPTY=True DENOM_CTRL_SPACED=True DENOM_CTRL_PLAIN=True
+  DENOM_ENFORCE_CTRL_SILENT_PASS=True WITH_DENOM=True FAIL_NO_DENOM=True SELFTEST_EXEMPT=True
+默认        EXIT=1   DENOM_MISSING=0   SKIP_UNMATCHED=0
+-RepoWide   EXIT=1
+-破坏检测器  BROKEN_FIXTURE_EXIT=4 （fixture 由当前源码现场生成，不会陈旧）
+```
+
+> 📌 **「有控制」才算证明。** 一个判定的正确性如果只由**仓库外的一次性 fixture**支撑，那它在 CI 里等于**没有被证明过**。

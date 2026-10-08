@@ -36,7 +36,9 @@
     denominator line is promoted to an instrument failure (exit 3), because such a PASS is
     indistinguishable from "it scanned nothing". Self-test mode is exempt, since the gates'
     controls intentionally produce no file counts. The detector itself has controls which run
-    under -SelfTest, so it cannot rot silently.
+    under -SelfTest, so it cannot rot silently. The enforcement decision itself has
+    in-memory controls too (DENOM_ENFORCE_CTRL_*), so it does not depend on the external
+    fixture directory to stay honest.
 
 .PARAMETER SelfTest
     Run each gate's own -SelfTest instead of its real scan. All controls are in-memory
@@ -152,6 +154,13 @@ function Get-GateScope {
     return @($Output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_.StartsWith('FILES=') -or $_.StartsWith('PROJECT_COUNT') -or $_.StartsWith('EDGE_COUNT') })
 }
 
+function Get-DenomMissingCount {
+    param([object[]]$Ran, [bool]$IsSelfTest)
+    if ($IsSelfTest) { return 0 }
+    if ($null -eq $Ran) { return 0 }
+    return @($Ran | Where-Object { $_.ExitCode -eq 0 -and @($_.Scope).Count -eq 0 }).Count
+}
+
 Write-Output ('RUNNER = ' + $MyInvocation.MyCommand.Name)
 Write-Output ('MODE   = ' + $(if ($SelfTest) { 'SELFTEST (each gate runs its own controls)' } else { 'SCAN (each gate runs its real check)' }))
 Write-Output ('ENGINE = ' + $PSVersionTable.PSVersion.ToString())
@@ -227,6 +236,21 @@ if ($SelfTest) {
         Write-Output 'RESULT: SELFTEST FAIL (denominator detector did not classify its own controls)'
         exit $EXIT_SELFTEST
     }
+
+    # Controls for the ENFORCEMENT itself, not just the detector: they live in-memory so a
+    # regression is caught here rather than only by the external fixture directory.
+    $eSilent = New-Object PSObject -Property @{ ExitCode = 0; Scope = @() }
+    $eGood   = New-Object PSObject -Property @{ ExitCode = 0; Scope = @('FILES=22') }
+    $eFail   = New-Object PSObject -Property @{ ExitCode = 1; Scope = @() }
+    $nSilent = Get-DenomMissingCount -Ran @($eSilent) -IsSelfTest:$false
+    $nGood   = Get-DenomMissingCount -Ran @($eGood)   -IsSelfTest:$false
+    $nFail   = Get-DenomMissingCount -Ran @($eFail)   -IsSelfTest:$false
+    $nExempt = Get-DenomMissingCount -Ran @($eSilent) -IsSelfTest:$true
+    Write-Output ('DENOM_ENFORCE_CTRL_SILENT_PASS={0} WITH_DENOM={1} FAIL_NO_DENOM={2} SELFTEST_EXEMPT={3}' -f ($nSilent -eq 1), ($nGood -eq 0), ($nFail -eq 0), ($nExempt -eq 0))
+    if ($nSilent -ne 1 -or $nGood -ne 0 -or $nFail -ne 0 -or $nExempt -ne 0) {
+        Write-Output 'RESULT: SELFTEST FAIL (denominator enforcement control did not classify its own cases)'
+        exit $EXIT_SELFTEST
+    }
     Write-Output ''
 }
 
@@ -248,10 +272,7 @@ $codes = @($ran | ForEach-Object { $_.ExitCode })
 # A PASS carrying no denominator cannot be told apart from "it scanned nothing". That is
 # the exact false-PASS class this suite exists to eliminate, so it is not allowed to stay
 # invisible: in scan mode it is counted and promoted to an instrument failure.
-$denomMissing = 0
-if (-not $SelfTest) {
-    $denomMissing = @($ran | Where-Object { $_.ExitCode -eq $EXIT_PASS -and @($_.Scope).Count -eq 0 }).Count
-}
+$denomMissing = Get-DenomMissingCount -Ran $ran -IsSelfTest:$SelfTest
 
 $aggregate = $EXIT_PASS
 if ($missing -gt 0) {
