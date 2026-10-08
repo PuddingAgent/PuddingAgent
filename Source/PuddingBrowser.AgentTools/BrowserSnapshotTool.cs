@@ -1,4 +1,4 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
@@ -41,6 +41,14 @@ public sealed record BrowserSnapshotArgs
     /// </summary>
     [ToolParam("Only return these output fields (JSON key names: accessibilityTree, domText, html, nodeCount, returnedLines, bytes). Core fields mode/truncated/truncationReason/nextCursor are always returned. Only the requested representations are fetched.")]
     public IReadOnlyList<string>? Fields { get; init; }
+
+    /// <summary>
+    /// 读取作用域（设计方案 §151 的 <c>scope</c>）：只读这个元素（含子孙）而不是整页。
+    /// 用法与定位器一致：<c>{ kind: "ref", value: "p1-v2-n3" }</c> 直接用已有引用；
+    /// 其它定位方式会**先解析成唯一 ref**（0 命中/多命中都明确拒绝，不猜"大概就是这个"）。
+    /// </summary>
+    [ToolParam("Read only this element's subtree instead of the whole page: use a ref locator to reuse an existing reference, or any other locator (resolved to a single ref first).")]
+    public BrowserLocatorInput? Scope { get; init; }
 
     // ── full 模式专用（outline/interactive 下被忽略，输出预算由 limit/max_bytes 决定）──
     public bool IncludeDom { get; init; } = true;
@@ -134,12 +142,51 @@ public sealed class BrowserSnapshotTool(
             }
 
             var target = new DesktopPageTarget(contextId, args.PageId.Trim());
+
+            // 作用域（§151）：ref 直接用；其它定位方式先解析成**唯一** ref——
+            // 0 命中/多命中都明确拒绝（"大概就是这个"是错位读取的常见来源）。
+            string? scopeRef = null;
+            if (args.Scope is { } scope)
+            {
+                var scopeLocator = BrowserLocatorInputMapper.ToDesktopLocator(scope);
+                if (scopeLocator.Kind == DesktopLocatorKind.Ref)
+                {
+                    scopeRef = scopeLocator.Value;
+                }
+                else
+                {
+                    var resolved = await surface.LocateAsync(
+                        new BrowserLocateRequest(target, scopeLocator, DesktopPageVersion.Unknown, maxResults: 2),
+                        call,
+                        ct);
+                    if (resolved.IsFailure)
+                    {
+                        return Failure(resolved.Error!);
+                    }
+
+                    if (resolved.Value.Elements.Count == 0)
+                    {
+                        return BrowserToolResponse.Failure(
+                            "browser_element_not_found", $"snapshot scope {scopeLocator} matched no element");
+                    }
+
+                    if (resolved.Value.Elements.Count > 1)
+                    {
+                        return BrowserToolResponse.Failure(
+                            "browser_locator_ambiguous",
+                            $"snapshot scope {scopeLocator} matched more than one element; narrow it down first");
+                    }
+
+                    scopeRef = resolved.Value.Elements[0].Reference;
+                }
+            }
+
             var snapshot = await surface.SnapshotAsync(
                 new BrowserSnapshotRequest(
                     target,
                     // 快照不钉版本：「当前版本即可」由 Unknown 表达（与迁移前"直接用当前页"一致）。
                     DesktopPageVersion.Unknown,
-                    BuildOptions(args, mode, fields)),
+                    BuildOptions(args, mode, fields, scopeRef)),
                 call,
                 ct);
             if (snapshot.IsFailure)
@@ -249,7 +296,7 @@ public sealed class BrowserSnapshotTool(
     /// 三种表示一起抓下来再丢掉是纯浪费（大页面上三种表示都是 MB 级）。
     /// </summary>
     private static DesktopSnapshotOptions BuildOptions(
-        BrowserSnapshotArgs args, BrowserReadingMode mode, OutputFieldSet fields) =>
+        BrowserSnapshotArgs args, BrowserReadingMode mode, OutputFieldSet fields, string? scopeRef) =>
         mode == BrowserReadingMode.Full
             ? new DesktopSnapshotOptions(
                 includeDom: args.IncludeDom && fields.Includes("domText"),
@@ -260,7 +307,8 @@ public sealed class BrowserSnapshotTool(
                 includeHidden: args.IncludeHidden,
                 includeIframes: args.IncludeIframes,
                 includeShadowDom: args.IncludeShadowDom,
-                maxDepth: args.MaxDepth)
+                maxDepth: args.MaxDepth,
+                scopeRef: scopeRef)
             : new DesktopSnapshotOptions(
                 includeDom: false,
                 includeAccessibilityTree: true,
@@ -270,7 +318,8 @@ public sealed class BrowserSnapshotTool(
                 includeHidden: args.IncludeHidden,
                 includeIframes: args.IncludeIframes,
                 includeShadowDom: args.IncludeShadowDom,
-                maxDepth: BrowserReadingFormat.ScanMaxDepth);
+                maxDepth: BrowserReadingFormat.ScanMaxDepth,
+                scopeRef: scopeRef);
 
     private static IReadOnlyList<string>? BuildWarnings(BrowserReadingResult composed) => composed.Truncation switch
     {

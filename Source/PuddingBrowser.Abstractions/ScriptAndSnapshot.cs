@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingBrowser.Abstractions;
 
@@ -32,6 +32,12 @@ public sealed record SnapshotOptions
     public int MaxNodes { get; init; } = 5_000;
     public int MaxTextLength { get; init; } = 200_000;
     public int MaxDepth { get; init; } = 24;
+
+    /// <summary>
+    /// 读取作用域（设计方案 §151 的 <c>scope</c>）：只从该 ref 的节点（含自己）开始遍历。
+    /// <c>null</c> = 整页；引用过期由驱动明确拒绝（<c>stale_element_reference</c>），不退化成正页。
+    /// </summary>
+    public string? ScopeRef { get; init; }
 }
 
 public sealed record PageSnapshot

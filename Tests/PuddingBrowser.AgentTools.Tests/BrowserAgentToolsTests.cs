@@ -1232,6 +1232,86 @@ public sealed class BrowserAgentToolsTests
         Assert.Equal(0, value.GetProperty("nodeCount").GetInt32());
     }
 
+    [Fact]
+    public async Task Snapshot_ScopeUsesTheRefDirectly_OrResolvesASingleMatch()
+    {
+        // 设计 §151：scope(locator/ref)。ref 直接用（不多一跳）；其它定位方式先解析成**唯一** ref。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var byRef = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                scope = new { kind = "ref", value = $"v{page.PageVersion}-n7" }
+            }));
+
+        Assert.True(byRef.Success);
+        Assert.Equal($"v{page.PageVersion}-n7", surface.LastSnapshotRequest!.Options.ScopeRef);
+        // ref 直接用 ⇒ **不产生**额外定位跳（省一跳，也就少一次被页面变化打断的机会）。
+        Assert.Null(surface.LastLocateRequest);
+
+        var byLocator = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                scope = new { kind = "css", value = "table" }
+            }));
+
+        Assert.True(byLocator.Success);
+        Assert.NotNull(surface.LastLocateRequest);
+        Assert.Equal($"v{page.PageVersion}-n1", surface.LastSnapshotRequest!.Options.ScopeRef);
+    }
+
+    [Fact]
+    public async Task Snapshot_ScopeLocatorMustResolveToExactlyOneElement()
+    {
+        // "大概就是这个"是错位读取的常见来源：0 命中与多命中都必须明确拒绝。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        page.MatchCount = 0;
+        var none = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                scope = new { kind = "css", value = "table" }
+            }));
+
+        Assert.False(none.Success);
+        using (var document = JsonDocument.Parse(none.Error!))
+        {
+            Assert.Equal("browser_element_not_found", document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        }
+
+        page.MatchCount = 3;
+        var many = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                scope = new { kind = "css", value = "table" }
+            }));
+
+        Assert.False(many.Success);
+        using (var document = JsonDocument.Parse(many.Error!))
+        {
+            Assert.Equal("browser_locator_ambiguous", document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        }
+    }
+
     /// <summary>断言某字段**不在**输出里（要么缺键，要么显式为 null）。</summary>
     private static void AssertAbsent(JsonElement element, string name)
     {
@@ -2115,11 +2195,12 @@ internal sealed class FakeBrowserPage : IBrowserPage
         ct.ThrowIfCancellationRequested();
         if (locator.Kind == LocatorKind.Ref && !locator.Value.StartsWith($"v{PageVersion}-", StringComparison.Ordinal))
             throw new BrowserOperationException("stale_element_reference", "stale ref");
+
+        // 命中数可控：作用域解析要能验证"0 命中/多命中都明确拒绝，不猜大概就是这个"。
         return Task.FromResult<IReadOnlyList<IElementHandle>>(
-        [
-            new FakeElementHandle(Id, PageVersion, new BrowserElementInfo
+            Enumerable.Range(1, MatchCount).Select(index => (IElementHandle)new FakeElementHandle(Id, PageVersion, new BrowserElementInfo
             {
-                Ref = $"v{PageVersion}-n1",
+                Ref = $"v{PageVersion}-n{index}",
                 Tag = "button",
                 Role = "button",
                 Name = "Save",
@@ -2131,9 +2212,11 @@ internal sealed class FakeBrowserPage : IBrowserPage
                 // 表单回读（设计方案 §6.2）：text 不含表单值，只有它能让调用方确认写入成功。
                 Value = "Pudding",
                 BoundingBox = new BoundingBox { X = 10.25, Y = 20.5, Width = 80.04, Height = 30.75 }
-            })
-        ]);
+            })).ToArray());
     }
+
+    /// <summary>该页面每次定位返回的命中数（默认 1）。</summary>
+    public int MatchCount { get; set; } = 1;
     public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct) => Unsupported<BrowserScriptValue>();
     public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct) => Unsupported<IJsHandle>();
     public Task<JsonDocument> SendCdpAsync(string method, JsonElement? parameters, CancellationToken ct) => Unsupported<JsonDocument>();

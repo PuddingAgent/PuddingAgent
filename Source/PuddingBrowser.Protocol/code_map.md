@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 |------|------|
 | `BrowserBridgeCommandNames.cs` | 桥接命令名称常量 |
-| `BrowserBridgeCommandPayloads.cs` | 命令载荷定义。`PageInteractArguments.ScrollTarget` 承载滚动目标模型（§7）；`BrowserInteractionResultDescriptor.Scroll`（`BrowserScrollReportDescriptor`）承载滚动结果事实；非滚动动作或宿主未报告时为 **null**（线缆上不编造"滚了 0 像素"） |
+| `BrowserBridgeCommandPayloads.cs` | 命令载荷定义。`PageSnapshotArguments.ScopeRef`（§151 的 `scope`，null = 整页）；`PageInteractArguments.ScrollTarget` 承载滚动目标模型（§7）；`BrowserInteractionResultDescriptor.Scroll`（`BrowserScrollReportDescriptor`）承载滚动结果事实；非滚动动作或宿主未报告时为 **null**（线缆上不编造"滚了 0 像素"） |
 | `BrowserBridgeEnvelope.cs` | 消息信封 |
 | `BrowserBridgeErrorCodes.cs` | 错误码 |
 | `BrowserBridgeMessages.cs` | 消息类型定义 |

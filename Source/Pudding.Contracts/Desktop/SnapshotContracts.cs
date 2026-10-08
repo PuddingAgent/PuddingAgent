@@ -23,7 +23,8 @@ public sealed record DesktopSnapshotOptions
         bool includeHidden = false,
         bool includeIframes = true,
         bool includeShadowDom = true,
-        int maxDepth = 24)
+        int maxDepth = 24,
+        string? scopeRef = null)
     {
         if (maxNodes is < 1 or > MaxMaxNodes)
         {
@@ -46,6 +47,7 @@ public sealed record DesktopSnapshotOptions
         IncludeIframes = includeIframes;
         IncludeShadowDom = includeShadowDom;
         MaxDepth = maxDepth;
+        ScopeRef = string.IsNullOrWhiteSpace(scopeRef) ? null : scopeRef.Trim();
     }
 
     public bool IncludeDom { get; }
@@ -69,6 +71,13 @@ public sealed record DesktopSnapshotOptions
 
     /// <summary>遍历深度上限。</summary>
     public int MaxDepth { get; }
+
+    /// <summary>
+    /// 读取**作用域**（设计方案 §151 的 <c>scope</c>）：只从该 ref 的节点（含自己）开始遍历，
+    /// 而不是整页。<c>null</c> 表示整页。引用随版本失效，因此过期的 ref 会被驱动明确拒绝
+    /// （<c>stale_element_reference</c>），而不是返回一份"看起来是子树其实是整页"的结果。
+    /// </summary>
+    public string? ScopeRef { get; }
 
     /// <summary>至少需要一种内容，否则快照没有意义（fail closed，不做无内容调用）。</summary>
     public bool HasContent => IncludeDom || IncludeAccessibilityTree || IncludeHtml;

@@ -876,7 +876,10 @@ public sealed class BrowserWorkspaceController :
             IncludeHtml = args.IncludeHtml,
             MaxNodes = args.MaxNodes,
             MaxTextLength = args.MaxTextLength,
-            MaxDepth = args.MaxDepth
+            MaxDepth = args.MaxDepth,
+            // 作用域（§151）：过线的 ref 交给驱动决定从哪个节点开始遍历；
+            // 过期引用由驱动明确拒绝（stale_element_reference），不退化成正页快照。
+            ScopeRef = args.ScopeRef
         }, ct);
         return Success(command.OperationId, new BrowserSnapshotDescriptor
         {

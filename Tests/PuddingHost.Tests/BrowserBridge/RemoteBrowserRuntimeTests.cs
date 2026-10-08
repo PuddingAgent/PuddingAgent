@@ -280,6 +280,47 @@ public sealed class RemoteBrowserRuntimeTests
         Assert.False(outcome.AtBoundary);
     }
 
+    [Fact]
+    public async Task RemotePage_SnapshotCarriesTheScopeRefOverTheWire()
+    {
+        // 设计 §151：scope 必须在**两条传输**上都到达真正扫描页面的那一侧。
+        BrowserBridgeCommand? sent = null;
+        var broker = new RecordingBrowserBroker(command =>
+        {
+            if (command.Name == BrowserBridgeCommandNames.PageSnapshot)
+            {
+                sent = command;
+            }
+
+            return command.Name switch
+            {
+                BrowserBridgeCommandNames.ContextCreate => Success(command, Context("ctx-1", 1)),
+                BrowserBridgeCommandNames.PageCreate => Success(command, Page("ctx-1", "page-1", "https://example.test/")),
+                BrowserBridgeCommandNames.PageSnapshot => Success(command, new BrowserSnapshotDescriptor
+                {
+                    AccessibilityTree = "table ref=v1-n2 name=\"Rows\"",
+                    NodeCount = 1,
+                    PageVersion = 1
+                }),
+                _ => Failure(command, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
+            };
+        });
+        await using var runtime = new RemoteBrowserRuntime(broker);
+        var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var snapshot = await page.SnapshotAsync(
+            new SnapshotOptions { IncludeDom = false, IncludeAccessibilityTree = true, ScopeRef = "p1-v1-n2" },
+            CancellationToken.None);
+
+        Assert.Equal(1, snapshot.NodeCount);
+
+        using var document = JsonDocument.Parse(sent!.Arguments.GetRawText());
+        Assert.Equal("p1-v1-n2", document.RootElement.GetProperty("scopeRef").GetString());
+        Assert.False(document.RootElement.GetProperty("includeDom").GetBoolean());
+        Assert.True(document.RootElement.GetProperty("includeAccessibilityTree").GetBoolean());
+    }
+
     private static BrowserContextDescriptor Context(string contextId, int pageCount) => new()
     {
         ContextId = contextId,

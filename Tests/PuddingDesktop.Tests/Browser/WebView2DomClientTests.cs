@@ -116,6 +116,25 @@ public sealed class WebView2DomClientTests
     }
 
     [Fact]
+    public void SnapshotScript_ScopesTheScan_AndNeverFallsBackToTheWholePage()
+    {
+        // 设计 §151：scope(locator/ref) —— 只读该元素子树。
+        // 过期/未知 ref 必须**明确拒绝**：退化成正页扫描会让调用方以为拿到的是子树。
+        // ⚠️ 脚本文本/结构断言：真机行为需 WebView2.Smoke 复核。
+        var script = WebView2DomClient.SnapshotScript;
+
+        Assert.Contains("input.scopeRef", script);
+        Assert.Contains("stale_element_reference", script);
+
+        // 结构断言：作用域解析失败必须**先返回**，然后才可能落到整页遍历。
+        var scopeCheck = script.IndexOf("if (!root) return", StringComparison.Ordinal);
+        var walk = script.IndexOf("if (root) visit(root, 0, 'main')", StringComparison.Ordinal);
+
+        Assert.True(scopeCheck >= 0, "作用域 ref 找不到时必须立即返回错误");
+        Assert.True(walk > scopeCheck, "整页/子树遍历必须在作用域检查**之后**");
+    }
+
+    [Fact]
     public void InteractScript_RejectsObstructedWriteTargets()
     {
         // 设计 §6.2：「隐藏/禁用/**遮挡**目标不按成功处理」。

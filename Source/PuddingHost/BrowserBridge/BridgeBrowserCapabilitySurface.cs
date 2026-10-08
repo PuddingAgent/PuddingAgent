@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
@@ -355,6 +355,8 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
                 IncludeIframes = options.IncludeIframes,
                 IncludeShadowDom = options.IncludeShadowDom,
                 MaxDepth = options.MaxDepth,
+                // 作用域（§151）：随命令过线，由宿主从该 ref 的节点开始遍历。
+                ScopeRef = options.ScopeRef,
             },
             cancellationToken).ConfigureAwait(false);
 

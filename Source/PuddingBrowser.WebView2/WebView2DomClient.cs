@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
@@ -64,6 +64,15 @@ internal static partial class WebView2DomClient
         CancellationToken ct)
     {
         var normalized = Normalize(options);
+
+        // 作用域 ref 与普通引用同一条规则（§5）：**先**校验它属于这一页这一版，再进脚本。
+        // 过期就明确拒绝——绝不"降级成整页扫描"，那会让调用方以为拿到的是子树。
+        if (normalized.ScopeRef is { } scopeRef)
+        {
+            ValidateLocator(
+                new Locator { Kind = LocatorKind.Ref, Value = scopeRef }, pageVersion, pageToken);
+        }
+
         var result = await ExecuteAsync<SnapshotScriptResult>(webView, SnapshotScript, new
         {
             pageVersion,
@@ -76,8 +85,11 @@ internal static partial class WebView2DomClient
             normalized.IncludeHtml,
             normalized.MaxNodes,
             normalized.MaxTextLength,
-            normalized.MaxDepth
+            normalized.MaxDepth,
+            scopeRef = options.ScopeRef
         }, ct);
+
+        EnsureSuccess(result.Ok, result.Code, result.Message);
 
         return new PageSnapshot
         {
@@ -211,7 +223,7 @@ internal static partial class WebView2DomClient
     [GeneratedRegex("^p([0-9a-fA-F]{32})-v(\\d+)-n\\d+$", RegexOptions.CultureInvariant)]
     private static partial Regex BrowserRefRegex();
 
-    private sealed record SnapshotScriptResult
+    private sealed record SnapshotScriptResult : ScriptResult
     {
         public string? DomText { get; init; }
         public string? AccessibilityTree { get; init; }
@@ -326,7 +338,7 @@ internal static partial class WebView2DomClient
         public bool Matched { get; init; }
     }
 
-    private const string SnapshotScript = """
+    internal const string SnapshotScript = """
 (() => {
   const input = __PUDDING_INPUT__;
   const dom = [];
@@ -391,13 +403,20 @@ internal static partial class WebView2DomClient
       } catch { append(ax, `${'  '.repeat(depth + 1)}iframe cross-origin`); }
     }
   };
-  if (document.documentElement) visit(document.documentElement, 0, 'main');
+  // 作用域（设计 §151 的 scope）：给了 ref 就从那个节点（含自己）开始，而不是整页。
+  // 引用过期 ⇒ **明确拒绝**，绝不退化成正页扫描（那会让调用方以为拿到的是子树）。
+  let root = document.documentElement;
+  if (input.scopeRef) {
+    try { root = document.querySelector(`[data-pudding-ref="${input.scopeRef}"]`); } catch { root = null; }
+    if (!root) return {ok:false,code:'stale_element_reference',message:'Scope ref does not belong to this page\'s current document; re-observe and locate a fresh ref'};
+  }
+  if (root) visit(root, 0, 'main');
   let html = null;
-  if (input.includeHtml) {
-    html = document.documentElement?.outerHTML || '';
+  if (input.includeHtml && root) {
+    html = root.outerHTML || '';
     if (html.length > input.maxTextLength) { html = html.slice(0, input.maxTextLength); truncated = true; }
   }
-  return { domText: input.includeDom ? dom.join('\n') : null,
+  return { ok:true, domText: input.includeDom ? dom.join('\n') : null,
     accessibilityTree: input.includeAccessibilityTree ? ax.join('\n') : null,
     html, truncated, nodeCount: Math.min(nodeCount, input.maxNodes) };
 })()

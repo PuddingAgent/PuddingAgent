@@ -111,7 +111,8 @@ public sealed class RemoteBrowserPage : IBrowserPage
                 IncludeHtml = options.IncludeHtml,
                 MaxNodes = options.MaxNodes,
                 MaxTextLength = options.MaxTextLength,
-                MaxDepth = options.MaxDepth
+                MaxDepth = options.MaxDepth,
+                ScopeRef = options.ScopeRef
             },
             ContextId, Id, TimeSpan.FromSeconds(30), ct);
         return new PageSnapshot
