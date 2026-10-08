@@ -1149,6 +1149,89 @@ public sealed class BrowserAgentToolsTests
         }
     }
 
+    [Fact]
+    public async Task Snapshot_FieldsTrimTheOutputAndOnlyFetchTheRequestedRepresentation()
+    {
+        // 设计 §151：快照 fields —— 三种表示是 payload 绝对大头，且要求「同次默认只返回一种表示」。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var trimmed = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "full",
+                fields = new[] { "domText" }
+            }));
+
+        Assert.True(trimmed.Success);
+        var value = GetJson(trimmed.Output, "value");
+
+        // 只要了 DOM 文本 ⇒ 只有它（另两种表示不在输出里）。
+        Assert.False(string.IsNullOrEmpty(value.GetProperty("domText").GetString()));
+        AssertAbsent(value, "accessibilityTree");
+        AssertAbsent(value, "html");
+
+        // **并且只向驱动要了那一种**（三种一起抓再丢掉是纯浪费）。
+        var options = surface.LastSnapshotRequest!.Options;
+        Assert.True(options.IncludeDom);
+        Assert.False(options.IncludeAccessibilityTree);
+        Assert.False(options.IncludeHtml);
+
+        // 核心字段恒在：模式与截断事实（判断这份结果能不能信）。
+        Assert.Equal("full", value.GetProperty("mode").GetString());
+        Assert.False(value.GetProperty("truncated").GetBoolean());
+
+        // 未知字段名 ⇒ 明确拒绝并回合法清单。
+        var unknown = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                fields = new[] { "nope" }
+            }));
+
+        Assert.False(unknown.Success);
+        using var document = JsonDocument.Parse(unknown.Error!);
+        var error = document.RootElement.GetProperty("error");
+        Assert.Equal("browser_invalid_arguments", error.GetProperty("code").GetString());
+        Assert.Contains("domText", error.GetProperty("message").GetString()!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Snapshot_OutlineKeepsTheTextButCanDropBudgetMetadata()
+    {
+        // outline 模式下可裁剪的是预算事实（nodeCount/returnedLines/bytes），文本本身仍在。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var result = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "outline",
+                fields = new[] { "accessibilityTree" }
+            }));
+
+        Assert.True(result.Success);
+        var value = GetJson(result.Output, "value");
+
+        Assert.False(string.IsNullOrEmpty(value.GetProperty("accessibilityTree").GetString()));
+        AssertAbsent(value, "returnedLines");
+        AssertAbsent(value, "bytes");
+        Assert.Equal(0, value.GetProperty("nodeCount").GetInt32());
+    }
+
     /// <summary>断言某字段**不在**输出里（要么缺键，要么显式为 null）。</summary>
     private static void AssertAbsent(JsonElement element, string name)
     {
@@ -1338,6 +1421,9 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     /// <summary>让替身报告"还有下一页"（宿主签发的游标）。</summary>
     public string? LocateNextCursor { get; init; }
 
+    /// <summary>最近一次快照请求（断言"只抓要的表示"确实生效）。</summary>
+    public BrowserSnapshotRequest? LastSnapshotRequest { get; private set; }
+
     public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext call, CancellationToken ct = default)
     {
@@ -1466,6 +1552,8 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        LastSnapshotRequest = request;
+
         if (await ResolvePageAsync(request.Target, ct) is not { } page)
         {
             return CapabilityResult<DesktopSnapshot>.Failure(

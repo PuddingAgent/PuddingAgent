@@ -1,4 +1,4 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
@@ -182,6 +182,6 @@ public sealed class BrowserLocateTool(
     /// 敏感值不得在此直接回显——交互回执走 <c>BrowserActionAssertion</c> 的脱敏路径。
     /// </summary>
     private static BrowserElementToolValue ToValue(
-        DesktopElementRef element, bool includeValue, bool includeChecked, BrowserElementFields fields) =>
+        DesktopElementRef element, bool includeValue, bool includeChecked, OutputFieldSet fields) =>
         BrowserToolResponse.Element(element, includeValue, includeChecked, fields);
 }

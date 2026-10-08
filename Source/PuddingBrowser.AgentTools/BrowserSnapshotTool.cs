@@ -34,6 +34,14 @@ public sealed record BrowserSnapshotArgs
     [ToolParam("Cursor from a previous result's nextCursor to continue reading (outline/interactive only).")]
     public int? Cursor { get; init; }
 
+    /// <summary>
+    /// 只返回这些输出字段（设计方案 §151 的 <c>fields</c>）：键名与输出里的 JSON 键一致。
+    /// 核心字段 mode/truncated/truncationReason/nextCursor 恒在。
+    /// 指定表示时**只向驱动请求那一种**（三种表示同次返回是 payload 大头）。
+    /// </summary>
+    [ToolParam("Only return these output fields (JSON key names: accessibilityTree, domText, html, nodeCount, returnedLines, bytes). Core fields mode/truncated/truncationReason/nextCursor are always returned. Only the requested representations are fetched.")]
+    public IReadOnlyList<string>? Fields { get; init; }
+
     // ── full 模式专用（outline/interactive 下被忽略，输出预算由 limit/max_bytes 决定）──
     public bool IncludeDom { get; init; } = true;
     public bool IncludeAccessibilityTree { get; init; } = true;
@@ -89,6 +97,15 @@ public sealed class BrowserSnapshotTool(
             return BrowserToolResponse.Failure("browser_invalid_arguments", readingError!);
         }
 
+        // 输出字段白名单：未知名字明确拒绝（静默忽略会让调用方以为字段真的没了）。
+        if (!BrowserSnapshotFields.TryParse(args.Fields, out var fields, out var unknownField))
+        {
+            return BrowserToolResponse.Failure(
+                "browser_invalid_arguments",
+                $"unknown snapshot field '{unknownField}'; valid fields: {BrowserSnapshotFields.SelectableList}"
+                + $" (always returned: {string.Join(", ", BrowserSnapshotFields.Core)})");
+        }
+
         try
         {
             if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
@@ -122,7 +139,7 @@ public sealed class BrowserSnapshotTool(
                     target,
                     // 快照不钉版本：「当前版本即可」由 Unknown 表达（与迁移前"直接用当前页"一致）。
                     DesktopPageVersion.Unknown,
-                    BuildOptions(args, mode)),
+                    BuildOptions(args, mode, fields)),
                 call,
                 ct);
             if (snapshot.IsFailure)
@@ -136,12 +153,12 @@ public sealed class BrowserSnapshotTool(
                     new BrowserSnapshotToolValue
                     {
                         Mode = "full",
-                        DomText = snapshot.Value.DomText,
-                        AccessibilityTree = snapshot.Value.AccessibilityTree,
-                        Html = snapshot.Value.Html,
+                        DomText = fields.Includes("domText") ? snapshot.Value.DomText : null,
+                        AccessibilityTree = fields.Includes("accessibilityTree") ? snapshot.Value.AccessibilityTree : null,
+                        Html = fields.Includes("html") ? snapshot.Value.Html : null,
                         Truncated = snapshot.Value.Truncated,
                         TruncationReason = snapshot.Value.Truncated ? "incomplete_scan" : "none",
-                        NodeCount = snapshot.Value.NodeCount
+                        NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0
                     },
                     new BrowserContextId(contextId),
                     new PageId(args.PageId.Trim()),
@@ -159,13 +176,13 @@ public sealed class BrowserSnapshotTool(
                 new BrowserSnapshotToolValue
                 {
                     Mode = BrowserReadingFormatWire.NameOf(mode),
-                    AccessibilityTree = composed.Text,
+                    AccessibilityTree = fields.Includes("accessibilityTree") ? composed.Text : null,
                     Truncated = composed.Truncated,
                     TruncationReason = BrowserReadingFormatWire.TruncationNameOf(composed.Truncation),
                     NextCursor = composed.NextCursor,
-                    ReturnedLines = composed.ReturnedLines,
-                    Bytes = composed.Bytes,
-                    NodeCount = snapshot.Value.NodeCount
+                    ReturnedLines = fields.Includes("returnedLines") ? composed.ReturnedLines : null,
+                    Bytes = fields.Includes("bytes") ? composed.Bytes : null,
+                    NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0
                 },
                 new BrowserContextId(contextId),
                 new PageId(args.PageId.Trim()),
@@ -227,13 +244,17 @@ public sealed class BrowserSnapshotTool(
     /// <summary>
     /// 请求选项：outline/interactive 只要无障碍树（DOM 树是体积大头），并使用**内部扫描预算**
     /// （10k 节点 / 深度 64 / 200k 文本）；full 模式沿用调用方给出的完整预算。
+    ///
+    /// <paramref name="fields"/> 指定表示时**只取那一种**：设计要求「同次默认只返回一种表示」，
+    /// 三种表示一起抓下来再丢掉是纯浪费（大页面上三种表示都是 MB 级）。
     /// </summary>
-    private static DesktopSnapshotOptions BuildOptions(BrowserSnapshotArgs args, BrowserReadingMode mode) =>
+    private static DesktopSnapshotOptions BuildOptions(
+        BrowserSnapshotArgs args, BrowserReadingMode mode, OutputFieldSet fields) =>
         mode == BrowserReadingMode.Full
             ? new DesktopSnapshotOptions(
-                includeDom: args.IncludeDom,
-                includeAccessibilityTree: args.IncludeAccessibilityTree,
-                includeHtml: args.IncludeHtml,
+                includeDom: args.IncludeDom && fields.Includes("domText"),
+                includeAccessibilityTree: args.IncludeAccessibilityTree && fields.Includes("accessibilityTree"),
+                includeHtml: args.IncludeHtml && fields.Includes("html"),
                 maxNodes: args.MaxNodes,
                 maxTextLength: args.MaxTextLength,
                 includeHidden: args.IncludeHidden,

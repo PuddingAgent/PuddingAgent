@@ -62,6 +62,65 @@ public sealed class ElementFieldsTests
     }
 
     [Fact]
+    public void SnapshotFields_ShareTheSameParsingSemantics()
+    {
+        // 设计 §151：快照也有 fields。核心 = "能不能用/还有没有"（mode/truncated/truncationReason/nextCursor），
+        // 可裁剪 = 三种表示 + 三个预算事实。
+        Assert.True(BrowserSnapshotFields.TryParse(["domText"], out var fields, out var unknown));
+        Assert.Null(unknown);
+
+        foreach (var name in BrowserSnapshotFields.Core)
+        {
+            Assert.True(fields.Includes(name), $"核心字段 {name} 必须恒在");
+        }
+
+        Assert.True(fields.Includes("domText"));
+        Assert.False(fields.Includes("html"));
+        Assert.False(fields.Includes("accessibilityTree"));
+
+        // 与元素白名单同一套解析语义：未知即拒、全空白等价于没给、默认不裁剪。
+        Assert.False(BrowserSnapshotFields.TryParse(["nope"], out _, out var badName));
+        Assert.Equal("nope", badName);
+
+        Assert.True(BrowserSnapshotFields.TryParse([" "], out var blank, out _));
+        Assert.False(blank.IsExplicit);
+
+        Assert.True(BrowserSnapshotFields.Default.Includes("html"));
+        Assert.False(BrowserSnapshotFields.Default.Includes("no_such_field"));
+
+        // 名字必须与输出键一致（不含下划线）。
+        foreach (var name in BrowserSnapshotFields.All)
+        {
+            Assert.DoesNotContain('_', name);
+        }
+
+        // 三种表示都必须是**可裁剪**的：否则"同次只返回一种表示"无法表达（§151）。
+        foreach (var representation in new[] { "accessibilityTree", "domText", "html" })
+        {
+            Assert.Contains(representation, BrowserSnapshotFields.Selectable);
+        }
+    }
+
+    [Fact]
+    public void OutputFieldSet_IsReusableAcrossTools()
+    {
+        // 通用实现在 Contracts 里只有一份：各工具只提供"核心/可裁剪"两张清单。
+        var custom = new OutputFieldSet(core: ["a", "b"], selectable: ["c", "d"]);
+
+        Assert.Equal(["a", "b", "c", "d"], custom.All);
+        Assert.True(custom.Includes("a"));
+        Assert.True(custom.Includes("d"));
+        Assert.False(custom.Includes("e"));
+
+        Assert.True(custom.TryParse(["c"], out var parsed, out _));
+        Assert.True(parsed.Includes("a"));   // 核心恒在
+        Assert.True(parsed.Includes("c"));
+        Assert.False(parsed.Includes("d"));
+
+        Assert.Throws<ArgumentNullException>(() => new OutputFieldSet(null!, ["c"]));
+    }
+
+    [Fact]
     public void NamesAreTrimmed_AndCoverTheBigFields()
     {
         Assert.True(BrowserElementFields.TryParse([" name ", "text"], out var fields, out _));

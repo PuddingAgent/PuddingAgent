@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingCode.Tools;
@@ -355,7 +355,7 @@ internal static class BrowserToolResponse
         DesktopElementRef element,
         bool includeValue = false,
         bool includeChecked = false,
-        BrowserElementFields? fields = null)
+        OutputFieldSet? fields = null)
     {
         var set = fields ?? BrowserElementFields.Default;
 
