@@ -190,4 +190,115 @@ public static class DeliveryManifestValidator
         WriteIndented = true,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
+
+    /// <summary>
+    /// 反序列化清单（外部一侧读取内部交付的 JSON）。缺字段一律失败、**不补默认值**：
+    /// 一份读不全的清单不能用来判断"到底交付了什么"。
+    /// </summary>
+    public static bool TryDeserialize(
+        string? json,
+        out DeliveryManifest? manifest,
+        out IReadOnlyList<string> problems)
+    {
+        manifest = null;
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            problems = ["the manifest is empty"];
+            return false;
+        }
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(json);
+        }
+        catch (JsonException exception)
+        {
+            problems = [$"the manifest is not valid JSON: {exception.Message}"];
+            return false;
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            var collected = new List<string>();
+
+            var buildId = ReadString(root, "buildId");
+            var commit = ReadString(root, "commit");
+            var artifacts = ReadStringArray(root, "artifacts");
+            var knownUnverified = ReadStringArray(root, "knownUnverified");
+            var steps = ReadStringArray(root, "requiredExternalSteps");
+
+            if (string.IsNullOrWhiteSpace(buildId))
+            {
+                collected.Add("manifest is missing buildId");
+            }
+
+            if (string.IsNullOrWhiteSpace(commit))
+            {
+                collected.Add("manifest is missing commit");
+            }
+
+            var checks = new List<DeliveryCheck>();
+            if (!root.TryGetProperty("checks", out var checksElement) || checksElement.ValueKind != JsonValueKind.Array)
+            {
+                collected.Add("manifest is missing checks");
+            }
+            else
+            {
+                foreach (var element in checksElement.EnumerateArray())
+                {
+                    var name = ReadString(element, "name");
+                    if (string.IsNullOrWhiteSpace(name)
+                        || !TryReadInt(element, "passed", out var passed)
+                        || !TryReadInt(element, "failed", out var failed))
+                    {
+                        collected.Add("manifest contains a check without name/passed/failed");
+                        break;
+                    }
+
+                    checks.Add(new DeliveryCheck(name, passed, failed));
+                }
+            }
+
+            if (collected.Count > 0)
+            {
+                problems = collected;
+                return false;
+            }
+
+            manifest = new DeliveryManifest(
+                buildId!,
+                commit!,
+                artifacts ?? [],
+                checks,
+                knownUnverified ?? [],
+                steps is { Count: > 0 } ? steps : DeliveryManifest.RequiredLifecycleSteps);
+
+            problems = [];
+            return true;
+        }
+    }
+
+    private static string? ReadString(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+
+    private static bool TryReadInt(JsonElement element, string name, out int value)
+    {
+        value = 0;
+        return element.TryGetProperty(name, out var property)
+            && property.ValueKind == JsonValueKind.Number
+            && property.TryGetInt32(out value);
+    }
+
+    private static IReadOnlyList<string>? ReadStringArray(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Array
+            ? property.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString() ?? string.Empty)
+                .ToArray()
+            : null;
 }

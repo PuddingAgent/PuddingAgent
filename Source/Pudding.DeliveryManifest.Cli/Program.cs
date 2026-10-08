@@ -1,4 +1,4 @@
-﻿using Pudding.DesktopService;
+using Pudding.DesktopService;
 
 // 交付清单采集入口（B7 内部一侧）。
 //
@@ -12,10 +12,20 @@
 
 var arguments = ParseArguments(args);
 
+// --conclude：外部一侧的模式 —— 读交付清单 + 外部观察事实，判定能否下 external-lifecycle-verified 结论。
+if (arguments is not null && arguments.ContainsKey("conclude"))
+{
+    return Conclude(arguments);
+}
+
 if (arguments is null || arguments.ContainsKey("help"))
 {
     Console.WriteLine("""
-        用法：Pudding.DeliveryManifest.Cli --build <id> --commit <sha> --publish <dir> --results <dir> --changelog <dir> [--extra-unverified <text>]... [--out <file>] [--report <file>]
+        用法（内部一侧）：
+          Pudding.DeliveryManifest.Cli --build <id> --commit <sha> --publish <dir> --results <dir> --changelog <dir> [--extra-unverified <text>]... [--out <file>] [--report <file>]
+
+        用法（外部一侧）：
+          Pudding.DeliveryManifest.Cli --conclude <facts.json> --manifest <manifest.json> [--record <file>]
 
         采集三类事实并产出交付清单：
           --publish    发布目录（取其中的 .exe/.dll 作为产物，只记录文件名）
@@ -23,7 +33,13 @@ if (arguments is null || arguments.ContainsKey("help"))
           --changelog  修改日志目录（提取"内部证明不了的结论"）
           --build      构建标识   --commit 提交号
           --extra-unverified  额外补充的未验证项（可多次）
-          --out        同时写入该文件（JSON）`r`n          --report     同时渲染留痕报告（markdown + Front Matter）到该文件
+          --out        同时写入该文件（JSON）
+          --report     同时渲染留痕报告（markdown + Front Matter）到该文件
+
+        外部一侧判定（--conclude）：
+          facts.json 形状：{ observedBuildId, smoke:[{checkId,outcome(passed|failed|not-run),evidence}],
+                             lifecycle:[{step,passed,evidence}] }
+          退出码：0 = 允许 external-lifecycle-verified；2 = 拒绝（原因逐条打印）
         """);
     return arguments is null ? 1 : 0;
 }
@@ -145,4 +161,86 @@ static string? FindRepositoryRoot()
     }
 
     return null;
+}
+
+// 外部一侧：清单 + 观察事实 → 结论（0 = 允许 external-lifecycle-verified；2 = 拒绝）。
+static int Conclude(Dictionary<string, string> arguments)
+{
+    if (!arguments.TryGetValue("manifest", out var manifestPath) || string.IsNullOrWhiteSpace(manifestPath))
+    {
+        Console.Error.WriteLine("--conclude 需要 --manifest <manifest.json>（内部交付的清单）。");
+        return 1;
+    }
+
+    if (!File.Exists(manifestPath))
+    {
+        Console.Error.WriteLine($"找不到交付清单：{manifestPath}");
+        return 1;
+    }
+
+    if (!DeliveryManifestValidator.TryDeserialize(
+            File.ReadAllText(manifestPath), out var manifest, out var manifestProblems))
+    {
+        Console.Error.WriteLine("交付清单读取失败：");
+        foreach (var problem in manifestProblems)
+        {
+            Console.Error.WriteLine($"  - {problem}");
+        }
+
+        return 2;
+    }
+
+    var factsPath = arguments["conclude"];
+    if (!File.Exists(factsPath))
+    {
+        Console.Error.WriteLine($"找不到观察事实文件：{factsPath}");
+        return 1;
+    }
+
+    if (!ExternalAcceptanceFacts.TryParse(
+            File.ReadAllText(factsPath), manifest!, out var input, out var factsProblems))
+    {
+        Console.Error.WriteLine("观察事实读取失败（逐条如下）：");
+        foreach (var problem in factsProblems)
+        {
+            Console.Error.WriteLine($"  - {problem}");
+        }
+
+        return 2;
+    }
+
+    var concluded = ExternalAcceptanceSession.TryConclude(input!, out var problems);
+
+    if (concluded)
+    {
+        Console.WriteLine(ExternalAcceptanceSession.ToMarkdown(input!, concluded: true));
+        Console.WriteLine("# 允许作出 external-lifecycle-verified 结论（由外部控制器记录并留痕）");
+    }
+    else
+    {
+        Console.Error.WriteLine("**不允许**作出 external-lifecycle-verified 结论：");
+        foreach (var problem in problems)
+        {
+            Console.Error.WriteLine($"  - {problem}");
+        }
+
+        Console.WriteLine(ExternalAcceptanceSession.ToMarkdown(input!, concluded: false));
+    }
+
+    if (arguments.TryGetValue("record", out var recordPath) && !string.IsNullOrWhiteSpace(recordPath))
+    {
+        var directory = Path.GetDirectoryName(recordPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(
+            recordPath,
+            ExternalAcceptanceSession.ToMarkdown(input!, concluded)
+                + (concluded ? string.Empty : "\n校验问题：\n" + string.Join('\n', problems.Select(problem => $"- {problem}")) + "\n"));
+        Console.WriteLine($"# 验收记录已写入 {recordPath}");
+    }
+
+    return concluded ? 0 : 2;
 }
