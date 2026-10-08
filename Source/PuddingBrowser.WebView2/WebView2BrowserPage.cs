@@ -48,6 +48,15 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
     /// <summary>被自动处理的页面脚本对话框累计次数（诊断用）。</summary>
     internal int ScriptDialogCount { get; private set; }
+
+    /// <summary>
+    /// 最近一次被自动处理的**页面周边事件**摘要（权限请求/新窗口/下载；有界、无敏感内容）。
+    /// 与脚本对话框同一套取向：不让页面停在"等人操作"的状态，并留下可解释的事实。
+    /// </summary>
+    internal string? LastPageEvent { get; private set; }
+
+    /// <summary>被自动处理的页面周边事件累计次数（诊断用）。</summary>
+    internal int PageEventCount { get; private set; }
     public PageInfo Info { get; private set; }
     public bool CanGoBack => _canGoBack;
     public bool CanGoForward => _canGoForward;
@@ -90,6 +99,9 @@ public sealed class WebView2BrowserPage : IBrowserPage
         coreWebView.SourceChanged += OnSourceChanged;
         coreWebView.ProcessFailed += OnProcessFailed;
         coreWebView.ScriptDialogOpening += OnScriptDialogOpening;
+        coreWebView.PermissionRequested += OnPermissionRequested;
+        coreWebView.NewWindowRequested += OnNewWindowRequested;
+        coreWebView.DownloadStarting += OnDownloadStarting;
     }
 
     private void UnsubscribeCoreWebViewEvents(CoreWebView2 coreWebView)
@@ -100,6 +112,52 @@ public sealed class WebView2BrowserPage : IBrowserPage
         coreWebView.SourceChanged -= OnSourceChanged;
         coreWebView.ProcessFailed -= OnProcessFailed;
         coreWebView.ScriptDialogOpening -= OnScriptDialogOpening;
+        coreWebView.PermissionRequested -= OnPermissionRequested;
+        coreWebView.NewWindowRequested -= OnNewWindowRequested;
+        coreWebView.DownloadStarting -= OnDownloadStarting;
+    }
+
+    /// <summary>
+    /// 权限请求（摄像头/麦克风/定位/通知/剪贴板…）：**一律拒绝**并如实记录。
+    /// 不处理时 WebView2 会弹权限询问等人点，自动化流程就卡在那里；而"默认允许"更糟——
+    /// 页面不该因为想要就拿到设备权限。
+    /// </summary>
+    private void OnPermissionRequested(object? sender, CoreWebView2PermissionRequestedEventArgs e)
+    {
+        var verdict = PageEventPolicy.DecidePermission(e.PermissionKind.ToString());
+        e.State = CoreWebView2PermissionState.Deny;
+        e.Handled = true;
+
+        LastPageEvent = PageEventPolicy.DescribePermission(e.PermissionKind.ToString(), e.Uri, verdict);
+        PageEventCount++;
+    }
+
+    /// <summary>
+    /// 新窗口（<c>window.open</c>/<c>target=_blank</c>）：**抑制**弹窗并记录目标地址。
+    /// 不偷偷改成"在当前页打开"——那会丢掉当前页面状态，是调用方没要求的语义改变。
+    /// </summary>
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        var verdict = PageEventPolicy.DecideWindow();
+        e.Handled = true;
+
+        LastPageEvent = PageEventPolicy.DescribeWindow(e.Uri, verdict);
+        PageEventCount++;
+    }
+
+    /// <summary>
+    /// 下载：**取消**并记录建议文件名。
+    /// 让页面自己决定往哪儿写文件属于需要授权与明确去向的副作用，默认不做。
+    /// </summary>
+    private void OnDownloadStarting(object? sender, CoreWebView2DownloadStartingEventArgs e)
+    {
+        var verdict = PageEventPolicy.DecideDownload();
+        e.Cancel = true;
+        e.Handled = true;
+
+        LastPageEvent = PageEventPolicy.DescribeDownload(
+            e.ResultFilePath, e.DownloadOperation?.Uri, verdict);
+        PageEventCount++;
     }
 
     /// <summary>

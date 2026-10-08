@@ -1,4 +1,4 @@
-using Pudding.Contracts.Desktop;
+﻿using Pudding.Contracts.Desktop;
 using PuddingBrowser.Automation;
 
 namespace PuddingBrowser.AutomationTests;
@@ -22,7 +22,11 @@ public sealed class ComponentSurfaceTests
         "ContentSize",
         "Answer",
         "Kind",
+        "DownloadVerdict",
+        "PageEventPolicy",
+        "PermissionVerdict",
         "ScriptDialogPolicy",
+        "WindowVerdict",
         "ScreenshotPlan",
         "ArticlePaging",
         "PageResult",
@@ -157,6 +161,7 @@ public sealed class ComponentSurfaceTests
             ["ArticleCompactJsonTests"] = 8,
             ["ArticleCursorTests"] = 7,
             ["ScreenshotPlanTests"] = 9,
+            ["PageEventPolicyTests"] = 7,
             ["ScriptDialogPolicyTests"] = 6,
             ["BrowserNodeIdentityTests"] = 10,
             ["NativeInputSequenceTests"] = 10,
