@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
@@ -496,7 +496,8 @@ internal static partial class WebView2DomClient
   let root = document.documentElement;
   if (input.scopeRef) {
     try { root = document.querySelector(`[data-pudding-ref="${input.scopeRef}"]`); } catch { root = null; }
-    if (!root) return {ok:false,code:'stale_element_reference',message:'Scope ref does not belong to this page\'s current document; re-observe and locate a fresh ref'};
+    // 影子节点（脱离文档但仍在内存里）同样不算"这个作用域还成立"。
+    if (!root || !root.isConnected) return {ok:false,code:'stale_element_reference',message:'Scope ref does not belong to this page\'s current document; re-observe and locate a fresh ref'};
   }
   if (root) visit(root, 0, 'main');
   let html = null;
@@ -704,6 +705,10 @@ internal static partial class WebView2DomClient
   if(matches.length===0)return{ok:false,code:'browser_element_not_found',message:'No element matched the locator'};
   if(matches.length>1)return{ok:false,code:'browser_locator_ambiguous',message:`Locator matched ${matches.length} elements`};
   const el=matches[0];
+  // 引用绑在**节点自身**上（`data-pudding-ref`），因此节点从文档脱离后**照样能查到**，
+  // 但动作再也到不了页面。这类"影子节点"必须明确判成引用过期 ——
+  // 否则就是静默操作一个不在文档里的元素（设计 §1.1：禁止自动重绑，也绝不装作成功）。
+  if(!el.isConnected)return{ok:false,code:'stale_element_reference',message:'Matched element is detached from the document; re-observe the page and locate a fresh ref'};
   if(input.action!=='scroll'&&!visible(el))return{ok:false,code:'browser_element_not_visible',message:'Matched element is not visible'};
   // 写操作要求元素**真的在视口内**（设计 §6.2：先滚入可见区域并复检）。
   // 只读观察（hover/press 之外的检查）不需要，但"看起来在屏外"绝不能当成写成功。

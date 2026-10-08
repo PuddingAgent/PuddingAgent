@@ -116,6 +116,45 @@ public sealed class WebView2DomClientTests
     }
 
     [Fact]
+    public void InteractScript_TreatsDetachedNodesAsStaleReferences_NeverAsSuccess()
+    {
+        // 引用绑在节点自身（data-pudding-ref）：节点脱离文档后**照样查得到**，但动作到不了页面。
+        // 不判成过期的后果就是"静默操作一个不在文档里的元素"。
+        // ⚠️ 脚本结构断言：真机行为需 WebView2.Smoke 复核。
+        var script = WebView2DomClient.InteractScript;
+
+        Assert.Contains("!el.isConnected", script);
+        Assert.Contains("'stale_element_reference'", script);
+
+        // **判定必须真的生效**：只断言"文本里出现过 isConnected"会被 `if(false&&…)` 这类短路糊弄过去，
+        // 因此这里钉住完整守卫形态，并显式排除被短路/被注释掉的写法。
+        Assert.Contains(
+            "if(!el.isConnected)return{ok:false,code:'stale_element_reference'",
+            script);
+        Assert.DoesNotContain("false&&!el.isConnected", script);
+
+        // 顺序要求：判"脱离文档"必须在**任何写操作之前**（可见性检查之前、动作分派之前）。
+        var detached = script.IndexOf("!el.isConnected", StringComparison.Ordinal);
+        var visibility = script.IndexOf("browser_element_not_visible", StringComparison.Ordinal);
+        var dispatch = script.IndexOf("action==='click'", StringComparison.Ordinal);
+
+        Assert.True(detached >= 0, "缺少 isConnected 判定");
+        Assert.True(visibility > detached, "脱离文档的判定必须在可见性检查之前");
+        if (dispatch >= 0)
+        {
+            Assert.True(detached < dispatch, "脱离文档的判定必须在动作分派之前");
+        }
+    }
+
+    [Fact]
+    public void SnapshotScript_RejectsDetachedScopeRoots()
+    {
+        var script = WebView2DomClient.SnapshotScript;
+
+        Assert.Contains("!root.isConnected", script);
+    }
+
+    [Fact]
     public void SnapshotScript_ExtractsArticleBlocks_WithoutSiteSpecificSelectors()
     {
         // 设计 §6.1（mode=text）：正文提取先用 article/main/语义地标，再普通块回退；
@@ -154,7 +193,7 @@ public sealed class WebView2DomClientTests
         Assert.Contains("stale_element_reference", script);
 
         // 结构断言：作用域解析失败必须**先返回**，然后才可能落到整页遍历。
-        var scopeCheck = script.IndexOf("if (!root) return", StringComparison.Ordinal);
+        var scopeCheck = script.IndexOf("if (!root || !root.isConnected) return", StringComparison.Ordinal);
         var walk = script.IndexOf("if (root) visit(root, 0, 'main')", StringComparison.Ordinal);
 
         Assert.True(scopeCheck >= 0, "作用域 ref 找不到时必须立即返回错误");
