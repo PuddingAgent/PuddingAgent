@@ -69,6 +69,37 @@ public sealed class ContextUsageSnapshotAttributionTests
         Assert.AreEqual(snapshot.MessageTokens, snapshot.CompactionSummaryTokens);
     }
 
+    /// <summary>
+    /// warm-prefix checkpoint 使用共享合同里的 &lt;compacted-summary&gt; 标记
+    /// （见 <see cref="PuddingCode.Runtime.ContextSummaryMarkers"/>）。
+    /// 只认 &lt;compact_summary&gt; 会把这条路径的摘要误计入「对话消息」，
+    /// 表现为摘要桶恒为 0、有效输入压力被高估（诊断 2026-10-07 §4.3）。
+    /// </summary>
+    [TestMethod]
+    public void CaptureLlmRequest_WarmPrefixCheckpointIsCountedAsCompactionSummary()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var content =
+            $"checkpoint preamble\n\n{PuddingCode.Runtime.ContextSummaryMarkers.WarmPrefixCheckpoint}\n"
+            + "## Current Work\n- continue\n</compacted-summary>";
+
+        var snapshot = store.CaptureLlmRequest(
+            "session-warm-prefix-summary",
+            [
+                new ChatMessage(ChatRole.System, "你是 PuddingAgent。"),
+                new ChatMessage(ChatRole.User, content),
+            ],
+            tools: null,
+            modelId: "gpt-5");
+
+        Assert.IsTrue(PuddingCode.Runtime.ContextSummaryMarkers.ContainsMarker(content));
+        Assert.IsGreaterThan(0, snapshot.CompactionSummaryTokens);
+        Assert.AreEqual(0, snapshot.ConversationTokens, "warm-prefix checkpoint 不是对话消息");
+        Assert.AreEqual(
+            snapshot.MessageTokens - snapshot.SystemPromptTokens,
+            snapshot.CompactionSummaryTokens);
+    }
+
     [TestMethod]
     public void CaptureLlmRequest_ReasoningIsDeductedFromConversationBucket()
     {

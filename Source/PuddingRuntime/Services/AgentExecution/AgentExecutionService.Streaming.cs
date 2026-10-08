@@ -787,6 +787,8 @@ public sealed partial class AgentExecutionService
                 if (_contextUsageSnapshotStore is not null)
                 {
                     // 与 Buffered 共用 warm-prefix checkpoint；失败保留原历史，不再静默驱逐。
+                    // ADR-095 D2：候选只来自软阈值且请求仍安全时，摘要生成不进入发送关键路径
+                    // （outcome.Disposition = DeferredSoft），此处只做归因，不产生等待。
                     if (history.Count > 12 && !warmPrefixCompactionAttempted)
                     {
                         var compaction = await TryWarmPrefixCompactionAsync(
@@ -798,6 +800,10 @@ public sealed partial class AgentExecutionService
                             effectiveLlmConfig,
                             round,
                             ct);
+                        turnTimings.RegisterCompactionAttempt(
+                            compaction.DurationMs,
+                            compaction.Compacted,
+                            compaction.DeferredSoft);
                         warmPrefixCompactionAttempted = compaction.Plan is not null;
                         if (compaction.Compacted)
                         {

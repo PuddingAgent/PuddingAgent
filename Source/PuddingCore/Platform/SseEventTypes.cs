@@ -21,6 +21,11 @@ public static class SseEventTypes
     public const string ContextCompactionStarted = "context.compaction.started";
     public const string ContextCompactionCompleted = "context.compaction.completed";
     public const string ContextCompactionFailed = "context.compaction.failed";
+    /// <summary>
+    /// 压缩未开始/被推迟的显式终态（ADR-095 D7：成功/跳过/延期/失败结果必须明确）。
+    /// 与 failed 区分：skipped 表示「本轮不需要或不值得做」，不是错误。
+    /// </summary>
+    public const string ContextCompactionSkipped = "context.compaction.skipped";
     public const string VoiceCaptureStatus = "voice_capture_status";
     public const string VoicePlaybackStatus = "voice_playback_status";
     public const string CameraCaptureStatus = "camera_capture_status";

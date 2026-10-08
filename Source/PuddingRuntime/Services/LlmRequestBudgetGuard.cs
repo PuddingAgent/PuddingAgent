@@ -195,6 +195,10 @@ public static partial class LlmRequestBudgetGuard
     /// 2026-08-22 能耗修复：此前子代理路径只有硬悬崖（约 61 万 tokens），
     /// 上下文被养满才一次性裁剪，每轮重放 30-60 万 tokens。
     /// </summary>
+    /// <param name="workUnitInputCapacity">
+    /// 可选：WorkUnit 的输入容量上限。必须与出站 <see cref="Prepare"/> 使用同一参数，
+    /// 否则软阈值分母宽于真实硬边界。null/非正数表示无该约束。
+    /// </param>
     public static LlmSoftCompactionResult PrepareSoftCompaction(
         ContextUsageSnapshotStore usageStore,
         string sessionId,
@@ -203,11 +207,14 @@ public static partial class LlmRequestBudgetGuard
         LlmConfig? config,
         double triggerRatio = ContextCompactionDefaults.TriggerRatio,
         double targetRatio = 0.5,
-        int safetyBufferTokens = DefaultSafetyBufferTokens)
+        int safetyBufferTokens = DefaultSafetyBufferTokens,
+        long? workUnitInputCapacity = null)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
 
-        var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens);
+        // 有效输入上限必须与出站硬门禁（<see cref="Prepare"/>）同源：除模型窗口/输出预算/安全余量外，
+        // 还要包含 WorkUnit 输入容量，否则软阈值会在比真实硬边界更宽的分母上判断。
+        var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens, workUnitInputCapacity);
         var working = messages.ToList();
         var snapshot = usageStore.CaptureLlmRequest(
             sessionId,

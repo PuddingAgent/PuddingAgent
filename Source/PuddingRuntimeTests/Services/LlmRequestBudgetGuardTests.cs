@@ -223,6 +223,113 @@ public sealed class LlmRequestBudgetGuardTests
             "two tokens"));
     }
 
+    /// <summary>
+    /// ADR-095 D2 准入判据：候选只来自软阈值时不得进入发送关键路径。
+    /// 关键不变量——判为「软」意味着出站硬门禁不会裁剪请求副本；判为「硬」时不同步压缩
+    /// 就只能靠请求副本硬裁剪（丢会话级记忆连续性）。
+    /// </summary>
+    [TestMethod]
+    public void WarmPrefixPlan_ClassifiesSoftVersusHardByRealHeadroom()
+    {
+        var history = BuildHistory(pairs: 40);
+        var used = new ContextUsageSnapshotStore()
+            .CaptureLlmRequest("probe", history, tools: null, "test-model").UsedTokens;
+        Assert.IsGreaterThan(0, used);
+
+        // ── 软：估算输入 ≈ 80% 有效上限（已达 0.65 触发比，但仍安全）──
+        var softLimit = (int)(used / 0.8);
+        var softConfig = ConfigForEffectiveLimit(softLimit);
+        Assert.AreEqual(softLimit, LlmRequestBudgetGuard.ResolveEffectiveInputLimit(softConfig));
+
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(
+            new ContextUsageSnapshotStore(), "session-soft", history, history, tools: null, softConfig,
+            triggerRatio: 0.65, targetRatio: 0.5, out var softPlan));
+        Assert.IsNotNull(softPlan);
+        Assert.IsFalse(
+            softPlan!.RequiresSynchronousProtection,
+            $"used={softPlan.InitialUsedTokens} limit={softPlan.EffectiveInputLimit}");
+        Assert.IsGreaterThan(0, softPlan.HardHeadroomTokens);
+
+        var softOutbound = LlmRequestBudgetGuard.Prepare(
+            new ContextUsageSnapshotStore(), "session-soft", history, tools: null, softConfig);
+        Assert.AreEqual(
+            0,
+            softOutbound.RemovedMessageCount,
+            "判定为软维护时出站请求必须仍在硬预算内，否则同步保护不可省");
+
+        // ── 硬：估算输入 ≈ 2× 有效上限 ──
+        var hardLimit = used / 2;
+        var hardConfig = ConfigForEffectiveLimit(hardLimit);
+        Assert.AreEqual(hardLimit, LlmRequestBudgetGuard.ResolveEffectiveInputLimit(hardConfig));
+
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(
+            new ContextUsageSnapshotStore(), "session-hard", history, history, tools: null, hardConfig,
+            triggerRatio: 0.65, targetRatio: 0.5, out var hardPlan));
+        Assert.IsNotNull(hardPlan);
+        Assert.IsTrue(hardPlan!.RequiresSynchronousProtection);
+        Assert.IsLessThan(0, hardPlan.HardHeadroomTokens);
+
+        var hardOutbound = LlmRequestBudgetGuard.Prepare(
+            new ContextUsageSnapshotStore(), "session-hard", history, tools: null, hardConfig);
+        Assert.IsGreaterThan(
+            0,
+            hardOutbound.RemovedMessageCount,
+            "越界时若不同步压缩，出站只能靠请求副本硬裁剪");
+    }
+
+    /// <summary>
+    /// 软阈值分母必须与出站硬门禁同源：WorkUnit 输入容量参与后，触发判断不得继续用更宽的模型窗口。
+    /// </summary>
+    [TestMethod]
+    public void PrepareSoftCompaction_AppliesWorkUnitCapacityToTriggerDenominator()
+    {
+        var history = BuildHistory(pairs: 40);
+        // 无 MaxContextTokens：有效上限完全由 WorkUnit 容量决定，断言可直接对号。
+        var config = new LlmConfig { ModelId = "test-model" };
+
+        var constrained = LlmRequestBudgetGuard.PrepareSoftCompaction(
+            new ContextUsageSnapshotStore(), "session-capacity", history, tools: null, config,
+            workUnitInputCapacity: 5_000);
+        Assert.AreEqual(5_000, constrained.EffectiveInputLimit);
+        Assert.IsTrue(constrained.Compacted, "5,000 分母下估算输入已越过触发比");
+        Assert.IsGreaterThan(0, constrained.RemovedMessageCount);
+
+        // 对照：不给容量约束时同一历史不触发（分母退化为 int.MaxValue）。
+        var unconstrained = LlmRequestBudgetGuard.PrepareSoftCompaction(
+            new ContextUsageSnapshotStore(), "session-capacity", history, tools: null, config);
+        Assert.IsFalse(unconstrained.Compacted);
+    }
+
+    /// <summary>
+    /// checkpoint 正文必须携带共享合同登记的摘要标记：计量分层与 UI 摘要桶按该合同识别，
+    /// 未登记的标记会被误计入「对话消息」（诊断 2026-10-07 §4.3）。
+    /// </summary>
+    [TestMethod]
+    public void WarmPrefixCheckpoint_UsesTheSharedSummaryMarkerContract()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(
+            store, "session-marker", history, history, tools: null, BuildConfig(),
+            triggerRatio: 0.65, targetRatio: 0.5, out var plan));
+
+        var checkpoint = WarmPrefixCompaction.TryCreateCheckpoint(plan!, "## Current Work\n- continue");
+
+        Assert.IsNotNull(checkpoint);
+        Assert.IsTrue(ContextSummaryMarkers.ContainsMarker(checkpoint[1].Content));
+        Assert.IsTrue(checkpoint[1].Content.Contains(
+            ContextSummaryMarkers.WarmPrefixCheckpoint,
+            StringComparison.Ordinal));
+    }
+
+    /// <summary>反推一个使有效输入上限恰好等于 <paramref name="limit"/> 的配置。</summary>
+    private static LlmConfig ConfigForEffectiveLimit(int limit) => new()
+    {
+        ModelId = "test-model",
+        MaxOutputTokens = 1_000,
+        MaxContextTokens = limit + 1_000 + LlmRequestBudgetGuard.DefaultSafetyBufferTokens,
+    };
+
     [TestMethod]
     public void FrozenSystemPrompt_MaintainsSameEpochBytes_AndPreservesHydratedCheckpoint()
     {

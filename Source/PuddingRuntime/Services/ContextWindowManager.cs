@@ -1205,6 +1205,31 @@ public sealed class ContextWindowManager
         }
     }
 
+    /// <summary>
+    /// 发布 warm-prefix（长 Agent 循环前缀重放）压缩的生命周期事实。
+    /// <para>
+    /// 复用 canonical Conversation 事件管道与 <see cref="ISessionCompactionEventEmitter"/>：
+    /// 不新增第二套事件库、不新增轮询（ADR-095 D7）。emitter 缺失/写入失败按既有策略记 metric 并告警，不抛。
+    /// </para>
+    /// <para>
+    /// 只传事实（compactionId/reason/applied/前后估算/耗时），不带摘要原文、Prompt 或密钥。
+    /// </para>
+    /// </summary>
+    internal Task EmitWarmPrefixCompactionLifecycleAsync(
+        string sessionId,
+        string? workspaceId,
+        string eventType,
+        object payload,
+        string? traceId,
+        CancellationToken ct)
+        => EmitCompactionLifecycleEventAsync(
+            sessionId,
+            workspaceId ?? string.Empty,
+            eventType,
+            payload,
+            traceId,
+            ct);
+
     private async Task EmitCompactionLifecycleEventAsync(
         string sessionId,
         string workspaceId,

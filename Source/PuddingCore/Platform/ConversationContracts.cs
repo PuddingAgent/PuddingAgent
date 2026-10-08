@@ -113,6 +113,12 @@ public static class ConversationEventTypes
     public const string ContextCompactionCompleted = "context.compaction.completed";
     public const string ContextCompactionFailed = "context.compaction.failed";
 
+    /// <summary>
+    /// 压缩跳过/推迟终态（非错误）：候选只来自软阈值且当前请求仍安全时，摘要生成被移出发送关键路径。
+    /// 目录投影必须保持会话原状态（不得像 completed 那样投影为 frozen）。
+    /// </summary>
+    public const string ContextCompactionSkipped = "context.compaction.skipped";
+
     /// <summary>P0-1: 模型实际所见的 context 各层正文（脱敏后）快照。</summary>
     public const string ContextAssembled = "context.assembled";
 

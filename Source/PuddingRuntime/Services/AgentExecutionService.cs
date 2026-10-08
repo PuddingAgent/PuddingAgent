@@ -2112,6 +2112,14 @@ public sealed partial class AgentExecutionService
     /// conversation plus one fixed trailing instruction, so the provider can reuse the
     /// already-warm prefix. History is replaced only after a non-empty shrinking summary
     /// returns; failure preserves the original surface.
+    /// <para>
+    /// ADR-095 D2 准入：候选只来自**软阈值**且本次请求仍能安全容纳时
+    /// （<see cref="WarmPrefixCompactionPlan.RequiresSynchronousProtection"/> == false），
+    /// 摘要生成**不进入发送关键路径**——本轮只为可选维护留下明确事实（
+    /// <c>context.compaction.skipped</c> 生命周期事件 + 日志），真正的整理交给 canonical 终态提交后的
+    /// 会话维护（<c>ContextWindowManager.TrimHistoryAsync</c> 的持久压缩路径）。
+    /// 只有真的越过硬输入边界时才同步生成摘要，避免出站退化为仅靠请求副本硬裁剪。
+    /// </para>
     /// </summary>
     private async Task<WarmPrefixCompactionOutcome> TryWarmPrefixCompactionAsync(
         RuntimeDispatchRequest request,
@@ -2136,11 +2144,100 @@ public sealed partial class AgentExecutionService
                 effectiveLlmConfig,
                 trigger,
                 target,
-                out var plan)
+                out var plan,
+                workUnitInputCapacity: request.UsageBudget?.MaxInputTokens)
             || plan is null)
         {
             return WarmPrefixCompactionOutcome.NotNeeded;
         }
+
+        // 生命周期身份：一次尝试一个 compactionId；started / completed / failed / skipped 共用同一 id。
+        var warmPrefixCompactionId =
+            $"warm-prefix:{request.ExecutionIdentity?.RunId ?? request.SessionId}:r{round + 1}:{Guid.NewGuid():N}";
+        var warmPrefixStartedAt = DateTimeOffset.UtcNow;
+
+        if (!plan.RequiresSynchronousProtection)
+        {
+            // 软维护推迟（ADR-095 D2）：估算输入 <= 有效输入上限，本次请求安全。
+            // 关键路径上不调用摘要模型、不改动历史，也不伪造"已压缩"。
+            _logger.LogInformation(
+                "[AgentExec:Compaction] Warm-prefix soft maintenance deferred (request still within hard input budget) session={Session} round={Round} compactionId={CompactionId} used={Used} limit={Limit} headroom={Headroom} candidateRemoved={Removed} reason={Reason}",
+                request.SessionId,
+                round + 1,
+                warmPrefixCompactionId,
+                plan.InitialUsedTokens,
+                plan.EffectiveInputLimit,
+                plan.HardHeadroomTokens,
+                plan.RemovedMessageCount,
+                WarmPrefixCompactionReasons.SoftDeferred);
+            await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
+                request.SessionId,
+                request.WorkspaceId,
+                SseEventTypes.ContextCompactionSkipped,
+                new
+                {
+                    compactionId = warmPrefixCompactionId,
+                    sessionId = request.SessionId,
+                    mode = "WarmPrefix",
+                    stage = "deferred",
+                    reason = WarmPrefixCompactionReasons.SoftDeferred,
+                    applied = false,
+                    outcome = WarmPrefixCompactionDisposition.DeferredSoft.ToString(),
+                    requiresSynchronousProtection = false,
+                    beforeTokens = plan.InitialUsedTokens,
+                    afterTokens = plan.InitialUsedTokens,
+                    effectiveInputLimit = plan.EffectiveInputLimit,
+                    hardHeadroomTokens = plan.HardHeadroomTokens,
+                    candidateRemovedMessages = plan.RemovedMessageCount,
+                    candidateRemovedTokens = plan.RemovedTokenEstimate,
+                    messageCount = plan.InitialMessageCount,
+                    round = round + 1,
+                    // 明确：该路径只改内存前缀重放历史，不写持久 checkpoint（与持久摘要压缩是不同操作）。
+                    durableCheckpoint = false,
+                    startedAt = warmPrefixStartedAt,
+                },
+                request.ExecutionIdentity?.TraceId,
+                CancellationToken.None);
+
+            return new WarmPrefixCompactionOutcome(
+                false,
+                plan,
+                trigger,
+                target,
+                warmPrefixStartedAt,
+                WarmPrefixCompactionDisposition.DeferredSoft,
+                DurationMs: null,
+                SkipReason: WarmPrefixCompactionReasons.SoftDeferred);
+        }
+
+        // ── 硬保护：真的越过有效输入上限，必须同步压缩 ──
+        var summaryStartedAt = warmPrefixStartedAt;
+        await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
+            request.SessionId,
+            request.WorkspaceId,
+            SseEventTypes.ContextCompactionStarted,
+            new
+            {
+                compactionId = warmPrefixCompactionId,
+                sessionId = request.SessionId,
+                mode = "WarmPrefix",
+                stage = "generating",
+                reason = WarmPrefixCompactionReasons.HardProtection,
+                applied = false,
+                requiresSynchronousProtection = true,
+                beforeTokens = plan.InitialUsedTokens,
+                afterTokens = (int?)null,
+                effectiveInputLimit = plan.EffectiveInputLimit,
+                hardHeadroomTokens = plan.HardHeadroomTokens,
+                candidateRemovedMessages = plan.RemovedMessageCount,
+                candidateRemovedTokens = plan.RemovedTokenEstimate,
+                messageCount = plan.InitialMessageCount,
+                round = round + 1,
+                durableCheckpoint = false,
+                startedAt = warmPrefixStartedAt,
+            },
+            request.ExecutionIdentity?.TraceId,
+            CancellationToken.None);
 
         var replayPrefix = PrefixCacheSnapshotBuilder.Build(
             plan.SummaryRequestMessages,
@@ -2153,7 +2250,6 @@ public sealed partial class AgentExecutionService
         {
             MaxOutputTokens = summaryOutputTokens,
         };
-        var summaryStartedAt = DateTimeOffset.UtcNow;
         // S01-B：请求准备边界——冻结本次 compaction 请求的上下文归因。
         var summaryRequestContext = FreezeRequestContext(request.SessionId);
         var summaryInvocationId = BuildLlmInvocationId(request, round, "compaction");
@@ -2206,14 +2302,50 @@ public sealed partial class AgentExecutionService
             || summaryResult.Response is null
             || summaryResult.Response.ToolCalls is { Count: > 0 })
         {
+            var failureDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
             _logger.LogWarning(
-                "[AgentExec:Compaction] Warm-prefix summary rejected; history preserved session={Session} round={Round} success={Success} toolCalls={ToolCalls} error={Error}",
+                "[AgentExec:Compaction] Warm-prefix summary rejected; history preserved session={Session} round={Round} compactionId={CompactionId} success={Success} toolCalls={ToolCalls} durationMs={DurationMs} error={Error}",
                 request.SessionId,
                 round + 1,
+                warmPrefixCompactionId,
                 summaryResult.Success,
                 summaryResult.Response?.ToolCalls?.Count ?? 0,
+                failureDurationMs,
                 summaryResult.ExecutionError);
-            return new WarmPrefixCompactionOutcome(false, plan, trigger, target, summaryStartedAt);
+            await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
+                request.SessionId,
+                request.WorkspaceId,
+                SseEventTypes.ContextCompactionFailed,
+                new
+                {
+                    compactionId = warmPrefixCompactionId,
+                    sessionId = request.SessionId,
+                    mode = "WarmPrefix",
+                    stage = "failed",
+                    reason = WarmPrefixCompactionReasons.SummaryRejected,
+                    applied = false,
+                    outcome = WarmPrefixCompactionDisposition.Failed.ToString(),
+                    beforeTokens = plan.InitialUsedTokens,
+                    afterTokens = plan.InitialUsedTokens,
+                    effectiveInputLimit = plan.EffectiveInputLimit,
+                    messageCount = plan.InitialMessageCount,
+                    durationMs = failureDurationMs,
+                    round = round + 1,
+                    durableCheckpoint = false,
+                    historyPreserved = true,
+                    error = summaryResult.ExecutionError,
+                },
+                request.ExecutionIdentity?.TraceId,
+                CancellationToken.None);
+            return new WarmPrefixCompactionOutcome(
+                false,
+                plan,
+                trigger,
+                target,
+                summaryStartedAt,
+                WarmPrefixCompactionDisposition.Failed,
+                failureDurationMs,
+                WarmPrefixCompactionReasons.SummaryRejected);
         }
 
         var safeSummary = await _keyVaultService.StripAsync(
@@ -2222,28 +2354,102 @@ public sealed partial class AgentExecutionService
         var checkpoint = WarmPrefixCompaction.TryCreateCheckpoint(plan, safeSummary);
         if (checkpoint is null)
         {
+            var noGainDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
             _logger.LogWarning(
-                "[AgentExec:Compaction] Warm-prefix summary did not shrink selected history; history preserved session={Session} round={Round} removedTokens={RemovedTokens} summaryTokens={SummaryTokens}",
+                "[AgentExec:Compaction] Warm-prefix summary did not shrink selected history; history preserved session={Session} round={Round} compactionId={CompactionId} removedTokens={RemovedTokens} summaryTokens={SummaryTokens} durationMs={DurationMs}",
                 request.SessionId,
                 round + 1,
+                warmPrefixCompactionId,
                 plan.RemovedTokenEstimate,
-                ContextUsageSnapshotStore.CountTokens(safeSummary));
-            return new WarmPrefixCompactionOutcome(false, plan, trigger, target, summaryStartedAt);
+                ContextUsageSnapshotStore.CountTokens(safeSummary),
+                noGainDurationMs);
+            await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
+                request.SessionId,
+                request.WorkspaceId,
+                SseEventTypes.ContextCompactionFailed,
+                new
+                {
+                    compactionId = warmPrefixCompactionId,
+                    sessionId = request.SessionId,
+                    mode = "WarmPrefix",
+                    stage = "no_gain",
+                    reason = WarmPrefixCompactionReasons.SummaryNoGain,
+                    applied = false,
+                    outcome = WarmPrefixCompactionDisposition.NoGain.ToString(),
+                    beforeTokens = plan.InitialUsedTokens,
+                    afterTokens = plan.InitialUsedTokens,
+                    effectiveInputLimit = plan.EffectiveInputLimit,
+                    candidateRemovedTokens = plan.RemovedTokenEstimate,
+                    summaryTokens = ContextUsageSnapshotStore.CountTokens(safeSummary),
+                    messageCount = plan.InitialMessageCount,
+                    durationMs = noGainDurationMs,
+                    round = round + 1,
+                    durableCheckpoint = false,
+                    historyPreserved = true,
+                },
+                request.ExecutionIdentity?.TraceId,
+                CancellationToken.None);
+            return new WarmPrefixCompactionOutcome(
+                false,
+                plan,
+                trigger,
+                target,
+                summaryStartedAt,
+                WarmPrefixCompactionDisposition.NoGain,
+                noGainDurationMs,
+                WarmPrefixCompactionReasons.SummaryNoGain);
         }
 
         durableHistory.Clear();
         durableHistory.AddRange(checkpoint);
+        var appliedDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
         _logger.LogInformation(
-            "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} removed={Removed} messages={Before}->{After} estimated={BeforeTokens}->{AfterTokens} durationMs={DurationMs}",
+            "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} compactionId={CompactionId} removed={Removed} messages={Before}->{After} estimated={BeforeTokens}->{AfterTokens} durationMs={DurationMs}",
             request.SessionId,
             round + 1,
+            warmPrefixCompactionId,
             plan.RemovedMessageCount,
             plan.InitialMessageCount,
             durableHistory.Count,
             plan.InitialUsedTokens,
             plan.EstimatedRetainedSnapshot.UsedTokens,
-            Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds));
-        return new WarmPrefixCompactionOutcome(true, plan, trigger, target, summaryStartedAt);
+            appliedDurationMs);
+        await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
+            request.SessionId,
+            request.WorkspaceId,
+            SseEventTypes.ContextCompactionCompleted,
+            new
+            {
+                compactionId = warmPrefixCompactionId,
+                sessionId = request.SessionId,
+                mode = "WarmPrefix",
+                stage = "applied",
+                reason = WarmPrefixCompactionReasons.HardProtection,
+                // 只有 applied=true 才允许前端显示"已压缩"（ADR-095 D7）。
+                applied = true,
+                outcome = WarmPrefixCompactionDisposition.Applied.ToString(),
+                beforeTokens = plan.InitialUsedTokens,
+                afterTokens = plan.EstimatedRetainedSnapshot.UsedTokens,
+                effectiveInputLimit = plan.EffectiveInputLimit,
+                removedMessages = plan.RemovedMessageCount,
+                candidateRemovedTokens = plan.RemovedTokenEstimate,
+                messageCountBefore = plan.InitialMessageCount,
+                messageCountAfter = durableHistory.Count,
+                durationMs = appliedDurationMs,
+                round = round + 1,
+                durableCheckpoint = false,
+            },
+            request.ExecutionIdentity?.TraceId,
+            CancellationToken.None);
+        return new WarmPrefixCompactionOutcome(
+            true,
+            plan,
+            trigger,
+            target,
+            summaryStartedAt,
+            WarmPrefixCompactionDisposition.Applied,
+            appliedDurationMs,
+            SkipReason: null);
     }
 
     /// <summary>

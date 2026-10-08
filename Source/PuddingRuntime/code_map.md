@@ -239,7 +239,7 @@
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
 | `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |
 | `Services/VolcengineArkImageGenerationProvider.cs` | 火山方舟的图片生成适配 | `VolcengineArkImageGenerationProvider` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | — |
-| `Services/WarmPrefixCompaction.cs` | 长循环的暖前缀压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | 只接受真实缩小的结果 |
+| `Services/WarmPrefixCompaction.cs` | 长循环的暖前缀压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | 只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection`（估算输入 > 有效输入上限，两侧同源含 WorkUnit 容量）才允许同步生成摘要，软阈值候选一律延期到 canonical 终态之后（ADR-095 D2）；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers` |
 | `Services/WikiPageWriteEntry.cs` | 记忆 Wiki 页面的确定性写入入口 | `WikiPageWriteRequest` | `Services/MemoryWikiPageUpdateService.cs` | — |
 | `Services/WorkspaceAgentsContextBuilder.cs` | 工作区 Agent 名册上下文层的构造 | `WorkspaceAgentsContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
 | `Services/YoloSignalService.cs` | 监听工作区 yolo.signal 的后台服务 | `YoloSignalService` | `Services/AgentFirewall.cs` | 只读文件信号，不放宽任何资源边界 |

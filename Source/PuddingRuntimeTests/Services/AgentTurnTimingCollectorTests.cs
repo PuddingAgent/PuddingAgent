@@ -106,4 +106,42 @@ public sealed class AgentTurnTimingCollectorTests
         Assert.AreEqual(2, collector.ModelCalls);
         Assert.IsTrue(collector.ModelMs >= 1L);
     }
+
+    /// <summary>
+    /// ADR-095 §6.3：压缩是串行阶段，必须能解释「受理→首增量」，但它是独立归因，不是主模型耗时；
+    /// 未观察到同步压缩时保持 null（不用 0 掩盖），软维护延期不得被记成一次压缩。
+    /// </summary>
+    [TestMethod]
+    public void CompactionFacts_StayNullUntilObserved_ThenAccumulateSeparately()
+    {
+        var collector = new AgentTurnTimingCollector();
+
+        var untouched = collector.ToPayload();
+        Assert.IsNull(untouched["compactionMs"], "未观察到同步压缩时必须是 null，不是 0");
+        Assert.AreEqual(0, untouched["compactionAttempts"]);
+        Assert.AreEqual(0, untouched["deferredSoftCompactions"]);
+        Assert.AreEqual(0, untouched["appliedCompactions"]);
+
+        // 软维护延期：没有摘要调用，也没有耗时。
+        collector.RegisterCompactionAttempt(durationMs: null, applied: false, deferredSoft: true);
+        Assert.IsNull(collector.CompactionMs);
+        Assert.AreEqual(1, collector.CompactionAttempts);
+        Assert.AreEqual(1, collector.DeferredSoftCompactions);
+        Assert.AreEqual(0, collector.AppliedCompactions);
+
+        // 真正的同步压缩 + 一次无收益/失败尝试：耗时累加，但仍不计入 ModelMs。
+        collector.RegisterCompactionAttempt(1_500, applied: true, deferredSoft: false);
+        collector.RegisterCompactionAttempt(500, applied: false, deferredSoft: false);
+
+        Assert.AreEqual(2_000L, collector.CompactionMs);
+        Assert.AreEqual(3, collector.CompactionAttempts);
+        Assert.AreEqual(1, collector.AppliedCompactions);
+        Assert.AreEqual(0L, collector.ModelMs, "摘要耗时不得混入主模型耗时");
+
+        var payload = collector.ToPayload();
+        Assert.AreEqual(2_000L, payload["compactionMs"]);
+        Assert.AreEqual(3, payload["compactionAttempts"]);
+        Assert.AreEqual(1, payload["deferredSoftCompactions"]);
+        Assert.AreEqual(1, payload["appliedCompactions"]);
+    }
 }

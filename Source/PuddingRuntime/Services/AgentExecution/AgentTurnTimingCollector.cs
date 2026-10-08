@@ -68,6 +68,41 @@ internal sealed class AgentTurnTimingCollector
     /// <summary>Total time spent inside provider streams (all rounds).</summary>
     public long ModelMs => _modelTotalMs;
 
+    /// <summary>
+    /// 同步（硬保护）压缩累计耗时。ADR-095 §6.3：压缩是串行阶段，必须能解释「受理→首增量」，
+    /// 但它**不是**主模型耗时，因此不计入 <see cref="ModelMs"/>。
+    /// 从未观察到任何同步压缩时为 null（不用 0 掩盖）。
+    /// </summary>
+    public long? CompactionMs { get; private set; }
+
+    /// <summary>本 Turn 内 warm-prefix 压缩尝试次数（含延期、失败与无收益）。</summary>
+    public int CompactionAttempts { get; private set; }
+
+    /// <summary>被移出发送关键路径的软维护次数（延期，不是失败，也不是"已压缩"）。</summary>
+    public int DeferredSoftCompactions { get; private set; }
+
+    /// <summary>真正替换历史（applied）的同步压缩次数。</summary>
+    public int AppliedCompactions { get; private set; }
+
+    /// <summary>
+    /// 记录一次 warm-prefix 压缩尝试的归因事实。
+    /// </summary>
+    /// <param name="durationMs">
+    /// 同步摘要实际耗时；延期/未发生摘要调用时传 null（阶段未观察），不传 0 冒充已测量。
+    /// </param>
+    /// <param name="applied">是否真正替换了历史。</param>
+    /// <param name="deferredSoft">是否为「软维护延期」。</param>
+    public void RegisterCompactionAttempt(long? durationMs, bool applied, bool deferredSoft)
+    {
+        CompactionAttempts++;
+        if (deferredSoft)
+            DeferredSoftCompactions++;
+        if (applied)
+            AppliedCompactions++;
+        if (durationMs is { } measured)
+            CompactionMs = (CompactionMs ?? 0) + measured;
+    }
+
     /// <summary>Total time spent executing tools (all calls).</summary>
     public long ToolMs => _toolTotalMs;
 
@@ -180,6 +215,10 @@ internal sealed class AgentTurnTimingCollector
         ["providerFirstToolDeltaMs"] = ProviderFirstToolDeltaMs,
         ["firstContentFrameMs"] = FirstContentFrameMs,
         ["modelMs"] = ModelMs,
+        ["compactionMs"] = CompactionMs,
+        ["compactionAttempts"] = CompactionAttempts,
+        ["deferredSoftCompactions"] = DeferredSoftCompactions,
+        ["appliedCompactions"] = AppliedCompactions,
         ["toolMs"] = ToolMs,
         ["modelCalls"] = ModelCalls,
         ["toolCalls"] = ToolCalls,

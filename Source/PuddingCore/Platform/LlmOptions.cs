@@ -99,7 +99,10 @@ namespace PuddingCode.Platform
         public int HistoryMessageTokens { get; set; }
         /// <summary>系统提示词层（Role=System 且非压缩摘要）token 估算。</summary>
         public int SystemPromptTokens { get; set; }
-        /// <summary>压缩摘要层（正文含 &lt;compact_summary&gt; 标记的消息）token 估算。</summary>
+        /// <summary>
+        /// 压缩摘要层 token 估算。识别标记见 <see cref="PuddingCode.Runtime.ContextSummaryMarkers"/>：
+        /// 持久摘要 <c>&lt;compact_summary&gt;</c> 与 warm-prefix checkpoint <c>&lt;compacted-summary&gt;</c> 同源计入本桶。
+        /// </summary>
         public int CompactionSummaryTokens { get; set; }
         /// <summary>对话消息层（Role=User/Assistant 且非压缩摘要）token 估算。</summary>
         public int ConversationTokens { get; set; }
@@ -137,8 +140,6 @@ namespace PuddingCode.Platform
     public sealed class ContextUsageSnapshotStore
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-        /// <summary>压缩摘要内容标记：请求侧不携带 ContentType，只能按标记识别。</summary>
-        private const string CompactSummaryMarker = "<compact_summary>";
         private static readonly ConcurrentDictionary<string, Tokenizer> Tokenizers = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, ContextUsageSnapshot> _snapshots = new();
         private readonly ConcurrentDictionary<string, double> _promptCalibrationRatios = new(StringComparer.OrdinalIgnoreCase);
@@ -195,7 +196,9 @@ namespace PuddingCode.Platform
                 // 分层归因（上下文用量进度条）：各桶互斥且穷尽 —— ChatRole 只有
                 // System/User/Assistant/Tool，压缩摘要按内容标记识别（不依赖角色，
                 // 注入路径可能落在 System 或 User 上）。
-                if (content.Contains(CompactSummaryMarker, StringComparison.OrdinalIgnoreCase))
+                // 摘要身份来自共享合同（ContextSummaryMarkers）：持久摘要 <compact_summary> 与
+                // warm-prefix checkpoint <compacted-summary> 必须同源识别，否则后者被误计入对话桶。
+                if (ContextSummaryMarkers.ContainsMarker(content))
                 {
                     compactionSummaryTokens += tokenCount;
                 }
@@ -222,9 +225,7 @@ namespace PuddingCode.Platform
                     continue;
                 if (message.Role is not (ChatRole.Assistant or ChatRole.User))
                     continue;
-                if ((message.Content ?? string.Empty).Contains(
-                        CompactSummaryMarker,
-                        StringComparison.OrdinalIgnoreCase))
+                if (ContextSummaryMarkers.ContainsMarker(message.Content))
                     continue;
                 reasoningTokens += CountTokens(message.ReasoningContent, modelId);
             }

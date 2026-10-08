@@ -96,7 +96,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Runtime` | `ContextPipeline` → `AgentExecutionService` | 组装 stable system prefix + volatile User tail，再用 `[CURRENT USER TURN input_sha256=…]` 围栏本轮输入（缺失 fail-closed） |
 | `Runtime → Gateway` | `LlmInvocationService` → `DirectLlmClient` | 按 `model.protocol` 路由 openai / responses / anthropic 三协议网关 |
 | `Gateway → Platform` | `ILlmGatewayUsageRecorder` → `llm_gateway_usage_events` | usage 落库后供 StatsApi 与日聚合取本地计费口径 |
-| `Runtime` | `ContextWindowManager` → `ContextCompactionService` | 绝对窗口 proactive 压缩；压缩前从 ChatMessages 增量镜像到 memory，失败 fail-closed |
+| `Runtime` | `ContextWindowManager` → `ContextCompactionService` | 绝对窗口 proactive 压缩；压缩前从 ChatMessages 增量镜像到 memory，失败 fail-closed。软维护按「容量 + 候选变化」准入：请求仍能安全容纳时只登记 `context.compaction.skipped`（stage=deferred）并延期到 canonical 终态之后，越过有效输入上限才同步保护（ADR-095 D2） |
 | `Platform` | `MessageDeliveryPolicy` → `MessageDeliveryDispatcher` | inform/report_result 只通知；ask/request_review/delegate 才进执行 |
 | `Runtime` | `SubAgentInvocationService` → `SubAgentManager` | 子代理委派：model 须为 providerId/modelId；run archive 固化实际预算 |
 | `Platform` | `TaskAutoDispatchWorker` → `TaskExecutionTracker` | 5 min 有界派发：availability → backlog 精炼 → Plan/Node 编译 → 五态跟踪 |
