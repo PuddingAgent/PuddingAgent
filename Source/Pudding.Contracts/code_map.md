@@ -74,7 +74,9 @@ draft: false
 | `ApiInterfaces.cs` | `IPuddingDesktopApi` → `IPuddingDesktopWebViewApi`（Navigate / ExecuteJavascript / GetPageState）+ `IPuddingDesktopShellApi`（ShowNotification）。全部带 `DesktopCallContext` 与 `CancellationToken` |
 | `Desktop/LocateContracts.cs` | 元素定位契约：`DesktopLocatorKind`（10 策略 + 线名真源）、`DesktopLocator`（`IncludeHidden` 默认 false：只排除**隐藏**元素；`InViewportOnly` 默认 false：只留视口内 —— 两者**正交**，隐藏与屏外是两个事实）、`BrowserLocateRequest`（**Ref 必须携带来源 PageVersion**，构造期强制；可选 `Cursor` 分页）、`DesktopElementRef`（必须带有效版本；`Visible` 与 `InViewport` 分开报告）、`DesktopLocateResult`（命中 0 ≠ 被截断；`NextCursor` 为 null 表示**已取完**） |
 | `Desktop/LocateCursor.cs` | 分页游标 `BrowserLocateCursor`：**对模型不透明**，绑定「页面版本 + 查询指纹 + 偏移」，线格式 `c1-{version}-{fp8}-{offset}`；严格解析（不猜测、不修补）；**`TryResolve` 是两条传输共用的分页判定**（过期 ⇒ `CursorExpired`、格式坏 ⇒ `InvalidRequest`，两者必须分开）；指纹用 SHA-256 截断（**不能用 `string.GetHashCode`**——按进程加盐，跨进程不稳定），只看影响匹配集合的输入（定位条件 + includeHidden/inViewportOnly），不含 limit/cursor 自身 |
-| `CapabilityErrors.cs` | 错误码 ↔ 线名真源（快照由契约测试冻结）：`cursor_expired`（旧游标绑定的是别的版本/查询 ⇒ 必须**重新读取**，不可重试、无副作用；与"参数错" `invalid_request` 分开） |
+| `Desktop/ReadingRevision.cs` | 读取结果的**修订标识**（§145）：线格式 `r1-{version}-{queryFp8}-{hash8}`，绑定「页面版本 + 查询指纹（模式/作用域/字段）+ 内容哈希」；`IsComparableTo` 明确"能不能谈变化"——不可比就 `refresh_required`，**绝不伪造 diff**。载体是调用方上次看到的内容，因此比较是本地纯计算，不需要服务端保存基线 |
+| `Desktop/StableHash.cs` | 跨进程稳定短哈希（SHA-256 截断）：**不能用 `string.GetHashCode()`**（按进程加盐 ⇒ 重启后把"没变"误判成"变了"）。游标指纹与修订标识共用 |
+| `CapabilityErrors.cs` | 错误码 ↔ 线名真源（快照由契约测试冻结）：`cursor_expired`、**`refresh_required`**（基线不可比 ⇒ 重新读取；都不可重试、无副作用；与"参数错" `invalid_request` 分开） |
 | `Desktop/OutputFieldSet.cs` | 输出字段白名单的**通用实现**（§6.2/§151：读取类工具都有 `fields`）：核心字段恒在、可裁剪字段才是作用面、线名与输出 JSON 键一一对应、未知线名**明确拒绝**、全空白等价于没给。各工具只提供"核心/可裁剪"两张清单，解析与错误语义只有一份 |
 | `Desktop/ElementFields.cs` | 元素输出的字段定义（locate）：核心 `ref/tag/visible/enabled`（`ref` 是继续操作的唯一把手）；可裁剪 `role/name/text/inViewport/checked/value/selectedValues/boundingBox`（text/name/bbox 是 payload 大头） |
 | `Desktop/SnapshotFields.cs` | 快照输出的字段定义（§151）：核心 `mode/truncated/truncationReason/nextCursor`（这份结果能不能信）；可裁剪三种表示 `accessibilityTree/domText/html`（payload 绝对大头 ⇒ 设计要求"同次默认只返回一种表示"）+ 预算事实 `nodeCount/returnedLines/bytes` |

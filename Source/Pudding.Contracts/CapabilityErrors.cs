@@ -56,6 +56,12 @@ public enum DesktopCapabilityErrorCode
     /// 调用方必须**重新读取**再分页；这不是"重试同一个请求"能解决的。
     /// </summary>
     CursorExpired,
+
+    /// <summary>
+    /// 基线不可用（设计方案 §145）：调用方给的修订标识与当前页面版本/查询不可比，
+    /// 因此**谈不了"变化"** —— 必须重新读取，且**绝不伪造变化**（凭空生成 diff）。
+    /// </summary>
+    RefreshRequired,
 }
 
 /// <summary>
@@ -83,6 +89,8 @@ public static class DesktopCapabilityErrorCodes
         (DesktopCapabilityErrorCode.InternalError, "internal_error", false, true),
         // 旧游标绝不能用于新内容（§6.2）：过期后唯一的正确动作是重新读取，因此不可重试。
         (DesktopCapabilityErrorCode.CursorExpired, "cursor_expired", false, false),
+        // 基线不可比（§145）：同样只能重新读取；**不伪造变化**。
+        (DesktopCapabilityErrorCode.RefreshRequired, "refresh_required", false, false),
     ];
 
     private static readonly Dictionary<DesktopCapabilityErrorCode, (string Wire, bool Retryable, bool MayHaveSideEffects)> ByCode =

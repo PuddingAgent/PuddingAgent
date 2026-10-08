@@ -31,6 +31,7 @@ public sealed class ErrorTaxonomyTests
             "invalid_request",
             "internal_error",
             "cursor_expired",
+            "refresh_required",
         ];
 
         Assert.Equal(expected, actual);
@@ -84,6 +85,8 @@ public sealed class ErrorTaxonomyTests
             "InternalError|retry=False|side=True",
             // 旧游标只能靠"重新读取"解决，重试同一个请求没有意义（§6.2）。
             "CursorExpired|retry=False|side=False",
+            // 基线不可比（§145）：同样只能重新读取；不伪造变化。
+            "RefreshRequired|retry=False|side=False",
         ];
 
         Assert.Equal(expected, actual);

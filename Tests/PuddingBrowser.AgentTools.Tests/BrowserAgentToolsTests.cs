@@ -1312,6 +1312,98 @@ public sealed class BrowserAgentToolsTests
         }
     }
 
+    [Fact]
+    public async Task Snapshot_RevisionAnswersWhetherContentChanged_AndRefusesToCompareIncomparableBaselines()
+    {
+        // 设计 §145：「diff 绑定 baseline 和同一文档；基线缺失返回 refresh_required，不伪造变化」。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+        var tool = new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor);
+
+        string Args(object extra) => JsonSerializer.Serialize(extra);
+
+        var first = await ExecuteAsync(tool, Args(new { page_id = page.Id.Value, context_id = "ctx-1", mode = "outline" }));
+        Assert.True(first.Success);
+        var firstValue = GetJson(first.Output, "value");
+        var revision = firstValue.GetProperty("revision").GetString();
+        Assert.False(string.IsNullOrEmpty(revision));
+
+        // 没给 since_revision ⇒ **不比较**，也就不声称"没变"（changed = null）。
+        Assert.Equal(JsonValueKind.Null, firstValue.GetProperty("changed").ValueKind);
+
+        // 同一内容 ⇒ 明确回答"没变"（这是内容哈希的证据，不是猜测）。
+        var unchanged = await ExecuteAsync(tool, Args(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "outline",
+            since_revision = revision
+        }));
+        Assert.True(unchanged.Success);
+        Assert.False(GetJson(unchanged.Output, "value").GetProperty("changed").GetBoolean());
+
+        // 内容真的变了 ⇒ 明确回答"变了"。
+        page.SnapshotText = "document name=\"Example\"\nheading name=\"Changed\"\nbutton ref=v1-n1 name=\"Save\"";
+        var changed = await ExecuteAsync(tool, Args(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "outline",
+            since_revision = revision
+        }));
+        Assert.True(changed.Success);
+        Assert.True(GetJson(changed.Output, "value").GetProperty("changed").GetBoolean());
+
+        // 换了查询（不同 mode/fields）⇒ **不可比**：refresh_required，且不发明"变化"。
+        var otherQuery = await ExecuteAsync(tool, Args(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "interactive",
+            since_revision = revision
+        }));
+        Assert.False(otherQuery.Success);
+        using (var document = JsonDocument.Parse(otherQuery.Error!))
+        {
+            Assert.Equal("refresh_required", document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        }
+
+        // 来自**别的版本**的修订 ⇒ 同样不可比。
+        var otherVersion = BrowserReadingRevision.Create(
+                page.PageVersion + 1,
+                BrowserReadingRevision.QueryFingerprintOf("outline", null, null),
+                "whatever")
+            .Encode();
+        var stale = await ExecuteAsync(tool, Args(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "outline",
+            since_revision = otherVersion
+        }));
+        Assert.False(stale.Success);
+        using (var document = JsonDocument.Parse(stale.Error!))
+        {
+            Assert.Equal("refresh_required", document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        }
+
+        // 格式坏掉 ⇒ **参数错**（不是"内容变了"，也不是"基线不可比"）。
+        var malformed = await ExecuteAsync(tool, Args(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            since_revision = "not-a-revision"
+        }));
+        Assert.False(malformed.Success);
+        using (var document = JsonDocument.Parse(malformed.Error!))
+        {
+            Assert.Equal("browser_invalid_arguments", document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        }
+    }
+
     /// <summary>断言某字段**不在**输出里（要么缺键，要么显式为 null）。</summary>
     private static void AssertAbsent(JsonElement element, string name)
     {
@@ -2181,13 +2273,16 @@ internal sealed class FakeBrowserPage : IBrowserPage
         {
             DomText = "<div><button ref=v1-n1> Save</button><input ref=v1-n2></div>",
             // 结构行没有 ref（只有 outline 保留它），可交互行带 ref（驱动自己的判定）。
-            AccessibilityTree =
-                "document name=\"Example\"\nheading name=\"Form\"\n"
+            AccessibilityTree = SnapshotText
+                ?? "document name=\"Example\"\nheading name=\"Form\"\n"
                 + "button ref=v1-n1 name=\"Save\"\ntextbox ref=v1-n2 name=\"Search\"",
             NodeCount = 4,
             Truncated = SnapshotTruncated
         });
     }
+
+    /// <summary>让替身改变读取内容（用于验证"内容变了吗"是**基于内容哈希的证据**）。</summary>
+    public string? SnapshotText { get; set; }
     public async Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
         => (await QueryAllAsync(locator, ct)).FirstOrDefault();
     public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct)

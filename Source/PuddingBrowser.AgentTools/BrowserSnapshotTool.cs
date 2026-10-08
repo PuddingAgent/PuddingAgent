@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
@@ -49,6 +49,13 @@ public sealed record BrowserSnapshotArgs
     /// </summary>
     [ToolParam("Read only this element's subtree instead of the whole page: use a ref locator to reuse an existing reference, or any other locator (resolved to a single ref first).")]
     public BrowserLocatorInput? Scope { get; init; }
+
+    /// <summary>
+    /// 与上次读取的修订标识比较（设计方案 §145）：只有相同页面版本 + 相同查询才谈得上"变化"；
+    /// 不可比时返回 <c>refresh_required</c> 让调用方重新读取，**绝不伪造 diff**。
+    /// </summary>
+    [ToolParam("Revision from a previous result to check whether the content changed since then. Only comparable for the same page version and the same mode/scope/fields; otherwise the call fails with refresh_required.")]
+    public string? SinceRevision { get; init; }
 
     // ── full 模式专用（outline/interactive 下被忽略，输出预算由 limit/max_bytes 决定）──
     public bool IncludeDom { get; init; } = true;
@@ -143,6 +150,20 @@ public sealed class BrowserSnapshotTool(
 
             var target = new DesktopPageTarget(contextId, args.PageId.Trim());
 
+            // 修订标识比对（§145）：先校验格式，格式坏是**参数错**，不是"内容变了"。
+            BrowserReadingRevision? previous = null;
+            if (!string.IsNullOrWhiteSpace(args.SinceRevision))
+            {
+                if (!BrowserReadingRevision.TryParse(args.SinceRevision, out var parsed))
+                {
+                    return BrowserToolResponse.Failure(
+                        "browser_invalid_arguments",
+                        "since_revision is malformed; omit it to read without comparing, or pass the revision string unchanged");
+                }
+
+                previous = parsed;
+            }
+
             // 作用域（§151）：ref 直接用；其它定位方式先解析成**唯一** ref——
             // 0 命中/多命中都明确拒绝（"大概就是这个"是错位读取的常见来源）。
             string? scopeRef = null;
@@ -196,6 +217,14 @@ public sealed class BrowserSnapshotTool(
 
             if (mode == BrowserReadingMode.Full)
             {
+                var fullContent = snapshot.Value.AccessibilityTree ?? snapshot.Value.DomText ?? snapshot.Value.Html;
+                var (fullRevision, fullChanged, fullFailure) = CompareRevision(
+                    previous, mode, scopeRef, fields, snapshot.Value.PageVersion, fullContent);
+                if (fullFailure is not null)
+                {
+                    return fullFailure;
+                }
+
                 return BrowserToolResponse.Success(
                     new BrowserSnapshotToolValue
                     {
@@ -205,7 +234,9 @@ public sealed class BrowserSnapshotTool(
                         Html = fields.Includes("html") ? snapshot.Value.Html : null,
                         Truncated = snapshot.Value.Truncated,
                         TruncationReason = snapshot.Value.Truncated ? "incomplete_scan" : "none",
-                        NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0
+                        NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
+                        Revision = fullRevision?.Encode(),
+                        Changed = fullChanged
                     },
                     new BrowserContextId(contextId),
                     new PageId(args.PageId.Trim()),
@@ -219,6 +250,13 @@ public sealed class BrowserSnapshotTool(
             var composed = BrowserReadingFormat.Compose(
                 snapshot.Value.AccessibilityTree, reading!, snapshot.Value.Truncated);
 
+            var (revision, changed, failure) = CompareRevision(
+                previous, mode, scopeRef, fields, snapshot.Value.PageVersion, composed.Text);
+            if (failure is not null)
+            {
+                return failure;
+            }
+
             return BrowserToolResponse.Success(
                 new BrowserSnapshotToolValue
                 {
@@ -229,7 +267,9 @@ public sealed class BrowserSnapshotTool(
                     NextCursor = composed.NextCursor,
                     ReturnedLines = fields.Includes("returnedLines") ? composed.ReturnedLines : null,
                     Bytes = fields.Includes("bytes") ? composed.Bytes : null,
-                    NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0
+                    NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
+                    Revision = revision?.Encode(),
+                    Changed = changed
                 },
                 new BrowserContextId(contextId),
                 new PageId(args.PageId.Trim()),
@@ -238,6 +278,56 @@ public sealed class BrowserSnapshotTool(
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (BrowserOperationException ex) { return BrowserToolResponse.FromException(ex); }
+    }
+
+    /// <summary>
+    /// 生成/比对修订标识（§145）。三条规则：
+    /// ① 没有 <c>since_revision</c> ⇒ 只报告本次修订，不谈变化；
+    /// ② 页面版本未知、或与调用方给的不一致、或查询指纹不同 ⇒ <c>refresh_required</c>
+    ///    （**不可比就谈不了"变化"**，更不许伪造 diff）；
+    /// ③ 可比时只回答"内容是否一致"——这是内容哈希的**证据**，不是猜测。
+    /// </summary>
+    private static (BrowserReadingRevision? Revision, bool? Changed, ToolExecutionResult? Failure) CompareRevision(
+        BrowserReadingRevision? previous,
+        BrowserReadingMode mode,
+        string? scopeRef,
+        OutputFieldSet fields,
+        DesktopPageVersion pageVersion,
+        string? content)
+    {
+        if (!pageVersion.IsKnown)
+        {
+            // 没有活版本 ⇒ 修订标识失去依据，无法与任何历史比较（也绝不能假装能比）。
+            return previous is null
+                ? (null, null, null)
+                : (null, null, BrowserToolResponse.Failure(
+                    "refresh_required",
+                    "the page has no live version, so the previous revision cannot be compared; re-read to establish a baseline"));
+        }
+
+        var fingerprint = BrowserReadingRevision.QueryFingerprintOf(
+            mode.ToString().ToLowerInvariant(),
+            scopeRef,
+            fields.IsExplicit
+                ? BrowserSnapshotFields.All.Where(fields.Includes).OrderBy(name => name, StringComparer.Ordinal)
+                : null);
+
+        var revision = BrowserReadingRevision.Create(pageVersion.Value, fingerprint, content);
+
+        if (previous is not { } baseline)
+        {
+            return (revision, null, null);
+        }
+
+        if (!baseline.IsComparableTo(pageVersion.Value, fingerprint))
+        {
+            return (revision, null, BrowserToolResponse.Failure(
+                "refresh_required",
+                $"the given revision belongs to v{baseline.PageVersion} or a different mode/scope/fields; "
+                + "re-read to establish a comparable baseline (no change is reported, none is invented)"));
+        }
+
+        return (revision, !baseline.HasSameContentAs(content), null);
     }
 
     private static bool TryParseMode(string? mode, out BrowserReadingMode parsed)

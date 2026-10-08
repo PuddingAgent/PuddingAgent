@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingCode.Tools;
@@ -80,6 +80,18 @@ public sealed record BrowserSnapshotToolValue
 
     /// <summary>驱动扫到的节点数（页面侧事实，不是返回行数）。</summary>
     public int NodeCount { get; init; }
+
+    /// <summary>
+    /// 本次读取的修订标识（§145）：把它原样回传给下次的 <c>since_revision</c> 即可问"内容变了吗"。
+    /// 对调用方不透明。
+    /// </summary>
+    public string? Revision { get; init; }
+
+    /// <summary>
+    /// 与 <c>since_revision</c> 相比内容是否变化；**没给 <c>since_revision</c> 时为 <c>null</c>**
+    /// （不比较就不能声称"没变"）。不可比时整个调用以 `refresh_required` 失败，而不是在这里猜一个值。
+    /// </summary>
+    public bool? Changed { get; init; }
 }
 
 public sealed record BrowserElementToolValue
