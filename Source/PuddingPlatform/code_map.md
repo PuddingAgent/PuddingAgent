@@ -31,22 +31,22 @@
 
 ## 消息网关
 
-| 文件 | 用途 |
-|------|------|
-| `Services/MessageGateway/` | 🔑 消息网关投影（FeishuImageArtifactProjection 等） |
-| `Services/MessageFabric/MessageQueueProjectionService.cs` | 未认领消息队列统一只读投影；默认仅 `message_deliveries queued/retrying` + `chat_execution_commands pending`，认领/运行后转入会话轨迹；`includeTerminal=true` 才返回完整诊断，`queueKind` 区分事实源 |
-| `Services/MessageFabric/MessageRouter.cs` / `MessageFabricStore.cs` | Agent 目标按 intent/requires_response 固化 `execute/notify`；稳定 per-target delivery ID；支持按 handling mode 原子批量领取最多 20 条 |
-| `Services/MessageFabric/MessageFabricSchemaBootstrapper.cs` | 旧 SQLite 幂等补 `handling_mode` 与索引，并把普通 `inform/report_result/agent_reply` 历史投递回填为被动通知 |
-| `Services/Conversation/ConversationNotificationStore.cs` | 被动 Message Fabric 通知的原子受理：每条独立写 `ChatMessage + message.created + ConversationHead`，不创建 Turn/command，提交后唤醒 SSE |
-| `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 从 committed terminal event 投影 Connector 回信；trusted Message Fabric Agent ingress 仅在显式 reply contract 下，以稳定 MessageId 投影一次被动 `agent_reply`，失败重试不重跑 Agent |
-| `Services/Conversation/` | 对话接受/投影/事件存储 |
-| `Services/Conversation/CreateSteeringHandler.cs` | Steering 单一受理边界；只接受 canonical Running Turn，校验 Workspace/Agent 后写 Runtime 消费队列 |
-| `Controllers/Api/ConversationTurnsController.cs` | canonical Turn HTTP API；Steering 为 `POST /api/v1/conversations/{conversationId}/turns/{turnId}/steering`，202/409 fail closed |
-| `Services/ConversationEventStore.cs` | 对话事件存储（18KB）。**`GetBoundsAsync` 用一条语句内的两个索引端点查找**（`ORDER BY sequence ASC/DESC LIMIT 1`，2026-10-02）：旧 `MIN(sequence), MAX(sequence)` 会遍历整段会话索引分区，而该方法在 SSE 回放/轮询里被反复调用；同一语句保证 min/max 来自同一读取视图，空会话仍返回 `EventBounds(null, null)`，不新增索引（复用 `(conversation_id, sequence)`） |
-| `Services/RsiTrajectoryDataAccess.cs` | RSI-S3 轨迹数据访问 EF 实现（照抄 `SkillEvolutionDataAccess` 模式：`IDbContextFactory` + `AsNoTracking` + **双数组**空判早退 + 类型过滤**在 SQL 侧** + `OrderBy(TurnId).ThenBy(Sequence)` + 投影 row record 不泄实体）。执行级证据：`PuddingPlatformTests/Services/RsiTrajectoryDataAccessTests.cs`（`EXPLAIN QUERY PLAN` 断言 `SEARCH ... USING INDEX IX_conversation_events_turn_id_type (turn_id=? AND type=?)`，不加 `.Where` 即退化为全表扫描 ⇒ 该断言**可红**）。⚠️ `(turn_id,type)` 索引给不了 `(TurnId,Sequence)` 完全有序 ⇒ 第二排序键走 `USE TEMP B-TREE FOR LAST TERM OF ORDER BY`，代价受返回行数上界约束；**limit 放大到千行级必须重评** |
-| `Services/ConversationProjectionWorker.cs` | 对话投影 Worker；活跃流小积压短 coalescing，批量 checkpoint/catalog，避免每个 raw source event 触发 SQLite/日志紧循环 |
-| `Services/Execution/SqliteExecutionJournal.cs` | canonical execution journal；开事务前处理 SQLite pooled-handle 激活异常，且只在尚未写入事件时清池并有限重试，避免瞬时连接故障直接终止 Agent turn |
-| `Services/MessageTopicService.cs` | 消息主题 |
+| 文件 | 用途 | 关键符号 | 关联 | 约束 |
+|------|------|------|------|------|
+| `Services/MessageGateway/` | Connector 回信与飞书输出的投影目录 | `FeishuImageArtifactProjection` / `FeishuTtsProjection` / `ConversationTerminalMessageFormatter` | `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | — |
+| `Services/MessageFabric/MessageQueueProjectionService.cs` | 未认领消息队列的只读投影 | `MessageQueueProjectionService` / `MessageQueueKinds` | `Services/MessageFabric/MessageFabricStore.cs` | 默认只投影 `queued`/`retrying` 投递与 `pending` 命令；`includeTerminal=true` 才返回完整诊断；`queueKind` 区分事实源 |
+| `Services/MessageFabric/MessageRouter.cs` / `Services/MessageFabric/MessageFabricStore.cs` | 投递路由与固化 | `MessageRouter` / `MessageFabricStore` | `MessageQueueProjectionService` | 按 intent/requires_response 固化为 `execute`/`notify`；per-target delivery ID 稳定；按 handling mode 原子批量领取，单批上限 20 条 |
+| `Services/MessageFabric/MessageFabricSchemaBootstrapper.cs` | 存量库的 handling_mode 迁移 | `MessageFabricSchemaBootstrapper` | `Services/MessageFabric/MessageFabricStore.cs` | 在旧 SQLite 上幂等补列与索引；把普通 `inform`/`report_result`/`agent_reply` 的历史投递回填为被动通知 |
+| `Services/Conversation/ConversationNotificationStore.cs` | 被动通知的原子受理 | `ConversationNotificationStore` | `Services/Conversation/` | 每条通知独立写 `ChatMessage` + `message.created` + `ConversationHead`，不创建 Turn/command；提交后唤醒 SSE |
+| `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | Connector 回信投影 | `ConversationReplyProjectionWorker` | `ConversationNotificationStore` | 只从 committed terminal event 投影；trusted Agent ingress 仅在显式 reply contract 下、以稳定 MessageId 投影一次 `agent_reply`；失败重试不重跑 Agent |
+| `Services/Conversation/` | 对话受理与投影的处理器目录 | `SubmitTurnHandler` / `SystemCommandHandler` / `RequestCompactionHandler` / `CreateSteeringHandler` | `Services/ConversationEventStore.cs` | — |
+| `Services/Conversation/CreateSteeringHandler.cs` | Steering 的单一受理边界 | `CreateSteeringHandler` | `Services/Conversation/` | 只接受 canonical Running Turn，校验 Workspace/Agent 后写 Runtime 消费队列 |
+| `Controllers/Api/ConversationTurnsController.cs` | canonical Turn 的 HTTP API | `ConversationTurnsController` / `SteeringHttpRequest` / `SubmitTurnHttpRequest` | `Services/Conversation/CreateSteeringHandler.cs` | Steering 受理返回 202，冲突 409（fail closed） |
+| `Services/ConversationEventStore.cs` | 对话事件存储 | `ConversationEventStore` / `GetBoundsAsync` | `IConversationEventStore` | `GetBoundsAsync` 用一条语句内 `ORDER BY sequence ASC/DESC LIMIT 1` 取索引两端点（复用 `(conversation_id, sequence)`，不新增索引），空会话返回 `EventBounds(null, null)`；不得改回 `MIN/MAX` |
+| `Services/RsiTrajectoryDataAccess.cs` | RSI 轨迹的 EF 数据访问 | `RsiTrajectoryDataAccess` | `Services/ConversationEventStore.cs` | `(turn_id,type)` 索引给不了 `(TurnId,Sequence)` 完全有序，第二排序键走 `USE TEMP B-TREE FOR LAST TERM OF ORDER BY`，代价受返回行数上界约束，limit 放大到千行级必须重评 |
+| `Services/ConversationProjectionWorker.cs` | 对话投影 Worker | `ConversationProjectionWorker` | `Services/ConversationEventStore.cs` | 活跃流小积压做短 coalescing，checkpoint/catalog 批量提交，避免每个 raw source event 触发 SQLite/日志紧循环 |
+| `Services/Execution/SqliteExecutionJournal.cs` | canonical 执行日志 | `SqliteExecutionJournal` | — | 开事务前处理 SQLite pooled-handle 激活异常；只在尚未写入事件时清池并有限重试，避免瞬时连接故障终止 Agent turn |
+| `Services/MessageTopicService.cs` | 消息主题 | `MessageTopicService` | — | — |
 
 ## Agent 管理
 

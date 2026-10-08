@@ -1,10 +1,10 @@
 ---
-title: 2026-10-08 PuddingPlatform code_map 会话管理表列式改造（波次 1/15 表：error 118 → 113）
+title: 2026-10-08 PuddingPlatform code_map 会话管理表列式改造（波次 1-2/15 表：error 118 → 101）
 author: hyfree
 date: 2026-10-08
 last_reviewed: 2026-10-08
 status: active
-description: "把 Source/PuddingPlatform/code_map.md 的「会话管理」表（8 行）从 2 列改造成规范 v2 的 5 列 schema：用途压回一条职责命题，关键符号取自源码实测的类型与 ctor 依赖，关联只写真实存在的同工程路径，约束只保留「不可从代码推断且删掉会导致误改」的两条并压到 ≤160 字符。检查器 error 118 → 113、warn 50 → 48；目的不是清数字，而是把该表从正文堆积改回可导航索引；本文件是 15 张表中的第 1 张。"
+description: "把 Source/PuddingPlatform/code_map.md 的「会话管理」表（8 行）从 2 列改造成规范 v2 的 5 列 schema：用途压回一条职责命题，关键符号取自源码实测的类型与 ctor 依赖，关联只写真实存在的同工程路径，约束只保留「不可从代码推断且删掉会导致误改」的两条并压到 ≤160 字符。检查器 error 118 → 113 → 101、warn 50 → 48 → 46（波次 1-2）；本文件归并记录该目标文件的全部波次，文件名保留首波次命名。目的不是清数字，而是把该表从正文堆积改回可导航索引；本文件是 15 张表中的第 1 张。"
 categories: [docs, code-map, condensation]
 tags: [code-map, spec-v2, schema, condensation]
 related_docs: [Docs/10_conventions/code-map-规范-v2.md, Docs/00_changelog/2026Year/10/2026-10-07-code_map规范v2与自检.md, Docs/00_changelog/2026Year/10/2026-10-08-code_map波次1-PuddingCodeIndex契约表列式改造.md]
@@ -65,11 +65,35 @@ warn | 50 | **48**（anti-pattern 48 → 46） |
 2. **`header-repeat` 结构性 warn**：该文件 15 个 concern 分区共用同一表头（14 次 > 上限 8），而 §2 又要求固定列序 —— 二者冲突。要么合并分区，要么登记"接受该 warn"的理由，留待后续波次裁定。
 3. **缺 §5 源指纹**：指纹描述的是**源码**而非本文档，与本轮文档改造无耦合；留待专门一波用检查器自身的 `glob_fingerprint` 实测后再写（不手算、不改数字凑绿）。
 
+## 波次 2：消息网关表（14 行）
+
+范围 `## 消息网关`（L36–L49，14 行，含 2 个目录行与 2 个多文件行）。
+
+| 指标 | 波次 1 后 | 波次 2 后 |
+|---|---|---|
+error | 113 | **101**（field-too-long 96 → 86、line-too-long 17 → 15） |
+warn | 48 | **46** |
+该表最长行 | 573 | **290** |
+字节 | 44721 | 45204 |
+行数 / 条目行 | 268 / 181 | **268 / 181（不变）** |
+改造区间违规 | — | **L36..L49 = 0**（对报告 JSON 独立复核） |
+
+目录行（`Services/MessageGateway/`、`Services/Conversation/`）的关键符号取自**磁盘实测的 6 / 8 个 .cs 文件**（脚本逐目录枚举并提取类型）；多文件行 `MessageFabricStore.cs` 的路径**补全为真实路径**（见下）；被引用接口 `IConversationEventStore` / `ICommittedEventSignal` 实测声明在 `Source/PuddingCore/Platform/`，故关联列只写符号名（不写跨工程路径，避免 L2 越界）。
+
+### 写前断言取红（第二轮，均未写入）
+
+1. `关键符号` 格 101 > 100（该行原本想把 `POST /api/v1/conversations/{conversationId}/turns/{turnId}/steering` 塞进关键符号）⇒ 改为列 `ConversationTurnsController` / `SteeringHttpRequest` / `SubmitTurnHttpRequest`，**端点从索引中移除**（它可由控制器的路由属性直接读出，属"可从代码推断"，不满足 S 的双问）。
+2. 三行超 `MAX_LINE_LEN`（307 / 327 / 304）⇒ 通过把关联列换成**符号名**（`MessageQueueProjectionService` / `ConversationNotificationStore`）与收敛用途措辞压到 290 以内。
+3. token 零丢失检查报出 `MessageFabricStore.cs` 与 `PuddingPlatformTests/Services/RsiTrajectoryDataAccessTests.cs` 两项差异 —— 前者是**修正**（原单元格写的是裸文件名，缺 `Services/MessageFabric/` 前缀，实测真实路径存在），后者是**有意丢弃**（测试工程路径属测试侧索引，非本 L2 条目范围）。两项均已显式登记为例外，不是静默丢失。
+
+### 本轮剥离内容（披露）
+
+- L45：剥离"（18KB）"、"2026-10-02"、以及旧 `MIN(sequence), MAX(sequence)` 的行为对比与"该方法在 SSE 回放/轮询里被反复调用"的频率叙述（前者是叙事，后者可由调用方读出）；**保留**索引端点与"不得改回 `MIN/MAX`"的约束。
+- L46：剥离"照抄 `SkillEvolutionDataAccess` 模式"的同类引用、测试文件路径与 `EXPLAIN QUERY PLAN` 断言细节；**保留**索引不足以给出完全有序、第二排序键走 `TEMP B-TREE`、代价受行数上界约束、limit 放大到千行级必须重评。
+- L36：去掉 `🔑` 标记与"（FeishuImageArtifactProjection 等）"式举例，改为在关键符号列列出实测类型。
+
 ## 遗留（后续波次）
 
-- 其余 14 张表（对话 & 聊天 9 行、消息网关 14、Agent 管理 6、认证与当前用户 6、子代理 & 诊断 8、任务系统 20、Agent Availability 25、Goal 持久控制面 16、外部访问令牌 19、安全审批 2、持久化 18、多媒体 6、提供商配置 6、Token 计量 18），合计 173 行。
-
-## 手法沉淀（可复用）
-
-- 大文件多表场景下**表头不可作锚点**（同 schema 必然重复），**首个数据行也可能重复**（重复登记缺陷）⇒ 唯一锚点只能用**章节标题**，再 +2 定位表头。
-- 脚本只做「带断言的精确块替换」，不自动压缩任何语义字段；逐行长度诊断（`row len` + 每格长度）让"是哪一行越界"在写前就可见。
+- 其余 **13 张表 / 159 行**：对话 & 聊天 9、Agent 管理 6、认证与当前用户 6、子代理 & 诊断 8、任务系统 20、Agent Availability 与自动派发 25、Goal 持久控制面 16、外部访问令牌 19、安全审批 2、持久化 18、多媒体 6、提供商配置 6、Token 计量 18。
+- 既有缺陷待裁定（波次 1 登记，仍未处理）：①`Services/SessionStateManager.cs` 在 L9 与 L84 重复登记；②同表头重复 14 次 > 上限 8 与固定列序冲突；③缺 §5 源指纹（待专用一波用 `glob_fingerprint` 实测后写）。
+- 本轮新增登记：`Services/MessageFabric/MessageFabricStore.cs` 的**裸文件名路径**已完成修正；同表的 `Services/MessageFabric/` 与 `Services/Conversation/` 目录行未展开为逐文件条目（是否值得展开需按 §4 成本判据裁定）。
