@@ -1,12 +1,6 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
-#if !WINUI_BROWSER
-// 纯策略组件（原生输入的调用序列、截图参数语义、对话框/页面事件策略）。
-// WinUI 面（PuddingBrowser.WinUI）**链接**本文件但只允许引用 Abstractions（EnforceBrowserBoundary），
-// 因此那里这些能力明确 unsupported / 尚未接管 —— 见文件内各处 #if WINUI_BROWSER 的说明。
-using PuddingBrowser.Automation;
-#endif
 
 namespace PuddingBrowser.WebView2;
 
@@ -45,16 +39,24 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// <summary>页面级 ref 作用域 token（诊断/测试用；不进工具输出，避免被当作可复用标识）。</summary>
     internal string RefScopeToken => _refScopeToken;
 
-    /// <summary>
-    /// 被自动处理的页面事件（脚本对话框/权限请求/新窗口/下载）**有界日志**：随快照回给调用方，
-    /// 让上层知道「刚才发生了什么、页面为什么没卡住」。**不用于继续交互**。
-    /// </summary>
-#if !WINUI_BROWSER
-    internal PageEventLog PageEvents { get; } = new();
-#endif
+    /// <summary>页面事件日志（由注入策略创建；没有策略时为 null ⇒ 如实不上报）。</summary>
+    private IBrowserPageEventLog? _eventLog;
 
-    /// <summary>注入的驱动策略；未注入时用安全默认（页面同样不会被卡住）。</summary>
-    internal IBrowserDriverPolicy Policy { get; set; } = NullBrowserDriverPolicy.Instance;
+    private IBrowserDriverPolicy _policy = NullBrowserDriverPolicy.Instance;
+
+    /// <summary>
+    /// 注入的驱动策略（§7/§8）：未注入时用安全默认（页面同样不会被卡住，只是原生输入/截图明确不支持）。
+    /// 换策略时**重建事件日志**，避免把上一份策略的日志带过去。
+    /// </summary>
+    internal IBrowserDriverPolicy Policy
+    {
+        get => _policy;
+        set
+        {
+            _policy = value ?? NullBrowserDriverPolicy.Instance;
+            _eventLog = _policy.CreateEventLog();
+        }
+    }
 
     /// <summary>被自动处理的页面脚本对话框累计次数（诊断用）。</summary>
     internal int ScriptDialogCount { get; private set; }
@@ -131,9 +133,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         e.State = CoreWebView2PermissionState.Deny;
         e.Handled = true;
 
-#if !WINUI_BROWSER
-        PageEvents.Add(Policy.DescribePermissionRequest(e.PermissionKind.ToString(), e.Uri));
-#endif
+        _eventLog?.Add(Policy.DescribePermissionRequest(e.PermissionKind.ToString(), e.Uri));
         PageEventCount++;
     }
 
@@ -145,9 +145,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
     {
         e.Handled = true;
 
-#if !WINUI_BROWSER
-        PageEvents.Add(Policy.DescribeWindowRequest(e.Uri));
-#endif
+        _eventLog?.Add(Policy.DescribeWindowRequest(e.Uri));
         PageEventCount++;
     }
 
@@ -160,9 +158,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         e.Cancel = true;
         e.Handled = true;
 
-#if !WINUI_BROWSER
-        PageEvents.Add(Policy.DescribeDownloadRequest(e.ResultFilePath, e.DownloadOperation?.Uri));
-#endif
+        _eventLog?.Add(Policy.DescribeDownloadRequest(e.ResultFilePath, e.DownloadOperation?.Uri));
         PageEventCount++;
     }
 
@@ -193,9 +189,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         }
 
         // prompt 的回填文本**永远不提供**（编一个文本替用户提交等于伪造输入）。
-#if !WINUI_BROWSER
-        PageEvents.Add(decision.Summary);
-#endif
+        _eventLog?.Add(decision.Summary);
     }
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
@@ -441,17 +435,8 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// 把有界日志整理成随快照回传的事实（连续重复合并为 <c>(xN)</c>）；没有事件时给 <c>null</c>
     /// （不填「一切正常」之类的假事实）。
     /// </summary>
-#if !WINUI_BROWSER
     private IReadOnlyList<string>? DescribePageEvents() =>
-        PageEvents.IsEmpty
-            ? null
-            : PageEvents.Entries
-                .Select(entry => entry.Count > 1 ? $"{entry.Summary} (x{entry.Count})" : entry.Summary)
-                .ToArray();
-#else
-    // WinUI 面：事件接管照常（策略由宿主注入），但**事实上报**需要 Automation 的日志，尚未接入。
-    private IReadOnlyList<string>? DescribePageEvents() => null;
-#endif
+        _eventLog is not { IsEmpty: false } ? null : _eventLog.Entries.ToArray();
 
     public async Task<ScrollOutcome> ScrollAsync(ScrollOptions o, CancellationToken ct)
     {
@@ -486,13 +471,8 @@ public sealed class WebView2BrowserPage : IBrowserPage
     private async Task<ScrollOutcome> ScrollNativelyAsync(
         CoreWebView2 webView, ScrollOptions options, CancellationToken ct)
     {
-#if WINUI_BROWSER
-        await Task.CompletedTask;
-        throw new BrowserOperationException(
-            "browser_input_mode_not_supported",
-            "native scroll is not available on this surface; use input_mode=dom");
-#else
-        NativeInputSequence.InputTarget target;
+        double pointX;
+        double pointY;
 
         if (options.Target == ScrollTarget.Element && options.Locator is { } locator)
         {
@@ -502,23 +482,26 @@ public sealed class WebView2BrowserPage : IBrowserPage
             var box = await handle.GetBoundingBoxAsync(ct).ConfigureAwait(false)
                 ?? throw new BrowserOperationException(
                     "browser_element_not_found", "the scroll target has no geometry");
-            target = new NativeInputSequence.InputTarget(box.X, box.Y, box.Width, box.Height);
+            pointX = box.X + (box.Width / 2);
+            pointY = box.Y + (box.Height / 2);
         }
         else
         {
             using var metrics = await SendCdpAsync("Page.getLayoutMetrics", null, ct).ConfigureAwait(false);
             var viewport = metrics.RootElement.GetProperty("cssLayoutViewport");
-            target = new NativeInputSequence.InputTarget(
-                viewport.GetProperty("clientWidth").GetDouble() / 2,
-                viewport.GetProperty("clientHeight").GetDouble() / 2,
-                Width: 0,
-                Height: 0);
+            pointX = viewport.GetProperty("clientWidth").GetDouble() / 2;
+            pointY = viewport.GetProperty("clientHeight").GetDouble() / 2;
         }
 
         var deltaX = options.DeltaX ?? 0;
         var deltaY = options.DeltaY ?? 0;
 
-        foreach (var call in NativeInputSequence.PlanScroll(target, deltaX, deltaY))
+        var plan = Policy.PlanScroll(pointX, pointY, deltaX, deltaY)
+            ?? throw new BrowserOperationException(
+                "browser_input_mode_not_supported",
+                "native scroll is not available on this surface; use input_mode=dom");
+
+        foreach (var call in plan)
         {
             ct.ThrowIfCancellationRequested();
             var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
@@ -536,7 +519,6 @@ public sealed class WebView2BrowserPage : IBrowserPage
                 new ScrollOptions { Target = options.Target, Locator = options.Locator, DeltaX = 0, DeltaY = 0 },
                 ct),
             ct).ConfigureAwait(false);
-#endif
     }
 
     public Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct)
@@ -598,12 +580,6 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// </summary>
     public async Task<ScreenshotResult> ScreenshotAsync(ScreenshotOptions o, CancellationToken ct)
     {
-#if WINUI_BROWSER
-        // WinUI 面：截图依赖 Automation 的参数语义组件（该面只允许引用 Abstractions）⇒
-        // 明确 unsupported，不假装能截。
-        await Task.CompletedTask;
-        throw new NotSupportedException("screenshot is not available on this surface yet");
-#else
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(o);
 
@@ -613,22 +589,32 @@ public sealed class WebView2BrowserPage : IBrowserPage
                 "browser_invalid_arguments", "screenshot quality must be between 0 and 100");
         }
 
-        // 参数语义（格式/quality/整页 clip）由 ScreenshotPlan 一处决定并单独测试。
-        ScreenshotPlan.ContentSize? contentSize = null;
+        // 参数语义（格式/quality/整页 clip）由注入策略决定（Automation 的 ScreenshotPlan 单独测试）。
+        double contentX = 0, contentY = 0, contentWidth = 0, contentHeight = 0;
         if (o.FullPage)
         {
             using var metrics = await SendCdpAsync("Page.getLayoutMetrics", null, ct).ConfigureAwait(false);
-            if (!ScreenshotPlan.TryReadContentSize(metrics.RootElement, out var size))
+            if (!metrics.RootElement.TryGetProperty("cssContentSize", out var content)
+                || !content.TryGetProperty("width", out var width)
+                || !content.TryGetProperty("height", out var height))
             {
                 throw new BrowserOperationException(
                     "browser_operation_failed",
                     "the browser did not report a content size, so a full-page screenshot cannot be taken honestly");
             }
 
-            contentSize = size;
+            contentX = content.TryGetProperty("x", out var x) ? x.GetDouble() : 0;
+            contentY = content.TryGetProperty("y", out var y) ? y.GetDouble() : 0;
+            contentWidth = width.GetDouble();
+            contentHeight = height.GetDouble();
         }
 
-        var json = ScreenshotPlan.Build(o.Quality, o.FullPage, contentSize);
+        var json = Policy.BuildScreenshotParameters(
+            o.Quality, o.FullPage, contentX, contentY, contentWidth, contentHeight)
+            ?? throw new BrowserOperationException(
+                "browser_operation_not_supported",
+                "screenshot is not available on this surface (no driver policy supports it)");
+
         using var document = JsonDocument.Parse(json);
         using var captured = await SendCdpAsync(
             "Page.captureScreenshot", document.RootElement.Clone(), ct).ConfigureAwait(false);
@@ -636,7 +622,15 @@ public sealed class WebView2BrowserPage : IBrowserPage
         byte[] bytes;
         try
         {
-            bytes = ScreenshotPlan.Decode(captured.RootElement);
+            var base64 = captured.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.String
+                ? data.GetString()
+                : null;
+            if (string.IsNullOrEmpty(base64))
+            {
+                throw new InvalidOperationException("the browser returned no screenshot payload");
+            }
+
+            bytes = Convert.FromBase64String(base64);
         }
         catch (Exception exception) when (exception is InvalidOperationException or FormatException)
         {
@@ -649,15 +643,16 @@ public sealed class WebView2BrowserPage : IBrowserPage
         }
 
         // 字节预算：**绝不截断图片**（半张图会让读者得出错误结论），超了如实报资源耗尽。
-        if (ScreenshotPlan.CheckBudget(bytes.Length, o.MaxBytes) == ScreenshotPlan.BudgetVerdict.Exceeded)
+        if (o.MaxBytes is { } limit && bytes.Length > limit)
         {
             throw new BrowserOperationException(
                 "browser_resource_exhausted",
-                ScreenshotPlan.DescribeBudget(bytes.Length, o.MaxBytes!.Value));
+                $"screenshot is {bytes.Length} bytes, over the {limit}-byte budget;"
+                + " lower the quality, capture the viewport instead of the full page, or raise the budget"
+                + " (a screenshot is never truncated to fit: half an image invites wrong conclusions)");
         }
 
         return new ScreenshotResult { Bytes = bytes, FilePath = o.FilePath };
-#endif
     }
     public Task<PdfResult> PrintToPdfAsync(PdfOptions o, CancellationToken ct)
         => throw new NotSupportedException("Not in Phase 2A-1");
@@ -699,7 +694,6 @@ public sealed class WebView2BrowserPage : IBrowserPage
         }
     }
 
-#if !WINUI_BROWSER
     /// <summary>
     /// **原生输入路径**（设计方案 §7）：按 <c>NativeInputSequence</c> 规划好的 CDP 调用逐条发出。
     ///
@@ -725,18 +719,23 @@ public sealed class WebView2BrowserPage : IBrowserPage
             ?? throw new BrowserOperationException(
                 "browser_element_not_found", "the matched element has no geometry; native input needs a box");
 
-        var target = new NativeInputSequence.InputTarget(box.X, box.Y, box.Width, box.Height);
         var plan = action switch
         {
-            "click" => NativeInputSequence.PlanClick(target),
-            "hover" => NativeInputSequence.PlanHover(target),
-            "fill" => NativeInputSequence.PlanFill(value),
-            "type" => NativeInputSequence.PlanType(value),
-            "press" => NativeInputSequence.PlanPress(value),
-            _ => throw new BrowserOperationException(
-                "browser_input_mode_not_supported",
-                $"native input is not implemented for action '{action}'"),
+            "click" => Policy.PlanClick(box.X + (box.Width / 2), box.Y + (box.Height / 2), 1),
+            "hover" => Policy.PlanHover(box.X + (box.Width / 2), box.Y + (box.Height / 2)),
+            "fill" => Policy.PlanFill(value),
+            "type" => Policy.PlanType(value),
+            "press" => Policy.PlanPress(value),
+            _ => null,
         };
+
+        // 策略返回 null ⇒ 这一面不支持该动作：**明确拒绝**，绝不静默回落成 DOM 输入。
+        if (plan is null)
+        {
+            throw new BrowserOperationException(
+                "browser_input_mode_not_supported",
+                $"native input is not available for action '{action}' on this surface; use input_mode=dom");
+        }
 
         var modifiers = 0;
         try
@@ -768,7 +767,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
     private async Task ReleaseModifiersAsync(int modifiers, CancellationToken ct)
     {
-        foreach (var call in NativeInputSequence.ReleaseModifiers(modifiers))
+        foreach (var call in Policy.ReleaseModifiers(modifiers) ?? [])
         {
             try
             {
@@ -781,15 +780,6 @@ public sealed class WebView2BrowserPage : IBrowserPage
             }
         }
     }
-#else
-    // WinUI 面：原生输入依赖 Automation 的序列规划，而该面只允许引用 Abstractions ⇒ **明确 unsupported**
-    // （绝不静默回落成 DOM 输入：那会让调用方以为走的是真实输入路径）。
-    private Task ExecuteNativeAsync(string action, Locator locator, string? value, CancellationToken ct) =>
-        throw new BrowserOperationException(
-            "browser_input_mode_not_supported",
-            $"native input is not available on this surface (action '{action}'); use input_mode=dom");
-
-#endif
 
     /// <summary>
     /// Disposes the page. Only unsubscribes CoreWebView2 events.
