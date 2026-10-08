@@ -2276,21 +2276,29 @@ public sealed partial class AgentExecutionService
         if (!terminatedByCancellationOrTimeout
             && !request.SuppressContextAutoCompaction)
         {
-            await _contextManager.TrimHistoryAsync(
+            // T5：可选维护移到**终态之后**（ExecuteAsync 返回即终态，维护不得拖住它）。
+            // 快照在此同步取，避免维护与后续 Turn 并发遍历同一个 List。
+            var bufferedMaintenanceSnapshot = history.ToList();
+            var bufferedMaintenanceWindow =
+                effectiveLlmConfig?.MaxContextTokens ?? template.Runtime?.MaxContextTokens ?? 8192;
+            _postTurnMaintenance.Schedule(
                 request.SessionId,
-                history,
-                effectiveLlmConfig?.MaxContextTokens ?? template.Runtime?.MaxContextTokens ?? 8192,
-                preferDbContextWindow: false,
-                request.WorkspaceId,
-                instance.AgentInstanceId,
-                                    ct,
-                maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
-                maxInputTokens: effectiveLlmConfig?.MaxInputTokens,
-                agentTemplateId: request.AgentTemplateId,
-                traceId: request.ExecutionIdentity?.TraceId,
-                query: request.MessageText,
-                currentMessageId: request.MessageId,
-                currentTurnId: request.ExecutionIdentity?.TurnId);
+                "buffered_post_turn_auto_compaction",
+                maintenanceCt => _contextManager.TrimHistoryAsync(
+                    request.SessionId,
+                    bufferedMaintenanceSnapshot,
+                    bufferedMaintenanceWindow,
+                    preferDbContextWindow: false,
+                    request.WorkspaceId,
+                    instance.AgentInstanceId,
+                    maintenanceCt,
+                    maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
+                    maxInputTokens: effectiveLlmConfig?.MaxInputTokens,
+                    agentTemplateId: request.AgentTemplateId,
+                    traceId: request.ExecutionIdentity?.TraceId,
+                    query: request.MessageText,
+                    currentMessageId: request.MessageId,
+                    currentTurnId: request.ExecutionIdentity?.TurnId));
         }
         _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
         _sessionManager.Touch(request.SessionId);

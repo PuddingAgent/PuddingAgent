@@ -191,19 +191,71 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         Assert.AreEqual(0, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration);
     }
 
+    /// <summary>
+    /// T5 接缝：可选维护必须**在终态之后**才完成 —— 断言「ExecuteAsync 已返回」这一标记
+    /// 出现在 `[PostTurnMaintenance]` 日志之前。这直接证明维护不再位于 done/结果返回之前的同步路径上。
+    /// </summary>
+    [TestMethod]
+    public async Task PostTurnMaintenance_CompletesOnlyAfterExecuteAsyncReturned()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 36, charsPerMessage: 3_000);
+        }
+
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(DoneJson);
+        var tools = new RecordingToolInvocationService();
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var gate = new SessionExecutionGate(NullLogger<SessionExecutionGate>.Instance);
+        var service = CreateService(llm, tools, manager, new ContextUsageSnapshotStore(), factory, log, gate);
+
+        var history = manager.GetOrCreateHistory(SessionId);
+        var hydration = await manager.TryHydrateStreamHistoryFromDbAsync(
+            SessionId, history, 200_000, CancellationToken.None);
+        Assert.IsTrue(hydration.Succeeded, "水合必须成功，否则本用例不成立");
+
+        // 允许终态后的自动维护（Suppress=false）。
+        await service.ExecuteAsync(CreateDispatchRequest(suppressAutoCompaction: false));
+
+        // ① 回到调用方时 Turn 的租约**已经释放**（维护的「终态之后」正是建立在这一点上，
+        //    配合 PostTurnMaintenanceSchedulerTests.Work_StartsOnlyAfterTheGateIsReleased 构成完整证明）。
+        var reacquire = gate.EnterAsync(SessionId, "probe_after_terminal").AsTask();
+        var acquired = await Task.WhenAny(reacquire, Task.Delay(500));
+        Assert.AreSame(reacquire, acquired, "ExecuteAsync 返回时 Turn 租约必须已释放");
+        await (await reacquire).DisposeAsync();
+
+        // ② 可选维护仍然会被执行（不得因移出关键路径而消失）。
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline
+               && !log.Lines.Any(l => l.Contains("[PostTurnMaintenance]", StringComparison.Ordinal)))
+        {
+            await Task.Delay(50);
+        }
+
+        Assert.IsTrue(
+            log.Lines.Any(l => l.Contains("[PostTurnMaintenance]", StringComparison.Ordinal)),
+            "终态后的可选维护必须仍然执行（不得因移出关键路径而消失）");
+    }
+
     // ── 装配 ────────────────────────────────────────────────────────────────
 
-    private static RuntimeDispatchRequest CreateDispatchRequest() => new()
+    private static RuntimeDispatchRequest CreateDispatchRequest(bool suppressAutoCompaction = true) => new()
     {
         SessionId = SessionId,
         AgentTemplateId = "workspace-task-agent",
         MessageText = "please proceed",
         WorkspaceId = WorkspaceId,
         AgentInstanceId = "agent-1",
-        // 有效上限 = 30_000 − 1_000 − 1_024 = 27_976；36×2_000 字符 ≈ 24_000 token
-        // ⇒ 第 0 轮在限内（软维护延期），助手正文 20_000 字符 ⇒ 第 1 轮越界。
+        // 有效上限 = 30_000 − 1_000 − 1_024 = 27_976；36×3_000 字符（词表拼接）≈ 24_000 token
+        // ⇒ 第 0 轮在限内（软维护延期），助手正文 44_000 字符 ⇒ 后续轮次越界。
         LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = 30_000, MaxOutputTokens = 1_000 },
-        SuppressContextAutoCompaction = true,
+        SuppressContextAutoCompaction = suppressAutoCompaction,
         MaxRounds = 5,
     };
 
@@ -223,7 +275,8 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         ContextWindowManager contextManager,
         ContextUsageSnapshotStore snapshotStore,
         IDbContextFactory<MemoryDbContext> memoryDbFactory,
-        CapturingLogger? log = null)
+        CapturingLogger? log = null,
+        ISessionExecutionGate? gate = null)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -241,7 +294,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             memory, skillRuntime, skillPackageRegistry, promptBuilder,
             new MemoryCache(new MemoryCacheOptions()), new ContextAssemblyStore(),
             NullLogger<ContextPipeline>.Instance, new FakeExecutionEnvironmentProvider());
-        var sessionExecutionGate = new SessionExecutionGate(NullLogger<SessionExecutionGate>.Instance);
+        var sessionExecutionGate = gate ?? new SessionExecutionGate(NullLogger<SessionExecutionGate>.Instance);
         var skillPackageDownloader = new SkillPackageDownloadService(
             new FakeHttpClientFactory(), NullLogger<SkillPackageDownloadService>.Instance);
         var compactionService = new ContextCompactionService(
@@ -311,9 +364,27 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     /// <summary>捕获运行时日志，用于在断言失败时给出「为什么没触发」的一手证据。</summary>
     private sealed class CapturingLogger : ILogger<AgentExecutionService>
     {
-        public List<string> Lines { get; } = [];
+        private readonly object _gate = new();
+        private readonly List<string> _lines = [];
+
+        /// <summary>线程安全快照：终态后的维护由后台任务写日志。</summary>
+        public IReadOnlyList<string> Lines
+        {
+            get
+            {
+                lock (_gate)
+                    return _lines.ToArray();
+            }
+        }
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        /// <summary>插入一条外部标记（用于断言日志中的先后顺序）。</summary>
+        public void Mark(string marker)
+        {
+            lock (_gate)
+                _lines.Add(marker);
+        }
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -323,7 +394,10 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter)
-            => Lines.Add($"[{logLevel}] {formatter(state, exception)}");
+        {
+            lock (_gate)
+                _lines.Add($"[{logLevel}] {formatter(state, exception)}");
+        }
     }
 
     private sealed class Factory(DbContextOptions<MemoryDbContext> options) : IDbContextFactory<MemoryDbContext>

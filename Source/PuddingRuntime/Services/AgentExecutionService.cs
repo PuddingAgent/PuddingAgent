@@ -105,6 +105,12 @@ public sealed partial class AgentExecutionService
     /// </summary>
     private readonly IContextCompactionService? _contextCompactionService;
 
+    /// <summary>
+    /// T5：终态之后的**可选**上下文维护调度（复用既有 gate + logger，无需新增 DI）。
+    /// 维护不再出现在 done 帧/结果返回之前的同步路径上。
+    /// </summary>
+    private readonly PostTurnMaintenanceScheduler _postTurnMaintenance;
+
     // LLM 调用提取（审计 P0 #1）
     private AgentExecutionLlmInvoker? _llmInvoker;
     private AgentExecutionLlmInvoker LlmInvoker => _llmInvoker ??= new AgentExecutionLlmInvoker(
@@ -220,6 +226,7 @@ public sealed partial class AgentExecutionService
         _executionProgress         = executionProgress;
         _toolPresentationProjector = toolPresentationProjector;
         _contextCompactionService = contextCompactionService;
+        _postTurnMaintenance = new PostTurnMaintenanceScheduler(sessionExecutionGate, logger);
         _conversationEventStore    = conversationEventStore;
         _compositionRecovery       = compositionRecovery;
         _runtimeExecutionConfig    = runtimeExecutionConfig;
