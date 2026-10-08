@@ -1,4 +1,4 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 ﻿using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -406,6 +406,76 @@ public sealed class BrowserAgentToolsTests
         Assert.NotNull(value.GetProperty("domText").GetString());
         Assert.Equal(100, page.LastSnapshotOptions!.MaxNodes);
         Assert.Equal(JsonValueKind.Null, value.GetProperty("nextCursor").ValueKind);
+    }
+
+    [Fact]
+    public async Task Snapshot_FullMode_DefaultsToExactlyOneRepresentation()
+    {
+        // §151：「同次默认只返回一种表示」。此前 full 会把 DOM + 无障碍树一起倒出来（大页面上都是 MB 级）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", mode = "full" }));
+
+        Assert.True(snapshot.Success, snapshot.Error);
+        var value = GetJson(snapshot.Output, "value");
+        Assert.Equal("accessibilityTree", value.GetProperty("representation").GetString());
+        Assert.False(string.IsNullOrEmpty(value.GetProperty("accessibilityTree").GetString()));
+        AssertAbsent(value, "domText");
+        AssertAbsent(value, "html");
+
+        // 而且要真的少抓：请求里只要无障碍树。
+        var options = surface.LastSnapshotRequest!.Options;
+        Assert.True(options.IncludeAccessibilityTree);
+        Assert.False(options.IncludeDom);
+        Assert.False(options.IncludeHtml);
+    }
+
+    [Fact]
+    public async Task Snapshot_FullMode_ExplicitSelectionsAreHonored_AndEmptySelectionIsRejected()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        // 显式要多于一种：这是"排障模式"的正当用法（旧 include_* 开关就是为此保留的）。
+        var both = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "full",
+                include_dom = true,
+                include_accessibility_tree = true
+            }));
+
+        Assert.True(both.Success, both.Error);
+        var value = GetJson(both.Output, "value");
+        Assert.Equal("accessibilityTree+domText", value.GetProperty("representation").GetString());
+        Assert.False(string.IsNullOrEmpty(value.GetProperty("domText").GetString()));
+
+        // 白名单把三种表示全排掉 ⇒ 参数错（§151「模式与互斥字段组合非法时返回参数错误」）。
+        var none = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "full",
+                fields = new[] { "nodeCount" }
+            }));
+
+        Assert.False(none.Success);
+        using var document = JsonDocument.Parse(none.Error!);
+        Assert.Equal("browser_invalid_arguments", document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        Assert.Contains("representation", document.RootElement.GetProperty("error").GetProperty("message").GetString()!);
     }
 
     [Fact]

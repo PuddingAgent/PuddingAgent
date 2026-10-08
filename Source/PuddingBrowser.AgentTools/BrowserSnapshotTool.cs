@@ -58,8 +58,11 @@ public sealed record BrowserSnapshotArgs
     public string? SinceRevision { get; init; }
 
     // ── full 模式专用（outline/interactive 下被忽略，输出预算由 limit/max_bytes 决定）──
-    public bool IncludeDom { get; init; } = true;
-    public bool IncludeAccessibilityTree { get; init; } = true;
+    /// <summary>显式要 DOM 文本（默认 false：§151「同次默认只返回一种表示」）。</summary>
+    public bool IncludeDom { get; init; }
+
+    /// <summary>显式要无障碍树（默认 false；**什么都不选时**默认给这一种）。</summary>
+    public bool IncludeAccessibilityTree { get; init; }
     public bool IncludeHidden { get; init; }
     public bool IncludeIframes { get; init; } = true;
     public bool IncludeShadowDom { get; init; } = true;
@@ -110,6 +113,14 @@ public sealed class BrowserSnapshotTool(
                 "browser_invalid_arguments",
                 $"unknown snapshot field '{unknownField}'; valid fields: {BrowserSnapshotFields.SelectableList}"
                 + $" (always returned: {string.Join(", ", BrowserSnapshotFields.Core)})");
+        }
+
+        // 「模式与互斥字段组合非法时返回参数错误」（§151）：full 模式一个表示都没选就没法读。
+        if (mode == BrowserReadingMode.Full && SelectedRepresentations(args, fields).Count == 0)
+        {
+            return BrowserToolResponse.Failure(
+                "browser_invalid_arguments",
+                "full mode must select at least one representation (accessibilityTree, domText or html)");
         }
 
         try
@@ -194,13 +205,17 @@ public sealed class BrowserSnapshotTool(
 
             if (mode == BrowserReadingMode.Full)
             {
+                // 表示集合是**唯一判定**：抓取与输出用同一个列表，不会出现"抓了却没说"。
+                var representations = SelectedRepresentations(args, fields);
+
                 return BrowserToolResponse.Success(
                     new BrowserSnapshotToolValue
                     {
                         Mode = "full",
-                        DomText = fields.Includes("domText") ? snapshot.Value.DomText : null,
-                        AccessibilityTree = fields.Includes("accessibilityTree") ? snapshot.Value.AccessibilityTree : null,
-                        Html = fields.Includes("html") ? snapshot.Value.Html : null,
+                        Representation = string.Join('+', representations),
+                        DomText = representations.Contains("domText") ? snapshot.Value.DomText : null,
+                        AccessibilityTree = representations.Contains("accessibilityTree") ? snapshot.Value.AccessibilityTree : null,
+                        Html = representations.Contains("html") ? snapshot.Value.Html : null,
                         Truncated = snapshot.Value.Truncated,
                         TruncationReason = snapshot.Value.Truncated ? "incomplete_scan" : "none",
                         NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
@@ -255,6 +270,7 @@ public sealed class BrowserSnapshotTool(
                 new BrowserSnapshotToolValue
                 {
                     Mode = BrowserReadingFormatWire.NameOf(mode),
+                    Representation = BrowserReadingFormatWire.NameOf(mode),
                     AccessibilityTree = fields.Includes("accessibilityTree") ? composed.Text : null,
                     Truncated = composed.Truncated,
                     TruncationReason = BrowserReadingFormatWire.TruncationNameOf(composed.Truncation),
@@ -335,9 +351,10 @@ public sealed class BrowserSnapshotTool(
         BrowserSnapshotArgs args, BrowserReadingMode mode, OutputFieldSet fields, string? scopeRef, string? sinceRevision) =>
         mode == BrowserReadingMode.Full
             ? new DesktopSnapshotOptions(
-                includeDom: args.IncludeDom && fields.Includes("domText"),
-                includeAccessibilityTree: args.IncludeAccessibilityTree && fields.Includes("accessibilityTree"),
-                includeHtml: args.IncludeHtml && fields.Includes("html"),
+                // 表示集合由 SelectedRepresentations 唯一决定（默认只一种，§151）。
+                includeDom: SelectedRepresentations(args, fields).Contains("domText"),
+                includeAccessibilityTree: SelectedRepresentations(args, fields).Contains("accessibilityTree"),
+                includeHtml: SelectedRepresentations(args, fields).Contains("html"),
                 maxNodes: args.MaxNodes,
                 maxTextLength: args.MaxTextLength,
                 includeHidden: args.IncludeHidden,
@@ -374,6 +391,59 @@ public sealed class BrowserSnapshotTool(
                 maxDepth: BrowserReadingFormat.ScanMaxDepth,
                 scopeRef: scopeRef,
                 sinceRevision: sinceRevision);
+
+    /// <summary>
+    /// 本次 full 模式要抓/要回的表示（设计方案 §151：「**同次默认只返回一种表示**」）。
+    /// 规则：调用方显式勾选 `include_*` 或给了 `fields` 白名单 ⇒ 以它为准；
+    /// **什么都没说** ⇒ 只给一种（无障碍树，调试时最结构化），不再默默把 DOM 一起倒出来。
+    /// </summary>
+    private static IReadOnlyList<string> SelectedRepresentations(BrowserSnapshotArgs args, OutputFieldSet fields)
+    {
+        var selected = new List<string>(3);
+        if (fields.IsExplicit)
+        {
+            // 白名单是**权威**（与 locate 的 fields 语义一致）：列了哪几种就回哪几种。
+            if (fields.Includes("accessibilityTree"))
+            {
+                selected.Add("accessibilityTree");
+            }
+
+            if (fields.Includes("domText"))
+            {
+                selected.Add("domText");
+            }
+
+            if (fields.Includes("html"))
+            {
+                selected.Add("html");
+            }
+
+            return selected;
+        }
+
+        if (args.IncludeAccessibilityTree)
+        {
+            selected.Add("accessibilityTree");
+        }
+
+        if (args.IncludeDom)
+        {
+            selected.Add("domText");
+        }
+
+        if (args.IncludeHtml)
+        {
+            selected.Add("html");
+        }
+
+        if (selected.Count == 0)
+        {
+            // **同次默认只返回一种表示**（§151）：不再默默把 DOM 一起倒出来。
+            selected.Add("accessibilityTree");
+        }
+
+        return selected;
+    }
 
     /// <summary>正文读取的告警：丢弃块与截断都要看得见。</summary>
     private static IReadOnlyList<string>? BuildArticleWarnings(BrowserReadingResult article)
