@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>PuddingSsh.Probe</AssemblyName>
+    <RootNamespace>PuddingSsh.Probe</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- 独立协议探针（设计 §4 / §12 A1）：连接受控真实 OpenSSH，检查结果并用**退出码**表达成败。
+       边界规则：只引用 PuddingSsh 一个项目；不装配 Core / 不读 DataRoot / 不引用任何 Pudding 上层工程。
+       它不是组件测试工程（S2 的假传输测试在 A2/A3 交付），而是「库能力实测」的执行者。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingSsh\PuddingSsh.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -3,6 +3,12 @@
 ###############################################################################
 * text=auto
 
+# Shell scripts must keep LF line endings in the working tree: with `* text=auto`
+# and core.autocrlf=true a fresh checkout would hand bash a CRLF file, whose
+# shebang and every command would fail. TestScripts/ssh-probe/setup-wsl-sshd.sh
+# is executed by WSL bash over /mnt/<drive>/...
+*.sh text eol=lf
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #

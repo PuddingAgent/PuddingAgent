@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+  </PropertyGroup>
+
+  <!-- PuddingSsh: SSH 远程执行/传输的**叶子组件**（设计见
+       Docs/12_features/SSH工具组件化设计与实施方案-2026-10-08.md §4）。
+       边界硬规则（组件化交付规程 §2.2，判据是编译期失败）：
+         · 本项目 **ProjectReference 数量必须为 0**；
+         · 不得引用 PuddingCore / PuddingRuntime / PuddingPlatform / PuddingHost /
+           PuddingDesktop / PuddingAgent / PuddingPathFiltering 或 EF Core / ASP.NET Core /
+           Roslyn / MSBuild；
+         · 唯一允许的包引用是 SSH.NET（实现细节）；公开合同**不得**出现第三方类型；
+         · 不做 DI、DataRoot/home 解析、Agent 主体、审批与持久化 —— 那些由引用方（Runtime）承担。
+       因此本组件可以在宿主运行中独立 build（规程 R1），S5 才登记进解决方案。 -->
+  <ItemGroup>
+    <!-- 固定版本，不用浮动版本（设计 §3）；升级必须与依赖审计结果同一次提交。 -->
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
+  </ItemGroup>
+
+</Project>
