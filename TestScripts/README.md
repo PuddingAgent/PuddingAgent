@@ -469,3 +469,88 @@ RESULT: FAIL (exit 1)
 **结论**：本机可运行的顶层门禁脚本 = **15/20**；另 5 个**不可运行的原因不是编码，而是引擎要求**。
 **处置选项（需人工裁决）**：① **装 PowerShell 7**（最小改动，5 个脚本全部恢复）② 改 5 个脚本为**引擎中立**（可能依赖 7.x 专有语法，工作量大）③ 有意只在 CI/他机运行（则 `#requires` 是**正确设计**，本机属环境缺口）。
 ⚠️ 因 `.github/workflows` **实测不存在**，选项 ③ 当前等于**永久不可运行** ⇒ 建议至少执行 ①。
+
+---
+
+## C-6 —— 脚本**运行期**兼容性门禁（`check-script-runtime-compat.ps1`，2026-10-08 新增）
+
+### 为什么还需要一道门禁
+
+上一节（C-5）的结论是「**解析干净 ≠ 能运行**」。C-6 把这句话**变成了可机检的缺陷**，而不是停留在告诫：
+
+> `check-circular-deps.ps1` 在 C-5 下 **`errors=0` + `req=-`**（能解析、未声明引擎），
+> 但它在第 **26** 行调用 `Split-Path -LeafBase` —— 这是 **PowerShell 6+** 的**参数**。
+> 在 Windows PowerShell 5.1 下该调用抛 `ParameterBindingException`；本机实测：
+> `SPLITPATH_HAS_LEAFBASE=False` · `CALL_ERR=ParameterBindingException`。
+
+**C-5 的判据（字节编码 + 解析 + `#requires`）看不见这一类缺陷。** C-6 专门看这一类。
+
+### 它做什么
+
+1. 用**运行中引擎**同样的规则解码（有 BOM → UTF-8；否则 ANSI），再用**真实解析器**解析；
+2. 遍历**每个 `CommandAst`**，用 `Get-Command` 解析命令名；
+3. 对已解析的 cmdlet/函数，逐个校验**具名参数**（接受**无歧义前缀**，如 `-Fore` → `-ForegroundColor`）。
+
+| 发现 | 含义 | 是否致命 |
+|---|---|---|
+**`PARAM_MISSING`** | 命令存在，但该参数在**本引擎**不存在 | 🔴 致命（exit 1） |
+**`CMD_MISSING`** | 命令名在本引擎**解析不到** | 🔴 致命（exit 1） |
+**`CMD_UNRESOLVED`** | 同 `CMD_MISSING`，但**该文件在运行时会动态注入定义**（见下） | 🟡 仅 WARN（`-StrictCommands` 可升级为致命） |
+`UNANALYSABLE` | 文件解码/解析失败 ⇒ **无法分析** | 🔴 致命（exit 2，fail-closed） |
+
+### 动态定义注入：一次**已证伪的假阳性**与它的处置
+
+首跑时 C-6 在 `test-pudding-deployment-gates.ps1:20/:23` 报了 `CMD_MISSING Test-CoreQuiescent`。
+**这是假阳性**：该脚本用 `[scriptblock]::Create(...)` **在运行时**从另一个文件里 dot-source 出纯谓词
+`Test-CoreQuiescent` —— 动态定义的名字**永远不可能被静态看见**；而该脚本上一轮已被**实跑证明可运行**
+（`exit 0` · `{"Passed":7,"Failed":0}`）。
+
+处置：文件文本匹配 `[scriptblock]::Create` 或 `Invoke-Expression` ⇒ 该文件的未解析名降级为
+`CMD_UNRESOLVED`（**打印但只警告**），文件标签加 `/DYN`。
+⚠️ **代价已明说**：在同时动态注入定义的文件里，**真正缺失的命令也会一起降级为警告**；要强制失败用 `-StrictCommands`。
+
+### 自检（8 组控制，纯内存，不写文件）
+
+| 控制 | 断言 |
+|---|---|
+A | 不存在的命令**必须**被报出 |
+B | 可解析命令 + 可解析参数**必须**干净（不含假阳性） |
+C | **相对本引擎**：本引擎有 `-LeafBase` ⇒ 不许报；没有 ⇒ 必须报（在 5.1 与 7+ 下均成立） |
+D | **同文件内定义的函数不得**被当成缺失命令 |
+E | **原生命令行程序**（`cmd.exe` 等）**只查名、不判参数** |
+F | **无歧义前缀**必须被接受（引擎相对，参数集合不唯一时跳过断言） |
+G | 动态注入文件**必须**产出 `CMD_UNRESOLVED`、**不得**产出 `CMD_MISSING` |
+H | **单个**发现必须计为 **1**（见下） |
+
+### ⚠️ 首跑即抓到本脚本自己的一个缺陷（控制 H 的来源）
+
+首版把函数返回的 `List[object]` 直接当数组用。PowerShell 会**把单元素集合解包**，而
+`New-Object PSObject` 造出的对象**没有** `.Count = 1` 的标量垫片 ⇒ `$findings.Count` 得到 `$null`：
+
+```
+首版实测：check-circular-deps.ps1 显示 "OK  findings=   "（空）← 明明有 1 个发现
+```
+
+**后果是「单发现文件会被标成 OK」—— 与我们要修的假 PASS 同一类错误。**
+修法：所有计数点统一走 `Get-FindingCount`（内部 `@($Findings).Count`），并用**控制 H** 把它钉住。
+
+### 实测（本机 `PS 5.1.26100.9444`，`-Root TestScripts`，21 个脚本 / 1,164 处命令引用）
+
+```
+FILES=21 ANALYSED=21 UNANALYSABLE=0 DYN_FILES=3 CMDREF=1164
+CMD_MISSING=0 CMD_UNRESOLVED=2 PARAM_MISSING=1
+FAIL: check-circular-deps.ps1:26 Split-Path -LeafBase
+WARN: test-pudding-deployment-gates.ps1:20/:23 Test-CoreQuiescent   (DYN)
+RESULT: FAIL   (exit 1)
+```
+
+⇒ **全仓唯一「真·运行期不兼容」= `check-circular-deps.ps1`**（与本文件上一节的 5 个逻辑缺陷叠加，它**两种修法都救不回来**：能解析、但跑到第 26 行必然抛错）。
+
+### 已知边界（打印在报告尾部，不隐藏）
+
+动态调用与 `& $var` 跳过 · 路径方式调用的 `*.ps1` 跳过 · 同文件内定义的函数视为已知 ·
+原生命令行程序只查名 · **splatting、位置参数、provider 动态参数均不分析** · 只能检查源码里**字面出现**的名字。
+
+### 退出码
+
+`0` PASS · `1` 有发现 · `2` 有文件无法分析（fail-closed） · `3` 范围内**枚举到 0 个脚本**（拒绝报绿） · `4` 自检未检出植入缺陷。
