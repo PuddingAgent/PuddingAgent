@@ -25,6 +25,8 @@
 | `BrowserReceiptJudge.cs` | 证据 → 回执。只按「执行阶段 + 声明的后置断言」判定，**不按动作名推断导航**；未执行/结果不明 ⇒ `not_requested`；需要断言但拿不到 ⇒ `unverified`；有未通过断言 ⇒ `failed`。 |
 | `BrowserOperationLedger.cs` | operationId 账本：键 = 调用身份 + 连接世代 + operationId，另存请求摘要。在途项**永不因容量被淘汰**（容量耗尽拒新写请求）；终态 tombstone 保留到容量压力出现，因此过期重传返回 `receipt_expired` 而不是被当成新动作。默认 5 分钟 / 1,024 项。 |
 | `BrowserMutationPostcondition.cs` | 变更类动作的**后置条件**（取代「所有 mutating 结果版本必须严格递增」）：没有活版本是真失败；观测到文档提交即满足任何期望；<b>未声明后置条件时版本不推进不算失败</b>（fill/click 开菜单/SPA 更新）；只有显式声明 `DocumentNavigation` 未满足才报 `outcome_unknown`。`ValidateTabs` 不拿「另一页的版本推进」当证据，改为校验 `close` 是否真的关掉、`activate`/`new` 是否回带活版本。 |
+| `BrowserRefIdentity.cs` | 引用身份模型（设计 §5 / G4）：`BrowserRefScope`（context/page/frame 三元组，frame=null 即顶层）、`BrowserObservationRevisions`（**三个分开的事实**：文档世代 / DOM 修订 / 视口修订）、`BrowserRevisionPolicy`（只读**不推进任何**事实；文档提交推三者；DOM 变更只推 dom；滚动只推 viewport）、`BrowserRefInvalidation`（分类作废）、`BrowserRefDenial` + 线名、`BrowserRefToken`（宿主绑定节点键 + 最小刷新提示）、`BrowserRefDecision` |
+| `BrowserRefRegistry.cs` | 宿主绑定的引用登记表：身份用**宿主侧**节点键（`data-pudding-ref` 之类页面可自写属性只能当提示）；校验同时看作用域与文档世代 ⇒ **跨页/跨 frame 即使版本号相同也拒绝**；撤销**分类**（整页 / 单 frame / 单引用），而普通 DOM 变更与滚动**不作废任何**引用；reference 值不可解析，**绝不按键名/角色自动重绑** |
 
 ## 3. 契约落点（在 `Pudding.Contracts/Desktop/`，BCL-only）
 
@@ -51,10 +53,11 @@
 
 ## 5. 测试
 
-`Source/PuddingBrowser.AutomationTests/`（只引用本组件）：126 用例。
+`Source/PuddingBrowser.AutomationTests/`（只引用本组件）：156 用例。
 
 | 文件 | 覆盖 |
 |------|------|
+| `BrowserRefIdentityTests.cs` | 引用身份与三个事实（设计 §5 / G4）：跨页/跨 frame（含「两页都恰好 v7」）、同角色同名字的新节点**不让旧引用复活**、整页/单 frame/单引用分类作废、普通 DOM 变更与滚动**不作废任何**引用、宿主存活校验、视口变化只让坐标失效、只读调用**零推进** |
 | `BrowserMutationPostconditionTests.cs` | 变更类后置条件：fill/click 不推进版本仍判成功、无活版本是真失败、显式声明导航未满足报 `outcome_unknown`、tab close 按「是否关掉」判、关最后一页无剩余版本仍成功 |
 | `BrowserControlAuthorityTests.cs` | G1：接管/暂停拒绝新写步骤、只读仍可用、接管不撤销阅读授权、接管确认后复检失败、恢复不复活旧租约/世代推进、关闭与连接世代改变作废全部许可、租约按页串行与重传复用 |
 | `BrowserPageGrantTests.cs` | G2：同 context 非目标页拒绝、read 不授权 write、TabClose 需 manage+read、撤销/切目标/跨实例/跨 frame 拒绝、子代理不得借用或扩大父授权、任务级管理授权 |
@@ -74,3 +77,9 @@
 - `BrowserMutationPostcondition` 目前只在**没有**显式后置条件的情况下判定成功/失败；
   `BrowserInteractRequest` 还没有 `expect` 参数，因此 `DocumentNavigation` 目前只被 navigate 使用。
   工具层暴露 `expect` 属后续切片。
+- **`BrowserRefRegistry` 尚未被驱动消费**（2026-10-08，诚实登记）：它是设计 §5 的契约与判据层，
+  驱动侧目前仍只按 `v{pageVersion}-n{seq}` 校验版本、身份仍取自页面可自写的 `data-pudding-ref`。
+  接入需要两件事，属后续切片：① 宿主绑定的节点键（CDP `backendNodeId`；CDP 在本驱动里仍是
+  `NotSupportedException("CDP not in Phase 2A-1")`，过渡期可用驱动侧 `IElementHandle.Id`）；
+  ② `WebView2BrowserPage` 持有登记表并把自己的 scope / 三个事实传进 `WebView2DomClient.ValidateLocator`。
+  在此之前，跨页/跨 frame 同版本号的引用仍会被接受 —— 这是**已知缺口**，不是已修复项。

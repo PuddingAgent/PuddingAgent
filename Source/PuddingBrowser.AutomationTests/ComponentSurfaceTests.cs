@@ -26,8 +26,17 @@ public sealed class ComponentSurfaceTests
         "BrowserOperationLedger",
         "BrowserOperationLedgerEntry",
         "BrowserOperationLedgerOptions",
+        "BrowserObservationRevisions",
         "BrowserReceiptJudge",
+        "BrowserRefDecision",
+        "BrowserRefDenial",
+        "BrowserRefDenialWire",
+        "BrowserRefInvalidation",
+        "BrowserRefRegistry",
+        "BrowserRefScope",
+        "BrowserRefToken",
         "BrowserRetryPolicy",
+        "BrowserRevisionPolicy",
     ];
 
     [TestMethod]
@@ -121,6 +130,7 @@ public sealed class ComponentSurfaceTests
             ["BrowserOperationPolicyTests"] = 10,
             ["BrowserPageGrantTests"] = 22,
             ["BrowserReceiptJudgeTests"] = 21,
+            ["BrowserRefIdentityTests"] = 30,
             ["BrowserRetryPolicyTests"] = 8,
             ["ComponentBoundaryTests"] = 5,
             ["ComponentSurfaceTests"] = 6,
