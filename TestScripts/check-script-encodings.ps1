@@ -19,6 +19,11 @@
       is rejected with ScriptRequiresUnmatchedPSVersion no matter how clean it parses.
       Such scripts are reported as UNRUNNABLE.
 
+    A third class is easy to miss: a file that is non-ASCII WITHOUT a BOM and still PARSES,
+    because the non-ASCII bytes sit in comments or in strings that survive ANSI decoding.
+    Nothing errors, yet the text this engine reads is not the text the author wrote. Those
+    are reported as MOJIBAKE (and MOJIBAKE_RISK when they actually run on this engine).
+
   The gate is NOT "every script must have a BOM", and NOT "every script must avoid
   #requires". An ASCII-only script with no BOM is perfectly valid. BOM presence,
   non-ASCII byte presence and the declared engine are reported as facts.
@@ -153,6 +158,12 @@ if ($SelfTest) {
     $reqFuture = [System.Text.Encoding]::ASCII.GetBytes('#requires -Version ' + $futureMajor + '.0' + [char]10 + '$x = 1' + [char]10)
     $reqCurrent = [System.Text.Encoding]::ASCII.GetBytes('#requires -Version ' + $curMajor + '.0' + [char]10 + '$x = 1' + [char]10)
 
+    # Control F: UTF-8, no BOM, non-ASCII ONLY inside a comment. This one still PARSES on 5.1,
+    # so ErrorCount stays 0 and the file looks OK while holding the wrong text. Control A
+    # proves the loud case (parse fails); this proves the quiet one.
+    $commentOnly = [System.Text.Encoding]::UTF8.GetBytes('#' + ' ' + $cn + [char]10 + '$x = 1' + [char]10)
+    $sF = Get-LoadStateFromBytes -Bytes $commentOnly
+
     $sA = Get-LoadStateFromBytes -Bytes $noBom
     $sB = Get-LoadStateFromBytes -Bytes $withBom
     $sC = Get-LoadStateFromBytes -Bytes $asciiOnly
@@ -169,12 +180,16 @@ if ($SelfTest) {
     if (-not $sD.ReqUnsatisfiable) { $failures += 'future engine requirement not flagged unsatisfiable' }
     if ($sD.ErrorCount -ne 0) { $failures += 'engine requirement fixture did not parse clean' }
     if ($sE.ReqUnsatisfiable) { $failures += 'current engine requirement wrongly flagged unsatisfiable' }
+    if ($sF.ErrorCount -ne 0) { $failures += 'quiet no-BOM control did not parse clean' }
+    if (-not $sF.HasNonAscii) { $failures += 'quiet no-BOM control: non-ASCII flag not set' }
+    if ($sF.HasBom) { $failures += 'quiet no-BOM control reported a BOM' }
 
     Write-Output ('POSCTRL   errors={0} first={1}' -f $sA.ErrorCount, $sA.FirstError)
     Write-Output ('BOMCTRL   errors={0}' -f $sB.ErrorCount)
     Write-Output ('ASCIICTRL errors={0}' -f $sC.ErrorCount)
     Write-Output ('REQFUTURE req={0} unsat={1}' -f $sD.RequiredVersion, $sD.ReqUnsatisfiable)
     Write-Output ('REQCURRENT req={0} unsat={1}' -f $sE.RequiredVersion, $sE.ReqUnsatisfiable)
+    Write-Output ('QUIETCTRL  errors={0} nonascii={1} bom={2}' -f $sF.ErrorCount, $sF.HasNonAscii, $sF.HasBom)
 
     if ($failures.Count -gt 0) {
         foreach ($f in $failures) { Write-Output ('SELFTEST FAIL: ' + $f) }
@@ -213,6 +228,8 @@ $broken = @()
 $unrunnable = @()
 $bomCount = 0
 $nonAsciiCount = 0
+$noBomNonAsciiCount = 0
+$mojiBakeRisk = @()
 $parseClean = 0
 
 foreach ($f in $files) {
@@ -224,6 +241,10 @@ foreach ($f in $files) {
     }
     if ($state.HasBom) { $bomCount++ }
     if ($state.HasNonAscii) { $nonAsciiCount++ }
+    if ($state.HasNonAscii -and -not $state.HasBom) {
+        $noBomNonAsciiCount++
+        if ($state.ErrorCount -eq 0 -and -not $state.ReqUnsatisfiable) { $mojiBakeRisk += $rel }
+    }
 
     $tag = 'OK'
     if ($state.ErrorCount -gt 0) {
@@ -236,6 +257,7 @@ foreach ($f in $files) {
     }
     else {
         $parseClean++
+        if ($state.HasNonAscii -and -not $state.HasBom) { $tag = 'MOJIBAKE' }
     }
 
     $req = '-'
@@ -249,8 +271,8 @@ foreach ($f in $files) {
 }
 
 Write-Output ''
-Write-Output ('FILES={0} BOM={1} NONASCII={2} BROKEN={3} UNRUNNABLE={4} RUNNABLE={5}' -f `
-    $files.Count, $bomCount, $nonAsciiCount, $broken.Count, $unrunnable.Count, $parseClean)
+Write-Output ('FILES={0} BOM={1} NONASCII={2} NONASCII_NO_BOM={3} MOJIBAKE_RISK={4} BROKEN={5} UNRUNNABLE={6} RUNNABLE={7}' -f `
+    $files.Count, $bomCount, $nonAsciiCount, $noBomNonAsciiCount, $mojiBakeRisk.Count, $broken.Count, $unrunnable.Count, $parseClean)
 
 $failed = $false
 if ($broken.Count -gt 0) {
@@ -275,6 +297,23 @@ if ($unrunnable.Count -gt 0) {
         $shown++
     }
     if (-not $AllowUnrunnable) { $failed = $true }
+}
+
+if ($mojiBakeRisk.Count -gt 0) {
+    Write-Output ('FAIL: {0} script(s) are non-ASCII WITHOUT a BOM and DO run on this engine' -f $mojiBakeRisk.Count)
+    Write-Output '  Windows PowerShell decodes a BOM-less file as ANSI, so these parse cleanly while already'
+    Write-Output '  holding different text than the author wrote. No parse error is not the same as correct.'
+    $shown = 0
+    foreach ($m in $mojiBakeRisk) {
+        if ($shown -ge $MaxReport) { break }
+        Write-Output ('  - ' + $m)
+        $shown++
+    }
+    if ($noBomNonAsciiCount -gt $mojiBakeRisk.Count) {
+        Write-Output ('  ({0} further BOM-less non-ASCII file(s) need an engine this machine does not have,' -f ($noBomNonAsciiCount - $mojiBakeRisk.Count))
+        Write-Output '   where UTF-8 is the default encoding - counted, but not a defect here.)'
+    }
+    $failed = $true
 }
 
 if ($failed) {

@@ -859,3 +859,64 @@ $gates = @(
 - 标签**仍然要人手写**：现在它**声明在一处、缺失即拒绝运行**，但「门禁输出哪个标签」这件事本身**无法自动推断**。
 - 静默门禁 fixture 仍未仓库化（端到端路径仍只有仓库外证据）。
 - 仍未接线 CI。
+
+---
+
+## C-5 的静默漏洞：**「能解析」≠「内容正确」**（2026-10-09）
+
+### 起点：一次独立交叉核对
+
+用独立探针数 `TestScripts` 下的 `.ps1`：**45 个**；而 C-5 报 `FILES=23`。**先怀疑门禁漏扫**，逐项对账后排除：
+
+| 量 | 独立探针（不排除任何目录） | C-5（`ExcludeDir` 生效） | 结论 |
+|---|---|---|---|
+`.ps1` 总数 | 45 | 23 | 差额 22 = 被排除目录（`temp\` 等）⇒ **不是漏扫** |
+`BOM` | 5 | 5 | 一致 |
+`NONASCII` | 13 | 7 | 差额 6 全在 `temp\` |
+**非 ASCII 且无 BOM** | **8** | **7 − 5 = 2** | **8 − 6 = 2** ⇒ **算术精确闭合** |
+
+> 📌 **对账的价值就在这里**：先假设门禁有洞，再用**独立口径**证伪；**证伪的过程本身产出了真发现**。
+
+### ⭐ 真发现：2 个文件「无 BOM + 非 ASCII 且仍能解析」
+
+C-5 的自检 **Control A** 只覆盖**响**案例：`$s = '中'`（UTF-8 无 BOM）⇒ ANSI 解码**吞掉引号** ⇒ `TerminatorExpectedAtEndOfString` ⇒ `BROKEN`。
+但真实世界存在**静**案例：非 ASCII 字节落在**注释/能幸存解码的字符串**里 ⇒ **`errors=0`、解析通过、C-5 判 `OK`**，而**引擎读到的文本已经和作者写的不是一回事**。
+
+编码判定（离线，逐字节）：这两个文件都是 **`VALID_UTF8_DIFFERS_FROM_GBK`** ⇒ **它们是无 BOM 的 UTF-8**。
+
+**受害文件（实测）**
+
+| 范围 | 文件 | 为何危险 |
+|---|---|---|
+TestScripts | `start-phase2a3b-external-acceptance.ps1` | 无 `#requires` ⇒ **本机 PS 5.1 真会跑它** ⇒ 中文字符串是乱码 |
+仓库级（额外） | **`dev-up.ps1`**（仓库根） | 同上；**且是外部看门狗链路上的关键脚本** |
+（信息性） | `test-operators-architecture-gates.ps1` | `#requires 7.0` ⇒ 本机跑不了；PS 7 默认 UTF-8 ⇒ **无 BOM 反而是对的** ⇒ 只计数、不算缺陷 |
+
+### 修法（C-5）
+
+- 新增分类 **`MOJIBAKE`**（无 BOM + 非 ASCII + **本机可跑**）与 **`MOJIBAKE_RISK`** 计数。
+- 分母扩展：`NONASCII_NO_BOM=n MOJIBAKE_RISK=n`（**分母必须带，才看得见有多少**）。
+- `MOJIBAKE_RISK > 0` ⇒ **计入 FAIL**（把缺陷从绿色后面揪出来）；跑不了的只统计并附一行说明（**风险方向相反：那样的文件不算缺陷**）。
+- 新增自检 **Control F**：UTF-8 无 BOM、非 ASCII **仅在注释里** ⇒ 断言 `errors=0` **且** 非 ASCII 标志为真 ⇒ **证明「安静案例」确实能静悄悄地过去**。
+
+### 实测（`PS 5.1.26100.9444` · `C5_BYTES=13178` · `C5_NONASCII=0`）
+
+```
+C-5 -SelfTest   EXIT=0  POSCTRL errors=1（响案例） · QUIETCTRL errors=0 nonascii=True bom=False（静案例） · SELFTEST PASS
+C-5 TestScripts EXIT=1  FILES=23 BOM=5 NONASCII=7 NONASCII_NO_BOM=2 MOJIBAKE_RISK=1 BROKEN=0 UNRUNNABLE=5 RUNNABLE=18
+                        FAIL: 1 script(s) are non-ASCII WITHOUT a BOM and DO run on this engine
+C-5 仓库级       EXIT=1  FILES=29 BOM=8 NONASCII=11 NONASCII_NO_BOM=3 MOJIBAKE_RISK=2 …
+runner 默认      EXIT=1  C-5 FAIL（新分母字段照常被提取，DENOM_MISSING=0）
+runner -SelfTest EXIT=0  全部控制 True
+runner -RepoWide EXIT=1
+```
+
+### 判据层面的一句话
+
+**`能加载` ⟶ `能运行` ⟶ `判定正确` 是三层，各需独立判据。**
+本轮补的是最阴的一类：**「能加载」甚至「能运行」，但读到的东西已经不是作者写的那个了。**
+
+### 未做（有意）
+
+- **未修那 2 个受害文件**：`dev-up.ps1` 在仓库根、可能属他人/并行工作流 ⇒ **不擅自加 BOM**（那是改他人文件的字节）。已上报，待裁决。
+- 静默门禁端到端 fixture 仍未仓库化 · 仍未接线 CI。
