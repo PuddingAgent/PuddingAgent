@@ -34,6 +34,8 @@
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
     <!-- ADR-089 U4-4 D4: tool-side exclusion lists are derived from this leaf. -->
     <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
+    <!-- S5：上下文容量/候选/收益/退避纯策略组件（BCL-only 叶子，无反向依赖）；Runtime 在提交边界消费。 -->
+    <ProjectReference Include="..\PuddingContextPolicy\PuddingContextPolicy.csproj" />
   </ItemGroup>
 
   <ItemGroup>

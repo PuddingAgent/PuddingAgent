@@ -2355,18 +2355,45 @@ public sealed partial class AgentExecutionService
         var safeSummary = await _keyVaultService.StripAsync(
             summaryResult.Response.Content ?? string.Empty,
             ct);
-        var checkpoint = WarmPrefixCompaction.TryCreateCheckpoint(plan, safeSummary);
-        if (checkpoint is null)
+
+        // ── F2 唯一应用边界 ──
+        // 成 checkpoint → 严格版本/身份 CAS → 用**真实摘要**重新完整计量 → 收益与硬上限准入。
+        // 任何一步不过都保持原历史：不得拼接新尾部、不得自动 rebase、不得把计划估算当 after。
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            _contextUsageSnapshotStore,
+            request.SessionId,
+            durableHistory,
+            llmTools,
+            effectiveLlmConfig,
+            plan,
+            safeSummary);
+        var verifyDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
+
+        if (!verification.CanApply)
         {
-            var noGainDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
+            var rejectedDisposition = verification.Reason switch
+            {
+                WarmPrefixCompactionReasons.SummaryNoGain
+                    or "summary_empty" or "summary_not_smaller_than_span"
+                    => WarmPrefixCompactionDisposition.NoGain,
+                "generation_changed" or "history_revision_changed" or "retained_context_changed"
+                    or "selected_span_not_intact" or "route_changed" or "tool_spec_changed"
+                    or "policy_changed"
+                    => WarmPrefixCompactionDisposition.StaleCandidate,
+                _ => WarmPrefixCompactionDisposition.Failed,
+            };
             _logger.LogWarning(
-                "[AgentExec:Compaction] Warm-prefix summary did not shrink selected history; history preserved session={Session} round={Round} compactionId={CompactionId} removedTokens={RemovedTokens} summaryTokens={SummaryTokens} durationMs={DurationMs}",
+                "[AgentExec:Compaction] Warm-prefix apply rejected; history preserved session={Session} round={Round} compactionId={CompactionId} reason={Reason} beforeTokens={BeforeTokens} measuredAfterTokens={MeasuredAfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} limit={Limit} durationMs={DurationMs}",
                 request.SessionId,
                 round + 1,
                 warmPrefixCompactionId,
-                plan.RemovedTokenEstimate,
-                ContextUsageSnapshotStore.CountTokens(safeSummary),
-                noGainDurationMs);
+                verification.Reason,
+                plan.InitialUsedTokens,
+                verification.AfterSnapshot?.UsedTokens,
+                plan.EstimatedRetainedSnapshot.UsedTokens,
+                verification.ReclaimTokens,
+                plan.EffectiveInputLimit,
+                verifyDurationMs);
             await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
                 request.SessionId,
                 request.WorkspaceId,
@@ -2376,17 +2403,20 @@ public sealed partial class AgentExecutionService
                     compactionId = warmPrefixCompactionId,
                     sessionId = request.SessionId,
                     mode = "WarmPrefix",
-                    stage = "no_gain",
-                    reason = WarmPrefixCompactionReasons.SummaryNoGain,
+                    stage = "rejected",
+                    reason = verification.Reason,
                     applied = false,
-                    outcome = WarmPrefixCompactionDisposition.NoGain.ToString(),
+                    outcome = rejectedDisposition.ToString(),
                     beforeTokens = plan.InitialUsedTokens,
-                    afterTokens = plan.InitialUsedTokens,
+                    // 只有真实计量过的值才可作为 after；未计量时为 null，绝不用计划估算顶替。
+                    afterTokens = verification.AfterSnapshot?.UsedTokens,
+                    planEstimateExcludingSummaryTokens = plan.EstimatedRetainedSnapshot.UsedTokens,
+                    reclaimTokens = verification.ReclaimTokens,
                     effectiveInputLimit = plan.EffectiveInputLimit,
                     candidateRemovedTokens = plan.RemovedTokenEstimate,
                     summaryTokens = ContextUsageSnapshotStore.CountTokens(safeSummary),
                     messageCount = plan.InitialMessageCount,
-                    durationMs = noGainDurationMs,
+                    durationMs = verifyDurationMs,
                     round = round + 1,
                     durableCheckpoint = false,
                     historyPreserved = true,
@@ -2399,16 +2429,19 @@ public sealed partial class AgentExecutionService
                 trigger,
                 target,
                 summaryStartedAt,
-                WarmPrefixCompactionDisposition.NoGain,
-                noGainDurationMs,
-                WarmPrefixCompactionReasons.SummaryNoGain);
+                rejectedDisposition,
+                verifyDurationMs,
+                verification.Reason);
         }
 
+        // 校验通过：此时才替换内存历史。
+        var appliedMessages = verification.AppliedMessages!;
+        var afterUsedTokens = verification.AfterSnapshot!.UsedTokens;
         durableHistory.Clear();
-        durableHistory.AddRange(checkpoint);
-        var appliedDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
+        durableHistory.AddRange(appliedMessages);
+        var appliedDurationMs = verifyDurationMs;
         _logger.LogInformation(
-            "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} compactionId={CompactionId} removed={Removed} messages={Before}->{After} estimated={BeforeTokens}->{AfterTokens} durationMs={DurationMs}",
+            "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} compactionId={CompactionId} removed={Removed} messages={Before}->{After} measuredBefore={BeforeTokens} measuredAfter={AfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} meetsTarget={MeetsTarget} durationMs={DurationMs}",
             request.SessionId,
             round + 1,
             warmPrefixCompactionId,
@@ -2416,7 +2449,10 @@ public sealed partial class AgentExecutionService
             plan.InitialMessageCount,
             durableHistory.Count,
             plan.InitialUsedTokens,
+            afterUsedTokens,
             plan.EstimatedRetainedSnapshot.UsedTokens,
+            verification.ReclaimTokens,
+            verification.MeetsTarget,
             appliedDurationMs);
         await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
             request.SessionId,
@@ -2433,7 +2469,11 @@ public sealed partial class AgentExecutionService
                 applied = true,
                 outcome = WarmPrefixCompactionDisposition.Applied.ToString(),
                 beforeTokens = plan.InitialUsedTokens,
-                afterTokens = plan.EstimatedRetainedSnapshot.UsedTokens,
+                // 加入真实摘要后**重新计量**的值；不是 EstimatedRetainedSnapshot。
+                afterTokens = afterUsedTokens,
+                planEstimateExcludingSummaryTokens = plan.EstimatedRetainedSnapshot.UsedTokens,
+                reclaimedTokens = verification.ReclaimTokens,
+                meetsTarget = verification.MeetsTarget,
                 effectiveInputLimit = plan.EffectiveInputLimit,
                 removedMessages = plan.RemovedMessageCount,
                 candidateRemovedTokens = plan.RemovedTokenEstimate,

@@ -18,8 +18,10 @@ public enum CandidateApplicabilityVerdict
 
 /// <summary>冻结候选的身份描述（生成候选时固化，提交前用于严格比对）。</summary>
 /// <param name="RetainedIdentities">
-/// 冻结时**保留后缀**的完整身份序列（中间保留段 + 受保护尾部）。提交前要求它与当前历史
-/// 逐位一致 —— 这样「尾部之前插入/删除消息」也会让旧候选失效，而不只是「尾部被追加」。
+/// 冻结时**被替换跨度之后**的完整后缀身份（中间保留段 + 受保护尾部），
+/// **不含**跨度之前的保留前缀（如前导 system —— 它不在跨度之后，因此不参与后缀比对）。
+/// 提交前要求它与当前历史中「跨度之后」的部分逐位一致 —— 这样「尾部之前插入/删除消息」
+/// 也会让旧候选失效，而不只是「尾部被追加」。
 /// </param>
 public sealed record FrozenCandidateDescriptor(
     string Fingerprint,

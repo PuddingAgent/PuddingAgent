@@ -30,13 +30,18 @@ public sealed record CandidateSelectionResult(
     int ProjectedUsedTokensExcludingSummary,
     IReadOnlyList<ContextMessageShape> RemovedMessages,
     IReadOnlyList<ContextMessageShape> RetainedMessages,
+    /// <summary>
+    /// CAS 用的保留**后缀**身份（被替换跨度之后，不含跨度之前的保留前缀）。
+    /// 构造 <see cref="FrozenCandidateDescriptor"/> 时用它，而不是 <c>RetainedMessages</c> 的全量身份。
+    /// </summary>
+    IReadOnlyList<string> RetainedSuffixIdentities,
     string SourceGeneration,
     string SourceRevision,
     string? Fingerprint)
 {
     internal static CandidateSelectionResult NotCreated(string reason, int initialUsedTokens) =>
         new(false, reason, -1, 0, 0, initialUsedTokens, initialUsedTokens,
-            [], [], string.Empty, string.Empty, null);
+            [], [], [], string.Empty, string.Empty, null);
 }
 
 /// <summary>
@@ -104,6 +109,9 @@ public static class ContextCandidateSelector
             return CandidateSelectionResult.NotCreated("protected_only", initialUsed);
 
         var retained = working.ToArray();
+        // CAS/指纹都用「跨度之后的后缀」：保留前缀（前导 system）不在跨度之后，不参与后缀比对，
+        // 否则用全量 retained 构造的描述符会与 Validate 的 afterSpan 永远不等。
+        var retainedSuffix = working.Skip(leadingSystemCount).ToArray();
         var protectedTail = ComputeProtectedTail(working, leadingSystemCount, protectedTailCount);
         var projected = SumUsed(working, nonMessageTokens);
         var fingerprint = ComputeFingerprint(
@@ -112,7 +120,7 @@ public static class ContextCandidateSelector
             routeVersion,
             toolSpecVersion,
             removed,
-            retained);
+            retainedSuffix);
 
         return new CandidateSelectionResult(
             true,
@@ -127,6 +135,7 @@ public static class ContextCandidateSelector
             // 保留侧记录**完整后缀**（中间保留段 + 受保护尾部）：提交前要求它逐位不变，
             // 这样「尾部之前插入/删除消息」也会让旧候选失效，而不只是「尾部被追加」。
             retained,
+            retainedSuffix.Select(m => m.Identity).ToArray(),
             sourceGeneration.ToString(),
             sourceRevision,
             fingerprint);
@@ -134,8 +143,7 @@ public static class ContextCandidateSelector
 
     /// <summary>
     /// 稳定指纹：对（策略版本、源代次、源 revision、路由版本、工具定义版本、被替换跨度身份、
-    /// 保留后缀身份）做 SHA-256。只含身份与版本，**不含正文**；<c>protectedTail</c> 供调用方
-    /// 需要单独定位受保护尾部时使用（它是保留后缀的一个子后缀）。
+    /// 跨度之后的保留后缀身份）做 SHA-256。只含身份与版本，**不含正文**。
     /// </summary>
     public static string ComputeFingerprint(
         long sourceGeneration,
@@ -143,10 +151,10 @@ public static class ContextCandidateSelector
         string routeVersion,
         string toolSpecVersion,
         IReadOnlyList<ContextMessageShape> removed,
-        IReadOnlyList<ContextMessageShape> retained)
+        IReadOnlyList<ContextMessageShape> retainedSuffix)
     {
         ArgumentNullException.ThrowIfNull(removed);
-        ArgumentNullException.ThrowIfNull(retained);
+        ArgumentNullException.ThrowIfNull(retainedSuffix);
 
         var builder = new StringBuilder();
         builder.Append("v=").Append(ContextPolicyVersion.Current).Append('\n');
@@ -160,8 +168,8 @@ public static class ContextCandidateSelector
             builder.Append(message.Role).Append('\t').Append(message.Identity).Append('\n');
         }
 
-        builder.Append("retained:\n");
-        foreach (var message in retained)
+        builder.Append("retained-suffix:\n");
+        foreach (var message in retainedSuffix)
         {
             builder.Append(message.Role).Append('\t').Append(message.Identity).Append('\n');
         }

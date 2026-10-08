@@ -126,4 +126,63 @@ public sealed class ContextCandidateApplicabilityTests
         Assert.IsFalse(result.IsApplicable);
         Assert.AreEqual(CandidateApplicabilityVerdict.RetainedContextChanged, result.Verdict);
     }
+
+    /// <summary>
+    /// 契约回归：按文档用 <c>ContextCandidateSelector</c> 的结果构造描述符
+    /// （<c>RemovedMessages</c> 身份 + <c>RetainedSuffixIdentities</c>）必须判定为 Applicable。
+    /// 若误用 <c>RetainedMessages</c> 的全量身份（含跨度之前的前导 system），
+    /// 与 Validate 的 afterSpan 永远不等，会稳定退化成 retained_context_changed。
+    /// </summary>
+    [TestMethod]
+    public void Validate_RoundTripFromSelection_IsApplicable()
+    {
+        var history = new List<ContextMessageShape> { new("sys-1", ContextMessageRole.System, 5_000) };
+        for (var i = 0; i < 40; i++)
+        {
+            history.Add(new ContextMessageShape($"u-{i}", ContextMessageRole.User, 8_000));
+            history.Add(new ContextMessageShape($"a-{i}", ContextMessageRole.Assistant, 8_000));
+        }
+
+        var capacity = ContextCapacityArithmetic.Resolve(new ContextCapacityInputs(ModelWindowTokens: 150_000));
+        var selection = ContextCandidateSelector.Select(
+            history,
+            nonMessageTokens: 67_533,
+            capacity,
+            new CandidateSelectionOptions(ProtectedTailMessages: 8, TriggerRatio: 0.80, TargetRatio: 0.50),
+            routeVersion: "deepseek/flash",
+            toolSpecVersion: "tools-99",
+            sourceGeneration: 12,
+            sourceRevision: "rev-42");
+        Assert.IsTrue(selection.Created, selection.Reason);
+        Assert.IsNotEmpty(selection.RetainedSuffixIdentities);
+
+        var frozen = new FrozenCandidateDescriptor(
+            Fingerprint: selection.Fingerprint!,
+            SourceGeneration: 12,
+            SourceRevision: "rev-42",
+            RouteVersion: "deepseek/flash",
+            ToolSpecVersion: "tools-99",
+            PolicyVersion: ContextPolicyVersion.Current,
+            RemovedIdentities: selection.RemovedMessages.Select(m => m.Identity).ToArray(),
+            RetainedIdentities: selection.RetainedSuffixIdentities);
+
+        var current = new CurrentContextDescriptor(
+            Generation: 12,
+            Revision: "rev-42",
+            RouteVersion: "deepseek/flash",
+            ToolSpecVersion: "tools-99",
+            PolicyVersion: ContextPolicyVersion.Current,
+            MessageIdentities: history.Select(m => m.Identity).ToArray());
+
+        var result = ContextCandidateApplicability.Validate(frozen, current);
+
+        Assert.AreEqual(CandidateApplicabilityVerdict.Applicable, result.Verdict, result.Reason);
+
+        // 反向控制：误用全量 RetainedMessages 身份会立刻退化（这正是被修掉的契约 bug）。
+        var wrongDescriptor = frozen with
+        {
+            RetainedIdentities = selection.RetainedMessages.Select(m => m.Identity).ToArray(),
+        };
+        Assert.IsFalse(ContextCandidateApplicability.Validate(wrongDescriptor, current).IsApplicable);
+    }
 }
