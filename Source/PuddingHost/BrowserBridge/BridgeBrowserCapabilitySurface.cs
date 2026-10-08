@@ -374,6 +374,7 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
             Revision = snapshot.Revision,
             Changed = snapshot.Changed,
             ContentBlocks = snapshot.ContentBlocks,
+            PageEvents = snapshot.PageEvents,
             Diff = snapshot.Diff is { } diff
                 ? BrowserTextDiff.FromParts(
                     diff.Added, diff.Removed, diff.AddedCount, diff.RemovedCount, diff.Truncated)

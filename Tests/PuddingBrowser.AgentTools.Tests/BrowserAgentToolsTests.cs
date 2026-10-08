@@ -669,6 +669,51 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Snapshot_ReportsPageEvents_SoTheAgentKnowsWhatWasAutoHandled()
+    {
+        // 页面把弹窗/权限/下载自动处理掉之后**必须让 Agent 看得见**：
+        // 否则"页面不卡了"却没人知道为什么，等于只完成了一半。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.PageEvents =
+        [
+            "scriptDialog kind=confirm answered=dismiss messageChars=12",
+            "permissionRequest kind=camera answered=deny host=https://example.test",
+        ];
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1" }));
+
+        Assert.True(snapshot.Success, snapshot.Error);
+        var value = GetJson(snapshot.Output, "value");
+
+        var events = value.GetProperty("pageEvents");
+        Assert.Equal(2, events.GetArrayLength());
+        Assert.Contains("scriptDialog", events[0].GetString()!);
+
+        // warnings 里也要带上（Agent 常常只看 warnings，不看全部字段）。
+        using var output = JsonDocument.Parse(snapshot.Output);
+        var warnings = output.RootElement.GetProperty("warnings");
+        var joined = string.Join(' ', warnings.EnumerateArray().Select(item => item.GetString()));
+        Assert.Contains("page_event:", joined);
+        Assert.Contains("permissionRequest", joined);
+
+        // 没有事件时**不编造**：字段为 null 而不是空数组或"一切正常"。
+        var quiet = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var clean = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = quiet.Id.Value, context_id = "ctx-1" }));
+
+        Assert.True(clean.Success, clean.Error);
+        Assert.Equal(
+            JsonValueKind.Null, GetJson(clean.Output, "value").GetProperty("pageEvents").ValueKind);
+    }
+
+    [Fact]
     public async Task Snapshot_TextMode_ComposesArticleMarkdown()
     {
         // §6.1 mode=text：驱动只给语义块，markdown 由读取侧组装（结构/预算/分页是纯函数，另有专项测试）。
@@ -2083,6 +2128,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
             Revision = snapshot.Revision,
             Changed = snapshot.Changed,
             ContentBlocks = snapshot.ContentBlocks,
+            PageEvents = snapshot.PageEvents,
             Diff = snapshot.Diff is { } diff
                 ? BrowserTextDiff.FromParts(
                     diff.Added, diff.Removed, diff.AddedCount, diff.RemovedCount, diff.Truncated)
@@ -2618,6 +2664,7 @@ internal sealed class FakeBrowserPage : IBrowserPage
             Revision = SnapshotRevision,
             Changed = SnapshotChanged,
             ContentBlocks = ContentBlocks,
+            PageEvents = PageEvents,
             Diff = SnapshotDiff
         });
     }
@@ -2634,6 +2681,9 @@ internal sealed class FakeBrowserPage : IBrowserPage
 
     /// <summary>正文语义块（§6.1 mode=text）。</summary>
     public string? ContentBlocks { get; set; }
+
+    /// <summary>页面事件事实（§8；模拟驱动已经处理掉的弹窗/权限/下载）。</summary>
+    public IReadOnlyList<string>? PageEvents { get; set; }
 
     public async Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
         => (await QueryAllAsync(locator, ct)).FirstOrDefault();

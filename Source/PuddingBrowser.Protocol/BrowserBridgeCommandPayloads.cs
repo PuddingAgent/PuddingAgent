@@ -166,6 +166,9 @@ public sealed record BrowserSnapshotDescriptor
     /// <summary>正文语义块（每行一个 JSON 对象）；markdown 由读取侧组装。</summary>
     public string? ContentBlocks { get; init; }
 
+    /// <summary>页面自己处理掉的事件事实（脚本对话框/权限请求/新窗口/下载；有界、无敏感内容）。</summary>
+    public IReadOnlyList<string>? PageEvents { get; init; }
+
     /// <summary>与调用方给的修订相比内容是否变化；未要求比较时为 <c>null</c>。</summary>
     public bool? Changed { get; init; }
 

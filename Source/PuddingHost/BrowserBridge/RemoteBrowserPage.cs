@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Protocol;
 
@@ -128,6 +128,7 @@ public sealed class RemoteBrowserPage : IBrowserPage
             Revision = result.Revision,
             Changed = result.Changed,
             ContentBlocks = result.ContentBlocks,
+            PageEvents = result.PageEvents,
             Diff = result.Diff is { } diff
                 ? new TextDiff
                 {

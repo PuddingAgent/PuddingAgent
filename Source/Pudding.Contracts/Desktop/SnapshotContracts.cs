@@ -140,7 +140,8 @@ public sealed record DesktopSnapshot
         string? revision = null,
         bool? changed = null,
         BrowserTextDiff? diff = null,
-        string? contentBlocks = null)
+        string? contentBlocks = null,
+        IReadOnlyList<string>? pageEvents = null)
     {
         if (nodeCount < 0)
         {
@@ -158,6 +159,7 @@ public sealed record DesktopSnapshot
         Changed = changed;
         Diff = diff;
         ContentBlocks = contentBlocks;
+        PageEvents = pageEvents;
     }
 
     public DesktopPageTarget Target { get; }
@@ -190,6 +192,9 @@ public sealed record DesktopSnapshot
 
     /// <summary>正文语义块（每行一个 JSON 对象）；未请求时为 <c>null</c>。</summary>
     public string? ContentBlocks { get; init; }
+
+    /// <summary>页面自己处理掉的事件事实（有界、无敏感内容）；无事件时为 <c>null</c>。</summary>
+    public IReadOnlyList<string>? PageEvents { get; init; }
 
     public bool IsEmpty => DomText is null && AccessibilityTree is null && Html is null;
 

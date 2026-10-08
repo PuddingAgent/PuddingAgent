@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
@@ -341,12 +341,13 @@ public sealed class BrowserSnapshotTool(
                         NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
                         Revision = snapshot.Value.Revision,
                         Changed = snapshot.Value.Changed,
-                        Diff = BrowserDiffToolValue.From(snapshot.Value.Diff)
+                        Diff = BrowserDiffToolValue.From(snapshot.Value.Diff),
+                        PageEvents = null
                     },
                     new BrowserContextId(contextId),
                     new PageId(args.PageId.Trim()),
                     snapshot.Value.PageVersion.IsKnown ? snapshot.Value.PageVersion.Value : null,
-                    BuildArticleWarnings(article));
+                    MergeWarnings(BuildArticleWarnings(article), snapshot.Value.PageEvents));
             }
 
             // outline / interactive：把驱动给的无障碍树按模式过滤并按输出预算收敛。
@@ -374,15 +375,51 @@ public sealed class BrowserSnapshotTool(
                     // 修订与差异**由宿主持有基线的一侧判定**（工具不自己算，避免两份判定漂移）。
                     Revision = snapshot.Value.Revision,
                     Changed = snapshot.Value.Changed,
-                    Diff = BrowserDiffToolValue.From(snapshot.Value.Diff)
+                    Diff = BrowserDiffToolValue.From(snapshot.Value.Diff),
+                    PageEvents = PageEventsOf(snapshot.Value.PageEvents)
                 },
                 new BrowserContextId(contextId),
                 new PageId(args.PageId.Trim()),
                 snapshot.Value.PageVersion.IsKnown ? snapshot.Value.PageVersion.Value : null,
-                BuildWarnings(composed));
+                MergeWarnings(BuildWarnings(composed), snapshot.Value.PageEvents));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (BrowserOperationException ex) { return BrowserToolResponse.FromException(ex); }
+    }
+
+    /// <summary>
+    /// 页面事件事实的**输出投影**：只回最近几条（有界日志本身已有界，这里再兜一层，防止输出膨胀）。
+    /// </summary>
+    private static IReadOnlyList<string>? PageEventsOf(IReadOnlyList<string>? events)
+    {
+        if (events is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        return events.Count <= 4 ? events : events.TakeLast(4).ToArray();
+    }
+
+    /// <summary>
+    /// 把页面事件并进 <c>warnings</c>：**Agent 必须能自己看到"刚才发生了什么"**，
+    /// 否则页面不卡了却没人知道为什么（这轮补的就是这一半价值）。
+    /// </summary>
+    private static IReadOnlyList<string>? MergeWarnings(
+        IReadOnlyList<string>? warnings, IReadOnlyList<string>? pageEvents)
+    {
+        if (pageEvents is not { Count: > 0 })
+        {
+            return warnings;
+        }
+
+        var merged = new List<string>();
+        if (warnings is { Count: > 0 })
+        {
+            merged.AddRange(warnings);
+        }
+
+        merged.AddRange(PageEventsOf(pageEvents)!.Select(summary => $"page_event: {summary}"));
+        return merged;
     }
 
     private static bool TryParseMode(string? mode, out BrowserReadingMode parsed)

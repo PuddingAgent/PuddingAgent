@@ -1,7 +1,12 @@
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
+#if !WINUI_BROWSER
+// 纯策略组件（原生输入的调用序列、截图参数语义、对话框/页面事件策略）。
+// WinUI 面（PuddingBrowser.WinUI）**链接**本文件但只允许引用 Abstractions（EnforceBrowserBoundary），
+// 因此那里这些能力明确 unsupported / 尚未接管 —— 见文件内各处 #if WINUI_BROWSER 的说明。
 using PuddingBrowser.Automation;
+#endif
 
 namespace PuddingBrowser.WebView2;
 
@@ -40,20 +45,16 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// <summary>页面级 ref 作用域 token（诊断/测试用；不进工具输出，避免被当作可复用标识）。</summary>
     internal string RefScopeToken => _refScopeToken;
 
+#if !WINUI_BROWSER
     /// <summary>
-    /// 最近一次被自动处理的页面脚本对话框摘要（有界、无敏感内容）；没有过则为 <c>null</c>。
-    /// **不用于继续交互**，只用于说明"刚才有个弹窗被处理了，所以页面没卡住"。
+    /// 被自动处理的页面事件（脚本对话框/权限请求/新窗口/下载）**有界日志**：随快照回给调用方，
+    /// 让上层知道「刚才发生了什么、页面为什么没卡住」。**不用于继续交互**。
     /// </summary>
-    internal string? LastScriptDialog { get; private set; }
+    internal PageEventLog PageEvents { get; } = new();
+#endif
 
     /// <summary>被自动处理的页面脚本对话框累计次数（诊断用）。</summary>
     internal int ScriptDialogCount { get; private set; }
-
-    /// <summary>
-    /// 最近一次被自动处理的**页面周边事件**摘要（权限请求/新窗口/下载；有界、无敏感内容）。
-    /// 与脚本对话框同一套取向：不让页面停在"等人操作"的状态，并留下可解释的事实。
-    /// </summary>
-    internal string? LastPageEvent { get; private set; }
 
     /// <summary>被自动处理的页面周边事件累计次数（诊断用）。</summary>
     internal int PageEventCount { get; private set; }
@@ -98,10 +99,13 @@ public sealed class WebView2BrowserPage : IBrowserPage
         coreWebView.DocumentTitleChanged += OnDocumentTitleChanged;
         coreWebView.SourceChanged += OnSourceChanged;
         coreWebView.ProcessFailed += OnProcessFailed;
+#if !WINUI_BROWSER
+        // 事件接管依赖 Automation 里的策略组件；WinUI 面只允许引用 Abstractions，故暂不订阅。
         coreWebView.ScriptDialogOpening += OnScriptDialogOpening;
         coreWebView.PermissionRequested += OnPermissionRequested;
         coreWebView.NewWindowRequested += OnNewWindowRequested;
         coreWebView.DownloadStarting += OnDownloadStarting;
+#endif
     }
 
     private void UnsubscribeCoreWebViewEvents(CoreWebView2 coreWebView)
@@ -111,12 +115,15 @@ public sealed class WebView2BrowserPage : IBrowserPage
         coreWebView.DocumentTitleChanged -= OnDocumentTitleChanged;
         coreWebView.SourceChanged -= OnSourceChanged;
         coreWebView.ProcessFailed -= OnProcessFailed;
+#if !WINUI_BROWSER
         coreWebView.ScriptDialogOpening -= OnScriptDialogOpening;
         coreWebView.PermissionRequested -= OnPermissionRequested;
         coreWebView.NewWindowRequested -= OnNewWindowRequested;
         coreWebView.DownloadStarting -= OnDownloadStarting;
+#endif
     }
 
+#if !WINUI_BROWSER
     /// <summary>
     /// 权限请求（摄像头/麦克风/定位/通知/剪贴板…）：**一律拒绝**并如实记录。
     /// 不处理时 WebView2 会弹权限询问等人点，自动化流程就卡在那里；而"默认允许"更糟——
@@ -128,7 +135,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         e.State = CoreWebView2PermissionState.Deny;
         e.Handled = true;
 
-        LastPageEvent = PageEventPolicy.DescribePermission(e.PermissionKind.ToString(), e.Uri, verdict);
+        PageEvents.Add(PageEventPolicy.DescribePermission(e.PermissionKind.ToString(), e.Uri, verdict));
         PageEventCount++;
     }
 
@@ -141,7 +148,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         var verdict = PageEventPolicy.DecideWindow();
         e.Handled = true;
 
-        LastPageEvent = PageEventPolicy.DescribeWindow(e.Uri, verdict);
+        PageEvents.Add(PageEventPolicy.DescribeWindow(e.Uri, verdict));
         PageEventCount++;
     }
 
@@ -155,11 +162,13 @@ public sealed class WebView2BrowserPage : IBrowserPage
         e.Cancel = true;
         e.Handled = true;
 
-        LastPageEvent = PageEventPolicy.DescribeDownload(
-            e.ResultFilePath, e.DownloadOperation?.Uri, verdict);
+        PageEvents.Add(PageEventPolicy.DescribeDownload(
+            e.ResultFilePath, e.DownloadOperation?.Uri, verdict));
         PageEventCount++;
     }
+#endif
 
+#if !WINUI_BROWSER
     /// <summary>
     /// 页面脚本对话框（<c>alert</c>/<c>confirm</c>/<c>prompt</c>/<c>beforeunload</c>）。
     ///
@@ -188,9 +197,9 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
         // prompt 的回填文本**永远不提供**（编一个文本替用户提交等于伪造输入）。
         var summary = ScriptDialogPolicy.Describe(kind, e.Message, answer);
-        LastScriptDialog = summary;
-        ScriptDialogCount++;
+        PageEvents.Add(summary);
     }
+#endif
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
@@ -356,8 +365,11 @@ public sealed class WebView2BrowserPage : IBrowserPage
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(options);
         var webView = RequireWebView();
-        return await _dispatcher.InvokeAsync(
+        var snapshot = await _dispatcher.InvokeAsync(
             () => WebView2DomClient.SnapshotAsync(webView, PageVersion, _refScopeToken, options, ct), ct);
+
+        // 页面事件事实随快照回传：调用方据此知道"刚才发生了什么、页面为什么没卡住"。
+        return snapshot with { PageEvents = DescribePageEvents() };
     }
 
     public async Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
@@ -399,7 +411,8 @@ public sealed class WebView2BrowserPage : IBrowserPage
             : parameters!.Value.GetRawText();
 
         var result = await _dispatcher.InvokeAsync(
-            () => webView.CallDevToolsProtocolMethodAsync(method, payload), ct).ConfigureAwait(false);
+            async () => await webView.CallDevToolsProtocolMethodAsync(method, payload), ct)
+            .ConfigureAwait(false);
 
         return System.Text.Json.JsonDocument.Parse(result);
     }
@@ -427,6 +440,22 @@ public sealed class WebView2BrowserPage : IBrowserPage
         => o.InputMode == InputMode.Native
             ? ExecuteNativeAsync("hover", l, value: null, ct)
             : ExecuteInteractionAsync("hover", l, value: null, deltaX: null, deltaY: null, ct);
+    /// <summary>
+    /// 把有界日志整理成随快照回传的事实（连续重复合并为 <c>(xN)</c>）；没有事件时给 <c>null</c>
+    /// （不填「一切正常」之类的假事实）。
+    /// </summary>
+#if !WINUI_BROWSER
+    private IReadOnlyList<string>? DescribePageEvents() =>
+        PageEvents.IsEmpty
+            ? null
+            : PageEvents.Entries
+                .Select(entry => entry.Count > 1 ? $"{entry.Summary} (x{entry.Count})" : entry.Summary)
+                .ToArray();
+#else
+    // WinUI 面尚未接管页面事件（需要把策略注入进来，见 code_map 的边界说明）。
+    private IReadOnlyList<string>? DescribePageEvents() => null;
+#endif
+
     public async Task<ScrollOutcome> ScrollAsync(ScrollOptions o, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -460,6 +489,12 @@ public sealed class WebView2BrowserPage : IBrowserPage
     private async Task<ScrollOutcome> ScrollNativelyAsync(
         CoreWebView2 webView, ScrollOptions options, CancellationToken ct)
     {
+#if WINUI_BROWSER
+        await Task.CompletedTask;
+        throw new BrowserOperationException(
+            "browser_input_mode_not_supported",
+            "native scroll is not available on this surface; use input_mode=dom");
+#else
         NativeInputSequence.InputTarget target;
 
         if (options.Target == ScrollTarget.Element && options.Locator is { } locator)
@@ -504,6 +539,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
                 new ScrollOptions { Target = options.Target, Locator = options.Locator, DeltaX = 0, DeltaY = 0 },
                 ct),
             ct).ConfigureAwait(false);
+#endif
     }
 
     public Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct)
@@ -565,6 +601,12 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// </summary>
     public async Task<ScreenshotResult> ScreenshotAsync(ScreenshotOptions o, CancellationToken ct)
     {
+#if WINUI_BROWSER
+        // WinUI 面：截图依赖 Automation 的参数语义组件（该面只允许引用 Abstractions）⇒
+        // 明确 unsupported，不假装能截。
+        await Task.CompletedTask;
+        throw new NotSupportedException("screenshot is not available on this surface yet");
+#else
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(o);
 
@@ -618,6 +660,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         }
 
         return new ScreenshotResult { Bytes = bytes, FilePath = o.FilePath };
+#endif
     }
     public Task<PdfResult> PrintToPdfAsync(PdfOptions o, CancellationToken ct)
         => throw new NotSupportedException("Not in Phase 2A-1");
@@ -659,6 +702,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
         }
     }
 
+#if !WINUI_BROWSER
     /// <summary>
     /// **原生输入路径**（设计方案 §7）：按 <c>NativeInputSequence</c> 规划好的 CDP 调用逐条发出。
     ///
@@ -740,6 +784,15 @@ public sealed class WebView2BrowserPage : IBrowserPage
             }
         }
     }
+#else
+    // WinUI 面：原生输入依赖 Automation 的序列规划，而该面只允许引用 Abstractions ⇒ **明确 unsupported**
+    // （绝不静默回落成 DOM 输入：那会让调用方以为走的是真实输入路径）。
+    private Task ExecuteNativeAsync(string action, Locator locator, string? value, CancellationToken ct) =>
+        throw new BrowserOperationException(
+            "browser_input_mode_not_supported",
+            $"native input is not available on this surface (action '{action}'); use input_mode=dom");
+
+#endif
 
     /// <summary>
     /// Disposes the page. Only unsubscribes CoreWebView2 events.

@@ -68,6 +68,12 @@ public sealed record PageSnapshot
 
     /// <summary>正文语义块（每行一个 JSON 对象）；未请求时为 <c>null</c>。</summary>
     public string? ContentBlocks { get; init; }
+
+    /// <summary>
+    /// 页面自己处理掉的事件事实（脚本对话框/权限请求/新窗口/下载；有界、无敏感内容）。
+    /// 没有事件时为 <c>null</c>（不填「一切正常」之类的假事实）。
+    /// </summary>
+    public IReadOnlyList<string>? PageEvents { get; init; }
 }
 
 /// <summary>

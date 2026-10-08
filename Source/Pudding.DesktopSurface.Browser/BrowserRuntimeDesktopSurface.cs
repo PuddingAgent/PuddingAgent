@@ -535,7 +535,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             snapshot.Truncated,
             snapshot.NodeCount,
             LiveVersion(browserPage.PageVersion),
-            contentBlocks: snapshot.ContentBlocks);
+            contentBlocks: snapshot.ContentBlocks,
+            pageEvents: snapshot.PageEvents);
 
         // 纵深防御：运行时没守预算时也要在这里收敛（含硬上限）。
         var budgeted = DesktopCapabilityBudgets.Apply(mapped, request.Options);

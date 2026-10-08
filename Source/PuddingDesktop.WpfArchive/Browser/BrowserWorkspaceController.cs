@@ -933,6 +933,7 @@ public sealed class BrowserWorkspaceController :
             Revision = reading.Revision,
             Changed = reading.Changed,
             ContentBlocks = snapshot.ContentBlocks,
+            PageEvents = snapshot.PageEvents,
             Diff = reading.Diff is { } diff
                 ? new BrowserTextDiffDescriptor
                 {

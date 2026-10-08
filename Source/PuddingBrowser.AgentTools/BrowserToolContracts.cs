@@ -105,6 +105,12 @@ public sealed record BrowserSnapshotToolValue
 
     /// <summary>正文 markdown（仅 <c>mode=text</c>）；它和 <see cref="AccessibilityTree"/> 同次只给一种。</summary>
     public string? Content { get; init; }
+
+    /// <summary>
+    /// 页面自己处理掉的事件事实（脚本对话框/权限请求/新窗口/下载；有界、无敏感内容）。
+    /// 它解释「为什么页面没卡住」，也是 <c>warnings</c> 的来源之一。
+    /// </summary>
+    public IReadOnlyList<string>? PageEvents { get; init; }
 }
 
 /// <summary>
