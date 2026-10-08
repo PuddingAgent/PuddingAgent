@@ -1,4 +1,4 @@
-namespace PuddingBrowser.Abstractions;
+﻿namespace PuddingBrowser.Abstractions;
 
 /// <summary>
 /// **驱动策略注入点**（设计方案 §7/§8）。
@@ -43,6 +43,12 @@ public interface IBrowserDriverPolicy
     IReadOnlyList<DriverCall>? PlanClick(double x, double y, int clickCount);
 
     IReadOnlyList<DriverCall>? PlanHover(double x, double y);
+
+    /// <summary>
+    /// 拖拽计划：从起点到终点的分步移动（中间必须有 mousemove 序列），按下必然抬起。
+    /// <c>null</c> 表示该面不支持拖拽 ⇒ 驱动明确 unsupported。
+    /// </summary>
+    IReadOnlyList<DriverCall>? PlanDrag(double fromX, double fromY, double toX, double toY);
 
     IReadOnlyList<DriverCall>? PlanScroll(double x, double y, double deltaX, double deltaY);
 
@@ -119,6 +125,8 @@ public sealed class NullBrowserDriverPolicy : IBrowserDriverPolicy
     public IReadOnlyList<DriverCall>? PlanClick(double x, double y, int clickCount) => null;
 
     public IReadOnlyList<DriverCall>? PlanHover(double x, double y) => null;
+
+    public IReadOnlyList<DriverCall>? PlanDrag(double fromX, double fromY, double toX, double toY) => null;
 
     public IReadOnlyList<DriverCall>? PlanScroll(double x, double y, double deltaX, double deltaY) => null;
 

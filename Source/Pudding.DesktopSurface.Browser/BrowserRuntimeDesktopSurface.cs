@@ -760,7 +760,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
     private static bool SupportsNativeInput(DesktopInteractionAction action) => action is
         DesktopInteractionAction.Click or DesktopInteractionAction.Fill or DesktopInteractionAction.Type
         or DesktopInteractionAction.Press or DesktopInteractionAction.Hover
-        or DesktopInteractionAction.Check or DesktopInteractionAction.Uncheck or DesktopInteractionAction.Scroll;
+        or DesktopInteractionAction.Check or DesktopInteractionAction.Uncheck or DesktopInteractionAction.Scroll
+        or DesktopInteractionAction.Drag;
 
     private static async Task<ScrollOutcome?> PerformAsync(
         IBrowserPage page, BrowserInteractRequest request, Locator? locator, CancellationToken cancellationToken)
@@ -792,6 +793,10 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 break;
             case DesktopInteractionAction.Hover:
                 await page.HoverAsync(locator!, new PointerOptions { InputMode = inputMode }, cancellationToken).ConfigureAwait(false);
+                break;
+            case DesktopInteractionAction.Drag:
+                // 拖拽（§7）：两端都必须由调用方给出（契约层已强制），驱动负责原生分步拖拽。
+                await page.DragAsync(locator!, ToRuntimeLocator(request.ToLocator!), new DragOptions { InputMode = inputMode }, cancellationToken).ConfigureAwait(false);
                 break;
             case DesktopInteractionAction.Scroll:
                 // 滚动目标模型（§7）：显式目标优先，否则按 locator/位移推导；

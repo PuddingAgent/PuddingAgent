@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 
@@ -29,6 +29,10 @@ public sealed record BrowserInteractArgs
     public string? ContextId { get; init; }
 
     public BrowserLocatorInput? Locator { get; init; }
+
+    /// <summary>拖拽终点（仅 action=drag 使用）。</summary>
+    [ToolParam("Target locator for action=drag (required together with locator).")]
+    public BrowserLocatorInput? ToLocator { get; init; }
 
     [ToolParam("Text for fill/type, or key for press. Values are never returned in activity logs.")]
 
@@ -168,6 +172,14 @@ public sealed class BrowserInteractTool(
 
                 return BrowserToolResponse.Failure("browser_invalid_arguments", "locator is required for this action");
 
+            // 拖拽必须**两个端点都给**：只有一个端点无法表达「拖到哪儿」（契约层也会拦，这里给更早的提示）。
+            var toLocator = args.ToLocator is null ? null : BrowserLocatorInputMapper.ToDesktopLocator(args.ToLocator);
+
+            if (action == "drag" && toLocator is null)
+
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments", "action=drag requires both locator (source) and to_locator (target)");
+
             if (action == "press" && string.IsNullOrWhiteSpace(args.Text))
 
                 return BrowserToolResponse.Failure("browser_invalid_arguments", "text key is required for press");
@@ -287,7 +299,10 @@ public sealed class BrowserInteractTool(
                     inputMode,
 
                     // 滚动目标：显式优先，否则由契约按 locator/位移推导。
-                    scrollTarget),
+                    scrollTarget,
+
+                    // 拖拽终点（仅 action=drag；契约层强制两个端点都给）。
+                    toLocator),
 
                 call,
 
@@ -427,6 +442,8 @@ public sealed class BrowserInteractTool(
 
         "scroll" => DesktopInteractionAction.Scroll,
 
+        "drag" => DesktopInteractionAction.Drag,
+
         "select" => DesktopInteractionAction.Select,
 
         _ => isChecked == false ? DesktopInteractionAction.Uncheck : DesktopInteractionAction.Check,
@@ -487,6 +504,6 @@ public sealed class BrowserInteractTool(
     /// 与能力通道的判定保持同一份清单（两处都拒绝，谁都不会悄悄改语义）。
     /// </summary>
     private static bool SupportsNativeInput(string action) =>
-        action is "click" or "fill" or "type" or "press" or "hover" or "check" or "scroll";
+        action is "click" or "fill" or "type" or "press" or "hover" or "check" or "scroll" or "drag";
 }
 

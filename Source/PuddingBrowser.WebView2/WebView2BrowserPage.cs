@@ -521,8 +521,55 @@ public sealed class WebView2BrowserPage : IBrowserPage
             ct).ConfigureAwait(false);
     }
 
-    public Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+    /// <summary>
+    /// **拖拽**（§7）：原生路径 = 从起点中心按下、分步移动到终点中心、抬起（见策略的 PlanDrag）。
+    /// DOM 模式**明确 unsupported**：用脚本伪造 drag 事件在真实页面上经常不生效（尤其 HTML5 拖放），
+    /// 假装成功比拒绝更糟。
+    /// </summary>
+    public async Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(s);
+        ArgumentNullException.ThrowIfNull(t);
+        ArgumentNullException.ThrowIfNull(o);
+
+        if (o.InputMode != InputMode.Native)
+        {
+            throw new BrowserOperationException(
+                "browser_input_mode_not_supported",
+                "drag requires input_mode=native (the DOM path does not implement drag)");
+        }
+
+        var from = await QueryAsync(s, ct).ConfigureAwait(false)
+            ?? throw new BrowserOperationException("browser_element_not_found", "no element matches the drag source");
+        var to = await QueryAsync(t, ct).ConfigureAwait(false)
+            ?? throw new BrowserOperationException("browser_element_not_found", "no element matches the drag target");
+
+        var fromBox = await from.GetBoundingBoxAsync(ct).ConfigureAwait(false)
+            ?? throw new BrowserOperationException("browser_element_not_found", "the drag source has no geometry");
+        var toBox = await to.GetBoundingBoxAsync(ct).ConfigureAwait(false)
+            ?? throw new BrowserOperationException("browser_element_not_found", "the drag target has no geometry");
+
+        var plan = Policy.PlanDrag(
+            fromBox.X + (fromBox.Width / 2), fromBox.Y + (fromBox.Height / 2),
+            toBox.X + (toBox.Width / 2), toBox.Y + (toBox.Height / 2))
+            ?? throw new BrowserOperationException(
+                "browser_input_mode_not_supported", "native drag is not available on this surface");
+
+        try
+        {
+            foreach (var call in plan)
+            {
+                ct.ThrowIfCancellationRequested();
+                var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
+                using var _ = await SendCdpAsync(call.Method, parameters, ct).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            Interlocked.Increment(ref _pageVersion);
+        }
+    }
     public Task SelectAsync(Locator l, IReadOnlyList<string> v, CancellationToken ct)
         => ExecuteInteractionAsync("select", l, v, deltaX: null, deltaY: null, ct);
     public Task CheckAsync(Locator l, bool c, CancellationToken ct)

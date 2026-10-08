@@ -22,6 +22,12 @@ public static class NativeInputSequence
     public const int MetaModifier = 4;
     public const int ShiftModifier = 8;
 
+    /// <summary>拖拽默认分几步移动（中间必须有 mousemove 序列，见 PlanDrag）。</summary>
+    public const int DefaultDragSteps = 8;
+
+    /// <summary>分步上限（防调用方给出离谱步数把一次拖拽变成几千次 CDP 调用）。</summary>
+    public const int MaxDragSteps = 64;
+
     /// <summary>
     /// 原生输入的目标几何（**本组件不引用 Abstractions**，因此用自己的最小形状；
     /// 调用方从元素包围盒映射进来）。
@@ -65,6 +71,42 @@ public static class NativeInputSequence
         return [Mouse("mouseMoved", x, y, button: "none", buttons: 0, clickCount: 0)];
     }
 
+    /// <summary>
+    /// **拖拽**：移动到起点 → 按下 → 分步移动到终点（全程 buttons=1）→ 抬起。
+    ///
+    /// 为什么**分步**而不是"起点按下、终点抬起"：很多拖拽实现（HTML5 drag&drop、画布、滑块）依赖中间的
+    /// mousemove 序列，只发一次跳跃移动会被忽略或落错位置；而**按下必然抬起**（即使中途取消）是这条链上
+    /// 最硬的约束 —— 留下按住状态会让后续动作全部走样。
+    /// </summary>
+    public static IReadOnlyList<CdpCall> PlanDrag(InputTarget from, InputTarget to, int steps = DefaultDragSteps)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(steps, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(steps, MaxDragSteps);
+
+        var (fromX, fromY) = Center(from);
+        var (toX, toY) = Center(to);
+
+        var calls = new List<CdpCall>(steps + 3)
+        {
+            Mouse("mouseMoved", fromX, fromY, button: "none", buttons: 0, clickCount: 0),
+            Mouse("mousePressed", fromX, fromY, button: "left", buttons: 1, clickCount: 1),
+        };
+
+        for (var step = 1; step <= steps; step++)
+        {
+            var ratio = (double)step / steps;
+            calls.Add(Mouse(
+                "mouseMoved",
+                Math.Round(fromX + ((toX - fromX) * ratio), 2),
+                Math.Round(fromY + ((toY - fromY) * ratio), 2),
+                button: "left",
+                buttons: 1,
+                clickCount: 0));
+        }
+
+        calls.Add(Mouse("mouseReleased", toX, toY, button: "left", buttons: 0, clickCount: 1));
+        return calls;
+    }
     /// <summary>滚动：在元素位置发滚轮事件（<c>deltaY&gt;0</c> 向下）。</summary>
     public static IReadOnlyList<CdpCall> PlanScroll(InputTarget target, double deltaX, double deltaY)
     {

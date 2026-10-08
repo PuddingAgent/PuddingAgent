@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingBrowser.Automation;
 
@@ -157,6 +157,47 @@ public sealed class NativeInputSequenceTests
         Assert.AreEqual(0, NativeInputSequence.ReleaseModifiers(0).Count);
     }
 
+    [TestMethod]
+    public void DragPressesAtTheSourceMovesInStepsAndReleasesAtTheTarget()
+    {
+        // 拖拽的硬约束：按下必然抬起；中间必须有 mousemove 序列（很多实现依赖它）。
+        var from = new NativeInputSequence.InputTarget(0, 0, 20, 20);    // 中心 (10,10)
+        var to = new NativeInputSequence.InputTarget(100, 0, 20, 20);   // 中心 (110,10)
+
+        var calls = NativeInputSequence.PlanDrag(from, to, steps: 4);
+
+        Assert.AreEqual(4 + 3, calls.Count);
+        Assert.AreEqual("mouseMoved", Parse(calls[0]).GetProperty("type").GetString());
+        Assert.AreEqual(0, Parse(calls[0]).GetProperty("buttons").GetInt32());
+        Assert.AreEqual("mousePressed", Parse(calls[1]).GetProperty("type").GetString());
+        Assert.AreEqual(1, Parse(calls[1]).GetProperty("buttons").GetInt32());
+        Assert.AreEqual(10d, Parse(calls[1]).GetProperty("x").GetDouble());
+
+        // 中间的移动全程 buttons=1，且坐标单调走向终点。
+        for (var index = 2; index < calls.Count - 1; index++)
+        {
+            Assert.AreEqual("mouseMoved", Parse(calls[index]).GetProperty("type").GetString());
+            Assert.AreEqual(1, Parse(calls[index]).GetProperty("buttons").GetInt32());
+        }
+
+        Assert.AreEqual(35d, Parse(calls[2]).GetProperty("x").GetDouble());
+        Assert.AreEqual(110d, Parse(calls[^2]).GetProperty("x").GetDouble());
+
+        // 最后必定是抬起，且 buttons 归零。
+        Assert.AreEqual("mouseReleased", Parse(calls[^1]).GetProperty("type").GetString());
+        Assert.AreEqual(0, Parse(calls[^1]).GetProperty("buttons").GetInt32());
+    }
+
+    [TestMethod]
+    public void DragStepCountIsBounded()
+    {
+        var from = new NativeInputSequence.InputTarget(0, 0, 0, 0);
+        var to = new NativeInputSequence.InputTarget(10, 10, 0, 0);
+
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => NativeInputSequence.PlanDrag(from, to, steps: 0));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+            () => NativeInputSequence.PlanDrag(from, to, NativeInputSequence.MaxDragSteps + 1));
+    }
     [TestMethod]
     public void Plans_AreDeterministic()
     {

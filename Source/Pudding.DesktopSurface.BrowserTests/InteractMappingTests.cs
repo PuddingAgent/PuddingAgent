@@ -1,4 +1,4 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopSurface.Browser;
 using PuddingBrowser.Abstractions;
@@ -141,6 +141,29 @@ public sealed class InteractMappingTests
         Assert.Contains("native scroll", refused.Error!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task NativeDrag_CarriesBothEndpointsAndTheMode()
+    {
+        // 拖拽（§7）：两端 locator 都必须下传；DOM 模式在驱动侧明确 unsupported（此处只验证映射）。
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target,
+                DesktopInteractionAction.Drag,
+                DesktopPageVersion.Require(7),
+                locator: Button,
+                deltaX: null,
+                deltaY: null,
+                inputMode: DesktopInputMode.Native,
+                scrollTarget: null,
+                toLocator: new DesktopLocator(DesktopLocatorKind.Css, "#drop")),
+            CancellationToken.None);
+
+        // 映射层把两个端点都送进驱动（驱动的原生实现会真的执行；这里断言调用确实发生）。
+        Assert.False(result.IsFailure);
+        Assert.Equal("drag:native", runtime.Pages["ctx-1/p-1"].LastAction);
+    }
     [Fact]
     public async Task ScrollCarriesTheTargetModelAndReportsTheOutcome()
     {
@@ -432,7 +455,7 @@ public sealed class InteractMappingTests
 
         public Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => throw new NotSupportedException();
+        public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) { Advance(options.InputMode == InputMode.Native ? "drag:native" : "drag"); return Task.CompletedTask; }
 
         public Task SetInputFilesAsync(Locator locator, IReadOnlyList<string> paths, CancellationToken ct) => throw new NotSupportedException();
 

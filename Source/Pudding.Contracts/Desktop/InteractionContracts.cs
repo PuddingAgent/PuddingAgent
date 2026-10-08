@@ -15,6 +15,9 @@ public enum DesktopInteractionAction
     Select,
     Hover,
     Scroll,
+
+    /// <summary>拖拽：从 <c>Locator</c> 拖到 <c>ToLocator</c>（两者都必须给）。</summary>
+    Drag,
     Focus,
 }
 
@@ -165,6 +168,7 @@ public static class DesktopInteractionActionWire
         DesktopInteractionAction.Select => "select",
         DesktopInteractionAction.Hover => "hover",
         DesktopInteractionAction.Scroll => "scroll",
+        DesktopInteractionAction.Drag => "drag",
         DesktopInteractionAction.Focus => "focus",
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Interaction action is not registered."),
     };
@@ -207,7 +211,8 @@ public sealed record BrowserInteractRequest
         double? deltaX = null,
         double? deltaY = null,
         DesktopInputMode inputMode = DesktopInputMode.Dom,
-        DesktopScrollTarget? scrollTarget = null)
+        DesktopScrollTarget? scrollTarget = null,
+        DesktopLocator? toLocator = null)
     {
         if (!Enum.IsDefined(action))
         {
@@ -243,6 +248,7 @@ public sealed record BrowserInteractRequest
         DeltaY = deltaY;
         InputMode = inputMode;
         ScrollTarget = scrollTarget;
+        ToLocator = toLocator;
 
         ValidateShape();
     }
@@ -278,6 +284,9 @@ public sealed record BrowserInteractRequest
     /// 无 locator ⇒ <c>page</c>。
     /// </summary>
     public DesktopScrollTarget? ScrollTarget { get; }
+
+    /// <summary>拖拽终点（仅 <c>Drag</c> 使用）。</summary>
+    public DesktopLocator? ToLocator { get; }
 
     /// <summary>实际生效的滚动目标（显式优先，否则按上面的规则推导）。</summary>
     public DesktopScrollTarget EffectiveScrollTarget => ScrollTarget ?? (Locator is null
@@ -316,6 +325,11 @@ public sealed record BrowserInteractRequest
             case DesktopInteractionAction.Scroll:
                 ValidateScroll();
                 break;
+
+            // 拖拽必须**两个端点都给**：只有一个端点无法表达"拖到哪儿"，猜一个目标是不诚实的。
+            case DesktopInteractionAction.Drag when Locator is null || ToLocator is null:
+                throw new ArgumentException(
+                    "Action 'drag' requires both a source locator and a target locator.", nameof(ToLocator));
         }
     }
 

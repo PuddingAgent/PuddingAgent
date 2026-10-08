@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace PuddingBrowser.Abstractions;
 
@@ -188,6 +188,8 @@ public sealed record ScrollOutcome
 
 public sealed record DragOptions
 {
+    public InputMode InputMode { get; init; }
+
     public int TimeoutMs { get; init; } = 5_000;
 }
 

@@ -1,4 +1,4 @@
-using PuddingBrowser.Abstractions;
+﻿using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
 
 namespace Pudding.DesktopService.Browser;
@@ -54,6 +54,9 @@ public sealed class AutomationDriverPolicy : IBrowserDriverPolicy
 
     public IReadOnlyList<DriverCall>? PlanHover(double x, double y) =>
         Map(NativeInputSequence.PlanHover(Target(x, y)));
+
+    public IReadOnlyList<DriverCall>? PlanDrag(double fromX, double fromY, double toX, double toY) =>
+        Map(NativeInputSequence.PlanDrag(Target(fromX, fromY), Target(toX, toY)));
 
     public IReadOnlyList<DriverCall>? PlanScroll(double x, double y, double deltaX, double deltaY) =>
         Map(NativeInputSequence.PlanScroll(Target(x, y), deltaX, deltaY));
