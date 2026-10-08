@@ -19,6 +19,16 @@ public sealed record HistoryHydrationOutcome(
     Exception? Error = null);
 
 /// <summary>
+/// 一串内存消息 → 持久 `MessageEntity.MessageId` 的解析结果（F2 覆盖标注的唯一依据）。
+/// <see cref="AllResolved"/> 为 false 表示存在**没有持久行**的消息：调用方必须放弃写
+/// `CompactedBy`/覆盖清单，绝不能只标注其中一部分去"凑齐"。
+/// </summary>
+internal sealed record DurableSpanResolution(
+    bool AllResolved,
+    IReadOnlyList<string> MessageIds,
+    int UnresolvedCount);
+
+/// <summary>
 /// 上下文窗口与会话历史管理器。
 /// 负责内存历史、DB/JSONL 回填、历史裁剪与过期清理。
 /// </summary>
@@ -38,6 +48,13 @@ public sealed class ContextWindowManager
     private readonly ConcurrentDictionary<string, DateTimeOffset> _historyLastAccessedAt;
     private readonly ConcurrentDictionary<string, TimeSpan> _historyTimeouts;
     private readonly ConcurrentDictionary<string, int> _activeExecutions;
+    /// <summary>
+    /// 会话内「内存消息对象 → 持久 MessageId」的**引用相等**登记表（F2 持久化尾款的基础设施）。
+    /// 见 <see cref="PublishDurableMessageIds"/> 与 <see cref="ResolveDurableSpan"/> 的注释：
+    /// 未登记即"没有持久行"，不可被覆盖标注。
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<ChatMessage, string>> _durableMessageIds
+        = new(StringComparer.Ordinal);
     private readonly ILogger<ContextWindowManager> _logger;
     private readonly AgentCompactionNotifier? _compactionNotifier;
     private readonly IPreCompactionFlushService? _preCompactionFlushService;
@@ -103,7 +120,6 @@ public sealed class ContextWindowManager
         _historyTimeouts = new ConcurrentDictionary<string, TimeSpan>();
         _activeExecutions = new ConcurrentDictionary<string, int>();
     }
-
     public List<ChatMessage> GetOrCreateHistory(string sessionId)
     {
         return _histories.GetOrAdd(sessionId, _ => []);
@@ -127,6 +143,63 @@ public sealed class ContextWindowManager
         _histories.TryRemove(sessionId, out _);
         _historyLastAccessedAt.TryRemove(sessionId, out _);
         _historyTimeouts.TryRemove(sessionId, out _);
+        // 内存历史已被丢弃 ⇒ 身份登记随之失效，避免旁路表长期持有旧消息对象。
+        _durableMessageIds.TryRemove(sessionId, out _);
+    }
+
+    /// <summary>
+    /// 发布某会话的「内存消息对象 → 持久 MessageId」登记（**整体替换**，不是追加）。
+    /// <para>
+    /// 为什么要这张旁路表：F2 的覆盖标注必须精确到 `MessageEntity` 行，而内存历史
+    /// <c>List&lt;ChatMessage&gt;</c> 不携带持久 id。给 <c>ChatMessage</c>（record）加字段会把身份并入
+    /// **值相等**语义，改变既有比较/去重；因此改为按**引用相等**登记的旁路表。
+    /// </para>
+    /// <para>
+    /// 为什么整体替换：DB 水合是「整体重建内存历史」的语义（调用方随后 <c>history.Clear()</c> +
+    /// <c>AddRange</c>），因此登记表也应镜像新的持久基线 —— 既保证语义一致，也避免旧消息对象
+    /// 被永久引用导致泄漏。
+    /// </para>
+    /// <para>
+    /// <b>未登记 = 该消息没有持久行</b>（例如本 Turn 新追加、尚未落库的消息），因此**不可**被
+    /// 覆盖标注吞掉。
+    /// </para>
+    /// </summary>
+    private void PublishDurableMessageIds(string sessionId, IReadOnlyList<(ChatMessage Message, string MessageId)> registrations)
+    {
+        var map = new ConcurrentDictionary<ChatMessage, string>(ReferenceEqualityComparer.Instance);
+        foreach (var (message, messageId) in registrations)
+        {
+            if (string.IsNullOrWhiteSpace(messageId))
+                continue;
+            map[message] = messageId;
+        }
+
+        if (map.IsEmpty)
+            _durableMessageIds.TryRemove(sessionId, out _);
+        else
+            _durableMessageIds[sessionId] = map;
+    }
+
+    /// <summary>
+    /// 解析一串内存消息对应的持久身份。`AllResolved == false` 表示其中有消息**没有持久行**，
+    /// 调用方**必须**据此放弃写 `CompactedBy`（错标等于静默隐藏真实消息）。
+    /// </summary>
+    internal DurableSpanResolution ResolveDurableSpan(string sessionId, IReadOnlyList<ChatMessage> span)
+    {
+        if (span.Count == 0 || !_durableMessageIds.TryGetValue(sessionId, out var map))
+            return new DurableSpanResolution(false, [], span.Count);
+
+        var ids = new List<string>(span.Count);
+        var unresolved = 0;
+        foreach (var message in span)
+        {
+            if (map.TryGetValue(message, out var messageId) && !string.IsNullOrWhiteSpace(messageId))
+                ids.Add(messageId);
+            else
+                unresolved++;
+        }
+
+        return new DurableSpanResolution(unresolved == 0, ids, unresolved);
     }
 
     /// <summary>
@@ -409,9 +482,12 @@ public sealed class ContextWindowManager
         // 摘要 Sequence = 压缩时 max+1，本就晚于被压缩消息）。
         selected.AddRange(summaryEntities);
         var lastCreatedAt = selected.Count > 0 ? selected.Max(m => m.CreatedAt) : 0L;
-        var messages = selected
-            .OrderBy(m => m.Sequence)
-            .Select(entity => new ChatMessage(
+        var orderedEntities = selected.OrderBy(m => m.Sequence).ToList();
+        var messages = new List<ChatMessage>(orderedEntities.Count);
+        var registrations = new List<(ChatMessage Message, string MessageId)>(orderedEntities.Count);
+        foreach (var entity in orderedEntities)
+        {
+            var message = new ChatMessage(
                 string.Equals(entity.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase)
                     ? ChatRole.Assistant
                     : ParseChatRole(entity.Role),
@@ -427,8 +503,14 @@ public sealed class ContextWindowManager
                     ? HistoryPrefixReconciler.ComputeSourceHash(
                         entity.Content, ContentPartsEnvelope.Decode(entity.AttachmentsJson))
                     : null,
-            })
-            .ToList();
+            };
+            messages.Add(message);
+            if (!string.IsNullOrWhiteSpace(entity.MessageId))
+                registrations.Add((message, entity.MessageId));
+        }
+
+        // 登记「内存消息对象 → 持久 MessageId」，供 F2 的覆盖标注精确到行（引用相等，见字段注释）。
+        PublishDurableMessageIds(sessionId, registrations);
 
         return new(SanitizeForLlmContext(messages), lastCreatedAt);
     }
