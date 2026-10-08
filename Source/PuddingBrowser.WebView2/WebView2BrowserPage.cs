@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
@@ -332,6 +332,11 @@ public sealed class WebView2BrowserPage : IBrowserPage
         ArgumentNullException.ThrowIfNull(o);
         var webView = RequireWebView();
 
+        if (o.InputMode == InputMode.Native)
+        {
+            return await ScrollNativelyAsync(webView, o, ct).ConfigureAwait(false);
+        }
+
         // 与其它动作一致：把脚本执行排到 UI 线程上（跨线程访问 WebView2 会直接失败）。
         var outcome = await _dispatcher.InvokeAsync(
             () => WebView2DomClient.ScrollAsync(webView, PageVersion, _refScopeToken, o, ct), ct)
@@ -340,6 +345,66 @@ public sealed class WebView2BrowserPage : IBrowserPage
         Interlocked.Increment(ref _pageVersion);
         return outcome;
     }
+    /// <summary>
+    /// **原生滚动**（§7 <c>inputMode=native</c>）：在正确的落点发真实滚轮事件（CDP
+    /// <c>Input.dispatchMouseEvent(mouseWheel)</c>），而不是改 <c>scrollTop</c>。
+    ///
+    /// 事实从哪来：滚轮事件本身不带结果，因此滚动**之后**用只读观察（DOM 侧读位置/边界/内容变化）
+    /// 把事实如实取回 —— 输入是原生的，观察是 DOM 的，这个分工在返回的
+    /// <see cref="ScrollOutcome"/> 里如实成立（<c>Container</c> 等字段即观察结果）。
+    ///
+    /// 落点规则：有元素目标 ⇒ 元素中心（滚轮作用在指针下的可滚动祖先）；页面目标 ⇒ 视口中心
+    /// （视口尺寸来自 CDP <c>Page.getLayoutMetrics</c>，不猜窗口大小）。
+    /// </summary>
+    private async Task<ScrollOutcome> ScrollNativelyAsync(
+        CoreWebView2 webView, ScrollOptions options, CancellationToken ct)
+    {
+        NativeInputSequence.InputTarget target;
+
+        if (options.Target == ScrollTarget.Element && options.Locator is { } locator)
+        {
+            var handle = await QueryAsync(locator, ct).ConfigureAwait(false)
+                ?? throw new BrowserOperationException(
+                    "browser_element_not_found", "the scroll target element was not found");
+            var box = await handle.GetBoundingBoxAsync(ct).ConfigureAwait(false)
+                ?? throw new BrowserOperationException(
+                    "browser_element_not_found", "the scroll target has no geometry");
+            target = new NativeInputSequence.InputTarget(box.X, box.Y, box.Width, box.Height);
+        }
+        else
+        {
+            using var metrics = await SendCdpAsync("Page.getLayoutMetrics", null, ct).ConfigureAwait(false);
+            var viewport = metrics.RootElement.GetProperty("cssLayoutViewport");
+            target = new NativeInputSequence.InputTarget(
+                viewport.GetProperty("clientWidth").GetDouble() / 2,
+                viewport.GetProperty("clientHeight").GetDouble() / 2,
+                Width: 0,
+                Height: 0);
+        }
+
+        var deltaX = options.DeltaX ?? 0;
+        var deltaY = options.DeltaY ?? 0;
+
+        foreach (var call in NativeInputSequence.PlanScroll(target, deltaX, deltaY))
+        {
+            ct.ThrowIfCancellationRequested();
+            var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
+            using var _ = await SendCdpAsync(call.Method, parameters, ct).ConfigureAwait(false);
+        }
+
+        Interlocked.Increment(ref _pageVersion);
+
+        // 只读回读：位移 0 的"滚动"不改任何东西，只把前后位置/边界/内容变化取回来。
+        return await _dispatcher.InvokeAsync(
+            () => WebView2DomClient.ScrollAsync(
+                webView,
+                PageVersion,
+                _refScopeToken,
+                new ScrollOptions { Target = options.Target, Locator = options.Locator, DeltaX = 0, DeltaY = 0 },
+                ct),
+            ct).ConfigureAwait(false);
+    }
+
     public Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct)
         => throw new NotSupportedException("DOM not in Phase 2A-1");
     public Task SelectAsync(Locator l, IReadOnlyList<string> v, CancellationToken ct)

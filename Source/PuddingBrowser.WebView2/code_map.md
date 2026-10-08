@@ -1,4 +1,4 @@
-# PuddingBrowser.WebView2 CodeMAP
+﻿# PuddingBrowser.WebView2 CodeMAP
 
 > WebView2 Driver | 真实浏览器页面操作
 
@@ -8,7 +8,7 @@
 |------|------|
 | `WebView2BrowserRuntime.cs` | 浏览器运行时实现 |
 | `WebView2BrowserContext.cs` | 浏览器上下文管理 |
-| `WebView2BrowserPage.cs` | 页面实现（核心，16KB）。**CDP 传输已实现**：`SendCdpAsync` 走 WebView2 自带的 `CallDevToolsProtocolMethodAsync`（不必另开调试端口），参数原样透传、返回 JSON 由调用方解释；`SubscribeCdpAsync`（事件订阅）**仍明确 unsupported**——它需要另外的事件泵，不假装支持。原生输入的动作序列由 `PuddingBrowser.Automation.NativeInputSequence` 规划，这里只负责按序发 CDP。**引用身份事实**：ref 以 `data-pudding-ref` 属性绑在**节点自身**上（节点被换 ⇒ 查不到；节点脱离文档 ⇒ 仍查得到），因此解析时必须判 `isConnected`，脱离文档一律按 `stale_element_reference` 拒绝（否则就是静默操作一个不在文档里的元素） |
+| `WebView2BrowserPage.cs` | 页面实现（核心，16KB）。**CDP 传输已实现**：`SendCdpAsync` 走 WebView2 自带的 `CallDevToolsProtocolMethodAsync`（不必另开调试端口），参数原样透传、返回 JSON 由调用方解释；`SubscribeCdpAsync`（事件订阅）**仍明确 unsupported**——它需要另外的事件泵，不假装支持。原生输入的动作序列由 `PuddingBrowser.Automation.NativeInputSequence` 规划，这里只负责按序发 CDP。**引用身份事实**：ref 以 `data-pudding-ref` 属性绑在**节点自身**上（节点被换 ⇒ 查不到；节点脱离文档 ⇒ 仍查得到），因此解析时必须判 `isConnected`，脱离文档一律按 `stale_element_reference` 拒绝（否则就是静默操作一个不在文档里的元素）。**原生滚动**（§7）：改 `scrollTop` 换成在正确落点发真实滚轮事件（CDP `Input.dispatchMouseEvent(mouseWheel)`），落点=元素中心或视口中心（视口尺寸取自 CDP `Page.getLayoutMetrics`，不猜窗口大小）；滚轮本身不带结果，**事实由之后的一次只读 DOM 观察取回**（输入原生、观察 DOM，这个分工如实反映在返回的 ScrollOutcome 里） |
 | `WebView2BrowserSurface.cs` | 浏览器表面 |
 
 ## DOM 操作

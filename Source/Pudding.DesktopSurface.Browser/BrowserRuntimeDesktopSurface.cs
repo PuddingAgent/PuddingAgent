@@ -654,6 +654,19 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                     $"native input is not implemented for action '{DesktopInteractionActionWire.NameOf(request.Action)}'"));
         }
 
+        // 原生滚动只覆盖**按位移滚动**：到达类目标（to_top/to_bottom/to_ref）需要"滚到边界/滚到某元素"
+        // 的判定，本轮明确拒绝（fail closed），绝不悄悄退回 DOM —— 那会让调用方以为走的是真实输入。
+        if (request.InputMode == DesktopInputMode.Native
+            && request.Action == DesktopInteractionAction.Scroll
+            && request.EffectiveScrollTarget is DesktopScrollTarget.ToTop
+                or DesktopScrollTarget.ToBottom or DesktopScrollTarget.ToRef)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(
+                DesktopCapabilityError.UnsupportedCapability(
+                    $"native scroll does not implement target '{request.EffectiveScrollTarget}' yet;"
+                    + " use input_mode=dom for to_top/to_bottom/to_ref"));
+        }
+
         if (_runtime.State != BrowserRuntimeState.Ready)
         {
             return CapabilityResult<DesktopInteractionResult>.Failure(
@@ -746,7 +759,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
     private static bool SupportsNativeInput(DesktopInteractionAction action) => action is
         DesktopInteractionAction.Click or DesktopInteractionAction.Fill or DesktopInteractionAction.Type
         or DesktopInteractionAction.Press or DesktopInteractionAction.Hover
-        or DesktopInteractionAction.Check or DesktopInteractionAction.Uncheck;
+        or DesktopInteractionAction.Check or DesktopInteractionAction.Uncheck or DesktopInteractionAction.Scroll;
 
     private static async Task<ScrollOutcome?> PerformAsync(
         IBrowserPage page, BrowserInteractRequest request, Locator? locator, CancellationToken cancellationToken)
@@ -782,6 +795,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             case DesktopInteractionAction.Scroll:
                 // 滚动目标模型（§7）：显式目标优先，否则按 locator/位移推导；
                 // 结果事实（容器/前后位置/消耗位移/边界/内容变化）如实带回。
+                // （原生路径下的到达类目标已在 InteractAsync 入口明确拒绝。）
                 return await page.ScrollAsync(
                     new ScrollOptions
                     {
@@ -789,6 +803,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                         DeltaY = request.DeltaY,
                         Target = MapScrollTarget(request.EffectiveScrollTarget),
                         Locator = locator,
+                        InputMode = inputMode,
                     },
                     cancellationToken).ConfigureAwait(false);
             default:

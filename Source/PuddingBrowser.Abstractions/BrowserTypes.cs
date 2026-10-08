@@ -146,6 +146,7 @@ public static class ScrollTargetWire
 public sealed record ScrollOptions
 {
     public int TimeoutMs { get; init; } = 5_000;
+    public InputMode InputMode { get; init; }
     public double? DeltaX { get; init; }
     public double? DeltaY { get; init; }
 

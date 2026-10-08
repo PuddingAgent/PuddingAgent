@@ -102,6 +102,46 @@ public sealed class InteractMappingTests
     }
 
     [Fact]
+    public async Task NativeScroll_CarriesTheMode_AndRefusesArrivalTargets()
+    {
+        // §7：原生滚动是"发真实滚轮事件"，因此只覆盖**按位移滚动**；
+        // 到达类目标（to_top/to_bottom/to_ref）在原生路径下明确拒绝，不悄悄退回 DOM。
+        var runtime = Runtime(pageVersion: 5, advanceTo: 6, handle: null);
+        var surface = Surface(runtime);
+
+        var native = await surface.InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target,
+                DesktopInteractionAction.Scroll,
+                DesktopPageVersion.Require(5),
+                locator: null,
+                deltaX: null,
+                deltaY: 240,
+                inputMode: DesktopInputMode.Native),
+            CancellationToken.None);
+
+        Assert.False(native.IsFailure);
+        Assert.Equal(InputMode.Native, runtime.Pages["ctx-1/p-1"].LastScroll!.InputMode);
+
+        var refused = await surface.InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target,
+                DesktopInteractionAction.Scroll,
+                DesktopPageVersion.Require(6),
+                locator: null,
+                deltaX: null,
+                deltaY: null,
+                inputMode: DesktopInputMode.Native,
+                scrollTarget: DesktopScrollTarget.ToBottom),
+            CancellationToken.None);
+
+        Assert.True(refused.IsFailure);
+        Assert.Contains("native scroll", refused.Error!.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ScrollCarriesTheTargetModelAndReportsTheOutcome()
     {
         // 设计 §7：滚动目标（page/element/to_ref/to_top/to_bottom）必须显式下传，
