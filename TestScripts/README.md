@@ -341,6 +341,8 @@ foreach($n in @('check-circular-deps.ps1','report-skill-portfolio.ps1','test-pla
 
 ### `check-circular-deps.ps1` 的另外四个独立缺陷（**修好编码也不可用**）
 
+> ✅ **已于 2026-10-08 退场**：该文件现为 **fail-closed 委托器**（转发到 `check-project-layering.ps1` 并透传退出码）。以下清单**保留为历史证据**，不再描述当前行为 —— 详见本节末「`check-circular-deps.ps1` 退场处置」。
+
 1. `$cyclesFound` **从不递增** ⇒ 结尾永远打印"未发现循环依赖" ⇒ **假 PASS**（最危险的一条）。
 2. `$root` 多剥了一层目录（3× `Split-Path -Parent`）⇒ `$sourceDir` 指向仓库**外**（实测 `Test-Path D:\CodeProject\PuddingAgent\Source` = **False**）。
 3. 只扫 `Source\`，**不覆盖 `Tests\`**（仓库级还有 ≥5 个测试工程）。
@@ -391,7 +393,8 @@ RESULT: PASS
 
 **「内容零改动」的量化取证**：`git diff --numstat -- TestScripts` ⇒ 4 个文件**各 `1 1`**（只动首行），汇总 `4 files changed, 4 insertions(+), 4 deletions(-)`。
 
-> ⚠️ **注意**：修复**只解决「能加载」**。`check-circular-deps.ps1` 的 **5 个逻辑缺陷仍在**（尤其 `$cyclesFound` 假 PASS）⇒ 它**依然不得作为门禁判据**，替代实现仍是 `check-project-layering.ps1`。
+> ⚠️ **注意**：修复**只解决「能加载」** —— 这条结论在 2026-10-08 又被 C-6 **独立验证了一次**（该文件当时还带一个 PS 6+ 参数缺陷）。
+> ✅ **现状（2026-10-08 起）**：`check-circular-deps.ps1` **已退场**，改为 fail-closed 委托器；上述 5 个逻辑缺陷**已随重写消失**。门禁判据统一由 `check-project-layering.ps1` 提供。
 
 ### `check-script-encodings.ps1`（C-5：脚本可加载性机检）
 
@@ -554,3 +557,28 @@ RESULT: FAIL   (exit 1)
 ### 退出码
 
 `0` PASS · `1` 有发现 · `2` 有文件无法分析（fail-closed） · `3` 范围内**枚举到 0 个脚本**（拒绝报绿） · `4` 自检未检出植入缺陷。
+
+---
+
+### `check-circular-deps.ps1` 退场处置（2026-10-08）
+
+**决定：退场（retire），不修。** 该文件**同时**具备 5 个逻辑缺陷（含 `$cyclesFound` 假 PASS）**与** 1 个运行期不兼容（`Split-Path -LeafBase`）⇒ 两条修法（修逻辑 / 修编码）**都救不回来**。
+
+**做法**：**保留文件名**（既有调用方与文档不必改），内容改为 **fail-closed 委托器** ——
+转发到 `check-project-layering.ps1` 并**透传其退出码**；**自身不下任何判定**；若后继脚本缺失则 **exit 3**（缺件**绝不可能**看起来是绿的）。
+
+**验证（全部实测、机检）**
+
+| 检查 | 结果 |
+|---|---|
+字节 / 非 ASCII | `CD_BYTES=3303` · **`CD_NONASCII=0`**（ASCII-only ⇒ **无需 BOM**，天然免疫 ANSI 陷阱） |
+`-File check-circular-deps.ps1` | **exit 0**；输出 `PROJECT_COUNT = 81` · `EDGE_COUNT = 131` · `PASS C-1` · `PASS C-4` · `RESULT: PASS` ⇒ **退出码透传成功** |
+`-SelfTest` | **exit 0**；`SELFTEST ok: injected cycle detected -> __ZZ_CycleA -> __ZZ_CycleB -> __ZZ_CycleA` · `injected production->test reference detected` · `SELFTEST: PASS` ⇒ **参数转发成功** |
+**C-6 复扫** | **`C6_EXIT=0`** · `CMD_MISSING=0 CMD_UNRESOLVED=2 **PARAM_MISSING=0**`（原 `=1`）⇒ **C-6 由 FAIL 转 PASS** |
+
+> ⭐ **闭环意义**：C-6 在本轮之前唯一报出的「真·运行期不兼容」**就是本文件**；退场后 **C-6 全绿** ⇒
+> 「**门禁发现 → 修复 → 门禁确认修复**」这条链**首次走完**（此前各轮均为「发现」或「自纠」，未形成"门禁验收门禁修复"的闭环）。
+> 残余的 2 条**仅为 `CMD_UNRESOLVED` 警告**（`test-pudding-deployment-gates.ps1` 的运行时动态注入，已在上节判定为**假阳性**）。
+
+⚠️ **保留的历史痕迹**：`check-circular-deps.ps1` 曾在 2026-10-08 两次被"修"（① 加 BOM 解编码障碍；② 本轮改为委托器）。
+第一修**未解决**任何逻辑缺陷——这正是「**能加载 ≠ 能运行 ≠ 判定正确**」三层区分的实证教材。

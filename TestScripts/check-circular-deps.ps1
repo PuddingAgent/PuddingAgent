@@ -1,110 +1,77 @@
-﻿<#
+<#
 .SYNOPSIS
-检测 PuddingAgent 解决方案中的项目循环依赖
+    DEPRECATED shim. Superseded by check-project-layering.ps1 (C-1 + C-4).
+
+.DESCRIPTION
+    This file used to be a standalone circular-dependency checker. It was RETIRED on
+    2026-10-08 because it could not be repaired into a trustworthy gate. Five measured
+    defects, any one of which is disqualifying:
+
+      (1) FALSE PASS BY CONSTRUCTION - the cycle counter was declared but never
+          incremented anywhere, so the final branch always took the
+          "no circular dependency found" path regardless of what the DFS saw.
+      (2) WRONG ROOT - the repository root was derived with three Split-Path -Parent
+          hops from the script path, landing one level ABOVE the repository, so the
+          scanned directory did not exist.
+      (3) PARTIAL SCOPE - it only scanned <root>\Source, so Tests\ and external\ were
+          invisible.
+      (4) RUNTIME INCOMPATIBILITY - it called Split-Path -LeafBase, a PowerShell 6+
+          parameter. Under Windows PowerShell 5.1 that call throws
+          ParameterBindingException. Measured 2026-10-08 by
+          TestScripts/check-script-runtime-compat.ps1 (C-6):
+              SPLITPATH_HAS_LEAFBASE=False   CALL_ERR=ParameterBindingException
+          Note that the script PARSES cleanly and declares no engine requirement, so
+          C-5 cannot see this defect - only C-6 can.
+      (5) NO EXIT CODE - it never called exit, so no gate could consume its verdict.
+
+    The file NAME is preserved so that any existing caller or document keeps working.
+    It now forwards to check-project-layering.ps1 and propagates that script's exit
+    code. No verdict is produced here.
+
+.PARAMETER Root
+    Repository root. Default: empty, which lets check-project-layering.ps1 derive it
+    from its own PSScriptRoot.
+
+.PARAMETER SelfTest
+    Forwarded to check-project-layering.ps1.
+
+.EXIT CODES
+    0 = PASS / 1 = FAIL / 4 = SELFTEST_FAIL, exactly as returned by
+    check-project-layering.ps1. Additionally 3 = FAIL-CLOSED, returned here when the
+    successor script cannot be found, so a missing successor can never look green.
+
+.NOTE
+    Keep this file ASCII-ONLY. Windows PowerShell 5.1 decodes BOM-less script files as
+    ANSI, so a UTF-8 file containing non-ASCII text fails to parse on this machine.
+
+.EXAMPLE
+    powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\check-circular-deps.ps1
+.EXAMPLE
+    powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\check-circular-deps.ps1 -SelfTest
 #>
 
+[CmdletBinding()]
+param(
+    [string]$Root = '',
+    [switch]$SelfTest
+)
+
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path | Split-Path -Parent | Split-Path -Parent
-$sourceDir = Join-Path $root 'Source'
 
-Write-Host "==> 扫描项目引用..." -ForegroundColor Cyan
-
-$projects = @{}
-$csprojFiles = Get-ChildItem -Path $sourceDir -Recurse -Filter '*.csproj' | Where-Object { $_.FullName -notmatch '\\bin\\|\\obj\\' }
-
-foreach ($file in $csprojFiles) {
-    $name = $file.BaseName
-    $projects[$name] = @{
-        Path = $file.FullName
-        References = [System.Collections.Generic.Dictionary[string,bool]]::new()
-    }
-
-    $content = Get-Content $file.FullName -Raw
-    $refMatches = [regex]::Matches($content, '<ProjectReference\s+Include="([^"]+)"')
-    foreach ($m in $refMatches) {
-        $refPath = $m.Groups[1].Value
-        $refName = (Split-Path $refPath -LeafBase)
-        if (-not $projects[$name].References.ContainsKey($refName)) {
-            $projects[$name].References[$refName] = $true
-        }
-    }
+$successor = Join-Path $PSScriptRoot 'check-project-layering.ps1'
+if (-not (Test-Path -LiteralPath $successor)) {
+    Write-Output ('FAIL-CLOSED: successor gate not found: ' + $successor)
+    exit 3
 }
 
-Write-Host "发现 $($projects.Count) 个项目" -ForegroundColor Green
+Write-Output 'DEPRECATED (2026-10-08): check-circular-deps.ps1 now delegates to check-project-layering.ps1'
+Write-Output 'Retired because of 5 measured defects, including a false PASS and a PS 6+ parameter'
+Write-Output 'that made it die at runtime under Windows PowerShell 5.1. See the file header.'
+Write-Output ''
 
-# 显示依赖图
-Write-Host "`n==> 依赖关系总览" -ForegroundColor Cyan
-foreach ($proj in ($projects.Keys | Sort-Object)) {
-    $refs = $projects[$proj].References.Keys | Sort-Object
-    if ($refs.Count -eq 0) {
-        Write-Host "  $proj -> (无项目引用)" -ForegroundColor DarkGray
-    } else {
-        Write-Host "  $proj -> $($refs -join ', ')" -ForegroundColor Yellow
-    }
-}
+$forward = @{}
+if (-not [string]::IsNullOrWhiteSpace($Root)) { $forward['Root'] = $Root }
+if ($SelfTest) { $forward['SelfTest'] = $true }
 
-# 检测循环依赖
-Write-Host "`n==> 检测循环依赖..." -ForegroundColor Cyan
-
-function Find-Cycles {
-    param(
-        [hashtable]$Graph,
-        [string]$StartNode
-    )
-
-    $visited = @{}
-    $recStack = @{}
-    $path = [System.Collections.Generic.Stack[string]]::new()
-
-    function DFS($node) {
-        $visited[$node] = $true
-        $recStack[$node] = $true
-        $null = $path.Push($node)
-
-        if ($Graph.ContainsKey($node)) {
-            foreach ($neighbor in $Graph[$node].Keys) {
-                if (-not $visited.ContainsKey($neighbor)) {
-                    DFS $neighbor
-                } elseif ($recStack.ContainsKey($neighbor)) {
-                    # 找到循环
-                    $cycle = @()
-                    $temp = [System.Collections.Generic.Stack[string]]::new()
-                    while ($temp.Count -eq 0 -or $temp.Peek() -ne $neighbor) {
-                        $item = $path.Pop()
-                        $null = $temp.Push($item)
-                        $cycle += $item
-                    }
-                    $cycle += $neighbor
-                    $cycle = [array]::Reverse($cycle)
-                    Write-Host "  发现循环: $($cycle -join ' -> ')" -ForegroundColor Red
-                    # 恢复路径
-                    foreach ($item in $temp) {
-                        $null = $path.Push($item)
-                    }
-                }
-            }
-        }
-
-        $recStack.Remove($node) | Out-Null
-        $null = $path.Pop()
-    }
-
-    DFS $StartNode
-}
-
-$allProjectNodes = $projects.Keys
-$globalVisited = @{}
-$cyclesFound = 0
-
-foreach ($node in $allProjectNodes) {
-    if (-not $globalVisited.ContainsKey($node)) {
-        Find-Cycles -Graph $projects -StartNode $node
-        $globalVisited[$node] = $true
-    }
-}
-
-if ($cyclesFound -eq 0) {
-    Write-Host "`n未发现循环依赖。" -ForegroundColor Green
-} else {
-    Write-Host "`n发现 $cyclesFound 个循环依赖。" -ForegroundColor Red
-}
+& $successor @forward
+exit $LASTEXITCODE
