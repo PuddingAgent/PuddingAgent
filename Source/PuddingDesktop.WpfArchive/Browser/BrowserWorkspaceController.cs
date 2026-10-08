@@ -1001,6 +1001,9 @@ public sealed class BrowserWorkspaceController :
     {
         if (!string.IsNullOrWhiteSpace(wire))
         {
+            // ⚠️ 这里是**本地** switch（旧 WPF 归档项目不引用 Contracts，故不引契约层的线名真源）；
+            // 与契约层 DesktopScrollTargetWire / Abstractions ScrollTargetWire 的逐项一致
+            // 由跨层门禁 ScrollTargetVocabularyTests 钉住（改一侧就会红）。
             return wire.Trim().ToLowerInvariant() switch
             {
                 "page" => ScrollTarget.Page,
