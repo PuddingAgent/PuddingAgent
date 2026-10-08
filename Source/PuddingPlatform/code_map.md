@@ -20,6 +20,8 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/ChatHistoryService.cs` | 聊天历史 |
+| `Controllers/Api/MessageSearchController.cs` → `Services/RawSessionLogService.cs` | 历史消息弹窗的 `POST /api/messages/search`；当前 `GrepMessagesAsync` 从事件表发现会话，加载最多 10,000 条消息后在内存筛选日期/子串，未走全文或向量索引 |
+| `Services/RawSessionLogService.Fts.cs` | Agent Markdown 日志证据的 Lucene 搜索；要求 agent/有界日期范围，在查询中按日刷新文件索引，区别于消息弹窗检索 |
 | `Services/ChatMessageRepository.cs` | 消息仓储；ChatMessageRow 透传 `WorkspaceId/MessageId/TurnId` 与 `ContentPartsJson` canonical 信封；after-Id 增量扫描不因空正文越过纯 typed-parts 消息，支持 Runtime 冷水合与当前 Turn 排除 |
 | `Services/ChatMessageSchemaBootstrapper.cs` | 存量 SQLite 幂等补 `ChatMessages.content_parts_json` 列 |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | ADR-077 canonical parts；执行前应用 canonical WorkUnit context，将 Agent/WorkUnit rounds、tools、duration 逐项取最严值并冻结 deadline，按实际 provider/model 冻结价格与 input/output/cost 预算，透传 plan/node identity；V5：构建 `CallerLlmSnapshot` 时下发 `snapshot.VisionPolicy`（:212），视觉策略随执行快照单源冻结 |
