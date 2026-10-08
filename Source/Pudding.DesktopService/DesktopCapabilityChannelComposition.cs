@@ -75,14 +75,19 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
         DesktopProcessInstanceId processInstanceId,
         IDesktopUiDispatcher dispatcher,
         IDesktopUiSurface surface,
-        DesktopTargetRegistry pageTargets,
+        BrowserPageLifecycle lifecycle,
         DesktopServiceOptions? serviceOptions = null,
         Action<string>? log = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(surface);
-        ArgumentNullException.ThrowIfNull(pageTargets);
+        // 只接受生命周期端口：它同时持有**唯一**权威实例与准入读的页面注册表。
+        // 分开传两个参数就允许了"配错对"（注册表来自 A、权威来自 B），那等于又出现两份控制权状态。
+        ArgumentNullException.ThrowIfNull(lifecycle);
+
+        var pageTargets = lifecycle.PageTargets;
+        var authority = lifecycle.Authority;
 
         var preflight = DesktopCapabilityChannelPreflight.Evaluate(
             settings, processInstanceId, authentication, endpointDescription);
@@ -115,11 +120,6 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
         }
 
         var streamFactory = new GrpcDesktopChannelStreamFactory(transport.Value, authentication);
-
-        // 进程内唯一控制权/授权事实源（设计方案 §3.1）。装配点就在这里：
-        // 关闭态不构造服务，因此也不会留下一个没人读的权威实例。
-        var authority = new BrowserAutomationAuthority(
-            new DesktopInstanceId(settings.DesktopId), processInstanceId);
 
         var service = new DesktopService(
             dispatcher, surface, pageTargets, serviceOptions ?? CreateDefaultServiceOptions(), authority);

@@ -18,17 +18,21 @@ namespace Pudding.DesktopSurface.Browser;
 /// </summary>
 public sealed class BrowserWorkspaceTargetBridge
 {
+    private readonly BrowserPageLifecycle _lifecycle;
     private readonly BrowserTargetRegistry _browserTargets;
     private readonly DesktopTargetRegistry _pageTargets;
     private readonly Lock _sync = new();
     private readonly HashSet<string> _contexts = new(StringComparer.Ordinal);
 
-    public BrowserWorkspaceTargetBridge(
-        BrowserTargetRegistry browserTargets,
-        DesktopTargetRegistry pageTargets)
+    /// <summary>
+    /// 只接受生命周期端口：它是唯一权威实例 + 两个注册表 + 关闭清理点的所有者。
+    /// 早先这里收两个注册表，于是"谁来保证关闭时授权也被撤销"在类型层面没有归属。
+    /// </summary>
+    public BrowserWorkspaceTargetBridge(BrowserPageLifecycle lifecycle)
     {
-        _browserTargets = browserTargets ?? throw new ArgumentNullException(nameof(browserTargets));
-        _pageTargets = pageTargets ?? throw new ArgumentNullException(nameof(pageTargets));
+        _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
+        _browserTargets = lifecycle.BrowserTargets;
+        _pageTargets = lifecycle.PageTargets;
     }
 
     /// <summary>
@@ -58,8 +62,8 @@ public sealed class BrowserWorkspaceTargetBridge
 
         lock (_sync)
         {
-            _browserTargets.UnregisterContext(contextId);
-            _pageTargets.CloseContext(contextId);
+            // 授权是按页绑定的：上下文关闭必须连页面授权与租约一起撤，否则"页面没了、授权还在"。
+            _lifecycle.CloseContext(contextId);
             _contexts.Remove(contextId);
         }
     }
@@ -121,7 +125,10 @@ public sealed class BrowserWorkspaceTargetBridge
         }
     }
 
-    /// <summary>关闭页面：两个注册表同时移除（活跃页若正是它则一并清除）。</summary>
+    /// <summary>
+    /// 关闭页面：交给生命周期端口 —— 两个注册表 + 该页**全部授权** + 写租约一起清
+    /// （设计方案 §3.3）。这里只负责"页面的关闭事件"，不再自己拼清理步骤。
+    /// </summary>
     public void OnPageClosed(string contextId, string pageId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(contextId);
@@ -129,8 +136,7 @@ public sealed class BrowserWorkspaceTargetBridge
 
         lock (_sync)
         {
-            _browserTargets.UnregisterPage(contextId, pageId);
-            _pageTargets.ClosePage(new DesktopPageTarget(contextId, pageId));
+            _lifecycle.ClosePage(new DesktopPageTarget(contextId, pageId));
         }
     }
 

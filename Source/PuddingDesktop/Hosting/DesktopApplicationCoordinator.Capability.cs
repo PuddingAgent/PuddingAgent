@@ -66,9 +66,12 @@ public sealed partial class DesktopApplicationCoordinator
                 return;
             }
 
-            var pageTargets = new DesktopTargetRegistry();
-            var browserTargets = new BrowserTargetRegistry();
-            var bridge = new BrowserWorkspaceTargetBridge(browserTargets, pageTargets);
+            // 进程内唯一事实源 + 两个注册表 + 关闭清理点 = 一个生命周期端口（设计方案 §3.1/§3.3）。
+            // 三者必须同源：分别构造就会出现"注册表更新了但授权没撤"这类分叉。
+            var lifecycle = BrowserPageLifecycle.Create(
+                new DesktopInstanceId(settings.DesktopId),
+                new DesktopProcessInstanceId($"desktop-{Environment.ProcessId}"));
+            var bridge = new BrowserWorkspaceTargetBridge(lifecycle);
             AttachBrowserTargets(workspace, bridge);
 
             var dispatcher = new WinUiDesktopUiDispatcher(UiThread.Queue);
@@ -79,7 +82,7 @@ public sealed partial class DesktopApplicationCoordinator
                 () => window.CapabilityTrayVisible,
                 window.ShowCapabilityNotification);
             var surface = new DesktopSurfaceComposition(
-                new BrowserRuntimeDesktopSurface(browserRuntime, browserTargets),
+                new BrowserRuntimeDesktopSurface(browserRuntime, lifecycle.BrowserTargets),
                 new DesktopShellSurface(facilities, hostFacilities));
 
             string token;
@@ -102,7 +105,7 @@ public sealed partial class DesktopApplicationCoordinator
                 new DesktopProcessInstanceId($"desktop-{Environment.ProcessId}"),
                 dispatcher,
                 surface,
-                pageTargets,
+                lifecycle,
                 log: LogCapability,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 

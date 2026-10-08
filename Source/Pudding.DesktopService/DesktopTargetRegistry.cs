@@ -231,6 +231,24 @@ public sealed class DesktopTargetRegistry
         }
     }
 
+    /// <summary>
+    /// 某上下文下**当前仍登记**的页面目标。
+    /// 关闭上下文前必须先把清单取出来：注册表移除之后就查不到了，而授权是按页绑定的，
+    /// 逐个撤销需要这份清单（缺口会表现为"页面没了但授权还在"）。
+    /// </summary>
+    public IReadOnlyList<DesktopPageTarget> PagesInContext(string contextId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contextId);
+
+        lock (_sync)
+        {
+            return _pages.Values
+                .Where(page => string.Equals(page.Target.ContextId, contextId, StringComparison.Ordinal))
+                .Select(page => page.Target)
+                .ToArray();
+        }
+    }
+
     public int OpenPageCount
     {
         get

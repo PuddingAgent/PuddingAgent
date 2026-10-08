@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
 using Pudding.DesktopService;
@@ -104,15 +104,15 @@ public sealed class DesktopCapabilityChannelCompositionTests
     {
         // 准入用的页面注册表必须**就是** Shell 那边驱动的那一个实例：
         // 换成另一个实例会让「页面已登记」与「准入能看见页面」互相矛盾。
-        var pageTargets = new DesktopTargetRegistry();
+        var lifecycle = TestAuthorities.CreateLifecycle();
 
         var result = await StartAsync(
             settings: EnabledSettings(),
             endpointDescription: UsableEndpoint,
-            pageTargets: pageTargets);
+            lifecycle: lifecycle);
 
         Assert.NotNull(result.Value);
-        Assert.Same(pageTargets, result.Value!.Service.Targets);
+        Assert.Same(lifecycle.PageTargets, result.Value!.Service.Targets);
         await result.Value.DisposeAsync();
     }
 
@@ -176,15 +176,36 @@ public sealed class DesktopCapabilityChannelCompositionTests
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => DesktopCapabilityChannelComposition.StartAsync(
             settings, UsableEndpoint, Authentication(), new DesktopProcessInstanceId("proc-1"),
-            dispatcher: null!, surface: new RecordingUiSurface(), pageTargets: new DesktopTargetRegistry()));
+            dispatcher: null!, surface: new RecordingUiSurface(), lifecycle: TestAuthorities.CreateLifecycle()));
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => DesktopCapabilityChannelComposition.StartAsync(
             settings, UsableEndpoint, Authentication(), new DesktopProcessInstanceId("proc-1"),
-            dispatcher: new ManualUiDispatcher(), surface: null!, pageTargets: new DesktopTargetRegistry()));
+            dispatcher: new ManualUiDispatcher(), surface: null!, lifecycle: TestAuthorities.CreateLifecycle()));
 
+        // 生命周期端口缺失必须拒绝：没有唯一事实源就没有控制权语义（设计方案 §3.1）。
         await Assert.ThrowsAsync<ArgumentNullException>(() => DesktopCapabilityChannelComposition.StartAsync(
             settings, UsableEndpoint, Authentication(), new DesktopProcessInstanceId("proc-1"),
-            dispatcher: new ManualUiDispatcher(), surface: new RecordingUiSurface(), pageTargets: null!));
+            dispatcher: new ManualUiDispatcher(), surface: new RecordingUiSurface(), lifecycle: null!));
+    }
+
+    [Fact]
+    public async Task StartAsync_UsesTheProvidedLifecycle_InsteadOfCreatingItsOwn()
+    {
+        // 组合根不能自己再造权威/注册表：那等于又出现两份控制权状态。
+        // 断言方式：用**已接管**的权威启动，服务的控制面必须立刻反映它。
+        var lifecycle = TestAuthorities.CreateLifecycle();
+        lifecycle.Authority.SetUserTakeover(true, "user clicked");
+
+        var result = await StartAsync(
+            settings: EnabledSettings(), endpointDescription: UsableEndpoint, lifecycle: lifecycle);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Value);
+        await using var composition = result.Value!;
+
+        Assert.Same(lifecycle.Authority, composition.Service.Authority);
+        Assert.Same(lifecycle.PageTargets, composition.Service.Targets);
+        Assert.True(composition.Service.Interaction.IsUserTakeover);
     }
 
     private static DesktopCapabilityChannelSettings EnabledSettings() => new()
@@ -204,7 +225,7 @@ public sealed class DesktopCapabilityChannelCompositionTests
         DesktopCapabilityChannelSettings? settings,
         string? endpointDescription,
         Action<string>? log = null,
-        DesktopTargetRegistry? pageTargets = null) =>
+        BrowserPageLifecycle? lifecycle = null) =>
         DesktopCapabilityChannelComposition.StartAsync(
             settings,
             endpointDescription,
@@ -212,7 +233,7 @@ public sealed class DesktopCapabilityChannelCompositionTests
             new DesktopProcessInstanceId("proc-1"),
             new ManualUiDispatcher(),
             new RecordingUiSurface(),
-            pageTargets ?? new DesktopTargetRegistry(),
+            lifecycle ?? TestAuthorities.CreateLifecycle(),
             log: log);
 
     private static Task<CapabilityResult<DesktopCapabilityChannelComposition?>> StartAsync(
