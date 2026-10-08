@@ -4,12 +4,14 @@
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
     <Project Path="Source/PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
     <Project Path="Source/PuddingBrowser.AgentTools/PuddingBrowser.AgentTools.csproj" />
+    <Project Path="Source/PuddingBrowser.Automation/PuddingBrowser.Automation.csproj" />
     <Project Path="Source/PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj" />
     <Project Path="Source/PuddingBrowser.WebView2/PuddingBrowser.WebView2.csproj" />
     <Project Path="Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj" />
     <Project Path="Source/PuddingBrowser.WinUI/PuddingBrowser.WinUI.csproj" />
     <Project Path="Source/PuddingBrowser.WinUITests/PuddingBrowser.WinUITests.csproj" />
     <Project Path="Source/PuddingCodeIndex/PuddingCodeIndex.csproj" />
+    <Project Path="Source/PuddingContextPolicy/PuddingContextPolicy.csproj" />
     <Project Path="Source/Pudding.CapabilityBroker/Pudding.CapabilityBroker.csproj" />
     <Project Path="Source/Pudding.CapabilityBroker.AspNetCore/Pudding.CapabilityBroker.AspNetCore.csproj" />
     <Project Path="Source/Pudding.Contracts/Pudding.Contracts.csproj" />
@@ -57,8 +59,10 @@
     <Project Path="Source/Pudding.DesktopConnectionTests/Pudding.DesktopConnectionTests.csproj" />
     <Project Path="Source/Pudding.DesktopServiceTests/Pudding.DesktopServiceTests.csproj" />
     <Project Path="Tests/PuddingHost.Tests/PuddingHost.Tests.csproj" />
+    <Project Path="Source/PuddingBrowser.AutomationTests/PuddingBrowser.AutomationTests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
     <Project Path="Source/PuddingCodeIndexTests/PuddingCodeIndexTests.csproj" />
+    <Project Path="Source/PuddingContextPolicyTests/PuddingContextPolicyTests.csproj" />
     <Project Path="Source/PuddingCodexServiceTests/PuddingCodexServiceTests.csproj" />
     <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />
     <Project Path="Source/PuddingDiagnosticsTests/PuddingDiagnosticsTests.csproj" />

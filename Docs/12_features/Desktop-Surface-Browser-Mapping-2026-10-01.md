@@ -2,7 +2,7 @@
 title: "Desktop 表面 · 浏览器侧映射规格（映射到既有 `IBrowserRuntime`）"
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-08
 status: active
 description: "csharp // 运行时 public interface IBrowserRuntime : IAsyncDisposable { BrowserRuntimeState State { get; } Task<IBrowserContext> CreateContextAsync(BrowserContextOptions options, CancellationToken ct); Ta"
 categories: [docs, features]
@@ -94,7 +94,7 @@ public readonly record struct ElementHandleId(string Value);
 | `webview.page_state` | `IBrowserContext.GetPageAsync(pageId)` | 版本取 `PageInfo.PageVersion` |
 | `browser.snapshot` | `IBrowserPage.SnapshotAsync(SnapshotOptions)` | 预算来自请求；截断必须如实标注；版本取 `PageVersion` |
 | `browser.locate` | `IBrowserPage.QueryAllAsync(Locator)` | **每个 Ref 必须带 `IElementHandle.PageVersion`**；定位为空是成功而非失败 |
-| `browser.interact` | `ClickAsync/FillAsync/PressAsync/HoverAsync/ScrollAsync/SelectAsync/CheckAsync` | 交互后**必须回带新的** `page.PageVersion`（旧 Ref 随之作废；服务侧已有 `DesktopMutationInvariants` 兜底） |
+| `browser.interact` | `ClickAsync/FillAsync/PressAsync/HoverAsync/ScrollAsync/SelectAsync/CheckAsync` | 交互后**必须回带观测到的** `page.PageVersion`（不伪造推进）。⚠️ 2026-10-08 修正：**不再要求**版本必须推进，见下方注 |
 | `browser.wait_for` | `IBrowserPage.WaitForAsync(WaitCondition)` | 超时用结果标注（`TimedOut`），**不是失败** |
 | `browser.contexts` | `IBrowserRuntime.ListContextsAsync` + 每个 `IBrowserContext.ListPagesAsync` | 每个页面必须带当前版本；`closed` 如实标注 |
 | `browser.tabs` | `IBrowserContext.GetPageAsync` / `ClosePageAsync` / `BringToFrontAsync` + `ListPagesAsync` | 操作后回带**新的**活动页状态与剩余清单 |
@@ -103,7 +103,14 @@ public readonly record struct ElementHandleId(string Value);
 
 - **Ref 随版本失效**：`IElementHandle.PageVersion` 与 `IBrowserPage.PageVersion` 天然提供依据；
   映射层不得用「当前页面版本」替代元素自身版本。
-- **变更类必须推进版本**：`DesktopMutationInvariants` 已在服务咽喉点强制，映射层必须回带真实版本（不得伪造）。
+- ~~**变更类必须推进版本**~~ → **2026-10-08 更正**：该条**已作废**。实测 `fill` 只改 value、
+  `click` 只开菜单或触发 SPA 更新、`browser.tabs` 的 `activate` 只切焦点 —— 这些动作**成功却不推进版本**，
+  通用「版本必须严格递增」把它们判成 `internal_error`（假失败）。
+  现由 `PuddingBrowser.Automation` 的 `BrowserMutationPostcondition` 统一判定，两条传输共用：
+  必须有**活**版本；只有调用方**显式声明**的文档导航期望未满足才失败（报 `outcome_unknown`）；
+  tabs 按「`close` 是否真的关掉」判定。依据见
+  [浏览器自动化可靠性与渐进阅读设计方案 §1.1/§4.2](浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md)。
+  映射层仍必须回带**真实的观测版本**（不得伪造）。
 - **预算与隐私**：快照预算由 `DesktopCapabilityBudgets` 强制；剪贴板/路径不进日志。
 - **失败语义**：`NavigationResult.Ok=false`、`ErrorText` 等既有信号要映射成对应的 `CapabilityError`，
   不能一律 `internal_error`（否则上层无法区分"页面不存在"与"运行时坏了"）。

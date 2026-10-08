@@ -1,6 +1,7 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
+using PuddingBrowser.Automation;
 
 namespace Pudding.DesktopService;
 
@@ -141,8 +142,11 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     return DesktopCapabilityResponse.Failure(result.Error);
                 }
 
-                var navigationViolation = DesktopMutationInvariants.RequireVersionAdvanced(
-                    capability.Capability, request.ExpectedPageVersion, result.Value.PageVersion);
+                var navigationViolation = BrowserMutationPostcondition.Validate(new BrowserMutationOutcome(
+                    BrowserAutomationOperation.Navigate,
+                    request.ExpectedPageVersion,
+                    result.Value.PageVersion,
+                    BrowserMutationExpectation.DocumentNavigation));
                 return navigationViolation is not null
                     ? DesktopCapabilityResponse.Failure(navigationViolation)
                     : DesktopCapabilityResponse.FromNavigate(result.Value);
@@ -328,8 +332,10 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     return DesktopCapabilityResponse.Failure(result.Error);
                 }
 
-                var tabsViolation = DesktopMutationInvariants.RequireVersionAdvanced(
-                    capability.Capability, tabs.ExpectedPageVersion, result.Value.Page.Version);
+                // 标签页：不拿「另一页的版本推进」当证据（Activate 切换焦点不会推进版本），
+                // 改为校验动作自身的事实 —— close 要求确实关掉了，activate/new 要求回带活版本。
+                var tabsViolation = BrowserMutationPostcondition.ValidateTabs(
+                    tabs.Action, result.Value.TabClosed, result.Value.Page.Version);
                 return tabsViolation is not null
                     ? DesktopCapabilityResponse.Failure(tabsViolation)
                     : DesktopCapabilityResponse.FromTabs(result.Value);
@@ -440,8 +446,12 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     return DesktopCapabilityResponse.Failure(result.Error);
                 }
 
-                var interactionViolation = DesktopMutationInvariants.RequireVersionAdvanced(
-                    capability.Capability, interact.ExpectedPageVersion, result.Value.Page.Version);
+                // 交互：**不**要求版本推进（fill 只改 value、click 可能只开菜单或触发 SPA 更新）。
+                // 只有调用方显式声明的文档导航后置条件未满足时才失败，且如实报「结果不明」。
+                var interactionViolation = BrowserMutationPostcondition.Validate(new BrowserMutationOutcome(
+                    BrowserAutomationOperation.Interact,
+                    interact.ExpectedPageVersion,
+                    result.Value.Page.Version));
                 return interactionViolation is not null
                     ? DesktopCapabilityResponse.Failure(interactionViolation)
                     : DesktopCapabilityResponse.FromInteract(result.Value);

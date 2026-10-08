@@ -33,7 +33,12 @@
 | `DesktopCapabilityChannelComposition.cs` | **组合根**（唯一会改变产品行为的一步）：判定 → 构造 → `StartAsync` → `DisposeAsync` 一次调用完成。关闭 ⇒ `Success(null)` 什么都不做；启用却起不来 ⇒ **明确失败**（不是只记日志）；不做跨传输回退；缺省服务策略 fail-closed |
 | `DesktopShellSurface.cs` | 把两个 Shell 端口（交互设施 + 宿主告知）适配成表面：预算纵深防御（剪贴板二次截断）、异常折叠为 `internal_error`、取消原样传播；**不补齐**自动化状态与页面数（那是 `DesktopService` 的权威状态） |
 | `BrowserTargetRegistry.cs` | 浏览器目标注册表（`IDesktopBrowserTargetRegistry` 实现）：上下文可信级别 / Agent 目标 / 活动页。`SetAgentTarget` 是**撤销的**一等操作（`RegisterPage(isAgentTarget:false)` 只增不减，撤销缺失会让注册表替不该被驱动的页面背书） |
-| `DesktopMutationInvariants.cs` | 变更类能力的**结果不变量**：返回版本必须严格推进，不诚实/缺失的版本折叠为 `internal_error`（否则旧 Ref 在 Core 眼里仍然「有效」，整套保护被静默破坏） |
+
+> 变更类后置条件已**移出**本组件：原 `DesktopMutationInvariants.cs`（「所有 mutating 结果版本必须严格递增」）
+> 于 2026-10-08 删除，改由 `PuddingBrowser.Automation` 的 `BrowserMutationPostcondition` 统一判定，
+> DesktopService 与 Bridge **共用同一份**纯逻辑。原因：该通用要求把 `fill`/`click`（只开菜单）等
+> 不推进版本的成功动作判成 `internal_error`（实测假失败），见
+> [设计方案 §1.1](../../Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md)。
 
 ## 错误映射（终态语义）
 

@@ -456,10 +456,29 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
-    public async Task Interact_WhenVersionDoesNotAdvance_FailsLoudly()
+    public async Task Interact_WhenVersionDoesNotAdvance_StillSucceedsWithTheObservedState()
     {
-        // 变更类能力的硬不变量：结果版本必须严格推进，否则旧引用会重新"有效"。
+        // 修正（设计 §1.1/§4.2）：不得按动作名推断导航。click 只开菜单、fill 只改 value 时
+        // 版本不会推进，旧规则在这里假失败（实测：click 导航成功却报 "did not advance"）。
         var page = new FakePage { Version = 3, AdvanceVersionOnClick = false };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "button")), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.Equal(1, page.ClickCount);
+        // 如实回带观测到的版本（不伪造推进）。
+        Assert.Equal(3, result.Value.Page.Version.Value);
+    }
+
+    [Fact]
+    public async Task Interact_WithoutALiveVersion_IsStillRejected()
+    {
+        // 引用必须带活版本 ⇒ 这仍是真失败（与 DesktopService 同一份判据）。
+        var page = new FakePage { Version = 3, AdvanceVersionOnClick = false, ClearVersionOnClick = true };
         var surface = Create(page);
 
         var result = await surface.InteractAsync(
@@ -806,6 +825,9 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public bool AdvanceVersionOnClick { get; init; } = true;
 
+        /// <summary>让动作后页面**失去活版本**（用于验证「引用必须带活版本」仍是真失败）。</summary>
+        public bool ClearVersionOnClick { get; init; }
+
         public int ClickCount { get; private set; }
 
         public ScrollOptions? LastScroll { get; private set; }
@@ -920,7 +942,11 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct)
         {
             ClickCount++;
-            if (AdvanceVersionOnClick)
+            if (ClearVersionOnClick)
+            {
+                Version = 0;
+            }
+            else if (AdvanceVersionOnClick)
             {
                 Version++;
             }

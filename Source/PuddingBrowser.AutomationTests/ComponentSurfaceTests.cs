@@ -20,6 +20,9 @@ public sealed class ComponentSurfaceTests
         "BrowserGrantIssuancePolicy",
         "BrowserLedgerAdmission",
         "BrowserLedgerAdmissionKind",
+        "BrowserMutationExpectation",
+        "BrowserMutationOutcome",
+        "BrowserMutationPostcondition",
         "BrowserOperationLedger",
         "BrowserOperationLedgerEntry",
         "BrowserOperationLedgerOptions",
@@ -113,6 +116,7 @@ public sealed class ComponentSurfaceTests
         {
             ["BrowserAssertionRedactionTests"] = 11,
             ["BrowserControlAuthorityTests"] = 16,
+            ["BrowserMutationPostconditionTests"] = 12,
             ["BrowserOperationLedgerTests"] = 15,
             ["BrowserOperationPolicyTests"] = 10,
             ["BrowserPageGrantTests"] = 22,

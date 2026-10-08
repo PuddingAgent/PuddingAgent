@@ -64,7 +64,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingBrowser.WebView2/` | WebView2 Driver（DOM/元素/页面操作） | [code_map](Source/PuddingBrowser.WebView2/code_map.md) |
 | `Source/PuddingBrowser.AgentTools/` | 七项 `browser_*` Agent Tools | [code_map](Source/PuddingBrowser.AgentTools/code_map.md) |
 | `Source/PuddingBrowser.WinUI/` | WinUI 浏览器表面宿主（与 WPF 适配层共享驱动源文件） | [code_map](Source/PuddingBrowser.WinUI/code_map.md) |
-| `Source/PuddingBrowser.Automation/` | 🔑 浏览器自动化可靠性组件（叶子，只引用 `Pudding.Contracts`）：统一控制权状态机、页面授权与执行租约、证据化回执判定、operationId 账本；**S1–S4 阶段、尚未登记解决方案** | [code_map](Source/PuddingBrowser.Automation/code_map.md) |
+| `Source/PuddingBrowser.Automation/` | 🔑 浏览器自动化可靠性组件（叶子，只引用 `Pudding.Contracts`）：统一控制权状态机、页面授权与执行租约、证据化回执判定、变更类后置条件、operationId 账本；**S5 已部分落地**（登记解决方案 + DesktopService/Host 引用） | [code_map](Source/PuddingBrowser.Automation/code_map.md) |
 | `Source/PuddingDiagnostics/` | 🔑 可诊断基础设施叶子组件：稳定因果码/分类器/有界证据/脱敏/事故投影/故障场景；不得引用任何 Pudding 程序集 | [code_map](Source/PuddingDiagnostics/code_map.md) |
 
 ## 3. 关键概念与组件
@@ -79,7 +79,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **Desktop ↔ Core 能力通道** | §2 + [能力通道](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | 两端只经 `Pudding.Contracts`（DTO）与 `Pudding.Rpc.Protocol`（wire）；启用前必须过 `DesktopCapabilityChannelPreflight` |
 | **Core 启动与就绪契约** | `Source/PuddingHost/Hosting/`、`Source/PuddingDesktop/Hosting/` | 每 5s 发 `PUDDING_DESKTOP_STARTING`，全部 hosted service `StartAsync` 返回后才发 `PUDDING_DESKTOP_READY`；`/health/ready` 不可省 |
 | **浏览器自动化链路** | `Source/PuddingHost/BrowserBridge/`、`Source/PuddingBrowser.WebView2/` | Snapshot ref 必须携带 `PageVersion`；交互提交后不得重查旧 Locator，后续状态用 Wait 或新 Snapshot |
-| **浏览器控制权与页面授权** | `Source/PuddingBrowser.Automation/` + [设计方案](Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md) | 进程内**唯一** `IBrowserAutomationAuthority`：接管/暂停/关闭/世代改变推进控制世代，接管**不**撤销阅读授权；页面授权按 `read/write/manage` 范围绑定实例+世代+页面+frame，子代理只能取父任务子集；写请求入队签发租约、触碰页面前复检世代 |
+| **浏览器控制权与页面授权** | `Source/PuddingBrowser.Automation/` + [设计方案](Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md) | 进程内**唯一** `IBrowserAutomationAuthority`：接管/暂停/关闭/世代改变推进控制世代，接管**不**撤销阅读授权；页面授权按 `read/write/manage` 范围绑定实例+世代+页面+frame，子代理只能取父任务子集；写请求入队签发租约、触碰页面前复检世代。**变更类后置条件由 `BrowserMutationPostcondition` 统一判定**（两条传输共用，不按动作名推断导航） |
 | **多模态视觉链路** | `Source/PuddingRuntime/` + [ADR-077](Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) | typed `ContentPart{type=image, artifactId, detail}` 同事务写入 `ChatMessages.ContentPartsJson`；文本模型只收 `artifact://` 占位 |
 | **记忆与存储治理** | `Source/PuddingMemoryEngine/`、`Source/PuddingHost/Storage/` + [ADR-076](Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) | Library/Book/Chapter 是 Agent 主动维护的当前结论与索引；`StorageMaintenanceCoordinator` 是唯一在线维护 writer，保留策略读 `system.json` 且 CAS + fail-closed |
 | **插件 / Hook / 事件 / 投影** | `Source/PuddingCore/` + [参考架构](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md) | Plugin/Function/Hook/Event/Projection 五类合同；outbox → DomainEventLog → per-consumer checkpoint/retry/dead-letter |
@@ -119,7 +119,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingCodeIndexTests/` · `Source/PuddingIndexChunkingTests/` | 索引组件独立测试：变更管线/调度/维护/存储 + 分块（含边界断言） |
 | `Source/PuddingContextPolicyTests/` | 上下文策略组件独立测试：容量算术与压力分类（含事故两条样本的记录值回放）、候选边界与指纹、严格适用校验（新消息追加必须让旧候选失效）、净收益准入（真实摘要重算 after）、退避判定（硬保护不被退避屏蔽）+ S1–S4 边界断言（含探测器自检与取红） |
 | `Source/PuddingDiagnosticsTests/` | 可诊断基础设施独立测试：故障场景→期望因果码全量、事故复刻与证据、脱敏与证据预算、事故投影、S1–S4 边界断言（含探测器自检与取红） |
-| `Source/PuddingBrowser.AutomationTests/` | 浏览器自动化可靠性组件独立测试：控制权/接管与世代、页面授权与子代理范围、回执与重试裁定、operationId 账本、S1–S4 边界断言与用例守恒 |
+| `Source/PuddingBrowser.AutomationTests/` | 浏览器自动化可靠性组件独立测试：控制权/接管与世代、页面授权与子代理范围、回执与重试裁定、变更类后置条件、operationId 账本、S1–S4 边界断言与用例守恒 |
 | `Source/PuddingPathFilteringTests/` · `Source/PuddingVectorIndexTests/` · `Source/PuddingFullTextIndexTests/` · `Source/PuddingMemoryEngineBenchmarks/` · `Tests/PuddingBrowser.WebView2.Smoke/` | 路径忽略、向量与全文索引叶子组件 · BenchmarkDotNet 基准 · 浏览器 smoke |
 | `Source/PuddingRetrievalEvalTests/` · `Source/PuddingRetrievalEvalProbe/` · `Source/PuddingFullTextIndex.Cli.Tests/` | 检索评测（`ISearchProbe` 端口）与全文索引 CLI |
 | `Source/PuddingCodeIntelligenceTests/` · `Source/PuddingCodexServiceTests/` · `Source/PuddingBrowser.WinUITests/` · `Source/PuddingDesktop.FoundationTests/` | 语言智能层 · Codex MCP Service · WinUI 浏览器表面 · Foundation 纯逻辑 |

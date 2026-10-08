@@ -573,8 +573,9 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
     /// 执行交互（切片 D 唯一会改变页面状态的能力）。要点：
     /// ①**必须固定版本**且版本不符即拒绝——否则可能操作到另一个页面；
     /// ②动作按类型映射到运行时的显式 API（不自己拼 DOM 脚本）；
-    /// ③**交互后回带新的页面状态与版本**（旧 Ref 随之作废）。
-    ///   运行时以页面版本作为变更计数，因此交互必然推进版本；服务侧还有 `DesktopMutationInvariants` 兜底。
+    /// ③**交互后回带观测到的页面状态与版本**。版本**不要求**推进：fill 只改 value、
+    ///   click 可能只开菜单或触发 SPA 更新，这些动作成功却不会推进版本（2026-10-08 修正，设计 §1.1）。
+    ///   后置条件由 `BrowserMutationPostcondition` 统一判定，两条传输共用同一份。
     /// ④`focus` 在当前运行时没有对应 API ⇒ 明确返回 `unsupported_capability`，**不**用脚本"凑"出来。
     /// </summary>
     public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(

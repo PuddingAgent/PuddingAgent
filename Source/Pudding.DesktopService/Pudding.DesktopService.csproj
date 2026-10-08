@@ -22,6 +22,12 @@
   <ItemGroup>
     <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
     <ProjectReference Include="..\Pudding.DesktopConnection\Pudding.DesktopConnection.csproj" />
+    <!--
+      S5 接入（2026-10-08）：变更类后置条件必须与 Bridge 路径共用同一份纯逻辑，
+      否则两条传输会各自验出相反结论。PuddingBrowser.Automation 是纯逻辑组件
+      （只引用 Pudding.Contracts，无 UI / 驱动 / WebView2 依赖），不越过下面的边界门禁。
+    -->
+    <ProjectReference Include="..\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj" />
   </ItemGroup>
 
   <Target Name="EnforceDesktopServiceBoundary" BeforeTargets="ResolveReferences">

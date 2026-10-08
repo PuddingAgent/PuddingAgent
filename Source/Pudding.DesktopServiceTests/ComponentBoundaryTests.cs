@@ -67,7 +67,14 @@ public sealed class ComponentBoundaryTests
         var content = File.ReadAllText(Path.Combine(ProjectDirectory, "Pudding.DesktopService.csproj"));
 
         Assert.Equal(
-            [@"..\Pudding.Contracts\Pudding.Contracts.csproj", @"..\Pudding.DesktopConnection\Pudding.DesktopConnection.csproj"],
+            [
+                @"..\Pudding.Contracts\Pudding.Contracts.csproj",
+                @"..\Pudding.DesktopConnection\Pudding.DesktopConnection.csproj",
+                // S5 接入（2026-10-08）：变更类后置条件与 Bridge 路径共用同一份纯逻辑组件。
+                // 它是叶子级纯逻辑（只引用 Pudding.Contracts，无 UI/驱动/WebView2），
+                // 不越过 EnforceDesktopServiceBoundary 的禁止项。
+                @"..\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj",
+            ],
             ReadAttributes(content, "<ProjectReference", "Include=\""));
         Assert.Empty(ReadAttributes(content, "<PackageReference", "Include=\""));
         Assert.Contains("EnforceDesktopServiceBoundary", content, StringComparison.Ordinal);

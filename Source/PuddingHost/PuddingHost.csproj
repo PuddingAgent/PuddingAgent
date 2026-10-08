@@ -40,6 +40,8 @@
     <ProjectReference Include="..\HarnessAgent.Core\HarnessAgent.Core.csproj" />
     <ProjectReference Include="..\PuddingBrowser.Protocol\PuddingBrowser.Protocol.csproj" />
     <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
+    <!-- S5 接入（2026-10-08）：Bridge 路径与 DesktopService 路径共用同一份变更类后置条件。 -->
+    <ProjectReference Include="..\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj" />
     <ProjectReference Include="..\PuddingBrowser.AgentTools\PuddingBrowser.AgentTools.csproj" />
     <!-- 切片 C-3：桌面能力通道（Desktop 主动 gRPC 双向流）。默认关闭，见 DesktopCapabilityChannelWiring。 -->
     <ProjectReference Include="..\Pudding.CapabilityBroker\Pudding.CapabilityBroker.csproj" />

@@ -1,6 +1,7 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopService;
+using PuddingBrowser.Automation;
 
 namespace DesktopServiceTests;
 
@@ -110,21 +111,48 @@ public sealed class SnapshotTests
     }
 }
 
-/// <summary>变更类能力的结果不变量：返回版本必须严格推进，否则折成 internal_error（fail closed）。</summary>
+/// <summary>
+/// 变更类能力的**后置条件**（2026-10-08 修正，设计 §1.1/§4.2）：
+/// 不再要求「所有 mutating 结果版本必须严格递增」——那只对**确实提交新文档**的动作成立。
+/// fill 只改 value、click 可能只开菜单或触发 SPA 更新、tab activate 只切焦点，
+/// 这些动作成功却不会推进版本；旧规则把它们判成 internal_error（实测假失败）。
+/// 现在的判据：必须有活版本 + 只有调用方显式声明的后置条件未满足才失败。
+/// </summary>
 public sealed class MutationInvariantTests
 {
     private const DesktopCapability Allowed =
         DesktopCapability.BrowserInteract | DesktopCapability.WebViewNavigate | DesktopCapability.BrowserTabs;
 
     [Fact]
-    public async Task Mutation_ThatDoesNotAdvanceTheVersion_IsRejectedAsInternalError()
+    public async Task Interaction_ThatDoesNotAdvanceTheVersion_IsAcceptedWithTheObservedVersion()
     {
         var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true);
-        // 不守规矩的 surface：固定交互 v5，却回带 v5（版本没推进）。
+        // surface 回带与请求相同的版本（fill 改 value / click 只开菜单的真实形态）。
         harness.Surface.InteractHandler = (request, _) => Task.FromResult(
             CapabilityResult<DesktopInteractionResult>.Success(new DesktopInteractionResult(
                 request.Target,
                 new DesktopPageState(request.Target, null, request.ExpectedPageVersion, DesktopPageReadiness.Complete))));
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.BrowserInteract,
+            DesktopCapabilityRequest.ForInteract(new BrowserInteractRequest(
+                ServiceHarness.AgentPage, DesktopInteractionAction.Click, DesktopPageVersion.Require(1),
+                new DesktopLocator(DesktopLocatorKind.Css, "button"))));
+
+        Assert.False(response.IsFailure);
+        // 如实回带**观测到的**事实：不伪造推进，也不假失败。
+        Assert.Equal(1, response.Interact!.Page.Version.Value);
+    }
+
+    [Fact]
+    public async Task Interaction_WithoutALiveVersion_IsStillRejected()
+    {
+        // 引用必须带活版本：没有活版本时旧引用无法作废、新引用无法建立 ⇒ 这仍是真失败。
+        var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true);
+        harness.Surface.InteractHandler = (request, _) => Task.FromResult(
+            CapabilityResult<DesktopInteractionResult>.Success(new DesktopInteractionResult(
+                request.Target,
+                new DesktopPageState(request.Target, null, DesktopPageVersion.Unknown, DesktopPageReadiness.Complete))));
 
         var response = await harness.ExecuteAsync(
             DesktopCapability.BrowserInteract,
@@ -155,22 +183,26 @@ public sealed class MutationInvariantTests
     [Fact]
     public void ReadOnlyCapabilities_AreExemptFromTheAdvanceRule()
     {
-        // 只读能力本来就可能回带与请求相同的版本（例如 page_state 观测当前版本）。
-        Assert.Null(DesktopMutationInvariants.RequireVersionAdvanced(
-            DesktopCapability.WebViewPageState, DesktopPageVersion.Require(5), DesktopPageVersion.Require(5)));
-        Assert.Null(DesktopMutationInvariants.RequireVersionAdvanced(
-            DesktopCapability.BrowserLocate, DesktopPageVersion.Require(9), DesktopPageVersion.Require(2)));
+        // 只读能力根本不走变更类后置条件（它们本来就可能回带与请求相同的版本）。
+        Assert.Null(BrowserMutationPostcondition.Validate(new BrowserMutationOutcome(
+            BrowserAutomationOperation.Snapshot, DesktopPageVersion.Require(5), DesktopPageVersion.Require(2))));
 
-        // 变更类：同版本或不带版本都不通过。
-        Assert.NotNull(DesktopMutationInvariants.RequireVersionAdvanced(
-            DesktopCapability.BrowserTabs, DesktopPageVersion.Require(5), DesktopPageVersion.Require(5)));
-        Assert.NotNull(DesktopMutationInvariants.RequireVersionAdvanced(
-            DesktopCapability.WebViewNavigate, DesktopPageVersion.Require(5), DesktopPageVersion.Unknown));
+        // 变更类：没有活版本 ⇒ 真失败（引用无法建立）。
+        Assert.NotNull(BrowserMutationPostcondition.Validate(new BrowserMutationOutcome(
+            BrowserAutomationOperation.Interact, DesktopPageVersion.Require(5), DesktopPageVersion.Unknown)));
+
+        // 声明了「应提交新文档」却没观测到提交 ⇒ 结果不明，**不是**可安全重试的失败。
+        var declared = BrowserMutationPostcondition.Validate(new BrowserMutationOutcome(
+            BrowserAutomationOperation.Navigate, DesktopPageVersion.Require(5), DesktopPageVersion.Require(5),
+            BrowserMutationExpectation.DocumentNavigation));
+        Assert.NotNull(declared);
+        Assert.Equal(DesktopCapabilityErrorCode.OutcomeUnknown, declared!.Code);
     }
 
     [Fact]
-    public async Task TabClose_ThatDoesNotAdvanceTheVersion_IsRejected()
+    public async Task TabClose_IsJudgedByTheClosedFact_NotByTheVersion()
     {
+        // 关闭非最后一页不会推进版本；旧规则在这里假失败。现在证据是「确实关掉了」。
         var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true);
         harness.Surface.TabsHandler = (request, _) => Task.FromResult(
             CapabilityResult<DesktopTabsResult>.Success(new DesktopTabsResult(
@@ -178,6 +210,29 @@ public sealed class MutationInvariantTests
                 request.Action,
                 new DesktopPageState(request.Target, null, DesktopPageVersion.Require(1), DesktopPageReadiness.Complete),
                 tabClosed: true,
+                new DesktopContexts([]))));
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.BrowserTabs,
+            DesktopCapabilityRequest.ForTabs(new BrowserTabsRequest(
+                ServiceHarness.AgentPage, DesktopTabAction.Close, DesktopPageVersion.Require(1))));
+
+        Assert.False(response.IsFailure);
+        Assert.True(response.Tabs!.TabClosed);
+        Assert.Equal(1, response.Tabs.Page.Version.Value);
+    }
+
+    [Fact]
+    public async Task TabClose_ThatReportsNoClosedTab_IsRejected()
+    {
+        // 关闭动作**没关掉**才是真失败（拿「另一页的版本推进」当证据是错的）。
+        var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true);
+        harness.Surface.TabsHandler = (request, _) => Task.FromResult(
+            CapabilityResult<DesktopTabsResult>.Success(new DesktopTabsResult(
+                request.Target,
+                request.Action,
+                new DesktopPageState(request.Target, null, DesktopPageVersion.Require(1), DesktopPageReadiness.Complete),
+                tabClosed: false,
                 new DesktopContexts([]))));
 
         var response = await harness.ExecuteAsync(

@@ -2,6 +2,7 @@ using System.Text;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
+using PuddingBrowser.Automation;
 
 namespace PuddingHost.BrowserBridge;
 
@@ -527,12 +528,15 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
 
         var state = BuildPageState(request.Target, page);
 
-        // 变更类能力的**结果不变量**：版本必须严格推进（Desktop 侧的同一条检查才是权威，
-        // 这里是 Bridge 路径上的纵深防御——不诚实的版本会让旧引用重新"有效"）。
-        if (!state.Version.IsKnown || state.Version.Value <= request.ExpectedPageVersion.Value)
+        // 变更类后置条件：与 DesktopService **同一份**判据（设计 §4.2 / §1.1 修正）。
+        // 不再要求版本严格推进 —— fill 只改 value、click 可能只开菜单或触发 SPA 更新，
+        // 这些动作成功却不会推进版本；只有显式声明的文档导航后置条件才要求提交证据。
+        if (BrowserMutationPostcondition.Validate(new BrowserMutationOutcome(
+                BrowserAutomationOperation.Interact,
+                request.ExpectedPageVersion,
+                state.Version)) is { } violation)
         {
-            return CapabilityResult<DesktopInteractionResult>.Failure(DesktopCapabilityError.Internal(
-                "mutating capability returned a page version that did not advance"));
+            return CapabilityResult<DesktopInteractionResult>.Failure(violation);
         }
 
         // 版本用**交互之后**的事实：引用随版本失效，旧 Ref 由此作废。
