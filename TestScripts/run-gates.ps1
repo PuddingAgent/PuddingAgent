@@ -59,7 +59,14 @@
 
 .PARAMETER Skip
     Gate name fragments to skip, for example -Skip C-5. Matched case-insensitively
-    against the gate id and script name.
+    against the gate id and script name. A comma- or semicolon-separated list works too
+    (-Skip C-5,C-6): when the script is launched with -File the whole list arrives as ONE
+    string, so the runner splits it itself instead of relying on argument binding - which
+    would match nothing and skip nothing while appearing to have worked.
+
+    A pattern matching no registered gate is reported as SKIP_UNMATCHED rather than
+    ignored: "that gate was skipped" and "that gate ran anyway" are very different things
+    to believe while reading a verdict.
 
 .PARAMETER MaxTail
     Lines of each gate's output to echo. Default 8. Does not affect the verdict.
@@ -126,6 +133,19 @@ function Test-Skipped {
     return $false
 }
 
+function Get-SkipPatterns {
+    param([string[]]$Patterns)
+    $out = @()
+    foreach ($p in @($Patterns)) {
+        if ($null -eq $p) { continue }
+        foreach ($piece in ($p -split '[,;]')) {
+            $t = $piece.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($t)) { $out += $t }
+        }
+    }
+    return $out
+}
+
 function Get-GateScope {
     param([object[]]$Output)
     if ($null -eq $Output) { return @() }
@@ -142,9 +162,11 @@ Write-Output ''
 $results = New-Object System.Collections.ArrayList
 $missing = 0
 
+$effectiveSkip = Get-SkipPatterns -Patterns $Skip
+
 foreach ($g in $gates) {
     $scope = @()
-    if (Test-Skipped -Id $g.Id -Script $g.Script -Patterns $Skip) {
+    if (Test-Skipped -Id $g.Id -Script $g.Script -Patterns $effectiveSkip) {
         Write-Output ('--- {0}  {1}  SKIPPED' -f $g.Id, $g.Script)
         [void]$results.Add((New-Object PSObject -Property @{ Id = $g.Id; Script = $g.Script; ExitCode = -1; Skipped = $true; Scope = @() }))
         continue
@@ -183,6 +205,17 @@ foreach ($g in $gates) {
 
     Write-Output ''
     [void]$results.Add((New-Object PSObject -Property @{ Id = $g.Id; Script = $g.Script; ExitCode = $code; Skipped = $false; Scope = $scope }))
+}
+
+$skipUnmatched = @()
+foreach ($p in $effectiveSkip) {
+    $hit = @($gates | Where-Object { $_.Id.ToLowerInvariant().Contains($p.ToLowerInvariant()) -or $_.Script.ToLowerInvariant().Contains($p.ToLowerInvariant()) }).Count
+    if ($hit -eq 0) { $skipUnmatched += $p }
+}
+if ($skipUnmatched.Count -gt 0) {
+    Write-Output ('SKIP PATTERNS MATCHED NO REGISTERED GATE: ' + ($skipUnmatched -join ', '))
+    Write-Output 'Those patterns skipped nothing, so every gate still ran. Check the spelling against the ids above.'
+    Write-Output ''
 }
 
 if ($SelfTest) {
@@ -245,6 +278,7 @@ if (-not $SelfTest -and $denomMissing -gt 0 -and $aggregate -eq $EXIT_PASS) {
 Write-Output ''
 Write-Output ('GATES_RUN={0} SKIPPED={1} MISSING={2}' -f $ran.Count, (@($results | Where-Object { $_.Skipped }).Count), $missing)
 Write-Output ('DENOM_MISSING={0}' -f $denomMissing)
+Write-Output ('SKIP_UNMATCHED={0}' -f $skipUnmatched.Count)
 Write-Output ('AGGREGATE_EXIT={0}' -f $aggregate)
 if ($aggregate -eq $EXIT_PASS) {
     Write-Output 'RESULT: PASS'

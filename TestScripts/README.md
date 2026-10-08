@@ -757,3 +757,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\run-gates.ps1 -R
 > 这正是上一轮那个假 `PASS` 的**复发疫苗** —— 而且它现在有**控制**，不靠"记得去看"。
 
 > 📌 **规则**：**门禁自己的 `PASS` 也必须带分母。** 绿不绿是「结论」，「看过多少」才是「证据」；两者不同时出现，绿色就不可信 —— 这条现在是**机检**，不是文档里的善意提醒。
+
+---
+
+## `-Skip` 曾**静默失效**（2026-10-08，同轮实测抓到并修掉）
+
+### 缺陷
+
+```powershell
+run-gates.ps1 -Skip C-5,C-6      # 修前：GATES_RUN=3 SKIPPED=0  ← 两个都没跳过
+run-gates.ps1 -Skip C-5          # 修前：GATES_RUN=2 SKIPPED=1  ← 单值正常
+```
+
+**根因**：用 `-File` 启动时，**逗号列表按"单个字符串"绑定**（`-Skip "C-5,C-6"` 是一个元素）。`Test-Skipped` 拿它去 `Contains` 匹配，两个门禁都不命中 ⇒ **跳过命令看起来生效，实际一个也没跳**。第三个「**静默 no-op 看着像成功**」缺陷。
+
+### 修法
+
+- runner **自己拆分** `,` 与 `;`（`Get-SkipPatterns`），不再依赖参数绑定 ⇒ `-Skip C-5,C-6` 与 `-Skip C-5 -Skip C-6` 等价。
+- 新增 **`SKIP_UNMATCHED`**：**没有任何门禁命中的跳过模式会被点名报出**，而不是被忽略 —— 「那个门禁被跳过了」和「它其实照跑了」是**完全不同的两件事**。
+  ⚠️ 该提示**不改变退出码**（跳过头 ⇒ 跑得更多 ⇒ 判定只会**更严**，不会更松）；它是**读者假设**层面的风险。
+
+### 实测（修后）
+
+| 组 | 命令 | 结果 |
+|---|---|---|
+E | `-Skip C-5` | `EXIT=0` · `C-5 SKIPPED` · `GATES_RUN=2 SKIPPED=1` · `SKIP_UNMATCHED=0` |
+F | `-Skip C-5,C-6` | **`EXIT=0`** · **`C-5 SKIPPED` + `C-6 SKIPPED`** · `GATES_RUN=1 SKIPPED=2` · `SKIP_UNMATCHED=0` |
+H | `-Skip C-99`（拼错） | `EXIT=1` · **`SKIP PATTERNS MATCHED NO REGISTERED GATE: C-99`** · `SKIP_UNMATCHED=1` · `GATES_RUN=3`（全跑） |
+G | 故意破坏检测器（fixture） | **`BROKEN_FIXTURE_EXIT=4`** · `DENOM_CTRL_EMPTY=False` · `RESULT: SELFTEST FAIL` |
+
+**回归**：默认 `EXIT=1` · `-SelfTest` `EXIT=0` · `-RepoWide` `EXIT=1` · `RG_BYTES=12653` · `RG_NONASCII=0`。
