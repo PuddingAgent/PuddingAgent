@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <!--
     PuddingBrowser.WebView2 — WebView2-based browser driver for Windows.
     Phase 3: Implements IBrowserRuntime/Context/Page via WebView2.
@@ -20,6 +20,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
+    <!--
+      原生输入（CDP 键鼠）的**调用序列规划**在 PuddingBrowser.Automation 里：
+      按下必成对抬起、修饰键顺序、取消清理这些规则必须只有一份，驱动只负责按序发出去。
+      方向是"执行层 → 规则层"（Automation 只引用 Contracts，不会反向引用驱动），无环。
+    -->
+    <ProjectReference Include="..\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj" />
   </ItemGroup>
 
   <ItemGroup>

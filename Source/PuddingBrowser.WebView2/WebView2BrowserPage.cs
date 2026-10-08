@@ -1,5 +1,7 @@
+﻿using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
+using PuddingBrowser.Automation;
 
 namespace PuddingBrowser.WebView2;
 
@@ -305,15 +307,25 @@ public sealed class WebView2BrowserPage : IBrowserPage
     public Task UnsubscribeAsync(BrowserSubscriptionId sid, CancellationToken ct)
         => throw new NotSupportedException("CDP not in Phase 2A-1");
     public Task ClickAsync(Locator l, ClickOptions o, CancellationToken ct)
-        => ExecuteInteractionAsync("click", l, value: null, deltaX: null, deltaY: null, ct);
+        => o.InputMode == InputMode.Native
+            ? ExecuteNativeAsync("click", l, value: null, ct)
+            : ExecuteInteractionAsync("click", l, value: null, deltaX: null, deltaY: null, ct);
     public Task FillAsync(Locator l, string v, FillOptions o, CancellationToken ct)
-        => ExecuteInteractionAsync("fill", l, v, deltaX: null, deltaY: null, ct);
+        => o.InputMode == InputMode.Native
+            ? ExecuteNativeAsync("fill", l, v, ct)
+            : ExecuteInteractionAsync("fill", l, v, deltaX: null, deltaY: null, ct);
     public Task TypeAsync(Locator l, string t, TypeOptions o, CancellationToken ct)
-        => ExecuteInteractionAsync("type", l, t, deltaX: null, deltaY: null, ct);
+        => o.InputMode == InputMode.Native
+            ? ExecuteNativeAsync("type", l, t, ct)
+            : ExecuteInteractionAsync("type", l, t, deltaX: null, deltaY: null, ct);
     public Task PressAsync(Locator l, string k, KeyOptions o, CancellationToken ct)
-        => ExecuteInteractionAsync("press", l, k, deltaX: null, deltaY: null, ct);
+        => o.InputMode == InputMode.Native
+            ? ExecuteNativeAsync("press", l, k, ct)
+            : ExecuteInteractionAsync("press", l, k, deltaX: null, deltaY: null, ct);
     public Task HoverAsync(Locator l, PointerOptions o, CancellationToken ct)
-        => ExecuteInteractionAsync("hover", l, value: null, deltaX: null, deltaY: null, ct);
+        => o.InputMode == InputMode.Native
+            ? ExecuteNativeAsync("hover", l, value: null, ct)
+            : ExecuteInteractionAsync("hover", l, value: null, deltaX: null, deltaY: null, ct);
     public async Task<ScrollOutcome> ScrollAsync(ScrollOptions o, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -414,6 +426,88 @@ public sealed class WebView2BrowserPage : IBrowserPage
         finally
         {
             _domGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// **原生输入路径**（设计方案 §7）：按 <c>NativeInputSequence</c> 规划好的 CDP 调用逐条发出。
+    ///
+    /// 三条硬性约定：
+    /// ① 需要元素几何 ⇒ 先按定位符取句柄与其包围盒；取不到就是"目标问题"，明确报错；
+    /// ② **不静默回落**：本方法只做 native；不可用/不支持的动作由调用方（surface）明确拒绝；
+    /// ③ 中途取消时**清理按键状态**（<c>ReleaseModifiers</c>），避免页面以为修饰键一直按着。
+    /// </summary>
+    private async Task ExecuteNativeAsync(
+        string action,
+        Locator locator,
+        string? value,
+        CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(locator);
+
+        var handle = await QueryAsync(locator, ct).ConfigureAwait(false)
+            ?? throw new BrowserOperationException(
+                "browser_element_not_found", $"no element matches {locator}");
+
+        var box = await handle.GetBoundingBoxAsync(ct).ConfigureAwait(false)
+            ?? throw new BrowserOperationException(
+                "browser_element_not_found", "the matched element has no geometry; native input needs a box");
+
+        var target = new NativeInputSequence.InputTarget(box.X, box.Y, box.Width, box.Height);
+        var plan = action switch
+        {
+            "click" => NativeInputSequence.PlanClick(target),
+            "hover" => NativeInputSequence.PlanHover(target),
+            "fill" => NativeInputSequence.PlanFill(value),
+            "type" => NativeInputSequence.PlanType(value),
+            "press" => NativeInputSequence.PlanPress(value),
+            _ => throw new BrowserOperationException(
+                "browser_input_mode_not_supported",
+                $"native input is not implemented for action '{action}'"),
+        };
+
+        var modifiers = 0;
+        try
+        {
+            foreach (var call in plan)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (call.Method == "Input.dispatchKeyEvent"
+                    && JsonDocument.Parse(call.ParametersJson).RootElement.TryGetProperty("modifiers", out var m))
+                {
+                    modifiers |= m.GetInt32();
+                }
+
+                var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
+                using var _ = await SendCdpAsync(call.Method, parameters, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 取消也要把按键状态清干净（尽力而为；失败不掩盖取消本身）。
+            await ReleaseModifiersAsync(modifiers, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            Interlocked.Increment(ref _pageVersion);
+        }
+    }
+
+    private async Task ReleaseModifiersAsync(int modifiers, CancellationToken ct)
+    {
+        foreach (var call in NativeInputSequence.ReleaseModifiers(modifiers))
+        {
+            try
+            {
+                var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
+                using var _ = await SendCdpAsync(call.Method, parameters, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                // 清理是尽力而为：它失败也不能掩盖真正的取消/异常。
+            }
         }
     }
 

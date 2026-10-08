@@ -1,4 +1,4 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopService;
 using PuddingBrowser.Abstractions;
@@ -645,6 +645,15 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 DesktopCapabilityError.UnsupportedCapability("the browser runtime has no focus action"));
         }
 
+        // 原生输入（§7）不支持的动作**明确拒绝**（返回能力错误，不是抛异常）：
+        // 静默回落成 DOM 会让调用方以为走了真实输入路径。
+        if (request.InputMode == DesktopInputMode.Native && !SupportsNativeInput(request.Action))
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(
+                DesktopCapabilityError.UnsupportedCapability(
+                    $"native input is not implemented for action '{DesktopInteractionActionWire.NameOf(request.Action)}'"));
+        }
+
         if (_runtime.State != BrowserRuntimeState.Ready)
         {
             return CapabilityResult<DesktopInteractionResult>.Failure(
@@ -722,22 +731,41 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                         scrollOutcome.ContentChanged)));
     }
 
+    /// <summary>契约的输入路径 → 运行时输入路径（两套枚举必须一一对应）。</summary>
+    private static InputMode MapInputMode(DesktopInputMode mode) => mode switch
+    {
+        DesktopInputMode.Dom => InputMode.Dom,
+        DesktopInputMode.Native => InputMode.Native,
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Input mode is not mapped."),
+    };
+
+    /// <summary>
+    /// 原生输入**支持哪些动作**（§7）：键鼠能表达的那些。不支持的动作必须**明确拒绝**，
+    /// 而不是静默回落成 DOM —— 那会让调用方以为用了真实输入路径。
+    /// </summary>
+    private static bool SupportsNativeInput(DesktopInteractionAction action) => action is
+        DesktopInteractionAction.Click or DesktopInteractionAction.Fill or DesktopInteractionAction.Type
+        or DesktopInteractionAction.Press or DesktopInteractionAction.Hover
+        or DesktopInteractionAction.Check or DesktopInteractionAction.Uncheck;
+
     private static async Task<ScrollOutcome?> PerformAsync(
         IBrowserPage page, BrowserInteractRequest request, Locator? locator, CancellationToken cancellationToken)
     {
+        var inputMode = MapInputMode(request.InputMode);
+
         switch (request.Action)
         {
             case DesktopInteractionAction.Click:
-                await page.ClickAsync(locator!, new ClickOptions(), cancellationToken).ConfigureAwait(false);
+                await page.ClickAsync(locator!, new ClickOptions { InputMode = inputMode }, cancellationToken).ConfigureAwait(false);
                 break;
             case DesktopInteractionAction.Fill:
-                await page.FillAsync(locator!, request.Text!, new FillOptions(), cancellationToken).ConfigureAwait(false);
+                await page.FillAsync(locator!, request.Text!, new FillOptions { InputMode = inputMode }, cancellationToken).ConfigureAwait(false);
                 break;
             case DesktopInteractionAction.Type:
-                await page.TypeAsync(locator!, request.Text!, new TypeOptions(), cancellationToken).ConfigureAwait(false);
+                await page.TypeAsync(locator!, request.Text!, new TypeOptions { InputMode = inputMode }, cancellationToken).ConfigureAwait(false);
                 break;
             case DesktopInteractionAction.Press:
-                await page.PressAsync(locator!, request.Text!, new KeyOptions(), cancellationToken).ConfigureAwait(false);
+                await page.PressAsync(locator!, request.Text!, new KeyOptions { InputMode = inputMode }, cancellationToken).ConfigureAwait(false);
                 break;
             case DesktopInteractionAction.Check:
                 await page.CheckAsync(locator!, true, cancellationToken).ConfigureAwait(false);
@@ -749,7 +777,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 await page.SelectAsync(locator!, request.Values!, cancellationToken).ConfigureAwait(false);
                 break;
             case DesktopInteractionAction.Hover:
-                await page.HoverAsync(locator!, new PointerOptions(), cancellationToken).ConfigureAwait(false);
+                await page.HoverAsync(locator!, new PointerOptions { InputMode = inputMode }, cancellationToken).ConfigureAwait(false);
                 break;
             case DesktopInteractionAction.Scroll:
                 // 滚动目标模型（§7）：显式目标优先，否则按 locator/位移推导；

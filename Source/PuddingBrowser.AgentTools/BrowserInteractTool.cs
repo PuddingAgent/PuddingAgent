@@ -115,22 +115,24 @@ public sealed class BrowserInteractTool(
                     "browser_invalid_arguments", "input_mode must be one of dom or native");
             }
 
-            if (inputMode == DesktopInputMode.Native)
+            if (inputMode == DesktopInputMode.Native && !SupportsNativeInput(action))
             {
                 // **绝不静默降级成 dom**：那会让调用方以为走了真实输入路径。
-                // 真实输入需要 CDP（尚未实现），因此这里明确 unsupported，且一次驱动调用都不发生。
+                // 原生输入目前覆盖键鼠能表达的动作；其余动作在这里明确 unsupported。
+                const string hint =
+                    "native input covers click/fill/type/press/check/hover; use input_mode=dom for this action";
                 return BrowserToolResponse.Failure(
                     "browser_input_mode_not_supported",
-                    "native input is not implemented yet; the driver has no CDP input path",
+                    $"native input is not implemented for action '{action}'",
                     value: BrowserOperationFailure.Receipt(
                         new DesktopCapabilityError(
                             DesktopCapabilityErrorCode.UnsupportedCapability,
-                            "native input is not implemented yet",
+                            $"native input is not implemented for action '{action}'",
                             retryable: false),
-                        "use input_mode=dom (verified DOM events), or wait for the native/CDP input slice",
+                        hint,
                         MapAction(action, args.Checked),
                         args.ExpectValue),
-                    warnings: ["use input_mode=dom (verified DOM events), or wait for the native/CDP input slice"]);
+                    warnings: [hint]);
             }
         }
 
@@ -369,6 +371,9 @@ public sealed class BrowserInteractTool(
                     RetryDisposition = BrowserRetryDispositionWire.NameOf(retry.Disposition),
                     RetryDetail = retry.Detail,
                     // 实际 backend：本切片只有 DOM 路径（请求 native 已在入口明确失败）。
+                    // 实际 backend：**没有静默回落**（native 不支持的动作在上游/驱动明确失败），
+                    // 因此请求成功就意味着用的就是这条路径。native 路径不做动作后回读（避免重查旧定位符），
+                    // 所以它的回执通常是 dispatched —— 要确认写入请用 dom 或后续 snapshot/locate。
                     InputBackend = DesktopInputModeWire.NameOf(inputMode),
 
                     // 滚动结果事实（§7）：容器/位移/边界/内容变化。**内容没变不是失败**，
@@ -476,5 +481,12 @@ public sealed class BrowserInteractTool(
                 RetryDetail = retry.Detail,
             });
     }
+
+    /// <summary>
+    /// 原生输入（§7）覆盖哪些动作：键鼠能表达的那些。**其余动作必须明确拒绝**，不静默回落成 DOM。
+    /// 与能力通道的判定保持同一份清单（两处都拒绝，谁都不会悄悄改语义）。
+    /// </summary>
+    private static bool SupportsNativeInput(string action) =>
+        action is "click" or "fill" or "type" or "press" or "hover" or "check";
 }
 

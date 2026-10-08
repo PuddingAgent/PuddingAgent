@@ -61,6 +61,47 @@ public sealed class InteractMappingTests
     }
 
     [Fact]
+    public async Task NativeInputMode_ReachesTheDriver_AndUnsupportedActionsAreRefused()
+    {
+        // §7：input_mode 必须原样下传到驱动（不静默改语义）；不支持的动作**明确拒绝**。
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var surface = Surface(runtime);
+
+        var native = await surface.InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target,
+                DesktopInteractionAction.Click,
+                DesktopPageVersion.Require(7),
+                locator: Button,
+                deltaX: null,
+                deltaY: null,
+                inputMode: DesktopInputMode.Native),
+            CancellationToken.None);
+
+        Assert.False(native.IsFailure);
+        Assert.Equal("click:native", runtime.Pages["ctx-1/p-1"].LastAction);
+
+        // select 不在原生输入覆盖范围内 ⇒ 明确 unsupported（不回落成 DOM）。
+        var refused = await surface.InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target,
+                DesktopInteractionAction.Select,
+                DesktopPageVersion.Require(8),   // native 点击已把页面推进到 v8
+                locator: Button,
+                deltaX: null,
+                deltaY: null,
+                inputMode: DesktopInputMode.Native,
+                values: ["CN"]),
+            CancellationToken.None);
+
+        Assert.True(refused.IsFailure);
+        Assert.Contains("native input is not implemented", refused.Error!.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("click:native", runtime.Pages["ctx-1/p-1"].LastAction);   // 拒绝发生在触达驱动之前
+    }
+
+    [Fact]
     public async Task ScrollCarriesTheTargetModelAndReportsTheOutcome()
     {
         // 设计 §7：滚动目标（page/element/to_ref/to_top/to_bottom）必须显式下传，
@@ -278,7 +319,7 @@ public sealed class InteractMappingTests
             Info = Info with { PageVersion = AdvanceTo };
         }
 
-        public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct) { Advance("click"); return Task.CompletedTask; }
+        public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct) { Advance(options.InputMode == InputMode.Native ? "click:native" : "click"); return Task.CompletedTask; }
 
         public Task FillAsync(Locator locator, string value, FillOptions options, CancellationToken ct) { Advance($"fill:{value}"); return Task.CompletedTask; }
 

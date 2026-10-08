@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 ﻿using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -1004,17 +1004,18 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
-    public async Task Interact_NativeInputMode_FailsExplicitly_InsteadOfSilentlyFallingBackToDom()
+    public async Task Interact_NativeInputMode_IsForwarded_AndReportedAsTheBackend()
     {
-        // 设计 §7：native 不可用时**明确 unsupported**，不静默切换语义 ——
-        // 否则调用方会以为走了真实输入路径，而实际只是 DOM 事件。
+        // §7：native 现在是**可用路径**（CDP 键鼠）。关键是"说了 native 就真的走 native"：
+        // 请求里必须带 Native，且回执如实报 native —— 没有静默回落。
         var runtime = new FakeBrowserRuntime();
         var context = await runtime.CreateContextAsync(
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
         var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
 
         var result = await ExecuteAsync(
-            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
             JsonSerializer.Serialize(new
             {
                 action = "click",
@@ -1024,12 +1025,41 @@ public sealed class BrowserAgentToolsTests
                 input_mode = "native"
             }));
 
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(DesktopInputMode.Native, surface.LastInteractRequest!.InputMode);
+        Assert.Equal(
+            "native",
+            GetJson(result.Output, "value").GetProperty("inputBackend").GetString());
+    }
+
+    [Fact]
+    public async Task Interact_NativeInputMode_OnAnUnsupportedAction_FailsExplicitly()
+    {
+        // 原生输入覆盖键鼠能表达的动作；`select` 不在其中 ⇒ **明确 unsupported**，
+        // 且一次驱动调用都不发生（静默回落成 DOM 会让调用方以为走了真实输入路径）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "select",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Country" },
+                values = new[] { "CN" },
+                input_mode = "native"
+            }));
+
         Assert.False(result.Success);
         using var document = JsonDocument.Parse(result.Error!);
         var root = document.RootElement;
 
         Assert.Equal("browser_input_mode_not_supported", root.GetProperty("error").GetProperty("code").GetString());
-        Assert.Contains("not implemented", root.GetProperty("error").GetProperty("message").GetString()!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("select", root.GetProperty("error").GetProperty("message").GetString()!);
 
         // 明确拒绝同时给回执：未开始、无副作用、不可重试（不是"观察一下"）。
         var receipt = root.GetProperty("value");
@@ -1684,6 +1714,9 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     /// <summary>让替身直接以某个领域错误结束交互（用于验证闸门拒绝 vs 普通失败的回执差异）。</summary>
     public DesktopCapabilityError? InteractFailure { get; init; }
 
+    /// <summary>最近一次交互请求：断言 input_mode 真的下传（不静默改语义）。</summary>
+    public BrowserInteractRequest? LastInteractRequest { get; private set; }
+
     /// <summary>最近一次定位请求（用于断言默认 limit 等参数确实传到了能力层）。</summary>
     public BrowserLocateRequest? LastLocateRequest { get; private set; }
 
@@ -1900,6 +1933,9 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        // 最近的交互请求：用来断言"说了 native 就真的把 native 传下去"。
+        LastInteractRequest = request;
+
         if (InteractFailure is not null)
         {
             return CapabilityResult<DesktopInteractionResult>.Failure(InteractFailure);

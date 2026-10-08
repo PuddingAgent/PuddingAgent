@@ -43,33 +43,47 @@ public sealed record NavigationResult
     public string? ErrorText { get; init; }
 }
 
+/// <summary>
+/// 输入路径（设计方案 §7）：<c>Dom</c> = DOM 事件/属性写入（语义确定、已验证适用）；
+/// <c>Native</c> = 真实浏览器输入（CDP 键鼠）。**不可用时必须明确 unsupported，不静默回落**。
+/// </summary>
+public enum InputMode
+{
+    Dom,
+    Native,
+}
 public sealed record ClickOptions
 {
     public int TimeoutMs { get; init; } = 5_000;
     public int? ClickCount { get; init; }
     public string? Button { get; init; }
+    public InputMode InputMode { get; init; }
 }
 
 public sealed record FillOptions
 {
     public int TimeoutMs { get; init; } = 5_000;
+    public InputMode InputMode { get; init; }
     public bool ClearFirst { get; init; } = true;
 }
 
 public sealed record TypeOptions
 {
     public int TimeoutMs { get; init; } = 5_000;
+    public InputMode InputMode { get; init; }
     public int DelayMs { get; init; }
 }
 
 public sealed record KeyOptions
 {
     public int TimeoutMs { get; init; } = 5_000;
+    public InputMode InputMode { get; init; }
 }
 
 public sealed record PointerOptions
 {
     public int TimeoutMs { get; init; } = 5_000;
+    public InputMode InputMode { get; init; }
 }
 
 /// <summary>
