@@ -80,6 +80,12 @@ public sealed class BrowserPageLifecycle
     /// <summary>页面目标注册表（准入读的那一份：版本 / 就绪度 / page 级目标标记）。</summary>
     public DesktopTargetRegistry PageTargets => _pageTargets;
 
+    /// <summary>
+    /// 读取基线存储（设计方案 §145）：由本端口**持有并随生命周期清除** ——
+    /// "页面没了、内容还留着"与"授权/租约没撤"是同一类错误，因此交给同一个所有者。
+    /// </summary>
+    public BrowserReadingBaselineStore Readings { get; } = new();
+
     // ── 控制面门面 ────────────────────────────────────────────────────────
     // Shell 侧（Bridge 闸门、窗口控制器）只需要"读两个轴 + 写两个轴"。
     // 直接暴露 Authority 会迫使每个消费方都引用 Automation 组件；而 Shell 本来就不该关心
@@ -210,6 +216,9 @@ public sealed class BrowserPageLifecycle
 
             var (grantsRevoked, leaseReleased) = RevokePageAuthorization(target);
 
+            // 内容基线随页面清除（§145）：它与授权/租约同属"页面没了就不该再存在"的东西。
+            Readings.ClearPage(target);
+
             return new BrowserLifecycleOutcome(
                 target.ContextId,
                 target,
@@ -248,6 +257,9 @@ public sealed class BrowserPageLifecycle
 
             _browserTargets.UnregisterContext(contextId);
             var cleared = _pageTargets.CloseContext(contextId);
+
+            // 内容基线也随上下文清除（§145）：页面没了还留着它能被"读出来"是同一类漏洞。
+            Readings.ClearContext(contextId);
 
             return new BrowserLifecycleOutcome(
                 contextId,

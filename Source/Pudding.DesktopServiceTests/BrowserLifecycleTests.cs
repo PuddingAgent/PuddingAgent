@@ -271,6 +271,58 @@ public sealed class BrowserLifecycleTests
     }
 
     [Fact]
+    public void ReadingBaselines_AreScopedPerPageAndClearedByTheLifecycle()
+    {
+        // §145：内容基线必须**随页面/上下文清除**——"页面没了、内容还留着"与"授权没撤"同类。
+        var (lifecycle, _, _, _, page) = Create();
+        var other = new DesktopPageTarget(ContextId, "page-2");
+        var elsewhere = new DesktopPageTarget("ctx-2", "page-9");
+
+        Assert.True(lifecycle.Readings.Remember(page, "rev-1", ["a", "b"]));
+        Assert.True(lifecycle.Readings.Remember(other, "rev-1", ["c"]));
+        Assert.True(lifecycle.Readings.Remember(elsewhere, "rev-1", ["d"]));
+        Assert.Equal(3, lifecycle.Readings.Count);
+
+        // 按页隔离：别的页面的同一个 revision 不会串味。
+        Assert.True(lifecycle.Readings.TryGet(page, "rev-1", out var lines));
+        Assert.Equal(["a", "b"], lines);
+
+        // 关闭一个页面 ⇒ 只清它自己的基线。
+        lifecycle.ClosePage(page);
+        Assert.False(lifecycle.Readings.TryGet(page, "rev-1", out _));
+        Assert.True(lifecycle.Readings.TryGet(other, "rev-1", out _));
+        Assert.True(lifecycle.Readings.TryGet(elsewhere, "rev-1", out _));
+
+        // 关闭上下文 ⇒ 清掉该上下文下所有页面（别的上下文不受影响）。
+        lifecycle.CloseContext(ContextId);
+        Assert.False(lifecycle.Readings.TryGet(other, "rev-1", out _));
+        Assert.True(lifecycle.Readings.TryGet(elsewhere, "rev-1", out _));
+    }
+
+    [Fact]
+    public void ReadingBaselines_AreBoundedAndRefuseOversizedOnes()
+    {
+        // 有界：每页只留最近若干份（旧的淘汰 ⇒ 调用方得到 refresh_required 而不是错位 diff）。
+        var store = new BrowserReadingBaselineStore(capacityPerPage: 2);
+        var page = new DesktopPageTarget("ctx-1", "page-1");
+
+        Assert.True(store.Remember(page, "r1", ["1"]));
+        Assert.True(store.Remember(page, "r2", ["2"]));
+        Assert.True(store.Remember(page, "r3", ["3"]));
+
+        Assert.False(store.TryGet(page, "r1", out _));
+        Assert.True(store.TryGet(page, "r3", out _));
+        Assert.Equal(2, store.Count);
+
+        // 过大的基线**不保存**（宁缺勿错：保存一份被截断的基线会算出错误差异）。
+        var huge = Enumerable.Range(0, BrowserReadingBaselineStore.MaxLinesPerBaseline + 1)
+            .Select(index => index.ToString())
+            .ToArray();
+        Assert.False(store.Remember(page, "r4", huge));
+        Assert.False(store.TryGet(page, "r4", out _));
+    }
+
+    [Fact]
     public void CloseContext_DoesNotTouchAnotherContext()    {
         var (lifecycle, authority, pages, _, page) = Create();
         var otherPage = new DesktopPageTarget("ctx-2", "page-9");
