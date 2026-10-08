@@ -1,14 +1,25 @@
 namespace PuddingSsh.Contracts;
 
 /// <summary>
-/// <c>ISshClient</c>：Runtime 工具层唯一消费的端口（设计 §4）。Test/Execute 的**实现**属于协调器（A3）：
-/// 排队、deadline、并发准入、清理宽限都在实现侧，端口本身不泄露第三方类型。
+/// <c>ISshClient</c>：Runtime 工具层唯一消费的端口（设计 §4）。实现是
+/// <see cref="Execution.SshOperationCoordinator"/>：准入排队、deadline 合成、凭据、建连、执行与释放都在实现侧，
+/// 端口本身不泄露第三方类型。
+/// <para>
+/// 第一个参数是**冻结的主机上下文**（限额/凭据来源/信任集合/默认 cwd/宿主 deadline）。
+/// 请求 DTO 只承载调用方（最终是模型）能提供的东西：目标、命令、cwd、限额请求与理由。
+/// </para>
 /// </summary>
 public interface ISshClient
 {
-    Task<SshTestResult> TestAsync(SshTestRequest request, CancellationToken cancellationToken);
+    Task<SshTestResult> TestAsync(
+        SshHostContext host,
+        SshTestRequest request,
+        CancellationToken cancellationToken);
 
-    Task<SshExecuteResult> ExecuteAsync(SshExecuteRequest request, CancellationToken cancellationToken);
+    Task<SshExecuteResult> ExecuteAsync(
+        SshHostContext host,
+        SshExecuteRequest request,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>宿主冻结的 identity 请求：**绝对** <c>.ssh</c> 目录 + 文件名校验后的结果。</summary>
@@ -107,6 +118,9 @@ public interface ISshTransportSession : IAsyncDisposable
 {
     /// <summary>本次握手实际验证通过的指纹（<c>SHA256:...</c>）。</summary>
     string VerifiedHostKeySha256 { get; }
+
+    /// <summary>本次握手实际使用的主机密钥算法（如 <c>ssh-ed25519</c>）；诊断与 <c>ssh_test</c> 结果用。</summary>
+    string HostKeyAlgorithm { get; }
 
     bool IsConnected { get; }
 

@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using PuddingSsh.Contracts;
 using PuddingSsh.Diagnostics;
+using PuddingSsh.Execution;
 using PuddingSsh.Transport;
+using PuddingSsh.Validation;
 
 namespace PuddingSsh.Probe;
 
@@ -57,6 +59,9 @@ internal static class Program
                 case "throughput":
                     await RunThroughputAsync(options, log);
                     break;
+                case "coordinator":
+                    await RunCoordinatorAsync(options, log);
+                    break;
                 case "matrix":
                     await RunFingerprintAsync(options, log);
                     if (options.ExpectedFingerprint is { Length: > 0 } fingerprint)
@@ -69,6 +74,7 @@ internal static class Program
                     await RunDeadlineAsync(options, log);
                     await RunCancelAsync(options, log);
                     await RunThroughputAsync(options, log);
+                    await RunCoordinatorAsync(options, log);
                     break;
             }
         }
@@ -300,6 +306,110 @@ internal static class Program
             cancelled is not null
                 && (cancelled.ExecutionState == SshExecutionState.Exited) == (cancelled.ExitCode is not null || cancelled.ExitSignal is not null),
             $"state={cancelled?.ExecutionState.ToWire()} exit_code={cancelled?.ExitCode?.ToString() ?? "null"} signal={cancelled?.ExitSignal ?? "null"}");
+    }
+
+    /// <summary>
+    /// 经 <see cref="ISshClient"/>（A3 协调器）走完整链路：ssh_test → 成功执行 → 错指纹拒绝 → 非零退出 → 非法请求。
+    /// 这一场景把协调器的准入/deadline/结果映射放到**真实 OpenSSH** 上复核（假传输矩阵之外的第二条证据）。
+    /// </summary>
+    private static async Task RunCoordinatorAsync(ProbeOptions options, ProbeLog log)
+    {
+        const string scenario = "coordinator";
+        if (options.ExpectedFingerprint is not { Length: > 0 } fingerprint)
+        {
+            log.Assert(scenario, "fingerprint_required", false, "本场景需要 --fingerprint");
+            return;
+        }
+
+        var transport = new SshNetTransportFactory();
+        var identities = new ProbeIdentityProvider(options.IdentityPath);
+        await using var coordinator = new SshOperationCoordinator(transport, identities);
+
+        SshHostContext Host(string pin, string? defaultCwd = null) => new(
+            options.Target,
+            new SshOperationLimits
+            {
+                ConnectTimeoutSeconds = options.ConnectTimeoutSeconds,
+                OperationTimeoutSeconds = options.OperationTimeoutSeconds,
+                MaxOutputBytes = options.OutputBudgetBytes,
+                MaxConcurrentOperations = 2,
+            },
+            new SshIdentityRequest(
+                Path.GetDirectoryName(Path.GetFullPath(options.IdentityPath)) ?? "/",
+                Path.GetFileName(options.IdentityPath)),
+            SshTrustSnapshot.FromPin("ssh-ed25519", pin),
+            defaultCwd);
+
+        // 1) ssh_test：只建连，不执行 shell。
+        var test = await coordinator.TestAsync(Host(fingerprint), new SshTestRequest(options.Target), CancellationToken.None);
+        log.Fact(scenario, "test_status", test.Status.ToWire());
+        log.Fact(scenario, "test_phase", test.Phase.ToWire());
+        log.Fact(scenario, "test_duration_ms", test.DurationMs);
+        log.Fact(scenario, "test_verified_fingerprint", test.VerifiedHostKeySha256);
+        log.Assert(scenario, "test_completed", test.Status == SshExecutionStatus.Completed, test.Status.ToWire());
+        log.Assert(scenario, "test_authenticated", test.AuthenticationSucceeded, "ssh_test 必须确认认证成功");
+        log.Assert(
+            scenario,
+            "test_fingerprint_matches",
+            ProbeHostKeyVerifier.FingerprintEquals(fingerprint, test.VerifiedHostKeySha256 ?? string.Empty),
+            $"{test.VerifiedHostKeySha256}");
+        log.Assert(scenario, "test_reports_phases", test.PhaseDurationsMs.Count >= 3, string.Join(',', test.PhaseDurationsMs.Keys));
+
+        // 2) 成功执行：审批前确定的执行串 + 退出码 0 + stdout。
+        var executed = await coordinator.ExecuteAsync(
+            Host(fingerprint, defaultCwd: "/tmp"),
+            new SshExecuteRequest(options.Target, "echo coordinator-ok; pwd"),
+            CancellationToken.None);
+        log.Fact(scenario, "execute_status", executed.Status.ToWire());
+        log.Fact(scenario, "execute_exit_code", executed.ExitCode?.ToString() ?? "null");
+        log.Fact(scenario, "execute_stdout", executed.Stdout.Trim().Replace('\n', '|'));
+        log.Fact(scenario, "execute_duration_ms", executed.DurationMs);
+        log.Assert(scenario, "execute_completed", executed.Status == SshExecutionStatus.Completed, executed.ErrorCode ?? "null");
+        log.Assert(scenario, "execute_exit_zero", executed.ExitCode == 0, executed.ExitCode?.ToString() ?? "null");
+        log.Assert(scenario, "execute_cwd_applied", executed.Stdout.Contains("/tmp", StringComparison.Ordinal), executed.Stdout.Trim());
+        log.Assert(scenario, "execute_stdout_marker", executed.Stdout.Contains("coordinator-ok", StringComparison.Ordinal), executed.Stdout.Trim());
+
+        // 3) 错指纹：验证器拒绝 ⇒ 不认证、不执行。
+        var mismatched = await coordinator.ExecuteAsync(
+            Host(ProbeHostKeyVerifier.Mutable(fingerprint)),
+            new SshExecuteRequest(options.Target, "echo should-not-run"),
+            CancellationToken.None);
+        log.Fact(scenario, "mismatch_error_code", mismatched.ErrorCode ?? "null");
+        log.Assert(
+            scenario,
+            "mismatch_rejected",
+            mismatched.ErrorCode == SshErrorCodes.HostKeyMismatch,
+            mismatched.ErrorCode ?? "null");
+        log.Assert(scenario, "mismatch_not_retry_safe", !mismatched.RetrySafe, "指纹不符需要用户核对");
+        log.Assert(
+            scenario,
+            "mismatch_not_submitted",
+            mismatched.ExecutionState == SshExecutionState.NotSubmitted,
+            mismatched.ExecutionState.ToWire());
+
+        // 4) 非零退出：业务失败，不是传输失败。
+        var failed = await coordinator.ExecuteAsync(
+            Host(fingerprint),
+            new SshExecuteRequest(options.Target, "exit 3"),
+            CancellationToken.None);
+        log.Fact(scenario, "exit3_status", failed.Status.ToWire());
+        log.Fact(scenario, "exit3_exit_code", failed.ExitCode?.ToString() ?? "null");
+        log.Fact(scenario, "exit3_error_code", failed.ErrorCode ?? "null");
+        log.Assert(scenario, "exit3_reported", failed.Status == SshExecutionStatus.Failed, failed.Status.ToWire());
+        log.Assert(scenario, "exit3_code_preserved", failed.ExitCode == 3, failed.ExitCode?.ToString() ?? "null");
+        log.Assert(scenario, "exit3_error_code", failed.ErrorCode == SshErrorCodes.RemoteExitNonzero, failed.ErrorCode ?? "null");
+
+        // 5) 非法请求：连接之前就拒绝。
+        var invalid = await coordinator.ExecuteAsync(
+            Host(fingerprint),
+            new SshExecuteRequest(options.Target, "echo\0bad"),
+            CancellationToken.None);
+        log.Assert(
+            scenario,
+            "invalid_request_rejected",
+            invalid.ErrorCode == SshErrorCodes.RequestInvalid,
+            invalid.ErrorCode ?? "null");
+        log.Assert(scenario, "invalid_request_phase", invalid.Phase == SshPhase.Validation, invalid.Phase.ToWire());
     }
 
     /// <summary>

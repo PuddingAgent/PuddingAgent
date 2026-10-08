@@ -78,9 +78,18 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repo
 
 $outPath = Join-Path $repo $OutDir
-New-Item -ItemType Directory -Force -Path $outPath | Out-Null
 $transcript = Join-Path $outPath 'probe-run.log'
 $probeExePath = Join-Path $repo $ProbeExe
+
+# temp/ 是共享临时区：别的会话可能随时按仓库卫生约定清空 temp\test-out\*。
+# 因此每次写入前重建目录，而不是只在脚本开头创建一次（否则一次并发清理就会打断整轮探针）。
+function Initialize-OutDir {
+    if (-not (Test-Path -LiteralPath $outPath)) {
+        New-Item -ItemType Directory -Force -Path $outPath | Out-Null
+    }
+}
+
+Initialize-OutDir
 
 if (-not (Test-Path $probeExePath)) {
     throw "probe not built: $ProbeExe -- run: dotnet build Source\PuddingSsh.Probe\PuddingSsh.Probe.csproj --artifacts-path temp\build\ssh"
@@ -89,6 +98,7 @@ if (-not (Test-Path $probeExePath)) {
 function Write-Log([string]$Message) {
     $line = "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $Message
     Write-Host $line
+    Initialize-OutDir
     Add-Content -Path $transcript -Value $line
 }
 
@@ -171,6 +181,7 @@ try {
         $result = Invoke-NativeCommand $probeExePath $ProbeArgs
         $after = Get-AcceptedCount
         $output = @($result.Text)
+        Initialize-OutDir
         $output | Tee-Object -FilePath $logFile | ForEach-Object { Write-Host "    $_" }
         Add-Content -Path $transcript -Value ($output -join [Environment]::NewLine)
 
@@ -213,6 +224,12 @@ try {
 
     # 7) Dual-stream throughput and memory.
     $r = Invoke-Scenario 'throughput' (@('throughput', '--timeout', '180') + $common)
+
+    # 8) Full chain through the ISshClient coordinator (A3): ssh_test + success + wrong pin + non-zero exit + invalid request.
+    #    Expected successful authentications: test(1) + execute(1) + exit3(1) = 3;
+    #    the wrong-pin and invalid-request operations must NOT authenticate.
+    $r = Invoke-Scenario 'coordinator' (@('coordinator') + $common)
+    if ($r.AuthDelta -ne 3) { Add-Failure "coordinator: expected 3 successful authentications, got $($r.AuthDelta)" }
 
     # Cross-check: the fingerprint the probe observed must equal OpenSSH's own.
     $observedLine = Get-Content (Join-Path $outPath 'probe-fingerprint.log') |

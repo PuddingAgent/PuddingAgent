@@ -26,6 +26,7 @@ internal sealed record ProbeOptions(
           deadline     用极短建连 deadline 连不可达地址：必须有界失败
           cancel       取消一个长时间命令：必须受限、且远端证据符合预期
           throughput   双流大输出：捕获必须受限、计数必须完整
+          coordinator  经 ISshClient 协调器走完整链路（ssh_test / 成功执行 / 错指纹 / 非零退出 / 非法请求）
           matrix       顺序执行上面全部（默认）
 
         选项:
@@ -92,7 +93,7 @@ internal sealed record ProbeOptions(
             }
         }
 
-        if (scenario is not ("fingerprint" or "hostkey" or "encrypted" or "deadline" or "cancel" or "throughput" or "matrix"))
+        if (scenario is not ("fingerprint" or "hostkey" or "encrypted" or "deadline" or "cancel" or "throughput" or "coordinator" or "matrix"))
         {
             throw new ProbeUsageException($"未知 scenario {scenario}");
         }
