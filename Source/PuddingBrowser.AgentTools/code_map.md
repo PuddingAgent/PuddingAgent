@@ -24,7 +24,7 @@ draft: false
 | `BrowserContextTool.cs` | `browser_context` | 创建/列出/查看/关闭浏览器上下文（create/close 走上下文管理窄端口） |
 | `BrowserTabsTool.cs` | `browser_tabs` | 标签页管理 |
 | `BrowserNavigateTool.cs` | `browser_navigate` | 页面导航 |
-| `BrowserSnapshotTool.cs` | `browser_snapshot` | 页面快照 / 无障碍树 |
+| `BrowserSnapshotTool.cs` | `browser_snapshot` | 页面快照；`mode` 默认 **outline**（只请求无障碍树，DOM 树不采集；输出按 50 行/4096 字节收敛，超预算给 `nextCursor`）；`interactive` 只列可交互节点；`full` 排障用（显式开启，沿用调用方预算）；`text`（正文 markdown）**未实现**，返回明确 unsupported 而非静默降级；截断原因区分 `incomplete_scan` 与 `output_budget` |
 | `BrowserLocateTool.cs` | `browser_locate` | 元素定位；`include_value=true` 时附带表单当前值（`value`/`selectedValues`）——**默认不带**以守住输出预算，需要确认「fill 是否写入成功」时显式打开（唯一可靠回执，`text` 不含表单值） |
 | `BrowserInteractTool.cs` | `browser_interact` | 元素交互（点击/输入）；`expect_value` 声明期望后**一次调用即可确认写入成功**——输出带 `ok`/`completion`/`assertions`/`mayHaveSideEffects`/`safeToRetry`（判定在 `PuddingBrowser.Automation`，两条传输天然同形）；表单值只以 matched+长度回传 |
 | `BrowserWaitForTool.cs` | `browser_wait_for` | 等待条件满足 |

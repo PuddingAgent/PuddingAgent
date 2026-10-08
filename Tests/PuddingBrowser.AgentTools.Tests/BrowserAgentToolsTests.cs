@@ -319,6 +319,167 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Snapshot_DefaultsToOutline_AndDoesNotRequestTheDomTree()
+    {
+        // 设计方案 §6.1：默认 outline —— 只请求无障碍树（DOM 树是体积大头），
+        // 并用**内部扫描预算**采集，输出再按 limit/max_bytes 收敛。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1" }));
+
+        Assert.True(snapshot.Success);
+
+        // ① 发给驱动的采集预算：不要 DOM、不要 HTML，只要无障碍树，且扫描预算明显大于输出预算。
+        var options = page.LastSnapshotOptions;
+        Assert.NotNull(options);
+        Assert.False(options!.IncludeDom);
+        Assert.False(options.IncludeHtml);
+        Assert.True(options.IncludeAccessibilityTree);
+        Assert.Equal(10_000, options.MaxNodes);
+
+        // ② 输出形状：outline 投影 + 字节口径，domText 为 null。
+        var value = GetJson(snapshot.Output, "value");
+        Assert.Equal("outline", value.GetProperty("mode").GetString());
+        Assert.Equal(JsonValueKind.Null, value.GetProperty("domText").ValueKind);
+        Assert.True(value.GetProperty("bytes").GetInt32() > 0);
+        Assert.Equal("none", value.GetProperty("truncationReason").GetString());
+
+        // ③ outline 保留结构行与可交互行，丢掉无语义的容器行。
+        var tree = value.GetProperty("accessibilityTree").GetString()!;
+        Assert.Contains("heading", tree, StringComparison.Ordinal);
+        Assert.Contains("v1-n1", tree, StringComparison.Ordinal);
+        Assert.DoesNotContain("document", tree, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Snapshot_InteractiveMode_KeepsOnlyRefLines()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", mode = "interactive" }));
+
+        Assert.True(snapshot.Success);
+        var value = GetJson(snapshot.Output, "value");
+        Assert.Equal("interactive", value.GetProperty("mode").GetString());
+
+        var tree = value.GetProperty("accessibilityTree").GetString()!;
+        foreach (var line in tree.Split('\n'))
+        {
+            Assert.Contains("ref=", line);
+        }
+
+        Assert.DoesNotContain("heading", tree, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Snapshot_FullMode_KeepsTheLegacyShape()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "full",
+                include_dom = true,
+                max_nodes = 100
+            }));
+
+        Assert.True(snapshot.Success);
+        var value = GetJson(snapshot.Output, "value");
+        Assert.Equal("full", value.GetProperty("mode").GetString());
+        Assert.NotNull(value.GetProperty("domText").GetString());
+        Assert.Equal(100, page.LastSnapshotOptions!.MaxNodes);
+        Assert.Equal(JsonValueKind.Null, value.GetProperty("nextCursor").ValueKind);
+    }
+
+    [Fact]
+    public async Task Snapshot_TextMode_IsExplicitlyUnsupported_NotASilentFallback()
+    {
+        // 正文 markdown 需要驱动侧提取；绝不能静默降级成 full（那会让调用方以为拿到了正文）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", mode = "text" }));
+
+        Assert.False(snapshot.Success);
+        using var document = JsonDocument.Parse(snapshot.Error!);
+        var error = document.RootElement.GetProperty("error");
+        Assert.Equal("browser_operation_not_supported", error.GetProperty("code").GetString());
+        Assert.Contains("not implemented", error.GetProperty("message").GetString()!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Snapshot_OutputBudget_ReportsCursor_AndScanTruncationReportsIncomplete()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        // ① 扫描完整、只是行数收敛 ⇒ output_budget + 游标可续读。
+        var limited = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", limit = 1 }));
+
+        var limitedValue = GetJson(limited.Output, "value");
+        Assert.True(limitedValue.GetProperty("truncated").GetBoolean());
+        Assert.Equal("output_budget", limitedValue.GetProperty("truncationReason").GetString());
+        Assert.Equal(1, limitedValue.GetProperty("nextCursor").GetInt32());
+
+        // ② 扫描侧被截断 ⇒ incomplete_scan，且不给游标（续读也保证不了完整）。
+        var truncatedPage = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        truncatedPage.SnapshotTruncated = true;
+
+        var incomplete = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = truncatedPage.Id.Value, context_id = "ctx-1" }));
+
+        var incompleteValue = GetJson(incomplete.Output, "value");
+        Assert.Equal("incomplete_scan", incompleteValue.GetProperty("truncationReason").GetString());
+        Assert.Equal(JsonValueKind.Null, incompleteValue.GetProperty("nextCursor").ValueKind);
+    }
+
+    [Fact]
+    public async Task Snapshot_RejectsUnknownModeAndOutOfRangeBudgets()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var badMode = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", mode = "brand_new" }));
+
+        var badBudget = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", limit = 0 }));
+
+        Assert.False(badMode.Success);
+        Assert.False(badBudget.Success);
+    }
+
+    [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
         var runtime = new FakeBrowserRuntime();
@@ -1019,14 +1180,25 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public Task ReloadAsync(CancellationToken ct) => Task.CompletedTask;
     public Task StopAsync(CancellationToken ct) { IsLoading = false; return Task.CompletedTask; }
     public Task BringToFrontAsync(CancellationToken ct) { _context.LastActivatedPageId = Id; return Task.CompletedTask; }
+    /// <summary>最近一次快照请求的选项：用来断言模式确实改变了**发给驱动**的采集预算。</summary>
+    public SnapshotOptions? LastSnapshotOptions { get; private set; }
+
+    /// <summary>让替身模拟「扫描侧被截断」，用于验证 incomplete_scan 与 output_budget 的区分。</summary>
+    public bool SnapshotTruncated { get; set; }
+
     public Task<PageSnapshot> SnapshotAsync(SnapshotOptions options, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        LastSnapshotOptions = options;
         return Task.FromResult(new PageSnapshot
         {
-            DomText = "<button ref=v1-n1> Save",
-            AccessibilityTree = "button ref=v1-n1 name=\"Save\"",
-            NodeCount = 1
+            DomText = "<div><button ref=v1-n1> Save</button><input ref=v1-n2></div>",
+            // 结构行没有 ref（只有 outline 保留它），可交互行带 ref（驱动自己的判定）。
+            AccessibilityTree =
+                "document name=\"Example\"\nheading name=\"Form\"\n"
+                + "button ref=v1-n1 name=\"Save\"\ntextbox ref=v1-n2 name=\"Search\"",
+            NodeCount = 4,
+            Truncated = SnapshotTruncated
         });
     }
     public async Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)

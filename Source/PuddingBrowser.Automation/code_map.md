@@ -27,6 +27,7 @@
 | `BrowserMutationPostcondition.cs` | 变更类动作的**后置条件**（取代「所有 mutating 结果版本必须严格递增」）：没有活版本是真失败；观测到文档提交即满足任何期望；<b>未声明后置条件时版本不推进不算失败</b>（fill/click 开菜单/SPA 更新）；只有显式声明 `DocumentNavigation` 未满足才报 `outcome_unknown`。`ValidateTabs` 不拿「另一页的版本推进」当证据，改为校验 `close` 是否真的关掉、`activate`/`new` 是否回带活版本。 |
 | `BrowserRefIdentity.cs` | 引用身份模型（设计 §5 / G4）：`BrowserRefScope`（context/page/frame 三元组，frame=null 即顶层）、`BrowserObservationRevisions`（**三个分开的事实**：文档世代 / DOM 修订 / 视口修订）、`BrowserRevisionPolicy`（只读**不推进任何**事实；文档提交推三者；DOM 变更只推 dom；滚动只推 viewport）、`BrowserRefInvalidation`（分类作废）、`BrowserRefDenial` + 线名、`BrowserRefToken`（宿主绑定节点键 + 最小刷新提示）、`BrowserRefDecision` |
 | `BrowserRefRegistry.cs` | 宿主绑定的引用登记表：身份用**宿主侧**节点键（`data-pudding-ref` 之类页面可自写属性只能当提示）；校验同时看作用域与文档世代 ⇒ **跨页/跨 frame 即使版本号相同也拒绝**；撤销**分类**（整页 / 单 frame / 单引用），而普通 DOM 变更与滚动**不作废任何**引用；reference 值不可解析，**绝不按键名/角色自动重绑** |
+| `BrowserReadingFormat.cs` | 阅读面收敛（设计 §6.1/§6.2、G5）：把驱动的无障碍树按模式（`outline` 默认＝可交互行＋标题/地标行，`interactive`＝仅带 `ref=` 的行，`full`＝全量不设预算，`text` 未实现）**只做投影不编造**；**输出预算（50 行 / 4096 UTF-8 字节）与内部扫描预算（10k 节点 / 64 层 / 200k 文本）分开**；截断如实区分 `incomplete_scan`（可能缺整片区域）与 `output_budget`（可用 `nextCursor` 续读）。`BrowserReadingFormatWire` 提供线名与 fail-closed 解析 |
 | `BrowserInteractionReceipt.cs` | 交互回执**判定**（设计 §4.1/§4.2、G7）：把「调用方声明的期望 + 驱动回读的观测值」判成断言与完成度。① 不按动作名推断成功——只有声明了期望（显式 `expect_value`，或 select 的 `values`、check/uncheck 的 `checked` 这类调用方自给的目标值）才有断言，否则如实报 `dispatched`；② **表单值一律不回显**（value/selectedValues 只给 matched 与长度）；③ 期望存在但拿不到观测 ⇒ `unverified`（不是 failed）。`ExecutionFor(error)` 由错误目录推导执行阶段 |
 
 ## 3. 契约落点（在 `Pudding.Contracts/Desktop/`，BCL-only）
@@ -54,10 +55,11 @@
 
 ## 5. 测试
 
-`Source/PuddingBrowser.AutomationTests/`（只引用本组件）：173 用例。
+`Source/PuddingBrowser.AutomationTests/`（只引用本组件）：187 用例。
 
 | 文件 | 覆盖 |
 |------|------|
+| `BrowserReadingFormatTests.cs` | 阅读面：默认 outline 只留可交互/结构行、interactive 只留带 ref 的行、full 不设预算、`output_budget` 与 `incomplete_scan` 的区分与游标续读、UTF-8 字节口径、单行超预算仍返回、非法预算取红、合成大树上默认模式收敛到 4 KB 内 |
 | `BrowserInteractionReceiptTests.cs` | 交互回执（G7）：`expect_value` 匹配 ⇒ verified（不匹配 ⇒ failed）、**表单值零回显**（只给 matched 与长度）、无期望 ⇒ dispatched 不假装成功、有期望但拿不到观测 ⇒ unverified、select/check 用调用方自给的目标值判定、执行阶段由错误目录推导、未开始+可重试才 safeToRetry |
 | `BrowserRefIdentityTests.cs` | 引用身份与三个事实（设计 §5 / G4）：跨页/跨 frame（含「两页都恰好 v7」）、同角色同名字的新节点**不让旧引用复活**、整页/单 frame/单引用分类作废、普通 DOM 变更与滚动**不作废任何**引用、宿主存活校验、视口变化只让坐标失效、只读调用**零推进** |
 | `BrowserMutationPostconditionTests.cs` | 变更类后置条件：fill/click 不推进版本仍判成功、无活版本是真失败、显式声明导航未满足报 `outcome_unknown`、tab close 按「是否关掉」判、关最后一页无剩余版本仍成功 |

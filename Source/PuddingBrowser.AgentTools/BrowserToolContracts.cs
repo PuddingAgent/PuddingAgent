@@ -46,12 +46,38 @@ public sealed record BrowserNavigationToolValue
     public string? ErrorText { get; init; }
 }
 
+/// <summary>
+/// 快照输出。
+/// outline/interactive 模式下 <see cref="AccessibilityTree"/> 是**按模式过滤并收敛后**的投影，
+/// <see cref="DomText"/>/<see cref="Html"/> 为 <c>null</c>（不请求，省下体积大头）；
+/// full 模式下三者按请求原样返回。
+/// </summary>
 public sealed record BrowserSnapshotToolValue
 {
+    /// <summary>实际使用的阅读模式线名：outline / interactive / full。</summary>
+    public string? Mode { get; init; }
+
     public string? DomText { get; init; }
     public string? AccessibilityTree { get; init; }
     public string? Html { get; init; }
     public bool Truncated { get; init; }
+
+    /// <summary>
+    /// 截断原因线名：<c>incomplete_scan</c>（扫描侧被截断，可能缺整片区域）
+    /// 或 <c>output_budget</c>（扫描完整，只是输出收敛，可用 <see cref="NextCursor"/> 续读）。
+    /// </summary>
+    public string? TruncationReason { get; init; }
+
+    /// <summary>继续读取的游标；仅在 <c>output_budget</c> 截断时给出。</summary>
+    public int? NextCursor { get; init; }
+
+    /// <summary>本次返回的行数（outline/interactive）。</summary>
+    public int? ReturnedLines { get; init; }
+
+    /// <summary>本次返回文本的 UTF-8 字节数（outline/interactive）——省 token 的实测口径。</summary>
+    public int? Bytes { get; init; }
+
+    /// <summary>驱动扫到的节点数（页面侧事实，不是返回行数）。</summary>
     public int NodeCount { get; init; }
 }
 
