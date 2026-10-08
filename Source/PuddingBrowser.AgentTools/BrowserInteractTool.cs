@@ -311,7 +311,18 @@ public sealed class BrowserInteractTool(
 
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
 
-        catch (BrowserOperationException ex) { return BrowserToolResponse.FromException(ex); }
+        catch (BrowserOperationException ex)
+        {
+            // 异常路径也要带回执：驱动抛出的失败同样是"一次交互的结果"，
+            // 只给 code/message 会让调用方看不出到底派发没有（设计 §4.1）。
+            var (error, hint) = BrowserOperationFailure.Map(ex.Code, ex.Message);
+            return BrowserToolResponse.Failure(
+                ex.Code,
+                ex.Message,
+                value: BrowserOperationFailure.Receipt(
+                    error, hint, MapAction(action, args.Checked), args.ExpectValue),
+                warnings: hint is null ? null : [hint]);
+        }
 
     }
 

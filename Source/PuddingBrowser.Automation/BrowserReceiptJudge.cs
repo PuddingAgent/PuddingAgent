@@ -141,7 +141,9 @@ public static class BrowserRetryPolicy
                 "the action was dispatched but its effect is unverified; observe before retrying",
             BrowserRetryDisposition.UnknownOutcome =>
                 "the outcome is unknown (disconnect/crash); do not treat it as not executed",
-            _ => null,
+            // 其余情况沿用回执自带的**最小修复提示**（例如"引用已过期：重新观察后再定位"）。
+            // 没有提示时保持 null，不编造一句空话。
+            _ => receipt.Detail,
         };
 
         return new BrowserRetryDecision(disposition, receipt.MayHaveSideEffects, receipt, receipt.Error, detail);

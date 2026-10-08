@@ -606,6 +606,48 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Interact_StaleRefException_AlsoCarriesAReceipt_WithARefreshHint()
+    {
+        // 驱动抛出的异常（引用过期）同样要给回执 + 最小修复提示：
+        // 只给 code/message 会让调用方不知道"到底派发没有"，也不知道下一步该做什么。
+        // 并且"重试同一次调用"毫无意义（同一个 ref 一定再次失败）⇒ 不可自动重试。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "click",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "ref", value = "v0-n1" }
+            }));
+
+        Assert.False(result.Success);
+        using var document = JsonDocument.Parse(result.Error!);
+        var root = document.RootElement;
+
+        Assert.Equal("stale_element_reference", root.GetProperty("error").GetProperty("code").GetString());
+
+        var receipt = root.GetProperty("value");
+        Assert.Equal("failed", receipt.GetProperty("completion").GetString());
+        Assert.Equal("not_started", receipt.GetProperty("execution").GetString());
+        Assert.False(receipt.GetProperty("mayHaveSideEffects").GetBoolean());
+        // 同一个 ref 一定再次失败 ⇒ 不可自动重试，但必须告诉调用方**该怎么刷新**。
+        Assert.Equal("not_retryable", receipt.GetProperty("retryDisposition").GetString());
+        Assert.Contains("re-observe", receipt.GetProperty("retryDetail").GetString()!, StringComparison.OrdinalIgnoreCase);
+
+        // 提示同时作为 warning 暴露（调用方不必解析回执才能看到）。
+        Assert.Contains("re-observe", result.Error!, StringComparison.OrdinalIgnoreCase);
+
+        // 什么都没派发：替身页面没有记录任何动作。
+        Assert.Null(page.LastAction);
+    }
+
+    [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
         var runtime = new FakeBrowserRuntime();
@@ -1364,15 +1406,15 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public Task<JsonDocument> SendCdpAsync(string method, JsonElement? parameters, CancellationToken ct) => Unsupported<JsonDocument>();
     public Task<BrowserSubscriptionId> SubscribeCdpAsync(string eventName, CancellationToken ct) => Unsupported<BrowserSubscriptionId>();
     public Task UnsubscribeAsync(BrowserSubscriptionId subscriptionId, CancellationToken ct) => Unsupported();
-    public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct) => Record("click", null, ct);
-    public Task FillAsync(Locator locator, string value, FillOptions options, CancellationToken ct) => Record("fill", value, ct);
-    public Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct) => Record("type", text, ct);
-    public Task PressAsync(Locator locator, string key, KeyOptions options, CancellationToken ct) => Record("press", key, ct);
-    public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct) => Record("hover", null, ct);
+    public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct) => Record("click", null, ct, locator);
+    public Task FillAsync(Locator locator, string value, FillOptions options, CancellationToken ct) => Record("fill", value, ct, locator);
+    public Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct) => Record("type", text, ct, locator);
+    public Task PressAsync(Locator locator, string key, KeyOptions options, CancellationToken ct) => Record("press", key, ct, locator);
+    public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct) => Record("hover", null, ct, locator);
     public Task ScrollAsync(ScrollOptions options, CancellationToken ct) => Record("scroll", null, ct);
     public Task DragAsync(Locator source, Locator target, DragOptions options, CancellationToken ct) => Unsupported();
-    public Task SelectAsync(Locator locator, IReadOnlyList<string> values, CancellationToken ct) => Record("select", values, ct);
-    public Task CheckAsync(Locator locator, bool isChecked, CancellationToken ct) => Record("check", isChecked, ct);
+    public Task SelectAsync(Locator locator, IReadOnlyList<string> values, CancellationToken ct) => Record("select", values, ct, locator);
+    public Task CheckAsync(Locator locator, bool isChecked, CancellationToken ct) => Record("check", isChecked, ct, locator);
     public Task SetInputFilesAsync(Locator locator, IReadOnlyList<string> paths, CancellationToken ct) => Unsupported();
     public Task<WaitResult> WaitForAsync(WaitCondition condition, CancellationToken ct)
     {
@@ -1383,9 +1425,22 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public Task<PdfResult> PrintToPdfAsync(PdfOptions options, CancellationToken ct) => Unsupported<PdfResult>();
     public Task OpenDevToolsAsync(CancellationToken ct) => Unsupported();
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    private Task Record(string action, object? value, CancellationToken ct)
+    /// <summary>
+    /// 记录一次动作。与真实驱动一致：**任何元素解析都要先校验引用**，
+    /// 因此这里在记录之前也校验 ref（否则"过期引用"在替身上永远不会失败，
+    /// 而真实路径会在触碰页面前就抛 stale_element_reference）。
+    /// </summary>
+    private Task Record(string action, object? value, CancellationToken ct, Locator? locator = null)
     {
         ct.ThrowIfCancellationRequested();
+
+        // 与真实驱动一致：任何元素解析都要先校验引用，过期引用在触碰页面前就失败。
+        if (locator is { Kind: LocatorKind.Ref }
+            && !locator.Value.StartsWith($"v{PageVersion}-", StringComparison.Ordinal))
+        {
+            throw new BrowserOperationException("stale_element_reference", "stale ref");
+        }
+
         LastAction = action;
         LastValue = value;
         return Task.CompletedTask;

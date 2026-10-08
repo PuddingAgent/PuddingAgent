@@ -23,7 +23,8 @@ public sealed record BrowserInteractionEvidence(
     BrowserObservationStamp? Before = null,
     BrowserObservationStamp? After = null,
     DesktopCapabilityError? Error = null,
-    bool IsBlocked = false);
+    bool IsBlocked = false,
+    string? Detail = null);
 
 /// <summary>
 /// 交互回执的**判定**（设计方案 §4.1/§4.2、门禁 G7）：
@@ -74,7 +75,10 @@ public static class BrowserInteractionReceipt
             Before: evidence.Before,
             After: evidence.After,
             Effects: BrowserActionEffectSummary.None,
-            Error: evidence.Error));
+            Error: evidence.Error,
+            // 最小修复提示（例如「引用已过期：重新观察页面再定位」）随回执保留，
+            // 由重试裁定在"不可自动重试"时回带给调用方 —— 否则调用方只知道失败，不知道该做什么。
+            Detail: evidence.Detail));
     }
 
     /// <summary>

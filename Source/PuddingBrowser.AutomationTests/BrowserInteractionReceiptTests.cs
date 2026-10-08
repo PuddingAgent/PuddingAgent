@@ -25,7 +25,8 @@ public sealed class BrowserInteractionReceiptTests
         bool? observedChecked = null,
         string? requestedText = null,
         BrowserActionExecution execution = BrowserActionExecution.Completed,
-        DesktopCapabilityError? error = null) =>
+        DesktopCapabilityError? error = null,
+        string? detail = null) =>
         new(
             OperationId.NewId(),
             action,
@@ -39,7 +40,8 @@ public sealed class BrowserInteractionReceiptTests
             ObservedChecked: observedChecked,
             Execution: execution,
             Target: Target,
-            Error: error);
+            Error: error,
+            Detail: detail);
 
     // ── G7：一次 fill 即可确认 ────────────────────────────────────────────
 
@@ -390,8 +392,37 @@ public sealed class BrowserInteractionReceiptTests
     }
 
     [TestMethod]
-    public void UnknownOutcome_IsNeverTreatedAsNotExecuted()
+    public void RetryDecision_PreservesTheReceiptsMinimalRepairHint()
     {
+        // 「不可自动重试」不等于「无事可做」：引用过期时必须告诉调用方**怎么刷新**。
+        // 提示由回执携带，重试裁定在兜底分支回带（否则调用方只得到一个干巴巴的 not_retryable）。
+        var receipt = BrowserInteractionReceipt.Build(Evidence(
+            DesktopInteractionAction.Click,
+            execution: BrowserActionExecution.NotStarted,
+            error: new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch, "stale ref", retryable: false),
+            detail: "re-observe the page and re-locate"));
+
+        var decision = BrowserRetryPolicy.Decide(receipt);
+
+        Assert.AreEqual(BrowserRetryDisposition.NotRetryable, decision.Disposition);
+        Assert.AreEqual("re-observe the page and re-locate", decision.Detail);
+    }
+
+    [TestMethod]
+    public void RetryDecision_DoesNotInventAHint_WhenThereIsNone()
+    {
+        var receipt = BrowserInteractionReceipt.Build(Evidence(
+            DesktopInteractionAction.Click,
+            execution: BrowserActionExecution.NotStarted,
+            error: new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch, "moved on", retryable: false)));
+
+        Assert.IsNull(BrowserRetryPolicy.Decide(receipt).Detail);
+    }
+
+    [TestMethod]
+    public void UnknownOutcome_IsNeverTreatedAsNotExecuted()    {
         var unknown = DesktopCapabilityError.OutcomeUnknown("connection dropped");
 
         var receipt = BrowserInteractionReceipt.Build(Evidence(
