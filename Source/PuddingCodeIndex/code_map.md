@@ -37,29 +37,29 @@
 
 ## 变更捕获管线（Services/CodeIndex/ → `PuddingCodeIndex.Services.CodeIndex`）
 
-| 文件 | 用途 |
-|------|------|
-| `IndexChange.cs` | 单条文件系统变更观测（`IndexChangeKind`） |
-| `CodeIndexChangeQueue.cs` | 有界队列（容量 8192，`TryPublish` 不阻塞） |
-| `CodeIndexScopeState.cs` | 范围状态（dirty/version/reconcile，无 IO）；**U3-B3** 增 reconcile 原因 `BatchApplicationFailed`；**U3-C** 增 `CalibrationRootUnavailable` / `CalibrationFailed`；**U3-D** 增 `CalibrationTruncated`（常规路径被 ceiling 截断也置位） |
-| `CodeIndexWatcher.cs` | 文件系统监视器（64KB 缓冲，回调只过滤 + TryPublish） |
-| `CodeIndexChangeCoalescer.cs` | 防抖折叠（静默 500ms / 最长 2s，2 万路径 → reconcile） |
-| `CodeIndexChangeBatch.cs` | 折叠产物（重读集合 / 移除集合 / reconcile 标记） |
-| `CodeIndexChangeWatchers.cs` | **U3-B1** 变更源抽象（`ICodeIndexChangeWatcher` / `ICodeIndexWatcherFactory`）+ 真实 watcher 适配工厂 |
-| `CodeIndexMaintenanceService.cs` | **U3-B1/U3-B3** 变更→索引的单一驱动（消费批次、置脏补跑、有界停止）。**U3-B3 按文件施用**：`PathsToRemove` → store 真删除；`PathsToReindex` → `ICodeIndexFileUpdater.IndexFileAsync` 逐文件（索引器无该能力则同样升级）；仅 reconcile / 目录变更 / 索引器拒绝才升级为 scope 级重索引；批次施用失败 ⇒ 标 `NeedsReconcile` + 记错误日志（不静默丢弃）。**D4（2026-10-02）**：`Coordinator` 模式下滑失的直接删除改为只作提示（删除由完整扫描确认）。周期性校准与 **reconcile 批次（队列溢出等）** 在 `Coordinator` 模式下都走协调器的**完整**扫描（由它同时维护索引/manifest/账本；旧路径的 scope 级运行只写索引不更新 manifest）。**U3-D 常规校准**：驱动步末尾的校准由 `TryBeginCalibration` 逐 scope 判due —— 被标位的 scope（U3-C，首次尝试在下一步、重试节流 `DefaultCalibrationInterval` 60s）**或**自有常规周期到期的 scope（`DefaultCalibrationPeriod` 15min，按**上次完成**计时，首次以挂载时刻为锚）。未到期 ⇒ **一次校准都不发起**（每日 200ms 步不会变成扫盘）；被拒/被截断 ⇒ **保持或置位** `NeedsReconcile`。**D4 驱动开关**（2026-10-02）：`Coordinator` 模式下整批交给源维护协调器（单路径失败按退避重试、**不升级整仓**；watcher 观察到的消失只作提示，删除由完整扫描确认）；`Legacy` 默认保持原样。**U3-E 重试退避**：被标位 scope 的重试间隔改为**指数阶梯** —— 以 `DefaultCalibrationInterval`(60s) 为底、**第二次及以后的连续失败**逐次翻倍（60s/2m/4m/8m/16m），封顶到组件常量 `DefaultCalibrationBackoffMax`(**30min**)；**任何一次“读到了根”的 sweep（完成或截断）立刻把档位复位到 0**；15min 常规钟与“首次尝试在下一步 / 单次失败仍 60s”**逐字未变**（阶梯只判“重复失败”，且与常规钟不叠加：`IsCalibrationDue` 的 if/else 二者永不同时参与） |
-| `CodeIndexCalibrationService.cs` | **U3-C 校准（mark-and-sweep）**：取 scope 已索引路径集合（`ListFilesAsync`），逐条判磁盘存在性，对"已消失"的调用 `RemoveFilesAsync`（只删索引行）；**根目录缺失/不可读 ⇒ 拒绝 sweep**（零移除 + 保持置位）；宽限窗口内被变更管线刚观测过的路径豁免；每事务 ≤256 条、每轮 ≤4096 条，可取消。**D 后续阶段**：扩展为「磁盘清单 vs manifest 差异扫描」（发现漏通知的新增文件），并接入持久账本 |
-| `CodeSourceChangeDetector.cs` | **D2 变更判定纯逻辑**（2026-10-02）：三源提示（watcher / mtime·stat 扫描 / 深度核验）＋ 持久 manifest ＋ 消费者输入指纹 → `CodeSourceChangeSet`。不读文件、不访问数据库、不看时钟。落地的不变量：新路径即使 mtime 很旧也必须处理；stat 未变+无提示+输入未变 ⇒ 复用（不读正文）；mtime 落在 `ScanStartedUtc - RacyOverlap` 内是候选；提示/深度核验/stat 读不到必须核验内容；**hash 与本次 stat 不一致（读写竞争）⇒ Deferred，绝不提交**；内容一致但策略/语义输入变了 ⇒ 只重绑；**删除只能由完整且根可用的扫描得出**，不完整/根不可用/watcher-only/扫描期间又变化的路径一律 Deferred；水位只在「完整+根可用+确实扫描过」时推进 |
-| `CodeSourceMaintenanceLedger.cs` | **D2 持久待办语义（纯内存，无 I/O）**（2026-10-02）：`FromState` 从持久快照恢复（保留 `DirtyAgain`）；`RecordObservedChanges` 每批递增期望版本并**标记「还有工作」**，返回捕获版本；`CompleteCommit` 只确认捕获版本、只对真正提交成功的消费者做单调 `max` 推进；扫描水位仅在「捕获版本即当前期望 + 扫描完整 + 无未解决路径 + 无待重试」时前进且永不回退；`BeginEpoch` 递增世代（旧世代提交返回 `StaleEpoch`）；`RecordFailure`/`DueRetries`/`ClearRetry` 实现有界退避（默认 60s→30min）。持久化在 `SqliteCodeIndexStore.SourceMaintenance.cs` |
-| `FileSystemCodeSourceScanner.cs` | **D2 默认磁盘枚举**（2026-10-02，只读元数据、不读正文、不写任何东西）：根先探测（缺失/不可读 ⇒ `RootUsable=false`）；目录被忽略即整棵子树不枚举（忽略规则经 `ICodeSourceIgnoreRules` 注入）；子树读不到或触条目上限只置 `Complete=false` + 原因（**绝不假装「那里没有文件」**）；忽略规则抛错按「不忽略」处理（多一个候选只是核验一次）；枚举顺序按组件路径身份确定 |
-| `CodeSourceScanService.cs` | **D2 完整清单校准**（2026-10-02）：持久状态 → 磁盘枚举 → 真实变更集 → 账本登记捕获版本并持久化。**不读正文/不算 hash**（返回 `RequiresContentHash=true` 交执行层）、**不写索引**、**不推进扫描水位**（水位只在执行层回报 `CompleteCommit` 时前进）；存储无该能力时降级为 `CapabilityMissing` 并只产出磁盘事实；无待办时不递增版本也不写库 |
-| `LanguageCodeSourceConsumerInputProvider.cs` | **D4 消费者输入指纹生产者**（2026-10-02）：一个注册的语言实现 = 一个消费者（顺序稳定）。解析器/策略指纹 = 实现所在程序集版本 + 策略版本常量（工具链升级 ⇒ 重新提取）；语义输入指纹 = scope 根那一层**工程/配置文件**（csproj/sln/tsconfig/package.json/pyproject…）内容 hash 合成，源码正文**不算**（否则改一个 .cs 就把全仓判成需重绑）；没有工程文件时返回确定性标记（不用随机值）。默认实现经 `ICodeProjectRegistry` 取 scope 根 |
-| `WorkspaceCodeSourceIgnoreRules.cs` | **D4 忽略规则适配**（2026-10-02）：把叶子组件 `PuddingPathFiltering`（名字级噪声名单 + 与 `git check-ignore` 对齐的 .gitignore）适配成 `ICodeSourceIgnoreRules`；忽略栈**按仓库根缓存**并按有效期（默认 5 分钟）重建。⚠️ 名字级噪声必须 `IsNoisePathBelow(repositoryRoot, path)` **相对仓库根**判定：用绝对路径会把工作区自己的祖先目录名（`…\Temp\…` / `…\build\…` / `…\Debug\…`）当成噪声，整棵工作区被排除（等于索引悄悄变空）—— 已由此处用例锁定 |
-| `ICodeSourcePathProbe.cs` | **D4 按路径观测端口**（2026-10-02）：只给一批已知路径（watcher 提示）取元数据，**不遍历整棵树**；与 `ICodeSourceScanner` 分开是刻意的（给共享端口加成员会破坏每个实现者）。实现 = `FileSystemCodeSourceScanner`。**结果必然 `Complete=false`** ⇒ 永远不能据此删除 |
-| `CodeSourceFingerprintReader.cs` | **D4 稳定读**（2026-10-02）：`ReadAsync` 读前 stat → 读内容 → 读后 stat，**两者一致才认**，hash 来自真正读到的那份内容；不一致/长度不符 ⇒ 不稳定（调用方必须弃用本轮结果）；不存在/无权限/超上限 ⇒ 带原因的失败。`virtual` 是为了让「不稳定 ⇒ 弃用」这条分支能被确定性验证（真实读写竞争无法可靠复现）。默认单文件上限 64MB |
-| `CodeIndexMaintenanceScopeStatus`（`Contracts/ICodeIndexMaintenance.cs`） | 状态含 **D4 源维护事实**（2026-10-02）：生效链路、运行轮数、累计提取/复用/孤儿清理、最近一轮未解决与删除数、最近账本结果与语言侧会话键 —— 外部四场景复核据此读事实而非翻日志 |
-| `CodeSourceMaintenanceMode.cs` | **D4 驱动开关**（2026-10-02）：`Legacy`（默认，既有逐文件路径）/ `Coordinator`（新源维护链）+ `CodeIndexMaintenanceOptions`。默认 Legacy：切换是行为变化，必须显式打开；打开但零件未装配齐 ⇒ 告警并退回 Legacy，绝不假装新链路在跑 |
-| `CodeSourceMaintenanceCoordinator.cs` | **D4 维护协调器**（2026-10-02）：把各件串成一条链 —— 校准（真实变更集 + 捕获版本）→ 更新计划 → **先稳定读候选路径的指纹**（与已提交指纹一致 ⇒ 跳过提取、只刷新消费者视图）→ **语言批量接缝一次调用**（只对真正变了的路径）→ **稳定读**算指纹 → `ReplaceFilesAsync` **一个事务**提交索引 + 指纹 + 消费者水位 → 账本 `CompleteCommit`（只有它能推进扫描水位）。失败语义：语言 `Retryable` / 稳定读不稳定 / **检测器判 Deferred** ⇒ 记退避**并写入持久待办** + 计入未解决 ⇒ 水位不前进（绝不出现「既不在索引也不在待办」的静默丢失）；**本轮处理过的路径一律清退避**（提取/删除/复用/只重绑/无消费者认领），否则一个从此走重绑分支的路径会永久冻结水位；删除前查出依赖方并排进待办（删除会连带删掉其他文件的入边）；只对**变更集里观测过**的路径刷新 manifest；提交前复核 stat（提取可能耗时）；单文件失败只影响它自己，绝不升级整仓。`NotApplicable` 路径仍如实记指纹并按「消费者视图已最新」推进（否则每轮都会被当新文件）。watcher 节流、宿主忽略规则、DI 与调度节拍不在本类。**孤儿行清理**：完整且根可用的非提示轮次会清掉「索引有、manifest 无、本轮也枚举不到」的行（旧链路时代或不完整观测留下的行） |
-| `CodeSourceUpdatePlanner.cs` | **D3 更新计划**（2026-10-02）：变更集 → 执行计划（Extract → RebindOnly → Delete → RetryLater，组内按路径排序）。**反向依赖扩展只沿已知符号变化走**（没有 `CodeFileSemanticChange` 就一次图都不查）；依赖方以 `RebindOnly`/深度 1 入计划并沿用触发它的消费者；本来要提取/删除/退避的依赖方不被降级；退避中的路径不参与扩展也不重复入队；扩展有界并显式 `Truncated`；`RefreshFingerprintOnly` 不进计划 |
+| 文件 | 用途 | 关键符号 | 关联 | 约束 |
+|------|------|------|------|------|
+| `IndexChange.cs` | 单条文件系统变更观测 | `IndexChange` / `IndexChangeKind` | — | — |
+| `CodeIndexChangeQueue.cs` | 有界变更队列 | `CodeIndexChangeQueue` / `TryPublish` | — | 队列满时 `TryPublish` 必须立即返回，不得阻塞写入方 |
+| `CodeIndexScopeState.cs` | 范围脏位与版本的内存态 | `CodeIndexScopeState` | — | 不含 IO；置位后须由维护循环消费才可清除 |
+| `CodeIndexWatcher.cs` | 文件系统监视器 | `CodeIndexWatcher` | — | 回调只做过滤与投递，不在回调里做 IO 或索引 |
+| `CodeIndexChangeCoalescer.cs` | 变更防抖折叠 | `CodeIndexChangeCoalescer` | — | 静默 500ms / 最长 2s 到点即产出；路径数超阈值退化为整 scope reconcile |
+| `CodeIndexChangeBatch.cs` | 折叠后的变更批次 | `CodeIndexChangeBatch` | — | — |
+| `CodeIndexChangeWatchers.cs` | 变更源抽象与 watcher 适配工厂 | `ICodeIndexChangeWatcher` / `ICodeIndexWatcherFactory` | — | — |
+| `CodeIndexMaintenanceService.cs` | 变更驱动索引的维护循环 | `CodeIndexMaintenanceService` | `CodeSourceMaintenanceCoordinator.cs` | 按文件施用，只有 reconcile、目录变更或索引器拒绝才升级 scope 级；施用失败必须置 `NeedsReconcile` 并记日志；校准未到期不发起 |
+| `CodeIndexCalibrationService.cs` | 校准（mark-and-sweep） | `CodeIndexCalibrationService` / `ListFilesAsync` / `RemoveFilesAsync` | — | 根缺失或不可读必须拒绝 sweep（零移除并保持置位）；每事务 ≤256 条、每轮 ≤4096 条 |
+| `CodeSourceChangeDetector.cs` | 变更判定纯逻辑 | `CodeSourceChangeDetector` / `CodeSourceChangeSet` | `CodeSourceManifestContracts.cs` | 不读文件、不访问数据库、不看时钟；hash 与实际 stat 不一致必须 Deferred；删除只能由完整且根可用的扫描得出 |
+| `CodeSourceMaintenanceLedger.cs` | 待办账本（纯内存） | `CodeSourceMaintenanceLedger` | `SqliteCodeIndexStore.SourceMaintenance.cs` | 水位只在「捕获版本即当前期望 + 扫描完整 + 无未解决路径 + 无待重试」时前进且永不回退；旧世代提交返回 `StaleEpoch` |
+| `FileSystemCodeSourceScanner.cs` | 默认磁盘枚举（只读元数据） | `FileSystemCodeSourceScanner` / `ICodeSourceScanner` | `CodeSourceScanningContracts.cs` | 子树读不到或触条目上限只置 `Complete=false` 加原因，绝不假装那里没有文件；不读正文、不写任何东西 |
+| `CodeSourceScanService.cs` | 完整清单校准 | `CodeSourceScanService` | — | 不读正文不算 hash、不写索引、不推进扫描水位（水位只由执行层回报 `CompleteCommit` 时前进） |
+| `LanguageCodeSourceConsumerInputProvider.cs` | 消费者输入指纹生产者 | `LanguageCodeSourceConsumerInputProvider` | — | 语义输入指纹只取 scope 根那一层工程/配置文件，源码正文不算；无工程文件时返回确定性标记 |
+| `WorkspaceCodeSourceIgnoreRules.cs` | 忽略规则适配 | `WorkspaceCodeSourceIgnoreRules` | `Source/PuddingPathFiltering/code_map.md` | 名字级噪声必须相对仓库根判定；用绝对路径会把工作区祖先目录名当噪声而排除整棵工作区（索引悄悄变空） |
+| `ICodeSourcePathProbe.cs` | 按路径观测端口 | `ICodeSourcePathProbe` | `FileSystemCodeSourceScanner.cs` | 结果必然 `Complete=false`，永远不能据此删除 |
+| `CodeSourceFingerprintReader.cs` | 稳定读（读前读后 stat 一致才认） | `CodeSourceFingerprintReader` | — | 读前后 stat 不一致或长度不符必须判不稳定并弃用该轮结果；默认单文件上限 64MB |
+| `CodeIndexMaintenanceScopeStatus`（`Contracts/ICodeIndexMaintenance.cs`） | 维护状态的只读视图 | `CodeIndexMaintenanceScopeStatus` | `Contracts/ICodeIndexMaintenance.cs` | — |
+| `CodeSourceMaintenanceMode.cs` | 源维护驱动开关 | `CodeSourceMaintenanceMode` / `CodeIndexMaintenanceOptions` | — | 默认 `Legacy`，切换是行为变化必须显式打开；打开但零件未装配齐必须告警并退回 `Legacy` |
+| `CodeSourceMaintenanceCoordinator.cs` | 源维护链协调器 | `CodeSourceMaintenanceCoordinator` | — | 处理过的路径一律清退避；失败路径写入持久待办且水位不前进（不得出现只在索引或只在待办的静默丢失）；提交前复核 stat |
+| `CodeSourceUpdatePlanner.cs` | 更新计划生成 | `CodeSourceUpdatePlanner` | `CodeSourceUpdateContracts.cs` | 反向依赖扩展只沿已知符号变化走，无变化则一次图都不查；退避中的路径不参与扩展；扩展有界并显式 `Truncated` |
 
 ## 服务（Services/ → `PuddingCodeIndex.Services`）
 

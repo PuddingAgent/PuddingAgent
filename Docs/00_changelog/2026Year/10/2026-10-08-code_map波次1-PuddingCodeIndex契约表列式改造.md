@@ -4,7 +4,7 @@ author: hyfree
 date: 2026-10-08
 last_reviewed: 2026-10-08
 status: archived
-description: "把 Source/PuddingCodeIndex/code_map.md 的「契约」表从 2 列（文件/用途）改造成规范 v2 的 5 列 schema：用途压回一条职责命题（≤80 字符），把此前塞在用途里的演进叙事剥离出去，把不可从代码推断且删掉会导致误改的约束移入独立「约束」列；关键符号/关联两列按规范化身份填写。检查器 error 50 → 35、用途列中位数 86 → 30 字符。"
+description: "把 Source/PuddingCodeIndex/code_map.md 的「契约」表从 2 列（文件/用途）改造成规范 v2 的 5 列 schema：用途压回一条职责命题（≤80 字符），把此前塞在用途里的演进叙事剥离出去，把不可从代码推断且删掉会导致误改的约束移入独立「约束」列；关键符号/关联两列按规范化身份填写。检查器 error 50 → 35 → 12、用途列中位数 86 → 30 → 10.5 字符（波次 1/2）。"
 categories: [docs, code-map, condensation]
 tags: [code-map, spec-v2, schema, condensation]
 related_docs: [Docs/10_conventions/code-map-规范-v2.md, Docs/00_changelog/2026Year/10/2026-10-07-code_map规范v2与自检.md]
@@ -51,7 +51,25 @@ draft: false
 
 > 注：写前断言**实际拦下一次违规**——首版有 5 个「关键符号」格 >100 字符、最长行 305 >300，脚本 fail-closed 未写盘，按上限收敛后才落盘。
 
-## 遗留（波次 2+）
+## 波次 2（同一文件，「变更捕获管线」表 21 行）
 
-1. 该文件另外 3 张表仍是 2 列（`变更捕获管线` 等），`error` 余量 35 全在这里；另有两行（L59/L60）是 CRLF、其余为 LF，属历史混用。
-2. 缺 §5 头部源指纹：检查器已给出可核实的实测值（scope `Source/PuddingCodeIndex/code_map.md`，`file_count=86`，`digest=9dbf49ed441c`，`value=86-9dbf49ed441c`）；写入前需先从 `Tools/Docs/code_map_check.py` 读出**声明的确切语法**，避免把 warn 从 `missing-fingerprint` 换成 `stale-fingerprint`。
+同一处置：`| 文件 | 用途 |` → 5 列；用途逐行压成一条命题（如「变更驱动索引的维护循环」），把 U3-B1/U3-C/U3-D/U3-E 与 D2/D3/D4 标记、日期、长段推演移出索引（规范 §6：历史属 changelog）；真正「不可从代码推断 且 删掉会导致误改」的内容进「约束」（如「水位只在捕获版本即当前期望、扫描完整、无未解决路径且无待重试时前进且永不回退」「名字级噪声必须相对仓库根判定，否则整棵工作区被排除」）。
+
+| 指标 | 改前（波次 1 后） | 改后（波次 2 后） |
+|---|---|---|
+error | 35 | **12** |
+warn | 14 | **5** |
+line-too-long | 13 | **6** |
+field-too-long | 22 | **6** |
+anti-pattern | 13（清单型 F=7 / 路线图=4 / 演进叙事=2） | **4（清单型 F=1 / 路线图=3）** |
+用途列（F） | median 30 / max 1129 | **median 10.5 / max 467** |
+关键符号·关联·约束 | n=24 | **n=45**（A median 37，S median 32 / max 87） |
+字节 | 24451 | 18073 |
+行数 / 表数 / 条目行 | 106 / 4 / 58 | **106 / 4 / 58（结构不变）** |
+
+写入同为脚本精确块替换 + **写前断言**（首个数据行锚点唯一、表头与其所属章节标题双向校验、旧行数=新行数=21、块内 21 个文件名 token 零丢失、每格不超该列硬上限、最长行 ≤300），写后 `readback_match=True`。顺带把该表内两行历史 CRLF（L59/L60）统一为 LF ⇒ 该文件 EOL 由混用变为**纯 LF**（`cr_after=0`）。
+
+## 遗留（波次 3+）
+
+1. 余量 `error 12` 全在最后两张表（`服务（Services/）` 与末表），同为 2 列，需同样的列式改造。
+2. 缺 §5 头部源指纹。检查器语法已查清：段匹配 `源指纹\s*[:：]`，对匹配 `<glob>=<value>`，value 形如 `[0-9a-fA-F][0-9a-fA-F\-]{5,79}`；glob 以**该 code_map 所在目录**为 base（`glob_fingerprint(root, pattern, base_dir=scope)`）。实测值：`file_count=86` · `digest=9dbf49ed441c` · `value=86-9dbf49ed441c`。波次 3 一并补，并复核 `stale-fingerprint` 为 0。
