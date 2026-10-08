@@ -330,6 +330,52 @@ public sealed class LlmRequestBudgetGuardTests
         MaxContextTokens = limit + 1_000 + LlmRequestBudgetGuard.DefaultSafetyBufferTokens,
     };
 
+    /// <summary>
+    /// 分类回放：2026-10-07 事故两条样本（只保留整数，无会话内容）。
+    /// <para>
+    /// 事实来源：`D:\data\logs\system\pudding-20261007_023.log`
+    /// 行 1547 / 2781 的 `[AgentExec:Compaction] … estimated=583691->326392 / …->430576`
+    /// （即 `plan.InitialUsedTokens`），上限取同日志 21 处的 `inputLimit=605760`。
+    /// </para>
+    /// <para>
+    /// 结论：**只有第一条**（583,691）判软可延期；第二条（625,824）判硬，仍须同步保护——
+    /// 不得把两条都当成「省掉前置压缩」。更正记录见
+    /// `Docs/00_changelog/2026Year/10/2026-10-08-软压缩移出主请求关键路径与压缩生命周期归因.md`「更正（2026-10-08）」。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    [DataRow(583_691, false, DisplayName = "事故第一条 583,691 < 605,760 ⇒ 软（延期）")]
+    [DataRow(625_824, true, DisplayName = "事故第二条 625,824 > 605,760 ⇒ 硬（同步保护）")]
+    public void WarmPrefixPlan_ReplaysRecordedIncidentSamples(int initialUsedTokens, bool expectedHard)
+    {
+        const int recordedEffectiveInputLimit = 605_760;
+        const int recordedSoftTrigger = 484_608; // 0.80 × 605,760：旧软触发阈值
+
+        var replayed = BuildRecordedSamplePlan() with
+        {
+            InitialUsedTokens = initialUsedTokens,
+            EffectiveInputLimit = recordedEffectiveInputLimit,
+        };
+
+        Assert.AreEqual(expectedHard, replayed.RequiresSynchronousProtection);
+        Assert.AreEqual(
+            recordedEffectiveInputLimit - initialUsedTokens,
+            replayed.HardHeadroomTokens);
+        // 两条样本都越过了旧软触发阈值 ⇒ 旧路径下都会同步压缩（这正是被修复的等待来源）。
+        Assert.IsGreaterThanOrEqualTo(recordedSoftTrigger, initialUsedTokens);
+    }
+
+    /// <summary>回放用的判据载体：字段会被 <c>with</c> 覆盖，只需是一个真实构造出来的 plan。</summary>
+    private static WarmPrefixCompactionPlan BuildRecordedSamplePlan()
+    {
+        var history = BuildHistory(pairs: 40);
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(
+            new ContextUsageSnapshotStore(), "session-replay", history, history, tools: null, BuildConfig(),
+            triggerRatio: 0.65, targetRatio: 0.5, out var plan));
+        Assert.IsNotNull(plan);
+        return plan!;
+    }
+
     [TestMethod]
     public void FrozenSystemPrompt_MaintainsSameEpochBytes_AndPreservesHydratedCheckpoint()
     {
