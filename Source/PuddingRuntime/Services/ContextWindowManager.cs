@@ -509,11 +509,43 @@ public sealed class ContextWindowManager
                 registrations.Add((message, entity.MessageId));
         }
 
-        // 登记「内存消息对象 → 持久 MessageId」，供 F2 的覆盖标注精确到行（引用相等，见字段注释）。
-        PublishDurableMessageIds(sessionId, registrations);
+        // 归一化（SanitizeForLlmContext → LlmMessageSequenceNormalizer）可能**复制/重排/丢弃**消息对象，
+        // 于是上面按引用登记的实例就不再是真正进入历史的那批对象（流式水合实测就是这样退化成
+        // `unresolved_durable_identities:29`，F2 落库被迫降级）。因此归一化之后还要**按内容把身份
+        // 重新绑回**归一化产物：
+        //   - 只有 (role, content) 在源集合里**唯一**时才敢绑定（重复内容会绑错行，错标=静默隐藏真实消息）；
+        //   - 绑不上就保持「没有持久行」，由 F2 的提交边界拒绝落库（安全默认）。
+        var sanitized = SanitizeForLlmContext(messages);
+        var uniqueByKey = new Dictionary<string, string>(StringComparer.Ordinal);
+        var ambiguousKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (message, messageId) in registrations)
+        {
+            var key = DurableIdentityKey(message);
+            if (!uniqueByKey.TryAdd(key, messageId))
+                ambiguousKeys.Add(key);
+        }
 
-        return new(SanitizeForLlmContext(messages), lastCreatedAt);
+        var rebound = new List<(ChatMessage Message, string MessageId)>(sanitized.Count);
+        foreach (var message in sanitized)
+        {
+            var key = DurableIdentityKey(message);
+            if (ambiguousKeys.Contains(key))
+                continue;
+            if (uniqueByKey.TryGetValue(key, out var messageId))
+                rebound.Add((message, messageId));
+        }
+
+        // 登记「内存消息对象 → 持久 MessageId」，供 F2 的覆盖标注精确到行（引用相等，见字段注释）。
+        PublishDurableMessageIds(sessionId, rebound);
+
+        return new(sanitized, lastCreatedAt);
     }
+
+    /// <summary>
+    /// 持久身份重绑用的键：角色 + 正文（内容相同且角色相同的多条消息视为**不可分辨**，宁可不绑）。
+    /// </summary>
+    private static string DurableIdentityKey(ChatMessage message)
+        => $"{message.Role}\u001f{message.Content ?? string.Empty}";
 
     /// <summary>
     /// SSE 路径优先按数据库重建上下文；失败时保持现有内存历史不变。

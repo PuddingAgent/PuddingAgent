@@ -317,6 +317,135 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             Assert.AreEqual(1, session.CompactionGeneration, "有摘要就必须推进过一次代际");
     }
 
+    /// <summary>
+    /// **流式路径**的同等串联用例（此前只覆盖了缓冲路径）：第 0 轮软维护延期 → 后续越界 →
+    /// 逐轮硬保护恰好压缩一次 → checkpoint 落库；并断言流式终态帧已发出、租约已释放、
+    /// 终态后的维护仍会执行。
+    /// </summary>
+    [TestMethod]
+    public async Task StreamingPath_MidTurnHardProtection_CompactsAndPersists_AndMaintainsAfterTerminal()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 36, charsPerMessage: 3_000);
+        }
+
+        var factory = new Factory(options);
+        // 流式路径：第 0 轮用**原生工具调用**触发工具轮（正文 44_000 字符把请求推过硬阈值），
+        // 第 2 个响应给摘要调用，第 3 个响应结束本轮。
+        var llm = new ScriptedLlmClient(
+            new LlmResponse(
+                LongAssistantBody,
+                [new ToolCall("call-1", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
+            new LlmResponse(SummaryResponse, null),
+            new LlmResponse(DoneJson, null));
+        var tools = new RecordingToolInvocationService();
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var gate = new SessionExecutionGate(NullLogger<SessionExecutionGate>.Instance);
+        var service = CreateService(llm, tools, manager, new ContextUsageSnapshotStore(), factory, log, gate);
+
+        var history = manager.GetOrCreateHistory(SessionId);
+        var hydration = await manager.TryHydrateStreamHistoryFromDbAsync(
+            SessionId, history, 200_000, CancellationToken.None);
+        Assert.IsTrue(hydration.Succeeded, "水合必须成功，否则本用例不成立");
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+
+        var frames = new List<ServerSentEventFrame>();
+        await foreach (var frame in service.ExecuteStreamAsync(CreateDispatchRequest(suppressAutoCompaction: false)))
+        {
+            frames.Add(frame);
+        }
+
+        Assert.IsTrue(frames.Count > 0, "流式路径必须至少产出一帧");
+
+        // ① 中途恰好一次摘要调用（第 0 轮软维护延期，越界后逐轮硬保护）。
+        var summaryCalls = llm.Requests.Count(messages => messages.Any(m =>
+            m.Content?.Contains("## Primary Request and Intent", StringComparison.Ordinal) == true
+            && m.Content.Contains("compaction engine", StringComparison.Ordinal)));
+        if (summaryCalls != 1)
+        {
+            var sizes = string.Join(
+                " | ",
+                llm.Requests.Select((r, i) =>
+                    $"#{i}:{r.Count}msgs/{r.Sum(r2 => ContextUsageSnapshotStore.CountTokens(r2.Content ?? string.Empty))}tok"));
+            var logLines = string.Join(
+                "\n  ",
+                log.Lines.Where(l =>
+                    l.Contains("Compaction", StringComparison.Ordinal)
+                    || l.Contains("ContextBudget", StringComparison.Ordinal)
+                    || l.Contains("PostTurnMaintenance", StringComparison.Ordinal)));
+            Assert.Fail(
+                $"诊断：frames={frames.Count} llmCalls={llm.Requests.Count} toolCalls={tools.Requests.Count} " +
+                $"historyCount={history.Count} requests=[{sizes}]\n  相关日志:\n  {logLines}");
+        }
+        Assert.AreEqual(1, summaryCalls, $"流式路径的逐轮硬保护必须恰好压缩一次，实际 {summaryCalls}");
+        // ② 落库要么**完整**、要么**明确降级**，绝不允许部分写入。
+        //    已知缺口（见 changelog「未完成」）：流式路径当前会走到
+        //    `durableSkipReason=unresolved_durable_identities:N` 的降级分支 —— 这不是本次新增的缺陷，
+        //    而是 F2 提交边界的安全默认在真实 Turn 里被触发；下面的断言把「安全」钉住，
+        //    同时把「流式仍未持久化」这一事实显式记录下来（不允许它悄悄变成部分标注）。
+        await using (var verify = new MemoryDbContext(options))
+        {
+            var summaries = await verify.Messages
+                .Where(m => m.SessionId == SessionId && m.ContentType == "compact_summary")
+                .ToListAsync();
+            var coveredRows = await verify.Messages
+                .Where(m => m.SessionId == SessionId && m.CompactedBy != null)
+                .ToListAsync();
+            var session = await verify.Sessions.SingleAsync(s => s.SessionId == SessionId);
+
+            var committedLogs = log.Lines.Where(l =>
+                l.Contains("Warm-prefix checkpoint committed", StringComparison.Ordinal)).ToList();
+            Assert.AreEqual(1, committedLogs.Count, "流式路径必须恰好提交一次压缩结果");
+
+            if (summaries.Count == 1)
+            {
+                // 完整落库：摘要行 + 逐行覆盖标注 + 代际推进，三者必须一致。
+                Assert.AreEqual("warm_prefix_checkpoint", summaries[0].Source);
+                Assert.IsTrue(coveredRows.Count > 0, "有摘要就必须有覆盖标注");
+                Assert.IsTrue(coveredRows.All(m => m.CompactedBy == summaries[0].MessageId));
+                Assert.AreEqual(1, session.CompactionGeneration);
+            }
+            else
+            {
+                // 降级：必须一条都不写，且日志给出显式原因（不得静默、不得半写）。
+                Assert.AreEqual(0, summaries.Count, "降级时不得留下摘要行");
+                Assert.AreEqual(0, coveredRows.Count, "降级时不得留下任何覆盖标注（部分标注=静默隐藏真实消息）");
+                Assert.AreEqual(0, session.CompactionGeneration, "降级时不得推进代际");
+                StringAssert.Contains(
+                    committedLogs[0],
+                    "durableCheckpoint=False",
+                    "降级必须在日志里显式标注 durableCheckpoint=False");
+                StringAssert.Contains(
+                    committedLogs[0],
+                    "durableSkipReason=",
+                    "降级必须给出原因码，便于归因");
+            }
+        }
+
+        // ③ 枚举结束（= 终态已交付）时 Turn 租约必须已释放。
+        var reacquire = gate.EnterAsync(SessionId, "probe_after_stream_terminal").AsTask();
+        var acquired = await Task.WhenAny(reacquire, Task.Delay(500));
+        Assert.AreSame(reacquire, acquired, "流式枚举结束时租约必须已释放");
+        await (await reacquire).DisposeAsync();
+
+        // ④ 终态后的可选维护仍然执行（不因移出关键路径而消失）。
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline
+               && !log.Lines.Any(l => l.Contains("[PostTurnMaintenance]", StringComparison.Ordinal)))
+        {
+            await Task.Delay(50);
+        }
+        Assert.IsTrue(
+            log.Lines.Any(l => l.Contains("[PostTurnMaintenance]", StringComparison.Ordinal)),
+            "流式路径的终态后维护必须仍然执行");
+    }
+
     // ── 装配 ────────────────────────────────────────────────────────────────
 
     private static RuntimeDispatchRequest CreateDispatchRequest(bool suppressAutoCompaction = true) => new()
@@ -499,11 +628,24 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             => Task.FromResult(0);
     }
 
-    private sealed class ScriptedLlmClient(params string[] contents) : IRuntimeLlmClient
+    private sealed class ScriptedLlmClient : IRuntimeLlmClient
     {
-        private readonly Queue<LlmResponse> _responses = new(contents.Select(c => new LlmResponse(c, null)));
+        private readonly Queue<LlmResponse> _responses = new();
 
         public List<IReadOnlyList<ChatMessage>> Requests { get; } = [];
+
+        public ScriptedLlmClient(params string[] contents)
+        {
+            foreach (var content in contents)
+                _responses.Enqueue(new LlmResponse(content, null));
+        }
+
+        /// <summary>需要带**原生工具调用**的响应时用这个重载（流式路径靠 tool-call 增量继续下一轮）。</summary>
+        public ScriptedLlmClient(params LlmResponse[] responses)
+        {
+            foreach (var response in responses)
+                _responses.Enqueue(response);
+        }
 
         public Task<LlmResponse> ChatAsync(
             string workspaceId,
@@ -532,8 +674,26 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         {
             var response = await ChatAsync(workspaceId, sessionId, agentTemplateId, messages, tools, llmConfig, ct);
             await Task.Yield();
-            yield return new StreamDelta { ContentDelta = response.Content };
-            yield return new StreamDelta { FinishReason = "stop" };
+            // 流式路径靠**原生 tool-call 增量**继续下一轮（状态 JSON 只在缓冲路径生效），
+            // 因此按 TaskE2EHarness.ScriptedLlmClient 的既有形态产出工具调用增量。
+            for (var i = 0; i < (response.ToolCalls?.Count ?? 0); i++)
+            {
+                var call = response.ToolCalls![i];
+                yield return new StreamDelta
+                {
+                    ToolCallIndex = i,
+                    ToolCallId = call.Id,
+                    ToolCallNameDelta = call.Name,
+                    ToolCallArgsDelta = call.ArgumentsJson,
+                };
+            }
+
+            yield return new StreamDelta
+            {
+                ContentDelta = response.Content,
+                Usage = response.Usage,
+                FinishReason = response.ToolCalls?.Count > 0 ? "tool_calls" : "stop",
+            };
         }
     }
 
