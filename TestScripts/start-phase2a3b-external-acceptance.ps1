@@ -1,4 +1,4 @@
-# Phase 2A-3B External Acceptance Controller
+﻿# Phase 2A-3B External Acceptance Controller
 # ============================================
 # Purpose: Prepare and observe a standalone PuddingDesktop instance with
 # TestSite, verify process lifecycle, write sanitized shutdown evidence.
