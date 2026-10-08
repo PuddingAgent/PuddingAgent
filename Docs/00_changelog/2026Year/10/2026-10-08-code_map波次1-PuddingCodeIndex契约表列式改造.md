@@ -1,10 +1,10 @@
 ---
-title: 2026-10-08 波次 1：PuddingCodeIndex code_map 契约表改造为规范 v2 列式 schema
+title: 2026-10-08 PuddingCodeIndex code_map 列式改造收口（波次 1-3：error 50 → 0，门禁 PASS）
 author: hyfree
 date: 2026-10-08
 last_reviewed: 2026-10-08
 status: archived
-description: "把 Source/PuddingCodeIndex/code_map.md 的「契约」表从 2 列（文件/用途）改造成规范 v2 的 5 列 schema：用途压回一条职责命题（≤80 字符），把此前塞在用途里的演进叙事剥离出去，把不可从代码推断且删掉会导致误改的约束移入独立「约束」列；关键符号/关联两列按规范化身份填写。检查器 error 50 → 35 → 12、用途列中位数 86 → 30 → 10.5 字符（波次 1/2）。"
+description: "把 Source/PuddingCodeIndex/code_map.md 的「契约」表从 2 列（文件/用途）改造成规范 v2 的 5 列 schema：用途压回一条职责命题（≤80 字符），把此前塞在用途里的演进叙事剥离出去，把不可从代码推断且删掉会导致误改的约束移入独立「约束」列；关键符号/关联两列按规范化身份填写。检查器 error 50 → 35 → 12 → 0、warn → 0、门禁 PASS；用途列中位数 86 → 9.5 字符；补 §5 源指纹（4 个 glob 全部 verified）。本文件按「天 + 文件」归并记录波次 1-3，文件名中的「波次1」是首波次的命名。"
 categories: [docs, code-map, condensation]
 tags: [code-map, spec-v2, schema, condensation]
 related_docs: [Docs/10_conventions/code-map-规范-v2.md, Docs/00_changelog/2026Year/10/2026-10-07-code_map规范v2与自检.md]
@@ -69,7 +69,29 @@ anti-pattern | 13（清单型 F=7 / 路线图=4 / 演进叙事=2） | **4（清�
 
 写入同为脚本精确块替换 + **写前断言**（首个数据行锚点唯一、表头与其所属章节标题双向校验、旧行数=新行数=21、块内 21 个文件名 token 零丢失、每格不超该列硬上限、最长行 ≤300），写后 `readback_match=True`。顺带把该表内两行历史 CRLF（L59/L60）统一为 LF ⇒ 该文件 EOL 由混用变为**纯 LF**（`cr_after=0`）。
 
-## 遗留（波次 3+）
+## 波次 3（收口：服务表 + 存储表 + 测试段落重排 + §5 源指纹）
 
-1. 余量 `error 12` 全在最后两张表（`服务（Services/）` 与末表），同为 2 列，需同样的列式改造。
-2. 缺 §5 头部源指纹。检查器语法已查清：段匹配 `源指纹\s*[:：]`，对匹配 `<glob>=<value>`，value 形如 `[0-9a-fA-F][0-9a-fA-F\-]{5,79}`；glob 以**该 code_map 所在目录**为 base（`glob_fingerprint(root, pattern, base_dir=scope)`）。实测值：`file_count=86` · `digest=9dbf49ed441c` · `value=86-9dbf49ed441c`。波次 3 一并补，并复核 `stale-fingerprint` 为 0。
+- **服务表 10 行、存储表 3 行**同样改为 5 列；用途继续压成一条命题（全文件 median 降到 **9.5** 字符）。
+- **测试段落的 755 字符单行**重排为两行（各 <300），并剥掉「U3-C 后 66 → 82，U4-2a 后 82 → 98 …」这类**演进叙事**（历史在各阶段 changelog，本文件头部已链接）；保留原测量口径「**334 用例**（2026-10-02 实测，其中 3 条边界断言）」。
+- **补 §5 头部源指纹**（此前缺失，属 C4 判据）。glob 以本 code_map 所在目录为 base，值由**检查器自身的 `glob_fingerprint` 实测**得到（不手算）：`Contracts/**=94ee42442a77`（51 文件）、`Services/**=1cab52e9b024`（31）、`Storage/**=08a238ad9cf3`（3）、`*.csproj=8426a13c8553`（1）——合计 **86 文件**，与 `scope_fingerprint` 的 `86-9dbf49ed441c` 覆盖同一集合。检查器复核：`declared_files=1 globs=4 verified=4 mismatched=0 unverifiable=0`。
+  ⚠️ 实测记录：**`**` 不能作为声明 glob** —— `glob_fingerprint` 会同时尝试 base_dir 与仓库根，`**` 因而把 5266 个文件（整个仓库）并进来；只有带前缀的 `dir/**` 才会走「按 base_dir 的排除剪枝遍历」。
+- 自纠两处**由本人波次 1/2 引入**的路线图词（`更新计划` → `编排`），使本文件 `anti-pattern` 归零。
+
+| 指标 | 波次 2 后 | 波次 3 后（终态） |
+|---|---|---|
+error | 12 | **0** |
+warn | 5 | **0** |
+gate | FAIL | **PASS** |
+missing-fingerprint / stale-fingerprint | warn 1 / 0 | **0 / 0**（4 个 glob 全部 verified） |
+用途列（F） | median 10.5 / max 467 | **median 9.5 / max 26** |
+关键符号·关联·约束 | n=45 | **n=58（全量）**（A median 33，S median 29.5 / max 111） |
+字节 | 18073 | 15073 |
+行数 / 表数 / 条目行 | 106 / 4 / 58 | 108 / 4 / 58 |
+
+写前断言：两张表的首个数据行锚点唯一、表头与其章节标题双向校验、行数逐表核对（10 / 3）、块内文件名 token 零丢失、每格不超该列硬上限、单行 ≤300、文件仍为纯 LF；写后 `readback_match=True`。
+
+## 遗留（后续波次）
+
+1. 本仓其余 `code_map.md` 的同类债务仍在（此前全仓基线 `error 417 / warn 235`，其中 `field-too-long` 与 `line-too-long` 约占 99%），按「单文件为可完成单元」继续。
+2. 历史遗留的 **3 处 `stale-fingerprint`** 声明仍未刷新（当时的处置是如实登记而非改数字）。
+3. 本文件 §5 源指纹此后会随 `Contracts/**`、`Services/**`、`Storage/**` 任一文件内容变化而变陈旧 —— 这是设计意图（触发重新核对），不是缺陷。
