@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -886,7 +886,8 @@ public sealed class BrowserWorkspaceController :
             MaxDepth = args.MaxDepth,
             // 作用域（§151）：过线的 ref 交给驱动决定从哪个节点开始遍历；
             // 过期引用由驱动明确拒绝（stale_element_reference），不退化成正页快照。
-            ScopeRef = args.ScopeRef
+            ScopeRef = args.ScopeRef,
+            IncludeContentBlocks = args.IncludeContentBlocks
         }, ct);
 
         // 修订与行级差异（§145）：判定只有一份（DesktopService 的解析器），基线在本进程内，
@@ -931,6 +932,7 @@ public sealed class BrowserWorkspaceController :
             PageVersion = page.PageVersion,
             Revision = reading.Revision,
             Changed = reading.Changed,
+            ContentBlocks = snapshot.ContentBlocks,
             Diff = reading.Diff is { } diff
                 ? new BrowserTextDiffDescriptor
                 {

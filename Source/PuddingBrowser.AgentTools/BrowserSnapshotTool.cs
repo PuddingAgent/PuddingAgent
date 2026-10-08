@@ -91,15 +91,6 @@ public sealed class BrowserSnapshotTool(
                 "snapshot mode must be one of outline, interactive, text, or full");
         }
 
-        if (mode == BrowserReadingMode.Text)
-        {
-            // 正文 markdown 需要驱动侧正文提取（设计方案 §6.1）；工具层不做伪造，
-            // 也**不**静默降级成 full —— 那会让调用方以为拿到了正文。
-            return BrowserToolResponse.Failure(
-                "browser_operation_not_supported",
-                "snapshot mode 'text' (article markdown) is not implemented yet; use outline/interactive for actionable nodes or full for troubleshooting");
-        }
-
         if (mode == BrowserReadingMode.Full
             && (args.MaxNodes is < 1 or > 10_000 || args.MaxTextLength is < 256 or > 500_000
                 || args.MaxDepth is < 1 or > 64))
@@ -223,6 +214,37 @@ public sealed class BrowserSnapshotTool(
                     snapshot.Value.Truncated ? ["snapshot_truncated"] : null);
             }
 
+            // 正文 markdown（§6.1 mode=text）：驱动只给**语义块**，组装在这里做——
+            // 结构、预算与分页都是纯函数，因此可被完整验证（ArticleMarkdownTests）。
+            if (mode == BrowserReadingMode.Text)
+            {
+                var article = ArticleMarkdown.Compose(
+                    snapshot.Value.ContentBlocks,
+                    args.MaxBytes ?? ArticleMarkdown.DefaultMaxBytes,
+                    args.Cursor ?? 0);
+
+                return BrowserToolResponse.Success(
+                    new BrowserSnapshotToolValue
+                    {
+                        Mode = BrowserReadingFormatWire.NameOf(mode),
+                        Representation = "markdown",
+                        Content = article.Text,
+                        Truncated = article.Truncated,
+                        TruncationReason = BrowserReadingFormatWire.TruncationNameOf(article.Truncation),
+                        NextCursor = article.NextCursor,
+                        ReturnedLines = article.ReturnedLines,
+                        Bytes = article.Bytes,
+                        NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
+                        Revision = snapshot.Value.Revision,
+                        Changed = snapshot.Value.Changed,
+                        Diff = BrowserDiffToolValue.From(snapshot.Value.Diff)
+                    },
+                    new BrowserContextId(contextId),
+                    new PageId(args.PageId.Trim()),
+                    snapshot.Value.PageVersion.IsKnown ? snapshot.Value.PageVersion.Value : null,
+                    BuildArticleWarnings(article));
+            }
+
             // outline / interactive：把驱动给的无障碍树按模式过滤并按输出预算收敛。
             // 扫描预算与输出预算分开：扫描被截断时报 incomplete_scan（可能缺整片区域），
             // 只是输出收敛时报 output_budget（可用 nextCursor 续读）。
@@ -271,7 +293,7 @@ public sealed class BrowserSnapshotTool(
         request = null;
         error = null;
 
-        if (mode == BrowserReadingMode.Full)
+        if (mode is BrowserReadingMode.Full or BrowserReadingMode.Text)
         {
             return true;
         }
@@ -324,6 +346,22 @@ public sealed class BrowserSnapshotTool(
                 maxDepth: args.MaxDepth,
                 scopeRef: scopeRef,
                 sinceRevision: sinceRevision)
+            : mode == BrowserReadingMode.Text
+                // 正文模式只要**语义块**（DOM/无障碍树都不抓：那才是体积大头），
+                // markdown 由 ArticleMarkdown 在本地组装。
+                ? new DesktopSnapshotOptions(
+                    includeDom: false,
+                    includeAccessibilityTree: false,
+                    includeHtml: false,
+                    maxNodes: BrowserReadingFormat.ScanMaxNodes,
+                    maxTextLength: BrowserReadingFormat.ScanMaxTextLength,
+                    includeHidden: args.IncludeHidden,
+                    includeIframes: args.IncludeIframes,
+                    includeShadowDom: args.IncludeShadowDom,
+                    maxDepth: BrowserReadingFormat.ScanMaxDepth,
+                    scopeRef: scopeRef,
+                    sinceRevision: sinceRevision,
+                    includeContentBlocks: true)
             : new DesktopSnapshotOptions(
                 includeDom: false,
                 includeAccessibilityTree: true,
@@ -336,6 +374,23 @@ public sealed class BrowserSnapshotTool(
                 maxDepth: BrowserReadingFormat.ScanMaxDepth,
                 scopeRef: scopeRef,
                 sinceRevision: sinceRevision);
+
+    /// <summary>正文读取的告警：丢弃块与截断都要看得见。</summary>
+    private static IReadOnlyList<string>? BuildArticleWarnings(BrowserReadingResult article)
+    {
+        var warnings = new List<string>();
+        if (article.SkippedBlocks > 0)
+        {
+            warnings.Add($"snapshot_blocks_skipped:{article.SkippedBlocks}");
+        }
+
+        if (article.Truncation == BrowserReadingTruncation.OutputBudget)
+        {
+            warnings.Add("snapshot_output_budget");
+        }
+
+        return warnings.Count == 0 ? null : warnings;
+    }
 
     private static IReadOnlyList<string>? BuildWarnings(BrowserReadingResult composed) => composed.Truncation switch
     {

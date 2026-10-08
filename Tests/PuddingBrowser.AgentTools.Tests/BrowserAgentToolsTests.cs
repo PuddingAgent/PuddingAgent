@@ -409,23 +409,89 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
-    public async Task Snapshot_TextMode_IsExplicitlyUnsupported_NotASilentFallback()
+    public async Task Snapshot_TextMode_ComposesArticleMarkdown()
     {
-        // 正文 markdown 需要驱动侧提取；绝不能静默降级成 full（那会让调用方以为拿到了正文）。
+        // §6.1 mode=text：驱动只给语义块，markdown 由读取侧组装（结构/预算/分页是纯函数，另有专项测试）。
         var runtime = new FakeBrowserRuntime();
         var context = await runtime.CreateContextAsync(
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
-        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.ContentBlocks = string.Join('\n',
+            """{"k":"h1","t":"Title"}""",
+            """{"k":"p","t":"Body text"}""",
+            """{"k":"li","t":"Item"}""",
+            """{"k":"table","r":[["h1","h2"],["c1","c2"]]}""");
+        var surface = new FakeCapabilitySurface(runtime);
 
         var snapshot = await ExecuteAsync(
-            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
             JsonSerializer.Serialize(new { page_id = page.Id.Value, context_id = "ctx-1", mode = "text" }));
 
-        Assert.False(snapshot.Success);
-        using var document = JsonDocument.Parse(snapshot.Error!);
-        var error = document.RootElement.GetProperty("error");
-        Assert.Equal("browser_operation_not_supported", error.GetProperty("code").GetString());
-        Assert.Contains("not implemented", error.GetProperty("message").GetString()!, StringComparison.OrdinalIgnoreCase);
+        Assert.True(snapshot.Success);
+        var value = GetJson(snapshot.Output, "value");
+
+        Assert.Equal("text", value.GetProperty("mode").GetString());
+        Assert.Equal("markdown", value.GetProperty("representation").GetString());
+
+        var markdown = value.GetProperty("content").GetString()!;
+        Assert.Contains("# Title", markdown);
+        Assert.Contains("Body text", markdown);
+        Assert.Contains("- Item", markdown);
+        Assert.Contains("| h1 | h2 |", markdown);
+
+        // 正文模式**只抓语义块**：DOM/无障碍树是体积大头，不该为了一次正文读取全部抓下来。
+        var options = surface.LastSnapshotRequest!.Options;
+        Assert.True(options.IncludeContentBlocks);
+        Assert.False(options.IncludeDom);
+        Assert.False(options.IncludeAccessibilityTree);
+        Assert.False(options.IncludeHtml);
+    }
+
+    [Fact]
+    public async Task Snapshot_TextMode_PagesByByteBudgetAndReportsTheCursor()
+    {
+        // 超预算时分页落在**块边界**，游标可以续读（G6：超预算保持合法输出）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.ContentBlocks = string.Join('\n',
+            Enumerable.Range(1, 6).Select(index => $$"""{"k":"p","t":"paragraph-{{index}}-xxxxxxxx"}"""));
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var first = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                max_bytes = 80
+            }));
+
+        Assert.True(first.Success, first.Error);
+        var value = GetJson(first.Output, "value");
+        Assert.True(value.GetProperty("truncated").GetBoolean());
+        var cursor = value.GetProperty("nextCursor").GetInt32();
+
+        var second = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                max_bytes = 5_000,
+                cursor
+            }));
+
+        // 续读必须真的接上：两页拼起来覆盖全部 6 段，且每段只出现一次。
+        var combined = value.GetProperty("content").GetString() + "\n\n"
+            + GetJson(second.Output, "value").GetProperty("content").GetString();
+        for (var index = 1; index <= 6; index++)
+        {
+            Assert.Equal(1, combined!.Split($"paragraph-{index}-xxxxxxxx").Length - 1);
+        }
     }
 
     [Fact]
@@ -1722,6 +1788,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
             // 与真实传输同形：宿主编出的修订/变化/差异随结果回来（判定不在工具侧）。
             Revision = snapshot.Revision,
             Changed = snapshot.Changed,
+            ContentBlocks = snapshot.ContentBlocks,
             Diff = snapshot.Diff is { } diff
                 ? BrowserTextDiff.FromParts(
                     diff.Added, diff.Removed, diff.AddedCount, diff.RemovedCount, diff.Truncated)
@@ -2253,6 +2320,7 @@ internal sealed class FakeBrowserPage : IBrowserPage
             Truncated = SnapshotTruncated,
             Revision = SnapshotRevision,
             Changed = SnapshotChanged,
+            ContentBlocks = ContentBlocks,
             Diff = SnapshotDiff
         });
     }
@@ -2266,6 +2334,9 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public bool? SnapshotChanged { get; set; }
 
     public TextDiff? SnapshotDiff { get; set; }
+
+    /// <summary>正文语义块（§6.1 mode=text）。</summary>
+    public string? ContentBlocks { get; set; }
 
     public async Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
         => (await QueryAllAsync(locator, ct)).FirstOrDefault();

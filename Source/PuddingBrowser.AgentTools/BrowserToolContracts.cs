@@ -95,6 +95,12 @@ public sealed record BrowserSnapshotToolValue
 
     /// <summary>行级差异（要求比较且基线可用时给出）；计数真实，列表可能被预算截断。</summary>
     public BrowserDiffToolValue? Diff { get; init; }
+
+    /// <summary>本次返回的是**哪种表示**（§161）：<c>outline</c>/<c>interactive</c> 文本、<c>markdown</c> 正文等。</summary>
+    public string? Representation { get; init; }
+
+    /// <summary>正文 markdown（仅 <c>mode=text</c>）；它和 <see cref="AccessibilityTree"/> 同次只给一种。</summary>
+    public string? Content { get; init; }
 }
 
 /// <summary>

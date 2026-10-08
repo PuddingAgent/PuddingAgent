@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
@@ -357,6 +357,8 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
                 MaxDepth = options.MaxDepth,
                 // 作用域（§151）：随命令过线，由宿主从该 ref 的节点开始遍历。
                 ScopeRef = options.ScopeRef,
+                // 正文语义块（§6.1 mode=text）：宿主只提取结构，markdown 由读取侧组装。
+                IncludeContentBlocks = options.IncludeContentBlocks,
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -371,6 +373,7 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
             // 修订与差异由宿主判定（基线在它那里）；这里只做**形状搬运**，绝不重算。
             Revision = snapshot.Revision,
             Changed = snapshot.Changed,
+            ContentBlocks = snapshot.ContentBlocks,
             Diff = snapshot.Diff is { } diff
                 ? BrowserTextDiff.FromParts(
                     diff.Added, diff.Removed, diff.AddedCount, diff.RemovedCount, diff.Truncated)

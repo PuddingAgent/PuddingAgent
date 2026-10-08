@@ -523,6 +523,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             IncludeIframes = request.Options.IncludeIframes,
             IncludeShadowDom = request.Options.IncludeShadowDom,
             MaxDepth = request.Options.MaxDepth,
+            // 正文语义块（§6.1 mode=text）：驱动只提取结构，markdown 由读取侧组装。
+            IncludeContentBlocks = request.Options.IncludeContentBlocks,
         }, cancellationToken).ConfigureAwait(false);
 
         var mapped = new DesktopSnapshot(
@@ -532,7 +534,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             snapshot.Html,
             snapshot.Truncated,
             snapshot.NodeCount,
-            LiveVersion(browserPage.PageVersion));
+            LiveVersion(browserPage.PageVersion),
+            contentBlocks: snapshot.ContentBlocks);
 
         // 纵深防御：运行时没守预算时也要在这里收敛（含硬上限）。
         var budgeted = DesktopCapabilityBudgets.Apply(mapped, request.Options);

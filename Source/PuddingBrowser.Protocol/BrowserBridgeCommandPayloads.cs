@@ -74,6 +74,9 @@ public sealed record PageSnapshotArguments
 
     /// <summary>与上次读取的修订标识比较（§145）；由**持有基线的宿主侧**解释。</summary>
     public string? SinceRevision { get; init; }
+
+    /// <summary>是否提取正文语义块（§6.1 的 <c>mode=text</c>）。</summary>
+    public bool IncludeContentBlocks { get; init; }
 }
 
 public sealed record PageLocateArguments
@@ -159,6 +162,9 @@ public sealed record BrowserSnapshotDescriptor
 
     /// <summary>本次读取的修订标识（§145）；回传给下次的 <c>sinceRevision</c>。</summary>
     public string? Revision { get; init; }
+
+    /// <summary>正文语义块（每行一个 JSON 对象）；markdown 由读取侧组装。</summary>
+    public string? ContentBlocks { get; init; }
 
     /// <summary>与调用方给的修订相比内容是否变化；未要求比较时为 <c>null</c>。</summary>
     public bool? Changed { get; init; }

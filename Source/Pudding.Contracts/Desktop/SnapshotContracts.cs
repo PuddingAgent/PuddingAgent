@@ -25,7 +25,8 @@ public sealed record DesktopSnapshotOptions
         bool includeShadowDom = true,
         int maxDepth = 24,
         string? scopeRef = null,
-        string? sinceRevision = null)
+        string? sinceRevision = null,
+        bool includeContentBlocks = false)
     {
         if (maxNodes is < 1 or > MaxMaxNodes)
         {
@@ -50,6 +51,7 @@ public sealed record DesktopSnapshotOptions
         MaxDepth = maxDepth;
         ScopeRef = string.IsNullOrWhiteSpace(scopeRef) ? null : scopeRef.Trim();
         SinceRevision = string.IsNullOrWhiteSpace(sinceRevision) ? null : sinceRevision.Trim();
+        IncludeContentBlocks = includeContentBlocks;
     }
 
     public bool IncludeDom { get; }
@@ -87,8 +89,14 @@ public sealed record DesktopSnapshotOptions
     /// </summary>
     public string? SinceRevision { get; }
 
+    /// <summary>
+    /// 是否提取**正文语义块**（设计方案 §6.1 的 <c>mode=text</c>）。驱动只回答「哪块是正文」，
+    /// markdown 组装在读取侧（<c>ArticleMarkdown</c>）完成。
+    /// </summary>
+    public bool IncludeContentBlocks { get; }
+
     /// <summary>至少需要一种内容，否则快照没有意义（fail closed，不做无内容调用）。</summary>
-    public bool HasContent => IncludeDom || IncludeAccessibilityTree || IncludeHtml;
+    public bool HasContent => IncludeDom || IncludeAccessibilityTree || IncludeHtml || IncludeContentBlocks;
 }
 
 /// <summary>
@@ -131,7 +139,8 @@ public sealed record DesktopSnapshot
         DesktopPageVersion pageVersion,
         string? revision = null,
         bool? changed = null,
-        BrowserTextDiff? diff = null)
+        BrowserTextDiff? diff = null,
+        string? contentBlocks = null)
     {
         if (nodeCount < 0)
         {
@@ -148,6 +157,7 @@ public sealed record DesktopSnapshot
         Revision = revision;
         Changed = changed;
         Diff = diff;
+        ContentBlocks = contentBlocks;
     }
 
     public DesktopPageTarget Target { get; }
@@ -177,6 +187,9 @@ public sealed record DesktopSnapshot
 
     /// <summary>行级差异（要求比较且基线可用时给出）。</summary>
     public BrowserTextDiff? Diff { get; init; }
+
+    /// <summary>正文语义块（每行一个 JSON 对象）；未请求时为 <c>null</c>。</summary>
+    public string? ContentBlocks { get; init; }
 
     public bool IsEmpty => DomText is null && AccessibilityTree is null && Html is null;
 

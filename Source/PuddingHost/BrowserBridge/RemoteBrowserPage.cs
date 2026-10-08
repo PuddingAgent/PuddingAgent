@@ -113,7 +113,8 @@ public sealed class RemoteBrowserPage : IBrowserPage
                 MaxTextLength = options.MaxTextLength,
                 MaxDepth = options.MaxDepth,
                 ScopeRef = options.ScopeRef,
-                SinceRevision = options.SinceRevision
+                SinceRevision = options.SinceRevision,
+                IncludeContentBlocks = options.IncludeContentBlocks
             },
             ContextId, Id, TimeSpan.FromSeconds(30), ct);
         return new PageSnapshot
@@ -126,6 +127,7 @@ public sealed class RemoteBrowserPage : IBrowserPage
             // 修订与差异由宿主（真正读到内容的那一侧）判定，这里只做形状搬运。
             Revision = result.Revision,
             Changed = result.Changed,
+            ContentBlocks = result.ContentBlocks,
             Diff = result.Diff is { } diff
                 ? new TextDiff
                 {
