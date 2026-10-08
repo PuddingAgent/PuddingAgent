@@ -1,4 +1,4 @@
-using Pudding.Contracts;
+﻿using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
@@ -145,6 +145,22 @@ public sealed class BrowserSnapshotTool(
                 "browser_invalid_arguments",
                 $"unknown snapshot field '{unknownField}'; valid fields: {BrowserSnapshotFields.SelectableList}"
                 + $" (always returned: {string.Join(", ", BrowserSnapshotFields.Core)})");
+        }
+
+        // 正文模式的 `fields`（§151）：正文没有"表示类"字段（DOM/无障碍树/HTML 都不在输出里），
+        // 因此那些名字**明确拒绝**而不是静默忽略（静默忽略会让调用方以为字段被应用了）。
+        if (mode == BrowserReadingMode.Text)
+        {
+            foreach (var name in new[] { "accessibilityTree", "domText", "html" })
+            {
+                if (fields.IsExplicit && fields.Includes(name))
+                {
+                    return BrowserToolResponse.Failure(
+                        "browser_invalid_arguments",
+                        $"field '{name}' does not apply to mode=text;"
+                        + " text returns content/bytes/returnedLines/nextCursor (plus revision facts)");
+                }
+            }
         }
 
         // 「模式与互斥字段组合非法时返回参数错误」（§151）：full 模式一个表示都没选就没法读。
@@ -336,8 +352,8 @@ public sealed class BrowserSnapshotTool(
                         NextCursor = article.NextCursor is { } next && snapshot.Value.PageVersion.IsKnown
                             ? ArticleCursor.Encode(kind, next, ArticleCursor.PageIdentityOf(args.PageId.Trim(), snapshot.Value.PageVersion.Value))
                             : null,
-                        ReturnedLines = article.ReturnedLines,
-                        Bytes = article.Bytes,
+                        ReturnedLines = fields.Includes("returnedLines") ? article.ReturnedLines : null,
+                        Bytes = fields.Includes("bytes") ? article.Bytes : null,
                         NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
                         Revision = snapshot.Value.Revision,
                         Changed = snapshot.Value.Changed,

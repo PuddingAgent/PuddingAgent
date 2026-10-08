@@ -669,6 +669,53 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Snapshot_TextMode_HonorsFieldsThatApply_AndRefusesRepresentationFields()
+    {
+        // 正文模式没有"表示类"字段：那些名字必须**明确拒绝**（静默忽略会让调用方以为字段生效了）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.ContentBlocks = """{"k":"p","t":"hello"}""";
+        var surface = new FakeCapabilitySurface(runtime);
+
+        // 适用的字段：给了白名单就只回这些（bytes/returnedLines 可裁剪，content 恒在）。
+        var trimmed = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                fields = new[] { "bytes" }
+            }));
+
+        Assert.True(trimmed.Success, trimmed.Error);
+        var value = GetJson(trimmed.Output, "value");
+        Assert.NotNull(value.GetProperty("content").GetString());
+        Assert.Equal(JsonValueKind.Null, value.GetProperty("returnedLines").ValueKind);
+        Assert.NotEqual(JsonValueKind.Null, value.GetProperty("bytes").ValueKind);
+
+        // 不适用的字段：明确拒绝。
+        var refused = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text",
+                fields = new[] { "domText" }
+            }));
+
+        Assert.False(refused.Success);
+        using var document = JsonDocument.Parse(refused.Error!);
+        Assert.Equal(
+            "browser_invalid_arguments",
+            document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        Assert.Contains("does not apply to mode=text", document.RootElement.GetProperty("error").GetProperty("message").GetString()!);
+    }
+
+    [Fact]
     public async Task Snapshot_ReportsPageEvents_SoTheAgentKnowsWhatWasAutoHandled()
     {
         // 页面把弹窗/权限/下载自动处理掉之后**必须让 Agent 看得见**：
