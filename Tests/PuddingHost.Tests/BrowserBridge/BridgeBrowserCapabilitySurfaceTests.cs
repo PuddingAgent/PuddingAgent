@@ -408,6 +408,56 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
+    public async Task Locate_PagesWithTheCursor_AndExpiresItWhenThePageMovesOn()
+    {
+        // 设计 §6.2：分页语义必须在两条传输上**一致**（桥接不能是"分页不存在"）。
+        var page = new FakePage
+        {
+            Version = 2,
+            QueryAll = _ =>
+            [
+                new FakeElementHandle { Version = 2, Info = new BrowserElementInfo { Ref = "e1", Tag = "a" } },
+                new FakeElementHandle { Version = 2, Info = new BrowserElementInfo { Ref = "e2", Tag = "a" } },
+                new FakeElementHandle { Version = 2, Info = new BrowserElementInfo { Ref = "e3", Tag = "a" } },
+            ],
+        };
+        var surface = Create(page);
+        var locator = new DesktopLocator(DesktopLocatorKind.Css, "a");
+
+        var first = await surface.LocateAsync(
+            new BrowserLocateRequest(Target, locator, maxResults: 2), Call);
+
+        Assert.False(first.IsFailure);
+        Assert.True(first.Value.Truncated);
+        Assert.Equal(2, first.Value.Elements.Count);
+        Assert.NotNull(first.Value.NextCursor);
+
+        // 原样回传 ⇒ 取到剩下那一条，且没有下一页。
+        var second = await surface.LocateAsync(
+            new BrowserLocateRequest(Target, locator, maxResults: 2, cursor: first.Value.NextCursor), Call);
+
+        Assert.False(second.IsFailure);
+        Assert.Single(second.Value.Elements);
+        Assert.False(second.Value.Truncated);
+        Assert.Null(second.Value.NextCursor);
+
+        // 页面往前走了 ⇒ 旧游标过期（与能力通道同一个判定）。
+        page.Version = 3;
+        var expired = await surface.LocateAsync(
+            new BrowserLocateRequest(Target, locator, maxResults: 2, cursor: first.Value.NextCursor), Call);
+
+        Assert.True(expired.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.CursorExpired, expired.Error!.Code);
+
+        // 格式坏掉 ⇒ 参数错（两类分开）。
+        var malformed = await surface.LocateAsync(
+            new BrowserLocateRequest(Target, locator, maxResults: 2, cursor: "garbage"), Call);
+
+        Assert.True(malformed.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InvalidRequest, malformed.Error!.Code);
+    }
+
+    [Fact]
     public async Task Locate_OverMaxResults_IsTruncatedAndFlagged()
     {
         var page = new FakePage

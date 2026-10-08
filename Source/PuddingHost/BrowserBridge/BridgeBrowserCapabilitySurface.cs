@@ -456,15 +456,27 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
             });
         }
 
-        // 预算：超出请求上限就截断并**如实标注**。
-        var truncated = elements.Count > request.MaxResults;
-        if (truncated)
+        // 分页游标（§6.2）：与能力通道路径**共用同一套判定**（BrowserLocateCursor.TryResolve），
+        // 因此"过期"与"参数错"的分类、以及取完即 null 的语义在两条传输上完全一致。
+        var fingerprint = BrowserLocateCursor.FingerprintOf(
+            request.Locator, request.Locator.IncludeHidden, request.Locator.InViewportOnly);
+        if (!BrowserLocateCursor.TryResolve(request.Cursor, version.Value, fingerprint, out var offset, out var cursorFailure))
         {
-            elements = elements.GetRange(0, request.MaxResults);
+            return CapabilityResult<DesktopLocateResult>.Failure(cursorFailure);
         }
 
+        var window = elements.Skip(offset).ToArray();
+
+        // 预算：超出请求上限就截断并**如实标注**。
+        var truncated = window.Length > request.MaxResults;
+        var pageElements = truncated ? window[..request.MaxResults] : window;
+
+        var nextCursor = truncated
+            ? BrowserLocateCursor.Create(version.Value, fingerprint, offset + pageElements.Length).Encode()
+            : null;
+
         return CapabilityResult<DesktopLocateResult>.Success(
-            new DesktopLocateResult(request.Target, request.Locator, elements, truncated, version));
+            new DesktopLocateResult(request.Target, request.Locator, pageElements, truncated, version, nextCursor));
     }
 
     public async Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(

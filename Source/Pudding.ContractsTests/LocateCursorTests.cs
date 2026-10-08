@@ -1,3 +1,4 @@
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 
 namespace Pudding.ContractsTests;
@@ -54,6 +55,35 @@ public sealed class LocateCursorTests
 
         // 换了查询条件 ⇒ 同样不适用。
         Assert.False(cursor.Matches(pageVersion: 7, fingerprint: "ffffffff"));
+    }
+
+    [Fact]
+    public void TryResolve_ClassifiesExpirySeparatelyFromMalformedInput()
+    {
+        // 两条传输共用这一个判定：分类错了，工具层就给不出正确的下一步。
+        var fingerprint = BrowserLocateCursor.FingerprintOf(Css);
+
+        // 没给游标 ⇒ 从头开始，不算失败。
+        Assert.True(BrowserLocateCursor.TryResolve(null, 7, fingerprint, out var start, out _));
+        Assert.Equal(0, start);
+
+        // 适用的游标 ⇒ 给出偏移。
+        var valid = BrowserLocateCursor.Create(7, fingerprint, 30).Encode();
+        Assert.True(BrowserLocateCursor.TryResolve(valid, 7, fingerprint, out var offset, out _));
+        Assert.Equal(30, offset);
+
+        // 版本变了 ⇒ **过期**（不是参数错）：唯一正确动作是重新读取。
+        Assert.False(BrowserLocateCursor.TryResolve(valid, 8, fingerprint, out _, out var expired));
+        Assert.Equal(DesktopCapabilityErrorCode.CursorExpired, expired.Code);
+        Assert.False(expired.Retryable);
+
+        // 查询变了 ⇒ 同样过期。
+        Assert.False(BrowserLocateCursor.TryResolve(valid, 7, "ffffffff", out _, out var otherQuery));
+        Assert.Equal(DesktopCapabilityErrorCode.CursorExpired, otherQuery.Code);
+
+        // 格式坏 ⇒ **参数错**（调用方拼错了，重新读也不会因此变好）。
+        Assert.False(BrowserLocateCursor.TryResolve("garbage", 7, fingerprint, out _, out var malformed));
+        Assert.Equal(DesktopCapabilityErrorCode.InvalidRequest, malformed.Code);
     }
 
     [Fact]

@@ -83,6 +83,52 @@ public readonly record struct BrowserLocateCursor
         && string.Equals(Fingerprint, fingerprint, StringComparison.Ordinal);
 
     /// <summary>
+    /// 解析并校验调用方给的游标，给出**分页偏移**；失败时给出**分类好的**错误：
+    /// 过期（版本/查询变了 ⇒ <see cref="DesktopCapabilityErrorCode.CursorExpired"/>，唯一正确动作是重新读取）
+    /// 与参数错（格式不合法 ⇒ <see cref="DesktopCapabilityErrorCode.InvalidRequest"/>）必须分开。
+    ///
+    /// 两条传输**共用这一个判定**：分页语义各写一份迟早会漂移（本系列已吃过这个亏）。
+    /// </summary>
+    public static bool TryResolve(
+        string? wire,
+        long pageVersion,
+        string fingerprint,
+        out int offset,
+        out DesktopCapabilityError failure)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fingerprint);
+
+        offset = 0;
+        failure = null!;
+
+        if (string.IsNullOrWhiteSpace(wire))
+        {
+            return true;
+        }
+
+        if (!TryParse(wire, out var cursor))
+        {
+            failure = new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.InvalidRequest,
+                "the locate cursor is malformed; omit it to start from the beginning");
+            return false;
+        }
+
+        if (!cursor.Matches(pageVersion, fingerprint))
+        {
+            failure = new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.CursorExpired,
+                $"the locate cursor was issued for v{cursor.PageVersion} / a different locator, "
+                + $"but the page is at v{pageVersion}",
+                retryable: false);
+            return false;
+        }
+
+        offset = cursor.Offset;
+        return true;
+    }
+
+    /// <summary>
     /// 查询指纹：**只看影响匹配集合的输入**（定位条件与 includeHidden/inViewportOnly）。
     /// 故意不含 limit/cursor 自身——分页不该改变"这是同一组结果"这一事实。
     /// </summary>

@@ -44,7 +44,7 @@ draft: false
 | `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理：把 `IBrowserPage` 调用翻译成桥接命令，并**如实回传宿主事实**（不编造）。滚动走 `PageInteract(action=scroll)`，携带目标模型线名与 ref 定位，并把宿主报告的 `scroll` 事实读回成 `ScrollOutcome`；宿主未报告时标 `unreported`（"没有事实"≠"滚了 0 像素"） |
 | `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（仅 DesktopChild + BrowserAutomationEnabled）；同时注册**窄端口**（路由实现）与能力调用上下文工厂 |
 
-| `BrowserBridge/BridgeBrowserCapabilitySurface.cs` | 窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败） |
+| `BrowserBridge/BridgeBrowserCapabilitySurface.cs` | 窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败）。`locate` 的分页游标与能力通道**共用 `BrowserLocateCursor.TryResolve`**：过期（版本/查询变了）与参数错分类一致，取完即 `NextCursor=null`；`interact` 把滚动目标与滚动事实一并带过 |
 
 | `BrowserBridge/TransportRoutedBrowserCapabilitySurface.cs` | 组合根按 `DesktopTransportRouting` **二选一**（通道就绪走通道，否则 Bridge，两者都不可用则如实失败）；同文件含 `DesktopTransportUsageTracker`（退役判据计数 + `MissingEvidenceCalls` 观测）。硬要求：**同一次操作绝不执行两次**；**副作用类能力要求权限证据**（缺失或 `denied` ⇒ `Unauthorized`，只读能力不受影响；见 `Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md`） |
 

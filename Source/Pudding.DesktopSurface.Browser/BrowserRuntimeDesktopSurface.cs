@@ -372,28 +372,12 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
 
         // 分页游标（§6.2）：绑定「页面版本 + 查询指纹 + 已消费偏移」。
         // 旧游标用在变了的内容上 ⇒ 过期（重新读取），绝不返回错位结果。
+        // 判定与桥接路径共用 BrowserLocateCursor.TryResolve（分页语义只写一份）。
         var fingerprint = BrowserLocateCursor.FingerprintOf(
             request.Locator, request.Locator.IncludeHidden, request.Locator.InViewportOnly);
-        var offset = 0;
-        if (request.Cursor is { } wire)
+        if (!BrowserLocateCursor.TryResolve(request.Cursor, pageVersion, fingerprint, out var offset, out var cursorFailure))
         {
-            if (!BrowserLocateCursor.TryParse(wire, out var cursor))
-            {
-                return CapabilityResult<DesktopLocateResult>.Failure(new DesktopCapabilityError(
-                    DesktopCapabilityErrorCode.InvalidRequest,
-                    "the locate cursor is malformed; omit it to start from the beginning"));
-            }
-
-            if (!cursor.Matches(pageVersion, fingerprint))
-            {
-                return CapabilityResult<DesktopLocateResult>.Failure(new DesktopCapabilityError(
-                    DesktopCapabilityErrorCode.CursorExpired,
-                    $"the locate cursor was issued for v{cursor.PageVersion} / a different locator, "
-                    + $"but the page is at v{pageVersion}",
-                    retryable: false));
-            }
-
-            offset = cursor.Offset;
+            return CapabilityResult<DesktopLocateResult>.Failure(cursorFailure);
         }
 
         var window = handles.Skip(offset).ToArray();
