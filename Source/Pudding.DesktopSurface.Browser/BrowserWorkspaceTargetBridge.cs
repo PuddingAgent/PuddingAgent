@@ -68,6 +68,10 @@ public sealed class BrowserWorkspaceTargetBridge
     /// 登记新页面并带上它**当下**的版本。上下文未登记会直接抛
     /// （<see cref="DesktopTargetRegistry.RegisterPage"/> 的既有不变式）——这是有意的：
     /// 「先有页面后有上下文」说明写入顺序错了，静默补登记会让不可信上下文被当成可信。
+    ///
+    /// <b>对 Agent 目标不表态</b>（<c>isAgentTarget: null</c>）：创建事件重复触发时不得清除
+    /// 用户已选定的目标页，否则页级准入闸门会被静默关掉。目标只由
+    /// <see cref="OnAgentTargetChanged"/> 设置/撤销。
     /// </summary>
     public void OnPageCreated(
         string contextId,
@@ -80,7 +84,7 @@ public sealed class BrowserWorkspaceTargetBridge
 
         lock (_sync)
         {
-            _pageTargets.RegisterPage(new DesktopPageTarget(contextId, pageId), version);
+            _pageTargets.RegisterPage(new DesktopPageTarget(contextId, pageId), version, isAgentTarget: null);
             _browserTargets.RegisterPage(contextId, pageId, isAgentTarget: false, isActive: isActive);
         }
     }

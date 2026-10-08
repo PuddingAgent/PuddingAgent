@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopService;
 using PuddingBrowser.Automation;
@@ -370,6 +370,95 @@ public sealed class TargetRegistryTests
         // 版本回退会让旧 Snapshot/Locator 重新"有效"，必须拒绝。
         Assert.False(registry.UpdatePage(target, DesktopPageVersion.Require(3)));
         Assert.Equal(6, registry.Resolve(target)!.Version.Value);
+    }
+
+    // ── 登记对已发布事实必须是**非破坏性**的（设计方案 §3.3）─────────────────
+    // 页面生命周期事件会重复触发（标签重建、重新播种、窗口重连）。若"再次登记"能把
+    // Agent 目标标记或版本清掉，页级准入闸门就会被静默关掉、旧 ref 会重新"有效"。
+
+    [Fact]
+    public void RegisterPage_RepeatedRegistration_KeepsTheAgentTargetAndTheHigherVersion()
+    {
+        var registry = new DesktopTargetRegistry();
+        var target = new DesktopPageTarget("ctx-1", "page-1");
+        registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+        registry.RegisterPage(target, DesktopPageVersion.Require(7), DesktopPageReadiness.Complete, isAgentTarget: true);
+
+        // 重复的"页面已创建"事件：不表态（null）+ 未观测版本（Unknown）。
+        registry.RegisterPage(target, DesktopPageVersion.Unknown);
+
+        var state = registry.Resolve(target)!;
+        Assert.True(state.IsAgentTarget, "重复登记不得静默关掉页级准入闸门");
+        Assert.Equal(7, state.Version.Value);
+        Assert.Equal(DesktopPageReadiness.Complete, state.Readiness);
+    }
+
+    [Fact]
+    public void RegisterPage_NeverMovesTheVersionBackwards()
+    {
+        var registry = new DesktopTargetRegistry();
+        var target = new DesktopPageTarget("ctx-1", "page-1");
+        registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+        registry.RegisterPage(target, DesktopPageVersion.Require(9));
+
+        // 用旧版本重新登记 = 绕过 UpdatePage 的"版本只能前进"不变式 ⇒ 必须被吞掉。
+        registry.RegisterPage(target, DesktopPageVersion.Require(2));
+
+        Assert.Equal(9, registry.Resolve(target)!.Version.Value);
+
+        // 前进仍然生效。
+        registry.RegisterPage(target, DesktopPageVersion.Require(11));
+        Assert.Equal(11, registry.Resolve(target)!.Version.Value);
+    }
+
+    [Fact]
+    public void RegisterPage_ExplicitFalse_StillClearsTheAgentTarget()
+    {
+        // "不表态"（null）与"显式清除"（false）必须区分开，否则就没有撤销路径了。
+        var registry = new DesktopTargetRegistry();
+        var target = new DesktopPageTarget("ctx-1", "page-1");
+        registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+        registry.RegisterPage(target, isAgentTarget: true);
+
+        registry.RegisterPage(target, isAgentTarget: false);
+
+        Assert.False(registry.Resolve(target)!.IsAgentTarget);
+    }
+
+    [Fact]
+    public void RegisterContext_RejectsTrustRewrite()
+    {
+        var registry = new DesktopTargetRegistry();
+        registry.RegisterContext("ctx-1", DesktopContextTrust.Untrusted);
+
+        // 幂等：同级别重复登记无害。
+        registry.RegisterContext("ctx-1", DesktopContextTrust.Untrusted);
+
+        // 换级别是**提权路径**（Untrusted → AgentAuthorized），必须显式先注销上下文。
+        var error = Assert.Throws<InvalidOperationException>(
+            () => registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized));
+        Assert.Contains("cannot be rewritten", error.Message, StringComparison.Ordinal);
+
+        registry.CloseContext("ctx-1");
+        registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+    }
+
+    [Fact]
+    public void AgentTargetCount_IsCountedSeparatelyFromOpenPages()
+    {
+        var registry = new DesktopTargetRegistry();
+        registry.RegisterContext("ctx-1", DesktopContextTrust.AgentAuthorized);
+        var first = new DesktopPageTarget("ctx-1", "page-1");
+        registry.RegisterPage(first);
+        registry.RegisterPage(new DesktopPageTarget("ctx-1", "page-2"));
+
+        Assert.Equal(2, registry.OpenPageCount);
+        Assert.Equal(0, registry.AgentTargetCount);
+
+        registry.SetAgentTarget(first.ContextId, first.PageId);
+
+        Assert.Equal(2, registry.OpenPageCount);
+        Assert.Equal(1, registry.AgentTargetCount);
     }
 
     [Fact]

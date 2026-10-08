@@ -32,8 +32,8 @@
 | `DesktopCapabilityHostFactory.cs` | 用配置构造宿主：关闭 ⇒ 明确失败**且不构造**；启用 ⇒ 只构造**不启动**（启动名额留给组合根，见规格 §7.2 的陷阱） |
 | `DesktopCapabilityChannelComposition.cs` | **组合根**（唯一会改变产品行为的一步）：判定 → 构造 → `StartAsync` → `DisposeAsync` 一次调用完成。关闭 ⇒ `Success(null)` 什么都不做；启用却起不来 ⇒ **明确失败**（不是只记日志）；不做跨传输回退；缺省服务策略 fail-closed。**在此装配进程内唯一 `BrowserAutomationAuthority`**（`settings.DesktopId` + 进程实例 ID）并注入 `DesktopService` |
 | `DesktopShellSurface.cs` | 把两个 Shell 端口（交互设施 + 宿主告知）适配成表面：预算纵深防御（剪贴板二次截断）、异常折叠为 `internal_error`、取消原样传播；**不补齐**自动化状态与页面数（那是 `DesktopService` 的权威状态） |
-| `BrowserTargetRegistry.cs` | 浏览器目标注册表（`IDesktopBrowserTargetRegistry` 实现）：上下文可信级别 / Agent 目标 / 活动页。`SetAgentTarget` 是**撤销的**一等操作（`RegisterPage(isAgentTarget:false)` 只增不减，撤销缺失会让注册表替不该被驱动的页面背书） |
-| `DesktopTargetRegistry.cs` | 页面/上下文目标登记表（准入读的那一份）：版本只前进、可信级别不可由调用方声明；另承载**用户选定的 Agent 目标页**（`SetAgentTarget`，同一时刻至多一个，未登记/已关闭的 id 不标记）——准入的 page 级闸门读它 |
+| `BrowserTargetRegistry.cs` | 浏览器目标注册表（`IDesktopBrowserTargetRegistry` 实现）：上下文可信级别 / Agent 目标 / 活动页。`SetAgentTarget` 是**撤销的**一等操作（`RegisterPage(isAgentTarget:false)` 只增不减，撤销缺失会让注册表替不该被驱动的页面背书）。`RegisterContext` 与 `DesktopTargetRegistry` **同一条规则**（同级别幂等、换级别抛异常）——两个注册表对同一事实的规则必须一致，它们曾在"页面重复登记是否清除 Agent 目标"上分叉 |
+| `DesktopTargetRegistry.cs` | 页面/上下文登记表（准入读的那一份）：版本只前进、可信级别不可由调用方声明；另承载**用户选定的 Agent 目标页**（`SetAgentTarget`，同一时刻至多一个，未登记/已关闭的 id 不标记）——准入的 page 级闸门读它。**登记对已发布事实非破坏性**：重复登记只合并新信息 —— 版本只进不退、`Readiness=Unknown`/`isAgentTarget=null` 表示"不表态"（保留原值），否则一次重复的生命周期事件就会静默关掉页级闸门或让旧 ref 复活；`RegisterContext` 同级别幂等，换级别抛异常（否则是 Untrusted→AgentAuthorized 的静默提权）；`AgentTargetCount` 与 `OpenPageCount` **分别统计**（设计方案 §3.3） |
 | `DesktopCapabilityPolicy.cs` | 能力 × 目标可信级别的准入策略表；`RequiresAgentTarget` 由信任表**推导**（需要页面目标且只对 AgentAuthorized 开放），避免出现第二份真源 |
 
 > 变更类后置条件已**移出**本组件：原 `DesktopMutationInvariants.cs`（「所有 mutating 结果版本必须严格递增」）

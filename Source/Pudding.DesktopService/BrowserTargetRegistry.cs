@@ -20,12 +20,29 @@ public sealed class BrowserTargetRegistry : IDesktopBrowserTargetRegistry
     private readonly Dictionary<string, HashSet<string>> _agentTargets = new(StringComparer.Ordinal);
     private (string ContextId, string PageId)? _active;
 
+    /// <summary>
+    /// 登记上下文。与 <see cref="DesktopTargetRegistry.RegisterContext"/> **同一条规则**：
+    /// 可信级别在创建时确定，重复登记相同级别幂等，换级别必须显式注销后重建。
+    /// 两个注册表对同一事实的规则必须一致 —— 它们曾经在"页面重复登记是否清除 Agent 目标"
+    /// 上不一致，导致 UI 显示与准入判据分叉。
+    /// </summary>
     public void RegisterContext(string contextId, DesktopContextTrust trust)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(contextId);
 
         lock (_sync)
         {
+            if (_trust.TryGetValue(contextId, out var existing))
+            {
+                if (existing != trust)
+                {
+                    throw new InvalidOperationException(
+                        $"Context '{contextId}' is already registered as {existing}; its trust level is decided at creation and cannot be rewritten to {trust}.");
+                }
+
+                return;
+            }
+
             _trust[contextId] = trust;
             _pages.TryAdd(contextId, new HashSet<string>(StringComparer.Ordinal));
         }

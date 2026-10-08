@@ -32,6 +32,11 @@ public sealed class DesktopTargetRegistry
     private readonly Dictionary<string, DesktopTargetState> _pages = new(StringComparer.Ordinal);
 
     /// <summary>登记上下文（可信级别在此时确定，之后不可由调用方改写）。</summary>
+    /// <exception cref="InvalidOperationException">
+    /// 同一 context 已登记且**可信级别不同**。级别由 Desktop 侧在创建上下文时确定，
+    /// 允许"重新登记"覆盖它等于给出了一条静默提权路径（Untrusted → AgentAuthorized）；
+    /// 需要换级别必须先 <see cref="CloseContext"/>。相同级别重复登记是幂等的。
+    /// </exception>
     public void RegisterContext(string contextId, DesktopContextTrust trust)
     {
         if (!IsValidIdentifier(contextId))
@@ -41,16 +46,40 @@ public sealed class DesktopTargetRegistry
 
         lock (_sync)
         {
+            if (_contexts.TryGetValue(contextId, out var existing))
+            {
+                if (existing != trust)
+                {
+                    throw new InvalidOperationException(
+                        $"Context '{contextId}' is already registered as {existing}; its trust level is decided at creation and cannot be rewritten to {trust}.");
+                }
+
+                return;
+            }
+
             _contexts[contextId] = trust;
         }
     }
 
-    /// <summary>登记页面并绑定到已登记的上下文。</summary>
+    /// <summary>
+    /// 登记页面并绑定到已登记的上下文。
+    ///
+    /// <b>对已登记页面是非破坏性的</b>（设计方案 §3.3「原子发布登记与授权事实」）：
+    /// 页面生命周期事件会重复触发（标签重建、重新播种、窗口重连），而"再次登记"绝不能让
+    /// 已经发布的事实变弱：
+    /// · <b>版本只进不退</b> —— 否则 <see cref="UpdatePage"/> 的"版本只能前进"不变式会被绕过，
+    ///   旧 Snapshot/Locator 重新"有效"；
+    /// · <b>就绪度</b>：<see cref="DesktopPageReadiness.Unknown"/> 表示"没有新信息"，保留原值；
+    /// · <b>Agent 目标标记</b>：<paramref name="isAgentTarget"/> 为 <c>null</c> 表示"不表态"，
+    ///   保留原值；<c>true</c>/<c>false</c> 才是显式设置/清除。
+    ///   默认值 <c>null</c> 很关键：创建事件对"这一页是否是用户选定的 Agent 目标"没有意见，
+    ///   若默认按 <c>false</c> 处理，一次重复的创建事件就会**静默关掉页级准入闸门**。
+    /// </summary>
     public void RegisterPage(
         DesktopPageTarget target,
         DesktopPageVersion version = default,
         DesktopPageReadiness readiness = DesktopPageReadiness.Unknown,
-        bool isAgentTarget = false)
+        bool? isAgentTarget = null)
     {
         ArgumentNullException.ThrowIfNull(target);
 
@@ -62,8 +91,30 @@ public sealed class DesktopTargetRegistry
                     $"Context '{target.ContextId}' must be registered before its pages.");
             }
 
-            _pages[target.Key] = new DesktopTargetState(
-                target, version, readiness, trust, IsOpen: true, IsAgentTarget: isAgentTarget);
+            if (!_pages.TryGetValue(target.Key, out var existing) || !existing.IsOpen)
+            {
+                _pages[target.Key] = new DesktopTargetState(
+                    target,
+                    version,
+                    readiness,
+                    trust,
+                    IsOpen: true,
+                    IsAgentTarget: isAgentTarget ?? false);
+                return;
+            }
+
+            // 已登记的开放页面：合并新信息，绝不削弱已有事实。
+            var mergedVersion = version.IsKnown
+                && (!existing.Version.IsKnown || version.Value > existing.Version.Value)
+                    ? version
+                    : existing.Version;
+
+            _pages[target.Key] = existing with
+            {
+                Version = mergedVersion,
+                Readiness = readiness == DesktopPageReadiness.Unknown ? existing.Readiness : readiness,
+                IsAgentTarget = isAgentTarget ?? existing.IsAgentTarget,
+            };
         }
     }
 
@@ -187,6 +238,22 @@ public sealed class DesktopTargetRegistry
             lock (_sync)
             {
                 return _pages.Count;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 其中被标记为「用户选定的 Agent 目标」的数量。
+    /// 设计方案 §3.3 要求**目标数与授权数分别统计**（不混为一项）：授权数属于 grant 模型，
+    /// 目前尚未接入（见 code_map 已知缺口），因此这里只给出目标数。
+    /// </summary>
+    public int AgentTargetCount
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _pages.Values.Count(page => page.IsAgentTarget);
             }
         }
     }

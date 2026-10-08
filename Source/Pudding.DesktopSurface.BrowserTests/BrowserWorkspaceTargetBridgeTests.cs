@@ -119,6 +119,28 @@ public sealed class BrowserWorkspaceTargetBridgeTests
     }
 
     [Fact]
+    public void RepeatedPageCreated_DoesNotClearAPinnedAgentTarget()
+    {
+        // 回归：页面生命周期事件会重复触发（标签重建 / 重新播种 / 窗口重连）。
+        // 早先 `OnPageCreated` 把"不表态"当成了 `isAgentTarget: false`，于是**重复的创建事件
+        // 会静默关掉页级准入闸门**：UI 仍显示这是 Agent 目标页，准入却说不是
+        // （两个注册表正是在这里分叉 —— browser 侧只增不减、admission 侧被清零）。
+        var (bridge, browser, pages) = Create();
+        bridge.OnContextCreated(ContextId);
+        bridge.OnPageCreated(ContextId, PageId, DesktopPageVersion.Require(4));
+        bridge.OnAgentTargetChanged(ContextId, PageId);
+
+        // 同一个页面的创建事件再次到达（版本未知）。
+        bridge.OnPageCreated(ContextId, PageId, DesktopPageVersion.Unknown);
+
+        Assert.True(
+            pages.Resolve(new DesktopPageTarget(ContextId, PageId))!.IsAgentTarget,
+            "重复登记不得清掉用户选定的 Agent 目标");
+        Assert.True(browser.IsAgentTarget(ContextId, PageId));
+        Assert.Equal(4, pages.Resolve(new DesktopPageTarget(ContextId, PageId))!.Version.Value);
+    }
+
+    [Fact]
     public void AgentTarget_IsMirroredIntoThePageRegistryThatAdmissionReads()
     {
         // 两个注册表都要更新：准入读的是**页面**注册表的 page 级标记。
