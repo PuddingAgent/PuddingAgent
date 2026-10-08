@@ -1249,6 +1249,31 @@ public sealed class ContextWindowManager
             traceId,
             ct);
 
+    /// <summary>
+    /// 获取**压缩提交单飞租约**（ADR-095 D4）：把「候选校验 + 内存历史替换」放进同一个短临界区。
+    /// <para>
+    /// 为什么 warm-prefix 必须接这个锁：DB 水合（本类 298 行）与自动/手动压缩都走
+    /// <see cref="CompactionCoordinator"/>，而 warm-prefix 原先绕开它 —— 不接入就没有
+    /// 「同一会话同时只有一个压缩提交者」的保证。
+    /// </para>
+    /// <para>
+    /// 纪律：① **不包住**远端摘要调用（那会持锁跨网络，D4 明禁）；② 调用方必须已持有
+    /// <c>SessionExecutionGate</c>（锁序：执行锁 → 压缩锁，反向会死锁）；
+    /// ③ 临界区内不得等待消息 dispatch 回执。
+    /// </para>
+    /// </summary>
+    internal async Task<IAsyncDisposable> AcquireCompactionCommitLeaseAsync(
+        string sessionId,
+        CancellationToken ct)
+        => await _compactionCoordinator.AcquireAsync(sessionId, ct);
+
+    /// <summary>
+    /// 提交成功后登记完成事实：记录冷却时间并清除该会话的「无收益抑制」。
+    /// 只应在**真的改写了历史**之后调用（延期/被拒/无收益都不算）。
+    /// </summary>
+    internal void RecordCompactionCommitCompleted(string sessionId)
+        => _compactionCoordinator.RecordCompactionCompleted(sessionId);
+
     private async Task EmitCompactionLifecycleEventAsync(
         string sessionId,
         string workspaceId,

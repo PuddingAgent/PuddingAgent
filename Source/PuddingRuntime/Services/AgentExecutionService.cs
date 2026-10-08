@@ -2359,29 +2359,50 @@ public sealed partial class AgentExecutionService
         // ── F2 唯一应用边界 ──
         // 成 checkpoint → 严格版本/身份 CAS → 用**真实摘要**重新完整计量 → 收益与硬上限准入。
         // 任何一步不过都保持原历史：不得拼接新尾部、不得自动 rebase、不得把计划估算当 after。
-        var verification = WarmPrefixCompaction.VerifyApplication(
-            _contextUsageSnapshotStore,
-            request.SessionId,
-            durableHistory,
-            llmTools,
-            effectiveLlmConfig,
-            plan,
-            safeSummary);
+        // ADR-095 D4：**候选校验 + 内存历史替换**放进同一个压缩提交单飞租约（本 Turn 已持执行锁，
+        // 锁序为「执行锁 → 压缩锁」，不会与既有路径形成 AB-BA）；远端摘要调用在租约之外。
+        // 生命周期事件在租约释放后发布：事件写入失败不得撤销已提交历史（ADR-095 D5）。
+        WarmPrefixApplyVerification verification;
+        WarmPrefixCompactionDisposition rejectedDisposition = WarmPrefixCompactionDisposition.NotNeeded;
+        await using (var compactionCommitLease =
+            await _contextManager.AcquireCompactionCommitLeaseAsync(request.SessionId, ct))
+        {
+            verification = WarmPrefixCompaction.VerifyApplication(
+                _contextUsageSnapshotStore,
+                request.SessionId,
+                durableHistory,
+                llmTools,
+                effectiveLlmConfig,
+                plan,
+                safeSummary);
+
+            if (verification.CanApply)
+            {
+                // 校验通过：在**同一临界区**内替换内存历史。
+                durableHistory.Clear();
+                durableHistory.AddRange(verification.AppliedMessages!);
+                // 只有真的改写了历史才登记完成（冷却 + 清除无收益抑制）。
+                _contextManager.RecordCompactionCommitCompleted(request.SessionId);
+            }
+            else
+            {
+                rejectedDisposition = verification.Reason switch
+                {
+                    WarmPrefixCompactionReasons.SummaryNoGain
+                        or "summary_empty" or "summary_not_smaller_than_span"
+                        => WarmPrefixCompactionDisposition.NoGain,
+                    "generation_changed" or "history_revision_changed" or "retained_context_changed"
+                        or "selected_span_not_intact" or "route_changed" or "tool_spec_changed"
+                        or "policy_changed"
+                        => WarmPrefixCompactionDisposition.StaleCandidate,
+                    _ => WarmPrefixCompactionDisposition.Failed,
+                };
+            }
+        }
         var verifyDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
 
         if (!verification.CanApply)
         {
-            var rejectedDisposition = verification.Reason switch
-            {
-                WarmPrefixCompactionReasons.SummaryNoGain
-                    or "summary_empty" or "summary_not_smaller_than_span"
-                    => WarmPrefixCompactionDisposition.NoGain,
-                "generation_changed" or "history_revision_changed" or "retained_context_changed"
-                    or "selected_span_not_intact" or "route_changed" or "tool_spec_changed"
-                    or "policy_changed"
-                    => WarmPrefixCompactionDisposition.StaleCandidate,
-                _ => WarmPrefixCompactionDisposition.Failed,
-            };
             _logger.LogWarning(
                 "[AgentExec:Compaction] Warm-prefix apply rejected; history preserved session={Session} round={Round} compactionId={CompactionId} reason={Reason} beforeTokens={BeforeTokens} measuredAfterTokens={MeasuredAfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} limit={Limit} durationMs={DurationMs}",
                 request.SessionId,
@@ -2434,11 +2455,8 @@ public sealed partial class AgentExecutionService
                 verification.Reason);
         }
 
-        // 校验通过：此时才替换内存历史。
-        var appliedMessages = verification.AppliedMessages!;
+        // 校验通过：内存历史已在临界区内替换完毕，这里只做日志与生命周期事件。
         var afterUsedTokens = verification.AfterSnapshot!.UsedTokens;
-        durableHistory.Clear();
-        durableHistory.AddRange(appliedMessages);
         var appliedDurationMs = verifyDurationMs;
         _logger.LogInformation(
             "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} compactionId={CompactionId} removed={Removed} messages={Before}->{After} measuredBefore={BeforeTokens} measuredAfter={AfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} meetsTarget={MeetsTarget} durationMs={DurationMs}",

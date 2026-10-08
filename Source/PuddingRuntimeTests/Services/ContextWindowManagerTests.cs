@@ -1874,7 +1874,8 @@ public sealed class ContextWindowManagerTests
         ISessionCompactionEventEmitter? compactionEventEmitter = null,
         ITelemetryMetricSink? telemetrySink = null,
         IPreCompactionFlushService? preCompactionFlushService = null,
-        ICompactionChatMessageStore? canonicalMessageStore = null)
+        ICompactionChatMessageStore? canonicalMessageStore = null,
+        CompactionCoordinator? compactionCoordinator = null)
         => new(
             new AgentSessionManager(NullLogger<AgentSessionManager>.Instance),
             new InMemoryRuntimeSessionStore(),
@@ -1890,7 +1891,8 @@ public sealed class ContextWindowManagerTests
             telemetrySink: telemetrySink,
             preCompactionFlushService: preCompactionFlushService,
             canonicalMessageStore: canonicalMessageStore
-                ?? (memoryDbFactory is null ? null : EmptyCompactionChatMessageStore.Instance));
+                ?? (memoryDbFactory is null ? null : EmptyCompactionChatMessageStore.Instance),
+            compactionCoordinator: compactionCoordinator);
 
     private static string CreateTempJsonlRoot()
     {
