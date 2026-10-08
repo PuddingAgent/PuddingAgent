@@ -23,6 +23,8 @@
                                                  no engine this machine lacks
       C-6      check-script-runtime-compat.ps1   every command / named parameter inside
                                                  a script RESOLVES in this engine
+      C-7      check-script-paths.ps1            absolute path literals inside scripts
+                                                 still point at something that exists
 
     NOT registered: check-circular-deps.ps1. It is a deprecated shim that only forwards
     to check-project-layering.ps1 (2026-10-08), so registering it would double-count
@@ -46,6 +48,13 @@
     denominator in silence. A registration that declares no label is now refused at
     startup (exit 3), and a gate that emits none of its declared labels names them in the
     message.
+
+    The scan MODE is asserted the same way. This runner always asks its gates for a
+    recursive scan, so every scope line that reports MODE= must report MODE=REC. A gate
+    reporting MODE=FLAT has quietly narrowed its own scan out from under the runner -
+    the same false-PASS class as a missing denominator - so it is counted as
+    SCOPE_MODE_MISMATCH and promoted to an instrument failure (exit 3). A gate whose
+    scope lines carry no MODE= field at all is not judged: not every gate scans a tree.
 
 .PARAMETER SelfTest
     Run each gate's own -SelfTest instead of its real scan. All controls are in-memory
@@ -83,8 +92,8 @@
 .EXIT CODES
     0 = every registered gate reported PASS
     1 = at least one gate reported FAIL
-    3 = no gate FAILed, but a gate failed closed (broken instrument), or a PASS carried no
-        denominator line
+    3 = no gate FAILed, but a gate failed closed (broken instrument), a PASS carried no
+        denominator line, or a scope line reported a scan mode this run did not ask for
     4 = no gate FAILed, but at least one gate's SELF-TEST did not detect the planted
         defect (expected mainly in -SelfTest mode)
   255 = the runner could not find or start a registered gate script
@@ -175,6 +184,26 @@ function Get-DenomMissingCount {
     if ($IsSelfTest) { return 0 }
     if ($null -eq $Ran) { return 0 }
     return @($Ran | Where-Object { $_.ExitCode -eq 0 -and @($_.Scope).Count -eq 0 }).Count
+}
+
+function Get-ScopeModeViolations {
+    param([object[]]$ScopeLines)
+    if ($null -eq $ScopeLines) { return 0 }
+    $bad = 0
+    foreach ($s in @($ScopeLines)) {
+        $m = [regex]::Match([string]$s, 'MODE=([A-Za-z]+)')
+        if ($m.Success -and $m.Groups[1].Value -ne 'REC') { $bad++ }
+    }
+    return $bad
+}
+
+function Get-ScopeModeMismatch {
+    param([object[]]$Ran, [bool]$IsSelfTest)
+    if ($IsSelfTest) { return 0 }
+    if ($null -eq $Ran) { return 0 }
+    $bad = 0
+    foreach ($r in $Ran) { $bad += Get-ScopeModeViolations -ScopeLines @($r.Scope) }
+    return $bad
 }
 
 function Get-UnlabelledGates {
@@ -289,6 +318,21 @@ if ($SelfTest) {
         exit $EXIT_SELFTEST
     }
 
+    # Same treatment for the SCAN MODE assertion: a gate that quietly narrows its own scan
+    # (MODE=FLAT where REC was requested) must be caught, while a gate that reports no
+    # MODE= field at all must NOT be punished for it - not every gate scans a tree.
+    $mVRec    = Get-ScopeModeViolations -ScopeLines @('FILES=25 MISSING_DRIVE=0 MODE=REC')
+    $mVFlat   = Get-ScopeModeViolations -ScopeLines @('FILES=24 MODE=FLAT')
+    $mVNone   = Get-ScopeModeViolations -ScopeLines @('PROJECT_COUNT = 81')
+    $mVMixed  = Get-ScopeModeViolations -ScopeLines @('FILES=25 MODE=REC', 'FILES=24 MODE=FLAT')
+    $mAggFlat = Get-ScopeModeMismatch -Ran @((New-Object PSObject -Property @{ ExitCode = 0; Scope = @('FILES=22 MODE=FLAT') })) -IsSelfTest:$false
+    $mAggExm  = Get-ScopeModeMismatch -Ran @((New-Object PSObject -Property @{ ExitCode = 0; Scope = @('FILES=22 MODE=FLAT') })) -IsSelfTest:$true
+    Write-Output ('MODE_CTRL_REC={0} FLAT={1} NOFIELD={2} MIXED={3} AGG_FLAT={4} SELFTEST_EXEMPT={5}' -f ($mVRec -eq 0), ($mVFlat -eq 1), ($mVNone -eq 0), ($mVMixed -eq 1), ($mAggFlat -eq 1), ($mAggExm -eq 0))
+    if ($mVRec -ne 0 -or $mVFlat -ne 1 -or $mVNone -ne 0 -or $mVMixed -ne 1 -or $mAggFlat -ne 1 -or $mAggExm -ne 0) {
+        Write-Output 'RESULT: SELFTEST FAIL (scope mode control did not classify its own cases)'
+        exit $EXIT_SELFTEST
+    }
+
     # Label contract: a registration with no declared label must be refused, and a
     # whitespace-only label counts as absent.
     $uMissing = @(Get-UnlabelledGates -Gates @((New-Object PSObject -Property @{ Id = 'X-GATE'; Script = 'x.ps1' })))
@@ -322,6 +366,10 @@ $codes = @($ran | ForEach-Object { $_.ExitCode })
 # invisible: in scan mode it is counted and promoted to an instrument failure.
 $denomMissing = Get-DenomMissingCount -Ran $ran -IsSelfTest:$SelfTest
 
+# A gate may not narrow its own scan out from under the runner: the runner always asks for
+# a recursive scan, so a scope line reporting any other mode is a scope regression.
+$scopeModeMismatch = Get-ScopeModeMismatch -Ran $ran -IsSelfTest:$SelfTest
+
 $aggregate = $EXIT_PASS
 if ($missing -gt 0) {
     $aggregate = $EXIT_MISSING
@@ -344,9 +392,18 @@ if (-not $SelfTest -and $denomMissing -gt 0 -and $aggregate -eq $EXIT_PASS) {
     $aggregate = $EXIT_INSTRUMENT
 }
 
+if (-not $SelfTest -and $scopeModeMismatch -gt 0 -and $aggregate -eq $EXIT_PASS) {
+    $aggregate = $EXIT_INSTRUMENT
+}
+
+if ($scopeModeMismatch -gt 0) {
+    Write-Output ('SCOPE REGRESSION: {0} scope line(s) reported a scan mode this run did not ask for.' -f $scopeModeMismatch)
+}
+
 Write-Output ''
 Write-Output ('GATES_RUN={0} SKIPPED={1} MISSING={2}' -f $ran.Count, (@($results | Where-Object { $_.Skipped }).Count), $missing)
 Write-Output ('DENOM_MISSING={0}' -f $denomMissing)
+Write-Output ('SCOPE_MODE_MISMATCH={0}' -f $scopeModeMismatch)
 Write-Output ('SKIP_UNMATCHED={0}' -f $skipUnmatched.Count)
 Write-Output ('AGGREGATE_EXIT={0}' -f $aggregate)
 if ($aggregate -eq $EXIT_PASS) {
