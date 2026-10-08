@@ -36,7 +36,12 @@
   Directory to scan. Default: TestScripts (resolved relative to the current dir).
 
 .PARAMETER Recurse
-  Scan subdirectories too. Default: top level only.
+  Accepted for compatibility; recursion is ON by default.
+
+.PARAMETER NoRecurse
+  Scan the top level only. The scope of a gate must not depend on how it is
+  invoked, so recursion is the default and this switch is the explicit opt-out:
+  a direct run and run-gates.ps1 must enumerate the same files.
 
 .PARAMETER ExcludeDir
   Directory names (any path segment) to skip. Default: temp, node_modules, .git, bin, obj, dist, .venv, .pudding
@@ -58,6 +63,7 @@
 param(
     [string]$Root = 'TestScripts',
     [switch]$Recurse,
+    [switch]$NoRecurse,
     [string[]]$ExcludeDir = @('temp', 'node_modules', '.git', 'bin', 'obj', 'dist', '.venv', '.pudding'),
     [switch]$AllowUnrunnable,
     [switch]$SelfTest,
@@ -65,6 +71,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Scope must be a property of the gate, not of the invocation. Recursion defaults
+# to ON so that a direct run enumerates exactly what run-gates.ps1 enumerates;
+# before 2026-10-09 the default was top-level-only and a direct run silently saw
+# fewer files (TestScripts\ssh-probe\run-ssh-probe.ps1 was missed).
+$scanRecurse = -not $NoRecurse
+if ($scanRecurse) { $modeTag = 'REC' } else { $modeTag = 'FLAT' }
 
 $EXIT_PASS = 0
 $EXIT_BROKEN = 1
@@ -204,7 +217,7 @@ if (-not (Test-Path -LiteralPath $Root)) {
     exit $EXIT_EMPTY
 }
 
-$all = @(Get-ChildItem -LiteralPath $Root -Filter *.ps1 -File -Recurse:$Recurse)
+$all = @(Get-ChildItem -LiteralPath $Root -Filter *.ps1 -File -Recurse:$scanRecurse)
 $files = @()
 foreach ($f in $all) {
     $skip = $false
@@ -218,7 +231,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $repoRoot) { $repoRoot = (Get-Location).Path }
 
 if ($files.Count -eq 0) {
-    Write-Output ('FAIL-CLOSED: no .ps1 enumerated under ' + $Root + ' (recurse=' + [string]$Recurse + ')')
+    Write-Output ('FAIL-CLOSED: no .ps1 enumerated under ' + $Root + ' (recurse=' + [string]$scanRecurse + ')')
     exit $EXIT_EMPTY
 }
 
@@ -271,8 +284,8 @@ foreach ($f in $files) {
 }
 
 Write-Output ''
-Write-Output ('FILES={0} BOM={1} NONASCII={2} NONASCII_NO_BOM={3} MOJIBAKE_RISK={4} BROKEN={5} UNRUNNABLE={6} RUNNABLE={7}' -f `
-    $files.Count, $bomCount, $nonAsciiCount, $noBomNonAsciiCount, $mojiBakeRisk.Count, $broken.Count, $unrunnable.Count, $parseClean)
+Write-Output ('FILES={0} BOM={1} NONASCII={2} NONASCII_NO_BOM={3} MOJIBAKE_RISK={4} BROKEN={5} UNRUNNABLE={6} RUNNABLE={7} MODE={8}' -f `
+    $files.Count, $bomCount, $nonAsciiCount, $noBomNonAsciiCount, $mojiBakeRisk.Count, $broken.Count, $unrunnable.Count, $parseClean, $modeTag)
 
 $failed = $false
 if ($broken.Count -gt 0) {

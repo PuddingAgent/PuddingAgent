@@ -54,7 +54,12 @@
   Directory to scan. Default: TestScripts (resolved relative to the current dir).
 
 .PARAMETER Recurse
-  Scan subdirectories too. Default: top level only.
+  Accepted for compatibility; recursion is ON by default.
+
+.PARAMETER NoRecurse
+  Scan the top level only. The scope of a gate must not depend on how it is
+  invoked, so recursion is the default and this switch is the explicit opt-out:
+  a direct run and run-gates.ps1 must enumerate the same files.
 
 .PARAMETER ExcludeDir
   Directory names (any path segment) to skip. Default: temp, node_modules, .git, bin, obj, dist, .venv, .pudding
@@ -81,6 +86,7 @@
 param(
     [string]$Root = 'TestScripts',
     [switch]$Recurse,
+    [switch]$NoRecurse,
     [string[]]$ExcludeDir = @('temp', 'node_modules', '.git', 'bin', 'obj', 'dist', '.venv', '.pudding'),
     [int]$MaxReport = 200,
     [switch]$StrictCommands,
@@ -88,6 +94,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Scope must be a property of the gate, not of the invocation. Recursion defaults
+# to ON so that a direct run enumerates exactly what run-gates.ps1 enumerates.
+$scanRecurse = -not $NoRecurse
+if ($scanRecurse) { $modeTag = 'REC' } else { $modeTag = 'FLAT' }
 
 $EXIT_PASS = 0
 $EXIT_FINDINGS = 1
@@ -335,7 +346,7 @@ if (-not (Test-Path -LiteralPath $rootPath)) {
     exit $EXIT_EMPTY
 }
 
-$all = @(Get-ChildItem -LiteralPath $rootPath -Filter '*.ps1' -File -Recurse:$Recurse -ErrorAction SilentlyContinue)
+$all = @(Get-ChildItem -LiteralPath $rootPath -Filter '*.ps1' -File -Recurse:$scanRecurse -ErrorAction SilentlyContinue)
 $files = @()
 foreach ($f in $all) {
     $skip = $false
@@ -399,8 +410,8 @@ foreach ($file in $files) {
 }
 
 Write-Output ''
-Write-Output ('FILES={0} ANALYSED={1} UNANALYSABLE={2} DYN_FILES={3} CMDREF={4} CMD_MISSING={5} CMD_UNRESOLVED={6} PARAM_MISSING={7}' -f `
-    $files.Count, $analysed, $skippedDep.Count, $dynFiles, $totalCmdRefs, (Get-FindingCount -Findings $cmdMissing), (Get-FindingCount -Findings $cmdUnresolved), (Get-FindingCount -Findings $paramMissing))
+Write-Output ('FILES={0} ANALYSED={1} UNANALYSABLE={2} DYN_FILES={3} CMDREF={4} CMD_MISSING={5} CMD_UNRESOLVED={6} PARAM_MISSING={7} MODE={8}' -f `
+    $files.Count, $analysed, $skippedDep.Count, $dynFiles, $totalCmdRefs, (Get-FindingCount -Findings $cmdMissing), (Get-FindingCount -Findings $cmdUnresolved), (Get-FindingCount -Findings $paramMissing), $modeTag)
 
 $failed = $false
 

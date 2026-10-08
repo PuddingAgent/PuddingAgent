@@ -984,3 +984,51 @@ FAIL: 2 literal(s) name a drive that does not exist on this machine
 ### 退出码
 
 `0` PASS · `1` 至少一条 `MISSING_DRIVE`（或 `-StrictPaths` 下的 `MISSING_PATH`）· `2` 范围内 `.ps1` 无法解析故无法检查 · `3` **枚举到 0 个脚本 ⇒ 拒绝报绿** · `4` 自检未检出植入缺陷。
+
+## 扫描范围不得取决于**调用方式**（2026-10-09 实测抓到的第三个「安静地什么都没做」类缺陷）
+
+### 现象
+
+同一个门禁，直接跑与经 `run-gates.ps1` 跑，**分母不同**：
+
+| 调用 | C-5 的分母 |
+|---|---|
+| `powershell -File TestScripts\check-script-encodings.ps1`（人最可能敲的那条） | `FILES=24` |
+| `powershell -File TestScripts\run-gates.ps1` | `FILES=25` |
+
+差 1 个文件的来源已定位：**`TestScripts\ssh-probe\run-ssh-probe.ps1`** —— 它在一个**子目录**里，而 runner 恒带 `-Recurse`，门禁自身的默认是**只扫顶层**。
+
+### 为什么这比「报错」危险
+
+顶层是**仓库最不缺文件的地方**（24 个 `.ps1`），所以只看分母**看不出少了东西**。一个放在子目录里的坏脚本会让门禁**照常 PASS**，而人对"自己敲的那条命令"有天然信任。
+
+### 修法（三个扫描门禁统一，C-5 / C-6 / C-7）
+
+| 变更 | 说明 |
+|---|---|
+**默认递归** | `$scanRecurse = -not $NoRecurse`；`-Recurse` 保留但成为兼容参数，`-NoRecurse` 是显式退出 |
+**分母带模式** | 范围行尾部追加 `MODE=REC` / `MODE=FLAT`，**人无法再把两种范围看成同一个数** |
+
+### 实测（`5.1.26100.9444`）
+
+| 门禁 | 默认（`MODE=REC`） | `-NoRecurse`（`MODE=FLAT`） | 经 runner |
+|---|---|---|---|
+| C-5 | `FILES=25 … MOJIBAKE_RISK=0 UNRUNNABLE=5 RUNNABLE=20` exit 1 | `FILES=24 … RUNNABLE=19` exit 1 | `FILES=25 … MODE=REC` FAIL |
+| C-6 | `FILES=25 … CMD_MISSING=0` exit 0 | `FILES=24 … CMDREF=1388` exit 0 | `FILES=25 … MODE=REC` PASS |
+| C-7 | `FILES=41 … MISSING_DRIVE=0` exit 0 | `FILES=38 … MISSING_PATH=7` exit 0 | `FILES=41 … MODE=REC` PASS |
+
+**三条直接运行的分母与 runner 逐字相同** ⇒ 范围已是**门禁自身的属性**，不再是调用方式的属性。
+三个 `-SelfTest` 均为 `PASS`（exit 0），即本次改动未破坏任何控制。
+
+### 同一轮修掉的另一处（C-5 静默漏洞的最后一个实例）
+
+`TestScripts\start-phase2a3b-external-acceptance.ps1`（16,204 B，519 个非 ASCII 字节，**无 BOM**）曾被 C-5 判 `MOJIBAKE_RISK=1`：它在 5.1 下**能解析**，但引擎读到的是**按 ANSI(936) 解码后的另一段文字**。
+先做严格 UTF-8 解码校验（`UTF8_STRICT=OK`）确认加 BOM 是**正确**修法，再前置 3 字节 `EF BB BF`：
+
+```
+SZ=16204 → 16207    FIRST3=23-20-50 → EF-BB-BF
+git diff --numstat -- TestScripts  ⇒  1  1  （仅首行变动 ⇒ 内容零改动，可机检）
+C-5 复扫: BOM 6→7, NONASCII_NO_BOM 2→1, MOJIBAKE_RISK 1→0
+```
+
+⇒ C-5 的失败原因**收窄为唯一一类**：5 个 `#requires -Version 7.0`（本机无 PS 7）。

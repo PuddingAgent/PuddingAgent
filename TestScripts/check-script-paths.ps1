@@ -41,7 +41,12 @@
   Directory to scan. Default: TestScripts (resolved relative to the current dir).
 
 .PARAMETER Recurse
-  Scan subdirectories too. Default: top level only.
+  Accepted for compatibility; recursion is ON by default.
+
+.PARAMETER NoRecurse
+  Scan the top level only. The scope of a gate must not depend on how it is
+  invoked, so recursion is the default and this switch is the explicit opt-out:
+  a direct run and run-gates.ps1 must enumerate the same files.
 
 .PARAMETER ExcludeDir
   Directory names (any path segment) to skip. Default: temp, node_modules, .git, bin, obj, dist, .venv, .pudding
@@ -67,6 +72,7 @@
 param(
     [string]$Root = 'TestScripts',
     [switch]$Recurse,
+    [switch]$NoRecurse,
     [string[]]$ExcludeDir = @('temp', 'node_modules', '.git', 'bin', 'obj', 'dist', '.venv', '.pudding'),
     [int]$MaxReport = 200,
     [switch]$StrictPaths,
@@ -74,6 +80,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Scope must be a property of the gate, not of the invocation. Recursion defaults
+# to ON so that a direct run enumerates exactly what run-gates.ps1 enumerates.
+$scanRecurse = -not $NoRecurse
+if ($scanRecurse) { $modeTag = 'REC' } else { $modeTag = 'FLAT' }
 
 $EXIT_PASS = 0
 $EXIT_FINDINGS = 1
@@ -361,7 +372,7 @@ if (-not (Test-Path -LiteralPath $rootPath)) {
     exit $EXIT_EMPTY
 }
 
-$all = @(Get-ChildItem -LiteralPath $rootPath -File -Recurse:$Recurse -ErrorAction SilentlyContinue |
+$all = @(Get-ChildItem -LiteralPath $rootPath -File -Recurse:$scanRecurse -ErrorAction SilentlyContinue |
     Where-Object { $_.Extension -eq '.ps1' -or $_.Extension -eq '.py' })
 $files = @()
 foreach ($f in $all) {
@@ -439,9 +450,9 @@ $missingDrive = @($findings | Where-Object { $_.Verdict -eq 'MISSING_DRIVE' })
 $missingPath = @($findings | Where-Object { $_.Verdict -eq 'MISSING_PATH' })
 
 Write-Output ''
-Write-Output ('FILES={0} ANALYSED={1} UNANALYSABLE={2} LITERALS={3} OK_PATHS={4} MISSING_DRIVE={5} MISSING_PATH={6}' -f `
+Write-Output ('FILES={0} ANALYSED={1} UNANALYSABLE={2} LITERALS={3} OK_PATHS={4} MISSING_DRIVE={5} MISSING_PATH={6} MODE={7}' -f `
         $files.Count, $analysed, (Get-FindingCount -Findings $unanalysable), $totalLiterals, $okPaths, `
-        (Get-FindingCount -Findings $missingDrive), (Get-FindingCount -Findings $missingPath))
+        (Get-FindingCount -Findings $missingDrive), (Get-FindingCount -Findings $missingPath), $modeTag)
 
 $failed = $false
 
