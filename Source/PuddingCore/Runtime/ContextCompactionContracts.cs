@@ -164,6 +164,24 @@ public sealed record ContextHealthSnapshot(
     public string UsageSource { get; init; } = "unknown";
     public string UsageConfidence { get; init; } = "estimated";
     public string? UsageRecordedAtUtc { get; init; }
+
+    /// <summary>
+    /// **上一次主请求**的 Provider 实测输入（prompt tokens；只取主调用槽位，压缩/审批等辅助调用
+    /// 不得污染）。它与 <see cref="UsedTokens"/> 是**两个口径**：后者可能是「当前已准备好、尚未发出」
+    /// 请求的预算估算。UI 必须并排展示、各自标注来源，不得互相覆盖 ——
+    /// 诊断 2026-10-07 §4.1 记录的正是两者共用一个数值槽位导致的跳变。
+    /// null = 本次会话还没有任何主请求实测。
+    /// </summary>
+    public int? LastMeasuredPromptTokens { get; init; }
+
+    /// <summary>上述实测所对应请求的**原始（校准前）估算**，用于解释校准系数。</summary>
+    public int? LastMeasuredRawEstimatedTokens { get; init; }
+
+    /// <summary>上述实测所属调用的身份（session:trace:round:purpose），便于与日志/事件对表。</summary>
+    public string? LastMeasuredInvocationId { get; init; }
+
+    /// <summary>上述实测的记录时刻（ISO-8601，UTC）。</summary>
+    public string? LastMeasuredAtUtc { get; init; }
     public int? MessageTokens { get; init; }
     public int? ToolDefinitionTokens { get; init; }
     public int? SystemMessageTokens { get; init; }

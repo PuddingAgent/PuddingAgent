@@ -124,3 +124,34 @@ describe('unavailable-for-input region is labelled by source', () => {
     expect(screen.getAllByText('Provider 输入上限').length).toBeGreaterThan(0);
   });
 });
+
+describe('two usage sources side by side (F1)', () => {
+  it('renders 上次请求实测输入 next to the prepared estimate instead of overwriting it', () => {
+    render(
+      <ContextUsageRing
+        tLimit={1_000_000}
+        tUsed={463_800}
+        tPct={46.4}
+        usageSource="llm_request_calibrated"
+        usageConfidence="estimated"
+        measuredPromptTokens={131_100}
+        measuredRawTokens={71_000}
+      />,
+    );
+
+    const measured = screen.getByTestId('context-usage-last-measured');
+    expect(measured.textContent).toContain('上次请求实测输入');
+    expect(measured.textContent).toContain('131.1K');
+    expect(measured.textContent).toContain('原始估算 71.0K');
+    // 两个口径同时存在：主数值（预算估算 463.8K）不得被实测值覆盖。
+    expect(screen.getByText(/463\.8K/)).toBeTruthy();
+  });
+
+  it('renders nothing for the measured row when the value was not collected', () => {
+    render(
+      <ContextUsageRing tLimit={1_000_000} tUsed={463_800} tPct={46.4} usageConfidence="estimated" />,
+    );
+
+    expect(screen.queryByTestId('context-usage-last-measured')).toBeNull();
+  });
+});

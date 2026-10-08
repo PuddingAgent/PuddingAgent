@@ -101,6 +101,10 @@ public sealed class ContextCompactionService : IContextCompactionService
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var usage = await ResolveCurrentContextUsageAsync(db, sessionId, ct);
 
+        // F1 尾款：主调用的实测槽位（与「当前准备请求」的预算估算分开）。
+        MeasuredRequestUsage? measuredMain = null;
+        _contextUsageSnapshotStore?.TryGetLastMeasuredRequest(sessionId, out measuredMain);
+
         var threshold = _options?.AutoCompactionThreshold is > 0 and <= 1
             ? _options.AutoCompactionThreshold
             : ContextCompactionDefaults.TriggerRatio;
@@ -139,6 +143,14 @@ public sealed class ContextCompactionService : IContextCompactionService
             ProviderPromptTokens = usage.ProviderPromptTokens,
             ProviderCompletionTokens = usage.ProviderCompletionTokens,
             ProviderTotalTokens = usage.ProviderTotalTokens,
+            // F1 尾款：**上一次主请求的 Provider 实测输入**单独成一组事实，与上面的
+            // UsedTokens/UsageSource（可能是「当前准备好但还没发出去的请求」的预算估算）并排展示。
+            // 诊断 §4.1 的问题就是两者共用一个数值槽位、随来源切换而跳变（463.8K ↔ 164.7K）。
+            // 只取主调用槽位：压缩/审批等辅助调用不得污染这个口径（它们有自己的槽位）。
+            LastMeasuredPromptTokens = measuredMain?.ProviderPromptTokens,
+            LastMeasuredRawEstimatedTokens = measuredMain?.RawEstimatedTokens,
+            LastMeasuredInvocationId = measuredMain?.InvocationId,
+            LastMeasuredAtUtc = measuredMain?.RecordedAtUtc.ToString("O"),
         };
     }
 

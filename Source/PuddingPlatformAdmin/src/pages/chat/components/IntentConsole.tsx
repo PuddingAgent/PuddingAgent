@@ -1207,6 +1207,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               usageRecordedAt={contextHealth?.usageRecordedAtUtc}
               usageSource={contextHealth?.usageSource}
               usageConfidence={contextHealth?.usageConfidence}
+              measuredPromptTokens={contextHealth?.lastMeasuredPromptTokens}
+              measuredRawTokens={contextHealth?.lastMeasuredRawEstimatedTokens}
               tMessageCount={contextHealth?.messageCount}
               onOpenChange={(next) => {
                 // 打开即刷新：此前只在会话切换 / 一轮结束时拉取，

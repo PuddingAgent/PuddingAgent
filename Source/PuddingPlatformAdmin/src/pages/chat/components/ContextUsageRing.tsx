@@ -49,6 +49,15 @@ export interface ContextUsageRingProps {
   usageRecordedAt?: string | null;
   usageSource?: string | null;
   usageConfidence?: string | null;
+  /**
+   * F1：**上一次主请求的 Provider 实测输入**（prompt tokens）。它与主数值（可能只是「当前准备请求」
+   * 的预算估算）是**两个口径**，必须并排展示；未采集 ⇒ undefined（该行不渲染），不用 0 冒充。
+   */
+  measuredPromptTokens?: number | null;
+  /** 上述实测所对应请求的原始（校准前）估算，用于解释校准系数。 */
+  measuredRawTokens?: number | null;
+  /** 上述实测所属调用的身份（与日志/事件对表用）。 */
+  measuredInvocationId?: string | null;
   /** 会话消息数：0 = 会话尚未开始，不展示任何用量（方案 2）。 */
   tMessageCount?: number;
   /** 运行状态详情（原 ComposerStatusDetails 弹层内容，并入本面板）。 */
@@ -140,6 +149,8 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   usageRecordedAt,
   usageSource,
   usageConfidence,
+  measuredPromptTokens,
+  measuredRawTokens,
   tMessageCount,
   compactionStatus,
   error,
@@ -396,7 +407,23 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
               {/* 数据来源：同一面板的百分比在不同回退源之间口径并不一致（DB 回退按
                   TotalTokens 含 completion，本地估算走字典），不标来源则「86% 但
                   剩余 0」这类组合无法判断。 */}
-              {usageRecordedAt && <div className={styles.contextUsagePanelRow}>
+              {/* F1：**两个口径并排**。上面的「已使用」可能是「当前准备请求」的预算估算，
+                  这里永远是「上一次真的发出去的主请求」的 Provider 实测输入；诊断 §4.1 的问题
+                  正是两者共用一个数值槽位、随来源切换而跳变（463.8K ↔ 164.7K）。
+                  未采集 ⇒ 整行不渲染（不用 0 冒充）。 */}
+              {typeof measuredPromptTokens === 'number' && (
+                <div
+                  className={styles.contextUsagePanelRow}
+                  data-testid="context-usage-last-measured"
+                >
+                  <span className={styles.contextUsagePanelLabel}>上次请求实测输入</span>
+                  <span className={styles.contextUsagePanelValue}>
+                    {formatTokens(measuredPromptTokens)}
+                    {typeof measuredRawTokens === 'number' &&
+                      `（原始估算 ${formatTokens(measuredRawTokens)}）`}
+                  </span>
+                </div>
+              )}              {usageRecordedAt && <div className={styles.contextUsagePanelRow}>
                 <span className={styles.contextUsagePanelLabel}>用量采样时间</span>
                 <span className={styles.contextUsagePanelValue}>{new Date(usageRecordedAt).toLocaleString('zh-CN', { hour12: false })}</span>
               </div>}

@@ -14,6 +14,13 @@ namespace PuddingMemoryEngineTests;
 [TestClass]
 public sealed class ContextCompactionServiceTests
 {
+    private static IReadOnlyList<ChatMessage> Messages(int count)
+    {
+        var messages = new List<ChatMessage>();
+        for (var i = 0; i < count; i++)
+            messages.Add(new ChatMessage(ChatRole.User, $"message {i} " + new string('x', 200)));
+        return messages;
+    }
     [TestMethod]
     public void ContextHealthEvaluator_ReturnsCriticalWhenUsageExceedsCriticalThreshold()
     {
@@ -73,9 +80,96 @@ public sealed class ContextCompactionServiceTests
         Assert.IsTrue(health.ShouldAutoCompact);
     }
 
+    /// <summary>
+    /// F1 尾款：健康快照必须**同时**给出两个口径 —— 「上一次主请求的 Provider 实测输入」与
+    /// 「当前准备请求的预算估算」（<c>UsedTokens</c>）不得共用一个槽位随来源跳变（诊断 §4.1）。
+    /// </summary>
     [TestMethod]
-    public async Task GetHealthAsync_LargeWindow_DoesNotCompactAtOldAbsoluteCap()
+    public async Task GetHealthAsync_ExposesLastMeasuredMainRequest_SeparatelyFromPreparedEstimate()
     {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-two-sources", messageCount: 2);
+
+        var usageStore = new ContextUsageSnapshotStore();
+        var prepared = usageStore.CaptureLlmRequest(
+            "session-two-sources", Messages(4), tools: null, "test-model");
+        var measuredPrompt = prepared.RawEstimatedTokens * 2;
+        usageStore.RecordProviderUsage(
+            "session-two-sources",
+            new TokenUsageDto
+            {
+                PromptTokens = measuredPrompt,
+                CompletionTokens = 64,
+                TotalTokens = measuredPrompt + 64,
+            },
+            purpose: LlmCallPurposes.Agent,
+            invocationId: "session-two-sources:trace:1:agent");
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("summary"),
+            NullLogger<ContextCompactionService>.Instance,
+            contextUsageSnapshotStore: usageStore);
+
+        var health = await service.GetHealthAsync(
+            "session-two-sources",
+            contextWindowTokens: 200_000,
+            maxOutputTokens: 20_000);
+
+        // 实测口径（主请求）
+        Assert.AreEqual(measuredPrompt, health.LastMeasuredPromptTokens, "必须暴露主请求的实测输入");
+        Assert.AreEqual(prepared.RawEstimatedTokens, health.LastMeasuredRawEstimatedTokens);
+        Assert.AreEqual("session-two-sources:trace:1:agent", health.LastMeasuredInvocationId);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(health.LastMeasuredAtUtc));
+
+        // 两者是不同口径：UsedTokens 来自准备快照（含 provider 覆盖后的值），实测输入单独成字段，
+        // 且 Total 不得被当成实测输入（含 completion）。
+        Assert.IsNotNull(health.ProviderPromptTokens);
+        Assert.AreEqual(measuredPrompt, health.ProviderPromptTokens);
+        Assert.AreNotEqual(measuredPrompt + 64, health.LastMeasuredPromptTokens, "Total 不得当作实测输入");
+    }
+
+    /// <summary>辅助调用（压缩/审批）不得污染「上次主请求实测输入」这一口径。</summary>
+    [TestMethod]
+    public async Task GetHealthAsync_AuxiliaryMeasurement_DoesNotPopulateMeasuredInput()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-aux-only", messageCount: 2);
+
+        var usageStore = new ContextUsageSnapshotStore();
+        var prepared = usageStore.CaptureLlmRequest(
+            "session-aux-only", Messages(4), tools: null, "test-model");
+        usageStore.RecordProviderUsage(
+            "session-aux-only",
+            new TokenUsageDto { PromptTokens = prepared.RawEstimatedTokens * 3, CompletionTokens = 1, TotalTokens = 2 },
+            purpose: LlmCallPurposes.Compaction,
+            invocationId: "session-aux-only:trace:1:compaction");
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("summary"),
+            NullLogger<ContextCompactionService>.Instance,
+            contextUsageSnapshotStore: usageStore);
+
+        var health = await service.GetHealthAsync(
+            "session-aux-only",
+            contextWindowTokens: 200_000,
+            maxOutputTokens: 20_000);
+
+        Assert.IsNull(health.LastMeasuredPromptTokens, "辅助调用不得写入「上次主请求实测输入」");
+        Assert.IsNull(health.LastMeasuredInvocationId);
+    }
+
+    [TestMethod]
+    public async Task GetHealthAsync_LargeWindow_DoesNotCompactAtOldAbsoluteCap()    {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = CreateOptions(connection);

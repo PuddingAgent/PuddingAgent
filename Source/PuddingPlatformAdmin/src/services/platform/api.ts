@@ -2674,6 +2674,19 @@ export interface ContextHealthSnapshot {
   usageSource?: string;
   /** provider_reported = 可直接采信；estimated = 估算值。 */
   usageConfidence?: string;
+  /**
+   * F1：**上一次主请求**的 Provider 实测输入（prompt tokens，只取主调用槽位）。
+   * 与 `usedTokens` 是**两个口径**：后者可能是「当前已准备好、尚未发出」请求的预算估算。
+   * 两者必须并排展示、各自标注来源，不得互相覆盖（诊断 2026-10-07 §4.1 的跳变）。
+   * 未采集 ⇒ undefined/null（按「未采集」处理，不用 0 冒充）。
+   */
+  lastMeasuredPromptTokens?: number | null;
+  /** 上述实测所对应请求的原始（校准前）估算，用于解释校准系数。 */
+  lastMeasuredRawEstimatedTokens?: number | null;
+  /** 上述实测所属调用的身份（与日志/事件对表用）。 */
+  lastMeasuredInvocationId?: string | null;
+  /** 上述实测的记录时刻（ISO-8601）。 */
+  lastMeasuredAtUtc?: string | null;
   usageRecordedAtUtc?: string | null;
   /** Provider 输入 token 上限；undefined = 未配置/未知（该约束不参与取小）。 */
   providerInputLimitTokens?: number | null;
