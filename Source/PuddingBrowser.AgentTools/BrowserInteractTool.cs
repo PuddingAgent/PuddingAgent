@@ -2,6 +2,8 @@ using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 
+using PuddingBrowser.Automation;
+
 using PuddingCode.Models;
 
 using PuddingCode.Tools;
@@ -39,6 +41,14 @@ public sealed record BrowserInteractArgs
     public double? DeltaX { get; init; }
 
     public double? DeltaY { get; init; }
+
+    /// <summary>
+    /// 显式声明「动作完成后该元素的值应当是这个」——回执会据此给出 <c>verified</c>，
+    /// 于是**一次调用就能确认写入成功**，不需要再发一次 locate/snapshot（设计方案 §4.1/§4.2、G7）。
+    /// 表单值只以 <c>matched</c> + 长度形式回传，绝不回显内容。
+    /// </summary>
+    [ToolParam("Optional expected element value after the action; when set, the receipt reports verified/failed instead of dispatched. The value itself is never echoed.")]
+    public string? ExpectValue { get; init; }
 
 }
 
@@ -223,6 +233,23 @@ public sealed class BrowserInteractTool(
 
             var page = interaction.Value.Page;
 
+            // 证据化回执：把「调用方声明的期望」与「驱动回读的观测值」交给共享判定器，
+            // 于是两条传输天然同形（判定只在这里发生一次，映射层不各自再验）。
+            var element = interaction.Value.Element;
+            var receipt = BrowserInteractionReceipt.Build(new BrowserInteractionEvidence(
+                new OperationId(Guid.NewGuid().ToString("N")),
+                MapAction(action, args.Checked),
+                RequestedText: args.Text,
+                RequestedValues: args.Values,
+                RequestedChecked: args.Checked,
+                ExpectedValue: args.ExpectValue,
+                ElementObserved: element is not null,
+                ObservedValue: element?.Value,
+                ObservedSelectedValues: element?.SelectedValues,
+                ObservedChecked: element?.IsChecked,
+                Execution: BrowserActionExecution.Completed,
+                Target: new DesktopPageTarget(contextId, args.PageId.Trim())));
+
             return BrowserToolResponse.Success(
 
                 new BrowserInteractionToolValue
@@ -251,7 +278,21 @@ public sealed class BrowserInteractTool(
 
                     // 迁移前这里恒为 null，现在与能力通道的结果一致。
 
-                    Element = interaction.Value.Element is { } element ? ToValue(element) : null,
+                    Element = element is { } observed ? ToValue(observed) : null,
+
+                    Ok = receipt.Ok,
+                    Completion = BrowserActionCompletionWire.NameOf(receipt.Completion),
+                    Assertions = receipt.Assertions
+                        .Select(assertion => new BrowserAssertionToolValue
+                        {
+                            Kind = BrowserAssertionKindWire.NameOf(assertion.Kind),
+                            Matched = assertion.Matched,
+                            Length = assertion.RawLength,
+                            Actual = assertion.Actual,
+                        })
+                        .ToArray(),
+                    MayHaveSideEffects = receipt.MayHaveSideEffects,
+                    SafeToRetry = receipt.SafeToRetry,
 
                 },
 

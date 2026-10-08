@@ -90,6 +90,40 @@ public sealed record BrowserInteractionToolValue
     public required string Action { get; init; }
     public required BrowserTabToolValue Page { get; init; }
     public BrowserElementToolValue? Element { get; init; }
+
+    /// <summary>
+    /// 回执是否可当作成功：只对 <c>verified</c> 或明确标注的 <c>dispatched</c> 为真；
+    /// unknown/blocked/failed 为假，但**不丢失已派发的事实**（见 <see cref="Completion"/> 与
+    /// <see cref="MayHaveSideEffects"/>）。
+    /// </summary>
+    public bool Ok { get; init; }
+
+    /// <summary>完成度线名：verified / dispatched / blocked / failed / unknown。</summary>
+    public required string Completion { get; init; }
+
+    /// <summary>后置断言证据。表单值只给 matched 与长度，绝不回显内容。</summary>
+    public IReadOnlyList<BrowserAssertionToolValue> Assertions { get; init; } = [];
+
+    public bool MayHaveSideEffects { get; init; }
+
+    public bool SafeToRetry { get; init; }
+}
+
+/// <summary>
+/// 一条后置断言证据的工具投影。
+/// <see cref="Actual"/> 对表单值是 <c>null</c>（<see cref="Length"/> 仍给出长度），
+/// 因此「fill 到底写进去了没有」可被证明而内容不外泄。
+/// </summary>
+public sealed record BrowserAssertionToolValue
+{
+    public required string Kind { get; init; }
+    public required bool Matched { get; init; }
+
+    /// <summary>观测值的原始长度；未观测到为 <c>null</c>。</summary>
+    public int? Length { get; init; }
+
+    /// <summary>非敏感断言的实际值（已截断）；敏感断言恒为 <c>null</c>。</summary>
+    public string? Actual { get; init; }
 }
 
 public sealed record BrowserWaitToolValue

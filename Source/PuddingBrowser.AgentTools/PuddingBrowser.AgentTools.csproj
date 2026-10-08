@@ -9,6 +9,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
+    <!-- 回执判定（completion/断言/重试裁定）是纯逻辑组件：工具层只调用它一次，
+         因此两条传输天然同形，映射层不必各自再验一遍。 -->
+    <ProjectReference Include="..\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj" />
     <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
   </ItemGroup>

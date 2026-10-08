@@ -26,7 +26,7 @@ draft: false
 | `BrowserNavigateTool.cs` | `browser_navigate` | 页面导航 |
 | `BrowserSnapshotTool.cs` | `browser_snapshot` | 页面快照 / 无障碍树 |
 | `BrowserLocateTool.cs` | `browser_locate` | 元素定位；`include_value=true` 时附带表单当前值（`value`/`selectedValues`）——**默认不带**以守住输出预算，需要确认「fill 是否写入成功」时显式打开（唯一可靠回执，`text` 不含表单值） |
-| `BrowserInteractTool.cs` | `browser_interact` | 元素交互（点击/输入） |
+| `BrowserInteractTool.cs` | `browser_interact` | 元素交互（点击/输入）；`expect_value` 声明期望后**一次调用即可确认写入成功**——输出带 `ok`/`completion`/`assertions`/`mayHaveSideEffects`/`safeToRetry`（判定在 `PuddingBrowser.Automation`，两条传输天然同形）；表单值只以 matched+长度回传 |
 | `BrowserWaitForTool.cs` | `browser_wait_for` | 等待条件满足 |
 
 ## 基础与契约

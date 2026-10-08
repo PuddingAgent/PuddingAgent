@@ -226,6 +226,99 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Interact_FillWithExpectValue_ConfirmsTheWriteInOneCall()
+    {
+        // 门禁 G7：一次 fill 的回执就足以确认写入成功，不需要再发一次 locate/snapshot。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var matched = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "fill",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Name" },
+                text = "Pudding",
+                expect_value = "Pudding"
+            }));
+
+        var mismatched = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "fill",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Name" },
+                text = "Pudding",
+                expect_value = "something-else"
+            }));
+
+        var withoutExpectation = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "fill",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Name" },
+                text = "Pudding"
+            }));
+
+        Assert.True(matched.Success);
+        var verified = GetJson(matched.Output, "value");
+        Assert.Equal("verified", verified.GetProperty("completion").GetString());
+        Assert.True(verified.GetProperty("ok").GetBoolean());
+        Assert.True(verified.GetProperty("assertions")[0].GetProperty("matched").GetBoolean());
+
+        var failed = GetJson(mismatched.Output, "value");
+        Assert.Equal("failed", failed.GetProperty("completion").GetString());
+        Assert.False(failed.GetProperty("ok").GetBoolean());
+        Assert.False(failed.GetProperty("assertions")[0].GetProperty("matched").GetBoolean());
+
+        // 没有声明期望 ⇒ 如实报 dispatched，不假装成功。
+        var dispatched = GetJson(withoutExpectation.Output, "value");
+        Assert.Equal("dispatched", dispatched.GetProperty("completion").GetString());
+        Assert.True(dispatched.GetProperty("ok").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Interact_Receipt_NeverEchoesTheFormValue()
+    {
+        // 证明「写进去了」但不能把输入内容带进工具输出。
+        const string secret = "hunter2-never-echo";
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "fill",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Name" },
+                text = secret,
+                expect_value = secret
+            }));
+
+        Assert.True(result.Success);
+        var assertion = GetJson(result.Output, "value").GetProperty("assertions")[0];
+
+        // 敏感断言：只给 matched 与长度。
+        Assert.True(assertion.GetProperty("matched").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, assertion.GetProperty("actual").ValueKind);
+        Assert.Equal(secret.Length, assertion.GetProperty("length").GetInt32());
+        Assert.DoesNotContain(secret, result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
         var runtime = new FakeBrowserRuntime();
@@ -547,6 +640,20 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
         var version = page.PageVersion > 0
             ? DesktopPageVersion.Require(page.PageVersion)
             : DesktopPageVersion.Unknown;
+
+        // 真实驱动在动作之后会**在同一节点上回读**表单值（见 WebView2DomClient 的交互脚本），
+        // 因此替身也必须回读：否则「fill 是否写入成功」在工具层无从判定（门禁 G7）。
+        var element = version.IsKnown
+            ? new DesktopElementRef(
+                "e1",
+                "input",
+                version,
+                role: "textbox",
+                name: request.Locator?.Name ?? "Name",
+                // 回读值：替身用 LastValue 代表"页面里现在的值"（非字符串形态=没读到值）。
+                value: page is FakeBrowserPage fake ? fake.LastValue as string : null)
+            : null;
+
         return CapabilityResult<DesktopInteractionResult>.Success(new DesktopInteractionResult(
             request.Target,
             new DesktopPageState(
@@ -554,7 +661,8 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
                 Uri.TryCreate(page.Info.Url, UriKind.Absolute, out var url) ? url : null,
                 version,
                 DesktopPageReadiness.Unknown,
-                page.Info.Title)));
+                page.Info.Title),
+            element));
     }
     public async Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
         BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken ct = default)
