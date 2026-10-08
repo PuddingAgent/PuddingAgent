@@ -36,6 +36,26 @@ internal static class BrowserOperationFailure
             new DesktopCapabilityError(DesktopCapabilityErrorCode.UnsupportedCapability, message, retryable: false),
             null),
 
+        // ── §6.2 的"动作被拒绝"三态：都没派发，但**修复方式不同**，因此提示必须不同。
+        // 歧义：绝不静默选第一个，也绝不重试（同样的定位一定再次歧义）。
+        "browser_locator_ambiguous" => (
+            new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidRequest, message, retryable: false),
+            "the locator matched several elements: disambiguate with nth or a more specific locator"),
+
+        // 零命中不等于"定位方式全坏"：页面可能还在渲染 ⇒ 可以等/重试。
+        "browser_element_not_found" => (
+            new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidTarget, message, retryable: true),
+            "no element matched: wait for it (browser_wait_for) or re-observe the page and re-locate"),
+
+        // 不可见的写目标不算成功：§6.2 要求写操作先滚入可见区域并复检。
+        "browser_element_not_visible" => (
+            new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidTarget, message, retryable: false),
+            "the matched element is not visible: scroll it into view or choose a different target"),
+
+        "browser_element_disabled" => (
+            new DesktopCapabilityError(DesktopCapabilityErrorCode.InvalidRequest, message, retryable: false),
+            "the matched element is disabled: wait until it becomes enabled"),
+
         // 未登记的异常码：保守地当作**可能已产生副作用**（内部错误），不得当作"没执行"。
         _ => (
             new DesktopCapabilityError(DesktopCapabilityErrorCode.InternalError, message),

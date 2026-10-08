@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingCode.Tools;
 
@@ -270,4 +271,49 @@ internal static class BrowserToolResponse
         SelectedValues = info.SelectedValues,
         BoundingBox = info.BoundingBox
     };
+
+    /// <summary>
+    /// 元素的能力层记录 → 工具输出（设计方案 §6.2「定位结果」）。
+    ///
+    /// 三条输出收敛规则（都在**展示边界**做，不影响驱动内部精度与准入判定）：
+    /// ① <c>text</c> 与 <c>name</c> 相同时省略 —— 重复内容只是白付 token；
+    /// ② <c>checked</c> 属于「可显式请求」的状态，默认不给；
+    /// ③ bbox 保留**最多一位小数**（驱动内部仍是原精度；这里只用于展示，
+    ///    真实点击走 ref，绝不使用四舍五入后的坐标）。
+    /// </summary>
+    public static BrowserElementToolValue Element(
+        DesktopElementRef element,
+        bool includeValue = false,
+        bool includeChecked = false) => new()
+    {
+        Ref = element.Reference,
+        Tag = element.Tag,
+        Role = element.Role,
+        Name = element.Name,
+        Text = SameAsName(element.Text, element.Name) ? null : element.Text,
+        Visible = element.Visible,
+        Enabled = element.Enabled,
+        Checked = includeChecked ? element.IsChecked : null,
+        Value = includeValue ? element.Value : null,
+        SelectedValues = includeValue ? element.SelectedValues : null,
+        BoundingBox = element.BoundingBox is { } box
+            ? new BoundingBox
+            {
+                X = Round1(box.X),
+                Y = Round1(box.Y),
+                Width = Round1(box.Width),
+                Height = Round1(box.Height),
+            }
+            : null,
+    };
+
+    private static bool SameAsName(string? text, string? name) =>
+        text is not null && name is not null && string.Equals(text, name, StringComparison.Ordinal);
+
+    /// <summary>展示用：最多一位小数（负零归一成 0，避免出现 "-0"）。</summary>
+    private static double Round1(double value)
+    {
+        var rounded = Math.Round(value, 1, MidpointRounding.AwayFromZero);
+        return rounded == 0 ? 0 : rounded;
+    }
 }

@@ -8,10 +8,17 @@ namespace PuddingBrowser.AgentTools;
 
 public sealed record BrowserLocateArgs
 {
+    /// <summary>定位默认返回条数上限（设计方案 §6.2：locate 默认 limit=10）。</summary>
+    public const int DefaultLimit = 10;
+
     [ToolParam("Browser page id to search.")]
     public required string PageId { get; init; }
     public string? ContextId { get; init; }
     public required BrowserLocatorInput Locator { get; init; }
+
+    /// <summary>返回条数上限（默认 10，最多 100）。低于设计默认值是有意的：定位结果通常只需前几条。</summary>
+    [ToolParam("Maximum matches to return (default 10, max 100).")]
+    public int? Limit { get; init; }
 
     /// <summary>
     /// 是否返回表单当前值（默认 <c>false</c>，见设计方案 §6.2）。
@@ -20,6 +27,10 @@ public sealed record BrowserLocateArgs
     /// </summary>
     [ToolParam("Include the current form value/selected values for each match (default false; use it to confirm a fill actually wrote).")]
     public bool IncludeValue { get; init; }
+
+    /// <summary>是否返回勾选态（默认 <c>false</c>；同样属「可显式请求」的状态，见 §6.2）。</summary>
+    [ToolParam("Include the checked state for each match (default false).")]
+    public bool IncludeChecked { get; init; }
 }
 
 [Tool(
@@ -40,6 +51,14 @@ public sealed class BrowserLocateTool(
         try
         {
             var locator = BrowserLocatorInputMapper.ToDesktopLocator(args.Locator);
+
+            // 越界不是运行时异常，而是调用方参数错（fail closed，且错误码可读）。
+            if (args.Limit is { } limit and (< 1 or > BrowserLocateRequest.MaxMaxResults))
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_invalid_arguments",
+                    $"locator limit must be between 1 and {BrowserLocateRequest.MaxMaxResults}");
+            }
 
             if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
             {
@@ -83,14 +102,17 @@ public sealed class BrowserLocateTool(
             }
 
             var located = await surface.LocateAsync(
-                new BrowserLocateRequest(target, locator, expectedPageVersion), call, ct);
+                new BrowserLocateRequest(target, locator, expectedPageVersion, args.Limit ?? BrowserLocateArgs.DefaultLimit), call, ct);
             if (located.IsFailure)
             {
                 return Failure(located.Error!);
             }
 
             var elements = located.Value.Elements;
-            var values = elements.Take(100).Select(element => ToValue(element, args.IncludeValue)).ToArray();
+            var values = elements
+                .Take(BrowserLocateRequest.MaxMaxResults)
+                .Select(element => ToValue(element, args.IncludeValue, args.IncludeChecked))
+                .ToArray();
             return BrowserToolResponse.Success(
                 new BrowserLocateToolValue
                 {
@@ -113,30 +135,11 @@ public sealed class BrowserLocateTool(
         BrowserCapabilityFailure.From(error, "browser_locate_failed", "stale_element_reference");
 
     /// <summary>
-    /// 表单值与选中值**只在显式请求时**返回（设计方案 §6.2）：默认省掉它们才能守住输出预算，
-    /// 而需要确认写入时它们又是唯一的可靠证据。敏感值不得在此直接回显——
-    /// 交互回执走 <c>BrowserActionAssertion</c> 的脱敏路径。
+    /// 定位结果的展示投影（规则集中在 <see cref="BrowserToolResponse.Element(DesktopElementRef, bool, bool)"/>）：
+    /// text 与 name 相同则省略、checked 显式请求、bbox 最多一位小数。
+    /// 敏感值不得在此直接回显——交互回执走 <c>BrowserActionAssertion</c> 的脱敏路径。
     /// </summary>
-    private static BrowserElementToolValue ToValue(DesktopElementRef element, bool includeValue) => new()
-    {
-        Ref = element.Reference,
-        Tag = element.Tag,
-        Role = element.Role,
-        Name = element.Name,
-        Text = element.Text,
-        Visible = element.Visible,
-        Enabled = element.Enabled,
-        Checked = element.IsChecked,
-        Value = includeValue ? element.Value : null,
-        SelectedValues = includeValue ? element.SelectedValues : null,
-        BoundingBox = element.BoundingBox is { } box
-            ? new PuddingBrowser.Abstractions.BoundingBox
-            {
-                X = box.X,
-                Y = box.Y,
-                Width = box.Width,
-                Height = box.Height,
-            }
-            : null,
-    };
+    private static BrowserElementToolValue ToValue(
+        DesktopElementRef element, bool includeValue, bool includeChecked) =>
+        BrowserToolResponse.Element(element, includeValue, includeChecked);
 }

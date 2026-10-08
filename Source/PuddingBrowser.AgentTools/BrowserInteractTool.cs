@@ -354,33 +354,13 @@ public sealed class BrowserInteractTool(
 
 
 
-    private static BrowserElementToolValue ToValue(DesktopElementRef element) => new()
-
-    {
-
-        Ref = element.Reference,
-
-        Tag = element.Tag,
-
-        Role = element.Role,
-
-        Name = element.Name,
-
-        Text = element.Text,
-
-        Visible = element.Visible,
-
-        Enabled = element.Enabled,
-
-        Checked = element.IsChecked,
-
-        BoundingBox = element.BoundingBox is { } box
-
-            ? new BoundingBox { X = box.X, Y = box.Y, Width = box.Width, Height = box.Height }
-
-            : null,
-
-    };
+    /// <summary>
+    /// 受影响元素的投影：与定位共用同一套展示规则（text 与 name 相同则省略、bbox 最多一位小数）。
+    /// <c>checked</c> 在这里保留 —— 交互后"到底勾上没有"正是这一条的直接证据，
+    /// 而表单值仍不回显（回执走脱敏断言）。
+    /// </summary>
+    private static BrowserElementToolValue ToValue(DesktopElementRef element) =>
+        BrowserToolResponse.Element(element, includeValue: false, includeChecked: true);
 
 
 

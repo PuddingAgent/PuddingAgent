@@ -647,6 +647,103 @@ public sealed class BrowserAgentToolsTests
         Assert.Null(page.LastAction);
     }
 
+    [Theory]
+    [InlineData("browser_locator_ambiguous", "not_retryable", "nth")]
+    [InlineData("browser_element_not_visible", "not_retryable", "scroll")]
+    [InlineData("browser_element_disabled", "not_retryable", "enabled")]
+    [InlineData("browser_element_not_found", "safe_to_retry", "wait")]
+    public async Task Interact_DriverRejections_MapToTheRightRetryAdvice(
+        string driverCode, string expectedDisposition, string expectedHintFragment)
+    {
+        // 设计 §6.2：歧义必须明确拒绝（不静默选第一个）；零命中不等于"定位方式全坏"（可以等）。
+        // 这些拒绝都**没派发**，但修复方式不同 ⇒ 重试建议与提示必须分别正确。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.ActionFailure = new BrowserOperationException(driverCode, "driver rejected the action");
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "click",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "text", value = "Learn more" }
+            }));
+
+        Assert.False(result.Success);
+        using var document = JsonDocument.Parse(result.Error!);
+        var root = document.RootElement;
+        Assert.Equal(driverCode, root.GetProperty("error").GetProperty("code").GetString());
+
+        var receipt = root.GetProperty("value");
+        Assert.Equal("not_started", receipt.GetProperty("execution").GetString());
+        Assert.False(receipt.GetProperty("mayHaveSideEffects").GetBoolean());
+        Assert.Equal(expectedDisposition, receipt.GetProperty("retryDisposition").GetString());
+        Assert.Contains(
+            expectedHintFragment,
+            receipt.GetProperty("retryDetail").GetString()!,
+            StringComparison.OrdinalIgnoreCase);
+
+        // 一次驱动动作都没发生。
+        Assert.Null(page.LastAction);
+    }
+
+    [Fact]
+    public async Task Locate_AppliesTheDesignOutputRules_AndTheDefaultLimit()
+    {
+        // 设计 §6.2：text 与 name 相同则省略、checked 显式请求、bbox 最多一位小数、默认 limit=10。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var locate = await ExecuteAsync(
+            new BrowserLocateTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" }
+            }));
+
+        Assert.True(locate.Success);
+
+        // 默认 limit=10 确实传到了能力层。
+        Assert.Equal(10, surface.LastLocateRequest!.MaxResults);
+
+        var element = GetJson(locate.Output, "value").GetProperty("elements")[0];
+
+        // text == name（替身里都是 "Save"）⇒ 省略 text。
+        Assert.Equal(JsonValueKind.Null, element.GetProperty("text").ValueKind);
+        // checked 属显式请求：默认不给。
+        Assert.Equal(JsonValueKind.Null, element.GetProperty("checked").ValueKind);
+        // ✓ bbox 展示保留**最多一位小数**（驱动给的是 10.25 / 20.5 / 80.04 / 30.75）。
+        var box = element.GetProperty("boundingBox");
+        Assert.Equal(10.3, box.GetProperty("x").GetDouble());
+        Assert.Equal(20.5, box.GetProperty("y").GetDouble());
+        Assert.Equal(80.0, box.GetProperty("width").GetDouble());
+        Assert.Equal(30.8, box.GetProperty("height").GetDouble());
+
+        // 显式请求时才给 value（checked 由替身未设而保持 null）。
+        var explicitState = await ExecuteAsync(
+            new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "role", value = "button", name = "Save" },
+                include_value = true,
+                include_checked = true
+            }));
+
+        var explicitElement = GetJson(explicitState.Output, "value").GetProperty("elements")[0];
+        Assert.Equal("Pudding", explicitElement.GetProperty("value").GetString());
+    }
+
     [Fact]
     public async Task Locate_StaleRefPreservesStableFailureCode()
     {
@@ -751,6 +848,9 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     /// <summary>让替身直接以某个领域错误结束交互（用于验证闸门拒绝 vs 普通失败的回执差异）。</summary>
     public DesktopCapabilityError? InteractFailure { get; init; }
 
+    /// <summary>最近一次定位请求（用于断言默认 limit 等参数确实传到了能力层）。</summary>
+    public BrowserLocateRequest? LastLocateRequest { get; private set; }
+
     public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext call, CancellationToken ct = default)
     {
@@ -805,6 +905,8 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
         BrowserLocateRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        LastLocateRequest = request;
+
         if (await ResolvePageAsync(request.Target, ct) is not { } page)
         {
             return CapabilityResult<DesktopLocateResult>.Failure(
@@ -843,7 +945,13 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
                 handle.Info.Enabled,
                 handle.Info.Checked,
                 handle.Info.Value,
-                handle.Info.SelectedValues))
+                handle.Info.SelectedValues)
+            {
+                // 驱动会带上几何（展示层再收敛到一位小数）；替身也必须给，否则定位输出永远没有 bbox。
+                BoundingBox = handle.Info.BoundingBox is { } b
+                    ? new DesktopElementBox(b.X, b.Y, b.Width, b.Height)
+                    : null,
+            })
             .ToArray();
 
         return CapabilityResult<DesktopLocateResult>.Success(
@@ -1328,6 +1436,9 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public string? LastAction { get; private set; }
     public object? LastValue { get; private set; }
 
+    /// <summary>让驱动替身按真实驱动的拒绝语义抛异常（歧义/零命中/不可见/禁用）。</summary>
+    public BrowserOperationException? ActionFailure { get; set; }
+
     public FakeBrowserPage(PageId id, BrowserContextId contextId, FakeBrowserContext context)
     {
         Id = id;
@@ -1397,7 +1508,7 @@ internal sealed class FakeBrowserPage : IBrowserPage
                 Enabled = true,
                 // 表单回读（设计方案 §6.2）：text 不含表单值，只有它能让调用方确认写入成功。
                 Value = "Pudding",
-                BoundingBox = new BoundingBox { X = 10, Y = 20, Width = 80, Height = 30 }
+                BoundingBox = new BoundingBox { X = 10.25, Y = 20.5, Width = 80.04, Height = 30.75 }
             })
         ]);
     }
@@ -1439,6 +1550,11 @@ internal sealed class FakeBrowserPage : IBrowserPage
             && !locator.Value.StartsWith($"v{PageVersion}-", StringComparison.Ordinal))
         {
             throw new BrowserOperationException("stale_element_reference", "stale ref");
+        }
+
+        if (ActionFailure is not null)
+        {
+            throw ActionFailure;
         }
 
         LastAction = action;
