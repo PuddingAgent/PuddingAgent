@@ -760,6 +760,57 @@ public sealed class BrowserAgentToolsTests
         Assert.False(stale.Success, "另一页面/版本的游标必须被拒绝");
     }
     [Fact]
+    public void TheCallerIdentityComesFromTheTrustedExecutionContextOnly()
+    {
+        // 设计 §3.1/§3.2：身份来自 Core 的可信执行上下文。这里逐条钉住"从上下文到身份"的映射与拒绝面。
+        var turn = new PuddingCode.Runtime.RuntimeExecutionIdentity
+        {
+            Kind = PuddingCode.Runtime.RuntimeExecutionKind.ConversationTurn,
+            ConversationId = "conv-1",
+            RunId = "run-1",
+            TraceId = "trace-1",
+        };
+
+        Assert.True(
+            BrowserCallerIdentitySource.TryProject(turn, "agent-1", out var agent, out var agentReason),
+            agentReason);
+        Assert.Equal(Pudding.Contracts.Desktop.BrowserCallerKind.Agent, agent!.Kind);
+        Assert.Equal("agent-1", agent.CallerId);
+        Assert.Equal("run-1", agent.TaskId);
+        Assert.Null(agent.ParentTaskId);
+
+        // 子代理：必须带父任务，否则无法做"子集"校验。
+        var sub = turn with { Kind = PuddingCode.Runtime.RuntimeExecutionKind.SubAgent, RunId = "run-sub", ParentRunId = "run-parent" };
+        Assert.True(BrowserCallerIdentitySource.TryProject(sub, "agent-1", out var child, out var childReason), childReason);
+        Assert.Equal(Pudding.Contracts.Desktop.BrowserCallerKind.SubAgent, child!.Kind);
+        Assert.Equal("run-parent", child.ParentTaskId);
+
+        var orphan = turn with { Kind = PuddingCode.Runtime.RuntimeExecutionKind.SubAgent, RunId = "run-sub", ParentRunId = null };
+        Assert.False(BrowserCallerIdentitySource.TryProject(orphan, "agent-1", out var none, out var orphanReason));
+        Assert.Null(none);
+        Assert.Contains("parent task", orphanReason, StringComparison.Ordinal);
+
+        // 没有执行上下文 / 没有 agent 标识 ⇒ 拒绝（**不**回退到环境推断）。
+        Assert.False(BrowserCallerIdentitySource.TryProject(null, "agent-1", out none, out var noContextReason));
+        Assert.Contains("execution identity", noContextReason, StringComparison.Ordinal);
+
+        Assert.False(BrowserCallerIdentitySource.TryProject(turn, "  ", out none, out var noCallerReason));
+        Assert.Contains("caller identity", noCallerReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheCallerIdentitySourceTakesNoModelSuppliedInput()
+    {
+        // 签名形状门禁：入参只有执行上下文与 agent 标识，没有任何承载工具参数（模型可控）的类型。
+        var method = typeof(BrowserCallerIdentitySource).GetMethod(nameof(BrowserCallerIdentitySource.TryProject));
+        Assert.NotNull(method);
+
+        var inputs = method!.GetParameters().Where(parameter => !parameter.IsOut).ToArray();
+        Assert.Equal(2, inputs.Length);
+        Assert.Equal(typeof(PuddingCode.Runtime.RuntimeExecutionIdentity), inputs[0].ParameterType);
+        Assert.Equal(typeof(string), inputs[1].ParameterType);
+    }
+    [Fact]
     public void FullModeBudgetsMatchTheDesignDocument()
     {
         // §6.1 模式表：full = 默认 16 KiB、硬上限 64 KiB。数字与文档对表（文档改了这里就得改）。

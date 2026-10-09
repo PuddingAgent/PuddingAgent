@@ -34,6 +34,7 @@ draft: false
 
 | 文件 | 用途 |
 |------|------|
+| `BrowserCallerIdentitySource.cs` | **把 Core 执行上下文投影成调用者身份**（设计 §3.1/§3.2）：工具层唯一允许产生 `BrowserCallerIdentity` 的地方；入参只有**执行上下文**（编排层创建、只能透传）与 **agent 实例标识**（与 `BrowserOperationOrigin` 同一条取值规则，保证"审计里的行动者"＝"授权里的行动者"），**没有**任何工具参数 ⇒ 模型无法自报身份。子代理判定取 `RuntimeExecutionKind.SubAgent`（不用"有没有 ParentRunId"这种可伪造推断）；无上下文/无 agent 标识/子代理缺父任务一律拒绝（不回退环境推断）。⚠️ 尚未接到 `Admit`（见 changelog 的决策简报） |
 | `BrowserAgentToolBase.cs` | 工具基类 |
 | `BrowserAgentToolIds.cs` | 工具 ID 常量 |
 | `BrowserToolContracts.cs` | 工具输入/输出契约；失败载荷也支持 `value`（失败必须能带结构化证据，不能只有 code/message）；**元素展示投影的唯一实现**（`Element(...)`：text==name 省略、bbox 一位小数、checked/value 显式请求）——两个工具共用，规则不会各写一份 |
