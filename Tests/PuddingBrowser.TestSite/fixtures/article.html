@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>TestSite 结构化长文（G6 fixture）</title>
+  <!--
+    G6（正文/分页）验收 fixture：标题/列表/表格/代码/链接结构齐全。
+    聚合后必须**内容覆盖 100%、不重不漏**；超预算要保持合法输出并给出游标。
+    结构改动会让 Source/Pudding.DesktopServiceTests/TestSiteFixtureTests 变红。
+  -->
+</head>
+<body>
+  <article id="doc">
+    <h1>结构化长文标题</h1>
+    <p>第一段正文，用于验证段落聚合与顺序。</p>
+    <h2>列表</h2>
+    <ul>
+      <li>列表项一</li>
+      <li>列表项二</li>
+      <li>列表项三</li>
+    </ul>
+    <h2>表格</h2>
+    <table>
+      <thead><tr><th>列一</th><th>列二</th></tr></thead>
+      <tbody>
+        <tr><td>单元格甲</td><td>单元格乙</td></tr>
+        <tr><td>单元格丙</td><td>单元格丁</td></tr>
+      </tbody>
+    </table>
+    <h2>代码</h2>
+    <pre><code>var answer = 42;</code></pre>
+    <h2>链接</h2>
+    <p>参考 <a href="https://example.com/doc">结构化文档</a>。</p>
+    <p>最后一段，用于验证长文分页的边界与游标连续性。</p>
+  </article>
+</body>
+</html>

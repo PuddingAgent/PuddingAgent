@@ -4,4 +4,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 验收 fixture 必须随站点进输出目录（`/fixtures/*` 直接读文件）。 -->
+    <Content Include="fixtures/**/*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

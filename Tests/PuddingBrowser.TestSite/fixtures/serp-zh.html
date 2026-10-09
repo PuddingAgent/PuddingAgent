@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>TestSite 搜索结果（中文 SERP fixture）</title>
+  <!--
+    G5（阅读预算）验收 fixture。
+
+    固定的**10 条结果**，标题长度刻意统一为 20 个汉字（60 UTF-8 字节）：
+    预算判定的验收要求"标题长度明确固定"，否则"一次 extract 是否 ≤1536 字节"无法复核。
+    任何改动都会让 Source/Pudding.DesktopServiceTests/TestSiteFixtureTests 变红。
+  -->
+</head>
+<body>
+  <main id="results">
+    <h1>测试搜索结果</h1>
+    <ol class="serp">
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐一</h3><a href="https://example.com/r1">结果一</a><p class="snippet">摘要一</p></li>
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐二</h3><a href="https://example.com/r2">结果二</a><p class="snippet">摘要二</p></li>
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐三</h3><a href="https://example.com/r3">结果三</a><p class="snippet">摘要三</p></li>
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐四</h3><a href="https://example.com/r4">结果四</a><p class="snippet">摘要四</p></li>
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐五</h3><a href="https://example.com/r5">结果五</a><p class="snippet">摘要五</p></li>
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐六</h3><a href="https://example.com/r6">结果六</a><p class="snippet">摘要六</p></li>
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐七</h3><a href="https://example.com/r7">结果七</a><p class="snippet">摘要七</p></li>
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐八</h3><a href="https://example.com/r8">结果八</a><p class="snippet">摘要八</p></li>
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐九</h3><a href="https://example.com/r9">结果九</a><p class="snippet">摘要九</p></li>
+      <li class="result"><h3 class="title">中文标题固定二十个汉字整整齐齐十</h3><a href="https://example.com/r10">结果十</a><p class="snippet">摘要十</p></li>
+    </ol>
+  </main>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>TestSite 滚动与无限滚动（G8 fixture）</title>
+  <!--
+    G8（滚动）验收 fixture：
+      ① 文档本身足够高（非边界滚动有真实位移）；
+      ② 一个**嵌套可滚动容器**（外层窗口不动、内层动）；
+      ③ 一个**无限滚动**列表：接近底部时追加条目（用于验证 content-grows 等待与 contentChanged）。
+    结构改动会让 Source/Pudding.DesktopServiceTests/TestSiteFixtureTests 变红。
+  -->
+  <style>
+    #spacer { height: 3000px; }
+    #inner { height: 200px; overflow-y: scroll; border: 1px solid #ccc; }
+    #inner div { height: 120px; }
+  </style>
+</head>
+<body>
+  <h1>滚动 fixture</h1>
+
+  <h2>嵌套滚动容器</h2>
+  <div id="inner">
+    <div>内层一</div>
+    <div>内层二</div>
+    <div>内层三</div>
+  </div>
+
+  <div id="spacer">文档占位（保证文档级滚动有位移）</div>
+
+  <h2>无限滚动列表</h2>
+  <ul id="infinite"></ul>
+  <div id="sentinel">底部哨兵</div>
+
+  <script>
+    // 追加 10 条后就停（fixture 必须**有确定的终点**，否则验收无法判定"等到了"）。
+    var appended = 0;
+    function appendBatch() {
+      if (appended >= 10) { return; }
+      var list = document.getElementById('infinite');
+      for (var index = 0; index < 5 && appended < 10; index++) {
+        appended++;
+        var item = document.createElement('li');
+        item.textContent = '动态条目 ' + appended;
+        list.appendChild(item);
+      }
+    }
+    window.addEventListener('scroll', function () {
+      if (window.scrollY + window.innerHeight >= document.body.scrollHeight - 50) { appendBatch(); }
+    });
+    document.getElementById('sentinel').addEventListener('click', appendBatch);
+    // 也提供一个确定性入口：调用一次就追加一批（供 smoke 手工触发）。
+    window.puddingAppendBatch = appendBatch;
+  </script>
+</body>
+</html>

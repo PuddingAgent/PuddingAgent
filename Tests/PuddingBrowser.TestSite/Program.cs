@@ -1,7 +1,24 @@
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
+// 验收 fixture（G5/G6/G8 的观察对象）：放**文件**而不是内联字符串，这样它们的结构属性可以被测试钉住
+// （见 Source/Pudding.DesktopServiceTests/TestSiteFixtureTests）：fixture 一旦漂移，验收项就悄悄变得无法执行。
+var fixturesDirectory = Path.Combine(AppContext.BaseDirectory, "fixtures");
+
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+static IResult Fixture(string directory, string fileName)
+{
+    var path = Path.Combine(directory, fileName);
+    return File.Exists(path)
+        ? Results.Content(File.ReadAllText(path), "text/html; charset=utf-8")
+        : Results.NotFound($"fixture '{fileName}' is missing");
+}
+
+app.MapGet("/fixtures/serp-zh", () => Fixture(fixturesDirectory, "serp-zh.html"));
+app.MapGet("/fixtures/article", () => Fixture(fixturesDirectory, "article.html"));
+app.MapGet("/fixtures/scroll", () => Fixture(fixturesDirectory, "scroll.html"));
+
 app.MapGet("/frame", () => Results.Content("""
 <!doctype html><html><body><button id="frame-button">Frame action</button></body></html>
 """, "text/html"));
