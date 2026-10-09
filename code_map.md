@@ -130,7 +130,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.ContractsTests/` · `Source/Pudding.Rpc.ProtocolTests/` · `Source/Pudding.DesktopSurface.BrowserTests/` | 契约与 wire 协议形状断言 · 浏览器表面 |
 | `Source/Pudding.DesktopConnectionTests/` · `Source/Pudding.DesktopServiceTests/` · `Source/Pudding.CapabilityBrokerTests/` · `Source/Pudding.CapabilityBroker.AspNetCoreTests/` | 能力通道四个组件的独立测试（假服务端 / 假 UI 调度器 / 自托管 Kestrel） |
 | `Tests/PuddingDesktop.Tests/` · `Tests/PuddingHost.Tests/` · `Tests/PuddingBrowser.AgentTools.Tests/` | Desktop 进程与配置、调试模式（路由/反向代理/SSE/WS）· Bridge Endpoint · 七项 Agent Tools |
-| `Tests/PuddingAgent.IntegrationTests/` · `Tests/PuddingNativeChat.IntegrationTests/` · `Tests/e2e/` · `TestScripts/` · `Tests/PuddingBrowser.TestSite/` | 集成测试 · 端到端脚本 · 生命周期/部署/smoke/性能探针 · 测试站点（`fixtures/` 含 SERP/正文/滚动/**页面事件**四条 fixture 路由）· 门禁脚本 `TestScripts/check-round-gates.ps1`（Front Matter/链接/BOM 总数 + `-FixLinks`）与 `TestScripts/commit-round.ps1`（先门禁后提交）|
+| `Tests/PuddingAgent.IntegrationTests/` · `Tests/PuddingNativeChat.IntegrationTests/` · `Tests/e2e/` · `TestScripts/` · `Tests/PuddingBrowser.TestSite/` | 集成测试 · 端到端脚本 · 生命周期/部署/smoke/性能探针 · 测试站点（`fixtures/` 含 SERP/正文/滚动/**页面事件**四条 fixture 路由）· 门禁脚本 `TestScripts/check-round-gates.ps1`（Front Matter/链接/BOM 总数 + `-FixLinks`）与 `TestScripts/commit-round.ps1`（先门禁后提交）· `TestScripts/check-dependent-suites.ps1`（按引用图找"谁真的加载某程序集"的测试套件，可选 -Run）|
 
 ## 6. 架构与设计文档索引
 
