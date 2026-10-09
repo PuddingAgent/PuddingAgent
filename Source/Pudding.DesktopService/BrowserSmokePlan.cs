@@ -56,8 +56,11 @@ public static class BrowserSmokePlan
             "非边界有真实位移；边界是 no-op（不假称成功）；to_top/to_bottom/to_ref 能停且回报停止原因；"
             + "无限滚动等新条目后 contentChanged=true"),
         new("S-09", "G9", "视觉与坐标", "整页/视口截图；导航过程中再次截图；缩放后使用旧坐标",
-            "截图与目标一致、导航中不返回旧页；**字节预算按调用方给的上限判定**（超限明确报 Exceeded 并给出"
-            + "降质量/改视口/调上限的指引，不静默截断）；缩放后旧坐标被拒"),
+            "截图与目标一致、导航中不返回旧页；"
+            + $"**detail=low 最长边 ≤{BrowserScreenshotTransfer.LowDetailLongestEdge}px、"
+            + $"单张 ≤{BrowserScreenshotTransfer.MaxImageBytes / (1024 * 1024)} MiB，超限明确说明原因**"
+            + "（不静默截断/降级）；元数据含源/输出尺寸、设备缩放、CSS viewport、scroll offset、裁剪变换与三代修订号；"
+            + "缩放后旧坐标被拒"),
         new("S-10", "G10", "委派", "父代理持有页面写租约时委派子代理写同一页；再取消/接管/超时",
             "父子写租约不并存；子代理**真正**发现并调用 browser_*；父结果 ≤2 KiB 且不含整页；"
             + "取消/接管/超时都回收许可",

@@ -25,6 +25,8 @@ public sealed class SmokePlanCoverageClaimTests
             ("前 10 条标题", "Source/PuddingBrowser.AutomationTests/SerpBudgetFixtureTests.cs", "应有 10 条结果"),
             ("1536 字节", "Source/PuddingBrowser.AutomationTests/SerpBudgetFixtureTests.cs", "G5BudgetBytes = 1_536"),
             ("父结果 ≤2 KiB", "Source/PuddingBrowser.Automation/SubAgentDelegation.cs", "DefaultResultBudgetBytes = 2 * 1024"),
+            ("detail=low", "Source/PuddingBrowser.Automation/BrowserScreenshotTransfer.cs", "LowDetailLongestEdge = 512"),
+            ("MiB", "Source/PuddingBrowser.Automation/BrowserScreenshotTransfer.cs", "MaxImageBytes = 8 * 1024 * 1024"),
         };
 
         var plan = File.ReadAllText(Path.Combine(
