@@ -63,7 +63,10 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
         {
             lock (_sync)
             {
-                return _grants.Values.ToArray();
+                // 契约说的是"当前**有效**的授权"，因此必须**过滤过期**：
+                // 否则 UI 会把已经不被准入认可的授权算作在册（准入查 IsExpiredAt，投影却不查 ⇒ 两者说法不一致）。
+                var now = _timeProvider.GetUtcNow();
+                return _grants.Values.Where(grant => !grant.IsExpiredAt(now)).ToArray();
             }
         }
     }
@@ -74,7 +77,8 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
         {
             lock (_sync)
             {
-                return _managementGrants.Values.ToArray();
+                var now = _timeProvider.GetUtcNow();
+                return _managementGrants.Values.Where(grant => !grant.IsExpiredAt(now)).ToArray();
             }
         }
     }

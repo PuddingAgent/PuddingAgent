@@ -20,9 +20,9 @@ draft: false
 
 | 入口 | 端口 | 语义要点（不变量） | 现有证据 | 判定 |
 |---|---|---|---|---|
-| `Capture` | 读 | 只读投影；不因读取改变状态 | `BrowserControlAuthorityTests` | 已核对并取红 |
-| `ActiveGrants` | 读 | 只暴露有效授权（过期/已撤销不出现） | `BrowserPageGrantTests` · `ReadOnlyDelegationTests` | 已核对并取红 |
-| `ActiveManagementGrants` | 读 | 只暴露有效管理授权 | `BrowserControlAuthorityTests` | 仅正向 |
+| `Capture` | 读 | 只读投影；**不因读取改变状态**（世代/授权集合不变） | `BrowserControlAuthorityTests` · `ReadOnlyDelegationTests` | 已核对并取红 |
+| `ActiveGrants` | 读 | 只暴露**有效**授权（过期/已撤销不出现，与准入口径一致） | `BrowserPageGrantTests` · `ReadOnlyDelegationTests`（过期投影取红） | 已核对并取红 |
+| `ActiveManagementGrants` | 读 | 只暴露**有效**管理授权（过期不出现） | `BrowserControlAuthorityTests` · `ReadOnlyDelegationTests`（过期投影取红） | 已核对并取红 |
 | `Admit` | 读 | 入队前准入：只读做完整校验、写额外签租约；拒绝时**驱动调用数为 0**；非可信身份/未握手/接管/暂停/绑定或世代不符/无授权/范围不足/`PageBusy` 一律拒 | `BrowserControlAuthorityTests`（16 条）· `ReadOnlyDelegationTests` | 已核对并取红 |
 | `Revalidate` | 读 | 触碰页面前复检：租约身份、行动者、操作、目标、控制/授权世代、覆盖授权；任一不符即拒 | `BrowserControlAuthorityTests` · `ReadOnlyDelegationTests` | 已核对并取红 |
 | `SetPaused` | 控制 | 推进控制世代、**释放在途租约**；恢复不复活旧队列 | `BrowserControlAuthorityTests` · `ReadOnlyDelegationTests` | 已核对并取红 |
@@ -34,7 +34,7 @@ draft: false
 | `IssueGrant` | 控制 | 绑定必须 live；子代理须为父授权子集；**同 id 不得换内容**（不可变） | `BrowserPageGrantTests` · `ReadOnlyDelegationTests`（不可变取红） | 已核对并取红 |
 | `IssueManagementGrant` | 控制 | 绑定必须 live；同 id 不得换内容 | `ReadOnlyDelegationTests`（不可变取红） | 已核对并取红 |
 | `RevokeGrant` | 控制 | 推进授权世代、释放失去覆盖的租约、**级联清除派生授权**（子/孙） | `ReadOnlyDelegationTests`（级联取红等 3 条） | 已核对并取红 |
-| `RevokeManagementGrant` | 控制 | 推进授权世代；**不**释放页面租约（有意） | `BrowserPageGrantTests` | 仅正向 |
+| `RevokeManagementGrant` | 控制 | 推进授权世代；管理类操作立刻失效；**不**释放在途页面租约（有意） | `BrowserPageGrantTests` · `ReadOnlyDelegationTests` | 已核对并取红 |
 | `RevokeExecutionScope` | 控制 | 去掉该页 Write/Manage、保留只读；推进世代、释放失去覆盖的租约；**子代理授权随之收窄**（子集关系不破坏） | `BrowserPageGrantTests` · `BrowserLifecycleTests` · `ReadOnlyDelegationTests`（收窄+释放取红） | 已核对并取红 |
 | `RevokeAllGrants` | 控制 | 清空页面与管理授权（**含派生授权**）；推进世代；释放租约 | `BrowserPageGrantTests` · `ReadOnlyDelegationTests`（清空+释放取红） | 已核对并取红 |
 
@@ -45,7 +45,7 @@ draft: false
 3. ~~**`RevokeAllGrants`**：未验证清空后**派生授权**（子/孙）也一并消失~~ ⇒ **2026-10-08 已补**（父/子/孙全清 + 在途租约释放）。
 4. **`ActiveManagementGrants`**：未验证过期管理授权不会出现在只读投影里。
 5. **`Capture`**：仅验证投影可用，未验证"读取不改变任何状态"（幂等/无副作用）。
-6. **并发**：权威是进程内 `lock` 保护，但**并发用例没有**（本会话所有验证都是单线程）。
+6. ~~**并发**：无用例~~ ⇒ **2026-10-08 已补有界并发冒烟**（8 个行动者并发抢同一页写租约：不抛异常且**最多一个**获得许可）；**仍未做**压力/长时间并发与死锁分析。
 
 ## 配套门禁（防漂移）
 

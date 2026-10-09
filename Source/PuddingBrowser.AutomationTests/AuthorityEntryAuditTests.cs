@@ -52,10 +52,10 @@ public sealed class AuthorityEntryAuditTests
             extra,
             "对账表里有已不存在的入口（删掉该行或改回正确名字）：" + string.Join(", ", extra));
 
-        // 表里必须写明判定，且必须存在"仅正向/未验证"这类**诚实标注**的落点（否则表格会退化成"全绿清单"）。
+        // 表里必须写明判定口径，且必须保留"仍缺的边界"这一**诚实小节**（否则表格会退化成"全绿清单"）。
         var text = File.ReadAllText(path);
         StringAssert.Contains(text, "已核对并取红");
-        StringAssert.Contains(text, "仅正向");
+        StringAssert.Contains(text, "仍缺的边界");
     }
 
     private static string Normalize(string memberName) =>

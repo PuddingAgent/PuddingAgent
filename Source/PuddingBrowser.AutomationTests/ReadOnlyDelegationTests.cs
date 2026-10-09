@@ -15,6 +15,133 @@ namespace PuddingBrowser.AutomationTests;
 public sealed class ReadOnlyDelegationTests
 {
     [TestMethod]
+    public void ExpiredGrantsDisappearFromTheActiveProjections_SoTheProjectionAgreesWithAdmission()
+    {
+        // 取红用例（round-113 修的真实缺陷）：`ActiveGrants` / `ActiveManagementGrants` 原先直接返回
+        // 字典内容**不过滤过期**，而契约说的是"当前**有效**的授权记录"。后果：UI 把已经被准入拒绝的授权
+        // 算作在册 —— 投影与准入说法不一致（用户看到"还有授权"，实际一调就拒）。
+        var clock = new TestTimeProvider(B0Fixture.Now);
+        var authority = B0Fixture.Connected(clock);
+        var page = B0Fixture.Page();
+
+        var actor = B0Fixture.Agent("agent-1", "task-1");
+        authority.IssueGrant(B0Fixture.Grant(
+            actor,
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page,
+            lifetime: TimeSpan.FromMinutes(5)));
+        authority.IssueManagementGrant(B0Fixture.ManagementGrant(actor, lifetime: TimeSpan.FromMinutes(5)));
+
+        // 未过期：投影里能看到，准入也允许 —— 两者一致。
+        Assert.AreEqual(1, authority.ActiveGrants.Count);
+        Assert.AreEqual(1, authority.ActiveManagementGrants.Count);
+        Assert.IsTrue(authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Snapshot, actor, target: page)).IsAllowed);
+
+        clock.Advance(TimeSpan.FromMinutes(6));
+
+        // 过期后：投影必须为空（**与准入一致**），否则 UI 会报告一个不存在的授权。
+        Assert.IsEmpty(authority.ActiveGrants, "过期授权不得出现在'当前有效授权'投影里");
+        Assert.IsEmpty(authority.ActiveManagementGrants, "过期管理授权同样不得出现");
+        Assert.IsFalse(
+            authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Snapshot, actor, target: page)).IsAllowed,
+            "过期授权本来就不被准入认可（这两条必须一致）");
+    }
+
+    [TestMethod]
+    public void RevokingAManagementGrantKeepsTheInFlightPageLease()
+    {
+        // 对账表缺口 #1：把"撤管理授权**不**释放在途页面写租约"这一**有意**语义钉住
+        // （撤管理授权只影响"能否创建/关闭目标"，不该打断已经开始的页面写）。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+        var actor = B0Fixture.Agent("agent-1", "task-1");
+        authority.IssueGrant(B0Fixture.Grant(actor, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+        var management = B0Fixture.ManagementGrant(actor);
+        authority.IssueManagementGrant(management);
+
+        Assert.IsTrue(authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, actor, target: page)).IsAllowed);
+
+        authority.RevokeManagementGrant(management.GrantId);
+
+        Assert.IsEmpty(authority.ActiveManagementGrants);
+
+        // ① 管理类操作立刻不可用（管理授权确实被撤）。
+        Assert.IsFalse(
+            authority.Admit(B0Fixture.Request(BrowserAutomationOperation.ContextCreate, actor)).IsAllowed,
+            "撤管理授权后，管理类操作必须被拒");
+
+        // ② 页面写在途租约**仍在**：另一个行动者被 PageBusy 挡住（若租约被错误释放，它会立刻拿到许可）。
+        var other = B0Fixture.Agent("agent-2", "task-2");
+        authority.IssueGrant(B0Fixture.Grant(other, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+        Assert.IsFalse(
+            authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, other, target: page)).IsAllowed,
+            "撤管理授权不得释放在途页面写租约（有意语义）");
+    }
+
+    [TestMethod]
+    public void CaptureIsSideEffectFree()
+    {
+        // 对账表缺口 #5：读取面不得改变任何状态（捕获是只读投影）。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+        authority.IssueGrant(B0Fixture.Grant(
+            B0Fixture.Agent("agent-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page));
+
+        var first = authority.Capture();
+        var second = authority.Capture();
+        var third = authority.Capture();
+
+        Assert.AreEqual(first.ControlEpoch.Value, second.ControlEpoch.Value);
+        Assert.AreEqual(first.GrantEpoch.Value, second.GrantEpoch.Value);
+        Assert.AreEqual(second.ControlEpoch.Value, third.ControlEpoch.Value);
+        Assert.AreEqual(second.GrantEpoch.Value, third.GrantEpoch.Value);
+        Assert.AreEqual(1, authority.ActiveGrants.Count, "读取不得改变授权集合");
+    }
+
+    [TestMethod]
+    public void ConcurrentAdmissionNeverGrantsTwoWritersOnOnePage()
+    {
+        // 对账表缺口 #6（最大未覆盖面）：**有界**并发冒烟。不追求证明线程安全，
+        // 只证明"并发下也不会出现两个写租约"这一条最要命的不变量，并确保不抛异常。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+        var actors = Enumerable.Range(0, 8)
+            .Select(index => B0Fixture.Agent($"agent-{index}", $"task-{index}"))
+            .ToArray();
+        foreach (var actor in actors)
+        {
+            authority.IssueGrant(B0Fixture.Grant(
+                actor, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+        }
+
+        var allowed = 0;
+        var failures = new List<Exception>();
+        Parallel.ForEach(actors, actor =>
+        {
+            try
+            {
+                if (authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, actor, target: page)).IsAllowed)
+                {
+                    Interlocked.Increment(ref allowed);
+                }
+            }
+            catch (Exception exception)
+            {
+                lock (failures)
+                {
+                    failures.Add(exception);
+                }
+            }
+        });
+
+        Assert.IsEmpty(failures, "并发准入不得抛异常");
+        // 关键不变量：同一页同一时刻只有一个写租约 ⇒ 最多一个并发请求拿到许可。
+        Assert.AreEqual(1, allowed, "同一页不得出现两个写租约（并发下也成立）");
+    }
+
+    [TestMethod]
     public void RevokeAllGrantsClearsDerivedGrantsAndReleasesTheInFlightLease()
     {
         // 对账表缺口 #3：`RevokeAllGrants` 只验证过"正向清空"。这里连派生授权与**在途租约**一起看：
