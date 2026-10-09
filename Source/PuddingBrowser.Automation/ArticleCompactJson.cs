@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace PuddingBrowser.Automation;
@@ -108,7 +109,7 @@ public static class ArticleCompactJson
     private static string SerializeBlock(ArticleBlock block)
     {
         using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
+        using (var writer = new Utf8JsonWriter(stream, CompactWriterOptions))
         {
             WriteBlock(writer, block);
         }
@@ -116,10 +117,23 @@ public static class ArticleCompactJson
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
+    /// <summary>
+    /// 紧凑表示的 JSON 写入选项。
+    ///
+    /// **不转义非 ASCII**（`UnsafeRelaxedJsonEscaping`）是刻意的：默认转义会把每个汉字写成
+    /// `\uXXXX`（6 字节，是原文 3 字节的两倍），实测让"10 条中文标题 + 1536 字节预算"**装不下**
+    /// （见 changelog 的 G5 实测）。JSON 允许直接输出 UTF-8，因此不转义既合法又省一半预算。
+    /// 名字里的 "Unsafe" 针对的是**嵌入 HTML/JS** 的场景，本组件输出的是纯 JSON 数据，不拼 HTML。
+    /// </summary>
+    private static readonly JsonWriterOptions CompactWriterOptions = new()
+    {
+        Indented = false,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
     private static string Serialize(IReadOnlyList<ArticleBlock> blocks, bool truncated, int? nextCursor)
     {
         using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
+        using (var writer = new Utf8JsonWriter(stream, CompactWriterOptions))
         {
             writer.WriteStartObject();
             writer.WritePropertyName("blocks");

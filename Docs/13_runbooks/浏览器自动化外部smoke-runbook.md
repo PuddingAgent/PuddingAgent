@@ -44,16 +44,16 @@ draft: false
 **步骤**（对两种语言各做一次）：
 
 1. `browser_navigate` → `http://127.0.0.1:5199/fixtures/serp-zh`（英文用 `serp-en`）；
-2. `browser_snapshot` → `mode=text`、`format=markdown`、`max_bytes=1536`、**不传** `fields`；
+2. `browser_snapshot` → `mode=text`、`format=markdown`（或 `compact_json`）、`max_bytes=1536`、**不传** `fields`；
 3. 记下：`content` 是否含**前 10 条标题**、`bytes` 字段值、`truncated`、`nextCursor`。
 
 **期望**：一次调用即拿到前 10 条；`bytes ≤ 1536`；**不需要**额外 `browser_locate`。
 **若超预算**：必须声明分页/截断（`truncated=true` + `nextCursor`），不得静默丢内容。
 
-> ⚠️ **表示决定成败（实测，见 changelog）**：同一批块、1536 字节预算下，
-> **markdown 能一次给全 10 条**，而 **compact_json 装不下**（它把非 ASCII 转义成 `\uXXXX`，每个汉字 6 字节）。
-> 因此 1536 这条要在 **markdown** 表示上核对；用 `format=compact_json` 时应按"分页"观察
-> （`truncated=true` + 用 `nextCursor` 续读到 10 条），**不要**把它当成失败。
+> ✅ **两种表示都应一次给全（round-86 实测）**：1536 字节预算下，markdown 与 `compact_json`
+> 都能装下 10 条中文标题（compact_json 实测 **993 字节**）——前提是 compact_json **不对非 ASCII 转义**
+> （`\uXXXX` 会让每个汉字 6 字节、把预算翻倍；这一条已在 round-86 修掉）。
+> 若将来看到 compact_json 分页，先怀疑"转义策略回退了"（`ArticleCompactJsonFormatTests` 会拦住）。
 
 > 中英标题长度不同（20 汉字 / 43 ASCII），**字节数不可直接比较**，分别观察。
 

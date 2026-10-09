@@ -84,10 +84,11 @@ public sealed class SerpBudgetFixtureTests
             article.Truncated ? article.NextCursor is not null : article.NextCursor is null,
             "截断必须带续读游标；未截断就不该给游标（不能两者矛盾）");
 
-        // 实测（本轮发现，见 changelog）：以驱动当前给出的"标题+链接两块/结果"粒度，
-        // 中文 SERP 在 1536 字节预算内**装不下 10 条**（会分页）。
-        // 因此这里断言的是"分页必须能续读到全部 10 条"，而不是"一次给全"。
-        var all = CollectAllPages(blocks, G5BudgetBytes);
+        // G5 的承诺（round-86 之后在两种表示上都成立）：一次 extract 给全 10 条。
+        Assert.IsFalse(article.Truncated, "1536 字节预算下应当一次给全 10 条（否则 G5 不成立）");
+        Assert.IsNull(article.NextCursor);
+
+        var all = DecodedText(article.Text);
         foreach (var title in titles)
         {
             StringAssert.Contains(all, title);
@@ -142,9 +143,12 @@ public sealed class SerpBudgetFixtureTests
         Assert.IsNull(article.NextCursor);
         Assert.IsTrue(article.Bytes <= ArticleCompactJson.DefaultMaxBytes);
 
-        // 记录实测值（供 changelog/设计对照）：远低于 4096，但**高于** 1536。
-        Assert.IsTrue(article.Bytes > G5BudgetBytes,
-            $"若实测已 ≤1536 字节，说明块粒度变轻了，应回头更新本条与运行手册（当前 {article.Bytes}）");
+        // 实测：关闭非 ASCII 转义前为 >1536（装不下 10 条），改为 `UnsafeRelaxedJsonEscaping` 后为 **993 字节**
+        // ⇒ compact_json 从此也能"一次给全 10 条 + ≤1536"。这条断言把该数字钉住：
+        // 一旦块粒度或转义策略回退，它会立刻变红。
+        Assert.IsTrue(
+            article.Bytes <= G5BudgetBytes,
+            $"{nameof(ArticleCompactJson)} 应当无需分页即可装下 10 条（当前 {article.Bytes} 字节，预算 {G5BudgetBytes}）");
     }
 
     [TestMethod]
