@@ -25,7 +25,7 @@ if (arguments is null || arguments.ContainsKey("help"))
           Pudding.DeliveryManifest.Cli --build <id> --commit <sha> --publish <dir> --results <dir> --changelog <dir> [--extra-unverified <text>]... [--out <file>] [--report <file>]
 
         用法（外部一侧）：
-          Pudding.DeliveryManifest.Cli --conclude <facts.json> --manifest <manifest.json> [--record <file>]
+          Pudding.DeliveryManifest.Cli --conclude <facts.json> --manifest <manifest.json> [--record <file>] [--accept-retries]
 
         采集三类事实并产出交付清单：
           --publish    发布目录（取其中的 .exe/.dll 作为产物，只记录文件名）
@@ -122,9 +122,11 @@ static Dictionary<string, string>? ParseArguments(string[] rawArguments)
         }
 
         var name = token[2..];
-        if (name is "help")
+        // 无取值开关（valueless switches）：解析器默认要求每个 --flag 后面跟取值，
+        // 所以裸开关必须在这里显式登记，否则会被判成"缺少取值"而整体退化成用法错误。
+        if (name is "help" or "accept-retries")
         {
-            parsed["help"] = "1";
+            parsed[name] = "1";
             continue;
         }
 
@@ -207,6 +209,19 @@ static int Conclude(Dictionary<string, string> arguments)
         }
 
         return 2;
+    }
+
+    // Accepting retried results is the ACCEPTOR's call: require an explicit flag, never assume it.
+    var acceptRetries = arguments.ContainsKey("accept-retries");
+    input = input! with { AcceptRetries = acceptRetries };
+    if (manifest!.RetryNotes.Count > 0)
+    {
+        Console.WriteLine(
+            $"# 交付清单里有 {manifest.RetryNotes.Count} 个套件是重跑后才绿的（enabled={acceptRetries}）");
+        foreach (var note in manifest.RetryNotes)
+        {
+            Console.WriteLine($"#   - {note}");
+        }
     }
 
     var concluded = ExternalAcceptanceSession.TryConclude(input!, out var problems);

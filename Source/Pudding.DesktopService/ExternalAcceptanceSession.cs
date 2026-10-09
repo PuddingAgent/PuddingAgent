@@ -26,7 +26,10 @@ public sealed record ExternalAcceptanceInput(
     DeliveryManifest DeliveredManifest,
     string ObservedBuildId,
     IReadOnlyList<SmokeObservation> Observations,
-    IReadOnlyList<LifecycleEvidence> Lifecycle);
+    IReadOnlyList<LifecycleEvidence> Lifecycle,
+    // 交付清单里若有"重跑后才绿"的套件，**必须由验收方显式接受**：
+    // 设计把它定为验收方的取舍（"是否接受重试由验收方决定"），那就不能"悄悄带过去"。
+    bool AcceptRetries = false);
 
 /// <summary>
 /// **外部验收会话的判定**（B7 的收口）：把「内部交付清单 + 外部 smoke 清单 + 外部观察事实」合成一个结论。
@@ -83,6 +86,18 @@ public static class ExternalAcceptanceSession
             collected.Add(
                 $"the observations were made on build '{input.ObservedBuildId.Trim()}'"
                 + $" but the delivered manifest is '{input.DeliveredManifest.BuildId}'");
+        }
+
+        // ⑤ 交付清单里若有"重跑后才绿"的套件，必须由验收方**显式接受**。
+        // 设计把"是否接受重试"定为验收方的取舍 ⇒ 那就不能让它悄悄过去：
+        // 一份"全绿"若来自重试，与"一次通过"不是同一件事。
+        var retried = input.DeliveredManifest.RetryNotes;
+        if (retried.Count > 0 && !input.AcceptRetries)
+        {
+            collected.Add(
+                $"the delivered manifest reports {retried.Count} retried suite(s); accepting retried results is the"
+                + " acceptor's decision — acknowledge it explicitly (--accept-retries) or re-deliver a build that"
+                + " passed on the first attempt");
         }
 
         // ① 覆盖：清单里的每一项都要有观察记录，且不能是 NotRun。

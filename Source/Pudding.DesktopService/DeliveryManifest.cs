@@ -333,8 +333,11 @@ public static class DeliveryManifestValidator
                 artifacts ?? [],
                 checks,
                 knownUnverified ?? [],
-            knownUnverifiedTotal,
-                steps is { Count: > 0 } ? steps : DeliveryManifest.RequiredLifecycleSteps);
+                knownUnverifiedTotal,
+                steps is { Count: > 0 } ? steps : DeliveryManifest.RequiredLifecycleSteps,
+                changelogFilesScanned,
+                changelogFilesTotal,
+                retryNotes);
 
             problems = [];
             return true;

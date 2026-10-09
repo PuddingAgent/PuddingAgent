@@ -34,6 +34,41 @@ public sealed class ExternalAcceptanceSessionTests
         new(Manifest(), observedBuildId, observations ?? AllObserved(), lifecycle ?? AllLifecycle());
 
     [Fact]
+    public void RetriedResultsAreRefusedUnlessTheAcceptorAcknowledgesThem()
+    {
+        // 取红用例（round-128）：交付清单里若有"重跑后才绿"的套件，验收方必须**显式接受**——
+        // 设计把"是否接受重试"定为验收方的取舍，那就不能让它悄悄过去。
+        var baseline = Manifest();
+        var retried = new DeliveryManifest(
+            baseline.BuildId,
+            baseline.Commit,
+            baseline.Artifacts,
+            baseline.Checks,
+            baseline.KnownUnverified,
+            baseline.KnownUnverifiedTotal,
+            baseline.RequiredExternalSteps,
+            baseline.ChangelogFilesScanned,
+            baseline.ChangelogFilesTotal,
+            ["PuddingHost.Tests : first attempt had 1 failing test(s); the result below is from the retry"]);
+
+        var observed = AllObserved();
+        var lifecycle = AllLifecycle();
+
+        var refused = ExternalAcceptanceSession.TryConclude(
+            new ExternalAcceptanceInput(retried, retried.BuildId, observed, lifecycle),
+            out var refusalProblems);
+
+        Assert.False(refused, "未确认重试时不得作出结论");
+        Assert.Contains(refusalProblems, problem => problem.Contains("retried suite", StringComparison.Ordinal));
+
+        var accepted = ExternalAcceptanceSession.TryConclude(
+            new ExternalAcceptanceInput(retried, retried.BuildId, observed, lifecycle, AcceptRetries: true),
+            out var acceptProblems);
+
+        Assert.True(accepted, string.Join("; ", acceptProblems));
+    }
+
+    [Fact]
     public void ACompleteExternalRunIsConcluded()
     {
         Assert.True(ExternalAcceptanceSession.TryConclude(Input(), out var problems), string.Join("; ", problems));

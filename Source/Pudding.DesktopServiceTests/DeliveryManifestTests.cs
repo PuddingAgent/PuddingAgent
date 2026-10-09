@@ -132,6 +132,47 @@ public sealed class DeliveryManifestTests
     }
 
     [Fact]
+    public void DeserializationKeepsTheCorpusCountsAndRetryNotes()
+    {
+        // 取红用例（round-128）：这三个字段曾经**写得进、读不回**（反序列化时没有传给构造器），
+        // 后果是外部一侧永远看不到"重跑后才绿"，也没有语料规模 —— 静默丢字段。
+        var baseline = Manifest();
+        var original = new DeliveryManifest(
+            baseline.BuildId,
+            baseline.Commit,
+            baseline.Artifacts,
+            baseline.Checks,
+            baseline.KnownUnverified,
+            baseline.KnownUnverifiedTotal,
+            baseline.RequiredExternalSteps,
+            changelogFilesScanned: 319,
+            changelogFilesTotal: 319,
+            retryNotes: ["PuddingHost.Tests : first attempt had 1 failing test(s)"]);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            new
+            {
+                buildId = original.BuildId,
+                commit = original.Commit,
+                artifacts = original.Artifacts,
+                checks = original.Checks.Select(check => new { name = check.Name, passed = check.Passed, failed = check.Failed }),
+                knownUnverified = original.KnownUnverified,
+                knownUnverifiedTotal = original.KnownUnverifiedTotal,
+                requiredExternalSteps = original.RequiredExternalSteps,
+                changelogFilesScanned = original.ChangelogFilesScanned,
+                changelogFilesTotal = original.ChangelogFilesTotal,
+                retryNotes = original.RetryNotes,
+            });
+
+        Assert.True(DeliveryManifestValidator.TryDeserialize(json, out var parsed, out var problems),
+            string.Join("; ", problems));
+
+        Assert.Equal(319, parsed!.ChangelogFilesScanned);
+        Assert.Equal(319, parsed.ChangelogFilesTotal);
+        Assert.Single(parsed.RetryNotes);
+        Assert.Contains("first attempt had 1 failing test(s)", parsed.RetryNotes[0], StringComparison.Ordinal);
+    }
+    [Fact]
     public void ATotalSmallerThanTheListedItemsIsRejected()
     {
         // 总数是"实际找到多少条"的声明；比列出条数还小就是自相矛盾 ⇒ 校验必须拒绝。

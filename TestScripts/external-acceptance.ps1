@@ -36,7 +36,9 @@ param(
     [string]$Record = "temp/test-out/external-acceptance-record.md",
     [switch]$Template,
     [switch]$Conclude,
-    [switch]$SkipTemplate
+    [switch]$SkipTemplate,
+    # Accepting retried suite results is the ACCEPTOR's decision: it is never assumed.
+    [switch]$AcceptRetries
 )
 
 $ErrorActionPreference = "Stop"
@@ -143,10 +145,34 @@ if ($Conclude -or -not $Template) {
     $ErrorActionPreference = "Continue"
 
     # stderr carries the concrete refusal reasons; report them through the exit code.
-    & dotnet run --project $cliProject --no-restore -- `
-        --conclude (Join-Path $repositoryRoot $Facts) `
-        --manifest (Join-Path $repositoryRoot $Manifest) `
-        --record (Join-Path $repositoryRoot $Record)
+    $cliArguments = @(
+        "run", "--project", $cliProject, "--no-restore", "--",
+        "--conclude", (Join-Path $repositoryRoot $Facts),
+        "--manifest", (Join-Path $repositoryRoot $Manifest),
+        "--record", (Join-Path $repositoryRoot $Record)
+    )
+    if ($AcceptRetries) { $cliArguments += "--accept-retries" }
+
+    # Surface retried suites BEFORE concluding: a "green" manifest that came from a retry is not
+    # the same claim as one that passed on the first attempt.
+    if (Test-Path $Manifest) {
+        try {
+            $manifestJson = Get-Content $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+            $retryNotes = @($manifestJson.retryNotes)
+            if ($retryNotes.Count -gt 0) {
+                Write-Host "--- delivered manifest reports retried suite(s):"
+                foreach ($note in $retryNotes) { Write-Host "      $note" }
+                if (-not $AcceptRetries) {
+                    Write-Host "      (not accepted yet: pass -AcceptRetries to acknowledge, otherwise the verdict is refused)"
+                }
+            }
+        }
+        catch {
+            Write-Warning "could not read retryNotes from the manifest; the CLI will still enforce the rule"
+        }
+    }
+
+    & dotnet @cliArguments
 
     $exitCode = $LASTEXITCODE
     if ($exitCode -eq 0) {
