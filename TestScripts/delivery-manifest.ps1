@@ -154,6 +154,12 @@ try {
 
                 for ($attempt = 1; $attempt -le $RetryFailedSuites; $attempt++) {
                     Write-Host "--- retry $attempt/$RetryFailedSuites for $name"
+
+                    # Capture HOW BAD the attempt before the retry was: renaming alone only says
+                    # "a retry happened", a reader still cannot tell 1 flaky test from 40 failures.
+                    $firstAttemptFailures = ([regex]::Match(
+                        (Get-Content $trx -Raw -Encoding UTF8), 'failed="(\d+)"')).Groups[1].Value
+
                     $retryArguments = @(
                         "test", $suite, "--nologo", "--no-restore",
                         "--logger", "trx;LogFileName=$name.trx",
@@ -164,6 +170,11 @@ try {
                     if ([int]$failed -eq 0) {
                         # Keep the retry visible: the manifest check name will carry "(retried)".
                         Move-Item -Force $trx (Join-Path $ResultsDirectory "$name-retried.trx")
+
+                        # ...and record the first attempt's failure count for the collector/report.
+                        $notesPath = Join-Path $ResultsDirectory "retry-notes.txt"
+                        Add-Content -Path $notesPath -Encoding UTF8 -Value (
+                            "$name : first attempt had $firstAttemptFailures failing test(s); the result below is from the retry")
                         Write-Host "--- $name green on retry (manifest will show it as retried)"
                         break
                     }

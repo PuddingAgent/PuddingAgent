@@ -108,10 +108,26 @@ public static class DeliveryFactCollector
             }
         }
 
+        // ②b 重试记录（可选）：由 delivery-manifest.ps1 在"重跑后转绿"时写下，说明**第一次就失败过**。
+        // 没有它，清单只能靠检查名里的 "-retried" 暗示发生过重试，说不出"当时失败了多少条"。
+        IReadOnlyList<string>? retryNotes = null;
+        if (!string.IsNullOrWhiteSpace(request.ResultsDirectory) && Directory.Exists(request.ResultsDirectory))
+        {
+            var notesPath = Path.Combine(request.ResultsDirectory, "retry-notes.txt");
+            if (File.Exists(notesPath))
+            {
+                retryNotes = SafeRead(notesPath)?
+                    .Replace("\r\n", "\n", StringComparison.Ordinal)
+                    .Split('\n')
+                    .Select(line => line.Trim())
+                    .Where(line => line.Length > 0)
+                    .ToArray();
+            }
+        }
+
         // ③ 未验证项（日志）
         List<string>? changelogs = null;
-        var changelogFilesTotal = 0;
-        if (string.IsNullOrWhiteSpace(request.ChangelogDirectory) || !Directory.Exists(request.ChangelogDirectory))
+        var changelogFilesTotal = 0;        if (string.IsNullOrWhiteSpace(request.ChangelogDirectory) || !Directory.Exists(request.ChangelogDirectory))
         {
             collected.Add($"changelog directory does not exist: '{request.ChangelogDirectory}'");
         }
@@ -155,6 +171,7 @@ public static class DeliveryFactCollector
                 changelogs,
                 request.AdditionalKnownUnverified,
                 RequiredExternalSteps: null,
+                RetryNotes: retryNotes,
                 ChangelogFilesTotal: changelogFilesTotal,
                 ChangelogFilesScanned: changelogs?.Count ?? 0),
             out manifest,

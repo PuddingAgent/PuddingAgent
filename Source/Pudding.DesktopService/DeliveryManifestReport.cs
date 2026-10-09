@@ -78,6 +78,14 @@ public static class DeliveryManifestReport
             builder.Append($"| {check.Name} | {check.Passed} | {check.Failed} |\n");
         }
 
+        if (manifest.RetryNotes.Count > 0)
+        {
+            builder.Append("\n### 重试记录（这些结果不是第一次就通过的）\n\n");
+            foreach (var note in manifest.RetryNotes)
+            {
+                builder.Append($"- {note}\n");
+            }
+        }
         builder.Append("\n### 产物\n\n");
         foreach (var artifact in manifest.Artifacts)
         {

@@ -13,7 +13,8 @@ public sealed record DeliveryBuildFacts(
     IReadOnlyList<string>? AdditionalKnownUnverified = null,
     IReadOnlyList<string>? RequiredExternalSteps = null,
     int ChangelogFilesTotal = 0,
-    int ChangelogFilesScanned = 0);
+    int ChangelogFilesScanned = 0,
+    IReadOnlyList<string>? RetryNotes = null);
 
 /// <summary>
 /// **交付清单生成器**：把事实汇总成清单，并**用同一套校验**自检（不合格就不产出清单）。
@@ -91,7 +92,8 @@ public static class DeliveryManifestBuilder
                 ? facts.RequiredExternalSteps
                 : DeliveryManifest.RequiredLifecycleSteps,
             facts.ChangelogFilesScanned,
-            facts.ChangelogFilesTotal);
+            facts.ChangelogFilesTotal,
+            facts.RetryNotes);
 
         var validation = DeliveryManifestValidator.Validate(candidate);
         if (validation.Count > 0)

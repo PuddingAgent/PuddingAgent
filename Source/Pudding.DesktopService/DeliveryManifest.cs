@@ -30,6 +30,7 @@ public sealed record DeliveryManifest
         IReadOnlyList<string> requiredExternalSteps,
         int changelogFilesScanned = 0,
         int changelogFilesTotal = 0,
+        IReadOnlyList<string>? retryNotes = null,
         DesktopAcceptance.Stage stage = DesktopAcceptance.Stage.ReadyForExternalDeploy)
     {
         BuildId = buildId;
@@ -41,6 +42,7 @@ public sealed record DeliveryManifest
         RequiredExternalSteps = requiredExternalSteps;
         ChangelogFilesScanned = changelogFilesScanned;
         ChangelogFilesTotal = changelogFilesTotal;
+        RetryNotes = retryNotes ?? [];
         Stage = stage;
     }
 
@@ -61,6 +63,12 @@ public sealed record DeliveryManifest
 
     /// <summary>提取未验证项时的**语料**是否被截断（与"条目被截断"是两件事，必须分开报告）。</summary>
     public bool ChangelogCorpusIsTruncated => ChangelogFilesTotal > ChangelogFilesScanned;
+
+    /// <summary>
+    /// **重试记录**：哪些套件是"重跑后才绿"的，以及第一次失败了多少条。
+    /// 光有检查名里的 <c>-retried</c> 只能说"发生过重试"，说不出"当时多糟"。
+    /// </summary>
+    public IReadOnlyList<string> RetryNotes { get; }
 
     /// <summary>构建标识（产物可追溯；空值由校验拒绝）。</summary>
     public string BuildId { get; }
@@ -278,6 +286,7 @@ public static class DeliveryManifestValidator
         var knownUnverifiedTotal = ReadInt32(root, "knownUnverifiedTotal");
         var changelogFilesScanned = ReadInt32(root, "changelogFilesScanned");
         var changelogFilesTotal = ReadInt32(root, "changelogFilesTotal");
+        var retryNotes = ReadStringArray(root, "retryNotes");
             var steps = ReadStringArray(root, "requiredExternalSteps");
 
             if (string.IsNullOrWhiteSpace(buildId))

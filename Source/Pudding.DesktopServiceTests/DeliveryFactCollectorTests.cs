@@ -179,6 +179,28 @@ public sealed class DeliveryFactCollectorTests : IDisposable
     }
 
     [Fact]
+    public void RetryNotesFromTheRunnerBecomeAuditableFactsInTheManifest()
+    {
+        // 取红用例（round-126）：重跑后转绿的套件只留下 `-retried.trx`，检查名虽带 `-retried`，
+        // 却**说不出第一次失败了多少条**。脚本把这件事写进结果目录的 retry-notes.txt，
+        // 采集器必须把它变成清单里可读的事实。
+        var publish = Publish("app.exe");
+        var results = Results("A.trx", Trx(1, 0));
+        File.WriteAllText(
+            Path.Combine(results, "retry-notes.txt"),
+            "PuddingHost.Tests : first attempt had 1 failing test(s); the result below is from the retry",
+            System.Text.Encoding.UTF8);
+
+        Assert.True(DeliveryFactCollector.TryCollect(
+            new DeliveryCollectionRequest(_root, publish, results, Changelogs(("a.md", "- 真机未验证：x")), "b", "c"),
+            out var manifest,
+            out var problems),
+            string.Join("; ", problems));
+
+        Assert.Single(manifest!.RetryNotes);
+        Assert.Contains("first attempt had 1 failing test(s)", manifest.RetryNotes[0], StringComparison.Ordinal);
+    }
+    [Fact]
     public void ATruncatedChangelogCorpusIsRefusedInsteadOfSilentlyUnderReporting()
     {
         // 取红用例（round-125 修的真实缺陷）：日志语料原先**静默截断**到常量上限（当时仓库已有 319 个文件、
