@@ -207,6 +207,51 @@ public sealed class BrowserSmokePlanTests
     }
 
     [Fact]
+    public void TheChecklistRowsDoNotPromiseMoreThanThePlan()
+    {
+        // 取红用例（round-142）：原来的漂移门禁只核对"编号与门禁"出现在文档里，
+        // 于是文档可以继续承诺代码/清单里**没有**的东西 —— 实测 S-09 一行还留着已被判定为
+        // 无出处的「≤40 KiB」（round-136 已从清单里删掉，文档没跟上）。
+        // 现在把**动作**逐字核对，并要求文档行里的**每个数字**都能在清单的对应项里找到出处。
+        var path = Path.Combine(
+            RepoLayout.Root, "Docs", "14_reports", "2026-10-09-浏览器自动化外部smoke清单.md");
+        var rows = File.ReadAllLines(path)
+            .Where(line => line.StartsWith("| S-", StringComparison.Ordinal))
+            .Select(line => line.Split('|').Select(cell => cell.Trim()).ToArray())
+            .ToDictionary(cells => cells[1], cells => cells, StringComparer.Ordinal);
+
+        var problems = new List<string>();
+        foreach (var check in BrowserSmokePlan.Checks)
+        {
+            if (!rows.TryGetValue(check.Id, out var cells) || cells.Length < 6)
+            {
+                problems.Add($"{check.Id} 在清单文档里找不到整行");
+                continue;
+            }
+
+            var documentedAction = cells[4];
+            var documentedExpectation = cells[5];
+            if (!string.Equals(documentedAction, check.Action, StringComparison.Ordinal))
+            {
+                problems.Add($"{check.Id} 的动作与清单不一致：\n      文档：{documentedAction}\n      代码：{check.Action}");
+            }
+
+            var planText = check.Action + " " + check.Expected;
+            foreach (System.Text.RegularExpressions.Match number in System.Text.RegularExpressions.Regex.Matches(
+                documentedExpectation, @"\d+"))
+            {
+                if (!planText.Contains(number.Value, StringComparison.Ordinal))
+                {
+                    problems.Add(
+                        $"{check.Id} 的期望里写了数字 {number.Value}，但清单里找不到出处"
+                        + "（文档承诺了清单没有的东西）");
+                }
+            }
+        }
+
+        Assert.True(problems.Count == 0, "清单文档与代码真源不一致：\n  - " + string.Join("\n  - ", problems));
+    }
+    [Fact]
     public void TheCommittedChecklistDoesNotDriftFromThePlan()
     {
         // 留痕清单（Docs/14_reports）必须与代码里的唯一真源一致：
