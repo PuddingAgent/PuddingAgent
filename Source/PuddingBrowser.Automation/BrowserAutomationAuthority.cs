@@ -411,13 +411,51 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
 
         lock (_sync)
         {
-            if (_grants.Remove(grantId.Value))
+            if (_grants.Remove(grantId.Value, out var removed))
             {
+                // 撤销父授权必须**级联**撤销由它派生的子代理授权：
+                // 子代理的可授权范围以父任务在**签发时**的授权为上界（BrowserGrantIssuancePolicy），
+                // 父授权一旦撤销，这个上界就不存在了；只删父记录会让子代理带着"来源已消失"的授权继续写。
+                RemoveDerivedSubAgentGrants(removed);
+
                 AdvanceGrantEpoch();
                 ReleaseLeaseIfUnauthorized();
             }
 
             return _grantEpoch;
+        }
+    }
+
+    /// <summary>
+    /// 级联撤销：删除所有"父任务就是 <paramref name="parent"/> 的受让人任务"的子代理授权
+    /// （判据与签发时的 <see cref="BrowserGrantIssuancePolicy.CheckSubAgentScope"/> 一致：
+    /// <c>ParentTaskId</c> == 父的 <c>TaskId</c>，且同页、同 frame）。子代理再派生的孙代理也递归清除。
+    /// </summary>
+    private void RemoveDerivedSubAgentGrants(BrowserPageGrant parent)
+    {
+        var taskQueue = new Queue<string>();
+        if (parent.Grantee.TaskId is { Length: > 0 } rootTaskId)
+        {
+            taskQueue.Enqueue(rootTaskId);
+        }
+
+        while (taskQueue.Count > 0)
+        {
+            var parentTaskId = taskQueue.Dequeue();
+
+            foreach (var candidate in _grants.Values
+                .Where(item => item.Grantee.IsSubAgent
+                    && string.Equals(item.Grantee.ParentTaskId, parentTaskId, StringComparison.Ordinal)
+                    && item.TargetsSamePage(parent.Target)
+                    && string.Equals(item.FrameId, parent.FrameId, StringComparison.Ordinal))
+                .ToArray())
+            {
+                _grants.Remove(candidate.GrantId.Value);
+                if (candidate.Grantee.TaskId is { Length: > 0 } childTaskId)
+                {
+                    taskQueue.Enqueue(childTaskId);
+                }
+            }
         }
     }
 

@@ -15,6 +15,110 @@ namespace PuddingBrowser.AutomationTests;
 public sealed class ReadOnlyDelegationTests
 {
     [TestMethod]
+    public void RevokingTheParentGrantAlsoRevokesTheDerivedSubAgentGrants()
+    {
+        // 取红用例（round-110）：签发时强制"子代理只能是父授权的子集"，但**撤销父授权时只删父记录** ⇒
+        // 子代理带着"来源已消失"的授权继续写。授权链断了，派生授权必须一起失效（fail closed）。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+
+        var parent = B0Fixture.Grant(
+            B0Fixture.Agent("agent-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page);
+        authority.IssueGrant(parent);
+
+        var child = B0Fixture.Grant(
+            B0Fixture.SubAgent("sub-1", "task-sub-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page);
+        authority.IssueGrant(child);
+
+        // 父授权还在时，子代理可以用自己的（子集）授权写。
+        var before = authority.Admit(B0Fixture.Request(
+            BrowserAutomationOperation.Interact, B0Fixture.SubAgent("sub-1", "task-sub-1", "task-1"), target: page));
+        Assert.IsTrue(before.IsAllowed, "父授权还在时，子代理的合法子集授权应当可用");
+
+        // 父授权被撤销。
+        authority.RevokeGrant(parent.GrantId);
+
+        var after = authority.Admit(B0Fixture.Request(
+            BrowserAutomationOperation.Interact, B0Fixture.SubAgent("sub-1", "task-sub-1", "task-1"), target: page));
+        Assert.IsFalse(
+            after.IsAllowed,
+            "父授权撤销后，派生的子代理授权必须一起失效（否则授权链断裂而权限仍在）");
+
+        // 只读也一样：不是"只收写权"。
+        var readAfter = authority.Admit(B0Fixture.Request(
+            BrowserAutomationOperation.Snapshot, B0Fixture.SubAgent("sub-1", "task-sub-1", "task-1"), target: page));
+        Assert.IsFalse(readAfter.IsAllowed, "父授权撤销后子代理的读授权同样不该存活");
+    }
+
+    [TestMethod]
+    public void RevokingTheParentGrantCascadesThroughGrandchildren()
+    {
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+
+        var parent = B0Fixture.Grant(
+            B0Fixture.Agent("agent-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page);
+        authority.IssueGrant(parent);
+
+        var child = B0Fixture.Grant(
+            B0Fixture.SubAgent("sub-1", "task-sub-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page);
+        authority.IssueGrant(child);
+
+        // 孙代理：父任务是子代理的任务（"task-sub-1"）。
+        authority.IssueGrant(B0Fixture.Grant(
+            B0Fixture.SubAgent("sub-2", "task-sub-2", "task-sub-1"),
+            BrowserPageGrantScope.Read,
+            target: page));
+
+        authority.RevokeGrant(parent.GrantId);
+
+        var grandChild = authority.Admit(B0Fixture.Request(
+            BrowserAutomationOperation.Snapshot, B0Fixture.SubAgent("sub-2", "task-sub-2", "task-sub-1"), target: page));
+        Assert.IsFalse(grandChild.IsAllowed, "级联必须一路清到孙代理");
+        Assert.IsEmpty(authority.ActiveGrants, "父、子、孙三条授权都应被清除");
+    }
+
+    [TestMethod]
+    public void RevokingOneTasksGrantDoesNotTouchAnotherTasksSubAgents()
+    {
+        // 反向保护：级联不能伤及**别的任务**派生的子代理授权。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+
+        var parentA = B0Fixture.Grant(
+            B0Fixture.Agent("agent-a", "task-a"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page);
+        var parentB = B0Fixture.Grant(
+            B0Fixture.Agent("agent-b", "task-b"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page);
+        authority.IssueGrant(parentA);
+        authority.IssueGrant(parentB);
+
+        var childA = B0Fixture.Grant(
+            B0Fixture.SubAgent("sub-a", "task-sub-a", "task-a"), BrowserPageGrantScope.Read, target: page);
+        var childB = B0Fixture.Grant(
+            B0Fixture.SubAgent("sub-b", "task-sub-b", "task-b"), BrowserPageGrantScope.Read, target: page);
+        authority.IssueGrant(childA);
+        authority.IssueGrant(childB);
+
+        authority.RevokeGrant(parentA.GrantId);
+
+        var surviving = authority.Admit(B0Fixture.Request(
+            BrowserAutomationOperation.Snapshot, B0Fixture.SubAgent("sub-b", "task-sub-b", "task-b"), target: page));
+        Assert.IsTrue(surviving.IsAllowed, "别的任务派生的子代理授权不得被牵连");
+    }
+
+    [TestMethod]
     public void AnInFlightWriteLeaseIsNeverFreedByTimeAlone()
     {
         // 这条**故意钉住"看起来像缺陷"的安全方向**（round-109 的审计结论）：
