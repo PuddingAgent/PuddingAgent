@@ -361,8 +361,34 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
         {
             EnsureLiveBinding(grant.Binding);
             BrowserGrantIssuancePolicy.EnsureSubAgentScopeIsSubset(grant, _grants.Values);
+            EnsureGrantIsNotSilentlyReplaced(grant.GrantId.Value, _grants, grant);
             _grants[grant.GrantId.Value] = grant;
             return _grantEpoch;
+        }
+    }
+
+    /// <summary>
+    /// 授权记录是**不可变**的：同一个 GrantId 只允许"原样重发"（幂等），
+    /// 不允许用同 id 换一份**不同内容**的记录。
+    ///
+    /// 为什么必须拒绝而不是覆盖：覆盖等于**在同一个授权世代内改变授权内容** ——
+    /// 已签发的租约仍在同一 epoch 下有效（<see cref="Revalidate"/> 查 epoch），
+    /// 于是"悄悄扩大范围/换受让人"会绕过世代检查，这正是授权模型要防的静默提权。
+    /// 正确做法是撤销旧记录再签发新的（撤销会推进 epoch，租约随之失效）。
+    /// </summary>
+    private static void EnsureGrantIsNotSilentlyReplaced<T>(
+        string grantId,
+        IReadOnlyDictionary<string, T> existing,
+        T candidate)
+    {
+        if (existing.TryGetValue(grantId, out var current)
+            && !EqualityComparer<T>.Default.Equals(current, candidate))
+        {
+            throw new ArgumentException(
+                $"grant '{grantId}' already exists with different content; grants are immutable"
+                + " — revoke it and issue a new one (silent replacement would widen authority"
+                + " without advancing the authorization epoch)",
+                nameof(candidate));
         }
     }
 
@@ -373,6 +399,7 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
         lock (_sync)
         {
             EnsureLiveBinding(grant.Binding);
+            EnsureGrantIsNotSilentlyReplaced(grant.GrantId.Value, _managementGrants, grant);
             _managementGrants[grant.GrantId.Value] = grant;
             return _grantEpoch;
         }

@@ -15,6 +15,66 @@ namespace PuddingBrowser.AutomationTests;
 public sealed class ReadOnlyDelegationTests
 {
     [TestMethod]
+    public void ReissuingAGrantIdWithDifferentContentIsRefusedInsteadOfSilentlyWidening()
+    {
+        // 取红用例（round-107 修的真实静默提权）：`IssueGrant` 原先按 GrantId **直接覆盖**。
+        // 覆盖 = 在同一个授权世代内改变授权内容 ⇒ 已签发租约仍有效（Revalidate 查 epoch），
+        // 于是"同 id 换一份更宽的授权"能绕过世代检查。授权记录声明是不可变的，就必须拒绝而不是覆盖。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+        var grantId = BrowserPageGrantId.NewId();
+
+        var narrow = new BrowserPageGrant(
+            grantId,
+            B0Fixture.Binding(),
+            page,
+            B0Fixture.Agent(),
+            BrowserPageGrantScope.Read,
+            BrowserPageGrantEpoch.Initial,
+            B0Fixture.Now);
+        authority.IssueGrant(narrow);
+
+        // ① 原样重发是幂等的（宿主可能重试同一签发）。
+        authority.IssueGrant(narrow);
+        Assert.AreEqual(1, authority.ActiveGrants.Count);
+
+        // ② 同 id 换内容（这里是把只读扩成读写）必须被拒绝。
+        var widened = new BrowserPageGrant(
+            grantId,
+            B0Fixture.Binding(),
+            page,
+            B0Fixture.Agent(),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            BrowserPageGrantEpoch.Initial,
+            B0Fixture.Now);
+        Assert.ThrowsExactly<ArgumentException>(() => authority.IssueGrant(widened));
+
+        // ③ 而且**旧记录仍按原样生效**：写操作依然不被允许（没被偷偷扩权）。
+        var write = authority.Admit(B0Fixture.Request(
+            BrowserAutomationOperation.Interact, B0Fixture.Agent(), target: page));
+        Assert.IsFalse(write.IsAllowed, "拒绝替换之后，原记录的窄范围必须仍然生效");
+        Assert.AreEqual(BrowserPageGrantScope.Read, authority.ActiveGrants.Single().Scope);
+    }
+
+    [TestMethod]
+    public void ReissuingAManagementGrantIdWithDifferentContentIsRefused()
+    {
+        var authority = B0Fixture.Connected();
+        var grantId = BrowserManagementGrantId.NewId();
+
+        var first = new BrowserManagementGrant(
+            grantId, B0Fixture.Binding(), B0Fixture.Agent(), B0Fixture.Now);
+        authority.IssueManagementGrant(first);
+        authority.IssueManagementGrant(first); // 幂等
+
+        var second = new BrowserManagementGrant(
+            grantId, B0Fixture.Binding(), B0Fixture.Agent("agent-2", "task-2"), B0Fixture.Now);
+        Assert.ThrowsExactly<ArgumentException>(() => authority.IssueManagementGrant(second));
+
+        Assert.AreEqual(1, authority.ActiveManagementGrants.Count);
+    }
+
+    [TestMethod]
     public void APageGrantIsBoundToTheExactActorAndNotJustToACallerIdString()
     {
         // 取红用例（round-106 修的真实越权借用）：页面授权的匹配原先只比 `CallerId` 字符串。
