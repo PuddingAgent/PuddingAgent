@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts.Desktop;
+using Pudding.Contracts.Desktop;
 using PuddingBrowser.Automation;
 
 namespace PuddingBrowser.AutomationTests;
@@ -177,7 +177,7 @@ public sealed class ComponentSurfaceTests
             ["ScreenshotPlanTests"] = 12,
             ["FileUploadPlanTests"] = 4,
             ["SubAgentDelegationTests"] = 10,
-            ["SubAgentDelegationLeaseTests"] = 9,
+            ["SubAgentDelegationLeaseTests"] = 12,
             ["ArrivalScrollTests"] = 11,
             ["SerpBudgetFixtureTests"] = 6,
             ["DriverEventHandlingTests"] = 3,

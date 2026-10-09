@@ -33,7 +33,11 @@ public sealed class BrowserDelegationLeaseLedger
     private readonly Dictionary<string, LeaseHolder> _writes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _reads = new(StringComparer.Ordinal);
     private readonly HashSet<string> _revokedPages = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _parentOfDelegation = new(StringComparer.Ordinal);
+
+    // 一个委派可以同时持有**多页**的租约（子代理可能在第二个标签页里继续写）。
+    // 这里必须是"委派 → 页集合"：早先写成单值映射时，第二个页会覆盖第一个，
+    // 于是 EndDelegation 只归还最后一页，**第一页的子代理写租约永久泄漏**（父代理再也写不进去）。
+    private readonly Dictionary<string, HashSet<string>> _pagesOfDelegation = new(StringComparer.Ordinal);
 
     private sealed record LeaseHolder(string HolderId, BrowserLeaseRole Role, string? DelegationId);
 
@@ -82,7 +86,13 @@ public sealed class BrowserDelegationLeaseLedger
         _writes[pageId] = new LeaseHolder(holderId, role, delegationId);
         if (role == BrowserLeaseRole.Child && delegationId is not null)
         {
-            _parentOfDelegation[delegationId] = pageId;
+            if (!_pagesOfDelegation.TryGetValue(delegationId, out var pages))
+            {
+                pages = new HashSet<string>(StringComparer.Ordinal);
+                _pagesOfDelegation[delegationId] = pages;
+            }
+
+            pages.Add(pageId);
         }
 
         return BrowserLeaseOutcome.Allow();
@@ -137,25 +147,29 @@ public sealed class BrowserDelegationLeaseLedger
     {
         Require(delegationId, nameof(delegationId));
 
-        if (!_parentOfDelegation.Remove(delegationId, out var pageId))
+        if (!_pagesOfDelegation.Remove(delegationId, out var pages))
         {
             return;
         }
 
-        if (_writes.TryGetValue(pageId, out var holder)
-            && holder.Role == BrowserLeaseRole.Child
-            && holder.DelegationId == delegationId)
+        // 该委派**在每一页**上的写租约都必须归还（不是只归还最后登记的那一页）。
+        foreach (var pageId in pages)
         {
-            _writes.Remove(pageId);
-        }
-
-        // 子代理的只读观察也随之失效（委派结束即不再授权）。
-        if (_reads.TryGetValue(pageId, out var readers))
-        {
-            readers.RemoveWhere(reader => reader.StartsWith($"child:{delegationId}", StringComparison.Ordinal));
-            if (readers.Count == 0)
+            if (_writes.TryGetValue(pageId, out var holder)
+                && holder.Role == BrowserLeaseRole.Child
+                && holder.DelegationId == delegationId)
             {
-                _reads.Remove(pageId);
+                _writes.Remove(pageId);
+            }
+
+            // 子代理的只读观察也随之失效（委派结束即不再授权）。
+            if (_reads.TryGetValue(pageId, out var readers))
+            {
+                readers.RemoveWhere(reader => reader.StartsWith($"child:{delegationId}", StringComparison.Ordinal));
+                if (readers.Count == 0)
+                {
+                    _reads.Remove(pageId);
+                }
             }
         }
     }
@@ -172,9 +186,16 @@ public sealed class BrowserDelegationLeaseLedger
         _writes.Remove(pageId);
         _reads.Remove(pageId);
 
-        foreach (var delegation in _parentOfDelegation.Where(pair => pair.Value == pageId).Select(pair => pair.Key).ToArray())
+        // 只把**这一页**从各委派的登记里摘掉：同一委派在别的页上的租约不受影响
+        // （撤权是按页的，不是按委派的）。
+        foreach (var delegation in _pagesOfDelegation.Keys.ToArray())
         {
-            _parentOfDelegation.Remove(delegation);
+            var pages = _pagesOfDelegation[delegation];
+            pages.Remove(pageId);
+            if (pages.Count == 0)
+            {
+                _pagesOfDelegation.Remove(delegation);
+            }
         }
     }
 

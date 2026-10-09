@@ -146,6 +146,63 @@ public sealed class SubAgentDelegationLeaseTests
     }
 
     [TestMethod]
+    public void ADelegationHoldingTwoPagesReturnsBothOnEnd()
+    {
+        // 取红用例（round-99 修的真实缺陷）：子代理可能在**第二个标签页**继续写，于是同一委派会在两页上持租约。
+        // 早先"委派→页"是**单值**映射，第二页会覆盖第一页 ⇒ EndDelegation 只归还最后一页，
+        // **第一页的子代理写租约永久泄漏**，父代理再也拿不回写权。
+        var ledger = new BrowserDelegationLeaseLedger();
+
+        Assert.IsTrue(ledger.TryAcquireWrite("page-a", "child:1", BrowserLeaseRole.Child, "delegation-1").Granted);
+        Assert.IsTrue(ledger.TryAcquireWrite("page-b", "child:1", BrowserLeaseRole.Child, "delegation-1").Granted);
+        Assert.AreEqual("child:1", ledger.WriteHolderOf("page-a"));
+        Assert.AreEqual("child:1", ledger.WriteHolderOf("page-b"));
+
+        ledger.EndDelegation("delegation-1");
+
+        Assert.IsNull(ledger.WriteHolderOf("page-a"), "第一页的租约必须一并归还（泄漏会让父代理永远写不进去）");
+        Assert.IsNull(ledger.WriteHolderOf("page-b"));
+
+        // 父代理在两页上都能重新写（这才是"归还"的可观察后果）。
+        Assert.IsTrue(ledger.TryAcquireWrite("page-a", "parent", BrowserLeaseRole.Parent).Granted);
+        Assert.IsTrue(ledger.TryAcquireWrite("page-b", "parent", BrowserLeaseRole.Parent).Granted);
+    }
+
+    [TestMethod]
+    public void EndingOneDelegationDoesNotReleaseAnotherDelegationsPages()
+    {
+        // 多页归还必须**按委派**精确回收：不能把别的委派的页也一起放掉。
+        var ledger = new BrowserDelegationLeaseLedger();
+
+        Assert.IsTrue(ledger.TryAcquireWrite("page-a", "child:1", BrowserLeaseRole.Child, "delegation-1").Granted);
+        Assert.IsTrue(ledger.TryAcquireWrite("page-b", "child:2", BrowserLeaseRole.Child, "delegation-2").Granted);
+
+        ledger.EndDelegation("delegation-1");
+
+        Assert.IsNull(ledger.WriteHolderOf("page-a"));
+        Assert.AreEqual("child:2", ledger.WriteHolderOf("page-b"), "另一个委派的租约不该被牵连释放");
+    }
+
+    [TestMethod]
+    public void RevokingOnePageKeepsTheOtherPageOfTheSameDelegation()
+    {
+        // 撤权是**按页**的：子代理在另一页上的租约不受影响；此后 EndDelegation 仍应归还那一页。
+        var ledger = new BrowserDelegationLeaseLedger();
+
+        Assert.IsTrue(ledger.TryAcquireWrite("page-a", "child:1", BrowserLeaseRole.Child, "delegation-1").Granted);
+        Assert.IsTrue(ledger.TryAcquireWrite("page-b", "child:1", BrowserLeaseRole.Child, "delegation-1").Granted);
+
+        ledger.RevokePage("page-a");
+
+        Assert.IsTrue(ledger.IsRevoked("page-a"));
+        Assert.AreEqual("child:1", ledger.WriteHolderOf("page-b"), "撤权 page-a 不该动 page-b");
+
+        ledger.EndDelegation("delegation-1");
+
+        Assert.IsNull(ledger.WriteHolderOf("page-b"), "被撤权的那一页摘掉后，同一委派的另一页仍要归还");
+    }
+
+    [TestMethod]
     public void BlankIdentifiersAreRefusedInsteadOfGuessed()
     {
         var ledger = new BrowserDelegationLeaseLedger();
