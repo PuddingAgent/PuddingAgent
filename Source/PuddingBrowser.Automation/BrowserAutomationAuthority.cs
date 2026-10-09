@@ -364,11 +364,44 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
         lock (_sync)
         {
             EnsureLiveBinding(grant.Binding);
-            BrowserGrantIssuancePolicy.EnsureSubAgentScopeIsSubset(grant, _grants.Values);
+
+            // 回收已过期的记录：它们既不参与准入，也不该无限留在字典里（字典随签发缓慢增长）。
+            var live = ReclaimExpiredGrantsUnsafe();
+
+            // 子集判定只看**仍然有效**的父授权：否则"父授权已过期"时仍能签出子代理授权，
+            // 而子代理自己的授权是有效的 ⇒ 等于凭一个已经死掉的来源获得权限（fail closed 必须在这里拒）。
+            BrowserGrantIssuancePolicy.EnsureSubAgentScopeIsSubset(grant, live);
+
             EnsureGrantIsNotSilentlyReplaced(grant.GrantId.Value, _grants, grant);
             _grants[grant.GrantId.Value] = grant;
             return _grantEpoch;
         }
+    }
+
+    /// <summary>
+    /// 回收**已过期**的授权记录（授权字典的字典增长上限）。返回回收后仍然有效的页面授权。
+    ///
+    /// 为什么安全：过期记录本来就不被准入认可（`FindPageGrant` / `HasManagementGrant` / `HasWriteCoverage`
+    /// 都检查 `IsExpiredAt`），删除它们**不改变任何授权判定**；管理授权同理。
+    /// </summary>
+    private IReadOnlyList<BrowserPageGrant> ReclaimExpiredGrantsUnsafe()
+    {
+        var now = _timeProvider.GetUtcNow();
+
+        foreach (var expired in _grants.Values.Where(item => item.IsExpiredAt(now)).Select(item => item.GrantId.Value).ToArray())
+        {
+            _grants.Remove(expired);
+        }
+
+        foreach (var expired in _managementGrants.Values
+            .Where(item => item.IsExpiredAt(now))
+            .Select(item => item.GrantId.Value)
+            .ToArray())
+        {
+            _managementGrants.Remove(expired);
+        }
+
+        return _grants.Values.Where(item => !item.IsExpiredAt(now)).ToArray();
     }
 
     /// <summary>
@@ -403,6 +436,7 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
         lock (_sync)
         {
             EnsureLiveBinding(grant.Binding);
+            _ = ReclaimExpiredGrantsUnsafe();
             EnsureGrantIsNotSilentlyReplaced(grant.GrantId.Value, _managementGrants, grant);
             _managementGrants[grant.GrantId.Value] = grant;
             return _grantEpoch;

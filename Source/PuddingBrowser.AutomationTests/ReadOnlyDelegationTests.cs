@@ -15,6 +15,59 @@ namespace PuddingBrowser.AutomationTests;
 public sealed class ReadOnlyDelegationTests
 {
     [TestMethod]
+    public void ASubAgentGrantCannotBeIssuedUnderAnExpiredParentGrant()
+    {
+        // 取红用例（round-115）：子集判定只看"同任务+同页+同 frame+范围"，**不看父授权是否过期** ⇒
+        // 父授权过期后仍能签出子代理授权，而子代理自己的授权是有效的 ⇒ 凭一个**已经死掉的来源**获得权限。
+        var clock = new TestTimeProvider(B0Fixture.Now);
+        var authority = B0Fixture.Connected(clock);
+        var page = B0Fixture.Page();
+
+        authority.IssueGrant(B0Fixture.Grant(
+            B0Fixture.Agent("agent-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page,
+            lifetime: TimeSpan.FromMinutes(5)));
+
+        clock.Advance(TimeSpan.FromMinutes(6)); // 父授权已过期
+
+        var child = B0Fixture.Grant(
+            B0Fixture.SubAgent("sub-1", "task-sub-1", "task-1"), BrowserPageGrantScope.Read, target: page);
+        Assert.ThrowsExactly<ArgumentException>(() => authority.IssueGrant(child));
+    }
+
+    [TestMethod]
+    public void ExpiredGrantsAreReclaimedSoTheDictionaryDoesNotGrowForever()
+    {
+        // 已知取舍收口：过期记录既不被准入认可，也不该无限留在字典里。
+        // 可观察证据：记录被回收后，**同一个 GrantId 可以重新签发**（旧的死记录已不在，不再触发"不可变"拒绝）。
+        var clock = new TestTimeProvider(B0Fixture.Now);
+        var authority = B0Fixture.Connected(clock);
+        var page = B0Fixture.Page();
+        var grantId = BrowserPageGrantId.NewId();
+        var actor = B0Fixture.Agent("agent-1", "task-1");
+
+        authority.IssueGrant(new BrowserPageGrant(
+            grantId, B0Fixture.Binding(), page, actor,
+            BrowserPageGrantScope.Read, BrowserPageGrantEpoch.Initial, B0Fixture.Now,
+            null, B0Fixture.Now + TimeSpan.FromMinutes(5)));
+
+        clock.Advance(TimeSpan.FromMinutes(6));
+
+        // 触发回收（签发是唯一的增长点，因此回收也放在那里）。
+        authority.IssueGrant(new BrowserPageGrant(
+            BrowserPageGrantId.NewId(), B0Fixture.Binding(), page, actor,
+            BrowserPageGrantScope.Read, BrowserPageGrantEpoch.Initial, clock.GetUtcNow()));
+
+        // 再签发同一 GrantId：若能成功，说明旧的过期记录确实被回收了（否则会因"不可变"被拒）。
+        authority.IssueGrant(new BrowserPageGrant(
+            grantId, B0Fixture.Binding(), page, actor,
+            BrowserPageGrantScope.Read, BrowserPageGrantEpoch.Initial, clock.GetUtcNow()));
+
+        Assert.AreEqual(2, authority.ActiveGrants.Count, "回收后字典里只应剩两条有效授权");
+    }
+
+    [TestMethod]
     public void ExpiredGrantsDisappearFromTheActiveProjections_SoTheProjectionAgreesWithAdmission()
     {
         // 取红用例（round-113 修的真实缺陷）：`ActiveGrants` / `ActiveManagementGrants` 原先直接返回
