@@ -76,7 +76,7 @@ public static class BrowserSmokePlan
             + $"快照的 `pageEvents` 如实列出这些事实——**有界**（最多保留最近 {PageEventLog.DefaultCapacity} 条，"
             + "按条数截断而非截断文本）、连续重复**合并为 (xN)**、总次数另计；"
             + "且**不用于继续交互**（它是事实说明，不是新的定位依据）",
-            AutomatedCoverage: "AutomationTests.ScriptDialogPolicyFormatTests / PageEventLogTests"),
+            AutomatedCoverage: "AutomationTests.ScriptDialogPolicyTests / PageEventLogTests"),
     ];
 
     /// <summary>校验清单：覆盖全部门禁、Id 唯一、字段非空、"真机项 vs 自动化覆盖"必须二选一。</summary>
