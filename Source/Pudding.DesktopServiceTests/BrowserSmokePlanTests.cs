@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Pudding.DesktopService;
 using PuddingBrowser.Automation;
 
@@ -122,6 +123,41 @@ public sealed class BrowserSmokePlanTests
         Assert.Contains("| 项 | 门禁 | 区域 | 怎么触发 | 看到什么才算过 |", markdown);
         Assert.Contains("已有自动化覆盖", markdown);
         Assert.Contains("AutomationTests.SubAgentDelegation", markdown);
+    }
+
+    [Fact]
+    public void TheInternalVerificationRunbookNamesEveryStepAndScript()
+    {
+        // 内部验证顺序是交接材料的一部分：改了共享契约就必须跑链外抽查（round-122 的教训）。
+        // 这条把"runbook 必须写清四步与四个脚本"钉住，避免文档与工具各自漂移。
+        var runbook = File.ReadAllText(Path.Combine(
+            RepoLayout.Root, "Docs", "13_runbooks", "浏览器自动化内部验证-runbook.md"));
+
+        foreach (var script in new[]
+        {
+            "check-round-gates.ps1",
+            "delivery-manifest.ps1",
+            "check-dependent-suites.ps1",
+            "external-acceptance.ps1",
+        })
+        {
+            Assert.Contains(script, runbook, StringComparison.Ordinal);
+        }
+
+        // 四个步骤的标题必须在（顺序即流程）；步骤 3 还必须带**触发条件**，
+        // 否则"什么时候该跑链外抽查"就又回到靠人记（这正是 round-122 之前的状况）。
+        Assert.Contains("步骤 1：文档门禁", runbook, StringComparison.Ordinal);
+        Assert.Contains("步骤 2：链内 7 套件", runbook, StringComparison.Ordinal);
+        Assert.Contains("步骤 4：外部验收排练", runbook, StringComparison.Ordinal);
+
+        // 步骤 3 的**标题行本身**必须带触发条件（正文别处出现同样的词不算）：
+        // 否则"什么时候该跑链外抽查"又回到靠人记 —— 这正是 round-122 之前的状况。
+        Assert.Matches(
+            new Regex(@"^##\s*步骤 3：链外抽查.*改了共享契约", RegexOptions.Multiline),
+            runbook);
+
+        // 必须写明"证明不了什么"（诚实性要求：runbook 不能只讲能证明的）。
+        Assert.Contains("证明不了", runbook, StringComparison.Ordinal);
     }
 
     [Fact]
