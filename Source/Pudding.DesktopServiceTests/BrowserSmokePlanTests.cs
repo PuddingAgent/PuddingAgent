@@ -125,6 +125,25 @@ public sealed class BrowserSmokePlanTests
     }
 
     [Fact]
+    public void TheExternalScriptDocumentsHowToCallItsSwitches()
+    {
+        // 实战教训（round-119）：把 `-Template` 当"模板输出路径"传（它其实是**开关**）时，
+        // 后面的路径被静默绑到位置参数上 —— 输出看着像成功，参数却是错的。
+        // 这条把"帮助块必须写清开关用法与观察文件参数名"钉住，免得下一个人重犯。
+        var script = File.ReadAllText(Path.Combine(RepoLayout.Root, "TestScripts", "external-acceptance.ps1"));
+
+        Assert.Contains("-Template -Facts", script, StringComparison.Ordinal);
+        Assert.Contains("-SkipTemplate -Conclude -Facts", script, StringComparison.Ordinal);
+        Assert.Contains("SWITCHES", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("positional", script, StringComparison.OrdinalIgnoreCase);
+
+        // 帮助块提到的参数必须仍然存在（脚本改写时这条会提醒同步）。
+        Assert.Contains("$Facts", script, StringComparison.Ordinal);
+        Assert.Contains("[switch]$Template", script, StringComparison.Ordinal);
+        Assert.Contains("[switch]$Conclude", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TheExternalScriptMirrorsThePlan()
     {
         // round-76 登记的风险：外部验收脚本里的观察项编号是 BrowserSmokePlan 的**镜像**（跨语言无法共享常量），

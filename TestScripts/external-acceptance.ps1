@@ -18,8 +18,16 @@
     as ANSI, so non-ASCII literals here would be a parse error).
 
 .EXAMPLE
-    powershell -File TestScripts/external-acceptance.ps1 -Template
-    powershell -File TestScripts/external-acceptance.ps1 -Conclude
+    # 1) facts skeleton (all items not-run) + the observation table:
+    powershell -File TestScripts/external-acceptance.ps1 -Template -Facts temp/test-out/facts.json
+
+    # 2) after the operator fills the facts file, compute the verdict:
+    #    exit 0 = external-lifecycle-verified allowed; exit 2 = refused with reasons (e.g. any not-run item)
+    powershell -File TestScripts/external-acceptance.ps1 -SkipTemplate -Conclude -Facts temp/test-out/facts.json
+
+    # NOTE: -Template / -Conclude / -SkipTemplate are SWITCHES. Passing a path to a switch
+    #       (e.g. `-Template some\path.json`) silently binds that path to a POSITIONAL parameter
+    #       and looks like it worked. The observations file is -Facts. (Learned the hard way.)
 #>
 [CmdletBinding()]
 param(
