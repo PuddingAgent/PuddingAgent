@@ -251,6 +251,80 @@ public sealed class SubAgentDelegationLeaseTests
     }
 
     [TestMethod]
+    public void TimeoutCancelAndTakeoverAreDistinguishableInTheReleaseRecord()
+    {
+        // S-10 要求"取消/接管/超时都回收许可"。只证明"收回了"不够：外部观察者要能区分**哪种结束**
+        // —— 超时意味着子代理没干完（结论可能不完整），取消是父代理主动放弃，接管是用户插手（需重新授权）。
+        var ledger = new BrowserDelegationLeaseLedger();
+
+        Assert.IsTrue(ledger.TryAcquireWrite("page-a", "child:1", BrowserLeaseRole.Child, "delegation-timeout").Granted);
+        Assert.IsTrue(ledger.TryAcquireWrite("page-b", "child:2", BrowserLeaseRole.Child, "delegation-cancel").Granted);
+        Assert.IsTrue(ledger.TryAcquireWrite("page-c", "child:3", BrowserLeaseRole.Child, "delegation-done").Granted);
+
+        // 接管要撤一个**还持有租约**的页（否则没有东西可撤，按设计不记录）。
+        Assert.IsTrue(ledger.TryAcquireWrite("page-d", "parent", BrowserLeaseRole.Parent).Granted);
+
+        ledger.EndDelegation("delegation-timeout", BrowserLeaseReleaseReason.TimedOut);
+        ledger.EndDelegation("delegation-cancel", BrowserLeaseReleaseReason.Cancelled);
+        ledger.EndDelegation("delegation-done");
+        ledger.RevokePage("page-d");
+
+        // 三种结束都真的归还了许可。
+        Assert.IsNull(ledger.WriteHolderOf("page-a"));
+        Assert.IsNull(ledger.WriteHolderOf("page-b"));
+        Assert.IsNull(ledger.WriteHolderOf("page-c"));
+        Assert.IsNull(ledger.WriteHolderOf("page-d"));
+
+        var releases = ledger.RecentReleases;
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                BrowserLeaseReleaseReason.TimedOut,
+                BrowserLeaseReleaseReason.Cancelled,
+                BrowserLeaseReleaseReason.Completed,
+                BrowserLeaseReleaseReason.TakenOver,
+            },
+            releases.Select(release => release.Reason).ToArray());
+
+        Assert.IsFalse(releases[0].IsPage, "委派级释放标记为委派");
+        Assert.IsTrue(releases[3].IsPage, "接管是按页的");
+        Assert.AreEqual("page-d", releases[3].SubjectId);
+    }
+
+    [TestMethod]
+    public void TheReleaseRecordIsBoundedAndDoesNotAffectAuthority()
+    {
+        var ledger = new BrowserDelegationLeaseLedger();
+
+        for (var index = 0; index < BrowserDelegationLeaseLedger.MaxReleases * 3; index++)
+        {
+            var page = $"page-{index}";
+            Assert.IsTrue(ledger.TryAcquireWrite(page, $"child:{index}", BrowserLeaseRole.Child, $"delegation-{index}").Granted);
+            ledger.EndDelegation($"delegation-{index}", BrowserLeaseReleaseReason.TimedOut);
+        }
+
+        Assert.AreEqual(
+            BrowserDelegationLeaseLedger.MaxReleases,
+            ledger.RecentReleases.Count,
+            "释放记录必须**有界**（否则它自己就成了内存增长点）");
+
+        // 记录只是诊断事实：它不影响授权判定（超时记录不会让该页此后拒绝授予）。
+        Assert.IsTrue(ledger.TryAcquireWrite("page-0", "parent", BrowserLeaseRole.Parent).Granted);
+        Assert.IsFalse(ledger.IsRevoked("page-0"));
+    }
+
+    [TestMethod]
+    public void RevokingAPageWithNothingToReleaseRecordsNothing()
+    {
+        var ledger = new BrowserDelegationLeaseLedger();
+
+        ledger.RevokePage("page-empty");
+
+        Assert.IsEmpty(ledger.RecentReleases, "没有东西可撤时不记无意义记录");
+        Assert.IsTrue(ledger.IsRevoked("page-empty"), "撤权本身仍然生效");
+    }
+
+    [TestMethod]
     public void BlankIdentifiersAreRefusedInsteadOfGuessed()
     {
         var ledger = new BrowserDelegationLeaseLedger();

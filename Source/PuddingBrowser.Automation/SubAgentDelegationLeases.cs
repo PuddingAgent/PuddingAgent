@@ -16,6 +16,31 @@ public sealed record BrowserLeaseOutcome(bool Granted, string? Reason)
 }
 
 /// <summary>
+/// **为什么把许可收回去了**（S-10 要求"取消/接管/超时都回收许可"）。
+///
+/// 光"收回了"不够：外部观察者与调用方需要能区分**是哪种结束**——超时说明子代理没干完（结论可能不完整），
+/// 取消是父代理主动放弃，接管是用户插手（此后该页要重新授权）。三者对后续判定的含义完全不同。
+/// 因此把它记为**释放原因**（纯观察事实，**不参与**任何授权判定）。
+/// </summary>
+public enum BrowserLeaseReleaseReason
+{
+    /// <summary>委派正常结束。</summary>
+    Completed,
+
+    /// <summary>委派超时（结论可能不完整）。</summary>
+    TimedOut,
+
+    /// <summary>父代理主动取消。</summary>
+    Cancelled,
+
+    /// <summary>用户接管 / 撤权（按页）。</summary>
+    TakenOver,
+}
+
+/// <summary>一条**释放记录**（诊断用）：谁被收回、什么原因。</summary>
+public sealed record BrowserLeaseRelease(string SubjectId, bool IsPage, BrowserLeaseReleaseReason Reason);
+
+/// <summary>
 /// **父子页面写租约的账本**（设计方案 §9 / 门禁 G10）：
 /// <list type="bullet">
 ///   <item><b>同一页同一时刻只有一个写租约</b>——父子不得并存（父在写时委派必须先暂停/释放）；</item>
@@ -44,6 +69,25 @@ public sealed class BrowserDelegationLeaseLedger
     // 于是那些观察在委派结束后**永久留存在账本里**（"委派结束即不再授权"被违反）。
     // 这里记**确切的 id**（不靠字符串约定），回收时精确移除，不误伤别的观察者。
     private readonly Dictionary<string, HashSet<string>> _readersOfDelegation = new(StringComparer.Ordinal);
+
+    // 释放原因记录（**有界**）：只用于诊断与外部观察，不参与任何授权判定。
+    // 无界记录会成为内存增长点，因此按条数截断（与 PageEventLog 同样的取舍）。
+    private readonly List<BrowserLeaseRelease> _releases = [];
+
+    /// <summary>释放原因记录的容量（有界；只保留最近若干条）。</summary>
+    public const int MaxReleases = 16;
+
+    /// <summary>最近的释放记录（最旧 → 最新）。**诊断事实**，不表示授权状态。</summary>
+    public IReadOnlyList<BrowserLeaseRelease> RecentReleases => _releases;
+
+    private void RecordRelease(string subjectId, bool isPage, BrowserLeaseReleaseReason reason)
+    {
+        _releases.Add(new BrowserLeaseRelease(subjectId, isPage, reason));
+        while (_releases.Count > MaxReleases)
+        {
+            _releases.RemoveAt(0);
+        }
+    }
 
     private sealed record LeaseHolder(string HolderId, BrowserLeaseRole Role, string? DelegationId);
 
@@ -173,7 +217,14 @@ public sealed class BrowserDelegationLeaseLedger
     /// <summary>
     /// **委派结束/超时归还**：释放该委派（子代理）在该页的写租约，父代理随即可以重新写。
     /// </summary>
-    public void EndDelegation(string delegationId)
+    public void EndDelegation(string delegationId) =>
+        EndDelegation(delegationId, BrowserLeaseReleaseReason.Completed);
+
+    /// <summary>
+    /// 同上，但**记录为什么结束**（<paramref name="reason"/> 只影响诊断记录，不影响授权判定）：
+    /// 超时/取消都必须走这里，外部观察者才能区分"子代理干完了"与"没干完就被收走了"。
+    /// </summary>
+    public void EndDelegation(string delegationId, BrowserLeaseReleaseReason reason)
     {
         Require(delegationId, nameof(delegationId));
 
@@ -182,6 +233,7 @@ public sealed class BrowserDelegationLeaseLedger
             return;
         }
 
+        RecordRelease(delegationId, isPage: false, reason);
         // 该委派**在每一页**上的写租约都必须归还（不是只归还最后登记的那一页）。
         _readersOfDelegation.Remove(delegationId, out var registeredReaders);
 
@@ -217,9 +269,20 @@ public sealed class BrowserDelegationLeaseLedger
     /// **接管/撤权**：该页的父子写租约与只读观察**同时失效**，且此后不再授予新租约。
     /// （§9 明确"接管和撤权使父子同时失效"，不是只失效子代理。）
     /// </summary>
-    public void RevokePage(string pageId)
+    public void RevokePage(string pageId) =>
+        RevokePage(pageId, BrowserLeaseReleaseReason.TakenOver);
+
+    /// <summary>
+    /// 同上，但**记录原因**（默认"用户接管"；撤权走同一个方法，只是原因不同）。
+    /// 只有该页**确实有东西可撤**（写租约/只读观察/委派登记）时才记一条，避免刷出无意义的记录。
+    /// </summary>
+    public void RevokePage(string pageId, BrowserLeaseReleaseReason reason)
     {
         Require(pageId, nameof(pageId));
+
+        var hadAnything = _writes.ContainsKey(pageId)
+            || _reads.ContainsKey(pageId)
+            || _pagesOfDelegation.Values.Any(pages => pages.Contains(pageId));
 
         _revokedPages.Add(pageId);
         _writes.Remove(pageId);
@@ -235,6 +298,11 @@ public sealed class BrowserDelegationLeaseLedger
             {
                 _pagesOfDelegation.Remove(delegation);
             }
+        }
+
+        if (hadAnything)
+        {
+            RecordRelease(pageId, isPage: true, reason);
         }
     }
 
