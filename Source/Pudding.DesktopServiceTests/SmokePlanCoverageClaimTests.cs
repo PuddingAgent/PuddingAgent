@@ -14,6 +14,52 @@ namespace DesktopServiceTests;
 public sealed class SmokePlanCoverageClaimTests
 {
     [Fact]
+    public void EveryNumberOfThePlanIsTraceableToItsSourceOfTruth()
+    {
+        // 取红用例（round-136）：清单里的**数字**也是对外承诺。原先 S-09 写着"low 基准图 ≤512px/≤40 KiB"，
+        // 而浏览器截图层根本没有这个策略（唯一存在的 512 低保证属于 **vision 管线**的 detail=low），
+        // "≤40 KiB"更是查无出处 ⇒ 对外承诺了不存在的东西。已改写成代码保证的形式（按调用方上限判定）。
+        // 这条把**留存的数字**逐一对到真源：数字改了或真源改了，两侧都会红。
+        var expected = new (string PlanText, string SourceFile, string SourceText)[]
+        {
+            ("前 10 条标题", "Source/PuddingBrowser.AutomationTests/SerpBudgetFixtureTests.cs", "应有 10 条结果"),
+            ("1536 字节", "Source/PuddingBrowser.AutomationTests/SerpBudgetFixtureTests.cs", "G5BudgetBytes = 1_536"),
+            ("父结果 ≤2 KiB", "Source/PuddingBrowser.Automation/SubAgentDelegation.cs", "DefaultResultBudgetBytes = 2 * 1024"),
+        };
+
+        var plan = File.ReadAllText(Path.Combine(
+            RepoLayout.Root, "Source", "Pudding.DesktopService", "BrowserSmokePlan.cs"));
+
+        var problems = new List<string>();
+        foreach (var (planText, sourceFile, sourceText) in expected)
+        {
+            if (!plan.Contains(planText, StringComparison.Ordinal))
+            {
+                problems.Add($"清单里找不到「{planText}」（数字被改写/删除后必须同步本表）");
+            }
+
+            var path = Path.Combine(RepoLayout.Root, sourceFile.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path))
+            {
+                problems.Add($"找不到真源文件：{sourceFile}");
+                continue;
+            }
+
+            if (!File.ReadAllText(path).Contains(sourceText, StringComparison.Ordinal))
+            {
+                problems.Add($"{sourceFile} 里找不到「{sourceText}」（真源改了，清单里的数字要跟着改）");
+            }
+        }
+
+        // S-13 的上限是从代码常量插值来的（不是手写数字），这里确认它确实出现在清单文本里。
+        if (!plan.Contains("PageEventLog.DefaultCapacity", StringComparison.Ordinal))
+        {
+            problems.Add("S-13 的容量应继续用 PageEventLog.DefaultCapacity 插值，而不是手写数字");
+        }
+
+        Assert.True(problems.Count == 0, "清单数字与真源不一致：\n  - " + string.Join("\n  - ", problems));
+    }
+    [Fact]
     public void EveryAutomatedCoverageClaimResolvesToARealTestClass()
     {
         var automationTestsDirectory = Path.Combine(
