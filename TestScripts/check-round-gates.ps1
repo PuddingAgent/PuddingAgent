@@ -29,7 +29,15 @@ param(
     [int]$BaselineFrontMatterNonCompliant = 2,
     [int]$BaselineBrokenLinkTargets = 32,
     [int]$BaselineBrokenAnchors = 0,
-    [int]$BaselineDocsBomFiles = 0
+    [int]$BaselineDocsBomFiles = 0,
+
+    # Rewrite broken relative links in MY deliverables to the correct depth (one command instead of my
+    # fourth manual fix). Scoped by -OwnerPattern so it never touches another team's documents.
+    # NOTE: the pattern must stay ASCII-only -- Windows PowerShell 5.1 reads a BOM-less .ps1 as ANSI, so a
+    # literal Chinese path here would be mangled into an invalid regex. "\u6D4F\u89C8\u5668" spells the
+    # Chinese word for "browser" (used in those file names) without any non-ASCII byte in this file.
+    [switch]$FixLinks,
+    [string]$OwnerPattern = '^Docs/(00_changelog/2026Year/10/2026-10-0[89]-(?!T\d)|12_features/(\u6D4F\u89C8\u5668|B6-)|13_runbooks/\u6D4F\u89C8\u5668|14_reports/2026-10-0[89]-\u6D4F\u89C8\u5668)'
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,6 +56,25 @@ function Get-Numbers {
         }
     }
     return $null
+}
+
+function Get-RelativePathFrom {
+    param([string]$FromDirectory, [string]$ToPath)
+    # [System.IO.Path]::GetRelativePath does not exist in Windows PowerShell 5.1 (.NET Framework),
+    # so compute it by hand (learned in round 89, forgotten, and paid for again in round 94).
+    $from = (Resolve-Path $FromDirectory).Path.TrimEnd('\')
+    $to = (Resolve-Path $ToPath).Path
+    $fromParts = $from.Split('\')
+    $toParts = $to.Split('\')
+    $common = 0
+    while ($common -lt $fromParts.Count -and $common -lt $toParts.Count -and
+           $fromParts[$common] -eq $toParts[$common]) {
+        $common++
+    }
+    $parts = @()
+    for ($index = $common; $index -lt $fromParts.Count; $index++) { $parts += '..' }
+    for ($index = $common; $index -lt $toParts.Count; $index++) { $parts += $toParts[$index] }
+    return ($parts -join '/')
 }
 
 try {
@@ -75,6 +102,64 @@ try {
     Write-Host "=== 2/3 links (repo-wide)"
     $linksReport = "temp/test-out/round-gates-links.txt"
     $links = & python Tools/Docs/check_md_links.py --all-repo --report $linksReport 2>&1 | Out-String
+
+    if ($FixLinks) {
+        # One command instead of a fifth manual fix. Only touches files matching -OwnerPattern.
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        $ownerRegex = [regex]$OwnerPattern
+        $fixed = 0
+        $skipped = @()
+
+        if (Test-Path $linksReport) {
+            # Offender lines look like: "  Docs/....md  ->  ../../target.md"
+            foreach ($line in (Get-Content $linksReport -Encoding UTF8)) {
+                $match = [regex]::Match($line, '^\s+(\S+\.md)\s+->\s+(\S+)\s*$')
+                if (-not $match.Success) { continue }
+
+                $offenderRel = $match.Groups[1].Value.Replace('/', '\')
+                $targetText = $match.Groups[2].Value
+                $repoRel = $offenderRel.Replace('\', '/')
+                if (-not $ownerRegex.IsMatch($repoRel)) { continue }
+
+                $offenderFull = Join-Path $repositoryRoot $offenderRel
+                if (-not (Test-Path $offenderFull)) { continue }
+
+                $leaf = [System.IO.Path]::GetFileName($targetText)
+                if ([string]::IsNullOrWhiteSpace($leaf)) { continue }
+
+                $candidates = @(Get-ChildItem -Path $repositoryRoot -Recurse -File -Filter $leaf -ErrorAction SilentlyContinue |
+                    Where-Object { $_.FullName -notmatch '\\(bin|obj|node_modules|\.git)\\' })
+                if ($candidates.Count -ne 1) {
+                    $skipped += "$repoRel -> $targetText (matches=$($candidates.Count))"
+                    continue
+                }
+
+                $text = [System.IO.File]::ReadAllText($offenderFull)
+                if (-not $text.Contains($targetText)) { continue }
+
+                $correct = Get-RelativePathFrom -FromDirectory ([System.IO.Path]::GetDirectoryName($offenderFull)) -ToPath $candidates[0].FullName
+
+                # Anchor the replacement to a whole markdown link: a plain substring replace double-applied
+                # ("../../../x" CONTAINS "../../x"), which over-corrected by one level once already.
+                $pattern = '\]\(' + [regex]::Escape($targetText) + '\)'
+                $rewritten = [regex]::Replace($text, $pattern, '](' + $correct + ')')
+                if ($rewritten -eq $text) { continue }
+
+                [System.IO.File]::WriteAllText($offenderFull, $rewritten, $utf8NoBom)
+                Write-Host "    fixed: $repoRel -> $correct"
+                $fixed++
+            }
+        }
+
+        Write-Host ("    links rewritten = {0}; skipped (ambiguous/missing target) = {1}" -f $fixed, $skipped.Count)
+        $skipped | Select-Object -First 5 | ForEach-Object { Write-Host "      skipped: $_" }
+
+        if ($fixed -gt 0) {
+            # Re-measure after rewriting so the reported totals describe the current state.
+            $links = & python Tools/Docs/check_md_links.py --all-repo --report $linksReport 2>&1 | Out-String
+        }
+    }
+
     $linkNumbers = Get-Numbers -Text $links
     if ($null -eq $linkNumbers -or $linkNumbers.Count -lt 3) {
         Write-Warning "cannot parse link totals; raw output kept at $linksReport"
