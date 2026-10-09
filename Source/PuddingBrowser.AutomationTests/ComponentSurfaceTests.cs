@@ -180,7 +180,7 @@ public sealed class ComponentSurfaceTests
             ["FileUploadPlanTests"] = 4,
             ["SubAgentDelegationTests"] = 10,
             ["SubAgentDelegationLeaseTests"] = 18,
-            ["ReadOnlyDelegationTests"] = 8,
+            ["ReadOnlyDelegationTests"] = 9,
             ["ArrivalScrollTests"] = 11,
             ["SerpBudgetFixtureTests"] = 6,
             ["DriverEventHandlingTests"] = 4,

@@ -15,6 +15,48 @@ namespace PuddingBrowser.AutomationTests;
 public sealed class ReadOnlyDelegationTests
 {
     [TestMethod]
+    public void AnInFlightWriteLeaseIsNeverFreedByTimeAlone()
+    {
+        // 这条**故意钉住"看起来像缺陷"的安全方向**（round-109 的审计结论）：
+        // 权威签发的写租约**不带到期时间**（`expiresAtUtc` 为空），因此"过了很久"不会让它消失。
+        //
+        // 为什么这是对的、不能"顺手修成按时间清理"：清理后必须立刻允许**另一个写入者**动手，
+        // 而我们无法知道原持有者是否已经停止 ⇒ 会变成**两个写入者同时操作同一页**（正是 G10 要防的）。
+        // 因此安全方向只能是：时间不释放；释放只来自显式 ReleaseLease / 暂停 / 接管 / 世代改变。
+        var clock = new TestTimeProvider(B0Fixture.Now);
+        var authority = B0Fixture.Connected(clock);
+        var page = B0Fixture.Page();
+
+        var actorA = B0Fixture.Agent("agent-1", "task-1");
+        var actorB = B0Fixture.Agent("agent-2", "task-2");
+        authority.IssueGrant(B0Fixture.Grant(actorA, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+        authority.IssueGrant(B0Fixture.Grant(actorB, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+
+        var leaseA = authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, actorA, target: page));
+        Assert.IsTrue(leaseA.IsAllowed);
+
+        // ① 时间过去了很久：租约**不**因时间而释放 —— B 仍被挡（宁可让宿主显式释放，也不能放两个写入者）。
+        clock.Advance(TimeSpan.FromHours(6));
+        var tooEarly = authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, actorB, target: page));
+        Assert.IsFalse(tooEarly.IsAllowed, "时间流逝不得让在途写租约失效（否则会出现两个写入者）");
+
+        // ② 显式释放后，B 立刻可以写。
+        Assert.IsNotNull(leaseA.Lease);
+        authority.ReleaseLease(leaseA.Lease!.LeaseId, "test");
+        var afterRelease = authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, actorB, target: page));
+        Assert.IsTrue(afterRelease.IsAllowed, "显式释放必须真正让出该页");
+
+        // ③ 暂停同样释放（控制面无须知道租约 id）。
+        clock.Advance(TimeSpan.FromMinutes(1));
+        authority.SetPaused(true, "test");
+        authority.SetPaused(false, "test");
+        var actorC = B0Fixture.Agent("agent-3", "task-3");
+        authority.IssueGrant(B0Fixture.Grant(actorC, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+        var afterPause = authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, actorC, target: page));
+        Assert.IsTrue(afterPause.IsAllowed, "暂停必须释放租约");
+    }
+
+    [TestMethod]
     public void AWriteLeaseIsReleasedWhenItsOwnGrantIsRevoked_EvenIfAnotherActorSharesTheCallerId()
     {
         // 取红用例（round-108）：租约存活性检查（`HasWriteCoverage`）原先也只比 `CallerId` 字符串。
