@@ -66,7 +66,9 @@ public sealed class DocsMarkdownEncodingTests
         // 不替其它子系统背既有的失效链接（那些不属于本次改动，且仓库纪律要求不代改他方内容）。
         var deliverables = new (string Directory, string FileNamePattern)[]
         {
-            ("Docs/00_changelog/2026Year/10", @"^2026-10-0[89]-.*\.md$"),
+            // `(?!T\d)` 排除他方团队的 changelog（本目录里同时有 `2026-10-08-T6-*` 的并行 WIP）：
+            // 他们的失效链接不属本次改动，也不该让我的套件变红（同一条边界教训，见 changelog）。
+            ("Docs/00_changelog/2026Year/10", @"^2026-10-0[89]-(?!T\d).*\.md$"),
             ("Docs/12_features", @"^(浏览器|B6-).*\.md$"),
             ("Docs/13_runbooks", @"^浏览器.*\.md$"),
             ("Docs/14_reports", @"^2026-10-0[89]-浏览器.*\.md$"),
