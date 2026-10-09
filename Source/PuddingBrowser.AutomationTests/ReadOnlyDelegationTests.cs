@@ -15,6 +15,81 @@ namespace PuddingBrowser.AutomationTests;
 public sealed class ReadOnlyDelegationTests
 {
     [TestMethod]
+    public void RevokeAllGrantsClearsDerivedGrantsAndReleasesTheInFlightLease()
+    {
+        // 对账表缺口 #3：`RevokeAllGrants` 只验证过"正向清空"。这里连派生授权与**在途租约**一起看：
+        // 清空后又重新签发一条授权，如果旧租约还在，新写入者会拿到 PageBusy（这就是可观察的证据）。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+        var parent = B0Fixture.Grant(
+            B0Fixture.Agent("agent-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page);
+        authority.IssueGrant(parent);
+        authority.IssueGrant(B0Fixture.Grant(
+            B0Fixture.SubAgent("sub-1", "task-sub-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page));
+        authority.IssueGrant(B0Fixture.Grant(
+            B0Fixture.SubAgent("sub-2", "task-sub-2", "task-sub-1"),
+            BrowserPageGrantScope.Read,
+            target: page));
+        authority.IssueManagementGrant(B0Fixture.ManagementGrant(B0Fixture.Agent("agent-1", "task-1")));
+
+        var child = B0Fixture.SubAgent("sub-1", "task-sub-1", "task-1");
+        Assert.IsTrue(authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, child, target: page)).IsAllowed);
+
+        authority.RevokeAllGrants();
+
+        Assert.IsEmpty(authority.ActiveGrants, "父/子/孙授权都必须被清空");
+        Assert.IsEmpty(authority.ActiveManagementGrants);
+        Assert.IsFalse(
+            authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, child, target: page)).IsAllowed,
+            "清空后子代理不得再写");
+
+        // 重新签发一条新授权：若旧租约没被释放，这里会得到 PageBusy。
+        var fresh = B0Fixture.Agent("agent-9", "task-9");
+        authority.IssueGrant(B0Fixture.Grant(fresh, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+        Assert.IsTrue(
+            authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, fresh, target: page)).IsAllowed,
+            "RevokeAllGrants 必须同时释放在途租约（否则该页被旧租约占住）");
+    }
+
+    [TestMethod]
+    public void RevokeExecutionScopeNarrowsSubAgentGrantsAndReleasesTheirInFlightLease()
+    {
+        // 对账表缺口 #2：`RevokeExecutionScope` 只验证过"去掉 Write 保留 Read"的正向行为。
+        // 这里看两件更要紧的事：① 子代理的授权是否**一起收窄**（子集关系不被破坏）；
+        // ② 子代理的在途写租约是否释放（用一个新写入者观察，避免只看内部状态）。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+        authority.IssueGrant(B0Fixture.Grant(
+            B0Fixture.Agent("agent-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page));
+        var child = B0Fixture.SubAgent("sub-1", "task-sub-1", "task-1");
+        authority.IssueGrant(B0Fixture.Grant(
+            child, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+
+        Assert.IsTrue(authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, child, target: page)).IsAllowed);
+
+        authority.RevokeExecutionScope(page);
+
+        Assert.IsFalse(
+            authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, child, target: page)).IsAllowed,
+            "撤执行权必须连子代理的写权一起收窄（否则子代理可以绕过父任务的收缩）");
+        Assert.IsTrue(
+            authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Snapshot, child, target: page)).IsAllowed,
+            "只读授权应当保留");
+
+        var fresh = B0Fixture.Agent("agent-9", "task-9");
+        authority.IssueGrant(B0Fixture.Grant(fresh, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+        Assert.IsTrue(
+            authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, fresh, target: page)).IsAllowed,
+            "撤执行权必须释放在途写租约（否则该页被旧租约占住）");
+    }
+
+    [TestMethod]
     public void RevokingTheParentGrantAlsoRevokesTheDerivedSubAgentGrants()
     {
         // 取红用例（round-110）：签发时强制"子代理只能是父授权的子集"，但**撤销父授权时只删父记录** ⇒
