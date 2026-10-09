@@ -28,6 +28,8 @@ public sealed record DeliveryManifest
         IReadOnlyList<string>? knownUnverified,
         int knownUnverifiedTotal,
         IReadOnlyList<string> requiredExternalSteps,
+        int changelogFilesScanned = 0,
+        int changelogFilesTotal = 0,
         DesktopAcceptance.Stage stage = DesktopAcceptance.Stage.ReadyForExternalDeploy)
     {
         BuildId = buildId;
@@ -37,6 +39,8 @@ public sealed record DeliveryManifest
         KnownUnverified = knownUnverified;
         KnownUnverifiedTotal = knownUnverifiedTotal;
         RequiredExternalSteps = requiredExternalSteps;
+        ChangelogFilesScanned = changelogFilesScanned;
+        ChangelogFilesTotal = changelogFilesTotal;
         Stage = stage;
     }
 
@@ -48,6 +52,15 @@ public sealed record DeliveryManifest
 
     /// <summary>展示的未验证项是否少于实际找到的（由总数与列表长度推出）。</summary>
     public bool KnownUnverifiedIsTruncated => KnownUnverifiedTotal > (KnownUnverified?.Count ?? 0);
+
+    /// <summary>实际扫描的日志文件数（提取未验证项的语料规模）。</summary>
+    public int ChangelogFilesScanned { get; }
+
+    /// <summary>日志目录里的 markdown 文件总数（&gt; <see cref="ChangelogFilesScanned"/> 即语料被截断）。</summary>
+    public int ChangelogFilesTotal { get; }
+
+    /// <summary>提取未验证项时的**语料**是否被截断（与"条目被截断"是两件事，必须分开报告）。</summary>
+    public bool ChangelogCorpusIsTruncated => ChangelogFilesTotal > ChangelogFilesScanned;
 
     /// <summary>构建标识（产物可追溯；空值由校验拒绝）。</summary>
     public string BuildId { get; }
@@ -158,6 +171,21 @@ public static class DeliveryManifestValidator
             problems.Add("knownUnverified entries must not be blank");
         }
 
+        if (manifest.ChangelogFilesScanned < 0 || manifest.ChangelogFilesTotal < manifest.ChangelogFilesScanned)
+        {
+            problems.Add(
+                "changelogFilesTotal must be >= changelogFilesScanned (both must be non-negative)"
+                + $" (scanned {manifest.ChangelogFilesScanned}, total {manifest.ChangelogFilesTotal})");
+        }
+
+        // 语料被截断 ⇒ 未验证项的"总数"也只是**已扫描部分**的数字，绝不能当成全集。
+        if (manifest.ChangelogCorpusIsTruncated)
+        {
+            problems.Add(
+                $"changelog corpus was truncated: scanned {manifest.ChangelogFilesScanned}"
+                + $" of {manifest.ChangelogFilesTotal} files, so knownUnverifiedTotal is a lower bound");
+        }
+
         // 总数是"实际找到多少条"的声明：比列出的条数还小就是自相矛盾（必有一个字段在撒谎）。
         if (manifest.KnownUnverifiedTotal < (manifest.KnownUnverified?.Count ?? 0))
         {
@@ -248,6 +276,8 @@ public static class DeliveryManifestValidator
             var artifacts = ReadStringArray(root, "artifacts");
             var knownUnverified = ReadStringArray(root, "knownUnverified");
         var knownUnverifiedTotal = ReadInt32(root, "knownUnverifiedTotal");
+        var changelogFilesScanned = ReadInt32(root, "changelogFilesScanned");
+        var changelogFilesTotal = ReadInt32(root, "changelogFilesTotal");
             var steps = ReadStringArray(root, "requiredExternalSteps");
 
             if (string.IsNullOrWhiteSpace(buildId))

@@ -10,7 +10,9 @@ public sealed record DeliveryCollectionRequest(
     string ChangelogDirectory,
     string BuildId,
     string Commit,
-    IReadOnlyList<string>? AdditionalKnownUnverified = null);
+    IReadOnlyList<string>? AdditionalKnownUnverified = null,
+    // 单次采集允许扫描的日志文件数（默认 = MaxChangelogFiles 常量；测试用它构造"语料被截断"的场景）。
+    int ChangelogFileLimit = DeliveryFactCollector.MaxChangelogFiles);
 
 /// <summary>
 /// **交付事实采集**：把"跑测试/发版/写日志"之后留在磁盘上的东西，汇总成一份可自检的交付清单。
@@ -25,8 +27,15 @@ public sealed record DeliveryCollectionRequest(
 /// </summary>
 public static class DeliveryFactCollector
 {
-    /// <summary>单次采集读取的日志文件上限（清单不是日志转储）。</summary>
-    public const int MaxChangelogFiles = 120;
+    /// <summary>
+    /// 单次采集读取的日志文件上限。
+    ///
+    /// **2026-10-08 更正**：这里原先静默截断到 **120**，而仓库当时已有 **319** 个 changelog ⇒
+    /// "未验证项"是从**被截断的语料**里提取的，清单却对此只字未提（与 round-124 修的"条目被截断"是同一类问题）。
+    /// 现在的做法是：**扫全部**（markdown 总量很小），并把"扫了多少文件"作为**事实**写进清单；
+    /// 只有在极端情况下才用上限兜底，且届时清单必须**显式报告**被截断。
+    /// </summary>
+    public const int MaxChangelogFiles = 100_000;
 
     public static bool TryCollect(
         DeliveryCollectionRequest request,
@@ -101,20 +110,34 @@ public static class DeliveryFactCollector
 
         // ③ 未验证项（日志）
         List<string>? changelogs = null;
+        var changelogFilesTotal = 0;
         if (string.IsNullOrWhiteSpace(request.ChangelogDirectory) || !Directory.Exists(request.ChangelogDirectory))
         {
             collected.Add($"changelog directory does not exist: '{request.ChangelogDirectory}'");
         }
         else
         {
-            changelogs = Directory
+            // 先数总数，再决定读多少：这样"被截断"永远是可报告的**事实**，而不是沉默。
+            var limit = request.ChangelogFileLimit;
+            var all = Directory
                 .EnumerateFiles(request.ChangelogDirectory, "*.md")
                 .OrderByDescending(path => path, StringComparer.OrdinalIgnoreCase)
-                .Take(MaxChangelogFiles)
+                .ToArray();
+            changelogFilesTotal = all.Length;
+
+            changelogs = all
+                .Take(limit)
                 .Select(path => SafeRead(path))
                 .Where(text => text is not null)
                 .Select(text => text!)
                 .ToList();
+
+            if (all.Length > limit)
+            {
+                collected.Add(
+                    $"changelog corpus has {all.Length} markdown files but only {limit} were scanned;"
+                    + " the manifest must not silently under-report unverified items");
+            }
         }
 
         if (collected.Count > 0)
@@ -130,7 +153,10 @@ public static class DeliveryFactCollector
                 artifacts,
                 checks,
                 changelogs,
-                request.AdditionalKnownUnverified),
+                request.AdditionalKnownUnverified,
+                RequiredExternalSteps: null,
+                ChangelogFilesTotal: changelogFilesTotal,
+                ChangelogFilesScanned: changelogs?.Count ?? 0),
             out manifest,
             out problems);
     }

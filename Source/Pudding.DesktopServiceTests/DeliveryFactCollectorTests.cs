@@ -161,7 +161,7 @@ public sealed class DeliveryFactCollectorTests : IDisposable
     {
         var publish = Publish("app.exe");
         var results = Results("A.trx", Trx(1, 0));
-        var changelogs = Changelogs(Enumerable.Range(0, DeliveryFactCollector.MaxChangelogFiles + 20)
+        var changelogs = Changelogs(Enumerable.Range(0, 30)
             .Select(index => ($"{index:000}.md", $"- 真机未验证：第 {index} 项"))
             .ToArray());
 
@@ -171,10 +171,43 @@ public sealed class DeliveryFactCollectorTests : IDisposable
             out var problems),
             string.Join("; ", problems));
 
-        // 提取器自身也有上限（20），因此清单不会变成日志转储。
+        // 提取器自身也有上限（20），因此清单不会变成日志转储；但**语料规模必须如实报出**。
         Assert.True(manifest!.KnownUnverified!.Count <= KnownUnverifiedExtractor.MaxItems);
+        Assert.Equal(30, manifest.ChangelogFilesScanned);
+        Assert.Equal(30, manifest.ChangelogFilesTotal);
+        Assert.False(manifest.ChangelogCorpusIsTruncated);
     }
 
+    [Fact]
+    public void ATruncatedChangelogCorpusIsRefusedInsteadOfSilentlyUnderReporting()
+    {
+        // 取红用例（round-125 修的真实缺陷）：日志语料原先**静默截断**到常量上限（当时仓库已有 319 个文件、
+        // 只扫 120 个），清单对此只字未提 ⇒ "未验证项"是从被截断的语料里提取的。
+        // 现在的语义是：语料超过本次上限就**明确失败**，绝不静默少报。
+        var publish = Publish("app.exe");
+        var results = Results("A.trx", Trx(1, 0));
+        var changelogs = Changelogs(Enumerable.Range(0, 12)
+            .Select(index => ($"{index:000}.md", $"- 真机未验证：第 {index} 项"))
+            .ToArray());
+
+        var ok = DeliveryFactCollector.TryCollect(
+            new DeliveryCollectionRequest(_root, publish, results, changelogs, "b", "c", ChangelogFileLimit: 20),
+            out var manifest,
+            out var problems);
+
+        Assert.True(ok, string.Join("; ", problems));
+        Assert.Equal(12, manifest!.ChangelogFilesScanned);
+
+        // 上限调小 ⇒ 语料被截断 ⇒ 拒绝产出（而不是给出一份"看起来完整"的清单）。
+        var refused = DeliveryFactCollector.TryCollect(
+            new DeliveryCollectionRequest(_root, publish, results, changelogs, "b", "c", ChangelogFileLimit: 5),
+            out var none,
+            out var refusalProblems);
+
+        Assert.False(refused, "语料被截断时必须拒绝，而不是静默少报未验证项");
+        Assert.Null(none);
+        Assert.Contains(refusalProblems, problem => problem.Contains("changelog corpus", StringComparison.Ordinal));
+    }
     [Fact]
     public void NullRequestIsRefused()
     {

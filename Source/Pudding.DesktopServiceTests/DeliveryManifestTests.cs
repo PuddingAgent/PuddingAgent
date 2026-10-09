@@ -24,7 +24,9 @@ public sealed class DeliveryManifestTests
             knownUnverified ?? [],
             (knownUnverified ?? []).Count,
             requiredExternalSteps ?? ["startup", "restart", "crash-recovery", "exit-reclamation"],
-            stage);
+            changelogFilesScanned: 0,
+            changelogFilesTotal: 0,
+            stage: stage);
 
     [Fact]
     public void ACompleteManifestIsAccepted()

@@ -66,6 +66,9 @@ public static class DeliveryManifestReport
         builder.Append(manifest.KnownUnverifiedIsTruncated
             ? $"| 未验证项 | **显示 {manifest.KnownUnverified?.Count ?? 0} 条 / 共 {manifest.KnownUnverifiedTotal} 条（已截断）** |\n"
             : $"| 未验证项 | {manifest.KnownUnverified?.Count ?? 0} 条（全部列出） |\n");
+        builder.Append(manifest.ChangelogCorpusIsTruncated
+            ? $"| 日志语料 | **扫描 {manifest.ChangelogFilesScanned} / 共 {manifest.ChangelogFilesTotal} 个文件（已截断 ⇒ 未验证项只是下界）** |\n"
+            : $"| 日志语料 | 扫描 {manifest.ChangelogFilesScanned} 个文件（全部） |\n");
         builder.Append($"| 外部必做步骤 | {string.Join("、", manifest.RequiredExternalSteps.Select(step => $"`{step}`"))} |\n\n");
 
         builder.Append("### 检查（来自 TRX，非人工填写）\n\n");

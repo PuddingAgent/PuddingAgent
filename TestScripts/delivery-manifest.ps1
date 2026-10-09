@@ -114,10 +114,32 @@ try {
                 "--logger", "trx;LogFileName=$name.trx",
                 "--results-directory", $ResultsDirectory
             )
+            # IMPORTANT: a native tool writing to stderr (xUnit prints [FAIL]) becomes a TERMINATING
+            # error under ErrorActionPreference=Stop, which aborted this script at the FIRST failing
+            # suite: later suites never ran, the retry block was unreachable, and no manifest decision
+            # was ever made. Gate on exit codes instead and keep going.
+            $ErrorActionPreference = "Continue"
             & dotnet @testArguments
             if ($LASTEXITCODE -ne 0) {
                 Write-Warning "$name has failing tests (recorded honestly; the manifest will refuse to exist)"
             }
+        }
+
+        # A suite that never produced a TRX (build failure, bad path, crash) would simply be ABSENT
+        # from the manifest: the remaining green suites would make it look complete. Refuse instead.
+        $missingTrx = @()
+        foreach ($suite in $Suites) {
+            $name = [System.IO.Path]::GetFileNameWithoutExtension($suite)
+            $trx = Join-Path $ResultsDirectory "$name.trx"
+            $retried = Join-Path $ResultsDirectory "$name-retried.trx"
+            if (-not (Test-Path $trx) -and -not (Test-Path $retried)) {
+                $missingTrx += $name
+            }
+        }
+
+        if ($missingTrx.Count -gt 0) {
+            Write-Warning ("REFUSING to build a manifest: these suites produced no TRX: {0}" -f ($missingTrx -join ", "))
+            exit 2
         }
 
         if ($RetryFailedSuites -gt 0) {
