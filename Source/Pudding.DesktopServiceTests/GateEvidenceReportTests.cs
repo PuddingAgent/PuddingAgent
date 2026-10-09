@@ -30,6 +30,12 @@ public sealed class GateEvidenceReportTests
         Assert.Contains("5_000", report, StringComparison.Ordinal);
         Assert.Contains("10,000", report, StringComparison.Ordinal);
         Assert.Contains("maxDepth = 24", report, StringComparison.Ordinal);
+
+        // §6.1 各模式预算里"一致的那四条"也要钉住；full 模式的偏差必须仍在记录里。
+        Assert.Equal(4_096, PuddingBrowser.Automation.ArticleMarkdown.DefaultMaxBytes);
+        Assert.Equal(4_096, PuddingBrowser.Automation.ArticleCompactJson.DefaultMaxBytes);
+        Assert.Contains("full 模式缺输出预算", report, StringComparison.Ordinal);
+        Assert.Contains("16 KiB、硬上限 64 KiB", report, StringComparison.Ordinal);
     }
     [Fact]
     public void EveryTestMethodNamedInTheGateReportExists()
