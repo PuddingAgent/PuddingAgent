@@ -47,6 +47,24 @@ public static class ExternalAcceptanceFacts
             var root = document.RootElement;
             var collected = new List<string>();
 
+            // 未知字段一律拒绝：静默忽略会把"写了却没生效"变成最难查的一类问题。
+            // 尤其是有人想在这里写 acceptRetries（接受重试是**命令行开关**，不是观察事实的一部分）——
+            // 那种写法如果被忽略，他会以为已接受，实际结论仍被拒。
+            foreach (var property in root.EnumerateObject())
+            {
+                if (property.Name is "observedBuildId" or "smoke" or "lifecycle")
+                {
+                    continue;
+                }
+
+                var hint = string.Equals(property.Name, "acceptRetries", StringComparison.OrdinalIgnoreCase)
+                    ? " (accepting retried results is a command-line switch: --accept-retries / -AcceptRetries,"
+                        + " not part of the observation facts)"
+                    : string.Empty;
+                collected.Add(
+                    $"unknown field '{property.Name}' (allowed: observedBuildId, smoke, lifecycle){hint}");
+            }
+
             var observedBuildId = ReadString(root, "observedBuildId");
             if (string.IsNullOrWhiteSpace(observedBuildId))
             {

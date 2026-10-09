@@ -49,6 +49,58 @@ public sealed class ExternalAcceptanceFactsTests
     }
 
     [Fact]
+    public void UnknownFieldsAreRefusedAndAcceptRetriesGetsAnActionableHint()
+    {
+        // 取红用例（round-132）：解析器原先**静默忽略**未知字段。最难查的一类问题就是
+        // "我写了却没生效"——尤其是把"接受重试"写进观察事实（它其实是命令行开关）。
+        var withUnknown = FullJson().Replace(
+            "\"lifecycle\"",
+            "\"unknownSection\": 1,\n  \"lifecycle\"",
+            StringComparison.Ordinal);
+
+        Assert.False(
+            ExternalAcceptanceFacts.TryParse(withUnknown, Manifest(), out _, out var unknownProblems));
+        Assert.Contains(unknownProblems, problem => problem.Contains("unknown field 'unknownSection'", StringComparison.Ordinal));
+
+        var withAcceptRetries = FullJson().Replace(
+            "\"lifecycle\"",
+            "\"acceptRetries\": true,\n  \"lifecycle\"",
+            StringComparison.Ordinal);
+
+        Assert.False(
+            ExternalAcceptanceFacts.TryParse(withAcceptRetries, Manifest(), out _, out var retryProblems));
+        Assert.Contains(retryProblems, problem => problem.Contains("--accept-retries", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EveryKeyTheTemplateWritesIsActuallyReadByTheParser()
+    {
+        // 模板由 PowerShell 写、解析器由 C# 读（跨语言约定）。若模板改了键名而解析器没跟上，
+        // 结果不是编译错误，而是"外部一方的观察被当成缺失" —— 静默否定。这条把两侧钉在一起。
+        var script = File.ReadAllText(Path.Combine(RepoRoot(), "TestScripts", "external-acceptance.ps1"));
+        var parser = File.ReadAllText(Path.Combine(
+            RepoRoot(), "Source", "Pudding.DesktopService", "ExternalAcceptanceFacts.cs"));
+
+        foreach (var key in new[] { "observedBuildId", "smoke", "checkId", "outcome", "evidence", "lifecycle", "step", "passed" })
+        {
+            Assert.Contains($"\"{key}\"", script, StringComparison.Ordinal);
+            Assert.Contains($"\"{key}\"", parser, StringComparison.Ordinal);
+        }
+    }
+
+    private static string RepoRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "PuddingAgentNetwork.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("repository root not found");
+    }
+    [Fact]
     public void UnknownOutcomeWordsAreRefusedInsteadOfTreatedAsPassed()
     {
         // "ok"/"pass"/"done" 这类写法必须拒绝 —— 宽容地把它们当通过是最容易出错的。
