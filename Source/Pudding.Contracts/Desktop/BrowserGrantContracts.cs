@@ -119,6 +119,26 @@ public sealed record BrowserCallerIdentity
         return mine is not null && theirs is not null && string.Equals(mine, theirs, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 两个身份是不是**同一个行动者**（授权与租约都按它判"发给谁"）。
+    ///
+    /// 必须比 <c>CallerId</c> 字符串更严：还要比**种类**与**任务**。原因很实在 ——
+    /// <c>CallerId</c> 只是字符串，不同种类的调用者（父任务 Agent vs 子代理）或同一调用者在**另一个任务**里，
+    /// 完全可能撞上同一个 id；只比字符串就等于把"发给谁"降级成"谁的 id 长得一样"，
+    /// 会放行越权借用（本会话已在授权查询、租约存活性、租约本身三处各修过一次）。
+    ///
+    /// 与 <see cref="IsSameTaskScope"/> 的区别是**故意**的：后者用于**任务级**管理授权
+    /// （同父任务下的子任务可以共享），本方法用于**页面级**授权与写租约（必须精确到行动者）。
+    /// </summary>
+    public bool IsSameActor(BrowserCallerIdentity other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        return Kind == other.Kind
+            && string.Equals(CallerId, other.CallerId, StringComparison.Ordinal)
+            && string.Equals(TaskId, other.TaskId, StringComparison.Ordinal);
+    }
+
     public override string ToString() =>
         TaskId is null ? $"{Kind}:{CallerId}" : $"{Kind}:{CallerId}/task={TaskId}";
 }

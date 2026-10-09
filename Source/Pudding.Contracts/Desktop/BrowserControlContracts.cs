@@ -129,8 +129,10 @@ public sealed record BrowserAutomationLease
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // "持有者一致"必须是**同一个行动者**（种类 + callerId + taskId），不能只比 CallerId 字符串：
+        // 否则另一个同 id 的调用者拿着同一个 operationId 就能骑在这条租约上执行（租约是要授权的凭据）。
         return string.Equals(OperationId.Value, request.OperationId.Value, StringComparison.Ordinal)
-            && string.Equals(Holder.CallerId, request.Caller.CallerId, StringComparison.Ordinal)
+            && Holder.IsSameActor(request.Caller)
             && request.Target is { } target
             && string.Equals(Target.Key, target.Key, StringComparison.Ordinal);
     }

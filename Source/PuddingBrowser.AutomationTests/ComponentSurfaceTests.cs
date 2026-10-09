@@ -180,7 +180,7 @@ public sealed class ComponentSurfaceTests
             ["FileUploadPlanTests"] = 4,
             ["SubAgentDelegationTests"] = 10,
             ["SubAgentDelegationLeaseTests"] = 18,
-            ["ReadOnlyDelegationTests"] = 20,
+            ["ReadOnlyDelegationTests"] = 21,
             ["AuthorityEntryAuditTests"] = 1,
             ["GrantExpiryWiringTests"] = 2,
             ["ArrivalScrollTests"] = 11,

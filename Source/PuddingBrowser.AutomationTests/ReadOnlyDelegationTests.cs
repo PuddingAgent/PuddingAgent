@@ -1,3 +1,4 @@
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Automation;
 
@@ -14,6 +15,43 @@ namespace PuddingBrowser.AutomationTests;
 [TestClass]
 public sealed class ReadOnlyDelegationTests
 {
+    [TestMethod]
+    public void ALeaseCannotBeRiddenByADifferentActorSharingTheSameCallerId()
+    {
+        // 取红用例（round-117）：**租约自己**的持有者判定（`BrowserAutomationLease.Allows`）原先只比
+        // `CallerId` 字符串。租约是"允许触碰页面"的凭据 ⇒ 另一个同 id 的调用者只要拿到同一个 operationId，
+        // 就能骑在这条租约上继续执行（而 `Allows` 的文档写的是"持有者、操作、页面都必须一致"）。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+        var holder = B0Fixture.Agent("agent-1", "task-1");
+        authority.IssueGrant(B0Fixture.Grant(
+            holder, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+
+        var operationId = OperationId.NewId();
+        var granted = authority.Admit(B0Fixture.Request(
+            BrowserAutomationOperation.Interact, holder, target: page, operationId: operationId));
+        Assert.IsTrue(granted.IsAllowed);
+        var lease = granted.Lease;
+        Assert.IsNotNull(lease);
+
+        // 真正的持有者（同一行动者、同一 operationId）= 允许。
+        Assert.IsTrue(lease!.Allows(B0Fixture.Request(
+            BrowserAutomationOperation.Interact, holder, target: page, operationId: operationId)));
+
+        // 同 CallerId、**不同任务**（即不同行动者）= 拒绝。
+        Assert.IsFalse(lease.Allows(B0Fixture.Request(
+            BrowserAutomationOperation.Interact,
+            B0Fixture.Agent("agent-1", "task-2"), target: page, operationId: operationId)),
+            "租约不得被另一个同 CallerId 的行动者骑用");
+
+        // 同 CallerId、不同**种类**（子代理）= 拒绝。
+        Assert.IsFalse(lease.Allows(B0Fixture.Request(
+            BrowserAutomationOperation.Interact,
+            new BrowserCallerIdentity(BrowserCallerKind.SubAgent, "agent-1", "task-sub", "task-1"),
+            target: page, operationId: operationId)),
+            "租约不得被子代理凭 CallerId 相同骑用");
+    }
+
     [TestMethod]
     public void ASubAgentGrantCannotBeIssuedUnderAnExpiredParentGrant()
     {
