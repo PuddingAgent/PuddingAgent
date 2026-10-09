@@ -52,11 +52,13 @@ public static class BrowserSmokePlan
             "无需重复定位；读操作不推进 PageVersion；文档导航后旧 ref 被拒且不会点到同名替代节点",
             AutomatedCoverage: "AutomationTests.BrowserNodeIdentity*"),
         new("S-05", "G5", "阅读预算", "中文与英文 SERP fixture 各一次 extract",
-            "一次调用返回前 10 条标题；UTF-8 序列化 ≤ 1536 字节；无额外 locate"),
+            "一次调用返回前 10 条标题；UTF-8 序列化 ≤ 1536 字节；无额外 locate；"
+            + "**另记录进入模型后的文本 token 与调用次数**（文本与视觉分别记，压缩字节 ≠ token 节省）"),
         new("S-06", "G6", "正文与分页", "含标题/列表/表格/代码/链接的结构化 fixture；再跨 TTL 取 cursor",
-            "聚合内容覆盖 100%、不重不漏；超预算仍是合法输出；过期 cursor 明确 cursor_expired"),
+            "聚合内容覆盖 100%、不重不漏；超预算仍是合法输出；过期 cursor 明确 cursor_expired；"
+            + "**全文模式必须显式选择**（默认不是全文）"),
         new("S-07", "G7", "定位与输入", "十种 locator 矩阵（含 exact/重复/隐藏）；受控输入重渲染；密码字段",
-            "受控值一致、密码不回显；0×0/禁用/遮挡被拒；一次 fill 回执即可确认非敏感值"),
+            "受控值一致、密码不回显；0×0/禁用/遮挡被拒；一次 fill 回执即可确认非敏感值（**无二次 snapshot**）"),
         new("S-08", "G8", "滚动", "window 与嵌套容器的非边界滚动 + 滚到边界 + 无限滚动页",
             "非边界有真实位移；边界是 no-op（不假称成功）；to_top/to_bottom/to_ref 能停且回报停止原因；"
             + "无限滚动等新条目后 contentChanged=true"),
@@ -67,7 +69,7 @@ public static class BrowserSmokePlan
             + "不无限压缩后仍称可读）；单张输入 ≤"
             + $"{BrowserScreenshotTransfer.MaxImageBytes / (1024 * 1024)} MiB，超限明确说明原因**"
             + "（不静默截断/降级）；元数据含源/输出尺寸、设备缩放、CSS viewport、scroll offset、裁剪变换与三代修订号；"
-            + "缩放后旧坐标被拒",
+            + "缩放后旧坐标被拒；**实际模型收到类型化图片**（不是 base64 长串；文本模型得到明确限制）",
             // 采集本身要真机（CapturePreviewAsync），但**载荷/变换/拒绝语义**已由进程内用例覆盖 —— 两件事分开说清。
             AutomatedCoverage: "AutomationTests.BrowserScreenshotCoordinate* / BrowserScreenshotTransferTests / BrowserScreenshotPlannerTests"),
         new("S-10", "G10", "委派", "父代理持有页面写租约时委派子代理写同一页；再取消/接管/超时",
