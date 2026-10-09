@@ -33,6 +33,7 @@ draft: false
 | `/fixtures/serp-en` | S-05 英文 SERP | **10 条**结果；标题等长（43 ASCII） |
 | `/fixtures/article` | S-06 结构化长文 | h1/h2、列表、表格、代码、链接、最后一段 |
 | `/fixtures/scroll` | S-08 滚动 | 3000px 文档、`overflow-y: scroll` 嵌套容器、无限列表（终点 10 条） |
+| `/fixtures/events` | S-12/S-13 触发页 | 对话框三键、权限、新窗口、下载、`input[type=file]`、页面自弹选择框；页面自记录区 `#log` |
 
 ```powershell
 # ② 确认 Desktop + 能力通道已就绪（工具调用全部经由它）
@@ -113,16 +114,16 @@ draft: false
 
 ### S-12 文件选择器（输入路径）
 
-1. 准备一个含 `input[type=file]` 的页面；
+1. 打开 `/fixtures/events`（含 `input[type=file]` 与「页面自弹选择框」按钮）；
 2. **工具上传**：`browser_interact` → `action=upload`、`input_mode=native`、`files=[绝对路径]`；
    期望：元素收到文件（**真实浏览器路径** `DOM.setFileInputFiles`），不是脚本伪造；
-3. **页面自弹**：让页面脚本触发文件选择框；
+3. **页面自弹**：点 `#open-picker`；
    期望：**记录为"不支持"** —— WebView2 SDK（1.0.4078.44）**没有**文件选择器 API，我们**不接管**它，
    也**不假装**接管（驱动源码里写明了这个缺口）。这一项是"如实报告边界"，不是"必须成功"。
 
 ### S-13 页面事件接管与上报
 
-在同一会话内依次触发：**脚本对话框**（alert/confirm/prompt）、**权限请求**、**新窗口**、**下载**。
+打开 `/fixtures/events`，依次点 `#dialog-alert`/`#dialog-confirm`/`#dialog-prompt`、`#permission`、`#new-window`、`#download`。
 
 期望：
 

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>TestSite 页面事件与选择器触发（S-12/S-13 fixture）</title>
+  <!--
+    S-12（文件选择器边界）与 S-13（页面事件接管与上报）的**触发页**。
+
+    每个按钮只做一件事，便于外部观察"我们的接管是否生效、流程是否被卡住"：
+      #dialog-alert / #dialog-confirm / #dialog-prompt  —— 脚本对话框（三种）
+      #permission                                       —— 权限请求（geolocation）
+      #new-window                                       —— 新窗口
+      #download                                         —— 下载
+      #open-picker                                      —— 页面脚本自行触发文件选择框（S-12 第②步：期望"不支持"）
+
+    页面上的 #log 记录**本页自己**观察到的事件（例如 confirm 的返回值、新窗口是否被返回 null），
+    供 smoke 时对照——注意它是页面事实，不是自动化回执。
+  -->
+</head>
+<body>
+  <h1>页面事件触发页</h1>
+
+  <button id="dialog-alert" type="button">触发 alert</button>
+  <button id="dialog-confirm" type="button">触发 confirm</button>
+  <button id="dialog-prompt" type="button">触发 prompt</button>
+  <button id="permission" type="button">请求定位权限</button>
+  <button id="new-window" type="button">打开新窗口</button>
+  <a id="download" download="pudding-download.txt" href="data:text/plain;base64,cHVkZGluZyBkb3dubG9hZA==">下载一个文本</a>
+  <input id="picker" type="file" />
+  <button id="open-picker" type="button">让页面自己弹出文件选择框</button>
+
+  <h2>页面观察记录</h2>
+  <pre id="log"></pre>
+
+  <script>
+    var log = document.getElementById('log');
+    function record(line) { log.textContent += line + '\n'; }
+
+    document.getElementById('dialog-alert').addEventListener('click', function () {
+      alert('pudding-alert');
+      record('alert 已返回');
+    });
+
+    document.getElementById('dialog-confirm').addEventListener('click', function () {
+      record('confirm 返回 ' + confirm('pudding-confirm'));
+    });
+
+    document.getElementById('dialog-prompt').addEventListener('click', function () {
+      record('prompt 返回 ' + JSON.stringify(prompt('pudding-prompt', '默认值')));
+    });
+
+    document.getElementById('permission').addEventListener('click', function () {
+      if (!navigator.geolocation) { record('无 geolocation'); return; }
+      navigator.geolocation.getCurrentPosition(
+        function () { record('定位成功（意外：自动化应拒绝权限）'); },
+        function (error) { record('定位失败（预期：权限被拒）code=' + error.code); });
+    });
+
+    document.getElementById('new-window').addEventListener('click', function () {
+      var opened = window.open('https://example.com/new-window', '_blank');
+      // 被抑制时浏览器会返回 null（我们的策略是"抑制并记录目标地址"）。
+      record('新窗口返回 ' + (opened === null ? 'null（预期：被抑制）' : '非 null'));
+    });
+
+    document.getElementById('download').addEventListener('click', function () {
+      record('已点击下载链接');
+    });
+
+    document.getElementById('open-picker').addEventListener('click', function () {
+      // S-12 第②步：页面**自行**触发文件选择框。SDK 无 API ⇒ 我们不接管，期望记录为"不支持"。
+      record('已请求页面自弹选择框');
+      document.getElementById('picker').click();
+    });
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace DesktopServiceTests;
@@ -100,6 +100,38 @@ public sealed class TestSiteFixtureTests
     }
 
     [Fact]
+    public void TheEventsFixtureCanTriggerEveryPeripheralCase()
+    {
+        // S-12（文件选择器边界）与 S-13（页面事件接管上报）此前**没有触发页**，因此无法执行。
+        // 这条把触发能力钉住：每个钩子都必须存在，否则外部一方照着手册做却发现"按钮点了没反应"。
+        var path = FixturePath("events.html");
+        Assert.True(File.Exists(path), $"找不到事件触发页：{path}");
+
+        var html = File.ReadAllText(path);
+
+        // S-13：脚本对话框三种 + 权限 + 新窗口 + 下载。
+        Assert.Contains("id=\"dialog-alert\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"dialog-confirm\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"dialog-prompt\"", html, StringComparison.Ordinal);
+        Assert.Contains("navigator.geolocation.getCurrentPosition", html, StringComparison.Ordinal);
+        Assert.Contains("window.open(", html, StringComparison.Ordinal);
+        Assert.Contains("download=", html, StringComparison.Ordinal);
+
+        // S-12：真实上传目标（input[type=file]）与"页面自弹选择框"的触发钩子。
+        Assert.Contains("type=\"file\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"open-picker\"", html, StringComparison.Ordinal);
+        Assert.Contains(".click()", html, StringComparison.Ordinal);
+
+        // 页面自记录区（供 smoke 对照；注意它是页面事实，不是自动化回执）。
+        Assert.Contains("id=\"log\"", html, StringComparison.Ordinal);
+
+        // 路由与复制（站点按文件读 ⇒ 必须随输出目录一起复制）。
+        var program = File.ReadAllText(Path.Combine(
+            RepoLayout.Root, "Tests", "PuddingBrowser.TestSite", "Program.cs"));
+        Assert.Contains("/fixtures/events", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TheRunbookOnlyReferencesRoutesThatExistAndStatesTheExpectedNumbers()
     {
         // 手册是对外可执行的：它引用的 fixture 路由必须真的存在于站点，期望数字必须与 fixture 一致，
@@ -112,7 +144,7 @@ public sealed class TestSiteFixtureTests
         var program = File.ReadAllText(Path.Combine(
             RepoLayout.Root, "Tests", "PuddingBrowser.TestSite", "Program.cs"));
 
-        foreach (var route in new[] { "serp-zh", "serp-en", "article", "scroll" })
+        foreach (var route in new[] { "serp-zh", "serp-en", "article", "scroll", "events" })
         {
             Assert.Contains($"/fixtures/{route}", runbook, StringComparison.Ordinal);
             Assert.Contains($"/fixtures/{route}", program, StringComparison.Ordinal);
