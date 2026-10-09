@@ -29,8 +29,16 @@ public sealed class GateEvidenceReportTests
         var sectionEnd = report.IndexOf("## 诚实边界", sectionStart, StringComparison.Ordinal);
         var section = sectionEnd > sectionStart ? report[sectionStart..sectionEnd] : report[sectionStart..];
 
-        var cited = Regex.Matches(section, "`([A-Z][A-Za-z0-9_]{6,})`")
-            .Select(match => match.Groups[1].Value)
+        // 只核对**标准行**里的用例名：同一节里还有"真机观察步骤"这类叙述行，里面的行内代码（如 CoreReady）
+        // 不是用例名，若一并核对会变成噪音。
+        var criterionLines = section
+            .Split('\n')
+            .Where(line => line.StartsWith("|", StringComparison.Ordinal))
+            .Where(line => !line.Contains("真机观察步骤", StringComparison.Ordinal))
+            .ToArray();
+
+        var cited = criterionLines
+            .SelectMany(line => Regex.Matches(line, "`([A-Z][A-Za-z0-9_]{6,})`").Select(match => match.Groups[1].Value))
             .Where(name => !name.EndsWith("Tests", StringComparison.Ordinal))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
