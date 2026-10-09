@@ -1,0 +1,8 @@
+# Flake observations (append-only): one line per first-attempt failure that a retry then absorbed.
+# Format (space separated, ASCII): <yyyy-MM-dd> <suite> <full.test.name>
+#
+# Why this exists: "it flakes" is not actionable; "this test has flaked 5 times since 2026-10-01" is.
+# The file is written by TestScripts/delivery-manifest.ps1 (retry path) and read by TestScripts/flake-stats.ps1.
+# It belongs to the delivery chain, so it does NOT modify the owning subsystem's test code.
+#
+2026-10-08 PuddingHost.Tests PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection

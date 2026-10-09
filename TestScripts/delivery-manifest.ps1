@@ -218,10 +218,32 @@ try {
                             "no test names in the TRX; cannot tell whether this was a known flake"
                         }
 
+                        # "It flakes" is not actionable; "it has flaked N times since <date>" is. Every absorbed
+                        # failure is appended to an append-only log owned by this delivery chain (so the owning
+                        # subsystem's test code is NOT touched), and the running count goes into the note.
+                        $observationsPath = Join-Path $PSScriptRoot "flake-observations.txt"
+                        $statsScript = Join-Path $PSScriptRoot "flake-stats.ps1"
+                        $today = (Get-Date).ToString("yyyy-MM-dd")
+                        foreach ($failedName in $failedNames) {
+                            Add-Content -Path $observationsPath -Encoding UTF8 -Value ("$today $name $failedName")
+                        }
+
+                        $historyNote = ""
+                        if ((Test-Path $statsScript) -and (Test-Path $observationsPath)) {
+                            foreach ($failedName in $failedNames) {
+                                $counted = @(& $statsScript -Path $observationsPath -TestName $failedName 2>$null |
+                                    Where-Object { $_ -match "^TOTAL`t" })
+                                if ($counted.Count -gt 0) {
+                                    $total = ($counted[0] -split "`t")[1]
+                                    $historyNote += " observed $total time(s) in total (TestScripts/flake-observations.txt);"
+                                }
+                            }
+                        }
+
                         # ...and record what the first attempt looked like, for the collector/report.
                         $notesPath = Join-Path $ResultsDirectory "retry-notes.txt"
                         Add-Content -Path $notesPath -Encoding UTF8 -Value (
-                            "$name : first attempt had $firstAttemptFailures failing test(s) [$nameSummary]; $verdict; the result below is from the retry")
+                            "$name : first attempt had $firstAttemptFailures failing test(s) [$nameSummary]; $verdict;$historyNote the result below is from the retry")
                         Write-Host "--- $name green on retry (manifest will show it as retried; $verdict)"
                         break
                     }

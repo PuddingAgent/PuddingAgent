@@ -36,6 +36,15 @@ public sealed class GateEvidenceReportTests
         // round-162：新不稳定**默认拒绝出清单**，必须显式 -AllowNewInstability 才能接受。
         Assert.Contains("[switch]$AllowNewInstability", script, StringComparison.Ordinal);
         Assert.Contains("REFUSING to build a manifest: a retry absorbed a failure", script, StringComparison.Ordinal);
+        // round-163：吸收的失败要留下**频次**数据（append-only 日志 + 只读统计脚本），否则"它偶尔失败"无法行动。
+        Assert.Contains("flake-observations.txt", script, StringComparison.Ordinal);
+        Assert.Contains("flake-stats.ps1", script, StringComparison.Ordinal);
+        foreach (var required in new[] { "flake-observations.txt", "flake-stats.ps1" })
+        {
+            Assert.True(
+                File.Exists(Path.Combine(root, "TestScripts", required)),
+                $"缺少交付链的频次数据文件：TestScripts/{required}");
+        }
     }
     [Fact]
     public void DocumentedPlanDeviationsStillDescribeTheActualCode()
