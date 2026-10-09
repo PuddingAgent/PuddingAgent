@@ -15,6 +15,23 @@ public sealed class GateEvidenceReportTests
     private const string ReportRelativePath = "Docs/14_reports/2026-10-09-门禁证据对账.md";
 
     [Fact]
+    public void DocumentedPlanDeviationsStillDescribeTheActualCode()
+    {
+        // §6.1 的预算数字与代码**不一致**（文档 10,000 节点/深度 64；代码 5,000/24），这份偏差已写进对账表。
+        // 这条门禁保证：① 对账表还写着这段偏差；② 代码里的值确实等于表里记录的值。
+        // 任何人改了默认预算（无论向文档靠拢还是反向），都必须同步更新对账表 —— 偏差不会悄悄消失或悄悄扩大。
+        var reportPath = Path.Combine(RepoLayout.Root, ReportRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var report = File.ReadAllText(reportPath);
+        Assert.Contains("§6.1 预算数字对账", report, StringComparison.Ordinal);
+
+        var options = new Pudding.Contracts.Desktop.DesktopSnapshotOptions();
+        Assert.Equal(5_000, Pudding.Contracts.Desktop.DesktopSnapshotOptions.DefaultMaxNodes);
+        Assert.Equal(24, options.MaxDepth);
+        Assert.Contains("5_000", report, StringComparison.Ordinal);
+        Assert.Contains("10,000", report, StringComparison.Ordinal);
+        Assert.Contains("maxDepth = 24", report, StringComparison.Ordinal);
+    }
+    [Fact]
     public void EveryTestMethodNamedInTheGateReportExists()
     {
         var reportPath = Path.Combine(
