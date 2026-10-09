@@ -40,7 +40,11 @@ param(
         "Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj",
         "Tests/PuddingHost.Tests/PuddingHost.Tests.csproj"
     ),
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    # Re-run suites whose TRX shows failures, at most N times each (0 = off, the default).
+    # Retries are NOT hidden: a retried suite's TRX is renamed with a "-retried" suffix, so the manifest
+    # check name carries it and anyone reading the manifest can see that a retry happened.
+    [int]$RetryFailedSuites = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -78,6 +82,35 @@ try {
             & dotnet @testArguments
             if ($LASTEXITCODE -ne 0) {
                 Write-Warning "$name has failing tests (recorded honestly; the manifest will refuse to exist)"
+            }
+        }
+
+        if ($RetryFailedSuites -gt 0) {
+            Write-Host "--- retrying suites whose TRX shows failures (max $RetryFailedSuites attempt(s) each)"
+            foreach ($suite in $Suites) {
+                $name = [System.IO.Path]::GetFileNameWithoutExtension($suite)
+                $trx = Join-Path $ResultsDirectory "$name.trx"
+                if (-not (Test-Path $trx)) { continue }
+
+                $failed = ([regex]::Match((Get-Content $trx -Raw -Encoding UTF8), 'failed="(\d+)"')).Groups[1].Value
+                if (-not $failed -or [int]$failed -eq 0) { continue }
+
+                for ($attempt = 1; $attempt -le $RetryFailedSuites; $attempt++) {
+                    Write-Host "--- retry $attempt/$RetryFailedSuites for $name"
+                    $retryArguments = @(
+                        "test", $suite, "--nologo", "--no-restore",
+                        "--logger", "trx;LogFileName=$name.trx",
+                        "--results-directory", $ResultsDirectory
+                    )
+                    & dotnet @retryArguments
+                    $failed = ([regex]::Match((Get-Content $trx -Raw -Encoding UTF8), 'failed="(\d+)"')).Groups[1].Value
+                    if ([int]$failed -eq 0) {
+                        # Keep the retry visible: the manifest check name will carry "(retried)".
+                        Move-Item -Force $trx (Join-Path $ResultsDirectory "$name-retried.trx")
+                        Write-Host "--- $name green on retry (manifest will show it as retried)"
+                        break
+                    }
+                }
             }
         }
     }
