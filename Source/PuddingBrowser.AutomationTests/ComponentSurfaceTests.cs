@@ -181,6 +181,7 @@ public sealed class ComponentSurfaceTests
             ["SubAgentDelegationTests"] = 10,
             ["SubAgentDelegationLeaseTests"] = 18,
             ["ReadOnlyDelegationTests"] = 12,
+            ["AuthorityEntryAuditTests"] = 1,
             ["ArrivalScrollTests"] = 11,
             ["SerpBudgetFixtureTests"] = 6,
             ["DriverEventHandlingTests"] = 4,
