@@ -6,3 +6,5 @@
 # It belongs to the delivery chain, so it does NOT modify the owning subsystem's test code.
 #
 2026-10-08 PuddingHost.Tests PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection
+2026-10-09 PuddingHost.Tests PuddingHost.Tests.Hosting.DesktopConfigurationLoadingTests.LlmConfigurationLoad_DoesNotDeadlockOnDesktopSynchronizationContext
+2026-10-09 PuddingHost.Tests PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection

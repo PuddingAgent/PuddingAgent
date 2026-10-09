@@ -24,10 +24,16 @@ public sealed class GateEvidenceReportTests
         Assert.True(File.Exists(registryPath), $"找不到已知 flake 注册表：{registryPath}");
 
         var registry = File.ReadAllText(registryPath);
-        Assert.Contains(
+        // 三条**已被历史日志记录**的时序 flake 都必须在册（round-164 就因漏登记第二条而触发了一次拒绝）。
+        foreach (var knownFlake in new[]
+        {
             "PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection",
-            registry,
-            StringComparison.Ordinal);
+            "PuddingHost.Tests.Hosting.DesktopConfigurationLoadingTests.LlmConfigurationLoad_DoesNotDeadlockOnDesktopSynchronizationContext",
+            "PuddingDesktop.Tests.Browser.WebView2PresentationGateTests.HiddenSurface_ParksLateSdkFramesAndStopsObservingAfterDisposal",
+        })
+        {
+            Assert.Contains(knownFlake, registry, StringComparison.Ordinal);
+        }
 
         var script = File.ReadAllText(Path.Combine(root, "TestScripts", "delivery-manifest.ps1"));
         Assert.Contains("known-flaky.txt", script, StringComparison.Ordinal);

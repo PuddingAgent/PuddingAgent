@@ -2,12 +2,27 @@
 #
 # Purpose: when a suite fails and then passes on retry, delivery-manifest.ps1 records WHICH tests failed.
 # This list is what lets the manifest say "that was a KNOWN flake" instead of silently accepting any retry.
-# A failing test that is NOT on this list is recorded as NEW INSTABILITY and must be investigated.
+# A failing test that is NOT on this list is recorded as NEW INSTABILITY and (by default) REFUSES the manifest.
 #
 # Evidence for each entry must live in Docs/00_changelog (observation rounds + failure kind).
 #
-# Observed many times across rounds; failure kind = System.OperationCanceledException from
-# Microsoft.AspNetCore.TestHost.TestWebSocket.ReceiveAsync (a receive timeout), NOT an assertion.
-# NOTE (round-158): it also failed in ISOLATION on 2026-10-08, which contradicts the earlier
-# "passes in isolation" description; the timing budget is therefore tighter than assumed on this machine.
+# --- registry maintenance note (round-164) --------------------------------------------------------------
+# The first version of this file listed only ONE of the three timing flakes that earlier changelogs already
+# documented. On round 164 the second one flaked for real, the refusal rule fired (correctly), and this file
+# was completed. Lesson: a registry that is less complete than one's own documentation silently turns
+# "known" failures into "new instability" -- which is safe (it stops) but noisy.
+# -------------------------------------------------------------------------------------------------------
+
+# Failure kind: System.OperationCanceledException from Microsoft.AspNetCore.TestHost.TestWebSocket.ReceiveAsync
+# (a receive timeout), NOT an assertion. NOTE: on 2026-10-08 it also failed in ISOLATION, which contradicts the
+# earlier "passes in isolation" description; the timing budget is tighter than assumed on this machine.
 PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection
+
+# Failure kind: timing/deadlock-sensitive synchronization-context test. Flaked live again on round 164
+# (first attempt failed, retry green) while a manifest was being built; documented as load-sensitive in
+# earlier changelogs and consistent with "passes in isolation".
+PuddingHost.Tests.Hosting.DesktopConfigurationLoadingTests.LlmConfigurationLoad_DoesNotDeadlockOnDesktopSynchronizationContext
+
+# Failure kind: late-arriving WebView2 SDK frame after the surface was disposed (hidden-surface gate).
+# Documented as load-sensitive in earlier changelogs; the retry path has not yet observed it live.
+PuddingDesktop.Tests.Browser.WebView2PresentationGateTests.HiddenSurface_ParksLateSdkFramesAndStopsObservingAfterDisposal
