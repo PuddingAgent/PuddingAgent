@@ -43,6 +43,7 @@ public sealed class BrowserScreenshotPlannerTests
         Assert.AreEqual(512, plan.ExpectedOutputWidth);
         Assert.AreEqual(320, plan.ExpectedOutputHeight);
         Assert.AreEqual(BrowserScreenshotTransfer.MaxImageBytes, plan.MaxBytes);
+        Assert.AreEqual(BrowserScreenshotTransfer.LowDetailBaselineBytes, plan.ByteBudget, "低细节基准的输出预算是 40 KiB");
     }
 
     [TestMethod]
@@ -57,7 +58,8 @@ public sealed class BrowserScreenshotPlannerTests
                 out var reason),
             reason);
 
-        Assert.AreEqual(2560, plan!.ExpectedOutputWidth);
+        Assert.AreEqual(BrowserScreenshotTransfer.MaxImageBytes, plan!.ByteBudget, "高保真按输入上限约束，而不是低细节基准");
+        Assert.AreEqual(2560, plan.ExpectedOutputWidth);
         Assert.AreEqual(1600, plan.ExpectedOutputHeight);
     }
 

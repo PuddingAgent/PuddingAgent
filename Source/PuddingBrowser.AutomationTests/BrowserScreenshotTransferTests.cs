@@ -13,7 +13,7 @@ public sealed class BrowserScreenshotTransferTests
 {
     private static BrowserScreenshotMetadata Metadata(
         string mime = "image/png",
-        int byteCount = 64 * 1024,
+        int byteCount = 32 * 1024,
         int outputWidth = 512,
         int outputHeight = 320,
         BrowserScreenshotDetail detail = BrowserScreenshotDetail.Low,
@@ -66,6 +66,7 @@ public sealed class BrowserScreenshotTransferTests
         // 与权威文档对表：数字若被改动而文档没改（或反之），这条会红。
         Assert.AreEqual(8 * 1024 * 1024, BrowserScreenshotTransfer.MaxImageBytes, "设计 §8.1：8 MiB/张");
         Assert.AreEqual(512, BrowserScreenshotTransfer.LowDetailLongestEdge, "设计 §8.1：detail=low 最长边 512px");
+        Assert.AreEqual(40 * 1024, BrowserScreenshotTransfer.LowDetailBaselineBytes, "设计 §11 G9：低细节基准 40 KiB");
 
         var documentPath = Path.Combine(RepoRoot(), "Docs", "12_features",
             "浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md");
@@ -73,6 +74,7 @@ public sealed class BrowserScreenshotTransferTests
         var document = File.ReadAllText(documentPath);
         Assert.IsTrue(document.Contains("8 MiB", StringComparison.Ordinal), "设计文档里应写明 8 MiB 上限");
         Assert.IsTrue(document.Contains("512px", StringComparison.Ordinal), "设计文档里应写明 512px 低清上限");
+        Assert.IsTrue(document.Contains("40 KiB", StringComparison.Ordinal), "设计文档 §11 G9 里应写明低细节基准 40 KiB");
     }
 
     [TestMethod]
@@ -84,6 +86,25 @@ public sealed class BrowserScreenshotTransferTests
         Assert.IsTrue(reason.Contains("8 MiB", StringComparison.Ordinal), reason);
     }
 
+    [TestMethod]
+    public void LowDetailOverTheFortyKiBBaselineIsRefusedWithBudgetExceededWording()
+    {
+        // 设计 §11（G9 与说明段）：40 KiB 只针对固定低细节基准；超了要明确报 budget_exceeded 或改为局部截图，
+        // **不能**无限压缩之后仍然宣称"可读"。
+        var over = Metadata(byteCount: BrowserScreenshotTransfer.LowDetailBaselineBytes + 1);
+        Assert.IsFalse(BrowserScreenshotTransfer.TryValidate(over, out var rejection, out var reason));
+        Assert.AreEqual(BrowserScreenshotRejection.LowDetailBudgetExceeded, rejection);
+        Assert.IsTrue(reason.Contains("40 KiB", StringComparison.Ordinal), reason);
+        Assert.IsTrue(reason.Contains("region crop", StringComparison.Ordinal), reason);
+    }
+
+    [TestMethod]
+    public void HighDetailMayExceedTheLowBaselineButStillObeysTheInputLimit()
+    {
+        // 40 KiB 是**低细节基准**的输出预算，不是所有截图的硬上限：高保真只要不超过 8 MiB 输入上限即可。
+        var high = Metadata(byteCount: 512 * 1024, detail: BrowserScreenshotDetail.High);
+        Assert.IsTrue(BrowserScreenshotTransfer.TryValidate(high, out _, out var reason), reason);
+    }
     [TestMethod]
     public void AnUnsupportedMimeTypeIsRefusedInsteadOfBeingAssumed()
     {

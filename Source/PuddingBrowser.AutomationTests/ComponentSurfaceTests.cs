@@ -193,7 +193,7 @@ public sealed class ComponentSurfaceTests
             ["ScreenshotPlanTests"] = 12,
             ["BrowserScreenshotCoordinateTests"] = 12,
             ["BrowserScreenshotPlannerTests"] = 9,
-            ["BrowserScreenshotTransferTests"] = 12,
+            ["BrowserScreenshotTransferTests"] = 14,
             ["FileUploadPlanTests"] = 4,
             ["SubAgentDelegationTests"] = 10,
             ["SubAgentDelegationLeaseTests"] = 18,

@@ -66,6 +66,7 @@ public sealed record BrowserScreenshotPlan(
     int ExpectedOutputWidth,
     int ExpectedOutputHeight,
     int MaxBytes,
+    int ByteBudget,
     string ObservationRequirements);
 
 /// <summary>
@@ -206,6 +207,10 @@ public static class BrowserScreenshotPlanner
             outputWidth,
             outputHeight,
             BrowserScreenshotTransfer.MaxImageBytes,
+            // 低细节基准另有输出预算（设计 §11 G9：512px/40 KiB）；其余保真度按输入上限约束。
+            intent.Detail == BrowserScreenshotDetail.Low
+                ? BrowserScreenshotTransfer.LowDetailBaselineBytes
+                : BrowserScreenshotTransfer.MaxImageBytes,
             "report source/output size, device scale, CSS viewport, scroll offset, crop transform and"
             + " PageVersion/domRevision/viewportRevision (see BrowserScreenshotTransfer)");
 

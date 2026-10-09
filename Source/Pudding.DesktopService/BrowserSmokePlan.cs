@@ -57,8 +57,10 @@ public static class BrowserSmokePlan
             + "无限滚动等新条目后 contentChanged=true"),
         new("S-09", "G9", "视觉与坐标", "整页/视口截图；导航过程中再次截图；缩放后使用旧坐标",
             "截图与目标一致、导航中不返回旧页；"
-            + $"**detail=low 最长边 ≤{BrowserScreenshotTransfer.LowDetailLongestEdge}px、"
-            + $"单张 ≤{BrowserScreenshotTransfer.MaxImageBytes / (1024 * 1024)} MiB，超限明确说明原因**"
+            + $"**detail=low 基准 ≤{BrowserScreenshotTransfer.LowDetailLongestEdge}px/"
+            + $"{BrowserScreenshotTransfer.LowDetailBaselineBytes / 1024} KiB（超预算明确 budget_exceeded 或要求局部截图，"
+            + "不无限压缩后仍称可读）；单张输入 ≤"
+            + $"{BrowserScreenshotTransfer.MaxImageBytes / (1024 * 1024)} MiB，超限明确说明原因**"
             + "（不静默截断/降级）；元数据含源/输出尺寸、设备缩放、CSS viewport、scroll offset、裁剪变换与三代修订号；"
             + "缩放后旧坐标被拒",
             // 采集本身要真机（CapturePreviewAsync），但**载荷/变换/拒绝语义**已由进程内用例覆盖 —— 两件事分开说清。

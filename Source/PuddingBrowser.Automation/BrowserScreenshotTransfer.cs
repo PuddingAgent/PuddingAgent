@@ -19,6 +19,7 @@ public enum BrowserScreenshotRejection
     None,
     UnsupportedMime,
     OverLimit,
+    LowDetailBudgetExceeded,
     DetailViolation,
     MissingObservationIdentity,
     MissingRevisions,
@@ -72,6 +73,17 @@ public static class BrowserScreenshotTransfer
 
     /// <summary>默认 detail=low 时最长边上限：**512px**（设计 §8.1）。</summary>
     public const int LowDetailLongestEdge = 512;
+
+    /// <summary>
+    /// **低细节基准的字节上限：40 KiB**（设计 §11 G9「low 基准图≤512px/≤40 KiB」与 §11 说明段
+    /// 「截图 40 KiB 只针对固定低细节基准；复杂图若在最低可读质量下无法满足则返回 budget_exceeded
+    /// 或明确请求局部截图，不能无限压缩后仍称可读」）。
+    ///
+    /// **更正（2026-10-08）**：我曾在维护轮里把 40 KiB 判成"查无出处"并从清单与文档里删掉 —— 那是我
+    /// **只读了 §8.1 而没通读 §11 验收矩阵**造成的误判。它与 <see cref="MaxImageBytes"/>（8 MiB **输入**上限）
+    /// 是两件事：前者是低细节基准的输出预算，后者是单张输入上限。
+    /// </summary>
+    public const int LowDetailBaselineBytes = 40 * 1024;
 
     /// <summary>允许的 MIME（设计只要求位图截图；其它一律明确拒绝）。</summary>
     public static readonly IReadOnlyList<string> AllowedMimeTypes = ["image/png", "image/jpeg"];
@@ -141,6 +153,17 @@ public static class BrowserScreenshotTransfer
                 rejection = BrowserScreenshotRejection.DetailViolation;
                 reason = $"detail=low promises a longest edge <= {LowDetailLongestEdge}px"
                     + $" but the output is {metadata.OutputWidth}x{metadata.OutputHeight}";
+                return false;
+            }
+
+            if (metadata.ByteCount > LowDetailBaselineBytes)
+            {
+                // 设计 §11 G9 + 说明段：低细节基准是 512px/40 KiB；超了要**明确**报 budget_exceeded 或改为局部截图，
+                // **不能**无限压缩之后仍然宣称"可读"。
+                rejection = BrowserScreenshotRejection.LowDetailBudgetExceeded;
+                reason = $"detail=low baseline is {LowDetailLongestEdge}px/{LowDetailBaselineBytes} bytes (40 KiB)"
+                    + $" but the payload is {metadata.ByteCount} bytes: report budget_exceeded, or lower the quality"
+                    + " deliberately, or ask for a region crop — do not keep compressing and still call it readable";
                 return false;
             }
         }

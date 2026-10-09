@@ -27,6 +27,7 @@ public sealed class SmokePlanCoverageClaimTests
             ("父结果 ≤2 KiB", "Source/PuddingBrowser.Automation/SubAgentDelegation.cs", "DefaultResultBudgetBytes = 2 * 1024"),
             ("detail=low", "Source/PuddingBrowser.Automation/BrowserScreenshotTransfer.cs", "LowDetailLongestEdge = 512"),
             ("MiB", "Source/PuddingBrowser.Automation/BrowserScreenshotTransfer.cs", "MaxImageBytes = 8 * 1024 * 1024"),
+            ("KiB", "Source/PuddingBrowser.Automation/BrowserScreenshotTransfer.cs", "LowDetailBaselineBytes = 40 * 1024"),
         };
 
         var plan = File.ReadAllText(Path.Combine(
