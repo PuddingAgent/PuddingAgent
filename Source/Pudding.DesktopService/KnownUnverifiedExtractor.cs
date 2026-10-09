@@ -20,7 +20,13 @@ public static partial class KnownUnverifiedExtractor
     /// <summary>每条的最大长度（过长就截断，避免把整段日志搬进清单）。</summary>
     public const int MaxItemChars = 200;
 
-    /// <summary>表示"未验证"的说法（保守词表：只认明确的否定式验证声明）。</summary>
+    /// <summary>
+    /// 表示"未验证"的说法（保守词表：只认明确的否定式验证声明）。
+    ///
+    /// **2026-10-08 扩表**：实测发现词表漏掉了我自己最常用的几种写法（"未真机验证" 一项就漏了 14 条，
+    /// 另有"真机从未运行""只能由外部判定"等）——清单因此低估了未验证面。这里只补**无歧义**的说法：
+    /// 它们都明确表示"这件事没有被验证/只能由别人验证"，不会把"已验证"的句子误判成未验证。
+    /// </summary>
     private static readonly string[] Markers =
     [
         "真机未验证",
@@ -28,6 +34,13 @@ public static partial class KnownUnverifiedExtractor
         "未做真机验证",
         "未在真机",
         "无法在真机",
+        // 上面几种是"真机未验证"的常见变体；下面几种表述的是同一件事的不同说法。
+        "未真机验证",
+        "未在真机验证",
+        "真机从未运行",
+        "需真机验证",
+        "只能由外部",
+        "只能由进程外",
         "需外部 smoke",
         "需要外部 smoke",
         "未经外部",

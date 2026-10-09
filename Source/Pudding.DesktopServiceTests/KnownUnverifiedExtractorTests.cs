@@ -117,6 +117,32 @@ public sealed class KnownUnverifiedExtractorTests
     }
 
     [Fact]
+    public void TheCommonPhrasingsOfNotVerifiedAreAllRecognised()
+    {
+        // 取红用例（round-134）：词表原先漏掉了我最常用的几种写法（"未真机验证"一项就漏 14 条），
+        // 清单因此**低估**未验证面。这条把每种常见表述都钉住：少一种就红。
+        var phrasings = new[]
+        {
+            "真机未验证：CDP 行为",
+            "未经真机验证：滚动位移",
+            "未做真机验证：截图",
+            "未在真机验证：生命周期",
+            "未真机验证：上传",
+            "真机从未运行",
+            "需真机验证才能确认",
+            "只能由外部控制器判定",
+            "只能由进程外一方判定",
+            "需外部 smoke 核对",
+            "无法自证",
+            "环境限制：无 WebView2",
+        };
+
+        var documents = phrasings.Select((text, index) => $"- {text}{index}").ToArray();
+        var extraction = KnownUnverifiedExtractor.ExtractDetailed(documents);
+
+        Assert.Equal(phrasings.Length, extraction.TotalDistinct);
+    }
+    [Fact]
     public void TheDetailedExtractionReportsHowManyItemsWereFoundEvenWhenTheShownListIsCapped()
     {
         // 取红用例（round-124 修的真实报告缺陷）：抽取器有 **20 条展示上限**，但旧实现**提前 return**，
