@@ -191,7 +191,7 @@ public sealed class ComponentSurfaceTests
             ["ArticleCompactJsonTests"] = 8,
             ["ArticleCursorTests"] = 7,
             ["ScreenshotPlanTests"] = 12,
-            ["BrowserScreenshotCoordinateTests"] = 8,
+            ["BrowserScreenshotCoordinateTests"] = 12,
             ["BrowserScreenshotPlannerTests"] = 9,
             ["BrowserScreenshotTransferTests"] = 12,
             ["FileUploadPlanTests"] = 4,
