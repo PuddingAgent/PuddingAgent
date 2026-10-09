@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace DesktopServiceTests;
@@ -97,6 +97,33 @@ public sealed class TestSiteFixtureTests
         // 终点必须写死：不限批次的 fixture 会让"等新条目"永远等不到结论。
         Assert.Contains("appended >= 10", html, StringComparison.Ordinal);
         Assert.Contains("window.puddingAppendBatch", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheRunbookOnlyReferencesRoutesThatExistAndStatesTheExpectedNumbers()
+    {
+        // 手册是对外可执行的：它引用的 fixture 路由必须真的存在于站点，期望数字必须与 fixture 一致，
+        // 否则外部控制器会照着做却跑出"找不到页面/数字对不上"。
+        var runbookPath = Path.Combine(
+            RepoLayout.Root, "Docs", "13_runbooks", "浏览器自动化外部smoke-runbook.md");
+        Assert.True(File.Exists(runbookPath), $"找不到运行手册：{runbookPath}");
+
+        var runbook = File.ReadAllText(runbookPath);
+        var program = File.ReadAllText(Path.Combine(
+            RepoLayout.Root, "Tests", "PuddingBrowser.TestSite", "Program.cs"));
+
+        foreach (var route in new[] { "serp-zh", "serp-en", "article", "scroll" })
+        {
+            Assert.Contains($"/fixtures/{route}", runbook, StringComparison.Ordinal);
+            Assert.Contains($"/fixtures/{route}", program, StringComparison.Ordinal);
+        }
+
+        // 期望数字：10 条结果与 1536 字节预算（S-05 的可复核前提）。
+        Assert.Contains("10 条", runbook, StringComparison.Ordinal);
+        Assert.Contains("1536", runbook, StringComparison.Ordinal);
+
+        // 手册必须写明"not-run 不等于通过"这条判定规则（否则外部一方容易把未执行当通过）。
+        Assert.Contains("不等于", runbook, StringComparison.Ordinal);
     }
 
     [Fact]
