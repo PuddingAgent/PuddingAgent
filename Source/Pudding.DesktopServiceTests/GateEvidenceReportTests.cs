@@ -15,6 +15,40 @@ public sealed class GateEvidenceReportTests
     private const string ReportRelativePath = "Docs/14_reports/2026-10-09-门禁证据对账.md";
 
     [Fact]
+    public void TheBrowserAutomationComponentKeepsItsCompileTimeBoundary()
+    {
+        // 设计 §2/§10：Automation 是**独立组件**，S1–S4 期间只增独立工程与测试；B1 首段才把它接进 Host。
+        // 边界必须可核对（而不是靠文档约定）：**Core 侧不得引用它**，Host 侧**确有一个**消费者
+        // （Host 与 DesktopService 共用同一份后置条件判据，见 §4.2/§1.1）。
+        var root = RepoLayout.Root;
+        var coreProjects = new[]
+        {
+            Path.Combine("Source", "PuddingAgent", "PuddingAgent.csproj"),
+            Path.Combine("Source", "PuddingRuntime", "PuddingRuntime.csproj"),
+        };
+
+        foreach (var relative in coreProjects)
+        {
+            var path = Path.Combine(root, relative);
+            Assert.True(File.Exists(path), $"找不到 Core 工程：{relative}");
+            Assert.DoesNotContain(
+                "PuddingBrowser.Automation",
+                File.ReadAllText(path),
+                StringComparison.Ordinal);
+        }
+
+        // Host 侧：**必须**引用（否则 Host 与 DesktopService 会各自验出相反结论）。若有意取消这条接线，
+        // 就请同时更新本条与设计文档 —— 不许"悄悄不接"。
+        var hostPath = Path.Combine(root, "Source", "PuddingHost", "PuddingHost.csproj");
+        Assert.True(File.Exists(hostPath), "找不到 PuddingHost.csproj");
+        Assert.Contains("PuddingBrowser.Automation", File.ReadAllText(hostPath), StringComparison.Ordinal);
+
+        // 该引用存在的理由要能在代码里看见（共用后置条件判据）。
+        var surface = Path.Combine(root, "Source", "PuddingHost", "BrowserBridge", "BridgeBrowserCapabilitySurface.cs");
+        Assert.True(File.Exists(surface), "找不到 Host 侧浏览器桥面");
+        Assert.Contains("BrowserMutationPostcondition.Validate", File.ReadAllText(surface), StringComparison.Ordinal);
+    }
+    [Fact]
     public void TheKnownFlakyRegistryIsConsultedByTheRetryPath()
     {
         // 重跑后变绿的套件**不能**一律被当成"没事"：脚本必须拿失败用例名去查已知 flake 注册表，
