@@ -61,5 +61,5 @@ S-05 明确要求"**中文与英文** SERP fixture 各一次 extract"（预算�
 
 ## 关联
 
-- 报告：[外部 smoke 清单](../../14_reports/2026-10-09-浏览器自动化外部smoke清单.md)（S-05 的观察对象）
+- 报告：[外部 smoke 清单](../../../14_reports/2026-10-09-浏览器自动化外部smoke清单.md)（S-05 的观察对象）
 - 前序：[TestSite 验收 fixture](2026-10-08-TestSite验收fixture.md)
