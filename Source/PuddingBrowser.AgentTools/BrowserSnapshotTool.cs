@@ -106,58 +106,111 @@ public sealed class BrowserSnapshotTool(
     public const int FullModeMaxBytes = 64 * 1024;
 
     /// <summary>
-    /// 把 full 模式的载荷收敛到 <paramref name="budget"/> 字节以内（**按序列化后的 UTF-8 字节**计量）。
+    /// full 模式的**按行分页**（§6.1：默认 16 KiB / 硬上限 64 KiB，分页/截断声明）。
     ///
-    /// 做法是**缩减内容字段**（每次把最长的一路砍半，直到满足预算或三路都空），
-    /// 而不是砍 JSON 尾巴 —— §6.1 明确禁止后者（那样结果不可解析）。
-    /// 返回是否真的发生了输出收敛（调用方据此把原因写成 <c>output_budget</c>）。
+    /// 规则（与正文路径同源）：
+    /// <list type="bullet">
+    ///   <item>三路表示按固定顺序（accessibilityTree → domText → html）拼成一条逻辑行流；</item>
+    ///   <item>从 <paramref name="startIndex"/> 行开始，装到预算为止；**至少装一行**（否则超大单行会让调用方无法前进）；</item>
+    ///   <item>还剩行 ⇒ 调用方给出 <c>lines:&lt;下一行号&gt;@身份</c> 游标，并把原因写成 <c>output_budget</c>；</item>
+    ///   <item>收敛的是**内容**，JSON 结构始终完整可解析（§6.1 禁止砍 JSON 尾巴）。</item>
+    /// </list>
     /// </summary>
-    private static (BrowserSnapshotToolValue Value, bool OutputCut) ApplyFullModeBudget(
-        BrowserSnapshotToolValue value, int budget)
+    private static (BrowserSnapshotToolValue Value, int NextIndex, bool HasMore) PageFullMode(
+        BrowserSnapshotToolValue source, int budget, int startIndex)
     {
-        var outputCut = false;
-        var current = value;
+        var (entries, fields) = Flatten(source);
+        var taken = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var index = Math.Max(0, startIndex);
+        var estimated = 0;
+        var count = 0;
 
-        while (MeasureJsonBytes(current) > budget)
+        while (index < entries.Count)
         {
-            var longest = Longest(current);
-            switch (longest)
+            var entry = entries[index];
+            var size = System.Text.Encoding.UTF8.GetByteCount(entry.Line) + 8;
+            if (count > 0 && estimated + size > budget)
             {
-                case "domText" when !string.IsNullOrEmpty(current.DomText):
-                    current = current with { DomText = Shrink(current.DomText) };
-                    break;
-                case "accessibilityTree" when !string.IsNullOrEmpty(current.AccessibilityTree):
-                    current = current with { AccessibilityTree = Shrink(current.AccessibilityTree) };
-                    break;
-                case "html" when !string.IsNullOrEmpty(current.Html):
-                    current = current with { Html = Shrink(current.Html) };
-                    break;
-                default:
-                    // 三路都空还超预算 ⇒ 元数据本身超出（极小预算）：停止，由调用方如实标注截断。
-                    return (current, true);
+                break;
             }
 
-            outputCut = true;
-        }
-
-        return (current, outputCut);
-
-        static string? Longest(BrowserSnapshotToolValue candidate)
-        {
-            var lengths = new (string Name, int Length)[]
+            if (!taken.TryGetValue(entry.Field, out var lines))
             {
-                ("domText", candidate.DomText?.Length ?? 0),
-                ("accessibilityTree", candidate.AccessibilityTree?.Length ?? 0),
-                ("html", candidate.Html?.Length ?? 0),
-            };
+                lines = [];
+                taken[entry.Field] = lines;
+            }
 
-            var maximum = lengths.Max(entry => entry.Length);
-            return maximum == 0 ? null : lengths.First(entry => entry.Length == maximum).Name;
+            lines.Add(entry.Line);
+            estimated += size;
+            index++;
+            count++;
+
+            // 至少装一行：即使这一行本身超预算也照给（与"超大单块整体给出并标注"的既有语义一致）。
+            if (count == 1 && estimated > budget)
+            {
+                break;
+            }
         }
 
-        static string Shrink(string text) => text.Length <= 256 ? string.Empty : text[..(text.Length / 2)];
+        BrowserSnapshotToolValue Build(int upto)
+        {
+            var consumed = new Dictionary<string, int>(StringComparer.Ordinal);
+            var result = source with { AccessibilityTree = null, DomText = null, Html = null };
+            foreach (var entry in entries.Take(upto))
+            {
+                consumed.TryGetValue(entry.Field, out var already);
+                consumed[entry.Field] = already + 1;
+            }
+
+            string? Join(string field) =>
+                taken.TryGetValue(field, out var lines) && consumed.TryGetValue(field, out var take) && take > 0
+                    ? string.Join('\n', lines.Take(take))
+                    : null;
+
+            return result with
+            {
+                AccessibilityTree = fields.Contains("accessibilityTree") ? Join("accessibilityTree") : null,
+                DomText = fields.Contains("domText") ? Join("domText") : null,
+                Html = fields.Contains("html") ? Join("html") : null,
+            };
+        }
+
+        var used = count;
+        var value = Build(used);
+        while (used > 1 && MeasureJsonBytes(value) > budget)
+        {
+            used--;
+            value = Build(used);
+        }
+
+        var nextIndex = startIndex + used;
+        return (value, nextIndex, nextIndex < entries.Count);
     }
 
+    private static (List<(string Field, string Line)> Entries, HashSet<string> Fields) Flatten(
+        BrowserSnapshotToolValue value)
+    {
+        var entries = new List<(string Field, string Line)>();
+        var fields = new HashSet<string>(StringComparer.Ordinal);
+        Add("accessibilityTree", value.AccessibilityTree);
+        Add("domText", value.DomText);
+        Add("html", value.Html);
+        return (entries, fields);
+
+        void Add(string field, string? text)
+        {
+            if (text is null)
+            {
+                return;
+            }
+
+            fields.Add(field);
+            foreach (var line in text.Split('\n'))
+            {
+                entries.Add((field, line));
+            }
+        }
+    }
     /// <summary>用与工具结果一致的默认序列化选项计量 JSON 的 UTF-8 字节数。</summary>
     private static int MeasureJsonBytes(BrowserSnapshotToolValue value) =>
         System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value).Length;
@@ -397,9 +450,18 @@ public sealed class BrowserSnapshotTool(
                     Diff = BrowserDiffToolValue.From(snapshot.Value.Diff)
                 };
 
-                var (bounded, outputCut) = ApplyFullModeBudget(value, outputBudget);
+                var (bounded, nextIndex, hasMore) = PageFullMode(value, outputBudget, cursor);
+                // 还有剩余行 ⇒ 输出被收敛；**单行本身就超预算**时也要标注（否则调用方会以为拿到了完整内容）。
+                var outputCut = hasMore || MeasureJsonBytes(bounded) > outputBudget;
+                var pageIdentity = snapshot.Value.PageVersion.IsKnown
+                    ? ArticleCursor.PageIdentityOf(args.PageId.Trim(), snapshot.Value.PageVersion.Value)
+                    : null;
                 value = bounded with
                 {
+                    // 还有剩余行 ⇒ 给出**绑定页面/版本**的行游标（与正文路径同源的不透明游标）。
+                    NextCursor = outputCut && pageIdentity is { Length: > 0 }
+                        ? ArticleCursor.Encode(ArticleCursor.LinesKind, nextIndex, pageIdentity)
+                        : null,
                     Truncated = scanIncomplete || outputCut,
                     TruncationReason = (scanIncomplete, outputCut) switch
                     {

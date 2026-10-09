@@ -626,6 +626,105 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task FullModeCursorContinuesWithoutGapsOrRepeats()
+    {
+        // round-157：full 模式的 output_budget 不能只是"声明截断"——必须能用 nextCursor **续读**，
+        // 且续读要么不重不漏，要么明确拒绝（静默跳行是最难发现的一类数据丢失）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.SnapshotText = string.Join('\n', Enumerable.Range(1, 400).Select(index => $"访问树行{index:000}"));
+
+        var tool = new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor);
+        var first = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "full",
+            fields = new[] { "accessibilityTree" },
+            max_bytes = 2 * 1024
+        }));
+
+        Assert.True(first.Success, first.Error);
+        var firstValue = GetJson(first.Output, "value");
+        Assert.Equal("output_budget", firstValue.GetProperty("truncationReason").GetString());
+        var cursor = firstValue.GetProperty("nextCursor").GetString()!;
+        var firstText = firstValue.GetProperty("accessibilityTree").GetString()!;
+
+        var second = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "full",
+            fields = new[] { "accessibilityTree" },
+            max_bytes = 2 * 1024,
+            cursor
+        }));
+
+        Assert.True(second.Success, second.Error);
+        var secondValue = GetJson(second.Output, "value");
+        var secondText = secondValue.TryGetProperty("accessibilityTree", out var secondNode)
+            ? secondNode.GetString()
+            : null;
+
+        if (!string.IsNullOrEmpty(secondText))
+        {
+            var firstLines = firstText.Split('\n');
+            var secondLines = secondText!.Split('\n');
+            Assert.Empty(firstLines.Intersect(secondLines));      // 不重
+            // 不丢：第二页的第一行必须紧接第一页的最后一行（行号连续）。
+            var lastOfFirst = int.Parse(firstLines[^1].Replace("访问树行", string.Empty));
+            var firstOfSecond = int.Parse(secondLines[0].Replace("访问树行", string.Empty));
+            Assert.Equal(lastOfFirst + 1, firstOfSecond);
+        }
+    }
+
+    [Fact]
+    public async Task FullModeRejectsACursorFromAnotherRepresentationOrAnOlderVersion()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.SnapshotText = string.Join('\n', Enumerable.Range(1, 50).Select(index => $"行{index}"));
+        var tool = new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor);
+
+        // ① 拿正文（markdown）的游标来读 full ⇒ 明确拒绝（表示不同，页边界不同）。
+        var markdown = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "text",
+            max_bytes = 128
+        }));
+        Assert.True(markdown.Success, markdown.Error);
+        var markdownCursor = GetJson(markdown.Output, "value").GetProperty("nextCursor").GetString();
+        if (!string.IsNullOrWhiteSpace(markdownCursor))
+        {
+            var crossed = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "full",
+                fields = new[] { "accessibilityTree" },
+                cursor = markdownCursor
+            }));
+            Assert.False(crossed.Success, "跨表示的游标必须被拒绝");
+        }
+
+        // ② 旧版本的游标（身份里的版本与当前不符）⇒ 拒绝。
+        var stale = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "full",
+            fields = new[] { "accessibilityTree" },
+            cursor = "lines:0@p1-v999"
+        }));
+        Assert.False(stale.Success, "另一页面/版本的游标必须被拒绝");
+    }
+    [Fact]
     public void FullModeBudgetsMatchTheDesignDocument()
     {
         // §6.1 模式表：full = 默认 16 KiB、硬上限 64 KiB。数字与文档对表（文档改了这里就得改）。
@@ -712,11 +811,10 @@ public sealed class BrowserAgentToolsTests
         var value = GetJson(snapshot.Output, "value");
         Assert.True(value.GetProperty("truncated").GetBoolean(), "内容超大时必须如实标注截断");
         Assert.Equal("output_budget", value.GetProperty("truncationReason").GetString());
-        // full 模式当前**不提供**续读游标（已登记为缺口）：字段存在但必须是 null，不能给一个假的游标。
-        if (value.TryGetProperty("nextCursor", out var nextCursor))
-        {
-            Assert.Equal(JsonValueKind.Null, nextCursor.ValueKind);
-        }
+        // round-157：full 模式**给出续读游标**（行游标，绑定页面/版本），不再是登记缺口。
+        var nextCursor = value.GetProperty("nextCursor").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(nextCursor));
+        Assert.StartsWith("lines:", nextCursor!);
     }
 
     [Fact]

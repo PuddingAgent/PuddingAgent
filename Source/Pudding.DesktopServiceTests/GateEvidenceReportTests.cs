@@ -37,7 +37,7 @@ public sealed class GateEvidenceReportTests
         Assert.Equal(4_096, PuddingBrowser.Automation.ArticleMarkdown.DefaultMaxBytes);
         Assert.Equal(4_096, PuddingBrowser.Automation.ArticleCompactJson.DefaultMaxBytes);
         // round-156：full 模式的 16 KiB/64 KiB 预算已按文档实现；仅"无续读游标"作为缺口登记。
-        Assert.Contains("full 模式**当前不提供续读游标**", report, StringComparison.Ordinal);
+        Assert.Contains("续读游标已实现", report, StringComparison.Ordinal);
         Assert.Contains("16 KiB、硬上限 64 KiB", report, StringComparison.Ordinal);
     }
     [Fact]
