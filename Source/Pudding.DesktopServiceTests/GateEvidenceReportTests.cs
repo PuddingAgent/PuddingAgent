@@ -51,6 +51,7 @@ public sealed class GateEvidenceReportTests
             Path.Combine("Source", "PuddingBrowser.AutomationTests"),
             Path.Combine("Source", "Pudding.DesktopSurface.BrowserTests"),
             Path.Combine("Tests", "PuddingBrowser.AgentTools.Tests"),
+            Path.Combine("Tests", "PuddingDesktop.Tests"),
         };
 
         var declared = projects
