@@ -634,6 +634,20 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
         return false;
     }
 
+    /// <summary>
+    /// 两个身份是不是**同一个行动者**（页面授权只能发给它）。
+    ///
+    /// 比 <c>CallerId</c> 更严：还要比种类与任务。原因很实在 —— <c>CallerId</c> 只是字符串，
+    /// 不同种类的调用者（父任务 vs 子代理）或同一调用者的不同任务完全可能撞上同一个 id；
+    /// 只比字符串就等于把"授权给谁"降级成"谁的 id 长得一样"，会放行越权借用。
+    /// 注意：这与 <see cref="BrowserCallerIdentity.IsSameTaskScope"/> **不同**，后者用于任务级管理授权
+    /// （同父任务下的子任务可以共享），这里用于**页面级**授权（必须精确到行动者）。
+    /// </summary>
+    private static bool IsTheSameActor(BrowserCallerIdentity grantee, BrowserCallerIdentity caller) =>
+        grantee.Kind == caller.Kind
+        && string.Equals(grantee.CallerId, caller.CallerId, StringComparison.Ordinal)
+        && string.Equals(grantee.TaskId, caller.TaskId, StringComparison.Ordinal);
+
     private (BrowserPageGrant? Grant, BrowserAuthorizationDenial Denial) FindPageGrant(
         BrowserAutomationRequest request)
     {
@@ -658,7 +672,11 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
 
             // 页面授权必须发给**这个**调用者：子代理要自己的子集授权，不能直接借用父任务的授权
             // （方案 §3.2「子代理只能取得父任务授权的子集」）。
-            if (!string.Equals(grant.Grantee.CallerId, request.Caller.CallerId, StringComparison.Ordinal))
+            //
+            // 判据必须是**完整的行动者身份**（kind + callerId + taskId），不能只比 callerId：
+            // callerId 只是字符串，两个不同种类的调用者（或同一调用者在不同任务里）完全可能撞上同一个 id，
+            // 那时"授权给谁"就退化成"谁的 id 字符串一样" —— 这正是要防的越权借用。
+            if (!IsTheSameActor(grant.Grantee, request.Caller))
             {
                 lastDenial = BrowserAuthorizationDenial.CallerMismatch;
                 continue;

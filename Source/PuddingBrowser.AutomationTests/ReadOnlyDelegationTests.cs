@@ -15,6 +15,46 @@ namespace PuddingBrowser.AutomationTests;
 public sealed class ReadOnlyDelegationTests
 {
     [TestMethod]
+    public void APageGrantIsBoundToTheExactActorAndNotJustToACallerIdString()
+    {
+        // 取红用例（round-106 修的真实越权借用）：页面授权的匹配原先只比 `CallerId` 字符串。
+        // CallerId 只是字符串 ⇒ 种类不同的调用者（子代理）或同一调用者在另一个任务里，
+        // 只要 id 长得一样就能用**别人的**页面授权。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+
+        authority.IssueGrant(B0Fixture.Grant(
+            B0Fixture.Agent("agent-1", "task-1"),
+            BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+            target: page));
+
+        // ① 同 id 但**不同种类**（子代理）：不得借用父授权。
+        var asSubAgent = B0Fixture.Request(
+            BrowserAutomationOperation.Snapshot,
+            new BrowserCallerIdentity(BrowserCallerKind.SubAgent, "agent-1", "task-sub", "task-1"),
+            target: page);
+        Assert.IsFalse(
+            authority.Admit(asSubAgent).IsAllowed,
+            "子代理不能仅凭 CallerId 相同就借用父任务的页面授权");
+
+        // ② 同种类同 id 但**不同任务**：授权发给某个任务，不能跨任务复用。
+        var otherTask = B0Fixture.Request(
+            BrowserAutomationOperation.Snapshot,
+            B0Fixture.Agent("agent-1", "task-2"),
+            target: page);
+        Assert.IsFalse(
+            authority.Admit(otherTask).IsAllowed,
+            "页面授权不得跨任务复用（同一调用者在另一个任务里也不行）");
+
+        // ③ 精确的行动者仍然放行（防止修得过头）。
+        var sameActor = B0Fixture.Request(
+            BrowserAutomationOperation.Snapshot,
+            B0Fixture.Agent("agent-1", "task-1"),
+            target: page);
+        Assert.IsTrue(authority.Admit(sameActor).IsAllowed, "同一个行动者必须仍被放行");
+    }
+
+    [TestMethod]
     public void AReadOnlySubAgentGrantIsAllowedAndItsWritesAreDenied()
     {
         var authority = B0Fixture.Connected();

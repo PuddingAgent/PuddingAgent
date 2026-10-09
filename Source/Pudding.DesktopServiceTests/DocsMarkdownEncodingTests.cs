@@ -192,9 +192,21 @@ public sealed class DocsMarkdownEncodingTests
             }
         }
 
-        // 至少要有"现在可做"的步骤，否则拆解没有可执行部分（与方案第六节的结论一致）。
-        Assert.Contains(rows, cells => cells[5].Contains("可做", StringComparison.Ordinal));
-    }
+        // 状态列必须用既有词汇（可做 / 已完成 / 被挡），且「已完成」与「被挡」两类都要出现。
+        // 注意**故意不要求**"必须有可做步骤"：当组件侧全部做完、其余都等决定时，"没有可做"正是真实状态
+        // （2026-10-08 就是这样：S1–S5 已完成，S6–S9 分别被决定①/②挡住）。
+        var statuses = rows.Select(cells => cells[5]).ToArray();
+        foreach (var (status, id) in statuses.Zip(ids))
+        {
+            Assert.True(
+                status.Contains("可做", StringComparison.Ordinal)
+                || status.Contains("已完成", StringComparison.Ordinal)
+                || status.Contains("被挡", StringComparison.Ordinal),
+                $"{id} 的状态列必须是 可做 / 已完成 / 被挡 之一：'{status}'");
+        }
+
+        Assert.Contains(statuses, cell => cell.Contains("已完成", StringComparison.Ordinal));
+        Assert.Contains(statuses, cell => cell.Contains("被挡", StringComparison.Ordinal));    }
 
     private static string Relative(string path) => Path.GetRelativePath(RepoLayout.Root, path);
 }
