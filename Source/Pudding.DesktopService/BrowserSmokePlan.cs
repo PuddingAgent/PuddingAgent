@@ -1,3 +1,5 @@
+using PuddingBrowser.Automation;
+
 namespace Pudding.DesktopService;
 
 /// <summary>
@@ -71,7 +73,9 @@ public static class BrowserSmokePlan
         new("S-13", "G3", "页面事件接管与上报",
             "同一会话内依次触发：脚本对话框（alert/confirm/prompt）、权限请求、新窗口、下载",
             "流程**不被卡住**（对话框被应答、权限被拒、新窗口被抑制、下载被取消）；"
-            + "快照的 `pageEvents` 如实列出这些事实（有界、含 ×N 合并），且**不用于继续交互**",
+            + $"快照的 `pageEvents` 如实列出这些事实——**有界**（最多保留最近 {PageEventLog.DefaultCapacity} 条，"
+            + "按条数截断而非截断文本）、连续重复**合并为 (xN)**、总次数另计；"
+            + "且**不用于继续交互**（它是事实说明，不是新的定位依据）",
             AutomatedCoverage: "AutomationTests.ScriptDialogPolicyFormatTests / PageEventLogTests"),
     ];
 

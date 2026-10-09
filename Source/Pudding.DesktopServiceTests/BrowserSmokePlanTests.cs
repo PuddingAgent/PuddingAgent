@@ -1,4 +1,5 @@
 using Pudding.DesktopService;
+using PuddingBrowser.Automation;
 
 namespace DesktopServiceTests;
 
@@ -90,6 +91,21 @@ public sealed class BrowserSmokePlanTests
         Assert.DoesNotContain(
             BrowserSmokePlan.Validate(honest),
             problem => problem.Contains("automated coverage", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheEventReportingCheckStatesTheRealBoundFromTheCode()
+    {
+        // S-13 的期望必须**写出真实的上界**：外部一方只能照文字判定，写"有界"等于让人猜。
+        // 这里把清单文字与 `PageEventLog.DefaultCapacity` 绑死：容量改了而清单没改 ⇒ 立刻变红。
+        var check = BrowserSmokePlan.Checks.Single(item => item.Id == "S-13");
+
+        Assert.Contains(
+            PageEventLog.DefaultCapacity.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            check.Expected,
+            StringComparison.Ordinal);
+        Assert.Contains("(xN)", check.Expected, StringComparison.Ordinal);
+        Assert.Contains("pageEvents", check.Expected, StringComparison.Ordinal);
     }
 
     [Fact]
