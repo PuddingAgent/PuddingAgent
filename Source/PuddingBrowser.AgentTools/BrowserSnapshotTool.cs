@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
@@ -78,9 +78,9 @@ public sealed record BrowserSnapshotArgs
     public bool IncludeIframes { get; init; } = true;
     public bool IncludeShadowDom { get; init; } = true;
     public bool IncludeHtml { get; init; }
-    public int MaxNodes { get; init; } = 5_000;
+    public int MaxNodes { get; init; } = 10_000;
     public int MaxTextLength { get; init; } = 200_000;
-    public int MaxDepth { get; init; } = 24;
+    public int MaxDepth { get; init; } = 64;
 }
 
 [Tool(

@@ -1,4 +1,4 @@
-﻿namespace Pudding.Contracts.Desktop;
+namespace Pudding.Contracts.Desktop;
 
 /// <summary>
 /// 快照范围与预算（与既有 Bridge 的 <c>page.snapshot</c> 参数语义等价，计划 §9）。
@@ -6,7 +6,7 @@
 /// </summary>
 public sealed record DesktopSnapshotOptions
 {
-    public const int DefaultMaxNodes = 5_000;
+    public const int DefaultMaxNodes = 10_000;
 
     public const int MaxMaxNodes = 50_000;
 
@@ -23,7 +23,8 @@ public sealed record DesktopSnapshotOptions
         bool includeHidden = false,
         bool includeIframes = true,
         bool includeShadowDom = true,
-        int maxDepth = 24,
+        // 设计 §6.1：扫描深度初值 64（**按文档对齐**，round-155；此前为 24 且无记录说明）。
+        int maxDepth = 64,
         string? scopeRef = null,
         string? sinceRevision = null,
         bool includeContentBlocks = false)

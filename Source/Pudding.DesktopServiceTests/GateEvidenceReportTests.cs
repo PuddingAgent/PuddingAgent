@@ -25,11 +25,13 @@ public sealed class GateEvidenceReportTests
         Assert.Contains("§6.1 预算数字对账", report, StringComparison.Ordinal);
 
         var options = new Pudding.Contracts.Desktop.DesktopSnapshotOptions();
-        Assert.Equal(5_000, Pudding.Contracts.Desktop.DesktopSnapshotOptions.DefaultMaxNodes);
-        Assert.Equal(24, options.MaxDepth);
+        // round-155：节点/深度已按文档对齐（10_000/64）；250ms 与 full 模式预算仍是登记的偏差。
+        Assert.Equal(10_000, Pudding.Contracts.Desktop.DesktopSnapshotOptions.DefaultMaxNodes);
+        Assert.Equal(64, options.MaxDepth);
         Assert.Contains("5_000", report, StringComparison.Ordinal);
         Assert.Contains("10,000", report, StringComparison.Ordinal);
-        Assert.Contains("maxDepth = 24", report, StringComparison.Ordinal);
+        Assert.Contains("maxDepth = 64", report, StringComparison.Ordinal);
+        Assert.Contains("250ms", report, StringComparison.Ordinal);
 
         // §6.1 各模式预算里"一致的那四条"也要钉住；full 模式的偏差必须仍在记录里。
         Assert.Equal(4_096, PuddingBrowser.Automation.ArticleMarkdown.DefaultMaxBytes);

@@ -62,9 +62,9 @@ public sealed record PageSnapshotArguments
     public bool IncludeIframes { get; init; } = true;
     public bool IncludeShadowDom { get; init; } = true;
     public bool IncludeHtml { get; init; }
-    public int MaxNodes { get; init; } = 5_000;
+    public int MaxNodes { get; init; } = 10_000;
     public int MaxTextLength { get; init; } = 200_000;
-    public int MaxDepth { get; init; } = 24;
+    public int MaxDepth { get; init; } = 64;
 
     /// <summary>
     /// 读取作用域（设计方案 §151 的 <c>scope</c>）：只从该 ref 的节点（含自己）开始遍历；
