@@ -39,8 +39,13 @@ public static class BrowserSmokePlan
         new("S-01", "G1", "控制权", "在测试页上让用户接管，然后尝试一次写入（click/fill）",
             "驱动调用数 = 0；只读观察仍可用；恢复后旧写租约不复活",
             AutomatedCoverage: "AutomationTests.BrowserControlAuthority*"),
-        new("S-02", "G2", "页面授权", "对同 context 的非目标页发起写入；再撤销 grant 后重试",
-            "两次都拒绝；撤销后驱动调用数 = 0"),
+        new("S-02", "G2", "页面授权",
+            "对同 context 的非目标页发起写入；跨 frame/跨身份再试一次；撤销 grant 后重试；"
+            + "再由父代理签发的子代理尝试扩大授权；最后建页并关闭",
+            "全部拒绝（帧/身份不匹配也拒绝）；撤销后驱动调用数 = 0；子代理不得扩大父授权；"
+            + "建关页后无残留（标签项/订阅/注册项）",
+            // 帧/身份/撤销/子代理授权都已有进程内用例；"无残留"只能真机看（UI/运行时/注册表）。
+            AutomatedCoverage: "AutomationTests.BrowserPageGrant* / ReadOnlyDelegationTests"),
         new("S-03", "G3", "回执", "click 一个纯 SPA 菜单项（不导航、不推进版本）",
             "不被判失败；回执的 execution/side-effects 与事实一致"),
         new("S-04", "G4", "元素引用", "同一节点连续 20 次只读 + 一次 fill + 普通滚动",
