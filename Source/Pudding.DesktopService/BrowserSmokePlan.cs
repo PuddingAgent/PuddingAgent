@@ -69,7 +69,9 @@ public static class BrowserSmokePlan
             + "不无限压缩后仍称可读）；单张输入 ≤"
             + $"{BrowserScreenshotTransfer.MaxImageBytes / (1024 * 1024)} MiB，超限明确说明原因**"
             + "（不静默截断/降级）；元数据含源/输出尺寸、设备缩放、CSS viewport、scroll offset、裁剪变换与三代修订号；"
-            + "缩放后旧坐标被拒；**实际模型收到类型化图片**（不是 base64 长串；文本模型得到明确限制）",
+            + "缩放后旧坐标被拒；**实际模型收到类型化图片**（不是 base64 长串；文本模型得到明确限制）；"
+            + "**窗口隐藏（托盘）后再截一次**：必须给出可判定结果（可用，或明确报不可用），"
+            + "**不得**返回黑图/旧帧冒充成功（§12 要求先核验「截图对隐藏表面的支持」，未核验前不许默认宣告可用）",
             // 采集本身要真机（CapturePreviewAsync），但**载荷/变换/拒绝语义**已由进程内用例覆盖 —— 两件事分开说清。
             AutomatedCoverage: "AutomationTests.BrowserScreenshotCoordinate* / BrowserScreenshotTransferTests / BrowserScreenshotPlannerTests"),
         new("S-10", "G10", "委派", "父代理持有页面写租约时委派子代理写同一页；再取消/接管/超时",
