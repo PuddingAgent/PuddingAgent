@@ -15,6 +15,26 @@ public sealed class GateEvidenceReportTests
     private const string ReportRelativePath = "Docs/14_reports/2026-10-09-门禁证据对账.md";
 
     [Fact]
+    public void TheKnownFlakyRegistryIsConsultedByTheRetryPath()
+    {
+        // 重跑后变绿的套件**不能**一律被当成"没事"：脚本必须拿失败用例名去查已知 flake 注册表，
+        // 不在表里的要写成 NEW INSTABILITY（否则任何未来的真问题都会被重跑悄悄吸收）。
+        var root = RepoLayout.Root;
+        var registryPath = Path.Combine(root, "TestScripts", "known-flaky.txt");
+        Assert.True(File.Exists(registryPath), $"找不到已知 flake 注册表：{registryPath}");
+
+        var registry = File.ReadAllText(registryPath);
+        Assert.Contains(
+            "PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection",
+            registry,
+            StringComparison.Ordinal);
+
+        var script = File.ReadAllText(Path.Combine(root, "TestScripts", "delivery-manifest.ps1"));
+        Assert.Contains("known-flaky.txt", script, StringComparison.Ordinal);
+        Assert.Contains("NEW INSTABILITY", script, StringComparison.Ordinal);
+        Assert.Contains("known-flaky registry", script, StringComparison.Ordinal);
+    }
+    [Fact]
     public void DocumentedPlanDeviationsStillDescribeTheActualCode()
     {
         // §6.1 的预算数字与代码**不一致**（文档 10,000 节点/深度 64；代码 5,000/24），这份偏差已写进对账表。

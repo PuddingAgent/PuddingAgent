@@ -190,11 +190,37 @@ try {
                         # Keep the retry visible: the manifest check name will carry "(retried)".
                         Move-Item -Force $trx (Join-Path $ResultsDirectory "$name-retried.trx")
 
+                        # A retry that succeeds is NOT automatically benign: compare the failing test names with
+                        # the known-flaky registry. A failure that is NOT on the list is NEW instability and must
+                        # be investigated -- otherwise every future flake would be silently absorbed by the retry.
+                        $registryPath = Join-Path $PSScriptRoot "known-flaky.txt"
+                        $knownNames = @()
+                        if (Test-Path $registryPath) {
+                            $knownNames = Get-Content $registryPath -Encoding UTF8 |
+                                Where-Object { $_ -and -not $_.TrimStart().StartsWith("#") } |
+                                ForEach-Object { $_.Trim() }
+                        }
+
+                        $unknown = @()
+                        foreach ($failedName in $failedNames) {
+                            if ($knownNames -notcontains $failedName) { $unknown += $failedName }
+                        }
+
+                        $verdict = if ($unknown.Count -eq 0 -and $failedNames.Count -gt 0) {
+                            "all of them are on the known-flaky registry"
+                        }
+                        elseif ($unknown.Count -gt 0) {
+                            "NEW INSTABILITY (not on TestScripts/known-flaky.txt): " + ($unknown -join ", ")
+                        }
+                        else {
+                            "no test names in the TRX; cannot tell whether this was a known flake"
+                        }
+
                         # ...and record what the first attempt looked like, for the collector/report.
                         $notesPath = Join-Path $ResultsDirectory "retry-notes.txt"
                         Add-Content -Path $notesPath -Encoding UTF8 -Value (
-                            "$name : first attempt had $firstAttemptFailures failing test(s) [$nameSummary]; the result below is from the retry")
-                        Write-Host "--- $name green on retry (manifest will show it as retried)"
+                            "$name : first attempt had $firstAttemptFailures failing test(s) [$nameSummary]; $verdict; the result below is from the retry")
+                        Write-Host "--- $name green on retry (manifest will show it as retried; $verdict)"
                         break
                     }
                 }

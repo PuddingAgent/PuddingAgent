@@ -1,0 +1,13 @@
+# Known timing-flaky tests (one full test name per line; '#' starts a comment).
+#
+# Purpose: when a suite fails and then passes on retry, delivery-manifest.ps1 records WHICH tests failed.
+# This list is what lets the manifest say "that was a KNOWN flake" instead of silently accepting any retry.
+# A failing test that is NOT on this list is recorded as NEW INSTABILITY and must be investigated.
+#
+# Evidence for each entry must live in Docs/00_changelog (observation rounds + failure kind).
+#
+# Observed many times across rounds; failure kind = System.OperationCanceledException from
+# Microsoft.AspNetCore.TestHost.TestWebSocket.ReceiveAsync (a receive timeout), NOT an assertion.
+# NOTE (round-158): it also failed in ISOLATION on 2026-10-08, which contradicts the earlier
+# "passes in isolation" description; the timing budget is therefore tighter than assumed on this machine.
+PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection
