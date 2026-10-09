@@ -154,6 +154,15 @@ public sealed class TestSiteFixtureTests
         Assert.Contains("10 条", runbook, StringComparison.Ordinal);
         Assert.Contains("1536", runbook, StringComparison.Ordinal);
 
+        // 清单里会影响结论的字段必须在手册里写明（否则外部一方会遇到"拒绝但不知道为何"）。
+        foreach (var field in new[]
+        {
+            "retryNotes", "knownUnverifiedTotal", "changelogFilesScanned", "-AcceptRetries", "-retried",
+        })
+        {
+            Assert.Contains(field, runbook, StringComparison.Ordinal);
+        }
+
         // 手册必须写明"not-run 不等于通过"这条判定规则（否则外部一方容易把未执行当通过）。
         Assert.Contains("不等于", runbook, StringComparison.Ordinal);
     }

@@ -146,6 +146,20 @@ draft: false
 
 **只有 `passed` + 非空 evidence 才算通过**；`not-run` **不等于**通过（这是脚本与判定组件的硬规则）。
 
+### 5.1 清单里这几项会直接影响你的结论（先读再下结论）
+
+| 清单字段 | 它意味着什么 | 你该怎么做 |
+|---|---|---|
+| `retryNotes`（非空） | 交付清单里有套件是**重跑后才绿**的（每个套件写明"第一次失败了几条、哪几条"） | 结论**默认会被拒**：是否接受重试是**你的**取舍；接受就显式传 `-AcceptRetries`，不接受就要求重新交付一份"一次通过"的构建 |
+| `knownUnverified` + `knownUnverifiedTotal` | 未验证项**显示条数 / 实际条数**；显示有上限（当前 20） | 按 `total` 理解规模；清单里那份**不是全集**（抽取词表保守），要完整清单去 changelog |
+| `changelogFilesScanned` / `changelogFilesTotal` | 提取未验证项时扫了多少日志文件 | 两者不等 ⇒ 语料被截断（清单会直接拒绝产出，不会给你一份"看起来完整"的） |
+| 检查名带 `-retried` | 该套件的绿色结果来自重试 | 同上：与"一次通过"不是同一个声明 |
+
+```powershell
+# 若交付清单里有重试记录，而你认为可接受：
+& .\TestScripts\external-acceptance.ps1 -SkipTemplate -Conclude -AcceptRetries
+```
+
 ## 关联
 
 - 清单：[外部 smoke 清单](../14_reports/2026-10-09-浏览器自动化外部smoke清单.md)（"看到什么才算过"）
