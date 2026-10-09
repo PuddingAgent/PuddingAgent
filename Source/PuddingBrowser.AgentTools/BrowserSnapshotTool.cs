@@ -78,8 +78,7 @@ public sealed record BrowserSnapshotArgs
     public bool IncludeIframes { get; init; } = true;
     public bool IncludeShadowDom { get; init; } = true;
     public bool IncludeHtml { get; init; }
-    public int MaxNodes { get; init; } = 10_000;
-    public int MaxTextLength { get; init; } = 200_000;
+    public int MaxNodes { get; init; } = 10_000;    public int MaxTextLength { get; init; } = 200_000;
     public int MaxDepth { get; init; } = 64;
 }
 
@@ -95,6 +94,73 @@ public sealed class BrowserSnapshotTool(
     IDesktopCapabilityCallContextFactory callContexts,
     IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserSnapshotArgs>(originAccessor)
 {
+    /// <summary>
+    /// **full 模式的输出预算**（设计 §6.1 模式表："默认 16 KiB、硬上限 64 KiB，分页/截断声明"）。
+    ///
+    /// 与 <c>incomplete_scan</c> 严格分开：扫描侧缺内容报 <c>incomplete_scan</c>，
+    /// 只是输出收敛报 <c>output_budget</c>；两者同时发生时报 <c>incomplete_scan+output_budget</c>。
+    /// </summary>
+    public const int FullModeDefaultMaxBytes = 16 * 1024;
+
+    /// <summary>full 模式的**硬上限**：请求更大一律按参数错误拒绝（不静默夹到上限）。</summary>
+    public const int FullModeMaxBytes = 64 * 1024;
+
+    /// <summary>
+    /// 把 full 模式的载荷收敛到 <paramref name="budget"/> 字节以内（**按序列化后的 UTF-8 字节**计量）。
+    ///
+    /// 做法是**缩减内容字段**（每次把最长的一路砍半，直到满足预算或三路都空），
+    /// 而不是砍 JSON 尾巴 —— §6.1 明确禁止后者（那样结果不可解析）。
+    /// 返回是否真的发生了输出收敛（调用方据此把原因写成 <c>output_budget</c>）。
+    /// </summary>
+    private static (BrowserSnapshotToolValue Value, bool OutputCut) ApplyFullModeBudget(
+        BrowserSnapshotToolValue value, int budget)
+    {
+        var outputCut = false;
+        var current = value;
+
+        while (MeasureJsonBytes(current) > budget)
+        {
+            var longest = Longest(current);
+            switch (longest)
+            {
+                case "domText" when !string.IsNullOrEmpty(current.DomText):
+                    current = current with { DomText = Shrink(current.DomText) };
+                    break;
+                case "accessibilityTree" when !string.IsNullOrEmpty(current.AccessibilityTree):
+                    current = current with { AccessibilityTree = Shrink(current.AccessibilityTree) };
+                    break;
+                case "html" when !string.IsNullOrEmpty(current.Html):
+                    current = current with { Html = Shrink(current.Html) };
+                    break;
+                default:
+                    // 三路都空还超预算 ⇒ 元数据本身超出（极小预算）：停止，由调用方如实标注截断。
+                    return (current, true);
+            }
+
+            outputCut = true;
+        }
+
+        return (current, outputCut);
+
+        static string? Longest(BrowserSnapshotToolValue candidate)
+        {
+            var lengths = new (string Name, int Length)[]
+            {
+                ("domText", candidate.DomText?.Length ?? 0),
+                ("accessibilityTree", candidate.AccessibilityTree?.Length ?? 0),
+                ("html", candidate.Html?.Length ?? 0),
+            };
+
+            var maximum = lengths.Max(entry => entry.Length);
+            return maximum == 0 ? null : lengths.First(entry => entry.Length == maximum).Name;
+        }
+
+        static string Shrink(string text) => text.Length <= 256 ? string.Empty : text[..(text.Length / 2)];
+    }
+
+    /// <summary>用与工具结果一致的默认序列化选项计量 JSON 的 UTF-8 字节数。</summary>
+    private static int MeasureJsonBytes(BrowserSnapshotToolValue value) =>
+        System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value).Length;
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         BrowserSnapshotArgs args, ToolExecutionContext context, CancellationToken ct)
     {
@@ -110,6 +176,15 @@ public sealed class BrowserSnapshotTool(
                 || args.MaxDepth is < 1 or > 64))
         {
             return BrowserToolResponse.Failure("browser_invalid_arguments", "snapshot budgets are outside allowed ranges");
+        }
+
+        // full 模式的**输出**预算（§6.1）：默认 16 KiB，硬上限 64 KiB；超上限明确拒绝而不是静默夹住。
+        if (mode == BrowserReadingMode.Full && args.MaxBytes is { } fullBudget
+            && (fullBudget < 1024 || fullBudget > FullModeMaxBytes))
+        {
+            return BrowserToolResponse.Failure(
+                "browser_invalid_arguments",
+                $"full mode max_bytes must be in [1024, {FullModeMaxBytes}] (default {FullModeDefaultMaxBytes})");
         }
 
         if (!TryBuildReadingRequest(args, mode, out var reading, out var readingError))
@@ -303,25 +378,50 @@ public sealed class BrowserSnapshotTool(
                 // 表示集合是**唯一判定**：抓取与输出用同一个列表，不会出现"抓了却没说"。
                 var representations = SelectedRepresentations(args, fields);
 
-                return BrowserToolResponse.Success(
-                    new BrowserSnapshotToolValue
+                // §6.1 模式表：full 的输出预算是 16 KiB（默认）/ 64 KiB（硬上限）；超出就**收敛内容**
+                // 而不是砍 JSON 尾巴（那样结果会不可解析，§6.1 line 161 明确禁止）。
+                var outputBudget = args.MaxBytes ?? FullModeDefaultMaxBytes;
+                var scanIncomplete = snapshot.Value.Truncated;
+                var value = new BrowserSnapshotToolValue
+                {
+                    Mode = "full",
+                    Representation = string.Join('+', representations),
+                    DomText = representations.Contains("domText") ? snapshot.Value.DomText : null,
+                    AccessibilityTree = representations.Contains("accessibilityTree") ? snapshot.Value.AccessibilityTree : null,
+                    Html = representations.Contains("html") ? snapshot.Value.Html : null,
+                    Truncated = scanIncomplete,
+                    TruncationReason = scanIncomplete ? "incomplete_scan" : "none",
+                    NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
+                    Revision = snapshot.Value.Revision,
+                    Changed = snapshot.Value.Changed,
+                    Diff = BrowserDiffToolValue.From(snapshot.Value.Diff)
+                };
+
+                var (bounded, outputCut) = ApplyFullModeBudget(value, outputBudget);
+                value = bounded with
+                {
+                    Truncated = scanIncomplete || outputCut,
+                    TruncationReason = (scanIncomplete, outputCut) switch
                     {
-                        Mode = "full",
-                        Representation = string.Join('+', representations),
-                        DomText = representations.Contains("domText") ? snapshot.Value.DomText : null,
-                        AccessibilityTree = representations.Contains("accessibilityTree") ? snapshot.Value.AccessibilityTree : null,
-                        Html = representations.Contains("html") ? snapshot.Value.Html : null,
-                        Truncated = snapshot.Value.Truncated,
-                        TruncationReason = snapshot.Value.Truncated ? "incomplete_scan" : "none",
-                        NodeCount = fields.Includes("nodeCount") ? snapshot.Value.NodeCount : 0,
-                        Revision = snapshot.Value.Revision,
-                        Changed = snapshot.Value.Changed,
-                        Diff = BrowserDiffToolValue.From(snapshot.Value.Diff)
-                    },
+                        (true, true) => "incomplete_scan+output_budget",
+                        (true, false) => "incomplete_scan",
+                        (false, true) => "output_budget",
+                        (false, false) => "none",
+                    }
+                };
+
+                return BrowserToolResponse.Success(
+                    value,
                     new BrowserContextId(contextId),
                     new PageId(args.PageId.Trim()),
                     snapshot.Value.PageVersion.IsKnown ? snapshot.Value.PageVersion.Value : null,
-                    snapshot.Value.Truncated ? ["snapshot_truncated"] : null);
+                    (scanIncomplete, outputCut) switch
+                    {
+                        (true, true) => ["snapshot_truncated", "output_budget"],
+                        (true, false) => ["snapshot_truncated"],
+                        (false, true) => ["output_budget"],
+                        (false, false) => null,
+                    });
             }
 
             // 正文 markdown（§6.1 mode=text）：驱动只给**语义块**，组装在这里做——

@@ -36,7 +36,8 @@ public sealed class GateEvidenceReportTests
         // §6.1 各模式预算里"一致的那四条"也要钉住；full 模式的偏差必须仍在记录里。
         Assert.Equal(4_096, PuddingBrowser.Automation.ArticleMarkdown.DefaultMaxBytes);
         Assert.Equal(4_096, PuddingBrowser.Automation.ArticleCompactJson.DefaultMaxBytes);
-        Assert.Contains("full 模式缺输出预算", report, StringComparison.Ordinal);
+        // round-156：full 模式的 16 KiB/64 KiB 预算已按文档实现；仅"无续读游标"作为缺口登记。
+        Assert.Contains("full 模式**当前不提供续读游标**", report, StringComparison.Ordinal);
         Assert.Contains("16 KiB、硬上限 64 KiB", report, StringComparison.Ordinal);
     }
     [Fact]

@@ -626,6 +626,126 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public void FullModeBudgetsMatchTheDesignDocument()
+    {
+        // §6.1 模式表：full = 默认 16 KiB、硬上限 64 KiB。数字与文档对表（文档改了这里就得改）。
+        Assert.Equal(16 * 1024, BrowserSnapshotTool.FullModeDefaultMaxBytes);
+        Assert.Equal(64 * 1024, BrowserSnapshotTool.FullModeMaxBytes);
+
+        var root = RepoRoot();
+        var document = File.ReadAllText(Path.Combine(
+            root, "Docs", "12_features", "浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md"));
+        Assert.Contains("默认 16 KiB、硬上限 64 KiB", document, StringComparison.Ordinal);
+    }
+
+    private static string RepoRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "PuddingAgentNetwork.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("repository root not found");
+    }
+    [Fact]
+    public async Task FullModeRejectsAnOutputBudgetAboveTheHardCap()
+    {
+        // §6.1 模式表：full 的输出预算是"默认 16 KiB、**硬上限 64 KiB**"。
+        // 超上限必须**明确拒绝**，不能静默夹到上限（那会让调用方以为拿到了更大的预算）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var tool = new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor);
+        var tooBig = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "full",
+            fields = new[] { "domText" },
+            max_bytes = BrowserSnapshotTool.FullModeMaxBytes + 1
+        }));
+
+        Assert.False(tooBig.Success);
+        Assert.Contains("max_bytes", tooBig.Error!, StringComparison.Ordinal);
+
+        // 上限本身可以请求。
+        var atCap = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+        {
+            page_id = page.Id.Value,
+            context_id = "ctx-1",
+            mode = "full",
+            fields = new[] { "domText" },
+            max_bytes = BrowserSnapshotTool.FullModeMaxBytes
+        }));
+        Assert.True(atCap.Success, atCap.Error);
+    }
+
+    [Fact]
+    public async Task FullModeConvergesOversizedContentAndSaysOutputBudget()
+    {
+        // §6.1：输出上限被命中时报告 output_budget，且**不能靠砍 JSON 尾巴**（那样结果不可解析）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.SnapshotText = new string('x', 200_000);          // 无障碍树
+        page.ContentBlocks = new string('y', 200_000);          // DOM 文本走内容块
+        page.SnapshotTruncated = false;
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "full",
+                fields = new[] { "domText", "accessibilityTree" },
+                max_bytes = 8 * 1024
+            }));
+
+        Assert.True(snapshot.Success, snapshot.Error);
+        var value = GetJson(snapshot.Output, "value");
+        Assert.True(value.GetProperty("truncated").GetBoolean(), "内容超大时必须如实标注截断");
+        Assert.Equal("output_budget", value.GetProperty("truncationReason").GetString());
+        // full 模式当前**不提供**续读游标（已登记为缺口）：字段存在但必须是 null，不能给一个假的游标。
+        if (value.TryGetProperty("nextCursor", out var nextCursor))
+        {
+            Assert.Equal(JsonValueKind.Null, nextCursor.ValueKind);
+        }
+    }
+
+    [Fact]
+    public async Task FullModeKeepsScanAndOutputReasonsDistinctWhenBothHappen()
+    {
+        // §6.1 原话：「命中扫描上限时报告 incomplete_scan，输出上限时报告 output_budget，两者不混淆」。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.SnapshotText = new string('x', 200_000);
+        page.SnapshotTruncated = true;                          // 扫描侧也被截断
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "full",
+                fields = new[] { "accessibilityTree" },
+                max_bytes = 4 * 1024
+            }));
+
+        Assert.True(snapshot.Success, snapshot.Error);
+        var value = GetJson(snapshot.Output, "value");
+        Assert.Equal("incomplete_scan+output_budget", value.GetProperty("truncationReason").GetString());
+    }
+    [Fact]
     public async Task TextExtractReturnsEverySerpTitleInOneCallWithoutAnExtraLocate()
     {
         // G5 的"无额外 locate"标准（round-148 对账时发现**没有**进程内用例）：一次 extract 必须
