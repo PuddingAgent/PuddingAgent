@@ -97,6 +97,19 @@ public sealed class WebView2BrowserPage : IBrowserPage
         };
     }
 
+    /// <summary>
+    /// 订阅**会卡住自动化**的那些 CoreWebView2 事件（§8）。
+    ///
+    /// 这张清单是**故意冻结**的（由 <c>DriverEventHandlingTests</c> 钉住）：新增/删除订阅都必须走一次有意识的改动，
+    /// 因为它等于"我们接管了哪些会让流程停在那里的事件"。
+    ///
+    /// **已知缺口（2026-10-08 核实）**：**文件选择器无法接管**。WebView2 SDK 1.0.4078.44 的
+    /// <c>Microsoft.Web.WebView2.Core</c> 里**没有** FilePicker/FileChooser 相关 API
+    /// （在程序集里检索两个关键字均为 0 处），因此"页面自己弹出文件选择框"这件事我们**接管不了**，
+    /// 也就**不假装**：对策只有两条 —— ① 上传走 <c>DOM.setFileInputFiles</c>（真实浏览器路径，见 FileUploadPlan），
+    /// ② 明确不支持"页面自行弹选择器"的场景（若页面脚本触发，行为取决于宿主 UI，不在自动化可控范围）。
+    /// 若将来 SDK 升级提供该事件，这里是唯一该加订阅的地方，同时要更新冻结清单与本节说明。
+    /// </summary>
     private void SubscribeCoreWebViewEvents(CoreWebView2 coreWebView)
     {
         coreWebView.NavigationStarting += OnNavigationStarting;
