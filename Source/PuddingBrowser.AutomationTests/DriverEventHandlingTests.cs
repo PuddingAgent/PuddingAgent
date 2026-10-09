@@ -27,6 +27,35 @@ public sealed class DriverEventHandlingTests
         "DownloadStarting",
     ];
 
+    [TestMethod]
+    public void EverySubscribedPageEventIsAlsoUnsubscribedExactlyOnce()
+    {
+        // "订阅不增长/不泄漏"（S-11 的静态部分）：驱动必须**对称**地订阅与退订，
+        // 而且那 9 个事件在整个文件里只允许出现**一次 `+=`**（出现在 SubscribeCoreWebViewEvents 里）。
+        // 出现第二次 += 就意味着"某条路径会重复订阅"（重复应答对话框/重复上报下载，正是要防的）。
+        var source = DriverSource();
+
+        StringAssert.Contains(source, "private void UnsubscribeCoreWebViewEvents(CoreWebView2 coreWebView)");
+
+        foreach (var handler in FrozenHandlers)
+        {
+            var subscribe = Regex.Matches(source, $@"\bcoreWebView\.{handler}\s*\+=").Count;
+            var unsubscribe = Regex.Matches(source, $@"\bcoreWebView\.{handler}\s*-=").Count;
+
+            Assert.AreEqual(1, subscribe, $"{handler} 的订阅必须恰好一次（多了就是重复订阅路径）");
+            Assert.AreEqual(1, unsubscribe, $"{handler} 必须被对称退订（否则页面释放后回调仍会命中已释放对象）");
+        }
+
+        // `_coreWebView`（等待用的 oneshot 处理器）方向相反：允许**一次订阅、多处退订**
+        // （同一个处理器在等待的每条出口路径上都要摘掉，重复摘是安全的空操作）。
+        // 真正的危险是反方向——**订阅了却没有任何退订**（回调会命中已释放的对象）。
+        var oneshotSubscribe = Regex.Matches(source, @"_coreWebView!?\.NavigationCompleted\s*\+=").Count;
+        var oneshotUnsubscribe = Regex.Matches(source, @"_coreWebView!?\.NavigationCompleted\s*-=").Count;
+        Assert.IsTrue(
+            oneshotSubscribe > 0 && oneshotSubscribe <= oneshotUnsubscribe,
+            $"oneshot 等待处理器必须每条订阅都有退订（订阅 {oneshotSubscribe} 次 / 退订 {oneshotUnsubscribe} 次）");
+    }
+
     private static string DriverSource()
     {
         var root = RepoRoot();
