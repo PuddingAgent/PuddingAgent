@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.RegularExpressions;
 
 namespace DesktopServiceTests;
@@ -37,6 +37,34 @@ public sealed class TestSiteFixtureTests
 
         // 每条结果都有链接（阅读管线要能取到来源 URL）。
         Assert.Equal(10, Regex.Matches(html, @"<a href=""https://example\.com/r\d+""").Count);
+    }
+
+    [Fact]
+    public void TheEnglishSerpFixtureHasExactlyTenResultsWithFixedTitleLength()
+    {
+        // S-05 要求**中文与英文**两种 fixture（预算判定在两种文字下的成本不同）。
+        var path = FixturePath("serp-en.html");
+        Assert.True(File.Exists(path), $"找不到英文 SERP fixture：{path}");
+
+        var html = File.ReadAllText(path);
+
+        var titles = Regex.Matches(html, @"<h3 class=""title"">([^<]+)</h3>")
+            .Select(match => match.Groups[1].Value)
+            .ToArray();
+
+        Assert.Equal(10, titles.Length);
+
+        var fixedLength = titles[0].Length;
+        Assert.All(titles, title => Assert.Equal(fixedLength, title.Length));
+        Assert.Equal(43, fixedLength);   // fixture 里写死的长度；改动 fixture 必须同步这里
+
+        Assert.Equal(10, Regex.Matches(html, @"<a href=""https://example\.com/e\d+""").Count);
+
+        // 中英两条 fixture 必须在同一站点上都能取到（S-05 的两次观察）。
+        var program = File.ReadAllText(Path.Combine(
+            RepoLayout.Root, "Tests", "PuddingBrowser.TestSite", "Program.cs"));
+        Assert.Contains("/fixtures/serp-en", program, StringComparison.Ordinal);
+        Assert.Contains("/fixtures/serp-zh", program, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -90,7 +118,7 @@ public sealed class TestSiteFixtureTests
     [Fact]
     public void FixtureFilesAreUtf8AndReasonablySmall()
     {
-        foreach (var fileName in new[] { "serp-zh.html", "article.html", "scroll.html" })
+        foreach (var fileName in new[] { "serp-zh.html", "serp-en.html", "article.html", "scroll.html" })
         {
             var bytes = File.ReadAllBytes(FixturePath(fileName));
 

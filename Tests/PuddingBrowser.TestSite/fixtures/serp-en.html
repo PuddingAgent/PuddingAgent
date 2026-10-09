@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>TestSite Search Results (English SERP fixture)</title>
+  <!--
+    G5 (reading budget) acceptance fixture — English counterpart of serp-zh.html.
+
+    Exactly 10 results; every title is a fixed 43 ASCII characters so the
+    "one extract <= 1536 UTF-8 bytes" promise stays reviewable. Any change here turns
+    Source/Pudding.DesktopServiceTests/TestSiteFixtureTests red.
+  -->
+</head>
+<body>
+  <main id="results">
+    <h1>Search results</h1>
+    <ol class="serp">
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars aa</h3><a href="https://example.com/e1">Result one</a><p class="snippet">Snippet one</p></li>
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars bb</h3><a href="https://example.com/e2">Result two</a><p class="snippet">Snippet two</p></li>
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars cc</h3><a href="https://example.com/e3">Result three</a><p class="snippet">Snippet three</p></li>
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars dd</h3><a href="https://example.com/e4">Result four</a><p class="snippet">Snippet four</p></li>
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars ee</h3><a href="https://example.com/e5">Result five</a><p class="snippet">Snippet five</p></li>
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars ff</h3><a href="https://example.com/e6">Result six</a><p class="snippet">Snippet six</p></li>
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars gg</h3><a href="https://example.com/e7">Result seven</a><p class="snippet">Snippet seven</p></li>
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars hh</h3><a href="https://example.com/e8">Result eight</a><p class="snippet">Snippet eight</p></li>
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars ii</h3><a href="https://example.com/e9">Result nine</a><p class="snippet">Snippet nine</p></li>
+      <li class="result"><h3 class="title">Result title padded to forty ascii chars jj</h3><a href="https://example.com/e10">Result ten</a><p class="snippet">Snippet ten</p></li>
+    </ol>
+  </main>
+</body>
+</html>

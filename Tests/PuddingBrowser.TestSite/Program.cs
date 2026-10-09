@@ -16,6 +16,7 @@ static IResult Fixture(string directory, string fileName)
 }
 
 app.MapGet("/fixtures/serp-zh", () => Fixture(fixturesDirectory, "serp-zh.html"));
+app.MapGet("/fixtures/serp-en", () => Fixture(fixturesDirectory, "serp-en.html"));
 app.MapGet("/fixtures/article", () => Fixture(fixturesDirectory, "article.html"));
 app.MapGet("/fixtures/scroll", () => Fixture(fixturesDirectory, "scroll.html"));
 
