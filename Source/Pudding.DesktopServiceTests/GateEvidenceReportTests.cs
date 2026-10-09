@@ -37,10 +37,19 @@ public sealed class GateEvidenceReportTests
 
         Assert.True(cited.Length >= 30, $"只解析到 {cited.Length} 个用例名，解析逻辑可能写错");
 
-        var declared = Directory
-            .EnumerateFiles(
-                Path.Combine(RepoLayout.Root, "Source", "PuddingBrowser.AutomationTests"), "*.cs")
-            .SelectMany(path => Regex.Matches(File.ReadAllText(path), @"public void (?<name>\w+)\(")
+        // 表里会引用多个测试工程的用例名（自动化组件 / 桌面浏览器面 / Agent 工具面），逐个工程都扫。
+        var projects = new[]
+        {
+            Path.Combine("Source", "PuddingBrowser.AutomationTests"),
+            Path.Combine("Source", "Pudding.DesktopSurface.BrowserTests"),
+            Path.Combine("Tests", "PuddingBrowser.AgentTools.Tests"),
+        };
+
+        var declared = projects
+            .Select(relative => Path.Combine(RepoLayout.Root, relative))
+            .Where(Directory.Exists)
+            .SelectMany(directory => Directory.EnumerateFiles(directory, "*.cs", SearchOption.AllDirectories))
+            .SelectMany(path => Regex.Matches(File.ReadAllText(path), @"public\s+(?:async\s+)?(?:Task|void|Task<[^>]+>)\s+(?<name>\w+)\s*\(")
                 .Select(match => match.Groups["name"].Value))
             .ToHashSet(StringComparer.Ordinal);
 
