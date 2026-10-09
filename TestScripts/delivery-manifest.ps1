@@ -44,7 +44,9 @@ param(
     # Re-run suites whose TRX shows failures, at most N times each (0 = off, the default).
     # Retries are NOT hidden: a retried suite's TRX is renamed with a "-retried" suffix, so the manifest
     # check name carries it and anyone reading the manifest can see that a retry happened.
-    [int]$RetryFailedSuites = 0
+    [int]$RetryFailedSuites = 0,
+    # Print the retry decision from existing TRX files without running tests (verification aid).
+    [switch]$DryRunRetry
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +63,39 @@ try {
     }
 
     Write-Host "=== delivery manifest: build=$BuildId commit=$Commit"
+
+    if ($DryRunRetry) {
+        # Decision-only mode (early exit): report which suites the retry phase WOULD re-run, reading the
+        # TRX files already on disk and running nothing. This is how the retry decision gets verified --
+        # no suite fails on demand, so a dry run plus fabricated TRX files is the honest way to test it.
+        Write-Host "--- dry run: reading TRX failure counts only (no tests executed)"
+        foreach ($suite in $Suites) {
+            $name = [System.IO.Path]::GetFileNameWithoutExtension($suite)
+            $trx = Join-Path (Join-Path $repositoryRoot $ResultsDirectory) "$name.trx"
+            if (-not (Test-Path $trx)) {
+                Write-Host "    $name : no TRX (would NOT retry)"
+                continue
+            }
+
+            $failed = ([regex]::Match((Get-Content $trx -Raw -Encoding UTF8), 'failed="(\d+)"')).Groups[1].Value
+            if (-not $failed) {
+                Write-Host "    $name : TRX has no failed counter (would NOT retry)"
+                continue
+            }
+
+            if ([int]$failed -eq 0) {
+                Write-Host "    $name : failed=0 (would NOT retry)"
+            }
+            elseif ($RetryFailedSuites -gt 0) {
+                Write-Host "    $name : failed=$failed => WOULD RETRY (max $RetryFailedSuites attempt(s))"
+            }
+            else {
+                Write-Host "    $name : failed=$failed but -RetryFailedSuites is 0 => would NOT retry"
+            }
+        }
+
+        exit 0
+    }
 
     if (-not $SkipTests) {
         New-Item -ItemType Directory -Force -Path $ResultsDirectory | Out-Null
