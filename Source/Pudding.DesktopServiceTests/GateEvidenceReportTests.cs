@@ -33,6 +33,9 @@ public sealed class GateEvidenceReportTests
         Assert.Contains("known-flaky.txt", script, StringComparison.Ordinal);
         Assert.Contains("NEW INSTABILITY", script, StringComparison.Ordinal);
         Assert.Contains("known-flaky registry", script, StringComparison.Ordinal);
+        // round-162：新不稳定**默认拒绝出清单**，必须显式 -AllowNewInstability 才能接受。
+        Assert.Contains("[switch]$AllowNewInstability", script, StringComparison.Ordinal);
+        Assert.Contains("REFUSING to build a manifest: a retry absorbed a failure", script, StringComparison.Ordinal);
     }
     [Fact]
     public void DocumentedPlanDeviationsStillDescribeTheActualCode()

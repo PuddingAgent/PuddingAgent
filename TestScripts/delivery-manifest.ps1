@@ -46,7 +46,9 @@ param(
     # check name carries it and anyone reading the manifest can see that a retry happened.
     [int]$RetryFailedSuites = 0,
     # Print the retry decision from existing TRX files without running tests (verification aid).
-    [switch]$DryRunRetry
+    [switch]$DryRunRetry,
+    # Accept a retry that absorbed a failure NOT on TestScripts/known-flaky.txt (default: refuse).
+    [switch]$AllowNewInstability
 )
 
 $ErrorActionPreference = "Stop"
@@ -229,6 +231,28 @@ try {
     }
     else {
         Write-Host "--- tests skipped (-SkipTests): using existing TRX in $ResultsDirectory"
+    }
+
+    # A retry must not silently absorb an UNKNOWN failure. The retry path records, per suite, whether the
+    # first-attempt failures were all on the known-flaky registry; if any was not, the delivery stops here
+    # unless the operator explicitly allows it (-AllowNewInstability). Green-after-retry is NOT evidence
+    # that the failure was benign.
+    $notesPath = Join-Path $ResultsDirectory "retry-notes.txt"
+    if ((Test-Path $notesPath)) {
+        $newInstability = @(Get-Content $notesPath -Encoding UTF8 |
+            Where-Object { $_ -match "NEW INSTABILITY" })
+        if ($newInstability.Count -gt 0) {
+            if ($AllowNewInstability) {
+                Write-Warning ("absorbing {0} retried suite(s) with NEW instability (-AllowNewInstability was given):" -f $newInstability.Count)
+                $newInstability | ForEach-Object { Write-Warning ("  " + $_) }
+            }
+            else {
+                Write-Warning "REFUSING to build a manifest: a retry absorbed a failure that is NOT on TestScripts/known-flaky.txt."
+                $newInstability | ForEach-Object { Write-Warning ("  " + $_) }
+                Write-Warning "Investigate it, add it to the registry with evidence if it is a known timing flake, or pass -AllowNewInstability to accept it explicitly."
+                exit 2
+            }
+        }
     }
 
     Write-Host "=== gathering facts and building the manifest"
