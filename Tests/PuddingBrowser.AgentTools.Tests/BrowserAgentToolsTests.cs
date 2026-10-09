@@ -626,6 +626,46 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task TextExtractReturnsEverySerpTitleInOneCallWithoutAnExtraLocate()
+    {
+        // G5 的"无额外 locate"标准（round-148 对账时发现**没有**进程内用例）：一次 extract 必须
+        // 把 SERP 的 10 条标题一次给全，并且**不额外触发定位**——定位是另一条独立能力，
+        // 读取路径偷偷去 locate 会让"一次读取"变成两次往返，也会让调用方以为读到了它没读的东西。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        const int TitleCount = 10;
+        page.ContentBlocks = string.Join(
+            '\n',
+            Enumerable.Range(1, TitleCount).Select(index =>
+                $$"""{"k":"li","t":"中文标题固定二十个汉字整整齐齐{{index}}","d":0,"href":"https://example.test/{{index}}"}"""));
+
+        var surface = new FakeCapabilitySurface(runtime);
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "text"
+            }));
+
+        Assert.True(snapshot.Success, snapshot.Error);
+        var value = GetJson(snapshot.Output, "value");
+        Assert.Equal("markdown", value.GetProperty("representation").GetString());
+        var content = value.GetProperty("content").GetString()!;
+
+        for (var index = 1; index <= TitleCount; index++)
+        {
+            Assert.Contains($"中文标题固定二十个汉字整整齐齐{index}", content, StringComparison.Ordinal);
+        }
+
+        // 关键断言：这次读取**没有**发生定位。
+        Assert.Null(surface.LastLocateRequest);
+    }
+    [Fact]
     public async Task Snapshot_FormatIsFailClosed_UnknownValueOrWrongMode()
     {
         var runtime = new FakeBrowserRuntime();
