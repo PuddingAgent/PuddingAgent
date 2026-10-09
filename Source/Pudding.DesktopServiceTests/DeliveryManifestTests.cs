@@ -132,6 +132,77 @@ public sealed class DeliveryManifestTests
     }
 
     [Fact]
+    public void EveryManifestConstructorFieldSurvivesTheCanonicalWriterAndReader()
+    {
+        // 把"字段写得进、读不回"这类缺陷**自动挡住**（round-128 就是靠人工发现的）：
+        // 用反射枚举构造器**全部**参数，逐个给出可区分取值，然后走**真正的**写入器与读取器往返，
+        // 最后逐属性比对。新增字段时这条会先红（要求作者补上取值），从而不可能悄悄漏接。
+        var stage = typeof(DeliveryManifest).GetConstructor(
+        [
+            typeof(string), typeof(string), typeof(IReadOnlyList<string>), typeof(IReadOnlyList<DeliveryCheck>),
+            typeof(IReadOnlyList<string>), typeof(int), typeof(IReadOnlyList<string>), typeof(int), typeof(int),
+            typeof(IReadOnlyList<string>), typeof(DesktopAcceptance.Stage),
+        ])!;
+
+        var values = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["buildId"] = "build-roundtrip",
+            ["commit"] = "abcdef1",
+            ["artifacts"] = new[] { "PuddingDesktop.exe" },
+            ["checks"] = new[] { new DeliveryCheck("suite", 7, 0) },
+            ["knownUnverified"] = new[] { "真机未验证：往返用例" },
+            ["knownUnverifiedTotal"] = 12,
+            ["requiredExternalSteps"] = DeliveryManifest.RequiredLifecycleSteps,
+            ["changelogFilesScanned"] = 5,
+            ["changelogFilesTotal"] = 6,
+            ["retryNotes"] = new[] { "suite : first attempt had 1 failing test(s)" },
+            ["stage"] = DesktopAcceptance.Stage.ReadyForExternalDeploy,
+        };
+
+        var parameters = stage.GetParameters();
+        var missing = parameters.Where(p => !values.ContainsKey(p.Name!)).Select(p => p.Name!).ToArray();
+        Assert.True(
+            missing.Length == 0,
+            "DeliveryManifest 新增了构造器字段，请在往返用例里给出可区分取值："
+            + string.Join(", ", missing));
+
+        var original = (DeliveryManifest)stage.Invoke(parameters.Select(p => values[p.Name!]).ToArray());
+
+        var json = DeliveryManifestValidator.Serialize(original);
+        Assert.True(
+            DeliveryManifestValidator.TryDeserialize(json, out var parsed, out var problems),
+            string.Join("; ", problems));
+
+        // 逐属性比对：任何"写了但没读回"的字段都会在这里露出来。
+        var mismatches = new List<string>();
+        foreach (var property in typeof(DeliveryManifest).GetProperties(
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+        {
+            var expected = property.GetValue(original);
+            var actual = property.GetValue(parsed);
+
+            if (expected is System.Collections.IEnumerable expectedItems and not string)
+            {
+                var left = expectedItems.Cast<object?>().Select(item => item?.ToString()).ToArray();
+                var right = ((System.Collections.IEnumerable?)actual)?.Cast<object?>().Select(item => item?.ToString()).ToArray();
+                if (!left.SequenceEqual(right ?? []))
+                {
+                    mismatches.Add($"{property.Name}: [{string.Join(", ", left)}] != [{string.Join(", ", right ?? [])}]");
+                }
+
+                continue;
+            }
+
+            if (!Equals(expected, actual))
+            {
+                mismatches.Add($"{property.Name}: '{expected}' != '{actual}'");
+            }
+        }
+
+        Assert.True(mismatches.Count == 0, "这些字段在往返中丢失或改变：\n  - " + string.Join("\n  - ", mismatches));
+    }
+
+    [Fact]
     public void DeserializationKeepsTheCorpusCountsAndRetryNotes()
     {
         // 取红用例（round-128）：这三个字段曾经**写得进、读不回**（反序列化时没有传给构造器），
