@@ -39,6 +39,12 @@ public sealed class BrowserDelegationLeaseLedger
     // 于是 EndDelegation 只归还最后一页，**第一页的子代理写租约永久泄漏**（父代理再也写不进去）。
     private readonly Dictionary<string, HashSet<string>> _pagesOfDelegation = new(StringComparer.Ordinal);
 
+    // 该委派登记过的**只读观察者 id**。只读租约也要能被"委派结束"回收：
+    // 早先只按 `child:{delegationId}` 前缀扫，而子代理完全可以只拿只读观察、从不申请写租约，
+    // 于是那些观察在委派结束后**永久留存在账本里**（"委派结束即不再授权"被违反）。
+    // 这里记**确切的 id**（不靠字符串约定），回收时精确移除，不误伤别的观察者。
+    private readonly Dictionary<string, HashSet<string>> _readersOfDelegation = new(StringComparer.Ordinal);
+
     private sealed record LeaseHolder(string HolderId, BrowserLeaseRole Role, string? DelegationId);
 
     /// <summary>当前持有该页写租约的持有者（诊断用；没有则 null）。</summary>
@@ -86,20 +92,20 @@ public sealed class BrowserDelegationLeaseLedger
         _writes[pageId] = new LeaseHolder(holderId, role, delegationId);
         if (role == BrowserLeaseRole.Child && delegationId is not null)
         {
-            if (!_pagesOfDelegation.TryGetValue(delegationId, out var pages))
-            {
-                pages = new HashSet<string>(StringComparer.Ordinal);
-                _pagesOfDelegation[delegationId] = pages;
-            }
-
-            pages.Add(pageId);
+            RegisterPageOfDelegation(delegationId, pageId);
         }
 
         return BrowserLeaseOutcome.Allow();
     }
 
-    /// <summary>申请只读观察：**可并行**（多 reader 互不阻塞），但被接管/撤权的页不再授予。</summary>
-    public BrowserLeaseOutcome TryAcquireRead(string pageId, string holderId)
+    /// <summary>
+    /// 申请只读观察：**可并行**（多 reader 互不阻塞），但被接管/撤权的页不再授予。
+    ///
+    /// <paramref name="delegationId"/> 非空时表示"这是某个子代理委派的观察"：
+    /// 该页与该观察者 id 都会登记到委派上，**委派结束（含取消/超时）时被一并回收**。
+    /// 子代理请务必传它，否则委派结束后这条观察会留在账本里。
+    /// </summary>
+    public BrowserLeaseOutcome TryAcquireRead(string pageId, string holderId, string? delegationId = null)
     {
         Require(pageId, nameof(pageId));
         Require(holderId, nameof(holderId));
@@ -116,7 +122,31 @@ public sealed class BrowserDelegationLeaseLedger
         }
 
         readers.Add(holderId);
+
+        if (delegationId is not null)
+        {
+            RegisterPageOfDelegation(delegationId, pageId);
+            if (!_readersOfDelegation.TryGetValue(delegationId, out var readers_))
+            {
+                readers_ = new HashSet<string>(StringComparer.Ordinal);
+                _readersOfDelegation[delegationId] = readers_;
+            }
+
+            readers_.Add(holderId);
+        }
+
         return BrowserLeaseOutcome.Allow();
+    }
+
+    private void RegisterPageOfDelegation(string delegationId, string pageId)
+    {
+        if (!_pagesOfDelegation.TryGetValue(delegationId, out var pages))
+        {
+            pages = new HashSet<string>(StringComparer.Ordinal);
+            _pagesOfDelegation[delegationId] = pages;
+        }
+
+        pages.Add(pageId);
     }
 
     /// <summary>释放：写租约按持有者匹配（不是自己的释放不掉）；只读按持有者移除。</summary>
@@ -153,6 +183,8 @@ public sealed class BrowserDelegationLeaseLedger
         }
 
         // 该委派**在每一页**上的写租约都必须归还（不是只归还最后登记的那一页）。
+        _readersOfDelegation.Remove(delegationId, out var registeredReaders);
+
         foreach (var pageId in pages)
         {
             if (_writes.TryGetValue(pageId, out var holder)
@@ -165,6 +197,13 @@ public sealed class BrowserDelegationLeaseLedger
             // 子代理的只读观察也随之失效（委派结束即不再授权）。
             if (_reads.TryGetValue(pageId, out var readers))
             {
+                // ① 精确移除本委派登记过的观察者 id；
+                // ② 兼容按约定命名的 `child:{delegationId}[:...]`（约定外的调用方仍能被回收）。
+                if (registeredReaders is not null)
+                {
+                    readers.RemoveWhere(registeredReaders.Contains);
+                }
+
                 readers.RemoveWhere(reader => reader.StartsWith($"child:{delegationId}", StringComparison.Ordinal));
                 if (readers.Count == 0)
                 {

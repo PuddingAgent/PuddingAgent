@@ -203,6 +203,54 @@ public sealed class SubAgentDelegationLeaseTests
     }
 
     [TestMethod]
+    public void AChildThatOnlyObservedIsAlsoClearedWhenTheDelegationEnds()
+    {
+        // 取红用例（round-100 修的第二个真实缺陷）：子代理完全可以**只拿只读观察**、从不申请写租约。
+        // 早先只读页不登记到委派上，且回收只按 `child:{delegationId}` 前缀扫 —— 但只要调用方用了别的
+        // 观察者 id（或压根没登记页），这条观察就**永久留在账本里**（"委派结束即不再授权"被违反）。
+        var ledger = new BrowserDelegationLeaseLedger();
+
+        Assert.IsTrue(ledger.TryAcquireRead("page-a", "reader-1", "delegation-1").Granted);
+        Assert.IsTrue(ledger.TryAcquireRead("page-b", "reader-2", "delegation-1").Granted);
+        Assert.AreEqual(1, ledger.ReaderCountOf("page-a"));
+        Assert.AreEqual(1, ledger.ReaderCountOf("page-b"));
+
+        ledger.EndDelegation("delegation-1");
+
+        Assert.AreEqual(0, ledger.ReaderCountOf("page-a"), "委派结束必须回收它登记的只读观察");
+        Assert.AreEqual(0, ledger.ReaderCountOf("page-b"));
+    }
+
+    [TestMethod]
+    public void EndingADelegationKeepsOtherHoldersObservationsOnTheSamePage()
+    {
+        // 回收只读观察必须**精确**：同一页上别人的观察不能被牵连（否则父代理/其它委派会被无故打断）。
+        var ledger = new BrowserDelegationLeaseLedger();
+
+        Assert.IsTrue(ledger.TryAcquireRead("page-a", "parent", null).Granted);
+        Assert.IsTrue(ledger.TryAcquireRead("page-a", "reader-1", "delegation-1").Granted);
+        Assert.IsTrue(ledger.TryAcquireRead("page-a", "reader-9", "delegation-9").Granted);
+        Assert.AreEqual(3, ledger.ReaderCountOf("page-a"));
+
+        ledger.EndDelegation("delegation-1");
+
+        Assert.AreEqual(2, ledger.ReaderCountOf("page-a"), "父代理与另一个委派的观察都必须留下");
+        Assert.IsTrue(ledger.TryAcquireRead("page-a", "parent", null).Granted, "父代理仍可继续观察");
+    }
+
+    [TestMethod]
+    public void EndingADelegationThatNeverRegisteredAnythingChangesNothing()
+    {
+        // 防御：用委派 id 申请只读时不登记（delegationId=null）不该产生"幽灵登记"。
+        var ledger = new BrowserDelegationLeaseLedger();
+
+        Assert.IsTrue(ledger.TryAcquireRead("page-a", "parent").Granted);
+        ledger.EndDelegation("delegation-never-used");
+
+        Assert.AreEqual(1, ledger.ReaderCountOf("page-a"));
+    }
+
+    [TestMethod]
     public void BlankIdentifiersAreRefusedInsteadOfGuessed()
     {
         var ledger = new BrowserDelegationLeaseLedger();
