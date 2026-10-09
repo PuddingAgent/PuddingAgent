@@ -141,5 +141,60 @@ public sealed class DocsMarkdownEncodingTests
         }
     }
 
+    [Fact]
+    public void TheB6WiringDecompositionNamesOnlyExistingFilesAndVerifications()
+    {
+        // B6 的拆解表是"决定一下达就施工"的依据：如果它引用了不存在的文件、或某步没写验证方式，
+        // 那它就从依据退化成愿望。这条把它钉住（同 docs 的漂移门禁思路，但作用于表内容）。
+        var path = Path.Combine(RepoLayout.Root, "Docs", "12_features", "B6-接线可执行拆解-2026-10-08.md");
+        Assert.True(File.Exists(path), $"找不到拆解文档：{path}");
+
+        var lines = File.ReadAllLines(path);
+        var rows = lines
+            .Where(line => line.StartsWith("| S", StringComparison.Ordinal))
+            .Select(line => line.Split('|').Select(cell => cell.Trim()).ToArray())
+            .ToArray();
+
+        Assert.True(rows.Length >= 6, $"步骤太少（{rows.Length}），拆解可能被误删");
+
+        var ids = rows.Select(cells => cells[1]).ToArray();
+        Assert.Equal(ids.Length, ids.Distinct(StringComparer.Ordinal).Count());
+
+        foreach (var cells in rows)
+        {
+            // 列：空 | 步骤 | 依赖 | 触及文件 | 验证方式 | 现在可做 | 空
+            Assert.True(cells.Length >= 7, $"步骤行结构不对：{string.Join(" | ", cells)}");
+
+            var id = cells[1];
+            var dependency = cells[2];
+            var files = cells[3];
+            var verification = cells[4];
+
+            Assert.False(string.IsNullOrWhiteSpace(dependency), $"{id} 必须写明依赖（无 / 决定① / 决定② / 前置步骤）");
+            Assert.False(string.IsNullOrWhiteSpace(verification), $"{id} 必须写明验证方式");
+
+            // 文件列里的每个反引号路径都必须真实存在（允许 `...` 省略号形式，跳过）。
+            foreach (System.Text.RegularExpressions.Match match in
+                System.Text.RegularExpressions.Regex.Matches(files, @"`([^`]+)`"))
+            {
+                var candidate = match.Groups[1].Value;
+                if (candidate.Contains("...", StringComparison.Ordinal)
+                    || candidate.EndsWith("**", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                // 目录（以 / 结尾）或文件都必须存在。
+                var full = Path.Combine(RepoLayout.Root, candidate.Replace('/', Path.DirectorySeparatorChar));
+                Assert.True(
+                    File.Exists(full) || Directory.Exists(full),
+                    $"{id} 引用的路径不存在：{candidate}");
+            }
+        }
+
+        // 至少要有"现在可做"的步骤，否则拆解没有可执行部分（与方案第六节的结论一致）。
+        Assert.Contains(rows, cells => cells[5].Contains("可做", StringComparison.Ordinal));
+    }
+
     private static string Relative(string path) => Path.GetRelativePath(RepoLayout.Root, path);
 }
