@@ -31,6 +31,10 @@
 | `KnownUnverifiedExtractor.cs` | 从修改日志提取「内部证明不了的结论」（保守词表、去重保序有界、**永不返回 null**） |
 | `TrxTestResultParser.cs` | 从 TRX 读**真实**测试计数（读不出来就失败，不猜 0；多套件全有或全无） |
 | `DeliveryFactCollector.cs` | 交付链**入口（内部一侧）**：从发布目录 / TRX 结果目录 / 日志目录采集事实 → 生成并自检清单；目录或事实缺失一律明确失败（产物只写文件名，不泄露本机路径） |
+| `Browser/BrowserSmokePlan.cs` | 浏览器自动化**外部 smoke 清单**（G1–G11 的唯一事实源，13 项 S-01…S-13）：每项含门禁、触发方式、期望；`Validate` 要求**覆盖全部 G1–G11** 且结构完整；`ToMarkdown` 渲染给外部一方 |
+| `Browser/ExternalAcceptanceSession.cs` | 外部验收**会话**：把「观察」变成判定（**未执行 ≠ 通过**）；四类明确拒绝（未运行、缺构建标识、缺证据、以内部声明替代外部观察） |
+| `Browser/ExternalAcceptanceFacts.cs` | 外部观察**事实模型**（每条检查的观察值 + 备注）；序列化形状是 CLI 与脚本之间的唯一契约 |
+| `Browser/AutomationDriverPolicy.cs` | 浏览器驱动**策略适配器**：把 `PuddingBrowser.Automation` 的计划/账本接到 `IBrowserDriverPolicy` 接缝上（组件不反向依赖 Automation） |
 | `DesktopCapabilityHost.cs` | 宿主组合（切片 C-2）：只依赖 `IDesktopConnectionSupervisor` 端口 + `DesktopService`；启动时**二选一传输**（选旧 Bridge 则拒绝启动，不做跨传输回退）；同一 DesktopId **只允许一个活动传输**（进程级占用，停止即释放）；`StartAsync`/`StopAsync`/`WaitForStateAsync`；停止超时仍释放占用 |
 | `DesktopChannelTransportResolver.cs` | 把 Core 发布的端点描述解析成 Desktop 传输（计划 §7）：版本不支持 / 形态未知 / 地址不可用一律明确失败；**凭据不从描述里取**（描述没有凭据字段，凭据只能由主机侧注入） |
 | `DesktopCapabilityChannelSettings.cs` | `desktop.json` 对应段的**值对象**（不读配置文件，由宿主映射进来）：`Enabled` 缺省 false（继续走旧 Bridge）、`SectionName = "Desktop:CapabilityChannel"`、`DeclaredCapabilities` 是**代码事实**（实现即声明，不从配置放宽）、`CreateConnectionOptions` / `ResolveTransportFromDescription` |
