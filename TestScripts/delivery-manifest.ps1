@@ -157,8 +157,27 @@ try {
 
                     # Capture HOW BAD the attempt before the retry was: renaming alone only says
                     # "a retry happened", a reader still cannot tell 1 flaky test from 40 failures.
-                    $firstAttemptFailures = ([regex]::Match(
-                        (Get-Content $trx -Raw -Encoding UTF8), 'failed="(\d+)"')).Groups[1].Value
+                    $trxText = Get-Content $trx -Raw -Encoding UTF8
+                    $firstAttemptFailures = ([regex]::Match($trxText, 'failed="(\d+)"')).Groups[1].Value
+
+                    # ...and WHICH tests failed (bounded): a suite name + a count still cannot point at
+                    # the flaky test. Attribute order in TRX varies, so match the element then inspect it.
+                    $failedNames = @()
+                    foreach ($element in [regex]::Matches($trxText, '<UnitTestResult\b[^>]*>')) {
+                        if ($element.Value -notmatch 'outcome="Failed"') { continue }
+                        $nameMatch = [regex]::Match($element.Value, 'testName="([^"]+)"')
+                        if ($nameMatch.Success) { $failedNames += $nameMatch.Groups[1].Value }
+                    }
+                    $nameSummary = if ($failedNames.Count -eq 0) {
+                        "no test names in the TRX"
+                    }
+                    elseif ($failedNames.Count -le 5) {
+                        ($failedNames -join ", ")
+                    }
+                    else {
+                        (($failedNames | Select-Object -First 5) -join ", ") + (" (+" + ($failedNames.Count - 5) + " more)")
+                    }
+                    Write-Host ("--- $name : first attempt failed {0} test(s): {1}" -f $firstAttemptFailures, $nameSummary)
 
                     $retryArguments = @(
                         "test", $suite, "--nologo", "--no-restore",
@@ -171,10 +190,10 @@ try {
                         # Keep the retry visible: the manifest check name will carry "(retried)".
                         Move-Item -Force $trx (Join-Path $ResultsDirectory "$name-retried.trx")
 
-                        # ...and record the first attempt's failure count for the collector/report.
+                        # ...and record what the first attempt looked like, for the collector/report.
                         $notesPath = Join-Path $ResultsDirectory "retry-notes.txt"
                         Add-Content -Path $notesPath -Encoding UTF8 -Value (
-                            "$name : first attempt had $firstAttemptFailures failing test(s); the result below is from the retry")
+                            "$name : first attempt had $firstAttemptFailures failing test(s) [$nameSummary]; the result below is from the retry")
                         Write-Host "--- $name green on retry (manifest will show it as retried)"
                         break
                     }

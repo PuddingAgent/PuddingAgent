@@ -179,6 +179,36 @@ public sealed class DeliveryFactCollectorTests : IDisposable
     }
 
     [Fact]
+    public void TheRetryNotesFileNameIsAgreedBetweenTheRunnerAndTheCollector()
+    {
+        // `retry-notes.txt` 是**跨语言的约定**（PowerShell 写、C# 读）。改名一侧而另一侧不改，
+        // 结果不是编译错误而是"重试记录静默消失" —— 正是本轮一直在修的那类静默缺陷。
+        var root = RepoRoot();
+        var script = File.ReadAllText(Path.Combine(root, "TestScripts", "delivery-manifest.ps1"));
+        var collector = File.ReadAllText(Path.Combine(
+            root, "Source", "Pudding.DesktopService", "DeliveryFactCollector.cs"));
+
+        Assert.Contains("retry-notes.txt", script, StringComparison.Ordinal);
+        Assert.Contains("retry-notes.txt", collector, StringComparison.Ordinal);
+
+        // 记录内容必须让人看出"这是重试后的结果"，而不只是一个数字。
+        Assert.Contains("first attempt had", script, StringComparison.Ordinal);
+        Assert.Contains("the result below is from the retry", script, StringComparison.Ordinal);
+    }
+
+    private static string RepoRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "PuddingAgentNetwork.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("repository root not found");
+    }
+    [Fact]
     public void RetryNotesFromTheRunnerBecomeAuditableFactsInTheManifest()
     {
         // 取红用例（round-126）：重跑后转绿的套件只留下 `-retried.trx`，检查名虽带 `-retried`，
