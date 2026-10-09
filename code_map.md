@@ -142,6 +142,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | [工具插件化架构与实施方案](Docs/12_features/工具插件化架构与实施方案-2026-10-09.md) | 提案：不可变插件包、独立 SDK 与 Core 能力接口、Worker 故障隔离、启动元数据扫描、Agent 挂载租约与卸载、诊断闭环、Web 管理及 P0–P6 组件交付门禁 |
 | [全生命周期注册点目录](Docs/12_features/Agent全生命周期Hook事件与动作注册点目录-2026-10-09.md) · [管道架构](Docs/12_features/Agent生命周期与Hook管道架构设计-2026-10-09.md) · [代码设计](Docs/12_features/Agent生命周期与Hook管道代码设计-2026-10-09.md) · [现状审计](Docs/14_reports/2026-10-09-Agent生命周期与Hook边界审计.md) | 提案：Agent/Pudding 动作与时间、执行前后 Hook、只读事实、过滤器与管道、中央 C# 扩展方法注册、确定顺序、owner/快照、生命周期收口与渐进迁移 |
 | [浏览器自动化可靠性与渐进阅读设计](Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md) | 浏览器控制权与页面授权、动作回执、稳定 ref、渐进 DOM/markdown 阅读、截图视觉和受约束委派的目标设计与交付门禁（提案） |
+| [B1 身份准入与下一阶段施工](Docs/12_features/B1身份准入接线与浏览器交付下一阶段实施方案-2026-10-09.md) | Core 可信身份跨进程传递、任务授权签发、Desktop 准入/复检、B6 接线及外部验收顺序 |
 | [Agent 生成式交互界面与浏览器应用运行时](Docs/12_features/Agent生成式交互界面与浏览器应用运行时设计方案-2026-10-08.md) | HTML/表单/SVG/图表/涂鸦作品、页面 SDK、持久状态、实时版本更新、具名 JS 调用与用户提交闭环的目标设计（提案） |
 | [ADR-095](Docs/07_architecture/109ADR-095会话上下文维护与首增量延迟治理ADR.md) · [上下文维护施工方案](Docs/12_features/首Token等待与上下文指示器修复方案-2026-10-07.md) | Proposed：Session软维护与逐请求硬保护、唯一候选提交/checkpoint、请求实测与估算分离；独立策略组件先行，尚未接入 |
 | [`ADR-089`](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [检索设计](Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md) · [`ADR-077`](Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) · [视觉设计](Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md) | 统一检索入口与索引组件拆分 · 原生视觉、typed parts 与截图链路 |
