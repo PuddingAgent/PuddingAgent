@@ -1,0 +1,345 @@
+{
+  "head": "0286f20ff69f766a47096e5552baaaef1ec58871",
+  "projects": {
+    "PuddingCore": {
+      "sdk": "Microsoft.NET.Sdk",
+      "projectReferences": [
+        "..\\PuddingDiagnostics\\PuddingDiagnostics.csproj"
+      ]
+    },
+    "PuddingRuntime": {
+      "sdk": "Microsoft.NET.Sdk.Web",
+      "projectReferences": [
+        "..\\PuddingCodeIntelligence\\PuddingCodeIntelligence.csproj",
+        "..\\PuddingCodeIndex\\PuddingCodeIndex.csproj",
+        "..\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj",
+        "..\\PuddingPathFiltering\\PuddingPathFiltering.csproj",
+        "..\\PuddingContextPolicy\\PuddingContextPolicy.csproj",
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+        "..\\PuddingDiagnostics\\PuddingDiagnostics.csproj"
+      ]
+    },
+    "PuddingPlatform": {
+      "sdk": "Microsoft.NET.Sdk.Web",
+      "projectReferences": [
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+        "..\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj",
+        "..\\PuddingPathFiltering\\PuddingPathFiltering.csproj"
+      ]
+    },
+    "PuddingHost": {
+      "sdk": "Microsoft.NET.Sdk.Web",
+      "projectReferences": [
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingPlatform\\PuddingPlatform.csproj",
+        "..\\PuddingController\\PuddingController.csproj",
+        "..\\PuddingRuntime\\PuddingRuntime.csproj",
+        "..\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+        "..\\..\\external\\github.hyfree.GM\\github.hyfree.GM\\github.hyfree.GM.csproj",
+        "..\\HarnessAgent.Core\\HarnessAgent.Core.csproj",
+        "..\\PuddingBrowser.Protocol\\PuddingBrowser.Protocol.csproj",
+        "..\\PuddingBrowser.Abstractions\\PuddingBrowser.Abstractions.csproj",
+        "..\\PuddingBrowser.Automation\\PuddingBrowser.Automation.csproj",
+        "..\\PuddingBrowser.AgentTools\\PuddingBrowser.AgentTools.csproj",
+        "..\\Pudding.CapabilityBroker\\Pudding.CapabilityBroker.csproj",
+        "..\\Pudding.CapabilityBroker.AspNetCore\\Pudding.CapabilityBroker.AspNetCore.csproj"
+      ]
+    },
+    "PuddingController": {
+      "sdk": "Microsoft.NET.Sdk.Web",
+      "projectReferences": [
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingGateway\\PuddingGateway.csproj"
+      ]
+    }
+  },
+  "files": {
+    "Source/PuddingRuntime/Services/AgentExecutionService.cs": {
+      "lines": 2771,
+      "sha256": "8713de2c01d5ba67ea1e03940253067c497b68c5e929b1de0299b7d910272ad8",
+      "hookCallSites": {}
+    },
+    "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs": {
+      "lines": 2453,
+      "sha256": "430747ec58becbd77ffae7b672bed0cdabfaeb2183aa0892498ffc402499561e",
+      "hookCallSites": {
+        "OnLoopStartAsync": [
+          505
+        ],
+        "OnCancelledAsync": [
+          541,
+          1731,
+          2208
+        ],
+        "OnMaxRoundsReachedAsync": [
+          577,
+          591,
+          611,
+          971,
+          1772,
+          2160,
+          2328
+        ],
+        "OnRoundStartAsync": [
+          616
+        ],
+        "OnFailedAsync": [
+          886,
+          1717,
+          2178,
+          2219
+        ],
+        "OnToolCallAsync": [
+          1081,
+          1807
+        ],
+        "OnToolResultAsync": [
+          1440,
+          2038
+        ],
+        "OnRoundCompleteAsync": [
+          1627
+        ],
+        "OnCompletedAsync": [
+          1661
+        ],
+        "OnWaitingAsync": [
+          1701
+        ],
+        "OnLoopErrorAsync": [
+          2218
+        ],
+        "OnLoopCompleteAsync": [
+          2348
+        ]
+      }
+    },
+    "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs": {
+      "lines": 2064,
+      "sha256": "dd86dd6e30c851aa7a9fcf0c54ba6983c99a2531dabdda5616b1e034109dbfc5",
+      "hookCallSites": {
+        "OnLoopStartAsync": [
+          483
+        ],
+        "OnCompletedAsync": [
+          1911
+        ],
+        "OnLoopCompleteAsync": [
+          1912
+        ],
+        "OnCancelledAsync": [
+          2042
+        ]
+      }
+    },
+    "Source/PuddingRuntime/Services/ContextPipeline.cs": {
+      "lines": 404,
+      "sha256": "f073c3d232336a3cd686d39f5a2f4bde2fbdcffb42a003dbb0c8834e99733d49",
+      "hookCallSites": {}
+    },
+    "Source/PuddingRuntime/Services/ContextPipelineLayers.cs": {
+      "lines": 949,
+      "sha256": "1fd5a14cd1c4d904cda1174056d0bdb2e2c093704bd80900ee0c48a4a7050f21",
+      "hookCallSites": {}
+    },
+    "Source/PuddingRuntime/Services/ContextPipelineOrchestrator.cs": {
+      "lines": 716,
+      "sha256": "a602e3e2ee65bb3cdb74b14647622b17c94889773e8206211a73bd9f5c638ae4",
+      "hookCallSites": {}
+    },
+    "Source/PuddingPlatform/Services/SessionStateManager.cs": {
+      "lines": 1756,
+      "sha256": "c42d1c0c23b6f5b3fcb9c22c004f3e69afe43c3f49e07cd2875b8e36a967bb09",
+      "hookCallSites": {}
+    },
+    "Source/PuddingRuntime/Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs": {
+      "lines": 1156,
+      "sha256": "3c1170dc91dadf36e49342a1d0e07b696182afe430510c6ca84122028626f44d",
+      "hookCallSites": {}
+    },
+    "Source/PuddingRuntime/Services/AgentLoop/IAgentLoopHook.cs": {
+      "lines": 129,
+      "sha256": "9718cbfd0b10c2159943778b63f8cbd26af96a0247f710571ba573b01591e764",
+      "hookCallSites": {}
+    }
+  },
+  "comments": {
+    "PuddingCore": {
+      "topLevelDeclarations": 1530,
+      "withSummary": 1204,
+      "withAllMetadata": 0,
+      "fieldCounts": {
+        "description": 8,
+        "related_files": 0,
+        "related_docs": 0,
+        "categories": 0
+      }
+    },
+    "PuddingRuntime": {
+      "topLevelDeclarations": 712,
+      "withSummary": 390,
+      "withAllMetadata": 0,
+      "fieldCounts": {
+        "description": 1,
+        "related_files": 0,
+        "related_docs": 0,
+        "categories": 0
+      }
+    },
+    "PuddingPlatform": {
+      "topLevelDeclarations": 852,
+      "withSummary": 571,
+      "withAllMetadata": 0,
+      "fieldCounts": {
+        "description": 2,
+        "related_files": 0,
+        "related_docs": 0,
+        "categories": 0
+      }
+    },
+    "PuddingHost": {
+      "topLevelDeclarations": 144,
+      "withSummary": 104,
+      "withAllMetadata": 0,
+      "fieldCounts": {
+        "description": 0,
+        "related_files": 0,
+        "related_docs": 0,
+        "categories": 0
+      }
+    },
+    "PuddingController": {
+      "topLevelDeclarations": 39,
+      "withSummary": 36,
+      "withAllMetadata": 0,
+      "fieldCounts": {
+        "description": 0,
+        "related_files": 0,
+        "related_docs": 0,
+        "categories": 0
+      }
+    }
+  },
+  "runtime_hits": {
+    "aspnet_using": [
+      "Source/PuddingRuntime/Controllers/NativeCapabilityController.cs",
+      "Source/PuddingRuntime/Controllers/PluginCatalogController.cs",
+      "Source/PuddingRuntime/Controllers/RuntimeExecuteController.cs",
+      "Source/PuddingRuntime/Controllers/RuntimeSessionController.cs"
+    ],
+    "ef_using": [
+      "Source/PuddingRuntime/DependencyInjection.cs",
+      "Source/PuddingRuntime/Services/CanonicalChatTranscriptSynchronizer.cs",
+      "Source/PuddingRuntime/Services/CompactionCoverageFilter.cs",
+      "Source/PuddingRuntime/Services/ContextCompactionService.cs",
+      "Source/PuddingRuntime/Services/ContextWindowManager.cs",
+      "Source/PuddingRuntime/Services/CurrentTurnCompactionGuard.cs",
+      "Source/PuddingRuntime/Services/EmbeddingGenerationHook.cs",
+      "Source/PuddingRuntime/Services/SessionChunkBackfillService.cs",
+      "Source/PuddingRuntime/Services/SessionChunkIndexer.cs",
+      "Source/PuddingRuntime/Services/Skills/ConversationSkillEvolutionTrajectorySource.cs",
+      "Source/PuddingRuntime/Services/SqliteCompositionStore.cs",
+      "Source/PuddingRuntime/Services/SubconsciousRecallPipeline.cs"
+    ],
+    "memory_data_using": [
+      "Source/PuddingRuntime/DependencyInjection.cs",
+      "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs",
+      "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs",
+      "Source/PuddingRuntime/Services/AgentExecutionService.cs",
+      "Source/PuddingRuntime/Services/CanonicalChatTranscriptSynchronizer.cs",
+      "Source/PuddingRuntime/Services/CompactionCoverageFilter.cs",
+      "Source/PuddingRuntime/Services/ContextCompactionService.cs",
+      "Source/PuddingRuntime/Services/ContextWindowManager.cs",
+      "Source/PuddingRuntime/Services/CurrentTurnCompactionGuard.cs",
+      "Source/PuddingRuntime/Services/EmbeddingGenerationHook.cs",
+      "Source/PuddingRuntime/Services/SessionChunkBackfillService.cs",
+      "Source/PuddingRuntime/Services/SessionChunkIndexer.cs",
+      "Source/PuddingRuntime/Services/SqliteCompositionStore.cs",
+      "Source/PuddingRuntime/Services/SubconsciousRecallPipeline.cs",
+      "Source/PuddingRuntime/Tools/BuiltIns/Memory/GrepMemoryTool.cs",
+      "Source/PuddingRuntime/Tools/BuiltIns/Memory/Handlers/BookHandler.cs",
+      "Source/PuddingRuntime/Tools/BuiltIns/Memory/Handlers/ChapterHandler.cs",
+      "Source/PuddingRuntime/Tools/BuiltIns/Memory/Handlers/DedupHandler.cs",
+      "Source/PuddingRuntime/Tools/BuiltIns/Memory/Handlers/GraphHandler.cs",
+      "Source/PuddingRuntime/Tools/BuiltIns/Memory/Handlers/ReferenceHandler.cs",
+      "Source/PuddingRuntime/Tools/BuiltIns/Memory/ManageMemoryTool.cs",
+      "Source/PuddingRuntime/Tools/BuiltIns/Memory/SaveMemoryTool.cs"
+    ],
+    "dbcontext_usage": [
+      "Source/PuddingRuntime/DependencyInjection.cs",
+      "Source/PuddingRuntime/Services/CanonicalChatTranscriptSynchronizer.cs",
+      "Source/PuddingRuntime/Services/CompactionCoverageFilter.cs",
+      "Source/PuddingRuntime/Services/ContextCompactionService.cs",
+      "Source/PuddingRuntime/Services/ContextWindowManager.cs",
+      "Source/PuddingRuntime/Services/CurrentTurnCompactionGuard.cs",
+      "Source/PuddingRuntime/Services/EmbeddingGenerationHook.cs",
+      "Source/PuddingRuntime/Services/SessionChunkBackfillService.cs",
+      "Source/PuddingRuntime/Services/SessionChunkIndexer.cs",
+      "Source/PuddingRuntime/Services/SqliteCompositionStore.cs",
+      "Source/PuddingRuntime/Services/SubconsciousRecallPipeline.cs"
+    ],
+    "direct_sqlite": [
+      "Source/PuddingRuntime/Services/SqliteCompositionStore.cs"
+    ],
+    "platform_using": [],
+    "desktop_using": []
+  },
+  "core_upper_using": [],
+  "constructor": {
+    "parameters": 52,
+    "optional": 35
+  },
+  "pi": {
+    "sha": "6fb2e7815167e6b19006fc526d1a5d0f5f998787",
+    "commitDate": "2026-10-08T15:26:34Z",
+    "relatedPaths": [
+      "packages/coding-agent/src/experimental/durable/harness-setup.ts",
+      "packages/coding-agent/src/experimental/vacation/harness-setup.ts",
+      "packages/coding-agent/test/suite/harness.ts",
+      "packages/coding-agent/test/test-harness.test.ts",
+      "packages/coding-agent/test/test-harness.ts",
+      "packages/durable/src/harness/agent.ts",
+      "packages/durable/src/harness/compaction.ts",
+      "packages/durable/src/harness/context.ts",
+      "packages/durable/src/harness/define.ts",
+      "packages/durable/src/harness/events.ts",
+      "packages/durable/src/harness/generation.ts",
+      "packages/durable/src/harness/harness.ts",
+      "packages/durable/src/harness/inbox.ts",
+      "packages/durable/src/harness/json.ts",
+      "packages/durable/src/harness/live.ts",
+      "packages/durable/src/harness/output.ts",
+      "packages/durable/src/harness/prompt.ts",
+      "packages/durable/src/harness/provider.ts",
+      "packages/durable/src/harness/registry.ts",
+      "packages/durable/src/harness/scheduler.ts",
+      "packages/durable/src/harness/submissions.ts",
+      "packages/durable/src/harness/task-graph.ts",
+      "packages/durable/src/harness/tool.ts",
+      "packages/durable/src/harness/types.ts",
+      "packages/durable/src/harness/usage.ts",
+      "packages/durable/src/harness/util.ts",
+      "packages/durable/src/harness/view.ts",
+      "packages/durable/test/examples/06-harness.ts",
+      "packages/durable/test/examples/08-harness-conversations.ts",
+      "packages/durable/test/harness-compaction.test.ts",
+      "packages/durable/test/harness-context.test.ts",
+      "packages/durable/test/harness-conversations.test.ts",
+      "packages/durable/test/harness-events.test.ts",
+      "packages/durable/test/harness-generation-recovery.test.ts",
+      "packages/durable/test/harness-generation.test.ts",
+      "packages/durable/test/harness-inbox.test.ts",
+      "packages/durable/test/harness-inspect.test.ts",
+      "packages/durable/test/harness-lifecycle.test.ts",
+      "packages/durable/test/harness-live-deltas.test.ts",
+      "packages/durable/test/harness-output-skip.test.ts",
+      "packages/durable/test/harness-output.test.ts",
+      "packages/durable/test/harness-ownership.test.ts",
+      "packages/durable/test/harness-prompt.test.ts",
+      "packages/durable/test/harness-registry.test.ts",
+      "packages/durable/test/harness-structured.test.ts"
+    ]
+  }
+}
