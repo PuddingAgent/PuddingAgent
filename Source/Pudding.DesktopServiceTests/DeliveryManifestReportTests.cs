@@ -1,4 +1,4 @@
-﻿using Pudding.DesktopService;
+using Pudding.DesktopService;
 
 namespace DesktopServiceTests;
 
@@ -11,13 +11,15 @@ public sealed class DeliveryManifestReportTests
     private static DeliveryManifest Manifest(
         IReadOnlyList<string>? knownUnverified = null,
         int passed = 276,
-        int failed = 0) =>
+        int failed = 0,
+        int? knownUnverifiedTotal = null) =>
         new(
             "round-64",
             "9b97418",
             ["PuddingDesktop.exe", "Pudding.DesktopService.dll"],
             [new DeliveryCheck("PuddingBrowser.AutomationTests", passed, failed)],
             knownUnverified ?? ["真机未验证：CDP 行为需外部 smoke。"],
+            knownUnverifiedTotal ?? (knownUnverified ?? ["真机未验证：CDP 行为需外部 smoke。"]).Count,
             DeliveryManifest.RequiredLifecycleSteps);
 
     private static string Render(DeliveryManifest manifest) =>
@@ -102,6 +104,24 @@ public sealed class DeliveryManifestReportTests
         Assert.Contains("](../12_features/", markdown);
     }
 
+    [Fact]
+    public void ReportSaysSoWhenTheUnverifiedListIsTruncated()
+    {
+        // 取红用例（round-124）：未验证项有展示上限；被截断时必须**写出总数**，
+        // 否则读者会把"显示 20 条"当成"一共 20 条"。
+        var truncated = Manifest(knownUnverified: ["条目一", "条目二"], knownUnverifiedTotal: 43);
+        var text = Render(truncated);
+
+        Assert.Contains("已截断", text, StringComparison.Ordinal);
+        Assert.Contains("共 43 条", text, StringComparison.Ordinal);
+        Assert.Contains("显示 2 条", text, StringComparison.Ordinal);
+
+        // 未截断时不得出现"已截断"（反向误导同样不允许）。
+        var complete = Manifest(knownUnverified: ["条目一"], knownUnverifiedTotal: 1);
+        var completeText = Render(complete);
+        Assert.DoesNotContain("已截断", completeText, StringComparison.Ordinal);
+        Assert.Contains("全部列出", completeText, StringComparison.Ordinal);
+    }
     [Fact]
     public void RendererRefusesBlankTitleOrSlug()
     {

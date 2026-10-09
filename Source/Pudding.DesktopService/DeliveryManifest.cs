@@ -1,4 +1,4 @@
-﻿using System.Text.Encodings.Web;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -26,6 +26,7 @@ public sealed record DeliveryManifest
         IReadOnlyList<string> artifacts,
         IReadOnlyList<DeliveryCheck> checks,
         IReadOnlyList<string>? knownUnverified,
+        int knownUnverifiedTotal,
         IReadOnlyList<string> requiredExternalSteps,
         DesktopAcceptance.Stage stage = DesktopAcceptance.Stage.ReadyForExternalDeploy)
     {
@@ -34,9 +35,19 @@ public sealed record DeliveryManifest
         Artifacts = artifacts;
         Checks = checks;
         KnownUnverified = knownUnverified;
+        KnownUnverifiedTotal = knownUnverifiedTotal;
         RequiredExternalSteps = requiredExternalSteps;
         Stage = stage;
     }
+
+    /// <summary>
+    /// **从日志提取到的未验证项总数**（可能大于 <see cref="KnownUnverified"/> 的条数：
+    /// 清单展示有上限）。必须显式声明：只报"20 条"而不说"共 43 条、已截断"就是报告假事实。
+    /// </summary>
+    public int KnownUnverifiedTotal { get; }
+
+    /// <summary>展示的未验证项是否少于实际找到的（由总数与列表长度推出）。</summary>
+    public bool KnownUnverifiedIsTruncated => KnownUnverifiedTotal > (KnownUnverified?.Count ?? 0);
 
     /// <summary>构建标识（产物可追溯；空值由校验拒绝）。</summary>
     public string BuildId { get; }
@@ -147,6 +158,14 @@ public static class DeliveryManifestValidator
             problems.Add("knownUnverified entries must not be blank");
         }
 
+        // 总数是"实际找到多少条"的声明：比列出的条数还小就是自相矛盾（必有一个字段在撒谎）。
+        if (manifest.KnownUnverifiedTotal < (manifest.KnownUnverified?.Count ?? 0))
+        {
+            problems.Add(
+                "knownUnverifiedTotal must be >= the number of listed items"
+                + $" (total {manifest.KnownUnverifiedTotal}, listed {manifest.KnownUnverified?.Count ?? 0})");
+        }
+
         if (manifest.RequiredExternalSteps is not { Count: > 0 })
         {
             problems.Add("requiredExternalSteps is required");
@@ -228,6 +247,7 @@ public static class DeliveryManifestValidator
             var commit = ReadString(root, "commit");
             var artifacts = ReadStringArray(root, "artifacts");
             var knownUnverified = ReadStringArray(root, "knownUnverified");
+        var knownUnverifiedTotal = ReadInt32(root, "knownUnverifiedTotal");
             var steps = ReadStringArray(root, "requiredExternalSteps");
 
             if (string.IsNullOrWhiteSpace(buildId))
@@ -274,6 +294,7 @@ public static class DeliveryManifestValidator
                 artifacts ?? [],
                 checks,
                 knownUnverified ?? [],
+            knownUnverifiedTotal,
                 steps is { Count: > 0 } ? steps : DeliveryManifest.RequiredLifecycleSteps);
 
             problems = [];
@@ -285,6 +306,19 @@ public static class DeliveryManifestValidator
         element.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String
             ? property.GetString()
             : null;
+
+    /// <summary>读一个整数（用于 <c>knownUnverifiedTotal</c> 这类**必需**的计数）。</summary>
+    private static int ReadInt32(JsonElement element, string name)
+    {
+        if (!TryReadInt(element, name, out var value))
+        {
+            throw new InvalidOperationException(
+                $"delivery manifest is missing required integer '{name}'"
+                + " (state 0 explicitly when there is nothing to count)");
+        }
+
+        return value;
+    }
 
     private static bool TryReadInt(JsonElement element, string name, out int value)
     {

@@ -36,15 +36,29 @@ public static partial class KnownUnverifiedExtractor
     ];
 
     /// <summary>
+    /// 一次提取的结果：**展示给清单的有界列表** + **实际找到的条数**。
+    ///
+    /// 为什么必须带 <see cref="TotalDistinct"/>：列表有 20 条上限（清单是给人读的），
+    /// 但"只有 20 条"与"有 43 条、只列了 20 条"是**完全不同的事实**。
+    /// 不带总数时，清单会把截断当成全部 —— 那正是"绝不报告假事实"要防的事。
+    /// </summary>
+    public sealed record KnownUnverifiedExtraction(IReadOnlyList<string> Items, int TotalDistinct);
+
+    /// <summary>
     /// 从若干段 markdown 文本里提取未验证项（去重、保序、有界）。
     /// **永不返回 null**（返回空列表表示"确实没有"）—— 交付清单要求显式给出该字段。
     /// </summary>
-    public static IReadOnlyList<string> Extract(IEnumerable<string?> documents)
+    public static IReadOnlyList<string> Extract(IEnumerable<string?> documents) =>
+        ExtractDetailed(documents).Items;
+
+    /// <summary>同上，但**同时**给出实际找到的条数（用于如实标注"被截断"）。</summary>
+    public static KnownUnverifiedExtraction ExtractDetailed(IEnumerable<string?> documents)
     {
         ArgumentNullException.ThrowIfNull(documents);
 
         var items = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var totalDistinct = 0;
 
         foreach (var document in documents)
         {
@@ -91,17 +105,16 @@ public static partial class KnownUnverifiedExtractor
                 // 同一条边界在不同小节里重复出现时只报一次（清单不是日志）。
                 if (seen.Add(item))
                 {
-                    items.Add(item);
-                }
-
-                if (items.Count >= MaxItems)
-                {
-                    return items;
+                    totalDistinct++;
+                    if (items.Count < MaxItems)
+                    {
+                        items.Add(item);
+                    }
                 }
             }
         }
 
-        return items;
+        return new KnownUnverifiedExtraction(items, totalDistinct);
     }
 
     /// <summary>去掉 markdown 装饰（标题/项目符号/粗体/行内代码），压成一行。</summary>

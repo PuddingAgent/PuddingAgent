@@ -1,4 +1,4 @@
-﻿using Pudding.DesktopService;
+using Pudding.DesktopService;
 
 namespace DesktopServiceTests;
 
@@ -22,6 +22,7 @@ public sealed class DeliveryManifestTests
             artifacts ?? ["PuddingDesktop.exe", "PuddingAgent.exe"],
             checks ?? [new DeliveryCheck("dotnet test (all suites)", 1_845, 0)],
             knownUnverified ?? [],
+            (knownUnverified ?? []).Count,
             requiredExternalSteps ?? ["startup", "restart", "crash-recovery", "exit-reclamation"],
             stage);
 
@@ -70,6 +71,7 @@ public sealed class DeliveryManifestTests
         var missing = DeliveryManifestValidator.Validate(new DeliveryManifest(
             "build", "abc123", ["app.exe"], [new DeliveryCheck("tests", 1, 0)],
             knownUnverified: null,
+            knownUnverifiedTotal: 0,
             requiredExternalSteps: ["startup", "restart", "crash-recovery", "exit-reclamation"]));
         Assert.Contains(missing, problem => problem.Contains("knownUnverified", StringComparison.Ordinal));
 
@@ -125,5 +127,24 @@ public sealed class DeliveryManifestTests
         Assert.Contains("\"requiredExternalSteps\"", json);
         Assert.Contains("真机 CDP 行为未验证", json);
         // 阶段用**交付用语**（外部控制器读的是这套词，不该猜枚举名）。`r`n        Assert.Contains("ready-for-external-deploy", json);
+    }
+
+    [Fact]
+    public void ATotalSmallerThanTheListedItemsIsRejected()
+    {
+        // 总数是"实际找到多少条"的声明；比列出条数还小就是自相矛盾 ⇒ 校验必须拒绝。
+        var manifest = Manifest(knownUnverified: ["一", "二", "三"]) with { };
+        var inconsistent = new DeliveryManifest(
+            manifest.BuildId,
+            manifest.Commit,
+            manifest.Artifacts,
+            manifest.Checks,
+            manifest.KnownUnverified,
+            knownUnverifiedTotal: 2,
+            manifest.RequiredExternalSteps);
+
+        var problems = DeliveryManifestValidator.Validate(inconsistent);
+
+        Assert.Contains(problems, problem => problem.Contains("knownUnverifiedTotal", StringComparison.Ordinal));
     }
 }

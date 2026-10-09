@@ -59,12 +59,16 @@ public static class DeliveryManifestBuilder
 
         // 未验证项：日志提取 + 调用方补充（去重、保序）；提取器保证**永不返回 null**。
         var knownUnverified = new List<string>();
-        knownUnverified.AddRange(KnownUnverifiedExtractor.Extract(facts.ChangelogDocuments ?? []));
+        var extraction = KnownUnverifiedExtractor.ExtractDetailed(facts.ChangelogDocuments ?? []);
+        knownUnverified.AddRange(extraction.Items);
+        // 提取器**有展示上限**：把实际条数一并带上，清单才能如实说"显示 N / 共 M（已截断）"。
+        var knownUnverifiedTotal = extraction.TotalDistinct;
         foreach (var item in facts.AdditionalKnownUnverified ?? [])
         {
             if (!string.IsNullOrWhiteSpace(item) && !knownUnverified.Contains(item.Trim(), StringComparer.Ordinal))
             {
                 knownUnverified.Add(item.Trim());
+                knownUnverifiedTotal++;
             }
         }
 
@@ -80,6 +84,7 @@ public static class DeliveryManifestBuilder
             facts.Artifacts!,
             facts.Checks!,
             knownUnverified,
+            knownUnverifiedTotal,
             facts.RequiredExternalSteps is { Count: > 0 }
                 ? facts.RequiredExternalSteps
                 : DeliveryManifest.RequiredLifecycleSteps);

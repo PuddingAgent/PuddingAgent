@@ -14,6 +14,7 @@ public sealed class ExternalAcceptanceFactsTests
         ["PuddingDesktop.exe"],
         [new DeliveryCheck("全部套件", 2_000, 0)],
         [],
+        0,
         DeliveryManifest.RequiredLifecycleSteps);
 
     private static string FullJson(string outcome = "passed", string? evidence = "已按清单观察") =>

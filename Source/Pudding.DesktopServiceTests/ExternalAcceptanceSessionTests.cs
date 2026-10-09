@@ -14,6 +14,7 @@ public sealed class ExternalAcceptanceSessionTests
         ["PuddingDesktop.exe", "PuddingAgent.exe"],
         [new DeliveryCheck("全部套件", 2_100, 0)],
         ["真机未验证：需要外部 smoke"],
+        1,
         DeliveryManifest.RequiredLifecycleSteps);
 
     private static IReadOnlyList<SmokeObservation> AllObserved(

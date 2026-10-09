@@ -117,6 +117,43 @@ public sealed class KnownUnverifiedExtractorTests
     }
 
     [Fact]
+    public void TheDetailedExtractionReportsHowManyItemsWereFoundEvenWhenTheShownListIsCapped()
+    {
+        // 取红用例（round-124 修的真实报告缺陷）：抽取器有 **20 条展示上限**，但旧实现**提前 return**，
+        // 于是清单永远只报"20 条"，看不出真实有更多 —— 把截断当成全部，正是"绝不报告假事实"要防的。
+        var documents = Enumerable.Range(0, KnownUnverifiedExtractor.MaxItems + 7)
+            .Select(index => $"- 真机未验证：第 {index} 项边界")
+            .ToArray();
+
+        var extraction = KnownUnverifiedExtractor.ExtractDetailed(documents);
+
+        Assert.Equal(KnownUnverifiedExtractor.MaxItems, extraction.Items.Count);
+        Assert.Equal(KnownUnverifiedExtractor.MaxItems + 7, extraction.TotalDistinct);
+        Assert.True(extraction.TotalDistinct > extraction.Items.Count, "被截断时总数必须大于展示条数");
+
+        // 兼容入口仍返回有界列表。
+        Assert.Equal(extraction.Items, KnownUnverifiedExtractor.Extract(documents));
+    }
+
+    [Fact]
+    public void TheRealChangelogCorpusIsTruncatedSoTheTotalMustBeStated()
+    {
+        // 真实语料下的现状：提取到的条数**超过**展示上限。这条不断言"现在具体多少条"（会随日志增长），
+        // 只断言**截断这件事本身成立**（否则说明语料变了，需要同步文档与用例）。
+        var directory = Path.Combine(RepoLayout.Root, "Docs", "00_changelog", "2026Year", "10");
+        var documents = Directory.EnumerateFiles(directory, "*.md", SearchOption.AllDirectories)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .Select(File.ReadAllText)
+            .ToArray();
+
+        var extraction = KnownUnverifiedExtractor.ExtractDetailed(documents);
+
+        Assert.True(extraction.TotalDistinct > KnownUnverifiedExtractor.MaxItems,
+            $"真实语料应超过展示上限（当前 {extraction.TotalDistinct} 条）；若确实没超过，请更新本条与相关文档");
+        Assert.Equal(KnownUnverifiedExtractor.MaxItems, extraction.Items.Count);
+    }
+
+    [Fact]
     public void ExtractedItemsSatisfyTheDeliveryManifestRequirement()
     {
         // 端到端的一小步：提取出来的东西直接放进清单，且清单能通过校验。
@@ -129,6 +166,7 @@ public sealed class KnownUnverifiedExtractorTests
             ["PuddingDesktop.exe"],
             [new DeliveryCheck("全部套件", 1_845, 0)],
             items,
+            items.Count,
             ["startup", "restart", "crash-recovery", "exit-reclamation"]);
 
         Assert.Empty(DeliveryManifestValidator.Validate(manifest));

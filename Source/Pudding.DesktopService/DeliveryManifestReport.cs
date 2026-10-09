@@ -36,6 +36,9 @@ public static class DeliveryManifestReport
         builder.Append($"last_reviewed: {iso}\n");
         builder.Append("description: \"由 Pudding.DeliveryManifest.Cli 自动渲染的交付清单：")
             .Append($"{manifest.Checks.Count} 个套件 {passed} 通过 / {failed} 失败、{manifest.Artifacts.Count} 个产物、")
+            .Append(manifest.KnownUnverifiedIsTruncated
+                ? $"{manifest.KnownUnverified?.Count ?? 0} 条内部证明不了的结论（**共 {manifest.KnownUnverifiedTotal} 条，清单只展示前 {manifest.KnownUnverified?.Count ?? 0} 条**）"
+                : $"{manifest.KnownUnverified?.Count ?? 0} 条内部证明不了的结论")
             .Append($"{manifest.KnownUnverified?.Count ?? 0} 条内部证明不了的结论；阶段 {DesktopAcceptance.NameOf(manifest.Stage)}。\"\n");
         builder.Append("status: active\n");
         builder.Append("categories: [docs, reports]\n");
@@ -60,7 +63,9 @@ public static class DeliveryManifestReport
         builder.Append($"| 套件 | {manifest.Checks.Count} 个 |\n");
         builder.Append($"| 通过 / 失败 | **{passed} / {failed}** |\n");
         builder.Append($"| 产物 | {manifest.Artifacts.Count} 个 |\n");
-        builder.Append($"| 未验证项 | {manifest.KnownUnverified?.Count ?? 0} 条 |\n");
+        builder.Append(manifest.KnownUnverifiedIsTruncated
+            ? $"| 未验证项 | **显示 {manifest.KnownUnverified?.Count ?? 0} 条 / 共 {manifest.KnownUnverifiedTotal} 条（已截断）** |\n"
+            : $"| 未验证项 | {manifest.KnownUnverified?.Count ?? 0} 条（全部列出） |\n");
         builder.Append($"| 外部必做步骤 | {string.Join("、", manifest.RequiredExternalSteps.Select(step => $"`{step}`"))} |\n\n");
 
         builder.Append("### 检查（来自 TRX，非人工填写）\n\n");
