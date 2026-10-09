@@ -626,6 +626,41 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task FullModeTruncationWithoutAPageVersionSaysItCannotBeContinued()
+    {
+        // round-158：页面版本未知时**给不出绑定身份的游标**（游标必须绑定页面/版本，否则会串内容）。
+        // 那就必须说清"截断了且无法续读"——不能只报 output_budget 让调用方以为还能接着读。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        page.ForceUnknownPageVersion();                          // ⇒ DesktopPageVersion.Unknown
+        page.SnapshotText = string.Join('\n', Enumerable.Range(1, 300).Select(index => $"行{index:000}"));
+
+        var snapshot = await ExecuteAsync(
+            new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                mode = "full",
+                fields = new[] { "accessibilityTree" },
+                max_bytes = 2 * 1024
+            }));
+
+        Assert.True(snapshot.Success, snapshot.Error);
+        var value = GetJson(snapshot.Output, "value");
+        Assert.Equal("output_budget", value.GetProperty("truncationReason").GetString());
+
+        if (value.TryGetProperty("nextCursor", out var nextCursor))
+        {
+            Assert.Equal(JsonValueKind.Null, nextCursor.ValueKind);
+        }
+
+        var warnings = GetJson(snapshot.Output, "warnings").EnumerateArray().Select(item => item.GetString()).ToArray();
+        Assert.Contains("output_budget_without_cursor", warnings);
+    }
+    [Fact]
     public async Task FullModeCursorContinuesWithoutGapsOrRepeats()
     {
         // round-157：full 模式的 output_budget 不能只是"声明截断"——必须能用 nextCursor **续读**，
@@ -2975,6 +3010,11 @@ internal sealed class FakeBrowserPage : IBrowserPage
     }
 
     /// <summary>让替身改变读取内容（用于验证"内容变了吗"是**基于内容哈希的证据**）。</summary>
+    /// <summary>
+    /// 让替身模拟"桌面没报出版本"（0 ⇒ <c>DesktopPageVersion.Unknown</c>）：
+    /// 直接在页面信息里清零，因此**不需要**改动任何读取版本的地方。
+    /// </summary>
+    public void ForceUnknownPageVersion() => Info = Info with { PageVersion = 0 };
     public string? SnapshotText { get; set; }
 
     /// <summary>让替身报告"宿主编出来的"修订与差异（§145）。</summary>

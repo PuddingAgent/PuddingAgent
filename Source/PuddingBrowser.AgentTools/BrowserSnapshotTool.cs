@@ -477,13 +477,30 @@ public sealed class BrowserSnapshotTool(
                     new BrowserContextId(contextId),
                     new PageId(args.PageId.Trim()),
                     snapshot.Value.PageVersion.IsKnown ? snapshot.Value.PageVersion.Value : null,
-                    (scanIncomplete, outputCut) switch
+                    Warnings(scanIncomplete, outputCut, value.NextCursor));
+
+                static IReadOnlyList<string>? Warnings(bool scanIncomplete, bool outputCut, string? nextCursor)
+                {
+                    var warnings = new List<string>();
+                    if (scanIncomplete)
                     {
-                        (true, true) => ["snapshot_truncated", "output_budget"],
-                        (true, false) => ["snapshot_truncated"],
-                        (false, true) => ["output_budget"],
-                        (false, false) => null,
-                    });
+                        warnings.Add("snapshot_truncated");
+                    }
+
+                    if (outputCut)
+                    {
+                        warnings.Add("output_budget");
+                    }
+
+                    if (outputCut && string.IsNullOrWhiteSpace(nextCursor))
+                    {
+                        // 页面版本未知 ⇒ 给不出**绑定身份**的游标：必须说清"截断了且无法续读"，
+                        // 否则调用方会以为还能拿 nextCursor 继续（那是假承诺）。
+                        warnings.Add("output_budget_without_cursor");
+                    }
+
+                    return warnings.Count == 0 ? null : warnings;
+                }
             }
 
             // 正文 markdown（§6.1 mode=text）：驱动只给**语义块**，组装在这里做——
