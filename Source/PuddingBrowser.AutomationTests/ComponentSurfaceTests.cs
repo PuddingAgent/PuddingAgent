@@ -183,6 +183,7 @@ public sealed class ComponentSurfaceTests
             ["ReadOnlyDelegationTests"] = 21,
             ["AuthorityEntryAuditTests"] = 1,
             ["GrantExpiryWiringTests"] = 2,
+            ["CallerIdentityGateTests"] = 2,
             ["ArrivalScrollTests"] = 11,
             ["SerpBudgetFixtureTests"] = 6,
             ["DriverEventHandlingTests"] = 4,
