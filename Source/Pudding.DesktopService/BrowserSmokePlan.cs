@@ -62,6 +62,17 @@ public static class BrowserSmokePlan
         new("S-11", "G11", "生命周期", "启停新通道；迟到 CoreReady；断连；桌面隐藏/恢复；跨标签；重启/崩溃/退出",
             "订阅不增长；旧会话不复活；断连不双执行；重启/崩溃/退出有外部证据",
             AutomatedCoverage: null),
+        new("S-12", "G7", "输入路径·文件选择器",
+            "在含 `input[type=file]` 的页面上：① 用工具上传一个真实文件；② 让页面脚本自行触发文件选择框",
+            "① 上传按 DOM.setFileInputFiles 真实完成（元素收到文件）；"
+            + "② **记录为不支持**——WebView2 SDK 无文件选择器 API，我们不接管页面自弹的选择框，"
+            + "也不假装接管（见驱动里的缺口说明）",
+            AutomatedCoverage: "AutomationTests.FileUploadPlanTests"),
+        new("S-13", "G3", "页面事件接管与上报",
+            "同一会话内依次触发：脚本对话框（alert/confirm/prompt）、权限请求、新窗口、下载",
+            "流程**不被卡住**（对话框被应答、权限被拒、新窗口被抑制、下载被取消）；"
+            + "快照的 `pageEvents` 如实列出这些事实（有界、含 ×N 合并），且**不用于继续交互**",
+            AutomatedCoverage: "AutomationTests.ScriptDialogPolicyFormatTests / PageEventLogTests"),
     ];
 
     /// <summary>校验清单：覆盖全部门禁、Id 唯一、字段非空、"真机项 vs 自动化覆盖"必须二选一。</summary>

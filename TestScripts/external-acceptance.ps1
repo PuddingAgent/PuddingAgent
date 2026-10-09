@@ -48,7 +48,9 @@ $checks = @(
     @{ Id = "S-08"; Gate = "G8"; Area = "scrolling" },
     @{ Id = "S-09"; Gate = "G9"; Area = "screenshot-coordinates" },
     @{ Id = "S-10"; Gate = "G10"; Area = "delegation" },
-    @{ Id = "S-11"; Gate = "G11"; Area = "lifecycle" }
+    @{ Id = "S-11"; Gate = "G11"; Area = "lifecycle" },
+    @{ Id = "S-12"; Gate = "G7"; Area = "file-picker-input-path" },
+    @{ Id = "S-13"; Gate = "G3"; Area = "page-events" }
 )
 
 $lifecycleSteps = @("startup", "restart", "crash-recovery", "exit-reclamation")

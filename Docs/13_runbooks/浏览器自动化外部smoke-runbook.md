@@ -111,6 +111,25 @@ draft: false
 | S-03 回执 | `browser_snapshot` 找页面里的按钮，`browser_interact action=click` 一个**不导航**的元素（如 `/fixtures/scroll` 的 `#sentinel`） | 不因"版本未推进"判失败；回执 `execution`/`verification` 与事实一致 |
 | S-07 定位与输入 | `browser_locate` 用十种 locator 组合（含 `exact`/重复/隐藏）；对受控输入 `fill` 后**不重新快照**直接看回执 | 受控值一致；密码字段不回显；0×0/禁用/遮挡被拒；一次 fill 回执足以确认非敏感值 |
 
+### S-12 文件选择器（输入路径）
+
+1. 准备一个含 `input[type=file]` 的页面；
+2. **工具上传**：`browser_interact` → `action=upload`、`input_mode=native`、`files=[绝对路径]`；
+   期望：元素收到文件（**真实浏览器路径** `DOM.setFileInputFiles`），不是脚本伪造；
+3. **页面自弹**：让页面脚本触发文件选择框；
+   期望：**记录为"不支持"** —— WebView2 SDK（1.0.4078.44）**没有**文件选择器 API，我们**不接管**它，
+   也**不假装**接管（驱动源码里写明了这个缺口）。这一项是"如实报告边界"，不是"必须成功"。
+
+### S-13 页面事件接管与上报
+
+在同一会话内依次触发：**脚本对话框**（alert/confirm/prompt）、**权限请求**、**新窗口**、**下载**。
+
+期望：
+
+- 流程**不被卡住**（对话框被应答、权限被拒、新窗口被抑制、下载被取消 —— 都是安全侧默认）；
+- 之后 `browser_snapshot` 的 `pageEvents` **如实列出**这些事实（有界、连续重复合并为 `(xN)`）；
+- `pageEvents` 是**事实说明**，**不用于继续交互**（不要据此再点一次）。
+
 ## 5. 记录与判定
 
 把每个观察项的结果写进 facts 文件（骨架由脚手架生成）：
