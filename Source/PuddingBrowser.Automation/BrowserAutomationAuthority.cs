@@ -540,7 +540,7 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
         }
     }
 
-    /// <summary>是否仍存在覆盖该目标的 Write 授权（用于「租约不越过授权」的不变式）。</summary>
+    /// <summary>是否仍存在覆盖该目标、且发给**这个行动者**的 Write 授权（用于「租约不越过授权」的不变式）。</summary>
     private bool HasWriteCoverage(DesktopPageTarget target, BrowserCallerIdentity holder)
     {
         var now = _timeProvider.GetUtcNow();
@@ -548,8 +548,12 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
 
         foreach (var grant in _grants.Values)
         {
+            // 判据与 FindPageGrant 一致：必须是**同一个行动者**（kind + callerId + taskId），
+            // 不能只比 CallerId 字符串 —— 否则"另一个同 id 调用者的授权"会被当成"我的授权还在"，
+            // 于是我的租约在授权被撤后**不释放**（违反"租约不得比它的授权活得久"，
+            // 并且会以 PageBusy 长期挡住该页的其它写入者）。
             if (!grant.TargetsSamePage(target)
-                || !string.Equals(grant.Grantee.CallerId, holder.CallerId, StringComparison.Ordinal)
+                || !IsTheSameActor(grant.Grantee, holder)
                 || !grant.Binding.Matches(binding)
                 || grant.IsExpiredAt(now)
                 || !grant.Covers(BrowserPageGrantScope.Write))

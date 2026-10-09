@@ -15,6 +15,37 @@ namespace PuddingBrowser.AutomationTests;
 public sealed class ReadOnlyDelegationTests
 {
     [TestMethod]
+    public void AWriteLeaseIsReleasedWhenItsOwnGrantIsRevoked_EvenIfAnotherActorSharesTheCallerId()
+    {
+        // 取红用例（round-108）：租约存活性检查（`HasWriteCoverage`）原先也只比 `CallerId` 字符串。
+        // 于是当**另一个同 id 的行动者**在该页上还有写授权时，我的授权被撤掉后租约**不释放**：
+        // 违反"租约不得比它的授权活得久"，并且会以 PageBusy 长期挡住该页的其它写入者。
+        // 这里用公开行为观察：撤掉 A 的授权后，B 必须能立刻拿到写租约。
+        var authority = B0Fixture.Connected();
+        var page = B0Fixture.Page();
+
+        var actorA = B0Fixture.Agent("agent-1", "task-1");
+        var actorB = B0Fixture.Agent("agent-1", "task-2"); // 同一个 CallerId，不同任务
+
+        var grantA = B0Fixture.Grant(actorA, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page);
+        authority.IssueGrant(grantA);
+        authority.IssueGrant(B0Fixture.Grant(actorB, BrowserPageGrantScope.Read | BrowserPageGrantScope.Write, target: page));
+
+        // A 拿到写租约（在途）。
+        var leaseA = authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, actorA, target: page));
+        Assert.IsTrue(leaseA.IsAllowed, "A 应当拿到写租约");
+
+        // 只撤掉 A 的授权（B 的仍在）。
+        authority.RevokeGrant(grantA.GrantId);
+
+        // B 必须能立刻写：这只有在"A 的租约真的被释放"时才成立。
+        var leaseB = authority.Admit(B0Fixture.Request(BrowserAutomationOperation.Interact, actorB, target: page));
+        Assert.IsTrue(
+            leaseB.IsAllowed,
+            "撤掉 A 的授权后，A 的在途租约必须释放（否则该页被一个已无授权的租约长期占住）");
+    }
+
+    [TestMethod]
     public void ReissuingAGrantIdWithDifferentContentIsRefusedInsteadOfSilentlyWidening()
     {
         // 取红用例（round-107 修的真实静默提权）：`IssueGrant` 原先按 GrantId **直接覆盖**。
