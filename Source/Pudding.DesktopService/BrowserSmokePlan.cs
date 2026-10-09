@@ -62,7 +62,7 @@ public static class BrowserSmokePlan
             + "（不静默截断/降级）；元数据含源/输出尺寸、设备缩放、CSS viewport、scroll offset、裁剪变换与三代修订号；"
             + "缩放后旧坐标被拒",
             // 采集本身要真机（CapturePreviewAsync），但**载荷/变换/拒绝语义**已由进程内用例覆盖 —— 两件事分开说清。
-            AutomatedCoverage: "AutomationTests.BrowserScreenshotCoordinate* / BrowserScreenshotTransferTests"),
+            AutomatedCoverage: "AutomationTests.BrowserScreenshotCoordinate* / BrowserScreenshotTransferTests / BrowserScreenshotPlannerTests"),
         new("S-10", "G10", "委派", "父代理持有页面写租约时委派子代理写同一页；再取消/接管/超时",
             "父子写租约不并存；子代理**真正**发现并调用 browser_*；父结果 ≤2 KiB 且不含整页；"
             + "取消/接管/超时都回收许可",
