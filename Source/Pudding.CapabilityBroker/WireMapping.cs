@@ -368,6 +368,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.Clipboard => expectedCapability == DesktopCapability.ShellClipboard,
             Proto.OperationResult.OutcomeOneofCase.Dialog => expectedCapability == DesktopCapability.ShellDialog,
             Proto.OperationResult.OutcomeOneofCase.FilePicker => expectedCapability == DesktopCapability.ShellFilePicker,
+                Proto.OperationResult.OutcomeOneofCase.BindingAck => expectedCapability is DesktopCapability.BrowserBindingApply or DesktopCapability.BrowserBindingRevoke,
             _ => false,
         };
 
@@ -379,6 +380,24 @@ internal static class DesktopResultDecoder
 
         switch (result.OutcomeCase)
         {
+                case Proto.OperationResult.OutcomeOneofCase.BindingAck:
+                {
+                    var ack = result.BindingAck;
+                    if (ack is null)
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal("binding ack outcome is empty"));
+                    }
+
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromBindingAck(new BrowserBindingAck(
+                            ack.Accepted,
+                            string.IsNullOrEmpty(ack.GrantId) ? null : new BrowserPageGrantId(ack.GrantId),
+                            // epoch 目前按 default 还原：桌面侧的 grant epoch 语义尚未在 ack 上约定下限；（见 changelog）
+                            Epoch: default,
+                            string.IsNullOrEmpty(ack.Reason) ? null : ack.Reason)));
+                }
+
             case Proto.OperationResult.OutcomeOneofCase.Navigate:
             {
                 var disposition = result.Navigate.Disposition switch

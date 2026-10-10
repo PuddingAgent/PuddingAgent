@@ -872,6 +872,26 @@ internal static class DesktopFrameMapping
         {
             switch (capability.Capability)
             {
+                case DesktopCapability.BrowserBindingApply when response.BindingAck is { } applyAck:
+                    result.BindingAck = new Proto.BindingAckOutcome
+                    {
+                        Accepted = applyAck.Accepted,
+                        GrantId = applyAck.GrantId?.Value ?? string.Empty,
+                        Epoch = 0,
+                        Reason = applyAck.Reason ?? string.Empty,
+                    };
+                    break;
+
+                case DesktopCapability.BrowserBindingRevoke when response.BindingAck is { } revokeAck:
+                    result.BindingAck = new Proto.BindingAckOutcome
+                    {
+                        Accepted = revokeAck.Accepted,
+                        GrantId = revokeAck.GrantId?.Value ?? string.Empty,
+                        Epoch = 0,
+                        Reason = revokeAck.Reason ?? string.Empty,
+                    };
+                    break;
+
                 case DesktopCapability.WebViewNavigate when response.Navigate is { } navigate:
                     var wireNavigate = new Proto.NavigateOutcome
                     {
