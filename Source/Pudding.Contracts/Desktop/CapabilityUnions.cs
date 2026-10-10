@@ -214,6 +214,7 @@ public sealed record DesktopCapabilityResponse
         DesktopFilePickerResult? filePicker = null,
         DesktopContextInfo? contextCreated = null,
         DesktopContextClosed? contextClosed = null,
+        BrowserBindingAck? bindingAck = null,
         DesktopCapabilityError? error = null)
     {
         var payloadCount = (navigate is null ? 0 : 1)
@@ -231,7 +232,8 @@ public sealed record DesktopCapabilityResponse
             + (dialog is null ? 0 : 1)
             + (filePicker is null ? 0 : 1)
             + (contextCreated is null ? 0 : 1)
-            + (contextClosed is null ? 0 : 1);
+            + (contextClosed is null ? 0 : 1)
+            + (bindingAck is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -243,6 +245,7 @@ public sealed record DesktopCapabilityResponse
         Notification = notification;
         PageState = pageState;
         ShellStatus = shellStatus;
+        BindingAck = bindingAck;
         Snapshot = snapshot;
         Locate = locate;
         Interact = interact;
@@ -266,6 +269,9 @@ public sealed record DesktopCapabilityResponse
     public DesktopPageState? PageState { get; }
 
     public DesktopShellStatus? ShellStatus { get; }
+
+    /// <summary>控制面：绑定申请/撤销的 ack（§4.1）。</summary>
+    public BrowserBindingAck? BindingAck { get; }
 
     /// <summary>页面快照（含 PageVersion 的 DOM/可访问性树）。</summary>
     public DesktopSnapshot? Snapshot { get; }
@@ -315,6 +321,10 @@ public sealed record DesktopCapabilityResponse
 
     public static DesktopCapabilityResponse FromPageState(DesktopPageState state) =>
         new(pageState: state ?? throw new ArgumentNullException(nameof(state)));
+
+    /// <summary>控制面：绑定申请/撤销的 ack（§4.1）。</summary>
+    public static DesktopCapabilityResponse FromBindingAck(BrowserBindingAck ack) =>
+        new(bindingAck: ack ?? throw new ArgumentNullException(nameof(ack)));
 
     public static DesktopCapabilityResponse FromShellStatus(DesktopShellStatus status) =>
         new(shellStatus: status ?? throw new ArgumentNullException(nameof(status)));
