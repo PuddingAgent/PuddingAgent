@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopSurface.Browser;
 using PuddingBrowser.Abstractions;
@@ -491,5 +491,40 @@ public sealed class InteractMappingTests
         public Task<PdfResult> PrintToPdfAsync(PdfOptions options, CancellationToken ct) => throw new NotSupportedException();
 
         public Task OpenDevToolsAsync(CancellationToken ct) => throw new NotSupportedException();
+    }
+    [Fact]
+    public async Task PointerActionsAreRefusedWhenTheSurfaceCannotTakeCoordinates()
+    {
+        // 替身页面**不**实现可选能力 IPointerInputPage ⇒ 必须**明确 unsupported**，
+        // 且**不得触达驱动**（绝不静默降级成"往页面塞脚本点一下"）。
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+
+        var refused = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerClick, DesktopPageVersion.Require(7), x: 10, y: 20),
+            CancellationToken.None);
+
+        Assert.True(refused.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, refused.Error!.Code);
+        Assert.Null(runtime.Pages["ctx-1/p-1"].LastAction);
+    }
+
+    [Fact]
+    public async Task PointerDragIsRefusedUntilTheRequestCarriesATargetPoint()
+    {
+        // 拖拽需要起点与终点四个坐标；请求目前只有 x/y ⇒ 明确拒绝，**不臆造终点**（否则会拖到 (0,0)）。
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+
+        var refused = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerDrag, DesktopPageVersion.Require(7), x: 10, y: 20),
+            CancellationToken.None);
+
+        Assert.True(refused.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, refused.Error!.Code);
+        Assert.Contains("target point", refused.Error!.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(runtime.Pages["ctx-1/p-1"].LastAction);
     }
 }
