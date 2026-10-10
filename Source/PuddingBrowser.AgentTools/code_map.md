@@ -34,8 +34,9 @@ draft: false
 
 | 文件 | 用途 |
 |------|------|
+| `BrowserCallerIdentityScope.cs` | **调用级调用者身份作用域**（设计 §3.1）：`BrowserCallerIdentityScope`（AsyncLocal，`Push` 返回还原句柄）+ `IBrowserCallerIdentityAccessor` / `BrowserCallerIdentityAccessor`（供 Host 调用上下文工厂读取，**不缓存**）。与审计 Origin **分开存放**：Origin 管诊断、本作用域管**授权**；投影失败时保留具体原因（缺运行身份/缺调用者/子代理缺父任务）供拒绝使用 |
 | `BrowserCallerIdentitySource.cs` | **把 Core 执行上下文投影成调用者身份**（设计 §3.1/§3.2）：工具层唯一允许产生 `BrowserCallerIdentity` 的地方；入参只有**执行上下文**（编排层创建、只能透传）与 **agent 实例标识**（与 `BrowserOperationOrigin` 同一条取值规则，保证"审计里的行动者"＝"授权里的行动者"），**没有**任何工具参数 ⇒ 模型无法自报身份。子代理判定取 `RuntimeExecutionKind.SubAgent`（不用"有没有 ParentRunId"这种可伪造推断）；无上下文/无 agent 标识/子代理缺父任务一律拒绝（不回退环境推断）。⚠️ 尚未接到 `Admit`（见 changelog 的决策简报） |
-| `BrowserAgentToolBase.cs` | 工具基类 |
+| `BrowserAgentToolBase.cs` | 工具基类。**每次调用**推入审计 Origin、权限证据与**调用者身份**三个作用域（退出时全部还原）；**sealed 执行入口**：没有 `BrowserCallerIdentityScope.Current` 就返回明确拒绝（`browser tool refused: …`），**不执行**也**不生成默认身份**；派生工具改实现 `ExecuteBrowserCoreAsync` |
 | `BrowserAgentToolIds.cs` | 工具 ID 常量 |
 | `BrowserToolContracts.cs` | 工具输入/输出契约；失败载荷也支持 `value`（失败必须能带结构化证据，不能只有 code/message）；**元素展示投影的唯一实现**（`Element(...)`：text==name 省略、bbox 一位小数、checked/value 显式请求）——两个工具共用，规则不会各写一份 |
 | `BrowserOperationFailure.cs` | 驱动异常（`BrowserOperationException`）→ 失败回执：异常码映射成领域错误 + 是否可重试 + **最小修复提示**。§6.2 的动作拒绝分别给建议：`browser_locator_ambiguous` ⇒ 不可重试 + 「用 nth 或更具体的定位」（**绝不静默选第一个**）；`browser_element_not_visible`/`browser_element_disabled`/`browser_element_not_in_viewport`/**`browser_element_obstructed`** ⇒ 不可重试 + 滚入可见/等待可用/调整滚动/撤掉浮层（最后一条=命中测试发现被别的节点挡住，**绝不"照点不误"当成成功**）；`browser_element_not_found` ⇒ **可重试** + 等待或重新观察（零命中不等于"定位方式全坏"）；**`browser_locator_matches_filtered`** ⇒ 不可重试 + 「命中了但被隐藏/视口筛掉：显式传 includeHidden/inViewportOnly 或滚动容器」（把"这次筛选没用对"与"这种定位方式坏了"分开）；`stale_element_reference` ⇒ 不可重试 + 重新观察再定位；未登记异常码保守按 `internal_error`（可能已产生副作用） |

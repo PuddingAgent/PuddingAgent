@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
@@ -28,7 +28,7 @@ public sealed class BrowserContextTool(
     IDesktopCapabilityCallContextFactory callContexts,
     IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserContextArgs>(originAccessor)
 {
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<ToolExecutionResult> ExecuteBrowserCoreAsync(
         BrowserContextArgs args,
         ToolExecutionContext context,
         CancellationToken ct)

@@ -26,6 +26,14 @@ public sealed class BrowserAgentToolBridgeIntegrationTests
             ArgumentsJson = """{"action":"list"}""",
             Context = new ToolExecutionContext
             {
+                    // §3.1：浏览器工具执行前必须有可信调用者身份（缺即拒，不生成默认身份）。
+                    ExecutionIdentity = new PuddingCode.Runtime.RuntimeExecutionIdentity
+                    {
+                        Kind = PuddingCode.Runtime.RuntimeExecutionKind.ConversationTurn,
+                        ConversationId = "conv-bridge",
+                        RunId = "run-bridge",
+                        TraceId = null
+                    },
                 WorkspaceId = "default",
                 SessionId = "session-bridge",
                 AgentInstanceId = "agent-bridge"
@@ -118,6 +126,14 @@ public sealed class BrowserAgentToolBridgeIntegrationTests
             ArgumentsJson = """{"context_id":"ctx-visible","page_id":"page-visible"}""",
             Context = new ToolExecutionContext
             {
+                    // §3.1：浏览器工具执行前必须有可信调用者身份（缺即拒，不生成默认身份）。
+                    ExecutionIdentity = new PuddingCode.Runtime.RuntimeExecutionIdentity
+                    {
+                        Kind = PuddingCode.Runtime.RuntimeExecutionKind.ConversationTurn,
+                        ConversationId = "conv-bridge",
+                        RunId = "run-bridge",
+                        TraceId = null
+                    },
                 WorkspaceId = "default", SessionId = "session-bridge", AgentInstanceId = "agent-bridge"
             }
         }, CancellationToken.None);

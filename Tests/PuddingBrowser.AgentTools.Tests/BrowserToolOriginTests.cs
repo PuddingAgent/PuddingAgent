@@ -80,6 +80,13 @@ public sealed class BrowserToolOriginTests
             ArgumentsJson = "{}",
             Context = new ToolExecutionContext
             {
+                ExecutionIdentity = new PuddingCode.Runtime.RuntimeExecutionIdentity
+                {
+                    Kind = PuddingCode.Runtime.RuntimeExecutionKind.ConversationTurn,
+                    ConversationId = "conv-1",
+                    RunId = "run-1",
+                    TraceId = null
+                },
                 WorkspaceId = "ws-2",
                 SessionId = "session-2",
                 AgentInstanceId = "agent-2"
@@ -111,6 +118,13 @@ public sealed class BrowserToolOriginTests
                 ArgumentsJson = "{}",
                 Context = new ToolExecutionContext
                 {
+                ExecutionIdentity = new PuddingCode.Runtime.RuntimeExecutionIdentity
+                {
+                    Kind = PuddingCode.Runtime.RuntimeExecutionKind.ConversationTurn,
+                    ConversationId = "conv-1",
+                    RunId = "run-1",
+                    TraceId = null
+                },
                     WorkspaceId = "inner-ws",
                     SessionId = "inner-session",
                     AgentInstanceId = "inner-agent"
@@ -149,6 +163,13 @@ public sealed class BrowserToolOriginTests
             ArgumentsJson = "{}",
             Context = new ToolExecutionContext
             {
+                ExecutionIdentity = new PuddingCode.Runtime.RuntimeExecutionIdentity
+                {
+                    Kind = PuddingCode.Runtime.RuntimeExecutionKind.ConversationTurn,
+                    ConversationId = "conv-1",
+                    RunId = "run-1",
+                    TraceId = null
+                },
                 WorkspaceId = "ws-3",
                 SessionId = "session-3",
                 AgentInstanceId = "agent-3"
@@ -216,6 +237,7 @@ public sealed class BrowserToolOriginTests
                     Kind = RuntimeExecutionKind.SubAgent,
                     ConversationId = "conv-b",
                     RunId = "run-b",
+                    ParentRunId = "run-a",
                     ToolCallId = "call-b",
                     TraceId = null
                 }
@@ -363,7 +385,7 @@ public sealed class BrowserToolOriginTests
     {
         private readonly IBrowserRuntime _runtime = runtime;
 
-        protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+        protected override async Task<ToolExecutionResult> ExecuteBrowserCoreAsync(
             TestOriginToolArgs args,
             ToolExecutionContext context,
             CancellationToken ct)

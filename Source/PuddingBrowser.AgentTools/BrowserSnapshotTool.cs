@@ -214,7 +214,7 @@ public sealed class BrowserSnapshotTool(
     /// <summary>用与工具结果一致的默认序列化选项计量 JSON 的 UTF-8 字节数。</summary>
     private static int MeasureJsonBytes(BrowserSnapshotToolValue value) =>
         System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value).Length;
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<ToolExecutionResult> ExecuteBrowserCoreAsync(
         BrowserSnapshotArgs args, ToolExecutionContext context, CancellationToken ct)
     {
         if (!TryParseMode(args.Mode, out var mode))

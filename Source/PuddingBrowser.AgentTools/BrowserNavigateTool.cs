@@ -36,7 +36,7 @@ public sealed class BrowserNavigateTool(
     IDesktopCapabilityCallContextFactory callContexts,
     IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserNavigateArgs>(originAccessor)
 {
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<ToolExecutionResult> ExecuteBrowserCoreAsync(
         BrowserNavigateArgs args,
         ToolExecutionContext context,
         CancellationToken ct)

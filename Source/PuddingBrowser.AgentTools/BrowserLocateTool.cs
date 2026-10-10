@@ -1,4 +1,4 @@
-﻿using Pudding.Contracts;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
@@ -61,7 +61,7 @@ public sealed class BrowserLocateTool(
     IDesktopCapabilityCallContextFactory callContexts,
     IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserLocateArgs>(originAccessor)
 {
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<ToolExecutionResult> ExecuteBrowserCoreAsync(
         BrowserLocateArgs args, ToolExecutionContext context, CancellationToken ct)
     {
         try

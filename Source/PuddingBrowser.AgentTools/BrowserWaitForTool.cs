@@ -38,7 +38,7 @@ public sealed class BrowserWaitForTool(
     IDesktopCapabilityCallContextFactory callContexts,
     IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserWaitForArgs>(originAccessor)
 {
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<ToolExecutionResult> ExecuteBrowserCoreAsync(
         BrowserWaitForArgs args, ToolExecutionContext context, CancellationToken ct)
     {
         if (args.TimeoutMs is < 1 or > 120_000

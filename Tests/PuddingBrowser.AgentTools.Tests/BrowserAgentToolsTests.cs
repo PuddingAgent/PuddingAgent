@@ -2279,6 +2279,13 @@ public sealed class BrowserAgentToolsTests
             ArgumentsJson = arguments,
             Context = new ToolExecutionContext
             {
+                ExecutionIdentity = new PuddingCode.Runtime.RuntimeExecutionIdentity
+                {
+                    Kind = PuddingCode.Runtime.RuntimeExecutionKind.ConversationTurn,
+                    ConversationId = "conv-1",
+                    RunId = "run-1",
+                    TraceId = null
+                },
                 WorkspaceId = "default",
                 SessionId = "session-1",
                 AgentInstanceId = "agent-1",

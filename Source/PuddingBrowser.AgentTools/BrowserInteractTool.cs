@@ -101,7 +101,7 @@ public sealed class BrowserInteractTool(
 
 {
 
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<ToolExecutionResult> ExecuteBrowserCoreAsync(
 
         BrowserInteractArgs args, ToolExecutionContext context, CancellationToken ct)
 

@@ -36,7 +36,7 @@ public sealed class BrowserTabsTool(
     IDesktopCapabilityCallContextFactory callContexts,
     IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserTabsArgs>(originAccessor)
 {
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<ToolExecutionResult> ExecuteBrowserCoreAsync(
         BrowserTabsArgs args,
         ToolExecutionContext context,
         CancellationToken ct)
