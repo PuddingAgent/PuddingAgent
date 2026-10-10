@@ -519,12 +519,12 @@ public sealed class InteractMappingTests
         var refused = await Surface(runtime).InteractAsync(
             Call,
             new BrowserInteractRequest(
-                Target, DesktopInteractionAction.PointerDrag, DesktopPageVersion.Require(7), x: 10, y: 20),
+                Target, DesktopInteractionAction.PointerDrag, DesktopPageVersion.Require(7), x: 10, y: 20, toX: 30, toY: 40),
             CancellationToken.None);
 
         Assert.True(refused.IsFailure);
         Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, refused.Error!.Code);
-        Assert.Contains("target point", refused.Error!.Message, StringComparison.OrdinalIgnoreCase);
+        // 拖拽现与点击/移动同路：替身不实现可选能力 ⇒ 明确 unsupported。
         Assert.Null(runtime.Pages["ctx-1/p-1"].LastAction);
     }
 }

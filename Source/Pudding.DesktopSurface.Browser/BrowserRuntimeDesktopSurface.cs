@@ -754,12 +754,6 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 or DesktopInteractionAction.PointerMove
                 or DesktopInteractionAction.PointerDrag)
             {
-                if (request.Action == DesktopInteractionAction.PointerDrag)
-                {
-                    return CapabilityResult<DesktopInteractionResult>.Failure(
-                        DesktopCapabilityError.UnsupportedCapability(
-                            "coordinate drag needs a target point (toX/toY); the request does not carry one yet"));
-                }
 
                 if (browserPage is not IPointerInputPage)
                 {
@@ -877,15 +871,19 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             default:
                 case DesktopInteractionAction.PointerClick:
                 case DesktopInteractionAction.PointerMove:
+                case DesktopInteractionAction.PointerDrag:
                 {
-                    // 检查已在 InteractAsync 完成（unsupported/拖拽缺终点都在那里拒绝）⇒ 这里的转换是安全的。
+                    // 检查已在 InteractAsync 完成（不支持/带 observationId 都在那里拒绝）⇒ 这里的转换是安全的。
+                    var pointerKind = request.Action switch
+                    {
+                        DesktopInteractionAction.PointerClick => PointerInputKind.Click,
+                        DesktopInteractionAction.PointerDrag => PointerInputKind.Drag,
+                        _ => PointerInputKind.Move,
+                    };
+
                     await ((IPointerInputPage)page).PointerAsync(
                         new PointerInput(
-                            request.Action == DesktopInteractionAction.PointerClick
-                                ? PointerInputKind.Click
-                                : PointerInputKind.Move,
-                            request.X!.Value,
-                            request.Y!.Value),
+                            pointerKind, request.X!.Value, request.Y!.Value, request.ToX ?? 0, request.ToY ?? 0),
                         cancellationToken).ConfigureAwait(false);
                     break;
                 }
