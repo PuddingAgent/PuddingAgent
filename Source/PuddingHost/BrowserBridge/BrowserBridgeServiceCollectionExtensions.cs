@@ -35,6 +35,24 @@ public static class BrowserBridgeServiceCollectionExtensions
         services.AddSingleton<IDesktopBrowserCommandBroker, DesktopBrowserCommandBroker>();
         services.AddSingleton<IBrowserBridgeClock, SystemBrowserBridgeClock>();
         services.AddSingleton<RemoteBrowserRuntime>();
+
+    // 触发点门（§4.1）：把"发命令前确保有授权"接到能力通道的控制面。
+    // 会话**按调用解析**（通道由 Desktop 按 desktop.json 启用，可能后连上）⇒ 无条件注册是安全的：
+    // 无会话时门是 **no-op**（只走 Bridge 的现网路径行为不变）；最终判据仍在 Desktop 的唯一 authority。
+    services.AddSingleton<IBrowserBindingGate>(sp =>
+    {
+        if (!Pudding.Contracts.DesktopCapabilities.TryGetByName("browser.binding.apply", out var descriptor))
+        {
+            throw new InvalidOperationException("browser.binding.apply is not registered in the capability catalog");
+        }
+
+        return new CapabilityChannelBindingGate(
+            () => sp.GetService<Pudding.CapabilityBroker.CapabilityBroker>()?.Sessions.FirstOrDefault(),
+            descriptor,
+            Pudding.Contracts.Desktop.BrowserPageGrantScope.Read | Pudding.Contracts.Desktop.BrowserPageGrantScope.Write,
+            TimeSpan.FromMinutes(5),
+            "bridge:agent-target");
+    });
         services.AddSingleton<IBrowserRuntime>(sp => sp.GetRequiredService<RemoteBrowserRuntime>());
 
         // ── 切片 D 窄端口：组合根按**传输决策**二选一（不做跨传输回退） ──────
