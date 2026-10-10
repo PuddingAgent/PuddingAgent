@@ -72,4 +72,13 @@ public sealed class InteractPointerDecodeTests
         Assert.Null(interact.ObservationId); // 空串 ⇒ 未设置
     }
 
+    [Fact]
+    public void PointerActionsWithoutCoordinatesAreRefusedAtTheWireBoundary()
+    {
+        // 契约要求指针动作**成对给 X/Y**：缺坐标时解码必须失败（fail-closed），
+        // 绝不允许产出一个"坐标为空"的请求让下游去猜（猜 0 就会点到页面左上角）。
+        Assert.True(CoreFrameMapping.Decode(Command(10, null), DesktopId).IsFailure);
+        Assert.True(CoreFrameMapping.Decode(Command(null, 10), DesktopId).IsFailure);
+        Assert.True(CoreFrameMapping.Decode(Command(null, null), DesktopId).IsFailure);
+    }
 }
