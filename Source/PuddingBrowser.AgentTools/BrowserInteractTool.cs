@@ -73,6 +73,18 @@ public sealed record BrowserInteractArgs
     /// </summary>
     [ToolParam("Scroll target: page | element | to_ref | to_top | to_bottom. Derived from the locator/delta when omitted. Element targets require a ref locator.")]
     public string? ScrollTarget { get; init; }
+
+    /// <summary>坐标 X（CSS viewport 像素，§8.2；action=pointer_click/pointer_move/pointer_drag）。</summary>
+    [ToolParam("X coordinate in CSS viewport pixels for pointer actions.")]
+    public double? X { get; init; }
+
+    /// <summary>坐标 Y（CSS viewport 像素，§8.2）。</summary>
+    [ToolParam("Y coordinate in CSS viewport pixels for pointer actions.")]
+    public double? Y { get; init; }
+
+    /// <summary>截图来源坐标必须携带的 observationId；滚动/缩放/布局或页面世代变化后失效（§8.2）。</summary>
+    [ToolParam("Screenshot observation id when the coordinates came from a screenshot.")]
+    public string? ObservationId { get; init; }
 }
 
 
@@ -109,7 +121,7 @@ public sealed class BrowserInteractTool(
 
         var action = args.Action?.Trim().ToLowerInvariant();
 
-        if (action is not ("click" or "fill" or "type" or "press" or "hover" or "scroll" or "select" or "check"))
+        if (action is not ("click" or "fill" or "type" or "press" or "hover" or "scroll" or "select" or "check" or "pointer_click" or "pointer_move" or "pointer_drag"))
 
             return BrowserToolResponse.Failure("browser_invalid_arguments", "unsupported interaction action");
 
@@ -327,7 +339,7 @@ public sealed class BrowserInteractTool(
                     toLocator,
 
                     // 上传文件（仅 action=upload；契约层强制至少一个）。
-                    args.Files),
+                    args.Files, x: args.X, y: args.Y, observationId: args.ObservationId),
 
                 call,
 
@@ -472,6 +484,10 @@ public sealed class BrowserInteractTool(
         "upload" => DesktopInteractionAction.Upload,
 
         "select" => DesktopInteractionAction.Select,
+                // §8.2 坐标动作（CSS viewport 像素）：必须显式映射，**绝不能落到 _ 兜底**（那会变成 check/uncheck）。
+                "pointer_click" => DesktopInteractionAction.PointerClick,
+                "pointer_move" => DesktopInteractionAction.PointerMove,
+                "pointer_drag" => DesktopInteractionAction.PointerDrag,
 
         _ => isChecked == false ? DesktopInteractionAction.Uncheck : DesktopInteractionAction.Check,
 
