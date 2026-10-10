@@ -356,6 +356,54 @@ public static class NativeInputSequence
         return new CdpCall("Input.dispatchKeyEvent", JsonSerializer.Serialize(payload));
     }
 
+    /// <summary>
+    /// §8.2 **坐标点击**（CSS viewport 像素）：直接给坐标，不经元素定位。
+    /// 按下与抬起**成对**且坐标一致 —— 只按下不抬起会让页面卡在按下态。
+    /// </summary>
+    public static IReadOnlyList<CdpCall> PlanPointerClick(double x, double y, int clickCount = 1)
+    {
+        return
+        [
+            Mouse("mousePressed", x, y, "left", 1, clickCount),
+            Mouse("mouseReleased", x, y, "left", 0, clickCount),
+        ];
+    }
+
+    /// <summary>§8.2 **坐标移动**：只移动、不按下。</summary>
+    public static IReadOnlyList<CdpCall> PlanPointerMove(double x, double y)
+    {
+        return [Mouse("mouseMoved", x, y, "none", 0, 0)];
+    }
+
+    /// <summary>
+    /// §8.2 **坐标拖拽**：起点按下 → 分步移动 → 终点抬起。
+    /// 步数存在是为了让页面能观察到中间的 pointermove（一步跳到底在很多 UI 上不生效）；
+    /// 每一步都是独立的 CDP 调用，调用方被取消时不会留下"按下未抬起"的状态（末尾必然有抬起）。
+    /// </summary>
+    public static IReadOnlyList<CdpCall> PlanPointerDrag(double fromX, double fromY, double toX, double toY, int steps = 8)
+    {
+        if (steps < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(steps), steps, "a pointer drag needs at least one move step");
+        }
+
+        var calls = new List<CdpCall> { Mouse("mousePressed", fromX, fromY, "left", 1, 1) };
+        for (var step = 1; step <= steps; step++)
+        {
+            var ratio = (double)step / steps;
+            calls.Add(Mouse(
+                "mouseMoved",
+                fromX + ((toX - fromX) * ratio),
+                fromY + ((toY - fromY) * ratio),
+                "left",
+                1,
+                0));
+        }
+
+        calls.Add(Mouse("mouseReleased", toX, toY, "left", 0, 1));
+        return calls;
+    }
+
     private static CdpCall Mouse(string type, double x, double y, string button, int buttons, int clickCount) =>
         new("Input.dispatchMouseEvent", JsonSerializer.Serialize(new
         {
