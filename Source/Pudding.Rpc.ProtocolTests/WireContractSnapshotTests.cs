@@ -131,7 +131,8 @@ public sealed class WireContractSnapshotTests
             ("tabs", 21),
             ("clipboard", 22),
             ("dialog", 23),
-            ("file_picker", 24));
+            ("file_picker", 24),
+            ("binding_ack", 27));
 
         Assert.Equal(
             ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState", "GetShellStatus", "Snapshot", "Locate",
@@ -142,7 +143,7 @@ public sealed class WireContractSnapshotTests
         Assert.Equal(
             ["Navigate", "ExecuteJavascript", "ShowNotification", "Error", "PageState", "ShellStatus", "Snapshot",
             "Locate", "Interact", "WaitFor", "Contexts", "Tabs", "Clipboard", "Dialog", "FilePicker",
-            "ContextCreated", "ContextClosed"],
+            "ContextCreated", "ContextClosed", "BindingAck"],
             Enum.GetNames<OperationResult.OutcomeOneofCase>().Where(name => name != "None").ToArray());
 
         AssertFieldNumbers(OperationCancel.Descriptor, ("operation_id", 1), ("generation", 2), ("reason", 3));
@@ -204,7 +205,7 @@ public sealed class WireContractSnapshotTests
     {
         // 计划 §4：禁止「字符串命令名 + 任意 JSON」演化成万能调用。
         Assert.Equal(18, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
-        Assert.Equal(17, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
+        Assert.Equal(18, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
     }
 
     [Fact]

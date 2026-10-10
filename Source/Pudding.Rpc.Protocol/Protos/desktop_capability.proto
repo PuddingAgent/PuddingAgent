@@ -483,6 +483,14 @@ message ErrorOutcome {
 }
 
 // Desktop → Core 的单次操作终态。终态结果不可丢（状态事件可合并）。
+// 控制面（§4.1）：绑定申请/撤销的 ack。accepted=false 时 reason 必须可区分（未选定给 Agent/超上限/目标未登记/世代不活/子代理越权）。
+message BindingAckOutcome {
+  bool accepted = 1;
+  string grant_id = 2;
+  uint64 epoch = 3;
+  string reason = 4;
+}
+
 message OperationResult {
   string operation_id = 1;
   uint64 generation = 2;
@@ -505,6 +513,7 @@ message OperationResult {
     FilePickerOutcome file_picker = 24;
   ContextCreatedOutcome context_created = 25;
   ContextClosedOutcome context_closed = 26;
+    BindingAckOutcome binding_ack = 27;
   }
 }
 
