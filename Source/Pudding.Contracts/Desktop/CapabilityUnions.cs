@@ -223,6 +223,7 @@ public sealed record DesktopCapabilityResponse
         DesktopContextInfo? contextCreated = null,
         DesktopContextClosed? contextClosed = null,
         BrowserBindingAck? bindingAck = null,
+        BrowserScreenshotResult? screenshot = null,
         DesktopCapabilityError? error = null)
     {
         var payloadCount = (navigate is null ? 0 : 1)
@@ -241,7 +242,8 @@ public sealed record DesktopCapabilityResponse
             + (filePicker is null ? 0 : 1)
             + (contextCreated is null ? 0 : 1)
             + (contextClosed is null ? 0 : 1)
-            + (bindingAck is null ? 0 : 1);
+            + (bindingAck is null ? 0 : 1)
+            + (screenshot is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -254,6 +256,7 @@ public sealed record DesktopCapabilityResponse
         PageState = pageState;
         ShellStatus = shellStatus;
         BindingAck = bindingAck;
+        Screenshot = screenshot;
         Snapshot = snapshot;
         Locate = locate;
         Interact = interact;
@@ -286,6 +289,9 @@ public sealed record DesktopCapabilityResponse
 
     /// <summary>元素定位结果（命中的 Ref 携带 PageVersion）。</summary>
     public DesktopLocateResult? Locate { get; }
+
+    /// <summary>截图结果（§8.1：元数据 + 分块；观察 id 随元数据回传）。</summary>
+    public BrowserScreenshotResult? Screenshot { get; }
 
     /// <summary>元素交互结果（含交互后的页面状态；旧 Ref 自此作废）。</summary>
     public DesktopInteractionResult? Interact { get; }
@@ -339,6 +345,9 @@ public sealed record DesktopCapabilityResponse
 
     public static DesktopCapabilityResponse FromSnapshot(DesktopSnapshot snapshot) =>
         new(snapshot: snapshot ?? throw new ArgumentNullException(nameof(snapshot)));
+
+    public static DesktopCapabilityResponse FromScreenshot(BrowserScreenshotResult result) =>
+        new(screenshot: result ?? throw new ArgumentNullException(nameof(result)));
 
     public static DesktopCapabilityResponse FromLocate(DesktopLocateResult result) =>
         new(locate: result ?? throw new ArgumentNullException(nameof(result)));

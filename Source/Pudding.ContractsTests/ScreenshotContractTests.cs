@@ -82,4 +82,26 @@ public sealed class ScreenshotContractTests
         var missingMetadata = new BrowserScreenshotResult(null!, []);
         Assert.Throws<ArgumentNullException>(missingMetadata.Validate);
     }
+    [Fact]
+    public void ForScreenshotBuildsExactlyOnePayloadAndTheResultRoundTrips()
+    {
+        var request = new BrowserScreenshotRequest(Target, DesktopPageVersion.Require(3));
+        var built = DesktopCapabilityRequest.ForScreenshot(request);
+
+        Assert.Same(request, built.Screenshot);
+        Assert.Null(built.Locate);
+
+        var metadata = new DesktopScreenshotMetadata(
+            "obs-1", "image/png", 2048, 1280, 720, 512, 288,
+            DeviceScaleFactor: 2, ViewportWidth: 1280, ViewportHeight: 720,
+            ScrollX: 0, ScrollY: 0, CropX: null, CropY: null, CropWidth: null, CropHeight: null,
+            PageVersion: 3, DomRevision: 4, ViewportRevision: 5, DesktopScreenshotDetail.Low);
+        var result = new BrowserScreenshotResult(metadata, [new DesktopScreenshotChunk(0, true, [1, 2, 3])]);
+
+        var response = DesktopCapabilityResponse.FromScreenshot(result);
+
+        // 关键：结果属性必须**真被赋值** —— 否则 payloadCount == 0，构造会抛"恰好一个载荷"。
+        Assert.Same(result, response.Screenshot);
+        Assert.Equal("obs-1", response.Screenshot!.Metadata.ObservationId);
+    }
 }
