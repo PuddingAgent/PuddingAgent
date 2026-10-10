@@ -19,6 +19,8 @@ namespace Pudding.DesktopSurface.Browser;
 public sealed class BrowserWorkspaceTargetBridge
 {
     private readonly BrowserPageLifecycle _lifecycle;
+
+    private readonly BrowserTaskBindingService? _taskBindings;
     private readonly BrowserTargetRegistry _browserTargets;
     private readonly DesktopTargetRegistry _pageTargets;
     private readonly Lock _sync = new();
@@ -28,8 +30,12 @@ public sealed class BrowserWorkspaceTargetBridge
     /// 只接受生命周期端口：它是唯一权威实例 + 两个注册表 + 关闭清理点的所有者。
     /// 早先这里收两个注册表，于是"谁来保证关闭时授权也被撤销"在类型层面没有归属。
     /// </summary>
-    public BrowserWorkspaceTargetBridge(BrowserPageLifecycle lifecycle)
+    public BrowserWorkspaceTargetBridge(
+        BrowserPageLifecycle lifecycle,
+        // 切换目标时要**真的撤销**旧目标上的任务绑定（§4.1）；未提供时不撤销，但闸门也不应被打开。
+        BrowserTaskBindingService? taskBindings = null)
     {
+        _taskBindings = taskBindings;
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _browserTargets = lifecycle.BrowserTargets;
         _pageTargets = lifecycle.PageTargets;
@@ -163,7 +169,22 @@ public sealed class BrowserWorkspaceTargetBridge
     {
         lock (_sync)
         {
+            // 切换前记下旧目标：切换成功后必须**撤销旧目标上的任务绑定**，
+            // 否则"不再被用户选定的页"仍持有可执行的授权（§4.1 的确定性撤销）。
+            var previous = _lifecycle.PageTargets.AgentTarget;
+
             _lifecycle.SetAgentTarget(contextId, pageId);
+
+            // 以**注册表的实际状态**为准（而不是某个返回值）：目标真的变了才撤销旧目标的绑定。
+            // 切换失败时目标未变 ⇒ 不撤销（保守，不会把有效授权误撤）。
+            if (_taskBindings is { } bindings && previous is { } stale)
+            {
+                var current = _lifecycle.PageTargets.AgentTarget;
+                if (current != stale)
+                {
+                    bindings.RevokeForTarget(stale);
+                }
+            }
         }
     }
 

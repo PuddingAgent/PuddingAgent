@@ -21,7 +21,8 @@
 |------|---------------|
 | `BrowserRuntimeDesktopSurface.cs` | 九项浏览器能力 → `IBrowserRuntime` 调用。语义：页面版本来自身为一等成员的 `IBrowserPage.PageVersion`；缺失即 `Unknown`（**不伪造**）；超预算结果**如实标注** `Truncated`；`locate` 遇版本不符**跳过**陈旧引用查询，并实现**游标分页**（校验版本+查询指纹 ⇒ 不符即 `CursorExpired`，格式坏即 `InvalidRequest`；还有下一页才发 `NextCursor`，取完为 null）；元素无活版本即 `internal_error`（不静默丢弃）；`interact` 的 `focus` 无运行时 API ⇒ `unsupported_capability`；滚动映射**目标模型**（`DesktopScrollTarget` → `ScrollTarget`，显式优先、否则按 locator/位移推导）并把驱动报告的**滚动事实**放进 `DesktopInteractionResult.Scroll`（无事实即 `null`，**不编造**）；`wait_for` 超时是结果不是失败；`page_state` 只报 `IsLoading` 能支持的 `Loading`/`Unknown`（**从不**声称 Interactive/Complete） |
 | `DesktopSurfaceComposition.cs` | 把协作方组装成 `DesktopService` 需要的**单一** `IDesktopUiSurface`：浏览器 9 项 → `BrowserRuntimeDesktopSurface`，Shell 5 项 → `DesktopShellSurface`。组装层无逻辑，唯一可能的缺陷是**接错协作者**（编译期查不出、表现是"能调用但做错事"），故由测试逐个钉住 |
-| `BrowserWorkspaceTargetBridge.cs` | **页面生命周期 → 生命周期端口**的唯一翻译点。版本推进（`OnPageActivated`/`OnPageVersionAdvanced`）仍直接写页面注册表；**创建、目标切换与关闭全部交给 `BrowserPageLifecycle`**，因此"登记原子性/关闭清理（授权+租约）"只有一个所有者。不撒谎语义：未登记上下文 `Untrusted`（fail closed）；先页面后上下文**直接抛**（不静默补登记）；版本只前进；版本事件对未知页面**不凭空造目标**；关闭/清空不留悬空引用 |
+| `BrowserWorkspaceTargetBridge.cs` |
+| （同上）切换目标即撤销 | `OnAgentTargetChanged` 在目标**真的改变**后调用 `BrowserTaskBindingService.RevokeForTarget(旧目标)`；以注册表实际状态为准（切换失败不误撤）。未提供绑定服务时不撤销 —— 因此**闸门也不应被打开** | **页面生命周期 → 生命周期端口**的唯一翻译点。版本推进（`OnPageActivated`/`OnPageVersionAdvanced`）仍直接写页面注册表；**创建、目标切换与关闭全部交给 `BrowserPageLifecycle`**，因此"登记原子性/关闭清理（授权+租约）"只有一个所有者。不撒谎语义：未登记上下文 `Untrusted`（fail closed）；先页面后上下文**直接抛**（不静默补登记）；版本只前进；版本事件对未知页面**不凭空造目标**；关闭/清空不留悬空引用 |
 
 ## 3. 与其它组件的边界
 
