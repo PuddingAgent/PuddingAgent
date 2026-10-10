@@ -124,7 +124,9 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
         var streamFactory = new GrpcDesktopChannelStreamFactory(transport.Value, authentication);
 
         var service = new DesktopService(
-            dispatcher, surface, pageTargets, serviceOptions ?? CreateDefaultServiceOptions(), authority, taskBindings: taskBindings);
+            dispatcher, surface, pageTargets, serviceOptions ?? CreateDefaultServiceOptions(), authority,
+        connectionGeneration: () => authority.ConnectionGeneration, // 闸门：让 ValidateAdmission 的 Admit 生效（生产路径的授权由此成为**必需**）
+        taskBindings: taskBindings);
 
         // 顺序与「关闭时不构造」的判据由 DesktopCapabilityHostFactory 与组合顺序测试钉住：
         // 关闭 ⇒ 明确失败且不构造宿主；启用 ⇒ 只构造不启动（启动名额留给这里）。
