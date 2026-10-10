@@ -29,7 +29,7 @@ public sealed class DesktopBrowserBindingProducerTests
             (capability, request, call, token) =>
             {
                 sent.Add(request);
-                Assert.Equal("browser.binding.apply", capability.Name);
+                Assert.Equal(DesktopCapability.BrowserBindingApply, capability);
                 Assert.Equal("run-1", call.BrowserCaller!.TaskId);
                 return Task.FromResult(CapabilityResult<DesktopCapabilityResponse>.Success(Accepted()));
             },

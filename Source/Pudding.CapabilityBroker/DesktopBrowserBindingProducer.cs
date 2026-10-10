@@ -6,7 +6,7 @@ namespace Pudding.CapabilityBroker;
 
 /// <summary>Core 侧"发一次能力调用"的形状（可指真实 DesktopSession，也可替身化）。</summary>
 public delegate Task<CapabilityResult<DesktopCapabilityResponse>> DesktopCapabilitySender(
-    DesktopCapabilityDescriptor capability,
+    DesktopCapability capability,
     DesktopCapabilityRequest request,
     DesktopCallContext call,
     CancellationToken cancellationToken);
@@ -77,7 +77,7 @@ public sealed class DesktopBrowserBindingProducer(
             CapabilityResult<DesktopCapabilityResponse> result;
             try
             {
-                result = await _send(_capability, DesktopCapabilityRequest.ForBindingApply(binding), call, cancellationToken)
+                result = await _send(_capability.Capability, DesktopCapabilityRequest.ForBindingApply(binding), call, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
