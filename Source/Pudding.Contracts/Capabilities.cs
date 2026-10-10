@@ -51,6 +51,12 @@ public enum DesktopCapability
     /// <summary>标签页操作：激活或关闭目标页面（变更类；必须固定页面版本）。</summary>
     BrowserTabs = 1 << 13,
 
+        /// <summary>控制面：申请把某任务绑定到用户选定页（§4.1）。</summary>
+        BrowserBindingApply = 1 << 16,
+
+        /// <summary>控制面：撤销该绑定。</summary>
+        BrowserBindingRevoke = 1 << 17,
+
     /// <summary>创建浏览器上下文（变更类，缺口 #1）。**新能力名**而非扩展 browser.contexts ——
     /// 目录规则要求改变同名能力语义时必须用新名字或升版本。</summary>
     BrowserContextCreate = 1 << 14,
@@ -63,6 +69,9 @@ public enum DesktopCapabilityKind
 {
     WebView,
     Shell,
+
+        /// <summary>控制面（§4.1）：改权限而非改页面；需要可信 caller，不要求页面 grant。</summary>
+        Control,
 }
 
 /// <summary>能力的执行语义，供调度与准入使用；同名能力在不同版本下语义必须保持兼容。</summary>
@@ -139,6 +148,10 @@ public static class DesktopCapabilities
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
         new(DesktopCapability.BrowserTabs, "browser.tabs", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.Mutating | DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
+        new(DesktopCapability.BrowserBindingApply, "browser.binding.apply", InitialVersion,
+            DesktopCapabilityKind.Control, DesktopCapabilityTraits.RequiresTrustedContext),
+        new(DesktopCapability.BrowserBindingRevoke, "browser.binding.revoke", InitialVersion,
+            DesktopCapabilityKind.Control, DesktopCapabilityTraits.RequiresTrustedContext),
     ];
 
     private static readonly Dictionary<DesktopCapability, DesktopCapabilityDescriptor> ByCapability =

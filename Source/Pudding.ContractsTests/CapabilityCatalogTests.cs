@@ -33,6 +33,9 @@ public sealed class CapabilityCatalogTests
             "browser.context.create|v1|WebView|Mutating, HasSideEffects, RequiresTrustedContext",
             "browser.context.close|v1|WebView|Mutating, HasSideEffects, RequiresTrustedContext",
             "browser.tabs|v1|WebView|Mutating, HasSideEffects, RequiresTrustedContext, RequiresPageTarget",
+        // 控制面（§4.1）：刻意新增。
+        "browser.binding.apply|v1|Control|RequiresTrustedContext",
+        "browser.binding.revoke|v1|Control|RequiresTrustedContext",
         ];
 
         Assert.Equal(expected, actual);
@@ -136,7 +139,7 @@ public sealed class CapabilityCatalogTests
             .ToArray();
 
         Assert.Equal(
-            ["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard", "browser.snapshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.context.create", "browser.context.close", "browser.tabs"],
+            ["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard", "browser.snapshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.context.create", "browser.context.close", "browser.tabs", "browser.binding.apply", "browser.binding.revoke"],
             trustedOnly);
     }
 }
