@@ -60,6 +60,14 @@ public sealed class AutomationDriverPolicy : IBrowserDriverPolicy
 
     public IReadOnlyList<DriverCall>? PlanScroll(double x, double y, double deltaX, double deltaY) =>
         Map(NativeInputSequence.PlanScroll(Target(x, y), deltaX, deltaY));
+    public IReadOnlyList<DriverCall>? PlanPointerClick(double x, double y, int clickCount) =>
+        Map(NativeInputSequence.PlanPointerClick(x, y, clickCount));
+
+    public IReadOnlyList<DriverCall>? PlanPointerMove(double x, double y) =>
+        Map(NativeInputSequence.PlanPointerMove(x, y));
+
+    public IReadOnlyList<DriverCall>? PlanPointerDrag(double fromX, double fromY, double toX, double toY, int steps) =>
+        Map(NativeInputSequence.PlanPointerDrag(fromX, fromY, toX, toY, steps));
 
     public IReadOnlyList<DriverCall>? PlanFill(string? text) => Map(NativeInputSequence.PlanFill(text));
 

@@ -51,6 +51,14 @@ public interface IBrowserDriverPolicy
     IReadOnlyList<DriverCall>? PlanDrag(double fromX, double fromY, double toX, double toY);
 
     IReadOnlyList<DriverCall>? PlanScroll(double x, double y, double deltaX, double deltaY);
+    /// <summary>§8.2 坐标点击（CSS viewport 像素）；<c>null</c> 表示本策略不支持坐标输入。</summary>
+    IReadOnlyList<DriverCall>? PlanPointerClick(double x, double y, int clickCount);
+
+    /// <summary>§8.2 坐标移动（不按下）。</summary>
+    IReadOnlyList<DriverCall>? PlanPointerMove(double x, double y);
+
+    /// <summary>§8.2 坐标拖拽（起点按下 → 分步移动 → 终点抬起）。</summary>
+    IReadOnlyList<DriverCall>? PlanPointerDrag(double fromX, double fromY, double toX, double toY, int steps);
 
     IReadOnlyList<DriverCall>? PlanFill(string? text);
 
@@ -167,6 +175,11 @@ public sealed class NullBrowserDriverPolicy : IBrowserDriverPolicy
     public IReadOnlyList<DriverCall>? PlanDrag(double fromX, double fromY, double toX, double toY) => null;
 
     public IReadOnlyList<DriverCall>? PlanScroll(double x, double y, double deltaX, double deltaY) => null;
+    public IReadOnlyList<DriverCall>? PlanPointerClick(double x, double y, int clickCount) => null;
+
+    public IReadOnlyList<DriverCall>? PlanPointerMove(double x, double y) => null;
+
+    public IReadOnlyList<DriverCall>? PlanPointerDrag(double fromX, double fromY, double toX, double toY, int steps) => null;
 
     public IReadOnlyList<DriverCall>? PlanFill(string? text) => null;
 
