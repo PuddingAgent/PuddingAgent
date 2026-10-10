@@ -184,6 +184,9 @@ message InteractCommand {
   optional double y = 11;
   // 截图来源坐标的 observationId（空 = 非截图来源）；滚动/缩放/布局/页面世代变化后必须失效。
   string observation_id = 12;
+  // §8.2 坐标拖拽的终点（CSS viewport 像素）；仅 pointer_drag 使用，presence 同 x/y。
+  optional double to_x = 13;
+  optional double to_y = 14;
 }
 
 // 交互结果：受影响元素（可选）+ 交互后的页面状态（版本通常高于请求版本 ⇒ 旧 Ref 作废）。

@@ -164,6 +164,15 @@ internal static class CoreCommandEncoder
             command.Interact.X = pointerX;
         }
 
+        if (interact.ToX is { } pointerToX)
+        {
+            command.Interact.ToX = pointerToX;
+        }
+
+        if (interact.ToY is { } pointerToY)
+        {
+            command.Interact.ToY = pointerToY;
+        }
         if (interact.Y is { } pointerY)
         {
             command.Interact.Y = pointerY;
