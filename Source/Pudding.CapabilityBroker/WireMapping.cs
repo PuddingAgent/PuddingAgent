@@ -418,6 +418,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.Dialog => expectedCapability == DesktopCapability.ShellDialog,
             Proto.OperationResult.OutcomeOneofCase.FilePicker => expectedCapability == DesktopCapability.ShellFilePicker,
                 Proto.OperationResult.OutcomeOneofCase.BindingAck => expectedCapability is DesktopCapability.BrowserBindingApply or DesktopCapability.BrowserBindingRevoke,
+            Proto.OperationResult.OutcomeOneofCase.Screenshot => expectedCapability == DesktopCapability.BrowserScreenshot,
             _ => false,
         };
 
@@ -429,6 +430,55 @@ internal static class DesktopResultDecoder
 
         switch (result.OutcomeCase)
         {
+                case Proto.OperationResult.OutcomeOneofCase.Screenshot:
+                {
+                    var shotOutcome = result.Screenshot;
+                    if (shotOutcome is null)
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal("screenshot outcome is empty"));
+                    }
+                
+                    if (!DesktopScreenshotDetailWire.TryParse(shotOutcome.Detail, out var shotDetail))
+                    {
+                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                            DesktopCapabilityError.Internal("screenshot detail is missing or not registered"));
+                    }
+                
+                    var shotChunks = new List<DesktopScreenshotChunk>(shotOutcome.Chunks.Count);
+                    foreach (var shotChunk in shotOutcome.Chunks)
+                    {
+                        shotChunks.Add(new DesktopScreenshotChunk(shotChunk.Index, shotChunk.IsLast, shotChunk.Data.ToByteArray()));
+                    }
+                
+                    var shotMetadata = new DesktopScreenshotMetadata(
+                        shotOutcome.ObservationId,
+                        shotOutcome.MimeType,
+                        shotOutcome.ByteCount,
+                        shotOutcome.SourceWidth,
+                        shotOutcome.SourceHeight,
+                        shotOutcome.OutputWidth,
+                        shotOutcome.OutputHeight,
+                        shotOutcome.HasDeviceScaleFactor ? shotOutcome.DeviceScaleFactor : null,
+                        shotOutcome.HasViewportWidth ? shotOutcome.ViewportWidth : null,
+                        shotOutcome.HasViewportHeight ? shotOutcome.ViewportHeight : null,
+                        shotOutcome.HasScrollX ? shotOutcome.ScrollX : null,
+                        shotOutcome.HasScrollY ? shotOutcome.ScrollY : null,
+                        shotOutcome.HasCropX ? shotOutcome.CropX : null,
+                        shotOutcome.HasCropY ? shotOutcome.CropY : null,
+                        shotOutcome.HasCropWidth ? shotOutcome.CropWidth : null,
+                        shotOutcome.HasCropHeight ? shotOutcome.CropHeight : null,
+                        shotOutcome.PageVersion,
+                        shotOutcome.DomRevision,
+                        shotOutcome.ViewportRevision,
+                        shotDetail);
+                
+                    var shotResult = new BrowserScreenshotResult(shotMetadata, shotChunks);
+                    shotResult.Validate();
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromScreenshot(shotResult));
+                }
+
                 case Proto.OperationResult.OutcomeOneofCase.BindingAck:
                 {
                     var ack = result.BindingAck;
