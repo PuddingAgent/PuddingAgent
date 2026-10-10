@@ -439,6 +439,67 @@ internal static class CoreFrameMapping
                 }
             }
 
+            case DesktopCapability.BrowserScreenshot:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.Screenshot)
+                {
+                    return Mismatch(descriptor);
+                }
+            
+                var screenshotTarget = DecodeTarget(command.Screenshot.Target);
+                if (screenshotTarget is null)
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Failure(
+                        DesktopCapabilityError.InvalidTarget("browser.screenshot requires an explicit context_id/page_id target"));
+                }
+            
+                if (!DesktopScreenshotScopeWire.TryParse(command.Screenshot.Scope, out var screenshotScope))
+                {
+                    return FailRequest("screenshot scope is missing or not registered");
+                }
+            
+                if (!DesktopScreenshotDetailWire.TryParse(command.Screenshot.Detail, out var screenshotDetail))
+                {
+                    return FailRequest("screenshot detail is missing or not registered");
+                }
+            
+                DesktopLocator? screenshotLocator = null;
+                if (command.Screenshot.Locator is { } screenshotSpec)
+                {
+                    if (!DesktopLocatorKindWire.TryParse(screenshotSpec.Kind, out var screenshotKind))
+                    {
+                        return FailRequest("screenshot locator kind is missing or not registered");
+                    }
+            
+                    screenshotLocator = new DesktopLocator(
+                        screenshotKind,
+                        screenshotSpec.Value,
+                        string.IsNullOrEmpty(screenshotSpec.Name) ? null : screenshotSpec.Name,
+                        screenshotSpec.Exact,
+                        screenshotSpec.Nth < 0 ? null : screenshotSpec.Nth,
+                        string.IsNullOrEmpty(screenshotSpec.HasText) ? null : screenshotSpec.HasText);
+                }
+            
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(DesktopCapabilityRequest.ForScreenshot(new BrowserScreenshotRequest(
+                        screenshotTarget,
+                        ToPageVersion(command.Screenshot.ExpectedPageVersion),
+                        screenshotScope,
+                        screenshotDetail,
+                        screenshotLocator,
+                        command.Screenshot.HasRegionX ? command.Screenshot.RegionX : null,
+                        command.Screenshot.HasRegionY ? command.Screenshot.RegionY : null,
+                        command.Screenshot.HasRegionWidth ? command.Screenshot.RegionWidth : null,
+                        command.Screenshot.HasRegionHeight ? command.Screenshot.RegionHeight : null,
+                        command.Screenshot.Format)));
+                }
+                catch (ArgumentException ex)
+                {
+                    return FailRequest($"screenshot parameters are not usable ({ex.ParamName})");
+                }
+            }
+
             case DesktopCapability.BrowserWaitFor:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.WaitFor)
