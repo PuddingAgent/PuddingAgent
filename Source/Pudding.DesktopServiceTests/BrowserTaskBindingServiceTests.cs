@@ -80,4 +80,31 @@ public sealed class BrowserTaskBindingServiceTests
         Assert.Single(lifecycle.Authority.ActiveGrants);
         Assert.Equal(1, service.ActiveCount);
     }
+    [Fact]
+    public void SwitchingAwayFromTheTargetRevokesItsBindings()
+    {
+        var (service, lifecycle) = Arrange(selectForAgent: true);
+        Assert.True(service.Accept(Binding()).Accepted);
+
+        Assert.Equal(1, service.RevokeForTarget(new DesktopPageTarget("ctx-1", "page-1")));
+
+        Assert.Empty(lifecycle.Authority.ActiveGrants);
+        Assert.Equal(0, service.ActiveCount);
+        Assert.Equal(0, service.RevokeForTarget(new DesktopPageTarget("ctx-1", "page-1"))); // 幂等
+    }
+
+    [Fact]
+    public void EndingTheTaskRevokesItsBindingsAndLeavesOthersAlone()
+    {
+        var (service, lifecycle) = Arrange(selectForAgent: true);
+        Assert.True(service.Accept(Binding()).Accepted);
+
+        Assert.Equal(0, service.RevokeAllForCaller("agent-other", "run-9")); // 不相干的任务不动
+        Assert.Single(lifecycle.Authority.ActiveGrants);
+
+        Assert.Equal(1, service.RevokeAllForCaller("agent-1", "run-1"));
+
+        Assert.Empty(lifecycle.Authority.ActiveGrants);
+        Assert.Equal(0, service.ActiveCount);
+    }
 }

@@ -23,7 +23,9 @@ public sealed class BrowserTaskBindingService(
 
     private readonly BrowserGrantIssuer _issuer = issuer ?? throw new ArgumentNullException(nameof(issuer));
 
-    private readonly Dictionary<string, BrowserPageGrantId> _active = new(StringComparer.Ordinal);
+    private sealed record ActiveBinding(DesktopPageTarget Target, BrowserCallerIdentity Task, BrowserPageGrantId GrantId);
+
+    private readonly Dictionary<string, ActiveBinding> _active = new(StringComparer.Ordinal);
 
     /// <summary>当前已受理的绑定数（用于撤销与测试断言）。</summary>
     public int ActiveCount => _active.Count;
@@ -55,10 +57,10 @@ public sealed class BrowserTaskBindingService(
         // ③ 同一绑定重复受理：先撤旧授权，避免同一 (任务,目标) 上留下两份并存授权。
         if (_active.TryGetValue(Key(binding), out var previous))
         {
-            _lifecycle.Authority.RevokeGrant(previous);
+            _lifecycle.Authority.RevokeGrant(previous.GrantId);
         }
 
-        _active[Key(binding)] = grant!.GrantId;
+        _active[Key(binding)] = new ActiveBinding(binding.Target, binding.Task, grant!.GrantId);
         return new BrowserBindingAcceptance(true, null, epoch);
     }
 
@@ -66,13 +68,53 @@ public sealed class BrowserTaskBindingService(
     public bool Revoke(BrowserTaskBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        if (!_active.Remove(Key(binding), out var grantId))
+        if (!_active.Remove(Key(binding), out var active))
         {
             return false;
         }
 
-        _lifecycle.Authority.RevokeGrant(grantId);
+        _lifecycle.Authority.RevokeGrant(active.GrantId);
         return true;
+    }
+
+    /// <summary>
+    /// **切目标时的确定性撤销**（方案 §4.1）：该页不再被操作 ⇒ 撤掉它上面所有适用绑定。
+    /// 返回被撤销的绑定数（0 表示本来就没有，不是错误）。
+    /// </summary>
+    public int RevokeForTarget(DesktopPageTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        var doomed = _active.Where(pair => pair.Value.Target == target).Select(pair => pair.Key).ToArray();
+        foreach (var key in doomed)
+        {
+            _lifecycle.Authority.RevokeGrant(_active[key].GrantId);
+            _active.Remove(key);
+        }
+
+        return doomed.Length;
+    }
+
+    /// <summary>**任务结束/父撤销时的确定性撤销**：按行动者撤销其全部绑定。</summary>
+    public int RevokeAllForCaller(string callerId, string? taskId = null)
+    {
+        if (string.IsNullOrWhiteSpace(callerId))
+        {
+            return 0;
+        }
+
+        var doomed = _active
+            .Where(pair => string.Equals(pair.Value.Task.CallerId, callerId, StringComparison.Ordinal)
+                && (taskId is null || string.Equals(pair.Value.Task.TaskId, taskId, StringComparison.Ordinal)))
+            .Select(pair => pair.Key)
+            .ToArray();
+
+        foreach (var key in doomed)
+        {
+            _lifecycle.Authority.RevokeGrant(_active[key].GrantId);
+            _active.Remove(key);
+        }
+
+        return doomed.Length;
     }
 
     private static string Key(BrowserTaskBinding binding) =>
