@@ -121,9 +121,7 @@ internal static class CoreCommandEncoder
                 {
                     Target = EncodeTarget(interact.Target),
                     ExpectedPageVersion = interact.ExpectedPageVersion.Value,
-                    X = interact.X ?? 0,
-                    Y = interact.Y ?? 0,
-                    ObservationId = interact.ObservationId ?? string.Empty,
+                                                            ObservationId = interact.ObservationId ?? string.Empty,
                     Action = DesktopInteractionActionWire.NameOf(interact.Action),
                 };
 
@@ -160,6 +158,16 @@ internal static class CoreCommandEncoder
 
                 command.Interact.DeltaX = interact.DeltaX ?? 0;
                 command.Interact.DeltaY = interact.DeltaY ?? 0;
+        // 坐标用 proto3 optional 保留 presence：(0,0) 是**合法坐标**（页面左上角），不能与"未设置"混同。
+        if (interact.X is { } pointerX)
+        {
+            command.Interact.X = pointerX;
+        }
+
+        if (interact.Y is { } pointerY)
+        {
+            command.Interact.Y = pointerY;
+        }
                 break;
 
             case DesktopCapability.BrowserWaitFor when request.WaitFor is { } waitFor:

@@ -180,8 +180,8 @@ message InteractCommand {
   double delta_x = 8;
   double delta_y = 9;
   // §8.2 坐标操作（CSS viewport 像素）：仅 pointer_click/pointer_move/pointer_drag 使用。
-  double x = 10;
-  double y = 11;
+  optional double x = 10;
+  optional double y = 11;
   // 截图来源坐标的 observationId（空 = 非截图来源）；滚动/缩放/布局/页面世代变化后必须失效。
   string observation_id = 12;
 }

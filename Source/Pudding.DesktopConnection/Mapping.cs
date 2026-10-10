@@ -426,7 +426,10 @@ internal static class CoreFrameMapping
                             command.Interact.Values.Count == 0 ? null : command.Interact.Values.ToArray(),
                             command.Interact.HasChecked ? command.Interact.Checked : null,
                             command.Interact.DeltaX == 0 ? null : command.Interact.DeltaX,
-                            command.Interact.DeltaY == 0 ? null : command.Interact.DeltaY)));
+                            command.Interact.DeltaY == 0 ? null : command.Interact.DeltaY,
+                x: command.Interact.HasX ? command.Interact.X : null,
+                y: command.Interact.HasY ? command.Interact.Y : null,
+                observationId: string.IsNullOrEmpty(command.Interact.ObservationId) ? null : command.Interact.ObservationId)));
                 }
                 catch (ArgumentException ex)
                 {
