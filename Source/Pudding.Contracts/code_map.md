@@ -72,6 +72,7 @@ draft: false
 | `WebViewContracts.cs` | `NavigateDisposition`（Accepted/Completed，**都不代表 DOM 已就绪**）、`NavigateRequest/Result`、`JavascriptValueKind`、`JavascriptRequest`（脚本正文禁入审计；结果字节上限 1 B–4 MiB）、`JavascriptResult`（`JsonValue` 恒为裸 JSON 片段，避免二次编码） |
 | `ShellContracts.cs` | `DesktopNotificationPriority`、`DesktopNotificationRequest`（标题 ≤128 / 正文 ≤1024）、`DesktopNotificationResult` |
 | `ApiInterfaces.cs` | `IPuddingDesktopApi` → `IPuddingDesktopWebViewApi`（Navigate / ExecuteJavascript / GetPageState）+ `IPuddingDesktopShellApi`（ShowNotification）。全部带 `DesktopCallContext` 与 `CancellationToken` |
+| `Desktop/BrowserControlPlaneRequests.cs` | **控制面载荷**（§4.1）：`BrowserBindingApplyRequest`（原样携带 `BrowserTaskBinding`）与 `BrowserBindingRevokeRequest`（只带任务+目标）；经 `DesktopCapabilityRequest.ForBindingApply/ForBindingRevoke` 构造 |
 | `Desktop/BrowserTaskBinding.cs` | **任务绑定**（§4.1）：Core 可信元数据给出的"哪个任务被授权操作哪个页面"；grantee 必须过唯一规则（缺身份/冒充 User/无运行身份即拒）、范围非空、期限为正、来源非空。签发时仍受 Desktop 上限/目标已登记/世代存活/子代理子集约束 |
 | `Desktop/BrowserOperationMapping.cs` | **能力 → 自动化操作** 的唯一映射（准入前置件）：WebView 系能力各有操作（标签页按**最严**的 TabClose），Shell 系"不适用"；由用例保证**目录里每个 WebView 能力都有映射**（防新能力静默绕过闸门） |
 | `Desktop/BrowserCallerRequirement.cs` | **浏览器操作对调用者身份的统一要求**（方案 §3.2）：缺身份 / 冒充 `User` / 无运行身份三种情形各给具体原因；**两条传输与 Desktop 准入共用的唯一一份规则**（`DesktopCallContext.TryGetBrowserCaller` 委托它） |

@@ -24,7 +24,9 @@ public sealed record DesktopCapabilityRequest
         bool contexts = false,
         BrowserContextCreateRequest? contextCreate = null,
         BrowserContextCloseRequest? contextClose = null,
-        bool shellStatus = false)
+        bool shellStatus = false,
+        BrowserBindingApplyRequest? bindingApply = null,
+        BrowserBindingRevokeRequest? bindingRevoke = null)
     {
         Navigate = navigate;
         Javascript = javascript;
@@ -42,6 +44,8 @@ public sealed record DesktopCapabilityRequest
         ContextCreate = contextCreate;
         ContextClose = contextClose;
         ShellStatus = shellStatus;
+        BindingApply = bindingApply;
+        BindingRevoke = bindingRevoke;
     }
 
     public NavigateRequest? Navigate { get; }
@@ -88,6 +92,20 @@ public sealed record DesktopCapabilityRequest
 
     /// <summary>只读 Shell 状态查询：无参数（Shell 是窗口作用域）。</summary>
     public bool ShellStatus { get; }
+
+    /// <summary>控制面：绑定申请载荷（§4.1）。</summary>
+    public BrowserBindingApplyRequest? BindingApply { get; }
+
+    /// <summary>控制面：绑定撤销载荷。</summary>
+    public BrowserBindingRevokeRequest? BindingRevoke { get; }
+
+    /// <summary>控制面：绑定申请（§4.1）。</summary>
+    public static DesktopCapabilityRequest ForBindingApply(BrowserTaskBinding binding) =>
+        new(bindingApply: new BrowserBindingApplyRequest(binding));
+
+    /// <summary>控制面：绑定撤销。</summary>
+    public static DesktopCapabilityRequest ForBindingRevoke(BrowserCallerIdentity task, DesktopPageTarget target) =>
+        new(bindingRevoke: new BrowserBindingRevokeRequest(task, target));
 
     public static DesktopCapabilityRequest ForNavigate(NavigateRequest request) =>
         new(navigate: request ?? throw new ArgumentNullException(nameof(request)));
