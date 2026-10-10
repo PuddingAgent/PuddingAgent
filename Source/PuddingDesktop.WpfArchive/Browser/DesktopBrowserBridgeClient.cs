@@ -1,6 +1,7 @@
-﻿using System.Net.WebSockets;
+using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
+using Pudding.Contracts.Desktop;
 using PuddingBrowser.Protocol;
 
 namespace PuddingDesktop.Browser;
@@ -432,6 +433,26 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
 
             case BrowserBridgeMessageKind.Command:
                 var command = BrowserBridgeSerializer.DeserializePayload<BrowserBridgeCommand>(envelope);
+
+                // §3.2（Desktop 侧）：Bridge 的每一条命令都是浏览器操作 ⇒ **必须**有可信调用者身份。
+                // Core 侧预检不能替代这里；缺身份/冒充 User/无运行身份/取值非法一律**不执行**，
+                // 也不给默认身份（返回可诊断的错误结果，而不是静默放过）。
+                if (!TryAcceptCaller(command.Caller, out var callerError))
+                {
+                    await EnqueueResultAsync(
+                        session,
+                        new BrowserBridgeCommandResult
+                        {
+                            OperationId = command.OperationId,
+                            Success = false,
+                            ErrorCode = BrowserBridgeErrorCodes.BrowserUnauthorized,
+                            ErrorMessage = callerError,
+                        },
+                        envelope.MessageId,
+                        ct);
+                    break;
+                }
+
                 var result = await _dispatcher.DispatchAsync(command, ct);
                 await EnqueueResultAsync(session, result, envelope.MessageId, ct);
                 break;
@@ -604,6 +625,42 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         StateChanged?.Invoke(this, new BrowserBridgeStateChangedEventArgs(old, newState, reason));
     }
 
+    /// <summary>
+    /// 校验 wire 形态的调用者身份（方案 §3.2）：解析 kind（未知取值拒绝）→ 构造领域身份（空/超长/子代理缺父任务由类型层拒绝）
+    /// → 套用**唯一一份**要求规则（缺身份 / 冒充 User / 无运行身份）。
+    /// 失败时给出具体原因；**不**返回默认身份。
+    /// </summary>
+    private static bool TryAcceptCaller(BrowserBridgeCallerIdentity? wire, out string reason)
+    {
+        if (wire is null)
+        {
+            reason = "the command carried no trusted browser caller identity";
+            return false;
+        }
+
+        if (!BrowserCallerKindWire.TryParse(wire.Kind, out var kind))
+        {
+            reason = $"caller.kind '{wire.Kind}' is not a registered caller kind";
+            return false;
+        }
+
+        BrowserCallerIdentity identity;
+        try
+        {
+            identity = new BrowserCallerIdentity(
+                kind,
+                wire.CallerId,
+                string.IsNullOrEmpty(wire.TaskId) ? null : wire.TaskId,
+                string.IsNullOrEmpty(wire.ParentTaskId) ? null : wire.ParentTaskId);
+        }
+        catch (ArgumentException ex)
+        {
+            reason = $"caller identity is invalid: {ex.Message}";
+            return false;
+        }
+
+        return BrowserCallerRequirement.TryRequireCaller(identity, out _, out reason);
+    }
     private static Uri BuildWebSocketUri(Uri coreBaseAddress)
     {
         var scheme = coreBaseAddress.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ? "wss" : "ws";

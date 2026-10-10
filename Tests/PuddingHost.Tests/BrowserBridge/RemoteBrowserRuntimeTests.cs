@@ -1,12 +1,25 @@
 using System.Text.Json;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Protocol;
+using PuddingBrowser.AgentTools;
 using PuddingHost.BrowserBridge;
 
 namespace PuddingHost.Tests.BrowserBridge;
 
-public sealed class RemoteBrowserRuntimeTests
+public sealed class RemoteBrowserRuntimeTests : IDisposable
 {
+    /// <summary>
+    /// 每个用例默认带一个**可信 Agent 身份**：Bridge 命令现在必须有调用者身份（方案 §3.2）。
+    /// 需要验证"缺身份被拒"的用例请显式构造不带身份的运行时（并用作用域把身份清掉）。
+    /// </summary>
+    private readonly IDisposable _callerScope = BrowserCallerIdentityScope.Push(
+        new Pudding.Contracts.Desktop.BrowserCallerIdentity(
+            Pudding.Contracts.Desktop.BrowserCallerKind.Agent, "agent-test", "run-test"),
+        null);
+
+    private readonly PuddingBrowser.AgentTools.BrowserCallerIdentityAccessor _callerAccessor = new();
+
+    public void Dispose() => _callerScope.Dispose();
     [Fact]
     public async Task CreateContextAsync_MapsDescriptorToRemoteContext()
     {
@@ -16,7 +29,7 @@ public sealed class RemoteBrowserRuntimeTests
             UserDataDirectory = "C:/temp/browser",
             PageCount = 2
         }));
-        await using var runtime = new RemoteBrowserRuntime(broker);
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
 
         var context = await runtime.CreateContextAsync(
             new BrowserContextOptions { Id = new BrowserContextId("ctx-requested") },
@@ -44,7 +57,7 @@ public sealed class RemoteBrowserRuntimeTests
                 }
             ]
         }));
-        await using var runtime = new RemoteBrowserRuntime(broker);
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
 
         var contexts = await runtime.ListContextsAsync(CancellationToken.None);
 
@@ -78,7 +91,7 @@ public sealed class RemoteBrowserRuntimeTests
             }),
             _ => Failure(command, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
         });
-        await using var runtime = new RemoteBrowserRuntime(broker);
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
         var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
@@ -108,7 +121,7 @@ public sealed class RemoteBrowserRuntimeTests
     {
         var broker = new RecordingBrowserBroker(command =>
             Failure(command, BrowserBridgeErrorCodes.BrowserContextNotFound));
-        await using var runtime = new RemoteBrowserRuntime(broker);
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
 
         var context = await runtime.GetContextAsync(
             new BrowserContextId("missing"), CancellationToken.None);
@@ -121,7 +134,7 @@ public sealed class RemoteBrowserRuntimeTests
     {
         var broker = new RecordingBrowserBroker(command =>
             Failure(command, BrowserBridgeErrorCodes.BrowserNotAvailable));
-        await using var runtime = new RemoteBrowserRuntime(broker);
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
 
         var exception = await Assert.ThrowsAsync<BrowserOperationException>(
             () => runtime.ListContextsAsync(CancellationToken.None));
@@ -133,7 +146,7 @@ public sealed class RemoteBrowserRuntimeTests
     public async Task Dispose_DoesNotCloseDesktopOwnedBrowserState()
     {
         var broker = new RecordingBrowserBroker(command => Success(command, new { }));
-        var runtime = new RemoteBrowserRuntime(broker);
+        var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
 
         await runtime.DisposeAsync();
 
@@ -178,7 +191,7 @@ public sealed class RemoteBrowserRuntimeTests
             }),
             _ => Failure(command, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
         });
-        await using var runtime = new RemoteBrowserRuntime(broker);
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
         var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
@@ -231,7 +244,7 @@ public sealed class RemoteBrowserRuntimeTests
                 _ => Failure(command, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
             };
         });
-        await using var runtime = new RemoteBrowserRuntime(broker);
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
         var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
@@ -269,7 +282,7 @@ public sealed class RemoteBrowserRuntimeTests
             }),
             _ => Failure(command, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
         });
-        await using var runtime = new RemoteBrowserRuntime(broker);
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
         var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
@@ -316,7 +329,7 @@ public sealed class RemoteBrowserRuntimeTests
                 _ => Failure(command, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
             };
         });
-        await using var runtime = new RemoteBrowserRuntime(broker);
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
         var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 

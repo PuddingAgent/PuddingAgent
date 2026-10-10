@@ -1,4 +1,4 @@
-﻿namespace PuddingBrowser.Protocol;
+namespace PuddingBrowser.Protocol;
 
 public static class BrowserBridgeErrorCodes
 {
@@ -6,6 +6,9 @@ public static class BrowserBridgeErrorCodes
     public const string BrowserBridgeDisconnected = "browser_bridge_disconnected";
     public const string BrowserProtocolMismatch = "browser_protocol_mismatch";
     public const string BrowserInvalidCommand = "browser_invalid_command";
+
+    /// <summary>调用者身份缺失或不可信（方案 §3.2）：浏览器操作必须有可信 Agent/子代理身份。</summary>
+    public const string BrowserUnauthorized = "browser_unauthorized";
     public const string BrowserDeadlineExceeded = "browser_deadline_exceeded";
     public const string BrowserCancelled = "browser_cancelled";
     public const string BrowserContextNotFound = "browser_context_not_found";

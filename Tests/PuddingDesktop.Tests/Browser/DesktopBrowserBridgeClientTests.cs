@@ -1,7 +1,8 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
+using Pudding.Contracts.Desktop;
 using PuddingBrowser.Protocol;
 using PuddingDesktop.Browser;
 
@@ -83,7 +84,14 @@ public sealed class DesktopBrowserBridgeClientTests
                 OperationId = operationId,
                 Name = BrowserBridgeCommandNames.ContextCreate,
                 DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
-                Arguments = JsonSerializer.SerializeToElement(new { })
+                Arguments = JsonSerializer.SerializeToElement(new { }),
+                // §3.2：Bridge 命令必须有可信调用者身份（本次同步消费方）
+                Caller = new BrowserBridgeCallerIdentity
+                {
+                    Kind = "agent",
+                    CallerId = "agent-1",
+                    TaskId = "run-1",
+                },
             }, BrowserBridgeSerializerOptionsForTests.Default)
         });
 
@@ -101,6 +109,48 @@ public sealed class DesktopBrowserBridgeClientTests
         await client.DisposeAsync();
     }
 
+    [Fact]
+    public async Task Command_WithoutATrustedCaller_IsRefusedWithoutDispatching()
+    {
+        // §3.2（Desktop 侧）：缺身份一律不执行，也不给默认身份 —— Core 侧预检不能替代这里。
+        var socket = new FakeDesktopBrowserWebSocket(HelloAckMode.Accept);
+        var dispatcher = BrowserTestState.CreateDispatcher();
+        var handler = new SuccessfulCommandHandler();
+        dispatcher.SetHandler(handler);
+        var client = CreateClient(new QueueWebSocketFactory(socket), dispatcher);
+        await client.ConnectAsync(new Uri("http://127.0.0.1:12345"), "secret-token", CancellationToken.None);
+
+        var commandEnvelopeId = Guid.NewGuid();
+        var operationId = Guid.NewGuid();
+        socket.QueueEnvelope(new BrowserBridgeEnvelope
+        {
+            MessageId = commandEnvelopeId,
+            Kind = BrowserBridgeMessageKind.Command,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Payload = JsonSerializer.SerializeToElement(new BrowserBridgeCommand
+            {
+                OperationId = operationId,
+                Name = BrowserBridgeCommandNames.ContextCreate,
+                DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
+                Arguments = JsonSerializer.SerializeToElement(new { }),
+                Caller = null,
+            }, BrowserBridgeSerializerOptionsForTests.Default)
+        });
+
+        await WaitUntilAsync(() => socket.Sent.Any(envelope =>
+            envelope.Kind == BrowserBridgeMessageKind.CommandResult
+            && envelope.CorrelationId == commandEnvelopeId));
+
+        var resultEnvelope = socket.Sent.Single(envelope =>
+            envelope.Kind == BrowserBridgeMessageKind.CommandResult);
+        var result = BrowserBridgeSerializer.DeserializePayload<BrowserBridgeCommandResult>(resultEnvelope);
+        Assert.False(result.Success);
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserUnauthorized, result.ErrorCode);
+        Assert.Contains("no trusted browser caller", result.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
+
+        await client.DisconnectAsync(CancellationToken.None);
+        await client.DisposeAsync();
+    }
     [Fact]
     public async Task Heartbeat_IsAcknowledged_WithOriginalMessageCorrelation()
     {

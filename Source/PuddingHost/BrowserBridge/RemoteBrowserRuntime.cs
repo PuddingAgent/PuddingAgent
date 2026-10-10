@@ -1,6 +1,8 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
+using PuddingBrowser.AgentTools;
 using PuddingBrowser.Protocol;
 
 namespace PuddingHost.BrowserBridge;
@@ -14,14 +16,17 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
     private static readonly JsonSerializerOptions s_jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IDesktopBrowserCommandBroker _broker;
     private readonly IBrowserOperationOriginAccessor? _originAccessor;
+    private readonly IBrowserCallerIdentityAccessor? _callerIdentity;
     private bool _disposed;
 
     public RemoteBrowserRuntime(
         IDesktopBrowserCommandBroker broker,
-        IBrowserOperationOriginAccessor? originAccessor = null)
+        IBrowserOperationOriginAccessor? originAccessor = null,
+        IBrowserCallerIdentityAccessor? callerIdentity = null)
     {
         _broker = broker ?? throw new ArgumentNullException(nameof(broker));
         _originAccessor = originAccessor;
+        _callerIdentity = callerIdentity;
     }
 
     public BrowserRuntimeState State => _disposed
@@ -133,9 +138,25 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
             };
         }
 
+        // §3.2：Bridge 的每一条命令都是浏览器操作 ⇒ **必须**有可信调用者身份。
+        // 缺身份/冒充 User/无运行身份时**不发送**（fail-closed），也不给默认身份。
+        if (!BrowserCallerRequirement.TryRequireCaller(_callerIdentity?.Current, out var caller, out var callerReason))
+        {
+            throw new BrowserOperationException(
+                BrowserBridgeErrorCodes.BrowserUnauthorized,
+                callerReason);
+        }
+
         var result = await _broker.ExecuteAsync(new BrowserBridgeCommand
         {
             OperationId = operationId,
+            Caller = new BrowserBridgeCallerIdentity
+            {
+                Kind = BrowserCallerKindWire.NameOf(caller.Kind),
+                CallerId = caller.CallerId,
+                TaskId = caller.TaskId,
+                ParentTaskId = caller.ParentTaskId,
+            },
             ContextId = contextId?.Value,
             PageId = pageId?.Value,
             DeadlineUtc = DateTimeOffset.UtcNow.Add(timeout > TimeSpan.Zero ? timeout : TimeSpan.FromSeconds(30)),

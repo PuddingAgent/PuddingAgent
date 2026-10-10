@@ -1,12 +1,25 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Protocol;
+using PuddingBrowser.AgentTools;
 using PuddingHost.BrowserBridge;
 
 namespace PuddingHost.Tests.BrowserBridge;
 
-public sealed class RemoteBrowserRuntimeOriginTests
+public sealed class RemoteBrowserRuntimeOriginTests : IDisposable
 {
+    /// <summary>
+    /// 每个用例默认带一个**可信 Agent 身份**：Bridge 命令现在必须有调用者身份（方案 §3.2）。
+    /// 需要验证"缺身份被拒"的用例请显式构造不带身份的运行时（并用作用域把身份清掉）。
+    /// </summary>
+    private readonly IDisposable _callerScope = BrowserCallerIdentityScope.Push(
+        new Pudding.Contracts.Desktop.BrowserCallerIdentity(
+            Pudding.Contracts.Desktop.BrowserCallerKind.Agent, "agent-test", "run-test"),
+        null);
+
+    private readonly PuddingBrowser.AgentTools.BrowserCallerIdentityAccessor _callerAccessor = new();
+
+    public void Dispose() => _callerScope.Dispose();
     [Fact]
     public async Task RemoteRuntime_CopiesCurrentOriginIntoEveryBridgeCommand()
     {
@@ -31,7 +44,7 @@ public sealed class RemoteBrowserRuntimeOriginTests
         // Act: push origin then execute any browser operation
         using (accessor.Push(origin))
         {
-            await using var runtime = new RemoteBrowserRuntime(broker, accessor);
+            await using var runtime = new RemoteBrowserRuntime(broker, accessor, _callerAccessor);
             await runtime.ListContextsAsync(CancellationToken.None);
         }
 
@@ -79,7 +92,7 @@ public sealed class RemoteBrowserRuntimeOriginTests
             _ => Failure(cmd, BrowserBridgeErrorCodes.BrowserOperationNotSupported)
         });
 
-        await using var runtime = new RemoteBrowserRuntime(broker, accessor);
+        await using var runtime = new RemoteBrowserRuntime(broker, accessor, _callerAccessor);
 
         // ① Agent A scope: create context and page
         IBrowserPage page;
@@ -118,7 +131,7 @@ public sealed class RemoteBrowserRuntimeOriginTests
         }));
 
         // Act: execute without pushing an origin (simulates non-Agent caller)
-        await using var runtime = new RemoteBrowserRuntime(broker, accessor);
+        await using var runtime = new RemoteBrowserRuntime(broker, accessor, _callerAccessor);
         await runtime.ListContextsAsync(CancellationToken.None);
 
         // Assert: the broker command must have Origin == null
@@ -167,7 +180,7 @@ public sealed class RemoteBrowserRuntimeOriginTests
         // Act: full round-trip through the authenticated bridge
         using (accessor.Push(origin))
         {
-            await using var runtime = new RemoteBrowserRuntime(broker, accessor);
+            await using var runtime = new RemoteBrowserRuntime(broker, accessor, _callerAccessor);
             var context = await runtime.CreateContextAsync(
                 new BrowserContextOptions(), CancellationToken.None);
             var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingBrowser.Protocol;
 
@@ -36,7 +36,34 @@ public sealed record BrowserBridgeCommand
     public required DateTimeOffset DeadlineUtc { get; init; }
     public required string Name { get; init; }
     public required JsonElement Arguments { get; init; }
+
+    /// <summary>审计用来源（诊断）：**不能**代替授权身份（缺父运行与执行 kind）。</summary>
     public BrowserBridgeCommandOrigin? Origin { get; init; }
+
+    /// <summary>
+    /// **可信调用者身份**（方案 §3.2）：由 Core 从可信执行上下文投影后随命令下发；
+    /// Desktop 侧解析并校验后才执行。所有 Bridge 命令都是浏览器操作 ⇒ 缺它一律拒绝。
+    /// <para>
+    /// wire 形态用**字符串 kind**（`agent`/`sub_agent`/`user`），与能力通道同一套取值：
+    /// 未知取值、空必填一律由 Desktop 侧拒绝（不按默认值补身份）。
+    /// </para>
+    /// </summary>
+    public BrowserBridgeCallerIdentity? Caller { get; init; }
+}
+
+/// <summary>
+/// Bridge 线缆上的调用者身份（方案 §3.2）。**不是**领域类型：`PuddingBrowser.Protocol` 不引用 Contracts，
+/// 由两侧各自映射到/自 <c>Pudding.Contracts.Desktop.BrowserCallerIdentity</c>。
+/// </summary>
+public sealed record BrowserBridgeCallerIdentity
+{
+    public required string Kind { get; init; }
+
+    public required string CallerId { get; init; }
+
+    public string? TaskId { get; init; }
+
+    public string? ParentTaskId { get; init; }
 }
 
 public sealed record BrowserBridgeCommandResult

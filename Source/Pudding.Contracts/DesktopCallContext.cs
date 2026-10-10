@@ -70,35 +70,7 @@ public sealed record DesktopCallContext
     /// 其余情况一律给出**具体原因**（调用方据此拒绝，不得回退到默认身份或"当作 User"）。
     /// </summary>
     public bool TryGetBrowserCaller(out BrowserCallerIdentity caller, out string reason)
-    {
-        caller = BrowserCaller!;
-
-        if (BrowserCaller is null)
-        {
-            caller = null!;
-            reason = "the Desktop call carried no trusted browser caller identity";
-            return false;
-        }
-
-        if (BrowserCaller.Kind == BrowserCallerKind.User)
-        {
-            // §3.2：浏览器工具**不能**构造 User kind 绕过自动化闸门（用户原生操作走独立可信入口）。
-            caller = null!;
-            reason = "a browser automation operation cannot be admitted as a User caller";
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(BrowserCaller.TaskId))
-        {
-            // 授权要绑定到一次具体运行：没有运行身份就没有可撤销/可回收的边界。
-            caller = null!;
-            reason = "the browser caller carries no run identity; the authorization cannot be bound to a task";
-            return false;
-        }
-
-        reason = string.Empty;
-        return true;
-    }
+        => BrowserCallerRequirement.TryRequireCaller(BrowserCaller, out caller, out reason);
 
     /// <summary>剩余时长；已过期返回负值，调用方需显式判断。</summary>
     public TimeSpan RemainingAt(DateTimeOffset utcNow) => DeadlineUtc - utcNow;
