@@ -502,4 +502,61 @@ public sealed class InteractMappingTests
 
         public Task OpenDevToolsAsync(CancellationToken ct) => throw new NotSupportedException();
     }
+    [Fact]
+    public async Task PointerClickReachesThePageWithItsCoordinates()
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerClick, DesktopPageVersion.Require(7), x: 12.5, y: 44.25),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        var pointer = runtime.Pages["ctx-1/p-1"].LastPointer;
+        Assert.NotNull(pointer);
+        Assert.Equal(PointerInputKind.Click, pointer!.Value.Kind);
+        Assert.Equal(12.5, pointer.Value.X);
+        Assert.Equal(44.25, pointer.Value.Y);
+        // 坐标动作**不**走 locator 路径。
+        Assert.Null(runtime.Pages["ctx-1/p-1"].LastAction);
+    }
+
+    [Fact]
+    public async Task PointerMoveReachesThePageWithoutPressing()
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerMove, DesktopPageVersion.Require(7), x: 3, y: 4),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        Assert.Equal(PointerInputKind.Move, runtime.Pages["ctx-1/p-1"].LastPointer!.Value.Kind);
+    }
+
+    [Fact]
+    public async Task PointerDragReachesThePageWithAllFourCoordinates()
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerDrag, DesktopPageVersion.Require(7),
+                x: 1, y: 2, toX: 30, toY: 40),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        var pointer = runtime.Pages["ctx-1/p-1"].LastPointer;
+        Assert.NotNull(pointer);
+        Assert.Equal(PointerInputKind.Drag, pointer!.Value.Kind);
+        Assert.Equal(1, pointer.Value.X);
+        Assert.Equal(2, pointer.Value.Y);
+        Assert.Equal(30, pointer.Value.ToX);
+        Assert.Equal(40, pointer.Value.ToY);
+    }
 }
