@@ -10,7 +10,7 @@ namespace PuddingBrowser.WebView2;
 /// to satisfy WebView2's UI thread constraint.
 /// Surface ownership: WpfBrowserSurfaceHost owns the Control; Page only unsubscribes events.
 /// </summary>
-public sealed class WebView2BrowserPage : IBrowserPage
+public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
 {
     private readonly IWebView2UiDispatcher _dispatcher;
     private readonly Func<WebView2BrowserPage, Task>? _onNavigationChanged;
@@ -450,6 +450,41 @@ public sealed class WebView2BrowserPage : IBrowserPage
     /// </summary>
     private IReadOnlyList<string>? DescribePageEvents() =>
         _eventLog is not { IsEmpty: false } ? null : _eventLog.Entries.ToArray();
+
+    /// <summary>
+    /// §8.2 **坐标输入**（可选能力 <see cref="IPointerInputPage"/>）：坐标是 **CSS viewport 像素**，
+    /// 由策略计划成 CDP 鼠标调用后逐条发出（按下/抬起**成对**）。
+    /// 策略不支持坐标（返回 <c>null</c>）时**明确失败**，不静默降级成"往页面塞脚本"。
+    /// 这里**不推进页面版本**：坐标点击是否改变页面只有回读页面状态才知道，凭猜推进会让旧 Ref 提前作废。
+    /// </summary>
+    public async Task PointerAsync(PointerInput input, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        RequireWebView();
+
+        var calls = input.Kind switch
+        {
+            PointerInputKind.Click => Policy.PlanPointerClick(input.X, input.Y, input.ClickCount),
+            PointerInputKind.Move => Policy.PlanPointerMove(input.X, input.Y),
+            PointerInputKind.Drag => Policy.PlanPointerDrag(input.X, input.Y, input.ToX, input.ToY, input.Steps),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(input), input.Kind, "Pointer input kind is not mapped."),
+        };
+
+        if (calls is null)
+        {
+            throw new BrowserOperationException(
+                "browser_input_mode_not_supported",
+                "coordinate input is not available on this surface; use a locator-based action");
+        }
+
+        foreach (var call in calls)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
+            using var _ = await SendCdpAsync(call.Method, parameters, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     public async Task<ScrollOutcome> ScrollAsync(ScrollOptions o, CancellationToken ct)
     {
