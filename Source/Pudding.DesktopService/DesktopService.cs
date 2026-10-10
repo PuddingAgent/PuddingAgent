@@ -710,7 +710,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         Func<CancellationToken, Task<CapabilityResult<TResult>>> action,
         CancellationToken cancellationToken)
     {
-        var admission = ValidateAdmission(capability, target, expectedPageVersion, context, out _);
+        var admission = ValidateAdmission(capability, target, expectedPageVersion, context, out _, out var lease);
         if (admission is not null)
         {
             return CapabilityResult<TResult>.Failure(admission);
@@ -751,6 +751,15 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             return CapabilityResult<TResult>.Failure(
                 DesktopCapabilityError.Internal($"ui dispatch failed ({ex.GetType().Name})"));
         }
+        finally
+        {
+            // 变更类操作在准入时拿到租约：**必须**在操作结束时释放（幂等）。
+            // 否则租约一直留在权威里，会把后续写操作（包括用户自己的）挡住 —— 即"租约泄漏"。
+            if (lease is not null)
+            {
+                Authority.ReleaseLease(lease.LeaseId, "operation completed");
+            }
+        }
     }
 
     /// <summary>在 UI 线程上执行：先复检竞态，再调用 surface，最后把异常映射成领域错误。</summary>
@@ -762,7 +771,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         Func<CancellationToken, Task<CapabilityResult<TResult>>> action,
         CancellationToken token)
     {
-        var recheck = ValidateAdmission(capability, target, expectedPageVersion, context, out _);
+        var recheck = ValidateAdmission(capability, target, expectedPageVersion, context, out _, out _);
         if (recheck is not null)
         {
             return CapabilityResult<TResult>.Failure(recheck);
@@ -834,9 +843,11 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         DesktopPageTarget? target,
         DesktopPageVersion expectedPageVersion,
         DesktopCallContext context,
-        out DesktopTargetState? pageState)
+        out DesktopTargetState? pageState,
+        out BrowserAutomationLease? lease)
     {
         pageState = null;
+        lease = null;
 
         if (IsClosed)
         {
@@ -866,6 +877,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                 context.OperationId,
                 generation(),
                 target));
+
+            lease = decision.Lease;
 
             if (!decision.IsAllowed)
             {
