@@ -33,7 +33,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         TimeProvider? timeProvider = null,
         // 当前连接世代的提供者（方案 §4.2）。**放在最后**：前面都是既有位置参数调用方。
         // 未提供 ⇒ 不启用 authority 准入闸门（见 ValidateAdmission）；生产装配必须提供，否则等于没有准入。
-        Func<ConnectionGeneration>? connectionGeneration = null)
+        Func<ConnectionGeneration>? connectionGeneration = null,
+        BrowserTaskBindingService? taskBindings = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
@@ -44,6 +45,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         Interaction = new DesktopInteractionState(Authority);
         _timeProvider = timeProvider ?? TimeProvider.System;
         _connectionGeneration = connectionGeneration;
+        _taskBindings = taskBindings;
     }
 
     /// <summary>窗口退出时触发（用于让宿主停止派发新命令）。</summary>
@@ -59,6 +61,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
     public BrowserAutomationAuthority Authority { get; }
 
     private readonly Func<ConnectionGeneration>? _connectionGeneration;
+
+    private readonly BrowserTaskBindingService? _taskBindings;
 
     public DesktopInteractionState Interaction { get; }
 
@@ -381,6 +385,39 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.BrowserBindingApply:
+            {
+                if (request.BindingApply is not { } apply)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("browser.binding.apply request payload is missing"));
+                }
+                if (_taskBindings is null)
+                {
+                    return DesktopCapabilityResponse.Failure(DesktopCapabilityError.InvalidRequest(
+                        "the browser task-binding control plane is not wired on this desktop"));
+                }
+                var acceptance = _taskBindings.Accept(apply.Binding);
+                return DesktopCapabilityResponse.FromBindingAck(new BrowserBindingAck(
+                    acceptance.Accepted, acceptance.GrantId, acceptance.Epoch, acceptance.Reason));
+            }
+            case DesktopCapability.BrowserBindingRevoke:
+            {
+                if (request.BindingRevoke is not { } revoke)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("browser.binding.revoke request payload is missing"));
+                }
+                if (_taskBindings is null)
+                {
+                    return DesktopCapabilityResponse.Failure(DesktopCapabilityError.InvalidRequest(
+                        "the browser task-binding control plane is not wired on this desktop"));
+                }
+                var revoked = _taskBindings.Revoke(revoke.Target, revoke.Task);
+                return DesktopCapabilityResponse.FromBindingAck(new BrowserBindingAck(
+                    revoked, GrantId: null, Epoch: default,
+                    Reason: revoked ? null : "no binding is active for this task and target"));
+            }
             case DesktopCapability.BrowserContextClose:
             {
                 if (request.ContextClose is not { } closeContext)

@@ -54,6 +54,8 @@ public static class DesktopCapabilityPolicy
         // 上下文创建/关闭是变更类（缺口 #1）：同样只对获授权的 Agent 浏览器开放。
         [DesktopCapability.BrowserContextCreate] = [DesktopContextTrust.AgentAuthorized],
         [DesktopCapability.BrowserContextClose] = [DesktopContextTrust.AgentAuthorized],
+        [DesktopCapability.BrowserBindingApply] = [DesktopContextTrust.AgentAuthorized],
+        [DesktopCapability.BrowserBindingRevoke] = [DesktopContextTrust.AgentAuthorized],
     };
 
     /// <summary>
@@ -66,7 +68,9 @@ public static class DesktopCapabilityPolicy
     public static bool IsBrowserContextScoped(DesktopCapability capability) => capability
         is DesktopCapability.BrowserContexts
         or DesktopCapability.BrowserContextCreate
-        or DesktopCapability.BrowserContextClose;
+        or DesktopCapability.BrowserContextClose
+        or DesktopCapability.BrowserBindingApply
+        or DesktopCapability.BrowserBindingRevoke;
 
     public static bool IsAllowedForTrust(DesktopCapability capability, DesktopContextTrust trust) =>
         AllowedTrust.TryGetValue(capability, out var allowed) && Array.IndexOf(allowed, trust) >= 0;

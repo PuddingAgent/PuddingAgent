@@ -139,6 +139,8 @@ public sealed class TargetAndPolicyTests
 
         string[] expected =
         [
+            $"BrowserBindingApply=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
+            $"BrowserBindingRevoke=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"BrowserContextClose=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"BrowserContextCreate=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"BrowserContexts=[{nameof(DesktopContextTrust.AgentAuthorized)}]",

@@ -3,7 +3,11 @@ using Pudding.Contracts.Desktop;
 namespace Pudding.DesktopService;
 
 /// <summary>一次绑定的受理结果（拒绝必须给具体原因；不回退成"先签了再说"）。</summary>
-public sealed record BrowserBindingAcceptance(bool Accepted, string? Reason, BrowserPageGrantEpoch Epoch);
+public sealed record BrowserBindingAcceptance(
+    bool Accepted,
+    string? Reason,
+    BrowserPageGrantEpoch Epoch,
+    BrowserPageGrantId? GrantId = null);
 
 /// <summary>
 /// **任务绑定的受理与撤销**（方案 §4.1）：Desktop 收到 Core 的 <see cref="BrowserTaskBinding"/> 后，
@@ -61,7 +65,7 @@ public sealed class BrowserTaskBindingService(
         }
 
         _active[Key(binding)] = new ActiveBinding(binding.Target, binding.Task, grant!.GrantId);
-        return new BrowserBindingAcceptance(true, null, epoch);
+        return new BrowserBindingAcceptance(true, null, epoch, grant!.GrantId);
     }
 
     /// <summary>撤销该绑定对应的授权（切目标/任务结束/父撤销时调用）；不存在则返回 <c>false</c>。</summary>
@@ -117,6 +121,18 @@ public sealed class BrowserTaskBindingService(
         return doomed.Length;
     }
 
-    private static string Key(BrowserTaskBinding binding) =>
-        $"{binding.Target.ContextId}/{binding.Target.PageId}|{binding.Task.CallerId}|{binding.Task.TaskId}";
+    public bool Revoke(DesktopPageTarget target, BrowserCallerIdentity task)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(task);
+        if (!_active.Remove(Key(target, task), out var revoked))
+        {
+            return false;
+        }
+        _lifecycle.Authority.RevokeGrant(revoked.GrantId);
+        return true;
+    }
+    private static string Key(BrowserTaskBinding binding) => Key(binding.Target, binding.Task);
+    private static string Key(DesktopPageTarget target, BrowserCallerIdentity task) =>
+        $"{target.ContextId}/{target.PageId}|{task.CallerId}|{task.TaskId}";
 }
