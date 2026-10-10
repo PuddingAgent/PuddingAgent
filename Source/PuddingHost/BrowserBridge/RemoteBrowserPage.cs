@@ -254,9 +254,10 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
         PointerInputKind.Move => InteractAsync(
             "pointer_move", locator: null, text: null, values: null, isChecked: null,
             deltaX: null, deltaY: null, ct: cancellationToken, x: input.X, y: input.Y),
-        PointerInputKind.Drag => throw new BrowserOperationException(
-            "browser_invalid_arguments",
-            "coordinate drag needs a target point; the bridge command does not carry one yet"),
+        PointerInputKind.Drag => InteractAsync(
+            "pointer_drag", locator: null, text: null, values: null, isChecked: null,
+            deltaX: null, deltaY: null, ct: cancellationToken,
+            x: input.X, y: input.Y, toX: input.ToX, toY: input.ToY),
         _ => throw new ArgumentOutOfRangeException(nameof(input), input.Kind, "Pointer input kind is not mapped."),
     };
 
@@ -269,7 +270,8 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
         double? deltaX,
         double? deltaY,
         CancellationToken ct,
-        double? x = null,         double? y = null,         string? observationId = null)
+        double? x = null,         double? y = null,         string? observationId = null,
+        double? toX = null,         double? toY = null)
     {
         EnsureNotDisposed();
         var result = await _runtime.ExecuteAsync<BrowserInteractionResultDescriptor>(
@@ -285,7 +287,8 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
                 DeltaY = deltaY,
             X = x,
             Y = y,
-            ObservationId = observationId
+            ObservationId = observationId,
+            ToX = toX,             ToY = toY
             }, ContextId, Id, TimeSpan.FromSeconds(30), ct);
         Apply(result.Page);
     }

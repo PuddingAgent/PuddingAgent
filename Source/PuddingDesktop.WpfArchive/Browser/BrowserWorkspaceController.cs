@@ -1002,6 +1002,22 @@ public sealed class BrowserWorkspaceController :
             case "hover" when locator is not null:
                 await page.HoverAsync(locator, new PointerOptions(), ct);
                 break;
+            case "pointer_drag" when args?.X is { } dx && args.Y is { } dy
+                && args.ToX is { } tx && args.ToY is { } ty:
+            {
+                if (page is not PuddingBrowser.Abstractions.IPointerInputPage dragPointer)
+                {
+                    return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                        "coordinate input is not available on this browser surface");
+                }
+
+                await dragPointer.PointerAsync(
+                    new PuddingBrowser.Abstractions.PointerInput(
+                        PuddingBrowser.Abstractions.PointerInputKind.Drag, dx, dy, tx, ty),
+                    ct).ConfigureAwait(false);
+                break;
+            }
+
             case "pointer_click" or "pointer_move" when args?.X is { } px && args.Y is { } py:
             {
                 // §8.2 坐标输入：页面必须以**可选能力**实现；否则**明确失败**（绝不静默忽略坐标）。

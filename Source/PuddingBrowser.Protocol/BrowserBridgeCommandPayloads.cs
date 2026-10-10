@@ -105,6 +105,12 @@ public sealed record PageInteractArguments
     /// <summary>§8.2 坐标输入的 Y（**CSS viewport 像素**）。</summary>
     public double? Y { get; init; }
 
+    /// <summary>§8.2 坐标拖拽的终点 X（CSS viewport 像素）；仅 pointer_drag 使用。</summary>
+    public double? ToX { get; init; }
+
+    /// <summary>§8.2 坐标拖拽的终点 Y（CSS viewport 像素）。</summary>
+    public double? ToY { get; init; }
+
     /// <summary>截图来源坐标的 observationId；无观察登记处可校验时消费端必须**明确失败**。</summary>
     public string? ObservationId { get; init; }
 }
