@@ -13,6 +13,14 @@ namespace Pudding.CapabilityBroker;
 /// </summary>
 internal static class CoreCommandEncoder
 {
+    /// <summary>
+    /// 是否属于**浏览器自动化**能力（§3.2：这些能力必须携带可信调用者身份）。
+    /// 判据取自能力目录本身的 `Kind`（WebView 系 = 浏览器/网页自动化；Shell 系 = 通知/状态/对话框/剪贴板），
+    /// **不另建一份清单**，避免第二处真源。
+    /// </summary>
+    internal static bool IsBrowserCapability(DesktopCapabilityDescriptor capability)
+        => capability.Kind == DesktopCapabilityKind.WebView;
+
     public static Proto.CapabilityCommand Encode(
         OperationId operationId,
         ConnectionGeneration generation,
@@ -30,6 +38,19 @@ internal static class CoreCommandEncoder
             CorrelationId = call.CorrelationId?.Value ?? string.Empty,
             Deadline = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(call.DeadlineUtc),
         };
+
+        // §3.2：把可信调用者身份带上线缆。"浏览器能力**必须**有身份"的要求由**调用路径**负责
+        // （缺身份返回类型化失败，而不是在编码器里抛异常 —— 抛异常会绕过调用方的错误通道）。
+        if (call.BrowserCaller is { } caller)
+        {
+            command.Caller = new Proto.BrowserCallerIdentityMessage
+            {
+                Kind = BrowserCallerKindWire.NameOf(caller.Kind),
+                CallerId = caller.CallerId,
+                TaskId = caller.TaskId ?? string.Empty,
+                ParentTaskId = caller.ParentTaskId ?? string.Empty,
+            };
+        }
 
         switch (capability.Capability)
         {

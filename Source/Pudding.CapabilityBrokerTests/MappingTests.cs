@@ -13,6 +13,69 @@ public sealed class MappingTests
     private static readonly DesktopCallContext Call = new(
         new DesktopInstanceId("desk-1"), Operation, DateTimeOffset.UtcNow.AddSeconds(30));
 
+    private static DesktopCapabilityDescriptor Descriptor(string name)
+    {
+        Assert.True(DesktopCapabilities.TryGetByName(name, out var descriptor), $"能力目录里没有 {name}");
+        return descriptor;
+    }
+
+    [Fact]
+    public void EncoderCarriesTheTrustedCallerOntoTheWire()
+    {
+        // §3.2：能力通道命令携带类型化调用者身份（kind/callerId/taskId/parentTaskId）。
+        var caller = new BrowserCallerIdentity(BrowserCallerKind.SubAgent, "agent-1", "run-sub", "run-parent");
+        var call = new DesktopCallContext(
+            new DesktopInstanceId("desk-1"),
+            new OperationId("op-carrier"),
+            DateTimeOffset.UtcNow.AddSeconds(30),
+            correlationId: null,
+            browserCaller: caller);
+
+        var command = CoreCommandEncoder.Encode(
+            call.OperationId,
+            ConnectionGeneration.Require(1),
+            Descriptor("browser.contexts"),
+            DesktopCapabilityRequest.ForContexts(),
+            call,
+            traceId: null);
+
+        Assert.NotNull(command.Caller);
+        Assert.Equal("sub_agent", command.Caller.Kind);
+        Assert.Equal("agent-1", command.Caller.CallerId);
+        Assert.Equal("run-sub", command.Caller.TaskId);
+        Assert.Equal("run-parent", command.Caller.ParentTaskId);
+    }
+
+    [Fact]
+    public void EncoderDoesNotInventACallerWhenTheContextHasNone()
+    {
+        // 没有身份就是**没有**（空字段），不得按 proto 默认值补出任何身份。
+        var call = new DesktopCallContext(
+            new DesktopInstanceId("desk-1"),
+            new OperationId("op-no-caller"),
+            DateTimeOffset.UtcNow.AddSeconds(30));
+
+        var command = CoreCommandEncoder.Encode(
+            call.OperationId,
+            ConnectionGeneration.Require(1),
+            Descriptor("browser.contexts"),
+            DesktopCapabilityRequest.ForContexts(),
+            call,
+            traceId: null);
+
+        Assert.Null(command.Caller);
+    }
+
+    [Fact]
+    public void TheBrowserCapabilityClassifierSeparatesShellCapabilities()
+    {
+        // §3.2 的边界：浏览器自动化能力需要 caller；Shell 系列不算浏览器操作。
+        Assert.True(CoreCommandEncoder.IsBrowserCapability(Descriptor("browser.contexts")));
+        Assert.True(CoreCommandEncoder.IsBrowserCapability(Descriptor("webview.navigate")));
+        Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.notification")));
+        Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.status")));
+        Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.clipboard")));
+    }
     [Fact]
     public void Encoder_ProducesTheExpectedPayloadPerCapability()
     {

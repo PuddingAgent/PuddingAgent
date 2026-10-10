@@ -322,6 +322,17 @@ message SnapshotBudget {
 }
 
 // Core → Desktop 的能力命令。payload 用 oneof 白名单化，禁止「字符串命令名 + 任意 JSON」。
+// 可信调用者身份（下一阶段实施方案 §3.2）。由 Core 从**可信执行上下文**投影后携带；
+// Desktop 侧校验后准入。字段用**字符串 kind**（而非 proto enum）：proto3 enum 的默认值会让
+// "没填" 与 "填了第一个枚举值" 无法区分，而这里**必须**能区分（不得用默认值补身份）。
+// 未知 kind、空必填、过长或不合法标识一律按**协议错误**拒绝。
+message BrowserCallerIdentityMessage {
+  // "agent" | "sub_agent"；"user" 不允许出现在浏览器自动化请求上（用户原生操作走独立入口）。
+  string kind = 1;
+  string caller_id = 2;
+  string task_id = 3;
+  string parent_task_id = 4;
+}
 message CapabilityCommand {
   string operation_id = 1;
   // 命令所属连接世代；与当前世代不符必须拒绝。
@@ -332,6 +343,8 @@ message CapabilityCommand {
   string correlation_id = 5;
   // 单操作期限（UTC）。长连接 deadline 不代替它。
   google.protobuf.Timestamp deadline = 6;
+  // 可信调用者身份；浏览器自动化操作必须携带，且不得是 user。
+  BrowserCallerIdentityMessage caller = 7;
 
   oneof payload {
     NavigateCommand navigate = 10;

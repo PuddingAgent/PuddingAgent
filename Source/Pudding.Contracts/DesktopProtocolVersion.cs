@@ -10,7 +10,7 @@ namespace Pudding.Contracts;
 /// </summary>
 public static class DesktopProtocolVersion
 {
-    /// <summary>当前实现支持的版本。</summary>
+    /// <summary>当前实现支持的版本（v1；v2 携带类型化调用者身份的升级作为独立一步，见 changelog）。</summary>
     public const int Current = 1;
 
     /// <summary>仍可协商的最低版本。</summary>
@@ -18,7 +18,7 @@ public static class DesktopProtocolVersion
 
     public static bool IsSupported(int version) => version >= Minimum && version <= Current;
 
-    /// <summary>协商结果：双方区间取交集，取较高者（当前实现只有 v1）。</summary>
+    /// <summary>协商结果：双方区间取交集，取较高者。</summary>
     public static bool TryNegotiate(int peerMinimum, int peerMaximum, out int negotiated)
     {
         var lower = Math.Max(Minimum, peerMinimum);

@@ -7,6 +7,7 @@ public sealed class ProtocolVersionTests
     [Fact]
     public void CurrentVersion_IsTheOnlySupportedVersionToday()
     {
+        // v2：能力通道携带类型化调用者身份（下一阶段实施方案 §3.2）。
         Assert.Equal(1, DesktopProtocolVersion.Current);
         Assert.Equal(1, DesktopProtocolVersion.Minimum);
         Assert.True(DesktopProtocolVersion.IsSupported(DesktopProtocolVersion.Current));
@@ -22,6 +23,9 @@ public sealed class ProtocolVersionTests
 
         Assert.True(DesktopProtocolVersion.TryNegotiate(0, 99, out var widened));
         Assert.Equal(DesktopProtocolVersion.Current, widened);
+
+        // 对端最低版本高于本端当前版本 ⇒ 谈不拢（不能"就地降级"或回退另一条通道）。
+        Assert.False(DesktopProtocolVersion.TryNegotiate(2, 3, out _));
     }
 
     [Fact]
