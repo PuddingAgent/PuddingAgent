@@ -99,16 +99,13 @@ public sealed class BrowserTaskBindingService(
     }
 
     /// <summary>**任务结束/父撤销时的确定性撤销**：按行动者撤销其全部绑定。</summary>
-    public int RevokeAllForCaller(string callerId, string? taskId = null)
+    public int RevokeAllForCaller(BrowserCallerIdentity task)
     {
-        if (string.IsNullOrWhiteSpace(callerId))
-        {
-            return 0;
-        }
+        ArgumentNullException.ThrowIfNull(task);
 
         var doomed = _active
-            .Where(pair => string.Equals(pair.Value.Task.CallerId, callerId, StringComparison.Ordinal)
-                && (taskId is null || string.Equals(pair.Value.Task.TaskId, taskId, StringComparison.Ordinal)))
+            // 任务级管理撤销：判据走身份辅助（IsSameTaskScope），不手写 CallerId 字符串比较
+            .Where(pair => pair.Value.Task.IsSameTaskScope(task))
             .Select(pair => pair.Key)
             .ToArray();
 

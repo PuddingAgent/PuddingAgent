@@ -99,10 +99,10 @@ public sealed class BrowserTaskBindingServiceTests
         var (service, lifecycle) = Arrange(selectForAgent: true);
         Assert.True(service.Accept(Binding()).Accepted);
 
-        Assert.Equal(0, service.RevokeAllForCaller("agent-other", "run-9")); // 不相干的任务不动
+        Assert.Equal(0, service.RevokeAllForCaller(new BrowserCallerIdentity(BrowserCallerKind.Agent, "agent-other", "run-9"))); // 不相干的任务不动
         Assert.Single(lifecycle.Authority.ActiveGrants);
 
-        Assert.Equal(1, service.RevokeAllForCaller("agent-1", "run-1"));
+        Assert.Equal(1, service.RevokeAllForCaller(new BrowserCallerIdentity(BrowserCallerKind.Agent, "agent-1", "run-1")));
 
         Assert.Empty(lifecycle.Authority.ActiveGrants);
         Assert.Equal(0, service.ActiveCount);
