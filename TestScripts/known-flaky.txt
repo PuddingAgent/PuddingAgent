@@ -28,6 +28,11 @@
 # ConfigureAwait(false) everywhere. Evidence: mutation (ConfigureAwait(true)) makes it fail via the watchdog,
 # and the fixed test passed 20/20 consecutive runs. Do not re-add it here without fresh failure evidence.
 
-# Failure kind: late-arriving WebView2 SDK frame after the surface was disposed (hidden-surface gate).
-# Documented as load-sensitive in earlier changelogs; the retry path has not yet observed it live.
+# HARDENED, STILL REGISTERED (2026-10-08): HiddenSurface_ParksLateSdkFramesAndStopsObservingAfterDisposal.
+# The test used two time-based criteria (a single priority-ranked no-op as a "drain", and thread.Join(10s));
+# both are now state-based (pump the dispatcher until the parked state is observed) with a documented watchdog.
+# IMPORTANT: the failure was NOT reproduced on this machine -- isolation 20x showed 0 failures BOTH before and
+# after the change, so the hardening is root-cause-targeted but UNPROVEN. It stays on this registry because the
+# plan's stability gate (20 consecutive chain-level runs, or a live failure) has not been met; remove it only
+# with that evidence, and never treat the hardening itself as proof.
 PuddingDesktop.Tests.Browser.WebView2PresentationGateTests.HiddenSurface_ParksLateSdkFramesAndStopsObservingAfterDisposal
