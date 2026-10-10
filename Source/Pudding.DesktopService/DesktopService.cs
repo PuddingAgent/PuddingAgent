@@ -30,7 +30,10 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         DesktopTargetRegistry targets,
         DesktopServiceOptions options,
         BrowserAutomationAuthority authority,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        // 当前连接世代的提供者（方案 §4.2）。**放在最后**：前面都是既有位置参数调用方。
+        // 未提供 ⇒ 不启用 authority 准入闸门（见 ValidateAdmission）；生产装配必须提供，否则等于没有准入。
+        Func<ConnectionGeneration>? connectionGeneration = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
@@ -40,6 +43,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         Authority = authority ?? throw new ArgumentNullException(nameof(authority));
         Interaction = new DesktopInteractionState(Authority);
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _connectionGeneration = connectionGeneration;
     }
 
     /// <summary>窗口退出时触发（用于让宿主停止派发新命令）。</summary>
@@ -53,6 +57,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
     /// 能力通道准入都写/读同一份状态。
     /// </summary>
     public BrowserAutomationAuthority Authority { get; }
+
+    private readonly Func<ConnectionGeneration>? _connectionGeneration;
 
     public DesktopInteractionState Interaction { get; }
 
@@ -803,6 +809,32 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         if (!_options.AllowedCapabilities.HasFlag(capability))
         {
             return DesktopCapabilityError.UnsupportedCapability(DesktopCapabilities.NameOf(capability));
+        }
+
+        // 方案 §4.2：浏览器能力在 Desktop 侧**必须**过 authority 准入（身份 + grant + 控制态/租约）。
+        // 判据不在这里重写：能力→操作走唯一映射（DesktopCapabilityOperations），身份走契约唯一规则
+        // （BrowserCallerRequirement，经 DesktopCallContext.TryGetBrowserCaller），裁决在唯一 Authority。
+        // 未注入世代提供者时不启用这道闸门（见构造器说明）—— 生产装配必须注入，否则等于没有准入。
+        if (_connectionGeneration is { } generation
+            && DesktopCapabilityOperations.TryGetBrowserOperation(capability, out var automationOperation))
+        {
+            if (!context.TryGetBrowserCaller(out var browserCaller, out var callerReason))
+            {
+                return DesktopCapabilityError.Unauthorized(callerReason);
+            }
+
+            var decision = Authority.Admit(new BrowserAutomationRequest(
+                automationOperation,
+                browserCaller,
+                context.OperationId,
+                generation(),
+                target));
+
+            if (!decision.IsAllowed)
+            {
+                return decision.Error
+                    ?? DesktopCapabilityError.Unauthorized(decision.Denial.ToString());
+            }
         }
 
         // 无页面目标的能力有两种来源，可信级别**来源不同**：
