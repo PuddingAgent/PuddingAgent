@@ -69,7 +69,13 @@ public sealed partial class DesktopApplicationCoordinator
             // 复用协调器的那一个事实源（Bridge 闸门用的也是它）：分别构造就会出现
             // "用户在 UI 上接管、Bridge 与能力通道看法不一致"这类分叉（审计 2026-10-08 结论 #1）。
             var lifecycle = _browserAutomation;
-            var bridge = new BrowserWorkspaceTargetBridge(lifecycle);
+            // 控制面（§4.1）：由 DesktopService 侧的工厂构造（Shell 不引用 Automation）——
+            // 签发器与受理/撤销服务共用同一个 lifecycle 与**真实**的连接世代（未握手 ⇒ 签发被拒）。
+            var controlPlane = BrowserTaskBindingComposition.Create(
+                lifecycle,
+                new DesktopInstanceId("default"),
+                new DesktopProcessInstanceId($"desktop-{Environment.ProcessId}"));
+            var bridge = new BrowserWorkspaceTargetBridge(lifecycle, controlPlane.Service);
             AttachBrowserTargets(workspace, bridge);
 
             var dispatcher = new WinUiDesktopUiDispatcher(UiThread.Queue);
@@ -104,6 +110,7 @@ public sealed partial class DesktopApplicationCoordinator
                 dispatcher,
                 surface,
                 lifecycle,
+                taskBindings: controlPlane.Service,
                 log: LogCapability,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
