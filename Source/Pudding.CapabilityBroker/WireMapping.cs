@@ -296,6 +296,33 @@ internal static class CoreCommandEncoder
                     Target = EncodeTarget(bindingRevoke.Target),
                 };
                 break;
+            case DesktopCapability.BrowserScreenshot when request.Screenshot is { } screenshot:
+                command.Screenshot = new Proto.ScreenshotCommand
+                {
+                    Target = EncodeTarget(screenshot.Target),
+                    ExpectedPageVersion = screenshot.ExpectedPageVersion.Value,
+                    Scope = DesktopScreenshotScopeWire.NameOf(screenshot.Scope),
+                    Detail = DesktopScreenshotDetailWire.NameOf(screenshot.Detail),
+                    Format = screenshot.Format,
+                };
+                if (screenshot.RegionX is { } regionX) { command.Screenshot.RegionX = regionX; }
+                if (screenshot.RegionY is { } regionY) { command.Screenshot.RegionY = regionY; }
+                if (screenshot.RegionWidth is { } regionWidth) { command.Screenshot.RegionWidth = regionWidth; }
+                if (screenshot.RegionHeight is { } regionHeight) { command.Screenshot.RegionHeight = regionHeight; }
+                if (screenshot.Locator is { } screenshotLocator)
+                {
+                    command.Screenshot.Locator = new Proto.LocatorSpec
+                    {
+                        Kind = DesktopLocatorKindWire.NameOf(screenshotLocator.Kind),
+                        Value = screenshotLocator.Value,
+                        Name = screenshotLocator.Name ?? string.Empty,
+                        Exact = screenshotLocator.Exact,
+                        Nth = screenshotLocator.Nth ?? -1,
+                        HasText = screenshotLocator.HasText ?? string.Empty,
+                    };
+                }
+                break;
+
             default:
                 throw new ArgumentException(
                     $"Request does not carry a payload for capability '{capability.Name}'.", nameof(request));
@@ -328,6 +355,8 @@ internal static class CoreCommandEncoder
             _ when request.FilePicker is { } picker =>
                 $"file_picker:{picker.AllowMultiple}:{picker.Title}:{string.Join(",", picker.Extensions)}",
             _ when request.Contexts => "contexts",
+            _ when request.Screenshot is { } shot =>
+                $"screenshot:{shot.Target.Key}:{DesktopScreenshotScopeWire.NameOf(shot.Scope)}:{DesktopScreenshotDetailWire.NameOf(shot.Detail)}:{shot.Format}:{shot.RegionX?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}:{shot.RegionY?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}:{shot.RegionWidth?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}:{shot.RegionHeight?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}:{shot.Locator?.Kind}:{shot.Locator?.Value}:{shot.ExpectedPageVersion.Value}",
             _ when request.WaitFor is { } waitFor =>
                 $"wait_for:{waitFor.Target.Key}:{waitFor.Condition.Kind}:{waitFor.Condition.Value}:{waitFor.TimeoutMs}:{waitFor.ExpectedPageVersion.Value}",
             _ when request.Interact is { } interact =>
