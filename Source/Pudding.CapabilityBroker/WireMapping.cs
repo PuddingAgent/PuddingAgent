@@ -121,6 +121,9 @@ internal static class CoreCommandEncoder
                 {
                     Target = EncodeTarget(interact.Target),
                     ExpectedPageVersion = interact.ExpectedPageVersion.Value,
+                    X = interact.X ?? 0,
+                    Y = interact.Y ?? 0,
+                    ObservationId = interact.ObservationId ?? string.Empty,
                     Action = DesktopInteractionActionWire.NameOf(interact.Action),
                 };
 
