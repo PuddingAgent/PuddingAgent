@@ -244,6 +244,38 @@ internal static class CoreCommandEncoder
                 };
                 break;
 
+
+            case DesktopCapability.BrowserBindingApply when request.BindingApply is { } bindingApply:
+                var binding = bindingApply.Binding;
+                command.BindingApply = new Proto.BrowserBindingApplyCommand
+                {
+                    Task = new Proto.BrowserCallerIdentityMessage
+                    {
+                        Kind = BrowserCallerKindWire.NameOf(binding.Task.Kind),
+                        CallerId = binding.Task.CallerId,
+                        TaskId = binding.Task.TaskId ?? string.Empty,
+                        ParentTaskId = binding.Task.ParentTaskId ?? string.Empty,
+                    },
+                    Target = EncodeTarget(binding.Target),
+                    Scope = (uint)binding.Scope,
+                    ValidityMs = (long)binding.Validity.TotalMilliseconds,
+                    Source = binding.Source,
+                };
+                break;
+
+            case DesktopCapability.BrowserBindingRevoke when request.BindingRevoke is { } bindingRevoke:
+                command.BindingRevoke = new Proto.BrowserBindingRevokeCommand
+                {
+                    Task = new Proto.BrowserCallerIdentityMessage
+                    {
+                        Kind = BrowserCallerKindWire.NameOf(bindingRevoke.Task.Kind),
+                        CallerId = bindingRevoke.Task.CallerId,
+                        TaskId = bindingRevoke.Task.TaskId ?? string.Empty,
+                        ParentTaskId = bindingRevoke.Task.ParentTaskId ?? string.Empty,
+                    },
+                    Target = EncodeTarget(bindingRevoke.Target),
+                };
+                break;
             default:
                 throw new ArgumentException(
                     $"Request does not carry a payload for capability '{capability.Name}'.", nameof(request));
