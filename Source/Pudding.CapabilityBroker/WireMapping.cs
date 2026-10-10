@@ -19,7 +19,7 @@ internal static class CoreCommandEncoder
     /// **不另建一份清单**，避免第二处真源。
     /// </summary>
     internal static bool IsBrowserCapability(DesktopCapabilityDescriptor capability)
-        => capability.Kind == DesktopCapabilityKind.WebView;
+        => capability.Kind is DesktopCapabilityKind.WebView or DesktopCapabilityKind.Control;
 
     public static Proto.CapabilityCommand Encode(
         OperationId operationId,

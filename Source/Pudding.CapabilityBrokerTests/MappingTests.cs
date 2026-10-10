@@ -75,6 +75,10 @@ public sealed class MappingTests
         Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.notification")));
         Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.status")));
         Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.clipboard")));
+
+        // 控制面（§4.1）**同样**必须有可信 caller —— 否则控制面可匿名申请/撤销授权。
+        Assert.True(CoreCommandEncoder.IsBrowserCapability(Descriptor("browser.binding.apply")));
+        Assert.True(CoreCommandEncoder.IsBrowserCapability(Descriptor("browser.binding.revoke")));
     }
     [Fact]
     public void Encoder_ProducesTheExpectedPayloadPerCapability()
