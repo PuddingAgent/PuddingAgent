@@ -26,7 +26,8 @@ public sealed record DesktopCapabilityRequest
         BrowserContextCloseRequest? contextClose = null,
         bool shellStatus = false,
         BrowserBindingApplyRequest? bindingApply = null,
-        BrowserBindingRevokeRequest? bindingRevoke = null)
+        BrowserBindingRevokeRequest? bindingRevoke = null,
+        BrowserScreenshotRequest? screenshot = null)
     {
         Navigate = navigate;
         Javascript = javascript;
@@ -46,6 +47,7 @@ public sealed record DesktopCapabilityRequest
         ShellStatus = shellStatus;
         BindingApply = bindingApply;
         BindingRevoke = bindingRevoke;
+        Screenshot = screenshot;
     }
 
     public NavigateRequest? Navigate { get; }
@@ -68,6 +70,9 @@ public sealed record DesktopCapabilityRequest
 
     /// <summary>条件等待请求（只读）。</summary>
     public BrowserWaitForRequest? WaitFor { get; }
+
+    /// <summary>截图请求（§8.1：视口/区域/元素 + 细节档）。</summary>
+    public BrowserScreenshotRequest? Screenshot { get; }
 
     /// <summary>标签页操作请求（变更类）。</summary>
     public BrowserTabsRequest? Tabs { get; }
@@ -127,6 +132,9 @@ public sealed record DesktopCapabilityRequest
 
     public static DesktopCapabilityRequest ForInteract(BrowserInteractRequest request) =>
         new(interact: request ?? throw new ArgumentNullException(nameof(request)));
+
+    public static DesktopCapabilityRequest ForScreenshot(BrowserScreenshotRequest request) =>
+        new(screenshot: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForWaitFor(BrowserWaitForRequest request) =>
         new(waitFor: request ?? throw new ArgumentNullException(nameof(request)));
