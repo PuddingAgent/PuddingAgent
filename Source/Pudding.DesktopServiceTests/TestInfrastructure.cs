@@ -467,7 +467,8 @@ internal sealed class ServiceHarness
         bool hasThreadAccess = false,
         Action<ManualUiDispatcher>? configureDispatcher = null,
         TimeProvider? clock = null,
-        DesktopServiceOptions? options = null)
+        DesktopServiceOptions? options = null,
+        Func<ConnectionGeneration>? connectionGeneration = null)
     {
         var dispatcher = new ManualUiDispatcher { HasThreadAccess = hasThreadAccess };
         configureDispatcher?.Invoke(dispatcher);
@@ -500,7 +501,7 @@ internal sealed class ServiceHarness
         var surface = new RecordingUiSurface();
         var authority = new BrowserAutomationAuthority(
             new DesktopInstanceId("desk-test"), new DesktopProcessInstanceId("proc-test"), testClock);
-        var service = new DesktopService(dispatcher, surface, registry, effectiveOptions, authority, testClock);
+        var service = new DesktopService(dispatcher, surface, registry, effectiveOptions, authority, testClock, connectionGeneration);
         return new ServiceHarness(dispatcher, surface, testClock, service);
     }
 
