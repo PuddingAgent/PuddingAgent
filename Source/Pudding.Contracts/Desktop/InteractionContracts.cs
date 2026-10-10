@@ -249,7 +249,9 @@ public sealed record BrowserInteractRequest
         IReadOnlyList<string>? filePaths = null,
         double? x = null,
         double? y = null,
-        string? observationId = null)
+        string? observationId = null,
+        double? toX = null,
+        double? toY = null)
     {
         if (!Enum.IsDefined(action))
         {
@@ -304,6 +306,8 @@ public sealed record BrowserInteractRequest
         X = x;
         Y = y;
         ObservationId = observationId;
+        ToX = toX;
+        ToY = toY;
 
         ValidateShape();
     }
@@ -354,6 +358,12 @@ public sealed record BrowserInteractRequest
 
     /// <summary>截图来源坐标必须携带的 observationId；滚动/缩放/布局或页面世代变化后失效（§8.2）。</summary>
     public string? ObservationId { get; }
+
+    /// <summary>坐标拖拽的终点 X（**CSS viewport 像素**，§8.2）；仅 pointer_drag 使用。</summary>
+    public double? ToX { get; }
+
+    /// <summary>坐标拖拽的终点 Y（**CSS viewport 像素**）。</summary>
+    public double? ToY { get; }
 
     /// <summary>实际生效的滚动目标（显式优先，否则按上面的规则推导）。</summary>
     public DesktopScrollTarget EffectiveScrollTarget => ScrollTarget ?? (Locator is null
