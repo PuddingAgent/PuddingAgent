@@ -78,7 +78,9 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
         BrowserPageLifecycle lifecycle,
         DesktopServiceOptions? serviceOptions = null,
         Action<string>? log = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        // 控制面（§4.1）：由组合根构造**同一个**受理/撤销服务（bridge 也用它）。未提供 ⇒ 控制面能力明确拒绝。
+        BrowserTaskBindingService? taskBindings = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(surface);
@@ -122,7 +124,7 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
         var streamFactory = new GrpcDesktopChannelStreamFactory(transport.Value, authentication);
 
         var service = new DesktopService(
-            dispatcher, surface, pageTargets, serviceOptions ?? CreateDefaultServiceOptions(), authority);
+            dispatcher, surface, pageTargets, serviceOptions ?? CreateDefaultServiceOptions(), authority, taskBindings: taskBindings);
 
         // 顺序与「关闭时不构造」的判据由 DesktopCapabilityHostFactory 与组合顺序测试钉住：
         // 关闭 ⇒ 明确失败且不构造宿主；启用 ⇒ 只构造不启动（启动名额留给这里）。
