@@ -72,6 +72,7 @@ draft: false
 | `WebViewContracts.cs` | `NavigateDisposition`（Accepted/Completed，**都不代表 DOM 已就绪**）、`NavigateRequest/Result`、`JavascriptValueKind`、`JavascriptRequest`（脚本正文禁入审计；结果字节上限 1 B–4 MiB）、`JavascriptResult`（`JsonValue` 恒为裸 JSON 片段，避免二次编码） |
 | `ShellContracts.cs` | `DesktopNotificationPriority`、`DesktopNotificationRequest`（标题 ≤128 / 正文 ≤1024）、`DesktopNotificationResult` |
 | `ApiInterfaces.cs` | `IPuddingDesktopApi` → `IPuddingDesktopWebViewApi`（Navigate / ExecuteJavascript / GetPageState）+ `IPuddingDesktopShellApi`（ShowNotification）。全部带 `DesktopCallContext` 与 `CancellationToken` |
+| `Desktop/BrowserOperationMapping.cs` | **能力 → 自动化操作** 的唯一映射（准入前置件）：WebView 系能力各有操作（标签页按**最严**的 TabClose），Shell 系"不适用"；由用例保证**目录里每个 WebView 能力都有映射**（防新能力静默绕过闸门） |
 | `Desktop/BrowserCallerRequirement.cs` | **浏览器操作对调用者身份的统一要求**（方案 §3.2）：缺身份 / 冒充 `User` / 无运行身份三种情形各给具体原因；**两条传输与 Desktop 准入共用的唯一一份规则**（`DesktopCallContext.TryGetBrowserCaller` 委托它） |
 | `Desktop/BrowserCallerKindWire.cs` | 调用者类别的**线缆编码真源**（方案 §3.2）：`user`/`agent`/`sub_agent`，`TryParse` 对未知/空/大小写不符一律失败（用**字符串**而非 proto enum，避免 proto3 默认值把"没填"当成某个类别） |
 | `Desktop/BrowserCallerIdentityProjection.cs` | **可信调用身份的投影**（设计 §3.1/§3.2）：唯一允许产生 `BrowserCallerIdentity` 的地方，入参**只能是执行上下文的标量**（是否子代理/调用者/本次运行/父运行），**不接收任何工具参数**（⇒ 模型无法自报身份获得权限）。fail-closed：缺运行身份、缺调用者、**子代理缺父任务**（无法做子集校验）一律拒绝；身份值去空白后再比较（避免用空白变体伪造另一个行动者） |
