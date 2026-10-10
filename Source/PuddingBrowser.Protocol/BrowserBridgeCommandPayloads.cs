@@ -99,6 +99,14 @@ public sealed record PageInteractArguments
     /// 省略时宿主按 locator/位移推导（与能力通道路径同一套规则）。
     /// </summary>
     public string? ScrollTarget { get; init; }
+    /// <summary>§8.2 坐标输入的 X（**CSS viewport 像素**）；仅 pointer 动作使用。</summary>
+    public double? X { get; init; }
+
+    /// <summary>§8.2 坐标输入的 Y（**CSS viewport 像素**）。</summary>
+    public double? Y { get; init; }
+
+    /// <summary>截图来源坐标的 observationId；无观察登记处可校验时消费端必须**明确失败**。</summary>
+    public string? ObservationId { get; init; }
 }
 
 public sealed record PageWaitForArguments

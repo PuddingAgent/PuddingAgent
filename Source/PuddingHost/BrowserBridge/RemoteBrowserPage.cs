@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Protocol;
 
@@ -250,7 +250,8 @@ public sealed class RemoteBrowserPage : IBrowserPage
         bool? isChecked,
         double? deltaX,
         double? deltaY,
-        CancellationToken ct)
+        CancellationToken ct,
+        double? x = null,         double? y = null,         string? observationId = null)
     {
         EnsureNotDisposed();
         var result = await _runtime.ExecuteAsync<BrowserInteractionResultDescriptor>(
@@ -263,7 +264,10 @@ public sealed class RemoteBrowserPage : IBrowserPage
                 Values = values,
                 Checked = isChecked,
                 DeltaX = deltaX,
-                DeltaY = deltaY
+                DeltaY = deltaY,
+            X = x,
+            Y = y,
+            ObservationId = observationId
             }, ContextId, Id, TimeSpan.FromSeconds(30), ct);
         Apply(result.Page);
     }

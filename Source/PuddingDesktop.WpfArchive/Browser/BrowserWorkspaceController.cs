@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -1002,6 +1002,33 @@ public sealed class BrowserWorkspaceController :
             case "hover" when locator is not null:
                 await page.HoverAsync(locator, new PointerOptions(), ct);
                 break;
+            case "pointer_click" or "pointer_move" when args?.X is { } px && args.Y is { } py:
+            {
+                // §8.2 坐标输入：页面必须以**可选能力**实现；否则**明确失败**（绝不静默忽略坐标）。
+                if (page is not PuddingBrowser.Abstractions.IPointerInputPage pointer)
+                {
+                    return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                        "coordinate input is not available on this browser surface");
+                }
+
+                if (!string.IsNullOrEmpty(args.ObservationId))
+                {
+                    // 尚无观察登记处可校验 ⇒ 带 id 的请求一律拒绝（与能力通道侧同规则）。
+                    return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                        "screenshot-derived coordinates require a live observation; none is registered yet");
+                }
+
+                await pointer.PointerAsync(
+                    new PuddingBrowser.Abstractions.PointerInput(
+                        action == "pointer_click"
+                            ? PuddingBrowser.Abstractions.PointerInputKind.Click
+                            : PuddingBrowser.Abstractions.PointerInputKind.Move,
+                        px,
+                        py),
+                    ct).ConfigureAwait(false);
+                break;
+            }
+
             case "scroll":
                 scroll = await page.ScrollAsync(
                     new ScrollOptions
