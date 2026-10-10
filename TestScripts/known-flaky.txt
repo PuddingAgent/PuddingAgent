@@ -13,10 +13,13 @@
 # "known" failures into "new instability" -- which is safe (it stops) but noisy.
 # -------------------------------------------------------------------------------------------------------
 
-# Failure kind: System.OperationCanceledException from Microsoft.AspNetCore.TestHost.TestWebSocket.ReceiveAsync
-# (a receive timeout), NOT an assertion. NOTE: on 2026-10-08 it also failed in ISOLATION, which contradicts the
-# earlier "passes in isolation" description; the timing budget is tighter than assumed on this machine.
-PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection
+# FIXED (2026-10-08): DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection
+# was removed from this registry. Root cause was a RACE IN THE TEST, not load: it connected twice back-to-back,
+# so either socket could win Registry.Current; when the second won, the server closed the FIRST socket and the
+# test waited forever for a close on the second (OperationCanceledException from ReceiveAsync). The test now
+# waits on a STATE BARRIER (Registry.Current is set) before the second connect, and its 2s clock is a 30s
+# documented watchdog. Evidence: old form failed 10/20 runs in isolation; fixed form 0/20 (plus a chain run).
+# Do not re-add it here without fresh failure evidence.
 
 # FIXED (2026-10-08): DesktopConfigurationLoadingTests.LlmConfigurationLoad_DoesNotDeadlockOnDesktopSynchronizationContext
 # was removed from this registry. Its "does not deadlock" criterion used to be a wall-clock Join(5s), which

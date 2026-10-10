@@ -62,7 +62,6 @@ public sealed class GateEvidenceReportTests
         // 仍在册的时序 flake（round-164 就因漏登记第二条而触发过一次拒绝）。
         foreach (var knownFlake in new[]
         {
-            "PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection",
             "PuddingDesktop.Tests.Browser.WebView2PresentationGateTests.HiddenSurface_ParksLateSdkFramesAndStopsObservingAfterDisposal",
         })
         {
@@ -76,9 +75,15 @@ public sealed class GateEvidenceReportTests
             .Select(line => line.Trim())
             .Where(line => line.Length > 0 && !line.StartsWith("#", StringComparison.Ordinal))
             .ToArray();
-        Assert.DoesNotContain(
+        // 两条**已修好**的用例都必须只是注释里的历史记录，不能仍是"条目"。
+        foreach (var fixedFlake in new[]
+        {
             "PuddingHost.Tests.Hosting.DesktopConfigurationLoadingTests.LlmConfigurationLoad_DoesNotDeadlockOnDesktopSynchronizationContext",
-            bareEntries);
+            "PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection",
+        })
+        {
+            Assert.DoesNotContain(fixedFlake, bareEntries);
+        }
         Assert.Contains("FIXED", registry, StringComparison.Ordinal);
 
         var script = File.ReadAllText(Path.Combine(root, "TestScripts", "delivery-manifest.ps1"));
