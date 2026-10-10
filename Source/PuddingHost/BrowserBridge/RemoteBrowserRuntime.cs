@@ -153,9 +153,9 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
         }
 
         // §4.1：**发命令前**过一次控制面门（只对带页面的命令）。未注入 ⇒ 不做任何事（行为不变）。
-        if (_bindingGate is { } gate && pageId is { } gatePage)
+        if (_bindingGate is { } gate && pageId is { } gatePage && contextId is { } gateContext)
         {
-            await gate.EnsureAsync(caller.CallerId, caller.TaskId, contextId?.Value, gatePage.Value, ct)
+            await gate.EnsureAsync(caller, gateContext.Value, gatePage.Value, ct)
                 .ConfigureAwait(false);
         }
 
