@@ -88,4 +88,45 @@ public sealed class RemoteBrowserRuntimeCallerTests
 
         public void FailPendingForConnection(Guid connectionId, long generation, string errorCode, string message) { }
     }
+
+    /// <summary>
+    /// 触发点门（§4.1）：Desktop **拒绝**授权时，命令**不得**发到 broker（fail-closed）。
+    /// 走的是内部页面级入口（公开方法一律不带页面，无法触到门）。
+    /// </summary>
+    [Fact]
+    public async Task ARefusedBindingStopsTheCommandBeforeTheBrokerSeesIt()
+    {
+        var broker = new RecordingBroker();
+        var gate = new RejectingGate();
+        using var scope = BrowserCallerIdentityScope.Push(
+            new BrowserCallerIdentity(BrowserCallerKind.Agent, "agent-1", "run-1"),
+            null);
+
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: new BrowserCallerIdentityAccessor(), bindingGate: gate);
+
+        var ex = await Assert.ThrowsAsync<BrowserOperationException>(() => runtime.ExecuteEmptyAsync(
+            "browser.test",
+            new { },
+            new BrowserContextId("ctx-1"),
+            new PageId("page-1"),
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None));
+
+        Assert.Contains("refused by policy", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(1, gate.Calls);        // 门被调用过一次
+        Assert.Empty(broker.Commands);      // 关键：命令**从未**发到 broker
+    }
+
+    /// <summary>拒绝型门：记录调用次数并按契约抛异常。</summary>
+    private sealed class RejectingGate : IBrowserBindingGate
+    {
+        public int Calls { get; private set; }
+
+        public Task EnsureAsync(
+            BrowserCallerIdentity caller, string contextId, string pageId, CancellationToken cancellationToken)
+        {
+            Calls++;
+            throw new BrowserOperationException(BrowserBridgeErrorCodes.BrowserUnauthorized, "refused by policy");
+        }
+    }
 }
