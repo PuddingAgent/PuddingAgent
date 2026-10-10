@@ -53,6 +53,56 @@ public sealed class InteractContractTests
         Assert.False(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Select));
         Assert.False(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Focus));
     }
+
+    /// <summary>
+    /// §8.2 坐标操作：`pointer_click/move/drag` 的坐标是 **CSS viewport 像素**；
+    /// 必须成对给出、**不得与 locator 混用**（否则驱动不知道该按坐标还是按元素走）；
+    /// 截图来源坐标必须携带 `observationId`。
+    /// </summary>
+    [Fact]
+    public void PointerActionsCarryViewportCoordinatesAndObservationId()
+    {
+        var request = new BrowserInteractRequest(
+            Target,
+            DesktopInteractionAction.PointerClick,
+            DesktopPageVersion.Require(3),
+            x: 12.5,
+            y: 44.25,
+            observationId: "obs-1");
+
+        Assert.Equal(12.5, request.X);
+        Assert.Equal(44.25, request.Y);
+        Assert.Equal("obs-1", request.ObservationId);
+        Assert.Null(request.Locator);
+    }
+
+    [Theory]
+    [InlineData(DesktopInteractionAction.PointerClick)]
+    [InlineData(DesktopInteractionAction.PointerMove)]
+    [InlineData(DesktopInteractionAction.PointerDrag)]
+    public void PointerActionsRequireBothCoordinates(DesktopInteractionAction action)
+    {
+        // 缺任一坐标都必须**明确拒绝**，不得猜一个默认值（0,0 会点到页面左上角）。
+        Assert.Throws<ArgumentException>(() => new BrowserInteractRequest(
+            Target, action, DesktopPageVersion.Require(3), x: 10));
+        Assert.Throws<ArgumentException>(() => new BrowserInteractRequest(
+            Target, action, DesktopPageVersion.Require(3), y: 10));
+        Assert.Throws<ArgumentException>(() => new BrowserInteractRequest(
+            Target, action, DesktopPageVersion.Require(3)));
+    }
+
+    [Fact]
+    public void PointerActionsRefuseALocator()
+    {
+        // 语义只能有一种：给了坐标就不该再给 locator。
+        Assert.Throws<ArgumentException>(() => new BrowserInteractRequest(
+            Target,
+            DesktopInteractionAction.PointerClick,
+            DesktopPageVersion.Require(3),
+            Button,
+            x: 1,
+            y: 2));
+    }
     [Fact]
     public void InputModeLineNames_AreFrozenAndUnknownIsRejected()
     {

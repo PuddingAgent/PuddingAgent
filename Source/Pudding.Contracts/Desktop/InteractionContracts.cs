@@ -357,8 +357,12 @@ public sealed record BrowserInteractRequest
         ? DesktopScrollTarget.Page
         : DeltaX is null && DeltaY is null ? DesktopScrollTarget.ToRef : DesktopScrollTarget.Element);
 
-    /// <summary>元素作用域动作必须有定位；<c>scroll</c> 可作用于页面本身。</summary>
-    public bool RequiresLocator => Action != DesktopInteractionAction.Scroll;
+    /// <summary>元素作用域动作必须有定位；<c>scroll</c> 可作用于页面本身；坐标动作（§8.2）按 CSS 视口坐标作用，不需要定位。</summary>
+    public bool RequiresLocator => Action is not (
+        DesktopInteractionAction.Scroll
+        or DesktopInteractionAction.PointerClick
+        or DesktopInteractionAction.PointerMove
+        or DesktopInteractionAction.PointerDrag);
 
     private void ValidateShape()
     {
