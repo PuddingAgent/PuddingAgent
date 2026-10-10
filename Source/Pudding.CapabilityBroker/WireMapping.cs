@@ -394,7 +394,7 @@ internal static class DesktopResultDecoder
                             ack.Accepted,
                             string.IsNullOrEmpty(ack.GrantId) ? null : new BrowserPageGrantId(ack.GrantId),
                             // epoch 目前按 default 还原：桌面侧的 grant epoch 语义尚未在 ack 上约定下限；（见 changelog）
-                            Epoch: default,
+                            Epoch: ack.Epoch == 0 ? BrowserPageGrantEpoch.None : new BrowserPageGrantEpoch((long)ack.Epoch),
                             string.IsNullOrEmpty(ack.Reason) ? null : ack.Reason)));
                 }
 

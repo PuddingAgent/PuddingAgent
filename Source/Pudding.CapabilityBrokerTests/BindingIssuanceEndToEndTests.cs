@@ -39,7 +39,7 @@ public sealed class BindingIssuanceEndToEndTests
             harness.Session.DesktopId,
             Apply());
 
-    private static Proto.DesktopFrame AckFrame(string operationId, bool accepted, string grantId, string reason) => new()
+    private static Proto.DesktopFrame AckFrame(string operationId, bool accepted, string grantId, string reason, ulong epoch = 0) => new()
     {
         Result = new Proto.OperationResult
         {
@@ -49,7 +49,7 @@ public sealed class BindingIssuanceEndToEndTests
             {
                 Accepted = accepted,
                 GrantId = grantId,
-                Epoch = 0,
+                Epoch = epoch,
                 Reason = reason,
             },
         },
@@ -95,5 +95,40 @@ public sealed class BindingIssuanceEndToEndTests
         Assert.False(outcome.Issued);
         Assert.Null(outcome.GrantId);
         Assert.Contains("not the page the user currently selected", outcome.Reason!, StringComparison.Ordinal);
+    }
+    [Fact]
+    public async Task AKnownEpochTravelsBackUnchanged()
+    {
+        await using var harness = await HarnessAsync();
+        var producer = Producer(harness);
+
+        var pending = producer.IssueAsync(Binding(), new OperationId("op-bind-epoch"));
+        await harness.WaitForCommandAsync("op-bind-epoch");
+
+        harness.Channel.Push(AckFrame("op-bind-epoch", accepted: true, grantId: "grant-1", reason: string.Empty, epoch: 7));
+
+        var outcome = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(outcome.Issued, outcome.Reason);
+        Assert.Equal(7, outcome.Epoch.Value);
+        Assert.True(outcome.Epoch.IsKnown);
+    }
+
+    [Fact]
+    public async Task AnUnspecifiedEpochIsReportedAsNoneNotAsOne()
+    {
+        await using var harness = await HarnessAsync();
+        var producer = Producer(harness);
+
+        var pending = producer.IssueAsync(Binding(), new OperationId("op-bind-epoch-none"));
+        await harness.WaitForCommandAsync("op-bind-epoch-none");
+
+        harness.Channel.Push(AckFrame("op-bind-epoch-none", accepted: true, grantId: "grant-1", reason: string.Empty, epoch: 0));
+
+        var outcome = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(outcome.Issued, outcome.Reason);
+        Assert.Equal(BrowserPageGrantEpoch.None, outcome.Epoch);
+        Assert.False(outcome.Epoch.IsKnown);
     }
 }

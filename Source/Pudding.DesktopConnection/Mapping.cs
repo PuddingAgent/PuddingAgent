@@ -877,7 +877,7 @@ internal static class DesktopFrameMapping
                     {
                         Accepted = applyAck.Accepted,
                         GrantId = applyAck.GrantId?.Value ?? string.Empty,
-                        Epoch = 0,
+                        Epoch = applyAck.Epoch.IsKnown ? (ulong)applyAck.Epoch.Value : 0UL,
                         Reason = applyAck.Reason ?? string.Empty,
                     };
                     break;
@@ -887,7 +887,7 @@ internal static class DesktopFrameMapping
                     {
                         Accepted = revokeAck.Accepted,
                         GrantId = revokeAck.GrantId?.Value ?? string.Empty,
-                        Epoch = 0,
+                        Epoch = revokeAck.Epoch.IsKnown ? (ulong)revokeAck.Epoch.Value : 0UL,
                         Reason = revokeAck.Reason ?? string.Empty,
                     };
                     break;
