@@ -48,7 +48,7 @@ draft: false
 
 | `BrowserBridge/TransportRoutedBrowserCapabilitySurface.cs` | 组合根按 `DesktopTransportRouting` **二选一**（通道就绪走通道，否则 Bridge，两者都不可用则如实失败）；同文件含 `DesktopTransportUsageTracker`（退役判据计数 + `MissingEvidenceCalls` 观测）。硬要求：**同一次操作绝不执行两次**；**副作用类能力要求权限证据**（缺失或 `denied` ⇒ `Unauthorized`，只读能力不受影响；见 `Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md`） |
 
-| `Hosting/ConnectedDesktopCallContextFactory.cs` | 能力调用上下文工厂实现：Desktop 实例 ID 有两个**真实来源**（活动能力通道会话 → Bridge 当前连接），都没有则返回 `null`（不猜实例 ID） |
+| `Hosting/ConnectedDesktopCallContextFactory.cs` | 能力调用上下文工厂实现：Desktop 实例 ID 有两个**真实来源**（活动能力通道会话 → Bridge 当前连接），都没有则返回 `null`（不猜实例 ID）；另含**调用者身份**：从工具执行作用域（`IBrowserCallerIdentityAccessor`）取，缺身份不补默认值 |
 
 ## 飞书连接器
 
