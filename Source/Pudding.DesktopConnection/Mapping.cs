@@ -496,6 +496,56 @@ internal static class CoreFrameMapping
                         command.ContextCreate.Persistent)));
             }
 
+            case DesktopCapability.BrowserBindingApply:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.BindingApply)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var apply = command.BindingApply;
+                if (!BrowserCallerKindWire.TryParse(apply.Task.Kind, out var applyKind))
+                {
+                    return FailRequest($"unknown caller kind '{apply.Task.Kind}'");
+                }
+
+                try
+                {
+                    var binding = new BrowserTaskBinding(
+                        new BrowserCallerIdentity(applyKind, apply.Task.CallerId, apply.Task.TaskId),
+                        new DesktopPageTarget(apply.Target.ContextId, apply.Target.PageId),
+                        (BrowserPageGrantScope)apply.Scope,
+                        TimeSpan.FromMilliseconds(apply.ValidityMs),
+                        apply.Source);
+
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForBindingApply(binding));
+                }
+                catch (ArgumentException ex)
+                {
+                    return FailRequest(ex.Message);
+                }
+            }
+
+            case DesktopCapability.BrowserBindingRevoke:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.BindingRevoke)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                var revoke = command.BindingRevoke;
+                if (!BrowserCallerKindWire.TryParse(revoke.Task.Kind, out var revokeKind))
+                {
+                    return FailRequest($"unknown caller kind '{revoke.Task.Kind}'");
+                }
+
+                return CapabilityResult<DesktopCapabilityRequest>.Success(
+                    DesktopCapabilityRequest.ForBindingRevoke(
+                        new BrowserCallerIdentity(revokeKind, revoke.Task.CallerId, revoke.Task.TaskId),
+                        new DesktopPageTarget(revoke.Target.ContextId, revoke.Target.PageId)));
+            }
+
             case DesktopCapability.BrowserContextClose:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.ContextClose)
