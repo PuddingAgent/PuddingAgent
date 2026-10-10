@@ -727,6 +727,26 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
 
+            // 方案 §4.2：**真正触碰页面前**复检一次。排队期间授权可能被撤销、用户可能接管、页面可能关闭 ——
+            // 只在入队前判一次是不够的。复检放在 try 内，因此无论拒绝还是继续，finally 都会释放租约。
+            if (lease is not null
+                && _connectionGeneration is { } generation
+                && DesktopCapabilityOperations.TryGetBrowserOperation(capability, out var recheckOperation)
+                && context.TryGetBrowserCaller(out var recheckCaller, out _))
+            {
+                var revalidated = Authority.Revalidate(
+                    lease,
+                    new BrowserAutomationRequest(
+                        recheckOperation, recheckCaller, context.OperationId, generation(), target));
+
+                if (!revalidated.IsAllowed)
+                {
+                    return CapabilityResult<TResult>.Failure(
+                        revalidated.Error
+                            ?? DesktopCapabilityError.Unauthorized(revalidated.Denial.ToString()));
+                }
+            }
+
             return await _dispatcher.InvokeAsync(
                 token => ExecuteOnUiAsync(capability, target, expectedPageVersion, context, action, token),
                 linked.Token).ConfigureAwait(false);
