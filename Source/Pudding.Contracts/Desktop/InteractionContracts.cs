@@ -1,4 +1,4 @@
-﻿namespace Pudding.Contracts.Desktop;
+namespace Pudding.Contracts.Desktop;
 
 /// <summary>
 /// 交互动作（与既有 Bridge 的 <c>page.interact</c> 动作等价；线名为 kebab-case 真源）。
@@ -22,6 +22,9 @@ public enum DesktopInteractionAction
     /// <summary>上传文件：把 <c>FilePaths</c> 交给 <c>Locator</c> 指向的文件输入元素。</summary>
     Upload,
     Focus,
+    PointerClick,
+    PointerMove,
+    PointerDrag,
 }
 
 /// <summary>
@@ -194,6 +197,9 @@ public static class DesktopInteractionActionWire
         DesktopInteractionAction.Drag => "drag",
         DesktopInteractionAction.Upload => "upload",
         DesktopInteractionAction.Focus => "focus",
+            DesktopInteractionAction.PointerClick => "pointer_click",
+            DesktopInteractionAction.PointerMove => "pointer_move",
+            DesktopInteractionAction.PointerDrag => "pointer_drag",
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Interaction action is not registered."),
     };
 
@@ -237,7 +243,10 @@ public sealed record BrowserInteractRequest
         DesktopInputMode inputMode = DesktopInputMode.Dom,
         DesktopScrollTarget? scrollTarget = null,
         DesktopLocator? toLocator = null,
-        IReadOnlyList<string>? filePaths = null)
+        IReadOnlyList<string>? filePaths = null,
+        double? x = null,
+        double? y = null,
+        string? observationId = null)
     {
         if (!Enum.IsDefined(action))
         {
@@ -262,6 +271,20 @@ public sealed record BrowserInteractRequest
                 nameof(expectedPageVersion));
         }
 
+        // §8.2 坐标操作：CSS viewport 像素；必须成对给出，且不得与 locator 混用（语义只能有一种）。
+        if (action is DesktopInteractionAction.PointerClick or DesktopInteractionAction.PointerMove or DesktopInteractionAction.PointerDrag)
+        {
+            if (x is null || y is null)
+            {
+                throw new ArgumentException("Pointer actions require both x and y (CSS viewport pixels).", nameof(x));
+            }
+
+            if (locator is not null)
+            {
+                throw new ArgumentException("Pointer actions take coordinates, not a locator.", nameof(locator));
+            }
+        }
+
         Target = target ?? throw new ArgumentNullException(nameof(target));
         Action = action;
         ExpectedPageVersion = expectedPageVersion;
@@ -275,6 +298,9 @@ public sealed record BrowserInteractRequest
         ScrollTarget = scrollTarget;
         ToLocator = toLocator;
         FilePaths = filePaths;
+        X = x;
+        Y = y;
+        ObservationId = observationId;
 
         ValidateShape();
     }
@@ -316,6 +342,15 @@ public sealed record BrowserInteractRequest
 
     /// <summary>上传的文件路径（仅 <c>Upload</c> 使用；必须是绝对路径）。</summary>
     public IReadOnlyList<string>? FilePaths { get; }
+
+    /// <summary>坐标 X（CSS viewport 像素，§8.2）。</summary>
+    public double? X { get; }
+
+    /// <summary>坐标 Y（CSS viewport 像素，§8.2）。</summary>
+    public double? Y { get; }
+
+    /// <summary>截图来源坐标必须携带的 observationId；滚动/缩放/布局或页面世代变化后失效（§8.2）。</summary>
+    public string? ObservationId { get; }
 
     /// <summary>实际生效的滚动目标（显式优先，否则按上面的规则推导）。</summary>
     public DesktopScrollTarget EffectiveScrollTarget => ScrollTarget ?? (Locator is null
