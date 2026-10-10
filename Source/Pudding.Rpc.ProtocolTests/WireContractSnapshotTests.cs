@@ -162,7 +162,8 @@ public sealed class WireContractSnapshotTests
         AssertFieldNumbers(LocateOutcome.Descriptor, ("elements", 1), ("truncated", 2), ("page_version", 3));
         AssertFieldNumbers(InteractCommand.Descriptor,
             ("target", 1), ("expected_page_version", 2), ("action", 3), ("locator", 4), ("text", 5),
-            ("values", 6), ("checked", 7), ("delta_x", 8), ("delta_y", 9));
+            ("values", 6), ("checked", 7), ("delta_x", 8), ("delta_y", 9),
+            ("x", 10), ("y", 11), ("observation_id", 12));
         AssertFieldNumbers(InteractionOutcome.Descriptor, ("element", 1), ("page", 2));
         AssertFieldNumbers(WaitForCommand.Descriptor,
             ("target", 1), ("expected_page_version", 2), ("condition_kind", 3), ("condition_value", 4), ("timeout_ms", 5));
