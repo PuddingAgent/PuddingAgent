@@ -643,7 +643,7 @@ internal static class Frames
         new()
         {
             Command = new Proto.CapabilityCommand
-            {
+            { Caller = TrustedCaller, 
                 OperationId = operationId,
                 Generation = generation,
                 Capability = capability,
@@ -670,7 +670,7 @@ internal static class Frames
         new()
         {
             Command = new Proto.CapabilityCommand
-            {
+            { Caller = TrustedCaller, 
                 OperationId = operationId,
                 Generation = generation,
                 Capability = "webview.execute_javascript",
@@ -694,7 +694,7 @@ internal static class Frames
         new()
         {
             Command = new Proto.CapabilityCommand
-            {
+            { Caller = TrustedCaller, 
                 OperationId = operationId,
                 Generation = generation,
                 Capability = "webview.page_state",
@@ -717,7 +717,7 @@ internal static class Frames
         new()
         {
             Command = new Proto.CapabilityCommand
-            {
+            { Caller = TrustedCaller, 
                 OperationId = operationId,
                 Generation = generation,
                 Capability = "shell.notification",
@@ -731,6 +731,16 @@ internal static class Frames
             },
         };
 
+    /// <summary>
+    /// 测试替身默认携带的**可信调用者身份**（方案 §3.2）：浏览器能力现在必须有身份。
+    /// 需要验证"缺身份被拒"的用例请显式构造不带 Caller 的命令。
+    /// </summary>
+    public static readonly Proto.BrowserCallerIdentityMessage TrustedCaller = new()
+    {
+        Kind = "agent",
+        CallerId = "agent-1",
+        TaskId = "run-1",
+    };
     public static Proto.CapabilityCommand Command(
         string operationId,
         string capability,

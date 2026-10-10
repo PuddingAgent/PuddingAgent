@@ -54,21 +54,52 @@ internal static class CoreFrameMapping
                 DesktopCapabilityError.UnsupportedCapability(WireText.Truncate(command.Capability, 64)));
         }
 
-        var request = BuildRequest(command, descriptor);
-        if (!request.IsSuccess)
-        {
-            return CapabilityResult<DecodedCommand>.Failure(request.Error);
-        }
-
         DesktopCorrelationId? correlationId = null;
         if (!string.IsNullOrEmpty(command.CorrelationId) && DesktopCorrelationId.IsValid(command.CorrelationId))
         {
             correlationId = new DesktopCorrelationId(command.CorrelationId);
         }
 
+        // §3.2：解码可信调用者身份。**不**按 proto 默认值补身份：
+        //   - 取值非法（未知 kind / 空必填 / 过长 / 子代理缺父任务）⇒ 协议错误；
+        //   - 浏览器自动化能力**必须**有身份（缺即拒，且不得冒充 User）—— 判据复用契约里的唯一一份规则。
+        BrowserCallerIdentity? browserCaller = null;
+        if (command.Caller is { } wireCaller)
+        {
+            if (!BrowserCallerKindWire.TryParse(wireCaller.Kind, out var callerKind))
+            {
+                return Fail($"caller.kind '{WireText.Truncate(wireCaller.Kind, 32)}' is not a registered caller kind");
+            }
+
+            try
+            {
+                browserCaller = new BrowserCallerIdentity(
+                    callerKind,
+                    wireCaller.CallerId,
+                    string.IsNullOrEmpty(wireCaller.TaskId) ? null : wireCaller.TaskId,
+                    string.IsNullOrEmpty(wireCaller.ParentTaskId) ? null : wireCaller.ParentTaskId);
+            }
+            catch (ArgumentException ex)
+            {
+                return Fail($"caller identity is invalid: {ex.Message}");
+            }
+        }
+
         var operationId = new OperationId(command.OperationId);
         var context = new DesktopCallContext(
-            desktopId, operationId, command.Deadline.ToDateTimeOffset(), correlationId);
+            desktopId, operationId, command.Deadline.ToDateTimeOffset(), correlationId, browserCaller);
+
+        // 浏览器自动化能力在 Desktop 侧同样要求可信身份（Core 侧预检不能替代这里）。
+        if (descriptor.Kind == DesktopCapabilityKind.WebView
+            && !context.TryGetBrowserCaller(out _, out var callerReason))
+        {
+            return Fail(callerReason);
+        }
+        var request = BuildRequest(command, descriptor);
+        if (!request.IsSuccess)
+        {
+            return CapabilityResult<DecodedCommand>.Failure(request.Error);
+        }
         var traceId = WireText.Truncate(command.TraceId, MaxTraceIdLength);
 
         return CapabilityResult<DecodedCommand>.Success(new DecodedCommand(
