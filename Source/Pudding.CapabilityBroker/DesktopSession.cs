@@ -438,6 +438,23 @@ public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapability
 
     // ── 调用实现 ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// 控制面（§4.1）：发送一次能力调用并返回**完整响应**（调用方自己读 ack）。
+    /// 存在的理由：签发生产者需要一个"把请求发出去"的入口，而 <c>InvokeAsync</c> 是 private 且要求投影函数；
+    /// 本方法只做投影恒等 + 公开化，不改变任何发送语义。
+    /// </summary>
+    public Task<CapabilityResult<DesktopCapabilityResponse>> SendAsync(
+        DesktopCapability capability,
+        DesktopCapabilityRequest request,
+        DesktopCallContext call,
+        CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            capability,
+            request,
+            call,
+            static response => CapabilityResult<DesktopCapabilityResponse>.Success(response),
+            cancellationToken);
+
     private async Task<CapabilityResult<TResult>> InvokeAsync<TResult>(
         DesktopCapability capability,
         DesktopCapabilityRequest request,
