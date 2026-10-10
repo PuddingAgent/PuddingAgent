@@ -62,4 +62,33 @@ public sealed class WebView2DomClientValidationTests
         Assert.Equal(500_000, WebView2DomClient.Normalize(new SnapshotOptions { MaxTextLength = 9_999_999 }).MaxTextLength);
         Assert.Equal(200_000, WebView2DomClient.Normalize(new SnapshotOptions()).MaxTextLength);
     }
+
+    // ── ref 线格式（round-283 读码确认）：`p{32位hex页面token}-v{世代}-n{序号}` ──
+    // 页面 token 由驱动生成 ⇒ 跨页/跨 frame 的引用**天然无法**通过校验（设计如此）。
+    private const string RefToken = "0123456789abcdef0123456789abcdef";
+
+    [Fact]
+    public void AWellShapedReferenceIsAccepted()
+    {
+        WebView2DomClient.ValidateLocator(
+            new Locator { Kind = LocatorKind.Ref, Value = $"p{RefToken}-v1-n2" },
+            pageVersion: 1,
+            pageToken: RefToken);
+    }
+
+    [Fact]
+    public void ReferencesWithATruncatedTokenOrANonReferenceShapeAreRejected()
+    {
+        // token 不是 32 位 hex。
+        Assert.Throws<BrowserOperationException>(() => WebView2DomClient.ValidateLocator(
+            new Locator { Kind = LocatorKind.Ref, Value = "p0123-v1-n2" }, pageVersion: 1, pageToken: RefToken));
+
+        // 旧式猜测形状（round-282 曾误以为是合法 ref）。
+        Assert.Throws<BrowserOperationException>(() => WebView2DomClient.ValidateLocator(
+            new Locator { Kind = LocatorKind.Ref, Value = "e1" }, pageVersion: 1, pageToken: RefToken));
+
+        // 缺世代。
+        Assert.Throws<BrowserOperationException>(() => WebView2DomClient.ValidateLocator(
+            new Locator { Kind = LocatorKind.Ref, Value = $"p{RefToken}-n2" }, pageVersion: 1, pageToken: RefToken));
+    }
 }
