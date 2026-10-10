@@ -134,6 +134,49 @@ message LocateCommand {
 }
 
 // 定位策略 + 值 + 可选修饰；kind 用线名（ref/css/xpath/text/role/label/placeholder/alt-text/title/test-id）。
+// §8.1 截图（视口/区域/元素 + 细节档）。坐标为 CSS viewport 像素；区域/滚动/裁剪用 optional 保留 presence。
+message ScreenshotCommand {
+  CommandTarget target = 1;
+  int64 expected_page_version = 2;
+  string scope = 3;
+  optional double region_x = 4;
+  optional double region_y = 5;
+  optional double region_width = 6;
+  optional double region_height = 7;
+  LocatorSpec locator = 8;
+  string detail = 9;
+  string format = 10;
+}
+
+message ScreenshotChunk {
+  int32 index = 1;
+  bool is_last = 2;
+  bytes data = 3;
+}
+
+message ScreenshotOutcome {
+  string observation_id = 1;
+  string mime_type = 2;
+  int32 byte_count = 3;
+  int32 source_width = 4;
+  int32 source_height = 5;
+  int32 output_width = 6;
+  int32 output_height = 7;
+  optional double device_scale_factor = 8;
+  optional double viewport_width = 9;
+  optional double viewport_height = 10;
+  optional double scroll_x = 11;
+  optional double scroll_y = 12;
+  optional double crop_x = 13;
+  optional double crop_y = 14;
+  optional double crop_width = 15;
+  optional double crop_height = 16;
+  int64 page_version = 17;
+  int64 dom_revision = 18;
+  int64 viewport_revision = 19;
+  string detail = 20;
+  repeated ScreenshotChunk chunks = 21;
+}
 message LocatorSpec {
   string kind = 1;
   string value = 2;
@@ -388,6 +431,7 @@ message CapabilityCommand {
   ContextCloseCommand context_close = 25;
     BrowserBindingApplyCommand binding_apply = 26;
     BrowserBindingRevokeCommand binding_revoke = 27;
+  ScreenshotCommand screenshot = 28;
   }
 }
 
@@ -522,6 +566,7 @@ message OperationResult {
   ContextCreatedOutcome context_created = 25;
   ContextClosedOutcome context_closed = 26;
     BindingAckOutcome binding_ack = 27;
+  ScreenshotOutcome screenshot = 28;
   }
 }
 
