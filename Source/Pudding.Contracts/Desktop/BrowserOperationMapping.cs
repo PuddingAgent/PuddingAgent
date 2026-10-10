@@ -29,6 +29,9 @@ public static class DesktopCapabilityOperations
             case DesktopCapability.BrowserSnapshot:
                 operation = BrowserAutomationOperation.Snapshot;
                 return true;
+                case DesktopCapability.BrowserScreenshot:
+                operation = BrowserAutomationOperation.Screenshot;
+                return true;
             case DesktopCapability.BrowserLocate:
                 operation = BrowserAutomationOperation.Locate;
                 return true;

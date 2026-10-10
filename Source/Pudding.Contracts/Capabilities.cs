@@ -56,6 +56,7 @@ public enum DesktopCapability
 
         /// <summary>控制面：撤销该绑定。</summary>
         BrowserBindingRevoke = 1 << 17,
+    BrowserScreenshot = 1 << 18,
 
     /// <summary>创建浏览器上下文（变更类，缺口 #1）。**新能力名**而非扩展 browser.contexts ——
     /// 目录规则要求改变同名能力语义时必须用新名字或升版本。</summary>
@@ -133,6 +134,9 @@ public static class DesktopCapabilities
         new(DesktopCapability.ShellClipboard, "shell.clipboard", InitialVersion,
             DesktopCapabilityKind.Shell, DesktopCapabilityTraits.RequiresTrustedContext),
         new(DesktopCapability.BrowserSnapshot, "browser.snapshot", InitialVersion,
+            DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
+        // §8.1 截图：**只读**（无 Mutating/HasSideEffects），需要可信上下文与页面目标。
+        new(DesktopCapability.BrowserScreenshot, "browser.screenshot", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
         new(DesktopCapability.BrowserLocate, "browser.locate", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
