@@ -60,6 +60,10 @@ public static class BrowserBridgeServiceCollectionExtensions
         //   ① 能力通道已启用 ⇒ 活动会话的 DesktopId；
         //   ② 通道未启用 ⇒ 既有 Bridge 连接的 DesktopInstanceId。
         // 少了 ② 这条回退，走 Bridge 的工具根本拿不到调用上下文（本轮实读发现）。
+        // 身份读取器（设计 §3.1）：读"本次工具调用"的作用域。注册为单例是因为它**本身无状态** ——
+        // 状态在工具执行作用域（AsyncLocal）里，单例只是读取入口。
+        services.TryAddSingleton<IBrowserCallerIdentityAccessor, BrowserCallerIdentityAccessor>();
+
         services.AddSingleton<IDesktopCapabilityCallContextFactory>(sp =>
             new ConnectedDesktopCallContextFactory(() =>
             {
@@ -72,7 +76,8 @@ public static class BrowserBridgeServiceCollectionExtensions
                     && !string.IsNullOrWhiteSpace(bridge.DesktopInstanceId)
                         ? new Pudding.Contracts.DesktopInstanceId(bridge.DesktopInstanceId)
                         : null;
-            }));
+            },
+            callerIdentity: sp.GetRequiredService<IBrowserCallerIdentityAccessor>()));
 
         services.AddPuddingToolsFromAssembly(typeof(BrowserContextTool).Assembly);
         return services;

@@ -2,6 +2,9 @@ using Microsoft.Extensions.DependencyInjection;
 using PuddingBrowser.Abstractions;
 using PuddingCode.Tools;
 using PuddingHost.BrowserBridge;
+using Pudding.Contracts;
+using Pudding.Contracts.Desktop;
+using PuddingBrowser.AgentTools;
 using PuddingHost.Hosting;
 
 namespace PuddingHost.Tests.BrowserBridge;
@@ -28,6 +31,26 @@ public sealed class BrowserBridgeServiceCollectionExtensionsTests
             toolTypes);
     }
 
+    [Fact]
+    public void TheCallContextFactoryIsWiredToTheCallerIdentityScope()
+    {
+        // §3.1 的组合根约束：工厂必须**真的**拿到身份读取器。这条用例是在一次静默失效
+        // （字符串替换没生效、编译照过、生产路径其实没接上）之后补的 —— 用行为/结构断言钉住。
+        var services = new ServiceCollection();
+        services.AddDesktopBrowserAutomation(Options(PuddingHostMode.DesktopChild, enabled: true));
+        using var provider = services.BuildServiceProvider();
+
+        var accessor = provider.GetRequiredService<IBrowserCallerIdentityAccessor>();
+        Assert.IsType<BrowserCallerIdentityAccessor>(accessor);
+
+        var factory = provider.GetRequiredService<IDesktopCapabilityCallContextFactory>();
+        var field = factory.GetType().GetField(
+            "_callerIdentity",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        Assert.NotNull(field);
+        Assert.Same(accessor, field!.GetValue(factory));
+    }
     [Theory]
     [InlineData(PuddingHostMode.Console, false)]
     [InlineData(PuddingHostMode.Console, true)]

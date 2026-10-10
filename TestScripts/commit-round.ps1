@@ -20,7 +20,10 @@
 param(
     [Parameter(Mandatory = $true)][string]$Message,
     [Parameter(Mandatory = $true)][string[]]$Paths,
-    [string[]]$TestPath = @()
+    [string[]]$TestPath = @(),
+    # Retry a failing suite ONCE, but only when every failing test is on TestScripts/known-flaky.txt.
+    # Unknown instability still refuses: the retry is a classification, not a way to ignore red.
+    [ValidateRange(0, 2)][int]$RetryKnownFlakes = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,13 +40,64 @@ try {
 
     if ($TestPath.Count -gt 0) {
         Write-Host "=== step 2/3: tests"
+        # dotnet writes test failures to stderr; with $ErrorActionPreference = "Stop" that becomes a
+        # terminating error and the retry/classification code below would never run (found by running it).
+        # Gate on exit codes instead (same reason as the git step).
+        $ErrorActionPreference = "Continue"
+        $registryPath = Join-Path $PSScriptRoot "known-flaky.txt"
+        $knownNames = @()
+        if (Test-Path $registryPath) {
+            $knownNames = Get-Content $registryPath -Encoding UTF8 |
+                Where-Object { $_ -and -not $_.TrimStart().StartsWith("#") } |
+                ForEach-Object { $_.Trim() }
+        }
+
         foreach ($project in $TestPath) {
             Write-Host "--- $project"
             & dotnet test $project --nologo --no-restore
-            if ($LASTEXITCODE -ne 0) {
+            if ($LASTEXITCODE -eq 0) { continue }
+
+            if ($RetryKnownFlakes -le 0) {
                 Write-Warning "REFUSING TO COMMIT: tests failed for $project (exit $LASTEXITCODE)."
                 exit $LASTEXITCODE
             }
+
+            # Identify WHICH tests failed before retrying -- never "just run it again and see".
+            $suiteName = [System.IO.Path]::GetFileNameWithoutExtension($project)
+            $trxDir = Join-Path $repositoryRoot "temp/test-out/trx"
+            New-Item -ItemType Directory -Force -Path $trxDir | Out-Null
+            Write-Host "--- re-running $suiteName once with a TRX to classify the failure"
+            & dotnet test $project --nologo --no-restore --logger "trx;LogFileName=$suiteName.retry.trx" --results-directory $trxDir
+            $retryExit = $LASTEXITCODE
+            $trxPath = Join-Path $trxDir "$suiteName.retry.trx"
+            $failedNames = @()
+            if (Test-Path $trxPath) {
+                $trx = Get-Content $trxPath -Raw -Encoding UTF8
+                $failedNames = [regex]::Matches($trx, '<UnitTestResult\b[^>]*outcome="Failed"[^>]*testName="([^"]+)"') |
+                    ForEach-Object { $_.Groups[1].Value } |
+                    Sort-Object -Unique
+            }
+
+            if ($retryExit -eq 0 -and $failedNames.Count -gt 0) {
+                $unknown = @($failedNames | Where-Object { $knownNames -notcontains $_ })
+                if ($unknown.Count -eq 0) {
+                    Write-Warning ("known flake absorbed by retry ({0}): {1}" -f $failedNames.Count, ($failedNames -join ", "))
+                    continue
+                }
+
+                Write-Warning "REFUSING TO COMMIT: the first attempt failed with NEW INSTABILITY (not on TestScripts/known-flaky.txt):"
+                $unknown | ForEach-Object { Write-Warning ("  " + $_) }
+                exit 1
+            }
+
+            if ($retryExit -eq 0 -and $failedNames.Count -eq 0) {
+                # Retry green but the TRX names no failing test => cannot classify, treat as instability.
+                Write-Warning "REFUSING TO COMMIT: $suiteName failed once and passed on retry, but the TRX names no failing test (cannot classify)."
+                exit 1
+            }
+
+            Write-Warning "REFUSING TO COMMIT: $suiteName still fails on retry (exit $retryExit)."
+            exit $retryExit
         }
     }
     else {
