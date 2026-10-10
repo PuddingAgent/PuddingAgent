@@ -288,6 +288,20 @@ public sealed record BrowserInteractRequest
             {
                 throw new ArgumentException("Pointer actions take coordinates, not a locator.", nameof(locator));
             }
+                // 拖拽需要**终点**：缺 toX/toY 就明确拒绝（绝不臆造终点 —— 那会拖到 (0,0)）。
+                if (action == DesktopInteractionAction.PointerDrag)
+                {
+                    if (toX is null || toY is null)
+                    {
+                        throw new ArgumentException(
+                            "Pointer drag requires both toX and toY (CSS viewport pixels).", nameof(toX));
+                    }
+                }
+                else if (toX is not null || toY is not null)
+                {
+                    throw new ArgumentException("Only pointer drag takes toX/toY.", nameof(toX));
+                }
+
         }
 
         Target = target ?? throw new ArgumentNullException(nameof(target));

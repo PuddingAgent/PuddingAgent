@@ -85,6 +85,13 @@ public sealed record BrowserInteractArgs
     /// <summary>截图来源坐标必须携带的 observationId；滚动/缩放/布局或页面世代变化后失效（§8.2）。</summary>
     [ToolParam("Screenshot observation id when the coordinates came from a screenshot.")]
     public string? ObservationId { get; init; }
+    /// <summary>坐标拖拽的终点 X（CSS viewport 像素，§8.2；仅 action=pointer_drag）。</summary>
+    [ToolParam("Target X for action=pointer_drag (CSS viewport pixels).")]
+    public double? ToX { get; init; }
+
+    /// <summary>坐标拖拽的终点 Y（CSS viewport 像素）。</summary>
+    [ToolParam("Target Y for action=pointer_drag (CSS viewport pixels).")]
+    public double? ToY { get; init; }
 }
 
 
@@ -339,7 +346,7 @@ public sealed class BrowserInteractTool(
                     toLocator,
 
                     // 上传文件（仅 action=upload；契约层强制至少一个）。
-                    args.Files, x: args.X, y: args.Y, observationId: args.ObservationId),
+                    args.Files, x: args.X, y: args.Y, observationId: args.ObservationId, toX: args.ToX, toY: args.ToY),
 
                 call,
 
