@@ -5,7 +5,7 @@ public enum DesktopScreenshotScope
 {
     Viewport,
     Region,
-    Element,
+    FullPage,
 }
 
 /// <summary>截图范围的**线名真源**（与既有 <c>*Wire</c> 同风格）。</summary>
@@ -15,7 +15,7 @@ public static class DesktopScreenshotScopeWire
     {
         DesktopScreenshotScope.Viewport => "viewport",
         DesktopScreenshotScope.Region => "region",
-        DesktopScreenshotScope.Element => "element",
+        DesktopScreenshotScope.FullPage => "full_page",
         _ => throw new ArgumentOutOfRangeException(nameof(scope), scope, "Screenshot scope is not registered."),
     };
 
@@ -110,8 +110,8 @@ public sealed record BrowserScreenshotRequest
         {
             case DesktopScreenshotScope.Viewport when locator is not null || hasRegion:
                 throw new ArgumentException("A viewport screenshot takes no locator and no region.", nameof(scope));
-            case DesktopScreenshotScope.Element when locator is null:
-                throw new ArgumentException("An element screenshot requires a locator.", nameof(locator));
+            case DesktopScreenshotScope.FullPage when locator is not null || hasRegion:
+                throw new ArgumentException("A full-page screenshot takes no locator and no region.", nameof(scope));
             case DesktopScreenshotScope.Region when regionX is null || regionY is null || regionWidth is null || regionHeight is null:
                 throw new ArgumentException("A region screenshot requires all four rectangle values.", nameof(regionX));
             case DesktopScreenshotScope.Region when regionWidth <= 0 || regionHeight <= 0:

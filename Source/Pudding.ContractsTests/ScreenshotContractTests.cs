@@ -22,10 +22,10 @@ public sealed class ScreenshotContractTests
     }
 
     [Fact]
-    public void AnElementScreenshotRequiresALocator()
+    public void AFullPageScreenshotTakesNoLocatorAndNoRegion()
     {
         Assert.Throws<ArgumentException>(() => new BrowserScreenshotRequest(
-            Target, DesktopPageVersion.Require(3), DesktopScreenshotScope.Element));
+            Target, DesktopPageVersion.Require(3), DesktopScreenshotScope.FullPage, locator: Button));
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class ScreenshotContractTests
     public void ScopeAndDetailWireNamesAreStableAndUnknownNamesAreRejected()
     {
         Assert.Equal("viewport", DesktopScreenshotScopeWire.NameOf(DesktopScreenshotScope.Viewport));
-        Assert.Equal("element", DesktopScreenshotScopeWire.NameOf(DesktopScreenshotScope.Element));
+        Assert.Equal("full_page", DesktopScreenshotScopeWire.NameOf(DesktopScreenshotScope.FullPage));
         Assert.Equal("low", DesktopScreenshotDetailWire.NameOf(DesktopScreenshotDetail.Low));
         Assert.Equal("original", DesktopScreenshotDetailWire.NameOf(DesktopScreenshotDetail.Original));
 
