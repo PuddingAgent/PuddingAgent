@@ -12,17 +12,17 @@ public sealed class ChannelTransportResolverTests
     public void Resolve_MapsEveryEndpointKind()
     {
         var pipe = DesktopChannelTransportResolver.Resolve(
-            DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1, "core-1"));
+            DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", DesktopProtocolVersion.Current, "core-1"));
         Assert.True(pipe.IsSuccess);
         Assert.Equal(DesktopChannelTransportKind.NamedPipe, pipe.Value.Kind);
         Assert.Equal("pudding-capability-abc", pipe.Value.Address);
 
         var loopback = DesktopChannelTransportResolver.Resolve(
-            DesktopCapabilityEndpoint.LoopbackHttp2(new Uri("http://127.0.0.1:5099"), 1));
+            DesktopCapabilityEndpoint.LoopbackHttp2(new Uri("http://127.0.0.1:5099"), DesktopProtocolVersion.Current));
         Assert.Equal(DesktopChannelTransportKind.LoopbackHttp2, loopback.Value.Kind);
 
         var tls = DesktopChannelTransportResolver.Resolve(
-            DesktopCapabilityEndpoint.Tls(new Uri("https://core.example:5099"), 1));
+            DesktopCapabilityEndpoint.Tls(new Uri("https://core.example:5099"), DesktopProtocolVersion.Current));
         Assert.Equal(DesktopChannelTransportKind.Tls, tls.Value.Kind);
     }
 
@@ -49,7 +49,7 @@ public sealed class ChannelTransportResolverTests
     [Fact]
     public void ResolveFromText_RoundTripsThePublishedDescription()
     {
-        var endpoint = DesktopCapabilityEndpoint.NamedPipe("pudding-capability-deadbeef", 1, "core-9");
+        var endpoint = DesktopCapabilityEndpoint.NamedPipe("pudding-capability-deadbeef", DesktopProtocolVersion.Current, "core-9");
 
         var result = DesktopChannelTransportResolver.ResolveFromText(endpoint.ToEndpointString());
 
@@ -63,8 +63,8 @@ public sealed class ChannelTransportResolverTests
     {
         foreach (var text in new string?[]
                  {
-                     null, string.Empty, "named-pipe:pudding", "carrier-pigeon:pudding|1|",
-                     "loopback-h2c:http://10.0.0.5:1|1|", "tls:http://core.example:1|1|",
+                     null, string.Empty, "named-pipe:pudding", $"carrier-pigeon:pudding|{DesktopProtocolVersion.Current}|",
+                     $"loopback-h2c:http://10.0.0.5:1|{DesktopProtocolVersion.Current}|", $"tls:http://core.example:1|{DesktopProtocolVersion.Current}|",
                  })
         {
             var result = DesktopChannelTransportResolver.ResolveFromText(text);
@@ -77,7 +77,7 @@ public sealed class ChannelTransportResolverTests
     public void ResolvedTransport_ExposesNoCredentials()
     {
         var transport = DesktopChannelTransportResolver.Resolve(
-            DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1, "core-1")).Value;
+            DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", DesktopProtocolVersion.Current, "core-1")).Value;
 
         Assert.DoesNotContain("core-1", transport.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("=", transport.ToString(), StringComparison.Ordinal);
@@ -100,7 +100,7 @@ public sealed class DesktopCapabilityChannelSettingsTests
 
         // 未启用时两个入口都必须明确失败，不得静默降级到能力通道。
         Assert.True(settings.CreateConnectionOptions(new DesktopProcessInstanceId("proc-1")).IsFailure);
-        Assert.True(settings.ResolveTransportFromDescription("named-pipe:pudding-x|1|").IsFailure);
+        Assert.True(settings.ResolveTransportFromDescription($"named-pipe:pudding-x|{DesktopProtocolVersion.Current}|").IsFailure);
     }
 
     [Fact]
@@ -157,12 +157,12 @@ public sealed class DesktopCapabilityChannelSettingsTests
     {
         var settings = new DesktopCapabilityChannelSettings { Enabled = true };
 
-        var namedPipe = settings.ResolveTransportFromDescription("named-pipe:pudding-capability-abc|1|core-1");
+        var namedPipe = settings.ResolveTransportFromDescription($"named-pipe:pudding-capability-abc|{DesktopProtocolVersion.Current}|core-1");
         Assert.True(namedPipe.IsSuccess);
         Assert.Equal(DesktopChannelTransportKind.NamedPipe, namedPipe.Value.Kind);
 
         // 描述不可解析时明确失败（不做跨传输回退）。
-        Assert.True(settings.ResolveTransportFromDescription("carrier-pigeon:x|1|").IsFailure);
+        Assert.True(settings.ResolveTransportFromDescription($"carrier-pigeon:x|{DesktopProtocolVersion.Current}|").IsFailure);
     }
 }
 /// <summary>能力预算：按上限截断且如实标注（诚实优先，不假装完整）。</summary>

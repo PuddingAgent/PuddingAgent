@@ -1,8 +1,8 @@
-﻿namespace PuddingBrowser.Protocol;
+namespace PuddingBrowser.Protocol;
 
 public static class BrowserBridgeProtocol
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
     public const int MaxMessageBytes = 1024 * 1024;
     public const string EndpointPath = "/desktop/browser-bridge";
     public const string ControlTokenHeader = "X-Pudding-Desktop-Token";

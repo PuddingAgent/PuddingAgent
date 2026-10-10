@@ -31,7 +31,7 @@ public sealed class CapabilityChannelReadinessContractTests
 
         var ready = ParseReadyLine(CapabilityChannelReadySignal.Describe(endpoint));
 
-        Assert.Equal("named-pipe:pudding-capability-contract|1|core-1", ready.CapabilityEndpoint);
+        Assert.Equal($"named-pipe:{PipeName}|{DesktopProtocolVersion.Current}|core-1", ready.CapabilityEndpoint);
 
         var preflight = Evaluate(ready.CapabilityEndpoint);
 

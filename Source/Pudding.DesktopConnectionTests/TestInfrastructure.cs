@@ -587,7 +587,7 @@ internal static class Frames
         {
             ConnectionId = options.ConnectionId,
             Generation = options.Generation,
-            NegotiatedVersion = options.VersionRange ?? new Proto.ProtocolRange { Minimum = 1, Maximum = 1 },
+            NegotiatedVersion = options.VersionRange ?? new Proto.ProtocolRange { Minimum = (uint)DesktopProtocolVersion.Minimum, Maximum = (uint)DesktopProtocolVersion.Current },
         };
 
         foreach (var declaration in DesktopCapabilities.DeclareFor(options.Granted ?? options.Declared))
@@ -612,8 +612,8 @@ internal static class Frames
         ulong generation = 1,
         DesktopCapability granted = DesktopCapability.WebViewNavigate,
         Proto.ChannelLimits? limits = null,
-        uint minimum = 1,
-        uint maximum = 1) =>
+        uint minimum = (uint)DesktopProtocolVersion.Minimum,
+        uint maximum = (uint)DesktopProtocolVersion.Current) =>
         HelloAck(new HarnessOptions
         {
             ConnectionId = connectionId,

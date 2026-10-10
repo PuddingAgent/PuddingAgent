@@ -25,7 +25,7 @@ public sealed class HandshakeTests
         Assert.Equal(DesktopConnectionState.Ready, harness.Connection.State);
         Assert.Equal(1, harness.Connection.Generation.Value);
         Assert.Equal("conn-1", harness.Connection.ConnectionId);
-        Assert.Equal(1, harness.Connection.NegotiatedVersion);
+        Assert.Equal(DesktopProtocolVersion.Current, harness.Connection.NegotiatedVersion);
         Assert.Equal(
             DesktopCapability.WebViewNavigate
                 | DesktopCapability.WebViewExecuteJavascript
@@ -122,7 +122,7 @@ public sealed class HandshakeTests
             {
                 ConnectionId = "conn-1",
                 Generation = 0,
-                NegotiatedVersion = new Proto.ProtocolRange { Minimum = 1, Maximum = 1 },
+                NegotiatedVersion = new Proto.ProtocolRange { Minimum = (uint)DesktopProtocolVersion.Minimum, Maximum = (uint)DesktopProtocolVersion.Current },
             },
         });
 

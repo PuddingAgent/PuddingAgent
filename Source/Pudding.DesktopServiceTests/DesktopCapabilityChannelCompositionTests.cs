@@ -16,7 +16,7 @@ namespace DesktopServiceTests;
 /// </summary>
 public sealed class DesktopCapabilityChannelCompositionTests
 {
-    private const string UsableEndpoint = "named-pipe:pudding-capability-composition-test|1|core-test";
+    private static readonly string UsableEndpoint = $"named-pipe:pudding-capability-composition-test|{DesktopProtocolVersion.Current}|core-test";
     private const string TestToken = "test-token-value-SECRET";
 
     [Fact]
@@ -163,7 +163,7 @@ public sealed class DesktopCapabilityChannelCompositionTests
     [Fact]
     public async Task FailureMessagesNeverCarryCredentials()
     {
-        var result = await StartAsync(settings: EnabledSettings(), endpointDescription: "bogus:whatever|1|x");
+        var result = await StartAsync(settings: EnabledSettings(), endpointDescription: $"bogus:whatever|{DesktopProtocolVersion.Current}|x");
 
         Assert.True(result.IsFailure);
         Assert.DoesNotContain(TestToken, result.Error!.Message, StringComparison.Ordinal);

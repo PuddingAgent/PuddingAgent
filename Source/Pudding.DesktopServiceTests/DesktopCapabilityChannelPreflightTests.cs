@@ -28,7 +28,7 @@ public sealed class DesktopCapabilityChannelPreflightTests
         Assert.False(missing.ShouldStart);
         Assert.Contains("missing or not usable", missing.Summary, StringComparison.Ordinal);
 
-        var unusable = DesktopCapabilityChannelPreflight.Evaluate(settings, Process, null, endpointDescription: "carrier-pigeon:x|1|");
+        var unusable = DesktopCapabilityChannelPreflight.Evaluate(settings, Process, null, endpointDescription: $"carrier-pigeon:x|{DesktopProtocolVersion.Current}|");
         Assert.False(unusable.ShouldStart);
     }
 
@@ -38,7 +38,7 @@ public sealed class DesktopCapabilityChannelPreflightTests
         var settings = new DesktopCapabilityChannelSettings { Enabled = true };
 
         var report = DesktopCapabilityChannelPreflight.Evaluate(
-            settings, Process, authentication: null, endpointDescription: "named-pipe:pudding-capability-abc|1|core-42");
+            settings, Process, authentication: null, endpointDescription: $"named-pipe:pudding-capability-abc|{DesktopProtocolVersion.Current}|core-42");
 
         Assert.True(report.ShouldStart);
         Assert.Contains("declared capabilities:", string.Join(";", report.Notes), StringComparison.Ordinal);
@@ -47,7 +47,7 @@ public sealed class DesktopCapabilityChannelPreflightTests
     [Fact]
     public void NullSettingsAreTreatedAsDisabled()
     {
-        var report = DesktopCapabilityChannelPreflight.Evaluate(null, Process, null, "named-pipe:x|1|core-1");
+        var report = DesktopCapabilityChannelPreflight.Evaluate(null, Process, null, $"named-pipe:x|{DesktopProtocolVersion.Current}|core-1");
 
         Assert.False(report.ShouldStart);
     }

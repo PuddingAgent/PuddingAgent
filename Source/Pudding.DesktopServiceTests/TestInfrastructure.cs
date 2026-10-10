@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
@@ -706,7 +706,7 @@ internal static class HostFrames
             {
                 ConnectionId = "host-connection",
                 Generation = generation,
-                NegotiatedVersion = new Proto.ProtocolRange { Minimum = 1, Maximum = 1 },
+                NegotiatedVersion = new Proto.ProtocolRange { Minimum = (uint)DesktopProtocolVersion.Minimum, Maximum = (uint)DesktopProtocolVersion.Current },
                 Capabilities =
                 {
                     new Proto.CapabilityDeclaration { Capability = "webview.navigate", Version = 1 },

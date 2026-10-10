@@ -28,7 +28,8 @@ public sealed class SerializationRoundTripTests
             {
                 DesktopId = "desk-1",
                 ProcessInstanceId = "proc-1",
-                SupportedVersions = new ProtocolRange { Minimum = 1, Maximum = 1 },
+                // 与 DesktopProtocolVersion 同步（本工程不引用 Contracts ⇒ 只能写字面量，升级时同步改）。
+                SupportedVersions = new ProtocolRange { Minimum = 2, Maximum = 2 },
                 Capabilities =
                 {
                     new CapabilityDeclaration { Capability = "webview.navigate", Version = 1 },

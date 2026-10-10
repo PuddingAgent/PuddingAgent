@@ -227,7 +227,7 @@ internal sealed class BrokerHarness : IAsyncDisposable
         {
             DesktopId = options.DesktopId,
             ProcessInstanceId = "proc-1",
-            SupportedVersions = new Proto.ProtocolRange { Minimum = 1, Maximum = 1 },
+            SupportedVersions = new Proto.ProtocolRange { Minimum = (uint)DesktopProtocolVersion.Minimum, Maximum = (uint)DesktopProtocolVersion.Current },
         };
 
         foreach (var declaration in DesktopCapabilities.DeclareFor(options.Declared))

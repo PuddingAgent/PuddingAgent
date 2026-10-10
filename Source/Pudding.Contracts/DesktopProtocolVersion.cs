@@ -10,11 +10,11 @@ namespace Pudding.Contracts;
 /// </summary>
 public static class DesktopProtocolVersion
 {
-    /// <summary>当前实现支持的版本（v1；v2 携带类型化调用者身份的升级作为独立一步，见 changelog）。</summary>
-    public const int Current = 1;
+    /// <summary>当前实现支持的版本（v2：携带类型化调用者身份；v1 与本切片不兼容 ⇒ 旧新配对明确拒绝）。</summary>
+    public const int Current = 2;
 
     /// <summary>仍可协商的最低版本。</summary>
-    public const int Minimum = 1;
+    public const int Minimum = 2;
 
     public static bool IsSupported(int version) => version >= Minimum && version <= Current;
 

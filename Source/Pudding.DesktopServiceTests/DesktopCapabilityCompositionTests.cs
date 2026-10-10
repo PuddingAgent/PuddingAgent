@@ -13,7 +13,7 @@ public sealed class DesktopCapabilityCompositionTests
 {
     private static readonly DesktopProcessInstanceId Process = new("desktop-process-1");
 
-    private const string GoodDescription = "named-pipe:pudding-capability-abc|1|core-42";
+    private static readonly string GoodDescription = $"named-pipe:pudding-capability-abc|{DesktopProtocolVersion.Current}|core-42";
 
     [Fact]
     public void DisabledChannel_KeepsTheLegacyBridgeAndNeverBuildsAHost()

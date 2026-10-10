@@ -17,7 +17,7 @@ public sealed class NegotiationAndRegistryTests
 
         Assert.Equal(1UL, ack.Generation);
         Assert.Equal("core-", ack.ConnectionId[..5]);
-        Assert.Equal(1u, ack.NegotiatedVersion.Minimum);
+        Assert.Equal((uint)DesktopProtocolVersion.Minimum, ack.NegotiatedVersion.Minimum);
         Assert.Equal((uint)DesktopProtocolVersion.Current, ack.NegotiatedVersion.Maximum);
         Assert.Equal(
             ["webview.navigate", "webview.execute_javascript", "webview.page_state", "shell.notification", "shell.status", "shell.dialog", "shell.file_picker", "shell.clipboard", "browser.snapshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.tabs"],
