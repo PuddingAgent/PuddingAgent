@@ -182,7 +182,10 @@ public static class DesktopInteractionActionWire
         or DesktopInteractionAction.Check or DesktopInteractionAction.Uncheck
         or DesktopInteractionAction.Scroll or DesktopInteractionAction.Drag
         // 上传不是「合成事件」，而是让浏览器把本地文件交给元素（真实浏览器路径，CDP）⇒ 同样算原生面。
-        or DesktopInteractionAction.Upload;
+        or DesktopInteractionAction.Upload
+        or DesktopInteractionAction.PointerClick
+        or DesktopInteractionAction.PointerMove
+        or DesktopInteractionAction.PointerDrag;
     public static string NameOf(DesktopInteractionAction action) => action switch
     {
         DesktopInteractionAction.Click => "click",

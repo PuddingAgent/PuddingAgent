@@ -48,6 +48,8 @@ public sealed class InteractContractTests
         Assert.True(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Drag));
         Assert.True(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Scroll));
         Assert.True(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Type));
+        Assert.True(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.PointerClick));
+        Assert.True(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.PointerMove));
 
         // 键鼠表达不了的：明确不支持（绝不静默回落成 DOM）。
         Assert.False(DesktopInteractionActionWire.SupportsNativeInput(DesktopInteractionAction.Select));
