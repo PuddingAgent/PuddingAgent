@@ -333,6 +333,21 @@ message BrowserCallerIdentityMessage {
   string task_id = 3;
   string parent_task_id = 4;
 }
+// 控制面（方案 §4.1）。
+message BrowserBindingApplyCommand {
+  BrowserCallerIdentityMessage task = 1;
+  CommandTarget target = 2;
+  uint32 scope = 3;
+  int64 validity_ms = 4;
+  string source = 5;
+}
+
+// 控制面：撤销绑定。
+message BrowserBindingRevokeCommand {
+  BrowserCallerIdentityMessage task = 1;
+  CommandTarget target = 2;
+}
+
 message CapabilityCommand {
   string operation_id = 1;
   // 命令所属连接世代；与当前世代不符必须拒绝。
@@ -363,6 +378,8 @@ message CapabilityCommand {
     ShowFilePickerCommand show_file_picker = 23;
   ContextCreateCommand context_create = 24;
   ContextCloseCommand context_close = 25;
+    BrowserBindingApplyCommand binding_apply = 26;
+    BrowserBindingRevokeCommand binding_revoke = 27;
   }
 }
 

@@ -109,7 +109,9 @@ public sealed class WireContractSnapshotTests
             ("tabs", 20),
             ("read_clipboard", 21),
             ("show_dialog", 22),
-            ("show_file_picker", 23));
+            ("show_file_picker", 23),
+            ("binding_apply", 26),
+            ("binding_revoke", 27));
 
         AssertFieldNumbers(
             OperationResult.Descriptor,
@@ -134,7 +136,7 @@ public sealed class WireContractSnapshotTests
         Assert.Equal(
             ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState", "GetShellStatus", "Snapshot", "Locate",
             "Interact", "WaitFor", "Contexts", "Tabs", "ReadClipboard", "ShowDialog", "ShowFilePicker",
-            "ContextCreate", "ContextClose"],
+            "ContextCreate", "ContextClose", "BindingApply", "BindingRevoke"],
             Enum.GetNames<CapabilityCommand.PayloadOneofCase>().Where(name => name != "None").ToArray());
 
         Assert.Equal(
@@ -201,7 +203,7 @@ public sealed class WireContractSnapshotTests
     public void PayloadOneof_IsClosedWhitelist()
     {
         // 计划 §4：禁止「字符串命令名 + 任意 JSON」演化成万能调用。
-        Assert.Equal(16, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
+        Assert.Equal(18, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
         Assert.Equal(17, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
     }
 
