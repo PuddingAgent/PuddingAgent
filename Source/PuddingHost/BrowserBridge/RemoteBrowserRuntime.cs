@@ -17,16 +17,21 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
     private readonly IDesktopBrowserCommandBroker _broker;
     private readonly IBrowserOperationOriginAccessor? _originAccessor;
     private readonly IBrowserCallerIdentityAccessor? _callerIdentity;
+
+    private readonly IBrowserBindingGate? _bindingGate;
     private bool _disposed;
 
     public RemoteBrowserRuntime(
         IDesktopBrowserCommandBroker broker,
         IBrowserOperationOriginAccessor? originAccessor = null,
-        IBrowserCallerIdentityAccessor? callerIdentity = null)
+        IBrowserCallerIdentityAccessor? callerIdentity = null,
+        // 控制面（§4.1）接线缝：发命令前过门。未注入 ⇒ 行为不变。
+        IBrowserBindingGate? bindingGate = null)
     {
         _broker = broker ?? throw new ArgumentNullException(nameof(broker));
         _originAccessor = originAccessor;
         _callerIdentity = callerIdentity;
+        _bindingGate = bindingGate;
     }
 
     public BrowserRuntimeState State => _disposed
@@ -145,6 +150,13 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
             throw new BrowserOperationException(
                 BrowserBridgeErrorCodes.BrowserUnauthorized,
                 callerReason);
+        }
+
+        // §4.1：**发命令前**过一次控制面门（只对带页面的命令）。未注入 ⇒ 不做任何事（行为不变）。
+        if (_bindingGate is { } gate && pageId is { } gatePage)
+        {
+            await gate.EnsureAsync(caller.CallerId, caller.TaskId, contextId?.Value, gatePage.Value, ct)
+                .ConfigureAwait(false);
         }
 
         var result = await _broker.ExecuteAsync(new BrowserBridgeCommand
