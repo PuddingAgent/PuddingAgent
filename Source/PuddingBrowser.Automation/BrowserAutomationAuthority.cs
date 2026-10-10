@@ -31,6 +31,13 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
     private BrowserControlEpoch _controlEpoch = BrowserControlEpoch.Initial;
     private BrowserPageGrantEpoch _grantEpoch = BrowserPageGrantEpoch.Initial;
     private ConnectionGeneration _generation = ConnectionGeneration.None;
+
+    /// <summary>
+    /// 当前**连接世代**（未握手时为 <see cref="ConnectionGeneration.None"/>）。
+    /// 暴露它是因为"签发/准入"都需要一个**真实**的世代来源：伪造一个会让闸门变成"永远拒"，
+    /// 而读不到就只能各自维护一份 —— 后者正是本仓库反复出现的漂移来源。
+    /// </summary>
+    public ConnectionGeneration ConnectionGeneration => _generation;
     private bool _isPaused;
     private bool _isUserTakeover;
     private bool _isClosed;

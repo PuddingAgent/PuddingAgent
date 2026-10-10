@@ -23,7 +23,8 @@
 
 | 文件 | 职责 / 不变量 |
 |------|----------------|
-| `BrowserAutomationAuthority.cs` | 实现 `IBrowserAutomationAuthority` + `IBrowserAutomationControl`：唯一事实源。接管/暂停/恢复/关闭/连接世代改变推进**控制世代**；撤销授权、切目标、关闭、世代改变推进**授权世代**；接管**不**推进授权世代。`Admit` 在入队前校验并签发写租约，`Revalidate` 在触碰页面前复检租约世代 ⇒ 「验证通过 → 期间被接管」必然被拦下。同一页面同时只有一个写租约；授权被撤销时租约随之释放。 |
+| `BrowserAutomationAuthority.cs` |
+| （同上）`ConnectionGeneration` | 唯一 authority 暴露**当前连接世代**（未握手为 `None`）：签发与准入必须读它，不得各自维护一份 | 实现 `IBrowserAutomationAuthority` + `IBrowserAutomationControl`：唯一事实源。接管/暂停/恢复/关闭/连接世代改变推进**控制世代**；撤销授权、切目标、关闭、世代改变推进**授权世代**；接管**不**推进授权世代。`Admit` 在入队前校验并签发写租约，`Revalidate` 在触碰页面前复检租约世代 ⇒ 「验证通过 → 期间被接管」必然被拦下。同一页面同时只有一个写租约；授权被撤销时租约随之释放。 |
 | `BrowserGrantIssuancePolicy.cs` | 子代理授权的**上界**判据：子代理 grant 的范围必须 ⊆ 父任务在同一页面/同一 frame 的 grant；父任务无授权 ⇒ 子代理不得凭空获得。失败时抛 `ArgumentException`（fail closed）。 |
 | `BrowserReceiptJudge.cs` | 证据 → 回执。只按「执行阶段 + 声明的后置断言」判定，**不按动作名推断导航**；未执行/结果不明 ⇒ `not_requested`；需要断言但拿不到 ⇒ `unverified`；有未通过断言 ⇒ `failed`。同文件的重试裁定 `BrowserRetryPolicy`：`unknown` ⇒ 结果不明、`blocked`/`verified` ⇒ 不可重试、**真跑过（dispatched/completed）却没通过验证 ⇒ `dispatched_observe_only`（先观察、勿重做）**，其余按「未开始 + 可重试 + 无副作用」才 `safe_to_retry`；兜底分支回带回执自带的**最小修复提示**（无提示则 null，不编造） |
 | `BrowserOperationLedger.cs` | operationId 账本：键 = 调用身份 + 连接世代 + operationId，另存请求摘要。在途项**永不因容量被淘汰**（容量耗尽拒新写请求）；终态 tombstone 保留到容量压力出现，因此过期重传返回 `receipt_expired` 而不是被当成新动作。默认 5 分钟 / 1,024 项。 |
