@@ -748,6 +748,27 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             }
         }
 
+            // §8.2 坐标动作：页面以**可选能力**实现；不支持就必须明确 unsupported
+            //（绝不静默降级成"往页面塞脚本点一下"）。拖拽还需终点坐标 —— 请求尚未携带，同样明确拒绝。
+            if (request.Action is DesktopInteractionAction.PointerClick
+                or DesktopInteractionAction.PointerMove
+                or DesktopInteractionAction.PointerDrag)
+            {
+                if (request.Action == DesktopInteractionAction.PointerDrag)
+                {
+                    return CapabilityResult<DesktopInteractionResult>.Failure(
+                        DesktopCapabilityError.UnsupportedCapability(
+                            "coordinate drag needs a target point (toX/toY); the request does not carry one yet"));
+                }
+
+                if (browserPage is not IPointerInputPage)
+                {
+                    return CapabilityResult<DesktopInteractionResult>.Failure(
+                        DesktopCapabilityError.UnsupportedCapability(
+                            "coordinate input is not available on this browser surface"));
+                }
+            }
+
         var scrollOutcome = await PerformAsync(browserPage, request, locator, cancellationToken).ConfigureAwait(false);
 
         // 交互后的页面状态：版本取**交互之后**的事实（旧 Ref 由此作废）。
@@ -854,6 +875,21 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                     },
                     cancellationToken).ConfigureAwait(false);
             default:
+                case DesktopInteractionAction.PointerClick:
+                case DesktopInteractionAction.PointerMove:
+                {
+                    // 检查已在 InteractAsync 完成（unsupported/拖拽缺终点都在那里拒绝）⇒ 这里的转换是安全的。
+                    await ((IPointerInputPage)page).PointerAsync(
+                        new PointerInput(
+                            request.Action == DesktopInteractionAction.PointerClick
+                                ? PointerInputKind.Click
+                                : PointerInputKind.Move,
+                            request.X!.Value,
+                            request.Y!.Value),
+                        cancellationToken).ConfigureAwait(false);
+                    break;
+                }
+
                 throw new ArgumentOutOfRangeException(nameof(request), request.Action, "Interaction action is not mapped.");
         }
 
