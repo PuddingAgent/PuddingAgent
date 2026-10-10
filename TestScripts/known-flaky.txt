@@ -18,10 +18,12 @@
 # earlier "passes in isolation" description; the timing budget is tighter than assumed on this machine.
 PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection
 
-# Failure kind: timing/deadlock-sensitive synchronization-context test. Flaked live again on round 164
-# (first attempt failed, retry green) while a manifest was being built; documented as load-sensitive in
-# earlier changelogs and consistent with "passes in isolation".
-PuddingHost.Tests.Hosting.DesktopConfigurationLoadingTests.LlmConfigurationLoad_DoesNotDeadlockOnDesktopSynchronizationContext
+# FIXED (2026-10-08): DesktopConfigurationLoadingTests.LlmConfigurationLoad_DoesNotDeadlockOnDesktopSynchronizationContext
+# was removed from this registry. Its "does not deadlock" criterion used to be a wall-clock Join(5s), which
+# false-failed under load. The test now asserts a DETERMINISTIC property (the desktop SynchronizationContext
+# must never be posted to) with a documented watchdog for real hangs; production already used
+# ConfigureAwait(false) everywhere. Evidence: mutation (ConfigureAwait(true)) makes it fail via the watchdog,
+# and the fixed test passed 20/20 consecutive runs. Do not re-add it here without fresh failure evidence.
 
 # Failure kind: late-arriving WebView2 SDK frame after the surface was disposed (hidden-surface gate).
 # Documented as load-sensitive in earlier changelogs; the retry path has not yet observed it live.

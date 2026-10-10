@@ -58,16 +58,28 @@ public sealed class GateEvidenceReportTests
         Assert.True(File.Exists(registryPath), $"找不到已知 flake 注册表：{registryPath}");
 
         var registry = File.ReadAllText(registryPath);
-        // 三条**已被历史日志记录**的时序 flake 都必须在册（round-164 就因漏登记第二条而触发了一次拒绝）。
+
+        // 仍在册的时序 flake（round-164 就因漏登记第二条而触发过一次拒绝）。
         foreach (var knownFlake in new[]
         {
             "PuddingHost.Tests.BrowserBridge.DesktopBrowserBridgeHandshakeTests.SecondConnection_CannotReplaceAwaitingHelloConnection",
-            "PuddingHost.Tests.Hosting.DesktopConfigurationLoadingTests.LlmConfigurationLoad_DoesNotDeadlockOnDesktopSynchronizationContext",
             "PuddingDesktop.Tests.Browser.WebView2PresentationGateTests.HiddenSurface_ParksLateSdkFramesAndStopsObservingAfterDisposal",
         })
         {
             Assert.Contains(knownFlake, registry, StringComparison.Ordinal);
         }
+
+        // **已修好**的那条必须只是注释里的历史记录，不能仍是"条目" —— 否则它会把未来的真失败悄悄吸收。
+        // （修复证据：确定性判据取代墙钟，见 Docs/00_changelog 的 flake 修复记录。）
+        var bareEntries = registry
+            .Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0 && !line.StartsWith("#", StringComparison.Ordinal))
+            .ToArray();
+        Assert.DoesNotContain(
+            "PuddingHost.Tests.Hosting.DesktopConfigurationLoadingTests.LlmConfigurationLoad_DoesNotDeadlockOnDesktopSynchronizationContext",
+            bareEntries);
+        Assert.Contains("FIXED", registry, StringComparison.Ordinal);
 
         var script = File.ReadAllText(Path.Combine(root, "TestScripts", "delivery-manifest.ps1"));
         Assert.Contains("known-flaky.txt", script, StringComparison.Ordinal);

@@ -54,7 +54,13 @@ try {
 
         foreach ($project in $TestPath) {
             Write-Host "--- $project"
-            & dotnet test $project --nologo --no-restore
+            $suiteName = [System.IO.Path]::GetFileNameWithoutExtension($project)
+            $trxDir = Join-Path $repositoryRoot "temp/test-out/trx"
+            New-Item -ItemType Directory -Force -Path $trxDir | Out-Null
+
+            # Write a TRX for the FIRST attempt: classification needs the first failures
+            # (a successful retry TRX contains no failing test names).
+            & dotnet test $project --nologo --no-restore --logger "trx;LogFileName=$suiteName.first.trx" --results-directory $trxDir
             if ($LASTEXITCODE -eq 0) { continue }
 
             if ($RetryKnownFlakes -le 0) {
@@ -62,42 +68,38 @@ try {
                 exit $LASTEXITCODE
             }
 
-            # Identify WHICH tests failed before retrying -- never "just run it again and see".
-            $suiteName = [System.IO.Path]::GetFileNameWithoutExtension($project)
-            $trxDir = Join-Path $repositoryRoot "temp/test-out/trx"
-            New-Item -ItemType Directory -Force -Path $trxDir | Out-Null
-            Write-Host "--- re-running $suiteName once with a TRX to classify the failure"
-            & dotnet test $project --nologo --no-restore --logger "trx;LogFileName=$suiteName.retry.trx" --results-directory $trxDir
-            $retryExit = $LASTEXITCODE
-            $trxPath = Join-Path $trxDir "$suiteName.retry.trx"
+            $firstTrx = Join-Path $trxDir "$suiteName.first.trx"
             $failedNames = @()
-            if (Test-Path $trxPath) {
-                $trx = Get-Content $trxPath -Raw -Encoding UTF8
+            if (Test-Path $firstTrx) {
+                $trx = Get-Content $firstTrx -Raw -Encoding UTF8
                 $failedNames = [regex]::Matches($trx, '<UnitTestResult\b[^>]*outcome="Failed"[^>]*testName="([^"]+)"') |
                     ForEach-Object { $_.Groups[1].Value } |
                     Sort-Object -Unique
             }
 
-            if ($retryExit -eq 0 -and $failedNames.Count -gt 0) {
-                $unknown = @($failedNames | Where-Object { $knownNames -notcontains $_ })
-                if ($unknown.Count -eq 0) {
-                    Write-Warning ("known flake absorbed by retry ({0}): {1}" -f $failedNames.Count, ($failedNames -join ", "))
-                    continue
-                }
-
-                Write-Warning "REFUSING TO COMMIT: the first attempt failed with NEW INSTABILITY (not on TestScripts/known-flaky.txt):"
-                $unknown | ForEach-Object { Write-Warning ("  " + $_) }
+            if ($failedNames.Count -eq 0) {
+                Write-Warning "REFUSING TO COMMIT: $suiteName failed once but its TRX names no failing test (cannot classify)."
                 exit 1
             }
 
-            if ($retryExit -eq 0 -and $failedNames.Count -eq 0) {
-                # Retry green but the TRX names no failing test => cannot classify, treat as instability.
-                Write-Warning "REFUSING TO COMMIT: $suiteName failed once and passed on retry, but the TRX names no failing test (cannot classify)."
-                exit 1
+            Write-Host "--- retrying $suiteName once (first attempt failed: $($failedNames -join ', '))"
+            & dotnet test $project --nologo --no-restore
+            $retryExit = $LASTEXITCODE
+
+            if ($retryExit -ne 0) {
+                Write-Warning "REFUSING TO COMMIT: $suiteName still fails on retry (exit $retryExit)."
+                exit $retryExit
             }
 
-            Write-Warning "REFUSING TO COMMIT: $suiteName still fails on retry (exit $retryExit)."
-            exit $retryExit
+            $unknown = @($failedNames | Where-Object { $knownNames -notcontains $_ })
+            if ($unknown.Count -eq 0) {
+                Write-Warning ("known flake absorbed by retry ({0}): {1}" -f $failedNames.Count, ($failedNames -join ", "))
+                continue
+            }
+
+            Write-Warning "REFUSING TO COMMIT: the first attempt failed with NEW INSTABILITY (not on TestScripts/known-flaky.txt):"
+            $unknown | ForEach-Object { Write-Warning ("  " + $_) }
+            exit 1
         }
     }
     else {
