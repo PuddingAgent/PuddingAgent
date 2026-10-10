@@ -4,7 +4,7 @@ using PuddingBrowser.Protocol;
 
 namespace PuddingHost.BrowserBridge;
 
-public sealed class RemoteBrowserPage : IBrowserPage
+public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
 {
     private readonly RemoteBrowserRuntime _runtime;
     private bool _disposed;
@@ -241,6 +241,24 @@ public sealed class RemoteBrowserPage : IBrowserPage
     public Task<ScreenshotResult> ScreenshotAsync(ScreenshotOptions options, CancellationToken ct) => Unsupported<ScreenshotResult>();
     public Task<PdfResult> PrintToPdfAsync(PdfOptions options, CancellationToken ct) => Unsupported<PdfResult>();
     public Task OpenDevToolsAsync(CancellationToken ct) => Unsupported();
+
+    /// <summary>
+    /// §8.2 坐标输入：转发到桥命令 <c>page.interact</c>（动作名 <c>pointer_click</c>/<c>pointer_move</c> + 坐标）。
+    /// 拖拽需要终点坐标，而线缆尚未携带 ⇒ **明确拒绝**（不臆造终点）。
+    /// </summary>
+    public Task PointerAsync(PointerInput input, CancellationToken cancellationToken) => input.Kind switch
+    {
+        PointerInputKind.Click => InteractAsync(
+            "pointer_click", locator: null, text: null, values: null, isChecked: null,
+            deltaX: null, deltaY: null, ct: cancellationToken, x: input.X, y: input.Y),
+        PointerInputKind.Move => InteractAsync(
+            "pointer_move", locator: null, text: null, values: null, isChecked: null,
+            deltaX: null, deltaY: null, ct: cancellationToken, x: input.X, y: input.Y),
+        PointerInputKind.Drag => throw new BrowserOperationException(
+            "browser_invalid_arguments",
+            "coordinate drag needs a target point; the bridge command does not carry one yet"),
+        _ => throw new ArgumentOutOfRangeException(nameof(input), input.Kind, "Pointer input kind is not mapped."),
+    };
 
     private async Task InteractAsync(
         string action,
