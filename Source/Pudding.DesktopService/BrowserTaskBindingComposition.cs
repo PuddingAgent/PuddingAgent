@@ -33,7 +33,7 @@ public static class BrowserTaskBindingComposition
             () => lifecycle.Authority.ConnectionGeneration,
             clock);
 
-        return new BrowserTaskBoundControlPlane(issuer, new BrowserTaskBindingService(lifecycle, issuer));
+        return new BrowserTaskBoundControlPlane(issuer, new BrowserTaskBindingService(lifecycle, issuer, clock));
     }
 }
 

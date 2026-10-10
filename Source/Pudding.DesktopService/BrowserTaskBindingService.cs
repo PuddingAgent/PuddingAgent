@@ -20,12 +20,16 @@ public sealed record BrowserBindingAcceptance(
 /// </summary>
 public sealed class BrowserTaskBindingService(
     BrowserPageLifecycle lifecycle,
-    BrowserGrantIssuer issuer)
+    BrowserGrantIssuer issuer,
+    // B6（§5）：子授权期限必须夹到父授权**剩余期限**内 ⇒ 需要读当前时间。
+    TimeProvider? clock = null)
 {
     private readonly BrowserPageLifecycle _lifecycle =
         lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
 
     private readonly BrowserGrantIssuer _issuer = issuer ?? throw new ArgumentNullException(nameof(issuer));
+
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
     private sealed record ActiveBinding(DesktopPageTarget Target, BrowserCallerIdentity Task, BrowserPageGrantId GrantId);
 
@@ -47,10 +51,51 @@ public sealed class BrowserTaskBindingService(
                 default);
         }
 
+        // ② B6（§5）：子代理只能取得**父授权**的子集，且期限不得超过父授权的**剩余期限**。
+        //    父授权必须真实存在；找不到就明确拒绝（绝不静默放宽成"无父也放行"）。
+        BrowserPageGrantScope? parentScope = null;
+        var validity = binding.Validity;
+
+        if (binding.Task.Kind == BrowserCallerKind.SubAgent)
+        {
+            if (binding.Task.ParentTaskId is not { Length: > 0 } parentTaskId)
+            {
+                return new BrowserBindingAcceptance(false, "a sub-agent binding must carry its parent task id", default);
+            }
+
+            var parent = _lifecycle.Authority.ActiveGrants.FirstOrDefault(grant =>
+                grant.Target == binding.Target
+                && string.Equals(grant.Grantee.TaskId, parentTaskId, StringComparison.Ordinal));
+
+            if (parent is null)
+            {
+                return new BrowserBindingAcceptance(
+                    false, "no active parent grant for this sub-agent's parent task on the requested page", default);
+            }
+
+            parentScope = parent.Scope;
+
+            if (parent.ExpiresAtUtc is { } parentExpiry)
+            {
+                var remaining = parentExpiry - _clock.GetUtcNow();
+                // 留 1 秒安全边界：签发方会在稍后取一次 now，正好等于 remaining 时子到期会晚于父若干微秒（实测踩到）。
+                var clamped = remaining - TimeSpan.FromSeconds(1);
+                if (clamped <= TimeSpan.Zero)
+                {
+                    return new BrowserBindingAcceptance(false, "the parent grant is about to expire", default);
+                }
+
+                if (validity > clamped)
+                {
+                    validity = clamped; // 夹取而非拒绝：§5 要求"期限不超过父授权"，夹取后仍是子集。
+                }
+            }
+        }
+
         // ② 签发（有效期上限/已登记/世代/子集都在签发器里判）。
         if (!_issuer.TryIssue(
                 new BrowserGrantIssuanceRequest(
-                    binding.Task, binding.Target, binding.Scope, binding.Validity, binding.Source),
+                    binding.Task, binding.Target, binding.Scope, validity, binding.Source, parentScope),
                 out var grant,
                 out var epoch,
                 out var reason))
