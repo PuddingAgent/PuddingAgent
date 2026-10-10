@@ -28,7 +28,7 @@ draft: false
 | 文件 | 用途 |
 |------|------|
 | `Identity.cs` | `DesktopInstanceId`（按 DesktopHome/DataRoot 隔离的实例身份，**不是** PID）、`DesktopProcessInstanceId`（单次启动实例，用于识别 Core 重启）、`OperationId`（待完成表与幂等复用键）、`DesktopCorrelationId`（业务关联，不参与权限）、`ConnectionGeneration`（Core 在握手回执分配，每次重连递增；`None`=未握手）、`ContractText`（内部校验：标识符限可见 ASCII，展示文本允许 CJK 且超长取红） |
-| `DesktopCallContext.cs` | 调用上下文：DesktopId + OperationId + **UTC** Deadline + 可选 CorrelationId；`IsExpiredAt` / `RemainingAt`。身份与权限不由模型填写字段决定；页面目标属于请求 DTO，禁止「当前激活 Tab」隐式定位 |
+| `DesktopCallContext.cs` | 调用上下文：DesktopId + OperationId + **UTC** Deadline + 可选 CorrelationId；`IsExpiredAt` / `RemainingAt`。身份与权限不由模型填写字段决定；页面目标属于请求 DTO，禁止「当前激活 Tab」隐式定位 另含**类型化 caller**（`BrowserCaller`；`TryGetBrowserCaller` 对"缺身份 / User 冒充 / 无运行身份"分别给具体原因） |
 | `DesktopProtocolVersion.cs` | 协商版本区间常量（`Current = Minimum = 1`）与 `TryNegotiate`。线上字段/编号的真源是 proto，本类只存平台无关版本号，映射测试断言两者一致 |
 
 ## 能力目录与协商（`Capabilities.cs`）
