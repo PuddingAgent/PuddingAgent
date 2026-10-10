@@ -958,6 +958,47 @@ internal static class DesktopFrameMapping
                     };
                     break;
 
+                case DesktopCapability.BrowserScreenshot when response.Screenshot is { } screenshot:
+                    var wireScreenshot = new Proto.ScreenshotOutcome
+                    {
+                        ObservationId = screenshot.Metadata.ObservationId,
+                        MimeType = screenshot.Metadata.MimeType,
+                        ByteCount = screenshot.Metadata.ByteCount,
+                        SourceWidth = screenshot.Metadata.SourceWidth,
+                        SourceHeight = screenshot.Metadata.SourceHeight,
+                        OutputWidth = screenshot.Metadata.OutputWidth,
+                        OutputHeight = screenshot.Metadata.OutputHeight,
+                        PageVersion = screenshot.Metadata.PageVersion,
+                        DomRevision = screenshot.Metadata.DomRevision,
+                        ViewportRevision = screenshot.Metadata.ViewportRevision,
+                        Detail = DesktopScreenshotDetailWire.NameOf(screenshot.Metadata.Detail),
+                    };
+                
+                    // 可选字段：presence（0 是合法值，不能变成"未设置"）。
+                    if (screenshot.Metadata.DeviceScaleFactor is { } deviceScale) { wireScreenshot.DeviceScaleFactor = deviceScale; }
+                    if (screenshot.Metadata.ViewportWidth is { } viewportWidth) { wireScreenshot.ViewportWidth = viewportWidth; }
+                    if (screenshot.Metadata.ViewportHeight is { } viewportHeight) { wireScreenshot.ViewportHeight = viewportHeight; }
+                    if (screenshot.Metadata.ScrollX is { } scrollX) { wireScreenshot.ScrollX = scrollX; }
+                    if (screenshot.Metadata.ScrollY is { } scrollY) { wireScreenshot.ScrollY = scrollY; }
+                    if (screenshot.Metadata.CropX is { } cropX) { wireScreenshot.CropX = cropX; }
+                    if (screenshot.Metadata.CropY is { } cropY) { wireScreenshot.CropY = cropY; }
+                    if (screenshot.Metadata.CropWidth is { } cropWidth) { wireScreenshot.CropWidth = cropWidth; }
+                    if (screenshot.Metadata.CropHeight is { } cropHeight) { wireScreenshot.CropHeight = cropHeight; }
+                
+                    // 分块：空就是空（不臆造一片）。
+                    foreach (var chunk in screenshot.Chunks)
+                    {
+                        wireScreenshot.Chunks.Add(new Proto.ScreenshotChunk
+                        {
+                            Index = chunk.Index,
+                            IsLast = chunk.IsLast,
+                            Data = Google.Protobuf.ByteString.CopyFrom(chunk.Data),
+                        });
+                    }
+                
+                    result.Screenshot = wireScreenshot;
+                    break;
+
                 case DesktopCapability.WebViewNavigate when response.Navigate is { } navigate:
                     var wireNavigate = new Proto.NavigateOutcome
                     {
