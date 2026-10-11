@@ -50,7 +50,7 @@ draft: false
 调用链：`Agent Loop → search_tools → Browser*Tool`（七项**全部**已迁移）→ `IDesktopBrowserCapabilitySurface`（窄端口）+ `IDesktopCapabilityCallContextFactory`；
 上下文管理（`browser_context` 的 create/close）另走 `IDesktopContextCapabilitySurface`；组合根路由二选一（能力通道会话 / Bridge 实现），**不回退**。
 
-> 七项工具均已脱离进程内 `IBrowserRuntime`；迁移完成后旧的静态解析器（`BrowserToolRuntimeResolver`）已删除。
+> **八项工具**（`browser_context`/`browser_tabs`/`browser_navigate`/`browser_snapshot`/`browser_locate`/`browser_interact`/`browser_wait_for`/`browser_screenshot`）均已脱离进程内 `IBrowserRuntime`；迁移完成后旧的静态解析器（`BrowserToolRuntimeResolver`）已删除。
 
 ## 测试
 
