@@ -2,6 +2,7 @@ using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopSurface.Browser;
 using PuddingBrowser.Abstractions;
+using PuddingBrowser.Automation;
 
 namespace DesktopSurfaceBrowserTests;
 
@@ -562,5 +563,52 @@ public sealed class InteractMappingTests
         Assert.Equal(2, pointer.Value.Y);
         Assert.Equal(30, pointer.Value.ToX);
         Assert.Equal(40, pointer.Value.ToY);
+    }
+    private static BrowserRuntimeDesktopSurface Surface(
+        InteractFakeRuntime runtime, IScreenshotObservationRegistry observations) =>
+        new(runtime, new InteractFakeTargets(), readings: null, screenshotObservations: observations);
+
+    private const string LayoutMetricsJson = """
+        {
+          "cssVisualViewport": { "clientWidth": 1280, "clientHeight": 720, "scale": 1, "pageX": 0, "pageY": 0 },
+          "cssContentSize": { "x": 0, "y": 0, "width": 1280, "height": 720 }
+        }
+        """;
+
+    private static string Describe<T>(CapabilityResult<T> result) =>
+        result.IsFailure ? $"{result.Error!.Code}: {result.Error.Message}" : "success";
+
+    [Fact]
+    public async Task ScreenshotCoordinatesResolveThroughTheObservationRegistryIntoThePage()
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var page = runtime.Pages["ctx-1/p-1"];
+
+        page.OnCdp = method => System.Text.Json.JsonDocument.Parse(method switch
+        {
+            "Page.getLayoutMetrics" => LayoutMetricsJson,
+            "Runtime.evaluate" => "{\"result\":{\"type\":\"number\",\"value\":3}}",
+            _ => throw new NotSupportedException(method),
+        });
+
+        Assert.True(ScreenshotLayoutFactsReader.TryRead(
+            System.Text.Json.JsonDocument.Parse(LayoutMetricsJson).RootElement, out var facts, out var factsReason), factsReason);
+
+        var registry = new InMemoryScreenshotObservationRegistry();
+        registry.Register(new BrowserScreenshotMetadata(
+            "obs-1", "image/png", 1024, 1280, 720, 512, 288,
+            DeviceScaleFactor: 1, ViewportWidth: 1280, ViewportHeight: 720,
+            ScrollX: 0, ScrollY: 0, CropX: 0, CropY: 0, CropWidth: 1280, CropHeight: 720,
+            PageVersion: 7, DomRevision: 3, ViewportRevision: facts!.ViewportRevision,
+            BrowserScreenshotDetail.Low));
+
+        var result = await Surface(runtime, registry).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerClick, DesktopPageVersion.Require(7),
+                observationId: "obs-1", x: 300, y: 200),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure, Describe(result));
     }
 }
