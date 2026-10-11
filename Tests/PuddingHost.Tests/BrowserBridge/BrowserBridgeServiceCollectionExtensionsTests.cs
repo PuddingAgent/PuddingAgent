@@ -12,7 +12,7 @@ namespace PuddingHost.Tests.BrowserBridge;
 public sealed class BrowserBridgeServiceCollectionExtensionsTests
 {
     [Fact]
-    public void DesktopChild_RegistersRemoteRuntimeAndSevenBrowserTools()
+    public void DesktopChild_RegistersRemoteRuntimeAndAllBrowserTools()
     {
         var services = new ServiceCollection();
         services.AddDesktopBrowserAutomation(Options(PuddingHostMode.DesktopChild, enabled: true));
@@ -27,7 +27,7 @@ public sealed class BrowserBridgeServiceCollectionExtensionsTests
             .ToArray();
         Assert.Equal(
             ["BrowserContextTool", "BrowserInteractTool", "BrowserLocateTool", "BrowserNavigateTool",
-                "BrowserSnapshotTool", "BrowserTabsTool", "BrowserWaitForTool"],
+                "BrowserScreenshotTool", "BrowserSnapshotTool", "BrowserTabsTool", "BrowserWaitForTool"],
             toolTypes);
     }
 
