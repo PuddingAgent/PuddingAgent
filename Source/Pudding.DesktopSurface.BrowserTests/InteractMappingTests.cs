@@ -611,4 +611,60 @@ public sealed class InteractMappingTests
 
         Assert.False(result.IsFailure, Describe(result));
     }
+    [Fact]
+    public async Task AnExpiredObservationIsRefusedWithoutTouchingTheDriver()
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var page = runtime.Pages["ctx-1/p-1"];
+
+        // 页面**已经变化**：页内计数是 4，而登记的是 3 ⇒ 观察过期。
+        page.OnCdp = method => System.Text.Json.JsonDocument.Parse(method switch
+        {
+            "Page.getLayoutMetrics" => LayoutMetricsJson,
+            "Runtime.evaluate" => "{\"result\":{\"type\":\"number\",\"value\":4}}",
+            _ => throw new NotSupportedException(method),
+        });
+
+        Assert.True(ScreenshotLayoutFactsReader.TryRead(
+            System.Text.Json.JsonDocument.Parse(LayoutMetricsJson).RootElement, out var facts, out var factsReason), factsReason);
+
+        var registry = new InMemoryScreenshotObservationRegistry();
+        registry.Register(new BrowserScreenshotMetadata(
+            "obs-1", "image/png", 1024, 1280, 720, 512, 288,
+            DeviceScaleFactor: 1, ViewportWidth: 1280, ViewportHeight: 720,
+            ScrollX: 0, ScrollY: 0, CropX: 0, CropY: 0, CropWidth: 1280, CropHeight: 720,
+            PageVersion: 7, DomRevision: 3, ViewportRevision: facts!.ViewportRevision,
+            BrowserScreenshotDetail.Low));
+
+        var result = await Surface(runtime, registry).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerClick, DesktopPageVersion.Require(7),
+                observationId: "obs-1", x: 300, y: 200),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure, Describe(result));
+        // **绝不触达驱动**：过期坐标不得被点下去。
+        Assert.Null(page.LastPointer);
+    }
+
+    [Fact]
+    public async Task BareCoordinatesDoNotConsultTheObservationRegistry()
+    {
+        // 不设 OnCdp ⇒ 假页的 SendCdpAsync 保持"抛 NotSupported"：裸坐标路径**不应调用 CDP**。
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var page = runtime.Pages["ctx-1/p-1"];
+
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerClick, DesktopPageVersion.Require(7), x: 10, y: 20),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure, Describe(result));
+        var pointer = page.LastPointer;
+        Assert.NotNull(pointer);
+        Assert.Equal(10, pointer!.Value.X);
+        Assert.Equal(20, pointer.Value.Y);
+    }
 }
