@@ -2345,6 +2345,9 @@ public sealed class BrowserAgentToolsTests
 internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     : IDesktopBrowserCapabilitySurface, IDesktopContextCapabilitySurface
 {
+    /// <summary>可编程截图应答（工具用例用）；未设置时保持"抛 NotSupported"的旧语义。</summary>
+    public Func<BrowserScreenshotRequest, CapabilityResult<BrowserScreenshotResult>>? OnScreenshot { get; set; }
+
     /// <summary>让替身直接以某个领域错误结束交互（用于验证闸门拒绝 vs 普通失败的回执差异）。</summary>
     public DesktopCapabilityError? InteractFailure { get; init; }
 
@@ -2490,7 +2493,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
 
     public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
         BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException();
+        OnScreenshot is { } factory ? Task.FromResult(factory(request)) : throw new NotSupportedException();
 
     public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken ct = default)
