@@ -262,4 +262,60 @@ public sealed record BrowserWaitResultDescriptor
     public bool TimedOut { get; init; }
     public string? Error { get; init; }
     public required BrowserPageDescriptor Page { get; init; }
+
+/// <summary>截图参数（§8.1，Bridge 传输）。**必须钉住页面版本**（观察只在同一世代内有效）。</summary>
+public sealed record PageScreenshotArguments
+{
+    /// <summary>要截取的页面版本：缺失或不正 ⇒ 宿主明确拒绝（不猜"就用当前版本"）。</summary>
+    public required long ExpectedPageVersion { get; init; }
+
+    /// <summary>截图范围线名：<c>viewport</c>（默认）/ <c>region</c> / <c>full_page</c>；未登记即拒。</summary>
+    public string? Scope { get; init; }
+
+    /// <summary>细节档线名：<c>low</c>（默认）/ <c>high</c> / <c>original</c>；未登记即拒。</summary>
+    public string? Detail { get; init; }
+
+    /// <summary>图片格式：<c>png</c>（默认）/ <c>jpeg</c>；其它值即拒。</summary>
+    public string? Format { get; init; }
+
+    public double? RegionX { get; init; }
+
+    public double? RegionY { get; init; }
+
+    public double? RegionWidth { get; init; }
+
+    public double? RegionHeight { get; init; }
+}
+
+/// <summary>截图结果分块：<see cref="Base64"/> 是**原始字节的 Base64**（JSON 协议不自创二进制格式；与能力通道的 <c>repeated Chunk</c> 语义对齐）。</summary>
+public sealed record BrowserScreenshotChunkDescriptor
+{
+    public required int Index { get; init; }
+
+    public required bool IsLast { get; init; }
+
+    /// <summary>Base64 编码的原始字节。</summary>
+    public required string Base64 { get; init; }
+}
+
+/// <summary>截图结果（§8.1）：<see cref="ObservationId"/> 交给调用方，供后续坐标操作解析。</summary>
+public sealed record BrowserScreenshotDescriptor
+{
+    public required string ObservationId { get; init; }
+
+    public required string MimeType { get; init; }
+
+    public required int ByteCount { get; init; }
+
+    public required int OutputWidth { get; init; }
+
+    public required int OutputHeight { get; init; }
+
+    public required long PageVersion { get; init; }
+
+    public required string Detail { get; init; }
+
+    /// <summary>分块载荷；**空列表表示没有载荷**（不伪造一片）。</summary>
+    public required IReadOnlyList<BrowserScreenshotChunkDescriptor> Chunks { get; init; }
+}
 }
