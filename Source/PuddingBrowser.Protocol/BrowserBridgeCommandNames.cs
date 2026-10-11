@@ -1,4 +1,4 @@
-﻿namespace PuddingBrowser.Protocol;
+namespace PuddingBrowser.Protocol;
 
 public static class BrowserBridgeCommandNames
 {
@@ -20,12 +20,13 @@ public static class BrowserBridgeCommandNames
     public const string PageLocate = "page.locate";
     public const string PageInteract = "page.interact";
     public const string PageWaitFor = "page.waitFor";
+    public const string PageScreenshot = "page.screenshot";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         ContextCreate, ContextList, ContextGetInfo, ContextClose,
         PageCreate, PageList, PageGetInfo, PageActivate, PageClose,
         PageGoto, PageGoBack, PageGoForward, PageReload, PageStop,
-        PageSnapshot, PageLocate, PageInteract, PageWaitFor
+        PageSnapshot, PageLocate, PageInteract, PageWaitFor, PageScreenshot
     };
 }
