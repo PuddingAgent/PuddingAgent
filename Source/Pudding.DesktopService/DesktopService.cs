@@ -535,6 +535,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.BrowserScreenshot:
             case DesktopCapability.BrowserSnapshot:
             {
                 if (request.Snapshot is not { } snapshot)

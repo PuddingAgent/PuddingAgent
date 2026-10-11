@@ -42,6 +42,8 @@ public static class DesktopCapabilityPolicy
         [DesktopCapability.ShellClipboard] = [DesktopContextTrust.Workbench],
         // 快照读取会遍历 DOM（同样是脚本注入）：只对获授权的 Agent 浏览器开放，工作台与普通网页都不允许。
         [DesktopCapability.BrowserSnapshot] = [DesktopContextTrust.AgentAuthorized],
+        // §8.1 截图：只读能力，与 snapshot 同级信任。
+        [DesktopCapability.BrowserScreenshot] = [DesktopContextTrust.AgentAuthorized],
         [DesktopCapability.BrowserLocate] = [DesktopContextTrust.AgentAuthorized],
         // 交互是变更类：只对获授权的 Agent 浏览器开放（工作台不可注入脚本，普通网页更不允许）。
         [DesktopCapability.BrowserInteract] = [DesktopContextTrust.AgentAuthorized],

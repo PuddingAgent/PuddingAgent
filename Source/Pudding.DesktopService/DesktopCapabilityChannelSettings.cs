@@ -46,6 +46,7 @@ public sealed record DesktopCapabilityChannelSettings
         | DesktopCapability.ShellNotification
         | DesktopCapability.ShellStatus
         | DesktopCapability.BrowserSnapshot
+        | DesktopCapability.BrowserScreenshot
         | DesktopCapability.BrowserLocate
         | DesktopCapability.BrowserInteract
         | DesktopCapability.BrowserWaitFor
