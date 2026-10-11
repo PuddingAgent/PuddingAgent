@@ -35,11 +35,11 @@ public static class BrowserDelegation
     /// 写入类任务必须注入的工具。
     ///
     /// **更正（2026-10-08）**：原先按设计示例写成 browser_navigate + browser_screenshot，但本仓库的浏览器
-    /// 工具面（<c>BrowserAgentToolIds</c>）**没有 screenshot 这个工具**（截图能力存在，但不是七项工具之一）。
+    /// 工具面（<c>BrowserAgentToolIds</c>）**当时没有** screenshot 工具；**现已有**（`BrowserAgentToolIds.Screenshot`，并已纳入宿主工具契约）。
     /// 要求一个不存在的工具名会让每个可写委派都判不合格 —— 那是"照着文档示例写代码"而不是"照着代码事实写"。
-    /// 现改为实际存在的写入必需工具；设计里"须包含 navigate/screenshot"的意图由 browser_interact（真实输入）承担。
+    /// 现恢复设计意图：写入类任务需要 navigate + interact **与 screenshot**（写入后如实观察结果的凭据要求）。
     /// </summary>
-    public static readonly IReadOnlyList<string> WriteTaskRequiredTools = ["browser_navigate", "browser_interact"];
+    public static readonly IReadOnlyList<string> WriteTaskRequiredTools = ["browser_navigate", "browser_interact", "browser_screenshot"];
 
     /// <summary>校验信封：不合格就**明确拒绝**（逐条给原因，而不是让执行器去猜）。</summary>
     public static bool TryValidate(

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingBrowser.Automation;
 
@@ -85,9 +85,9 @@ public sealed class SubAgentDelegationTests
     }
 
     [TestMethod]
-    public void WriteCapableDelegationsMustHaveNavigateAndInteract()
+    public void WriteCapableDelegationsMustHaveNavigateInteractAndScreenshot()
     {
-        // 写入类任务缺 navigate/interact ⇒ 拒绝（按**代码事实**：工具面里没有 screenshot 工具）。
+        // 写入类任务缺 navigate/interact/screenshot ⇒ 拒绝（screenshot 工具已落地 ⇒ 恢复设计意图）。
         Assert.IsFalse(BrowserDelegation.TryValidate(
             Envelope(
                 scope: new BrowserDelegationScope(CanRead: true, CanWrite: true, CanManage: false),
@@ -99,11 +99,12 @@ public sealed class SubAgentDelegationTests
         var joined = string.Join("; ", problems);
         StringAssert.Contains(joined, "browser_navigate");
         StringAssert.Contains(joined, "browser_interact");
+        StringAssert.Contains(joined, "browser_screenshot");
 
         Assert.IsTrue(BrowserDelegation.TryValidate(
             Envelope(
                 scope: new BrowserDelegationScope(CanRead: true, CanWrite: true, CanManage: false),
-                injected: ["browser_interact", "browser_navigate", "browser_snapshot"],
+                injected: ["browser_interact", "browser_navigate", "browser_snapshot", "browser_screenshot"],
                 required: ["browser_snapshot"]),
             FullParent,
             out _));
