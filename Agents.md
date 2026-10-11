@@ -53,7 +53,7 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 **Browser 与上层能力**
 
-- DesktopChild 在启用 Browser Automation 时提供 `browser_context`、`browser_tabs`、`browser_navigate`、`browser_snapshot`、`browser_locate`、`browser_interact`、`browser_wait_for` 七项工具。
+- DesktopChild 在启用 Browser Automation 时提供 `browser_context`、`browser_tabs`、`browser_navigate`、`browser_snapshot`、`browser_locate`、`browser_interact`、`browser_wait_for`、`browser_screenshot` 八项工具。
 - **Snapshot ref 必须携带 PageVersion；交互提交后不得重查旧 Locator**，后续状态用 Wait 或新 Snapshot 获取。
 - Douyin Adapter 准入：先用用户明确选择的测试 Agent/DataRoot 完成真实 DeepSeek 可见 smoke；**不得读取或复制 `D:\data` 中的 LLM Secret 绕过该项目准入**。底层始终保持通用，抖音能力只位于上层适配器。
 
