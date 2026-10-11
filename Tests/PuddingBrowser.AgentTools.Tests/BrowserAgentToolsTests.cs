@@ -1,5 +1,6 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
+using PuddingBrowser.Automation;
 ﻿using System.Runtime.CompilerServices;
 using System.Text.Json;
 using PuddingBrowser.Abstractions;
@@ -2337,6 +2338,51 @@ public sealed class BrowserAgentToolsTests
         using var document = JsonDocument.Parse(json);
         return document.RootElement.GetProperty(property).Clone();
     }
+    [Fact]
+    public async Task Screenshot_RequiresAPinnedPageVersion()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var tool = new BrowserScreenshotTool(
+            new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor);
+
+        var result = await ExecuteAsync(tool, """{"page_id":"p-1"}""");
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
+    public async Task Screenshot_RefusesAnUnregisteredScope()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var tool = new BrowserScreenshotTool(
+            new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor);
+
+        var result = await ExecuteAsync(tool, """{"page_id":"p-1","expected_page_version":7,"scope":"diagonal"}""");
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
+    public async Task Screenshot_ReturnsTheObservationIdThatCoordinatesReferTo()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var surface = new FakeCapabilitySurface(runtime);
+        surface.OnScreenshot = _ => CapabilityResult<BrowserScreenshotResult>.Success(
+            new BrowserScreenshotResult(
+                new DesktopScreenshotMetadata(
+                    "obs-1", "image/png", 4, 1280, 720, 512, 288,
+                    DeviceScaleFactor: 1, ViewportWidth: 1280, ViewportHeight: 720,
+                    ScrollX: 0, ScrollY: 0, CropX: 0, CropY: 0, CropWidth: 1280, CropHeight: 720,
+                    PageVersion: 7, DomRevision: 1, ViewportRevision: 1,
+                    DesktopScreenshotDetail.Low),
+                [new DesktopScreenshotChunk(0, true, [1, 2, 3, 4])]));
+        var tool = new BrowserScreenshotTool(surface, new FakeCallContextFactory(), _originAccessor);
+
+        var result = await ExecuteAsync(tool, """{"page_id":"p-1","context_id":"ctx-1","expected_page_version":7}""");
+
+        Assert.True(result.Success);
+        Assert.Contains("obs-1", result.Output);
+    }
 }
 
 /// <summary>
@@ -3208,3 +3254,4 @@ internal sealed class FakeElementHandle : IElementHandle
     public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
+
