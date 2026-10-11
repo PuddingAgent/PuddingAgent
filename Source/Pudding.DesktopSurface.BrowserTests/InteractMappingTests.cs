@@ -382,6 +382,9 @@ public sealed class InteractMappingTests
         /// <summary>最近一次坐标输入（§8.2）：kind/x/y/toX/toY 如实记录。</summary>
         public PointerInput? LastPointer { get; private set; }
 
+        /// <summary>可编程 CDP 应答（用于观察解析路径的用例）；未设置时保持"抛 NotSupported"的旧语义。</summary>
+        public Func<string, System.Text.Json.JsonDocument>? OnCdp { get; set; }
+
         public Task PointerAsync(PointerInput input, CancellationToken ct)
         {
             LastPointer = input;
@@ -482,7 +485,8 @@ public sealed class InteractMappingTests
 
         public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task<System.Text.Json.JsonDocument> SendCdpAsync(string method, System.Text.Json.JsonElement? parameters, CancellationToken ct) => throw new NotSupportedException();
+        public Task<System.Text.Json.JsonDocument> SendCdpAsync(string method, System.Text.Json.JsonElement? parameters, CancellationToken ct)
+            => OnCdp is { } factory ? Task.FromResult(factory(method)) : throw new NotSupportedException();
 
         public Task<BrowserSubscriptionId> SubscribeCdpAsync(string eventName, CancellationToken ct) => throw new NotSupportedException();
 
