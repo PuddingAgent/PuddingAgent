@@ -40,4 +40,26 @@ public sealed class ScreenshotDomRevisionTests
         Assert.IsFalse(ScreenshotDomRevision.TryRead(JsonDocument.Parse("-1").RootElement, out _, out _));
         Assert.IsFalse(ScreenshotDomRevision.TryRead(JsonDocument.Parse("1.5").RootElement, out _, out _));
     }
+    [TestMethod]
+    public void TheCounterIsReadFromARuntimeEvaluateResult()
+    {
+        var payload = JsonDocument.Parse("""{ "result": { "type": "number", "value": 12 } }""").RootElement;
+
+        Assert.IsTrue(ScreenshotDomRevision.TryReadEvaluationResult(payload, out var revision, out var reason), reason);
+        Assert.AreEqual(12, revision);
+        StringAssert.Contains(ScreenshotDomRevision.CounterExpression, ScreenshotDomRevision.CounterProperty);
+    }
+
+    [TestMethod]
+    public void AnUnreadableCounterIsRefusedRatherThanAssumedUnchanged()
+    {
+        // undefined ⇒ 没有 result.value（观察尚未由截图建立）
+        Assert.IsFalse(ScreenshotDomRevision.TryReadEvaluationResult(
+            JsonDocument.Parse("""{ "result": { "type": "undefined" } }""").RootElement, out _, out var reason1));
+        Assert.IsTrue(reason1.Contains("screenshot"), reason1);
+
+        Assert.IsFalse(ScreenshotDomRevision.TryReadEvaluationResult(
+            JsonDocument.Parse("""{ "result": { "type": "number", "value": -3 } }""").RootElement, out _, out _));
+        Assert.IsFalse(ScreenshotDomRevision.TryReadEvaluationResult(JsonDocument.Parse("{}").RootElement, out _, out _));
+    }
 }

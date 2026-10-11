@@ -218,7 +218,7 @@ public sealed class ComponentSurfaceTests
             ["PointerInputSequenceTests"] = 5,
             ["ScreenshotObservationRegistryTests"] = 4,
             ["ScreenshotLayoutFactsTests"] = 3,
-            ["ScreenshotDomRevisionTests"] = 3,
+            ["ScreenshotDomRevisionTests"] = 5,
             ["BrowserAssertionRedactionTests"] = 11,
             ["BrowserControlAuthorityTests"] = 16,
             ["BrowserInteractionReceiptTests"] = 24,

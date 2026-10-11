@@ -48,4 +48,29 @@ public static class ScreenshotDomRevision
 
         return true;
     }
+
+    /// <summary>读取计数的 CDP 表达式（配合 <c>Runtime.evaluate</c> + <c>returnByValue</c>）。</summary>
+    public const string CounterExpression = "window.__puddingDomRevision";
+
+    /// <summary>
+    /// 从 <c>Runtime.evaluate</c> 的返回里取计数：形如 <c>{ "result": { "type": "number", "value": 12 } }</c>。
+    /// **缺 result/value、类型不是 number、负数/非整数一律拒绝**（绝不把"读不到"当成"没变过"）。
+    /// </summary>
+    public static bool TryReadEvaluationResult(JsonElement evaluationResult, out long revision, out string reason)
+    {
+        revision = 0;
+        reason = string.Empty;
+
+        if (evaluationResult.ValueKind != JsonValueKind.Object
+            || !evaluationResult.TryGetProperty("result", out var result)
+            || result.ValueKind != JsonValueKind.Object
+            || !result.TryGetProperty("value", out var value))
+        {
+            reason = $"the in-page DOM revision counter ({CounterProperty}) could not be read; " +
+                "an observation must be established by a screenshot before its coordinates can be used";
+            return false;
+        }
+
+        return TryRead(value, out revision, out reason);
+    }
 }
