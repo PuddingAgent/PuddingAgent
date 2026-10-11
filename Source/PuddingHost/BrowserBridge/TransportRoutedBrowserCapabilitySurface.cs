@@ -191,6 +191,10 @@ internal sealed class TransportRoutedBrowserCapabilitySurface(
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync((surface, ct) => surface.SnapshotAsync(request, call, ct), cancellationToken);
 
+    public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync((surface, ct) => surface.ScreenshotAsync(request, call, ct), cancellationToken);
+
     public Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
         BrowserLocateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync((surface, ct) => surface.LocateAsync(request, call, ct), cancellationToken);

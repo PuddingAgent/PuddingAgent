@@ -38,6 +38,10 @@ public interface IDesktopBrowserCapabilitySurface
     Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default);
 
+    /// <summary>截图（§8.1）：结果必须携带可校验的 <c>ObservationId</c> 与完整裁剪几何，供后续坐标操作解析。</summary>
+    Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default);
+
     /// <summary>按定位描述符查找元素；每个命中项必须标注当前页面版本。</summary>
     Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
         BrowserLocateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default);

@@ -98,6 +98,10 @@ public sealed class TransportRoutedBrowserCapabilitySurfaceTests
             NavigateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+            BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
             BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();

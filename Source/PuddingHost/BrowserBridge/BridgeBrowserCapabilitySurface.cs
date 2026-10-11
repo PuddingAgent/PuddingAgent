@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
@@ -27,6 +27,13 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
     private readonly IBrowserRuntime _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
 
     // ── 上下文管理（缺口 #1）：与 Desktop 侧同形（新建的上下文页面列表为空、可信级别保守）。──
+
+    /// <summary>Bridge 传输**尚无截图命令** ⇒ 明确拒绝（fail-closed），不硬塞半成品。</summary>
+    public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        Task.FromResult(CapabilityResult<BrowserScreenshotResult>.Failure(
+            DesktopCapabilityError.UnsupportedCapability(
+                "screenshot is not available over the bridge transport; use the capability channel")));
 
     public async Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
         BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)

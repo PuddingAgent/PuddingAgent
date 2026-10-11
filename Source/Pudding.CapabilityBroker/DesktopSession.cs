@@ -316,6 +316,19 @@ public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapability
             cancellationToken);
 
     /// <summary>只读 Shell 状态（窗口形态/托盘/自动化状态/打开页面数）。</summary>
+    /// <summary>截图（§8.1）：走能力通道发 <c>ScreenshotCommand</c>，结果含观察 id 与分块载荷。</summary>
+    public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.BrowserScreenshot,
+            DesktopCapabilityRequest.ForScreenshot(request),
+            call,
+            static response => response.Screenshot is { } value
+                ? CapabilityResult<BrowserScreenshotResult>.Success(value)
+                : CapabilityResult<BrowserScreenshotResult>.Failure(
+                    DesktopCapabilityError.Internal("screenshot response payload is missing")),
+            cancellationToken);
+
     public Task<CapabilityResult<DesktopShellStatus>> GetShellStatusAsync(
         DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync(
