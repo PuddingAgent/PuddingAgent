@@ -1,4 +1,5 @@
 using Pudding.Contracts;
+using PuddingBrowser.Automation;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopService;
 using PuddingBrowser.Abstractions;
@@ -63,16 +64,20 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
     private readonly IBrowserRuntime _runtime;
     private readonly IDesktopBrowserTargetRegistry _targets;
     private readonly BrowserReadingBaselineStore _readings;
+    private readonly IScreenshotObservationRegistry _screenshotObservations;
 
     public BrowserRuntimeDesktopSurface(
         IBrowserRuntime runtime,
         IDesktopBrowserTargetRegistry targets,
-        BrowserReadingBaselineStore? readings = null)
+        BrowserReadingBaselineStore? readings = null,
+        IScreenshotObservationRegistry? screenshotObservations = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _targets = targets ?? throw new ArgumentNullException(nameof(targets));
         // 生产侧传入生命周期端口持有的那一份（页面关闭时会清）；省略则自建一份（测试/独立使用）。
         _readings = readings ?? new BrowserReadingBaselineStore();
+        // 生产侧可注入共享实例（截图登记 ⇒ 坐标解析要用同一份）；省略则自建。
+        _screenshotObservations = screenshotObservations ?? new InMemoryScreenshotObservationRegistry();
     }
 
     /// <summary>
