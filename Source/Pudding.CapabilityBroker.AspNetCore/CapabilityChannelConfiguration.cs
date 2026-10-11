@@ -32,7 +32,8 @@ public sealed record CapabilityChannelConfiguration
         | DesktopCapability.BrowserTabs
         | DesktopCapability.ShellDialog
         | DesktopCapability.ShellFilePicker
-        | DesktopCapability.ShellClipboard;
+        | DesktopCapability.ShellClipboard
+        | DesktopCapability.BrowserScreenshot;
 
     public const int DefaultMaxMessageBytes = 1024 * 1024;
 
