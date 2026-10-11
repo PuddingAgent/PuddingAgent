@@ -23,12 +23,13 @@ public sealed class BrowserAgentToolsTests
             new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserLocateTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
             new BrowserInteractTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
-            new BrowserWaitForTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor)
+            new BrowserWaitForTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor),
+            new BrowserScreenshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor)
         };
 
         Assert.Equal(
             ["browser_context", "browser_tabs", "browser_navigate", "browser_snapshot",
-                "browser_locate", "browser_interact", "browser_wait_for"],
+                "browser_locate", "browser_interact", "browser_wait_for", "browser_screenshot"],
             tools.Select(tool => tool.Descriptor.ToolId));
         Assert.All(tools.Take(3), tool => Assert.Contains("action", tool.Descriptor.Parameters.Required));
         Assert.Contains("page_id", tools[2].Descriptor.Parameters.Required);
