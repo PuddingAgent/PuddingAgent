@@ -40,6 +40,9 @@ param(
     [string]$OwnerPattern = '^Docs/(00_changelog/2026Year/10/2026-10-0[89]-(?!T\d)|12_features/(\u6D4F\u89C8\u5668|B6-)|13_runbooks/\u6D4F\u89C8\u5668|14_reports/2026-10-0[89]-\u6D4F\u89C8\u5668)'
 )
 
+# 解释器解析（2026-10-08）：PATH 上的 python 可能是 Windows 应用执行别名；优先 py / 可用的 .venv。
+if ($env:PUDDING_PYTHON) { $pythonExe = $env:PUDDING_PYTHON } elseif ((Get-Command py -ErrorAction SilentlyContinue) -and (& py --version 2>&1) -match 'Python 3') { $pythonExe = 'py' } elseif (Test-Path (Join-Path $PSScriptRoot '..\.venv\Scripts\python.exe')) { $pythonExe = Join-Path $PSScriptRoot '..\.venv\Scripts\python.exe' } else { $pythonExe = 'python' }
+
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repositoryRoot
@@ -81,7 +84,7 @@ try {
     New-Item -ItemType Directory -Force -Path temp/test-out | Out-Null
 
     Write-Host "=== 1/3 front matter (Docs)"
-    $frontMatter = & python Tools/Docs/front_matter.py --check --paths Docs 2>&1 | Out-String
+    $frontMatter = & $pythonExe Tools/Docs/front_matter.py --check --paths Docs 2>&1 | Out-String
     $frontMatter | Out-File -Encoding UTF8 temp/test-out/round-gates-front-matter.txt
     $frontNumbers = Get-Numbers -Text $frontMatter
     if ($null -eq $frontNumbers) {
@@ -101,7 +104,7 @@ try {
 
     Write-Host "=== 2/3 links (repo-wide)"
     $linksReport = "temp/test-out/round-gates-links.txt"
-    $links = & python Tools/Docs/check_md_links.py --all-repo --report $linksReport 2>&1 | Out-String
+    $links = & $pythonExe Tools/Docs/check_md_links.py --all-repo --report $linksReport 2>&1 | Out-String
 
     if ($FixLinks) {
         # One command instead of a fifth manual fix. Only touches files matching -OwnerPattern.
@@ -156,7 +159,7 @@ try {
 
         if ($fixed -gt 0) {
             # Re-measure after rewriting so the reported totals describe the current state.
-            $links = & python Tools/Docs/check_md_links.py --all-repo --report $linksReport 2>&1 | Out-String
+            $links = & $pythonExe Tools/Docs/check_md_links.py --all-repo --report $linksReport 2>&1 | Out-String
         }
     }
 
