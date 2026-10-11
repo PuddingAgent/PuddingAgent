@@ -2488,6 +2488,10 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
             new DesktopLocateResult(request.Target, request.Locator, elements, false, version, LocateNextCursor));
     }
 
+    public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
     public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken ct = default)
     {

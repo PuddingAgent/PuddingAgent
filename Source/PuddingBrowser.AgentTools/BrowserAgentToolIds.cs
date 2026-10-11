@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 
 namespace PuddingBrowser.AgentTools;
 
@@ -13,6 +13,8 @@ public static class BrowserAgentToolIds
     public const string Tabs = "browser_tabs";
     public const string Navigate = "browser_navigate";
     public const string Snapshot = "browser_snapshot";
+    /// <summary>截图（§8.1）：结果携带 observationId，供后续坐标操作解析。</summary>
+    public const string Screenshot = "browser_screenshot";
     public const string Locate = "browser_locate";
     public const string Interact = "browser_interact";
     public const string WaitFor = "browser_wait_for";
