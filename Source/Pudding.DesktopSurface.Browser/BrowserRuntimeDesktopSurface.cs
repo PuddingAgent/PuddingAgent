@@ -680,6 +680,161 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
     ///   后置条件由 `BrowserMutationPostcondition` 统一判定，两条传输共用同一份。
     /// ④`focus` 在当前运行时没有对应 API ⇒ 明确返回 `unsupported_capability`，**不**用脚本"凑"出来。
     /// </summary>
+    /// <summary>§8.1 截图：按计划采集并登记观察。三个前提布尔的依据见 round-419 决策（注释即证据来源）。</summary>
+    public async Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        DesktopCallContext context, BrowserScreenshotRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_runtime.State != BrowserRuntimeState.Ready)
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(
+                DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
+        }
+
+        var page = await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false);
+        if (page.IsFailure)
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(page.Error);
+        }
+
+        var browserPage = page.Value;
+        if (browserPage.PageVersion != request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch,
+                $"page is at v{browserPage.PageVersion}, request pinned v{request.ExpectedPageVersion.Value}",
+                retryable: true));
+        }
+
+        ScreenshotLayoutFacts? facts;
+        using (var metrics = await browserPage.SendCdpAsync("Page.getLayoutMetrics", null, cancellationToken).ConfigureAwait(false))
+        {
+            if (!ScreenshotLayoutFactsReader.TryRead(metrics.RootElement, out facts, out var factsReason))
+            {
+                return CapabilityResult<BrowserScreenshotResult>.Failure(
+                    DesktopCapabilityError.InvalidRequest($"screenshot geometry is unavailable: {factsReason}"));
+            }
+        }
+
+        long domRevision;
+        var installJson = System.Text.Json.JsonSerializer.Serialize(
+            new Dictionary<string, object?> { ["expression"] = ScreenshotDomRevision.InstallScript, ["returnByValue"] = true });
+        using (var installParameters = System.Text.Json.JsonDocument.Parse(installJson))
+        using (var installed = await browserPage.SendCdpAsync("Runtime.evaluate", installParameters.RootElement, cancellationToken).ConfigureAwait(false))
+        {
+            if (!ScreenshotDomRevision.TryReadEvaluationResult(installed.RootElement, out domRevision, out var domReason))
+            {
+                return CapabilityResult<BrowserScreenshotResult>.Failure(
+                    DesktopCapabilityError.InvalidRequest($"screenshot observation could not be established: {domReason}"));
+            }
+        }
+
+        var intent = new BrowserScreenshotIntent(
+            MapScreenshotScope(request.Scope),
+            MapScreenshotDetail(request.Detail),
+            HasPageReadGrant: true,
+            PageReady: !browserPage.IsLoading,
+            IsCurrentDocument: true,
+            ViewportWidth: facts!.ViewportWidth,
+            ViewportHeight: facts.ViewportHeight,
+            DeviceScaleFactor: facts.DeviceScaleFactor,
+            request.RegionX, request.RegionY, request.RegionWidth, request.RegionHeight);
+
+        if (!BrowserScreenshotPlanner.TryPlan(intent, out var plan, out var planningRejection, out var planningReason))
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(
+                DesktopCapabilityError.InvalidRequest($"screenshot was not planned ({planningRejection}): {planningReason}"));
+        }
+
+        var captureJson = plan!.Scope == BrowserScreenshotScope.Viewport
+            ? ScreenshotPlan.Build()
+            : ScreenshotPlan.Build(fullPage: true, contentSize: new ScreenshotPlan.ContentSize(
+                plan.CropX, plan.CropY, plan.CropWidth, plan.CropHeight));
+        byte[] bytes;
+        using (var captureParameters = System.Text.Json.JsonDocument.Parse(captureJson))
+        using (var captured = await browserPage.SendCdpAsync("Page.captureScreenshot", captureParameters.RootElement, cancellationToken).ConfigureAwait(false))
+        {
+            bytes = ScreenshotPlan.Decode(captured.RootElement);
+        }
+
+        if (ScreenshotPlan.CheckBudget(bytes.Length, plan.MaxBytes) != ScreenshotPlan.BudgetVerdict.Within)
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(DesktopCapabilityError.InvalidRequest(
+                $"screenshot exceeds its budget: {ScreenshotPlan.DescribeBudget(bytes.Length, plan.MaxBytes)}"));
+        }
+
+        var observationId = "obs-" + Guid.NewGuid().ToString("N");
+        var mimeType = string.Equals(request.Format, ScreenshotPlan.JpegFormat, StringComparison.OrdinalIgnoreCase)
+            ? "image/jpeg"
+            : "image/png";
+
+        // 裁剪几何必须完整（视口也写 0/0/宽/高）：TryToCssViewport 遇 Crop* = null 会判 InvalidGeometry。
+        var metadata = new BrowserScreenshotMetadata(
+            observationId, mimeType, bytes.Length,
+            (int)Math.Ceiling(facts.ViewportWidth), (int)Math.Ceiling(facts.ViewportHeight),
+            plan.ExpectedOutputWidth, plan.ExpectedOutputHeight,
+            facts.DeviceScaleFactor, facts.ViewportWidth, facts.ViewportHeight,
+            facts.ScrollX, facts.ScrollY,
+            plan.CropX, plan.CropY, plan.CropWidth, plan.CropHeight,
+            browserPage.PageVersion, domRevision, facts.ViewportRevision,
+            MapScreenshotDetail(request.Detail));
+
+        if (!BrowserScreenshotTransfer.TryValidate(metadata, out var rejection, out var validationReason))
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(
+                DesktopCapabilityError.InvalidRequest($"screenshot was refused ({rejection}): {validationReason}"));
+        }
+
+        _screenshotObservations.Register(metadata);
+
+        var chunks = BrowserScreenshotTransfer.Split(bytes.Length);
+        var offset = 0;
+        foreach (var chunk in chunks)
+        {
+            Array.Copy(bytes, offset, chunk.Data, 0, chunk.Data.Length);
+            offset += chunk.Data.Length;
+        }
+
+        var wireChunks = chunks
+            .Select(chunk => new DesktopScreenshotChunk(chunk.Index, chunk.IsLast, chunk.Data))
+            .ToArray();
+        var wireResult = new BrowserScreenshotResult(
+            new DesktopScreenshotMetadata(
+                observationId, mimeType, bytes.Length,
+                (int)Math.Ceiling(facts.ViewportWidth), (int)Math.Ceiling(facts.ViewportHeight),
+                plan.ExpectedOutputWidth, plan.ExpectedOutputHeight,
+                facts.DeviceScaleFactor, facts.ViewportWidth, facts.ViewportHeight,
+                facts.ScrollX, facts.ScrollY,
+                plan.CropX, plan.CropY, plan.CropWidth, plan.CropHeight,
+                browserPage.PageVersion, domRevision, facts.ViewportRevision,
+                request.Detail),
+            wireChunks);
+        wireResult.Validate();
+
+        return CapabilityResult<BrowserScreenshotResult>.Success(wireResult);
+    }
+
+    private static BrowserScreenshotScope MapScreenshotScope(DesktopScreenshotScope scope)
+    {
+        return scope switch
+        {
+            DesktopScreenshotScope.Viewport => BrowserScreenshotScope.Viewport,
+            DesktopScreenshotScope.Region => BrowserScreenshotScope.Region,
+            _ => BrowserScreenshotScope.FullPage,
+        };
+    }
+
+    private static BrowserScreenshotDetail MapScreenshotDetail(DesktopScreenshotDetail detail)
+    {
+        return detail switch
+        {
+            DesktopScreenshotDetail.Low => BrowserScreenshotDetail.Low,
+            DesktopScreenshotDetail.High => BrowserScreenshotDetail.High,
+            _ => BrowserScreenshotDetail.Original,
+        };
+    }
     public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         DesktopCallContext context, BrowserInteractRequest request, CancellationToken cancellationToken)
     {
