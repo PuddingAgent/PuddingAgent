@@ -36,6 +36,8 @@ public static class BrowserDelegationTasks
         {
             required.Add(BrowserAgentToolIds.Navigate);
             required.Add(BrowserAgentToolIds.Interact);
+            // 设计：写入后要**如实观察结果** ⇒ 截图是凭据要求的一部分。
+            required.Add(BrowserAgentToolIds.Screenshot);
         }
 
         if (extraRequiredTools is { Count: > 0 })
