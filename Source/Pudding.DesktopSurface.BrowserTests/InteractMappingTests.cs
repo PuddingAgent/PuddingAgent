@@ -667,4 +667,78 @@ public sealed class InteractMappingTests
         Assert.Equal(10, pointer!.Value.X);
         Assert.Equal(20, pointer.Value.Y);
     }
+    private const string CaptureScreenshotJson = """{ "data": "AQIDBA==" }""";
+
+    [Fact]
+    public async Task AScreenshotRegistersAnObservationThatCoordinatesCanThenUse()
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var page = runtime.Pages["ctx-1/p-1"];
+        var domRevision = 1L;
+        page.OnCdp = method => System.Text.Json.JsonDocument.Parse(method switch
+        {
+            "Page.getLayoutMetrics" => LayoutMetricsJson,
+            "Runtime.evaluate" => $"{{\"result\":{{\"type\":\"number\",\"value\":{domRevision}}}}}",
+            "Page.captureScreenshot" => CaptureScreenshotJson,
+            _ => throw new NotSupportedException(method),
+        });
+
+        var registry = new InMemoryScreenshotObservationRegistry();
+        var surface = Surface(runtime, registry);
+
+        var screenshot = await surface.ScreenshotAsync(
+            Call,
+            new BrowserScreenshotRequest(Target, DesktopPageVersion.Require(7)),
+            CancellationToken.None);
+
+        Assert.False(screenshot.IsFailure, Describe(screenshot));
+        var observationId = screenshot.Value.Metadata.ObservationId;
+        Assert.False(string.IsNullOrWhiteSpace(observationId));
+        Assert.NotEmpty(screenshot.Value.Chunks);
+
+        // 用**刚刚签发的** id 发坐标请求 ⇒ 必须成功（这是 B5 闭环的直接证据）。
+        var interact = await surface.InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerClick, DesktopPageVersion.Require(7),
+                observationId: observationId, x: 10, y: 10),
+            CancellationToken.None);
+
+        Assert.False(interact.IsFailure, Describe(interact));
+        Assert.NotNull(page.LastPointer);
+    }
+
+    [Fact]
+    public async Task AScreenshotObservationExpiresWhenThePageChanges()
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var page = runtime.Pages["ctx-1/p-1"];
+        var domRevision = 1L;
+        page.OnCdp = method => System.Text.Json.JsonDocument.Parse(method switch
+        {
+            "Page.getLayoutMetrics" => LayoutMetricsJson,
+            "Runtime.evaluate" => $"{{\"result\":{{\"type\":\"number\",\"value\":{domRevision}}}}}",
+            "Page.captureScreenshot" => CaptureScreenshotJson,
+            _ => throw new NotSupportedException(method),
+        });
+
+        var registry = new InMemoryScreenshotObservationRegistry();
+        var surface = Surface(runtime, registry);
+        var screenshot = await surface.ScreenshotAsync(
+            Call, new BrowserScreenshotRequest(Target, DesktopPageVersion.Require(7)), CancellationToken.None);
+        Assert.False(screenshot.IsFailure, Describe(screenshot));
+
+        // 页面变了（页内计数 0 ⇒ 1）⇒ 该观察过期。
+        domRevision = 2;
+
+        var interact = await surface.InteractAsync(
+            Call,
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.PointerClick, DesktopPageVersion.Require(7),
+                observationId: screenshot.Value.Metadata.ObservationId, x: 10, y: 10),
+            CancellationToken.None);
+
+        Assert.True(interact.IsFailure, Describe(interact));
+        Assert.Null(page.LastPointer);
+    }
 }

@@ -20,7 +20,7 @@ public static class ScreenshotDomRevision
     public const string InstallScript = """
         (() => {
           if (window.__puddingDomRevisionInstalled) { return window.__puddingDomRevision; }
-          window.__puddingDomRevision = 0;
+          window.__puddingDomRevision = 1;
           window.__puddingDomRevisionInstalled = true;
           const observer = new MutationObserver(() => { window.__puddingDomRevision += 1; });
           observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
