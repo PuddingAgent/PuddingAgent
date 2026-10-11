@@ -706,16 +706,6 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         // 以及把参考元素滚进视口（to_ref）。三者都由驱动实现并**必须能停**（G8）。
         // 这里不再有"原生拒绝到达目标"的分支：目标模型已完整。
 
-        // §8.2 坐标：**截图来源**的坐标必须携带可校验的 observationId（驱动用精确变换转换，
-        // 且在滚动/缩放/布局/页面世代变化后失效）。当前还没有"观察登记处"可校验 ⇒
-        // 带 id 的请求**明确拒绝**（fail-closed），**绝不静默忽略**：忽略会让调用方以为坐标已被
-        // 变换/校验，实际却把旧截图的像素当新视口坐标点下去。
-        if (request.ObservationId is { Length: > 0 })
-        {
-            return CapabilityResult<DesktopInteractionResult>.Failure(
-                DesktopCapabilityError.InvalidRequest(
-                    "screenshot-derived coordinates require a live observation; none is registered yet"));
-        }
 
         if (_runtime.State != BrowserRuntimeState.Ready)
         {
@@ -736,6 +726,53 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 DesktopCapabilityErrorCode.PageVersionMismatch,
                 $"page '{request.Target.Key}' is at v{browserPage.PageVersion}, request pinned v{request.ExpectedPageVersion.Value}",
                 retryable: true));
+        }
+
+        // §8.2 截图来源坐标：登记处 + **当前世代三重校验** + 精确变换；任一环节缺失/过期 ⇒ 明确拒绝，且**不触达驱动**。
+        double? observationX = null;
+        double? observationY = null;
+        if (request.ObservationId is { Length: > 0 } observationId)
+        {
+            ScreenshotLayoutFacts? facts;
+            using (var metrics = await browserPage.SendCdpAsync("Page.getLayoutMetrics", null, cancellationToken).ConfigureAwait(false))
+            {
+                if (!ScreenshotLayoutFactsReader.TryRead(metrics.RootElement, out facts, out var factsReason))
+                {
+                    return CapabilityResult<DesktopInteractionResult>.Failure(
+                        DesktopCapabilityError.InvalidRequest($"screenshot coordinates cannot be verified: {factsReason}"));
+                }
+            }
+        
+            long domRevision;
+            using var counterParameters = System.Text.Json.JsonDocument.Parse(
+                "{\"expression\":\"" + ScreenshotDomRevision.CounterExpression + "\",\"returnByValue\":true}");
+            using (var evaluated = await browserPage.SendCdpAsync(
+                "Runtime.evaluate", counterParameters.RootElement, cancellationToken).ConfigureAwait(false))
+            {
+                if (!ScreenshotDomRevision.TryReadEvaluationResult(evaluated.RootElement, out domRevision, out var domReason))
+                {
+                    return CapabilityResult<DesktopInteractionResult>.Failure(
+                        DesktopCapabilityError.InvalidRequest($"screenshot coordinates cannot be verified: {domReason}"));
+                }
+            }
+        
+            var currentGenerations = new BrowserPageGenerations(browserPage.PageVersion, domRevision, facts!.ViewportRevision);
+            if (!_screenshotObservations.TryResolve(observationId, currentGenerations, out var observation))
+            {
+                return CapabilityResult<DesktopInteractionResult>.Failure(DesktopCapabilityError.InvalidRequest(
+                    "screenshot-derived coordinates refer to an unknown or expired observation; take a new screenshot"));
+            }
+        
+            if (!BrowserScreenshotCoordinates.TryToCssViewport(
+                    observation, observationId, request.X ?? 0, request.Y ?? 0, currentGenerations,
+                    out var observationTarget, out var coordinateRejection, out var coordinateReason))
+            {
+                return CapabilityResult<DesktopInteractionResult>.Failure(DesktopCapabilityError.InvalidRequest(
+                    $"screenshot coordinates were refused ({coordinateRejection}): {coordinateReason}"));
+            }
+        
+            observationX = observationTarget!.CssX;
+            observationY = observationTarget.CssY;
         }
 
         Locator? locator = null;
@@ -768,7 +805,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 }
             }
 
-        var scrollOutcome = await PerformAsync(browserPage, request, locator, cancellationToken).ConfigureAwait(false);
+        var scrollOutcome = await PerformAsync(browserPage, request, locator, cancellationToken, observationX, observationY).ConfigureAwait(false);
 
         // 交互后的页面状态：版本取**交互之后**的事实（旧 Ref 由此作废）。
         var state = new DesktopPageState(
@@ -821,7 +858,9 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
 
 
     private static async Task<ScrollOutcome?> PerformAsync(
-        IBrowserPage page, BrowserInteractRequest request, Locator? locator, CancellationToken cancellationToken)
+        IBrowserPage page, BrowserInteractRequest request, Locator? locator, CancellationToken cancellationToken,
+        double? observationX = null,
+        double? observationY = null)
     {
         var inputMode = MapInputMode(request.InputMode);
 
