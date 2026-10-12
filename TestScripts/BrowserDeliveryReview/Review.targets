@@ -1,0 +1,11 @@
+<Project>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pudding.DesktopServiceTests'">
+    <Compile Include="$(MSBuildThisFileDirectory)ServiceReview.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pudding.DesktopConnectionTests'">
+    <Compile Include="$(MSBuildThisFileDirectory)ConnectionReview.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PuddingDesktop.Tests'">
+    <Compile Include="$(MSBuildThisFileDirectory)BridgeReview.cs" />
+  </ItemGroup>
+</Project>

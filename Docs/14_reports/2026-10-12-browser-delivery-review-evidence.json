@@ -1,0 +1,378 @@
+{
+  "date": "2026-10-12",
+  "source_commit": "c5869a2b2c4d4353747d44ded819af83a23589a0",
+  "head_at_evidence_collection": "09fa06e4e825495141b2e1309b0af5afbc965f8c",
+  "kind": "in_process_review_regressions_and_existing_controls",
+  "verdict": "reject_browser_product_delivery",
+  "new_regressions": {
+    "failed": 11,
+    "passed": 0
+  },
+  "existing_controls": {
+    "failed": 0,
+    "passed": 10
+  },
+  "notes": [
+    "No WebView2/product lifecycle/model vision smoke was performed.",
+    "Unrelated dirty working-tree files were not staged or reverted.",
+    "The 11 failed assertions specify required behavior; these are not passing release tests."
+  ],
+  "reproduction": "TestScripts/BrowserDeliveryReview/README.md",
+  "runs": [
+    {
+      "file": "bridge-review.trx",
+      "trx_sha256": "6621f23eeead2b556e22d59f3dc45de69db451766f334f65ea99c204d7f570e3",
+      "counters": {
+        "total": "3",
+        "executed": "3",
+        "passed": "0",
+        "failed": "3",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "times": {
+        "creation": "2026-10-12T17:33:10.3926563+08:00",
+        "queuing": "2026-10-12T17:33:10.3926566+08:00",
+        "start": "2026-10-12T17:33:01.7288427+08:00",
+        "finish": "2026-10-12T17:33:10.4399128+08:00"
+      },
+      "cases": [
+        {
+          "test": "PuddingDesktop.Tests.Browser.BrowserDeliveryReviewBridge.CachedResultMustNotBeReplayedToAnotherCaller",
+          "outcome": "Failed",
+          "failure": "result replay ignored the caller identity"
+        },
+        {
+          "test": "PuddingDesktop.Tests.Browser.BrowserDeliveryReviewBridge.ConcurrentDuplicatesMustNotExecuteTwice",
+          "outcome": "Failed",
+          "failure": "duplicate handler executions=2"
+        },
+        {
+          "test": "PuddingDesktop.Tests.Browser.BrowserDeliveryReviewBridge.BridgeWithNoPageGrantMustRejectBeforeHandler",
+          "outcome": "Failed",
+          "failure": "no grant but handler calls=1"
+        }
+      ]
+    },
+    {
+      "file": "connection-existing-control.trx",
+      "trx_sha256": "a99e727d2710b07602f7b6ddc190cd4f92992eb6c56a812ccdf50a26171035ff",
+      "counters": {
+        "total": "6",
+        "executed": "6",
+        "passed": "6",
+        "failed": "0",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "times": {
+        "creation": "2026-10-12T17:34:36.1267290+08:00",
+        "queuing": "2026-10-12T17:34:36.1267291+08:00",
+        "start": "2026-10-12T17:34:31.4213805+08:00",
+        "finish": "2026-10-12T17:34:36.1307997+08:00"
+      },
+      "cases": [
+        {
+          "test": "DesktopConnectionTests.BrowserBindingDecodeTests.Decode_BindingApply_WithAnInvalidStructureIsRefused(scope: 1, validityMs: 0)",
+          "outcome": "Passed",
+          "failure": null
+        },
+        {
+          "test": "DesktopConnectionTests.BrowserBindingDecodeTests.Decode_BindingApply_WithAMismatchedPayloadIsRefused",
+          "outcome": "Passed",
+          "failure": null
+        },
+        {
+          "test": "DesktopConnectionTests.BrowserBindingDecodeTests.Decode_BindingApply_WithAnInvalidStructureIsRefused(scope: 1, validityMs: -1)",
+          "outcome": "Passed",
+          "failure": null
+        },
+        {
+          "test": "DesktopConnectionTests.BrowserBindingDecodeTests.Decode_BindingApply_WithAnInvalidStructureIsRefused(scope: 0, validityMs: 300000)",
+          "outcome": "Passed",
+          "failure": null
+        },
+        {
+          "test": "DesktopConnectionTests.BrowserBindingDecodeTests.Decode_BindingRevoke_ProducesTaskAndTarget",
+          "outcome": "Passed",
+          "failure": null
+        },
+        {
+          "test": "DesktopConnectionTests.BrowserBindingDecodeTests.Decode_BindingApply_ProducesTheTaskBinding",
+          "outcome": "Passed",
+          "failure": null
+        }
+      ]
+    },
+    {
+      "file": "connection-review.trx",
+      "trx_sha256": "2cbf940114c2fb111fd4c1354ef7ce5f2598c84bd04f63dec684729be3b1c5ee",
+      "counters": {
+        "total": "4",
+        "executed": "4",
+        "passed": "0",
+        "failed": "4",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "times": {
+        "creation": "2026-10-12T17:32:20.1345617+08:00",
+        "queuing": "2026-10-12T17:32:20.1345619+08:00",
+        "start": "2026-10-12T17:32:16.0356313+08:00",
+        "finish": "2026-10-12T17:32:20.1386689+08:00"
+      },
+      "cases": [
+        {
+          "test": "DesktopConnectionTests.BrowserDeliveryReviewConnection.IdempotencyFingerprintMustIncludeCallerAndCompletePayload(caller: \"agent-b\", page: \"page-a\")",
+          "outcome": "Failed",
+          "failure": "Assert.NotEqual() Failure: Strings are equal\r\nExpected: Not \"browser.binding.apply:E3B0C44298FC1C149AFBF4C8996F\"···\r\nActual:       \"browser.binding.apply:E3B0C44298FC1C149AFBF4C8996F\"···"
+        },
+        {
+          "test": "DesktopConnectionTests.BrowserDeliveryReviewConnection.ChildBindingMustPreserveParentRunOnApplyAndRevoke(revoke: False)",
+          "outcome": "Failed",
+          "failure": "A sub-agent caller must carry the parent task identity; grants are issued against it. (Parameter 'parentTaskId')"
+        },
+        {
+          "test": "DesktopConnectionTests.BrowserDeliveryReviewConnection.ChildBindingMustPreserveParentRunOnApplyAndRevoke(revoke: True)",
+          "outcome": "Failed",
+          "failure": "System.ArgumentException : A sub-agent caller must carry the parent task identity; grants are issued against it. (Parameter 'parentTaskId')"
+        },
+        {
+          "test": "DesktopConnectionTests.BrowserDeliveryReviewConnection.IdempotencyFingerprintMustIncludeCallerAndCompletePayload(caller: \"agent-a\", page: \"page-b\")",
+          "outcome": "Failed",
+          "failure": "Assert.NotEqual() Failure: Strings are equal\r\nExpected: Not \"browser.binding.apply:E3B0C44298FC1C149AFBF4C8996F\"···\r\nActual:       \"browser.binding.apply:E3B0C44298FC1C149AFBF4C8996F\"···"
+        }
+      ]
+    },
+    {
+      "file": "service-existing-control.trx",
+      "trx_sha256": "e27c78e6e3830ee09d7ddc21322b7bb98077980db733afaf287dd0931537cd0f",
+      "counters": {
+        "total": "4",
+        "executed": "4",
+        "passed": "4",
+        "failed": "0",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "times": {
+        "creation": "2026-10-12T17:33:22.7658581+08:00",
+        "queuing": "2026-10-12T17:33:22.7658585+08:00",
+        "start": "2026-10-12T17:33:18.6416684+08:00",
+        "finish": "2026-10-12T17:33:22.7696733+08:00"
+      },
+      "cases": [
+        {
+          "test": "DesktopServiceTests.BrowserRevalidateBeforeTouchingTests.RevokingWhileQueuedIsRefusedBeforeAnyDriverCall",
+          "outcome": "Passed",
+          "failure": null
+        },
+        {
+          "test": "DesktopServiceTests.BrowserAdmissionGateTests.WithAGrantTheCapabilityReachesTheDriverExactlyOnce",
+          "outcome": "Passed",
+          "failure": null
+        },
+        {
+          "test": "DesktopServiceTests.BrowserAdmissionGateTests.WithoutAGrantTheCapabilityIsRefusedBeforeAnyDriverCall",
+          "outcome": "Passed",
+          "failure": null
+        },
+        {
+          "test": "DesktopServiceTests.BrowserLeaseLifecycleTests.AWriteOperationReleasesItsLeaseSoTheNextWriteStillWorks",
+          "outcome": "Passed",
+          "failure": null
+        }
+      ]
+    },
+    {
+      "file": "service-review.trx",
+      "trx_sha256": "0b9a530aadfb7f80965dccf9042c5bcaff6e7abb6e6277796c3cb1ba8fe7a8eb",
+      "counters": {
+        "total": "4",
+        "executed": "4",
+        "passed": "0",
+        "failed": "4",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "times": {
+        "creation": "2026-10-12T17:31:57.1282321+08:00",
+        "queuing": "2026-10-12T17:31:57.1282322+08:00",
+        "start": "2026-10-12T17:31:45.5286589+08:00",
+        "finish": "2026-10-12T17:31:57.1331097+08:00"
+      },
+      "cases": [
+        {
+          "test": "DesktopServiceTests.BrowserDeliveryReviewService.VersionRejectionMustNotLeakTheAdmittedLease",
+          "outcome": "Failed",
+          "failure": "Assert.Null() Failure: Value is not null\r\nExpected: null\r\nActual:   lease 8b9bf0eecdb74d69abbfdfc6d0726f01 ctx-agent/page-1 op=review-version holder=agent-a @ctl2/grant2"
+        },
+        {
+          "test": "DesktopServiceTests.BrowserDeliveryReviewService.CancellationBeforeQueueMustNotLeakTheAdmittedLease",
+          "outcome": "Failed",
+          "failure": "Assert.Null() Failure: Value is not null\r\nExpected: null\r\nActual:   lease 44a8b36b1da443788f914e1c6d04c371 ctx-agent/page-1 op=review-cancel holder=agent-a @ctl2/grant2"
+        },
+        {
+          "test": "DesktopServiceTests.BrowserDeliveryReviewService.SelectingAPageMustNotAuthorizeEveryUnrelatedTask",
+          "outcome": "Failed",
+          "failure": "unrelated task acquired the same selected page without a user task binding"
+        },
+        {
+          "test": "DesktopServiceTests.BrowserDeliveryReviewService.TakeoverThenResumeWhileQueuedMustNotReviveTheOldOperation",
+          "outcome": "Failed",
+          "failure": "old request resumed; driver calls=1"
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "path": "Source/Pudding.DesktopService/DesktopService.cs",
+      "sha256_checkout": "653a46700627a31dd72c5ad89a2f082a7a44198612319a0726aa727f48733a2a",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/Pudding.DesktopService/BrowserTaskBindingService.cs",
+      "sha256_checkout": "dfc0b334ee5278900902487d9c7f001813e33528a69088fdb71f538023337807",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/Pudding.DesktopService/BrowserGrantIssuer.cs",
+      "sha256_checkout": "c8478df6013668377428f88a113f54f53ca0141047fa4c3cd6135d2bd7b0dc93",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/PuddingDesktop.WpfArchive/Browser/BrowserBridgeCommandDispatcher.cs",
+      "sha256_checkout": "6666a2a79d9eb0a7fe52a9a36fe78a2df8264d3ad46faffb60b75853cd29c827",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/PuddingDesktop/PuddingDesktop.csproj",
+      "sha256_checkout": "da9b5820e2399be1d608c6ac16670c4657b39c26c40fdccf5739f4cbc32083ba",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/Pudding.DesktopConnection/Mapping.cs",
+      "sha256_checkout": "26d041687045b1010e098ee587c5c4bb88861babfae9d296faeb056d7ceb818c",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/Pudding.CapabilityBroker/DesktopSession.cs",
+      "sha256_checkout": "04fc439ac2678ef79464caa31bb2dfadc0fd38d2d5388012f0440f1cb4e90b9d",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/Pudding.CapabilityBroker/WireMapping.cs",
+      "sha256_checkout": "34d4cc1f378f68fe469968fe526113a073e4bd8300731816eca29aa98a334a69",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs",
+      "sha256_checkout": "71876699813d59bbb449d8af63070bf507aa3379f7205aac86d0e6214c461849",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/PuddingHost/BrowserBridge/CapabilityChannelBindingGate.cs",
+      "sha256_checkout": "2e5a42404ebb8f76ff5c8a322fdc9b395bd84e843f2464fed0abd049842279c8",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/PuddingHost/BrowserBridge/TransportRoutedBrowserCapabilitySurface.cs",
+      "sha256_checkout": "03633801acbd69590a189523d0a9f672ec5a673385e053380d59df2713e12919",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/PuddingHost/BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs",
+      "sha256_checkout": "de820a76cc6a64405aef775c30097686cdfb5f6551fb42ee524bdc817f42920b",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/Pudding.Contracts/Desktop/BrowserOperationMapping.cs",
+      "sha256_checkout": "a08e113e5b74f4b602d47d0933eaf967020ab306cbdf92d2bed9f1d361112b8d",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/PuddingBrowser.Automation/BrowserAutomationAuthority.cs",
+      "sha256_checkout": "d88fe54422c9917a64e6af10d8d4dd5dd5ebb35b7725fdc584f3b07e743332ce",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/PuddingBrowser.AgentTools/BrowserScreenshotTool.cs",
+      "sha256_checkout": "32fce40eb48a0d20713795ed7c2df77fc713a2cc72f19703033f44c3aba68e54",
+      "matches_head_ignoring_crlf": true
+    },
+    {
+      "path": "Source/PuddingHost/Tools/ImageReaderTool.cs",
+      "sha256_checkout": "38e0c7db707f2f1c833242a3226b746a45aa92503ac5e46bdc2eb13c150fd2f2",
+      "matches_head_ignoring_crlf": true
+    }
+  ],
+  "probes": [
+    {
+      "path": "TestScripts/BrowserDeliveryReview/BridgeReview.cs",
+      "sha256": "c106759fcd388f26a5f2c1338df875f26d991b874e146fdd5f1d0fb926f4dda3"
+    },
+    {
+      "path": "TestScripts/BrowserDeliveryReview/ConnectionReview.cs",
+      "sha256": "a45a76068e0d1f17856acd55e03ac0ccc9054db3f1fb02415e220975fba10ef2"
+    },
+    {
+      "path": "TestScripts/BrowserDeliveryReview/Review.targets",
+      "sha256": "0a279fb46cda5b7a00580ec3c06c882a2eb8f11236c63eba87e69e741b3a1a09"
+    },
+    {
+      "path": "TestScripts/BrowserDeliveryReview/ServiceReview.cs",
+      "sha256": "9e1eb648e4eef4590d4d8a0e17aa383c5dfcb5f12d02d18a1390bab8d854745d"
+    }
+  ]
+}
