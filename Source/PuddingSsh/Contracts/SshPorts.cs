@@ -113,6 +113,20 @@ public interface ISshTransportFactory
     Task<ISshTransportSession> ConnectAsync(SshTransportConnectRequest request, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// 提交事实（ADR-096 D4）：进入**可能发送 exec** 的调用之前必须推进到
+/// <see cref="SubmissionAttempted"/>；只有底层能明确证明「什么都没写出去」时才允许
+/// <see cref="NotSent"/>，此时才可能保持 <c>NotSubmitted</c> 与 <c>retry_safe</c>。
+/// </summary>
+public enum SshSubmissionEvidence
+{
+    /// <summary>明确未发送（例如尚未调用 exec，或底层给出未写出证据）。</summary>
+    NotSent,
+
+    /// <summary>可能已经发送：此后任何失败都必须按「远端状态未知、不可重试」处理。</summary>
+    SubmissionAttempted,
+}
+
 /// <summary>一次独占连接的会话：Exec + 双流有界采集 + 终止 + 资源释放。</summary>
 public interface ISshTransportSession : IAsyncDisposable
 {
@@ -124,6 +138,15 @@ public interface ISshTransportSession : IAsyncDisposable
 
     bool IsConnected { get; }
 
+    /// <summary>提交事实；调用 exec 之前必须已推进（见 <see cref="SshSubmissionEvidence"/>）。</summary>
+    SshSubmissionEvidence SubmissionEvidence { get; }
+
+    /// <summary>
+    /// **非阻塞**中止请求：只登记请求，实际的 TERM/关闭连接由会话自己的有界清理状态机执行
+    /// （ADR-096 D3）；调用线程不得因此被卡住。
+    /// </summary>
+    void RequestAbort();
+
     /// <summary>
     /// 执行一条 POSIX 命令。取消只是**发送信号**并可能结束客户端等待，因此调用方不得据此宣称远端进程已消失。
     /// </summary>
@@ -132,4 +155,20 @@ public interface ISshTransportSession : IAsyncDisposable
         TimeSpan timeout,
         int maxOutputBytes,
         CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// 会话的**资源可见性**（ADR-096 D3）：让上层能断言「回收真的发生了」，而不是只看
+/// 「业务调用返回了」。实现可选；不实现时上层按未知处理，不据此宣称已释放。
+/// </summary>
+public interface ISshTransportSessionDiagnostics
+{
+    /// <summary>仍然存活的流读取任务数（stdout/stderr 排空）。</summary>
+    int PendingReaders { get; }
+
+    /// <summary>是否已收到中止请求。</summary>
+    bool AbortRequested { get; }
+
+    /// <summary>连接与命令是否已经关闭（关闭状态机完成）。</summary>
+    bool Closed { get; }
 }

@@ -9,20 +9,34 @@ using Renci.SshNet.Common;
 namespace PuddingSsh.Transport;
 
 /// <summary>
-/// 一次操作独占的连接会话（设计 §1.2 第 2 条）：Exec + 双流有界采集 + 终止 + 释放。
+/// 一次操作独占的连接会话（设计 §1.2 第 2 条 / ADR-096 D3）：
+/// Exec + 双流有界采集 + **单一关闭状态机** + 资源可见性。
 /// <para>
-/// 终止语义（设计 §9.2）：取消/超时对当前 exec channel 发送 **TERM**，随后关闭 channel 与独占连接；
-/// 不发送远程 <c>killall/pkill</c>、不自动强杀整机进程。远端没有给出退出码/信号证据时
-/// <see cref="SshExecutionState"/> 必须是 <c>unknown</c>，不得声称远端进程已消失。
+/// 终止与清理的合同：
+/// <list type="bullet">
+///   <item><see cref="RequestAbort"/> 只登记中止请求并在有界 worker 上启动关闭，**不阻塞调用线程**。</item>
+///   <item>TERM、关闭命令、关闭连接、dispose 客户端与密钥**共用同一份清理预算**（<see cref="SshOperationLimits.CleanupGrace"/>），
+///         每一步只拿剩余额度，不存在「每步各自 2 秒」。</item>
+///   <item>排空到期即请求中止并**不再无条件 await** 原任务；迟到完成由 continuation 观察。</item>
+///   <item>取消只是发送 TERM：远端是否真的退出仍以退出码/信号证据为准。</item>
+/// </list>
 /// </para>
 /// </summary>
-internal sealed class SshNetTransportSession : ISshTransportSession
+internal sealed class SshNetTransportSession : ISshTransportSession, ISshTransportSessionDiagnostics
 {
     private readonly SshClient _client;
     private readonly SshTargetRef _target;
     private readonly SshIdentityMaterial _identity;
     private readonly PrivateKeyFile _privateKey;
     private readonly Stream _keyStream;
+    private readonly object _closeGate = new();
+
+    private Task? _closeTask;
+    private SshCommand? _currentCommand;
+    private int _abortRequested;
+    private int _closed;
+    private int _pendingReaders;
+    private int _submissionEvidence;
     private bool _disposed;
 
     public SshNetTransportSession(
@@ -49,6 +63,22 @@ internal sealed class SshNetTransportSession : ISshTransportSession
 
     public bool IsConnected => !_disposed && _client.IsConnected;
 
+    public SshSubmissionEvidence SubmissionEvidence =>
+        Volatile.Read(ref _submissionEvidence) == 1 ? SshSubmissionEvidence.SubmissionAttempted : SshSubmissionEvidence.NotSent;
+
+    public int PendingReaders => Volatile.Read(ref _pendingReaders);
+
+    public bool AbortRequested => Volatile.Read(ref _abortRequested) == 1;
+
+    public bool Closed => Volatile.Read(ref _closed) == 1;
+
+    /// <summary>非阻塞中止：登记请求并把关闭交给 <see cref="EnsureCloseAsync"/> 的单次状态机。</summary>
+    public void RequestAbort()
+    {
+        Volatile.Write(ref _abortRequested, 1);
+        _ = EnsureCloseAsync();
+    }
+
     public async Task<SshExecuteResult> ExecuteAsync(
         string command,
         TimeSpan timeout,
@@ -69,16 +99,19 @@ internal sealed class SshNetTransportSession : ISshTransportSession
         int? exitCode = null;
         string? exitSignal = null;
         var submitted = false;
-        var retrySafe = false;
 
         SshCommand? sshCommand = null;
         try
         {
             sshCommand = _client.CreateCommand(command, Encoding.UTF8);
             sshCommand.CommandTimeout = timeout;
+            _currentCommand = sshCommand;
 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             linked.CancelAfter(timeout);
+
+            // 提交事实必须在**可能发送 exec 的调用之前**推进（ADR-096 D4）。
+            Volatile.Write(ref _submissionEvidence, 1);
 
             // ExecuteAsync 只负责「提交并等待」；输出必须同时从两条流排空（设计 §9.1）。
             Task executeTask = sshCommand.ExecuteAsync(linked.Token);
@@ -86,8 +119,8 @@ internal sealed class SshNetTransportSession : ISshTransportSession
             state = SshExecutionState.Submitted;
             phase = SshPhase.Executing;
 
-            Task stdoutDrain = collector.DrainStdoutAsync(sshCommand.OutputStream);
-            Task stderrDrain = collector.DrainStderrAsync(sshCommand.ExtendedOutputStream);
+            Task stdoutDrain = TrackDrain(collector.DrainStdoutAsync(sshCommand.OutputStream));
+            Task stderrDrain = TrackDrain(collector.DrainStderrAsync(sshCommand.ExtendedOutputStream));
 
             try
             {
@@ -115,17 +148,23 @@ internal sealed class SshNetTransportSession : ISshTransportSession
             catch (Exception ex)
             {
                 status = SshExecutionStatus.Failed;
-                var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(phase, submitted));
-                errorCode = failure.ErrorCode;
-                retrySafe = failure.RetrySafe;
-                diagnostic = ex.GetType().Name + ": " + ex.Message;
+                errorCode = SshFailureClassifier.Classify(ex, submitted);
+                diagnostic = ex.GetType().Name;
             }
 
             phase = SshPhase.Collecting;
-            await DrainWithGraceAsync(stdoutDrain, stderrDrain).ConfigureAwait(false);
+
+            // 排空与清理**共用同一份预算**：到期就请求中止，绝不再无条件 await（ADR-096 D3）。
+            var drains = Task.WhenAll(stdoutDrain, stderrDrain);
+            _ = await SshBoundedDrain
+                .WaitAsync(
+                    drains,
+                    RemainingCleanupBudget(stopwatch, timeout),
+                    onTimeout: RequestAbort)
+                .ConfigureAwait(false);
 
             // 退出证据：即使被取消，服务端也可能已经回报信号（SIGTERM ⇒ ExitSignal="TERM"）。
-            exitCode = ToExitCode(sshCommand.ExitStatus);
+            exitCode = sshCommand.ExitStatus;
             exitSignal = sshCommand.ExitSignal;
             if (exitCode is not null || exitSignal is not null)
             {
@@ -160,10 +199,8 @@ internal sealed class SshNetTransportSession : ISshTransportSession
         catch (Exception ex)
         {
             status = SshExecutionStatus.Failed;
-            var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(phase, submitted));
-            errorCode = failure.ErrorCode;
-            retrySafe = failure.RetrySafe;
-            diagnostic = ex.GetType().Name + ": " + ex.Message;
+            errorCode = SshFailureClassifier.Classify(ex, submitted);
+            diagnostic = ex.GetType().Name;
             if (submitted)
             {
                 state = SshExecutionState.Unknown;
@@ -172,19 +209,11 @@ internal sealed class SshNetTransportSession : ISshTransportSession
         finally
         {
             phase = phase == SshPhase.Completed ? phase : SshPhase.Cleanup;
-            sshCommand?.Dispose();
 
-            // 取消/超时按清理宽限关闭独占连接；正常结束由调用方释放。
-            if (status is SshExecutionStatus.Cancelled or SshExecutionStatus.TimedOut && _client.IsConnected)
+            // 取消/超时后登记中止（非阻塞）；正常结束由调用方释放会话。
+            if (status is SshExecutionStatus.Cancelled or SshExecutionStatus.TimedOut)
             {
-                try
-                {
-                    _client.Disconnect();
-                }
-                catch (Exception)
-                {
-                    // 释放路径不得抛出新错误覆盖业务结果。
-                }
+                RequestAbort();
             }
         }
 
@@ -202,7 +231,7 @@ internal sealed class SshNetTransportSession : ISshTransportSession
             CapturedBytes = collector.CapturedBytes,
             ReceivedBytes = collector.ReceivedBytes,
             OutputTruncated = collector.IsTruncated,
-            RetrySafe = retrySafe,
+            RetrySafe = false,
             ErrorCode = errorCode,
             Phase = phase,
             Diagnostic = diagnostic,
@@ -212,55 +241,133 @@ internal sealed class SshNetTransportSession : ISshTransportSession
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
         _disposed = true;
 
-        await Task.Run(() =>
+        // 关闭状态机自身有预算（TERM/连接/密钥共享一份）；等待它结束是为了让上层能判断
+        // 「是否真的释放」——上层仍会用**自己的**预算给这次等待封顶（超时进隔离区）。
+        await EnsureCloseAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>单一关闭状态机：无论谁先请求（取消/中止/释放），只会执行一次。</summary>
+    private Task EnsureCloseAsync()
+    {
+        lock (_closeGate)
+        {
+            return _closeTask ??= Task.Run(() => CloseCoreAsync());
+        }
+    }
+
+    private async Task CloseCoreAsync()
+    {
+        var stopwatch = Stopwatch.StartNew();
+        TimeSpan Remaining()
+        {
+            var left = SshOperationLimits.CleanupGrace - stopwatch.Elapsed;
+            return left > TimeSpan.Zero ? left : TimeSpan.Zero;
+        }
+
+        var command = _currentCommand;
+
+        // 1) 命令仍在跑：TERM（有界等待服务端应答），再释放命令对象。
+        if (command is not null && SubmissionEvidence == SshSubmissionEvidence.SubmissionAttempted)
         {
             try
             {
-                if (_client.IsConnected)
-                {
-                    _client.Disconnect();
-                }
+                var waitMs = (int)Math.Max(1, Remaining().TotalMilliseconds);
+                command.CancelAsync(forceKill: false, millisecondsTimeout: waitMs);
             }
             catch (Exception)
             {
-                // 释放路径静默：连接可能已被远端关闭。
+                // 服务端不应答/已结束：继续关闭连接。
             }
-            finally
+        }
+
+        if (command is not null)
+        {
+            try
             {
-                _client.Dispose();
-                _privateKey.Dispose();
-                _keyStream.Dispose();
-
-                // 认证材料只在内存中交给第三方库，连接释放时清零（设计 §6.2）。
-                _identity.Dispose();
+                command.Dispose();
             }
-        }).ConfigureAwait(false);
-    }
+            catch (Exception)
+            {
+                // 释放路径静默。
+            }
+        }
 
-    private static async Task DrainWithGraceAsync(Task stdoutDrain, Task stderrDrain)
-    {
-        var drains = Task.WhenAll(stdoutDrain, stderrDrain);
-        await Task.WhenAny(drains, Task.Delay(SshOperationLimits.CleanupGrace, CancellationToken.None))
-            .ConfigureAwait(false);
-
+        // 2) 关闭连接（socket/channel），再释放客户端。
         try
         {
-            // 排空任务自身不抛（异常被视为「流结束」），这里再隔离一次，避免清理路径污染执行事实。
-            await drains.ConfigureAwait(false);
+            if (_client.IsConnected)
+            {
+                _client.Disconnect();
+            }
         }
         catch (Exception)
         {
-            // 忽略：执行事实由主任务与退出证据决定。
+            // 连接可能已被远端关闭。
+        }
+
+        try
+        {
+            _client.Dispose();
+        }
+        catch (Exception)
+        {
+            // 同上。
+        }
+
+        // 3) 释放密钥与认证材料（材料释放是幂等的）。
+        try
+        {
+            _privateKey.Dispose();
+        }
+        catch (Exception)
+        {
+            // 同上。
+        }
+
+        try
+        {
+            _keyStream.Dispose();
+        }
+        catch (Exception)
+        {
+            // 同上。
+        }
+
+        _identity.Dispose();
+        Volatile.Write(ref _closed, 1);
+
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    /// <summary>把排空任务登记进「仍在读取」计数，供资源可见性断言使用。</summary>
+    private async Task TrackDrain(Task drain)
+    {
+        Interlocked.Increment(ref _pendingReaders);
+        try
+        {
+            await drain.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // 读取失败由 R4 的 output_complete 事实表达；这里只负责计数与观察。
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _pendingReaders);
         }
     }
 
-    /// <summary>库的退出码是 <c>int?</c>（未收到 exit-status 时为 <see langword="null"/>）；这里保持可空语义。</summary>
-    private static int? ToExitCode(int? exitStatus) => exitStatus;
+    private static TimeSpan RemainingCleanupBudget(Stopwatch stopwatch, TimeSpan timeout)
+    {
+        // 清理预算 = 清理宽限，且不超过本次操作剩余时间（两者取小）。
+        var left = timeout - stopwatch.Elapsed;
+        if (left < TimeSpan.Zero)
+        {
+            left = TimeSpan.Zero;
+        }
+
+        return left < SshOperationLimits.CleanupGrace ? left : SshOperationLimits.CleanupGrace;
+    }
 }

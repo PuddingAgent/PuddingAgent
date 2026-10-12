@@ -60,15 +60,33 @@ internal sealed class FakeTransportFactory : ISshTransportFactory
     }
 }
 
-internal sealed class FakeSession : ISshTransportSession
+internal sealed class FakeSession : ISshTransportSession, ISshTransportSessionDiagnostics
 {
     private int _executeCount;
+    private int _submissionEvidence;
+    private int _abortRequested;
+    private int _closed;
 
     public Func<string, TimeSpan, int, CancellationToken, Task<SshExecuteResult>> OnExecute { get; set; } =
         (_, _, _, _) => Task.FromResult(FakeResults.Completed());
 
     /// <summary>释放延迟：用于验证「释放本身也有界」。</summary>
     public TimeSpan DisposeDelay { get; set; }
+
+    /// <summary>释放是否永不返回（模拟不合作的清理）。</summary>
+    public bool DisposeNeverCompletes { get; set; }
+
+    /// <summary>
+    /// exec 调用**同步阻塞**的时长（模拟「方法返回 Task 之前的同步启动段」）。
+    /// 协调器必须把它放在有界 worker 上，业务等待不得因此被卡住。
+    /// </summary>
+    public TimeSpan SynchronousBlockBeforeExecute { get; set; }
+
+    /// <summary>是否在 exec 调用时推进提交事实（真实适配器就是这样做的）。</summary>
+    public bool MarkSubmissionAttempted { get; set; } = true;
+
+    /// <summary>测试直接设定的提交事实（在 <see cref="MarkSubmissionAttempted"/> 为 false 时生效）。</summary>
+    public SshSubmissionEvidence SubmissionEvidenceOverride { get; set; } = SshSubmissionEvidence.NotSent;
 
     public int ExecuteCount => Volatile.Read(ref _executeCount);
 
@@ -86,22 +104,51 @@ internal sealed class FakeSession : ISshTransportSession
 
     public bool IsConnected => !Disposed;
 
+    public SshSubmissionEvidence SubmissionEvidence =>
+        Volatile.Read(ref _submissionEvidence) == 1 ? SshSubmissionEvidence.SubmissionAttempted : SubmissionEvidenceOverride;
+
+    public int PendingReaders => 0;
+
+    public bool AbortRequested => Volatile.Read(ref _abortRequested) == 1;
+
+    public bool Closed => Volatile.Read(ref _closed) == 1 || Disposed;
+
+    public void RequestAbort() => Volatile.Write(ref _abortRequested, 1);
+
     public Task<SshExecuteResult> ExecuteAsync(string command, TimeSpan timeout, int maxOutputBytes, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _executeCount);
         LastCommand = command;
         LastTimeout = timeout;
         LastOutputBudget = maxOutputBytes;
+
+        if (MarkSubmissionAttempted)
+        {
+            Volatile.Write(ref _submissionEvidence, 1);
+        }
+
+        if (SynchronousBlockBeforeExecute > TimeSpan.Zero)
+        {
+            Thread.Sleep(SynchronousBlockBeforeExecute);
+        }
+
         return OnExecute(command, timeout, maxOutputBytes, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
     {
         Disposed = true;
+        if (DisposeNeverCompletes)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+        }
+
         if (DisposeDelay > TimeSpan.Zero)
         {
             await Task.Delay(DisposeDelay).ConfigureAwait(false);
         }
+
+        Volatile.Write(ref _closed, 1);
     }
 }
 

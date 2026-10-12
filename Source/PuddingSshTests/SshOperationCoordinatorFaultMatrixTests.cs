@@ -586,22 +586,44 @@ public sealed class SshOperationCoordinatorFaultMatrixTests
     }
 
     [TestMethod]
-    public async Task SessionThrowsBeforeSubmit_KeepsSubmittingPhaseAndIsRetrySafe()
+    public async Task SessionThrowsInSubmitWindow_IsUnknownAndNotRetrySafe()
     {
         var session = new FakeSession
         {
-            // 同步抛出（连 Task 都没返回）⇒ 命令**未提交**，与上一条的形状必须可区分。
+            // 同步抛出（连 Task 都没返回）：**但提交事实已推进**（真实适配器在调用前就推进）。
             OnExecute = (_, _, _, _) => throw new SshConnectionException("channel not opened"),
+            MarkSubmissionAttempted = true,
         };
         var factory = new FakeTransportFactory { OnConnect = (_, _) => Task.FromResult<ISshTransportSession>(session) };
 
         await using var coordinator = new SshOperationCoordinator(factory, new FakeIdentityProvider(), Options());
         var result = await coordinator.ExecuteAsync(FakeSsh.Host(), FakeSsh.Execute(), CancellationToken.None);
 
-        Assert.AreEqual(SshErrorCodes.ConnectFailed, result.ErrorCode);
+        Assert.AreEqual(SshPhase.Submitting, result.Phase);
+        Assert.AreEqual(SshExecutionState.Unknown, result.ExecutionState, "可能已发送 ⇒ 不得声称未提交（ADR-096 D4）");
+        Assert.IsFalse(result.RetrySafe, "触及提交窗口后不得自动重试");
+        Assert.AreEqual(SshErrorCodes.ConnectionLost, result.ErrorCode);
+    }
+
+    [TestMethod]
+    public async Task SessionThrowsBeforeSend_WithNotSentEvidence_StaysNotSubmittedAndRetrySafe()
+    {
+        var session = new FakeSession
+        {
+            OnExecute = (_, _, _, _) => throw new SshConnectionException("nothing was written"),
+            // 只有底层**明确给出未发送证据**时才允许保持未提交（ADR-096 D4）。
+            MarkSubmissionAttempted = false,
+            SubmissionEvidenceOverride = SshSubmissionEvidence.NotSent,
+        };
+        var factory = new FakeTransportFactory { OnConnect = (_, _) => Task.FromResult<ISshTransportSession>(session) };
+
+        await using var coordinator = new SshOperationCoordinator(factory, new FakeIdentityProvider(), Options());
+        var result = await coordinator.ExecuteAsync(FakeSsh.Host(), FakeSsh.Execute(), CancellationToken.None);
+
         Assert.AreEqual(SshPhase.Submitting, result.Phase);
         Assert.AreEqual(SshExecutionState.NotSubmitted, result.ExecutionState);
-        Assert.IsTrue(result.RetrySafe, "未提交的失败可以安全再次尝试（phase 区分它与建连阶段失败）");
+        Assert.IsTrue(result.RetrySafe);
+        Assert.AreEqual(SshErrorCodes.ConnectFailed, result.ErrorCode);
     }
 
     [TestMethod]
