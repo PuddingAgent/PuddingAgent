@@ -654,6 +654,10 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("page-1", delegation.LastRequest.PageId);
         Assert.AreEqual("read", delegation.LastRequest.ScopeName);
 
+        // 修复后：该路径的**收尾也必须撤销**（此前 out _ 丢弃 runId ⇒ 授权会泄漏）。
+        Assert.HasCount(1, delegation.RevokedRunIds, "revoked=" + string.Join(",", delegation.RevokedRunIds));
+        Assert.AreEqual(delegation.LastRequest!.ChildRunId, delegation.RevokedRunIds[0]);
+
         // ...and the completion still revokes that same run.
         Assert.HasCount(1, delegation.RevokedRunIds);
         Assert.AreEqual(result.RunId, delegation.RevokedRunIds[0]);
@@ -757,6 +761,10 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("parent-run", delegation.LastRequest.ParentRunId);
         Assert.AreEqual("ctx-1", delegation.LastRequest.ContextId);
         Assert.AreEqual("read", delegation.LastRequest.ScopeName);
+
+        // 修复后：该路径的**收尾也必须撤销**（此前 out _ 丢弃 runId ⇒ 授权会泄漏）。
+        Assert.HasCount(1, delegation.RevokedRunIds, "revoked=" + string.Join(",", delegation.RevokedRunIds));
+        Assert.AreEqual(delegation.LastRequest!.ChildRunId, delegation.RevokedRunIds[0]);
     }
     private static SubAgentManager CreateManager(RecordingRuntimeAgentDispatcher dispatcher)
     {

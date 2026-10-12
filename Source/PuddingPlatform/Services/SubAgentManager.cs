@@ -381,7 +381,12 @@ public sealed class SubAgentManager : ISubAgentManager
         }
         catch (Exception ex)
         {
-            _runIdMap.TryRemove(subSessionId, out _);
+            // R4: 该路径也是**运行收尾** —— 必须撤销委派授权（此前 out _ 丢弃 runId ⇒ 会泄漏授权）。
+            if (_runIdMap.TryRemove(subSessionId, out var failedSyncRunId))
+            {
+                await RevokeBrowserDelegationAsync(failedSyncRunId).ConfigureAwait(false);
+            }
+
             var status = ex is TimeoutException
                 ? "timed_out"
                 : ex is OperationCanceledException
@@ -444,7 +449,12 @@ public sealed class SubAgentManager : ISubAgentManager
             ToolFailureSummary = r.ToolFailureSummary,
             CompletedAt = DateTimeOffset.UtcNow,
         }, CancellationToken.None);
-        _runIdMap.TryRemove(subSessionId, out _);
+
+        // R4: 成功收尾同样必须撤销委派授权（此前 out _ 丢弃 runId ⇒ 会泄漏授权）。
+        if (_runIdMap.TryRemove(subSessionId, out var completedSyncRunId))
+        {
+            await RevokeBrowserDelegationAsync(completedSyncRunId).ConfigureAwait(false);
+        }
 
         // Token usage is persisted per LLM round by AgentExecutionService. Do not add a second
         // run-terminal aggregate row here; TrackSubAgentCompleteAsync already keeps the summary.
