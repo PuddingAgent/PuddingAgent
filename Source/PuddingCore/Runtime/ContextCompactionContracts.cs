@@ -86,6 +86,10 @@ public enum ContextCompactionOutcome
     SkippedNoCandidate,
     SkippedCurrentTurn,
     SkippedCooldown,
+    /// <summary>R2：候选在生成期间已过期（代次/revision/覆盖状态被别的提交改变）⇒ 零写入放弃。</summary>
+    SkippedStaleCandidate,
+    /// <summary>R2：后台压缩在提交前发现前台需求 ⇒ 让位给下一条消息，零写入。</summary>
+    SkippedForegroundDemand,
     Failed,
 }
 
@@ -238,6 +242,12 @@ public sealed record ContextCompactionRequest(
 {
     /// <summary>P0-4f-1a step6: 本次压缩所属执行的 trace_id（可空；不可得时显式传 null，不 fallback 生成）。</summary>
     public string? TraceId { get; init; }
+
+    /// <summary>
+    /// R2：本次压缩是否为**后台可选维护**（终态后维护/空闲维护）。后台压缩在提交前会重验前台需求，
+    /// 有需求即零写入放弃（让位给下一条消息）；前台/手动压缩不受此限（它们本身就是前台工作）。
+    /// </summary>
+    public bool IsBackground { get; init; }
 }
 
 public sealed record ContextCompactionDiagnostics(

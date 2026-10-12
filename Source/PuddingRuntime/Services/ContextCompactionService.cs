@@ -44,7 +44,9 @@ public sealed class ContextCompactionService : IContextCompactionService
     private readonly SessionSummaryStore? _sessionSummaryStore;
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
     private readonly ContextCompactionOptions? _options;
-    private readonly IHookPublisher? _hookPublisher;
+
+    /// <summary>R2：前后台准入（可选）。仅用于**后台**压缩在提交前重验前台需求。</summary>
+    private readonly PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? _admission;    private readonly IHookPublisher? _hookPublisher;
     private readonly PuddingDataPaths? _dataPaths;
     private readonly CompactionCoordinator _coordinator;
     private readonly ISessionCompactionEventEmitter? _compactionEventEmitter;
@@ -62,7 +64,10 @@ public sealed class ContextCompactionService : IContextCompactionService
         IHookPublisher? hookPublisher = null,
         PuddingDataPaths? dataPaths = null,
         CompactionCoordinator? compactionCoordinator = null,
-        ISessionCompactionEventEmitter? compactionEventEmitter = null)
+        ISessionCompactionEventEmitter? compactionEventEmitter = null,
+        // R2：前后台准入（与消息受理/维护调度共用同一实例）。仅用于**后台**压缩在提交前重验
+        // 「是否已出现前台需求」——有需求就让位给下一条消息，绝不把可选维护变成阻塞。
+        PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? admissionCoordinator = null)
     {
         _dbFactory = dbFactory;
         _summaryGenerator = summaryGenerator;
@@ -77,6 +82,7 @@ public sealed class ContextCompactionService : IContextCompactionService
         _dataPaths = dataPaths;
         _coordinator = compactionCoordinator ?? new CompactionCoordinator();
         _compactionEventEmitter = compactionEventEmitter;
+        _admission = admissionCoordinator;
     }
 
     /// <summary>压缩运行态：直接来自协调器的单飞锁持有状态（见 IContextCompactionService）。</summary>
@@ -544,71 +550,22 @@ public sealed class ContextCompactionService : IContextCompactionService
             CreatedAtUtc = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
 
-        db.Messages.Add(summaryMessage);
-        db.CompactionCoverageManifests.Add(manifestEntity);
-
-        // ── R3：显式事务 + **真实 CAS**，先持久化、成功后才由调用方替换内存 ──
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-
-        // 顺序：**先插入摘要行与清单**（覆盖标注的 CompactedBy 外键指向摘要行，必须先存在），
-        // 再做两个条件更新（代次、逐行覆盖），最后提交。全部在同一事务内。
-        await db.SaveChangesAsync(ct);
-
-        // 代次推进用**条件更新**：只有「当前代次仍等于候选冻结时的期望值」才推进，
-        // 受影响行数必须恰为 1；否则回滚并报 GenerationMismatch（绝不写入任何一行）。
-        var advancedRows = await db.Database.ExecuteSqlAsync(
-            $"""
-             UPDATE Sessions SET CompactionGeneration = {targetGeneration}
-             WHERE SessionId = {request.SessionId} AND CompactionGeneration = {request.ExpectedSourceGeneration}
-             """,
+        // ── R2/R3：**唯一提交原语** ──
+        // warm-prefix/hard-protection 与普通压缩共用同一段「先持久化 + 真实 CAS」写入：
+        // 事务内先插摘要行与覆盖清单（覆盖标注的外键指向摘要行），再条件推进代次与逐行覆盖标注，
+        // 任一受影响行数不为 1 即整体回滚。调用方只有在拿到 Committed 之后才允许改内存。
+        var commitResult = await WriteCheckpointAtomicallyAsync(
+            db,
+            request.SessionId,
+            request.CompactionId,
+            request.ExpectedSourceGeneration,
+            targetGeneration,
+            summaryMessage,
+            manifestEntity,
+            rows,
             ct);
-        if (advancedRows != 1)
-        {
-            await transaction.RollbackAsync(ct);
-            var currentGeneration = await db.Sessions
-                .AsNoTracking()
-                .Where(s => s.SessionId == request.SessionId)
-                .Select(s => s.CompactionGeneration)
-                .FirstOrDefaultAsync(ct);
-            _logger.LogWarning(
-                "[ContextCompaction] Warm-prefix commit lost generation CAS session={Session} compactionId={CompactionId} expected={Expected} current={Current}",
-                request.SessionId,
-                request.CompactionId,
-                request.ExpectedSourceGeneration,
-                currentGeneration);
-            return new WarmPrefixCheckpointCommitResult(
-                WarmPrefixCheckpointCommitStatus.GenerationMismatch,
-                TargetGeneration: currentGeneration);
-        }
-
-        // 覆盖标注也是**条件更新**：只有仍未覆盖（CompactedBy IS NULL）的行才认，
-        // 逐行核对受影响行数；任何一行不满足 ⇒ 整笔回滚（不得只标注找得到的那部分）。
-        foreach (var row in rows)
-        {
-            var fallbackHash = row.CanonicalContentHash ?? CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty);
-            var markedRows = await db.Database.ExecuteSqlAsync(
-                $"""
-                 UPDATE Messages SET CompactedBy = {summaryMessageId},
-                     CanonicalContentHash = COALESCE(CanonicalContentHash, {fallbackHash})
-                 WHERE MessageId = {row.MessageId} AND SessionId = {request.SessionId} AND CompactedBy IS NULL
-                 """,
-                ct);
-            if (markedRows != 1)
-            {
-                await transaction.RollbackAsync(ct);
-                _logger.LogWarning(
-                    "[ContextCompaction] Warm-prefix commit lost coverage CAS session={Session} compactionId={CompactionId} messageId={MessageId}",
-                    request.SessionId,
-                    request.CompactionId,
-                    row.MessageId);
-                return new WarmPrefixCheckpointCommitResult(
-                    WarmPrefixCheckpointCommitStatus.AlreadyCovered,
-                    ProblemMessageIds: [row.MessageId]);
-            }
-        }
-
-        // 一个事务：摘要行 + 覆盖清单 + 覆盖标注 + 代际，要么全写、要么全不写。
-        await transaction.CommitAsync(ct);
+        if (commitResult.Status != WarmPrefixCheckpointCommitStatus.Committed)
+            return commitResult;
 
         // 不调用 InvalidateHistory：调用方（warm-prefix）的内存历史已经是压缩后的版本，
         // 失效会强制从 DB 重水合并丢掉本次延迟收益；DB 与内存此时是一致的。
@@ -621,9 +578,91 @@ public sealed class ContextCompactionService : IContextCompactionService
             sourceGeneration,
             targetGeneration);
 
+        return commitResult;
+    }
+
+    /// <summary>
+    /// **唯一提交原语**（R2 §2 / R3）：普通压缩与 warm-prefix/hard-protection 都走这里。
+    /// <para>
+    /// 一个显式事务内：① 先插入摘要行与覆盖清单（覆盖标注的外键指向摘要行，必须先存在）；
+    /// ② **条件更新**代次（<c>WHERE CompactionGeneration = expected</c>，受影响行数必须为 1）；
+    /// ③ **逐行条件更新**覆盖标注（<c>WHERE CompactedBy IS NULL</c>，每行受影响行数必须为 1）；
+    /// ④ 提交。任一条件不满足即整体回滚 —— 绝不出现「写了一半」的历史。
+    /// </para>
+    /// <para>
+    /// 覆盖行必须**不**由 EF 跟踪修改（本原语用原始 SQL 打标），否则跟踪实体会把陈旧值写回去。
+    /// </para>
+    /// </summary>
+    private async Task<WarmPrefixCheckpointCommitResult> WriteCheckpointAtomicallyAsync(
+        MemoryDbContext db,
+        string sessionId,
+        string compactionId,
+        int expectedGeneration,
+        int targetGeneration,
+        MessageEntity summaryMessage,
+        CompactionCoverageManifestEntity manifestEntity,
+        IReadOnlyList<MessageEntity> rows,
+        CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        db.Messages.Add(summaryMessage);
+        db.CompactionCoverageManifests.Add(manifestEntity);
+        await db.SaveChangesAsync(ct);
+
+        var advancedRows = await db.Database.ExecuteSqlAsync(
+            $"""
+             UPDATE Sessions SET CompactionGeneration = {targetGeneration}
+             WHERE SessionId = {sessionId} AND CompactionGeneration = {expectedGeneration}
+             """,
+            ct);
+        if (advancedRows != 1)
+        {
+            await transaction.RollbackAsync(ct);
+            var currentGeneration = await db.Sessions
+                .AsNoTracking()
+                .Where(s => s.SessionId == sessionId)
+                .Select(s => s.CompactionGeneration)
+                .FirstOrDefaultAsync(ct);
+            _logger.LogWarning(
+                "[ContextCompaction] Checkpoint commit lost generation CAS session={Session} compactionId={CompactionId} expected={Expected} current={Current}",
+                sessionId,
+                compactionId,
+                expectedGeneration,
+                currentGeneration);
+            return new WarmPrefixCheckpointCommitResult(
+                WarmPrefixCheckpointCommitStatus.GenerationMismatch,
+                TargetGeneration: currentGeneration);
+        }
+
+        foreach (var row in rows)
+        {
+            var fallbackHash = row.CanonicalContentHash ?? CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty);
+            var markedRows = await db.Database.ExecuteSqlAsync(
+                $"""
+                 UPDATE Messages SET CompactedBy = {summaryMessage.MessageId},
+                     CanonicalContentHash = COALESCE(CanonicalContentHash, {fallbackHash})
+                 WHERE MessageId = {row.MessageId} AND SessionId = {sessionId} AND CompactedBy IS NULL
+                 """,
+                ct);
+            if (markedRows != 1)
+            {
+                await transaction.RollbackAsync(ct);
+                _logger.LogWarning(
+                    "[ContextCompaction] Checkpoint commit lost coverage CAS session={Session} compactionId={CompactionId} messageId={MessageId}",
+                    sessionId,
+                    compactionId,
+                    row.MessageId);
+                return new WarmPrefixCheckpointCommitResult(
+                    WarmPrefixCheckpointCommitStatus.AlreadyCovered,
+                    ProblemMessageIds: [row.MessageId]);
+            }
+        }
+
+        await transaction.CommitAsync(ct);
         return new WarmPrefixCheckpointCommitResult(
             WarmPrefixCheckpointCommitStatus.Committed,
-            summaryMessageId,
+            summaryMessage.MessageId,
             targetGeneration,
             rows.Count);
     }
@@ -814,6 +853,11 @@ public sealed class ContextCompactionService : IContextCompactionService
                     reason = request.Reason, startedAt = active.StartedAt,
                 }, request.TraceId, ct);
         var summaryStart = sw.ElapsedMilliseconds;
+
+        // ── R2：冻结阶段（短锁）到此结束，**生成阶段不持提交锁** ──
+        // 远端摘要生成若继续持 per-session 单飞锁，下一条请求的水合/硬保护就会在这把锁上排队
+        // （复核 §3 探针）。CompactionLease 释放幂等，方法退出时的 await using 再释放无副作用。
+        await lease.DisposeAsync();
         
         // 如果有 Agent 工作总结，记录日志
                 if (!string.IsNullOrWhiteSpace(request.AgentWorkSummary))
@@ -900,6 +944,55 @@ public sealed class ContextCompactionService : IContextCompactionService
         }
 
                 summary = AppendKeyFactsSection(summary, request.PreCompactionFacts);
+
+        // ── R2：短锁重验 + 提交（与 warm-prefix 共用**同一提交原语**） ──
+        await using var commitLease = await _coordinator.AcquireAsync(request.SessionId, ct);
+
+        // 重验 ① 代次：生成期间若有别的持久压缩提交，本候选已过期 ⇒ 零写入放弃。
+        var commitGeneration = await TryGetCompactionGenerationAsync(db, request.SessionId, ct);
+        if (commitGeneration != compactionGeneration)
+        {
+            _logger.LogInformation(
+                "[ContextCompaction:Stale] commit rejected (generation changed) session={SessionId} compactionId={CompactionId} frozen={Frozen} current={Current}",
+                request.SessionId, compactionId, compactionGeneration, commitGeneration);
+            return await FinishNoOpAsync(ContextCompactionOutcome.SkippedStaleCandidate);
+        }
+
+        // 重验 ② revision：候选窗口指纹（代际 + MessageId + 正文 hash）必须未变。
+        var commitFingerprint = ComputeCandidateFingerprint(commitGeneration, messagesToCompact);
+        if (!string.Equals(commitFingerprint, candidateFingerprint, StringComparison.Ordinal))
+        {
+            _logger.LogInformation(
+                "[ContextCompaction:Stale] commit rejected (revision changed) session={SessionId} compactionId={CompactionId}",
+                request.SessionId, compactionId);
+            return await FinishNoOpAsync(ContextCompactionOutcome.SkippedStaleCandidate);
+        }
+
+        // 重验 ③ 覆盖行必须仍未被覆盖（生成期间别的提交可能已经标过它们）。
+        var commitSourceIds = messagesToCompact.Select(m => m.MessageId).ToArray();
+        var alreadyCoveredCount = await db.Messages.CountAsync(
+            m => m.SessionId == request.SessionId
+                 && commitSourceIds.Contains(m.MessageId)
+                 && m.CompactedBy != null,
+            ct);
+        if (alreadyCoveredCount > 0)
+        {
+            _logger.LogInformation(
+                "[ContextCompaction:Stale] commit rejected (rows already covered) session={SessionId} compactionId={CompactionId} covered={Covered}",
+                request.SessionId, compactionId, alreadyCoveredCount);
+            return await FinishNoOpAsync(ContextCompactionOutcome.SkippedStaleCandidate);
+        }
+
+        // 重验 ④ 后台维护：提交前若已出现前台需求 ⇒ 让位给下一条消息（零写入）。
+        if (request.IsBackground
+            && _admission is not null
+            && _admission.HasSessionForegroundDemand(request.WorkspaceId, request.SessionId))
+        {
+            _logger.LogInformation(
+                "[ContextCompaction:Stale] commit deferred (foreground demand) session={SessionId} compactionId={CompactionId}",
+                request.SessionId, compactionId);
+            return await FinishNoOpAsync(ContextCompactionOutcome.SkippedForegroundDemand);
+        }
 
         // ── P0-1 持久化覆盖清单 + 代际 ──
         // 在同一事务内写入 final summary、manifest、精确的 CompactedBy 与 generation。
@@ -1016,16 +1109,34 @@ public sealed class ContextCompactionService : IContextCompactionService
             }, JsonOptions),
         };
 
-        db.Messages.Add(summaryMessage);
-        db.CompactionCoverageManifests.Add(manifestEntity);
+        // R2/R3：走**同一提交原语**（事务 + 条件代次 + 逐行条件覆盖标注）。
+        // 覆盖标注由原语用原始 SQL 完成 ⇒ 先把将被覆盖的跟踪实体摘掉，
+        // 否则 SaveChanges 会用陈旧值把它们写回去（记忆库实体仍是 Unchanged 也不会写，但显式摘除更稳）。
         foreach (var message in messagesToCompact)
-        {
-            message.CompactedBy = summaryMessage.MessageId;
-            message.CanonicalContentHash ??= CompositionSnapshot.Sha256Hex(message.Content ?? string.Empty);
-        }
-        session.CompactionGeneration = targetGeneration;
+            db.Entry(message).State = EntityState.Detached;
 
-        await db.SaveChangesAsync(ct);
+        var commit = await WriteCheckpointAtomicallyAsync(
+            db,
+            request.SessionId,
+            compactionId,
+            sourceGeneration,
+            targetGeneration,
+            summaryMessage,
+            manifestEntity,
+            messagesToCompact,
+            ct);
+        if (commit.Status != WarmPrefixCheckpointCommitStatus.Committed)
+        {
+            _logger.LogWarning(
+                "[ContextCompaction] Commit rejected by shared primitive session={SessionId} compactionId={CompactionId} status={Status}",
+                request.SessionId,
+                compactionId,
+                commit.Status);
+            return await FinishNoOpAsync(
+                commit.Status == WarmPrefixCheckpointCommitStatus.GenerationMismatch
+                    ? ContextCompactionOutcome.SkippedStaleCandidate
+                    : ContextCompactionOutcome.SkippedNoGain);
+        }
 
         // 写库成功后立即失效内存历史 + 记录冷却时间（非工具回执后），
         // 使下次访问从 DB 重建历史（已含压缩摘要与 CompactedBy 打标），解决 stale 缺口。

@@ -883,7 +883,10 @@ public sealed class ContextWindowManager
         string? traceId = null,
         string? query = null,
         string? currentMessageId = null,
-        string? currentTurnId = null)
+        string? currentTurnId = null,
+        // R2：本次裁剪是否为**后台可选维护**（终态后维护走这里 ⇒ true）。
+        // 后台压缩在提交前会重验前台需求，有需求即零写入让位。
+        bool isBackground = false)
     {
         var autoCompacted = await TryAutoCompactAsync(
             sessionId,
@@ -894,7 +897,8 @@ public sealed class ContextWindowManager
             maxInputTokens,
             agentTemplateId,
             traceId,
-            ct);
+            ct,
+            isBackground);
 
         var hasLiveContext = history.Any(message => message.Role != ChatRole.System);
         if (preferDbContextWindow && hasLiveContext && !autoCompacted)
@@ -1070,7 +1074,8 @@ public sealed class ContextWindowManager
         int? maxInputTokens,
         string? agentTemplateId,
         string? traceId,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool isBackground = false)
     {
         if (_compactionService is null || string.IsNullOrWhiteSpace(workspaceId))
         {
@@ -1191,6 +1196,8 @@ public sealed class ContextWindowManager
                     PreCompactionFacts: preCompactionFacts.Count > 0 ? preCompactionFacts : null)
                 {
                     TraceId = traceId,
+                    // R2：后台维护标记 ⇒ 提交前重验前台需求，有需求即零写入让位。
+                    IsBackground = isBackground,
                 },
                 ct);
             var compactMs = (System.Diagnostics.Stopwatch.GetTimestamp() - compactStart) * 1000 / System.Diagnostics.Stopwatch.Frequency;

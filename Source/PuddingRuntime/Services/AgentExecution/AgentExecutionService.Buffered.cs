@@ -2313,7 +2313,9 @@ public sealed partial class AgentExecutionService
                     traceId: request.ExecutionIdentity?.TraceId,
                     query: request.MessageText,
                     currentMessageId: request.MessageId,
-                    currentTurnId: request.ExecutionIdentity?.TurnId),
+                    currentTurnId: request.ExecutionIdentity?.TurnId,
+                    // R2：终态后维护 = 后台可选工作 ⇒ 提交前重验前台需求。
+                    isBackground: true),
                 // R2：候选身份 = 本轮终态时的历史形状 ⇒ 同一形状的重复调度直接合并。
                 candidateKey: "buffered:" + WarmPrefixCompaction.ComputeRevisionHash(bufferedMaintenanceSnapshot));
         }
