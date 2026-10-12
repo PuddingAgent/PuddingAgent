@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using Google.Protobuf;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
@@ -578,7 +580,8 @@ internal static class CoreFrameMapping
                 try
                 {
                     var binding = new BrowserTaskBinding(
-                        new BrowserCallerIdentity(applyKind, apply.Task.CallerId, apply.Task.TaskId),
+                        new BrowserCallerIdentity(applyKind, apply.Task.CallerId, apply.Task.TaskId,
+                            string.IsNullOrWhiteSpace(apply.Task.ParentTaskId) ? null : apply.Task.ParentTaskId),
                         new DesktopPageTarget(apply.Target.ContextId, apply.Target.PageId),
                         (BrowserPageGrantScope)apply.Scope,
                         TimeSpan.FromMilliseconds(apply.ValidityMs),
@@ -608,7 +611,8 @@ internal static class CoreFrameMapping
 
                 return CapabilityResult<DesktopCapabilityRequest>.Success(
                     DesktopCapabilityRequest.ForBindingRevoke(
-                        new BrowserCallerIdentity(revokeKind, revoke.Task.CallerId, revoke.Task.TaskId),
+                        new BrowserCallerIdentity(revokeKind, revoke.Task.CallerId, revoke.Task.TaskId,
+                            string.IsNullOrWhiteSpace(revoke.Task.ParentTaskId) ? null : revoke.Task.ParentTaskId),
                         new DesktopPageTarget(revoke.Target.ContextId, revoke.Target.PageId)));
             }
 
@@ -786,16 +790,59 @@ internal static class CoreFrameMapping
 
     private static string Fingerprint(Proto.CapabilityCommand command, DesktopCapabilityDescriptor descriptor)
     {
+        // 方案 §4.1：指纹必须覆盖**调用者身份**与**完整 typed payload**。
+        // 旧实现只映射 3 种 payload、其余一律 `_ => []` ⇒ 不同调用者/不同目标会算出**同一个**指纹，
+        // 于是"同一 operationId + 不同身份/不同载荷"被误判为可复用（外部复核 P0）。
+        // 这里穷举 oneof；新增能力若未在此登记 ⇒ **运行时明确失败**，绝不给"不认识也放行"的默认。
         var payload = command.PayloadCase switch
         {
+            Proto.CapabilityCommand.PayloadOneofCase.None => [],
             Proto.CapabilityCommand.PayloadOneofCase.Navigate => command.Navigate.ToByteArray(),
             Proto.CapabilityCommand.PayloadOneofCase.ExecuteJavascript => command.ExecuteJavascript.ToByteArray(),
             Proto.CapabilityCommand.PayloadOneofCase.ShowNotification => command.ShowNotification.ToByteArray(),
-            _ => [],
+            Proto.CapabilityCommand.PayloadOneofCase.GetPageState => command.GetPageState.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.GetShellStatus => command.GetShellStatus.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.Snapshot => command.Snapshot.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.Locate => command.Locate.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.Interact => command.Interact.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.WaitFor => command.WaitFor.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.Contexts => command.Contexts.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.Tabs => command.Tabs.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.ReadClipboard => command.ReadClipboard.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.ShowDialog => command.ShowDialog.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.ShowFilePicker => command.ShowFilePicker.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.ContextCreate => command.ContextCreate.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.ContextClose => command.ContextClose.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.BindingApply => command.BindingApply.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.BindingRevoke => command.BindingRevoke.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.Screenshot => command.Screenshot.ToByteArray(),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(command),
+                command.PayloadCase,
+                "unmapped capability payload in the idempotency fingerprint (方案 §4.1)"),
         };
 
-        return string.Concat(descriptor.Name, ":", Convert.ToHexString(SHA256.HashData(payload)));
+        var caller = command.Caller;
+        // 身份四元组按长度前缀拼装（避免分隔符碰撞）：kind / callerId / taskId / parentTaskId
+        var identity = string.Concat(
+            LengthPrefixed(caller?.Kind ?? string.Empty),
+            LengthPrefixed(caller?.CallerId ?? string.Empty),
+            LengthPrefixed(caller?.TaskId ?? string.Empty),
+            LengthPrefixed(string.IsNullOrWhiteSpace(caller?.ParentTaskId) ? string.Empty : caller!.ParentTaskId));
+
+        var canonical = string.Concat(
+            LengthPrefixed(descriptor.Name),
+            identity,
+            LengthPrefixed(Convert.ToHexString(SHA256.HashData(payload))));
+
+        // 保留 `<能力名>:` 可读前缀（既有断言与排障都依赖它），但哈希内部已含**身份 + 完整载荷**。
+        return string.Concat(
+            descriptor.Name, ":", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))));
     }
+
+    /// <summary>长度前缀：拼接多个字段时避免"分隔符出现在字段里"造成的碰撞（方案 §4.1）。</summary>
+    private static string LengthPrefixed(string value) =>
+        string.Concat(value.Length.ToString(CultureInfo.InvariantCulture), ":", value, "|");
 
     private static DesktopPageVersion ToPageVersion(long value) =>
         value > 0 ? DesktopPageVersion.Require(value) : DesktopPageVersion.Unknown;
