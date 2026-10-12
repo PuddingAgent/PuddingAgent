@@ -76,6 +76,19 @@ public sealed record DeliveryManifest
     /// <summary>提交（短哈希即可；空值由校验拒绝）。</summary>
     public string Commit { get; }
 
+    /// <summary>
+    /// R6 证据绑定：产出本清单时工作树是否**有未提交改动**。**三态**：
+    /// <c>true</c> 有未提交改动 · <c>false</c> 干净 · <c>null</c> **尚未采集**。
+    ///
+    /// 故意用可空：在脚本与采集器接上之前，清单要**诚实地说"不知道"**，而不是默认 <c>false</c>
+    /// 谎称"干净" —— 带未提交改动的产物**不可复现**（与前端版本徽标 <c>+dirty</c> 同义），
+    /// 评审者会据此信任一个不可复现的产物。
+    ///
+    /// 校验规则：<c>Dirty == true</c> 时**不得**声明 <c>ready-for-external-deploy</c>。
+    /// </summary>
+    [JsonPropertyName("dirty")]
+    public bool? Dirty { get; }
+
     /// <summary>交付产物（相对发布目录或绝对路径均可）。</summary>
     public IReadOnlyList<string> Artifacts { get; }
 
