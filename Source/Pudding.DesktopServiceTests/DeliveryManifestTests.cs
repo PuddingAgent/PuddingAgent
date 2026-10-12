@@ -102,6 +102,31 @@ public sealed class DeliveryManifestTests
                 requiredExternalSteps: ["startup", "restart", "crash-recovery", "exit-reclamation"])));
     }
 
+    /// <summary>
+    /// R6：`Dirty` 是 **init-only**（不进构造参数 ⇒ canonical 守卫遍历不到它），因此必须**自己**钉住
+    /// 三态在"写入器 ↔ 读取器"之间的往返：true / false / **未采集(null)** 都不得在往返中丢失或变形。
+    /// </summary>
+    [Fact]
+    public void DirtyTriStateSurvivesTheCanonicalWriterAndReader()
+    {
+        foreach (var expected in new bool?[] { true, false, null })
+        {
+            var manifest = new DeliveryManifest(
+                "build-dirty", "abcdef1", ["PuddingDesktop.exe"], [new DeliveryCheck("tests", 3, 0)],
+                knownUnverified: [],
+                knownUnverifiedTotal: 0,
+                requiredExternalSteps: ["startup", "restart", "crash-recovery", "exit-reclamation"])
+            {
+                Dirty = expected,
+            };
+
+            var json = DeliveryManifestValidator.Serialize(manifest);
+            Assert.True(
+                DeliveryManifestValidator.TryDeserialize(json, out var readBack, out var problems),
+                string.Join("; ", problems));
+            Assert.Equal(expected, readBack!.Dirty);
+        }
+    }
     [Fact]
     public void KnownUnverifiedMustBeStatedExplicitly()
     {
