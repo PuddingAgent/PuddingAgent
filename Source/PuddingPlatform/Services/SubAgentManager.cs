@@ -1056,6 +1056,16 @@ public sealed class SubAgentManager : ISubAgentManager
             BuildRunCreateRequest(request, subSessionId),
             ct);
 
+        // §6.2：拿到**真实子 runId** 之后申请浏览器子集授权（标量来自可信父上下文投影，非模型参数）。
+        // fail-closed：父声明了委派却拿不到授权 ⇒ **该子运行明确失败**（不留"无声无权限"）。
+        var delegationFailure = await TryRequestBrowserDelegationAsync(request, runHandle.RunId, ct)
+            .ConfigureAwait(false);
+        if (delegationFailure is not null)
+        {
+            await RevokeBrowserDelegationAsync(runHandle.RunId).ConfigureAwait(false);
+            throw new InvalidOperationException(delegationFailure);
+        }
+
         try
         {
             // session_sub_agents 是每个 SubSessionId 的当前状态投影。
@@ -1095,6 +1105,8 @@ public sealed class SubAgentManager : ISubAgentManager
                     runHandle.RunId,
                     subSessionId);
             }
+            // §6.2 第四站点：启动失败也必须撤销 —— 否则该运行已申请的委派授权会**悬挂**（泄漏）。
+            await RevokeBrowserDelegationAsync(runHandle.RunId).ConfigureAwait(false);
 
             throw;
         }
@@ -1102,6 +1114,63 @@ public sealed class SubAgentManager : ISubAgentManager
         return runHandle;
     }
 
+    /// <summary>
+    /// §6.2：为**真实子运行**申请浏览器子集授权。返回 <c>null</c> = 无需申请或已获授权；
+    /// 返回字符串 = **失败原因**（调用方据此 **fail-closed**）。
+    /// 未装配端口、或父未声明委派 ⇒ 直接不申请（行为与今天一致）。
+    /// 声明了却**不完整**（缺目标或缺范围）⇒ **明确拒绝**，绝不降级成"没有委派"。
+    /// </summary>
+    private async Task<string?> TryRequestBrowserDelegationAsync(
+        SubAgentSpawnRequest request,
+        string childRunId,
+        CancellationToken ct)
+    {
+        if (_browserDelegation is null)
+        {
+            return null;
+        }
+
+        var contextId = request.BrowserDelegationContextId;
+        var pageId = request.BrowserDelegationPageId;
+        var scopeName = request.BrowserDelegationScopeName;
+        var declared = !string.IsNullOrWhiteSpace(contextId)
+            || !string.IsNullOrWhiteSpace(pageId)
+            || !string.IsNullOrWhiteSpace(scopeName);
+        if (!declared)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(contextId)
+            || string.IsNullOrWhiteSpace(pageId)
+            || string.IsNullOrWhiteSpace(scopeName))
+        {
+            return "browser delegation was declared but incomplete: contextId, pageId and scope are all required";
+        }
+
+        var parentRunId = request.ParentExecutionIdentity?.RunId;
+        if (string.IsNullOrWhiteSpace(parentRunId))
+        {
+            return "browser delegation requires a trusted parent run id";
+        }
+
+        var grant = await _browserDelegation.RequestChildGrantAsync(
+            new BrowserDelegationGrantRequest(
+                CallerKind: "sub_agent",
+                CallerId: request.ConfigurationAgentInstanceId ?? request.ParentAgentId ?? childRunId,
+                ParentRunId: parentRunId,
+                ParentTaskId: request.ParentTaskNodeId,
+                ChildRunId: childRunId,
+                ContextId: contextId,
+                PageId: pageId,
+                ScopeName: scopeName,
+                RequestedValidity: TimeSpan.FromMinutes(5)),
+            ct).ConfigureAwait(false);
+
+        return grant.Granted
+            ? null
+            : "browser delegation was denied: " + (grant.DenialReason ?? "no reason reported");
+    }
     private static SubAgentRunCreateRequest BuildRunCreateRequest(
         SubAgentSpawnRequest request,
         string subSessionId) => new()
