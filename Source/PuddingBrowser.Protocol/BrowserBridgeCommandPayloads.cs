@@ -308,6 +308,10 @@ public sealed record BrowserScreenshotDescriptor
 
     public required int ByteCount { get; init; }
 
+    public required int SourceWidth { get; init; }
+
+    public required int SourceHeight { get; init; }
+
     public required int OutputWidth { get; init; }
 
     public required int OutputHeight { get; init; }
@@ -334,9 +338,9 @@ public sealed record BrowserScreenshotDescriptor
 
     public double? CropHeight { get; init; }
 
-    public long? DomRevision { get; init; }
+    public long DomRevision { get; init; }
 
-    public long? ViewportRevision { get; init; }
+    public long ViewportRevision { get; init; }
 
     /// <summary>分块载荷；**空列表表示没有载荷**（不伪造一片）。</summary>
     public required IReadOnlyList<BrowserScreenshotChunkDescriptor> Chunks { get; init; }

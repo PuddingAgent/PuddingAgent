@@ -967,6 +967,8 @@ public sealed class BrowserWorkspaceController :
             ObservationId = shot.Metadata.ObservationId,
             MimeType = shot.Metadata.MimeType,
             ByteCount = shot.Metadata.ByteCount,
+            SourceWidth = shot.Metadata.SourceWidth,
+            SourceHeight = shot.Metadata.SourceHeight,
             OutputWidth = shot.Metadata.OutputWidth,
             OutputHeight = shot.Metadata.OutputHeight,
             PageVersion = shot.Metadata.PageVersion,
@@ -979,6 +981,8 @@ public sealed class BrowserWorkspaceController :
             CropY = shot.Metadata.CropY,
             CropWidth = shot.Metadata.CropWidth,
             CropHeight = shot.Metadata.CropHeight,
+            DomRevision = shot.Metadata.DomRevision,
+            ViewportRevision = shot.Metadata.ViewportRevision,
             Detail = DesktopScreenshotDetailWire.NameOf(shot.Metadata.Detail),
             Chunks = shot.Chunks.Select(chunk => new BrowserScreenshotChunkDescriptor
             {
