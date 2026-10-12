@@ -233,6 +233,13 @@ namespace PuddingCode.Platform
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, PreparedRequestRecord>> _preparedRequests
             = new(StringComparer.Ordinal);
 
+        /// <summary>
+        /// invocation → 该 invocation 下的各 attempt（按请求序号）。仅用于「未给 attempt」时的
+        /// **唯一性**判据：只有唯一一次冻结请求才允许明确约定的降级匹配（复核 P1）。
+        /// </summary>
+        private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, ConcurrentDictionary<long, PreparedRequestRecord>>> _preparedByInvocation
+            = new(StringComparer.Ordinal);
+
         /// <summary>会话内单调请求序号（冻结时分配）。</summary>
         private readonly ConcurrentDictionary<string, long> _requestSequences = new(StringComparer.Ordinal);
 
@@ -303,6 +310,18 @@ namespace PuddingCode.Platform
             foreach (var key in IdentityKeys(record))
                 perSession[key] = record;
 
+            // invocation → 该 invocation 下的各 attempt（仅未给 attempt 的降级匹配需要「唯一性」判据）。
+            if (!string.IsNullOrWhiteSpace(invocationId))
+            {
+                var byInvocation = _preparedByInvocation.GetOrAdd(
+                    sessionId,
+                    _ => new ConcurrentDictionary<string, ConcurrentDictionary<long, PreparedRequestRecord>>(StringComparer.Ordinal));
+                var attempts = byInvocation.GetOrAdd(
+                    invocationId,
+                    _ => new ConcurrentDictionary<long, PreparedRequestRecord>());
+                attempts[sequence] = record;
+            }
+
             // 有界：只保留序号最大的若干条，防止长会话无界增长。
             if (perSession.Count > MaxFrozenRequestsPerSession * 2)
             {
@@ -313,12 +332,31 @@ namespace PuddingCode.Platform
                     .ToHashSet();
                 foreach (var pair in perSession.Where(p => !keep.Contains(p.Value.RequestSequence)).ToList())
                     perSession.TryRemove(pair.Key, out _);
+
+                if (_preparedByInvocation.TryGetValue(sessionId, out var byInvocationIndex))
+                {
+                    foreach (var attempts in byInvocationIndex.Values)
+                    {
+                        foreach (var stale in attempts.Keys.Where(s => !keep.Contains(s)).ToList())
+                            attempts.TryRemove(stale, out _);
+                    }
+                }
             }
 
             return record;
         }
 
-        /// <summary>按 attempt（优先）→ invocation 找该次请求的冻结记录；找不到返回 false。</summary>
+        /// <summary>
+        /// 按身份找该次请求的冻结记录。**配对规则（复核 P1）**：
+        /// <list type="bullet">
+        /// <item>明确给了 <paramref name="attemptId"/> ⇒ 必须**精确命中该 attempt**；
+        /// 命中记录的 invocation 还必须与传入的 <paramref name="invocationId"/> 一致（给了才算）。
+        /// 不允许「attempt 查不到就退到 invocation」——那会让未知/已淘汰 attempt 的 usage 用
+        /// **另一次请求**的估算参与校准（复核探针：attempt-never-prepared 匹配到了 attempt-known）。</item>
+        /// <item>未给 attempt、给了 invocation ⇒ 仅当该 invocation 对应**唯一**一次冻结请求时才允许
+        /// 这一明确约定的降级匹配；有多次重试（歧义）⇒ 未配对。</item>
+        /// </list>
+        /// </summary>
         public bool TryGetPreparedRequest(
             string sessionId,
             string? invocationId,
@@ -332,16 +370,39 @@ namespace PuddingCode.Platform
                 return false;
             }
 
-            foreach (var key in IdentityKeys(sessionId, invocationId, attemptId))
+            // ① 明确给了 attempt：只认精确 attempt 键。
+            if (!string.IsNullOrWhiteSpace(attemptId))
             {
-                if (perSession.TryGetValue(key, out var found))
+                if (!perSession.TryGetValue(AttemptIdentityKey(sessionId, attemptId), out var byAttempt))
+                    return false;
+
+                // 身份一致性：调用方给了 invocation 就必须对得上，否则视为身份冲突（未配对）。
+                if (!string.IsNullOrWhiteSpace(invocationId)
+                    && !string.Equals(byAttempt.InvocationId, invocationId, StringComparison.Ordinal))
                 {
-                    record = found;
-                    return true;
+                    return false;
                 }
+
+                record = byAttempt;
+                return true;
             }
 
-            return false;
+            // ② 未给 attempt：仅当 invocation → 唯一一次冻结请求时才降级匹配。
+            if (string.IsNullOrWhiteSpace(invocationId))
+                return false;
+
+            if (!_preparedByInvocation.TryGetValue(sessionId, out var byInvocation)
+                || !byInvocation.TryGetValue(invocationId, out var attempts)
+                || attempts.IsEmpty)
+            {
+                return false;
+            }
+
+            if (attempts.Count != 1)
+                return false; // 同一 invocation 有多次 attempt ⇒ 歧义，不得猜
+
+            record = attempts.Values.First();
+            return true;
         }
 
         /// <summary>身份无法配对的 usage（只留证）。</summary>
@@ -355,10 +416,13 @@ namespace PuddingCode.Platform
         private static IEnumerable<string> IdentityKeys(PreparedRequestRecord record)
             => IdentityKeys(record.SessionId, record.InvocationId, record.AttemptId);
 
+        private static string AttemptIdentityKey(string sessionId, string attemptId)
+            => $"{sessionId}\u001fattempt\u001f{attemptId}";
+
         private static IEnumerable<string> IdentityKeys(string sessionId, string? invocationId, string? attemptId)
         {
             if (!string.IsNullOrWhiteSpace(attemptId))
-                yield return $"{sessionId}\u001fattempt\u001f{attemptId}";
+                yield return AttemptIdentityKey(sessionId, attemptId);
             if (!string.IsNullOrWhiteSpace(invocationId))
                 yield return $"{sessionId}\u001finvocation\u001f{invocationId}";
         }
@@ -561,9 +625,11 @@ namespace PuddingCode.Platform
             {
                 // 辅助/摘要调用：只写自己的槽位。不发布、不改写、不校准。
                 // 辅助 raw 也必须来自**它自己**的冻结请求（借主槽位就是 R1 的同类错误）。
-                var auxiliaryRaw = TryGetPreparedRequest(sessionId, invocationId, attemptId, out var auxRecord)
-                    ? auxRecord!.RawEstimatedTokens
-                    : 0;
+                // 复核 P1：还须核验 purpose —— 主请求的冻结记录不得被辅助 usage 借用（反之亦然）。
+                var auxRecordFound = TryGetPreparedRequest(sessionId, invocationId, attemptId, out var auxRecord)
+                    && auxRecord is not null
+                    && !LlmCallPurposes.IsMainCall(auxRecord.Purpose);
+                var auxiliaryRaw = auxRecordFound ? auxRecord!.RawEstimatedTokens : 0;
                 _lastAuxiliaryMeasurements[sessionId] = new MeasuredRequestUsage(
                     sessionId,
                     purpose,
@@ -593,7 +659,10 @@ namespace PuddingCode.Platform
             // ── R1：主请求实测必须按 invocation/attempt 配到**它自己那次**冻结请求 ──
             // 配不到身份的 usage 只进独立账本：既不参与校准，也不改写 currentPreparedRequest。
             // 这样一次迟到的旧请求不会用新请求的 raw 去算校准，也不会把准备槽位改成 Provider Total。
-            if (!TryGetPreparedRequest(sessionId, invocationId, attemptId, out var frozen) || frozen is null)
+            // 复核 P1：还须核验 purpose —— 辅助调用的冻结记录不得被主 usage 借用。
+            if (!TryGetPreparedRequest(sessionId, invocationId, attemptId, out var frozen)
+                || frozen is null
+                || !LlmCallPurposes.IsMainCall(frozen.Purpose))
             {
                 _unpairedMeasurements[sessionId] = new MeasuredRequestUsage(
                     sessionId,
@@ -654,8 +723,10 @@ namespace PuddingCode.Platform
             var measurement = new MeasuredRequestUsage(
                 sessionId,
                 purpose,
-                invocationId,
-                attemptId,
+                // 记录**配对到的那次冻结请求**的身份：调用方可能只给 invocation（唯一时降级匹配），
+                // 此时实测记录必须指向真正的 attempt，展示与诊断才不会有歧义。
+                frozen.InvocationId,
+                frozen.AttemptId,
                 usage.PromptTokens,
                 usage.CompletionTokens,
                 measuredTotal,
