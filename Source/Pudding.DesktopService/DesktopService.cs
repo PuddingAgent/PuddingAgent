@@ -342,13 +342,23 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                         DesktopCapabilityError.InvalidRequest("browser.tabs request payload is missing"));
                 }
 
+                // §5.3：request-aware —— new/activate/close 的**最小准入不同**；未登记动作**明确拒绝**
+                // （既不得统一按"最严的 TabClose"蒙过去，也不得放行）。
+                if (!DesktopCapabilityOperations.TryGetBrowserOperation(request, out var tabsOperation))
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest(
+                            $"browser.tabs action '{tabs.Action}' is not registered"));
+                }
+
                 var result = await RunOnUiAsync(
                     descriptor,
                     tabs.Target,
                     tabs.ExpectedPageVersion,
                     context,
                     token => _surface.TabsAsync(context, tabs, token),
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    operationOverride: tabsOperation).ConfigureAwait(false);
 
                 if (result.IsFailure)
                 {
@@ -729,9 +739,13 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         DesktopPageVersion expectedPageVersion,
         DesktopCallContext context,
         Func<CancellationToken, Task<CapabilityResult<TResult>>> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        // 方案 §5.3：request-aware 操作覆盖（如 browser.tabs 的具体动作）。放在末尾以保持既有调用点不变。
+        BrowserAutomationOperation? operationOverride = null)
     {
-        var admission = ValidateAdmission(capability, target, expectedPageVersion, context, out _, out var lease);
+        var admission = ValidateAdmission(
+            capability, target, expectedPageVersion, context, out _, out var lease,
+            operationOverride: operationOverride);
 
         // 租约一旦在准入时签发，就必须在**所有**退出路径上释放（外部复核 P0：取消与版本拒绝都会泄漏租约）。
         // 因此把"准入失败"和"入队前已取消"也放进同一个 try，由 finally 统一释放原租约。
@@ -892,7 +906,10 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         out BrowserAutomationLease? lease,
         // 方案 §3.2：UI 回调里**只做纯复检**，不得再次 Admit（第二次 Admit 会另签一份租约 ⇒ 泄漏，
         // 且"接管→恢复"这类中间变化按当前状态重跑是看不出来的，改由准入世代比对负责）。
-        bool admitAuthority = true)
+        bool admitAuthority = true,
+        // 方案 §5.3：**request-aware** 的操作覆盖（同一能力的不同动作最小准入不同，如 tabs 的 new/activate/close）。
+        // 为空时回退到能力级映射（其它能力没有"同能力多动作"的分裂）。
+        BrowserAutomationOperation? operationOverride = null)
     {
         pageState = null;
         lease = null;
@@ -911,9 +928,17 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         // 判据不在这里重写：能力→操作走唯一映射（DesktopCapabilityOperations），身份走契约唯一规则
         // （BrowserCallerRequirement，经 DesktopCallContext.TryGetBrowserCaller），裁决在唯一 Authority。
         // 未注入世代提供者时不启用这道闸门（见构造器说明）—— 生产装配必须注入，否则等于没有准入。
+        // request-aware：优先用调用方给的覆盖值（如 tabs 的具体动作），否则回退能力级映射。
+        BrowserAutomationOperation? authorizationOperation = operationOverride;
+        if (authorizationOperation is null
+            && DesktopCapabilityOperations.TryGetBrowserOperation(capability, out var mappedOperation))
+        {
+            authorizationOperation = mappedOperation;
+        }
+
         if (admitAuthority
             && _connectionGeneration is { } generation
-            && DesktopCapabilityOperations.TryGetBrowserOperation(capability, out var automationOperation))
+            && authorizationOperation is { } automationOperation)
         {
             if (!context.TryGetBrowserCaller(out var browserCaller, out var callerReason))
             {
