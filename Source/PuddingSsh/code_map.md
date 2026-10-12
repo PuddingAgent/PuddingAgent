@@ -42,6 +42,9 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Validation/SshRequestValidator.cs` | 请求/目标形状校验与有效限额合成 | `ValidateTarget`、`ValidateTest`、`ValidateExecute` | 连接前拒绝畸形输入；生效超时 = `min(请求, 主机上限, 宿主 deadline)` |
 | `Execution/SshBoundedOutputCollector.cs` | 双流同时排空 + 共享预算 + 增量 UTF-8 解码 | `SshBoundedOutputCollector` | 固定缓冲（2×预算 + 16 KiB 池化读缓冲）；捕获满**继续计数并丢弃**；截断不产生 U+FFFD；**禁止**整份 `Result`/`ReadToEnd` |
 | `Execution/SshCoordinatorOptions.cs` | 协调器预算 | `SshCoordinatorOptions`（Core 总并行 / 等待队列 / 清理宽限） | 默认取 `SshOperationLimits` 的硬上限；引用方只能收窄 |
+| `Diagnostics/SshOutcomePolicy.cs` | 退出证据×输出完整性的纯判定（ADR-096 D4） | `SshOutcomePolicy.Decide`、`SshOutputIncompleteReasons` | 只有「exit=0 + 两条流读完 + 无执行失败」才是 `Completed`；信号结束/无退出证据/输出不完整各有独立错误码 |
+| `Diagnostics/SshDiagnosticText.cs` | 公开诊断有界化（ADR-096 D5） | `SshDiagnosticText.Bound/FromException/Join`、`MaxLength=512` | 诊断只给稳定因果类别与异常类型名；不复制第三方 Message/known_hosts 整行；超长必标记截断 |
+| `Execution/SshStreamDrainResult.cs` | 单条流的排空事实（ADR-096 D4） | `SshStreamDrainResult`（`ReachedEnd`/`ReadFailed`/`Aborted`） | 正常 EOF、读取失败、被中止是三个不同事实；读异常不得伪装成 EOF |
 | `Execution/SshBoundedDrain.cs` | 有界排空（ADR-096 D3） | `SshBoundedDrain.WaitAsync` | 排空/TERM/关闭/Dispose **共用一份预算**；超时只登记中止，绝不二次等待；迟到完成被观察 |
 | `Execution/SshCleanupQuarantine.cs` | 清理隔离区 | `SshCleanupQuarantine`（`Pending`/`Completed`/`IsFull`） | 容量固定；未结束的资源仍被追踪并占计数；满额即拒绝新增工作 |
 | `Execution/SshStageWorkerPool.cs` | 有界阶段 worker 池 | `SshStageWorkerPool`、`SshStageCapacityExceededException` | 阶段端口的同步启动段不得阻塞业务线程；容量固定，满额 `ssh.busy` |
@@ -89,7 +92,14 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 21. **清理有界且有人负责**（ADR-096 D3）：TERM/关闭/排空/Dispose 共用同一份清理预算；预算用尽即 `RequestAbort()`
     并进入固定容量隔离区（满额 `ssh.busy`）；未结束的资源**不得**被宣称已释放（诊断标注 `cleanup_pending`）。
 22. **同步启动段不得卡住业务等待**：阶段端口在有界 worker 池上调用；worker 满额同样 `ssh.busy`。
-23. **终止原因不混淆**：`stop_reason=caller_cancelled|host_stopping|operation_deadline|connect_deadline`；
+24. **输出完整性独立表达**（ADR-096 D4）：`output_complete` + `output_incomplete_reason`（`read_failed`/`aborted`/`unknown`）
+    与 `output_truncated` 是三个不同字段；**预算截断仍算完整**（继续计数到 EOF），读失败/中止才算不完整。
+    exit=0 但输出不完整 ⇒ `ssh.output_incomplete` 且保留已知退出码。
+25. **公开诊断有界且无载荷**（ADR-096 D5）：`Diagnostic` 只放稳定因果码/原因码 + 行号或异常类型名，
+    长度上限 512 并标记截断；known_hosts 解析错误用 `code=<code> line=<n>`，不得含原始行。
+26. **清理状态是结构化字段**：结果里的 `CleanupState` 为 `NotStarted`/`Completed`/`Pending`；
+    `Pending` 表示资源仍在隔离区被追踪，**不得**声称独占连接已释放。
+27. **终止原因不混淆**：`stop_reason=caller_cancelled|host_stopping|operation_deadline|connect_deadline`；
     Core 停止写成 `ssh.cancelled`，绝不因为「外部 token 没取消」而写成 `ssh.timeout`；迟到结果只回收、不恢复。
 
 ## 4. 验证与门禁

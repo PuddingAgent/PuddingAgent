@@ -227,7 +227,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Credentials, false));
-                return TestFailure(host, SshPhase.Credentials, failure.ErrorCode, ex.GetType().Name, stopwatch);
+                return TestFailure(host, SshPhase.Credentials, failure.ErrorCode, SshDiagnosticText.FromException(ex), stopwatch);
             }
 
             if (!identityOutcome.Completed)
@@ -281,7 +281,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 {
                     var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Connecting, false));
                     var code = ex is OperationCanceledException ? StopCode(lifetime.StopReason) : failure.ErrorCode;
-                    return TestFailure(host, SshPhase.Connecting, code, ex.GetType().Name, stopwatch);
+                    return TestFailure(host, SshPhase.Connecting, code, SshDiagnosticText.FromException(ex), stopwatch);
                 }
 
                 if (!connectOutcome.Completed)
@@ -298,13 +298,18 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 lease.AttachSession(session);
                 if (TryTestFence(lifetime, host, stopwatch, out testFenced))
                 {
-                    return testFenced!;
+                    var fencedCleanup = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                    return testFenced! with
+                    {
+                        CleanupState = fencedCleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
+                    };
                 }
 
                 phaseDurations["connect"] = Elapsed(stopwatch) - phaseDurations["queue"] - phaseDurations["credentials"];
 
                 // 有界关闭：同一条连接在预算内没结束就进隔离区（不得声称已释放）。
                 var cleanup = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                var cleanupState = cleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending;
 
                 return new SshTestResult
                 {
@@ -316,12 +321,19 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                     HostKeyAlgorithm = string.IsNullOrEmpty(session.HostKeyAlgorithm) ? null : session.HostKeyAlgorithm,
                     AuthenticationSucceeded = true,
                     Phase = SshPhase.Completed,
+                    CleanupState = cleanupState,
                     DurationMs = Elapsed(stopwatch),
                     PhaseDurationsMs = phaseDurations,
                 };
             }
             finally
             {
+                // 兜底：任何提前返回（例如提交前围栏）都不得把已建立的连接漏在租约外。
+                if (lease.HasSession)
+                {
+                    _ = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                }
+
                 lease.ReleaseBusinessResources();
             }
         }
@@ -430,7 +442,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Credentials, false));
-                return ExecuteFailure(host, SshPhase.Credentials, failure.ErrorCode, ex.GetType().Name, failure.RetrySafe, stopwatch);
+                return ExecuteFailure(host, SshPhase.Credentials, failure.ErrorCode, SshDiagnosticText.FromException(ex), failure.RetrySafe, stopwatch);
             }
 
             if (!identityOutcome.Completed)
@@ -487,7 +499,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                         host,
                         SshPhase.Connecting,
                         code,
-                        ex.GetType().Name,
+                        SshDiagnosticText.FromException(ex),
                         SshFailureClassifier.IsRetrySafe(code, commandSubmitted: false),
                         stopwatch);
                 }
@@ -509,7 +521,11 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 // 提交前围栏：会话已到手但已终止时不得发 exec。
                 if (TryFence(lifetime, host, stopwatch, out fenced))
                 {
-                    return fenced!;
+                    var fencedCleanup = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                    return fenced! with
+                    {
+                        CleanupState = fencedCleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
+                    };
                 }
 
                 var result = await ExecuteOnSessionAsync(host, session, plan, lifetime, outputBudget, stopwatch)
@@ -518,14 +534,21 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 // 有界关闭（与 TERM/排空共享同一份预算）；没结束就进隔离区并如实标注。
                 var cleanup = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
                 return cleanup.Completed
-                    ? result
+                    ? result with { CleanupState = SshCleanupState.Completed }
                     : result with
                     {
+                        CleanupState = SshCleanupState.Pending,
                         Diagnostic = AppendDiagnostic(result.Diagnostic, "cleanup_pending：清理未在预算内结束，已进入隔离区，不得声称独占连接已释放。"),
                     };
             }
             finally
             {
+                // 兜底：任何提前返回（例如提交前围栏）都不得把已建立的连接漏在租约外。
+                if (lease.HasSession)
+                {
+                    _ = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                }
+
                 lease.ReleaseBusinessResources();
             }
         }
@@ -571,7 +594,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 host,
                 SshPhase.Submitting,
                 failure.ErrorCode,
-                ex.GetType().Name,
+                SshDiagnosticText.FromException(ex),
                 SshFailureClassifier.IsRetrySafe(failure.ErrorCode, submitted),
                 stopwatch,
                 submitted ? SshExecutionState.Unknown : SshExecutionState.NotSubmitted);
@@ -595,7 +618,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                     host,
                     SshPhase.Collecting,
                     failure.ErrorCode,
-                    ex.GetType().Name,
+                    SshDiagnosticText.FromException(ex),
                     retrySafe: false,
                     stopwatch,
                     SshExecutionState.Unknown);
@@ -620,7 +643,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                         host,
                         SshPhase.Cleanup,
                         failure.ErrorCode,
-                        ex.GetType().Name,
+                        SshDiagnosticText.FromException(ex),
                         retrySafe: false,
                         stopwatch,
                         SshExecutionState.Unknown);
@@ -920,7 +943,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         string? diagnostic,
         bool retrySafe,
         Stopwatch stopwatch,
-        SshExecutionState state = SshExecutionState.NotSubmitted) => new()
+        SshExecutionState state = SshExecutionState.NotSubmitted,
+        SshCleanupState cleanupState = SshCleanupState.NotStarted) => new()
     {
         Status = errorCode switch
         {
@@ -933,7 +957,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         HostRevision = host.Target.HostRevision,
         ErrorCode = errorCode,
         Phase = phase,
-        Diagnostic = diagnostic,
+        Diagnostic = SshDiagnosticText.Bound(diagnostic),
+        CleanupState = cleanupState,
         RetrySafe = retrySafe,
         DurationMs = Elapsed(stopwatch),
     };
@@ -943,7 +968,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         SshPhase phase,
         string errorCode,
         string? diagnostic,
-        Stopwatch stopwatch) => new()
+        Stopwatch stopwatch,
+        SshCleanupState cleanupState = SshCleanupState.NotStarted) => new()
     {
         Status = errorCode switch
         {
@@ -956,7 +982,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         Target = host.Target,
         Phase = phase,
         ErrorCode = errorCode,
-        Diagnostic = diagnostic,
+        Diagnostic = SshDiagnosticText.Bound(diagnostic),
+        CleanupState = cleanupState,
         DurationMs = Elapsed(stopwatch),
     };
 

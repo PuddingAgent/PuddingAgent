@@ -35,6 +35,12 @@ public static class SshErrorCodes
     public const string ConnectionLost = "ssh.connection_lost";
     public const string ExitStatusMissing = "ssh.exit_status_missing";
     public const string RemoteExitNonzero = "ssh.remote_exit_nonzero";
+
+    /// <summary>远端以信号结束（只有 exit-signal、没有 exit-status）。</summary>
+    public const string RemoteExitSignal = "ssh.remote_exit_signal";
+
+    /// <summary>退出码为 0 但输出没有读完（读失败或排空被中止）：不得报成完整成功。</summary>
+    public const string OutputIncomplete = "ssh.output_incomplete";
     public const string TransportFault = "ssh.transport_fault";
 }
 

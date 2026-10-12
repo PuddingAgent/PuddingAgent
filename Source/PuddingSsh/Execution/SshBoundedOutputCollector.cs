@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Text;
+using PuddingSsh.Diagnostics;
 
 namespace PuddingSsh.Execution;
 
@@ -65,9 +66,23 @@ internal sealed class SshBoundedOutputCollector
     /// <summary>固定缓冲峰值（字节）：两个预算数组。用于探针核对「与输出量无关」。</summary>
     public long ReservedBufferBytes => 2L * _budget;
 
-    public Task DrainStdoutAsync(Stream stream) => DrainAsync(stream, isStderr: false);
+    /// <summary>stdout 排空事实（R4）：是否读到 EOF / 读取失败 / 被中止。</summary>
+    public SshStreamDrainResult StdoutDrain { get; private set; } = SshStreamDrainResult.NotStarted;
 
-    public Task DrainStderrAsync(Stream stream) => DrainAsync(stream, isStderr: true);
+    public SshStreamDrainResult StderrDrain { get; private set; } = SshStreamDrainResult.NotStarted;
+
+    /// <summary>两条流是否都读到 EOF（ADR-096 D4）。</summary>
+    public bool ReachedEnd => StdoutDrain.ReachedEnd && StderrDrain.ReachedEnd;
+
+    public bool AnyReadFailed => StdoutDrain.ReadFailed || StderrDrain.ReadFailed;
+
+    public bool AnyAborted => StdoutDrain.Aborted || StderrDrain.Aborted;
+
+    public string? IncompleteReason => SshOutcomePolicy.IncompleteReason(ReachedEnd, AnyReadFailed, AnyAborted);
+
+    public Task<SshStreamDrainResult> DrainStdoutAsync(Stream stream) => DrainAsync(stream, isStderr: false);
+
+    public Task<SshStreamDrainResult> DrainStderrAsync(Stream stream) => DrainAsync(stream, isStderr: true);
 
     public string DecodeStdout()
     {
@@ -85,9 +100,10 @@ internal sealed class SshBoundedOutputCollector
         }
     }
 
-    private async Task DrainAsync(Stream stream, bool isStderr)
+    private async Task<SshStreamDrainResult> DrainAsync(Stream stream, bool isStderr)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize);
+        SshStreamDrainResult result;
         try
         {
             while (true)
@@ -98,15 +114,22 @@ internal sealed class SshBoundedOutputCollector
                     read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), CancellationToken.None)
                         .ConfigureAwait(false);
                 }
+                catch (ObjectDisposedException)
+                {
+                    // 本端中止/关闭导致的流中止：不是「读完」，但也不是读取失败（ADR-096 D4）。
+                    result = SshStreamDrainResult.AbortedResult;
+                    break;
+                }
                 catch (Exception)
                 {
-                    // 通道被服务端关闭、或本端释放连接导致的流中止 = 该流结束。
-                    // 真实传输故障由 ExecuteAsync 的任务负责报告，这里不吞掉执行事实。
+                    // 读取失败**不得**伪装成正常 EOF：它是独立事实，结果里必须能表达数据丢失。
+                    result = SshStreamDrainResult.ReadFailedResult;
                     break;
                 }
 
                 if (read <= 0)
                 {
+                    result = SshStreamDrainResult.EndedResult;
                     break;
                 }
 
@@ -118,6 +141,17 @@ internal sealed class SshBoundedOutputCollector
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+
+        if (isStderr)
+        {
+            StderrDrain = result;
+        }
+        else
+        {
+            StdoutDrain = result;
+        }
+
+        return result;
     }
 
     private void Store(byte[] source, int count, bool isStderr)

@@ -28,6 +28,8 @@ internal sealed class SshResourceLease
     private int _identityReleased;
     private int _admissionReleased;
     private int _lateOwnership;
+    private SshCleanupOutcome? _closeOutcome;
+    private readonly object _closeGate = new();
 
     public SshResourceLease(SshCleanupQuarantine quarantine, Action releaseAdmission)
     {
@@ -36,6 +38,9 @@ internal sealed class SshResourceLease
     }
 
     public bool LateOwnershipTransferred => Volatile.Read(ref _lateOwnership) == 1;
+
+    /// <summary>是否已经持有过独占连接（用于「必须走有界关闭」的兜底判断）。</summary>
+    public bool HasSession => _session is not null;
 
     public void AttachIdentity(SshIdentityMaterial identity) => _identity = identity;
 
@@ -71,6 +76,15 @@ internal sealed class SshResourceLease
     /// </summary>
     public async Task<SshCleanupOutcome> CloseSessionAsync(TimeSpan budget)
     {
+        // 幂等：同一租约只会真正关闭一次；重复调用返回同一结论（不会重复计入隔离区）。
+        lock (_closeGate)
+        {
+            if (_closeOutcome is { } cached)
+            {
+                return cached;
+            }
+        }
+
         var session = _session;
         if (session is null)
         {
@@ -103,12 +117,24 @@ internal sealed class SshResourceLease
 
         if (completed)
         {
-            return new SshCleanupOutcome(true, false, true, PendingReaders(session));
+            var done = new SshCleanupOutcome(true, false, true, PendingReaders(session));
+            lock (_closeGate)
+            {
+                _closeOutcome = done;
+            }
+
+            return done;
         }
 
         // 预算内没结束：交给隔离区继续追踪（不得声称「已释放独占连接」）。
         _quarantine.Track(disposeTask);
-        return new SshCleanupOutcome(false, true, true, PendingReaders(session));
+        var pending = new SshCleanupOutcome(false, true, true, PendingReaders(session));
+        lock (_closeGate)
+        {
+            _closeOutcome = pending;
+        }
+
+        return pending;
     }
 
     private static int PendingReaders(ISshTransportSession session) =>

@@ -99,6 +99,8 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
         int? exitCode = null;
         string? exitSignal = null;
         var submitted = false;
+        var outputComplete = false;
+        string? outputIncompleteReason = SshOutputIncompleteReasons.Unknown;
 
         SshCommand? sshCommand = null;
         try
@@ -119,8 +121,8 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
             state = SshExecutionState.Submitted;
             phase = SshPhase.Executing;
 
-            Task stdoutDrain = TrackDrain(collector.DrainStdoutAsync(sshCommand.OutputStream));
-            Task stderrDrain = TrackDrain(collector.DrainStderrAsync(sshCommand.ExtendedOutputStream));
+            Task<SshStreamDrainResult> stdoutDrain = TrackDrain(collector.DrainStdoutAsync(sshCommand.OutputStream));
+            Task<SshStreamDrainResult> stderrDrain = TrackDrain(collector.DrainStderrAsync(sshCommand.ExtendedOutputStream));
 
             try
             {
@@ -156,12 +158,18 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
 
             // 排空与清理**共用同一份预算**：到期就请求中止，绝不再无条件 await（ADR-096 D3）。
             var drains = Task.WhenAll(stdoutDrain, stderrDrain);
-            _ = await SshBoundedDrain
+            var drainsCompleted = await SshBoundedDrain
                 .WaitAsync(
                     drains,
                     RemainingCleanupBudget(stopwatch, timeout),
                     onTimeout: RequestAbort)
                 .ConfigureAwait(false);
+
+            // 排空事实：没在预算内结束 ⇒ 未读到 EOF 且被中止（不得冒充完整输出）。
+            outputComplete = drainsCompleted && collector.ReachedEnd;
+            outputIncompleteReason = collector.IncompleteReason;
+            var outputReadFailed = drainsCompleted && collector.AnyReadFailed;
+            var outputAborted = !drainsCompleted || collector.AnyAborted;
 
             // 退出证据：即使被取消，服务端也可能已经回报信号（SIGTERM ⇒ ExitSignal="TERM"）。
             exitCode = sshCommand.ExitStatus;
@@ -175,25 +183,27 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
                 state = SshExecutionState.Unknown;
             }
 
-            if (status == SshExecutionStatus.Completed)
-            {
-                if (exitCode is null && exitSignal is null)
-                {
-                    // 已结束但**没有**退出状态或信号证据：不得伪造 0。
-                    status = SshExecutionStatus.Failed;
-                    errorCode = SshErrorCodes.ExitStatusMissing;
-                    diagnostic = "服务端未返回 exit-status；远端退出状态未知。";
-                }
-                else if (exitCode is not null and not 0)
-                {
-                    status = SshExecutionStatus.Failed;
-                    errorCode = SshErrorCodes.RemoteExitNonzero;
-                }
-            }
+            // 退出证据与输出完整性分别表达（ADR-096 D4）：只有「明确退出码 0 + 两条流读完 + 无执行失败」才是 Completed。
+            var decision = SshOutcomePolicy.Decide(
+                executionFailed: status != SshExecutionStatus.Completed,
+                status,
+                errorCode,
+                exitCode,
+                exitSignal,
+                outputComplete,
+                outputReadFailed,
+                outputAborted);
+
+            status = decision.Status;
+            errorCode = decision.ErrorCode;
 
             if (status == SshExecutionStatus.Completed)
             {
                 phase = SshPhase.Completed;
+            }
+            else if (errorCode == SshErrorCodes.OutputIncomplete)
+            {
+                diagnostic = "exit=" + (exitCode?.ToString() ?? "null") + "；输出未读完（reason=" + (outputIncompleteReason ?? SshOutputIncompleteReasons.Unknown) + "）。";
             }
         }
         catch (Exception ex)
@@ -231,6 +241,8 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
             CapturedBytes = collector.CapturedBytes,
             ReceivedBytes = collector.ReceivedBytes,
             OutputTruncated = collector.IsTruncated,
+            OutputComplete = outputComplete,
+            OutputIncompleteReason = outputIncompleteReason,
             RetrySafe = false,
             ErrorCode = errorCode,
             Phase = phase,
@@ -342,16 +354,17 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
     }
 
     /// <summary>把排空任务登记进「仍在读取」计数，供资源可见性断言使用。</summary>
-    private async Task TrackDrain(Task drain)
+    private async Task<SshStreamDrainResult> TrackDrain(Task<SshStreamDrainResult> drain)
     {
         Interlocked.Increment(ref _pendingReaders);
         try
         {
-            await drain.ConfigureAwait(false);
+            return await drain.ConfigureAwait(false);
         }
         catch (Exception)
         {
-            // 读取失败由 R4 的 output_complete 事实表达；这里只负责计数与观察。
+            // 读取失败由排空事实表达；这里只负责计数与观察。
+            return SshStreamDrainResult.ReadFailedResult;
         }
         finally
         {

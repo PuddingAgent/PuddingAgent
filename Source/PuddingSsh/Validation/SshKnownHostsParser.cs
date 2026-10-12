@@ -55,9 +55,10 @@ public static class SshKnownHostsParser
         var lines = content.Split('\n');
         var contentLines = 0;
 
-        foreach (var rawLine in lines)
+        for (var i = 0; i < lines.Length; i++)
         {
-            var line = rawLine.TrimEnd('\r').Trim();
+            var lineNumber = i + 1;
+            var line = lines[i].TrimEnd('\r').Trim();
             if (line.Length == 0 || line.StartsWith('#'))
             {
                 continue;
@@ -81,8 +82,8 @@ public static class SshKnownHostsParser
                     // 未知标记与 @cert-authority 一律**整行丢弃**并判为不支持：
                     // 放行一条我们解释不了语义的信任记录，比拒绝更危险。
                     unsupported ??= marker == "cert-authority"
-                        ? $"记录使用了 @{marker}（主机证书/CA 不在首期范围内）：{line}"
-                        : $"记录使用了未知标记 @{marker}：{line}";
+                        ? Unsupported("cert_authority", lineNumber)
+                        : Unsupported("unknown_marker", lineNumber);
                     continue;
                 }
 
@@ -91,7 +92,7 @@ public static class SshKnownHostsParser
 
             if (tokens.Length - index < 3)
             {
-                unsupported ??= $"known_hosts 行格式非法（应为 <hosts> <keytype> <base64>）：{line}";
+                unsupported ??= Unsupported("malformed_fields", lineNumber);
                 continue;
             }
 
@@ -101,7 +102,7 @@ public static class SshKnownHostsParser
 
             if (keyAlgorithm.StartsWith('@') || keyBase64.StartsWith('@'))
             {
-                unsupported ??= $"known_hosts 行格式非法：{line}";
+                unsupported ??= Unsupported("malformed_fields", lineNumber);
                 continue;
             }
 
@@ -112,13 +113,13 @@ public static class SshKnownHostsParser
             }
             catch (FormatException)
             {
-                unsupported ??= $"known_hosts 公钥不是合法 base64：{line}";
+                unsupported ??= Unsupported("bad_base64", lineNumber);
                 continue;
             }
 
             if (keyBlob.Length == 0)
             {
-                unsupported ??= $"known_hosts 公钥为空：{line}";
+                unsupported ??= Unsupported("empty_key", lineNumber);
                 continue;
             }
 
@@ -132,7 +133,7 @@ public static class SshKnownHostsParser
                 // 期望 ["", "1", salt, hash]
                 if (parts.Length != 4 || parts[1] != "1" || parts[2].Length == 0 || parts[3].Length == 0)
                 {
-                    unsupported ??= $"known_hosts 哈希主机记录不支持（只支持 |1|salt|hash）：{line}";
+                    unsupported ??= Unsupported("hash_version", lineNumber);
                     continue;
                 }
 
@@ -146,21 +147,21 @@ public static class SshKnownHostsParser
                 {
                     if (pattern.Length == 0)
                     {
-                        unsupported ??= $"known_hosts 主机字段含空项：{line}";
+                        unsupported ??= Unsupported("empty_pattern", lineNumber);
                         unsupportedPattern = true;
                         break;
                     }
 
                     if (pattern.StartsWith('!'))
                     {
-                        unsupported ??= $"known_hosts 使用否定模式（无法安全解释）：{line}";
+                        unsupported ??= Unsupported("negation_pattern", lineNumber);
                         unsupportedPattern = true;
                         break;
                     }
 
                     if (pattern.Contains('*') || pattern.Contains('?'))
                     {
-                        unsupported ??= $"known_hosts 使用通配模式（无法安全解释）：{line}";
+                        unsupported ??= Unsupported("wildcard_pattern", lineNumber);
                         unsupportedPattern = true;
                         break;
                     }
@@ -188,6 +189,13 @@ public static class SshKnownHostsParser
 
         return new SshKnownHostsParseResult(entries, unsupported, contentLines);
     }
+
+    /// <summary>
+    /// 稳定且**不含原始载荷**的不支持原因（ADR-096 D5）：只给原因码与行号，
+    /// 不把 known_hosts 整行（可能含主机名/公钥/注释）放进公开诊断。
+    /// </summary>
+    private static string Unsupported(string code, int lineNumber) =>
+        $"unsupported_known_hosts_record code={code} line={lineNumber}";
 
     /// <summary>OpenSSH 的 hashed-host token：<c>base64(HMAC-SHA1(key=salt, data=hostToken))</c>。</summary>
     public static string ComputeHashedHostToken(string hostToken, string base64Salt)

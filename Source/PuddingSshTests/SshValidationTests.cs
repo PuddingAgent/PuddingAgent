@@ -76,13 +76,13 @@ public sealed class SshKnownHostsParserTests
     }
 
     [TestMethod]
-    [DataRow("*.example.com ssh-ed25519 {0}", "通配")]
-    [DataRow("!bad.example.com ssh-ed25519 {0}", "否定")]
-    [DataRow("@cert-authority ca.example.com ssh-ed25519 {0}", "cert-authority")]
-    [DataRow("@unknown-marker h ssh-ed25519 {0}", "未知标记")]
-    [DataRow("|2|salt|hash ssh-ed25519 {0}", "只支持 |1|salt|hash")]
-    [DataRow("too-few-fields", "格式非法")]
-    [DataRow("h ssh-ed25519 not-base64!!!", "base64")]
+    [DataRow("*.example.com ssh-ed25519 {0}", "code=wildcard_pattern")]
+    [DataRow("!bad.example.com ssh-ed25519 {0}", "code=negation_pattern")]
+    [DataRow("@cert-authority ca.example.com ssh-ed25519 {0}", "code=cert_authority")]
+    [DataRow("@unknown-marker h ssh-ed25519 {0}", "code=unknown_marker")]
+    [DataRow("|2|salt|hash ssh-ed25519 {0}", "code=hash_version")]
+    [DataRow("too-few-fields", "code=malformed_fields")]
+    [DataRow("h ssh-ed25519 not-base64!!!", "code=bad_base64")]
     public void UnsupportedOrMalformedContent_FailsClosed(string template, string expectedFragment)
     {
         var parsed = SshKnownHostsParser.Parse(template.Replace("{0}", Key, StringComparison.Ordinal) + "\n");
