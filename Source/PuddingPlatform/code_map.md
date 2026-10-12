@@ -52,15 +52,14 @@
 
 ## Agent 管理
 
-| 文件 | 用途 |
-|------|------|
-| `Services/WorkspaceAgentFileService.cs` | 🔑 Agent 文件服务（65KB） |
-| `Services/AgentTemplateFileService.cs` | 模板文件服务（27KB） |
-| `Services/AgentTemplateProvider.cs` | 模板提供 |
-| `Services/AgentLLMConfigResolver.cs` | LLM 配置解析；把选中模型的协议写入 `LlmConfig` |
-| `Services/AgentRuntimeProfileResolver.cs` | Runtime Profile 解析（16KB） |
-| `Services/AgentConversationLogService.cs` | 对话日志 |
-
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/WorkspaceAgentFileService.cs` | Agent 文件服务（65KB） | `WorkspaceAgentFileService` | `Services/AgentTemplateFileService.cs` | 单文件承载 Agent 增删改查与校验 |
+| `Services/AgentTemplateFileService.cs` | 模板文件服务（27KB） | `AgentTemplateFileService` | `Services/AgentTemplateProvider.cs` | 单文件承载模板读写 |
+| `Services/AgentTemplateProvider.cs` | 模板提供 | `AgentTemplateProvider` | `Services/AgentTemplateFileService.cs` | — |
+| `Services/AgentLLMConfigResolver.cs` | LLM 配置解析 | `AgentLLMConfigResolver` | `Services/AgentRuntimeProfileResolver.cs` | 把选中模型的协议写入 LlmConfig |
+| `Services/AgentRuntimeProfileResolver.cs` | Runtime Profile 解析（16KB） | `AgentRuntimeProfileResolver` | `Services/AgentLLMConfigResolver.cs` | 单文件承载 Profile 解析 |
+| `Services/AgentConversationLogService.cs` | 对话日志 | `AgentConversationLogService` | `Services/WorkspaceAgentFileService.cs` | — |
 ## 认证与当前用户
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
@@ -161,7 +160,8 @@
 | `Controllers/Api/GoalQueriesController.cs` | 只读查询端点 | `GoalQueriesController` | `Services/Goals/GoalQueryService.cs` | 未写拆解 200+found:false；仅 goal 缺失 404 |
 | `Data/Entities/Goal*Entity.cs` + `TaskGoalBindingEntity.cs` | Goal 五表与 Task binding 实体 | `GoalRunEntity` | `PlatformDbContext` | 枚举存 int、snake_case、version CAS；5 DbSet + partial unique 索引 |
 
-关联修改：`SystemCommandHandler`（/goal 分支委托 GoalCommandService，不创建 Turn）；`PlatformDbContext`（5 个 DbSet + partial unique 索引）；`PuddingApplicationInitializer`（GoalSchemaBootstrapper + 启动 reconcile：按 resume_policy 分流 disarm / auto-resume，日志区分 disarmed 与 auto-resumed）。相关配置见 `PuddingCore/Goals/GoalRunOptions.cs`：`NoProgressBreakerThreshold`（默认 3，边界 1..16）、`DefaultResumePolicy`、`MaxAutoResumesPerBoot`（默认 8，边界 0..64）。
+关联修改：`SystemCommandHandler`（/goal 分支委托 GoalCommandService，不创建 Turn）；`PlatformDbContext`（5 个 DbSet + partial unique 索引）；`PuddingApplicationInitializer`（GoalSchemaBootstrapper + 启动 reconcile：按 resume_policy 分流 disarm / auto-resume，日志区分 disarmed 与 auto-resumed）。
+相关配置见 `PuddingCore/Goals/GoalRunOptions.cs`：`NoProgressBreakerThreshold`（默认 3，边界 1..16）、`DefaultResumePolicy`、`MaxAutoResumesPerBoot`（默认 8，边界 0..64）。
 
 ## 外部访问令牌与 Agent 消息 API（ADR-075 / ADR-082）
 
@@ -269,4 +269,5 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 
 ## 测试
 
-`../PuddingPlatformTests/` — 渠道配置、Artifact、消息与通用编排；2026-08-11 Orchestration 定向测试 62/62 ✅，覆盖 Graph/Run 发现、Revision/Layout CAS、Draft validate、Graph 生命周期、冻结 Run Inputs、手动运行、后继 Ready/失败 Skipped 与 Run 原子终态、两节点图片模板、HTTP Hook 映射/幂等冲突；2026-08-22 新增 StatsApiController/TokenUsageDailyAggregate/ContextLayerDailyRollup/TokenUsageRebuild 定向 18/18 ✅（闭日缓存命中、空日完成标记、当天实时不落缓存、按月失效、rollup 跨日精确合并、非对齐边界直查）
+`../PuddingPlatformTests/` — 渠道配置、Artifact、消息与通用编排；2026-08-11 Orchestration 定向测试 62/62 ✅，覆盖 Graph/Run 发现、Revision/Layout CAS、Draft validate、Graph 生命周期、冻结 Run Inputs、手动运行、后继 Ready/失败 Skipped 与 Run 原子终态、两节点图片模板、HTTP Hook 映射/幂等冲突；
+2026-08-22 新增 StatsApiController/TokenUsageDailyAggregate/ContextLayerDailyRollup/TokenUsageRebuild 定向 18/18 ✅（闭日缓存命中、空日完成标记、当天实时不落缓存、按月失效、rollup 跨日精确合并、非对齐边界直查）
