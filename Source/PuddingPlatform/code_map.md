@@ -17,8 +17,6 @@
 
 ## 对话 & 聊天
 
-| 文件 | 用途 |
-|------|------|
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Services/ChatHistoryService.cs` | 聊天历史读写 | `ChatHistoryService` | `Services/ChatMessageRepository.cs` | — |
@@ -65,19 +63,17 @@
 
 ## 认证与当前用户
 
-| 文件 | 用途 |
-|------|------|
-| `Controllers/Api/AuthApiController.cs` | 登录、JWT/Session 当前用户投影；签发统一委托 `JwtTokenFactory`（密钥/有效期只来自配置，登录响应不返回到期时间）；认证成功/失败按 Information 记录且不记录用户标识、密码长度或账户存在性；`/api/currentUser` 异步读取 `AppUsers.Avatar`（空值回退自有 `/admin/assets/images/me.png`），刷新/重登后头像保持数据库最新值 |
-| `Services/JwtTokenFactory.cs` | 登录态 JWT 的唯一配置解析（`PuddingJwtSettings`：`Jwt:Key/Issuer/Audience/ExpiryHours`，缺省 168 小时 = 7 天，密钥缺失/过短即 fail closed，无硬编码兜底）与唯一签发入口（HS256 + `sm2_sig` 载荷签名）；登录与 Bootstrap 首次初始化共用 |
-| `Controllers/Api/UserAvatarApiController.cs` | 头像唯一上传契约 `POST /api/users/{userId}/avatar`（multipart 字段 `file`，返回 `{ avatar }`）；上传自己需登录、为他人上传需 Admin（403）；统一 PNG/JPG/WebP、5 MiB 上限；`SaveForUserAsync` 复用落盘/写库/旧文件清理；`GET` 匿名查任意用户头像 |
-| `Controllers/Api/AppUserApiController.cs` | 用户管理 CRUD/密码/角色，收紧为 `[Authorize(Roles = "admin")]`；`AppUserDto` 携带 `Avatar` |
-| `Services/UserAvatarStorageService.cs` | 头像落盘 `wwwroot/user-avatars/`（userId 前缀防穿越、原子写、TryDelete 限根内）；允许 MIME 仅 PNG/JPEG/WebP（GIF 已移除） |
-| `Services/Sm2JwtSigner.cs` | ECDSA-P256 JWT payload 签名；缺少持久密钥时仅记录进程临时密钥告警与公钥 SHA-256 指纹，禁止日志输出私钥/公钥材料 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Controllers/Api/AuthApiController.cs` | 登录与当前用户投影 | `AuthApiController` | `Services/JwtTokenFactory.cs` | 签发统一委托 JwtTokenFactory（密钥与有效期只来自配置，登录响应不返回到期时间）；认证成功/失败按 Information 记录且不记用户标识、密码长度或账户存在性；/api/currentUser 异步读 AppUsers.Avatar（空值回退 /admin/assets/images/me.png） |
+| `Services/JwtTokenFactory.cs` | 登录态 JWT 的唯一解析与签发 | `JwtTokenFactory` | `Controllers/Api/AuthApiController.cs` | 配置键 PuddingJwtSettings：Jwt:Key/Issuer/Audience/ExpiryHours，缺省 168 小时；密钥缺失或过短即 fail closed，无硬编码兜底；HS256 + sm2_sig 载荷签名；登录与 Bootstrap 首次初始化共用 |
+| `Controllers/Api/UserAvatarApiController.cs` | 头像上传唯一契约 POST /api/users/{userId}/avatar | `UserAvatarApiController` | `Services/UserAvatarStorageService.cs` | multipart 字段 file，返回 { avatar }；上传自己需登录、为他人需 Admin(403)；统一 PNG/JPG/WebP 与 5 MiB 上限；SaveForUserAsync 复用落盘/写库/旧文件清理；GET 匿名查任意用户头像 |
+| `Controllers/Api/AppUserApiController.cs` | 用户管理 CRUD/密码/角色 | `AppUserApiController` | `Controllers/Api/UserAvatarApiController.cs` | 收紧为 [Authorize(Roles = "admin")]；AppUserDto 携带 Avatar |
+| `Services/UserAvatarStorageService.cs` | 头像落盘与路径防护 | `UserAvatarStorageService` | `Controllers/Api/UserAvatarApiController.cs` | 落盘 wwwroot/user-avatars/（userId 前缀防穿越、原子写、TryDelete 限根内）；允许 MIME 仅 PNG/JPEG/WebP（GIF 已移除） |
+| `Services/Sm2JwtSigner.cs` | JWT payload 的 ECDSA-P256 签名 | `Sm2JwtSigner` | `Services/JwtTokenFactory.cs` | 缺持久密钥时仅记进程临时密钥告警与公钥 SHA-256 指纹；禁止日志输出私钥/公钥材料 |
 
 ## 子代理 & 诊断
 
-| 文件 | 用途 |
-|------|------|
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Middleware/TraceableExceptionMiddleware.cs` | 未处理异常的可检索 500 | `TraceableExceptionMiddleware` | — | 仅当 RequestAborted 已取消时把 OperationCanceledException 视为客户端断开（499 + Debug），不污染 Error 日志 |
@@ -146,8 +142,6 @@
 
 ## Goal 持久控制面（Services/Goals/ · ADR-074 G1–G3 + Task-bound 原子启动源码链）
 
-| 文件 | 用途 |
-|------|------|
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Services/Goals/GoalSchemaBootstrapper.cs` | goal 五表幂等建表与索引冻结 | `GoalSchemaBootstrapper` | `Data/Entities/Goal*Entity.cs` | 单会话仅一个非终态 Goal 的 partial unique；outbox 幂等键索引 |
@@ -196,15 +190,16 @@
 
 ## 安全审批管理 API 与分类器健康（2026-09-21）
 
-| 文件 | 说明 |
-| --- | --- |
-| `Controllers/Api/ToolApprovalAdminApiController.cs` | 安全审批白名单/审计管理 API（`[Authorize]`，`/api/tool-approval`）：allowlist 的 list/create/get/update + audit 查询；来源 `built_in` / `audit_agent` / `human` / **`classifier`** 双向映射。**2026-09-21 修两处缺陷**：① `FormatSource` 曾以 `_ => "human"` 兜底 ⇒ **分类器落的规则被当作 human 上报**（审计溯源失真），现改为如实回显枚举名，未来新增来源**宁可暴露未知也不谎报来源**；② `TryParseSource` 补 `classifier` 分支，否则前端编辑/禁用分类器规则会被 **400** 拒绝 |
-| `Controllers/Api/ClassifierHealthApiController.cs` | 分类器健康**只读** API（切片 S6b-1，规格 §8.2 / §10 D6）：`GET /api/classifier-health`，`[Authorize]`，**服务端权威**——直接透传 `IClassifierHealthReporter.Snapshot()`，不由前端推断、不缓存改写；健康面未接线 ⇒ **`200` + `configured=false` 的明确未知态**（绝不 500、绝不假装健康）；wire 仅白名单字段（`classifierId` / `health` 小写字符串 / `detail` / `consecutiveFailures` / `lastCheckedAtUtc` / `lastLatencyMs`）；**只依赖 PuddingCore 抽象**（不引用 Runtime 具体类）；per-key 连续 deferred 计数与退避档属 **Agent 侧诊断**（`classifier_status` 工具），**不进本 API**（§8.2 裁定）；离线契约测试 `PuddingPlatformTests/Controllers/ClassifierHealthApiControllerTests.cs`（7 例） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Controllers/Api/ToolApprovalAdminApiController.cs` | 审批白名单与审计 API | `ToolApprovalAdminApiController`、built_in、audit_agent、human、classifier | — | [Authorize] /api/tool-approval：allowlist 增删查改 + audit；FormatSource 曾以 _ => "human" 兜底致分类器规则误报，现如实回显枚举名；TryParseSource 补 classifier 否则 400 |
+| `Controllers/Api/ClassifierHealthApiController.cs` | 分类器健康只读 API | `ClassifierHealthApiController` | `PuddingPlatformTests/Controllers/ClassifierHealthApiControllerTests.cs` | GET /api/classifier-health，[Authorize]；直接透传 IClassifierHealthReporter.Snapshot()；未接线 ⇒ 200 + configured=false 的明确未知态 |
+
+契约细节：wire 仅白名单字段 `classifierId` / `health`（小写字符串） / `detail` / `consecutiveFailures` / `lastCheckedAtUtc` / `lastLatencyMs`；只依赖 PuddingCore 抽象（不引用 Runtime 具体类）。
+per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_status` 工具），不进本 API（规格 §8.2 裁定）；离线契约测试 `PuddingPlatformTests/Controllers/ClassifierHealthApiControllerTests.cs`（7 例）。
 
 ## 持久化
 
-| 文件 | 用途 |
-|------|------|
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Data/` | EF Core DbContext、实体与迁移 | `PlatformDbContext` | `Data/PlatformSqliteConnectionInterceptor.cs` | 实体枚举存 int、snake_case、version CAS |
@@ -224,36 +219,33 @@
 | `Controllers/Api/AgentOrchestrationRevisionApiController.cs` | Draft validate 与 Revision PUT CAS | `AgentOrchestrationRevisionApiController` | `Services/Orchestration/AgentOrchestrationAuthoringService.cs` | 编排专用 Web/string-enum JSON 契约；冲突返回当前 Revision 事实；诊断含 elementType/elementId/portId |
 | `Controllers/Api/AgentOrchestrationRunCommandApiController.cs` | 运行命令端点 | `AgentOrchestrationRunCommandApiController` | `Services/Orchestration/AgentOrchestrationManualRunService.cs` | POST /api/orchestrations/runs；Admin-only、1 MiB 上限、201/200 幂等回执与稳定 400/404/409 |
 | `Controllers/Api/AgentOrchestrationHttpHookApiController.cs` | HTTP Hook 端点 | `AgentOrchestrationHttpHookApiController` | `Services/Orchestration/AgentOrchestrationHttpHookService.cs` | POST /api/orchestrations/hooks/{graphId}/{triggerId}?revisionId=...；Admin-only、1 MiB、201/200 幂等 |
-| `Services/RetentionPruningService.cs` | platform.db 在线保留期裁剪后台服务 | `RetentionPruningService` | `Data/` | 表名/列名白名单防注入；证据事件先归档后删；100 行小批、批间让步；VACUUM 默认关；ChatMessages 永不裁剪 |
 
 ## 多媒体
 
-| 文件 | 用途 |
-|------|------|
-| `Services/ImageGenerationService.cs` | 图片生成 |
-| `Services/VisionArtifactStorageService.cs` + `.Preprocessing.cs` + `ImagePreprocessing.cs` | Workspace原图与派生缓存；64MiB、实际格式/尺寸/EXIF；模型边界低分辨率副本与超尺寸概览；本地裁剪/旋转/灰度/降噪/缩放/编码。原图不覆盖，变换按源与版本化参数复用，解码串行限并发 |
-| `Services/VisualArtifactObservationService.cs` | 视觉观察 |
-| `Services/AudioArtifactStorageService.cs` | 音频存储 |
-| `Services/AudioTranscriptionService.cs` | 音频转录 |
-| `Services/VoiceSynthesisService.cs` | 语音合成 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/ImageGenerationService.cs` | 图片生成 | `ImageGenerationService` | `Services/VisionArtifactStorageService.cs` | — |
+| `Services/VisionArtifactStorageService.cs` | Workspace 原图与派生缓存 | `VisionArtifactStorageService`、`.Preprocessing.cs`、`ImagePreprocessing.cs` | `Services/VisualArtifactObservationService.cs` | 64MiB 与实际格式/尺寸/EXIF；模型边界低分辨率副本与超尺寸概览；原图不覆盖，变换按源与版本化参数复用；解码串行限并发 |
+| `Services/VisualArtifactObservationService.cs` | 视觉观察 | `VisualArtifactObservationService` | `Services/VisionArtifactStorageService.cs` | — |
+| `Services/AudioArtifactStorageService.cs` | 音频存储 | `AudioArtifactStorageService` | `Services/AudioTranscriptionService.cs` | — |
+| `Services/AudioTranscriptionService.cs` | 音频转录 | `AudioTranscriptionService` | `Services/AudioArtifactStorageService.cs` | — |
+| `Services/VoiceSynthesisService.cs` | 语音合成 | `VoiceSynthesisService` | `Services/AudioArtifactStorageService.cs` | — |
 
 ## 提供商配置
 
-| 文件 | 用途 |
-|------|------|
-| `Services/LlmProviderFileService.cs` | LLM Provider/模型文件配置；协议只存在于模型 DTO 与模型写入请求；`GetBalanceAsync` 余额查询——解析 apiKey（ApiKey/${ENV}/{{vault:NAME}}/ApiKeyRef→KeyVault）后按 `ILlmBalanceProvider` 注册表 CanHandle 分发，未注册适配器返回「暂不支持」DTO（apiKey 不进日志） |
-| `Services/ILlmBalanceProvider.cs` | 服务商余额查询适配器契约（多服务商计费抽象）：`CanHandle(provider)` + `QueryAsync(provider, apiKey, ct)`；网络错误抛 HttpRequestException（控制器映射 502），上游业务错误返回 IsAvailable=false DTO |
-| `Services/DeepSeekLlmBalanceProvider.cs` | DeepSeek 适配器：GET {baseUrl 剥掉尾部 /v1}/user/balance + Bearer；解析 is_available/balance_infos（字符串金额兼容）与 error.message；CanHandle=providerId 含 deepseek 或 baseUrl 指向 deepseek.com；命名 HttpClient `LlmBalanceQuery`（30s） |
-| `Controllers/Api/LlmProviderApiController.cs` | Provider CRUD/配额/余额 HTTP 出口；`GET api/llm/providers/{providerId}/balance`（KeyNotFound→404 / InvalidOperation→400 / HttpRequestException→502） |
-| `Services/ChannelConfigurationFileService.cs` | 渠道配置（21KB） |
-| `Services/VoiceProviderFileService.cs` | 语音提供商（18KB） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/LlmProviderFileService.cs` | LLM Provider/模型文件配置与余额查询 | `LlmProviderFileService` | `Services/ILlmBalanceProvider.cs` | 协议只在模型 DTO 与写入请求；GetBalanceAsync 解析 apiKey（ApiKey/${ENV}/{{vault:NAME}}/ApiKeyRef→KeyVault）后按注册表 CanHandle 分发；未注册返回「暂不支持」DTO；apiKey 不进日志 |
+| `Services/ILlmBalanceProvider.cs` | 余额查询适配器契约 | `ILlmBalanceProvider` | `Services/DeepSeekLlmBalanceProvider.cs` | CanHandle(provider) + QueryAsync(provider, apiKey, ct)；网络错误抛 HttpRequestException（控制器映射 502）；上游业务错误返回 IsAvailable=false DTO |
+| `Services/DeepSeekLlmBalanceProvider.cs` | DeepSeek 余额适配器 | `DeepSeekLlmBalanceProvider`、`LlmBalanceQuery` | `Services/ILlmBalanceProvider.cs` | GET {baseUrl 剥尾 /v1}/user/balance + Bearer；解析 is_available/balance_infos 与 error.message；CanHandle：providerId 含 deepseek 或 baseUrl 指向 deepseek.com |
+| `Controllers/Api/LlmProviderApiController.cs` | Provider CRUD/配额/余额出口 | `LlmProviderApiController` | `Services/LlmProviderFileService.cs` | GET api/llm/providers/{providerId}/balance；KeyNotFound→404 / InvalidOperation→400 / HttpRequestException→502 |
+| `Services/ChannelConfigurationFileService.cs` | 渠道配置文件服务 | `ChannelConfigurationFileService` | — | 单文件配置（21KB） |
+| `Services/VoiceProviderFileService.cs` | 语音提供商配置文件服务 | `VoiceProviderFileService` | — | 单文件配置（18KB） |
 
 余额链路测试：`PuddingPlatformTests/Services/DeepSeekLlmBalanceProviderTests.cs`（8 用例：解析//v1 剥离/Bearer/非 2xx/网络错误/CanHandle 矩阵）+ `LlmProviderBalanceDispatchTests.cs`（4 用例：暂不支持/委托与密钥/404/400）；扩展步骤见 `Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md`。
 
 ## Token 计量
 
-| 文件 | 用途 |
-|------|------|
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Services/TokenUsageRecorder.cs` | Token 用量记录与层级诊断 | `TokenUsageRecorder` | `Data/Entities/LlmGatewayUsageEventEntity.cs` | 持久化 parent/sub-agent 身份与零基 round；prefix-v2 归因 history_anchor_changed 与 serialization_version_changed；不复制 prompt 正文 |
