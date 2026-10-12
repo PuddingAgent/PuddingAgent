@@ -2383,6 +2383,93 @@ public sealed class BrowserAgentToolsTests
         Assert.True(result.Success);
         Assert.Contains("obs-1", result.Output);
     }
+
+    /// <summary>R5 的关键正向用例：**字节被发布**、**native image part 携带工件 id**（不是 base64 文本）。</summary>
+    [Fact]
+    public async Task Screenshot_PublishesTheBytesAndReturnsANativeImagePart()
+    {
+        var publisher = new FakeScreenshotPublisher();
+        var tool = new BrowserScreenshotTool(
+            SurfaceWithSingleChunk(out _),
+            new FakeCallContextFactory(),
+            _originAccessor,
+            publisher);
+
+        var result = await ExecuteAsync(tool, """{"page_id":"p-1","context_id":"ctx-1","expected_page_version":7}""");
+
+        Assert.True(result.Success, result.Output);
+        Assert.NotNull(publisher.LastRequest);
+        Assert.Equal([1, 2, 3, 4], publisher.LastBytes);
+
+        // native part 必须指向**工件**；旧实现只返回 `chunks = 1` 而把字节丢掉。
+        Assert.NotNull(result.ToolContentParts);
+        var image = Assert.Single(result.ToolContentParts!.OfType<PuddingCode.Models.LlmImagePart>());
+        Assert.Equal("vision-fake", image.ArtifactId);
+    }
+
+    /// <summary>坏块必须**明确失败**，且**不得**发布任何工件（残缺字节不能被当成"成功截图"）。</summary>
+    [Fact]
+    public async Task Screenshot_RejectsIncompleteChunks_AndNeverPublishes()
+    {
+        var publisher = new FakeScreenshotPublisher();
+        var surface = new FakeCapabilitySurface(new FakeBrowserRuntime());
+        surface.OnScreenshot = _ => CapabilityResult<BrowserScreenshotResult>.Success(
+            new BrowserScreenshotResult(
+                Metadata(byteCount: 4),
+                [new DesktopScreenshotChunk(0, true, [1, 2])])); // 元数据说 4 字节，实际 2 字节
+        var tool = new BrowserScreenshotTool(surface, new FakeCallContextFactory(), _originAccessor, publisher);
+
+        var result = await ExecuteAsync(tool, """{"page_id":"p-1","context_id":"ctx-1","expected_page_version":7}""");
+
+        Assert.False(result.Success);
+        Assert.Null(publisher.LastRequest);
+    }
+
+    /// <summary>没有发布端时**不得谎报**视觉成功：仍给元数据，但必须显式声明看不见图片。</summary>
+    [Fact]
+    public async Task Screenshot_WithoutPublisher_DoesNotClaimVisionSucceeded()
+    {
+        var tool = new BrowserScreenshotTool(
+            SurfaceWithSingleChunk(out _), new FakeCallContextFactory(), _originAccessor);
+
+        var result = await ExecuteAsync(tool, """{"page_id":"p-1","context_id":"ctx-1","expected_page_version":7}""");
+
+        Assert.True(result.Success);
+        Assert.Contains("visionUnavailable", result.Output);
+    }
+
+    private static DesktopScreenshotMetadata Metadata(int byteCount = 4) =>
+        new("obs-1", "image/png", byteCount, 1280, 720, 512, 288,
+            DeviceScaleFactor: 1, ViewportWidth: 1280, ViewportHeight: 720,
+            ScrollX: 0, ScrollY: 0, CropX: 0, CropY: 0, CropWidth: 1280, CropHeight: 720,
+            PageVersion: 7, DomRevision: 1, ViewportRevision: 1,
+            DesktopScreenshotDetail.Low);
+
+    private static FakeCapabilitySurface SurfaceWithSingleChunk(out DesktopScreenshotMetadata _)
+    {
+        _ = Metadata();
+        var surface = new FakeCapabilitySurface(new FakeBrowserRuntime());
+        surface.OnScreenshot = _ => CapabilityResult<BrowserScreenshotResult>.Success(
+            new BrowserScreenshotResult(Metadata(), [new DesktopScreenshotChunk(0, true, [1, 2, 3, 4])]));
+        return surface;
+    }
+
+    private sealed class FakeScreenshotPublisher : IBrowserScreenshotPublisher
+    {
+        public BrowserScreenshotPublishRequest? LastRequest { get; private set; }
+
+        public byte[]? LastBytes { get; private set; }
+
+        public ValueTask<PublishedBrowserScreenshot> PublishAsync(
+            BrowserScreenshotPublishRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            LastBytes = [.. request.Chunks.SelectMany(chunk => chunk.Data)];
+            return ValueTask.FromResult(new PublishedBrowserScreenshot(
+                "vision-fake", request.MimeType, request.ByteCount, request.Width, request.Height, request.ObservationId));
+        }
+    }
 }
 
 /// <summary>
