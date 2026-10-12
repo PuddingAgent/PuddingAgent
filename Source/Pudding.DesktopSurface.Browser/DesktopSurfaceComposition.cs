@@ -70,6 +70,10 @@ public sealed class DesktopSurfaceComposition : IDesktopUiSurface
         DesktopCallContext context, BrowserLocateRequest request, CancellationToken cancellationToken) =>
         _browser.LocateAsync(context, request, cancellationToken);
 
+    public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        DesktopCallContext context, BrowserScreenshotRequest request, CancellationToken cancellationToken) =>
+        _browser.ScreenshotAsync(context, request, cancellationToken);
+
     public Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         DesktopCallContext context, BrowserSnapshotRequest request, CancellationToken cancellationToken) =>
         _browser.SnapshotAsync(context, request, cancellationToken);

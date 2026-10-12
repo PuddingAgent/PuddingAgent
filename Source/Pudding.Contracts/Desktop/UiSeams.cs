@@ -92,6 +92,10 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
         DesktopCallContext context, BrowserLocateRequest request, CancellationToken cancellationToken);
 
+    /// <summary>截取视觉观察；结果必须含 observationId（供后续坐标解析），裁剪与预算由实现方如实执行。</summary>
+    Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        DesktopCallContext context, BrowserScreenshotRequest request, CancellationToken cancellationToken);
+
     /// <summary>读取页面快照；预算由请求给出，实现方必须截断并如实标注 <c>Truncated</c>。</summary>
     Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         DesktopCallContext context, BrowserSnapshotRequest request, CancellationToken cancellationToken);

@@ -535,7 +535,27 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
-            case DesktopCapability.BrowserScreenshot:
+        case DesktopCapability.BrowserScreenshot:
+        {
+            if (request.Screenshot is not { } screenshot)
+            {
+                return DesktopCapabilityResponse.Failure(
+                    DesktopCapabilityError.InvalidRequest("browser.screenshot request payload is missing"));
+            }
+
+            var screenshotResult = await RunOnUiAsync(
+                descriptor,
+                screenshot.Target,
+                screenshot.ExpectedPageVersion,
+                context,
+                token => _surface.ScreenshotAsync(context, screenshot, token),
+                cancellationToken).ConfigureAwait(false);
+
+            return screenshotResult.IsSuccess
+                ? DesktopCapabilityResponse.FromScreenshot(screenshotResult.Value)
+                : DesktopCapabilityResponse.Failure(screenshotResult.Error);
+        }
+
             case DesktopCapability.BrowserSnapshot:
             {
                 if (request.Snapshot is not { } snapshot)

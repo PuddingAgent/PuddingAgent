@@ -401,6 +401,13 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
 
     public Func<BrowserSnapshotRequest, CancellationToken, Task<CapabilityResult<DesktopSnapshot>>>? SnapshotHandler { get; set; }
 
+    public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        DesktopCallContext context, BrowserScreenshotRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue($"screenshot:{request.Target}");
+        throw new NotSupportedException("screenshot is not supported by the recording surface");
+    }
+
     public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         DesktopCallContext context, BrowserSnapshotRequest request, CancellationToken cancellationToken)
     {
