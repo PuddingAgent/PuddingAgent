@@ -15,6 +15,26 @@ public sealed class DesktopCapabilityCompositionTests
 
     private static readonly string GoodDescription = $"named-pipe:pudding-capability-abc|{DesktopProtocolVersion.Current}|core-42";
 
+    /// <summary>
+    /// §5.4：组合根**只接受生命周期端口** —— 它同时持有唯一权威与准入读的页面注册表。
+    /// 允许拆成两个参数就允许"配错对"（注册表来自 A、权威来自 B）⇒ 又出现**两份控制权状态**。
+    /// 这条用例把该契约钉住：缺生命周期必须**明确拒绝**，而不是悄悄各建一份。
+    /// </summary>
+    [Fact]
+    public async Task TheChannelCompositionRefusesToStartWithoutTheLifecyclePort()
+    {
+        var settings = new DesktopCapabilityChannelSettings { Enabled = true };
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            DesktopCapabilityChannelComposition.StartAsync(
+                settings,
+                GoodDescription,
+                authentication: null,
+                Process,
+                new ManualUiDispatcher(),
+                new RecordingUiSurface(),
+                lifecycle: null!));
+    }
     [Fact]
     public void DisabledChannel_KeepsTheLegacyBridgeAndNeverBuildsAHost()
     {
