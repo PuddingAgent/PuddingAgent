@@ -78,14 +78,16 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Middleware/TraceableExceptionMiddleware.cs` | 未处理异常生成可检索 errorId/500；仅当 `RequestAborted` 已取消时把 `OperationCanceledException` 视为客户端断开（499 + Debug），不污染 Error 日志 |
-| `Services/SubAgentManager.cs` | 子代理管理；统一预算解析（N00）：`maxRounds = request.MaxRounds ?? options.MaxRounds`、`maxToolCallsTotal` 同理（无 isManagedWorkUnit 特判）；显式超过 options 上限抛 InvalidOperationException；收尾宽限与续跑语义不变；以同一 SubSessionId + 新 runId 透明续跑并重置计数器；终态 usage 只存运行摘要；`SubAgentResultIdentity.Compute(childRunId, 规范化终态, 父会话)` 派生确定性 `resultId` 并复用为结果消息 `MessageId`（无时间戳/随机成分），借 MessageFabric 按 MessageId 去重保证“一个 result 只触发一次父级接续” |
-| `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 子代理池实现 |
-| `Services/SubAgentTransientDirectoryGcService.cs` | 历史临时执行身份空 Skill 脚手架 GC；以精确目录形状 + 子代理池 + durable run 终态多重门禁，先移入 retention-archive 隔离，延迟后再安全删除 |
-| `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 |
-| `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储；终态 `run.json` 固化轮次、工具、耗时和错误；支持可恢复终态 `budget_exhausted` 与预算通知投影；归档读写同一 per-run gate + sharing violation 退避重试，重试耗尽写 archive-degraded.json 降级（ADR-060 §3.11） |
-| `Controllers/Api/SubAgentRunController.cs` | 认证运行检查器 API；详情从归档返回终态统计，events 分页返回可重建历史时间线的完整事件 payload |
-| `Services/SessionStateManager.cs` | 会话/子代理持久状态查询；子代理状态 DTO 按可复用 SubSessionId 关联最新 canonical runId，供托盘坞和检查器在漏收事件后恢复运行 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Middleware/TraceableExceptionMiddleware.cs` | 未处理异常的可检索 500 | `TraceableExceptionMiddleware` | — | 仅当 RequestAborted 已取消时把 OperationCanceledException 视为客户端断开（499 + Debug），不污染 Error 日志 |
+| `Services/SubAgentManager.cs` | 子代理预算与结果身份 | `SubAgentManager`、`SubAgentResultIdentity.Compute(childRunId, 规范化终态, 父会话)` | — | 预算解析（N00）：`maxRounds = request.MaxRounds ?? options.MaxRounds`、maxToolCallsTotal 同理；同 SubSessionId + 新 runId 续跑重置计数器；resultId 复用为 MessageId 去重 |
+| `Services/SubAgentPool.cs` | Core ISubAgentPool 的 Platform 实现 | `SubAgentPool` | `Services/SubAgentManager.cs` | — |
+| `Services/SubAgentTransientDirectoryGcService.cs` | 历史空 Skill 脚手架目录 GC | `SubAgentTransientDirectoryGcService` | `Services/SubAgentPool.cs` | 以精确目录形状 + 子代理池 + durable run 终态多重门禁；先移入 retention-archive 隔离，延迟后再安全删除 |
+| `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 | `SubAgentDiagnosticsService` | `Services/SubAgentManager.cs` | — |
+| `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储 | `FileSubAgentRunStore` | `Controllers/Api/SubAgentRunController.cs` | 终态 run.json 固化轮次/工具/耗时/错误；支持可恢复终态 budget_exhausted；per-run gate + sharing violation 退避重试，耗尽写 archive-degraded.json 降级 |
+| `Controllers/Api/SubAgentRunController.cs` | 认证运行检查器 API | `SubAgentRunController` | `Services/FileSubAgentRunStore.cs` | 详情从归档返回终态统计；events 分页返回可重建历史时间线的完整事件 payload |
+| `Services/SessionStateManager.cs` | 会话与子代理持久状态查询 | `SessionStateManager` | `Services/SubAgentManager.cs` | 状态 DTO 按可复用 SubSessionId 关联最新 canonical runId，供托盘坞与检查器在漏收事件后恢复运行 |
 
 ## 任务系统（Tasks）
 
