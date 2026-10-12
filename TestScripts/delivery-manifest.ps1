@@ -109,10 +109,7 @@ try {
         $Commit = (git rev-parse --short HEAD).Trim()
     }
 
-    # R6 证据绑定：工作树是否有未提交改动（带未提交改动的产物不可复现）。
-$dirtyFlag = if ([string]::IsNullOrWhiteSpace((git status --porcelain))) { 'false' } else { 'true' }
-
-Write-Host "=== delivery manifest: build=$BuildId commit=$Commit"
+    Write-Host "=== delivery manifest: build=$BuildId commit=$Commit"
 
     if ($DryRunRetry) {
         # Decision-only mode (early exit): report which suites the retry phase WOULD re-run, reading the
@@ -334,7 +331,7 @@ Write-Host "=== delivery manifest: build=$BuildId commit=$Commit"
         "--no-restore", "--",
         "--repo", $repositoryRoot,
         "--build", $BuildId,
-        "--commit", $Commit, "--dirty", $dirtyFlag,
+        "--commit", $Commit,
         "--publish", (Join-Path $repositoryRoot $PublishDirectory),
         "--results", (Join-Path $repositoryRoot $ResultsDirectory),
         "--changelog", (Join-Path $repositoryRoot $ChangelogDirectory),
