@@ -61,7 +61,11 @@ var request = new DeliveryCollectionRequest(
     arguments.GetValueOrDefault("changelog") ?? string.Empty,
     arguments.GetValueOrDefault("build") ?? string.Empty,
     arguments.GetValueOrDefault("commit") ?? string.Empty,
-    arguments.TryGetValue("extra-unverified", out var extra) ? [extra] : null);
+    arguments.TryGetValue("extra-unverified", out var extra) ? [extra] : null,
+    // R6：--dirty true|false（未提供 ⇒ 不传 ⇒ 记录保持 null = 尚未采集，绝不默认干净）。
+    // 参数名必须是记录里的 **WorkingTreeDirty**（C# 命名参数区分大小写）。
+    WorkingTreeDirty: string.Equals(
+        arguments.GetValueOrDefault("dirty"), "true", StringComparison.OrdinalIgnoreCase));
 
 if (DeliveryFactCollector.TryCollect(request, out var manifest, out var problems))
 {
