@@ -51,6 +51,29 @@ public sealed class BrowserBridgeServiceCollectionExtensionsTests
         Assert.NotNull(field);
         Assert.Same(accessor, field!.GetValue(factory));
     }
+    /// <summary>
+    /// **§5.4 组合根矩阵（必交付证据）**：只断言"某个服务被注册"是不够的 —— 两条传输（Bridge 与能力通道）
+    /// **必须共用同一个执行边界**；若各自解析出不同实例，就是"两套执行器/两套策略"的静默分裂
+    /// （方案 L205 要求注入**同一个** executor/authority/taskBindings/lifecycle）。
+    /// 这里用**重复解析同一实例**（singleton 语义）钉住这一点。
+    /// 注意：容器**必须异步释放**（`RemoteBrowserRuntime` 只实现 `IAsyncDisposable`）。
+    /// </summary>
+    [Fact]
+    public async Task CompositionRoot_HandsBothTransportsTheSameExecutorBoundary()
+    {
+        var services = new ServiceCollection();
+        services.AddDesktopBrowserAutomation(Options(PuddingHostMode.DesktopChild, enabled: true));
+        await using var provider = services.BuildServiceProvider();
+
+        var surface = provider.GetRequiredService<IDesktopBrowserCapabilitySurface>();
+        Assert.Same(surface, provider.GetRequiredService<IDesktopBrowserCapabilitySurface>());
+
+        var contextSurface = provider.GetRequiredService<IDesktopContextCapabilitySurface>();
+        Assert.Same(contextSurface, provider.GetRequiredService<IDesktopContextCapabilitySurface>());
+
+        var runtime = provider.GetRequiredService<IBrowserRuntime>();
+        Assert.Same(runtime, provider.GetRequiredService<IBrowserRuntime>());
+    }
     [Theory]
     [InlineData(PuddingHostMode.Console, false)]
     [InlineData(PuddingHostMode.Console, true)]
