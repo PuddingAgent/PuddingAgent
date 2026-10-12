@@ -286,7 +286,8 @@ try {
 
     # 构建身份（证据必须能指认构建）：git HEAD + 工作树是否 dirty + 探针 dll 哈希。
     $sourceSha = (git -C $repo rev-parse HEAD 2>$null | Select-Object -First 1)
-    $sourceDirty = ((git -C $repo status --porcelain 2>$null | Measure-Object).Count -gt 0)
+    $componentPaths = @('Source/PuddingSsh', 'Source/PuddingSshTests', 'Source/PuddingSsh.Probe', 'TestScripts/ssh-probe')
+    $sourceDirty = ((git -C $repo status --porcelain -- $componentPaths 2>$null | Measure-Object).Count -gt 0)
     $probeDllForHash = [System.IO.Path]::ChangeExtension($probeExePath, '.dll')
     $probeDllSha = if (Test-Path -LiteralPath $probeDllForHash) { (Get-FileHash -Algorithm SHA256 -LiteralPath $probeDllForHash).Hash } else { 'missing' }
     Write-Log "build source_sha=$sourceSha dirty=$sourceDirty probe_dll_sha256=$probeDllSha"
