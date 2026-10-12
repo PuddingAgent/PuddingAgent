@@ -37,6 +37,8 @@ public sealed class BrowserAutomationAuthority : IBrowserAutomationAuthority, IB
     /// 暴露它是因为"签发/准入"都需要一个**真实**的世代来源：伪造一个会让闸门变成"永远拒"，
     /// 而读不到就只能各自维护一份 —— 后者正是本仓库反复出现的漂移来源。
     /// </summary>
+    public DesktopProcessInstanceId ProcessInstanceId => _processInstanceId;
+
     public ConnectionGeneration ConnectionGeneration => _generation;
     private bool _isPaused;
     private bool _isUserTakeover;

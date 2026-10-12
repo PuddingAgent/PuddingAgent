@@ -112,6 +112,13 @@ public sealed class BrowserPageLifecycle
     // 授权/租约/世代这些内部模型 —— 于是这里给出**同一事实源**的最小门面。
 
     /// <summary>是否被暂停（读权威快照）。</summary>
+    /// <summary>
+    /// 账本命名空间（方案 §4.2）：**桌面进程实例 + 连接世代**。供 Shell 侧（Bridge 派发器）构造
+    /// 账本键 —— **只用标量/契约类型**，不暴露 Automation 的 authority 类型（否则 Shell 编译面会 CS0012）。
+    /// **世代进键** ⇒ 重连后的同 operationId 落在**新的命名空间**，不会被旧世代的记录误判为重复。
+    /// </summary>
+    public (string ProcessInstance, long Generation) LedgerNamespace =>
+        (_authority.ProcessInstanceId.Value, _authority.ConnectionGeneration.Value);
     public bool IsPaused => _authority.Capture().IsPaused;
 
     /// <summary>是否被用户接管（读权威快照）。</summary>

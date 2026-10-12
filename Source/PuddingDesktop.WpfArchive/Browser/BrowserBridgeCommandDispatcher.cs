@@ -77,7 +77,11 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
     {
         // 方案 §4.2：**账本是唯一幂等来源**。键 = (进程实例, 连接世代, operationId)；
         // 指纹含调用者身份与完整语义载荷 ⇒ 换调用者/换目标/换参数一律冲突，绝不跨调用者复用结果。
-        var key = new BrowserOperationLedgerKey("bridge", 0, command.OperationId.ToString("n"));
+        // 真实命名空间（进程实例 + 当前连接世代）——**不得用常量**：世代进键才能保证
+        // "重连后的同 ID 落在新命名空间、不被旧世代记录误判为重复"（方案 §4.2）。
+        var ledgerNamespace = _lifecycle.LedgerNamespace;
+        var key = new BrowserOperationLedgerKey(
+            ledgerNamespace.ProcessInstance, ledgerNamespace.Generation, command.OperationId.ToString("n"));
         var fingerprint = Fingerprint(command);
 
         while (true)
