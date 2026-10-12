@@ -108,6 +108,18 @@ public sealed record SubAgentInvocationRequest
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
     /// <summary>父 WorkUnit 在进入派生工具时的剩余预算。</summary>
     public ExecutionUsageBudget? UsageBudget { get; init; }
+
+    // ── §6.2 浏览器委派意图（**标量过桥**，与 SubAgentSpawnRequest 同形）────────────────
+    // 由**可信父执行上下文**填充（绝不接受模型参数自报）；PuddingCore 不引用 Pudding.Contracts
+    // ⇒ 用线名/标识字符串，强类型解析与校验在引用 Contracts 的 Runtime 侧完成（未知线名明确拒绝）。
+    /// <summary>父任务声明的浏览器委派目标 context；为空表示不委派浏览器权限。</summary>
+    public string? BrowserDelegationContextId { get; init; }
+
+    /// <summary>父任务声明的浏览器委派目标页（与 context 成对）。</summary>
+    public string? BrowserDelegationPageId { get; init; }
+
+    /// <summary>允许子运行使用的最小范围线名；未知线名由 Runtime 明确拒绝。</summary>
+    public string? BrowserDelegationScopeName { get; init; }
 }
 
 /// <summary>子代理调用结果。</summary>
