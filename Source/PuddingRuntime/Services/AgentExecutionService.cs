@@ -231,6 +231,7 @@ public sealed partial class AgentExecutionService
         _contextCompactionService = contextCompactionService;
         _postTurnMaintenance = new PostTurnMaintenanceScheduler(
             sessionExecutionGate, logger, admissionCoordinator);
+
         _conversationEventStore    = conversationEventStore;
         _compositionRecovery       = compositionRecovery;
         _runtimeExecutionConfig    = runtimeExecutionConfig;
@@ -2732,6 +2733,14 @@ public sealed partial class AgentExecutionService
             ? uri.Host
             : endpoint;
     }
+
+    /// <summary>
+    /// 复核 P1（停机接线）：停机时取消并等待终态后可选维护退出。
+    /// 由宿主的停机流程调用（见 PuddingHost 的 BackgroundMaintenanceShutdownHostedService）：
+    /// 维护是可选能力，停机不得被它拖住，但也必须给它协作取消与可诊断的退出窗口。
+    /// </summary>
+    public Task StopBackgroundMaintenanceAsync(TimeSpan? timeout = null)
+        => _postTurnMaintenance.StopAsync(timeout);
 
     internal static void RecordProviderContextUsageSnapshot(
         string sessionId,

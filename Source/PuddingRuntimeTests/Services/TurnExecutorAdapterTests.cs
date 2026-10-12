@@ -28,6 +28,71 @@ public sealed class TurnExecutorAdapterTests
         Assert.AreEqual("route missing", events[0].TerminalInfo?.ErrorMessage);
     }
 
+    /// <summary>
+    /// 复核 P1（前台租约接线）：真实 Turn 入口必须持有**同键 session 前台租约**，
+    /// 且该租约在整个 Turn 期间有效 —— 包括**超过消息入口 5 秒限时预留**之后。
+    /// 否则长 Turn 跨过预留窗口时，终态后可选维护会在 Turn 中途开工（抢占/提交）。
+    /// </summary>
+    [TestMethod]
+    public async Task ExecuteAsync_HoldsSessionForegroundLease_BeyondReservationWindow()
+    {
+        var coordinator = new AgentExecutionAdmissionCoordinator();
+        var runtime = new SlowRuntimeDispatcher(TimeSpan.FromSeconds(6));
+        var adapter = new TurnExecutorAdapter(
+            runtime,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TurnExecutorAdapter>.Instance,
+            coordinator);
+
+        // 维护按 session 注册后台工作（用调度器的同一注册面）。
+        using var maintenanceCts = new CancellationTokenSource();
+        using var background = coordinator.TryRegisterSessionBackground(
+            "default", "conversation-1", maintenanceCts);
+        Assert.IsNotNull(background, "前提：Turn 开始前应能注册同会话后台工作");
+
+        var sawDemandDuringTurn = false;
+        var sawDemandAfterReservationWindow = false;
+        var expectation = TimeSpan.FromSeconds(5.5);
+        var startedAt = DateTimeOffset.UtcNow;
+
+        await foreach (var evt in adapter.ExecuteAsync(CreateContext(), CancellationToken.None))
+        {
+            if (evt.Type != ConversationEventTypes.MessageContentAppended)
+                continue;
+
+            sawDemandDuringTurn = coordinator.HasSessionForegroundDemand("default", "conversation-1");
+            // 等到超过消息入口的默认 5 秒预留窗口再复查一次。
+            while (DateTimeOffset.UtcNow - startedAt < expectation)
+                await Task.Delay(100);
+
+            sawDemandAfterReservationWindow = coordinator.HasSessionForegroundDemand("default", "conversation-1");
+        }
+
+        Assert.IsTrue(sawDemandDuringTurn, "Turn 运行期间必须有 session 前台需求（租约）");
+        Assert.IsTrue(
+            sawDemandAfterReservationWindow,
+            "超过 5 秒预留窗口后仍必须由**租约**维持前台需求（限时预留会过期）");
+        Assert.IsTrue(maintenanceCts.IsCancellationRequested, "Turn 入口必须提前取消同会话后台工作");
+        Assert.IsFalse(
+            coordinator.HasSessionForegroundDemand("default", "conversation-1"),
+            "Turn 结束后（租约释放）不应再有前台需求");
+    }
+
+    /// <summary>先给一帧正文，再慢一段时间，最后给终态（模拟跨过预留窗口的长 Turn）。</summary>
+    private sealed class SlowRuntimeDispatcher(TimeSpan workDuration) : IRuntimeAgentDispatcher
+    {
+        public Task<RuntimeDispatchResult> DispatchAsync(RuntimeDispatchRequest request,
+            CancellationToken ct = default) => throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ServerSentEventFrame> DispatchStreamAsync(
+            RuntimeDispatchRequest request, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            yield return new ServerSentEventFrame("delta", "{\"text\":\"working\"}");
+            await Task.Delay(workDuration, ct);
+            yield return new ServerSentEventFrame("done", "{\"reply\":\"ok\"}");
+        }
+    }
+
     private sealed class ErrorRuntimeDispatcher(string payload) : IRuntimeAgentDispatcher
     {
         public Task<RuntimeDispatchResult> DispatchAsync(RuntimeDispatchRequest request,

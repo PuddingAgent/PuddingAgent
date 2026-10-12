@@ -288,6 +288,67 @@ public sealed class ContextCompactionCommitRevalidationTests
             "拒绝时不得推进代次");
     }
 
+    /// <summary>
+    /// 复核 P1（锁序）：后台压缩提交按 **SessionExecutionGate → CompactionCoordinator** 取锁 ——
+    /// 前台 Turn 持门期间它必须等在门外（且**不得**先占压缩锁），前台释放门后锁内重验前台需求，
+    /// 有需求即零写入让位。
+    /// </summary>
+    [TestMethod]
+    public async Task BackgroundCommit_TakesSessionGateFirst_ThenDefersOnForegroundDemand()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 10);
+        }
+
+        var coordinator = new CompactionCoordinator();
+        var admission = new AgentExecutionAdmissionCoordinator();
+        var gate = new SessionExecutionGate(NullLogger<SessionExecutionGate>.Instance);
+        var generator = new ImmediateSummaryGenerator();
+        var service = CreateService(options, generator, coordinator, admission, gate);
+
+        // 前台 Turn：持会话门 + 前台租约。
+        var foregroundGate = await gate.EnterAsync(SessionId, "foreground_turn");
+        using var foregroundLease = admission.AcquireSessionForeground(WorkspaceId, SessionId);
+
+        var compactTask = service.CompactAsync(CreateRequest() with { IsBackground = true });
+
+        // ① 它必须等在门外（还没完成），而且**没有**先占压缩锁 —— 否则会与前台互等。
+        var early = await Task.WhenAny(compactTask, Task.Delay(TimeSpan.FromMilliseconds(500)));
+        Assert.AreNotSame(compactTask, early, "前台持门时后台提交必须等在 SessionExecutionGate 外");
+        var compactionLockProbe = coordinator.AcquireAsync(SessionId);
+        var probeAcquired = await Task.WhenAny(compactionLockProbe, Task.Delay(TimeSpan.FromSeconds(2)));
+        Assert.AreSame(compactionLockProbe, probeAcquired, "等待门期间不得持有压缩锁（锁序：门 → 压缩锁）");
+        await using (var lease = await compactionLockProbe)
+        {
+            Assert.IsNotNull(lease);
+        }
+
+        // ② 前台释放门（但前台需求租约仍在）⇒ 后台进锁后必须重验并让位。
+        await foregroundGate.DisposeAsync();
+        var result = await compactTask.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.AreEqual(ContextCompactionOutcome.SkippedForegroundDemand, result.Outcome,
+            "锁内重验发现前台需求 ⇒ 零写入让位");
+
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"));
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.CompactedBy != null));
+        Assert.AreEqual(0, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration);
+    }
+
+    /// <summary>立即返回固定摘要的生成器（用于锁序用例）。</summary>
+    private sealed class ImmediateSummaryGenerator : IContextCompactionSummaryGenerator
+    {
+        public Task<string> GenerateSummaryAsync(
+            ContextCompactionSummaryRequest request,
+            CancellationToken ct = default)
+            => Task.FromResult("## 用户目标\n- 锁序用例：短提交。");
+    }
+
     // ── 装配 ────────────────────────────────────────────────────────────────
 
     private static ContextCompactionRequest CreateRequest() => new(
@@ -302,13 +363,15 @@ public sealed class ContextCompactionCommitRevalidationTests
         DbContextOptions<MemoryDbContext> options,
         IContextCompactionSummaryGenerator generator,
         CompactionCoordinator coordinator,
-        AgentExecutionAdmissionCoordinator? admission = null)
+        AgentExecutionAdmissionCoordinator? admission = null,
+        ISessionExecutionGate? sessionExecutionGate = null)
         => new(
             new TestFactory(options),
             generator,
             NullLogger<ContextCompactionService>.Instance,
             compactionCoordinator: coordinator,
-            admissionCoordinator: admission);
+            admissionCoordinator: admission,
+            sessionExecutionGate: sessionExecutionGate);
 
     private static async Task SeedAsync(MemoryDbContext db, int messageCount)
     {

@@ -65,6 +65,13 @@ public sealed class TurnExecutorAdapter(
             context.WorkspaceId,
             agentId);
 
+        // 复核 P1（前台租约接线）：**同键 session 前台租约**，覆盖「水合 → 终态释放」整段。
+        // 消息入口的 ReserveSessionForeground 只是**限时预留**（默认 5 秒即过期），
+        // 长 Turn 一旦跨过该窗口，后台可选维护就可能在 Turn 中途开工；这里用真正的租约把它挡住。
+        using var sessionForegroundLease = _admissionCoordinator.AcquireSessionForeground(
+            context.WorkspaceId,
+            context.ConversationId);
+
         var sawTerminal = false;
         var usageInvocationIndex = 0;
         var busyAttempt = 0;

@@ -46,7 +46,10 @@ public sealed class ContextCompactionService : IContextCompactionService
     private readonly ContextCompactionOptions? _options;
 
     /// <summary>R2：前后台准入（可选）。仅用于**后台**压缩在提交前重验前台需求。</summary>
-    private readonly PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? _admission;    private readonly IHookPublisher? _hookPublisher;
+    private readonly PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? _admission;
+
+    /// <summary>复核 P1：会话执行门（可选）。后台提交按 SessionExecutionGate → CompactionCoordinator 锁序。</summary>
+    private readonly ISessionExecutionGate? _sessionExecutionGate;    private readonly IHookPublisher? _hookPublisher;
     private readonly PuddingDataPaths? _dataPaths;
     private readonly CompactionCoordinator _coordinator;
     private readonly ISessionCompactionEventEmitter? _compactionEventEmitter;
@@ -67,7 +70,10 @@ public sealed class ContextCompactionService : IContextCompactionService
         ISessionCompactionEventEmitter? compactionEventEmitter = null,
         // R2：前后台准入（与消息受理/维护调度共用同一实例）。仅用于**后台**压缩在提交前重验
         // 「是否已出现前台需求」——有需求就让位给下一条消息，绝不把可选维护变成阻塞。
-        PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? admissionCoordinator = null)
+        PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? admissionCoordinator = null,
+        // 复核 P1（锁序）：后台压缩提交按规定锁序 **SessionExecutionGate → CompactionCoordinator**，
+        // 锁内重验前台需求；前台执行者（Turn）持租约期间后台不得抢提交。
+        ISessionExecutionGate? sessionExecutionGate = null)
     {
         _dbFactory = dbFactory;
         _summaryGenerator = summaryGenerator;
@@ -83,6 +89,7 @@ public sealed class ContextCompactionService : IContextCompactionService
         _coordinator = compactionCoordinator ?? new CompactionCoordinator();
         _compactionEventEmitter = compactionEventEmitter;
         _admission = admissionCoordinator;
+        _sessionExecutionGate = sessionExecutionGate;
     }
 
     /// <summary>压缩运行态：直接来自协调器的单飞锁持有状态（见 IContextCompactionService）。</summary>
@@ -969,6 +976,12 @@ public sealed class ContextCompactionService : IContextCompactionService
                 summary = AppendKeyFactsSection(summary, request.PreCompactionFacts);
 
         // ── R2：短锁重验 + 提交（与 warm-prefix 共用**同一提交原语**） ──
+        // 复核 P1（锁序）：**后台**提交按规定锁序 **SessionExecutionGate → CompactionCoordinator**。
+        // 门租约只覆盖这段短提交（生成阶段不持锁），且锁内会立刻重验前台需求：若有前台 Turn
+        // 在等门，下面的重验④会零写入让位并释放门 ⇒ 不阻塞安全消息、也不与前台互等（无死锁）。
+        await using var gateLease = request.IsBackground && _sessionExecutionGate is not null
+            ? await _sessionExecutionGate.EnterAsync(request.SessionId, "background_compaction_commit", ct)
+            : null;
         await using var commitLease = await _coordinator.AcquireAsync(request.SessionId, ct);
 
         // 重验 ① 代次：生成期间若有别的持久压缩提交，本候选已过期 ⇒ 零写入放弃。

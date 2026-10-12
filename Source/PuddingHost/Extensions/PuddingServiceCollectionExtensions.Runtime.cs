@@ -527,6 +527,11 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ITurnExecutor, TurnExecutorAdapter>();
         builder.Services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();
 
+        // 复核 P1（停机接线）：可选维护调度必须在停机时协作取消并等待退出。
+        builder.Services.AddHostedService(sp => new BackgroundMaintenanceShutdownHostedService(
+            sp.GetRequiredService<AgentExecutionService>(),
+            sp.GetRequiredService<ILogger<BackgroundMaintenanceShutdownHostedService>>()));
+
     }
 
 }
