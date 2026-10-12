@@ -87,7 +87,7 @@ public sealed record DeliveryManifest
     /// 校验规则：<c>Dirty == true</c> 时**不得**声明 <c>ready-for-external-deploy</c>。
     /// </summary>
     [JsonPropertyName("dirty")]
-    public bool? Dirty { get; }
+    public bool? Dirty { get; init; }
 
     /// <summary>交付产物（相对发布目录或绝对路径均可）。</summary>
     public IReadOnlyList<string> Artifacts { get; }
@@ -310,6 +310,20 @@ public static class DeliveryManifestValidator
         var changelogFilesScanned = ReadInt32(root, "changelogFilesScanned");
         var changelogFilesTotal = ReadInt32(root, "changelogFilesTotal");
         var retryNotes = ReadStringArray(root, "retryNotes");
+
+        // R6：dirty 三态 —— 缺省/不可解析一律 null（"尚未采集"），绝不默认 false。
+        // 用 init-only 属性在对象初始化器里赋值（**不进构造参数**：守卫的夹具生成器在
+        // 可空值类型的构造参数上会 NRE，见 changelog 诊断二）。
+        bool? dirty = null;
+        if (root.TryGetProperty("dirty", out var dirtyElement))
+        {
+            dirty = dirtyElement.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => null,
+            };
+        }
             var steps = ReadStringArray(root, "requiredExternalSteps");
 
             if (string.IsNullOrWhiteSpace(buildId))
@@ -360,7 +374,10 @@ public static class DeliveryManifestValidator
                 steps is { Count: > 0 } ? steps : DeliveryManifest.RequiredLifecycleSteps,
                 changelogFilesScanned,
                 changelogFilesTotal,
-                retryNotes);
+                retryNotes)
+            {
+                Dirty = dirty,
+            };
 
             problems = [];
             return true;
