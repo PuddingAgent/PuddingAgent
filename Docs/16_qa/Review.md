@@ -20,6 +20,7 @@ draft: false
 
 | 日期 | 主题 | 结论 | 报告 |
 |------|------|------|------|
+| 2026-10-08 | 浏览器自动化 B7 — 交付交接单与外部验收口径（判据/清单/命令/250ms 协议） | **待外部控制器** | [B7外部生命周期交接单-2026-10-08.md](B7外部生命周期交接单-2026-10-08.md) |
 | 2026-06-19 | Code Map V0.1→V0.2 — CodeOutline 守卫 + CodeSummary + ProjectMap | **FAIL** | [QA-2026-06-19-CodeMapV02.md](QA-2026-06-19-CodeMapV02.md) |
 | 2026-05-02 | PuddingPlatform 管理台合并入 PuddingAgent 单进程 (task-20260502-016) | **FAIL** | [QA-2026-05-02-PlatformAgentMerge.md](QA-2026-05-02-PlatformAgentMerge.md) |
 | 2026-05-03 | 前端风格统一 — Chat 页面迁移至 React SPA | **PASS_WITH_NOTES** | [QA-2026-05-03-ChatPageMigration.md](QA-2026-05-03-ChatPageMigration.md) |
