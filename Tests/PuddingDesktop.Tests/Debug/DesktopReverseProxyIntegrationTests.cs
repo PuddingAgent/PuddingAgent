@@ -274,13 +274,28 @@ public sealed class DesktopReverseProxyIntegrationTests : IDisposable
 
         public static FakeUpstream Start(Func<HttpListenerContext, Task> handler)
         {
-            var port = GetFreeLoopbackPort();
-            var listener = new HttpListener();
-            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-            listener.Start();
-            var upstream = new FakeUpstream(listener, port);
-            _ = Task.Run(() => upstream.LoopAsync(handler));
-            return upstream;
+            // 端口竞态守卫（与 StartProxy 同理）：GetFreeLoopbackPort() 只是"取一个当前空闲的端口"，
+            // 到 HttpListener 真正绑定时可能已被占用 ⇒ Windows 抛 HttpListenerException("拒绝访问")。
+            // 2026-10-08 实测：整链连跑时该上游监听器同样会间歇触发，故这里也换端口重试。
+            for (var attempt = 1; ; attempt++)
+            {
+                var port = GetFreeLoopbackPort();
+                var listener = new HttpListener();
+                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                try
+                {
+                    listener.Start();
+                }
+                catch (HttpListenerException) when (attempt < 5)
+                {
+                    listener.Close();
+                    continue;
+                }
+
+                var upstream = new FakeUpstream(listener, port);
+                _ = Task.Run(() => upstream.LoopAsync(handler));
+                return upstream;
+            }
         }
 
         private async Task LoopAsync(Func<HttpListenerContext, Task> handler)
