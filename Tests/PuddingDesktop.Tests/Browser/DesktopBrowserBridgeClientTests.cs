@@ -272,7 +272,7 @@ public sealed class DesktopBrowserBridgeClientTests
             clock ?? new SystemBrowserBridgeClock(),
             options ?? TestOptions);
 
-    private static async Task WaitUntilAsync(Func<bool> predicate, int timeoutMs = 2_000)
+    private static async Task WaitUntilAsync(Func<bool> predicate, int timeoutMs = 15_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (!predicate())

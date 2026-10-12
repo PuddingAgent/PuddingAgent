@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.WebSockets;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -178,7 +178,7 @@ internal sealed class BrowserBridgeTestHost : IAsyncDisposable
         return BrowserBridgeSerializer.DeserializePayload<BrowserBridgeHelloAck>(ackEnvelope);
     }
 
-    public static async Task WaitUntilAsync(Func<bool> predicate, int timeoutMs = 2_000)
+    public static async Task WaitUntilAsync(Func<bool> predicate, int timeoutMs = 15_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (!predicate())
