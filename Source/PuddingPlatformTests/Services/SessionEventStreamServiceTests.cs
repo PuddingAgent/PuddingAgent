@@ -329,7 +329,9 @@ public sealed class SessionEventStreamServiceTests
             }
         });
 
-    private static async Task WaitUntilAsync(Func<bool> condition)
+    private static async Task WaitUntilAsync(
+        Func<bool> condition,
+        [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(condition))] string? expression = null)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (DateTime.UtcNow < deadline)
@@ -340,7 +342,7 @@ public sealed class SessionEventStreamServiceTests
             await Task.Delay(10);
         }
 
-        Assert.Fail("条件在 10 秒内没有成立");
+        Assert.Fail($"条件在 10 秒内没有成立: {expression ?? "<unknown condition>"}");
     }
 
     /// <summary>
