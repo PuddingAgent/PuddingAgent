@@ -65,6 +65,22 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "    shell build: OK"
 
+# ── 发布产物守卫（2026-10-08）──────────────────────────────────────────────
+# 链的"事实来源"包含 Desktop 发布目录（DeliveryFactCollector 会在其不存在时加入一条事实，
+# 从而拒绝产出清单）。该目录**不在链的步骤内** ⇒ 缺失时**自行发布**（存在时零成本）。
+$repoRootForPublish = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$publishPath = Join-Path $repoRootForPublish $PublishDirectory
+if (-not (Test-Path $publishPath)) {
+    Write-Host ""
+    Write-Host "=== step 0b/4: publish the Desktop preview (missing: $PublishDirectory) ==="
+    & dotnet publish (Join-Path $repoRootForPublish 'Source\PuddingDesktop\PuddingDesktop.csproj') -c Release -o $publishPath --nologo | Out-String | Write-Host
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $publishPath)) {
+        Write-Host "PUBLISH-FAILED: the Desktop preview could not be produced => refusing to emit a manifest"
+        exit 1
+    }
+}
+Write-Host "    publish dir: OK ($PublishDirectory)"
+
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repositoryRoot
