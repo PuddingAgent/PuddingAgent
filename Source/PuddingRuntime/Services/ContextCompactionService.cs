@@ -602,7 +602,13 @@ public sealed class ContextCompactionService : IContextCompactionService
         MessageEntity summaryMessage,
         CompactionCoverageManifestEntity manifestEntity,
         IReadOnlyList<MessageEntity> rows,
-        CancellationToken ct)
+        CancellationToken ct,
+        /// <summary>
+        /// 冻结的候选行版本期望（顺序与 <paramref name="rows"/> 对应）。给出时，覆盖标注的
+        /// 条件更新会额外要求 **顺序 + 角色 + 正文 hash** 未变 —— 把版本条件纳入事务内 CAS，
+        /// 而不只是「未覆盖」。为 null 时保持原语义（warm-prefix 的身份 CAS 在应用边界完成）。
+        /// </summary>
+        IReadOnlyList<FrozenCoverageRow>? expectedRows = null)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
@@ -635,24 +641,43 @@ public sealed class ContextCompactionService : IContextCompactionService
                 TargetGeneration: currentGeneration);
         }
 
-        foreach (var row in rows)
+        for (var index = 0; index < rows.Count; index++)
         {
+            var row = rows[index];
             var fallbackHash = row.CanonicalContentHash ?? CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty);
-            var markedRows = await db.Database.ExecuteSqlAsync(
-                $"""
-                 UPDATE Messages SET CompactedBy = {summaryMessage.MessageId},
-                     CanonicalContentHash = COALESCE(CanonicalContentHash, {fallbackHash})
-                 WHERE MessageId = {row.MessageId} AND SessionId = {sessionId} AND CompactedBy IS NULL
-                 """,
-                ct);
+            var expected = expectedRows is not null && index < expectedRows.Count ? expectedRows[index] : null;
+
+            // 版本条件（给出期望时）：顺序 + 角色 + 正文 hash 必须与冻结值一致。
+            // 正文 hash 用 SQLite 侧 sha256 不现实，因此把冻结 hash 与「读库重算」分开：
+            // 这里比较 Sequence/Role（廉价、可入 WHERE），正文一致性由上层的读库重算把关 +
+            // 下方 `Content` 全等条件兜底（Content 为 NULL 时用 IS NULL 语义处理）。
+            var markedRows = expected is null
+                ? await db.Database.ExecuteSqlAsync(
+                    $"""
+                     UPDATE Messages SET CompactedBy = {summaryMessage.MessageId},
+                         CanonicalContentHash = COALESCE(CanonicalContentHash, {fallbackHash})
+                     WHERE MessageId = {row.MessageId} AND SessionId = {sessionId} AND CompactedBy IS NULL
+                     """,
+                    ct)
+                : await db.Database.ExecuteSqlAsync(
+                    $"""
+                     UPDATE Messages SET CompactedBy = {summaryMessage.MessageId},
+                         CanonicalContentHash = COALESCE(CanonicalContentHash, {fallbackHash})
+                     WHERE MessageId = {row.MessageId} AND SessionId = {sessionId} AND CompactedBy IS NULL
+                         AND Sequence = {expected.Sequence} AND Role = {expected.Role}
+                         AND Content IS NOT NULL AND Content = {row.Content}
+                     """,
+                    ct);
+
             if (markedRows != 1)
             {
                 await transaction.RollbackAsync(ct);
                 _logger.LogWarning(
-                    "[ContextCompaction] Checkpoint commit lost coverage CAS session={Session} compactionId={CompactionId} messageId={MessageId}",
+                    "[ContextCompaction] Checkpoint commit lost coverage CAS session={Session} compactionId={CompactionId} messageId={MessageId} versionChecked={VersionChecked}",
                     sessionId,
                     compactionId,
-                    row.MessageId);
+                    row.MessageId,
+                    expected is not null);
                 return new WarmPrefixCheckpointCommitResult(
                     WarmPrefixCheckpointCommitStatus.AlreadyCovered,
                     ProblemMessageIds: [row.MessageId]);
@@ -729,21 +754,19 @@ public sealed class ContextCompactionService : IContextCompactionService
         // 滚动摘要链：旧代 compact_summary 与普通 text 消息一起进入下一代压缩输入，
         // 压缩后由新摘要统一标记 CompactedBy——否则每代压缩各留一条独立摘要，
         // 重水合窗口里逐代堆积（设计 §9"唯一 summary chain"）。
-        var candidates = activeMessages
-            .Where(m => string.Equals(m.ContentType, "text", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(m.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase))
-            .Where(m => !string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(m.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(m => m.Sequence)
-            .ToList();
-
-        var messagesToCompact = candidates
-            .Take(Math.Max(0, candidates.Count - RecentMessagesToKeep))
-            .ToList();
+        // **冻结与提交共用同一个选择函数**：提交时重新读库重算，才能发现候选窗口已变。
+        var window = SelectCandidateWindow(activeMessages);
+        var candidates = window.Candidates;
+        var messagesToCompact = window.ToCompact;
 
         _logger.LogInformation(
             "[ContextCompaction:Phase] filter session={SessionId} candidates={Candidates} toCompact={ToCompact} keepRecent={KeepRecent}",
             request.SessionId, candidates.Count, messagesToCompact.Count, RecentMessagesToKeep);
+
+        // 冻结候选行的**版本期望**（提交时既用于重算比对，也用于事务内条件更新）。
+        var frozenCoverageRows = ProjectCoverageRows(messagesToCompact);
+        // 冻结**整个候选窗口**（含保留尾部）：复核要求提交时同时核对「候选行及保留区间」。
+        var frozenCandidateRows = ProjectCoverageRows(candidates);
 
         if (candidates.Count == 0)
         {
@@ -958,8 +981,29 @@ public sealed class ContextCompactionService : IContextCompactionService
             return await FinishNoOpAsync(ContextCompactionOutcome.SkippedStaleCandidate);
         }
 
-        // 重验 ② revision：候选窗口指纹（代际 + MessageId + 正文 hash）必须未变。
-        var commitFingerprint = ComputeCandidateFingerprint(commitGeneration, messagesToCompact);
+        // 重验 ② revision：**重新读库（NoTracking）**并按同一规则重算候选窗口。
+        // 正文修改、删除、追加、角色/顺序变化、保留区间变化都会让重算结果与冻结值不一致 ⇒ 零写入拒绝。
+        var commitActiveMessages = await LoadActiveMessagesAsync(db, request.SessionId, ct, asNoTracking: true);
+        var commitWindow = SelectCandidateWindow(commitActiveMessages);
+        var commitCandidateRows = ProjectCoverageRows(commitWindow.Candidates);
+        var commitCoverageRows = ProjectCoverageRows(commitWindow.ToCompact);
+        if (!CoverageRowsMatch(frozenCandidateRows, commitCandidateRows))
+        {
+            _logger.LogInformation(
+                "[ContextCompaction:Stale] commit rejected (candidate window changed on re-read) session={SessionId} compactionId={CompactionId} frozenCandidates={Frozen} currentCandidates={Current}",
+                request.SessionId, compactionId, frozenCandidateRows.Length, commitCandidateRows.Length);
+            return await FinishNoOpAsync(ContextCompactionOutcome.SkippedStaleCandidate);
+        }
+
+        if (!CoverageRowsMatch(frozenCoverageRows, commitCoverageRows))
+        {
+            _logger.LogInformation(
+                "[ContextCompaction:Stale] commit rejected (covered span changed on re-read) session={SessionId} compactionId={CompactionId} frozenRows={Frozen} currentRows={Current}",
+                request.SessionId, compactionId, frozenCoverageRows.Length, commitCoverageRows.Length);
+            return await FinishNoOpAsync(ContextCompactionOutcome.SkippedStaleCandidate);
+        }
+
+        var commitFingerprint = ComputeCandidateFingerprint(commitGeneration, commitWindow.ToCompact);
         if (!string.Equals(commitFingerprint, candidateFingerprint, StringComparison.Ordinal))
         {
             _logger.LogInformation(
@@ -1123,8 +1167,10 @@ public sealed class ContextCompactionService : IContextCompactionService
             targetGeneration,
             summaryMessage,
             manifestEntity,
-            messagesToCompact,
-            ct);
+            commitWindow.ToCompact,
+            ct,
+            // 事务内 CAS 也带上冻结版本（顺序/角色/正文），与上面的读库重算形成两道闸门。
+            expectedRows: frozenCoverageRows);
         if (commit.Status != WarmPrefixCheckpointCommitStatus.Committed)
         {
             _logger.LogWarning(
@@ -1579,7 +1625,10 @@ public sealed class ContextCompactionService : IContextCompactionService
     private static async Task<List<MessageEntity>> LoadActiveMessagesAsync(
         MemoryDbContext db,
         string sessionId,
-        CancellationToken ct)
+        CancellationToken ct,
+        // 提交前重算候选窗口时必须**绕过变更跟踪**：同一 DbContext 里的跟踪实体会返回冻结时的旧值，
+        // 那样「读库重算」就等于读内存副本（复核探针正是打穿这一点）。
+        bool asNoTracking = false)
     {
         var activeMessages = new List<MessageEntity>();
         long? lastSequence = null;
@@ -1588,6 +1637,8 @@ public sealed class ContextCompactionService : IContextCompactionService
         {
             var query = db.Messages
                 .Where(m => m.SessionId == sessionId && m.CompactedBy == null);
+            if (asNoTracking)
+                query = query.AsNoTracking();
             if (lastSequence is not null)
                 query = query.Where(m => m.Sequence > lastSequence.Value);
 
@@ -1676,10 +1727,75 @@ public sealed class ContextCompactionService : IContextCompactionService
     /// MessageId 与正文 SHA-256（复用 manifest sourceHashes 的同一原语）。
     /// 只用已加载内存实体，不额外扫描历史；同一窗口同一代际 ⇔ 指纹相等。
     /// </summary>
+    /// <summary>
+    /// 候选窗口选择（冻结与提交共用）。同一个函数在两处使用，才能保证「提交时重算」与冻结时同规则，
+    /// 从而让正文修改 / 删除 / 追加 / 角色顺序变化都能被比对出来。
+    /// </summary>
+    private static (List<MessageEntity> Candidates, List<MessageEntity> ToCompact) SelectCandidateWindow(
+        IReadOnlyList<MessageEntity> activeMessages)
+    {
+        var candidates = activeMessages
+            .Where(m => string.Equals(m.ContentType, "text", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase))
+            .Where(m => !string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(m => m.Sequence)
+            .ToList();
+
+        var toCompact = candidates
+            .Take(Math.Max(0, candidates.Count - RecentMessagesToKeep))
+            .ToList();
+
+        return (candidates, toCompact);
+    }
+
+    /// <summary>
+    /// 冻结的候选行**版本期望**：提交时既用于重算比对，也作为事务内条件更新的一部分
+    /// （正文 hash + 顺序 + 角色），使「读库重算」与「事务内 CAS」两道闸门都拦截过期候选。
+    /// </summary>
+    private sealed record FrozenCoverageRow(
+        string MessageId,
+        long Sequence,
+        string Role,
+        string ContentHash);
+
+    /// <summary>把库里的候选行投影为版本期望（用于与冻结值逐项比对）。</summary>
+    private static FrozenCoverageRow[] ProjectCoverageRows(IReadOnlyList<MessageEntity> rows)
+        => rows
+            .Select(m => new FrozenCoverageRow(
+                m.MessageId,
+                m.Sequence,
+                m.Role ?? string.Empty,
+                CompositionSnapshot.Sha256Hex(m.Content ?? string.Empty)))
+            .ToArray();
+
+    /// <summary>两个版本期望序列必须逐项一致（顺序敏感：Sequence 变化即视为窗口已变）。</summary>
+    private static bool CoverageRowsMatch(
+        IReadOnlyList<FrozenCoverageRow> frozen,
+        IReadOnlyList<FrozenCoverageRow> current)
+    {
+        if (frozen.Count != current.Count)
+            return false;
+
+        for (var i = 0; i < frozen.Count; i++)
+        {
+            var a = frozen[i];
+            var b = current[i];
+            if (!string.Equals(a.MessageId, b.MessageId, StringComparison.Ordinal)
+                || a.Sequence != b.Sequence
+                || !string.Equals(a.Role, b.Role, StringComparison.Ordinal)
+                || !string.Equals(a.ContentHash, b.ContentHash, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static string ComputeCandidateFingerprint(
         int generation,
-        IReadOnlyList<MessageEntity> candidateWindow)
-    {
+        IReadOnlyList<MessageEntity> candidateWindow)    {
         var sb = new System.Text.StringBuilder();
         sb.Append(CompactionCandidateFingerprintVersion).Append('|').Append(generation);
         foreach (var message in candidateWindow)

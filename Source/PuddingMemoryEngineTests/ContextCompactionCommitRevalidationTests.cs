@@ -173,6 +173,121 @@ public sealed class ContextCompactionCommitRevalidationTests
         Assert.AreEqual(1, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"));
     }
 
+    // ── 复核新发现的 P1：提交时必须**读库重算候选窗口**（内存副本不足为凭） ──────────
+    // 生成阶段被屏障卡住期间修改数据库，释放屏障后必须拒绝且零写入。
+
+    /// <summary>正文被改写 ⇒ 拒绝。</summary>
+    [TestMethod]
+    public async Task CandidateContentMutatedDuringGeneration_IsRejected()
+        => await AssertMutationDuringGenerationIsRejectedAsync(async db =>
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE Messages SET Content = 'tampered content' WHERE SessionId = {0} AND MessageId = 'msg-1'",
+                SessionId);
+        });
+
+    /// <summary>候选行被删除 ⇒ 拒绝。</summary>
+    [TestMethod]
+    public async Task CandidateRowDeletedDuringGeneration_IsRejected()
+        => await AssertMutationDuringGenerationIsRejectedAsync(async db =>
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM Messages WHERE SessionId = {0} AND MessageId = 'msg-1'",
+                SessionId);
+        });
+
+    /// <summary>追加新消息 ⇒ 候选窗口变化 ⇒ 拒绝。</summary>
+    [TestMethod]
+    public async Task MessageAppendedDuringGeneration_IsRejected()
+        => await AssertMutationDuringGenerationIsRejectedAsync(async db =>
+        {
+            db.Messages.Add(new MessageEntity
+            {
+                MessageId = "msg-appended",
+                SessionId = SessionId,
+                Sequence = 99,
+                Role = "user",
+                ContentType = "text",
+                Content = "appended during generation",
+                CreatedAt = 99,
+            });
+            await db.SaveChangesAsync();
+        });
+
+    /// <summary>角色/顺序被改（工具调用参数等载荷变化走同一条内容 hash 判据）⇒ 拒绝。</summary>
+    [TestMethod]
+    public async Task CandidateRoleOrOrderChangedDuringGeneration_IsRejected()
+        => await AssertMutationDuringGenerationIsRejectedAsync(async db =>
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE Messages SET Role = 'system' WHERE SessionId = {0} AND MessageId = 'msg-2'",
+                SessionId);
+        });
+
+    /// <summary>**保留区间**的正文被改写也必须拒绝（复核要求覆盖「候选行及保留区间」）。</summary>
+    [TestMethod]
+    public async Task RetainedTailMutatedDuringGeneration_IsRejected()
+        => await AssertMutationDuringGenerationIsRejectedAsync(async db =>
+        {
+            // msg-10 属于保留尾部（RecentMessagesToKeep = 6），不在被覆盖跨度内。
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE Messages SET Content = 'retained tampered' WHERE SessionId = {0} AND MessageId = 'msg-10'",
+                SessionId);
+        });
+
+    private static async Task AssertMutationDuringGenerationIsRejectedAsync(
+        Func<MemoryDbContext, Task> mutate)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 10);
+        }
+
+        var coordinator = new CompactionCoordinator();
+        var generator = new BlockingSummaryGenerator();
+        var service = CreateService(options, generator, coordinator);
+
+        var compactTask = service.CompactAsync(CreateRequest());
+        await generator.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // 生成期间改动数据库（模拟别的写者/工具回执落地）。
+        await using (var mutator = new MemoryDbContext(options))
+        {
+            await mutate(mutator);
+        }
+
+        generator.Barrier.SetResult();
+        var result = await compactTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.AreEqual(
+            ContextCompactionOutcome.SkippedStaleCandidate,
+            result.Outcome,
+            "生成期间数据库已变 ⇒ 提交必须零写入拒绝");
+        Assert.AreEqual(string.Empty, result.SummaryMessageId);
+
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(
+            0,
+            await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"),
+            "拒绝时不得写摘要行");
+        Assert.AreEqual(
+            0,
+            await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.CompactedBy != null),
+            "拒绝时不得打覆盖标注");
+        Assert.AreEqual(
+            0,
+            await verify.CompactionCoverageManifests.CountAsync(m => m.SessionId == SessionId),
+            "拒绝时不得写覆盖清单");
+        Assert.AreEqual(
+            0,
+            (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration,
+            "拒绝时不得推进代次");
+    }
+
     // ── 装配 ────────────────────────────────────────────────────────────────
 
     private static ContextCompactionRequest CreateRequest() => new(
