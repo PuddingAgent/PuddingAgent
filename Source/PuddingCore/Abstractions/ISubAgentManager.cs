@@ -155,6 +155,21 @@ public sealed record SubAgentSpawnRequest
     /// <summary>调度边界归一化后的子代理绝对截止时间。</summary>
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public string? InvocationId { get; init; }
+
+    // ── §6.2 浏览器委派意图（**标量过桥**）────────────────────────────────────────────
+    // 为什么用 string 而不是 DesktopPageTarget/BrowserPageGrantScope：本程序集（PuddingCore）
+    // **只引用 PuddingDiagnostics，不引用 Pudding.Contracts** ⇒ 直接放强类型会制造
+    // Core → Contracts 的反向依赖（违反"依赖方向由编译期强制"）。由**引用 Contracts 的 Runtime**
+    // 在投影时解析成强类型；**未知线名一律明确拒绝**，绝不静默当成"没有委派"。
+
+    /// <summary>父任务声明的浏览器委派目标 context；为空表示不为子运行委派任何浏览器权限。</summary>
+    public string? BrowserDelegationContextId { get; init; }
+
+    /// <summary>父任务声明的浏览器委派目标页（与 context 成对；只给其一会由 Runtime 明确拒绝）。</summary>
+    public string? BrowserDelegationPageId { get; init; }
+
+    /// <summary>允许子运行使用的最小范围线名（`read`/`write` 等）；未知线名由 Runtime 明确拒绝。</summary>
+    public string? BrowserDelegationScopeName { get; init; }
     public string? BatchId { get; init; }
     public string OriginToolId { get; init; } = "spawn_sub_agent";
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
