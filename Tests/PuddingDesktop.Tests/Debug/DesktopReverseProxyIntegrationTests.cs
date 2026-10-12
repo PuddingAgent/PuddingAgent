@@ -205,13 +205,26 @@ public sealed class DesktopReverseProxyIntegrationTests : IDisposable
 
     private DesktopReverseProxy StartProxy(int backendPort, int frontendPort)
     {
-        var proxy = new DesktopReverseProxy(
-            new Uri($"http://127.0.0.1:{backendPort}"),
-            new Uri($"http://127.0.0.1:{frontendPort}"),
-            GetFreeLoopbackPort());
-        proxy.Start();
-        _proxies.Add(proxy);
-        return proxy;
+        // 端口竞态守卫：GetFreeLoopbackPort() 只是"取一个当前空闲的端口"，
+        // 到 HttpListener 真正绑定时可能已被占用 ⇒ Windows 会抛 HttpListenerException("拒绝访问")。
+        // 这是**环境型 flake**（2026-10-08 实测：连跑链第 3 次触发），因此换端口重试而不是放宽断言。
+        for (var attempt = 1; ; attempt++)
+        {
+            var proxy = new DesktopReverseProxy(
+                new Uri($"http://127.0.0.1:{backendPort}"),
+                new Uri($"http://127.0.0.1:{frontendPort}"),
+                GetFreeLoopbackPort());
+            try
+            {
+                proxy.Start();
+                _proxies.Add(proxy);
+                return proxy;
+            }
+            catch (HttpListenerException) when (attempt < 5)
+            {
+                proxy.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        }
     }
 
     private static async Task WriteTextAsync(HttpListenerResponse response, string text, string contentType)
