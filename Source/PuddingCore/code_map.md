@@ -25,6 +25,7 @@
 | 文件/目录 | 用途 |
 |------|------|
 | `Abstractions/` | 核心接口定义 |
+| `Abstractions/IBrowserDelegationLifecycle.cs` | **委派生命周期端口**（R4·§6.2）：Runtime/Platform 与 Host 之间**唯一接缝**，**只用标量**（`PuddingCore` 不引用 `Contracts`）；拒绝必须**可判且带理由**（调用方据此 fail-closed） |
 | `Core/` | 核心实现 |
 | `Platform/` | 平台抽象 |
 | `Abstractions/ILlmGatewayUsageRecorder.cs` | 一次 Provider usage 对应一条本地计费事实的必达写入契约 |
