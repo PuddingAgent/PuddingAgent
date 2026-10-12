@@ -62,7 +62,9 @@ var request = new DeliveryCollectionRequest(
     arguments.GetValueOrDefault("build") ?? string.Empty,
     arguments.GetValueOrDefault("commit") ?? string.Empty,
     arguments.TryGetValue("extra-unverified", out var extra) ? [extra] : null,
-    WorkingTreeDirty: string.Equals(arguments.GetValueOrDefault("dirty"), "true", StringComparison.OrdinalIgnoreCase));
+    WorkingTreeDirty: arguments.TryGetValue("dirty", out var dirtyValue)
+        ? string.Equals(dirtyValue, "true", StringComparison.OrdinalIgnoreCase)
+        : null);
 
 if (DeliveryFactCollector.TryCollect(request, out var manifest, out var problems))
 {
