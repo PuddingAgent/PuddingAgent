@@ -680,6 +680,7 @@ public sealed class BrowserWorkspaceController :
                 BrowserBridgeCommandNames.PageLocate => await HandlePageLocateAsync(command, ct),
                 BrowserBridgeCommandNames.PageInteract => await HandlePageInteractAsync(command, ct),
                 BrowserBridgeCommandNames.PageWaitFor => await HandlePageWaitForAsync(command, ct),
+                BrowserBridgeCommandNames.PageScreenshot => await HandlePageScreenshotAsync(command, ct),
                 _ => Error(command.OperationId, BrowserBridgeErrorCodes.BrowserOperationNotSupported,
                     $"Unknown command: {command.Name}")
             };
@@ -874,6 +875,109 @@ public sealed class BrowserWorkspaceController :
             case "stop": await StopAsync(pageId.Value, ct); break;
         }
         return Success(command.OperationId, BuildPageDescriptor(page, pageId.Value));
+    }
+
+    private async Task<BrowserBridgeCommandResult> HandlePageScreenshotAsync(
+        BrowserBridgeCommand command, CancellationToken ct)
+    {
+        if (_capabilityExecutor is not { } executor)
+        {
+            return Error(
+                command.OperationId,
+                BrowserBridgeErrorCodes.BrowserOperationNotSupported,
+                "screenshot is not available over the bridge transport in this host configuration");
+        }
+
+        var page = ResolvePage(command, out var pageId);
+        if (page is null)
+        {
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserPageNotFound, "Page not found");
+        }
+
+        var args = DeserializeArgs<PageScreenshotArguments>(command);
+        if (args is null || args.ExpectedPageVersion <= 0)
+        {
+            return Error(
+                command.OperationId,
+                BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                "screenshot must pin expected_page_version (> 0): an observation is only valid within the version it captured");
+        }
+
+        var scope = DesktopScreenshotScope.Viewport;
+        if (!string.IsNullOrWhiteSpace(args.Scope) && !DesktopScreenshotScopeWire.TryParse(args.Scope, out scope))
+        {
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                "screenshot scope is not registered (viewport, region, full_page)");
+        }
+
+        var detail = DesktopScreenshotDetail.Low;
+        if (!string.IsNullOrWhiteSpace(args.Detail) && !DesktopScreenshotDetailWire.TryParse(args.Detail, out detail))
+        {
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                "screenshot detail is not registered (low, high, original)");
+        }
+
+        var identity = BridgeCallerContext.Create(
+            new DesktopInstanceId("default"),
+            new OperationId(command.OperationId.ToString("N")),
+            command.DeadlineUtc,
+            correlationId: null,
+            command.Caller?.Kind,
+            command.Caller?.CallerId,
+            command.Caller?.TaskId,
+            command.Caller?.ParentTaskId);
+        if (identity.IsFailure)
+        {
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserUnauthorized, identity.Error!.Message);
+        }
+
+        if (!DesktopCapabilities.TryGetByName("browser.screenshot", out var descriptor))
+        {
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserOperationNotSupported,
+                "the screenshot capability is not registered in this build");
+        }
+
+        var target = new DesktopPageTarget(command.ContextId ?? string.Empty, pageId.Value);
+        var request = DesktopCapabilityRequest.ForScreenshot(new BrowserScreenshotRequest(
+            target,
+            DesktopPageVersion.Require(args.ExpectedPageVersion),
+            scope,
+            detail,
+            locator: null,
+            regionX: args.RegionX,
+            regionY: args.RegionY,
+            regionWidth: args.RegionWidth,
+            regionHeight: args.RegionHeight,
+            format: string.IsNullOrWhiteSpace(args.Format) ? "png" : args.Format!.Trim()));
+
+        var response = await executor.ExecuteAsync(descriptor, request, identity.Value, ct);
+        if (response.IsFailure)
+        {
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserOperationFailed, response.Error!.Message);
+        }
+
+        if (response.Screenshot is not { } shot)
+        {
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                "screenshot response payload is missing");
+        }
+
+        return Success(command.OperationId, new BrowserScreenshotDescriptor
+        {
+            ObservationId = shot.Metadata.ObservationId,
+            MimeType = shot.Metadata.MimeType,
+            ByteCount = shot.Metadata.ByteCount,
+            OutputWidth = shot.Metadata.OutputWidth,
+            OutputHeight = shot.Metadata.OutputHeight,
+            PageVersion = shot.Metadata.PageVersion,
+            Detail = DesktopScreenshotDetailWire.NameOf(shot.Metadata.Detail),
+            Chunks = shot.Chunks.Select(chunk => new BrowserScreenshotChunkDescriptor
+            {
+                Index = chunk.Index,
+                IsLast = chunk.IsLast,
+                Base64 = Convert.ToBase64String(chunk.Data),
+            }).ToArray(),
+        });
     }
 
     private async Task<BrowserBridgeCommandResult> HandlePageSnapshotAsync(
