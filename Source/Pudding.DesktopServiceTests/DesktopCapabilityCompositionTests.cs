@@ -24,6 +24,38 @@ public sealed class DesktopCapabilityCompositionTests
     /// §5.4：**关闭态是正常路径** —— 不构造、不启动，把控制权完整留给既有 Bridge；
     /// 因此这一步**不得**产生第二份控制权状态（同一 lifecycle 的 `Authority` 必须保持**同一实例**）。
     /// </summary>
+    /// <summary>
+    /// §5.4：**唯一权威由外部注入、被共享，绝不被复制** —— 组合根把同一个 `lifecycle.Authority`
+    /// 同时交给能力通道与既有 Bridge 路径。若服务自己新建一份权威，两条传输就会各有一套控制权状态。
+    /// 这条用例钉住"注入即共享"：用同一个 lifecycle 建两份服务（模拟两条传输各一份）⇒ 权威仍是同一实例。
+    /// </summary>
+    [Fact]
+    public void TwoServicesBuiltFromTheSameLifecycleShareOneAuthority()
+    {
+        var clock = new TestTimeProvider();
+        var lifecycle = BrowserPageLifecycle.Create(
+            new DesktopInstanceId("desk-share"), new DesktopProcessInstanceId("proc-share"), clock);
+
+        DesktopService Build() => new(
+            new ManualUiDispatcher { HasThreadAccess = true },
+            new RecordingUiSurface(),
+            lifecycle.PageTargets,
+            new DesktopServiceOptions
+            {
+                AllowedCapabilities = DesktopCapability.BrowserBindingApply | DesktopCapability.BrowserBindingRevoke,
+                BrowserContextCallerTrust = DesktopContextTrust.AgentAuthorized,
+            },
+            lifecycle.Authority,
+            clock,
+            () => ConnectionGeneration.Require(4),
+            taskBindings: null);
+
+        var bridgeSide = Build();
+        var channelSide = Build();
+
+        Assert.Same(lifecycle.Authority, bridgeSide.Authority);
+        Assert.Same(bridgeSide.Authority, channelSide.Authority);
+    }
     [Fact]
     public async Task DisabledChannelLeavesTheSingleAuthorityUntouched()
     {
