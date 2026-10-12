@@ -42,7 +42,8 @@ param(
     "Source/Pudding.DesktopConnectionTests/Pudding.DesktopConnectionTests.csproj",
     "Source/Pudding.CapabilityBrokerTests/Pudding.CapabilityBrokerTests.csproj",
     "Source/Pudding.CapabilityBroker.AspNetCoreTests/Pudding.CapabilityBroker.AspNetCoreTests.csproj",
-    "Source/Pudding.Rpc.ProtocolTests/Pudding.Rpc.ProtocolTests.csproj"
+    "Source/Pudding.Rpc.ProtocolTests/Pudding.Rpc.ProtocolTests.csproj",
+    "Source/PuddingBrowser.WinUITests/PuddingBrowser.WinUITests.csproj"
 
     ),
     [switch]$SkipTests,
