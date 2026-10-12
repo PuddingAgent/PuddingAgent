@@ -7,7 +7,7 @@ status: proposed
 description: "规定 SSH 的工作目录守卫、取消与截止前置围栏、提交事实、输出完整性和资源回收合同，作为独立组件进入 S5 的前置约束。"
 categories: [docs, architecture]
 tags: [adr, ssh, cancellation, lifecycle, security]
-related_docs: [Docs/12_features/SSH工具组件化设计与实施方案-2026-10-08.md, Docs/12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md, Docs/14_reports/2026-10-12-SSH-S1-S4审阅与S5准入结论.md, Docs/10_conventions/组件化交付规程.md]
+related_docs: [Docs/12_features/SSH工具组件化设计与实施方案-2026-10-08.md, Docs/12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md, Docs/12_features/SSH资源生命周期补充修补方案-2026-10-12.md, Docs/14_reports/2026-10-12-SSH-R1-R5独立复核与S5暂缓结论.md, Docs/10_conventions/组件化交付规程.md]
 related_files: [Source/PuddingSsh/Validation/SshPosixCommand.cs, Source/PuddingSsh/Execution/SshOperationCoordinator.cs, Source/PuddingSsh/Execution/SshBoundedOutputCollector.cs, Source/PuddingSsh/Transport/SshNetTransportSession.cs, Source/PuddingSsh/Transport/SshNetTransportFactory.cs]
 slug: architecture-adr-096-ssh-execution-fences-and-bounded-termination
 draft: false
@@ -15,7 +15,7 @@ draft: false
 
 # ADR-096：SSH 执行前置围栏与有界终止
 
-状态：Proposed。本文定义施工合同，不代表修补已实现。实施文件与回归门禁见[代码级施工方案](../12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md)，当前验收证据见[审阅报告](../14_reports/2026-10-12-SSH-S1-S4审阅与S5准入结论.md)。
+状态：Proposed。本文定义施工合同，不代表修补已实现。实施文件与回归门禁见[代码级施工方案](../12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md)，当前验收证据见[独立复核报告](../14_reports/2026-10-12-SSH-R1-R5独立复核与S5暂缓结论.md)。
 
 ## 1. 范围与已有决策
 
@@ -53,6 +53,12 @@ cd -- '<按现有 Quote 编码的 cwd>' || exit $?
 不能把 `Task.WhenAny` 到期、调用 Dispose 或本地等待结束当作“连接已释放”。未完成工作仍由资源租约持有：迟到材料销毁、迟到连接关闭、任务异常观察都必须安排；关闭前占用原槽位或有界隔离槽位，预算耗尽后拒绝新的工作。禁止无限创建脱离追踪的 Task.Run/流读取任务。
 
 对于不合作的受控测试端口，业务调用在预算内结束并报告 cleanup pending；对于真实网络适配器，必须验证 Abort 能关闭实际 socket/reader。若真实库无法做到，先在组件边界重新裁定适配方式，不接入 Core。
+
+身份材料在交付建连任务之前确定唯一 owner；停止等待与资源所有权转移不可存在空窗。迟到回调只能完成已确立的回收责任，不能在材料被业务 finally 清零之后才宣称接管。
+
+资源租约必须覆盖尚未结束的 exec、reader、建连和关闭任务；Dispose Task 完成不能代替全部资源完成。容量由原子令牌强制，转移到隔离区必须先取得目标令牌再释放原槽，转移失败保留原槽。已排队请求也必须遵守副作用前的资源准入限制。执行/释放的同步入口和停止取消回调均包含在业务等待有界的合同内。
+
+上述状态转移与具体文件修改见[资源生命周期补充修补方案](../12_features/SSH资源生命周期补充修补方案-2026-10-12.md)。
 
 ### D4. 远端退出、提交与输出完整性分别表达
 

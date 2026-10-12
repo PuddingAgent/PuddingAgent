@@ -1,0 +1,84 @@
+{
+  "review_date": "2026-10-12",
+  "component_baseline": "addecc2",
+  "reviewed_head": "8fefe802cd7d1b5b07c10184536cb27ee4ec1572",
+  "component_matches_baseline": true,
+  "production_source_modified": false,
+  "unit_tests": {
+    "passed": 208,
+    "total": 208,
+    "failed": 0
+  },
+  "source_sha256": {
+    "Source/PuddingSsh\\Execution\\SshCleanupQuarantine.cs": "9DE2DFDFC191D0C40D89B197DBF5D57FB2657F61786AC45617A217B644EF3DD7",
+    "Source/PuddingSsh\\Execution\\SshCoordinatorOptions.cs": "1B0B042E3F083B8D81CF309AEF48F956432FCCFC90A7F8070FF1B59C7F745116",
+    "Source/PuddingSsh\\Validation\\SshRequestValidator.cs": "39198B777DD378D2C9F990D593CF80A8AF1CE3C445C613E20B67F8A13C6E419E",
+    "Source/PuddingSsh\\Execution\\SshOperationLifetime.cs": "69EC7CB2BA2EB97C5C554439AACB2BE4A29C1BED7F87E6383A2329F486F6BD06",
+    "Source/PuddingSsh\\Contracts\\SshLimits.cs": "7647A6C503C96108024D014CE776C683131D8548AD20B4D9E00B04322B734986",
+    "Source/PuddingSsh\\Diagnostics\\SshFailureClassifier.cs": "F7FE8CB23A7146FEF979C396DAC31E6DB81BF075A82A200AC7EA7FE996BF9734",
+    "Source/PuddingSsh\\Validation\\SshKnownHostsParser.cs": "04D8BED15E2E852A60AE63153D0F24E85DD7C3DDCF5357483B308E8A042A5117",
+    "Source/PuddingSsh\\Execution\\SshBoundedDrain.cs": "35F5259298D621E0D0CBE0849B7EB9230125F66A5B05CF44DA8703007706BCC5",
+    "Source/PuddingSsh\\Execution\\SshResourceLease.cs": "CF0151AD4FE256B1410C6AAB278AF40CF3ADA03A70A3EA86561CF8FD175C1408",
+    "Source/PuddingSsh\\Diagnostics\\SshOutcomePolicy.cs": "B0F1F157DD4B422B502FB5C7D515E77E9DAF747C96F58C685CAB933FB2BDAAF6",
+    "Source/PuddingSsh\\Contracts\\SshResults.cs": "1CF847AAE07571FA871748A80987F34DD36C3519C8242A4E5727BB92CBFE5016",
+    "Source/PuddingSsh\\Transport\\SshNetTransportFactory.cs": "5DDD6C5B62C983FADB1371237A7B6D9895E131277C89C2B11EE7D3F996040AC0",
+    "Source/PuddingSsh\\Execution\\SshStreamDrainResult.cs": "EB41A3823A2EA60C3CCFE08EFD1AB4D7D88C0D28BA757386E0D6BB4D8F6E4CA4",
+    "Source/PuddingSsh\\Contracts\\SshHostContext.cs": "A4B18B07FF15CBB5C71D874C3349D14865AF12ECF380B6C8E68FB92F6EAD49D8",
+    "Source/PuddingSsh\\Validation\\SshHostTokens.cs": "F56BE9C62EEBE429A6AA3520C1C6BA43C7656E4237FE620D8EEA1A0D7D2B6E52",
+    "Source/PuddingSsh\\Diagnostics\\SshDiagnosticText.cs": "75CD5B08C351ACE213D663DD52ED3F0C09F341BA202ECA5134811D406554CDAD",
+    "Source/PuddingSsh\\Diagnostics\\SshDiagnostics.cs": "4CEF8069BC28E5AA99248FF3E4F4D90DCCC6497822262F4559B6BD7E990E2436",
+    "Source/PuddingSsh\\Contracts\\SshTargets.cs": "1F9F87D1135777945985F5FEF26344CE36E54A60BC6C02D476FF5676EC4E970B",
+    "Source/PuddingSsh\\Execution\\SshBoundedOutputCollector.cs": "70E7D1231E5A31E66F35988335FCDBFEC7FBA517E8DA079585CEDF2E6627D281",
+    "Source/PuddingSsh\\Transport\\SshNetTransportSession.cs": "0E1A6A196221BD0B1EC68CE7E299597731472C75945A7C8FFCEFBE6C6E2E7A80",
+    "Source/PuddingSsh\\PuddingSsh.csproj": "1CFB906F2A253599A5F406E6DF5D800B2F9D99B34B09301FDA20A7D3B9ABBDE0",
+    "Source/PuddingSsh\\Contracts\\SshRequests.cs": "695DD30F189132CC7B6B5F973B1D565AEFF8E34A9514EA3CAA43BBF325CDAFC7",
+    "Source/PuddingSsh\\Validation\\SshTrustSnapshot.cs": "CEDAFF4D16F9FB0473BFDC04623EE5FEE03D41CD43F7501479877B4D212A7985",
+    "Source/PuddingSsh\\Contracts\\SshPorts.cs": "3C455DCACCD810E327D33EA2A22F3F12F47DFD5A214DD647D7832C5DDF2846F9",
+    "Source/PuddingSsh\\Execution\\SshStageWorkerPool.cs": "04981F6B568C8E25477ED5460682F535AF23E00705FF55C4C31C7FE89733E857",
+    "Source/PuddingSsh\\Validation\\SshPosixCommand.cs": "7E84C6FA000F1A237D730B576603C0125EE02948EE5A535CED5F624AD8C1ACFD",
+    "Source/PuddingSsh\\Execution\\SshOperationCoordinator.cs": "70BF24BF452B9E11C00916B2C48BA6E9E2773D44C1CF08C01A1E050F89A6517B"
+  },
+  "observations": [
+    {
+      "test": "sync_execute",
+      "elapsed_ms": 820,
+      "status": "Completed",
+      "ActiveStageWorkers": 0
+    },
+    {
+      "test": "sync_dispose",
+      "elapsed_ms": 806,
+      "cleanup": "Completed",
+      "ActiveStageWorkers": 0
+    },
+    {
+      "test": "late_identity_ownership",
+      "bytes_zeroed_before_connect_completed": true,
+      "connect_pending": true,
+      "ActiveStageWorkers": 1,
+      "status": "Cancelled"
+    },
+    {
+      "test": "orphan_execute",
+      "execute_pending": true,
+      "ActiveLeases": 0,
+      "ActiveStageWorkers": 0,
+      "QuarantinedResources": 0,
+      "stop": {
+        "PendingOperations": 0,
+        "PendingCleanups": 0,
+        "TimedOut": false
+      },
+      "status": "Cancelled",
+      "Diagnostic": "stop_reason=caller_cancelled：清理宽限内会话未返回；已释放独占连接，远端进程状态未知"
+    },
+    {
+      "test": "quarantine_overflow",
+      "QuarantineCapacity": 1,
+      "QuarantinedResources": 4,
+      "ConnectCount": 4
+    }
+  ],
+  "reproducer_project": "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>\n  <ItemGroup><Compile Include=\"ssh-review2.cs\"/><Compile Include=\"../Source/PuddingSshTests/SshFakes.cs\"/><ProjectReference Include=\"../Source/PuddingSsh/PuddingSsh.csproj\"/></ItemGroup>\n</Project>\n",
+  "reproducer_source": "using System.Diagnostics;\nusing System.Text.Json;\nusing PuddingSsh.Contracts;\nusing PuddingSsh.Execution;\nusing PuddingSshTests;\n\nstatic void Emit(object x) => Console.WriteLine(JsonSerializer.Serialize(x));\nstatic SshCoordinatorOptions Opt(int q = 8) => new() { CleanupGrace = TimeSpan.FromMilliseconds(50), MaxQuarantinedResources = q };\nstatic SshOperationCoordinator Coordinator(ISshTransportSession s) => new(new FakeTransportFactory { OnConnect = (_, _) => Task.FromResult(s) }, new FakeIdentityProvider(), Opt());\n\n// Sync execute entry returns only after a deliberately finite block.\n{\n    var session = new FakeSession { SynchronousBlockBeforeExecute = TimeSpan.FromMilliseconds(800) };\n    await using var c = Coordinator(session);\n    var watch = Stopwatch.StartNew();\n    var result = await c.ExecuteAsync(FakeSsh.Host(deadline: DateTimeOffset.UtcNow.AddMilliseconds(120)), FakeSsh.Execute(), default);\n    Emit(new { test = \"sync_execute\", elapsed_ms = watch.ElapsedMilliseconds, status = result.Status.ToString(), c.ActiveStageWorkers });\n}\n{\n    var session = new BlockingDispose();\n    await using var c = Coordinator(session);\n    var watch = Stopwatch.StartNew();\n    var result = await c.TestAsync(FakeSsh.Host(deadline: DateTimeOffset.UtcNow.AddMilliseconds(120)), FakeSsh.Test(), default);\n    Emit(new { test = \"sync_dispose\", elapsed_ms = watch.ElapsedMilliseconds, cleanup = result.CleanupState.ToString(), c.ActiveStageWorkers });\n}\n// The connect stage still owns the bytes until it returns.\n{\n    byte[] bytes = [17, 18, 19];\n    var identity = new SshIdentityMaterial(\"/tmp/fake\", \"id_ed25519\", bytes);\n    var gate = new TaskCompletionSource<ISshTransportSession>(TaskCreationOptions.RunContinuationsAsynchronously);\n    var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);\n    var factory = new FakeTransportFactory { OnConnect = (_, _) => { entered.SetResult(); return gate.Task; } };\n    await using var c = new SshOperationCoordinator(factory, new FakeIdentityProvider { OnGet = _ => identity }, Opt());\n    using var cancel = new CancellationTokenSource();\n    var task = c.ExecuteAsync(FakeSsh.Host(), FakeSsh.Execute(), cancel.Token);\n    await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));\n    cancel.Cancel();\n    var result = await task.WaitAsync(TimeSpan.FromSeconds(2));\n    Emit(new { test = \"late_identity_ownership\", bytes_zeroed_before_connect_completed = bytes.All(b => b == 0), connect_pending = !gate.Task.IsCompleted, c.ActiveStageWorkers, status = result.Status.ToString() });\n    var late = new FakeSession();\n    gate.SetResult(late);\n    await FakeSsh.WaitUntilAsync(() => late.Disposed);\n}\n// An execution task that ignores cancellation, while Dispose itself completes.\n{\n    var gate = new TaskCompletionSource<SshExecuteResult>(TaskCreationOptions.RunContinuationsAsynchronously);\n    var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);\n    var session = new FakeSession { OnExecute = (_, _, _, _) => { entered.SetResult(); return gate.Task; } };\n    await using var c = Coordinator(session);\n    using var cancel = new CancellationTokenSource();\n    var op = c.ExecuteAsync(FakeSsh.Host(), FakeSsh.Execute(), cancel.Token);\n    await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));\n    cancel.Cancel();\n    var result = await op.WaitAsync(TimeSpan.FromSeconds(2));\n    var stop = await c.StopAsync();\n    Emit(new { test = \"orphan_execute\", execute_pending = !gate.Task.IsCompleted, c.ActiveLeases, c.ActiveStageWorkers, c.QuarantinedResources, stop, status = result.Status.ToString(), result.Diagnostic });\n    gate.SetResult(FakeResults.Completed());\n}\n// Queue is accepted before first cleanup fills the quarantine; no re-check at admission.\n{\n    var gate = new TaskCompletionSource<SshExecuteResult>(TaskCreationOptions.RunContinuationsAsynchronously);\n    var disposals = new List<TaskCompletionSource>();\n    var factory = new FakeTransportFactory { OnConnect = (_, _) => { var d = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); disposals.Add(d); return Task.FromResult<ISshTransportSession>(new PendingDispose(gate.Task, d.Task)); } };\n    await using var c = new SshOperationCoordinator(factory, new FakeIdentityProvider(), Opt(1) with { CoreMaxConcurrentOperations = 1 });\n    var first = c.ExecuteAsync(FakeSsh.Host(), FakeSsh.Execute(), default);\n    await FakeSsh.WaitUntilAsync(() => factory.ConnectCount == 1);\n    var next = Enumerable.Range(0, 3).Select(_ => c.ExecuteAsync(FakeSsh.Host(), FakeSsh.Execute(), default)).ToArray();\n    await FakeSsh.WaitUntilAsync(() => c.WaitQueueLength == 3);\n    gate.SetResult(FakeResults.Completed());\n    await Task.WhenAll(next.Append(first)).WaitAsync(TimeSpan.FromSeconds(4));\n    Emit(new { test = \"quarantine_overflow\", c.QuarantineCapacity, c.QuarantinedResources, factory.ConnectCount });\n    foreach (var d in disposals) d.SetResult();\n    await FakeSsh.WaitUntilAsync(() => c.QuarantinedResources == 0);\n}\n\nclass BlockingDispose : ISshTransportSession\n{\n    public string VerifiedHostKeySha256 => \"fake\";\n    public string HostKeyAlgorithm => \"ssh-ed25519\";\n    public bool IsConnected => true;\n    public SshSubmissionEvidence SubmissionEvidence => SshSubmissionEvidence.NotSent;\n    public void RequestAbort() { }\n    public Task<SshExecuteResult> ExecuteAsync(string c, TimeSpan t, int b, CancellationToken ct) => Task.FromResult(FakeResults.Completed());\n    public ValueTask DisposeAsync() { Thread.Sleep(800); return ValueTask.CompletedTask; }\n}\nclass PendingDispose(Task<SshExecuteResult> execute, Task dispose) : ISshTransportSession\n{\n    public string VerifiedHostKeySha256 => \"fake\";\n    public string HostKeyAlgorithm => \"ssh-ed25519\";\n    public bool IsConnected => true;\n    public SshSubmissionEvidence SubmissionEvidence => SshSubmissionEvidence.SubmissionAttempted;\n    public void RequestAbort() { }\n    public Task<SshExecuteResult> ExecuteAsync(string c, TimeSpan t, int b, CancellationToken ct) => execute;\n    public ValueTask DisposeAsync() => new(dispose);\n}\n"
+}

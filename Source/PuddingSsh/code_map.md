@@ -2,7 +2,7 @@
 
 > 设计依据：[SSH 工具组件化设计与实施方案](../../Docs/12_features/SSH工具组件化设计与实施方案-2026-10-08.md)
 > （§4 组件与依赖边界、§6 凭据与主机验证、§7 工具合同、§9 并发/输出/超时、§10 诊断合同、§12 实施顺序）。
-> 宿主接入前置合同：[ADR-096](../../Docs/07_architecture/110ADR-096SSH执行前置围栏与有界终止ADR.md) 与[代码级修补方案](../../Docs/12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md)。组件没有宿主消费方，三个 Agent 工具尚未装配。
+> 宿主接入前置合同：[ADR-096](../../Docs/07_architecture/110ADR-096SSH执行前置围栏与有界终止ADR.md)、[代码级修补方案](../../Docs/12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md)与[资源生命周期补充方案](../../Docs/12_features/SSH资源生命周期补充修补方案-2026-10-12.md)。组件没有宿主消费方，三个 Agent 工具尚未装配。
 >
 > 边界硬规则（`Docs/10_conventions/组件化交付规程.md` §2.2，判据是**编译期失败**）：
 > `ProjectReference` **必须为 0**；不得引用 `PuddingCore` / `PuddingRuntime` / `PuddingPlatform` /
