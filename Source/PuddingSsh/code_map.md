@@ -97,14 +97,21 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 22. **清理有界且有人负责**（ADR-096 D3）：TERM/关闭/排空/Dispose 共用同一份清理预算；预算用尽即 `RequestAbort()`
     并进入固定容量隔离区（满额 `ssh.busy`）；未结束的资源**不得**被宣称已释放（诊断标注 `cleanup_pending`）。
 23. **同步启动段不得卡住业务等待**：阶段端口在有界 worker 池上调用；worker 满额同样 `ssh.busy`。
-24. **输出完整性独立表达**（ADR-096 D4）：`output_complete` + `output_incomplete_reason`（`read_failed`/`aborted`/`unknown`）
+24. **业务返回 ≠ 资源结束**（ADR-096 D3 补充）：业务计数与资源计数分离；exec/reader/关闭/迟到回收在**调度之前**登记，
+    `ResourcesCompleted` 只在义务清零且登记集合为空后完成；有挂起工作时不释放准入槽；`PendingResourceLeases` 与
+    `StopAsync.PendingResources` 如实报告未收敛的资源。
+25. **容量是原子硬上限**：worker/隔离区令牌用 CAS 发放（不是 `IsFull` + `Increment` 两步），取不到立即 `ssh.busy`；
+    隔离区转移失败保留原准入槽，`Pending/Peak ≤ Capacity` 恒成立；容量 0 表示禁用转移，而不是拒绝所有正常请求。
+26. **关闭有独立有界容量**：关闭工作走单独池，不会被卡死的 connect/exec 饿死；关闭是共享单次状态机（`CloseOnceAsync`）；
+    `CleanupState=Completed` 需要关闭证据（会话自报 `Closed`），「调用过 Abort」或「异常已观察」都不算。
+27. **输出完整性独立表达**（ADR-096 D4）：`output_complete` + `output_incomplete_reason`（`read_failed`/`aborted`/`unknown`）
     与 `output_truncated` 是三个不同字段；**预算截断仍算完整**（继续计数到 EOF），读失败/中止才算不完整。
     exit=0 但输出不完整 ⇒ `ssh.output_incomplete` 且保留已知退出码。
-25. **公开诊断有界且无载荷**（ADR-096 D5）：`Diagnostic` 只放稳定因果码/原因码 + 行号或异常类型名，
+28. **公开诊断有界且无载荷**（ADR-096 D5）：`Diagnostic` 只放稳定因果码/原因码 + 行号或异常类型名，
     长度上限 512 并标记截断；known_hosts 解析错误用 `code=<code> line=<n>`，不得含原始行。
-26. **清理状态是结构化字段**：结果里的 `CleanupState` 为 `NotStarted`/`Completed`/`Pending`；
+29. **清理状态是结构化字段**：结果里的 `CleanupState` 为 `NotStarted`/`Completed`/`Pending`；
     `Pending` 表示资源仍在隔离区被追踪，**不得**声称独占连接已释放。
-27. **终止原因不混淆**：`stop_reason=caller_cancelled|host_stopping|operation_deadline|connect_deadline`；
+30. **终止原因不混淆**：`stop_reason=caller_cancelled|host_stopping|operation_deadline|connect_deadline`；
     Core 停止写成 `ssh.cancelled`，绝不因为「外部 token 没取消」而写成 `ssh.timeout`；迟到结果只回收、不恢复。
 
 ## 4. 验证与门禁

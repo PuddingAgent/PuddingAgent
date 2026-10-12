@@ -30,6 +30,13 @@ public sealed record SshCoordinatorOptions
     /// </summary>
     public int MaxStageWorkers { get; init; } = 8;
 
+    /// <summary>
+    /// 关闭工作（会话 Dispose / 迟到回收）的独立容量，默认 8（L1.6）：
+    /// 关闭不能被同一池里卡死的 connect/exec 饿死，因此用单独且有上限的池；
+    /// 令牌耗尽时拒绝新的资源创建，而不是用无记账 <c>Task.Run</c> 绕过容量。
+    /// </summary>
+    public int MaxCloseWorkers { get; init; } = 8;
+
     public static SshCoordinatorOptions Default { get; } = new();
 
     /// <summary>清理隔离区容量的上限（防御性上限，避免配置把清理变成无界堆积）。</summary>
@@ -64,6 +71,10 @@ public sealed record SshCoordinatorOptions
             MaxStageWorkers >= 1 && MaxStageWorkers <= MaxStageWorkersHardLimit,
             "coordinator.max_stage_workers",
             MaxStageWorkers.ToString());
+        Require(
+            MaxCloseWorkers >= 1 && MaxCloseWorkers <= MaxStageWorkersHardLimit,
+            "coordinator.max_close_workers",
+            MaxCloseWorkers.ToString());
     }
 
     private static void Require(bool condition, string field, string value)
@@ -77,5 +88,9 @@ public sealed record SshCoordinatorOptions
     }
 }
 
-/// <summary>停止报告（ADR-096 D3）：停止等待有界，且**如实报告**仍未结束的操作与隔离资源。</summary>
-public sealed record SshStopReport(int PendingOperations, int PendingCleanups, bool TimedOut);
+/// <summary>
+/// 停止报告（ADR-096 D3）：停止等待有界，且**如实报告**仍未结束的东西。
+/// <paramref name="PendingOperations"/> 是业务仍在跑的操作数；<paramref name="PendingResources"/> 是
+/// **业务已返回但物理资源仍未结束**的租约数（L1：Dispose 完成不等于所有工作结束）。
+/// </summary>
+public sealed record SshStopReport(int PendingOperations, int PendingCleanups, int PendingResources, bool TimedOut);

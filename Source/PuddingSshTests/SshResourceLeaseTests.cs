@@ -191,8 +191,12 @@ public sealed class SshResourceLeaseTests
         stopwatch.Stop();
 
         Assert.IsLessThan(2500, (int)stopwatch.ElapsedMilliseconds, "StopAsync 必须有界");
-        Assert.IsTrue(report.PendingOperations >= 0 && report.PendingCleanups >= 0, "报告不得为负");
-        Assert.IsTrue(report.TimedOut || report.PendingCleanups == 0, "超时或仍有隔离资源时必须如实报告");
+        Assert.IsTrue(
+            report.PendingOperations >= 0 && report.PendingCleanups >= 0 && report.PendingResources >= 0,
+            "报告不得为负");
+        Assert.IsTrue(
+            report.PendingOperations + report.PendingResources + report.PendingCleanups > 0,
+            "存在在飞操作或未结束的释放工作时，Stop 必须如实报告（不得宣称全部收敛）");
 
         var result = await WaitOrFailAsync(operation);
         Assert.AreEqual(SshExecutionStatus.Cancelled, result.Status);

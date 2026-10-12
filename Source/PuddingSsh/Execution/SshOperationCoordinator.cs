@@ -31,7 +31,9 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
     private readonly SemaphoreSlim _coreGate;
     private readonly SshCleanupQuarantine _quarantine;
     private readonly SshStageWorkerPool _stageWorkers;
+    private readonly SshStageWorkerPool _closeWorkers;
     private int _activeLeases;
+    private int _pendingLateResources;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _hostGates = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly object _inFlightGate = new();
@@ -67,6 +69,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         _options.Validate();
         _quarantine = new SshCleanupQuarantine(_options.MaxQuarantinedResources);
         _stageWorkers = new SshStageWorkerPool(_options.MaxStageWorkers);
+        _closeWorkers = new SshStageWorkerPool(_options.MaxCloseWorkers);
     }
 
     /// <summary>当前在飞操作数（含排队）；供诊断与测试断言「槽位没有泄漏」。</summary>
@@ -90,12 +93,34 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
     /// <summary>清理隔离区里仍未结束的资源数；满额时新增工作会被拒绝（<c>ssh.busy</c>）。</summary>
     public int QuarantinedResources => _quarantine.Pending;
 
+    /// <summary>
+    /// **业务已返回但物理资源仍未结束**的租约数（L1）。它与 <see cref="ActiveLeases"/> 的区别是：
+    /// 业务等待有界返回之后，exec/reader/close/迟到回收仍可能在跑，那部分必须继续占账，
+    /// 不能用 <c>ActiveLeases == 0</c> 证明资源已收敛。
+    /// </summary>
+    public int PendingResourceLeases => Volatile.Read(ref _pendingLateResources);
+
     /// <summary>阶段 worker 占用数（含已超时但线程尚未归还的）。</summary>
     public int ActiveStageWorkers => _stageWorkers.Active;
 
     public int QuarantineCapacity => _quarantine.Capacity;
 
     public int StageWorkerCapacity => _stageWorkers.Capacity;
+
+    /// <summary>阶段 worker 的历史峰值：并发 barrier 测试断言「从未越限」。</summary>
+    public int PeakStageWorkers => _stageWorkers.Peak;
+
+    public int StageWorkerRejections => _stageWorkers.Rejected;
+
+    /// <summary>关闭 worker 占用与容量（关闭工作有独立容量，不被阶段池饿死）。</summary>
+    public int ActiveCloseWorkers => _closeWorkers.Active;
+
+    public int PeakCloseWorkers => _closeWorkers.Peak;
+
+    public int CloseWorkerCapacity => _closeWorkers.Capacity;
+
+    /// <summary>隔离区历史峰值：容量是硬上限，峰值也不得越限。</summary>
+    public int PeakQuarantinedResources => _quarantine.Peak;
 
     public Task<SshTestResult> TestAsync(SshHostContext host, SshTestRequest request, CancellationToken cancellationToken)
     {
@@ -130,7 +155,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             timedOut = winner != drained;
         }
 
-        return new SshStopReport(InFlightOperations, _quarantine.Pending, timedOut);
+        return new SshStopReport(InFlightOperations, _quarantine.Pending, PendingResourceLeases, timedOut);
     }
 
     public async ValueTask DisposeAsync()
@@ -210,6 +235,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
 
         phaseDurations["queue"] = Elapsed(stopwatch);
         var lease = BeginLease(admission);
+        StageHandoff? handoff = null;
         try
         {
             // 身份阶段：拿到槽位后再检查一次终止；身份与建连都只等**剩余额度**。
@@ -221,8 +247,9 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             SshStageOutcome<SshIdentityMaterial> identityOutcome;
             try
             {
-                // 阶段端口在**有界 worker** 上启动：同步启动段可能阻塞线程，不得卡住业务调用线程（ADR-096 D3）。
-                var identityTask = _stageWorkers.Start(() => _identities.GetIdentityAsync(host.Identity, lifetime.Token).AsTask());
+                // 阶段端口在**有界 worker** 上启动（原子令牌；登记先于调度）：同步启动段不卡业务线程（ADR-096 D3）。
+                var identityTask = _stageWorkers.StartAsync(() => _identities.GetIdentityAsync(host.Identity, lifetime.Token).AsTask());
+                lease.RegisterWork(identityTask, "identity");
                 identityOutcome = await lifetime
                     .WaitStageAsync(
                         identityTask,
@@ -266,26 +293,28 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                     host.Trust.CreateVerifier(request.Target.Host, request.Target.Port),
                     connectBudget);
 
+                // L2：在把身份交付 connect **之前**建立交接义务（不是等迟到回调才置位）。
+                handoff = new StageHandoff(lease);
                 SshStageOutcome<ISshTransportSession> connectOutcome;
                 try
                 {
+                    var connectTask = _stageWorkers.StartAsync(() => _transport.ConnectAsync(connectRequest, lifetime.Token));
+                    lease.RegisterWork(connectTask, "connect");
                     connectOutcome = await lifetime
                         .WaitStageAsync(
-                            _stageWorkers.Start(() => _transport.ConnectAsync(connectRequest, lifetime.Token)),
+                            connectTask,
                             connectBudget,
                             SshStopReason.ConnectDeadline,
                             onLateSuccess: late =>
                             {
-                                // 迟到连接只能被回收：业务路径不再释放身份，由迟到 owner 在关闭连接后清零。
-                                lease.TransferLateOwnership();
+                                // 迟到连接只能被回收：关闭走独立关闭池，身份由租约在所有资源结束后释放。
                                 lease.AttachSession(late);
-                                _ = CloseLateResourcesAsync(lease);
+                                _ = CloseLateResourcesAsync(lease, handoff);
                             },
                             onLateFailure: error =>
                             {
                                 _ = error;
-                                lease.TransferLateOwnership();
-                                _ = CloseLateResourcesAsync(lease);
+                                _ = CloseLateResourcesAsync(lease, handoff);
                             })
                         .ConfigureAwait(false);
                 }
@@ -310,7 +339,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 lease.AttachSession(session);
                 if (TryTestFence(lifetime, host, stopwatch, out testFenced))
                 {
-                    var fencedCleanup = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                    var fencedCleanup = await CloseSessionOnceAsync(lease, lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
                     return testFenced! with
                     {
                         CleanupState = fencedCleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
@@ -320,7 +349,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 phaseDurations["connect"] = Elapsed(stopwatch) - phaseDurations["queue"] - phaseDurations["credentials"];
 
                 // 有界关闭：同一条连接在预算内没结束就进隔离区（不得声称已释放）。
-                var cleanup = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                var cleanup = await CloseSessionOnceAsync(lease, lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
                 var cleanupState = cleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending;
 
                 return new SshTestResult
@@ -343,9 +372,11 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 // 兜底：任何提前返回（例如提交前围栏）都不得把已建立的连接漏在租约外。
                 if (lease.HasSession)
                 {
-                    _ = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                    _ = await CloseSessionOnceAsync(lease, lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
                 }
 
+                // 交接义务在**所有登记完成之后**结算：迟到路径与及时路径各只结算一次。
+                handoff?.Settle();
                 lease.ReleaseBusinessResources();
             }
         }
@@ -425,6 +456,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         }
 
         var lease = BeginLease(admission);
+        StageHandoff? handoff = null;
         try
         {
             if (TryFence(lifetime, host, stopwatch, out fenced))
@@ -435,8 +467,9 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             SshStageOutcome<SshIdentityMaterial> identityOutcome;
             try
             {
-                // 阶段端口在**有界 worker** 上启动：同步启动段可能阻塞线程，不得卡住业务调用线程（ADR-096 D3）。
-                var identityTask = _stageWorkers.Start(() => _identities.GetIdentityAsync(host.Identity, lifetime.Token).AsTask());
+                // 阶段端口在**有界 worker** 上启动（原子令牌；登记先于调度）：同步启动段不卡业务线程（ADR-096 D3）。
+                var identityTask = _stageWorkers.StartAsync(() => _identities.GetIdentityAsync(host.Identity, lifetime.Token).AsTask());
+                lease.RegisterWork(identityTask, "identity");
                 identityOutcome = await lifetime
                     .WaitStageAsync(
                         identityTask,
@@ -479,26 +512,28 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                     host.Trust.CreateVerifier(request.Target.Host, request.Target.Port),
                     connectBudget);
 
+                // L2：在把身份交付 connect **之前**建立交接义务（不是等迟到回调才置位）。
+                handoff = new StageHandoff(lease);
                 SshStageOutcome<ISshTransportSession> connectOutcome;
                 try
                 {
+                    var connectTask = _stageWorkers.StartAsync(() => _transport.ConnectAsync(connectRequest, lifetime.Token));
+                    lease.RegisterWork(connectTask, "connect");
                     connectOutcome = await lifetime
                         .WaitStageAsync(
-                            _stageWorkers.Start(() => _transport.ConnectAsync(connectRequest, lifetime.Token)),
+                            connectTask,
                             connectBudget,
                             SshStopReason.ConnectDeadline,
                             onLateSuccess: late =>
                             {
-                                // 迟到连接只能被回收：业务路径不再释放身份，由迟到 owner 在关闭连接后清零。
-                                lease.TransferLateOwnership();
+                                // 迟到连接只能被回收：关闭走独立关闭池，身份由租约在所有资源结束后释放。
                                 lease.AttachSession(late);
-                                _ = CloseLateResourcesAsync(lease);
+                                _ = CloseLateResourcesAsync(lease, handoff);
                             },
                             onLateFailure: error =>
                             {
                                 _ = error;
-                                lease.TransferLateOwnership();
-                                _ = CloseLateResourcesAsync(lease);
+                                _ = CloseLateResourcesAsync(lease, handoff);
                             })
                         .ConfigureAwait(false);
                 }
@@ -532,18 +567,18 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 // 提交前围栏：会话已到手但已终止时不得发 exec。
                 if (TryFence(lifetime, host, stopwatch, out fenced))
                 {
-                    var fencedCleanup = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                    var fencedCleanup = await CloseSessionOnceAsync(lease, lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
                     return fenced! with
                     {
                         CleanupState = fencedCleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
                     };
                 }
 
-                var result = await ExecuteOnSessionAsync(host, session, plan, lifetime, outputBudget, stopwatch)
+                var result = await ExecuteOnSessionAsync(host, session, plan, lifetime, lease, outputBudget, stopwatch)
                     .ConfigureAwait(false);
 
                 // 有界关闭（与 TERM/排空共享同一份预算）；没结束就进隔离区并如实标注。
-                var cleanup = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                var cleanup = await CloseSessionOnceAsync(lease, lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
                 return cleanup.Completed
                     ? result with { CleanupState = SshCleanupState.Completed }
                     : result with
@@ -557,9 +592,11 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 // 兜底：任何提前返回（例如提交前围栏）都不得把已建立的连接漏在租约外。
                 if (lease.HasSession)
                 {
-                    _ = await lease.CloseSessionAsync(lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
+                    _ = await CloseSessionOnceAsync(lease, lifetime.RemainingCleanup(_options.CleanupGrace)).ConfigureAwait(false);
                 }
 
+                // 交接义务在**所有登记完成之后**结算：迟到路径与及时路径各只结算一次。
+                handoff?.Settle();
                 lease.ReleaseBusinessResources();
             }
         }
@@ -574,6 +611,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         ISshTransportSession session,
         SshPosixExecutionPlan plan,
         SshOperationLifetime lifetime,
+        SshResourceLease lease,
         int outputBudget,
         Stopwatch stopwatch)
     {
@@ -593,7 +631,9 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                     stopwatch);
             }
 
-            executeTask = session.ExecuteAsync(plan.ExecutedCommand, remaining, outputBudget, lifetime.Token);
+            // L3：exec 的**同步启动段**也在有界 worker 上（外部线程立即拿到可等待句柄）。
+            executeTask = _stageWorkers.StartAsync(() => session.ExecuteAsync(plan.ExecutedCommand, remaining, outputBudget, lifetime.Token));
+            lease.RegisterWork(executeTask, "exec");
         }
         catch (Exception ex)
         {
@@ -623,16 +663,18 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             }
             catch (Exception ex)
             {
-                // 会话在提交后抛出：可能已执行，一律按「状态未知」处理（设计 §7.3/§9.2）。
-                var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Collecting, true));
+                // 提交事实决定失败形状（ADR-096 D4）：`NotSent` 才允许保持未提交与可重试，
+                // `SubmissionAttempted` 一律「远端状态未知、不可重试」。
+                var submitted = session.SubmissionEvidence == SshSubmissionEvidence.SubmissionAttempted;
+                var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Submitting, submitted));
                 return ExecuteFailure(
                     host,
-                    SshPhase.Collecting,
+                    SshPhase.Submitting,
                     failure.ErrorCode,
                     SshDiagnosticText.FromException(ex),
-                    retrySafe: false,
+                    SshFailureClassifier.IsRetrySafe(failure.ErrorCode, submitted),
                     stopwatch,
-                    SshExecutionState.Unknown);
+                    submitted ? SshExecutionState.Unknown : SshExecutionState.NotSubmitted);
             }
         }
         else
@@ -667,7 +709,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                     host,
                     SshPhase.Cleanup,
                     StopCode(reason),
-                    StopDiagnostic(reason, "清理宽限内会话未返回；已释放独占连接，远端进程状态未知"),
+                    StopDiagnostic(reason, "清理宽限内会话未返回；远端进程状态未知，连接释放证据见 cleanup_state"),
                     retrySafe: false,
                     stopwatch,
                     SshExecutionState.Unknown);
@@ -697,19 +739,33 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         return lease;
     }
 
-    /// <summary>结束记账：释放业务资源（身份 + 准入槽位）并减少活跃数。</summary>
+    /// <summary>
+    /// 结束**业务**记账（L1）：业务返回只结束业务计数。仍挂起的 exec/reader/关闭工作由租约继续占账，
+    /// 计入 <see cref="PendingResourceLeases"/>，并在资源真正结束时归还（此时才释放准入槽与身份材料）。
+    /// </summary>
     private void EndLease(SshResourceLease lease)
     {
-        lease.ReleaseBusinessResources();
+        lease.EndBusiness();
         Interlocked.Decrement(ref _activeLeases);
+
+        if (!lease.ResourcesCompleted.IsCompleted)
+        {
+            Interlocked.Increment(ref _pendingLateResources);
+            _ = lease.ResourcesCompleted.ContinueWith(
+                static (_, state) => Interlocked.Decrement(ref ((SshOperationCoordinator)state!)._pendingLateResources),
+                this,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
     }
 
-    /// <summary>迟到 owner 的收尾：在有界预算内关闭迟到的连接，并清零仍在手边的身份材料。</summary>
-    private async Task CloseLateResourcesAsync(SshResourceLease lease)
+    /// <summary>迟到 owner 的收尾：在共享清理预算内关闭迟到的连接；身份由租约在所有资源结束后统一释放。</summary>
+    private async Task CloseLateResourcesAsync(SshResourceLease lease, StageHandoff handoff)
     {
         try
         {
-            await lease.CloseSessionAsync(_options.CleanupGrace).ConfigureAwait(false);
+            await CloseSessionOnceAsync(lease, _options.CleanupGrace).ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -717,8 +773,84 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         }
         finally
         {
-            lease.ReleaseIdentity();
-            lease.ReleaseAdmission();
+            handoff.Settle();
+        }
+    }
+
+    /// <summary>
+    /// 关闭会话的**单次状态机**（L3）：所有调用者共享同一个关闭 Task；
+    /// 关闭工作走**独立的**有界池，不会被卡死的 connect/exec 饿死。
+    /// <c>CleanupState=Completed</c> 需要关闭证据（会话自报 Closed）而不是「调用过 Abort」。
+    /// </summary>
+    private Task<SshCleanupOutcome> CloseSessionOnceAsync(SshResourceLease lease, TimeSpan budget) =>
+        lease.CloseOnceAsync(() => CloseCoreAsync(lease, budget));
+
+    private async Task<SshCleanupOutcome> CloseCoreAsync(SshResourceLease lease, TimeSpan budget)
+    {
+        var session = lease.Session;
+        if (session is null)
+        {
+            return new SshCleanupOutcome(true, false, false, 0);
+        }
+
+        // 非阻塞中止请求：真正的 TERM/关闭由会话自己的状态机执行。
+        try
+        {
+            session.RequestAbort();
+        }
+        catch (Exception)
+        {
+            // 中止请求不得把清理路径变成失败路径。
+        }
+
+        Task closeWork;
+        try
+        {
+            closeWork = _closeWorkers.StartAsync(() => session.DisposeAsync().AsTask());
+        }
+        catch (SshStageCapacityExceededException)
+        {
+            // 关闭容量耗尽：资源保持未关闭，租约继续占账（不得假装已收敛）。
+            lease.RegisterWork(Task.Delay(Timeout.InfiniteTimeSpan), "close-capacity");
+            return new SshCleanupOutcome(false, false, true, PendingReaders(session));
+        }
+
+        lease.RegisterWork(closeWork, "close");
+        var completed = await SshBoundedDrain
+            .WaitAsync(closeWork, budget, onTimeout: static () => { })
+            .ConfigureAwait(false);
+
+        lease.CaptureCloseEvidence(session);
+
+        // 关闭证据：实现诊断接口的会话必须自报 Closed；不实现的按「Dispose 完成」为证据。
+        var closed = lease.Closed || session is not ISshTransportSessionDiagnostics;
+        return new SshCleanupOutcome(completed && closed, !completed, true, PendingReaders(session));
+    }
+
+    private static int PendingReaders(ISshTransportSession session) =>
+        session is ISshTransportSessionDiagnostics diagnostics ? diagnostics.PendingReaders : -1;
+
+    /// <summary>
+    /// 一次「可能产生迟到工作」的交接（L2/L3）：无论及时路径还是迟到 owner 接手，义务只结算一次；
+    /// 义务未结算前租约不会释放准入槽与身份材料（迟到连接读取期间材料保持有效）。
+    /// </summary>
+    private sealed class StageHandoff
+    {
+        private readonly SshResourceLease _lease;
+        private int _settled;
+
+        public StageHandoff(SshResourceLease lease)
+        {
+            _lease = lease;
+            _lease.BeginObligation();
+        }
+
+        public void Settle()
+        {
+            if (Interlocked.Exchange(ref _settled, 1) == 0)
+            {
+                _lease.EndObligation();
+            }
         }
     }
 
@@ -836,14 +968,16 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
     /// <summary>取得槽位**之后**再检查一次终止：已取消的操作不得带着槽位继续读身份。</summary>
     private Admission AdmitOrRelease(SemaphoreSlim hostGate, SshOperationLifetime lifetime)
     {
-        if (!lifetime.IsStopped)
+        // 取得槽位之后、读身份之前再核对停止与**资源准入**状态（L1.5）：
+        // 隔离区满额时，预先排队的请求也不得开启新连接。
+        if (lifetime.IsStopped || _quarantine.IsFull || _closeWorkers.IsFull)
         {
-            return Admission.Admitted(hostGate, _coreGate);
+            hostGate.Release();
+            _coreGate.Release();
+            return lifetime.IsStopped ? Admission.Expired() : Admission.Busy();
         }
 
-        hostGate.Release();
-        _coreGate.Release();
-        return Admission.Expired();
+        return Admission.Admitted(hostGate, _coreGate);
     }
 
     /// <summary>前置围栏（ssh_test）：已终止时返回失败结果，不读身份、不建连。</summary>

@@ -581,7 +581,10 @@ public sealed class SshOperationCoordinatorFaultMatrixTests
 
         Assert.AreEqual(SshErrorCodes.ConnectionLost, result.ErrorCode);
         Assert.AreEqual(SshExecutionState.Unknown, result.ExecutionState, "提交后断线可能已执行");
-        Assert.AreEqual(SshPhase.Collecting, result.Phase);
+
+        // L3：exec 的同步/异步失败统一按**提交事实**表达（SubmissionAttempted ⇒ unknown + 不可重试），
+        // 因此阶段固定为提交窗口 Submitting；远端未知仍由 ExecutionState 承担。
+        Assert.AreEqual(SshPhase.Submitting, result.Phase);
         Assert.IsFalse(result.RetrySafe);
     }
 
