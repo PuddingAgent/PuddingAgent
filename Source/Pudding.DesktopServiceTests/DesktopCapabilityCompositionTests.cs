@@ -20,6 +20,30 @@ public sealed class DesktopCapabilityCompositionTests
     /// 允许拆成两个参数就允许"配错对"（注册表来自 A、权威来自 B）⇒ 又出现**两份控制权状态**。
     /// 这条用例把该契约钉住：缺生命周期必须**明确拒绝**，而不是悄悄各建一份。
     /// </summary>
+    /// <summary>
+    /// §5.4：**关闭态是正常路径** —— 不构造、不启动，把控制权完整留给既有 Bridge；
+    /// 因此这一步**不得**产生第二份控制权状态（同一 lifecycle 的 `Authority` 必须保持**同一实例**）。
+    /// </summary>
+    [Fact]
+    public async Task DisabledChannelLeavesTheSingleAuthorityUntouched()
+    {
+        var lifecycle = BrowserPageLifecycle.Create(
+            new DesktopInstanceId("desk-1"), Process, TimeProvider.System);
+        var before = lifecycle.Authority;
+
+        var result = await DesktopCapabilityChannelComposition.StartAsync(
+            DesktopCapabilityChannelSettings.Disabled,
+            GoodDescription,
+            authentication: null,
+            Process,
+            new ManualUiDispatcher(),
+            new RecordingUiSurface(),
+            lifecycle);
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Value);
+        Assert.Same(before, lifecycle.Authority);
+    }
     [Fact]
     public async Task TheChannelCompositionRefusesToStartWithoutTheLifecyclePort()
     {
