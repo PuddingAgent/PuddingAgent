@@ -704,6 +704,60 @@ public sealed class SubAgentManagerMessageTests
         Assert.IsTrue(cancelled >= 1, "CancelAllAsync must find the in-flight run; cancelled=" + cancelled);
         Assert.HasCount(1, delegation.RevokedRunIds, "revoked=" + string.Join(",", delegation.RevokedRunIds));
     }
+    [TestMethod]
+    public async Task BrowserDelegation_IsRequestedOnTheExecuteSyncPathToo()
+    {
+        // R4: BOTH entry points (SpawnAsync and ExecuteSyncAsync) must funnel through the same
+        // CreateTrackedRunAsync => the same single delegation request call site (parity evidence).
+        var messageSystem = new RecordingMessageSystem();
+        var services = new ServiceCollection()
+            .AddSingleton<IMessageSystem>(messageSystem)
+            .AddSingleton<IRuntimeAgentDispatcher>(new RecordingRuntimeAgentDispatcher())
+            .AddSingleton<IRuntimeExecutionConfigService>(new TestRuntimeExecutionConfigService())
+            .BuildServiceProvider();
+
+        var delegation = new RecordingBrowserDelegationLifecycle();
+        var manager = new SubAgentManager(
+            new RecordingSessionStateManager(),
+            services,
+            new RecordingInternalEventBus(),
+            new RecordingSubAgentRunStore(),
+            NullLogger<SubAgentManager>.Instance,
+            new RecordingRuntimeActivitySink(),
+            new RecordingRuntimeTraceAccessor(),
+            services.GetRequiredService<IRuntimeExecutionConfigService>(),
+            browserDelegation: delegation);
+
+        await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Return child result.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+            BrowserDelegationContextId = "ctx-1",
+            BrowserDelegationPageId = "page-1",
+            BrowserDelegationScopeName = "read",
+            ParentExecutionIdentity = new RuntimeExecutionIdentity
+            {
+                Kind = RuntimeExecutionKind.ConversationTurn,
+                ConversationId = "parent-session",
+                TurnId = "parent-turn",
+                RunId = "parent-run",
+                TraceId = null,
+                ToolCallId = "parent-tool-call",
+            },
+        });
+
+        Assert.AreEqual(1, delegation.RequestCount, "the sync path must request the delegation exactly once");
+        Assert.IsNotNull(delegation.LastRequest);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(delegation.LastRequest!.ChildRunId));
+        Assert.AreEqual("parent-run", delegation.LastRequest.ParentRunId);
+        Assert.AreEqual("ctx-1", delegation.LastRequest.ContextId);
+        Assert.AreEqual("read", delegation.LastRequest.ScopeName);
+    }
     private static SubAgentManager CreateManager(RecordingRuntimeAgentDispatcher dispatcher)
     {
         var services = new ServiceCollection()
