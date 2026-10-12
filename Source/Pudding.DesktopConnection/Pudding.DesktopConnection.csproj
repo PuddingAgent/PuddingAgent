@@ -18,6 +18,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Pudding.DesktopConnectionTests" />
     <InternalsVisibleTo Include="PuddingDesktop.WpfArchive" />
+    <InternalsVisibleTo Include="PuddingDesktop" />
   </ItemGroup>
 
   <ItemGroup>

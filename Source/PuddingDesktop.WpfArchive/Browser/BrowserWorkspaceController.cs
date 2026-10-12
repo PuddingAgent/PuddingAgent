@@ -120,7 +120,7 @@ public sealed class BrowserWorkspaceController :
     private readonly IWebView2UiDispatcher _uiDispatcher;
     private readonly BrowserAutomationGateSync? _automationGates;
     private readonly BrowserReadingBaselineStore _readings;
-    private readonly IDesktopCapabilityExecutor? _capabilityExecutor;
+    private readonly Func<IDesktopCapabilityExecutor?>? _capabilityExecutor;
 
     private IBrowserContext? _context;
     private PageId? _activePageId;
@@ -201,7 +201,7 @@ public sealed class BrowserWorkspaceController :
         IWebView2UiDispatcher uiDispatcher,
         BrowserAutomationGateSync? automationGates = null,
         BrowserReadingBaselineStore? readings = null,
-        IDesktopCapabilityExecutor? capabilityExecutor = null)
+        Func<IDesktopCapabilityExecutor?>? capabilityExecutor = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _surfaceHost = surfaceHost ?? throw new ArgumentNullException(nameof(surfaceHost));
@@ -880,7 +880,7 @@ public sealed class BrowserWorkspaceController :
     private async Task<BrowserBridgeCommandResult> HandlePageScreenshotAsync(
         BrowserBridgeCommand command, CancellationToken ct)
     {
-        if (_capabilityExecutor is not { } executor)
+        if (_capabilityExecutor?.Invoke() is not { } executor)
         {
             return Error(
                 command.OperationId,
