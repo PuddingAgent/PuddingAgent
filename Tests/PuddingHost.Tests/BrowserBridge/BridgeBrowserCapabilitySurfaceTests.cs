@@ -856,6 +856,20 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         Assert.Equal("page-2", result.Value.Page.Target.PageId);
     }
 
+    [Fact]
+    public async Task Screenshot_IsExplicitlyUnsupported_WhenTheRuntimeIsNotTheBridgeRuntime()
+    {
+        // 桥侧截图的执行只可能发生在 Bridge 运行时上（由它发 page.screenshot）；
+        // 其它运行时（探针等）在此**明确不支持**——fail-closed，不返回伪结果。
+        var surface = Create(new FakeRuntime(context: null));
+
+        var result = await surface.ScreenshotAsync(
+            new BrowserScreenshotRequest(Target, DesktopPageVersion.Require(1)), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, result.Error!.Code);
+    }
+
     private static BridgeBrowserCapabilitySurface Create(FakePage page) => new(new FakeRuntime(page));
 
     private static BridgeBrowserCapabilitySurface Create(FakeRuntime runtime) => new(runtime);
