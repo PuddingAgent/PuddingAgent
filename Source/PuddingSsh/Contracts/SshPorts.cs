@@ -52,6 +52,9 @@ public sealed class SshIdentityMaterial : IDisposable
 
     public string IdentityFileName { get; }
 
+    /// <summary>释放次数（内部可观测）：门禁断言「清零效果恰好发生一次」。</summary>
+    internal int DisposeCount { get; private set; }
+
     /// <summary>私钥字节的内存流；调用方用后立即释放（<see cref="IDisposable.Dispose"/> 会清零）。</summary>
     internal MemoryStream OpenKeyStream()
     {
@@ -67,6 +70,7 @@ public sealed class SshIdentityMaterial : IDisposable
         }
 
         _disposed = true;
+        DisposeCount++;
         System.Security.Cryptography.CryptographicOperations.ZeroMemory(_privateKey);
     }
 }

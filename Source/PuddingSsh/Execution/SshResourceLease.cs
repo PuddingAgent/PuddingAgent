@@ -28,6 +28,7 @@ internal readonly record struct SshCleanupOutcome(
 internal sealed class SshResourceLease
 {
     private readonly SshCleanupQuarantine _quarantine;
+
     private readonly Action _releaseAdmission;
     private readonly Func<bool>? _transferAllowed;
     private readonly object _gate = new();
@@ -35,11 +36,10 @@ internal sealed class SshResourceLease
     private readonly TaskCompletionSource _resourcesCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly List<string> _failures = [];
 
-    private SshIdentityMaterial? _identity;
+    private readonly SshIdentityOwner _identityOwner = new();
     private ISshTransportSession? _session;
     private int _obligations;
     private int _admissionReleased;
-    private int _identityReleased;
     private int _businessEnded;
     private int _transferred;
     private int _closed;
@@ -108,7 +108,19 @@ internal sealed class SshResourceLease
     /// <summary>业务返回且资源全部结束时完成。</summary>
     public Task ResourcesCompleted => _resourcesCompleted.Task;
 
-    public void AttachIdentity(SshIdentityMaterial identity) => _identity = identity;
+    /// <summary>身份材料的所有权状态（诊断/门禁用）。</summary>
+    public SshIdentityOwnership IdentityState => _identityOwner.State;
+
+    /// <summary>身份释放次数（幂等验证：恰好一次）。</summary>
+    public int IdentityReleaseCount => _identityOwner.ReleaseCount;
+
+    public void AttachIdentity(SshIdentityMaterial identity) => _identityOwner.Attach(identity);
+
+    /// <summary>L2：在**调用 connect 之前**把所有权转入 Connecting。</summary>
+    public void BeginIdentityConnect() => _identityOwner.BeginConnect();
+
+    /// <summary>L2：connect 成功后材料改由会话资源持有。</summary>
+    public void MarkIdentitySessionOwned() => _identityOwner.MarkSessionOwned();
 
     public void AttachSession(ISshTransportSession session) => _session = session;
 
@@ -224,15 +236,7 @@ internal sealed class SshResourceLease
     }
 
     /// <summary>幂等释放身份材料（只在整个租约的资源真正结束后由本类调用）。</summary>
-    public void ReleaseIdentity()
-    {
-        if (Interlocked.Exchange(ref _identityReleased, 1) != 0)
-        {
-            return;
-        }
-
-        _identity?.Dispose();
-    }
+    public void ReleaseIdentity() => _identityOwner.Release();
 
     /// <summary>幂等释放准入槽位。</summary>
     public void ReleaseAdmission()

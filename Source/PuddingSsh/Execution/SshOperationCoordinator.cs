@@ -293,7 +293,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                     host.Trust.CreateVerifier(request.Target.Host, request.Target.Port),
                     connectBudget);
 
-                // L2：在把身份交付 connect **之前**建立交接义务（不是等迟到回调才置位）。
+                // L2：在把身份交付 connect **之前**完成所有权转移（不是等迟到回调才置位）。
+                lease.BeginIdentityConnect();
                 handoff = new StageHandoff(lease);
                 SshStageOutcome<ISshTransportSession> connectOutcome;
                 try
@@ -308,6 +309,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                             onLateSuccess: late =>
                             {
                                 // 迟到连接只能被回收：关闭走独立关闭池，身份由租约在所有资源结束后释放。
+                                lease.MarkIdentitySessionOwned();
                                 lease.AttachSession(late);
                                 _ = CloseLateResourcesAsync(lease, handoff);
                             },
@@ -327,6 +329,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
 
                 if (!connectOutcome.Completed)
                 {
+                    // 与停止选择不可分割：立刻把交接义务的结算权交给迟到 owner。
+                    handoff.MarkAbandoned();
                     return TestFailure(
                         host,
                         SshPhase.Connecting,
@@ -336,6 +340,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 }
 
                 session = connectOutcome.Result!;
+                lease.MarkIdentitySessionOwned();
                 lease.AttachSession(session);
                 if (TryTestFence(lifetime, host, stopwatch, out testFenced))
                 {
@@ -376,7 +381,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 }
 
                 // 交接义务在**所有登记完成之后**结算：迟到路径与及时路径各只结算一次。
-                handoff?.Settle();
+                handoff?.SettleFromBusiness();
                 lease.ReleaseBusinessResources();
             }
         }
@@ -512,7 +517,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                     host.Trust.CreateVerifier(request.Target.Host, request.Target.Port),
                     connectBudget);
 
-                // L2：在把身份交付 connect **之前**建立交接义务（不是等迟到回调才置位）。
+                // L2：在把身份交付 connect **之前**完成所有权转移（不是等迟到回调才置位）。
+                lease.BeginIdentityConnect();
                 handoff = new StageHandoff(lease);
                 SshStageOutcome<ISshTransportSession> connectOutcome;
                 try
@@ -527,6 +533,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                             onLateSuccess: late =>
                             {
                                 // 迟到连接只能被回收：关闭走独立关闭池，身份由租约在所有资源结束后释放。
+                                lease.MarkIdentitySessionOwned();
                                 lease.AttachSession(late);
                                 _ = CloseLateResourcesAsync(lease, handoff);
                             },
@@ -552,6 +559,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
 
                 if (!connectOutcome.Completed)
                 {
+                    // 与停止选择不可分割：立刻把交接义务的结算权交给迟到 owner。
+                    handoff.MarkAbandoned();
                     return ExecuteFailure(
                         host,
                         SshPhase.Connecting,
@@ -562,6 +571,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 }
 
                 session = connectOutcome.Result!;
+                lease.MarkIdentitySessionOwned();
                 lease.AttachSession(session);
 
                 // 提交前围栏：会话已到手但已终止时不得发 exec。
@@ -596,7 +606,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 }
 
                 // 交接义务在**所有登记完成之后**结算：迟到路径与及时路径各只结算一次。
-                handoff?.Settle();
+                handoff?.SettleFromBusiness();
                 lease.ReleaseBusinessResources();
             }
         }
@@ -773,7 +783,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         }
         finally
         {
-            handoff.Settle();
+            handoff.SettleFromLateOwner();
         }
     }
 
@@ -836,8 +846,12 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
     /// </summary>
     private sealed class StageHandoff
     {
+        private const int BusinessOwned = 0;
+        private const int AbandonedToLateOwner = 1;
+        private const int Settled = 2;
+
         private readonly SshResourceLease _lease;
-        private int _settled;
+        private int _state = BusinessOwned;
 
         public StageHandoff(SshResourceLease lease)
         {
@@ -845,9 +859,25 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             _lease.BeginObligation();
         }
 
-        public void Settle()
+        /// <summary>
+        /// 放弃等待：把结算权**原子**交给迟到 owner。必须紧跟 <c>WaitStageAsync</c> 返回
+        /// <c>Completed == false</c> 之后调用——这是与「停止选择」不可分割的一步（L2 要求）。
+        /// </summary>
+        public void MarkAbandoned() => Interlocked.CompareExchange(ref _state, AbandonedToLateOwner, BusinessOwned);
+
+        /// <summary>业务路径结算：只有**没有**放弃过才真的结算（放弃时由迟到 owner 负责）。</summary>
+        public void SettleFromBusiness()
         {
-            if (Interlocked.Exchange(ref _settled, 1) == 0)
+            if (Interlocked.CompareExchange(ref _state, Settled, BusinessOwned) == BusinessOwned)
+            {
+                _lease.EndObligation();
+            }
+        }
+
+        /// <summary>迟到 owner 结算：接管并结束义务（幂等）。</summary>
+        public void SettleFromLateOwner()
+        {
+            if (Interlocked.Exchange(ref _state, Settled) != Settled)
             {
                 _lease.EndObligation();
             }
