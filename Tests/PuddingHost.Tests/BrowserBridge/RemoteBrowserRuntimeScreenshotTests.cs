@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.AgentTools;
 using PuddingBrowser.Protocol;
@@ -63,6 +64,73 @@ public sealed class RemoteBrowserRuntimeScreenshotTests
         Assert.Equal(7, decoded.PageVersion);
         Assert.Equal("AQIDBA==", decoded.Chunks[0].Base64);
     }
+
+    [Fact]
+    public async Task Surface_MapsTheDescriptorIntoTheContractResult()
+    {
+        // 映射层：描述符 ⇒ BrowserScreenshotResult（Base64 → 字节、元数据逐项、Detail 线名解析）。
+        var descriptor = SampleDescriptor(0);
+        var runtime = new RemoteBrowserRuntime(
+            new FakeBroker(descriptor), callerIdentity: new FakeCallerIdentity());
+        var surface = new BridgeBrowserCapabilitySurface(runtime);
+
+        var result = await surface.ScreenshotAsync(
+            new BrowserScreenshotRequest(new DesktopPageTarget("ctx-1", "page-1"), DesktopPageVersion.Require(7)),
+            new DesktopCallContext(
+                new DesktopInstanceId("desk-1"),
+                new OperationId(Guid.NewGuid().ToString("N")),
+                DateTimeOffset.UtcNow.AddSeconds(30),
+                correlationId: null,
+                new BrowserCallerIdentity(BrowserCallerKind.Agent, "agent-1", "run-1")));
+
+        Assert.True(result.IsSuccess);
+        var value = result.Value;
+        Assert.Equal("obs-1", value.Metadata.ObservationId);
+        Assert.Equal("image/png", value.Metadata.MimeType);
+        Assert.Equal(4, value.Metadata.ByteCount);
+        Assert.Equal(1280, value.Metadata.SourceWidth);
+        Assert.Equal(720, value.Metadata.SourceHeight);
+        Assert.Equal(512, value.Metadata.OutputWidth);
+        Assert.Equal(288, value.Metadata.OutputHeight);
+        Assert.Equal(7, value.Metadata.PageVersion);
+        Assert.Equal(1, value.Metadata.DomRevision);
+        Assert.Equal(1, value.Metadata.ViewportRevision);
+        Assert.Equal(DesktopScreenshotDetail.Low, value.Metadata.Detail);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, value.Chunks[0].Data);
+    }
+
+    private static BrowserScreenshotDescriptor SampleDescriptor(int unused) => new()
+    {
+        ObservationId = "obs-1",
+        MimeType = "image/png",
+        ByteCount = 4,
+        SourceWidth = 1280,
+        SourceHeight = 720,
+        OutputWidth = 512,
+        OutputHeight = 288,
+        DeviceScaleFactor = 1,
+        ViewportWidth = 1280,
+        ViewportHeight = 720,
+        ScrollX = 0,
+        ScrollY = 0,
+        CropX = 0,
+        CropY = 0,
+        CropWidth = 1280,
+        CropHeight = 720,
+        PageVersion = 7,
+        DomRevision = 1,
+        ViewportRevision = 1,
+        Detail = DesktopScreenshotDetailWire.NameOf(DesktopScreenshotDetail.Low),
+        Chunks =
+        [
+            new BrowserScreenshotChunkDescriptor
+            {
+                Index = 0,
+                IsLast = true,
+                Base64 = Convert.ToBase64String([1, 2, 3, 4]),
+            }
+        ],
+    };
 
     private sealed class FakeBroker(BrowserScreenshotDescriptor descriptor) : IDesktopBrowserCommandBroker
     {
