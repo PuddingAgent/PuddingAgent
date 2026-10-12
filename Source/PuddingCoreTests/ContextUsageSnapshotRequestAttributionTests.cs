@@ -64,12 +64,19 @@ public sealed class ContextUsageSnapshotRequestAttributionTests
             "辅助调用不得写入主请求实测槽位");
     }
 
-    /// <summary>主请求实测写入自己的槽位；Total 与 Prompt 分开保存，不得当成「实测输入」。</summary>
+    /// <summary>
+    /// 主请求实测写入自己的槽位；Total 与 Prompt 分开保存，不得当成「实测输入」。
+    /// R1：必须**先按身份冻结准备记录**，usage 才配得上（否则只进未配对账本）。
+    /// </summary>
     [TestMethod]
     public void RecordProviderUsage_MainPurposeWritesSeparateMeasurement()
     {
         var store = new ContextUsageSnapshotStore();
-        var prepared = store.CaptureLlmRequest("session-main", Messages(4), tools: null, "test-model");
+        var prepared = store.CaptureLlmRequest(
+            "session-main", Messages(4), tools: null, "test-model",
+            LlmCallPurposes.Agent,
+            invocationId: "session-main:trace:1:agent",
+            attemptId: "session-main:trace:1:agent:a0");
         var prompt = prepared.RawEstimatedTokens * 2;
 
         store.RecordProviderUsage(
@@ -87,6 +94,10 @@ public sealed class ContextUsageSnapshotRequestAttributionTests
         Assert.AreEqual("session-main:trace:1:agent", measured.InvocationId);
         Assert.AreEqual("session-main:trace:1:agent:a0", measured.AttemptId);
         Assert.IsTrue(measured.HasProviderUsage);
+
+        // R1：准备槽位保持为「准备形状」，不被 Provider Total 覆盖。
+        Assert.IsTrue(store.TryGet("session-main", out var current));
+        Assert.AreSame(prepared, current, "主 usage 不得把准备快照改成 Provider Total");
     }
 
     /// <summary>
@@ -126,24 +137,36 @@ public sealed class ContextUsageSnapshotRequestAttributionTests
         Assert.IsFalse(store.TryGetLastAuxiliaryMeasurement("session-missing", out _));
     }
 
-    /// <summary>主/辅助交错：两个槽位各自保留自己的那一条，互不覆盖。</summary>
+    /// <summary>
+    /// 主/辅助交错：两个槽位各自保留自己的那一条，互不覆盖。
+    /// R1：两条 usage 都必须能配到各自的冻结记录（辅助不得借主槽位）。
+    /// </summary>
     [TestMethod]
     public void InterleavedMainAndAuxiliaryUsage_StaySeparated()
     {
         var store = new ContextUsageSnapshotStore();
-        var prepared = store.CaptureLlmRequest("session-interleaved", Messages(4), tools: null, "test-model");
+        var prepared = store.CaptureLlmRequest(
+            "session-interleaved", Messages(4), tools: null, "test-model",
+            LlmCallPurposes.Agent, invocationId: "inv-main", attemptId: "inv-main:a0");
         var mainPrompt = prepared.RawEstimatedTokens * 2;
+
+        // 摘要请求自己的准备（purpose=Compaction）与它的 usage
+        var summaryPrepared = store.MeasureLlmRequest("session-interleaved", Messages(6), tools: null, "test-model");
+        store.PublishPreparedRequest(
+            summaryPrepared, LlmCallPurposes.Compaction, "inv-summary", "inv-summary:a0");
 
         store.RecordProviderUsage(
             "session-interleaved",
             new TokenUsageDto { PromptTokens = mainPrompt, CompletionTokens = 50 },
             purpose: LlmCallPurposes.Agent,
-            invocationId: "inv-main");
+            invocationId: "inv-main",
+            attemptId: "inv-main:a0");
         store.RecordProviderUsage(
             "session-interleaved",
             new TokenUsageDto { PromptTokens = 193_218, CompletionTokens = 4_343 },
             purpose: LlmCallPurposes.Compaction,
-            invocationId: "inv-summary");
+            invocationId: "inv-summary",
+            attemptId: "inv-summary:a0");
 
         Assert.IsTrue(store.TryGetLastMeasuredRequest("session-interleaved", out var main));
         Assert.IsTrue(store.TryGetLastAuxiliaryMeasurement("session-interleaved", out var auxiliary));
@@ -151,5 +174,8 @@ public sealed class ContextUsageSnapshotRequestAttributionTests
         Assert.AreEqual(mainPrompt, main.ProviderPromptTokens);
         Assert.AreEqual("inv-summary", auxiliary!.InvocationId);
         Assert.AreEqual(193_218, auxiliary.ProviderPromptTokens);
+        // 辅助 raw 必须来自它自己的准备，而不是主槽位
+        Assert.AreEqual(summaryPrepared.RawEstimatedTokens, auxiliary.RawEstimatedTokens);
+        Assert.AreNotEqual(prepared.RawEstimatedTokens, auxiliary.RawEstimatedTokens);
     }
 }

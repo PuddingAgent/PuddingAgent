@@ -140,9 +140,12 @@ public sealed class ContextCompactionService : IContextCompactionService
             ReasoningTokens = usage.ReasoningTokens,
             MessageCount = usage.MessageCount,
             ToolCount = usage.ToolCount,
-            ProviderPromptTokens = usage.ProviderPromptTokens,
-            ProviderCompletionTokens = usage.ProviderCompletionTokens,
-            ProviderTotalTokens = usage.ProviderTotalTokens,
+            // R1：准备槽位不再被 Provider usage 改写，因此 Provider 报数一律取自**实测槽位**
+            // （已按 invocation/attempt 配对）。这样「Provider 输入」与「当前预算估算」两个口径
+            // 各自有独立来源，不会随到达顺序互相覆盖。
+            ProviderPromptTokens = measuredMain?.ProviderPromptTokens ?? usage.ProviderPromptTokens,
+            ProviderCompletionTokens = measuredMain?.ProviderCompletionTokens ?? usage.ProviderCompletionTokens,
+            ProviderTotalTokens = measuredMain?.ProviderTotalTokens ?? usage.ProviderTotalTokens,
             // F1 尾款：**上一次主请求的 Provider 实测输入**单独成一组事实，与上面的
             // UsedTokens/UsageSource（可能是「当前准备好但还没发出去的请求」的预算估算）并排展示。
             // 诊断 §4.1 的问题就是两者共用一个数值槽位、随来源切换而跳变（463.8K ↔ 164.7K）。

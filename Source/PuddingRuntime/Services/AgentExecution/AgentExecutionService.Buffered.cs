@@ -664,6 +664,9 @@ public sealed partial class AgentExecutionService
                         : toolSpecChangedThisRound
                             ? PrefixChangeReasons.ToolSpecChanged
                             : null;
+                // R1：本轮请求身份（Prepare 发布 / 主调用 usage 落账共用；轮次作用域）。
+                var agentInvocationId = BuildLlmInvocationId(request, round, "agent");
+                var agentAttemptId = agentInvocationId + ":a" + (providerInputRecoveryAttempted ? 1 : 0);
                 if (_contextUsageSnapshotStore is not null)
                 {
                     // Warm-prefix checkpoint：原样重放当前 provider 请求并只在尾部追加固定摘要
@@ -716,7 +719,10 @@ public sealed partial class AgentExecutionService
                             llmTools,
                             effectiveLlmConfig,
                             workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
-                            logger: _logger);
+                            logger: _logger,
+                            purpose: LlmCallPurposes.Agent,
+                            invocationId: agentInvocationId,
+                            attemptId: agentAttemptId);
                     }
                     catch (LlmInputBudgetExceededException ex)
                     {
@@ -793,7 +799,10 @@ public sealed partial class AgentExecutionService
                                     llmTools,
                                     effectiveLlmConfig,
                                     workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
-                                    logger: _logger);
+                                    logger: _logger,
+                                    purpose: LlmCallPurposes.Agent,
+                                    invocationId: agentInvocationId,
+                                    attemptId: agentAttemptId);
                                 injectedHistory = rePrepared.Messages.ToList();
                                 contextUsageSnapshot = rePrepared.Snapshot;
                                 _logger.LogInformation(
@@ -808,8 +817,9 @@ public sealed partial class AgentExecutionService
 
                 // S01-B：请求准备边界——冻结本请求的上下文层归因与 usage 估算。
                 var requestContext = FreezeRequestContext(request.SessionId);
-                var llmInvocationId = BuildLlmInvocationId(request, round, "agent");
-                var llmAttemptId = llmInvocationId + ":a" + (providerInputRecoveryAttempted ? 1 : 0);
+                // R1：复用本轮开始时算好的身份（Prepare 已按同一身份冻结记录）。
+                var llmInvocationId = agentInvocationId;
+                var llmAttemptId = agentAttemptId;
 
                 await EnsureCurrentTurnInputPresentWithRecoveryAsync(
             injectedHistory,
@@ -853,7 +863,11 @@ public sealed partial class AgentExecutionService
                     prefixSnapshot,
                     providerInputRecoveryAttempted,
                     round,
-                    ct);
+                    ct,
+                    purpose: LlmCallPurposes.Agent,
+                    // R1：usage 按身份配对到上面的准备记录。
+                    invocationId: agentInvocationId,
+                    attemptId: agentAttemptId);
 
                 if (llmResult.ShouldRetryRound)
                 {

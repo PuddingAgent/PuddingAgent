@@ -13,25 +13,42 @@ namespace PuddingMemoryEngineTests;
 [TestClass]
 public sealed class ContextCompactionPressureTests
 {
+    /// <summary>
+    /// R1：主 usage 不得把「准备快照」改成 Provider Total（旧行为），也不得因 Provider 报数**小于**
+    /// 估算就削弱出站硬门禁的保守校准。
+    /// </summary>
     [TestMethod]
     public void ProviderUsage_DoesNotMislabelAnOverestimate_OrWeakenOutboundGuard()
     {
         var store = new ContextUsageSnapshotStore();
-        store.Set(new ContextUsageSnapshot
+        var prepared = new ContextUsageSnapshot
         {
             SessionId = "s", UsedTokens = 204942, RawEstimatedTokens = 204942,
             MessageTokens = 160778, ToolDefinitionTokens = 44164, ModelId = "deepseek-flash",
             Source = "llm_request", Confidence = "estimated",
-        });
-        var measured = store.RecordProviderUsage("s", new TokenUsageDto
+        };
+        store.PublishPreparedRequest(
+            prepared, LlmCallPurposes.Agent, invocationId: "s:trace:1:agent", attemptId: "s:trace:1:agent:a0");
+
+        var returned = store.RecordProviderUsage("s", new TokenUsageDto
         {
             PromptTokens = 120653, CompletionTokens = 2663, TotalTokens = 123316,
-        });
-        Assert.AreEqual(123316, measured.UsedTokens);
-        Assert.AreEqual("provider_reported", measured.Confidence);
-        Assert.AreEqual(204942, measured.RawEstimatedTokens);
-        Assert.AreEqual(44164, measured.ToolDefinitionTokens);
+        }, LlmCallPurposes.Agent, "s:trace:1:agent", "s:trace:1:agent:a0");
+
+        // 准备快照保持原样：不得被 Provider Total 顶替，也不得丢掉分层归因。
+        Assert.AreSame(prepared, returned, "主 usage 不得改写准备快照");
+        Assert.IsTrue(store.TryGet("s", out var current));
+        Assert.AreSame(prepared, current);
+        Assert.AreEqual(204942, current!.UsedTokens);
+        Assert.AreEqual(44164, current.ToolDefinitionTokens);
+
+        // Provider 报数小于估算 ⇒ 校准保持 1.0（不得削弱硬门禁）。
         Assert.AreEqual(1.0, store.GetPromptCalibrationRatio("s", "deepseek-flash"));
+
+        // 实测按身份配对，raw 来自它自己那次准备。
+        Assert.IsTrue(store.TryGetLastMeasuredRequest("s", out var measured));
+        Assert.AreEqual(120653, measured!.ProviderPromptTokens);
+        Assert.AreEqual(204942, measured.RawEstimatedTokens);
     }
 
     [TestMethod]
@@ -46,14 +63,41 @@ public sealed class ContextCompactionPressureTests
         Assert.AreEqual("estimated", measured.Confidence);
     }
 
+    /// <summary>
+    /// Total 缺失时按 prompt+completion 推导 —— R1 后该推导只进**实测槽位**，
+    /// 不再改写准备快照（准备槽位由准备/冻结路径独占）。
+    /// </summary>
     [TestMethod]
     [DataRow(null)]
     [DataRow(0)]
-    public void MissingTotal_UsesPromptPlusCompletion(int? total)
+    public void MissingTotal_DerivesPromptPlusCompletionInMeasurementOnly(int? total)
     {
-        var measured = new ContextUsageSnapshotStore().RecordProviderUsage("s",
-            new TokenUsageDto { PromptTokens = 120000, CompletionTokens = 3000, TotalTokens = total });
-        Assert.AreEqual(123000, measured.UsedTokens);
+        var store = new ContextUsageSnapshotStore();
+        var identity = "s:trace:1:agent";
+        store.PublishPreparedRequest(
+            new ContextUsageSnapshot
+            {
+                SessionId = "s", UsedTokens = 5000, RawEstimatedTokens = 5000, ModelId = "m",
+                Source = "llm_request", Confidence = "estimated",
+            },
+            LlmCallPurposes.Agent,
+            invocationId: identity,
+            attemptId: identity + ":a0");
+
+        store.RecordProviderUsage(
+            "s",
+            new TokenUsageDto { PromptTokens = 120000, CompletionTokens = 3000, TotalTokens = total },
+            LlmCallPurposes.Agent,
+            identity,
+            identity + ":a0");
+
+        Assert.IsTrue(store.TryGetLastMeasuredRequest("s", out var measured));
+        Assert.AreEqual(120000, measured!.ProviderPromptTokens);
+        Assert.AreEqual(123000, measured.ProviderTotalTokens, "Total 缺失时按 prompt+completion 推导");
+
+        // 准备槽位不受影响
+        Assert.IsTrue(store.TryGet("s", out var current));
+        Assert.AreEqual(5000, current!.UsedTokens, "推导出的 Total 不得写进准备槽位");
     }
 
     [TestMethod]

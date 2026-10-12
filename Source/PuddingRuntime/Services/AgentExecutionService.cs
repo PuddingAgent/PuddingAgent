@@ -2275,6 +2275,14 @@ public sealed partial class AgentExecutionService
         // S01-B：请求准备边界——冻结本次 compaction 请求的上下文归因。
         var summaryRequestContext = FreezeRequestContext(request.SessionId);
         var summaryInvocationId = BuildLlmInvocationId(request, round, "compaction");
+        var summaryAttemptId = summaryInvocationId + ":a0";
+        // R1：压缩请求也是一次「准备」，必须登记它自己的身份，否则它的 usage 配不到记录、
+        // 只能进未配对账本（不校准、不投影）。
+        _contextUsageSnapshotStore.FreezePreparedRequest(
+            plan.InitialSnapshot,
+            LlmCallPurposes.Compaction,
+            summaryInvocationId,
+            summaryAttemptId);
         var summaryResult = await LlmInvoker.InvokeAsync(
             request,
             agentInstanceId,
@@ -2285,7 +2293,9 @@ public sealed partial class AgentExecutionService
             providerInputRecoveryAlreadyAttempted: true,
             round,
             ct,
-            purpose: "compaction");
+            purpose: LlmCallPurposes.Compaction,
+            invocationId: summaryInvocationId,
+            attemptId: summaryAttemptId);
 
         // The provider call is billable even if its result is rejected. Keep it in the
         // canonical attribution ledger under an explicit compaction source type.
@@ -2673,9 +2683,16 @@ public sealed partial class AgentExecutionService
             : endpoint;
     }
 
-    internal static void RecordProviderContextUsageSnapshot(string sessionId, TokenUsageDto usage, ContextUsageSnapshotStore? store)
+    internal static void RecordProviderContextUsageSnapshot(
+        string sessionId,
+        TokenUsageDto usage,
+        ContextUsageSnapshotStore? store,
+        string purpose = LlmCallPurposes.Agent,
+        string? invocationId = null,
+        string? attemptId = null)
     {
-        store?.RecordProviderUsage(sessionId, usage);
+        // R1：身份必须一路带到落账，否则 usage 只能进未配对账本（不校准、不投影）。
+        store?.RecordProviderUsage(sessionId, usage, purpose, invocationId, attemptId);
     }
 
     internal static TokenUsageDto ApplyResolvedModelCapacity(TokenUsageDto usage, LlmConfig? llmConfig)

@@ -46,7 +46,11 @@ internal sealed class AgentExecutionLlmInvoker
         bool providerInputRecoveryAlreadyAttempted,
         int round,
         CancellationToken ct,
-        string purpose = "agent")
+        string purpose = "agent",
+        // R1：usage 必须按 invocation/attempt 配到**它自己那次**冻结请求。
+        // 不传身份时该 usage 只进未配对账本（不参与校准、不改写准备槽位）——安全但不学习。
+        string? invocationId = null,
+        string? attemptId = null)
     {
         LlmResponse llmResp;
 
@@ -142,10 +146,13 @@ internal sealed class AgentExecutionLlmInvoker
             };
             // F1 归因：usage 必须带用途落账。压缩/审批等辅助调用不得改写主请求的
             // currentPreparedRequest，也不得参与出站安全校准（ADR-095 D6）。
+            // R1：同时带 invocation/attempt —— usage 按身份配到**它自己那次**冻结请求。
             _contextUsageSnapshotStore?.RecordProviderUsage(
                 request.SessionId,
                 usage,
-                purpose);
+                purpose,
+                invocationId,
+                attemptId);
         }
 
         return AgentExecutionLlmInvocationResult.CreateSuccess(llmResp, usage);

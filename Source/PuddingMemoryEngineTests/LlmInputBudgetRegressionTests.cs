@@ -27,36 +27,58 @@ public sealed class LlmInputBudgetRegressionTests
         Assert.AreEqual(983_616, limit);
     }
 
+    /// <summary>
+    /// R1：实测**不再改写准备快照**（旧行为是把它换成 Provider Total），
+    /// 而是按身份配对、用**该请求自己的** raw 学习保守校准，并用校准后的值保护下一次请求。
+    /// </summary>
     [TestMethod]
-    public void RecordProviderUsage_ReplacesSmallerEstimateAndCalibratesNextRequest()
+    public void RecordProviderUsage_CalibratesNextRequestFromItsOwnRaw_WithoutReplacingPreparedSnapshot()
     {
         var store = new ContextUsageSnapshotStore();
+        var invocationId = "session-calibration:trace:1:agent";
+        var attemptId = invocationId + ":a0";
         var first = store.CaptureLlmRequest(
             "session-calibration",
             [new ChatMessage(ChatRole.User, new string('a', 4_000))],
             tools: null,
-            modelId: "qwen3.8-max-preview");
+            modelId: "qwen3.8-max-preview",
+            purpose: LlmCallPurposes.Agent,
+            invocationId: invocationId,
+            attemptId: attemptId);
 
         var providerPromptTokens = first.RawEstimatedTokens * 2;
         var providerTotalTokens = providerPromptTokens + 128;
-        var provider = store.RecordProviderUsage(
+        var returned = store.RecordProviderUsage(
             "session-calibration",
             new TokenUsageDto
             {
                 PromptTokens = providerPromptTokens,
                 CompletionTokens = 128,
                 TotalTokens = providerTotalTokens,
-            });
+            },
+            purpose: LlmCallPurposes.Agent,
+            invocationId: invocationId,
+            attemptId: attemptId);
         var next = store.CaptureLlmRequest(
             "session-calibration",
             [new ChatMessage(ChatRole.User, new string('a', 4_000))],
             tools: null,
             modelId: "qwen3.8-max-preview");
 
-        Assert.AreEqual(providerTotalTokens, provider.UsedTokens);
-        Assert.AreEqual("provider_usage", provider.Source);
+        // 准备槽位保持原样（不再被 Provider Total 顶替）。注意：必须在**第二次 Capture 之前**断言，
+        // 因为第二次 Capture 本身就是一次新的准备发布。
+        Assert.AreSame(first, returned, "主 usage 不得改写准备快照");
+
+        // 实测按身份配对，raw 来自它自己那次请求
+        Assert.IsTrue(store.TryGetLastMeasuredRequest("session-calibration", out var measured));
+        Assert.AreEqual(providerPromptTokens, measured!.ProviderPromptTokens);
+        Assert.AreEqual(first.RawEstimatedTokens, measured.RawEstimatedTokens);
+
+        // 校准仍生效（2 倍），下一次准备按校准后的值保护
         Assert.AreEqual(2.0, next.PromptCalibrationRatio, 0.001);
         Assert.AreEqual(next.RawEstimatedTokens * 2, next.UsedTokens);
+        Assert.IsTrue(store.TryGet("session-calibration", out var current));
+        Assert.AreSame(next, current, "当前准备槽位应是最近一次准备发布的对象");
     }
 
     [TestMethod]

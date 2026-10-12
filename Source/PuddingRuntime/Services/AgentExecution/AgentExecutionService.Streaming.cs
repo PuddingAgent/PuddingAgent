@@ -788,6 +788,11 @@ public sealed partial class AgentExecutionService
                         : toolSpecChangedThisRound
                             ? PrefixChangeReasons.ToolSpecChanged
                             : null;
+                // R1：本轮请求身份。Prepare 会**发布**当前准备请求，因此身份必须先算出来带上；
+                // 主调用与流式 usage 落账也共用它。放在轮次作用域（不是 if 块内），
+                // 因为 done 帧前的 usage 落账在块外。
+                var agentInvocationId = BuildLlmInvocationId(request, round, "agent");
+                var agentAttemptId = agentInvocationId + ":a" + (providerInputRecoveryAttempted ? 1 : 0);
                 if (_contextUsageSnapshotStore is not null)
                 {
                     // 与 Buffered 共用 warm-prefix checkpoint；失败保留原历史，不再静默驱逐。
@@ -829,7 +834,10 @@ public sealed partial class AgentExecutionService
                             llmTools,
                             effectiveLlmConfig,
                             workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
-                            logger: _logger);
+                            logger: _logger,
+                            purpose: LlmCallPurposes.Agent,
+                            invocationId: agentInvocationId,
+                            attemptId: agentAttemptId);
                     }
                     catch (LlmInputBudgetExceededException ex)
                     {
@@ -915,7 +923,10 @@ public sealed partial class AgentExecutionService
                                     llmTools,
                                     effectiveLlmConfig,
                                     workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
-                                    logger: _logger);
+                                    logger: _logger,
+                                    purpose: LlmCallPurposes.Agent,
+                                    invocationId: agentInvocationId,
+                                    attemptId: agentAttemptId);
                                 injectedHistory = rePrepared.Messages.ToList();
                                 contextUsageSnapshot = rePrepared.Snapshot;
                                 _logger.LogInformation(
@@ -931,8 +942,9 @@ public sealed partial class AgentExecutionService
                 // S01-B：请求准备边界——冻结本请求的上下文层归因与 usage 估算。
                 // 此后同 session 的后续请求覆盖 store 不会改写本次落账的 shape。
                 var requestContext = FreezeRequestContext(request.SessionId);
-                var llmInvocationId = BuildLlmInvocationId(request, round, "agent");
-                var llmAttemptId = llmInvocationId + ":a" + (providerInputRecoveryAttempted ? 1 : 0);
+                // R1：复用本轮开始时算好的身份（Prepare 已按同一身份冻结记录）。
+                var llmInvocationId = agentInvocationId;
+                var llmAttemptId = agentAttemptId;
 
                 await EnsureCurrentTurnInputPresentWithRecoveryAsync(
             injectedHistory,
@@ -1124,7 +1136,14 @@ public sealed partial class AgentExecutionService
                         if (delta.Usage is not null)
                         {
                             usage = ApplyResolvedModelCapacity(delta.Usage, effectiveLlmConfig);
-                            RecordProviderContextUsageSnapshot(request.SessionId, usage, _contextUsageSnapshotStore);
+                            // R1：流式主调用按本轮身份落账，usage 才能配到上面冻结的准备记录。
+                            RecordProviderContextUsageSnapshot(
+                                request.SessionId,
+                                usage,
+                                _contextUsageSnapshotStore,
+                                LlmCallPurposes.Agent,
+                                agentInvocationId,
+                                agentAttemptId);
                         }
 
                         if (delta.ContinuationState is not null)

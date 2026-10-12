@@ -174,12 +174,43 @@ namespace PuddingCode.Platform
         int? ProviderCompletionTokens,
         int? ProviderTotalTokens,
         int RawEstimatedTokens,
-        DateTimeOffset RecordedAtUtc)
+        DateTimeOffset RecordedAtUtc,
+        /// <summary>
+        /// 该实测所对应的**冻结请求序号**（单调）。投影按序号推进而不是按到达时间，
+        /// 否则一次迟到的旧请求会把「最近主实测」拉回去（R1 门禁：最近 measurement 不得倒退）。
+        /// 未配对/无序号时为 0。
+        /// </summary>
+        long RequestSequence = 0)
     {
         /// <summary>Provider <c>Total</c> 含 completion，**不得**当作「实测输入」使用。</summary>
         public bool HasProviderUsage =>
             ProviderPromptTokens is > 0 || ProviderTotalTokens is > 0;
     }
+
+    /// <summary>
+    /// **不可变的冻结请求记录**：最终 dispatch 前冻结的「这一次请求」的准备事实。
+    /// <para>
+    /// 为什么必须有它（R1 缺陷）：Provider usage 迟到时，若只按 session 取「当前最新准备快照」，
+    /// 就会拿**另一次请求**（甚至另一个路由）的 raw 去算校准 —— 实测探针里
+    /// A 的实测输入(2504)被 B 的 raw(6) 除，得到 417.33 倍并被写到 B 的模型校准键上，
+    /// 既污染展示，又会抬高安全上界、重新制造硬压缩等待。
+    /// </para>
+    /// <para>
+    /// 因此 usage 必须按 <see cref="InvocationId"/>/<see cref="AttemptId"/> 找到**它自己那次**冻结记录，
+    /// 用那条记录的 raw 与 model 做校准；找不到身份的 usage 只进独立账本，
+    /// 既不参与校准也不改写准备槽位。
+    /// </para>
+    /// </summary>
+    public sealed record PreparedRequestRecord(
+        string SessionId,
+        string Purpose,
+        string? InvocationId,
+        string? AttemptId,
+        long RequestSequence,
+        string? ModelId,
+        int RawEstimatedTokens,
+        int CalibratedUpperBoundTokens,
+        DateTimeOffset PreparedAtUtc);
 
     /// <summary>
     /// 保存每个 Session 最近一次最终 LLM 请求的输入上下文估算。
@@ -198,12 +229,138 @@ namespace PuddingCode.Platform
         /// <summary>最近一次辅助/摘要调用的实测；单独归因，永不写进上面的槽位。</summary>
         private readonly ConcurrentDictionary<string, MeasuredRequestUsage> _lastAuxiliaryMeasurements = new(StringComparer.Ordinal);
 
+        /// <summary>会话内已冻结请求（key = 身份键）→ 不可变记录；用于按身份配对 usage。</summary>
+        private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, PreparedRequestRecord>> _preparedRequests
+            = new(StringComparer.Ordinal);
+
+        /// <summary>会话内单调请求序号（冻结时分配）。</summary>
+        private readonly ConcurrentDictionary<string, long> _requestSequences = new(StringComparer.Ordinal);
+
+        /// <summary>身份无法配对到冻结记录的 usage：只留证，不参与校准、不改写任何准备槽位。</summary>
+        private readonly ConcurrentDictionary<string, MeasuredRequestUsage> _unpairedMeasurements = new(StringComparer.Ordinal);
+
+        /// <summary>每个会话保留的冻结记录条数上限（按序号淘汰最旧）。</summary>
+        private const int MaxFrozenRequestsPerSession = 16;
+
         public void Set(ContextUsageSnapshot snapshot)
         {
             if (string.IsNullOrWhiteSpace(snapshot.SessionId))
                 return;
 
             _snapshots[snapshot.SessionId] = snapshot;
+        }
+
+        /// <summary>
+        /// 冻结并发布一次请求准备事实：既登记不可变记录（供 usage 按身份配对），
+        /// 也把它设为 session 的 <c>currentPreparedRequest</c>。
+        /// <para>
+        /// 只有这里（准备/冻结路径）允许改写准备槽位；Provider usage **不再**改它（R1）。
+        /// </para>
+        /// </summary>
+        public PreparedRequestRecord PublishPreparedRequest(
+            ContextUsageSnapshot snapshot,
+            string purpose = LlmCallPurposes.Agent,
+            string? invocationId = null,
+            string? attemptId = null)
+        {
+            ArgumentNullException.ThrowIfNull(snapshot);
+            var record = FreezePreparedRequest(snapshot, purpose, invocationId, attemptId);
+            Set(snapshot);
+            return record;
+        }
+
+        /// <summary>登记冻结记录（不改写准备槽位）；序号在此单调分配。</summary>
+        public PreparedRequestRecord FreezePreparedRequest(
+            ContextUsageSnapshot snapshot,
+            string purpose = LlmCallPurposes.Agent,
+            string? invocationId = null,
+            string? attemptId = null)
+        {
+            ArgumentNullException.ThrowIfNull(snapshot);
+            var sessionId = snapshot.SessionId;
+            var sequence = string.IsNullOrWhiteSpace(sessionId)
+                ? 0
+                : _requestSequences.AddOrUpdate(sessionId, 1, (_, current) => current + 1);
+
+            var record = new PreparedRequestRecord(
+                sessionId,
+                purpose,
+                invocationId,
+                attemptId,
+                sequence,
+                snapshot.ModelId,
+                snapshot.RawEstimatedTokens,
+                snapshot.UsedTokens,
+                snapshot.RecordedAt == default ? DateTimeOffset.UtcNow : snapshot.RecordedAt);
+
+            if (string.IsNullOrWhiteSpace(sessionId))
+                return record;
+
+            var perSession = _preparedRequests.GetOrAdd(
+                sessionId,
+                _ => new ConcurrentDictionary<string, PreparedRequestRecord>(StringComparer.Ordinal));
+
+            foreach (var key in IdentityKeys(record))
+                perSession[key] = record;
+
+            // 有界：只保留序号最大的若干条，防止长会话无界增长。
+            if (perSession.Count > MaxFrozenRequestsPerSession * 2)
+            {
+                var keep = perSession.Values
+                    .OrderByDescending(r => r.RequestSequence)
+                    .Take(MaxFrozenRequestsPerSession)
+                    .Select(r => r.RequestSequence)
+                    .ToHashSet();
+                foreach (var pair in perSession.Where(p => !keep.Contains(p.Value.RequestSequence)).ToList())
+                    perSession.TryRemove(pair.Key, out _);
+            }
+
+            return record;
+        }
+
+        /// <summary>按 attempt（优先）→ invocation 找该次请求的冻结记录；找不到返回 false。</summary>
+        public bool TryGetPreparedRequest(
+            string sessionId,
+            string? invocationId,
+            string? attemptId,
+            out PreparedRequestRecord? record)
+        {
+            record = null;
+            if (string.IsNullOrWhiteSpace(sessionId)
+                || !_preparedRequests.TryGetValue(sessionId, out var perSession))
+            {
+                return false;
+            }
+
+            foreach (var key in IdentityKeys(sessionId, invocationId, attemptId))
+            {
+                if (perSession.TryGetValue(key, out var found))
+                {
+                    record = found;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>身份无法配对的 usage（只留证）。</summary>
+        public bool TryGetUnpairedMeasurement(string sessionId, out MeasuredRequestUsage? measured)
+        {
+            var ok = _unpairedMeasurements.TryGetValue(sessionId, out var found);
+            measured = found;
+            return ok;
+        }
+
+        private static IEnumerable<string> IdentityKeys(PreparedRequestRecord record)
+            => IdentityKeys(record.SessionId, record.InvocationId, record.AttemptId);
+
+        private static IEnumerable<string> IdentityKeys(string sessionId, string? invocationId, string? attemptId)
+        {
+            if (!string.IsNullOrWhiteSpace(attemptId))
+                yield return $"{sessionId}\u001fattempt\u001f{attemptId}";
+            if (!string.IsNullOrWhiteSpace(invocationId))
+                yield return $"{sessionId}\u001finvocation\u001f{invocationId}";
         }
 
         public bool TryGet(string sessionId, out ContextUsageSnapshot? snapshot)
@@ -218,9 +375,25 @@ namespace PuddingCode.Platform
             IReadOnlyList<ChatMessage> messages,
             IReadOnlyList<LlmToolDefinition>? tools,
             string? modelId = null)
+            => CaptureLlmRequest(
+                sessionId, messages, tools, modelId, LlmCallPurposes.Agent, invocationId: null, attemptId: null);
+
+        /// <summary>
+        /// 计量并发布一次**准备请求**，同时按 invocation/attempt 冻结身份（R1）。
+        /// 生产路径必须带上身份，否则该请求的 Provider usage 会因配不上身份而只进未配对账本
+        /// （安全，但失去校准与最近实测投影）。
+        /// </summary>
+        public ContextUsageSnapshot CaptureLlmRequest(
+            string sessionId,
+            IReadOnlyList<ChatMessage> messages,
+            IReadOnlyList<LlmToolDefinition>? tools,
+            string? modelId,
+            string purpose,
+            string? invocationId,
+            string? attemptId)
         {
             var snapshot = MeasureLlmRequest(sessionId, messages, tools, modelId);
-            Set(snapshot);
+            PublishPreparedRequest(snapshot, purpose, invocationId, attemptId);
             return snapshot;
         }
 
@@ -387,6 +560,10 @@ namespace PuddingCode.Platform
             if (!LlmCallPurposes.IsMainCall(purpose))
             {
                 // 辅助/摘要调用：只写自己的槽位。不发布、不改写、不校准。
+                // 辅助 raw 也必须来自**它自己**的冻结请求（借主槽位就是 R1 的同类错误）。
+                var auxiliaryRaw = TryGetPreparedRequest(sessionId, invocationId, attemptId, out var auxRecord)
+                    ? auxRecord!.RawEstimatedTokens
+                    : 0;
                 _lastAuxiliaryMeasurements[sessionId] = new MeasuredRequestUsage(
                     sessionId,
                     purpose,
@@ -395,8 +572,9 @@ namespace PuddingCode.Platform
                     usage.PromptTokens,
                     usage.CompletionTokens,
                     usage.TotalTokens,
-                    existing?.RawEstimatedTokens ?? 0,
-                    DateTimeOffset.UtcNow);
+                    auxiliaryRaw,
+                    DateTimeOffset.UtcNow,
+                    auxRecord?.RequestSequence ?? 0);
 
                 return existing ?? new ContextUsageSnapshot
                 {
@@ -411,75 +589,95 @@ namespace PuddingCode.Platform
             }
 
             var providerPromptTokens = Math.Max(0, usage.PromptTokens ?? 0);
-            var rawEstimatedTokens = existing?.RawEstimatedTokens > 0
-                ? existing.RawEstimatedTokens
-                : existing?.UsedTokens ?? 0;
-            var calibrationRatio = existing?.PromptCalibrationRatio ?? 1.0;
-            if (providerPromptTokens > 0 && rawEstimatedTokens > 0)
+
+            // ── R1：主请求实测必须按 invocation/attempt 配到**它自己那次**冻结请求 ──
+            // 配不到身份的 usage 只进独立账本：既不参与校准，也不改写 currentPreparedRequest。
+            // 这样一次迟到的旧请求不会用新请求的 raw 去算校准，也不会把准备槽位改成 Provider Total。
+            if (!TryGetPreparedRequest(sessionId, invocationId, attemptId, out var frozen) || frozen is null)
             {
-                var observedRatio = Math.Max(1.0, providerPromptTokens / (double)rawEstimatedTokens);
-                var calibrationKey = BuildCalibrationKey(sessionId, existing?.ModelId);
-                calibrationRatio = _promptCalibrationRatios.AddOrUpdate(
+                _unpairedMeasurements[sessionId] = new MeasuredRequestUsage(
+                    sessionId,
+                    purpose,
+                    invocationId,
+                    attemptId,
+                    usage.PromptTokens,
+                    usage.CompletionTokens,
+                    usage.TotalTokens,
+                    RawEstimatedTokens: 0,
+                    DateTimeOffset.UtcNow,
+                    RequestSequence: 0);
+
+                return existing ?? new ContextUsageSnapshot
+                {
+                    SessionId = sessionId,
+                    RecordedAt = DateTimeOffset.UtcNow,
+                    Source = "provider_usage_unpaired",
+                    Confidence = "provider_reported",
+                    ProviderPromptTokens = usage.PromptTokens,
+                    ProviderCompletionTokens = usage.CompletionTokens,
+                    ProviderTotalTokens = usage.TotalTokens,
+                };
+            }
+
+            if (frozen.RawEstimatedTokens > 0 && providerPromptTokens > 0)
+            {
+                // 用**该请求自己的** raw 与 model 校准 ⇒ 校准天然按路由隔离。
+                var observedRatio = Math.Max(1.0, providerPromptTokens / (double)frozen.RawEstimatedTokens);
+                var calibrationKey = BuildCalibrationKey(sessionId, frozen.ModelId);
+                _promptCalibrationRatios.AddOrUpdate(
                     calibrationKey,
                     observedRatio,
                     (_, current) => Math.Max(current, observedRatio));
             }
 
-            // Total usage estimates the next input including this assistant response.
-            // A local overestimate is not provider-reported usage. Preserve conservative
-            // calibration for the outbound hard-limit guard, not in measured telemetry.
-            var providerTokens = Math.Max(0, usage.TotalTokens is > 0
-                ? usage.TotalTokens.Value
-                : (usage.PromptTokens is not null
-                    ? (int)Math.Min(int.MaxValue, (long)providerPromptTokens + Math.Max(0, usage.CompletionTokens ?? 0))
-                    : 0));
-            var hasProviderUsage = providerTokens > 0;
-            if (!hasProviderUsage && existing is not null)
-                return existing;
-            var usedTokens = hasProviderUsage ? providerTokens : existing?.UsedTokens ?? 0;
+            // Provider 完全没报数（Prompt/Completion/Total 全空）⇒ 不产生实测、不推进投影。
+            // 不允许用 0 伪造一次实测（旧实现同样在这里提前返回）。
+            var hasAnyProviderNumbers =
+                usage.PromptTokens is not null || usage.CompletionTokens is not null || usage.TotalTokens is not null;
+            if (!hasAnyProviderNumbers)
+                return existing ?? new ContextUsageSnapshot
+                {
+                    SessionId = sessionId,
+                    RecordedAt = DateTimeOffset.UtcNow,
+                    Source = "provider_usage_missing",
+                    Confidence = "unknown",
+                };
 
-            var snapshot = new ContextUsageSnapshot
-            {
-                SessionId = sessionId,
-                RecordedAt = DateTimeOffset.UtcNow,
-                UsedTokens = usedTokens,
-                RawEstimatedTokens = rawEstimatedTokens,
-                MessageTokens = existing?.MessageTokens ?? 0,
-                ToolDefinitionTokens = existing?.ToolDefinitionTokens ?? 0,
-                SystemMessageTokens = existing?.SystemMessageTokens ?? 0,
-                HistoryMessageTokens = existing?.HistoryMessageTokens ?? 0,
-                SystemPromptTokens = existing?.SystemPromptTokens ?? 0,
-                CompactionSummaryTokens = existing?.CompactionSummaryTokens ?? 0,
-                ConversationTokens = existing?.ConversationTokens ?? 0,
-                ToolResultTokens = existing?.ToolResultTokens ?? 0,
-                ReasoningTokens = existing?.ReasoningTokens ?? 0,
-                MessageCount = existing?.MessageCount ?? 0,
-                ToolCount = existing?.ToolCount ?? 0,
-                ToolDefinitionHash = existing?.ToolDefinitionHash,
-                ToolDefinitionUtf8Bytes = existing?.ToolDefinitionUtf8Bytes ?? 0,
-                ToolDefinitionGzipBytes = existing?.ToolDefinitionGzipBytes ?? 0,
-                Source = hasProviderUsage ? "provider_usage" : existing?.Source ?? "unknown",
-                Confidence = hasProviderUsage ? "provider_reported" : existing?.Confidence ?? "estimated",
-                ProviderPromptTokens = usage.PromptTokens,
-                ProviderCompletionTokens = usage.CompletionTokens,
-                ProviderTotalTokens = usage.TotalTokens,
-                ModelId = existing?.ModelId,
-                PromptCalibrationRatio = calibrationRatio,
-            };
-            Set(snapshot);
-            // 实测与准备分离：主请求实测写入自己的槽位，不回写 raw estimate，
-            // 也不因为迟到而覆盖更晚的准备快照（两者本就不同槽位）。
-            _lastMeasuredRequests[sessionId] = new MeasuredRequestUsage(
+            // 投影按**请求序号**单调推进（不是到达时间）：迟到的旧实测不得把最近主实测拉回去。
+            // Total 缺失时按 prompt+completion 推导（Provider 没给 Total 不代表这次调用没有总用量）；
+            // 该推导只进实测槽位，不参与「准备槽位」的改写。
+            var measuredTotal = usage.TotalTokens is > 0
+                ? usage.TotalTokens
+                : usage.PromptTokens is not null
+                    ? (int?)Math.Min(int.MaxValue, (long)providerPromptTokens + Math.Max(0, usage.CompletionTokens ?? 0))
+                    : null;
+            var measurement = new MeasuredRequestUsage(
                 sessionId,
                 purpose,
                 invocationId,
                 attemptId,
                 usage.PromptTokens,
                 usage.CompletionTokens,
-                usage.TotalTokens,
-                rawEstimatedTokens,
-                DateTimeOffset.UtcNow);
-            return snapshot;
+                measuredTotal,
+                frozen.RawEstimatedTokens,
+                DateTimeOffset.UtcNow,
+                frozen.RequestSequence);
+            _lastMeasuredRequests.AddOrUpdate(
+                sessionId,
+                measurement,
+                (_, current) => measurement.RequestSequence >= current.RequestSequence ? measurement : current);
+
+            // 关键：**不 Set**。准备槽位只由准备/冻结路径改写；Provider usage 不再覆盖它。
+            return existing ?? new ContextUsageSnapshot
+            {
+                SessionId = sessionId,
+                RecordedAt = DateTimeOffset.UtcNow,
+                Source = "provider_usage",
+                Confidence = "provider_reported",
+                ProviderPromptTokens = usage.PromptTokens,
+                ProviderCompletionTokens = usage.CompletionTokens,
+                ProviderTotalTokens = usage.TotalTokens,
+            };
         }
 
         /// <summary>最近一次**主请求**的 Provider 实测；null = 尚未观察到（不得用 0 冒充）。</summary>

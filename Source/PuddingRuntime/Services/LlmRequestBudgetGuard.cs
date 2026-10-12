@@ -131,7 +131,12 @@ public static partial class LlmRequestBudgetGuard
         int safetyBufferTokens = DefaultSafetyBufferTokens,
         long? workUnitInputCapacity = null,
         bool evictOversizedToolPayloads = true,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        // R1：准备即发布，因此必须带上这次请求的身份（invocation/attempt），
+        // 否则它的 Provider usage 配不到自己那条冻结记录，只能进未配对账本。
+        string purpose = LlmCallPurposes.Agent,
+        string? invocationId = null,
+        string? attemptId = null)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
 
@@ -142,7 +147,10 @@ public static partial class LlmRequestBudgetGuard
             sessionId,
             working,
             tools,
-            config?.ModelId);
+            config?.ModelId,
+            purpose,
+            invocationId,
+            attemptId);
 
         while (snapshot.UsedTokens > effectiveInputLimit && RemoveOldestConversationUnit(working))
         {
@@ -151,7 +159,10 @@ public static partial class LlmRequestBudgetGuard
                 sessionId,
                 working,
                 tools,
-                config?.ModelId);
+                config?.ModelId,
+                purpose,
+                invocationId,
+                attemptId);
         }
 
         // 超限时不立刻抛错：先做一次（仅一次）有界「载荷驱逐」——
@@ -168,7 +179,10 @@ public static partial class LlmRequestBudgetGuard
                     sessionId,
                     working,
                     tools,
-                    config?.ModelId);
+                    config?.ModelId,
+                    purpose,
+                    invocationId,
+                    attemptId);
                 logger?.LogWarning(
                     "[LlmRequestBudgetGuard:PayloadEviction] session={SessionId} evictedToolPayloads={Evicted} reclaimedTokens={Reclaimed} estimatedBefore={EstimatedBefore} estimatedAfter={EstimatedAfter} limit={Limit}",
                     sessionId,

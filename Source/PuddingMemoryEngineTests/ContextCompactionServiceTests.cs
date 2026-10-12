@@ -96,7 +96,10 @@ public sealed class ContextCompactionServiceTests
 
         var usageStore = new ContextUsageSnapshotStore();
         var prepared = usageStore.CaptureLlmRequest(
-            "session-two-sources", Messages(4), tools: null, "test-model");
+            "session-two-sources", Messages(4), tools: null, "test-model",
+            LlmCallPurposes.Agent,
+            invocationId: "session-two-sources:trace:1:agent",
+            attemptId: "session-two-sources:trace:1:agent:a0");
         var measuredPrompt = prepared.RawEstimatedTokens * 2;
         usageStore.RecordProviderUsage(
             "session-two-sources",
@@ -107,7 +110,8 @@ public sealed class ContextCompactionServiceTests
                 TotalTokens = measuredPrompt + 64,
             },
             purpose: LlmCallPurposes.Agent,
-            invocationId: "session-two-sources:trace:1:agent");
+            invocationId: "session-two-sources:trace:1:agent",
+            attemptId: "session-two-sources:trace:1:agent:a0");
 
         var service = new ContextCompactionService(
             new TestMemoryDbContextFactory(options),
@@ -261,10 +265,14 @@ public sealed class ContextCompactionServiceTests
         await SeedMessagesAsync(db, "session-provider-usage", messageCount: 2);
 
         var usageStore = new ContextUsageSnapshotStore();
-        usageStore.CaptureLlmRequest(
+        var prepared = usageStore.CaptureLlmRequest(
             "session-provider-usage",
             [new ChatMessage(ChatRole.User, "short local estimate")],
-            tools: null);
+            tools: null,
+            modelId: null,
+            purpose: LlmCallPurposes.Agent,
+            invocationId: "session-provider-usage:trace:1:agent",
+            attemptId: "session-provider-usage:trace:1:agent:a0");
         usageStore.RecordProviderUsage(
             "session-provider-usage",
             new TokenUsageDto
@@ -272,7 +280,10 @@ public sealed class ContextCompactionServiceTests
                 PromptTokens = 150_000,
                 CompletionTokens = 25_000,
                 TotalTokens = 175_000,
-            });
+            },
+            LlmCallPurposes.Agent,
+            "session-provider-usage:trace:1:agent",
+            "session-provider-usage:trace:1:agent:a0");
 
         var service = new ContextCompactionService(
             new TestMemoryDbContextFactory(options),
@@ -285,15 +296,24 @@ public sealed class ContextCompactionServiceTests
             contextWindowTokens: 200_000,
             maxOutputTokens: 20_000);
 
-        Assert.AreEqual(175_000, health.UsedTokens);
+        // R1 契约：两个口径分离 —— UsedTokens/UsageSource 仍描述「当前准备请求」，
+        // Provider 报数单独给出（取自已配对的实测槽位）。
+        Assert.AreEqual(prepared.UsedTokens, health.UsedTokens, "准备口径不得被 Provider Total 顶替");
+        Assert.AreEqual(prepared.Source, health.UsageSource);
+        Assert.AreEqual(prepared.Confidence, health.UsageConfidence);
         Assert.AreEqual(
-            200_000 - 20_000 - LlmRequestBudgetGuard.DefaultSafetyBufferTokens - 175_000,
+            200_000 - 20_000 - LlmRequestBudgetGuard.DefaultSafetyBufferTokens - prepared.UsedTokens,
             health.RemainingTokens);
-        Assert.AreEqual("provider_usage", health.UsageSource);
-        Assert.AreEqual("provider_reported", health.UsageConfidence);
         Assert.AreEqual(150_000, health.ProviderPromptTokens);
         Assert.AreEqual(175_000, health.ProviderTotalTokens);
-        Assert.IsTrue(health.ShouldAutoCompact);
+        Assert.AreEqual(150_000, health.LastMeasuredPromptTokens);
+        Assert.AreEqual("session-provider-usage:trace:1:agent", health.LastMeasuredInvocationId);
+
+        // 安全没有被削弱：Provider 实测远大于本地估算 ⇒ 保守校准仍被学到（下一次估算会抬高）。
+        Assert.IsGreaterThan(
+            1.0,
+            usageStore.GetPromptCalibrationRatio("session-provider-usage", prepared.ModelId),
+            "Provider 报数远大于估算时必须学到保守校准");
     }
 
     [TestMethod]

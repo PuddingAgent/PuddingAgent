@@ -1,6 +1,7 @@
 # PuddingContextPolicy · code_map
 
-> 组件化交付规程（`Docs/10_conventions/组件化交付规程.md`）状态：**S1–S4 已交付，S5 未接入**。
+> 组件化交付规程（`Docs/10_conventions/组件化交付规程.md`）状态：**S1–S5 已交付**（已登记解决方案，
+> 并已在主机侧被消费；见 §5）。
 > 边界硬规则：本组件**不得**引用 `PuddingCore` / `PuddingRuntime` / `PuddingMemoryEngine` /
 > `PuddingHost` / `PuddingAgent` / `PuddingPlatform` 或任何 LLM SDK；判据是**编译期失败**，
 > 并由 `Source/PuddingContextPolicyTests/ComponentBoundaryTests.cs` 在运行期复核（S4）。
@@ -54,7 +55,13 @@ Core/Desktop 运行中执行，不碰宿主文件锁。
 `Test_Dependency_Closure_Must_Not_Contain_Forbidden_Assemblies` 两条**变红**；删除后 csproj
 `SHA256` 逐位复原、42/42 全绿。
 
-## 5. 尚未接入（S5）
+## 5. 接入状态（S5）
 
-未登记 `PuddingAgentNetwork.slnx`、未在任何消费方 csproj 加引用、未在 DI 组合根装配。
-接入前须先完成 S5 的四步与宿主组合测试；**S5 之前不得改动宿主**。
+- **已登记解决方案**：`PuddingAgentNetwork.slnx` 含 `Source/PuddingContextPolicy/PuddingContextPolicy.csproj`
+  与 `Source/PuddingContextPolicyTests/PuddingContextPolicyTests.csproj`。
+- **已被消费**：`Source/PuddingRuntime/PuddingRuntime.csproj` 通过 `ProjectReference` 引用本组件；
+  Runtime 在 warm-prefix 的提交边界消费 `ContextCandidateApplicability`（版本/身份适用性）与
+  `ContextNetGainAdmission`（收益与硬上限准入）。
+- **无需 DI 登记**：本组件只有静态纯策略（无状态、无 I/O），因此没有服务注册项；
+  这不等于「未接入」。
+- 组件自身仍**只依赖 BCL**；边界由编译期强制 + `ComponentBoundaryTests` 运行期复核。
