@@ -24,6 +24,7 @@
 | `DesktopTargetRegistry.cs` | 页面/上下文登记表（唯一真源）：`RegisterContext/RegisterPage/UpdatePage/ClosePage/CloseContext/Resolve`。版本**只允许前进**（回退会让旧 Snapshot/Locator 重新有效，必须拒绝） |
 | `DesktopCapabilityPolicy.cs` | 能力 × 可信级别准入表（8 能力 × 3 级别，快照断言）：脚本注入仅 `AgentAuthorized`；对话框/Picker/剪贴板仅 `Workbench`；`Workbench` **永不**允许脚本注入 |
 | `DesktopInteractionState.cs` | 暂停与用户接管两个**独立轴**：变更类能力被拒（`Paused`/`UserTakeover`，接管优先），只读能力仍可用（观测不打断用户）。**这两个轴不再是本类私有字段**：唯一事实源是 `DesktopService.Authority`（进程内那一个 `BrowserAutomationAuthority`），本类只是读投影 + 写入口（设计方案 §3.1）；原因标签按轴保留（权威只有一个 reason 槽位），仅用于显示，不参与判定。交互槽位（对话框/Picker 单窗口互斥）仍由本类持有 |
+| `BrowserOperationLedger.cs` | **原子执行账本**（§4.2）：键 = **(桌面进程实例, 连接世代, operationId)**（世代进键 ⇒ 重连后同 ID 落新命名空间），`TryBegin(key, 指纹)` 四态 —— `Execute`（唯一获胜者）· `AwaitPending`（**等同一完成源**）· `ReplayCompleted`（复用同一终态）· `Conflict`（**指纹不同，不透**露原结果）。两条边界：**结果未知**（`Abandon`）既不复用也不当安全重试、且其记录**永不被清理/驱逐**；**在途记录永不被容量或保留期驱逐**（否则重传会再执行）。Bridge 分发器以它为**唯一**幂等来源 |
 | `DesktopServiceOptions.cs` | `AllowedCapabilities`、`ShellCallerTrust`（默认 `Untrusted` ⇒ 对话框/Picker/剪贴板默认不开放） |
 | `DesktopAcceptance.cs` | 两段式验收**判定**（强制规则的可执行版本）：`ready-for-external-deploy` / `in-product-functional-complete` / `external-lifecycle-verified` 各自的证据要求；**明确拒绝**「在可能仍跑旧代码的进程上声称新构建功能完成」与「内部 Agent 声称生命周期已验证」 |
 | `DeliveryManifest.cs` | **交付清单**（机器可读交接事实）+ `DeliveryManifestValidator`：缺构建/提交、有失败项、`knownUnverified` 为 null（=没想过）、外部步骤未覆盖生命周期四步、内部声明后续阶段 ⇒ 一律不放行 |

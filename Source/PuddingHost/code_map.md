@@ -42,7 +42,8 @@ draft: false
 | `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge） |
 | `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 代理 |
 | `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理：把 `IBrowserPage` 调用翻译成桥接命令，并**如实回传宿主事实**（不编造）。滚动走 `PageInteract(action=scroll)`，携带目标模型线名与 ref 定位，并把宿主报告的 `scroll` 事实读回成 `ScrollOutcome`；宿主未报告时标 `unreported`（"没有事实"≠"滚了 0 像素"） |
-| `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（仅 DesktopChild + BrowserAutomationEnabled）；同时注册**窄端口**（路由实现）与能力调用上下文工厂 |
+| `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（仅 DesktopChild + BrowserAutomationEnabled）；同时注册**窄端口**（路由实现）与能力调用上下文工厂。其中 `IBrowserScreenshotPublisher` **仅在容器已有 `VisionArtifactStorageService` 时**注册（测试容器只装配本扩展 ⇒ 无条件注册会让工具图激活失败）；未注册时截图工具走**诚实的 `visionUnavailable`** 降级 |
+| `BrowserBridge/BrowserScreenshotArtifactPublisher.cs` | **截图工件发布端**（§7.1）：把截图**有序字节块**落成**调用 workspace 工件域**内的有界图片工件，复用既有 **`VisionArtifactStorageService.SaveIdempotentAsync`**（**内容寻址 + 幂等**，与 `Tools/ImageReaderTool.cs` 同范式，id = `vision-<sha256 前 32 位>`）。**发布端再校一次**分块（升序 · 仅末块 `IsLast` · 累计字节 == 元数据 · 非空 · 不超上限）；返回值**只含工件 id 与元数据**（不含路径/凭据） |
 
 | `BrowserBridge/BridgeBrowserCapabilitySurface.cs` | 窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败）。`locate` 的分页游标与能力通道**共用 `BrowserLocateCursor.TryResolve`**：过期（版本/查询变了）与参数错分类一致，取完即 `NextCursor=null`；`interact` 把滚动目标与滚动事实一并带过 |
 
