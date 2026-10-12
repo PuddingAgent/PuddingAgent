@@ -40,6 +40,17 @@ param(
         "Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj",
         "Tests/PuddingHost.Tests/PuddingHost.Tests.csproj"
 
+    ),
+    [switch]$SkipTests,
+    # Re-run suites whose TRX shows failures, at most N times each (0 = off, the default).
+    # Retries are NOT hidden: a retried suite's TRX is renamed with a "-retried" suffix, so the manifest
+    # check name carries it and anyone reading the manifest can see that a retry happened.
+    [int]$RetryFailedSuites = 0,
+    # Print the retry decision from existing TRX files without running tests (verification aid).
+    [switch]$DryRunRetry,
+    # Accept a retry that absorbed a failure NOT on TestScripts/known-flaky.txt (default: refuse).
+    [switch]$AllowNewInstability
+)
 # ── Shell 构建守卫（2026-10-08）────────────────────────────────────────────
 # WinUI 产品工程不在 suites 里（它没有测试），但曾因**引用边界**被破坏而链全绿、Shell 却构建不了
 # （CS0012：Automation 类型进入 Shell 编译面）。⇒ 单独构建它，失败即拒绝生成清单。
@@ -53,17 +64,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Host "    shell build: OK"
-    ),
-    [switch]$SkipTests,
-    # Re-run suites whose TRX shows failures, at most N times each (0 = off, the default).
-    # Retries are NOT hidden: a retried suite's TRX is renamed with a "-retried" suffix, so the manifest
-    # check name carries it and anyone reading the manifest can see that a retry happened.
-    [int]$RetryFailedSuites = 0,
-    # Print the retry decision from existing TRX files without running tests (verification aid).
-    [switch]$DryRunRetry,
-    # Accept a retry that absorbed a failure NOT on TestScripts/known-flaky.txt (default: refuse).
-    [switch]$AllowNewInstability
-)
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
