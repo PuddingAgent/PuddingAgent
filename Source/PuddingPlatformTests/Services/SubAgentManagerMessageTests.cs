@@ -553,6 +553,46 @@ public sealed class SubAgentManagerMessageTests
         StringAssert.Contains(failure!, "parent run id");
         Assert.AreEqual(0, delegation.RequestCount);
     }
+    [TestMethod]
+    public async Task BrowserDelegation_RevokesWhenStartProjectionFails()
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<IMessageSystem>(new RecordingMessageSystem())
+            .AddSingleton<IRuntimeAgentDispatcher>(new RecordingRuntimeAgentDispatcher())
+            .AddSingleton<IRuntimeExecutionConfigService>(new TestRuntimeExecutionConfigService())
+            .BuildServiceProvider();
+
+        var delegation = new RecordingBrowserDelegationLifecycle();
+        var sessionState = new RecordingSessionStateManager
+        {
+            StartProjectionFailure = new InvalidOperationException("start projection failed"),
+        };
+        var manager = new SubAgentManager(
+            sessionState,
+            services,
+            new RecordingInternalEventBus(),
+            new RecordingSubAgentRunStore(),
+            NullLogger<SubAgentManager>.Instance,
+            new RecordingRuntimeActivitySink(),
+            new RecordingRuntimeTraceAccessor(),
+            services.GetRequiredService<IRuntimeExecutionConfigService>(),
+            browserDelegation: delegation);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => manager.SpawnAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Should fail while projecting the start.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+        }));
+
+        // R4 7: the startup-failure path must revoke too (4th site) -- it happens synchronously
+        // inside the catch before the rethrow, so no completion wait is needed.
+        Assert.HasCount(1, delegation.RevokedRunIds, "revoked=" + string.Join(",", delegation.RevokedRunIds));
+    }
     private static SubAgentManager CreateManager(RecordingRuntimeAgentDispatcher dispatcher)
     {
         var services = new ServiceCollection()
