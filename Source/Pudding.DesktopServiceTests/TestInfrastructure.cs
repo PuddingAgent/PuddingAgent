@@ -169,6 +169,8 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
 
     public int PageStateCount => _calls.Count(call => call.StartsWith("page_state", StringComparison.Ordinal));
 
+    public int ScreenshotCount => _calls.Count(call => call.StartsWith("screenshot", StringComparison.Ordinal));
+
     public int ShellStatusCount => _calls.Count(call => string.Equals(call, "shell_status", StringComparison.Ordinal));
 
     /// <summary>surface 只报告它知道的窗口/托盘部分；其余由 DesktopService 补齐。</summary>
@@ -405,7 +407,8 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
         DesktopCallContext context, BrowserScreenshotRequest request, CancellationToken cancellationToken)
     {
         _calls.Enqueue($"screenshot:{request.Target}");
-        throw new NotSupportedException("screenshot is not supported by the recording surface");
+        return Task.FromResult(CapabilityResult<BrowserScreenshotResult>.Failure(
+            DesktopCapabilityError.InvalidRequest("screenshot is not supported by the recording surface")));
     }
 
     public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
