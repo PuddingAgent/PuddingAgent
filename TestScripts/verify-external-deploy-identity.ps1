@@ -231,14 +231,38 @@ if (-not (Test-Path $sourcePackageJson)) {
     exit 1
 }
 $sourceVersion = (Get-Content $sourcePackageJson -Raw | ConvertFrom-Json).version
-$headCommit = (git -C $RepoRoot rev-parse HEAD 2>$null)
-$headShort = (git -C $RepoRoot rev-parse --short HEAD 2>$null)
-$worktreeDirty = (@(git -C $RepoRoot status --porcelain 2>$null).Count -gt 0)
+# git 事实必须容错读取：-RepoRoot 可能指向一个**非 git** 的构件/发布目录（运维常见）。
+# 那种情况下不能 crash，也不能假装干净 —— 显式记为问题（无法 pin 提交 ⇔ artifact 阶段不得通过）。
+$headCommit = $null
+$headShort = $null
+$worktreeDirty = $false
+$gitResolvable = $false
+try {
+    $headCommit = (git -C $RepoRoot rev-parse HEAD 2>&1 | Select-Object -First 1)
+    if ($LASTEXITCODE -eq 0 -and $headCommit -match '^[0-9a-f]{7,40}$') {
+        $headShort = (git -C $RepoRoot rev-parse --short HEAD 2>&1 | Select-Object -First 1)
+        $worktreeDirty = (@(git -C $RepoRoot status --porcelain 2>&1).Count -gt 0)
+        $gitResolvable = $true
+    } else {
+        $headCommit = $null
+        $headShort = $null
+    }
+} catch {
+    $headCommit = $null
+    $headShort = $null
+    $gitResolvable = $false
+}
+
 Write-Host ("  package.json version : {0}" -f $sourceVersion)
 Write-Host ("  HEAD                 : {0} ({1})" -f $headCommit, $headShort)
 Write-Host ("  ExpectedCommit       : {0} (short {1})" -f $ExpectedCommit, $expectedShort)
 Write-Host ("  工作树是否脏         : {0}" -f $worktreeDirty)
 Write-Host ("  构件根               : {0}" -f $artifactRootFull)
+Write-Host ("  git 可判定           : {0}" -f $gitResolvable)
+
+if (-not $gitResolvable) {
+    $problems.Add('-RepoRoot 不是可判定的 git 工作树：无法核对 HEAD 与工作树干净度（无法 pin 提交）')
+}
 
 if ($worktreeDirty) {
     $problems.Add('工作树脏：交付构建必须在干净检出上完成（否则无法复现，也不能 pin commit）')
@@ -395,33 +419,80 @@ if ($ArtifactOnly) {
     $liveProblems.Add($liveNote)
     Write-Host ("  {0}" -f $liveNote) -ForegroundColor Red
 } else {
-    # ① 运行中进程的 Core DLL 哈希（实际加载的构建）。
-    $process = @(Get-Process -Name $CoreProcessName -ErrorAction SilentlyContinue) | Select-Object -First 1
-    if (-not $process) {
-        $liveProblems.Add(("找不到进程 {0}：运行实例不存在 ⇒ live unknown" -f $CoreProcessName))
-        Write-Host ("  进程 {0}           : 不存在" -f $CoreProcessName) -ForegroundColor Red
-    } else {
-        $liveProcessPath = $null
-        try { $liveProcessPath = $process.Path } catch { $liveProcessPath = $null }
-        if ([string]::IsNullOrWhiteSpace($liveProcessPath)) {
-            $liveProblems.Add('无法读取运行进程的可执行路径 ⇒ live unknown（不猜）')
+    # ① 运行实例身份端点（复核 R5）：PID + 启动标识 + 关键程序集 MVID/文件 SHA256。
+    #    端点由产品提供（api/system/build-identity），是"在线实例加载了哪份构建"的唯一权威来源。
+    $base = $BaseUri.TrimEnd('/')
+    $identityUrl = $base + '/api/system/build-identity'
+    $liveIdentity = $null
+    try {
+        $identityResponse = Invoke-WebRequest -Uri $identityUrl -UseBasicParsing -TimeoutSec 15
+        $identityText = if ($identityResponse.Content -is [string]) { $identityResponse.Content } else { [System.Text.Encoding]::UTF8.GetString($identityResponse.Content) }
+        $liveIdentity = $identityText | ConvertFrom-Json
+    } catch {
+        $liveProblems.Add(("读不到运行实例身份端点（{0}）：{1} ⇒ live unknown（不得视为通过）" -f $identityUrl, $_.Exception.Message))
+        Write-Host ("  身份端点             : 读取失败 ⇒ unknown") -ForegroundColor Red
+    }
+
+    if ($liveIdentity) {
+        Write-Host ("  实例 PID             : {0}（启动 {1}）" -f $liveIdentity.processId, $liveIdentity.processStartedAtUtc)
+
+        # 绑定端口对应进程：BaseUri 返回的 PID 必须真实存在，且启动标识吻合。
+        $liveProcess = $null
+        try { $liveProcess = Get-Process -Id ([int]$liveIdentity.processId) -ErrorAction Stop } catch { $liveProcess = $null }
+        if (-not $liveProcess) {
+            $liveProblems.Add(("BaseUri 指向的实例 PID {0} 不存在：端口未绑定到活的运行进程 ⇒ live unknown" -f $liveIdentity.processId))
         } else {
-            Write-Host ("  进程 {0}           : PID {1} @ {2}" -f $CoreProcessName, $process.Id, $liveProcessPath)
-            $liveDll = Join-Path (Split-Path -Parent $liveProcessPath) 'PuddingAgent.dll'
-            $liveDllHash = Get-FileSha256 -Path $liveDll
-            if (-not $liveDllHash) {
-                $liveProblems.Add(("运行实例目录里找不到 PuddingAgent.dll：{0} ⇒ live unknown" -f $liveDll))
-            } else {
-                Write-Host ("  运行中 DLL SHA256    : {0}" -f $liveDllHash)
-                if ($liveDllHash -ne $artifactDllHash) {
-                    $liveProblems.Add('运行中 Core DLL ≠ 构件根 Core DLL：旧进程仍在运行（磁盘已构建≠已部署）')
+            $startMatches = $false
+            try {
+                if ($liveIdentity.processStartedAtUtc) {
+                    $reportedStart = [datetimeoffset]::Parse($liveIdentity.processStartedAtUtc)
+                    $actualStart = [datetimeoffset]$liveProcess.StartTime.ToUniversalTime()
+                    $startMatches = ([math]::Abs(($reportedStart - $actualStart).TotalSeconds) -le 2)
                 }
+            } catch { $startMatches = $false }
+
+            if (-not $startMatches) {
+                $liveProblems.Add('PID 存在但启动标识不吻合：身份端点与进程不是同一实例 ⇒ live unknown（不猜）')
+            }
+        }
+
+        # 逐程序集比对：MVID 必须存在，文件 SHA256 必须与构件根同名 DLL 一致（唯一命中，不按时间猜）。
+        $assemblyRows = @($liveIdentity.assemblies)
+        foreach ($row in $assemblyRows) {
+            if (-not $row.loaded) {
+                $liveProblems.Add(("实例未加载关键程序集 {0}：无法证明本次修复已在线 ⇒ live unknown" -f $row.name))
+                continue
+            }
+
+            $candidates = @(
+                Get-ChildItem $artifactRootFull -Recurse -Filter ($row.name + '.dll') -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.FullName -notmatch '\\obj\\' -and $_.FullName -notmatch '\\ref\\' }
+            )
+            if ($candidates.Count -eq 0) {
+                $liveProblems.Add(("构件根里找不到 {0}.dll：无法比对在线程序集身份" -f $row.name))
+                continue
+            }
+            if ($candidates.Count -gt 1) {
+                $liveProblems.Add(("构件根里有 {0} 个 {1}.dll（多实例/多配置）：不得按时间猜测，请给更精确的 -ArtifactRoot" -f $candidates.Count, $row.name))
+                continue
+            }
+
+            $artifactAssemblyHash = Get-FileSha256 -Path $candidates[0].FullName
+            $reportedHash = if ($row.fileSha256) { ([string]$row.fileSha256).ToUpperInvariant() } else { $null }
+            $artifactUpper = if ($artifactAssemblyHash) { $artifactAssemblyHash.ToUpperInvariant() } else { $null }
+
+            if ([string]::IsNullOrWhiteSpace($row.mvid)) {
+                $liveProblems.Add(("实例未报告 {0} 的 MVID：无法证明实际加载的程序集身份 ⇒ live unknown" -f $row.name))
+            }
+            if (-not $reportedHash -or $reportedHash -ne $artifactUpper) {
+                $liveProblems.Add(("在线 {0} 的文件 SHA256 ≠ 构件根（旧进程仍在运行：磁盘已构建≠已部署）" -f $row.name))
+            } else {
+                Write-Host ("  {0,-18} : MVID {1} · SHA256 与构件一致" -f $row.name, $row.mvid)
             }
         }
     }
 
-    # ② HTTP 资源：字节与清单一致 + 注入身份一致。
-    $base = $BaseUri.TrimEnd('/')
+    # ② HTTP 资源：字节与清单一致 + 注入身份一致 + **每个 JS/CSS 字节**与构件一致。
     $indexUrl = $base + '/admin/index.html'
     try {
         $response = Invoke-WebRequest -Uri $indexUrl -UseBasicParsing -TimeoutSec 15
@@ -438,8 +509,53 @@ if ($ArtifactOnly) {
             $liveProblems.Add('HTTP /admin/index.html 与构件清单不一致：运行实例提供的不是本次构件根的内容')
         }
 
+        if (-not $artifactAdminRoot) {
+            $liveProblems.Add('构件根里没有 wwwroot/admin：无法校验 JS/CSS 字节 ⇒ live unknown')
+        } else {
+            $html = [System.Text.Encoding]::UTF8.GetString($servedBytes)
+            # 校验**实际返回的 JS/CSS 字节**，而不只是解析注入字段：
+            # 身份字段可以相同而脚本内容不同（复核要求的拒绝用例）。
+            $assetSources = @(
+                [regex]::Matches($html, '(?:src|href)="(?<s>[^"]+\.(?:js|css))"') |
+                    ForEach-Object { $_.Groups['s'].Value } |
+                    Select-Object -Unique
+            )
+            $checkedAssets = 0
+            $assetMismatches = New-Object System.Collections.Generic.List[string]
+            foreach ($source in $assetSources) {
+                $relative = if ($source -match '^https?://') { $null } elseif ($source.StartsWith('/')) { $source.TrimStart('/') } else { 'admin/' + $source }
+                if (-not $relative) { continue }
+                if ($relative.StartsWith('admin/')) { $relative = $relative.Substring('admin/'.Length) }
+
+                $localPath = Join-Path $artifactAdminRoot $relative
+                if (-not (Test-Path $localPath)) { continue }
+
+                $url = $base + '/admin/' + $relative
+                try {
+                    $assetResponse = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20
+                    $assetBytes = $assetResponse.Content
+                    if ($assetBytes -is [string]) { $assetBytes = [System.Text.Encoding]::UTF8.GetBytes($assetBytes) }
+                    $assetHash = (Get-FileHash -InputStream ([System.IO.MemoryStream]::new($assetBytes)) -Algorithm SHA256).Hash
+                    $localHash = Get-FileSha256 -Path $localPath
+                    $checkedAssets++
+                    if ($assetHash -ne $localHash) {
+                        $assetMismatches.Add($relative)
+                    }
+                } catch {
+                    $assetMismatches.Add($relative + '(读取失败)')
+                }
+            }
+
+            Write-Host ("  已校验 JS/CSS 字节   : {0} 个" -f $checkedAssets)
+            if ($assetMismatches.Count -gt 0) {
+                $liveProblems.Add(("在线 JS/CSS 与构件字节不一致（身份字段可能相同）：{0}" -f (($assetMismatches | Select-Object -First 5) -join ', ')))
+            }
+            if ($checkedAssets -eq 0) {
+                $liveProblems.Add('没有校验到任何 JS/CSS 字节：无法证明在线前端与构件一致 ⇒ live unknown')
+            }
+        }
+
         # 拉取页面引用的脚本，核对注入身份（真正的「运行中前端身份」）。
-        $html = [System.Text.Encoding]::UTF8.GetString($servedBytes)
         $scriptSources = @([regex]::Matches($html, 'src="(?<s>[^"]+\.js)"') | ForEach-Object { $_.Groups['s'].Value } | Select-Object -First 6)
         $servedIdentity = $null
         foreach ($source in $scriptSources) {
