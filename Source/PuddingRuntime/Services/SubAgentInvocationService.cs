@@ -242,6 +242,10 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         BlocksParentTurn = request.EffectiveBlocksParentTurn,
         ParentExecutionIdentity = request.ParentExecutionIdentity,
         UsageBudget = request.UsageBudget,
+        // §6.2：把**父上下文投影出来**的委派意图原样带给子运行（标量，Core 侧不依赖 Contracts）。
+        BrowserDelegationContextId = request.BrowserDelegationContextId,
+        BrowserDelegationPageId = request.BrowserDelegationPageId,
+        BrowserDelegationScopeName = request.BrowserDelegationScopeName,
     };
 
     private static SubAgentSpawnRequest BuildSpawnRequest(
