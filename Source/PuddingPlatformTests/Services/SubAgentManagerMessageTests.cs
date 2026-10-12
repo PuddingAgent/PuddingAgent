@@ -441,11 +441,14 @@ public sealed class SubAgentManagerMessageTests
             BrowserDelegationGrantRequest request, CancellationToken cancellationToken)
         {
             RequestCount++;
+            LastRequest = request;
             return ValueTask.FromResult(new BrowserDelegationGrantResult(
                 "grant-1", request.ScopeName, DateTimeOffset.UnixEpoch.AddMinutes(5)));
         }
 
         public List<string> RevokedRunIds { get; } = [];
+
+        public BrowserDelegationGrantRequest? LastRequest { get; private set; }
 
         public ValueTask RevokeForRunAsync(string runId, string reason, CancellationToken cancellationToken)
         {
@@ -592,6 +595,68 @@ public sealed class SubAgentManagerMessageTests
         // R4 7: the startup-failure path must revoke too (4th site) -- it happens synchronously
         // inside the catch before the rethrow, so no completion wait is needed.
         Assert.HasCount(1, delegation.RevokedRunIds, "revoked=" + string.Join(",", delegation.RevokedRunIds));
+    }
+    [TestMethod]
+    public async Task BrowserDelegation_GrantsForTheRealChildRunThenRevokes()
+    {
+        var messageSystem = new RecordingMessageSystem();
+        var services = new ServiceCollection()
+            .AddSingleton<IMessageSystem>(messageSystem)
+            .AddSingleton<IRuntimeAgentDispatcher>(new RecordingRuntimeAgentDispatcher())
+            .AddSingleton<IRuntimeExecutionConfigService>(new TestRuntimeExecutionConfigService())
+            .BuildServiceProvider();
+
+        var delegation = new RecordingBrowserDelegationLifecycle();
+        var manager = new SubAgentManager(
+            new RecordingSessionStateManager(),
+            services,
+            new RecordingInternalEventBus(),
+            new RecordingSubAgentRunStore(),
+            NullLogger<SubAgentManager>.Instance,
+            new RecordingRuntimeActivitySink(),
+            new RecordingRuntimeTraceAccessor(),
+            services.GetRequiredService<IRuntimeExecutionConfigService>(),
+            browserDelegation: delegation);
+
+        var result = await manager.SpawnAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Return child result.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+            BrowserDelegationContextId = "ctx-1",
+            BrowserDelegationPageId = "page-1",
+            BrowserDelegationScopeName = "read",
+            ParentExecutionIdentity = new RuntimeExecutionIdentity
+            {
+                Kind = RuntimeExecutionKind.ConversationTurn,
+                ConversationId = "parent-session",
+                TurnId = "parent-turn",
+                RunId = "parent-run",
+                TraceId = null,
+                ToolCallId = "parent-tool-call",
+            },
+        });
+
+        await messageSystem.WaitForEnvelopeAsync();
+
+        // R4 legitimate-authorization success case: the grant is requested for the REAL child run
+        // (never the template/parent id), with the trusted parent identity and the declared target/scope.
+        Assert.IsTrue(result.Success, "the delegated spawn should succeed");
+        Assert.AreEqual(1, delegation.RequestCount);
+        Assert.IsNotNull(delegation.LastRequest);
+        Assert.AreEqual(result.RunId, delegation.LastRequest!.ChildRunId);
+        Assert.AreEqual("parent-run", delegation.LastRequest.ParentRunId);
+        Assert.AreEqual("ctx-1", delegation.LastRequest.ContextId);
+        Assert.AreEqual("page-1", delegation.LastRequest.PageId);
+        Assert.AreEqual("read", delegation.LastRequest.ScopeName);
+
+        // ...and the completion still revokes that same run.
+        Assert.HasCount(1, delegation.RevokedRunIds);
+        Assert.AreEqual(result.RunId, delegation.RevokedRunIds[0]);
     }
     private static SubAgentManager CreateManager(RecordingRuntimeAgentDispatcher dispatcher)
     {
