@@ -280,6 +280,10 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         TimeoutSeconds = timeoutSeconds,
         ParentExecutionDeadlineUtc = request.ParentExecutionDeadlineUtc,
         InvocationId = $"subinv-{Guid.NewGuid():N}",
+        // §6.2：批量路径**必须与单任务路径同形**，否则"批量派子代理"会成为绕过委派校验的旁路。
+        BrowserDelegationContextId = request.BrowserDelegationContextId,
+        BrowserDelegationPageId = request.BrowserDelegationPageId,
+        BrowserDelegationScopeName = request.BrowserDelegationScopeName,
         BatchId = batchId,
         OriginToolId = request.OriginToolId,
         InvocationMode = request.EffectiveInvocationMode,

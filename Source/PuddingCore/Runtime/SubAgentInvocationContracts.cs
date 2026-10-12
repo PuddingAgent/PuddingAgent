@@ -183,6 +183,17 @@ public sealed record SubAgentBatchInvocationRequest
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
     /// <summary>批次共享的剩余预算；运行时按子任务数量确定性切分。</summary>
     public ExecutionUsageBudget? UsageBudget { get; init; }
+
+    // ── §6.2 浏览器委派意图（**标量过桥**，与 SubAgentSpawnRequest / SubAgentInvocationRequest 同形）──
+    // 批量路径必须与单任务路径**同形**：否则"批量派子代理"会成为绕过委派校验的旁路。
+    /// <summary>父任务声明的浏览器委派目标 context；为空表示不委派浏览器权限。</summary>
+    public string? BrowserDelegationContextId { get; init; }
+
+    /// <summary>父任务声明的浏览器委派目标页（与 context 成对）。</summary>
+    public string? BrowserDelegationPageId { get; init; }
+
+    /// <summary>允许子运行使用的最小范围线名；未知线名由 Runtime 明确拒绝。</summary>
+    public string? BrowserDelegationScopeName { get; init; }
 }
 
 /// <summary>批量子代理调用聚合结果。</summary>
