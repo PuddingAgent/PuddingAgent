@@ -173,7 +173,10 @@ public sealed partial class AgentExecutionService
         ContextAssemblyStore? contextAssemblyStore = null,
         FrozenVisionContextAccessor? frozenVisionContext = null,
         IToolPresentationProjector? toolPresentationProjector = null,
-        IContextCompactionService? contextCompactionService = null)
+        IContextCompactionService? contextCompactionService = null,
+        // R2：前后台准入协调器（与消息受理共用同一实例）——可选维护按会话注册为后台工作，
+        // 新消息受理时的 ReserveSessionForeground 会立刻取消它。
+        PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? admissionCoordinator = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -226,7 +229,8 @@ public sealed partial class AgentExecutionService
         _executionProgress         = executionProgress;
         _toolPresentationProjector = toolPresentationProjector;
         _contextCompactionService = contextCompactionService;
-        _postTurnMaintenance = new PostTurnMaintenanceScheduler(sessionExecutionGate, logger);
+        _postTurnMaintenance = new PostTurnMaintenanceScheduler(
+            sessionExecutionGate, logger, admissionCoordinator);
         _conversationEventStore    = conversationEventStore;
         _compositionRecovery       = compositionRecovery;
         _runtimeExecutionConfig    = runtimeExecutionConfig;

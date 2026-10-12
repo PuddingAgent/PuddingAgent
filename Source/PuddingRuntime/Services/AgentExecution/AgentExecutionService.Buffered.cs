@@ -2296,6 +2296,7 @@ public sealed partial class AgentExecutionService
             var bufferedMaintenanceWindow =
                 effectiveLlmConfig?.MaxContextTokens ?? template.Runtime?.MaxContextTokens ?? 8192;
             _postTurnMaintenance.Schedule(
+                request.WorkspaceId,
                 request.SessionId,
                 "buffered_post_turn_auto_compaction",
                 maintenanceCt => _contextManager.TrimHistoryAsync(
@@ -2312,7 +2313,9 @@ public sealed partial class AgentExecutionService
                     traceId: request.ExecutionIdentity?.TraceId,
                     query: request.MessageText,
                     currentMessageId: request.MessageId,
-                    currentTurnId: request.ExecutionIdentity?.TurnId));
+                    currentTurnId: request.ExecutionIdentity?.TurnId),
+                // R2：候选身份 = 本轮终态时的历史形状 ⇒ 同一形状的重复调度直接合并。
+                candidateKey: "buffered:" + WarmPrefixCompaction.ComputeRevisionHash(bufferedMaintenanceSnapshot));
         }
         _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
         _sessionManager.Touch(request.SessionId);

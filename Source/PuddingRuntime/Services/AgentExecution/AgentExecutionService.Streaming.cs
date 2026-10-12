@@ -1903,6 +1903,7 @@ public sealed partial class AgentExecutionService
                 // 快照在此同步取（Turn 内），避免维护与后续 Turn 并发遍历同一个 List。
                 var maintenanceSnapshot = history.ToList();
                 _postTurnMaintenance.Schedule(
+                    request.WorkspaceId,
                     request.SessionId,
                     "stream_post_turn_auto_compaction",
                     maintenanceCt => _contextManager.TrimHistoryAsync(
@@ -1919,7 +1920,9 @@ public sealed partial class AgentExecutionService
                         traceId: request.ExecutionIdentity?.TraceId,
                         query: request.MessageText,
                         currentMessageId: request.MessageId,
-                        currentTurnId: request.ExecutionIdentity?.TurnId));
+                        currentTurnId: request.ExecutionIdentity?.TurnId),
+                    // R2：候选身份 = 本轮终态时的历史形状 ⇒ 同一形状的重复调度直接合并。
+                    candidateKey: "stream:" + WarmPrefixCompaction.ComputeRevisionHash(maintenanceSnapshot));
             }
             _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
             _sessionManager.Touch(request.SessionId);

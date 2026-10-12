@@ -11,6 +11,7 @@ namespace PuddingRuntimeTests.Services;
 [TestClass]
 public sealed class PostTurnMaintenanceSchedulerTests
 {
+    private const string WorkspaceId = "workspace-post-turn";
     private const string SessionId = "session-post-turn";
 
     /// <summary>核心：Turn 持有门租约期间维护不得开始；释放后立刻开始。</summary>
@@ -23,7 +24,7 @@ public sealed class PostTurnMaintenanceSchedulerTests
 
         await using var turnLease = await gate.EnterAsync(SessionId, "agent_execute");
 
-        scheduler.Schedule(SessionId, "post_turn", _ =>
+        scheduler.Schedule(WorkspaceId, SessionId, "post_turn", _ =>
         {
             started.SetResult();
             return Task.CompletedTask;
@@ -49,7 +50,7 @@ public sealed class PostTurnMaintenanceSchedulerTests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var workStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        scheduler.Schedule(SessionId, "post_turn", async _ =>
+        scheduler.Schedule(WorkspaceId, SessionId, "post_turn", async _ =>
         {
             workStarted.SetResult();
             await release.Task;
@@ -87,7 +88,7 @@ public sealed class PostTurnMaintenanceSchedulerTests
         var secondRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var firstCompletedNormally = false;
 
-        scheduler.Schedule(SessionId, "first", async ct =>
+        scheduler.Schedule(WorkspaceId, SessionId, "first", async ct =>
         {
             firstStarted.TrySetResult();
             await Task.Delay(Timeout.Infinite, ct);
@@ -97,7 +98,7 @@ public sealed class PostTurnMaintenanceSchedulerTests
         // 等第一个真正开始执行（若抢占抢先发生，这一步可能已经不成立——那也属于抢占成功）。
         await Task.WhenAny(firstStarted.Task, Task.Delay(1_000));
 
-        scheduler.Schedule(SessionId, "second", _ =>
+        scheduler.Schedule(WorkspaceId, SessionId, "second", _ =>
         {
             secondRan.TrySetResult();
             return Task.CompletedTask;
@@ -121,8 +122,8 @@ public sealed class PostTurnMaintenanceSchedulerTests
         var scheduler = new PostTurnMaintenanceScheduler(gate, NullLogger.Instance);
         var ran = new System.Collections.Concurrent.ConcurrentBag<string>();
 
-        scheduler.Schedule("session-a", "post_turn", _ => { ran.Add("a"); return Task.CompletedTask; });
-        scheduler.Schedule("session-b", "post_turn", _ => { ran.Add("b"); return Task.CompletedTask; });
+        scheduler.Schedule(WorkspaceId, "session-a", "post_turn", _ => { ran.Add("a"); return Task.CompletedTask; });
+        scheduler.Schedule(WorkspaceId, "session-b", "post_turn", _ => { ran.Add("b"); return Task.CompletedTask; });
 
         await scheduler.DrainAsync();
 
@@ -137,7 +138,7 @@ public sealed class PostTurnMaintenanceSchedulerTests
         var logger = new RecordingLogger();
         var scheduler = new PostTurnMaintenanceScheduler(gate, logger);
 
-        scheduler.Schedule(SessionId, "post_turn", _ => throw new InvalidOperationException("boom"));
+        scheduler.Schedule(WorkspaceId, SessionId, "post_turn", _ => throw new InvalidOperationException("boom"));
 
         await scheduler.DrainAsync();
 
@@ -155,8 +156,8 @@ public sealed class PostTurnMaintenanceSchedulerTests
         var gate = new SessionExecutionGate(NullLogger<SessionExecutionGate>.Instance);
         var scheduler = new PostTurnMaintenanceScheduler(gate, NullLogger.Instance);
 
-        Assert.ThrowsExactly<ArgumentNullException>(() => scheduler.Schedule(SessionId, "r", null!));
-        Assert.ThrowsExactly<ArgumentException>(() => scheduler.Schedule("  ", "r", _ => Task.CompletedTask));
+        Assert.ThrowsExactly<ArgumentNullException>(() => scheduler.Schedule(WorkspaceId, SessionId, "r", null!));
+        Assert.ThrowsExactly<ArgumentException>(() => scheduler.Schedule(WorkspaceId, "  ", "r", _ => Task.CompletedTask));
     }
 
     private sealed class RecordingLogger : ILogger

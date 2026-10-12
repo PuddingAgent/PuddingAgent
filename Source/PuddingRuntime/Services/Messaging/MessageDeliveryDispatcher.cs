@@ -197,6 +197,13 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                     payload.WorkspaceId,
                     payload.Target.Id);
             }
+
+            // R2：**会话级**预留 —— 新消息一受理就取消同会话的后台可选维护
+            // （终态后维护按 (workspace, session) 注册，见 PostTurnMaintenanceScheduler）。
+            // 不再等「下一次 Turn 结束再次 Schedule」才取消。
+            _admissionCoordinator.ReserveSessionForeground(
+                payload.WorkspaceId,
+                evt.SessionId);
         }
 
         await TryClaimAndDispatchAsync(
