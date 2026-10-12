@@ -41,6 +41,8 @@ public interface IBrowserScreenshotPublisher
 
 /// <summary>发布请求：把一次 capture 的**元数据 + 有序字节块**交给发布端。</summary>
 public sealed record BrowserScreenshotPublishRequest(
+    // 方案 §7.2：工件必须落在**调用 workspace 的工件域**（跨 workspace 无权解析）⇒ workspace 随请求传。
+    string WorkspaceId,
     string ObservationId,
     string MimeType,
     long ByteCount,

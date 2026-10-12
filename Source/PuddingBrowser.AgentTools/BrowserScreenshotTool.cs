@@ -183,6 +183,7 @@ public sealed class BrowserScreenshotTool(
 
             var published = await screenshotPublisher.PublishAsync(
                 new BrowserScreenshotPublishRequest(
+                    context.WorkspaceId,
                     capture.Value.Metadata.ObservationId,
                     capture.Value.Metadata.MimeType,
                     capture.Value.Metadata.ByteCount,
