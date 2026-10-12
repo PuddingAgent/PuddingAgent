@@ -144,6 +144,16 @@ public static class DeliveryManifestValidator
             problems.Add("commit is required (a build nobody can trace back is not deliverable)");
         }
 
+        // R6 证据绑定：**带未提交改动的产物不可复现** ⇒ 不得声明可交付。
+        // 注意三态：只有**确知** dirty（true）才拒绝；null（尚未采集）不算 dirty —— 它由
+        // "采集是否接线"另行治理，不能在这里被当成"干净"（那是另一种谎报）。
+        if (manifest.Dirty == true)
+        {
+            problems.Add(
+                "the working tree had uncommitted changes when this manifest was produced; "
+                + "such a build is not reproducible and cannot be declared 'ready-for-external-deploy'");
+        }
+
         if (manifest.Artifacts is not { Count: > 0 })
         {
             problems.Add("at least one artifact is required");
