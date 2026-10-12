@@ -61,20 +61,22 @@ public sealed class SshResourceAccountingTests
         var results = await WaitOrFailAsync(Task.WhenAll(operations), 10000);
         peakQuarantine = Math.Max(peakQuarantine, coordinator.QuarantinedResources);
 
-        Assert.IsLessThanOrEqualTo(
+        Assert.IsGreaterThanOrEqualTo(
             coordinator.QuarantineCapacity,
             coordinator.QuarantinedResources,
             $"隔离区 pending 必须恒 ≤ capacity（peak={peakQuarantine}）");
-        Assert.IsLessThanOrEqualTo(
-            coordinator.QuarantineCapacity,
+        Assert.IsGreaterThanOrEqualTo(
             coordinator.PeakQuarantinedResources,
+            coordinator.QuarantineCapacity,
             "隔离区历史峰值也不得越限");
         Assert.AreEqual(1, factory.ConnectCount, "隔离区填满后，已排队请求不得再开启新连接");
-        Assert.IsTrue(
-            results.Count(r => r.ErrorCode == SshErrorCodes.Busy) >= 1,
+        Assert.IsGreaterThanOrEqualTo(
+            1,
+            results.Count(r => r.ErrorCode == SshErrorCodes.Busy),
             "无法预留隔离令牌的后续请求应以 ssh.busy 拒绝，而不是越限进入");
-        Assert.IsTrue(
-            results[0].CleanupState == SshCleanupState.Pending,
+        Assert.AreEqual(
+            SshCleanupState.Pending,
+            results[0].CleanupState,
             "第一个请求的清理未结束，必须如实报告 Pending");
     }
 
@@ -136,16 +138,19 @@ public sealed class SshResourceAccountingTests
 
         // 业务已返回，但 exec 仍在跑：资源必须继续占账，且 Stop 如实报告。
         Assert.IsFalse(execGate.Task.IsCompleted, "用例前提：exec 仍未结束");
-        Assert.IsTrue(
-            coordinator.PendingResourceLeases > 0,
+        Assert.IsGreaterThan(
+            0,
+            coordinator.PendingResourceLeases,
             "业务已返回但 exec 未结束时，必须有未完成资源租约计数");
-        Assert.IsTrue(
-            coordinator.QuarantinedResources + coordinator.ActiveStageWorkers > 0,
+        Assert.IsGreaterThan(
+            0,
+            coordinator.QuarantinedResources + coordinator.ActiveStageWorkers,
             "未结束的 exec 必须留在某种记账里（隔离区或 worker）");
 
         var report = await WaitOrFailAsync(coordinator.StopAsync());
-        Assert.IsTrue(
-            report.PendingOperations + report.PendingCleanups + report.PendingResources > 0,
+        Assert.IsGreaterThan(
+            0,
+            report.PendingOperations + report.PendingCleanups + report.PendingResources,
             "StopAsync 必须如实报告仍未结束的资源，不能宣称全部收敛");
 
         // 交还 gate：资源真正结束后计数归零。
@@ -204,6 +209,22 @@ public sealed class SshResourceAccountingTests
         Assert.AreEqual(7, again);
     }
 
+    [TestMethod]
+    public async Task StageWorkerPool_SyncBlockingWork_HoldsTokenUntilItEnds()
+    {
+        var pool = new SshStageWorkerPool(4);
+        var task = pool.StartAsync(() =>
+        {
+            Thread.Sleep(500);
+            return Task.FromResult(1);
+        });
+
+        await Task.Delay(150);
+        var activeDuring = pool.Active;
+        await task;
+        Assert.AreEqual(1, activeDuring, $"同步阻塞期间令牌必须仍被占用（active={activeDuring} peak={pool.Peak}）");
+        Assert.AreEqual(0, pool.Active);
+    }
     [TestMethod]
     public async Task CloseCapacityExhausted_RefusesNewResourceCreation()
     {

@@ -221,8 +221,9 @@ public sealed class SshIdentityOwnershipTests
             PendingDetail(coordinator, "迟到关闭卡住"));
         var beforeStop = PendingDetail(coordinator, "stop 之前");
         var report = await WaitOrFailAsync(coordinator.StopAsync());
-        Assert.IsTrue(
-            report.PendingResources + report.PendingCleanups > 0,
+        Assert.IsGreaterThan(
+            0,
+            report.PendingResources + report.PendingCleanups,
             $"Stop 必须如实报告仍未结束的迟到资源｜{beforeStop}｜report=(ops={report.PendingOperations},cleanups={report.PendingCleanups},resources={report.PendingResources},timedOut={report.TimedOut})");
         AssertMaterialIntact(material);
     }

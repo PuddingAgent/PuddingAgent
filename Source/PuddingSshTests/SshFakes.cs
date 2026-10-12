@@ -66,6 +66,7 @@ internal sealed class FakeSession : ISshTransportSession, ISshTransportSessionDi
     private int _submissionEvidence;
     private int _abortRequested;
     private int _closed;
+    private int _disposeCallCount;
 
     public Func<string, TimeSpan, int, CancellationToken, Task<SshExecuteResult>> OnExecute { get; set; } =
         (_, _, _, _) => Task.FromResult(FakeResults.Completed());
@@ -75,6 +76,12 @@ internal sealed class FakeSession : ISshTransportSession, ISshTransportSessionDi
 
     /// <summary>释放是否永不返回（模拟不合作的清理）。</summary>
     public bool DisposeNeverCompletes { get; set; }
+
+    /// <summary>释放方法**同步阻塞**的时长（模拟「返回 ValueTask 之前的同步入口」）。</summary>
+    public TimeSpan SynchronousBlockBeforeDispose { get; set; }
+
+    /// <summary>释放被调用了几次：单次关闭状态机的门禁断言。</summary>
+    public int DisposeCallCount => Volatile.Read(ref _disposeCallCount);
 
     /// <summary>
     /// exec 调用**同步阻塞**的时长（模拟「方法返回 Task 之前的同步启动段」）。
@@ -137,7 +144,14 @@ internal sealed class FakeSession : ISshTransportSession, ISshTransportSessionDi
 
     public async ValueTask DisposeAsync()
     {
+        Interlocked.Increment(ref _disposeCallCount);
         Disposed = true;
+
+        if (SynchronousBlockBeforeDispose > TimeSpan.Zero)
+        {
+            Thread.Sleep(SynchronousBlockBeforeDispose);
+        }
+
         if (DisposeNeverCompletes)
         {
             await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);

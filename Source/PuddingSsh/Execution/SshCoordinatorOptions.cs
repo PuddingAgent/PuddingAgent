@@ -93,4 +93,9 @@ public sealed record SshCoordinatorOptions
 /// <paramref name="PendingOperations"/> 是业务仍在跑的操作数；<paramref name="PendingResources"/> 是
 /// **业务已返回但物理资源仍未结束**的租约数（L1：Dispose 完成不等于所有工作结束）。
 /// </summary>
-public sealed record SshStopReport(int PendingOperations, int PendingCleanups, int PendingResources, bool TimedOut);
+public sealed record SshStopReport(
+    int PendingOperations,
+    int PendingCleanups,
+    int PendingResources,
+    bool TimedOut,
+    bool CancelCallbacksPending = false);

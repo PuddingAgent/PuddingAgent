@@ -41,6 +41,22 @@ public static class SshDiagnosticText
         return Bound("exception=" + exception.GetType().Name) ?? "exception";
     }
 
+    /// <summary>拼接两段诊断并**统一有界**（避免 append 绕过 512 字符上限）。</summary>
+    public static string? BoundedJoin(string? existing, string? extra)
+    {
+        if (string.IsNullOrEmpty(existing))
+        {
+            return Bound(extra);
+        }
+
+        if (string.IsNullOrEmpty(extra))
+        {
+            return Bound(existing);
+        }
+
+        return Bound(existing + "｜" + extra);
+    }
+
     /// <summary>把若干诊断片段拼成一条有界文本。</summary>
     public static string Join(params string?[] parts)
     {

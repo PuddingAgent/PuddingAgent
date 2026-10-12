@@ -194,8 +194,9 @@ public sealed class SshResourceLeaseTests
         Assert.IsTrue(
             report.PendingOperations >= 0 && report.PendingCleanups >= 0 && report.PendingResources >= 0,
             "报告不得为负");
-        Assert.IsTrue(
-            report.PendingOperations + report.PendingResources + report.PendingCleanups > 0,
+        Assert.IsGreaterThan(
+            0,
+            report.PendingOperations + report.PendingResources + report.PendingCleanups,
             "存在在飞操作或未结束的释放工作时，Stop 必须如实报告（不得宣称全部收敛）");
 
         var result = await WaitOrFailAsync(operation);
