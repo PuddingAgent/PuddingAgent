@@ -613,7 +613,8 @@ if ($artifactPassed -and $livePassed) {
 
 if ($artifactPassed -and $liveState -eq 'skipped') {
     Write-Host ''
-    Write-Host 'PREFLIGHT ARTIFACT-ONLY：构件阶段通过，但**未验证运行实例**（不得声称 ready-for-external-deploy）。' -ForegroundColor Yellow
+    Write-Host 'PREFLIGHT ARTIFACT-ONLY：构件阶段通过 ⇒ 该 **pinned 构件**具备交付条件（ready-for-external-deploy）。' -ForegroundColor Yellow
+    Write-Host '注意：本次**未验证运行实例**（LIVE 待外部控制器部署后按本脚本完整模式执行）；产品功能验收需在真实新会话 smoke 之后判定。' -ForegroundColor Yellow
     exit 0
 }
 
