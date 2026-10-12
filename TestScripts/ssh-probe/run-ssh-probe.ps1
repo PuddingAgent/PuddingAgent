@@ -91,6 +91,14 @@ $probeExePath = Join-Path $repo $ProbeExe
 
 # temp/ 是共享临时区：别的会话可能随时按仓库卫生约定清空 temp\test-out\*。
 # 因此每次写入前重建目录，而不是只在脚本开头创建一次（否则一次并发清理就会打断整轮探针）。
+# 服务端 socket 证据：noeof 场景之后，测试端口上不应再有已建立的连接。
+function Get-RemoteSocketCount {
+    $out = Invoke-Wsl @('-u', 'root', '-e', 'bash', '-lc',
+        "ss -tn state established '( sport = :$Port )' 2>/dev/null | tail -n +2 | wc -l")
+    $text = (@($out) | ForEach-Object { "$_" }) -join ' '
+    if ($text -match '(\d+)') { return [int]$Matches[1] }
+    return -1
+}
 function Initialize-OutDir {
     if (-not (Test-Path -LiteralPath $outPath)) {
         New-Item -ItemType Directory -Force -Path $outPath | Out-Null
@@ -360,6 +368,49 @@ try {
             Add-Failure "cwd: probe opened $expectedConnections connections but the server authenticated $($r.AuthDelta) times"
         }
     }
+
+    # 15) R5 item 2: pre-cancelled / expired deadline => zero server-side authentication, zero marker.
+    $r = Invoke-Scenario 'precancel' (@('precancel') + $common)
+    if ($r.AuthDelta -ne 2) {
+        Add-Failure "precancel: only the 2 scenario-owned setup/verify connections may authenticate, got $($r.AuthDelta)"
+    }
+
+    # 16) R5 item 2 (late): a real connection that arrives after the deadline must never run the marker.
+    $r = Invoke-Scenario 'lateconnect' (@('lateconnect') + $common)
+    $connLine = $r.Output | Select-String -Pattern 'name=connections value=(\d+)' | Select-Object -First 1
+    if ($connLine) {
+        $expectedConnections = [int]$connLine.Matches.Groups[1].Value
+        if ($r.AuthDelta -gt $expectedConnections) {
+            Add-Failure "lateconnect: authenticated $($r.AuthDelta) times for $expectedConnections probe-owned connections"
+        }
+    }
+
+    # 17) R5 item 3: server holds the connection open without stdout EOF; close + readers must converge,
+    #     and the server must see no leftover established socket afterwards.
+    $r = Invoke-Scenario 'noeof' (@('noeof') + $common + @('--timeout', '3'))
+    if ($r.AuthDelta -ne 1) { Add-Failure "noeof: expected exactly 1 authentication, got $($r.AuthDelta)" }
+    $observedSockets = Get-RemoteSocketCount
+    if ($observedSockets -ne 0) {
+        Add-Failure "noeof: server still sees $observedSockets established probe socket(s) after close"
+    }
+
+    # 18) R5 item 4: submit-window disconnect => unknown state, retry_safe=false.
+    $r = Invoke-Scenario 'submitfail' (@('submitfail') + $common)
+    if ($r.AuthDelta -ne 1) { Add-Failure "submitfail: expected exactly 1 authentication, got $($r.AuthDelta)" }
+
+    # 19) R5 item 5: many rounds of success/timeout/cancel must return every resource counter to baseline.
+    $r = Invoke-Scenario 'rounds' (@('rounds', '--timeout', '120') + $common)
+    $connLine = $r.Output | Select-String -Pattern 'name=connections value=(\d+)' | Select-Object -First 1
+    if ($connLine) {
+        $expectedConnections = [int]$connLine.Matches.Groups[1].Value
+        if ($r.AuthDelta -ne $expectedConnections) {
+            Add-Failure "rounds: probe opened $expectedConnections connections but the server authenticated $($r.AuthDelta) times"
+        }
+    }
+
+    # 20) R5 item 6: signal-only exit mapping, known exit code preserved.
+    $r = Invoke-Scenario 'signal' (@('signal') + $common)
+    if ($r.AuthDelta -ne 3) { Add-Failure "signal: expected 3 authentications, got $($r.AuthDelta)" }
 
     # Cross-check: the fingerprint the probe observed must equal OpenSSH's own.
     $observedLine = Get-Content (Join-Path $outPath 'probe-fingerprint.log') |

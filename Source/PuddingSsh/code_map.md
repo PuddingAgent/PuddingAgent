@@ -39,7 +39,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Validation/SshKnownHostsParser.cs` | known_hosts 解析（明文/逗号/`\|1\|salt\|hash`/`@revoked`） | `SshKnownHostsEntry`、`SshKnownHostsParseResult`、`Parse`、`ComputeHashedHostToken` | 通配/否定/`@cert-authority`/未知标记/非 v1 哈希/非法公钥 ⇒ **整行丢弃并 fail-closed** |
 | `Validation/SshTrustSnapshot.cs` | 冻结信任快照 + 单目标验证器 | `SshTrustSource`、`SshTrustSnapshot.FromKnownHosts/FromPin/CreateVerifier/ComputeSha256Fingerprint`、`KnownHostsHostKeyVerifier`、`PinHostKeyVerifier` | 两种来源互斥、无首次信任；pin 指纹由**出示的 blob 现算**；撤销按密钥生效 |
 | `Validation/SshPosixCommand.cs` | POSIX 执行封装与 cwd/命令校验 | `SshPosixExecutionPlan`、`Compose`、`Quote`、`IsValidCwd`、`ValidateCommand` | 精确串 = `cd -- '<cwd>' \|\| exit $?` 独立一行 + `\n` + **原样**命令（ADR-096 D1）；cwd 必须干净绝对路径；命令 16 KiB/NUL |
-| `Validation/SshRequestValidator.cs` | 请求/目标形状校验与有效限额合成 | `ValidateTarget`、`ValidateTest`、`ValidateExecute` | 连接前拒绝畸形输入；生效超时 = `min(请求, 主机上限, 宿主 deadline)` |
+| `Validation/SshRequestValidator.cs`（R5：与协调器共用同一 validator） | 请求/目标形状校验与有效限额合成 | `ValidateTarget`、`ValidateTest`、`ValidateExecute` | 连接前拒绝畸形输入；生效超时 = `min(请求, 主机上限, 宿主 deadline)` |
 | `Execution/SshBoundedOutputCollector.cs` | 双流同时排空 + 共享预算 + 增量 UTF-8 解码 | `SshBoundedOutputCollector` | 固定缓冲（2×预算 + 16 KiB 池化读缓冲）；捕获满**继续计数并丢弃**；截断不产生 U+FFFD；**禁止**整份 `Result`/`ReadToEnd` |
 | `Execution/SshCoordinatorOptions.cs` | 协调器预算 | `SshCoordinatorOptions`（Core 总并行 / 等待队列 / 清理宽限） | 默认取 `SshOperationLimits` 的硬上限；引用方只能收窄 |
 | `Diagnostics/SshOutcomePolicy.cs` | 退出证据×输出完整性的纯判定（ADR-096 D4） | `SshOutcomePolicy.Decide`、`SshOutputIncompleteReasons` | 只有「exit=0 + 两条流读完 + 无执行失败」才是 `Completed`；信号结束/无退出证据/输出不完整各有独立错误码 |
@@ -71,27 +71,32 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 8. **无自动重放**：任何已提交命令都不自动重试；连通性失败也不自动重连。
 9. **输出与输出量解耦**：捕获有界（预算内），驻留内存不随远端输出增长（见 §4 实测）。
 10. **限额只能缩小**：`ResolveOperationTimeout` / `ResolveOutputBudget` / `ValidateExecute` 是唯一入口。
-11. **执行串在审批前即确定，cwd 是整脚本前置守卫**（ADR-096 D1）：`cd -- '<单引号编码 cwd>' || exit $?`
+11. **限额要么合法、要么拒绝**（ADR-096 D5）：`SshCoordinatorOptions.Validate()`（Core 1..8、队列 0..32、清理 >0 且 ≤2 s、隔离区 ≤32、worker ≤32）与
+    `SshOperationLimits.Validate()`（connect/默认/max 操作 ≤600 s、默认≤max、捕获 1..256 KiB、每主机 1..2）在**构造与受理处**拒绝；
+    非法配置一律 `ssh.config_invalid` 且零身份/零连接/零提交，不得靠 `Math.Max` 静默夹取掩盖越权配置。
+12. **请求 0/负数属非法请求**：`SshRequestValidator.ValidateExecute` 报 `ssh.request_invalid`；
+    合法但超主机预算的请求只收窄；过期宿主 deadline 绝不把零/负额度传给库。
+13. **执行串在审批前即确定，cwd 是整脚本前置守卫**（ADR-096 D1）：`cd -- '<单引号编码 cwd>' || exit $?`
     独立成行，随后是**原样**命令；分隔符固定 `\n`。守卫不能只挂在命令第一段上——分号/换行/`||`/pipeline/
     后台列表在 cd 失败后一段都不得执行。权威实现入口 `Validation/SshPosixCommand.cs`。
-12. **零上层依赖**：任何 `ProjectReference` 或对 Pudding 上层程序集的 `using` 都是边界破裂。
-13. **会话不含并发保护**：一个 `ISshTransportSession` 代表一条独占连接，同一时刻只应有一个 Exec；
+14. **零上层依赖**：任何 `ProjectReference` 或对 Pudding 上层程序集的 `using` 都是边界破裂。
+15. **会话不含并发保护**：一个 `ISshTransportSession` 代表一条独占连接，同一时刻只应有一个 Exec；
     并发准入/排队/`ssh.busy` 由 `SshOperationCoordinator` 负责（`MaxSessions=1` 是库侧兜底，不是队列）。
-14. **操作总时长从「受理」起算**：含排队、建连、执行与清理；排队中到期即 `ssh.timeout`，且**不建连**。
+16. **操作总时长从「受理」起算**：含排队、建连、执行与清理；排队中到期即 `ssh.timeout`，且**不建连**。
     宿主绝对 deadline（`ExecutionDeadlineUtc`）只能进一步收紧，不会放宽。
-15. **队满立即拒绝**：等待队列（默认 32）满额直接返回 `ssh.busy`，绝不创建无界等待任务；
+17. **队满立即拒绝**：等待队列（默认 32）满额直接返回 `ssh.busy`，绝不创建无界等待任务；
     排队中的操作必须可被取消（`ssh.cancelled`）。
-16. **清理宽限是资源回收，不是执行许可**：截止后最多再等 `CleanupGrace`（默认 2 秒），随后释放独占连接，
+18. **清理宽限是资源回收，不是执行许可**：截止后最多再等 `CleanupGrace`（默认 2 秒），随后释放独占连接，
     并把「已提交但无退出证据」如实报成 `execution_state=unknown`——不得声称远端进程已结束。
-17. **停止不延长业务许可**：`StopAsync`/`DisposeAsync` 取消所有在飞操作、等待清理宽限后返回；
+19. **停止不延长业务许可**：`StopAsync`/`DisposeAsync` 取消所有在飞操作、等待清理宽限后返回；
     停止期间到达的请求返回 `ssh.busy`。释放路径（含 Dispose 卡死）不得改写业务结果。
-18. **取消/截止是前置围栏**（ADR-096 D2）：受理、取得槽位后、取到身份后、建连后（提交前）各检查终止事实；
+20. **取消/截止是前置围栏**（ADR-096 D2）：受理、取得槽位后、取到身份后、建连后（提交前）各检查终止事实；
     已取消的请求**不读身份、不建连、不提交**。阶段只拿**剩余**额度，换阶段不重置预算。
-20. **提交事实先于发送**（ADR-096 D4）：进入可能发送 exec 的调用**之前**推进 `SubmissionEvidence`；
+21. **提交事实先于发送**（ADR-096 D4）：进入可能发送 exec 的调用**之前**推进 `SubmissionEvidence`；
     此后任何失败都是「远端状态未知、不可重试」；只有底层明确给出未发送证据才允许保持 `not_submitted` 与 `retry_safe`。
-21. **清理有界且有人负责**（ADR-096 D3）：TERM/关闭/排空/Dispose 共用同一份清理预算；预算用尽即 `RequestAbort()`
+22. **清理有界且有人负责**（ADR-096 D3）：TERM/关闭/排空/Dispose 共用同一份清理预算；预算用尽即 `RequestAbort()`
     并进入固定容量隔离区（满额 `ssh.busy`）；未结束的资源**不得**被宣称已释放（诊断标注 `cleanup_pending`）。
-22. **同步启动段不得卡住业务等待**：阶段端口在有界 worker 池上调用；worker 满额同样 `ssh.busy`。
+23. **同步启动段不得卡住业务等待**：阶段端口在有界 worker 池上调用；worker 满额同样 `ssh.busy`。
 24. **输出完整性独立表达**（ADR-096 D4）：`output_complete` + `output_incomplete_reason`（`read_failed`/`aborted`/`unknown`）
     与 `output_truncated` 是三个不同字段；**预算截断仍算完整**（继续计数到 EOF），读失败/中止才算不完整。
     exit=0 但输出不完整 ⇒ `ssh.output_incomplete` 且保留已知退出码。

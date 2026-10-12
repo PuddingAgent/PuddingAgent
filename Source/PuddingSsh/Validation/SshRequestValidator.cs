@@ -63,13 +63,43 @@ public static class SshRequestValidator
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(limits);
+
+        // 配置先校验（非法配置一律 ssh.config_invalid，绝不静默夹取）。
+        limits.Validate();
         ValidateTarget(request.Target);
+
+        // 请求的 0/负数不是「配置问题」，而是非法请求：拒绝而不是夹成 1。
+        if (request.TimeoutSeconds is { } requestedSeconds && requestedSeconds <= 0)
+        {
+            throw new SshComponentException(
+                SshErrorCodes.RequestInvalid,
+                "timeout_seconds 必须是正整数；要收窄只能传更小的合法值。");
+        }
+
+        if (request.MaxOutputBytes is { } requestedBytes && requestedBytes <= 0)
+        {
+            throw new SshComponentException(
+                SshErrorCodes.RequestInvalid,
+                "max_output_bytes 必须是正整数；要收窄只能传更小的合法值。");
+        }
 
         var plan = SshPosixCommand.Compose(request.Command, request.Cwd, defaultCwd);
         var timeout = limits.ResolveOperationTimeout(request.TimeoutSeconds);
-        if (hostDeadline is { } deadline && deadline < timeout)
+
+        if (hostDeadline is { } deadline)
         {
-            timeout = deadline;
+            if (deadline <= TimeSpan.Zero)
+            {
+                // 过期 deadline 绝不能变成负数/零额度传给库：直接判为不建连的超时。
+                throw new SshComponentException(
+                    SshErrorCodes.Timeout,
+                    "宿主 deadline 已过期：未建连、未提交（ADR-096 D2）。");
+            }
+
+            if (deadline < timeout)
+            {
+                timeout = deadline;
+            }
         }
 
         return (plan, timeout, limits.ResolveOutputBudget(request.MaxOutputBytes));

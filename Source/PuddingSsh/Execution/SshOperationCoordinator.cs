@@ -63,6 +63,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         }
 
         _coreGate = new SemaphoreSlim(_options.CoreMaxConcurrentOperations, _options.CoreMaxConcurrentOperations);
+        // 非法协调器配置在构造处就拒绝：不让越权配置「看起来生效」。
+        _options.Validate();
         _quarantine = new SshCleanupQuarantine(_options.MaxQuarantinedResources);
         _stageWorkers = new SshStageWorkerPool(_options.MaxStageWorkers);
     }
@@ -162,6 +164,16 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 SshErrorCodes.TargetChanged,
                 "请求目标与冻结主机快照不一致（配置可能已变化）；请重新发现并重新审批。",
                 stopwatch);
+        }
+
+        try
+        {
+            // ssh_test 与 ssh_execute 共用机器校验：非法主机限额一律拒绝，不做静默夹取。
+            host.Limits.Validate();
+        }
+        catch (SshComponentException ex)
+        {
+            return TestFailure(host, SshPhase.Validation, ex.ErrorCode, ex.Message, stopwatch);
         }
 
         var timeout = host.Limits.ResolveOperationTimeout(null);
@@ -368,19 +380,18 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 stopwatch);
         }
 
-        // 执行串在**审批前**即可确定：审批看到的就是将要提交的精确字符串。
+        // 与 ssh_test 共用同一个 validator：限额校验 + 请求校验 + 执行串（审批看到的就是将要提交的精确字符串）。
         SshPosixExecutionPlan plan;
+        TimeSpan timeout;
+        int outputBudget;
         try
         {
-            plan = SshPosixCommand.Compose(request.Command, request.Cwd, host.DefaultCwd);
+            (plan, timeout, outputBudget) = SshRequestValidator.ValidateExecute(request, host.Limits, host.DefaultCwd);
         }
         catch (SshComponentException ex)
         {
             return ExecuteFailure(host, SshPhase.Validation, ex.ErrorCode, ex.Message, retrySafe: false, stopwatch);
         }
-
-        var timeout = host.Limits.ResolveOperationTimeout(request.TimeoutSeconds);
-        var outputBudget = host.Limits.ResolveOutputBudget(request.MaxOutputBytes);
 
         if (ResolveDeadlineBudget(host, startedAt, ref timeout, out var deadlineFailure))
         {

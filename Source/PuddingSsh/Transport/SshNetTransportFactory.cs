@@ -1,6 +1,7 @@
 using System.Text;
 using PuddingSsh.Contracts;
 using PuddingSsh.Diagnostics;
+using PuddingSsh.Validation;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 
@@ -28,6 +29,15 @@ public sealed class SshNetTransportFactory : ISshTransportFactory
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Identity);
         ArgumentNullException.ThrowIfNull(request.HostKeyVerifier);
+
+        // 底层公开入口的**防御校验**（ADR-096 D5）：不能只等 Runtime 加检查。
+        SshRequestValidator.ValidateTarget(request.Target);
+        if (request.ConnectTimeout <= TimeSpan.Zero)
+        {
+            throw new SshComponentException(
+                SshErrorCodes.ConfigInvalid,
+                "connect_timeout 必须为正；过期/零额度不得传入库（ADR-096 D2）。");
+        }
 
         var keyStream = request.Identity.OpenKeyStream();
         PrivateKeyFile? privateKey = null;

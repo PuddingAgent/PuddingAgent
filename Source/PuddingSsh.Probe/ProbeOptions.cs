@@ -49,6 +49,12 @@ internal sealed record ProbeOptions(
           ignoreterm   服务端忽略 TERM：取消后不得声称远端已退出（execution_state 必须 unknown）
           disconnect   命令执行中连接被服务端切断：必须是 connection_lost + 状态未知、绝不重放
           auth         错误账号：必须 authentication_failed，且不得发生命令提交
+          precancel    预先取消/已过期 deadline：零连接零认证零 marker
+          lateconnect  极短 deadline 下真实连接迟到：不得执行 marker
+          noeof        服务端不发 stdout EOF：关闭与 reader 在宽限内收敛
+          submitfail   提交窗口断线：unknown 且 retry_safe=false
+          rounds       多轮成功/超时/取消后资源计数回基线
+          signal       signal-only 退出映射与已知 exit code 保留
           cwd          cwd 守卫：cd 失败时整个脚本零执行、零副作用；cd 正常时原脚本语义不变
           matrix       顺序执行上面全部（默认）
 
@@ -135,7 +141,8 @@ internal sealed record ProbeOptions(
         }
 
         if (scenario is not ("fingerprint" or "hostkey" or "encrypted" or "deadline" or "cancel" or "throughput"
-            or "coordinator" or "knownhosts" or "dirs" or "ignoreterm" or "disconnect" or "auth" or "cwd" or "matrix"))
+            or "coordinator" or "knownhosts" or "dirs" or "ignoreterm" or "disconnect" or "auth" or "cwd"
+            or "precancel" or "lateconnect" or "noeof" or "submitfail" or "rounds" or "signal" or "matrix"))
         {
             throw new ProbeUsageException($"未知 scenario {scenario}");
         }

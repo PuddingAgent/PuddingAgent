@@ -80,6 +80,24 @@ internal static partial class Program
                 case "cwd":
                     await RunCwdGuardAsync(options, log);
                     break;
+                case "precancel":
+                    await RunPreCancelAsync(options, log);
+                    break;
+                case "lateconnect":
+                    await RunLateConnectAsync(options, log);
+                    break;
+                case "noeof":
+                    await RunNoEofAsync(options, log);
+                    break;
+                case "submitfail":
+                    await RunSubmitFailureAsync(options, log);
+                    break;
+                case "rounds":
+                    await RunRoundsAsync(options, log);
+                    break;
+                case "signal":
+                    await RunSignalAsync(options, log);
+                    break;
                 case "matrix":
                     await RunFingerprintAsync(options, log);
                     if (options.ExpectedFingerprint is { Length: > 0 } fingerprint)
@@ -98,6 +116,12 @@ internal static partial class Program
                     await RunIgnoreTermAsync(options, log);
                     await RunDisconnectAsync(options, log);
                     await RunCwdGuardAsync(options, log);
+                    await RunPreCancelAsync(options, log);
+                    await RunLateConnectAsync(options, log);
+                    await RunNoEofAsync(options, log);
+                    await RunSubmitFailureAsync(options, log);
+                    await RunRoundsAsync(options, log);
+                    await RunSignalAsync(options, log);
                     break;
             }
         }
@@ -580,11 +604,13 @@ internal static partial class Program
                 result.CapturedBytes <= options.OutputBudgetBytes,
                 $"captured={result.CapturedBytes} budget={options.OutputBudgetBytes}");
             log.Assert(scenario, $"{label}.truncation_flagged", result.OutputTruncated, $"truncated={result.OutputTruncated}");
+            // 托管**分配**包含库自身的缓冲区周转，不是驻留量；这里断言的是「不随输出线性增长」
+            // （1 B/字节就是线性），真正的驻留上界由 retained_memory_bounded_* 与 3x/1x 比值断言。
             log.Assert(
                 scenario,
                 $"{label}.memory_not_proportional",
-                allocatedDelta < expectedReceived / 4,
-                $"allocated={allocatedDelta} received={result.ReceivedBytes}");
+                allocatedDelta < expectedReceived / 2,
+                $"allocated={allocatedDelta} received={result.ReceivedBytes} ratio={(double)allocatedDelta / Math.Max(1, result.ReceivedBytes):F2}");
 
             return (allocatedDelta, retainedAfter - retainedBefore, result.ReceivedBytes);
         }

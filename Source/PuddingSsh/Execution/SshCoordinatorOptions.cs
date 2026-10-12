@@ -31,6 +31,50 @@ public sealed record SshCoordinatorOptions
     public int MaxStageWorkers { get; init; } = 8;
 
     public static SshCoordinatorOptions Default { get; } = new();
+
+    /// <summary>清理隔离区容量的上限（防御性上限，避免配置把清理变成无界堆积）。</summary>
+    public const int MaxQuarantinedResourcesHardLimit = 32;
+
+    /// <summary>阶段 worker 池容量的上限。</summary>
+    public const int MaxStageWorkersHardLimit = 32;
+
+    /// <summary>
+    /// 机器可校验的协调器限额校验：**非法配置直接拒绝**（<c>ssh.config_invalid</c>），
+    /// 不允许「先夹取到合法值再继续」——那会让越权配置看起来生效了。
+    /// </summary>
+    public void Validate()
+    {
+        Require(
+            CoreMaxConcurrentOperations >= 1 && CoreMaxConcurrentOperations <= Contracts.SshOperationLimits.CoreMaxConcurrentOperations,
+            "coordinator.core_max_concurrent_operations",
+            CoreMaxConcurrentOperations.ToString());
+        Require(
+            MaxWaitQueueLength >= 0 && MaxWaitQueueLength <= Contracts.SshOperationLimits.WaitQueueHardLimit,
+            "coordinator.max_wait_queue_length",
+            MaxWaitQueueLength.ToString());
+        Require(
+            CleanupGrace > TimeSpan.Zero && CleanupGrace <= Contracts.SshOperationLimits.CleanupGrace,
+            "coordinator.cleanup_grace",
+            CleanupGrace.ToString());
+        Require(
+            MaxQuarantinedResources >= 0 && MaxQuarantinedResources <= MaxQuarantinedResourcesHardLimit,
+            "coordinator.max_quarantined_resources",
+            MaxQuarantinedResources.ToString());
+        Require(
+            MaxStageWorkers >= 1 && MaxStageWorkers <= MaxStageWorkersHardLimit,
+            "coordinator.max_stage_workers",
+            MaxStageWorkers.ToString());
+    }
+
+    private static void Require(bool condition, string field, string value)
+    {
+        if (!condition)
+        {
+            throw new Diagnostics.SshComponentException(
+                Diagnostics.SshErrorCodes.ConfigInvalid,
+                $"协调器配置非法：{field}={value}；请改为合法取值（硬上限见 SshOperationLimits / SshCoordinatorOptions 常量）。");
+        }
+    }
 }
 
 /// <summary>停止报告（ADR-096 D3）：停止等待有界，且**如实报告**仍未结束的操作与隔离资源。</summary>

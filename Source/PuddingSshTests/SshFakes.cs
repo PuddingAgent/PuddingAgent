@@ -222,9 +222,10 @@ internal static class FakeSsh
         int connectTimeoutSeconds = 15,
         string? defaultCwd = null,
         DateTimeOffset? deadline = null,
-        SshTrustSnapshot? trust = null) => new(
+        SshTrustSnapshot? trust = null,
+        SshOperationLimits? limits = null) => new(
         target ?? Target(),
-        new SshOperationLimits
+        limits ?? new SshOperationLimits
         {
             OperationTimeoutSeconds = operationTimeoutSeconds,
             MaxOperationTimeoutSeconds = maxOperationTimeoutSeconds,

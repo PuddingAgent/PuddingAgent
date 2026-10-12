@@ -1,3 +1,5 @@
+using PuddingSsh.Diagnostics;
+
 namespace PuddingSsh.Contracts;
 
 /// <summary>
@@ -35,7 +37,59 @@ public sealed record SshOperationLimits
 
     public static SshOperationLimits Default { get; } = new();
 
-    /// <summary>有效操作超时 = min(请求值 ?? 默认值, 主机上限)，且不小于 1 秒。</summary>
+    /// <summary>单次操作总时长的硬上限（秒）。</summary>
+    public const int MaxOperationTimeoutSecondsHardLimit = 600;
+
+    /// <summary>单主机并发硬上限。</summary>
+    public const int MaxConcurrentOperationsHardLimit = 2;
+
+    /// <summary>
+    /// 机器可校验的限额校验（ADR-096 D5 的收口）：**非法配置直接拒绝**，
+    /// 不允许靠 <c>Math.Max</c>/<c>Math.Clamp</c> 静默夹取后继续用超出授权的行为。
+    /// </summary>
+    public void Validate()
+    {
+        Require(
+            ConnectTimeoutSeconds >= 1 && ConnectTimeoutSeconds <= MaxOperationTimeoutSecondsHardLimit,
+            "limits.connect_timeout_seconds",
+            ConnectTimeoutSeconds);
+        Require(
+            OperationTimeoutSeconds >= 1 && OperationTimeoutSeconds <= MaxOperationTimeoutSecondsHardLimit,
+            "limits.operation_timeout_seconds",
+            OperationTimeoutSeconds);
+        Require(
+            MaxOperationTimeoutSeconds >= 1 && MaxOperationTimeoutSeconds <= MaxOperationTimeoutSecondsHardLimit,
+            "limits.max_operation_timeout_seconds",
+            MaxOperationTimeoutSeconds);
+        Require(
+            OperationTimeoutSeconds <= MaxOperationTimeoutSeconds,
+            "limits.operation_timeout_seconds>max_operation_timeout_seconds",
+            OperationTimeoutSeconds);
+        Require(
+            MaxOutputBytes >= 1 && MaxOutputBytes <= MaxOutputBytesHardLimit,
+            "limits.max_output_bytes",
+            MaxOutputBytes);
+        Require(
+            MaxConcurrentOperations >= 1 && MaxConcurrentOperations <= MaxConcurrentOperationsHardLimit,
+            "limits.max_concurrent_operations",
+            MaxConcurrentOperations);
+    }
+
+    private static void Require(bool condition, string field, int value)
+    {
+        if (!condition)
+        {
+            throw new SshComponentException(
+                SshErrorCodes.ConfigInvalid,
+                $"限额配置非法：{field}={value}；请改为合法取值（硬上限见 SshOperationLimits 常量）。");
+        }
+    }
+
+    /// <summary>
+    /// 有效操作超时 = min(请求值 ?? 默认值, 主机上限)。调用方必须先用
+    /// <see cref="Validation.SshRequestValidator.ValidateExecute"/> 拒绝 0/负数请求（<c>ssh.request_invalid</c>），
+    /// 这里的下界只是纵深防御，不是「静默接受非法请求」。
+    /// </summary>
     public TimeSpan ResolveOperationTimeout(int? requestedSeconds)
     {
         var requested = requestedSeconds ?? OperationTimeoutSeconds;
@@ -43,7 +97,9 @@ public sealed record SshOperationLimits
         return TimeSpan.FromSeconds(Math.Max(1, clamped));
     }
 
-    /// <summary>有效捕获预算 = min(请求值 ?? 默认值, 主机预算, 硬上限 256 KiB)。</summary>
+    /// <summary>
+    /// 有效捕获预算 = min(请求值 ?? 默认值, 主机预算, 硬上限 256 KiB)。同样要求调用方先拒绝 0/负数请求。
+    /// </summary>
     public int ResolveOutputBudget(int? requestedBytes)
     {
         var requested = requestedBytes ?? MaxOutputBytes;
