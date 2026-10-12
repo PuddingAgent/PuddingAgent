@@ -316,6 +316,28 @@ public sealed record BrowserScreenshotDescriptor
 
     public required string Detail { get; init; }
 
+    public double? DeviceScaleFactor { get; init; }
+
+    public int? ViewportWidth { get; init; }
+
+    public int? ViewportHeight { get; init; }
+
+    public double? ScrollX { get; init; }
+
+    public double? ScrollY { get; init; }
+
+    public double? CropX { get; init; }
+
+    public double? CropY { get; init; }
+
+    public double? CropWidth { get; init; }
+
+    public double? CropHeight { get; init; }
+
+    public long? DomRevision { get; init; }
+
+    public long? ViewportRevision { get; init; }
+
     /// <summary>分块载荷；**空列表表示没有载荷**（不伪造一片）。</summary>
     public required IReadOnlyList<BrowserScreenshotChunkDescriptor> Chunks { get; init; }
 }
