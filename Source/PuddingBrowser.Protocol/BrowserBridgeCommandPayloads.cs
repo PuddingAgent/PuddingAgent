@@ -263,6 +263,7 @@ public sealed record BrowserWaitResultDescriptor
     public string? Error { get; init; }
     public required BrowserPageDescriptor Page { get; init; }
 
+}
 /// <summary>截图参数（§8.1，Bridge 传输）。**必须钉住页面版本**（观察只在同一世代内有效）。</summary>
 public sealed record PageScreenshotArguments
 {
@@ -317,5 +318,4 @@ public sealed record BrowserScreenshotDescriptor
 
     /// <summary>分块载荷；**空列表表示没有载荷**（不伪造一片）。</summary>
     public required IReadOnlyList<BrowserScreenshotChunkDescriptor> Chunks { get; init; }
-}
 }
