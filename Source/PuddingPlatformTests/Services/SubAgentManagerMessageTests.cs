@@ -285,6 +285,10 @@ public sealed class SubAgentManagerMessageTests
         Assert.IsTrue(result.Success);
         var envelope = await messageSystem.WaitForEnvelopeAsync();
 
+        // R4 ⑦：**失败**收尾同样必须撤销（统一撤销四点之二）—— 完成已被观测之后再断言。
+        Assert.HasCount(1, delegation.RevokedRunIds, "revoked=" + string.Join(",", delegation.RevokedRunIds));
+        Assert.AreEqual(result.RunId, delegation.RevokedRunIds[0]);
+
         Assert.AreEqual("subagent_result", envelope.Metadata["intent"]);
         Assert.AreEqual("failed", envelope.Metadata["subagent_status"]);
         Assert.AreEqual("1", envelope.Metadata["tool_failure_count"], envelope.Content);
