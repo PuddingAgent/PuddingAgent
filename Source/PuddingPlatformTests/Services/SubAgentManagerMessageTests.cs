@@ -658,6 +658,52 @@ public sealed class SubAgentManagerMessageTests
         Assert.HasCount(1, delegation.RevokedRunIds);
         Assert.AreEqual(result.RunId, delegation.RevokedRunIds[0]);
     }
+    [TestMethod]
+    public async Task BrowserDelegation_RevokesOnCancellation()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher(suspend: true);
+        var services = new ServiceCollection()
+            .AddSingleton<IMessageSystem>(new RecordingMessageSystem())
+            .AddSingleton<IRuntimeAgentDispatcher>(dispatcher)
+            .AddSingleton<IRuntimeExecutionConfigService>(new TestRuntimeExecutionConfigService())
+            .BuildServiceProvider();
+
+        var delegation = new RecordingBrowserDelegationLifecycle();
+        var manager = new SubAgentManager(
+            new RecordingSessionStateManager(),
+            services,
+            new RecordingInternalEventBus(),
+            new RecordingSubAgentRunStore(),
+            NullLogger<SubAgentManager>.Instance,
+            new RecordingRuntimeActivitySink(),
+            new RecordingRuntimeTraceAccessor(),
+            services.GetRequiredService<IRuntimeExecutionConfigService>(),
+            browserDelegation: delegation);
+
+        var spawn = manager.SpawnAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Stays in flight until cancelled.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+        });
+
+        var cancelled = 0;
+        for (var attempt = 0; attempt < 100 && cancelled == 0; attempt++)
+        {
+            cancelled = await manager.CancelAllAsync("parent-session");
+            if (cancelled == 0) { await Task.Delay(10); }
+        }
+
+        dispatcher.Release();
+        try { await spawn; } catch { }
+
+        Assert.IsTrue(cancelled >= 1, "CancelAllAsync must find the in-flight run; cancelled=" + cancelled);
+        Assert.HasCount(1, delegation.RevokedRunIds, "revoked=" + string.Join(",", delegation.RevokedRunIds));
+    }
     private static SubAgentManager CreateManager(RecordingRuntimeAgentDispatcher dispatcher)
     {
         var services = new ServiceCollection()
@@ -715,16 +761,33 @@ public sealed class SubAgentManagerMessageTests
     private sealed class RecordingRuntimeAgentDispatcher : IRuntimeAgentDispatcher
     {
         private readonly RuntimeDispatchResult? _result;
+        private readonly TaskCompletionSource<RuntimeDispatchResult>? _pending;
         public RuntimeDispatchRequest? LastRequest { get; private set; }
 
-        public RecordingRuntimeAgentDispatcher(RuntimeDispatchResult? result = null)
+        public RecordingRuntimeAgentDispatcher(RuntimeDispatchResult? result = null, bool suspend = false)
         {
             _result = result;
+            if (suspend) { _pending = new TaskCompletionSource<RuntimeDispatchResult>(TaskCreationOptions.RunContinuationsAsynchronously); }
+        }
+
+        public void Release()
+        {
+            var request = LastRequest;
+            if (_pending is null || request is null) { return; }
+            _pending.TrySetResult(_result ?? new RuntimeDispatchResult
+            {
+                SessionId = request.SessionId,
+                AgentInstanceId = request.AgentTemplateId,
+                IsSuccess = true,
+                ReplyText = "child ok",
+                ExecutionState = AgentExecutionState.Completed,
+            });
         }
 
         public Task<RuntimeDispatchResult> DispatchAsync(RuntimeDispatchRequest request, CancellationToken ct = default)
         {
             LastRequest = request;
+            if (_pending is not null) { return _pending.Task; }
             var result = _result ?? new RuntimeDispatchResult
             {
                 SessionId = request.SessionId,
@@ -771,12 +834,47 @@ public sealed class SubAgentManagerMessageTests
         /// <summary>R4 7: set non-null to make the start projection fail (covers the 4th revoke site).</summary>
         public Exception? StartProjectionFailure { get; set; }
 
-        public Task TrackSubAgentStartAsync(string parentSessionId, SubAgentSpawnInfo info, CancellationToken ct = default) =>
-            StartProjectionFailure is null ? Task.CompletedTask : Task.FromException(StartProjectionFailure);
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Generic.List<SubAgentStatus>> _subAgents =
+            new(StringComparer.Ordinal);
+
+        public Task TrackSubAgentStartAsync(string parentSessionId, SubAgentSpawnInfo info, CancellationToken ct = default)
+        {
+            if (StartProjectionFailure is not null)
+            {
+                return Task.FromException(StartProjectionFailure);
+            }
+
+            var list = _subAgents.GetOrAdd(parentSessionId, _ => []);
+            lock (list)
+            {
+                list.RemoveAll(s => s.SubSessionId == info.SubSessionId);
+                list.Add(new SubAgentStatus
+                {
+                    RunId = info.SubSessionId,
+                    ParentSessionId = parentSessionId,
+                    SubSessionId = info.SubSessionId,
+                    Status = "running",
+                    TaskSummary = info.TaskSummary ?? string.Empty,
+                    SpawnedAt = info.SpawnedAt,
+                });
+            }
+
+            return Task.CompletedTask;
+        }
         public Task TrackSubAgentCompleteAsync(string subSessionId, SubAgentResult result, CancellationToken ct = default) =>
             Task.CompletedTask;
-        public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(string sessionId, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<SubAgentStatus>>([]);
+        public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(string sessionId, CancellationToken ct = default)
+        {
+            if (!_subAgents.TryGetValue(sessionId, out var list))
+            {
+                return Task.FromResult<IReadOnlyList<SubAgentStatus>>([]);
+            }
+
+            lock (list)
+            {
+                return Task.FromResult<IReadOnlyList<SubAgentStatus>>(list.ToList());
+            }
+        }
         public Task<int> GetRunningSubAgentCountAsync(string parentSessionId, CancellationToken ct = default) =>
             Task.FromResult(0);
         
