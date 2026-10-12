@@ -25,6 +25,8 @@ public sealed class TrustedCallerAuthorizerOverTheWireTests
         var call = harness.Connect();
         await call.RequestStream.WriteAsync(CapabilityHostHarness.Hello(DesktopIdValue));
         await harness.ReadAsync(call, frame => frame.HelloAck is not null, "hello_ack");
+        // 会话在 hello_ack 之后**异步注册**：先有界等待它出现，再严格 Single()（2026-10-08 实测整链负载下偶发 Sequence contains no elements）。
+        await TestWait.UntilAsync(() => harness.Broker.Sessions.Count == 1, "broker registered the session");
         var session = harness.Broker.Sessions.Single();
         var context = new DesktopCallContext(
             new DesktopInstanceId(DesktopIdValue), new OperationId("op-denied"), DateTimeOffset.UtcNow.AddSeconds(30));
@@ -63,6 +65,8 @@ public sealed class TrustedCallerAuthorizerOverTheWireTests
         var call = harness.Connect();
         await call.RequestStream.WriteAsync(CapabilityHostHarness.Hello(DesktopIdValue));
         await harness.ReadAsync(call, frame => frame.HelloAck is not null, "hello_ack");
+        // 会话在 hello_ack 之后**异步注册**：先有界等待它出现，再严格 Single()（2026-10-08 实测整链负载下偶发 Sequence contains no elements）。
+        await TestWait.UntilAsync(() => harness.Broker.Sessions.Count == 1, "broker registered the session");
         var session = harness.Broker.Sessions.Single();
         var context = new DesktopCallContext(
             new DesktopInstanceId(DesktopIdValue), new OperationId("op-allowed"), DateTimeOffset.UtcNow.AddSeconds(30));
@@ -108,6 +112,8 @@ public sealed class TrustedCallerAuthorizerOverTheWireTests
         var call = harness.Connect();
         await call.RequestStream.WriteAsync(CapabilityHostHarness.Hello(DesktopIdValue));
         await harness.ReadAsync(call, frame => frame.HelloAck is not null, "hello_ack");
+        // 会话在 hello_ack 之后**异步注册**：先有界等待它出现，再严格 Single()（2026-10-08 实测整链负载下偶发 Sequence contains no elements）。
+        await TestWait.UntilAsync(() => harness.Broker.Sessions.Count == 1, "broker registered the session");
         var session = harness.Broker.Sessions.Single();
         var context = new DesktopCallContext(
             new DesktopInstanceId(DesktopIdValue), new OperationId("op-no-exec"), DateTimeOffset.UtcNow.AddSeconds(30));
@@ -173,6 +179,8 @@ public sealed class TrustedCallerAuthorizerOverTheWireTests
         var call = harness.Connect();
         await call.RequestStream.WriteAsync(CapabilityHostHarness.Hello(DesktopIdValue, declared: NineBrowserCapabilities));
         await harness.ReadAsync(call, frame => frame.HelloAck is not null, "hello_ack");
+        // 会话在 hello_ack 之后**异步注册**：先有界等待它出现，再严格 Single()（2026-10-08 实测整链负载下偶发 Sequence contains no elements）。
+        await TestWait.UntilAsync(() => harness.Broker.Sessions.Count == 1, "broker registered the session");
         IDesktopBrowserCapabilitySurface surface = harness.Broker.Sessions.Single();
         var target = new DesktopPageTarget("ctx-1", "page-1");
         var context = new DesktopCallContext(
