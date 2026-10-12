@@ -200,7 +200,8 @@ public sealed class CapabilityChannelConfigurationTests
                 DesktopCapability.WebViewPageState or
                 DesktopCapability.ShellNotification or
                 DesktopCapability.ShellStatus or
-                DesktopCapability.BrowserSnapshot or
+                DesktopCapability.BrowserScreenshot or
+            DesktopCapability.BrowserSnapshot or
                 DesktopCapability.BrowserLocate or
                 DesktopCapability.BrowserInteract or
                 DesktopCapability.BrowserWaitFor or
