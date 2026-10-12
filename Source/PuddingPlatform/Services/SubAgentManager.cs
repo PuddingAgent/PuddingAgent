@@ -30,6 +30,14 @@ public sealed class SubAgentManager : ISubAgentManager
     private readonly IRuntimeActivitySink _activitySink;
     private readonly IRuntimeTraceAccessor _traceAccessor;
         private readonly IRuntimeExecutionConfigService? _executionConfig;
+    /// <summary>
+    /// §6.2 浏览器委派生命周期（**可选**）：为**真实子运行**申请/撤销浏览器子集授权。
+    /// 可选是刻意的 —— 本类被大量既有测试直接构造/DI，强制依赖会让那些套件全部变红；
+    /// 为空时行为与今天完全一致（不申请、不撤销，也**不谎称**已委派）。
+    /// 端口声明在 **`PuddingCore`**（标量签名）：本程序集的引用里**没有 `Pudding.Contracts`**，
+    /// 而 Core 是 Platform / Runtime / Host 的公共落点。
+    /// </summary>
+    private readonly PuddingCode.Abstractions.IBrowserDelegationLifecycle? _browserDelegation;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _workspaceGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _templateGates = new(StringComparer.Ordinal);
 
@@ -41,7 +49,8 @@ public sealed class SubAgentManager : ISubAgentManager
         ILogger<SubAgentManager> logger,
         IRuntimeActivitySink activitySink,
         IRuntimeTraceAccessor traceAccessor,
-        IRuntimeExecutionConfigService? executionConfig = null)
+        IRuntimeExecutionConfigService? executionConfig = null,
+        PuddingCode.Abstractions.IBrowserDelegationLifecycle? browserDelegation = null)
     {
         _ssm = ssm;
         _services = services;
@@ -51,6 +60,7 @@ public sealed class SubAgentManager : ISubAgentManager
         _activitySink = activitySink;
         _traceAccessor = traceAccessor;
         _executionConfig = executionConfig;
+        _browserDelegation = browserDelegation;
     }
 
     /// <summary>子代理 subSessionId → runId 的内存映射（供异步完成回调使用）。</summary>
