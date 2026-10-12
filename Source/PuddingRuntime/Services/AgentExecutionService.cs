@@ -2163,7 +2163,8 @@ public sealed partial class AgentExecutionService
                 target,
                 out var plan,
                 workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
-                sourceGeneration: sourceGeneration)
+                sourceGeneration: sourceGeneration,
+                providerId: request.LlmProfile?.ProviderId)
             || plan is null)
         {
             return WarmPrefixCompactionOutcome.NotNeeded;
@@ -2392,6 +2393,9 @@ public sealed partial class AgentExecutionService
         // 生命周期事件在租约释放后发布：事件写入失败不得撤销已提交历史（ADR-095 D5）。
         WarmPrefixApplyVerification verification;
         WarmPrefixCompactionDisposition rejectedDisposition = WarmPrefixCompactionDisposition.NotNeeded;
+        // R3：**只有持久提交成功并替换了内存**才算应用（durableCheckpoint 是权威）。
+        var durableApplied = false;
+        string? appliedRejectionReason = null;
         // F2：本次 checkpoint 是否真的落库（权威事实），以及未落库时的原因码。
         var durableCheckpoint = false;
         string? durableSkipReason = null;
@@ -2405,17 +2409,20 @@ public sealed partial class AgentExecutionService
                 llmTools,
                 effectiveLlmConfig,
                 plan,
-                safeSummary);
+                safeSummary,
+                // R4：提交时的**真实当前值**（不能拿 plan 里的冻结值自比较）。
+                // generation 在这里**重新读**（锁内）：期间若有别的持久压缩推进了代次，这里会不等 ⇒ 拒绝。
+                currentValues: new CurrentContextValues(
+                    Generation: await _contextManager.GetCompactionGenerationAsync(request.SessionId, ct),
+                    RouteVersion: WarmPrefixCompaction.ResolveRouteVersion(
+                        effectiveLlmConfig, providerId: request.LlmProfile?.ProviderId),
+                    ToolSpecVersion: WarmPrefixCompaction.ResolveToolSpecVersion(exactOutboundHistory, llmTools)));
 
             if (verification.CanApply)
             {
-                // 校验通过：在**同一临界区**内替换内存历史。
-                durableHistory.Clear();
-                durableHistory.AddRange(verification.AppliedMessages!);
-
-                // F2：把 checkpoint 落库（摘要行 + 精确到行的 CompactedBy + 覆盖清单 + 代际，
-                // 单事务）。跨度里有任何「没有持久行」的消息就**不落库**（错标等于静默隐藏真实消息），
-                // 降级为内存-only 并如实上报；降级不撤销本次运行期压缩。
+                // ── R3：唯一提交边界 = **先持久提交成功，再替换内存** ──
+                // 旧实现先改内存再尝试落库：落库失败时内存已经是压缩后的版本，等于「内存-only 成功」，
+                // 而 DB 仍是旧历史 ⇒ 重启/其它进程看到的是另一份事实。现在反过来。
                 var spanResolution = _contextManager.ResolveDurableSpan(
                     request.SessionId,
                     verification.RemovedMessages ?? []);
@@ -2424,27 +2431,49 @@ public sealed partial class AgentExecutionService
                 var spanKeys = (verification.RemovedMessages ?? [])
                     .Select(m => new WarmPrefixSpanKey(m.Role.ToString(), m.Content ?? string.Empty))
                     .ToArray();
+
                 if (WarmPrefixDurableCommitDecision.ShouldAttempt(
                         _contextCompactionService is not null, spanResolution, spanKeys.Length))
                 {
-                    var commit = await _contextCompactionService!.CommitWarmPrefixCheckpointAsync(
-                        new WarmPrefixCheckpointCommitRequest(
-                            SessionId: request.SessionId,
-                            WorkspaceId: request.WorkspaceId,
-                            AgentId: agentInstanceId,
-                            CompactionId: warmPrefixCompactionId,
-                            ExpectedSourceGeneration: sourceGeneration,
-                            CoveredMessageIds: spanResolution.MessageIds,
-                            Summary: safeSummary,
-                            MessagesBefore: plan.InitialMessageCount,
-                            MessagesAfter: durableHistory.Count,
-                            TokensBefore: plan.InitialUsedTokens,
-                            MeasuredTokensAfter: verification.AfterSnapshot!.UsedTokens,
-                            Reason: plan.RequiresSynchronousProtection ? "hard_protection" : "soft_maintenance",
-                            SpanKeys: spanKeys),
-                        ct);
-                    (durableCheckpoint, durableSkipReason) =
-                        WarmPrefixDurableCommitDecision.Interpret(commit);
+                    try
+                    {
+                        var commit = await _contextCompactionService!.CommitWarmPrefixCheckpointAsync(
+                            new WarmPrefixCheckpointCommitRequest(
+                                SessionId: request.SessionId,
+                                WorkspaceId: request.WorkspaceId,
+                                AgentId: agentInstanceId,
+                                CompactionId: warmPrefixCompactionId,
+                                ExpectedSourceGeneration: sourceGeneration,
+                                CoveredMessageIds: spanResolution.MessageIds,
+                                Summary: safeSummary,
+                                MessagesBefore: plan.InitialMessageCount,
+                                MessagesAfter: verification.AppliedMessages!.Count,
+                                TokensBefore: plan.InitialUsedTokens,
+                                MeasuredTokensAfter: verification.AfterSnapshot!.UsedTokens,
+                                Reason: plan.RequiresSynchronousProtection ? "hard_protection" : "soft_maintenance",
+                                SpanKeys: spanKeys),
+                            ct);
+                        (durableCheckpoint, durableSkipReason) =
+                            WarmPrefixDurableCommitDecision.Interpret(commit);
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        // 取消：事务随 Dispose 回滚，内存尚未改动 ⇒ 两边都保持原值。
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        // 落库抛异常（故障注入 / DB 错误）：事务已回滚，内存尚未改动。
+                        // 维护是**可选**的，不得因此中断安全消息（ADR-095 D2/D7）⇒ 降级为拒绝。
+                        durableCheckpoint = false;
+                        durableSkipReason = "durable_commit_failed";
+                        _logger.LogError(
+                            ex,
+                            "[AgentExec:Compaction] Warm-prefix durable commit failed; history preserved session={Session} round={Round} compactionId={CompactionId}",
+                            request.SessionId,
+                            round + 1,
+                            warmPrefixCompactionId);
+                    }
                 }
                 else
                 {
@@ -2453,8 +2482,22 @@ public sealed partial class AgentExecutionService
                         spanResolution);
                 }
 
-                // 只有真的改写了历史才登记完成（冷却 + 清除无收益抑制）。
-                _contextManager.RecordCompactionCommitCompleted(request.SessionId);
+                if (durableCheckpoint)
+                {
+                    // 持久提交已经成功（事务内 CAS + 摘要/清单/标注都落库）⇒ 现在才替换内存。
+                    durableHistory.Clear();
+                    durableHistory.AddRange(verification.AppliedMessages!);
+                    durableApplied = true;
+                    // 只有真的改写了历史才登记完成（冷却 + 清除无收益抑制）。
+                    _contextManager.RecordCompactionCommitCompleted(request.SessionId);
+                }
+                else
+                {
+                    // 落库未成功（服务不可用 / 身份不可解析 / 代次或覆盖 CAS 冲突）：
+                    // 显式保留原历史，绝不做「内存-only」应用（R3）。
+                    rejectedDisposition = WarmPrefixCompactionDisposition.Failed;
+                    appliedRejectionReason = durableSkipReason ?? "durable_commit_unavailable";
+                }
             }
             else
             {
@@ -2469,18 +2512,21 @@ public sealed partial class AgentExecutionService
                         => WarmPrefixCompactionDisposition.StaleCandidate,
                     _ => WarmPrefixCompactionDisposition.Failed,
                 };
+                appliedRejectionReason = verification.Reason;
             }
         }
         var verifyDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
 
-        if (!verification.CanApply)
+        // R3：判据是「落库 + 应用」成功，而不是「校验通过」。
+        appliedRejectionReason ??= verification.Reason;
+        if (!durableApplied)
         {
             _logger.LogWarning(
                 "[AgentExec:Compaction] Warm-prefix apply rejected; history preserved session={Session} round={Round} compactionId={CompactionId} reason={Reason} beforeTokens={BeforeTokens} measuredAfterTokens={MeasuredAfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} limit={Limit} durationMs={DurationMs}",
                 request.SessionId,
                 round + 1,
                 warmPrefixCompactionId,
-                verification.Reason,
+                appliedRejectionReason,
                 plan.InitialUsedTokens,
                 verification.AfterSnapshot?.UsedTokens,
                 plan.EstimatedRetainedSnapshot.UsedTokens,
@@ -2497,7 +2543,7 @@ public sealed partial class AgentExecutionService
                     sessionId = request.SessionId,
                     mode = "WarmPrefix",
                     stage = "rejected",
-                    reason = verification.Reason,
+                    reason = appliedRejectionReason,
                     applied = false,
                     outcome = rejectedDisposition.ToString(),
                     beforeTokens = plan.InitialUsedTokens,
@@ -2524,7 +2570,7 @@ public sealed partial class AgentExecutionService
                 summaryStartedAt,
                 rejectedDisposition,
                 verifyDurationMs,
-                verification.Reason);
+                appliedRejectionReason);
         }
 
         // 校验通过：内存历史已在临界区内替换完毕，这里只做日志与生命周期事件。

@@ -432,6 +432,139 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             "流式路径的终态后维护必须仍然执行");
     }
 
+    // ── R3：唯一提交边界（先持久提交成功，再替换内存；否则内存与 DB 都保持原值） ────────
+
+    /// <summary>
+    /// 持久服务**不可用**时：不得做「内存-only」应用。Turn 仍须安全跑完（维护是可选能力，
+    /// 由出站裁剪 fail-closed 兜底），但内存历史不得出现 checkpoint、DB 不得有任何写入。
+    /// </summary>
+    [TestMethod]
+    public async Task DurableServiceUnavailable_KeepsHistoryAndWritesNothing()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 36, charsPerMessage: 3_000);
+        }
+
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(ContinueWithToolJson, SummaryResponse, DoneJson);
+        var tools = new RecordingToolInvocationService();
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var service = CreateService(
+            llm, tools, manager, new ContextUsageSnapshotStore(), factory, log,
+            omitCompactionService: true);
+
+        var history = manager.GetOrCreateHistory(SessionId);
+        var hydration = await manager.TryHydrateStreamHistoryFromDbAsync(
+            SessionId, history, 200_000, CancellationToken.None);
+        Assert.IsTrue(hydration.Succeeded, "水合必须成功，否则本用例不成立");
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+
+        var result = await service.ExecuteAsync(CreateDispatchRequest());
+
+        // 维护失败不得中断安全消息。
+        Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState, "Turn 必须跑到终态");
+
+        // ① 内存历史**没有**被替换：不得出现 checkpoint 前导语。
+        Assert.IsFalse(
+            history.Any(m => m.Content?.Contains(
+                WarmPrefixCompaction.CheckpointPreamble[..40], StringComparison.Ordinal) == true),
+            "持久服务不可用时内存历史必须保持原样（不得内存-only 应用）");
+
+        // ② DB 零写入。
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"),
+            "持久服务不可用时不得写摘要行");
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.CompactedBy != null),
+            "持久服务不可用时不得打覆盖标注");
+        Assert.AreEqual(0, await verify.CompactionCoverageManifests.CountAsync(m => m.SessionId == SessionId));
+        Assert.AreEqual(0, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration);
+
+        // ③ 事件与日志必须如实说「拒绝 + 历史保留」。
+        Assert.IsTrue(
+            log.Lines.Any(l => l.Contains("Warm-prefix apply rejected", StringComparison.Ordinal)),
+            "必须记录拒绝（不得静默）");
+        Assert.IsFalse(
+            log.Lines.Any(l => l.Contains("Warm-prefix checkpoint committed", StringComparison.Ordinal)),
+            "不得记录已提交");
+    }
+
+    /// <summary>
+    /// 落库时**代次已被别人推进**（真实 CAS 冲突）：候选在摘要调用前冻结（generation=0），
+    /// 摘要调用期间另一个持久压缩把代次推到 1 ⇒ R4 的真实当前值校验 + R3 的落库 CAS 都必须拒绝，
+    /// 且内存与 DB 都不得变化（不得推进代次、不得写摘要、不得打标、不得替换内存历史）。
+    /// </summary>
+    [TestMethod]
+    public async Task StaleGenerationAtCommit_IsRejected_WithNothingAppliedInMemoryOrDb()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 36, charsPerMessage: 3_000);
+        }
+
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(ContinueWithToolJson, SummaryResponse, DoneJson);
+        var tools = new RecordingToolInvocationService();
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var service = CreateService(llm, tools, manager, new ContextUsageSnapshotStore(), factory, log);
+
+        // 真实窗口：摘要调用期间推进持久代次（模拟并发的持久压缩提交）。
+        var bumped = false;
+        llm.OnSummaryRequestAsync = async () =>
+        {
+            await using var bump = factory.CreateDbContext();
+            var session = await bump.Sessions.SingleAsync(s => s.SessionId == SessionId);
+            session.CompactionGeneration = 1;
+            await bump.SaveChangesAsync();
+            bumped = true;
+        };
+
+        var history = manager.GetOrCreateHistory(SessionId);
+        var hydration = await manager.TryHydrateStreamHistoryFromDbAsync(
+            SessionId, history, 200_000, CancellationToken.None);
+        Assert.IsTrue(hydration.Succeeded, "水合必须成功，否则本用例不成立");
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+
+        var result = await service.ExecuteAsync(CreateDispatchRequest());
+        Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState, "Turn 必须跑到终态");
+        Assert.IsTrue(bumped, "前提：摘要调用期间必须真的发生了代次推进（否则本用例不成立）");
+
+        // 内存：没有被替换。
+        Assert.IsFalse(
+            history.Any(m => m.Content?.Contains(
+                WarmPrefixCompaction.CheckpointPreamble[..40], StringComparison.Ordinal) == true),
+            "代次冲突时必须保留原历史");
+
+        // DB：代次仍是 1（不是 2），且没有任何本次写入。
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(1, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration,
+            "冲突时不得推进代次");
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"));
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.CompactedBy != null));
+        Assert.AreEqual(0, await verify.CompactionCoverageManifests.CountAsync(m => m.SessionId == SessionId));
+
+        // 拒绝必须如实落在日志/事件上（真实 CAS 判据）。
+        var rejectionLogs = log.Lines.Where(l =>
+            l.Contains("Warm-prefix apply rejected", StringComparison.Ordinal)).ToList();
+        Assert.IsTrue(rejectionLogs.Count > 0, "必须记录拒绝");
+        Assert.IsTrue(
+            rejectionLogs.Any(l => l.Contains("generation_changed", StringComparison.Ordinal)),
+            "拒绝原因必须是代次冲突（真实 CAS），实际：" + string.Join(" | ", rejectionLogs));
+        Assert.IsFalse(
+            log.Lines.Any(l => l.Contains("Warm-prefix checkpoint committed", StringComparison.Ordinal)),
+            "不得记录已提交");
+    }
+
     // ── 装配 ────────────────────────────────────────────────────────────────
 
     private static RuntimeDispatchRequest CreateDispatchRequest(bool suppressAutoCompaction = true) => new()
@@ -465,7 +598,9 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         ContextUsageSnapshotStore snapshotStore,
         IDbContextFactory<MemoryDbContext> memoryDbFactory,
         CapturingLogger? log = null,
-        ISessionExecutionGate? gate = null)
+        ISessionExecutionGate? gate = null,
+        // R3：允许「持久服务不可用」（omit=true ⇒ null）以验证内存与 DB 都保持原值。
+        bool omitCompactionService = false)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -513,7 +648,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             sessionExecutionGate,
             toolInvocationService: tools,
             contextUsageSnapshotStore: snapshotStore,
-            contextCompactionService: compactionService);
+            contextCompactionService: omitCompactionService ? null : compactionService);
     }
 
     private static DbContextOptions<MemoryDbContext> CreateOptions(SqliteConnection connection) =>
@@ -620,6 +755,12 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
 
         public List<IReadOnlyList<ChatMessage>> Requests { get; } = [];
 
+        /// <summary>
+        /// R3/R4 用例钩子：**摘要调用期间**注入并发变化（例如别的持久压缩推进代次）。
+        /// 这是真实窗口：候选在摘要调用之前冻结，提交在摘要返回之后。
+        /// </summary>
+        public Func<Task>? OnSummaryRequestAsync { get; set; }
+
         public ScriptedLlmClient(params string[] contents)
         {
             foreach (var content in contents)
@@ -633,7 +774,22 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
                 _responses.Enqueue(response);
         }
 
-        public Task<LlmResponse> ChatAsync(
+        private async Task<LlmResponse> NextAsync(IReadOnlyList<ChatMessage> messages)
+        {
+            if (_responses.Count == 0)
+                throw new InvalidOperationException("ScriptedLlmClient exhausted: more LLM rounds than scripted responses.");
+
+            Requests.Add(messages.ToList());
+            if (OnSummaryRequestAsync is not null
+                && messages.Any(m => m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true))
+            {
+                await OnSummaryRequestAsync();
+            }
+
+            return _responses.Dequeue();
+        }
+
+        public async Task<LlmResponse> ChatAsync(
             string workspaceId,
             string sessionId,
             string agentTemplateId,
@@ -641,13 +797,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             IReadOnlyList<LlmToolDefinition>? tools = null,
             LlmConfig? llmConfig = null,
             CancellationToken ct = default)
-        {
-            if (_responses.Count == 0)
-                throw new InvalidOperationException("ScriptedLlmClient exhausted: more LLM rounds than scripted responses.");
-
-            Requests.Add(messages.ToList());
-            return Task.FromResult(_responses.Dequeue());
-        }
+            => await NextAsync(messages);
 
         public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(
             string workspaceId,

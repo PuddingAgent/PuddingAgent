@@ -36,6 +36,22 @@ public sealed class WarmPrefixCompactionApplyTests
         return messages;
     }
 
+    /// <summary>
+    /// 「未变化」的当前值：模拟真实适配层在提交时从**当前** config / 当前工具清单 / 当前代次重算
+    /// （不是从 plan 复制字段；plan 在这里只是提供预期相等的基准）。
+    /// </summary>
+    private static CurrentContextValues CurrentValuesFor(
+        WarmPrefixCompactionPlan plan,
+        IReadOnlyList<ChatMessage> history,
+        LlmConfig? config = null,
+        long? generation = null,
+        string? routeVersion = null,
+        string? toolSpecVersion = null)
+        => new(
+            Generation: generation ?? plan.SourceGeneration,
+            RouteVersion: routeVersion ?? WarmPrefixCompaction.ResolveRouteVersion(config ?? BuildConfig()),
+            ToolSpecVersion: toolSpecVersion ?? WarmPrefixCompaction.ResolveToolSpecVersion(history, tools: null));
+
     private static WarmPrefixCompactionPlan CreatePlan(
         ContextUsageSnapshotStore store,
         List<ChatMessage> history,
@@ -65,7 +81,7 @@ public sealed class WarmPrefixCompactionApplyTests
         var summary = "## Current Work\n- continue implementation\n## Next Step\n- run tests";
 
         var verification = WarmPrefixCompaction.VerifyApplication(
-            store, SessionId, history, tools: null, BuildConfig(), plan, summary);
+            store, SessionId, history, tools: null, BuildConfig(), plan, summary, CurrentValuesFor(plan, history));
 
         Assert.IsTrue(verification.CanApply, verification.Reason);
         Assert.AreEqual("applied", verification.Reason);
@@ -97,7 +113,7 @@ public sealed class WarmPrefixCompactionApplyTests
         var mutated = history.Concat([new ChatMessage(ChatRole.User, "新的用户消息")]).ToArray();
 
         var verification = WarmPrefixCompaction.VerifyApplication(
-            store, SessionId, mutated, tools: null, BuildConfig(), plan, "## Current Work\n- x");
+            store, SessionId, mutated, tools: null, BuildConfig(), plan, "## Current Work\n- x", CurrentValuesFor(plan, mutated));
 
         Assert.IsFalse(verification.CanApply);
         Assert.AreEqual("history_revision_changed", verification.Reason);
@@ -117,7 +133,7 @@ public sealed class WarmPrefixCompactionApplyTests
         var oversizedSummary = new string('s', plan.RemovedTokenEstimate * 4);
 
         var verification = WarmPrefixCompaction.VerifyApplication(
-            store, SessionId, history, tools: null, BuildConfig(), plan, oversizedSummary);
+            store, SessionId, history, tools: null, BuildConfig(), plan, oversizedSummary, CurrentValuesFor(plan, history));
 
         Assert.IsFalse(verification.CanApply);
         Assert.AreEqual(WarmPrefixCompactionReasons.SummaryNoGain, verification.Reason);
@@ -136,7 +152,7 @@ public sealed class WarmPrefixCompactionApplyTests
         var tinyLimitPlan = plan with { EffectiveInputLimit = 1_000 };
 
         var verification = WarmPrefixCompaction.VerifyApplication(
-            store, SessionId, history, tools: null, BuildConfig(), tinyLimitPlan, "## Current Work\n- x");
+            store, SessionId, history, tools: null, BuildConfig(), tinyLimitPlan, "## Current Work\n- x", CurrentValuesFor(tinyLimitPlan, history));
 
         Assert.IsFalse(verification.CanApply);
         Assert.AreEqual("after_summary_exceeds_hard_limit", verification.Reason);
@@ -180,7 +196,7 @@ public sealed class WarmPrefixCompactionApplyTests
         var summary = "## Current Work\n- continue implementation\n## Next Step\n- run tests";
 
         var verification = WarmPrefixCompaction.VerifyApplication(
-            store, SessionId, history, tools: null, BuildConfig(), plan, summary);
+            store, SessionId, history, tools: null, BuildConfig(), plan, summary, CurrentValuesFor(plan, history));
 
         Assert.IsTrue(verification.CanApply, verification.Reason);
         Assert.IsNotNull(verification.RemovedMessages);
@@ -215,10 +231,150 @@ public sealed class WarmPrefixCompactionApplyTests
 
         // 空摘要 ⇒ summary_no_gain，历史原样。
         var verification = WarmPrefixCompaction.VerifyApplication(
-            store, SessionId, history, tools: null, BuildConfig(), plan, rawSummary: "   ");
+            store, SessionId, history, tools: null, BuildConfig(), plan, rawSummary: "   ", currentValues: CurrentValuesFor(plan, history));
 
         Assert.IsFalse(verification.CanApply);
         Assert.IsNull(verification.RemovedMessages);
         Assert.IsNull(verification.AppliedMessages);
+    }
+
+    // ── R4 门禁：CAS 必须用**提交时真实当前值**，逐项变更都要拒绝 ──────────────────
+
+    /// <summary>
+    /// 没有提供当前值 ⇒ 一律拒绝（`current_context_unavailable`）。
+    /// 这条防的正是「拿 plan 的冻结值自比较」——那样 CAS 永远通过。
+    /// </summary>
+    [TestMethod]
+    public void VerifyApplication_WithoutCurrentValues_IsRejected()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        var plan = CreatePlan(store, history);
+
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            store, SessionId, history, tools: null, BuildConfig(), plan, "## Current Work\n- x");
+
+        Assert.IsFalse(verification.CanApply);
+        Assert.AreEqual(WarmPrefixCompactionReasons.CurrentContextUnavailable, verification.Reason);
+        Assert.IsNull(verification.AppliedMessages);
+        Assert.IsNull(verification.AfterSnapshot);
+    }
+
+    /// <summary>代次变化（例如期间有别的持久压缩提交）⇒ 拒绝，且不得给出可替换历史。</summary>
+    [TestMethod]
+    public void VerifyApplication_StaleGeneration_IsRejected()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        var plan = CreatePlan(store, history);
+
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            store, SessionId, history, tools: null, BuildConfig(), plan, "## Current Work\n- x",
+            CurrentValuesFor(plan, history, generation: plan.SourceGeneration + 1));
+
+        Assert.IsFalse(verification.CanApply);
+        Assert.AreEqual("generation_changed", verification.Reason);
+        Assert.IsNull(verification.AppliedMessages);
+        Assert.IsNull(verification.AfterSnapshot, "未通过 CAS 就不得计量 after");
+    }
+
+    /// <summary>路由变化（换 provider/model/protocol/endpoint 或容量）⇒ 拒绝。</summary>
+    [TestMethod]
+    public void VerifyApplication_ChangedRoute_IsRejected()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        var plan = CreatePlan(store, history);
+
+        var otherRoute = new LlmConfig
+        {
+            ModelId = "test-model",
+            MaxContextTokens = 30_000,
+            MaxOutputTokens = 1_000,
+            Endpoint = "https://another-provider.example/v1",
+            Protocol = "anthropic",
+        };
+
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            store, SessionId, history, tools: null, BuildConfig(), plan, "## Current Work\n- x",
+            CurrentValuesFor(plan, history, config: otherRoute));
+
+        Assert.IsFalse(verification.CanApply);
+        Assert.AreEqual("route_changed", verification.Reason);
+        Assert.IsNull(verification.AppliedMessages);
+    }
+
+    /// <summary>工具清单变化 ⇒ 拒绝（工具 schema 变了，旧候选的前缀不再成立）。</summary>
+    [TestMethod]
+    public void VerifyApplication_ChangedToolSpec_IsRejected()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        var plan = CreatePlan(store, history);
+
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            store, SessionId, history, tools: null, BuildConfig(), plan, "## Current Work\n- x",
+            CurrentValuesFor(plan, history, toolSpecVersion: "changed-tool-manifest"));
+
+        Assert.IsFalse(verification.CanApply);
+        Assert.AreEqual("tool_spec_changed", verification.Reason);
+        Assert.IsNull(verification.AppliedMessages);
+    }
+
+    /// <summary>
+    /// R4 §5.3：**工具调用参数**变化必须让身份变化（否则「同一工具换参数」会被判成未变而误用旧候选）。
+    /// 这里构造含工具调用的历史，冻结候选后只改参数 JSON，当前 revision 必须不再匹配。
+    /// </summary>
+    [TestMethod]
+    public void VerifyApplication_ToolArgumentsChange_IsRejected()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        history.Add(new ChatMessage(
+            ChatRole.Assistant,
+            "calling",
+            ToolCalls: [new ToolCall("call-1", "lookup", "{\"query\":\"before\"}")]));
+        history.Add(new ChatMessage(ChatRole.Tool, "result", ToolCallId: "call-1", ToolName: "lookup"));
+
+        Assert.IsTrue(history.Select(WarmPrefixCompaction.ComputeMessageIdentity).Distinct().Count() == history.Count,
+            "前提：历史里各条消息身份互不相同，便于观察参数变化");
+
+        var plan = CreatePlan(store, history);
+
+        // 只改工具参数（同 id、同 name、同内容长度不同）
+        var mutated = history.ToList();
+        var index = mutated.FindIndex(m => m.ToolCalls is { Count: > 0 });
+        mutated[index] = mutated[index] with
+        {
+            ToolCalls = [new ToolCall("call-1", "lookup", "{\"query\":\"after\"}")],
+        };
+
+        var beforeIdentity = WarmPrefixCompaction.ComputeMessageIdentity(history[index]);
+        var afterIdentity = WarmPrefixCompaction.ComputeMessageIdentity(mutated[index]);
+        Assert.AreNotEqual(beforeIdentity, afterIdentity, "参数变化必须改变消息身份");
+
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            store, SessionId, mutated, tools: null, BuildConfig(), plan, "## Current Work\n- x",
+            CurrentValuesFor(plan, mutated));
+
+        Assert.IsFalse(verification.CanApply);
+        Assert.AreEqual("history_revision_changed", verification.Reason);
+        Assert.IsNull(verification.AppliedMessages);
+    }
+
+    /// <summary>对照：什么都不变 ⇒ 仍然成功（证明上面的拒绝不是"一律拒绝"）。</summary>
+    [TestMethod]
+    public void VerifyApplication_UnchangedCurrentValues_StillApplies()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        var plan = CreatePlan(store, history);
+
+        var verification = WarmPrefixCompaction.VerifyApplication(
+            store, SessionId, history, tools: null, BuildConfig(), plan, "## Current Work\n- x",
+            CurrentValuesFor(plan, history));
+
+        Assert.IsTrue(verification.CanApply, verification.Reason);
+        Assert.AreEqual("applied", verification.Reason);
     }
 }

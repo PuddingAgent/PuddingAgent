@@ -54,7 +54,9 @@ internal static class WarmPrefixCompaction
         /// 生产路径必须传入真实值，否则「仅代次变化」这一路 CAS 抓不到（durable compaction 与
         /// warm-prefix 交错时会用旧候选覆盖新事实）。
         /// </summary>
-        int sourceGeneration = 0)
+        int sourceGeneration = 0,
+        /// <summary>Provider 身份（Runtime 的 LlmConfig 不携带，由调用方给出）：参与路由 CAS。</summary>
+        string? providerId = null)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
         ArgumentNullException.ThrowIfNull(durableHistory);
@@ -116,7 +118,7 @@ internal static class WarmPrefixCompaction
             // CAS 的保留身份是「被替换跨度**之后**的后缀」，不含跨度之前的保留前缀（前导 system）。
             retained.Skip(leadingSystemCount).Select(ComputeMessageIdentity).ToArray(),
             ComputeRevisionHash(durableHistory),
-            ResolveRouteVersion(config),
+            ResolveRouteVersion(config, providerId),
             ResolveToolSpecVersion(exactOutboundHistory, tools),
             targetRatio,
             // 持久代次要等 checkpoint/generation 落库后才能提供；当前恒为 0，
@@ -161,11 +163,25 @@ internal static class WarmPrefixCompaction
         IReadOnlyList<LlmToolDefinition>? tools,
         LlmConfig? config,
         WarmPrefixCompactionPlan plan,
-        string? rawSummary)
+        string? rawSummary,
+        /// <summary>
+        /// **提交时**从真实状态取得的当前上下文描述符（generation/route/tool 版本、revision 基准）。
+        /// 为 null ⇒ 一律拒绝（不能拿 plan 里的冻结值自比较，那会让 CAS 变成同义反复：R4 §5.1）。
+        /// </summary>
+        CurrentContextValues? currentValues = null)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
         ArgumentNullException.ThrowIfNull(currentDurableHistory);
         ArgumentNullException.ThrowIfNull(plan);
+
+        // ⓪ 必须先有「提交时的真实当前值」，否则无法做真实 CAS。
+        if (currentValues is null)
+        {
+            return WarmPrefixApplyVerification.Rejected(
+                WarmPrefixCompactionReasons.CurrentContextUnavailable,
+                reclaimTokens: 0,
+                meetsTarget: false);
+        }
 
         // ① 摘要必须真实缩小被替换跨度，否则无收益。
         var checkpoint = TryCreateCheckpoint(plan, rawSummary);
@@ -177,7 +193,7 @@ internal static class WarmPrefixCompaction
                 meetsTarget: false);
         }
 
-        // ② 严格 CAS：源 revision 必须未变，且被替换跨度与保留后缀仍在当前历史中原样存在。
+        // ② 严格 CAS：冻结候选 vs **提交时真实当前值**（generation/route/tool/revision/跨度身份）。
         //    任一不符 ⇒ stale_candidate，历史保持原样（不拼接新尾部、不自动 rebase）。
         var currentRevision = ComputeRevisionHash(currentDurableHistory);
         var frozen = new FrozenCandidateDescriptor(
@@ -190,10 +206,10 @@ internal static class WarmPrefixCompaction
             RemovedIdentities: plan.RemovedIdentities,
             RetainedIdentities: plan.RetainedIdentities);
         var current = new CurrentContextDescriptor(
-            Generation: plan.SourceGeneration,
+            Generation: currentValues.Generation,
             Revision: currentRevision,
-            RouteVersion: plan.RouteVersion,
-            ToolSpecVersion: plan.ToolSpecVersion,
+            RouteVersion: currentValues.RouteVersion,
+            ToolSpecVersion: currentValues.ToolSpecVersion,
             PolicyVersion: ContextPolicyVersion.Current,
             MessageIdentities: currentDurableHistory.Select(ComputeMessageIdentity).ToArray());
         var applicability = ContextCandidateApplicability.Validate(frozen, current);
@@ -265,6 +281,11 @@ internal static class WarmPrefixCompaction
     }
 
     /// <summary>稳定的消息身份（内容 + 角色 + 工具配对元数据），用于严格 CAS 与指纹；不展开密钥。</summary>
+    /// <summary>
+    /// 消息身份（CAS 与 revision 的原子）：必须覆盖**全部语义载荷**，否则「内容变了但身份没变」
+    /// 会让陈旧候选仍然通过校验（R4 §5.3）。当前覆盖：角色、正文、思维链、工具回执身份、
+    /// 工具调用（id/名称/**参数 JSON**）、有序内容部件（图片等 typed parts）。
+    /// </summary>
     internal static string ComputeMessageIdentity(ChatMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
@@ -272,13 +293,33 @@ internal static class WarmPrefixCompaction
         var builder = new StringBuilder();
         builder.Append(message.Role).Append('\u001f')
             .Append(message.Content ?? string.Empty).Append('\u001f')
+            .Append(message.ReasoningContent ?? string.Empty).Append('\u001f')
             .Append(message.ToolCallId ?? string.Empty).Append('\u001f')
             .Append(message.ToolName ?? string.Empty);
         if (message.ToolCalls is { Count: > 0 })
         {
             builder.Append('\u001f');
             foreach (var call in message.ToolCalls)
-                builder.Append(call.Id).Append(':').Append(call.Name).Append('\u001e');
+            {
+                // 参数是语义载荷：不参与身份会让「同一 tool 换参数」被判成未变。
+                builder.Append(call.Id).Append(':').Append(call.Name).Append(':')
+                    .Append(call.ArgumentsJson ?? string.Empty).Append('\u001e');
+            }
+        }
+
+        if (message.ContentParts is { Count: > 0 })
+        {
+            builder.Append('\u001f');
+            foreach (var part in message.ContentParts)
+            {
+                builder.Append(part.Type).Append(':');
+                if (part is LlmTextPart text)
+                    builder.Append(text.Text);
+                else
+                    // 非文本部件（图片等）用其规范 JSON 作为载荷，避免只凭类型判别。
+                    builder.Append(System.Text.Json.JsonSerializer.Serialize(part));
+                builder.Append('\u001e');
+            }
         }
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
@@ -297,10 +338,48 @@ internal static class WarmPrefixCompaction
         return Convert.ToHexStringLower(hash);
     }
 
-    private static string ResolveRouteVersion(LlmConfig? config)
-        => string.IsNullOrWhiteSpace(config?.ModelId) ? "unknown-route" : config!.ModelId!;
+    /// <summary>
+    /// 路由版本（参与 CAS）：**不能只看 ModelId** —— 同名模型换 Provider/Endpoint/协议或容量
+    /// 都会改变实际请求语义（R4 §5.2）。这里用安全身份（不含密钥）拼出稳定 token：
+    /// provider / endpoint 主机 / 模型 / 协议 / 容量三元组。
+    /// </summary>
+    internal static string ResolveRouteVersion(
+        LlmConfig? config,
+        string? providerId = null,
+        string? protocol = null)
+    {
+        var model = string.IsNullOrWhiteSpace(config?.ModelId) ? "unknown-model" : config!.ModelId!.Trim();
+        // Provider 由调用方显式给出（Runtime 的 LlmConfig 不携带 ProviderId）；Protocol 取 config。
+        // 同名模型换 Provider 必须让旧候选失效。
+        var providerSource = providerId;
+        var protocolSource = protocol ?? config?.Protocol;
+        var provider = string.IsNullOrWhiteSpace(providerSource) ? "unknown-provider" : providerSource!.Trim();
+        var endpoint = ResolveEndpointIdentity(config?.Endpoint);
+        var proto = string.IsNullOrWhiteSpace(protocolSource) ? "unknown-protocol" : protocolSource!.Trim();
 
-    private static string ResolveToolSpecVersion(
+        return string.Join(
+            '\u001f',
+            provider,
+            endpoint,
+            model,
+            proto,
+            config?.MaxContextTokens?.ToString() ?? "-",
+            config?.MaxInputTokens?.ToString() ?? "-",
+            config?.MaxOutputTokens?.ToString() ?? "-");
+    }
+
+    /// <summary>只取 endpoint 的**主机**（去掉路径与查询，避免把密钥/参数写进身份）。</summary>
+    private static string ResolveEndpointIdentity(string? endpoint)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint))
+            return "unknown-endpoint";
+
+        return Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+            ? uri.Host
+            : endpoint.Trim();
+    }
+
+    internal static string ResolveToolSpecVersion(
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<LlmToolDefinition>? tools)
     {
@@ -430,7 +509,22 @@ internal static class WarmPrefixCompactionReasons
 
     /// <summary>摘要未比被替换跨度更小（无收益）。</summary>
     internal const string SummaryNoGain = "summary_no_gain";
+
+    /// <summary>
+    /// 调用方没能提供**提交时的真实当前值**（generation/route/tool 版本）⇒ 拒绝应用。
+    /// 不得退回「拿 plan 里的冻结值自比较」：那会让 CAS 永远通过（R4）。
+    /// </summary>
+    internal const string CurrentContextUnavailable = "current_context_unavailable";
 }
+
+/// <summary>
+/// **提交时**从真实状态取得的当前上下文值（供 warm-prefix 做真实 CAS）。
+/// 与 <see cref="WarmPrefixCompactionPlan"/> 里的冻结值必须分别来源，否则校验是同义反复。
+/// </summary>
+internal sealed record CurrentContextValues(
+    long Generation,
+    string RouteVersion,
+    string ToolSpecVersion);
 
 internal sealed record WarmPrefixCompactionOutcome(
     bool Compacted,

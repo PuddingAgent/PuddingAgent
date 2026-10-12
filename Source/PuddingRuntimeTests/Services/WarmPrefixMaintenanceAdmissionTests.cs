@@ -113,7 +113,12 @@ public sealed class WarmPrefixMaintenanceAdmissionTests
         Assert.IsTrue(plan!.RequiresSynchronousProtection);
 
         var verification = WarmPrefixCompaction.VerifyApplication(
-            store, "session-floor", history, tools: null, config, plan, new string('x', 120));
+            store, "session-floor", history, tools: null, config, plan, new string('x', 120),
+            // R4：必须给出提交时的真实当前值（未变化对照）。
+            new CurrentContextValues(
+                plan.SourceGeneration,
+                WarmPrefixCompaction.ResolveRouteVersion(config),
+                WarmPrefixCompaction.ResolveToolSpecVersion(history, tools: null)));
 
         Assert.IsFalse(verification.CanApply);
         Assert.AreEqual("after_summary_exceeds_hard_limit", verification.Reason);

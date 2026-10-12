@@ -546,16 +546,69 @@ public sealed class ContextCompactionService : IContextCompactionService
 
         db.Messages.Add(summaryMessage);
         db.CompactionCoverageManifests.Add(manifestEntity);
-        foreach (var row in rows)
+
+        // ── R3：显式事务 + **真实 CAS**，先持久化、成功后才由调用方替换内存 ──
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        // 顺序：**先插入摘要行与清单**（覆盖标注的 CompactedBy 外键指向摘要行，必须先存在），
+        // 再做两个条件更新（代次、逐行覆盖），最后提交。全部在同一事务内。
+        await db.SaveChangesAsync(ct);
+
+        // 代次推进用**条件更新**：只有「当前代次仍等于候选冻结时的期望值」才推进，
+        // 受影响行数必须恰为 1；否则回滚并报 GenerationMismatch（绝不写入任何一行）。
+        var advancedRows = await db.Database.ExecuteSqlAsync(
+            $"""
+             UPDATE Sessions SET CompactionGeneration = {targetGeneration}
+             WHERE SessionId = {request.SessionId} AND CompactionGeneration = {request.ExpectedSourceGeneration}
+             """,
+            ct);
+        if (advancedRows != 1)
         {
-            row.CompactedBy = summaryMessageId;
-            row.CanonicalContentHash ??= CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty);
+            await transaction.RollbackAsync(ct);
+            var currentGeneration = await db.Sessions
+                .AsNoTracking()
+                .Where(s => s.SessionId == request.SessionId)
+                .Select(s => s.CompactionGeneration)
+                .FirstOrDefaultAsync(ct);
+            _logger.LogWarning(
+                "[ContextCompaction] Warm-prefix commit lost generation CAS session={Session} compactionId={CompactionId} expected={Expected} current={Current}",
+                request.SessionId,
+                request.CompactionId,
+                request.ExpectedSourceGeneration,
+                currentGeneration);
+            return new WarmPrefixCheckpointCommitResult(
+                WarmPrefixCheckpointCommitStatus.GenerationMismatch,
+                TargetGeneration: currentGeneration);
         }
 
-        session.CompactionGeneration = targetGeneration;
+        // 覆盖标注也是**条件更新**：只有仍未覆盖（CompactedBy IS NULL）的行才认，
+        // 逐行核对受影响行数；任何一行不满足 ⇒ 整笔回滚（不得只标注找得到的那部分）。
+        foreach (var row in rows)
+        {
+            var fallbackHash = row.CanonicalContentHash ?? CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty);
+            var markedRows = await db.Database.ExecuteSqlAsync(
+                $"""
+                 UPDATE Messages SET CompactedBy = {summaryMessageId},
+                     CanonicalContentHash = COALESCE(CanonicalContentHash, {fallbackHash})
+                 WHERE MessageId = {row.MessageId} AND SessionId = {request.SessionId} AND CompactedBy IS NULL
+                 """,
+                ct);
+            if (markedRows != 1)
+            {
+                await transaction.RollbackAsync(ct);
+                _logger.LogWarning(
+                    "[ContextCompaction] Warm-prefix commit lost coverage CAS session={Session} compactionId={CompactionId} messageId={MessageId}",
+                    request.SessionId,
+                    request.CompactionId,
+                    row.MessageId);
+                return new WarmPrefixCheckpointCommitResult(
+                    WarmPrefixCheckpointCommitStatus.AlreadyCovered,
+                    ProblemMessageIds: [row.MessageId]);
+            }
+        }
 
-        // 一个事务：摘要行 + 覆盖标注 + 覆盖清单 + 代际，要么全写、要么全不写。
-        await db.SaveChangesAsync(ct);
+        // 一个事务：摘要行 + 覆盖清单 + 覆盖标注 + 代际，要么全写、要么全不写。
+        await transaction.CommitAsync(ct);
 
         // 不调用 InvalidateHistory：调用方（warm-prefix）的内存历史已经是压缩后的版本，
         // 失效会强制从 DB 重水合并丢掉本次延迟收益；DB 与内存此时是一致的。
