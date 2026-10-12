@@ -420,6 +420,122 @@ public sealed class SubAgentManagerMessageTests
         Assert.IsNull(dispatcher.LastRequest);
     }
 
+    // ── R4（§6.2）子委派申请决策：复用本类的私有假件，只额外注入委派端口（第 9 个末位参数） ──
+    private sealed class RecordingBrowserDelegationLifecycle : IBrowserDelegationLifecycle
+    {
+        public int RequestCount { get; private set; }
+
+        public ValueTask<BrowserDelegationGrantResult> RequestChildGrantAsync(
+            BrowserDelegationGrantRequest request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            return ValueTask.FromResult(new BrowserDelegationGrantResult(
+                "grant-1", request.ScopeName, DateTimeOffset.UnixEpoch.AddMinutes(5)));
+        }
+
+        public ValueTask RevokeForRunAsync(string runId, string reason, CancellationToken cancellationToken)
+            => ValueTask.CompletedTask;
+
+        public ValueTask RevokeForTaskAsync(
+            string callerKind, string callerId, string runId, string? parentRunId, string reason,
+            CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask OnConnectionLostAsync(string reason, CancellationToken cancellationToken)
+            => ValueTask.CompletedTask;
+    }
+
+    private static readonly System.Reflection.MethodInfo DelegationDecision =
+        typeof(SubAgentManager).GetMethod(
+            "TryRequestBrowserDelegationAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+    private static SubAgentManager CreateManagerWithDelegation(
+        RecordingRuntimeAgentDispatcher dispatcher,
+        IBrowserDelegationLifecycle? delegation)
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<IRuntimeAgentDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        return new SubAgentManager(
+            new RecordingSessionStateManager(),
+            services,
+            new RecordingInternalEventBus(),
+            new RecordingSubAgentRunStore(),
+            NullLogger<SubAgentManager>.Instance,
+            new RecordingRuntimeActivitySink(),
+            new RecordingRuntimeTraceAccessor(),
+            new TestRuntimeExecutionConfigService(),
+            browserDelegation: delegation);
+    }
+
+    private static SubAgentSpawnRequest DelegationRequest(
+        string? contextId = null, string? pageId = null, string? scope = null) => new()
+    {
+        ParentSessionId = "session-1",
+        WorkspaceId = "ws-1",
+        TaskDescription = "delegated task",
+        LlmConfig = CreateLlmConfig(),
+        LlmProfile = CreateLlmProfile(),
+        BrowserDelegationContextId = contextId,
+        BrowserDelegationPageId = pageId,
+        BrowserDelegationScopeName = scope,
+    };
+
+    private static async Task<string?> DecideDelegationAsync(
+        SubAgentManager manager, SubAgentSpawnRequest request)
+    {
+        var task = (Task<string?>)DelegationDecision.Invoke(
+            manager, [request, "run-child", CancellationToken.None])!;
+        return await task;
+    }
+
+    [TestMethod]
+    public async Task BrowserDelegation_NoPortMeansNoRequest()
+    {
+        var manager = CreateManagerWithDelegation(new RecordingRuntimeAgentDispatcher(), delegation: null);
+
+        var failure = await DecideDelegationAsync(manager, DelegationRequest("ctx-1", "page-1", "read"));
+
+        Assert.IsNull(failure);
+    }
+
+    [TestMethod]
+    public async Task BrowserDelegation_UndeclaredMakesNoRequest()
+    {
+        var delegation = new RecordingBrowserDelegationLifecycle();
+        var manager = CreateManagerWithDelegation(new RecordingRuntimeAgentDispatcher(), delegation);
+
+        var failure = await DecideDelegationAsync(manager, DelegationRequest());
+
+        Assert.IsNull(failure);
+        Assert.AreEqual(0, delegation.RequestCount);
+    }
+
+    [TestMethod]
+    public async Task BrowserDelegation_DeclaredButIncompleteIsRejected()
+    {
+        var delegation = new RecordingBrowserDelegationLifecycle();
+        var manager = CreateManagerWithDelegation(new RecordingRuntimeAgentDispatcher(), delegation);
+
+        var failure = await DecideDelegationAsync(manager, DelegationRequest(contextId: "ctx-1", pageId: "page-1"));
+
+        Assert.IsNotNull(failure);
+        StringAssert.Contains(failure!, "incomplete");
+        Assert.AreEqual(0, delegation.RequestCount);
+    }
+
+    [TestMethod]
+    public async Task BrowserDelegation_MissingTrustedParentRunIdIsRejected()
+    {
+        var delegation = new RecordingBrowserDelegationLifecycle();
+        var manager = CreateManagerWithDelegation(new RecordingRuntimeAgentDispatcher(), delegation);
+
+        var failure = await DecideDelegationAsync(manager, DelegationRequest("ctx-1", "page-1", "read"));
+
+        Assert.IsNotNull(failure);
+        StringAssert.Contains(failure!, "parent run id");
+        Assert.AreEqual(0, delegation.RequestCount);
+    }
     private static SubAgentManager CreateManager(RecordingRuntimeAgentDispatcher dispatcher)
     {
         var services = new ServiceCollection()
