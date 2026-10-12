@@ -970,6 +970,15 @@ public sealed class BrowserWorkspaceController :
             OutputWidth = shot.Metadata.OutputWidth,
             OutputHeight = shot.Metadata.OutputHeight,
             PageVersion = shot.Metadata.PageVersion,
+            DeviceScaleFactor = shot.Metadata.DeviceScaleFactor,
+            ViewportWidth = shot.Metadata.ViewportWidth,
+            ViewportHeight = shot.Metadata.ViewportHeight,
+            ScrollX = shot.Metadata.ScrollX,
+            ScrollY = shot.Metadata.ScrollY,
+            CropX = shot.Metadata.CropX,
+            CropY = shot.Metadata.CropY,
+            CropWidth = shot.Metadata.CropWidth,
+            CropHeight = shot.Metadata.CropHeight,
             Detail = DesktopScreenshotDetailWire.NameOf(shot.Metadata.Detail),
             Chunks = shot.Chunks.Select(chunk => new BrowserScreenshotChunkDescriptor
             {

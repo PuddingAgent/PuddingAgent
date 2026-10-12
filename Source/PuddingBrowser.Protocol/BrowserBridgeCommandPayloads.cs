@@ -318,9 +318,9 @@ public sealed record BrowserScreenshotDescriptor
 
     public double? DeviceScaleFactor { get; init; }
 
-    public int? ViewportWidth { get; init; }
+    public double? ViewportWidth { get; init; }
 
-    public int? ViewportHeight { get; init; }
+    public double? ViewportHeight { get; init; }
 
     public double? ScrollX { get; init; }
 
