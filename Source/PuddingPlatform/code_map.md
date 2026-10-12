@@ -250,24 +250,26 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/TokenUsageRecorder.cs` | Token 用量记录；持久化 RuntimeExecutionIdentity 提供的 parent/sub-agent、零基 round、本轮 canonical 工具及 context layer Token/UTF-8/GZIP/hash/cache 诊断；prefix-v2 在 system/tool 不变而 PrefixHash 变化时归因为 `history_anchor_changed`，版本切换归因为 `serialization_version_changed`；不复制 prompt 正文 |
-| `Services/CacheDiagnosticsService.cs` | 会话级 Cache Miss Inspector 后端；汇总 token-weighted hit/miss、prefix churn、首次变化原因与逐轮事实 |
-| `Services/GoodputAttributionService.cs` | Goodput 归因聚合（只读）：SourceId 中段(TraceId)→goal_iterations/execution_runs 归因，汇总每迭代 prompt/completion/cache-hit/miss/成本；并判定「零成本却非零 token 不得当节省」（SavingsClaimable）。含 `UsageAttribution.Parse` 与 `PricingClassifier`（priced/free/unpriced/unknown_provider） |
-| `Services/ConversationProjector.cs` | Conversation Event 增量投影；usage 仅在 direct `session:trace:round` 行缺失时补记，SQLite 查询先按稳定 route/token 指纹取最近 32 行、再在内存应用 DateTimeOffset 窗口，避免查询翻译失败后双记账；父子身份来自持久关系、零基 round 来自 invocation index，未知工具数保持 NULL |
-| `Services/TokenUsageEventRepository.cs` | Token 事件持久化与最近层级/熵诊断查询；向 Runtime 返回 Core 诊断 DTO |
-| `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本；与会话归因投影解耦 |
-| `Data/Entities/LlmGatewayUsageEventEntity.cs` | `llm_gateway_usage_events` 本地计费事实；sourceId 唯一 |
-| `Services/TokenUsageSchemaBootstrapper.cs` | 旧 SQLite 的 Token 字段/索引、context-layer UTF-8/GZIP 指标列与网关账本幂等升级 |
-| `Services/AppUserSchemaBootstrapper.cs` | 旧 SQLite 的 `AppUsers.Avatar` 幂等补列；避免头像实体升级后登录查询因 schema 漂移返回 500 |
-| `Services/TokenUsageRebuildService.cs` | 从成功网关活动 + session usage 帧重建计费事实，并保留无法覆盖的实时行；提交后按月失效按日聚合缓存 |
-| `Controllers/Api/StatsApiController.cs` | 月度/趋势优先网关计费账本，无网关历史月份回退会话投影；context-layer API 聚合 Token、UTF-8/GZIP 字节、压缩比、缓存与变化指标；三接口（monthly/series/context-layers）走闭日缓存 + 当天实时渐进加载 |
-| `Services/TokenUsageDailyAggregateService.cs` | Token 统计按日聚合缓存：已结束 UTC 日聚合一次落 `llm_usage_daily_aggregates`（day × source × provider × model），当天实时；Rebuild 后按月失效 |
-| `Services/ContextLayerDailyRollupService.cs` | Context-layer 按日 rollup 缓存：`context_layer_daily_rollups` 存 JSON 分布（token/命中率数组 + 去重哈希集合），跨日精确合并 median/P95/distinctHashes；非对齐边界日直查明细 |
-| `Services/DailyCacheUtility.cs` | 按日缓存共用工具：cache_key、UTC 日枚举、闭日标记读取、SQLite DateTimeOffset 文本范围格式（EF 无法翻译 DateTimeOffset 参数比较） |
-| `Data/Entities/LlmUsageDailyAggregateEntity.cs` | `llm_usage_daily_aggregates` 闭日 Token 聚合行 |
-| `Data/Entities/ContextLayerDailyRollupEntity.cs` | `context_layer_daily_rollups` 闭日层级分析 rollup |
-| `Data/Entities/StatsDailyCacheDayEntity.cs` | `stats_daily_cache_days` 闭日完成标记（cache_key × day，含零数据日） |
-| `Services/TokenCostService.cs` | 成本计算 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/TokenUsageRecorder.cs` | Token 用量记录与层级诊断 | `TokenUsageRecorder` | `Data/Entities/LlmGatewayUsageEventEntity.cs` | 持久化 parent/sub-agent 身份与零基 round；prefix-v2 归因 history_anchor_changed 与 serialization_version_changed；不复制 prompt 正文 |
+| `Services/CacheDiagnosticsService.cs` | 会话级 Cache Miss Inspector 后端 | `CacheDiagnosticsService` | `Services/TokenUsageEventRepository.cs` | 汇总 token-weighted hit/miss、prefix churn、首次变化原因与逐轮事实 |
+| `Services/GoodputAttributionService.cs` | Goodput 归因聚合（只读） | `GoodputAttributionService`、`UsageAttribution.Parse`、`PricingClassifier` | `Controllers/Api/StatsApiController.cs` | TraceId 中段→goal_iterations/execution_runs 归因；零成本却非零 token 不得当节省 |
+| `Services/ConversationProjector.cs` | Conversation Event 增量投影 | `ConversationProjector` | `Services/TokenUsageEventRepository.cs` | usage 仅在 direct session:trace:round 行缺失时补记；先按指纹取最近 32 行再内存窗口；未知工具数保持 NULL |
+| `Services/TokenUsageEventRepository.cs` | Token 事件持久化与诊断查询 | `TokenUsageEventRepository` | `Services/ConversationProjector.cs` | 向 Runtime 返回 Core 诊断 DTO |
+| `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本 | `LlmGatewayUsageRecorder` | `Data/Entities/LlmGatewayUsageEventEntity.cs` | 与会话归因投影解耦 |
+| `Data/Entities/LlmGatewayUsageEventEntity.cs` | 本地计费事实实体 | `LlmGatewayUsageEventEntity` | `Services/LlmGatewayUsageRecorder.cs` | 表 llm_gateway_usage_events；sourceId 唯一 |
+| `Services/TokenUsageSchemaBootstrapper.cs` | 旧 SQLite Token 与指标列幂等升级 | `TokenUsageSchemaBootstrapper` | `Services/TokenUsageRebuildService.cs` | Token 字段与索引、context-layer UTF-8/GZIP 指标列、网关账本均幂等 |
+| `Services/AppUserSchemaBootstrapper.cs` | AppUsers.Avatar 幂等补列 | `AppUserSchemaBootstrapper` | `Services/TokenUsageSchemaBootstrapper.cs` | 避免头像实体升级后 schema 漂移令登录查询 500 |
+| `Services/TokenUsageRebuildService.cs` | 从网关活动重建计费事实 | `TokenUsageRebuildService` | `Services/TokenUsageDailyAggregateService.cs` | 保留无法覆盖的实时行；提交后按月失效按日聚合缓存 |
+| `Controllers/Api/StatsApiController.cs` | 统计 HTTP 出口（月/趋势/层级） | `StatsApiController` | `Services/TokenUsageDailyAggregateService.cs` | 优先网关账本、无网关历史月份回退会话投影；monthly/series/context-layers 走闭日缓存 + 当天实时渐进加载 |
+| `Services/TokenUsageDailyAggregateService.cs` | 按日 Token 聚合缓存 | `TokenUsageDailyAggregateService` | `Data/Entities/LlmUsageDailyAggregateEntity.cs` | 闭日聚合一次落 llm_usage_daily_aggregates（day × source × provider × model）；当天实时；Rebuild 后按月失效 |
+| `Services/ContextLayerDailyRollupService.cs` | context-layer 按日 rollup 缓存 | `ContextLayerDailyRollupService` | `Data/Entities/ContextLayerDailyRollupEntity.cs` | 存 JSON 分布；跨日精确合并 median/P95/distinctHashes；非对齐边界日直查明细 |
+| `Services/DailyCacheUtility.cs` | 按日缓存共用工具 | `DailyCacheUtility` | `Services/TokenUsageDailyAggregateService.cs` | cache_key、UTC 日枚举、闭日标记；SQLite DateTimeOffset 文本范围格式（EF 无法翻译该比较） |
+| `Data/Entities/LlmUsageDailyAggregateEntity.cs` | 闭日 Token 聚合行 | `LlmUsageDailyAggregateEntity` | `Services/TokenUsageDailyAggregateService.cs` | 表 llm_usage_daily_aggregates |
+| `Data/Entities/ContextLayerDailyRollupEntity.cs` | 闭日层级分析 rollup | `ContextLayerDailyRollupEntity` | `Services/ContextLayerDailyRollupService.cs` | 表 context_layer_daily_rollups |
+| `Data/Entities/StatsDailyCacheDayEntity.cs` | 闭日完成标记（含零数据日） | `StatsDailyCacheDayEntity` | `Services/TokenUsageDailyAggregateService.cs` | 表 stats_daily_cache_days；cache_key × day |
+| `Services/TokenCostService.cs` | 成本计算 | `TokenCostService` | `Services/GoodputAttributionService.cs` | 按 provider/model 定价折算；未知 provider 归为 unpriced |
 
 ## 测试
 
