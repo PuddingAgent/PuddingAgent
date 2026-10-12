@@ -103,12 +103,31 @@ if (-not (Test-Path $probeExePath)) {
     throw "probe not built: $ProbeExe -- run: dotnet build Source\PuddingSsh.Probe\PuddingSsh.Probe.csproj --artifacts-path temp\build\ssh"
 }
 
+# temp/ 是共享临时区：别的会话可能随时清空 temp\build\*，把探针 dll 一并删掉，
+# 只剩 exe 会让每次调用都以「application to execute does not exist」崩掉。这里按需重建一次。
+function Initialize-ProbeBuild {
+    $probeDll = [System.IO.Path]::ChangeExtension($probeExePath, '.dll')
+    if (Test-Path -LiteralPath $probeDll) {
+        return
+    }
+
+    Write-Log 'probe dll missing (temp/build was cleaned?); rebuilding Source/PuddingSsh.Probe'
+    $build = Invoke-NativeCommand 'dotnet' @(
+        'build', (Join-Path $repo 'Source\PuddingSsh.Probe\PuddingSsh.Probe.csproj'),
+        '--artifacts-path', (Join-Path $repo 'temp\build\ssh'), '--nologo')
+    if ($build.Exit -ne 0 -or -not (Test-Path -LiteralPath $probeDll)) {
+        throw "probe rebuild failed (exit $($build.Exit))"
+    }
+}
+
 function Write-Log([string]$Message) {
     $line = "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $Message
     Write-Host $line
     Initialize-OutDir
     Add-Content -Path $transcript -Value $line
 }
+
+Initialize-ProbeBuild
 
 $failures = New-Object System.Collections.ArrayList
 $summary = [ordered]@{}

@@ -111,11 +111,19 @@ internal sealed class FakeIdentityProvider : ISshIdentityProvider
 
     public Func<SshIdentityRequest, SshIdentityMaterial> OnGet { get; set; } = _ => FakeSsh.Material();
 
+    /// <summary>设置后优先于 <see cref="OnGet"/>：用于「忽略 token / 晚返回 / 晚失败」的身份端口。</summary>
+    public Func<SshIdentityRequest, CancellationToken, Task<SshIdentityMaterial>>? OnGetAsync { get; set; }
+
     public int Calls => Volatile.Read(ref _calls);
 
     public ValueTask<SshIdentityMaterial> GetIdentityAsync(SshIdentityRequest request, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _calls);
+        if (OnGetAsync is { } async)
+        {
+            return new ValueTask<SshIdentityMaterial>(async(request, cancellationToken));
+        }
+
         return ValueTask.FromResult(OnGet(request));
     }
 }

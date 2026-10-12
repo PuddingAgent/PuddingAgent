@@ -153,68 +153,107 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             return TestFailure(host, SshPhase.Queued, SshErrorCodes.Busy, "组件正在停止，未受理新操作。", stopwatch);
         }
 
-        using var operationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
-        operationCts.CancelAfter(timeout);
+        using var lifetime = new SshOperationLifetime(_time, timeout, cancellationToken, _shutdown.Token);
 
-        var admission = await AdmitAsync(GateKey(host.Target), host.Limits.MaxConcurrentOperations, operationCts.Token)
+        // 受理处的前置围栏：已取消/已过期/宿主已停止的请求不读身份、不建连、不提交（ADR-096 D2）。
+        if (TryTestFence(lifetime, host, stopwatch, out var testFenced))
+        {
+            return testFenced!;
+        }
+
+        var admission = await AdmitAsync(GateKey(host.Target), host.Limits.MaxConcurrentOperations, lifetime)
             .ConfigureAwait(false);
         if (admission.Kind != AdmissionKind.Admitted)
         {
-            var code = ResolveAdmissionCode(admission.Kind, cancellationToken);
-            return TestFailure(host, SshPhase.Queued, code, DescribeAdmission(admission.Kind), stopwatch);
+            var code = ResolveAdmissionCode(admission.Kind, lifetime);
+            return TestFailure(host, SshPhase.Queued, code, DescribeAdmission(admission.Kind, lifetime), stopwatch);
         }
 
         phaseDurations["queue"] = Elapsed(stopwatch);
         try
         {
-            SshIdentityMaterial identity;
+            // 身份阶段：拿到槽位后再检查一次终止；身份与建连都只等**剩余额度**。
+            if (TryTestFence(lifetime, host, stopwatch, out testFenced))
+            {
+                return testFenced!;
+            }
+
+            SshStageOutcome<SshIdentityMaterial> identityOutcome;
             try
             {
-                identity = await _identities.GetIdentityAsync(host.Identity, operationCts.Token).ConfigureAwait(false);
+                // 调用阶段端口的**同步启动段**也要在 try 内：同步抛出同样是凭据阶段的失败事实。
+                var identityTask = _identities.GetIdentityAsync(host.Identity, lifetime.Token).AsTask();
+                identityOutcome = await lifetime
+                    .WaitStageAsync(
+                        identityTask,
+                        lifetime.RemainingOperation,
+                        SshStopReason.OperationDeadline,
+                        onLateSuccess: material => material.Dispose(),
+                        onLateFailure: _ => { })
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Credentials, false));
                 return TestFailure(host, SshPhase.Credentials, failure.ErrorCode, ex.GetType().Name, stopwatch);
             }
-            catch (OperationCanceledException)
+
+            if (!identityOutcome.Completed)
             {
-                return TestFailure(host, SshPhase.Credentials, ResolveOperationCode(cancellationToken), "取凭据阶段被取消/到期。", stopwatch);
+                return TestFailure(
+                    host,
+                    SshPhase.Credentials,
+                    StopCode(identityOutcome.Reason),
+                    StopDiagnostic(identityOutcome.Reason, "取凭据阶段"),
+                    stopwatch);
             }
 
+            var identity = identityOutcome.Result!;
             phaseDurations["credentials"] = Elapsed(stopwatch) - phaseDurations["queue"];
 
             ISshTransportSession? session = null;
             try
             {
-                var connectTimeout = host.Limits.ConnectTimeout;
-                if (connectTimeout > timeout)
-                {
-                    connectTimeout = timeout;
-                }
-
+                var connectBudget = lifetime.RemainingConnect(host.Limits.ConnectTimeout);
                 var connectRequest = new SshTransportConnectRequest(
                     request.Target,
                     identity,
                     host.Trust.CreateVerifier(request.Target.Host, request.Target.Port),
-                    connectTimeout);
+                    connectBudget);
 
+                SshStageOutcome<ISshTransportSession> connectOutcome;
                 try
                 {
-                    session = await _transport.ConnectAsync(connectRequest, operationCts.Token).ConfigureAwait(false);
+                    connectOutcome = await lifetime
+                        .WaitStageAsync(
+                            _transport.ConnectAsync(connectRequest, lifetime.Token),
+                            connectBudget,
+                            SshStopReason.ConnectDeadline,
+                            onLateSuccess: late => _ = DisposeSessionAsync(late),
+                            onLateFailure: _ => { })
+                        .ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Connecting, false));
-                    var code = ex is OperationCanceledException
-                        ? ResolveOperationCode(cancellationToken)
-                        : failure.ErrorCode;
+                    var code = ex is OperationCanceledException ? StopCode(lifetime.StopReason) : failure.ErrorCode;
+                    return TestFailure(host, SshPhase.Connecting, code, ex.GetType().Name, stopwatch);
+                }
+
+                if (!connectOutcome.Completed)
+                {
                     return TestFailure(
                         host,
                         SshPhase.Connecting,
-                        code,
-                        ex.GetType().Name,
+                        StopCode(connectOutcome.Reason),
+                        StopDiagnostic(connectOutcome.Reason, "建连阶段"),
                         stopwatch);
+                }
+
+                session = connectOutcome.Result!;
+                if (TryTestFence(lifetime, host, stopwatch, out testFenced))
+                {
+                    return testFenced!;
                 }
 
                 phaseDurations["connect"] = Elapsed(stopwatch) - phaseDurations["queue"] - phaseDurations["credentials"];
@@ -297,65 +336,87 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             return ExecuteFailure(host, SshPhase.Queued, SshErrorCodes.Busy, "组件正在停止，未受理新操作。", retrySafe: true, stopwatch);
         }
 
-        using var operationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
-        operationCts.CancelAfter(timeout);
+        using var lifetime = new SshOperationLifetime(_time, timeout, cancellationToken, _shutdown.Token);
 
-        var admission = await AdmitAsync(GateKey(host.Target), host.Limits.MaxConcurrentOperations, operationCts.Token)
+        // 受理处的前置围栏：已取消/已过期/宿主已停止的请求不读身份、不建连、不提交（ADR-096 D2）。
+        if (TryFence(lifetime, host, stopwatch, out var fenced))
+        {
+            return fenced!;
+        }
+
+        var admission = await AdmitAsync(GateKey(host.Target), host.Limits.MaxConcurrentOperations, lifetime)
             .ConfigureAwait(false);
         if (admission.Kind != AdmissionKind.Admitted)
         {
-            var code = ResolveAdmissionCode(admission.Kind, cancellationToken);
-            return ExecuteFailure(host, SshPhase.Queued, code, DescribeAdmission(admission.Kind), code == SshErrorCodes.Busy, stopwatch);
+            var code = ResolveAdmissionCode(admission.Kind, lifetime);
+            return ExecuteFailure(host, SshPhase.Queued, code, DescribeAdmission(admission.Kind, lifetime), code == SshErrorCodes.Busy, stopwatch);
         }
 
         try
         {
-            SshIdentityMaterial identity;
+            if (TryFence(lifetime, host, stopwatch, out fenced))
+            {
+                return fenced!;
+            }
+
+            SshStageOutcome<SshIdentityMaterial> identityOutcome;
             try
             {
-                identity = await _identities.GetIdentityAsync(host.Identity, operationCts.Token).ConfigureAwait(false);
+                // 调用阶段端口的**同步启动段**也要在 try 内：同步抛出同样是凭据阶段的失败事实。
+                var identityTask = _identities.GetIdentityAsync(host.Identity, lifetime.Token).AsTask();
+                identityOutcome = await lifetime
+                    .WaitStageAsync(
+                        identityTask,
+                        lifetime.RemainingOperation,
+                        SshStopReason.OperationDeadline,
+                        onLateSuccess: material => material.Dispose(),
+                        onLateFailure: _ => { })
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Credentials, false));
                 return ExecuteFailure(host, SshPhase.Credentials, failure.ErrorCode, ex.GetType().Name, failure.RetrySafe, stopwatch);
             }
-            catch (OperationCanceledException)
+
+            if (!identityOutcome.Completed)
             {
                 return ExecuteFailure(
                     host,
                     SshPhase.Credentials,
-                    ResolveOperationCode(cancellationToken),
-                    "取凭据阶段被取消/到期。",
+                    StopCode(identityOutcome.Reason),
+                    StopDiagnostic(identityOutcome.Reason, "取凭据阶段"),
                     retrySafe: false,
                     stopwatch);
             }
 
+            var identity = identityOutcome.Result!;
             ISshTransportSession? session = null;
             try
             {
-                var connectTimeout = host.Limits.ConnectTimeout;
-                if (connectTimeout > timeout)
-                {
-                    connectTimeout = timeout;
-                }
-
+                var connectBudget = lifetime.RemainingConnect(host.Limits.ConnectTimeout);
                 var connectRequest = new SshTransportConnectRequest(
                     request.Target,
                     identity,
                     host.Trust.CreateVerifier(request.Target.Host, request.Target.Port),
-                    connectTimeout);
+                    connectBudget);
 
+                SshStageOutcome<ISshTransportSession> connectOutcome;
                 try
                 {
-                    session = await _transport.ConnectAsync(connectRequest, operationCts.Token).ConfigureAwait(false);
+                    connectOutcome = await lifetime
+                        .WaitStageAsync(
+                            _transport.ConnectAsync(connectRequest, lifetime.Token),
+                            connectBudget,
+                            SshStopReason.ConnectDeadline,
+                            onLateSuccess: late => _ = DisposeSessionAsync(late),
+                            onLateFailure: _ => { })
+                        .ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Connecting, false));
-                    var code = ex is OperationCanceledException
-                        ? ResolveOperationCode(cancellationToken)
-                        : failure.ErrorCode;
+                    var code = ex is OperationCanceledException ? StopCode(lifetime.StopReason) : failure.ErrorCode;
                     return ExecuteFailure(
                         host,
                         SshPhase.Connecting,
@@ -365,7 +426,26 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                         stopwatch);
                 }
 
-                var result = await ExecuteOnSessionAsync(host, session, plan, timeout, outputBudget, operationCts, cancellationToken, stopwatch)
+                if (!connectOutcome.Completed)
+                {
+                    return ExecuteFailure(
+                        host,
+                        SshPhase.Connecting,
+                        StopCode(connectOutcome.Reason),
+                        StopDiagnostic(connectOutcome.Reason, "建连阶段"),
+                        retrySafe: false,
+                        stopwatch);
+                }
+
+                session = connectOutcome.Result!;
+
+                // 提交前围栏：会话已到手但已终止时不得发 exec。
+                if (TryFence(lifetime, host, stopwatch, out fenced))
+                {
+                    return fenced!;
+                }
+
+                var result = await ExecuteOnSessionAsync(host, session, plan, lifetime, outputBudget, stopwatch)
                     .ConfigureAwait(false);
                 return result;
             }
@@ -388,16 +468,27 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         SshHostContext host,
         ISshTransportSession session,
         SshPosixExecutionPlan plan,
-        TimeSpan timeout,
+        SshOperationLifetime lifetime,
         int outputBudget,
-        CancellationTokenSource operationCts,
-        CancellationToken callerToken,
         Stopwatch stopwatch)
     {
         Task<SshExecuteResult> executeTask;
         try
         {
-            executeTask = session.ExecuteAsync(plan.ExecutedCommand, timeout, outputBudget, operationCts.Token);
+            // exec 阶段只拿**剩余**额度：不得在换阶段时重新得到完整的原始预算（ADR-096 D2）。
+            var remaining = lifetime.RemainingOperation;
+            if (remaining <= TimeSpan.Zero)
+            {
+                return ExecuteFailure(
+                    host,
+                    SshPhase.Cleanup,
+                    SshErrorCodes.Timeout,
+                    StopDiagnostic(SshStopReason.OperationDeadline, "提交前"),
+                    retrySafe: false,
+                    stopwatch);
+            }
+
+            executeTask = session.ExecuteAsync(plan.ExecutedCommand, remaining, outputBudget, lifetime.Token);
         }
         catch (Exception ex)
         {
@@ -405,7 +496,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             return ExecuteFailure(host, SshPhase.Submitting, failure.ErrorCode, ex.GetType().Name, failure.RetrySafe, stopwatch);
         }
 
-        var first = await Task.WhenAny(executeTask, Task.Delay(Timeout.InfiniteTimeSpan, operationCts.Token))
+        var first = await Task.WhenAny(executeTask, Task.Delay(Timeout.InfiniteTimeSpan, lifetime.Token))
             .ConfigureAwait(false);
 
         SshExecuteResult result;
@@ -456,28 +547,27 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             }
             else
             {
-                var cancelled = callerToken.IsCancellationRequested;
+                var reason = lifetime.StopReason;
                 return ExecuteFailure(
                     host,
                     SshPhase.Cleanup,
-                    cancelled ? SshErrorCodes.Cancelled : SshErrorCodes.Timeout,
-                    "清理宽限内会话未返回；已释放独占连接，远端进程状态未知。",
+                    StopCode(reason),
+                    StopDiagnostic(reason, "清理宽限内会话未返回；已释放独占连接，远端进程状态未知"),
                     retrySafe: false,
                     stopwatch,
                     SshExecutionState.Unknown);
             }
         }
 
-        // 会话可能把「本端到期」报成 Cancelled（它只看到外层 token 被取消）：这里按事实改写为 timeout。
+        // 会话可能把「本端到期」报成 Cancelled（它只看到外层 token 被取消）：这里按终止原因改写为 timeout。
         if (result.Status == SshExecutionStatus.Cancelled
-            && !callerToken.IsCancellationRequested
-            && operationCts.IsCancellationRequested)
+            && lifetime.StopReason is SshStopReason.OperationDeadline or SshStopReason.ConnectDeadline)
         {
             result = result with
             {
                 Status = SshExecutionStatus.TimedOut,
                 ErrorCode = SshErrorCodes.Timeout,
-                Diagnostic = "操作总时长/宿主 deadline 到期（远端已收到 TERM；是否退出需以 execution_state 为准）。",
+                Diagnostic = StopDiagnostic(lifetime.StopReason, "操作总时长/宿主 deadline 到期（远端已收到 TERM；是否退出需以 execution_state 为准）"),
             };
         }
 
@@ -518,15 +608,23 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
 
     private static string GateKey(SshTargetRef target) => target.HostId + "\u001f" + target.HostRevision;
 
-    private async Task<Admission> AdmitAsync(string gateKey, int hostLimit, CancellationToken cancellationToken)
+    private async Task<Admission> AdmitAsync(string gateKey, int hostLimit, SshOperationLifetime lifetime)
     {
+        var cancellationToken = lifetime.Token;
+
+        // 等待任何门之前的前置围栏（ADR-096 D2）。
+        if (lifetime.IsStopped)
+        {
+            return Admission.Expired();
+        }
+
         var hostGate = _hostGates.GetOrAdd(gateKey, _ => new SemaphoreSlim(Math.Max(1, hostLimit), Math.Max(1, hostLimit)));
 
         if (_coreGate.Wait(0))
         {
             if (hostGate.Wait(0))
             {
-                return Admission.Admitted(hostGate, _coreGate);
+                return AdmitOrRelease(hostGate, lifetime);
             }
 
             // 已占住 Core 槽位、只差主机槽位：计入等待队列。
@@ -540,7 +638,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
             try
             {
                 await hostGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-                return Admission.Admitted(hostGate, _coreGate);
+                return AdmitOrRelease(hostGate, lifetime);
             }
             catch (OperationCanceledException)
             {
@@ -572,7 +670,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 throw;
             }
 
-            return Admission.Admitted(hostGate, _coreGate);
+            return AdmitOrRelease(hostGate, lifetime);
         }
         catch (OperationCanceledException)
         {
@@ -584,19 +682,81 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         }
     }
 
-    private static string ResolveAdmissionCode(AdmissionKind kind, CancellationToken callerToken) => kind switch
+    /// <summary>取得槽位**之后**再检查一次终止：已取消的操作不得带着槽位继续读身份。</summary>
+    private Admission AdmitOrRelease(SemaphoreSlim hostGate, SshOperationLifetime lifetime)
     {
-        AdmissionKind.Busy => SshErrorCodes.Busy,
-        _ => ResolveOperationCode(callerToken),
+        if (!lifetime.IsStopped)
+        {
+            return Admission.Admitted(hostGate, _coreGate);
+        }
+
+        hostGate.Release();
+        _coreGate.Release();
+        return Admission.Expired();
+    }
+
+    /// <summary>前置围栏（ssh_test）：已终止时返回失败结果，不读身份、不建连。</summary>
+    private bool TryTestFence(
+        SshOperationLifetime lifetime,
+        SshHostContext host,
+        Stopwatch stopwatch,
+        out SshTestResult? failure)
+    {
+        failure = null;
+        if (!lifetime.IsStopped)
+        {
+            return false;
+        }
+
+        var reason = lifetime.StopReason;
+        failure = TestFailure(host, SshPhase.Validation, StopCode(reason), StopDiagnostic(reason, "受理前置围栏"), stopwatch);
+        return true;
+    }
+
+    /// <summary>前置围栏（ssh_execute）：已终止时返回该阶段的失败结果（不读身份、不建连、不提交）。</summary>
+    private bool TryFence(
+        SshOperationLifetime lifetime,
+        SshHostContext host,
+        Stopwatch stopwatch,
+        out SshExecuteResult? failure)
+    {
+        failure = null;
+        if (!lifetime.IsStopped)
+        {
+            return false;
+        }
+
+        var reason = lifetime.StopReason;
+        failure = ExecuteFailure(
+            host,
+            SshPhase.Validation,
+            StopCode(reason),
+            StopDiagnostic(reason, "受理前置围栏"),
+            retrySafe: false,
+            stopwatch);
+        return true;
+    }
+
+    private static string StopCode(SshStopReason reason) => reason switch
+    {
+        SshStopReason.OperationDeadline or SshStopReason.ConnectDeadline => SshErrorCodes.Timeout,
+        SshStopReason.CallerCancelled or SshStopReason.HostStopping => SshErrorCodes.Cancelled,
+        _ => SshErrorCodes.Cancelled,
     };
 
-    private static string ResolveOperationCode(CancellationToken callerToken) =>
-        callerToken.IsCancellationRequested ? SshErrorCodes.Cancelled : SshErrorCodes.Timeout;
+    private static string StopDiagnostic(SshStopReason reason, string detail) =>
+        reason.ToDiagnostic() + "：" + detail;
 
-    private static string DescribeAdmission(AdmissionKind kind) => kind switch
+    private static string ResolveAdmissionCode(AdmissionKind kind, SshOperationLifetime lifetime) => kind switch
+    {
+        AdmissionKind.Busy => SshErrorCodes.Busy,
+        _ => StopCode(lifetime.StopReason),
+    };
+
+    private static string DescribeAdmission(AdmissionKind kind, SshOperationLifetime lifetime) => kind switch
     {
         AdmissionKind.Busy => "等待队列已满（ssh.busy）：未创建连接，也未提交命令。",
-        _ => "排队期间到期/被取消：未创建连接，也未提交命令。",
+        _ => StopDiagnostic(lifetime.StopReason, "排队期间到期/被取消：未创建连接，也未提交命令。"),
     };
 
     private async Task<T> TrackAsync<T>(Func<Task<T>> body)

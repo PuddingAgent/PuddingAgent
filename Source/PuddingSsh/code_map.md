@@ -42,7 +42,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Validation/SshRequestValidator.cs` | 请求/目标形状校验与有效限额合成 | `ValidateTarget`、`ValidateTest`、`ValidateExecute` | 连接前拒绝畸形输入；生效超时 = `min(请求, 主机上限, 宿主 deadline)` |
 | `Execution/SshBoundedOutputCollector.cs` | 双流同时排空 + 共享预算 + 增量 UTF-8 解码 | `SshBoundedOutputCollector` | 固定缓冲（2×预算 + 16 KiB 池化读缓冲）；捕获满**继续计数并丢弃**；截断不产生 U+FFFD；**禁止**整份 `Result`/`ReadToEnd` |
 | `Execution/SshCoordinatorOptions.cs` | 协调器预算 | `SshCoordinatorOptions`（Core 总并行 / 等待队列 / 清理宽限） | 默认取 `SshOperationLimits` 的硬上限；引用方只能收窄 |
-| `Execution/SshOperationCoordinator.cs` | `ISshClient` 实现：准入排队、deadline、凭据、建连、执行、释放、停止 | `SshOperationCoordinator`（含 `StopAsync`/`IAsyncDisposable`）、`InFlightOperations`、`WaitQueueLength` | 准入按 `hostId + hostRevision` 分门；操作总时长从**受理**起算（含排队）；队满立即 `ssh.busy`；清理宽限只做资源回收 |
+| `Execution/SshOperationLifetime.cs` | 单次操作的**时间与终止事实**（ADR-096 D2） | `SshStopReason`/`SshStopReasons`、`SshOperationLifetime`（`RemainingOperation`/`RemainingConnect`/`CheckBeforeSideEffect`/`WaitStageAsync`） | 预算在**受理时**算一次；剩余额度用单调时间戳；计时器走注入的 `TimeProvider`；阶段晚返回只做材料清零/连接回收，绝不开启下一阶段 |`r`n| `Execution/SshOperationCoordinator.cs` | `ISshClient` 实现：准入排队、deadline、凭据、建连、执行、释放、停止 | `SshOperationCoordinator`（含 `StopAsync`/`IAsyncDisposable`）、`InFlightOperations`、`WaitQueueLength` | 准入按 `hostId + hostRevision` 分门；操作总时长从**受理**起算（含排队）；队满立即 `ssh.busy`；清理宽限只做资源回收 |
 | `Transport/SshNetTransportFactory.cs` | 建连：密钥、认证方法、默认拒绝的主机密钥回调 | `SshNetTransportFactory` | `RetryAttempts=1`（库默认 10）、`MaxSessions=1`（库默认 10）、`Timeout` 由 deadline 决定；回调在 `ConnectAsync` 之前安装；加密私钥 ⇒ `ssh.passphrase_required` |
 | `Transport/SshNetTransportSession.cs` | 独占连接的 Exec、退出证据、终止与释放 | `SshNetTransportSession` | 取消/超时对 exec channel 发 TERM 后关连接；无退出码/信号 ⇒ `execution_state=unknown`；释放路径不抛新错误覆盖业务结果 |
 
@@ -78,6 +78,10 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
     并把「已提交但无退出证据」如实报成 `execution_state=unknown`——不得声称远端进程已结束。
 17. **停止不延长业务许可**：`StopAsync`/`DisposeAsync` 取消所有在飞操作、等待清理宽限后返回；
     停止期间到达的请求返回 `ssh.busy`。释放路径（含 Dispose 卡死）不得改写业务结果。
+18. **取消/截止是前置围栏**（ADR-096 D2）：受理、取得槽位后、取到身份后、建连后（提交前）各检查终止事实；
+    已取消的请求**不读身份、不建连、不提交**。阶段只拿**剩余**额度，换阶段不重置预算。
+19. **终止原因不混淆**：`stop_reason=caller_cancelled|host_stopping|operation_deadline|connect_deadline`；
+    Core 停止写成 `ssh.cancelled`，绝不因为「外部 token 没取消」而写成 `ssh.timeout`；迟到结果只回收、不恢复。
 
 ## 4. 验证与门禁
 
