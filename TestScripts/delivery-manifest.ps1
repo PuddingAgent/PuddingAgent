@@ -85,6 +85,16 @@ if (-not (Test-Path $publishPath)) {
     }
 }
 Write-Host "    publish dir: OK ($PublishDirectory)"
+# 目录存在 != 产物可用：Shell 主程序与 Core 子进程 exe 必须都在。
+# （2026-10-08 实测：只检查目录存在时，缺 core\PuddingAgent.exe 的发布包会让链变绿却无法启动。）
+$missingArtifacts = @()
+if (-not (Test-Path (Join-Path $publishPath 'PuddingDesktop.exe'))) { $missingArtifacts += 'PuddingDesktop.exe' }
+if (-not (Test-Path (Join-Path $publishPath 'core\PuddingAgent.exe'))) { $missingArtifacts += 'core\PuddingAgent.exe' }
+if ($missingArtifacts.Count -gt 0) {
+    Write-Host "PUBLISH-INCOMPLETE: missing $($missingArtifacts -join ', ') in $PublishDirectory => refusing to emit a manifest"
+    exit 1
+}
+Write-Host "    publish artifacts: OK (PuddingDesktop.exe + core\PuddingAgent.exe)"
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
