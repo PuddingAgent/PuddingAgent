@@ -119,6 +119,7 @@ public sealed class BrowserWorkspaceController :
     private readonly IWebView2UiDispatcher _uiDispatcher;
     private readonly BrowserAutomationGateSync? _automationGates;
     private readonly BrowserReadingBaselineStore _readings;
+    private readonly IDesktopUiSurface? _uiSurface;
 
     private IBrowserContext? _context;
     private PageId? _activePageId;
@@ -198,7 +199,8 @@ public sealed class BrowserWorkspaceController :
         IBrowserSurfaceHost surfaceHost,
         IWebView2UiDispatcher uiDispatcher,
         BrowserAutomationGateSync? automationGates = null,
-        BrowserReadingBaselineStore? readings = null)
+        BrowserReadingBaselineStore? readings = null,
+        IDesktopUiSurface? uiSurface = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _surfaceHost = surfaceHost ?? throw new ArgumentNullException(nameof(surfaceHost));
@@ -206,6 +208,8 @@ public sealed class BrowserWorkspaceController :
         _automationGates = automationGates;
         // 生产侧传入生命周期端口持有的那一份（页面关闭时会清）；省略则自建（测试/独立使用）。
         _readings = readings ?? new BrowserReadingBaselineStore();
+        // 桥侧截图复用能力通道的同一条执行路径（省略 ⇒ 该能力在 Bridge 路径上明确不支持）。
+        _uiSurface = uiSurface;
     }
 
     /// <summary>
