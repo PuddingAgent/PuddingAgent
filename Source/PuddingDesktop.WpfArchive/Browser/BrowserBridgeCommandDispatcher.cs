@@ -84,6 +84,17 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
             ledgerNamespace.ProcessInstance, ledgerNamespace.Generation, command.OperationId.ToString("n"));
         var fingerprint = Fingerprint(command);
 
+        // 方案 §4.1：deadline 不进指纹，但**每次接收**都要检查"这次请求是否已过期" ——
+        // 包括**重放**路径（否则同一个 operationId 在期限之后重传会静默拿到历史结果，
+        // 掩盖"本次请求已过期"这一事实）。检查必须位于账本裁决**之前**。
+        if (command.DeadlineUtc <= DateTimeOffset.UtcNow)
+        {
+            return Error(
+                command.OperationId,
+                BrowserBridgeErrorCodes.BrowserDeadlineExceeded,
+                "Command deadline has already passed");
+        }
+
         while (true)
         {
             var decision = _ledger.TryBegin(key, fingerprint);
