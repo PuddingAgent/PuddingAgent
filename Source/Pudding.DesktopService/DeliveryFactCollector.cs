@@ -12,7 +12,11 @@ public sealed record DeliveryCollectionRequest(
     string Commit,
     IReadOnlyList<string>? AdditionalKnownUnverified = null,
     // 单次采集允许扫描的日志文件数（默认 = MaxChangelogFiles 常量；测试用它构造"语料被截断"的场景）。
-    int ChangelogFileLimit = DeliveryFactCollector.MaxChangelogFiles);
+    int ChangelogFileLimit = DeliveryFactCollector.MaxChangelogFiles,
+    /// <summary>R6 证据绑定：采集时工作树是否**有未提交改动**（<c>git status --porcelain</c> 非空）。
+    /// 放在**末尾**以免打乱既有位置调用；事实先采集，随后由清单发布并据以**拒绝**
+    /// <c>ready-for-external-deploy</c> —— 带未提交改动的产物**不可复现**（与前端 +dirty 同义）。</summary>
+    bool WorkingTreeDirty = false);
 
 /// <summary>
 /// **交付事实采集**：把"跑测试/发版/写日志"之后留在磁盘上的东西，汇总成一份可自检的交付清单。
