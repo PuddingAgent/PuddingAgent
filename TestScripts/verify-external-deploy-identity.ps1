@@ -313,23 +313,64 @@ if ($artifactAdminRoot) {
     }
 
     # 逐文件清单比对：版本号相同不代表内容相同（复核 §6：只比版本与短哈希不够）。
+    # 允许构件侧多出**构建期派生的 `.gz`**（Core 内容管线为静态服务预压缩）：
+    # 但 dist 的每个文件都必须在构件里逐字节一致，且额外文件只能是 `<dist 文件>.gz`。
     if ($distManifest -and $artifactManifest) {
-        if ($distManifest.FileCount -ne $artifactManifest.FileCount) {
-            $problems.Add(("artifact 静态产物文件数 {0} ≠ dist {1}（复制不完整）" -f $artifactManifest.FileCount, $distManifest.FileCount))
+        $distMap = @{}
+        foreach ($line in $distManifest.Lines) {
+            $parts = $line -split '\|', 2
+            $distMap[$parts[0]] = $parts[1]
         }
-        if ($distManifest.Digest -ne $artifactManifest.Digest) {
-            $problems.Add('artifact 静态产物清单摘要 ≠ dist 清单摘要（内容不一致：复制陈旧或构建期改写）')
-        } else {
-            Write-Host ("  清单摘要             : {0}（{1} 个文件，与 dist 一致）" -f $artifactManifest.Digest.Substring(0, 16), $artifactManifest.FileCount)
+        $artifactMap = @{}
+        foreach ($line in $artifactManifest.Lines) {
+            $parts = $line -split '\|', 2
+            $artifactMap[$parts[0]] = $parts[1]
+        }
+
+        $missing = @($distMap.Keys | Where-Object { -not $artifactMap.ContainsKey($_) })
+        $mismatched = @($distMap.Keys | Where-Object {
+            $artifactMap.ContainsKey($_) -and $artifactMap[$_] -ne $distMap[$_]
+        })
+        $unexpected = @($artifactMap.Keys | Where-Object {
+            if ($distMap.ContainsKey($_)) { return $false }
+            # 派生文件只允许 `.gz`，且其基准文件必须存在于 dist。
+            if ($_ -like '*.gz') { return -not $distMap.ContainsKey($_.Substring(0, $_.Length - 3)) }
+            return $true
+        })
+
+        if ($missing.Count -gt 0) {
+            $sample = ($missing | Select-Object -First 5) -join ', '
+            $problems.Add(("artifact 缺少 dist 的 {0} 个文件（复制不完整），例如：{1}" -f $missing.Count, $sample))
+        }
+        if ($mismatched.Count -gt 0) {
+            $sample = ($mismatched | Select-Object -First 5) -join ', '
+            $problems.Add(("artifact 有 {0} 个文件与 dist 逐字节不一致（复制陈旧或构建期改写），例如：{1}" -f $mismatched.Count, $sample))
+        }
+        if ($unexpected.Count -gt 0) {
+            $sample = ($unexpected | Select-Object -First 5) -join ', '
+            $problems.Add(("artifact 有 {0} 个既不属于 dist、也不是 `.gz` 派生的文件（陈旧残留？），例如：{1}" -f $unexpected.Count, $sample))
+        }
+        if ($missing.Count -eq 0 -and $mismatched.Count -eq 0 -and $unexpected.Count -eq 0) {
+            Write-Host ("  清单摘要             : dist {0} 个文件全部逐字节一致（构件另有 {1} 个 .gz 派生）" -f $distMap.Count, ($artifactMap.Count - $distMap.Count))
         }
     }
 
     # pin 住本次构建的 Core 身份（供 live 阶段比对「实际加载的 DLL」）。
-    $artifactDll = Join-Path $artifactRootFull 'PuddingAgent.dll'
-    $artifactDllHash = Get-FileSha256 -Path $artifactDll
-    if (-not $artifactDllHash) {
-        $problems.Add(("构件根里找不到 PuddingAgent.dll：无法 pin Core 身份（{0}）" -f $artifactDll))
+    # `--artifacts-path` 布局下 DLL 在 `<root>\bin\<Project>\<config>\`，普通 publish 才在根：
+    # 因此**递归查找并强制唯一**，不假设位置（歧义 ⇒ 明确要求更精确的 -ArtifactRoot）。
+    $dllCandidates = @(
+        Get-ChildItem $artifactRootFull -Recurse -Filter 'PuddingAgent.dll' -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\obj\\' -and $_.FullName -notmatch '\\ref\\' }
+    )
+    if ($dllCandidates.Count -eq 0) {
+        $problems.Add(("构件根下找不到 PuddingAgent.dll（排除 obj/ref）：无法 pin Core 身份（{0}）" -f $artifactRootFull))
+    } elseif ($dllCandidates.Count -gt 1) {
+        $paths = ($dllCandidates | ForEach-Object { $_.FullName }) -join ' ; '
+        $problems.Add(("构件根下有 {0} 个 PuddingAgent.dll（多配置/多目标）：不得按时间猜测，请给更精确的 -ArtifactRoot。命中：{1}" -f $dllCandidates.Count, $paths))
     } else {
+        $artifactDll = $dllCandidates[0].FullName
+        $artifactDllHash = Get-FileSha256 -Path $artifactDll
+        Write-Host ("  Core DLL             : {0}" -f ($artifactDll -replace [regex]::Escape($artifactRootFull + '\'), ''))
         Write-Host ("  Core DLL SHA256      : {0}" -f $artifactDllHash)
     }
 }
