@@ -65,6 +65,43 @@ public sealed class DeliveryManifestTests
             Manifest(checks: [new DeliveryCheck("negative", -1, 0)])));
     }
 
+    /// <summary>
+    /// R6：**带未提交改动的产物不可复现** ⇒ 必须拒绝；而"干净"与"**尚未采集**"都不得因此被拒。
+    /// （三态语义：只有**确知** dirty 才拒绝；`null` 只表示没采集，**不等于干净**。）
+    /// </summary>
+    [Fact]
+    public void ADirtyWorkingTreeCannotBeDeclaredDeliverable()
+    {
+        Assert.Contains(
+            DeliveryManifestValidator.Validate(
+                new DeliveryManifest(
+                    "build", "abc123", ["app.exe"], [new DeliveryCheck("tests", 1, 0)],
+                    knownUnverified: [],
+                    knownUnverifiedTotal: 0,
+                    requiredExternalSteps: ["startup", "restart", "crash-recovery", "exit-reclamation"])
+                {
+                    Dirty = true,
+                }),
+            problem => problem.Contains("uncommitted", StringComparison.Ordinal));
+
+        Assert.Empty(DeliveryManifestValidator.Validate(
+            new DeliveryManifest(
+                "build", "abc123", ["app.exe"], [new DeliveryCheck("tests", 1, 0)],
+                knownUnverified: [],
+                knownUnverifiedTotal: 0,
+                requiredExternalSteps: ["startup", "restart", "crash-recovery", "exit-reclamation"])
+            {
+                Dirty = false,
+            }));
+
+        Assert.Empty(DeliveryManifestValidator.Validate(
+            new DeliveryManifest(
+                "build", "abc123", ["app.exe"], [new DeliveryCheck("tests", 1, 0)],
+                knownUnverified: [],
+                knownUnverifiedTotal: 0,
+                requiredExternalSteps: ["startup", "restart", "crash-recovery", "exit-reclamation"])));
+    }
+
     [Fact]
     public void KnownUnverifiedMustBeStatedExplicitly()
     {
