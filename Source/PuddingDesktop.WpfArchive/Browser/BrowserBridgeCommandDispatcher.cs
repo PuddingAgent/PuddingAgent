@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Pudding.Contracts;
+using Pudding.Contracts.Desktop;
 using Pudding.DesktopService;
 using PuddingBrowser.Protocol;
 
@@ -167,6 +169,18 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
                 BrowserBridgeErrorCodes.BrowserDeadlineExceeded, "Command deadline has already passed"));
         }
 
+        // 方案 §5.2/§5.3：Bridge 页面命令必须先过**页面授权**闸门 —— **无授权不得触碰 handler**
+        // （外部复核 P0：Bridge 无任务授权仍能执行页面操作）。fail closed：未登记的只读命令按写处理。
+        if (TryAuthorizePageCommand(command, out var authorizationReason))
+        {
+            var deniedActivity = new AgentBrowserActivity(
+                command.OperationId, command.Name,
+                command.PageId ?? command.ContextId ?? "-", command.Origin);
+            deniedActivity.Complete(false, PageGrantRequired);
+            RecordActivity(deniedActivity);
+            return CacheAndReturn(Error(command.OperationId, PageGrantRequired, authorizationReason!));
+        }
+
         // Execute with deadline + cancellation
         using var deadlineCts = new CancellationTokenSource();
         var delay = command.DeadlineUtc - DateTimeOffset.UtcNow;
@@ -310,6 +324,75 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
         {
             // Subscriber exception must not break command execution (doc 6.1)
         }
+    }
+
+    /// <summary>方案 §5.3：**只读**命令的最小准入是目标页 Read；其余（含未登记者）一律要 Write（fail closed）。</summary>
+    private static readonly IReadOnlySet<string> ReadOnlyPageCommands = new HashSet<string>(StringComparer.Ordinal)
+    {
+        BrowserBridgeCommandNames.PageSnapshot,
+        BrowserBridgeCommandNames.PageLocate,
+        BrowserBridgeCommandNames.PageWaitFor,
+        BrowserBridgeCommandNames.PageScreenshot,
+        BrowserBridgeCommandNames.PageGetInfo,
+        BrowserBridgeCommandNames.PageList,
+        BrowserBridgeCommandNames.ContextList,
+        BrowserBridgeCommandNames.ContextGetInfo,
+    };
+
+    private const string PageGrantRequired = "page_grant_required";
+
+    /// <summary>
+    /// 页面授权闸门（方案 §5.2/§5.3）：要求调用者在该目标页上持有满足最小范围的**有效页面授权**。
+    /// 返回 <c>true</c> 表示**拒绝**（并给出原因）；无页面目标的命令不在此闸门范围。
+    /// </summary>
+    private bool TryAuthorizePageCommand(BrowserBridgeCommand command, out string? reason)
+    {
+        reason = null;
+
+        if (string.IsNullOrEmpty(command.ContextId) || string.IsNullOrEmpty(command.PageId))
+        {
+            return false;
+        }
+
+        var wire = command.Caller;
+        var kind = wire?.Kind switch
+        {
+            "agent" => BrowserCallerKind.Agent,
+            "sub_agent" => BrowserCallerKind.SubAgent,
+            _ => (BrowserCallerKind?)null,
+        };
+
+        if (kind is null || string.IsNullOrWhiteSpace(wire!.CallerId) || string.IsNullOrWhiteSpace(wire.TaskId))
+        {
+            reason = "browser page commands must carry a trusted caller identity";
+            return true;
+        }
+
+        var caller = new BrowserCallerIdentity(
+            kind.Value,
+            wire.CallerId,
+            wire.TaskId,
+            string.IsNullOrWhiteSpace(wire.ParentTaskId) ? null : wire.ParentTaskId);
+
+        var required = ReadOnlyPageCommands.Contains(command.Name)
+            ? BrowserPageGrantScope.Read
+            : BrowserPageGrantScope.Write;
+        var target = new DesktopPageTarget(command.ContextId, command.PageId);
+        var now = DateTimeOffset.UtcNow;
+
+        var granted = _lifecycle.Authority.ActiveGrants.Any(grant =>
+            grant.Target == target
+            && grant.Grantee.IsSameTaskScope(caller)
+            && (grant.Scope & required) == required
+            && (grant.ExpiresAtUtc is null || grant.ExpiresAtUtc > now));
+
+        if (!granted)
+        {
+            reason = $"no {(required == BrowserPageGrantScope.Read ? "read" : "write")} page grant for this caller on {target.Key}";
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>调用者身份键（方案 §4.2）：幂等缓存与去重都按"**谁发起**"隔离，不跨调用者复用。</summary>
