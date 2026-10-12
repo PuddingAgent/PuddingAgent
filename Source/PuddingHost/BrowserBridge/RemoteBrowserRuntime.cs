@@ -112,6 +112,33 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
         yield break;
     }
 
+    /// <summary>Bridge 传输的截图：把请求参数放上 <c>page.screenshot</c>，由桌面侧执行同一套采集与准入。</summary>
+    public async Task<BrowserScreenshotDescriptor> ScreenshotAsync(
+        BrowserScreenshotRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var descriptor = await ExecuteAsync<BrowserScreenshotDescriptor>(
+            BrowserBridgeCommandNames.PageScreenshot,
+            new PageScreenshotArguments
+            {
+                ExpectedPageVersion = request.ExpectedPageVersion.Value,
+                Scope = DesktopScreenshotScopeWire.NameOf(request.Scope),
+                Detail = DesktopScreenshotDetailWire.NameOf(request.Detail),
+                Format = request.Format,
+                RegionX = request.RegionX,
+                RegionY = request.RegionY,
+                RegionWidth = request.RegionWidth,
+                RegionHeight = request.RegionHeight,
+            },
+            contextId: new BrowserContextId(request.Target.ContextId),
+            pageId: new PageId(request.Target.PageId),
+            timeout: TimeSpan.FromSeconds(30),
+            ct).ConfigureAwait(false);
+
+        return descriptor;
+    }
+
     internal async Task<T> ExecuteAsync<T>(
         string name,
         object arguments,
