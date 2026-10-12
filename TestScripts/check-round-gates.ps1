@@ -40,7 +40,7 @@ param(
     [string]$OwnerPattern = '^Docs/(00_changelog/2026Year/10/2026-10-0[89]-(?!T\d)|12_features/(\u6D4F\u89C8\u5668|B6-)|13_runbooks/\u6D4F\u89C8\u5668|14_reports/2026-10-0[89]-\u6D4F\u89C8\u5668)'
 )
 
-# 解释器解析（2026-10-08）：PATH 上的 python 可能是 Windows 应用执行别名；优先 py / 可用的 .venv。
+# Interpreter resolution (2026-10-08): python on PATH may be a Windows Store execution alias; prefer py, then a usable .venv python.
 if ($env:PUDDING_PYTHON) { $pythonExe = $env:PUDDING_PYTHON } elseif ((Get-Command py -ErrorAction SilentlyContinue) -and (& py --version 2>&1) -match 'Python 3') { $pythonExe = 'py' } elseif (Test-Path (Join-Path $PSScriptRoot '..\.venv\Scripts\python.exe')) { $pythonExe = Join-Path $PSScriptRoot '..\.venv\Scripts\python.exe' } else { $pythonExe = 'python' }
 
 $ErrorActionPreference = "Stop"

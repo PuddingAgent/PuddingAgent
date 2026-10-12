@@ -53,7 +53,7 @@ try {
         }
 
         foreach ($project in $TestPath) {
-            # 先判存在性：路径写错时 dotnet test 会 MSB1009，若直接当"tests failed"会误导（曾把 Source/ 写成 Tests/）。
+            # Check existence first: a wrong path makes dotnet test emit MSB1009, and treating that as "tests failed" misleads (Source/ was once written as Tests/).
             if (-not (Test-Path $project)) {
                 Write-Warning "REFUSING TO COMMIT: test project not found: $project"
                 exit 1
