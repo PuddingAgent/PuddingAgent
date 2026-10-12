@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
@@ -20,13 +22,10 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
 {
     private readonly BrowserOperationResultCache _resultCache = new();
 
-    // 方案 §4.2：同一 operationId 的**在途**命令只能有一次执行 —— 后来者等待同一完成源，
-    // 而不是再进一次 handler（外部复核 P0：并发重复被执行两次）。
-    private readonly ConcurrentDictionary<Guid, Task<BrowserBridgeCommandResult>> _inFlight = new();
-
-    // 方案 §4.2：缓存结果**不得跨调用者复用** —— 结果只对"当初发起它的那个调用者"有效，
-    // 同 operationId 换调用者即冲突（外部复核 P0：缓存被回放给另一个调用者）。
-    private readonly ConcurrentDictionary<Guid, string> _resultCaller = new();
+    // 方案 §4.2：**唯一**幂等来源就是原子执行账本 —— 同键同指纹在途则等同一完成源、
+    // 已完成则复用、指纹不同则冲突；不再另造一份"按 Guid 的 in-flight/调用者缓存"。
+    // 指纹里含调用者身份 ⇒ 换调用者即冲突（不跨调用者复用他人结果）。
+    private readonly BrowserOperationLedger _ledger = new();
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeOperations = new();
     private readonly ConcurrentDictionary<Guid, (string Code, string Message)> _forcedFailures = new();
     private readonly ConcurrentQueue<AgentBrowserActivity> _activities = new();
@@ -76,59 +75,89 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
         BrowserBridgeCommand command,
         CancellationToken externalCt)
     {
-        // 方案 §4.2：同一 operationId 在途时**只允许一次执行**；后来者等待同一完成源。
-        if (_inFlight.TryGetValue(command.OperationId, out var running))
+        // 方案 §4.2：**账本是唯一幂等来源**。键 = (进程实例, 连接世代, operationId)；
+        // 指纹含调用者身份与完整语义载荷 ⇒ 换调用者/换目标/换参数一律冲突，绝不跨调用者复用结果。
+        var key = new BrowserOperationLedgerKey("bridge", 0, command.OperationId.ToString("n"));
+        var fingerprint = Fingerprint(command);
+
+        while (true)
         {
-            return await running.ConfigureAwait(false);
+            var decision = _ledger.TryBegin(key, fingerprint);
+            switch (decision.State)
+            {
+                case BrowserOperationLedgerState.Conflict:
+                    return Error(
+                        command.OperationId,
+                        "operation_id_conflict",
+                        "this operation id is already bound to a different caller or payload; a result is never replayed across callers");
+
+                case BrowserOperationLedgerState.AwaitPending:
+                    if (decision.Pending is null)
+                    {
+                        break;
+                    }
+
+                    // 等**同一完成源**：绝不重复进 handler。
+                    await decision.Pending.ConfigureAwait(false);
+                    continue;
+
+                case BrowserOperationLedgerState.ReplayCompleted:
+                    if (_resultCache.TryGet(command.OperationId, out var replayed))
+                    {
+                        return replayed!;
+                    }
+
+                    return Error(
+                        command.OperationId,
+                        "operation_result_unavailable",
+                        "the operation already completed but its result is no longer retained");
+
+                case BrowserOperationLedgerState.Execute:
+                    return await ExecuteOnceAsync(command, externalCt, key).ConfigureAwait(false);
+            }
+
+            break;
         }
 
-        var completion = new TaskCompletionSource<BrowserBridgeCommandResult>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        return Error(command.OperationId, "operation_ledger_unavailable", "the ledger returned no usable decision");
+    }
 
-        if (!_inFlight.TryAdd(command.OperationId, completion.Task))
-        {
-            // 与另一个并发调用竞争登记失败 ⇒ 同样等它的结果，不重复进 handler。
-            return await _inFlight[command.OperationId].ConfigureAwait(false);
-        }
-
+    private async Task<BrowserBridgeCommandResult> ExecuteOnceAsync(
+        BrowserBridgeCommand command,
+        CancellationToken externalCt,
+        BrowserOperationLedgerKey key)
+    {
         try
         {
-            var deduplicated = await DispatchCoreAsync(command, externalCt).ConfigureAwait(false);
-            completion.TrySetResult(deduplicated);
-            return deduplicated;
+            var result = await DispatchCoreAsync(command, externalCt).ConfigureAwait(false);
+            _ledger.Complete(key, result.Success ? "completed" : "failed");
+            return result;
         }
-        catch (Exception ex)
+        catch
         {
-            completion.TrySetException(ex);
+            // 结果未知：账本按 fail-closed 处置（不复用、也不当安全重试）。
+            _ledger.Abandon(key, "outcome_unknown: dispatch threw");
             throw;
         }
-        finally
-        {
-            _inFlight.TryRemove(command.OperationId, out _);
-        }
+    }
+
+    /// <summary>完整语义指纹（方案 §4.1）：调用者身份 + 能力名 + 目标 + 完整载荷（deadline 等非语义元数据不入）。</summary>
+    private static string Fingerprint(BrowserBridgeCommand command)
+    {
+        var canonical = string.Concat(
+            CallerKey(command), "\u001e",
+            command.Name ?? string.Empty, "\u001e",
+            command.ContextId ?? string.Empty, "\u001e",
+            command.PageId ?? string.Empty, "\u001e",
+            command.Arguments.ValueKind == JsonValueKind.Undefined ? "null" : command.Arguments.GetRawText());
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 
     private async Task<BrowserBridgeCommandResult> DispatchCoreAsync(
         BrowserBridgeCommand command,
         CancellationToken externalCt)
     {
-        // Idempotency: return cached result for duplicate operationId —— **但只对同一调用者**。
-        if (_resultCache.TryGet(command.OperationId, out var cached))
-        {
-            var requestingCaller = CallerKey(command);
-            if (_resultCaller.TryGetValue(command.OperationId, out var owner)
-                && !string.Equals(owner, requestingCaller, StringComparison.Ordinal))
-            {
-                return Error(
-                    command.OperationId,
-                    "operation_id_conflict",
-                    "this operation id belongs to another caller; a cached result is never replayed across callers");
-            }
-
-            return cached!;
-        }
-
-        _resultCaller[command.OperationId] = CallerKey(command);
 
         // Gate: pause/takeover rejects new Agent commands.
         // Record a failed activity so Agent and user understand the rejection (doc 6.1).
