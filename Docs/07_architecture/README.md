@@ -2,7 +2,7 @@
 title: 07架构
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-07
+last_reviewed: 2026-10-12
 status: active
 description: ADR-092第二版（Proposed）及简化设计：独立Goal存储、一个决策入口、两类执行工作；移除Goal步骤树与两级Verifier，Task可选适配，等待无模型轮询。Agent goal.md管理独立。整体替代ADR-092第一版，保留历史任务记录；实现和运行验收待完成。
 categories: [docs, architecture]
@@ -127,6 +127,7 @@ draft: false
 70. [ADR-082 Pudding 外部工作空间、Agent 与消息 API](96ADR-082Pudding外部工作空间Agent消息APIADR.md)
 71. [ADR-083 Agent 系统预制模板版本化快照与 DeepSeek 鲸鱼娘模板](97ADR-083Agent系统预制模板版本化快照与DeepSeek鲸鱼娘模板ADR.md)
 72. [ADR-090 上下文压缩触发口径、来源标注与收益准入收敛](104ADR-090上下文压缩触发口径来源标注与收益准入收敛ADR.md)（2026-09-13 仅审阅与设计，状态 Proposed；S1 起分期实施。ADR-084 至 ADR-089 尚未登记进本编号列表，对应文件见本目录）
+73. [ADR-096 SSH 执行前置围栏与有界终止](110ADR-096SSH执行前置围栏与有界终止ADR.md) — POSIX 工作目录守卫、取消/deadline、提交事实、资源回收与输出完整性合同。
 
 文档分工：
 

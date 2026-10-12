@@ -1,0 +1,147 @@
+{
+  "review_date": "2026-10-12",
+  "production_source_modified": false,
+  "baseline_test_counters": {
+    "total": "122",
+    "executed": "122",
+    "passed": "122",
+    "failed": "0",
+    "error": "0",
+    "timeout": "0",
+    "aborted": "0",
+    "inconclusive": "0",
+    "passedButRunAborted": "0",
+    "notRunnable": "0",
+    "notExecuted": "0",
+    "disconnected": "0",
+    "warning": "0",
+    "completed": "0",
+    "inProgress": "0",
+    "pending": "0"
+  },
+  "source_sha256": {
+    "Validation/SshPosixCommand.cs": "37949cc7c15d6219da0cdba5b9c35bb5b8a8afc820ddc71ad8ab9ccdcc287f72",
+    "Execution/SshOperationCoordinator.cs": "07664cb0df7c256a8bb7628c6e273a5152bc7a0de91e73c536d2382483ef51dd",
+    "Transport/SshNetTransportSession.cs": "9c02f51baf1c16a0895ce463f937b35196ceecc4ebfcd11142571df565fbc6dc",
+    "Transport/SshNetTransportFactory.cs": "dce0da7f7eb28aa90d88f8f92b7accde87fcfae708c02fb5e02b98f2ffcc1d0f",
+    "Execution/SshBoundedOutputCollector.cs": "7138a8085217ab7f172c7293ae23cf34ce0ad466af67fddfd858b797459047b9",
+    "Contracts/SshLimits.cs": "931bcbcc04888fdebf29658f65d02447aa4d53539803ff42ec47f22cd5a2fb5b"
+  },
+  "observations": [
+    {
+      "scenario": "cwd_failure_composite",
+      "actual": {
+        "command": "printf FIRST; printf SECOND",
+        "ExecutedCommand": "cd -- '/__pudding_ssh_review_missing_directory__' && printf FIRST; printf SECOND",
+        "ExitCode": 0,
+        "stdout": "SECOND",
+        "cdErrorObserved": true
+      }
+    },
+    {
+      "scenario": "proposed_cwd_guard",
+      "actual": {
+        "command": "printf FIRST; printf SECOND",
+        "ExitCode": 2,
+        "stdout": ""
+      }
+    },
+    {
+      "scenario": "cwd_failure_composite",
+      "actual": {
+        "command": "printf FIRST\nprintf SECOND",
+        "ExecutedCommand": "cd -- '/__pudding_ssh_review_missing_directory__' && printf FIRST\nprintf SECOND",
+        "ExitCode": 0,
+        "stdout": "SECOND",
+        "cdErrorObserved": true
+      }
+    },
+    {
+      "scenario": "proposed_cwd_guard",
+      "actual": {
+        "command": "printf FIRST\nprintf SECOND",
+        "ExitCode": 2,
+        "stdout": ""
+      }
+    },
+    {
+      "scenario": "cwd_failure_composite",
+      "actual": {
+        "command": "printf FIRST || printf SECOND",
+        "ExecutedCommand": "cd -- '/__pudding_ssh_review_missing_directory__' && printf FIRST || printf SECOND",
+        "ExitCode": 0,
+        "stdout": "SECOND",
+        "cdErrorObserved": true
+      }
+    },
+    {
+      "scenario": "proposed_cwd_guard",
+      "actual": {
+        "command": "printf FIRST || printf SECOND",
+        "ExitCode": 2,
+        "stdout": ""
+      }
+    },
+    {
+      "scenario": "pre_cancelled",
+      "actual": {
+        "Status": 0,
+        "ExecutionState": 2,
+        "ConnectCount": 1,
+        "Calls": 1,
+        "executes": 1
+      }
+    },
+    {
+      "scenario": "connect_ignores_deadline_before_release",
+      "actual": {
+        "IsCompleted": false,
+        "InFlightOperations": 1
+      }
+    },
+    {
+      "scenario": "connect_ignores_deadline_after_release",
+      "actual": {
+        "Status": 0,
+        "ExecutionState": 2,
+        "ExecuteCount": 1
+      }
+    },
+    {
+      "scenario": "identity_ignores_deadline_before_release",
+      "actual": {
+        "IsCompleted": false,
+        "InFlightOperations": 1
+      }
+    },
+    {
+      "scenario": "identity_ignores_deadline_after_release",
+      "actual": {
+        "Status": 0,
+        "ConnectCount": 1
+      }
+    },
+    {
+      "scenario": "drain_cleanup_grace",
+      "actual": {
+        "IsCompleted": false,
+        "allowedGraceMs": 2000
+      }
+    },
+    {
+      "scenario": "collector_read_error",
+      "actual": {
+        "IsCompletedSuccessfully": true,
+        "captured": "hello",
+        "truncated": false
+      }
+    },
+    {
+      "scenario": "hard_limits",
+      "actual": {
+        "acceptedInvalidOptions": true,
+        "seconds": 601
+      }
+    }
+  ]
+}

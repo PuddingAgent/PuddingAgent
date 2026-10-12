@@ -2,7 +2,7 @@
 
 > 设计依据：[SSH 工具组件化设计与实施方案](../../Docs/12_features/SSH工具组件化设计与实施方案-2026-10-08.md)
 > （§4 组件与依赖边界、§6 凭据与主机验证、§7 工具合同、§9 并发/输出/超时、§10 诊断合同、§12 实施顺序）。
-> 交付规程状态：**A1–A4 / S1–S4 已交付，S5 未接入**（宿主接入与三个 Agent 工具未做）。
+> 宿主接入前置合同：[ADR-096](../../Docs/07_architecture/110ADR-096SSH执行前置围栏与有界终止ADR.md) 与[代码级修补方案](../../Docs/12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md)。组件没有宿主消费方，三个 Agent 工具尚未装配。
 >
 > 边界硬规则（`Docs/10_conventions/组件化交付规程.md` §2.2，判据是**编译期失败**）：
 > `ProjectReference` **必须为 0**；不得引用 `PuddingCore` / `PuddingRuntime` / `PuddingPlatform` /
@@ -64,8 +64,8 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 8. **无自动重放**：任何已提交命令都不自动重试；连通性失败也不自动重连。
 9. **输出与输出量解耦**：捕获有界（预算内），驻留内存不随远端输出增长（见 §4 实测）。
 10. **限额只能缩小**：`ResolveOperationTimeout` / `ResolveOutputBudget` / `ValidateExecute` 是唯一入口。
-11. **执行串在审批前即确定**：`cd -- '<quoted cwd>' && <原始 command>`，cwd 按 POSIX 单引号编码
-    （含 `'`/`$`/反引号/分号都在同一个词里），`cd` 失败不会继续执行。
+11. **执行串在审批前即确定**：cwd 按 POSIX 单引号编码；整个复合脚本的 cwd 前置守卫合同由
+    ADR-096 D1 定义，权威实现入口为 `Validation/SshPosixCommand.cs`。
 12. **零上层依赖**：任何 `ProjectReference` 或对 Pudding 上层程序集的 `using` 都是边界破裂。
 13. **会话不含并发保护**：一个 `ISshTransportSession` 代表一条独占连接，同一时刻只应有一个 Exec；
     并发准入/排队/`ssh.busy` 由 `SshOperationCoordinator` 负责（`MaxSessions=1` 是库侧兜底，不是队列）。
