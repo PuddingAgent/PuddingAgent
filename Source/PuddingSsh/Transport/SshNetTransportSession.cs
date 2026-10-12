@@ -34,6 +34,7 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
     private Task? _closeTask;
     private SshCommand? _currentCommand;
     private int _abortRequested;
+    private TimeSpan _closeBudget;
     private int _closed;
     private int _pendingReaders;
     private int _submissionEvidence;
@@ -72,11 +73,14 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
 
     public bool Closed => Volatile.Read(ref _closed) == 1;
 
+    /// <summary>关闭状态机实际消费的预算（由**首次**调用者决定）；用于验证预算合同真的传进来了。</summary>
+    internal TimeSpan CloseBudget => _closeBudget;
+
     /// <summary>非阻塞中止：登记请求并把关闭交给 <see cref="EnsureCloseAsync"/> 的单次状态机。</summary>
     public void RequestAbort()
     {
         Volatile.Write(ref _abortRequested, 1);
-        _ = EnsureCloseAsync();
+        _ = EnsureCloseAsync(SshOperationLimits.CleanupGrace);
     }
 
     public async Task<SshExecuteResult> ExecuteAsync(
@@ -255,26 +259,37 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
     {
         _disposed = true;
 
-        // 关闭状态机自身有预算（TERM/连接/密钥共享一份）；等待它结束是为了让上层能判断
-        // 「是否真的释放」——上层仍会用**自己的**预算给这次等待封顶（超时进隔离区）。
-        await EnsureCloseAsync().ConfigureAwait(false);
+        // 直接使用者（探针/宿主）用组件默认清理宽限；协调器走带预算的重载。
+        await EnsureCloseAsync(SshOperationLimits.CleanupGrace).ConfigureAwait(false);
     }
 
-    /// <summary>单一关闭状态机：无论谁先请求（取消/中止/释放），只会执行一次。</summary>
-    private Task EnsureCloseAsync()
+    /// <summary>带预算释放：TERM/关闭/排空/Dispose 共用这份额度（L3）。</summary>
+    public async ValueTask DisposeAsync(TimeSpan budget)
+    {
+        _disposed = true;
+        await EnsureCloseAsync(budget).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 单一关闭状态机：无论谁先请求（中止/带预算释放/普通释放），只会执行一次；
+    /// **首次调用者给的预算**决定这份状态机的时间上界。
+    /// </summary>
+    private Task EnsureCloseAsync(TimeSpan budget)
     {
         lock (_closeGate)
         {
-            return _closeTask ??= Task.Run(() => CloseCoreAsync());
+            return _closeTask ??= Task.Run(() => CloseCoreAsync(budget));
         }
     }
 
-    private async Task CloseCoreAsync()
+    private async Task CloseCoreAsync(TimeSpan budget)
     {
+        var total = budget > TimeSpan.Zero ? budget : TimeSpan.Zero;
+        _closeBudget = total;
         var stopwatch = Stopwatch.StartNew();
         TimeSpan Remaining()
         {
-            var left = SshOperationLimits.CleanupGrace - stopwatch.Elapsed;
+            var left = total - stopwatch.Elapsed;
             return left > TimeSpan.Zero ? left : TimeSpan.Zero;
         }
 
@@ -372,9 +387,13 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
         }
     }
 
+    /// <summary>
+    /// exec 排空阶段的清理额度 = min(组件清理宽限, 本次操作剩余时间)。
+    /// 注意：这是**执行阶段内部**的排空额度；操作收尾的关闭/回收预算由协调器的
+    /// <c>SshCleanupBudget</c>（`DisposeAsync(budget)`）单独给出，两者不得互相"新开 2 秒"。
+    /// </summary>
     private static TimeSpan RemainingCleanupBudget(Stopwatch stopwatch, TimeSpan timeout)
     {
-        // 清理预算 = 清理宽限，且不超过本次操作剩余时间（两者取小）。
         var left = timeout - stopwatch.Elapsed;
         if (left < TimeSpan.Zero)
         {

@@ -249,6 +249,95 @@ public sealed class SshSyncEntryBoundaryTests
         }
     }
 
+    [TestMethod]
+    public async Task CleanupBudget_IsHandedToTheSessionCloseStateMachine()
+    {
+        var session = new FakeSession();
+        var factory = new FakeTransportFactory { OnConnect = (_, _) => Task.FromResult<ISshTransportSession>(session) };
+
+        await using var coordinator = new SshOperationCoordinator(
+            factory,
+            new FakeIdentityProvider(),
+            new SshCoordinatorOptions { CleanupGrace = TimeSpan.FromMilliseconds(250) });
+
+        var result = await WaitOrFailAsync(coordinator.ExecuteAsync(FakeSsh.Host(), FakeSsh.Execute(), CancellationToken.None));
+
+        Assert.AreEqual(SshExecutionStatus.Completed, result.Status, result.ErrorCode ?? "null");
+        Assert.IsNotNull(session.LastCloseBudget, "关闭必须通过带预算的重载进行");
+        Assert.IsGreaterThan(TimeSpan.Zero, session.LastCloseBudget!.Value, "预算必须是正数");
+        Assert.IsLessThanOrEqualTo(
+            TimeSpan.FromMilliseconds(250),
+            session.LastCloseBudget!.Value,
+            "会话拿到的预算不得超过协调器的清理宽限");
+    }
+
+    [TestMethod]
+    public async Task CleanupBudget_StaysPositiveEvenAfterOperationDeadlinePassed()
+    {
+        // 业务 deadline 到期（取消）之后才收尾：关闭仍必须拿到**正数**预算，
+        // 不得出现「按业务剩余取 0 ⇒ 根本没试过关闭就进隔离区」。
+        var session = new FakeSession
+        {
+            OnExecute = async (_, _, _, ct) =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return FakeResults.Completed();
+            },
+            DisposeDelay = TimeSpan.FromMilliseconds(120),
+        };
+        var factory = new FakeTransportFactory { OnConnect = (_, _) => Task.FromResult<ISshTransportSession>(session) };
+
+        await using var coordinator = new SshOperationCoordinator(
+            factory,
+            new FakeIdentityProvider(),
+            new SshCoordinatorOptions { CleanupGrace = TimeSpan.FromMilliseconds(600) });
+
+        using var cts = new CancellationTokenSource();
+        var operation = coordinator.ExecuteAsync(FakeSsh.Host(), FakeSsh.Execute(), cts.Token);
+        Assert.IsTrue(await FakeSsh.WaitUntilAsync(() => session.ExecuteCount == 1));
+        await cts.CancelAsync();
+
+        var result = await WaitOrFailAsync(operation, 8000);
+
+        Assert.AreEqual(SshExecutionStatus.Cancelled, result.Status);
+        Assert.IsNotNull(session.LastCloseBudget);
+        Assert.IsGreaterThan(TimeSpan.Zero, session.LastCloseBudget!.Value, "业务 deadline 过后关闭预算仍必须为正");
+        Assert.AreEqual(SshCleanupState.Completed, result.CleanupState, "预算足够时关闭必须真的完成");
+    }
+    [TestMethod]
+    public async Task CleanupBudget_StartsAtCleanupStart_NotAtOperationStart()
+    {
+        // 执行 300 ms（长于 200 ms 清理宽限）后才收尾：若预算从**操作开始**起算，
+        // 收尾时额度已耗尽 ⇒ 关闭拿到 0 ⇒ 误报 Pending。正确口径是「从清理开始起算」。
+        var session = new FakeSession
+        {
+            OnExecute = async (_, _, _, _) =>
+            {
+                await Task.Delay(300).ConfigureAwait(false);
+                return FakeResults.Completed();
+            },
+            DisposeDelay = TimeSpan.FromMilliseconds(120),
+        };
+        var factory = new FakeTransportFactory { OnConnect = (_, _) => Task.FromResult<ISshTransportSession>(session) };
+
+        await using var coordinator = new SshOperationCoordinator(
+            factory,
+            new FakeIdentityProvider(),
+            new SshCoordinatorOptions { CleanupGrace = TimeSpan.FromMilliseconds(200) });
+
+        var result = await WaitOrFailAsync(coordinator.ExecuteAsync(FakeSsh.Host(), FakeSsh.Execute(), CancellationToken.None));
+
+        Assert.AreEqual(SshExecutionStatus.Completed, result.Status, result.ErrorCode ?? "null");
+        Assert.AreEqual(
+            SshCleanupState.Completed,
+            result.CleanupState,
+            "清理预算必须从清理开始起算，不能被业务耗时提前耗尽");
+        Assert.AreEqual(0, coordinator.QuarantinedResources);
+        Assert.IsGreaterThanOrEqualTo(
+            TimeSpan.FromMilliseconds(100),
+            session.LastCloseBudget ?? TimeSpan.Zero,
+            "会话拿到的关闭预算必须接近完整清理宽限");
+    }
     /// <summary>自报仍未关闭的会话：用于验证 CleanupState 需要关闭证据。</summary>
     private sealed class UnclosedSession : ISshTransportSession, ISshTransportSessionDiagnostics
     {
@@ -272,6 +361,8 @@ public sealed class SshSyncEntryBoundaryTests
 
         public Task<SshExecuteResult> ExecuteAsync(string command, TimeSpan timeout, int maxOutputBytes, CancellationToken cancellationToken) =>
             Task.FromResult(FakeResults.Completed());
+
+        public ValueTask DisposeAsync(TimeSpan budget) => ValueTask.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
@@ -299,6 +390,8 @@ public sealed class SshSyncEntryBoundaryTests
 
         public Task<SshExecuteResult> ExecuteAsync(string command, TimeSpan timeout, int maxOutputBytes, CancellationToken cancellationToken) =>
             Task.FromResult(FakeResults.Completed());
+
+        public ValueTask DisposeAsync(TimeSpan budget) => throw new IOException("dispose fault");
 
         public ValueTask DisposeAsync() => throw new IOException("dispose fault");
     }

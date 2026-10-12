@@ -251,7 +251,13 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         phaseDurations["queue"] = Elapsed(stopwatch);
         var lease = BeginLease(admission);
         StageHandoff? handoff = null;
-        var cleanupBudget = new SshCleanupBudget(_time, _options.CleanupGrace);
+
+        // 清理预算**从清理开始起算**（方案 L3）：首次需要清理时才建，避免「长于宽限的操作在收尾时
+        // 预算已被业务耗尽 ⇒ 关闭拿到 0 额度 ⇒ 没试过关闭就进隔离区」。
+        var cleanupBudget = new Lazy<SshCleanupBudget>(
+            () => new SshCleanupBudget(_time, _options.CleanupGrace),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        TimeSpan CleanupRemaining() => cleanupBudget.Value.Remaining;
         try
         {
             // 身份阶段：拿到槽位后再检查一次终止；身份与建连都只等**剩余额度**。
@@ -360,7 +366,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 lease.AttachSession(session);
                 if (TryTestFence(lifetime, host, stopwatch, out testFenced))
                 {
-                    var fencedCleanup = await CloseSessionOnceAsync(lease, cleanupBudget.Remaining).ConfigureAwait(false);
+                    var fencedCleanup = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
                     return testFenced! with
                     {
                         CleanupState = fencedCleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
@@ -370,7 +376,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 phaseDurations["connect"] = Elapsed(stopwatch) - phaseDurations["queue"] - phaseDurations["credentials"];
 
                 // 有界关闭：同一条连接在预算内没结束就进隔离区（不得声称已释放）。
-                var cleanup = await CloseSessionOnceAsync(lease, cleanupBudget.Remaining).ConfigureAwait(false);
+                var cleanup = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
                 var cleanupState = cleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending;
 
                 return new SshTestResult
@@ -393,7 +399,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 // 兜底：任何提前返回（例如提交前围栏）都不得把已建立的连接漏在租约外。
                 if (lease.HasSession)
                 {
-                    _ = await CloseSessionOnceAsync(lease, cleanupBudget.Remaining).ConfigureAwait(false);
+                    _ = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
                 }
 
                 // 交接义务在**所有登记完成之后**结算：迟到路径与及时路径各只结算一次。
@@ -478,7 +484,13 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
 
         var lease = BeginLease(admission);
         StageHandoff? handoff = null;
-        var cleanupBudget = new SshCleanupBudget(_time, _options.CleanupGrace);
+
+        // 清理预算**从清理开始起算**（方案 L3）：首次需要清理时才建，避免「长于宽限的操作在收尾时
+        // 预算已被业务耗尽 ⇒ 关闭拿到 0 额度 ⇒ 没试过关闭就进隔离区」。
+        var cleanupBudget = new Lazy<SshCleanupBudget>(
+            () => new SshCleanupBudget(_time, _options.CleanupGrace),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        TimeSpan CleanupRemaining() => cleanupBudget.Value.Remaining;
         try
         {
             if (TryFence(lifetime, host, stopwatch, out fenced))
@@ -594,18 +606,18 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 // 提交前围栏：会话已到手但已终止时不得发 exec。
                 if (TryFence(lifetime, host, stopwatch, out fenced))
                 {
-                    var fencedCleanup = await CloseSessionOnceAsync(lease, cleanupBudget.Remaining).ConfigureAwait(false);
+                    var fencedCleanup = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
                     return fenced! with
                     {
                         CleanupState = fencedCleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
                     };
                 }
 
-                var result = await ExecuteOnSessionAsync(host, session, plan, lifetime, lease, cleanupBudget, outputBudget, stopwatch)
+                var result = await ExecuteOnSessionAsync(host, session, plan, lifetime, lease, CleanupRemaining, outputBudget, stopwatch)
                     .ConfigureAwait(false);
 
                 // 有界关闭（与 TERM/排空共享同一份预算）；没结束就进隔离区并如实标注。
-                var cleanup = await CloseSessionOnceAsync(lease, cleanupBudget.Remaining).ConfigureAwait(false);
+                var cleanup = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
                 return cleanup.Completed
                     ? result with { CleanupState = SshCleanupState.Completed }
                     : result with
@@ -619,7 +631,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 // 兜底：任何提前返回（例如提交前围栏）都不得把已建立的连接漏在租约外。
                 if (lease.HasSession)
                 {
-                    _ = await CloseSessionOnceAsync(lease, cleanupBudget.Remaining).ConfigureAwait(false);
+                    _ = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
                 }
 
                 // 交接义务在**所有登记完成之后**结算：迟到路径与及时路径各只结算一次。
@@ -639,7 +651,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         SshPosixExecutionPlan plan,
         SshOperationLifetime lifetime,
         SshResourceLease lease,
-        SshCleanupBudget cleanupBudget,
+        Func<TimeSpan> cleanupRemaining,
         int outputBudget,
         Stopwatch stopwatch)
     {
@@ -708,7 +720,7 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         else
         {
             // 已到期/被取消：只再给一次**资源回收**宽限；超时就不再等会话（不延长业务许可）。
-            var grace = await Task.WhenAny(executeTask, Task.Delay(cleanupBudget.Remaining, CancellationToken.None))
+            var grace = await Task.WhenAny(executeTask, Task.Delay(cleanupRemaining(), CancellationToken.None))
                 .ConfigureAwait(false);
 
             if (grace == executeTask)
@@ -835,7 +847,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         Task closeWork;
         try
         {
-            closeWork = _closeWorkers.StartAsync(() => session.DisposeAsync().AsTask());
+            // 把协调器的**剩余清理额度**交给会话关闭状态机（L3：同一份预算合同）。
+            closeWork = _closeWorkers.StartAsync(() => session.DisposeAsync(budget).AsTask());
         }
         catch (SshStageCapacityExceededException)
         {

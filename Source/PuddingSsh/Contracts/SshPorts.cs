@@ -147,9 +147,17 @@ public interface ISshTransportSession : IAsyncDisposable
 
     /// <summary>
     /// **非阻塞**中止请求：只登记请求，实际的 TERM/关闭连接由会话自己的有界清理状态机执行
-    /// （ADR-096 D3）；调用线程不得因此被卡住。
+    /// （ADR-096 D3）；调用线程不得因此被卡住。此时状态机使用组件默认清理宽限。
     /// </summary>
     void RequestAbort();
+
+    /// <summary>
+    /// 带预算的释放（ADR-096 D3 补充 L3）：TERM、关闭命令、关闭连接、排空与 Dispose
+    /// **共用调用方给的这一份剩余额度**；谁先启动关闭状态机，预算就按谁的算（单次状态机）。
+    /// 协调器用它把 <see cref="SshCleanupBudget"/> 的剩余时间传给真实会话，从而避免
+    /// 「一处按业务剩余取 0、另一处又新开 2 秒」。
+    /// </summary>
+    ValueTask DisposeAsync(TimeSpan budget);
 
     /// <summary>
     /// 执行一条 POSIX 命令。取消只是**发送信号**并可能结束客户端等待，因此调用方不得据此宣称远端进程已消失。

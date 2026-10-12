@@ -22,7 +22,8 @@ internal sealed record ProbeOptions(
     string? ScopeBDirectory,
     string? RotatedKnownHostsPath,
     string? PresentCwd,
-    string? MissingCwd)
+    string? MissingCwd,
+    string? SourceSha)
 {
     /// <summary>冻结的绝对 `.ssh` 目录（默认为 <c>--identity</c> 的所在目录）。</summary>
     public string EffectiveIdentityDirectory =>
@@ -97,7 +98,7 @@ internal sealed record ProbeOptions(
         var scenario = args[0].ToLowerInvariant();
         string? host = null, user = null, identity = null, fingerprint = null, expect = null, remoteTmp = null;
         string? knownHosts = null, identityDir = null, identityName = null, scopeA = null, scopeB = null, rotatedKnownHosts = null;
-        string? presentCwd = null, missingCwd = null;
+        string? presentCwd = null, missingCwd = null, sourceSha = null;
         var port = 22122;
         var budget = 64 * 1024;
         var timeout = 60;
@@ -132,6 +133,7 @@ internal sealed record ProbeOptions(
                 case "--rotated-known-hosts": rotatedKnownHosts = Next(); break;
                 case "--cwd": presentCwd = Next(); break;
                 case "--missing-cwd": missingCwd = Next(); break;
+                case "--source-sha": sourceSha = Next(); break;
                 case "--budget": budget = int.Parse(Next()); break;
                 case "--timeout": timeout = int.Parse(Next()); break;
                 case "--connect-timeout": connectTimeout = int.Parse(Next()); break;
@@ -191,7 +193,8 @@ internal sealed record ProbeOptions(
             scopeB,
             rotatedKnownHosts,
             presentCwd,
-            missingCwd);
+            missingCwd,
+            sourceSha);
     }
 }
 

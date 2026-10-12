@@ -159,6 +159,8 @@ public sealed class SshResourceLeaseTests
         public Task<SshExecuteResult> ExecuteAsync(string command, TimeSpan timeout, int maxOutputBytes, CancellationToken cancellationToken) =>
             inner.ExecuteAsync(command, timeout, maxOutputBytes, cancellationToken);
 
+        public ValueTask DisposeAsync(TimeSpan budget) => DisposeAsync();
+
         public async ValueTask DisposeAsync()
         {
             await gate.Task.ConfigureAwait(false);

@@ -83,6 +83,9 @@ internal sealed class FakeSession : ISshTransportSession, ISshTransportSessionDi
     /// <summary>释放被调用了几次：单次关闭状态机的门禁断言。</summary>
     public int DisposeCallCount => Volatile.Read(ref _disposeCallCount);
 
+    /// <summary>最近一次带预算释放收到的额度（L3 预算合同门禁）。</summary>
+    public TimeSpan? LastCloseBudget { get; private set; }
+
     /// <summary>
     /// exec 调用**同步阻塞**的时长（模拟「方法返回 Task 之前的同步启动段」）。
     /// 协调器必须把它放在有界 worker 上，业务等待不得因此被卡住。
@@ -140,6 +143,12 @@ internal sealed class FakeSession : ISshTransportSession, ISshTransportSessionDi
         }
 
         return OnExecute(command, timeout, maxOutputBytes, cancellationToken);
+    }
+
+    public ValueTask DisposeAsync(TimeSpan budget)
+    {
+        LastCloseBudget = budget;
+        return DisposeAsync();
     }
 
     public async ValueTask DisposeAsync()

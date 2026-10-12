@@ -284,9 +284,19 @@ try {
         return @{ Exit = $result.Exit; AuthDelta = $delta; Output = $output; ClientKeys = $newFingerprints }
     }
 
+    # 构建身份（证据必须能指认构建）：git HEAD + 工作树是否 dirty + 探针 dll 哈希。
+    $sourceSha = (git -C $repo rev-parse HEAD 2>$null | Select-Object -First 1)
+    $sourceDirty = ((git -C $repo status --porcelain 2>$null | Measure-Object).Count -gt 0)
+    $probeDllForHash = [System.IO.Path]::ChangeExtension($probeExePath, '.dll')
+    $probeDllSha = if (Test-Path -LiteralPath $probeDllForHash) { (Get-FileHash -Algorithm SHA256 -LiteralPath $probeDllForHash).Hash } else { 'missing' }
+    Write-Log "build source_sha=$sourceSha dirty=$sourceDirty probe_dll_sha256=$probeDllSha"
+    $summary['build.source_sha'] = $sourceSha
+    $summary['build.source_dirty'] = $sourceDirty
+    $summary['build.probe_dll_sha256'] = $probeDllSha
+
     $common = @('--host', '127.0.0.1', '--port', "$Port", '--user', 'root', '--identity', $identityPath,
         '--fingerprint', $fingerprint, '--budget', "$OutputBudgetBytes", '--timeout', '60',
-        '--connect-timeout', "$ConnectTimeoutSeconds", '--remote-tmp', $FixtureRoot)
+        '--connect-timeout', "$ConnectTimeoutSeconds", '--remote-tmp', $FixtureRoot, '--source-sha', $sourceSha)
 
     # 1) Observe-then-deny: the presented key is recorded, the connection is refused, no auth.
     $r = Invoke-Scenario 'fingerprint' (@('fingerprint') + $common)
@@ -406,6 +416,12 @@ try {
         if ($r.AuthDelta -ne $expectedConnections) {
             Add-Failure "rounds: probe opened $expectedConnections connections but the server authenticated $($r.AuthDelta) times"
         }
+    }
+
+    # 19b) L 轮：反复资源转移之后，服务端不得残留任何已建立连接。
+    $roundsSockets = Get-RemoteSocketCount
+    if ($roundsSockets -ne 0) {
+        Add-Failure "rounds: server still sees $roundsSockets established socket(s) after 9 resource-transfer rounds"
     }
 
     # 20) R5 item 6: signal-only exit mapping, known exit code preserved.

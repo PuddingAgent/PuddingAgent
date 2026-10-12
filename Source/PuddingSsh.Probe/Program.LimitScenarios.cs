@@ -280,6 +280,7 @@ internal static partial class Program
         const string scenario = "rounds";
         var factory = new SshNetTransportFactory();
         var statuses = new List<string>();
+        var cleanupStates = new List<string>();
         var connections = 0;
         var operations = 0;
 
@@ -315,6 +316,7 @@ internal static partial class Program
 
             var result = await operation;
             statuses.Add(result.ErrorCode ?? result.Status.ToString());
+            cleanupStates.Add(result.CleanupState.ToString());
         }
 
         // 扩大输出：捕获恒为预算，驻留内存不随输出增长。
@@ -330,6 +332,10 @@ internal static partial class Program
             TimeSpan.FromSeconds(10));
 
         log.Fact(scenario, "statuses", string.Join('|', statuses));
+        log.Fact(scenario, "cleanup_states", string.Join('|', cleanupStates));
+        log.Fact(scenario, "peak_stage_workers", coordinator.PeakStageWorkers);
+        log.Fact(scenario, "peak_close_workers", coordinator.PeakCloseWorkers);
+        log.Fact(scenario, "peak_quarantined", coordinator.PeakQuarantinedResources);
         log.Fact(scenario, "big_status", big.Status.ToString());
         log.Fact(scenario, "big_captured_bytes", big.CapturedBytes);
         log.Fact(scenario, "big_truncated", big.OutputTruncated);
@@ -347,6 +353,18 @@ internal static partial class Program
             big.CapturedBytes <= options.OutputBudgetBytes && big.OutputTruncated,
             $"captured={big.CapturedBytes} truncated={big.OutputTruncated}");
         log.Assert(scenario, "no_negative_counters", coordinator.ActiveLeases >= 0 && coordinator.QuarantinedResources >= 0, "counters");
+        log.Assert(
+            scenario,
+            "peaks_within_capacity",
+            coordinator.PeakStageWorkers <= coordinator.StageWorkerCapacity
+                && coordinator.PeakCloseWorkers <= coordinator.CloseWorkerCapacity
+                && coordinator.PeakQuarantinedResources <= coordinator.QuarantineCapacity,
+            $"workers={coordinator.PeakStageWorkers}/{coordinator.StageWorkerCapacity} close={coordinator.PeakCloseWorkers}/{coordinator.CloseWorkerCapacity} quarantine={coordinator.PeakQuarantinedResources}/{coordinator.QuarantineCapacity}");
+        log.Assert(
+            scenario,
+            "every_round_cleanup_completed",
+            cleanupStates.All(state => string.Equals(state, "Completed", StringComparison.Ordinal)),
+            string.Join('|', cleanupStates));
     }
 
     /// <summary>signal-only 退出映射，以及已知 exit code 的保留。</summary>
