@@ -31,6 +31,11 @@ public static class BrowserBridgeServiceCollectionExtensions
         // Register Origin accessor (AsyncLocal, singleton for process lifetime)
         services.TryAddSingleton<IBrowserOperationOriginAccessor, BrowserOperationOriginAccessor>();
 
+        // §7.1：截图工件发布端 —— `BrowserScreenshotTool` 通过**可选参数**注入它（既有注册不受影响）；
+        // 未注册时工具会**显式**声明看不见图（`visionUnavailable`），而不是谎报视觉成功。
+        // 依赖 `VisionArtifactStorageService`（在 Platform 扩展里注册），复用其内容寻址 + 幂等存储。
+        services.TryAddSingleton<IBrowserScreenshotPublisher, BrowserScreenshotArtifactPublisher>();
+
         services.AddSingleton<IDesktopBrowserConnectionRegistry, DesktopBrowserConnectionRegistry>();
         services.AddSingleton<IDesktopBrowserCommandBroker, DesktopBrowserCommandBroker>();
         services.AddSingleton<IBrowserBridgeClock, SystemBrowserBridgeClock>();
