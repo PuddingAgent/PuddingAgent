@@ -35,6 +35,8 @@ public sealed class BrowserOperationPolicyTests
         new(BrowserAutomationOperation.ContextCreate, BrowserGrantKind.Management, BrowserPageGrantScope.Manage, false, true),
         new(BrowserAutomationOperation.ContextClose, BrowserGrantKind.Management, BrowserPageGrantScope.Manage, false, true),
         new(BrowserAutomationOperation.TabNew, BrowserGrantKind.Management, BrowserPageGrantScope.Manage, false, true),
+        // 激活已有页（§5.3）：目标页 **write** 授权 + 当前控制租约（与其它写操作同类）；接管期间拒绝。
+        new(BrowserAutomationOperation.TabActivate, BrowserGrantKind.Page, BrowserPageGrantScope.Write, true, true),
         // 关闭已有页：management 授权 **加上** 该页自己的 read 授权。
         new(BrowserAutomationOperation.TabClose, BrowserGrantKind.Page,
             BrowserPageGrantScope.Manage | BrowserPageGrantScope.Read, false, true),
