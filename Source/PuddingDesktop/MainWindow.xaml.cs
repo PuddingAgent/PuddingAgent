@@ -964,7 +964,9 @@ public sealed partial class MainWindow : Window
             // 读取基线（§145）与生命周期端口**同一份**：页面关闭时会随授权/租约一起清。
             var browser = new BrowserWorkspaceController(
                 runtime, surfaces, dispatcher, _automationGates,
-                _coordinator.BridgeDispatcher.Lifecycle.Readings);
+                _coordinator.BridgeDispatcher.Lifecycle.Readings,
+            // 桥侧截图复用能力通道**同一条执行路径**（延迟求值：通道可能尚未启动）。
+            () => _coordinator.CapabilityExecutor);
             try { await browser.InitializeAsync(dataRoot, ct); }
             catch { await browser.DisposeAsync(); throw; }
             _browser = browser;

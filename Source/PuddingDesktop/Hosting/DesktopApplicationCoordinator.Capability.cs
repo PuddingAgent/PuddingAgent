@@ -27,6 +27,9 @@ public sealed partial class DesktopApplicationCoordinator
     private readonly SemaphoreSlim _capabilityGate = new(1, 1);
     private readonly SemaphoreSlim _capabilityStartGate = new(1, 1);
     private DesktopCapabilityChannelComposition? _capabilityChannel;
+
+    /// <summary>能力通道的执行器（未启动时为 null）——桥侧截图复用**同一条**执行路径（准入一致）。</summary>
+    internal IDesktopCapabilityExecutor? CapabilityExecutor => _capabilityChannel?.Service;
     /// <summary>能力通道的执行闸门（挂在浏览器工作区的唯一控制权写入点上）。</summary>
     private IBrowserAutomationGate? _capabilityInteractionGate;
 
