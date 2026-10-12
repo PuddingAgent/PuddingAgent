@@ -26,6 +26,7 @@ public sealed class SubAgentManagerMessageTests
             .AddSingleton<IRuntimeExecutionConfigService>(new TestRuntimeExecutionConfigService())
             .BuildServiceProvider();
 
+        var delegation = new RecordingBrowserDelegationLifecycle();
         var manager = new SubAgentManager(
             new RecordingSessionStateManager(),
             services,
@@ -34,7 +35,8 @@ public sealed class SubAgentManagerMessageTests
             NullLogger<SubAgentManager>.Instance,
             new RecordingRuntimeActivitySink(),
             new RecordingRuntimeTraceAccessor(),
-            services.GetRequiredService<IRuntimeExecutionConfigService>());
+            services.GetRequiredService<IRuntimeExecutionConfigService>(),
+            browserDelegation: delegation);
 
         var result = await manager.SpawnAsync(new SubAgentSpawnRequest
         {
@@ -49,6 +51,10 @@ public sealed class SubAgentManagerMessageTests
 
         Assert.IsTrue(result.Success);
         var envelope = await messageSystem.WaitForEnvelopeAsync();
+
+        // R4 判别实验：完成已被观测之后，撤销应当已经发生（若仍为 0 ⇒ 覆盖缺口）。
+        Assert.HasCount(1, delegation.RevokedRunIds, "revoked=" + string.Join(",", delegation.RevokedRunIds));
+        Assert.AreEqual(result.RunId, delegation.RevokedRunIds[0]);
 
         Assert.AreEqual(MessageEndpointKinds.Agent, envelope.From.Kind);
         Assert.AreEqual(result.SubSessionId, envelope.From.Id);
@@ -253,6 +259,7 @@ public sealed class SubAgentManagerMessageTests
             .AddSingleton<IRuntimeExecutionConfigService>(new TestRuntimeExecutionConfigService())
             .BuildServiceProvider();
 
+        var delegation = new RecordingBrowserDelegationLifecycle();
         var manager = new SubAgentManager(
             new RecordingSessionStateManager(),
             services,
@@ -261,7 +268,8 @@ public sealed class SubAgentManagerMessageTests
             NullLogger<SubAgentManager>.Instance,
             new RecordingRuntimeActivitySink(),
             new RecordingRuntimeTraceAccessor(),
-            services.GetRequiredService<IRuntimeExecutionConfigService>());
+            services.GetRequiredService<IRuntimeExecutionConfigService>(),
+            browserDelegation: delegation);
 
         var result = await manager.SpawnAsync(new SubAgentSpawnRequest
         {
@@ -433,8 +441,13 @@ public sealed class SubAgentManagerMessageTests
                 "grant-1", request.ScopeName, DateTimeOffset.UnixEpoch.AddMinutes(5)));
         }
 
+        public List<string> RevokedRunIds { get; } = [];
+
         public ValueTask RevokeForRunAsync(string runId, string reason, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        {
+            RevokedRunIds.Add(runId);
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask RevokeForTaskAsync(
             string callerKind, string callerId, string runId, string? parentRunId, string reason,
