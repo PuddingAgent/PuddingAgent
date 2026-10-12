@@ -663,8 +663,11 @@ public sealed class SubAgentManagerMessageTests
         public void UnsubscribeWorkspace(string workspaceId, ChannelReader<SessionNotification> reader) { }
         public Task<SessionState> GetSessionStateAsync(string sessionId, CancellationToken ct = default) =>
             Task.FromResult(SessionState.Completed);
+        /// <summary>R4 7: set non-null to make the start projection fail (covers the 4th revoke site).</summary>
+        public Exception? StartProjectionFailure { get; set; }
+
         public Task TrackSubAgentStartAsync(string parentSessionId, SubAgentSpawnInfo info, CancellationToken ct = default) =>
-            Task.CompletedTask;
+            StartProjectionFailure is null ? Task.CompletedTask : Task.FromException(StartProjectionFailure);
         public Task TrackSubAgentCompleteAsync(string subSessionId, SubAgentResult result, CancellationToken ct = default) =>
             Task.CompletedTask;
         public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(string sessionId, CancellationToken ct = default) =>
