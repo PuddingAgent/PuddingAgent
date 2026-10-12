@@ -17,6 +17,14 @@ namespace PuddingDesktop.Browser;
 public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
 {
     private readonly BrowserOperationResultCache _resultCache = new();
+
+    // 方案 §4.2：同一 operationId 的**在途**命令只能有一次执行 —— 后来者等待同一完成源，
+    // 而不是再进一次 handler（外部复核 P0：并发重复被执行两次）。
+    private readonly ConcurrentDictionary<Guid, Task<BrowserBridgeCommandResult>> _inFlight = new();
+
+    // 方案 §4.2：缓存结果**不得跨调用者复用** —— 结果只对"当初发起它的那个调用者"有效，
+    // 同 operationId 换调用者即冲突（外部复核 P0：缓存被回放给另一个调用者）。
+    private readonly ConcurrentDictionary<Guid, string> _resultCaller = new();
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeOperations = new();
     private readonly ConcurrentDictionary<Guid, (string Code, string Message)> _forcedFailures = new();
     private readonly ConcurrentQueue<AgentBrowserActivity> _activities = new();
@@ -66,11 +74,59 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
         BrowserBridgeCommand command,
         CancellationToken externalCt)
     {
-        // Idempotency: return cached result for duplicate operationId
+        // 方案 §4.2：同一 operationId 在途时**只允许一次执行**；后来者等待同一完成源。
+        if (_inFlight.TryGetValue(command.OperationId, out var running))
+        {
+            return await running.ConfigureAwait(false);
+        }
+
+        var completion = new TaskCompletionSource<BrowserBridgeCommandResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        if (!_inFlight.TryAdd(command.OperationId, completion.Task))
+        {
+            // 与另一个并发调用竞争登记失败 ⇒ 同样等它的结果，不重复进 handler。
+            return await _inFlight[command.OperationId].ConfigureAwait(false);
+        }
+
+        try
+        {
+            var deduplicated = await DispatchCoreAsync(command, externalCt).ConfigureAwait(false);
+            completion.TrySetResult(deduplicated);
+            return deduplicated;
+        }
+        catch (Exception ex)
+        {
+            completion.TrySetException(ex);
+            throw;
+        }
+        finally
+        {
+            _inFlight.TryRemove(command.OperationId, out _);
+        }
+    }
+
+    private async Task<BrowserBridgeCommandResult> DispatchCoreAsync(
+        BrowserBridgeCommand command,
+        CancellationToken externalCt)
+    {
+        // Idempotency: return cached result for duplicate operationId —— **但只对同一调用者**。
         if (_resultCache.TryGet(command.OperationId, out var cached))
         {
+            var requestingCaller = CallerKey(command);
+            if (_resultCaller.TryGetValue(command.OperationId, out var owner)
+                && !string.Equals(owner, requestingCaller, StringComparison.Ordinal))
+            {
+                return Error(
+                    command.OperationId,
+                    "operation_id_conflict",
+                    "this operation id belongs to another caller; a cached result is never replayed across callers");
+            }
+
             return cached!;
         }
+
+        _resultCaller[command.OperationId] = CallerKey(command);
 
         // Gate: pause/takeover rejects new Agent commands.
         // Record a failed activity so Agent and user understand the rejection (doc 6.1).
@@ -254,6 +310,17 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
         {
             // Subscriber exception must not break command execution (doc 6.1)
         }
+    }
+
+    /// <summary>调用者身份键（方案 §4.2）：幂等缓存与去重都按"**谁发起**"隔离，不跨调用者复用。</summary>
+    private static string CallerKey(BrowserBridgeCommand command)
+    {
+        var caller = command.Caller;
+        return string.Concat(
+            caller?.Kind ?? string.Empty, "\u001f",
+            caller?.CallerId ?? string.Empty, "\u001f",
+            caller?.TaskId ?? string.Empty, "\u001f",
+            caller?.ParentTaskId ?? string.Empty);
     }
 
     private static BrowserBridgeCommandResult Error(Guid operationId, string code, string message)
