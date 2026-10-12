@@ -231,7 +231,9 @@ internal sealed class CapabilityHostHarness : IAsyncDisposable
         {
             DesktopId = desktopId,
             ProcessInstanceId = "proc-test",
-            SupportedVersions = new Proto.ProtocolRange { Minimum = 1, Maximum = 1 },
+            // 产品协议已到 v2（v1 明确不兼容 ⇒ 旧声明会被拒绝）——harness 必须声明 v2 区间，
+            // 否则每次 hello 都因版本协商失败而报 unsupported_capability（本套件长期未入链 ⇒ 此滞后未被发现）。
+            SupportedVersions = new Proto.ProtocolRange { Minimum = 2, Maximum = 2 },
         };
 
         foreach (var declaration in DesktopCapabilities.DeclareFor(declared))
