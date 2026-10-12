@@ -331,6 +331,17 @@ try {
     $r = Invoke-Scenario 'auth' (@('auth') + $common + @('--user', 'nosuchuser_xyz'))
     if ($r.AuthDelta -ne 0) { Add-Failure "auth: a wrong account still authenticated (delta=$($r.AuthDelta))" }
 
+    # 14) R1: the cwd guard must stop the WHOLE script when cd fails (no output, no marker files),
+    #     and must preserve the original script semantics when cd succeeds.
+    $r = Invoke-Scenario 'cwd' (@('cwd', '--cwd', '/tmp') + $common)
+    $connLine = $r.Output | Select-String -Pattern 'name=connections value=(\d+)' | Select-Object -First 1
+    if ($connLine) {
+        $expectedConnections = [int]$connLine.Matches.Groups[1].Value
+        if ($r.AuthDelta -ne $expectedConnections) {
+            Add-Failure "cwd: probe opened $expectedConnections connections but the server authenticated $($r.AuthDelta) times"
+        }
+    }
+
     # Cross-check: the fingerprint the probe observed must equal OpenSSH's own.
     $observedLine = Get-Content (Join-Path $outPath 'probe-fingerprint.log') |
         Select-String -Pattern 'sha256=(SHA256:\S+)' | Select-Object -First 1

@@ -4,16 +4,21 @@ using PuddingSsh.Diagnostics;
 
 namespace PuddingSsh.Validation;
 
-/// <summary>执行封装的结果：**审批前即可确定的精确字符串**（设计 §7.3）。</summary>
+/// <summary>执行封装的结果：**审批前即可确定的精确字符串**（设计 §7.3 / ADR-096 D1）。</summary>
 public sealed record SshPosixExecutionPlan(string ExecutedCommand, string? EffectiveCwd, bool UsedDefaultCwd);
 
 /// <summary>
-/// POSIX 非交互执行的封装合同（设计 §7.3）：
-/// <c>cd -- &lt;单引号编码的 cwd&gt; &amp;&amp; &lt;原始 command&gt;</c>。
+/// POSIX 非交互执行的封装合同（设计 §7.3 + ADR-096 D1）：
+/// <c>cd -- &lt;单引号编码的 cwd&gt; || exit $?</c> 独立成行，随后是**原样**命令。
 /// <para>
-/// 不允许：env、stdin、shellKind 覆盖、PTY、自动 <c>sudo</c>；不在本地 shell 里拼接地址与命令。
-/// <c>cd</c> 失败时 <c>&amp;&amp;</c> 保证后续命令**不会执行**（这是封装里唯一的语义保证，
-/// 远端 shell 方言差异不在首期承诺内）。
+/// 为什么不是 <c>cd ... &amp;&amp; &lt;命令&gt;</c>：那样只有命令的**第一段**受 <c>&amp;&amp;</c> 限制，
+/// 复合脚本（分号、换行、<c>||</c>、pipeline、后台列表、行尾注释）在 cd 失败后仍会执行，
+/// 而且后续段的退出码会覆盖 cd 的失败——那是会把文件写到账号默认目录的真实副作用。
+/// 守卫独立成行后，<c>cd</c> 失败即让当前 shell 退出，后续任何一段都不会执行。
+/// </para>
+/// <para>
+/// 分隔符固定为 <c>\n</c>（不是 <c>Environment.NewLine</c>）；不拼 <c>set -e</c>、
+/// 不用 subshell 或第二个 shell 包裹原脚本（那会改变原始语义）。
 /// </para>
 /// </summary>
 public static class SshPosixCommand
@@ -48,7 +53,7 @@ public static class SshPosixCommand
     }
 
     /// <summary>
-    /// 组合最终执行字符串。请求未给 cwd 时用主机默认 cwd；两者都没有则不加 <c>cd</c> 前缀
+    /// 组合最终执行字符串。请求未给 cwd 时用主机默认 cwd；两者都没有则不加守卫
     /// （远端在登录目录执行）——这与「显式指定了非法 cwd」是两种不同事实，必须区分。
     /// </summary>
     public static SshPosixExecutionPlan Compose(string command, string? requestedCwd, string? defaultCwd)
@@ -74,7 +79,7 @@ public static class SshPosixCommand
 
         return cwd is null
             ? new SshPosixExecutionPlan(command, null, false)
-            : new SshPosixExecutionPlan($"cd -- {Quote(cwd)} && {command}", cwd, usedDefault);
+            : new SshPosixExecutionPlan($"cd -- {Quote(cwd)} || exit $?\n{command}", cwd, usedDefault);
     }
 
     /// <summary>命令必填、UTF-8 ≤ 16 KiB、拒绝 NUL（设计 §7.3）。</summary>

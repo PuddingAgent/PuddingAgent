@@ -559,7 +559,7 @@ public sealed class SshOperationCoordinatorFaultMatrixTests
             FakeSsh.Execute(command: "echo it's ok"),
             CancellationToken.None);
 
-        Assert.AreEqual("cd -- '/srv/app' && echo it's ok", session.LastCommand);
+        Assert.AreEqual("cd -- '/srv/app' || exit $?\necho it's ok", session.LastCommand);
     }
 
     [TestMethod]

@@ -77,6 +77,9 @@ internal static partial class Program
                 case "auth":
                     await RunAuthFailureAsync(options, log);
                     break;
+                case "cwd":
+                    await RunCwdGuardAsync(options, log);
+                    break;
                 case "matrix":
                     await RunFingerprintAsync(options, log);
                     if (options.ExpectedFingerprint is { Length: > 0 } fingerprint)
@@ -94,6 +97,7 @@ internal static partial class Program
                     await RunScopeDirsAsync(options, log);
                     await RunIgnoreTermAsync(options, log);
                     await RunDisconnectAsync(options, log);
+                    await RunCwdGuardAsync(options, log);
                     break;
             }
         }

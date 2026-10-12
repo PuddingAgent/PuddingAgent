@@ -20,7 +20,9 @@ internal sealed record ProbeOptions(
     string? IdentityFileName,
     string? ScopeADirectory,
     string? ScopeBDirectory,
-    string? RotatedKnownHostsPath)
+    string? RotatedKnownHostsPath,
+    string? PresentCwd,
+    string? MissingCwd)
 {
     /// <summary>冻结的绝对 `.ssh` 目录（默认为 <c>--identity</c> 的所在目录）。</summary>
     public string EffectiveIdentityDirectory =>
@@ -47,6 +49,7 @@ internal sealed record ProbeOptions(
           ignoreterm   服务端忽略 TERM：取消后不得声称远端已退出（execution_state 必须 unknown）
           disconnect   命令执行中连接被服务端切断：必须是 connection_lost + 状态未知、绝不重放
           auth         错误账号：必须 authentication_failed，且不得发生命令提交
+          cwd          cwd 守卫：cd 失败时整个脚本零执行、零副作用；cd 正常时原脚本语义不变
           matrix       顺序执行上面全部（默认）
 
         选项:
@@ -62,6 +65,8 @@ internal sealed record ProbeOptions(
           --scope-a <目录>         dirs 场景的第一个 .ssh 目录（默认 = identity 目录）
           --scope-b <目录>         dirs 场景的第二个 .ssh 目录
           --rotated-known-hosts <路径>  dirs 场景的「换 key」信任文件
+          --cwd <路径>             cwd 场景中「存在」的目录，默认 /tmp
+          --missing-cwd <路径>     cwd 场景中「不存在」的目录
           --budget <字节>          捕获预算，默认 65536
           --timeout <秒>           单次操作超时，默认 60
           --connect-timeout <秒>   建连 deadline，默认 15
@@ -86,6 +91,7 @@ internal sealed record ProbeOptions(
         var scenario = args[0].ToLowerInvariant();
         string? host = null, user = null, identity = null, fingerprint = null, expect = null, remoteTmp = null;
         string? knownHosts = null, identityDir = null, identityName = null, scopeA = null, scopeB = null, rotatedKnownHosts = null;
+        string? presentCwd = null, missingCwd = null;
         var port = 22122;
         var budget = 64 * 1024;
         var timeout = 60;
@@ -118,6 +124,8 @@ internal sealed record ProbeOptions(
                 case "--scope-a": scopeA = Next(); break;
                 case "--scope-b": scopeB = Next(); break;
                 case "--rotated-known-hosts": rotatedKnownHosts = Next(); break;
+                case "--cwd": presentCwd = Next(); break;
+                case "--missing-cwd": missingCwd = Next(); break;
                 case "--budget": budget = int.Parse(Next()); break;
                 case "--timeout": timeout = int.Parse(Next()); break;
                 case "--connect-timeout": connectTimeout = int.Parse(Next()); break;
@@ -127,7 +135,7 @@ internal sealed record ProbeOptions(
         }
 
         if (scenario is not ("fingerprint" or "hostkey" or "encrypted" or "deadline" or "cancel" or "throughput"
-            or "coordinator" or "knownhosts" or "dirs" or "ignoreterm" or "disconnect" or "auth" or "matrix"))
+            or "coordinator" or "knownhosts" or "dirs" or "ignoreterm" or "disconnect" or "auth" or "cwd" or "matrix"))
         {
             throw new ProbeUsageException($"未知 scenario {scenario}");
         }
@@ -174,7 +182,9 @@ internal sealed record ProbeOptions(
             identityName,
             scopeA,
             scopeB,
-            rotatedKnownHosts);
+            rotatedKnownHosts,
+            presentCwd,
+            missingCwd);
     }
 }
 

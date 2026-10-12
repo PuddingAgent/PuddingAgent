@@ -5,7 +5,7 @@ using PuddingSsh.Validation;
 namespace PuddingSshTests;
 
 /// <summary>
-/// POSIX 封装（设计 §7.3）：<c>cd -- 'cwd' &amp;&amp; &lt;command&gt;</c>，单引号编码，
+/// POSIX 封装（设计 §7.3 + ADR-096 D1）：<c>cd -- 'cwd' || exit $?</c> 独立成行 + 原样命令，单引号编码，
 /// cwd 必须是干净的绝对路径，命令 16 KiB/NUL 边界。
 /// </summary>
 [TestClass]
@@ -26,7 +26,7 @@ public sealed class SshPosixCommandTests
     {
         var plan = SshPosixCommand.Compose("uname -a", "/srv/pudding test", null);
 
-        Assert.AreEqual("cd -- '/srv/pudding test' && uname -a", plan.ExecutedCommand);
+        Assert.AreEqual("cd -- '/srv/pudding test' || exit $?\nuname -a", plan.ExecutedCommand);
         Assert.AreEqual("/srv/pudding test", plan.EffectiveCwd);
         Assert.IsFalse(plan.UsedDefaultCwd);
     }
@@ -35,11 +35,11 @@ public sealed class SshPosixCommandTests
     public void RequestedCwd_WinsOver_DefaultCwd_AndIsFlaggedWhenInherited()
     {
         var fromDefault = SshPosixCommand.Compose("id", null, "/srv/default");
-        Assert.AreEqual("cd -- '/srv/default' && id", fromDefault.ExecutedCommand);
+        Assert.AreEqual("cd -- '/srv/default' || exit $?\nid", fromDefault.ExecutedCommand);
         Assert.IsTrue(fromDefault.UsedDefaultCwd);
 
         var fromRequest = SshPosixCommand.Compose("id", "/per/call", "/srv/default");
-        Assert.AreEqual("cd -- '/per/call' && id", fromRequest.ExecutedCommand);
+        Assert.AreEqual("cd -- '/per/call' || exit $?\nid", fromRequest.ExecutedCommand);
         Assert.IsFalse(fromRequest.UsedDefaultCwd);
     }
 
@@ -59,12 +59,14 @@ public sealed class SshPosixCommandTests
         const string hostileCwd = "/tmp/it's; rm -rf /";
         var plan = SshPosixCommand.Compose("id", hostileCwd, null);
 
-        Assert.IsTrue(plan.ExecutedCommand.StartsWith("cd -- '", StringComparison.Ordinal));
-        Assert.IsTrue(plan.ExecutedCommand.EndsWith("' && id", StringComparison.Ordinal));
+        var lines = plan.ExecutedCommand.Split('\n');
+        Assert.AreEqual("id", lines[1], "恶意 cwd 不得改写命令本体");
+        Assert.IsTrue(lines[0].StartsWith("cd -- '", StringComparison.Ordinal));
+        Assert.IsTrue(lines[0].EndsWith("' || exit $?", StringComparison.Ordinal));
 
-        // 反向解码：把包装里的 cwd 词按 POSIX 单引号规则解回来，必须逐字等于原值
-        // ⇒ 分号、空格都在**同一个词**里，没有逃逸成命令分隔符。
-        var cwdWord = plan.ExecutedCommand["cd -- ".Length..^" && id".Length];
+        // 反向解码：把守卫行里的 cwd 词按 POSIX 单引号规则解回来，必须逐字等于原值
+        // ⇒ 分号、空格、尖括号都在**同一个词**里，没有逃逸成命令分隔符。
+        var cwdWord = lines[0]["cd -- ".Length..^" || exit $?".Length];
         Assert.AreEqual(hostileCwd, DecodeSingleQuoted(cwdWord));
     }
 
@@ -157,7 +159,7 @@ public sealed class SshRequestValidatorTests
             limits,
             defaultCwd: null);
 
-        Assert.AreEqual("cd -- '/srv/app' && uname -a", plan.ExecutedCommand);
+        Assert.AreEqual("cd -- '/srv/app' || exit $?\nuname -a", plan.ExecutedCommand);
         Assert.AreEqual(TimeSpan.FromSeconds(60), timeout);
         Assert.AreEqual(64 * 1024, budget);
     }

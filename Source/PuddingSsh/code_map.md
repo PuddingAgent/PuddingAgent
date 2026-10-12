@@ -38,7 +38,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Validation/SshHostTokens.cs` | known_hosts 主机 token 语义 | `SshHostTokens.ForTarget` | 22 端口裸主机名；非默认端口与 IPv6 用 `[host]:port`；**不做** DNS/地址互换 |
 | `Validation/SshKnownHostsParser.cs` | known_hosts 解析（明文/逗号/`\|1\|salt\|hash`/`@revoked`） | `SshKnownHostsEntry`、`SshKnownHostsParseResult`、`Parse`、`ComputeHashedHostToken` | 通配/否定/`@cert-authority`/未知标记/非 v1 哈希/非法公钥 ⇒ **整行丢弃并 fail-closed** |
 | `Validation/SshTrustSnapshot.cs` | 冻结信任快照 + 单目标验证器 | `SshTrustSource`、`SshTrustSnapshot.FromKnownHosts/FromPin/CreateVerifier/ComputeSha256Fingerprint`、`KnownHostsHostKeyVerifier`、`PinHostKeyVerifier` | 两种来源互斥、无首次信任；pin 指纹由**出示的 blob 现算**；撤销按密钥生效 |
-| `Validation/SshPosixCommand.cs` | POSIX 执行封装与 cwd/命令校验 | `SshPosixExecutionPlan`、`Compose`、`Quote`、`IsValidCwd`、`ValidateCommand` | 精确串 `cd -- '<cwd>' && <command>`；cwd 必须干净绝对路径；命令 16 KiB/NUL |
+| `Validation/SshPosixCommand.cs` | POSIX 执行封装与 cwd/命令校验 | `SshPosixExecutionPlan`、`Compose`、`Quote`、`IsValidCwd`、`ValidateCommand` | 精确串 = `cd -- '<cwd>' \|\| exit $?` 独立一行 + `\n` + **原样**命令（ADR-096 D1）；cwd 必须干净绝对路径；命令 16 KiB/NUL |
 | `Validation/SshRequestValidator.cs` | 请求/目标形状校验与有效限额合成 | `ValidateTarget`、`ValidateTest`、`ValidateExecute` | 连接前拒绝畸形输入；生效超时 = `min(请求, 主机上限, 宿主 deadline)` |
 | `Execution/SshBoundedOutputCollector.cs` | 双流同时排空 + 共享预算 + 增量 UTF-8 解码 | `SshBoundedOutputCollector` | 固定缓冲（2×预算 + 16 KiB 池化读缓冲）；捕获满**继续计数并丢弃**；截断不产生 U+FFFD；**禁止**整份 `Result`/`ReadToEnd` |
 | `Execution/SshCoordinatorOptions.cs` | 协调器预算 | `SshCoordinatorOptions`（Core 总并行 / 等待队列 / 清理宽限） | 默认取 `SshOperationLimits` 的硬上限；引用方只能收窄 |
@@ -64,8 +64,9 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 8. **无自动重放**：任何已提交命令都不自动重试；连通性失败也不自动重连。
 9. **输出与输出量解耦**：捕获有界（预算内），驻留内存不随远端输出增长（见 §4 实测）。
 10. **限额只能缩小**：`ResolveOperationTimeout` / `ResolveOutputBudget` / `ValidateExecute` 是唯一入口。
-11. **执行串在审批前即确定**：cwd 按 POSIX 单引号编码；整个复合脚本的 cwd 前置守卫合同由
-    ADR-096 D1 定义，权威实现入口为 `Validation/SshPosixCommand.cs`。
+11. **执行串在审批前即确定，cwd 是整脚本前置守卫**（ADR-096 D1）：`cd -- '<单引号编码 cwd>' || exit $?`
+    独立成行，随后是**原样**命令；分隔符固定 `\n`。守卫不能只挂在命令第一段上——分号/换行/`||`/pipeline/
+    后台列表在 cd 失败后一段都不得执行。权威实现入口 `Validation/SshPosixCommand.cs`。
 12. **零上层依赖**：任何 `ProjectReference` 或对 Pudding 上层程序集的 `using` 都是边界破裂。
 13. **会话不含并发保护**：一个 `ISshTransportSession` 代表一条独占连接，同一时刻只应有一个 Exec；
     并发准入/排队/`ssh.busy` 由 `SshOperationCoordinator` 负责（`MaxSessions=1` 是库侧兜底，不是队列）。
@@ -82,7 +83,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 
 | 位置 | 覆盖 |
 |---|---|
-| `Source/PuddingSshTests/`（**只引用组件**） | **122 个用例**：known_hosts/pin（真 fixture）、POSIX 封装与请求校验、错误分类矩阵、有界采集白盒、S4 边界断言，以及 **A3 假传输故障矩阵（35 例）** |
+| `Source/PuddingSshTests/`（**只引用组件**） | **137 个用例**：known_hosts/pin（真 fixture）、POSIX 封装与请求校验、**cwd 整脚本守卫（`SshPosixCommandGuardTests`）**、错误分类矩阵、有界采集白盒、S4 边界断言，以及假传输故障矩阵 |
 | `Source/PuddingSshTests/SshOperationCoordinatorFaultMatrixTests.cs` + `SshFakes.cs` | 假 `ISshTransportFactory`/会话/身份提供者：每主机 2 与 Core 8 的准入、队列满 `ssh.busy`、排队取消/到期、revision 分门、凭据失败、建连失败/拒绝/到期、提交前后抛错的区别、恶意会话在宽限后被放弃、停止与释放有界 |
 | `Source/PuddingSshTests/Fixtures/` | **真实 OpenSSH** 产物：`ssh-keyscan` 明文记录、`ssh-keygen -H` 哈希记录、`@revoked` 变体、不支持形态、`ssh-keygen -lf -E sha256` 指纹与 `ssh-keygen -F` 交叉核对结论 |
 | `TestScripts/ssh-probe/make-known-hosts-fixtures.sh` | fixture 生成器（含 port-22/IPv6 真实扫描与 derived 标注），证明期望值来自 OpenSSH 而非本组件 |
