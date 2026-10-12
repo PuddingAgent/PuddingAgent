@@ -188,6 +188,7 @@ public sealed class SubAgentManager : ISubAgentManager
                 string? completedRunId = null;
                 if (_runIdMap.TryRemove(subSessionId, out var removedRunId))
                 {
+                    await RevokeBrowserDelegationAsync(removedRunId).ConfigureAwait(false);
                     completedRunId = removedRunId;
                 }
                 else
@@ -276,6 +277,7 @@ public sealed class SubAgentManager : ISubAgentManager
                 // 异常路径也完成运行归档（幂等保护）
                 if (_runIdMap.TryRemove(subSessionId, out var failedRunId))
                 {
+                    await RevokeBrowserDelegationAsync(failedRunId).ConfigureAwait(false);
                                         var writeResult = await _runStore.CompleteRunAsync(failedRunId, new SubAgentRunCompletion
                     {
                         Status = "failed",
@@ -474,6 +476,7 @@ public sealed class SubAgentManager : ISubAgentManager
             // 完成运行归档（ADR-021，幂等保护）
             if (_runIdMap.TryRemove(sa.SubSessionId, out var cancelledRunId))
             {
+                await RevokeBrowserDelegationAsync(cancelledRunId).ConfigureAwait(false);
                 var writeResult = await _runStore.CompleteRunAsync(cancelledRunId, new SubAgentRunCompletion
                 {
                     Status = "cancelled",
@@ -943,6 +946,30 @@ public sealed class SubAgentManager : ISubAgentManager
             : "failed";
     }
 
+    /// <summary>
+    /// §6.2：**统一撤销**某个运行的浏览器委派授权（成功/异常/取消/启动失败都走这里）。
+    /// 未装配端口时直接返回（此时也**没有**授权可撤，行为与今天一致）；撤销失败只记日志，
+    /// 不掩盖原本的失败原因。
+    /// </summary>
+    private async Task RevokeBrowserDelegationAsync(string runId)
+    {
+        if (_browserDelegation is null || string.IsNullOrWhiteSpace(runId))
+        {
+            return;
+        }
+
+        try
+        {
+            await _browserDelegation.RevokeForRunAsync(
+                runId,
+                "sub-agent run finished (success, failure, cancellation, timeout or parent termination)",
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SubAgentMgr] RevokeForRunAsync failed for runId={RunId}", runId);
+        }
+    }
     private static SubAgentSpawnRequest NormalizeRequestIdentity(SubAgentSpawnRequest request)
         => request with
         {
