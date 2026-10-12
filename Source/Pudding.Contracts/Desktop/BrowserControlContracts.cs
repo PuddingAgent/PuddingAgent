@@ -248,6 +248,12 @@ public enum BrowserAutomationOperation
     /// <summary>新建 tab。</summary>
     TabNew,
 
+    /// <summary>
+    /// 激活 tab（方案 §5.3）：目标页 **Write**，并按 UI 焦点副作用走控制许可。
+    /// 与 <see cref="TabClose"/> 分开 —— 旧映射把二者合并成"最严的 TabClose"（2026-10-12 复核定位）。
+    /// </summary>
+    TabActivate,
+
     /// <summary>关闭 tab。</summary>
     TabClose,
 }
@@ -279,6 +285,7 @@ public static class BrowserOperationPolicy
     public static BrowserGrantKind RequiredGrantKind(BrowserAutomationOperation operation) => operation switch
     {
         BrowserAutomationOperation.ContextsList => BrowserGrantKind.None,
+        BrowserAutomationOperation.TabActivate => BrowserGrantKind.Page,
         BrowserAutomationOperation.ContextCreate
             or BrowserAutomationOperation.ContextClose
             or BrowserAutomationOperation.TabNew => BrowserGrantKind.Management,
@@ -301,6 +308,7 @@ public static class BrowserOperationPolicy
     public static BrowserPageGrantScope RequiredScope(BrowserAutomationOperation operation) => operation switch
     {
         BrowserAutomationOperation.ContextsList => BrowserPageGrantScope.None,
+        BrowserAutomationOperation.TabActivate => BrowserPageGrantScope.Write,
         BrowserAutomationOperation.PageState => BrowserPageGrantScope.Read,
         BrowserAutomationOperation.Snapshot => BrowserPageGrantScope.Read,
         BrowserAutomationOperation.Locate => BrowserPageGrantScope.Read,
