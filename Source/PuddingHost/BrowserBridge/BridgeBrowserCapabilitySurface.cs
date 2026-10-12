@@ -29,11 +29,72 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
     // ── 上下文管理（缺口 #1）：与 Desktop 侧同形（新建的上下文页面列表为空、可信级别保守）。──
 
     /// <summary>Bridge 传输**尚无截图命令** ⇒ 明确拒绝（fail-closed），不硬塞半成品。</summary>
-    public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
-        BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        Task.FromResult(CapabilityResult<BrowserScreenshotResult>.Failure(
-            DesktopCapabilityError.UnsupportedCapability(
-                "screenshot is not available over the bridge transport; use the capability channel")));
+    public async Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
+        BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // 只有 Bridge 运行时能发 page.screenshot；其它运行时在此明确不支持。
+        if (_runtime is not RemoteBrowserRuntime bridgeRuntime)
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(
+                DesktopCapabilityError.UnsupportedCapability(
+                    "screenshot is not available over the bridge transport in this host configuration"));
+        }
+
+        try
+        {
+            var descriptor = await bridgeRuntime.ScreenshotAsync(request, cancellationToken).ConfigureAwait(false);
+
+            var detail = DesktopScreenshotDetail.Low;
+            if (!DesktopScreenshotDetailWire.TryParse(descriptor.Detail, out detail))
+            {
+                return CapabilityResult<BrowserScreenshotResult>.Failure(DesktopCapabilityError.Internal(
+                    "the desktop reported an unregistered screenshot detail"));
+            }
+
+            var metadata = new DesktopScreenshotMetadata(
+                descriptor.ObservationId,
+                descriptor.MimeType,
+                descriptor.ByteCount,
+                descriptor.SourceWidth,
+                descriptor.SourceHeight,
+                descriptor.OutputWidth,
+                descriptor.OutputHeight,
+                descriptor.DeviceScaleFactor,
+                descriptor.ViewportWidth,
+                descriptor.ViewportHeight,
+                descriptor.ScrollX,
+                descriptor.ScrollY,
+                descriptor.CropX,
+                descriptor.CropY,
+                descriptor.CropWidth,
+                descriptor.CropHeight,
+                descriptor.PageVersion,
+                descriptor.DomRevision,
+                descriptor.ViewportRevision,
+                detail);
+
+            var result = new BrowserScreenshotResult(
+                metadata,
+                descriptor.Chunks
+                    .Select(chunk => new DesktopScreenshotChunk(
+                        chunk.Index, chunk.IsLast, Convert.FromBase64String(chunk.Base64)))
+                    .ToArray());
+
+            result.Validate();
+            return CapabilityResult<BrowserScreenshotResult>.Success(result);
+        }
+        catch (BrowserOperationException ex)
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(DesktopCapabilityError.Internal(ex.Message));
+        }
+        catch (FormatException)
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(DesktopCapabilityError.Internal(
+                "the desktop returned screenshot chunks that are not valid base64"));
+        }
+    }
 
     public async Task<CapabilityResult<DesktopContextInfo>> CreateContextAsync(
         BrowserContextCreateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
