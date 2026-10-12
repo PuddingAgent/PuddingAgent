@@ -344,6 +344,13 @@ try {
         $cliArguments += @("--report", (Join-Path $repositoryRoot $Report))
     }
 
+    # R6 evidence binding (ASCII-only: PS 5.1 reads BOM-less UTF-8 as ANSI).
+    $dirtyFlag = [string]$(if ([string]::IsNullOrWhiteSpace((git status --porcelain))) { 'false' } else { 'true' })
+    if (-not [string]::IsNullOrWhiteSpace($dirtyFlag)) {
+        $cliArguments += @("--dirty", $dirtyFlag)
+    }
+    Write-Host ("[cli] dirty=" + $dirtyFlag)
+
     & dotnet @cliArguments
 
     $exitCode = $LASTEXITCODE

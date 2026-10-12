@@ -94,7 +94,10 @@ public static class DeliveryManifestBuilder
                 : DeliveryManifest.RequiredLifecycleSteps,
             facts.ChangelogFilesScanned,
             facts.ChangelogFilesTotal,
-            facts.RetryNotes);
+            facts.RetryNotes)
+        {
+            Dirty = facts.WorkingTreeDirty,
+        };
 
         var validation = DeliveryManifestValidator.Validate(candidate);
         if (validation.Count > 0)

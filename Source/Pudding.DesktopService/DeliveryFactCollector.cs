@@ -177,7 +177,8 @@ public static class DeliveryFactCollector
                 RequiredExternalSteps: null,
                 RetryNotes: retryNotes,
                 ChangelogFilesTotal: changelogFilesTotal,
-                ChangelogFilesScanned: changelogs?.Count ?? 0),
+                ChangelogFilesScanned: changelogs?.Count ?? 0,
+                WorkingTreeDirty: request.WorkingTreeDirty),
             out manifest,
             out problems);
     }
