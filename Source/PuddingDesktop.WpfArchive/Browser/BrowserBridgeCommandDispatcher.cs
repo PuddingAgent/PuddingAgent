@@ -407,15 +407,10 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
             ? BrowserPageGrantScope.Read
             : BrowserPageGrantScope.Write;
         var target = new DesktopPageTarget(command.ContextId, command.PageId);
-        var now = DateTimeOffset.UtcNow;
 
-        var granted = _lifecycle.Authority.ActiveGrants.Any(grant =>
-            grant.Target == target
-            && grant.Grantee.IsSameTaskScope(caller)
-            && (grant.Scope & required) == required
-            && (grant.ExpiresAtUtc is null || grant.ExpiresAtUtc > now));
-
-        if (!granted)
+        // 判据下沉在 BrowserPageLifecycle：本文件被链接编译进 WinUI Shell，而 Shell 不引用
+        // PuddingBrowser.Automation ⇒ **不得**在这里直接读 Authority（会 CS0012 打断 Shell 构建）。
+        if (!_lifecycle.HasSufficientPageGrant(caller, target, required, DateTimeOffset.UtcNow))
         {
             reason = $"no {(required == BrowserPageGrantScope.Read ? "read" : "write")} page grant for this caller on {target.Key}";
             return true;

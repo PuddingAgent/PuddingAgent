@@ -81,6 +81,26 @@ public sealed class BrowserPageLifecycle
     public DesktopTargetRegistry PageTargets => _pageTargets;
 
     /// <summary>
+    /// Bridge 准入判据（方案 §5.2/§5.3）：该调用者是否在目标页上持有满足**最小范围**的有效页面授权。
+    ///
+    /// ⚠ 为什么要有这个方法而不是让调用方直接读 <see cref="Authority"/>：本类所在源文件会被
+    /// **链接编译进 WinUI Shell**，而 Shell 的引用白名单**不含** `PuddingBrowser.Automation`
+    /// （2026-10-12 实测：Bridge 分发器直接读 `Authority.ActiveGrants` 会让 Shell 构建
+    /// `CS0012 类型 BrowserAutomationAuthority 在未引用的程序集中定义`）。
+    /// ⇒ 判据必须**下沉到这里**，且签名**只出现 Contracts 类型**。
+    /// </summary>
+    public bool HasSufficientPageGrant(
+        BrowserCallerIdentity caller,
+        DesktopPageTarget target,
+        BrowserPageGrantScope required,
+        DateTimeOffset nowUtc) =>
+        _authority.ActiveGrants.Any(grant =>
+            grant.Target == target
+            && grant.Grantee.IsSameTaskScope(caller)
+            && (grant.Scope & required) == required
+            && (grant.ExpiresAtUtc is null || grant.ExpiresAtUtc > nowUtc));
+
+    /// <summary>
     /// 读取基线存储（设计方案 §145）：由本端口**持有并随生命周期清除** ——
     /// "页面没了、内容还留着"与"授权/租约没撤"是同一类错误，因此交给同一个所有者。
     /// </summary>
