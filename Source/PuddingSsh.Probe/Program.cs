@@ -541,35 +541,44 @@ internal static partial class Program
         bool measure)
     {
         const string scenario = "throughput";
+
+        // 采样口径（重要）：**基线在连接之前**、**复测在会话关闭之后**，两次都强制整代回收。
+        // 会话还活着时，SSH.NET 的 channel/pipe 内部缓冲仍被 _currentCommand 引用，
+        // 其大小随传输量变化——那测到的是「库内部缓冲的存续」，不是「有没有东西被留下」。
+        var allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
+        var retainedBefore = GC.GetTotalMemory(forceFullCollection: true);
+        var process = Process.GetCurrentProcess();
+        process.Refresh();
+        var workingSetBefore = process.WorkingSet64;
+
         var session = await factory.ConnectAsync(
             ConnectRequest(options, new ProbeHostKeyVerifier(options.ExpectedFingerprint), options.IdentityRequest),
             CancellationToken.None);
 
+        SshExecuteResult result;
+        var stopwatch = Stopwatch.StartNew();
         await using (session)
         {
             var command =
                 $"( head -c {stdoutBytes} /dev/zero | tr '\\0' o ) & " +
                 $"( head -c {stderrBytes} /dev/zero | tr '\\0' e >&2 ) & wait";
 
-            var allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
-            var retainedBefore = GC.GetTotalMemory(forceFullCollection: true);
-            var process = Process.GetCurrentProcess();
-            process.Refresh();
-            var workingSetBefore = process.WorkingSet64;
-            var stopwatch = Stopwatch.StartNew();
-
-            var result = await session.ExecuteAsync(
+            result = await session.ExecuteAsync(
                 command,
                 TimeSpan.FromSeconds(Math.Max(options.OperationTimeoutSeconds, 180)),
                 options.OutputBudgetBytes,
                 CancellationToken.None);
+        }
 
-            stopwatch.Stop();
-            var allocatedDelta = GC.GetTotalAllocatedBytes(precise: true) - allocatedBefore;
-            var retainedAfter = GC.GetTotalMemory(forceFullCollection: true);
-            process.Refresh();
-            var workingSetDelta = process.WorkingSet64 - workingSetBefore;
+        stopwatch.Stop();
 
+        // 会话已关闭：此时再采样，剩下的差异才是「操作结束后仍然驻留的东西」。
+        var allocatedDelta = GC.GetTotalAllocatedBytes(precise: true) - allocatedBefore;
+        var retainedAfter = GC.GetTotalMemory(forceFullCollection: true);
+        process.Refresh();
+        var workingSetDelta = process.WorkingSet64 - workingSetBefore;
+
+        {
             var expectedReceived = stdoutBytes + stderrBytes;
             if (!measure)
             {
