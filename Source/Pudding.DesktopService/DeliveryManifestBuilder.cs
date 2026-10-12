@@ -14,7 +14,8 @@ public sealed record DeliveryBuildFacts(
     IReadOnlyList<string>? RequiredExternalSteps = null,
     int ChangelogFilesTotal = 0,
     int ChangelogFilesScanned = 0,
-    IReadOnlyList<string>? RetryNotes = null);
+    IReadOnlyList<string>? RetryNotes = null,
+        bool? WorkingTreeDirty = null);
 
 /// <summary>
 /// **交付清单生成器**：把事实汇总成清单，并**用同一套校验**自检（不合格就不产出清单）。
