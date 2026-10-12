@@ -39,6 +39,20 @@ param(
         "Source/Pudding.DesktopSurface.BrowserTests/Pudding.DesktopSurface.BrowserTests.csproj",
         "Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj",
         "Tests/PuddingHost.Tests/PuddingHost.Tests.csproj"
+
+# ── Shell 构建守卫（2026-10-08）────────────────────────────────────────────
+# WinUI 产品工程不在 suites 里（它没有测试），但曾因**引用边界**被破坏而链全绿、Shell 却构建不了
+# （CS0012：Automation 类型进入 Shell 编译面）。⇒ 单独构建它，失败即拒绝生成清单。
+$shellProject = "Source/PuddingDesktop/PuddingDesktop.csproj"
+Write-Host ""
+Write-Host "=== step 0/3: build the WinUI shell (product project, not a test suite) ==="
+$shellBuild = & dotnet build $shellProject --nologo 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0) {
+    Write-Host $shellBuild
+    Write-Host "SHELL-BUILD-FAILED: the product shell does not build => refusing to emit a manifest"
+    exit 1
+}
+Write-Host "    shell build: OK"
     ),
     [switch]$SkipTests,
     # Re-run suites whose TRX shows failures, at most N times each (0 = off, the default).
