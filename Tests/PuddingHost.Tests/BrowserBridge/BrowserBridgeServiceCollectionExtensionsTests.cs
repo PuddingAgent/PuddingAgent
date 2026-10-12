@@ -5,6 +5,7 @@ using PuddingHost.BrowserBridge;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.AgentTools;
+using PuddingCode.Abstractions;
 using PuddingHost.Hosting;
 
 namespace PuddingHost.Tests.BrowserBridge;
@@ -89,6 +90,31 @@ public sealed class BrowserBridgeServiceCollectionExtensionsTests
         Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IPuddingTool));
     }
 
+    /// <summary>
+    /// R4（§6.2）**组合根注册**：启用浏览器自动化时，**委派生命周期端口必须可解析**（且是单例 ——
+    /// 与门/运行时共用同一容器语义）；关闭时**不得注册**（保持今天的行为）。
+    /// 这条用例同时验证了注册里用的两个能力名（apply/revoke）**确实存在于能力目录**中。
+    /// </summary>
+    [Fact]
+    public void DesktopChild_WiresTheBrowserDelegationLifecyclePortAsASingleton()
+    {
+        var services = new ServiceCollection();
+        services.AddDesktopBrowserAutomation(Options(PuddingHostMode.DesktopChild, enabled: true));
+        using var provider = services.BuildServiceProvider();
+
+        var port = provider.GetRequiredService<IBrowserDelegationLifecycle>();
+        Assert.IsType<HostBrowserDelegationLifecycle>(port);
+        Assert.Same(port, provider.GetRequiredService<IBrowserDelegationLifecycle>());
+    }
+
+    [Fact]
+    public void DisabledBrowserAutomation_DoesNotRegisterTheDelegationPort()
+    {
+        var services = new ServiceCollection();
+        services.AddDesktopBrowserAutomation(Options(PuddingHostMode.DesktopChild, enabled: false));
+
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IBrowserDelegationLifecycle));
+    }
     private static PuddingHostOptions Options(PuddingHostMode mode, bool enabled) => new()
     {
         Mode = mode,

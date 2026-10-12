@@ -64,6 +64,26 @@ public static class BrowserBridgeServiceCollectionExtensions
             TimeSpan.FromMinutes(5),
             "bridge:agent-target");
     });
+        // R4（§6.2）委派生命周期端口：与门**共用同一个会话解析器与同一套能力描述符**，
+        // 因此"两条传输/委派与门看到同一个 Desktop 会话与同一份控制面"在组合根层面成立。
+        // 语义差别（刻意的）：门在无会话时是 no-op（通道默认关闭），而**被显式请求的委派必须 fail-closed**。
+        services.TryAddSingleton<PuddingCode.Abstractions.IBrowserDelegationLifecycle>(sp =>
+        {
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName("browser.binding.apply", out var applyDescriptor)
+                || !Pudding.Contracts.DesktopCapabilities.TryGetByName("browser.binding.revoke", out var revokeDescriptor))
+            {
+                throw new InvalidOperationException(
+                    "the browser binding capabilities (apply/revoke) are not registered in the capability catalog");
+            }
+
+            return new HostBrowserDelegationLifecycle(
+                () => sp.GetService<Pudding.CapabilityBroker.CapabilityBroker>()?.Sessions.FirstOrDefault(),
+                applyDescriptor,
+                revokeDescriptor,
+                Pudding.Contracts.Desktop.BrowserPageGrantScope.Read | Pudding.Contracts.Desktop.BrowserPageGrantScope.Write,
+                TimeSpan.FromMinutes(5),
+                "bridge:sub-agent-delegation");
+        });
         services.AddSingleton<IBrowserRuntime>(sp => sp.GetRequiredService<RemoteBrowserRuntime>());
 
         // ── 切片 D 窄端口：组合根按**传输决策**二选一（不做跨传输回退） ──────
