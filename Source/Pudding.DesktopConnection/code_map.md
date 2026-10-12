@@ -12,6 +12,7 @@
 |---|---|
 | 单读单写 | 读循环由 `RunAsync` 驱动；写循环 `WriterLoopAsync` 独占 `IAsyncEnumerable` 式消费；其他线程只写入无界 `Channel`。测试断言「同一条流上并发 writer ≤ 1」 |
 | 握手 | 连接建立后由 Desktop 先写 `DesktopHello`（此阶段独占流）；首个 Core 帧必须是 `hello_ack`；校验 connection_id / generation / 协商版本 / 授予能力，任一不合法即 `Faulted`（不部分接受） |
+| Bridge 可信身份 | `BridgeCallerContext`（`BridgeCallerContext.cs`）：把**认证 WebSocket** 上的调用者身份按与能力通道 `CoreFrameMapping.Decode` **同一套判据**投影成 `DesktopCallContext`（kind 解析 / `BrowserCallerIdentity` 校验 / WebView 能力**必须有身份**）——**缺身份即拒，不补默认身份**；入参为四个字符串 ⇒ 不引入对 Bridge 协议程序集的依赖 |
 | 世代失效 | `Generation` 来自 ack；`command.generation != 当前` ⇒ 不执行，回 `not_connected`；结果帧恒用当前世代 |
 | 命令关联 | `OperationRegistry`：进行中复用（同 ID 同 payload 不重复执行）、终态幂等重放、同 ID 不同 payload 拒绝（回瞬时错误，不改写原记录）、TTL 过期只回 `outcome_unknown`（**绝不重新执行**） |
 | 取消 | `OperationCancel` 按世代校验；取消后立即回终态（不等待执行器自愿观察 token），`mayHaveSideEffects` 按能力 Traits 如实标注 |
