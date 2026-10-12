@@ -86,7 +86,9 @@ public sealed partial class DesktopApplicationCoordinator
                 () => window.CapabilityTrayVisible,
                 window.ShowCapabilityNotification);
             var surface = new DesktopSurfaceComposition(
-                new BrowserRuntimeDesktopSurface(browserRuntime, lifecycle.BrowserTargets, lifecycle.Readings),
+                browserRuntime,
+                lifecycle.BrowserTargets,
+                lifecycle.Readings,
                 new DesktopShellSurface(facilities, hostFacilities));
 
             string token;

@@ -1,4 +1,5 @@
 using Pudding.Contracts;
+using PuddingBrowser.Abstractions;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopService;
 
@@ -20,6 +21,18 @@ public sealed class DesktopSurfaceComposition : IDesktopUiSurface
     private readonly BrowserRuntimeDesktopSurface _browser;
     private readonly DesktopShellSurface _shell;
 
+    /// <summary>
+    /// **Shell 友好的构造**：Shell 关闭传递引用、且不得引用驱动细节 ⇒ 这里接收**运行时与生命周期读口**
+    /// 并在内部构造浏览器表面（含观察登记处），从而**不把 Automation 类型带进 Shell 的编译面**。
+    /// </summary>
+    public DesktopSurfaceComposition(
+        IBrowserRuntime runtime,
+        IDesktopBrowserTargetRegistry targets,
+        BrowserReadingBaselineStore? readings,
+        DesktopShellSurface shell)
+        : this(new BrowserRuntimeDesktopSurface(runtime, targets, readings), shell)
+    {
+    }
     public DesktopSurfaceComposition(
         BrowserRuntimeDesktopSurface browser,
         DesktopShellSurface shell)
