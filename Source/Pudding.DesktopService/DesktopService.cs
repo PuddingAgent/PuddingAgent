@@ -732,27 +732,30 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         CancellationToken cancellationToken)
     {
         var admission = ValidateAdmission(capability, target, expectedPageVersion, context, out _, out var lease);
-        if (admission is not null)
-        {
-            return CapabilityResult<TResult>.Failure(admission);
-        }
 
-        // 入队前就取消/关闭的操作绝不进队列（不能依赖调度器替我们检查取消）。
-        if (cancellationToken.IsCancellationRequested || _lifetime.IsCancellationRequested)
-        {
-            return CapabilityResult<TResult>.Failure(MapCancellation(capability, context, started: false));
-        }
-
-        // 交互类能力（对话框/Picker）的单窗口互斥随切片 E 一起落地：届时才有 payload 能端到端验证。
+        // 租约一旦在准入时签发，就必须在**所有**退出路径上释放（外部复核 P0：取消与版本拒绝都会泄漏租约）。
+        // 因此把"准入失败"和"入队前已取消"也放进同一个 try，由 finally 统一释放原租约。
         try
         {
+            if (admission is not null)
+            {
+                return CapabilityResult<TResult>.Failure(admission);
+            }
+
+            // 入队前就取消/关闭的操作绝不进队列（不能依赖调度器替我们检查取消）。
+            if (cancellationToken.IsCancellationRequested || _lifetime.IsCancellationRequested)
+            {
+                return CapabilityResult<TResult>.Failure(MapCancellation(capability, context, started: false));
+            }
+
+            // 交互类能力（对话框/Picker）的单窗口互斥随切片 E 一起落地：届时才有 payload 能端到端验证。
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
 
             // 触碰页面前的复检由 `ExecuteOnUiAsync` 负责：它在 UI 线程内、surface 调用前**再跑一次完整准入**
             // （更贴近真实触碰时刻的那个窗口）。这里**不再**另加一份 Revalidate —— 同一判据两处实现就是
             // 设计 §1.1 说的"第二份策略来源"，而且实测证明删掉它也拦得住（round-232 取红）。
             return await _dispatcher.InvokeAsync(
-                token => ExecuteOnUiAsync(capability, target, expectedPageVersion, context, action, token),
+                token => ExecuteOnUiAsync(capability, target, expectedPageVersion, context, action, lease, token),
                 linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -793,9 +796,27 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         DesktopPageVersion expectedPageVersion,
         DesktopCallContext context,
         Func<CancellationToken, Task<CapabilityResult<TResult>>> action,
+        BrowserAutomationLease? admittedLease,
         CancellationToken token)
     {
-        var recheck = ValidateAdmission(capability, target, expectedPageVersion, context, out _, out _);
+        // 排队期间的竞态（外部复核 P0）：接管→恢复、断连、撤销、关闭都会推进控制/授权世代。
+        // 按"当前状态"重跑准入**看不出**这个中间过程（接管已被撤销 ⇒ 又会放行），所以必须比对
+        // **准入当时**的世代：一旦推进，原许可即失效，旧排队操作不得复活。
+        if (admittedLease is not null)
+        {
+            var current = Authority.Capture();
+            if (current.ControlEpoch.Value != admittedLease.ControlEpoch.Value
+                || current.GrantEpoch.Value != admittedLease.GrantEpoch.Value)
+            {
+                return CapabilityResult<TResult>.Failure(
+                    DesktopCapabilityError.Unauthorized(
+                        "the admitted control or grant epoch is stale (takeover/resume/disconnect/revoke since admission)"));
+            }
+        }
+
+        // 纯复检（不再次 Admit）：窗口/能力/目标/可信级别/页面版本仍在同一 UI 序列内可判。
+        var recheck = ValidateAdmission(
+            capability, target, expectedPageVersion, context, out _, out _, admitAuthority: false);
         if (recheck is not null)
         {
             return CapabilityResult<TResult>.Failure(recheck);
@@ -868,7 +889,10 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         DesktopPageVersion expectedPageVersion,
         DesktopCallContext context,
         out DesktopTargetState? pageState,
-        out BrowserAutomationLease? lease)
+        out BrowserAutomationLease? lease,
+        // 方案 §3.2：UI 回调里**只做纯复检**，不得再次 Admit（第二次 Admit 会另签一份租约 ⇒ 泄漏，
+        // 且"接管→恢复"这类中间变化按当前状态重跑是看不出来的，改由准入世代比对负责）。
+        bool admitAuthority = true)
     {
         pageState = null;
         lease = null;
@@ -887,7 +911,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         // 判据不在这里重写：能力→操作走唯一映射（DesktopCapabilityOperations），身份走契约唯一规则
         // （BrowserCallerRequirement，经 DesktopCallContext.TryGetBrowserCaller），裁决在唯一 Authority。
         // 未注入世代提供者时不启用这道闸门（见构造器说明）—— 生产装配必须注入，否则等于没有准入。
-        if (_connectionGeneration is { } generation
+        if (admitAuthority
+            && _connectionGeneration is { } generation
             && DesktopCapabilityOperations.TryGetBrowserOperation(capability, out var automationOperation))
         {
             if (!context.TryGetBrowserCaller(out var browserCaller, out var callerReason))

@@ -19,22 +19,16 @@ public sealed class BrowserRevalidateBeforeTouchingTests
     [Fact]
     public async Task RevokingWhileQueuedIsRefusedBeforeAnyDriverCall()
     {
+        // 排队期间撤权必须在触碰 driver 之前被拒。
+        // 机制在 2026-10-12 复核后**变了**：旧实现靠"复检时再取一次世代 provider"来发现变动，
+        // 而方案 §3.1/§3.2 明令 UI 回调**不得**用"当前世代 provider"重建请求，改由**准入世代比对**
+        // （BrowserControlSnapshot.ControlEpoch / GrantEpoch）负责。断言的不变量不变，机制换新。
         ServiceHarness? harness = null;
-        var generationReads = 0;
 
         harness = ServiceHarness.Create(
             allowed: DesktopCapability.WebViewNavigate,
-            hasThreadAccess: true,
-            connectionGeneration: () =>
-            {
-                if (Interlocked.Increment(ref generationReads) == 2)
-                {
-                    // 第 2 次取世代 = 触碰页面前重建复检请求 ⇒ 此刻撤权 = "排队期间被撤权"。
-                    harness!.Service.Authority.RevokeGrant(GrantId);
-                }
-
-                return Generation;
-            });
+            hasThreadAccess: false,
+            connectionGeneration: () => Generation);
 
         harness.Service.Authority.NotifyConnectionGeneration(Generation);
 
@@ -52,13 +46,21 @@ public sealed class BrowserRevalidateBeforeTouchingTests
 
         var context = harness.Context("op-revoked-while-queued") with { BrowserCaller = Agent };
 
-        var response = await harness.ExecuteAsync(
+        var pending = harness.ExecuteAsync(
             DesktopCapability.WebViewNavigate,
             harness.NavigateRequest(ServiceHarness.AgentPage),
             context);
 
-        Assert.True(generationReads >= 2, $"复检必须再取一次世代（实际 {generationReads} 次）");
-        Assert.True(response.IsFailure);
+        Assert.False(pending.IsCompleted); // 先确认它真的排在队列里
+
+        harness.Service.Authority.RevokeGrant(GrantId); // 排队期间撤权 ⇒ 授权世代推进
+        harness.Dispatcher.Pump();
+
+        var response = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(
+            response.IsFailure,
+            $"revoked-while-queued operation must be refused; driver calls={harness.Surface.NavigateCount}");
         Assert.Equal(0, harness.Surface.NavigateCount);
+        Assert.Null(harness.Service.Authority.Capture().ActiveLease); // 且不得残留租约
     }
 }

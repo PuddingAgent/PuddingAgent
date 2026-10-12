@@ -51,7 +51,21 @@ public sealed class BrowserTaskBindingService(
                 default);
         }
 
-        // ② B6（§5）：子代理只能取得**父授权**的子集，且期限不得超过父授权的**剩余期限**。
+        // ② 选中页**可以**绑定，但**不能匿名共享**（方案 §5.1：许可由控制面签发，普通调用只消费）。
+        //    同一选中页若已被**另一个任务**绑定，则无关任务必须拿到自己的显式选择许可 —— 不得因为
+        //    "目标正好是用户当前选中的那一页"就自动获得读写授权（外部复核 P0：选页后无关任务也能获批）。
+        var rival = _active.Values.FirstOrDefault(active =>
+            active.Target == binding.Target && !active.Task.IsSameTaskScope(binding.Task));
+
+        if (rival is not null)
+        {
+            return new BrowserBindingAcceptance(
+                false,
+                "the selected page is already bound to another task; an unrelated task needs its own explicit user selection",
+                default);
+        }
+
+        // ③ B6（§5）：子代理只能取得**父授权**的子集，且期限不得超过父授权的**剩余期限**。
         //    父授权必须真实存在；找不到就明确拒绝（绝不静默放宽成"无父也放行"）。
         BrowserPageGrantScope? parentScope = null;
         var validity = binding.Validity;
@@ -92,7 +106,7 @@ public sealed class BrowserTaskBindingService(
             }
         }
 
-        // ② 签发（有效期上限/已登记/世代/子集都在签发器里判）。
+        // ④ 签发（有效期上限/已登记/世代/子集都在签发器里判）。
         if (!_issuer.TryIssue(
                 new BrowserGrantIssuanceRequest(
                     binding.Task, binding.Target, binding.Scope, validity, binding.Source, parentScope),
@@ -103,7 +117,7 @@ public sealed class BrowserTaskBindingService(
             return new BrowserBindingAcceptance(false, reason, default);
         }
 
-        // ③ 同一绑定重复受理：先撤旧授权，避免同一 (任务,目标) 上留下两份并存授权。
+        // ⑤ 同一绑定重复受理：先撤旧授权，避免同一 (任务,目标) 上留下两份并存授权。
         if (_active.TryGetValue(Key(binding), out var previous))
         {
             _lifecycle.Authority.RevokeGrant(previous.GrantId);
