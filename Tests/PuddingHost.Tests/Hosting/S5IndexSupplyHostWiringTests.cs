@@ -217,6 +217,15 @@ public sealed class S5IndexSupplyHostWiringTests
         Assert.Contains("outcome=RejectedOverBudget", rejected.Message, StringComparison.Ordinal);
 
         // ③ 宿主**如实记录**（jobId + 原因原文），不是一句含糊的 failed
+        // 宿主"如实记录"是**异步落盘**的：终态任务可能先完成（实测曾在 143 ms 内断言失败）。
+        // ⇒ 有界等待该日志行出现，随后**仍用 Assert.Single 严格断言**（不放松判据）。
+        var logDeadline = DateTime.UtcNow.AddSeconds(30);
+        while (!crampedLogger.Entries.Any(static e => e.Contains("Supply job", StringComparison.Ordinal))
+               && DateTime.UtcNow < logDeadline)
+        {
+            await Task.Delay(50);
+        }
+
         var failureLine = Assert.Single(crampedLogger.Entries, static e => e.Contains("Supply job", StringComparison.Ordinal)
                                                                           && e.Contains("failed", StringComparison.Ordinal));
         Assert.Contains(rejected.JobId, failureLine, StringComparison.Ordinal);
