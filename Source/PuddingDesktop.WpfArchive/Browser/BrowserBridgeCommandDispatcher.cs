@@ -20,6 +20,7 @@ namespace PuddingDesktop.Browser;
 /// </summary>
 public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
 {
+    // 重放**载荷**存储（去重权威是 _ledger）：只在账本 ReplayCompleted 分支内被查询 ⇒ 不构成跨调用者/跨世代复用入口（见 BrowserOperationResultCache 的类文档）。
     private readonly BrowserOperationResultCache _resultCache = new();
 
     // 方案 §4.2：**唯一**幂等来源就是原子执行账本 —— 同键同指纹在途则等同一完成源、
@@ -117,6 +118,7 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
                     continue;
 
                 case BrowserOperationLedgerState.ReplayCompleted:
+                    // 仅在账本已判定"同键 + 同指纹 + 已知终态"之后取载荷（跨调用者/跨世代不可能到达这里）。
                     if (_resultCache.TryGet(command.OperationId, out var replayed))
                     {
                         return replayed!;
