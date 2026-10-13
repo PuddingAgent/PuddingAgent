@@ -74,3 +74,20 @@ key-symbols 列 n | 74 | **88**（+14，即本节新增五列中的两列） |
 
 - PuddingCore 剩 5 节：判定算子与分类契约(11) / 配置 & 序列化(10) / Agent 定义(7) / 改进落点契约(6) / 子代理编排(4)；
 - warn 侧 `anti-pattern` 26 条、`missing-fingerprint` 1、`header-repeat` 1 未处理（需逐条判定或跑 `--fingerprint` 取实测值）。
+
+## 收口记录：提交归属（跨代理共享工作区）
+
+本轮 stage 两个文件后、执行 `git commit` 之前，**同一工作区的另一个 Agent 用一次提交 `3480222`
+（主题为 SSH B1 单文件传输契约）把我 stage 的这两个文件一并扫入**：
+
+- 事实（可复核）：`git show --name-only 3480222` 含 `Source/PuddingCore/code_map.md` 与
+  `Docs/00_changelog/2026Year/10/2026-10-13-core_code_map波次17.md`；
+  `git diff --stat HEAD -- Source/PuddingCore/code_map.md` 为**空** ⇒ **内容确实已落库**；
+  我随后的 `git commit -F` 因索引已被清空而报 "no changes added to commit"。
+- 处置：**不做历史改写**（他方正在同一分支活跃提交，rebase/amend 会破坏其工作），
+  仅由本次提交追加本说明，使「谁做的」在文档层可追溯。
+- 教训：**stage 与 commit 之间的窗口越小越好**；在共享仓库里，`git add` 之后应立刻提交，
+  并在提交前后各核一次 `git diff --cached --name-only`；提交信息与文件集合不一致是本工作区的已知风险。
+
+另记：本机 `master` **未配置上游**（`branch.master.remote` / `branch.master.merge` 均为空），
+`git push` 需显式写 `git push origin master`（remote = `git@github.com:PuddingAgent/PuddingAgent.git`）。
