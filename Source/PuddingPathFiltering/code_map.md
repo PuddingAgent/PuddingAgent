@@ -42,8 +42,14 @@
 |---|---|
 | `GitIgnoreOracleTests.cs` | **核心验收**：两份冻结语料共 **196 条路径**，逐条断言「结论 + 定案规则原文」与 `git check-ignore -v` 一致（一致率 100%）。语料含取反、父目录剪枝、嵌套 .gitignore、`**`、字符类、行首/行尾空格、大小写折叠等判别性行 |
 | `RepositoryRootReductionTests.cs` | **「−84%」判据的可失效断言**：canonical 集合必须覆盖 P3 实测的四家头部噪声目录（23,756/28,519 = 83.3%） |
-| `GitWildcardTests.cs` / `IgnoreFileParserTests.cs` / `IgnoreStackTests.cs` / `GitIgnoreFileLoaderTests.cs` / `PathNoiseRulesTests.cs` | 语义逐条锁 |
+| 逐文件语义锁（5 个测试类，见下「关键语义」） | 语义逐条锁 |
 | `ComponentBoundaryTests.cs` | S4：csproj 零 ProjectReference/PackageReference、判定链无 `System.IO`、叶子不 `using Pudding*`、测试工程只引用本叶子 |
+
+### 关键语义
+
+「测试」表「语义逐条锁」行的完整文件清单（原单元格 133 字符，超「文件 / 目录」列 120 上限）逐字下沉如下：
+
+`GitWildcardTests.cs` / `IgnoreFileParserTests.cs` / `IgnoreStackTests.cs` / `GitIgnoreFileLoaderTests.cs` / `PathNoiseRulesTests.cs`
 
 `Fixtures/` 是**冻结的 oracle**：`*.gitignore.txt`（模式源，故意不叫 `.gitignore`，否则会开始忽略仓库里 Fixtures 下的路径）
 + `*-oracle.tsv`（git 判定，列：路径 / 是否目录 / 结论 / 来源 / 行号 / 模式）。生成脚本 `temp/u4-4-oracle-build.ps1` + `temp/u4-4-freeze-fixtures.ps1`。
