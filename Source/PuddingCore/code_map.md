@@ -77,19 +77,24 @@ LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布�
 
 ## LLM 网关（Core/）
 
-| 文件 | 用途 |
-|------|------|
-| `OpenAiLlmGateway.cs` | OpenAI-compatible Chat Completions 网关 |
-| `ResponsesLlmGateway.cs` | OpenAI/DeepSeek Responses API 网关；flat tools、明文 reasoning SSE、completed/failed/incomplete 终态、截断工具调用隔离与 output items 回放；ADR-077：user `input_image`（original→high）与 `function_call_output.output` [input_text, input_image] 数组，图片经 LlmVisualInputPlanner fail-closed；V3-S2a：大图（>2MB）经 DeepSeekFilesApiClient 上传后以 `file_id` 引用（不输出 image_url/detail） |
-| `AnthropicMessagesLlmGateway.cs` | Anthropic Messages API 网关；`x-api-key`、顶层 system、content blocks、工具回放和 SSE state |
-| `LlmVisualInputPlanner.cs` | ADR-077 图片请求预算与规划：inline 小图（≤2MB）data URL、大图 fail-closed 或（V3-S2a，有 uploader 时）Files API 上传 file_id 互斥规划；`VisionRequestPolicy` 含 Files 常量（64 MiB 单文件 / 200 MiB 总量 / lifetime 1h–30d）；V5 切片二：`PlanAsync` 可选接收 `VisualInputRequestBudget`（budget=null 时行为不变），按实际序列化份数把每张图 charge 进请求级账本（份数/解码字节/wire 字节/token/file 上传字节），越界抛 `RequestLimitExceeded` 整请求 fail closed |
-| `VisionCapabilityContract.cs` | V5-T2：模型级视觉能力合同（唯一来源 = llm.providers.json 模型 `vision` 节 → `LlmModelInfo.VisionContract`）；`ToPolicy()` 投影 `VisionRequestPolicy`（上限类 7 维按设计 §4.1 交集语义取 `Math.Min(配置值, 产品默认)`——只能收紧、不得放宽，未配置字段沿用产品默认；合同版本进 `ImageTokenEstimatorVersion`）；V5-T4：放宽型配置由 `PuddingFileConfigLoader.ValidateVisionContract` / `RejectVisionLimitAboveCeiling` 在加载期 fail-fast 显式拒绝（不静默钳制后放行）；快照工厂据「合同 ∩ 模型类别」生成 `AgentExecutionSnapshot.VisionPolicy`，embedding/图像生成/无 vision 标签一律不投影 |
-| `VisualInputRequestBudget.cs` | V5 切片二：一次 LLM payload 构造一个实例的请求级图片预算账本；三 Gateway 在 payload 入口创建并以显式参数贯穿全部 `PlanAsync`（user `input_image` 与工具 `function_call_output` 共用）；累计只增不减，越界异常含维度/累计值/增量/上限/来源与批次序号；无 AsyncLocal/静态状态 |
-| `DeepSeekFilesApiClient.cs` | ADR-077 V3-S1 DeepSeek Files API 上传客户端（multipart purpose=user_data）；ApiKey 脱敏，异常只含 HTTP status + 错误摘要 |
-| `ProviderFileReference.cs` | ADR-077 Files API 值类型：`ProviderFileUploadResult`（FileId/ExpiresAt 计算）与轻量 `ProviderFileReference` |
-| `ProviderFileRefRecord.cs` | ADR-077 V3-S2b-1 行值类型：`ProviderFileRefRecord`（llm_provider_file_refs 行）+ `ProviderFileRefStatus` 枚举 + wire 映射（uploading/ready/delete_pending/expired/failed）；`ToReference()` 映射轻量引用 |
-| `IFileRefStore.cs` | ADR-077 V3-S2b-1 存储接口：`TryGetReadyRefAsync`/`SaveAsync`（幂等 upsert）/`UpdateExpiryAsync`/`MarkExpiredAsync`/`MarkDeletePendingAsync`/`ListExpiredAsync`；`FileRefNearExpirySkewSeconds=300`（近过期不分配） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `OpenAiLlmGateway.cs` | OpenAI 兼容 Chat Completions 网关 | `OpenAiLlmGateway` | `ResponsesLlmGateway.cs` | — |
+| `ResponsesLlmGateway.cs` | Responses API 网关 | `ResponsesLlmGateway` | `OpenAiLlmGateway.cs` | flat tools / 明文 reasoning SSE / completed·failed·incomplete 终态 / 截断工具调用隔离与 output items 回放；图片与 Files 细节见后注 |
+| `AnthropicMessagesLlmGateway.cs` | Anthropic Messages API 网关 | `AnthropicMessagesLlmGateway` | `ResponsesLlmGateway.cs` | x-api-key、顶层 system、content blocks、工具回放与 SSE state |
+| `LlmVisualInputPlanner.cs` | 图片请求预算与规划（ADR-077） | `LlmVisualInputPlanner`、`PlanAsync` | `VisualInputRequestBudget.cs` | inline 小图 data URL / 大图 fail-closed 或 Files API 上传互斥规划；越界整请求 fail closed；细节见后注 |
+| `VisionCapabilityContract.cs` | 模型级视觉能力合同（V5-T2） | `VisionCapabilityContract` | `LlmVisualInputPlanner.cs` | 唯一来源 = llm.providers.json 模型 vision 节；上限只可收紧不可放宽；放宽型配置加载期 fail-fast 拒绝；快照按「合同 ∩ 模型类别」投影；细节见后注 |
+| `VisualInputRequestBudget.cs` | 请求级图片预算账本（V5 切片二） | `VisualInputRequestBudget` | `LlmVisualInputPlanner.cs` | 一次 payload 一实例，以显式参数贯穿全部 PlanAsync；累计只增不减；越界异常含维度/累计/增量/上限/来源与批次序号；无 AsyncLocal/静态状态 |
+| `DeepSeekFilesApiClient.cs` | DeepSeek Files API 上传客户端 | `DeepSeekFilesApiClient` | `ProviderFileReference.cs` | multipart purpose=user_data；ApiKey 脱敏，异常只含 HTTP status 与错误摘要 |
+| `ProviderFileReference.cs` | Files API 值类型 | `ProviderFileUploadResult`、`ProviderFileReference` | `DeepSeekFilesApiClient.cs` | FileId/ExpiresAt 计算；轻量引用 |
+| `ProviderFileRefRecord.cs` | llm_provider_file_refs 行值类型 | `ProviderFileRefRecord`、`ProviderFileRefStatus` | `IFileRefStore.cs` | wire 映射 uploading/ready/delete_pending/expired/failed；ToReference() 映射轻量引用 |
+| `IFileRefStore.cs` | Files 引用存储接口 | `IFileRefStore` | `ProviderFileRefRecord.cs` | TryGetReadyRefAsync / SaveAsync（幂等 upsert）/ UpdateExpiryAsync / MarkExpiredAsync / MarkDeletePendingAsync / ListExpiredAsync；FileRefNearExpirySkewSeconds=300 |
 
+ResponsesLlmGateway：ADR-077 user `input_image`（original→high）与 `function_call_output.output` [input_text, input_image] 数组，图片经 `LlmVisualInputPlanner` fail-closed；V3-S2a 大图（>2MB）经 `DeepSeekFilesApiClient` 上传后以 `file_id` 引用（不输出 image_url/detail）。
+LlmVisualInputPlanner：inline 小图（≤2MB）data URL；大图 fail-closed 或（V3-S2a，有 uploader 时）Files API 上传 `file_id` 互斥规划；`VisionRequestPolicy` 含 Files 常量（64 MiB 单文件 / 200 MiB 总量 / lifetime 1h–30d）。
+同上（V5 切片二）：`PlanAsync` 可选接收 `VisualInputRequestBudget`（budget=null 时行为不变），按实际序列化份数把每张图 charge 进请求级账本（份数/解码字节/wire 字节/token/file 上传字节），越界抛 `RequestLimitExceeded` 整请求 fail closed。
+VisionCapabilityContract 细节一：唯一来源 = llm.providers.json 模型 `vision` 节 → `LlmModelInfo.VisionContract`；`ToPolicy()` 投影 `VisionRequestPolicy`（上限类 7 维按设计 §4.1 交集语义取 `Math.Min(配置值, 产品默认)`，只能收紧、不得放宽；合同版本进 `ImageTokenEstimatorVersion`）。
+VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfigLoader.ValidateVisionContract` / `RejectVisionLimitAboveCeiling` 在加载期 fail-fast 显式拒绝（不静默钳制后放行）；快照工厂据「合同 ∩ 模型类别」生成 `AgentExecutionSnapshot.VisionPolicy`，embedding/图像生成/无 vision 标签一律不投影。
 ## 推理紧凑编解码（Services/）
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
