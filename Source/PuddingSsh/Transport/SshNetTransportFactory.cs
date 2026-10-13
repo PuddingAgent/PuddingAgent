@@ -11,7 +11,7 @@ namespace PuddingSsh.Transport;
 /// SSH.NET 适配的建连工厂（设计 §4.1 <c>Transport/</c>）：第三方类型只出现在 <c>Transport/</c> 内。
 /// 执行会话与 SFTP 传输会话共用同一套「默认拒绝的主机密钥 + 冻结身份 + 固定版本」建连准备。
 /// </summary>
-public sealed class SshNetTransportFactory : ISshTransportFactory
+public sealed class SshNetTransportFactory : ISshTransportFactory, ISshTransferFactory
 {
     public async Task<ISshTransportSession> ConnectAsync(
         SshTransportConnectRequest request,

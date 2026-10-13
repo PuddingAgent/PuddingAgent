@@ -38,6 +38,7 @@ internal sealed class SshResourceLease
 
     private readonly SshIdentityOwner _identityOwner = new();
     private ISshTransportSession? _session;
+    private ISshTransferSession? _transferSession;
     private int _obligations;
     private int _admissionReleased;
     private int _businessEnded;
@@ -56,8 +57,8 @@ internal sealed class SshResourceLease
         _transferAllowed = transferAllowed;
     }
 
-    /// <summary>是否持有过独占连接。</summary>
-    public bool HasSession => _session is not null;
+    /// <summary>是否持有过独占连接（执行会话或传输会话）。</summary>
+    public bool HasSession => _session is not null || _transferSession is not null;
 
     /// <summary>已登记、尚未结束的工作任务数。</summary>
     public int PendingWork
@@ -123,6 +124,12 @@ internal sealed class SshResourceLease
     public void MarkIdentitySessionOwned() => _identityOwner.MarkSessionOwned();
 
     public void AttachSession(ISshTransportSession session) => _session = session;
+
+    /// <summary>切片 B：挂上 SFTP 传输会话（与执行会话互斥使用）。</summary>
+    public void AttachTransferSession(ISshTransferSession session) => _transferSession = session;
+
+    /// <summary>独占的 SFTP 传输会话。</summary>
+    public ISshTransferSession? TransferSession => _transferSession;
 
     /// <summary>在调度一个**可能产生迟到工作**的阶段之前调用；其及时路径与迟到 owner 各结算一次。</summary>
     public void BeginObligation() => Interlocked.Increment(ref _obligations);

@@ -116,3 +116,43 @@ public sealed record SshDownloadPlan(
     string RemoteRoot,
     SshOverwritePolicy Overwrite,
     long MaxBytes);
+/// <summary>
+/// 传输结果（协调器输出）：与执行结果一样表达「本端终止事实、远端未知、清理是否收敛、临时文件是否残留」。
+/// </summary>
+public sealed record SshTransferResult
+{
+    public SshExecutionStatus Status { get; init; } = SshExecutionStatus.Failed;
+
+    public Diagnostics.SshPhase Phase { get; init; } = Diagnostics.SshPhase.Validation;
+
+    public string HostId { get; init; } = string.Empty;
+
+    public string HostRevision { get; init; } = string.Empty;
+
+    /// <summary>实际传输的字节数（中断时是已确认写入的字节）。</summary>
+    public long BytesTransferred { get; init; }
+
+    public string? RemotePath { get; init; }
+
+    public string? LocalPath { get; init; }
+
+    /// <summary>不自动重试：传输一律 false，避免调用方误判为可安全重放。</summary>
+    public bool RetrySafe { get; init; }
+
+    public string? ErrorCode { get; init; }
+
+    public string? Diagnostic { get; init; }
+
+    /// <summary>清理状态（关闭证据）：Pending 表示资源仍在隔离区被追踪。</summary>
+    public SshCleanupState CleanupState { get; init; } = SshCleanupState.NotStarted;
+
+    /// <summary>本次临时文件是否残留（true 时 <see cref="TemporaryPath"/> 给出路径）。</summary>
+    public bool TemporaryLeftBehind { get; init; }
+
+    public string? TemporaryPath { get; init; }
+
+    /// <summary>实测的服务端传输能力（诊断用；未探测为 null）。</summary>
+    public SshTransferCapabilities? Capabilities { get; init; }
+
+    public int DurationMs { get; init; }
+}

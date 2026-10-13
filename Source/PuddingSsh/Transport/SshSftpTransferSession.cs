@@ -28,6 +28,7 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
     private readonly object _probeGate = new();
     private SshTransferCapabilities? _capabilities;
     private int _abortRequested;
+    private int _closed;
 
     public SshSftpTransferSession(
         ISshSftpChannel channel,
@@ -44,6 +45,8 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
     }
 
     public string VerifiedHostKeySha256 { get; }
+
+    public bool Closed => Volatile.Read(ref _closed) == 1;
 
     public bool AbortRequested => Volatile.Read(ref _abortRequested) == 1;
 
@@ -326,6 +329,7 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
         try
         {
             _channel.Dispose();
+            Volatile.Write(ref _closed, 1);
         }
         finally
         {

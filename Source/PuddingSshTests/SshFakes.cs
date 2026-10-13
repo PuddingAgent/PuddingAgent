@@ -246,7 +246,8 @@ internal static class FakeSsh
         string? defaultCwd = null,
         DateTimeOffset? deadline = null,
         SshTrustSnapshot? trust = null,
-        SshOperationLimits? limits = null) => new(
+        SshOperationLimits? limits = null,
+        SshTransferLimits? transfer = null) => new(
         target ?? Target(),
         limits ?? new SshOperationLimits
         {
@@ -259,7 +260,8 @@ internal static class FakeSsh
         new SshIdentityRequest("/tmp/fake-ssh", "id_ed25519"),
         trust ?? SshTrustSnapshot.FromPin("ssh-ed25519", "SHA256:fake-verified-key"),
         defaultCwd,
-        deadline);
+        deadline,
+        transfer);
 
     public static SshExecuteRequest Execute(
         SshTargetRef? target = null,

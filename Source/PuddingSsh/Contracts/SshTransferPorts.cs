@@ -47,6 +47,9 @@ public interface ISshTransferSession : IAsyncDisposable
     /// <summary>实测的服务端传输能力（惰性探测，探测失败按不支持处理）。</summary>
     Task<SshTransferCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken);
 
+    /// <summary>关闭证据：通道已释放。</summary>
+    bool Closed { get; }
+
     /// <summary>非阻塞中止请求（本端取消/截止时由协调器调用）。</summary>
     void RequestAbort();
 
@@ -63,6 +66,17 @@ public interface ISshTransferSession : IAsyncDisposable
     Task<SshTransferOutcome> DownloadAsync(
         SshDownloadPlan plan,
         TimeSpan timeout,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// 传输会话工厂（切片 B）：与执行路径共用身份/信任/超时合同，只是通道换成 SFTP。
+/// </summary>
+public interface ISshTransferFactory
+{
+    Task<ISshTransferSession> ConnectTransferAsync(
+        SshTransportConnectRequest request,
+        string scratchDirectory,
         CancellationToken cancellationToken);
 }
 

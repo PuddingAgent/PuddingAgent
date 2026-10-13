@@ -25,6 +25,7 @@ namespace PuddingSsh.Execution;
 public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
 {
     private readonly ISshTransportFactory _transport;
+    private readonly ISshTransferFactory? _transfer;
     private readonly ISshIdentityProvider _identities;
     private readonly SshCoordinatorOptions _options;
     private readonly TimeProvider _time;
@@ -47,9 +48,12 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         ISshTransportFactory transport,
         ISshIdentityProvider identities,
         SshCoordinatorOptions? options = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ISshTransferFactory? transferFactory = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
+        // 传输工厂可与执行工厂分开装配（切片 B 的独立测试）；未显式给出时按同一实例探测。
+        _transfer = transferFactory ?? transport as ISshTransferFactory;
         _identities = identities ?? throw new ArgumentNullException(nameof(identities));
         _options = options ?? SshCoordinatorOptions.Default;
         _time = timeProvider ?? TimeProvider.System;
@@ -127,6 +131,22 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(request);
         return TrackAsync(() => TestCoreAsync(host, request, cancellationToken));
+    }
+
+    /// <summary>单文件上传（切片 B）：与执行路径共用准入/围栏/租约/关闭预算/隔离区。</summary>
+    public Task<SshTransferResult> UploadAsync(SshHostContext host, SshUploadRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(request);
+        return TrackAsync(() => TransferCoreAsync(host, request, download: null, cancellationToken));
+    }
+
+    /// <summary>单文件下载（切片 B）。</summary>
+    public Task<SshTransferResult> DownloadAsync(SshHostContext host, SshDownloadRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(request);
+        return TrackAsync(() => TransferCoreAsync(host, upload: null, request, cancellationToken));
     }
 
     public Task<SshExecuteResult> ExecuteAsync(SshHostContext host, SshExecuteRequest request, CancellationToken cancellationToken)
@@ -824,7 +844,47 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
     /// <c>CleanupState=Completed</c> 需要关闭证据（会话自报 Closed）而不是「调用过 Abort」。
     /// </summary>
     private Task<SshCleanupOutcome> CloseSessionOnceAsync(SshResourceLease lease, TimeSpan budget) =>
-        lease.CloseOnceAsync(() => CloseCoreAsync(lease, budget));
+        lease.CloseOnceAsync(() => lease.Session is not null
+            ? CloseCoreAsync(lease, budget)
+            : CloseTransferCoreAsync(lease, budget));
+
+    /// <summary>SFTP 传输会话的有界关闭（与执行会话同一份预算合同与关闭池）。</summary>
+    private async Task<SshCleanupOutcome> CloseTransferCoreAsync(SshResourceLease lease, TimeSpan budget)
+    {
+        var session = lease.TransferSession;
+        if (session is null)
+        {
+            return new SshCleanupOutcome(true, false, false, 0);
+        }
+
+        try
+        {
+            session.RequestAbort();
+        }
+        catch (Exception)
+        {
+            // 中止请求不得把清理路径变成失败路径。
+        }
+
+        Task closeWork;
+        try
+        {
+            closeWork = _closeWorkers.StartAsync(() => session.DisposeAsync(budget).AsTask());
+        }
+        catch (SshStageCapacityExceededException)
+        {
+            lease.RegisterWork(Task.Delay(Timeout.InfiniteTimeSpan), "transfer-close-capacity");
+            return new SshCleanupOutcome(false, false, true, -1);
+        }
+
+        lease.RegisterWork(closeWork, "transfer-close");
+        var completed = await SshBoundedDrain
+            .WaitAsync(closeWork, budget, onTimeout: static () => { })
+            .ConfigureAwait(false);
+
+        // 关闭证据：通道自报 Closed 才算 Completed。
+        return new SshCleanupOutcome(completed && session.Closed, !completed, true, -1);
+    }
 
     private async Task<SshCleanupOutcome> CloseCoreAsync(SshResourceLease lease, TimeSpan budget)
     {
@@ -934,6 +994,364 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 StopDiagnostic(reason, "本地终止事实已确立：迟到完成不覆盖状态；远端退出证据另行保留")),
         };
     }
+
+    /// <summary>
+    /// 切片 B 传输核心：与执行路径**共用**准入/围栏/租约/关闭预算/隔离区与身份所有权，
+    /// 差别只有「连的是 SFTP 通道」与「做的是单文件上传/下载」。
+    /// </summary>
+    private async Task<SshTransferResult> TransferCoreAsync(
+        SshHostContext host,
+        SshUploadRequest? upload,
+        SshDownloadRequest? download,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var startedAt = _time.GetUtcNow();
+        var isUpload = upload is not null;
+        var target = (isUpload ? upload!.Target : download!.Target)!;
+
+        try
+        {
+            SshRequestValidator.ValidateTarget(target);
+        }
+        catch (SshComponentException ex)
+        {
+            return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Validation, ex.ErrorCode, ex.Message, stopwatch);
+        }
+
+        if (!TargetsMatch(host.Target, target))
+        {
+            return TransferFailure(
+                host,
+                SshExecutionStatus.Failed,
+                SshPhase.Validation,
+                SshErrorCodes.TargetChanged,
+                "请求目标与冻结主机快照不一致（配置可能已变化）；请重新发现并重新审批。",
+                stopwatch);
+        }
+
+        try
+        {
+            host.Limits.Validate();
+        }
+        catch (SshComponentException ex)
+        {
+            return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Validation, ex.ErrorCode, ex.Message, stopwatch);
+        }
+
+        if (host.Transfer is not { } transferLimits)
+        {
+            return TransferFailure(
+                host,
+                SshExecutionStatus.Failed,
+                SshPhase.Validation,
+                SshErrorCodes.TransferUnavailable,
+                "主机未配置传输限额（未开放上传/下载根）：切片 B 关闭式失败。",
+                stopwatch);
+        }
+
+        if (_transfer is null)
+        {
+            return TransferFailure(
+                host,
+                SshExecutionStatus.Failed,
+                SshPhase.Validation,
+                SshErrorCodes.TransferUnavailable,
+                "传输通道未装配（未提供 ISshTransferFactory）。",
+                stopwatch);
+        }
+
+        SshUploadPlan? uploadPlan = null;
+        SshDownloadPlan? downloadPlan = null;
+        try
+        {
+            if (isUpload)
+            {
+                uploadPlan = SshTransferValidator.ValidateUpload(upload!, transferLimits);
+            }
+            else
+            {
+                downloadPlan = SshTransferValidator.ValidateDownload(download!, transferLimits);
+            }
+        }
+        catch (SshComponentException ex)
+        {
+            return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Validation, ex.ErrorCode, ex.Message, stopwatch);
+        }
+
+        var remotePath = uploadPlan?.RemotePath ?? downloadPlan!.RemotePath;
+        var localPath = uploadPlan?.LocalPath ?? downloadPlan!.LocalPath;
+        var remoteRoot = uploadPlan?.RemoteRoot ?? downloadPlan!.RemoteRoot;
+
+        if (_stopping)
+        {
+            return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Queued, SshErrorCodes.Busy, "组件正在停止，未受理新操作。", stopwatch);
+        }
+
+        if (_quarantine.IsFull)
+        {
+            return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Queued, SshErrorCodes.Busy, "清理隔离区已满（ssh.busy）：拒绝新增工作。", stopwatch);
+        }
+
+        var timeout = host.Limits.ResolveOperationTimeout(null);
+        if (ResolveDeadlineBudget(host, startedAt, ref timeout, out var deadlineFailure))
+        {
+            return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Validation, SshErrorCodes.Timeout, deadlineFailure!, stopwatch);
+        }
+
+        using var lifetime = new SshOperationLifetime(_time, timeout, cancellationToken, _shutdown.Token);
+        if (TryTransferFence(lifetime, host, stopwatch, out var fenced))
+        {
+            return fenced!;
+        }
+
+        var admission = await AdmitAsync(GateKey(host.Target), host.Limits.MaxConcurrentOperations, lifetime).ConfigureAwait(false);
+        if (admission.Kind != AdmissionKind.Admitted)
+        {
+            var code = ResolveAdmissionCode(admission.Kind, lifetime);
+            return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Queued, code, DescribeAdmission(admission.Kind, lifetime), stopwatch);
+        }
+
+        var lease = BeginLease(admission);
+        try
+        {
+        StageHandoff? handoff = null;
+        var cleanupBudget = new Lazy<SshCleanupBudget>(
+            () => new SshCleanupBudget(_time, _options.CleanupGrace),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        TimeSpan CleanupRemaining() => cleanupBudget.Value.Remaining;
+
+        try
+        {
+            // 1) 身份
+            SshStageOutcome<SshIdentityMaterial> identityOutcome;
+            try
+            {
+                var identityTask = _stageWorkers.StartAsync(() => _identities.GetIdentityAsync(host.Identity, lifetime.Token).AsTask());
+                lease.RegisterWork(identityTask, "identity");
+                identityOutcome = await lifetime
+                    .WaitStageAsync(
+                        identityTask,
+                        lifetime.RemainingOperation,
+                        SshStopReason.OperationDeadline,
+                        onLateSuccess: material => material.Dispose(),
+                        onLateFailure: _ => { })
+                    .ConfigureAwait(false);
+            }
+            catch (SshStageCapacityExceededException)
+            {
+                return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Queued, SshErrorCodes.Busy, "阶段 worker 已满（ssh.busy）：未读取身份、未创建连接。", stopwatch);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Credentials, false));
+                return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Credentials, failure.ErrorCode, SshDiagnosticText.FromException(ex), stopwatch);
+            }
+
+            if (!identityOutcome.Completed)
+            {
+                return TransferFailure(
+                    host,
+                    SshExecutionStatus.Failed,
+                    SshPhase.Credentials,
+                    StopCode(identityOutcome.Reason),
+                    StopDiagnostic(identityOutcome.Reason, "取凭据阶段"),
+                    stopwatch);
+            }
+
+            var identity = identityOutcome.Result!;
+            lease.AttachIdentity(identity);
+
+            // 2) 连接 SFTP 会话（切片 B：能力探测就在允许根内做）
+            lease.BeginIdentityConnect();
+            handoff = new StageHandoff(lease);
+            SshStageOutcome<ISshTransferSession> connectOutcome;
+            try
+            {
+                var connectBudget = lifetime.RemainingConnect(host.Limits.ConnectTimeout);
+                var connectRequest = new SshTransportConnectRequest(
+                    target,
+                    identity,
+                    host.Trust.CreateVerifier(target.Host, target.Port),
+                    connectBudget);
+
+                var connectTask = _stageWorkers.StartAsync(() => _transfer.ConnectTransferAsync(connectRequest, remoteRoot, lifetime.Token));
+                lease.RegisterWork(connectTask, "transfer-connect");
+                connectOutcome = await lifetime
+                    .WaitStageAsync(
+                        connectTask,
+                        connectBudget,
+                        SshStopReason.ConnectDeadline,
+                        onLateSuccess: late =>
+                        {
+                            lease.MarkIdentitySessionOwned();
+                            lease.AttachTransferSession(late);
+                            _ = CloseLateResourcesAsync(lease, handoff);
+                        },
+                        onLateFailure: error =>
+                        {
+                            _ = error;
+                            _ = CloseLateResourcesAsync(lease, handoff);
+                        })
+                    .ConfigureAwait(false);
+            }
+            catch (SshStageCapacityExceededException)
+            {
+                handoff.MarkAbandoned();
+                return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Queued, SshErrorCodes.Busy, "阶段 worker 已满（ssh.busy）。", stopwatch);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                handoff.MarkAbandoned();
+                var failure = SshFailureClassifier.Classify(ex, new SshFailureFacts(SshPhase.Connecting, false));
+                return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Connecting, failure.ErrorCode, SshDiagnosticText.FromException(ex), stopwatch);
+            }
+
+            if (!connectOutcome.Completed)
+            {
+                handoff.MarkAbandoned();
+                return TransferFailure(
+                    host,
+                    SshExecutionStatus.Failed,
+                    SshPhase.Connecting,
+                    StopCode(connectOutcome.Reason),
+                    StopDiagnostic(connectOutcome.Reason, "建连阶段"),
+                    stopwatch);
+            }
+
+            var session = connectOutcome.Result!;
+            lease.MarkIdentitySessionOwned();
+            lease.AttachTransferSession(session);
+
+            if (TryTransferFence(lifetime, host, stopwatch, out fenced))
+            {
+                var fencedCleanup = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
+                return fenced! with
+                {
+                    CleanupState = fencedCleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
+                };
+            }
+
+            // 3) 传输本身也在有界 worker 上（同步阻塞段不得卡住业务线程）。
+            var transferTimeout = lifetime.RemainingOperation;
+            if (transferTimeout <= TimeSpan.Zero)
+            {
+                return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Executing, SshErrorCodes.Timeout, StopDiagnostic(SshStopReason.OperationDeadline, "传输前"), stopwatch);
+            }
+
+            SshTransferCapabilities? capabilities = null;
+            SshTransferOutcome outcome;
+            try
+            {
+                var transferTask = _stageWorkers.StartAsync(() => isUpload
+                    ? session.UploadAsync(uploadPlan!, transferTimeout, lifetime.Token)
+                    : session.DownloadAsync(downloadPlan!, transferTimeout, lifetime.Token));
+                lease.RegisterWork(transferTask, "transfer");
+
+                var transferStage = await lifetime
+                    .WaitStageAsync(
+                        transferTask,
+                        transferTimeout,
+                        SshStopReason.OperationDeadline,
+                        onLateSuccess: static result => _ = result,
+                        onLateFailure: static _ => { })
+                    .ConfigureAwait(false);
+
+                if (!transferStage.Completed)
+                {
+                    var reason = transferStage.Reason;
+                    outcome = SshTransferOutcome.Failed(StopCode(reason), 0, StopDiagnostic(reason, "传输阶段未在预算内结束（远端状态未知；临时文件由清理路径处理）。"));
+                }
+                else
+                {
+                    outcome = transferStage.Result!;
+                }
+
+                capabilities = await session.GetCapabilitiesAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (SshStageCapacityExceededException)
+            {
+                return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Queued, SshErrorCodes.Busy, "阶段 worker 已满（ssh.busy）：未提交传输。", stopwatch);
+            }
+
+            var cleanup = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
+
+            var status = outcome.Status;
+            var phase = status == SshExecutionStatus.Completed ? SshPhase.Completed : SshPhase.Cleanup;
+
+            return new SshTransferResult
+            {
+                Status = status,
+                Phase = phase,
+                HostId = host.Target.HostId,
+                HostRevision = host.Target.HostRevision,
+                BytesTransferred = outcome.BytesTransferred,
+                RemotePath = remotePath,
+                LocalPath = localPath,
+                RetrySafe = false,
+                ErrorCode = outcome.ErrorCode,
+                Diagnostic = SshDiagnosticText.Bound(outcome.Diagnostic),
+                CleanupState = cleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
+                TemporaryLeftBehind = outcome.TemporaryLeftBehind,
+                TemporaryPath = outcome.TemporaryPath,
+                Capabilities = capabilities,
+                DurationMs = Elapsed(stopwatch),
+            };
+        }
+        finally
+        {
+            if (lease.HasSession)
+            {
+                _ = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
+            }
+
+            handoff?.SettleFromBusiness();
+            lease.ReleaseBusinessResources();
+        }
+        }
+        finally
+        {
+            EndLease(lease);
+        }
+    }
+
+    /// <summary>传输前置围栏（切片 B）。</summary>
+    private bool TryTransferFence(
+        SshOperationLifetime lifetime,
+        SshHostContext host,
+        Stopwatch stopwatch,
+        out SshTransferResult? failure)
+    {
+        failure = null;
+        if (!lifetime.IsStopped)
+        {
+            return false;
+        }
+
+        var reason = lifetime.StopReason;
+        failure = TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Validation, StopCode(reason), StopDiagnostic(reason, "受理前置围栏"), stopwatch);
+        return true;
+    }
+
+    private static SshTransferResult TransferFailure(
+        SshHostContext host,
+        SshExecutionStatus status,
+        SshPhase phase,
+        string? errorCode,
+        string? diagnostic,
+        Stopwatch stopwatch,
+        SshCleanupState cleanupState = SshCleanupState.NotStarted) => new()
+        {
+            Status = status,
+            Phase = phase,
+            HostId = host.Target.HostId,
+            HostRevision = host.Target.HostRevision,
+            RetrySafe = false,
+            ErrorCode = errorCode,
+            Diagnostic = SshDiagnosticText.Bound(diagnostic),
+            CleanupState = cleanupState,
+            DurationMs = Elapsed(stopwatch),
+        };
 
     /// <summary>把宿主绝对 deadline 折算进操作预算；已过期则拒绝（不建连）。</summary>
     private bool ResolveDeadlineBudget(SshHostContext host, DateTimeOffset startedAt, ref TimeSpan timeout, out string? failure)

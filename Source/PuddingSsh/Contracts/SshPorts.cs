@@ -20,6 +20,18 @@ public interface ISshClient
         SshHostContext host,
         SshExecuteRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>单文件上传（切片 B）：同目录唯一临时文件/原子占位 + 发布。</summary>
+    Task<SshTransferResult> UploadAsync(
+        SshHostContext host,
+        SshUploadRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>单文件下载（切片 B）。</summary>
+    Task<SshTransferResult> DownloadAsync(
+        SshHostContext host,
+        SshDownloadRequest request,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>宿主冻结的 identity 请求：**绝对** <c>.ssh</c> 目录 + 文件名校验后的结果。</summary>
