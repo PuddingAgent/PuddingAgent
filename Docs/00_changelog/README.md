@@ -107,4 +107,4 @@ ADR / 设计 / 报告 / 任务 id / 提交号。
 - 待迁（下次整理时处理，迁移时保持原文并提供来源说明）：
   - `Docs/Changelog-2026-08-24_2026-09-22.md`（`Docs/` 根目录的历史日志，应按月拆入本目录）；
   - `Docs/README.md` 中以日期段落开头的进展叙述；
-  - 各子项目 `code_map.md` 内的「变更（YYYY-MM-DD）」小节（如 `Source/PuddingRuntime/code_map.md`、`Source/PuddingFullTextIndex/code_map.md`、`Source/PuddingCodeIndex/code_map.md`、`Source/PuddingPlatformAdmin/code_map.md`、`Source/PuddingHost/code_map.md` 等）。
+  - 各子项目 `code_map.md` 内的「变更（YYYY-MM-DD）」小节（如 `Source/PuddingRuntime/code_map.md`、`Source/PuddingFullTextIndex/code_map.md`、`Source/PuddingCodeIndex/code_map.md`、`Source/PuddingPlatformAdmin/code_map.md`、`Source/PuddingHost/code_map.md` 等）。**核实结论（2026-10-14）：该项已完成，无需再迁。** 精确枚举 `Source/**/code_map.md` 共 **44** 个文件，逐个检索 `变更（20` **零命中**；对照组（同一检索方式查 `源指纹`）在 **4** 个文件命中，证明检索有效而非静默失败。
