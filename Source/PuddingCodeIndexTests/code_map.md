@@ -17,20 +17,28 @@
 
 | 文件 | 用途 |
 |------|------|
-| `ComponentBoundaryTests.cs` | **S3/S4 边界断言**：① 探测器自检（必须能报出违规）；② 测试进程未加载（并强制加载元数据引用）Roslyn/MSBuild/上层程序集；③ 声明的依赖闭包（`*.deps.json`）不含禁用程序集 |
+| `ComponentBoundaryTests.cs` | **S3/S4 边界断言**：探测器自检 + 未加载上层程序集 + 依赖闭包无禁用程序集（见下「关键语义」） |
 | `Services/CodeIndexFixture.cs` | 组件本地夹具：临时根目录 + 真实 `SqliteCodeIndexStore`（**自足**，不用上层夹具） |
 | `Services/CodeIndex/CodeIndexChangeCoalescerTests.cs` | 防抖折叠（静默 500ms / 最长 2s / 2 万路径 → reconcile） |
 | `Services/CodeIndex/CodeIndexChangeQueueTests.cs` | 有界队列容量与 `TryPublish` 不阻塞 |
 | `Services/CodeIndex/CodeIndexChangeTestHelpers.cs` | 共享测试替身：`TestDirectory` / `MutableTimeProvider` / `CodeIndexChangeTestFactory` |
 | `Services/CodeIndex/CodeIndexMaintenanceServiceTests.cs` | **U3-B1** 变更驱动维护服务：单驱动泵、置脏补跑、有界停止；**U3-B3** 改写为按文件语义（单文件变更不触发全量重索引、删除不触发全量重索引） |
-| `Services/CodeIndex/CodeIndexMaintenanceTestDoubles.cs` | 维护服务测试替身：`RecordingCodeIndexer`（含 U3-B3 的 `IndexFileAsync` 记账与拒绝注入）/ `FakeCodeIndexChangeWatcher` / `MaintenanceTestData` |
+| `Services/CodeIndex/CodeIndexMaintenanceTestDoubles.cs` | 维护服务测试替身：`RecordingCodeIndexer` / `FakeCodeIndexChangeWatcher` 等（见下「关键语义」） |
 | `Services/CodeIndex/MaintenanceHarness.cs` | **U3-B3** 共享驱动夹具（真调度器 + 真 store + 假变更源，与管理服务测试共用） |
-| `Services/CodeIndex/CodeIndexRemovalCorrectnessTests.cs` | **U3-B3** 管线级施用：删除后**查询不再返回**该文件符号（A6 硬判据，改动前为红）、重命名旧清新增、消失路径按删除处理、索引器拒绝 ⇒ 升级 scope 级重索引 |
+| `Services/CodeIndex/CodeIndexRemovalCorrectnessTests.cs` | **U3-B3** 管线级施用：删除后查询不再命中、重命名旧清新增等（见下「关键语义」） |
 | `Services/CodeIndex/CodeIndexSchedulerTests.cs` | **U3-B1** 调度器不变量：in-flight 期间到达的请求不得丢弃、取消时重新入队 |
 | `Services/CodeIndex/CodeIndexScopeStateTests.cs` | 范围状态（dirty/version/reconcile，无 IO） |
 | `Services/CodeIndex/CodeIndexWatcherTests.cs` | 文件系统监视器过滤与发布 |
 | `Storage/SqliteCodeIndexStoreTests.cs` | `SqliteCodeIndexStore` 项目/文件/符号/关系/引用往返，且不触碰源文件 |
 | `Storage/SqliteCodeIndexStoreRemoveFilesTests.cs` | **U3-B3** 按文件清除：文件记录 + 符号 + 关系/引用均消失且不动其他文件；幂等；**批次中途失败 ⇒ 一字不删**（触发器具确定性注入） |
+
+## 关键语义（长表格单元格原文）
+
+> 下列原文对应上方表格中被缩写为「（见下「关键语义」）」的单元格；改写只做语义摘要，此处逐字保留原文。
+
+- `ComponentBoundaryTests.cs`：**S3/S4 边界断言**：① 探测器自检（必须能报出违规）；② 测试进程未加载（并强制加载元数据引用）Roslyn/MSBuild/上层程序集；③ 声明的依赖闭包（`*.deps.json`）不含禁用程序集
+- `Services/CodeIndex/CodeIndexMaintenanceTestDoubles.cs`：维护服务测试替身：`RecordingCodeIndexer`（含 U3-B3 的 `IndexFileAsync` 记账与拒绝注入）/ `FakeCodeIndexChangeWatcher` / `MaintenanceTestData`
+- `Services/CodeIndex/CodeIndexRemovalCorrectnessTests.cs`：**U3-B3** 管线级施用：删除后**查询不再返回**该文件符号（A6 硬判据，改动前为红）、重命名旧清新增、消失路径按删除处理、索引器拒绝 ⇒ 升级 scope 级重索引
 
 ## 运行
 
