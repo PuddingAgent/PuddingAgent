@@ -8,22 +8,63 @@ using Renci.SshNet.Common;
 namespace PuddingSsh.Transport;
 
 /// <summary>
-/// SSH.NET 适配的建连工厂（设计 §4.1 <c>Transport/</c>）。第三方类型只出现在 <c>Transport/</c> 内：
-/// 公开合同（<see cref="ISshTransportFactory"/> / <see cref="ISshTransportSession"/>）不含 <c>SshClient</c>。
-/// <para>
-/// 依赖库的默认值对本组件**不安全**，必须显式覆盖：
-/// <list type="bullet">
-///   <item><c>ConnectionInfo.RetryAttempts</c> 默认 <b>10</b> ⇒ 固定 1（组件不自动重连重放）；</item>
-///   <item><c>ConnectionInfo.Timeout</c> 默认 30 秒 ⇒ 由主机建连 deadline 决定；</item>
-///   <item><c>MaxSessions</c> 默认 10 ⇒ 独占连接固定 1；</item>
-///   <item><c>HostKeyReceived</c> ⇒ 一律先装**默认拒绝**回调（设计 §6.3），且在认证之前。</item>
-/// </list>
-/// </para>
+/// SSH.NET 适配的建连工厂（设计 §4.1 <c>Transport/</c>）：第三方类型只出现在 <c>Transport/</c> 内。
+/// 执行会话与 SFTP 传输会话共用同一套「默认拒绝的主机密钥 + 冻结身份 + 固定版本」建连准备。
 /// </summary>
 public sealed class SshNetTransportFactory : ISshTransportFactory
 {
     public async Task<ISshTransportSession> ConnectAsync(
         SshTransportConnectRequest request,
+        CancellationToken cancellationToken)
+    {
+        var prepared = await PrepareAsync(request, static connectionInfo => new SshClient(connectionInfo), cancellationToken)
+            .ConfigureAwait(false);
+
+        var client = (SshClient)prepared.Client;
+        var identity = request.Identity;
+        return new SshNetTransportSession(
+            client,
+            request.Target,
+            identity,
+            prepared.PrivateKey,
+            prepared.KeyStream,
+            prepared.Capture.VerifiedFingerprint,
+            prepared.Capture.HostKeyAlgorithm);
+    }
+
+    /// <summary>
+    /// 打开一次**独占的 SFTP 传输会话**（切片 B）：身份/信任/超时合同与执行路径完全一致，
+    /// 只是通道换成 SFTP。文件系统资源（client/key/keyStream/identity）由传输会话在释放时一并回收。
+    /// </summary>
+    public async Task<ISshTransferSession> ConnectTransferAsync(
+        SshTransportConnectRequest request,
+        string scratchDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scratchDirectory);
+        SshRemotePathPolicy.NormalizeRoot(scratchDirectory, "transfer.scratch_directory");
+
+        var prepared = await PrepareAsync(request, static connectionInfo => new SftpClient(connectionInfo), cancellationToken)
+            .ConfigureAwait(false);
+
+        var identity = request.Identity;
+        return new SshSftpTransferSession(
+            new SshSftpChannel((SftpClient)prepared.Client),
+            prepared.Capture.VerifiedFingerprint ?? string.Empty,
+            scratchDirectory,
+            SshLocalFileSystem.Instance,
+            releaseOwnedResources: () =>
+            {
+                prepared.PrivateKey.Dispose();
+                prepared.KeyStream.Dispose();
+                identity.Dispose();
+            });
+    }
+
+    /// <summary>建连准备：校验 + 冻结身份 + 主机密钥回调（默认拒绝）+ 有界 Connect。</summary>
+    private static async Task<PreparedConnection> PrepareAsync(
+        SshTransportConnectRequest request,
+        Func<ConnectionInfo, BaseClient> createClient,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -41,22 +82,21 @@ public sealed class SshNetTransportFactory : ISshTransportFactory
 
         var keyStream = request.Identity.OpenKeyStream();
         PrivateKeyFile? privateKey = null;
-        SshClient? client = null;
-
-        try
-        {
-            privateKey = CreatePrivateKeyFile(keyStream);
-        }
-        catch (Exception ex)
-        {
-            keyStream.Dispose();
-            throw WrapCredentialFailure(ex);
-        }
-
+        BaseClient? client = null;
         var capture = new HostKeyCapture();
 
         try
         {
+            try
+            {
+                privateKey = new PrivateKeyFile(keyStream);
+            }
+            catch (Exception ex)
+            {
+                keyStream.Dispose();
+                throw WrapCredentialFailure(ex);
+            }
+
             var authentication = new PrivateKeyAuthenticationMethod(request.Target.Username, privateKey);
 
             var connectionInfo = new ConnectionInfo(
@@ -72,7 +112,7 @@ public sealed class SshNetTransportFactory : ISshTransportFactory
                 Encoding = Encoding.UTF8,
             };
 
-            client = new SshClient(connectionInfo);
+            client = createClient(connectionInfo);
 
             // 默认拒绝：只有验证器明确 Trust 才置 CanTrust=true。回调在 ConnectAsync 之前安装，
             // 因此不存在「认证先发生、之后再验证」的窗口。
@@ -92,25 +132,13 @@ public sealed class SshNetTransportFactory : ISshTransportFactory
             connectCts.CancelAfter(request.ConnectTimeout);
             await client.ConnectAsync(connectCts.Token).ConfigureAwait(false);
 
-            var session = new SshNetTransportSession(
-                client,
-                request.Target,
-                request.Identity,
-                privateKey,
-                keyStream,
-                capture.VerifiedFingerprint,
-                capture.HostKeyAlgorithm);
-
-            client = null;
-            privateKey = null;
-            keyStream = null!;
-            return session;
+            return new PreparedConnection(client, privateKey, keyStream, capture);
         }
         catch (Exception ex)
         {
             client?.Dispose();
             privateKey?.Dispose();
-            keyStream?.Dispose();
+            keyStream.Dispose();
             request.Identity.Dispose();
 
             if (capture.Rejection is { Trusted: false } rejection)
@@ -124,8 +152,6 @@ public sealed class SshNetTransportFactory : ISshTransportFactory
             throw;
         }
     }
-
-    private static PrivateKeyFile CreatePrivateKeyFile(Stream keyStream) => new(keyStream);
 
     /// <summary>
     /// 加密私钥首期必须**明确**返回 <c>ssh.passphrase_required</c>（设计 §6.2）：不把口令放进参数或日志、
@@ -147,14 +173,30 @@ public sealed class SshNetTransportFactory : ISshTransportFactory
             exception);
     }
 
+    private sealed record PreparedConnection(
+        BaseClient Client,
+        PrivateKeyFile PrivateKey,
+        Stream KeyStream,
+        HostKeyCapture Capture);
+
     /// <summary>握手回调的线程安全落点：回调可能在工作线程执行，不能用普通闭包变量跨线程读。</summary>
     private sealed class HostKeyCapture
     {
         private readonly object _gate = new();
+        private SshHostKeyDecision? _rejection;
         private string? _verifiedFingerprint;
         private string? _hostKeyAlgorithm;
 
-        public SshHostKeyDecision? Rejection { get; private set; }
+        public SshHostKeyDecision? Rejection
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _rejection;
+                }
+            }
+        }
 
         public string? VerifiedFingerprint
         {
@@ -189,7 +231,7 @@ public sealed class SshNetTransportFactory : ISshTransportFactory
                 }
                 else
                 {
-                    Rejection = decision;
+                    _rejection ??= decision;
                 }
             }
         }

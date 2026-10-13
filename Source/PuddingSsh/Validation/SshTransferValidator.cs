@@ -28,7 +28,7 @@ public static class SshTransferValidator
         SshRemotePathPolicy.EnsureWithinRoot(uploadRoot, remotePath);
 
         var tempPath = SshRemotePathPolicy.TemporarySiblingOf(remotePath, Guid.NewGuid().ToString("N")[..12]);
-        return new SshUploadPlan(localPath, remotePath, tempPath, request.Overwrite, maxBytes);
+        return new SshUploadPlan(localPath, remotePath, tempPath, uploadRoot, request.Overwrite, maxBytes);
     }
 
     /// <summary>校验下载请求并给出下载计划。</summary>
@@ -50,7 +50,7 @@ public static class SshTransferValidator
         var localPath = SshLocalPathPolicy.ResolveDownloadTarget(limits.LocalRoot, request.LocalPath, fileSystem);
         var tempPath = TemporaryLocalSiblingOf(localPath);
 
-        return new SshDownloadPlan(remotePath, localPath, tempPath, request.Overwrite, maxBytes);
+        return new SshDownloadPlan(remotePath, localPath, tempPath, downloadRoot, request.Overwrite, maxBytes);
     }
 
     /// <summary>本地目标的同目录唯一临时文件。</summary>

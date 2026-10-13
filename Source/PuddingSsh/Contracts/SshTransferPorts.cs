@@ -1,0 +1,105 @@
+namespace PuddingSsh.Contracts;
+
+/// <summary>
+/// 服务端 SFTP 能力**实测**结果（切片 B）：设计明确要求「原子/不覆盖 rename 能力必须实测，
+/// 服务器不支持时返回不支持」——因此这些值只能来自真实探针，不能假定。
+/// </summary>
+public sealed record SshTransferCapabilities(
+    bool AtomicReplace,
+    bool RenameNoOverwrite,
+    bool ExclusiveCreate)
+{
+    /// <summary>尚未探测。</summary>
+    public static SshTransferCapabilities Unknown { get; } = new(false, false, false);
+}
+
+/// <summary>
+/// 传输结果（切片 B）：状态、实际字节、稳定错误码与诊断。
+/// <see cref="TemporaryLeftBehind"/> 表示**本次**临时文件残留（不得误报原目标已回滚）。
+/// </summary>
+public sealed record SshTransferOutcome(
+    SshExecutionStatus Status,
+    long BytesTransferred,
+    string? ErrorCode,
+    string? Diagnostic,
+    bool TemporaryLeftBehind = false,
+    string? TemporaryPath = null)
+{
+    public static SshTransferOutcome Completed(long bytes) =>
+        new(SshExecutionStatus.Completed, bytes, null, null);
+
+    public static SshTransferOutcome Failed(string errorCode, long bytes, string? diagnostic, bool tempLeftBehind = false, string? tempPath = null) =>
+        new(SshExecutionStatus.Failed, bytes, errorCode, diagnostic, tempLeftBehind, tempPath);
+
+    public static SshTransferOutcome Cancelled(long bytes, string? diagnostic, bool tempLeftBehind = false, string? tempPath = null) =>
+        new(SshExecutionStatus.Cancelled, bytes, Diagnostics.SshErrorCodes.Cancelled, diagnostic, tempLeftBehind, tempPath);
+}
+
+/// <summary>
+/// 一次独占的 SFTP 传输会话（切片 B）：单文件上传/下载 + 能力实测 + 有界释放。
+/// 与 <see cref="ISshTransportSession"/> 一样，一个会话代表一条独占连接，不做并发保护。
+/// </summary>
+public interface ISshTransferSession : IAsyncDisposable
+{
+    /// <summary>本次握手实际验证通过的指纹。</summary>
+    string VerifiedHostKeySha256 { get; }
+
+    /// <summary>实测的服务端传输能力（惰性探测，探测失败按不支持处理）。</summary>
+    Task<SshTransferCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken);
+
+    /// <summary>非阻塞中止请求（本端取消/截止时由协调器调用）。</summary>
+    void RequestAbort();
+
+    /// <summary>带预算释放（与 <see cref="ISshTransportSession"/> 同一预算合同）。</summary>
+    ValueTask DisposeAsync(TimeSpan budget);
+
+    /// <summary>上传单个普通文件：同目录唯一临时文件 + 发布。</summary>
+    Task<SshTransferOutcome> UploadAsync(
+        SshUploadPlan plan,
+        TimeSpan timeout,
+        CancellationToken cancellationToken);
+
+    /// <summary>下载单个普通文件：本地同目录唯一临时文件 + 发布。</summary>
+    Task<SshTransferOutcome> DownloadAsync(
+        SshDownloadPlan plan,
+        TimeSpan timeout,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// SFTP 通道（切片 B）：把用到的 SFTP 原语收成一个小接口，
+/// 使「发布语义/能力判定/临时文件清理」这些逻辑可以**确定性单测**；
+/// 真实实现在 <c>Transport/</c>，由探针在真实 OpenSSH 上验证。
+/// </summary>
+public interface ISshSftpChannel : IDisposable
+{
+    bool IsConnected { get; }
+
+    bool Exists(string remotePath);
+
+    /// <summary>是否为普通文件（false = 目录/不存在/未知）。</summary>
+    bool IsRegularFile(string remotePath);
+
+    long GetLength(string remotePath);
+
+    /// <summary>用 SFTP realpath 语义解析目录（实现可用 ChangeDirectory + WorkingDirectory）。</summary>
+    string GetRealDirectory(string remotePath);
+
+    Stream OpenRead(string remotePath);
+
+    Stream OpenWriteNew(string remotePath);
+
+    /// <summary>把本地流上传到远端新文件（排他创建）。</summary>
+    Task UploadAsync(Stream source, string remotePath, long maxBytes, CancellationToken cancellationToken);
+
+    /// <summary>把远端文件下载到本地流。</summary>
+    Task DownloadAsync(string remotePath, Stream destination, CancellationToken cancellationToken);
+
+    /// <summary>标准 SFTP RENAME（不覆盖语义需实测；OpenSSH 实测为覆盖）。</summary>
+    void Rename(string oldPath, string newPath);
+
+    /// <summary>posix-rename@openssh.com（原子替换）。</summary>
+    void RenamePosix(string oldPath, string newPath);
+
+    void Delete(string remotePath);
+}

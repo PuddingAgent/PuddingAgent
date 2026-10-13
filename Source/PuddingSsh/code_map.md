@@ -55,6 +55,9 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Execution/SshIdentityOwner.cs` | 身份材料的所有权状态机（L2） | `SshIdentityOwner`、`SshIdentityOwnership` | `LeaseOwned → Connecting → SessionOwned → Released` 原子且幂等；转移在**调用 connect 之前**完成 |`r`n| `Execution/SshResourceLease.cs` | 单次操作的资源记账 | `SshResourceLease`、`SshCleanupOutcome` | 身份释放幂等；阶段超时把收尾交给迟到 owner（先关连接再清零材料）；准入槽位幂等释放 |
 | `Execution/SshOperationLifetime.cs` | 单次操作的**时间与终止事实**（ADR-096 D2） | `SshStopReason`/`SshStopReasons`、`SshOperationLifetime`（`RemainingOperation`/`RemainingConnect`/`CheckBeforeSideEffect`/`WaitStageAsync`） | 预算在**受理时**算一次；剩余额度用单调时间戳；计时器走注入的 `TimeProvider`；阶段晚返回只做材料清零/连接回收，绝不开启下一阶段 |`r`n| `Execution/SshOperationCoordinator.cs` | `ISshClient` 实现：准入排队、deadline、凭据、建连、执行、释放、停止 | `SshOperationCoordinator`（含 `StopAsync`/`IAsyncDisposable`）、`InFlightOperations`、`WaitQueueLength` | 准入按 `hostId + hostRevision` 分门；操作总时长从**受理**起算（含排队）；队满立即 `ssh.busy`；清理宽限只做资源回收 |
 | `Transport/SshNetTransportFactory.cs` | 建连：密钥、认证方法、默认拒绝的主机密钥回调 | `SshNetTransportFactory` | `RetryAttempts=1`（库默认 10）、`MaxSessions=1`（库默认 10）、`Timeout` 由 deadline 决定；回调在 `ConnectAsync` 之前安装；加密私钥 ⇒ `ssh.passphrase_required` |
+| `Contracts/SshTransferPorts.cs` | 传输会话与 SFTP 通道端口（切片 B） | `ISshTransferSession`、`ISshSftpChannel`、`SshTransferCapabilities`、`SshTransferOutcome` | 能力必须**实测**；不支持即 `ssh.transfer_unsupported`；清理失败必须报告残留 |
+| `Transport/SshSftpChannel.cs` | SSH.NET 的 SFTP 通道（切片 B） | `SshSftpChannel` | 排他创建、标准/posix rename、realpath（ChangeDirectory+WorkingDirectory）、64 KiB 流式复制与超限中止 |
+| `Transport/SshSftpTransferSession.cs` | 传输会话与发布语义（切片 B） | `SshSftpTransferSession`、`SshTransferLimitExceededException` | Fail=排他创建原子占位（失败即删除）；Overwrite=临时文件+posix-rename；清理由实测能力支撑、不使用竞态冒充 |
 | `Transport/SshNetTransportSession.cs` | 独占连接的 Exec、退出证据、终止与释放 | `SshNetTransportSession` | 取消/超时对 exec channel 发 TERM 后关连接；无退出码/信号 ⇒ `execution_state=unknown`；释放路径不抛新错误覆盖业务结果 |
 
 ## 3. 不变量（改这个组件前先读）

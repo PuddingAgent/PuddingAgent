@@ -104,6 +104,7 @@ public sealed record SshUploadPlan(
     string LocalPath,
     string RemotePath,
     string RemoteTempPath,
+    string RemoteRoot,
     SshOverwritePolicy Overwrite,
     long MaxBytes);
 
@@ -112,5 +113,6 @@ public sealed record SshDownloadPlan(
     string RemotePath,
     string LocalPath,
     string LocalTempPath,
+    string RemoteRoot,
     SshOverwritePolicy Overwrite,
     long MaxBytes);
