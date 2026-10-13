@@ -7,13 +7,19 @@
 | 文件 | 用途 |
 |------|------|
 | `BrowserBridgeCommandNames.cs` | 桥接命令名称常量 |
-| `BrowserBridgeCommandPayloads.cs` | 命令载荷定义。`PageSnapshotArguments.ScopeRef`（§151 的 `scope`，null = 整页）；`PageInteractArguments.ScrollTarget` 承载滚动目标模型（§7）；`BrowserInteractionResultDescriptor.Scroll`（`BrowserScrollReportDescriptor`）承载滚动结果事实；非滚动动作或宿主未报告时为 **null**（线缆上不编造"滚了 0 像素"） |
+| `BrowserBridgeCommandPayloads.cs` | 命令载荷定义：ScopeRef / ScrollTarget / 滚动结果描述符（见下「关键语义」） |
 | `BrowserBridgeEnvelope.cs` | 消息信封 |
 | `BrowserBridgeErrorCodes.cs` | 错误码 |
 | `BrowserBridgeMessages.cs` | 消息类型定义 |
 | `BrowserBridgeProtocol.cs` | 协议常量 |
 | `BrowserBridgeSerializer.cs` | JSON 序列化器 |
 | `BrowserBridgeJsonSerializerContext.cs` | AOT 源码生成上下文 |
+
+## 关键语义（用途原文逐字下沉）
+
+`BrowserBridgeCommandPayloads.cs` 用途原文（逐字）：
+
+命令载荷定义。`PageSnapshotArguments.ScopeRef`（§151 的 `scope`，null = 整页）；`PageInteractArguments.ScrollTarget` 承载滚动目标模型（§7）；`BrowserInteractionResultDescriptor.Scroll`（`BrowserScrollReportDescriptor`）承载滚动结果事实；非滚动动作或宿主未报告时为 **null**（线缆上不编造"滚了 0 像素"）
 
 ## 测试
 
