@@ -4,22 +4,21 @@
 
 ## Goal 域（Goals/ · ADR-074 G0 合同层）
 
-| 文件 | 用途 |
-|------|------|
-| `Goals/GoalContracts.cs` | GoalPhase/GoalCommandKind 枚举（含 Policy）、GoalSnapshot、GoalCommand（含 ResumePolicy）、GoalCommandRequest/Result、GoalLimits（256 硬上限、objective 1-4000）与 GoalErrorCodes（含 InvalidResumePolicy） |
-| `Goals/GoalStateMachine.cs` | 纯状态机：转换矩阵、终态判定、resume/edit 卫兵、计数不变量、CanAcceptNewIteration 预算裁决 |
-| `Goals/GoalEventTypes.cs` | goal.* canonical 事件目录 + ProducerComponent 常量（G1 冻结命名；目录冻结后新增 `goal.policy_changed`，消费方按 goal. 前缀或精确类型读取，无类型穷举 switch） |
-| `Goals/GoalCommandTextParser.cs` | /goal 严格 grammar（中文/多行 objective、--rounds 1..256、子命令消歧）；含保留子命令 `policy`（缺值/未知值 fail-closed 并列出合法取值，取值归一化为规范常量、大小写不敏感） |
-| `Goals/IGoalCommandService.cs` + `IGoalQueryService.cs` | 命令/查询应用服务契约（slash 与结构化 API 共用；查询含 steps 与 GetTodoAsync 拆解投影，复用 TodoItemView/TodoSummary） |
-| `Goals/GoalRunOptions.cs` | GoalRuns 配置节（Enabled 默认 false；局部配置不得扩大硬边界）；含 `NoProgressBreakerThreshold`（熔断阈值，默认 3，边界 1..16）、`DefaultResumePolicy`、`MaxAutoResumesPerBoot`（单 boot 自动恢复配额，默认 8，边界 0..64）与 `GoalResumePolicies` 常量 |
-| `Goals/GoalContinuationContracts.cs` | durable continuation outbox wire 值、受信 Acceptance fence、Task plan/node/fingerprint metadata 与稳定失败码 |
-| `Goals/GoalVerificationContracts.cs` | 有界 Evidence Capsule、Verifier verdict/decision 与只读接口；含阻塞码分类白名单（WaitBlockerCodes / InfraFailureBlockerCodes / UnrecoverableBlockerCodes）与判定方法（IsWaitBlockerCode / IsInfraFailureBlockerCode），供熔断计数排除合法等待 |
-| `Goals/TaskBoundGoalContracts.cs` | `StartGoalFromTaskCommand`（含 Agent 路由 SHA-256）、原子启动结果/稳定码与跨域事务 Store 契约 |
-| `Scheduling/TaskAutoDispatchContracts.cs` | evaluate-only 候选结果；携带 taskType、Agent 选择原因与路由指纹，不代表已派发 |
-| `Scheduling/TaskBacklogRefinementContracts.cs` | 已 opt-in Backlog 的只读 ReadyCandidate/NeedsRefinement 合同；不代表状态已迁移 |
-| `Scheduling/TaskExecutionTrackingContracts.cs` | 自动 Task 的只读五态跟踪 verdict 与跨层事实摘要；不授权 repair/requeue/release |
-| `Tasks/WorkspaceTaskModels.cs` + `Tasks/TaskPersistenceContracts.cs` | Task 状态/持久合同；含结构化 taskType、能力、provider/model 要求、显式 Agent fallback 与默认关闭的 auto-dispatch opt-in |
-
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Goals/GoalContracts.cs` | Goal 合同类型总集 | `GoalContracts` | `Goals/GoalStateMachine.cs` | GoalPhase/GoalCommandKind（含 Policy）、GoalSnapshot/GoalCommand（含 ResumePolicy）、GoalLimits（256 硬上限、objective 1-4000）、GoalErrorCodes（含 InvalidResumePolicy） |
+| `Goals/GoalStateMachine.cs` | Goal 纯状态机 | `GoalStateMachine` | `Goals/GoalContracts.cs` | 转换矩阵、终态判定、resume/edit 卫兵、计数不变量、CanAcceptNewIteration 预算裁决 |
+| `Goals/GoalEventTypes.cs` | goal.* canonical 事件目录 | `GoalEventTypes` | `Goals/GoalContracts.cs` | G1 冻结命名 + ProducerComponent 常量；冻结后新增 goal.policy_changed；消费方按 goal. 前缀或精确类型读取，无类型穷举 switch |
+| `Goals/GoalCommandTextParser.cs` | /goal 严格 grammar 解析 | `GoalCommandTextParser` | `Goals/IGoalCommandService.cs` | 中文/多行 objective、--rounds 1..256、子命令消歧；保留子命令 policy 缺值或未知值 fail-closed 并列出合法取值，取值归一化为规范常量、大小写不敏感 |
+| `Goals/IGoalCommandService.cs` + `IGoalQueryService.cs` | 命令/查询应用服务契约 | `IGoalCommandService`、`IGoalQueryService` | `Goals/GoalCommandTextParser.cs` | slash 与结构化 API 共用；查询含 steps 与 GetTodoAsync 拆解投影，复用 TodoItemView/TodoSummary |
+| `Goals/GoalRunOptions.cs` | GoalRuns 配置节 | `GoalRunOptions` | `Goals/GoalContracts.cs` | Enabled 默认 false，局部配置不得扩大硬边界；NoProgressBreakerThreshold（默认 3，边界 1..16）、DefaultResumePolicy、MaxAutoResumesPerBoot（默认 8，边界 0..64）、GoalResumePolicies |
+| `Goals/GoalContinuationContracts.cs` | continuation outbox wire 契约 | `GoalContinuationContracts` | `Goals/GoalRunOptions.cs` | durable outbox wire 值、受信 Acceptance fence、Task plan/node/fingerprint metadata 与稳定失败码 |
+| `Goals/GoalVerificationContracts.cs` | 有界证据与 verifier 契约 | `GoalVerificationContracts` | `Goals/GoalStateMachine.cs` | Evidence Capsule、verdict/decision 与只读接口；含 WaitBlockerCodes/InfraFailureBlockerCodes/UnrecoverableBlockerCodes 白名单与 IsWaitBlockerCode/IsInfraFailureBlockerCode |
+| `Goals/TaskBoundGoalContracts.cs` | Task-bound 原子启动契约 | `StartGoalFromTaskCommand` | `Goals/GoalContracts.cs` | 含 Agent 路由 SHA-256；原子启动结果/稳定码与跨域事务 Store 契约 |
+| `Scheduling/TaskAutoDispatchContracts.cs` | evaluate-only 候选结果 | `TaskAutoDispatchContracts` | `Scheduling/TaskExecutionPlanContracts.cs` | 携带 taskType、Agent 选择原因与路由指纹，不代表已派发 |
+| `Scheduling/TaskBacklogRefinementContracts.cs` | opt-in Backlog 只读合同 | `TaskBacklogRefinementContracts` | `Scheduling/TaskAutoDispatchContracts.cs` | ReadyCandidate/NeedsRefinement；不代表状态已迁移 |
+| `Scheduling/TaskExecutionTrackingContracts.cs` | 自动 Task 只读五态跟踪 | `TaskExecutionTrackingContracts` | `Scheduling/TaskAutoDispatchContracts.cs` | 跨层事实摘要；不授权 repair/requeue/release |
+| `Tasks/WorkspaceTaskModels.cs` + `Tasks/TaskPersistenceContracts.cs` | Task 状态与持久合同 | `WorkspaceTaskModels`、`TaskPersistenceContracts` | `Tasks/WorkspaceTaskModels.cs` | 含结构化 taskType、能力、provider/model 要求、显式 Agent fallback 与默认关闭的 auto-dispatch opt-in |
 ## 抽象层
 
 | 文件/目录 | 用途 |
@@ -48,31 +47,32 @@
 
 ## 模型（Models/）
 
-| 文件 | 用途 |
-|------|------|
-| `ChatMessage.cs` + `LlmContentPart.cs` + `ChatMessageMultimodalNormalizer.cs` | 消息模型；ADR-077 有序 typed 内容部件（text/image→Artifact 引用+detail）与 v1 信封 `ContentPartsEnvelope`，Gateway 渲染统一经 normalizer（旧 VisualArtifactIds 派生 original） |
-| `LlmResponse.cs` | LLM 响应 |
-| `LlmContinuationState.cs` | Provider opaque output items 跨工具轮次回放契约 |
-| `LlmOptions.cs` | LLM 选项、最近请求的 ContextUsageSnapshot、Tokenizer 校准和工具 schema 的 UTF-8/GZIP 归因（不保存正文）。**请求归因分离（F1）**：`MeasureLlmRequest` 只计量不发布（候选测量不得改写准备快照）；`CaptureLlmRequest` = 计量 + 发布 `currentPreparedRequest`；`RecordProviderUsage` 带 `LlmCallPurposes`，只有主请求用途才允许改写准备快照/参与安全校准/写 `MeasuredRequestUsage`（`lastMeasuredRequest`），辅助与摘要调用单独落 `TryGetLastAuxiliaryMeasurement`；`Total` 与 `Prompt` 分开保存 |
-| `StreamDelta.cs` | 流式增量 |
-| `ToolCall.cs` | 工具调用 |
-| `ToolParameterSchema.cs` | 工具参数 Schema（JSON Schema） |
-| `ToolPermissionLevel.cs` | 工具权限级别 |
-| `AgentContextEnvelope.cs` | Agent 上下文信封 |
-| `AgentReplyImageDirective.cs` | 图片指令解析 |
-| `AgentReplyImageGenerationDirective.cs` | ImageGeneration fence 解析（含 StripBlocks） |
-| `AgentReplyVoiceDirective.cs` | 语音指令解析 |
-| `MessageFabricModels.cs` | 消息结构模型 |
-| `MemoryMaintenancePlanModels.cs` | 记忆维护计划（12KB） |
-| `MemoryWriteCommandModels.cs` | 记忆写入命令（10KB） |
-| `TaskPlanningModels.cs` | 任务规划模型（12KB） |
-| `OmniRealtimeModels.cs` | 全双工实时模型 |
-| `VisualReasoningModels.cs` | 视觉推理模型 |
-| `VoiceRecognitionModels.cs` | 语音识别模型 |
-| `VoiceSynthesisModels.cs` | 语音合成模型 |
-| `AudioTranscodingModels.cs` | 音频转码模型 |
-| `LlmMessageSequenceNormalizer.cs` | 消息序列规范化 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `ChatMessage.cs` + `LlmContentPart.cs` + `ChatMessageMultimodalNormalizer.cs` | 消息模型与多模态归一 | `ChatMessage`、`LlmContentPart` | `AgentReplyImageDirective.cs` | ADR-077 有序 typed 内容部件（text/image→Artifact 引用+detail）与 v1 信封 ContentPartsEnvelope；Gateway 渲染统一经 normalizer，旧 VisualArtifactIds 派生 original |
+| `LlmResponse.cs` | LLM 响应 | `LlmResponse` | `LlmOptions.cs` | — |
+| `LlmContinuationState.cs` | Provider opaque output items 回放契约 | `LlmContinuationState` | `LlmResponse.cs` | 跨工具轮次回放 |
+| `LlmOptions.cs` | LLM 选项与请求归因（F1） | `LlmOptions`、`MeasureLlmRequest`、`CaptureLlmRequest` | `LlmResponse.cs` | 含最近请求的 ContextUsageSnapshot、Tokenizer 校准与工具 schema 的 UTF-8/GZIP 归因（不保存正文）；请求归因分离见本表后注 |
+| `StreamDelta.cs` | 流式增量 | `StreamDelta` | `LlmResponse.cs` | — |
+| `ToolCall.cs` | 工具调用 | `ToolCall` | `ToolParameterSchema.cs` | — |
+| `ToolParameterSchema.cs` | 工具参数 Schema（JSON Schema） | `ToolParameterSchema` | `ToolCall.cs` | — |
+| `ToolPermissionLevel.cs` | 工具权限级别 | `ToolPermissionLevel` | `ToolCall.cs` | — |
+| `AgentContextEnvelope.cs` | Agent 上下文信封 | `AgentContextEnvelope` | `ChatMessage.cs` | — |
+| `AgentReplyImageDirective.cs` | 图片指令解析 | `AgentReplyImageDirective` | `AgentReplyImageGenerationDirective.cs` | — |
+| `AgentReplyImageGenerationDirective.cs` | ImageGeneration fence 解析 | `AgentReplyImageGenerationDirective` | `AgentReplyImageDirective.cs` | 含 StripBlocks |
+| `AgentReplyVoiceDirective.cs` | 语音指令解析 | `AgentReplyVoiceDirective` | `AgentReplyImageDirective.cs` | — |
+| `MessageFabricModels.cs` | 消息结构模型 | `MessageFabricModels` | `ChatMessage.cs` | — |
+| `MemoryMaintenancePlanModels.cs` | 记忆维护计划模型（12KB） | `MemoryMaintenancePlanModels` | `MemoryWriteCommandModels.cs` | — |
+| `MemoryWriteCommandModels.cs` | 记忆写入命令模型（10KB） | `MemoryWriteCommandModels` | `MemoryMaintenancePlanModels.cs` | — |
+| `TaskPlanningModels.cs` | 任务规划模型（12KB） | `TaskPlanningModels` | `ToolCall.cs` | — |
+| `OmniRealtimeModels.cs` | 全双工实时模型 | `OmniRealtimeModels` | `StreamDelta.cs` | — |
+| `VisualReasoningModels.cs` | 视觉推理模型 | `VisualReasoningModels` | `LlmResponse.cs` | — |
+| `VoiceRecognitionModels.cs` | 语音识别模型 | `VoiceRecognitionModels` | `ChatMessage.cs` | — |
+| `VoiceSynthesisModels.cs` | 语音合成模型 | `VoiceSynthesisModels` | `VoiceRecognitionModels.cs` | — |
+| `AudioTranscodingModels.cs` | 音频转码模型 | `AudioTranscodingModels` | `VoiceSynthesisModels.cs` | — |
+| `LlmMessageSequenceNormalizer.cs` | 消息序列规范化 | `LlmMessageSequenceNormalizer` | `ChatMessage.cs` | — |
 
+LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布（候选测量不得改写准备快照）；`CaptureLlmRequest` = 计量 + 发布 `currentPreparedRequest`；`RecordProviderUsage` 带 `LlmCallPurposes`，只有主请求用途才允许改写准备快照/参与安全校准/写 `MeasuredRequestUsage`（`lastMeasuredRequest`），辅助与摘要调用单独落 `TryGetLastAuxiliaryMeasurement`；`Total` 与 `Prompt` 分开保存。
 ## LLM 网关（Core/）
 
 | 文件 | 用途 |
