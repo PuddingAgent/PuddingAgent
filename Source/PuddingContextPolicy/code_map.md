@@ -19,12 +19,23 @@
 
 | 文件 | 职责 | 关键符号 | 约束 |
 |---|---|---|---|
-| `ContextPolicyContracts.cs` | 输入/输出合同：消息策略视图、容量输入/结果、压力分类、来源常量、策略版本 | `ContextMessageShape`、`ContextCapacityInputs`、`ContextCapacityResult`、`ContextPressureDecision`、`ContextEffectiveWindowSources`、`ContextPolicyVersion` | 只带整数与**稳定身份**，不带正文；来源取值与 Runtime 的 `ContextEffectiveWindowSources` 逐字对齐 |
+| `ContextPolicyContracts.cs` | 输入/输出合同：消息策略视图、容量输入/结果、压力分类、来源常量、策略版本 | `ContextMessageShape` 等 6 型合同（消息/容量输入输出/压力/来源/版本）（见下「关键语义」） | 只带整数与**稳定身份**，不带正文；来源取值与 Runtime 的 `ContextEffectiveWindowSources` 逐字对齐 |
 | `ContextCapacityArithmetic.cs` | 容量算术与压力分类 | `ContextCapacityArithmetic.Resolve/Classify` | `effectiveInput = min(providerInputLimit, modelWindow − reservedOutput − safetyBuffer)`；回退预留必须记为 `fallback_output_reserve`，不得冒充用户预算；**先判硬边界再判软阈值** |
-| `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint`、`CandidateSelectionOptions`、`CandidateSelectionResult` | 前导 System 不可移除；最后 N 条与当前用户轮不可移除；只按完整会话单元移除（不拆 tool call 与 result）；`ProjectedUsedTokensExcludingSummary` **不是**提交后的值 |
-| `ContextCandidateApplicability.cs` | 严格适用校验（旧候选能否提交） | `ContextCandidateApplicability.Validate`、`FrozenCandidateDescriptor`、`CurrentContextDescriptor`、`CandidateApplicabilityVerdict` | 代次/revision/路由/工具/策略版本任一变化 ⇒ `stale_candidate`；保留后缀必须与当前历史**逐位一致**（新消息追加/中间插入/删改一律失效）；不做尾部拼接或自动 rebase |
+| `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint` + 选项/结果两型（见下「关键语义」） | 前导 System 不可移除；最后 N 条与当前用户轮不可移除；只按完整会话单元移除（不拆 tool call 与 result）；`ProjectedUsedTokensExcludingSummary` **不是**提交后的值 |
+| `ContextCandidateApplicability.cs` | 严格适用校验（旧候选能否提交） | `ContextCandidateApplicability.Validate` + 冻结/当前描述符与判定（见下「关键语义」） | 代次/revision/路由/工具/策略版本任一变化 ⇒ `stale_candidate`；保留后缀必须与当前历史**逐位一致**（新消息追加/中间插入/删改一律失效）；不做尾部拼接或自动 rebase |
 | `ContextNetGainAdmission.cs` | 净收益准入 | `ContextNetGainAdmission.Evaluate`、`NetGainInputs`、`NetGainDecision` | 必须用**真实摘要长度**重算 after；摘要为空/不缩小 ⇒ `no_gain`；加摘要后仍越界 ⇒ 不得提交；未达目标允许提交但必须如实记录 |
 | `ContextBackoffPolicy.cs` | 退避/去重判定 | `ContextBackoffPolicy.Decide`、`CandidateMaintenanceRecord`、`CandidateMaintenanceOutcomes` | **硬保护优先于任何退避**；同候选同代次上的 `applied` 记录不可信（成功应用应推进代次） |
+
+**关键语义（§2「文件索引」表·关键符号列逐字原文）**
+
+> 上表超长单元格已缩为语义摘要并以 `（见下「关键语义」）` 指回本段；下列为**逐字原文**（行序与上表一致），折行为软换行、字面不增删。
+
+- `ContextPolicyContracts.cs`
+  `ContextMessageShape`、`ContextCapacityInputs`、`ContextCapacityResult`、`ContextPressureDecision`、`ContextEffectiveWindowSources`、`ContextPolicyVersion`
+- `ContextCandidateSelector.cs`
+  `ContextCandidateSelector.Select/ComputeFingerprint`、`CandidateSelectionOptions`、`CandidateSelectionResult`
+- `ContextCandidateApplicability.cs`
+  `ContextCandidateApplicability.Validate`、`FrozenCandidateDescriptor`、`CurrentContextDescriptor`、`CandidateApplicabilityVerdict`
 
 ## 3. 不变量（改这个组件前先读）
 
