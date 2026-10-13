@@ -81,6 +81,11 @@ internal sealed class CapabilityHostHarness : IAsyncDisposable
 
     public string? LoopbackUrl { get; }
 
+    public IReadOnlyList<string> BoundAddresses => _app.Services
+        .GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>()
+        .Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()
+        ?.Addresses.ToArray() ?? [];
+
     public static async Task<CapabilityHostHarness> StartAsync(
         Action<CapabilityChannelOptionsBuilder>? configure = null)
     {

@@ -2,7 +2,7 @@
 title: 案例：桌面与 Core 启动
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-13
 status: active
 description: 先 dry-run 检查服务端当前识别出的 deterministic cases；该操作不会调用付费模型：
 categories: [docs, how-debug]
@@ -181,6 +181,10 @@ WPF 会生成 `PuddingDesktop_*_wpftmp.csproj`。若自定义 `BaseOutputPath` �
 运行中心的进程职责分为两层：`CoreProcessSupervisor` 只管理一次 Core 启停和进程树，`DesktopRuntimeOrchestrator` 管理异常恢复、退避、熔断和用户意图。默认策略是 2s/4s/8s 退避，60 秒窗口内允许 3 次恢复，继续失败进入 `CoreCircuitOpen`。用户点击“停止”、配置无效或 DataRoot 缺失都不得自动拉起。
 
 DesktopChild 的监听端口来自 `<DataRoot>/config/system.json` 的 `desktop.core.port`，必须为 `1–65535`，默认 `8080`。进程命令行应包含 `--urls http://0.0.0.0:<port>`，`PUDDING_DESKTOP_READY` 则报告 `http://127.0.0.1:<port>` 给 Desktop 控制链路。若启动失败，先用 `Get-NetTCPConnection -State Listen -LocalPort <port>` 判断端口占用，再看运行中心最近 stderr 中的 Kestrel bind 错误；系统不会静默回退到随机端口。局域网访问还需确认 Windows 防火墙允许该入站端口。
+
+启用 `Desktop:CapabilityChannel` 后出现 `capability channel preflight FAILED`，应先区分 REST 丢失与能力端点误判。Kestrel 的 `IServerAddressesFeature` 发布命名管道为 `http://pipe:/<name>`，不是 `\\.\pipe\<name>`；预检必须匹配完整管道名，不能只检查列表里是否有 `pipe`。REST 丢失仍需修正 `Listen*` 覆盖 `UseUrls` 的接线，不能跳过预检。运行中心中文日志乱码时，检查 `Program.cs` 是否在首条输出和日志初始化之前将 DesktopChild 的 `Console.OutputEncoding` 固定为无 BOM UTF-8；Desktop 的 stdout/stderr 读取端也使用 UTF-8。
+
+真实进程回归使用 `TestScripts/test-pudding-desktop-launcher.ps1 -CapabilityChannelEnabled`：脚本同时启用隔离 DesktopHome 与 DataRoot 的能力通道，Debug smoke 检查真实预检和中文日志，再由外部脚本判定 Core PID、数据租约与端口是否在 Shell 退出后释放。该脚本使用构建目录中的独立 Core；不要将测试指向 `D:\data`。
 
 定向验证：
 

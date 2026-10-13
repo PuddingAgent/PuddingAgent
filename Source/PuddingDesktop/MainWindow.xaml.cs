@@ -1324,6 +1324,15 @@ public sealed partial class MainWindow : Window
             var pid = _coordinator.RuntimeSnapshot.Session!.ProcessId;
             if (pid == Environment.ProcessId) throw new Exception("Core must be a separate process");
             pids.Add(pid); checks.Add("independent Core ready and Web workbench loaded");
+            if (_coordinator.RuntimeSnapshot.Session.CapabilityEndpoint is not null)
+            {
+                var startupLog = _coordinator.CoreLogBuffer.GetTail(300);
+                if (!startupLog.Contains("capability channel preflight ok", StringComparison.Ordinal)
+                    || !startupLog.Contains("能力端点已监听", StringComparison.Ordinal)
+                    || startupLog.Contains('\uFFFD'))
+                    throw new Exception("Capability preflight or redirected UTF-8 startup logs failed");
+                checks.Add("named-pipe capability preflight passed; redirected Chinese logs decoded as UTF-8");
+            }
             if (_tray?.Available != true) throw new Exception("Tray icon unavailable in lifecycle test");
             _coordinator.ApplyCloseBehavior(DesktopCloseBehavior.MinimizeToTray);
             await RequestCloseAsync(false);

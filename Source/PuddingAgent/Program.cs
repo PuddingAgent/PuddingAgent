@@ -1,6 +1,7 @@
 using Pudding.CapabilityBroker.AspNetCore;
 using PuddingHost.Hosting;
 using System.Text.Json;
+using System.Text;
 
 // ── PuddingAgent Console/DesktopChild Host (thin entry point) ──────
 // All composition root logic lives in PuddingHost;
@@ -13,11 +14,17 @@ using System.Text.Json;
 // Calling order: Parse args → CreateBuilder → Build → InitializeAsync →
 //                StartAsync → CaptureBoundAddresses → Ready signal
 
+var isDesktopChild = args.Contains("--desktop-child");
+if (isDesktopChild)
+{
+    // Desktop decodes both redirected streams as UTF-8. Set the producer encoding
+    // before any startup output or logger captures Console.Out/Console.Error.
+    Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+}
+
 // ── 启动阶段埋点（诊断「启动耗时」用）：stdout + 系统日志双通道，每阶段一行 ──
 var phases = StartupPhaseTracker.Start();
 phases.Mark(StartupPhases.ProcessStart);
-
-var isDesktopChild = args.Contains("--desktop-child");
 
 var options = isDesktopChild
     ? PuddingHostOptionsFactory.ForDesktopChild(args)

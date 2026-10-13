@@ -52,7 +52,7 @@ public sealed class CapabilityChannelHostTests
         var description = DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1, "core-1");
 
         var report = CapabilityChannelPreflight.Check(
-            addresses: ["http://127.0.0.1:5099", @"\\.\pipe\pudding-capability-abc"],
+            addresses: ["http://127.0.0.1:5099", "http://pipe:/pudding-capability-abc"],
             expectedRestAddresses: ["http://127.0.0.1:5099"],
             description);
 
@@ -66,7 +66,7 @@ public sealed class CapabilityChannelHostTests
     {
         // 这正是「Listen* 覆盖 UseUrls」的失败形态：REST 静默消失。
         var report = CapabilityChannelPreflight.Check(
-            addresses: [@"\\.\pipe\pudding-capability-abc"],
+            addresses: ["http://pipe:/pudding-capability-abc"],
             expectedRestAddresses: ["http://127.0.0.1:5099"],
             DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1, "core-1"));
 
@@ -88,7 +88,7 @@ public sealed class CapabilityChannelHostTests
 
         // 缺少 Core 实例 ID：不是致命错误，但重连语义会退化，必须提示。
         var noInstance = CapabilityChannelPreflight.Check(
-            addresses: [@"\\.\pipe\pudding-capability-abc"],
+            addresses: ["http://pipe:/pudding-capability-abc"],
             expectedRestAddresses: [],
             DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1));
 
@@ -107,6 +107,20 @@ public sealed class CapabilityChannelHostTests
         Assert.True(report.IsHealthy);
         Assert.Contains(report.Checks, check => check.Contains("未启用", StringComparison.Ordinal));
     }
+
+    [Theory]
+    [InlineData("http://pipe:/another-pipe")]
+    [InlineData("http://pipe")]
+    [InlineData("http://127.0.0.1:5099")]
+    public void Preflight_RejectsAnAddressThatDoesNotIdentifyTheExpectedPipe(string address)
+    {
+        var report = CapabilityChannelPreflight.Check(
+            [address], [], DesktopCapabilityEndpoint.NamedPipe("pudding-capability-abc", 1, "core-1"));
+
+        Assert.False(report.IsHealthy);
+        Assert.Single(report.Failures);
+        Assert.Contains("能力端点", report.Failures[0], StringComparison.Ordinal);
+    }
     [Fact]
     public async Task Host_WithNamedPipeChannel_KeepsServingHttp11RestEndpoints()
     {
@@ -116,6 +130,26 @@ public sealed class CapabilityChannelHostTests
 
         Assert.Equal(System.Net.HttpStatusCode.OK, health.StatusCode);
         Assert.Equal("ok", await health.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Preflight_WithRealNamedPipeListener_AcceptsKestrelBoundAddresses(bool alsoListenOnLoopback)
+    {
+        await using var harness = await CapabilityHostHarness.StartAsync(options =>
+        {
+            if (alsoListenOnLoopback)
+                options.LoopbackPort = CapabilityChannelOptionsBuilder.FreeLoopbackPort();
+        });
+        var description = DesktopCapabilityEndpoint.NamedPipe(
+            harness.Options.NamedPipeName!, DesktopProtocolVersion.Current, harness.Options.CoreInstanceId);
+
+        var report = CapabilityChannelPreflight.Check(
+            harness.BoundAddresses, [harness.RestUrl], description);
+
+        Assert.True(report.IsHealthy,
+            $"{report.Summary}; observed: {string.Join(", ", harness.BoundAddresses)}");
     }
 
     [Fact]
@@ -129,6 +163,12 @@ public sealed class CapabilityChannelHostTests
         });
 
         Assert.Equal(port, int.Parse(new Uri(harness.LoopbackUrl!).Port.ToString()));
+
+        var preflight = CapabilityChannelPreflight.Check(
+            harness.BoundAddresses, [harness.RestUrl],
+            DesktopCapabilityEndpoint.LoopbackHttp2(new Uri(harness.LoopbackUrl!),
+                DesktopProtocolVersion.Current, harness.Options.CoreInstanceId));
+        Assert.True(preflight.IsHealthy, preflight.Summary);
 
         var health = await harness.GetHealthAsync();
         Assert.Equal(System.Net.HttpStatusCode.OK, health.StatusCode);

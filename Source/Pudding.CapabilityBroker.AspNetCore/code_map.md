@@ -14,6 +14,7 @@
 | `CoreCapabilityAuthentication.cs` | 认证接缝 `ICoreCapabilityAuthenticator`（**默认拒绝一切**）、`StaticHeaderCapabilityAuthenticator`（测试/受控探针）、`ServerStreamDesktopChannel`（服务端流 → `ICoreDesktopChannel`，串行化写入） |
 | `CapabilityChannelConfiguration.cs` | **配置绑定与端点派生**（计划 §7/§9）：`Desktop:CapabilityChannel` 段 → `CapabilityChannelOptions` + 就绪描述。默认关闭；`Transport` 三态（`named-pipe` 缺省 / `loopback-h2c` / `both`）保证「配置与监听一致」；能力线名未知即整体失败；`Describe(...)` 只发布实际监听的端点且不含凭据 |
 | `CapabilityChannelTransport.cs` | 传输形态常量（配置取值真源） |
+| `CapabilityChannelPreflight.cs` | 启动后核对 REST 与能力监听地址；Named Pipe 按 Kestrel 的 `http://pipe:/<name>` 地址精确匹配管道名，缺失端点或实例 ID 即失败 |
 | `DesktopCapabilityService`（同文件内部类） | 唯一 gRPC 服务：**认证先于握手** → `broker.AcceptAsync` → `await session.Completion` |
 
 ## 实测约束（装配产品组合根前必读）
@@ -24,7 +25,7 @@
    或者改用「复用既有监听器的 `Http1AndHttp2`」方案。该约束由
    `KestrelListenOverridesUseUrls_SoTheAssemblyBindsBothExplicitly` 与
    `Host_WithNamedPipeChannel_KeepsServingHttp11RestEndpoints` 两条测试固定下来。
-2. **命名管道端点也会出现在地址列表里**（形如 `http://pipe`，`Uri.Port` 会是默认 80）：
+2. **命名管道端点也会出现在地址列表里**（形如 `http://pipe:/<name>`，不是 Win32 的 `\\.\pipe\<name>`）：
    任何按地址列表探测端口的代码都要排除它。
 3. **认证失败不产生会话**：被拒的连接不会进入 Broker 的注册表（测试断言 `Sessions` 为空）。
 4. 同一 Desktop 的第二条连接在第一条活跃时被拒（`InvalidArgument`），与 Broker 的单实例传输策略一致。

@@ -79,7 +79,9 @@ public static class CapabilityChannelPreflight
 
     private static string ExpectedAddress(DesktopCapabilityEndpoint description) =>
         description.Kind == DesktopCapabilityEndpointKind.NamedPipe
-            ? $@"\\.\pipe\{description.Address}"
+            // Kestrel publishes a URI-shaped address, not the Win32 pipe path.
+            // Keep the pipe name in the comparison so another pipe cannot pass preflight.
+            ? $"http://pipe:/{description.Address}"
             : description.Address;
 
     /// <summary>宽松比较：忽略大小写与结尾斜杠，兼容 `http://127.0.0.1:5000` 与 `http://127.0.0.1:5000/`。</summary>
