@@ -1,0 +1,24 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!--
+    Component tests for PuddingBrowser.Authorization (组件化交付规程 S2/S3).
+
+    Boundary rule: this test project MUST reference PuddingBrowser.Authorization ONLY.
+    It must never reference PuddingHost / PuddingRuntime / PuddingAgent / Pudding.DesktopService /
+    PuddingDesktop / PuddingBrowser.WebView2 / PuddingBrowser.Automation, so the target-session
+    state machine can be built and tested without a running host, a WebView2 runtime, or a UI thread.
+    The boundary is asserted at runtime by ComponentBoundaryTests.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingBrowser.Authorization\PuddingBrowser.Authorization.csproj" />
+  </ItemGroup>
+
+</Project>

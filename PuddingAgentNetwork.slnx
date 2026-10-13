@@ -1,9 +1,10 @@
-﻿<Solution>
+<Solution>
   <Folder Name="/Source/">
     <Project Path="Source/HarnessAgent.Core/HarnessAgent.Core.csproj" />
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
     <Project Path="Source/PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
     <Project Path="Source/PuddingBrowser.AgentTools/PuddingBrowser.AgentTools.csproj" />
+  <Project Path="Source/PuddingBrowser.Authorization/PuddingBrowser.Authorization.csproj" />
     <Project Path="Source/PuddingBrowser.Automation/PuddingBrowser.Automation.csproj" />
     <Project Path="Source/PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj" />
     <Project Path="Source/PuddingBrowser.WebView2/PuddingBrowser.WebView2.csproj" />
@@ -60,7 +61,8 @@
     <Project Path="Source/Pudding.DesktopConnectionTests/Pudding.DesktopConnectionTests.csproj" />
     <Project Path="Source/Pudding.DesktopServiceTests/Pudding.DesktopServiceTests.csproj" />
     <Project Path="Tests/PuddingHost.Tests/PuddingHost.Tests.csproj" />
-    <Project Path="Source/PuddingBrowser.AutomationTests/PuddingBrowser.AutomationTests.csproj" />
+    <Project Path="Source/PuddingBrowser.AuthorizationTests/PuddingBrowser.AuthorizationTests.csproj" />
+  <Project Path="Source/PuddingBrowser.AutomationTests/PuddingBrowser.AutomationTests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
     <Project Path="Source/PuddingCodeIndexTests/PuddingCodeIndexTests.csproj" />
     <Project Path="Source/PuddingContextPolicyTests/PuddingContextPolicyTests.csproj" />

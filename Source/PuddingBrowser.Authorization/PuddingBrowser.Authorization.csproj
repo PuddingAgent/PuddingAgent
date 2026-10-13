@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>PuddingBrowser.Authorization</RootNamespace>
+    <AssemblyName>PuddingBrowser.Authorization</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Agent 浏览器目标授权组件（方案 Docs/11_design/浏览器控制简化架构方案-2026-10-13.md §3/§10.5）。
+
+    唯一职责：把「用户在 Desktop 上选定某页」翻译成**一个**授权判定结果，
+    并保证该判定只在「桥处于已确认世代 + 目标是用户选中的那一页 + 用户未接管」时成立。
+
+    边界（组件化交付规程 S1/S4）：纯逻辑组件，只允许引用 Pudding.Contracts。
+    它**不得**引用 UI、宿主、浏览器驱动或消费者：
+      UI/驱动 = PuddingBrowser.WebView2 / PuddingBrowser.WinUI / PuddingDesktop*
+      映射    = Pudding.DesktopService / Pudding.DesktopSurface.Browser / PuddingBrowser.Automation
+      宿主    = PuddingHost / PuddingRuntime / PuddingAgent
+    依赖方向由编译期强制（下面的 EnforceAgentTargetBoundary 目标），不靠文档约定。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingBrowser.AuthorizationTests" />
+  </ItemGroup>
+
+  <!--
+    编译期边界门禁，与 PuddingBrowser.Automation 同构，且**可「取红」**：
+    临时加一条指向消费方的引用 ⇒ 本工程立刻构建失败；
+    临时加一条 PackageReference ⇒ 同样失败。
+  -->
+  <Target Name="EnforceAgentTargetBoundary" BeforeTargets="ResolveReferences">
+    <ItemGroup>
+      <ForbiddenAgentTargetReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'Pudding.Contracts'" />
+    </ItemGroup>
+    <Error Condition="'@(ForbiddenAgentTargetReference)' != ''"
+           Text="PuddingBrowser.Authorization may reference Pudding.Contracts ONLY (component boundary, S1/S4). Forbidden reference(s): @(ForbiddenAgentTargetReference)" />
+    <Error Condition="'@(PackageReference)' != ''"
+           Text="PuddingBrowser.Authorization is a pure-logic component and must stay package-free. Forbidden PackageReference: @(PackageReference)" />
+  </Target>
+
+</Project>
