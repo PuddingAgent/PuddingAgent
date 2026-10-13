@@ -28,6 +28,25 @@ const mockedGetAgentMessageProcessItems = jest.requireMock(
 ).getAgentMessageProcessItems as jest.Mock;
 
 describe('useTurnSurfaceStore (real fixture)', () => {
+  it('routes continuation snapshots by canonical window instead of the old command alias', () => {
+    const view = {
+      ...conversation,
+      messages: [{ messageId: 'old-command', turnId: 'old-turn', runId: 'shared-run', role: 'agent', status: 'succeeded', processItems: [] }],
+      activeRun: {
+        runId: 'shared-run', commandClientId: 'old-command', status: 'running',
+        outputSnapshot: {
+          markdown: 'new output',
+          window: { turnId: 'new-turn', throughSequence: 10, minSequence: 10, maxSequence: 10, hasMoreBefore: false },
+          processItems: [{ id: 'new-event', kind: 'text', text: 'new output', sequence: 10, timestamp: '2026-10-13T00:00:00Z' }],
+        },
+      },
+    };
+    const { result } = renderHook(() => useTurnSurfaceStore({
+      workspaceId: 'default', agentId: 'agent', conversationView: view,
+    }));
+    expect(result.current.getSurfaceProjection('new-turn')?.nodes.some((node) => node.kind === 'message' && node.text === 'new output')).toBe(true);
+    expect(result.current.getSurfaceProjection('old-turn')?.nodes).toHaveLength(0);
+  });
   beforeEach(() => {
     mockedGetAgentMessageProcessItems.mockClear();
     mockedGetAgentMessageProcessItems.mockImplementation(

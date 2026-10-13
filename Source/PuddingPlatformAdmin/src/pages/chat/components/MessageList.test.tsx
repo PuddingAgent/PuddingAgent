@@ -14,10 +14,11 @@ jest.mock('../styles', () => {
   };
 });
 
-jest.mock('./MessageRow', () => ({ block, onContextMenu }: any) => (
+jest.mock('./MessageRow', () => ({ block, onContextMenu, executionFlowProjection }: any) => (
   <div
     data-testid="message-row"
     data-role={block.role}
+    data-projection={executionFlowProjection ? 'yes' : 'no'}
     onContextMenu={(event) =>
       onContextMenu?.(
         event,
@@ -83,6 +84,19 @@ const createTurn = (
     isStreaming: false,
     renderMode: 'structured' as const,
   },
+});
+
+it('sends a growing Turn projection only to its latest message row', () => {
+  const earlier = createTurn('turn-1', 1000, '', 'earlier');
+  const latest = createTurn('turn-1', 2000, '', 'latest');
+  latest.assistant.id = 'latest-message';
+  const turns = [earlier, latest];
+  const getTurnProjection = () => ({ nodes: [], roots: [], terminal: false } as any);
+  const { rerender } = render(<MessageList {...baseProps} turns={turns} getTurnProjection={getTurnProjection} />);
+  expect(screen.getAllByTestId('message-row').map((row) => row.getAttribute('data-projection'))).toEqual(['no', 'yes']);
+  rerender(<MessageList {...baseProps} turns={turns} getTurnProjection={() => ({ nodes: [], roots: [], terminal: false } as any)} />);
+  expect(screen.getAllByTestId('message-row')[0].textContent).toContain('earlier');
+  expect(screen.getAllByTestId('message-row').map((row) => row.getAttribute('data-projection'))).toEqual(['no', 'yes']);
 });
 
 describe('MessageList scroll performance', () => {

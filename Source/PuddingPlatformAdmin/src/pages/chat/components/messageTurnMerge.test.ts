@@ -277,6 +277,31 @@ const createActiveRun = (
   ...overrides,
 });
 
+describe('live output ownership', () => {
+  it('updates the last message of a Turn and leaves earlier messages untouched', () => {
+    const earlier = createLocalTurn({ answerMarkdown: 'earlier', status: 'success', isStreaming: false });
+    const latest = { ...createLocalTurn({ id: 'latest', answerMarkdown: 'live' }), userMessage: { ...earlier.userMessage, text: '' } };
+    const run = createActiveRun({ runId: 'turn-1', outputSnapshot: { markdown: 'live output', processItems: [] } });
+    const merged = mergeActiveRunIntoTurns([earlier, latest], run, 'Pudding');
+    expect(merged[0]).toBe(earlier);
+    expect(merged[1].assistant.answerMarkdown).toBe('live output');
+    expect(merged[1].assistant.isStreaming).toBe(true);
+  });
+
+  it('uses the snapshot canonical Turn instead of an old reply sharing the command/run', () => {
+    const history = createProjectedHistoryTurns();
+    const run = createActiveRun({ outputSnapshot: {
+      markdown: 'new continuation', processItems: [],
+      window: { turnId: 'new-turn', throughSequence: 20, minSequence: 20, maxSequence: 20, hasMoreBefore: false },
+    } });
+    const merged = mergeActiveRunIntoTurns(history, run, 'Pudding');
+    expect(merged).toHaveLength(history.length + 1);
+    expect(merged[1]).toBe(history[1]);
+    expect(merged[2].turnId).toBe('new-turn');
+    expect(merged[2].assistant.isStreaming).toBe(true);
+  });
+});
+
 describe('BUG3 同一条回复不得渲染成两张卡片', () => {
   it('本地 turn 没有用户正文时，turnId 身份仍可与投影匹配（不再被当作新 turn）', () => {
     const projected = createProjectedHistoryTurns();

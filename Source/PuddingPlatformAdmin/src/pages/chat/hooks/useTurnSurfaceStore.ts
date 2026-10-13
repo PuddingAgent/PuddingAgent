@@ -204,7 +204,8 @@ export function useTurnSurfaceStore({
 
   // 1) 投影快照 → 别名/状态/activeRun 事件合流。
   useEffect(() => {
-    if (!conversationView) return;
+    // Initialize/reset the session before ingesting its first snapshot.
+    if (!scheduler || !conversationView) return;
     const view = conversationView;
     let mutated = false;
     for (const message of view.messages) {
@@ -224,6 +225,7 @@ export function useTurnSurfaceStore({
     const activeRun = view.activeRun;
     if (activeRun) {
       const turnId =
+        activeRun.outputSnapshot.window?.turnId ??
         store.resolveTurnId(activeRun.commandClientId) ??
         store.resolveTurnId(activeRun.runId);
       if (turnId) {
@@ -239,7 +241,7 @@ export function useTurnSurfaceStore({
       }
     }
     if (mutated) notifyMutated();
-  }, [conversationView, store, notifyMutated]);
+  }, [conversationView, store, notifyMutated, scheduler]);
 
   // 2) 完成 turn 懒水合（有界）：把「近视口 + 可水合」的期望集合交给调度器
   //    对账。调度器保证全页未完成请求 ≤ capacity，任一槽位结束自动补位，

@@ -69,6 +69,48 @@ const diagnosticCodes = (
 ): string[] => result.diagnostics.map((diagnostic) => diagnostic.code);
 
 describe('canonical merge（切片 1 纯函数）', () => {
+  it('inserts late materialized history in server order and repairs cached order', () => {
+    const first = userMessage();
+    const reply = agentMessage();
+    const next = userMessage({ messageId: 'next', content: '继续' });
+    const current = conversation({ messages: [first, next] });
+    const candidate = conversation({ messages: [first, reply, next], eventCursor: 13 });
+    const merged = mergeCanonicalConversation(current, candidate).conversation;
+    expect(merged.messages.map((m) => m.messageId)).toEqual(['user-1', 'agent-1', 'next']);
+    const badOrder = { ...candidate, messages: [first, next, reply] };
+    expect(isConversationEquivalent(badOrder, candidate)).toBe(false);
+    expect(mergeCanonicalConversation(badOrder, candidate).conversation.messages).toEqual(candidate.messages);
+    expect(mergeCanonicalConversation(merged, candidate).changed).toBe(false);
+  });
+
+  it('keeps paged-out history before shared anchors and rejects stale reordering', () => {
+    const messages = [userMessage(), agentMessage(), userMessage({ messageId: 'next' })];
+    const current = conversation({ messages, eventCursor: 20 });
+    const candidate = conversation({ messages: messages.slice(1), eventCursor: 21 });
+    expect(mergeCanonicalConversation(current, candidate).conversation.messages).toBe(messages);
+    const stale = conversation({ messages: [...messages].reverse(), eventCursor: 19 });
+    expect(mergeCanonicalConversation(current, stale).conversation.messages).toBe(messages);
+  });
+
+  it('updates same-ID run output at the same cursor without rebuilding history', () => {
+    const activeRun: NonNullable<AgentConversationView['activeRun']> = {
+      runId: 'run-1', status: 'running',
+      workspaceId: 'default', ownerUserId: 'single-user', agentId: 'agent-a',
+      mainSessionId: 'session-a', statusText: 'running', summary: '', eventCursor: 12,
+      startedAt: '2026-06-07T00:00:00Z', updatedAt: '2026-06-07T00:00:01Z',
+      outputSnapshot: { markdown: 'one', processItems: [] },
+    };
+    const current = conversation({ activeRun });
+    const candidate = conversation({ activeRun: {
+      ...activeRun, outputSnapshot: { markdown: 'one two', processItems: [] },
+    } });
+    expect(isConversationEquivalent(current, candidate)).toBe(false);
+    const result = mergeCanonicalConversation(current, candidate);
+    expect(result.changed).toBe(true);
+    expect(result.conversation.activeRun?.outputSnapshot.markdown).toBe('one two');
+    expect(result.conversation.messages).toBe(current.messages);
+    expect(mergeCanonicalConversation(result.conversation, candidate).changed).toBe(false);
+  });
   it('① 同一 messageId、条数不变、正文变长 ⇒ 采纳更长正文（「晚一条」最小复现）', () => {
     const current = conversation({
       messages: [userMessage(), agentMessage({ content: 'partial' })],

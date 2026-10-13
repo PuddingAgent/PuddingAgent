@@ -411,7 +411,7 @@ const createActiveRunTurn = (
 ): ChatTurn => {
   const timestamp = toTimestamp(activeRun.startedAt || activeRun.updatedAt);
   return {
-    turnId: activeRun.runId,
+    turnId: activeRun.outputSnapshot.window?.turnId || activeRun.runId,
     source: {
       sourceId: activeRun.agentId || 'agent',
       sourceType: 'agent',
@@ -904,9 +904,15 @@ export const mergeActiveRunIntoTurns = (
     agentName,
     activeRunMarkdown,
   );
-  const existingIndex = turns.findIndex(
-    (turn) => turn.turnId === activeRun.runId,
-  );
+  // A run may span multiple canonical Turns, and a Turn may have multiple
+  // persisted messages. Only its latest row can own the live output.
+  let existingIndex = -1;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    if (turns[index].turnId === activeTurn.turnId) {
+      existingIndex = index;
+      break;
+    }
+  }
   if (existingIndex >= 0) {
     return mergeActiveRunIntoIndex(turns, existingIndex, activeTurn);
   }
@@ -915,6 +921,10 @@ export const mergeActiveRunIntoTurns = (
   if (matchingPendingIndex >= 0) {
     return mergeActiveRunIntoIndex(turns, matchingPendingIndex, activeTurn);
   }
+
+  // Explicit canonical identity must not fall back to an earlier command's
+  // materialized reply (Goal continuations can share the command/run).
+  if (activeRun.outputSnapshot.window?.turnId) return [...turns, activeTurn];
 
   const lastTurn = turns[turns.length - 1];
   if (
@@ -1028,7 +1038,7 @@ const MessageList: React.FC<MessageListProps> = ({
   const projectedTurns = useMemo(
     () =>
       buildProjectedTurns(conversationView, selectedAgent?.name || 'Pudding'),
-    [conversationView, selectedAgent?.name],
+    [conversationView?.messages, selectedAgent?.name],
   );
   const hasProjectedConversation = Boolean(
     conversationView && (projectedTurns.length > 0 || activeRun),
@@ -1098,16 +1108,30 @@ const MessageList: React.FC<MessageListProps> = ({
     return matching[matching.length - 1]?.id;
   }, [parentDelegationActivity, projection.activeItemId, projection.items]);
 
+  // Turn-wide canonical content has one owner. Passing it to every persisted
+  // message in that Turn overwrites old bubbles and renders the same growing
+  // Markdown/tool tree multiple times on every stream update.
+  const projectionOwnerByTurn = useMemo(() => {
+    const owners = new Map<string, string>();
+    for (const item of projection.items) {
+      if (item.kind === 'message' && item.block.role === 'agent') {
+        owners.set(item.block.turnId, item.id);
+      }
+    }
+    return owners;
+  }, [projection.items]);
+
   const viewportItems = useMemo(
     () =>
       projection.items.map((item) => {
         if (item.kind !== 'message' || item.block.role !== 'agent') return item;
+        if (projectionOwnerByTurn.get(item.block.turnId) !== item.id) return item;
         const renderWeight = getExecutionFlowRenderWeight(
           getTurnProjection?.(item.block.turnId),
         );
         return renderWeight > 0 ? { ...item, renderWeight } : item;
       }),
-    [getTurnProjection, projection.items],
+    [getTurnProjection, projection.items, projectionOwnerByTurn],
   );
 
   const viewport = useMessageViewportRuntime({
@@ -1249,7 +1273,8 @@ const MessageList: React.FC<MessageListProps> = ({
         onTranscriptModeChange={onTranscriptModeChange}
         focusView={focusView}
         executionFlowProjection={
-          item.block.role === 'agent'
+          item.block.role === 'agent' &&
+          projectionOwnerByTurn.get(item.block.turnId) === item.id
             ? getTurnProjection?.(item.block.turnId)
             : undefined
         }

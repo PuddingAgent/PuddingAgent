@@ -145,6 +145,16 @@ const fingerprintKey = (fingerprint: MessageFingerprint): string =>
     fingerprint.structureHash,
   ].join('|');
 
+// A run keeps its ID while its output, process window and status advance.
+const activeRunsEqual = (
+  a: AgentConversationView['activeRun'],
+  b: AgentConversationView['activeRun'],
+): boolean => a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+const messageOrderKey = (message: ConversationMessageView): string =>
+  resolveMessageIdentity(message).key ??
+  `anonymous:${fingerprintKey(buildMessageFingerprint(message))}`;
+
 /**
  * 完整性比较：先过程块数、后正文字符数。返回值 >0 表示 a 更完整，0 表示完全平局。
  * 只做「不得减少」的单调判定，不引入状态序（见文件头第 2 条事实）。
@@ -282,10 +292,14 @@ export const isConversationEquivalent = (
   }
   if ((current.eventCursor ?? 0) !== (candidate.eventCursor ?? 0)) return false;
   if (
-    (current.activeRun?.runId ?? null) !== (candidate.activeRun?.runId ?? null)
+    !activeRunsEqual(current.activeRun, candidate.activeRun)
   ) {
     return false;
   }
+  const currentOrder = (current.messages ?? []).map(messageOrderKey);
+  const candidateOrder = (candidate.messages ?? []).map(messageOrderKey);
+  if (currentOrder.length !== candidateOrder.length ||
+      currentOrder.some((key, index) => key !== candidateOrder[index])) return false;
   const currentIndex = indexMessagesByKey(current.messages ?? []);
   const candidateIndex = indexMessagesByKey(candidate.messages ?? []);
   if (currentIndex.size !== candidateIndex.size) return false;
@@ -559,6 +573,10 @@ const mergeActiveRun = (
   candidateIsNewer: boolean,
 ) => {
   if (candidateIsNewer) return candidate.activeRun ?? null;
+  if ((candidate.eventCursor ?? 0) < (current.eventCursor ?? 0)) return current.activeRun ?? null;
+  if (current.activeRun && candidate.activeRun &&
+      current.activeRun.runId === candidate.activeRun.runId &&
+      candidate.activeRun.eventCursor < current.activeRun.eventCursor) return current.activeRun;
   // 同游标或候选较旧：无法证明 run 已结束 ⇒ 保守保留仍存在的那一个。
   return candidate.activeRun ?? current.activeRun ?? null;
 };
@@ -672,6 +690,42 @@ export const mergeCanonicalConversation = (
   }
 
   const candidateIsNewer = candidateCursor > currentCursor;
+  // Follow the latest server sequence, including late materialization and
+  // corrected ordering. Retained history missing from a paged candidate stays
+  // before its next shared anchor; never sort by a long-running run's start time.
+  const preferred = candidateCursor >= currentCursor ? candidateMessages : currentMessages;
+  const secondary = candidateCursor >= currentCursor ? currentMessages : candidateMessages;
+  const byKey = new Map(mergedMessages.map((message) => [messageOrderKey(message), message]));
+  const preferredKeys = new Set(preferred.map(messageOrderKey));
+  const hasSharedAnchor = secondary.some((message) => preferredKeys.has(messageOrderKey(message)));
+  const before = new Map<string, string[]>();
+  let pending: string[] = [];
+  for (const message of secondary) {
+    const key = messageOrderKey(message);
+    if (preferredKeys.has(key)) {
+      if (pending.length) before.set(key, pending);
+      pending = [];
+    } else {
+      pending.push(key);
+    }
+  }
+  const ordered: ConversationMessageView[] = [];
+  const emitted = new Set<string>();
+  const emit = (key: string) => {
+    const message = byKey.get(key);
+    if (message && !emitted.has(key)) {
+      emitted.add(key);
+      ordered.push(message);
+    }
+  };
+  if (!hasSharedAnchor) mergedMessages.forEach((message) => emit(messageOrderKey(message)));
+  for (const message of preferred) {
+    const key = messageOrderKey(message);
+    before.get(key)?.forEach(emit);
+    emit(key);
+  }
+  pending.forEach(emit);
+  if (ordered.some((message, index) => message !== currentMessages[index])) messagesChanged = true;
   const eventCursor = Math.max(currentCursor, candidateCursor);
   const activeRun = mergeActiveRun(current, candidate, candidateIsNewer);
   const updatedAt = candidateIsNewer
@@ -681,7 +735,7 @@ export const mergeCanonicalConversation = (
   const changed =
     messagesChanged ||
     eventCursor !== currentCursor ||
-    (activeRun?.runId ?? null) !== (current.activeRun?.runId ?? null) ||
+    !activeRunsEqual(activeRun, current.activeRun) ||
     updatedAt !== current.updatedAt;
 
   if (!changed) {
@@ -692,7 +746,7 @@ export const mergeCanonicalConversation = (
   return {
     conversation: {
       ...current,
-      messages: mergedMessages,
+      messages: messagesChanged ? ordered : current.messages,
       eventCursor,
       activeRun,
       updatedAt,
