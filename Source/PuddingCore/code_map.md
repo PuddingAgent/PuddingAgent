@@ -19,6 +19,7 @@
 | `Scheduling/TaskBacklogRefinementContracts.cs` | opt-in Backlog 只读合同 | `TaskBacklogRefinementContracts` | `Scheduling/TaskAutoDispatchContracts.cs` | ReadyCandidate/NeedsRefinement；不代表状态已迁移 |
 | `Scheduling/TaskExecutionTrackingContracts.cs` | 自动 Task 只读五态跟踪 | `TaskExecutionTrackingContracts` | `Scheduling/TaskAutoDispatchContracts.cs` | 跨层事实摘要；不授权 repair/requeue/release |
 | `Tasks/WorkspaceTaskModels.cs` + `Tasks/TaskPersistenceContracts.cs` | Task 状态与持久合同 | `WorkspaceTaskModels`、`TaskPersistenceContracts` | `Tasks/WorkspaceTaskModels.cs` | 含结构化 taskType、能力、provider/model 要求、显式 Agent fallback 与默认关闭的 auto-dispatch opt-in |
+
 ## 抽象层
 
 | 文件/目录 | 用途 |
@@ -40,10 +41,10 @@
 
 ## 外部 API 安全合同（ADR-075 / ADR-082）
 
-| 文件 | 用途 |
-|------|------|
-| `Security/ExternalAccessTokenContracts.cs` | opaque Token 创建/查询合同、claims 与认证 scheme 常量；External principal 不获得 Admin role |
-| `Security/ExternalTaskApiScopes.cs` | External API v1 scope 唯一白名单；除 `tasks.*` 外包含 `workspaces.read`、`agents.read`、`messages.send`，无 `*` 超级权限 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Security/ExternalAccessTokenContracts.cs` | opaque Token 合同与认证 scheme 常量 | `ExternalAccessTokenContracts` | `Security/ExternalTaskApiScopes.cs` | 创建/查询合同与 claims；External principal 不获得 Admin role |
+| `Security/ExternalTaskApiScopes.cs` | External API v1 scope 唯一白名单 | `ExternalTaskApiScopes` | `Security/ExternalAccessTokenContracts.cs` | 除 tasks.* 外含 workspaces.read、agents.read、messages.send；无 * 超级权限 |
 
 ## 模型（Models/）
 
@@ -73,6 +74,7 @@
 | `LlmMessageSequenceNormalizer.cs` | 消息序列规范化 | `LlmMessageSequenceNormalizer` | `ChatMessage.cs` | — |
 
 LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布（候选测量不得改写准备快照）；`CaptureLlmRequest` = 计量 + 发布 `currentPreparedRequest`；`RecordProviderUsage` 带 `LlmCallPurposes`，只有主请求用途才允许改写准备快照/参与安全校准/写 `MeasuredRequestUsage`（`lastMeasuredRequest`），辅助与摘要调用单独落 `TryGetLastAuxiliaryMeasurement`；`Total` 与 `Prompt` 分开保存。
+
 ## LLM 网关（Core/）
 
 | 文件 | 用途 |
@@ -90,9 +92,9 @@ LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布�
 
 ## 推理紧凑编解码（Services/）
 
-| 文件 | 用途 |
-|------|------|
-| `Services/ReasoningCompactCodec.cs` | 🆕 P1-3 推理紧凑编解码：v2 紧凑 JSON（UTF-8 字节偏移 + delta 时间戳 + SHA-256 hash），旧格式兼容、hash fail-open、UTF-8 多字节严格边界 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/ReasoningCompactCodec.cs` | 推理紧凑编解码（P1-3） | `ReasoningCompactCodec` | `Services/` | v2 紧凑 JSON（UTF-8 字节偏移 + delta 时间戳 + SHA-256 hash）；旧格式兼容；hash fail-open；UTF-8 多字节严格边界 |
 
 ## Agent 定义
 
@@ -133,19 +135,25 @@ LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布�
 |---|---|---|---|---|
 | `Tools/` | 工具接口与基类目录 | — | — | — |
 | `Tools/PuddingToolContracts.cs` | 原生 Tool 描述、反序列化与执行基类 | `PuddingToolContracts` | `Tools/` | 当前结果仍为 Output/Error string；deepseek-harness 对齐将演进 input/output schema、canonical value、结构化错误与不可变调用身份 |
+
 ## 检索合同（Tools/Retrieval/，ADR-089 U0）
 
-| 文件 | 用途 |
-|------|------|
-| `Tools/Retrieval/RetrievalContracts.cs` | 统一检索合同：`RetrievalCoverage`（`Complete/Partial/Truncated/Timeout/ContractError`，`IsComplete` 仅由 `Status==Complete` 唯一推导；Partial 必须给出原因）+ `RetrievalMatchOutcome`（`NoMatch/Match/Timeout`，超时不降级为 NoMatch） |
-| `Tools/Retrieval/RetrievalMatcher.cs` | 唯一匹配语义实现：字面量 `Ordinal` 与正则 `CultureInvariant` 归一；`TryMatch(line, ct)` 返回三态并把 `RegexMatchTimeoutException` 映射为 `Timeout`（不吞不抛），取消传播 `OperationCanceledException`；`IsMatch` 为兼容层（超时返回 false，须改用 `TryMatch`） |
-| `Tools/Retrieval/RetrievalGlobMatcher.cs` | 共享 glob 匹配合同（ADR-089 U0-G1，`public static`）：`Matches/MatchesFileName/MatchesRelativePath/HasWildcards/Normalize`；`null`/空/全空白匹配一切；`**/`、`**\`、前导 `**` 单次剥离；通配符仅 `*`（任意长度可 0）与 `?`（恰好一个），`[ ] { }` 按字面；不含分隔符→比对文件名，含分隔符→比对相对路径（两侧分隔符归一 `/`）；无通配符→精确比较（禁子串包含）；`*`/`?` 不跨 `/`；整串 `*.*` ≡ `*`（规范 3a，父级裁决：漏检优先 + SearchGrepTool 默认 `filePattern`）；大小写由 `ignoreCase` 控制（默认 true，恒用 Ordinal/CultureInvariant）；正则编译 + 有界缓存 512 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Tools/Retrieval/RetrievalContracts.cs` | 统一检索合同 | `RetrievalContracts`、`RetrievalCoverage`、`RetrievalMatchOutcome` | `Tools/Retrieval/RetrievalMatcher.cs` | IsComplete 仅由 Status==Complete 推导，Partial 必给原因；Complete/Partial/Truncated/Timeout/ContractError；MatchOutcome 为 NoMatch/Match/Timeout，超时不降级 |
+| `Tools/Retrieval/RetrievalMatcher.cs` | 唯一匹配语义实现 | `RetrievalMatcher`、`TryMatch(line, ct)` | `Tools/Retrieval/RetrievalContracts.cs` | 字面量 Ordinal / 正则 CultureInvariant 归一；TryMatch 三态且 RegexMatchTimeoutException→Timeout（不吞不抛）、取消传播 OperationCanceledException；IsMatch 为兼容层（超时 false） |
+| `Tools/Retrieval/RetrievalGlobMatcher.cs` | 共享 glob 匹配合同（ADR-089 U0-G1） | `RetrievalGlobMatcher` | `Tools/Retrieval/RetrievalMatcher.cs` | 契约与逐条边界见本表后注；判定优先级以「漏检优先」为准 |
+
+RetrievalGlobMatcher 合同：`public static`，API 为 `Matches/MatchesFileName/MatchesRelativePath/HasWildcards/Normalize`；`null`/空/全空白匹配一切；`**/`、`**\`、前导 `**` 单次剥离。
+通配符仅 `*`（任意长度可 0）与 `?`（恰好一个），`[ ] { }` 按字面；不含分隔符→比对文件名，含分隔符→比对相对路径（两侧分隔符归一 `/`）；无通配符→精确比较（禁子串包含）；`*`/`?` 不跨 `/`。
+整串 `*.*` ≡ `*`（规范 3a，父级裁决：漏检优先 + SearchGrepTool 默认 `filePattern`）；大小写由 `ignoreCase` 控制（默认 true，恒用 Ordinal/CultureInvariant）；正则编译 + 有界缓存 512。
 
 ## 存储管理契约（Storage/）
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `StorageMaintenanceContracts.cs` | Core 数据库/索引明细与清理契约 | `StorageMaintenanceContracts`、`IStorageMaintenanceService` | `Storage/` | 含语义清理目标、十分钟预览令牌与执行结果；Desktop 只通过 HTTP 使用 |
+
 ## 任务系统契约（Tasks/）
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
@@ -159,16 +167,17 @@ LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布�
 | `Tasks/TaskAdminContracts.cs` | 看板契约（无依赖示 (no dependencies)、遇环示 (cycle detected)） | `IWorkspaceTaskAdminService`、`TaskAdminGetResult` | `Tasks/TaskDependencyContracts.cs` | 结果携 dependencies/dependency_tree/children；depends_on_task_ids 追加且幂等，自引用/成环/缺前置 fail-closed |
 | `Tasks/TaskDependencyContracts.cs` | finish-to-start 依赖契约 | `ITaskDependencyStore` | `Tasks/TaskAdminContracts.cs` | Add/Remove/List/Evaluate + Satisfied/Waiting/Broken 评估 |
 | `Tasks/ActiveTaskRuntimeContext.cs` | ActiveTask 运行时上下文 | `ActiveTaskRuntimeContext` | `Tasks/TaskDispatchModels.cs` | 由派发链注入 ToolExecutionContext，含 ExpectedVersion |
+
 ## 自动调度契约（Scheduling/）
 
-| 文件 | 用途 |
-|------|------|
-| `Scheduling/AgentAvailabilityModels.cs` | 保守持久 Availability 状态、busy reason、版本/TTL 快照与 Store 边界 |
-| `Scheduling/AgentExecutionReservationContracts.cs` | 单 Agent 自动工作 Reservation、lease 与 fencing token 契约 |
-| `Scheduling/ExecutionWindowModels.cs` | Allow/Defer/Unknown 窗口裁决及 route/profile/TTL 快照 |
-| `Scheduling/TaskAutoDispatchContracts.cs` | evaluate-only 候选 verdict，携带 Task/Availability/Conversation/Window、Agent route SHA 与 execution-plan SHA/version 事实 |
-| `Scheduling/TaskExecutionPlanContracts.cs` | 版本化 `TaskExecutionPlanSnapshot`、Explore/Plan/Change/Test/Review WorkUnit、依赖/冲突范围与轮次/工具/时长/token/cost 预算合同 |
-| `Scheduling/TaskExecutionTrackingContracts.cs` | Task→Plan/WorkUnit→Goal/Execution 五态健康投影、outbox identity 与有界 repair coordinator 合同；写入权限仅授予独立白名单 repair 实现 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Scheduling/AgentAvailabilityModels.cs` | 保守持久 Availability 状态模型 | `AgentAvailabilityModels` | `Scheduling/AgentExecutionReservationContracts.cs` | busy reason、版本/TTL 快照与 Store 边界 |
+| `Scheduling/AgentExecutionReservationContracts.cs` | 自动工作 Reservation 与 lease 契约 | `AgentExecutionReservationContracts` | `Scheduling/AgentAvailabilityModels.cs` | 单 Agent 粒度；lease 与 fencing token |
+| `Scheduling/ExecutionWindowModels.cs` | 执行窗口裁决模型 | `ExecutionWindowModels` | `Scheduling/AgentAvailabilityModels.cs` | Allow/Defer/Unknown 裁决及 route/profile/TTL 快照 |
+| `Scheduling/TaskAutoDispatchContracts.cs` | evaluate-only 候选 verdict | `TaskAutoDispatchContracts` | `Scheduling/ExecutionWindowModels.cs` | 携带 Task/Availability/Conversation/Window、Agent route SHA 与 execution-plan SHA/version 事实 |
+| `Scheduling/TaskExecutionPlanContracts.cs` | 版本化执行计划合同 | `TaskExecutionPlanSnapshot` | `Scheduling/TaskExecutionTrackingContracts.cs` | Explore/Plan/Change/Test/Review WorkUnit；依赖/冲突范围与轮次/工具/时长/token/cost 预算 |
+| `Scheduling/TaskExecutionTrackingContracts.cs` | 五态健康投影与有界 repair 合同 | `TaskExecutionTrackingContracts` | `Scheduling/TaskExecutionPlanContracts.cs` | Task→Plan/WorkUnit→Goal/Execution 五态健康投影、outbox identity；写入权限仅授予独立白名单 repair 实现 |
 
 ## 配置 & 序列化
 
@@ -191,6 +200,7 @@ LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布�
 | `Abstractions/IInternalEventBus.cs` | 进程内 pub/sub 抽象 | `IInternalEventBus` | `Models/InternalEvent.cs` | 不作为长期 durable replay 或同步 Hook 合同 |
 | `Observability/` | 观测抽象目录 | — | — | — |
 | `Diagnostics/` | 诊断抽象目录 | — | — | — |
+
 ## 判定算子与分类契约（Operators/ · Classification/，2026-09-21）
 
 S1a/S1b 已落地（`f577add` / `7cfc198`）。抽象在 PuddingCore，实现全在 PuddingRuntime（与 Classification 域同构），**需重启才生效**。
