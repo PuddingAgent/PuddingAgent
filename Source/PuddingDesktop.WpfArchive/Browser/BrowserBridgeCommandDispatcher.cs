@@ -72,6 +72,13 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
     public void SetUserTakeover(bool takeover) =>
         _lifecycle.SetUserTakeover(takeover, "bridge gate");
 
+    /// <summary>
+    /// 用户把某页设为（或清除）Agent 目标：下发到准入权威。
+    /// 本类是 Bridge 闸门本身，因此它就是那个必须知道目标的执行路径。
+    /// </summary>
+    public void SetAgentTarget(string? contextId, string? pageId) =>
+        _lifecycle.SetAgentTarget(contextId, pageId);
+
     public async Task<BrowserBridgeCommandResult> DispatchAsync(
         BrowserBridgeCommand command,
         CancellationToken externalCt)

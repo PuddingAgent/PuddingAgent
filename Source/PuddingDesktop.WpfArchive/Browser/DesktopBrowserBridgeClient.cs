@@ -173,7 +173,8 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         if (reconnect is not null)
             await reconnect.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         lifetime?.Dispose();
-        TransitionTo(BrowserBridgeConnectionState.Disconnected, "Intentional disconnect");
+            TransitionTo(BrowserBridgeConnectionState.Disconnected, "Intentional disconnect");
+            _dispatcher.Lifecycle.NotifyBridgeDisconnected();
     }
 
     /// <summary>
@@ -285,6 +286,10 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
 
         // HelloAck accepted — truly Connected
         TransitionTo(BrowserBridgeConnectionState.Connected, null);
+
+        // 把「桥已连接」翻译成「准入权威已活」。此前该通知在生产代码零调用者，
+        // 于是所有浏览器命令都停在「the desktop connection is not established」（方案 §10.4）。
+        _dispatcher.Lifecycle.NotifyBridgeConnected(gen);
 
         // Start Heartbeat and Watchdog
         session.HeartbeatTask = Task.Run(() => HeartbeatLoopAsync(session, connCt), CancellationToken.None);
@@ -517,6 +522,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         if (Interlocked.Read(ref _generation) != session.Generation) return;
 
         TransitionTo(BrowserBridgeConnectionState.Disconnected, reason);
+        _dispatcher.Lifecycle.NotifyBridgeDisconnected();
         _dispatcher.FailAllPending(BrowserBridgeErrorCodes.BrowserBridgeDisconnected, reason);
 
         ScheduleReconnect(session.Generation, _lifetimeCts?.Token ?? CancellationToken.None);

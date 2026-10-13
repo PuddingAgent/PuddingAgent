@@ -515,6 +515,8 @@ public sealed class BrowserWorkspaceController :
                 return;
 
             AgentTargetPageId = pageId;
+            // 唯一授权动作必须下发到准入侧：否则闸门读不到「用户已选页」，按钮就只是 UI 装饰。
+            _automationGates?.ApplyAgentTarget(_activeContextId?.Value, pageId.Value);
             await _uiDispatcher.InvokeAsync(() =>
             {
                 foreach (var tab in Tabs)

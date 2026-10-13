@@ -16,6 +16,17 @@ public interface IBrowserAutomationGate
 
     /// <summary>工具运行时是否被暂停。</summary>
     void SetPaused(bool paused);
+
+    /// <summary>
+    /// 用户把某页设为（或清除）Agent 目标。
+    ///
+    /// 这是**唯一的授权动作**，它必须能到达准入侧：否则 Bridge 闸门永远读不到「用户已选页」，
+    /// Agent 就只能被拒（实测：`page_grant_required` 与 UI 上按钮点击无任何关联）。
+    /// 默认实现为空，让不关心目标语义的闸门无需改动。
+    /// </summary>
+    void SetAgentTarget(string? contextId, string? pageId)
+    {
+    }
 }
 
 /// <summary>
@@ -28,16 +39,20 @@ public sealed class DelegateAutomationGate : IBrowserAutomationGate
 {
     private readonly Action<bool> _setUserTakeover;
     private readonly Action<bool> _setPaused;
+    private readonly Action<string?, string?>? _setAgentTarget;
 
-    public DelegateAutomationGate(Action<bool> setUserTakeover, Action<bool> setPaused)
+    public DelegateAutomationGate(Action<bool> setUserTakeover, Action<bool> setPaused, Action<string?, string?>? setAgentTarget = null)
     {
         _setUserTakeover = setUserTakeover ?? throw new ArgumentNullException(nameof(setUserTakeover));
         _setPaused = setPaused ?? throw new ArgumentNullException(nameof(setPaused));
+        _setAgentTarget = setAgentTarget;
     }
 
     public void SetUserTakeover(bool takenOver) => _setUserTakeover(takenOver);
 
     public void SetPaused(bool paused) => _setPaused(paused);
+
+    public void SetAgentTarget(string? contextId, string? pageId) => _setAgentTarget?.Invoke(contextId, pageId);
 }
 
 /// <summary>
@@ -95,6 +110,15 @@ public sealed class BrowserAutomationGateSync
 
     /// <summary>把「运行时暂停」推给全部闸门。</summary>
     public void ApplyPaused(bool paused) => Apply(gate => gate.SetPaused(paused));
+
+    /// <summary>
+    /// 把「用户选中的 Agent 目标页」推给全部闸门（<c>null</c> 表示清除目标）。
+    ///
+    /// 与接管/暂停同理：这是 UI 的唯一授权写入点，不下发就会出现
+    /// 「按钮点了、准入侧不知道」的分叉（实测：同一意图产生三种拒绝码）。
+    /// </summary>
+    public void ApplyAgentTarget(string? contextId, string? pageId) =>
+        Apply(gate => gate.SetAgentTarget(contextId, pageId));
 
     /// <summary>
     /// 把完整控制状态推给**单个**闸门：新闸门注册时对齐用，

@@ -93,12 +93,33 @@ public sealed class BrowserPageLifecycle
         BrowserCallerIdentity caller,
         DesktopPageTarget target,
         BrowserPageGrantScope required,
-        DateTimeOffset nowUtc) =>
-        _authority.ActiveGrants.Any(grant =>
+        DateTimeOffset nowUtc)
+    {
+        // ① 用户显式选中的 Agent 目标页（唯一的显式授权动作）。
+        if (_browserTargets.IsAgentTarget(target.ContextId, target.PageId))
+        {
+            return true;
+        }
+
+        // ② V1 基线策略（69 规格 §1.1：Agent Browser 使用独立 Context/Page/UDF 与标签页，
+        //    UI 的暂停/接管是**运行控制**而非权限审批）：
+        //    Agent 浏览器是 **Agent 自己的**浏览器（独立 profile，与用户的 Edge/Chrome 隔离），
+        //    因此「桥处于已确认世代」即视为「Agent 浏览器在线」，可由 Agent 驱动；
+        //    用户的运行控制（暂停 / 接管）在同一入口之前就已拦下，不依赖本方法。
+        //    ⚠ 这是 V1 简化目标下的有意选择：逐页 grant 在本场景下的可验证安全收益≈ 0，
+        //      而可用性成本是确定的（实测：同一意图产生三种拒绝码）。后续 step 4 收敛为 session 后本条移除。
+        if (_authority.ConnectionGeneration.IsLive)
+        {
+            return true;
+        }
+
+        // ③ 既有页级授权（能力通道路径签发的 grant）继续兼容。
+        return _authority.ActiveGrants.Any(grant =>
             grant.Target == target
             && grant.Grantee.IsSameTaskScope(caller)
             && (grant.Scope & required) == required
             && (grant.ExpiresAtUtc is null || grant.ExpiresAtUtc > nowUtc));
+    }
 
     /// <summary>
     /// 读取基线存储（设计方案 §145）：由本端口**持有并随生命周期清除** ——
@@ -111,7 +132,21 @@ public sealed class BrowserPageLifecycle
     // 直接暴露 Authority 会迫使每个消费方都引用 Automation 组件；而 Shell 本来就不该关心
     // 授权/租约/世代这些内部模型 —— 于是这里给出**同一事实源**的最小门面。
 
-    /// <summary>是否被暂停（读权威快照）。</summary>
+    /// <summary>
+    /// 桥完成握手并确认世代：把「连接已建立」翻译成「权威已活」。
+    ///
+    /// **这是历史上缺失的那一环**：`NotifyConnectionGeneration` 在生产代码曾**零调用者**，
+    /// 于是「Core 已连接、桌面权威恒不活」是代码的必然结果（实测证据见方案 §10.4）。
+    /// 世代用 Desktop 侧自增计数器（每次连接 +1），因此重连必然换代、旧记录不会被误判为重复。
+    /// 参数取 <c>long</c> 而非常量：Shell 侧（链接编译本文件）不得出现 Automation 类型。
+    /// </summary>
+    public void NotifyBridgeConnected(long generation) =>
+        _authority.NotifyConnectionGeneration(ConnectionGeneration.Require(generation), "bridge connected");
+
+    /// <summary>桥断开/失败：世代归 None，目标与租约随之作废，在途动作在复检时必然被拦下。</summary>
+    public void NotifyBridgeDisconnected() =>
+        _authority.NotifyConnectionGeneration(ConnectionGeneration.None, "bridge disconnected");
+
     /// <summary>
     /// 账本命名空间（方案 §4.2）：**桌面进程实例 + 连接世代**。供 Shell 侧（Bridge 派发器）构造
     /// 账本键 —— **只用标量/契约类型**，不暴露 Automation 的 authority 类型（否则 Shell 编译面会 CS0012）。
