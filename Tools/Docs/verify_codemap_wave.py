@@ -32,6 +32,16 @@ import re
 import sys
 from pathlib import Path
 
+# 输出编码防御：本工具会打印**文档内容片段**（可能含 emoji，如 ✅）。
+# 若调用方的 stdout 是 GBK/cp936，print 会抛 UnicodeEncodeError 并**吞掉 VERDICT 行**
+# （实测：PYTHONIOENCODING=gbk 时崩溃于 print(m)，退出码仍为 1 ⇒ 看起来像"没有结论"）。
+# 只改 errors、不动 encoding：utf-8 调用方行为不变，GBK 调用方降级为 '?' 而不中断判定输出。
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
 TABLE_SEP = re.compile(r"^\|[\s\-:|]+\|$")
 TOKEN = re.compile(r"`([^`\n]+)`")
 

@@ -32,6 +32,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+# 输出编码防御：本工具会打印**文档内容片段**（可能含 emoji）。
+# 若调用方的 stdout 是 GBK/cp936，print 会抛 UnicodeEncodeError 并**吞掉 VERDICT 行**。
+# 只改 errors、不动 encoding（与 verify_codemap_wave.py 同款防御）。
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
 FENCE = re.compile(r"^\s*```")
 SEP = re.compile(r"^\|[\s\-:|]+\|$")
 WIN, STEP = 32, 16
