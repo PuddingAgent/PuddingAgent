@@ -15,8 +15,12 @@
 |------|------|----------|
 | `plan --scope <绝对路径>... [--budget-bytes <n>] [--index-root <路径>] [--json]` | 干跑估算（FileCount / CorpusBytes / PredictedIndexBytes / WithinBudget + 逐条拒绝） | **零写入**（不建索引目录、不写租约、不触发构建） |
 | `status [--job <id>] [--scope <路径>]... [--index-root <路径>] [--json]` | 如实报告**磁盘可观察**状态：owner、本进程 job 台账、每 scope 的 `HasIndex` / 索引目录条目数与字节数 / 租约持有者 | `--job` 在本进程查不到 ⇒ 逐字输出 `not_in_this_process`，**不**外推状态 |
-| `build --scope <绝对路径>... --index-root <路径> [--budget-bytes <n>] [--wait] [--json]` | 真实 `LuceneSearchEngine` + `FileSystemSupplyInventory` + `FullTextSearchEngineIndexBuilder` + `FileSupplyLease` ⇒ `BuildAsync`；`--wait` 轮询到终态 | `--index-root` **必填**（防误写生产索引根）；`IndexedFileCount/TotalBytes/ElapsedMs` 来自 builder 自报（`metrics-source = builder`） |
+| `build --scope <绝对路径>... --index-root <路径> [--budget-bytes <n>] [--wait] [--json]` | 真实构建与轮询（见下「关键语义」） | `--index-root` **必填**（防误写生产索引根）；`IndexedFileCount/TotalBytes/ElapsedMs` 来自 builder 自报（`metrics-source = builder`） |
 | `cancel --job <id> [--json]` | 取消本进程 job | 本 CLI 每次调用都是新进程 ⇒ 外来 job 必然 `not_in_this_process` + 非零退出（**不静默成功**） |
+
+**关键语义**（上方表格中「作用」列的完整原文逐字下沉；仅按安全边界折行，未删改任何字符）
+
+**`build --scope <绝对路径>... --index-root <路径> [--budget-bytes <n>] [--wait] [--json]`**：真实 `LuceneSearchEngine` + `FileSystemSupplyInventory` + `FullTextSearchEngineIndexBuilder` + `FileSupplyLease` ⇒ `BuildAsync`；`--wait` 轮询到终态
 
 退出码：`0` 成功 · `2` 被拒（Rejected）· `3` 本进程无法完成（Busy / job 不在本进程 / `--wait` 超时）·
 `4` 执行未成功（Failed / Cancelled / 未预期异常）· `5` 用法错误（未知命令 / 缺必填参数 / 非法数值 / 该命令不支持的选项）。
