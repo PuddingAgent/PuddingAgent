@@ -70,16 +70,24 @@ public sealed class BrowserBridgeAdmissionTests
     }
 
     [Fact]
-    public async Task ConcurrentDuplicatesMustNotExecuteTwice()
+    public async Task ConcurrentDuplicatesMustExecuteExactlyOnceForTheSameAuthorizedCaller()
     {
-        var dispatcher = BrowserTestState.CreateDispatcher();
+        // 复核 README L44 口径：**A 已授权、B 未授权**；断言"**首次成功**"与"**相同 A/operationId 并发执行恰好 1 次**"。
+        // 旧版在**无授权**夹具下只断言 `Count <= 1` —— 由于未授权命令在触碰 handler 之前即被拒，`Count` 恒为 0，
+        // 该断言会**空验证**（既非"恰好一次"，也没走到并发路径）。本版授予 A 的页面权限并断言**恰好 1 次**。
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        BrowserTestState.GrantAgentPage(lifecycle);
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
         var handler = new CountingHandler { Gate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
         dispatcher.SetHandler(handler);
+
         var command = Command();
         var first = dispatcher.DispatchAsync(command, CancellationToken.None);
         var second = dispatcher.DispatchAsync(command, CancellationToken.None);
         handler.Gate.SetResult(true);
-        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.True(handler.Count <= 1, $"duplicate handler executions={handler.Count}");
+        var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.All(results, r => Assert.True(r.Success, $"authorized duplicates must succeed; error={r.ErrorCode}"));
+        Assert.Equal(1, handler.Count);
     }
 }
