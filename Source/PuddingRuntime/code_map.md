@@ -103,7 +103,7 @@
 | `Services/ContextCompactionService.cs` | 上下文压缩执行与覆盖清单写入 | `IContextCompactionService` | `Services/CurrentTurnCompactionGuard.cs` | 围栏 Turn 落入候选时须在任何写入前 fail-closed |
 | `Services/ContextCompactionService.TokenEstimation.cs` | 压缩服务的 Token 估算（partial） | `ContextCompactionService` | `Services/ContextCompactionService.cs` | — |
 | `Services/ContextCompactionStrategy.cs` | 压缩策略的选择与分级填充 | `ContextCompactionStrategy` | `Services/ContextWindowManager.cs` | — |
-| `Services/ContextHealthEvaluator.cs` | 上下文健康度的评估 | `ContextHealthEvaluator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 占用率分母 = 模型窗口、门禁分母 = 有效输入窗口，两者不可混用；同时如实输出容量分量与来源（`ProviderInputLimitTokens`/`RequestedOutputBudgetTokens`/`SafetyBufferTokens`/`EffectiveWindowSource`），回退输出预算必须记为 `fallback_output_reserve` 而不得冒充用户预算 |
+| `Services/ContextHealthEvaluator.cs` | 上下文健康度的评估 | `ContextHealthEvaluator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 占用率分母 = 模型窗口、门禁分母 = 有效输入窗口，两者不可混用；容量分量与来源须如实输出，回退输出预算单列而不得冒充用户预算（见下「关键语义」） |
 | `Services/ContextLayerContracts.cs` | 上下文分层的契约模型 | `ContextLayerContracts` | `Services/ContextPipelineLayers.cs` | — |
 | `Services/ContextPipeline.cs` | 分层上下文组装的对外实现 | `ContextPipeline` | `Services/ContextPipelineLayers.cs` | 稳定 system prefix 与本轮 User tail 必须分离 |
 | `Services/ContextPipelineLayers.cs` | 上下文各层的装配 | `ContextPipelineLayers` | `Services/ContextPipelineOrchestrator.cs` | — |
@@ -113,6 +113,13 @@
 | `Services/ControllerRoutedLlmClient.cs` | 经 Controller 中转的 LLM 客户端 | `ControllerRoutedLlmClient` | `Services/LlmInvocationService.cs` | — |
 | `Services/CroppedLayersProvider.cs` | 用 Flash 模型裁剪记忆原始层 | `CroppedLayersProvider` | `Models/MemoryCropModels.cs` | — |
 | `Services/CurrentTurnCompactionGuard.cs` | 当前轮是否落入压缩候选的守卫 | `CurrentTurnCompactionGuard` | `Services/ContextCompactionService.cs` | — |
+
+### 「约束」列·关键语义（逐字原文）
+
+> 下列为上方表「约束」列的**逐字原文**（行序与表一致）；表内已缩为语义摘要，并以 `（见下「关键语义」）` 指回本段。
+
+- `Services/ContextHealthEvaluator.cs`
+  占用率分母 = 模型窗口、门禁分母 = 有效输入窗口，两者不可混用；同时如实输出容量分量与来源（`ProviderInputLimitTokens`/`RequestedOutputBudgetTokens`/`SafetyBufferTokens`/`EffectiveWindowSource`），回退输出预算必须记为 `fallback_output_reserve` 而不得冒充用户预算
 
 ## LLM 调用 · 多模态 · 会话事件 · 记忆写入
 
@@ -239,10 +246,17 @@
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
 | `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |
 | `Services/VolcengineArkImageGenerationProvider.cs` | 火山方舟的图片生成适配 | `VolcengineArkImageGenerationProvider` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | — |
-| `Services/WarmPrefixCompaction.cs` | 长循环的暖前缀压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | 只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection`（估算输入 > 有效输入上限，两侧同源含 WorkUnit 容量）才允许同步生成摘要，软阈值候选一律延期到 canonical 终态之后（ADR-095 D2）；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers` |
+| `Services/WarmPrefixCompaction.cs` | 长循环的暖前缀压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | 只接受真实缩小的结果；仅 `RequiresSynchronousProtection` 成立才同步生成摘要，软阈值候选一律延期到 canonical 终态之后（见下「关键语义」） |
 | `Services/WikiPageWriteEntry.cs` | 记忆 Wiki 页面的确定性写入入口 | `WikiPageWriteRequest` | `Services/MemoryWikiPageUpdateService.cs` | — |
 | `Services/WorkspaceAgentsContextBuilder.cs` | 工作区 Agent 名册上下文层的构造 | `WorkspaceAgentsContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
 | `Services/YoloSignalService.cs` | 监听工作区 yolo.signal 的后台服务 | `YoloSignalService` | `Services/AgentFirewall.cs` | 只读文件信号，不放宽任何资源边界 |
+
+### 「约束」列·关键语义（逐字原文）
+
+> 下列为上方表「约束」列的**逐字原文**（行序与表一致）；表内已缩为语义摘要，并以 `（见下「关键语义」）` 指回本段。
+
+- `Services/WarmPrefixCompaction.cs`
+  只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection`（估算输入 > 有效输入上限，两侧同源含 WorkUnit 容量）才允许同步生成摘要，软阈值候选一律延期到 canonical 终态之后（ADR-095 D2）；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`
 
 ## 工具审批与准入实现
 
@@ -355,7 +369,7 @@
 | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | `anysearch_search`：通用网页搜索 | `AnySearchSearchTool` | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | `doubao_search`：豆包搜索 | `DoubaoSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/GitHubSearchTool.cs` | `github_search`：GitHub 仓库与代码检索 | `GitHubSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
-| `Tools/BuiltIns/Search/SearchGrepTool.cs` | `search_grep`：工作区文本检索 | `SearchGrepTool` | `Services/Search/SearchAttemptLedger.cs` | 索引只产候选，匹配以磁盘当前内容为准；`backend=index` 未建索引报 `dependency_wait`（环境前置），引擎故障报 `contract_error`；可选注入 `IFullTextIndexFreshnessProbe`，未注册时输出逐字不变，注册后摘要追加 `indexFreshness/lastIndexed/indexAge/indexDirMtime`，且 0 命中而新鲜度不可核实时报「不是不存在的证据」 |
+| `Tools/BuiltIns/Search/SearchGrepTool.cs` | `search_grep`：工作区文本检索 | `SearchGrepTool` | `Services/Search/SearchAttemptLedger.cs` | 索引只产候选，匹配以磁盘当前内容为准；未建索引报 `dependency_wait`、引擎故障报 `contract_error`；新鲜度不可核实时不把 0 命中当作不存在的证据（见下「关键语义」） |
 | `Tools/BuiltIns/Search/SearchToolsTool.cs` | `search_tools`：工具目录检索与加载 | `SearchToolsTool` | `Services/Tools/ToolExposurePlanner.cs` | 只返回权限过滤后的条目 |
 | `Tools/BuiltIns/Search/ZhihuGlobalSearchTool.cs` | `zhihu_global_search`：全网检索 | `ZhihuGlobalSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
 | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | 知乎检索的共享配置与渲染 | `ZhihuSearchShared` | `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | — |
@@ -376,6 +390,13 @@
 | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | 角色化工作流工具的公共基类 | `SmartWorkflowToolBase<TArgs>` | `Tools/BuiltIns/Agents/SubAgentTool.cs` | 校验失败时原样返回子代理产出并附说明 |
 | `Tools/BuiltIns/Terminal/TerminalSkill.cs` | 终端命令执行的技能封装 | `TerminalSkill` | `Tools/BuiltIns/Terminal/TerminalTools.cs` | — |
 | `Tools/BuiltIns/Terminal/TerminalTools.cs` | `terminal_*`：终端任务的完整工具集 | `TerminalToolJson` | `Services/TerminalProcessManager.cs` | 长任务用阻塞式等待，禁止秒级轮询 |
+
+### 「约束」列·关键语义（逐字原文）
+
+> 下列为上方表「约束」列的**逐字原文**（行序与表一致）；表内已缩为语义摘要，并以 `（见下「关键语义」）` 指回本段。
+
+- `Tools/BuiltIns/Search/SearchGrepTool.cs`
+  索引只产候选，匹配以磁盘当前内容为准；`backend=index` 未建索引报 `dependency_wait`（环境前置），引擎故障报 `contract_error`；可选注入 `IFullTextIndexFreshnessProbe`，未注册时输出逐字不变，注册后摘要追加 `indexFreshness/lastIndexed/indexAge/indexDirMtime`，且 0 命中而新鲜度不可核实时报「不是不存在的证据」
 
 ## 工具平台与展示投影
 
