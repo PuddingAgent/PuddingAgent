@@ -115,31 +115,50 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Agents/` | Agent 抽象定义 |
 | `SubAgents/` | 子代理抽象 |
 | `Platform/BuiltInAgentTemplates.cs` | 内置 Agent 模板的唯一权威源；V2 Default/Grant 直接决定 Low/High 子代理工具投影，Host 不得复制同全名类 |
-| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；单一预算域（N00，commit f096bc5）：未显式请求时统一使用系统 profile 默认 600 轮/2400 工具调用/24h，请求可显式携带 `int? MaxRounds/MaxToolCallsTotal/TimeoutSeconds`，无 managed WorkUnit 独立预算域，不存在 32/40/120 隐式截断；显式超过配置护栏（options 上限）显式拒绝；收尾宽限 20 轮/30 分钟为加法（不预扣）；父 Agent 可指定 `resume_sub_agent_id` 与可选预算请求字段 |
-| `Runtime/ContextAssemblyContracts.cs` | 上下文装配契约；同时携带执行 AgentInstanceId 与稳定 ConfigurationAgentInstanceId，避免把 SubSessionId 当持久配置目录 |
+| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约（单一预算域） |
+| `Runtime/ContextAssemblyContracts.cs` | 上下文装配契约 |
 | `Runtime/ContextSegmentContracts.cs` | ContextSegmentLedger 数据契约（§6.1）+ ContextSegmentTier（T0–T4 分级枚举）|
 | `Runtime/ContextTierPlannerContracts.cs` | T0–T4 分级规划器契约：段输入/分配结果/阈值选项 + IContextTierPlanner |
 | `Runtime/ContextTierPlanner.cs` | 纯函数式分级规划器：轮次距离基础分级 → 原子组校正 → query 有界晋升 |
-| `Runtime/CompositionContracts.cs` | 🆕 P0-5 SessionCompositionRecord（SessionId/CompositionVersion/SystemPromptHash/ToolSpecHash/PrefixHash/SkillManifestHash/SerializationVersion/ToolIds/ChangeReason/PermissionEpoch/CanonicalSystemPrefixHash）+ `ICompositionStore`（GetLatest/Append/Load，append-only）|
-| `Runtime/PrefixCacheContracts.cs` | `prefix-v2` 请求前缀快照；稳定 system/tool/envelope version 加首条非 system `HistoryAnchorHash`，区分正常尾部 append 与 rehydrate/checkpoint 造成的历史 epoch 变化 |
+| `Runtime/CompositionContracts.cs` | SessionCompositionRecord 与 `ICompositionStore`（append-only） |
+| `Runtime/PrefixCacheContracts.cs` | `prefix-v2` 请求前缀快照 |
 | `Runtime/LlmInvocationContracts.cs` | 统一 LLM invocation 合同；`Purpose` 以非模型可见方式区分 agent/approval/compaction 计费与诊断 |
-| `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同（`<compact_summary>` 持久摘要 + `<compacted-summary>` warm-prefix checkpoint）；`ContainsMarker` 供计量分层与 UI 摘要桶同源识别。请求消息无 `ContentType`，只认其中一个标记会把另一条路径的摘要误计入对话桶（诊断 2026-10-07 §4.3） |
-| `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约；快照除用量分层外还输出容量**分量与来源**（`ProviderInputLimitTokens`/`RequestedOutputBudgetTokens`/`SafetyBufferTokens`/`EffectiveWindowSource` + `ContextEffectiveWindowSources` 常量），使 UI 能解释「有效输入上限为什么比模型窗口小」而不必用窗口差值反推「预留输出」 |
+| `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同 |
+| `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约 |
+
+**关键语义**
+
+**`Runtime/SubAgentInvocationContracts.cs`**：子代理调用与系统执行预算契约；单一预算域（N00，commit f096bc5）：未显式请求时统一使用系统 profile 默认 600 轮/2400 工具调用/24h，请求可显式携带 `int? MaxRounds/MaxToolCallsTotal/TimeoutSeconds`，无 managed WorkUnit 独立预算域，不存在 32/40/120 隐式截断；显式超过配置护栏（options 上限）显式拒绝；
+收尾宽限 20 轮/30 分钟为加法（不预扣）；父 Agent 可指定 `resume_sub_agent_id` 与可选预算请求字段
+**`Runtime/ContextAssemblyContracts.cs`**：上下文装配契约；同时携带执行 AgentInstanceId 与稳定 ConfigurationAgentInstanceId，避免把 SubSessionId 当持久配置目录
+**`Runtime/CompositionContracts.cs`**：🆕 P0-5 SessionCompositionRecord（SessionId/CompositionVersion/SystemPromptHash/ToolSpecHash/PrefixHash/SkillManifestHash/SerializationVersion/ToolIds/ChangeReason/PermissionEpoch/CanonicalSystemPrefixHash）+ 
+`ICompositionStore`（GetLatest/Append/Load，append-only）
+**`Runtime/PrefixCacheContracts.cs`**：`prefix-v2` 请求前缀快照；稳定 system/tool/envelope version 加首条非 system `HistoryAnchorHash`，区分正常尾部 append 与 rehydrate/checkpoint 造成的历史 epoch 变化
+**`Runtime/ContextSummaryMarkers.cs`**：压缩摘要的请求侧标记唯一合同（`<compact_summary>` 持久摘要 + `<compacted-summary>` warm-prefix checkpoint）；`ContainsMarker` 供计量分层与 UI 摘要桶同源识别。请求消息无 `ContentType`，只认其中一个标记会把另一条路径的摘要误计入对话桶（诊断 2026-10-07 §4.3）
+**`Runtime/ContextCompactionContracts.cs`**：压缩终态、`ContextHealthSnapshot` 与容量预测契约；快照除用量分层外还输出容量**分量与来源**（`ProviderInputLimitTokens`/`RequestedOutputBudgetTokens`/`SafetyBufferTokens`/`EffectiveWindowSource` + `ContextEffectiveWindowSources` 常量），
+使 UI 能解释「有效输入上限为什么比模型窗口小」而不必用窗口差值反推「预留输出」
 
 ## 子代理编排（Orchestration/）
 
 | 文件 | 用途 |
 |------|------|
-| `AgentOrchestrationModels.cs` | `pudding.agent-orchestration/v2` 通用图、修订、Graph Input/Trigger、typed node/control-data edge、受治理 predicate、权限策略与 append-only run event 契约 |
-| `AgentOrchestrationComponentContracts.cs` | 组件/触发器注册表、contract hash、类型/MIME/基数/delivery 端口、多模态 Artifact 值与独立 GraphLayout 契约；内置 `pudding.agent.subagent` 的 request/context/result 端口及图片生成/展示组件，形成 typed 文本与 Artifact 组合链 |
-| `AgentOrchestrationGraphCompiler.cs` | 纯图编译器；规范化、组件冻结、Graph Input/端口四维兼容、data binding/安全 sourcePath、受治理 control-edge predicate、引用/精确路由/写权限校验和确定性 DAG 拓扑排序，不执行节点 |
-| `AgentOrchestrationPersistenceContracts.cs` | 通用图/run 发现摘要、revision/run/node 快照、冻结 Run Inputs 与按端口 node Outputs、真实 child Run/SubSession 身份、独立 GraphLayout CAS、无 Run Graph 的 Head-CAS 删除收据、只读 QueryStore、可写 Store、claim 请求与 committed-event signal 契约 |
+| `AgentOrchestrationModels.cs` | `pudding.agent-orchestration/v2` 通用图与 run event 契约 |
+| `AgentOrchestrationComponentContracts.cs` | 组件/触发器注册表与 contract hash 契约 |
+| `AgentOrchestrationGraphCompiler.cs` | 纯图编译器（校验 + 确定性 DAG 拓扑排序） |
+| `AgentOrchestrationPersistenceContracts.cs` | 通用图/run 发现与持久 CAS 契约 |
 | `DesignCouncilOrchestrationGraphAdapter.cs` | 将 MOA stage/work item 和上下文可见性映射为通用 gate/subAgent 节点及 control/data edge |
 | `SubAgentOrchestrationModels.cs` | MOA 设计请求、专家成员、阶段门禁、只读 work item 与 Draft 计划契约 |
 | `DesignCouncilPlanCompiler.cs` | 纯计划编译器；校验精确模型路由/多样性/独立终审并生成六阶段 DAG，不启动子代理 |
 | `SubAgentOrchestrationRuntimeModels.cs` | MOA run/stage/work item 快照、claim、完成结果和用户上下文补充契约 |
 | `SubAgentOrchestrationRuntimeContracts.cs` | MOA 乐观并发 run store、运行时命令/派发结果与 `IDesignCouncilRuntimeService` 契约 |
 | `DesignCouncilRunStateMachine.cs` | 纯状态机；显式激活、并发领取、claim 校验、暂停恢复、法定人数、取消和终态 |
+
+**关键语义**
+
+**`AgentOrchestrationModels.cs`**：`pudding.agent-orchestration/v2` 通用图、修订、Graph Input/Trigger、typed node/control-data edge、受治理 predicate、权限策略与 append-only run event 契约
+**`AgentOrchestrationComponentContracts.cs`**：组件/触发器注册表、contract hash、类型/MIME/基数/delivery 端口、多模态 Artifact 值与独立 GraphLayout 契约；内置 `pudding.agent.subagent` 的 request/context/result 端口及图片生成/展示组件，形成 typed 文本与 Artifact 组合链
+**`AgentOrchestrationGraphCompiler.cs`**：纯图编译器；规范化、组件冻结、Graph Input/端口四维兼容、data binding/安全 sourcePath、受治理 control-edge predicate、引用/精确路由/写权限校验和确定性 DAG 拓扑排序，不执行节点
+**`AgentOrchestrationPersistenceContracts.cs`**：通用图/run 发现摘要、revision/run/node 快照、冻结 Run Inputs 与按端口 node Outputs、真实 child Run/SubSession 身份、独立 GraphLayout CAS、无 Run Graph 的 Head-CAS 删除收据、只读 QueryStore、可写 Store、claim 请求与 committed-event signal 契约
 
 ## 工具契约
 
@@ -195,13 +214,27 @@ RetrievalGlobMatcher 合同：`public static`，API 为 `Matches/MatchesFileName
 
 | 目录/文件 | 用途 |
 |------|------|
- | `Configuration/` | 配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`PuddingBuildOutputSync` 提供同卷暂存、逐文件回滚、路径边界和 SHA-256 点火部署原语；`llm.providers.json` 支持每模型协议与版本化 `priceWindows/profileVersion/sourceUrl`，供低价自动调度 fail-closed 解析；V5-T2：模型条目可选 `vision` 合同节（`PuddingVisionCapabilityConfig`，字节口径显式区分解码后/wire）由 `ValidateVisionContract` fail-fast 校验（存在即必须完整有效），`PuddingFileLlmConfigService.GetAllModels()` 投影为 `LlmModelInfo.VisionContract` |
+| `Configuration/` | 配置抽象与 `llm.providers.json` 解析 |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
-| `Skills/Portfolio/` | 🆕 G3 组合预算策略：`SkillPortfolioPolicy`（`IVersionedCriterion`，只含**被消费**的阈值）+ `AppliedPortfolioPolicy` + `SkillScoreSnapshot`（两态：`Observed`/`Unavailable` —— `Unavailable` **无 `Score` 字段** ⇒ “把无数据当低分”在类型上不可表达）。默认 `ZeroRegressionDefault(实测启用数, headroom)`。⚠️ 该目录**不在**算子架构门禁扫描范围（门禁只扫 `PuddingCore/Operators/**` 与 `PuddingRuntime/Operators/**`）⇒ 门禁 PASS **不构成**本目录纯净性证据 |
-| `Skills/Curation/` | 🆕 G7 提炼产物契约：`SkillCurationPolicy`（`IVersionedCriterion`，`MinRetainedValueRatio`/`ApplicabilityHeadings`/`PitfallHeadings`/`MinMarkdownLength`；**无默认实参、无默认策略工厂** —— 比例下限是治理结论）+ `AppliedSkillCurationPolicy` + `SkillDistillationContract`（反笔记不变式 P1–P6 违规码 + `SourceTurnsOf`/`SourceSessionsOf` tag 级抽取，供 C1/C2 复用）。⚠️ 同 `Skills/Portfolio/`：**不在**算子架构门禁扫描范围 |
-| `Skills/Family/` | 🆕 G4 家族归类：`SkillFamilyPolicy`（`IVersionedCriterion`，阈值外置：家族名相似度下限等；`Create` 无默认实参 ⇒ 阈值是治理结论）、`SkillFamilyClustering`（**静态纯函数** `Cluster(subjects, policy)`：并查集 + 确定性排序；输出**含单成员簇**、按 `FamilyKey` 序数序、`FamilyKey = Members[0]`）、`SkillNameTokenization`（`StandardSeparators`/`Tokenize`/`Jaccard`；其分隔符与 `Skills/Retrieval/SkillKeywordNormalization.NameTokenSeparators` 是**同一份字符集**的两处表达，**有用例钉住相等**）、`SkillMergePolicy`（`IVersionedCriterion`，`MinimumProceduralTextSimilarity` 合法区间 (0,1]）。⛔ 家族标签**只用于分组**，不参与生死判定 |
-| `Skills/Retrieval/` | 🆕 G4 关键词**归一**的唯一定义（`SkillKeywordNormalization`）：`Collect(keywords, tags, skillId, name)` **逐字复现**原 `SkillEnforcerService.CollectKeywords`（口径唯一 ⇒ G7-C3 与 G4 必须共享同一来源）、`KeywordComparer = OrdinalIgnoreCase`（⛔ 不得改为序数敏感）、`NameTokenSeparators`/`MinimumNameTokenLength`/`IsInjectableKeyword`。⚠️ 该归一口径**保留原始大小写**：消费侧一律用 `KeywordComparer` 比较，⛔ 不得自建折叠步骤（G4-D6c 教训：判据曾用序数比较 ⇒ 真实数据 116 处被误拒） |
+| `Skills/Portfolio/` | G3 组合预算策略（`IVersionedCriterion` 阈值外置） |
+| `Skills/Curation/` | G7 提炼产物契约（`SkillDistillationContract` 等） |
+| `Skills/Family/` | G4 家族归类（`SkillFamilyClustering` 等纯函数） |
+| `Skills/Retrieval/` | G4 关键词归一的唯一定义（`SkillKeywordNormalization`） |
+
+**关键语义**
+
+**`Configuration/`**：配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`PuddingBuildOutputSync` 提供同卷暂存、逐文件回滚、路径边界和 SHA-256 点火部署原语；`llm.providers.json` 支持每模型协议与版本化 `priceWindows/profileVersion/sourceUrl`，供低价自动调度 fail-closed 解析；
+V5-T2：模型条目可选 `vision` 合同节（`PuddingVisionCapabilityConfig`，字节口径显式区分解码后/wire）由 `ValidateVisionContract` fail-fast 校验（存在即必须完整有效），`PuddingFileLlmConfigService.GetAllModels()` 投影为 `LlmModelInfo.VisionContract`
+**`Skills/Portfolio/`**：🆕 G3 组合预算策略：`SkillPortfolioPolicy`（`IVersionedCriterion`，只含**被消费**的阈值）+ `AppliedPortfolioPolicy` + `SkillScoreSnapshot`（两态：`Observed`/`Unavailable` —— `Unavailable` **无 `Score` 字段** ⇒ “把无数据当低分”在类型上不可表达）。默认 `ZeroRegressionDefault(实测启用数, headroom)`。
+⚠️ 该目录**不在**算子架构门禁扫描范围（门禁只扫 `PuddingCore/Operators/**` 与 `PuddingRuntime/Operators/**`）⇒ 门禁 PASS **不构成**本目录纯净性证据
+**`Skills/Curation/`**：🆕 G7 提炼产物契约：`SkillCurationPolicy`（`IVersionedCriterion`，`MinRetainedValueRatio`/`ApplicabilityHeadings`/`PitfallHeadings`/`MinMarkdownLength`；
+**无默认实参、无默认策略工厂** —— 比例下限是治理结论）+ `AppliedSkillCurationPolicy` + `SkillDistillationContract`（反笔记不变式 P1–P6 违规码 + `SourceTurnsOf`/`SourceSessionsOf` tag 级抽取，供 C1/C2 复用）。⚠️ 同 `Skills/Portfolio/`：**不在**算子架构门禁扫描范围
+**`Skills/Family/`**：🆕 G4 家族归类：`SkillFamilyPolicy`（`IVersionedCriterion`，阈值外置：家族名相似度下限等；`Create` 无默认实参 ⇒ 阈值是治理结论）、`SkillFamilyClustering`（**静态纯函数** `Cluster(subjects, policy)`：并查集 + 确定性排序；
+输出**含单成员簇**、按 `FamilyKey` 序数序、`FamilyKey = Members[0]`）、`SkillNameTokenization`（`StandardSeparators`/`Tokenize`/`Jaccard`；其分隔符与 `Skills/Retrieval/SkillKeywordNormalization.NameTokenSeparators` 是**同一份字符集**的两处表达，**有用例钉住相等**）、`SkillMergePolicy`（`IVersionedCriterion`，
+`MinimumProceduralTextSimilarity` 合法区间 (0,1]）。⛔ 家族标签**只用于分组**，不参与生死判定
+**`Skills/Retrieval/`**：🆕 G4 关键词**归一**的唯一定义（`SkillKeywordNormalization`）：`Collect(keywords, tags, skillId, name)` **逐字复现**原 `SkillEnforcerService.CollectKeywords`（口径唯一 ⇒ G7-C3 与 G4 必须共享同一来源）、`KeywordComparer = OrdinalIgnoreCase`（⛔ 不得改为序数敏感）、
+`NameTokenSeparators`/`MinimumNameTokenLength`/`IsInjectableKeyword`。⚠️ 该归一口径**保留原始大小写**：消费侧一律用 `KeywordComparer` 比较，⛔ 不得自建折叠步骤（G4-D6c 教训：判据曾用序数比较 ⇒ 真实数据 116 处被误拒）
 
 ## 事件 & 观测
 
@@ -223,18 +256,33 @@ S1a/S1b 已落地（`f577add` / `7cfc198`）。抽象在 PuddingCore，实现全
 
 | 文件 | 用途 |
 |------|------|
-| `Classification/ToolCallClassification.cs` | 既有工具审批分类契约（命名空间 `PuddingCode.Classification`）：`ClassificationOutcome`（`Unknown=0`，**仅允许末尾追加**）、`ClassificationVerdict`（`PerOutcomeConfidence` 用字典而非四个具名字段，注释明确理由「抽象层同时服务于非准入类决策」）、`ToolCallClassificationContext`（承载审批出题单；**契约层不裁剪不校验长度，有界截断由调用方负责**）、`IToolCallClassifier`（**禁止向调用方冒泡异常**，不可用/取消均需按降级契约返回确定结论）、`ClassifierHealth`/`ClassifierStatus`/`IClassifierHealthReporter` |
-| `Operators/OperatorEnums.cs` | `ConfidenceKind`（`ModelSelfReported` vs `Calibrated`：**未校准时禁止下游把它当概率做统计推断**）、`JudgementTier`、`JudgeOutcome`（**三值** `Yes/No/Abstain`；`Abstain` 为一等结果，**禁止折叠为 Yes/No**——折叠成 No 退化为「不敢判就拒绝」，折叠成 Yes 退化为「沉默放行」） |
-| `Operators/OperatorContextContracts.cs` | `IOperatorContext`（`SceneKey` + `InputDigest`）、`OperatorIdentity`（自审批上下文提升的四元组，不改变其既有定义）、`JudgementEvidence` |
-| `Operators/ThresholdPolicy.cs` | **阈值外置**为一等对象（S1a 判据核心）：`Apply` 为确定性三区间——`>= YesAtOrAbove ⇒ Yes`、`<= NoAtOrBelow ⇒ No`（**边界含等**）、中间开区间 ⇒ `Abstain`；`IsValid` 要求**严格大于**以保证 Abstain 带非空；非法配置**构造期即拒**（不静默产生全 Yes/全 No/全 Abstain）、NaN 显式拒绝。外置理由：使「为什么放行」可事后解释，且**自我改进候选无法悄悄移动判据** |
-| `Operators/JudgementEnvelope.cs` | 统一信封（收敛既有多个 verdict record 的公共核）：身份与可复现性（`JudgementId`/`InputDigest`/`OperatorId`/`ModelId`/`InstructionVersion`/`AppliedThreshold`/`SchemaVersion`）+ 结果（`Score`/`Outcome`/`PrimaryLabel`/`LabelDistribution`）+ 置信（**必带 `ConfidenceKind`**）+ 证据与成本 + 溯源 |
-| `Operators/OperatorResultProjections.cs` | 三投影结果 `ScoreResult` / `JudgeResult` / `ClassificationResult`——**同一信封的不同视图，不是三套实现** |
-| `Operators/OperatorPorts.cs` | 三原语端口 `IScorer` / `IJudge` / `IClassifier` + `IClassifierModel`（**供应商隔离的唯一端口**）+ `IThresholdPolicyProvider`。**禁止一个类型实现多于一个原语端口** |
-| `Operators/ModelJudgementContracts.cs` | `JudgementQuestion`/`ModelJudgementRequest`/`ModelAnswer`/`ModelJudgement`（支持**一次往返多问**，含 choice 与全选项概率） |
-| `Operators/OperatorRuntimeSeams.cs` | 运行时接缝：`OperatorInstruction`/`OperatorOutputShape`/`OperatorReasonCodes`/`OperatorDegradation`、健康观察者、**审计旁挂**、判定缓存、`OperatorScope`（含确定性 `BuildJudgementId`） |
+| `Classification/ToolCallClassification.cs` | 既有工具审批分类契约（命名空间 `PuddingCode.Classification`） |
+| `Operators/OperatorEnums.cs` | 判定枚举（`ConfidenceKind`/`JudgementTier`/`JudgeOutcome`） |
+| `Operators/OperatorContextContracts.cs` | 算子上下文契约（`IOperatorContext` 等） |
+| `Operators/ThresholdPolicy.cs` | 阈值外置为一等对象（S1a 判据核心） |
+| `Operators/JudgementEnvelope.cs` | 统一判定信封（身份 + 结果 + 置信） |
+| `Operators/OperatorResultProjections.cs` | 三投影结果（同一信封的不同视图） |
+| `Operators/OperatorPorts.cs` | 三原语端口（`IScorer`/`IJudge`/`IClassifier`） |
+| `Operators/ModelJudgementContracts.cs` | 模型判定请求/答案契约 |
+| `Operators/OperatorRuntimeSeams.cs` | 运行时接缝（指令/输出/降级/旁挂） |
 | `Operators/OperatorRegistry.cs` | 场景注册表契约 `IOperatorRegistry`（**键控**解析，取代此前的非键控单例缺口；缺失 ⇒ fail-closed 抛错，不静默放行） |
 
-> **S2b 已接线（2026-09-21，实现落在 PuddingRuntime）**：本文件的两个旁挂端口 `IOperatorHealthObserver` / `IOperatorAuditSink` 此前**没有任何生产实现**（惰性抽象），现由 `PuddingRuntime/Operators/Adapters/` 下的两个适配器接上——健康 ⇒ 既有 `ClassifierHealthReporter`（计数键含**场景维度**），审计 ⇒ 既有审计存储（严守「**裁决先于留痕**」）。**本契约层未改动一行**（append-only 纪律：只允许追加，不得改既有字段），因此上述两行的字段清单保持有效。
+**关键语义**
+
+**`Classification/ToolCallClassification.cs`**：既有工具审批分类契约（命名空间 `PuddingCode.Classification`）：`ClassificationOutcome`（`Unknown=0`，**仅允许末尾追加**）、`ClassificationVerdict`（`PerOutcomeConfidence` 用字典而非四个具名字段，注释明确理由「抽象层同时服务于非准入类决策」）、`ToolCallClassificationContext`（承载审批出题单；
+**契约层不裁剪不校验长度，有界截断由调用方负责**）、`IToolCallClassifier`（**禁止向调用方冒泡异常**，不可用/取消均需按降级契约返回确定结论）、`ClassifierHealth`/`ClassifierStatus`/`IClassifierHealthReporter`
+**`Operators/OperatorEnums.cs`**：`ConfidenceKind`（`ModelSelfReported` vs `Calibrated`：**未校准时禁止下游把它当概率做统计推断**）、`JudgementTier`、`JudgeOutcome`（**三值** `Yes/No/Abstain`；`Abstain` 为一等结果，**禁止折叠为 Yes/No**——折叠成 No 退化为「不敢判就拒绝」，折叠成 Yes 退化为「沉默放行」）
+**`Operators/OperatorContextContracts.cs`**：`IOperatorContext`（`SceneKey` + `InputDigest`）、`OperatorIdentity`（自审批上下文提升的四元组，不改变其既有定义）、`JudgementEvidence`
+**`Operators/ThresholdPolicy.cs`**：**阈值外置**为一等对象（S1a 判据核心）：`Apply` 为确定性三区间——`>= YesAtOrAbove ⇒ Yes`、`<= NoAtOrBelow ⇒ No`（**边界含等**）、中间开区间 ⇒ `Abstain`；`IsValid` 要求**严格大于**以保证 Abstain 带非空；非法配置**构造期即拒**（不静默产生全 Yes/全 No/全 Abstain）、NaN 显式拒绝。外置理由：使「为什么放行」可事后解释，且**自我改进候选无法悄悄移动判据**
+**`Operators/JudgementEnvelope.cs`**：统一信封（收敛既有多个 verdict record 的公共核）：身份与可复现性（`JudgementId`/`InputDigest`/`OperatorId`/`ModelId`/`InstructionVersion`/`AppliedThreshold`/`SchemaVersion`）+ 结果（`Score`/`Outcome`/`PrimaryLabel`/`LabelDistribution`）+ 置信（**必带 `ConfidenceKind`**）+ 证据与成本 
++ 溯源
+**`Operators/OperatorResultProjections.cs`**：三投影结果 `ScoreResult` / `JudgeResult` / `ClassificationResult`——**同一信封的不同视图，不是三套实现**
+**`Operators/OperatorPorts.cs`**：三原语端口 `IScorer` / `IJudge` / `IClassifier` + `IClassifierModel`（**供应商隔离的唯一端口**）+ `IThresholdPolicyProvider`。**禁止一个类型实现多于一个原语端口**
+**`Operators/ModelJudgementContracts.cs`**：`JudgementQuestion`/`ModelJudgementRequest`/`ModelAnswer`/`ModelJudgement`（支持**一次往返多问**，含 choice 与全选项概率）
+**`Operators/OperatorRuntimeSeams.cs`**：运行时接缝：`OperatorInstruction`/`OperatorOutputShape`/`OperatorReasonCodes`/`OperatorDegradation`、健康观察者、**审计旁挂**、判定缓存、`OperatorScope`（含确定性 `BuildJudgementId`）
+
+> **S2b 已接线（2026-09-21，实现落在 PuddingRuntime）**：本文件的两个旁挂端口 `IOperatorHealthObserver` / `IOperatorAuditSink` 此前**没有任何生产实现**（惰性抽象），现由 `PuddingRuntime/Operators/Adapters/` 下的两个适配器接上——健康 ⇒ 既有 `ClassifierHealthReporter`（计数键含**场景维度**），审计 ⇒ 既有审计存储（严守「**裁决先于留痕**」）。
+> **本契约层未改动一行**（append-only 纪律：只允许追加，不得改既有字段），因此上述两行的字段清单保持有效。
 
 ## 改进落点契约（Improvement/ · L3-a，2026-09-21）
 
@@ -250,10 +298,19 @@ L3-a 已落地（纯类型 + 守卫测试，**零行为**：不写技能、不�
 
 | 文件 | 用途 |
 |------|------|
-| `Improvement/ImprovementEnums.cs` | `ArtifactKind`（资产种类 `Skill`/`MemoryChapter`/`Rule`/`Doc`/`CodeFile`；`Unknown=0` 为非法哨兵，**不得当作「默认落到某通道」**）、`ImprovementOperation`（`Create`/`Update`/`Merge`/`Replace`/`Retire`；`Unknown=0`）、`ChangeDecision`（`ApplyShadow`/`Apply`/`Reject`/`Defer`；`Unknown=0` **不得当作放行**；`ApplyShadow` 为默认）。三者均**只允许末尾追加**（序列化兼容） |
-| `Improvement/ArtifactRef.cs` | 资产句柄（统一寻址）：`Kind`+`Id`+`Version?`+`EvidenceRefs`；`Handle` 产出规范化串 `kind:id@version` 供幂等键与对账。守卫：`Kind=Unknown` 拒、空 id 拒、**空白版本归一为 null**（防 `kind:id@` 假句柄）；`Equals` **显式按内容比较证据列表**（record 自动相等对集合成员用引用相等，会让去重与幂等键静默失效） |
-| `Improvement/ImprovementProposal.cs` | 改进提案（统一货币）：`Operation`+`Target?`+`ProposedBy`+`IdempotencyKey`+`EvidenceRefs`+`WhyNotUpdateOrMerge`+`Payload`+`ExpectedGain`+`Rationale`。⭐ **`Create` 必带 `WhyNotUpdateOrMerge`**（把「add 不是默认」做成**字段级强制**）；非 Create 必带 `Target` 且**禁**带该字段；`Update`/`Merge`/`Replace` 必带 `Payload`；`Retire` 必**无** `Payload`；证据非空（无证据的变更不进裁决）；`ExpectedGain` 标注为**未标定刻度**，不得当阈值输入，且**无数据 ≠ 低价值**（缺省 null，不用 0 填充） |
-| `Improvement/ChangeVerdict.cs` | 变更裁决（**唯一**可驱动落点动作的凭据）：`Decision`+`PolicyId`+`PolicyVersion`+`ReasonCode`+`RollbackHandle?`。守卫：`Apply` **必带** `RollbackHandle`（不可回滚的自动变更不允许存在，对应 C4）；**非 `Apply` 禁带**（防「看起来能回滚、实际无动作」的假象）；`Unknown` 决策拒；`PolicyVersion >= 1` |
+| `Improvement/ImprovementEnums.cs` | 改进枚举（`ArtifactKind`/`ImprovementOperation`/`ChangeDecision`） |
+| `Improvement/ArtifactRef.cs` | 资产句柄（统一寻址 + 幂等键） |
+| `Improvement/ImprovementProposal.cs` | 改进提案（统一货币 + 字段级守卫） |
+| `Improvement/ChangeVerdict.cs` | 变更裁决（唯一可驱动落点动作的凭据） |
+
+**关键语义**
+
+**`Improvement/ImprovementEnums.cs`**：`ArtifactKind`（资产种类 `Skill`/`MemoryChapter`/`Rule`/`Doc`/`CodeFile`；`Unknown=0` 为非法哨兵，**不得当作「默认落到某通道」**）、`ImprovementOperation`（`Create`/`Update`/`Merge`/`Replace`/`Retire`；`Unknown=0`）、`ChangeDecision`（`ApplyShadow`/`Apply`/`Reject`/`Defer`；
+`Unknown=0` **不得当作放行**；`ApplyShadow` 为默认）。三者均**只允许末尾追加**（序列化兼容）
+**`Improvement/ArtifactRef.cs`**：资产句柄（统一寻址）：`Kind`+`Id`+`Version?`+`EvidenceRefs`；`Handle` 产出规范化串 `kind:id@version` 供幂等键与对账。守卫：`Kind=Unknown` 拒、空 id 拒、**空白版本归一为 null**（防 `kind:id@` 假句柄）；`Equals` **显式按内容比较证据列表**（record 自动相等对集合成员用引用相等，会让去重与幂等键静默失效）
+**`Improvement/ImprovementProposal.cs`**：改进提案（统一货币）：`Operation`+`Target?`+`ProposedBy`+`IdempotencyKey`+`EvidenceRefs`+`WhyNotUpdateOrMerge`+`Payload`+`ExpectedGain`+`Rationale`。⭐ **`Create` 必带 `WhyNotUpdateOrMerge`**（把「add 不是默认」做成**字段级强制**）；非 Create 必带 `Target` 且**禁**带该字段；
+`Update`/`Merge`/`Replace` 必带 `Payload`；`Retire` 必**无** `Payload`；证据非空（无证据的变更不进裁决）；`ExpectedGain` 标注为**未标定刻度**，不得当阈值输入，且**无数据 ≠ 低价值**（缺省 null，不用 0 填充）
+**`Improvement/ChangeVerdict.cs`**：变更裁决（**唯一**可驱动落点动作的凭据）：`Decision`+`PolicyId`+`PolicyVersion`+`ReasonCode`+`RollbackHandle?`。守卫：`Apply` **必带** `RollbackHandle`（不可回滚的自动变更不允许存在，对应 C4）；**非 `Apply` 禁带**（防「看起来能回滚、实际无动作」的假象）；`Unknown` 决策拒；`PolicyVersion >= 1`
 
 **契约测试**：`../PuddingCoreTests/Improvement/ImprovementContractTests.cs` —— **29/29 ✅**（2026-09-21）。
 
