@@ -6,15 +6,15 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Program.cs` | 🔑 CLI 入口（160 行）。参数：`--apply`（**默认 dry-run**，只读诊断并落盘报告）、`--db <path>`、`--out <path>`、`--backup-dir <dir>`、`--help`/`-h`；未知参数 → stderr + 退出码 2。仅显式 `--apply` 才写库：写前先把 db 文件复制到 `temp\`（含时间戳）备份，全部修复包在**单事务**内，失败整体回滚 |
-| `PuddingTaskRecall.Cli.csproj` | 目标框架 net10.0；代码 `using` 显示依赖 `PuddingPlatform.Data.Entities`（平台实体/SQLite 事实表）与 `PuddingCode.Scheduling`、`PuddingCode.Tasks`（Core 契约） |
+| `Program.cs` | 🔑 CLI 入口（160 行）；默认 dry-run、写库需 `--apply` （见下「关键语义」） |
+| `PuddingTaskRecall.Cli.csproj` | net10.0；依赖平台实体事实表与 Core 契约 （见下「关键语义」） |
 
 ## 核心功能
 
 | 文件 | 用途 |
 |------|------|
 | `TaskRecallAuditEngine.cs` | 🔑 审计与修复引擎（922 行），两个静态类：`TaskRecallAuditEngine` 与 `TaskRecallReportWriter` |
-| ├ `TaskRecallAuditEngine.Analyze(...)`（:173） | 只读侦查：返回 `TaskRecallResult` 报告（状态分布、binding/projection 快照、Completed 事件样本、A 类回填清单），不写库 |
+| ├ `TaskRecallAuditEngine.Analyze(...)`（:173） | 只读侦查返回 `TaskRecallResult` 报告，不写库 （见下「关键语义」） |
 | ├ `TaskRecallAuditEngine.ApplyAsync(...)`（:225） | 显式 `--apply` 才执行；按报告修复并返回 `ApplyOutcome`，单事务提交 |
 | ├ 侦查查询区（:332） | task / attempt / binding / projection 事实查询（SQLite 直查） |
 | ├ 辅助区（:660） | 查询与修复的公共辅助 |
@@ -33,3 +33,14 @@
 ## 测试
 
 无对应测试项目。验证方式是 `--db` 指向真实库先跑默认 dry-run 看报告，再按需 `--apply`（写前有 db 备份，写库为单事务可整体回滚）。
+
+## 表「用途」列·关键语义（逐字原文）
+
+> 下列为 `## 入口 & 配置` 与 `## 核心功能` 两表「用途」列的**逐字原文**（行序与两表一致）；表内已缩为语义摘要，并以 `（见下「关键语义」）` 指回本段。
+
+- `Program.cs`
+  🔑 CLI 入口（160 行）。参数：`--apply`（**默认 dry-run**，只读诊断并落盘报告）、`--db <path>`、`--out <path>`、`--backup-dir <dir>`、`--help`/`-h`；未知参数 → stderr + 退出码 2。仅显式 `--apply` 才写库：写前先把 db 文件复制到 `temp\`（含时间戳）备份，全部修复包在**单事务**内，失败整体回滚
+- `PuddingTaskRecall.Cli.csproj`
+  目标框架 net10.0；代码 `using` 显示依赖 `PuddingPlatform.Data.Entities`（平台实体/SQLite 事实表）与 `PuddingCode.Scheduling`、`PuddingCode.Tasks`（Core 契约）
+- `TaskRecallAuditEngine.Analyze(...)`（:173）
+  只读侦查：返回 `TaskRecallResult` 报告（状态分布、binding/projection 快照、Completed 事件样本、A 类回填清单），不写库
