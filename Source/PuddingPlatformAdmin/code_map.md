@@ -16,12 +16,16 @@
 |------|------|
 | `src/` | 前端源码 |
 | `config/` | Umi 配置 |
-| `public/` | 静态资源；`public/scripts/root-redirect.js` 是**基座外深链归一**脚本（`<head>` 同步加载、只写 ES5），由 `config/config.ts` 以 `?v=<脚本内容 sha256 前 8 位>` 引用 —— 内容变 URL 变，破解宿主静态资源“无 Cache-Control”导致的启发式长期缓存。见 D11 / P6 |
+| `public/` | 静态资源与深链归一脚本（见下「关键语义」） |
 | `mock/` | 模拟数据 |
 | `tests/` | 测试 |
 | `e2e/` | 端到端测试 |
 | `scripts/` | 构建脚本 |
 | `dist/` | 构建产物 |
+
+**关键语义**
+
+**`public/`**：静态资源；`public/scripts/root-redirect.js` 是**基座外深链归一**脚本（`<head>` 同步加载、只写 ES5），由 `config/config.ts` 以 `?v=<脚本内容 sha256 前 8 位>` 引用 —— 内容变 URL 变，破解宿主静态资源“无 Cache-Control”导致的启发式长期缓存。见 D11 / P6
 
 ## 关键文件
 
@@ -36,15 +40,23 @@
 
 | 文件 | 用途 |
 |------|------|
-| `src/pages/stats/tokens/index.tsx` | 月度 Provider/Model Token 页面；显示本地网关或旧投影数据源；趋势图使用整列命中区和受控 HTML tooltip，稳定显示分项 Token、缓存命中率与请求数 |
+| `src/pages/stats/tokens/index.tsx` | 月度 Token 统计页（见下「关键语义」） |
 | `src/services/platform/api.ts` | `MonthlyTokenStatsResponse.dataSource` 区分 `local_gateway` 与 `legacy_projection` |
+
+**关键语义**
+
+**`src/pages/stats/tokens/index.tsx`**：月度 Provider/Model Token 页面；显示本地网关或旧投影数据源；趋势图使用整列命中区和受控 HTML tooltip，稳定显示分项 Token、缓存命中率与请求数
 
 ## External Access Token 管理（ADR-075 / ADR-082）
 
 | 文件 | 用途 |
 |------|------|
-| `src/pages/access-token-management/index.tsx` | External Token 列表/创建/重命名/撤销；scope 选择包含 tasks.* 与 ADR-082 `workspaces.read`、`agents.read`、高风险 `messages.send`，默认仍仅最小 `tasks.read` |
+| `src/pages/access-token-management/index.tsx` | External Token 管理页（见下「关键语义」） |
 | `src/pages/access-token-management/index.test.tsx` | 一次性 Secret、撤销/CAS 与最小 scope UI 回归；验证 `messages.send` 可见且默认不选中 |
+
+**关键语义**
+
+**`src/pages/access-token-management/index.tsx`**：External Token 列表/创建/重命名/撤销；scope 选择包含 tasks.* 与 ADR-082 `workspaces.read`、`agents.read`、高风险 `messages.send`，默认仍仅最小 `tasks.read`
 
 ## LLM 资源池
 
@@ -61,13 +73,18 @@
 | `src/pages/chat/utils/providerBilling.ts` | 展示适配器注册表 `{id,match,displayName,fallbackCurrencySymbol}` + `resolveBillingAdapter`/`currencySymbolFor`（CNY→¥/USD→$）；providerId 未命中不渲染徽标；新服务商在此加一项即可 |
 | `src/pages/chat/hooks/useProviderBalance.ts` | 余额拉取：providerId 变化即取 + 5min 低频轮询（`usePollingLoader` 页面隐藏自动暂停）+ 手动 `refresh`；任何失败静默降级为 `balance=undefined` + `errorText`，不抛错 |
 | `src/pages/chat/components/ProviderBalanceIndicator.tsx` | 品牌图标（DeepSeek/Mimo 内联 SVG）+ `¥xx.xx` 徽标；`detail` prop 进 Tooltip 第二行（错误原因/刷新提示） |
-| `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 Goal 状态控件：无 Goal 可开始，Active 可暂停/停止，Paused/Blocked 可恢复/停止，终态可新建；顶栏紧凑按钮显示 phase/iteration，Popover 承载完整 objective、原因与终态时间。`GoalStepsPanel` 惰性化（仅 Popover 内需要）：生产走 `React.lazy(loadGoalStepsPanel)` + `React.Suspense` 轻量 fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使 Chat 路由首屏 chunk 507842 → 496132 B（见 `Docs/14_reports/Chat-Bundle-Budget-Plan-2026-09-19.md`） |
+| `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 Goal 状态控件与 GoalStepsPanel 惰性化（见下「关键语义」） |
 | `src/pages/chat/utils/goalContinuationMessage.ts` + `types.ts` + `projections/messageProjection.ts` | 仅对服务端 `goal_managed + goal_continuation` 消息解析 `<goal_payload>`；历史 `\\uXXXX` 由 JSON parser 还原为可读 Goal/Task/工作单元文本，普通用户消息与损坏 payload 均原样保留 |
 | `src/pages/workspace-tasks/SchedulerDrawer.tsx` | Task 看板“调度中心”：权威状态、候选决策码、Pause/Resume/Scan/Repair、revision CAS 策略表单与 Authoritative 前置门禁 |
 | `src/pages/workspace-tasks/TaskEditorDrawer.tsx` + `TaskCard.tsx` + `TaskDetailsDrawer.tsx` | 暴露 Task 自动调度 opt-in、taskType/capability/provider/model/fallback/window；卡片显示“自动”标记并提供纳入/退出、Blocked Resume/Requeue 等用户干预 |
 | `src/services/platform/api.ts` | 调度 status/policy/actions/evaluate API；Goal 与 Task 继续使用服务端结构化命令，不在浏览器复制状态机 |
 | `src/pages/chat/components/ChatMain.tsx` | Goal 状态控件挂到 WorkspaceNavigationHeader 的「任务看板」旁；消息首屏不再被 Goal 长正文下推；其余余额/推断辅助请求继续 idle 后启动 |
 | `src/services/platform/api.ts` | `getLlmProviderBalance` → `GET /api/llm/providers/{id}/balance`；`LlmProviderBalanceDto`/`LlmBalanceInfoDto` 类型 |
+
+**关键语义**
+
+**`src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts`**：ADR-074 Goal 状态控件：无 Goal 可开始，Active 可暂停/停止，Paused/Blocked 可恢复/停止，终态可新建；顶栏紧凑按钮显示 phase/iteration，Popover 承载完整 objective、原因与终态时间。`GoalStepsPanel` 惰性化（仅 Popover 内需要）：生产走 `React.lazy(loadGoalStepsPanel)` + `React.Suspense` 轻量 
+fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使 Chat 路由首屏 chunk 507842 → 496132 B（见 `Docs/14_reports/Chat-Bundle-Budget-Plan-2026-09-19.md`）
 
 后端查询适配器注册表（`ILlmBalanceProvider`/`DeepSeekLlmBalanceProvider`）见 `PuddingPlatform/code_map.md` 提供商配置节；完整设计与扩展步骤见 `Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md`。
 
@@ -109,24 +126,26 @@
 | `src/pages/orchestration/*.test.ts` | SSE、API 路径、DAG/强类型 handle、布局/Revision CAS、Graph 生命周期、edge 构造/兼容/环拒绝、Graph Input 引用清理与 dirty/diff 行为测试 |
 | `config/routes.ts` | 注册管理菜单 `/orchestration`；继续保持 system config 为最后一个可见顶级菜单 |
 
-画布采用 `@xyflow/react`，固定高度容器内开放平移、缩放、选择、节点拖拽和 graph 模式的 catalog 端口连线；页面默认把完整宽高交给画布，Inspector、Graph Inputs、HTTP Hook、Events 按需以悬浮层覆盖，打开/收起都不重建画布或丢失 viewport。`deleteKeyCode={null}` 关闭画布裸删除键，节点/边删除必须走检查器以同步定义与引用。运行状态刷新只更新节点外观，不覆盖未保存坐标。保存提交全部节点坐标与当前 viewport，并以 `expectedCurrentLayoutRevision` 做 CAS；409 时保留本地状态，只有用户明确确认才重新加载。Executable definition、GraphLayout 与 Run 投影保持三层独立。
+画布采用 `@xyflow/react`，固定高度容器内开放平移、缩放、选择、节点拖拽和 graph 模式的 catalog 端口连线；页面默认把完整宽高交给画布，Inspector、Graph Inputs、HTTP Hook、Events 按需以悬浮层覆盖，打开/收起都不重建画布或丢失 viewport。`deleteKeyCode={null}` 关闭画布裸删除键，节点/边删除必须走检查器以同步定义与引用。运行状态刷新只更新节点外观，不覆盖未保存坐标。保存提交全部节点坐标与当前 viewport，并以 `expectedCurrentLayoutRevision` 做 CAS；409 
+时保留本地状态，只有用户明确确认才重新加载。Executable definition、GraphLayout 与 Run 投影保持三层独立。
 
 ## Chat 流式 UI（deepseek-harness 对齐，2026-08-23）
 
-参考 `E:\github\deepseek\deepseek-harness`（dsh-0.1.1-rc.2）流式 UI 设计 + `Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md`；保留 Pudding 色板/头像身份，采用 harness 的信息架构与流式渲染模式。行为链质感演进记录见 `Docs/11_design/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md`；2026-08-25 后续施工以 `Docs/12_features/Agent消息交错内容流与最新行为组披露完整实施方案.md` + ADR-079 为权威合同。
+参考 `E:\github\deepseek\deepseek-harness`（dsh-0.1.1-rc.2）流式 UI 设计 + `Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md`；保留 Pudding 色板/头像身份，采用 harness 的信息架构与流式渲染模式。行为链质感演进记录见 `Docs/11_design/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md`；2026-08-25 后续施工以 
+`Docs/12_features/Agent消息交错内容流与最新行为组披露完整实施方案.md` + ADR-079 为权威合同。
 
 | 文件 | 职责与边界 |
 |------|------------|
 | `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 只做逐行 `` `` ``→``` 归一；历史「管道行收集 + 标题拆 \|」hack 会破坏 GFM 表格（分隔行与正文合并/空行被吞→整表降级为 `<p>` 原文），已删除 |
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | `findStableMarkdownBoundary`（已导出）表格感知：前导 `\|` 识别（不要求尾管道）、分隔行到达才允许整表提交、半截表头滞留 live 段、表格 run 中间不提交 |
 | `src/pages/chat/components/MessageItem.tsx` | 流式尾段含块级/强调语法（`\|`、反引号、`#`、列表、`>*_~`、链接）时走 ReactMarkdown 渲染（不再以纯文本 span 显示原始管道/星号）；纯文本尾段保留打字机 span + 墨迹光标（零解析路径） |
-| `src/pages/chat/components/AgentMessageBubble.tsx` | 行序 TurnStatus → TurnContentStream（正文 ⇄ 行为组单一内容流）→ ModelRetryRow → 错误行 → actions/StatsLine；ModelRetryRow 只接收 canonical `subconscious_step` LLM retry 摘要并按 Turn/后续过程事实区分“重试中/已重试”，普通 thinking 中的 retry 不触发；投影一旦含 TextBlock 就不再渲染第二个 answer bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧记录兜底；TurnStatus 有 canonical 投影时直接消费 `deriveTurnStatusFromProjection`，turn 终态渲染 TurnStatsLine |
+| `src/pages/chat/components/AgentMessageBubble.tsx` | 行序渲染与 retry/正文去重（见下「关键语义」） |
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | `message.content.appended` 到达即翻转 status=streaming（首个回答增量 = 已知事实「正在生成回答」，状态条与正文不再各说各话）；`enqueueDelta` 携带入队基准长度 |
 | `src/pages/chat/hooks/useSessionEventBuffers.ts` | 回答增量缓冲 `{delta, baseLength}`；flush 经 `applyBufferedDeltaToTurn` 按基准位置幂等应用——基准漂移（activeRun 快照竞态）丢弃缓冲，杜绝直播期间正文整段重复 |
 | `src/pages/chat/components/IntentConsole.tsx` | Composer §6.2：Sandbox/Auto-review 收敛进设置 Popover（活动态角标浮出）；执行偏好/权限/语音/发送保持直达 |
 | `src/pages/chat/styles/agent.styles.ts` | `agentBubbleNew` 平铺化：透明背景/无边框阴影/15px 1.75（对齐 harness 助手无气泡全宽正文）；`agentActiveOutputSurface` 退化为兼容类名 |
 | `src/pages/chat/styles/user.styles.ts` | `userBubbleNew` 右侧 22px 圆角胶囊（harness 数值）：accent 淡染、无边框无阴影 |
-| `src/pages/chat/styles/execution-flow.styles.ts` | 行式 chrome：28px 行高、16px leading、14/22 标题（secondary 档）、2×2 分隔点（caption 档）、22px 展开缩进、TurnStatus 文字 shimmer；行为链升级新增：`rowSweep` 运行行扫光（reduced-motion 降级）、`duration` 折叠行尾部计量槽、`reasoningChip` 段时长 chip、`statsLine/statsDot` 终态计量行、`timelineList` 交错时间线容器；`turnStatusRow` = 运行态**胶囊状态条**（fit-content、status-running 8% 淡染 + 18% 描边 + 呼吸光晕，reduced-motion 只留静态底色），`turnStatusElapsed` = 胶囊内计时 chip（tabular-nums，宽度不随秒数跳动） |
+| `src/pages/chat/styles/execution-flow.styles.ts` | 行式 chrome 与行为链样式 token（见下「关键语义」） |
 | `src/pages/chat/styles/markdown.styles.ts` | 表格仅横向分隔线（th 加粗下边线/td 弱底线/无竖线网格，对齐 harness MarkdownText）；代码块圆角 12px、行内 code 圆角 6px |
 | `src/pages/chat/components/messageTurnMerge.test.ts` | 消息归并守卫单测：BUG2（终态不回退、同 messageId 不追加第二卡）+ BUG3「同一条回复两张卡片」（无用户正文的本地 turn 仍按 turnId 身份匹配、直播影子不追加、activeRun 正文只差空白/只差身份时归并、真正的下一轮仍追加） |
 | `src/pages/chat/components/MessageItem.streaming.test.tsx` | BUG1 单测：完整表格渲染 `<table>`、流式尾段表格走 markdown、纯文本尾段保留打字机 |
@@ -154,7 +173,7 @@
 | `src/pages/chat/components/IntentConsole.tsx` | Composer 壳：不再持有草稿态/面板态（下沉叶子），仅订阅低频事件（focus 变化、hasText 空↔非空翻转）；外部改写走 textInputRef.setValue；发送门控用 composerHasText |
 | `src/pages/chat/components/ChatMain.tsx` | `handlePinnedQuote` 用 inputValueRef 消除 inputValue 依赖（回调身份稳定，MessageList 的 React.memo 不再被逐键 lift 击穿） |
 | `src/pages/chat/types.ts` | `buildMessageBlocks` 仅滤除 `subagent_progress`（托盘坞承载）；spawned/completed 父级委派事实保留进主消息（DelegationRow 路径 A 数据源） |
-| `src/pages/chat/styles/message.styles.ts` | AgentTurnCard 宽屏最大 750px（720px 内容列 + 外壳），消除右侧卡内空白；正常流保留真实高度，不使用 `content-visibility` remembered intrinsic size；消息操作条为**常驻**透明图标行（2026-09-21 修卡片 hover 抖动）：隐藏只切 opacity、`minHeight: 28` 始终预留按钮高度，`MessageActions` **不得**在 `visible=false` 时提前 return，否则卡片高度随 hover 进出跳变；CurrentActivityPanel 委派大卡退役 |
+| `src/pages/chat/styles/message.styles.ts` | AgentTurnCard 宽屏上限与常驻操作条（见下「关键语义」） |
 | `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 增量：正文 emoji run 包 `<span data-md-emoji>`（0.95em 收敛，围栏代码/行内 code 跳过；fence 状态跟踪） |
 | `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 吸底阈值 `BOTTOM_THRESHOLD_PX`=24；scrollTop 单一写入者/instant snap/上滚停跟随；虚拟化权重同时计入消息正文、过程项和已水合 canonical render weight；follow effect 依赖 `totalSize`，ResizeObserver auto 模式在底部阈值内收敛 |
 | `src/pages/chat/viewport/executionFlowRenderWeight.ts` | 递归计算 reasoning/tool/delegation/message canonical 节点的结构与文本渲染成本，使 DOM 很重但消息数较少的会话提前进入虚拟化；按 immutable Projection 身份 WeakMap 缓存，未变化 Turn 不重复扫描 |
@@ -164,13 +183,24 @@
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | append 节奏：基础步长跟随流速率（ratePerTick，visible≈到达速率，clamp 2..24），滞后分档仅作追赶兜底；adaptiveMaxLag 收紧 [24,120]（只作平滑余量，避免长落后追赶爆发） |
 | `src/pages/chat/styles/layout.styles.ts` | `messageListShell` 增加 relative：底部滚动控制簇（回到底部/贴底跟随）锚定消息区右下角，天然位于 composer 上方（对齐 Hermes measured-composer 锚定语义） |
 
+**关键语义**
+
+**`src/pages/chat/components/AgentMessageBubble.tsx`**：行序 TurnStatus → TurnContentStream（正文 ⇄ 行为组单一内容流）→ ModelRetryRow → 错误行 → actions/StatsLine；ModelRetryRow 只接收 canonical `subconscious_step` LLM retry 摘要并按 Turn/后续过程事实区分“重试中/已重试”，普通 thinking 中的 retry 不触发；投影一旦含 TextBlock 就不再渲染第二个 answer 
+bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧记录兜底；TurnStatus 有 canonical 投影时直接消费 `deriveTurnStatusFromProjection`，turn 终态渲染 TurnStatsLine
+
+**`src/pages/chat/styles/execution-flow.styles.ts`**：行式 chrome：28px 行高、16px leading、14/22 标题（secondary 档）、2×2 分隔点（caption 档）、22px 展开缩进、TurnStatus 文字 shimmer；行为链升级新增：`rowSweep` 运行行扫光（reduced-motion 降级）、`duration` 折叠行尾部计量槽、`reasoningChip` 段时长 chip、`statsLine/statsDot` 终态计量行、`timelineList` 
+交错时间线容器；`turnStatusRow` = 运行态**胶囊状态条**（fit-content、status-running 8% 淡染 + 18% 描边 + 呼吸光晕，reduced-motion 只留静态底色），`turnStatusElapsed` = 胶囊内计时 chip（tabular-nums，宽度不随秒数跳动）
+
+**`src/pages/chat/styles/message.styles.ts`**：AgentTurnCard 宽屏最大 750px（720px 内容列 + 外壳），消除右侧卡内空白；正常流保留真实高度，不使用 `content-visibility` remembered intrinsic size；消息操作条为**常驻**透明图标行（2026-09-21 修卡片 hover 抖动）：隐藏只切 opacity、`minHeight: 28` 始终预留按钮高度，`MessageActions` **不得**在 `visible=false` 时提前 return，
+否则卡片高度随 hover 进出跳变；CurrentActivityPanel 委派大卡退役
+
 ## Chat 性能热路径
 
 | 文件 | 职责与性能边界 |
 |------|----------------|
 | `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；相同状态轮询必须短路，不重复写缓存或通知订阅者 |
 | `src/pages/chat/client/canonicalMerge.ts` | 消息内容与显示顺序分别合并：新快照顺序为准，分页缺失历史按共享身份锚点保留；同 ID 的 activeRun 比较完整状态与输出，旧游标不回退；未变化 messages 保持引用稳定 |
-| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；实时快照优先使用 window.turnId，同回合只有最后一条助手消息承载 canonical 投影；历史 messages 引用不变时不重建投影；把已水合 turn 的 execution-flow render weight 附到 viewport item；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；保留终态守卫、同 messageId 原地更新与三源去重。**同一条回复只允许一张卡片**（`visibleTurns`）：`hasProjectedUserTurn` 以 `userMessage.id` / `turnId` 身份优先匹配（没有用户正文的 agent 主动回合、SSE 恢复 turn、activeRun 快照 turn 不得被当成新 turn），文本+时间戳（≤1s）只是兜底；`normalizeReplyMarkdown` 做空白无关的正文等价比较并配 `REPLY_DEDUP_MAX_SKEW_MS`(10min) 同轮时间窗（防止把两轮相同的短回复误并）；`mergeLocalTurnsAwaitingProjection` 丢弃「已物化回复的直播影子」，`mergeActiveRunIntoTurns` 按正文或 `commandClientId` 身份归并（用户行/助手行被服务端拆成两条 turn 时命中后者），只有真正的下一轮才追加 |
+| `src/pages/chat/components/MessageList.tsx` | 消息行投影与单卡去重（见下「关键语义」） |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；Agent 行通过根滚动容器 IntersectionObserver 在 600px 预取区注册可见 turn；直接接收本 Turn 的 Projection 对象，任一其他 Turn/全局 selector revision 不得击穿历史行 memo |
 | `src/pages/chat/components/execution-flow/TurnContentStream.tsx` / `ActivityGroup.tsx` | 超长单 Turn 的二级 DOM 预算：默认最新 40 个内容块、每组最新 24 个行为节点；旧内容每次 40/24 项渐进揭示，折叠组成员完全卸载 |
@@ -197,6 +227,12 @@
 | `src/utils/debug.ts` | 完整性能快照、观察器和诊断建议；仅由 perf/debug 模式或开发面板异步加载 |
 | `scripts/check-chat-bundle-budget.cjs` / `package.json` | `npm run build` 后的 Chat 体积门禁；同步脚本 ≤1536 KiB、Chat 路由 ≤480 KiB，并验证任务看板/Checkpoint/ContextMenu 未回流首载共同块 |
 
+**关键语义**
+
+**`src/pages/chat/components/MessageList.tsx`**：将历史消息与 active run 快照投影为稳定消息行；实时快照优先使用 window.turnId，同回合只有最后一条助手消息承载 canonical 投影；历史 messages 引用不变时不重建投影；把已水合 turn 的 execution-flow render weight 附到 viewport item；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；保留终态守卫、同 
+messageId 原地更新与三源去重。**同一条回复只允许一张卡片**（`visibleTurns`）：`hasProjectedUserTurn` 以 `userMessage.id` / `turnId` 身份优先匹配（没有用户正文的 agent 主动回合、SSE 恢复 turn、activeRun 快照 turn 不得被当成新 turn），文本+时间戳（≤1s）只是兜底；`normalizeReplyMarkdown` 做空白无关的正文等价比较并配 `REPLY_DEDUP_MAX_SKEW_MS`(10min) 同轮时间窗（防止把两轮相同的短回复误并）；
+`mergeLocalTurnsAwaitingProjection` 丢弃「已物化回复的直播影子」，`mergeActiveRunIntoTurns` 按正文或 `commandClientId` 身份归并（用户行/助手行被服务端拆成两条 turn 时命中后者），只有真正的下一轮才追加
+
 ## 工作空间与静态资源边界
 
 | 文件 | 职责与边界 |
@@ -218,7 +254,8 @@
 | `src/pages/workspace/[id]/MarkdownPreview.tsx` | 只读 Markdown 预览：不启用 `rehype-raw`，文档内 HTML 按文本处理、不执行脚本；链接新窗口 + `noopener` |
 | `src/pages/workspace/[id]/workbenchStyles.ts` | 工作台专用样式与响应式断点（≥1440 近全屏、1024–1439 单列、<1024 顶部横向分区导航 + 文档选择器）。刻意与 `agent-template-settings/styles.ts` 分离，全局模板抽屉布局不受影响 |
 
-2026-10-01 复核修正（依运行态截图）：抽屉宽度改为**按分区分模式**——只有「角色与 Prompt」用 `94vw` 近全屏，其余分区收窄到 1040px，消除右侧 30–45% 的无内容死区；护栏三个数字改用 `fieldGrid`（`minmax(240px,280px)` 自动换行）而非各占一整行；模型与记忆分区加 `modelSectionHost` 作用域，把 antd 选择器长模型名从换行改为单行省略；身份栏补回可见关闭按钮（原先把抽屉头隐藏后只剩「返回列表」）；无修改时保存按钮降级为「已保存」次要按钮（长期停在灰紫禁用态会被误读成不能保存）；底部说明收敛为一行，避免与应用底部状态栏挤在同一行。另修 `CapabilitySkillSection.tsx` 的 `GrantChip`：能力目录里 `name` 常等于 `toolName`，无条件追加 code 会渲染成 `search_tools search_tools`，现在两者相同则只渲染一次。
+2026-10-01 复核修正（依运行态截图）：抽屉宽度改为**按分区分模式**——只有「角色与 Prompt」用 `94vw` 近全屏，其余分区收窄到 1040px，消除右侧 30–45% 的无内容死区；护栏三个数字改用 `fieldGrid`（`minmax(240px,280px)` 自动换行）而非各占一整行；模型与记忆分区加 `modelSectionHost` 作用域，把 antd 选择器长模型名从换行改为单行省略；身份栏补回可见关闭按钮（原先把抽屉头隐藏后只剩「返回列表」）；无修改时保存按钮降级为「已保存」次要按钮（长期停在灰紫禁用态会被误读成不能保存）；底部说明收敛为一行，
+避免与应用底部状态栏挤在同一行。另修 `CapabilitySkillSection.tsx` 的 `GrantChip`：能力目录里 `name` 常等于 `toolName`，无条件追加 code 会渲染成 `search_tools search_tools`，现在两者相同则只渲染一次。
 
 可验证性：`promptDocuments.test.ts`（目录完整性、改回原值不脏、数组/空值比较、错误归类、查找与滚动估算）、`useFormSnapshot.test.tsx`（锁定 `preserve: true` 全量草稿行为）、`WorkspaceAgentSettingsDrawer.test.tsx`（身份栏、目录、草稿保留、预览、保存成功/失败、关闭确认、加载态）。全量 `tsc --noEmit` 的既有基线错误只在 `src/pages/chat`，`src/pages/workspace` 命中必须为 0。
 
@@ -253,18 +290,46 @@
 | `src/pages/chat/components/AgentMessageBubble.tsx` | 压缩态下不再叠加 turn 级 `TurnStatus` 行：否则同一张卡同时出现「正在压缩上下文」与「正在生成回答 · 已运行 Nm」两条互斥叙述，被读成“压缩完了又在生成” |
 | `src/pages/chat/components/IntentConsole.tsx` / `ComposerStatusDetails.tsx` | `status=thinking` 文案统一为「正在思考…」；**不得再用「整理上下文」**，该词与压缩共用同一批词，用户会读成正在压缩。⚠️ 例外（2026-10-07）：容量压力行按修复方案 §1 用「建议整理上下文」，它是**容量信号**而非运行态文案；若复核认为仍会与压缩混淆，只改 `SERVICE_LABEL.capacity` 一处 |
 | `src/pages/chat/components/ContextUsageRing.tsx` | 上下文面板「压缩」行只有文案等于 `COMPACTION_RUNNING_LABEL` 时才带呼吸点；「上次压缩 / 压缩失败」是终态事实，不加动效。两个分母必须各自标注：`used/contextWindowTokens` = 模型窗口占用（圆环弧长与色阶口径），`used/effectiveWindowTokens` = 有效输入压力（独立成行，分母缺失时整行不渲染，不得拿总窗口顶替） |
-| `src/pages/chat/components/inputUnavailable.ts` | 「窗口里不可用于输入的那部分」的来源 → 文案。取值与后端 `ContextEffectiveWindowSources` **逐字对齐**（`output_reserve` / `provider_input_limit` / `safety_margin` / `output_reserve_and_safety_margin` / `fallback_output_reserve`），`toInputUnavailableReason` 只映射已知来源、未知 ⇒ `undefined`（不猜），未标注 ⇒「不可用于输入（来源未知）」；`fallback_output_reserve` 文案是「内置回退预留（未配置输出预算）」。**叶子模块**：`ContextUsageRing` 必须从这里引用而不是 `serviceStatus.ts`——后者 import `@/pages/index-status/health` → `api.ts`，会把整个 umi 应用链拉进圆环的模块图并让 `ContextUsageRing.test.tsx` 整套 import 失败。`serviceStatus.ts` 只做重新导出 |
+| `src/pages/chat/components/inputUnavailable.ts` | 输入不可用来源→文案映射与叶子模块约束（见下「关键语义」） |
 | `src/pages/chat/styles/panel.styles.ts` | 压缩卡形态与 `compactionSweep / compactionGlyph / compactionBreathe / compactionSettle` 关键帧；复用 `--accent-purple` / `--earth-brown` 暖色 token，不引入新色板 |
+
+**关键语义**
+
+**`src/pages/chat/components/inputUnavailable.ts`**：「窗口里不可用于输入的那部分」的来源 → 文案。取值与后端 `ContextEffectiveWindowSources` **逐字对齐**（`output_reserve` / `provider_input_limit` / `safety_margin` / `output_reserve_and_safety_margin` / `fallback_output_reserve`），`toInputUnavailableReason` 只映射已知来源、未知 ⇒ 
+`undefined`（不猜），未标注 ⇒「不可用于输入（来源未知）」；`fallback_output_reserve` 文案是「内置回退预留（未配置输出预算）」。**叶子模块**：`ContextUsageRing` 必须从这里引用而不是 `serviceStatus.ts`——后者 import `@/pages/index-status/health` → `api.ts`，会把整个 umi 应用链拉进圆环的模块图并让 `ContextUsageRing.test.tsx` 整套 import 失败。`serviceStatus.ts` 只做重新导出
 
 ### 压缩生命周期事件的活性契约（2026-09-19，承接「压缩卡重设计」）
 
 | 文件 | 职责与边界 |
 |------|------------|
-| `src/pages/chat/utils/chatStateUtils.ts` | `resolveRunningCompactionId(events)`：只有「最后一个压缩生命周期事件是带非空 id 的 `started`」才判定为仍在运行；payload 支持对象 / JSON 字符串 / 已展平事件，解析异常返回 null。另有 `isStaleCompactionStarted` / `resolveEventOccurredAtMs`（2026-09-19）：**路径无关**的陈旧 started 判定，事件时间距今 > `COMPACTION_STARTED_MAX_AGE_MS`(30min) 即不点亮；取不到时间戳返回 false（不误杀），由服务端权威与活性 TTL 兜底 |
-| `src/pages/chat/hooks/useCompaction.ts` | 重放判活门控：`replay===true` 且 id ≠ `runningCompactionId` 的 started **整条忽略**；重放命中的压缩点亮运行态但**永不弹 toast**。新增 `COMPACTION_LIVENESS_TIMEOUT_MS`(10min) 活性 TTL 与 `convergeStaleCompactions`：超时把 executing 压缩 turn 收敛为「压缩未完成（无终态记录）」并同步收敛 lifecycle map 副本、清 loading/文案、destroy toast。叠加**路径无关陈旧门控**（2026-09-19）：`isStaleCompactionStarted` 为真的 started 直接 return（不建 turn / 不 setLoading / 不弹 toast）——live 通道不带 replay 标记，`SessionEventsController` 无游标时从 sequence 0 无界重放历史，按 id 的判活门控拦不住（误报「正在压缩上下文… 已运行 11466m」）；同一规则在 `useSessionEventProjection.mapEventToTurn` 的 `context.compaction.started` 分支同步生效，防止陈旧 started 把普通 turn 翻成运行态 |
-| `src/pages/chat/hooks/sessionEventCursor.ts` | **游标身份与开流决策的唯一真源**（2026-10-02，高磁盘读取修复 B1）：游标状态 = `{sessionId, phase: unknown\|hydrating\|ready, sequence}`，`sequence=0` 只有在**服务端快照已应用**（ready）时才是合法游标；`decideSessionEventStreamStart` 是唯一的开流起点决策（显式游标含 0 / 该会话 ready / 需先准备 / **拒绝**，不再用 0 兜底），`SessionEventCursorPreparation` 是 bootstrap 的判别联合合同（`ok=false` 不得当成「成功但没有 turns」） |
-| `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放带 `{replay:true, runningCompactionId}`；缺口/历史尾部重放一律 `applySessionEvent(event,{replay:true})`，历史 started 不再冒充运行中。**游标准备合同**（2026-10-02）：`syncCompletedHistoryEventCursor` 返回判别联合（成功才 `markSessionEventCursorReady`，失败/取消/过期绝不 ready），`options.isCurrent` 使迟到的 A 快照不能改写 B 的游标 |
-| `src/pages/chat/hooks/useSessionEventProjection.ts` | `applySessionEvent(ev, {replay?})` 只把 replay 语义透传给压缩事件分发。**会话域**（2026-10-07）：identity 的 `isProjectionOwnedSession(sessionId)` 为真时（agent 主会话）本 hook 对该会话**只消费 `subagent.*` 事实并推进游标**，主消息/轮次/执行流一律不投影（避免与 Agent 投影重复投影同一正文），被过滤事件也不占用 `seenEventIdsRef` 去重集合。**游标推进/清理**（2026-10-02）：实时事件只对当前流的会话推进游标（`advanceSessionEventCursor` 拒绝别的会话），会话切换时 `invalidateSessionEventCursor` 清空游标身份 |
-| `src/pages/chat/hooks/useSessionEventConnection.ts` | **游标必须显式**（S3，2026-09-19）：`startSessionEventStream(sessionId, {cursor, reason})`；显式 0 ＝「有意全量回放」（仅服务端**刚创建、日志为空**的 compaction 后继会话与 checkpoint fork），省略 ＝ 使用该会话**已就绪的权威游标**（2026-10-02：未就绪一律拒绝开流，不再退回 `lastSequenceNumRef`/0），诊断日志记录 `cursorSource`/`cursorReason`。**统一入口 `ensureSessionEventStream`**（2026-10-02）：健康连接复用、否则先准备游标再开流（同会话请求合并 + generation/会话身份/AbortSignal 复检），准备失败返回 `ok=false`；重连走 `forceReconnect` 强制重建。投影自有会话**同样开流**（2026-10-07）：主消息由 Agent 投影负责并在投影层按会话域过滤，而子代理事实只有 canonical 事件这一条通道（`isProjectionOwnedSession` 端口现仅用于诊断标记该流的存在理由）。**410 分流**（S4 剩余项，2026-09-19）：按服务端 `code` 区分 `snapshot_required`（可恢复 → 端口 `syncCompletedHistoryEventCursor(sessionId, signal, {resetCursor:true})` 重取快照并强制重置游标后重连）与 `conversation_frozen`/404（终态 → `handleSessionNotFound`） |
+| `src/pages/chat/utils/chatStateUtils.ts` | 压缩活性/陈旧 started 判定纯函数（见下「关键语义」） |
+| `src/pages/chat/hooks/useCompaction.ts` | 重放判活门控与活性 TTL 收敛（见下「关键语义」） |
+| `src/pages/chat/hooks/sessionEventCursor.ts` | 会话事件游标身份与开流决策唯一真源（见下「关键语义」） |
+| `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放与游标准备合同（见下「关键语义」） |
+| `src/pages/chat/hooks/useSessionEventProjection.ts` | replay 透传与会话域过滤（见下「关键语义」） |
+| `src/pages/chat/hooks/useSessionEventConnection.ts` | 显式游标、统一开流入口与 410 分流（见下「关键语义」） |
 | `src/services/platform/api.ts` | `subscribeSessionEvents` **任何** `afterSequence`（含 0）都下发 `Last-Event-ID`（S3，2026-09-19）——此前只在 `>0` 时发送，使「显式 0（有意全量回放）」与「无游标（客户端没有权威位置）」在协议上不可区分，而无游标已被服务端改为只推实时帧（fail-safe） |
 | `PuddingRuntime/Services/ContextWindowManager.cs` | Auto 压缩三态携带同一 compactionId（failed 此前漏发）；见 `PuddingRuntime/code_map.md` 同主题章节 |
+
+**关键语义**
+
+**`src/pages/chat/utils/chatStateUtils.ts`**：`resolveRunningCompactionId(events)`：只有「最后一个压缩生命周期事件是带非空 id 的 `started`」才判定为仍在运行；payload 支持对象 / JSON 字符串 / 已展平事件，解析异常返回 null。另有 `isStaleCompactionStarted` / `resolveEventOccurredAtMs`（2026-09-19）：**路径无关**的陈旧 started 判定，事件时间距今 > 
+`COMPACTION_STARTED_MAX_AGE_MS`(30min) 即不点亮；取不到时间戳返回 false（不误杀），由服务端权威与活性 TTL 兜底
+
+**`src/pages/chat/hooks/useCompaction.ts`**：重放判活门控：`replay===true` 且 id ≠ `runningCompactionId` 的 started **整条忽略**；重放命中的压缩点亮运行态但**永不弹 toast**。新增 `COMPACTION_LIVENESS_TIMEOUT_MS`(10min) 活性 TTL 与 `convergeStaleCompactions`：超时把 executing 压缩 turn 收敛为「压缩未完成（无终态记录）」并同步收敛 lifecycle map 副本、清 
+loading/文案、destroy toast。叠加**路径无关陈旧门控**（2026-09-19）：`isStaleCompactionStarted` 为真的 started 直接 return（不建 turn / 不 setLoading / 不弹 toast）——live 通道不带 replay 标记，`SessionEventsController` 无游标时从 sequence 0 无界重放历史，按 id 的判活门控拦不住（误报「正在压缩上下文… 已运行 11466m」）；同一规则在 
+`useSessionEventProjection.mapEventToTurn` 的 `context.compaction.started` 分支同步生效，防止陈旧 started 把普通 turn 翻成运行态
+
+**`src/pages/chat/hooks/sessionEventCursor.ts`**：**游标身份与开流决策的唯一真源**（2026-10-02，高磁盘读取修复 B1）：游标状态 = `{sessionId, phase: unknown\|hydrating\|ready, sequence}`，`sequence=0` 只有在**服务端快照已应用**（ready）时才是合法游标；`decideSessionEventStreamStart` 是唯一的开流起点决策（显式游标含 0 / 该会话 ready / 需先准备 / **拒绝**，不再用 0 兜底），
+`SessionEventCursorPreparation` 是 bootstrap 的判别联合合同（`ok=false` 不得当成「成功但没有 turns」）
+
+**`src/pages/chat/hooks/useSessionEventReplay.ts`**：bootstrap 重放带 `{replay:true, runningCompactionId}`；缺口/历史尾部重放一律 `applySessionEvent(event,{replay:true})`，历史 started 不再冒充运行中。**游标准备合同**（2026-10-02）：`syncCompletedHistoryEventCursor` 返回判别联合（成功才 `markSessionEventCursorReady`，失败/取消/过期绝不 ready）
+，`options.isCurrent` 使迟到的 A 快照不能改写 B 的游标
+
+**`src/pages/chat/hooks/useSessionEventProjection.ts`**：`applySessionEvent(ev, {replay?})` 只把 replay 语义透传给压缩事件分发。**会话域**（2026-10-07）：identity 的 `isProjectionOwnedSession(sessionId)` 为真时（agent 主会话）本 hook 对该会话**只消费 `subagent.*` 事实并推进游标**，主消息/轮次/执行流一律不投影（避免与 Agent 投影重复投影同一正文），被过滤事件也不占用 
+`seenEventIdsRef` 去重集合。**游标推进/清理**（2026-10-02）：实时事件只对当前流的会话推进游标（`advanceSessionEventCursor` 拒绝别的会话），会话切换时 `invalidateSessionEventCursor` 清空游标身份
+
+**`src/pages/chat/hooks/useSessionEventConnection.ts`**：**游标必须显式**（S3，2026-09-19）：`startSessionEventStream(sessionId, {cursor, reason})`；显式 0 ＝「有意全量回放」（仅服务端**刚创建、日志为空**的 compaction 后继会话与 checkpoint fork），省略 ＝ 使用该会话**已就绪的权威游标**（2026-10-02：未就绪一律拒绝开流，不再退回 `lastSequenceNumRef`/0），诊断日志记录 
+`cursorSource`/`cursorReason`。**统一入口 `ensureSessionEventStream`**（2026-10-02）：健康连接复用、否则先准备游标再开流（同会话请求合并 + generation/会话身份/AbortSignal 复检），准备失败返回 `ok=false`；重连走 `forceReconnect` 强制重建。投影自有会话**同样开流**（2026-10-07）：主消息由 Agent 投影负责并在投影层按会话域过滤，而子代理事实只有 canonical 事件这一条通道（`isProjectionOwnedSession` 
+端口现仅用于诊断标记该流的存在理由）。**410 分流**（S4 剩余项，2026-09-19）：按服务端 `code` 区分 `snapshot_required`（可恢复 → 端口 `syncCompletedHistoryEventCursor(sessionId, signal, {resetCursor:true})` 重取快照并强制重置游标后重连）与 `conversation_frozen`/404（终态 → `handleSessionNotFound`）
+
