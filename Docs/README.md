@@ -77,6 +77,21 @@ python Tools/Docs/front_matter.py --fix --dry-run  # 预览将补齐的内容
 python Tools/Docs/front_matter.py --fix            # 补齐（只补缺失，不覆盖已有值）
 ```
 
+同为只读门禁（互为补充）：
+
+```bash
+python Tools/Docs/check_md_links.py                # 断链检查
+python Tools/Docs/code_map_check.py --check        # code_map 格式门禁（行长/单元格长度等）
+python Tools/Docs/verify_codemap_wave.py --old <改动前备份> --new <当前文件>
+                                                   # code_map **内容守恒**门禁：抓“改格式时把原文截断”
+python Tools/Docs/verify_codemap_wave_selftest.py  # 上者的自测（自带夹具，含 4 个取红用例）
+```
+
+> `code_map_check.py` 只看**格式**；一次实测中某个 wave 格式门禁 `error 0 / PASS`，但
+> 3 条长纯段落尾部被截断（370/365/444 → 289/283/287）。`verify_codemap_wave.py` 专补这个盲区：
+> 用“**滑动窗口命中率**”（去掉空白后按 32 字符窗、步长 16 滑动）判定内容是否守恒——
+> 该判据对软折行鲁棒，且不依赖“前缀包含”的单调性。
+
 ## 建议阅读顺序
 
 1. [`07_architecture/架构.md`](07_architecture/架构.md) — 架构总览、分层边界与阅读地图。
