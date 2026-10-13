@@ -292,3 +292,107 @@ internal static class FakeSsh
         return condition();
     }
 }
+
+/// <summary>
+/// 确定性假文件系统（切片 B 路径策略门禁）：reparse point / 普通文件 / 目录可以精确编排，
+/// 不依赖 Windows 符号链接权限。真实文件系统路径由集成测试与探针覆盖。
+/// </summary>
+internal sealed class FakeLocalFileSystem : PuddingSsh.Validation.ISshLocalFileSystem
+{
+    private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+
+    private sealed record Entry(bool IsDirectory, bool IsRegularFile, bool IsReparsePoint, long Length);
+
+    public FakeLocalFileSystem Root(string path) => Directory(path);
+
+    public FakeLocalFileSystem Directory(string path)
+    {
+        EnsureAncestors(path);
+        _entries[Canonical(path)] = new Entry(true, false, false, 0);
+        return this;
+    }
+
+    public FakeLocalFileSystem File(string path, long length = 0)
+    {
+        EnsureAncestors(path);
+        _entries[Canonical(path)] = new Entry(false, true, false, length);
+        return this;
+    }
+
+    public FakeLocalFileSystem ReparseDirectory(string path)
+    {
+        EnsureAncestors(path);
+        _entries[Canonical(path)] = new Entry(true, false, true, 0);
+        return this;
+    }
+
+    public FakeLocalFileSystem NonRegular(string path)
+    {
+        EnsureAncestors(path);
+        _entries[Canonical(path)] = new Entry(false, false, false, 0);
+        return this;
+    }
+
+    public bool Exists(string path) => _entries.ContainsKey(Canonical(path));
+
+    public bool IsDirectory(string path) => _entries.TryGetValue(Canonical(path), out var entry) && entry.IsDirectory;
+
+    public bool IsRegularFile(string path) => _entries.TryGetValue(Canonical(path), out var entry) && entry.IsRegularFile;
+
+    public bool IsReparsePoint(string path) => _entries.TryGetValue(Canonical(path), out var entry) && entry.IsReparsePoint;
+
+    public long GetLength(string path) => _entries.TryGetValue(Canonical(path), out var entry) ? entry.Length : 0;
+
+    public string GetFullPath(string path) => Canonical(path);
+
+    private void EnsureAncestors(string path)
+    {
+        var parent = ParentOf(Canonical(path));
+        while (parent is not null and not "")
+        {
+            if (!_entries.ContainsKey(parent))
+            {
+                _entries[parent] = new Entry(true, false, false, 0);
+            }
+
+            parent = ParentOf(parent);
+        }
+    }
+
+    private static string? ParentOf(string path)
+    {
+        var index = path.LastIndexOf('/');
+        return index <= 0 ? null : path[..index];
+    }
+
+    /// <summary>POSIX 风格规范化：统一分隔符、消解 <c>.</c>/<c>..</c>（保持测试跨平台确定性）。</summary>
+    private static string Canonical(string path)
+    {
+        var replaced = path.Replace('\\', '/');
+        var absolute = replaced.StartsWith('/') || (replaced.Length > 1 && replaced[1] == ':');
+        var segments = replaced.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var stack = new List<string>();
+        foreach (var segment in segments)
+        {
+            if (segment == ".")
+            {
+                continue;
+            }
+
+            if (segment == "..")
+            {
+                if (stack.Count > 0)
+                {
+                    stack.RemoveAt(stack.Count - 1);
+                }
+
+                continue;
+            }
+
+            stack.Add(segment);
+        }
+
+        var body = string.Join('/', stack);
+        return absolute ? "/" + body : body;
+    }
+}

@@ -16,4 +16,5 @@ public sealed record SshHostContext(
     SshIdentityRequest Identity,
     SshTrustSnapshot Trust,
     string? DefaultCwd = null,
-    DateTimeOffset? ExecutionDeadlineUtc = null);
+    DateTimeOffset? ExecutionDeadlineUtc = null,
+    SshTransferLimits? Transfer = null);

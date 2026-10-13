@@ -22,22 +22,29 @@
 
 ## 抽象层
 
-| 文件/目录 | 用途 |
-|------|------|
-| `Abstractions/` | 核心接口定义 |
-| `Abstractions/IBrowserDelegationLifecycle.cs` | **委派生命周期端口**（R4·§6.2）：Runtime/Platform 与 Host 之间**唯一接缝**，**只用标量**（`PuddingCore` 不引用 `Contracts`）；拒绝必须**可判且带理由**（调用方据此 fail-closed） |
-| `Core/` | 核心实现 |
-| `Platform/` | 平台抽象 |
-| `Abstractions/ILlmGatewayUsageRecorder.cs` | 一次 Provider usage 对应一条本地计费事实的必达写入契约 |
-| `Abstractions/ISubAgentPool.cs` | Runtime 调用子代理池所需的最小契约、池状态与池快照模型；实现留在 Platform |
-| `Abstractions/ITokenUsageRecorder.cs` | Token 归因写入边界；`TokenUsageAttribution` 承载 canonical parent/sub-agent、零基 round 与本轮工具事实，并以默认接口实现保持旧 recorder 源码兼容 |
-| `Platform/IPlatformRepositories.cs` | Platform 持久化仓储契约；`ChatMessageRow` 含 WorkspaceId、稳定 platform/business MessageId、TurnId 与消息内容，供 Runtime 在压缩与冷水合前增量镜像 canonical 转录并排除当前 Turn；包含 Agent Token/熵诊断的 Core DTO 查询边界 |
-| `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界；返回从 canonical Goal/Task/Plan 解析的 `ExecutionWorkUnitContext` 及 rounds/tools/duration/token/cost 冻结预算 |
-| `Platform/AgentProjectionDtos.cs` | Agent 会话读模型；`ProcessSummaryItem.Sequence` 为 canonical 必填，active/detail 输出携带 `TurnEventWindow`（through/min/max/hasMoreBefore）供前端识别截断 |
-| `Platform/ExecutionRunContracts.cs` | ExecutionRun 冻结快照合同；V5：`LlmRouteSnapshot`（:110-118）与 `CallerLlmSnapshot`（:165）新增可选 `VisionRequestPolicy? VisionPolicy`；`CallerLlmSnapshot.SupportsVision` 为唯一 vision 能力投影（CapabilityTags 含 vision，OrdinalIgnoreCase） |
-| `Platform/ApprovalCode.cs` | 待审单确认码的生成与校验——PuddingController 审批流程的**唯一凭据**（`GET /api/approval/*` 只下发脱敏投影）。`Generate()` 用 CSPRNG 取 8 位十六进制（**32 bit**，对照 `ApprovalId` 的 128 bit）；`Matches()` 用 `CryptographicOperations.FixedTimeEquals` 恒时比较。2026-09-20 从 `InMemoryApprovalService` 抽出（原为 `Guid…[..8]` + 逐字节短路比较），使其可独立单测。`MaxFailedAttempts`=10：确认码失败累计达上限即把审批单置 `Expired` 作废（迭代 #16 实现——因审批服务已在迭代 #15 改为进程内实现，才首次可端到端测试） |
-| `Platform/IRsiTrajectoryDataAccess.cs` | RSI-S3 轨迹数据访问接缝；`RsiEventRowWithTurn`（TurnId/Type/Payload/Sequence/OccurredAtRaw）——**不复用** `ConversationEventRow`（后者无 TurnId / 无 OccurredAt，**类型层面**装不下 B1 的 `RsiToolStep`）。查询**只走已索引键 `(TurnId, Type)`**；⛔ 禁用 `CommandId` 形状：`conversation_events` 上 `command_id` **无任何索引**（4 条索引为 ConversationId+Sequence / EventId / TurnId+Type / CommittedAt），按它过滤即全表扫描且随事件总量线性增长 |
-| `Platform/RsiEventTimestamp.cs` | RSI-S3 时间戳契约：`DateTimeOffset.TryParse(raw, **InvariantCulture**, **AssumeUniversal**, out v) → v.ToUniversalTime()`。⛔ 禁用 `DateTimeStyles.None`（无偏移串会按本机时区解释 —— 本机 UTC+8 恰好错 8 小时，且**不会有断言失败**）；⛔ 禁用裸 `DateTimeOffset.Parse`（走 CurrentCulture，非公历文化下解析成不同年份；平台内另有 7+ 处该写法，属既有技术债）；⛔ 不得省 `ToUniversalTime()`（字段名 `OccurredAtUtc` / `RsiEventTimestamp`，**类型名不得撒谎**）。不可解析 ⇒ **fail-closed 抛出**（不返回 null / MinValue、**不丢行**）—— 纯函数层（Rsi 装配器）绝不抛异常，边界层（IO）必须抛 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Abstractions/` | 核心接口定义目录 | — | — | — |
+| `Abstractions/IBrowserDelegationLifecycle.cs` | 委派生命周期端口（R4·§6.2） | `IBrowserDelegationLifecycle` | `Contracts` | Runtime/Platform 与 Host 之间唯一接缝，只用标量（PuddingCore 不引用 Contracts）；拒绝必须可判且带理由（调用方据此 fail-closed） |
+| `Core/` | 核心实现目录 | — | — | — |
+| `Platform/` | 平台抽象目录 | — | — | — |
+| `Abstractions/ILlmGatewayUsageRecorder.cs` | 本地计费事实的必达写入契约 | `ILlmGatewayUsageRecorder` | `Services/` | 一次 Provider usage 对应一条本地计费事实 |
+| `Abstractions/ISubAgentPool.cs` | 子代理池最小契约 | `ISubAgentPool` | `Platform/` | 含池状态与池快照模型；实现留在 Platform |
+| `Abstractions/ITokenUsageRecorder.cs` | Token 归因写入边界 | `ITokenUsageRecorder`、`TokenUsageAttribution` | `Services/` | 承载 canonical parent/sub-agent、零基 round 与本轮工具事实；默认接口实现保持旧 recorder 源码兼容 |
+| `Platform/IPlatformRepositories.cs` | Platform 持久化仓储契约 | `IPlatformRepositories`、`ChatMessageRow` | `Abstractions/` | ChatMessageRow 含 WorkspaceId、稳定 platform/business MessageId、TurnId 与消息内容；供 Runtime 压缩/冷水合前增量镜像 canonical 转录并排除当前 Turn；含 Agent Token/熵诊断 Core DTO 查询边界 |
+| `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界 | `IExecutionCommandReader`、`ExecutionWorkUnitContext` | `Platform/IPlatformRepositories.cs` | 返回由 canonical Goal/Task/Plan 解析的上下文及 rounds/tools/duration/token/cost 冻结预算 |
+| `Platform/AgentProjectionDtos.cs` | Agent 会话读模型 | `AgentProjectionDtos`、`ProcessSummaryItem.Sequence`、`TurnEventWindow` | `Platform/IPlatformRepositories.cs` | Sequence 为 canonical 必填；active/detail 输出携带 TurnEventWindow（through/min/max/hasMoreBefore）供前端识别截断 |
+| `Platform/ExecutionRunContracts.cs` | ExecutionRun 冻结快照合同 | `LlmRouteSnapshot`、`CallerLlmSnapshot` | `Platform/AgentProjectionDtos.cs` | V5：LlmRouteSnapshot 与 CallerLlmSnapshot 新增可选 VisionRequestPolicy? VisionPolicy；CallerLlmSnapshot.SupportsVision 为唯一 vision 能力投影（OrdinalIgnoreCase） |
+| `Platform/ApprovalCode.cs` | 待审单确认码生成与校验 | `ApprovalCode` | `Controllers/` | 细节见后注 |
+| `Platform/IRsiTrajectoryDataAccess.cs` | RSI-S3 轨迹数据访问接缝 | `IRsiTrajectoryDataAccess` | `Data/` | 细节见后注 |
+| `Platform/RsiEventTimestamp.cs` | RSI-S3 时间戳契约 | `RsiEventTimestamp` | `Platform/IRsiTrajectoryDataAccess.cs` | 细节见后注 |
+
+**`Platform/ApprovalCode.cs`**：待审单确认码的生成与校验——PuddingController 审批流程的**唯一凭据**（`GET /api/approval/*` 只下发脱敏投影）。`Generate()` 用 CSPRNG 取 8 位十六进制（**32 bit**，对照 `ApprovalId` 的 128 bit）；`Matches()` 用 `CryptographicOperations.FixedTimeEquals` 恒时比较。
+2026-09-20 从 `InMemoryApprovalService` 抽出（原为 `Guid…[..8]` + 逐字节短路比较），使其可独立单测。`MaxFailedAttempts`=10：确认码失败累计达上限即把审批单置 `Expired` 作废（迭代 #16 实现——因审批服务已在迭代 #15 改为进程内实现，才首次可端到端测试）
+**`Platform/IRsiTrajectoryDataAccess.cs`**：RSI-S3 轨迹数据访问接缝；`RsiEventRowWithTurn`（TurnId/Type/Payload/Sequence/OccurredAtRaw）——**不复用** `ConversationEventRow`（后者无 TurnId / 无 OccurredAt，**类型层面**装不下 B1 的 `RsiToolStep`）。查询**只走已索引键 `(TurnId, Type)`**；
+⛔ 禁用 `CommandId` 形状：`conversation_events` 上 `command_id` **无任何索引**（4 条索引为 ConversationId+Sequence / EventId / TurnId+Type / CommittedAt），按它过滤即全表扫描且随事件总量线性增长
+**`Platform/RsiEventTimestamp.cs`**：RSI-S3 时间戳契约：`DateTimeOffset.TryParse(raw, **InvariantCulture**, **AssumeUniversal**, out v) → v.ToUniversalTime()`。⛔ 禁用 `DateTimeStyles.None`（无偏移串会按本机时区解释 —— 本机 UTC+8 恰好错 8 小时，且**不会有断言失败**）；
+⛔ 禁用裸 `DateTimeOffset.Parse`（走 CurrentCulture，非公历文化下解析成不同年份；平台内另有 7+ 处该写法，属既有技术债）；⛔ 不得省 `ToUniversalTime()`（字段名 `OccurredAtUtc` / `RsiEventTimestamp`，**类型名不得撒谎**）。不可解析 ⇒ **fail-closed 抛出**（不返回 null / MinValue、**不丢行**）—— 纯函数层（Rsi 装配器）绝不抛异常，边界层（IO）必须抛
 
 ## 外部 API 安全合同（ADR-075 / ADR-082）
 

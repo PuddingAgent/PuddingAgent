@@ -42,6 +42,38 @@ public static class SshErrorCodes
     /// <summary>退出码为 0 但输出没有读完（读失败或排空被中止）：不得报成完整成功。</summary>
     public const string OutputIncomplete = "ssh.output_incomplete";
     public const string TransportFault = "ssh.transport_fault";
+
+    // ---------- 切片 B：单文件 SFTP 传输 ----------
+
+    /// <summary>主机未配置传输限额（未开放上传/下载根）：关闭式失败。</summary>
+    public const string TransferUnavailable = "ssh.transfer_unavailable";
+
+    /// <summary>服务端不支持原子/不覆盖发布（能力实测不成立）：**不得**用竞态实现冒充原子性。</summary>
+    public const string TransferUnsupported = "ssh.transfer_unsupported";
+
+    /// <summary>超过本次/配置的文件字节上限（流式中止）。</summary>
+    public const string TransferTooLarge = "ssh.transfer_too_large";
+
+    /// <summary>传输中断/未完成（不自动重试、不提供断点续传）。</summary>
+    public const string TransferIncomplete = "ssh.transfer_incomplete";
+
+    /// <summary>本地路径被拒绝（越出根、重解析点、目录、设备文件等）。</summary>
+    public const string LocalPathInvalid = "ssh.local_path_invalid";
+
+    /// <summary>远端路径被拒绝（非绝对、越出允许根、符号链接逃逸等）。</summary>
+    public const string RemotePathInvalid = "ssh.remote_path_invalid";
+
+    /// <summary>本地目标已存在且未允许覆盖。</summary>
+    public const string LocalPathExists = "ssh.local_path_exists";
+
+    /// <summary>远端目标已存在且未允许覆盖。</summary>
+    public const string RemotePathExists = "ssh.remote_path_exists";
+
+    /// <summary>传输本身的失败（读写/权限/服务端错误）。</summary>
+    public const string TransferFailed = "ssh.transfer_failed";
+
+    /// <summary>清理失败：临时文件残留（不得误报原目标已回滚）。</summary>
+    public const string TransferCleanupFailed = "ssh.transfer_cleanup_failed";
 }
 
 /// <summary>
