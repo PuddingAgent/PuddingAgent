@@ -28,18 +28,18 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | 文件 | 职责 | 关键符号 | 约束 |
 |---|---|---|---|
 | `Contracts/SshTargets.cs` | 冻结目标与主机描述 | `SshTargetRef`、`SshHostDescriptor`、`SshIdentityScopes`、`SshShellKinds` | `HostRevision`/`TrustRevision` 是**权威快照**，不是调用方可覆盖值；作用域不能按次切换 |
-| `Contracts/SshLimits.cs` | 限额与硬上限唯一真源 | `SshOperationLimits.ResolveOperationTimeout/ResolveOutputBudget`、`CleanupGrace`、`MaxOutputBytesHardLimit`、`WaitQueueHardLimit` | 限额**只能缩小**：`min(请求, 主机, 硬上限)`；清理宽限不延长业务许可 |
+| `Contracts/SshLimits.cs` | 限额与硬上限唯一真源 | （见下「关键语义」） | 限额**只能缩小**：`min(请求, 主机, 硬上限)`；清理宽限不延长业务许可 |
 | `Contracts/SshRequests.cs` | Test/Execute 请求 | `SshTestRequest`、`SshExecuteRequest`、`SshRequestLimits.MaxCommandUtf8Bytes` | 无 env / stdin / shellKind 覆盖 / PTY；命令 16 KiB 上限 |
 | `Contracts/SshResults.cs` | 结果与事实枚举 | `SshExecutionStatus`、`SshExecutionState`、`SshTestResult`、`SshExecuteResult` | `ExitCode` 未收到服务端 exit-status 时**为 null**，不得伪造 0；stderr 非空 ≠ 失败 |
-| `Contracts/SshPorts.cs` | 公开最小端口 + 认证材料所有权 | `ISshClient`（`TestAsync`/`ExecuteAsync` 收**冻结上下文** + 请求）、`ISshIdentityProvider`、`ISshHostKeyVerifier`、`ISshTransportFactory`、`ISshTransportSession`、`SshIdentityMaterial`、`SshHostKeyEvidence/Decision` | 不返回 `SshClient`、不外泄第三方事件类型；`SshIdentityMaterial` 释放时清零密钥 |
+| `Contracts/SshPorts.cs` | 公开最小端口 + 认证材料所有权 | （见下「关键语义」） | 不返回 `SshClient`、不外泄第三方事件类型；`SshIdentityMaterial` 释放时清零密钥 |
 | `Contracts/SshHostContext.cs` | 引用方**冻结**后交给组件的输入 | `SshHostContext`（`Target`/`Limits`/`Identity`/`Trust`/`DefaultCwd`/`ExecutionDeadlineUtc`） | 组件不重读配置、不按别名解析、不接受调用方覆盖这些值 |
 | `Diagnostics/SshDiagnostics.cs` | 错误码/阶段/线上名唯一真源 | `SshErrorCodes`（含 A2 新增 `ssh.request_invalid`）、`SshPhase`、`SshWireNames` | 公开错误码是稳定合同；枚举→字符串只在此处定义 |
-| `Diagnostics/SshFailureClassifier.cs` | 异常类别 + 执行事实 → 稳定错误码/重试安全性 | `SshComponentException`、`SshHostKeyRejectedException`、`SshFailureFacts`、`SshFailure`、`Classify`、`IsRetrySafe` | 不看异常文本；同一种异常在**提交前后**语义不同（connect_failed vs connection_lost） |
+| `Diagnostics/SshFailureClassifier.cs` | 异常类别 + 执行事实 → 稳定错误码/重试安全性 | （见下「关键语义」） | 不看异常文本；同一种异常在**提交前后**语义不同（connect_failed vs connection_lost） |
 | `Validation/SshHostTokens.cs` | known_hosts 主机 token 语义 | `SshHostTokens.ForTarget` | 22 端口裸主机名；非默认端口与 IPv6 用 `[host]:port`；**不做** DNS/地址互换 |
 | `Validation/SshKnownHostsParser.cs` | known_hosts 解析（明文/逗号/`\|1\|salt\|hash`/`@revoked`） | `SshKnownHostsEntry`、`SshKnownHostsParseResult`、`Parse`、`ComputeHashedHostToken` | 通配/否定/`@cert-authority`/未知标记/非 v1 哈希/非法公钥 ⇒ **整行丢弃并 fail-closed** |
-| `Validation/SshTrustSnapshot.cs` | 冻结信任快照 + 单目标验证器 | `SshTrustSource`、`SshTrustSnapshot.FromKnownHosts/FromPin/CreateVerifier/ComputeSha256Fingerprint`、`KnownHostsHostKeyVerifier`、`PinHostKeyVerifier` | 两种来源互斥、无首次信任；pin 指纹由**出示的 blob 现算**；撤销按密钥生效 |
+| `Validation/SshTrustSnapshot.cs` | 冻结信任快照 + 单目标验证器 | （见下「关键语义」） | 两种来源互斥、无首次信任；pin 指纹由**出示的 blob 现算**；撤销按密钥生效 |
 | `Validation/SshPosixCommand.cs` | POSIX 执行封装与 cwd/命令校验 | `SshPosixExecutionPlan`、`Compose`、`Quote`、`IsValidCwd`、`ValidateCommand` | 精确串 = `cd -- '<cwd>' \|\| exit $?` 独立一行 + `\n` + **原样**命令（ADR-096 D1）；cwd 必须干净绝对路径；命令 16 KiB/NUL |
-| `Contracts/SshTransferContracts.cs` | 传输契约（切片 B） | `SshUploadRequest`/`SshDownloadRequest`、`SshOverwritePolicy`、`SshTransferLimits`（默认 64 MiB/硬上限 256 MiB）、`SshUploadPlan`/`SshDownloadPlan` | 本地与远端路径分别建模；默认禁止覆盖；计划含同目录唯一临时文件名 |
+| `Contracts/SshTransferContracts.cs` | 传输契约（切片 B） | （见下「关键语义」） | 本地与远端路径分别建模；默认禁止覆盖；计划含同目录唯一临时文件名 |
 | `Validation/SshLocalPathPolicy.cs` | 本地路径策略（切片 B） | `SshLocalPathPolicy`、`ISshLocalFileSystem`/`SshLocalFileSystem` | 单一权威包含判定（`GetRelativePath`，不用字符串前缀）；逐段拒绝重解析点；拒绝目录/非普通文件；声明 TOCTOU 限制 |
 | `Validation/SshRemotePathPolicy.cs` | 远端 POSIX 路径策略（切片 B） | `SshRemotePathPolicy` | 绝对路径/控制字符/目录标记校验、词法消解 `..`、允许根包含、父目录 realpath 根内、临时同目录名 |
 | `Validation/SshTransferValidator.cs` | 传输请求校验与计划（切片 B） | `SshTransferValidator` | 0/负数请求 `ssh.request_invalid`、超硬上限 `ssh.transfer_too_large`、非法配置 `ssh.config_invalid` |
@@ -52,13 +52,27 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Execution/SshBoundedDrain.cs` | 有界排空（ADR-096 D3） | `SshBoundedDrain.WaitAsync` | 排空/TERM/关闭/Dispose **共用一份预算**；超时只登记中止，绝不二次等待；迟到完成被观察 |
 | `Execution/SshCleanupQuarantine.cs` | 清理隔离区 | `SshCleanupQuarantine`（`Pending`/`Completed`/`IsFull`） | 容量固定；未结束的资源仍被追踪并占计数；满额即拒绝新增工作 |
 | `Execution/SshStageWorkerPool.cs` | 有界阶段 worker 池 | `SshStageWorkerPool`、`SshStageCapacityExceededException` | 阶段端口的同步启动段不得阻塞业务线程；容量固定，满额 `ssh.busy` |
-| `Execution/SshIdentityOwner.cs` | 身份材料的所有权状态机（L2） | `SshIdentityOwner`、`SshIdentityOwnership` | `LeaseOwned → Connecting → SessionOwned → Released` 原子且幂等；转移在**调用 connect 之前**完成 |`r`n| `Execution/SshResourceLease.cs` | 单次操作的资源记账 | `SshResourceLease`、`SshCleanupOutcome` | 身份释放幂等；阶段超时把收尾交给迟到 owner（先关连接再清零材料）；准入槽位幂等释放 |
-| `Execution/SshOperationLifetime.cs` | 单次操作的**时间与终止事实**（ADR-096 D2） | `SshStopReason`/`SshStopReasons`、`SshOperationLifetime`（`RemainingOperation`/`RemainingConnect`/`CheckBeforeSideEffect`/`WaitStageAsync`） | 预算在**受理时**算一次；剩余额度用单调时间戳；计时器走注入的 `TimeProvider`；阶段晚返回只做材料清零/连接回收，绝不开启下一阶段 |`r`n| `Execution/SshOperationCoordinator.cs`（切片 B：`UploadAsync`/`DownloadAsync` 复用同一套准入/围栏/租约/关闭预算） | `ISshClient` 实现：准入排队、deadline、凭据、建连、执行、释放、停止 | `SshOperationCoordinator`（含 `StopAsync`/`IAsyncDisposable`）、`InFlightOperations`、`WaitQueueLength` | 准入按 `hostId + hostRevision` 分门；操作总时长从**受理**起算（含排队）；队满立即 `ssh.busy`；清理宽限只做资源回收 |
+| `Execution/SshIdentityOwner.cs` | 身份材料的所有权状态机（L2） | `SshIdentityOwner`、`SshIdentityOwnership` | （见下「关键语义」） |`r`n| `Execution/SshResourceLease.cs` | 单次操作的资源记账 | `SshResourceLease`、`SshCleanupOutcome` | 身份释放幂等；阶段超时把收尾交给迟到 owner（先关连接再清零材料）；准入槽位幂等释放 |
+| `Execution/SshOperationLifetime.cs` | 单次操作的**时间与终止事实**（ADR-096 D2） | （见下「关键语义」） | （见下「关键语义」） |`r`n| `Execution/SshOperationCoordinator.cs` | `ISshClient` 实现：准入排队、deadline、凭据、建连、执行、释放、停止 | （见下「关键语义」） | （见下「关键语义」） |
 | `Transport/SshNetTransportFactory.cs` | 建连：密钥、认证方法、默认拒绝的主机密钥回调 | `SshNetTransportFactory` | `RetryAttempts=1`（库默认 10）、`MaxSessions=1`（库默认 10）、`Timeout` 由 deadline 决定；回调在 `ConnectAsync` 之前安装；加密私钥 ⇒ `ssh.passphrase_required` |
 | `Contracts/SshTransferPorts.cs` | 传输会话与 SFTP 通道端口（切片 B） | `ISshTransferSession`、`ISshSftpChannel`、`SshTransferCapabilities`、`SshTransferOutcome` | 能力必须**实测**；不支持即 `ssh.transfer_unsupported`；清理失败必须报告残留 |
 | `Transport/SshSftpChannel.cs` | SSH.NET 的 SFTP 通道（切片 B） | `SshSftpChannel` | 排他创建、标准/posix rename、realpath（ChangeDirectory+WorkingDirectory）、64 KiB 流式复制与超限中止 |
 | `Transport/SshSftpTransferSession.cs`（带预算释放：先等飞行中的传输清理再关通道） | 传输会话与发布语义（切片 B） | `SshSftpTransferSession`、`SshTransferLimitExceededException` | Fail=排他创建原子占位（失败即删除）；Overwrite=临时文件+posix-rename；清理由实测能力支撑、不使用竞态冒充 |
 | `Transport/SshNetTransportSession.cs` | 独占连接的 Exec、退出证据、终止与释放 | `SshNetTransportSession` | 取消/超时对 exec channel 发 TERM 后关连接；无退出码/信号 ⇒ `execution_state=unknown`；释放路径不抛新错误覆盖业务结果 |
+
+**关键语义**
+
+**`Contracts/SshLimits.cs`**：`SshOperationLimits.ResolveOperationTimeout/ResolveOutputBudget`、`CleanupGrace`、`MaxOutputBytesHardLimit`、`WaitQueueHardLimit`
+**`Contracts/SshPorts.cs`**：`ISshClient`（`TestAsync`/`ExecuteAsync` 收**冻结上下文** + 请求）、`ISshIdentityProvider`、`ISshHostKeyVerifier`、`ISshTransportFactory`、`ISshTransportSession`、`SshIdentityMaterial`、`SshHostKeyEvidence/Decision`
+**`Diagnostics/SshFailureClassifier.cs`**：`SshComponentException`、`SshHostKeyRejectedException`、`SshFailureFacts`、`SshFailure`、`Classify`、`IsRetrySafe`
+**`Validation/SshTrustSnapshot.cs`**：`SshTrustSource`、`SshTrustSnapshot.FromKnownHosts/FromPin/CreateVerifier/ComputeSha256Fingerprint`、`KnownHostsHostKeyVerifier`、`PinHostKeyVerifier`
+**`Contracts/SshTransferContracts.cs`**：`SshUploadRequest`/`SshDownloadRequest`、`SshOverwritePolicy`、`SshTransferLimits`（默认 64 MiB/硬上限 256 MiB）、`SshUploadPlan`/`SshDownloadPlan`
+**`Execution/SshIdentityOwner.cs`**：`LeaseOwned → Connecting → SessionOwned → Released` 原子且幂等；转移在**调用 connect 之前**完成
+**`Execution/SshOperationLifetime.cs`**：`SshStopReason`/`SshStopReasons`、`SshOperationLifetime`（`RemainingOperation`/`RemainingConnect`/`CheckBeforeSideEffect`/`WaitStageAsync`）
+**`Execution/SshOperationLifetime.cs`**：预算在**受理时**算一次；剩余额度用单调时间戳；计时器走注入的 `TimeProvider`；阶段晚返回只做材料清零/连接回收，绝不开启下一阶段
+**`Execution/SshOperationCoordinator.cs`**：`Execution/SshOperationCoordinator.cs`（切片 B：`UploadAsync`/`DownloadAsync` 复用同一套准入/围栏/租约/关闭预算）
+**`Execution/SshOperationCoordinator.cs`**：`SshOperationCoordinator`（含 `StopAsync`/`IAsyncDisposable`）、`InFlightOperations`、`WaitQueueLength`
+**`Execution/SshOperationCoordinator.cs`**：准入按 `hostId + hostRevision` 分门；操作总时长从**受理**起算（含排队）；队满立即 `ssh.busy`；清理宽限只做资源回收
 
 ## 3. 不变量（改这个组件前先读）
 
@@ -136,15 +150,18 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Source/PuddingSshTests/SshOperationCoordinatorFaultMatrixTests.cs` + `SshFakes.cs` | 假 `ISshTransportFactory`/会话/身份提供者：每主机 2 与 Core 8 的准入、队列满 `ssh.busy`、排队取消/到期、revision 分门、凭据失败、建连失败/拒绝/到期、提交前后抛错的区别、恶意会话在宽限后被放弃、停止与释放有界 |
 | `Source/PuddingSshTests/Fixtures/` | **真实 OpenSSH** 产物：`ssh-keyscan` 明文记录、`ssh-keygen -H` 哈希记录、`@revoked` 变体、不支持形态、`ssh-keygen -lf -E sha256` 指纹与 `ssh-keygen -F` 交叉核对结论 |
 | `TestScripts/ssh-probe/make-known-hosts-fixtures.sh` | fixture 生成器（含 port-22/IPv6 真实扫描与 derived 标注），证明期望值来自 OpenSSH 而非本组件 |
-| `Source/PuddingSsh.Probe/` + `TestScripts/ssh-probe/run-ssh-probe.ps1` | 真实协议探针 **16 个场景**（`fingerprint`/`hostkey`/`encrypted`/`deadline`/`cancel`/`throughput`/`coordinator`/**`knownhosts`(accept/revoked/rotated/hashed)**/**`dirs`**/**`ignoreterm`**/**`disconnect`**/**`auth`**），并核对每个场景的服务端认证次数与**实际使用的客户端密钥指纹**（拒绝场景必须为 0） |
+| `Source/PuddingSsh.Probe/` + `TestScripts/ssh-probe/run-ssh-probe.ps1` | 真实协议探针 **16 个场景**（见下「关键语义」） |
+
+**关键语义**
+
+**`Source/PuddingSsh.Probe/` + `TestScripts/ssh-probe/run-ssh-probe.ps1`**：
+真实协议探针 **16 个场景**（`fingerprint`/`hostkey`/`encrypted`/`deadline`/`cancel`/`throughput`/`coordinator`/**`knownhosts`(accept/revoked/rotated/hashed)**/**`dirs`**/**`ignoreterm`**/**`disconnect`**/**`auth`**），并核对每个场景的服务端认证次数与**实际使用的客户端密钥指纹**（拒绝场景必须为 0）
 
 命令（输出只进 `temp/`）：
 
-```powershell
 dotnet build Source/PuddingSsh.Probe/PuddingSsh.Probe.csproj --artifacts-path temp/build/ssh --nologo
 dotnet test Source/PuddingSshTests/PuddingSshTests.csproj --artifacts-path temp/build/ssh --results-directory temp/test-out/ssh --nologo
 powershell -File TestScripts/ssh-probe/run-ssh-probe.ps1
-```
 
 2026-10-08 实测（完整数字见 [A1 报告](../../Docs/14_reports/2026-10-08-PuddingSsh-A1-库能力实测报告.md)、
 [A2 报告](../../Docs/14_reports/2026-10-08-PuddingSsh-A2-独立测试与信任验证报告.md) 与
