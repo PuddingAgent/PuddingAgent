@@ -7,9 +7,25 @@
 
 | 文件 | 用途 |
 |---|---|
-| `WinUiDesktopUiDispatcher.cs` | `IDesktopUiDispatcher` 的 `DispatcherQueue` 实现：已在 UI 线程则同步执行；跨线程经 `TryEnqueue` 排队并把取消/异常传播到返回的 Task；**入队失败（窗口销毁）以异常结束，绝不悬挂** |
-| `WinUiShellFacilities.cs` | `IDesktopShellFacilities`（对话框 / 文件选择器 / 剪贴板）的 WinUI 实现。必守要点：`ContentDialog` **必须设 `XamlRoot`**；`FileOpenPicker` 必须 `InitializeWithWindow`（否则 `COMException`）；剪贴板非文本 ⇒ `HasText=false` 的**成功**结果；取消（ESC/遮罩/选择器返回 null）是**结果**不是失败 |
-| `WinUiShellHostFacilities.cs` | `IDesktopShellHostFacilities`（窗口形态 / 托盘可见性 / 系统通知）的实现：**委托注入**（窗口与托盘归 Shell 所有，通知走托盘气泡需要托盘图标的 HWND 与 uID）；通知**没弹出来也是成功结果**（`Shown=false`）；只读状态只报「只有它知道」的部分，自动化状态与页面数由 `DesktopService` 覆盖 |
+| `WinUiDesktopUiDispatcher.cs` | `IDesktopUiDispatcher` 的 WinUI `DispatcherQueue` 实现（见下「关键语义」） |
+| `WinUiShellFacilities.cs` | `IDesktopShellFacilities` 的 WinUI 实现：对话框/选择器/剪贴板（见下「关键语义」） |
+| `WinUiShellHostFacilities.cs` | `IDesktopShellHostFacilities` 的 WinUI 实现：窗口/托盘/通知（见下「关键语义」） |
+
+## 关键语义
+
+以下正文逐字取自上方「用途」列；上方摘要单元格以「（见下「关键语义」）」指向此处。
+
+### `WinUiDesktopUiDispatcher.cs`
+
+`IDesktopUiDispatcher` 的 `DispatcherQueue` 实现：已在 UI 线程则同步执行；跨线程经 `TryEnqueue` 排队并把取消/异常传播到返回的 Task；**入队失败（窗口销毁）以异常结束，绝不悬挂**
+
+### `WinUiShellFacilities.cs`
+
+`IDesktopShellFacilities`（对话框 / 文件选择器 / 剪贴板）的 WinUI 实现。必守要点：`ContentDialog` **必须设 `XamlRoot`**；`FileOpenPicker` 必须 `InitializeWithWindow`（否则 `COMException`）；剪贴板非文本 ⇒ `HasText=false` 的**成功**结果；取消（ESC/遮罩/选择器返回 null）是**结果**不是失败
+
+### `WinUiShellHostFacilities.cs`
+
+`IDesktopShellHostFacilities`（窗口形态 / 托盘可见性 / 系统通知）的实现：**委托注入**（窗口与托盘归 Shell 所有，通知走托盘气泡需要托盘图标的 HWND 与 uID）；通知**没弹出来也是成功结果**（`Shown=false`）；只读状态只报「只有它知道」的部分，自动化状态与页面数由 `DesktopService` 覆盖
 
 ## 为什么没有独立测试工程
 
