@@ -11,9 +11,9 @@
 
 | 类型 | 用途 |
 |------|------|
-| `SourceLanguage` | 语言分层（`Unknown=0` / CSharp / TypeScript / Python / Markdown / PlainText），决定过滤规则的取值 |
-| `ChunkKind` | 索引层：`Outline=0` / `DocComment=1` / `CodeText=2`，**枚举值即优先级**，对应 ADR-089 C1 的 P0/P1/P2 |
-| `ChunkPriorities` | `Of(kind)` → P0/P1/P2；`BoostOf(kind)` → 2.0 / 1.5 / 1.0（**优先级语义在本组件，加权数值由检索侧消费**）|
+| `SourceLanguage` | 语言分层枚举，决定过滤规则的取值（见下「关键语义」） |
+| `ChunkKind` | 索引层枚举，枚举值即优先级（见下「关键语义」） |
+| `ChunkPriorities` | 优先级映射 P0/P1/P2（见下「关键语义」） |
 | `IndexChunk` | 块文本 + 来源文件 + 行范围 + 优先级；**构造即校验**（空文本 / 行号 <1 / 末行早于首行都会抛）|
 | `OutlineSymbolKind` / `OutlineSymbol` / `OutlineSymbolSet` | 端口 DTO：符号种类、名字、行范围、签名、修饰符、容器、文档摘要；`Error` 是**数据**不是异常 |
 | `IOutlineSource` | **唯一端口**：`GetOutlineAsync(filePath, sourceText, language, ct)` |
@@ -23,11 +23,21 @@
 
 | 文件 | 用途 |
 |------|------|
-| `ChunkingOptions.cs` | `ChunkFilterOptions`（开关/阈值覆盖/大小写）+ `ChunkingOptions`（三层开关、`MaxCodeLinesPerChunk`、是否把文档摘要并入 P0）+ `FilterReport` / `FilteredChunkText` |
-| `ChunkFilterRules.cs` | C2 默认数据：按语言最小 token 长度（C#/TS/Python=3，md/plain=2）、按语言关键字停用词（C# 全保留字 + 常见上下文关键字；TS；Python；**Markdown 为空集** —— 语言差异是刻意可观察的）|
+| `ChunkingOptions.cs` | 选项对象：过滤开关/阈值/大小写 + 三层开关（见下「关键语义」） |
+| `ChunkFilterRules.cs` | C2 默认规则数据：长度阈值 + 停用词（见下「关键语义」） |
 | `ChunkTokenizer.cs` | 确定性分词：字母/数字/`_` 的极大串；只**整 token 删除**，不合并也不切分标识符 |
-| `ChunkFilter.cs` | 规则求值：`IsShortToken` / `IsStopWord` / `ShouldKeep` / `FilterTokens` / `Apply` / `ApplyDetailed`（带 `FilterReport`）。**归因顺序固定：先长度、后关键字**，同一 token 同时命中只算长度。纯函数，无 IO |
-| `FileChunkAssembler.cs` | 装配：代码文件 → 每符号一个 **P0 块**（声明文本，**永不包含函数体**）+ 整行注释块 → **P1 块** + 剩余代码行 → **P2 块**（按 `MaxCodeLinesPerChunk` 切段）；非代码文件 → 非空块 → P1 块（无 P0/P2）。`IOutlineSource` 仅在**代码语言且 P0 层开启**时才被咨询 |
+| `ChunkFilter.cs` | 过滤规则求值：纯函数、无 IO（见下「关键语义」） |
+| `FileChunkAssembler.cs` | 文件→块装配：P0/P1/P2 三层切割（见下「关键语义」） |
+
+## 关键语义（表内长单元格下沉原文）
+
+- `SourceLanguage` 用途：语言分层（`Unknown=0` / CSharp / TypeScript / Python / Markdown / PlainText），决定过滤规则的取值
+- `ChunkKind` 用途：索引层：`Outline=0` / `DocComment=1` / `CodeText=2`，**枚举值即优先级**，对应 ADR-089 C1 的 P0/P1/P2
+- `ChunkPriorities` 用途：`Of(kind)` → P0/P1/P2；`BoostOf(kind)` → 2.0 / 1.5 / 1.0（**优先级语义在本组件，加权数值由检索侧消费**）
+- `ChunkingOptions.cs` 用途：`ChunkFilterOptions`（开关/阈值覆盖/大小写）+ `ChunkingOptions`（三层开关、`MaxCodeLinesPerChunk`、是否把文档摘要并入 P0）+ `FilterReport` / `FilteredChunkText`
+- `ChunkFilterRules.cs` 用途：C2 默认数据：按语言最小 token 长度（C#/TS/Python=3，md/plain=2）、按语言关键字停用词（C# 全保留字 + 常见上下文关键字；TS；Python；**Markdown 为空集** —— 语言差异是刻意可观察的）
+- `ChunkFilter.cs` 用途：规则求值：`IsShortToken` / `IsStopWord` / `ShouldKeep` / `FilterTokens` / `Apply` / `ApplyDetailed`（带 `FilterReport`）。**归因顺序固定：先长度、后关键字**，同一 token 同时命中只算长度。纯函数，无 IO
+- `FileChunkAssembler.cs` 用途：装配：代码文件 → 每符号一个 **P0 块**（声明文本，**永不包含函数体**）+ 整行注释块 → **P1 块** + 剩余代码行 → **P2 块**（按 `MaxCodeLinesPerChunk` 切段）；非代码文件 → 非空块 → P1 块（无 P0/P2）。`IOutlineSource` 仅在**代码语言且 P0 层开启**时才被咨询
 
 ## 两个不变量（测试断言）
 
