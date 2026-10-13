@@ -21,15 +21,36 @@
 
 | 文件 | 用途 |
 |------|------|
-| `VectorMath.cs` | `Dot` / `Norm` / `Cosine` / `Normalize`。**维度不一致抛异常（绝不静默截断）**；零向量抛异常（方向不存在，分数不能编造）；累加用 `double`（1024 维 float 相加会因精度重排近分）|
-| `VectorIndexEntry.cs` | 向量条目：向量（构造即**拷贝**）+ 出处（文件/行范围/层级/boost）；`VectorSearchResult` 含 `Score` 与 0 基 `Rank` |
-| `InMemoryVectorIndex.cs` | **内存暴力余弦**索引：`Add` 拒绝维度不符 / 重复 id / 零向量；`Search` 按分数降序、**同分按 id 序数**打破平局（否则两次运行 top-k 可能不同）|
-| `VectorIndexBuilder.cs` | `VectorDocument` + `VectorIndexBuildOptions(BatchSize, TierFilter, Quantize)` + 构建：经端口批量嵌入并落地索引；**校验批长度、每条向量长度、非空向量**，任一不符即抛；`EmbeddingCalls` / `EmbeddingMs` 单列供四轴报告 |
-| `VectorQuantization.cs` | `QuantizedVector`（codes + scale，构造即校验）+ `VectorQuantizer.Quantize/Dequantize`：**对称 absmax**（`scale = max‖x‖/127`、`code = round(x/scale)`），**round-trip 误差界 ≤ scale/2（成文且可断言）**；空/NaN/Inf/全零、非法 scale、越界 code 一律 fail-closed；`Float32StorageBytes` / `Int8StorageBytes` 是**纯逻辑**的格式体积 |
-| `QuantizedVectorEntry.cs` | 量化行 = codes + scale + 出处；`ToVectorEntry()` 是**唯一**的「存储形态 → 检索形态」桥（反量化后走既有 float 余弦）|
+| `VectorMath.cs` | `Dot`/`Norm`/`Cosine`/`Normalize`；维度不符或零向量抛异常；累加用 `double` （见下「关键语义」） |
+| `VectorIndexEntry.cs` | 向量条目：向量（构造即拷贝）+ 出处；`VectorSearchResult` 含 `Score` 与 0 基 `Rank` （见下「关键语义」） |
+| `InMemoryVectorIndex.cs` | **内存暴力余弦**索引：`Add` 拒绝维度不符/重复 id/零向量；`Search` 降序、同分按 id 序数打破 （见下「关键语义」） |
+| `VectorIndexBuilder.cs` | `VectorDocument` + 构建选项：经端口批量嵌入落地；校验批长/向量长/非空，任一不符即抛 （见下「关键语义」） |
+| `VectorQuantization.cs` | `QuantizedVector` + `Quantize/Dequantize`：对称 absmax；非法输入 fail-closed （见下「关键语义」） |
+| `QuantizedVectorEntry.cs` | 量化行 = codes + scale + 出处；`ToVectorEntry()` 是唯一「存储→检索」桥 （见下「关键语义」） |
 | `QuantizedVectorMath.cs` | 量化空间相似度：**只提供「反量化后走 `VectorMath.Cosine`」这一条路径**，不引入融合整数点积（否则质量差无法归因于存储格式）|
-| `QuantizedInMemoryVectorIndex.cs` | **U4-3c**：**就地**读 int8 codes 的扫描 + 有界 top-k（大小 k 的最大堆，比较器与 `InMemoryVectorIndex` 的排序器逐字相同）；每行范数在 `Add` 时按 `VectorMath.Norm` 同一累加顺序预计算一次（分数逐位不变）；失败面完全复用既有规则。**与 `InMemoryVectorIndex` 并存，不改后者签名与语义** |
-| `VectorTierFilter.cs` | 分层选择谓词：按 `VectorDocument.Kind`（**字符串值**，序数比较）过滤；`OutlineOnly` = P0。**P0/P1/P2 → tier 名的映射属于组合根**，叶子不持 chunking 的优先级表 |
+| `QuantizedInMemoryVectorIndex.cs` | **U4-3c**：就地扫 int8 codes + 有界 top-k（最大堆）；失败面复用既有规则；与 float 索引并存 （见下「关键语义」） |
+| `VectorTierFilter.cs` | 分层选择谓词：按 `VectorDocument.Kind`（序数）过滤；`OutlineOnly` = P0；tier 映射属组合根 （见下「关键语义」） |
+
+## 实现表「用途」列·关键语义（逐字原文）
+
+> 下列为 `## 实现` 表「用途」列的**逐字原文**（行序与本表一致）；表内已缩为语义摘要，并以 `（见下「关键语义」）` 指回本段。
+
+- `VectorMath.cs`
+  `Dot` / `Norm` / `Cosine` / `Normalize`。**维度不一致抛异常（绝不静默截断）**；零向量抛异常（方向不存在，分数不能编造）；累加用 `double`（1024 维 float 相加会因精度重排近分）
+- `VectorIndexEntry.cs`
+  向量条目：向量（构造即**拷贝**）+ 出处（文件/行范围/层级/boost）；`VectorSearchResult` 含 `Score` 与 0 基 `Rank`
+- `InMemoryVectorIndex.cs`
+  **内存暴力余弦**索引：`Add` 拒绝维度不符 / 重复 id / 零向量；`Search` 按分数降序、**同分按 id 序数**打破平局（否则两次运行 top-k 可能不同）
+- `VectorIndexBuilder.cs`
+  `VectorDocument` + `VectorIndexBuildOptions(BatchSize, TierFilter, Quantize)` + 构建：经端口批量嵌入并落地索引；**校验批长度、每条向量长度、非空向量**，任一不符即抛；`EmbeddingCalls` / `EmbeddingMs` 单列供四轴报告
+- `VectorQuantization.cs`
+  `QuantizedVector`（codes + scale，构造即校验）+ `VectorQuantizer.Quantize/Dequantize`：**对称 absmax**（`scale = max‖x‖/127`、`code = round(x/scale)`），**round-trip 误差界 ≤ scale/2（成文且可断言）**；空/NaN/Inf/全零、非法 scale、越界 code 一律 fail-closed；`Float32StorageBytes` / `Int8StorageBytes` 是**纯逻辑**的格式体积
+- `QuantizedVectorEntry.cs`
+  量化行 = codes + scale + 出处；`ToVectorEntry()` 是**唯一**的「存储形态 → 检索形态」桥（反量化后走既有 float 余弦）
+- `QuantizedInMemoryVectorIndex.cs`
+  **U4-3c**：**就地**读 int8 codes 的扫描 + 有界 top-k（大小 k 的最大堆，比较器与 `InMemoryVectorIndex` 的排序器逐字相同）；每行范数在 `Add` 时按 `VectorMath.Norm` 同一累加顺序预计算一次（分数逐位不变）；失败面完全复用既有规则。**与 `InMemoryVectorIndex` 并存，不改后者签名与语义**
+- `VectorTierFilter.cs`
+  分层选择谓词：按 `VectorDocument.Kind`（**字符串值**，序数比较）过滤；`OutlineOnly` = P0。**P0/P1/P2 → tier 名的映射属于组合根**，叶子不持 chunking 的优先级表
 
 ## 三个不变量（测试断言）
 
