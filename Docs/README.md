@@ -85,6 +85,9 @@ python Tools/Docs/code_map_check.py --check        # code_map 格式门禁（行
 python Tools/Docs/verify_codemap_wave.py --old <改动前备份> --new <当前文件>
                                                    # code_map **内容守恒**门禁：抓“改格式时把原文截断”
 python Tools/Docs/verify_codemap_wave_selftest.py  # 上者的自测（自带夹具，含 4 个取红用例）
+python Tools/Docs/verify_codemap_global.py --old <改动前备份> --new <当前文件>
+                                                   # code_map **全局守恒**门禁：覆盖要更宽（短行/围栏/被改写行）
+python Tools/Docs/verify_codemap_global.py --selftest   # 自带夹具自测（3 用例，含 2 个取红）
 ```
 
 > `code_map_check.py` 只看**格式**；一次实测中某个 wave 格式门禁 `error 0 / PASS`，但
@@ -97,6 +100,11 @@ python Tools/Docs/verify_codemap_wave_selftest.py  # 上者的自测（自带夹
 >    **假阳性**（相对链接从 `temp/` 解析失败）；真实路径下同一文件 `link-broken: 0`。
 > 2. `verify_codemap_wave.py` 只覆盖「长表格单元格(>80)」与「长纯段落(>300)」；
 >    **围栏内内容与短行不在覆盖内** —— 遇到 `fence-forbidden` 这类改动时需额外人工/脚本自检。
+>
+> **两个守恒门禁的分工**：`verify_codemap_wave.py` 是**定向**检查（长单元格/长段落）；
+> `verify_codemap_global.py` 是**全局**检查，按改动形态分型——表格行逐**单元格**查
+> （行被改写时整行已变，只有单元格原文会被迁移）、非表行逐**行**查、围栏标记行跳过计数。
+> 两者互补，建议波次验收**两个都跑**：定向门禁快且判据明确，全局门禁能拦下短行/围栏间的静默丢失。
 
 ## 建议阅读顺序
 
