@@ -28,19 +28,31 @@
 
 | 文件 | 用途 |
 |------|------|
-| `DesktopConnectionRunner.cs` | 反复建连；指数退避 + jitter（`BackoffHistory` 可观测）；成功握手后重置梯度；**不跨传输回退、不重放任何副作用命令**；`Generation` 在握手成功当刻对外可见 |
-| `IDesktopConnectionSupervisor.cs` | 监督端口（状态/世代/尝试次数/最后错误/状态事件 + `RunAsync`/`DisposeAsync`）：宿主只依赖该端口，因此启停与单实例语义可以**不启动任何端点**就被测试；生产实现是 `DesktopConnectionRunner` |
-| `GrpcDesktopChannelStreamFactory.cs` | `GrpcChannel` + `SocketsHttpHandler.ConnectCallback`：NamedPipe（产品默认）/ Loopback h2c（调试备用）/ TLS（远端，后续）；`MaxReceive/SendMessageSize` 绑定帧上限 |
+| `DesktopConnectionRunner.cs` | 反复建连；指数退避 + jitter；握手成功重置梯度；不跨传输回退、不重放副作用命令（见下「关键语义」） |
+| `IDesktopConnectionSupervisor.cs` | 监督端口（状态/世代/尝试次数/最后错误/状态事件 + RunAsync/DisposeAsync）；宿主只依赖该端口（见下「关键语义」） |
+| `GrpcDesktopChannelStreamFactory.cs` | GrpcChannel + ConnectCallback：NamedPipe/Loopback h2c/TLS 与帧上限绑定（见下「关键语义」） |
 | `DesktopChannelStream.cs` | 双向流抽象（读/写/半关闭）。存在的理由：连接状态机可**不启动 gRPC 服务端**被确定性测试 |
-| `DesktopConnectionOptions.cs` | 身份、能力声明、认证（`x-…` 元数据，**凭据不进 ToString/日志**）、在途/字节/终态缓存上限、握手与静默超时、审计出口、`TimeProvider`（可测时钟） |
+| `DesktopConnectionOptions.cs` | 身份、能力声明、认证（凭据不进日志）、在途/字节/终态缓存上限、握手与静默超时、审计出口、可测时钟（见下「关键语义」） |
 | `ByteBudget.cs` | 按字节预留的预算（`SemaphoreSlim` 无法按字节取许可）；`ReserveAsync` 支持 FIFO 与取消，`ShrinkTo` 支持协商收缩 |
 
 ## 接缝与映射
 
 | 文件 | 用途 |
 |------|------|
-| `IDesktopCapabilityExecutor.cs` | **UI 侧唯一接缝**：`ExecuteAsync(descriptor, request, context, ct)`，只依赖 Contracts；实现方负责 `DispatcherQueue` 调度、准入与目标校验 |
-| `Mapping.cs` | `CoreFrameMapping.Decode`（proto → 领域，fail closed：op id/generation/deadline/**可信调用者身份**/能力/payload 一致性/目标/URL/脚本与结果上限；身份优先于 payload，未知 kind、空必填、超长、子代理缺父任务与"浏览器能力缺身份/冒充 User"一律拒绝）；指纹只覆盖 payload（deadline/trace 不参与），保证重试指纹稳定；`DesktopFrameMapping`（领域 → proto，含 `ErrorOutcome` 语义、`Hello` 的契约版本区间、就绪度/Shell 状态线名走契约层真源（`DesktopPageReadinessWire`/`DesktopShellStatusWire`）） |
+| `IDesktopCapabilityExecutor.cs` | **UI 侧唯一接缝**：ExecuteAsync(...) 只依赖 Contracts；实现方负责调度与准入（见下「关键语义」） |
+| `Mapping.cs` | CoreFrameMapping.Decode / DesktopFrameMapping 的映射与 fail-closed 校验（见下「关键语义」） |
+
+## 关键语义
+
+> 上列「监督与传输」「接缝与映射」两表中，因格式门禁要求单元格 ≤80 字符而被摘要化的单元格，其原文在此逐字保留（换行仅为满足行长上限，内容不删减）。
+
+- `DesktopConnectionRunner.cs` 用途原文：反复建连；指数退避 + jitter（`BackoffHistory` 可观测）；成功握手后重置梯度；**不跨传输回退、不重放任何副作用命令**；`Generation` 在握手成功当刻对外可见
+- `IDesktopConnectionSupervisor.cs` 用途原文：监督端口（状态/世代/尝试次数/最后错误/状态事件 + `RunAsync`/`DisposeAsync`）：宿主只依赖该端口，因此启停与单实例语义可以**不启动任何端点**就被测试；生产实现是 `DesktopConnectionRunner`
+- `GrpcDesktopChannelStreamFactory.cs` 用途原文：`GrpcChannel` + `SocketsHttpHandler.ConnectCallback`：NamedPipe（产品默认）/ Loopback h2c（调试备用）/ TLS（远端，后续）；`MaxReceive/SendMessageSize` 绑定帧上限
+- `DesktopConnectionOptions.cs` 用途原文：身份、能力声明、认证（`x-…` 元数据，**凭据不进 ToString/日志**）、在途/字节/终态缓存上限、握手与静默超时、审计出口、`TimeProvider`（可测时钟）
+- `IDesktopCapabilityExecutor.cs` 用途原文：**UI 侧唯一接缝**：`ExecuteAsync(descriptor, request, context, ct)`，只依赖 Contracts；实现方负责 `DispatcherQueue` 调度、准入与目标校验
+- `Mapping.cs` 用途原文：`CoreFrameMapping.Decode`（proto → 领域，fail closed：op id/generation/deadline/**可信调用者身份**/能力/payload 一致性/目标/URL/脚本与结果上限；身份优先于 payload，未知 kind、空必填、超长、子代理缺父任务与"浏览器能力缺身份/冒充 User"一律拒绝）；指纹只覆盖 payload（deadline/trace 不参与），保证重试指纹稳定；`DesktopFrameMapping`（领域 → proto，含 `ErrorOutcome` 语义、
+  `Hello` 的契约版本区间、就绪度/Shell 状态线名走契约层真源（`DesktopPageReadinessWire`/`DesktopShellStatusWire`））
 
 ## 与方案的对应（切片 B）
 
