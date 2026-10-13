@@ -14,38 +14,74 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench、调试组件；独立前端锁支持源码构建部署与仓库内预构建 `dist` 加载，并投影受控诊断快照 |
+| `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机（协调 Runtime/Bridge/Workbench 等）见下「关键语义」 |
 | `Core/CoreExecutableResolver.cs` | Core 路径确定性解析（配置→发布包→同源→兜底） |
-| `Core/CoreProcessSupervisor.cs` | Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收；启动超时采用有效进度租约（静默超时 + 有界绝对上限）；`EnvironmentName` 可覆盖 Production |
-| `Core/CoreStartupProgressMessage*.cs` | `PUDDING_DESKTOP_STARTING` 协议、严格解析与单调租约；校验协议版本/PID/序号，默认 60 秒静默门禁下允许最高 10 分钟冷升级，租约不替代 Ready/health 门禁 |
+| `Core/CoreProcessSupervisor.cs` | Core 子进程启动/健康检查/日志/进程树回收；超时用进度租约见下「关键语义」 |
+| `Core/CoreStartupProgressMessage*.cs` | `PUDDING_DESKTOP_STARTING` 协议、严格解析与单调租约见下「关键语义」 |
 | `Runtime/DesktopRuntimeOrchestrator.cs` | 异常退出恢复、退避熔断（2s/4s/8s，60s 3 次） |
 | `Runtime/CoreRestartPolicy.cs` | 重启策略与取消语义 |
-| `Bootstrap/DesktopBootstrapSignalService.cs` | 🔑 Core 点火部署主管：`desktop-build` / `prebuilt-artifact` / `restart-only`，停 Core 后把产物事务部署到实际 `CoreExecutablePath` 目录，重启前后校验 `PuddingAgent.dll` SHA-256 |
-| `Bootstrap/DesktopBootstrapHttpEndpoint.cs` | 仅回环 + ControlToken 的 Desktop 控制面：Core stop/build/start/restart/预构建制品部署，前端 build-deploy/预构建 dist 加载，以及有界诊断；返回稳定 JSON/HTTP 状态 |
+| `Bootstrap/DesktopBootstrapSignalService.cs` | 🔑 Core 点火部署主管（desktop-build 等三模式事务部署）见下「关键语义」 |
+| `Bootstrap/DesktopBootstrapHttpEndpoint.cs` | 仅回环 + ControlToken 的 Desktop 控制面（Core/前端部署与诊断）见下「关键语义」 |
 | `Bootstrap/DesktopBootstrapSignal*.cs` | 信号协议、部署模式归一化与结果证据模型（产物/加载路径、复制计数、哈希、`assembliesReloaded`） |
+
+**关键语义**
+
+**`Hosting/DesktopApplicationCoordinator.cs`**：🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench、调试组件；独立前端锁支持源码构建部署与仓库内预构建 `dist` 加载，并投影受控诊断快照
+
+**`Core/CoreProcessSupervisor.cs`**：Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收；启动超时采用有效进度租约（静默超时 + 有界绝对上限）；`EnvironmentName` 可覆盖 Production
+
+**`Core/CoreStartupProgressMessage*.cs`**：`PUDDING_DESKTOP_STARTING` 协议、严格解析与单调租约；校验协议版本/PID/序号，默认 60 秒静默门禁下允许最高 10 分钟冷升级，租约不替代 Ready/health 门禁
+
+**`Bootstrap/DesktopBootstrapSignalService.cs`**：🔑 Core 点火部署主管：`desktop-build` / `prebuilt-artifact` / `restart-only`，停 Core 后把产物事务部署到实际 `CoreExecutablePath` 目录，重启前后校验 `PuddingAgent.dll` SHA-256
+
+**`Bootstrap/DesktopBootstrapHttpEndpoint.cs`**：仅回环 + ControlToken 的 Desktop 控制面：Core stop/build/start/restart/预构建制品部署，前端 build-deploy/预构建 dist 加载，以及有界诊断；返回稳定 JSON/HTTP 状态
+
 
 ## 调试模式（Debug）
 
 | 文件 | 用途 |
 |------|------|
-| `Debug/DesktopReverseProxy.cs` | HttpListener 本机反向代理（默认 127.0.0.1:80）：后端前缀→Core、其余→前端 dev server；SSE 逐块 Flush、WebSocket 全双工中继（HMR）、上游 502 |
+| `Debug/DesktopReverseProxy.cs` | HttpListener 本机反向代理（后端→Core、其余→前端）见下「关键语义」 |
 | `Debug/ProxyRoutePlanner.cs` | 纯路由决策：8 个后端前缀 + /admin SPA fallback（与 dev-up.py 语义逐条对齐） |
-| `Debug/DebugBackendLauncher.cs` | `dotnet build` 源码后端并解析 `bin/Debug/net10.0/PuddingAgent.exe`（desktop-child 协议不变，Development 环境）；`ResolveOutputDirectory` 无需先构建即可给出输出目录 |
+| `Debug/DebugBackendLauncher.cs` | `dotnet build` 源码后端并解析可执行产物见下「关键语义」 |
 | `Debug/FrontendDevSupervisor.cs` | `pnpm run start:dev`（缺 node_modules 自动 install）、/admin/ 就绪探测、进程树回收、环形日志 |
-| `Debug/FrontendBuildDeployService.cs` | 运行中心/API 前端制品服务：可 `pnpm run build` 或直接加载预构建 dist，部署前后校验 `index.html` SHA-256；只替换 Core 可执行目录 `wwwroot\admin`，目标后缀强校验 |
+| `Debug/FrontendBuildDeployService.cs` | 运行中心/API 前端制品服务（build 或加载预构建 dist）见下「关键语义」 |
 | `Debug/DebugRepositoryResolver.cs` | 仓库根向上自动解析 + 显式覆盖（repositoryRoot/frontendWorkingDirectory/backendProjectPath） |
 | `Configuration/DesktopBootstrapSettings.cs` | `DesktopDebugSettings`（desktop.json `debug` 节：Enabled/端口/超时） |
 | `Hosting/DesktopStateChangedEventArgs.cs` | `WorkbenchAddress`（调试=代理源）与 `CoreAddress`（控制面）分离 |
+
+**关键语义**
+
+**`Debug/DesktopReverseProxy.cs`**：HttpListener 本机反向代理（默认 127.0.0.1:80）：后端前缀→Core、其余→前端 dev server；SSE 逐块 Flush、WebSocket 全双工中继（HMR）、上游 502
+
+**`Debug/DebugBackendLauncher.cs`**：`dotnet build` 源码后端并解析 `bin/Debug/net10.0/PuddingAgent.exe`（desktop-child 协议不变，Development 环境）；`ResolveOutputDirectory` 无需先构建即可给出输出目录
+
+**`Debug/FrontendBuildDeployService.cs`**：运行中心/API 前端制品服务：可 `pnpm run build` 或直接加载预构建 dist，部署前后校验 `index.html` SHA-256；只替换 Core 可执行目录 `wwwroot\admin`，目标后缀强校验
+
 
 ## Browser 工作区
 
 | 文件 | 用途 |
 |------|------|
 | `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client，HelloAck、heartbeat、重连 |
-| `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate`（它的 pause/takeover 就是**执行闸门本身**）。构造时只接受 `BrowserPageLifecycle`：**控制状态不再自己持有**，读写的是进程内唯一权威实例（与能力通道、生命周期清理点同一个对象）—— 只读快照、只写同一事实源，Bridge 是默认路径，因此这里读错就等于人工接管无效。**页面授权闸门**（§5.2/§5.3）：只读命令要 `Read`、写命令要 `Write`，判据**下沉在 `BrowserPageLifecycle.HasSufficientPageGrant`**（本文件被链接编译进 WinUI Shell，Shell 不引用 `PuddingBrowser.Automation` ⇒ **签名里不得出现 Automation 类型**，否则 `CS0012` 打断 Shell 构建）。**幂等**：以 `BrowserOperationLedger` 为**唯一**来源（`TryBegin` 四态驱动；指纹 = 调用者身份 + 能力名 + 目标 + 完整载荷，deadline 等非语义元数据不入）⇒ 同指纹在途等同一完成源、已完成复用终态、**换调用者/换载荷即冲突**，不再另造按 Guid 的 in-flight/调用者缓存 |
-| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target 唯一 UI 状态源；**接管/暂停的唯一写入点**：`SetUserTakeoverAsync`/`SetPausedAsync` 把状态推给所有已注册的执行闸门（不推 ⇒ 「人工接管」按钮对 Agent 无效）。桥接命令的宿主侧执行者：`page.interact` 的 `scroll` 会解析 `ScrollTarget`（显式线名优先，否则按 locator/位移推导；**未登记线名拒绝而不猜测**）并把驱动的滚动事实回传到响应 |
-| `Browser/BrowserAutomationGateSync.cs` | `IBrowserAutomationGate` 端口 + 闸门集合 + `DelegateAutomationGate`：注册/撤销、逐一推送、单个闸门抛异常不影响其余（接管是安全动作，不得半途失效） |
+| `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate` 见下「关键语义」 |
+| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target 唯一 UI 状态源；接管/暂停唯一写入点见下「关键语义」 |
+| `Browser/BrowserAutomationGateSync.cs` | `IBrowserAutomationGate` 端口/闸门集合/`DelegateAutomationGate` 见下「关键语义」 |
 | `Views/BrowserWorkspaceView.xaml(.cs)` | 双标签、地址栏、Surface、Agent Activity Pane |
+
+**关键语义**
+
+**`Browser/BrowserBridgeCommandDispatcher.cs`**：命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate`（它的 pause/takeover 就是**执行闸门本身**）。构造时只接受 `BrowserPageLifecycle`：**控制状态不再自己持有**，读写的是进程内唯一权威实例（与能力通道、
+生命周期清理点同一个对象）—— 只读快照、只写同一事实源，Bridge 是默认路径，因此这里读错就等于人工接管无效。**页面授权闸门**（§5.2/§5.3）：只读命令要 `Read`、写命令要 `Write`，判据**下沉在 
+`BrowserPageLifecycle.HasSufficientPageGrant`**（本文件被链接编译进 WinUI Shell，Shell 不引用 `PuddingBrowser.Automation` ⇒ **签名里不得出现 Automation 类型**，否则 `CS0012` 
+打断 Shell 构建）。**幂等**：以 `BrowserOperationLedger` 为**唯一**来源（`TryBegin` 四态驱动；指纹 = 调用者身份 + 能力名 + 目标 + 完整载荷，deadline 等非语义元数据不入）⇒ 同指纹在途等同一完成源、已完成复用终态、
+**换调用者/换载荷即冲突**，不再另造按 Guid 的 in-flight/调用者缓存
+
+**`Browser/BrowserWorkspaceController.cs`**：Tab/Activity/active/target 唯一 UI 状态源；**接管/暂停的唯一写入点**：`SetUserTakeoverAsync`/`SetPausedAsync` 把状态推给所有已注册的执行闸门（不推 ⇒ 「人工接管」按钮对 Agent 无效）。桥接命令的宿主侧执行者：
+`page.interact` 的 `scroll` 会解析 `ScrollTarget`（显式线名优先，否则按 locator/位移推导；**未登记线名拒绝而不猜测**）并把驱动的滚动事实回传到响应
+
+**`Browser/BrowserAutomationGateSync.cs`**：`IBrowserAutomationGate` 端口 + 闸门集合 + `DelegateAutomationGate`：注册/撤销、逐一推送、单个闸门抛异常不影响其余（接管是安全动作，不得半途失效）
+
 
 ## 运行中心 & 诊断
 
@@ -78,11 +114,16 @@
 |------|------|
 | `Storage/StorageAnalysisService.cs` | DataRoot 分类与大小扫描 |
 | `Storage/LogRetentionService.cs` | 24h 日志清理 |
-| `Storage/CoreStorageManagementClient.cs` | 携带 Desktop ControlToken 调用 Core `/api/admin/storage/databases` 分析/预览/执行 API，不直接写 SQLite |
+| `Storage/CoreStorageManagementClient.cs` | 携带 Desktop ControlToken 调用 Core 存储 API 见下「关键语义」 |
 | `Storage/DataRootSafetyValidator.cs` | 安全校验（拒绝越界、链接） |
 | `ViewModels/StorageViewModel.cs` | 文件分类与 Core 数据库明细合并展示；7/14/30/90 天保留期、预览确认、清理后重扫 |
 | `Configuration/SystemConfigurationService.cs` | system.json 原子写入 |
 | `ViewModels/SettingsViewModel.cs` | Desktop Core 固定监听端口（默认 8080）、恢复与关闭策略、调试模式（仓库根/前端端口/代理端口/超时）配置 |
+
+**关键语义**
+
+**`Storage/CoreStorageManagementClient.cs`**：携带 Desktop ControlToken 调用 Core `/api/admin/storage/databases` 分析/预览/执行 API，不直接写 SQLite
+
 
 ## 测试
 
