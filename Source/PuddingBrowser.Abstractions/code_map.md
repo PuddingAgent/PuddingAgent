@@ -19,7 +19,11 @@
 | `Locator.cs` | 元素定位器模型 |
 | `Models.cs` | 通用模型 |
 | `ScriptAndSnapshot.cs` | 脚本与快照模型 |
-| `DriverPolicy.cs` | `IBrowserDriverPolicy` **接缝**：驱动把「计划/事件日志/停止原因」交给实现方决定（计划点击/悬停/滚动/填充/键入/按键/拖拽、到达步进、截图参数、文件上传三步、事件日志工厂）；`NullBrowserDriverPolicy` = **fail-closed**（一切返回 null/unsupported） |
+| `DriverPolicy.cs` | `IBrowserDriverPolicy` 驱动策略**接缝**：计划/事件日志/停止原因由实现方决定（见下「关键语义」） |
+
+## 关键语义
+
+`IBrowserDriverPolicy` **接缝**：驱动把「计划/事件日志/停止原因」交给实现方决定（计划点击/悬停/滚动/填充/键入/按键/拖拽、到达步进、截图参数、文件上传三步、事件日志工厂）；`NullBrowserDriverPolicy` = **fail-closed**（一切返回 null/unsupported）
 
 ## 测试
 
