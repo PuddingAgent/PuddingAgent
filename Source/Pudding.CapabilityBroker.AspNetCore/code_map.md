@@ -10,12 +10,19 @@
 
 | 文件 | 用途 |
 |---|---|
-| `CapabilityChannelHostExtensions.cs` | `CapabilityChannelOptions`（Desktop 身份、可授予能力、队列/心跳/握手限制、消息上限、端点形态、审计出口）+ `AddCapabilityChannel(...)`（注册 Broker/认证器/服务/gRPC）+ `MapCapabilityChannel(app)` + `ListenForCapabilityChannel(kestrel)` |
-| `CoreCapabilityAuthentication.cs` | 认证接缝 `ICoreCapabilityAuthenticator`（**默认拒绝一切**）、`StaticHeaderCapabilityAuthenticator`（测试/受控探针）、`ServerStreamDesktopChannel`（服务端流 → `ICoreDesktopChannel`，串行化写入） |
-| `CapabilityChannelConfiguration.cs` | **配置绑定与端点派生**（计划 §7/§9）：`Desktop:CapabilityChannel` 段 → `CapabilityChannelOptions` + 就绪描述。默认关闭；`Transport` 三态（`named-pipe` 缺省 / `loopback-h2c` / `both`）保证「配置与监听一致」；能力线名未知即整体失败；`Describe(...)` 只发布实际监听的端点且不含凭据 |
+| `CapabilityChannelHostExtensions.cs` | 选项类型与注册/映射/监听三件扩展方法（完整用途见下） |
+| `CoreCapabilityAuthentication.cs` | 认证接缝与受控探针、服务端流通道实现（完整用途见下） |
+| `CapabilityChannelConfiguration.cs` | 配置绑定与端点派生与就绪描述（完整用途见下） |
 | `CapabilityChannelTransport.cs` | 传输形态常量（配置取值真源） |
-| `CapabilityChannelPreflight.cs` | 启动后核对 REST 与能力监听地址；Named Pipe 按 Kestrel 的 `http://pipe:/<name>` 地址精确匹配管道名，缺失端点或实例 ID 即失败 |
+| `CapabilityChannelPreflight.cs` | 启动后核对 REST 与能力监听地址一致性（完整用途见下） |
 | `DesktopCapabilityService`（同文件内部类） | 唯一 gRPC 服务：**认证先于握手** → `broker.AcceptAsync` → `await session.Completion` |
+
+### 文件用途详述（表格逐字下沉）
+
+- **`CapabilityChannelHostExtensions.cs`**：`CapabilityChannelOptions`（Desktop 身份、可授予能力、队列/心跳/握手限制、消息上限、端点形态、审计出口）+ `AddCapabilityChannel(...)`（注册 Broker/认证器/服务/gRPC）+ `MapCapabilityChannel(app)` + `ListenForCapabilityChannel(kestrel)`
+- **`CoreCapabilityAuthentication.cs`**：认证接缝 `ICoreCapabilityAuthenticator`（**默认拒绝一切**）、`StaticHeaderCapabilityAuthenticator`（测试/受控探针）、`ServerStreamDesktopChannel`（服务端流 → `ICoreDesktopChannel`，串行化写入）
+- **`CapabilityChannelConfiguration.cs`**：**配置绑定与端点派生**（计划 §7/§9）：`Desktop:CapabilityChannel` 段 → `CapabilityChannelOptions` + 就绪描述。默认关闭；`Transport` 三态（`named-pipe` 缺省 / `loopback-h2c` / `both`）保证「配置与监听一致」；能力线名未知即整体失败；`Describe(...)` 只发布实际监听的端点且不含凭据
+- **`CapabilityChannelPreflight.cs`**：启动后核对 REST 与能力监听地址；Named Pipe 按 Kestrel 的 `http://pipe:/<name>` 地址精确匹配管道名，缺失端点或实例 ID 即失败
 
 ## 实测约束（装配产品组合根前必读）
 
@@ -32,7 +39,6 @@
 
 ## 与产品的接线（重启窗口内只需两行 + 一段配置）
 
-```jsonc
 // <DataRoot>/config/system.json（缺省不写 = 关闭，产品行为不变）
 "Desktop": {
   "CapabilityChannel": {
@@ -42,9 +48,7 @@
     "Grantable": "webview.navigate,webview.execute_javascript,webview.page_state,shell.notification,shell.status"
   }
 }
-```
 
-```csharp
 // PuddingApplicationHost（DesktopChild 模式）
 var channel = CapabilityChannelConfiguration.Bind(builder.Configuration);
 if (channel.Enabled)
@@ -56,7 +60,6 @@ if (channel.Enabled)
 ...
 if (channel.Enabled) { app.MapCapabilityChannel(); }
 // 就绪流程：channel.Describe(userScope, productInstanceId, coreInstanceId) 发布端点（关闭时为 null）
-```
 
 仍未做（属于重启窗口内的装配，需外部控制器验收）：①上述代码接入 `PuddingApplicationHost`；
 ②用既有 `DesktopControlTokenValidator` 实现 `ICoreCapabilityAuthenticator`；③用继承 Tool Runtime 准入的实现
