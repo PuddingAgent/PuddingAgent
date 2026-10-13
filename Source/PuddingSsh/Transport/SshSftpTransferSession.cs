@@ -27,8 +27,11 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
     private readonly Action? _releaseOwnedResources;
     private readonly object _probeGate = new();
     private SshTransferCapabilities? _capabilities;
+    private readonly object _operationsGate = new();
     private int _abortRequested;
     private int _closed;
+    private int _inFlight;
+    private TaskCompletionSource? _idleSource;
 
     public SshSftpTransferSession(
         ISshSftpChannel channel,
@@ -47,6 +50,9 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
     public string VerifiedHostKeySha256 { get; }
 
     public bool Closed => Volatile.Read(ref _closed) == 1;
+
+    /// <summary>当前飞行中的传输操作数（带预算释放要等它们观察中止并完成清理）。</summary>
+    public int InFlightOperations => Volatile.Read(ref _inFlight);
 
     public bool AbortRequested => Volatile.Read(ref _abortRequested) == 1;
 
@@ -150,9 +156,54 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
 
     // ---------- 上传 ----------
 
+    private void BeginOperation()
+    {
+        lock (_operationsGate)
+        {
+            _inFlight++;
+        }
+    }
+
+    private void EndOperation()
+    {
+        TaskCompletionSource? idle = null;
+        lock (_operationsGate)
+        {
+            _inFlight--;
+            if (_inFlight <= 0)
+            {
+                idle = _idleSource;
+                _idleSource = null;
+            }
+        }
+
+        idle?.TrySetResult();
+    }
+
+    private Task? IdleTask()
+    {
+        lock (_operationsGate)
+        {
+            return _inFlight <= 0 ? null : (_idleSource ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+        }
+    }
+
     public async Task<SshTransferOutcome> UploadAsync(SshUploadPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        BeginOperation();
+        try
+        {
+            return await UploadCoreAsync(plan, timeout, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            EndOperation();
+        }
+    }
+
+    private async Task<SshTransferOutcome> UploadCoreAsync(SshUploadPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
+    {
 
         var stopwatch = Stopwatch.StartNew();
         long transferred = 0;
@@ -235,6 +286,19 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
     public async Task<SshTransferOutcome> DownloadAsync(SshDownloadPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        BeginOperation();
+        try
+        {
+            return await DownloadCoreAsync(plan, timeout, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            EndOperation();
+        }
+    }
+
+    private async Task<SshTransferOutcome> DownloadCoreAsync(SshDownloadPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
+    {
 
         long transferred = 0;
 
@@ -317,11 +381,21 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
-    public ValueTask DisposeAsync(TimeSpan budget)
+    /// <summary>
+    /// 带预算释放：先登记中止请求，再**等飞行中的传输观察中止并完成清理**（删除本次目标/临时文件），
+    /// 最后才关通道。否则「关通道」会把仍在写入的操作连同它的清理路径一起掐断，
+    /// 在服务端留下部分写入的目标（真实探针的出带 sha256 检查抓到过这一条）。
+    /// </summary>
+    public async ValueTask DisposeAsync(TimeSpan budget)
     {
-        _ = budget;
+        RequestAbort();
+        var idle = IdleTask();
+        if (idle is not null && budget > TimeSpan.Zero)
+        {
+            _ = await Task.WhenAny(idle, Task.Delay(budget)).ConfigureAwait(false);
+        }
+
         DisposeResources();
-        return ValueTask.CompletedTask;
     }
 
     private void DisposeResources()

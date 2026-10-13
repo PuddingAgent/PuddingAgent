@@ -59,7 +59,16 @@ internal sealed class FakeSftpChannel : ISshSftpChannel
 
     public byte[]? BytesOf(string path) => _files.TryGetValue(path, out var bytes) ? bytes : null;
 
-    public bool Exists(string remotePath) => _files.ContainsKey(remotePath);
+    private void EnsureNotDisposed()
+    {
+        ObjectDisposedException.ThrowIf(Disposed, this);
+    }
+
+    public bool Exists(string remotePath)
+    {
+        EnsureNotDisposed();
+        return _files.ContainsKey(remotePath);
+    }
 
     public bool IsRegularFile(string remotePath) => _files.ContainsKey(remotePath);
 
@@ -81,6 +90,7 @@ internal sealed class FakeSftpChannel : ISshSftpChannel
 
     public async Task UploadAsync(Stream source, string remotePath, long maxBytes, CancellationToken cancellationToken)
     {
+        EnsureNotDisposed();
         UploadCount++;
         UploadedPaths.Add(remotePath);
 
@@ -153,6 +163,7 @@ internal sealed class FakeSftpChannel : ISshSftpChannel
 
     public void Delete(string remotePath)
     {
+        EnsureNotDisposed();
         DeleteCount++;
         if (FailDelete)
         {

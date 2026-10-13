@@ -23,7 +23,9 @@ internal sealed record ProbeOptions(
     string? RotatedKnownHostsPath,
     string? PresentCwd,
     string? MissingCwd,
-    string? SourceSha)
+    string? SourceSha,
+    string? UploadRoot,
+    string? DownloadRoot)
 {
     /// <summary>冻结的绝对 `.ssh` 目录（默认为 <c>--identity</c> 的所在目录）。</summary>
     public string EffectiveIdentityDirectory =>
@@ -98,7 +100,7 @@ internal sealed record ProbeOptions(
         var scenario = args[0].ToLowerInvariant();
         string? host = null, user = null, identity = null, fingerprint = null, expect = null, remoteTmp = null;
         string? knownHosts = null, identityDir = null, identityName = null, scopeA = null, scopeB = null, rotatedKnownHosts = null;
-        string? presentCwd = null, missingCwd = null, sourceSha = null;
+        string? presentCwd = null, missingCwd = null, sourceSha = null, uploadRoot = null, downloadRoot = null;
         var port = 22122;
         var budget = 64 * 1024;
         var timeout = 60;
@@ -134,6 +136,8 @@ internal sealed record ProbeOptions(
                 case "--cwd": presentCwd = Next(); break;
                 case "--missing-cwd": missingCwd = Next(); break;
                 case "--source-sha": sourceSha = Next(); break;
+                case "--upload-root": uploadRoot = Next(); break;
+                case "--download-root": downloadRoot = Next(); break;
                 case "--budget": budget = int.Parse(Next()); break;
                 case "--timeout": timeout = int.Parse(Next()); break;
                 case "--connect-timeout": connectTimeout = int.Parse(Next()); break;
@@ -144,7 +148,7 @@ internal sealed record ProbeOptions(
 
         if (scenario is not ("fingerprint" or "hostkey" or "encrypted" or "deadline" or "cancel" or "throughput"
             or "coordinator" or "knownhosts" or "dirs" or "ignoreterm" or "disconnect" or "auth" or "cwd"
-            or "precancel" or "lateconnect" or "noeof" or "submitfail" or "rounds" or "signal" or "matrix"))
+            or "precancel" or "lateconnect" or "noeof" or "submitfail" or "rounds" or "signal" or "transfer" or "matrix"))
         {
             throw new ProbeUsageException($"未知 scenario {scenario}");
         }
@@ -194,7 +198,9 @@ internal sealed record ProbeOptions(
             rotatedKnownHosts,
             presentCwd,
             missingCwd,
-            sourceSha);
+            sourceSha,
+            uploadRoot,
+            downloadRoot);
     }
 }
 

@@ -53,6 +53,37 @@ public sealed class SshTransferSessionTests
     private static SshSftpTransferSession Session(FakeSftpChannel channel) =>
         new(channel, "SHA256:test", "/srv/download");
 
+    [TestMethod]
+    public async Task DisposeWithBudget_RunsAfterInFlightTransferCleansUp_SoNoPartialTargetSurvives()
+    {
+        // 真实探针发现的形状：deadline 触发后会话被关闭，但传输仍在写。
+        // 带预算释放必须**先等飞行中的操作观察中止并删掉自己的目标**，再关通道；
+        // 否则通道一关，清理路径就断了，服务端留下部分写入的目标。
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var channel = new FakeSftpChannel
+        {
+            OnBeforeUploadCommit = () =>
+            {
+                started.TrySetResult();
+                // 模拟"仍在写入"：等到被中止为止（不提交）。
+                Thread.Sleep(120);
+                throw new OperationCanceledException("aborted while writing");
+            },
+        };
+        var session = Session(channel);
+        var local = LocalFile("big.bin", new string('z', 4096));
+
+        var upload = session.UploadAsync(UploadPlan(local), TimeSpan.FromSeconds(10), CancellationToken.None);
+        await started.Task.ConfigureAwait(false);
+
+        // 关闭应当：登记中止 → 等飞行中的上传清理 → 才 DisposeResources。
+        await session.DisposeAsync(TimeSpan.FromSeconds(2));
+
+        var outcome = await upload.ConfigureAwait(false);
+        Assert.AreEqual(SshExecutionStatus.Cancelled, outcome.Status);
+        Assert.IsNull(channel.ContentOf("/srv/upload/target.bin"), "关闭前必须给清理留出时间：不得留下部分目标");
+        Assert.IsTrue(channel.Disposed, "清理完成后通道才关闭");
+    }
     // ---------- 能力实测 ----------
 
     [TestMethod]

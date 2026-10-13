@@ -429,6 +429,71 @@ try {
     $r = Invoke-Scenario 'signal' (@('signal') + $common)
     if ($r.AuthDelta -ne 3) { Add-Failure "signal: expected 3 authentications, got $($r.AuthDelta)" }
 
+    # 21) 切片 B：真实 SFTP 单文件传输（能力实测、覆盖策略、超限、取消、路径拒绝）。
+    $transferRoot = "$FixtureRoot/transfer"
+    $uploadRoot = "$transferRoot/upload"
+    $downloadRoot = "$transferRoot/download"
+    Invoke-Wsl @('-u', 'root', '-e', 'bash', '-lc',
+        "rm -rf $transferRoot; mkdir -p $uploadRoot $downloadRoot; chmod 700 $transferRoot; echo READY") | Out-Null
+
+    $r = Invoke-Scenario 'transfer' (@('transfer') + $common + @('--upload-root', $uploadRoot, '--download-root', $downloadRoot))
+    $connLine = $r.Output | Select-String -Pattern 'name=connections value=(\d+)' | Select-Object -First 1
+    if ($connLine) {
+        # 服务端认证次数**不得多于**探针自报的连接数（隐藏连接是严重问题）；少于是正常的：
+        # 校验阶段被拒的操作不会建连。
+        $expectedConnections = [int]$connLine.Matches.Groups[1].Value
+        if ($r.AuthDelta -gt $expectedConnections) {
+            Add-Failure "transfer: server authenticated $($r.AuthDelta) times but the probe only opened $expectedConnections connections"
+        }
+    }
+
+    # 出带证据 1：服务端 sha256sum 必须等于探针本地算出的期望值（远端内容是真的替换后的文件）。
+    $expectedShaLine = $r.Output | Select-String -Pattern 'name=overwrite_sha256_local value=([0-9a-f]{64})' | Select-Object -First 1
+    if ($expectedShaLine) {
+        $expectedSha = $expectedShaLine.Matches.Groups[1].Value
+        $serverShaText = (@(Invoke-Wsl @('-u', 'root', '-e', 'bash', '-lc',
+            "sha256sum $uploadRoot/payload.bin 2>/dev/null | awk '{print `$1}'")) | ForEach-Object { "$_" }) -join ' '
+        $serverSha = ($serverShaText.Trim() -split '\s+')[0]
+        Write-Log "transfer: server sha256=$serverSha expected=$expectedSha"
+        if ($serverSha -ne $expectedSha) {
+            Add-Failure "transfer: server-side sha256 mismatch (server=$serverSha expected=$expectedSha)"
+        }
+    }
+    else {
+        Add-Failure 'transfer: probe did not report overwrite_sha256_local'
+    }
+
+    # 出带证据 2：允许根内不得有临时文件残留，超限/取消/路径拒绝都不得留下文件。
+    $leftoverText = (@(Invoke-Wsl @('-u', 'root', '-e', 'bash', '-lc',
+        "find $uploadRoot $downloadRoot -name '.pudding-tmp-*' 2>/dev/null | wc -l")) | ForEach-Object { "$_" }) -join ' '
+    $leftovers = [int](($leftoverText.Trim() -split '\s+')[0])
+    if ($leftovers -ne 0) { Add-Failure "transfer: $leftovers temp file(s) left behind in the allowed roots" }
+
+    $forbiddenText = (@(Invoke-Wsl @('-u', 'root', '-e', 'bash', '-lc',
+        "ls $uploadRoot 2>/dev/null | tr '\n' ' '; test -e /etc/pudding-should-not-exist.bin && echo LEAKED || true")) | ForEach-Object { "$_" }) -join ' '
+    Write-Log "transfer: upload root contains: $forbiddenText"
+    if ($forbiddenText -match 'too-large\.bin') { Add-Failure 'transfer: over-limit upload left a target file' }
+    # 取消用例：目标**可以**存在（若传输在终止事实确立之后才完成），但必须是**字节完整**的，
+    # 绝不允许出现部分写入的目标。
+    if ($forbiddenText -match 'big\.bin') {
+        $bigShaLine = $r.Output | Select-String -Pattern 'name=cancel_big_sha256_local value=([0-9a-f]{64})' | Select-Object -First 1
+        if (-not $bigShaLine) {
+            Add-Failure 'transfer: big.bin exists but the probe did not report its expected sha256'
+        }
+        else {
+            $expectedBigSha = $bigShaLine.Matches.Groups[1].Value
+            $bigShaText = (@(Invoke-Wsl @('-u', 'root', '-e', 'bash', '-lc',
+                "sha256sum $uploadRoot/big.bin 2>/dev/null | awk '{print `$1}'")) | ForEach-Object { "$_" }) -join ' '
+            $bigSha = ($bigShaText.Trim() -split '\s+')[0]
+            Write-Log "transfer: big.bin exists, server sha256=$bigSha expected=$expectedBigSha"
+            if ($bigSha -ne $expectedBigSha) {
+                Add-Failure "transfer: cancelled upload left a PARTIAL target (server=$bigSha expected=$expectedBigSha)"
+            }
+        }
+    }
+    if ($forbiddenText -match 'escape\.bin') { Add-Failure 'transfer: rejected local path still produced a remote file' }
+    if ($forbiddenText -match 'LEAKED') { Add-Failure 'transfer: remote path outside the allowed root was written' }
+
     # Cross-check: the fingerprint the probe observed must equal OpenSSH's own.
     $observedLine = Get-Content (Join-Path $outPath 'probe-fingerprint.log') |
         Select-String -Pattern 'sha256=(SHA256:\S+)' | Select-Object -First 1

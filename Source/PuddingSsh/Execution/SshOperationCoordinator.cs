@@ -1259,8 +1259,12 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
 
                 if (!transferStage.Completed)
                 {
+                    // 本地终止事实（取消/截止）如实映射：传输阶段未在预算内结束时，绝不报 Completed。
                     var reason = transferStage.Reason;
-                    outcome = SshTransferOutcome.Failed(StopCode(reason), 0, StopDiagnostic(reason, "传输阶段未在预算内结束（远端状态未知；临时文件由清理路径处理）。"));
+                    var diagnostic = StopDiagnostic(reason, "传输阶段未在预算内结束（远端状态未知；本次临时文件/未完成目标由清理路径处理）。");
+                    outcome = StopCode(reason) == SshErrorCodes.Timeout
+                        ? new SshTransferOutcome(SshExecutionStatus.TimedOut, 0, SshErrorCodes.Timeout, diagnostic)
+                        : SshTransferOutcome.Cancelled(0, diagnostic);
                 }
                 else
                 {

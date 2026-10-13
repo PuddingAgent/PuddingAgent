@@ -98,6 +98,9 @@ internal static partial class Program
                 case "signal":
                     await RunSignalAsync(options, log);
                     break;
+                case "transfer":
+                    await RunTransferAsync(options, log);
+                    break;
                 case "matrix":
                     await RunFingerprintAsync(options, log);
                     if (options.ExpectedFingerprint is { Length: > 0 } fingerprint)
@@ -122,6 +125,7 @@ internal static partial class Program
                     await RunSubmitFailureAsync(options, log);
                     await RunRoundsAsync(options, log);
                     await RunSignalAsync(options, log);
+                    await RunTransferAsync(options, log);
                     break;
             }
         }

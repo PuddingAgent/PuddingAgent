@@ -429,7 +429,11 @@ internal static partial class Program
         new(options.Target, command);
 
     /// <summary>与既有 coordinator 场景同一形状的冻结主机快照（pin 信任 + 冻结身份 + 冻结 cwd）。</summary>
-    private static SshHostContext HostFor(this ProbeOptions options, int? operationTimeoutSeconds = null)
+    private static SshHostContext HostFor(
+        this ProbeOptions options,
+        int? operationTimeoutSeconds = null,
+        SshTransferLimits? transfer = null,
+        DateTimeOffset? deadline = null)
     {
         var timeout = operationTimeoutSeconds ?? options.OperationTimeoutSeconds;
         return new SshHostContext(
@@ -444,6 +448,8 @@ internal static partial class Program
             },
             options.IdentityRequest,
             SshTrustSnapshot.FromPin("ssh-ed25519", options.ExpectedFingerprint ?? string.Empty),
-            options.RemoteTempDirectory);
+            options.RemoteTempDirectory,
+            deadline,
+            transfer);
     }
 }

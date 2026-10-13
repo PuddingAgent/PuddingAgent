@@ -57,7 +57,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Transport/SshNetTransportFactory.cs` | 建连：密钥、认证方法、默认拒绝的主机密钥回调 | `SshNetTransportFactory` | `RetryAttempts=1`（库默认 10）、`MaxSessions=1`（库默认 10）、`Timeout` 由 deadline 决定；回调在 `ConnectAsync` 之前安装；加密私钥 ⇒ `ssh.passphrase_required` |
 | `Contracts/SshTransferPorts.cs` | 传输会话与 SFTP 通道端口（切片 B） | `ISshTransferSession`、`ISshSftpChannel`、`SshTransferCapabilities`、`SshTransferOutcome` | 能力必须**实测**；不支持即 `ssh.transfer_unsupported`；清理失败必须报告残留 |
 | `Transport/SshSftpChannel.cs` | SSH.NET 的 SFTP 通道（切片 B） | `SshSftpChannel` | 排他创建、标准/posix rename、realpath（ChangeDirectory+WorkingDirectory）、64 KiB 流式复制与超限中止 |
-| `Transport/SshSftpTransferSession.cs` | 传输会话与发布语义（切片 B） | `SshSftpTransferSession`、`SshTransferLimitExceededException` | Fail=排他创建原子占位（失败即删除）；Overwrite=临时文件+posix-rename；清理由实测能力支撑、不使用竞态冒充 |
+| `Transport/SshSftpTransferSession.cs`（带预算释放：先等飞行中的传输清理再关通道） | 传输会话与发布语义（切片 B） | `SshSftpTransferSession`、`SshTransferLimitExceededException` | Fail=排他创建原子占位（失败即删除）；Overwrite=临时文件+posix-rename；清理由实测能力支撑、不使用竞态冒充 |
 | `Transport/SshNetTransportSession.cs` | 独占连接的 Exec、退出证据、终止与释放 | `SshNetTransportSession` | 取消/超时对 exec channel 发 TERM 后关连接；无退出码/信号 ⇒ `execution_state=unknown`；释放路径不抛新错误覆盖业务结果 |
 
 ## 3. 不变量（改这个组件前先读）

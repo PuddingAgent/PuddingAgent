@@ -38,6 +38,10 @@ StrictModes no
 PrintMotd no
 X11Forwarding no
 AllowTcpForwarding no
+# 切片 B：真实 SFTP 传输探针需要 SFTP 子系统。自定义配置**不会**继承 /etc/ssh/sshd_config
+# 里的 Subsystem 行，缺少它时 SftpClient.Connect() 会被服务端拒绝。internal-sftp 与 sshd 同二进制，
+# 不依赖外部 sftp-server 路径。
+Subsystem sftp internal-sftp
 LogLevel VERBOSE
 EOF
 
