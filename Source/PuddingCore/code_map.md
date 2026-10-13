@@ -129,11 +129,10 @@
 
 ## 工具契约
 
-| 文件 | 用途 |
-|------|------|
-| `Tools/` | 工具接口与基类 |
-| `Tools/PuddingToolContracts.cs` | 原生 Tool 描述、反序列化与执行基类；当前结果仍为 Output/Error string，deepseek-harness 对齐方案将从这里演进 input/output schema、canonical value、结构化错误与不可变调用身份 |
-
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Tools/` | 工具接口与基类目录 | — | — | — |
+| `Tools/PuddingToolContracts.cs` | 原生 Tool 描述、反序列化与执行基类 | `PuddingToolContracts` | `Tools/` | 当前结果仍为 Output/Error string；deepseek-harness 对齐将演进 input/output schema、canonical value、结构化错误与不可变调用身份 |
 ## 检索合同（Tools/Retrieval/，ADR-089 U0）
 
 | 文件 | 用途 |
@@ -144,24 +143,22 @@
 
 ## 存储管理契约（Storage/）
 
-| 文件 | 用途 |
-|------|------|
-| `StorageMaintenanceContracts.cs` | Core 数据库/索引明细、语义清理目标、十分钟预览令牌、执行结果与 `IStorageMaintenanceService` 契约；Desktop 只通过 HTTP 使用 |
-
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `StorageMaintenanceContracts.cs` | Core 数据库/索引明细与清理契约 | `StorageMaintenanceContracts`、`IStorageMaintenanceService` | `Storage/` | 含语义清理目标、十分钟预览令牌与执行结果；Desktop 只通过 HTTP 使用 |
 ## 任务系统契约（Tasks/）
 
-| 文件 | 用途 |
-|------|------|
-| `Tasks/WorkspaceTaskModels.cs` | WorkspaceTask 核心模型（28 字段 + 五列投影 Backlog/Ready/InProgress/Review/Done）|
-| `Tasks/TaskStateMachine.cs` | 纯状态机：12 态 + 10 命令 + `CanTransition` 终态出边约束 |
-| `Tasks/TaskPersistenceContracts.cs` | `ITaskStore` 持久化契约（keyset 分页 + CAS 乐观并发 + 硬删语义）|
-| `Tasks/TaskStoreException.cs` | Store 契约异常（ErrorCode/TaskId/ExpectedVersion/ActualVersion）|
-| `Tasks/TaskDispatchModels.cs` | 任务派发模型（RuntimeDispatchRequest.ActiveTask 注入）|
-| `Tasks/TaskAgentCommandContracts.cs` | task_* 工具命令契约（List/Get/Claim/Update + `ITaskAgentCommandService`）+ `TaskToolErrors`（§7 统一错误体 code/message/task_id/current_version/current_status/**context_rebuild**）+ `TaskContextRebuildDiagnostics`（卡 3133b149：反查重建失败的非泄露诊断 attempted/stage/outcome）|
-| `Tasks/TaskAdminContracts.cs` | 管理者视角看板契约（`IWorkspaceTaskAdminService` + List/Create/Update/Command 请求与结果）：`TaskAdminGetResult` 携带 `dependencies`（前置/后继边 + satisfied/waiting/broken 评估）、`dependency_tree`（服务端多行缩进文本；无依赖 → `(no dependencies)`，遇环 → `(cycle detected)`）与 `children`（include_children=true 时内联直接子卡）；create/update 可选 `depends_on_task_ids`（追加语义、幂等；自引用/成环/前置缺失 fail-closed → task.dependency_invalid / task.dependency_task_not_found）|
-| `Tasks/TaskDependencyContracts.cs` | finish-to-start 看板卡依赖契约（`ITaskDependencyStore`：Add/Remove/List/Evaluate + Satisfied/Waiting/Broken 评估）|
-| `Tasks/ActiveTaskRuntimeContext.cs` | ActiveTask 运行时上下文（派发链注入 ToolExecutionContext，含 ExpectedVersion）|
-
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Tasks/WorkspaceTaskModels.cs` | WorkspaceTask 核心模型 | `WorkspaceTaskModels` | `Tasks/TaskStateMachine.cs` | 28 字段 + 五列投影 Backlog/Ready/InProgress/Review/Done |
+| `Tasks/TaskStateMachine.cs` | 纯状态机 | `TaskStateMachine` | `Tasks/WorkspaceTaskModels.cs` | 12 态 + 10 命令；CanTransition 含终态出边约束 |
+| `Tasks/TaskPersistenceContracts.cs` | 任务持久化契约 | `ITaskStore` | `Tasks/TaskStoreException.cs` | keyset 分页 + CAS 乐观并发 + 硬删语义 |
+| `Tasks/TaskStoreException.cs` | Store 契约异常 | `TaskStoreException` | `Tasks/TaskPersistenceContracts.cs` | 携带 ErrorCode/TaskId/ExpectedVersion/ActualVersion |
+| `Tasks/TaskDispatchModels.cs` | 任务派发模型 | `TaskDispatchModels` | `Tasks/ActiveTaskRuntimeContext.cs` | RuntimeDispatchRequest.ActiveTask 注入 |
+| `Tasks/TaskAgentCommandContracts.cs` | task_* 工具命令契约 | `ITaskAgentCommandService`、`TaskToolErrors`、`TaskContextRebuildDiagnostics` | `Tasks/TaskAdminContracts.cs` | 统一错误体 code/message/task_id/current_version/current_status/context_rebuild；重建失败给非泄露诊断 attempted/stage/outcome（卡 3133b149） |
+| `Tasks/TaskAdminContracts.cs` | 看板契约（无依赖示 (no dependencies)、遇环示 (cycle detected)） | `IWorkspaceTaskAdminService`、`TaskAdminGetResult` | `Tasks/TaskDependencyContracts.cs` | 结果携 dependencies/dependency_tree/children；depends_on_task_ids 追加且幂等，自引用/成环/缺前置 fail-closed |
+| `Tasks/TaskDependencyContracts.cs` | finish-to-start 依赖契约 | `ITaskDependencyStore` | `Tasks/TaskAdminContracts.cs` | Add/Remove/List/Evaluate + Satisfied/Waiting/Broken 评估 |
+| `Tasks/ActiveTaskRuntimeContext.cs` | ActiveTask 运行时上下文 | `ActiveTaskRuntimeContext` | `Tasks/TaskDispatchModels.cs` | 由派发链注入 ToolExecutionContext，含 ExpectedVersion |
 ## 自动调度契约（Scheduling/）
 
 | 文件 | 用途 |
@@ -187,16 +184,13 @@
 
 ## 事件 & 观测
 
-| 目录/文件 | 用途 |
-|------|------|
-| `Events/` | 事件定义 |
-| `Models/InternalEvent.cs` | 当前跨 Runtime/Platform 的事件信封与队列 DTO；目标补齐 aggregate/version/partition、producer、actor、classification 及 run/turn/call 身份 |
-| `Abstractions/IInternalEventBus.cs` | 当前进程内 pub/sub；不作为长期 durable replay 或同步 Hook 合同 |
-| `Observability/` | 观测抽象 |
-| `Diagnostics/` | 诊断抽象 |
-
-目标新增 `Plugins/`、`Hooks/`、`Lifecycle/` 与 `Events/DomainEventContracts.cs`，分别承载 PluginActivation/Scope、Guard/Transform/Around、各 aggregate 状态机，以及 durable event envelope；详见 `Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
-
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Events/` | 事件定义目录 | — | — | — |
+| `Models/InternalEvent.cs` | 跨 Runtime/Platform 的事件信封与队列 DTO | `InternalEvent` | `Abstractions/IInternalEventBus.cs` | 目标补齐 aggregate/version/partition、producer、actor、classification 及 run/turn/call 身份 |
+| `Abstractions/IInternalEventBus.cs` | 进程内 pub/sub 抽象 | `IInternalEventBus` | `Models/InternalEvent.cs` | 不作为长期 durable replay 或同步 Hook 合同 |
+| `Observability/` | 观测抽象目录 | — | — | — |
+| `Diagnostics/` | 诊断抽象目录 | — | — | — |
 ## 判定算子与分类契约（Operators/ · Classification/，2026-09-21）
 
 S1a/S1b 已落地（`f577add` / `7cfc198`）。抽象在 PuddingCore，实现全在 PuddingRuntime（与 Classification 域同构），**需重启才生效**。
