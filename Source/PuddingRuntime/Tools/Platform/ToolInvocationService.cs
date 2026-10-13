@@ -41,6 +41,15 @@ public sealed class ToolInvocationService : IToolInvocationService
     public async Task<ToolInvocationResult> InvokeAsync(ToolInvocationRequest request, CancellationToken ct = default)
     {
         var startedAt = DateTimeOffset.UtcNow;
+
+        // 把本次工具调用的运行轨迹发布到 Ambient（AsyncLocal）。
+        // 为什么必须发布：依赖 Ambient 取「调用方身份」的能力门禁（desktop capability 授权）在此之前
+        // 永远取不到 Agent 身份 —— 因为 Agent 执行侧构建的轨迹（携带 AgentInstanceId / ExecutionId）
+        // 只作为数据向下传，**从未压栈**；Ambient 里剩的是事件分发链留下的会话级轨迹。
+        // 作用域限定在本次工具调用内：退出即恢复上层轨迹，不污染调用方上下文。
+        using IDisposable? invocationTraceScope = request.Trace is null
+            ? null
+            : RuntimeTraceContextAccessor.Scope(request.Trace);
         var argumentError = HarnessToolCompatibilityAdapter.GetArgumentValidationError(request.ArgumentsJson);
         if (argumentError is not null)
         {
