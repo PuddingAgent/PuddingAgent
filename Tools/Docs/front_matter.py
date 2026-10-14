@@ -433,7 +433,8 @@ def main() -> int:
     ap.add_argument('--fix', action='store_true', help='补齐缺失字段')
     ap.add_argument('--dry-run', action='store_true', help='配合 --fix：只预览不写盘')
     ap.add_argument('--force', action='store_true', help='配合 --fix：覆盖取值非法的字段')
-    ap.add_argument('--paths', nargs='*', default=None, help='只处理这些前缀（仓库相对）')
+    ap.add_argument('--paths', action='extend', nargs='*', default=None,
+                    help='只处理这些前缀（仓库相对）；**可重复给出，累加**（旧版用 nargs="*"，重复给出时只会保留最后一次、前几次被静默丢弃）')
     ap.add_argument('--limit', type=int, default=0, help='最多处理 N 个文件（调试用）')
     ap.add_argument('--report', default=None, help='把明细写入 JSON')
     ap.add_argument('--default-author', default='', help='git 无记录时的作者兜底')
@@ -443,6 +444,7 @@ def main() -> int:
 
     root = repo_root()
     os.chdir(root)
+    explicit_paths = None if args.paths is None else list(args.paths)
     if args.paths is None and not args.all_repo:
         args.paths = ['Docs/']
     default_author = args.default_author or subprocess.run(
@@ -454,6 +456,14 @@ def main() -> int:
     files = list(iter_md(root, args.paths))
     if args.limit:
         files = files[:args.limit]
+    if explicit_paths is not None and not files:
+        # fail-closed：显式给出的前缀一个都没匹配上时，拒绝以“扫描 0 个文件”报通过。
+        # （否则调用方会得到假绿——它以为检查过了，实际什么都没查。）
+        print('ERROR: --paths 显式给出的前缀未匹配到任何 .md 文件：%s'
+              % ', '.join(explicit_paths), file=sys.stderr)
+        print('       （拒绝把“扫描 0 个文件”报告为通过；注意 temp/、bin/、obj/、node_modules/ 等'
+              '目录默认被剪枝，不算检查范围）', file=sys.stderr)
+        return 1
 
     for rel in files:
         checked += 1
