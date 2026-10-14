@@ -1,8 +1,18 @@
 ---
 title: 技能合并可行性探针复跑：era 子集代理腐化，两条门禁用例永久红（2026-10-06）
-slug: skill-merge-probe-rerun-2026-10-06
+author: hyfree
+date: 2026-10-06
+last_reviewed: 2026-10-06
+status: active
+description: "原计划是\"对 219 条技能池做一次近重复审计并给出合并/退休清单\"。动手前先做轮子调研， 发现平台已有一等实现，于是改为复跑既有仪器而非新写一套："
+categories: [docs, reports]
+tags: [skill, merge, probe, rerun, reports]
+related_docs: []
 related_files: [Source/PuddingRuntimeTests/Services/SkillMergeEligibilityRealIndexProbeTests.cs, Docs/14_reports/skill-near-duplicate-2026-09-21.md, Docs/12_features/RSI-G4-任务书-2026-09-22.md, Source/PuddingMemoryEngine/Services/SkillCurationGate.cs]
+slug: skill-merge-probe-rerun-2026-10-06
+draft: false
 ---
+
 
 # 技能合并可行性探针复跑（2026-10-06）
 
