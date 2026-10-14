@@ -486,9 +486,8 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string; workspaceName?: string
    * 编辑工作台负责关闭时机（无修改直接返回 / 有修改时确认），所以这里只返回结果，
    * 成功时刷新列表但不关闭工作台：保存后用户仍留在当前文档继续编辑。
    */
-  const handleSave = async (validatedValues?: WorkspaceAgentFormValues): Promise<boolean> => {
+  const handleSave = async (values: WorkspaceAgentFormValues): Promise<boolean> => {
     try {
-      const values = validatedValues ?? await form.validateFields();
       const request = {
         ...values,
         selectedCapabilityIds: Array.from(new Set([...defaultCapIds, ...grantTargetKeys])),

@@ -232,7 +232,10 @@ const WorkspaceAgentSettingsDrawer: React.FC<WorkspaceAgentSettingsDrawerProps> 
     setSaving(true);
     setSaveFailed(false);
     try {
-      const values = await form.validateFields();
+      await form.validateFields();
+      // validateFields 只返回已注册字段。Prompt 编辑器没有 Form.Item，且打开
+      // Prompt 分区会卸载其他表单项；保存必须包含 store 中保留的完整草稿。
+      const values = form.getFieldsValue(true);
       setErrorSections(new Set());
       setErrorCounts({});
       setErrorDocuments(new Set());

@@ -247,7 +247,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 
 | 文件 | 职责与边界 |
 |------|------------|
-| `src/pages/workspace/[id]/WorkspaceAgentSettingsDrawer.tsx` | 近全屏工作台外壳：身份栏（头像/名称/工作区/来源模板）、未保存与校验状态、`保存所有更改`（新增模式成功后返回列表）、关闭三选一确认、`Ctrl+S` 拦截；逐字段快照比较得出脏值，不依赖 `isFieldsTouched`。Prompt 文档字段由受控编辑器写入表单、不渲染 `Form.Item`，因此草稿快照用 `Form.useWatch([], { preserve: true })` |
+| `src/pages/workspace/[id]/WorkspaceAgentSettingsDrawer.tsx` | Agent 编辑工作台：身份栏、草稿/校验状态、保存与关闭确认、`Ctrl+S`；全量草稿合同见下「关键语义」 |
 | `src/pages/workspace/[id]/promptDocuments.ts` | Prompt 目录元数据（字段→中文职责/次级标签/分组/空值语义）与纯逻辑：`collectDirtyFields`/`collectDirtySections`/`collectDirtyPromptDocuments`/`summarizeValidationErrors`/`findTextMatches`/`estimateScrollTop`。空值语义以 Core 为准：只有心跳留空会回退默认提示词，其余 Markdown 留空不生成文件、界面只写「未填写」 |
 | `src/pages/workspace/[id]/AgentPromptCatalog.tsx` | 「角色与 Prompt」文档目录：常用 / 行为与协作 / 生命周期三组，显示选中、已修改、校验未通过；中文职责是主标题 |
 | `src/pages/workspace/[id]/AgentPromptEditor.tsx` | 单文档大编辑器：编辑/预览切换、文档内查找（命中计数 + 定位 + 高亮覆盖层，不改写原文）、字符数、`{{变量}}` 仅作文本辅助不替换；窄屏（<1024px）用选择器取代目录 |
@@ -257,7 +257,11 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 2026-10-01 复核修正（依运行态截图）：抽屉宽度改为**按分区分模式**——只有「角色与 Prompt」用 `94vw` 近全屏，其余分区收窄到 1040px，消除右侧 30–45% 的无内容死区；护栏三个数字改用 `fieldGrid`（`minmax(240px,280px)` 自动换行）而非各占一整行；模型与记忆分区加 `modelSectionHost` 作用域，把 antd 选择器长模型名从换行改为单行省略；身份栏补回可见关闭按钮（原先把抽屉头隐藏后只剩「返回列表」）；无修改时保存按钮降级为「已保存」次要按钮（长期停在灰紫禁用态会被误读成不能保存）；底部说明收敛为一行，
 避免与应用底部状态栏挤在同一行。另修 `CapabilitySkillSection.tsx` 的 `GrantChip`：能力目录里 `name` 常等于 `toolName`，无条件追加 code 会渲染成 `search_tools search_tools`，现在两者相同则只渲染一次。
 
-可验证性：`promptDocuments.test.ts`（目录完整性、改回原值不脏、数组/空值比较、错误归类、查找与滚动估算）、`useFormSnapshot.test.tsx`（锁定 `preserve: true` 全量草稿行为）、`WorkspaceAgentSettingsDrawer.test.tsx`（身份栏、目录、草稿保留、预览、保存成功/失败、关闭确认、加载态）。全量 `tsc --noEmit` 的既有基线错误只在 `src/pages/chat`，`src/pages/workspace` 命中必须为 0。
+可验证性：`promptDocuments.test.ts`（目录、脏值、错误归类、查找）、`useFormSnapshot.test.tsx`（全量草稿）、`WorkspaceAgentSettingsDrawer.test.tsx`（编辑/新增的完整保存载荷、跨分区与空文档保留、保存状态、关闭确认）。
+
+**关键语义**
+
+**`WorkspaceAgentSettingsDrawer.tsx`**：Prompt 编辑器不注册 `Form.Item`，切入 Prompt 分区还会卸载其他表单项。`Form.useWatch([], { preserve: true })` 观察完整草稿；保存先 `validateFields()`，再以 `getFieldsValue(true)` 取完整 store 交给父组件提交，保留名称、启用状态、Prompt、模型与护栏配置。
 
 ## 用户头像
 

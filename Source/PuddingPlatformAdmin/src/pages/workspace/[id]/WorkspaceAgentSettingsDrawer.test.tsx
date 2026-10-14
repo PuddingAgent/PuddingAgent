@@ -200,7 +200,16 @@ describe('WorkspaceAgentSettingsDrawer 编辑工作台', () => {
     const onClose = jest.fn();
     render(
       <Harness
-        initialValues={{ name: '审计员', systemPrompt: '原始内容' }}
+        initialValues={{
+          name: '审计员',
+          isEnabled: false,
+          systemPrompt: '原始内容',
+          agentsMdContent: '协作规则',
+          preferredProviderId: 'provider',
+          preferredModelId: 'model',
+          maxRounds: 200,
+          explorerModel: 'provider/explorer',
+        }}
         onSave={onSave}
         onClose={onClose}
       />,
@@ -213,6 +222,16 @@ describe('WorkspaceAgentSettingsDrawer 编辑工作台', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存所有更改' }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      name: '审计员',
+      isEnabled: false,
+      systemPrompt: '新内容',
+      agentsMdContent: '协作规则',
+      preferredProviderId: 'provider',
+      preferredModelId: 'model',
+      maxRounds: 200,
+      explorerModel: 'provider/explorer',
+    }));
     expect(onClose).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByText('无未保存更改')).toBeTruthy());
     // 仍停留在当前文档
@@ -234,6 +253,71 @@ describe('WorkspaceAgentSettingsDrawer 编辑工作台', () => {
     expect(await screen.findByText('保存失败，草稿已保留')).toBeTruthy();
     expect(textareaByLabel('系统提示词').value).toBe('新内容');
     expect(screen.getByText('未保存 · 1 项')).toBeTruthy();
+  });
+
+  it('在基础信息保存也包含未注册的 Prompt 字段和清空后的文档', async () => {
+    const onSave = jest.fn().mockResolvedValue(true);
+    render(
+      <Harness
+        initialValues={{
+          name: '审计员',
+          role: 'Audit',
+          isEnabled: true,
+          systemPrompt: '原始内容',
+          agentsMdContent: '协作规则',
+        }}
+        onSave={onSave}
+      />,
+    );
+    await screen.findByText('审计员');
+    await openPromptSection();
+    fireEvent.change(await findTextareaByLabel('系统提示词'), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^基础信息/ }));
+    fireEvent.click(screen.getByRole('button', { name: '保存所有更改' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      name: '审计员',
+      role: 'Audit',
+      isEnabled: true,
+      systemPrompt: '',
+      agentsMdContent: '协作规则',
+    })));
+  });
+
+  it('新增 Agent 时从 Prompt 分区保存完整模板草稿', async () => {
+    const onSave = jest.fn().mockResolvedValue(true);
+    const onClose = jest.fn();
+    render(
+      <Harness
+        editMode={false}
+        initialValues={{
+          name: '新助手',
+          role: 'Service',
+          isEnabled: true,
+          sourceTemplateId: 'global:general-assistant',
+          systemPrompt: '模板提示词',
+        }}
+        onSave={onSave}
+        onClose={onClose}
+      />,
+    );
+    await screen.findByText('新助手');
+    await openPromptSection();
+    fireEvent.change(await findTextareaByLabel('系统提示词'), {
+      target: { value: '自定义提示词' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存所有更改' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      name: '新助手',
+      role: 'Service',
+      isEnabled: true,
+      sourceTemplateId: 'global:general-assistant',
+      systemPrompt: '自定义提示词',
+    })));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
   it('无修改时保存按钮降级为「已保存」且禁用，返回列表直接关闭', async () => {
