@@ -106,6 +106,20 @@ python Tools/Docs/verify_codemap_global.py --selftest   # 自带夹具自测（3
 > （行被改写时整行已变，只有单元格原文会被迁移）、非表行逐**行**查、围栏标记行跳过计数。
 > 两者互补，建议波次验收**两个都跑**：定向门禁快且判据明确，全局门禁能拦下短行/围栏间的静默丢失。
 
+### 门禁的默认范围与 fail-closed 语义（2026-10-14 实测）
+
+- **`check_md_links.py` 默认只扫 `Docs/`**（实测 1497~1498 个 md）；`--all-repo` 扩大到全仓
+  （实测 **+110 个文件**，含仓库根 `README.md` 与各 `Source/*/code_map.md`）。
+  **默认范围是 `--all-repo` 的忠实子集**：两种范围的失效清单经集合比对**完全相同**
+  ⇒ 断链结论**不会被窄范围掩盖**。（比对要比**集合**，不能只比计数。）
+- **它真的在检锚点**：放入一个含**坏锚点**的探针 md ⇒ `失效锚点=1`，删掉探针后回 `0` ❗。
+- **`code_map_check.py` 是 fail-closed**：`--paths` 指向不存在的路径 ⇒ `exit 2` + `usage error: path not found`。
+  另有 `--report <json>` / `--report-md <md>`（导出**逐条**违规：`rule/severity/file/line/detail`）
+  与 `--fingerprint`（计算 §5 源指纹）；`--fp-probe` 可诊断声明的 glob 变体。
+  ❗ **`--paths` 是单个逗号分隔字符串**（`split(",")`），**不是**可重复参数。
+- **`front_matter.py --paths` 可重复**（`action='extend'`，重复给出会**累加**而不是覆盖）；
+  且**显式 paths 匹配 0 个 `.md` 会非零退出** —— 避免“扫 0 个 ⇒ 报通过”的假绿。
+
 ## 建议阅读顺序
 
 1. [`07_architecture/架构.md`](07_architecture/架构.md) — 架构总览、分层边界与阅读地图。
