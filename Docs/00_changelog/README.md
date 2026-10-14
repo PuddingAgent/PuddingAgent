@@ -104,7 +104,7 @@ ADR / 设计 / 报告 / 任务 id / 提交号。
 ## 6. 存量迁移（未迁完的清单）
 
 - 已迁出：根 `code_map.md` 的历史日志 → [`2026Year/10/2026-10-02-根code_map迁出历史记录.md`](2026Year/10/2026-10-02-根code_map迁出历史记录.md)。
-- 待迁（下次整理时处理，迁移时保持原文并提供来源说明）：
-  - `Docs/Changelog-2026-08-24_2026-09-22.md`（`Docs/` 根目录的历史日志，应按月拆入本目录）；
-  - `Docs/README.md` 中以日期段落开头的进展叙述；
+- 待迁（下次整理时处理，迁移时保持原文并提供来源说明）—— **2026-10-14 复核：以下 3 项均已核实完成，本节无遗留：**
+  - `Docs/Changelog-2026-08-24_2026-09-22.md`（`Docs/` 根目录的历史日志，应按月拆入本目录）；**核实结论（2026-10-14）：该项已完成，无需再迁。** 实测 `Docs/` 根目录现仅剩 `README.md` **1** 个文件（文件计数 = 1），该历史日志已不在原处。
+  - `Docs/README.md` 中以日期段落开头的进展叙述；**核实结论（2026-10-14）：该项已完成，无需再迁。** `Docs/README.md`（113 行）中已无日期段落标题；**对照组**：同一检索方式在该文件的迁出目标 `2026Year/10/2026-10-02-Docs-README迁出的按日期进展记录.md` 中命中 **10** 处日期标题，证明检索有效而非静默失败。
   - 各子项目 `code_map.md` 内的「变更（YYYY-MM-DD）」小节（如 `Source/PuddingRuntime/code_map.md`、`Source/PuddingFullTextIndex/code_map.md`、`Source/PuddingCodeIndex/code_map.md`、`Source/PuddingPlatformAdmin/code_map.md`、`Source/PuddingHost/code_map.md` 等）。**核实结论（2026-10-14）：该项已完成，无需再迁。** 精确枚举 `Source/**/code_map.md` 共 **44** 个文件，逐个检索 `变更（20` **零命中**；对照组（同一检索方式查 `源指纹`）在 **4** 个文件命中，证明检索有效而非静默失败。
