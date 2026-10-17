@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Leaf component: DeepSeek Search / Fetch (https://api.deepseek.com/v1/tools/*) protocol semantics
+       only — request validation, wire JSON shapes, response mapping, OpenAI-compatible error
+       classification and bounded retry. It deliberately does NOT speak HTTP: the transport is a port
+       (IDeepSeekWebTransport) so this assembly can be built and tested without network, proxy, DNS or
+       the host process (组件化交付规程 S1–S4). The host adapter reuses the existing IWebClient.
+       ProjectReference = 0 and PackageReference = 0; asserted by
+       PuddingDeepSeekWebTests/ComponentBoundaryTests. -->
+  <ItemGroup>
+    <!-- Keep the leaf honest: without the implicit using, a future direct HttpClient call cannot even
+         compile inside this component. (Endpoint/base-URL constants are protocol knowledge and stay.) -->
+    <Using Remove="System.Net.Http" />
+  </ItemGroup>
+
+</Project>

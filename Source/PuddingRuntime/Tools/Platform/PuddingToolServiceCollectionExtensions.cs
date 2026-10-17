@@ -10,6 +10,7 @@ using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingRuntime.Classification;
 using PuddingRuntime.Services;
+using PuddingRuntime.Services.DeepSeekWeb;
 using PuddingRuntime.Services.Plugins;
 using PuddingRuntime.Services.Search;
 using PuddingRuntime.Services.Skills;
@@ -36,6 +37,7 @@ public static class PuddingToolServiceCollectionExtensions
         services.TryAddSingleton<ITerminalProcessManager>(NoOpTerminalProcessManager.Instance);
         services.TryAddSingleton<IFlurlClientCache, FlurlClientCache>();
         services.TryAddSingleton<IWebClient, FlurlWebClient>();
+        services.AddPuddingDeepSeekWeb();
         services.TryAddSingleton<IHtmlToMarkdownConverter, ReverseMarkdownHtmlToMarkdownConverter>();
         services.TryAddSingleton<IHttpFetchContentFormatter, HttpFetchContentFormatter>();
         services.TryAddSingleton<BookHandler>();

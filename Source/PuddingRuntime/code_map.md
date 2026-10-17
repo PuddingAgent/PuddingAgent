@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=2f9a13331725 · 条目数: 350 · 最近整理: 2026-10-08
+> 源指纹: Source/PuddingRuntime/**=b377565361ff · 条目数: 352 · 最近整理: 2026-10-17
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -127,6 +127,9 @@
 |---|---|---|---|---|
 | `Services/DashScopeAsrProvider.cs` | 百炼 DashScope 语音识别 Provider | `IAsrHttpRecognizer` | `Services/VoiceProviderFactory.cs` | — |
 | `Services/DashScopeTtsProvider.cs` | 百炼 DashScope 语音合成 Provider | `ITtsProvider` | `Services/VoiceProviderFactory.cs` | — |
+| `Services/DeepSeekWeb/DeepSeekWebSettingsProvider.cs` | DeepSeek 凭据解析：`deepseek_search` 节优先，回退 `providerId=deepseek` | `DeepSeekWebSettingsProvider` | `Tools/BuiltIns/Search/DeepSeekSearchTool.cs` | 错误含两处配置路径且不回显 Key；disabled 终态不回退 |
+| `Services/DeepSeekWeb/DeepSeekWebServiceCollectionExtensions.cs` | DeepSeek Search/Fetch 组件在工具组合根的装配入口 | `AddPuddingDeepSeekWeb` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 只注册配置解析/传输/协议服务；两个工具由 `[Tool]` assembly scan 纳入，不单独登记 |
+| `Services/DeepSeekWeb/WebClientDeepSeekTransport.cs` | 组件传输端口到既有 `IWebClient` 的原样适配 | `WebClientDeepSeekTransport` | `../PuddingDeepSeekWeb/DeepSeekWebTransport.cs` | 不分类、不重试、不吞异常；错误语义归组件所有 |
 | `Services/Demo/DemoDesktopHostBridge.cs` | 演示用的嵌入式宿主桥接实现 | `DemoDesktopHostBridge` | `Services/INativeHostBridge.cs` | — |
 | `Services/DesignCouncilRuntimeService.cs` | MOA 设计委员会的运行时适配与状态持久化 | `IDesignCouncilRuntimeService` | `Services/InMemorySubAgentOrchestrationRunStore.cs` | 派发为只读，结果由调用方回填 |
 | `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 四维运行时指标的确定性诊断 | `RuntimeDiagnosisEngine` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 无证据判 unknown，绝不判 healthy |
@@ -368,6 +371,8 @@
 | `Tools/BuiltIns/Messaging/SendMessageTool.cs` | `send_message`：向其他 Agent 或用户发消息 | `SendMessageTool` | `Services/Messaging/MessageDeliveryDispatcher.cs` | 默认只通知；未知 intent fail-closed |
 | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | `anysearch_search`：通用网页搜索 | `AnySearchSearchTool` | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | `doubao_search`：豆包搜索 | `DoubaoSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
+| `Tools/BuiltIns/Search/DeepSeekFetchTool.cs` | `deepseek_fetch`：DeepSeek 官方单页抓取（Markdown 正文） | `DeepSeekFetchTool` | `../PuddingDeepSeekWeb/IDeepSeekWebService.cs` | 低风险只读网络工具（AutoAllowed 免授权）；url ≤8192/绝对 http(s)/无 userinfo；输出 ≤60k 有界截断 |
+| `Tools/BuiltIns/Search/DeepSeekSearchTool.cs` | `deepseek_search`：DeepSeek 官方网页搜索 | `DeepSeekSearchTool` | `Tools/BuiltIns/Search/DeepSeekFetchTool.cs` | 低风险只读网络工具（AutoAllowed 免授权）；count 夹取 1–50；摘要级结果需再用 fetch 核实原文 |
 | `Tools/BuiltIns/Search/GitHubSearchTool.cs` | `github_search`：GitHub 仓库与代码检索 | `GitHubSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/SearchGrepTool.cs` | `search_grep`：工作区文本检索 | `SearchGrepTool` | `Services/Search/SearchAttemptLedger.cs` | 索引只产候选，匹配以磁盘当前内容为准；未建索引报 `dependency_wait`、引擎故障报 `contract_error`；新鲜度不可核实时不把 0 命中当作不存在的证据（见下「关键语义」） |
 | `Tools/BuiltIns/Search/SearchToolsTool.cs` | `search_tools`：工具目录检索与加载 | `SearchToolsTool` | `Services/Tools/ToolExposurePlanner.cs` | 只返回权限过滤后的条目 |

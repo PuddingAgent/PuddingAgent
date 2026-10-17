@@ -1,6 +1,6 @@
 # PuddingAgent 代码地图（根索引）
 
-> 源指纹: Source/**=869bcd5ee8b0, Tests/**=b0411cf64a03, Tools/**=f27330dfc0b7, TestScripts/**=46b63da8b4e5 · 条目数: 93 · 最近整理: 2026-10-07
+> 源指纹: Source/**=6b8fcb222277, Tests/**=d0f59f75edda, Tools/**=a21cab083cdf, TestScripts/**=3f29759b31b3 · 条目数: 120 · 最近整理: 2026-10-17
 > 本文件是**索引**不是日志：只放 概念 · 组件 · 关键文件（相对路径）· 用途；维护规则见 [`Agents.md`](Agents.md)，过程记录写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)；子项目内部的文件级索引在其自己的 `code_map.md` 中，本文件只做跨项目路由。
 
 ## 0. 怎么用（30 秒）
@@ -52,6 +52,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
 | `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的**纯策略**组件（BCL-only）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定（见下「关键语义」） | [code_map](Source/PuddingContextPolicy/code_map.md) |
 | `Source/PuddingSsh/` | SSH 远程执行叶子组件（`ProjectReference=0`，包 `SSH.NET`）：合同/端口与错误分类、协调器与独占连接（见下「关键语义」） | [code_map](Source/PuddingSsh/code_map.md) |
+| `Source/PuddingDeepSeekWeb/` | 🔑 DeepSeek Search/Fetch 协议叶子组件（零引用；传输是端口，不直连 HTTP/不持凭据） | [code_map](Source/PuddingDeepSeekWeb/code_map.md) |
 | `Source/PuddingCodeIntelligence/` | 语言智能与查询：Roslyn 与 TypeScript 抽取及 outliner 与符号查询 | [code_map](Source/PuddingCodeIntelligence/code_map.md) |
 | `Source/PuddingIndexChunking/` | 分块组件：源文件 → 可独立索引的块（叶子，outline 由 `IOutlineSource` 注入） | [code_map](Source/PuddingIndexChunking/code_map.md) |
 | `Source/PuddingPathFiltering/` | 路径忽略合同的权威实现（噪声目录名 + `.gitignore` 语义） | [code_map](Source/PuddingPathFiltering/code_map.md) |
@@ -105,6 +106,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **Desktop ↔ Core 能力通道** | §2 + [能力通道](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | 两端只经 `Pudding.Contracts`（DTO）与 `Pudding.Rpc.Protocol`（wire）；启用前必须过 `DesktopCapabilityChannelPreflight` |
 | **Core 启动与就绪契约** | `Source/PuddingHost/Hosting/`、`Source/PuddingDesktop/Hosting/` | 每 5s 发 `PUDDING_DESKTOP_STARTING`，全部 hosted service `StartAsync` 返回后才发 `PUDDING_DESKTOP_READY`；`/health/ready` 不可省 |
 | **浏览器自动化链路** | `Source/PuddingHost/BrowserBridge/`、`Source/PuddingBrowser.WebView2/` | Snapshot ref 必须携带 `PageVersion`；交互提交后不得重查旧 Locator，后续状态用 Wait 或新 Snapshot |
+| **DeepSeek 网页搜索/抓取工具** | `Source/PuddingRuntime/Tools/BuiltIns/Search/DeepSeek*Tool.cs`、`Source/PuddingDeepSeekWeb/` | `deepseek_search`/`deepseek_fetch` 低风险只读（AutoAllowed 免授权）；凭据 `search.providers.json` 的 `deepseek_search` 优先、回退 `llm.providers.json` 的 `providerId=deepseek`；协议在叶子组件，传输经端口适配 |
 | **浏览器控制权与页面授权** | `Source/PuddingBrowser.Automation/` + [设计方案](Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md) | 进程内**唯一** `IBrowserAutomationAuthority`：页面授权按 read/write/manage 绑定实例+世代+页面+frame，写请求复检世代；`BrowserMutationPostcondition` 统一判定变更类后置条件；唯一事实源 `BrowserPageLifecycle`（见下「关键语义」） |
 | **多模态视觉链路** | `Source/PuddingRuntime/` + [ADR-077](Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) | typed `ContentPart{type=image, artifactId, detail}` 同事务写入 `ChatMessages.ContentPartsJson`；文本模型只收 `artifact://` 占位 |
 | **记忆与存储治理** | `Source/PuddingMemoryEngine/`、`Source/PuddingHost/Storage/` + [ADR-076](Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) | Library/Book/Chapter 是 Agent 主动维护的当前结论与索引；`StorageMaintenanceCoordinator` 是唯一在线维护 writer，保留策略读 `system.json` 且 CAS + fail-closed |
@@ -157,6 +159,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingCodeIndexTests/` · `Source/PuddingIndexChunkingTests/` | 索引组件独立测试：变更管线/调度/维护/存储 + 分块（含边界断言） |
 | `Source/PuddingContextPolicyTests/` | 上下文策略组件独立测试：容量算术与压力分类（含事故两条样本的记录值回放）、候选边界与指纹、严格适用校验（新消息追加必须让旧候选失效）、净收益准入（真实摘要重算 after）、退避判定（硬保护不被退避屏蔽）+ S1–S4 边界断言（含探测器自检与取红） |
 | `Source/PuddingDiagnosticsTests/` | 可诊断基础设施独立测试：故障场景→期望因果码全量、事故复刻与证据、脱敏与证据预算、事故投影、S1–S4 边界断言（含探测器自检与取红） |
+| `Source/PuddingDeepSeekWebTests/` | DeepSeek Search/Fetch 协议叶子组件独立测试：请求形状/参数校验矩阵/响应解析/HTTP 错误映射/有界重试与 `Retry-After`/传输异常与取消/端点归一 + S1–S4 边界断言（含探测器取红）+ 真实 API Live（Search→Fetch，无凭据时 Inconclusive） |
 | `Source/PuddingBrowser.AutomationTests/` | 浏览器自动化可靠性组件独立测试：控制权/接管与世代、页面授权与子代理范围、回执与重试裁定、变更类后置条件、交互回执、引用身份与三个观察事实、operationId 账本、S1–S4 边界断言与用例守恒 |
 | `Source/PuddingPathFilteringTests/` · `Source/PuddingVectorIndexTests/` · `Source/PuddingFullTextIndexTests/` · `Source/PuddingMemoryEngineBenchmarks/` · `Tests/PuddingBrowser.WebView2.Smoke/` | 路径忽略、向量与全文索引叶子组件 · BenchmarkDotNet 基准 · 浏览器 smoke |
 | `Source/PuddingRetrievalEvalTests/` · `Source/PuddingRetrievalEvalProbe/` · `Source/PuddingFullTextIndex.Cli.Tests/` | 检索评测（`ISearchProbe` 端口）与全文索引 CLI |
@@ -227,7 +230,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 - `D:\data` — 开发环境 DataRoot（由 `dev-up.py` 的环境变量/启动参数决定，见 PathHelper）。
 - `<DataRoot>/config/system.json` — Core 系统配置：端口、ControlToken、启动超时、保留策略、ToolReview 覆盖。
 - `<DataRoot>/config/security.json` — 登录态 JWT（`jwt.key/issuer/audience/expiryHours`，缺省 7 天；密钥缺失时由引导期生成并写回，代码内无硬编码兜底）。
-- `<DataRoot>/config/llm.providers.json` — LLM 服务商/模型配置来源（apiKey 支持 `${ENV}` / vault 引用，不回显）。
+- `<DataRoot>/config/llm.providers.json` — LLM 服务商/模型配置来源（apiKey 支持 `${ENV}` / vault 引用，不回显）；DeepSeek Search/Fetch 在未配置专用节时回退读取其中 `providerId=deepseek` 的 `baseUrl`+`apiKey`。
+- `<DataRoot>/config/search.providers.json` — 搜索类 provider 配置（anysearch / doubao_search / zhihu_search / deepseek_search）；`deepseek_search` 节（enabled/baseUrl/apiKey/timeoutSeconds）优先于 `llm.providers.json` 的 DeepSeek provider。
 - `D:\data\workspaces\default` · `DesktopHome/desktop.json` · `.pudding-host.lock` — 默认工作空间 · Shell 侧 DataRoot/Core 路径/关闭行为 · Console 与 DesktopChild 共用的单实例文件句柄租约（不删锁文件绕互斥）。
 - `.pudding/context-tool-results/` · `temp/build/` · `temp/test-out/` — 工具结果完整原文（模型只收 8 KiB 有界摘要）· 唯一允许的临时产物目录。
 - `dotnet build PuddingRuntime --no-restore` · `dotnet build Source\PuddingDesktop\PuddingDesktop.csproj --no-restore --nologo` · `dotnet test Tests\PuddingDesktop.Tests\PuddingDesktop.Tests.csproj --no-restore --nologo` — 编译入口 · Desktop 定向构建与测试（build/test/publish 必须串行）。

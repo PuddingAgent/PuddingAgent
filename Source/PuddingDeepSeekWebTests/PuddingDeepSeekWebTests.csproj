@@ -1,0 +1,20 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- 组件化交付规程 S2/S3：本测试工程**只**引用 PuddingDeepSeekWeb（+ 测试框架）。
+       不得引用 PuddingRuntime / PuddingHost / PuddingAgent / PuddingCore 或任何其他组件；
+       组件测试进程不会加载宿主程序集。边界由 ComponentBoundaryTests 双重断言
+       （进程实际加载的闭包 + 磁盘上的 csproj 清单）。
+       真实联网用例（[TestCategory("Live")]）只在能定位到 DeepSeek 凭据时运行，否则 Inconclusive。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingDeepSeekWeb\PuddingDeepSeekWeb.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -46,6 +46,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- S5：DeepSeek Search/Fetch 协议组件（叶子，ProjectReference=0、无反向依赖）；Runtime 提供 IWebClient 传输适配 + 工具体系接入。 -->
+    <ProjectReference Include="..\PuddingDeepSeekWeb\PuddingDeepSeekWeb.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="runtimes\win-x64\native\Everything64.dll" CopyToOutputDirectory="Always">
       <TargetPath>Everything64.dll</TargetPath>
     </None>
