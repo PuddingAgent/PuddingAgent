@@ -64,4 +64,25 @@ describe('request error handling', () => {
       'POST /api/chat — HTTP 500 — LLM 调用失败',
     );
   });
+
+  it('does not toast when the call site opts out via skipErrorHandler', () => {
+    // 已知的暂时不可用（如 context-health 的 409 context_window_unresolved）由调用方
+    // 自己降级成 unknown；全局 handler 不得再弹一次错误 toast。
+    expect(() =>
+      handleError(
+        {
+          response: {
+            status: 409,
+            config: { method: 'get', url: '/api/sessions/legacy-session/context-health' },
+            data: {
+              code: 'context_window_unresolved',
+              message: '无法解析当前 Session 的上下文窗口。',
+            },
+          },
+        },
+        { skipErrorHandler: true },
+      ),
+    ).toThrow();
+    expect(mockMessageError).not.toHaveBeenCalled();
+  });
 });

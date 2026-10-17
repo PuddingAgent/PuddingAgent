@@ -3257,6 +3257,10 @@ export async function uploadVisionArtifact(
 export async function getContextHealth(sessionId: string): Promise<ContextHealthSnapshot> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/context-health`, {
     method: 'GET',
+    // 409 `context_window_unresolved` 是**已知的暂时不可用**（早期会话未绑定 Agent 实例），
+    // 不是故障：全局 request 错误处理若照常弹 toast，会在每次打开这类会话时产生错误噪音。
+    // 调用方（IntentConsole）已经按服务态纪律把它降级为 unknown/未配置，这里只关掉全局 toast。
+    skipErrorHandler: true,
   });
 }
 

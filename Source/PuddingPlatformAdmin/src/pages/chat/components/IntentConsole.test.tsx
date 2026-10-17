@@ -82,6 +82,12 @@ jest.mock(
         <span data-testid="summary-context-service">
           {String(summary.contextService)}
         </span>
+        <span data-testid="summary-context-usage-status">
+          {String(summary.contextUsageStatus)}
+        </span>
+        <span data-testid="summary-context-error">
+          {String(summary.contextUsageError)}
+        </span>
         <span data-testid="summary-index">{String(summary.index)}</span>
         <span data-testid="summary-background-memory">
           {String(summary.backgroundMemory)}
@@ -549,8 +555,8 @@ describe('IntentConsole', () => {
     };
 
     settle(getContextHealth as jest.Mock, overrides.contextHealth, {
-      response: { status: 409 },
-      data: { code: 'context_window_unresolved' },
+      // 与真实 axios 错误一致：业务码在 response.data.code。
+      response: { status: 409, data: { code: 'context_window_unresolved' } },
     });
     settle(
       getCacheDiagnostics as jest.Mock,
@@ -655,6 +661,29 @@ describe('IntentConsole', () => {
     expect(screen.getByTestId('summary-index').textContent).not.toBe(
       'disabled',
     );
+  });
+
+  it('treats 409 context_window_unresolved as an expected unresolved state, not an error', async () => {
+    // 全部探针失败；contextHealth 默认就是 409 context_window_unresolved。
+    stubDiagnosticsRequests({});
+
+    render(<IntentConsole {...baseProps} sessionId="session-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-context-service').textContent).toBe(
+        'unknown',
+      ),
+    );
+    // 已知的暂时不可用不是故障：不进入 error 态（否则会误导用户排查未失败的服务）；
+    // 全局 toast 已在 getContextHealth 的 skipErrorHandler 中关闭。
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('summary-context-usage-status').textContent,
+      ).toBe('ready'),
+    );
+    expect(
+      screen.getByTestId('summary-context-error').textContent,
+    ).toBe('undefined');
   });
 
   it('maps real service data honestly (off index / running memory / usable provider)', async () => {

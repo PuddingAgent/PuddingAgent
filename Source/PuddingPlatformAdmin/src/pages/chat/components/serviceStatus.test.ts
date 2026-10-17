@@ -11,6 +11,7 @@ import {
   deriveIndexServiceStatus,
   deriveModelServiceStatus,
   describeInputUnavailableReason,
+  isContextWindowUnresolved,
   mapContextHealthState,
   mapIndexHealthLevel,
   toInputUnavailableReason,
@@ -93,6 +94,30 @@ describe('serviceStatus · contextService', () => {
     expect(
       deriveContextServiceStatus({ status: 'fulfilled', value: contextSnapshot('Blocking') }),
     ).toBe('capacity');
+  });
+});
+
+describe('serviceStatus · context_window_unresolved 判定', () => {
+  it('recognizes only HTTP 409 with the documented business code', () => {
+    expect(
+      isContextWindowUnresolved({
+        response: { status: 409, data: { code: 'context_window_unresolved' } },
+      }),
+    ).toBe(true);
+    // 409 但业务码不同（例如版本冲突）仍必须走错误路径。
+    expect(
+      isContextWindowUnresolved({
+        response: { status: 409, data: { code: 'version_conflict' } },
+      }),
+    ).toBe(false);
+    expect(
+      isContextWindowUnresolved({
+        response: { status: 500, data: { code: 'context_window_unresolved' } },
+      }),
+    ).toBe(false);
+    expect(isContextWindowUnresolved(new Error('network'))).toBe(false);
+    expect(isContextWindowUnresolved(undefined)).toBe(false);
+    expect(isContextWindowUnresolved(null)).toBe(false);
   });
 });
 

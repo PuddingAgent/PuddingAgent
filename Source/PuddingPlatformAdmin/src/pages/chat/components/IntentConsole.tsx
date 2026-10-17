@@ -71,6 +71,7 @@ import {
   deriveContextServiceStatus,
   deriveIndexServiceStatus,
   deriveModelServiceStatus,
+  isContextWindowUnresolved,
   toInputUnavailableReason,
 } from './serviceStatus';
 import PermissionModeSelector from './PermissionModeSelector';
@@ -448,8 +449,13 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         setContextHealth(contextResult.value);
       } else {
         setContextHealth(null);
+        // 409 context_window_unresolved 是「暂时解析不出窗口」的已知状态（如早期会话未绑定
+        // Agent 实例），不是服务故障：保持 contextHealthError=null，让圆环以「未知/未配置」
+        // 呈现，而不是降级成错误态（同时全局 toast 已在 getContextHealth 里关闭）。
         setContextHealthError(
-          getRequestErrorMessage(contextResult.reason, '上下文窗口刷新失败'),
+          isContextWindowUnresolved(contextResult.reason)
+            ? null
+            : getRequestErrorMessage(contextResult.reason, '上下文窗口刷新失败'),
         );
       }
 
@@ -467,7 +473,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     } catch (error) {
       setContextHealth(null);
       setContextHealthError(
-        getRequestErrorMessage(error, '上下文窗口刷新失败'),
+        isContextWindowUnresolved(error)
+          ? null
+          : getRequestErrorMessage(error, '上下文窗口刷新失败'),
       );
       setServiceSignals(UNKNOWN_SERVICE_SIGNALS);
     } finally {

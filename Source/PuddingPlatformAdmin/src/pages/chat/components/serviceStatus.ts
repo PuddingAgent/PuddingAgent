@@ -128,6 +128,23 @@ export function deriveContextServiceStatus(
 }
 
 /**
+ * 409 `context_window_unresolved` 的判定：会话暂时解析不出上下文窗口（典型：早期会话没有
+ * Agent 实例绑定），这是**已知的暂时不可用**，不是上下文服务故障，也不该弹全局错误 toast。
+ *
+ * 与 `deriveContextServiceStatus` 的纪律同源：没采到数据 ≠ 故障。调用方据此把该错误从
+ * 「错误」降级为「未知/未配置」，交由圆环与运行摘要以非故障样式呈现。
+ */
+export function isContextWindowUnresolved(reason: unknown): boolean {
+  const response = (
+    reason as { response?: { status?: number; data?: { code?: string } } } | undefined
+  )?.response;
+  return (
+    response?.status === 409 &&
+    response?.data?.code === 'context_window_unresolved'
+  );
+}
+
+/**
  * 「窗口里不可用于输入的那部分」的来源。
  *
  * 实现已移到叶子模块 `./inputUnavailable`（`ContextUsageRing` 只需要这个文案映射，
