@@ -16,6 +16,24 @@ namespace PuddingRuntimeTests.Services;
 public sealed class LlmRequestBudgetGuardTests
 {
     [TestMethod]
+    [DataRow(
+        "This model's maximum context length is 1048576 tokens. However, you requested 1691919 tokens (1683727 in the messages, 8192 in the completion).",
+        1_048_576)]
+    [DataRow("maximum context length is 1,048,576 tokens", 1_048_576)]
+    [DataRow("This model's MAXIMUM CONTEXT LENGTH IS 200_000 tokens", 200_000)]
+    [DataRow("Range of input length should be [1, 32768]", 32_768)]
+    [DataRow("Range of input length should be [1, 200_000]", 200_000)]
+    [DataRow("some unrelated 12345 token budget error", 0)]
+    [DataRow("", 0)]
+    public void TryGetProviderMaxInputTokens_ParsesProviderPhrasings(string error, int expected)
+    {
+        var parsed = LlmRequestBudgetGuard.TryGetProviderMaxInputTokens(error, out var maxInputTokens);
+
+        Assert.AreEqual(expected > 0, parsed, $"解析结果与文案不符：{error}");
+        Assert.AreEqual(expected, maxInputTokens, $"上限解析错误：{error}");
+    }
+
+    [TestMethod]
     [DataRow(1_000L, 1_000)]
     [DataRow(0L, 27_976)]
     [DataRow(100_000L, 27_976)]

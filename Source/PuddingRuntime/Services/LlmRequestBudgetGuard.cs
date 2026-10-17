@@ -97,6 +97,15 @@ public static partial class LlmRequestBudgetGuard
     [GeneratedRegex(@"Range\s+of\s+input\s+length\s+should\s+be\s+\[\s*1\s*,\s*(?<max>[0-9_]+)\s*\]", RegexOptions.IgnoreCase)]
     private static partial Regex InputLengthRangeRegex();
 
+    /// <summary>
+    /// DeepSeek（及同文案的 OpenAI-compatible provider）在请求超过窗口时返回：
+    /// <c>This model's maximum context length is 1048576 tokens. However, you requested ...</c>。
+    /// 该文案不含 "Range of input length" 形态；不解析它会让 provider 输入上限恢复逻辑永远不触发
+    /// （2026-10-17 事故：两次 1.68M token 请求均未被识别为 provider 输入拒绝）。
+    /// </summary>
+    [GeneratedRegex(@"(?:maximum|max)\s+context\s+length\s+is\s+(?<max>[0-9][0-9,_]*)\s*tokens", RegexOptions.IgnoreCase)]
+    private static partial Regex ContextLengthMessageRegex();
+
     public static int ResolveEffectiveInputLimit(
         LlmConfig? config,
         int safetyBufferTokens = DefaultSafetyBufferTokens,
@@ -295,11 +304,21 @@ public static partial class LlmRequestBudgetGuard
             return false;
 
         var match = InputLengthRangeRegex().Match(error);
+        if (!match.Success)
+            match = ContextLengthMessageRegex().Match(error);
+
         return match.Success
-            && int.TryParse(
-                match.Groups["max"].Value.Replace("_", string.Empty, StringComparison.Ordinal),
-                out maxInputTokens)
-            && maxInputTokens > 0;
+            && TryParseProviderTokenLimit(match.Groups["max"].Value, out maxInputTokens);
+    }
+
+    private static bool TryParseProviderTokenLimit(string value, out int maxInputTokens)
+    {
+        maxInputTokens = 0;
+        var normalized = value
+            .Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace(",", string.Empty, StringComparison.Ordinal)
+            .Trim();
+        return int.TryParse(normalized, out maxInputTokens) && maxInputTokens > 0;
     }
 
     private static bool RemoveOldestConversationUnit(List<ChatMessage> messages)

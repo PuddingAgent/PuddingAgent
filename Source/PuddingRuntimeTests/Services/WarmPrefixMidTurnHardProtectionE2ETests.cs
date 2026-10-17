@@ -156,6 +156,217 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         Assert.AreEqual("warm_prefix_checkpoint", manifest!.Generator);
     }
 
+    /// <summary>
+    /// 事故回归（2026-10-17）：provider 拒绝**摘要请求本身**（请求超过模型窗口）时，必须：
+    /// ① 同一 round 只尝试一次（去重，避免两条失败卡片）；② 用本地抽取式摘要兜底并继续走
+    /// 同一校验/持久提交边界，而不是让「上下文整理」永久失败、内存历史只增不减。
+    /// </summary>
+    [TestMethod]
+    public async Task ProviderRejectsOversizedSummary_UsesLocalExtractiveFallback_AndPersists()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 36, charsPerMessage: 3_000);
+        }
+
+        var factory = new Factory(options);
+        // 主循环脚本里**没有**摘要响应：摘要调用由 SummaryException 模拟 provider 400，
+        // 且抛异常不消耗队列（队列只供主循环两轮使用）。
+        var llm = new ScriptedLlmClient(ContinueWithToolJson, DoneJson)
+        {
+            SummaryException = new HttpRequestException(
+                "LLM Responses API error (BadRequest): {\"error\":{\"message\":\"This model's maximum " +
+                "context length is 1048576 tokens. However, you requested 1691919 tokens " +
+                "(1683727 in the messages, 8192 in the completion).\"}}"),
+        };
+        var tools = new RecordingToolInvocationService();
+        var snapshotStore = new ContextUsageSnapshotStore();
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var service = CreateService(
+            llm, tools, manager, snapshotStore, factory, log, enableExtractiveFallback: true);
+
+        var history = manager.GetOrCreateHistory(SessionId);
+        var hydration = await manager.TryHydrateStreamHistoryFromDbAsync(
+            SessionId, history, 200_000, CancellationToken.None);
+        Assert.IsTrue(hydration.Succeeded, "水合必须成功，否则本用例不成立");
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+
+        var result = await service.ExecuteAsync(CreateDispatchRequest());
+
+        Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState, "Turn 必须跑到终态");
+
+        // ① 去重：同一 round 只允许一次同步摘要尝试；provider 拒绝后不得再发一次相同请求。
+        var summaryAttempts = llm.Requests.Count(messages => messages.Any(m =>
+            m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true));
+        Assert.AreEqual(1, summaryAttempts,
+            $"provider 拒绝后必须走本地兜底而不是重发相同摘要请求，实际尝试={summaryAttempts}");
+
+        // ② 兜底必须如实记录，且不得落成「summary rejected; history preserved」。
+        Assert.IsTrue(
+            log.Lines.Any(l => l.Contains("using local extractive fallback", StringComparison.Ordinal)),
+            "必须记录本地抽取式兜底");
+        Assert.IsFalse(
+            log.Lines.Any(l => l.Contains("Warm-prefix summary rejected; history preserved", StringComparison.Ordinal)),
+            "兜底成功时不得再发布失败路径（历史必须被压缩，而不是原样保留）");
+
+        // ③ 与生产同构：本地摘要也必须经同一持久提交边界落库。
+        var compactionLog = string.Join(
+            "\n  ",
+            log.Lines.Where(l =>
+                l.Contains("Compaction", StringComparison.Ordinal)
+                || l.Contains("compaction", StringComparison.Ordinal)
+                || l.Contains("ContextBudget", StringComparison.Ordinal)));
+        await using var verify = new MemoryDbContext(options);
+        var summaryRow = await verify.Messages
+            .FirstOrDefaultAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary");
+        Assert.IsNotNull(
+            summaryRow,
+            "本地兜底摘要也必须落库（同一应用边界）。相关日志：\n  " + compactionLog);
+        Assert.AreEqual(1, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration);
+        Assert.IsTrue(
+            await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.CompactedBy != null) > 0,
+            "被替换跨度必须逐行打上 CompactedBy");
+        Assert.IsTrue(
+            history.Any(m => m.Content?.Contains(
+                WarmPrefixCompaction.CheckpointPreamble[..40], StringComparison.Ordinal) == true),
+            "内存历史必须被 checkpoint 替换（整理真正生效，而不是只裁剪请求副本）");
+    }
+
+    /// <summary>
+    /// 去重接线回归（缓冲路径，具备证伪能力）：第 0 轮**已经越过硬上限** ⇒ 软维护准入直接执行
+    /// 同步硬保护；provider 确定性拒绝（DeepSeek 超窗文案）且本地兜底**不可用**时必须：
+    /// ① 同一 round 只发一次摘要请求（旧实现会在 Prepare 后由硬保护准入再发一次，=2 次）；
+    /// ② 保持既有 fail-closed：历史原样保留、不落 checkpoint、不写 coverage。
+    /// </summary>
+    [TestMethod]
+    public async Task OverLimitAtRoundZero_ProviderInputLimitRejected_WithoutFallback_AttemptsOnceAndPreservesHistory()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            // 48 × 3,000 字符 ≈ 31K 估算 token > 有效上限 27,976 ⇒ 第 0 轮软准入即同步保护。
+            await SeedAsync(db, messageCount: 48, charsPerMessage: 3_000);
+        }
+
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(ContinueWithToolJson, DoneJson)
+        {
+            SummaryException = new HttpRequestException(
+                "LLM Responses API error (BadRequest): {\"error\":{\"message\":\"This model's maximum " +
+                "context length is 1048576 tokens. However, you requested 1691919 tokens " +
+                "(1683727 in the messages, 8192 in the completion).\"}}"),
+        };
+        var tools = new RecordingToolInvocationService();
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        // 兜底关闭：验证「不可用 ⇒ 保持 failed」的既有语义，同时让摘要调用可数。
+        var service = CreateService(llm, tools, manager, new ContextUsageSnapshotStore(), factory, log);
+
+        var history = manager.GetOrCreateHistory(SessionId);
+        var hydration = await manager.TryHydrateStreamHistoryFromDbAsync(
+            SessionId, history, 200_000, CancellationToken.None);
+        Assert.IsTrue(hydration.Succeeded, "水合必须成功，否则本用例不成立");
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+
+        // 前提自检：第 0 轮必须已越界（否则软维护会延期，本用例失去「同 round 去重」意义）。
+        var config = CreateDispatchRequest().LlmConfig!;
+        var limit = LlmRequestBudgetGuard.ResolveEffectiveInputLimit(config);
+        var initial = new ContextUsageSnapshotStore().MeasureLlmRequest(SessionId, history, tools: null, config.ModelId);
+        Assert.IsTrue(
+            initial.UsedTokens > limit,
+            $"前提失败：第 0 轮必须已越过有效上限（{initial.UsedTokens} > {limit}）");
+
+        var result = await service.ExecuteAsync(CreateDispatchRequest());
+        Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState, "Turn 必须跑到终态");
+
+        // ① 证伪点：旧实现同 round 会发 2 次相同摘要请求；新实现必须恰好 1 次。
+        var summaryAttempts = llm.Requests.Count(messages => messages.Any(m =>
+            m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true));
+        Assert.AreEqual(
+            1, summaryAttempts,
+            $"同一 round 只允许一次同步硬保护摘要尝试（旧实现=2），实际={summaryAttempts}");
+
+        // ② 兜底不可用 ⇒ 保持既有 fail-closed，且不得伪造本地兜底。
+        Assert.IsTrue(
+            log.Lines.Any(l => l.Contains("Warm-prefix summary rejected; history preserved", StringComparison.Ordinal)),
+            "兜底不可用时必须发既有失败路径（历史保持原样）");
+        Assert.IsFalse(
+            log.Lines.Any(l => l.Contains("using local extractive fallback", StringComparison.Ordinal)),
+            "兜底不可用时不得出现本地兜底路径");
+        Assert.IsFalse(
+            history.Any(m => m.Content?.Contains(
+                WarmPrefixCompaction.CheckpointPreamble[..40], StringComparison.Ordinal) == true),
+            "失败时内存历史必须保持原样");
+
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"));
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.CompactedBy != null));
+        Assert.AreEqual(0, await verify.CompactionCoverageManifests.CountAsync(m => m.SessionId == SessionId));
+    }
+
+    /// <summary>
+    /// 去重接线回归（流式路径）：第 0 轮已越界 ⇒ 同 round 只发一次摘要请求；provider 返回
+    /// **可恢复错误（401）** 时不得触发本地兜底（auth 故障应保持 fail-closed 可见），
+    /// 也不能让相同请求再发一次。
+    /// </summary>
+    [TestMethod]
+    public async Task StreamingPath_OverLimitAtRoundZero_ProviderAuthFailure_AttemptsOnceAndDoesNotFallback()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 48, charsPerMessage: 3_000);
+        }
+
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(ContinueWithToolJson, DoneJson)
+        {
+            SummaryException = new HttpRequestException(
+                "LLM Responses API error (Unauthorized): 401 Unauthorized - invalid API key"),
+        };
+        var tools = new RecordingToolInvocationService();
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var gate = new SessionExecutionGate(NullLogger<SessionExecutionGate>.Instance);
+        // 即使兜底可用，401 也不能触发它（只对确定性输入拒绝/不可用输出降级）。
+        var service = CreateService(
+            llm, tools, manager, new ContextUsageSnapshotStore(), factory, log, gate,
+            enableExtractiveFallback: true);
+
+        var history = manager.GetOrCreateHistory(SessionId);
+        var hydration = await manager.TryHydrateStreamHistoryFromDbAsync(
+            SessionId, history, 200_000, CancellationToken.None);
+        Assert.IsTrue(hydration.Succeeded, "水合必须成功，否则本用例不成立");
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+
+        var frames = new List<ServerSentEventFrame>();
+        await foreach (var frame in service.ExecuteStreamAsync(CreateDispatchRequest(suppressAutoCompaction: false)))
+        {
+            frames.Add(frame);
+        }
+
+        var summaryAttempts = llm.Requests.Count(messages => messages.Any(m =>
+            m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true));
+        Assert.AreEqual(1, summaryAttempts, $"流式路径同 round 只允许一次摘要尝试，实际={summaryAttempts}");
+        Assert.IsFalse(
+            log.Lines.Any(l => l.Contains("using local extractive fallback", StringComparison.Ordinal)),
+            "401 等可恢复 provider 错误不得触发本地兜底");
+        Assert.IsTrue(
+            log.Lines.Any(l => l.Contains("Warm-prefix summary rejected; history preserved", StringComparison.Ordinal)),
+            "可恢复错误必须保持既有 fail-closed 失败路径");
+    }
+
     /// <summary>对照：同一个 Turn 若不越界（第 0 轮软维护延期后没有增长）⇒ 不应有任何落库。</summary>
     [TestMethod]
     public async Task SoftDeferredFirstRound_WithoutGrowth_PersistsNothing()
@@ -600,7 +811,9 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         CapturingLogger? log = null,
         ISessionExecutionGate? gate = null,
         // R3：允许「持久服务不可用」（omit=true ⇒ null）以验证内存与 DB 都保持原值。
-        bool omitCompactionService = false)
+        bool omitCompactionService = false,
+        // provider 摘要失败时的本地兜底（生产 DI 已注册；旧用例省略以保持原语义）。
+        bool enableExtractiveFallback = false)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -648,7 +861,10 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             sessionExecutionGate,
             toolInvocationService: tools,
             contextUsageSnapshotStore: snapshotStore,
-            contextCompactionService: omitCompactionService ? null : compactionService);
+            contextCompactionService: omitCompactionService ? null : compactionService,
+            extractiveSummaryGenerator: enableExtractiveFallback
+                ? new ExtractiveContextCompactionSummaryGenerator()
+                : null);
     }
 
     private static DbContextOptions<MemoryDbContext> CreateOptions(SqliteConnection connection) =>
@@ -761,6 +977,12 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         /// </summary>
         public Func<Task>? OnSummaryRequestAsync { get; set; }
 
+        /// <summary>
+        /// 模拟 provider 对**摘要请求本身**的拒绝（典型：重放请求超过模型窗口）。抛异常且
+        /// **不消耗**脚本队列（摘要响应不进入主循环序列）。
+        /// </summary>
+        public Exception? SummaryException { get; set; }
+
         public ScriptedLlmClient(params string[] contents)
         {
             foreach (var content in contents)
@@ -780,11 +1002,15 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
                 throw new InvalidOperationException("ScriptedLlmClient exhausted: more LLM rounds than scripted responses.");
 
             Requests.Add(messages.ToList());
-            if (OnSummaryRequestAsync is not null
-                && messages.Any(m => m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true))
+            var isSummaryRequest = messages.Any(
+                m => m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true);
+            if (OnSummaryRequestAsync is not null && isSummaryRequest)
             {
                 await OnSummaryRequestAsync();
             }
+
+            if (isSummaryRequest && SummaryException is not null)
+                throw SummaryException;
 
             return _responses.Dequeue();
         }

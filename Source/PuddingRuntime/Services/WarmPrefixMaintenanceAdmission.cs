@@ -34,4 +34,22 @@ internal static class WarmPrefixMaintenanceAdmission
     /// </summary>
     internal static bool ShouldAttemptHardProtection(int historyCount, bool hardProtectionAttemptedThisDispatch)
         => historyCount > MinHistoryMessages && !hardProtectionAttemptedThisDispatch;
+
+    /// <summary>
+    /// 记录一次维护尝试后的两个封顶标记。
+    /// <para>
+    /// 关键不变量：软维护调用若已经走到**同步硬保护**分支（<c>RequiresSynchronousProtection=true</c>），
+    /// 它就已经执行过一次硬保护；同一 round 的硬保护准入不得再发一次**字节级相同**的摘要请求。
+    /// 2026-10-17 事故：同 round 两次 1.68M token 请求（间隔 24s、请求体 8,063,740B 完全相同）
+    /// 产生两张失败卡片，并让 prepare 多花约 12s 做重复的整段计量。
+    /// </para>
+    /// </summary>
+    internal static (bool SoftAttempted, bool HardProtectionAttempted) RecordAttempt(
+        bool planCreated,
+        bool requiresSynchronousProtection,
+        bool softAttempted,
+        bool hardProtectionAttempted)
+        => (
+            softAttempted || planCreated,
+            hardProtectionAttempted || (planCreated && requiresSynchronousProtection));
 }

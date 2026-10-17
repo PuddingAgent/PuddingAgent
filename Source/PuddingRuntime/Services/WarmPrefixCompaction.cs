@@ -148,6 +148,22 @@ internal static class WarmPrefixCompaction
     }
 
     /// <summary>
+    /// 被替换跨度（warm-prefix 候选）在 outbound 历史中的切片：本地兜底摘要**只覆盖它**，
+    /// 不得把保留尾部/受保护消息也概括进替代摘要（与 <see cref="VerifyApplication"/> 的切分同源）。
+    /// </summary>
+    internal static IReadOnlyList<ChatMessage> SelectRemovedMessages(
+        IReadOnlyList<ChatMessage> durableHistory,
+        WarmPrefixCompactionPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(durableHistory);
+        ArgumentNullException.ThrowIfNull(plan);
+        return durableHistory
+            .Skip(plan.LeadingSystemMessageCount)
+            .Take(plan.RemovedMessageCount)
+            .ToArray();
+    }
+
+    /// <summary>
     /// 提交前的**唯一应用校验**（F2）：先做成 checkpoint、再对当前历史做严格版本/身份 CAS，
     /// 然后用**真实摘要**重新完整计量整请求，最后过收益与硬上限准入。
     /// <para>
@@ -506,6 +522,12 @@ internal static class WarmPrefixCompactionReasons
 
     /// <summary>摘要请求失败或被拒绝。</summary>
     internal const string SummaryRejected = "summary_rejected";
+
+    /// <summary>
+    /// provider 摘要失败后改用**本地抽取式**摘要：只用于日志/摘要请求归因，不是生命周期失败原因；
+    /// 降级后仍走同一校验 + 持久提交边界，成功时发 completed 而不是 failed。
+    /// </summary>
+    internal const string SummaryLocalFallback = "provider_summary_failed_local_fallback";
 
     /// <summary>摘要未比被替换跨度更小（无收益）。</summary>
     internal const string SummaryNoGain = "summary_no_gain";

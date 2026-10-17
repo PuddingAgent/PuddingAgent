@@ -813,7 +813,15 @@ public sealed partial class AgentExecutionService
                             compaction.DurationMs,
                             compaction.Compacted,
                             compaction.DeferredSoft);
-                        warmPrefixCompactionAttempted = compaction.Plan is not null;
+                        // F3：软维护若已执行过同步硬保护（RequiresSynchronousProtection），必须同时
+                        // 关闭本 dispatch 的硬保护准入，避免同一 round 再发一次字节级相同的摘要请求。
+                        var attemptFlags = WarmPrefixMaintenanceAdmission.RecordAttempt(
+                            planCreated: compaction.Plan is not null,
+                            requiresSynchronousProtection: compaction.Plan?.RequiresSynchronousProtection == true,
+                            softAttempted: warmPrefixCompactionAttempted,
+                            hardProtectionAttempted: hardProtectionAttempted);
+                        warmPrefixCompactionAttempted = attemptFlags.SoftAttempted;
+                        hardProtectionAttempted = attemptFlags.HardProtectionAttempted;
                         if (compaction.Compacted)
                         {
                             roundPrefixChangeReason = PrefixChangeReasons.CompactionCheckpoint;

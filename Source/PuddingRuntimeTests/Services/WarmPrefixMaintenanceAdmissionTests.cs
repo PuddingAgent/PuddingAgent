@@ -64,6 +64,62 @@ public sealed class WarmPrefixMaintenanceAdmissionTests
         Assert.IsTrue(WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(count, hardProtectionAttemptedThisDispatch: false));
     }
 
+    /// <summary>
+    /// 2026-10-17 事故回归：软维护调用若已走到**同步硬保护**（RequiresSynchronousProtection），
+    /// 它就已经执行过一次硬保护；同一 round 的硬保护准入不得再发一次字节级相同的摘要请求
+    /// （事故里同 round 两次 1.68M token 请求 → 两张失败卡片 + 约 12s 重复计量）。
+    /// </summary>
+    [TestMethod]
+    public void RecordAttempt_SynchronousProtectionFromSoftEvaluation_BlocksDuplicateHardAttempt()
+    {
+        var (softAttempted, hardProtectionAttempted) = WarmPrefixMaintenanceAdmission.RecordAttempt(
+            planCreated: true,
+            requiresSynchronousProtection: true,
+            softAttempted: false,
+            hardProtectionAttempted: false);
+
+        Assert.IsTrue(softAttempted, "形成计划即视为本 dispatch 已评估软维护");
+        Assert.IsTrue(hardProtectionAttempted, "软维护调用已执行同步硬保护，必须关闭本 round 的硬保护重复尝试");
+        Assert.IsFalse(
+            WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(
+                HistoryWithMaintenance, hardProtectionAttempted),
+            "同一 round 不得再发一次相同的摘要请求");
+    }
+
+    /// <summary>软维护只是延期（未执行同步保护）⇒ 硬保护必须仍可用（F3 既有语义不变）。</summary>
+    [TestMethod]
+    public void RecordAttempt_DeferredSoft_LeavesHardProtectionAvailable()
+    {
+        var (softAttempted, hardProtectionAttempted) = WarmPrefixMaintenanceAdmission.RecordAttempt(
+            planCreated: true,
+            requiresSynchronousProtection: false,
+            softAttempted: false,
+            hardProtectionAttempted: false);
+
+        Assert.IsTrue(softAttempted);
+        Assert.IsFalse(hardProtectionAttempted);
+        Assert.IsTrue(
+            WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(
+                HistoryWithMaintenance, hardProtectionAttempted),
+            "软维护延期不得屏蔽后续越界时的硬保护（F3 核心不变量）");
+    }
+
+    /// <summary>没有形成计划（无可压缩候选）⇒ 两个封顶都不应被错误置位。</summary>
+    [TestMethod]
+    public void RecordAttempt_NoPlan_KeepsBothAdmissionsOpen()
+    {
+        var (softAttempted, hardProtectionAttempted) = WarmPrefixMaintenanceAdmission.RecordAttempt(
+            planCreated: false,
+            requiresSynchronousProtection: false,
+            softAttempted: false,
+            hardProtectionAttempted: false);
+
+        Assert.IsFalse(softAttempted);
+        Assert.IsFalse(hardProtectionAttempted);
+        Assert.IsTrue(WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(HistoryWithMaintenance, softAttempted));
+        Assert.IsTrue(WarmPrefixMaintenanceAdmission.ShouldAttemptHardProtection(HistoryWithMaintenance, hardProtectionAttempted));
+    }
+
     /// <summary>第 0 轮（尚无任何尝试）两条路径都可评估。</summary>
     [TestMethod]
     public void FirstRound_AllowsSoftAndHardEvaluation()

@@ -106,6 +106,13 @@ public sealed partial class AgentExecutionService
     private readonly IContextCompactionService? _contextCompactionService;
 
     /// <summary>
+    /// provider 摘要的本地抽取式兜底：provider 摘要失败（典型：重放请求本身超过模型窗口）
+    /// 时，用**被替换跨度**生成有界摘要，继续走同一校验/持久提交边界，避免「上下文整理」
+    /// 在每个 turn 稳定失败并让内存历史只增不减。为 null 时保持既有 fail-closed 语义。
+    /// </summary>
+    private readonly ExtractiveContextCompactionSummaryGenerator? _extractiveSummaryGenerator;
+
+    /// <summary>
     /// T5：终态之后的**可选**上下文维护调度（复用既有 gate + logger，无需新增 DI）。
     /// 维护不再出现在 done 帧/结果返回之前的同步路径上。
     /// </summary>
@@ -176,7 +183,9 @@ public sealed partial class AgentExecutionService
         IContextCompactionService? contextCompactionService = null,
         // R2：前后台准入协调器（与消息受理共用同一实例）——可选维护按会话注册为后台工作，
         // 新消息受理时的 ReserveSessionForeground 会立刻取消它。
-        PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? admissionCoordinator = null)
+        PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? admissionCoordinator = null,
+        // provider 摘要失败的本地兜底（生产 DI 已注册；测试替身可省略以保持旧语义）。
+        ExtractiveContextCompactionSummaryGenerator? extractiveSummaryGenerator = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -229,6 +238,7 @@ public sealed partial class AgentExecutionService
         _executionProgress         = executionProgress;
         _toolPresentationProjector = toolPresentationProjector;
         _contextCompactionService = contextCompactionService;
+        _extractiveSummaryGenerator = extractiveSummaryGenerator;
         _postTurnMaintenance = new PostTurnMaintenanceScheduler(
             sessionExecutionGate, logger, admissionCoordinator);
 
@@ -2336,20 +2346,67 @@ public sealed partial class AgentExecutionService
             }
         }
 
-        if (!summaryResult.Success
-            || summaryResult.Response is null
-            || summaryResult.Response.ToolCalls is { Count: > 0 })
+        var summaryFailureError = summaryResult.ExecutionError;
+        var summarySucceeded = summaryResult.Success
+            && summaryResult.Response is not null
+            && summaryResult.Response.ToolCalls is not { Count: > 0 }
+            && !string.IsNullOrWhiteSpace(summaryResult.Response.Content);
+        var summaryFallbackUsed = false;
+        if (!summarySucceeded)
+        {
+            // 先识别 provider 输入上限（若文案可解析）：DeepSeek 的
+            // "maximum context length is N tokens" 以前不被识别，恢复/校准逻辑永远看不到这条事实。
+            // 注意：**不能**在这里调 RecordProviderInputLimitFailure —— 它是摘要请求自己的 raw，
+            // 拿它校准主请求会污染出站硬门禁（ADR-095 D6：辅助调用不得抬高主请求的保守系数）。
+            var providerInputLimitRejected = LlmRequestBudgetGuard.TryGetProviderMaxInputTokens(
+                summaryFailureError, out var providerMaxInputTokens);
+            if (providerInputLimitRejected)
+            {
+                _logger.LogWarning(
+                    "[AgentExec:Compaction] Warm-prefix summary rejected by provider input limit session={Session} round={Round} compactionId={CompactionId} providerMaxInputTokens={ProviderMaxInputTokens}",
+                    request.SessionId,
+                    round + 1,
+                    warmPrefixCompactionId,
+                    providerMaxInputTokens);
+            }
+
+            // 只对**确定性失败**降级：provider 明确拒绝输入长度（摘要重放本身超过模型窗口），
+            // 或 provider 成功但输出不可用（空内容/工具调用）。auth/限流/5xx/超时等可恢复错误
+            // 必须保持 fail-closed —— 不能让一次瞬时故障用低质量摘要永久覆盖历史。
+            var fallbackEligible = providerInputLimitRejected || summaryResult.Success;
+            var fallbackSummary = fallbackEligible
+                ? await TryGenerateExtractiveFallbackSummaryAsync(request, plan, exactOutboundHistory, ct)
+                : null;
+            if (!string.IsNullOrWhiteSpace(fallbackSummary))
+            {
+                summaryFallbackUsed = true;
+                summarySucceeded = true;
+                summaryResult = AgentExecutionLlmInvocationResult.CreateSuccess(
+                    new LlmResponse(fallbackSummary, ToolCalls: null),
+                    usage: null);
+                _logger.LogWarning(
+                    "[AgentExec:Compaction] Warm-prefix provider summary failed; using local extractive fallback session={Session} round={Round} compactionId={CompactionId} fallbackTrigger={FallbackTrigger} error={Error}",
+                    request.SessionId,
+                    round + 1,
+                    warmPrefixCompactionId,
+                    providerInputLimitRejected ? "provider_input_limit" : "provider_output_unusable",
+                    summaryFailureError);
+            }
+        }
+
+        if (!summarySucceeded)
         {
             var failureDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
             _logger.LogWarning(
-                "[AgentExec:Compaction] Warm-prefix summary rejected; history preserved session={Session} round={Round} compactionId={CompactionId} success={Success} toolCalls={ToolCalls} durationMs={DurationMs} error={Error}",
+                "[AgentExec:Compaction] Warm-prefix summary rejected; history preserved session={Session} round={Round} compactionId={CompactionId} success={Success} toolCalls={ToolCalls} fallbackAvailable={FallbackAvailable} durationMs={DurationMs} error={Error}",
                 request.SessionId,
                 round + 1,
                 warmPrefixCompactionId,
                 summaryResult.Success,
                 summaryResult.Response?.ToolCalls?.Count ?? 0,
+                _extractiveSummaryGenerator is not null,
                 failureDurationMs,
-                summaryResult.ExecutionError);
+                summaryFailureError);
             await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
                 request.SessionId,
                 request.WorkspaceId,
@@ -2371,7 +2428,7 @@ public sealed partial class AgentExecutionService
                     round = round + 1,
                     durableCheckpoint = false,
                     historyPreserved = true,
-                    error = summaryResult.ExecutionError,
+                    error = summaryFailureError,
                 },
                 request.ExecutionIdentity?.TraceId,
                 CancellationToken.None);
@@ -2527,7 +2584,7 @@ public sealed partial class AgentExecutionService
         if (!durableApplied)
         {
             _logger.LogWarning(
-                "[AgentExec:Compaction] Warm-prefix apply rejected; history preserved session={Session} round={Round} compactionId={CompactionId} reason={Reason} beforeTokens={BeforeTokens} measuredAfterTokens={MeasuredAfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} limit={Limit} durationMs={DurationMs}",
+                "[AgentExec:Compaction] Warm-prefix apply rejected; history preserved session={Session} round={Round} compactionId={CompactionId} reason={Reason} beforeTokens={BeforeTokens} measuredAfterTokens={MeasuredAfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} limit={Limit} durationMs={DurationMs} summarySource={SummarySource}",
                 request.SessionId,
                 round + 1,
                 warmPrefixCompactionId,
@@ -2537,7 +2594,8 @@ public sealed partial class AgentExecutionService
                 plan.EstimatedRetainedSnapshot.UsedTokens,
                 verification.ReclaimTokens,
                 plan.EffectiveInputLimit,
-                verifyDurationMs);
+                verifyDurationMs,
+                summaryFallbackUsed ? "extractive_fallback" : "provider");
             await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
                 request.SessionId,
                 request.WorkspaceId,
@@ -2564,6 +2622,9 @@ public sealed partial class AgentExecutionService
                     round = round + 1,
                     durableCheckpoint = false,
                     historyPreserved = true,
+                    // 兜底摘要已生成但应用/持久提交被拒时，保留 provider 失败事实，避免诊断信息倒退。
+                    summarySource = summaryFallbackUsed ? "extractive_fallback" : null,
+                    summaryFallbackError = summaryFallbackUsed ? summaryFailureError : null,
                 },
                 request.ExecutionIdentity?.TraceId,
                 CancellationToken.None);
@@ -2582,7 +2643,7 @@ public sealed partial class AgentExecutionService
         var afterUsedTokens = verification.AfterSnapshot!.UsedTokens;
         var appliedDurationMs = verifyDurationMs;
         _logger.LogInformation(
-            "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} compactionId={CompactionId} removed={Removed} messages={Before}->{After} measuredBefore={BeforeTokens} measuredAfter={AfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} meetsTarget={MeetsTarget} durationMs={DurationMs} durableCheckpoint={DurableCheckpoint} durableSkipReason={DurableSkipReason}",
+            "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} compactionId={CompactionId} removed={Removed} messages={Before}->{After} measuredBefore={BeforeTokens} measuredAfter={AfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} meetsTarget={MeetsTarget} durationMs={DurationMs} durableCheckpoint={DurableCheckpoint} durableSkipReason={DurableSkipReason} summarySource={SummarySource}",
             request.SessionId,
             round + 1,
             warmPrefixCompactionId,
@@ -2596,7 +2657,8 @@ public sealed partial class AgentExecutionService
             verification.MeetsTarget,
             appliedDurationMs,
             durableCheckpoint,
-            durableSkipReason);
+            durableSkipReason,
+            summaryFallbackUsed ? "extractive_fallback" : "provider");
         await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
             request.SessionId,
             request.WorkspaceId,
@@ -2628,6 +2690,10 @@ public sealed partial class AgentExecutionService
                 // 前端不得把 durableCheckpoint=false 当作"已持久压缩"（ADR-095 D7）。
                 durableCheckpoint,
                 durableSkipReason,
+                // provider 摘要失败后改用本地抽取式摘要时如实标注（不是失败，但也不是原样重放摘要）；
+                // `degraded=true` 供 UI/诊断在不改变卡片语义前先能读到事实。
+                summarySource = summaryFallbackUsed ? "extractive_fallback" : "provider",
+                degraded = summaryFallbackUsed,
             },
             request.ExecutionIdentity?.TraceId,
             CancellationToken.None);
@@ -2642,6 +2708,64 @@ public sealed partial class AgentExecutionService
             SkipReason: null,
             // 只有真实计量过的 after 才允许出口；调用方的日志/事件/子代理事件都必须用它。
             AppliedAfterUsedTokens: afterUsedTokens);
+    }
+
+    /// <summary>
+    /// provider 摘要失败的本地兜底：只概括**被替换跨度**（不重放整段 outbound），因此请求大小与
+    /// 模型窗口无关。返回 null 表示兜底不可用（未注册生成器/空跨度/空摘要），调用方保持既有
+    /// fail-closed 语义（历史原样保留并发布 failed 事件）。
+    /// </summary>
+    private async Task<string?> TryGenerateExtractiveFallbackSummaryAsync(
+        RuntimeDispatchRequest request,
+        WarmPrefixCompactionPlan plan,
+        IReadOnlyList<ChatMessage> exactOutboundHistory,
+        CancellationToken ct)
+    {
+        if (_extractiveSummaryGenerator is null)
+            return null;
+
+        try
+        {
+            var removed = WarmPrefixCompaction.SelectRemovedMessages(exactOutboundHistory, plan);
+            if (removed.Count == 0)
+                return null;
+
+            var messages = removed
+                .Select((message, index) => new ContextCompactionMessage(
+                    MessageId: $"warm-prefix-fallback-{index}",
+                    Sequence: index + 1,
+                    Role: message.Role.ToString(),
+                    Content: message.Content ?? string.Empty))
+                .ToArray();
+
+            var summary = await _extractiveSummaryGenerator.GenerateSummaryAsync(
+                new ContextCompactionSummaryRequest(
+                    WorkspaceId: request.WorkspaceId,
+                    SessionId: request.SessionId,
+                    AgentId: request.AgentInstanceId,
+                    Messages: messages,
+                    Reason: WarmPrefixCompactionReasons.SummaryLocalFallback,
+                    AgentTemplateId: request.AgentTemplateId,
+                    LlmConfig: request.LlmConfig),
+                ct);
+
+            return string.IsNullOrWhiteSpace(summary) ? null : summary.Trim();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // 本地兜底是可选维护的最内层：它失败只能回到既有 fail-closed，
+            // 绝不能让摘要生成故障打死整个 Turn。
+            _logger.LogWarning(
+                ex,
+                "[AgentExec:Compaction] Warm-prefix local extractive fallback failed session={Session} round={Round}",
+                request.SessionId,
+                plan.InitialMessageCount);
+            return null;
+        }
     }
 
     /// <summary>

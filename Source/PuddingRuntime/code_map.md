@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=f8dab0cd42cf · 条目数: 352 · 最近整理: 2026-10-17
+> 源指纹: Source/PuddingRuntime/**=29542b5110bc · 条目数: 353 · 最近整理: 2026-10-17
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -167,7 +167,7 @@
 | `Services/LlmInvocationPurposeAccessor.cs` | 单次 LLM 调用的计费归因作用域 | `LlmInvocationPurposeAccessor` | `Services/DirectLlmClient.cs` | 嵌套调用完成后必须恢复外层作用域 |
 | `Services/LlmInvocationService.cs` | LLM 调用的稳定对外门面 | `ILlmInvocationService` | `Services/IRuntimeLlmClient.cs` | — |
 | `Services/LlmProfileResolver.cs` | provider 与 profile 到完整配置的解析 | `ILlmProfileResolver` | `Services/PuddingJsonConfig.cs` | — |
-| `Services/LlmRequestBudgetGuard.cs` | 请求级预算守卫与软压缩触发 | `LlmRequestBudgetGuard` | `Services/ContextCompactionService.cs` | — |
+| `Services/LlmRequestBudgetGuard.cs` | 请求级预算守卫与软压缩触发；provider 输入上限文案解析 | `LlmRequestBudgetGuard` | `Services/ContextCompactionService.cs` | `TryGetProviderMaxInputTokens` 同时识别 `Range of input length should be [1,N]` 与 DeepSeek `maximum context length is N tokens`；摘要 raw 不得写回主请求校准（ADR-095 D6） |
 | `Services/ManagedOggOpusTranscoder.cs` | 频道短音频的纯托管转码 | `IAudioTranscoder` | `Services/DashScopeTtsProvider.cs` | — |
 | `Services/MemoryLlmInvocationClient.cs` | 面向记忆的共享门面 LLM 客户端 | `IMemoryLlmClient` | `Services/LlmInvocationService.cs` | — |
 | `Services/MemoryMaintenancePlanWriteCommandMapper.cs` | 记忆维护方案到写命令的映射 | `MemoryMaintenancePlanWriteCommandMapper` | `Services/SubconsciousPlanGenerationService.cs` | — |
@@ -249,7 +249,8 @@
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
 | `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |
 | `Services/VolcengineArkImageGenerationProvider.cs` | 火山方舟的图片生成适配 | `VolcengineArkImageGenerationProvider` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | — |
-| `Services/WarmPrefixCompaction.cs` | 长循环的暖前缀压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | 只接受真实缩小的结果；仅 `RequiresSynchronousProtection` 成立才同步生成摘要，软阈值候选一律延期到 canonical 终态之后（见下「关键语义」） |
+| `Services/WarmPrefixCompaction.cs` | 长循环的暖前缀压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | 只接受真实缩小的结果；仅 `RequiresSynchronousProtection` 成立才同步生成摘要，软阈值候选一律延期到 canonical 终态之后；provider 摘要失败时由调用方降级本地 Extractive（仍走同一校验/提交边界，见下「关键语义」） |
+| `Services/WarmPrefixMaintenanceAdmission.cs` | 软维护/硬保护准入封顶与同 round 去重 | `WarmPrefixMaintenanceAdmission` | `Services/AgentExecution/AgentExecutionService.Streaming.cs`、`…Buffered.cs` | 软维护每 dispatch 一次、硬保护逐轮重新评估；软尝试已执行同步硬保护时不得同 round 重复（见下「关键语义」） |
 | `Services/WikiPageWriteEntry.cs` | 记忆 Wiki 页面的确定性写入入口 | `WikiPageWriteRequest` | `Services/MemoryWikiPageUpdateService.cs` | — |
 | `Services/WorkspaceAgentsContextBuilder.cs` | 工作区 Agent 名册上下文层的构造 | `WorkspaceAgentsContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
 | `Services/YoloSignalService.cs` | 监听工作区 yolo.signal 的后台服务 | `YoloSignalService` | `Services/AgentFirewall.cs` | 只读文件信号，不放宽任何资源边界 |
@@ -259,7 +260,11 @@
 > 下列为上方表「约束」列的**逐字原文**（行序与表一致）；表内已缩为语义摘要，并以 `（见下「关键语义」）` 指回本段。
 
 - `Services/WarmPrefixCompaction.cs`
-  只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection`（估算输入 > 有效输入上限，两侧同源含 WorkUnit 容量）才允许同步生成摘要，软阈值候选一律延期到 canonical 终态之后（ADR-095 D2）；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`
+  只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection`（估算输入 > 有效输入上限，两侧同源含 WorkUnit 容量）才允许同步生成摘要，软阈值候选一律延期到 canonical 终态之后（ADR-095 D2）；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`；
+  provider 摘要失败（含摘要请求本身超过模型窗口）时由 `AgentExecutionService` 改用本地 `ExtractiveContextCompactionSummaryGenerator` 对**被替换跨度**生成摘要，仍走同一 VerifyApplication/持久提交边界（completed 事件 `summarySource=extractive_fallback`）
+
+- `Services/WarmPrefixMaintenanceAdmission.cs`
+  软维护每 dispatch 一次；硬保护逐轮重新评估，不被软维护封顶屏蔽；软维护调用若已走 `RequiresSynchronousProtection` 分支（即已执行同步硬保护），`RecordAttempt` 同时置硬保护标记，禁止同一 round 再发一次字节级相同的摘要请求（2026-10-17 事故：同 round 两次 1.68M token 请求、两张失败卡片）
 
 ## 工具审批与准入实现
 
