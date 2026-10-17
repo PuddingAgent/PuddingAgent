@@ -96,3 +96,30 @@ deepseek_fetch(url="ftp://example.com/file.txt")
 
 - 交付来源：`Docs/00_changelog/2026Year/10/2026-10-17-DeepSeek-Search-Fetch工具接入.md`（提交 `011e240`）
 - 同日门禁复核：`Docs/00_changelog/2026Year/10/2026-10-17-文档门禁环境漂移与新增组件门禁复核.md`（提交 `0579f1e`）
+
+## 六、复查记录（2026-10-18）
+
+用户要求重新测试。串行调用 8 次（规避账号级 5 QPS），逐项结果：
+
+- **基础检索** `count=3` ⇒ PASS。首条 `api-docs.deepseek.com`，`Authority=3` / `Rerank=2.383`，字段齐全。
+- **`site:` 限定** `count=2` ⇒ PASS，2/2 命中该站点；`Rerank` 1.415 / 1.398（均低于 1.5 优质线，属"相关但不属优质"）。
+- **超长 query（129 字符）** ⇒ `exit=1`，`Query must be at most 128 characters.` 属**客户端校验**，未发起请求。
+- **`count=0`** ⇒ **被夹取为 1 条**（返回 `1 results`）。补上第 2 节"未覆盖"里的越界夹取项。
+- **`need_content=true`**（`count=1`）⇒ PASS，返回 `Content:` 段完整正文（约 1.5k 字）。
+- **`fetch` 正常页**（`https://example.com`）⇒ PASS。
+- **`fetch` 非 http(s)**（`ftp://example.com/file.txt`）⇒ `exit=1`，`Url must use the http or https scheme.`，fail-closed。
+- **`fetch` 不存在路径** ⇒ `exit=404`，含上游 `request_id`。
+
+### 对前节结论的两处更正
+
+1. **观察 1（正文转义）范围比先前判断更广。** 本次 `example.com` 同一页面内：**中文段落未转义**，英/法/俄/西/阿段落出现 `\.` `\;` `\,` ⇒ 转义**与段落/语言相关**，而非仅"与页面/站点相关"。第 2 节的表述按此收窄。
+
+2. **观察 3（"不存在的页面仍 exit 0"）需按站点行为分类。**
+   - 站点返回**真实 HTTP 404**（本次 `example.com` 未知路径）⇒ 工具 **`exit=404` 并报错**，不是静默成功。
+   - 站点以 **200 + 自定义 404 页**返回（部分 SPA 文档站）⇒ `exit 0`，正文为 `Page Not Found`。
+
+   ⇒ 正确表述：**`exit 0` 不保证目标内容存在；但 HTTP 404 会被工具明确拒绝**。两条证据不矛盾，是两类站点行为。
+
+### 本轮仍未覆盖
+
+`count > 50` 的夹取、`429/401/402` 限流与鉴权错误、60000 字符截断、`localization` / `ori_question` 的实际效果、单次延迟与账户计费核对。
