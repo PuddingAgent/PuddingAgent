@@ -21,11 +21,14 @@ namespace PuddingRuntime.Services.Tools;
         + "403 表示被 DeepSeek 安全策略拒绝、404 表示无法取得可用正文（页面不存在/被站点拦截/无可提取正文），应换 URL 或改用 http_fetch；"
         + "返回的 Markdown 正文由上游清洗：部分页面的标点会被上游转义成反斜杠形式（如 `\\#`、`\\|`、`https\\:\\/\\/`），工具按原文返回、不做改写（自动去转义会破坏代码块与合法 Markdown，故不实施）；"
         + "HTTP 成功只表示取到了正文，站点自带的 404/“Page Not Found”页面也会成功返回，判断目标是否存在要看 title 与正文；"
+        + "【成本与限速】Fetch 按请求次数计费（官方价：每 1000 次成功请求 5 元；只有真正取到正文才计费），账号级 QPS 5，且对同一目标域名另有 QPS 上限 ⇒ 批量抓同站正文极易触发 HTTP 429，应串行并退避重试；"
+        + "408/429/5xx 可等待后重试，其余 4xx 不要重试；"
         + "正文超过 60000 字符会被有界截断（会注明 truncated）。"
         + " English: Fetch one public URL through the DeepSeek Fetch API and return the page title plus cleaned Markdown body. "
         + "Requires DeepSeek credentials in data config; url must be an absolute http(s) URL without embedded credentials; "
         + "403/404 are actionable (security policy/no usable content) and long bodies are truncated at 60000 chars. "
-        + "Upstream may backslash-escape punctuation in the Markdown; content is returned verbatim. A successful fetch only means a body was obtained — site-generated 404/'Page Not Found' pages also succeed.",
+        + "Upstream may backslash-escape punctuation in the Markdown; content is returned verbatim. A successful fetch only means a body was obtained — site-generated 404/'Page Not Found' pages also succeed. "
+        + "Billed per successful fetch; account-level QPS 5 plus a per-target-domain limit, so fetch serially and back off on 429; retry 408/429/5xx, do not retry other 4xx.",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

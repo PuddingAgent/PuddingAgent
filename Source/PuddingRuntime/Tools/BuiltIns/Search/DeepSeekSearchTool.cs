@@ -23,11 +23,14 @@ namespace PuddingRuntime.Services.Tools;
         + "【坑】需先在 <DataRoot>/config/search.providers.json 配置 deepseek_search.apiKey（或 llm.providers.json 中 providerId=\"deepseek\" 的 apiKey），"
         + "未配置或 provider 被禁用时工具直接失败且不会发起请求；搜索返回的是摘要级内容，关键事实必须再用 deepseek_fetch 或 http_fetch 打开原文核实；"
         + "结果里的 Rerank 分 ≥1.5 才代表高相关（文档口径）、Authority ≥3 为极权威；Rerank 明显偏低（如 <1.0）说明该查询可能没有匹配的公开实体，应视同“未检索到”，换关键词或加 site: 限定后再试；"
+        + "【成本与限速】Search 按请求次数计费（官方价：每 1000 次成功请求 5 元；只有 HTTP 200 且 results 非空才计费），count 只影响条数、不影响单价 ⇒ 需要多条时一次取够，不要拆成多次调用；"
+        + "账号级 QPS 仅 5（Search 与 Fetch 各自独立），并发猛刷会收到 HTTP 429，遇 408/429/5xx 应等待后重试，其余 4xx 不要重试；"
         + "count>50 会被夹到 50，输出超过 60000 字符会被有界截断（会注明 truncated）。"
         + " English: Search the public web through the DeepSeek Search API; returns ranked results "
         + "(title/url/snippet/summary/optional content). Requires DeepSeek credentials in data config, "
         + "count is 1-50 (default 10), need_content toggles page bodies, and returned facts should be verified with deepseek_fetch/http_fetch. "
-        + "Treat clearly low Rerank scores (<1.0) as weak or no match rather than evidence.",
+        + "Treat clearly low Rerank scores (<1.0) as weak or no match rather than evidence. "
+        + "Billed per successful request (not per result) and rate-limited to 5 QPS per account: fetch more results per call instead of fanning out concurrent searches; retry 408/429/5xx, do not retry other 4xx.",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,
