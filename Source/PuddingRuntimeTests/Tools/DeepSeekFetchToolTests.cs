@@ -43,6 +43,9 @@ public sealed class DeepSeekFetchToolTests
         CollectionAssert.Contains(tool.Descriptor.Parameters.Required.ToList(), "url");
         Assert.AreEqual(1, tool.Descriptor.Parameters.Properties.Count);
         Assert.AreEqual("url", tool.Descriptor.Parameters.Properties[0].Name);
+        // 2026-10-17 实测（上游正文转义 / 站点软 404 仍成功）后写入工具自述的使用约束。
+        StringAssert.Contains(tool.Descriptor.Description, "按原文返回");
+        StringAssert.Contains(tool.Descriptor.Description, "Page Not Found");
     }
 
     [TestMethod]

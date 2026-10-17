@@ -48,6 +48,9 @@ public sealed class DeepSeekSearchToolTests
         Assert.IsTrue(tool.Descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresNetwork));
         Assert.IsTrue(tool.Descriptor.IsEnabledByDefault);
         Assert.AreEqual(56, tool.Descriptor.SortOrder);
+        // 2026-10-17 实测（低 Rerank 结果不可当事实）后写入工具自述的使用约束。
+        StringAssert.Contains(tool.Descriptor.Description, "Rerank 分 ≥1.5");
+        StringAssert.Contains(tool.Descriptor.Description, "未检索到");
     }
 
     [TestMethod]

@@ -19,10 +19,13 @@ namespace PuddingRuntime.Services.Tools;
         + "【怎么用】只传 url（必需；必须是 http/https 绝对地址、≤8192 字符、不能带用户名/密码）。"
         + "【坑】需先配置 DeepSeek 凭据（search.providers.json 的 deepseek_search.apiKey，或 llm.providers.json 的 providerId=\"deepseek\"），否则工具直接失败；"
         + "403 表示被 DeepSeek 安全策略拒绝、404 表示无法取得可用正文（页面不存在/被站点拦截/无可提取正文），应换 URL 或改用 http_fetch；"
+        + "返回的 Markdown 正文由上游清洗：部分页面的标点会被上游转义成反斜杠形式（如 `\\#`、`\\|`、`https\\:\\/\\/`），工具按原文返回、不做改写（自动去转义会破坏代码块与合法 Markdown，故不实施）；"
+        + "HTTP 成功只表示取到了正文，站点自带的 404/“Page Not Found”页面也会成功返回，判断目标是否存在要看 title 与正文；"
         + "正文超过 60000 字符会被有界截断（会注明 truncated）。"
         + " English: Fetch one public URL through the DeepSeek Fetch API and return the page title plus cleaned Markdown body. "
         + "Requires DeepSeek credentials in data config; url must be an absolute http(s) URL without embedded credentials; "
-        + "403/404 are actionable (security policy/no usable content) and long bodies are truncated at 60000 chars.",
+        + "403/404 are actionable (security policy/no usable content) and long bodies are truncated at 60000 chars. "
+        + "Upstream may backslash-escape punctuation in the Markdown; content is returned verbatim. A successful fetch only means a body was obtained — site-generated 404/'Page Not Found' pages also succeed.",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

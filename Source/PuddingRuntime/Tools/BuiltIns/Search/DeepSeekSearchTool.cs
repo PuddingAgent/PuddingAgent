@@ -22,10 +22,12 @@ namespace PuddingRuntime.Services.Tools;
         + "ori_question 可传用户原始问题帮助 API 理解搜索意图；localization 可传 IP 地址以本地化结果。"
         + "【坑】需先在 <DataRoot>/config/search.providers.json 配置 deepseek_search.apiKey（或 llm.providers.json 中 providerId=\"deepseek\" 的 apiKey），"
         + "未配置或 provider 被禁用时工具直接失败且不会发起请求；搜索返回的是摘要级内容，关键事实必须再用 deepseek_fetch 或 http_fetch 打开原文核实；"
+        + "结果里的 Rerank 分 ≥1.5 才代表高相关（文档口径）、Authority ≥3 为极权威；Rerank 明显偏低（如 <1.0）说明该查询可能没有匹配的公开实体，应视同“未检索到”，换关键词或加 site: 限定后再试；"
         + "count>50 会被夹到 50，输出超过 60000 字符会被有界截断（会注明 truncated）。"
         + " English: Search the public web through the DeepSeek Search API; returns ranked results "
         + "(title/url/snippet/summary/optional content). Requires DeepSeek credentials in data config, "
-        + "count is 1-50 (default 10), need_content toggles page bodies, and returned facts should be verified with deepseek_fetch/http_fetch.",
+        + "count is 1-50 (default 10), need_content toggles page bodies, and returned facts should be verified with deepseek_fetch/http_fetch. "
+        + "Treat clearly low Rerank scores (<1.0) as weak or no match rather than evidence.",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,
