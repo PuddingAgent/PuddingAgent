@@ -45,8 +45,11 @@
 | `Source/PuddingPlatformTests/Services/ConversationReadModelProjectionStoreTests.cs` | C2 读模型持久化定向测试 | `ConversationReadModelProjectionStoreTests` | `Services/AgentChat/ConversationReadModelProjectionStore.cs` | 真实 SQLite：往返/upsert/回滚/legacy partial/omitted/损坏 JSON |
 | `Source/PuddingPlatformTests/Services/ConversationProjectorReadModelTests.cs` | C2b 投影事务端到端测试 | `ConversationProjectorReadModelTests` | `Services/ConversationProjector.cs` | 真实 SQLite+fake event store：消息/摘要/read_state/checkpoint 原子提交、checkpoint 写失败全回滚、重放幂等、子 run 隔离、旧库 partial |
 | `Source/PuddingPlatformTests/Services/ConversationReadModelSchemaTests.cs` | 读模型持久化基线：EF 模型、存量库补齐、幂等、两条事件索引与 EXPLAIN 收敛断言 | `ConversationReadModelSchemaTests` | `Services/ConversationReadModelSchemaBootstrapper.cs` | 真实 SQLite 临时库；断言查询计划按 message/turn 等值收敛，禁止全会话扫描 |
+| `Services/AgentChat/ConversationOpenQueryService.cs` | 统一打开/历史/过程分页有界只读查询；C/H 一致读事务 + ETag | `ConversationOpenQueryService` | `Services/AgentChat/ConversationOpenContracts.cs` | GET 不重放/不补建；消息预览 SQL 有界、过程候选 scan≤400、空展示页前进；旧入口切换留 C3b/D |
+| `Services/AgentChat/ConversationOpenContracts.cs` | 打开/分页 DTO、sync 状态与查询失败码 | `ConversationOpenSnapshot`、`ConversationQueryException` | `Services/AgentChat/ConversationOpenQueryService.cs` | 与旧 AgentConversationView 并存至 D；失败用稳定 code，不伪造空会话 |
+| `Source/PuddingPlatformTests/Services/ConversationOpenQueryServiceTests.cs` | C3a 打开/历史/过程查询定向测试（9 例） | `ConversationOpenQueryServiceTests` | `Services/AgentChat/ConversationOpenQueryService.cs` | 真实 SQLite：C/H 一致、预览 8 KiB、legacy partial、syncing、键集分页、空展示页前进、游标拒绝、压缩/子代理摘要 |
 
-关联修改：`PlatformDbContext`（2 个 DbSet + 2 个实体配置 + conversation_events 两条命名索引）；`PuddingApplicationInitializer`（启动期仅注册小表 bootstrapper）；`PuddingPlatform.csproj`/slnx 接入 `PuddingConversationReadModel`；`ConversationProjector` 改为单事务投影并注册 `ConversationReadModelProjectionStore`（Host composition 2/2 通过，C2b）。
+关联修改：`PlatformDbContext`（2 DbSet+2 实体配置+conversation_events 两条索引）；`PuddingApplicationInitializer`（仅启动建小表）；Platform/slnx 接入 `PuddingConversationReadModel`；`ConversationProjector` 单事务投影并注册 `ProjectionStore`（Host composition 2/2）；新增 `ConversationOpenQueryService`（C3a，端点/身份/百万事件门禁待 C3b）。
 
 ## 消息网关
 
