@@ -95,23 +95,16 @@ public sealed class BrowserPageLifecycle
         BrowserPageGrantScope required,
         DateTimeOffset nowUtc)
     {
-        // ① 用户显式选中的 Agent 目标页（唯一的显式授权动作）。
+        // ① 用户显式选中的 Agent 目标页（唯一的显式授权动作；切换目标后旧页立即不再命中）。
         if (_browserTargets.IsAgentTarget(target.ContextId, target.PageId))
         {
             return true;
         }
 
-        // ② V1 基线策略（69 规格 §1.1：Agent Browser 使用独立 Context/Page/UDF 与标签页，
-        //    UI 的暂停/接管是**运行控制**而非权限审批）：
-        //    Agent 浏览器是 **Agent 自己的**浏览器（独立 profile，与用户的 Edge/Chrome 隔离），
-        //    因此「桥处于已确认世代」即视为「Agent 浏览器在线」，可由 Agent 驱动；
-        //    用户的运行控制（暂停 / 接管）在同一入口之前就已拦下，不依赖本方法。
-        //    ⚠ 这是 V1 简化目标下的有意选择：逐页 grant 在本场景下的可验证安全收益≈ 0，
-        //      而可用性成本是确定的（实测：同一意图产生三种拒绝码）。后续 step 4 收敛为 session 后本条移除。
-        if (_authority.ConnectionGeneration.IsLive)
-        {
-            return true;
-        }
+        // ② **刻意不再**提供「桥在线 ⇒ 任意页面可驱动」的 V1 过渡放行。
+        //    连接状态只证明传输活性，不证明目标归属（ADR-097 D4 / 审阅报告 F3）；
+        //    默认 Bridge 的真实授权来源是 ①（用户在 Desktop 上选页）与 ③（能力通道签发的页级 grant）。
+        //    若将来要放宽，必须是页级/会话级的显式判据，而不是传输在线这一全局事实。
 
         // ③ 既有页级授权（能力通道路径签发的 grant）继续兼容。
         return _authority.ActiveGrants.Any(grant =>

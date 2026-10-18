@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Pudding.Contracts.Desktop;
 using PuddingBrowser.Protocol;
 using PuddingDesktop.Browser;
 
@@ -54,6 +55,72 @@ public sealed class BrowserBridgeAdmissionTests
         dispatcher.SetHandler(handler);
         var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
         Assert.False(result.Success, $"no grant but handler calls={handler.Count}");
+        Assert.Equal(0, handler.Count);
+    }
+
+    // ── F3：桥在线只证明传输活性，不授予任意页面控制权 ──────────────────────
+
+    [Fact]
+    public async Task BridgeLivenessAloneDoesNotAuthorizePagesTheUserDidNotSelect()
+    {
+        // 修复前：ConnectionGeneration.IsLive ⇒ HasSufficientPageGrant 无条件放行任意页面。
+        // 现在必须由「用户在 Desktop 上选页」或「页级 grant」授权（ADR-097 D4）。
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        lifecycle.NotifyBridgeConnected(BrowserTestState.Generation.Value);
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
+        var handler = new CountingHandler();
+        dispatcher.SetHandler(handler);
+
+        var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("page_grant_required", result.ErrorCode);
+        Assert.Equal(0, handler.Count);
+    }
+
+    [Fact]
+    public async Task UserSelectedTargetPageIsDrivableOverTheBridge()
+    {
+        // 正向配对：没有 grant，但用户把这一页交给了 Agent ⇒ 命令必须执行（防"一律拒绝"假绿）。
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        lifecycle.NotifyBridgeConnected(BrowserTestState.Generation.Value);
+        lifecycle.RegisterContext("ctx", DesktopContextTrust.AgentAuthorized);
+        lifecycle.RegisterPage(
+            new DesktopPageTarget("ctx", "page"),
+            DesktopPageVersion.Require(1),
+            DesktopPageReadiness.Interactive);
+        lifecycle.SetAgentTarget("ctx", "page");
+
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
+        var handler = new CountingHandler();
+        dispatcher.SetHandler(handler);
+
+        var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
+
+        Assert.True(result.Success, $"selected target must be drivable; error={result.ErrorCode}: {result.ErrorMessage}");
+        Assert.Equal(1, handler.Count);
+    }
+
+    [Fact]
+    public async Task NonTargetPageIsRejectedEvenWhenTheBridgeIsLive()
+    {
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        lifecycle.NotifyBridgeConnected(BrowserTestState.Generation.Value);
+        lifecycle.RegisterContext("ctx", DesktopContextTrust.AgentAuthorized);
+        lifecycle.RegisterPage(
+            new DesktopPageTarget("ctx", "other"),
+            DesktopPageVersion.Require(1),
+            DesktopPageReadiness.Interactive);
+        lifecycle.SetAgentTarget("ctx", "other");
+
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
+        var handler = new CountingHandler();
+        dispatcher.SetHandler(handler);
+
+        var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("page_grant_required", result.ErrorCode);
         Assert.Equal(0, handler.Count);
     }
 

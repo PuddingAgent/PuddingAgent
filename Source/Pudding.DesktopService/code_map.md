@@ -89,7 +89,7 @@
 - **`BrowserPageLifecycle.cs`**：页面/上下文生命周期的**唯一所有者**（设计方案 §3.3）：**创建侧** `RegisterContext`/`RegisterPage`/`SetAgentTarget`，**关闭侧** `ClosePage`/`CloseContext`（两个注册表 + 该页**全部**授权 + 写租约）。**登记原子性**：任一侧失败都回收另一侧并抛出 ⇒ 
   调用方永远拿不到"半登记"页面（视图侧有、准入侧没有，或反之）。`SetAgentTarget` 切换时撤销**旧目标**的执行权并推进授权世代，但**保留只读**（§3.2）。`Create(...)` 为进程构造唯一端口（含唯一权威与两个注册表，调用方不必引用 Automation 组件）；另提供控制面门面 `IsPaused`/`IsUserTakeover`/`SetP
   aused`/`SetUserTakeover`。**失败安全**：注册表里已经没有它也照样撤授权。结果按项如实报告（`WasRegistered`/`PagesCleared`/`GrantsRevoked`/`LeaseReleased`/`ExecutionScopeRevoked`）。还持有**读取基线存储** `Readings`（§145）并在 
-  `ClosePage`/`CloseContext` 里清除——"页面没了、内容还留着"与"授权没撤"同类
+  `ClosePage`/`CloseContext` 里清除——"页面没了、内容还留着"与"授权没撤"同类。**页面级准入判据** `HasSufficientPageGrant` 只有两个来源：① 用户显式选中的 Agent 目标页；③ 页级 grant。**桥在线不再放行任意页面**（ADR-097 D4 / F3）
 - **`BrowserReadingBaselineStore.cs`**：读取基线存储（§145）：保存"某修订标识对应的那份文本"，让 `since_revision` 能给出真正的行级差异。三条约束：**按页隔离**（跨页比较无意义）、**有界**（每页只留最近若干份；单份超过 `MaxLinesPerBaseline` 就**不存**——保存被截断的基线会算出错误差异）、**随生命周期清除**（由 `BrowserPageLifecycle` 
   持有并清理）
 - **`DesktopShellSurface.cs`**：把两个 Shell 端口（交互设施 + 宿主告知）适配成表面：预算纵深防御（剪贴板二次截断）、异常折叠为 `internal_error`、取消原样传播；**不补齐**自动化状态与页面数（那是 `DesktopService` 的权威状态）
