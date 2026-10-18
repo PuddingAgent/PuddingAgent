@@ -143,4 +143,32 @@ public static class BrowserBridgeResultAdapter
             Page = FromPageState(result.Page),
         };
     }
+
+    public static BrowserSnapshotDescriptor FromSnapshot(DesktopSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return new BrowserSnapshotDescriptor
+        {
+            DomText = snapshot.DomText,
+            AccessibilityTree = snapshot.AccessibilityTree,
+            Html = snapshot.Html,
+            Truncated = snapshot.Truncated,
+            NodeCount = snapshot.NodeCount,
+            PageVersion = snapshot.PageVersion.Value,
+            Revision = snapshot.Revision,
+            ContentBlocks = snapshot.ContentBlocks,
+            PageEvents = snapshot.PageEvents,
+            Changed = snapshot.Changed,
+            Diff = snapshot.Diff is { } diff
+                ? new BrowserTextDiffDescriptor
+                {
+                    Added = diff.Added,
+                    Removed = diff.Removed,
+                    AddedCount = diff.Added.Count,
+                    RemovedCount = diff.Removed.Count,
+                    Truncated = diff.Truncated,
+                }
+                : null,
+        };
+    }
 }

@@ -174,4 +174,41 @@ public sealed class BrowserBridgeResultAdapterTests
         Assert.Equal(3, wait.Page.PageVersion);
         Assert.Equal(string.Empty, wait.Page.Url);
     }
+
+    [Fact]
+    public void Snapshot_MapsContentRevisionEventsAndDiff()
+    {
+        var snapshot = new DesktopSnapshot(
+            Target,
+            domText: "<main/>",
+            accessibilityTree: null,
+            html: "<html/>",
+            truncated: true,
+            nodeCount: 42,
+            pageVersion: DesktopPageVersion.Require(8),
+            revision: "rev-8",
+            changed: true,
+            diff: BrowserTextDiff.FromParts(["added-line"], ["removed-line"], truncated: true),
+            contentBlocks: "{\"kind\":\"paragraph\"}",
+            pageEvents: ["download-blocked"]);
+
+        var descriptor = BrowserBridgeResultAdapter.FromSnapshot(snapshot);
+
+        Assert.Equal("<main/>", descriptor.DomText);
+        Assert.Null(descriptor.AccessibilityTree);
+        Assert.Equal("<html/>", descriptor.Html);
+        Assert.True(descriptor.Truncated);
+        Assert.Equal(42, descriptor.NodeCount);
+        Assert.Equal(8, descriptor.PageVersion);
+        Assert.Equal("rev-8", descriptor.Revision);
+        Assert.Equal("{\"kind\":\"paragraph\"}", descriptor.ContentBlocks);
+        Assert.Equal(["download-blocked"], descriptor.PageEvents);
+        Assert.True(descriptor.Changed);
+        Assert.NotNull(descriptor.Diff);
+        Assert.Equal(["added-line"], descriptor.Diff!.Added);
+        Assert.Equal(["removed-line"], descriptor.Diff.Removed);
+        Assert.Equal(1, descriptor.Diff.AddedCount);
+        Assert.Equal(1, descriptor.Diff.RemovedCount);
+        Assert.True(descriptor.Diff.Truncated);
+    }
 }
