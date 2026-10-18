@@ -43,6 +43,54 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
+    public void PageSnapshot_MapsEverySnapshotOptionField()
+    {
+        // F4 的教训：映射层必须逐字段搬运，不能"看起来映射了"。
+        var command = Command(
+            BrowserBridgeCommandNames.PageSnapshot,
+            "ctx",
+            "page",
+            new PageSnapshotArguments
+            {
+                IncludeDom = false,
+                IncludeAccessibilityTree = true,
+                IncludeHidden = true,
+                IncludeIframes = false,
+                IncludeShadowDom = false,
+                IncludeHtml = true,
+                MaxNodes = 123,
+                MaxTextLength = 4567,
+                MaxDepth = 9,
+                ScopeRef = "v1-n1",
+                SinceRevision = "rev-1",
+                IncludeContentBlocks = true,
+            });
+
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason), reason);
+
+        Assert.Equal(DesktopCapability.BrowserSnapshot, descriptor!.Capability);
+        var snapshot = request!.Snapshot;
+        Assert.NotNull(snapshot);
+        Assert.Equal("ctx/page", snapshot!.Target.Key);
+        Assert.Equal(DesktopPageVersion.Unknown.Value, snapshot.ExpectedPageVersion.Value);
+
+        var options = snapshot.Options;
+        Assert.False(options.IncludeDom);
+        Assert.True(options.IncludeAccessibilityTree);
+        Assert.True(options.IncludeHidden);
+        Assert.False(options.IncludeIframes);
+        Assert.False(options.IncludeShadowDom);
+        Assert.True(options.IncludeHtml);
+        Assert.Equal(123, options.MaxNodes);
+        Assert.Equal(4567, options.MaxTextLength);
+        Assert.Equal(9, options.MaxDepth);
+        Assert.Equal("v1-n1", options.ScopeRef);
+        Assert.Equal("rev-1", options.SinceRevision);
+        Assert.True(options.IncludeContentBlocks);
+    }
+
+    [Fact]
     public void PageCommandsWithoutExplicitTargets_AreRejectedWithAnActionableReason()
     {
         var missingPage = Command(BrowserBridgeCommandNames.PageGetInfo, "ctx", null);

@@ -11,7 +11,8 @@ namespace PuddingDesktop.Browser;
 /// 已映射：
 /// · `context.list` → `browser.contexts`（发现类，不要求显式页面目标）；
 /// · `page.getInfo` → `webview.page_state`；
-/// · `page.goto/goBack/goForward/reload/stop` → `webview.navigate`（动作 + URL + 超时）。
+/// · `page.goto/goBack/goForward/reload/stop` → `webview.navigate`（动作 + URL + 超时）；
+/// · `page.snapshot` → `browser.snapshot`（全部快照选项逐字段搬运）。
 ///
 /// 后续切片按"快照/定位/等待 → 交互/tabs → 截图"扩充，再切换派发器入口。映射失败的
 /// <c>reason</c> 必须可行动（缺 context/page id、参数非法、能力未注册、尚未映射），不得
@@ -22,6 +23,7 @@ public static class BrowserBridgeCommandAdapter
     internal const string PageStateCapabilityName = "webview.page_state";
     internal const string ContextsCapabilityName = "browser.contexts";
     internal const string NavigateCapabilityName = "webview.navigate";
+    internal const string SnapshotCapabilityName = "browser.snapshot";
 
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
@@ -71,6 +73,48 @@ public static class BrowserBridgeCommandAdapter
         if (reason is not null)
         {
             return false;
+        }
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.PageSnapshot, StringComparison.Ordinal))
+        {
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(SnapshotCapabilityName, out descriptor))
+            {
+                reason = $"capability '{SnapshotCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            PageSnapshotArguments? snapshotArgs;
+            try
+            {
+                snapshotArgs = command.Arguments.Deserialize<PageSnapshotArguments>(WebJson);
+            }
+            catch (JsonException)
+            {
+                reason = "page.snapshot arguments are not valid JSON";
+                return false;
+            }
+
+            var options = snapshotArgs is null
+                ? new DesktopSnapshotOptions()
+                : new DesktopSnapshotOptions(
+                    includeDom: snapshotArgs.IncludeDom,
+                    includeAccessibilityTree: snapshotArgs.IncludeAccessibilityTree,
+                    includeHtml: snapshotArgs.IncludeHtml,
+                    maxNodes: snapshotArgs.MaxNodes,
+                    maxTextLength: snapshotArgs.MaxTextLength,
+                    includeHidden: snapshotArgs.IncludeHidden,
+                    includeIframes: snapshotArgs.IncludeIframes,
+                    includeShadowDom: snapshotArgs.IncludeShadowDom,
+                    maxDepth: snapshotArgs.MaxDepth,
+                    scopeRef: snapshotArgs.ScopeRef,
+                    sinceRevision: snapshotArgs.SinceRevision,
+                    includeContentBlocks: snapshotArgs.IncludeContentBlocks);
+
+            request = DesktopCapabilityRequest.ForSnapshot(new BrowserSnapshotRequest(
+                target,
+                DesktopPageVersion.Unknown,
+                options));
+            return true;
         }
 
         if (!string.Equals(command.Name, BrowserBridgeCommandNames.PageGetInfo, StringComparison.Ordinal))
