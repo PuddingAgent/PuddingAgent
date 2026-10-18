@@ -123,6 +123,7 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 |------|------|
 | `Services/HeartbeatService.cs` | 当前 Agent 心跳编排（见下「关键语义」） |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | Goal/Task 编排 worker 组合注册（见下「关键语义」） |
+| `Services/TaskAutoDispatchOptionsStartupValidator.cs` | TaskAutoDispatch 启动自愈：authoritative 缺 Goal 前置降级 disabled；其余非法仍 fail-closed |
 | `Services/CronSchedulerService.cs` | Cron 调度 |
 | `Services/ConfigHotReloadService.cs` | 配置热重载 |
 | `Services/IndexPrebuildService.cs` | 索引预构建 |
@@ -139,7 +140,7 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 **`Services/HeartbeatService.cs`**：当前 Agent 心跳编排（类名 `HeartbeatOrchestrator`，与文件名不一致；日志分类字符串亦为 `[HeartbeatOrchestrator]`）。启动时 + 每次空闲 tick 对**全部**「启用 + 未冻结 + 已绑定主会话」的 Agent 幂等补全登记（2026-09-20；此前只登记单个“默认 Agent”，且“队列为空才补全”不可达，导致其余 Agent 永远没有心跳）；实例提示词后追加自主执行契约；2026-08-26 增加持久 Availability gate，
 等待 SubAgent/Task/Goal、消息排队、Reservation、Unknown 或重建失败均跳过并重新排队，避免把 runtime 暂停误判为空闲
 
-**`Extensions/PuddingServiceCollectionExtensions.Platform.cs`**：组合 Goal outbox/settlement workers、Task-bound 原子 Store、Availability/Reservation/Dependency/Window/Auto Worker；authoritative flag 前置条件 ValidateOnStart
+**`Extensions/PuddingServiceCollectionExtensions.Platform.cs`**：组合 Goal outbox/settlement workers、Task-bound 原子 Store、Availability/Reservation/Dependency/Window/Auto Worker；authoritative flag 前置条件由 `TaskAutoDispatchOptionsStartupValidator` 校验：仅「缺 Goal 前置」自愈降级 disabled 并记录 Error，其余非法配置 fail-closed
 
 **`Hosting/PuddingApplicationHost.cs`**：组合根、Kestrel 地址绑定与本机控制地址捕获；在发布包 appsettings 默认之上加载 `<DataRoot>/config/system.json` 与 `<DataRoot>/config/security.json`（登录态 JWT 密钥/有效期来源）并支持 hot reload，环境变量/命令行仍为最高优先级；JWT 密钥缺失即启动失败（无硬编码兜底）；注册 ADR-075/082 External Token 的 
 tasks/workspaces/agents/messages scope+workspace Policies

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
@@ -216,12 +217,6 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ITaskDependencyStore>(sp =>
             sp.GetRequiredService<TaskDependencyStore>());
         builder.Services.AddSingleton<IExecutionWindowResolver, ProviderModelExecutionWindowResolver>();
-        var taskBoundGoalConfig = builder.Configuration
-            .GetSection(TaskBoundGoalOptions.SectionName)
-            .Get<TaskBoundGoalOptions>() ?? new TaskBoundGoalOptions();
-        var goalRunConfig = builder.Configuration
-            .GetSection(GoalRunOptions.SectionName)
-            .Get<GoalRunOptions>() ?? new GoalRunOptions();
         builder.Services.AddOptions<TaskBoundGoalOptions>()
             .Bind(builder.Configuration.GetSection(TaskBoundGoalOptions.SectionName))
             .Validate(
@@ -230,11 +225,12 @@ public static partial class PuddingServiceCollectionExtensions
             .ValidateOnStart();
         builder.Services.AddOptions<TaskAutoDispatchOptions>()
             .Bind(builder.Configuration.GetSection(TaskAutoDispatchOptions.SectionName))
-            .Validate(
-                options => TaskAutoDispatchOptions.Validate(
-                    options, taskBoundGoalConfig, goalRunConfig).Count == 0,
-                "Invalid TaskAutoDispatch configuration or disabled Goal prerequisite.")
             .ValidateOnStart();
+        // 历史配置可能出现 authoritative + Goals 关闭；该条降级为 disabled 并记录 Error，
+        // 避免 Core 直接启动失败（其余非法配置仍 fail-closed）。
+        builder.Services.AddSingleton<
+            IValidateOptions<TaskAutoDispatchOptions>,
+            TaskAutoDispatchOptionsStartupValidator>();
         builder.Services.AddSingleton<TaskGoalDispatchTransactionStore>();
         builder.Services.AddSingleton<ITaskGoalDispatchTransactionStore>(sp =>
             sp.GetRequiredService<TaskGoalDispatchTransactionStore>());
