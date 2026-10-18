@@ -91,6 +91,55 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
+    public void PageLocate_MapsTheLocatorFieldsAndRejectsUnknownKinds()
+    {
+        var command = Command(
+            BrowserBridgeCommandNames.PageLocate,
+            "ctx",
+            "page",
+            new PageLocateArguments
+            {
+                Locator = new BrowserLocatorDescriptor
+                {
+                    Kind = "label",
+                    Value = "Name",
+                    Name = "ignored-on-wire-name",
+                    Exact = true,
+                    Nth = 2,
+                    HasText = "hello",
+                },
+            });
+
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason), reason);
+
+        Assert.Equal(DesktopCapability.BrowserLocate, descriptor!.Capability);
+        var locate = request!.Locate;
+        Assert.NotNull(locate);
+        Assert.Equal(DesktopLocatorKind.Label, locate!.Locator.Kind);
+        Assert.Equal("Name", locate.Locator.Value);
+        Assert.Equal("ignored-on-wire-name", locate.Locator.Name);
+        Assert.True(locate.Locator.Exact);
+        Assert.Equal(2, locate.Locator.Nth);
+        Assert.Equal("hello", locate.Locator.HasText);
+        // 线缆没有 includeHidden/inViewportOnly：默认 false，不猜 true。
+        Assert.False(locate.Locator.IncludeHidden);
+        Assert.False(locate.Locator.InViewportOnly);
+
+        var unknown = Command(
+            BrowserBridgeCommandNames.PageLocate,
+            "ctx",
+            "page",
+            new PageLocateArguments
+            {
+                Locator = new BrowserLocatorDescriptor { Kind = "made-up-kind", Value = "x" },
+            });
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            unknown, out _, out _, out var unknownReason));
+        Assert.Contains("not registered", unknownReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PageCommandsWithoutExplicitTargets_AreRejectedWithAnActionableReason()
     {
         var missingPage = Command(BrowserBridgeCommandNames.PageGetInfo, "ctx", null);

@@ -12,7 +12,8 @@ namespace PuddingDesktop.Browser;
 /// · `context.list` → `browser.contexts`（发现类，不要求显式页面目标）；
 /// · `page.getInfo` → `webview.page_state`；
 /// · `page.goto/goBack/goForward/reload/stop` → `webview.navigate`（动作 + URL + 超时）；
-/// · `page.snapshot` → `browser.snapshot`（全部快照选项逐字段搬运）。
+/// · `page.snapshot` → `browser.snapshot`（全部快照选项逐字段搬运）；
+/// · `page.locate` → `browser.locate`（kind/name/exact/nth/hasText 逐字段；未知 kind 拒绝）。
 ///
 /// 后续切片按"快照/定位/等待 → 交互/tabs → 截图"扩充，再切换派发器入口。映射失败的
 /// <c>reason</c> 必须可行动（缺 context/page id、参数非法、能力未注册、尚未映射），不得
@@ -24,6 +25,7 @@ public static class BrowserBridgeCommandAdapter
     internal const string ContextsCapabilityName = "browser.contexts";
     internal const string NavigateCapabilityName = "webview.navigate";
     internal const string SnapshotCapabilityName = "browser.snapshot";
+    internal const string LocateCapabilityName = "browser.locate";
 
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
@@ -114,6 +116,61 @@ public static class BrowserBridgeCommandAdapter
                 target,
                 DesktopPageVersion.Unknown,
                 options));
+            return true;
+        }
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.PageLocate, StringComparison.Ordinal))
+        {
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(LocateCapabilityName, out descriptor))
+            {
+                reason = $"capability '{LocateCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            PageLocateArguments? locateArgs;
+            try
+            {
+                locateArgs = command.Arguments.Deserialize<PageLocateArguments>(WebJson);
+            }
+            catch (JsonException)
+            {
+                reason = "page.locate arguments are not valid JSON";
+                return false;
+            }
+
+            if (locateArgs?.Locator is not { } wireLocator)
+            {
+                reason = "page.locate requires a locator";
+                return false;
+            }
+
+            if (!DesktopLocatorKindWire.TryParse(wireLocator.Kind, out var kind))
+            {
+                reason = $"locator kind '{wireLocator.Kind}' is not registered (no guessing, no fallback)";
+                return false;
+            }
+
+            DesktopLocator locator;
+            try
+            {
+                locator = new DesktopLocator(
+                    kind,
+                    wireLocator.Value,
+                    wireLocator.Name,
+                    wireLocator.Exact,
+                    wireLocator.Nth,
+                    wireLocator.HasText);
+            }
+            catch (ArgumentException ex)
+            {
+                reason = $"page.locate locator is not usable: {ex.Message}";
+                return false;
+            }
+
+            request = DesktopCapabilityRequest.ForLocate(new BrowserLocateRequest(
+                target,
+                locator,
+                DesktopPageVersion.Unknown));
             return true;
         }
 
