@@ -21,6 +21,7 @@ import {
 } from '@/utils/workspaceNavigation';
 import { shouldIgnoreAgentContactClick } from './agentMainSessionSelection';
 import { getAgentConversation, getAgentConversationFromSnapshot, listAgentStatuses } from './client/agentChatApi';
+import { getConversationHistory } from './client/conversationOpenApi';
 import { conversationNeedsProjectionCatchUp } from './client/chatClientStore';
 import { isAgentClientArchitectureEnabled } from './client/featureFlag';
 import { createIndexedDbAgentChatCache } from './client/localCache';
@@ -86,6 +87,19 @@ const ChatPageContent: React.FC = () => {
       listStatuses: listAgentStatuses,
       getConversation: getAgentConversation,
       getConversationFromSnapshot: getAgentConversationFromSnapshot,
+      getHistoryPage: (
+        conversationId: string,
+        beforeCreatedAt: number | null,
+        beforeMessageId: string | null,
+        limit: number,
+        signal?: AbortSignal,
+      ) =>
+        getConversationHistory(conversationId, {
+          beforeCreatedAt,
+          beforeMessageId,
+          limit,
+          signal,
+        }),
     }),
     [],
   );
@@ -707,11 +721,23 @@ const ChatPageContent: React.FC = () => {
           chat.historyLoading ||
           (useAgentClientArchitecture && agentClient.snapshot.isOpening)
         }
-        loadingMore={chat.loadingMore}
-        hasMoreMessages={chat.hasMoreMessages}
+        loadingMore={
+          useAgentClientArchitecture
+            ? agentClient.snapshot.isLoadingOlder
+            : chat.loadingMore
+        }
+        hasMoreMessages={
+          useAgentClientArchitecture
+            ? agentClient.snapshot.hasMoreHistory
+            : chat.hasMoreMessages
+        }
         error={chat.error}
         onClearError={handleClearError}
-        onLoadMore={chat.loadMoreMessages}
+        onLoadMore={
+          useAgentClientArchitecture
+            ? agentClient.loadOlder
+            : chat.loadMoreMessages
+        }
         inputValue={chat.inputValue}
         onInputChange={chat.setInputValue}
         onKeyDown={chat.handleKeyDown}

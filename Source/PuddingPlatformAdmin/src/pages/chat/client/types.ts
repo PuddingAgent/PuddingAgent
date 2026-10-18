@@ -191,4 +191,8 @@ export interface AgentConversationView {
   activeRun?: AgentRunView | null;
   eventCursor: number;
   updatedAt: string;
+  /** 阶段 D：统一打开快照带来的历史分页边界（旧端点响应可省略）。 */
+  hasMoreHistory?: boolean;
+  historyNextBeforeCreatedAt?: number | null;
+  historyNextBeforeMessageId?: string | null;
 }

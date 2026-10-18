@@ -79,6 +79,32 @@ const outcomeOf = (
 const isActiveTurn = (snapshot: ConversationOpenSnapshot): boolean =>
   Boolean(snapshot.activeTurn) && snapshot.activeTurn?.terminalState === 0;
 
+/** 单条历史快照项 → 渲染消息；历史翻页复用同一映射（无 Turn 摘要时只保留基础字段）。 */
+export function mapSnapshotHistoryItem(
+  item: ConversationHistoryItem,
+  turn: ConversationTurnSummaryView | undefined,
+  content?: string,
+): ConversationMessageView {
+  const role = roleOf(item);
+  return {
+    messageId: item.messageId,
+    turnId: item.turnId ?? null,
+    runId: turn?.rootRunId ?? null,
+    role,
+    sourceKind: role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent',
+    sourceId: role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent',
+    sourceName: role === 'user' ? '用户' : role === 'system' ? '系统' : 'Agent',
+    messageType: role === 'user' ? 'user_message' : 'agent_message',
+    llmRole: role === 'user' ? 'user' : role === 'system' ? 'system' : 'assistant',
+    createdAt: toIso(item.createdAt),
+    content: content ?? item.preview,
+    status: 'succeeded',
+    processItems: [],
+    processSummary: processSummaryOf(turn),
+    turnOutcome: outcomeOf(turn),
+  };
+}
+
 async function readFullContent(
   conversationId: string,
   item: ConversationHistoryItem,
@@ -171,24 +197,11 @@ export async function getAgentConversationFromSnapshot(
   const messages: ConversationMessageView[] = snapshot.history.items.map(
     (item) => {
       const turn = item.turnId ? turns.get(item.turnId) : undefined;
-      const role = roleOf(item);
-      return {
-        messageId: item.messageId,
-        turnId: item.turnId ?? null,
-        runId: turn?.rootRunId ?? null,
-        role,
-        sourceKind: role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent',
-        sourceId: role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent',
-        sourceName: role === 'user' ? '用户' : role === 'system' ? '系统' : 'Agent',
-        messageType: role === 'user' ? 'user_message' : 'agent_message',
-        llmRole: role === 'user' ? 'user' : role === 'system' ? 'system' : 'assistant',
-        createdAt: toIso(item.createdAt),
-        content: contents.get(item.messageId) ?? item.preview,
-        status: 'succeeded',
-        processItems: [],
-        processSummary: processSummaryOf(turn),
-        turnOutcome: outcomeOf(turn),
-      };
+      return mapSnapshotHistoryItem(
+        item,
+        turn,
+        contents.get(item.messageId) ?? item.preview,
+      );
     },
   );
 
@@ -206,5 +219,8 @@ export async function getAgentConversationFromSnapshot(
     // 与旧契约/状态投影一致使用事件 head；快照 C 只用于读模型表示。
     eventCursor: snapshot.eventHead,
     updatedAt: toIso(lastCreatedAt),
+    hasMoreHistory: snapshot.history.hasMore,
+    historyNextBeforeCreatedAt: snapshot.history.nextBeforeCreatedAt ?? null,
+    historyNextBeforeMessageId: snapshot.history.nextBeforeMessageId ?? null,
   };
 }

@@ -140,6 +140,11 @@ describe('getAgentConversationFromSnapshot', () => {
       },
       turnOutcome: { status: 'succeeded' },
     });
+    expect(view).toMatchObject({
+      hasMoreHistory: false,
+      historyNextBeforeCreatedAt: null,
+      historyNextBeforeMessageId: null,
+    });
   });
 
   it('loads long content through UTF-8 byte segments before rendering', async () => {

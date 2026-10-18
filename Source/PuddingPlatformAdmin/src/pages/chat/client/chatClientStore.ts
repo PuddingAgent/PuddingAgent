@@ -7,6 +7,8 @@ import {
 } from './canonicalMerge';
 import { DEFAULT_AGENT_CHAT_OWNER_ID } from './clientIdentity';
 import type { AgentChatLocalCache } from './localCache';
+import type { ConversationHistoryPage } from './conversationOpenTypes';
+import { mapSnapshotHistoryItem } from './conversationSnapshotAdapter';
 import type { AgentConversationView, AgentStatusProjection } from './types';
 
 export interface AgentChatApiPort {
@@ -27,6 +29,14 @@ export interface AgentChatApiPort {
     ownerUserId: string,
     signal?: AbortSignal,
   ): Promise<AgentConversationView | null>;
+  /** 阶段 D2c2：统一历史分页（键集 createdAt+messageId）。 */
+  getHistoryPage?(
+    conversationId: string,
+    beforeCreatedAt: number | null,
+    beforeMessageId: string | null,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<ConversationHistoryPage>;
 }
 
 export interface AgentChatClientSnapshot {
@@ -40,6 +50,10 @@ export interface AgentChatClientSnapshot {
   isRefreshing: boolean;
   /** 最近一次成功缝合的 canonical SSE 事件时间（毫秒）；用于降级健康期整页轮询。 */
   lastLiveEventAt: number | null;
+  /** 是否还有更早历史页（统一快照/历史分页）。 */
+  hasMoreHistory: boolean;
+  /** 上滚加载旧页是否在途。 */
+  isLoadingOlder: boolean;
   error: string | null;
 }
 
@@ -157,6 +171,8 @@ export function createAgentChatClientStore(input: {
     isOpening: false,
     isRefreshing: false,
     lastLiveEventAt: null,
+    hasMoreHistory: false,
+    isLoadingOlder: false,
     error: null,
   };
 
@@ -460,7 +476,13 @@ export function createAgentChatClientStore(input: {
           },
         );
         if (version === selectionVersion) {
-          set({ conversation: fresh, isOpening: false, isRefreshing: false });
+          set({
+            conversation: fresh,
+            isOpening: false,
+            isRefreshing: false,
+            hasMoreHistory: fresh.hasMoreHistory ?? false,
+            isLoadingOlder: false,
+          });
           recordPerfStep('agent.select', 'select.finish', selectStartedAt, {
             traceId,
             workspaceId,
@@ -667,7 +689,11 @@ export function createAgentChatClientStore(input: {
           snapshot.agentId === agentId &&
           snapshot.ownerUserId === ownerUserId
         ) {
-          set({ conversation: mergedConversation, error: null });
+          set({
+            conversation: mergedConversation,
+            hasMoreHistory: fresh.hasMoreHistory ?? snapshot.hasMoreHistory,
+            error: null,
+          });
           recordPerfStep('agent.selectedSync', 'sync.finish', syncStartedAt, {
             traceId,
             workspaceId,
@@ -709,6 +735,76 @@ export function createAgentChatClientStore(input: {
           backgroundSyncAbort = null;
         }
         syncInFlight = false;
+      }
+    },
+    /**
+     * 阶段 D2c2：向上加载更早一页（键集 createdAt+messageId）。
+     * 只 prepend 当前页并按 messageId 去重；迟到/跨身份响应不得改写当前会话。
+     */
+    async loadOlder() {
+      if (
+        !input.api.getHistoryPage ||
+        snapshot.isLoadingOlder ||
+        !snapshot.hasMoreHistory
+      ) {
+        return;
+      }
+      const conversation = snapshot.conversation;
+      const workspaceId = snapshot.workspaceId;
+      const agentId = snapshot.agentId;
+      if (!conversation || !workspaceId || !agentId) return;
+
+      const version = selectionVersion;
+      const oldest = conversation.messages[0];
+      const oldestCreatedAt = oldest ? Date.parse(oldest.createdAt) : Number.NaN;
+      const beforeCreatedAt =
+        conversation.historyNextBeforeCreatedAt ??
+        (Number.isFinite(oldestCreatedAt) ? oldestCreatedAt : null);
+      const beforeMessageId =
+        conversation.historyNextBeforeMessageId ?? oldest?.messageId ?? null;
+
+      set({ isLoadingOlder: true });
+      try {
+        const page = await input.api.getHistoryPage(
+          conversation.mainSessionId,
+          beforeCreatedAt,
+          beforeMessageId,
+          20,
+          selectionAbort?.signal,
+        );
+        if (
+          version !== selectionVersion ||
+          snapshot.workspaceId !== workspaceId ||
+          snapshot.agentId !== agentId
+        ) {
+          return;
+        }
+
+        const existing = new Set(
+          conversation.messages.map((message) => message.messageId),
+        );
+        const older = page.items
+          .filter((item) => !existing.has(item.messageId))
+          .map((item) => mapSnapshotHistoryItem(item, undefined));
+        const nextConversation: AgentConversationView = {
+          ...conversation,
+          messages: [...older, ...conversation.messages],
+          hasMoreHistory: page.hasMore,
+          historyNextBeforeCreatedAt: page.nextBeforeCreatedAt ?? null,
+          historyNextBeforeMessageId: page.nextBeforeMessageId ?? null,
+        };
+        set({
+          conversation: nextConversation,
+          hasMoreHistory: page.hasMore,
+          isLoadingOlder: false,
+        });
+      } catch (error) {
+        if (version === selectionVersion) {
+          set({
+            isLoadingOlder: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     },
     /**

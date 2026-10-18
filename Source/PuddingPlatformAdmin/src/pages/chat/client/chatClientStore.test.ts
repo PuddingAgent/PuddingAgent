@@ -691,6 +691,94 @@ describe('agent chat client store', () => {
     expect(store.getSnapshot().conversation?.mainSessionId).toBe('session-b');
   });
 
+  it('loads older history page and prepends without duplicates', async () => {
+    const cache = createMemoryAgentChatCache();
+    let historyCalls = 0;
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [],
+        getConversation: jest.fn(),
+        getConversationFromSnapshot: async (_workspaceId, agentId) => ({
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId,
+          mainSessionId: 'session-agent-a',
+          messages: [
+            {
+              messageId: 'msg-2',
+              role: 'agent',
+              sourceId: 'agent',
+              sourceName: 'Agent',
+              createdAt: new Date(1_100).toISOString(),
+              content: 'newer',
+              status: 'succeeded',
+              processItems: [],
+            },
+          ],
+          eventCursor: 12,
+          updatedAt: '2026-06-07T00:00:00.000Z',
+          hasMoreHistory: true,
+          historyNextBeforeCreatedAt: 1_100,
+          historyNextBeforeMessageId: 'msg-2',
+        }),
+        getHistoryPage: async (
+          _conversationId,
+          beforeCreatedAt,
+          beforeMessageId,
+          _limit,
+        ) => {
+          historyCalls += 1;
+          expect(beforeCreatedAt).toBe(1_100);
+          expect(beforeMessageId).toBe('msg-2');
+          return {
+            items: [
+              {
+                messageId: 'msg-1',
+                role: 'user',
+                turnId: null,
+                createdAt: 1_000,
+                preview: 'older',
+                hasMoreContent: false,
+                contentLength: 5,
+                hasContentParts: false,
+              },
+              {
+                messageId: 'msg-2',
+                role: 'agent',
+                turnId: null,
+                createdAt: 1_100,
+                preview: 'newer',
+                hasMoreContent: false,
+                contentLength: 5,
+                hasContentParts: false,
+              },
+            ],
+            nextBeforeCreatedAt: null,
+            nextBeforeMessageId: null,
+            hasMore: false,
+          };
+        },
+      },
+    });
+
+    await store.selectAgent('default', 'agent-a');
+    expect(store.getSnapshot().hasMoreHistory).toBe(true);
+
+    await store.loadOlder();
+
+    const conversation = store.getSnapshot().conversation;
+    expect(conversation?.messages.map((message) => message.messageId)).toEqual([
+      'msg-1',
+      'msg-2',
+    ]);
+    expect(store.getSnapshot().hasMoreHistory).toBe(false);
+    expect(store.getSnapshot().isLoadingOlder).toBe(false);
+
+    await store.loadOlder();
+    expect(historyCalls).toBe(1);
+  });
+
   it('prefers the unified snapshot open path when the port provides it', async () => {
     const cache = createMemoryAgentChatCache();
     const legacy = jest.fn();

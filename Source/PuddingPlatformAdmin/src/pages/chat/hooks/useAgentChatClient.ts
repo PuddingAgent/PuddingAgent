@@ -31,5 +31,6 @@ export function useAgentChatClient(input: {
     selectAgent: store.selectAgent,
     syncSelectedAgent: store.syncSelectedAgent,
     applyLiveEvent: store.applyLiveEvent,
+    loadOlder: store.loadOlder,
   };
 }
