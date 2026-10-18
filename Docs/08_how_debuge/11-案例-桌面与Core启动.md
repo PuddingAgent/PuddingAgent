@@ -15,6 +15,15 @@ draft: false
 
 # 案例：桌面与 Core 启动
 
+## 自举重建报 MSB1009，但 Core 又启动成功
+
+从 Desktop 控制面 diagnostics 的 `lastDeploymentResult` 分别检查 `success`、`buildExitCode`、
+`assembliesReloaded` 和 `coreRestarted`。编译失败后的旧 Core 恢复会使最后一个字段为 true，不能据此认定新代码已加载。
+若 MSB1009 的项目路径是在 WinUI 输出目录后拼上 `Source/PuddingAgent/PuddingAgent.csproj`，
+检查 `DesktopBootstrapSignalParser.ResolveRepositoryRoot`：源码构建路径可能有八层或更多祖先，不能用固定八层上限。
+按父目录查到卷根，识别 `dev-up.py`、`.git` 目录及工作树的 `.git` 文件；环境变量显式覆盖仍优先。
+无源码的打包版保留原有目录回退，不能因此阻止 Shell 启动。
+
 > 本文档是 [How-Debuge 调试与诊断手册](README.md)（主索引）的主题分册，由原根目录 `How-Debuge.md` 于 2026-10-02 按主题拆分而来。
 > 新增本主题的经验请直接追加到本文件；跨主题内容请回到主索引选择分册。
 

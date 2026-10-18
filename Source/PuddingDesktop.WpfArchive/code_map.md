@@ -23,6 +23,7 @@
 | `Bootstrap/DesktopBootstrapSignalService.cs` | 🔑 Core 点火部署主管（desktop-build 等三模式事务部署）见下「关键语义」 |
 | `Bootstrap/DesktopBootstrapHttpEndpoint.cs` | 仅回环 + ControlToken 的 Desktop 控制面（Core/前端部署与诊断）见下「关键语义」 |
 | `Bootstrap/DesktopBootstrapSignal*.cs` | 信号协议、部署模式归一化与结果证据模型（产物/加载路径、复制计数、哈希、`assembliesReloaded`） |
+| `Bootstrap/DesktopBootstrapSignalParser.cs` | 自举仓库根从 EXE 目录向上查到卷根，识别 dev-up.py 与 .git 目录/工作树文件；无仓库时保留打包目录回退 |
 
 **关键语义**
 

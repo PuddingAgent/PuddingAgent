@@ -30,7 +30,6 @@ internal static class DesktopBootstrapSignalParser
     public const string FrontendSkipMode = "skip";
     public const string FrontendBuildMode = "build";
     public const string FrontendLoadMode = "load";
-    private const int MaxRepositoryWalkDepth = 8;
 
     /// <summary>
     /// Parses the signal file JSON payload. Returns null when the payload is not
@@ -103,7 +102,7 @@ internal static class DesktopBootstrapSignalParser
 
     /// <summary>
     /// Resolves the repository root: PUDDING_REPOSITORY_ROOT environment variable
-    /// first, otherwise walks up from baseDirectory looking for dev-up.py or .git
+    /// first, otherwise walks to the filesystem root looking for dev-up.py or .git
     /// (same approach as YoloSignalService.ResolveSignalPath).
     /// </summary>
     public static string ResolveRepositoryRoot(string? environmentRepositoryRoot, string baseDirectory)
@@ -112,9 +111,10 @@ internal static class DesktopBootstrapSignalParser
             return Path.GetFullPath(environmentRepositoryRoot);
 
         var current = new DirectoryInfo(Path.GetFullPath(baseDirectory));
-        for (var depth = 0; depth < MaxRepositoryWalkDepth && current is not null; depth++, current = current.Parent)
+        for (; current is not null; current = current.Parent)
         {
             if (File.Exists(Path.Combine(current.FullName, "dev-up.py"))
+                || File.Exists(Path.Combine(current.FullName, ".git"))
                 || Directory.Exists(Path.Combine(current.FullName, ".git")))
             {
                 return current.FullName;
