@@ -198,7 +198,7 @@ bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧�
 
 | 文件 | 职责与性能边界 |
 |------|----------------|
-| `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；同 scope+窗口并发打开请求单飞（共享 Promise），同 key 已完成选择复用；首次打开 `isOpening` 与后台 `isRefreshing` 分离；会话切换/后台校正用 AbortController 取消在途请求，迟到响应被版本守卫丢弃；projection-owned 主会话 canonical SSE 事件缝入活动 Turn（有界正文/过程、eventId/游标去重、健康期降级）；历史向上翻页只 prepend 当前页并按 messageId 去重 |
+| `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；同 scope+窗口并发打开单飞、同 key 复用；`isOpening`/`isRefreshing` 分离；会话切换/后台校正用 AbortController；projection-owned 主会话 SSE 事件缝入活动 Turn；缓存键统一 ownerUserId，权威响应先解除加载再写 IndexedDB；`expandMessage` 按需展开长正文；历史向上翻页 |
 | `src/pages/chat/client/conversationOpenApi.ts` / `conversationOpenTypes.ts` | 阶段D 统一打开/历史/过程分页/消息正文分段契约与客户端：数字枚举取值冻结、`If-None-Match` 304→null、AbortSignal 取消、失败不吞空会话；过程条目含结构化工具/子代理字段，正文按 UTF-8 字节偏移分段续读 |
 | `src/pages/chat/client/conversationSnapshotAdapter.ts` | 统一打开快照 → 现有 `AgentConversationView` 渲染契约适配：短消息全文、长消息预览+`#pudding-expand-*` 展开链接（按需分段读取）、Turn 摘要→过程摘要/终态、`eventCursor=C` 供 SSE 追平、活动 Turn/旧端点不可用时回退旧投影 |
 | `scripts/chat-browser-smoke.mjs` | 阶段F桌面浏览器冒烟（Playwright Chromium）：登录 token 注入、`/admin/chat` 首内容/FCP/请求路径/失败响应采集；输出 temp/test-out/chat-smoke.json + 截图 |

@@ -45,7 +45,15 @@ public sealed class ConversationProjector(
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync(ct);
-            var checkpoint = await GetCheckpointAsync(db, conversationId, ct);
+            var checkpointInfo = await GetCheckpointAsync(db, conversationId, ct);
+            // 旧 Core 可能只推进 checkpoint、不写读模型；从读模型最后应用位置补放尾部，
+            // 否则新端点会一直读到陈旧的 activeTurn（用户实测 13:04 终态仍显示运行中）。
+            var checkpoint = await readModelStore.ResolveResumeSequenceAsync(
+                db,
+                conversationId,
+                checkpointInfo.ProjectedThrough,
+                checkpointInfo.UpdatedAt,
+                ct);
             var batch = await eventStore.ReadForwardAsync(
                 conversationId, checkpoint, null, limit: ProjectionBatchSize, ct);
 
@@ -386,18 +394,22 @@ public sealed class ConversationProjector(
         };
     }
 
-    private static async Task<long> GetCheckpointAsync(
+    private static async Task<(long ProjectedThrough, DateTimeOffset UpdatedAt)> GetCheckpointAsync(
         PlatformDbContext db,
         string conversationId,
         CancellationToken ct)
     {
-        var projectedThrough = await db.ConversationProjectionCheckpoints
+        var checkpoint = await db.ConversationProjectionCheckpoints
             .AsNoTracking()
-            .Where(checkpoint => checkpoint.ConversationId == conversationId)
-            .Select(checkpoint => (long?)checkpoint.ProjectedThrough)
+            .Where(item => item.ConversationId == conversationId)
+            .Select(item => new { item.ProjectedThrough, item.UpdatedAt })
             .FirstOrDefaultAsync(ct);
+        if (checkpoint is null)
+            return (0L, DateTimeOffset.MinValue);
 
-        return projectedThrough ?? 0L;
+        return DateTimeOffset.TryParse(checkpoint.UpdatedAt, out var updatedAt)
+            ? (checkpoint.ProjectedThrough, updatedAt)
+            : (checkpoint.ProjectedThrough, DateTimeOffset.MinValue);
     }
 
     private static string? ExtractString(JsonElement el, string name)

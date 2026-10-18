@@ -20,6 +20,52 @@ public sealed class ConversationReadModelProjectionStore(ILogger<ConversationRea
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    private static readonly TimeSpan StaleCheckpointTolerance = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// 自愈：旧 Core 只推进 projection checkpoint 而不写读模型时，checkpoint 会领先
+    /// read_state/turn_summaries。若 checkpoint 明显比 read_state 新，则以该会话当前
+    /// Turn 摘要的最大 last_sequence 作为恢复点，让 Projector 从 stale 位置补放尾部事件。
+    /// 正常投影两者在同一事务写入、时间差远小于容差，不会被误判。
+    /// </summary>
+    public async Task<long> ResolveResumeSequenceAsync(
+        PlatformDbContext db,
+        string conversationId,
+        long projectedThrough,
+        DateTimeOffset checkpointUpdatedAt,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        if (projectedThrough <= 0)
+            return projectedThrough;
+
+        var readStateUpdatedAt = await db.ConversationReadStates
+            .AsNoTracking()
+            .Where(item => item.ConversationId == conversationId)
+            .Select(item => item.UpdatedAt)
+            .FirstOrDefaultAsync(ct);
+        if (string.IsNullOrWhiteSpace(readStateUpdatedAt))
+            return projectedThrough;
+        if (!DateTimeOffset.TryParse(readStateUpdatedAt, out var readStateTime))
+            return projectedThrough;
+        if (checkpointUpdatedAt - readStateTime <= StaleCheckpointTolerance)
+            return projectedThrough;
+
+        var appliedThrough = await db.ConversationTurnSummaries
+            .AsNoTracking()
+            .Where(item => item.ConversationId == conversationId)
+            .MaxAsync(item => (long?)item.LastSequence, ct) ?? 0L;
+        if (appliedThrough <= 0 || appliedThrough >= projectedThrough)
+            return projectedThrough;
+
+        logger.LogWarning(
+            "[ConversationReadModel] stale checkpoint conv={ConversationId} checkpoint={Checkpoint} readStateApplied={Applied}; replaying tail from read-model position",
+            conversationId,
+            projectedThrough,
+            appliedThrough);
+        return appliedThrough;
+    }
+
     /// <summary>
     /// 为下一批归约加载状态。旧库没有 read_state 时：
     /// checkpoint == 0 视为新会话（Ready）；checkpoint &gt; 0 说明已有旧投影但没有摘要基线，按 Partial 处理。

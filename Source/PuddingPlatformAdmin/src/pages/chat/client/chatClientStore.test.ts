@@ -79,6 +79,83 @@ describe('agent chat client store', () => {
     expect(store.getSnapshot().conversation?.eventCursor).toBe(9);
   });
 
+  it('uses the configured owner identity for cache reads and writes', async () => {
+    const cache = createMemoryAgentChatCache();
+    const loadConversation = jest.spyOn(cache, 'loadConversation');
+    const saveConversation = jest.spyOn(cache, 'saveConversation');
+    const store = createAgentChatClientStore({
+      cache,
+      ownerUserId: 'admin',
+      api: {
+        listStatuses: async () => [],
+        getConversation: jest.fn(),
+        getConversationFromSnapshot: async (_workspaceId, agentId, owner) => ({
+          workspaceId: 'default',
+          ownerUserId: owner,
+          agentId,
+          mainSessionId: `session-${agentId}`,
+          messages: [],
+          eventCursor: 1,
+          updatedAt: '2026-06-07T00:00:00.000Z',
+        }),
+      },
+    });
+
+    await store.selectAgent('default', 'agent-a');
+
+    expect(loadConversation).toHaveBeenCalledWith('default', 'agent-a', 'admin');
+    expect(saveConversation).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerUserId: 'admin' }),
+    );
+  });
+
+  it('clears opening state before the cache write finishes', async () => {
+    let releaseSave: () => void = () => undefined;
+    let markSaveStarted: () => void = () => undefined;
+    const saveStarted = new Promise<void>((resolve) => {
+      markSaveStarted = resolve;
+    });
+    const cache = createMemoryAgentChatCache();
+    const delayedCache = {
+      ...cache,
+      saveConversation: async (view: Parameters<typeof cache.saveConversation>[0]) => {
+        markSaveStarted();
+        await new Promise<void>((resolve) => {
+          releaseSave = resolve;
+        });
+        return cache.saveConversation(view);
+      },
+    };
+    const store = createAgentChatClientStore({
+      cache: delayedCache,
+      ownerUserId: 'admin',
+      api: {
+        listStatuses: async () => [],
+        getConversation: jest.fn(),
+        getConversationFromSnapshot: async (_workspaceId, agentId, owner) => ({
+          workspaceId: 'default',
+          ownerUserId: owner,
+          agentId,
+          mainSessionId: `session-${agentId}`,
+          messages: [],
+          eventCursor: 1,
+          updatedAt: '2026-06-07T00:00:00.000Z',
+        }),
+      },
+    });
+
+    const selecting = store.selectAgent('default', 'agent-a');
+    await saveStarted;
+
+    expect(store.getSnapshot().isOpening).toBe(false);
+    expect(store.getSnapshot().conversation?.mainSessionId).toBe(
+      'session-agent-a',
+    );
+
+    releaseSave();
+    await selecting;
+  });
+
   it('marks the selected agent before IndexedDB cache returns', async () => {
     let resolveCached: (value: AgentConversationView | null) => void = () =>
       undefined;

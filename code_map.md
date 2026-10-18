@@ -1,6 +1,6 @@
 # PuddingAgent 代码地图（根索引）
 
-> 源指纹: Source/**=426bce531f44, Tests/**=59505e8e824f, Tools/**=ed3547ac54c0, TestScripts/**=3f29759b31b3 · 条目数: 124 · 最近整理: 2026-10-18
+> 源指纹: Source/**=675ef3443fa0, Tests/**=0c4e72925309, Tools/**=ed3547ac54c0, TestScripts/**=2cabbbfd4abf · 条目数: 124 · 最近整理: 2026-10-18
 > 本文件是**索引**不是日志：只放 概念 · 组件 · 关键文件（相对路径）· 用途；维护规则见 [`Agents.md`](Agents.md)，过程记录写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)；子项目内部的文件级索引在其自己的 `code_map.md` 中，本文件只做跨项目路由。
 
 ## 0. 怎么用（30 秒）

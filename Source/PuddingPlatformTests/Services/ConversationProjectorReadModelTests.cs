@@ -208,6 +208,79 @@ public sealed class ConversationProjectorReadModelTests
         Assert.AreEqual(1, await verify.ChatMessages.CountAsync());
     }
 
+    [TestMethod]
+    public async Task ProjectAsync_StaleReadModelCheckpoint_ReplaysTailAndClearsActiveTurn()
+    {
+        await using var temp = TempProjectorDb.Create();
+        var checkpointUpdatedAt = DateTimeOffset.UtcNow;
+        var readStateUpdatedAt = checkpointUpdatedAt.AddHours(-1);
+        await using (var db = new PlatformDbContext(temp.Options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.ConversationProjectionCheckpoints.Add(new ConversationProjectionCheckpointEntity
+            {
+                ConversationId = "conv-1",
+                ProjectedThrough = 10,
+                UpdatedAt = checkpointUpdatedAt.ToString("O"),
+            });
+            db.ConversationReadStates.Add(new ConversationReadStateEntity
+            {
+                ConversationId = "conv-1",
+                InitializationState = (int)ReadModelInitializationState.Partial,
+                CurrentTurnId = "turn-1",
+                CurrentRootRunId = "run-1",
+                CurrentRootTerminalState = (int)TurnTerminalState.Unknown,
+                SubAgentRunsJson = "[]",
+                ReadModelVersion = ConversationReadModelLimits.CurrentReadModelVersion,
+                Revision = 1,
+                UpdatedAt = readStateUpdatedAt.ToString("O"),
+            });
+            db.ConversationTurnSummaries.Add(new ConversationTurnSummaryEntity
+            {
+                ConversationId = "conv-1",
+                TurnId = "turn-1",
+                RootRunId = "run-1",
+                TerminalState = (int)TurnTerminalState.Unknown,
+                ActivePreview = string.Empty,
+                FirstSequence = 1,
+                LastSequence = 6,
+                SummaryRevision = 1,
+                ProcessCompleteness = (int)SummaryCompleteness.Complete,
+                ReadModelVersion = ConversationReadModelLimits.CurrentReadModelVersion,
+                UpdatedAt = readStateUpdatedAt.ToString("O"),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var store = FakeStore(
+            Event(7, ConversationEventTypes.MessageContentAppended,
+                payloadJson: "{\"delta\":\"tail \"}"),
+            Event(8, ConversationEventTypes.UsageRecorded,
+                payloadJson: "{\"usage\":{\"promptTokens\":1,\"completionTokens\":1}}"),
+            Event(9, ConversationEventTypes.MessageContentAppended,
+                payloadJson: "{\"delta\":\"done\"}"),
+            Event(10, ConversationEventTypes.TurnCompleted,
+                messageId: "assistant-msg-1",
+                payloadJson: "{\"reply\":\"done\"}"));
+        var projector = NewProjector(temp, store);
+
+        var result = await projector.ProjectAsync("conv-1");
+
+        Assert.IsNull(result.Error);
+        await using var verify = new PlatformDbContext(temp.Options);
+        var readState = await verify.ConversationReadStates.SingleAsync();
+        Assert.AreEqual(
+            (int)TurnTerminalState.Completed,
+            readState.CurrentRootTerminalState,
+            "tail turn.completed must clear the stale running state");
+        var turn = await verify.ConversationTurnSummaries.SingleAsync();
+        Assert.AreEqual((int)TurnTerminalState.Completed, turn.TerminalState);
+        Assert.AreEqual(10, turn.LastSequence);
+        Assert.AreEqual(
+            10L,
+            (await verify.ConversationProjectionCheckpoints.SingleAsync()).ProjectedThrough);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────
 
     private static ConversationProjector NewProjector(TempProjectorDb temp, IConversationEventStore store)

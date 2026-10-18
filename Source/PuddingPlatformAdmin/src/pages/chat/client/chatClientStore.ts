@@ -243,7 +243,6 @@ export function createAgentChatClientStore(input: {
     },
     async refreshStatuses(workspaceId: string) {
       const traceId = createTraceId('agent-status-refresh');
-      const ownerUserId = DEFAULT_AGENT_CHAT_OWNER_ID;
       const cacheStartedAt = performance.now();
       const cached = await input.cache.loadStatuses(workspaceId, ownerUserId);
       recordPerfStep('agent.status', 'cache.loadStatuses', cacheStartedAt, {
@@ -299,7 +298,6 @@ export function createAgentChatClientStore(input: {
       if (statusesSyncInFlight) return;
       statusesSyncInFlight = true;
       const traceId = createTraceId('agent-status-sync');
-      const ownerUserId = DEFAULT_AGENT_CHAT_OWNER_ID;
       try {
         const apiStartedAt = performance.now();
         const fresh = await input.api.listStatuses(workspaceId);
@@ -378,7 +376,6 @@ export function createAgentChatClientStore(input: {
 
       const version = ++selectionVersion;
       backgroundSyncVersion += 1;
-      const ownerUserId = DEFAULT_AGENT_CHAT_OWNER_ID;
       const existingConversation = sameSelection ? snapshot.conversation : null;
 
       // 会话切换取消旧选择与旧后台校正的在途请求；同一 key 重入不取消共享请求。
@@ -470,22 +467,7 @@ export function createAgentChatClientStore(input: {
           eventCursor: fresh.eventCursor,
           hasActiveRun: Boolean(fresh.activeRun),
         });
-        const saveStartedAt = performance.now();
-        await input.cache.saveConversation(fresh);
-        recordPerfStep(
-          'agent.select',
-          'cache.saveConversation',
-          saveStartedAt,
-          {
-            traceId,
-            workspaceId,
-            agentId,
-            ownerUserId,
-            sessionId: fresh.mainSessionId,
-            messageCount: fresh.messages.length,
-            eventCursor: fresh.eventCursor,
-          },
-        );
+        // 加载状态必须在拿到权威响应后立即解除；IndexedDB 写入不得阻塞首屏可读。
         if (version === selectionVersion) {
           set({
             conversation: fresh,
@@ -517,6 +499,22 @@ export function createAgentChatClientStore(input: {
             },
           );
         }
+        const saveStartedAt = performance.now();
+        await input.cache.saveConversation(fresh);
+        recordPerfStep(
+          'agent.select',
+          'cache.saveConversation',
+          saveStartedAt,
+          {
+            traceId,
+            workspaceId,
+            agentId,
+            ownerUserId,
+            sessionId: fresh.mainSessionId,
+            messageCount: fresh.messages.length,
+            eventCursor: fresh.eventCursor,
+          },
+        );
       } catch (error) {
         recordPerfStep('agent.select', 'select.error', selectStartedAt, {
           traceId,
