@@ -140,6 +140,41 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
+    public void PageWaitFor_MapsExactlyOneConditionAndRejectsAmbiguousOrEmptyOnes()
+    {
+        var selectorWait = Command(
+            BrowserBridgeCommandNames.PageWaitFor,
+            "ctx",
+            "page",
+            new PageWaitForArguments { Selector = "#ready", TimeoutMs = 1500 });
+
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            selectorWait, out var descriptor, out var request, out var reason), reason);
+
+        Assert.Equal(DesktopCapability.BrowserWaitFor, descriptor!.Capability);
+        var wait = request!.WaitFor;
+        Assert.NotNull(wait);
+        Assert.Equal(DesktopWaitConditionKind.Selector, wait!.Condition.Kind);
+        Assert.Equal("#ready", wait.Condition.Value);
+        Assert.Equal(1500, wait.TimeoutMs);
+
+        // 多条件：旧 runtime 可全带，新能力契约只有一个条件 —— 不静默挑优先级，直接拒绝。
+        var ambiguous = Command(
+            BrowserBridgeCommandNames.PageWaitFor,
+            "ctx",
+            "page",
+            new PageWaitForArguments { Selector = "#ready", UrlPattern = "/done" });
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            ambiguous, out _, out _, out var ambiguousReason));
+        Assert.Contains("multiple conditions", ambiguousReason, StringComparison.Ordinal);
+
+        var empty = Command(BrowserBridgeCommandNames.PageWaitFor, "ctx", "page", new PageWaitForArguments());
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            empty, out _, out _, out var emptyReason));
+        Assert.Contains("requires one of", emptyReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PageCommandsWithoutExplicitTargets_AreRejectedWithAnActionableReason()
     {
         var missingPage = Command(BrowserBridgeCommandNames.PageGetInfo, "ctx", null);

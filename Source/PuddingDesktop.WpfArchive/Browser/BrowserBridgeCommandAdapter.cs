@@ -13,7 +13,8 @@ namespace PuddingDesktop.Browser;
 /// · `page.getInfo` → `webview.page_state`；
 /// · `page.goto/goBack/goForward/reload/stop` → `webview.navigate`（动作 + URL + 超时）；
 /// · `page.snapshot` → `browser.snapshot`（全部快照选项逐字段搬运）；
-/// · `page.locate` → `browser.locate`（kind/name/exact/nth/hasText 逐字段；未知 kind 拒绝）。
+/// · `page.locate` → `browser.locate`（kind/name/exact/nth/hasText 逐字段；未知 kind 拒绝）；
+/// · `page.waitFor` → `browser.wait_for`（单条件映射；多条件/无条件显式拒绝，不静默挑优先级）。
 ///
 /// 后续切片按"快照/定位/等待 → 交互/tabs → 截图"扩充，再切换派发器入口。映射失败的
 /// <c>reason</c> 必须可行动（缺 context/page id、参数非法、能力未注册、尚未映射），不得
@@ -26,6 +27,7 @@ public static class BrowserBridgeCommandAdapter
     internal const string NavigateCapabilityName = "webview.navigate";
     internal const string SnapshotCapabilityName = "browser.snapshot";
     internal const string LocateCapabilityName = "browser.locate";
+    internal const string WaitForCapabilityName = "browser.wait_for";
 
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
@@ -170,6 +172,65 @@ public static class BrowserBridgeCommandAdapter
             request = DesktopCapabilityRequest.ForLocate(new BrowserLocateRequest(
                 target,
                 locator,
+                DesktopPageVersion.Unknown));
+            return true;
+        }
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.PageWaitFor, StringComparison.Ordinal))
+        {
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(WaitForCapabilityName, out descriptor))
+            {
+                reason = $"capability '{WaitForCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            PageWaitForArguments? waitArgs;
+            try
+            {
+                waitArgs = command.Arguments.Deserialize<PageWaitForArguments>(WebJson);
+            }
+            catch (JsonException)
+            {
+                reason = "page.waitFor arguments are not valid JSON";
+                return false;
+            }
+
+            waitArgs ??= new PageWaitForArguments();
+            var candidates = new (DesktopWaitConditionKind Kind, string? Value)[]
+            {
+                (DesktopWaitConditionKind.Selector, waitArgs.Selector),
+                (DesktopWaitConditionKind.SelectorHidden, waitArgs.SelectorToHide),
+                (DesktopWaitConditionKind.UrlPattern, waitArgs.UrlPattern),
+            };
+            var provided = candidates
+                .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Value))
+                .ToArray();
+
+            if (provided.Length != 1)
+            {
+                // 旧 runtime 可同时承载多个条件；新能力契约只有一个条件。
+                // 不静默挑优先级（那会改变语义）：多条件/无条件一律拒绝，待契约扩展再放开。
+                reason = provided.Length == 0
+                    ? "page.waitFor requires one of selector/selectorToHide/urlPattern"
+                    : "page.waitFor with multiple conditions is not representable by the current capability contract";
+                return false;
+            }
+
+            DesktopWaitCondition condition;
+            try
+            {
+                condition = new DesktopWaitCondition(provided[0].Kind, provided[0].Value!);
+            }
+            catch (ArgumentException ex)
+            {
+                reason = $"page.waitFor condition is not usable: {ex.Message}";
+                return false;
+            }
+
+            request = DesktopCapabilityRequest.ForWaitFor(new BrowserWaitForRequest(
+                target,
+                condition,
+                waitArgs.TimeoutMs,
                 DesktopPageVersion.Unknown));
             return true;
         }
