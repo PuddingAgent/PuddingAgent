@@ -39,7 +39,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Validation/SshKnownHostsParser.cs` | known_hosts 解析（明文/逗号/`\|1\|salt\|hash`/`@revoked`） | `SshKnownHostsEntry`、`SshKnownHostsParseResult`、`Parse`、`ComputeHashedHostToken` | 通配/否定/`@cert-authority`/未知标记/非 v1 哈希/非法公钥 ⇒ **整行丢弃并 fail-closed** |
 | `Validation/SshTrustSnapshot.cs` | 冻结信任快照 + 单目标验证器 | （见下「关键语义」） | 两种来源互斥、无首次信任；pin 指纹由**出示的 blob 现算**；撤销按密钥生效 |
 | `Validation/SshPosixCommand.cs` | POSIX 执行封装与 cwd/命令校验 | `SshPosixExecutionPlan`、`Compose`、`Quote`、`IsValidCwd`、`ValidateCommand` | 精确串 = `cd -- '<cwd>' \|\| exit $?` 独立一行 + `\n` + **原样**命令（ADR-096 D1）；cwd 必须干净绝对路径；命令 16 KiB/NUL |
-| `Contracts/SshTransferContracts.cs` | 传输契约（切片 B） | （见下「关键语义」） | 本地与远端路径分别建模；默认禁止覆盖；计划含同目录唯一临时文件名 |
+| `Contracts/SshTransferContracts.cs` | 传输契约（切片 B） | （见下「关键语义」） | 本地与远端路径分别建模；默认禁止覆盖；计划含同目录唯一临时文件名；残留三态 `SshTemporaryResidue`（Unknown ≠ 无残留） |
 | `Validation/SshLocalPathPolicy.cs` | 本地路径策略（切片 B） | `SshLocalPathPolicy`、`ISshLocalFileSystem`/`SshLocalFileSystem` | 单一权威包含判定（`GetRelativePath`，不用字符串前缀）；逐段拒绝重解析点；拒绝目录/非普通文件；声明 TOCTOU 限制 |
 | `Validation/SshRemotePathPolicy.cs` | 远端 POSIX 路径策略（切片 B） | `SshRemotePathPolicy` | 绝对路径/控制字符/目录标记校验、词法消解 `..`、允许根包含、父目录 realpath 根内、临时同目录名 |
 | `Validation/SshTransferValidator.cs` | 传输请求校验与计划（切片 B） | `SshTransferValidator` | 0/负数请求 `ssh.request_invalid`、超硬上限 `ssh.transfer_too_large`、非法配置 `ssh.config_invalid` |

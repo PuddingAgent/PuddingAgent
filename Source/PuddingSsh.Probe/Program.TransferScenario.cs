@@ -134,7 +134,6 @@ internal static partial class Program
                 options.HostFor(transfer: limits),
                 new SshUploadRequest(options.Target, "payload.bin", tooLargeTarget, SshOverwritePolicy.Fail, MaxBytes: 64 * 1024),
                 CancellationToken.None);
-            connections++;
             operations++;
             log.Fact(scenario, "too_large_error", tooLarge.ErrorCode ?? "null");
             log.Fact(scenario, "too_large_left_behind", tooLarge.TemporaryLeftBehind);
