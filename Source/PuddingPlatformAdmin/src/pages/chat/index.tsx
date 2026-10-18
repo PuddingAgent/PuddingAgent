@@ -20,7 +20,7 @@ import {
   buildChatPathWithQuery,
 } from '@/utils/workspaceNavigation';
 import { shouldIgnoreAgentContactClick } from './agentMainSessionSelection';
-import { getAgentConversation, listAgentStatuses } from './client/agentChatApi';
+import { getAgentConversation, getAgentConversationFromSnapshot, listAgentStatuses } from './client/agentChatApi';
 import { conversationNeedsProjectionCatchUp } from './client/chatClientStore';
 import { isAgentClientArchitectureEnabled } from './client/featureFlag';
 import { createIndexedDbAgentChatCache } from './client/localCache';
@@ -85,6 +85,7 @@ const ChatPageContent: React.FC = () => {
     () => ({
       listStatuses: listAgentStatuses,
       getConversation: getAgentConversation,
+      getConversationFromSnapshot: getAgentConversationFromSnapshot,
     }),
     [],
   );

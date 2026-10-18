@@ -200,6 +200,7 @@ bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧�
 |------|----------------|
 | `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；同 scope+窗口并发打开请求单飞（共享 Promise），首次打开 `isOpening` 与后台 `isRefreshing` 分离；会话切换/后台校正用 AbortController 取消在途请求，迟到响应被版本守卫丢弃；projection-owned 主会话 canonical SSE 事件缝入活动 Turn（有界正文/过程、eventId 与快照游标去重，`lastLiveEventAt` 驱动健康期轮询降级）；相同状态轮询必须短路 |
 | `src/pages/chat/client/conversationOpenApi.ts` / `conversationOpenTypes.ts` | 阶段D 统一打开/历史/过程分页/消息正文分段契约与客户端：数字枚举取值冻结、`If-None-Match` 304→null、AbortSignal 取消、失败不吞空会话；过程条目含结构化工具/子代理字段，正文按 UTF-8 字节偏移分段续读 |
+| `src/pages/chat/client/conversationSnapshotAdapter.ts` | 统一打开快照 → 现有 `AgentConversationView` 渲染契约适配：短消息全文、长消息按字节分段自动读取（单条 256KiB/整页 1MiB 上限）、Turn 摘要→过程摘要/终态、活动 Turn 未终态/旧端点不可用时回退旧投影；Store 优先走该路径 |
 | `src/pages/chat/client/canonicalMerge.ts` | 消息内容与显示顺序分别合并：新快照顺序为准，分页缺失历史按共享身份锚点保留；同 ID 的 activeRun 比较完整状态与输出，旧游标不回退；未变化 messages 保持引用稳定 |
 | `src/pages/chat/components/MessageList.tsx` | 消息行投影与单卡去重（见下「关键语义」） |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |

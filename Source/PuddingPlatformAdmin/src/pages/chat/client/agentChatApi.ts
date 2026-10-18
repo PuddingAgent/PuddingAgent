@@ -6,6 +6,7 @@ import type {
 } from './types';
 import type { PermissionMode } from '../types/chatStateTypes';
 import { PERMISSION_MODES } from '../types/chatStateTypes';
+import { getAgentConversationFromSnapshot as buildConversationFromSnapshot } from './conversationSnapshotAdapter';
 
 export async function listAgentStatuses(
   workspaceId: string,
@@ -41,6 +42,22 @@ export async function getAgentConversation(
     if (isNotModifiedResponse(error)) return null;
     throw error;
   }
+}
+
+/**
+ * 阶段 D2c：优先用统一打开快照构造现有渲染契约；新端点不可用或活动 Turn
+ * 未终态时由适配层回退旧投影（过渡期兼容，D3c 退役）。
+ */
+export async function getAgentConversationFromSnapshot(
+  workspaceId: string,
+  agentId: string,
+  ownerUserId = 'single-user',
+  signal?: AbortSignal,
+): Promise<AgentConversationView | null> {
+  return buildConversationFromSnapshot(workspaceId, agentId, ownerUserId, signal, {
+    getLegacyConversation: (ws, ag, legacySignal) =>
+      getAgentConversation(ws, ag, undefined, legacySignal),
+  });
 }
 
 /** 明细请求选项（F01/AU-F01-1）：外部取消信号 + 有界超时。 */

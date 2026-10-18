@@ -691,6 +691,37 @@ describe('agent chat client store', () => {
     expect(store.getSnapshot().conversation?.mainSessionId).toBe('session-b');
   });
 
+  it('prefers the unified snapshot open path when the port provides it', async () => {
+    const cache = createMemoryAgentChatCache();
+    const legacy = jest.fn();
+    const snapshotOpen = jest.fn(async (_workspaceId, agentId) => ({
+      workspaceId: 'default',
+      ownerUserId: 'single-user',
+      agentId,
+      mainSessionId: 'session-snapshot',
+      messages: [],
+      eventCursor: 12,
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    }));
+
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [],
+        getConversation: legacy,
+        getConversationFromSnapshot: snapshotOpen,
+      },
+    });
+
+    await store.selectAgent('default', 'agent-a');
+
+    expect(snapshotOpen).toHaveBeenCalledTimes(1);
+    expect(legacy).not.toHaveBeenCalled();
+    expect(store.getSnapshot().conversation?.mainSessionId).toBe(
+      'session-snapshot',
+    );
+  });
+
   it('stitches live main-session events into the active run without duplicate body', async () => {
     const cache = createMemoryAgentChatCache();
     const store = createAgentChatClientStore({

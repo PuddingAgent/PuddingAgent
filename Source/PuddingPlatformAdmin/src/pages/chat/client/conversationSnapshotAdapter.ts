@@ -1,0 +1,210 @@
+import { getConversationMessageContent, getConversationOpen } from './conversationOpenApi';
+import type {
+  ConversationHistoryItem,
+  ConversationOpenSnapshot,
+  ConversationReadModelProcessSummary,
+  ConversationTurnSummaryView,
+} from './conversationOpenTypes';
+import type {
+  AgentConversationView,
+  ConversationMessageView,
+  ConversationProcessSummary,
+} from './types';
+
+/**
+ * 阶段 D2c：统一打开快照 → 现有 AgentConversationView 渲染契约的适配层。
+ *
+ * 边界：
+ * - 首屏只消费快照（最近 20 条、读模型 Turn 摘要）；不重放事件；
+ * - 短消息直接使用快照内全文；长消息按 UTF-8 字节分段读取，单条/整页有上限，
+ *   超出上限保留预览（后续展开全文入口）；
+ * - 活动 Turn 尚未终态时回退旧投影一次（活动正文/工具轨迹仍由旧实时投影负责），
+ *   终态后全部走快照；
+ * - 旧端点不可用（旧 Core 未部署新端点）时回退旧投影，保证过渡期可用。
+ */
+
+const MAX_AUTO_CONTENT_BYTES_PER_MESSAGE = 256 * 1024;
+const MAX_AUTO_CONTENT_BYTES_TOTAL = 1024 * 1024;
+const CONTENT_SEGMENT_BYTES = 32 * 1024;
+
+export interface SnapshotConversationDeps {
+  getSnapshot?: typeof getConversationOpen;
+  getContent?: typeof getConversationMessageContent;
+  getLegacyConversation?: (
+    workspaceId: string,
+    agentId: string,
+    signal?: AbortSignal,
+  ) => Promise<AgentConversationView | null>;
+}
+
+const toIso = (createdAt: number): string =>
+  new Date(createdAt).toISOString();
+
+const roleOf = (item: ConversationHistoryItem): ConversationMessageView['role'] =>
+  item.role === 'user' ? 'user' : item.role === 'system' ? 'system' : 'agent';
+
+const processSummaryOf = (
+  turn: ConversationTurnSummaryView | undefined,
+): ConversationProcessSummary | null => {
+  if (!turn) return null;
+  const process: ConversationReadModelProcessSummary = turn.process;
+  const totalItems =
+    process.contentAppendCount +
+    process.thinkingAppendCount +
+    process.toolCallRequestedCount +
+    process.toolCallCompletedCount +
+    process.toolCallFailedCount;
+  return {
+    totalItems,
+    thinkingRounds: 0,
+    thinkingSteps: process.thinkingAppendCount,
+    toolCalls: process.toolCallRequestedCount,
+    toolResults: process.toolCallCompletedCount,
+    failedTools: process.toolCallFailedCount,
+    durationMs: 0,
+    hasDetails: totalItems > 0,
+  };
+};
+
+const outcomeOf = (
+  turn: ConversationTurnSummaryView | undefined,
+): ConversationMessageView['turnOutcome'] => {
+  if (!turn) return null;
+  if (turn.terminalState === 1) return { status: 'succeeded' };
+  if (turn.terminalState === 2) return { status: 'failed' };
+  if (turn.terminalState === 3) return { status: 'cancelled' };
+  return null;
+};
+
+const isActiveTurn = (snapshot: ConversationOpenSnapshot): boolean =>
+  Boolean(snapshot.activeTurn) && snapshot.activeTurn?.terminalState === 0;
+
+async function readFullContent(
+  conversationId: string,
+  item: ConversationHistoryItem,
+  getContent: typeof getConversationMessageContent,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  if (item.contentLength <= 0) return null;
+  if (item.contentLength > MAX_AUTO_CONTENT_BYTES_PER_MESSAGE) return null;
+
+  let offset = 0;
+  let content = '';
+  for (let segment = 0; segment < 32 && offset < item.contentLength; segment++) {
+    const page = await getContent(conversationId, item.messageId, {
+      offsetBytes: offset,
+      maxBytes: CONTENT_SEGMENT_BYTES,
+      signal,
+    });
+    content += page.content;
+    if (!page.hasMore) return content;
+    if (page.nextOffsetBytes === null || page.nextOffsetBytes === undefined) {
+      return null;
+    }
+    offset = page.nextOffsetBytes;
+  }
+
+  return null;
+}
+
+export async function getAgentConversationFromSnapshot(
+  workspaceId: string,
+  agentId: string,
+  ownerUserId: string,
+  signal?: AbortSignal,
+  deps: SnapshotConversationDeps = {},
+): Promise<AgentConversationView | null> {
+  const getSnapshot = deps.getSnapshot ?? getConversationOpen;
+  const getContent = deps.getContent ?? getConversationMessageContent;
+  const legacy = deps.getLegacyConversation;
+
+  let snapshot: ConversationOpenSnapshot | null;
+  try {
+    snapshot = await getSnapshot(workspaceId, agentId, { signal });
+  } catch (error) {
+    // 过渡期：旧 Core 没有新端点时保持可用；新端点可用后不再走这里。
+    if (legacy) return legacy(workspaceId, agentId, signal);
+    throw error;
+  }
+
+  if (!snapshot) {
+    return legacy ? legacy(workspaceId, agentId, signal) : null;
+  }
+
+  if (isActiveTurn(snapshot) && legacy) {
+    // 活动 Turn 的正文/工具轨迹仍由旧实时投影负责；终态后走快照。
+    const active = await legacy(workspaceId, agentId, signal);
+    if (active) return active;
+  }
+
+  const turns = new Map<string, ConversationTurnSummaryView>();
+  for (const turn of snapshot.visibleTurns) turns.set(turn.turnId, turn);
+  if (snapshot.activeTurn) turns.set(snapshot.activeTurn.turnId, snapshot.activeTurn);
+
+  let autoContentBytes = 0;
+  const contents = new Map<string, string>();
+  for (const item of snapshot.history.items) {
+    let content = item.preview;
+    if (
+      item.hasMoreContent &&
+      item.contentLength <= MAX_AUTO_CONTENT_BYTES_PER_MESSAGE &&
+      autoContentBytes + item.contentLength <= MAX_AUTO_CONTENT_BYTES_TOTAL
+    ) {
+      try {
+        const full = await readFullContent(
+          snapshot.conversationId,
+          item,
+          getContent,
+          signal,
+        );
+        if (full !== null) {
+          content = full;
+          autoContentBytes += item.contentLength;
+        }
+      } catch {
+        // 分段读取失败时保留预览，不阻断首屏；后续可由展开入口重试。
+      }
+    }
+    contents.set(item.messageId, content);
+  }
+
+  const messages: ConversationMessageView[] = snapshot.history.items.map(
+    (item) => {
+      const turn = item.turnId ? turns.get(item.turnId) : undefined;
+      const role = roleOf(item);
+      return {
+        messageId: item.messageId,
+        turnId: item.turnId ?? null,
+        runId: turn?.rootRunId ?? null,
+        role,
+        sourceKind: role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent',
+        sourceId: role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent',
+        sourceName: role === 'user' ? '用户' : role === 'system' ? '系统' : 'Agent',
+        messageType: role === 'user' ? 'user_message' : 'agent_message',
+        llmRole: role === 'user' ? 'user' : role === 'system' ? 'system' : 'assistant',
+        createdAt: toIso(item.createdAt),
+        content: contents.get(item.messageId) ?? item.preview,
+        status: 'succeeded',
+        processItems: [],
+        processSummary: processSummaryOf(turn),
+        turnOutcome: outcomeOf(turn),
+      };
+    },
+  );
+
+  const lastCreatedAt = snapshot.history.items.length > 0
+    ? snapshot.history.items[0].createdAt
+    : Date.now();
+
+  return {
+    workspaceId,
+    ownerUserId,
+    agentId,
+    mainSessionId: snapshot.conversationId,
+    messages,
+    activeRun: null,
+    // 与旧契约/状态投影一致使用事件 head；快照 C 只用于读模型表示。
+    eventCursor: snapshot.eventHead,
+    updatedAt: toIso(lastCreatedAt),
+  };
+}

@@ -17,6 +17,16 @@ export interface AgentChatApiPort {
     knownCursor?: number,
     signal?: AbortSignal,
   ): Promise<AgentConversationView | null>;
+  /**
+   * 阶段 D2c：统一打开快照路径。提供时优先于 getConversation；
+   * 旧端点/活动 Turn 的过渡回退由实现方负责。
+   */
+  getConversationFromSnapshot?(
+    workspaceId: string,
+    agentId: string,
+    ownerUserId: string,
+    signal?: AbortSignal,
+  ): Promise<AgentConversationView | null>;
 }
 
 export interface AgentChatClientSnapshot {
@@ -174,13 +184,20 @@ export function createAgentChatClientStore(input: {
       return conversationInFlight.promise;
     }
 
-    const promise = input.api
-      .getConversation(workspaceId, agentId, knownCursor, signal)
-      .finally(() => {
-        if (conversationInFlight?.promise === promise) {
-          conversationInFlight = null;
-        }
-      });
+    const promise = (
+      input.api.getConversationFromSnapshot
+        ? input.api.getConversationFromSnapshot(
+            workspaceId,
+            agentId,
+            ownerUserId,
+            signal,
+          )
+        : input.api.getConversation(workspaceId, agentId, knownCursor, signal)
+    ).finally(() => {
+      if (conversationInFlight?.promise === promise) {
+        conversationInFlight = null;
+      }
+    });
     conversationInFlight = { key, promise };
     return promise;
   };
