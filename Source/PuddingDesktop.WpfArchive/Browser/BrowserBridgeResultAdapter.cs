@@ -4,8 +4,8 @@ using PuddingBrowser.Protocol;
 namespace PuddingDesktop.Browser;
 
 /// <summary>
-/// I2-c 接线所需的**结果反投影**（Contracts → Bridge 线缆描述符）的第一片：
-/// `page.getInfo`、`context.list`/`context.getInfo`、`page.list` 三类发现读命令。
+/// I2-c 接线所需的**结果反投影**（Contracts → Bridge 线缆描述符）：
+/// `page.getInfo`、`context.list`/`context.getInfo`、`page.list` 与 `page.locate`。
 ///
 /// 已知字段缺口（如实记录，不编造）：
 /// · `DesktopContextInfo` 没有 UserDataDirectory ⇒ 线缆值用空串（旧 controller 有该字段，接入执行器后
@@ -47,8 +47,7 @@ public static class BrowserBridgeResultAdapter
         };
     }
 
-    public static BrowserContextListDescriptor FromContexts(DesktopContexts contexts)
-    {
+    public static BrowserContextListDescriptor FromContexts(DesktopContexts contexts)    {
         ArgumentNullException.ThrowIfNull(contexts);
         return new BrowserContextListDescriptor
         {
@@ -73,6 +72,35 @@ public static class BrowserBridgeResultAdapter
                 .SelectMany(context => context.Pages)
                 .Select(FromPageInfo)
                 .ToArray(),
+        };
+    }
+
+    public static BrowserLocateResultDescriptor FromLocate(DesktopLocateResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new BrowserLocateResultDescriptor
+        {
+            Truncated = result.Truncated,
+            Elements = result.Elements.Select(FromElement).ToArray(),
+        };
+    }
+
+    public static BrowserElementDescriptor FromElement(DesktopElementRef element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        return new BrowserElementDescriptor
+        {
+            Ref = element.Reference,
+            Tag = element.Tag,
+            Role = element.Role,
+            Name = element.Name,
+            Text = element.Text,
+            Visible = element.Visible,
+            Enabled = element.Enabled,
+            Checked = element.IsChecked,
+            // 契约没有 bbox：线缆值 null（不伪造坐标）；需要时由契约/表面补来源。
+            BoundingBox = null,
+            PageVersion = element.PageVersion.Value,
         };
     }
 }

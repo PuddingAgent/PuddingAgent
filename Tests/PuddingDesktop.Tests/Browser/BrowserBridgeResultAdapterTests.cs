@@ -99,4 +99,41 @@ public sealed class BrowserBridgeResultAdapterTests
         Assert.Equal(["p1", "p2", "p3"], descriptor.Pages.Select(page => page.PageId));
         Assert.Equal(["ctx-a", "ctx-a", "ctx-b"], descriptor.Pages.Select(page => page.ContextId));
     }
+
+    [Fact]
+    public void Locate_MapsElementsAndKeepsTheBoundingBoxGapVisible()
+    {
+        var result = new DesktopLocateResult(
+            Target,
+            new DesktopLocator(DesktopLocatorKind.Css, "#go"),
+            [
+                new DesktopElementRef(
+                    "v5-n1",
+                    "button",
+                    DesktopPageVersion.Require(5),
+                    role: "button",
+                    name: "Go",
+                    text: "Go",
+                    enabled: true,
+                    isChecked: false),
+            ],
+            truncated: true,
+            pageVersion: DesktopPageVersion.Require(5));
+
+        var descriptor = BrowserBridgeResultAdapter.FromLocate(result);
+
+        Assert.True(descriptor.Truncated);
+        var element = Assert.Single(descriptor.Elements);
+        Assert.Equal("v5-n1", element.Ref);
+        Assert.Equal("button", element.Tag);
+        Assert.Equal("button", element.Role);
+        Assert.Equal("Go", element.Name);
+        Assert.Equal("Go", element.Text);
+        Assert.True(element.Visible);
+        Assert.True(element.Enabled);
+        Assert.False(element.Checked);
+        Assert.Equal(5, element.PageVersion);
+        // 已知缺口：契约没有 bbox，线缆保持 null（不伪造坐标）。
+        Assert.Null(element.BoundingBox);
+    }
 }
