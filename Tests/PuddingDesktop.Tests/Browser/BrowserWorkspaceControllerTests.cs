@@ -1019,7 +1019,32 @@ internal sealed class FakeBrowserPage : IBrowserPage
     }
     public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
     public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
-    public Task<JsonDocument> SendCdpAsync(string method, JsonElement? parameters, CancellationToken ct) => throw new NotSupportedException();
+
+    /// <summary>截图分发链证据：记录每个 CDP 方法被调用的次数。</summary>
+    private int _layoutMetricsCount;
+    private int _captureScreenshotCount;
+    private int _runtimeEvaluateCount;
+
+    public int LayoutMetricsCount => _layoutMetricsCount;
+    public int CaptureScreenshotCount => _captureScreenshotCount;
+    public int RuntimeEvaluateCount => _runtimeEvaluateCount;
+
+    /// <summary>截图链路需要的最小 CDP 剧本（与 DesktopSurface.BrowserTests 的夹具同形）。</summary>
+    public Task<JsonDocument> SendCdpAsync(string method, JsonElement? parameters, CancellationToken ct) => method switch
+    {
+        "Page.getLayoutMetrics" => Count(ref _layoutMetricsCount,
+            """{ "cssVisualViewport": { "clientWidth": 1280, "clientHeight": 720, "scale": 1, "pageX": 0, "pageY": 0 }, "cssContentSize": { "x": 0, "y": 0, "width": 1280, "height": 720 } }"""),
+        "Runtime.evaluate" => Count(ref _runtimeEvaluateCount, """{ "result": { "type": "number", "value": 3 } }"""),
+        "Page.captureScreenshot" => Count(ref _captureScreenshotCount, """{ "data": "AQIDBA==" }"""),
+        _ => throw new NotSupportedException(method),
+    };
+
+    private static Task<JsonDocument> Count(ref int counter, string json)
+    {
+        counter++;
+        return Task.FromResult(JsonDocument.Parse(json));
+    }
+
     public Task<BrowserSubscriptionId> SubscribeCdpAsync(string eventName, CancellationToken ct) => throw new NotSupportedException();
     public Task UnsubscribeAsync(BrowserSubscriptionId sid, CancellationToken ct) => throw new NotSupportedException();
     public Task ClickAsync(Locator l, ClickOptions o, CancellationToken ct) => Task.CompletedTask;

@@ -26,6 +26,10 @@
          能力通道的文件段在 WpfArchive，组件设置类型在 Pudding.DesktopService，
          两边各写一份缺省值就有漂移风险（"没配置"被当成"配错了"）。 -->
     <ProjectReference Include="..\..\Source\Pudding.DesktopService\Pudding.DesktopService.csproj" />
+    <!-- F1 生产组合根集成证据（2026-10-18）：测试要组装真实的桌面表面/执行器，
+         因此在测试侧引用表面程序集与纯逻辑 Automation 组件；不改变产品依赖方向。 -->
+    <ProjectReference Include="..\..\Source\Pudding.DesktopSurface.Browser\Pudding.DesktopSurface.Browser.csproj" />
+    <ProjectReference Include="..\..\Source\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj" />
     <!-- 只为 Core→Desktop 就绪描述这条字符串契约的**端到端**断言：
          产出侧在 Pudding.CapabilityBroker.AspNetCore（Core 适配器），解析侧在 WpfArchive。
          探针验证的是解析器而不是 Core 真正打出的那一行，所以这条链必须另有测试。 -->
