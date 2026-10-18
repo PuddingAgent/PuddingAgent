@@ -241,6 +241,17 @@ public sealed partial class DesktopApplicationCoordinator
                 lifecycle,
                 taskBindings: _browserTaskBindings);
 
+            // I2-c 接线：已映射且已有结果反投影的命令改由工作区执行器执行；
+            // 准入/复检仍由派发器（会话权威）完成，执行器见 SessionPermitMarker 不再重复裁决。
+            var bridgeExecutor = _browserExecutor;
+            if (bridgeExecutor is not null)
+            {
+                _bridgeDispatcher.SetExecutorRoute(new BrowserBridgeExecutorRoute(
+                    (capability, request, context, token) =>
+                        ((IDesktopCapabilityExecutor)bridgeExecutor).ExecuteAsync(
+                            capability, request, context, token)).RouteAsync);
+            }
+
             LogCapability("浏览器执行管线已就绪（与能力通道开关无关）");
         }
         catch (Exception ex)
@@ -264,6 +275,8 @@ public sealed partial class DesktopApplicationCoordinator
         _browserUiDispatcher = null;
         _browserUiSurface = null;
         _browserTaskBindings = null;
+        // 先清执行器路由：避免退出期间新命令进入已关闭的执行器。
+        _bridgeDispatcher.ClearExecutorRoute();
 
         if (executor is not null)
         {

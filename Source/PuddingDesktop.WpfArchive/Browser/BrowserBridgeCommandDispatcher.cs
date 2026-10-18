@@ -107,6 +107,9 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
     /// <summary>执行器路由（诊断用：是否已接线）。</summary>
     public bool HasExecutorRoute => _executorRoute is not null;
 
+    /// <summary>窗口退出/管线释放时清除路由，避免残留执行器引用。</summary>
+    public void ClearExecutorRoute() => _executorRoute = null;
+
 
     /// <summary>
     /// Type-safe handler removal. Only clears if the expected handler matches.
