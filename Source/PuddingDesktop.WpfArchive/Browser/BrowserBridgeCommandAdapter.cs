@@ -15,7 +15,8 @@ namespace PuddingDesktop.Browser;
 /// · `page.snapshot` → `browser.snapshot`（全部快照选项逐字段搬运）；
 /// · `page.locate` → `browser.locate`（kind/name/exact/nth/hasText 逐字段；未知 kind 拒绝）；
 /// · `page.waitFor` → `browser.wait_for`（单条件映射；多条件/无条件显式拒绝，不静默挑优先级）；
-/// · `page.screenshot` → `browser.screenshot`（必须钉住版本；scope/detail/format 严格解析）。
+/// · `page.screenshot` → `browser.screenshot`（必须钉住版本；scope/detail/format 严格解析）；
+/// · `page.interact` → **暂不可映射**：线缆缺 `expectedPageVersion`（H3），补协议字段前 fail closed。
 ///
 /// 后续切片按"快照/定位/等待 → 交互/tabs → 截图"扩充，再切换派发器入口。映射失败的
 /// <c>reason</c> 必须可行动（缺 context/page id、参数非法、能力未注册、尚未映射），不得
@@ -310,6 +311,17 @@ public static class BrowserBridgeCommandAdapter
 
             request = screenshotRequest;
             return true;
+        }
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.PageInteract, StringComparison.Ordinal))
+        {
+            // 能力契约 BrowserInteractRequest **必须**钉住 expectedPageVersion（写操作），
+            // 但 Bridge 线缆的 PageInteractArguments/envelope 当前没有该字段（审阅 H3 的记录）。
+            // 结论：I2-c 要把 interact 切到执行器，必须先给线缆补版本字段；在此之前 fail closed，
+            // 不能"猜当前版本"或回退旧路径（那会绕过版本门禁）。
+            reason = "page.interact cannot be mapped yet: the bridge wire carries no expectedPageVersion, "
+                + "and the executor contract requires a pinned version (H3 protocol gap)";
+            return false;
         }
 
         if (!string.Equals(command.Name, BrowserBridgeCommandNames.PageGetInfo, StringComparison.Ordinal))

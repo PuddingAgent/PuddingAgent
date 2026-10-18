@@ -290,10 +290,30 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
+    public void PageInteract_IsRejectedUntilTheWireCarriesThePinnedExpectedPageVersion()
+    {
+        // 审阅 H3：Bridge 线缆没有 expectedPageVersion，而执行器契约要求写操作必须钉版本。
+        // 在补协议字段之前必须 fail closed——不能猜版本，也不能回退旧路径绕过版本门禁。
+        var command = Command(
+            BrowserBridgeCommandNames.PageInteract,
+            "ctx",
+            "page",
+            new PageInteractArguments { Action = "click", Locator = new BrowserLocatorDescriptor { Kind = "css", Value = "#go" } });
+
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason));
+
+        Assert.Null(descriptor);
+        Assert.Null(request);
+        Assert.Contains("expectedPageVersion", reason, StringComparison.Ordinal);
+        Assert.Contains("H3", reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UnmappedCommands_FailClosedInsteadOfFallingBack()
     {
         // 尚未迁移的命令不得"看起来成功"或回退到 controller：返回 false 并给出原因。
-        var command = Command(BrowserBridgeCommandNames.PageInteract, "ctx", "page");
+        var command = Command(BrowserBridgeCommandNames.PageActivate, "ctx", "page");
         Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
             command, out var descriptor, out var request, out var reason));
 
