@@ -39,6 +39,12 @@ public sealed class BrowserBridgeExecutorRoute
         BrowserBridgeCommandNames.PageWaitFor,
         BrowserBridgeCommandNames.PageInteract,
         BrowserBridgeCommandNames.PageSnapshot,
+        BrowserBridgeCommandNames.PageGoto,
+        BrowserBridgeCommandNames.PageGoBack,
+        BrowserBridgeCommandNames.PageGoForward,
+        BrowserBridgeCommandNames.PageReload,
+        BrowserBridgeCommandNames.PageStop,
+        BrowserBridgeCommandNames.PageScreenshot,
     };
 
     private readonly BrowserCapabilityInvoker _invoker;
@@ -135,6 +141,17 @@ public sealed class BrowserBridgeExecutorRoute
                 BrowserBridgeCommandNames.PageSnapshot => JsonSerializer.SerializeToElement(
                     BrowserBridgeResultAdapter.FromSnapshot(
                         response.Snapshot ?? throw new InvalidOperationException("executor returned no snapshot")),
+                    WebJson),
+                BrowserBridgeCommandNames.PageGoto or BrowserBridgeCommandNames.PageGoBack
+                    or BrowserBridgeCommandNames.PageGoForward or BrowserBridgeCommandNames.PageReload
+                    or BrowserBridgeCommandNames.PageStop => JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromNavigate(
+                            response.Navigate ?? throw new InvalidOperationException("executor returned no navigation result"),
+                            new DesktopPageTarget(command.ContextId!, command.PageId!)),
+                        WebJson),
+                BrowserBridgeCommandNames.PageScreenshot => JsonSerializer.SerializeToElement(
+                    BrowserBridgeResultAdapter.FromScreenshot(
+                        response.Screenshot ?? throw new InvalidOperationException("executor returned no screenshot result")),
                     WebJson),
                 _ => JsonSerializer.SerializeToElement(
                     BrowserBridgeResultAdapter.FromContexts(

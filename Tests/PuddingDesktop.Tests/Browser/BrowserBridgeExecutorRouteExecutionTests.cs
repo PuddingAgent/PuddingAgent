@@ -62,7 +62,7 @@ public sealed class BrowserBridgeExecutorRouteExecutionTests
         var route = new BrowserBridgeExecutorRoute((_, _, _, _) =>
             throw new InvalidOperationException("must not be called"));
 
-        var result = await route.RouteAsync(Command(BrowserBridgeCommandNames.PageGoto), CancellationToken.None);
+        var result = await route.RouteAsync(Command(BrowserBridgeCommandNames.PageActivate), CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -126,6 +126,62 @@ public sealed class BrowserBridgeExecutorRouteExecutionTests
         Assert.NotNull(locate);
         Assert.True(locate!.Success);
         Assert.Equal("v4-n1", locate.Value!.Value.GetProperty("elements")[0].GetProperty("ref").GetString());
+    }
+
+    [Fact]
+    public async Task NavigateAndScreenshot_AreRoutedAndProjected()
+    {
+        var navigateRoute = new BrowserBridgeExecutorRoute((capability, _, _, _) =>
+        {
+            Assert.Equal(DesktopCapability.WebViewNavigate, capability.Capability);
+            return Task.FromResult(DesktopCapabilityResponse.FromNavigate(new NavigateResult(
+                NavigateDisposition.Completed,
+                new Uri("https://example.com/done"),
+                DesktopPageVersion.Require(9),
+                Ok: true,
+                Title: "Done")));
+        });
+
+        var navigate = await navigateRoute.RouteAsync(
+            Command(BrowserBridgeCommandNames.PageGoto) with
+            {
+                Arguments = JsonSerializer.SerializeToElement(
+                    new { url = "https://example.com/done" },
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(navigate);
+        Assert.True(navigate!.Success);
+        var navValue = navigate.Value!.Value;
+        Assert.True(navValue.GetProperty("ok").GetBoolean());
+        Assert.Equal("https://example.com/done", navValue.GetProperty("url").GetString());
+        Assert.Equal(9, navValue.GetProperty("page").GetProperty("pageVersion").GetInt64());
+
+        var screenshotRoute = new BrowserBridgeExecutorRoute((capability, _, _, _) =>
+        {
+            Assert.Equal(DesktopCapability.BrowserScreenshot, capability.Capability);
+            return Task.FromResult(DesktopCapabilityResponse.FromScreenshot(new BrowserScreenshotResult(
+                new DesktopScreenshotMetadata(
+                    "obs-1", "image/png", 3, 10, 10, 10, 10,
+                    null, null, null, null, null, null, null, null, null,
+                    9, 1, 1, DesktopScreenshotDetail.Low),
+                [new DesktopScreenshotChunk(0, true, [1, 2, 3])])));
+        });
+
+        var screenshot = await screenshotRoute.RouteAsync(
+            Command(BrowserBridgeCommandNames.PageScreenshot) with
+            {
+                Arguments = JsonSerializer.SerializeToElement(
+                    new { expectedPageVersion = 9 },
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(screenshot);
+        Assert.True(screenshot!.Success);
+        Assert.Equal("obs-1", screenshot.Value!.Value.GetProperty("observationId").GetString());
+        Assert.Equal("AQID", screenshot.Value.Value.GetProperty("chunks")[0].GetProperty("base64").GetString());
     }
 
     [Fact]

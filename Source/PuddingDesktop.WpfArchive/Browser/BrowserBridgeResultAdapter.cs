@@ -144,8 +144,7 @@ public static class BrowserBridgeResultAdapter
         };
     }
 
-    public static BrowserSnapshotDescriptor FromSnapshot(DesktopSnapshot snapshot)
-    {
+    public static BrowserSnapshotDescriptor FromSnapshot(DesktopSnapshot snapshot)    {
         ArgumentNullException.ThrowIfNull(snapshot);
         return new BrowserSnapshotDescriptor
         {
@@ -169,6 +168,66 @@ public static class BrowserBridgeResultAdapter
                     Truncated = diff.Truncated,
                 }
                 : null,
+        };
+    }
+
+    public static BrowserNavigationResultDescriptor FromNavigate(NavigateResult result, DesktopPageTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(target);
+        return new BrowserNavigationResultDescriptor
+        {
+            Url = result.CurrentUrl?.AbsoluteUri ?? string.Empty,
+            // 运行时没有等价返回值的动作会留 null：此时只有 Completed 视为成功（不猜 ok）。
+            Ok = result.Ok ?? result.Disposition == NavigateDisposition.Completed,
+            StatusCode = result.StatusCode,
+            ErrorText = result.ErrorText,
+            Page = new BrowserPageDescriptor
+            {
+                // 导航结果契约自身不含目标：由命令 envelope 提供目标，Url/Title/Version 来自结果事实。
+                ContextId = target.ContextId,
+                PageId = target.PageId,
+                Title = result.Title ?? string.Empty,
+                Url = result.CurrentUrl?.AbsoluteUri ?? string.Empty,
+                PageVersion = result.PageVersion.Value,
+            },
+        };
+    }
+
+    public static BrowserScreenshotDescriptor FromScreenshot(BrowserScreenshotResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var metadata = result.Metadata;
+        return new BrowserScreenshotDescriptor
+        {
+            ObservationId = metadata.ObservationId,
+            MimeType = metadata.MimeType,
+            ByteCount = metadata.ByteCount,
+            SourceWidth = metadata.SourceWidth,
+            SourceHeight = metadata.SourceHeight,
+            OutputWidth = metadata.OutputWidth,
+            OutputHeight = metadata.OutputHeight,
+            PageVersion = metadata.PageVersion,
+            Detail = DesktopScreenshotDetailWire.NameOf(metadata.Detail),
+            DeviceScaleFactor = metadata.DeviceScaleFactor,
+            ViewportWidth = metadata.ViewportWidth,
+            ViewportHeight = metadata.ViewportHeight,
+            ScrollX = metadata.ScrollX,
+            ScrollY = metadata.ScrollY,
+            CropX = metadata.CropX,
+            CropY = metadata.CropY,
+            CropWidth = metadata.CropWidth,
+            CropHeight = metadata.CropHeight,
+            DomRevision = metadata.DomRevision,
+            ViewportRevision = metadata.ViewportRevision,
+            Chunks = result.Chunks
+                .Select(chunk => new BrowserScreenshotChunkDescriptor
+                {
+                    Index = chunk.Index,
+                    IsLast = chunk.IsLast,
+                    Base64 = Convert.ToBase64String(chunk.Data),
+                })
+                .ToArray(),
         };
     }
 }
