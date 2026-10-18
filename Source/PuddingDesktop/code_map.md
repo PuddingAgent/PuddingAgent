@@ -21,3 +21,5 @@
  enables the named-pipe channel in both isolated configurations and verifies preflight plus redirected Chinese log decoding in the Debug smoke.
 
 The WPF archive is a reference/test host, not loaded into the WinUI product. Browser driver behavior is shared with `PuddingBrowser.WinUI` through source links.
+
+- `../../TestScripts/build-browser-companion.ps1`: serial Desktop + bundled Core build in a dedicated output directory; records per-file hashes, process identities and protocol revisions in `browser-companion.json`; `-VerifyOnly` validates copied packages, `-AllowDirty` marks development repairs explicitly.

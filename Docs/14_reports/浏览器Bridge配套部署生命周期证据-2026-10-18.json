@@ -1,0 +1,32 @@
+{
+  "success": true,
+  "shellPid": 75784,
+  "corePids": [
+    39584,
+    31100,
+    109212
+  ],
+  "coreExecutablePath": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\browser-companion-b6bd407\\core\\PuddingAgent.exe",
+  "checks": [
+    "startup panel visible with active progress ring before the workbench is ready",
+    "startup panel collapsed after the workbench loaded",
+    "independent Core ready and Web workbench loaded",
+    "close hides to tray while Core lives; window reactivated",
+    "runtime CPU/memory sampled; log viewport adapts in both dimensions",
+    "instance tabs per browser page; Agent target stayed stable across tab switches",
+    "output tab opens a real file; deferred tools report deferred instead of faking execution",
+    "divider drag persisted as a ratio; double-click restored the default split",
+    "narrow window overlays the chat; collapse keeps pages alive",
+    "closing a browser page removes its instance tab",
+    "no business Host loaded in Shell",
+    "restart replaced Core process and reloaded Web",
+    "Core crash leaves Shell alive; manual start recovers Web",
+    "Core stopped while Shell remained available"
+  ],
+  "externalChecks": [
+    "Shell exited",
+    "all Core PIDs exited",
+    "DataRoot lease released",
+    "Core port released"
+  ]
+}

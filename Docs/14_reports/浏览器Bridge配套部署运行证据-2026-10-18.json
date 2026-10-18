@@ -1,0 +1,81 @@
+{
+  "sourceRevision": "b6bd407263b31b7adbf11ed75f469cb73df949d1",
+  "dirty": true,
+  "desktop": {
+    "informationalVersion": "1.0.0+b6bd407263b31b7adbf11ed75f469cb73df949d1",
+    "mvid": "5aa69f21-b5d2-4dd9-99b0-f4b64a260a6a"
+  },
+  "core": {
+    "informationalVersion": "1.0.0",
+    "mvid": "bf6ca8a4-1cdc-4964-93c5-128872d24cb9"
+  },
+  "desktopProtocol": {
+    "informationalVersion": "1.0.0+b6bd407263b31b7adbf11ed75f469cb73df949d1",
+    "mvid": "043a96cd-b474-4f5f-91bc-a58007dc6fdd",
+    "protocolVersion": 3
+  },
+  "coreProtocol": {
+    "informationalVersion": "1.0.0+b6bd407263b31b7adbf11ed75f469cb73df949d1",
+    "mvid": "a880ccc2-25b9-40a4-8932-c107c0d29cb2",
+    "protocolVersion": 3
+  },
+  "loadedModules": [
+    {
+      "pid": 74056,
+      "module": "PuddingDesktop.dll",
+      "relativePath": "PuddingDesktop.dll",
+      "sha256": "FB6F4F3D48FA9F1B4F00F53D91EF8675E092FE65D5307C0F2644CA728D6D21E5",
+      "matchesManifest": true
+    },
+    {
+      "pid": 74056,
+      "module": "Pudding.Contracts.dll",
+      "relativePath": "Pudding.Contracts.dll",
+      "sha256": "3EADADE43C57C9AEE458C1108ADB2964EA2956E073BFC18943382D01CEEA4431",
+      "matchesManifest": true
+    },
+    {
+      "pid": 74056,
+      "module": "PuddingBrowser.Protocol.dll",
+      "relativePath": "PuddingBrowser.Protocol.dll",
+      "sha256": "0658FEF129F01DAB7C80CB9FCFF62E100CB4C32C03F379E17C02F9B18D8C5DD6",
+      "matchesManifest": true
+    },
+    {
+      "pid": 64828,
+      "module": "PuddingAgent.dll",
+      "relativePath": "core/PuddingAgent.dll",
+      "sha256": "F93AF2496A7F729946BE9963E2DA5A2A6A0AA28EAB8F2071D1EBA81F8C483C9E",
+      "matchesManifest": true
+    },
+    {
+      "pid": 64828,
+      "module": "PuddingHost.dll",
+      "relativePath": "core/PuddingHost.dll",
+      "sha256": "123CE338CF3D04DACC903CF7316C55D66BCCA2B86BB1BEF2C353B0EBFCB876A9",
+      "matchesManifest": true
+    },
+    {
+      "pid": 64828,
+      "module": "Pudding.Contracts.dll",
+      "relativePath": "core/Pudding.Contracts.dll",
+      "sha256": "8FFE4EFA057DE06C15BA69A3B7FECEBEE5FCDB2733A5A8200C7C328785639D47",
+      "matchesManifest": true
+    },
+    {
+      "pid": 64828,
+      "module": "PuddingBrowser.Protocol.dll",
+      "relativePath": "core/PuddingBrowser.Protocol.dll",
+      "sha256": "19762D9831A0A50CF2CB0D9C76F8AC6617FB80389E7F34C5F23E48F49420780D",
+      "matchesManifest": true
+    }
+  ],
+  "health": "ready",
+  "deployment": {
+    "desktopPid": 74056,
+    "desktopPath": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingDesktop.exe",
+    "corePath": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\core\\PuddingAgent.exe",
+    "backup": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\browser-before-b6bd407",
+    "dataRoot": "D:\\Data"
+  }
+}
