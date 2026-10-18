@@ -116,5 +116,10 @@ public sealed class ConversationOpenApiController(
         }
     }
 
-    private string ResolveOwnerUserId() => User.Identity?.Name ?? "single-user";
+    private string ResolveOwnerUserId() =>
+        // 统一使用稳定用户 ID（sub/nameidentifier）；Identity.Name 是显示名
+        // （如 Administrator），与 SessionRecord.OwnerUserId（admin/single-user）不是同一口径。
+        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? User.Identity?.Name
+        ?? "single-user";
 }

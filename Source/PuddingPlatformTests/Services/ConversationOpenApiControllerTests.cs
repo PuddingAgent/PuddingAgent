@@ -95,6 +95,22 @@ public sealed class ConversationOpenApiControllerTests
     }
 
     [TestMethod]
+    public async Task OpenAgentConversation_UsesNameIdentifierInsteadOfDisplayName()
+    {
+        using var env = new ControllerEnv();
+        await env.SeedConversationAsync(messageCount: 1, checkpoint: 1, head: 1);
+
+        // JWT 的 Name 是显示名（Administrator）；会话 OwnerUserId 是 admin/single-user。
+        // 控制器必须用 nameidentifier=admin 解析，否则统一打开会 404。
+        var controller = env.NewController(
+            "Administrator", nameIdentifier: "admin");
+        var result = await controller.OpenAgentConversation(
+            "ws", "agent-1", messageLimit: null, CancellationToken.None);
+
+        Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+    }
+
+    [TestMethod]
     public async Task GetMessageContent_ReturnsBoundedContentAnd404ForMissingMessage()
     {
         using var env = new ControllerEnv();
@@ -206,7 +222,8 @@ public sealed class ConversationOpenApiControllerTests
 
         public ConversationOpenApiController NewController(
             string owner,
-            bool useKnownAgent = true)
+            bool useKnownAgent = true,
+            string? nameIdentifier = null)
         {
             var catalog = useKnownAgent
                 ? _catalog
@@ -218,8 +235,10 @@ public sealed class ConversationOpenApiControllerTests
                 NullLogger<AgentMainSessionResolver>.Instance);
             var controller = new ConversationOpenApiController(resolver, QueryService);
             var context = new DefaultHttpContext();
-            context.User = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim(ClaimTypes.Name, owner)], "Test"));
+            var claims = new List<Claim> { new(ClaimTypes.Name, owner) };
+            if (!string.IsNullOrWhiteSpace(nameIdentifier))
+                claims.Add(new Claim(ClaimTypes.NameIdentifier, nameIdentifier));
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
             controller.ControllerContext = new ControllerContext { HttpContext = context };
             return controller;
         }

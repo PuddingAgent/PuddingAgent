@@ -64,5 +64,8 @@ public sealed class AgentChatApiController(IAgentRunProjectionService projection
     }
 
     private string ResolveOwnerUserId() =>
-        User.Identity?.Name ?? "single-user";
+        // 稳定用户 ID 与 SessionRecord.OwnerUserId 同口径；Identity.Name 是显示名。
+        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? User.Identity?.Name
+        ?? "single-user";
 }
