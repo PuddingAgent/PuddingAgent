@@ -166,4 +166,21 @@ public sealed class AgentTargetAdmissionTests
         Assert.False(response.IsFailure, response.Error?.Message);
         Assert.Equal(1, harness.Surface.SnapshotCount);
     }
+
+    [Fact]
+    public async Task SessionAdmitted_DoesNotWeakenContextTrust()
+    {
+        // 会话豁免只免掉「页级目标」这一层，**不**放宽 context 信任级：
+        // 普通网页（Untrusted）即使在桥路径上也不允许脚本注入类能力（snapshot 会遍历 DOM）。
+        var harness = ServiceHarness.Create(allowed: BrowserCapabilities, hasThreadAccess: true);
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.BrowserSnapshot,
+            SnapshotRequest(ServiceHarness.WebPage, DesktopPageVersion.Require(5)),
+            harness.Context() with { SessionPermitMarker = "session-permit" });
+
+        Assert.True(response.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.Unauthorized, response.Error!.Code);
+        Assert.Equal(0, harness.Surface.SnapshotCount);
+    }
 }
