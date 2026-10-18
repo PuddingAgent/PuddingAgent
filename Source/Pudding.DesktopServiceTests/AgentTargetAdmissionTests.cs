@@ -146,4 +146,24 @@ public sealed class AgentTargetAdmissionTests
         Assert.False(allowed.IsFailure);
         Assert.Equal(1, harness.Surface.JavascriptCount);
     }
+
+    [Fact]
+    public async Task SessionAdmitted_CallSkipsTheLegacyPageGate()
+    {
+        // V1（用户裁定 2026-10-18）：浏览器只服务 Agent，不再要求"用户把页交出来"。
+        // 会话权威（Bridge 派发器）已经完成目标绑定与复检时，执行器**不得**再用旧授权模型的
+        // 「必须是用户选定的目标页」二次拒绝 —— 两处都判会让隐式绑定形同虚设：
+        // 隐式绑定只写会话，不写桌面注册表的 IsAgentTarget 标志。
+        var harness = ServiceHarness.Create(allowed: BrowserCapabilities, hasThreadAccess: true);
+        var sibling = new DesktopPageTarget(ServiceHarness.AgentPage.ContextId, "page-2");
+        harness.Targets.RegisterPage(sibling, DesktopPageVersion.Require(1), DesktopPageReadiness.Interactive);
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.BrowserSnapshot,
+            SnapshotRequest(sibling, DesktopPageVersion.Require(1)),
+            harness.Context() with { SessionPermitMarker = "session-permit" });
+
+        Assert.False(response.IsFailure, response.Error?.Message);
+        Assert.Equal(1, harness.Surface.SnapshotCount);
+    }
 }

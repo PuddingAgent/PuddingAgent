@@ -958,6 +958,14 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             authorizationOperation = mappedOperation;
         }
 
+        // I2-c D2：该调用已由 Bridge 派发器用**会话权威**完成准入/复检（宿主内部标记，不上线缆）。
+        // 执行器不得再用旧 authority 的 grant/lease 重复裁决（否则写串行化会有第二套来源）；
+        // 页面存在/信任级/自动化状态/版本检查仍在本方法后续步骤执行。
+        // 提到闸门之外：页级「必须由用户指定为目标页」也属**旧授权模型**（审计 2026-10-08 结论 #2），
+        // 会话权威已用目标绑定（v1 隐式绑定）表达了同一事实。两处都判会让 V1「浏览器只服务 Agent」成为空话：
+        // 隐式绑定只写会话，**不**写桌面注册表的 IsAgentTarget 标志。
+        var sessionAdmitted = !string.IsNullOrWhiteSpace(context.SessionPermitMarker);
+
         if (admitAuthority
             && _connectionGeneration is { } generation
             && authorizationOperation is { } automationOperation)
@@ -966,11 +974,6 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             {
                 return DesktopCapabilityError.Unauthorized(callerReason);
             }
-
-            // I2-c D2：该调用已由 Bridge 派发器用**会话权威**完成准入/复检（宿主内部标记，不上线缆）。
-            // 执行器不得再用旧 authority 的 grant/lease 重复裁决（否则写串行化会有第二套来源）；
-            // 页面存在/信任级/自动化状态/版本检查仍在本方法后续步骤执行。
-            var sessionAdmitted = !string.IsNullOrWhiteSpace(context.SessionPermitMarker);
 
             if (!sessionAdmitted)
             {
@@ -1049,7 +1052,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         // page 级闸门（审计 2026-10-08 结论 #2 / 设计 §3.2）：可信级别是 **context 级**，
         // 不能把整个 AgentAuthorized 上下文当作「里面所有页面都已获授权」——
         // 否则同上下文的非目标页同样能通过准入，UI 上的「Agent 目标」就只是暗示。
-        if (DesktopCapabilityPolicy.RequiresAgentTarget(capability)
+        if (!sessionAdmitted
+            && DesktopCapabilityPolicy.RequiresAgentTarget(capability)
             && pageState is { } gated
             && !gated.IsAgentTarget)
         {
