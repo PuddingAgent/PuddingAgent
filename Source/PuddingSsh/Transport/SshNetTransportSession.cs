@@ -76,12 +76,12 @@ internal sealed class SshNetTransportSession : ISshTransportSession, ISshTranspo
     /// <summary>关闭状态机实际消费的预算（由**首次**调用者决定）；用于验证预算合同真的传进来了。</summary>
     internal TimeSpan CloseBudget => _closeBudget;
 
-    /// <summary>非阻塞中止：登记请求并把关闭交给 <see cref="EnsureCloseAsync"/> 的单次状态机。</summary>
-    public void RequestAbort()
-    {
-        Volatile.Write(ref _abortRequested, 1);
-        _ = EnsureCloseAsync(SshOperationLimits.CleanupGrace);
-    }
+    /// <summary>
+    /// 非阻塞中止：**只登记意图**，不启动关闭状态机。
+    /// 关闭预算由带预算的 <see cref="DisposeAsync(TimeSpan)"/> 决定（首次调用者定预算）；
+    /// 否则 RequestAbort 会先用默认 2 秒"抢跑"，把协调器收窄的清理宽限覆盖掉（F5）。
+    /// </summary>
+    public void RequestAbort() => Volatile.Write(ref _abortRequested, 1);
 
     public async Task<SshExecuteResult> ExecuteAsync(
         string command,
