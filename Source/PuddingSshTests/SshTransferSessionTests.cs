@@ -60,15 +60,18 @@ public sealed class SshTransferSessionTests
         // 带预算释放必须**先等飞行中的操作观察中止并删掉自己的目标**，再关通道；
         // 否则通道一关，清理路径就断了，服务端留下部分写入的目标。
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var channel = new FakeSftpChannel
+        var channel = new FakeSftpChannel();
+        channel.OnWrite = (path, _) =>
         {
-            OnBeforeUploadCommit = () =>
+            if (path != "/srv/upload/target.bin")
             {
-                started.TrySetResult();
-                // 模拟"仍在写入"：等到被中止为止（不提交）。
-                Thread.Sleep(120);
-                throw new OperationCanceledException("aborted while writing");
-            },
+                return;
+            }
+
+            started.TrySetResult();
+            // 模拟"仍在写入"：等到被中止为止。
+            Thread.Sleep(120);
+            throw new OperationCanceledException("aborted while writing");
         };
         var session = Session(channel);
         var local = LocalFile("big.bin", new string('z', 4096));
@@ -158,7 +161,7 @@ public sealed class SshTransferSessionTests
 
         Assert.AreEqual(SshErrorCodes.RemotePathExists, outcome.ErrorCode);
         Assert.AreEqual("original", channel.ContentOf("/srv/upload/target.bin"));
-        Assert.AreEqual(0, channel.UploadCount, "存在性拒绝发生在写入之前");
+        CollectionAssert.DoesNotContain(channel.UploadedPaths, "/srv/upload/target.bin", "存在性拒绝发生在写入之前");
     }
 
     [TestMethod]
@@ -172,7 +175,7 @@ public sealed class SshTransferSessionTests
         Assert.AreEqual(SshErrorCodes.TransferUnsupported, outcome.ErrorCode);
         StringAssert.Contains(outcome.Diagnostic!, "exclusive_create=False");
         Assert.IsNull(channel.ContentOf("/srv/upload/target.bin"), "不支持时绝不能退化到竞态写入");
-        Assert.AreEqual(0, channel.UploadCount);
+        CollectionAssert.DoesNotContain(channel.UploadedPaths, "/srv/upload/target.bin");
     }
 
     // ---------- 上传：overwrite = Overwrite（临时文件 + 原子替换） ----------
@@ -211,7 +214,7 @@ public sealed class SshTransferSessionTests
 
         Assert.AreEqual(SshErrorCodes.TransferUnsupported, outcome.ErrorCode);
         Assert.AreEqual("original", channel.ContentOf("/srv/upload/target.bin"), "不支持时不得用竞态实现覆盖");
-        Assert.AreEqual(0, channel.UploadCount);
+        CollectionAssert.DoesNotContain(channel.UploadedPaths, "/srv/upload/target.bin");
     }
 
     // ---------- 上传：限额、取消、清理失败 ----------
@@ -236,7 +239,14 @@ public sealed class SshTransferSessionTests
     public async Task Upload_Cancelled_DeletesTheReservedTarget()
     {
         using var cts = new CancellationTokenSource();
-        var channel = new FakeSftpChannel { OnBeforeUploadCommit = cts.Cancel };
+        var channel = new FakeSftpChannel();
+        channel.OnWrite = (path, _) =>
+        {
+            if (path == "/srv/upload/target.bin")
+            {
+                cts.Cancel();
+            }
+        };
         var local = LocalFile("a.bin", "hello");
 
         var outcome = await Session(channel).UploadAsync(UploadPlan(local), TimeSpan.FromSeconds(5), cts.Token);
@@ -251,9 +261,14 @@ public sealed class SshTransferSessionTests
     public async Task Upload_CleanupFailure_ReportsTemporaryLeftBehind()
     {
         using var cts = new CancellationTokenSource();
-        var channel = new FakeSftpChannel { OnBeforeUploadCommit = cts.Cancel, FailDelete = true }
-            // 覆盖发布路径：临时文件已经落地，取消后清理它时服务端拒绝删除。
-            .Seed("/srv/upload/.target.bin.pudding-tmp-test", "partial");
+        var channel = new FakeSftpChannel { FailDelete = true };
+        channel.OnWrite = (path, _) =>
+        {
+            if (path == "/srv/upload/.target.bin.pudding-tmp-test")
+            {
+                cts.Cancel();
+            }
+        };
         var local = LocalFile("a.bin", "hello");
 
         var outcome = await Session(channel).UploadAsync(

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics;
 using PuddingSsh.Contracts;
 using PuddingSsh.Diagnostics;
@@ -204,7 +205,6 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
 
     private async Task<SshTransferOutcome> UploadCoreAsync(SshUploadPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
     {
-
         var stopwatch = Stopwatch.StartNew();
         long transferred = 0;
 
@@ -220,7 +220,7 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
 
         if (plan.Overwrite == SshOverwritePolicy.Fail && _channel.Exists(plan.RemotePath))
         {
-            // 仅为**友好错误**；原子保证来自实测 rename 能力，不依赖这次检查。
+            // 仅为**友好错误**；真正的原子保证来自排他创建/posix-rename。
             return SshTransferOutcome.Failed(SshErrorCodes.RemotePathExists, 0, "远端目标已存在且未允许覆盖。");
         }
 
@@ -236,7 +236,7 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
         }
 
         // 两种发布语义（都由**实测能力**支撑，不用竞态冒充）：
-        //   Fail      → 直接对目标做**排他创建**（原子占位；失败/取消时删除我们创建的目标）；
+        //   Fail      → 直接对目标做**排他创建**（成功即表示本次持有该文件；失败/取消时只回滚删除本次创建的）；
         //   Overwrite → 先写同目录唯一临时文件，再用 posix-rename 原子替换（保留旧目标直到最后一刻）。
         var uploadTarget = publish.Value == UploadPublishMode.ExclusiveCreateTarget ? plan.RemotePath : plan.RemoteTempPath;
 
@@ -244,43 +244,112 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
         linked.CancelAfter(timeout);
         var token = linked.Token;
 
+        // 本地源先打开：打不开就**不会**创建任何远端文件（所有权事实从零开始）。
+        FileStream source;
         try
         {
-            using var source = new FileStream(plan.LocalPath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize, useAsync: true);
-            await _channel.UploadAsync(source, uploadTarget, plan.MaxBytes, token).ConfigureAwait(false);
-            transferred = source.Length;
-
-            if (AbortRequested)
-            {
-                var abandoned = AbandonUpload(plan, publish.Value, out var leftBehind, out var detail);
-                return SshTransferOutcome.Cancelled(transferred, "本端中止：" + abandoned + detail, leftBehind, leftBehind ? uploadTarget : null);
-            }
-
-            if (publish.Value == UploadPublishMode.TempThenAtomicReplace)
-            {
-                Publish(plan.RemoteTempPath, plan.RemotePath);
-            }
-
-            return SshTransferOutcome.Completed(transferred);
-        }
-        catch (OperationCanceledException)
-        {
-            var abandoned = AbandonUpload(plan, publish.Value, out var leftBehind, out var detail);
-            return SshTransferOutcome.Cancelled(transferred, "上传被取消/到期：" + abandoned + detail, leftBehind, leftBehind ? uploadTarget : null);
+            source = new FileStream(plan.LocalPath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize, useAsync: true);
         }
         catch (Exception ex)
         {
-            var mapped = MapUploadFailure(ex, transferred, stopwatch);
-            var abandoned = AbandonUpload(plan, publish.Value, out var tempLeft, out var cleanupDetail);
-            return mapped with
+            return SshTransferOutcome.Failed(
+                SshErrorCodes.TransferFailed,
+                0,
+                "本地源文件无法读取（exception=" + ex.GetType().Name + "）；未创建远端文件、未执行回滚删除。");
+        }
+
+        using (source)
+        {
+            Stream? target = null;
+            var createdByUs = false;
+            try
             {
-                TemporaryLeftBehind = tempLeft,
-                TemporaryPath = tempLeft ? uploadTarget : null,
-                Diagnostic = mapped.Diagnostic + "；" + abandoned + cleanupDetail,
-            };
+                // 排他创建：目标已存在时创建层抛 SshSftpTargetExistsException，且**没有**创建文件。
+                try
+                {
+                    target = _channel.OpenWriteNew(uploadTarget);
+                    createdByUs = true;
+                }
+                catch (SshSftpTargetExistsException)
+                {
+                    return SshTransferOutcome.Failed(
+                        SshErrorCodes.RemotePathExists,
+                        0,
+                        "目标在存在性检查后被其他客户端创建；本次未创建也未写入任何文件，未执行回滚删除。");
+                }
+
+                transferred = await CopyAsync(source, target, plan.MaxBytes, token).ConfigureAwait(false);
+                await target.FlushAsync(token).ConfigureAwait(false);
+
+                if (AbortRequested)
+                {
+                    var abandoned = AbandonUpload(plan, publish.Value, createdByUs, out var leftBehind, out var detail);
+                    return SshTransferOutcome.Cancelled(transferred, "本端中止：" + abandoned + detail, leftBehind, leftBehind ? uploadTarget : null);
+                }
+
+                if (publish.Value == UploadPublishMode.TempThenAtomicReplace)
+                {
+                    Publish(plan.RemoteTempPath, plan.RemotePath);
+                }
+
+                return SshTransferOutcome.Completed(transferred);
+            }
+            catch (OperationCanceledException)
+            {
+                var abandoned = AbandonUpload(plan, publish.Value, createdByUs, out var leftBehind, out var detail);
+                return SshTransferOutcome.Cancelled(transferred, "上传被取消/到期：" + abandoned + detail, leftBehind, leftBehind ? uploadTarget : null);
+            }
+            catch (Exception ex)
+            {
+                var mapped = MapUploadFailure(ex, transferred, stopwatch);
+                var abandoned = AbandonUpload(plan, publish.Value, createdByUs, out var tempLeft, out var cleanupDetail);
+                return mapped with
+                {
+                    TemporaryLeftBehind = tempLeft,
+                    TemporaryPath = tempLeft ? uploadTarget : null,
+                    Diagnostic = mapped.Diagnostic + "；" + abandoned + cleanupDetail,
+                };
+            }
+            finally
+            {
+                target?.Dispose();
+            }
         }
     }
 
+    /// <summary>
+    /// 会话内复制循环：**逐次检查累计字节**（STAT 只是快速拒绝；远端文件可能在 STAT 后增长）。
+    /// 超限立即中止，由调用方的清理路径删除本次文件。
+    /// </summary>
+    private static async Task<long> CopyAsync(Stream source, Stream destination, long maxBytes, CancellationToken cancellationToken)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(CopyBufferSize);
+        long total = 0;
+        try
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var read = await source.ReadAsync(buffer.AsMemory(0, CopyBufferSize), cancellationToken).ConfigureAwait(false);
+                if (read <= 0)
+                {
+                    return total;
+                }
+
+                total += read;
+                if (total > maxBytes)
+                {
+                    throw new SshTransferLimitExceededException(maxBytes, total);
+                }
+
+                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
     // ---------- 下载 ----------
 
     public async Task<SshTransferOutcome> DownloadAsync(SshDownloadPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
@@ -342,10 +411,10 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
         try
         {
             using (var destination = new FileStream(plan.LocalTempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, CopyBufferSize, useAsync: true))
+            using (var remote = _channel.OpenRead(plan.RemotePath))
             {
-                await _channel.DownloadAsync(plan.RemotePath, destination, token).ConfigureAwait(false);
+                transferred = await CopyAsync(remote, destination, plan.MaxBytes, token).ConfigureAwait(false);
                 await destination.FlushAsync(token).ConfigureAwait(false);
-                transferred = destination.Length;
             }
 
             if (AbortRequested)
@@ -431,16 +500,26 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
         _ => null,
     };
 
-    /// <summary>失败/取消后放弃本次上传：删除**我们创建的东西**并如实报告是否残留。</summary>
-    private string AbandonUpload(SshUploadPlan plan, UploadPublishMode mode, out bool leftBehind, out string detail)
+    /// <summary>
+    /// 失败/取消后放弃本次上传：**只删除本次成功创建的文件**（所有权事实来自创建层），
+    /// 并如实报告是否残留。目标不是本次创建的 ⇒ 绝不回滚删除（否则会删掉他人数据）。
+    /// </summary>
+    private string AbandonUpload(SshUploadPlan plan, UploadPublishMode mode, bool createdByUs, out bool leftBehind, out string detail)
     {
+        if (!createdByUs)
+        {
+            leftBehind = false;
+            detail = string.Empty;
+            return "本次未创建远端文件：未执行任何回滚删除（避免删除他人数据）。";
+        }
+
         if (mode == UploadPublishMode.TempThenAtomicReplace)
         {
             CleanupRemoteTemp(plan.RemoteTempPath, out leftBehind, out detail);
             return "已删除本次临时文件（原目标未被改动）。";
         }
 
-        // 排他创建路径：目标就是我们创建的，删除它（绝不保留部分写入的目标）。
+        // 排他创建路径：文件就是我们创建的，删除它（绝不保留部分写入的目标）。
         CleanupRemoteTemp(plan.RemotePath, out leftBehind, out detail);
         return "已删除本次未完成的目标文件。";
     }
@@ -526,6 +605,10 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
 
     private static SshTransferOutcome MapDownloadFailure(Exception ex, long transferred) => ex switch
     {
+        SshTransferLimitExceededException => SshTransferOutcome.Failed(
+            SshErrorCodes.TransferTooLarge,
+            transferred,
+            $"下载超过本次上限：{ex.Message}"),
         SshComponentException component => SshTransferOutcome.Failed(component.ErrorCode, transferred, component.Message),
         IOException => SshTransferOutcome.Failed(
             SshErrorCodes.TransferFailed,

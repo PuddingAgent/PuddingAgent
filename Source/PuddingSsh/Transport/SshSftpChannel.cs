@@ -1,7 +1,7 @@
-using System.Buffers;
 using PuddingSsh.Contracts;
 using PuddingSsh.Transport;
 using Renci.SshNet;
+using Renci.SshNet.Common;
 
 namespace PuddingSsh.Transport;
 
@@ -61,63 +61,16 @@ internal sealed class SshSftpChannel : ISshSftpChannel
 
     public Stream OpenRead(string remotePath) => _client.OpenRead(remotePath);
 
-    public Stream OpenWriteNew(string remotePath) => _client.Open(remotePath, FileMode.CreateNew);
-
-    public async Task UploadAsync(Stream source, string remotePath, long maxBytes, CancellationToken cancellationToken)
+    public Stream OpenWriteNew(string remotePath)
     {
-        using var target = _client.Open(remotePath, FileMode.CreateNew);
-        var buffer = ArrayPool<byte>.Shared.Rent(CopyBufferSize);
-        long total = 0;
         try
         {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var read = await source.ReadAsync(buffer.AsMemory(0, CopyBufferSize), cancellationToken).ConfigureAwait(false);
-                if (read <= 0)
-                {
-                    break;
-                }
-
-                total += read;
-                if (total > maxBytes)
-                {
-                    // 超限立即中止（不把整文件写完再判断）。
-                    throw new SshTransferLimitExceededException(maxBytes, total);
-                }
-
-                await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-            }
-
-            await target.FlushAsync(cancellationToken).ConfigureAwait(false);
+            return _client.Open(remotePath, FileMode.CreateNew);
         }
-        finally
+        catch (Exception ex) when (ex is SftpPathNotFoundException or SshException)
         {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
-    }
-
-    public async Task DownloadAsync(string remotePath, Stream destination, CancellationToken cancellationToken)
-    {
-        using var source = _client.OpenRead(remotePath);
-        var buffer = ArrayPool<byte>.Shared.Rent(CopyBufferSize);
-        try
-        {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var read = await source.ReadAsync(buffer.AsMemory(0, CopyBufferSize), cancellationToken).ConfigureAwait(false);
-                if (read <= 0)
-                {
-                    break;
-                }
-
-                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
+            // 排他创建被拒：没有创建任何东西 ⇒ 上层不得回滚删除。
+            throw new SshSftpTargetExistsException(remotePath);
         }
     }
 

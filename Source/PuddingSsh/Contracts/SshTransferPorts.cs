@@ -81,6 +81,15 @@ public interface ISshTransferFactory
 }
 
 /// <summary>
+/// 排他创建被服务端拒绝（目标已存在）：创建层**没有**创建文件，因此调用方不得回滚删除。
+/// </summary>
+public sealed class SshSftpTargetExistsException(string remotePath)
+    : Exception($"exclusive create rejected: {remotePath}")
+{
+    public string RemotePath { get; } = remotePath;
+}
+
+/// <summary>
 /// SFTP 通道（切片 B）：把用到的 SFTP 原语收成一个小接口，
 /// 使「发布语义/能力判定/临时文件清理」这些逻辑可以**确定性单测**；
 /// 真实实现在 <c>Transport/</c>，由探针在真实 OpenSSH 上验证。
@@ -101,13 +110,11 @@ public interface ISshSftpChannel : IDisposable
 
     Stream OpenRead(string remotePath);
 
+    /// <summary>
+    /// 对目标做**排他创建**并返回可写流；目标已存在时抛 <see cref="SshSftpTargetExistsException"/>
+    /// （此时**没有**创建任何东西 ⇒ 调用方不得回滚删除）。创建成功即表示本次持有该文件。
+    /// </summary>
     Stream OpenWriteNew(string remotePath);
-
-    /// <summary>把本地流上传到远端新文件（排他创建）。</summary>
-    Task UploadAsync(Stream source, string remotePath, long maxBytes, CancellationToken cancellationToken);
-
-    /// <summary>把远端文件下载到本地流。</summary>
-    Task DownloadAsync(string remotePath, Stream destination, CancellationToken cancellationToken);
 
     /// <summary>标准 SFTP RENAME（不覆盖语义需实测；OpenSSH 实测为覆盖）。</summary>
     void Rename(string oldPath, string newPath);

@@ -6,7 +6,8 @@ namespace PuddingSshTests;
 
 /// <summary>
 /// 内存版 SFTP 服务端（切片 B 门禁）：可以精确编排「原子替换是否支持」「标准 rename 是否覆盖」
-/// 「排他创建是否支持」「realpath 指到哪里」「删除是否失败」，从而确定性覆盖发布语义与清理路径。
+/// 「排他创建是否支持/是否被竞争对手抢先」「realpath 指到哪里」「删除是否失败」「STAT 后远端增长」，
+/// 从而确定性覆盖发布语义、所有权回滚与清理路径。
 /// </summary>
 internal sealed class FakeSftpChannel : ISshSftpChannel
 {
@@ -18,7 +19,7 @@ internal sealed class FakeSftpChannel : ISshSftpChannel
     /// <summary>标准 SFTP RENAME 是否覆盖已有目标（OpenSSH 实测为 true）。</summary>
     public bool StandardRenameOverwrites { get; set; } = true;
 
-    /// <summary>是否支持排他创建（SSH_FXF_EXCL）。</summary>
+    /// <summary>是否支持排他创建（SSH_FXF_EXCL）；关闭时表现为普通覆盖创建。</summary>
     public bool SupportsExclusiveCreate { get; set; } = true;
 
     /// <summary>realpath 结果覆盖（用于模拟符号链接逃逸）。</summary>
@@ -27,8 +28,17 @@ internal sealed class FakeSftpChannel : ISshSftpChannel
     /// <summary>删除是否失败（用于验证「清理失败必须明确报告残留」）。</summary>
     public bool FailDelete { get; set; }
 
-    /// <summary>取消钩子：在把本地内容写进目标的过程中触发。</summary>
-    public Action? OnBeforeUploadCommit { get; set; }
+    /// <summary>排他创建**之前**的钩子（模拟竞争对手抢先创建目标）。</summary>
+    public Action<string>? OnBeforeCreateNew { get; set; }
+
+    /// <summary>自定义只读流（模拟 STAT 之后远端文件增长）。</summary>
+    public Func<string, Stream>? OnOpenRead { get; set; }
+
+    /// <summary>每次写入后的钩子 (targetPath, totalBytesWritten)；可在写入中途取消/抛错。</summary>
+    public Action<string, long>? OnWrite { get; set; }
+
+    /// <summary>模拟"创建可能已发生但调用失败"：先落地文件再抛错（所有权不可证明）；只对指定路径生效。</summary>
+    public string? FailAfterCreatePath { get; set; }
 
     public int UploadCount { get; private set; }
 
@@ -59,11 +69,6 @@ internal sealed class FakeSftpChannel : ISshSftpChannel
 
     public byte[]? BytesOf(string path) => _files.TryGetValue(path, out var bytes) ? bytes : null;
 
-    private void EnsureNotDisposed()
-    {
-        ObjectDisposedException.ThrowIf(Disposed, this);
-    }
-
     public bool Exists(string remotePath)
     {
         EnsureNotDisposed();
@@ -76,69 +81,35 @@ internal sealed class FakeSftpChannel : ISshSftpChannel
 
     public string GetRealDirectory(string remotePath) => RealPathOverride ?? remotePath;
 
-    public Stream OpenRead(string remotePath) => new MemoryStream(_files[remotePath], writable: false);
+    public Stream OpenRead(string remotePath) =>
+        OnOpenRead is { } factory ? factory(remotePath) : new MemoryStream(_files[remotePath], writable: false);
 
     public Stream OpenWriteNew(string remotePath)
     {
+        EnsureNotDisposed();
+        OnBeforeCreateNew?.Invoke(remotePath);
+
         if (_files.ContainsKey(remotePath) && SupportsExclusiveCreate)
         {
-            throw new IOException("exclusive create rejected: file exists");
+            // 排他创建被拒绝：没有创建/写入任何东西 ⇒ 上层不得回滚删除。
+            throw new SshSftpTargetExistsException(remotePath);
         }
 
-        return new CommittingStream(bytes => _files[remotePath] = bytes);
-    }
-
-    public async Task UploadAsync(Stream source, string remotePath, long maxBytes, CancellationToken cancellationToken)
-    {
-        EnsureNotDisposed();
         UploadCount++;
         UploadedPaths.Add(remotePath);
-
-        // 真实服务端语义：排他创建**立刻落地**，中断时服务器上会留下**部分内容**，
-        // 必须由调用方清理（这样"取消后是否清理"才是可被门禁检出的行为）。
         _files[remotePath] = [];
-        using var buffer = new MemoryStream();
-        var chunk = new byte[4096];
-        try
+        if (FailAfterCreatePath is { } failPath && string.Equals(failPath, remotePath, StringComparison.Ordinal))
         {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var read = await source.ReadAsync(chunk.AsMemory(), cancellationToken).ConfigureAwait(false);
-                if (read <= 0)
-                {
-                    break;
-                }
-
-                if (buffer.Length + read > maxBytes)
-                {
-                    throw new SshTransferLimitExceededException(maxBytes, buffer.Length + read);
-                }
-
-                buffer.Write(chunk, 0, read);
-                _files[remotePath] = buffer.ToArray();
-            }
-
-            OnBeforeUploadCommit?.Invoke();
-            cancellationToken.ThrowIfCancellationRequested();
-            _files[remotePath] = buffer.ToArray();
+            // 服务端/库在"创建已落地"之后才报错：本次无法证明所有权 ⇒ 上层不得回滚删除。
+            throw new IOException("create ack lost after file was created");
         }
-        catch (Exception)
-        {
-            // 部分内容留在"服务器"上；调用方负责删除。
-            _files[remotePath] = buffer.ToArray();
-            throw;
-        }
-    }
 
-    public async Task DownloadAsync(string remotePath, Stream destination, CancellationToken cancellationToken)
-    {
-        var bytes = _files[remotePath];
-        await destination.WriteAsync(bytes.AsMemory(), cancellationToken).ConfigureAwait(false);
+        return new WriteThroughStream(this, remotePath);
     }
 
     public void Rename(string oldPath, string newPath)
     {
+        EnsureNotDisposed();
         RenameCount++;
         if (_files.ContainsKey(newPath) && !StandardRenameOverwrites)
         {
@@ -151,6 +122,7 @@ internal sealed class FakeSftpChannel : ISshSftpChannel
 
     public void RenamePosix(string oldPath, string newPath)
     {
+        EnsureNotDisposed();
         PosixRenameCount++;
         if (!SupportsAtomicReplace)
         {
@@ -176,17 +148,64 @@ internal sealed class FakeSftpChannel : ISshSftpChannel
 
     public void Dispose() => Disposed = true;
 
-    /// <summary>只在正常结束时提交字节的流：取消/异常路径不会留下部分内容。</summary>
-    private sealed class CommittingStream(Action<byte[]> commit) : MemoryStream
+    private void EnsureNotDisposed() => ObjectDisposedException.ThrowIf(Disposed, this);
+
+    private void CommitWrite(string path, byte[] content) => _files[path] = content;
+
+    /// <summary>写入即落地：模拟真实服务端在中断时会留下**部分内容**。</summary>
+    private sealed class WriteThroughStream(FakeSftpChannel channel, string path) : Stream
     {
-        private bool _committed;
+        private readonly MemoryStream _buffer = new();
+        private bool _disposed;
+
+        public override bool CanRead => false;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => true;
+
+        public override long Length => _buffer.Length;
+
+        public override long Position { get => _buffer.Position; set => throw new NotSupportedException(); }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            _buffer.Write(buffer, offset, count);
+            channel.CommitWrite(path, _buffer.ToArray());
+            channel.OnWrite?.Invoke(path, _buffer.Length);
+        }
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            Write(buffer, offset, count);
+            return Task.CompletedTask;
+        }
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            _buffer.Write(buffer.Span);
+            channel.CommitWrite(path, _buffer.ToArray());
+            channel.OnWrite?.Invoke(path, _buffer.Length);
+            return ValueTask.CompletedTask;
+        }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && !_committed)
+            if (disposing && !_disposed)
             {
-                _committed = true;
-                commit(ToArray());
+                _disposed = true;
+                // 不在这里重新提交：写入已逐次落地；否则清理删除后会被"复活"。
+                _buffer.Dispose();
             }
 
             base.Dispose(disposing);

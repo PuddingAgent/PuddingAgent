@@ -49,7 +49,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Diagnostics/SshOutcomePolicy.cs` | 退出证据×输出完整性的纯判定（ADR-096 D4） | `SshOutcomePolicy.Decide`、`SshOutputIncompleteReasons` | 只有「exit=0 + 两条流读完 + 无执行失败」才是 `Completed`；信号结束/无退出证据/输出不完整各有独立错误码 |
 | `Diagnostics/SshDiagnosticText.cs` | 公开诊断有界化（ADR-096 D5） | `SshDiagnosticText.Bound/FromException/Join`、`MaxLength=512` | 诊断只给稳定因果类别与异常类型名；不复制第三方 Message/known_hosts 整行；超长必标记截断 |
 | `Execution/SshStreamDrainResult.cs` | 单条流的排空事实（ADR-096 D4） | `SshStreamDrainResult`（`ReachedEnd`/`ReadFailed`/`Aborted`） | 正常 EOF、读取失败、被中止是三个不同事实；读异常不得伪装成 EOF |
-| `Execution/SshBoundedDrain.cs` | 有界排空（ADR-096 D3） | `SshBoundedDrain.WaitAsync` | 排空/TERM/关闭/Dispose **共用一份预算**；超时只登记中止，绝不二次等待；迟到完成被观察 |
+| `Transport/SshSftpChannel.cs`（复制循环已上移会话；`OpenWriteNew` 排他失败抛 `SshSftpTargetExistsException`） | 通道原语 | `SshSftpChannel` | 不提供"检查后写入"的复合操作；创建失败即证明未创建 |`r`n| `Execution/SshBoundedDrain.cs` | 有界排空（ADR-096 D3） | `SshBoundedDrain.WaitAsync` | 排空/TERM/关闭/Dispose **共用一份预算**；超时只登记中止，绝不二次等待；迟到完成被观察 |
 | `Execution/SshCleanupQuarantine.cs` | 清理隔离区 | `SshCleanupQuarantine`（`Pending`/`Completed`/`IsFull`） | 容量固定；未结束的资源仍被追踪并占计数；满额即拒绝新增工作 |
 | `Execution/SshStageWorkerPool.cs` | 有界阶段 worker 池 | `SshStageWorkerPool`、`SshStageCapacityExceededException` | 阶段端口的同步启动段不得阻塞业务线程；容量固定，满额 `ssh.busy` |
 | `Execution/SshIdentityOwner.cs` | 身份材料的所有权状态机（L2） | `SshIdentityOwner`、`SshIdentityOwnership` | （见下「关键语义」） |
@@ -59,7 +59,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Transport/SshNetTransportFactory.cs` | 建连：密钥、认证方法、默认拒绝的主机密钥回调 | `SshNetTransportFactory` | `RetryAttempts=1`（库默认 10）、`MaxSessions=1`（库默认 10）、`Timeout` 由 deadline 决定；回调在 `ConnectAsync` 之前安装；加密私钥 ⇒ `ssh.passphrase_required` |
 | `Contracts/SshTransferPorts.cs` | 传输会话与 SFTP 通道端口（切片 B） | `ISshTransferSession`、`ISshSftpChannel`、`SshTransferCapabilities`、`SshTransferOutcome` | 能力必须**实测**；不支持即 `ssh.transfer_unsupported`；清理失败必须报告残留 |
 | `Transport/SshSftpChannel.cs` | SSH.NET 的 SFTP 通道（切片 B） | `SshSftpChannel` | 排他创建、标准/posix rename、realpath（ChangeDirectory+WorkingDirectory）、64 KiB 流式复制与超限中止 |
-| `Transport/SshSftpTransferSession.cs`（带预算释放：先等飞行中的传输清理再关通道） | 传输会话与发布语义（切片 B） | `SshSftpTransferSession`、`SshTransferLimitExceededException` | Fail=排他创建原子占位（失败即删除）；Overwrite=临时文件+posix-rename；清理由实测能力支撑、不使用竞态冒充 |
+| `Transport/SshSftpTransferSession.cs`（复制循环 + 所有权回滚 + 带预算释放） | 传输会话与发布语义（切片 B） | `SshSftpTransferSession`、`SshTransferLimitExceededException`、`CopyAsync` | 上传/下载共用逐次字节上限；**只有本次成功创建的文件才回滚删除**（创建结果未知不删）；Fail=排他创建原子占位；Overwrite=临时文件+posix-rename；清理由实测能力支撑 |
 | `Transport/SshNetTransportSession.cs` | 独占连接的 Exec、退出证据、终止与释放 | `SshNetTransportSession` | 取消/超时对 exec channel 发 TERM 后关连接；无退出码/信号 ⇒ `execution_state=unknown`；释放路径不抛新错误覆盖业务结果 |
 
 **关键语义**
