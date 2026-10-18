@@ -42,6 +42,9 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
     // Will be set when BrowserWorkspaceController is available (Task 5)
     private IBrowserCommandHandler? _handler;
 
+    // I2-c：执行器路由（迁移期可选；null=全部走 handler）。
+    private BrowserCommandExecutorRoute? _executorRoute;
+
     /// <summary>
     /// 只接受生命周期端口：它是**唯一**权威实例的所有者。Bridge 路径是默认路径，
     /// 因此这里必须读同一份状态，否则用户在 UI 上接管后 Bridge 命令照旧执行。
@@ -91,6 +94,19 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
     }
 
     public void SetHandler(IBrowserCommandHandler handler) => _handler = handler;
+
+    /// <summary>
+    /// I2-c 接线缝：把已通过会话准入、且能映射成能力请求的命令交给**工作区执行器**执行。
+    ///
+    /// 返回 <c>null</c> 表示"本命令不由执行器路由"（回退到 <see cref="IBrowserCommandHandler"/>，
+    /// 迁移期语义）；抛异常或返回失败结果都**不得**静默回退（那会双执行/绕过门禁）。
+    /// 由 Shell 组合根在浏览器工作区就绪后设置；WpfArchive 不直接引用执行器实现。
+    /// </summary>
+    public void SetExecutorRoute(BrowserCommandExecutorRoute route) => _executorRoute = route ?? throw new ArgumentNullException(nameof(route));
+
+    /// <summary>执行器路由（诊断用：是否已接线）。</summary>
+    public bool HasExecutorRoute => _executorRoute is not null;
+
 
     /// <summary>
     /// Type-safe handler removal. Only clears if the expected handler matches.
@@ -318,7 +334,14 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
 
             BrowserBridgeCommandResult result;
 
-            if (_handler is null)
+            // I2-c：已接线的命令优先经执行器（会话准入/复检已在上方完成；执行器侧不再重复裁决）。
+            // 路由返回 null = 该命令不在执行器覆盖面内 ⇒ 回退 handler（迁移期）。异常不回退。
+            if (_executorRoute is not null
+                && await _executorRoute(command, linkedCts.Token).ConfigureAwait(false) is { } routed)
+            {
+                result = routed;
+            }
+            else if (_handler is null)
             {
                 result = Error(command.OperationId,
                     BrowserBridgeErrorCodes.BrowserNotAvailable,
