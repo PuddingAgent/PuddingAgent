@@ -29,6 +29,8 @@
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
+    <!-- 会话首屏读模型纯组件（S1–S4 已通过；阶段 C2 接入，读模型归约/预算/游标合同） -->
+    <ProjectReference Include="..\PuddingConversationReadModel\PuddingConversationReadModel.csproj" />
     <!-- ADR-089 U4-4 D4: GoalCheckInputIdentity's excluded-segment set is derived from this leaf. -->
     <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
   </ItemGroup>

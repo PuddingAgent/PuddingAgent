@@ -39,9 +39,13 @@
 | `Data/Entities/ConversationReadStateEntity.cs` | `conversation_read_state`：当前根 Turn、压缩状态、有界子代理摘要 JSON、初始化状态与 revision | `ConversationReadStateEntity` | `Services/ConversationReadModelSchemaBootstrapper.cs` | 事件游标唯一权威仍是 `conversation_projection_checkpoints`；本行与 checkpoint 同事务提交 |
 | `Data/ConversationReadModelSchema.cs` | 读模型表名/索引名的单一定义点 | `ConversationReadModelSchema` | `PlatformDbContext.cs`、`Services/ConversationReadModelSchemaBootstrapper.cs` | 新库 EF 模型与存量库 bootstrapper 引用同一常量，禁止两套名字；`conversation_events` 两条查询索引只在显式维护窗口创建 |
 | `Services/ConversationReadModelSchemaBootstrapper.cs` | 存量库就地补齐两张小表 + 索引；显式维护创建 `conversation_events` 消息/Turn 收敛索引 | `ConversationReadModelSchemaBootstrapper`、`ConversationEventIndexMaintenanceResult` | `Data/ConversationReadModelSchema.cs` | 启动期只建小表（有界成本）；300 万行事件索引必须显式维护（有耗时/磁盘成本），不在每次启动执行 |
+| `Services/AgentChat/ConversationReadModelEventMapper.cs` | canonical 事件 → 纯组件输入映射 | `ConversationReadModelEventMapper` | `PuddingConversationReadModel/Contracts/ConversationEventContracts.cs` | 只读生产 payload 字段（delta/tool/终态/子代理 producer），缺失不伪造；子代理产物正文标 `ParentRunId`，delta 入组件前 64 KiB 上限 |
+| `Services/AgentChat/ConversationReadModelProjectionStore.cs` | 读模型加载/写入适配：只加载本批受影响 Turn，摘要+read_state+checkpoint 同事务 | `ConversationReadModelProjectionStore` | `Data/Entities/ConversationTurnSummaryEntity.cs` | 不执行 SaveChanges/Commit；旧库无 read_state 且 checkpoint>0 ⇒ Partial；损坏子代理 JSON fail closed |
+| `Source/PuddingPlatformTests/Services/ConversationReadModelEventMapperTests.cs` | C2 事件映射定向测试（类/字段/delta 上限/子代理归属） | `ConversationReadModelEventMapperTests` | `Services/AgentChat/ConversationReadModelEventMapper.cs` | 覆盖 20 类 kind、UTF-8 边界、未知类型；纯内存 |
+| `Source/PuddingPlatformTests/Services/ConversationReadModelProjectionStoreTests.cs` | C2 读模型持久化定向测试 | `ConversationReadModelProjectionStoreTests` | `Services/AgentChat/ConversationReadModelProjectionStore.cs` | 真实 SQLite：往返/upsert/回滚/legacy partial/omitted/损坏 JSON |
 | `Source/PuddingPlatformTests/Services/ConversationReadModelSchemaTests.cs` | 读模型持久化基线：EF 模型、存量库补齐、幂等、两条事件索引与 EXPLAIN 收敛断言 | `ConversationReadModelSchemaTests` | `Services/ConversationReadModelSchemaBootstrapper.cs` | 真实 SQLite 临时库；断言查询计划按 message/turn 等值收敛，禁止全会话扫描 |
 
-关联修改：`PlatformDbContext`（2 个 DbSet + 2 个实体配置 + `conversation_events` 两条命名索引）；`PuddingHost/Hosting/PuddingApplicationInitializer.cs`（启动期注册 `ConversationReadModelSchemaBootstrapper.EnsureCreatedAsync`，仅建小表）。
+关联修改：`PlatformDbContext`（2 个 DbSet + 2 个实体配置 + conversation_events 两条命名索引）；`PuddingApplicationInitializer`（启动期仅注册小表 bootstrapper）；`PuddingPlatform.csproj`/slnx 接入 `PuddingConversationReadModel`（S5 接入，DI 随 C 完成）。
 
 ## 消息网关
 
