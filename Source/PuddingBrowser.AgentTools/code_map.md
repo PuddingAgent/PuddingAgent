@@ -1,5 +1,5 @@
 ---
-title: 工具（7 项）
+title: 工具（8 个工具类）
 author: hyfree
 date: 2026-08-07
 last_reviewed: 2026-08-07
@@ -15,9 +15,9 @@ draft: false
 
 ﻿# PuddingBrowser.AgentTools CodeMAP
 
-> 七项 Browser Agent Tools | Phase 2A-2/3
+> 八项 Browser Agent Tools；`BrowserAgentToolIds.All` / `BrowserAgentCapabilityIds.All` 目前仍为七项，不含 screenshot。
 
-## 工具（7 项）
+## 工具（8 个工具类）
 
 | 文件 | 工具 | 用途 |
 |------|------|------|
@@ -50,7 +50,7 @@ silent success**）
 `scroll_target`（`page/element/to_ref/to_top/to_bottom`，省略时按 locator/位移推导）：输出 `scroll` 事实（容器/前后位置/消耗位移/`atBoundary`/`contentChanged`/`notScrolled`）——**"滚到边界"与"没加载出新内容"都不是失败**，只如实报告（§7）。**失败也带回执**（能力失败与**驱动异常**两条路径都带，放进失败的 `value`）：「是否已经派发」不能因为失败就丢失，`blocked`（接管/暂停/授权）与 `failed` 分开，
 且不可重试时附最小修复提示
 **`BrowserWaitForTool.cs`**：等待条件满足。四个可选条件：`selector` / `selector_to_hide` / `url_pattern` / **`content_grows_above_nodes`**（G8 无限滚动：等元素数**超过**基线，而不是把"没加载出新内容"当成滚动失败；基线由调用方先观测 `nodeCount` 得到）。**超时是正常结果**（不是失败），由 `timedOut` 表达；超时与"条件不满足"都不编造事实
-**`BrowserDelegationTasks.cs`**：子代理委派信封**工厂**（§9/G10，无工具面）：Core 的 `spawn_sub_agent` 需要浏览器工具清单，而"有哪七个工具、哪些必需"是**本程序集的代码事实**（`BrowserAgentToolIds`）——让 Core 自己拼字符串就会出现编译期发现不了的漏配。只读任务要求 `browser_snapshot`；可写任务额外要求 `browser_navigate`+`browser_interact`；注入列表 = 必需 ∪ 真实工具全集；`TryCreate` 立即用 
+**`BrowserDelegationTasks.cs`**：子代理委派信封**工厂**（§9/G10，无工具面）：Core 的 `spawn_sub_agent` 需要浏览器工具清单，而"有哪些工具、哪些必需"是**本程序集的代码事实**（`BrowserAgentToolIds`）——让 Core 自己拼字符串就会出现编译期发现不了的漏配。只读任务要求 `browser_snapshot`；可写任务额外要求 `browser_navigate`+`browser_interact`；注入列表 = 必需 ∪ 真实工具全集；`TryCreate` 立即用
 `BrowserDelegation.TryValidate` 自检并给出原因（工厂不重写规则）
 
 ## 基础与契约
@@ -60,7 +60,7 @@ silent success**）
 | `BrowserCallerIdentityScope.cs` | 调用级调用者身份作用域（AsyncLocal，供 Host 读取）（见下「关键语义」） |
 | `BrowserCallerIdentitySource.cs` | 把 Core 执行上下文投影成调用者身份（见下「关键语义」） |
 | `BrowserAgentToolBase.cs` | 工具基类：每次调用推入三作用域并 sealed 守卫（见下「关键语义」） |
-| `BrowserAgentToolIds.cs` | 工具 ID 常量 |
+| `BrowserAgentToolIds.cs` | 工具 ID 常量；All 当前缺少 screenshot，见一期方案 |
 | `BrowserToolContracts.cs` | 工具输入/输出契约 + 元素展示投影唯一实现（见下「关键语义」） |
 | `BrowserOperationFailure.cs` | 驱动异常 → 失败回执（错误码映射 + 可重试 + 修复提示）（见下「关键语义」） |
 | `BrowserLocatorInput.cs` | 定位器输入模型（嵌套字段必须 camelCase）（见下「关键语义」） |
@@ -71,7 +71,7 @@ silent success**）
 
 **`BrowserCallerIdentityScope.cs`**：**调用级调用者身份作用域**（设计 §3.1）：`BrowserCallerIdentityScope`（AsyncLocal，`Push` 返回还原句柄）+ `IBrowserCallerIdentityAccessor` / `BrowserCallerIdentityAccessor`（供 Host 调用上下文工厂读取，**不缓存**）。与审计 Origin **分开存放**：Origin 管诊断、本作用域管**授权**；投影失败时保留具体原因（缺运行身份/缺调用者/子代理缺父任务）供拒绝使用
 **`BrowserCallerIdentitySource.cs`**：**把 Core 执行上下文投影成调用者身份**（设计 §3.1/§3.2）：工具层唯一允许产生 `BrowserCallerIdentity` 的地方；入参只有**执行上下文**（编排层创建、只能透传）与 **agent 实例标识**（与 `BrowserOperationOrigin` 同一条取值规则，保证"审计里的行动者"＝"授权里的行动者"），**没有**任何工具参数 ⇒ 模型无法自报身份。子代理判定取 `RuntimeExecutionKind.SubAgent`（不用"有没有 
-ParentRunId"这种可伪造推断）；无上下文/无 agent 标识/子代理缺父任务一律拒绝（不回退环境推断）。⚠️ 尚未接到 `Admit`（见 changelog 的决策简报）
+ParentRunId"这种可伪造推断）；无上下文/无 agent 标识/子代理缺父任务一律拒绝（不回退环境推断）。生产路径仍有多处身份门；一期会话归属与收敛规则见 [ADR-097](../../Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md)
 **`BrowserAgentToolBase.cs`**：工具基类。**每次调用**推入审计 Origin、权限证据与**调用者身份**三个作用域（退出时全部还原）；**sealed 执行入口**：没有 `BrowserCallerIdentityScope.Current` 就返回明确拒绝（`browser tool refused: …`），**不执行**也**不生成默认身份**；派生工具改实现 `ExecuteBrowserCoreAsync`
 **`BrowserToolContracts.cs`**：工具输入/输出契约；失败载荷也支持 `value`（失败必须能带结构化证据，不能只有 code/message）；**元素展示投影的唯一实现**（`Element(...)`：text==name 省略、bbox 一位小数、checked/value 显式请求）——两个工具共用，规则不会各写一份
 **`BrowserOperationFailure.cs`**：驱动异常（`BrowserOperationException`）→ 失败回执：异常码映射成领域错误 + 是否可重试 + **最小修复提示**。§6.2 的动作拒绝分别给建议：`browser_locator_ambiguous` ⇒ 不可重试 + 「用 nth 或更具体的定位」（**绝不静默选第一个**）；`browser_element_not_visible`/`browser_element_disabled`/
@@ -81,11 +81,11 @@ inViewportOnly 或滚动容器」（把"这次筛选没用对"与"这种定位�
 
 ## 调用链
 
-调用链：`Agent Loop → search_tools → Browser*Tool`（七项**全部**已迁移）→ `IDesktopBrowserCapabilitySurface`（窄端口）+ `IDesktopCapabilityCallContextFactory`；
+调用链：`Agent Loop → search_tools → Browser*Tool`（八个工具类）→ `IDesktopBrowserCapabilitySurface`（窄端口）+ `IDesktopCapabilityCallContextFactory`；
 上下文管理（`browser_context` 的 create/close）另走 `IDesktopContextCapabilitySurface`；组合根路由二选一（能力通道会话 / Bridge 实现），**不回退**。
 
 > **八项工具**（`browser_context`/`browser_tabs`/`browser_navigate`/`browser_snapshot`/`browser_locate`/`browser_interact`/`browser_wait_for`/`browser_screenshot`）均已脱离进程内 `IBrowserRuntime`；迁移完成后旧的静态解析器（`BrowserToolRuntimeResolver`）已删除。
 
 ## 测试
 
-`../Tests/PuddingBrowser.AgentTools.Tests/` — 10/10 ✅
+`../../Tests/PuddingBrowser.AgentTools.Tests/` — 工具契约与执行结果测试；产品验收另见 ADR-097。

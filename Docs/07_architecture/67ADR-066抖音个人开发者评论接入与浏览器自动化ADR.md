@@ -2,18 +2,20 @@
 title: 67 ADR-066 抖音个人开发者评论接入与通用 WebView2 自动化 ADR
 author: hyfree
 date: 2026-08-02
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-18
 status: active
 description: 继续沿用通用 WebView2 + Core 侧 Douyin Adapter，Playwright 仅作语义参考，不新增 Sidecar 或兼容层。下文“WPF 进程内启动 ASP.NET Core”“共享 DI 和进程生命周期”已被 68 实施规格与 Agents.md 的独立 Core 子进程方案取代：WPF 不承载业务，二者通过认证 Bridge 通信。
 categories: [docs, architecture]
 tags: [抖音个人开发, 者评论接入与, 浏览器自动化, architecture]
-related_docs: [Docs/07_architecture/68抖音接入与通用WebView2自动化开发实施规格.md, Docs/07_architecture/46ADR-045双向消息系统与聊天室客户端ADR.md, Docs/07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md, Docs/14_reports/DouyinCreatorTools-WebView2复用与看板方案-2026-09-12.md]
+related_docs: [Docs/07_architecture/68抖音接入与通用WebView2自动化开发实施规格.md, Docs/07_architecture/46ADR-045双向消息系统与聊天室客户端ADR.md, Docs/07_architecture/63ADR-063飞书Agent绑定与可靠消息网关ADR.md, Docs/14_reports/DouyinCreatorTools-WebView2复用与看板方案-2026-09-12.md, Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md, Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md, Docs/14_reports/Agent浏览器控制架构与实现审阅-2026-10-18.md]
 related_files: []
 slug: architecture-67adr-066抖音个人开发者评论接入与浏览器自动化adr
 draft: false
 ---
 
 # 67 ADR-066 抖音个人开发者评论接入与通用 WebView2 自动化 ADR
+
+> **通用浏览器控制的现行决策**：[ADR-097](111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md)规定先完成 PuddingAgent → PuddingDesktop 的真实浏览器任务闭环，再接 Douyin Adapter。通用授权、传输、执行器与验收以 ADR-097 为准；本 ADR 保留站点适配分层意图，不再以旧 WPF 宿主、AllowAll 或七工具表述指导一期实现。
 
 > - 状态：**proposed**
 > - 日期：2026-08-01
