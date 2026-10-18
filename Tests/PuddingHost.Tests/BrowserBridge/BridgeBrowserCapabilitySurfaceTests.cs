@@ -518,6 +518,178 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
     }
 
     [Fact]
+    public async Task Interact_ScrollToBottom_CarriesTargetAndReportsFacts()
+    {
+        // F4/S1：滚动目标与结果事实此前在 Bridge surface 被丢掉——`to_bottom` 退化成
+        // window.scrollBy(0,0) 的静默 no-op，回执里的 scroll 恒为 null。
+        // 现在必须把目标送到 runtime，并把 runtime 报告的 facts 如实映射进回执。
+        var page = new FakePage
+        {
+            Version = 3,
+            Scroll = _ => new ScrollOutcome
+            {
+                Container = "document",
+                BeforeY = 100,
+                AfterY = 950,
+                ConsumedDeltaY = 850,
+                AtBoundary = true,
+                StopReason = "reached the bottom",
+                ContentChanged = true,
+            },
+        };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Scroll, DesktopPageVersion.Require(3),
+                scrollTarget: DesktopScrollTarget.ToBottom), Call);
+
+        Assert.False(result.IsFailure);
+
+        // 目标模型必须到达 runtime（修复前是默认的 Page）。
+        Assert.NotNull(page.LastScroll);
+        Assert.Equal(ScrollTarget.ToBottom, page.LastScroll!.Target);
+        Assert.Null(page.LastScroll.Locator);
+        Assert.Equal(InputMode.Dom, page.LastScroll.InputMode);
+
+        // 回执必须带 runtime 报告的真实事实（修复前恒为 null）。
+        Assert.NotNull(result.Value.Scroll);
+        var report = result.Value.Scroll!;
+        Assert.Equal("document", report.Container);
+        Assert.Equal(100d, report.BeforeY);
+        Assert.Equal(950d, report.AfterY);
+        Assert.Equal(850d, report.ConsumedDeltaY);
+        Assert.True(report.AtBoundary);
+        Assert.Equal("reached the bottom", report.StopReason);
+        Assert.True(report.ContentChanged);
+    }
+
+    [Theory]
+    [InlineData(DesktopScrollTarget.ToTop, ScrollTarget.ToTop)]
+    [InlineData(DesktopScrollTarget.ToBottom, ScrollTarget.ToBottom)]
+    public async Task Interact_ScrollToTop_CarriesTarget(
+        DesktopScrollTarget requestedTarget, ScrollTarget expectedRuntimeTarget)
+    {
+        // 到达类目标（to_top/to_bottom）不带位移：请求本身合法，但此前 surface 只传 Delta，
+        // 等于把"滚到底"变成"滚 0 像素"。
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Scroll, DesktopPageVersion.Require(3),
+                scrollTarget: requestedTarget), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.NotNull(page.LastScroll);
+        Assert.Equal(expectedRuntimeTarget, page.LastScroll!.Target);
+    }
+
+    [Fact]
+    public async Task Interact_ScrollCarriesLocatorForElementTarget()
+    {
+        // 元素滚动必须把 locator 一起送到 runtime（「不盲目滚另一个区域」的前提）。
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Scroll, DesktopPageVersion.Require(3),
+                locator: new DesktopLocator(DesktopLocatorKind.Css, "#list"),
+                deltaY: 240,
+                scrollTarget: DesktopScrollTarget.Element), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.NotNull(page.LastScroll);
+        Assert.Equal(ScrollTarget.Element, page.LastScroll!.Target);
+        Assert.NotNull(page.LastScroll.Locator);
+        Assert.Equal(LocatorKind.Css, page.LastScroll.Locator!.Kind);
+        Assert.Equal("#list", page.LastScroll.Locator.Value);
+        Assert.Equal(240d, page.LastScroll.DeltaY);
+    }
+
+    [Fact]
+    public async Task Interact_DefaultClick_StaysDom()
+    {
+        // 默认路径仍是 DOM：不能因为修 native 谎报而改变既有默认语义。
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "button")), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.NotNull(page.LastClickOptions);
+        Assert.Equal(InputMode.Dom, page.LastClickOptions!.InputMode);
+    }
+
+    [Fact]
+    public async Task Interact_NativeClick_IsRejectedBeforeTouchingThePage()
+    {
+        // F4/S0：inputMode 不在 Bridge 协议上（PageInteractArguments 无该字段），surface 若照常
+        // 执行就等于"请求 native、实际 DOM"的谎报。正确行为：在触碰页面之前明确拒绝
+        // （unsupported_capability），绝不静默降级。
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "button"),
+                inputMode: DesktopInputMode.Native), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, result.Error!.Code);
+        // 连动作前的定位观察都不允许发生：页面必须一点没被碰过。
+        Assert.Equal(0, page.QueryCount);
+        Assert.Equal(0, page.ClickCount);
+        Assert.Null(page.LastClickOptions);
+        // 可行动：告诉调用方改用 dom（错误消息不得只给个码）。
+        Assert.Contains("dom", result.Error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Interact_NativeCheck_IsRejectedBeforeTouchingThePage()
+    {
+        // check/uncheck 的驱动 API 根本没有 options 参数 ⇒ native 连"表达"都做不到，
+        // 同样必须在触碰页面之前拒绝（不许静默回落成 DOM 勾选）。
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Check, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "input[type=checkbox]"),
+                isChecked: true,
+                inputMode: DesktopInputMode.Native), Call);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, result.Error!.Code);
+        Assert.Equal(0, page.QueryCount);
+        Assert.Equal(0, page.CheckCount);
+    }
+
+    [Fact]
+    public async Task Interact_DefaultCheck_StillReachesTheRuntime()
+    {
+        // 拒绝只针对 native：DOM 请求（默认）照旧执行，不能误伤既有路径。
+        var page = new FakePage { Version = 3 };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Check, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "input[type=checkbox]"),
+                isChecked: true), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.Equal(1, page.CheckCount);
+        Assert.True(page.LastChecked);
+    }
+
+    [Fact]
     public async Task WaitFor_PassesTheRequestedBudgetToTheRuntime()
     {
         // 契约与线缆本来就有 timeout_ms；此前适配器没带 ⇒ 调用方的预算被运行时默认值悄悄覆盖。
@@ -989,7 +1161,25 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public int ClickCount { get; private set; }
 
+        /// <summary>最近一次 click 收到的 options（**记录对象而非次数**：要能证明字段真的到达运行时）。</summary>
+        public ClickOptions? LastClickOptions { get; private set; }
+
+        public FillOptions? LastFillOptions { get; private set; }
+
+        public TypeOptions? LastTypeOptions { get; private set; }
+
+        public KeyOptions? LastPressOptions { get; private set; }
+
+        public PointerOptions? LastHoverOptions { get; private set; }
+
         public ScrollOptions? LastScroll { get; private set; }
+
+        public int CheckCount { get; private set; }
+
+        public bool? LastChecked { get; private set; }
+
+        /// <summary>定位（动作前观察）调用次数：用于证明"拒绝发生在触碰页面之前"。</summary>
+        public int QueryCount { get; private set; }
 
         public string? LastTyped { get; private set; }
 
@@ -1010,6 +1200,8 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         public Func<Locator, IElementHandle?>? Query { get; init; }
 
         public Func<WaitCondition, WaitResult>? Wait { get; init; }
+
+        public Func<ScrollOptions, ScrollOutcome>? Scroll { get; init; }
 
         public Func<SnapshotOptions, PageSnapshot>? Snapshot { get; init; }
 
@@ -1081,8 +1273,11 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
             return Task.FromResult(Snapshot?.Invoke(options) ?? new PageSnapshot());
         }
 
-        public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct) =>
-            Task.FromResult(Query?.Invoke(locator));
+        public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
+        {
+            QueryCount++;
+            return Task.FromResult(Query?.Invoke(locator));
+        }
 
         public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct) =>
             Task.FromResult(QueryAll?.Invoke(locator) ?? (IReadOnlyList<IElementHandle>)[]);
@@ -1101,6 +1296,7 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct)
         {
             ClickCount++;
+            LastClickOptions = options;
             if (ClearVersionOnClick)
             {
                 Version = 0;
@@ -1113,24 +1309,40 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
             return Task.CompletedTask;
         }
 
-        public Task FillAsync(Locator locator, string value, FillOptions options, CancellationToken ct) => throw new NotSupportedException();
-
-        public Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct)
+        public Task FillAsync(Locator locator, string value, FillOptions options, CancellationToken ct)
         {
-            LastTyped = text;
+            LastFillOptions = options;
             Version++;
             return Task.CompletedTask;
         }
 
-        public Task PressAsync(Locator locator, string key, KeyOptions options, CancellationToken ct) => throw new NotSupportedException();
+        public Task TypeAsync(Locator locator, string text, TypeOptions options, CancellationToken ct)
+        {
+            LastTyped = text;
+            LastTypeOptions = options;
+            Version++;
+            return Task.CompletedTask;
+        }
 
-        public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct) => throw new NotSupportedException();
+        public Task PressAsync(Locator locator, string key, KeyOptions options, CancellationToken ct)
+        {
+            LastPressOptions = options;
+            Version++;
+            return Task.CompletedTask;
+        }
+
+        public Task HoverAsync(Locator locator, PointerOptions options, CancellationToken ct)
+        {
+            LastHoverOptions = options;
+            Version++;
+            return Task.CompletedTask;
+        }
 
         public Task<ScrollOutcome> ScrollAsync(ScrollOptions options, CancellationToken ct)
         {
             LastScroll = options;
             Version++;
-            return Task.FromResult(new ScrollOutcome
+            return Task.FromResult(Scroll?.Invoke(options) ?? new ScrollOutcome
             {
                 Container = options.Target == ScrollTarget.Page ? "document" : "element",
                 ConsumedDeltaY = options.DeltaY ?? 0,
@@ -1142,7 +1354,13 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
 
         public Task SelectAsync(Locator locator, IReadOnlyList<string> values, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task CheckAsync(Locator locator, bool isChecked, CancellationToken ct) => throw new NotSupportedException();
+        public Task CheckAsync(Locator locator, bool isChecked, CancellationToken ct)
+        {
+            CheckCount++;
+            LastChecked = isChecked;
+            Version++;
+            return Task.CompletedTask;
+        }
 
         public Task SetInputFilesAsync(Locator locator, IReadOnlyList<string> paths, CancellationToken ct) => throw new NotSupportedException();
 

@@ -592,6 +592,15 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // F4/S0：inputMode 不在 Bridge 协议上（PageInteractArguments 没有该字段，协议变更另立切片），
+        // 因此 Native 请求不可能真实到达驱动。此前 surface 照常执行 click/fill/...，工具层再按请求值
+        // 回报 inputBackend=native —— 那是"DOM 执行却回报 native"的谎报。
+        // 正确做法：在**触碰页面之前**明确拒绝（fail closed），绝不静默降级；DOM 路径不受影响。
+        if (request.InputMode == DesktopInputMode.Native)
+        {
+            return CapabilityResult<DesktopInteractionResult>.Failure(NativeInputModeRejected());
+        }
+
         if (await ResolvePageAsync(request.Target, cancellationToken).ConfigureAwait(false) is not { } page)
         {
             return NotFound<DesktopInteractionResult>(request.Target);
@@ -619,7 +628,8 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
             affected = await page.QueryAsync(preLocator, cancellationToken).ConfigureAwait(false);
         }
 
-        if (await ApplyInteractionAsync(page, request, cancellationToken).ConfigureAwait(false) is { } error)
+        var applied = await ApplyInteractionAsync(page, request, cancellationToken).ConfigureAwait(false);
+        if (applied.Error is { } error)
         {
             return CapabilityResult<DesktopInteractionResult>.Failure(error);
         }
@@ -641,7 +651,7 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
         var element = affected is null ? null : ToElementRef(affected, state.Version);
 
         return CapabilityResult<DesktopInteractionResult>.Success(
-            new DesktopInteractionResult(request.Target, state, element));
+            new DesktopInteractionResult(request.Target, state, element, applied.Scroll));
     }
 
     // ── 内部 ───────────────────────────────────────────────────────────
@@ -722,33 +732,62 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
     };
 
     /// <summary>
-    /// 执行交互。返回 <c>null</c> 表示成功；返回错误表示**明确拒绝**（不支持的动作用
-    /// <c>unsupported_capability</c>，与 Desktop 侧对 `focus` 的处理一致）。
+    /// 执行交互。返回 <c>Error == null</c> 表示成功，并携带滚动动作的**真实结果事实**（非滚动为 null）；
+    /// 返回错误表示**明确拒绝**（不支持的动作用 <c>unsupported_capability</c>，与 Desktop 侧对 `focus` 的处理一致）。
+    /// native 输入已在 <see cref="InteractAsync"/> 入口被拒绝，本方法不再处理它。
     /// 动作所需的字段已由 <see cref="BrowserInteractRequest"/> 自身按动作校验，因此这里不再重复判空。
     /// </summary>
-    private static async Task<DesktopCapabilityError?> ApplyInteractionAsync(
+    private static async Task<(DesktopCapabilityError? Error, DesktopScrollReport? Scroll)> ApplyInteractionAsync(
         IBrowserPage page, BrowserInteractRequest request, CancellationToken cancellationToken)
     {
         if (request.Action == DesktopInteractionAction.Scroll)
         {
-            // 两个轴都要传：此前只映射了 DeltaY，等于**悄悄丢掉** DeltaX
-            // （线缆与 Desktop 侧本来就带 delta_x，因此那是我这边的缺陷）。
-            await page.ScrollAsync(
-                new ScrollOptions { DeltaX = request.DeltaX, DeltaY = request.DeltaY },
+            // §7：滚动目标模型必须完整过桥。此前只传 DeltaX/DeltaY ⇒ 有 locator 的 element/to_ref
+            // 与到达类目标（to_top/to_bottom）全被丢掉，to_bottom 退化成 window.scrollBy(0,0) 的
+            // 静默 no-op；runtime 返回的 ScrollOutcome 也被丢弃，回执里 scroll 恒为 null。
+            // 本切片仍只走 DOM 输入路径（native 无法上线）。
+            if (ToRuntimeScrollTarget(request.EffectiveScrollTarget) is not { } runtimeTarget)
+            {
+                return (DesktopCapabilityError.InvalidRequest(
+                    $"scroll target '{DesktopScrollTargetWire.NameOf(request.EffectiveScrollTarget)}' has no bridge equivalent"), null);
+            }
+
+            Locator? runtimeLocator = null;
+            if (request.Locator is { } requestedLocator)
+            {
+                runtimeLocator = ToRuntimeLocator(requestedLocator);
+                if (runtimeLocator is null)
+                {
+                    return (DesktopCapabilityError.InvalidRequest(
+                        $"locator kind '{DesktopLocatorKindWire.NameOf(requestedLocator.Kind)}' has no bridge equivalent"), null);
+                }
+            }
+
+            var outcome = await page.ScrollAsync(
+                new ScrollOptions
+                {
+                    DeltaX = request.DeltaX,
+                    DeltaY = request.DeltaY,
+                    Target = runtimeTarget,
+                    Locator = runtimeLocator,
+                    InputMode = InputMode.Dom,
+                },
                 cancellationToken).ConfigureAwait(false);
-            return null;
+
+            // runtime 报告的 facts 原样映射；它没报告的字段保持默认值（不编造）。
+            return (null, ToDesktopScrollReport(outcome));
         }
 
         if (request.Action == DesktopInteractionAction.Focus)
         {
             // 运行时没有 focus API，且不拿脚本绕过注入限制 ⇒ 明确拒绝（与 Desktop 侧同一口径）。
-            return DesktopCapabilityError.UnsupportedCapability("focus has no bridge runtime equivalent");
+            return (DesktopCapabilityError.UnsupportedCapability("focus has no bridge runtime equivalent"), null);
         }
 
         if (ToRuntimeLocator(request.Locator!) is not { } locator)
         {
-            return DesktopCapabilityError.InvalidRequest(
-                $"locator kind '{DesktopLocatorKindWire.NameOf(request.Locator!.Kind)}' has no bridge equivalent");
+            return (DesktopCapabilityError.InvalidRequest(
+                $"locator kind '{DesktopLocatorKindWire.NameOf(request.Locator!.Kind)}' has no bridge equivalent"), null);
         }
 
         switch (request.Action)
@@ -777,12 +816,48 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
                 await page.HoverAsync(locator, new PointerOptions(), cancellationToken).ConfigureAwait(false);
                 break;
             default:
-                return DesktopCapabilityError.UnsupportedCapability(
-                    $"interaction action '{DesktopInteractionActionWire.NameOf(request.Action)}' has no bridge equivalent");
+                return (DesktopCapabilityError.UnsupportedCapability(
+                    $"interaction action '{DesktopInteractionActionWire.NameOf(request.Action)}' has no bridge equivalent"), null);
         }
 
-        return null;
+        return (null, null);
     }
+
+    /// <summary>
+    /// native 输入在 Bridge 协议上无法表达（<c>PageInteractArguments</c> 没有 inputMode 字段）⇒
+    /// 一律明确拒绝：既不能执行成 DOM（工具层会因此谎报 backend），也不该假装支持。
+    /// 消息给出可行动方向（改用 DOM），并复用既有错误码，不新造协议错误。
+    /// </summary>
+    private static DesktopCapabilityError NativeInputModeRejected() => new(
+        DesktopCapabilityErrorCode.UnsupportedCapability,
+        "inputMode 'native' is not carried over the bridge protocol in this build; retry with inputMode 'dom'");
+
+    /// <summary>
+    /// runtime 的滚动结果事实 → 能力回执形状（§7）。逐字段照搬；runtime 没有报告的字段保持默认值，
+    /// **不伪造**（例：远端 Bridge 线缆目前不承载 StopReason ⇒ 这里如实为 null）。
+    /// </summary>
+    private static DesktopScrollReport ToDesktopScrollReport(ScrollOutcome outcome) => new(
+        outcome.Container,
+        outcome.BeforeX,
+        outcome.BeforeY,
+        outcome.AfterX,
+        outcome.AfterY,
+        outcome.ConsumedDeltaX,
+        outcome.ConsumedDeltaY,
+        outcome.AtBoundary,
+        outcome.ContentChanged,
+        outcome.StopReason);
+
+    /// <summary>能力形状的滚动目标 → 运行时滚动目标（五项一一对应；未登记的 kind 返回 null 由调用方拒绝）。</summary>
+    private static ScrollTarget? ToRuntimeScrollTarget(DesktopScrollTarget target) => target switch
+    {
+        DesktopScrollTarget.Page => ScrollTarget.Page,
+        DesktopScrollTarget.Element => ScrollTarget.Element,
+        DesktopScrollTarget.ToRef => ScrollTarget.ToRef,
+        DesktopScrollTarget.ToTop => ScrollTarget.ToTop,
+        DesktopScrollTarget.ToBottom => ScrollTarget.ToBottom,
+        _ => null,
+    };
 
     /// <summary>
     /// 能力形状的定位描述符 → 运行时定位器（十种一一对应，含 <c>Ref</c>——运行时的 <c>LocatorKind</c>
