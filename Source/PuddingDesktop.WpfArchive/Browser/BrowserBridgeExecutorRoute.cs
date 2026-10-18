@@ -45,6 +45,9 @@ public sealed class BrowserBridgeExecutorRoute
         BrowserBridgeCommandNames.PageReload,
         BrowserBridgeCommandNames.PageStop,
         BrowserBridgeCommandNames.PageScreenshot,
+        BrowserBridgeCommandNames.PageCreate,
+        BrowserBridgeCommandNames.PageActivate,
+        BrowserBridgeCommandNames.PageClose,
     };
 
     private readonly BrowserCapabilityInvoker _invoker;
@@ -113,7 +116,7 @@ public sealed class BrowserBridgeExecutorRoute
                 response.Error!.Message);
         }
 
-        JsonElement value;
+        JsonElement? value;
         try
         {
             value = command.Name switch
@@ -153,6 +156,12 @@ public sealed class BrowserBridgeExecutorRoute
                     BrowserBridgeResultAdapter.FromScreenshot(
                         response.Screenshot ?? throw new InvalidOperationException("executor returned no screenshot result")),
                     WebJson),
+                BrowserBridgeCommandNames.PageCreate or BrowserBridgeCommandNames.PageActivate => JsonSerializer.SerializeToElement(
+                    BrowserBridgeResultAdapter.FromPageState(
+                        (response.Tabs ?? throw new InvalidOperationException("executor returned no tabs result")).Page),
+                    WebJson),
+                // 与旧 controller 兼容：close 成功只回成功、不带载荷。
+                BrowserBridgeCommandNames.PageClose => null,
                 _ => JsonSerializer.SerializeToElement(
                     BrowserBridgeResultAdapter.FromContexts(
                         response.Contexts ?? throw new InvalidOperationException("executor returned no contexts")),

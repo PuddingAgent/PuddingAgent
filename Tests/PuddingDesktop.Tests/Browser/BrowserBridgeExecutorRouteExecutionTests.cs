@@ -62,7 +62,7 @@ public sealed class BrowserBridgeExecutorRouteExecutionTests
         var route = new BrowserBridgeExecutorRoute((_, _, _, _) =>
             throw new InvalidOperationException("must not be called"));
 
-        var result = await route.RouteAsync(Command(BrowserBridgeCommandNames.PageActivate), CancellationToken.None);
+        var result = await route.RouteAsync(Command(BrowserBridgeCommandNames.ContextCreate), CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -182,6 +182,62 @@ public sealed class BrowserBridgeExecutorRouteExecutionTests
         Assert.True(screenshot!.Success);
         Assert.Equal("obs-1", screenshot.Value!.Value.GetProperty("observationId").GetString());
         Assert.Equal("AQID", screenshot.Value.Value.GetProperty("chunks")[0].GetProperty("base64").GetString());
+    }
+
+    [Fact]
+    public async Task TabsCommands_AreRoutedAndProjected()
+    {
+        var pageState = new DesktopPageState(
+            new DesktopPageTarget("ctx", "page-2"),
+            new Uri("https://example.com/new"),
+            DesktopPageVersion.Require(2),
+            DesktopPageReadiness.Loading,
+            "New tab");
+
+        var createRoute = new BrowserBridgeExecutorRoute((capability, request, _, _) =>
+        {
+            Assert.Equal(DesktopCapability.BrowserTabs, capability.Capability);
+            Assert.Equal(DesktopTabAction.New, request.Tabs!.Action);
+            return Task.FromResult(DesktopCapabilityResponse.FromTabs(new DesktopTabsResult(
+                request.Tabs.Target ?? new DesktopPageTarget("ctx", "page-2"),
+                DesktopTabAction.New,
+                pageState,
+                tabClosed: false,
+                new DesktopContexts([]))));
+        });
+
+        var create = await createRoute.RouteAsync(
+            Command(BrowserBridgeCommandNames.PageCreate) with { PageId = null },
+            CancellationToken.None);
+
+        Assert.NotNull(create);
+        Assert.True(create!.Success);
+        Assert.Equal("page-2", create.Value!.Value.GetProperty("pageId").GetString());
+
+        var closeRoute = new BrowserBridgeExecutorRoute((capability, _, _, _) =>
+        {
+            Assert.Equal(DesktopCapability.BrowserTabs, capability.Capability);
+            return Task.FromResult(DesktopCapabilityResponse.FromTabs(new DesktopTabsResult(
+                new DesktopPageTarget("ctx", "page"),
+                DesktopTabAction.Close,
+                pageState,
+                tabClosed: true,
+                new DesktopContexts([]))));
+        });
+
+        var close = await closeRoute.RouteAsync(
+            Command(BrowserBridgeCommandNames.PageClose) with
+            {
+                Arguments = JsonSerializer.SerializeToElement(
+                    new { pageId = "page", expectedPageVersion = 2 },
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(close);
+        Assert.True(close!.Success);
+        // 与旧 controller 兼容：close 成功无载荷。
+        Assert.Null(close.Value);
     }
 
     [Fact]
