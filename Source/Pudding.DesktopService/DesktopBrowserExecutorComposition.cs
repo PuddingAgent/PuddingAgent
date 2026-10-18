@@ -71,11 +71,19 @@ public static class DesktopBrowserExecutorComposition
         DesktopServiceOptions? options = null,
         TimeProvider? timeProvider = null,
         BrowserTaskBindingService? taskBindings = null,
-        bool closesAuthorityOnDispose = true)
+        bool closesAuthorityOnDispose = true,
+        Func<BrowserCallerIdentity, DesktopPageTarget, bool>? readOnlyPageBaselineAdmission = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentNullException.ThrowIfNull(lifecycle);
+
+        // 缺省页级只读基线 = 生命周期端口的真实判据（用户选中的目标页 / 页级 grant）。
+        // 它只影响**只读**能力；写操作仍必须通过旧 authority 的 grant/租约。
+        var clock = timeProvider ?? TimeProvider.System;
+        var baseline = readOnlyPageBaselineAdmission
+            ?? ((caller, target) => lifecycle.HasSufficientPageGrant(
+                caller, target, BrowserPageGrantScope.Read, clock.GetUtcNow()));
 
         return new DesktopService(
             dispatcher,
@@ -87,7 +95,8 @@ public static class DesktopBrowserExecutorComposition
             // 生产路径必须提供连接世代：否则准入闸门不生效（等于没有准入）。
             () => lifecycle.Authority.ConnectionGeneration,
             taskBindings,
-            closesAuthorityOnDispose);
+            closesAuthorityOnDispose,
+            baseline);
     }
 
     private sealed class DesktopBrowserExecutor : IDesktopBrowserExecutor

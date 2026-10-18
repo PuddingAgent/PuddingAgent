@@ -78,7 +78,7 @@
 **换调用者/换载荷即冲突**，不再另造按 Guid 的 in-flight/调用者缓存。**暂停/接管只阻断副作用**：先按命令名判定只读类别（`ReadOnlyPageCommands`），只读命令继续走授权闸门并执行，写命令返回 `browser_paused`/`browser_user_takeover`（ADR-097 D4；修复前在识别命令前就拒绝全部命令，导致"接管后可读"只在文档里成立）
 
 **`Browser/BrowserWorkspaceController.cs`**：Tab/Activity/active/target 唯一 UI 状态源；**接管/暂停的唯一写入点**：`SetUserTakeoverAsync`/`SetPausedAsync` 把状态推给所有已注册的执行闸门（不推 ⇒ 「人工接管」按钮对 Agent 无效）。桥接命令的宿主侧执行者：
-`page.interact` 的 `scroll` 会解析 `ScrollTarget`（显式线名优先，否则按 locator/位移推导；**未登记线名拒绝而不猜测**）并把驱动的滚动事实回传到响应
+`page.interact` 的 `scroll` 会解析 `ScrollTarget`（显式线名优先，否则按 locator/位移推导；**未登记线名拒绝而不猜测**）并把驱动的滚动事实回传到响应。另暴露 `TryGetPageVersion(PageId)`（页面真实版本，未知返回 false）供 Shell 目标登记/版本喂入使用——**不伪造版本 0**
 
 **`Browser/BrowserAutomationGateSync.cs`**：`IBrowserAutomationGate` 端口 + 闸门集合 + `DelegateAutomationGate`：注册/撤销、逐一推送、单个闸门抛异常不影响其余（接管是安全动作，不得半途失效）
 

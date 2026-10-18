@@ -1,4 +1,4 @@
-﻿using PuddingCode.Configuration;
+using PuddingCode.Configuration;
 using PuddingDesktop.Bootstrap;
 using PuddingDesktop.Browser;
 using PuddingDesktop.Configuration;
@@ -718,10 +718,16 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
             if (window.DispatcherQueue.HasThreadAccess)
             {
                 await window.InitializeBrowserWorkspaceAsync(dataRoot, cancellationToken);
+                // 浏览器工作区就绪 ⇒ 构造与传输无关的执行管线（页面登记/版本/执行器只此一次）。
+                InitializeBrowserCapabilityPipeline();
                 return;
             }
 
-            await UiThread.InvokeAsync(() => window.InitializeBrowserWorkspaceAsync(dataRoot, cancellationToken));
+            await UiThread.InvokeAsync(async () =>
+            {
+                await window.InitializeBrowserWorkspaceAsync(dataRoot, cancellationToken);
+                InitializeBrowserCapabilityPipeline();
+            });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -950,6 +956,10 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
         {
             _bridgeOperationLock.Release();
         }
+
+        // 浏览器执行管线属于工作区生命周期：先关执行器（排队中的 UI 调用以 UiUnavailable 结束），
+        // 再释放窗口/运行时。与能力通道是否启用无关（ADR-097 D2）。
+        await DisposeBrowserCapabilityPipelineAsync();
 
         await _operationLock.WaitAsync();
         try

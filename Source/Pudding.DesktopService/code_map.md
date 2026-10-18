@@ -61,7 +61,7 @@
 
 - **`DesktopService.cs`**：管线：`ValidateAdmission`（入队前 + 拿到 UI 线程后**各一次**）→ `IDesktopUiDispatcher.InvokeAsync` → `ExecuteOnUiAsync`（deadline/取消/surface 异常映射）。实现 `IDesktopCapabilityExecutor`；另暴露只读直连 API 
   `GetPageStateAsync`（同样过校验与调度）。**唯一出口回写观察到的页面版本**（`ExecuteAsync` 拆出 `ExecuteCoreAsync`，成功结果里的版本写入 `DesktopTargetRegistry`）——准则是「谁告诉 Core 版本，谁就是准入的比较基准」，漏了这一步则第一个带版本的操作就被判 
-  `page_version_mismatch`
+  `page_version_mismatch`。**迁移期页级只读基线**：旧 authority 的页级 grant 在默认 Bridge 没有签发者，因此构造参数 `readOnlyPageBaselineAdmission` 允许「只读 + 用户选中的 Agent 目标页」越过 grant/租约准入（**不签发租约**）；写操作绝不走该例外（ADR-097 D4，会话权威落地后删除）
 - **`DesktopTargetRegistry.cs`**：页面/上下文登记表（唯一真源）：`RegisterContext/RegisterPage/UpdatePage/ClosePage/CloseContext/Resolve`。版本**只允许前进**（回退会让旧 Snapshot/Locator 重新有效，必须拒绝）
 - **`DesktopCapabilityPolicy.cs`**：能力 × 可信级别准入表（8 能力 × 3 级别，快照断言）：脚本注入仅 `AgentAuthorized`；对话框/Picker/剪贴板仅 `Workbench`；`Workbench` **永不**允许脚本注入
 - **`DesktopInteractionState.cs`**：暂停与用户接管两个**独立轴**：变更类能力被拒（`Paused`/`UserTakeover`，接管优先），只读能力仍可用（观测不打断用户）。**这两个轴不再是本类私有字段**：唯一事实源是 `DesktopService.Authority`（进程内那一个 `BrowserAutomationAuthority`），本类只是读投影 + 写入口（设计方案 

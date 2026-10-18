@@ -37,7 +37,11 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         BrowserTaskBindingService? taskBindings = null,
         // 共享权威的**关闭权**归属（ADR-097 D2）：浏览器工作区执行器拥有它；能力通道执行器只是借用
         // （Core 重启会停通道，若通道关掉共享权威，Bridge 路径会被永久关死且不可重开）。
-        bool closesAuthorityOnDispose = true)
+        bool closesAuthorityOnDispose = true,
+        // 迁移期**页级只读基线**（ADR-097 D4 / 审阅 F1/F3）：默认 Bridge 没有 grant 签发者，
+        // 但「用户选中的 Agent 目标页」是真实授权来源。只对只读操作生效，且不签发租约；
+        // 旧的 grant/租约准入仍是写操作的唯一路径。会话权威（I2）落地后删除本参。
+        Func<BrowserCallerIdentity, DesktopPageTarget, bool>? readOnlyPageBaselineAdmission = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
@@ -50,6 +54,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         _connectionGeneration = connectionGeneration;
         _taskBindings = taskBindings;
         _closesAuthorityOnDispose = closesAuthorityOnDispose;
+        _readOnlyPageBaselineAdmission = readOnlyPageBaselineAdmission;
     }
 
     /// <summary>窗口退出时触发（用于让宿主停止派发新命令）。</summary>
@@ -69,6 +74,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
     private readonly BrowserTaskBindingService? _taskBindings;
 
     private readonly bool _closesAuthorityOnDispose;
+
+    private readonly Func<BrowserCallerIdentity, DesktopPageTarget, bool>? _readOnlyPageBaselineAdmission;
 
     public DesktopInteractionState Interaction { get; }
 
@@ -966,8 +973,20 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
 
             if (!decision.IsAllowed)
             {
-                return decision.Error
-                    ?? DesktopCapabilityError.Unauthorized(decision.Denial.ToString());
+                // 迁移期唯一例外：只读操作 + 用户选中的 Agent 目标页（页级基线，不签发租约）。
+                // 写操作**绝不**走这条路：它们仍必须有 grant/租约（I2 会话权威落地后统一替换）。
+                if (_readOnlyPageBaselineAdmission is not null
+                    && target is not null
+                    && BrowserOperationPolicy.IsReadOnly(automationOperation)
+                    && _readOnlyPageBaselineAdmission(browserCaller, target))
+                {
+                    lease = null;
+                }
+                else
+                {
+                    return decision.Error
+                        ?? DesktopCapabilityError.Unauthorized(decision.Denial.ToString());
+                }
             }
         }
 

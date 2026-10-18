@@ -238,6 +238,22 @@ public sealed class BrowserWorkspaceController :
         _automationGates?.Unregister(gate) ?? false;
 
     /// <summary>
+    /// 当前页面的**真实版本**（供目标注册表喂版本）。未知/尚未创建时返回 <c>false</c>——
+    /// 不返回伪造的 0，否则准入会把"未知"当成一个可比较的版本。
+    /// </summary>
+    internal bool TryGetPageVersion(PageId pageId, out long version)
+    {
+        if (_pages.TryGetValue(pageId, out var page) && page.PageVersion > 0)
+        {
+            version = page.PageVersion;
+            return true;
+        }
+
+        version = 0;
+        return false;
+    }
+
+    /// <summary>
     /// Initializes the persistent Agent Browser context.
     /// Uses DataRoot/browser/agent-browser/user-data as UDF (distinct from Workbench).
     /// </summary>
