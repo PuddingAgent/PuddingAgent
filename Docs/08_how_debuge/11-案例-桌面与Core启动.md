@@ -2,7 +2,7 @@
 title: 案例：桌面与 Core 启动
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-13
+last_reviewed: 2026-10-18
 status: active
 description: 先 dry-run 检查服务端当前识别出的 deterministic cases；该操作不会调用付费模型：
 categories: [docs, how-debug]
@@ -100,6 +100,28 @@ Desktop 在 Core 和 Serilog 之前发生的启动/XAML/WebView2 异常写入：
 smoke 脚本通过 `PUDDING_DESKTOP_HOME` 将该日志重定向到
 `<smokeRoot>/desktop-home/logs/desktop.log`。该环境变量只控制 Desktop 自身配置目录，
 Core Token、端口和 DataRoot 仍必须通过配置文件与启动参数传递。
+
+### 进程存在但主窗口没有出现：先检查 Shell 的依赖清单
+
+若日志是 `FileNotFoundException`，并落在 `DesktopApplicationCoordinator` 构造函数，
+说明异常发生在 `MainWindow` 创建之前。先核对日志中的程序集是否同时存在于
+实际启动目录和 `PuddingDesktop.deps.json`；只有 DLL 文件存在不能证明运行时能加载它。
+再检查 `temp/build/winui3/obj/PuddingDesktop/project.assets.json` 是否包含该依赖。
+
+新增或修改下游 `ProjectReference` 后，Shell 仍可能拿旧的 NuGet assets 执行增量构建，
+留下“新 DLL + 旧 deps.json”的组合。先对 Desktop 做完整还原与构建，成功后才在同一
+产物目录使用 `--no-restore`；不要通过给 Shell 增加对授权实现组件的直接引用解决。
+
+```powershell
+dotnet build Source/PuddingDesktop/PuddingDesktop.csproj --artifacts-path temp/build/recovery --nologo
+```
+
+启用 artifacts 输出时，当前项目的 Shell 输出是
+`temp/build/winui3/bin/PuddingDesktop/debug_win-x64/`；VS 默认输出是
+`temp/build/winui3/bin/PuddingDesktop/Debug/net10.0-windows10.0.19041.0/win-x64/`。
+必须核对将要启动的那个目录，不能把一个目录的构建成功当作另一个目录已经更新。
+随后对实际 EXE 运行 `TestScripts/test-pudding-desktop-launcher.ps1 -DesktopExe <仓库相对路径>`，
+以隔离 DataRoot 验证窗口、工作台和子进程生命周期。
 
 如果 Desktop 中出现“系统初始化”，但日常开发环境已经初始化，先看窗口底部的
 `数据` 路径。`start-phase1a-desktop-smoke.ps1` 会故意创建新的系统 Temp DataRoot，
