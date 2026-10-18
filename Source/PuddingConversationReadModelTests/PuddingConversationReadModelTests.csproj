@@ -1,0 +1,24 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+    <!-- 本工程用例彼此独立、无共享夹具；显式关闭 MSTest 并行化分析器提示（MSTEST0001）。 -->
+    <NoWarn>$(NoWarn);MSTEST0001</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    S2 独立测试工程（组件化交付规程 S2；Plan §3.1 / §11.1 阶段 B）。
+    边界规则：本工程只能引用 PuddingConversationReadModel。
+    不得引用 PuddingHost / PuddingRuntime / PuddingPlatform / PuddingAgent / 其他 Pudding* 组件，
+    这样归约、分页预算与游标合同可以在 Core 运行期间独立构建与验证（规程 R1）。
+    边界由 ComponentBoundaryTests 在运行期断言（S4）。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingConversationReadModel\PuddingConversationReadModel.csproj" />
+  </ItemGroup>
+
+</Project>

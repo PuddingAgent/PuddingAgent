@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Leaf component（组件化交付规程 S1；Plan《会话首屏与渐进加载架构优化方案》§3.1）：
+      * ZERO <ProjectReference>：只依赖 BCL，不引用 EF/ASP.NET/Runtime/Platform/Desktop。
+      * ZERO <PackageReference>：归约、预算、游标规则全部在本组件内实现。
+    边界由 PuddingConversationReadModelTests/ComponentBoundaryTests 在运行期断言（S4）。
+  -->
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingConversationReadModelTests" />
+  </ItemGroup>
+
+</Project>

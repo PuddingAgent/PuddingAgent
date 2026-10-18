@@ -1,6 +1,6 @@
 # PuddingAgent 代码地图（根索引）
 
-> 源指纹: Source/**=aee8699fb133, Tests/**=59505e8e824f, Tools/**=ed3547ac54c0, TestScripts/**=3f29759b31b3 · 条目数: 120 · 最近整理: 2026-10-18
+> 源指纹: Source/**=7263a3017aa2, Tests/**=59505e8e824f, Tools/**=ed3547ac54c0, TestScripts/**=3f29759b31b3 · 条目数: 124 · 最近整理: 2026-10-18
 > 本文件是**索引**不是日志：只放 概念 · 组件 · 关键文件（相对路径）· 用途；维护规则见 [`Agents.md`](Agents.md)，过程记录写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)；子项目内部的文件级索引在其自己的 `code_map.md` 中，本文件只做跨项目路由。
 
 ## 0. 怎么用（30 秒）
@@ -51,6 +51,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
 | `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的**纯策略**组件（BCL-only）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定（见下「关键语义」） | [code_map](Source/PuddingContextPolicy/code_map.md) |
+| `Source/PuddingConversationReadModel/` | 会话首屏读模型纯规则组件（BCL-only，S1–S4，未接入 slnx/DI）：事件归约、预算与三游标合同 | [code_map](Source/PuddingConversationReadModel/code_map.md) |
 | `Source/PuddingSsh/` | SSH 远程执行叶子组件（`ProjectReference=0`，包 `SSH.NET`）：合同/端口与错误分类、协调器与独占连接（见下「关键语义」） | [code_map](Source/PuddingSsh/code_map.md) |
 | `Source/PuddingDeepSeekWeb/` | 🔑 DeepSeek Search/Fetch 协议叶子组件（零引用；传输是端口，不直连 HTTP/不持凭据） | [code_map](Source/PuddingDeepSeekWeb/code_map.md) |
 | `Source/PuddingCodeIntelligence/` | 语言智能与查询：Roslyn 与 TypeScript 抽取及 outliner 与符号查询 | [code_map](Source/PuddingCodeIntelligence/code_map.md) |
@@ -159,6 +160,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingCoreTests/` · `Source/PuddingRuntimeTests/` · `Source/PuddingPlatformTests/` · `Source/PuddingMemoryEngineTests/` · `Source/PuddingWebApiTests/` | 工具契约、LLM 网关、MessageFabric · Agent Loop、上下文管线、语音/图片 · 渠道配置与 Artifact · 记忆库与 FTS5 · Web API |
 | `Source/PuddingCodeIndexTests/` · `Source/PuddingIndexChunkingTests/` | 索引组件独立测试：变更管线/调度/维护/存储 + 分块（含边界断言） |
 | `Source/PuddingContextPolicyTests/` | 上下文策略组件独立测试：容量算术与压力分类（含事故两条样本的记录值回放）、候选边界与指纹、严格适用校验（新消息追加必须让旧候选失效）、净收益准入（真实摘要重算 after）、退避判定（硬保护不被退避屏蔽）+ S1–S4 边界断言（含探测器自检与取红） |
+| `Source/PuddingConversationReadModelTests/` | 会话读模型纯组件独立测试（**191 例**）：事件归约/重放幂等/跳号/终态迟到/父子 run 隔离、子代理摘要限长与完整性截断、历史/过程页条数与字节预算、三种游标合同、SSE 追赶预算、UTF-8 截断 + S1–S4 边界断言（含变异取红） |
 | `Source/PuddingDiagnosticsTests/` | 可诊断基础设施独立测试：故障场景→期望因果码全量、事故复刻与证据、脱敏与证据预算、事故投影、S1–S4 边界断言（含探测器自检与取红） |
 | `Source/PuddingDeepSeekWebTests/` | DeepSeek Search/Fetch 协议叶子组件独立测试：请求形状/参数校验矩阵/响应解析/HTTP 错误映射/有界重试与 `Retry-After`/传输异常与取消/端点归一 + S1–S4 边界断言（含探测器取红）+ 真实 API Live（Search→Fetch，无凭据时 Inconclusive） |
 | `Source/PuddingBrowser.AutomationTests/` | 浏览器自动化可靠性组件独立测试：控制权/接管与世代、页面授权与子代理范围、回执与重试裁定、变更类后置条件、交互回执、引用身份与三个观察事实、operationId 账本、S1–S4 边界断言与用例守恒 |
