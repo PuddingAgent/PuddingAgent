@@ -648,7 +648,11 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
         }
 
         // 版本用**交互之后**的事实：引用随版本失效，旧 Ref 由此作废。
-        var element = affected is null ? null : ToElementRef(affected, state.Version);
+        // affected 是**动作提交之前**解析到的元素快照：如实标注，供调用方区分"前置观察"
+        // 与"动作后验证"（F5：动作前值不能当 expect_value 证据）。
+        var element = affected is null
+            ? null
+            : ToElementRef(affected, state.Version) with { IsPreActionObservation = true };
 
         return CapabilityResult<DesktopInteractionResult>.Success(
             new DesktopInteractionResult(request.Target, state, element, applied.Scroll));

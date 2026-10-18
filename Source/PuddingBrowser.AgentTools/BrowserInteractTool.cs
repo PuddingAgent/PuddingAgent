@@ -365,7 +365,11 @@ public sealed class BrowserInteractTool(
 
             // 证据化回执：把「调用方声明的期望」与「驱动回读的观测值」交给共享判定器，
             // 于是两条传输天然同形（判定只在这里发生一次，映射层不各自再验）。
-            var element = interaction.Value.Element;
+            // F5：动作前元素快照**不得**当作动作后证据——带该标记时按"未观察到"处理，
+            // 判定器会给 unverified（而不是用旧值假失败/假成功）。
+            var element = interaction.Value.Element is { IsPreActionObservation: false } observedElement
+                ? observedElement
+                : null;
             var receipt = BrowserInteractionReceipt.Build(new BrowserInteractionEvidence(
                 new OperationId(Guid.NewGuid().ToString("N")),
                 MapAction(action, args.Checked),

@@ -82,7 +82,7 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 
 **`BrowserBridge/HostBrowserDelegationLifecycle.cs`**：**委派生命周期端口的 Host 实现**（R4·§6.2）：把 Runtime/Platform 的**标量委派请求**翻译成既有控制面的绑定签发/撤销；**无会话 ⇒ 拒绝**（与"门"的未启用即放行不同：委派是**显式请求**，必须 **fail-closed**）；范围线名**白名单**（`read`/`write`，未知即拒）；签发时登记 `childRunId → binding` 供**精确且幂等**的撤销
 
-**`BrowserBridge/BridgeBrowserCapabilitySurface.cs`**：窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败）。`locate` 的分页游标与能力通道**共用 `BrowserLocateCursor.TryResolve`**：过期（版本/查询变了）与参数错分类一致，取完即 `NextCursor=null`；`interact` 的滚动动作完整传 `Target/Locator/Delta/InputMode=Dom` 并把 `ScrollOutcome` 映射进回执；`inputMode=native` 在触碰页面前**明确拒绝**（协议不承载该字段，不静默降级成 DOM）
+**`BrowserBridge/BridgeBrowserCapabilitySurface.cs`**：窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败）。`locate` 的分页游标与能力通道**共用 `BrowserLocateCursor.TryResolve`**：过期（版本/查询变了）与参数错分类一致，取完即 `NextCursor=null`；`interact` 的滚动动作完整传 `Target/Locator/Delta/InputMode=Dom` 并把 `ScrollOutcome` 映射进回执；`inputMode=native` 在触碰页面前**明确拒绝**（协议不承载该字段，不静默降级成 DOM）；交互结果里的元素是**动作前**解析的快照，必须带 `IsPreActionObservation` 标记（不得当动作后验证证据）
 
 **`BrowserBridge/TransportRoutedBrowserCapabilitySurface.cs`**：组合根按 `DesktopTransportRouting` **二选一**（通道就绪走通道，否则 Bridge，两者都不可用则如实失败）；同文件含 `DesktopTransportUsageTracker`（退役判据计数 + `MissingEvidenceCalls` 观测）。硬要求：**同一次操作绝不执行两次**；**副作用类能力要求权限证据**（缺失或 `denied` ⇒ `Unauthorized`，只读能力不受影响；见 
 `Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md`）

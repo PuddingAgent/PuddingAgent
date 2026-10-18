@@ -289,6 +289,37 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Interact_ExpectValueAgainstAPreActionObservation_IsReportedUnverified()
+    {
+        // F5：动作前解析到的元素快照不是后置证据。带标记时必须给 unverified（清空断言），
+        // 而不是拿旧值假失败、更不能假成功。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var surface = new FakeCapabilitySurface(runtime) { MarkInteractElementAsPreActionObservation = true };
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "fill",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "label", value = "Name" },
+                text = "Pudding",
+                expect_value = "Pudding"
+            }));
+
+        Assert.True(result.Success);
+        var value = GetJson(result.Output, "value");
+        Assert.Equal("dispatched", value.GetProperty("completion").GetString());
+        Assert.Equal("unverified", value.GetProperty("verification").GetString());
+        Assert.Equal(0, value.GetProperty("assertions").GetArrayLength());
+        Assert.True(value.GetProperty("requiresFollowUp").GetBoolean());
+    }
+
+    [Fact]
     public async Task Interact_Receipt_NeverEchoesTheFormValue()
     {
         // 证明「写进去了」但不能把输入内容带进工具输出。
@@ -2485,6 +2516,11 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     /// <summary>让替身直接以某个领域错误结束交互（用于验证闸门拒绝 vs 普通失败的回执差异）。</summary>
     public DesktopCapabilityError? InteractFailure { get; init; }
 
+    /// <summary>
+    /// 把交互返回的元素标成“动作前快照”（F5 形态）：工具层必须按未验证处理，不得当后置证据。
+    /// </summary>
+    public bool MarkInteractElementAsPreActionObservation { get; init; }
+
     /// <summary>最近一次交互请求：断言 input_mode 真的下传（不静默改语义）。</summary>
     public BrowserInteractRequest? LastInteractRequest { get; private set; }
 
@@ -2805,6 +2841,10 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
                 name: request.Locator?.Name ?? "Name",
                 // 回读值：替身用 LastValue 代表"页面里现在的值"（非字符串形态=没读到值）。
                 value: page is FakeBrowserPage fake ? fake.LastValue as string : null)
+            {
+                // F5 用例外：把这份快照标成动作前观察，工具不得把它当后置证据。
+                IsPreActionObservation = MarkInteractElementAsPreActionObservation,
+            }
             : null;
 
         return CapabilityResult<DesktopInteractionResult>.Success(new DesktopInteractionResult(

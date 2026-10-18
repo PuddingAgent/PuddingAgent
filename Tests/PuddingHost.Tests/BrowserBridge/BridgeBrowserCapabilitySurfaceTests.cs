@@ -992,6 +992,8 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         Assert.Equal("e9", result.Value.Element!.Reference);
         // 引用版本取交互**之后**的事实（旧 Ref 由此作废），而不是句柄里的旧版本。
         Assert.Equal(4, result.Value.Element.PageVersion.Value);
+        // F5：这份元素是动作前解析的快照 ⇒ 必须如实标注，调用方不得当动作后证据。
+        Assert.True(result.Value.Element.IsPreActionObservation);
     }
 
     [Fact]

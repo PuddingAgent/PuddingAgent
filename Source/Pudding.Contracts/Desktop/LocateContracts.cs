@@ -276,6 +276,15 @@ public sealed record DesktopElementRef
     /// <summary>该引用所属的页面版本；调用方凭它判断引用是否仍然有效。</summary>
     public DesktopPageVersion PageVersion { get; }
 
+    /// <summary>
+    /// 该元素的 Value/SelectedValues/IsChecked 是**动作提交之前**的快照。
+    ///
+    /// 交互类结果必须如实标注：动作前观察只能用于"这里原本是什么"，
+    /// **不能**当作动作后验证（expect_value/select/check 的证据）——那是 F5 的谎报形态。
+    /// 需要动作后证据时必须由执行端在动作后回读，而不是把本字段当默认可用。
+    /// </summary>
+    public bool IsPreActionObservation { get; init; }
+
     public string? Role { get; }
 
     public string? Name { get; }
