@@ -2,18 +2,21 @@
 title: Agent Harness 兼容与工具调用效率修复设计方案
 author: hyfree
 date: 2026-08-26
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-18
 status: active
 description: 模型后训练时熟悉的 Harness 与 Pudding Runtime 不同。模型经常按已有先验尝试 rg、exec_command、write_stdin、Codex patch 或 pwsh 参数，而 Pudding 暴露的是 search_grep、shell、terminal_input 和自己的参数名。协议差异会产生三类浪费：
 categories: [docs, features]
 tags: [兼容与工具调, 用效率修复设, 计方案, features]
-related_docs: [Docs/07_architecture/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md]
+related_docs: [Docs/07_architecture/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md, Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md, Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md, Docs/12_features/增强索引分阶段施工计划-2026-10-18.md]
 related_files: []
 slug: features-agentharness兼容与工具调用效率修复设计方案
 draft: false
 ---
 
 # Agent Harness 兼容与工具调用效率修复设计方案
+
+> **检索子域承接边界**：本文件的 `rg → search_grep` 是既有Harness映射，统一检索目标以[ADR-089](../07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md)和[正式设计](增强索引统一检索与代码地图设计方案-2026-10-18.md)为准。按[施工计划](增强索引分阶段施工计划-2026-10-18.md)R3/R6，将确定性映射、调用哈希、权限、prompt及遥测迁移至 `workspace_search(intent=text)`，再退役旧入口；不额外扩充兼容别名或改写任意Shell语句。以下Shell/终态/预算等其它领域规则继续有效。
+
 
 > 日期：2026-08-26  
 > 状态：H0、H1 重复失败熔断、动态工具下一 LLM round 生效、discovery-only 熔断、内置模板单一权威源、canonical Token 归因与 WorkUnit 调用边界 Token/成本硬预算已实现并通过定向测试；聚合 Goodput 报表、进程外部署和真实模型 smoke 未完成
@@ -94,7 +97,7 @@ Runtime JSON 信封仍是正常路径：完成时必须 `status=DONE`、`tool=nu
 
 但 WSL 不是默认工具路径：首次冷启动有额外延迟，发行版和包集合会漂移，且当前 2026-08-26 探测到 `/usr/bin/grep`、`git`、`python3`，没有 `rg`。因此：
 
-- 代码内容检索仍优先 `search_grep`，结果结构、预算和工作区边界稳定；
+- 代码内容检索通过当前已接入的canonical工具；ADR-089阶段切换前为 `search_grep`，切换后为 `workspace_search(intent=text)`，结果、预算与范围合同随同迁移；
 - 确实需要 Unix shell 行为时使用 `shell=wsl`，一次调用内完成有界管道；
 - 每个 run 最多做一次必要的 `command -v <tool>` 能力探测，不反复探测；
 - Agent 不得自行 `apt install` 或修改发行版；依赖安装需要明确产品配置/用户授权；
@@ -114,7 +117,7 @@ Runtime JSON 信封仍是正常路径：完成时必须 `status=DONE`、`tool=nu
 
 - L0 兼容提示是固定短块，不按模型或轮次动态拼接。
 - L1 只在执行边界工作，不向每个模型重复发布别名工具 schema；基础 catalog 与既有定义顺序稳定。仅 `search_tools` 成功激活时在下一 LLM round 单调增加定义，并显式形成一次 `tool_spec_changed` epoch。
-- 参数归一化发生在统一调用哈希之前，使 `rg` 与等价 `search_grep` 进入同一执行身份和审计语义。
+- 参数归一化发生在统一调用哈希之前；确定性检索映射与其当前canonical目标共用执行身份和审计语义。目标入口按ADR-089阶段切换，不长期保留两套哈希合同。
 - 完整报告自动终止直接避免一轮 LLM 输入重放和一次可能失败的 reasoning continuation。
 - buffered outer loop 的重复调用指纹与 streaming 的 RuntimeControl/历史已使用 canonical 调用；`tool.harness_compatibility` 固化 `requested_tool/canonical_tool/adapter_version/adaptation_kind`，可以按模型、Agent 和时间窗口计算别名命中率与退役依据。
 - `llm.rate_limit.wait` 与 `llm.stream.provider_first_chunk_wait` 把限流排队和 Provider 首块等待从总 LLM 延迟中拆开，避免把工具低效循环误判为 Provider 或并发瓶颈；无数据块时不再产生三类 chunk 零值指标。

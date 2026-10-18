@@ -2,12 +2,12 @@
 title: ADR-081：Agent Harness 兼容边界与工具协议适配
 author: hyfree
 date: 2026-08-26
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-18
 status: active
 description: LLM 在后训练 Harness 中形成了 rg、exec_command、write_stdin、Codex patch 与特定终态表达的强先验。Pudding 的 canonical 工具协议不同，近期主代理和子代理轨迹中已出现工具名/参数猜测、no-match 误判、补丁重试和完整报告后额外续轮。这是 Harness 适配问题，不应归因于模型“不会使用工具”。
 categories: [docs, architecture]
 tags: [兼容边界与工, 具协议适配, architecture]
-related_docs: [Docs/07_architecture/100ADR-086长程执行预算与运行内核收敛ADR.md, Docs/12_features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md, Docs/12_features/AgentHarness兼容与工具调用效率修复设计方案.md]
+related_docs: [Docs/07_architecture/100ADR-086长程执行预算与运行内核收敛ADR.md, Docs/12_features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md, Docs/12_features/AgentHarness兼容与工具调用效率修复设计方案.md, Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md, Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md, Docs/12_features/增强索引分阶段施工计划-2026-10-18.md]
 related_files: []
 slug: architecture-95adr-081agentharness兼容边界与工具协议适配adr
 draft: false
@@ -37,7 +37,7 @@ LLM 在后训练 Harness 中形成了 `rg`、`exec_command`、`write_stdin`、Co
 4. `rg/grep/findstr` exit code 1 在确认不是命令缺失等诊断后建模为 `no_match`。
 5. 继续要求 Runtime JSON 终态信封；仅在无工具调用、非结构化响应且完整满足 canonical 输出合同时自动提升为 `DONE`。
 6. 已安装 WSL 的 Windows 主机提供显式 `shell=wsl` 真实 Unix 执行通道；结构化文件/搜索工具仍为默认。不得假设发行版内存在 `rg`，不得由 Agent 自动 `apt install`。
-7. H0 不捆绑 ripgrep。优先让 `rg` 工具别名落到托管 `search_grep`；只有评测证明存在必要语义缺口时，才以固定版本的应用私有二进制补充，禁止自动下载和修改系统 PATH。
+7. H0 不捆绑 ripgrep。检索入口的目标合同由 [ADR-089](103ADR-089Agent统一检索与渐进展开工具链ADR.md)及其[正式设计](../12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md)定义：既有 `rg` 到 `search_grep` 的固定映射随调用方迁移到统一服务；新工具接入并通过门禁后，canonical 目标为 `workspace_search(intent=text)`。过渡入口共用一个执行服务，不扩充猜测别名，不改写任意 Shell 管道。私有 ripgrep 二进制仍须另经能力缺口评测，不自动下载或修改系统 PATH。
 8. 兼容层不得改写任意 shell 语句、放宽命令白名单含义、隐式授权或吞掉真实错误；在 Terminal 支持嵌套命令策略前，不把 `wsl.exe` 加入普通 terminal 白名单。
 9. 适配命中记录为 `tool.harness_compatibility`；LLM 流式等待分别记录 `llm.rate_limit.wait` 与 `llm.stream.provider_first_chunk_wait`，避免以总耗时猜测瓶颈。
 10. 相同 canonical 工具、参数和失败结果连续两次不变时，第二次显式返回 `execution_stalled`；后续原样调用在 Agent Loop 内阻断，改变输入或结果后才重新计数。

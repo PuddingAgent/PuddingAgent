@@ -104,7 +104,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **Message Fabric / send_message** | `Source/PuddingPlatform/Services/` | `MessageDeliveryPolicy` + `MessageDeliveryDispatcher`：inform/report_result 只通知，仅 ask/request_review/delegate 执行；`agent_reply` 永远被动 |
 | **Task 自动派发 / Goal / WorkUnit** | `Source/PuddingPlatform/Services/Scheduling/` | availability → backlog 精炼 → Plan/WorkUnit 编译 → 五态跟踪；promotion/start/repair 只有一个 CAS 写入者 |
 | **工具系统与审批** | `Source/PuddingRuntime/Tools/` + [自动审批设计](Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md) | 复杂任务前三次内进入 `smart_*` 或 `spawn_sub_agent`；只读/构建秒放、危险秒拒、未知形态交 LLM 审批 |
-| **代码索引组件族** | §2 + [ADR-089](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) | 依赖方向由编译期强制；叶子组件 `ProjectReference` = 0；边界由 `ComponentBoundaryTests` 三重断言 |
+| **代码索引组件族** | §2 + [ADR-089](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [目标边界](Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md) | CodeIndex 不得反向引用 CodeIntelligence；依赖由编译期与边界测试强制；现有组件见 §2，拟新增组件以设计为准 |
 | **Desktop ↔ Core 能力通道** | §2 + [能力通道](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | 两端只经 `Pudding.Contracts`（DTO）与 `Pudding.Rpc.Protocol`（wire）；启用前必须过 `DesktopCapabilityChannelPreflight` |
 | **Core 启动与就绪契约** | `Source/PuddingHost/Hosting/`、`Source/PuddingDesktop/Hosting/` | 每 5s 发 `PUDDING_DESKTOP_STARTING`，全部 hosted service `StartAsync` 返回后才发 `PUDDING_DESKTOP_READY`；`/health/ready` 不可省 |
 | **Desktop 启动状态面板** | `Source/PuddingDesktop/MainWindow.xaml[.cs]` + `Source/PuddingDesktop.Foundation/StartupPanelPresenter.cs` | 启动/取消/自动恢复/加载工作台/失败共用一张文案映射表（Foundation 纯逻辑）；真实阶段只从 `CoreLogBuffer` 的 `[StartupPhase]` 行聚合（`StartupPhaseActivity`）；取消复用 `_startCts`，WebView2 加载有 20 s watchdog |
@@ -203,7 +203,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | [浏览器交付修订施工](Docs/12_features/浏览器交付修订施工方案-2026-10-12.md) · [DeepSeek 施工指令](Docs/15_tasks/2026-10-13-DeepSeek浏览器修订施工指令.md) | 两条传输的共用执行器、不可变许可、任务选择绑定、完整指纹账本、Runtime 委派和原生截图输出的逐文件规格；R1–R6 顺序、反例与交付验收要求 |
 | [Agent 生成式交互界面与浏览器应用运行时](Docs/12_features/Agent生成式交互界面与浏览器应用运行时设计方案-2026-10-08.md) | HTML/表单/SVG/图表/涂鸦作品、页面 SDK、持久状态、实时版本更新、具名 JS 调用与用户提交闭环的目标设计（提案） |
 | [ADR-095](Docs/07_architecture/109ADR-095会话上下文维护与首增量延迟治理ADR.md) · [上下文维护施工方案](Docs/12_features/首Token等待与上下文指示器修复方案-2026-10-07.md) | Proposed：Session软维护与逐请求硬保护、唯一候选提交/checkpoint、请求实测与估算分离；独立策略组件先行，尚未接入 |
-| [`ADR-089`](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [检索设计](Docs/12_features/Agent统一检索与渐进展开工具链设计-2026-09-13.md) · [`ADR-077`](Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) · [视觉设计](Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md) | 统一检索入口与索引组件拆分 · 原生视觉、typed parts 与截图链路 |
+| [`ADR-089`](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [统一检索设计](Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md) · [施工门禁](Docs/12_features/增强索引分阶段施工计划-2026-10-18.md) | Proposed：统一 grep、多项目会话、outline/代码图、向量证据、组件与工具合同；按 R1–R6 门禁实施 |
+| [`ADR-077`](Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) · [视觉设计](Docs/12_features/原生视觉与统一取图截图优化设计-2026-09-12.md) | 原生视觉、typed parts 与截图链路 |
 | [`ADR-076`](Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) · [存储设计](Docs/12_features/遥测调试数据自动过期与Web存储管理设计方案.md) | 存储治理、语义目录、保留策略 |
 | [`ADR-079`](Docs/07_architecture/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md) · [内容流设计](Docs/12_features/Agent消息交错内容流与最新行为组披露完整实施方案.md) | Agent 回合单一有序内容流与披露 owner |
 | [`ADR-074`](Docs/07_architecture/89ADR-074Goal持久目标自主续行与自动压缩ADR.md) · [Goal 设计](Docs/12_features/Goal持久目标自主续行与自动压缩完整设计方案.md) | 持久 GoalRun、证据验证、Task-bound Goal |

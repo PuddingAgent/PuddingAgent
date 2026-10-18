@@ -2,18 +2,21 @@
 title: 索引/检索 已知缺陷登记（2026-10-01）
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-02
-status: active
+last_reviewed: 2026-10-18
+status: archived
 description: 现象 code_index_list_projects 只列 4 条，不含 scope-6526fb344e33 与 scope-0ca100c528ef；但：
 categories: [docs, features]
 tags: [index, retrieval, known, defects, features]
-related_docs: []
+related_docs: [Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md, Docs/12_features/增强索引分阶段施工计划-2026-10-18.md, Docs/14_reports/2026-10-18-增强索引设计与实现审阅.md]
 related_files: [Source/PuddingRuntimeTests/Tools/CodeIndexStatusRegistryGateTests.cs, Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs, Source/PuddingCodeIndex/Contracts/Retrieval/ScopeOverlap.cs, Source/PuddingAgent/bin/Debug/net10.0/PuddingAgent.exe, Source/PuddingCore/Configuration/PuddingBuildOutputSync.cs, Source/PuddingDesktop.WpfArchive/Bootstrap/DesktopBootstrapSignalService.cs, Source/PuddingHost/Services/CodeIndexStatusProbe.cs, Source/PuddingHost/Controllers/IndexAdminController.cs, Source/PuddingHost/Hosting/FullTextIndexSupplyAccessor.cs, Source/PuddingRuntime/Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs, Source/PuddingRuntimeTests/Tools/CodeSymbolSearchStalePathGateTests.cs]
 slug: features-index-retrieval-known-defects-2026-10-01
 draft: false
 ---
 
 # 索引/检索 已知缺陷登记（2026-10-01）
+
+> **历史证据，非现行设计。** 本文保留原实验、缺陷处理及裁定，不表示当前产品状态。规范统一见[正式设计](增强索引统一检索与代码地图设计方案-2026-10-18.md)，后续工作见[分阶段计划](增强索引分阶段施工计划-2026-10-18.md)，本轮源码核验见[审阅报告](../14_reports/2026-10-18-增强索引设计与实现审阅.md)。
+
 
 > 本文件记录**检索面上**已复现、尚未修复的缺陷：证据、复现步骤、影响面、修复方向、未验证项。
 > 纪律：以下每条均为**本机实跑**所得，附原始返回；未能证实的部分标注为「未验证」。
