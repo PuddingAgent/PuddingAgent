@@ -15,7 +15,7 @@ draft: false
 
 ﻿# PuddingBrowser.AgentTools CodeMAP
 
-> 八项 Browser Agent Tools；`BrowserAgentToolIds.All` / `BrowserAgentCapabilityIds.All` 目前仍为七项，不含 screenshot。
+> 八项 Browser Agent Tools；`BrowserAgentToolIds.All` / `BrowserAgentCapabilityIds.All` 均为八项（含 `browser_screenshot` / `cap-browser-screenshot`），两目录同形、同序，作为注册/发现/提示词/测试共用的**事实目录**（ADR-097 D1）。
 
 ## 工具（8 个工具类）
 

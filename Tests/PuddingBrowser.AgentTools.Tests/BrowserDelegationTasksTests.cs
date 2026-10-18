@@ -134,4 +134,37 @@ public sealed class BrowserDelegationTasksTests
         Assert.Throws<ArgumentNullException>(() => BrowserDelegationTasks.Create(
             "goal", null!, "grant", "expected", TimeSpan.FromMinutes(1)));
     }
+
+    // ── F6：canonical 八工具/能力事实目录必须包含 screenshot ────────────────
+
+    [Fact]
+    public void CanonicalToolAndCapabilityLists_IncludeAllEightTools()
+    {
+        Assert.Equal(8, BrowserAgentToolIds.All.Count);
+        Assert.Contains(BrowserAgentToolIds.Screenshot, BrowserAgentToolIds.All);
+
+        Assert.Equal(8, BrowserAgentCapabilityIds.All.Count);
+        Assert.Contains(BrowserAgentCapabilityIds.Screenshot, BrowserAgentCapabilityIds.All);
+
+        // 两个事实目录必须同形（同一枚举顺序、同一数量）：注册、发现与提示词从同一目录生成。
+        Assert.Equal(BrowserAgentToolIds.All.Count, BrowserAgentCapabilityIds.All.Count);
+    }
+
+    [Fact]
+    public void ReadOnlyDelegationInjectsTheCanonicalSetIncludingScreenshot()
+    {
+        var envelope = BrowserDelegationTasks.Create(
+            goal: "读",
+            delegatedScope: new BrowserDelegationScope(CanRead: true, CanWrite: false, CanManage: false),
+            pageGrantId: "grant-7",
+            expectedResult: "结果",
+            deadline: TimeSpan.FromMinutes(1));
+
+        foreach (var tool in BrowserAgentToolIds.All)
+        {
+            Assert.Contains(tool, envelope.InjectedTools);
+        }
+
+        Assert.Contains(BrowserAgentToolIds.Screenshot, envelope.InjectedTools);
+    }
 }
