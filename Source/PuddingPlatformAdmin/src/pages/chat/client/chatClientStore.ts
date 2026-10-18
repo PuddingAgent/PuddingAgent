@@ -1,4 +1,5 @@
 import { recordPerfStep } from '@/utils/perfEventRuntime';
+import type { AdminChatStreamEvent } from '@/services/platform/api';
 import {
   detectUnconsumedProjectionEvidence,
   isConversationEquivalent,
@@ -69,6 +70,57 @@ const statusProjectionsEqual = (
   previous.length === next.length &&
   previous.every((status, index) => statusProjectionEquals(status, next[index]));
 
+type LiveActiveRun = NonNullable<AgentConversationView['activeRun']>;
+type LiveProcessItem = LiveActiveRun['outputSnapshot']['processItems'][number];
+
+const LIVE_ACTIVE_RUN_MARKDOWN_MAX_CHARS = 512 * 1024;
+const LIVE_ACTIVE_RUN_PROCESS_ITEM_MAX = 64;
+const LIVE_EVENT_ID_MAX = 4096;
+
+const liveString = (
+  event: AdminChatStreamEvent,
+  ...keys: string[]
+): string | null => {
+  const record = event as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return null;
+};
+
+const liveNumber = (
+  event: AdminChatStreamEvent,
+  ...keys: string[]
+): number | null => {
+  const record = event as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+};
+
+const boundLiveMarkdown = (markdown: string): string =>
+  markdown.length > LIVE_ACTIVE_RUN_MARKDOWN_MAX_CHARS
+    ? markdown.slice(0, LIVE_ACTIVE_RUN_MARKDOWN_MAX_CHARS)
+    : markdown;
+
+const appendLiveProcessItem = (
+  activeRun: LiveActiveRun,
+  item: LiveProcessItem,
+): LiveActiveRun => ({
+  ...activeRun,
+  outputSnapshot: {
+    ...activeRun.outputSnapshot,
+    processItems: [
+      ...activeRun.outputSnapshot.processItems,
+      item,
+    ].slice(-LIVE_ACTIVE_RUN_PROCESS_ITEM_MAX),
+  },
+});
+
+
 export function createAgentChatClientStore(input: {
   cache: AgentChatLocalCache;
   api: AgentChatApiPort;
@@ -85,6 +137,7 @@ export function createAgentChatClientStore(input: {
   } | null = null;
   let selectionAbort: AbortController | null = null;
   let backgroundSyncAbort: AbortController | null = null;
+  let liveSeenEventIds = new Set<string>();
   let snapshot: AgentChatClientSnapshot = {
     ownerUserId,
     statuses: [],
@@ -284,6 +337,7 @@ export function createAgentChatClientStore(input: {
       // 会话切换取消旧选择与旧后台校正的在途请求；同一 key 重入不取消共享请求。
       if (!sameSelection) {
         selectionAbort?.abort();
+        liveSeenEventIds.clear();
       }
       backgroundSyncAbort?.abort();
       backgroundSyncAbort = null;
@@ -636,6 +690,226 @@ export function createAgentChatClientStore(input: {
         }
         syncInFlight = false;
       }
+    },
+    /**
+     * 阶段 D：把 projection-owned 主会话的 canonical SSE 事件缝合进唯一 Store。
+     * 只维护活动 Turn 的有界正文/过程与 eventCursor；终态消息由快照/轮询合并器负责，
+     * 避免 SSE 与正文快照重复叠加（Plan §7.2）。
+     */
+    applyLiveEvent(
+      workspaceId: string,
+      agentId: string,
+      event: AdminChatStreamEvent,
+    ): boolean {
+      const conversation = snapshot.conversation;
+      if (
+        !conversation ||
+        snapshot.workspaceId !== workspaceId ||
+        snapshot.agentId !== agentId
+      ) {
+        return false;
+      }
+
+      const eventType = String(event.type);
+      const eventId = liveString(event, 'eventId');
+      if (eventId && liveSeenEventIds.has(eventId)) return false;
+
+      const sequence =
+        liveNumber(event, 'sequence', 'sequenceNum') ??
+        conversation.eventCursor + 1;
+      // 快照已覆盖的事件不再重复投影；turn.started 允许作为新 Turn 起点。
+      if (sequence <= conversation.eventCursor && eventType !== 'turn.started')
+        return false;
+
+      const now = new Date().toISOString();
+      const turnId = liveString(event, 'turnId', 'turn_id');
+      const runId = liveString(event, 'runId', 'run_id');
+      let nextConversation: AgentConversationView | null = null;
+
+      const ensureActiveRun = (): LiveActiveRun => {
+        const existing = conversation.activeRun;
+        if (existing && existing.status === 'running') return existing;
+        return {
+          runId: runId ?? `live-${turnId ?? sequence}`,
+          workspaceId: conversation.workspaceId,
+          ownerUserId: conversation.ownerUserId,
+          agentId: conversation.agentId,
+          mainSessionId: conversation.mainSessionId,
+          status: 'running',
+          statusText: '运行中',
+          summary: '',
+          eventCursor: sequence,
+          outputSnapshot: { markdown: '', processItems: [] },
+          startedAt: now,
+          updatedAt: now,
+          completedAt: null,
+        };
+      };
+
+      switch (eventType) {
+        case 'turn.started': {
+          nextConversation = {
+            ...conversation,
+            activeRun: ensureActiveRun(),
+            eventCursor: Math.max(conversation.eventCursor, sequence),
+            updatedAt: now,
+          };
+          break;
+        }
+        case 'message.content.appended': {
+          const delta = liveString(event, 'delta') ?? '';
+          if (!delta) return false;
+          const activeRun = ensureActiveRun();
+          nextConversation = {
+            ...conversation,
+            activeRun: {
+              ...activeRun,
+              outputSnapshot: {
+                ...activeRun.outputSnapshot,
+                markdown: boundLiveMarkdown(
+                  activeRun.outputSnapshot.markdown + delta,
+                ),
+              },
+              eventCursor: Math.max(activeRun.eventCursor, sequence),
+              updatedAt: now,
+            },
+            eventCursor: Math.max(conversation.eventCursor, sequence),
+            updatedAt: now,
+          };
+          break;
+        }
+        case 'message.thinking_summary.appended': {
+          const delta = liveString(event, 'delta') ?? '';
+          if (!delta) return false;
+          const activeRun = ensureActiveRun();
+          const withProcess = appendLiveProcessItem(activeRun, {
+            id: eventId ?? `thinking-${sequence}`,
+            kind: 'thinking',
+            status: 'succeeded',
+            text: delta,
+            timestamp: now,
+            sequence,
+          });
+          nextConversation = {
+            ...conversation,
+            activeRun: {
+              ...withProcess,
+              eventCursor: Math.max(activeRun.eventCursor, sequence),
+              updatedAt: now,
+            },
+            eventCursor: Math.max(conversation.eventCursor, sequence),
+            updatedAt: now,
+          };
+          break;
+        }
+        case 'tool.call.requested':
+        case 'tool.call.completed':
+        case 'tool.call.failed': {
+          const activeRun = ensureActiveRun();
+          const toolCallId =
+            liveString(event, 'toolCallId', 'tool_call_id') ?? undefined;
+          const name = liveString(event, 'name') ?? undefined;
+          const output = liveString(event, 'output') ?? undefined;
+          const error = liveString(event, 'error', 'message') ?? undefined;
+          const status =
+            eventType === 'tool.call.completed'
+              ? 'succeeded'
+              : eventType === 'tool.call.failed'
+                ? 'failed'
+                : 'running';
+          const kind =
+            eventType === 'tool.call.requested' ? 'tool_call' : 'tool_result';
+          const withProcess = appendLiveProcessItem(activeRun, {
+            id: eventId ?? `${kind}-${sequence}`,
+            kind,
+            status,
+            text:
+              eventType === 'tool.call.requested'
+                ? (name ?? '')
+                : (output ?? error ?? name ?? ''),
+            timestamp: now,
+            sequence,
+            toolCallId,
+            name,
+            arguments: liveString(event, 'arguments') ?? undefined,
+            output,
+            exitCode:
+              liveNumber(event, 'exitCode', 'exit_code') ?? undefined,
+            message: error,
+          });
+          nextConversation = {
+            ...conversation,
+            activeRun: {
+              ...withProcess,
+              eventCursor: Math.max(activeRun.eventCursor, sequence),
+              updatedAt: now,
+            },
+            eventCursor: Math.max(conversation.eventCursor, sequence),
+            updatedAt: now,
+          };
+          break;
+        }
+        case 'turn.completed':
+        case 'turn.failed':
+        case 'turn.cancelled': {
+          const status =
+            eventType === 'turn.completed'
+              ? 'succeeded'
+              : eventType === 'turn.failed'
+                ? 'failed'
+                : 'cancelled';
+          const activeRun = conversation.activeRun;
+          nextConversation = {
+            ...conversation,
+            activeRun: activeRun
+              ? {
+                  ...activeRun,
+                  status,
+                  statusText:
+                    status === 'succeeded'
+                      ? '已完成'
+                      : status === 'failed'
+                        ? '失败'
+                        : '已取消',
+                  eventCursor: Math.max(activeRun.eventCursor, sequence),
+                  updatedAt: now,
+                  completedAt: now,
+                  outputSnapshot: {
+                    ...activeRun.outputSnapshot,
+                    processSummary: {
+                      ...(activeRun.outputSnapshot.processSummary ?? {
+                        totalItems: 0,
+                        thinkingRounds: 0,
+                        thinkingSteps: 0,
+                        toolCalls: 0,
+                        toolResults: 0,
+                        failedTools: 0,
+                        durationMs: 0,
+                        hasDetails: false,
+                      }),
+                      totalItems: activeRun.outputSnapshot.processItems.length,
+                    },
+                  },
+                }
+              : null,
+            eventCursor: Math.max(conversation.eventCursor, sequence),
+            updatedAt: now,
+          };
+          break;
+        }
+        default:
+          return false;
+      }
+
+      if (!nextConversation) return false;
+      if (eventId) {
+        liveSeenEventIds.add(eventId);
+        if (liveSeenEventIds.size > LIVE_EVENT_ID_MAX) {
+          liveSeenEventIds = new Set([eventId]);
+        }
+      }
+      set({ conversation: nextConversation });
+      return true;
     },
   };
 

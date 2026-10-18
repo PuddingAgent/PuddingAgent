@@ -198,7 +198,7 @@ bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧�
 
 | 文件 | 职责与性能边界 |
 |------|----------------|
-| `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；同 scope+窗口并发打开请求单飞（共享 Promise），首次打开 `isOpening` 与后台 `isRefreshing` 分离；会话切换/后台校正用 AbortController 取消在途请求，迟到响应被版本守卫丢弃；相同状态轮询必须短路，不重复写缓存或通知订阅者 |
+| `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；同 scope+窗口并发打开请求单飞（共享 Promise），首次打开 `isOpening` 与后台 `isRefreshing` 分离；会话切换/后台校正用 AbortController 取消在途请求，迟到响应被版本守卫丢弃；projection-owned 主会话 canonical SSE 事件缝入活动 Turn（有界正文/过程、eventId 与快照游标去重）；相同状态轮询必须短路 |
 | `src/pages/chat/client/conversationOpenApi.ts` / `conversationOpenTypes.ts` | 阶段D 统一打开/历史/过程分页/消息正文分段契约与客户端：数字枚举取值冻结、`If-None-Match` 304→null、AbortSignal 取消、失败不吞空会话；过程条目含结构化工具/子代理字段，正文按 UTF-8 字节偏移分段续读 |
 | `src/pages/chat/client/canonicalMerge.ts` | 消息内容与显示顺序分别合并：新快照顺序为准，分页缺失历史按共享身份锚点保留；同 ID 的 activeRun 比较完整状态与输出，旧游标不回退；未变化 messages 保持引用稳定 |
 | `src/pages/chat/components/MessageList.tsx` | 消息行投影与单卡去重（见下「关键语义」） |
@@ -331,7 +331,7 @@ loading/文案、destroy toast。叠加**路径无关陈旧门控**（2026-09-19
 **`src/pages/chat/hooks/useSessionEventReplay.ts`**：bootstrap 重放带 `{replay:true, runningCompactionId}`；缺口/历史尾部重放一律 `applySessionEvent(event,{replay:true})`，历史 started 不再冒充运行中。**游标准备合同**（2026-10-02）：`syncCompletedHistoryEventCursor` 返回判别联合（成功才 `markSessionEventCursorReady`，失败/取消/过期绝不 ready）
 ，`options.isCurrent` 使迟到的 A 快照不能改写 B 的游标
 
-**`src/pages/chat/hooks/useSessionEventProjection.ts`**：`applySessionEvent(ev, {replay?})` 只把 replay 语义透传给压缩事件分发。**会话域**（2026-10-07）：identity 的 `isProjectionOwnedSession(sessionId)` 为真时（agent 主会话）本 hook 对该会话**只消费 `subagent.*` 事实并推进游标**，主消息/轮次/执行流一律不投影（避免与 Agent 投影重复投影同一正文），被过滤事件也不占用 
+**`src/pages/chat/hooks/useSessionEventProjection.ts`**：`applySessionEvent(ev, {replay?})` 只把 replay 语义透传给压缩事件分发。**会话域**：identity 的 `isProjectionOwnedSession(sessionId)` 为真时（agent 主会话）本 hook 对该会话**只消费 `subagent.*` 事实并推进游标**，主消息/轮次/执行流不投影但经 `onProjectionOwnedMainEvent` 上报 Store（不再静默丢弃）；被过滤事件也不占用
 `seenEventIdsRef` 去重集合。**游标推进/清理**（2026-10-02）：实时事件只对当前流的会话推进游标（`advanceSessionEventCursor` 拒绝别的会话），会话切换时 `invalidateSessionEventCursor` 清空游标身份
 
 **`src/pages/chat/hooks/useSessionEventConnection.ts`**：**游标必须显式**（S3，2026-09-19）：`startSessionEventStream(sessionId, {cursor, reason})`；显式 0 ＝「有意全量回放」（仅服务端**刚创建、日志为空**的 compaction 后继会话与 checkpoint fork），省略 ＝ 使用该会话**已就绪的权威游标**（2026-10-02：未就绪一律拒绝开流，不再退回 `lastSequenceNumRef`/0），诊断日志记录 

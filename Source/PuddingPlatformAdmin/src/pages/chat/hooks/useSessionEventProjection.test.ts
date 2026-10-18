@@ -61,6 +61,7 @@ interface Harness {
 function setup(
   initialTurns: ChatTurn[] = [makeRunningTurn()],
   isProjectionOwnedSession?: (sessionId: string | null) => boolean,
+  onProjectionOwnedMainEvent?: (event: AdminChatStreamEvent) => void,
 ): Harness {
   const sseSessionIdRef = {
     current: 'session-1',
@@ -139,6 +140,7 @@ function setup(
         appendRuntimeEvent: jest.fn(),
         markSteeringInjected: jest.fn(),
         handleCompactionLifecycleEvent: jest.fn(),
+        onProjectionOwnedMainEvent,
       },
     }),
   );
@@ -167,6 +169,33 @@ const callFacts = (items: TimelineItem[]) =>
     }));
 
 describe('useSessionEventProjection — CU-03 unified input', () => {
+  it('routes projection-owned main events to the single merge owner without projecting', () => {
+    const onProjectionOwnedMainEvent = jest.fn();
+    const { result, turnsRef } = setup(
+      [makeRunningTurn()],
+      () => true,
+      onProjectionOwnedMainEvent,
+    );
+    result.current.hydrateSessionReplayRef.current = true;
+
+    act(() => {
+      result.current.applySessionEvent(
+        makeTurnEvent('message.content.appended', {
+          eventId: 'evt-main-live',
+          sequenceNum: 5,
+          delta: 'live-body',
+        }),
+      );
+    });
+
+    expect(onProjectionOwnedMainEvent).toHaveBeenCalledTimes(1);
+    expect(
+      (onProjectionOwnedMainEvent.mock.calls[0][0] as { type?: string }).type,
+    ).toBe('message.content.appended');
+    // 本 hook 不得再投影正文（避免与快照/Store 重复叠加）。
+    expect(turnsRef.current[0].assistant.answerMarkdown).toBe('');
+  });
+
   it('consumes a duplicate eventId only once (idempotent over gap/live overlap)', () => {
     const { result, turnsRef } = setup();
     // 模拟 replay 直通（不走帧缓冲），便于断言 delta 累积。

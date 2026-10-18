@@ -77,15 +77,9 @@ const ChatPageContent: React.FC = () => {
     isAgentClientArchitectureEnabled,
     [],
   );
-  const chat = useChatState(location.search, {
-    agentProjectionOwnsMainSession: useAgentClientArchitecture,
-  });
   const { message: messageApi } = App.useApp();
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentUser;
-  const [createLoading, setCreateLoading] = useState(false);
-  const agentSwitchSeqRef = useRef(0);
-  const projectedStatusesRef = useRef<Record<string, ProjectedAgentStatus>>({});
   const agentChatCache = useMemo(() => createIndexedDbAgentChatCache(), []);
   const agentChatApi = useMemo(
     () => ({
@@ -99,6 +93,18 @@ const ChatPageContent: React.FC = () => {
     api: agentChatApi,
     ownerUserId: currentUser?.userid || currentUser?.name,
   });
+  const chat = useChatState(location.search, {
+    agentProjectionOwnsMainSession: useAgentClientArchitecture,
+    onProjectionOwnedMainEvent: (event) => {
+      const { workspaceId, agentId } = agentClient.snapshot;
+      if (workspaceId && agentId) {
+        agentClient.applyLiveEvent(workspaceId, agentId, event);
+      }
+    },
+  });
+  const [createLoading, setCreateLoading] = useState(false);
+  const agentSwitchSeqRef = useRef(0);
+  const projectedStatusesRef = useRef<Record<string, ProjectedAgentStatus>>({});
   const projectedAgentStatuses = useMemo(() => {
     if (!useAgentClientArchitecture)
       return {} as Record<string, ProjectedAgentStatus>;

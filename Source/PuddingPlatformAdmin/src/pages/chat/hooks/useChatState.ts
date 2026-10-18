@@ -20,6 +20,7 @@ import {
   ensureMainSession,
   submitConversationTurn,
 } from '@/services/platform/api';
+import type { AdminChatStreamEvent } from '@/services/platform/api';
 import {
   isPerfDiagnosticsEnabled,
   recordPerfStep,
@@ -196,10 +197,15 @@ export {
 };
 export function useChatState(
   routeSearch?: string,
-  options?: { agentProjectionOwnsMainSession?: boolean },
+  options?: {
+    agentProjectionOwnsMainSession?: boolean;
+    /** 阶段 D：projection-owned 主会话事件交给 ChatClientStore 唯一合并。 */
+    onProjectionOwnedMainEvent?: (event: AdminChatStreamEvent) => void;
+  },
 ): UseChatStateReturn {
   const agentProjectionOwnsMainSession =
     options?.agentProjectionOwnsMainSession ?? false;
+  const onProjectionOwnedMainEvent = options?.onProjectionOwnedMainEvent;
   const { message: messageApi } = App.useApp();
   const [error, setError] = useState<string | null>(null);
   const {
@@ -606,6 +612,7 @@ export function useChatState(
       appendRuntimeEvent: appendChatInteractionRuntimeEvent,
       markSteeringInjected,
       handleCompactionLifecycleEvent,
+      onProjectionOwnedMainEvent,
     },
   });
 

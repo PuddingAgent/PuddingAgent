@@ -128,6 +128,11 @@ interface ProjectionIntegrationPort {
     event: AdminChatStreamEvent,
     options?: CompactionLifecycleOptions,
   ) => void;
+  /**
+   * projection-owned 主会话的 canonical 主消息/Turn/压缩事件上报口（阶段 D）。
+   * 本 hook 不直接投影这些事件（避免与快照重复叠加），由 ChatClientStore 唯一合并。
+   */
+  onProjectionOwnedMainEvent?: (event: AdminChatStreamEvent) => void;
 }
 
 interface UseSessionEventProjectionOptions {
@@ -178,6 +183,7 @@ export function useSessionEventProjection({
     appendRuntimeEvent: appendChatInteractionRuntimeEvent,
     markSteeringInjected,
     handleCompactionLifecycleEvent,
+    onProjectionOwnedMainEvent,
   } = integrations;
 
   const [workingAgentIds, setWorkingAgentIds] = useState<string[]>([]);
@@ -1141,6 +1147,9 @@ export function useSessionEventProjection({
       }
 
       if (subagentOnly && !isSubAgentEvent) {
+        // 阶段 D：主消息/Turn/压缩事件不再静默丢弃，交给唯一 ChatClientStore 合并入口；
+        // 本 hook 仍不投影正文，避免与快照重复叠加。
+        onProjectionOwnedMainEvent?.(ev);
         const skippedCount = (eventCountsRef.current.get(eventType) ?? 0) + 1;
         eventCountsRef.current.set(eventType, skippedCount);
         updateLastSequence(ev);

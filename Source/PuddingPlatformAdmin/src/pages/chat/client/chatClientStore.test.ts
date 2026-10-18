@@ -3,6 +3,7 @@ import {
   getPerfEvents,
   setPerfDiagnosticsEnabled,
 } from '@/utils/debug';
+import type { AdminChatStreamEvent } from '@/services/platform/api';
 import { createAgentChatClientStore } from './chatClientStore';
 import { createMemoryAgentChatCache } from './localCache';
 import type { AgentConversationView } from './types';
@@ -688,5 +689,103 @@ describe('agent chat client store', () => {
 
     expect(store.getSnapshot().agentId).toBe('agent-b');
     expect(store.getSnapshot().conversation?.mainSessionId).toBe('session-b');
+  });
+
+  it('stitches live main-session events into the active run without duplicate body', async () => {
+    const cache = createMemoryAgentChatCache();
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [],
+        getConversation: async (_workspaceId, agentId) => ({
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId,
+          mainSessionId: 'session-agent-a',
+          messages: [],
+          eventCursor: 10,
+          updatedAt: '2026-06-07T00:00:00.000Z',
+        }),
+      },
+    });
+    await store.selectAgent('default', 'agent-a');
+
+    const live = (overrides: Record<string, unknown>) =>
+      ({
+        eventId: `e-${overrides.sequence}`,
+        ...overrides,
+      }) as unknown as AdminChatStreamEvent;
+
+    expect(
+      store.applyLiveEvent(
+        'default',
+        'agent-a',
+        live({ type: 'turn.started', sequence: 11, turnId: 't1', runId: 'r1' }),
+      ),
+    ).toBe(true);
+    store.applyLiveEvent(
+      'default',
+      'agent-a',
+      live({ type: 'message.content.appended', sequence: 12, delta: '你' }),
+    );
+    store.applyLiveEvent(
+      'default',
+      'agent-a',
+      live({
+        type: 'message.thinking_summary.appended',
+        sequence: 13,
+        delta: '思考',
+      }),
+    );
+    store.applyLiveEvent(
+      'default',
+      'agent-a',
+      live({ type: 'message.content.appended', sequence: 14, delta: '好' }),
+    );
+    store.applyLiveEvent(
+      'default',
+      'agent-a',
+      live({
+        type: 'tool.call.completed',
+        sequence: 15,
+        toolCallId: 'call-1',
+        name: 'read',
+        output: 'ok',
+        exitCode: 0,
+      }),
+    );
+    store.applyLiveEvent(
+      'default',
+      'agent-a',
+      live({ type: 'turn.completed', sequence: 16 }),
+    );
+
+    const conversation = store.getSnapshot().conversation;
+    expect(conversation?.activeRun?.outputSnapshot.markdown).toBe('你好');
+    expect(conversation?.activeRun?.status).toBe('succeeded');
+    expect(conversation?.activeRun?.completedAt).toBeTruthy();
+    expect(conversation?.activeRun?.outputSnapshot.processItems).toHaveLength(2);
+    expect(conversation?.eventCursor).toBe(16);
+
+    // 同一 eventId 重放不再叠加正文。
+    expect(
+      store.applyLiveEvent(
+        'default',
+        'agent-a',
+        live({ type: 'message.content.appended', sequence: 12, delta: '你' }),
+      ),
+    ).toBe(false);
+    expect(store.getSnapshot().conversation?.activeRun?.outputSnapshot.markdown).toBe(
+      '你好',
+    );
+
+    // 旧身份的事件不得污染当前 Store。
+    expect(
+      store.applyLiveEvent(
+        'default',
+        'agent-b',
+        live({ type: 'message.content.appended', sequence: 17, delta: 'X' }),
+      ),
+    ).toBe(false);
   });
 });
