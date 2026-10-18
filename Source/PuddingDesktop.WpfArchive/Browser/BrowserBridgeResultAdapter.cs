@@ -5,7 +5,7 @@ namespace PuddingDesktop.Browser;
 
 /// <summary>
 /// I2-c 接线所需的**结果反投影**（Contracts → Bridge 线缆描述符）：
-/// `page.getInfo`、`context.list`/`context.getInfo`、`page.list` 与 `page.locate`。
+/// `page.getInfo`、`context.list`/`context.getInfo`、`page.list`、`page.locate`、`page.interact`、`page.waitFor`。
 ///
 /// 已知字段缺口（如实记录，不编造）：
 /// · `DesktopContextInfo` 没有 UserDataDirectory ⇒ 线缆值用空串（旧 controller 有该字段，接入执行器后
@@ -101,6 +101,46 @@ public static class BrowserBridgeResultAdapter
             // 契约没有 bbox：线缆值 null（不伪造坐标）；需要时由契约/表面补来源。
             BoundingBox = null,
             PageVersion = element.PageVersion.Value,
+        };
+    }
+
+    public static BrowserInteractionResultDescriptor FromInteraction(DesktopInteractionResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new BrowserInteractionResultDescriptor
+        {
+            Page = FromPageState(result.Page),
+            Element = result.Element is { } element ? FromElement(element) : null,
+            Scroll = result.Scroll is { } scroll ? FromScrollReport(scroll) : null,
+        };
+    }
+
+    public static BrowserScrollReportDescriptor FromScrollReport(DesktopScrollReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        return new BrowserScrollReportDescriptor
+        {
+            Container = report.Container,
+            BeforeX = report.BeforeX,
+            BeforeY = report.BeforeY,
+            AfterX = report.AfterX,
+            AfterY = report.AfterY,
+            ConsumedDeltaX = report.ConsumedDeltaX,
+            ConsumedDeltaY = report.ConsumedDeltaY,
+            AtBoundary = report.AtBoundary,
+            ContentChanged = report.ContentChanged,
+            // 线缆没有 stopReason 字段：已知缺口，保持不伪造。
+        };
+    }
+
+    public static BrowserWaitResultDescriptor FromWait(DesktopWaitResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new BrowserWaitResultDescriptor
+        {
+            TimedOut = result.TimedOut,
+            Error = result.Error,
+            Page = FromPageState(result.Page),
         };
     }
 }

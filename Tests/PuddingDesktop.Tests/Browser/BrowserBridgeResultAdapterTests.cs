@@ -136,4 +136,42 @@ public sealed class BrowserBridgeResultAdapterTests
         // 已知缺口：契约没有 bbox，线缆保持 null（不伪造坐标）。
         Assert.Null(element.BoundingBox);
     }
+
+    [Fact]
+    public void InteractionAndWait_MapPageElementScrollAndTimeoutFacts()
+    {
+        var element = new DesktopElementRef(
+            "v5-n2",
+            "input",
+            DesktopPageVersion.Require(5),
+            role: "textbox",
+            name: "Name",
+            value: "Pudding");
+
+        var interaction = BrowserBridgeResultAdapter.FromInteraction(new DesktopInteractionResult(
+            Target,
+            new DesktopPageState(Target, new Uri("https://example.com/a"), DesktopPageVersion.Require(5), DesktopPageReadiness.Complete),
+            element,
+            new DesktopScrollReport("document", beforeY: 0, afterY: 120, consumedDeltaY: 120, contentChanged: true)));
+
+        Assert.NotNull(interaction.Element);
+        Assert.Equal("v5-n2", interaction.Element!.Ref);
+        Assert.Equal("https://example.com/a", interaction.Page.Url);
+        Assert.NotNull(interaction.Scroll);
+        Assert.Equal(120, interaction.Scroll!.AfterY);
+        Assert.Equal(120, interaction.Scroll.ConsumedDeltaY);
+        Assert.True(interaction.Scroll.ContentChanged);
+
+        var wait = BrowserBridgeResultAdapter.FromWait(new DesktopWaitResult(
+            Target,
+            new DesktopWaitCondition(DesktopWaitConditionKind.Selector, "#ready"),
+            timedOut: true,
+            new DesktopPageState(Target, null, DesktopPageVersion.Require(3), DesktopPageReadiness.Loading),
+            error: "condition not met"));
+
+        Assert.True(wait.TimedOut);
+        Assert.Equal("condition not met", wait.Error);
+        Assert.Equal(3, wait.Page.PageVersion);
+        Assert.Equal(string.Empty, wait.Page.Url);
+    }
 }
