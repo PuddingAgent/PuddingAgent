@@ -27,12 +27,16 @@ export async function getAgentConversation(
   workspaceId: string,
   agentId: string,
   knownCursor?: number,
+  signal?: AbortSignal,
 ): Promise<AgentConversationView | null> {
   const qs =
     knownCursor && knownCursor > 0 ? `?knownCursor=${knownCursor}` : '';
   const url = `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/conversation${qs}`;
+  const options: { method: 'GET'; skipErrorHandler: true; signal?: AbortSignal } =
+    { method: 'GET', skipErrorHandler: true };
+  if (signal) options.signal = signal;
   try {
-    return await request(url, { method: 'GET', skipErrorHandler: true });
+    return await request(url, options);
   } catch (error) {
     if (isNotModifiedResponse(error)) return null;
     throw error;

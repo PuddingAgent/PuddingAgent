@@ -634,4 +634,59 @@ describe('agent chat client store', () => {
     expect(store.getSnapshot().isOpening).toBe(false);
     expect(store.getSnapshot().isRefreshing).toBe(false);
   });
+
+  it('aborts the previous open request when switching agents', async () => {
+    const cache = createMemoryAgentChatCache();
+    const signals: AbortSignal[] = [];
+    let resolveA: (value: AgentConversationView) => void = () => undefined;
+    let resolveB: (value: AgentConversationView) => void = () => undefined;
+
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [],
+        getConversation: async (_workspaceId, agentId, _cursor, signal) => {
+          if (signal) signals.push(signal);
+          if (agentId === 'agent-a') {
+            return new Promise<AgentConversationView>((resolve) => {
+              resolveA = resolve;
+            });
+          }
+          return new Promise<AgentConversationView>((resolve) => {
+            resolveB = resolve;
+          });
+        },
+      },
+    });
+
+    const openA = store.selectAgent('default', 'agent-a');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(signals[0]?.aborted).toBe(false);
+
+    const openB = store.selectAgent('default', 'agent-b');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(signals[0]?.aborted).toBe(true);
+
+    const build = (
+      agentId: string,
+      sessionId: string,
+      cursor: number,
+    ): AgentConversationView => ({
+      workspaceId: 'default',
+      ownerUserId: 'single-user',
+      agentId,
+      mainSessionId: sessionId,
+      messages: [],
+      eventCursor: cursor,
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    resolveA(build('agent-a', 'session-a', 1));
+    resolveB(build('agent-b', 'session-b', 2));
+    await Promise.all([openA, openB]);
+
+    expect(store.getSnapshot().agentId).toBe('agent-b');
+    expect(store.getSnapshot().conversation?.mainSessionId).toBe('session-b');
+  });
 });

@@ -52,6 +52,22 @@ describe('agentChatApi', () => {
     );
   });
 
+  it('forwards the selection AbortSignal to the conversation request', async () => {
+    const controller = new AbortController();
+    mockRequest.mockResolvedValueOnce({ messages: [] });
+
+    await getAgentConversation('default', 'agent-1', undefined, controller.signal);
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      '/api/workspaces/default/agents/agent-1/conversation',
+      {
+        method: 'GET',
+        skipErrorHandler: true,
+        signal: controller.signal,
+      },
+    );
+  });
+
   it('loads historical process items only for the selected message', async () => {
     mockRequest.mockResolvedValueOnce({ processItems: [] });
 

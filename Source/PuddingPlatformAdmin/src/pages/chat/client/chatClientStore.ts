@@ -14,6 +14,7 @@ export interface AgentChatApiPort {
     workspaceId: string,
     agentId: string,
     knownCursor?: number,
+    signal?: AbortSignal,
   ): Promise<AgentConversationView | null>;
 }
 
@@ -82,6 +83,8 @@ export function createAgentChatClientStore(input: {
     key: string;
     promise: Promise<AgentConversationView | null>;
   } | null = null;
+  let selectionAbort: AbortController | null = null;
+  let backgroundSyncAbort: AbortController | null = null;
   let snapshot: AgentChatClientSnapshot = {
     ownerUserId,
     statuses: [],
@@ -108,6 +111,7 @@ export function createAgentChatClientStore(input: {
     workspaceId: string,
     agentId: string,
     knownCursor?: number,
+    signal?: AbortSignal,
   ): Promise<AgentConversationView | null> => {
     const key = `${workspaceId}\u0000${agentId}\u0000${knownCursor ?? 'none'}`;
     if (conversationInFlight?.key === key) {
@@ -115,7 +119,7 @@ export function createAgentChatClientStore(input: {
     }
 
     const promise = input.api
-      .getConversation(workspaceId, agentId, knownCursor)
+      .getConversation(workspaceId, agentId, knownCursor, signal)
       .finally(() => {
         if (conversationInFlight?.promise === promise) {
           conversationInFlight = null;
@@ -265,13 +269,27 @@ export function createAgentChatClientStore(input: {
     async selectAgent(workspaceId: string, agentId: string) {
       const traceId = createTraceId('agent-select');
       const selectStartedAt = performance.now();
+      const sameSelection =
+        snapshot.workspaceId === workspaceId && snapshot.agentId === agentId;
+      // 重复选择当前 key：若首次打开/后台校准仍在途，加入既有请求；不增加 generation。
+      if (sameSelection && (snapshot.isOpening || snapshot.isRefreshing)) {
+        return;
+      }
+
       const version = ++selectionVersion;
       backgroundSyncVersion += 1;
       const ownerUserId = DEFAULT_AGENT_CHAT_OWNER_ID;
-      const existingConversation =
-        snapshot.workspaceId === workspaceId && snapshot.agentId === agentId
-          ? snapshot.conversation
-          : null;
+      const existingConversation = sameSelection ? snapshot.conversation : null;
+
+      // 会话切换取消旧选择与旧后台校正的在途请求；同一 key 重入不取消共享请求。
+      if (!sameSelection) {
+        selectionAbort?.abort();
+      }
+      backgroundSyncAbort?.abort();
+      backgroundSyncAbort = null;
+      const abortController = new AbortController();
+      selectionAbort = abortController;
+
       const commitStartedAt = performance.now();
       set({
         workspaceId,
@@ -330,7 +348,12 @@ export function createAgentChatClientStore(input: {
 
       try {
         const apiStartedAt = performance.now();
-        const fresh = await fetchConversationOnce(workspaceId, agentId);
+        const fresh = await fetchConversationOnce(
+          workspaceId,
+          agentId,
+          undefined,
+          abortController.signal,
+        );
         if (!fresh) {
           throw new Error(
             'Conversation response unexpectedly empty during agent selection.',
@@ -450,6 +473,9 @@ export function createAgentChatClientStore(input: {
       }
 
       syncInFlight = true;
+      backgroundSyncAbort?.abort();
+      const syncAbortController = new AbortController();
+      backgroundSyncAbort = syncAbortController;
       const version = ++backgroundSyncVersion;
       const traceId = createTraceId('agent-selected-sync');
       const syncStartedAt = performance.now();
@@ -466,6 +492,7 @@ export function createAgentChatClientStore(input: {
           workspaceId,
           agentId,
           knownCursor,
+          syncAbortController.signal,
         );
         if (!fresh) {
           recordPerfStep(
@@ -604,6 +631,9 @@ export function createAgentChatClientStore(input: {
           });
         }
       } finally {
+        if (backgroundSyncAbort === syncAbortController) {
+          backgroundSyncAbort = null;
+        }
         syncInFlight = false;
       }
     },
