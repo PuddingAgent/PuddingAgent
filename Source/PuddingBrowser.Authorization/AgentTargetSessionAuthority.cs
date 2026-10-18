@@ -39,6 +39,13 @@ public sealed class AgentTargetSessionAuthority
     /// <summary>用户已把页面交出来、但尚未由可信 Core 会话确认归属的**待交页**（handover pending）。</summary>
     private DesktopPageTarget? _pendingTarget;
     private AgentTargetSessionId? _lastRevokedSessionId;
+
+    /// <summary>
+    /// V1 隐式绑定的人为闸：用户显式撤销目标后置位，直到用户再次显式选页（<see cref="SelectTarget"/>）
+    /// 或确认交接（<see cref="TryClaimOwner"/>）才解除。页面关闭 / 桥换代 / 目标切换都不置位 ——
+    /// 那些是运行状态变化，不应永久剥夺 Agent 使用浏览器的能力。
+    /// </summary>
+    private bool _implicitBindingSuspended;
     private AgentTargetPermit? _permitInFlight;
     private CancellationTokenSource? _permitCancellation;
     private AgentTargetControlState _controlState;
@@ -269,6 +276,8 @@ public sealed class AgentTargetSessionAuthority
                 _pendingTarget = null;
             }
 
+            // 用户重新选页 = 恢复 V1 隐式绑定。
+            _implicitBindingSuspended = false;
             _pendingTarget = target;
             _reason = reason;
             snapshot = Snapshot();
@@ -305,6 +314,7 @@ public sealed class AgentTargetSessionAuthority
                     || string.Equals(_session.Target.Key, _pendingTarget.Key, StringComparison.Ordinal);
                 if (sameTarget && _session.Owner.Equals(controlHandle.Owner))
                 {
+                    _implicitBindingSuspended = false;
                     _reason = "control owner is already bound to this target";
                     snapshot = Snapshot();
                     return true;
@@ -329,6 +339,7 @@ public sealed class AgentTargetSessionAuthority
                 controlHandle,
                 _timeProvider.GetUtcNow());
             _pendingTarget = null;
+            _implicitBindingSuspended = false;
             _reason = "handover claimed by the trusted control owner";
             snapshot = Snapshot();
             return true;
@@ -343,6 +354,8 @@ public sealed class AgentTargetSessionAuthority
         lock (_sync)
         {
             toCancel = InvalidateTargetUnsafe(reason ?? "revoked by user");
+            // 用户显式撤销 ⇒ 暂停 V1 隐式绑定，直到用户再次显式选页（尊重人工干预）。
+            _implicitBindingSuspended = true;
             snapshot = Snapshot();
         }
 
@@ -447,6 +460,10 @@ public sealed class AgentTargetSessionAuthority
 
         lock (_sync)
         {
+            // V1：PuddingDesktop 内置浏览器只服务本机 Agent，不再要求用户先手工交接页面。
+            // 隐式绑定只补足**缺失的目标**，不放宽 owner / 桥世代 / 已关闭这些真实边界（仍由 GateUnsafe 裁决）。
+            EnsureImplicitTargetUnsafe(request.Target, request.ControlHandle);
+
             var gate = GateUnsafe(request.Target, request.ControlHandle);
             if (gate is not null)
             {
@@ -633,6 +650,56 @@ public sealed class AgentTargetSessionAuthority
     }
 
     // ── 内部 ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// V1 隐式目标绑定：内置浏览器不再要求用户手工把页面交给 Agent。
+    ///
+    /// 首个页面命令用**宿主注入的可信控制句柄**把目标绑定到它请求的页面；同一 Core 会话随后请求另一页时
+    /// 目标自动跟随（旧目标的执行权按既有规则撤销，写世代与控制世代照常推进）。
+    /// 不放宽的部分：跨会话（owner 不同）不自动改绑，仍由 <see cref="GateUnsafe"/> 报 owner_mismatch；
+    /// 桥未连通或已关闭时同样不绑定。
+    /// </summary>
+    private void EnsureImplicitTargetUnsafe(DesktopPageTarget target, AgentTargetControlHandle? controlHandle)
+    {
+        if (_isClosed || !_generation.IsLive || controlHandle is null || _implicitBindingSuspended)
+        {
+            return;
+        }
+
+        if (_session is null)
+        {
+            _session = new AgentTargetSession(
+                AgentTargetSessionId.New(),
+                target,
+                _generation,
+                controlHandle,
+                _timeProvider.GetUtcNow());
+            _pendingTarget = null;
+            _reason = "implicit target binding (v1: the desktop browser is agent-only)";
+            return;
+        }
+
+        if (string.Equals(_session.Target.Key, target.Key, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!_session.Owner.Equals(controlHandle.Owner))
+        {
+            // 归属冲突交给 GateUnsafe 报 owner_mismatch，不在这里静默改绑。
+            return;
+        }
+
+        InvalidateTargetUnsafe("the agent target followed the next page request (v1)")?.Cancel();
+        _session = new AgentTargetSession(
+            AgentTargetSessionId.New(),
+            target,
+            _generation,
+            controlHandle,
+            _timeProvider.GetUtcNow());
+        _pendingTarget = null;
+        _reason = "implicit target switch (v1: the desktop browser is agent-only)";
+    }
 
     private AgentTargetDecision? GateUnsafe(DesktopPageTarget target, AgentTargetControlHandle? controlHandle)
     {

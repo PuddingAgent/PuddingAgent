@@ -76,9 +76,10 @@ public sealed class AgentTargetSessionAuthorityTests
         Assert.AreEqual(9, snapshot.BridgeGeneration.Value);
         Assert.IsTrue(snapshot.Describe().Contains("Connected(gen=9)", StringComparison.Ordinal));
 
-        // 桥活了但用户还没选页 ⇒ 必须是「需要选页」，不是「传输不可用」。
+        // V1：桥活了但用户没选页 ⇒ 首个页面命令自动绑定它请求的页面（内置浏览器只服务本机 Agent）。
         var decision = authority.Authorize(Req(PageA, AgentTargetOperation.Observe));
-        Assert.AreEqual(AgentTargetErrorCodes.TargetRequired, decision.ErrorCode);
+        Assert.IsTrue(decision.IsAllowed);
+        Assert.AreEqual(PageA.Key, authority.Capture().Session!.Target.Key);
     }
 
     [TestMethod]
@@ -107,15 +108,19 @@ public sealed class AgentTargetSessionAuthorityTests
     }
 
     [TestMethod]
-    public void GenerationChangeRevokesTheTarget()
+    public void GenerationChangeReplacesTheTargetOnTheNextCommand()
     {
         var authority = ReadyWith(PageA);
 
         var snapshot = authority.OnBridgeReady(ConnectionGeneration.Require(10));
 
+        // 换代本身作废旧会话（旧票据不可跟世代使用）……
         Assert.IsFalse(snapshot.HasTarget);
+
+        // ……但 V1 下一条命令会以新世代自动重绑，不再永久要求用户重新选页。
         var decision = authority.Authorize(Req(PageA, AgentTargetOperation.Observe));
-        Assert.AreEqual(AgentTargetErrorCodes.TargetRevoked, decision.ErrorCode);
+        Assert.IsTrue(decision.IsAllowed);
+        Assert.AreEqual(10, authority.Capture().Session!.BridgeGeneration.Value);
     }
 
     // ── 用户的选页是唯一授权来源 ────────────────────────────────────────
@@ -147,14 +152,30 @@ public sealed class AgentTargetSessionAuthorityTests
     }
 
     [TestMethod]
-    public void APageTheUserDidNotSelectIsRejected()
+    public void APageTheAgentRequestsIsBoundWithoutUserSelection()
     {
         var authority = ReadyWith(PageA);
 
+        // V1：目标跟随 Agent 请求的页面（同一 Core 会话内），不再要求用户先选页。
         var decision = authority.Authorize(Req(PageB, AgentTargetOperation.Observe));
 
-        Assert.IsFalse(decision.IsAllowed);
-        Assert.AreEqual(AgentTargetErrorCodes.TargetRequired, decision.ErrorCode);
+        Assert.IsTrue(decision.IsAllowed);
+        Assert.AreEqual(PageB.Key, authority.Capture().Session!.Target.Key);
+    }
+
+    [TestMethod]
+    public void RevocationSuspendsImplicitBindingUntilTheUserSelectsAgain()
+    {
+        var authority = ReadyWith(PageA);
+
+        authority.Revoke("user cleared the target");
+        Assert.AreEqual(
+            AgentTargetErrorCodes.TargetRevoked,
+            authority.Authorize(Req(PageA, AgentTargetOperation.Observe)).ErrorCode);
+
+        // 用户重新选页 ⇒ V1 隐式绑定恢复。
+        authority.SelectTarget(PageA, Handle);
+        Assert.IsTrue(authority.Authorize(Req(PageA, AgentTargetOperation.Observe)).IsAllowed);
     }
 
     [TestMethod]
@@ -252,8 +273,9 @@ public sealed class AgentTargetSessionAuthorityTests
         var revoked = authority.NotifyOwnerUnavailable(Handle.Owner, "core session ended");
         Assert.IsFalse(revoked.HasTarget);
 
+        // V1：会话结束后下一条命令自动重绑（不永久剥夺浏览器能力）。
         var decision = authority.Authorize(Req(PageA, AgentTargetOperation.Observe));
-        Assert.AreEqual(AgentTargetErrorCodes.TargetRevoked, decision.ErrorCode);
+        Assert.IsTrue(decision.IsAllowed);
     }
 
     [TestMethod]
@@ -266,7 +288,9 @@ public sealed class AgentTargetSessionAuthorityTests
 
         var closed = authority.NotifyPageClosed(PageA);
         Assert.IsFalse(closed.HasTarget);
-        Assert.AreEqual(AgentTargetErrorCodes.TargetRevoked, authority.Authorize(Req(PageA, AgentTargetOperation.Observe)).ErrorCode);
+
+        // V1：关页后下一条命令自动重绑（同页重新打开也可用），不再永久拒绝。
+        Assert.IsTrue(authority.Authorize(Req(PageA, AgentTargetOperation.Observe)).IsAllowed);
     }
 
     // ── 接管/暂停是运行控制，不是权限审批 ──────────────────────────────
@@ -612,7 +636,7 @@ public sealed class AgentTargetSessionAuthorityTests
     // ── Handover：用户交页 + 可信会话确认归属（ADR-097 D3）────────────────
 
     [TestMethod]
-    public void OfferingATargetDoesNotCreateAnExecutableSessionUntilClaimed()
+    public void OfferingATargetIsBoundOnTheFirstCommand()
     {
         var authority = Ready();
 
@@ -620,7 +644,10 @@ public sealed class AgentTargetSessionAuthorityTests
 
         Assert.IsFalse(offered.HasTarget, "交页本身不产生可执行授权（UI 不能显示“已交出”）。");
         Assert.IsTrue(offered.HasPendingHandover);
-        Assert.AreEqual(AgentTargetErrorCodes.TargetRequired, authority.Authorize(Req(PageA, AgentTargetOperation.Observe)).ErrorCode);
+
+        // V1：不再等待用户确认交接 —— 首条命令即建立会话。
+        Assert.IsTrue(authority.Authorize(Req(PageA, AgentTargetOperation.Observe)).IsAllowed);
+        Assert.IsTrue(authority.Capture().HasTarget);
     }
 
     [TestMethod]

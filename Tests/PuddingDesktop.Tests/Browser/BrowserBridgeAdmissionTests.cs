@@ -8,12 +8,13 @@ namespace PuddingDesktop.Tests.Browser;
 /// <summary>
 /// **Bridge 准入与幂等的不变式套件**（外部复核反例迁入常规测试）。
 ///
-/// ① **无会话授权**的命令必须在触碰 handler **之前**被拒（fail closed）；
+/// ① **无可信 owner** 的命令必须在触碰 handler **之前**被拒（fail closed）；
 /// ② 幂等缓存**不得跨调用者回收**（同 operationId 换调用者 ⇒ 冲突）；
 /// ③ 同一 operationId 的**并发**调用只允许执行一次（后来者等待同一完成源）。
 ///
-/// 正向配对见 <see cref="BrowserBridgeAuthorizationFixtureTests"/>：**有授权必须仍能成功** ——
-/// 防止用"一律拒绝"把反例刷绿。ADR-097 D3/D4：准入由会话权威裁决（用户交页 + 宿主注入 owner）。
+/// V1 变更：PuddingDesktop 内置浏览器只服务本机 Agent，**不再要求用户先交页** ——
+/// 桥在线 + 可信 owner ⇒ 首条命令自动绑定目标页（见各用例注释）。
+/// 保留的不变式：owner 缺失仍 fail-closed；跨 owner 不自动改绑。
 /// </summary>
 public sealed class BrowserBridgeAdmissionTests
 {
@@ -47,7 +48,7 @@ public sealed class BrowserBridgeAdmissionTests
     };
 
     [Fact]
-    public async Task BridgeWithNoHandedOverPageMustRejectBeforeHandler()
+    public async Task BridgeWithNoHandedOverPageBindsTheRequestedPage()
     {
         var lifecycle = BrowserTestState.CreateLifecycle();
         lifecycle.NotifyBridgeConnected(BrowserTestState.Generation.Value);
@@ -55,17 +56,19 @@ public sealed class BrowserBridgeAdmissionTests
         var handler = new CountingHandler();
         dispatcher.SetHandler(handler);
         var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
-        Assert.False(result.Success, $"no handover but handler calls={handler.Count}");
-        Assert.Equal("agent_target_required", result.ErrorCode);
-        Assert.Equal(0, handler.Count);
+
+        // V1：内置浏览器只服务本机 Agent —— 无需用户交接，首条可信命令即绑定目标页并执行。
+        Assert.True(result.Success, $"v1 implicit binding must allow the command; error={result.ErrorCode}: {result.ErrorMessage}");
+        Assert.Equal(1, handler.Count);
+        Assert.True(lifecycle.CaptureSessionStatus().HasTarget);
     }
 
     // ── F3：桥在线只证明传输活性，不授予任意页面控制权 ──────────────────────
 
     [Fact]
-    public async Task BridgeLivenessAloneDoesNotAuthorizePagesTheUserDidNotSelect()
+    public async Task BridgeLivenessAloneBindsTheRequestedPage()
     {
-        // 桥换代/在线本身不产生可执行授权：目标必须由用户交页 + 可信 owner 确认（ADR-097 D3/D4）。
+        // V1：桥在线 + 可信 owner ⇒ 自动绑定（不再要求用户先交页）；owner 缺失仍拒绝（见 ACommandWithoutTrustedOwnerIsRejectedEvenForTheSelectedPage）。
         var lifecycle = BrowserTestState.CreateLifecycle();
         lifecycle.NotifyBridgeConnected(BrowserTestState.Generation.Value);
         var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
@@ -74,9 +77,8 @@ public sealed class BrowserBridgeAdmissionTests
 
         var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
 
-        Assert.False(result.Success);
-        Assert.Equal("agent_target_required", result.ErrorCode);
-        Assert.Equal(0, handler.Count);
+        Assert.True(result.Success, $"error={result.ErrorCode}: {result.ErrorMessage}");
+        Assert.Equal(1, handler.Count);
     }
 
     [Fact]
@@ -98,7 +100,7 @@ public sealed class BrowserBridgeAdmissionTests
     }
 
     [Fact]
-    public async Task NonTargetPageIsRejectedEvenWhenTheBridgeIsLive()
+    public async Task NonTargetPageFollowsTheRequestedPage()
     {
         var lifecycle = BrowserTestState.CreateLifecycle();
         BrowserTestState.HandOver(lifecycle, pageId: "other");
@@ -109,9 +111,10 @@ public sealed class BrowserBridgeAdmissionTests
 
         var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
 
-        Assert.False(result.Success);
-        Assert.Equal("agent_target_required", result.ErrorCode);
-        Assert.Equal(0, handler.Count);
+        // V1：同一 Core 会话请求另一页时目标自动跟随（不再因“不是用户选中的那一页”拒绝）。
+        Assert.True(result.Success, $"error={result.ErrorCode}: {result.ErrorMessage}");
+        Assert.Equal(1, handler.Count);
+        Assert.True(lifecycle.CaptureSessionStatus().HasTarget);
     }
 
     [Fact]

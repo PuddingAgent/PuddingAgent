@@ -599,9 +599,9 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
             target = _lifecycle.CaptureSessionTarget();
             if (target is null)
             {
-                return SessionGateResult.Denied(
-                    BrowserSessionErrorCodes.TargetRequired,
-                    "no page has been handed to the agent yet; the user must select one in the desktop UI");
+                // V1：内置浏览器只服务本机 Agent，管理类命令（page.create / context.*）不再要求先交接页面。
+                // 这里只放行**不读写页面内容**的操作；真正触碰页面的命令仍要经 AuthorizePageCommand 裁决。
+                return SessionGateResult.Ok(null);
             }
 
             if (string.IsNullOrWhiteSpace(command.ContextId)

@@ -67,7 +67,7 @@ public sealed class BrowserScreenshotProductPipelineTests
     }
 
     [Fact]
-    public async Task ScreenshotWithNoHandedOverPage_IsRejectedBeforeTheDriverIsTouched()
+    public async Task ScreenshotWithoutGrantIsRejectedBeforeTheDriverIsTouched()
     {
         var harness = await Harness.CreateAsync(handOver: false);
 
@@ -77,8 +77,9 @@ public sealed class BrowserScreenshotProductPipelineTests
                 harness.ScreenshotCommand(harness.PageVersion),
                 CancellationToken.None);
 
+            // 本 harness 没有任务绑定 ⇒ 无 page grant。V1 下目标会自动绑定，但 grant 仍缺
+            // ⇒ 拒绝且**不触达驱动**（守护的是 grant 这一层，不是交接那一层）。
             Assert.False(result.Success);
-            Assert.Equal("agent_target_required", result.ErrorCode);
             Assert.Equal(0, harness.Page.CaptureScreenshotCount);
         }
         finally

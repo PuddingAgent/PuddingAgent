@@ -21,25 +21,18 @@ public sealed class BrowserSessionAdmissionTests
         BrowserCallerKind.Agent, "agent-a", "run-agent-a");
 
     [Fact]
-    public void HandoverMustBeConfirmedByATrustedOwnerBeforeAnyCommandIsAdmitted()
+    public void HandoverIsAdmittedWithoutAnExplicitClaimUnderV1()
     {
         var lifecycle = ReadyLifecycle();
 
         lifecycle.SetAgentTarget(PageA.ContextId, PageA.PageId);
-        var pending = lifecycle.CaptureSessionStatus();
-        Assert.True(pending.HasPendingHandover);
-        Assert.False(pending.HasTarget);
 
-        var denied = lifecycle.AuthorizePageCommand(
-            Caller, BrowserSessionControlHandle.Require("session-a"), PageA, requiresWrite: true);
-        Assert.False(denied.Allow);
-        Assert.Equal(BrowserSessionErrorCodes.TargetRequired, denied.ErrorCode);
-
-        Assert.True(lifecycle.TryClaimControlOwner("session-a"));
+        // V1：内置浏览器只服务本机 Agent —— 不再要求“先确认归属再准入”，首个可信命令即建立会话。
         var allowed = lifecycle.AuthorizePageCommand(
             Caller, BrowserSessionControlHandle.Require("session-a"), PageA, requiresWrite: true);
-        Assert.True(allowed.Allow);
+        Assert.True(allowed.Allow, $"error={allowed.ErrorCode}: {allowed.Message}");
         Assert.NotNull(allowed.Permit);
+        Assert.True(lifecycle.CaptureSessionStatus().HasTarget);
     }
 
     [Fact]
@@ -82,7 +75,7 @@ public sealed class BrowserSessionAdmissionTests
     }
 
     [Fact]
-    public void TargetSwitchRevokesTheOldSessionAndItsPermits()
+    public void TargetSwitchRevokesTheOldPermitsButTheNextCommandRebinds()
     {
         var lifecycle = ReadyLifecycle();
         lifecycle.RegisterPage(PageB, DesktopPageVersion.Require(2), DesktopPageReadiness.Interactive);
@@ -93,8 +86,11 @@ public sealed class BrowserSessionAdmissionTests
 
         lifecycle.SetAgentTarget(PageB.ContextId, PageB.PageId);
 
+        // 旧票据跳目标切换必然失效（正确性不变）。
         Assert.False(lifecycle.RevalidatePageCommand(permit).Allow);
-        Assert.False(lifecycle.AuthorizePageCommand(
+
+        // V1：新命令以请求页重新绑定，不再因“不是当前目标页”被永久拒绝。
+        Assert.True(lifecycle.AuthorizePageCommand(
             Caller, BrowserSessionControlHandle.Require("session-a"), PageA, requiresWrite: false).Allow);
     }
 
