@@ -65,6 +65,7 @@
 |------|------|
 | `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client，HelloAck、heartbeat、重连 |
 | `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate` 见下「关键语义」 |
+| `Browser/BrowserBridgeCommandAdapter.cs` | I2-c 映射层（未接管执行）：Bridge 命令 → `(DesktopCapabilityDescriptor, DesktopCapabilityRequest)`；已映射 context.list/page.getInfo/导航/snapshot/locate/waitFor/screenshot，失败 fail-closed 且原因可行动 |
 | `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target 唯一 UI 状态源；接管/暂停唯一写入点见下「关键语义」 |
 | `Browser/BrowserAutomationGateSync.cs` | `IBrowserAutomationGate` 端口/闸门集合/`DelegateAutomationGate` 见下「关键语义」 |
 | `Views/BrowserWorkspaceView.xaml(.cs)` | 双标签、地址栏、Surface、Agent Activity Pane |

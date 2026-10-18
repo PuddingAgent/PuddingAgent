@@ -175,6 +175,61 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
+    public void PageScreenshot_MapsPinnedVersionScopeDetailFormatAndRegion()
+    {
+        var command = Command(
+            BrowserBridgeCommandNames.PageScreenshot,
+            "ctx",
+            "page",
+            new PageScreenshotArguments
+            {
+                ExpectedPageVersion = 7,
+                Scope = "region",
+                Detail = "high",
+                Format = "jpeg",
+                RegionX = 10,
+                RegionY = 20,
+                RegionWidth = 100,
+                RegionHeight = 50,
+            });
+
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason), reason);
+
+        Assert.Equal(DesktopCapability.BrowserScreenshot, descriptor!.Capability);
+        var screenshot = request!.Screenshot;
+        Assert.NotNull(screenshot);
+        Assert.Equal(7, screenshot!.ExpectedPageVersion.Value);
+        Assert.Equal(DesktopScreenshotScope.Region, screenshot.Scope);
+        Assert.Equal(DesktopScreenshotDetail.High, screenshot.Detail);
+        Assert.Equal("jpeg", screenshot.Format);
+        Assert.Equal(10, screenshot.RegionX);
+        Assert.Equal(20, screenshot.RegionY);
+        Assert.Equal(100, screenshot.RegionWidth);
+        Assert.Equal(50, screenshot.RegionHeight);
+
+        // 缺失/非正版本必须拒绝（不猜当前版本）。
+        var missingVersion = Command(
+            BrowserBridgeCommandNames.PageScreenshot,
+            "ctx",
+            "page",
+            new PageScreenshotArguments { ExpectedPageVersion = 0 });
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            missingVersion, out _, out _, out var versionReason));
+        Assert.Contains("positive expectedPageVersion", versionReason, StringComparison.Ordinal);
+
+        // 未注册 scope 必须拒绝（不静默回退 viewport）。
+        var badScope = Command(
+            BrowserBridgeCommandNames.PageScreenshot,
+            "ctx",
+            "page",
+            new PageScreenshotArguments { ExpectedPageVersion = 3, Scope = "made-up" });
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            badScope, out _, out _, out var scopeReason));
+        Assert.Contains("not registered", scopeReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PageCommandsWithoutExplicitTargets_AreRejectedWithAnActionableReason()
     {
         var missingPage = Command(BrowserBridgeCommandNames.PageGetInfo, "ctx", null);

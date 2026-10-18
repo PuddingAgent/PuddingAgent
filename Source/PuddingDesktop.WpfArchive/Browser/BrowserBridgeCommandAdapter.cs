@@ -14,7 +14,8 @@ namespace PuddingDesktop.Browser;
 /// · `page.goto/goBack/goForward/reload/stop` → `webview.navigate`（动作 + URL + 超时）；
 /// · `page.snapshot` → `browser.snapshot`（全部快照选项逐字段搬运）；
 /// · `page.locate` → `browser.locate`（kind/name/exact/nth/hasText 逐字段；未知 kind 拒绝）；
-/// · `page.waitFor` → `browser.wait_for`（单条件映射；多条件/无条件显式拒绝，不静默挑优先级）。
+/// · `page.waitFor` → `browser.wait_for`（单条件映射；多条件/无条件显式拒绝，不静默挑优先级）；
+/// · `page.screenshot` → `browser.screenshot`（必须钉住版本；scope/detail/format 严格解析）。
 ///
 /// 后续切片按"快照/定位/等待 → 交互/tabs → 截图"扩充，再切换派发器入口。映射失败的
 /// <c>reason</c> 必须可行动（缺 context/page id、参数非法、能力未注册、尚未映射），不得
@@ -28,6 +29,7 @@ public static class BrowserBridgeCommandAdapter
     internal const string SnapshotCapabilityName = "browser.snapshot";
     internal const string LocateCapabilityName = "browser.locate";
     internal const string WaitForCapabilityName = "browser.wait_for";
+    internal const string ScreenshotCapabilityName = "browser.screenshot";
 
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
@@ -232,6 +234,81 @@ public static class BrowserBridgeCommandAdapter
                 condition,
                 waitArgs.TimeoutMs,
                 DesktopPageVersion.Unknown));
+            return true;
+        }
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.PageScreenshot, StringComparison.Ordinal))
+        {
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(ScreenshotCapabilityName, out descriptor))
+            {
+                reason = $"capability '{ScreenshotCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            PageScreenshotArguments? screenshotArgs;
+            try
+            {
+                screenshotArgs = command.Arguments.Deserialize<PageScreenshotArguments>(WebJson);
+            }
+            catch (JsonException)
+            {
+                reason = "page.screenshot arguments are not valid JSON";
+                return false;
+            }
+
+            if (screenshotArgs is null || screenshotArgs.ExpectedPageVersion <= 0)
+            {
+                // 截图必须钉住版本；缺失/非正版本由宿主明确拒绝，不"猜用当前版本"。
+                reason = "page.screenshot requires a positive expectedPageVersion";
+                return false;
+            }
+
+            var scope = DesktopScreenshotScope.Viewport;
+            if (!string.IsNullOrWhiteSpace(screenshotArgs.Scope)
+                && !DesktopScreenshotScopeWire.TryParse(screenshotArgs.Scope, out scope))
+            {
+                reason = $"screenshot scope '{screenshotArgs.Scope}' is not registered (no guessing)";
+                return false;
+            }
+
+            var detail = DesktopScreenshotDetail.Low;
+            if (!string.IsNullOrWhiteSpace(screenshotArgs.Detail)
+                && !DesktopScreenshotDetailWire.TryParse(screenshotArgs.Detail, out detail))
+            {
+                reason = $"screenshot detail '{screenshotArgs.Detail}' is not registered (no guessing)";
+                return false;
+            }
+
+            var format = string.IsNullOrWhiteSpace(screenshotArgs.Format)
+                ? "png"
+                : screenshotArgs.Format.Trim().ToLowerInvariant();
+            if (format is not ("png" or "jpeg"))
+            {
+                reason = $"screenshot format '{screenshotArgs.Format}' is not supported (png/jpeg only)";
+                return false;
+            }
+
+            DesktopCapabilityRequest screenshotRequest;
+            try
+            {
+                screenshotRequest = DesktopCapabilityRequest.ForScreenshot(new BrowserScreenshotRequest(
+                    target,
+                    DesktopPageVersion.Require(screenshotArgs.ExpectedPageVersion),
+                    scope,
+                    detail,
+                    format: format,
+                    regionX: screenshotArgs.RegionX,
+                    regionY: screenshotArgs.RegionY,
+                    regionWidth: screenshotArgs.RegionWidth,
+                    regionHeight: screenshotArgs.RegionHeight));
+            }
+            catch (ArgumentException ex)
+            {
+                reason = $"page.screenshot request is not usable: {ex.Message}";
+                return false;
+            }
+
+            request = screenshotRequest;
             return true;
         }
 
