@@ -96,6 +96,10 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<ConversationProjectionCheckpointEntity> ConversationProjectionCheckpoints => Set<ConversationProjectionCheckpointEntity>();
     public DbSet<ConversationCatalogEntity> ConversationCatalogs => Set<ConversationCatalogEntity>();
 
+    // 会话首屏读模型（Plan《会话首屏与渐进加载架构优化方案》§3.2）
+    public DbSet<ConversationTurnSummaryEntity> ConversationTurnSummaries => Set<ConversationTurnSummaryEntity>();
+    public DbSet<ConversationReadStateEntity> ConversationReadStates => Set<ConversationReadStateEntity>();
+
     // Connector streaming reply projection cursors (Feishu V1; generic storage contract)
     public DbSet<ConnectorStreamProjectionEntity> ConnectorStreamProjections => Set<ConnectorStreamProjectionEntity>();
 
@@ -592,6 +596,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(x => new { x.TurnId, x.Type });
             // ADR-076 retention 索引：证据保留裁剪按 committed_at 定位。
             e.HasIndex(x => x.CommittedAt);
+            // 会话首屏读模型查询收敛（Plan §6）：按 message/turn 等值收敛，禁止全会话扫描。
+            // 存量库由 ConversationReadModelSchemaBootstrapper.EnsureConversationEventIndexesAsync 显式维护创建。
+            e.HasIndex(x => new { x.ConversationId, x.MessageId, x.Sequence })
+                .HasDatabaseName(ConversationReadModelSchema.ConversationEventsConversationMessageSequenceIndex);
+            e.HasIndex(x => new { x.ConversationId, x.TurnId, x.Sequence })
+                .HasDatabaseName(ConversationReadModelSchema.ConversationEventsConversationTurnSequenceIndex);
         });
 
         modelBuilder.Entity<ConversationHeadEntity>(e =>
@@ -602,6 +612,20 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         modelBuilder.Entity<ConversationProjectionCheckpointEntity>(e =>
         {
             e.ToTable("conversation_projection_checkpoints");
+        });
+
+        modelBuilder.Entity<ConversationTurnSummaryEntity>(e =>
+        {
+            e.ToTable(ConversationReadModelSchema.TurnSummariesTable);
+            e.HasKey(x => new { x.ConversationId, x.TurnId });
+            e.HasIndex(x => new { x.ConversationId, x.LastSequence })
+                .HasDatabaseName(ConversationReadModelSchema.TurnSummariesConversationLastSequenceIndex);
+        });
+
+        modelBuilder.Entity<ConversationReadStateEntity>(e =>
+        {
+            e.ToTable(ConversationReadModelSchema.ReadStateTable);
+            e.HasKey(x => x.ConversationId);
         });
 
         modelBuilder.Entity<ConversationCatalogEntity>(e =>

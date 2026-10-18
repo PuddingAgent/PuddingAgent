@@ -55,6 +55,8 @@ public static class PuddingApplicationInitializer
             await ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             phases?.Mark(StartupPhases.Schema(nameof(ChatMessageSchemaBootstrapper)));
             await ChatMessageSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(ConversationReadModelSchemaBootstrapper)));
+            await ConversationReadModelSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             phases?.Mark(StartupPhases.Schema(nameof(SessionSteeringSchemaBootstrapper)));
             await SessionSteeringSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             phases?.Mark(StartupPhases.Schema(nameof(ExecutionRunSchemaBootstrapper)));
