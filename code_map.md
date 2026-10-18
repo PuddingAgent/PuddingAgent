@@ -68,7 +68,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingBrowser.WebView2/` | WebView2 Driver（DOM/元素/页面操作） | [code_map](Source/PuddingBrowser.WebView2/code_map.md) |
 | `Source/PuddingBrowser.AgentTools/` | 八项 `browser_*` 工具类；canonical 集合限制见子索引 | [code_map](Source/PuddingBrowser.AgentTools/code_map.md) |
 | `Source/PuddingBrowser.WinUI/` | WinUI 浏览器表面宿主（与 WPF 适配层共享驱动源文件） | [code_map](Source/PuddingBrowser.WinUI/code_map.md) |
-| `Source/PuddingBrowser.Authorization/` | 独立会话授权规则候选组件，仅被自身测试引用；生产接入按 ADR-097 | [code_map](Source/PuddingBrowser.Authorization/code_map.md) |
+| `Source/PuddingBrowser.Authorization/` | 独立会话授权规则，由 DesktopService 持有；票据/写世代与可信 owner，见 ADR-097 | [code_map](Source/PuddingBrowser.Authorization/code_map.md) |
 | `Source/PuddingBrowser.Automation/` | 🔑 浏览器自动化可靠性组件（叶子）：统一控制权状态机、页面授权与执行租约、证据化回执判定、变更类后置条件、operationId 账本（见下「关键语义」） | [code_map](Source/PuddingBrowser.Automation/code_map.md) |
 | `Source/PuddingDiagnostics/` | 🔑 可诊断基础设施叶子组件：稳定因果码/分类器/有界证据/脱敏/事故投影/故障场景；不得引用任何 Pudding 程序集 | [code_map](Source/PuddingDiagnostics/code_map.md) |
 
@@ -110,7 +110,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **Desktop 启动状态面板** | `Source/PuddingDesktop/MainWindow.xaml[.cs]` + `Source/PuddingDesktop.Foundation/StartupPanelPresenter.cs` | 启动/取消/自动恢复/加载工作台/失败共用一张文案映射表（Foundation 纯逻辑）；真实阶段只从 `CoreLogBuffer` 的 `[StartupPhase]` 行聚合（`StartupPhaseActivity`）；取消复用 `_startCts`，WebView2 加载有 20 s watchdog |
 | **浏览器自动化链路** | `Source/PuddingHost/BrowserBridge/`、`Source/PuddingBrowser.WebView2/` | Snapshot ref 必须携带 `PageVersion`；交互提交后不得重查旧 Locator，后续状态用 Wait 或新 Snapshot |
 | **DeepSeek 网页搜索/抓取工具** | `Source/PuddingRuntime/Tools/BuiltIns/Search/DeepSeek*Tool.cs`、`Source/PuddingDeepSeekWeb/` | `deepseek_search`/`deepseek_fetch` 低风险只读（AutoAllowed 免授权）；凭据 `search.providers.json` 的 `deepseek_search` 优先、回退 `llm.providers.json` 的 `providerId=deepseek`；协议在叶子组件，传输经端口适配 |
-| **浏览器控制权与页面授权** | `Source/Pudding.DesktopService/BrowserPageLifecycle.cs` + [ADR-097](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) | 当前 Bridge 与 channel 共享旧权威但执行入口分叉；一期目标是单会话与统一执行器（见下「关键语义」） |
+| **浏览器控制权与页面授权** | `Source/Pudding.DesktopService/BrowserPageLifecycle.cs` + [ADR-097](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) | Bridge 会话准入与工作区执行器；channel 保留旧权威路径；响应合同须与 Core 消费者配对（见下「关键语义」） |
 | **多模态视觉链路** | `Source/PuddingRuntime/` + [ADR-077](Docs/07_architecture/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) | typed `ContentPart{type=image, artifactId, detail}` 同事务写入 `ChatMessages.ContentPartsJson`；文本模型只收 `artifact://` 占位 |
 | **记忆与存储治理** | `Source/PuddingMemoryEngine/`、`Source/PuddingHost/Storage/` + [ADR-076](Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) | Library/Book/Chapter 是 Agent 主动维护的当前结论与索引；`StorageMaintenanceCoordinator` 是唯一在线维护 writer，保留策略读 `system.json` 且 CAS + fail-closed |
 | **插件 / Hook / 事件 / 投影** | `Source/PuddingCore/` + [参考架构](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md) | Plugin/Function/Hook/Event/Projection 五类合同；outbox → DomainEventLog → per-consumer checkpoint/retry/dead-letter |
@@ -125,7 +125,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 **浏览器控制权与页面授权**
 
-`BrowserPageLifecycle` 持有旧 `BrowserAutomationAuthority` 和页面注册表。channel 经 `DesktopService` 准入/复检；Bridge 经 dispatcher 检查后直接调用 controller，截图借用 channel 执行器。Bridge 的在线放行与暂停/接管全拒绝属于当前实现限制，不能推导为逐页撤权或只读可用。`PuddingBrowser.Authorization` 是未接入生产的候选会话规则；一期固定 Bridge、解耦本地执行器与通道，按 [ADR-097](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[整体方案](Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md)收敛。Snapshot ref 继续绑定页面版本，动作后以新观察验证，不重查旧 Locator。
+`BrowserPageLifecycle` 持有会话权威与页面登记；Bridge dispatcher 管准入、复检、释放和账本，ExecutorRoute 映射到工作区执行器，ResultAdapter 负责命令级响应。Host 代理严格消费 Protocol DTO，单项/列表/无值不可混用；发现元数据与页面控制分离。channel 旧权威路径及 handler 回退尚保留；目标边界见 [ADR-097](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[契约修复方案](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。Snapshot ref 绑定页面版本，动作后以新观察验证。
 
 ## 4. 关键调用链路
 
@@ -190,7 +190,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 | 文档 | 主题 |
 |------|------|
-| [浏览器一期 ADR](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) · [实施方案](Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md) · [现有架构](Docs/07_architecture/浏览器工具与浏览器控制能力-架构与施工进度-2026-10-18.md) | 真实 Agent 浏览器闭环、单一执行链与分层验收；代码审阅证据由架构入口链接 |
+| [浏览器一期 ADR](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) · [实施方案](Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md) · [现有架构](Docs/07_architecture/浏览器工具与浏览器控制能力-架构与施工进度-2026-10-18.md) | 真实 Agent 浏览器闭环、单一执行链与分层验收；[命令合同与配套部署](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)，审阅证据由架构入口链接 |
 | [`Docs/README.md`](Docs/README.md) · [`Agents.md`](Agents.md) · [`Agents-Hygiene.md`](Docs/10_conventions/Agents-Hygiene.md) | 文档总索引与阅读顺序 · 开发与提交纪律 · 仓库卫生 |
 | [`组件化交付规程`](Docs/10_conventions/组件化交付规程.md) · [`调试入口`](Docs/08_how_debuge/README.md) · [`架构`](Docs/07_architecture/架构.md) · [`ADR 全表`](Docs/07_architecture/README.md) | 组件化交付 S1–S5 门禁（强制）· 调试与日志诊断 · 架构总览与模块分册 |
 | [可诊断基础设施设计](Docs/12_features/可诊断基础设施设计-2026-10-07.md) | 诊断事实/类型化因果/事故查询面/故障场景资产：叶子组件边界、S1–S5 施工与门禁、查询与脱敏的强制项 |

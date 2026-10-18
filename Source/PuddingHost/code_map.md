@@ -58,7 +58,7 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 
 | 文件 | 用途 |
 |------|------|
-| `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge） |
+| `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge）：严格消费命令 DTO；单值、列表与无值合同见修复规格 |
 | `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 代理 |
 | `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理（如实回传宿主事实）（见下「关键语义」） |
 | `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（DesktopChild + BrowserAutomationEnabled）（见下「关键语义」） |；并注册**委派生命周期端口**（与门共用会话解析器与能力描述符来源） |
@@ -88,6 +88,8 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 `Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md`）
 
 **`Hosting/ConnectedDesktopCallContextFactory.cs`**：能力调用上下文工厂实现：Desktop 实例 ID 有两个**真实来源**（活动能力通道会话 → Bridge 当前连接），都没有则返回 `null`（不猜实例 ID）；另含**调用者身份**：从工具执行作用域（`IBrowserCallerIdentityAccessor`）取，缺身份不补默认值
+
+浏览器命令结果与发现路径的当前边界见[契约修复规格](../../Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)：生产者输出必须通过真实代理解码；发现不得逐页触发控制准入。
 
 ## 飞书连接器
 

@@ -21,6 +21,10 @@
 
 命令载荷定义。`PageSnapshotArguments.ScopeRef`（§151 的 `scope`，null = 整页）；`PageInteractArguments.ScrollTarget` 承载滚动目标模型（§7）；`BrowserInteractionResultDescriptor.Scroll`（`BrowserScrollReportDescriptor`）承载滚动结果事实；非滚动动作或宿主未报告时为 **null**（线缆上不编造"滚了 0 像素"）
 
+## 命令结果合同
+
+命令名、参数与结果 DTO 成对维护：`context.list` 是列表，`context.getInfo/create` 是单 context；`page.goto` 是导航结果，back/forward/reload/stop 是单页；close 无 Value。Desktop 内部能力返回全集时必须按请求裁剪，工具摘要不等于 wire。合同及修订策略见 [ADR-097](../../Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[修复规格](../../Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。
+
 ## 测试
 
-—（由 Host.Tests Bridge Endpoint 测试覆盖）
+现有 Host.Tests Bridge Endpoint 与 Desktop adapter 测试；真实 producer→wire→consumer 的连通门禁按修复规格补齐，不能仅以两侧独立 DTO 测试替代。

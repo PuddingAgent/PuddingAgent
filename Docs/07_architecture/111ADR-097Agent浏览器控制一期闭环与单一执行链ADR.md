@@ -7,7 +7,7 @@ status: active
 description: "以真实 Agent 在 PuddingDesktop 中完成可见浏览器任务作为一期交付目标；选择 Bridge 单一路由、独立于传输的 Desktop 执行器、单一会话控制权及分层验收。"
 categories: [docs, architecture]
 tags: [adr, browser, agent, desktop, execution]
-related_docs: [Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md, Docs/14_reports/Agent浏览器控制架构与实现审阅-2026-10-18.md, Docs/11_design/浏览器控制简化架构方案-2026-10-13.md, Docs/12_features/浏览器交付修订施工方案-2026-10-12.md, Docs/12_features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md]
+related_docs: [Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md, Docs/14_reports/Agent浏览器控制架构与实现审阅-2026-10-18.md, Docs/11_design/浏览器控制简化架构方案-2026-10-13.md, Docs/12_features/浏览器交付修订施工方案-2026-10-12.md, Docs/12_features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md, Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md]
 related_files: [Source/PuddingHost/BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs, Source/Pudding.DesktopService/DesktopService.cs, Source/PuddingBrowser.Authorization/AgentTargetSessionAuthority.cs, Source/PuddingDesktop/MainWindow.xaml.cs]
 slug: architecture-adr-097-agent-browser-control
 draft: false
@@ -87,6 +87,20 @@ Bridge 在线只证明传输活性，不授予任意页面的控制权。取消�
 2. 用户选定测试 Agent/DataRoot；真实模型仅凭自然语言任务，自行发现并调用浏览器工具，完成 TestSite 上可观察的表单/导航/阅读任务。
 3. 覆盖选择/换页/取消目标、接管与只读、旧 ref、断连及未知结果不重复执行；截图与视觉按模型能力分别验证。
 4. 进程内证据可声明 `in-product-functional-complete`；启动、重启、崩溃恢复、退出回收仍由外部控制器声明 `external-lifecycle-verified`。两者均满足才可称一期产品交付。
+
+### D8：命令结果合同与发现面不可被内部能力形状替代
+
+Bridge 每条命令有唯一的参数、结果及无值语义，由 Protocol 定义。内部能力可返回全集，但传输适配器必须按请求精确投影：context.getInfo 是单对象，context.list 是列表；goto 与 back/forward/reload/stop 按各自消费者合同返回；close 的成功可以无值。有值消费者严格校验 required 字段，不能以可选化、双形状解析或猜第一项掩盖错配。
+
+发现只读取有界元数据，不通过逐页内容/控制准入来补全；无目标时能发现，页面内容和副作用仍需合法会话。原始 wire、内部 Contracts 与 Agent 摘要是三个不同边界，不允许拿摘要证明原始协议字段是否存在。结果解码失败不能撤销已发生的副作用，也不能据此自动重试。
+
+必需门禁是实际生产者 → wire 编解码 → 实际消费者的连通测试；两侧各自构造期望 DTO 的单测不能替代它。具体 19 条命令矩阵、映射位置与发现端口见[契约修复方案](../12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。
+
+### D9：按配套产物交付，协议就绪与页面可控分开
+
+本次合同修复整体发布协议修订 3，两端严格匹配，不提供旧新载荷兼容分支；修订号只隔离不支持的混配，正确性仍由 D8 门禁证明。Hello/Ack 应携带协议修订与可诊断构建身份；正式发布清单绑定 Desktop、Core 及共享程序集的预期哈希。实际 Core 路径及进程加载模块身份必须与清单核对，不能以 DLL 长度、时间戳或“都重启了”代替。
+
+部署采用完整配套包，禁止只替换 Protocol.dll；显式 Core 路径配置必须在切换前核验。传输连接、合同可用、发现成功、控制会话成立分别呈现，握手成功不是 Agent 可控。协议不匹配时停止浏览器工具派发并提供修复入口，Shell 仍可启动和进入运行中心。产品外部部署及在飞任务处理遵守两段式验收边界。
 
 ## 3. 后果与替代方案
 

@@ -2,12 +2,12 @@
 title: 案例：浏览器 Bridge 与 Chat
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-18
 status: active
 description: 2026-08-23 新增。Desktop 设置页新增「调试模式（开发者）」卡片，启用并重启 Core 后：
 categories: [docs, how-debug]
 tags: [案例, 浏览器, how_debuge]
-related_docs: [Docs/08_how_debuge/README.md]
+related_docs: [Docs/08_how_debuge/README.md, Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md, Docs/14_reports/浏览器发现契约阻塞代码审阅-2026-10-18.md]
 related_files: []
 slug: how-debuge-13-案例-浏览器bridge与chat
 draft: false
@@ -262,3 +262,13 @@ ref，终态 render 会看到上一帧 `streaming`，而 ref 同步本身不会�
 WebApi 模板单程序集测试、`dotnet build PuddingRuntime --no-restore`。当前运行中的 Desktop/Core 不会自动加载新 DLL，
 必须由进程外控制器重启后，再用新子代会话检查它能否首先看到 `search_tools`、并发现/调用 `file_read`。
 
+
+## 浏览器命令返回 invalid payload：先看层级，再核对配套构建
+
+若多个工具报 `context.getInfo` 缺 `contextId/userDataDirectory/pageCount`，先沿 `RemoteBrowserRuntime.ExecuteAsync<T>` 的期望类型核对原始 Value 根节点：`{contexts:[…]}` 不是单个 context。不要以工具摘要是否显示某字段判断 wire 合同，也不要通过移除 required 属性消除症状。
+
+诊断按三层保存最小脱敏证据：命令名与 operationId、预期 DTO 和实际根字段/类型；两侧协议修订与构建身份；外部控制器记录的实际可执行路径及加载模块 MVID/哈希。不要输出整段网页、Cookie、token 或用户数据目录。DLL 时间/长度不同只是线索；同批源码仍可能有生产者/消费者错配。
+
+关闭或导航已派发后才解码失败，应先观察实际状态，不能自动重发。列页失败还要检查发现是否调用了逐页 page.getInfo，避免“无交页所以不能发现”的循环。先在隔离的 producer→wire→consumer 测试中复现，再修合同并成套部署；不直接覆盖运行中 DLL。
+
+源码位置、复现证据与修复门禁见[本次审阅](../14_reports/浏览器发现契约阻塞代码审阅-2026-10-18.md)及[修复方案](../12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。
