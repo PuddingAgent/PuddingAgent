@@ -11,15 +11,15 @@
 
 | 文件 | 职责与限制 |
 |---|---|
-| `AgentTargetSession.cs` | 当前目标页 + 桥世代的会话与快照；当前不包含可信 Core 会话所有者 |
-| `AgentTargetAuthorization.cs` | 操作分类、六种拒绝码、请求及票据；当前票据无唯一 operationId |
-| `AgentTargetSessionAuthority.cs` | OnBridgeReady/Lost、选页、撤销、Authorize/Revalidate/Complete；当前接管只翻转布尔值，完成仅按会话与控制世代匹配 |
+| `AgentTargetSession.cs` | 会话 = 目标页 + 桥世代 + **宿主注入的可信控制句柄**（Core 会话所有者 + 仅诊断用的展示名）；`AgentTargetOwnerId`/`AgentTargetControlHandle`；两轴运行控制态 `Paused`/`UserTakeover`；控制面快照 |
+| `AgentTargetAuthorization.cs` | 操作分类、九种稳定拒绝码、带可信控制句柄的请求、票据（唯一 `AgentTargetPermitId` + 连接/控制/**写世代** + 取消信号）、`AgentTargetWriteEpoch` |
+| `AgentTargetSessionAuthority.cs` | OnBridgeReady/Lost、选页（幂等/换目标/换所有者原子替换）、撤销/关页/所有者失效、暂停与接管两轴、Authorize/Revalidate/CompleteOperation/CancelOperation；进入阻断推进写世代并取消在途写，释放后票据不可再用，重复/迟到完成不释放他人占用 |
 | `PuddingBrowser.Authorization.csproj` | 组件依赖门禁 |
-| [状态机测试](../PuddingBrowser.AuthorizationTests/AgentTargetSessionAuthorityTests.cs) | 独立准入、串行、接管、切页与换代用例 |
+| [状态机测试](../PuddingBrowser.AuthorizationTests/AgentTargetSessionAuthorityTests.cs) | 40 条独立用例：准入、串行、归属、两轴控制、切页/换代、F7 反例、取消与精确释放 |
 | [边界测试](../PuddingBrowser.AuthorizationTests/ComponentBoundaryTests.cs) | 引用闭包检查 |
 
 ## 3. 生产接缝
 
-本组件无生产消费者。现有 Bridge 握手/断连已通知旧 `BrowserPageLifecycle`，并不是调用这里的 OnBridgeReady/Lost；不要再将旧权威的历史“零调用者”结论用于当前代码。
+本组件**无生产消费者**（`Source/`、`Tests/` 内除组件自身与测试工程外无引用）。现有 Bridge 握手/断连通知的是旧 `BrowserPageLifecycle`，不是调用这里的 OnBridgeReady/Lost；旧权威的历史“零调用者”结论不适用于本组件。
 
-接入前须满足一期方案的所有者、独立写世代与精确票据释放规则。接管后恢复旧写、A 的迟到 Complete 清掉 B 占用的具体静态反例见[审阅报告 F7](../../Docs/14_reports/Agent浏览器控制架构与实现审阅-2026-10-18.md#f7--p1候选简化授权组件尚未接入且不能直接替换)。组件先独立验证，再通过 DesktopService 的 Contracts 门面装配到 Shell；旧新权威不能同时裁决。
+接入（I2）前须保持：会话有可信 Core 会话所有者；暂停/接管是独立两轴并推进写世代；票据唯一且释放后不可复用；旧新权威不能同时裁决。装配点是 Desktop 浏览器工作区生命周期 + `DesktopService` 的 Contracts/标量门面；组件先独立验证，再进宿主。

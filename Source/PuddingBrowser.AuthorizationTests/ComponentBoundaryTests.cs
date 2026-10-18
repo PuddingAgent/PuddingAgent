@@ -62,7 +62,9 @@ public sealed class ComponentBoundaryTests
         // 不启动宿主、不需要 UI 线程即可构造并驱动状态机 —— 这正是拆出本组件的目的。
         var authority = new AgentTargetSessionAuthority();
         authority.OnBridgeReady(Pudding.Contracts.ConnectionGeneration.Require(1));
-        authority.SelectTarget(new Pudding.Contracts.Desktop.DesktopPageTarget("ctx", "page"));
+        authority.SelectTarget(
+            new Pudding.Contracts.Desktop.DesktopPageTarget("ctx", "page"),
+            AgentTargetControlHandle.For("component-test-session"));
 
         Assert.IsTrue(authority.Capture().HasTarget);
     }
