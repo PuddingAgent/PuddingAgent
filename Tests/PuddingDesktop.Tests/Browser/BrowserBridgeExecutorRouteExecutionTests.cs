@@ -319,6 +319,76 @@ public sealed class BrowserBridgeExecutorRouteExecutionTests
     }
 
     [Fact]
+    public async Task ContextGetInfoAndPageList_FollowTheSingleObjectAndScopedListContracts()
+    {
+        static DesktopPageInfo Page(string context, string page, long version) => new(
+            new DesktopPageTarget(context, page),
+            DesktopPageVersion.Require(version),
+            title: page,
+            url: new Uri($"https://example.com/{page}"));
+
+        var contexts = new DesktopContexts(
+        [
+            new DesktopContextInfo("ctx-a", DesktopContextTrust.AgentAuthorized, [Page("ctx-a", "p1", 1), Page("ctx-a", "p2", 2)]),
+            new DesktopContextInfo("ctx-b", DesktopContextTrust.Untrusted, [Page("ctx-b", "p3", 3)]),
+        ]);
+
+        var contextsResponse = DesktopCapabilityResponse.FromContexts(contexts);
+        var route = new BrowserBridgeExecutorRoute((_, _, _, _) => Task.FromResult(contextsResponse));
+
+        var getInfo = await route.RouteAsync(
+            Command(BrowserBridgeCommandNames.ContextGetInfo) with { ContextId = "ctx-b", PageId = null },
+            CancellationToken.None);
+        Assert.NotNull(getInfo);
+        Assert.True(getInfo!.Success);
+        var contextJson = getInfo.Value!.Value;
+        // D8：单项合同是单个对象，不是 {contexts:[...]} 包装。
+        Assert.Equal("ctx-b", contextJson.GetProperty("contextId").GetString());
+        Assert.False(contextJson.TryGetProperty("contexts", out _));
+
+        var missing = await route.RouteAsync(
+            Command(BrowserBridgeCommandNames.ContextGetInfo) with { ContextId = "missing", PageId = null },
+            CancellationToken.None);
+        Assert.NotNull(missing);
+        Assert.False(missing!.Success);
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserContextNotFound, missing.ErrorCode);
+
+        var pageList = await route.RouteAsync(
+            Command(BrowserBridgeCommandNames.PageList) with { ContextId = "ctx-a", PageId = null },
+            CancellationToken.None);
+        Assert.NotNull(pageList);
+        Assert.True(pageList!.Success);
+        var pages = pageList.Value!.Value.GetProperty("pages");
+        Assert.Equal(2, pages.GetArrayLength());
+        Assert.Equal(["p1", "p2"], pages.EnumerateArray().Select(p => p.GetProperty("pageId").GetString()));
+    }
+
+    [Fact]
+    public async Task HistoryNavigation_ReturnsTheSinglePageDescriptorContract()
+    {
+        var route = new BrowserBridgeExecutorRoute((_, _, _, _) => Task.FromResult(
+            DesktopCapabilityResponse.FromNavigate(new NavigateResult(
+                NavigateDisposition.Completed,
+                new Uri("https://example.com/after"),
+                DesktopPageVersion.Require(6),
+                Ok: true,
+                Title: "After"))));
+
+        var result = await route.RouteAsync(
+            Command(BrowserBridgeCommandNames.PageGoBack),
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result!.Success);
+        var page = result.Value!.Value;
+        // D8：历史动作消费者是单页描述符（不是导航包装）。
+        Assert.Equal("page", page.GetProperty("pageId").GetString());
+        Assert.Equal("After", page.GetProperty("title").GetString());
+        Assert.Equal(6, page.GetProperty("pageVersion").GetInt64());
+        Assert.False(page.TryGetProperty("page", out _));
+    }
+
+    [Fact]
     public async Task MissingCallerIdentity_IsRejectedBeforeTouchingTheExecutor()
     {
         var route = new BrowserBridgeExecutorRoute((_, _, _, _) =>

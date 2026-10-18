@@ -118,14 +118,19 @@ public static class BrowserBridgeCommandAdapter
             return true;
         }
 
-        // 发现面：controller 的 context.getInfo 与 page.list 都可由一次 browser.contexts 读取满足
-        //（DesktopContextInfo.pages 含目标页/版本），只是返回面更宽；不做第二条发现能力。
+        // 发现面：context.getInfo 必须精确到所请求的 context；page.list 必须明确 context。
+        // 传输层不能任取第一项（否则"查不到"会伪装成成功列表）。
         if (string.Equals(command.Name, BrowserBridgeCommandNames.ContextGetInfo, StringComparison.Ordinal)
             || string.Equals(command.Name, BrowserBridgeCommandNames.PageList, StringComparison.Ordinal))
         {
             if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(ContextsCapabilityName, out descriptor))
             {
                 reason = $"capability '{ContextsCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            if (!TryGetRequestedContextId(command, out _, out reason))
+            {
                 return false;
             }
 
@@ -673,5 +678,52 @@ public static class BrowserBridgeCommandAdapter
             reason = $"locator is not usable: {ex.Message}";
             return false;
         }
+    }
+
+    /// <summary>
+    /// 解析命令要求的 context id（envelope 与 arguments 任一来源）：
+    /// 两边都给出但不同 ⇒ 冲突失败（不任取其一）；都缺失 ⇒ 参数错误。
+    /// context.getInfo / page.list / context.close 共用同一规则。
+    /// </summary>
+    public static bool TryGetRequestedContextId(
+        BrowserBridgeCommand command,
+        out string? contextId,
+        out string? reason)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        contextId = null;
+        reason = null;
+
+        string? fromArguments = null;
+        if (command.Arguments.ValueKind == JsonValueKind.Object
+            && command.Arguments.TryGetProperty("contextId", out var argumentContextId)
+            && argumentContextId.ValueKind == JsonValueKind.String)
+        {
+            var raw = argumentContextId.GetString();
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                fromArguments = raw.Trim();
+            }
+        }
+
+        var fromEnvelope = string.IsNullOrWhiteSpace(command.ContextId) ? null : command.ContextId.Trim();
+
+        if (fromArguments is not null
+            && fromEnvelope is not null
+            && !string.Equals(fromArguments, fromEnvelope, StringComparison.Ordinal))
+        {
+            reason = $"{command.Name} has conflicting context ids in the envelope and arguments "
+                + $"('{fromEnvelope}' vs '{fromArguments}')";
+            return false;
+        }
+
+        contextId = fromEnvelope ?? fromArguments;
+        if (contextId is null)
+        {
+            reason = $"{command.Name} requires an explicit context id";
+            return false;
+        }
+
+        return true;
     }
 }

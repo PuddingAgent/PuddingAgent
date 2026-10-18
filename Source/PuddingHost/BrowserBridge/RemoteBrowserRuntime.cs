@@ -139,7 +139,59 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
         return descriptor;
     }
 
+    /// <summary>
+    /// 有值命令：成功结果必须携带合法载荷；解码失败**不代表未执行**，
+    /// 错误里带命令、operationId、期望 DTO、协议修订与阶段，便于定位而不泄露载荷。
+    /// </summary>
     internal async Task<T> ExecuteAsync<T>(
+        string name,
+        object arguments,
+        BrowserContextId? contextId,
+        PageId? pageId,
+        TimeSpan timeout,
+        CancellationToken ct)
+    {
+        var result = await SendAsync(name, arguments, contextId, pageId, timeout, ct).ConfigureAwait(false);
+
+        if (result.Value is not { } value)
+        {
+            throw new BrowserOperationException(
+                BrowserBridgeErrorCodes.BrowserOperationFailed,
+                $"Browser command '{name}' (operation {result.OperationId}) returned no value; "
+                + $"expected payload '{typeof(T).Name}' (protocol {BrowserBridgeProtocol.CurrentVersion})");
+        }
+
+        try
+        {
+            return value.Deserialize<T>(s_jsonOptions)
+                   ?? throw new JsonException($"empty value for '{typeof(T).Name}'");
+        }
+        catch (JsonException ex)
+        {
+            throw new BrowserOperationException(
+                BrowserBridgeErrorCodes.BrowserOperationFailed,
+                $"Browser command '{name}' (operation {result.OperationId}) returned an invalid payload: "
+                + $"expected '{typeof(T).Name}' (protocol {BrowserBridgeProtocol.CurrentVersion}, decode stage). {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 空响应命令（close 等）：成功**无需** Value；有值也不拒绝（消费者不读）。
+    /// 失败/取消语义与原路径一致——副作用可能已完成，调用方不得据此自动重试。
+    /// </summary>
+    internal async Task ExecuteEmptyAsync(
+        string name,
+        object arguments,
+        BrowserContextId? contextId,
+        PageId? pageId,
+        TimeSpan timeout,
+        CancellationToken ct)
+    {
+        _ = await SendAsync(name, arguments, contextId, pageId, timeout, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>统一的“发送 → 身份/期限/错误/关联”流程；不检查成功载荷形状。</summary>
+    private async Task<BrowserBridgeCommandResult> SendAsync(
         string name,
         object arguments,
         BrowserContextId? contextId,
@@ -214,35 +266,15 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
                 result.ErrorMessage ?? "Browser command failed");
         }
 
-        if (result.Value is not { } value)
+        if (result.OperationId != operationId)
         {
+            // 关联错位：不能把别的操作结果当成本次结果（更不得重试/重放）。
             throw new BrowserOperationException(
                 BrowserBridgeErrorCodes.BrowserOperationFailed,
-                $"Browser command '{name}' returned no value");
+                $"Browser command '{name}' returned a mismatched operation id");
         }
 
-        try
-        {
-            return value.Deserialize<T>(s_jsonOptions)
-                   ?? throw new JsonException($"Browser command '{name}' returned an empty value");
-        }
-        catch (JsonException ex)
-        {
-            throw new BrowserOperationException(
-                BrowserBridgeErrorCodes.BrowserOperationFailed,
-                $"Browser command '{name}' returned an invalid payload: {ex.Message}");
-        }
-    }
-
-    internal async Task ExecuteEmptyAsync(
-        string name,
-        object arguments,
-        BrowserContextId? contextId,
-        PageId? pageId,
-        TimeSpan timeout,
-        CancellationToken ct)
-    {
-        _ = await ExecuteAsync<JsonElement>(name, arguments, contextId, pageId, timeout, ct);
+        return result;
     }
 
     private void EnsureNotDisposed()

@@ -280,12 +280,7 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
             {
                 // 逐个取实体是为了拿到**活版本**与真实的前进/后退/加载标志
                 // （清单里的 PageInfo 没有这些）；拿不到实体或拿不到活版本的页面不进清单。
-                if (await context.GetPageAsync(listed.Id, cancellationToken).ConfigureAwait(false) is not { } live)
-                {
-                    continue;
-                }
-
-                if (BuildPageInfo(context.Id, live) is not { } info)
+                if (BuildPageInfo(context.Id, listed) is not { } info)
                 {
                     continue;
                 }
@@ -695,6 +690,30 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
             canGoBack: page.CanGoBack,
             canGoForward: page.CanGoForward,
             isLoading: page.IsLoading);
+    }
+
+    /// <summary>
+    /// 发现专用的元数据投影：只用 page.list 的 PageInfo（Id/Title/Url/PageVersion），
+    /// 不为了元数据去取得页面控制（不调用 page.getInfo）。版本未知 ⇒ 不进清单。
+    /// </summary>
+    private static DesktopPageInfo? BuildPageInfo(BrowserContextId contextId, PageInfo page)
+    {
+        if (page.PageVersion <= 0)
+        {
+            return null;
+        }
+
+        return new DesktopPageInfo(
+            new DesktopPageTarget(contextId.Value, page.Id.Value),
+            DesktopPageVersion.Require(page.PageVersion),
+            page.Title,
+            TryParseUrl(page.Url),
+            // 发现面拿不到活动页/授权目标/前进后退/加载标志：取保守值，工具不得据此做准入判断。
+            isActive: false,
+            isAgentTarget: false,
+            canGoBack: false,
+            canGoForward: false,
+            isLoading: false);
     }
 
     private static DesktopPageState BuildPageState(DesktopPageTarget target, IBrowserPage page) =>

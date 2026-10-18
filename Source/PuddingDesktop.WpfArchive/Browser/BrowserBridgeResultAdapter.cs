@@ -47,19 +47,47 @@ public static class BrowserBridgeResultAdapter
         };
     }
 
-    public static BrowserContextListDescriptor FromContexts(DesktopContexts contexts)    {
+    public static BrowserContextListDescriptor FromContexts(DesktopContexts contexts)
+    {
         ArgumentNullException.ThrowIfNull(contexts);
         return new BrowserContextListDescriptor
         {
-            Contexts = contexts.Contexts
-                .Select(context => new BrowserContextDescriptor
-                {
-                    ContextId = context.ContextId,
-                    // 契约没有 UserDataDirectory：如实空串，不伪造路径。
-                    UserDataDirectory = string.Empty,
-                    PageCount = context.PageCount,
-                })
-                .ToArray(),
+            Contexts = contexts.Contexts.Select(FromContext).ToArray(),
+        };
+    }
+
+    /// <summary>单个上下文投影（context.getInfo / context.create 共用）：目录未知如实空串。</summary>
+    public static BrowserContextDescriptor FromContext(DesktopContextInfo context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return new BrowserContextDescriptor
+        {
+            ContextId = context.ContextId,
+            // 契约没有 UserDataDirectory：如实空串，不伪造路径。
+            UserDataDirectory = string.Empty,
+            PageCount = context.PageCount,
+        };
+    }
+
+    /// <summary>
+    /// 按 id 精确取单个上下文：不存在返回 null（调用方转 `browser_context_not_found`）；
+    /// 同一 id 出现多次属内部合同错误（不静默取第一项）。
+    /// </summary>
+    public static BrowserContextDescriptor? FromContext(DesktopContexts contexts, string contextId)
+    {
+        ArgumentNullException.ThrowIfNull(contexts);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contextId);
+
+        var matches = contexts.Contexts
+            .Where(context => string.Equals(context.ContextId, contextId, StringComparison.Ordinal))
+            .ToArray();
+
+        return matches.Length switch
+        {
+            0 => null,
+            1 => FromContext(matches[0]),
+            _ => throw new InvalidOperationException(
+                $"desktop executor returned duplicate context id '{contextId}'"),
         };
     }
 
@@ -72,6 +100,20 @@ public static class BrowserBridgeResultAdapter
                 .SelectMany(context => context.Pages)
                 .Select(FromPageInfo)
                 .ToArray(),
+        };
+    }
+
+    /// <summary>page.list 按请求的 context 精确投影；其他 context 的页面不进入结果。</summary>
+    public static BrowserPageListDescriptor FromPageList(DesktopContexts contexts, string contextId)
+    {
+        ArgumentNullException.ThrowIfNull(contexts);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contextId);
+
+        var match = contexts.Contexts
+            .SingleOrDefault(context => string.Equals(context.ContextId, contextId, StringComparison.Ordinal));
+        return new BrowserPageListDescriptor
+        {
+            Pages = match is null ? [] : match.Pages.Select(FromPageInfo).ToArray(),
         };
     }
 
@@ -193,6 +235,13 @@ public static class BrowserBridgeResultAdapter
             },
         };
     }
+
+    /// <summary>
+    /// back/forward/reload/stop 的消费者合同是**单个页面描述符**（旧 controller 与
+    /// RemoteBrowserPage.ExecuteNavigationAsync 一致），不是导航包装。
+    /// </summary>
+    public static BrowserPageDescriptor FromNavigationPage(NavigateResult result, DesktopPageTarget target) =>
+        FromNavigate(result, target).Page;
 
     public static BrowserScreenshotDescriptor FromScreenshot(BrowserScreenshotResult result)
     {

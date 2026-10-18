@@ -178,7 +178,9 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         // 没有活版本的页面不进清单：契约本身也禁止（引用会失去版本依据）。
         var page = Assert.Single(context.Pages);
         Assert.Equal(5, page.Version.Value);
-        Assert.True(page.CanGoBack);
+        // R2/D8：发现只读 page.list 元数据，不再逐页取 page.getInfo ⇒ 前进/后退/加载标志
+        // 不在发现面内，取保守值（旧测试从 live page 断言 CanGoBack 已不再适用）。
+        Assert.False(page.CanGoBack);
         // Bridge 侧不知道这两件事：取保守值，工具不得据此做准入判断。
         Assert.False(page.IsActive);
         Assert.False(page.IsAgentTarget);

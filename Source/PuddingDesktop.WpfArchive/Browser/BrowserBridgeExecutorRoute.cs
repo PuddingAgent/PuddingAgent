@@ -121,58 +121,135 @@ public sealed class BrowserBridgeExecutorRoute
         JsonElement? value;
         try
         {
-            value = command.Name switch
+            // D8：每条命令显式列出响应合同；没有 `_ =>` 兜底（内部能力全集 ≠ 线缆返回形状）。
+            switch (command.Name)
             {
-                BrowserBridgeCommandNames.PageGetInfo => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromPageState(
-                        response.PageState ?? throw new InvalidOperationException("executor returned no page state")),
-                    WebJson),
-                BrowserBridgeCommandNames.PageList => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromPageList(
-                        response.Contexts ?? throw new InvalidOperationException("executor returned no contexts")),
-                    WebJson),
-                BrowserBridgeCommandNames.PageLocate => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromLocate(
-                        response.Locate ?? throw new InvalidOperationException("executor returned no locate result")),
-                    WebJson),
-                BrowserBridgeCommandNames.PageWaitFor => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromWait(
-                        response.Wait ?? throw new InvalidOperationException("executor returned no wait result")),
-                    WebJson),
-                BrowserBridgeCommandNames.PageInteract => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromInteraction(
-                        response.Interact ?? throw new InvalidOperationException("executor returned no interaction result")),
-                    WebJson),
-                BrowserBridgeCommandNames.PageSnapshot => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromSnapshot(
-                        response.Snapshot ?? throw new InvalidOperationException("executor returned no snapshot")),
-                    WebJson),
-                BrowserBridgeCommandNames.PageGoto or BrowserBridgeCommandNames.PageGoBack
-                    or BrowserBridgeCommandNames.PageGoForward or BrowserBridgeCommandNames.PageReload
-                    or BrowserBridgeCommandNames.PageStop => JsonSerializer.SerializeToElement(
+                case BrowserBridgeCommandNames.ContextList:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromContexts(
+                            response.Contexts ?? throw new InvalidOperationException("executor returned no contexts")),
+                        WebJson);
+                    break;
+
+                case BrowserBridgeCommandNames.ContextGetInfo:
+                {
+                    var requestedContextId = RequestedContextIdOrThrow(command);
+                    var contextDescriptor = BrowserBridgeResultAdapter.FromContext(
+                        response.Contexts ?? throw new InvalidOperationException("executor returned no contexts"),
+                        requestedContextId);
+                    if (contextDescriptor is null)
+                    {
+                        return Failure(
+                            command.OperationId,
+                            BrowserBridgeErrorCodes.BrowserContextNotFound,
+                            $"context '{requestedContextId}' was not found");
+                    }
+
+                    value = JsonSerializer.SerializeToElement(contextDescriptor, WebJson);
+                    break;
+                }
+
+                case BrowserBridgeCommandNames.ContextCreate:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromCreatedContext(
+                            response.ContextCreated ?? throw new InvalidOperationException("executor returned no created context")),
+                        WebJson);
+                    break;
+
+                // 空响应合同：只确认命令成功，不反序列化 JsonElement。
+                case BrowserBridgeCommandNames.ContextClose:
+                case BrowserBridgeCommandNames.PageClose:
+                    value = null;
+                    break;
+
+                case BrowserBridgeCommandNames.PageList:
+                {
+                    var requestedContextId = RequestedContextIdOrThrow(command);
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromPageList(
+                            response.Contexts ?? throw new InvalidOperationException("executor returned no contexts"),
+                            requestedContextId),
+                        WebJson);
+                    break;
+                }
+
+                case BrowserBridgeCommandNames.PageGetInfo:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromPageState(
+                            response.PageState ?? throw new InvalidOperationException("executor returned no page state")),
+                        WebJson);
+                    break;
+
+                case BrowserBridgeCommandNames.PageLocate:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromLocate(
+                            response.Locate ?? throw new InvalidOperationException("executor returned no locate result")),
+                        WebJson);
+                    break;
+
+                case BrowserBridgeCommandNames.PageWaitFor:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromWait(
+                            response.Wait ?? throw new InvalidOperationException("executor returned no wait result")),
+                        WebJson);
+                    break;
+
+                case BrowserBridgeCommandNames.PageInteract:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromInteraction(
+                            response.Interact ?? throw new InvalidOperationException("executor returned no interaction result")),
+                        WebJson);
+                    break;
+
+                case BrowserBridgeCommandNames.PageSnapshot:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromSnapshot(
+                            response.Snapshot ?? throw new InvalidOperationException("executor returned no snapshot")),
+                        WebJson);
+                    break;
+
+                // page.goto 的消费者合同是完整导航结果；四个历史动作只消费单页描述符。
+                case BrowserBridgeCommandNames.PageGoto:
+                    value = JsonSerializer.SerializeToElement(
                         BrowserBridgeResultAdapter.FromNavigate(
                             response.Navigate ?? throw new InvalidOperationException("executor returned no navigation result"),
-                            new DesktopPageTarget(command.ContextId!, command.PageId!)),
-                        WebJson),
-                BrowserBridgeCommandNames.PageScreenshot => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromScreenshot(
-                        response.Screenshot ?? throw new InvalidOperationException("executor returned no screenshot result")),
-                    WebJson),
-                BrowserBridgeCommandNames.PageCreate or BrowserBridgeCommandNames.PageActivate => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromPageState(
-                        (response.Tabs ?? throw new InvalidOperationException("executor returned no tabs result")).Page),
-                    WebJson),
-                // 与旧 controller 兼容：close 成功只回成功、不带载荷。
-                BrowserBridgeCommandNames.PageClose or BrowserBridgeCommandNames.ContextClose => null,
-                BrowserBridgeCommandNames.ContextCreate => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromCreatedContext(
-                        response.ContextCreated ?? throw new InvalidOperationException("executor returned no created context")),
-                    WebJson),
-                _ => JsonSerializer.SerializeToElement(
-                    BrowserBridgeResultAdapter.FromContexts(
-                        response.Contexts ?? throw new InvalidOperationException("executor returned no contexts")),
-                    WebJson),
-            };
+                            PageTargetOf(command)),
+                        WebJson);
+                    break;
+
+                case BrowserBridgeCommandNames.PageGoBack:
+                case BrowserBridgeCommandNames.PageGoForward:
+                case BrowserBridgeCommandNames.PageReload:
+                case BrowserBridgeCommandNames.PageStop:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromNavigationPage(
+                            response.Navigate ?? throw new InvalidOperationException("executor returned no navigation result"),
+                            PageTargetOf(command)),
+                        WebJson);
+                    break;
+
+                case BrowserBridgeCommandNames.PageScreenshot:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromScreenshot(
+                            response.Screenshot ?? throw new InvalidOperationException("executor returned no screenshot result")),
+                        WebJson);
+                    break;
+
+                case BrowserBridgeCommandNames.PageCreate:
+                case BrowserBridgeCommandNames.PageActivate:
+                    value = JsonSerializer.SerializeToElement(
+                        BrowserBridgeResultAdapter.FromPageState(
+                            (response.Tabs ?? throw new InvalidOperationException("executor returned no tabs result")).Page),
+                        WebJson);
+                    break;
+
+                default:
+                    // 路由集合与矩阵必须一一对应；漏列说明内部接线错误，不能回退给旧 handler。
+                    return Failure(
+                        command.OperationId,
+                        BrowserBridgeErrorCodes.BrowserOperationNotSupported,
+                        $"command '{command.Name}' is routed but has no response contract");
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -237,6 +314,22 @@ public sealed class BrowserBridgeExecutorRoute
                 return false;
         }
     }
+
+    private static string RequestedContextIdOrThrow(BrowserBridgeCommand command)
+    {
+        if (!BrowserBridgeCommandAdapter.TryGetRequestedContextId(command, out var contextId, out var reason)
+            || contextId is null)
+        {
+            throw new InvalidOperationException(reason ?? "command has no context id");
+        }
+
+        return contextId;
+    }
+
+    private static DesktopPageTarget PageTargetOf(BrowserBridgeCommand command) =>
+        new(
+            command.ContextId ?? throw new InvalidOperationException("command has no context id"),
+            command.PageId ?? throw new InvalidOperationException("command has no page id"));
 
     private static string MapErrorCode(DesktopCapabilityError error) => error.Code switch
     {

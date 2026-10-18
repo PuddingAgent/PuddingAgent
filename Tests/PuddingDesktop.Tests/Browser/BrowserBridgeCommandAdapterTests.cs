@@ -386,7 +386,7 @@ public sealed class BrowserBridgeCommandAdapterTests
     {
         // 发现/管理面：context.getInfo 与 page.list 都由一次 browser.contexts 读取满足
         //（DesktopContextInfo.pages 包含页面与版本），不做第二条发现能力。
-        var pageList = Command(BrowserBridgeCommandNames.PageList, null, null);
+        var pageList = Command(BrowserBridgeCommandNames.PageList, "ctx", null);
         Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
             pageList, out var listDescriptor, out var listRequest, out var listReason), listReason);
         Assert.Equal(DesktopCapability.BrowserContexts, listDescriptor!.Capability);
@@ -422,6 +422,21 @@ public sealed class BrowserBridgeCommandAdapterTests
         Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
             closeWithoutId, out _, out _, out var closeNoIdReason));
         Assert.Contains("requires a context id", closeNoIdReason, StringComparison.Ordinal);
+
+        // envelope 与 arguments 冲突：不任取其一，直接拒绝。
+        var conflicting = Command(
+            BrowserBridgeCommandNames.ContextGetInfo,
+            "ctx-envelope",
+            null,
+            new ContextGetInfoArguments { ContextId = "ctx-arguments" });
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            conflicting, out _, out _, out var conflictReason));
+        Assert.Contains("conflicting context ids", conflictReason, StringComparison.Ordinal);
+
+        var pageListWithoutContext = Command(BrowserBridgeCommandNames.PageList, null, null);
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            pageListWithoutContext, out _, out _, out var pageListReason));
+        Assert.Contains("requires an explicit context id", pageListReason, StringComparison.Ordinal);
     }
 
     private static BrowserBridgeCommand Command(

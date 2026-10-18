@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -21,6 +21,17 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Source\PuddingHost\PuddingHost.csproj" />
+    <!-- D8 契约连通门禁：链接 Desktop 侧无 UI 的合同适配器源码作为真实生产者（不引用 Shell）。 -->
+    <ProjectReference Include="..\..\Source\Pudding.Contracts\Pudding.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Source\PuddingDesktop.WpfArchive\Browser\BrowserBridgeCommandAdapter.cs"
+             Link="BrowserBridgeContract\BrowserBridgeCommandAdapter.cs" />
+    <Compile Include="..\..\Source\PuddingDesktop.WpfArchive\Browser\BrowserBridgeResultAdapter.cs"
+             Link="BrowserBridgeContract\BrowserBridgeResultAdapter.cs" />
+    <Compile Include="..\..\Source\PuddingDesktop.WpfArchive\Browser\BrowserBridgeExecutorRoute.cs"
+             Link="BrowserBridgeContract\BrowserBridgeExecutorRoute.cs" />
   </ItemGroup>
 
   <ItemGroup>
