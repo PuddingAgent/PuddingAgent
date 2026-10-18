@@ -60,6 +60,7 @@ describe('agent chat client store', () => {
     expect(store.getSnapshot().conversation?.messages[0]?.content).toBe(
       'cached answer',
     );
+    expect(store.getSnapshot().isOpening).toBe(false);
     expect(store.getSnapshot().isRefreshing).toBe(true);
 
     resolveFresh({
@@ -109,6 +110,7 @@ describe('agent chat client store', () => {
     expect(store.getSnapshot()).toMatchObject({
       workspaceId: 'default',
       agentId: 'agent-b',
+      isOpening: true,
       isRefreshing: true,
     });
 
@@ -589,5 +591,47 @@ describe('agent chat client store', () => {
     expect(
       store.getSnapshot().conversation?.messages.at(-1)?.content,
     ).toBe('terminal answer');
+  });
+
+  it('deduplicates concurrent open requests for the same agent scope', async () => {
+    const cache = createMemoryAgentChatCache();
+    let callCount = 0;
+    let resolveFresh: (value: AgentConversationView) => void = () => undefined;
+    const freshPromise = new Promise<AgentConversationView>((resolve) => {
+      resolveFresh = resolve;
+    });
+
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [],
+        getConversation: async () => {
+          callCount += 1;
+          return freshPromise;
+        },
+      },
+    });
+
+    const first = store.selectAgent('default', 'agent-a');
+    const second = store.selectAgent('default', 'agent-a');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(callCount).toBe(1);
+
+    resolveFresh({
+      workspaceId: 'default',
+      ownerUserId: 'single-user',
+      agentId: 'agent-a',
+      mainSessionId: 'session-agent-a',
+      messages: [],
+      eventCursor: 3,
+      updatedAt: '2026-06-07T00:00:03.000Z',
+    });
+    await Promise.all([first, second]);
+
+    expect(callCount).toBe(1);
+    expect(store.getSnapshot().isOpening).toBe(false);
+    expect(store.getSnapshot().isRefreshing).toBe(false);
   });
 });

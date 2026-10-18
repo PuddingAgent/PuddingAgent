@@ -23,6 +23,8 @@ export interface AgentChatClientSnapshot {
   agentId?: string;
   statuses: AgentStatusProjection[];
   conversation: AgentConversationView | null;
+  /** 首次打开且尚无任何可显示内容时使用的骨架条件；后台刷新不得置 true。 */
+  isOpening: boolean;
   isRefreshing: boolean;
   error: string | null;
 }
@@ -76,10 +78,15 @@ export function createAgentChatClientStore(input: {
   let backgroundSyncVersion = 0;
   let syncInFlight = false;
   let statusesSyncInFlight = false;
+  let conversationInFlight: {
+    key: string;
+    promise: Promise<AgentConversationView | null>;
+  } | null = null;
   let snapshot: AgentChatClientSnapshot = {
     ownerUserId,
     statuses: [],
     conversation: null,
+    isOpening: false,
     isRefreshing: false,
     error: null,
   };
@@ -92,6 +99,31 @@ export function createAgentChatClientStore(input: {
   };
   const createTraceId = (prefix: string) =>
     `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+  /**
+   * 同 scope+窗口+条件版本的打开请求合并（Plan §7.2）：并发选择/后台校正共用同一个 Promise，
+   * 不再重复拉取。只合并完全相同的请求 key；不同 agent/knownCursor 不互相污染。
+   */
+  const fetchConversationOnce = (
+    workspaceId: string,
+    agentId: string,
+    knownCursor?: number,
+  ): Promise<AgentConversationView | null> => {
+    const key = `${workspaceId}\u0000${agentId}\u0000${knownCursor ?? 'none'}`;
+    if (conversationInFlight?.key === key) {
+      return conversationInFlight.promise;
+    }
+
+    const promise = input.api
+      .getConversation(workspaceId, agentId, knownCursor)
+      .finally(() => {
+        if (conversationInFlight?.promise === promise) {
+          conversationInFlight = null;
+        }
+      });
+    conversationInFlight = { key, promise };
+    return promise;
+  };
 
   // P0-perf: 只有**可判定的等价**（scope + message identity + 内容/状态/过程指纹 + cursor
   // 全相等）才跳过 IndexedDB 写入与 React setState。禁止再用 messages.length 当等价判据
@@ -246,6 +278,7 @@ export function createAgentChatClientStore(input: {
         ownerUserId,
         agentId,
         conversation: existingConversation,
+        isOpening: !existingConversation,
         isRefreshing: true,
         error: null,
       });
@@ -288,11 +321,16 @@ export function createAgentChatClientStore(input: {
         return;
       }
 
-      set({ conversation: cached, isRefreshing: true });
+      const retainedConversation = cached ?? existingConversation;
+      set({
+        conversation: retainedConversation,
+        isOpening: !retainedConversation,
+        isRefreshing: true,
+      });
 
       try {
         const apiStartedAt = performance.now();
-        const fresh = await input.api.getConversation(workspaceId, agentId);
+        const fresh = await fetchConversationOnce(workspaceId, agentId);
         if (!fresh) {
           throw new Error(
             'Conversation response unexpectedly empty during agent selection.',
@@ -325,7 +363,7 @@ export function createAgentChatClientStore(input: {
           },
         );
         if (version === selectionVersion) {
-          set({ conversation: fresh, isRefreshing: false });
+          set({ conversation: fresh, isOpening: false, isRefreshing: false });
           recordPerfStep('agent.select', 'select.finish', selectStartedAt, {
             traceId,
             workspaceId,
@@ -360,6 +398,7 @@ export function createAgentChatClientStore(input: {
         });
         if (version === selectionVersion) {
           set({
+            isOpening: false,
             isRefreshing: false,
             error: error instanceof Error ? error.message : String(error),
           });
@@ -423,7 +462,7 @@ export function createAgentChatClientStore(input: {
           projectionCatchUpPending || existingConv?.activeRun
             ? undefined
             : existingConv?.eventCursor;
-        const fresh = await input.api.getConversation(
+        const fresh = await fetchConversationOnce(
           workspaceId,
           agentId,
           knownCursor,

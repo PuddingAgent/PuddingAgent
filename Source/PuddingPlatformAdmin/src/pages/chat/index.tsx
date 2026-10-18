@@ -688,7 +688,7 @@ const ChatPageContent: React.FC = () => {
         chatInteractionRuntimeEvents={chat.chatInteractionRuntimeEvents}
         historyLoading={
           chat.historyLoading ||
-          (useAgentClientArchitecture && agentClient.snapshot.isRefreshing)
+          (useAgentClientArchitecture && agentClient.snapshot.isOpening)
         }
         loadingMore={chat.loadingMore}
         hasMoreMessages={chat.hasMoreMessages}
