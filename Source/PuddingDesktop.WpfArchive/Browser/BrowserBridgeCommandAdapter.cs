@@ -5,16 +5,20 @@ using PuddingBrowser.Protocol;
 namespace PuddingDesktop.Browser;
 
 /// <summary>
-/// I2-c D1 的第一步：把 Bridge 命令映射成**能力请求**（尚不接管执行；执行仍由 controller）。
+/// I2-c D1：把 Bridge 命令映射成**能力请求**（尚不接管执行；执行仍由 controller）。
 ///
-/// 本轮只映射可验证的读命令 `page.getInfo`，用于钉住映射契约与失败原因；后续切片按
-/// "读命令（snapshot/locate/waitFor）→ 写命令（navigate/interact/tabs）→ 截图"扩充，
+/// 已映射：
+/// · `context.list` → `browser.contexts`（发现类，不要求显式页面目标）；
+/// · `page.getInfo` → `webview.page_state`。
+///
+/// 后续切片按"读命令（snapshot/locate/waitFor）→ 写命令（navigate/interact/tabs）→ 截图"扩充，
 /// 再切换派发器入口。映射失败的 <c>reason</c> 必须可行动（缺 context/page id、能力未注册、
 /// 尚未映射），不得静默回退到 controller；切换入口后该 reason 直接成为拒绝码来源。
 /// </summary>
 public static class BrowserBridgeCommandAdapter
 {
     internal const string PageStateCapabilityName = "webview.page_state";
+    internal const string ContextsCapabilityName = "browser.contexts";
 
     public static bool TryMapReadCommand(
         BrowserBridgeCommand command,
@@ -25,6 +29,18 @@ public static class BrowserBridgeCommandAdapter
         descriptor = null;
         request = null;
         reason = null;
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.ContextList, StringComparison.Ordinal))
+        {
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(ContextsCapabilityName, out descriptor))
+            {
+                reason = $"capability '{ContextsCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            request = DesktopCapabilityRequest.ForContexts();
+            return true;
+        }
 
         if (string.IsNullOrEmpty(command.PageId) || string.IsNullOrEmpty(command.ContextId))
         {

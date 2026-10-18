@@ -27,6 +27,22 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
+    public void ContextList_MapsToTheBrowserContextsCapabilityWithoutAPageTarget()
+    {
+        // 发现类命令：启动流程要求"没有交页也能看见上下文"，映射层不得要求 page id。
+        var command = Command(BrowserBridgeCommandNames.ContextList, null, null);
+
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason), reason);
+
+        Assert.NotNull(descriptor);
+        Assert.Equal(DesktopCapability.BrowserContexts, descriptor!.Capability);
+        Assert.NotNull(request);
+        Assert.NotNull(request!.Contexts);
+        Assert.Null(request.PageState);
+    }
+
+    [Fact]
     public void PageCommandsWithoutExplicitTargets_AreRejectedWithAnActionableReason()
     {
         var missingPage = Command(BrowserBridgeCommandNames.PageGetInfo, "ctx", null);
