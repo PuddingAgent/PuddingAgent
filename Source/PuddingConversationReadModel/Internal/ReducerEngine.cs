@@ -299,13 +299,22 @@ internal static class ReducerEngine
                 _ => TurnTerminalState.Cancelled,
             };
 
-            // 失败/取消终态不得伪造助手正文；只有 MessageCompleted 才能把 HasAssistantBody 置 true。
-            var hasAssistantBody = terminalState == TurnTerminalState.Completed && turn.HasAssistantBody;
+            // 失败/取消终态不得伪造助手正文；Completed 终态以 MessageCompleted 或终态 reply 存在证明正文。
+            var hasAssistantBody = terminalState == TurnTerminalState.Completed
+                && (turn.HasAssistantBody || !string.IsNullOrEmpty(ev.TextDelta));
+            var assistantMessageId = turn.AssistantMessageId;
+            if (hasAssistantBody
+                && string.IsNullOrEmpty(assistantMessageId)
+                && !string.IsNullOrEmpty(ev.MessageId))
+            {
+                assistantMessageId = ev.MessageId;
+            }
 
             _turns[turnId] = turn with
             {
                 TerminalState = terminalState,
                 HasAssistantBody = hasAssistantBody,
+                AssistantMessageId = assistantMessageId,
                 FirstSequence = turn.FirstSequence == 0 ? ev.Sequence : turn.FirstSequence,
                 LastSequence = ev.Sequence,
                 Process = ResolveTerminalProcess(turn),

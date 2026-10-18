@@ -220,7 +220,22 @@ public sealed class ComponentBoundaryTests
     // ============================================================ 辅助
 
     private static IEnumerable<string> EnumerateComponentSources()
-        => Directory.EnumerateFiles(ComponentDirectory(), "*.cs", SearchOption.AllDirectories);
+        => Directory
+            .EnumerateFiles(ComponentDirectory(), "*.cs", SearchOption.AllDirectories)
+            // 构建产物（obj/bin/TestResults）不是组件源码；即使有人用默认输出目录本地构建也不得影响纯度断言。
+            .Where(file => !IsGeneratedArtifactPath(file))
+            .Where(file => !Path.GetFileName(file).EndsWith(".g.cs", StringComparison.Ordinal));
+
+    private static bool IsGeneratedArtifactPath(string file)
+    {
+        var separators = new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
+        var normalized = file;
+        foreach (var separator in separators)
+            normalized = normalized.Replace(separator, '/');
+        return normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
+               || normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
+               || normalized.Contains("/TestResults/", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string StripXmlComments(string source)
         => Regex.Replace(source, @"<!--[\s\S]*?-->", " ");

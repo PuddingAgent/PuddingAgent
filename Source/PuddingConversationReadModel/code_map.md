@@ -44,6 +44,8 @@ Lead 审查追加（阶段 B 仍属 S3/S4）唯一新增公开字段：`Conversa
 - 只有真正改变摘要的 `Applied` 事件递增 `Revision`；迟到/忽略事件只消费游标，摘要与修订号不变。
 - 终态不可回退：`TurnCompleted/Failed/Cancelled` 后同 Turn 的 `TurnStarted`/内容事件计 `LateAfterTerminal`；
   `TurnFailed/TurnCancelled` 强制 `HasAssistantBody=false` 且不凭事件字段伪造 `AssistantMessageId`。
+- `TurnCompleted` 携带有界 `TextDelta`（终态 reply 存在性证据，≤16 KiB/入组件前 64 KiB）时可证明助手正文存在：
+  置 `HasAssistantBody=true` 并在缺失时补 `AssistantMessageId`；reply **不**拼入活动预览，失败/取消终态永不伪造正文。
 - 父子 run 隔离：`ParentRunId` 非空的子代理事件不修改 `CurrentRootRunId`、不会把根 Turn 置终态；
   **子 run 的正文/思考/工具事件不并入父 Turn 摘要**（不追加预览、不计数、不置 `HasAssistantBody`），
   只消费游标并计入 `IgnoredEventCount`；若指向已终态 Turn，终态优先，仍归 `LateAfterTerminal`。
@@ -67,11 +69,11 @@ Lead 审查追加（阶段 B 仍属 S3/S4）唯一新增公开字段：`Conversa
 - SSE 计量器停止顺序：事件数 → 字节 → 耗时；停止后调用返回 `false` 且计数不变；负值/非单调 elapsed 抛
   `ArgumentOutOfRangeException`。
 
-## 测试（`Source/PuddingConversationReadModelTests/`，191 用例）
+## 测试（`Source/PuddingConversationReadModelTests/`，193 用例）
 
 | 文件 | 覆盖 |
 |---|---|
-| `ConversationReadModelReducerTests.cs` | 初始化、按序应用、重放幂等、倒序/跳号分类、跨会话拒绝、根/子 run 隔离、终态与迟到事件、正文/思考/工具/子代理计数、UTF-8 尾部预览（中文/emoji 边界）、压缩状态、游标/修订推进 |
+| `ConversationReadModelReducerTests.cs` | 初始化、按序应用、重放幂等、倒序/跳号分类、跨会话拒绝、根/子 run 隔离、终态与迟到事件（含 `TurnCompleted` reply 证明助手正文/失败无正文）、正文/思考/工具/子代理计数、UTF-8 尾部预览（中文/emoji 边界）、压缩状态、游标/修订推进 |
 | `SubAgentReadModelTests.cs` | 子 run 内容/工具事件不并入父摘要、终态优先的 LateAfterTerminal、子代理生命周期终态不可回退（含冲突终态 fail-closed）、`SubAgentRuns` 限长/活动保留/淘汰最旧终态/`SubAgentRunsOmitted`/淘汰后重现不撑爆 |
 | `ProcessCompletenessTests.cs` | `partial/turn_active`、`complete`（Ready+TurnStarted 头+终态）、`turn_header_missing`（无头终态）、`baseline_incomplete`（非 Ready）、`subagent_summary_truncated`（omitted>0 时终态降级/活动原因/优先级）、失败/取消 Turn 覆盖语义、`Process.Revision` 递增 |
 | `ConversationReadModelLimitsTests.cs` | 冻结预算默认值、两个 Normalize 的钳制、Validate 默认通过/逐项违规报名字 |
@@ -80,16 +82,17 @@ Lead 审查追加（阶段 B 仍属 S3/S4）唯一新增公开字段：`Conversa
 | `ProcessPageBudgeterTests.cs` | 默认/最大项数、256 KiB、16 KiB 单条、候选扫描预算、空展示页前进边界、首个候选即被字节预算拒绝时的可重取边界、升序输出 |
 | `SseCatchUpMeterTests.cs` | 事件/字节/耗时触顶（触顶不消费）、停止后冻结、负值/非单调抛错、预算检查顺序 |
 | `TextBudgetTests.cs` | UTF-8 前缀/后缀字节精确、中文/emoji 不切码点、非正预算与空串 |
-| `ComponentBoundaryTests.cs` | **S4**：组件 csproj 零引用、源码无 `Pudding*` 外部命名空间/无 I/O·网络·EF·ASP.NET·DI·时间·环境 token、程序集只引用 BCL、`InternalsVisibleTo` 只给测试工程、测试工程恰好 1 条 ProjectReference、测试进程不加载宿主/兄弟组件 |
+| `ComponentBoundaryTests.cs` | **S4**：组件 csproj 零引用、源码无 `Pudding*` 外部命名空间/无 I/O·网络·EF·ASP.NET·DI·时间·环境 token（扫描自动排除 obj/bin/TestResults 与 `*.g.cs`）、程序集只引用 BCL、`InternalsVisibleTo` 只给测试工程、测试工程恰好 1 条 ProjectReference、测试进程不加载宿主/兄弟组件 |
 
 构建/测试命令（产物只在 `temp/`）：
 
 - `dotnet test Source\PuddingConversationReadModelTests\PuddingConversationReadModelTests.csproj --artifacts-path temp\build\readmodel-tests --nologo`
 - `dotnet build Source\PuddingConversationReadModel\PuddingConversationReadModel.csproj --artifacts-path temp\build\readmodel --nologo`
 
-## S5（尚未做，由接入阶段完成）
+## S5（接入中）
 
-登记 `PuddingAgentNetwork.slnx`、在消费方 csproj 加引用、DI 组合根装配、宿主侧组合测试。本阶段不改宿主。
+已做：`PuddingPlatform` 引用本组件、`PuddingAgentNetwork.slnx` 登记组件与测试工程、`ConversationProjector` 事务化读模型写入（C2b）。
+待 C 门禁通过后完成：宿主组合测试与旧首屏路径退役；本阶段不登记其余宿主 DI 生命周期。
 
 ## 关联
 

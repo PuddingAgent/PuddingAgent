@@ -5,23 +5,34 @@ using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingConversationReadModel;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services.AgentChat;
 
 namespace PuddingPlatform.Services;
 
 /// <summary>
 /// ADR-057 Phase 7: Conversation Projector。
 /// 从 Event Log 按 checkpoint 重放并生成 ChatMessages 物化视图。
+/// <para>
+/// 阶段 C2b：消息物化、读模型摘要（turn summaries + read_state）与 projection checkpoint 在
+/// **同一 SQLite 事务**提交；token usage / catalog / 向量索引等外部副作用在 commit 之后执行。
+/// 提交失败时三类写入一起回滚，checkpoint 不会领先状态。
+/// </para>
 /// </summary>
 public sealed class ConversationProjector(
     IServiceScopeFactory scopeFactory,
+    IDbContextFactory<PlatformDbContext> dbFactory,
     IConversationEventStore eventStore,
-    IChatTranscriptWriter transcriptWriter,
-    TokenUsageRecorder tokenUsageRecorder,
-    ConversationCatalogWriter catalogWriter,
-    ILogger<ConversationProjector> logger)
+    ChatTranscriptWriter transcriptWriter,
+    ConversationReadModelProjectionStore readModelStore,
+    ILogger<ConversationProjector> logger,
+    TokenUsageRecorder? tokenUsageRecorder = null,
+    ConversationCatalogWriter? catalogWriter = null)
 {
+    private const int ProjectionBatchSize = 200;
+
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -33,51 +44,119 @@ public sealed class ConversationProjector(
     {
         try
         {
-            var checkpoint = await GetCheckpointAsync(conversationId, ct);
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+            var checkpoint = await GetCheckpointAsync(db, conversationId, ct);
             var batch = await eventStore.ReadForwardAsync(
-                conversationId, checkpoint, null, limit: 200, ct);
+                conversationId, checkpoint, null, limit: ProjectionBatchSize, ct);
 
+            if (batch.Events.Count == 0)
+                return new ProjectionResult(0, batch.HasMore, null);
+
+            var readModelInputs = new List<ConversationEventInput>(batch.Events.Count);
+            var affectedTurnIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var evt in batch.Events)
+            {
+                var input = ConversationReadModelEventMapper.Map(evt);
+                readModelInputs.Add(input);
+                if (!string.IsNullOrWhiteSpace(input.TurnId))
+                    affectedTurnIds.Add(input.TurnId);
+            }
+
+            var lastSequence = batch.Events[^1].Sequence;
+            var now = DateTimeOffset.UtcNow;
             var projectedCount = 0;
+            var createdMessages = new List<ChatMessageEntity>(batch.Events.Count);
+
+            await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+            {
+                try
+                {
+                    var state = await readModelStore.LoadForBatchAsync(
+                        db, conversationId, checkpoint, affectedTurnIds, ct);
+                    var reduction = ConversationReadModelReducer.Apply(
+                        state, readModelInputs, ConversationReadModelLimits.Default);
+
+                    foreach (var evt in batch.Events)
+                    {
+                        var (role, content, thinking, usage) = ExtractFields(evt);
+                        if (content is null && usage is null)
+                            continue;
+
+                        var entity = await transcriptWriter.PersistMessageInTransactionAsync(
+                            db,
+                            sessionId: conversationId,
+                            role: role,
+                            content: content ?? "",
+                            createdAt: evt.OccurredAt.ToUnixTimeMilliseconds(),
+                            thinkingJson: thinking,
+                            usageJson: usage,
+                            workspaceId: evt.WorkspaceId,
+                            messageId: evt.MessageId,
+                            turnId: evt.TurnId,
+                            commandId: evt.CommandId,
+                            ct: ct);
+                        if (entity is not null)
+                        {
+                            createdMessages.Add(entity);
+                            projectedCount++;
+                        }
+                    }
+
+                    // 写读模型摘要/read_state 与 checkpoint：与消息物化同一事务。
+                    await readModelStore.PersistAsync(
+                        db,
+                        reduction.State,
+                        reduction.State.Turns.Keys.ToArray(),
+                        lastSequence,
+                        now,
+                        ct);
+                    await db.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                }
+                catch
+                {
+                    await transaction.RollbackAsync(ct);
+                    throw;
+                }
+            }
+
+            // ── commit 之后：外部副作用（不参与投影事务成败） ──
+            foreach (var entity in createdMessages)
+                transcriptWriter.ScheduleIndexing(entity);
 
             foreach (var evt in batch.Events)
             {
-                if (evt.Type == ConversationEventTypes.UsageRecorded)
+                if (evt.Type != ConversationEventTypes.UsageRecorded || tokenUsageRecorder is null)
+                    continue;
+                try
                 {
                     await ProjectTokenUsageAsync(evt);
                 }
-
-                var (role, content, thinking, usage) = ExtractFields(evt);
-                if (content is not null || usage is not null)
+                catch (Exception ex)
                 {
-                    await transcriptWriter.PersistMessageAsync(
-                        sessionId: conversationId,
-                        role: role,
-                        content: content ?? "",
-                        createdAt: evt.OccurredAt.ToUnixTimeMilliseconds(),
-                        thinkingJson: thinking,
-                        usageJson: usage,
-                        workspaceId: evt.WorkspaceId,
-                        agentInstanceId: null,
-                        agentTemplateId: null,
-                        messageId: evt.MessageId,
-                        turnId: evt.TurnId,
-                        commandId: evt.CommandId,
-                        ct: ct);
-                    projectedCount++;
+                    logger.LogWarning(ex,
+                        "[ConversationProjector] Post-commit usage projection failed conv={ConvId} event={EventId}",
+                        conversationId, evt.EventId);
                 }
-
-                // ADR-057 P0-4f 第⑤步第⑤小步 C2: 为每个事件 UPSERT 一行 conversation_catalog 物化投影。
-                // 不改 ExtractFields / ProjectTokenUsageAsync / PersistMessageAsync / SetCheckpoint 的既有逻辑。
-                await catalogWriter.UpsertCatalogRowAsync(evt, ct);
             }
 
-            if (batch.Events.Count > 0)
+            if (catalogWriter is not null)
             {
-                var lastSeq = batch.Events[^1].Sequence;
-                await SetCheckpointAsync(conversationId, lastSeq, ct);
+                foreach (var evt in batch.Events)
+                {
+                    try
+                    {
+                        await catalogWriter.UpsertCatalogRowAsync(evt, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex,
+                            "[ConversationProjector] Post-commit catalog projection failed conv={ConvId} event={EventId}",
+                            conversationId, evt.EventId);
+                    }
+                }
             }
 
-            var nextCheckpoint = batch.Events.Count > 0 ? batch.Events[^1].Sequence : checkpoint;
             if (projectedCount > 0)
             {
                 logger.LogInformation(
@@ -86,7 +165,7 @@ public sealed class ConversationProjector(
                     projectedCount,
                     batch.Events.Count,
                     checkpoint,
-                    nextCheckpoint);
+                    lastSequence);
             }
             else
             {
@@ -95,7 +174,7 @@ public sealed class ConversationProjector(
                     conversationId,
                     batch.Events.Count,
                     checkpoint,
-                    nextCheckpoint);
+                    lastSequence);
             }
 
             return new ProjectionResult(projectedCount, batch.HasMore, null);
@@ -109,6 +188,9 @@ public sealed class ConversationProjector(
 
     private async Task ProjectTokenUsageAsync(ConversationEvent evt)
     {
+        if (tokenUsageRecorder is null)
+            return;
+
         if (evt.Payload.ValueKind != JsonValueKind.Object
             || !evt.Payload.TryGetProperty("usage", out var usageElement)
             || usageElement.ValueKind != JsonValueKind.Object)
@@ -304,46 +386,18 @@ public sealed class ConversationProjector(
         };
     }
 
-    private async Task<long> GetCheckpointAsync(string conversationId, CancellationToken ct)
+    private static async Task<long> GetCheckpointAsync(
+        PlatformDbContext db,
+        string conversationId,
+        CancellationToken ct)
     {
-        using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-        var conn = db.Database.GetDbConnection();
-        await conn.OpenAsync(ct);
+        var projectedThrough = await db.ConversationProjectionCheckpoints
+            .AsNoTracking()
+            .Where(checkpoint => checkpoint.ConversationId == conversationId)
+            .Select(checkpoint => (long?)checkpoint.ProjectedThrough)
+            .FirstOrDefaultAsync(ct);
 
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"
-            SELECT projected_through FROM conversation_projection_checkpoints
-            WHERE conversation_id = @cid";
-        AddParam(cmd, "@cid", conversationId);
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return result is long l ? l : 0L;
-    }
-
-    private async Task SetCheckpointAsync(string conversationId, long sequence, CancellationToken ct)
-    {
-        using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-        var conn = db.Database.GetDbConnection();
-        await conn.OpenAsync(ct);
-
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"
-            INSERT OR REPLACE INTO conversation_projection_checkpoints
-            (conversation_id, projected_through, updated_at)
-            VALUES (@cid, @seq, @now)";
-        AddParam(cmd, "@cid", conversationId);
-        AddParam(cmd, "@seq", sequence);
-        AddParam(cmd, "@now", DateTimeOffset.UtcNow.ToString("O"));
-        await cmd.ExecuteNonQueryAsync(ct);
-    }
-
-    private static void AddParam(System.Data.Common.DbCommand cmd, string name, object value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = name;
-        p.Value = value;
-        cmd.Parameters.Add(p);
+        return projectedThrough ?? 0L;
     }
 
     private static string? ExtractString(JsonElement el, string name)

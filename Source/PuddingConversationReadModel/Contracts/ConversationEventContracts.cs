@@ -56,7 +56,10 @@ public sealed record ConversationEventInput
     public string? MessageId { get; init; }
     public string? SubAgentId { get; init; }
 
-    /// <summary>内容/思考增量文本；组件按字节预算只保留有界尾部，不保存完整历史正文。</summary>
+    /// <summary>
+    /// 内容/思考增量文本；组件按字节预算只保留有界尾部，不保存完整历史正文。
+    /// TurnCompleted 时可携带终态 reply（仅用于判断助手正文是否存在与身份，不保存全文）。
+    /// </summary>
     public string? TextDelta { get; init; }
 
     public int PayloadBytes { get; init; }

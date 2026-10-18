@@ -28,7 +28,7 @@
 | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 执行快照组装与视觉策略解析 | `AgentExecutionSnapshotFactory` | `Services/AgentChat/ExecutionRunCoordinator.cs` | 视觉策略按配置合同∩模型类别解析（不再硬编码 VisionRequestPolicy.Default）；无 vision 标签一律 null 不误标；日志键 visionPolicy=／visionPolicySource= |
 | `Services/AgentChat/TurnOutputChunker.cs` | Delta 聚合分块与轮次边界 | `TurnOutputChunker` | `PuddingPlatformTests/Services/TurnOutputChunkerPayloadOwnershipTests.cs` | 非 delta 事件先 flush 已缓冲正文/思考再透传；轮次边界进入 canonical sequence |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 首屏/活动 run/消息明细投影 | `AgentConversationProjectionService` | `Services/AgentChat/TurnOutputChunker.cs` | 活动根 run 以最新根 turn.started 锚定，避免子代理 runId 抢占；按真实 sequence 返回 message.content.appended；TurnEventWindow 标记 64 条窗口边界 |
-| `Services/ChatTranscriptWriter.cs` | 转录写入 | `ChatTranscriptWriter` | `Services/ChatHistoryService.cs` | — |
+| `Services/ChatTranscriptWriter.cs` | 转录写入（含投影共享事务重载） | `ChatTranscriptWriter` | `Services/ConversationProjector.cs` | `PersistMessageInTransactionAsync` 只 Add 不 SaveChanges，提交后 `ScheduleIndexing`；原独立 scope 路径保留给其他写入者 |
 | `Services/ChatTelemetryRecorder.cs` | 遥测记录 | `ChatTelemetryRecorder` | `Services/ChatHistoryService.cs` | — |
 
 ## 会话首屏读模型（Plan《会话首屏与渐进加载架构优化方案》，阶段 C）
@@ -43,9 +43,10 @@
 | `Services/AgentChat/ConversationReadModelProjectionStore.cs` | 读模型加载/写入适配：只加载本批受影响 Turn，摘要+read_state+checkpoint 同事务 | `ConversationReadModelProjectionStore` | `Data/Entities/ConversationTurnSummaryEntity.cs` | 不执行 SaveChanges/Commit；旧库无 read_state 且 checkpoint>0 ⇒ Partial；损坏子代理 JSON fail closed |
 | `Source/PuddingPlatformTests/Services/ConversationReadModelEventMapperTests.cs` | C2 事件映射定向测试（类/字段/delta 上限/子代理归属） | `ConversationReadModelEventMapperTests` | `Services/AgentChat/ConversationReadModelEventMapper.cs` | 覆盖 20 类 kind、UTF-8 边界、未知类型；纯内存 |
 | `Source/PuddingPlatformTests/Services/ConversationReadModelProjectionStoreTests.cs` | C2 读模型持久化定向测试 | `ConversationReadModelProjectionStoreTests` | `Services/AgentChat/ConversationReadModelProjectionStore.cs` | 真实 SQLite：往返/upsert/回滚/legacy partial/omitted/损坏 JSON |
+| `Source/PuddingPlatformTests/Services/ConversationProjectorReadModelTests.cs` | C2b 投影事务端到端测试 | `ConversationProjectorReadModelTests` | `Services/ConversationProjector.cs` | 真实 SQLite+fake event store：消息/摘要/read_state/checkpoint 原子提交、checkpoint 写失败全回滚、重放幂等、子 run 隔离、旧库 partial |
 | `Source/PuddingPlatformTests/Services/ConversationReadModelSchemaTests.cs` | 读模型持久化基线：EF 模型、存量库补齐、幂等、两条事件索引与 EXPLAIN 收敛断言 | `ConversationReadModelSchemaTests` | `Services/ConversationReadModelSchemaBootstrapper.cs` | 真实 SQLite 临时库；断言查询计划按 message/turn 等值收敛，禁止全会话扫描 |
 
-关联修改：`PlatformDbContext`（2 个 DbSet + 2 个实体配置 + conversation_events 两条命名索引）；`PuddingApplicationInitializer`（启动期仅注册小表 bootstrapper）；`PuddingPlatform.csproj`/slnx 接入 `PuddingConversationReadModel`（S5 接入，DI 随 C 完成）。
+关联修改：`PlatformDbContext`（2 个 DbSet + 2 个实体配置 + conversation_events 两条命名索引）；`PuddingApplicationInitializer`（启动期仅注册小表 bootstrapper）；`PuddingPlatform.csproj`/slnx 接入 `PuddingConversationReadModel`；`ConversationProjector` 改为单事务投影并注册 `ConversationReadModelProjectionStore`（Host composition 2/2 通过，C2b）。
 
 ## 消息网关
 
@@ -267,7 +268,7 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 | `Services/TokenUsageRecorder.cs` | Token 用量记录与层级诊断 | `TokenUsageRecorder` | `Data/Entities/LlmGatewayUsageEventEntity.cs` | 持久化 parent/sub-agent 身份与零基 round；prefix-v2 归因 history_anchor_changed 与 serialization_version_changed；不复制 prompt 正文 |
 | `Services/CacheDiagnosticsService.cs` | 会话级 Cache Miss Inspector 后端 | `CacheDiagnosticsService` | `Services/TokenUsageEventRepository.cs` | 汇总 token-weighted hit/miss、prefix churn、首次变化原因与逐轮事实 |
 | `Services/GoodputAttributionService.cs` | Goodput 归因聚合（只读） | `GoodputAttributionService`、`UsageAttribution.Parse`、`PricingClassifier` | `Controllers/Api/StatsApiController.cs` | TraceId 中段→goal_iterations/execution_runs 归因；零成本却非零 token 不得当节省 |
-| `Services/ConversationProjector.cs` | Conversation Event 增量投影 | `ConversationProjector` | `Services/TokenUsageEventRepository.cs` | usage 仅在 direct session:trace:round 行缺失时补记；先按指纹取最近 32 行再内存窗口；未知工具数保持 NULL |
+| `Services/ConversationProjector.cs` | Conversation Event 增量投影（消息+读模型+checkpoint 同事务） | `ConversationProjector` | `Services/AgentChat/ConversationReadModelProjectionStore.cs` | 单事务提交消息物化、turn summaries/read_state、checkpoint；token usage/catalog/索引移到 commit 后；usage 指纹补记规则保留 |
 | `Services/TokenUsageEventRepository.cs` | Token 事件持久化与诊断查询 | `TokenUsageEventRepository` | `Services/ConversationProjector.cs` | 向 Runtime 返回 Core 诊断 DTO |
 | `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本 | `LlmGatewayUsageRecorder` | `Data/Entities/LlmGatewayUsageEventEntity.cs` | 与会话归因投影解耦 |
 | `Data/Entities/LlmGatewayUsageEventEntity.cs` | 本地计费事实实体 | `LlmGatewayUsageEventEntity` | `Services/LlmGatewayUsageRecorder.cs` | 表 llm_gateway_usage_events；sourceId 唯一 |

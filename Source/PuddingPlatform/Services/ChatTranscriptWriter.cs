@@ -173,6 +173,81 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
         }
     }
 
+    /// <summary>
+    /// 在调用方持有的 <see cref="PlatformDbContext"/> 与事务内写入一条转录消息（阶段 C2b）。
+    /// 只把实体加入变更跟踪，不执行 SaveChanges/Commit；重复消息返回 null。
+    /// 投影事务提交后由调用方通过 <see cref="ScheduleIndexing"/> 触发异步索引。
+    /// </summary>
+    public async Task<ChatMessageEntity?> PersistMessageInTransactionAsync(
+        PlatformDbContext db,
+        string sessionId,
+        string role,
+        string? content,
+        long createdAt,
+        string? thinkingJson = null,
+        string? usageJson = null,
+        string? workspaceId = null,
+        string? agentInstanceId = null,
+        string? agentTemplateId = null,
+        string? messageId = null,
+        string? turnId = null,
+        string? commandId = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(role) || string.IsNullOrWhiteSpace(content))
+            return null;
+
+        var windowStart = createdAt - 2_000;
+        var windowEnd = createdAt + 2_000;
+        var hasStableMessageId = !string.IsNullOrWhiteSpace(messageId);
+        var exists = hasStableMessageId
+            ? await db.ChatMessages
+                .AsNoTracking()
+                .AnyAsync(m => m.MessageId == messageId, ct)
+            : await db.ChatMessages
+                .AsNoTracking()
+                .AnyAsync(m => m.SessionId == sessionId
+                    && m.Role == role
+                    && m.Content == content
+                    && m.CreatedAt >= windowStart
+                    && m.CreatedAt <= windowEnd, ct);
+
+        if (exists)
+        {
+            _logger.LogDebug(
+                "[Chat:Transcript] Skip duplicate transcript in projection transaction session={Session} role={Role} createdAt={CreatedAt}",
+                sessionId, role, createdAt);
+            return null;
+        }
+
+        var entity = new ChatMessageEntity
+        {
+            MessageId = hasStableMessageId ? messageId! : $"transcript-{Guid.NewGuid():N}",
+            SessionId = sessionId,
+            WorkspaceId = workspaceId ?? string.Empty,
+            AgentInstanceId = agentInstanceId ?? string.Empty,
+            AgentTemplateId = agentTemplateId ?? string.Empty,
+            Role = role,
+            Content = content,
+            ThinkingJson = thinkingJson,
+            UsageJson = usageJson,
+            TurnId = turnId,
+            CommandId = commandId,
+            CreatedAt = createdAt,
+        };
+        db.ChatMessages.Add(entity);
+        return entity;
+    }
+
+    /// <summary>投影事务提交后调用：异步索引已持久化消息（fire-and-forget，幂等）。</summary>
+    public void ScheduleIndexing(ChatMessageEntity entity)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        FireAndForgetIndex(entity);
+    }
+
     private void FireAndForgetIndex(ChatMessageEntity entity)
     {
         if (_chunkIndexer is null)

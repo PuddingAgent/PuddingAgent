@@ -75,6 +75,19 @@ public sealed class ConversationReadModelEventMapperTests
     }
 
     [TestMethod]
+    public void MapsTurnCompletedReplyAsAssistantBodyPresenceEvidence()
+    {
+        var input = ConversationReadModelEventMapper.Map(Evt(
+            ConversationEventTypes.TurnCompleted,
+            messageId: "assistant-msg-1",
+            payloadJson: """{"reply":"final answer"}"""));
+
+        Assert.AreEqual(ConversationEventKind.TurnCompleted, input.Kind);
+        Assert.AreEqual("final answer", input.TextDelta);
+        Assert.AreEqual("assistant-msg-1", input.MessageId);
+    }
+
+    [TestMethod]
     public void MapsSubAgentLifecycleWithSubAgentIdentity()
     {
         var input = ConversationReadModelEventMapper.Map(Evt(

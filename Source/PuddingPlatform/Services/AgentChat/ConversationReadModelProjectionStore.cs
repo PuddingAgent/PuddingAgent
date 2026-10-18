@@ -59,13 +59,16 @@ public sealed class ConversationReadModelProjectionStore(ILogger<ConversationRea
 
         var turnIds = affectedTurnIds
             .Where(turnId => !string.IsNullOrWhiteSpace(turnId))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        var turnRows = turnIds.Length == 0
+            .ToHashSet(StringComparer.Ordinal);
+        // 事件缺少 TurnId 时归约器会回退到 currentTurnId；把当前 Turn 一并载入，避免把它重建为 partial 摘要。
+        if (!string.IsNullOrWhiteSpace(readState.CurrentTurnId))
+            turnIds.Add(readState.CurrentTurnId);
+        var turnIdArray = turnIds.ToArray();
+        var turnRows = turnIdArray.Length == 0
             ? new List<ConversationTurnSummaryEntity>()
             : await db.ConversationTurnSummaries
                 .AsNoTracking()
-                .Where(row => row.ConversationId == conversationId && turnIds.Contains(row.TurnId))
+                .Where(row => row.ConversationId == conversationId && turnIdArray.Contains(row.TurnId))
                 .ToListAsync(ct);
 
         var turns = new Dictionary<string, TurnReadSummary>(StringComparer.Ordinal);

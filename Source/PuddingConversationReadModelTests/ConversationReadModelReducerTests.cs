@@ -344,6 +344,33 @@ public sealed class ConversationReadModelReducerTests
     }
 
     [TestMethod]
+    public void Apply_TurnCompletedWithReply_SetsAssistantBodyAndIdentity()
+    {
+        var state = TestData.Reduced(
+            TestData.TurnStarted(1),
+            TestData.TurnCompleted(2, reply: "final answer", messageId: "assistant-msg-9"));
+
+        var turn = state.Turns[TestData.RootTurnId];
+        Assert.AreEqual(TurnTerminalState.Completed, turn.TerminalState);
+        Assert.IsTrue(turn.HasAssistantBody, "Completed terminal with reply proves an assistant body exists");
+        Assert.AreEqual("assistant-msg-9", turn.AssistantMessageId);
+        Assert.AreEqual(string.Empty, turn.ActivePreview, "terminal reply is not appended to the active preview");
+    }
+
+    [TestMethod]
+    public void Apply_TurnFailedWithNoReply_StillHasNoAssistantBody()
+    {
+        var state = TestData.Reduced(
+            TestData.TurnStarted(1),
+            TestData.TurnFailed(2));
+
+        var turn = state.Turns[TestData.RootTurnId];
+        Assert.AreEqual(TurnTerminalState.Failed, turn.TerminalState);
+        Assert.IsFalse(turn.HasAssistantBody);
+        Assert.IsNull(turn.AssistantMessageId);
+    }
+
+    [TestMethod]
     public void Apply_TurnFailed_ForcesNoAssistantBodyAndDoesNotFabricateAssistantMessageId()
     {
         var state = TestData.Reduced(

@@ -61,8 +61,12 @@ internal static class TestData
     internal static ConversationEventInput MessageCompleted(long sequence, string? messageId = AssistantMessageId, string? turnId = RootTurnId)
         => Event(sequence, ConversationEventKind.MessageCompleted, turnId: turnId, messageId: messageId);
 
-    internal static ConversationEventInput TurnCompleted(long sequence, string turnId = RootTurnId)
-        => Event(sequence, ConversationEventKind.TurnCompleted, turnId: turnId);
+    internal static ConversationEventInput TurnCompleted(
+        long sequence,
+        string turnId = RootTurnId,
+        string? reply = null,
+        string? messageId = null)
+        => Event(sequence, ConversationEventKind.TurnCompleted, turnId: turnId, messageId: messageId, textDelta: reply);
 
     internal static ConversationEventInput TurnFailed(long sequence, string turnId = RootTurnId, string? messageId = null)
         => Event(sequence, ConversationEventKind.TurnFailed, turnId: turnId, messageId: messageId);

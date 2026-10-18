@@ -39,6 +39,9 @@ public static class ConversationReadModelEventMapper
                 BoundTextDelta(GetString(payload, "delta") ?? GetString(payload, "text")),
             ConversationEventKind.MessageThinkingSummaryAppended =>
                 BoundTextDelta(GetString(payload, "delta")),
+            // 终态 reply 只作为「助手正文存在/身份」证据，不进入活动预览。
+            ConversationEventKind.TurnCompleted =>
+                BoundTextDelta(GetString(payload, "reply")),
             _ => null,
         };
 
