@@ -879,6 +879,14 @@ describe('AgentMessageBubble streaming presentation', () => {
 });
 
 describe('AgentMessageBubble error summary row (P0-1)', () => {
+  it('shows the submission error even when no answer or process event exists', () => {
+    render(<AgentMessageBubble {...baseProps} status="error" isStreaming={false}
+      content="" executionError="会话事件游标准备失败，消息未发送，请重试。" />);
+    expect(screen.getByTestId('agent-error-summary-text').textContent).toBe(
+      '会话事件游标准备失败，消息未发送，请重试。',
+    );
+  });
+
   it('renders StateDot(error) + title + summarized message for error status', () => {
     render(
       <AgentMessageBubble

@@ -15,6 +15,21 @@ draft: false
 
 # 案例：浏览器 Bridge 与 Chat
 
+## 重启后发送失败，重试仍立即失败且失败卡没有原因
+
+先区分消息是否已被服务端受理：按会话检查 `chat_execution_commands` 与 `ChatMessages` 的有界尾部。
+如果没有对应命令，前端却有失败卡、用户气泡仍显示“发送中”，应查发送事务与游标准备，而不是先归因于模型或 Browser Bridge。
+
+- `useSessionEventConnection` 的 `connectionRequestRef.promise` 只应合并正在进行的快照请求；完成、失败或抛异常后必须释放。
+  否则 Core 重启期间的一次失败会永久复用，Core 恢复后同会话的重试也不会重新请求快照。
+- 浏览器诊断事件 `chat.sse.cursorPreparationFailed` 与 `post.streamCursorPreparationFailed` 表示发送前失败；
+  保留权威游标门禁，不能退回 0 回放全部历史来绕过失败。
+- `useMessageSend` 失败路径必须把原因写入 `assistant.executionError` 并更新用户消息状态；
+  `MessageRow` 将该字段传给 `AgentMessageBubble`，保证无正文、无工具事件时也能显示原因。
+
+验收需覆盖“准备失败/抛异常 → 同会话重试成功”、并发请求合并及切换会话的迟到请求隔离。
+缺少浏览器当时的请求证据时，不能仅凭截图断言第一次失败是 401、超时或断网。
+
 > 本文档是 [How-Debuge 调试与诊断手册](README.md)（主索引）的主题分册，由原根目录 `How-Debuge.md` 于 2026-10-02 按主题拆分而来。
 > 新增本主题的经验请直接追加到本文件；跨主题内容请回到主索引选择分册。
 

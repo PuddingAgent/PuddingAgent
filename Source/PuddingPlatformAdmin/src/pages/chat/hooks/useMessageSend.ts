@@ -746,9 +746,11 @@ export function useMessageSend({
               t.turnId === turnId
                 ? {
                     ...t,
+                    userMessage: { ...t.userMessage, status: 'error' as const },
                     assistant: {
                       ...t.assistant,
                       status: 'error' as const,
+                      executionError: errorMessage,
                       isStreaming: false,
                     },
                   }

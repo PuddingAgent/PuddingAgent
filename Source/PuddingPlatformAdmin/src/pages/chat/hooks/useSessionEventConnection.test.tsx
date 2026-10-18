@@ -320,6 +320,34 @@ describe('useSessionEventConnection ensureSessionEventStream', () => {
     unmount();
   });
 
+  it.each(['failure', 'rejection'])('retries cursor preparation after a settled %s', async (failure) => {
+    const { result, unmount } = renderHook(() => useSessionEventConnection());
+    const cursorRef = { current: createSessionEventCursorState() };
+    const sync = jest.fn(async (sessionId: string) => {
+      markSessionEventCursorReady(cursorRef.current, sessionId, 1234);
+      return { ok: true, cursor: 1234, turns: [] };
+    });
+    if (failure === 'rejection') sync.mockRejectedValueOnce(new Error('Core restarting'));
+    else sync.mockResolvedValueOnce({ ok: false, cursor: 0, turns: [] });
+    bindPorts(result, { sessionEventCursorRef: cursorRef, syncCompletedHistoryEventCursor: sync });
+
+    await act(async () => {
+      await result.current.ensureSessionEventStream('session-long').catch(() => undefined);
+    });
+    expect(subscribeSessionEvents).not.toHaveBeenCalled();
+    await act(async () => {
+      const retry = await result.current.ensureSessionEventStream('session-long');
+      expect(retry.ok).toBe(true);
+    });
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(subscribeSessionEvents).toHaveBeenCalledWith(
+      'session-long', expect.any(Function), expect.any(AbortSignal),
+      expect.objectContaining({ afterSequence: 1234 }),
+    );
+    act(() => result.current.stopSessionEventStream());
+    unmount();
+  });
+
   it('merges concurrent same-session preparations into one bootstrap request', async () => {
     const { result, unmount } = renderHook(() => useSessionEventConnection());
     const cursorRef = { current: createSessionEventCursorState() };

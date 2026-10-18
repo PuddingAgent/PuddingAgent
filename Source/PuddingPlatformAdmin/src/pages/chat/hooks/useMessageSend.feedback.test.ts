@@ -166,6 +166,8 @@ describe('useMessageSend feedback semantics', () => {
     // 失败轮保留在时间线作为记录，乐观 Turn 终态为 error
     const lastTurn = result.current.turnsRef.current.at(-1);
     expect(lastTurn?.assistant?.status).toBe('error');
+    expect(lastTurn?.assistant?.executionError).toBe('network unavailable');
+    expect(lastTurn?.userMessage?.status).toBe('error');
     expect(lastTurn?.userMessage?.text).toBe('失败也不能丢的草稿');
   });
 
@@ -261,5 +263,9 @@ describe('useMessageSend feedback semantics', () => {
     expect(result.current.turnsRef.current.at(-1)?.assistant?.status).toBe(
       'error',
     );
+    expect(result.current.turnsRef.current.at(-1)?.assistant?.executionError).toBe(
+      '会话事件游标准备失败，消息未发送，请重试。',
+    );
+    expect(result.current.turnsRef.current.at(-1)?.userMessage?.status).toBe('error');
   });
 });

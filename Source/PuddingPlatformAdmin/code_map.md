@@ -139,7 +139,9 @@ fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使
 | `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 只做逐行 `` `` ``→``` 归一；历史「管道行收集 + 标题拆 \|」hack 会破坏 GFM 表格（分隔行与正文合并/空行被吞→整表降级为 `<p>` 原文），已删除 |
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | `findStableMarkdownBoundary`（已导出）表格感知：前导 `\|` 识别（不要求尾管道）、分隔行到达才允许整表提交、半截表头滞留 live 段、表格 run 中间不提交 |
 | `src/pages/chat/components/MessageItem.tsx` | 流式尾段含块级/强调语法（`\|`、反引号、`#`、列表、`>*_~`、链接）时走 ReactMarkdown 渲染（不再以纯文本 span 显示原始管道/星号）；纯文本尾段保留打字机 span + 墨迹光标（零解析路径） |
-| `src/pages/chat/components/AgentMessageBubble.tsx` | 行序渲染与 retry/正文去重（见下「关键语义」） |
+| `src/pages/chat/components/AgentMessageBubble.tsx` | 行序渲染与 retry/正文去重；优先展示 MessageRow 传入的 executionError（见下「关键语义」） |
+| `src/pages/chat/hooks/useMessageSend.ts` | 发送事务；提交失败保留草稿、更新用户消息为 error，并写入助手 executionError |
+| `src/pages/chat/hooks/useSessionEventConnection.ts` | 权威游标准备与 SSE 重连；仅合并未完成的准备请求，成功/失败/异常后释放 promise，允许同会话重试 |
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | `message.content.appended` 到达即翻转 status=streaming（首个回答增量 = 已知事实「正在生成回答」，状态条与正文不再各说各话）；`enqueueDelta` 携带入队基准长度 |
 | `src/pages/chat/hooks/useSessionEventBuffers.ts` | 回答增量缓冲 `{delta, baseLength}`；flush 经 `applyBufferedDeltaToTurn` 按基准位置幂等应用——基准漂移（activeRun 快照竞态）丢弃缓冲，杜绝直播期间正文整段重复 |
 | `src/pages/chat/components/IntentConsole.tsx` | Composer §6.2：Sandbox/Auto-review 收敛进设置 Popover（活动态角标浮出）；执行偏好/权限/语音/发送保持直达 |

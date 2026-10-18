@@ -57,6 +57,7 @@ const SessionBenchmarkDrawer =
 interface AgentMessageBubbleProps {
   id: string;
   content: string;
+  executionError?: string;
   status: string;
   createdAt: number;
   agentName: string;
@@ -301,6 +302,7 @@ const QuotedMessageBlock: React.FC<{ quotedMessage: ChatQuotedMessage }> = ({
 const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   id: _id,
   content,
+  executionError,
   status,
   createdAt,
   agentName,
@@ -338,6 +340,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   // message/output（error 事件会把错误写入该条目），无失败条目时回退到 content
   // （error 事件同时会把诊断文本写入 answerMarkdown）。
   const errorText = React.useMemo(() => {
+    if (executionError?.trim()) return executionError;
     const candidates: string[] = [];
     if (processItems) {
       for (const item of processItems) {
@@ -353,7 +356,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       if (candidate.trim()) return candidate;
     }
     return content;
-  }, [processItems, content]);
+  }, [executionError, processItems, content]);
   const errorSummary = React.useMemo(
     () => summarizeError(errorText),
     [errorText],

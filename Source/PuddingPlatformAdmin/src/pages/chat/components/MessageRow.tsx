@@ -327,6 +327,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
       status={block.status}
       createdAt={block.createdAt}
       agentName={block.agentName || 'Pudding'}
+      executionError={block.executionError}
       agentAvatarEmoji={block.agentAvatarEmoji}
       agentAvatarColor={block.agentAvatarColor}
       agentAvatarUrl={block.agentAvatarUrl || defaultAvatarUrl}

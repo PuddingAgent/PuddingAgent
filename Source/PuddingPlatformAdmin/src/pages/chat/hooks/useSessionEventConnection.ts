@@ -727,8 +727,12 @@ export function useSessionEventConnection() {
         };
       })();
 
-      request.promise = promise;
-      return promise;
+      // Only coalesce requests that are still in flight. A failed bootstrap
+      // during a Core restart must not permanently poison this session's retry.
+      request.promise = promise.finally(() => {
+        request.promise = null;
+      });
+      return request.promise;
     },
     [hasHealthySessionEventStream, startSessionEventStream],
   );
