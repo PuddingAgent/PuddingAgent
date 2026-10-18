@@ -188,7 +188,15 @@ const ChatPageContent: React.FC = () => {
       conversationNeedsProjectionCatchUp(projectedConversation) ||
       selectedAgentStatus?.status === 'running' ||
       selectedAgentStatus?.status === 'waiting';
-    const intervalMs = isActive ? 1200 : 5000;
+    // SSE 已把活动 Turn 正文/过程缝入 Store 时，健康期降级旧整页轮询到 5s；
+    // 终态仍需一次有界快照校正来物化消息行，因此终态 Run 保持 1.2s 档位。
+    const liveRecentlyActive =
+      agentClient.snapshot.lastLiveEventAt !== null &&
+      Date.now() - agentClient.snapshot.lastLiveEventAt < 10_000;
+    const liveActiveRunRunning =
+      projectedConversation?.activeRun?.status === 'running';
+    const intervalMs =
+      isActive && !(liveRecentlyActive && liveActiveRunRunning) ? 1200 : 5000;
     const timer = window.setInterval(() => {
       void agentClient.syncSelectedAgent();
     }, intervalMs);
@@ -198,7 +206,9 @@ const ChatPageContent: React.FC = () => {
     chat.agentId,
     chat.workspaceId,
     projectedConversation?.activeRun,
+    projectedConversation?.activeRun?.status,
     selectedAgentStatus?.status,
+    agentClient.snapshot.lastLiveEventAt,
     useAgentClientArchitecture,
   ]);
 

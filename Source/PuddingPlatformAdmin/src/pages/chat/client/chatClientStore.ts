@@ -28,6 +28,8 @@ export interface AgentChatClientSnapshot {
   /** 首次打开且尚无任何可显示内容时使用的骨架条件；后台刷新不得置 true。 */
   isOpening: boolean;
   isRefreshing: boolean;
+  /** 最近一次成功缝合的 canonical SSE 事件时间（毫秒）；用于降级健康期整页轮询。 */
+  lastLiveEventAt: number | null;
   error: string | null;
 }
 
@@ -144,6 +146,7 @@ export function createAgentChatClientStore(input: {
     conversation: null,
     isOpening: false,
     isRefreshing: false,
+    lastLiveEventAt: null,
     error: null,
   };
 
@@ -908,7 +911,7 @@ export function createAgentChatClientStore(input: {
           liveSeenEventIds = new Set([eventId]);
         }
       }
-      set({ conversation: nextConversation });
+      set({ conversation: nextConversation, lastLiveEventAt: Date.now() });
       return true;
     },
   };

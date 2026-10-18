@@ -766,6 +766,7 @@ describe('agent chat client store', () => {
     expect(conversation?.activeRun?.completedAt).toBeTruthy();
     expect(conversation?.activeRun?.outputSnapshot.processItems).toHaveLength(2);
     expect(conversation?.eventCursor).toBe(16);
+    expect(store.getSnapshot().lastLiveEventAt).toBeGreaterThan(0);
 
     // 同一 eventId 重放不再叠加正文。
     expect(
