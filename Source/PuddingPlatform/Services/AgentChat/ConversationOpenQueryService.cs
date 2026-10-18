@@ -26,6 +26,9 @@ public sealed class ConversationOpenQueryService(
     private const int PreviewChars = 2048;
     private const int ProcessPayloadFragmentChars = 64 * 1024;
     private const int DefaultRetryAfterMs = 500;
+    private const int ContentSegmentDefaultBytes = 32 * 1024;
+    private const int ContentSegmentMaxBytes = 128 * 1024;
+    private const int ProcessStructuredFieldMaxBytes = 16 * 1024;
 
     private static readonly string[] DisplayableProcessTypes =
     [
@@ -207,7 +210,7 @@ public sealed class ConversationOpenQueryService(
                 $"process cursor rejected: {failure}");
         }
 
-        var candidates = await ReadProcessCandidatesAsync(
+        var (candidates, structuredFields) = await ReadProcessCandidatesAsync(
             db, query.ConversationId, query.TurnId, through, before, limits.DetailPageCandidateScanLimit, ct);
         var windowTruncated = candidates.Count >= limits.DetailPageCandidateScanLimit;
         candidates.Reverse();
@@ -220,19 +223,97 @@ public sealed class ConversationOpenQueryService(
 
         return new ConversationProcessPage(
             bounded.Items
-                .Select(item => new ConversationProcessItem(
-                    item.Sequence,
-                    item.EventId,
-                    item.Kind,
-                    item.Preview,
-                    item.PreviewTruncated,
-                    item.OriginalPayloadBytes))
+                .Select(item =>
+                {
+                    structuredFields.TryGetValue(item.EventId, out var fields);
+                    return new ConversationProcessItem(
+                        item.Sequence,
+                        item.EventId,
+                        item.Kind,
+                        item.Preview,
+                        item.PreviewTruncated,
+                        item.OriginalPayloadBytes,
+                        fields?.ToolCallId,
+                        fields?.Name,
+                        fields?.Status,
+                        fields?.ExitCode,
+                        fields?.Error,
+                        fields?.SubAgentId,
+                        fields?.RunId,
+                        fields?.Arguments,
+                        fields?.Output);
+                })
                 .ToArray(),
             nextBefore,
             hasMoreBefore,
             bounded.ScannedBackThroughSequence,
             bounded.OmittedNonDisplayableCount,
             bounded.Truncation.ToString());
+    }
+
+    /// <summary>
+    /// 单条消息正文有界分段读取（Plan §5.4）：只按 UTF-8 字节窗口读取 <c>Content</c>，
+    /// 不把超大正文整段加载进内存；短消息一次返回全文。
+    /// </summary>
+    public async Task<ConversationMessageContentPage> GetMessageContentAsync(
+        string conversationId,
+        string messageId,
+        long? offsetBytes = null,
+        int? maxBytes = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(conversationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+
+        var offset = offsetBytes ?? 0;
+        if (offset < 0)
+            throw new ConversationQueryException("invalid_content_offset", "offsetBytes must be >= 0.");
+        var limit = Math.Clamp(maxBytes ?? ContentSegmentDefaultBytes, 1, ContentSegmentMaxBytes);
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+            await connection.OpenAsync(ct);
+
+        var total = await ReadMessageContentLengthAsync(connection, conversationId, messageId, ct);
+        if (total < 0)
+            throw new ConversationQueryException("message_not_found", "Message does not exist in this conversation.");
+        if (offset > total)
+            throw new ConversationQueryException("invalid_content_offset", "offsetBytes is beyond message length.");
+        if (offset == total)
+        {
+            return new ConversationMessageContentPage(
+                conversationId, messageId, offset, null, total, string.Empty, false);
+        }
+
+        var segmentLength = (int)Math.Min(limit, total - offset);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT substr(CAST(Content AS BLOB), $startByte, $length)
+            FROM ChatMessages
+            WHERE SessionId = $sessionId AND message_id = $messageId
+            LIMIT 1;
+            """;
+        AddParameter(command, "$startByte", offset + 1);
+        AddParameter(command, "$length", segmentLength);
+        AddParameter(command, "$sessionId", conversationId);
+        AddParameter(command, "$messageId", messageId);
+
+        var raw = await command.ExecuteScalarAsync(ct);
+        var bytes = raw as byte[] ?? [];
+        var (text, bytesUsed) = DecodeUtf8Prefix(bytes);
+        if (bytesUsed <= 0 && bytes.Length > 0)
+            throw new ConversationQueryException("invalid_content_offset", "offsetBytes is not a UTF-8 boundary.");
+        var nextOffset = offset + bytesUsed < total ? offset + bytesUsed : (long?)null;
+        return new ConversationMessageContentPage(
+            conversationId,
+            messageId,
+            offset,
+            nextOffset,
+            total,
+            text,
+            nextOffset.HasValue);
     }
 
     // ── 最近消息页 ──────────────────────────────────────────────────────
@@ -332,7 +413,9 @@ public sealed class ConversationOpenQueryService(
 
     // ── 过程明细页 ──────────────────────────────────────────────────────
 
-    private static async Task<List<ProcessItemCandidate>> ReadProcessCandidatesAsync(
+    private static async Task<(
+        List<ProcessItemCandidate> Candidates,
+        Dictionary<string, ProcessStructuredFields> Structured)> ReadProcessCandidatesAsync(
         PlatformDbContext db,
         string conversationId,
         string? turnId,
@@ -367,6 +450,7 @@ public sealed class ConversationOpenQueryService(
         AddParameter(command, "$scanLimit", scanLimit);
 
         var candidates = new List<ProcessItemCandidate>(Math.Min(scanLimit, 128));
+        var structured = new Dictionary<string, ProcessStructuredFields>(StringComparer.Ordinal);
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
@@ -378,28 +462,33 @@ public sealed class ConversationOpenQueryService(
             var fragmentTruncated = payloadLength > ProcessPayloadFragmentChars;
 
             var displayable = IsDisplayableProcessType(type);
-            var preview = displayable
-                ? ExtractProcessPreview(type, payloadFragment, fragmentTruncated)
-                : string.Empty;
+            var payload = displayable
+                ? ExtractProcessPayload(type, payloadFragment, fragmentTruncated)
+                : new ProcessPayloadResult(string.Empty, EmptyStructuredFields);
 
             candidates.Add(new ProcessItemCandidate
             {
                 Sequence = sequence,
                 EventId = eventId,
                 Kind = type,
-                Preview = preview,
+                Preview = payload.Preview,
                 PayloadBytes = payloadLength,
                 IsDisplayable = displayable,
             });
+            if (displayable)
+                structured[eventId] = payload.Fields;
         }
 
-        return candidates;
+        return (candidates, structured);
     }
 
     private static bool IsDisplayableProcessType(string type)
         => DisplayableProcessTypes.Any(candidate => string.Equals(candidate, type, StringComparison.Ordinal));
 
-    private static string ExtractProcessPreview(string type, string payloadFragment, bool fragmentTruncated)
+    private static ProcessPayloadResult ExtractProcessPayload(
+        string type,
+        string payloadFragment,
+        bool fragmentTruncated)
     {
         JsonDocument? document = null;
         try
@@ -409,7 +498,9 @@ public sealed class ConversationOpenQueryService(
         catch (JsonException)
         {
             // 巨型 payload 的有界片段不是完整 JSON：不把它解析成“完整事实”，只返回有界片段并显式标记截断。
-            return fragmentTruncated ? payloadFragment : string.Empty;
+            return new ProcessPayloadResult(
+                fragmentTruncated ? payloadFragment : string.Empty,
+                EmptyStructuredFields);
         }
 
         using (document)
@@ -428,9 +519,117 @@ public sealed class ConversationOpenQueryService(
                     ReadString(payload, "sub_agent_id") ?? ReadString(payload, "subAgentId")),
             };
 
-            return preview ?? string.Empty;
+            var status = ReadString(payload, "status");
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                status = type switch
+                {
+                    ConversationEventTypes.ToolCallRequested => "requested",
+                    ConversationEventTypes.ToolCallCompleted => "completed",
+                    ConversationEventTypes.ToolCallFailed => "failed",
+                    _ => null,
+                };
+            }
+
+            var fields = new ProcessStructuredFields
+            {
+                ToolCallId = ReadString(payload, "toolCallId") ?? ReadString(payload, "tool_call_id"),
+                Name = ReadString(payload, "name"),
+                Status = status,
+                ExitCode = ReadInt(payload, "exitCode") ?? ReadInt(payload, "exit_code"),
+                Error = BoundUtf8(
+                    ReadString(payload, "error") ?? ReadString(payload, "errorMessage")),
+                SubAgentId = ReadString(payload, "sub_agent_id") ?? ReadString(payload, "subAgentId"),
+                RunId = ReadString(payload, "runId") ?? ReadString(payload, "run_id"),
+                Arguments = BoundUtf8(ReadString(payload, "arguments")),
+                Output = BoundUtf8(ReadString(payload, "output")),
+            };
+            return new ProcessPayloadResult(preview ?? string.Empty, fields);
         }
     }
+
+    private static int? ReadInt(JsonElement payload, string propertyName)
+    {
+        if (payload.ValueKind != JsonValueKind.Object
+            || !payload.TryGetProperty(propertyName, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number when value.TryGetInt32(out var parsed) => parsed,
+            JsonValueKind.String when int.TryParse(value.GetString(), out var parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static string? BoundUtf8(string? value)
+    {
+        if (string.IsNullOrEmpty(value) || Encoding.UTF8.GetByteCount(value) <= ProcessStructuredFieldMaxBytes)
+            return value;
+
+        var chars = value.ToCharArray();
+        var bytes = new byte[ProcessStructuredFieldMaxBytes];
+        var encoder = Encoding.UTF8.GetEncoder();
+        encoder.Convert(chars, 0, chars.Length, bytes, 0, bytes.Length, flush: true,
+            out var charsUsed, out _, out _);
+        return new string(chars, 0, charsUsed);
+    }
+
+    private static async Task<long> ReadMessageContentLengthAsync(
+        DbConnection connection,
+        string conversationId,
+        string messageId,
+        CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT length(CAST(Content AS BLOB))
+            FROM ChatMessages
+            WHERE SessionId = $sessionId AND message_id = $messageId
+            LIMIT 1;
+            """;
+        AddParameter(command, "$sessionId", conversationId);
+        AddParameter(command, "$messageId", messageId);
+        var raw = await command.ExecuteScalarAsync(ct);
+        return raw is null or DBNull ? -1 : Convert.ToInt64(raw);
+    }
+
+    /// <summary>只解码完整 UTF-8 前缀；不完整的尾字节留给下一页，绝不产生替换字符。</summary>
+    private static (string Text, int BytesUsed) DecodeUtf8Prefix(byte[] bytes)
+    {
+        if (bytes.Length == 0)
+            return (string.Empty, 0);
+        if ((bytes[0] & 0xC0) == 0x80)
+            return (string.Empty, 0);
+
+        // 从尾部回退到最后一个 lead byte，判断该码点是否被截断。
+        var lead = bytes.Length - 1;
+        while (lead >= 0 && (bytes[lead] & 0xC0) == 0x80)
+            lead--;
+        if (lead < 0)
+            return (string.Empty, 0);
+
+        var required = bytes[lead] switch
+        {
+            < 0x80 => 1,
+            >= 0xC0 and < 0xE0 => 2,
+            >= 0xE0 and < 0xF0 => 3,
+            >= 0xF0 and < 0xF8 => 4,
+            _ => 0,
+        };
+        var end = required == 0 || lead + required > bytes.Length
+            ? lead
+            : bytes.Length;
+        if (end <= 0)
+            return (string.Empty, 0);
+
+        return (Encoding.UTF8.GetString(bytes, 0, end), end);
+    }
+
+    private static readonly ProcessStructuredFields EmptyStructuredFields = new();
 
     private static string? JoinParts(params string?[] parts)
     {
@@ -636,4 +835,19 @@ public sealed class ConversationOpenQueryService(
         int ContentLength,
         string Preview,
         bool HasContentParts);
+
+    private sealed class ProcessStructuredFields
+    {
+        public string? ToolCallId { get; init; }
+        public string? Name { get; init; }
+        public string? Status { get; init; }
+        public int? ExitCode { get; init; }
+        public string? Error { get; init; }
+        public string? SubAgentId { get; init; }
+        public string? RunId { get; init; }
+        public string? Arguments { get; init; }
+        public string? Output { get; init; }
+    }
+
+    private sealed record ProcessPayloadResult(string Preview, ProcessStructuredFields Fields);
 }

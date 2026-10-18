@@ -289,6 +289,110 @@ public sealed class ConversationOpenQueryServiceTests
         Assert.AreEqual(3, snapshot.Runtime.SubAgentRunsOmitted);
     }
 
+    [TestMethod]
+    public async Task GetProcessPageAsync_ExposesStructuredToolAndSubAgentFields()
+    {
+        await using var temp = TempQueryDb.Create();
+        var longOutput = new string('o', 20_000);
+        await using (var db = new PlatformDbContext(temp.Options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            AddEvent(db, 1, ConversationEventTypes.ToolCallRequested,
+                """{"toolCallId":"call-1","name":"read","arguments":"{\"path\":\"/a\"}"}""");
+            AddEvent(db, 2, ConversationEventTypes.ToolCallCompleted,
+                $$"""{"toolCallId":"call-1","name":"read","output":"{{longOutput}}","exitCode":0}""");
+            AddEvent(db, 3, ConversationEventTypes.SubAgentRunCreated,
+                """{"sub_agent_id":"sub-1","runId":"run-child-1","status":"created"}""");
+            db.ConversationHeads.Add(new ConversationHeadEntity { ConversationId = "conv-1", HeadSequence = 3 });
+            await db.SaveChangesAsync();
+        }
+
+        var service = NewService(temp);
+        var page = await service.GetProcessPageAsync(new ConversationProcessQuery("conv-1", Limit: 10));
+
+        Assert.HasCount(3, page.Items);
+        var requested = page.Items.Single(item => item.Type == ConversationEventTypes.ToolCallRequested);
+        Assert.AreEqual("call-1", requested.ToolCallId);
+        Assert.AreEqual("read", requested.Name);
+        Assert.AreEqual("requested", requested.Status);
+        Assert.AreEqual("""{"path":"/a"}""", requested.Arguments);
+
+        var completed = page.Items.Single(item => item.Type == ConversationEventTypes.ToolCallCompleted);
+        Assert.AreEqual("call-1", completed.ToolCallId);
+        Assert.AreEqual(0, completed.ExitCode);
+        Assert.AreEqual("completed", completed.Status);
+        Assert.IsNotNull(completed.Output);
+        Assert.IsTrue(Encoding.UTF8.GetByteCount(completed.Output) <= 16 * 1024);
+
+        var subAgent = page.Items.Single(item => item.Type == ConversationEventTypes.SubAgentRunCreated);
+        Assert.AreEqual("sub-1", subAgent.SubAgentId);
+        Assert.AreEqual("run-child-1", subAgent.RunId);
+        Assert.AreEqual("created", subAgent.Status);
+    }
+
+    [TestMethod]
+    public async Task GetMessageContentAsync_SegmentsLargeUtf8ContentOnByteBoundaries()
+    {
+        await using var temp = TempQueryDb.Create();
+        var content = string.Concat(Enumerable.Repeat("中文😀abc", 1_000));
+        await using (var db = new PlatformDbContext(temp.Options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.ChatMessages.Add(Message("msg-large", "agent", content, 1_000, "turn-1"));
+            await db.SaveChangesAsync();
+        }
+
+        var service = NewService(temp);
+        var rebuilt = new StringBuilder();
+        long offset = 0;
+        var pageCount = 0;
+        while (true)
+        {
+            var page = await service.GetMessageContentAsync(
+                "conv-1", "msg-large", offsetBytes: offset, maxBytes: 7);
+            Assert.AreEqual(offset, page.OffsetBytes);
+            Assert.AreEqual(Encoding.UTF8.GetByteCount(content), page.TotalBytes);
+            Assert.IsFalse(page.Content.Contains('\uFFFD'), "segment must not split a UTF-8 sequence");
+            rebuilt.Append(page.Content);
+            pageCount++;
+            Assert.IsTrue(pageCount < 10_000, "pagination must terminate");
+            if (!page.HasMore)
+            {
+                Assert.IsNull(page.NextOffsetBytes);
+                break;
+            }
+
+            Assert.IsNotNull(page.NextOffsetBytes);
+            offset = page.NextOffsetBytes!.Value;
+            Assert.IsTrue(offset > page.OffsetBytes);
+        }
+
+        Assert.AreEqual(content, rebuilt.ToString());
+    }
+
+    [TestMethod]
+    public async Task GetMessageContentAsync_ShortMessageReturnsWholeContentAndRejectsMissingMessage()
+    {
+        await using var temp = TempQueryDb.Create();
+        await using (var db = new PlatformDbContext(temp.Options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.ChatMessages.Add(Message("msg-short", "agent", "hello", 1_000, "turn-1"));
+            await db.SaveChangesAsync();
+        }
+
+        var service = NewService(temp);
+        var page = await service.GetMessageContentAsync("conv-1", "msg-short");
+        Assert.AreEqual("hello", page.Content);
+        Assert.IsFalse(page.HasMore);
+        Assert.IsNull(page.NextOffsetBytes);
+        Assert.AreEqual(5L, page.TotalBytes);
+
+        var missing = await Assert.ThrowsExactlyAsync<ConversationQueryException>(() =>
+            service.GetMessageContentAsync("conv-1", "missing"));
+        Assert.AreEqual("message_not_found", missing.Code);
+    }
+
     // ── seed helpers ─────────────────────────────────────────────────────
 
     private static ConversationOpenQueryService NewService(TempQueryDb temp)

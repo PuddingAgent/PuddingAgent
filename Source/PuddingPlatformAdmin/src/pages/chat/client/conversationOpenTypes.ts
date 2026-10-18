@@ -135,6 +135,27 @@ export interface ConversationProcessItem {
   preview: string;
   previewTruncated: boolean;
   originalPayloadBytes: number;
+  /** 结构化字段（工具/子代理条目；其余为空）。 */
+  toolCallId?: string | null;
+  name?: string | null;
+  status?: string | null;
+  exitCode?: number | null;
+  error?: string | null;
+  subAgentId?: string | null;
+  runId?: string | null;
+  arguments?: string | null;
+  output?: string | null;
+}
+
+/** 单条消息正文有界分段（UTF-8 字节边界安全）；短消息一次全文。 */
+export interface ConversationMessageContentPage {
+  conversationId: string;
+  messageId: string;
+  offsetBytes: number;
+  nextOffsetBytes?: number | null;
+  totalBytes: number;
+  content: string;
+  hasMore: boolean;
 }
 
 export interface ConversationProcessPage {
@@ -166,5 +187,11 @@ export interface ConversationProcessRequestOptions {
   beforeSequence?: number | null;
   throughSequence?: number | null;
   limit?: number;
+  signal?: AbortSignal;
+}
+
+export interface ConversationMessageContentRequestOptions {
+  offsetBytes?: number;
+  maxBytes?: number;
   signal?: AbortSignal;
 }

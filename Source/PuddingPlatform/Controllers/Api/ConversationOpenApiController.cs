@@ -93,5 +93,28 @@ public sealed class ConversationOpenApiController(
         }
     }
 
+    /// <summary>单条消息正文有界分段读取；普通短消息一次返回全文。</summary>
+    [HttpGet("conversations/{conversationId}/messages/{messageId}/content")]
+    public async Task<ActionResult<ConversationMessageContentPage>> GetMessageContent(
+        string conversationId,
+        string messageId,
+        [FromQuery] long? offsetBytes,
+        [FromQuery] int? maxBytes,
+        CancellationToken ct)
+    {
+        try
+        {
+            var page = await queryService.GetMessageContentAsync(
+                conversationId, messageId, offsetBytes, maxBytes, ct);
+            return Ok(page);
+        }
+        catch (ConversationQueryException ex)
+        {
+            if (string.Equals(ex.Code, "message_not_found", StringComparison.Ordinal))
+                return NotFound(new { code = ex.Code, message = ex.Message });
+            return BadRequest(new { code = ex.Code, message = ex.Message });
+        }
+    }
+
     private string ResolveOwnerUserId() => User.Identity?.Name ?? "single-user";
 }

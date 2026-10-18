@@ -103,14 +103,36 @@ public sealed record ConversationProcessQuery(
     long? ThroughSequence = null,
     int? Limit = null);
 
-/// <summary>过程明细条目（有界预览；全文走详情/分段读取）。</summary>
+/// <summary>过程明细条目（有界预览 + 结构化工具/子代理字段；全文走详情/分段读取）。</summary>
 public sealed record ConversationProcessItem(
     long Sequence,
     string EventId,
     string Type,
     string Preview,
     bool PreviewTruncated,
-    int OriginalPayloadBytes);
+    int OriginalPayloadBytes,
+    string? ToolCallId = null,
+    string? Name = null,
+    string? Status = null,
+    int? ExitCode = null,
+    string? Error = null,
+    string? SubAgentId = null,
+    string? RunId = null,
+    string? Arguments = null,
+    string? Output = null);
+
+/// <summary>
+/// 单条消息正文的有界分段读取（Plan §5.4）：按 UTF-8 字节边界分页，永不整段加载超大正文；
+/// 普通短消息一次返回全文（<c>HasMore=false</c>）。
+/// </summary>
+public sealed record ConversationMessageContentPage(
+    string ConversationId,
+    string MessageId,
+    long OffsetBytes,
+    long? NextOffsetBytes,
+    long TotalBytes,
+    string Content,
+    bool HasMore);
 
 /// <summary>过程明细页结果；空展示页也带可前进的扫描边界。</summary>
 public sealed record ConversationProcessPage(

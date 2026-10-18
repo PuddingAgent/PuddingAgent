@@ -1,5 +1,6 @@
 import {
   getConversationHistory,
+  getConversationMessageContent,
   getConversationOpen,
   getConversationProcess,
 } from './conversationOpenApi';
@@ -103,5 +104,41 @@ describe('conversationOpenApi', () => {
     mockRequest.mockRejectedValueOnce({ response: { status: 400 } });
 
     await expect(getConversationProcess('conv-1')).rejects.toBeTruthy();
+  });
+
+  it('reads bounded message content segments with offset/maxBytes', async () => {
+    mockRequest.mockResolvedValueOnce({
+      content: '中',
+      offsetBytes: 0,
+      nextOffsetBytes: 3,
+      totalBytes: 3,
+      hasMore: false,
+    });
+    const controller = new AbortController();
+
+    await getConversationMessageContent('conv-1', 'msg/1', {
+      offsetBytes: 0,
+      maxBytes: 7,
+      signal: controller.signal,
+    });
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      '/api/conversations/conv-1/messages/msg%2F1/content?offsetBytes=0&maxBytes=7',
+      {
+        method: 'GET',
+        skipErrorHandler: true,
+        signal: controller.signal,
+      },
+    );
+
+    await getConversationMessageContent('conv-1', 'msg-1');
+    expect(mockRequest).toHaveBeenLastCalledWith(
+      '/api/conversations/conv-1/messages/msg-1/content',
+      {
+        method: 'GET',
+        skipErrorHandler: true,
+        signal: undefined,
+      },
+    );
   });
 });

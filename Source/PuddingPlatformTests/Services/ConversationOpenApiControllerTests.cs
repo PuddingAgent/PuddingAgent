@@ -94,6 +94,26 @@ public sealed class ConversationOpenApiControllerTests
         StringAssert.Contains(JsonSerializer.Serialize(badRequest.Value), "invalid_cursor");
     }
 
+    [TestMethod]
+    public async Task GetMessageContent_ReturnsBoundedContentAnd404ForMissingMessage()
+    {
+        using var env = new ControllerEnv();
+        await env.SeedConversationAsync(messageCount: 1, checkpoint: 1, head: 1);
+
+        var controller = env.NewController("single-user");
+        var result = await controller.GetMessageContent(
+            "conv-1", "msg-1", offsetBytes: null, maxBytes: null, CancellationToken.None);
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var page = (ConversationMessageContentPage)ok.Value!;
+        Assert.AreEqual("content-1", page.Content);
+        Assert.IsFalse(page.HasMore);
+
+        var missing = await controller.GetMessageContent(
+            "conv-1", "missing", offsetBytes: null, maxBytes: null, CancellationToken.None);
+        Assert.IsInstanceOfType<NotFoundObjectResult>(missing.Result);
+    }
+
     private sealed class ControllerEnv : IDisposable
     {
         private readonly string _root;

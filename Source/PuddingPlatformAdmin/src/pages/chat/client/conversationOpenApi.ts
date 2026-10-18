@@ -2,6 +2,8 @@ import { request } from '@umijs/max';
 import type {
   ConversationHistoryPage,
   ConversationHistoryRequestOptions,
+  ConversationMessageContentPage,
+  ConversationMessageContentRequestOptions,
   ConversationOpenRequestOptions,
   ConversationOpenSnapshot,
   ConversationProcessPage,
@@ -89,6 +91,26 @@ export async function getConversationProcess(
   ]);
   return request(
     `/api/conversations/${encodeURIComponent(conversationId)}/process${query}`,
+    {
+      method: 'GET',
+      skipErrorHandler: true,
+      signal: options?.signal,
+    },
+  );
+}
+
+/** 单条消息正文分段读取；调用方按 nextOffsetBytes 续读，直到 hasMore=false。 */
+export async function getConversationMessageContent(
+  conversationId: string,
+  messageId: string,
+  options?: ConversationMessageContentRequestOptions,
+): Promise<ConversationMessageContentPage> {
+  const query = buildQuery([
+    ['offsetBytes', options?.offsetBytes],
+    ['maxBytes', options?.maxBytes],
+  ]);
+  return request(
+    `/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/content${query}`,
     {
       method: 'GET',
       skipErrorHandler: true,
