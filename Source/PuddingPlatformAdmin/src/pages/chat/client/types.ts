@@ -139,6 +139,10 @@ export interface ConversationMessageView {
     | 'succeeded'
     | 'failed'
     | 'cancelled';
+  /** 阶段 D：服务端只给预览，正文需显式展开（同 messageId 身份不变）。 */
+  hasMoreContent?: boolean;
+  /** 原始正文总字节数（仅快照路径提供；用于显式展开预算）。 */
+  contentLength?: number;
   processItems: ProcessSummaryItem[];
   processSummary?: ConversationProcessSummary | null;
   /** 工具审批卡片（P0#1）。由 approval.requested / approval.resolved 事件投影。 */

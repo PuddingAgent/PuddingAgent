@@ -7,8 +7,8 @@ import {
 } from './canonicalMerge';
 import { DEFAULT_AGENT_CHAT_OWNER_ID } from './clientIdentity';
 import type { AgentChatLocalCache } from './localCache';
-import type { ConversationHistoryPage } from './conversationOpenTypes';
-import { mapSnapshotHistoryItem } from './conversationSnapshotAdapter';
+import type { ConversationHistoryPage, ConversationMessageContentPage } from './conversationOpenTypes';
+import { mapSnapshotHistoryItem, readFullMessageContent } from './conversationSnapshotAdapter';
 import type { AgentConversationView, AgentStatusProjection } from './types';
 
 export interface AgentChatApiPort {
@@ -37,6 +37,12 @@ export interface AgentChatApiPort {
     limit: number,
     signal?: AbortSignal,
   ): Promise<ConversationHistoryPage>;
+  /** 阶段 D2c3：显式展开长正文时的有界分段读取。 */
+  getMessageContent?(
+    conversationId: string,
+    messageId: string,
+    options?: { offsetBytes?: number; maxBytes?: number; signal?: AbortSignal },
+  ): Promise<ConversationMessageContentPage>;
 }
 
 export interface AgentChatClientSnapshot {
@@ -164,6 +170,7 @@ export function createAgentChatClientStore(input: {
   let selectionAbort: AbortController | null = null;
   let backgroundSyncAbort: AbortController | null = null;
   let liveSeenEventIds = new Set<string>();
+  const expandingMessageIds = new Set<string>();
   let snapshot: AgentChatClientSnapshot = {
     ownerUserId,
     statuses: [],
@@ -739,6 +746,60 @@ export function createAgentChatClientStore(input: {
           backgroundSyncAbort = null;
         }
         syncInFlight = false;
+      }
+    },
+    /**
+     * 阶段 D2c3：显式展开一条长正文（只替换该 messageId 的 content，不改身份/顺序）。
+     * 预算 512KiB；成功前不标记为已展开，失败保留预览与展开入口。
+     */
+    async expandMessage(messageId: string) {
+      const conversation = snapshot.conversation;
+      if (!conversation || !input.api.getMessageContent) return;
+      const message = conversation.messages.find(
+        (item) => item.messageId === messageId,
+      );
+      if (!message || !message.hasMoreContent) return;
+      if (expandingMessageIds.has(messageId)) return;
+
+      const version = selectionVersion;
+      const conversationId = conversation.mainSessionId;
+      expandingMessageIds.add(messageId);
+      try {
+        const full = await readFullMessageContent(
+          conversationId,
+          messageId,
+          message.contentLength ?? 0,
+          input.api.getMessageContent,
+          selectionAbort?.signal,
+        );
+        if (full === null) return;
+        if (
+          version !== selectionVersion ||
+          snapshot.conversation?.mainSessionId !== conversationId
+        ) {
+          return;
+        }
+
+        const current = snapshot.conversation;
+        if (!current) return;
+        set({
+          conversation: {
+            ...current,
+            messages: current.messages.map((item) =>
+              item.messageId === messageId
+                ? { ...item, content: full, hasMoreContent: false }
+                : item,
+            ),
+          },
+        });
+      } catch (error) {
+        if (version === selectionVersion) {
+          set({
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      } finally {
+        expandingMessageIds.delete(messageId);
       }
     },
     /**

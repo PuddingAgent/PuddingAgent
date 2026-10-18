@@ -21,7 +21,7 @@ import {
 } from '@/utils/workspaceNavigation';
 import { shouldIgnoreAgentContactClick } from './agentMainSessionSelection';
 import { getAgentConversation, getAgentConversationFromSnapshot, listAgentStatuses } from './client/agentChatApi';
-import { getConversationHistory } from './client/conversationOpenApi';
+import { getConversationHistory, getConversationMessageContent } from './client/conversationOpenApi';
 import { conversationNeedsProjectionCatchUp } from './client/chatClientStore';
 import { isAgentClientArchitectureEnabled } from './client/featureFlag';
 import { createIndexedDbAgentChatCache } from './client/localCache';
@@ -100,6 +100,7 @@ const ChatPageContent: React.FC = () => {
           limit,
           signal,
         }),
+      getMessageContent: getConversationMessageContent,
     }),
     [],
   );
@@ -239,6 +240,26 @@ const ChatPageContent: React.FC = () => {
     agentClient.snapshot.lastLiveEventAt,
     useAgentClientArchitecture,
   ]);
+
+  // 阶段 D2c3：快照长正文默认只显示预览 + 展开链接；点击链接按需分段读取全文。
+  useEffect(() => {
+    const handleExpandClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest<HTMLAnchorElement>(
+        'a[href^="#pudding-expand-"]',
+      );
+      if (!anchor) return;
+      const href = anchor.getAttribute('href') ?? '';
+      const encodedId = href.slice('#pudding-expand-'.length);
+      if (!encodedId) return;
+      event.preventDefault();
+      void agentClient.expandMessage(decodeURIComponent(encodedId));
+    };
+
+    document.addEventListener('click', handleExpandClick);
+    return () => document.removeEventListener('click', handleExpandClick);
+  }, [agentClient.expandMessage]);
 
   // T-201: 工作区通知 SSE — 页面级，跟随 workspaceId 自动启停
   useEffect(() => {

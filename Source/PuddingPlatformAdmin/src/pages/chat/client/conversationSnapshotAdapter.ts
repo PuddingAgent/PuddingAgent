@@ -23,9 +23,12 @@ import type {
  * - 旧端点不可用（旧 Core 未部署新端点）时回退旧投影，保证过渡期可用。
  */
 
-const MAX_AUTO_CONTENT_BYTES_PER_MESSAGE = 256 * 1024;
-const MAX_AUTO_CONTENT_BYTES_TOTAL = 1024 * 1024;
+const MAX_EXPAND_CONTENT_BYTES = 512 * 1024;
 const CONTENT_SEGMENT_BYTES = 32 * 1024;
+const EXPAND_HASH_PREFIX = 'pudding-expand-';
+
+const expandLinkFor = (messageId: string): string =>
+  `[展开全文](#${EXPAND_HASH_PREFIX}${encodeURIComponent(messageId)})`;
 
 export interface SnapshotConversationDeps {
   getSnapshot?: typeof getConversationOpen;
@@ -86,6 +89,7 @@ export function mapSnapshotHistoryItem(
   content?: string,
 ): ConversationMessageView {
   const role = roleOf(item);
+  const needsExpand = item.hasMoreContent && content === undefined;
   return {
     messageId: item.messageId,
     turnId: item.turnId ?? null,
@@ -97,27 +101,36 @@ export function mapSnapshotHistoryItem(
     messageType: role === 'user' ? 'user_message' : 'agent_message',
     llmRole: role === 'user' ? 'user' : role === 'system' ? 'system' : 'assistant',
     createdAt: toIso(item.createdAt),
-    content: content ?? item.preview,
+    content: needsExpand
+      ? `${item.preview}\n\n${expandLinkFor(item.messageId)}`
+      : (content ?? item.preview),
     status: 'succeeded',
     processItems: [],
     processSummary: processSummaryOf(turn),
     turnOutcome: outcomeOf(turn),
+    hasMoreContent: needsExpand,
+    contentLength: item.contentLength,
   };
 }
 
-async function readFullContent(
+/**
+ * 显式展开时按 UTF-8 字节分段读取正文；最多读 512KiB（超出保留预览并继续标记可展开）。
+ * 返回 null 表示读取失败/无可显示内容。
+ */
+export async function readFullMessageContent(
   conversationId: string,
-  item: ConversationHistoryItem,
+  messageId: string,
+  totalBytes: number,
   getContent: typeof getConversationMessageContent,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  if (item.contentLength <= 0) return null;
-  if (item.contentLength > MAX_AUTO_CONTENT_BYTES_PER_MESSAGE) return null;
+  if (totalBytes <= 0) return null;
 
+  const budget = Math.min(totalBytes, MAX_EXPAND_CONTENT_BYTES);
   let offset = 0;
   let content = '';
-  for (let segment = 0; segment < 32 && offset < item.contentLength; segment++) {
-    const page = await getContent(conversationId, item.messageId, {
+  for (let segment = 0; segment < 64 && offset < budget; segment++) {
+    const page = await getContent(conversationId, messageId, {
       offsetBytes: offset,
       maxBytes: CONTENT_SEGMENT_BYTES,
       signal,
@@ -130,7 +143,7 @@ async function readFullContent(
     offset = page.nextOffsetBytes;
   }
 
-  return null;
+  return content.length > 0 ? content : null;
 }
 
 export async function getAgentConversationFromSnapshot(
@@ -141,7 +154,6 @@ export async function getAgentConversationFromSnapshot(
   deps: SnapshotConversationDeps = {},
 ): Promise<AgentConversationView | null> {
   const getSnapshot = deps.getSnapshot ?? getConversationOpen;
-  const getContent = deps.getContent ?? getConversationMessageContent;
   const legacy = deps.getLegacyConversation;
 
   let snapshot: ConversationOpenSnapshot | null;
@@ -167,41 +179,10 @@ export async function getAgentConversationFromSnapshot(
   for (const turn of snapshot.visibleTurns) turns.set(turn.turnId, turn);
   if (snapshot.activeTurn) turns.set(snapshot.activeTurn.turnId, snapshot.activeTurn);
 
-  let autoContentBytes = 0;
-  const contents = new Map<string, string>();
-  for (const item of snapshot.history.items) {
-    let content = item.preview;
-    if (
-      item.hasMoreContent &&
-      item.contentLength <= MAX_AUTO_CONTENT_BYTES_PER_MESSAGE &&
-      autoContentBytes + item.contentLength <= MAX_AUTO_CONTENT_BYTES_TOTAL
-    ) {
-      try {
-        const full = await readFullContent(
-          snapshot.conversationId,
-          item,
-          getContent,
-          signal,
-        );
-        if (full !== null) {
-          content = full;
-          autoContentBytes += item.contentLength;
-        }
-      } catch {
-        // 分段读取失败时保留预览，不阻断首屏；后续可由展开入口重试。
-      }
-    }
-    contents.set(item.messageId, content);
-  }
-
   const messages: ConversationMessageView[] = snapshot.history.items.map(
     (item) => {
       const turn = item.turnId ? turns.get(item.turnId) : undefined;
-      return mapSnapshotHistoryItem(
-        item,
-        turn,
-        contents.get(item.messageId) ?? item.preview,
-      );
+      return mapSnapshotHistoryItem(item, turn);
     },
   );
 

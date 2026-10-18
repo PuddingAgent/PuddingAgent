@@ -147,7 +147,7 @@ describe('getAgentConversationFromSnapshot', () => {
     });
   });
 
-  it('loads long content through UTF-8 byte segments before rendering', async () => {
+  it('keeps long content as preview plus explicit expand link without eager fetch', async () => {
     const longItem = {
       messageId: 'msg-long',
       role: 'agent' as const,
@@ -158,22 +158,7 @@ describe('getAgentConversationFromSnapshot', () => {
       contentLength: 100,
       hasContentParts: false,
     };
-    const getContent = jest
-      .fn()
-      .mockResolvedValueOnce({
-        content: 'a'.repeat(50),
-        offsetBytes: 0,
-        nextOffsetBytes: 50,
-        totalBytes: 100,
-        hasMore: true,
-      })
-      .mockResolvedValueOnce({
-        content: 'b'.repeat(50),
-        offsetBytes: 50,
-        nextOffsetBytes: null,
-        totalBytes: 100,
-        hasMore: false,
-      });
+    const getContent = jest.fn();
 
     const view = await getAgentConversationFromSnapshot(
       'ws',
@@ -195,13 +180,12 @@ describe('getAgentConversationFromSnapshot', () => {
       },
     );
 
-    expect(getContent).toHaveBeenCalledTimes(2);
-    expect(getContent).toHaveBeenNthCalledWith(1, 'conv-1', 'msg-long', {
-      offsetBytes: 0,
-      maxBytes: 32 * 1024,
-      signal: undefined,
-    });
-    expect(view!.messages[0].content).toBe('a'.repeat(50) + 'b'.repeat(50));
+    expect(getContent).not.toHaveBeenCalled();
+    expect(view!.messages[0].content).toContain(
+      '[展开全文](#pudding-expand-msg-long)',
+    );
+    expect(view!.messages[0].hasMoreContent).toBe(true);
+    expect(view!.messages[0].contentLength).toBe(100);
   });
 
   it('falls back to the legacy projection while an active turn is not terminal', async () => {

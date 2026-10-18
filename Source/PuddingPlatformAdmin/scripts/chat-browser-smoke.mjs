@@ -51,6 +51,21 @@ try {
 }
 await page.waitForTimeout(1500);
 
+let expandResult = null;
+const expandLink = page.locator('a[href^="#pudding-expand-"]').first();
+if ((await expandLink.count()) > 0) {
+  const beforeRequests = chatRequests.filter((url) => url.includes('/content?')).length;
+  const startedExpandAt = Date.now();
+  await expandLink.click();
+  await page.waitForTimeout(1500);
+  expandResult = {
+    latencyMs: Date.now() - startedExpandAt,
+    contentRequests:
+      chatRequests.filter((url) => url.includes('/content?')).length - beforeRequests,
+    remainingLinks: await page.locator('a[href^="#pudding-expand-"]').count(),
+  };
+}
+
 const metrics = await page.evaluate(() => {
   const paints = performance.getEntriesByType('paint').map((entry) => ({
     name: entry.name,
@@ -80,6 +95,7 @@ const report = {
   domContentLoadedMs,
   messageListMs,
   firstContentMs,
+  expandResult,
   metrics,
   failedResponses: failedResponses.slice(0, 30),
   chatRequests: chatRequests.slice(0, 30),

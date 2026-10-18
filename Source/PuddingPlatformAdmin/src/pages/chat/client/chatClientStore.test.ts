@@ -691,6 +691,75 @@ describe('agent chat client store', () => {
     expect(store.getSnapshot().conversation?.mainSessionId).toBe('session-b');
   });
 
+  it('expands a truncated message on demand through bounded content segments', async () => {
+    const cache = createMemoryAgentChatCache();
+    let contentCalls = 0;
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [],
+        getConversation: jest.fn(),
+        getConversationFromSnapshot: async (_workspaceId, agentId) => ({
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId,
+          mainSessionId: 'session-agent-a',
+          messages: [
+            {
+              messageId: 'msg-long',
+              role: 'agent',
+              sourceId: 'agent',
+              sourceName: 'Agent',
+              createdAt: new Date(1_000).toISOString(),
+              content:
+                'preview\n\n[展开全文](#pudding-expand-msg-long)',
+              status: 'succeeded',
+              processItems: [],
+              hasMoreContent: true,
+              contentLength: 100,
+            },
+          ],
+          eventCursor: 10,
+          updatedAt: '2026-06-07T00:00:00.000Z',
+        }),
+        getMessageContent: async () => {
+          contentCalls += 1;
+          if (contentCalls === 1) {
+            return {
+              conversationId: 'session-agent-a',
+              messageId: 'msg-long',
+              offsetBytes: 0,
+              nextOffsetBytes: 50,
+              totalBytes: 100,
+              content: 'a'.repeat(50),
+              hasMore: true,
+            };
+          }
+          return {
+            conversationId: 'session-agent-a',
+            messageId: 'msg-long',
+            offsetBytes: 50,
+            nextOffsetBytes: null,
+            totalBytes: 100,
+            content: 'b'.repeat(50),
+            hasMore: false,
+          };
+        },
+      },
+    });
+
+    await store.selectAgent('default', 'agent-a');
+    await store.expandMessage('msg-long');
+
+    expect(contentCalls).toBe(2);
+    const message = store.getSnapshot().conversation?.messages[0];
+    expect(message?.content).toBe('a'.repeat(50) + 'b'.repeat(50));
+    expect(message?.hasMoreContent).toBe(false);
+
+    await store.expandMessage('msg-long');
+    expect(contentCalls).toBe(2);
+  });
+
   it('loads older history page and prepends without duplicates', async () => {
     const cache = createMemoryAgentChatCache();
     let historyCalls = 0;
