@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -36,5 +36,17 @@ public sealed class BackfillChatMessageSource(
             .ToListAsync(ct);
 
         return batch;
+    }
+
+    public async Task<long> GetMaxIdAsync(CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.ChatMessages.MaxAsync(m => (long?)m.Id, ct) ?? 0L;
+    }
+
+    public async Task<string> GetDatasetIdentityAsync(CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return db.Database.GetDbConnection().DataSource ?? string.Empty;
     }
 }

@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -205,6 +206,138 @@ public sealed class SessionChunkBackfillServiceTests
         }
     }
 
+    // ── g) 断点恢复：重启只扫高水位以内的新增消息，不重扫已完成区间 ──
+
+    [TestMethod]
+    public async Task RunAsync_CheckpointResume_OnlyScansMessagesAfterLastId()
+    {
+        var platformPath = CreateTempDbPath("platform");
+        var memoryPath = CreateTempDbPath("memory");
+        var checkpointPath = CreateTempDbPath("checkpoint") + ".json";
+        try
+        {
+            var platformFactory = new TestPlatformDbFactory(CreatePlatformOptions(platformPath));
+            await InitializePlatformDbAsync(platformFactory);
+            var memoryFactory = new TestMemoryDbFactory(CreateMemoryOptions(memoryPath));
+            await MemoryLibraryDbInitializer.InitializeAsync(memoryFactory);
+
+            await SeedMessagesAsync(platformFactory, ("m-1", "user"), ("m-2", "assistant"), ("m-3", "user"));
+
+            var firstIndexer = new FakeIndexer();
+            var first = CreateService(
+                platformFactory, memoryFactory, firstIndexer, enabled: true,
+                checkpointPath: checkpointPath);
+            await first.RunAsync();
+            Assert.AreEqual(3, firstIndexer.Calls.Count);
+            Assert.IsTrue(File.Exists(checkpointPath), "首次成功批后必须写 checkpoint");
+            StringAssert.Contains(File.ReadAllText(checkpointPath), "highWatermark");
+
+            await SeedMessagesAsync(platformFactory, ("m-4", "assistant"));
+
+            var secondIndexer = new FakeIndexer();
+            var second = CreateService(
+                platformFactory, memoryFactory, secondIndexer, enabled: true,
+                checkpointPath: checkpointPath);
+            await second.RunAsync();
+
+            CollectionAssert.AreEqual(
+                new[] { "m-4" },
+                secondIndexer.Calls.Select(c => c.MessageId).ToArray(),
+                "恢复 checkpoint 后只应扫描新增消息");
+        }
+        finally
+        {
+            CleanupDbFile(platformPath);
+            CleanupDbFile(memoryPath);
+            CleanupDbFile(checkpointPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunAsync_IndexConfigVersionChanged_InvalidatesCheckpointAndRescans()
+    {
+        var platformPath = CreateTempDbPath("platform");
+        var memoryPath = CreateTempDbPath("memory");
+        var checkpointPath = CreateTempDbPath("checkpoint") + ".json";
+        try
+        {
+            var platformFactory = new TestPlatformDbFactory(CreatePlatformOptions(platformPath));
+            await InitializePlatformDbAsync(platformFactory);
+            var memoryFactory = new TestMemoryDbFactory(CreateMemoryOptions(memoryPath));
+            await MemoryLibraryDbInitializer.InitializeAsync(memoryFactory);
+
+            await SeedMessagesAsync(platformFactory, ("m-1", "user"), ("m-2", "assistant"));
+            var first = CreateService(
+                platformFactory, memoryFactory, new FakeIndexer(), enabled: true,
+                checkpointPath: checkpointPath, indexConfigVersion: "v1");
+            await first.RunAsync();
+
+            await SeedMessagesAsync(platformFactory, ("m-3", "user"));
+            var secondIndexer = new FakeIndexer();
+            var second = CreateService(
+                platformFactory, memoryFactory, secondIndexer, enabled: true,
+                checkpointPath: checkpointPath, indexConfigVersion: "v2");
+            await second.RunAsync();
+
+            Assert.AreEqual(
+                3, secondIndexer.Calls.Count,
+                "索引配置版本变化必须从 0 重建，而不是沿用旧断点");
+        }
+        finally
+        {
+            CleanupDbFile(platformPath);
+            CleanupDbFile(memoryPath);
+            CleanupDbFile(checkpointPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunAsync_RestoredDatabaseWithLowerMaxId_InvalidatesCheckpoint()
+    {
+        var platformPath = CreateTempDbPath("platform");
+        var memoryPath = CreateTempDbPath("memory");
+        var checkpointPath = CreateTempDbPath("checkpoint") + ".json";
+        try
+        {
+            var platformFactory = new TestPlatformDbFactory(CreatePlatformOptions(platformPath));
+            await InitializePlatformDbAsync(platformFactory);
+            var memoryFactory = new TestMemoryDbFactory(CreateMemoryOptions(memoryPath));
+            await MemoryLibraryDbInitializer.InitializeAsync(memoryFactory);
+
+            await SeedMessagesAsync(platformFactory, ("m-1", "user"), ("m-2", "assistant"));
+            var first = CreateService(
+                platformFactory, memoryFactory, new FakeIndexer(), enabled: true,
+                checkpointPath: checkpointPath);
+            await first.RunAsync();
+
+            // 模拟“恢复了更旧的库”：checkpoint 水位高于当前 max(Id)。
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var checkpoint = JsonSerializer.Deserialize<SessionChunkBackfillCheckpoint>(
+                await File.ReadAllTextAsync(checkpointPath), options)!;
+            await File.WriteAllTextAsync(
+                checkpointPath,
+                JsonSerializer.Serialize(
+                    checkpoint with { LastId = 999, HighWatermark = 999 },
+                    options));
+
+            var secondIndexer = new FakeIndexer();
+            var second = CreateService(
+                platformFactory, memoryFactory, secondIndexer, enabled: true,
+                checkpointPath: checkpointPath);
+            await second.RunAsync();
+
+            Assert.AreEqual(
+                2, secondIndexer.Calls.Count,
+                "检测到恢复旧库后必须从头重建，不能把新数据永久跳过");
+        }
+        finally
+        {
+            CleanupDbFile(platformPath);
+            CleanupDbFile(memoryPath);
+            CleanupDbFile(checkpointPath);
+        }
+    }
+
     // ── Test Infrastructure ────────────────────────────────────────────
 
     private static SessionChunkBackfillService CreateService(
@@ -212,7 +345,9 @@ public sealed class SessionChunkBackfillServiceTests
         TestMemoryDbFactory memoryFactory,
         ISessionChunkIndexer indexer,
         bool enabled,
-        int batchSize = 50)
+        int batchSize = 50,
+        string? checkpointPath = null,
+        string indexConfigVersion = "1")
         => new(
             new BackfillChatMessageSource(platformFactory),
             memoryFactory,
@@ -222,6 +357,9 @@ public sealed class SessionChunkBackfillServiceTests
                 Enabled = enabled,
                 BatchSize = batchSize,
                 DelayMs = 0,
+                StartupDelayMs = 0,
+                CheckpointFilePath = checkpointPath,
+                IndexConfigVersion = indexConfigVersion,
             }),
             NullLogger<SessionChunkBackfillService>.Instance);
 

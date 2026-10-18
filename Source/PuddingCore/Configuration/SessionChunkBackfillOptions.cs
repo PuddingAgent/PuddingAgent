@@ -1,4 +1,4 @@
-﻿namespace PuddingCode.Configuration;
+namespace PuddingCode.Configuration;
 
 /// <summary>
 /// WP-L2d：SessionChunkVectors 存量回填 job 的控制开关与批参数。
@@ -19,4 +19,20 @@ public sealed class SessionChunkBackfillOptions
 
     /// <summary>批间延迟毫秒数，用于限速 embedding 调用（lmstudio qwen3-0.6b 单次约 30ms）。</summary>
     public int DelayMs { get; set; } = 200;
+
+    /// <summary>
+    /// checkpoint 文件路径；为空时使用 &lt;DataRoot&gt;/runtime/backfill/session-chunk-checkpoint.json。
+    /// </summary>
+    public string? CheckpointFilePath { get; set; }
+
+    /// <summary>
+    /// 索引配置/embedding 版本（分块规则、provider/model、维度等）。版本变化时旧 checkpoint 失效，
+    /// 从头重建，避免把旧向量当作新配置已覆盖。
+    /// </summary>
+    public string IndexConfigVersion { get; set; } = "1";
+
+    /// <summary>
+    /// Ready 后的启动保护窗口（毫秒）：先让首屏/交互稳定再扫描历史。默认 60s。
+    /// </summary>
+    public int StartupDelayMs { get; set; } = 60_000;
 }

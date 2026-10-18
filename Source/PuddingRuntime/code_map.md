@@ -205,7 +205,7 @@
 | `Services/SandboxExecutor.cs` | 沙箱执行的二级门控入口 | `SandboxExecutor` | `Services/AgentFirewall.cs` | — |
 | `Services/Search/SearchAttemptLedger.cs` | 搜索尝试的失败账本与短路判定 | `SearchAttemptOutcome` | `Tools/BuiltIns/Search/SearchGrepTool.cs` | — |
 | `Services/SessionArchiver.cs` | 会话原始记录到 Markdown 的导出 | `SessionArchiver` | `Services/SessionSummaryStore.cs` | — |
-| `Services/SessionChunkBackfillService.cs` | 会话块向量的存量回填作业 | `SessionChunkBackfillService` | `Services/SessionChunkIndexer.cs` | — |
+| `Services/SessionChunkBackfillService.cs` | 会话块存量回填：持久 checkpoint（数据集/配置版本/冻结 H）、增量恢复、恢复旧库失效重建、Ready 保护窗口 | `SessionChunkBackfillService`、`SessionChunkBackfillCheckpoint` | `Services/SessionChunkIndexer.cs` | 每批成功后才原子推进；批内失败/取消重扫（幂等）；checkpoint 写失败不阻断；不重扫已完成区间 |
 | `Services/SessionChunkIndexer.cs` | 会话块切分与向量写入 | `ISessionChunkIndexer` | `Services/OpenAiEmbeddingService.cs` | 不回查到哈希时按源文本现算兜底 |
 | `Services/SessionExecutionGate.cs` | 会话状态的进程内单写者门控 | `SessionExecutionGate` | `Services/AgentSessionManager.cs` | — |
 | `Services/SessionSummaryStore.cs` | 会话压缩摘要的持久化 | `SessionSummaryStore` | `Services/AgentMemorySummaryContextBuilder.cs` | — |
