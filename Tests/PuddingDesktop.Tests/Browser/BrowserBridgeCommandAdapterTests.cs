@@ -52,10 +52,61 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
+    public void PageGoto_MapsToWebViewNavigateWithActionUrlAndTimeout()
+    {
+        var command = Command(
+            BrowserBridgeCommandNames.PageGoto,
+            "ctx",
+            "page",
+            new PageGotoArguments { Url = "https://example.com/a", TimeoutMs = 1234 });
+
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason), reason);
+
+        Assert.Equal(DesktopCapability.WebViewNavigate, descriptor!.Capability);
+        var navigation = request!.Navigate;
+        Assert.NotNull(navigation);
+        Assert.Equal(DesktopNavigationAction.Goto, navigation!.Action);
+        Assert.Equal("https://example.com/a", navigation.Url!.AbsoluteUri);
+        Assert.Equal(1234, navigation.TimeoutMs);
+        Assert.Equal("ctx/page", navigation.Target.Key);
+    }
+
+    [Fact]
+    public void PageBack_MapsToTheBackActionWithoutAUrl()
+    {
+        var command = Command(BrowserBridgeCommandNames.PageGoBack, "ctx", "page");
+
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason), reason);
+
+        Assert.Equal(DesktopCapability.WebViewNavigate, descriptor!.Capability);
+        Assert.Equal(DesktopNavigationAction.Back, request!.Navigate!.Action);
+        Assert.Null(request.Navigate.Url);
+    }
+
+    [Fact]
+    public void PageGotoWithAnInvalidUrl_IsRejectedWithAnActionableReason()
+    {
+        var command = Command(
+            BrowserBridgeCommandNames.PageGoto,
+            "ctx",
+            "page",
+            new PageGotoArguments { Url = "not-a-url" });
+
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason));
+
+        Assert.Null(descriptor);
+        Assert.Null(request);
+        Assert.Contains("absolute http/https", reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UnmappedCommands_FailClosedInsteadOfFallingBack()
     {
         // 尚未迁移的命令不得"看起来成功"或回退到 controller：返回 false 并给出原因。
-        var command = Command(BrowserBridgeCommandNames.PageGoto, "ctx", "page");
+        var command = Command(BrowserBridgeCommandNames.PageInteract, "ctx", "page");
         Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
             command, out var descriptor, out var request, out var reason));
 
@@ -64,13 +115,19 @@ public sealed class BrowserBridgeCommandAdapterTests
         Assert.Contains("not mapped", reason, StringComparison.Ordinal);
     }
 
-    private static BrowserBridgeCommand Command(string name, string? contextId, string? pageId) => new()
+    private static BrowserBridgeCommand Command(
+        string name,
+        string? contextId,
+        string? pageId,
+        object? args = null) => new()
     {
         OperationId = Guid.NewGuid(),
         Name = name,
         ContextId = contextId,
         PageId = pageId,
         DeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
-        Arguments = JsonSerializer.SerializeToElement(new { }),
+        Arguments = JsonSerializer.SerializeToElement(
+            args ?? new { },
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)),
     };
 }
