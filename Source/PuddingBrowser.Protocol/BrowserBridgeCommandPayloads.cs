@@ -87,6 +87,13 @@ public sealed record PageLocateArguments
 public sealed record PageInteractArguments
 {
     public required string Action { get; init; }
+
+    /// <summary>
+    /// 本动作要钉住的页面版本（H3）：写操作执行器契约要求版本 &gt; 0，缺失即拒绝。
+    /// Core 侧从 <c>IBrowserPage.PageVersion</c> 填充；旧 Core 不填时为 null（Desktop 拒绝而非猜版本）。
+    /// </summary>
+    public long? ExpectedPageVersion { get; init; }
+
     public BrowserLocatorDescriptor? Locator { get; init; }
     public string? Text { get; init; }
     public IReadOnlyList<string>? Values { get; init; }

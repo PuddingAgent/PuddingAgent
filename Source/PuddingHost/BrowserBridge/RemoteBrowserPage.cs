@@ -185,6 +185,8 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
             new PageInteractArguments
             {
                 Action = "scroll",
+                // H3：写操作必须钉住版本；用客户端当前页面版本（0/未知留空，由 Desktop 拒绝而非猜）。
+                ExpectedPageVersion = PageVersion > 0 ? PageVersion : null,
                 Locator = options.Locator is null ? null : ToDescriptor(options.Locator),
                 DeltaX = options.DeltaX,
                 DeltaY = options.DeltaY,
@@ -279,6 +281,8 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
             new PageInteractArguments
             {
                 Action = action,
+                // H3：写操作钉住版本（0/未知留空，Desktop 拒绝）。
+                ExpectedPageVersion = PageVersion > 0 ? PageVersion : null,
                 Locator = locator is null ? null : ToDescriptor(locator),
                 Text = text,
                 Values = values,

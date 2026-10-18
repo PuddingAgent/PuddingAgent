@@ -290,23 +290,50 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
-    public void PageInteract_IsRejectedUntilTheWireCarriesThePinnedExpectedPageVersion()
+    public void PageInteract_MapsPinnedVersionActionLocatorAndScrollTargetButRejectsMissingVersion()
     {
-        // 审阅 H3：Bridge 线缆没有 expectedPageVersion，而执行器契约要求写操作必须钉版本。
-        // 在补协议字段之前必须 fail closed——不能猜版本，也不能回退旧路径绕过版本门禁。
+        // H3：写操作必须钉住版本；有版本才可执行，缺失/非正则拒绝（不猜当前版本）。
         var command = Command(
             BrowserBridgeCommandNames.PageInteract,
             "ctx",
             "page",
-            new PageInteractArguments { Action = "click", Locator = new BrowserLocatorDescriptor { Kind = "css", Value = "#go" } });
+            new PageInteractArguments
+            {
+                Action = "scroll",
+                ExpectedPageVersion = 5,
+                Locator = new BrowserLocatorDescriptor { Kind = "css", Value = "#list" },
+                DeltaY = 120,
+                ScrollTarget = "element",
+            });
 
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason), reason);
+
+        Assert.Equal(DesktopCapability.BrowserInteract, descriptor!.Capability);
+        var interact = request!.Interact;
+        Assert.NotNull(interact);
+        Assert.Equal(DesktopInteractionAction.Scroll, interact!.Action);
+        Assert.Equal(5, interact.ExpectedPageVersion.Value);
+        Assert.Equal("#list", interact.Locator!.Value);
+        Assert.Equal(120, interact.DeltaY);
+        Assert.Equal(DesktopScrollTarget.Element, interact.ScrollTarget);
+        Assert.Equal(DesktopInputMode.Dom, interact.InputMode);
+
+        var missingVersion = Command(
+            BrowserBridgeCommandNames.PageInteract,
+            "ctx",
+            "page",
+            new PageInteractArguments
+            {
+                Action = "click",
+                Locator = new BrowserLocatorDescriptor { Kind = "css", Value = "#go" },
+            });
         Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
-            command, out var descriptor, out var request, out var reason));
-
-        Assert.Null(descriptor);
-        Assert.Null(request);
-        Assert.Contains("expectedPageVersion", reason, StringComparison.Ordinal);
-        Assert.Contains("H3", reason, StringComparison.Ordinal);
+            missingVersion, out var noVersionDescriptor, out var noVersionRequest, out var versionReason));
+        Assert.Null(noVersionDescriptor);
+        Assert.Null(noVersionRequest);
+        Assert.Contains("expectedPageVersion", versionReason, StringComparison.Ordinal);
+        Assert.Contains("H3", versionReason, StringComparison.Ordinal);
     }
 
     [Fact]

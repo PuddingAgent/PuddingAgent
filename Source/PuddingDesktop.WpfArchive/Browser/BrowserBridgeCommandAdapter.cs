@@ -16,7 +16,7 @@ namespace PuddingDesktop.Browser;
 /// · `page.locate` → `browser.locate`（kind/name/exact/nth/hasText 逐字段；未知 kind 拒绝）；
 /// · `page.waitFor` → `browser.wait_for`（单条件映射；多条件/无条件显式拒绝，不静默挑优先级）；
 /// · `page.screenshot` → `browser.screenshot`（必须钉住版本；scope/detail/format 严格解析）；
-/// · `page.interact` → **暂不可映射**：线缆缺 `expectedPageVersion`（H3），补协议字段前 fail closed。
+/// · `page.interact` → `browser.interact`（H3：必须带 `expectedPageVersion`；action/scrollTarget 严格解析）。
 ///
 /// 后续切片按"快照/定位/等待 → 交互/tabs → 截图"扩充，再切换派发器入口。映射失败的
 /// <c>reason</c> 必须可行动（缺 context/page id、参数非法、能力未注册、尚未映射），不得
@@ -31,6 +31,7 @@ public static class BrowserBridgeCommandAdapter
     internal const string LocateCapabilityName = "browser.locate";
     internal const string WaitForCapabilityName = "browser.wait_for";
     internal const string ScreenshotCapabilityName = "browser.screenshot";
+    internal const string InteractCapabilityName = "browser.interact";
 
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
@@ -149,32 +150,14 @@ public static class BrowserBridgeCommandAdapter
                 return false;
             }
 
-            if (!DesktopLocatorKindWire.TryParse(wireLocator.Kind, out var kind))
+            if (!TryMapLocator(wireLocator, out var locator, out reason))
             {
-                reason = $"locator kind '{wireLocator.Kind}' is not registered (no guessing, no fallback)";
-                return false;
-            }
-
-            DesktopLocator locator;
-            try
-            {
-                locator = new DesktopLocator(
-                    kind,
-                    wireLocator.Value,
-                    wireLocator.Name,
-                    wireLocator.Exact,
-                    wireLocator.Nth,
-                    wireLocator.HasText);
-            }
-            catch (ArgumentException ex)
-            {
-                reason = $"page.locate locator is not usable: {ex.Message}";
                 return false;
             }
 
             request = DesktopCapabilityRequest.ForLocate(new BrowserLocateRequest(
                 target,
-                locator,
+                locator!,
                 DesktopPageVersion.Unknown));
             return true;
         }
@@ -315,13 +298,96 @@ public static class BrowserBridgeCommandAdapter
 
         if (string.Equals(command.Name, BrowserBridgeCommandNames.PageInteract, StringComparison.Ordinal))
         {
-            // 能力契约 BrowserInteractRequest **必须**钉住 expectedPageVersion（写操作），
-            // 但 Bridge 线缆的 PageInteractArguments/envelope 当前没有该字段（审阅 H3 的记录）。
-            // 结论：I2-c 要把 interact 切到执行器，必须先给线缆补版本字段；在此之前 fail closed，
-            // 不能"猜当前版本"或回退旧路径（那会绕过版本门禁）。
-            reason = "page.interact cannot be mapped yet: the bridge wire carries no expectedPageVersion, "
-                + "and the executor contract requires a pinned version (H3 protocol gap)";
-            return false;
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(InteractCapabilityName, out var interactDescriptor))
+            {
+                reason = $"capability '{InteractCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            PageInteractArguments? interactArgs;
+            try
+            {
+                interactArgs = command.Arguments.Deserialize<PageInteractArguments>(WebJson);
+            }
+            catch (JsonException)
+            {
+                reason = "page.interact arguments are not valid JSON";
+                return false;
+            }
+
+            if (interactArgs is not { } args || string.IsNullOrWhiteSpace(args.Action))
+            {
+                reason = "page.interact requires an action";
+                return false;
+            }
+
+            // H3：写操作必须钉住版本（缺失/非正 ⇒ 拒绝，不猜当前版本、不回退旧路径）。
+            if (args.ExpectedPageVersion is not { } wireVersion || wireVersion <= 0)
+            {
+                reason = "page.interact requires a positive expectedPageVersion on the bridge wire (H3); "
+                    + "refusing to guess the current version";
+                return false;
+            }
+
+            if (!DesktopInteractionActionWire.TryParse(args.Action, out var action))
+            {
+                reason = $"interaction action '{args.Action}' is not registered (no guessing)";
+                return false;
+            }
+
+            DesktopLocator? locator = null;
+            if (args.Locator is { } wireLocator && !TryMapLocator(wireLocator, out locator, out reason))
+            {
+                return false;
+            }
+
+            DesktopLocator? toLocator = null;
+
+            DesktopScrollTarget? scrollTarget = null;
+            if (!string.IsNullOrWhiteSpace(args.ScrollTarget))
+            {
+                if (!DesktopScrollTargetWire.TryParse(args.ScrollTarget, out var parsedScrollTarget))
+                {
+                    reason = $"scroll target '{args.ScrollTarget}' is not registered (no guessing)";
+                    return false;
+                }
+
+                scrollTarget = parsedScrollTarget;
+            }
+
+            DesktopCapabilityRequest interactRequest;
+            try
+            {
+                interactRequest = DesktopCapabilityRequest.ForInteract(new BrowserInteractRequest(
+                    target,
+                    action,
+                    DesktopPageVersion.Require(wireVersion),
+                    locator,
+                    args.Text,
+                    args.Values,
+                    args.Checked,
+                    args.DeltaX,
+                    args.DeltaY,
+                    // 线缆没有 inputMode：旧 Bridge 路径执行的是 DOM 输入，这里如实为 Dom。
+                    DesktopInputMode.Dom,
+                    scrollTarget,
+                    toLocator,
+                    filePaths: null,
+                    args.X,
+                    args.Y,
+                    args.ObservationId,
+                    args.ToX,
+                    args.ToY));
+            }
+            catch (ArgumentException ex)
+            {
+                reason = $"page.interact request is not usable: {ex.Message}";
+                return false;
+            }
+
+            request = interactRequest;
+            descriptor = interactDescriptor;
+            return true;
         }
 
         if (!string.Equals(command.Name, BrowserBridgeCommandNames.PageGetInfo, StringComparison.Ordinal))
@@ -412,5 +478,38 @@ public static class BrowserBridgeCommandAdapter
             DesktopPageVersion.Unknown,
             action));
         return true;
+    }
+
+    /// <summary>locate / interact 共用的 locator 映射：kind 严格解析，非法值 fail closed。</summary>
+    private static bool TryMapLocator(
+        BrowserLocatorDescriptor wireLocator,
+        out DesktopLocator? locator,
+        out string? reason)
+    {
+        locator = null;
+        reason = null;
+
+        if (!DesktopLocatorKindWire.TryParse(wireLocator.Kind, out var kind))
+        {
+            reason = $"locator kind '{wireLocator.Kind}' is not registered (no guessing, no fallback)";
+            return false;
+        }
+
+        try
+        {
+            locator = new DesktopLocator(
+                kind,
+                wireLocator.Value,
+                wireLocator.Name,
+                wireLocator.Exact,
+                wireLocator.Nth,
+                wireLocator.HasText);
+            return true;
+        }
+        catch (ArgumentException ex)
+        {
+            reason = $"locator is not usable: {ex.Message}";
+            return false;
+        }
     }
 }
