@@ -11,7 +11,13 @@ namespace PuddingDesktop.Browser;
 
 /// <summary>
 /// Dispatches incoming Bridge commands to the appropriate browser operation handler.
-/// Enforces idempotency via result cache, pause/takeover gating, and deadline checks.
+///
+/// 职责边界（ADR-097 D3/D4，2026-10-18）：
+/// · **准入**只有一处：会话权威（经 <see cref="BrowserPageLifecycle"/> 的标量门面）；
+///   owner 来自宿主注入的 Origin，首条可信命令确认交页归属，触碰 handler 前复检同一票据，
+///   所有退出路径精确释放；
+/// · **幂等**只有一处：原子执行账本（同键同指纹等待/复用，异载荷冲突）；
+/// · **暂停/接管**只阻断副作用（只读观察继续），运行控制状态读进程内唯一权威。
 ///
 /// 本类是 <see cref="IBrowserAutomationGate"/> 的实现之一：它的 pause/takeover 就是**执行闸门本身**。
 /// 在它只是"自己的一个字段"时，Shell 的接管开关从来不写它，于是 Bridge 路径上的人工接管无效
