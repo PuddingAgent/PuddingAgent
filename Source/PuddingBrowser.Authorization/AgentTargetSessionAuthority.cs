@@ -36,6 +36,8 @@ public sealed class AgentTargetSessionAuthority
     private BrowserControlEpoch _controlEpoch = BrowserControlEpoch.Initial;
     private AgentTargetWriteEpoch _writeEpoch = AgentTargetWriteEpoch.Initial;
     private AgentTargetSession? _session;
+    /// <summary>用户已把页面交出来、但尚未由可信 Core 会话确认归属的**待交页**（handover pending）。</summary>
+    private DesktopPageTarget? _pendingTarget;
     private AgentTargetSessionId? _lastRevokedSessionId;
     private AgentTargetPermit? _permitInFlight;
     private CancellationTokenSource? _permitCancellation;
@@ -196,6 +198,7 @@ public sealed class AgentTargetSessionAuthority
                 && string.Equals(_session.Target.Key, target.Key, StringComparison.Ordinal)
                 && _session.Owner.Equals(controlHandle.Owner))
             {
+                _pendingTarget = null;
                 _reason = "target selection is idempotent for the current page";
                 return Snapshot();
             }
@@ -211,6 +214,7 @@ public sealed class AgentTargetSessionAuthority
                 _generation,
                 controlHandle,
                 _timeProvider.GetUtcNow());
+            _pendingTarget = null;
             // 保留 _lastRevokedSessionId：它是审计事实（“此会话已被替换”），不因新选择而抹除。
             _reason = reason;
             snapshot = Snapshot();
@@ -218,6 +222,117 @@ public sealed class AgentTargetSessionAuthority
 
         toCancel?.Cancel();
         return snapshot;
+    }
+
+    /// <summary>
+    /// 用户把页面“交出来”（handover），但此时 Desktop 还不知道它属于哪个可信 Core 会话。
+    ///
+    /// 该动作本身**不产生可执行授权**：它只记录待交页并在归属确认后由
+    /// <see cref="TryClaimOwner"/> 建立会话（ADR-097 D3：「返回成功后 UI 才显示已交出」）。
+    /// 换页会原子作废旧会话与旧票据；重复交出同一页是幂等的。
+    /// </summary>
+    public AgentTargetSessionSnapshot OfferTarget(DesktopPageTarget target, string? reason = null)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+
+        CancellationTokenSource? toCancel = null;
+        AgentTargetSessionSnapshot snapshot;
+        lock (_sync)
+        {
+            if (_isClosed)
+            {
+                _reason = AgentTargetErrorCodes.Closed;
+                return Snapshot();
+            }
+
+            if (!_generation.IsLive)
+            {
+                _reason = AgentTargetErrorCodes.TransportUnavailable;
+                return Snapshot();
+            }
+
+            if (_session is not null && string.Equals(_session.Target.Key, target.Key, StringComparison.Ordinal))
+            {
+                // 已经是当前目标：重复交出幂等（保留归属，不清 pending —— 正常不会同时存在）。
+                _reason = "target handover is idempotent for the current page";
+                return Snapshot();
+            }
+
+            if (_session is not null)
+            {
+                toCancel = InvalidateTargetUnsafe(reason ?? "target switched by handover");
+            }
+
+            if (_pendingTarget is not null
+                && !string.Equals(_pendingTarget.Key, target.Key, StringComparison.Ordinal))
+            {
+                _pendingTarget = null;
+            }
+
+            _pendingTarget = target;
+            _reason = reason;
+            snapshot = Snapshot();
+        }
+
+        toCancel?.Cancel();
+        return snapshot;
+    }
+
+    /// <summary>
+    /// 用**宿主注入的可信控制句柄**确认待交页的归属：成功后才建立可执行会话。
+    ///
+    /// 这是 handover 的“绑定”一步：只接受来自可信执行上下文的 owner，模型不能自报；
+    /// 已经归属其它所有者的目标**不会**被改绑（<c>false</c>），与「无关任务不能使用该页」一致。
+    /// </summary>
+    public bool TryClaimOwner(AgentTargetControlHandle controlHandle, out AgentTargetSessionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(controlHandle);
+
+        lock (_sync)
+        {
+            snapshot = Snapshot();
+
+            if (_isClosed || !_generation.IsLive)
+            {
+                _reason = _isClosed ? AgentTargetErrorCodes.Closed : AgentTargetErrorCodes.TransportUnavailable;
+                snapshot = Snapshot();
+                return false;
+            }
+
+            if (_session is not null)
+            {
+                var sameTarget = _pendingTarget is null
+                    || string.Equals(_session.Target.Key, _pendingTarget.Key, StringComparison.Ordinal);
+                if (sameTarget && _session.Owner.Equals(controlHandle.Owner))
+                {
+                    _reason = "control owner is already bound to this target";
+                    snapshot = Snapshot();
+                    return true;
+                }
+
+                _reason = AgentTargetErrorCodes.OwnerMismatch;
+                snapshot = Snapshot();
+                return false;
+            }
+
+            if (_pendingTarget is not { } pending)
+            {
+                _reason = AgentTargetErrorCodes.TargetRequired;
+                snapshot = Snapshot();
+                return false;
+            }
+
+            _session = new AgentTargetSession(
+                AgentTargetSessionId.New(),
+                pending,
+                _generation,
+                controlHandle,
+                _timeProvider.GetUtcNow());
+            _pendingTarget = null;
+            _reason = "handover claimed by the trusted control owner";
+            snapshot = Snapshot();
+            return true;
+        }
     }
 
     /// <summary>用户撤销目标（或不接管而直接收回）。</summary>
@@ -235,7 +350,7 @@ public sealed class AgentTargetSessionAuthority
         return snapshot;
     }
 
-    /// <summary>目标页被关闭：只在该页正是当前目标时作废会话（关页 = 原子失效旧控制权）。</summary>
+    /// <summary>目标页被关闭：该页正是当前目标或待交页时作废（关页 = 原子失效旧控制权）。</summary>
     public AgentTargetSessionSnapshot NotifyPageClosed(DesktopPageTarget target, string? reason = null)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -244,7 +359,12 @@ public sealed class AgentTargetSessionAuthority
         AgentTargetSessionSnapshot snapshot;
         lock (_sync)
         {
-            if (_session is not null && string.Equals(_session.Target.Key, target.Key, StringComparison.Ordinal))
+            var isCurrentTarget = _session is not null
+                && string.Equals(_session.Target.Key, target.Key, StringComparison.Ordinal);
+            var isPendingTarget = _pendingTarget is not null
+                && string.Equals(_pendingTarget.Key, target.Key, StringComparison.Ordinal);
+
+            if (isCurrentTarget || isPendingTarget)
             {
                 toCancel = InvalidateTargetUnsafe(reason ?? "the agent target page was closed");
             }
@@ -599,7 +719,7 @@ public sealed class AgentTargetSessionAuthority
         }
     }
 
-    /// <summary>作废目标：推进控制世代 + 写世代，清空运行控制状态，返回待取消的令牌源。</summary>
+    /// <summary>作废目标：推进控制世代 + 写世代，清空运行控制状态与待交页，返回待取消的令牌源。</summary>
     private CancellationTokenSource? InvalidateTargetUnsafe(string reason)
     {
         if (_session is not null)
@@ -608,6 +728,7 @@ public sealed class AgentTargetSessionAuthority
             _session = null;
         }
 
+        _pendingTarget = null;
         _controlEpoch = _controlEpoch.Next();
         _controlState = AgentTargetControlState.None;
         var toCancel = AdvanceWriteEpochUnsafe();
@@ -631,6 +752,7 @@ public sealed class AgentTargetSessionAuthority
         _controlEpoch,
         _writeEpoch,
         _session,
+        _pendingTarget,
         _controlState,
         _isClosed,
         _lastRevokedSessionId,

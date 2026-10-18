@@ -608,4 +608,109 @@ public sealed class AgentTargetSessionAuthorityTests
         authority.BeginUserControl();
         Assert.AreNotEqual(paused, authority.WriteEpoch.Value, "另一轴进入同样推进写世代。");
     }
+
+    // ── Handover：用户交页 + 可信会话确认归属（ADR-097 D3）────────────────
+
+    [TestMethod]
+    public void OfferingATargetDoesNotCreateAnExecutableSessionUntilClaimed()
+    {
+        var authority = Ready();
+
+        var offered = authority.OfferTarget(PageA);
+
+        Assert.IsFalse(offered.HasTarget, "交页本身不产生可执行授权（UI 不能显示“已交出”）。");
+        Assert.IsTrue(offered.HasPendingHandover);
+        Assert.AreEqual(AgentTargetErrorCodes.TargetRequired, authority.Authorize(Req(PageA, AgentTargetOperation.Observe)).ErrorCode);
+    }
+
+    [TestMethod]
+    public void TheFirstTrustedClaimBindsTheOwnerAndOpensTheSession()
+    {
+        var authority = Ready();
+        authority.OfferTarget(PageA);
+
+        Assert.IsTrue(authority.TryClaimOwner(Handle, out var claimed));
+        Assert.IsTrue(claimed.HasTarget);
+        Assert.IsFalse(claimed.HasPendingHandover);
+        Assert.AreEqual(Handle.Owner, claimed.Session!.Owner);
+        Assert.IsTrue(authority.Authorize(Req(PageA, AgentTargetOperation.Observe)).IsAllowed);
+    }
+
+    [TestMethod]
+    public void AnotherOwnerCannotClaimAnAlreadyClaimedTarget()
+    {
+        var authority = Ready();
+        authority.OfferTarget(PageA);
+        Assert.IsTrue(authority.TryClaimOwner(Handle, out _));
+
+        Assert.IsFalse(authority.TryClaimOwner(OtherHandle, out var snapshot));
+        Assert.AreEqual(AgentTargetErrorCodes.OwnerMismatch, snapshot.Reason);
+        Assert.AreEqual(Handle.Owner, snapshot.Session!.Owner);
+        Assert.AreEqual(AgentTargetErrorCodes.OwnerMismatch, authority.Authorize(Req(PageA, AgentTargetOperation.Observe, OtherHandle)).ErrorCode);
+    }
+
+    [TestMethod]
+    public void ClaimingTwiceWithTheSameOwnerIsIdempotent()
+    {
+        var authority = Ready();
+        authority.OfferTarget(PageA);
+
+        Assert.IsTrue(authority.TryClaimOwner(Handle, out var first));
+        Assert.IsTrue(authority.TryClaimOwner(Handle, out var second));
+
+        Assert.AreEqual(first.Session!.SessionId.Value, second.Session!.SessionId.Value);
+    }
+
+    [TestMethod]
+    public void OfferingAnotherPageInvalidatesTheClaimedSessionAndItsPermits()
+    {
+        var authority = Ready();
+        authority.OfferTarget(PageA);
+        Assert.IsTrue(authority.TryClaimOwner(Handle, out _));
+        var permit = authority.Authorize(Req(PageA, AgentTargetOperation.Mutate)).Permit!;
+
+        var offered = authority.OfferTarget(PageB);
+
+        Assert.IsFalse(offered.HasTarget);
+        Assert.IsTrue(offered.HasPendingHandover);
+        Assert.IsFalse(authority.Revalidate(permit).IsAllowed);
+        Assert.IsTrue(authority.TryClaimOwner(Handle, out var claimed));
+        Assert.AreEqual(PageB.Key, claimed.Session!.Target.Key);
+    }
+
+    [TestMethod]
+    public void RevokingClearsAPendingHandover()
+    {
+        var authority = Ready();
+        authority.OfferTarget(PageA);
+
+        authority.Revoke("user withdrew the handover");
+
+        Assert.IsFalse(authority.Capture().HasPendingHandover);
+        Assert.IsFalse(authority.TryClaimOwner(Handle, out _));
+    }
+
+    [TestMethod]
+    public void ClosingTheOfferedPageClearsAPendingHandover()
+    {
+        var authority = Ready();
+        authority.OfferTarget(PageA);
+
+        authority.NotifyPageClosed(PageA);
+
+        Assert.IsFalse(authority.Capture().HasPendingHandover);
+        Assert.IsFalse(authority.TryClaimOwner(Handle, out _));
+    }
+
+    [TestMethod]
+    public void LosingTheBridgeClearsAPendingHandoverAndAHeldOwnerCannotClaim()
+    {
+        var authority = Ready();
+        authority.OfferTarget(PageA);
+
+        authority.OnBridgeLost("socket closed");
+
+        Assert.IsFalse(authority.Capture().HasPendingHandover);
+        Assert.IsFalse(authority.TryClaimOwner(Handle, out _));
+    }
 }

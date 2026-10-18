@@ -6,16 +6,14 @@ using PuddingDesktop.Browser;
 namespace PuddingDesktop.Tests.Browser;
 
 /// <summary>
-/// **Bridge 准入与幂等的不变量套件**（2026-10-12 由外部复核反例迁入常规测试）。
+/// **Bridge 准入与幂等的不变式套件**（外部复核反例迁入常规测试）。
 ///
-/// ① **无页面授权**的命令必须在触碰 handler **之前**被拒（fail closed）；
-/// ② 幂等缓存**不得跨调用者回放**（同 operationId 换调用者 ⇒ 冲突）；
+/// ① **无会话授权**的命令必须在触碰 handler **之前**被拒（fail closed）；
+/// ② 幂等缓存**不得跨调用者回收**（同 operationId 换调用者 ⇒ 冲突）；
 /// ③ 同一 operationId 的**并发**调用只允许执行一次（后来者等待同一完成源）。
 ///
 /// 正向配对见 <see cref="BrowserBridgeAuthorizationFixtureTests"/>：**有授权必须仍能成功** ——
-/// 防止用"一律拒绝"把反例刷绿。
-///
-/// 原反例文件仍保留在 <c>TestScripts/BrowserDeliveryReview/BridgeReview.cs</c>（外部复核证据与重演路径）。
+/// 防止用"一律拒绝"把反例刷绿。ADR-097 D3/D4：准入由会话权威裁决（用户交页 + 宿主注入 owner）。
 /// </summary>
 public sealed class BrowserBridgeAdmissionTests
 {
@@ -36,11 +34,12 @@ public sealed class BrowserBridgeAdmissionTests
         }
     }
 
-    private static BrowserBridgeCommand Command(Guid? id = null, string caller = "agent-a") => new()
+    private static BrowserBridgeCommand Command(Guid? id = null, string caller = "agent-a", string pageId = "page") => new()
     {
         OperationId = id ?? Guid.NewGuid(),
         ContextId = "ctx",
-        PageId = "page",
+        PageId = pageId,
+        Origin = BrowserTestState.Origin(),
         Caller = new BrowserBridgeCallerIdentity { Kind = "agent", CallerId = caller, TaskId = "run-" + caller },
         Name = BrowserBridgeCommandNames.PageGoto,
         DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
@@ -48,13 +47,16 @@ public sealed class BrowserBridgeAdmissionTests
     };
 
     [Fact]
-    public async Task BridgeWithNoPageGrantMustRejectBeforeHandler()
+    public async Task BridgeWithNoHandedOverPageMustRejectBeforeHandler()
     {
-        var dispatcher = BrowserTestState.CreateDispatcher();
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        lifecycle.NotifyBridgeConnected(BrowserTestState.Generation.Value);
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
         var handler = new CountingHandler();
         dispatcher.SetHandler(handler);
         var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
-        Assert.False(result.Success, $"no grant but handler calls={handler.Count}");
+        Assert.False(result.Success, $"no handover but handler calls={handler.Count}");
+        Assert.Equal("agent_target_required", result.ErrorCode);
         Assert.Equal(0, handler.Count);
     }
 
@@ -63,8 +65,7 @@ public sealed class BrowserBridgeAdmissionTests
     [Fact]
     public async Task BridgeLivenessAloneDoesNotAuthorizePagesTheUserDidNotSelect()
     {
-        // 修复前：ConnectionGeneration.IsLive ⇒ HasSufficientPageGrant 无条件放行任意页面。
-        // 现在必须由「用户在 Desktop 上选页」或「页级 grant」授权（ADR-097 D4）。
+        // 桥换代/在线本身不产生可执行授权：目标必须由用户交页 + 可信 owner 确认（ADR-097 D3/D4）。
         var lifecycle = BrowserTestState.CreateLifecycle();
         lifecycle.NotifyBridgeConnected(BrowserTestState.Generation.Value);
         var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
@@ -74,22 +75,16 @@ public sealed class BrowserBridgeAdmissionTests
         var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
 
         Assert.False(result.Success);
-        Assert.Equal("page_grant_required", result.ErrorCode);
+        Assert.Equal("agent_target_required", result.ErrorCode);
         Assert.Equal(0, handler.Count);
     }
 
     [Fact]
     public async Task UserSelectedTargetPageIsDrivableOverTheBridge()
     {
-        // 正向配对：没有 grant，但用户把这一页交给了 Agent ⇒ 命令必须执行（防"一律拒绝"假绿）。
+        // 正向配对：没有 grant，但用户把这一页交给了 Agent 且命令带可信 owner ⇒ 必须执行。
         var lifecycle = BrowserTestState.CreateLifecycle();
-        lifecycle.NotifyBridgeConnected(BrowserTestState.Generation.Value);
-        lifecycle.RegisterContext("ctx", DesktopContextTrust.AgentAuthorized);
-        lifecycle.RegisterPage(
-            new DesktopPageTarget("ctx", "page"),
-            DesktopPageVersion.Require(1),
-            DesktopPageReadiness.Interactive);
-        lifecycle.SetAgentTarget("ctx", "page");
+        BrowserTestState.HandOver(lifecycle);
 
         var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
         var handler = new CountingHandler();
@@ -99,19 +94,14 @@ public sealed class BrowserBridgeAdmissionTests
 
         Assert.True(result.Success, $"selected target must be drivable; error={result.ErrorCode}: {result.ErrorMessage}");
         Assert.Equal(1, handler.Count);
+        Assert.True(lifecycle.CaptureSessionStatus().HasTarget, "第一条可信命令应确认交页归属");
     }
 
     [Fact]
     public async Task NonTargetPageIsRejectedEvenWhenTheBridgeIsLive()
     {
         var lifecycle = BrowserTestState.CreateLifecycle();
-        lifecycle.NotifyBridgeConnected(BrowserTestState.Generation.Value);
-        lifecycle.RegisterContext("ctx", DesktopContextTrust.AgentAuthorized);
-        lifecycle.RegisterPage(
-            new DesktopPageTarget("ctx", "other"),
-            DesktopPageVersion.Require(1),
-            DesktopPageReadiness.Interactive);
-        lifecycle.SetAgentTarget("ctx", "other");
+        BrowserTestState.HandOver(lifecycle, pageId: "other");
 
         var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
         var handler = new CountingHandler();
@@ -120,8 +110,47 @@ public sealed class BrowserBridgeAdmissionTests
         var result = await dispatcher.DispatchAsync(Command(), CancellationToken.None);
 
         Assert.False(result.Success);
-        Assert.Equal("page_grant_required", result.ErrorCode);
+        Assert.Equal("agent_target_required", result.ErrorCode);
         Assert.Equal(0, handler.Count);
+    }
+
+    [Fact]
+    public async Task ACommandWithoutTrustedOwnerIsRejectedEvenForTheSelectedPage()
+    {
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        BrowserTestState.HandOver(lifecycle);
+
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
+        var handler = new CountingHandler();
+        dispatcher.SetHandler(handler);
+
+        // Origin 缺失 ⇒ 无法证明调用属于哪个 Core 会话 ⇒ 在触碰 handler 之前拒绝。
+        var command = Command() with { Origin = null };
+        var result = await dispatcher.DispatchAsync(command, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("browser_control_handle_required", result.ErrorCode);
+        Assert.Equal(0, handler.Count);
+    }
+
+    [Fact]
+    public async Task ASecondCoreSessionCannotUseTheHandedOverPage()
+    {
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        BrowserTestState.HandOver(lifecycle);
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
+        var handler = new CountingHandler();
+        dispatcher.SetHandler(handler);
+
+        Assert.True((await dispatcher.DispatchAsync(Command(), CancellationToken.None)).Success);
+
+        // 另一会话的命令：owner 不匹配 ⇒ 拒绝（无关任务不能串用交出的页面）。
+        var otherOwner = Command() with { Origin = BrowserTestState.Origin("session-agent-b") };
+        var denied = await dispatcher.DispatchAsync(otherOwner, CancellationToken.None);
+
+        Assert.False(denied.Success);
+        Assert.Equal("browser_owner_mismatch", denied.ErrorCode);
+        Assert.Equal(1, handler.Count);
     }
 
     [Fact]
@@ -139,11 +168,9 @@ public sealed class BrowserBridgeAdmissionTests
     [Fact]
     public async Task ConcurrentDuplicatesMustExecuteExactlyOnceForTheSameAuthorizedCaller()
     {
-        // 复核 README L44 口径：**A 已授权、B 未授权**；断言"**首次成功**"与"**相同 A/operationId 并发执行恰好 1 次**"。
-        // 旧版在**无授权**夹具下只断言 `Count <= 1` —— 由于未授权命令在触碰 handler 之前即被拒，`Count` 恒为 0，
-        // 该断言会**空验证**（既非"恰好一次"，也没走到并发路径）。本版授予 A 的页面权限并断言**恰好 1 次**。
+        // 复核 README L44 口径：断言"**首次成功**"与"**相同 A/operationId 并发执行恰好 1 次**"。
         var lifecycle = BrowserTestState.CreateLifecycle();
-        BrowserTestState.GrantAgentPage(lifecycle);
+        BrowserTestState.HandOver(lifecycle);
         var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
         var handler = new CountingHandler { Gate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
         dispatcher.SetHandler(handler);

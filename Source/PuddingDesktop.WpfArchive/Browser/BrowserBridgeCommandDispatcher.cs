@@ -224,17 +224,21 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
                 BrowserBridgeErrorCodes.BrowserDeadlineExceeded, "Command deadline has already passed"));
         }
 
-        // 方案 §5.2/§5.3：Bridge 页面命令必须先过**页面授权**闸门 —— **无授权不得触碰 handler**
-        // （外部复核 P0：Bridge 无任务授权仍能执行页面操作）。fail closed：未登记的只读命令按写处理。
-        if (TryAuthorizePageCommand(command, out var authorizationReason))
+        // ADR-097 D3/D4：Bridge 页面/管理命令的唯一准入在**会话权威**（BrowserPageLifecycle 背后的
+        // Browser Session Authority）：用户交页 + 宿主注入的可信 owner + 只读/写分级 + 写世代/唯一票据。
+        // 无 PageId 的**发现类**命令不要求目标（否则会形成“看不到页面所以选不了页面”的循环）。
+        var gate = AuthorizeSessionCommand(command);
+        if (!gate.Allowed)
         {
             var deniedActivity = new AgentBrowserActivity(
                 command.OperationId, command.Name,
                 command.PageId ?? command.ContextId ?? "-", command.Origin);
-            deniedActivity.Complete(false, PageGrantRequired);
+            deniedActivity.Complete(false, gate.ErrorCode);
             RecordActivity(deniedActivity);
-            return CacheAndReturn(Error(command.OperationId, PageGrantRequired, authorizationReason!));
+            return CacheAndReturn(Error(command.OperationId, gate.ErrorCode!, gate.Message!));
         }
+
+        var permit = gate.Permit;
 
         // Execute with deadline + cancellation
         using var deadlineCts = new CancellationTokenSource();
@@ -256,6 +260,19 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
 
         try
         {
+            // 触碰页面前**复检同一张票据**：入队期间可能被接管/暂停/切目标/换代/释放。
+            if (permit is { } admitted)
+            {
+                var revalidated = _lifecycle.RevalidatePageCommand(admitted);
+                if (!revalidated.Allow)
+                {
+                    activity.Complete(false, revalidated.ErrorCode);
+                    PublishActivity(activity);
+                    return CacheAndReturn(Error(
+                        command.OperationId, revalidated.ErrorCode!, revalidated.Message!));
+                }
+            }
+
             BrowserBridgeCommandResult result;
 
             if (_handler is null)
@@ -307,6 +324,19 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
         }
         finally
         {
+            // 所有退出路径精确释放这张票据（取消/超时/异常都一样；重复释放是幂等的）。
+            if (permit is { } admitted)
+            {
+                try
+                {
+                    _lifecycle.CompletePageCommand(admitted);
+                }
+                catch
+                {
+                    // 释放失败不得掩盖原结果；账本已按失败/未知处置。
+                }
+            }
+
             _activeOperations.TryRemove(command.OperationId, out _);
             _forcedFailures.TryRemove(command.OperationId, out _);
 
@@ -394,55 +424,138 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
         BrowserBridgeCommandNames.ContextGetInfo,
     };
 
-    private const string PageGrantRequired = "page_grant_required";
+    /// <summary>
+    /// 无需先交出页面即可执行的**引导/发现类**命令：
+    /// · 只读发现（context.list / context.getInfo / page.list）——启动流程要求“没目标也能看见页面”；
+    /// · context.create —— 在尚未交出任何页面时创建隔离的 Agent 上下文本身就是引导步骤，
+    ///   它不触碰任何既有页面；其余管理/页面命令仍必须绑定已交出的目标。
+    /// </summary>
+    private static readonly IReadOnlySet<string> DiscoveryCommands = new HashSet<string>(StringComparer.Ordinal)
+    {
+        BrowserBridgeCommandNames.ContextList,
+        BrowserBridgeCommandNames.ContextGetInfo,
+        BrowserBridgeCommandNames.PageList,
+        BrowserBridgeCommandNames.ContextCreate,
+    };
+
+    /// <summary>会话准入结果（标量；失败带稳定码，成功带不透明票据）。</summary>
+    private readonly record struct SessionGateResult(
+        bool Allowed,
+        BrowserSessionPermit? Permit,
+        string? ErrorCode,
+        string? Message)
+    {
+        public static SessionGateResult Ok(BrowserSessionPermit? permit) => new(true, permit, null, null);
+
+        public static SessionGateResult Denied(string errorCode, string message) => new(false, null, errorCode, message);
+    }
 
     /// <summary>
-    /// 页面授权闸门（方案 §5.2/§5.3）：要求调用者在该目标页上持有满足最小范围的**有效页面授权**。
-    /// 返回 <c>true</c> 表示**拒绝**（并给出原因）；无页面目标的命令不在此闸门范围。
+    /// Bridge 路径的**唯一**会话准入（ADR-097 D3/D4）：
+    /// ① 发现类无 PageId 命令放行；② 其它命令必须有宿主注入的可信 owner（Origin）；
+    /// ③ 首次命令把用户交出的页面**确认归属**给该 owner；④ 之后由会话权威裁决目标/只读写/写世代/票据。
+    /// 拒绝码与工具侧统一（agent_target_required / browser_owner_mismatch / browser_busy ...）。
     /// </summary>
-    private bool TryAuthorizePageCommand(BrowserBridgeCommand command, out string? reason)
+    private SessionGateResult AuthorizeSessionCommand(BrowserBridgeCommand command)
     {
-        reason = null;
-
-        if (string.IsNullOrEmpty(command.ContextId) || string.IsNullOrEmpty(command.PageId))
+        if (string.IsNullOrEmpty(command.PageId) && DiscoveryCommands.Contains(command.Name))
         {
-            return false;
+            return SessionGateResult.Ok(null);
         }
 
-        var wire = command.Caller;
-        var kind = wire?.Kind switch
+        // owner 来自**宿主注入的 Origin**（Core 执行上下文投影），不是模型参数。
+        var owner = command.Origin?.ConversationId;
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            owner = command.Origin?.SessionId;
+        }
+
+        if (string.IsNullOrWhiteSpace(owner) || owner.Length > BrowserSessionControlHandle.MaxLength)
+        {
+            return SessionGateResult.Denied(
+                BrowserSessionErrorCodes.ControlHandleRequired,
+                "this bridge command carries no trusted core-session owner; the user must hand the page over to a core session");
+        }
+
+        var callerKind = command.Caller?.Kind switch
         {
             "agent" => BrowserCallerKind.Agent,
             "sub_agent" => BrowserCallerKind.SubAgent,
             _ => (BrowserCallerKind?)null,
         };
 
-        if (kind is null || string.IsNullOrWhiteSpace(wire!.CallerId) || string.IsNullOrWhiteSpace(wire.TaskId))
+        if (callerKind is null
+            || string.IsNullOrWhiteSpace(command.Caller!.CallerId)
+            || string.IsNullOrWhiteSpace(command.Caller.TaskId))
         {
-            reason = "browser page commands must carry a trusted caller identity";
-            return true;
+            return SessionGateResult.Denied(
+                BrowserBridgeErrorCodes.BrowserUnauthorized,
+                "browser commands must carry a trusted caller identity");
         }
 
         var caller = new BrowserCallerIdentity(
-            kind.Value,
-            wire.CallerId,
-            wire.TaskId,
-            string.IsNullOrWhiteSpace(wire.ParentTaskId) ? null : wire.ParentTaskId);
+            callerKind.Value,
+            command.Caller.CallerId,
+            command.Caller.TaskId,
+            string.IsNullOrWhiteSpace(command.Caller.ParentTaskId) ? null : command.Caller.ParentTaskId);
 
-        var required = ReadOnlyPageCommands.Contains(command.Name)
-            ? BrowserPageGrantScope.Read
-            : BrowserPageGrantScope.Write;
-        var target = new DesktopPageTarget(command.ContextId, command.PageId);
+        // 首次可信命令确认交页归属（已归属其它 owner 时返回 false，随后准入会给出 owner_mismatch）。
+        _lifecycle.TryClaimControlOwner(owner!);
 
-        // 判据下沉在 BrowserPageLifecycle：本文件被链接编译进 WinUI Shell，而 Shell 不引用
-        // PuddingBrowser.Automation ⇒ **不得**在这里直接读 Authority（会 CS0012 打断 Shell 构建）。
-        if (!_lifecycle.HasSufficientPageGrant(caller, target, required, DateTimeOffset.UtcNow))
+        DesktopPageTarget? target;
+        if (!string.IsNullOrEmpty(command.PageId))
         {
-            reason = $"no {(required == BrowserPageGrantScope.Read ? "read" : "write")} page grant for this caller on {target.Key}";
-            return true;
+            if (string.IsNullOrWhiteSpace(command.ContextId))
+            {
+                return SessionGateResult.Denied(
+                    BrowserSessionErrorCodes.TargetRequired,
+                    "page commands must carry an explicit context id");
+            }
+
+            try
+            {
+                target = new DesktopPageTarget(command.ContextId, command.PageId);
+            }
+            catch (ArgumentException)
+            {
+                return SessionGateResult.Denied(
+                    BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                    "page command target is not a valid context/page identifier");
+            }
+        }
+        else
+        {
+            // 无 PageId 的**管理类**命令（page.create / context.*）：绑定当前已确认目标及其上下文，
+            // 不允许借会话权限管理别的上下文。
+            target = _lifecycle.CaptureSessionTarget();
+            if (target is null)
+            {
+                return SessionGateResult.Denied(
+                    BrowserSessionErrorCodes.TargetRequired,
+                    "no page has been handed to the agent yet; the user must select one in the desktop UI");
+            }
+
+            if (string.IsNullOrWhiteSpace(command.ContextId)
+                || !string.Equals(command.ContextId, target.ContextId, StringComparison.Ordinal))
+            {
+                return SessionGateResult.Denied(
+                    BrowserSessionErrorCodes.TargetRequired,
+                    "management commands must target the handed-over context");
+            }
         }
 
-        return false;
+        var requiresWrite = !ReadOnlyPageCommands.Contains(command.Name);
+        var decision = _lifecycle.AuthorizePageCommand(
+            caller,
+            BrowserSessionControlHandle.Require(owner!),
+            target,
+            requiresWrite);
+
+        return decision.Allow
+            ? SessionGateResult.Ok(decision.Permit)
+            : SessionGateResult.Denied(
+                decision.ErrorCode ?? BrowserSessionErrorCodes.PermitInvalid,
+                decision.Message ?? "the browser session refused this command");
     }
 
     /// <summary>调用者身份键（方案 §4.2）：幂等缓存与去重都按"**谁发起**"隔离，不跨调用者复用。</summary>

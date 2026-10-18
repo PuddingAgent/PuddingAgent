@@ -74,6 +74,9 @@ public sealed class ComponentBoundaryTests
                 // 它是叶子级纯逻辑（只引用 Pudding.Contracts，无 UI/驱动/WebView2），
                 // 不越过 EnforceDesktopServiceBoundary 的禁止项。
                 @"..\PuddingBrowser.Automation\PuddingBrowser.Automation.csproj",
+                // ADR-097 D3（2026-10-18）：会话授权纯规则组件（只引用 Contracts）；本层是它唯一的
+                // 生产持有者，Shell/桥侧只经标量门面（BrowserSessionAdmission）调用。
+                @"..\PuddingBrowser.Authorization\PuddingBrowser.Authorization.csproj",
                 // 驱动策略注入（2026-10-08）：驱动的策略注入点定义在 PuddingBrowser.Abstractions（叶子，
                 // 无 UI/驱动依赖）；两个浏览器宿主（WPF 归档与 WinUI Shell）都编译 BrowserWorkspaceController，
                 // 因此把 Automation 策略适配进注入点的适配器必须放在双方都能引用的这一层。
@@ -86,13 +89,18 @@ public sealed class ComponentBoundaryTests
     }
 
     [Fact]
-    public void ServiceTestsCsproj_ReferencesExactlyOneProject()
+    public void ServiceTestsCsproj_ReferencesTheComponentAndThePureAuthorizationLeaf()
     {
         var content = File.ReadAllText(
             Path.Combine(RepoLayout.Root, "Source", "Pudding.DesktopServiceTests", "Pudding.DesktopServiceTests.csproj"));
 
+        // 测试工程可引用被测组件 + 纯规则叶子（Authorization 只引用 Contracts）：
+        // 后者用于钉住「线缆拒绝码 == 组件契约」，不是宿主依赖。
         Assert.Equal(
-            [@"..\Pudding.DesktopService\Pudding.DesktopService.csproj"],
+            [
+                @"..\Pudding.DesktopService\Pudding.DesktopService.csproj",
+                @"..\PuddingBrowser.Authorization\PuddingBrowser.Authorization.csproj",
+            ],
             ReadAttributes(content, "<ProjectReference", "Include=\""));
     }
 

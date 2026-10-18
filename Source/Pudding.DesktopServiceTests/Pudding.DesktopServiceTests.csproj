@@ -13,9 +13,12 @@
     组件化交付规程 S2：只引用被测组件（Pudding.DesktopService）。
     Contracts 与 DesktopConnection 是被测组件的依赖闭包，不是「其它组件」。
     不引用 WinUI / 宿主：UI 调度用假调度器（ManualUiDispatcher）确定性验证。
+    PuddingBrowser.Authorization（纯规则叶子，只引用 Contracts）用于钉住「线缆拒绝码 == 组件契约」
+    的一致性；不是宿主依赖。
   -->
   <ItemGroup>
     <ProjectReference Include="..\Pudding.DesktopService\Pudding.DesktopService.csproj" />
+    <ProjectReference Include="..\PuddingBrowser.Authorization\PuddingBrowser.Authorization.csproj" />
   </ItemGroup>
 
   <ItemGroup>

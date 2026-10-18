@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using PuddingBrowser.Protocol;
 using PuddingDesktop.Browser;
@@ -32,7 +32,13 @@ public class DispatcherControllerStateTests
             ContextId = contextId,
             DeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
             Arguments = JsonSerializer.SerializeToElement(args ?? new { }),
-            Origin = origin
+            Origin = origin,
+            Caller = new BrowserBridgeCallerIdentity
+            {
+                Kind = "agent",
+                CallerId = "agent-1",
+                TaskId = "run-1",
+            }
         };
     }
 
@@ -106,7 +112,9 @@ public class DispatcherControllerStateTests
     [Fact]
     public async Task Dispatcher_ProjectsOriginIntoActivityWithoutArguments()
     {
-        var dispatcher = BrowserTestState.CreateDispatcher();
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        BrowserTestState.HandOver(lifecycle, pageId: "page-1");
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
         dispatcher.SetHandler(new SuccessfulBrowserHandler());
 
         var snapshots = new List<AgentBrowserActivitySnapshot>();
@@ -123,6 +131,7 @@ public class DispatcherControllerStateTests
         var cmd = MakeCommand(
             BrowserBridgeCommandNames.PageGoto,
             pageId: "page-1",
+            contextId: "ctx",
             args: new
             {
                 url = "https://example.com",
@@ -556,7 +565,9 @@ public class DispatcherControllerStateTests
     [Fact]
     public async Task SensitiveSentinel_NotInActivitySerialization_AfterFullDispatch()
     {
-        var dispatcher = BrowserTestState.CreateDispatcher();
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        BrowserTestState.HandOver(lifecycle, contextId: "ctx", pageId: "page-sentinel");
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
         dispatcher.SetHandler(new SuccessfulBrowserHandler());
 
         var snapshots = new List<AgentBrowserActivitySnapshot>();
@@ -567,6 +578,7 @@ public class DispatcherControllerStateTests
         var cmd = MakeCommand(
             BrowserBridgeCommandNames.PageInteract,
             pageId: "page-sentinel",
+            contextId: "ctx",
             args: new
             {
                 action = "fill",

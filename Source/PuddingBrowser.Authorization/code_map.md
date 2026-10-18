@@ -11,15 +11,15 @@
 
 | 文件 | 职责与限制 |
 |---|---|
-| `AgentTargetSession.cs` | 会话 = 目标页 + 桥世代 + **宿主注入的可信控制句柄**（Core 会话所有者 + 仅诊断用的展示名）；`AgentTargetOwnerId`/`AgentTargetControlHandle`；两轴运行控制态 `Paused`/`UserTakeover`；控制面快照 |
+| `AgentTargetSession.cs` | 会话 = 目标页 + 桥世代 + **宿主注入的可信控制句柄**（Core 会话所有者 + 仅诊断用的展示名）；`AgentTargetOwnerId`/`AgentTargetControlHandle`；两轴运行控制态 `Paused`/`UserTakeover`；快照含 `PendingTarget`（用户已交出、归属待确认） |
 | `AgentTargetAuthorization.cs` | 操作分类、九种稳定拒绝码、带可信控制句柄的请求、票据（唯一 `AgentTargetPermitId` + 连接/控制/**写世代** + 取消信号）、`AgentTargetWriteEpoch` |
-| `AgentTargetSessionAuthority.cs` | OnBridgeReady/Lost、选页（幂等/换目标/换所有者原子替换）、撤销/关页/所有者失效、暂停与接管两轴、Authorize/Revalidate/CompleteOperation/CancelOperation；进入阻断推进写世代并取消在途写，释放后票据不可再用，重复/迟到完成不释放他人占用 |
+| `AgentTargetSessionAuthority.cs` | OnBridgeReady/Lost；`OfferTarget`（用户交页，不产生可执行授权）→ `TryClaimOwner`（可信 owner 确认归属才建会话）；显式 `SelectTarget`/撤销/关页/所有者失效；暂停与接管两轴；Authorize/Revalidate/CompleteOperation/CancelOperation；进入阻断推进写世代并取消在途写，释放后票据不可再用，重复/迟到完成不释放他人占用 |
 | `PuddingBrowser.Authorization.csproj` | 组件依赖门禁 |
-| [状态机测试](../PuddingBrowser.AuthorizationTests/AgentTargetSessionAuthorityTests.cs) | 40 条独立用例：准入、串行、归属、两轴控制、切页/换代、F7 反例、取消与精确释放 |
+| [状态机测试](../PuddingBrowser.AuthorizationTests/AgentTargetSessionAuthorityTests.cs) | 48 条独立用例：准入、串行、归属、交页/确认、两轴控制、切页/换代、F7 反例、取消与精确释放 |
 | [边界测试](../PuddingBrowser.AuthorizationTests/ComponentBoundaryTests.cs) | 引用闭包检查 |
 
 ## 3. 生产接缝
 
-本组件**无生产消费者**（`Source/`、`Tests/` 内除组件自身与测试工程外无引用）。现有 Bridge 握手/断连通知的是旧 `BrowserPageLifecycle`，不是调用这里的 OnBridgeReady/Lost；旧权威的历史“零调用者”结论不适用于本组件。
+**已接入（2026-10-18，ADR-097 D3）**：`Pudding.DesktopService.BrowserPageLifecycle` 是唯一生产持有者；桥握手/断连、用户交页（`SetAgentTarget`）、暂停/接管、关页/关上下文、所有者确认（`TryClaimControlOwner`）、页面命令准入/复检/释放全部经其标量门面转发到本组件。Shell/桥侧不直接引用本组件（只拿 `Pudding.DesktopService` 的标量门面与稳定拒绝码），因此不破坏 Shell 引用白名单。
 
 接入（I2）前须保持：会话有可信 Core 会话所有者；暂停/接管是独立两轴并推进写世代；票据唯一且释放后不可复用；旧新权威不能同时裁决。装配点是 Desktop 浏览器工作区生命周期 + `DesktopService` 的 Contracts/标量门面；组件先独立验证，再进宿主。

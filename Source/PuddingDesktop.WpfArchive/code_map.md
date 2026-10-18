@@ -72,9 +72,10 @@
 **关键语义**
 
 **`Browser/BrowserBridgeCommandDispatcher.cs`**：命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate`（它的 pause/takeover 就是**执行闸门本身**）。构造时只接受 `BrowserPageLifecycle`：**控制状态不再自己持有**，读写的是进程内唯一权威实例（与能力通道、
-生命周期清理点同一个对象）—— 只读快照、只写同一事实源，Bridge 是默认路径，因此这里读错就等于人工接管无效。**页面授权闸门**（§5.2/§5.3）：只读命令要 `Read`、写命令要 `Write`，判据**下沉在 
-`BrowserPageLifecycle.HasSufficientPageGrant`**（本文件被链接编译进 WinUI Shell，Shell 不引用 `PuddingBrowser.Automation` ⇒ **签名里不得出现 Automation 类型**，否则 `CS0012` 
-打断 Shell 构建）。**幂等**：以 `BrowserOperationLedger` 为**唯一**来源（`TryBegin` 四态驱动；指纹 = 调用者身份 + 能力名 + 目标 + 完整载荷，deadline 等非语义元数据不入）⇒ 同指纹在途等同一完成源、已完成复用终态、
+生命周期清理点同一个对象）—— 只读快照、只写同一事实源，Bridge 是默认路径，因此这里读错就等于人工接管无效。**会话准入（ADR-097 D3，2026-10-18 替换旧的 grant 闸门）**：owner 来自**宿主注入的 Origin**
+（`ConversationId ?? SessionId`，不由模型参数决定）；第一条可信命令经 `TryClaimControlOwner` 确认交页归属，随后 `AuthorizePageCommand` → 触碰 handler 前 `RevalidatePageCommand` → `finally` `CompletePageCommand`
+（唯一票据、写世代、取消信号都在权威内；释放后不可复用）。无 PageId 的引导/发现命令（context.list/getInfo、page.list、context.create）不要求先交页，其余管理命令必须绑定已交出上下文。
+（本文件被链接编译进 WinUI Shell，Shell 不引用 `PuddingBrowser.Automation`/`Authorization` ⇒ 门面签名只出现 Contracts/标量类型，否则 `CS0012` 打断 Shell 构建）。**幂等**：以 `BrowserOperationLedger` 为**唯一**来源（`TryBegin` 四态驱动；指纹 = 调用者身份 + 能力名 + 目标 + 完整载荷，deadline 等非语义元数据不入）⇒ 同指纹在途等同一完成源、已完成复用终态、
 **换调用者/换载荷即冲突**，不再另造按 Guid 的 in-flight/调用者缓存。**暂停/接管只阻断副作用**：先按命令名判定只读类别（`ReadOnlyPageCommands`），只读命令继续走授权闸门并执行，写命令返回 `browser_paused`/`browser_user_takeover`（ADR-097 D4；修复前在识别命令前就拒绝全部命令，导致"接管后可读"只在文档里成立）
 
 **`Browser/BrowserWorkspaceController.cs`**：Tab/Activity/active/target 唯一 UI 状态源；**接管/暂停的唯一写入点**：`SetUserTakeoverAsync`/`SetPausedAsync` 把状态推给所有已注册的执行闸门（不推 ⇒ 「人工接管」按钮对 Agent 无效）。桥接命令的宿主侧执行者：

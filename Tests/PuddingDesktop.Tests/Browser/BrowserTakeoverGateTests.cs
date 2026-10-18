@@ -31,8 +31,11 @@ public sealed class BrowserTakeoverGateTests
     {
         OperationId = Guid.NewGuid(),
         Name = BrowserBridgeCommandNames.PageGoto,
-        PageId = "page-99",
+        ContextId = "ctx",
+        PageId = "page",
+        Origin = BrowserTestState.Origin(),
         DeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
+        Caller = new BrowserBridgeCallerIdentity { Kind = "agent", CallerId = "agent-a", TaskId = "run-agent-a" },
         Arguments = JsonSerializer.SerializeToElement(new { url = "https://example.com" }),
     };
 
@@ -70,14 +73,14 @@ public sealed class BrowserTakeoverGateTests
     [Fact]
     public async Task ReleasingTakeover_ReopensTheBridgeGate()
     {
-        var (controller, dispatcher, _) = CreateWired();
+        var (_, dispatcher, controller) = CreateAuthorized();
 
         await controller.SetUserTakeoverAsync(true, CancellationToken.None);
         await controller.SetUserTakeoverAsync(false, CancellationToken.None);
 
         Assert.False(dispatcher.IsUserTakeover);
         var result = await dispatcher.DispatchAsync(GotoCommand(), CancellationToken.None);
-        Assert.True(result.Success);
+        Assert.True(result.Success, $"error={result.ErrorCode}: {result.ErrorMessage}");
     }
 
     [Fact]
@@ -154,8 +157,8 @@ public sealed class BrowserTakeoverGateTests
         var controller = new BrowserWorkspaceController(
             new FakeBrowserRuntime(), new FakeBrowserSurfaceHost(), new FakeUiDispatcher(), gates);
 
-        // 正向夹具：页面已由用户交给 Agent（授权存在），否则"读成功"会退化成"闸门缺失"的假绿。
-        BrowserTestState.GrantAgentPage(lifecycle);
+        // 正向夹具：用户已把页面交出；归属由第一条带可信 Origin 的命令确认（ADR-097 D3）。
+        BrowserTestState.HandOver(lifecycle);
         return (lifecycle, dispatcher, controller);
     }
 
@@ -165,6 +168,7 @@ public sealed class BrowserTakeoverGateTests
         Name = BrowserBridgeCommandNames.PageSnapshot,
         ContextId = "ctx",
         PageId = "page",
+        Origin = BrowserTestState.Origin(),
         DeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
         Caller = new BrowserBridgeCallerIdentity { Kind = "agent", CallerId = "agent-a", TaskId = "run-agent-a" },
         Arguments = JsonSerializer.SerializeToElement(new { }),
@@ -176,6 +180,7 @@ public sealed class BrowserTakeoverGateTests
         Name = BrowserBridgeCommandNames.PageInteract,
         ContextId = "ctx",
         PageId = "page",
+        Origin = BrowserTestState.Origin(),
         DeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
         Caller = new BrowserBridgeCallerIdentity { Kind = "agent", CallerId = "agent-a", TaskId = "run-agent-a" },
         Arguments = JsonSerializer.SerializeToElement(new

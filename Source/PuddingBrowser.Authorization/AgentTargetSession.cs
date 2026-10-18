@@ -172,12 +172,16 @@ public sealed record AgentTargetSessionSnapshot(
     BrowserControlEpoch ControlEpoch,
     AgentTargetWriteEpoch WriteEpoch,
     AgentTargetSession? Session,
+    DesktopPageTarget? PendingTarget,
     AgentTargetControlState ControlState,
     bool IsClosed,
     AgentTargetSessionId? LastRevokedSessionId,
     string? Reason)
 {
     public bool HasTarget => Session is not null;
+
+    /// <summary>用户已交出页面、但归属尚未确认（UI 应显示“等待会话确认”，而不是“已交出”）。</summary>
+    public bool HasPendingHandover => PendingTarget is not null;
 
     public bool IsPaused => ControlState.HasFlag(AgentTargetControlState.Paused);
 
@@ -192,7 +196,11 @@ public sealed record AgentTargetSessionSnapshot(
         var bridge = IsBridgeReady
             ? string.Concat("Connected(gen=", BridgeGeneration.Value.ToString(CultureInfo.InvariantCulture), ")")
             : "Disconnected";
-        var target = Session is null ? "NoTarget" : string.Concat("Target=", Session.Target.Key);
+        var target = Session is not null
+            ? string.Concat("Target=", Session.Target.Key)
+            : PendingTarget is not null
+                ? string.Concat("PendingHandover=", PendingTarget.Key)
+                : "NoTarget";
         var control = IsClosed
             ? "Closed"
             : ControlState switch

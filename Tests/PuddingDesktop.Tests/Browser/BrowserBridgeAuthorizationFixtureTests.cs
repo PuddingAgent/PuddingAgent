@@ -9,8 +9,8 @@ namespace PuddingDesktop.Tests.Browser;
 ///
 /// 存在的理由（方案 §8.1 / 复核 README）：反例要求"无页面授权时于 handler 之前拒绝"，
 /// 但**不能**用"一律拒绝"来让它变绿 —— 那会把 Bridge 写操作整体打死。因此这里与
-/// <c>TestScripts/BrowserDeliveryReview/BridgeReview.cs</c> 的无授权反例**配对**：
-/// 反例证明"没授权不许执行"，本用例证明"有授权照样执行"。
+/// <see cref="BrowserBridgeAdmissionTests"/> 的反例**配对**：
+/// 反例证明"没授权不许执行"，本用例证明"用户交页 + 可信 owner 后照样执行"。
 /// </summary>
 public sealed class BrowserBridgeAuthorizationFixtureTests
 {
@@ -34,6 +34,7 @@ public sealed class BrowserBridgeAuthorizationFixtureTests
         OperationId = id ?? Guid.NewGuid(),
         ContextId = "ctx",
         PageId = "page",
+        Origin = BrowserTestState.Origin(),
         Caller = new BrowserBridgeCallerIdentity { Kind = "agent", CallerId = "agent-a", TaskId = "run-agent-a" },
         Name = BrowserBridgeCommandNames.PageGoto,
         DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
@@ -43,9 +44,9 @@ public sealed class BrowserBridgeAuthorizationFixtureTests
     [Fact]
     public async Task AuthorizedCaller_IsNotBlockedByTheAdmissionGate()
     {
-        // 反向对照：没有授权时反例要求被拒；**有授权时必须成功**，否则就是"靠一律拒绝取绿"。
+        // 反向对照：没有交页时反例要求被拒；**用户交页 + 可信 owner 后必须成功**。
         var lifecycle = BrowserTestState.CreateLifecycle();
-        BrowserTestState.GrantAgentPage(lifecycle);
+        BrowserTestState.HandOver(lifecycle);
         var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
         var handler = new CountingHandler();
         dispatcher.SetHandler(handler);

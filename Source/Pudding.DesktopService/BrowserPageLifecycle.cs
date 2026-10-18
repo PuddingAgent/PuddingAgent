@@ -1,5 +1,6 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
+using PuddingBrowser.Authorization;
 using PuddingBrowser.Automation;
 
 namespace Pudding.DesktopService;
@@ -43,6 +44,12 @@ public sealed class BrowserPageLifecycle
     private readonly DesktopTargetRegistry _pageTargets;
     private readonly BrowserAutomationAuthority _authority;
     private readonly Lock _sync = new();
+
+    /// <summary>
+    /// 浏览器会话授权（ADR-097 D3）：页面可驱动性的**唯一裁决者**（用户交页 + 可信会话所有者 +
+    /// 写世代/唯一票据）。只在本组件内部使用；Shell/桥侧只能经本文件的标量门面访问。
+    /// </summary>
+    private readonly AgentTargetSessionAuthority _sessions = new();
 
     public BrowserPageLifecycle(
         BrowserTargetRegistry browserTargets,
@@ -133,12 +140,19 @@ public sealed class BrowserPageLifecycle
     /// 世代用 Desktop 侧自增计数器（每次连接 +1），因此重连必然换代、旧记录不会被误判为重复。
     /// 参数取 <c>long</c> 而非常量：Shell 侧（链接编译本文件）不得出现 Automation 类型。
     /// </summary>
-    public void NotifyBridgeConnected(long generation) =>
-        _authority.NotifyConnectionGeneration(ConnectionGeneration.Require(generation), "bridge connected");
+    public void NotifyBridgeConnected(long generation)
+    {
+        var live = ConnectionGeneration.Require(generation);
+        _authority.NotifyConnectionGeneration(live, "bridge connected");
+        _sessions.OnBridgeReady(live, "bridge connected");
+    }
 
     /// <summary>桥断开/失败：世代归 None，目标与租约随之作废，在途动作在复检时必然被拦下。</summary>
-    public void NotifyBridgeDisconnected() =>
+    public void NotifyBridgeDisconnected()
+    {
         _authority.NotifyConnectionGeneration(ConnectionGeneration.None, "bridge disconnected");
+        _sessions.OnBridgeLost("bridge disconnected");
+    }
 
     /// <summary>
     /// 账本命名空间（方案 §4.2）：**桌面进程实例 + 连接世代**。供 Shell 侧（Bridge 派发器）构造
@@ -152,12 +166,127 @@ public sealed class BrowserPageLifecycle
     /// <summary>是否被用户接管（读权威快照）。</summary>
     public bool IsUserTakeover => _authority.Capture().IsUserTakeover;
 
-    /// <summary>暂停/恢复；写的是同一个权威实例。</summary>
-    public void SetPaused(bool paused, string? reason = null) => _authority.SetPaused(paused, reason);
+    /// <summary>
+    /// 暂停/恢复：同时驱动旧 authority（能力通道路径的租约/准入读它）与会话权威
+    /// （桥路径的写阻断/写世代由它裁决）。两条路径读同一份运行控制状态，不允许分叉。
+    /// </summary>
+    public void SetPaused(bool paused, string? reason = null)
+    {
+        _authority.SetPaused(paused, reason);
+        if (paused)
+        {
+            _sessions.BeginPause(reason ?? "browser automation is paused by the user");
+        }
+        else
+        {
+            _sessions.EndPause(reason);
+        }
+    }
 
-    /// <summary>用户接管开关；写的是同一个权威实例（接管**不**撤销阅读授权，§3.1）。</summary>
-    public void SetUserTakeover(bool takenOver, string? reason = null) =>
+    /// <summary>用户接管开关；写的是同一个会话权威（接管**不**撤销阅读授权，§3.1）。</summary>
+    public void SetUserTakeover(bool takenOver, string? reason = null)
+    {
         _authority.SetUserTakeover(takenOver, reason);
+        if (takenOver)
+        {
+            _sessions.BeginUserControl(reason ?? "user took control");
+        }
+        else
+        {
+            _sessions.EndUserControl(reason);
+        }
+    }
+
+    // ── 浏览器会话准入门面（ADR-097 D3/D4；标量类型，Shell 不引用 Authorization）────────
+
+    /// <summary>
+    /// 用宿主注入的**可信控制 owner** 确认待交页归属（桥命令第一条自带 Origin 时调用）。
+    /// 成功 ⇒ 会话建立、UI 才可显示“已交出”；失败 ⇒ 命令不得执行。
+    /// </summary>
+    public bool TryClaimControlOwner(string ownerId)
+    {
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return false;
+        }
+
+        return _sessions.TryClaimOwner(AgentTargetControlHandle.For(ownerId), out _);
+    }
+
+    /// <summary>
+    /// 页面命令准入（Bridge 路径）：会话/目标/owner 校验 + 只读/写分级 + 写串行化。
+    /// 只读观察在暂停/接管期间仍允许；写操作被 `browser_busy` 拒绝（与运行控制语义一致）。
+    /// </summary>
+    public BrowserSessionDecision AuthorizePageCommand(
+        BrowserCallerIdentity caller,
+        BrowserSessionControlHandle handle,
+        DesktopPageTarget target,
+        bool requiresWrite)
+    {
+        ArgumentNullException.ThrowIfNull(caller);
+        ArgumentNullException.ThrowIfNull(target);
+
+        if (string.IsNullOrWhiteSpace(handle.OwnerId))
+        {
+            return BrowserSessionDecision.Denied(
+                BrowserSessionErrorCodes.ControlHandleRequired,
+                "this command carries no trusted control handle; the core session owner is required");
+        }
+
+        var operation = requiresWrite ? AgentTargetOperation.Interact : AgentTargetOperation.Observe;
+        var decision = _sessions.Authorize(new AgentTargetRequest(
+            target,
+            operation,
+            AgentTargetControlHandle.For(handle.OwnerId)));
+
+        if (!decision.IsAllowed)
+        {
+            return BrowserSessionDecision.Denied(
+                decision.ErrorCode ?? BrowserSessionErrorCodes.OwnerMismatch,
+                decision.Message ?? "the browser session refused this operation");
+        }
+
+        return BrowserSessionDecision.Allowed(new BrowserSessionPermit(decision.Permit!, handle.OwnerId));
+    }
+
+    /// <summary>触碰页面前复检同一张票据（期间可能被接管/暂停/切目标/换代/释放）。</summary>
+    public BrowserSessionDecision RevalidatePageCommand(BrowserSessionPermit permit)
+    {
+        ArgumentNullException.ThrowIfNull(permit);
+
+        var decision = _sessions.Revalidate(permit.Permit);
+        return decision.IsAllowed
+            ? BrowserSessionDecision.Allowed(permit)
+            : BrowserSessionDecision.Denied(
+                decision.ErrorCode ?? BrowserSessionErrorCodes.PermitInvalid,
+                decision.Message ?? "the browser session permit is no longer valid");
+    }
+
+    /// <summary>精确释放这张票据（覆盖所有退出路径；释放后的票据不可再用）。</summary>
+    public void CompletePageCommand(BrowserSessionPermit permit)
+    {
+        ArgumentNullException.ThrowIfNull(permit);
+        _sessions.CompleteOperation(permit.Permit);
+    }
+
+    /// <summary>控制面快照（标量；UI 用来区分“待确认/已交出/无目标”，桥侧用于诊断）。</summary>
+    public BrowserSessionStatus CaptureSessionStatus()
+    {
+        var snapshot = _sessions.Capture();
+        return new BrowserSessionStatus(
+            snapshot.IsBridgeReady,
+            snapshot.HasTarget,
+            snapshot.HasPendingHandover,
+            snapshot.Session?.Target.Key,
+            snapshot.PendingTarget?.Key,
+            snapshot.IsPaused,
+            snapshot.IsUserControlling,
+            snapshot.IsClosed,
+            snapshot.Reason);
+    }
+
+    /// <summary>已确认归属的当前目标（无 ⇒ <c>null</c>）；只返回 Contracts 类型，Shell/桥侧可用。</summary>
+    public DesktopPageTarget? CaptureSessionTarget() => _sessions.Capture().Session?.Target;
 
     // ── 创建侧（§3.3：创建与关闭必须同一个所有者）────────────────────────
     // 设计要求「人工 UI 和两种传输均通过该端口创建/关闭 context/tab」，
@@ -225,8 +354,9 @@ public sealed class BrowserPageLifecycle
     /// <summary>
     /// 设置/撤销「用户选定的 Agent 目标页」（两个注册表一起）。
     ///
-    /// 切换目标时**撤销旧目标的执行权**（Write/Manage）并推进授权世代，但**保留只读授权**
-    /// （§3.2：用户切走目标不等于把旧页面从"可读"里删掉）。<c>null</c> 表示不再有目标。
+    /// 这是**用户交页**动作：两个注册表立刻记录目标（UI/发现/准入读它们），但会话权威只把它记为
+    /// **待交页**——归属要由可信 Core 会话在第一条命令里确认（<see cref="TryClaimControlOwner"/>），
+    /// 确认成功后 UI 才能显示“已交出”（ADR-097 D3）。切换目标会作废旧会话与旧票据。
     /// </summary>
     public BrowserLifecycleOutcome SetAgentTarget(string? contextId, string? pageId)
     {
@@ -243,6 +373,17 @@ public sealed class BrowserPageLifecycle
             {
                 _authority.RevokeExecutionScope(previous);
                 scopeRevoked = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(contextId) || string.IsNullOrWhiteSpace(pageId))
+            {
+                _sessions.Revoke("the agent target was cleared by the user");
+            }
+            else
+            {
+                _sessions.OfferTarget(
+                    new DesktopPageTarget(contextId, pageId),
+                    "user handed the page to the current core session");
             }
 
             return new BrowserLifecycleOutcome(
@@ -265,6 +406,9 @@ public sealed class BrowserPageLifecycle
         lock (_sync)
         {
             var wasRegistered = _pageTargets.Resolve(target) is not null;
+
+            // 页面没了 ⇒ 会话权威的当前目标/待交页一并作废（在途票据随写世代失效）。
+            _sessions.NotifyPageClosed(target, "the agent target page was closed");
 
             _pageTargets.ClosePage(target);
             _browserTargets.UnregisterPage(target.ContextId, target.PageId);
@@ -295,6 +439,14 @@ public sealed class BrowserPageLifecycle
         {
             // 先取出页面清单：注册表移除之后就查不到了，而撤销授权需要逐个页面（授予是按页绑定的）。
             var pages = _pageTargets.PagesInContext(contextId);
+
+            // 会话权威：该上下文里的当前目标/待交页一并作废（上下文没了 ⇒ 控制权不能留）。
+            var snapshot = _sessions.Capture();
+            if (snapshot.Session?.Target.ContextId == contextId
+                || snapshot.PendingTarget?.ContextId == contextId)
+            {
+                _sessions.Revoke("the browser context was closed");
+            }
 
             var grantsRevoked = 0;
             var leaseReleased = false;
