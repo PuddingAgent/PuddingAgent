@@ -82,6 +82,53 @@ public sealed class BrowserBridgeExecutorRouteExecutionTests
     }
 
     [Fact]
+    public async Task SnapshotAndLocate_AreRoutedAndProjectedToBridgeDescriptors()
+    {
+        var snapshotRoute = new BrowserBridgeExecutorRoute((capability, _, _, _) =>
+        {
+            Assert.Equal(DesktopCapability.BrowserSnapshot, capability.Capability);
+            return Task.FromResult(DesktopCapabilityResponse.FromSnapshot(new DesktopSnapshot(
+                new DesktopPageTarget("ctx", "page"),
+                domText: "<main/>",
+                accessibilityTree: null,
+                html: null,
+                truncated: false,
+                nodeCount: 3,
+                pageVersion: DesktopPageVersion.Require(4))));
+        });
+
+        var snapshot = await snapshotRoute.RouteAsync(
+            Command(BrowserBridgeCommandNames.PageSnapshot), CancellationToken.None);
+        Assert.NotNull(snapshot);
+        Assert.True(snapshot!.Success);
+        Assert.Equal("<main/>", snapshot.Value!.Value.GetProperty("domText").GetString());
+        Assert.Equal(3, snapshot.Value.Value.GetProperty("nodeCount").GetInt32());
+
+        var locateRoute = new BrowserBridgeExecutorRoute((capability, _, _, _) =>
+        {
+            Assert.Equal(DesktopCapability.BrowserLocate, capability.Capability);
+            return Task.FromResult(DesktopCapabilityResponse.FromLocate(new DesktopLocateResult(
+                new DesktopPageTarget("ctx", "page"),
+                new DesktopLocator(DesktopLocatorKind.Css, "#go"),
+                [new DesktopElementRef("v4-n1", "button", DesktopPageVersion.Require(4))],
+                truncated: false,
+                pageVersion: DesktopPageVersion.Require(4))));
+        });
+
+        var locate = await locateRoute.RouteAsync(
+            Command(BrowserBridgeCommandNames.PageLocate) with
+            {
+                Arguments = JsonSerializer.SerializeToElement(
+                    new { locator = new { kind = "css", value = "#go" } },
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            },
+            CancellationToken.None);
+        Assert.NotNull(locate);
+        Assert.True(locate!.Success);
+        Assert.Equal("v4-n1", locate.Value!.Value.GetProperty("elements")[0].GetProperty("ref").GetString());
+    }
+
+    [Fact]
     public async Task MissingCallerIdentity_IsRejectedBeforeTouchingTheExecutor()
     {
         var route = new BrowserBridgeExecutorRoute((_, _, _, _) =>

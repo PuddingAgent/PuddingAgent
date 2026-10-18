@@ -35,6 +35,10 @@ public sealed class BrowserBridgeExecutorRoute
         BrowserBridgeCommandNames.ContextGetInfo,
         BrowserBridgeCommandNames.PageList,
         BrowserBridgeCommandNames.PageGetInfo,
+        BrowserBridgeCommandNames.PageLocate,
+        BrowserBridgeCommandNames.PageWaitFor,
+        BrowserBridgeCommandNames.PageInteract,
+        BrowserBridgeCommandNames.PageSnapshot,
     };
 
     private readonly BrowserCapabilityInvoker _invoker;
@@ -115,6 +119,22 @@ public sealed class BrowserBridgeExecutorRoute
                 BrowserBridgeCommandNames.PageList => JsonSerializer.SerializeToElement(
                     BrowserBridgeResultAdapter.FromPageList(
                         response.Contexts ?? throw new InvalidOperationException("executor returned no contexts")),
+                    WebJson),
+                BrowserBridgeCommandNames.PageLocate => JsonSerializer.SerializeToElement(
+                    BrowserBridgeResultAdapter.FromLocate(
+                        response.Locate ?? throw new InvalidOperationException("executor returned no locate result")),
+                    WebJson),
+                BrowserBridgeCommandNames.PageWaitFor => JsonSerializer.SerializeToElement(
+                    BrowserBridgeResultAdapter.FromWait(
+                        response.Wait ?? throw new InvalidOperationException("executor returned no wait result")),
+                    WebJson),
+                BrowserBridgeCommandNames.PageInteract => JsonSerializer.SerializeToElement(
+                    BrowserBridgeResultAdapter.FromInteraction(
+                        response.Interact ?? throw new InvalidOperationException("executor returned no interaction result")),
+                    WebJson),
+                BrowserBridgeCommandNames.PageSnapshot => JsonSerializer.SerializeToElement(
+                    BrowserBridgeResultAdapter.FromSnapshot(
+                        response.Snapshot ?? throw new InvalidOperationException("executor returned no snapshot")),
                     WebJson),
                 _ => JsonSerializer.SerializeToElement(
                     BrowserBridgeResultAdapter.FromContexts(
