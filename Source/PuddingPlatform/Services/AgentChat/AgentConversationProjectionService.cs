@@ -33,7 +33,8 @@ public sealed class AgentConversationProjectionService(
     WorkspaceAgentFileService workspaceAgentFileService,
     SessionRedirectStore redirectStore,
     PlatformDbContext db,
-    ILogger<AgentConversationProjectionService> logger) : IAgentConversationProjectionService
+    ILogger<AgentConversationProjectionService> logger,
+    AgentMainSessionResolver? mainSessionResolver = null) : IAgentConversationProjectionService
 {
     private const string DefaultOwnerUserId = "single-user";
     private const int ConversationMessageLimit = 20;
@@ -108,15 +109,24 @@ public sealed class AgentConversationProjectionService(
     {
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
-        var sessions = await api.GetSessionsAsync(workspaceId, ct);
         var agent = await workspaceAgentFileService.GetAgentAsync(workspaceId, agentId, ct);
-        var main = await ResolveAgentMainSessionAsync(
-            workspaceId,
-            ownerUserId,
-            agentId,
-            agent,
-            sessions,
-            ct);
+        SessionRecord? main;
+        if (mainSessionResolver is not null)
+        {
+            // 有界身份解析：redirect → Manifest MainSessionId → FindMainAsync，不拉整个工作区会话列表。
+            main = await mainSessionResolver.ResolveAsync(workspaceId, ownerUserId, agentId, ct);
+        }
+        else
+        {
+            var sessions = await api.GetSessionsAsync(workspaceId, ct);
+            main = await ResolveAgentMainSessionAsync(
+                workspaceId,
+                ownerUserId,
+                agentId,
+                agent,
+                sessions,
+                ct);
+        }
 
         if (main is null)
         {
@@ -176,21 +186,8 @@ public sealed class AgentConversationProjectionService(
             if (!string.IsNullOrWhiteSpace(command.MessageId))
                 turnIdByMessageId[command.MessageId] = command.TurnId;
         }
-        var messageEvents = messageIds.Count == 0
-            ? []
-            : await db.ConversationEvents
-                .AsNoTracking()
-                .Where(e => e.ConversationId == main.SessionId)
-                .Where(e => e.MessageId != null && messageIds.Contains(e.MessageId))
-                .Where(e => MessageProjectionEventTypes.Contains(e.Type))
-                .OrderBy(e => e.Sequence)
-                .Select(e => new MessageProcessEvent(
-                    e.MessageId!,
-                    e.RunId,
-                    e.Type,
-                    e.Sequence,
-                    e.OccurredAt))
-                .ToListAsync(ct);
+        var messageEvents = await LoadMessageProcessEventsAsync(
+            main.SessionId, messageIds, ct);
 
         var completedProcessByMessageId = BuildCompletedProcessSummaryByMessageId(messageEvents);
         var messages = messageRows
@@ -208,11 +205,8 @@ public sealed class AgentConversationProjectionService(
         // Failed turns may have no ChatMessages reply. Project their outcome onto
         // the visible input, without inventing an assistant transcript message.
         var visibleTurnIds = messages.Select(m => m.TurnId).OfType<string>().Distinct().ToList();
-        var terminalEvents = await db.ConversationEvents.AsNoTracking()
-            .Where(e => e.ConversationId == main.SessionId && visibleTurnIds.Contains(e.TurnId))
-            .Where(e => TerminalEventTypes.Contains(e.Type))
-            .OrderBy(e => e.Sequence)
-            .ToListAsync(ct);
+        var terminalEvents = await LoadTerminalEventsAsync(
+            main.SessionId, visibleTurnIds, ct);
         var outcomes = terminalEvents.GroupBy(e => e.TurnId)
             .ToDictionary(g => g.Key, g => ProjectTurnOutcome(g.Last()), StringComparer.Ordinal);
         messages = messages.Select(m => m with
@@ -225,12 +219,36 @@ public sealed class AgentConversationProjectionService(
         // 整体抢占快照。根 run = 最新 turn.started 的 RunId；快照按其 TurnId
         // 聚合父 Agent 正文/思考/工具与子代理生命周期事件（正文按根 RunId 收敛，
         // 子 run 的 content 不并入父快照）；根 run 已终态 → 无 active run。
-        var rootTurnStarted = await db.ConversationEvents
+        // 2026-10-18：先由最近 ChatExecutionCommand 得到当前 Turn，再走
+        // (conversation_id,turn_id,sequence) 收敛查询，避免扫描整会话事件。
+        var currentTurnId = await db.ChatExecutionCommands
             .AsNoTracking()
-            .Where(e => e.ConversationId == main.SessionId)
-            .Where(e => e.Type == ConversationEventTypes.TurnStarted)
-            .OrderByDescending(e => e.Sequence)
+            .Where(command => command.SessionId == main.SessionId)
+            .OrderByDescending(command => command.CreatedAt)
+            .ThenByDescending(command => command.Id)
+            .Select(command => command.TurnId)
             .FirstOrDefaultAsync(ct);
+        ConversationEventEntity? rootTurnStarted = null;
+        if (!string.IsNullOrWhiteSpace(currentTurnId))
+        {
+            rootTurnStarted = await db.ConversationEvents
+                .AsNoTracking()
+                .Where(e => e.ConversationId == main.SessionId && e.TurnId == currentTurnId)
+                .Where(e => e.Type == ConversationEventTypes.TurnStarted)
+                .OrderByDescending(e => e.Sequence)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        if (rootTurnStarted is null)
+        {
+            rootTurnStarted = await db.ConversationEvents
+                .AsNoTracking()
+                .Where(e => e.ConversationId == main.SessionId)
+                .Where(e => e.Type == ConversationEventTypes.TurnStarted)
+                .OrderByDescending(e => e.Sequence)
+                .FirstOrDefaultAsync(ct);
+        }
+
         AgentRunView? activeRun = null;
         string? latestTurnEventAt = null;
         if (rootTurnStarted is not null && !string.IsNullOrWhiteSpace(rootTurnStarted.RunId))
@@ -238,8 +256,7 @@ public sealed class AgentConversationProjectionService(
             var rootRunId = rootTurnStarted.RunId;
             var rootTerminalExists = await db.ConversationEvents
                 .AsNoTracking()
-                .Where(e => e.ConversationId == main.SessionId)
-                .Where(e => e.RunId == rootRunId)
+                .Where(e => e.ConversationId == main.SessionId && e.TurnId == rootTurnStarted.TurnId)
                 .Where(e => TerminalEventTypes.Contains(e.Type))
                 .AnyAsync(ct);
             if (!rootTerminalExists)
@@ -448,8 +465,70 @@ public sealed class AgentConversationProjectionService(
         return main is null ? 0 : await GetEventCursorAsync(main.SessionId, ct);
     }
 
+    private async Task<List<MessageProcessEvent>> LoadMessageProcessEventsAsync(
+        string conversationId,
+        IReadOnlyList<string> messageIds,
+        CancellationToken ct)
+    {
+        var result = new List<MessageProcessEvent>();
+        foreach (var messageId in messageIds
+                     .Where(id => !string.IsNullOrWhiteSpace(id))
+                     .Distinct(StringComparer.Ordinal))
+        {
+            var id = messageId;
+            var events = await db.ConversationEvents
+                .AsNoTracking()
+                .Where(e => e.ConversationId == conversationId && e.MessageId == id)
+                .Where(e => MessageProjectionEventTypes.Contains(e.Type))
+                .OrderBy(e => e.Sequence)
+                .Select(e => new MessageProcessEvent(
+                    e.MessageId!,
+                    e.RunId,
+                    e.Type,
+                    e.Sequence,
+                    e.OccurredAt))
+                .ToListAsync(ct);
+            result.AddRange(events);
+        }
+
+        result.Sort((left, right) => left.Sequence.CompareTo(right.Sequence));
+        return result;
+    }
+
+    private async Task<List<ConversationEventEntity>> LoadTerminalEventsAsync(
+        string conversationId,
+        IReadOnlyList<string> turnIds,
+        CancellationToken ct)
+    {
+        var result = new List<ConversationEventEntity>();
+        foreach (var turnId in turnIds
+                     .Where(id => !string.IsNullOrWhiteSpace(id))
+                     .Distinct(StringComparer.Ordinal))
+        {
+            var id = turnId;
+            var events = await db.ConversationEvents
+                .AsNoTracking()
+                .Where(e => e.ConversationId == conversationId && e.TurnId == id)
+                .Where(e => TerminalEventTypes.Contains(e.Type))
+                .OrderBy(e => e.Sequence)
+                .ToListAsync(ct);
+            result.AddRange(events);
+        }
+
+        result.Sort((left, right) => left.Sequence.CompareTo(right.Sequence));
+        return result;
+    }
+
     private async Task<long> GetEventCursorAsync(string conversationId, CancellationToken ct)
     {
+        var head = await db.ConversationHeads
+            .AsNoTracking()
+            .Where(item => item.ConversationId == conversationId)
+            .Select(item => (long?)item.HeadSequence)
+            .FirstOrDefaultAsync(ct);
+        if (head.HasValue)
+            return head.Value;
+
         var maxSequence = await db.ConversationEvents
             .AsNoTracking()
             .Where(e => e.ConversationId == conversationId)

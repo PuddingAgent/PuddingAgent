@@ -27,7 +27,7 @@
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | 执行前预算与身份冻结 | `ExecutionRunCoordinator`、`CallerLlmSnapshot`、`snapshot.VisionPolicy` | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 应用 canonical WorkUnit context；取最严 rounds/tools/duration 冻结 deadline；按实际 provider/model 冻结价格与预算 |
 | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 执行快照组装与视觉策略解析 | `AgentExecutionSnapshotFactory` | `Services/AgentChat/ExecutionRunCoordinator.cs` | 视觉策略按配置合同∩模型类别解析（不再硬编码 VisionRequestPolicy.Default）；无 vision 标签一律 null 不误标；日志键 visionPolicy=／visionPolicySource= |
 | `Services/AgentChat/TurnOutputChunker.cs` | Delta 聚合分块与轮次边界 | `TurnOutputChunker` | `PuddingPlatformTests/Services/TurnOutputChunkerPayloadOwnershipTests.cs` | 非 delta 事件先 flush 已缓冲正文/思考再透传；轮次边界进入 canonical sequence |
-| `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 首屏/活动 run/消息明细投影 | `AgentConversationProjectionService` | `Services/AgentChat/TurnOutputChunker.cs` | 活动根 run 以最新根 turn.started 锚定，避免子代理 runId 抢占；按真实 sequence 返回 message.content.appended；TurnEventWindow 标记 64 条窗口边界 |
+| `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 首屏/活动 run/消息明细投影 | `AgentConversationProjectionService` | `Services/AgentChat/TurnOutputChunker.cs` | 活动根 run 以最新根 turn.started 锚定，避免子代理 runId 抢占；身份/每消息/每 Turn/游标查询按收敛索引点查，不再会话级 IN 扫描；TurnEventWindow 标记 64 条窗口边界 |
 | `Services/ChatTranscriptWriter.cs` | 转录写入（含投影共享事务重载） | `ChatTranscriptWriter` | `Services/ConversationProjector.cs` | `PersistMessageInTransactionAsync` 只 Add 不 SaveChanges，提交后 `ScheduleIndexing`；原独立 scope 路径保留给其他写入者 |
 | `Services/ChatTelemetryRecorder.cs` | 遥测记录 | `ChatTelemetryRecorder` | `Services/ChatHistoryService.cs` | — |
 
