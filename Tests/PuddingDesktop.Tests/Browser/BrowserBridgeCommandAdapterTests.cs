@@ -358,16 +358,27 @@ public sealed class BrowserBridgeCommandAdapterTests
         Assert.False(tabs.Activate);
         Assert.False(tabs.ExpectedPageVersion.IsKnown);
 
-        // activate/close 与 interact 同类：契约要求钉版本、线缆没有 ⇒ fail-closed。
+        // activate/close 与 interact 同类：契约要求钉版本，线缆已补字段 ⇒ 有版本可映射、缺失拒绝。
         var activate = Command(
             BrowserBridgeCommandNames.PageActivate,
             "ctx",
             "page",
-            new PageActivateArguments { PageId = "page" });
+            new PageActivateArguments { PageId = "page", ExpectedPageVersion = 9 });
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            activate, out var activateDescriptor, out var activateRequest, out var activateReason), activateReason);
+        Assert.Equal(DesktopCapability.BrowserTabs, activateDescriptor!.Capability);
+        Assert.Equal(DesktopTabAction.Activate, activateRequest!.Tabs!.Action);
+        Assert.Equal(9, activateRequest.Tabs.ExpectedPageVersion.Value);
+
+        var closeWithoutVersion = Command(
+            BrowserBridgeCommandNames.PageClose,
+            "ctx",
+            "page",
+            new PageCloseArguments { PageId = "page" });
         Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
-            activate, out _, out _, out var activateReason));
-        Assert.Contains("H3", activateReason, StringComparison.Ordinal);
-        Assert.Contains("expectedPageVersion", activateReason, StringComparison.Ordinal);
+            closeWithoutVersion, out _, out _, out var closeReason));
+        Assert.Contains("expectedPageVersion", closeReason, StringComparison.Ordinal);
+        Assert.Contains("H3", closeReason, StringComparison.Ordinal);
     }
 
     [Fact]

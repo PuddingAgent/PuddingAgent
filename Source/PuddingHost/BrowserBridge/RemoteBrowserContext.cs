@@ -90,9 +90,31 @@ public sealed class RemoteBrowserContext : IBrowserContext
     public async Task ClosePageAsync(PageId id, CancellationToken ct)
     {
         EnsureNotDisposed();
+
+        // H3（tabs）：close 是破坏性动作，执行器契约要求钉住页面版本。
+        // 上下文不缓存版本 ⇒ 先读一次页面清单拿目标页当前版本；读不到就留空由 Desktop 拒绝。
+        long? expectedPageVersion = null;
+        try
+        {
+            var pages = await ListPagesAsync(ct).ConfigureAwait(false);
+            var observed = pages.FirstOrDefault(page => page.Id == id)?.PageVersion;
+            if (observed is > 0)
+            {
+                expectedPageVersion = observed;
+            }
+        }
+        catch (BrowserOperationException)
+        {
+            // 读清单失败不阻断关闭语义：留空版本，由 Desktop 明确拒绝并给出原因。
+        }
+
         await _runtime.ExecuteEmptyAsync(
             BrowserBridgeCommandNames.PageClose,
-            new PageCloseArguments { PageId = id.Value },
+            new PageCloseArguments
+            {
+                PageId = id.Value,
+                ExpectedPageVersion = expectedPageVersion,
+            },
             Id,
             id,
             TimeSpan.FromSeconds(30),

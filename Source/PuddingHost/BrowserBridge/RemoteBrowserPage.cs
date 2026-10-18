@@ -58,7 +58,12 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
         => ExecuteNavigationAsync(BrowserBridgeCommandNames.PageStop, ct);
     public Task BringToFrontAsync(CancellationToken ct)
         => ExecuteNavigationAsync(BrowserBridgeCommandNames.PageActivate, ct,
-            new PageActivateArguments { PageId = Id.Value });
+            new PageActivateArguments
+            {
+                PageId = Id.Value,
+                // H3（tabs）：activate 有副作用，钉住本客户端已知版本；未知留空由 Desktop 拒绝。
+                ExpectedPageVersion = PageVersion > 0 ? PageVersion : null,
+            });
 
     private async Task ExecuteNavigationAsync(
         string commandName,

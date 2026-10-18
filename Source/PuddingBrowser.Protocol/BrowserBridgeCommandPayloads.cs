@@ -37,11 +37,17 @@ public sealed record PageGotoArguments
 public sealed record PageActivateArguments
 {
     public required string PageId { get; init; }
+
+    /// <summary>H3（tabs 变体）：activate 是副作用动作，执行器契约要求钉住页面版本；缺失即拒绝。</summary>
+    public long? ExpectedPageVersion { get; init; }
 }
 
 public sealed record PageCloseArguments
 {
     public required string PageId { get; init; }
+
+    /// <summary>H3（tabs 变体）：close 是破坏性动作，执行器契约要求钉住页面版本；缺失即拒绝。</summary>
+    public long? ExpectedPageVersion { get; init; }
 }
 
 public sealed record BrowserLocatorDescriptor

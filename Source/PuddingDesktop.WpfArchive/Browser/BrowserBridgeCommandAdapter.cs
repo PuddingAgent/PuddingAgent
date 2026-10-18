@@ -17,7 +17,7 @@ namespace PuddingDesktop.Browser;
 /// · `page.waitFor` → `browser.wait_for`（单条件映射；多条件/无条件显式拒绝，不静默挑优先级）；
 /// · `page.screenshot` → `browser.screenshot`（必须钉住版本；scope/detail/format 严格解析）；
 /// · `page.interact` → `browser.interact`（H3：必须带 `expectedPageVersion`；action/scrollTarget 严格解析）；
-/// · `page.create` → `browser.tabs`(New，唯一不钉版本的动作)；`page.activate/close` 暂不可映射（线缆缺版本，H3 tabs 变体）。
+/// · `page.create` → `browser.tabs`(New，唯一不钉版本的动作)；`page.activate/close` → `browser.tabs`（H3 tabs 变体：必须带 `expectedPageVersion`）。
 ///
 /// 后续切片按"快照/定位/等待 → 交互/tabs → 截图"扩充，再切换派发器入口。映射失败的
 /// <c>reason</c> 必须可行动（缺 context/page id、参数非法、能力未注册、尚未映射），不得
@@ -442,10 +442,40 @@ public static class BrowserBridgeCommandAdapter
         if (string.Equals(command.Name, BrowserBridgeCommandNames.PageActivate, StringComparison.Ordinal)
             || string.Equals(command.Name, BrowserBridgeCommandNames.PageClose, StringComparison.Ordinal))
         {
-            // 与 interact 同一类 H3 缺口：tabs 的 activate/close 契约要求钉住版本，线缆目前没有。
-            reason = $"'{command.Name}' cannot be mapped yet: the bridge wire carries no expectedPageVersion, "
-                + "and tab operations must pin the page version they act on (H3 protocol gap, tabs variant)";
-            return false;
+            // H3（tabs 变体）：activate/close 是副作用动作，执行器契约要求钉住页面版本。
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(TabsCapabilityName, out var tabDescriptor))
+            {
+                reason = $"capability '{TabsCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            var isActivate = string.Equals(command.Name, BrowserBridgeCommandNames.PageActivate, StringComparison.Ordinal);
+            long? wireVersion = null;
+            try
+            {
+                wireVersion = isActivate
+                    ? command.Arguments.Deserialize<PageActivateArguments>(WebJson)?.ExpectedPageVersion
+                    : command.Arguments.Deserialize<PageCloseArguments>(WebJson)?.ExpectedPageVersion;
+            }
+            catch (JsonException)
+            {
+                reason = $"{command.Name} arguments are not valid JSON";
+                return false;
+            }
+
+            if (wireVersion is not { } pinnedVersion || pinnedVersion <= 0)
+            {
+                reason = $"{command.Name} requires a positive expectedPageVersion on the bridge wire (H3, tabs); "
+                    + "refusing to guess the current version";
+                return false;
+            }
+
+            request = DesktopCapabilityRequest.ForTabs(new BrowserTabsRequest(
+                target,
+                isActivate ? DesktopTabAction.Activate : DesktopTabAction.Close,
+                DesktopPageVersion.Require(pinnedVersion)));
+            descriptor = tabDescriptor;
+            return true;
         }
 
         if (!string.Equals(command.Name, BrowserBridgeCommandNames.PageGetInfo, StringComparison.Ordinal))
