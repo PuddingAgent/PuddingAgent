@@ -50,6 +50,18 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
 
     public string VerifiedHostKeySha256 { get; }
 
+    /// <summary>能力快照：一旦探测成功即固定，结果阶段只读它。</summary>
+    public SshTransferCapabilities? Capabilities
+    {
+        get
+        {
+            lock (_probeGate)
+            {
+                return _capabilities;
+            }
+        }
+    }
+
     public bool Closed => Volatile.Read(ref _closed) == 1;
 
     /// <summary>当前飞行中的传输操作数（带预算释放要等它们观察中止并完成清理）。</summary>
@@ -60,6 +72,20 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
     public void RequestAbort() => Volatile.Write(ref _abortRequested, 1);
 
     public async Task<SshTransferCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken)
+    {
+        // 探测是飞行操作之一：带预算释放会等它收尾后再关通道（避免"探测打断关闭"）。
+        BeginOperation();
+        try
+        {
+            return await GetCapabilitiesCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            EndOperation();
+        }
+    }
+
+    private async Task<SshTransferCapabilities> GetCapabilitiesCoreAsync(CancellationToken cancellationToken)
     {
         lock (_probeGate)
         {
@@ -224,7 +250,15 @@ internal sealed class SshSftpTransferSession : ISshTransferSession
             return SshTransferOutcome.Failed(SshErrorCodes.RemotePathExists, 0, "远端目标已存在且未允许覆盖。");
         }
 
-        var capabilities = await GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        var capabilities = Capabilities;
+        if (capabilities is null)
+        {
+            return SshTransferOutcome.Failed(
+                SshErrorCodes.TransferUnsupported,
+                0,
+                "能力快照缺失：上传前必须在有界阶段完成能力探测（结果阶段不得再做远端探测）。");
+        }
+
         var publish = ResolvePublishPlan(plan.Overwrite, capabilities);
         if (publish is null)
         {

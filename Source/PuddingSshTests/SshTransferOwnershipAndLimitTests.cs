@@ -53,8 +53,13 @@ public sealed class SshTransferOwnershipAndLimitTests
     private static SshDownloadPlan DownloadPlan(string remotePath, string localPath, long maxBytes = 1024 * 1024) =>
         new(remotePath, localPath, Path.Combine(Path.GetDirectoryName(localPath)!, "." + Path.GetFileName(localPath) + ".pudding-tmp-test"), "/srv/download", SshOverwritePolicy.Fail, maxBytes);
 
-    private static SshSftpTransferSession Session(FakeSftpChannel channel) =>
-        new(channel, "SHA256:test", "/srv/download");
+    /// <summary>直接使用会话的门禁：按新契约先完成能力探测。</summary>
+    private static async Task<SshSftpTransferSession> SessionAsync(FakeSftpChannel channel)
+    {
+        var session = new SshSftpTransferSession(channel, "SHA256:test", "/srv/download");
+        _ = await session.GetCapabilitiesAsync(CancellationToken.None);
+        return session;
+    }
 
     // ---------- F1 ----------
 
@@ -71,7 +76,7 @@ public sealed class SshTransferOwnershipAndLimitTests
                 channel.Seed(path, "other-client-data");
             }
         };
-        var session = Session(channel);
+        var session = await SessionAsync(channel);
         var local = LocalFile("a.bin", "ours");
 
         var outcome = await session.UploadAsync(UploadPlan(local), TimeSpan.FromSeconds(5), CancellationToken.None);
@@ -87,7 +92,7 @@ public sealed class SshTransferOwnershipAndLimitTests
     {
         // 创建调用失败但文件可能已经落地：**所有权不可证明**，回滚删除必须放弃。
         var channel = new FakeSftpChannel { FailAfterCreatePath = "/srv/upload/target.bin" };
-        var session = Session(channel);
+        var session = await SessionAsync(channel);
         var local = LocalFile("a.bin", "ours");
 
         var outcome = await session.UploadAsync(UploadPlan(local), TimeSpan.FromSeconds(5), CancellationToken.None);
@@ -100,7 +105,7 @@ public sealed class SshTransferOwnershipAndLimitTests
     public async Task Upload_LocalSourceOpenFailure_LeavesRemoteUntouched()
     {
         var channel = new FakeSftpChannel();
-        var session = Session(channel);
+        var session = await SessionAsync(channel);
         var missing = Path.Combine(_workspace, "does-not-exist.bin");
 
         _ = await session.GetCapabilitiesAsync(CancellationToken.None);
@@ -123,7 +128,7 @@ public sealed class SshTransferOwnershipAndLimitTests
         channel.OnOpenRead = _ => new MemoryStream(Encoding.ASCII.GetBytes(new string('g', 4096)));
         var target = Path.Combine(_workspace, "out.bin");
 
-        var outcome = await Session(channel).DownloadAsync(
+        var outcome = await (await SessionAsync(channel)).DownloadAsync(
             DownloadPlan("/srv/download/src.bin", target, maxBytes: 1024),
             TimeSpan.FromSeconds(5),
             CancellationToken.None);
@@ -140,7 +145,7 @@ public sealed class SshTransferOwnershipAndLimitTests
         var channel = new FakeSftpChannel().Seed("/srv/download/src.bin", "payload");
         var target = Path.Combine(_workspace, "out.bin");
 
-        var outcome = await Session(channel).DownloadAsync(
+        var outcome = await (await SessionAsync(channel)).DownloadAsync(
             DownloadPlan("/srv/download/src.bin", target, maxBytes: 1024),
             TimeSpan.FromSeconds(5),
             CancellationToken.None);

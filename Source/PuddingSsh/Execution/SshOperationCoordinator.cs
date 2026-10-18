@@ -1232,15 +1232,75 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 };
             }
 
-            // 3) 传输本身也在有界 worker 上（同步阻塞段不得卡住业务线程）。
+            // 3) 提交前的**能力探测阶段**（F3）：只在需要远端原子写能力时执行（上传），
+            //    走有界 worker + lifetime + 租约登记 + 错误分类；结果阶段只读快照。
+            if (isUpload)
+            {
+                SshStageOutcome<SshTransferCapabilities> capabilityStage;
+                try
+                {
+                    var capabilityTask = _stageWorkers.StartAsync(() => session.GetCapabilitiesAsync(lifetime.Token));
+                    lease.RegisterWork(capabilityTask, "transfer-capabilities");
+                    capabilityStage = await lifetime
+                        .WaitStageAsync(
+                            capabilityTask,
+                            lifetime.RemainingOperation,
+                            SshStopReason.OperationDeadline,
+                            onLateSuccess: static _ => { },
+                            onLateFailure: static _ => { })
+                        .ConfigureAwait(false);
+                }
+                catch (SshStageCapacityExceededException)
+                {
+                    return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Queued, SshErrorCodes.Busy, "阶段 worker 已满（ssh.busy）：未开始能力探测。", stopwatch);
+                }
+                catch (Exception ex)
+                {
+                    // 探测失败是**传输准备阶段**的本地失败（不是连接丢失）：如实报 transfer_failed。
+                    return TransferFailure(
+                        host,
+                        SshExecutionStatus.Failed,
+                        SshPhase.Submitting,
+                        SshErrorCodes.TransferFailed,
+                        SshDiagnosticText.Join("capability_probe=failed", SshDiagnosticText.FromException(ex)),
+                        stopwatch);
+                }
+
+                if (!capabilityStage.Completed)
+                {
+                    var reason = capabilityStage.Reason;
+                    var code = StopCode(reason);
+                    var capabilityCleanup = await CloseSessionOnceAsync(lease, CleanupRemaining()).ConfigureAwait(false);
+                    return new SshTransferResult
+                    {
+                        Status = code == SshErrorCodes.Timeout ? SshExecutionStatus.TimedOut : SshExecutionStatus.Cancelled,
+                        Phase = SshPhase.Cleanup,
+                        HostId = host.Target.HostId,
+                        HostRevision = host.Target.HostRevision,
+                        RemotePath = remotePath,
+                        LocalPath = localPath,
+                        RetrySafe = false,
+                        ErrorCode = code,
+                        Diagnostic = StopDiagnostic(reason, "能力探测未在预算内结束；未开始传输"),
+                        CleanupState = capabilityCleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
+                        TemporaryResidue = SshTemporaryResidue.None,
+                        Capabilities = null,
+                        DurationMs = Elapsed(stopwatch),
+                    };
+                }
+            }
+
+            // 4) 传输本身也在有界 worker 上（同步阻塞段不得卡住业务线程）。
             var transferTimeout = lifetime.RemainingOperation;
             if (transferTimeout <= TimeSpan.Zero)
             {
                 return TransferFailure(host, SshExecutionStatus.Failed, SshPhase.Executing, SshErrorCodes.Timeout, StopDiagnostic(SshStopReason.OperationDeadline, "传输前"), stopwatch);
             }
 
-            SshTransferCapabilities? capabilities = null;
+            var capabilities = isUpload ? session.Capabilities : null;
             SshTransferOutcome outcome;
+            var residueState = SshTemporaryResidue.None;
+            string? residuePath = null;
             try
             {
                 var transferTask = _stageWorkers.StartAsync(() => isUpload
@@ -1261,17 +1321,48 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 {
                     // 本地终止事实（取消/截止）如实映射：传输阶段未在预算内结束时，绝不报 Completed。
                     var reason = transferStage.Reason;
-                    var diagnostic = StopDiagnostic(reason, "传输阶段未在预算内结束（远端状态未知；本次临时文件/未完成目标由清理路径处理）。");
-                    outcome = StopCode(reason) == SshErrorCodes.Timeout
-                        ? new SshTransferOutcome(SshExecutionStatus.TimedOut, 0, SshErrorCodes.Timeout, diagnostic)
-                        : SshTransferOutcome.Cancelled(0, diagnostic);
+                    var code = StopCode(reason);
+                    var diagnostic = StopDiagnostic(reason, "传输阶段未在预算内结束（远端状态未知）；清理证据在清理宽限内合并。");
+
+                    // F4：在清理宽限内合并已完成传输的字节数与**残留证据**；期限到仍未知 ⇒ Unknown。
+                    residueState = SshTemporaryResidue.Unknown;
+                    long mergedBytes = 0;
+                    var mergeBudget = CleanupRemaining();
+                    if (mergeBudget > TimeSpan.Zero)
+                    {
+                        var mergeWinner = await Task.WhenAny(
+                                transferTask,
+                                Task.Delay(mergeBudget, CancellationToken.None))
+                            .ConfigureAwait(false);
+
+                        if (mergeWinner == transferTask && transferTask.Status == TaskStatus.RanToCompletion)
+                        {
+                            var late = transferTask.Result;
+                            mergedBytes = late.BytesTransferred;
+                            residueState = late.TemporaryLeftBehind ? SshTemporaryResidue.LeftBehind : SshTemporaryResidue.None;
+                            residuePath = late.TemporaryPath;
+                        }
+                        else if (mergeWinner == transferTask)
+                        {
+                            // 迟到 fault：观察掉，残留仍按 Unknown 表达。
+                            _ = transferTask.Exception;
+                        }
+                    }
+
+                    outcome = new SshTransferOutcome(
+                        code == SshErrorCodes.Timeout ? SshExecutionStatus.TimedOut : SshExecutionStatus.Cancelled,
+                        mergedBytes,
+                        code,
+                        diagnostic,
+                        residueState == SshTemporaryResidue.LeftBehind,
+                        residuePath);
                 }
                 else
                 {
                     outcome = transferStage.Result!;
+                    residueState = outcome.TemporaryLeftBehind ? SshTemporaryResidue.LeftBehind : SshTemporaryResidue.None;
+                    residuePath = outcome.TemporaryPath;
                 }
-
-                capabilities = await session.GetCapabilitiesAsync(CancellationToken.None).ConfigureAwait(false);
             }
             catch (SshStageCapacityExceededException)
             {
@@ -1296,8 +1387,8 @@ public sealed class SshOperationCoordinator : ISshClient, IAsyncDisposable
                 ErrorCode = outcome.ErrorCode,
                 Diagnostic = SshDiagnosticText.Bound(outcome.Diagnostic),
                 CleanupState = cleanup.Completed ? SshCleanupState.Completed : SshCleanupState.Pending,
-                TemporaryLeftBehind = outcome.TemporaryLeftBehind,
-                TemporaryPath = outcome.TemporaryPath,
+                TemporaryResidue = residueState,
+                TemporaryPath = residuePath ?? outcome.TemporaryPath,
                 Capabilities = capabilities,
                 DurationMs = Elapsed(stopwatch),
             };

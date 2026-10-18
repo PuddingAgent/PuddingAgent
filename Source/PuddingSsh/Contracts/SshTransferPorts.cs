@@ -44,7 +44,13 @@ public interface ISshTransferSession : IAsyncDisposable
     /// <summary>本次握手实际验证通过的指纹。</summary>
     string VerifiedHostKeySha256 { get; }
 
-    /// <summary>实测的服务端传输能力（惰性探测，探测失败按不支持处理）。</summary>
+    /// <summary>
+    /// 实测的服务端传输能力**快照**；结果阶段只读它，不得再做远端探测。
+    /// 空值表示调用方尚未要求探测（上传会在提交前把它作为有界阶段执行）。
+    /// </summary>
+    SshTransferCapabilities? Capabilities { get; }
+
+    /// <summary>执行一次能力探测（由调用方在有界阶段/预算内调用；探测成功后写入快照）。</summary>
     Task<SshTransferCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken);
 
     /// <summary>关闭证据：通道已释放。</summary>

@@ -34,6 +34,7 @@ internal sealed class FakeTransferSession : ISshTransferSession
     private int _uploadCount;
     private int _downloadCount;
     private int _abortRequested;
+    private int _capabilityProbeCount;
     private int _closed;
 
     public Func<SshUploadPlan, TimeSpan, CancellationToken, Task<SshTransferOutcome>> OnUpload { get; set; } =
@@ -42,7 +43,17 @@ internal sealed class FakeTransferSession : ISshTransferSession
     public Func<SshDownloadPlan, TimeSpan, CancellationToken, Task<SshTransferOutcome>> OnDownload { get; set; } =
         (_, _, _) => Task.FromResult(SshTransferOutcome.Completed(7));
 
-    public SshTransferCapabilities Capabilities { get; set; } = new(true, false, true);
+    /// <summary>能力快照：探测成功后由会话持有（结果阶段只读它）。</summary>
+    public SshTransferCapabilities? Capabilities { get; private set; }
+
+    /// <summary>探测钩子（默认立即返回 <see cref="CapabilityResult"/>）；可用来挂起/抛错。</summary>
+    public Func<CancellationToken, Task<SshTransferCapabilities>>? OnGetCapabilities { get; set; }
+
+    /// <summary>探测返回的能力。</summary>
+    public SshTransferCapabilities CapabilityResult { get; set; } = new(true, false, true);
+
+    /// <summary>能力探测被调用次数。</summary>
+    public int CapabilityProbeCount => Volatile.Read(ref _capabilityProbeCount);
 
     public bool DisposeNeverCompletes { get; set; }
 
@@ -62,8 +73,14 @@ internal sealed class FakeTransferSession : ISshTransferSession
 
     public void RequestAbort() => Volatile.Write(ref _abortRequested, 1);
 
-    public Task<SshTransferCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(Capabilities);
+    public async Task<SshTransferCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _capabilityProbeCount);
+        Capabilities = OnGetCapabilities is { } hook
+            ? await hook(cancellationToken).ConfigureAwait(false)
+            : CapabilityResult;
+        return Capabilities;
+    }
 
     public Task<SshTransferOutcome> UploadAsync(SshUploadPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
     {

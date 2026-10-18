@@ -116,6 +116,19 @@ public sealed record SshDownloadPlan(
     string RemoteRoot,
     SshOverwritePolicy Overwrite,
     long MaxBytes);
+/// <summary>临时文件残留事实（F4）：不能把「不知道」写成「没有」。</summary>
+public enum SshTemporaryResidue
+{
+    /// <summary>已确认没有残留。</summary>
+    None,
+
+    /// <summary>已确认本次临时文件/未完成目标残留（路径见 <see cref="SshTransferResult.TemporaryPath"/>）。</summary>
+    LeftBehind,
+
+    /// <summary>清理期限已到仍无法确认（不得当成没有残留）。</summary>
+    Unknown,
+}
+
 /// <summary>
 /// 传输结果（协调器输出）：与执行结果一样表达「本端终止事实、远端未知、清理是否收敛、临时文件是否残留」。
 /// </summary>
@@ -146,8 +159,11 @@ public sealed record SshTransferResult
     /// <summary>清理状态（关闭证据）：Pending 表示资源仍在隔离区被追踪。</summary>
     public SshCleanupState CleanupState { get; init; } = SshCleanupState.NotStarted;
 
-    /// <summary>本次临时文件是否残留（true 时 <see cref="TemporaryPath"/> 给出路径）。</summary>
-    public bool TemporaryLeftBehind { get; init; }
+    /// <summary>临时文件残留事实（None/LeftBehind/Unknown）。</summary>
+    public SshTemporaryResidue TemporaryResidue { get; init; } = SshTemporaryResidue.None;
+
+    /// <summary>兼容视图：仅 <see cref="SshTemporaryResidue.LeftBehind"/> 为 true（Unknown ≠ 无残留）。</summary>
+    public bool TemporaryLeftBehind => TemporaryResidue == SshTemporaryResidue.LeftBehind;
 
     public string? TemporaryPath { get; init; }
 

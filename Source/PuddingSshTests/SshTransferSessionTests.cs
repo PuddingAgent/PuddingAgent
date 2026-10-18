@@ -50,8 +50,24 @@ public sealed class SshTransferSessionTests
     private static SshDownloadPlan DownloadPlan(string remotePath, string localPath, SshOverwritePolicy overwrite = SshOverwritePolicy.Fail, long maxBytes = 1024 * 1024) =>
         new(remotePath, localPath, Path.Combine(Path.GetDirectoryName(localPath)!, "." + Path.GetFileName(localPath) + ".pudding-tmp-test"), "/srv/download", overwrite, maxBytes);
 
+    /// <summary>直接使用会话的门禁：按新契约先完成一次能力探测（上传在协调器里是提交前的有界阶段）。</summary>
+    private static async Task<SshSftpTransferSession> SessionAsync(FakeSftpChannel channel)
+    {
+        var session = new SshSftpTransferSession(channel, "SHA256:test", "/srv/download");
+        _ = await session.GetCapabilitiesAsync(CancellationToken.None);
+        return session;
+    }
+
     private static SshSftpTransferSession Session(FakeSftpChannel channel) =>
         new(channel, "SHA256:test", "/srv/download");
+
+    /// <summary>上传前先完成能力探测（新契约：探测是提交前的有界阶段，结果阶段只读快照）。</summary>
+    private static async Task<SshTransferOutcome> UploadAsync(FakeSftpChannel channel, SshUploadPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var session = Session(channel);
+        _ = await session.GetCapabilitiesAsync(CancellationToken.None);
+        return await session.UploadAsync(plan, timeout, cancellationToken);
+    }
 
     [TestMethod]
     public async Task DisposeWithBudget_RunsAfterInFlightTransferCleansUp_SoNoPartialTargetSurvives()
@@ -74,6 +90,7 @@ public sealed class SshTransferSessionTests
             throw new OperationCanceledException("aborted while writing");
         };
         var session = Session(channel);
+        _ = await session.GetCapabilitiesAsync(CancellationToken.None);
         var local = LocalFile("big.bin", new string('z', 4096));
 
         var upload = session.UploadAsync(UploadPlan(local), TimeSpan.FromSeconds(10), CancellationToken.None);
@@ -99,6 +116,7 @@ public sealed class SshTransferSessionTests
             SupportsExclusiveCreate = true,
         };
         var session = Session(channel);
+        _ = await session.GetCapabilitiesAsync(CancellationToken.None);
 
         var first = await session.GetCapabilitiesAsync(CancellationToken.None);
         var uploadsAfterProbe = channel.UploadCount;
@@ -135,6 +153,7 @@ public sealed class SshTransferSessionTests
     {
         var channel = new FakeSftpChannel().Seed("/srv/download/keep", "keep");
         var session = Session(channel);
+        _ = await session.GetCapabilitiesAsync(CancellationToken.None);
         var local = LocalFile("a.bin", "hello");
 
         // 先让能力探测发生，之后只比较"发布本身"的调用次数。
@@ -157,7 +176,7 @@ public sealed class SshTransferSessionTests
         var channel = new FakeSftpChannel().Seed("/srv/upload/target.bin", "original");
         var local = LocalFile("a.bin", "hello");
 
-        var outcome = await Session(channel).UploadAsync(UploadPlan(local), TimeSpan.FromSeconds(5), CancellationToken.None);
+        var outcome = await UploadAsync(channel, UploadPlan(local), TimeSpan.FromSeconds(5), CancellationToken.None);
 
         Assert.AreEqual(SshErrorCodes.RemotePathExists, outcome.ErrorCode);
         Assert.AreEqual("original", channel.ContentOf("/srv/upload/target.bin"));
@@ -170,7 +189,7 @@ public sealed class SshTransferSessionTests
         var channel = new FakeSftpChannel { SupportsExclusiveCreate = false };
         var local = LocalFile("a.bin", "hello");
 
-        var outcome = await Session(channel).UploadAsync(UploadPlan(local), TimeSpan.FromSeconds(5), CancellationToken.None);
+        var outcome = await UploadAsync(channel, UploadPlan(local), TimeSpan.FromSeconds(5), CancellationToken.None);
 
         Assert.AreEqual(SshErrorCodes.TransferUnsupported, outcome.ErrorCode);
         StringAssert.Contains(outcome.Diagnostic!, "exclusive_create=False");
@@ -185,6 +204,7 @@ public sealed class SshTransferSessionTests
     {
         var channel = new FakeSftpChannel().Seed("/srv/upload/target.bin", "original");
         var session = Session(channel);
+        _ = await session.GetCapabilitiesAsync(CancellationToken.None);
         var local = LocalFile("a.bin", "replacement");
 
         _ = await session.GetCapabilitiesAsync(CancellationToken.None);
@@ -207,7 +227,7 @@ public sealed class SshTransferSessionTests
         var channel = new FakeSftpChannel { SupportsAtomicReplace = false }.Seed("/srv/upload/target.bin", "original");
         var local = LocalFile("a.bin", "replacement");
 
-        var outcome = await Session(channel).UploadAsync(
+        var outcome = await UploadAsync(channel, 
             UploadPlan(local, overwrite: SshOverwritePolicy.Overwrite),
             TimeSpan.FromSeconds(5),
             CancellationToken.None);
@@ -225,7 +245,7 @@ public sealed class SshTransferSessionTests
         var channel = new FakeSftpChannel();
         var local = LocalFile("big.bin", new string('x', 4096));
 
-        var outcome = await Session(channel).UploadAsync(
+        var outcome = await UploadAsync(channel, 
             UploadPlan(local, maxBytes: 1024),
             TimeSpan.FromSeconds(5),
             CancellationToken.None);
@@ -249,7 +269,7 @@ public sealed class SshTransferSessionTests
         };
         var local = LocalFile("a.bin", "hello");
 
-        var outcome = await Session(channel).UploadAsync(UploadPlan(local), TimeSpan.FromSeconds(5), cts.Token);
+        var outcome = await UploadAsync(channel, UploadPlan(local), TimeSpan.FromSeconds(5), cts.Token);
 
         Assert.AreEqual(SshExecutionStatus.Cancelled, outcome.Status);
         Assert.AreEqual(SshErrorCodes.Cancelled, outcome.ErrorCode);
@@ -271,7 +291,7 @@ public sealed class SshTransferSessionTests
         };
         var local = LocalFile("a.bin", "hello");
 
-        var outcome = await Session(channel).UploadAsync(
+        var outcome = await UploadAsync(channel, 
             UploadPlan(local, overwrite: SshOverwritePolicy.Overwrite),
             TimeSpan.FromSeconds(5),
             cts.Token);
@@ -288,11 +308,11 @@ public sealed class SshTransferSessionTests
         var channel = new FakeSftpChannel { RealPathOverride = "/srv/elsewhere" };
         var local = LocalFile("a.bin", "hello");
 
-        var outcome = await Session(channel).UploadAsync(UploadPlan(local), TimeSpan.FromSeconds(5), CancellationToken.None);
+        var outcome = await UploadAsync(channel, UploadPlan(local), TimeSpan.FromSeconds(5), CancellationToken.None);
 
         Assert.AreEqual(SshErrorCodes.RemotePathInvalid, outcome.ErrorCode);
         StringAssert.Contains(outcome.Diagnostic!, "symlink_escape");
-        Assert.AreEqual(0, channel.UploadCount, "父目录 realpath 越界时不得开始写入");
+        CollectionAssert.DoesNotContain(channel.UploadedPaths, "/srv/upload/target.bin", "父目录 realpath 越界时不得开始写入");
     }
 
     // ---------- 下载 ----------
