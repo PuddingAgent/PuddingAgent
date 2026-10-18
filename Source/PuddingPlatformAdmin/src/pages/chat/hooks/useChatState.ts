@@ -380,6 +380,7 @@ export function useChatState(
     reconnectCountRef,
     ensureSessionEventStream,
     reconnectCount,
+    connectionState,
     stopSessionEventStream,
     bindSessionEventConnection,
   } = useSessionEventConnection();
@@ -1690,5 +1691,6 @@ export function useChatState(
     creatingSession,
     reconnectCountRef,
     reconnectCount,
+    connectionState,
   };
 }

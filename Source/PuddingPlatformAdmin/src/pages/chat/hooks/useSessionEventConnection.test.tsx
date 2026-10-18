@@ -80,6 +80,15 @@ describe('useSessionEventConnection', () => {
       expect.objectContaining({ afterSequence: 9865 }),
     );
 
+    const subscribeOptions = (
+      subscribeSessionEvents as jest.Mock
+    ).mock.calls[0][3] as { onOpen?: () => void; onClose?: () => void };
+    expect(result.current.connectionState).toBe('connecting');
+    act(() => subscribeOptions.onOpen?.());
+    expect(result.current.connectionState).toBe('connected');
+    act(() => subscribeOptions.onClose?.());
+    expect(result.current.connectionState).toBe('reconnecting');
+
     act(() => result.current.stopSessionEventStream());
     unmount();
   });

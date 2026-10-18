@@ -157,6 +157,8 @@ export type ChatDiagWindow = Window & {
 export interface UseChatStateReturn {
   reconnectCountRef: RefObject<number>;
   reconnectCount: number;
+  /** SSE 连接健康事实（阶段 D3c）：idle/connecting/connected/reconnecting。 */
+  connectionState: 'idle' | 'connecting' | 'connected' | 'reconnecting';
   workspaces: WorkspaceWithPermDto[];
   workspaceId: string | undefined;
   workspaceLoading: boolean;

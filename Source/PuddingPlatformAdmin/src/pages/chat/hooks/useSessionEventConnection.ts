@@ -135,6 +135,10 @@ export function useSessionEventConnection() {
   const lastSseEventAtRef = useRef<number | null>(null);
   const reconnectCountRef = useRef(0);
   const [reconnectCount, setReconnectCount] = useState(0);
+  /** SSE 连接健康事实（阶段 D3c）：idle/connecting/connected/reconnecting。 */
+  const [connectionState, setConnectionState] = useState<
+    'idle' | 'connecting' | 'connected' | 'reconnecting'
+  >('idle');
   const connectionRequestRef = useRef<ConnectionRequest>({
     sessionId: '',
     generation: 0,
@@ -185,6 +189,7 @@ export function useSessionEventConnection() {
       lastSseEventAtRef.current = null;
       reconnectCountRef.current = 0;
       setReconnectCount(0);
+      setConnectionState('idle');
       if (options?.abortCursorPreparation) {
         // 停止（会话切换/卸载）时也取消正在进行的游标准备，避免迟到的 bootstrap 回写游标。
         connectionRequestRef.current.controller.abort();
@@ -450,6 +455,7 @@ export function useSessionEventConnection() {
       };
       scheduleWatchdog();
 
+      setConnectionState('connecting');
       try {
         subscribeSessionEvents(
           sessionId,
@@ -494,6 +500,26 @@ export function useSessionEventConnection() {
           },
           controller.signal,
           {
+            onOpen: () => {
+              if (
+                controller.signal.aborted ||
+                sseSessionIdRef.current !== sessionId
+              ) {
+                return;
+              }
+              lastSseEventAtRef.current = performance.now();
+              setConnectionState('connected');
+            },
+            onClose: () => {
+              if (
+                controller.signal.aborted ||
+                sseSessionIdRef.current !== sessionId
+              ) {
+                return;
+              }
+              setConnectionState('reconnecting');
+              scheduleReconnect();
+            },
             onError: (_error, httpStatus, code) => {
               if (
                 controller.signal.aborted ||
@@ -509,6 +535,7 @@ export function useSessionEventConnection() {
               if (code === 'snapshot_required') {
                 logChatDiag('sse.snapshotRequired', { sessionId, httpStatus });
                 recordPerfEvent('chat.sse.snapshotRequired', { sessionId });
+                setConnectionState('reconnecting');
                 void (async () => {
                   try {
                     // 重取快照并**强制**重置游标（快照是新的权威起点）。
@@ -535,6 +562,7 @@ export function useSessionEventConnection() {
               }
               if (httpStatus === 404 || httpStatus === 410) {
                 logChatDiag('sse.sessionTerminal', { sessionId, httpStatus });
+                setConnectionState('idle');
                 currentPorts.handleSessionNotFound(
                   sessionId,
                   `sse-${httpStatus}`,
@@ -542,6 +570,7 @@ export function useSessionEventConnection() {
                 return;
               }
               logChatDiag('sse.error.reconnect', { sessionId, httpStatus });
+              setConnectionState('reconnecting');
               scheduleReconnect();
             },
             afterSequence,
@@ -714,6 +743,7 @@ export function useSessionEventConnection() {
     lastSseEventAtRef,
     reconnectCountRef,
     reconnectCount,
+    connectionState,
     startSessionEventStream,
     ensureSessionEventStream,
     stopSessionEventStream,

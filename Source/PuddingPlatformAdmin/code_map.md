@@ -313,7 +313,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 | `src/pages/chat/hooks/sessionEventCursor.ts` | 会话事件游标身份与开流决策唯一真源（见下「关键语义」） |
 | `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放与游标准备合同（见下「关键语义」） |
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | replay 透传与会话域过滤（见下「关键语义」） |
-| `src/pages/chat/hooks/useSessionEventConnection.ts` | 显式游标、统一开流入口与 410 分流（见下「关键语义」） |
+| `src/pages/chat/hooks/useSessionEventConnection.ts` | 显式游标、统一开流入口与 410 分流；`connectionState`（idle/connecting/connected/reconnecting）由 SSE onOpen/onClose 驱动，供健康期停轮询（见下「关键语义」） |
 | `src/services/platform/api.ts` | `subscribeSessionEvents` **任何** `afterSequence`（含 0）都下发 `Last-Event-ID`（S3，2026-09-19）——此前只在 `>0` 时发送，使「显式 0（有意全量回放）」与「无游标（客户端没有权威位置）」在协议上不可区分，而无游标已被服务端改为只推实时帧（fail-safe） |
 | `PuddingRuntime/Services/ContextWindowManager.cs` | Auto 压缩三态携带同一 compactionId（failed 此前漏发）；见 `PuddingRuntime/code_map.md` 同主题章节 |
 

@@ -2270,6 +2270,10 @@ export function subscribeSessionEvents(
   signal?: AbortSignal,
   options?: {
     onError?: (error: Error, httpStatus?: number, code?: string) => void;
+    /** SSE 响应头已通过、流可读（连接健康事实）。 */
+    onOpen?: () => void;
+    /** 流正常结束（非 abort）；调用方决定是否重连。 */
+    onClose?: () => void;
     afterSequence?: number;
     generation?: number;
   },
@@ -2311,6 +2315,7 @@ export function subscribeSessionEvents(
       }
 
       const reader = resp.body.getReader();
+      options?.onOpen?.();
       const decoder = new TextDecoder();
       let buf = '';
       let chunkCount = 0;
@@ -2395,6 +2400,7 @@ export function subscribeSessionEvents(
         bufferedChars: buf.length,
         elapsedMs: Math.round(performance.now() - startedAt),
       });
+      options?.onClose?.();
     })
     .catch((error) => {
       recordPerfEvent('chat.sse.error', {

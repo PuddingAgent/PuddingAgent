@@ -210,8 +210,14 @@ const ChatPageContent: React.FC = () => {
       Date.now() - agentClient.snapshot.lastLiveEventAt < 10_000;
     const liveActiveRunRunning =
       projectedConversation?.activeRun?.status === 'running';
+    const liveConnected = chat.connectionState === 'connected';
+    // 阶段 D3c：健康 SSE 连接下不再整页轮询；仅活动 Turn 保留 5s 有界校正、
+    // 终态后保留 1.2s 一次快照物化，物化完成后 isActive=false 即停止。
+    if (!isActive && liveConnected) return;
     const intervalMs =
-      isActive && !(liveRecentlyActive && liveActiveRunRunning) ? 1200 : 5000;
+      isActive && !(liveConnected || (liveRecentlyActive && liveActiveRunRunning))
+        ? 1200
+        : 5000;
     const timer = window.setInterval(() => {
       void agentClient.syncSelectedAgent();
     }, intervalMs);
@@ -220,6 +226,7 @@ const ChatPageContent: React.FC = () => {
     agentClient.syncSelectedAgent,
     chat.agentId,
     chat.workspaceId,
+    chat.connectionState,
     projectedConversation?.activeRun,
     projectedConversation?.activeRun?.status,
     selectedAgentStatus?.status,
