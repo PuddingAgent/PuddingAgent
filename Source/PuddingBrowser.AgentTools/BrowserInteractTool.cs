@@ -183,6 +183,9 @@ public sealed class BrowserInteractTool(
             scrollTarget = parsedScrollTarget;
         }
 
+        // 异常路径也要带原 operationId：call 在 try 作用域内创建，这里先留住它的 id。
+        OperationId? callOperationId = null;
+
         try
 
         {
@@ -245,6 +248,8 @@ public sealed class BrowserInteractTool(
                     "browser_not_connected", "No Desktop is connected for browser capabilities");
 
             }
+
+            callOperationId = call.OperationId;
 
 
 
@@ -356,7 +361,7 @@ public sealed class BrowserInteractTool(
             {
                 // 失败也必须给出回执：调用方需要知道「执行到哪一步、是否可能已产生副作用、能否重试」。
                 // 只给 code/message 会把"可能已经执行"误读成"没执行"（设计 §4.1）。
-                return Failure(interaction.Error!, action, args, contextId);
+                return Failure(interaction.Error!, action, args, contextId, call.OperationId);
             }
 
 
@@ -468,7 +473,7 @@ public sealed class BrowserInteractTool(
                 ex.Code,
                 ex.Message,
                 value: BrowserOperationFailure.Receipt(
-                    error, hint, MapAction(action, args.Checked), args.ExpectValue),
+                    error, hint, MapAction(action, args.Checked), args.ExpectValue, callOperationId),
                 warnings: hint is null ? null : [hint]);
         }
 
@@ -528,10 +533,12 @@ public sealed class BrowserInteractTool(
         DesktopCapabilityError error,
         string? action = null,
         BrowserInteractArgs? args = null,
-        string? contextId = null)
+        string? contextId = null,
+        OperationId? operationId = null)
     {
+        var resolvedOperationId = operationId ?? OperationId.NewId();
         var receipt = BrowserInteractionReceipt.Build(new BrowserInteractionEvidence(
-            new OperationId(Guid.NewGuid().ToString("N")),
+            resolvedOperationId,
             MapAction(action ?? "click", args?.Checked),
             ExpectedValue: args?.ExpectValue,
             Execution: BrowserInteractionReceipt.ExecutionFor(error),
@@ -546,6 +553,7 @@ public sealed class BrowserInteractTool(
             value: new BrowserReceiptToolValue
             {
                 Operation = receipt.Operation.ToString(),
+                OperationId = resolvedOperationId.Value,
                 Completion = BrowserActionCompletionWire.NameOf(receipt.Completion),
                 Execution = BrowserActionExecutionWire.NameOf(receipt.Execution),
                 Verification = BrowserActionVerificationWire.NameOf(receipt.Verification),

@@ -257,6 +257,9 @@ public sealed record BrowserReceiptToolValue
     /// <summary>实际使用的输入路径（目前只有 <c>dom</c>）。</summary>
     public string? InputBackend { get; init; }
 
+    /// <summary>本次工具调用的原 operationId（失败回执同样要能关联，而不是新 Guid）。</summary>
+    public string? OperationId { get; init; }
+
     /// <summary>滚动结果事实（§7，仅 <c>scroll</c> 动作且驱动报告了时存在）。</summary>
     public BrowserScrollToolValue? Scroll { get; init; }
     public IReadOnlyList<BrowserAssertionToolValue> Assertions { get; init; } = [];

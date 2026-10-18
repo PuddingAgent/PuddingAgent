@@ -1360,9 +1360,10 @@ public sealed class BrowserAgentToolsTests
         {
             InteractFailure = DesktopCapabilityError.Unauthorized("not the agent target"),
         };
+        var callContexts = new FakeCallContextFactory();
 
         var result = await ExecuteAsync(
-            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            new BrowserInteractTool(surface, callContexts, _originAccessor),
             JsonSerializer.Serialize(new
             {
                 action = "fill",
@@ -1378,6 +1379,9 @@ public sealed class BrowserAgentToolsTests
         Assert.Equal("blocked", receipt.GetProperty("completion").GetString());
         Assert.Equal("not_retryable", receipt.GetProperty("retryDisposition").GetString());
         Assert.False(receipt.GetProperty("mayHaveSideEffects").GetBoolean());
+        // 失败回执同样必须关联本次调用的原 operationId。
+        Assert.NotNull(callContexts.LastOperationId);
+        Assert.Equal(callContexts.LastOperationId!.Value, receipt.GetProperty("operationId").GetString());
     }
 
     [Fact]

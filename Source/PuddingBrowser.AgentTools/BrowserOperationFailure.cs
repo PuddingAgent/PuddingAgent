@@ -85,10 +85,12 @@ internal static class BrowserOperationFailure
         DesktopCapabilityError error,
         string? hint,
         DesktopInteractionAction action,
-        string? expectedValue = null)
+        string? expectedValue = null,
+        OperationId? operationId = null)
     {
+        var resolvedOperationId = operationId ?? OperationId.NewId();
         var receipt = BrowserInteractionReceipt.Build(new BrowserInteractionEvidence(
-            new OperationId(Guid.NewGuid().ToString("N")),
+            resolvedOperationId,
             action,
             ExpectedValue: expectedValue,
             Execution: BrowserInteractionReceipt.ExecutionFor(error),
@@ -99,6 +101,7 @@ internal static class BrowserOperationFailure
         return new BrowserReceiptToolValue
         {
             Operation = receipt.Operation.ToString(),
+            OperationId = resolvedOperationId.Value,
             Completion = BrowserActionCompletionWire.NameOf(receipt.Completion),
             Execution = BrowserActionExecutionWire.NameOf(receipt.Execution),
             Verification = BrowserActionVerificationWire.NameOf(receipt.Verification),
