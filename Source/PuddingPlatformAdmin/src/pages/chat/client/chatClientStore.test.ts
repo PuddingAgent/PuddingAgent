@@ -779,6 +779,35 @@ describe('agent chat client store', () => {
     expect(historyCalls).toBe(1);
   });
 
+  it('does not repeat an immediate same-agent open after the first one completed', async () => {
+    const cache = createMemoryAgentChatCache();
+    let callCount = 0;
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [],
+        getConversation: jest.fn(),
+        getConversationFromSnapshot: async (_workspaceId, agentId) => {
+          callCount += 1;
+          return {
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId,
+            mainSessionId: 'session-agent-a',
+            messages: [],
+            eventCursor: 10,
+            updatedAt: '2026-06-07T00:00:00.000Z',
+          };
+        },
+      },
+    });
+
+    await store.selectAgent('default', 'agent-a');
+    await store.selectAgent('default', 'agent-a');
+
+    expect(callCount).toBe(1);
+  });
+
   it('prefers the unified snapshot open path when the port provides it', async () => {
     const cache = createMemoryAgentChatCache();
     const legacy = jest.fn();

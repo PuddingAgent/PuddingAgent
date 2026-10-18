@@ -216,8 +216,8 @@ export async function getAgentConversationFromSnapshot(
     mainSessionId: snapshot.conversationId,
     messages,
     activeRun: null,
-    // 与旧契约/状态投影一致使用事件 head；快照 C 只用于读模型表示。
-    eventCursor: snapshot.eventHead,
+    // 快照游标 C 是 SSE 的权威恢复起点；事件 head 由 SSE 追平（Plan §4.2/§7.2）。
+    eventCursor: snapshot.snapshotCursor,
     updatedAt: toIso(lastCreatedAt),
     hasMoreHistory: snapshot.history.hasMore,
     historyNextBeforeCreatedAt: snapshot.history.nextBeforeCreatedAt ?? null,

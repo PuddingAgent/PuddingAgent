@@ -201,11 +201,17 @@ export function useChatState(
     agentProjectionOwnsMainSession?: boolean;
     /** 阶段 D：projection-owned 主会话事件交给 ChatClientStore 唯一合并。 */
     onProjectionOwnedMainEvent?: (event: AdminChatStreamEvent) => void;
+    /**
+     * 阶段 D2c3：projection-owned 主会话的 SSE 起点由统一快照游标 C 提供，
+     * 不再额外请求 `/bootstrap`。返回 null 表示回退既有游标准备。
+     */
+    resolveProjectionCursor?: (sessionId: string) => number | null;
   },
 ): UseChatStateReturn {
   const agentProjectionOwnsMainSession =
     options?.agentProjectionOwnsMainSession ?? false;
   const onProjectionOwnedMainEvent = options?.onProjectionOwnedMainEvent;
+  const resolveProjectionCursor = options?.resolveProjectionCursor;
   const { message: messageApi } = App.useApp();
   const [error, setError] = useState<string | null>(null);
   const {
@@ -844,7 +850,21 @@ export function useChatState(
     replayMissedSessionEvents,
     replayMissedSessionEventsIfNeeded,
     resetStreamCursorForSessionChange,
-    syncCompletedHistoryEventCursor,
+    syncCompletedHistoryEventCursor: async (
+      sessionId,
+      signal,
+      cursorOptions,
+    ) => {
+      // projection-owned 主会话：统一快照 C 即 SSE 起点，避免额外 /bootstrap。
+      // 410 snapshot_required（resetCursor）仍走真实快照重取，不能用旧 C 死循环。
+      if (agentProjectionOwnsMainSession && !cursorOptions?.resetCursor) {
+        const projected = resolveProjectionCursor?.(sessionId);
+        if (projected !== null && projected !== undefined && projected >= 0) {
+          return { ok: true as const, cursor: projected, turns: [] };
+        }
+      }
+      return syncCompletedHistoryEventCursor(sessionId, signal, cursorOptions);
+    },
     flushPendingDeltas,
     syncSessionIdentity,
     activeMessageIdsRef,

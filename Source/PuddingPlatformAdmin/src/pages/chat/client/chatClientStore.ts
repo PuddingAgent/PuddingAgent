@@ -360,8 +360,12 @@ export function createAgentChatClientStore(input: {
       const selectStartedAt = performance.now();
       const sameSelection =
         snapshot.workspaceId === workspaceId && snapshot.agentId === agentId;
-      // 重复选择当前 key：若首次打开/后台校准仍在途，加入既有请求；不增加 generation。
+      // 重复选择当前 key：在途则加入；已完成则直接复用当前会话（不增 generation、不重复拉取）。
+      // 后台刷新由 syncSelectedAgent / SSE 负责，不依赖重复 select。
       if (sameSelection && (snapshot.isOpening || snapshot.isRefreshing)) {
+        return;
+      }
+      if (sameSelection && snapshot.conversation) {
         return;
       }
 

@@ -1,6 +1,6 @@
 {
   "name": "ant-design-pro",
-  "version": "6.9.1",
+  "version": "6.9.3",
   "private": true,
   "description": "An out-of-box UI solution for enterprise applications",
   "repository": "git@github.com:ant-design/ant-design-pro.git",
@@ -31,6 +31,7 @@
     "test:coverage": "npm run jest -- --coverage",
     "test:update": "npm run jest -- -u",
     "test:e2e": "npx playwright test",
+    "smoke:chat": "node scripts/chat-browser-smoke.mjs",
     "test:e2e:ui": "npx playwright test --ui",
     "tsc": "tsc --noEmit"
   },

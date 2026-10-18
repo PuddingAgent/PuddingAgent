@@ -115,7 +115,7 @@ describe('getAgentConversationFromSnapshot', () => {
       workspaceId: 'ws',
       agentId: 'agent-1',
       mainSessionId: 'conv-1',
-      eventCursor: 12,
+      eventCursor: 10,
     });
     expect(view!.messages).toHaveLength(2);
     expect(view!.messages[0]).toMatchObject({

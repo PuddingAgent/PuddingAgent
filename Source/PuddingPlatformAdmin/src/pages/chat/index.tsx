@@ -116,6 +116,12 @@ const ChatPageContent: React.FC = () => {
         agentClient.applyLiveEvent(workspaceId, agentId, event);
       }
     },
+    resolveProjectionCursor: (sessionId) => {
+      const conversation = agentClient.snapshot.conversation;
+      return conversation?.mainSessionId === sessionId
+        ? conversation.eventCursor
+        : null;
+    },
   });
   const [createLoading, setCreateLoading] = useState(false);
   const agentSwitchSeqRef = useRef(0);
