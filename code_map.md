@@ -46,7 +46,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.DeliveryManifest.Cli/` | 交付清单**采集入口**（B7 内部一侧）：目录 → 自检清单 → JSON；不合格以退出码 2 拒绝产出（见下「关键语义」） | — |
 | `Source/PuddingDesktop.CapabilityHost/` | WinUI 侧平台适配：`DispatcherQueue` 调度实现（只引用 Contracts） | [code_map](Source/PuddingDesktop.CapabilityHost/code_map.md) |
 | `Source/Pudding.DesktopSurface.Browser/` | 浏览器侧 Desktop 表面与目标注册表桥；不含 UI 代码，可脱 UI 测试 | [code_map](Source/Pudding.DesktopSurface.Browser/code_map.md) |
-| `Source/PuddingDesktop.Foundation/` | BCL-only 布局与外观偏好（`ShellLayout`、`WorkbenchAppearance`） | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
+| `Source/PuddingDesktop.Foundation/` | BCL-only 布局与外观偏好，以及启动状态面板的文案/阶段映射（`ShellLayout`、`WorkbenchAppearance`、`StartupPanelPresenter`、`StartupPhaseActivity`） | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
 | `Source/PuddingDesktop.WpfArchive/` | 旧 WPF 入口/验证基线；无 UI 的启动器与协议源文件由 WinUI 项目链接编译 | [code_map](Source/PuddingDesktop.WpfArchive/code_map.md) |
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
@@ -105,6 +105,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **代码索引组件族** | §2 + [ADR-089](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) | 依赖方向由编译期强制；叶子组件 `ProjectReference` = 0；边界由 `ComponentBoundaryTests` 三重断言 |
 | **Desktop ↔ Core 能力通道** | §2 + [能力通道](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | 两端只经 `Pudding.Contracts`（DTO）与 `Pudding.Rpc.Protocol`（wire）；启用前必须过 `DesktopCapabilityChannelPreflight` |
 | **Core 启动与就绪契约** | `Source/PuddingHost/Hosting/`、`Source/PuddingDesktop/Hosting/` | 每 5s 发 `PUDDING_DESKTOP_STARTING`，全部 hosted service `StartAsync` 返回后才发 `PUDDING_DESKTOP_READY`；`/health/ready` 不可省 |
+| **Desktop 启动状态面板** | `Source/PuddingDesktop/MainWindow.xaml[.cs]` + `Source/PuddingDesktop.Foundation/StartupPanelPresenter.cs` | 启动/取消/自动恢复/加载工作台/失败共用一张文案映射表（Foundation 纯逻辑）；真实阶段只从 `CoreLogBuffer` 的 `[StartupPhase]` 行聚合（`StartupPhaseActivity`）；取消复用 `_startCts`，WebView2 加载有 20 s watchdog |
 | **浏览器自动化链路** | `Source/PuddingHost/BrowserBridge/`、`Source/PuddingBrowser.WebView2/` | Snapshot ref 必须携带 `PageVersion`；交互提交后不得重查旧 Locator，后续状态用 Wait 或新 Snapshot |
 | **DeepSeek 网页搜索/抓取工具** | `Source/PuddingRuntime/Tools/BuiltIns/Search/DeepSeek*Tool.cs`、`Source/PuddingDeepSeekWeb/` | `deepseek_search`/`deepseek_fetch` 低风险只读（AutoAllowed 免授权）；凭据 `search.providers.json` 的 `deepseek_search` 优先、回退 `llm.providers.json` 的 `providerId=deepseek`；协议在叶子组件，传输经端口适配 |
 | **浏览器控制权与页面授权** | `Source/PuddingBrowser.Automation/` + [设计方案](Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md) | 进程内**唯一** `IBrowserAutomationAuthority`：页面授权按 read/write/manage 绑定实例+世代+页面+frame，写请求复检世代；`BrowserMutationPostcondition` 统一判定变更类后置条件；唯一事实源 `BrowserPageLifecycle`（见下「关键语义」） |

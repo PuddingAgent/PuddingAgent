@@ -48,6 +48,19 @@ public sealed partial class MainWindow : Window
     private bool _ready, _closing, _closed;
     private bool _restartRequired, _loadingAppearance;
     private string? _stateError;
+
+    // ── 启动状态面板（设计稿：temp/design/desktop-startup/design-spec.md）────────
+    // 面板文案/步骤/按钮全部来自 Foundation.StartupPanelPresenter；这里只做
+    // 「状态机 → 输入」「计时器 → 刷新」「按钮 → 协调器动作」三件事。
+    private readonly DispatcherTimer _startupTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private readonly Stopwatch _startupWatch = new();
+    private StartupPanelModel? _startupModel;
+    private StartupPanelPhase _lastStartupPhase = StartupPanelPhase.Unknown;
+    private bool _startupStateKnown, _startupStartPending, _startupCancelRequested, _rawErrorExpanded;
+    private string? _startupNotice;
+    private int _startupNoticeVersion;
+    private TimeSpan? _coreStartupDuration;
+    private CancellationTokenSource? _workbenchWatchdog;
     private readonly PuddingDesktop.Foundation.SkeletonSettingsStore _appearance = new(Path.Combine(App.StateRoot, "appearance"));
 
     // ── 能力通道接线所需的「宿主事实」（切片 C-3）─────────────────────────────
@@ -134,6 +147,9 @@ public sealed partial class MainWindow : Window
             _toolActivity.Observe(ToolActivityInFlight());
             if (RuntimePane.Visibility == Visibility.Visible && AppWindow.IsVisible) RefreshRuntimePanel();
         };
+        // 启动态（启动中/停止中/加载工作台/等待重启）需要 0.1 秒级刷新；
+        // 只有这些相位才启动该计时器，静止状态不空转。
+        _startupTimer.Tick += (_, _) => UpdateStartupPanel();
         LogText.SizeChanged += (_, _) => FollowLatestLog();
         RuntimeLogScroll.SizeChanged += (_, _) => FollowLatestLog();
         FollowLogsBox.Checked += (_, _) => FollowLatestLog();
@@ -159,8 +175,29 @@ public sealed partial class MainWindow : Window
 
     private void OnStateChanged(object? sender, DesktopStateChangedEventArgs e) => UiThread.Post(() =>
     {
+        _startupStateKnown = true;
         _stateError = e.Error;
-        RefreshStatus(e.Error);
+        switch (e.Current)
+        {
+            case DesktopStartupState.CoreStarting:
+                _coreStartupDuration = null;
+                if (!_startupWatch.IsRunning) _startupWatch.Restart();
+                break;
+            case DesktopStartupState.CoreReady:
+            case DesktopStartupState.WorkbenchReady:
+                if (_startupWatch.IsRunning)
+                {
+                    _coreStartupDuration ??= _startupWatch.Elapsed;
+                    _startupWatch.Stop();
+                }
+                break;
+            default:
+                _startupWatch.Stop();
+                break;
+        }
+        if (e.Current is DesktopStartupState.WorkbenchReady or DesktopStartupState.WorkbenchFailed)
+            CancelWorkbenchWatchdog();
+        RefreshStatus();
         if (e.Current == DesktopStartupState.CoreReady && e.WorkbenchAddress is { } address)
             _ = LoadWorkbenchAsync(address);
         if (e.Current is DesktopStartupState.CoreStopped or DesktopStartupState.CoreFailed
@@ -168,7 +205,7 @@ public sealed partial class MainWindow : Window
         {
             _webGeneration++;
             _webOrigin = null;
-            LoadingPanel.Visibility = Visibility.Visible;
+            CancelWorkbenchWatchdog();
             _web?.CoreWebView2?.Navigate("about:blank");
         }
     });
@@ -176,9 +213,7 @@ public sealed partial class MainWindow : Window
     private void RefreshStatus(string? error = null)
     {
         if (error is not null) _stateError = error;
-        error ??= _stateError;
         var runtime = _coordinator.RuntimeSnapshot;
-        StatusText.Text = $"Core · {runtime.State}    {(_coordinator.CoreAddress?.Authority ?? "尚未连接")}";
         var statusState = _coordinator.State is DesktopStartupState.CoreFailed or DesktopStartupState.InvalidConfiguration or DesktopStartupState.DebugFailed
             ? DesktopRuntimeState.Failed : runtime.State;
         var (label, symbol, color) = statusState switch
@@ -199,9 +234,353 @@ public sealed partial class MainWindow : Window
         RuntimePidText.Text = runtime.State == DesktopRuntimeState.Ready ? $"PID {runtime.Session?.ProcessId}" : $"Core · {runtime.State}";
         var startup = runtime.State == DesktopRuntimeState.Ready && runtime.Session is { ReadyAt: { } ready } session ? $" · 启动耗时 {(ready - session.StartedAt).TotalSeconds:F1} 秒" : "";
         RuntimeText.Text = $"接口：{_coordinator.CoreAddress?.Authority ?? "未连接"}{startup}\n数据目录：{_coordinator.DataRoot ?? "尚未设置"}";
-        if (!string.IsNullOrWhiteSpace(error ?? runtime.LastError)) RuntimeText.Text += $"\n{error ?? runtime.LastError}";
+        if (!string.IsNullOrWhiteSpace(_stateError ?? runtime.LastError)) RuntimeText.Text += $"\n{_stateError ?? runtime.LastError}";
         if (runtime.State != DesktopRuntimeState.Ready) UpdateMetrics(null);
-        LoadingText.Text = error ?? runtime.LastError ?? "等待独立 Core 就绪；可在运行中心查看日志，或在启动设置中修改路径。";
+        UpdateStartupPanel();
+    }
+
+    // ── 启动状态面板 ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 把协调器的 13 态启动状态映射成面板相位。优化过的「立即进入启动中」
+    /// （点击后到状态机回推 CoreStarting 之间的空窗）也在这里折叠，避免点击无反馈。
+    /// </summary>
+    private StartupPanelPhase ResolveStartupPhase()
+    {
+        if (!_startupStateKnown) return StartupPanelPhase.Unknown;
+        if (_startupCancelRequested) return StartupPanelPhase.Cancelling;
+        if (_startupStartPending && _coordinator.State is not (
+                DesktopStartupState.CoreStarting or DesktopStartupState.CoreReady
+                or DesktopStartupState.WebViewInitializing or DesktopStartupState.WorkbenchReady))
+            return StartupPanelPhase.Starting;
+        return _coordinator.State switch
+        {
+            DesktopStartupState.NeedsDataRoot => StartupPanelPhase.NeedsDataRoot,
+            DesktopStartupState.InvalidConfiguration => StartupPanelPhase.InvalidConfiguration,
+            DesktopStartupState.CoreStopped => StartupPanelPhase.Idle,
+            DesktopStartupState.CoreStarting => StartupPanelPhase.Starting,
+            DesktopStartupState.CoreStopping => StartupPanelPhase.Cancelling,
+            DesktopStartupState.CoreReady or DesktopStartupState.WebViewInitializing => StartupPanelPhase.WorkbenchLoading,
+            DesktopStartupState.WorkbenchReady => StartupPanelPhase.Ready,
+            DesktopStartupState.WorkbenchFailed => StartupPanelPhase.WorkbenchFailed,
+            DesktopStartupState.CoreFailed => StartupPanelPhase.CoreFailed,
+            DesktopStartupState.CoreRestartScheduled => StartupPanelPhase.RestartScheduled,
+            DesktopStartupState.CoreCircuitOpen => StartupPanelPhase.CircuitOpen,
+            DesktopStartupState.DebugFailed => StartupPanelPhase.DebugFailed,
+            _ => StartupPanelPhase.Unknown,
+        };
+    }
+
+    private void UpdateStartupPanel()
+    {
+        if (!_ready) return;
+        var phase = ResolveStartupPhase();
+        var runtime = _coordinator.RuntimeSnapshot;
+        var input = new StartupPanelInput
+        {
+            Phase = phase,
+            Elapsed = _startupWatch.Elapsed,
+            CoreStartupDuration = _coreStartupDuration,
+            Error = _stateError ?? runtime.LastError,
+            Notice = _startupNotice,
+            CoreAddress = _coordinator.CoreAddress?.Authority,
+            RestartAttempt = runtime.RestartAttemptsInWindow > 0 ? runtime.RestartAttemptsInWindow : null,
+            NextRestartIn = runtime.NextRestartAt is { } next && next > DateTimeOffset.UtcNow
+                ? next - DateTimeOffset.UtcNow
+                : null,
+        };
+        // 真实阶段只从 Core 的诊断打点取：这些行已经在 CoreLogBuffer 里，
+        // 解析/分组逻辑放在 Foundation（可单测），UI 不直接碰日志格式。
+        if (phase == StartupPanelPhase.Starting)
+        {
+            var (activity, detail) = StartupPhaseActivity.Read(_coordinator.CoreLogBuffer.Snapshot());
+            input = input with { Activity = activity, Detail = detail };
+        }
+
+        var model = StartupPanelPresenter.Present(input);
+        _startupModel = model;
+        ApplyStartupModel(model, phase);
+
+        // 只有需要秒级刷新的相位才让精确计时器空转。
+        var ticking = phase is StartupPanelPhase.Unknown or StartupPanelPhase.Starting
+            or StartupPanelPhase.Cancelling or StartupPanelPhase.WorkbenchLoading
+            or StartupPanelPhase.RestartScheduled;
+        if (ticking && !_startupTimer.IsEnabled) _startupTimer.Start();
+        else if (!ticking && _startupTimer.IsEnabled) _startupTimer.Stop();
+    }
+
+    private void ApplyStartupModel(StartupPanelModel model, StartupPanelPhase phase)
+    {
+        if (phase != _lastStartupPhase)
+        {
+            _rawErrorExpanded = false;
+            _lastStartupPhase = phase;
+        }
+        LoadingPanel.Visibility = model.PanelVisible ? Visibility.Visible : Visibility.Collapsed;
+        StartupTitle.Text = model.Title;
+        StartupRing.Visibility = model.RingVisible ? Visibility.Visible : Visibility.Collapsed;
+        var ringActive = model.RingVisible && model.PanelVisible;
+        if (StartupRing.IsActive != ringActive) StartupRing.IsActive = ringActive;
+        StartupErrorIcon.Visibility = model.ErrorIconVisible ? Visibility.Visible : Visibility.Collapsed;
+        SetStartupText(StartupPhase, model.PhaseText, model.PhaseVisible);
+        StartupStepsPanel.Visibility = model.StepsVisible ? Visibility.Visible : Visibility.Collapsed;
+        if (model.StepsVisible)
+        {
+            for (var index = 0; index < 3; index++)
+            {
+                var step = index < model.Steps.Count
+                    ? model.Steps[index]
+                    : new StartupPanelStep(string.Empty, StartupStepState.Pending);
+                ApplyStartupStep(index, step);
+            }
+        }
+        SetStartupText(StartupMeta, model.MetaText, model.MetaVisible && !model.MetaIsWarning);
+        SetStartupText(StartupMetaWarning, model.MetaText, model.MetaVisible && model.MetaIsWarning);
+        SetStartupText(StartupDetail, model.DetailText, model.DetailVisible);
+        SetStartupText(StartupError, model.ErrorText, model.ErrorVisible);
+        SetStartupText(StartupHint, model.HintText, model.HintVisible);
+        StartupPrimaryButton.Visibility = model.PrimaryVisible ? Visibility.Visible : Visibility.Collapsed;
+        if (model.PrimaryVisible)
+        {
+            StartupPrimaryButton.Content = model.PrimaryText;
+            // 取消是「撤退」而不是主 CTA：用次级按钮样式，避免把橙色主按钮的含义
+            // 花在打断启动上（设计稿里取消就是默认按钮）。
+            var styleKey = model.PrimaryAction == StartupPanelAction.CancelStartup
+                ? "StartupSecondaryButtonStyle"
+                : "StartupPrimaryButtonStyle";
+            if (Root.Resources[styleKey] is Style style && !ReferenceEquals(StartupPrimaryButton.Style, style))
+                StartupPrimaryButton.Style = style;
+        }
+        StartupRuntimeLink.Visibility = model.RuntimeLinkVisible ? Visibility.Visible : Visibility.Collapsed;
+        if (model.RuntimeLinkVisible) StartupRuntimeLink.Content = model.RuntimeLinkText;
+        StartupSettingsLink.Visibility = model.SettingsLinkVisible ? Visibility.Visible : Visibility.Collapsed;
+        StartupRawErrorLink.Visibility = model.RawErrorLinkVisible ? Visibility.Visible : Visibility.Collapsed;
+        if (model.RawErrorLinkVisible)
+        {
+            StartupRawErrorLink.Content = _rawErrorExpanded ? "收起错误详情" : "查看错误详情（原始输出）";
+            StartupRawErrorText.Text = model.RawErrorText;
+            StartupRawErrorText.Visibility = _rawErrorExpanded ? Visibility.Visible : Visibility.Collapsed;
+        }
+        else
+        {
+            StartupRawErrorText.Visibility = Visibility.Collapsed;
+        }
+        StatusText.Text = model.StatusBarText;
+        SetStartupStatusDot(model.StatusBarTone);
+    }
+
+    private static void SetStartupText(TextBlock target, string text, bool visible)
+    {
+        target.Text = text;
+        target.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// 步骤的四种视觉在 XAML 里预置（颜色走 ThemeResource），这里只切 Visibility，
+    /// 不在代码里拼主题色 —— 否则主题切换后代码写入的颜色不会重解析。
+    /// </summary>
+    private void ApplyStartupStep(int index, StartupPanelStep step)
+    {
+        var (pending, active, done, failed, mutedLabel, activeLabel, failedLabel) = index switch
+        {
+            0 => (StartupStep1Pending, StartupStep1Active, StartupStep1Done, StartupStep1Failed,
+                  StartupStep1LabelMuted, StartupStep1LabelActive, StartupStep1LabelFailed),
+            1 => (StartupStep2Pending, StartupStep2Active, StartupStep2Done, StartupStep2Failed,
+                  StartupStep2LabelMuted, StartupStep2LabelActive, StartupStep2LabelFailed),
+            _ => (StartupStep3Pending, StartupStep3Active, StartupStep3Done, StartupStep3Failed,
+                  StartupStep3LabelMuted, StartupStep3LabelActive, StartupStep3LabelFailed),
+        };
+        pending.Visibility = step.State == StartupStepState.Pending ? Visibility.Visible : Visibility.Collapsed;
+        active.Visibility = step.State == StartupStepState.Active ? Visibility.Visible : Visibility.Collapsed;
+        done.Visibility = step.State == StartupStepState.Done ? Visibility.Visible : Visibility.Collapsed;
+        failed.Visibility = step.State == StartupStepState.Failed ? Visibility.Visible : Visibility.Collapsed;
+        mutedLabel.Text = activeLabel.Text = failedLabel.Text = step.Label;
+        mutedLabel.Visibility = step.State is StartupStepState.Pending or StartupStepState.Done
+            ? Visibility.Visible : Visibility.Collapsed;
+        activeLabel.Visibility = step.State == StartupStepState.Active ? Visibility.Visible : Visibility.Collapsed;
+        failedLabel.Visibility = step.State == StartupStepState.Failed ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SetStartupStatusDot(StartupPanelTone tone)
+    {
+        StatusDotNeutral.Visibility = tone == StartupPanelTone.Normal ? Visibility.Visible : Visibility.Collapsed;
+        StatusDotBusy.Visibility = tone == StartupPanelTone.Busy ? Visibility.Visible : Visibility.Collapsed;
+        StatusDotWarning.Visibility = tone == StartupPanelTone.Warning ? Visibility.Visible : Visibility.Collapsed;
+        StatusDotError.Visibility = tone == StartupPanelTone.Error ? Visibility.Visible : Visibility.Collapsed;
+        StatusDotSuccess.Visibility = tone == StartupPanelTone.Success ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void OnStartupPrimary(object sender, RoutedEventArgs e)
+    {
+        switch (_startupModel?.PrimaryAction ?? StartupPanelAction.None)
+        {
+            case StartupPanelAction.StartCore:
+                await StartCoreFromPanelAsync();
+                break;
+            case StartupPanelAction.CancelStartup:
+                await CancelStartupAsync();
+                break;
+            case StartupPanelAction.Retry:
+                await RetryFromPanelAsync();
+                break;
+            case StartupPanelAction.OpenSettings:
+                NavigateToSettings();
+                break;
+            case StartupPanelAction.OpenRuntimeCenter:
+                NavigateToRuntimeCenter();
+                break;
+        }
+    }
+
+    private void OnStartupRuntimeLink(object sender, RoutedEventArgs e) => NavigateToRuntimeCenter();
+
+    private void OnStartupSettingsLink(object sender, RoutedEventArgs e) => NavigateToSettings();
+
+    private void OnToggleStartupRawError(object sender, RoutedEventArgs e)
+    {
+        _rawErrorExpanded = !_rawErrorExpanded;
+        UpdateStartupPanel();
+    }
+
+    private async Task StartCoreFromPanelAsync()
+    {
+        if (_restartRequired)
+        {
+            RefreshStatus("数据目录已改变，请退出并重开 Desktop。");
+            return;
+        }
+        // 先乐观进入「启动中」：从点击到状态机回推 CoreStarting 之间有断言空窗，
+        // 不这样做用户会看到按钮点了没反应（旧实现的实际问题）。
+        _startupStartPending = true;
+        _startupNotice = null;
+        _startupWatch.Restart();
+        _coreStartupDuration = null;
+        if (!_startupTimer.IsEnabled) _startupTimer.Start();
+        UpdateStartupPanel();
+        try { await RunAsync(_coordinator.StartCoreAsync); }
+        finally
+        {
+            _startupStartPending = false;
+            UpdateStartupPanel();
+        }
+    }
+
+    private async Task CancelStartupAsync()
+    {
+        if (_startupCancelRequested) return;
+        _startupCancelRequested = true;
+        if (!_startupTimer.IsEnabled) _startupTimer.Start();
+        UpdateStartupPanel();
+        try { await RunAsync(_coordinator.StopCoreAsync); }
+        finally { _startupCancelRequested = false; }
+        _startupNotice = "已取消启动。";
+        _startupNoticeVersion++;
+        UpdateStartupPanel();
+        _ = ClearStartupNoticeAsync(_startupNoticeVersion);
+    }
+
+    private async Task ClearStartupNoticeAsync(int version)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        if (version != _startupNoticeVersion || !_ready) return;
+        _startupNotice = null;
+        UpdateStartupPanel();
+    }
+
+    private async Task RetryFromPanelAsync()
+    {
+        if (ResolveStartupPhase() == StartupPanelPhase.WorkbenchFailed
+            || _coordinator.RuntimeSnapshot.State == DesktopRuntimeState.Ready)
+        {
+            await ReloadWorkbenchAsync();
+            return;
+        }
+        await StartCoreFromPanelAsync();
+    }
+
+    /// <summary>
+    /// 重新加载 Web 工作台（不是重启 Core）。旧 OnStart 的 Ready 分支直接
+    /// Close/清空 WebView，绕过 _webGate；所有重载路径统一走这里，避免与
+    /// LoadWorkbenchAsync 并发创建 WebView2。
+    /// </summary>
+    private async Task ReloadWorkbenchAsync()
+    {
+        if (_coordinator.WorkbenchAddress is not { } address)
+        {
+            RefreshStatus("Core 尚未就绪，无法加载工作台。");
+            return;
+        }
+        try
+        {
+            await _webGate.WaitAsync(_lifetime.Token);
+            try
+            {
+                _web?.Close();
+                _web = null;
+                _webOrigin = null;
+                WorkbenchHost.Children.Clear();
+            }
+            finally { _webGate.Release(); }
+            await LoadWorkbenchAsync(address);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { RefreshStatus(ex.Message); }
+    }
+
+    private void NavigateToRuntimeCenter()
+    {
+        if (ReferenceEquals(Navigation.SelectedItem, RuntimeNavigationItem))
+        {
+            RefreshRuntimePanel();
+            return;
+        }
+        Navigation.SelectedItem = RuntimeNavigationItem;
+    }
+
+    private void NavigateToSettings()
+    {
+        if (ReferenceEquals(Navigation.SelectedItem, SettingsNavigationItem))
+        {
+            _ = LoadSettingsAsync();
+            return;
+        }
+        Navigation.SelectedItem = SettingsNavigationItem;
+    }
+
+    /// <summary>
+    /// WebView2 阶段看门狗：NavigationCompleted 成功/失败都会取消；20 秒仍未完成
+    /// 就把状态降级为 WorkbenchFailed（旧实现没有超时，面板会无限期停在加载态）。
+    /// </summary>
+    private void StartWorkbenchWatchdog()
+    {
+        CancelWorkbenchWatchdog();
+        var watchdog = new CancellationTokenSource();
+        _workbenchWatchdog = watchdog;
+        _ = WatchWorkbenchAsync(watchdog);
+    }
+
+    private void CancelWorkbenchWatchdog()
+    {
+        var watchdog = _workbenchWatchdog;
+        if (watchdog is null) return;
+        _workbenchWatchdog = null;
+        try { watchdog.Cancel(); } catch (ObjectDisposedException) { }
+        watchdog.Dispose();
+    }
+
+    private async Task WatchWorkbenchAsync(CancellationTokenSource watchdog)
+    {
+        try { await Task.Delay(TimeSpan.FromSeconds(20), watchdog.Token); }
+        catch (OperationCanceledException) { return; }
+        if (_closing || !ReferenceEquals(_workbenchWatchdog, watchdog)) return;
+        UiThread.Post(() =>
+        {
+            if (_coordinator.State != DesktopStartupState.WebViewInitializing) return;
+            _webOrigin = null;
+            _stateError = "Web 工作台在 20 秒内没有加载完成。";
+            _coordinator.NotifyWorkbenchFailed(_stateError);
+            UpdateStartupPanel();
+        });
     }
 
     private void RefreshRuntimePanel()
@@ -919,23 +1298,48 @@ public sealed partial class MainWindow : Window
                 _web.CoreWebView2.NavigationCompleted += (_, e) =>
                 {
                     if (_closing || !ReferenceEquals(_web, currentWeb) || _webOrigin is null || !currentWeb.CoreWebView2.Source.StartsWith(_webOrigin.GetLeftPart(UriPartial.Authority) + "/", StringComparison.OrdinalIgnoreCase)) return;
-                    if (e.IsSuccess) { LoadingPanel.Visibility = Visibility.Collapsed; _coordinator.NotifyWorkbenchReady(); }
-                    else { _webOrigin = null; _coordinator.NotifyWorkbenchFailed(e.WebErrorStatus.ToString()); }
+                    CancelWorkbenchWatchdog();
+                    if (e.IsSuccess)
+                    {
+                        LoadingPanel.Visibility = Visibility.Collapsed;
+                        _coordinator.NotifyWorkbenchReady();
+                    }
+                    else
+                    {
+                        _webOrigin = null;
+                        _stateError = $"Web 工作台导航失败：{e.WebErrorStatus}";
+                        LoadingPanel.Visibility = Visibility.Visible;
+                        _coordinator.NotifyWorkbenchFailed(_stateError);
+                    }
+                    UpdateStartupPanel();
                 };
                 _web.CoreWebView2.ProcessFailed += (_, e) =>
                 {
                     if (_closing || !ReferenceEquals(_web, currentWeb)) return;
+                    CancelWorkbenchWatchdog();
                     _webOrigin = null;
+                    _stateError = $"WebView2 进程失败：{e.ProcessFailedKind}";
                     LoadingPanel.Visibility = Visibility.Visible;
-                    _coordinator.NotifyWorkbenchFailed(e.ProcessFailedKind.ToString());
+                    _coordinator.NotifyWorkbenchFailed(_stateError);
+                    UpdateStartupPanel();
                 };
             }
             if (generation != _webGeneration || _closing) return;
             _webOrigin = address;
             _web.CoreWebView2.Navigate(new Uri(address, "/admin/").ToString());
+            StartWorkbenchWatchdog();
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { _webOrigin = null; App.WriteDiagnostic(ex); LoadingText.Text = ex.Message; _coordinator.NotifyWorkbenchFailed(ex.Message); }
+        catch (Exception ex)
+        {
+            _webOrigin = null;
+            App.WriteDiagnostic(ex);
+            CancelWorkbenchWatchdog();
+            _stateError = $"Web 工作台初始化失败：{ex.Message}";
+            LoadingPanel.Visibility = Visibility.Visible;
+            _coordinator.NotifyWorkbenchFailed(_stateError);
+            UpdateStartupPanel();
+        }
         finally { _webGate.Release(); }
     }
 
@@ -1046,12 +1450,10 @@ public sealed partial class MainWindow : Window
     private async void OnStart(object sender, RoutedEventArgs e)
     {
         if (_restartRequired) { RefreshStatus("数据目录已改变，请退出并重开 Desktop。"); return; }
-        if (_coordinator.RuntimeSnapshot.State == DesktopRuntimeState.Ready && _coordinator.WorkbenchAddress is { } address)
-        {
-            _web?.Close(); _web = null; _webOrigin = null; WorkbenchHost.Children.Clear();
-            await LoadWorkbenchAsync(address);
-        }
-        else await RunAsync(_coordinator.StartCoreAsync);
+        if (_coordinator.RuntimeSnapshot.State == DesktopRuntimeState.Ready && _coordinator.WorkbenchAddress is not null)
+            await ReloadWorkbenchAsync();
+        else
+            await StartCoreFromPanelAsync();
     }
     private async void OnStop(object sender, RoutedEventArgs e) => await RunAsync(_coordinator.StopCoreAsync);
     private async void OnRestart(object sender, RoutedEventArgs e)
@@ -1292,6 +1694,8 @@ public sealed partial class MainWindow : Window
         _closing = true;
         _coordinator.RequestExplicitExit();
         _timer.Stop();
+        _startupTimer.Stop();
+        CancelWorkbenchWatchdog();
         try
         {
             await _coordinator.StopAsync(CancellationToken.None);
@@ -1309,6 +1713,24 @@ public sealed partial class MainWindow : Window
     }
 
 #if DEBUG
+    /// <summary>
+    /// Debug smoke 证据：把当前 XAML 树保存成 PNG。RenderTargetBitmap 不含 Mica/
+    /// 原生标题栏（见 Desktop-Shell-Recovery 报告），只作人工复核，不做像素门禁。
+    /// </summary>
+    private static async Task SavePngAsync(Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap capture, string path)
+    {
+        var pixels = await capture.GetPixelsAsync();
+        await File.WriteAllBytesAsync(path, []);
+        var imageFile = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+        using var stream = await imageFile.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite);
+        var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(
+            Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
+        encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8,
+            Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied,
+            (uint)capture.PixelWidth, (uint)capture.PixelHeight, 96, 96, pixels.ToArray());
+        await encoder.FlushAsync();
+    }
+
     private async Task RunSmokeAsync(string path)
     {
         var checks = new List<string>();
@@ -1320,7 +1742,42 @@ public sealed partial class MainWindow : Window
                 using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
                 while (_coordinator.State != DesktopStartupState.WorkbenchReady) await Task.Delay(100, timeout.Token);
             }
+
+            // 启动中面板：在 WorkbenchReady 之前抓一张，并断言面板确实在报进度。
+            // 这是本面板唯一的自动化门禁（WinUI MainWindow 无法进单测）。
+            var startupObserved = false;
+            using (var startupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(60)))
+            {
+                while (!startupTimeout.IsCancellationRequested)
+                {
+                    if (_coordinator.State is DesktopStartupState.CoreStarting
+                        or DesktopStartupState.CoreReady or DesktopStartupState.WebViewInitializing)
+                    {
+                        startupObserved = true;
+                        break;
+                    }
+                    if (_coordinator.State == DesktopStartupState.WorkbenchReady) break;
+                    try { await Task.Delay(50, startupTimeout.Token); }
+                    catch (OperationCanceledException) { break; }
+                }
+            }
+            if (!startupObserved) throw new Exception("Startup panel could not be observed before WorkbenchReady");
+            await Task.Delay(250);
+            if (LoadingPanel.Visibility != Visibility.Visible)
+                throw new Exception("Startup panel must be visible while Core/WebView starts");
+            if (!StartupRing.IsActive)
+                throw new Exception("Startup progress ring must be active while starting");
+            var startupCapture = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
+            await startupCapture.RenderAsync(Root);
+            await SavePngAsync(startupCapture, Path.ChangeExtension(path, ".startup.png"));
+            checks.Add("startup panel visible with active progress ring before the workbench is ready");
+
             await WaitReady();
+            if (LoadingPanel.Visibility != Visibility.Collapsed)
+                throw new Exception("Startup panel must collapse once WorkbenchReady");
+            if (StartupRing.IsActive)
+                throw new Exception("Startup progress ring must stop once WorkbenchReady");
+            checks.Add("startup panel collapsed after the workbench loaded");
             var pid = _coordinator.RuntimeSnapshot.Session!.ProcessId;
             if (pid == Environment.ProcessId) throw new Exception("Core must be a separate process");
             pids.Add(pid); checks.Add("independent Core ready and Web workbench loaded");
@@ -1356,17 +1813,8 @@ public sealed partial class MainWindow : Window
             checks.Add("runtime CPU/memory sampled; log viewport adapts in both dimensions");
             var capture = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
             await capture.RenderAsync(Root);
-            var pixels = await capture.GetPixelsAsync();
             var imagePath = Path.ChangeExtension(path, ".png");
-            await File.WriteAllBytesAsync(imagePath, []);
-            var imageFile = await Windows.Storage.StorageFile.GetFileFromPathAsync(imagePath);
-            using (var stream = await imageFile.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite))
-            {
-                var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
-                encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied,
-                    (uint)capture.PixelWidth, (uint)capture.PixelHeight, 96, 96, pixels.ToArray());
-                await encoder.FlushAsync();
-            }
+            await SavePngAsync(capture, imagePath);
 
             // ── Right tool workspace ─────────────────────────────────────────────
             Navigation.SelectedItem = Navigation.MenuItems[0];

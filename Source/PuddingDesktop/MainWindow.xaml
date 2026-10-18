@@ -27,6 +27,17 @@
       <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#14FFFFFF"/>
       <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#1FFFFFFF"/>
       <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent"/>
+      <!-- 启动状态面板（Default = 深色）：只给面板用，主题切换由 ThemeResource 自动重解析。 -->
+      <SolidColorBrush x:Key="StartupAccentBrush" Color="#D59F61"/>
+      <SolidColorBrush x:Key="StartupAccentTextBrush" Color="#241A0C"/>
+      <SolidColorBrush x:Key="StartupWarningBrush" Color="#E7B877"/>
+      <SolidColorBrush x:Key="StartupErrorBrush" Color="#FF99A4"/>
+      <SolidColorBrush x:Key="StartupErrorBackgroundBrush" Color="#442726"/>
+      <SolidColorBrush x:Key="StartupErrorStrokeBrush" Color="#6E2A2A"/>
+      <SolidColorBrush x:Key="StartupMutedBrush" Color="#A0A0A4"/>
+      <SolidColorBrush x:Key="StartupPendingBrush" Color="#5A5A5E"/>
+      <SolidColorBrush x:Key="StartupLinkBrush" Color="#E7B877"/>
+      <SolidColorBrush x:Key="StartupSuccessBrush" Color="#6CCB9C"/>
      </ResourceDictionary>
      <ResourceDictionary x:Key="Light">
       <SolidColorBrush x:Key="ToolTabSelectedBrush" Color="#1F000000"/>
@@ -42,6 +53,16 @@
       <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#0F000000"/>
       <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#17000000"/>
       <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="StartupAccentBrush" Color="#D59F61"/>
+      <SolidColorBrush x:Key="StartupAccentTextBrush" Color="#241A0C"/>
+      <SolidColorBrush x:Key="StartupWarningBrush" Color="#8A5A1E"/>
+      <SolidColorBrush x:Key="StartupErrorBrush" Color="#B3261E"/>
+      <SolidColorBrush x:Key="StartupErrorBackgroundBrush" Color="#FDE7E9"/>
+      <SolidColorBrush x:Key="StartupErrorStrokeBrush" Color="#F0B8BD"/>
+      <SolidColorBrush x:Key="StartupMutedBrush" Color="#86868A"/>
+      <SolidColorBrush x:Key="StartupPendingBrush" Color="#C6C6C8"/>
+      <SolidColorBrush x:Key="StartupLinkBrush" Color="#8A5A1E"/>
+      <SolidColorBrush x:Key="StartupSuccessBrush" Color="#1D8B55"/>
      </ResourceDictionary>
      <ResourceDictionary x:Key="HighContrast">
       <SolidColorBrush x:Key="ToolTabSelectedBrush" Color="Transparent"/>
@@ -57,6 +78,17 @@
       <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="Transparent"/>
       <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="Transparent"/>
       <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent"/>
+      <!-- 高对比：启动面板只使用系统色，禁止硬编码品牌色（否则 HC 下不可读）。 -->
+      <SolidColorBrush x:Key="StartupAccentBrush" Color="{ThemeResource SystemColorHighlightColor}"/>
+      <SolidColorBrush x:Key="StartupAccentTextBrush" Color="{ThemeResource SystemColorHighlightTextColor}"/>
+      <SolidColorBrush x:Key="StartupWarningBrush" Color="{ThemeResource SystemColorHighlightColor}"/>
+      <SolidColorBrush x:Key="StartupErrorBrush" Color="{ThemeResource SystemColorHighlightColor}"/>
+      <SolidColorBrush x:Key="StartupErrorBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}"/>
+      <SolidColorBrush x:Key="StartupErrorStrokeBrush" Color="{ThemeResource SystemColorWindowTextColor}"/>
+      <SolidColorBrush x:Key="StartupMutedBrush" Color="{ThemeResource SystemColorGrayTextColor}"/>
+      <SolidColorBrush x:Key="StartupPendingBrush" Color="{ThemeResource SystemColorGrayTextColor}"/>
+      <SolidColorBrush x:Key="StartupLinkBrush" Color="{ThemeResource SystemColorHighlightColor}"/>
+      <SolidColorBrush x:Key="StartupSuccessBrush" Color="{ThemeResource SystemColorHighlightColor}"/>
      </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
@@ -200,6 +232,56 @@
      <Setter Property="FontSize" Value="11"/>
      <Setter Property="Opacity" Value="0.75"/>
     </Style>
+
+    <!-- ── 启动状态面板（启动中 / 长启动 / 加载工作台 / 失败）───────────────
+         设计稿与验收：temp/design/desktop-startup/（design-spec.md 为契约）。
+         文案全部由 PuddingDesktop.Foundation.StartupPanelPresenter 产出，
+         XAML 只负责呈现，不在 markup 里写死任何状态句，避免面板与状态机漂移。 -->
+    <Style x:Key="StartupPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+     <Setter Property="Height" Value="32"/>
+     <Setter Property="MinWidth" Value="0"/>
+     <Setter Property="Padding" Value="20,0"/>
+     <Setter Property="CornerRadius" Value="4.5"/>
+     <Setter Property="BorderThickness" Value="0"/>
+     <Setter Property="Background" Value="{ThemeResource StartupAccentBrush}"/>
+     <Setter Property="Foreground" Value="{ThemeResource StartupAccentTextBrush}"/>
+     <Setter Property="FontSize" Value="13"/>
+     <Setter Property="FontWeight" Value="SemiBold"/>
+     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="StartupSecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+     <Setter Property="Height" Value="32"/>
+     <Setter Property="MinWidth" Value="0"/>
+     <Setter Property="Padding" Value="16,0"/>
+     <Setter Property="CornerRadius" Value="4.5"/>
+     <Setter Property="FontSize" Value="13"/>
+     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <!-- 文案链接：透明按钮而非 HyperlinkButton，避免引入未使用过的模板与下划线样式。 -->
+    <Style x:Key="StartupLinkButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+     <Setter Property="Height" Value="30"/>
+     <Setter Property="MinWidth" Value="0"/>
+     <Setter Property="Padding" Value="6,0"/>
+     <Setter Property="Background" Value="Transparent"/>
+     <Setter Property="BorderThickness" Value="0"/>
+     <Setter Property="CornerRadius" Value="6"/>
+     <Setter Property="Foreground" Value="{ThemeResource StartupLinkBrush}"/>
+     <Setter Property="FontSize" Value="13"/>
+     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+     <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="StartupRawErrorTextStyle" TargetType="TextBlock">
+     <Setter Property="FontFamily" Value="Consolas"/>
+     <Setter Property="FontSize" Value="11"/>
+     <Setter Property="TextWrapping" Value="Wrap"/>
+     <Setter Property="IsTextSelectionEnabled" Value="True"/>
+     <Setter Property="Foreground" Value="{ThemeResource StartupMutedBrush}"/>
+    </Style>
    </ResourceDictionary>
   </Grid.Resources>
   <Grid.KeyboardAccelerators>
@@ -223,7 +305,7 @@
     <NavigationViewItem x:Name="RuntimeNavigationItem" Content="运行中心" Tag="runtime" Icon="Play"/>
    </NavigationView.MenuItems>
    <NavigationView.FooterMenuItems>
-    <NavigationViewItem Content="启动设置" Tag="settings" Icon="Setting"/>
+    <NavigationViewItem x:Name="SettingsNavigationItem" Content="启动设置" Tag="settings" Icon="Setting"/>
    </NavigationView.FooterMenuItems>
    <Grid Margin="0,0,12,8">
     <!-- Workbench page: chat keeps its structure, the tool workspace is added beside it. -->
@@ -234,10 +316,150 @@
       <ColumnDefinition x:Name="ToolColumn" Width="0"/>
      </Grid.ColumnDefinitions>
      <Grid x:Name="WorkbenchHost" Grid.Column="0"/>
-     <StackPanel x:Name="LoadingPanel" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16" MaxWidth="540">
-      <TextBlock Text="准备你的工作台" FontSize="28" FontWeight="SemiBold"/>
-      <TextBlock x:Name="LoadingText" Text="正在连接 Pudding Core…" TextWrapping="Wrap" Opacity="0.7"/>
-      <Button Content="启动 Core" Click="OnStart"/>
+     <!-- ── 启动状态面板 ─────────────────────────────────────────────────
+          覆盖「启动中 → 长启动 → 加载工作台 → 失败」全链路；所有文案由
+          PuddingDesktop.Foundation.StartupPanelPresenter 产出（状态机不变），
+          XAML 只做呈现。步骤的每种状态用预置图形 + Visibility 切换，颜色全部
+          走 ThemeResource，浅色/深色/高对比自动重解析。 -->
+     <StackPanel x:Name="LoadingPanel" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="640">
+      <StackPanel HorizontalAlignment="Center">
+       <StackPanel Orientation="Horizontal" Spacing="14" HorizontalAlignment="Center">
+        <ProgressRing x:Name="StartupRing" Width="32" Height="32" IsActive="False"
+          Foreground="{ThemeResource StartupAccentBrush}" VerticalAlignment="Center"/>
+        <Border x:Name="StartupErrorIcon" Width="32" Height="32" CornerRadius="16" Visibility="Collapsed"
+          Background="{ThemeResource StartupErrorBackgroundBrush}"
+          BorderBrush="{ThemeResource StartupErrorStrokeBrush}" BorderThickness="1" VerticalAlignment="Center">
+         <TextBlock Text="!" FontSize="19" FontWeight="Bold" Foreground="{ThemeResource StartupErrorBrush}"
+           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+        <TextBlock x:Name="StartupTitle" FontSize="28" FontWeight="SemiBold" VerticalAlignment="Center"/>
+       </StackPanel>
+
+       <TextBlock x:Name="StartupPhase" Margin="0,12,0,0" MaxWidth="560" HorizontalAlignment="Center"
+         FontSize="13" TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource StartupMutedBrush}"/>
+
+       <StackPanel x:Name="StartupStepsPanel" Orientation="Horizontal" HorizontalAlignment="Center"
+         Margin="0,26,0,0" Visibility="Collapsed">
+        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+         <Grid Width="16" Height="16" VerticalAlignment="Center">
+          <Border x:Name="StartupStep1Pending" Width="16" Height="16" CornerRadius="8" BorderThickness="1.5"
+            BorderBrush="{ThemeResource StartupPendingBrush}"/>
+          <Border x:Name="StartupStep1Active" Width="16" Height="16" CornerRadius="8" BorderThickness="2"
+            BorderBrush="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
+           <Ellipse Width="6" Height="6" Fill="{ThemeResource StartupAccentBrush}"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <Border x:Name="StartupStep1Done" Width="16" Height="16" CornerRadius="8"
+            Background="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
+           <TextBlock Text="✓" FontSize="10" FontWeight="Bold" Foreground="{ThemeResource StartupAccentTextBrush}"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <Border x:Name="StartupStep1Failed" Width="16" Height="16" CornerRadius="8"
+            Background="{ThemeResource StartupErrorBackgroundBrush}" BorderThickness="1"
+            BorderBrush="{ThemeResource StartupErrorStrokeBrush}" Visibility="Collapsed">
+           <TextBlock Text="✕" FontSize="9" FontWeight="Bold" Foreground="{ThemeResource StartupErrorBrush}"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+         </Grid>
+         <Grid VerticalAlignment="Center">
+          <TextBlock x:Name="StartupStep1LabelMuted" FontSize="12" Foreground="{ThemeResource StartupMutedBrush}"/>
+          <TextBlock x:Name="StartupStep1LabelActive" FontSize="12" FontWeight="SemiBold"
+            Foreground="{ThemeResource StartupLinkBrush}" Visibility="Collapsed"/>
+          <TextBlock x:Name="StartupStep1LabelFailed" FontSize="12" FontWeight="SemiBold"
+            Foreground="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
+         </Grid>
+        </StackPanel>
+        <TextBlock Text="›" FontSize="11" Margin="12,0" VerticalAlignment="Center"
+          Foreground="{ThemeResource StartupMutedBrush}"/>
+        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+         <Grid Width="16" Height="16" VerticalAlignment="Center">
+          <Border x:Name="StartupStep2Pending" Width="16" Height="16" CornerRadius="8" BorderThickness="1.5"
+            BorderBrush="{ThemeResource StartupPendingBrush}"/>
+          <Border x:Name="StartupStep2Active" Width="16" Height="16" CornerRadius="8" BorderThickness="2"
+            BorderBrush="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
+           <Ellipse Width="6" Height="6" Fill="{ThemeResource StartupAccentBrush}"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <Border x:Name="StartupStep2Done" Width="16" Height="16" CornerRadius="8"
+            Background="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
+           <TextBlock Text="✓" FontSize="10" FontWeight="Bold" Foreground="{ThemeResource StartupAccentTextBrush}"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <Border x:Name="StartupStep2Failed" Width="16" Height="16" CornerRadius="8"
+            Background="{ThemeResource StartupErrorBackgroundBrush}" BorderThickness="1"
+            BorderBrush="{ThemeResource StartupErrorStrokeBrush}" Visibility="Collapsed">
+           <TextBlock Text="✕" FontSize="9" FontWeight="Bold" Foreground="{ThemeResource StartupErrorBrush}"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+         </Grid>
+         <Grid VerticalAlignment="Center">
+          <TextBlock x:Name="StartupStep2LabelMuted" FontSize="12" Foreground="{ThemeResource StartupMutedBrush}"/>
+          <TextBlock x:Name="StartupStep2LabelActive" FontSize="12" FontWeight="SemiBold"
+            Foreground="{ThemeResource StartupLinkBrush}" Visibility="Collapsed"/>
+          <TextBlock x:Name="StartupStep2LabelFailed" FontSize="12" FontWeight="SemiBold"
+            Foreground="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
+         </Grid>
+        </StackPanel>
+        <TextBlock Text="›" FontSize="11" Margin="12,0" VerticalAlignment="Center"
+          Foreground="{ThemeResource StartupMutedBrush}"/>
+        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+         <Grid Width="16" Height="16" VerticalAlignment="Center">
+          <Border x:Name="StartupStep3Pending" Width="16" Height="16" CornerRadius="8" BorderThickness="1.5"
+            BorderBrush="{ThemeResource StartupPendingBrush}"/>
+          <Border x:Name="StartupStep3Active" Width="16" Height="16" CornerRadius="8" BorderThickness="2"
+            BorderBrush="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
+           <Ellipse Width="6" Height="6" Fill="{ThemeResource StartupAccentBrush}"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <Border x:Name="StartupStep3Done" Width="16" Height="16" CornerRadius="8"
+            Background="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
+           <TextBlock Text="✓" FontSize="10" FontWeight="Bold" Foreground="{ThemeResource StartupAccentTextBrush}"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <Border x:Name="StartupStep3Failed" Width="16" Height="16" CornerRadius="8"
+            Background="{ThemeResource StartupErrorBackgroundBrush}" BorderThickness="1"
+            BorderBrush="{ThemeResource StartupErrorStrokeBrush}" Visibility="Collapsed">
+           <TextBlock Text="✕" FontSize="9" FontWeight="Bold" Foreground="{ThemeResource StartupErrorBrush}"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+         </Grid>
+         <Grid VerticalAlignment="Center">
+          <TextBlock x:Name="StartupStep3LabelMuted" FontSize="12" Foreground="{ThemeResource StartupMutedBrush}"/>
+          <TextBlock x:Name="StartupStep3LabelActive" FontSize="12" FontWeight="SemiBold"
+            Foreground="{ThemeResource StartupLinkBrush}" Visibility="Collapsed"/>
+          <TextBlock x:Name="StartupStep3LabelFailed" FontSize="12" FontWeight="SemiBold"
+            Foreground="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
+         </Grid>
+        </StackPanel>
+       </StackPanel>
+
+       <TextBlock x:Name="StartupMeta" Margin="0,15,0,0" HorizontalAlignment="Center" FontSize="12"
+         TextAlignment="Center" Foreground="{ThemeResource StartupMutedBrush}" Visibility="Collapsed"/>
+       <TextBlock x:Name="StartupMetaWarning" Margin="0,15,0,0" HorizontalAlignment="Center" FontSize="12"
+         TextAlignment="Center" Foreground="{ThemeResource StartupWarningBrush}" Visibility="Collapsed"/>
+       <TextBlock x:Name="StartupDetail" Margin="0,9,0,0" MaxWidth="560" HorizontalAlignment="Center"
+         FontFamily="Consolas" FontSize="11" TextAlignment="Center" TextTrimming="CharacterEllipsis"
+         Foreground="{ThemeResource StartupMutedBrush}" Visibility="Collapsed"/>
+       <TextBlock x:Name="StartupError" Margin="0,12,0,0" MaxWidth="560" HorizontalAlignment="Center"
+         FontSize="13" TextWrapping="Wrap" TextAlignment="Center"
+         Foreground="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
+       <TextBlock x:Name="StartupHint" Margin="0,8,0,0" MaxWidth="560" HorizontalAlignment="Center"
+         FontSize="12" TextWrapping="Wrap" TextAlignment="Center"
+         Foreground="{ThemeResource StartupMutedBrush}" Visibility="Collapsed"/>
+
+       <StackPanel Orientation="Horizontal" Spacing="18" HorizontalAlignment="Center" Margin="0,26,0,0">
+        <Button x:Name="StartupPrimaryButton" Style="{StaticResource StartupPrimaryButtonStyle}"
+          Click="OnStartupPrimary" Visibility="Collapsed"/>
+        <Button x:Name="StartupRuntimeLink" Style="{StaticResource StartupLinkButtonStyle}"
+          Click="OnStartupRuntimeLink" Visibility="Collapsed"/>
+        <Button x:Name="StartupSettingsLink" Style="{StaticResource StartupLinkButtonStyle}"
+          Content="启动设置" Click="OnStartupSettingsLink" Visibility="Collapsed"/>
+       </StackPanel>
+       <Button x:Name="StartupRawErrorLink" Style="{StaticResource StartupLinkButtonStyle}"
+         HorizontalAlignment="Center" Margin="0,12,0,0" Click="OnToggleStartupRawError" Visibility="Collapsed"/>
+       <TextBlock x:Name="StartupRawErrorText" Style="{StaticResource StartupRawErrorTextStyle}"
+         MaxWidth="560" Margin="0,8,0,0" HorizontalAlignment="Center" Visibility="Collapsed"/>
+      </StackPanel>
      </StackPanel>
      <!-- IMG05/§13.3：把分割线的可操作方式说清楚 —— 双击复原「默认分栏」是显式
           动作，不能只靠用户猜（拖动与键盘调整同理）。 -->
@@ -512,6 +734,17 @@
     </ScrollViewer>
    </Grid>
   </NavigationView>
-  <TextBlock x:Name="StatusText" Grid.Row="2" Margin="20,0" FontSize="11" VerticalAlignment="Center" Opacity="0.65"/>
+  <!-- 底部状态条：颜色圆点按 StartupPanelPresenter.StatusBarTone 切换预先声明的椭圆，
+       不在代码里拼 ThemeResource 颜色。 -->
+  <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="9" Margin="20,0" VerticalAlignment="Center">
+   <Grid Width="6" Height="6" VerticalAlignment="Center">
+    <Ellipse x:Name="StatusDotNeutral" Width="6" Height="6" Fill="{ThemeResource StartupMutedBrush}"/>
+    <Ellipse x:Name="StatusDotBusy" Width="6" Height="6" Fill="{ThemeResource StartupAccentBrush}" Visibility="Collapsed"/>
+    <Ellipse x:Name="StatusDotWarning" Width="6" Height="6" Fill="{ThemeResource StartupWarningBrush}" Visibility="Collapsed"/>
+    <Ellipse x:Name="StatusDotError" Width="6" Height="6" Fill="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
+    <Ellipse x:Name="StatusDotSuccess" Width="6" Height="6" Fill="{ThemeResource StartupSuccessBrush}" Visibility="Collapsed"/>
+   </Grid>
+   <TextBlock x:Name="StatusText" FontSize="11" VerticalAlignment="Center" Opacity="0.65"/>
+  </StackPanel>
  </Grid>
 </Window>
