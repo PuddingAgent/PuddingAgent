@@ -190,6 +190,12 @@ public sealed record BrowserInteractionToolValue
     public required BrowserTabToolValue Page { get; init; }
     public BrowserElementToolValue? Element { get; init; }
 
+    /// <summary>本次工具调用的原 operationId（回执可据此与 Desktop 活动/账本关联）。</summary>
+    public string? OperationId { get; init; }
+
+    /// <summary>宿主注入的工具调用 id（Origin），供两侧活动记录 join；缺失则为 null。</summary>
+    public string? ToolCallId { get; init; }
+
     /// <summary>
     /// 回执是否可当作成功：只对 <c>verified</c> 或明确标注的 <c>dispatched</c> 为真；
     /// unknown/blocked/failed 为假，但**不丢失已派发的事实**（见 <see cref="Completion"/> 与

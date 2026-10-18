@@ -371,7 +371,8 @@ public sealed class BrowserInteractTool(
                 ? observedElement
                 : null;
             var receipt = BrowserInteractionReceipt.Build(new BrowserInteractionEvidence(
-                new OperationId(Guid.NewGuid().ToString("N")),
+                // 回执使用**本次调用的原 operationId**（而非新 Guid），使 Core/Desktop 两侧能按同一 id 关联。
+                call.OperationId,
                 MapAction(action, args.Checked),
                 RequestedText: args.Text,
                 RequestedValues: args.Values,
@@ -415,6 +416,9 @@ public sealed class BrowserInteractTool(
 
                     Element = element is { } observed ? ToValue(observed) : null,
 
+                    // 关联 id：与本次工具调用同一个 operationId；ToolCallId 供 UI/Desktop 活动记录 join。
+                    OperationId = call.OperationId.Value,
+                    ToolCallId = OriginAccessor.Current?.ToolCallId,
                     Ok = receipt.Ok,
                     Completion = BrowserActionCompletionWire.NameOf(receipt.Completion),
                     Execution = BrowserActionExecutionWire.NameOf(receipt.Execution),

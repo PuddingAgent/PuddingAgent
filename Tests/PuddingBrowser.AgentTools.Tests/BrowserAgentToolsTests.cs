@@ -299,8 +299,9 @@ public sealed class BrowserAgentToolsTests
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
         var surface = new FakeCapabilitySurface(runtime) { MarkInteractElementAsPreActionObservation = true };
+        var callContexts = new FakeCallContextFactory();
         var result = await ExecuteAsync(
-            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            new BrowserInteractTool(surface, callContexts, _originAccessor),
             JsonSerializer.Serialize(new
             {
                 action = "fill",
@@ -317,6 +318,10 @@ public sealed class BrowserAgentToolsTests
         Assert.Equal("unverified", value.GetProperty("verification").GetString());
         Assert.Equal(0, value.GetProperty("assertions").GetArrayLength());
         Assert.True(value.GetProperty("requiresFollowUp").GetBoolean());
+
+        // 关联 id：回执必须带本次调用的原 operationId（而不是新 Guid）。
+        Assert.NotNull(callContexts.LastOperationId);
+        Assert.Equal(callContexts.LastOperationId!.Value, value.GetProperty("operationId").GetString());
     }
 
     [Fact]
@@ -3036,16 +3041,23 @@ internal sealed class FakeCallContextFactory : IDesktopCapabilityCallContextFact
     /// <summary>最近一次收到的权限证据摘要（用于断言工具确实把证据带到能力调用上下文）。</summary>
     public string? LastPermissionEvidenceSummary { get; private set; }
 
+    /// <summary>最近一次生成的调用 operationId（用于断言回执关联的是同一个 id）。</summary>
+    public OperationId? LastOperationId { get; private set; }
+
     public DesktopCallContext? TryCreate(string? permissionEvidenceSummary, TimeSpan? timeout = null)
     {
         LastPermissionEvidenceSummary = permissionEvidenceSummary;
         return TryCreate(timeout);
     }
 
-    public DesktopCallContext? TryCreate(TimeSpan? timeout = null) => new(
-        new DesktopInstanceId("desk-test"),
-        OperationId.NewId(),
-        DateTimeOffset.UtcNow.AddMinutes(1));
+    public DesktopCallContext? TryCreate(TimeSpan? timeout = null)
+    {
+        LastOperationId = OperationId.NewId();
+        return new(
+            new DesktopInstanceId("desk-test"),
+            LastOperationId,
+            DateTimeOffset.UtcNow.AddMinutes(1));
+    }
 }
 
 internal sealed class FakeBrowserRuntime : IBrowserRuntime
