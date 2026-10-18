@@ -337,10 +337,44 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
+    public void PageCreate_MapsToTabsNewWithoutAPinnedVersionButActivateIsBlockedByTheTabsH3Gap()
+    {
+        var command = Command(
+            BrowserBridgeCommandNames.PageCreate,
+            "ctx",
+            null,
+            new PageCreateArguments { InitialUrl = "https://example.com/new", Activate = false });
+
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            command, out var descriptor, out var request, out var reason), reason);
+
+        Assert.Equal(DesktopCapability.BrowserTabs, descriptor!.Capability);
+        var tabs = request!.Tabs;
+        Assert.NotNull(tabs);
+        Assert.Equal(DesktopTabAction.New, tabs!.Action);
+        Assert.Null(tabs.Target);
+        Assert.Equal("ctx", tabs.ContextId);
+        Assert.Equal("https://example.com/new", tabs.Url!.AbsoluteUri);
+        Assert.False(tabs.Activate);
+        Assert.False(tabs.ExpectedPageVersion.IsKnown);
+
+        // activate/close 与 interact 同类：契约要求钉版本、线缆没有 ⇒ fail-closed。
+        var activate = Command(
+            BrowserBridgeCommandNames.PageActivate,
+            "ctx",
+            "page",
+            new PageActivateArguments { PageId = "page" });
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            activate, out _, out _, out var activateReason));
+        Assert.Contains("H3", activateReason, StringComparison.Ordinal);
+        Assert.Contains("expectedPageVersion", activateReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UnmappedCommands_FailClosedInsteadOfFallingBack()
     {
         // 尚未迁移的命令不得"看起来成功"或回退到 controller：返回 false 并给出原因。
-        var command = Command(BrowserBridgeCommandNames.PageActivate, "ctx", "page");
+        var command = Command(BrowserBridgeCommandNames.PageList, "ctx", "page");
         Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
             command, out var descriptor, out var request, out var reason));
 

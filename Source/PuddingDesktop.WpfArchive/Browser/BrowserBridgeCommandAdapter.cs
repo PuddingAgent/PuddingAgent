@@ -16,7 +16,8 @@ namespace PuddingDesktop.Browser;
 /// · `page.locate` → `browser.locate`（kind/name/exact/nth/hasText 逐字段；未知 kind 拒绝）；
 /// · `page.waitFor` → `browser.wait_for`（单条件映射；多条件/无条件显式拒绝，不静默挑优先级）；
 /// · `page.screenshot` → `browser.screenshot`（必须钉住版本；scope/detail/format 严格解析）；
-/// · `page.interact` → `browser.interact`（H3：必须带 `expectedPageVersion`；action/scrollTarget 严格解析）。
+/// · `page.interact` → `browser.interact`（H3：必须带 `expectedPageVersion`；action/scrollTarget 严格解析）；
+/// · `page.create` → `browser.tabs`(New，唯一不钉版本的动作)；`page.activate/close` 暂不可映射（线缆缺版本，H3 tabs 变体）。
 ///
 /// 后续切片按"快照/定位/等待 → 交互/tabs → 截图"扩充，再切换派发器入口。映射失败的
 /// <c>reason</c> 必须可行动（缺 context/page id、参数非法、能力未注册、尚未映射），不得
@@ -32,6 +33,7 @@ public static class BrowserBridgeCommandAdapter
     internal const string WaitForCapabilityName = "browser.wait_for";
     internal const string ScreenshotCapabilityName = "browser.screenshot";
     internal const string InteractCapabilityName = "browser.interact";
+    internal const string TabsCapabilityName = "browser.tabs";
 
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
@@ -57,10 +59,57 @@ public static class BrowserBridgeCommandAdapter
             return true;
         }
 
-        if (string.IsNullOrEmpty(command.PageId) || string.IsNullOrEmpty(command.ContextId))
+        // page.create 是唯一不需要既有页面目标的命令（新建标签页），其余页面命令必须显式目标。
+        if (!string.Equals(command.Name, BrowserBridgeCommandNames.PageCreate, StringComparison.Ordinal)
+            && (string.IsNullOrEmpty(command.PageId) || string.IsNullOrEmpty(command.ContextId)))
         {
             reason = "page commands must carry explicit context and page ids";
             return false;
+        }
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.PageCreate, StringComparison.Ordinal))
+        {
+            // 新建标签页是唯一"不钉版本"的 tabs 动作（没有已存在页面可钉）。
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(TabsCapabilityName, out var tabsDescriptor))
+            {
+                reason = $"capability '{TabsCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(command.ContextId))
+            {
+                reason = "page.create requires an explicit context id";
+                return false;
+            }
+
+            PageCreateArguments? createArgs;
+            try
+            {
+                createArgs = command.Arguments.Deserialize<PageCreateArguments>(WebJson);
+            }
+            catch (JsonException)
+            {
+                reason = "page.create arguments are not valid JSON";
+                return false;
+            }
+
+            Uri? url = null;
+            if (!string.IsNullOrWhiteSpace(createArgs?.InitialUrl))
+            {
+                if (!Uri.TryCreate(createArgs!.InitialUrl, UriKind.Absolute, out url)
+                    || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
+                {
+                    reason = "page.create initialUrl must be an absolute http/https URL";
+                    return false;
+                }
+            }
+
+            request = DesktopCapabilityRequest.ForTabs(BrowserTabsRequest.New(
+                command.ContextId.Trim(),
+                url,
+                createArgs?.Activate ?? true));
+            descriptor = tabsDescriptor;
+            return true;
         }
 
         var target = new DesktopPageTarget(command.ContextId, command.PageId);
@@ -388,6 +437,15 @@ public static class BrowserBridgeCommandAdapter
             request = interactRequest;
             descriptor = interactDescriptor;
             return true;
+        }
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.PageActivate, StringComparison.Ordinal)
+            || string.Equals(command.Name, BrowserBridgeCommandNames.PageClose, StringComparison.Ordinal))
+        {
+            // 与 interact 同一类 H3 缺口：tabs 的 activate/close 契约要求钉住版本，线缆目前没有。
+            reason = $"'{command.Name}' cannot be mapped yet: the bridge wire carries no expectedPageVersion, "
+                + "and tab operations must pin the page version they act on (H3 protocol gap, tabs variant)";
+            return false;
         }
 
         if (!string.Equals(command.Name, BrowserBridgeCommandNames.PageGetInfo, StringComparison.Ordinal))
