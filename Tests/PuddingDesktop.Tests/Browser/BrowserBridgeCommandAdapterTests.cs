@@ -382,16 +382,46 @@ public sealed class BrowserBridgeCommandAdapterTests
     }
 
     [Fact]
-    public void UnmappedCommands_FailClosedInsteadOfFallingBack()
+    public void ContextCommandsAndPageList_MapToContextDiscoveryAndManagement()
     {
-        // 尚未迁移的命令不得"看起来成功"或回退到 controller：返回 false 并给出原因。
-        var command = Command(BrowserBridgeCommandNames.PageList, "ctx", "page");
-        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
-            command, out var descriptor, out var request, out var reason));
+        // 发现/管理面：context.getInfo 与 page.list 都由一次 browser.contexts 读取满足
+        //（DesktopContextInfo.pages 包含页面与版本），不做第二条发现能力。
+        var pageList = Command(BrowserBridgeCommandNames.PageList, null, null);
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            pageList, out var listDescriptor, out var listRequest, out var listReason), listReason);
+        Assert.Equal(DesktopCapability.BrowserContexts, listDescriptor!.Capability);
+        Assert.NotNull(listRequest!.Contexts);
 
-        Assert.Null(descriptor);
-        Assert.Null(request);
-        Assert.Contains("not mapped", reason, StringComparison.Ordinal);
+        var contextInfo = Command(BrowserBridgeCommandNames.ContextGetInfo, "ctx", null);
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            contextInfo, out var infoDescriptor, out var infoRequest, out var infoReason), infoReason);
+        Assert.Equal(DesktopCapability.BrowserContexts, infoDescriptor!.Capability);
+        Assert.NotNull(infoRequest!.Contexts);
+
+        var create = Command(
+            BrowserBridgeCommandNames.ContextCreate,
+            null,
+            null,
+            new ContextCreateArguments { ContextId = "ctx-new" });
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            create, out var createDescriptor, out var createRequest, out var createReason), createReason);
+        Assert.Equal(DesktopCapability.BrowserContextCreate, createDescriptor!.Capability);
+        Assert.Equal("ctx-new", createRequest!.ContextCreate!.ContextId);
+
+        var close = Command(
+            BrowserBridgeCommandNames.ContextClose,
+            "ctx",
+            null,
+            new ContextCloseArguments { ContextId = "ctx" });
+        Assert.True(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            close, out var closeDescriptor, out var closeRequest, out var closeReason), closeReason);
+        Assert.Equal(DesktopCapability.BrowserContextClose, closeDescriptor!.Capability);
+        Assert.Equal("ctx", closeRequest!.ContextClose!.ContextId);
+
+        var closeWithoutId = Command(BrowserBridgeCommandNames.ContextClose, null, null);
+        Assert.False(BrowserBridgeCommandAdapter.TryMapReadCommand(
+            closeWithoutId, out _, out _, out var closeNoIdReason));
+        Assert.Contains("requires a context id", closeNoIdReason, StringComparison.Ordinal);
     }
 
     private static BrowserBridgeCommand Command(

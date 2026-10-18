@@ -34,6 +34,8 @@ public static class BrowserBridgeCommandAdapter
     internal const string ScreenshotCapabilityName = "browser.screenshot";
     internal const string InteractCapabilityName = "browser.interact";
     internal const string TabsCapabilityName = "browser.tabs";
+    internal const string ContextCreateCapabilityName = "browser.context.create";
+    internal const string ContextCloseCapabilityName = "browser.context.close";
 
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
@@ -48,6 +50,78 @@ public static class BrowserBridgeCommandAdapter
         reason = null;
 
         if (string.Equals(command.Name, BrowserBridgeCommandNames.ContextList, StringComparison.Ordinal))
+        {
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(ContextsCapabilityName, out descriptor))
+            {
+                reason = $"capability '{ContextsCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            request = DesktopCapabilityRequest.ForContexts();
+            return true;
+        }
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.ContextCreate, StringComparison.Ordinal))
+        {
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(ContextCreateCapabilityName, out var createDescriptor))
+            {
+                reason = $"capability '{ContextCreateCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            ContextCreateArguments? createArgs;
+            try
+            {
+                createArgs = command.Arguments.Deserialize<ContextCreateArguments>(WebJson);
+            }
+            catch (JsonException)
+            {
+                reason = "context.create arguments are not valid JSON";
+                return false;
+            }
+
+            request = DesktopCapabilityRequest.ForContextCreate(
+                new BrowserContextCreateRequest(createArgs?.ContextId));
+            descriptor = createDescriptor;
+            return true;
+        }
+
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.ContextClose, StringComparison.Ordinal))
+        {
+            if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(ContextCloseCapabilityName, out var closeDescriptor))
+            {
+                reason = $"capability '{ContextCloseCapabilityName}' is not registered in the capability catalog";
+                return false;
+            }
+
+            ContextCloseArguments? closeArgs;
+            try
+            {
+                closeArgs = command.Arguments.Deserialize<ContextCloseArguments>(WebJson);
+            }
+            catch (JsonException)
+            {
+                reason = "context.close arguments are not valid JSON";
+                return false;
+            }
+
+            var contextToClose = closeArgs?.ContextId ?? command.ContextId;
+            if (string.IsNullOrWhiteSpace(contextToClose))
+            {
+                reason = "context.close requires a context id";
+                return false;
+            }
+
+            request = DesktopCapabilityRequest.ForContextClose(
+                new BrowserContextCloseRequest(contextToClose.Trim()));
+            descriptor = closeDescriptor;
+            return true;
+        }
+
+        // 发现面：controller 的 context.getInfo 与 page.list 都可由一次 browser.contexts 读取满足
+        //（DesktopContextInfo.pages 含目标页/版本），只是返回面更宽；不做第二条发现能力。
+        if (string.Equals(command.Name, BrowserBridgeCommandNames.ContextGetInfo, StringComparison.Ordinal)
+            || string.Equals(command.Name, BrowserBridgeCommandNames.PageList, StringComparison.Ordinal))
         {
             if (!Pudding.Contracts.DesktopCapabilities.TryGetByName(ContextsCapabilityName, out descriptor))
             {
