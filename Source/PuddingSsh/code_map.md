@@ -2,7 +2,7 @@
 
 > 设计依据：[SSH 工具组件化设计与实施方案](../../Docs/12_features/SSH工具组件化设计与实施方案-2026-10-08.md)
 > （§4 组件与依赖边界、§6 凭据与主机验证、§7 工具合同、§9 并发/输出/超时、§10 诊断合同、§12 实施顺序）。
-> 宿主接入前置合同：[ADR-096](../../Docs/07_architecture/110ADR-096SSH执行前置围栏与有界终止ADR.md)、[代码级修补方案](../../Docs/12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md)与[资源生命周期补充方案](../../Docs/12_features/SSH资源生命周期补充修补方案-2026-10-12.md)。组件没有宿主消费方，三个 Agent 工具尚未装配。
+> 宿主接入前置合同：[ADR-096](../../Docs/07_architecture/110ADR-096SSH执行前置围栏与有界终止ADR.md)、[代码级修补方案](../../Docs/12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md)与[资源生命周期补充方案](../../Docs/12_features/SSH资源生命周期补充修补方案-2026-10-12.md)。组件没有宿主消费方，五个 Agent 工具尚未装配。
 >
 > 边界硬规则（`Docs/10_conventions/组件化交付规程.md` §2.2，判据是**编译期失败**）：
 > `ProjectReference` **必须为 0**；不得引用 `PuddingCore` / `PuddingRuntime` / `PuddingPlatform` /
@@ -153,6 +153,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Source/PuddingSshTests/Fixtures/` | **真实 OpenSSH** 产物：`ssh-keyscan` 明文记录、`ssh-keygen -H` 哈希记录、`@revoked` 变体、不支持形态、`ssh-keygen -lf -E sha256` 指纹与 `ssh-keygen -F` 交叉核对结论 |
 | `TestScripts/ssh-probe/make-known-hosts-fixtures.sh` | fixture 生成器（含 port-22/IPv6 真实扫描与 derived 标注），证明期望值来自 OpenSSH 而非本组件 |
 | `Source/PuddingSsh.Probe/` + `TestScripts/ssh-probe/run-ssh-probe.ps1` | 真实协议探针 **24 个场景**（见下「关键语义」） |
+| [TestScripts/ssh-probe/review-counterexamples/ReviewCounterexamples.csproj](../../TestScripts/ssh-probe/review-counterexamples/ReviewCounterexamples.csproj) | 隔离反例复现器：上传所有权、下载限额、能力探测与清理事实；退出码表示缺陷是否复现，不作为验收门禁 |
 
 **关键语义**
 

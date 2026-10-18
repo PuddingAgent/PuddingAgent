@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>PuddingSshTests</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../Source/PuddingSsh/PuddingSsh.csproj" />
+    <Compile Include="Program.cs" />
+    <Compile Include="../../../Source/PuddingSshTests/SshFakes.cs" />
+    <Compile Include="../../../Source/PuddingSshTests/SshFakes.Transfer.cs" />
+    <Compile Include="../../../Source/PuddingSshTests/SshFakes.TransferSession.cs" />
+  </ItemGroup>
+</Project>

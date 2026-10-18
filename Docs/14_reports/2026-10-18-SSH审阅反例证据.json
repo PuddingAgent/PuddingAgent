@@ -1,0 +1,167 @@
+{
+  "reviewed_base_commit": "e96f24ef26ad3a9069f77f919c73f62b70883b8b",
+  "review_date": "2026-10-18",
+  "existing_unit_tests": {
+    "passed": 289,
+    "failed": 0,
+    "skipped": 0
+  },
+  "real_protocol_matrix_rerun": false,
+  "evidence_kind": "Isolated counterexamples with real component code and controlled ports; no live SSH server",
+  "counterexamples": {
+    "confirmed": 6,
+    "count": 6,
+    "cases": [
+      {
+        "id": "R1_upload_deletes_race_winner",
+        "reproduced": true,
+        "evidence": {
+          "status": "Failed",
+          "ErrorCode": "ssh.transfer_failed",
+          "RaceTriggered": true,
+          "deletedOtherFile": true,
+          "deleted": [
+            "/srv/upload/.pudding-cap-x-0413bcf987",
+            "/srv/upload/.pudding-cap-b-0413bcf987",
+            "/srv/upload/.pudding-cap-d-0413bcf987",
+            "/srv/upload/target"
+          ]
+        }
+      },
+      {
+        "id": "R2_download_exceeds_limit",
+        "reproduced": true,
+        "evidence": {
+          "status": "Completed",
+          "reportedSize": 1,
+          "limit": 1024,
+          "BytesTransferred": 4096,
+          "publishedSize": 4096
+        }
+      },
+      {
+        "id": "R3_capability_wait_outlives_deadline",
+        "reproduced": true,
+        "evidence": {
+          "deadlineMs": 150,
+          "observedAfterMs": 400,
+          "blocked": true,
+          "activeWorkers": 0,
+          "stop": {
+            "PendingOperations": 1,
+            "PendingCleanups": 0,
+            "PendingResources": 0,
+            "TimedOut": true,
+            "CancelCallbacksPending": false
+          },
+          "returnedStatus": "Completed"
+        }
+      },
+      {
+        "id": "R4_download_published_then_capability_exception",
+        "reproduced": true,
+        "evidence": {
+          "exception": "UnauthorizedAccessException",
+          "published": true,
+          "WriteAttempts": 1
+        }
+      },
+      {
+        "id": "R5_cancel_discards_leftover_evidence",
+        "reproduced": true,
+        "evidence": {
+          "status": "Cancelled",
+          "TemporaryLeftBehind": false,
+          "TemporaryPath": null,
+          "BytesTransferred": 0,
+          "cleanup": "Completed",
+          "actualLeftOnServer": "our-"
+        }
+      },
+      {
+        "id": "R6_real_exec_close_ignores_narrower_budget",
+        "reproduced": true,
+        "evidence": {
+          "configuredCleanupMs": 50,
+          "actualSessionBudgetMs": 2000,
+          "status": "Completed"
+        }
+      }
+    ]
+  },
+  "source_sha256": {
+    "Source/PuddingSsh.Probe/ProbeOptions.cs": "19E15C0FB4FCAE0BDAE3FCCE2D1A9E423A3FA165A9441D5BF43F1312442A90B3",
+    "Source/PuddingSsh.Probe/ProbeSupport.cs": "6D60E81225A040D83165CCE36E9057BA7E77D8DE80611CA8E59FF6E9AB223C4D",
+    "Source/PuddingSsh.Probe/Program.CwdGuardScenario.cs": "0B6BF1B990DC36BC7DCDC6334ADD2A8ADCF394F2EE9A8DE51B0C5604913368E5",
+    "Source/PuddingSsh.Probe/Program.LimitScenarios.cs": "663BAAD02C61D7897B612224B497611061E7476409864163389CBFBAFE6EC826",
+    "Source/PuddingSsh.Probe/Program.ScopeScenarios.cs": "71CF940A1283AAC073C057971590600655AF5158A29EF81B2FCE8D48E9DD23CD",
+    "Source/PuddingSsh.Probe/Program.TransferScenario.cs": "951DAB66916CD457AD9939BEB75A426EBDEC93F6E2513313FA51B9B3015B7936",
+    "Source/PuddingSsh.Probe/Program.cs": "8265E0E102BC9FDF4740F9F3E260379BAB65A348061EB4F47F30256C950C3350",
+    "Source/PuddingSsh.Probe/PuddingSsh.Probe.csproj": "76DF954FF1A5ACAA8684471EF048F9DA0813239B07453CD79F417066D5DEDF58",
+    "Source/PuddingSsh/Contracts/SshHostContext.cs": "3D7BED881C3F615B47DD6AEEB9F65498CCCA202F96349CE00BD3FC714F93260A",
+    "Source/PuddingSsh/Contracts/SshLimits.cs": "7647A6C503C96108024D014CE776C683131D8548AD20B4D9E00B04322B734986",
+    "Source/PuddingSsh/Contracts/SshPorts.cs": "DA1F9583C65767AAC9391EDB2594509BFAEBDDC3F5C5181D9C8905BF12FA4EF6",
+    "Source/PuddingSsh/Contracts/SshRequests.cs": "695DD30F189132CC7B6B5F973B1D565AEFF8E34A9514EA3CAA43BBF325CDAFC7",
+    "Source/PuddingSsh/Contracts/SshResults.cs": "1CF847AAE07571FA871748A80987F34DD36C3519C8242A4E5727BB92CBFE5016",
+    "Source/PuddingSsh/Contracts/SshTargets.cs": "1F9F87D1135777945985F5FEF26344CE36E54A60BC6C02D476FF5676EC4E970B",
+    "Source/PuddingSsh/Contracts/SshTransferContracts.cs": "7848F2331307F0490DC8C3F9E299E6F7A564268542DFE30A1D9452BD99C75C64",
+    "Source/PuddingSsh/Contracts/SshTransferPorts.cs": "3D9341C3401DFF4917F751661069FD340A2445785BDFD8E5C70C237DF053E467",
+    "Source/PuddingSsh/Diagnostics/SshDiagnosticText.cs": "474376544190B689A2AE83471615CDAAE6D8EAE69973F35B2B8FC679933249B9",
+    "Source/PuddingSsh/Diagnostics/SshDiagnostics.cs": "8FC32860ACE121588FB9DDD8648A3BCD22EB2AD322152D997238C03DAC8013CF",
+    "Source/PuddingSsh/Diagnostics/SshFailureClassifier.cs": "F7FE8CB23A7146FEF979C396DAC31E6DB81BF075A82A200AC7EA7FE996BF9734",
+    "Source/PuddingSsh/Diagnostics/SshOutcomePolicy.cs": "B0F1F157DD4B422B502FB5C7D515E77E9DAF747C96F58C685CAB933FB2BDAAF6",
+    "Source/PuddingSsh/Execution/SshBoundedDrain.cs": "35F5259298D621E0D0CBE0849B7EB9230125F66A5B05CF44DA8703007706BCC5",
+    "Source/PuddingSsh/Execution/SshBoundedOutputCollector.cs": "70E7D1231E5A31E66F35988335FCDBFEC7FBA517E8DA079585CEDF2E6627D281",
+    "Source/PuddingSsh/Execution/SshCleanupBudget.cs": "5216A68253CCFD16581F1F9A727699A97D86EAE1B2519B5F7A7D0A5025641852",
+    "Source/PuddingSsh/Execution/SshCleanupQuarantine.cs": "D530A8A685D8EBCCC4E604809E0FAFAB4742706B5AAC6664EFB0BD2A15436C65",
+    "Source/PuddingSsh/Execution/SshCoordinatorOptions.cs": "EF5B19FFB7143A7E57B3DA40301F35DCF93D52B40D332442E9A54252198AD569",
+    "Source/PuddingSsh/Execution/SshIdentityOwner.cs": "94CBCAA5C258A01E4ABA99D272B5B1A0621D8D7F79B75F1FDF6B903977DCC467",
+    "Source/PuddingSsh/Execution/SshOperationCoordinator.cs": "C9C0021517D24A9C867628F9314CC5D4F1D37C94C31BE5EFE51FDD7F9F993EF6",
+    "Source/PuddingSsh/Execution/SshOperationLifetime.cs": "69EC7CB2BA2EB97C5C554439AACB2BE4A29C1BED7F87E6383A2329F486F6BD06",
+    "Source/PuddingSsh/Execution/SshResourceLease.cs": "F1F13B592027F8F739151D20BACC01BF64F97A3ED30052AA9C3A2221EDC7A0DA",
+    "Source/PuddingSsh/Execution/SshStageWorkerPool.cs": "215156389F58FE6D006DC69401AA228EDC80ED7EB93724F86BBFE227E66011CB",
+    "Source/PuddingSsh/Execution/SshStreamDrainResult.cs": "EB41A3823A2EA60C3CCFE08EFD1AB4D7D88C0D28BA757386E0D6BB4D8F6E4CA4",
+    "Source/PuddingSsh/PuddingSsh.csproj": "1CFB906F2A253599A5F406E6DF5D800B2F9D99B34B09301FDA20A7D3B9ABBDE0",
+    "Source/PuddingSsh/Transport/SshNetTransportFactory.cs": "D8E4C0B9A4F3084EDC8A48CA310E096DCFAB40242B563CB66162CBD3FD5E35C4",
+    "Source/PuddingSsh/Transport/SshNetTransportSession.cs": "37DE9DE20F7E9A3E8CA65ED7ECFFF1A33335D6B35E9F1B81092775EFC752A718",
+    "Source/PuddingSsh/Transport/SshSftpChannel.cs": "7FCB685C883E96DE46407BFB57D52358878EC0D9CC3E261F2EE68BBCF604F8E8",
+    "Source/PuddingSsh/Transport/SshSftpTransferSession.cs": "5E1518678712C07FF913BE71EAB0C7220793CC030868C0D28E71B7BAA1BA020B",
+    "Source/PuddingSsh/Validation/SshHostTokens.cs": "F56BE9C62EEBE429A6AA3520C1C6BA43C7656E4237FE620D8EEA1A0D7D2B6E52",
+    "Source/PuddingSsh/Validation/SshKnownHostsParser.cs": "04D8BED15E2E852A60AE63153D0F24E85DD7C3DDCF5357483B308E8A042A5117",
+    "Source/PuddingSsh/Validation/SshLocalFileSystem.cs": "B0758E7922C8ED15473011D7E0B95C510DDF4A607C26BE7A9DE6EC6A8ABB0E7C",
+    "Source/PuddingSsh/Validation/SshLocalPathPolicy.cs": "878904828DD5D2E76E5B9653268F893D159AD75ECBAB96CCCDA50DFF9B78B3F1",
+    "Source/PuddingSsh/Validation/SshPosixCommand.cs": "7E84C6FA000F1A237D730B576603C0125EE02948EE5A535CED5F624AD8C1ACFD",
+    "Source/PuddingSsh/Validation/SshRemotePathPolicy.cs": "528F7FAD474AD4309B961B38097F02AFAA8877D840A54E8BE1250166A828B907",
+    "Source/PuddingSsh/Validation/SshRequestValidator.cs": "39198B777DD378D2C9F990D593CF80A8AF1CE3C445C613E20B67F8A13C6E419E",
+    "Source/PuddingSsh/Validation/SshTransferValidator.cs": "A04C2AF16246A3E314A4E7D925A8E429EB877689D0E2409FB78A0B291563D919",
+    "Source/PuddingSsh/Validation/SshTrustSnapshot.cs": "CEDAFF4D16F9FB0473BFDC04623EE5FEE03D41CD43F7501479877B4D212A7985",
+    "Source/PuddingSshTests/ComponentBoundaryTests.cs": "9CB1CF1FFE6FF7B10B619FD7E2390E554EFA8C73CEA20A857DC68AAE37182546",
+    "Source/PuddingSshTests/MSTestSettings.cs": "CA8DC9FE159287C02D0674DFBD531507639EBC7B063B3487DC1306B1FBCF4241",
+    "Source/PuddingSshTests/PuddingSshTests.csproj": "91A75D8711D9D2FF0FF61C2183B4F3A66556CCFE8DD6B354B09DAF8E07AC9B11",
+    "Source/PuddingSshTests/SshBoundedOutputCollectorTests.cs": "66B58C08868080DE5E5AA273973282BCF6304D03488EB5334C558BEE81D7487F",
+    "Source/PuddingSshTests/SshCommandAndRequestTests.cs": "3F44EB86EAF538159D79005186AB67DE30F9E3A65A4FD2FF65D434FD5419A09F",
+    "Source/PuddingSshTests/SshFailureClassifierTests.cs": "6975B2BE63FB49D5EFFBC4EC0BCEEFBC33D46E9AEDBD2CCFEC958D950738A796",
+    "Source/PuddingSshTests/SshFakes.Transfer.cs": "8988CDF7A4533A274B0DA5A292AA3C5190FB9E2B75BF0B65B118D7AF4B65A335",
+    "Source/PuddingSshTests/SshFakes.TransferSession.cs": "458B9CA7450B0BFFF72C912D43692DE1E866F829C62B0A269855DD510AB00E85",
+    "Source/PuddingSshTests/SshFakes.cs": "54F50D91BA3A5CFEBB558A84F4788F266E84D4EED2DC1D91F817AEAE75783EA6",
+    "Source/PuddingSshTests/SshFixtures.cs": "93DABB22208E0C248BF3B1AFC3F9F20C5B5EB04B19FEC8EA1CAD1DC5D1EF3859",
+    "Source/PuddingSshTests/SshIdentityOwnershipTests.cs": "C7183C039E3E5607558C72D80837A4D5EE3782034A1B0FFD9C31FF916A8D05A6",
+    "Source/PuddingSshTests/SshLimitsValidationTests.cs": "788D77464AE1335DAAADF4DC3E30C9C83EDE25D700C666BECBA1BCFEFC3B151A",
+    "Source/PuddingSshTests/SshOperationCoordinatorFaultMatrixTests.cs": "F737A61EA481D0CD407C88B9F49526F9EEDA21B85B9122C7DEAB6ABF2B24DBAC",
+    "Source/PuddingSshTests/SshOperationLifetimeFenceTests.cs": "BECEADDD3562309BACCD6A3A65653D792CC9E048A8543243D156ADB47D233553",
+    "Source/PuddingSshTests/SshOutputIntegrityTests.cs": "0081A2B810B0C6F5BBC174821B8AA9227866D4D3CD3FAD9ACE8D83E460A394B8",
+    "Source/PuddingSshTests/SshPosixCommandGuardTests.cs": "9A54425BCABEF33AD0F69FEC79D0A572907C4A4D1C3D5576772793791B14CFAA",
+    "Source/PuddingSshTests/SshResourceAccountingTests.cs": "59A2B8C7F1BD340C549D2B2ABB40FD5EE15C9DE8D02BEBBC52DF38F8FFA46F38",
+    "Source/PuddingSshTests/SshResourceLeaseTests.cs": "F1AAB396E487B9A3129986C99A3470E2BF35AC827C24557A2F758DDC1E72F641",
+    "Source/PuddingSshTests/SshSyncEntryBoundaryTests.cs": "B201E8ACB7A220CEE3ED3EE6261FB70BB2FA63AA977BBF9B94E589E587E5469E",
+    "Source/PuddingSshTests/SshTransferCoordinatorTests.cs": "788F55F8C7B7C47217CB06CF6DD25AE747B21E3AB01D7E84721E9B50CD3E1B9C",
+    "Source/PuddingSshTests/SshTransferSessionTests.cs": "D24FF389366F7E5AF47228E055A5CCBF3DE2F7C2A58891A0792AF3315E0C72F5",
+    "Source/PuddingSshTests/SshTransferValidationTests.cs": "BB19C48869C7006EB8ED0B3BFF04F565B17BCE09E23F565F13D3333EC554321B",
+    "Source/PuddingSshTests/SshTrustSnapshotRealFixtureTests.cs": "5CB3150D2BCE548DD6A254375D508A0E17D5B97560D80F61DFE805DFB942F379",
+    "Source/PuddingSshTests/SshValidationTests.cs": "37023988A909F9835A469B28319957EFE18A63B9E8EA5A7D4980E5E7AF0A08A5",
+    "TestScripts/ssh-probe/make-known-hosts-fixtures.sh": "4AE7860424FEDE6C45A9D53198DECEDC0DB6D3887E0BCCC49B55FE4A4F8DEEEA",
+    "TestScripts/ssh-probe/prepare-scope-dirs.sh": "B7E7E133A00E7220440B0B3A1963C2B7F6703270A71488D33F3D6CD783B7A0FF",
+    "TestScripts/ssh-probe/run-ssh-probe.ps1": "B34085A3A5F7F02D98F8BF74DB3E707477DCD71EBEE93B383B4275E2D8CB02B9",
+    "TestScripts/ssh-probe/setup-wsl-sshd.sh": "2F9BE772DDA4260B796A0C53D8F96D2E5F2E60431F8BD688FFFA4FF059C78216"
+  }
+}
