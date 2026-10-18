@@ -244,6 +244,37 @@ public sealed class MutationInvariantTests
         Assert.Equal(DesktopCapabilityErrorCode.InternalError, response.Error!.Code);
     }
 
+    [Fact]
+    public async Task TabNew_IsAdmittedWithoutAnExistingPage()
+    {
+        // 空上下文（零页面）是全新会话最常见的起点。browser.tabs 的**能力级** trait 带 RequiresPageTarget，
+        // 而它的 new 动作按操作级策略（BrowserOperationPolicy）属 Management 类、**不需要**页面目标。
+        // 若按能力级判断就会变成「必须先有页面才能新建页面」——实测死锁（2026-10-18）：
+        // Agent 永远拿不到第一个页面，除非用户手动点浏览器 UI 的 + 号。
+        var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true);
+        var created = new DesktopPageTarget("ctx-empty", "page-first");
+        harness.Surface.TabsHandler = (request, _) => Task.FromResult(
+            CapabilityResult<DesktopTabsResult>.Success(new DesktopTabsResult(
+                created,
+                request.Action,
+                new DesktopPageState(
+                    created,
+                    new Uri("https://www.jd.com"),
+                    DesktopPageVersion.Require(1),
+                    DesktopPageReadiness.Loading),
+                tabClosed: false,
+                new DesktopContexts([]))));
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.BrowserTabs,
+            DesktopCapabilityRequest.ForTabs(
+                BrowserTabsRequest.New("ctx-empty", new Uri("https://www.jd.com"))));
+
+        Assert.False(response.IsFailure, response.Error?.Message);
+        Assert.NotNull(response.Tabs);
+        Assert.Equal(1, response.Tabs!.Page.Version.Value);
+    }
+
 /// <summary>DOM 脚本生成与解析：平台无关部分（可脱离 WebView2 测试），解析 fail closed。</summary>
 public sealed class DesktopDomScriptsTests
 {

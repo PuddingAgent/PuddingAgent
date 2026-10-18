@@ -786,7 +786,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             // （更贴近真实触碰时刻的那个窗口）。这里**不再**另加一份 Revalidate —— 同一判据两处实现就是
             // 设计 §1.1 说的"第二份策略来源"，而且实测证明删掉它也拦得住（round-232 取红）。
             return await _dispatcher.InvokeAsync(
-                token => ExecuteOnUiAsync(capability, target, expectedPageVersion, context, action, lease, token),
+                token => ExecuteOnUiAsync(
+                    capability, target, expectedPageVersion, context, action, lease, token, operationOverride),
                 linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -828,7 +829,10 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         DesktopCallContext context,
         Func<CancellationToken, Task<CapabilityResult<TResult>>> action,
         BrowserAutomationLease? admittedLease,
-        CancellationToken token)
+        CancellationToken token,
+        // 复检必须与准入用**同一个动作**：否则能力级回退映射会重新要求页面目标，
+        // 把准入已经放行的动作（如 browser.tabs 的 new）在 UI 线程上再拒一次。
+        BrowserAutomationOperation? operationOverride = null)
     {
         // 排队期间的竞态（外部复核 P0）：接管→恢复、断连、撤销、关闭都会推进控制/授权世代。
         // 按"当前状态"重跑准入**看不出**这个中间过程（接管已被撤销 ⇒ 又会放行），所以必须比对
@@ -847,7 +851,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
 
         // 纯复检（不再次 Admit）：窗口/能力/目标/可信级别/页面版本仍在同一 UI 序列内可判。
         var recheck = ValidateAdmission(
-            capability, target, expectedPageVersion, context, out _, out _, admitAuthority: false);
+            capability, target, expectedPageVersion, context, out _, out _, admitAuthority: false,
+            operationOverride: operationOverride);
         if (recheck is not null)
         {
             return CapabilityResult<TResult>.Failure(recheck);
@@ -1002,10 +1007,22 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         // · 浏览器上下文作用域（Agent 工具层发起、无页面目标）⇒ BrowserContextCallerTrust；
         // · Shell 自身能力（对话框 / Picker / 剪贴板）⇒ ShellCallerTrust（默认 Untrusted，fail closed）。
         // 有页面目标的能力稍后会被 pageState.Trust 覆盖。
-        var trust = DesktopCapabilityPolicy.IsBrowserContextScoped(capability)
+        // §5.3 request-aware：能力级 trait 取的是该能力**最严动作**的并集，不能当作每个动作的要求。
+        // 反例（2026-10-18 实测死锁）：browser.tabs 带 RequiresPageTarget，而它的 new 动作按
+        // BrowserOperationPolicy 属 Management 类、**不需要**页面目标 ⇒ 空上下文（零页面）时
+        // 「必须先有页面才能新建页面」，Agent 永远拿不到第一个页面。
+        // 因此：动作级策略说不需页面目标时，本次调用按**上下文作用域**取信任级，并跳过目标解析。
+        var operationNeedsPageTarget = authorizationOperation is not { } scopedOperation
+            || BrowserOperationPolicy.RequiresPageTarget(scopedOperation);
+        var requiresPageTarget =
+            DesktopCapabilityPolicy.RequiresPageTarget(capability) && operationNeedsPageTarget;
+        var contextScoped =
+            DesktopCapabilityPolicy.IsBrowserContextScoped(capability) || !operationNeedsPageTarget;
+
+        var trust = contextScoped
             ? _options.BrowserContextCallerTrust
             : _options.ShellCallerTrust;
-        if (DesktopCapabilityPolicy.RequiresPageTarget(capability))
+        if (requiresPageTarget)
         {
             if (target is null)
             {
