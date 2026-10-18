@@ -281,6 +281,44 @@ public sealed class BrowserBridgeExecutorRouteExecutionTests
     }
 
     [Fact]
+    public async Task CapabilityErrorCodes_AreMappedToTheStableBridgeCodeTable()
+    {
+        // 能力码 → Bridge 稳定码的对表（近似映射集中在一处，改动必须同步本表）。
+        async Task<string?> MapAsync(DesktopCapabilityErrorCode code)
+        {
+            var route = new BrowserBridgeExecutorRoute((_, _, _, _) =>
+                Task.FromResult(DesktopCapabilityResponse.Failure(
+                    new DesktopCapabilityError(code, "synthetic failure"))));
+            var result = await route.RouteAsync(Command(), CancellationToken.None);
+            Assert.NotNull(result);
+            Assert.False(result!.Success);
+            return result.ErrorCode;
+        }
+
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserUnauthorized,
+            await MapAsync(DesktopCapabilityErrorCode.Unauthorized));
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserPaused,
+            await MapAsync(DesktopCapabilityErrorCode.Paused));
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserUserTakeover,
+            await MapAsync(DesktopCapabilityErrorCode.UserTakeover));
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserInvalidCommand,
+            await MapAsync(DesktopCapabilityErrorCode.InvalidRequest));
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserPageNotFound,
+            await MapAsync(DesktopCapabilityErrorCode.InvalidTarget));
+        Assert.Equal(BrowserBridgeErrorCodes.StaleElementReference,
+            await MapAsync(DesktopCapabilityErrorCode.PageVersionMismatch));
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserBridgeDisconnected,
+            await MapAsync(DesktopCapabilityErrorCode.NotConnected));
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserNotAvailable,
+            await MapAsync(DesktopCapabilityErrorCode.UiUnavailable));
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserOperationNotSupported,
+            await MapAsync(DesktopCapabilityErrorCode.UnsupportedCapability));
+        // 未列入对表的错误码必须落到通用失败，不得伪装成授权/暂停等可重试语义。
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserOperationFailed,
+            await MapAsync(DesktopCapabilityErrorCode.InternalError));
+    }
+
+    [Fact]
     public async Task MissingCallerIdentity_IsRejectedBeforeTouchingTheExecutor()
     {
         var route = new BrowserBridgeExecutorRoute((_, _, _, _) =>
