@@ -62,7 +62,7 @@ public sealed class BrowserBridgeExecutorRouteExecutionTests
         var route = new BrowserBridgeExecutorRoute((_, _, _, _) =>
             throw new InvalidOperationException("must not be called"));
 
-        var result = await route.RouteAsync(Command(BrowserBridgeCommandNames.ContextCreate), CancellationToken.None);
+        var result = await route.RouteAsync(Command("page.future_command"), CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -237,6 +237,46 @@ public sealed class BrowserBridgeExecutorRouteExecutionTests
         Assert.NotNull(close);
         Assert.True(close!.Success);
         // 与旧 controller 兼容：close 成功无载荷。
+        Assert.Null(close.Value);
+    }
+
+    [Fact]
+    public async Task ContextCommands_AreRoutedWithTheirOwnResultShapes()
+    {
+        var createRoute = new BrowserBridgeExecutorRoute((capability, _, _, _) =>
+        {
+            Assert.Equal(DesktopCapability.BrowserContextCreate, capability.Capability);
+            return Task.FromResult(DesktopCapabilityResponse.FromContextCreated(new DesktopContextInfo(
+                "ctx-new",
+                DesktopContextTrust.AgentAuthorized,
+                [])));
+        });
+
+        var create = await createRoute.RouteAsync(
+            Command(BrowserBridgeCommandNames.ContextCreate) with { PageId = null },
+            CancellationToken.None);
+
+        Assert.NotNull(create);
+        Assert.True(create!.Success);
+        Assert.Equal("ctx-new", create.Value!.Value.GetProperty("contextId").GetString());
+
+        var closeRoute = new BrowserBridgeExecutorRoute((capability, _, _, _) =>
+        {
+            Assert.Equal(DesktopCapability.BrowserContextClose, capability.Capability);
+            return Task.FromResult(DesktopCapabilityResponse.FromContextClosed(new DesktopContextClosed("ctx")));
+        });
+
+        var close = await closeRoute.RouteAsync(
+            Command(BrowserBridgeCommandNames.ContextClose) with
+            {
+                Arguments = JsonSerializer.SerializeToElement(
+                    new { contextId = "ctx" },
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(close);
+        Assert.True(close!.Success);
         Assert.Null(close.Value);
     }
 

@@ -33,6 +33,8 @@ public sealed class BrowserBridgeExecutorRoute
     {
         BrowserBridgeCommandNames.ContextList,
         BrowserBridgeCommandNames.ContextGetInfo,
+        BrowserBridgeCommandNames.ContextCreate,
+        BrowserBridgeCommandNames.ContextClose,
         BrowserBridgeCommandNames.PageList,
         BrowserBridgeCommandNames.PageGetInfo,
         BrowserBridgeCommandNames.PageLocate,
@@ -161,7 +163,11 @@ public sealed class BrowserBridgeExecutorRoute
                         (response.Tabs ?? throw new InvalidOperationException("executor returned no tabs result")).Page),
                     WebJson),
                 // 与旧 controller 兼容：close 成功只回成功、不带载荷。
-                BrowserBridgeCommandNames.PageClose => null,
+                BrowserBridgeCommandNames.PageClose or BrowserBridgeCommandNames.ContextClose => null,
+                BrowserBridgeCommandNames.ContextCreate => JsonSerializer.SerializeToElement(
+                    BrowserBridgeResultAdapter.FromCreatedContext(
+                        response.ContextCreated ?? throw new InvalidOperationException("executor returned no created context")),
+                    WebJson),
                 _ => JsonSerializer.SerializeToElement(
                     BrowserBridgeResultAdapter.FromContexts(
                         response.Contexts ?? throw new InvalidOperationException("executor returned no contexts")),

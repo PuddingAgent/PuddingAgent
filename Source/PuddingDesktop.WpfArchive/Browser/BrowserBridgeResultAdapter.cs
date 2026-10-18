@@ -230,4 +230,16 @@ public static class BrowserBridgeResultAdapter
                 .ToArray(),
         };
     }
+
+    public static BrowserContextDescriptor FromCreatedContext(DesktopContextInfo context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return new BrowserContextDescriptor
+        {
+            ContextId = context.ContextId,
+            // 与 FromContexts 同一已知缺口：执行器契约没有目录字段，不伪造路径。
+            UserDataDirectory = string.Empty,
+            PageCount = context.PageCount,
+        };
+    }
 }
