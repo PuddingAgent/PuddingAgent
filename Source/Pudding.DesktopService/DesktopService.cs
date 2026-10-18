@@ -34,7 +34,10 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         // 当前连接世代的提供者（方案 §4.2）。**放在最后**：前面都是既有位置参数调用方。
         // 未提供 ⇒ 不启用 authority 准入闸门（见 ValidateAdmission）；生产装配必须提供，否则等于没有准入。
         Func<ConnectionGeneration>? connectionGeneration = null,
-        BrowserTaskBindingService? taskBindings = null)
+        BrowserTaskBindingService? taskBindings = null,
+        // 共享权威的**关闭权**归属（ADR-097 D2）：浏览器工作区执行器拥有它；能力通道执行器只是借用
+        // （Core 重启会停通道，若通道关掉共享权威，Bridge 路径会被永久关死且不可重开）。
+        bool closesAuthorityOnDispose = true)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
@@ -46,6 +49,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         _timeProvider = timeProvider ?? TimeProvider.System;
         _connectionGeneration = connectionGeneration;
         _taskBindings = taskBindings;
+        _closesAuthorityOnDispose = closesAuthorityOnDispose;
     }
 
     /// <summary>窗口退出时触发（用于让宿主停止派发新命令）。</summary>
@@ -64,6 +68,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
 
     private readonly BrowserTaskBindingService? _taskBindings;
 
+    private readonly bool _closesAuthorityOnDispose;
+
     public DesktopInteractionState Interaction { get; }
 
     public bool IsClosed => Volatile.Read(ref _closed) != 0;
@@ -76,8 +82,12 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             return;
         }
 
-        // 窗口都没了 ⇒ 自动化不再成立：把权威置为关闭（Admit/写租约随之全部拒绝）。
-        Authority.Close("desktop window closed");
+        // 关闭自动化只在**拥有共享权威关闭权**的执行器上发生：能力通道执行器借用同一权威，
+        // 停通道不等于卸载浏览器（ADR-097 D2）。
+        if (_closesAuthorityOnDispose)
+        {
+            Authority.Close("desktop window closed");
+        }
 
         try
         {

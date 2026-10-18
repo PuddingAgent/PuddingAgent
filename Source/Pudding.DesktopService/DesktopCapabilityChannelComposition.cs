@@ -88,9 +88,6 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
         // 分开传两个参数就允许了"配错对"（注册表来自 A、权威来自 B），那等于又出现两份控制权状态。
         ArgumentNullException.ThrowIfNull(lifecycle);
 
-        var pageTargets = lifecycle.PageTargets;
-        var authority = lifecycle.Authority;
-
         var preflight = DesktopCapabilityChannelPreflight.Evaluate(
             settings, processInstanceId, authentication, endpointDescription);
 
@@ -123,10 +120,15 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
 
         var streamFactory = new GrpcDesktopChannelStreamFactory(transport.Value, authentication);
 
-        var service = new DesktopService(
-            dispatcher, surface, pageTargets, serviceOptions ?? CreateDefaultServiceOptions(), authority,
-        connectionGeneration: () => authority.ConnectionGeneration, // 闸门：让 ValidateAdmission 的 Admit 生效（生产路径的授权由此成为**必需**）
-        taskBindings: taskBindings);
+        // 借用**同一份**生命周期（权威/注册表/读回基线），但**不拥有**共享权威的关闭权：
+        // Core 每次重启都会停通道；若在这里关掉权威（不可重开），Bridge 路径会被永久关死（ADR-097 D2）。
+        var service = DesktopBrowserExecutorComposition.CreateService(
+            dispatcher,
+            surface,
+            lifecycle,
+            serviceOptions ?? CreateDefaultServiceOptions(),
+            taskBindings: taskBindings,
+            closesAuthorityOnDispose: false);
 
         // 顺序与「关闭时不构造」的判据由 DesktopCapabilityHostFactory 与组合顺序测试钉住：
         // 关闭 ⇒ 明确失败且不构造宿主；启用 ⇒ 只构造不启动（启动名额留给这里）。

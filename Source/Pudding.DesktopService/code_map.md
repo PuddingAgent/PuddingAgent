@@ -41,7 +41,8 @@
 | `DesktopCapabilityChannelSettings.cs` | desktop.json 值对象：Enabled 缺省 false；实现即声明（见下「关键语义」） |
 | `DesktopCapabilityChannelPreflight.cs` | 「要不要启动能力通道」的**单一判定入口**：未启用 ⇒ 不启动；启用但端点描述缺失/不可解析 ⇒ **不启动且不回退**；否则可启动 |
 | `DesktopCapabilityHostFactory.cs` | 用配置构造宿主：关闭 ⇒ 明确失败**且不构造**；启用 ⇒ 只构造**不启动**（启动名额留给组合根，见规格 §7.2 的陷阱） |
-| `DesktopCapabilityChannelComposition.cs` | 组合根：判定→构造→StartAsync→Dispose；只接受 BrowserPageLifecycle（见下「关键语义」） |
+| `DesktopCapabilityChannelComposition.cs` | 组合根：判定→构造→StartAsync→Dispose；只接受 BrowserPageLifecycle；通道执行器**借用**共享权威、停止不关闭它（见下「关键语义」） |
+| `DesktopBrowserExecutorComposition.cs` | 浏览器执行器组合根（ADR-097 D2）：Shell 可见的 `IDesktopBrowserExecutor`，与能力通道开关无关；`closesAuthorityOnDispose` 决定共享权威关闭权归属 |
 | `BrowserAdmissionAdapter.cs` | 两传输共用准入适配器：Admit/Revalidate/Release；写操作必须有租约（见下「关键语义」） |
 | 控制面准入与声明（`DesktopCapabilityPolicy.cs` / `DesktopCapabilityChannelSettings.cs`） | 两个 browser.binding.* 能力的准入规则与声明（实现即声明）（见下「关键语义」） |
 | `BrowserTaskBindingComposition.cs` | 控制面装配工厂：构造签发器 + 受理/撤销服务；未握手签发被拒（见下「关键语义」） |

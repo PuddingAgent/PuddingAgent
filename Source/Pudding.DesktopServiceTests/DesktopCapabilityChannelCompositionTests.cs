@@ -100,6 +100,28 @@ public sealed class DesktopCapabilityChannelCompositionTests
     }
 
     [Fact]
+    public async Task DisposingTheChannel_DoesNotCloseTheSharedAuthority()
+    {
+        // Core 每次重启都会停通道；共享权威若在这里被关掉（且不可重开），Bridge 路径会被永久关死。
+        // 关闭权属于浏览器工作区执行器，不属于能力通道（ADR-097 D2）。
+        var lifecycle = TestAuthorities.CreateLifecycle();
+
+        var result = await StartAsync(
+            settings: EnabledSettings(),
+            endpointDescription: UsableEndpoint,
+            lifecycle: lifecycle);
+
+        if (result.IsFailure)
+        {
+            Assert.Fail($"expected a running channel but got {result.Error!.Code}: {result.Error.Message}");
+        }
+
+        await result.Value!.DisposeAsync();
+
+        Assert.False(lifecycle.Authority.Capture().IsClosed);
+    }
+
+    [Fact]
     public async Task Composition_ReusesTheGivenPageRegistry()
     {
         // 准入用的页面注册表必须**就是** Shell 那边驱动的那一个实例：
