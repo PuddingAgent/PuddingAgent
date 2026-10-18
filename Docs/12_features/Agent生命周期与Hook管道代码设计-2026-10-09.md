@@ -2,12 +2,12 @@
 title: Agent 生命周期与 Hook 管道代码设计
 author: hyfree
 date: 2026-10-09
-last_reviewed: 2026-10-09
+last_reviewed: 2026-10-18
 status: proposed
 description: "定义中央 C# 注册入口、BCL 契约、注册快照、生命周期协调器、过滤器、动作和时间调度的目标代码布局、算法及迁移验收。"
 categories: [docs, features]
 tags: [agent, lifecycle, hooks, code-design, composition, events, actions]
-related_docs: [Docs/12_features/Agent全生命周期Hook事件与动作注册点目录-2026-10-09.md, Docs/12_features/Agent生命周期与Hook管道架构设计-2026-10-09.md, Docs/14_reports/2026-10-09-Agent生命周期与Hook边界审计.md, Docs/10_conventions/组件化交付规程.md]
+related_docs: [Docs/07_architecture/112ADR-098Core事件驱动与严格分层基础设施ADR.md, Docs/12_features/Core事件驱动基础设施施工与代码设计-2026-10-18.md, Docs/12_features/Agent全生命周期Hook事件与动作注册点目录-2026-10-09.md, Docs/12_features/Agent生命周期与Hook管道架构设计-2026-10-09.md, Docs/14_reports/2026-10-09-Agent生命周期与Hook边界审计.md, Docs/10_conventions/组件化交付规程.md]
 related_files: [Source/PuddingRuntime/Services/AgentExecutionService.cs, Source/PuddingRuntime/Services/AgentLoop/IAgentLoopHook.cs, Source/PuddingRuntime/Tools/Platform/PuddingToolRegistry.cs, Source/PuddingHost/PuddingHost.csproj]
 slug: features-agent-lifecycle-hook-pipeline-code-design-2026-10-09
 draft: false
@@ -20,6 +20,8 @@ draft: false
 优先评审[全生命周期注册点目录](Agent全生命周期Hook事件与动作注册点目录-2026-10-09.md)：它规定哪些阶段允许注册什么。本文给出足以分解施工任务的项目、文件、类型、接口、顺序、算法和测试合同。代码块是**目标 API 及算法示例**，不是已提交的可运行实现；示例中的端口/DTO 都按下文类型清单交付。
 
 本轮只交付文档。后续实施遵守[组件化交付规程](../10_conventions/组件化交付规程.md)，独立 S1–S4 通过前不修改 Host、Runtime、解决方案或现有 DI。
+
+与事件基础设施的边界以 [ADR-098](../07_architecture/112ADR-098Core事件驱动与严格分层基础设施ADR.md) 及其[施工方案](Core事件驱动基础设施施工与代码设计-2026-10-18.md)细化：可靠事件受理、Delivery 和持久消费者归 Eventing；本方案的 ObserverMailbox 只负责允许丢失的在线观察。目标 Kernel 仅引用 Contracts，通过 IHookPipeline 调用已装配管道，不直接引用 Pipeline 实现；下列其他生命周期与工具接缝继续适用。
 
 ## 2. 项目与目标文件布局
 
@@ -45,7 +47,7 @@ Source/
     Events/{ObserverDispatcher,ObserverMailbox,ObserverSubscription}.cs
     Diagnostics/{ExtensionDiagnosticsQuery,HookFailureRecorder}.cs
     code_map.md
-  PuddingAgentKernel/                Contracts + Pipeline
+  PuddingAgentKernel/                只引用 Contracts；管道经 IHookPipeline 端口
     Lifecycle/{AgentSessionCoordinator,RunCoordinator,RunFinalizer}.cs
     Lifecycle/{LifecycleTransitionTable,NecessaryWorkLedger}.cs
     Execution/{AgentActionRouter,RoundCoordinator}.cs
