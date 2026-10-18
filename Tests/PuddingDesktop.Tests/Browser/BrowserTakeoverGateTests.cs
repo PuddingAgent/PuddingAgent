@@ -92,6 +92,99 @@ public sealed class BrowserTakeoverGateTests
         Assert.Equal(BrowserBridgeErrorCodes.BrowserPaused, result.ErrorCode);
     }
 
+    // ── F2：暂停/接管是运行控制，只阻断副作用；只读观察必须继续 ────────────
+
+    /// <summary>
+    /// 配对反例（方案 §6）：接管时 **snapshot 成功、fill 被阻止**。
+    /// 修复前派发器在识别命令前就拒绝全部命令 ⇒ 只读也被拒，"接管后可读"只在文档里成立。
+    /// </summary>
+    [Fact]
+    public async Task Takeover_BlocksWrites_ButKeepsReads()
+    {
+        var (_, dispatcher, controller) = CreateAuthorized();
+
+        await controller.SetUserTakeoverAsync(true, CancellationToken.None);
+        Assert.True(dispatcher.IsUserTakeover);
+
+        var read = await dispatcher.DispatchAsync(SnapshotCommand(), CancellationToken.None);
+        Assert.True(read.Success, $"接管期间只读观察必须继续：{read.ErrorCode}: {read.ErrorMessage}");
+
+        var write = await dispatcher.DispatchAsync(GotoCommand(), CancellationToken.None);
+        Assert.False(write.Success);
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserUserTakeover, write.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Pause_BlocksWrites_ButKeepsReads()
+    {
+        var (_, dispatcher, controller) = CreateAuthorized();
+
+        await controller.SetPausedAsync(true, CancellationToken.None);
+        Assert.True(dispatcher.IsPaused);
+
+        var read = await dispatcher.DispatchAsync(SnapshotCommand(), CancellationToken.None);
+        Assert.True(read.Success, $"暂停期间只读观察必须继续：{read.ErrorCode}: {read.ErrorMessage}");
+
+        var write = await dispatcher.DispatchAsync(GotoCommand(), CancellationToken.None);
+        Assert.False(write.Success);
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserPaused, write.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Takeover_BlocksMutatingInteract()
+    {
+        var (_, dispatcher, controller) = CreateAuthorized();
+
+        await controller.SetUserTakeoverAsync(true, CancellationToken.None);
+
+        var interact = await dispatcher.DispatchAsync(InteractCommand(), CancellationToken.None);
+        Assert.False(interact.Success);
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserUserTakeover, interact.ErrorCode);
+    }
+
+    private static (Pudding.DesktopService.BrowserPageLifecycle Lifecycle, BrowserBridgeCommandDispatcher Dispatcher, BrowserWorkspaceController Controller)
+        CreateAuthorized()
+    {
+        var lifecycle = BrowserTestState.CreateLifecycle();
+        var dispatcher = new BrowserBridgeCommandDispatcher(lifecycle);
+        var gates = new BrowserAutomationGateSync();
+        dispatcher.SetHandler(new SuccessfulBrowserHandler());
+        gates.Register(dispatcher);
+
+        var controller = new BrowserWorkspaceController(
+            new FakeBrowserRuntime(), new FakeBrowserSurfaceHost(), new FakeUiDispatcher(), gates);
+
+        // 正向夹具：页面已由用户交给 Agent（授权存在），否则"读成功"会退化成"闸门缺失"的假绿。
+        BrowserTestState.GrantAgentPage(lifecycle);
+        return (lifecycle, dispatcher, controller);
+    }
+
+    private static BrowserBridgeCommand SnapshotCommand() => new()
+    {
+        OperationId = Guid.NewGuid(),
+        Name = BrowserBridgeCommandNames.PageSnapshot,
+        ContextId = "ctx",
+        PageId = "page",
+        DeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
+        Caller = new BrowserBridgeCallerIdentity { Kind = "agent", CallerId = "agent-a", TaskId = "run-agent-a" },
+        Arguments = JsonSerializer.SerializeToElement(new { }),
+    };
+
+    private static BrowserBridgeCommand InteractCommand() => new()
+    {
+        OperationId = Guid.NewGuid(),
+        Name = BrowserBridgeCommandNames.PageInteract,
+        ContextId = "ctx",
+        PageId = "page",
+        DeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
+        Caller = new BrowserBridgeCallerIdentity { Kind = "agent", CallerId = "agent-a", TaskId = "run-agent-a" },
+        Arguments = JsonSerializer.SerializeToElement(new
+        {
+            action = "click",
+            locator = new { kind = "css", value = "button" },
+        }),
+    };
+
     [Fact]
     public async Task RegisteringAGateAfterTakeover_AlignsItImmediately()
     {

@@ -183,9 +183,19 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
         CancellationToken externalCt)
     {
 
-        // Gate: pause/takeover rejects new Agent commands.
-        // Record a failed activity so Agent and user understand the rejection (doc 6.1).
-        if (IsPaused)
+        // Validate command name
+        if (!BrowserBridgeCommandNames.All.Contains(command.Name))
+        {
+            return CacheAndReturn(Error(command.OperationId,
+                BrowserBridgeErrorCodes.BrowserOperationNotSupported,
+                $"Unknown command: {command.Name}"));
+        }
+
+        // Gate: 暂停/接管是**运行控制**，只阻断副作用；只读观察继续（ADR-097 D4 / 69 规格 §1.1）。
+        // 先按命令类别判定，再决定是否拒绝——否则「接管后可读」只在文档里成立，默认 Bridge 路径见不到。
+        var readOnlyCommand = ReadOnlyPageCommands.Contains(command.Name);
+
+        if (!readOnlyCommand && IsPaused)
         {
             var pausedActivity = new AgentBrowserActivity(
                 command.OperationId, command.Name,
@@ -196,7 +206,7 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
                 BrowserBridgeErrorCodes.BrowserPaused, "Browser is paused"));
         }
 
-        if (IsUserTakeover)
+        if (!readOnlyCommand && IsUserTakeover)
         {
             var takeoverActivity = new AgentBrowserActivity(
                 command.OperationId, command.Name,
@@ -205,14 +215,6 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
             RecordActivity(takeoverActivity);
             return CacheAndReturn(Error(command.OperationId,
                 BrowserBridgeErrorCodes.BrowserUserTakeover, "User has taken over browser control"));
-        }
-
-        // Validate command name
-        if (!BrowserBridgeCommandNames.All.Contains(command.Name))
-        {
-            return CacheAndReturn(Error(command.OperationId,
-                BrowserBridgeErrorCodes.BrowserOperationNotSupported,
-                $"Unknown command: {command.Name}"));
         }
 
         // Deadline check
