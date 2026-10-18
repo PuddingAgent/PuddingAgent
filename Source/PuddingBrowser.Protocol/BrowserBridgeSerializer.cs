@@ -26,7 +26,7 @@ public static class BrowserBridgeSerializer
         {
             throw new BrowserBridgeProtocolException(
                 BrowserBridgeErrorCodes.BrowserProtocolMismatch,
-                $"Unsupported protocol version: {envelope.ProtocolVersion}");
+                $"Protocol version mismatch: expected={BrowserBridgeProtocol.CurrentVersion} received={envelope.ProtocolVersion}");
         }
 
         return envelope;

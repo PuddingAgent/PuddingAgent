@@ -23,6 +23,7 @@ internal sealed class DesktopBrowserClientConnection : IAsyncDisposable
     public Task ReceiveTask { get; set; } = Task.CompletedTask;
     public Task HeartbeatTask { get; set; } = Task.CompletedTask;
     public Task WatchdogTask { get; set; } = Task.CompletedTask;
+    public string? CompletionReason { get; private set; }
 
     private int _completed;
     private int _disposed;
@@ -52,9 +53,10 @@ internal sealed class DesktopBrowserClientConnection : IAsyncDisposable
     /// <summary>
     /// Atomically completes this session. Only the first call triggers teardown.
     /// </summary>
-    public bool TryComplete()
+    public bool TryComplete(string? reason = null)
     {
         if (Interlocked.Exchange(ref _completed, 1) != 0) return false;
+        CompletionReason = reason;
         Outbound.Writer.TryComplete();
         Lifetime.Cancel();
         return true;
@@ -285,11 +287,14 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         }
 
         // Step 6/7: Check result
-        if (ack is not { Accepted: true })
+        if (ack is not { Accepted: true } || session.IsCompleted || connCt.IsCancellationRequested)
         {
-            session.TryComplete();
-            TransitionTo(BrowserBridgeConnectionState.Failed,
-                ack is not null ? $"Hello rejected: {ack.ErrorMessage}" : "Hello timeout");
+            var reason = session.CompletionReason
+                ?? (ack is { Accepted: false } ? $"Hello rejected: {ack.ErrorCode}: {ack.ErrorMessage}"
+                    : connCt.IsCancellationRequested ? "Hello cancelled" : "Hello timeout");
+            session.TryComplete(reason);
+            if (Interlocked.Read(ref _generation) == gen)
+                TransitionTo(BrowserBridgeConnectionState.Failed, reason);
             await CloseSessionAsync(session, CancellationToken.None, closeSocket: true);
             ScheduleReconnect(gen, ct);
             return;
@@ -330,7 +335,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
     private async Task ReceiveLoopAsync(DesktopBrowserClientConnection session, CancellationToken ct)
     {
         var buffer = new byte[64 * 1024];
-        var messageBuffer = new MemoryStream();
+        using var messageBuffer = new MemoryStream();
         session.ReceiveStarted.TrySetResult();
 
         try
@@ -367,7 +372,12 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
                 {
                     envelope = BrowserBridgeSerializer.Deserialize(span);
                 }
-                catch
+                catch (BrowserBridgeProtocolException ex)
+                {
+                    CompleteConnectionOnce(session, $"{ex.ErrorCode}: {ex.Message}");
+                    return;
+                }
+                catch (JsonException)
                 {
                     CompleteConnectionOnce(session, "Malformed protocol message");
                     return;
@@ -378,6 +388,8 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
             }
         }
         catch (OperationCanceledException) { /* normal shutdown */ }
+        catch (BrowserBridgeProtocolException ex) { CompleteConnectionOnce(session, $"{ex.ErrorCode}: {ex.Message}"); }
+        catch (JsonException) { CompleteConnectionOnce(session, "Invalid protocol payload or required fields"); }
         catch (WebSocketException) { CompleteConnectionOnce(session, "WebSocket receive error"); }
         catch (Exception) { CompleteConnectionOnce(session, "Unexpected receive error"); }
     }
@@ -444,6 +456,12 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         {
             case BrowserBridgeMessageKind.HelloAck:
                 var ack = BrowserBridgeSerializer.DeserializePayload<BrowserBridgeHelloAck>(envelope);
+                if (ack.ProtocolVersion != BrowserBridgeProtocol.CurrentVersion)
+                {
+                    CompleteConnectionOnce(session,
+                        $"{BrowserBridgeErrorCodes.BrowserProtocolMismatch}: HelloAck expected={BrowserBridgeProtocol.CurrentVersion} received={ack.ProtocolVersion}");
+                    return;
+                }
                 LastDesktopBuildIdentity = ack.Build;
                 if (ack.Build is { } coreBuild)
                 {
@@ -534,7 +552,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
     /// </summary>
     private void CompleteConnectionOnce(DesktopBrowserClientConnection session, string reason)
     {
-        if (!session.TryComplete()) return; // already completed
+        if (!session.TryComplete(reason)) return; // already completed
 
         // Only transition state if this is still the current generation
         if (Interlocked.Read(ref _generation) != session.Generation) return;

@@ -10,6 +10,27 @@ namespace PuddingDesktop.Tests.Browser;
 
 public sealed class DesktopBrowserBridgeClientTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Connect_ProtocolMismatch_PreservesFailureInsteadOfReportingTimeout(bool envelopeMismatch)
+    {
+        var socket = new FakeDesktopBrowserWebSocket(HelloAckMode.Accept)
+        {
+            AckEnvelopeVersion = envelopeMismatch ? BrowserBridgeProtocol.CurrentVersion - 1 : BrowserBridgeProtocol.CurrentVersion,
+            AckPayloadVersion = BrowserBridgeProtocol.CurrentVersion - 1
+        };
+        await using var client = CreateClient(new QueueWebSocketFactory(socket));
+        var transitions = new ConcurrentQueue<BrowserBridgeStateChangedEventArgs>();
+        client.StateChanged += (_, args) => transitions.Enqueue(args);
+
+        await client.ConnectAsync(new Uri("http://127.0.0.1:12345"), "secret-token", CancellationToken.None);
+
+        Assert.DoesNotContain(transitions, args => args.NewState == BrowserBridgeConnectionState.Connected);
+        Assert.Contains(transitions, args => args.Reason?.Contains(BrowserBridgeErrorCodes.BrowserProtocolMismatch) == true);
+        Assert.DoesNotContain(transitions, args => args.Reason?.Contains("timeout", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
     private static readonly DesktopBrowserBridgeClientOptions TestOptions = new()
     {
         HelloTimeout = TimeSpan.FromMilliseconds(250),
@@ -324,6 +345,8 @@ internal sealed class FakeDesktopBrowserWebSocket : IDesktopBrowserWebSocket
     public int ReceiveCancellationCount => Volatile.Read(ref _receiveCancellationCount);
     public bool ReceiveWasRunningWhenHelloSent { get; private set; }
     public Exception? LastSendException { get; private set; }
+    public int AckEnvelopeVersion { get; init; } = BrowserBridgeProtocol.CurrentVersion;
+    public int AckPayloadVersion { get; init; } = BrowserBridgeProtocol.CurrentVersion;
 
     public FakeDesktopBrowserWebSocket(HelloAckMode helloAckMode)
         => _helloAckMode = helloAckMode;
@@ -361,13 +384,14 @@ internal sealed class FakeDesktopBrowserWebSocket : IDesktopBrowserWebSocket
             {
                 QueueEnvelope(new BrowserBridgeEnvelope
                 {
+                    ProtocolVersion = AckEnvelopeVersion,
                     MessageId = Guid.NewGuid(),
                     CorrelationId = envelope.MessageId,
                     Kind = BrowserBridgeMessageKind.HelloAck,
                     CreatedAt = DateTimeOffset.UtcNow,
                     Payload = JsonSerializer.SerializeToElement(new BrowserBridgeHelloAck
                     {
-                        ProtocolVersion = BrowserBridgeProtocol.CurrentVersion,
+                        ProtocolVersion = AckPayloadVersion,
                         Accepted = _helloAckMode == HelloAckMode.Accept,
                         ErrorCode = _helloAckMode == HelloAckMode.Reject ? BrowserBridgeErrorCodes.BrowserProtocolMismatch : null,
                         ErrorMessage = _helloAckMode == HelloAckMode.Reject ? "Rejected for test" : null

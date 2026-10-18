@@ -186,19 +186,22 @@ public static class DesktopBrowserBridgeWebSocketEndpoint
         try
         {
             var buffer = new byte[BrowserBridgeProtocol.MaxMessageBytes];
-            var messageBuffer = new MemoryStream();
+            using var messageBuffer = new MemoryStream();
 
             WebSocketReceiveResult result;
             do
             {
                 result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), helloCts.Token);
                 if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    logger.LogWarning("Browser Bridge Hello aborted: connection={ConnectionId} reason=peer_closed", connection.ConnectionId);
                     return false;
+                }
                 if (result.MessageType == WebSocketMessageType.Binary)
-                    return false;
+                    throw new BrowserBridgeProtocolException(BrowserBridgeErrorCodes.BrowserInvalidCommand, "Hello must be text");
                 messageBuffer.Write(buffer, 0, result.Count);
                 if (messageBuffer.Length > BrowserBridgeProtocol.MaxMessageBytes)
-                    return false;
+                    throw new BrowserBridgeProtocolException(BrowserBridgeErrorCodes.BrowserInvalidCommand, "Hello exceeds maximum size");
             } while (!result.EndOfMessage);
 
             var span = new ReadOnlySpan<byte>(messageBuffer.GetBuffer(), 0, (int)messageBuffer.Length);
@@ -210,7 +213,7 @@ public static class DesktopBrowserBridgeWebSocketEndpoint
                     BrowserBridgeErrorCodes.BrowserInvalidCommand, "First message must be Hello");
                 var errorBytes = BrowserBridgeSerializer.Serialize(errorAck);
                 await ws.SendAsync(errorBytes, WebSocketMessageType.Text, true, ct);
-                await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Expected Hello", ct);
+                await RejectHelloAsync(ws, connection, logger, BrowserBridgeErrorCodes.BrowserInvalidCommand, "Expected Hello");
                 return false;
             }
 
@@ -230,8 +233,9 @@ public static class DesktopBrowserBridgeWebSocketEndpoint
 
             if (!accepted)
             {
-                await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation,
-                    ack.ErrorMessage ?? "Hello rejected", ct);
+                await RejectHelloAsync(ws, connection, logger,
+                    ack.ErrorCode ?? BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                    $"Hello version mismatch: expected={BrowserBridgeProtocol.CurrentVersion} received={hello.ProtocolVersion}");
             }
 
             connection.MarkReceived(clock.UtcNow);
@@ -239,17 +243,39 @@ public static class DesktopBrowserBridgeWebSocketEndpoint
         }
         catch (OperationCanceledException)
         {
-            try
-            {
-                await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Hello timeout", CancellationToken.None);
-            }
-            catch { }
+            await RejectHelloAsync(ws, connection, logger, "hello_cancelled", ct.IsCancellationRequested ? "Connection cancelled" : "Hello timeout");
             return false;
         }
-        catch (BrowserBridgeProtocolException)
+        catch (BrowserBridgeProtocolException ex)
         {
+            await RejectHelloAsync(ws, connection, logger, ex.ErrorCode, ex.Message);
             return false;
         }
+        catch (JsonException)
+        {
+            // Never log the raw frame or JsonException: either may contain peer-supplied data.
+            await RejectHelloAsync(ws, connection, logger, BrowserBridgeErrorCodes.BrowserInvalidCommand, "Invalid Hello JSON or required fields");
+            return false;
+        }
+    }
+
+    private static async Task RejectHelloAsync(WebSocket ws, DesktopBrowserConnection connection,
+        ILogger logger, string code, string reason)
+    {
+        logger.LogWarning("Browser Bridge Hello rejected: connection={ConnectionId} expectedProtocol={ProtocolVersion} code={ErrorCode} reason={Reason}",
+            connection.ConnectionId, BrowserBridgeProtocol.CurrentVersion, code, reason);
+        // A mismatched peer cannot decode our versioned Ack. A bounded WebSocket close is version-neutral.
+        // Reasons here are fixed ASCII diagnostics, not peer payloads; close frames allow 123 UTF-8 bytes.
+        var diagnostic = $"{code}: {reason}";
+        if (diagnostic.Length > 123) diagnostic = diagnostic[..123];
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                await ws.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation, diagnostic, timeout.Token);
+        }
+        catch (OperationCanceledException) { }
+        catch (WebSocketException) { }
     }
 
     /// <summary>

@@ -6,6 +6,41 @@ namespace PuddingHost.Tests.BrowserBridge;
 
 public sealed class DesktopBrowserBridgeHandshakeTests
 {
+    [Theory]
+    [InlineData(2)]
+    [InlineData(4)]
+    public async Task EnvelopeProtocolMismatch_ClosesWithExplicitVersionDiagnostic(int version)
+    {
+        await using var host = await BrowserBridgeTestHost.StartAsync();
+        using var socket = await host.ConnectWebSocketAsync();
+        await BrowserBridgeTestHost.SendEnvelopeAsync(socket,
+            BrowserBridgeTestHost.HelloEnvelope(version) with { ProtocolVersion = version });
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var close = await socket.ReceiveAsync(new ArraySegment<byte>(new byte[512]), timeout.Token);
+
+        Assert.Equal(WebSocketMessageType.Close, close.MessageType);
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, close.CloseStatus);
+        Assert.Contains(BrowserBridgeErrorCodes.BrowserProtocolMismatch, close.CloseStatusDescription);
+        Assert.Contains($"expected={BrowserBridgeProtocol.CurrentVersion}", close.CloseStatusDescription);
+        Assert.Contains($"received={version}", close.CloseStatusDescription);
+        Assert.False(host.Broker.IsDesktopConnected);
+    }
+
+    [Fact]
+    public async Task InvalidHelloJson_ClosesWithDiagnosticWithoutEchoingPayload()
+    {
+        await using var host = await BrowserBridgeTestHost.StartAsync();
+        using var socket = await host.ConnectWebSocketAsync();
+        await socket.SendAsync("{secret-invalid-json"u8.ToArray(), WebSocketMessageType.Text, true, CancellationToken.None);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var close = await socket.ReceiveAsync(new ArraySegment<byte>(new byte[512]), timeout.Token);
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, close.CloseStatus);
+        Assert.Contains(BrowserBridgeErrorCodes.BrowserInvalidCommand, close.CloseStatusDescription);
+        Assert.DoesNotContain("secret", close.CloseStatusDescription);
+        Assert.False(host.Broker.IsDesktopConnected);
+    }
+
     [Fact]
     public async Task AcceptedHello_MakesBrokerAvailableOnlyAfterAck()
     {

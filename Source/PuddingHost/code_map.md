@@ -58,6 +58,7 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 
 | 文件 | 用途 |
 |------|------|
+| `BrowserBridge/DesktopBrowserBridgeWebSocketEndpoint.cs` | 认证 Bridge 入口；Hello 信封与载荷严格校验，版本拒绝记录 expected/received 并限时关闭，不回显原始帧 |
 | `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge）：严格消费命令 DTO；单值、列表与无值合同见修复规格 |
 | `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 代理 |
 | `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理（如实回传宿主事实）（见下「关键语义」） |

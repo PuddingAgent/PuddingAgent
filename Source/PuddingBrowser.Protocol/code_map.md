@@ -13,7 +13,7 @@
 | `BrowserBridgeMessages.cs` | 消息类型定义 |
 | `BrowserBridgeProtocol.cs` | 协议常量（当前修订 3：D8 结果合同修复隔离） |
 | `BrowserBridgeBuildIdentity.cs` | D9 构建身份：程序集名称/版本/MVID/路径与 stamp 的源修订；握手携带，仅诊断不授权 |
-| `BrowserBridgeSerializer.cs` | JSON 序列化器 |
+| `BrowserBridgeSerializer.cs` | JSON 序列化器；信封版本严格相等，拒绝包含 expected/received 诊断 |
 | `BrowserBridgeJsonSerializerContext.cs` | AOT 源码生成上下文 |
 
 ## 关键语义（用途原文逐字下沉）
