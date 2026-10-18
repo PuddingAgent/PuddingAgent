@@ -104,6 +104,13 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
     private Task? _reconnectTask;
 
     public BrowserBridgeConnectionState State => _state;
+
+    /// <summary>
+    /// 最近一次成功 HelloAck 中 Core 的构建身份（D9 诊断用；null = 尚未握手或旧 Core 未携带）。
+    /// 与发布清单核对由部署/诊断层完成，不参与任何授权判断。
+    /// </summary>
+    public BrowserBridgeBuildIdentity? LastDesktopBuildIdentity { get; private set; }
+
     public event EventHandler<BrowserBridgeStateChangedEventArgs>? StateChanged;
 
     public DesktopBrowserBridgeClient(
@@ -244,7 +251,11 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
             {
                 ProtocolVersion = BrowserBridgeProtocol.CurrentVersion,
                 DesktopInstanceId = _desktopInstanceId,
-                Capabilities = ["context", "page", "navigation", "snapshot", "locator", "interact", "wait"]
+                Capabilities = ["context", "page", "navigation", "snapshot", "locator", "interact", "wait"],
+                // D9：握手携带本进程构建身份，供与发布清单/日志核对（不参与授权）。
+                Build = BrowserBridgeBuildIdentity.FromAssembly(
+                    System.Reflection.Assembly.GetEntryAssembly()
+                        ?? typeof(DesktopBrowserBridgeClient).Assembly),
             }, BrowserBridgeSerializerOptions.Default)
         };
 
@@ -433,6 +444,13 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         {
             case BrowserBridgeMessageKind.HelloAck:
                 var ack = BrowserBridgeSerializer.DeserializePayload<BrowserBridgeHelloAck>(envelope);
+                LastDesktopBuildIdentity = ack.Build;
+                if (ack.Build is { } coreBuild)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[BrowserBridge] HelloAck from Core {ack.ProtocolVersion}: {coreBuild.Describe()}");
+                }
+
                 session.HelloAck.TrySetResult(ack);
                 break;
 

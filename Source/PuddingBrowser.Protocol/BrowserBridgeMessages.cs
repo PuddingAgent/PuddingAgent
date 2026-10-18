@@ -7,6 +7,9 @@ public sealed record BrowserBridgeHello
     public required int ProtocolVersion { get; init; }
     public required string DesktopInstanceId { get; init; }
     public required IReadOnlyList<string> Capabilities { get; init; }
+
+    /// <summary>Desktop 侧构建身份（D9；诊断用，不参与授权）。</summary>
+    public BrowserBridgeBuildIdentity? Build { get; init; }
 }
 
 public sealed record BrowserBridgeHelloAck
@@ -15,6 +18,9 @@ public sealed record BrowserBridgeHelloAck
     public required bool Accepted { get; init; }
     public string? ErrorCode { get; init; }
     public string? ErrorMessage { get; init; }
+
+    /// <summary>Core 侧构建身份（D9；诊断用）。</summary>
+    public BrowserBridgeBuildIdentity? Build { get; init; }
 }
 
 public sealed record BrowserBridgeCommandOrigin

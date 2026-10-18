@@ -5,6 +5,7 @@ namespace PuddingBrowser.Protocol;
 [JsonSerializable(typeof(BrowserBridgeEnvelope))]
 [JsonSerializable(typeof(BrowserBridgeHello))]
 [JsonSerializable(typeof(BrowserBridgeHelloAck))]
+[JsonSerializable(typeof(BrowserBridgeBuildIdentity))]
 [JsonSerializable(typeof(BrowserBridgeCommand))]
 [JsonSerializable(typeof(BrowserBridgeCommandResult))]
 [JsonSerializable(typeof(BrowserBridgeCancel))]

@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.WebSockets;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
@@ -103,7 +103,7 @@ public static class DesktopBrowserBridgeWebSocketEndpoint
         try
         {
             // 5. Await Hello (must be first message within 5s)
-            var helloOk = await AwaitHelloAsync(ws, connection, clock, ct);
+            var helloOk = await AwaitHelloAsync(ws, connection, clock, logger, ct);
             if (!helloOk)
             {
                 logger.LogWarning("Browser Bridge Hello failed: {ConnectionId}", connectionId);
@@ -178,7 +178,7 @@ public static class DesktopBrowserBridgeWebSocketEndpoint
     /// </summary>
     private static async Task<bool> AwaitHelloAsync(
         WebSocket ws, DesktopBrowserConnection connection,
-        IBrowserBridgeClock clock, CancellationToken ct)
+        IBrowserBridgeClock clock, ILogger logger, CancellationToken ct)
     {
         using var helloCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         helloCts.CancelAfter(HelloTimeout);
@@ -215,6 +215,12 @@ public static class DesktopBrowserBridgeWebSocketEndpoint
             }
 
             var hello = BrowserBridgeSerializer.DeserializePayload<BrowserBridgeHello>(envelope);
+            // D9：分别记录 transport 连接、协议修订与两侧构建身份；握手成功不代表 Agent 可控。
+            logger.LogInformation(
+                "Browser Bridge Hello: desktop={DesktopInstanceId} protocol={ProtocolVersion} build={BuildIdentity}",
+                hello.DesktopInstanceId,
+                hello.ProtocolVersion,
+                hello.Build?.Describe() ?? "unknown (peer did not report build identity)");
             var accepted = connection.TryAcceptHello(hello, out var ack);
 
             var ackEnvelope = BuildHelloAckEnvelope(envelope.MessageId, ack.Accepted,
@@ -438,7 +444,11 @@ public static class DesktopBrowserBridgeWebSocketEndpoint
                 ProtocolVersion = BrowserBridgeProtocol.CurrentVersion,
                 Accepted = accepted,
                 ErrorCode = errorCode,
-                ErrorMessage = errorMessage
+                ErrorMessage = errorMessage,
+                // D9：HelloAck 携带 Core 进程构建身份，供与发布清单/日志核对（不参与授权）。
+                Build = BrowserBridgeBuildIdentity.FromAssembly(
+                    System.Reflection.Assembly.GetEntryAssembly()
+                        ?? typeof(DesktopBrowserBridgeWebSocketEndpoint).Assembly),
             }, BrowserBridgeSerializerOptions.Default)
         };
     }
