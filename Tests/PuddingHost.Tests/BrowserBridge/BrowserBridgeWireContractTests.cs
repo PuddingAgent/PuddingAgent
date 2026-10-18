@@ -74,6 +74,13 @@ public sealed class BrowserBridgeWireContractTests : IDisposable
     ]);
 
     [Fact]
+    public void BridgeContractRevision_IsThree_SoMismatchedBuildsCannotMixPayloads()
+    {
+        // D9：本次合同修复整体发布修订 3，两端严格相等；改动必须显式更新本断言。
+        Assert.Equal(3, BrowserBridgeProtocol.CurrentVersion);
+    }
+
+    [Fact]
     public async Task ContextListAndGetInfo_AreConsumedByTheRealCoreRuntime()
     {
         var (runtime, _) = CreateChain((descriptor, _) => Task.FromResult(descriptor.Capability switch
