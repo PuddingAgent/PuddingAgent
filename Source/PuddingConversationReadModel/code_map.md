@@ -89,10 +89,10 @@ Lead 审查追加（阶段 B 仍属 S3/S4）唯一新增公开字段：`Conversa
 - `dotnet test Source\PuddingConversationReadModelTests\PuddingConversationReadModelTests.csproj --artifacts-path temp\build\readmodel-tests --nologo`
 - `dotnet build Source\PuddingConversationReadModel\PuddingConversationReadModel.csproj --artifacts-path temp\build\readmodel --nologo`
 
-## S5（接入中）
+## S5（已接入）
 
-已做：`PuddingPlatform` 引用本组件、`PuddingAgentNetwork.slnx` 登记组件与测试工程、`ConversationProjector` 事务化读模型写入（C2b）。
-待 C 门禁通过后完成：宿主组合测试与旧首屏路径退役；本阶段不登记其余宿主 DI 生命周期。
+已做：`PuddingPlatform` 引用本组件、`PuddingAgentNetwork.slnx` 登记组件与测试工程、`ConversationProjector` 事务化读模型写入（C2b）、统一打开查询/身份解析/HTTP 端点与 Host DI（C3b）；Host composition 2/2（ValidateOnBuild）通过。
+旧 `/conversation` 在线全量摘要路径的退役随阶段 D 前端切换执行。
 
 ## 关联
 

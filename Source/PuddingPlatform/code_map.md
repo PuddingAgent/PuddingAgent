@@ -48,8 +48,13 @@
 | `Services/AgentChat/ConversationOpenQueryService.cs` | 统一打开/历史/过程分页有界只读查询；C/H 一致读事务 + ETag | `ConversationOpenQueryService` | `Services/AgentChat/ConversationOpenContracts.cs` | GET 不重放/不补建；消息预览 SQL 有界、过程候选 scan≤400、空展示页前进；旧入口切换留 C3b/D |
 | `Services/AgentChat/ConversationOpenContracts.cs` | 打开/分页 DTO、sync 状态与查询失败码 | `ConversationOpenSnapshot`、`ConversationQueryException` | `Services/AgentChat/ConversationOpenQueryService.cs` | 与旧 AgentConversationView 并存至 D；失败用稳定 code，不伪造空会话 |
 | `Source/PuddingPlatformTests/Services/ConversationOpenQueryServiceTests.cs` | C3a 打开/历史/过程查询定向测试（9 例） | `ConversationOpenQueryServiceTests` | `Services/AgentChat/ConversationOpenQueryService.cs` | 真实 SQLite：C/H 一致、预览 8 KiB、legacy partial、syncing、键集分页、空展示页前进、游标拒绝、压缩/子代理摘要 |
+| `Services/AgentChat/AgentMainSessionResolver.cs` | Agent 主会话有界身份解析（redirect → Manifest MainSessionId → canonical FindMain） | `AgentMainSessionResolver` | `Services/SessionRedirectStore.cs`、`ISessionRepository` | 只点查不拉工作区列表；workspace/owner 不匹配 fail closed；解析失败返回 null |
+| `Controllers/Api/ConversationOpenApiController.cs` | 统一打开/历史/过程 HTTP 面 | `ConversationOpenApiController` | `Services/AgentChat/ConversationOpenQueryService.cs` | ETag/If-None-Match 304；查询失败映射 400 稳定 code；旧 /conversation 保留至 D |
+| `Source/PuddingPlatformTests/Services/AgentMainSessionResolverTests.cs` | C3b 身份解析测试（5 例） | `AgentMainSessionResolverTests` | `Services/AgentChat/AgentMainSessionResolver.cs` | redirect/Manifest/FindMain 优先级、workspace/owner 拒绝、admin 归一 |
+| `Source/PuddingPlatformTests/Services/ConversationOpenApiControllerTests.cs` | C3b 控制器合同测试（4 例） | `ConversationOpenApiControllerTests` | `Controllers/Api/ConversationOpenApiController.cs` | 200+ETag、条件请求 304、未知 Agent 404、非法游标 400 稳定码 |
+| `Source/PuddingPlatformTests/Services/ConversationOpenQueryPerformanceGateTests.cs` | C3b 百万事件查询门禁（显式 env） | `ConversationOpenQueryPerformanceGateTests` | `Services/AgentChat/ConversationOpenQueryService.cs` | `PUDDING_QUERY_GATE=1`；1.82M 事件 p95/EXPLAIN 无会话扫描；报告写 temp/test-out |
 
-关联修改：`PlatformDbContext`（2 DbSet+2 实体配置+conversation_events 两条索引）；`PuddingApplicationInitializer`（仅启动建小表）；Platform/slnx 接入 `PuddingConversationReadModel`；`ConversationProjector` 单事务投影并注册 `ProjectionStore`（Host composition 2/2）；新增 `ConversationOpenQueryService`（C3a，端点/身份/百万事件门禁待 C3b）。
+关联修改：`PlatformDbContext`（读模型 2 表 + 2 条事件索引）；Platform/slnx 接入 `PuddingConversationReadModel`；`ConversationProjector` 单事务投影；C3b 新增 `ConversationOpenQueryService`/`AgentMainSessionResolver`/`ConversationOpenApiController`（`ISessionRepository` 映射在 Host）；门禁见阶段 C 报告。
 
 ## 消息网关
 

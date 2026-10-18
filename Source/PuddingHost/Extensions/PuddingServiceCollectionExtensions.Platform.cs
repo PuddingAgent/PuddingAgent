@@ -28,6 +28,7 @@ using PuddingPlatform.Services.AgentChat;
 using PuddingPlatform.Services.Snapshot;
 using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
+using PuddingController.Services;
 using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.MessageGateway;
 using PuddingPlatform.Services.Mcp;
@@ -185,6 +186,8 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddSingleton<IConversationEventStore, ConversationEventStore>();
             builder.Services.AddSingleton<ConversationCatalogWriter>();
             builder.Services.AddSingleton<PuddingPlatform.Services.AgentChat.ConversationReadModelProjectionStore>();
+            builder.Services.AddSingleton<PuddingPlatform.Services.AgentChat.ConversationOpenQueryService>();
+            builder.Services.AddSingleton<PuddingPlatform.Services.AgentChat.AgentMainSessionResolver>();
             builder.Services.AddSingleton<ConversationProjector>();
             builder.Services.AddSingleton<ConversationCatalogBackfillService>();
             builder.Services.AddHostedService<ConversationProjectionWorker>();
@@ -434,6 +437,8 @@ public static partial class PuddingServiceCollectionExtensions
                 new DashScopeVisualReasoningOptions(endpoint, apiKey));
         });
         builder.Services.AddPuddingController();
+        // 统一打开的身份解析依赖 ISessionRepository；PuddingController 只注册了具体实现，这里补接口映射。
+        builder.Services.AddSingleton<ISessionRepository>(sp => sp.GetRequiredService<InMemorySessionRepository>());
 
         // ── 代码智能索引与查询服务 ─────────────────────────
         // ICodeIndexStore must be registered before AddPuddingCodeIntelligence,
