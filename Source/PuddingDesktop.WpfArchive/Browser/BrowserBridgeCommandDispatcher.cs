@@ -55,6 +55,35 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
     public event EventHandler<AgentBrowserActivityChangedEventArgs>? ActivityChanged;
     public event EventHandler<AgentBrowserOperationStateChangedEventArgs>? OperationStateChanged;
 
+    /// <summary>会话控制面变化（交页待确认 → 可信会话确认归属、撤销、暂停/接管等）。</summary>
+    public event EventHandler<BrowserSessionChangedEventArgs>? SessionChanged;
+
+    private string? _lastSessionStatusKey;
+
+    /// <summary>
+    /// 把会话控制面快照推给 UI（只在可观察内容变化时推）：UI 必须能区分
+    /// “等待会话确认 / 已交出 / 无目标”，而不是点了按钮就谎称已交出（ADR-097 D3）。
+    /// </summary>
+    private void PublishSessionStatus()
+    {
+        var status = _lifecycle.CaptureSessionStatus();
+        var key = string.Concat(status.Describe(), "\u001f", status.Reason ?? string.Empty);
+        if (string.Equals(_lastSessionStatusKey, key, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastSessionStatusKey = key;
+        try
+        {
+            SessionChanged?.Invoke(this, new BrowserSessionChangedEventArgs(status));
+        }
+        catch
+        {
+            // 订阅者异常不得打断命令执行。
+        }
+    }
+
     public void SetHandler(IBrowserCommandHandler handler) => _handler = handler;
 
     /// <summary>
@@ -75,9 +104,13 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
     /// <summary>
     /// 用户把某页设为（或清除）Agent 目标：下发到准入权威。
     /// 本类是 Bridge 闸门本身，因此它就是那个必须知道目标的执行路径。
+    /// 交页后立刻推送一次会话状态：UI 在此之前只能显示“等待会话确认”。
     /// </summary>
-    public void SetAgentTarget(string? contextId, string? pageId) =>
+    public void SetAgentTarget(string? contextId, string? pageId)
+    {
         _lifecycle.SetAgentTarget(contextId, pageId);
+        PublishSessionStatus();
+    }
 
     public async Task<BrowserBridgeCommandResult> DispatchAsync(
         BrowserBridgeCommand command,
@@ -228,6 +261,10 @@ public sealed class BrowserBridgeCommandDispatcher : IBrowserAutomationGate
         // Browser Session Authority）：用户交页 + 宿主注入的可信 owner + 只读/写分级 + 写世代/唯一票据。
         // 无 PageId 的**发现类**命令不要求目标（否则会形成“看不到页面所以选不了页面”的循环）。
         var gate = AuthorizeSessionCommand(command);
+
+        // 首条可信命令可能刚刚确认了交页归属 ⇒ 推送一次会话状态（UI 从“等待确认”切到“已交出”）。
+        PublishSessionStatus();
+
         if (!gate.Allowed)
         {
             var deniedActivity = new AgentBrowserActivity(
@@ -684,4 +721,15 @@ public sealed class AgentBrowserOperationStateChangedEventArgs : EventArgs
 
     public AgentBrowserOperationStateChangedEventArgs(AgentBrowserOperationStateSnapshot snapshot)
         => Snapshot = snapshot;
+}
+
+/// <summary>
+/// 会话控制面变化（交页/确认/撤销/暂停/接管）。只携带 Contracts/DesktopService 标量快照。
+/// </summary>
+public sealed class BrowserSessionChangedEventArgs : EventArgs
+{
+    public BrowserSessionStatus Status { get; }
+
+    public BrowserSessionChangedEventArgs(BrowserSessionStatus status)
+        => Status = status ?? throw new ArgumentNullException(nameof(status));
 }

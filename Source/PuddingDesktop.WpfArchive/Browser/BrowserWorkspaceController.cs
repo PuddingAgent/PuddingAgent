@@ -125,6 +125,7 @@ public sealed class BrowserWorkspaceController :
     private IBrowserContext? _context;
     private PageId? _activePageId;
     private PageId? _agentTargetPageId;
+    private BrowserSessionStatus? _sessionStatus;
     private AgentBrowserControlState _controlState = AgentBrowserControlState.Idle;
     private BrowserBridgeConnectionState _bridgeState = BrowserBridgeConnectionState.Disconnected;
     private BrowserContextId? _activeContextId;
@@ -179,9 +180,46 @@ public sealed class BrowserWorkspaceController :
     public bool CanGoBack => ActiveTab?.CanGoBack ?? false;
     public bool CanGoForward => ActiveTab?.CanGoForward ?? false;
     public bool IsLoading => ActiveTab?.IsLoading ?? false;
-    public string AgentTargetSummary => _agentTargetPageId is { } pageId
-        ? $"Agent target: {Tabs.FirstOrDefault(tab => tab.PageId == pageId)?.Title ?? pageId.Value}"
-        : "No agent target";
+    public string AgentTargetSummary
+    {
+        get
+        {
+            if (_agentTargetPageId is not { } pageId)
+            {
+                return "No agent target";
+            }
+
+            var title = Tabs.FirstOrDefault(tab => tab.PageId == pageId)?.Title ?? pageId.Value;
+
+            // ADR-097 D3：交页要由可信 Core 会话确认归属后才能显示“已交出”；
+            // 之前只能显示“等待会话确认”，不能因为点了按钮就谎称 Agent 已取得控制。
+            var state = _sessionStatus switch
+            {
+                { HasTarget: true } => "session confirmed",
+                { HasPendingHandover: true } => "waiting for session confirmation",
+                _ => "not yet confirmed by a core session",
+            };
+
+            return $"Agent target: {title} ({state})";
+        }
+    }
+
+    /// <summary>会话控制面快照（来自 Bridge 派发器的同一权威；UI 只读）。</summary>
+    public BrowserSessionStatus? ControlSession => _sessionStatus;
+
+    /// <summary>应用会话控制面快照：目标摘要据此区分“待确认/已交出/已失效”。</summary>
+    public async Task ApplySessionStatusAsync(BrowserSessionStatus status, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+
+        await _uiDispatcher.InvokeAsync(() =>
+        {
+            _sessionStatus = status;
+            OnPropertyChanged(nameof(ControlSession));
+            OnPropertyChanged(nameof(AgentTargetSummary));
+            return Task.CompletedTask;
+        }, ct);
+    }
 
     public string CurrentAgentSummary
     {

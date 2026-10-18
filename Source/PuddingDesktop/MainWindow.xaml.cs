@@ -1381,6 +1381,11 @@ public sealed partial class MainWindow : Window
             { try { await browser.ApplyActivityAsync(e.Snapshot, _lifetime.Token); } catch (OperationCanceledException) { } catch (Exception ex) { App.WriteDiagnostic(ex); } };
             _coordinator.BridgeDispatcher.OperationStateChanged += async (_, e) =>
             { try { await browser.ApplyOperationStateAsync(e.Snapshot, _lifetime.Token); } catch (OperationCanceledException) { } catch (Exception ex) { App.WriteDiagnostic(ex); } };
+            // ADR-097 D3：交页后 UI 必须能区分「等待会话确认 / 已交出 / 已失效」，不能点完按钮就显示已交出。
+            _coordinator.BridgeDispatcher.SessionChanged += async (_, e) =>
+            { try { await browser.ApplySessionStatusAsync(e.Status, _lifetime.Token); } catch (OperationCanceledException) { } catch (Exception ex) { App.WriteDiagnostic(ex); } };
+            await browser.ApplySessionStatusAsync(
+                _coordinator.BridgeDispatcher.Lifecycle.CaptureSessionStatus(), _lifetime.Token);
             // Every live page becomes one instance tab; the old inner tab strip is gone so
             // the outer tab and the page identity stay 1:1.
             browser.Tabs.CollectionChanged += (_, _) => UiThread.Post(SyncBrowserTabs);
