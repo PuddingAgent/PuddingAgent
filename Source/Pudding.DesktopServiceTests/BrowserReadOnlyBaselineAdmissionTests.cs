@@ -70,6 +70,35 @@ public sealed class BrowserReadOnlyBaselineAdmissionTests
         await executor.DisposeAsync();
     }
 
+    [Fact]
+    public async Task SessionPermitMarker_SkipsTheLegacyAuthorityAdmissionForWrite()
+    {
+        // I2-c D2：已由 Bridge 派发器完成会话准入的调用，执行器不得再用旧 authority 的
+        // grant/lease 重复裁决（否则写串行化出现第二套来源）。标记只在进程内可信组合根设置。
+        var (_, surface, executor) = CreateReady(selectTarget: true);
+        var context = new DesktopCallContext(
+            new DesktopInstanceId("desk-test"),
+            new OperationId("op-navigate-with-session-permit"),
+            DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30),
+            browserCaller: new BrowserCallerIdentity(
+                BrowserCallerKind.Agent, "agent-test", "task-test"))
+        {
+            SessionPermitMarker = "session-permit",
+        };
+
+        var response = await executor.ExecuteAsync(
+            Descriptor(DesktopCapability.WebViewNavigate),
+            DesktopCapabilityRequest.ForNavigate(new NavigateRequest(
+                AgentPage, new Uri("https://example.com"), DesktopPageVersion.Require(3))),
+            context,
+            CancellationToken.None);
+
+        Assert.False(response.IsFailure, $"expected admitted navigation, got {response.Error?.Code}: {response.Error?.Message}");
+        Assert.Equal(1, surface.NavigateCount);
+
+        await executor.DisposeAsync();
+    }
+
     private static (BrowserPageLifecycle Lifecycle, RecordingUiSurface Surface, IDesktopBrowserExecutor Executor)
         CreateReady(bool selectTarget)
     {

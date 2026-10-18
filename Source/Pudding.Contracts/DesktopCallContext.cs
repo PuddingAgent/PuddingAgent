@@ -31,6 +31,18 @@ public sealed record DesktopCallContext
     /// </summary>
     public BrowserCallerIdentity? BrowserCaller { get; init; }
 
+    /// <summary>
+    /// 宿主内部的**会话票据标记**（I2-c D2）：表示这次浏览器能力调用已经由 Bridge 派发器
+    /// 用会话权威完成准入/复检，执行器**不得**再用旧 authority 的 grant/lease 重复裁决。
+    ///
+    /// <para>
+    /// **不上线缆、不来自模型**：能力通道 wire 不携带本字段（见 `Mapping`/`WireMapping` 只映射
+    /// operation/generation/capability/deadline），因此只有 Desktop 进程内可信组合根能设置它；
+    /// 缺失即按旧路径（能力通道）处理。实现迁移期间禁止把它暴露给工具参数或日志。
+    /// </para>
+    /// </summary>
+    public string? SessionPermitMarker { get; init; }
+
     public DesktopCallContext(
         DesktopInstanceId desktopId,
         OperationId operationId,

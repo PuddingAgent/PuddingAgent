@@ -962,30 +962,38 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                 return DesktopCapabilityError.Unauthorized(callerReason);
             }
 
-            var decision = Authority.Admit(new BrowserAutomationRequest(
-                automationOperation,
-                browserCaller,
-                context.OperationId,
-                generation(),
-                target));
+            // I2-c D2：该调用已由 Bridge 派发器用**会话权威**完成准入/复检（宿主内部标记，不上线缆）。
+            // 执行器不得再用旧 authority 的 grant/lease 重复裁决（否则写串行化会有第二套来源）；
+            // 页面存在/信任级/自动化状态/版本检查仍在本方法后续步骤执行。
+            var sessionAdmitted = !string.IsNullOrWhiteSpace(context.SessionPermitMarker);
 
-            lease = decision.Lease;
-
-            if (!decision.IsAllowed)
+            if (!sessionAdmitted)
             {
-                // 迁移期唯一例外：只读操作 + 用户选中的 Agent 目标页（页级基线，不签发租约）。
-                // 写操作**绝不**走这条路：它们仍必须有 grant/租约（I2 会话权威落地后统一替换）。
-                if (_readOnlyPageBaselineAdmission is not null
-                    && target is not null
-                    && BrowserOperationPolicy.IsReadOnly(automationOperation)
-                    && _readOnlyPageBaselineAdmission(browserCaller, target))
+                var decision = Authority.Admit(new BrowserAutomationRequest(
+                    automationOperation,
+                    browserCaller,
+                    context.OperationId,
+                    generation(),
+                    target));
+
+                lease = decision.Lease;
+
+                if (!decision.IsAllowed)
                 {
-                    lease = null;
-                }
-                else
-                {
-                    return decision.Error
-                        ?? DesktopCapabilityError.Unauthorized(decision.Denial.ToString());
+                    // 迁移期唯一例外：只读操作 + 用户选中的 Agent 目标页（页级基线，不签发租约）。
+                    // 写操作**绝不**走这条路：它们仍必须有 grant/租约（I2 会话权威落地后统一替换）。
+                    if (_readOnlyPageBaselineAdmission is not null
+                        && target is not null
+                        && BrowserOperationPolicy.IsReadOnly(automationOperation)
+                        && _readOnlyPageBaselineAdmission(browserCaller, target))
+                    {
+                        lease = null;
+                    }
+                    else
+                    {
+                        return decision.Error
+                            ?? DesktopCapabilityError.Unauthorized(decision.Denial.ToString());
+                    }
                 }
             }
         }
