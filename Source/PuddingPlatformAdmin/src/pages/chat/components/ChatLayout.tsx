@@ -19,6 +19,12 @@ import SessionSidebar, {
 
 interface ChatLayoutProps {
   reconnectCount?: number;
+  /**
+   * 右侧产物区（文档预览等）。
+   * 根容器已是 flex row，直接作为最后一个子元素即可并排，不改现有布局。
+   * 未传时不占任何空间。
+   */
+  sidePanel?: React.ReactNode;
   // sidebar
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
@@ -238,6 +244,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         restoredCheckpointId={props.restoredCheckpointId}
         clearRestoredMarker={props.clearRestoredMarker}
       />
+      {props.sidePanel}
     </div>
   );
 };

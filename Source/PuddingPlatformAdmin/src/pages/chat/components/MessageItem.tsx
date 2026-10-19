@@ -7,6 +7,8 @@ import {
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import IncrementalMarkdown from './IncrementalMarkdown';
 import FoldableMessage from './FoldableMessage';
+import { useSideArtifact } from '../sideArtifact/SideArtifactContext';
+import { extractOutline } from '../markdown/outline';
 
 const MarkdownBlock =
   process.env.NODE_ENV === 'test'
@@ -204,17 +206,28 @@ const MessageItem: React.FC<MessageItemProps> = ({
   // 落定/非流式路径同样走增量渲染：块 key 与流式期间一致（偏移:长度），
   // settle 时不重挂载已冻结块、不全文重解析，只提交最后的尾块。
   const renderedMarkdown = markdownText || (isStreaming ? ' ' : '');
+
+  // 「在右侧打开」的优先级：显式 prop > 页面级 context > 不渲染按钮。
+  // 没有 context 时（单测、独立使用）保持原来的行为，不造死按钮。
+  const side = useSideArtifact();
+  const openInSide = onOpenMessageInSide
+    ? () => onOpenMessageInSide(renderedMarkdown)
+    : side
+      ? () =>
+          side.openDocument({
+            // 用第一个标题当文档名；extractOutline 已跳过围栏代码块。
+            name: `${extractOutline(renderedMarkdown)[0]?.text ?? '长消息'}.md`,
+            markdown: renderedMarkdown,
+          })
+      : undefined;
+
   return (
     <div ref={outputRef} className={styles.markdownBody}>
       {renderedMarkdown.trim() ? (
         <FoldableMessage
           markdown={renderedMarkdown}
           disabled={isStreaming}
-          onOpenInSide={
-            onOpenMessageInSide
-              ? () => onOpenMessageInSide(renderedMarkdown)
-              : undefined
-          }
+          onOpenInSide={openInSide}
         >
           <IncrementalMarkdown
             text={renderedMarkdown}

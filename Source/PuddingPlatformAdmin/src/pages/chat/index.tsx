@@ -27,6 +27,8 @@ import { isAgentClientArchitectureEnabled } from './client/featureFlag';
 import { createIndexedDbAgentChatCache } from './client/localCache';
 import type { AgentStatusProjection } from './client/types';
 import ChatLayout from './components/ChatLayout';
+import SideDocumentPanel from './components/SideDocumentPanel';
+import { SideArtifactProvider } from './sideArtifact/SideArtifactContext';
 import type { ContextMenuState } from './components/ContextMenu';
 import { useAgentChatClient } from './hooks/useAgentChatClient';
 import { useChatState } from './hooks/useChatState';
@@ -806,6 +808,7 @@ const ChatPageContent: React.FC = () => {
         formatTime={chat.formatTime}
         onDeleteTurn={chat.onDeleteTurn}
         onContextMenu={handleContextMenu}
+        sidePanel={<SideDocumentPanel />}
         onRerunTurn={handleRerunTurn}
         onPinTurn={handlePinTurn}
         messageListRef={chat.messageListRef}
@@ -896,7 +899,9 @@ const ChatPage: React.FC = () => (
     theme={{ token: { colorPrimary: 'var(--accent-purple)', borderRadius: 8 } }}
   >
     <App>
-      <ChatPageContent />
+      <SideArtifactProvider>
+        <ChatPageContent />
+      </SideArtifactProvider>
     </App>
   </ConfigProvider>
 );
