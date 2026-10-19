@@ -25,6 +25,7 @@ export default {
   'menu.memoryLibrary': '记忆图书馆',
   'menu.storage': '存储管理',
   'menu.indexStatus': '全文索引状态',
+  'menu.homeAssistant': 'Home Assistant',
   'menu.tokenStats': 'Token 统计',
   'menu.runtimeManagement': 'Runtime 节点',
   'menu.orchestration': 'Agent 编排',

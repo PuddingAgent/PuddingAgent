@@ -56,6 +56,7 @@ export default {
   'menu.memoryLibrary': 'Memory Library',
   'menu.storage': 'Storage',
   'menu.indexStatus': 'Full-Text Index Status',
+  'menu.homeAssistant': 'Home Assistant',
   'menu.workspace': 'Workspace',
   'menu.workspaceTasks': 'Workspace Tasks',
   'menu.llmResourcePool': 'LLM Resource Pool',

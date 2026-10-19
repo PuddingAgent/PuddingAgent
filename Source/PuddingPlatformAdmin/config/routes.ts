@@ -135,6 +135,12 @@ const routeCatalog = [
     component: './index-status',
   },
   {
+    path: '/home-assistant',
+    name: 'homeAssistant',
+    icon: 'home',
+    component: './home-assistant',
+  },
+  {
     path: '/diagnostics',
     name: 'diagnostics',
     icon: 'bug',

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using PuddingCode.Configuration;
 using PuddingHomeAssistant.Contracts;
@@ -139,6 +140,46 @@ public sealed class HaInstanceStore(PuddingDataPaths paths, ILogger<HaInstanceSt
             i.BaseUrl.ToString(),
             !string.IsNullOrEmpty(i.Token),
             i.OptInDomains.OrderBy(d => d, StringComparer.Ordinal).ToArray())).ToArray();
+
+    /// <summary>令牌预览（Admin 界面用）：只给前 6 后 4，永不回传完整令牌。</summary>
+    public static string? PreviewToken(string? token) =>
+        string.IsNullOrEmpty(token)
+            ? null
+            : token.Length <= 12
+                ? "****"
+                : token[..6] + "…" + token[^4..];
+
+    /// <summary>
+    /// 原子保存实例配置：写临时文件后 <c>File.Move(overwrite)</c> 替换，避免半写入。
+    /// 保存后立即失效缓存，使工具下一次调用就读到新值。
+    /// </summary>
+    public async Task SaveAsync(string configAgentId, IReadOnlyList<HaInstance> instances, CancellationToken ct)
+    {
+        var path = ResolvePath(configAgentId);
+        var directory = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(directory);
+
+        var doc = new ConfigDocument
+        {
+            Instances = instances.Select(i => new ConfigItem
+            {
+                Alias = i.Alias,
+                BaseUrl = i.BaseUrl.ToString(),
+                Token = i.Token,
+                OptInDomains = i.OptInDomains.OrderBy(x => x, StringComparer.Ordinal).ToList(),
+            }).ToList(),
+        };
+
+        var json = JsonSerializer.Serialize(
+            doc,
+            new JsonSerializerOptions(s_json) { WriteIndented = true });
+
+        var temp = path + ".tmp";
+        await File.WriteAllTextAsync(temp, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), ct)
+            .ConfigureAwait(false);
+        File.Move(temp, path, overwrite: true);
+        _cache.TryRemove(configAgentId, out _);
+    }
 
     private IReadOnlyList<HaInstance> Parse(ConfigDocument? doc)
     {
