@@ -16,7 +16,12 @@ import ChatMain from './ChatMain';
 import SessionSidebar, {
   type AgentStatusChipProjection,
 } from './SessionSidebar';
-import { sidePanelHostStyle } from '../sideArtifact/sidePanelSizing';
+import { SidePanelResizer } from './SidePanelResizer';
+import {
+  loadSavedWidth,
+  saveWidth,
+  sidePanelHostStyle,
+} from '../sideArtifact/sidePanelSizing';
 
 interface ChatLayoutProps {
   reconnectCount?: number;
@@ -142,6 +147,9 @@ interface ChatLayoutProps {
 const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
   const { styles } = useChatStyles();
   const workingAgentIds = Array.from(new Set(props.workingAgentIds));
+  // 右侧面板宽度由用户拖拽决定，首次取上次记住的值。
+  // 拖动过程中只改内存，松手（onCommit）才写 localStorage。
+  const [sideWidth, setSideWidth] = React.useState<number>(() => loadSavedWidth());
 
   return (
     <div className={styles.layout}>
@@ -246,18 +254,25 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         clearRestoredMarker={props.clearRestoredMarker}
       />
       {/*
-        右侧产物区：给它一个宽度上限，别让内容把聊天列挤成一条。
-        约束定义在 `sidePanelHostStyle()`（比例上限 + 最小可读宽度）。
-        不传 sidePanel 时不渲染外壳 = 不占任何空间。
+        右侧产物区：宽度由用户拖拽，记忆在 localStorage。
+        约束（最小/最大/窗口窄时硬顶）全在 sidePanelSizing.ts。
+        不传 sidePanel 时不渲染外壳与分隔条 = 不占任何空间。
       */}
       {props.sidePanel ? (
-        <div
-          className={styles.sidePanelHost}
-          data-testid="side-panel-host"
-          style={sidePanelHostStyle()}
-        >
-          {props.sidePanel}
-        </div>
+        <>
+          <SidePanelResizer
+            width={sideWidth}
+            onWidthChange={setSideWidth}
+            onCommit={saveWidth}
+          />
+          <div
+            className={styles.sidePanelHost}
+            data-testid="side-panel-host"
+            style={sidePanelHostStyle(sideWidth)}
+          >
+            {props.sidePanel}
+          </div>
+        </>
       ) : null}
     </div>
   );

@@ -114,25 +114,39 @@ export const FoldableMessage: React.FC<FoldableMessageProps> = ({
         <div
           style={{
             display: 'flex',
-            gap: 8,
+            gap: 12,
+            alignItems: 'center',
             padding: '10px 12px',
             borderTop: '1px solid #e5e7eb',
             background: '#fff',
           }}
         >
+          {/*
+            只给一个「主按钮」。
+            之前是两个同权重按钮（在右侧打开 / 在对话中展开）—— 用户实测反馈
+            "多了一个按钮"：两者都是"展开"，视觉上重复，得先读才能分辨差别。
+            现在：主路径是右侧阅读（长文档在对话里滚很痛苦），
+            留在对话里降为文字链接 —— 需要时仍在，但不抢注意力。
+          */}
           {onOpenInSide ? (
-            <Button
-              type="primary"
-              size="small"
-              data-testid="fold-open-side"
-              onClick={onOpenInSide}
-            >
-              在右侧打开全文
+            <>
+              <Button
+                type="primary"
+                size="small"
+                data-testid="fold-open-side"
+                onClick={onOpenInSide}
+              >
+                展开阅读
+              </Button>
+              <Button type="link" size="small" data-testid="fold-expand" onClick={() => setExpanded(true)}>
+                在对话中展开
+              </Button>
+            </>
+          ) : (
+            <Button size="small" data-testid="fold-expand" onClick={() => setExpanded(true)}>
+              在对话中展开
             </Button>
-          ) : null}
-          <Button size="small" data-testid="fold-expand" onClick={() => setExpanded(true)}>
-            在对话中展开
-          </Button>
+          )}
         </div>
       </div>
     </div>
