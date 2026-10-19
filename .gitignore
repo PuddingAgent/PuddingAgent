@@ -443,3 +443,6 @@ pub/
 /agents/
 /memory/
 /skills/
+
+# Desktop bootstrap 运行时信号文件（YOLO/重启标记），非源码
+/yolo.signal
