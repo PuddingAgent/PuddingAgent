@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Pudding.Contracts.Desktop;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Protocol;
 
@@ -304,13 +305,33 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
 
     private static BrowserLocatorDescriptor ToDescriptor(Locator locator) => new()
     {
-        Kind = locator.Kind.ToString(),
+        // 线缆上的 kind 是**线名**（kebab-case，真源 DesktopLocatorKindWire），不是枚举名：
+        // 接收端 BrowserBridgeCommandAdapter.TryMapLocator 按线名严格解析、不猜测不回退，
+        // 送 "AltText"/"Role" 这类枚举名会被判为"未注册"⇒ 十种定位全部 fail closed。
+        Kind = LocatorWireName(locator.Kind),
         Value = locator.Value,
         Name = locator.Name,
         Exact = locator.Exact,
         Nth = locator.Nth,
         HasText = locator.HasText
     };
+
+    /// <summary>
+    /// 运行时定位枚举 → 线名。两套枚举成员名一一对应（见 <see cref="DesktopLocatorKind"/> 注释：
+    /// 「与 PuddingBrowser.Abstractions.LocatorKind 等价，取值为线名真源」），因此按成员名过渡一次，
+    /// 再由 <see cref="DesktopLocatorKindWire"/> 给出唯一线名。成员名若不相等则**响亮失败**，不静默退化。
+    /// </summary>
+    internal static string LocatorWireName(LocatorKind kind)
+    {
+        if (!Enum.TryParse<DesktopLocatorKind>(kind.ToString(), ignoreCase: false, out var desktopKind))
+        {
+            throw new BrowserOperationException(
+                BrowserBridgeErrorCodes.BrowserOperationNotSupported,
+                $"locator kind '{kind}' has no wire equivalent");
+        }
+
+        return DesktopLocatorKindWire.NameOf(desktopKind);
+    }
 
     private static BrowserElementInfo ToInfo(BrowserElementDescriptor descriptor) => new()
     {
