@@ -168,6 +168,17 @@ public static class ScreenCaptureGeometry
                 return false;
             }
 
+            // 最小化窗口的 GetWindowRect 给的是 -32000 屏外占位矩形（实测 160x28），
+            // 拿它去采集只能得到一张碎片 —— 宁可明确拒绝，也不返回“看起来成功的错图”。
+            if (exact.IsMinimized)
+            {
+                window = null!;
+                error = $"window \"{Truncate(exact.Title, 40)}\" is minimized; its frame is the off-screen placeholder "
+                        + $"{exact.Bounds}, not the real window size, so capturing it would only produce a fragment. "
+                        + "Restore the window first, or capture by displayIndex/region instead.";
+                return false;
+            }
+
             window = exact;
             matchCount = 1;
             error = null;
@@ -197,10 +208,26 @@ public static class ScreenCaptureGeometry
             return false;
         }
 
-        window = matches
+        // 可采集性优先于面积：DWM 隐藏（另一虚拟桌面）与最小化（屏外占位）都排在正常窗口之后。
+        // 这三个条件分别对应 isVisible / isCloaked / isMinimized，**不可合并成一个布尔**。
+        var chosen = matches
             .OrderByDescending(w => w.IsVisible)
+            .ThenBy(w => w.IsCloaked)
+            .ThenBy(w => w.IsMinimized)
             .ThenByDescending(w => w.Bounds.Area)
             .First();
+
+        if (chosen.IsMinimized)
+        {
+            window = null!;
+            matchCount = matches.Count;
+            error = $"{matches.Count} window(s) contain \"{needle}\" but the best candidate "
+                    + $"\"{Truncate(chosen.Title, 40)}\" is minimized; its {chosen.Bounds} frame is an off-screen "
+                    + "placeholder, not the real size. Restore it first, or capture by displayIndex/region instead.";
+            return false;
+        }
+
+        window = chosen;
         matchCount = matches.Count;
         error = null;
         return true;

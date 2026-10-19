@@ -141,8 +141,8 @@ public sealed class ScreenCaptureGeometryTests
     {
         IReadOnlyList<ScreenWindow> windows =
         [
-            new((nint)0x2A, "Alpha", "alpha", new PixelRect(0, 0, 100, 100), true),
-            new((nint)0x2B, "Beta", "beta", new PixelRect(0, 0, 200, 200), true),
+            new((nint)0x2A, "Alpha", "alpha", new PixelRect(0, 0, 100, 100), true, false, false),
+            new((nint)0x2B, "Beta", "beta", new PixelRect(0, 0, 200, 200), true, false, false),
         ];
 
         Assert.True(ScreenCaptureGeometry.TryMatchWindow(windows, null, "0x2B", out var window, out var count, out _));
@@ -155,9 +155,9 @@ public sealed class ScreenCaptureGeometryTests
     {
         IReadOnlyList<ScreenWindow> windows =
         [
-            new((nint)1, "Pudding — chat", "PuddingAgent", new PixelRect(0, 0, 800, 600), true),
-            new((nint)2, "Pudding — 设置", "PuddingAgent", new PixelRect(0, 0, 1600, 1200), true),
-            new((nint)3, "Pudding — 隐藏", "PuddingAgent", new PixelRect(0, 0, 9999, 9999), false),
+            new((nint)1, "Pudding — chat", "PuddingAgent", new PixelRect(0, 0, 800, 600), true, false, false),
+            new((nint)2, "Pudding — 设置", "PuddingAgent", new PixelRect(0, 0, 1600, 1200), true, false, false),
+            new((nint)3, "Pudding — 隐藏", "PuddingAgent", new PixelRect(0, 0, 9999, 9999), false, false, false),
         ];
 
         Assert.True(ScreenCaptureGeometry.TryMatchWindow(windows, "pudding", null, out var window, out var count, out _));
@@ -171,7 +171,7 @@ public sealed class ScreenCaptureGeometryTests
     {
         IReadOnlyList<ScreenWindow> windows =
         [
-            new((nint)1, "Visual Studio Code", "Code", new PixelRect(0, 0, 1600, 1200), true),
+            new((nint)1, "Visual Studio Code", "Code", new PixelRect(0, 0, 1600, 1200), true, false, false),
         ];
 
         Assert.False(ScreenCaptureGeometry.TryMatchWindow(windows, "不存在的窗口", null, out _, out _, out var error));
@@ -184,7 +184,7 @@ public sealed class ScreenCaptureGeometryTests
     public void MatchWindow_WithoutTitleOrHandle_IsRejected()
     {
         Assert.False(ScreenCaptureGeometry.TryMatchWindow(
-            [new((nint)1, "X", "x", new PixelRect(0, 0, 10, 10), true)], " ", null, out _, out _, out var error));
+            [new((nint)1, "X", "x", new PixelRect(0, 0, 10, 10), true, false, false)], " ", null, out _, out _, out var error));
 
         Assert.Contains("requires windowTitle", error);
     }
@@ -193,8 +193,84 @@ public sealed class ScreenCaptureGeometryTests
     public void MatchWindow_MalformedHandle_IsRejectedRatherThanGuessed()
     {
         Assert.False(ScreenCaptureGeometry.TryMatchWindow(
-            [new((nint)1, "X", "x", new PixelRect(0, 0, 10, 10), true)], null, "not-a-handle", out _, out _, out var error));
+            [new((nint)1, "X", "x", new PixelRect(0, 0, 10, 10), true, false, false)], null, "not-a-handle", out _, out _, out var error));
 
         Assert.Contains("not a usable handle", error);
+    }
+
+    [Fact]
+    public void MatchWindow_ByHandle_Minimized_IsRejectedWithPlaceholderReason()
+    {
+        // 最小化窗口的 GetWindowRect 给的是 -32000 屏外占位矩形；抓它只会得到一张碎片。
+        IReadOnlyList<ScreenWindow> windows =
+        [
+            new((nint)0x2A, "最小化的窗口", "app", new PixelRect(-32000, -32000, 160, 28), true, true, false),
+        ];
+
+        Assert.False(ScreenCaptureGeometry.TryMatchWindow(windows, null, "0x2A", out _, out _, out var error));
+
+        Assert.Contains("is minimized", error);
+        Assert.Contains("-32000", error);   // 必须把占位矩形亮出来，调用方才明白为什么不给图
+    }
+
+    [Fact]
+    public void MatchWindow_PrefersNonMinimized_EvenWhenItIsSmaller()
+    {
+        IReadOnlyList<ScreenWindow> windows =
+        [
+            new((nint)1, "Pudding — 最小化", "app", new PixelRect(-32000, -32000, 160, 28), true, true, false),
+            new((nint)2, "Pudding — 正常", "app", new PixelRect(0, 0, 800, 600), true, false, false),
+        ];
+
+        Assert.True(ScreenCaptureGeometry.TryMatchWindow(windows, "pudding", null, out var window, out var count, out _));
+
+        Assert.Equal((nint)2, window.Handle);
+        Assert.Equal(2, count);
+    }
+
+    [Fact]
+    public void MatchWindow_AllMatchesMinimized_FailsInsteadOfReturningAPlaceholderShot()
+    {
+        IReadOnlyList<ScreenWindow> windows =
+        [
+            new((nint)1, "Pudding — A", "app", new PixelRect(-32000, -32000, 160, 28), true, true, false),
+            new((nint)2, "Pudding — B", "app", new PixelRect(-32000, -32000, 160, 28), true, true, false),
+        ];
+
+        Assert.False(ScreenCaptureGeometry.TryMatchWindow(windows, "pudding", null, out _, out var count, out var error));
+
+        Assert.Equal(2, count);             // 命中了几个仍然如实回报
+        Assert.Contains("is minimized", error);
+    }
+
+    [Fact]
+    public void MatchWindow_PrefersNonCloaked_OverLargerCloaked()
+    {
+        // 实测形态：ChatGPT 窗口在副屏上 isVisible=true、面积更大，但被 DWM 隐藏（另一虚拟桌面）。
+        IReadOnlyList<ScreenWindow> windows =
+        [
+            new((nint)1, "ChatGPT", "ChatGPT", new PixelRect(4008, 0, 1113, 1440), true, false, true),
+            new((nint)2, "ChatGPT", "ChatGPT", new PixelRect(0, 0, 800, 600), true, false, false),
+        ];
+
+        Assert.True(ScreenCaptureGeometry.TryMatchWindow(windows, "chatgpt", null, out var window, out _, out _));
+
+        Assert.Equal((nint)2, window.Handle);
+    }
+
+    [Fact]
+    public void MatchWindow_CloakedWindow_IsStillAllowed_OnlyMinimizedIsBlocked()
+    {
+        // cloaked 的 bounds 与渲染内容仍有效（PrintWindow 画窗口自身），所以不阻塞；
+        // 只有最小化的 -32000 占位矩形会污染结果。
+        IReadOnlyList<ScreenWindow> windows =
+        [
+            new((nint)1, "ChatGPT", "ChatGPT", new PixelRect(4008, 0, 1113, 1440), true, false, true),
+        ];
+
+        Assert.True(ScreenCaptureGeometry.TryMatchWindow(windows, "chatgpt", null, out var window, out _, out _));
+
+        Assert.True(window.IsCloaked);
+        Assert.Equal(new PixelRect(4008, 0, 1113, 1440), window.Bounds);
     }
 }

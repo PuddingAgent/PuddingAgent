@@ -14,8 +14,13 @@ namespace PuddingHost.Tests.ScreenCapture;
 /// </summary>
 public sealed class ScreenCaptureWireTests
 {
-    private static ScreenWindow Window(nint handle, string title = "title") =>
-        new(handle, title, "process", new PixelRect(1, 2, 3, 4), IsVisible: true);
+    private static ScreenWindow Window(
+        nint handle,
+        string title = "title",
+        bool isVisible = true,
+        bool isMinimized = false,
+        bool isCloaked = false) =>
+        new(handle, title, "process", new PixelRect(1, 2, 3, 4), isVisible, isMinimized, isCloaked);
 
     [Fact]
     public void RawScreenWindow_CannotBeSerialized_BecauseHandleIsIntPtr()
@@ -75,5 +80,21 @@ public sealed class ScreenCaptureWireTests
         Assert.StartsWith("0x", text, StringComparison.Ordinal);
         Assert.True(ScreenCaptureGeometry.TryParseHandle(text, out var parsed));
         Assert.Equal(handle, parsed);
+    }
+
+    [Fact]
+    public void ProjectWindows_CarriesMinimizedAndCloakedFlags()
+    {
+        // 两个标志必须原样过线：调用方靠它们决定"这张图能不能用"。
+        var projected = ScreenCaptureWire.ProjectWindows(
+        [
+            Window((nint)0x10, "min", isVisible: true, isMinimized: true),
+            Window((nint)0x11, "cloaked", isVisible: true, isCloaked: true),
+        ]);
+
+        Assert.True(projected[0].IsMinimized);
+        Assert.False(projected[0].IsCloaked);
+        Assert.True(projected[1].IsCloaked);
+        Assert.False(projected[1].IsMinimized);
     }
 }

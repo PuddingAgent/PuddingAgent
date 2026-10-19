@@ -150,9 +150,24 @@ public sealed class ScreenCaptureTool(
                 return null;
             }
 
-            var notes = matchCount > 1
-                ? new[] { $"{matchCount} windows matched; captured the largest visible one (\"{window.Title}\")" }
-                : Array.Empty<string>();
+            var notes = new List<string>(3);
+            if (matchCount > 1)
+            {
+                notes.Add($"{matchCount} windows matched; captured \"{window.Title}\" (the most usable one)");
+            }
+
+            // 被 DWM 隐藏（典型：另一个虚拟桌面）仍可采集（PrintWindow 画的是窗口自身），
+            // 但必须告知：屏幕位图里没有它，图像与用户当前所见不一致。
+            if (window.IsCloaked)
+            {
+                notes.Add("window is cloaked by DWM (likely on another virtual desktop); "
+                          + "the image is the window's own rendering, not a screen pixel copy");
+            }
+
+            if (!window.IsVisible)
+            {
+                notes.Add("window is hidden (WS_VISIBLE is off)");
+            }
 
             error = null;
             return new CapturePlan("window", DisplayContaining(displays, window.Bounds), window.Bounds, window, matchCount, notes);

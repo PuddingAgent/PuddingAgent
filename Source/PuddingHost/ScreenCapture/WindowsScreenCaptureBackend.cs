@@ -103,11 +103,17 @@ public sealed class WindowsScreenCaptureBackend : IScreenCaptureBackend
                     title.ToString(),
                     ResolveProcessName(hwnd),
                     bounds,
-                    IsWindowVisible(hwnd)));
+                    IsWindowVisible(hwnd),
+                    IsIconic(hwnd),
+                    IsCloakedByDwm(hwnd)));
             }
 
+            // 排序目标：把「真能拿来用的窗口」排前面。WS_VISIBLE 只在最前面当粗筛，
+            // 随后依次排掉 DWM 隐藏（其它虚拟桌面）与最小化（屏外占位矩形）。
             return windows
                 .OrderByDescending(w => w.IsVisible)
+                .ThenBy(w => w.IsCloaked)
+                .ThenBy(w => w.IsMinimized)
                 .ThenByDescending(w => w.Bounds.Area)
                 .Take(maxWindows)
                 .ToList();
@@ -342,6 +348,26 @@ public sealed class WindowsScreenCaptureBackend : IScreenCaptureBackend
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindowVisible(nint hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(nint hWnd);
+
+    private const int DwmwaCloaked = 14;
+
+    /// <summary>
+    /// 窗口是否被 DWM 隐藏（典型：位于其它虚拟桌面，或 UWP 的挂起框架）。
+    /// <para>失败或查询不到时返回 <c>false</c>：这是**保守**方向 —— 宁可少报一个 cloaked，
+    /// 也不要把正常窗口误判成不可见而拒掉一次合法采集。</para>
+    /// </summary>
+    private static bool IsCloakedByDwm(nint hWnd)
+    {
+        var status = DwmGetWindowAttribute(hWnd, DwmwaCloaked, out var cloaked, sizeof(int));
+        return status == 0 && cloaked != 0;
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(nint hwnd, int attribute, out int value, int size);
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);

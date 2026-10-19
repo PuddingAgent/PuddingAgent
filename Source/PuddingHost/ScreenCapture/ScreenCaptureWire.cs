@@ -43,7 +43,9 @@ public static class ScreenCaptureWire
                 window.Title,
                 window.ProcessName,
                 window.Bounds,
-                window.IsVisible);
+                window.IsVisible,
+                window.IsMinimized,
+                window.IsCloaked);
         }
 
         return projected;
@@ -52,9 +54,14 @@ public static class ScreenCaptureWire
 
 /// <summary>窗口的线格式：句柄为 <c>0x</c> 十六进制字符串，其余字段与领域模型同名。</summary>
 /// <param name="Handle">形如 <c>0x1A2B3C</c>；可直接作为 <c>windowHandle</c> 回传。</param>
+/// <param name="IsVisible"><c>WS_VISIBLE</c> 样式位，**不代表此刻在屏幕上看得见**。</param>
+/// <param name="IsMinimized">为 true 时 <paramref name="Bounds"/> 是 <c>-32000</c> 屏外占位矩形，不可直接采集。</param>
+/// <param name="IsCloaked">为 true 表示被 DWM 隐藏（典型：在另一个虚拟桌面）。此时 bounds 仍有效。</param>
 public sealed record WindowDescriptor(
     string Handle,
     string Title,
     string ProcessName,
     PixelRect Bounds,
-    bool IsVisible);
+    bool IsVisible,
+    bool IsMinimized,
+    bool IsCloaked);

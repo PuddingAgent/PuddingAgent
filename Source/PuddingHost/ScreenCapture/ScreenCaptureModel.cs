@@ -37,8 +37,27 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height)
 /// <summary>一台显示器（<see cref="Index"/> 由枚举顺序决定，0 起）。</summary>
 public sealed record ScreenDisplay(int Index, string DeviceName, PixelRect Bounds, bool IsPrimary);
 
-/// <summary>一个可截图的顶层窗口。</summary>
-public sealed record ScreenWindow(nint Handle, string Title, string ProcessName, PixelRect Bounds, bool IsVisible);
+/// <summary>
+/// 一个可截图的顶层窗口。
+///
+/// <para>三个可见性字段各说各的事，**不可互相替代**（实测过混淆代价）：</para>
+/// <list type="bullet">
+/// <item><see cref="IsVisible"/> 是 <c>WS_VISIBLE</c> 样式位：窗口未被隐藏，但**不代表此刻在屏幕上看得见**。</item>
+/// <item><see cref="IsMinimized"/> 为 true 时 <see cref="Bounds"/> 是 <c>-32000,-32000 160x28</c> 的
+/// 屏外占位矩形，**不是窗口真实尺寸** —— 拿它采集只能得到一张碎片。</item>
+/// <item><see cref="IsCloaked"/> 为 true 表示窗口被 DWM 隐藏（典型场景：在另一个虚拟桌面）。
+/// 此时 <see cref="Bounds"/> 与渲染内容仍然有效，<c>PrintWindow</c> 通常能抓到窗口自身绘制结果，
+/// 但屏幕位图里不会有它。</item>
+/// </list>
+/// </summary>
+public sealed record ScreenWindow(
+    nint Handle,
+    string Title,
+    string ProcessName,
+    PixelRect Bounds,
+    bool IsVisible,
+    bool IsMinimized,
+    bool IsCloaked);
 
 /// <summary>一次采集得到的 BGRA 像素缓冲（top-down，stride 由后端给出）。</summary>
 public sealed record CapturedScreenImage(int Width, int Height, byte[] Bgra, int Stride);
