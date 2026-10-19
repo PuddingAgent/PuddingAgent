@@ -25,6 +25,7 @@ public sealed class BrowserWorkspaceTargetBridge
     private readonly DesktopTargetRegistry _pageTargets;
     private readonly Lock _sync = new();
     private readonly HashSet<string> _contexts = new(StringComparer.Ordinal);
+    private DesktopPageTarget? _observedAgentTarget;
 
     /// <summary>
     /// 只接受生命周期端口：它是唯一权威实例 + 两个注册表 + 关闭清理点的所有者。
@@ -152,8 +153,8 @@ public sealed class BrowserWorkspaceTargetBridge
     }
 
     /// <summary>
-    /// 设置/撤销「已授权的 Agent 目标页」。<c>null</c> 表示当前没有 Agent 目标
-    /// （用户接管、会话结束、页面被关闭都应当走这里）。
+    /// 显式设置/撤销 Agent 目标。null 是用户撤权命令，不是空状态同步。
+    /// 页面关闭走 OnPageClosed；暂停/接管走各自运行控制端口。
     ///
     /// 撤销必须真的发生：注册表若继续对旧页面回答 <c>IsAgentTarget=true</c>，
     /// 就等于替一个不该再被驱动的页面背书，而只读状态无法自证这件事。
@@ -188,6 +189,24 @@ public sealed class BrowserWorkspaceTargetBridge
         }
     }
 
+    /// <summary>
+    /// 同步工作区展示的目标快照。初始 null、关页后的 null 及无关属性刷新不代表用户撤权；
+    /// 相同快照也不能把会话已切换的目标改回去。显式撤权必须走 OnAgentTargetChanged。
+    /// </summary>
+    public void ObserveAgentTarget(string? contextId, string? pageId)
+    {
+        lock (_sync)
+        {
+            var observed = !string.IsNullOrWhiteSpace(contextId) && !string.IsNullOrWhiteSpace(pageId)
+                ? new DesktopPageTarget(contextId, pageId)
+                : null;
+            if (Equals(observed, _observedAgentTarget)) return;
+            _observedAgentTarget = observed;
+            if (observed is not null)
+                OnAgentTargetChanged(observed.ContextId, observed.PageId);
+        }
+    }
+
     /// <summary>清空两个注册表（窗口退出、浏览器工作区被销毁）。</summary>
     public void Clear()
     {
@@ -203,6 +222,7 @@ public sealed class BrowserWorkspaceTargetBridge
             }
 
             _contexts.Clear();
+            _observedAgentTarget = null;
         }
     }
 

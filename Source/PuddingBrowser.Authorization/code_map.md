@@ -1,6 +1,6 @@
 # PuddingBrowser.Authorization — code_map
 
-> 单目标会话授权纯逻辑组件；当前只被自身测试工程引用，尚非产品执行权威。
+> 单目标会话授权纯逻辑组件；由 DesktopService.BrowserPageLifecycle 持有，负责默认 Bridge 页面命令准入。
 > 目标规则见 [ADR-097](../../Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[一期方案](../../Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md)。
 
 ## 1. 编译边界
@@ -19,6 +19,8 @@
 | [边界测试](../PuddingBrowser.AuthorizationTests/ComponentBoundaryTests.cs) | 引用闭包检查 |
 
 ## 3. 生产接缝
+
+V1 内置 Agent 浏览器：首条可信 owner 的页面请求可隐式建立目标，同 owner 的后续页面请求可切换目标；不同 owner 拒绝。显式 Revoke 暂停隐式绑定，空 UI 快照不能调用 Revoke；页面关闭、断连使旧票据失效。上下文可信级别仍由 DesktopService 校验。
 
 **已接入（2026-10-18，ADR-097 D3）**：`Pudding.DesktopService.BrowserPageLifecycle` 是唯一生产持有者；桥握手/断连、用户交页（`SetAgentTarget`）、暂停/接管、关页/关上下文、所有者确认（`TryClaimControlOwner`）、页面命令准入/复检/释放全部经其标量门面转发到本组件。Shell/桥侧不直接引用本组件（只拿 `Pudding.DesktopService` 的标量门面与稳定拒绝码），因此不破坏 Shell 引用白名单。
 

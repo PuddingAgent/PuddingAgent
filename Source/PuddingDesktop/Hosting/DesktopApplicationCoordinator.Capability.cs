@@ -347,7 +347,7 @@ public sealed partial class DesktopApplicationCoordinator
                 Register(initialContext, tab.PageId);
             }
 
-            bridge.OnAgentTargetChanged(initialContext, workspace.AgentTargetPageId?.Value);
+            bridge.ObserveAgentTarget(initialContext, workspace.AgentTargetPageId?.Value);
         }
 
         workspace.Tabs.CollectionChanged += (_, e) =>
@@ -399,7 +399,10 @@ public sealed partial class DesktopApplicationCoordinator
                 bridge.OnPageActivated(contextId, active.Value, VersionOf(active));
             }
 
-            bridge.OnAgentTargetChanged(contextId, workspace.AgentTargetPageId?.Value);
+            // This is a state observation, not a user revoke command. In particular,
+            // startup/ordinary property changes with no selected page must not
+            // suspend implicit control of the agent-owned browser.
+            bridge.ObserveAgentTarget(contextId, workspace.AgentTargetPageId?.Value);
         };
     }
 

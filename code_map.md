@@ -125,7 +125,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 **浏览器控制权与页面授权**
 
-`BrowserPageLifecycle` 持有会话权威与页面登记；Bridge dispatcher 管准入、复检、释放和账本，ExecutorRoute 映射到工作区执行器，ResultAdapter 负责命令级响应。Host 代理严格消费 Protocol DTO，单项/列表/无值不可混用；发现元数据与页面控制分离。channel 旧权威路径及 handler 回退尚保留；目标边界见 [ADR-097](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[契约修复方案](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。Snapshot ref 绑定页面版本，动作后以新观察验证。
+`BrowserPageLifecycle` 持有会话权威与页面登记；Bridge dispatcher 管准入、复检、释放和账本，ExecutorRoute 映射到工作区执行器，ResultAdapter 负责命令级响应。Host 代理严格消费 Protocol DTO，单项/列表/无值不可混用；发现元数据与页面控制分离。channel 旧权威路径及 handler 回退尚保留；目标边界见 [ADR-097](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[契约修复方案](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文档由驱动签发正数版本；`BrowserWorkspaceTargetBridge.ObserveAgentTarget` 观察 UI 目标快照，空/重复快照不等于用户撤权。显式选页/撤权与页面关闭分别走命令及生命周期端口。
 
 ## 4. 关键调用链路
 
