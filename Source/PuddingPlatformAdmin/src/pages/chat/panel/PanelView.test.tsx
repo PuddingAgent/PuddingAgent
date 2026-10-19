@@ -69,22 +69,7 @@ describe('PanelView', () => {
     });
   });
 
-  it('variants / draft 未实现时显式降级', () => {
-    const variants: PanelSpec = {
-      v: 1,
-      id: 'p2',
-      kind: 'variants',
-      layout: 2,
-      variants: [
-        { id: 'A', title: 'A', html: '<div>A</div>' },
-        { id: 'B', title: 'B', html: '<div>B</div>' },
-      ],
-    };
-    const { getByTestId, rerender } = render(
-      <PanelView spec={variants} onSubmit={jest.fn()} />,
-    );
-    expect(getByTestId('panel-unsupported').textContent).toContain('2 个方案');
-
+  it('draft 未实现时显式降级（variants 已接入，不再降级）', () => {
     const draft: PanelSpec = {
       v: 1,
       id: 'p3',
@@ -92,7 +77,7 @@ describe('PanelView', () => {
       format: 'html',
       source: '<div>草稿</div>',
     };
-    rerender(<PanelView spec={draft} onSubmit={jest.fn()} />);
+    const { getByTestId } = render(<PanelView spec={draft} onSubmit={jest.fn()} />);
     expect(getByTestId('panel-unsupported').textContent).toContain('沙箱宿主');
   });
 });
