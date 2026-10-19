@@ -134,7 +134,7 @@ interface ChatMainProps {
   onReorderQueuedInteraction?: (fromId: string, toId: string) => void;
   /** P1#6：取消全部（中止当前请求 + 清空待发队列） */
   onStopAll?: () => void;
-  onSend: () => void;
+  onSend: (draft: string) => void;
   onSendWithMetadata?: (
     content: string,
     metadata: Record<string, string>,

@@ -9,6 +9,11 @@ import {
   uploadVisionArtifact,
 } from '@/services/platform/api';
 import IntentConsole from './IntentConsole';
+import { createDashScopeVoiceInputAdapter } from '../hooks/dashScopeVoiceInput';
+
+jest.mock('../hooks/dashScopeVoiceInput', () => ({
+  createDashScopeVoiceInputAdapter: jest.fn(),
+}));
 
 jest.mock('@/services/platform/api', () => ({
   getCacheDiagnostics: jest.fn(),
@@ -135,6 +140,7 @@ const baseProps = {
 describe('IntentConsole', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (createDashScopeVoiceInputAdapter as jest.Mock).mockReturnValue(voiceAdapter);
     (URL.createObjectURL as jest.Mock).mockImplementation(
       (file: File) => `blob:${file.name}`,
     );
@@ -182,8 +188,8 @@ describe('IntentConsole', () => {
     expect(onInputChange).toHaveBeenCalledWith('你好');
   });
 
-  it('sends voice transcript with voice metadata from the console boundary', async () => {
-    const sendWithMetadata = jest.fn();
+  it('sends the inline voice transcript through the draft submit boundary', async () => {
+    const onSend = jest.fn();
 
     function ControlledIntentConsole() {
       const [value, setValue] = React.useState('');
@@ -193,7 +199,7 @@ describe('IntentConsole', () => {
           inputValue={value}
           onInputChange={setValue}
           voiceInputAdapter={voiceAdapter}
-          onSendWithMetadata={sendWithMetadata}
+          onSend={onSend}
         />
       );
     }
@@ -201,19 +207,17 @@ describe('IntentConsole', () => {
     render(<ControlledIntentConsole />);
 
     fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
-    fireEvent.click(screen.getByRole('button', { name: '开始语音会话' }));
+    fireEvent.click(await screen.findByRole('button', { name: '停止录音' }));
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('请总结今天的工作')).toBeTruthy();
+      expect((screen.getByTestId('chat-input') as HTMLTextAreaElement).value).toBe('请总结今天的工作');
+      expect((screen.getByTestId('chat-send') as HTMLButtonElement).disabled).toBe(false);
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '发送语音内容' }));
+    fireEvent.click(screen.getByTestId('chat-send'));
 
     await waitFor(() => {
-      expect(sendWithMetadata).toHaveBeenCalledWith(
-        '请总结今天的工作',
-        expect.objectContaining({ inputMode: 'voice', asrProvider: 'browser' }),
-      );
+      expect(onSend).toHaveBeenCalledWith('请总结今天的工作');
     });
   });
 
@@ -451,6 +455,33 @@ describe('IntentConsole', () => {
   });
 
   // ── P0-A 第一批：鼠标排队 / 独立停止 / 补充当前任务 ──
+
+  it.each([false, true])('submits the visible IME draft with a lagging parent (busy=%s)', (loading) => {
+    const submitted = jest.fn();
+    function ControlledComposer() {
+      const [value, setValue] = React.useState('');
+      return <IntentConsole {...baseProps} inputValue={value} onInputChange={setValue}
+        loading={loading} onSend={(draft: string = value) => {
+          if (draft.trim()) submitted(draft);
+          setValue('');
+        }} />;
+    }
+    render(<ControlledComposer />);
+    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: '开始测试，浏览器工具打开测试页' } });
+    const send = screen.getByTestId('chat-send') as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    expect(submitted).toHaveBeenCalledWith('开始测试，浏览器工具打开测试页');
+    expect(submitted).toHaveBeenCalledTimes(1);
+    expect(input.value).toBe('');
+    expect(send.disabled).toBe(true);
+    // A later IME notification must neither resubmit nor resurrect the draft.
+    fireEvent.compositionEnd(input);
+    expect(input.value).toBe('');
+    expect(submitted).toHaveBeenCalledTimes(1);
+  });
 
   it('running composer sends via the same submit chain as Enter instead of hijacking stop', () => {
     const onSend = jest.fn();

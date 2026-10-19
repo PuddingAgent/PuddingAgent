@@ -7,7 +7,7 @@
 // （词上屏 lift、hasText 空非空翻转、focus 变化、外部改写）时重渲染。
 //
 // 契约：
-//  - 非组合输入逐键 lift（onInputChange），与旧行为一致（发送读父级 state，无竞态）；
+//  - 非组合输入逐键 lift（onInputChange）；鼠标发送通过 getValue 读取本叶子草稿，
 //    组合期间不 lift，compositionEnd 一次性 lift（既有 IME 守卫语义不变）；
 //  - 外部改写（引用插入/语音转写/发送清空）走 inputValue prop 同步或 ref.setValue；
 //  - hasText 仅在空↔非空翻转时回调（composerActive/发送按钮门控），不逐键上报；
@@ -39,7 +39,7 @@ export interface ComposerTextInputHandle {
   setValue: (v: string) => void;
 
   focus: () => void;
-  /** 读取当前草稿（发送组图时取提示词用；始终最新，不受 lift 时序影响）。 */
+  /** 读取当前草稿（文字/组图发送均使用；不受 lift 时序影响）。 */
   getValue: () => string;
 }
 

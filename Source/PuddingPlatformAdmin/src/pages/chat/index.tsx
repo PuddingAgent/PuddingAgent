@@ -658,15 +658,14 @@ const ChatPageContent: React.FC = () => {
     chat.setCreateSceneOpen(true);
   }, [chat.createSceneForm, chat.setCreateSceneOpen]);
 
-  const handleSend = useCallback(() => {
-    const t = chat.inputValue.trim();
+  const handleSend = useCallback((draft: string) => {
+    const t = draft.trim();
     // 空文本但已选技能时仍应发出：技能提示由 chat 的出站装饰并入（见 useChatState），
     // 此处只负责判定“有没有东西可发”。
     if (!t && chat.pendingSkills.length === 0) return;
     chat.setInputValue('');
     void chat.submitInteraction(t);
   }, [
-    chat.inputValue,
     chat.setInputValue,
     chat.submitInteraction,
     chat.pendingSkills.length,

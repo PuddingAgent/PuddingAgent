@@ -172,7 +172,7 @@ fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使
 | `src/pages/chat/components/execution-flow/TurnStatus.tsx` | 单行运行态（唯一 aria-live）：胶囊状态条内 = leading 阶段墨球 TurnStatusOrb（pending/五阶段 → breathing/connecting/working/solving/weaving/composing）+ 阶段文案（text-shimmer）+ ≥15s 计时 chip（「已运行/已等待 Xs\|Xm」按测试 id `turn-status-elapsed` 取用）；终态立即不渲染；文案只来自已知事件事实 |
 | `src/pages/chat/components/execution-flow/TurnStatusOrb.tsx` | thinking-orbs 20px 单色墨球包装：阶段映射 + `data-pudding-theme` 显式主题绑定（MutationObserver 跟随）；全局仅 TurnStatus 一颗动画，其余行保持静态 StateDot + 扫光（不喧宾夺主） |
 | `src/pages/chat/components/ComposerTextInput.tsx` | 输入叶子组件（输入框卡顿修复）：textarea+草稿态+IME 组合守卫+「/」命令面板全部下沉，按键只重渲染本叶子（memo）；非组合逐键 lift、组合期不 lift（compositionEnd 一次性）、`lastLiftedRef` 自 lift 回显抑制（父级滞后 prop 不误判为外部改写）；ref API（setValue/getValue/focus）供语音转写/组图提示词/清空复用 |
-| `src/pages/chat/components/IntentConsole.tsx` | Composer 壳：不再持有草稿态/面板态（下沉叶子），仅订阅低频事件（focus 变化、hasText 空↔非空翻转）；外部改写走 textInputRef.setValue；发送门控用 composerHasText |
+| `src/pages/chat/components/IntentConsole.tsx` | Composer 壳：草稿态/面板态在叶子，仅订阅低频 focus/hasText；鼠标发送读取 textInputRef.getValue，清空叶子后通过 onSend(draft) 将同一草稿传至 ChatPage，不能读父级滞后值；外部改写走 setValue；发送门控用 composerHasText |
 | `src/pages/chat/components/ChatMain.tsx` | `handlePinnedQuote` 用 inputValueRef 消除 inputValue 依赖（回调身份稳定，MessageList 的 React.memo 不再被逐键 lift 击穿） |
 | `src/pages/chat/types.ts` | `buildMessageBlocks` 仅滤除 `subagent_progress`（托盘坞承载）；spawned/completed 父级委派事实保留进主消息（DelegationRow 路径 A 数据源） |
 | `src/pages/chat/styles/message.styles.ts` | AgentTurnCard 宽屏上限与常驻操作条（见下「关键语义」） |

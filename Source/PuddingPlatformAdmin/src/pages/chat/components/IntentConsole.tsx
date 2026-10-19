@@ -210,7 +210,7 @@ interface IntentConsoleProps {
   onReorderQueuedInteraction?: (fromId: string, toId: string) => void;
   /** P1#6：取消全部（中止当前请求 + 清空待发队列） */
   onStopAll?: () => void;
-  onSend: () => void;
+  onSend: (draft: string) => void;
   onSendWithMetadata?: (
     content: string,
     metadata: Record<string, string>,
@@ -630,7 +630,14 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     // 运行中鼠标与键盘语义一致：有草稿即走同一提交链（Agent 忙碌时由服务端排队）。
     // “停止”由独立的停止按钮承担，不再挪用发送按钮。
     if (pendingImages.length === 0) {
-      onSend();
+      if (disabled || imageUploading) return;
+      // The leaf owns the visible draft, including IME input that has not been
+      // lifted yet. Pass one explicit snapshot instead of reading parent state.
+      const draft = textInputRef.current?.getValue() ?? inputValue;
+      // Clearing only the parent can be a no-op when its value is already empty.
+      // Reset the leaf too, including its composition guard, before submission.
+      textInputRef.current?.setValue('');
+      onSend(draft);
       return;
     }
     if (!workspaceId || !onSendWithMetadata || disabled || imageUploading)
@@ -681,6 +688,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   }, [
     disabled,
     imageUploading,
+    inputValue,
     onSend,
     onSendWithMetadata,
     pendingImages,
