@@ -39,6 +39,7 @@ Pudding's design is deeply inspired by the following projects and research.
 - **[DeepSeek-TUI](https://github.com/Hmbown/deepseek-tui)** — 优雅的终端用户交互界面设计参考 / Elegant terminal UI design reference
 - **[DeepSeek-TUI 官网](https://deepseek-tui.com/zh)** — 终端交互体验的实践案例 / Terminal interaction experience case study
 - **[CodeWhale](https://github.com/Hmbown/CodeWhale)** — AI 编程工具参考 / AI coding tool reference
+- **[dsh-motion-ui](https://github.com/Scorp1o117/dsh-motion-ui)** (Scorp1o117) — DeepSeek Harness 的智能 UI 插件：让模型按内容生成流程指引、方案对比、数据看板、交互计算器与 HTML/SVG 图解动画，含引导/自由设计模式、5 种视觉风格与 Mermaid/ECharts/表单等扩展组件 — 生成式 UI 与可交互回答形态的设计参考 / Smart UI plugin for DeepSeek Harness that turns answers into interactive interfaces (flow guides, comparisons, dashboards, interactive calculators, HTML/SVG diagrams and animations), with guided/free design modes, five visual styles and Mermaid/ECharts/form extensions — a reference for generative UI and interactive answer surfaces
 
 以及所有在 AI Agent 领域探索的开源贡献者和研究者。
 And to all the open source contributors and researchers exploring the frontier of AI agents.
