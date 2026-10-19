@@ -159,3 +159,29 @@ describe('ChatLayout agent status projection', () => {
     ).toBe('agent-1');
   });
 });
+
+describe('ChatLayout 右侧产物区宽度约束', () => {
+  it('没有 sidePanel 时不渲染外壳（不占空间）', () => {
+    render(<ChatLayout {...(baseProps as any)} />);
+    expect(screen.queryByTestId('side-panel-host')).toBeNull();
+  });
+
+  // 回归：右侧面板曾无宽度上限，内容一宽就把聊天列压到 ~430px。
+  it('有 sidePanel 时外壳带比例上限与最小可读宽度', () => {
+    render(
+      <ChatLayout
+        {...(baseProps as any)}
+        sidePanel={<div data-testid="side-panel-content" />}
+      />,
+    );
+
+    const host = screen.getByTestId('side-panel-host');
+    // 断言用**字面量**而不是导入常量：如果直接引用实现里的常量，
+    // 把上限从 40 改成 100 时断言也会跟着变，变异取红会假绿。
+    expect(host.style.maxWidth).toBe('40%');
+    expect(host.style.minWidth).toBe('320px');
+    expect(host.style.flexShrink).not.toBe('0');
+    // 内容确实渲染在外壳里（不是被丢掉的占位）
+    expect(screen.getByTestId('side-panel-content')).toBeTruthy();
+  });
+});

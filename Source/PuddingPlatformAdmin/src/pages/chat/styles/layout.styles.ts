@@ -15,6 +15,12 @@ export const useLayoutStyles = createStyles(({ token }) => ({
     minWidth: 0,
     overflow: 'hidden',
   },
+  /** 右侧产物区外壳：宽度上限由 `sidePanelHostStyle()` 提供，见该文件注释。 */
+  sidePanelHost: {
+    display: 'flex',
+    minHeight: 0,
+    overflow: 'hidden',
+  },
   workbenchShell: {
     flexDirection: 'row' as const,
     alignItems: 'stretch',

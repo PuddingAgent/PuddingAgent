@@ -16,6 +16,7 @@ import ChatMain from './ChatMain';
 import SessionSidebar, {
   type AgentStatusChipProjection,
 } from './SessionSidebar';
+import { sidePanelHostStyle } from '../sideArtifact/sidePanelSizing';
 
 interface ChatLayoutProps {
   reconnectCount?: number;
@@ -244,7 +245,20 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         restoredCheckpointId={props.restoredCheckpointId}
         clearRestoredMarker={props.clearRestoredMarker}
       />
-      {props.sidePanel}
+      {/*
+        右侧产物区：给它一个宽度上限，别让内容把聊天列挤成一条。
+        约束定义在 `sidePanelHostStyle()`（比例上限 + 最小可读宽度）。
+        不传 sidePanel 时不渲染外壳 = 不占任何空间。
+      */}
+      {props.sidePanel ? (
+        <div
+          className={styles.sidePanelHost}
+          data-testid="side-panel-host"
+          style={sidePanelHostStyle()}
+        >
+          {props.sidePanel}
+        </div>
+      ) : null}
     </div>
   );
 };
