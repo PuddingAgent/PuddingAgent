@@ -13,6 +13,33 @@ namespace PuddingBrowser.Automation;
 /// </summary>
 public static class ScreenshotPlan
 {
+    /// <summary>Capture a planned viewport/region, translating CSS viewport coordinates to CDP document DIPs.</summary>
+    public static string BuildForObservation(BrowserScreenshotPlan plan, ScreenshotLayoutFacts facts, string format)
+    {
+        if (format is not (PngFormat or JpegFormat))
+            throw new ArgumentException("Screenshot format must be png or jpeg.", nameof(format));
+        var sourceEdge = Math.Max(plan.CropWidth, plan.CropHeight) * facts.DeviceScaleFactor;
+        var scale = plan.Detail == BrowserScreenshotDetail.Low
+            ? Math.Min(1, BrowserScreenshotTransfer.LowDetailLongestEdge / sourceEdge)
+            : 1;
+        var payload = new Dictionary<string, object?>
+        {
+            ["format"] = format,
+            ["fromSurface"] = true,
+            ["captureBeyondViewport"] = false,
+            ["clip"] = new
+            {
+                x = (facts.ScrollX + plan.CropX) * facts.PageZoomFactor,
+                y = (facts.ScrollY + plan.CropY) * facts.PageZoomFactor,
+                width = plan.CropWidth * facts.PageZoomFactor,
+                height = plan.CropHeight * facts.PageZoomFactor,
+                scale,
+            },
+        };
+        if (format == JpegFormat) payload["quality"] = 80;
+        return JsonSerializer.Serialize(payload);
+    }
+
     /// <summary>PNG（无损，无 quality）。</summary>
     public const string PngFormat = "png";
 

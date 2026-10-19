@@ -16,7 +16,8 @@ public sealed record ScreenshotLayoutFacts(
     double ScrollX,
     double ScrollY,
     double ContentWidth,
-    double ContentHeight)
+    double ContentHeight,
+    double PageZoomFactor = 1)
 {
     /// <summary>
     /// **视口修订**（§8.2 的失效键之一）：上面任一几何事实变化 ⇒ 值变化。
@@ -34,7 +35,8 @@ public sealed record ScreenshotLayoutFacts(
             ScrollX.ToString("R", CultureInfo.InvariantCulture),
             ScrollY.ToString("R", CultureInfo.InvariantCulture),
             ContentWidth.ToString("R", CultureInfo.InvariantCulture),
-            ContentHeight.ToString("R", CultureInfo.InvariantCulture));
+            ContentHeight.ToString("R", CultureInfo.InvariantCulture),
+            PageZoomFactor.ToString("R", CultureInfo.InvariantCulture));
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return BitConverter.ToInt64(hash, 0) & long.MaxValue;
     }
@@ -43,10 +45,17 @@ public sealed record ScreenshotLayoutFacts(
 /// <summary>从 CDP `Page.getLayoutMetrics` 的返回里读几何事实（缺字段即拒绝）。</summary>
 public static class ScreenshotLayoutFactsReader
 {
-    public static bool TryRead(JsonElement layoutMetrics, out ScreenshotLayoutFacts? facts, out string reason)
+    public static bool TryRead(JsonElement layoutMetrics, double deviceScaleFactor, out ScreenshotLayoutFacts? facts, out string reason)
     {
         facts = null;
         reason = string.Empty;
+
+        // cssVisualViewport.scale is page/pinch scale, NOT devicePixelRatio.
+        if (!double.IsFinite(deviceScaleFactor) || deviceScaleFactor <= 0)
+        {
+            reason = "the device pixel ratio must be a finite positive number";
+            return false;
+        }
 
         if (layoutMetrics.ValueKind != JsonValueKind.Object)
         {
@@ -85,6 +94,15 @@ public static class ScreenshotLayoutFactsReader
             }
         }
 
+        var zoom = 1.0;
+        if (viewport.TryGetProperty("zoom", out var zoomElement)
+            && (zoomElement.ValueKind != JsonValueKind.Number
+                || !zoomElement.TryGetDouble(out zoom) || !double.IsFinite(zoom) || zoom <= 0))
+        {
+            reason = "the page zoom must be a finite positive number";
+            return false;
+        }
+
         // 滚动位置：缺省视为 0（CDP 在未滚动时可能省略 pageX/pageY）。
         var scrollX = 0.0;
         var scrollY = 0.0;
@@ -105,7 +123,7 @@ public static class ScreenshotLayoutFactsReader
         }
 
         facts = new ScreenshotLayoutFacts(
-            viewportWidth, viewportHeight, scale, scrollX, scrollY, contentSize.Width, contentSize.Height);
+            viewportWidth, viewportHeight, deviceScaleFactor, scrollX, scrollY, contentSize.Width, contentSize.Height, zoom);
         return true;
     }
 

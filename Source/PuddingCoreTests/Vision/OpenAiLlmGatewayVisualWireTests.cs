@@ -65,6 +65,20 @@ public sealed class OpenAiLlmGatewayVisualWireTests
     private static JsonObject ParseRequestBody(CapturingHandler handler)
         => JsonNode.Parse(handler.Bodies.Single())!.AsObject();
 
+    [DataTestMethod]
+    [DataRow("low", "low")]
+    [DataRow("high", "high")]
+    [DataRow("original", "high")]
+    [DataRow("auto", "high")]
+    public async Task ImageDetailReachesTheChatCompletionsWire(string detail, string expected)
+    {
+        var handler = new CapturingHandler();
+        await CreateGateway(handler).ChatAsync(
+            [new ChatMessage(ChatRole.User, "describe", ContentParts: [new LlmImagePart(Id(1), detail)])], []);
+        var content = ParseRequestBody(handler)["messages"]![0]!["content"]!.AsArray();
+        Assert.AreEqual(expected, ImageUrlNodes(content).Single()!["image_url"]!["detail"]!.GetValue<string>());
+    }
+
     private static JsonArray ImageUrlNodes(JsonArray content)
         => new(content.OfType<JsonObject>().Where(node => (string?)node["type"] == "image_url").Select(node => node.DeepClone()).ToArray());
 

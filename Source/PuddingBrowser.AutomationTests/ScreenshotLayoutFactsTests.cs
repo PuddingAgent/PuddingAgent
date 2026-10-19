@@ -20,7 +20,7 @@ public sealed class ScreenshotLayoutFactsTests
     [TestMethod]
     public void GeometryIsReadFaithfully()
     {
-        Assert.IsTrue(ScreenshotLayoutFactsReader.TryRead(Parse(Metrics), out var facts, out var reason), reason);
+        Assert.IsTrue(ScreenshotLayoutFactsReader.TryRead(Parse(Metrics), 2, out var facts, out var reason), reason);
         Assert.AreEqual(1280, facts!.ViewportWidth);
         Assert.AreEqual(720, facts.ViewportHeight);
         Assert.AreEqual(2, facts.DeviceScaleFactor);
@@ -31,38 +31,38 @@ public sealed class ScreenshotLayoutFactsTests
     [TestMethod]
     public void MissingOrIllegalFieldsAreRefused()
     {
-        Assert.IsFalse(ScreenshotLayoutFactsReader.TryRead(Parse("{}"), out _, out var reason1));
+        Assert.IsFalse(ScreenshotLayoutFactsReader.TryRead(Parse("{}"), 2, out _, out var reason1));
         Assert.IsTrue(reason1.Length > 0);
 
         // 视口存在但缺 clientHeight
         Assert.IsFalse(ScreenshotLayoutFactsReader.TryRead(
             Parse("""{ "cssVisualViewport": { "clientWidth": 100 }, "cssContentSize": { "width": 1, "height": 1 } }"""),
-            out _, out _));
+            2, out _, out _));
 
         // 缩放非正
         Assert.IsFalse(ScreenshotLayoutFactsReader.TryRead(
             Parse("""{ "cssVisualViewport": { "clientWidth": 100, "clientHeight": 50, "scale": 0 }, "cssContentSize": { "width": 1, "height": 1 } }"""),
-            out _, out _));
+            2, out _, out _));
 
         // 缺内容尺寸（不得假装整页）
         Assert.IsFalse(ScreenshotLayoutFactsReader.TryRead(
             Parse("""{ "cssVisualViewport": { "clientWidth": 100, "clientHeight": 50 } }"""),
-            out _, out _));
+            2, out _, out _));
     }
 
     [TestMethod]
     public void AnyGeometryChangeChangesTheViewportRevision()
     {
-        Assert.IsTrue(ScreenshotLayoutFactsReader.TryRead(Parse(Metrics), out var baseline, out _));
+        Assert.IsTrue(ScreenshotLayoutFactsReader.TryRead(Parse(Metrics), 2, out var baseline, out _));
 
         var scrolled = Metrics.Replace("\"pageY\": 120", "\"pageY\": 121");
-        Assert.IsTrue(ScreenshotLayoutFactsReader.TryRead(Parse(scrolled), out var afterScroll, out _));
+        Assert.IsTrue(ScreenshotLayoutFactsReader.TryRead(Parse(scrolled), 2, out var afterScroll, out _));
 
         var resized = Metrics.Replace("\"clientWidth\": 1280", "\"clientWidth\": 1279");
-        Assert.IsTrue(ScreenshotLayoutFactsReader.TryRead(Parse(resized), out var afterResize, out _));
+        Assert.IsTrue(ScreenshotLayoutFactsReader.TryRead(Parse(resized), 2, out var afterResize, out _));
 
         Assert.AreNotEqual(baseline!.ViewportRevision, afterScroll!.ViewportRevision, "滚动变化必须改变视口修订（§8.2 失效键）");
         Assert.AreNotEqual(baseline.ViewportRevision, afterResize!.ViewportRevision, "布局变化必须改变视口修订");
-        Assert.AreEqual(baseline.ViewportRevision, ScreenshotLayoutFactsReader.TryRead(Parse(Metrics), out var again, out _) ? again!.ViewportRevision : -1, "同样的事实必须得到同样的修订");
+        Assert.AreEqual(baseline.ViewportRevision, ScreenshotLayoutFactsReader.TryRead(Parse(Metrics), 2, out var again, out _) ? again!.ViewportRevision : -1, "同样的事实必须得到同样的修订");
     }
 }

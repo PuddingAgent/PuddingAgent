@@ -2445,6 +2445,30 @@ public sealed class BrowserAgentToolsTests
         Assert.NotNull(result.ToolContentParts);
         var image = Assert.Single(result.ToolContentParts!.OfType<PuddingCode.Models.LlmImagePart>());
         Assert.Equal("vision-fake", image.ArtifactId);
+        Assert.Equal("low", image.Detail);
+    }
+
+    [Theory]
+    [InlineData("low", DesktopScreenshotDetail.Low)]
+    [InlineData("high", DesktopScreenshotDetail.High)]
+    [InlineData("original", DesktopScreenshotDetail.Original)]
+    public async Task Screenshot_PreservesDetailThroughCapturePublisherAndNativeImage(string detail, DesktopScreenshotDetail expected)
+    {
+        var publisher = new FakeScreenshotPublisher();
+        var surface = SurfaceWithSingleChunk(out _);
+        surface.OnScreenshot = request =>
+        {
+            Assert.Equal(expected, request.Detail);
+            return CapabilityResult<BrowserScreenshotResult>.Success(new BrowserScreenshotResult(
+                Metadata() with { Detail = request.Detail }, [new DesktopScreenshotChunk(0, true, [1, 2, 3, 4])]));
+        };
+        var tool = new BrowserScreenshotTool(surface, new FakeCallContextFactory(), _originAccessor, publisher);
+        var result = await ExecuteAsync(tool, $$"""{"page_id":"p-1","context_id":"ctx-1","expected_page_version":7,"detail":"{{detail}}"}""");
+        Assert.True(result.Success, result.Output);
+        Assert.Equal(detail, publisher.LastRequest!.Detail);
+        var image = Assert.Single(result.ToolContentParts!.OfType<PuddingCode.Models.LlmImagePart>());
+        Assert.Equal(detail, image.Detail);
+        Assert.True(PuddingCode.Models.VisionContentPartDetails.IsValid(image.Detail));
     }
 
     /// <summary>坏块必须**明确失败**，且**不得**发布任何工件（残缺字节不能被当成"成功截图"）。</summary>

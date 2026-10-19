@@ -720,15 +720,12 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 retryable: true));
         }
 
-        ScreenshotLayoutFacts? facts;
-        using (var metrics = await browserPage.SendCdpAsync("Page.getLayoutMetrics", null, cancellationToken).ConfigureAwait(false))
+        var layout = await ReadScreenshotLayoutAsync(browserPage, cancellationToken).ConfigureAwait(false);
+        if (layout.IsFailure)
         {
-            if (!ScreenshotLayoutFactsReader.TryRead(metrics.RootElement, out facts, out var factsReason))
-            {
-                return CapabilityResult<BrowserScreenshotResult>.Failure(
-                    DesktopCapabilityError.InvalidRequest($"screenshot geometry is unavailable: {factsReason}"));
-            }
+            return CapabilityResult<BrowserScreenshotResult>.Failure(layout.Error);
         }
+        var facts = layout.Value;
 
         long domRevision;
         var installJson = System.Text.Json.JsonSerializer.Serialize(
@@ -760,10 +757,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 DesktopCapabilityError.InvalidRequest($"screenshot was not planned ({planningRejection}): {planningReason}"));
         }
 
-        var captureJson = plan!.Scope == BrowserScreenshotScope.Viewport
-            ? ScreenshotPlan.Build()
-            : ScreenshotPlan.Build(fullPage: true, contentSize: new ScreenshotPlan.ContentSize(
-                plan.CropX, plan.CropY, plan.CropWidth, plan.CropHeight));
+        var captureJson = ScreenshotPlan.BuildForObservation(plan!, facts, request.Format);
         byte[] bytes;
         using (var captureParameters = System.Text.Json.JsonDocument.Parse(captureJson))
         using (var captured = await browserPage.SendCdpAsync("Page.captureScreenshot", captureParameters.RootElement, cancellationToken).ConfigureAwait(false))
@@ -771,7 +765,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             bytes = ScreenshotPlan.Decode(captured.RootElement);
         }
 
-        if (ScreenshotPlan.CheckBudget(bytes.Length, plan.MaxBytes) != ScreenshotPlan.BudgetVerdict.Within)
+        if (ScreenshotPlan.CheckBudget(bytes.Length, plan!.MaxBytes) != ScreenshotPlan.BudgetVerdict.Within)
         {
             return CapabilityResult<BrowserScreenshotResult>.Failure(DesktopCapabilityError.InvalidRequest(
                 $"screenshot exceeds its budget: {ScreenshotPlan.DescribeBudget(bytes.Length, plan.MaxBytes)}"));
@@ -782,14 +776,32 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             ? "image/jpeg"
             : "image/png";
 
+        var image = ScreenshotImageHeader.Read(bytes);
+        if (image is null || image.MimeType != mimeType
+            || Math.Abs(image.Width - plan.ExpectedOutputWidth) > 1
+            || Math.Abs(image.Height - plan.ExpectedOutputHeight) > 1)
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(
+                DesktopCapabilityError.InvalidRequest("captured image encoding or dimensions do not match the screenshot plan"));
+        }
+        if (browserPage.PageVersion != request.ExpectedPageVersion.Value)
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(new DesktopCapabilityError(
+                DesktopCapabilityErrorCode.PageVersionMismatch, "page changed during screenshot capture; re-observe", retryable: true));
+        }
+        var sourceWidth = (int)Math.Ceiling(plan.CropWidth * facts.DeviceScaleFactor);
+        var sourceHeight = (int)Math.Ceiling(plan.CropHeight * facts.DeviceScaleFactor);
+        // Crop origin is document CSS, matching the observation-to-viewport transform.
+        var cropX = facts.ScrollX + plan.CropX;
+        var cropY = facts.ScrollY + plan.CropY;
+
         // 裁剪几何必须完整（视口也写 0/0/宽/高）：TryToCssViewport 遇 Crop* = null 会判 InvalidGeometry。
         var metadata = new BrowserScreenshotMetadata(
             observationId, mimeType, bytes.Length,
-            (int)Math.Ceiling(facts.ViewportWidth), (int)Math.Ceiling(facts.ViewportHeight),
-            plan.ExpectedOutputWidth, plan.ExpectedOutputHeight,
+            sourceWidth, sourceHeight, image.Width, image.Height,
             facts.DeviceScaleFactor, facts.ViewportWidth, facts.ViewportHeight,
             facts.ScrollX, facts.ScrollY,
-            plan.CropX, plan.CropY, plan.CropWidth, plan.CropHeight,
+            cropX, cropY, plan.CropWidth, plan.CropHeight,
             browserPage.PageVersion, domRevision, facts.ViewportRevision,
             MapScreenshotDetail(request.Detail));
 
@@ -815,17 +827,38 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         var wireResult = new BrowserScreenshotResult(
             new DesktopScreenshotMetadata(
                 observationId, mimeType, bytes.Length,
-                (int)Math.Ceiling(facts.ViewportWidth), (int)Math.Ceiling(facts.ViewportHeight),
-                plan.ExpectedOutputWidth, plan.ExpectedOutputHeight,
+                sourceWidth, sourceHeight, image.Width, image.Height,
                 facts.DeviceScaleFactor, facts.ViewportWidth, facts.ViewportHeight,
                 facts.ScrollX, facts.ScrollY,
-                plan.CropX, plan.CropY, plan.CropWidth, plan.CropHeight,
+                cropX, cropY, plan.CropWidth, plan.CropHeight,
                 browserPage.PageVersion, domRevision, facts.ViewportRevision,
                 request.Detail),
             wireChunks);
         wireResult.Validate();
 
         return CapabilityResult<BrowserScreenshotResult>.Success(wireResult);
+    }
+
+    private static async Task<CapabilityResult<ScreenshotLayoutFacts>> ReadScreenshotLayoutAsync(
+        IBrowserPage page, CancellationToken cancellationToken)
+    {
+        using var metrics = await page.SendCdpAsync("Page.getLayoutMetrics", null, cancellationToken).ConfigureAwait(false);
+        using var parameters = System.Text.Json.JsonDocument.Parse(
+            """{"expression":"window.devicePixelRatio","returnByValue":true}""");
+        using var evaluated = await page.SendCdpAsync("Runtime.evaluate", parameters.RootElement, cancellationToken).ConfigureAwait(false);
+        if (evaluated.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object
+            || !evaluated.RootElement.TryGetProperty("result", out var result)
+            || result.ValueKind != System.Text.Json.JsonValueKind.Object
+            || !result.TryGetProperty("value", out var value)
+            || value.ValueKind != System.Text.Json.JsonValueKind.Number || !value.TryGetDouble(out var dpr))
+        {
+            return CapabilityResult<ScreenshotLayoutFacts>.Failure(
+                DesktopCapabilityError.InvalidRequest("screenshot device pixel ratio is unavailable"));
+        }
+        return ScreenshotLayoutFactsReader.TryRead(metrics.RootElement, dpr, out var facts, out var reason)
+            ? CapabilityResult<ScreenshotLayoutFacts>.Success(facts!)
+            : CapabilityResult<ScreenshotLayoutFacts>.Failure(
+                DesktopCapabilityError.InvalidRequest($"screenshot geometry is unavailable: {reason}"));
     }
 
     private static BrowserScreenshotScope MapScreenshotScope(DesktopScreenshotScope scope)
@@ -898,17 +931,16 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         // §8.2 截图来源坐标：登记处 + **当前世代三重校验** + 精确变换；任一环节缺失/过期 ⇒ 明确拒绝，且**不触达驱动**。
         double? observationX = null;
         double? observationY = null;
+        double? observationToX = null;
+        double? observationToY = null;
         if (request.ObservationId is { Length: > 0 } observationId)
         {
-            ScreenshotLayoutFacts? facts;
-            using (var metrics = await browserPage.SendCdpAsync("Page.getLayoutMetrics", null, cancellationToken).ConfigureAwait(false))
+            var layout = await ReadScreenshotLayoutAsync(browserPage, cancellationToken).ConfigureAwait(false);
+            if (layout.IsFailure)
             {
-                if (!ScreenshotLayoutFactsReader.TryRead(metrics.RootElement, out facts, out var factsReason))
-                {
-                    return CapabilityResult<DesktopInteractionResult>.Failure(
-                        DesktopCapabilityError.InvalidRequest($"screenshot coordinates cannot be verified: {factsReason}"));
-                }
+                return CapabilityResult<DesktopInteractionResult>.Failure(layout.Error);
             }
+            var facts = layout.Value;
         
             long domRevision;
             using var counterParameters = System.Text.Json.JsonDocument.Parse(
@@ -940,6 +972,16 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         
             observationX = observationTarget!.CssX;
             observationY = observationTarget.CssY;
+            if (request.Action == DesktopInteractionAction.PointerDrag)
+            {
+                if (!BrowserScreenshotCoordinates.TryToCssViewport(
+                        observation, observationId, request.ToX!.Value, request.ToY!.Value, currentGenerations,
+                        out var destination, out coordinateRejection, out coordinateReason))
+                    return CapabilityResult<DesktopInteractionResult>.Failure(DesktopCapabilityError.InvalidRequest(
+                        $"screenshot drag destination was refused ({coordinateRejection}): {coordinateReason}"));
+                observationToX = destination!.CssX;
+                observationToY = destination.CssY;
+            }
         }
 
         Locator? locator = null;
@@ -972,7 +1014,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 }
             }
 
-        var scrollOutcome = await PerformAsync(browserPage, request, locator, cancellationToken, observationX, observationY).ConfigureAwait(false);
+        var scrollOutcome = await PerformAsync(browserPage, request, locator, cancellationToken,
+            observationX, observationY, observationToX, observationToY).ConfigureAwait(false);
 
         // 交互后的页面状态：版本取**交互之后**的事实（旧 Ref 由此作废）。
         var state = new DesktopPageState(
@@ -1027,7 +1070,9 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
     private static async Task<ScrollOutcome?> PerformAsync(
         IBrowserPage page, BrowserInteractRequest request, Locator? locator, CancellationToken cancellationToken,
         double? observationX = null,
-        double? observationY = null)
+        double? observationY = null,
+        double? observationToX = null,
+        double? observationToY = null)
     {
         var inputMode = MapInputMode(request.InputMode);
 
@@ -1094,7 +1139,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
 
                     await ((IPointerInputPage)page).PointerAsync(
                         new PointerInput(
-                            pointerKind, request.X!.Value, request.Y!.Value, request.ToX ?? 0, request.ToY ?? 0),
+                            pointerKind, observationX ?? request.X!.Value, observationY ?? request.Y!.Value,
+                            observationToX ?? request.ToX ?? 0, observationToY ?? request.ToY ?? 0),
                         cancellationToken).ConfigureAwait(false);
                     break;
                 }

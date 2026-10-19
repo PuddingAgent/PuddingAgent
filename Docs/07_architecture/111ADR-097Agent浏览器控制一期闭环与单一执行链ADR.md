@@ -71,6 +71,10 @@ Bridge 在线只证明传输活性，不授予任意页面的控制权。取消�
 
 截图是一期能力，默认 Bridge 必须可用。图片字节进入 workspace 工件，再经 `LlmImagePart` 进入支持视觉的模型；必须在模型请求边界验证图片真正存在。文本模型明确报告视觉不可用，DOM 任务仍可完成，不偷偷换模型。截图成功不自动等于坐标输入已可用。
 
+截图采集与模型细节级别须端到端一致：`LlmImagePart(artifactId, detail)` 的第二参是细节级别，MIME 来自工件内容，不能占用 detail。浏览器 `low` 为等比例最长边不超过 512 像素的预览，`high/original` 保留设备像素；文字识别与细小商品差异应显式选择 original 或区域截图。网关保留低清选择，canonical original/high/auto 映射为供应商 high。根据 [DeepSeek Detail Level](https://api-docs.deepseek.com/zh-cn/guides/vision/)，服务端 low 为 512×512 处理，high 等价 original，auto 当前也等价 original；本地预览策略不冒充服务端像素变换，也不把 JPEG quality 当作 detail。浏览器工具当前只提供 low/high/original，不新增含糊的 auto 采集策略。Responses 的工具图片可进入 function_call_output；Chat Completions 不支持的工具图片路径继续明确失败，不借 user 消息隐式绕过。
+
+真实采集参数由纯组件生成：PNG/JPEG 格式、JPEG quality、区域和低清缩放必须实际传入 CDP。`window.devicePixelRatio` 与 visual viewport scale 分别采集，不能互相代用；CDP clip 按 [Page 协议](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot) 使用文档坐标及页面 zoom。回执尺寸从编码后的图片头读取并与计划核对，格式、尺寸不符或捕获期间页面版本改变即失败，不登记 observation。观察元数据的裁剪原点为文档 CSS 坐标；图片坐标还原为视口 CSS 坐标后，点击、移动和拖拽两端均须把转换结果真正交给驱动。无参数 CDP 命令将 nullable null、JSON null、Undefined 统一序列化为 `{}`。
+
 ### D6：保留现有技术栈，借鉴开源的职责边界
 
 不为一期引入 Node REPL、Playwright sidecar 或新的浏览器进程。借鉴的是资源归属、工具就绪、动作观察与结果回流，而非复制框架。

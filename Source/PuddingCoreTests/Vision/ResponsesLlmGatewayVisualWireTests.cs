@@ -67,6 +67,22 @@ public sealed class ResponsesLlmGatewayVisualWireTests
     private static JsonObject ParseRequestBody(CapturingHandler handler)
         => JsonNode.Parse(handler.Bodies.Single())!.AsObject();
 
+    [DataTestMethod]
+    [DataRow("low", "low")]
+    [DataRow("high", "high")]
+    [DataRow("original", "high")]
+    [DataRow("auto", "high")]
+    public async Task ToolImageDetailReachesTheResponsesWire(string detail, string expected)
+    {
+        var handler = new CapturingHandler();
+        await CreateGateway(handler).ChatAsync(
+            [new ChatMessage(ChatRole.Assistant, "capture", ToolCalls: [new ToolCall("capture-1", "browser_screenshot", "{}")]),
+             new ChatMessage(ChatRole.Tool, "screenshot", ToolCallId: "capture-1", ContentParts: [new LlmImagePart(Id(1), detail)])], []);
+        var output = ParseRequestBody(handler)["input"]!.AsArray().OfType<JsonObject>()
+            .Single(node => (string?)node["type"] == "function_call_output")["output"]!.AsArray();
+        Assert.AreEqual(expected, InputImageNodes(output).Single()!["detail"]!.GetValue<string>());
+    }
+
     private static JsonArray InputImageNodes(JsonArray content)
         => new(content.OfType<JsonObject>().Where(node => (string?)node["type"] == "input_image").Select(node => node.DeepClone()).ToArray());
 

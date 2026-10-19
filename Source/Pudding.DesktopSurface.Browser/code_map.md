@@ -32,6 +32,8 @@
 
 产品组合必传 `IBrowserWorkspaceLifecycle`：上下文创建/关闭与页签新建/激活/关闭走工作区所有者，内容操作仍走 driver。工作区失败不回退重试原始 runtime。独立驱动映射测试可直接构造表面；Shell 友好的 `DesktopSurfaceComposition` 构造函数不接受缺失所有者。
 
+截图统一读取 layout metrics 与真实 DPR，按 `ScreenshotPlan.BuildForObservation` 采集并核对 PNG/JPEG 字节的尺寸和格式；只为有效且仍在原页面版本的图片登记 observation。裁剪原点保存文档 CSS 坐标，点击/移动/拖拽两端的截图坐标转换为视口 CSS 后传给驱动。模型 detail 的传递归 AgentTools，不在表面决定供应商参数。
+
 九项浏览器能力 → `IBrowserRuntime` 调用。语义：页面版本来自身为一等成员的 `IBrowserPage.PageVersion`；缺失即 `Unknown`（**不伪造**）；超预算结果**如实标注** `Truncated`；`locate` 遇版本不符**跳过**陈旧引用查询，并实现**游标分页**（校验版本+查询指纹 ⇒ 不符即 `CursorExpired`，格式坏即 `InvalidRequest`；还有下一页才发 `NextCursor`，
 取完为 null）；元素无活版本即 `internal_error`（不静默丢弃）；`interact` 的 `focus` 无运行时 API ⇒ `unsupported_capability`；滚动映射**目标模型**（`DesktopScrollTarget` → `ScrollTarget`，显式优先、否则按 locator/位移推导）并把驱动报告的**滚动事实**放进 `DesktopInteractionResult.Scroll`（无事实即 `null`，
 **不编造**）；`wait_for` 超时是结果不是失败；`page_state` 只报 `IsLoading` 能支持的 `Loading`/`Unknown`（**从不**声称 Interactive/Complete）

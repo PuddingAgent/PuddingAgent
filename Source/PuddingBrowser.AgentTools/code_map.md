@@ -39,8 +39,7 @@ draft: false
 `mode/truncated/truncationReason/nextCursor` 恒在，可裁剪三种表示与预算事实——**指定表示时只向驱动请求那一种**（三种一起抓再丢掉是纯浪费），未知字段名明确拒绝。`scope`（locator/ref）：只读该元素子树；ref 直接用（不多一跳），其它定位方式先解析成**唯一** ref——0 命中/多命中都明确拒绝（"大概就是这个"是错位读取的常见来源）。`since_revision` + 输出 `revision`/`changed`（§145）：绑定版本+查询+内容哈希，不可比时 
 `refresh_required`（**基线缺失不伪造变化**）；没给 `since_revision` 时 `changed` 为 null（不比较就不声称"没变"）
 **`BrowserScreenshotTool.cs`**：截图工具（§8.1）：`page_id`/`context_id`/**`expected_page_version`（必填）**/`scope`/`detail`/`format`/区域四值；成功结果**含 `observationId`**（供后续坐标），失败**原样上报**不降级。**§7.1 出口**：先**校分块完整性**（`Index` 严格升序 · 仅末块 `IsLast` · 累计字节 == 元数据 `ByteCount` · 非空；不符 ⇒ 
-`browser_screenshot_incomplete`，**绝不把残缺字节当成功截图**），再经 `IBrowserScreenshotPublisher`（**可选注入**）落成工件并返回 **`ToolExecutionResult.OkWithParts(summary, [LlmImagePart(artifactId, mimeType)])`**（**native part 用工件 id**，不是把 base64 塞进 JSON）；**未接发布端**时仍返回元数据但**显式** `visionUnavailable=true` + 原因（**不 
-silent success**）
+`browser_screenshot_incomplete`，**绝不把残缺字节当成功截图**），再经 `IBrowserScreenshotPublisher`（**可选注入**）落成工件并返回 **`ToolExecutionResult.OkWithParts(summary, [LlmImagePart(artifactId, detail)])`**（第二参保留实际 low/high/original，MIME 属于工件元数据；**native part 用工件 id**，不是把 base64 塞进 JSON）；**未接发布端**时仍返回元数据但**显式** `visionUnavailable=true` + 原因。
 **`IBrowserScreenshotPublisher.cs`**：**截图工件发布窄端口**（§7.1）：声明在工具组件内，**不得**引用 `PuddingHost`/`PuddingPlatform`/WebView2（实现归 Host）。含 `PublishedBrowserScreenshot(ArtifactId, MimeType, ByteCount, Width, Height, ObservationId)` 与发布载荷（**带 `WorkspaceId`**：工件必须落在**调用 workspace 工件域**）；约定发布端由**内容寻址 + 
 幂等**存储落盘，并**再次校验**分块
 **`BrowserLocateTool.cs`**：元素定位。**输出按设计 §6.2 收敛**：`limit` 默认 10（最多 100）、`text` 与 `name` 相同时省略、bbox 展示最多一位小数（驱动内部保留精度）、`checked` 与 `value`/`selectedValues` 都要**显式请求**（`include_value`/`include_checked`，默认不带以守住预算，需要确认「fill 是否写入成功」时显式打开——唯一可靠回执，`text` 不含表单值）。**失败也带最小修复提示**（`warnings`）：只读、

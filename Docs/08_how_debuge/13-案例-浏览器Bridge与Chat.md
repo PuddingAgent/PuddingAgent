@@ -287,3 +287,13 @@ WebApi 模板单程序集测试、`dotnet build PuddingRuntime --no-restore`。�
 关闭或导航已派发后才解码失败，应先观察实际状态，不能自动重发。列页失败还要检查发现是否调用了逐页 page.getInfo，避免“无交页所以不能发现”的循环。先在隔离的 producer→wire→consumer 测试中复现，再修合同并成套部署；不直接覆盖运行中 DLL。
 
 源码位置、复现证据与修复门禁见[本次审阅](../14_reports/浏览器发现契约阻塞代码审阅-2026-10-18.md)及[修复方案](../12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。
+
+## 截图 surface 异常、图片 detail 与坐标错位
+
+`ui surface failed (InvalidOperationException)` 只给出异常类型，不能据此断言 WebView2 不支持截图。先测无参数 `Page.getLayoutMetrics`：nullable `JsonElement?` 的 C# null 不匹配 `{ ValueKind: Null }` 属性模式，随后 `.Value` 会在真正调用 CDP 前抛异常；驱动必须将三种空值统一成 `{}`。
+
+采集成功后核对实际 PNG/JPEG 字节的格式/宽高、请求 detail、回执宽高和 `LlmImagePart.Detail`。后者只能是 low/high/original/auto，出现 image/png 或 image/jpeg 表示把 MIME 误传为 detail。浏览器低清预览按最长边 512 等比例缩小，DeepSeek 服务端 detail 另有处理规则，参见[官方文档](https://api-docs.deepseek.com/zh-cn/guides/vision/)；JPEG quality 只改变编码质量，不替代 detail。须检查模型请求中真实图片部件及最终 detail，不能只读工具摘要。
+
+页面滚动或显示缩放时，检查独立读取的 devicePixelRatio、页面 zoom、文档 CSS 裁剪原点和实际输出尺寸。点击与拖拽应将经过 observation 变换后的坐标交给驱动；只运行变换校验、随后仍提交原始图片坐标，会得到成功回执但点错位置。页面版本改变或图片格式/尺寸不符应拒绝签发观察。
+
+定位器线名失败另查 `RemoteBrowserPageLocatorWireTests` 与运行中 Core 构建身份。源码修复后须成套重建 Desktop/Core 并退出旧托盘实例；进程重启时间和 DLL mtime 不能证明加载的是新代码。具体约束见 [ADR-097 D5/D9](../07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md)。

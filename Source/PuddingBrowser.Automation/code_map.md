@@ -42,7 +42,8 @@
 | `BrowserScreenshotTransfer.cs` | （见下「关键语义」） |
 | `BrowserScreenshotCoordinates.cs` | （见下「关键语义」） |
 | `BrowserScreenshotPlanner.cs` | （见下「关键语义」） |
-| `ScreenshotLayoutFacts.cs` | **页面几何事实投影**（§8.1/§8.2）：`ScreenshotLayoutFactsReader.TryRead` 从 CDP `Page.getLayoutMetrics` 读视口/设备缩放/滚动/内容尺寸（**缺字段即拒绝**）；`ViewportRevision` 是这些事实的**几何指纹**（滚动/缩放/布局任一变化即变化）。 |
+| `ScreenshotLayoutFacts.cs` | 页面几何事实：从 CDP layout metrics 读 CSS 视口/滚动/内容/页面 zoom；设备像素比由调用方独立采集并传入。`ViewportRevision` 绑定这些事实，不用 visual viewport scale 冒充 DPR。 |
+| `ScreenshotImageHeader.cs` | 有界解析 PNG/JPEG 头中的实际格式和尺寸，不信任请求声明；只依赖 BCL，不加载宿主或图像库。 |
 | `ScreenshotDomRevision.cs` | **页内 DOM 变更计数器**（§8.2 第三个失效键）：幂等安装 `MutationObserver` 的脚本（**初值 1**，因 `TryValidate` 要求修订 `> 0`）+ `TryRead`/`TryReadEvaluationResult`（读不到即拒绝 —— 不把"读不到"当成"没变过"）。 |
 | `ScreenshotObservationRegistry.cs` | **观察登记处**（§8.2）：`IScreenshotObservationRegistry` + 线程安全内存实现；值 = 既有 `BrowserScreenshotMetadata`，失效判据 = 既有 `BrowserPageGenerations`（**任一不同 ⇒ 移除并失败**）；空 id 登记即拒。 |
 | `PageEventLog.cs` | **页面事件有界日志**（§8）：把「被自动处理的页面事件」有界地留下来（默认 8 条），**连续重复合并为计数**（一次页面里十个一样的权限询问，报十遍没有信息量、报 ×N 才有），`TotalCount` 如实反映总数（含被容量挤掉的）；空摘要不计入（不编造事实）。它经 `PageSnapshot.PageEvents` 回给调用方 |
@@ -84,7 +85,7 @@
  一直按着）；`fill` 用 `Input.insertText`（清空则 Ctrl+A→Delete），`type` 逐字符 keyDown/keyUp（页面才收得到 input），未知按键**拒绝而不是猜**。`PlanDrag` 必须**分步移动**（HTML5
  拖放/画布依赖中间 mousemove）且**按下必然抬起**。本组件不引用 Abstractions，几何用自己的 `InputTarget`
 
-**`ScreenshotPlan.cs`**：**截图的 CDP 参数语义与结果解码**（§6 视觉观察）：格式由 quality 决定（有 quality ⇒ jpeg，否则 png——quality 只对有损格式有意义，给 PNG
+**`ScreenshotPlan.cs`**：`BuildForObservation` 按截图计划生成实际格式、低清缩放及文档 DIP 裁剪参数，PNG 不传 quality，JPEG 传 quality=80；旧驱动入口 `Build` 的格式由 quality 决定（有 quality ⇒ jpeg，否则 png——quality 只对有损格式有意义，给 PNG
  传是被拒的无效输入）；**整页必须有内容尺寸**（来自 `Page.getLayoutMetrics`）才做 clip + `captureBeyondViewport`，拿不到就拒绝而不假装整页；返回体缺 `data`/非法 base64 明确失败（不能解出 0
  字节还当成功）；**字节预算** `CheckBudget`：超了**绝不截断图片**（半张图会让读者得出错误结论），如实报资源耗尽并给出降画质/改视口/提预算三条出路
 

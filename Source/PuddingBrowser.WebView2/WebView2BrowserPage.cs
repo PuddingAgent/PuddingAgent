@@ -414,9 +414,7 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
         ArgumentException.ThrowIfNullOrWhiteSpace(method);
 
         var webView = RequireWebView();
-        var payload = parameters is { ValueKind: System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null }
-            ? "{}"
-            : parameters!.Value.GetRawText();
+        var payload = SerializeCdpParameters(parameters);
 
         var result = await _dispatcher.InvokeAsync(
             async () => await webView.CallDevToolsProtocolMethodAsync(method, payload), ct)
@@ -424,6 +422,11 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
 
         return System.Text.Json.JsonDocument.Parse(result);
     }
+
+    internal static string SerializeCdpParameters(JsonElement? parameters) =>
+        parameters is null or { ValueKind: JsonValueKind.Undefined or JsonValueKind.Null }
+            ? "{}"
+            : parameters!.Value.GetRawText();
     public Task<BrowserSubscriptionId> SubscribeCdpAsync(string eventName, CancellationToken ct)
         => throw new NotSupportedException("CDP not in Phase 2A-1");
     public Task UnsubscribeAsync(BrowserSubscriptionId sid, CancellationToken ct)

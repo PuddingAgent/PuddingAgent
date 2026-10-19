@@ -385,6 +385,7 @@ public sealed class InteractMappingTests
 
         /// <summary>可编程 CDP 应答（用于观察解析路径的用例）；未设置时保持"抛 NotSupported"的旧语义。</summary>
         public Func<string, System.Text.Json.JsonDocument>? OnCdp { get; set; }
+        public Action<string, System.Text.Json.JsonElement?>? InspectCdp { get; set; }
 
         public Task PointerAsync(PointerInput input, CancellationToken ct)
         {
@@ -487,7 +488,12 @@ public sealed class InteractMappingTests
         public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
 
         public Task<System.Text.Json.JsonDocument> SendCdpAsync(string method, System.Text.Json.JsonElement? parameters, CancellationToken ct)
-            => OnCdp is { } factory ? Task.FromResult(factory(method)) : throw new NotSupportedException();
+        {
+            InspectCdp?.Invoke(method, parameters);
+            if (method == "Runtime.evaluate" && parameters?.GetProperty("expression").GetString() == "window.devicePixelRatio")
+                return Task.FromResult(System.Text.Json.JsonDocument.Parse("""{"result":{"type":"number","value":1}}"""));
+            return OnCdp is { } factory ? Task.FromResult(factory(method)) : throw new NotSupportedException();
+        }
 
         public Task<BrowserSubscriptionId> SubscribeCdpAsync(string eventName, CancellationToken ct) => throw new NotSupportedException();
 
@@ -592,7 +598,7 @@ public sealed class InteractMappingTests
         });
 
         Assert.True(ScreenshotLayoutFactsReader.TryRead(
-            System.Text.Json.JsonDocument.Parse(LayoutMetricsJson).RootElement, out var facts, out var factsReason), factsReason);
+            System.Text.Json.JsonDocument.Parse(LayoutMetricsJson).RootElement, 1, out var facts, out var factsReason), factsReason);
 
         var registry = new InMemoryScreenshotObservationRegistry();
         registry.Register(new BrowserScreenshotMetadata(
@@ -626,7 +632,7 @@ public sealed class InteractMappingTests
         });
 
         Assert.True(ScreenshotLayoutFactsReader.TryRead(
-            System.Text.Json.JsonDocument.Parse(LayoutMetricsJson).RootElement, out var facts, out var factsReason), factsReason);
+            System.Text.Json.JsonDocument.Parse(LayoutMetricsJson).RootElement, 1, out var facts, out var factsReason), factsReason);
 
         var registry = new InMemoryScreenshotObservationRegistry();
         registry.Register(new BrowserScreenshotMetadata(
@@ -667,7 +673,86 @@ public sealed class InteractMappingTests
         Assert.Equal(10, pointer!.Value.X);
         Assert.Equal(20, pointer.Value.Y);
     }
-    private const string CaptureScreenshotJson = """{ "data": "AQIDBA==" }""";
+    // Real 512x288 PNG: observation metadata must describe the encoded image.
+    private const string CaptureScreenshotJson = """{"data":"iVBORw0KGgoAAAANSUhEUgAAAgAAAAEgAQAAAADqR/b8AAAAoUlEQVR4nO3QoQEDQBDDMDf779yCH+EKZZ4Afb7d2nGfgxjEgMFrHZuDGMQgBgxe69gcxCAGMWDwWsfmIAYxiAGD1zo2BzGIQQwYvNaxOYhBDGLA4LWOzUEMYhADBq91bA5iEIMYMHitY3MQgxjEgMFrHZuDGMQgBgxe69gcxCAGMWDwWsfmIAYxiAGD1zo2BzGIQQwYvNaxOYhBDGLwF4MfbBYDP4P3UdIAAAAASUVORK5CYII="}""";
+
+    [Theory]
+    [InlineData(DesktopInteractionAction.PointerClick)]
+    [InlineData(DesktopInteractionAction.PointerMove)]
+    [InlineData(DesktopInteractionAction.PointerDrag)]
+    public async Task ScrolledScreenshotUsesRealCaptureScaleAndResolvesImageCoordinates(DesktopInteractionAction action)
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var page = runtime.Pages["ctx-1/p-1"];
+        page.OnCdp = method => System.Text.Json.JsonDocument.Parse(method switch
+        {
+            "Page.getLayoutMetrics" => LayoutMetricsJson.Replace("\"pageY\": 0", "\"pageY\": 2000"),
+            "Runtime.evaluate" => """{"result":{"type":"number","value":1}}""",
+            "Page.captureScreenshot" => CaptureScreenshotJson,
+            _ => throw new NotSupportedException(method),
+        });
+        var captured = false;
+        page.InspectCdp = (method, parameters) =>
+        {
+            if (method != "Page.captureScreenshot") return;
+            captured = true;
+            var capture = parameters!.Value;
+            Assert.Equal("png", capture.GetProperty("format").GetString());
+            Assert.False(capture.TryGetProperty("quality", out _));
+            Assert.Equal(2000, capture.GetProperty("clip").GetProperty("y").GetDouble());
+            Assert.Equal(0.4, capture.GetProperty("clip").GetProperty("scale").GetDouble());
+        };
+        var surface = Surface(runtime, new InMemoryScreenshotObservationRegistry());
+        var screenshot = await surface.ScreenshotAsync(Call,
+            new BrowserScreenshotRequest(Target, DesktopPageVersion.Require(7)), CancellationToken.None);
+        Assert.False(screenshot.IsFailure, Describe(screenshot));
+        Assert.True(captured);
+        Assert.Equal(512, screenshot.Value.Metadata.OutputWidth);
+        Assert.Equal(288, screenshot.Value.Metadata.OutputHeight);
+        Assert.Equal(2000, screenshot.Value.Metadata.CropY);
+        var interaction = await surface.InteractAsync(Call,
+            new BrowserInteractRequest(Target, action, DesktopPageVersion.Require(7),
+                observationId: screenshot.Value.Metadata.ObservationId, x: 10, y: 10,
+                toX: action == DesktopInteractionAction.PointerDrag ? 20 : null,
+                toY: action == DesktopInteractionAction.PointerDrag ? 40 : null), CancellationToken.None);
+        Assert.False(interaction.IsFailure, Describe(interaction));
+        Assert.Equal(25, page.LastPointer!.Value.X);
+        Assert.Equal(25, page.LastPointer.Value.Y);
+        if (action == DesktopInteractionAction.PointerDrag)
+        {
+            Assert.Equal(50, page.LastPointer.Value.ToX);
+            Assert.Equal(100, page.LastPointer.Value.ToY);
+        }
+    }
+
+    [Theory]
+    [InlineData("jpeg", false, false)] // A PNG cannot be labelled JPEG.
+    [InlineData("png", true, false)] // Four bytes are not a valid image header.
+    [InlineData("png", false, true)] // Navigation during capture invalidates the result.
+    public async Task ScreenshotRejectsMismatchedImagesAndChangedPages(string format, bool malformed, bool navigation)
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var page = runtime.Pages["ctx-1/p-1"];
+        page.OnCdp = method => System.Text.Json.JsonDocument.Parse(method switch
+        {
+            "Page.getLayoutMetrics" => LayoutMetricsJson,
+            "Runtime.evaluate" => """{"result":{"type":"number","value":1}}""",
+            "Page.captureScreenshot" => malformed ? """{"data":"AQIDBA=="}""" : CaptureScreenshotJson,
+            _ => throw new NotSupportedException(method),
+        });
+        page.InspectCdp = (method, parameters) =>
+        {
+            if (method != "Page.captureScreenshot") return;
+            Assert.Equal(format, parameters!.Value.GetProperty("format").GetString());
+            if (format == "jpeg") Assert.Equal(80, parameters.Value.GetProperty("quality").GetInt32());
+            if (navigation) page.ClickAsync(null!, new ClickOptions(), CancellationToken.None).GetAwaiter().GetResult();
+        };
+        var screenshot = await Surface(runtime, new InMemoryScreenshotObservationRegistry()).ScreenshotAsync(Call,
+            new BrowserScreenshotRequest(Target, DesktopPageVersion.Require(7), format: format), CancellationToken.None);
+        Assert.True(screenshot.IsFailure);
+        Assert.Equal(navigation ? DesktopCapabilityErrorCode.PageVersionMismatch : DesktopCapabilityErrorCode.InvalidRequest,
+            screenshot.Error!.Code);
+    }
 
     [Fact]
     public async Task AScreenshotRegistersAnObservationThatCoordinatesCanThenUse()

@@ -25,7 +25,7 @@ public sealed record BrowserScreenshotArgs
     [ToolParam("Capture scope: viewport (default), region, or full_page.")]
     public string? Scope { get; init; }
 
-    [ToolParam("Detail: low (default, longest edge <=512px), high, or original.")]
+    [ToolParam("Detail: low (default, <=512px preview); high/original preserve device pixels. Use original or a region for small text and fine visual comparisons. The selected detail also reaches the model image input.")]
     public string? Detail { get; init; }
 
     [ToolParam("Image format: png (default) or jpeg.")]
@@ -195,7 +195,8 @@ public sealed class BrowserScreenshotTool(
                 ct);
 
             // §7.1：native image part 用**工件 id**（不是把 base64 塞进 JSON 文本）。
-            return ToolExecutionResult.OkWithParts(summaryJson, [new LlmImagePart(published.ArtifactId, published.MimeType)]);
+            return ToolExecutionResult.OkWithParts(summaryJson,
+                [new LlmImagePart(published.ArtifactId, metadata.detail)]);
         }
         catch (ArgumentException ex)
         {

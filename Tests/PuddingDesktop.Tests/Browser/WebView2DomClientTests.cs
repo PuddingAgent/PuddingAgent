@@ -5,6 +5,24 @@ namespace PuddingDesktop.Tests.Browser;
 
 public sealed class WebView2DomClientTests
 {
+    [Fact]
+    public void CdpParameterlessCommandsSerializeNullableNullAsEmptyObject()
+        => Assert.Equal("{}", WebView2BrowserPage.SerializeCdpParameters(null));
+
+    [Theory]
+    [InlineData("null", "{}")]
+    [InlineData("{}", "{}")]
+    [InlineData("{\"format\":\"jpeg\",\"clip\":{\"scale\":0.4}}", "{\"format\":\"jpeg\",\"clip\":{\"scale\":0.4}}")]
+    public void CdpParametersPreserveSuppliedObjectAndNormalizeJsonNull(string json, string expected)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal(expected, WebView2BrowserPage.SerializeCdpParameters(document.RootElement));
+    }
+
+    [Fact]
+    public void CdpParametersNormalizeUndefinedAsEmptyObject()
+        => Assert.Equal("{}", WebView2BrowserPage.SerializeCdpParameters(default(System.Text.Json.JsonElement)));
+
     /// <summary>驱动侧的页面作用域 token（ref 前缀的一部分）。</summary>
     private const string PageToken = "0123456789abcdef0123456789abcdef";
 
