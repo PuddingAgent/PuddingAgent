@@ -217,8 +217,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
     : side
       ? () =>
           side.openDocument({
-            // 用第一个标题当文档名；extractOutline 已跳过围栏代码块。
-            name: `${extractOutline(renderedMarkdown)[0]?.text ?? '长消息'}.md`,
+            // 长消息**不是文件**：不加 `.md` 后缀，也不给 sourcePath。
+            // 旧实现用「标题 + .md」当文件名并允许「复制路径」，复制出来的是
+            // 磁盘上不存在的路径 —— 比不给按钮更有害。
+            // 用第一个标题当展示名；extractOutline 已跳过围栏代码块。
+            name: extractOutline(renderedMarkdown)[0]?.text ?? '对话消息',
             markdown: renderedMarkdown,
           })
       : undefined;

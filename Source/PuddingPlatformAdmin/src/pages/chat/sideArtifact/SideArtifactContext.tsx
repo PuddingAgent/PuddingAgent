@@ -29,6 +29,14 @@ import React, { createContext, useContext, useMemo, useState } from 'react';
 export interface SideDocument {
   name: string;
   markdown: string;
+  /**
+   * 真实磁盘路径。**只有来自文件的文档才有**。
+   *
+   * 曾经踩过的坑：长消息用「第一个标题 + .md」伪造文件名并允许「复制路径」，
+   * 复制出来的是磁盘上根本不存在的路径 —— 正好是这个功能要解决的痛点反面。
+   * 判据：没有 sourcePath 就不提供复制路径，也不该给名字加扩展名。
+   */
+  sourcePath?: string;
   /** 来源标识（消息 id / 文件路径），便于将来做"同一产物"联动。 */
   sourceId?: string;
 }

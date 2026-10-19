@@ -4,6 +4,7 @@ import {
   SideArtifactProvider,
   useSideArtifact,
   useSideArtifactActions,
+  type SideDocument,
 } from './SideArtifactContext';
 import { SideDocumentPanel } from '../components/SideDocumentPanel';
 
@@ -135,4 +136,48 @@ describe('SideDocumentPanel', () => {
     expect(screen.getByTestId('side-artifact-panel')).toBeTruthy();
     expect(screen.getByTestId('document-preview-name').textContent).toBe('报告.md');
   });
+
+  // 回归：长消息曾被伪造成「标题 + .md」并配「复制路径」，
+  // 复制出来的是磁盘上不存在的路径——正好是这功能要解决的痛点反面。
+  it('来源为对话消息（无 sourcePath）时不提供「复制路径」', () => {
+    renderWithDocument({ name: '部署手册已写好', markdown: '# 一\n正文' });
+
+    expect(screen.queryByTestId('document-copy-path')).toBeNull();
+    // 诚实说明它来自对话，而不是一个文件。
+    expect(screen.getByTestId('document-preview-name').parentElement?.textContent).toContain(
+      '来自对话消息',
+    );
+  });
+
+  it('有 sourcePath 时才提供「复制路径」', () => {
+    renderWithDocument({
+      name: '部署操作手册.md',
+      markdown: '# 一\n正文',
+      sourcePath: 'Docs/14_reports/2026-10-20-部署操作手册.md',
+    });
+
+    expect(screen.getByTestId('document-copy-path')).toBeTruthy();
+  });
 });
+
+/** 在 Provider 里打开一份指定文档，并渲染右侧面板。 */
+function renderWithDocument(doc: SideDocument) {
+  const Opener: React.FC = () => {
+    const side = useSideArtifact();
+    // 同上面那条：只能用 ref 守卫，`side` 不能当 effect 依赖。
+    const opened = React.useRef(false);
+    React.useEffect(() => {
+      if (opened.current || !side) return;
+      opened.current = true;
+      side.openDocument(doc);
+    }, [side]);
+    return null;
+  };
+
+  return render(
+    <SideArtifactProvider>
+      <Opener />
+      <SideDocumentPanel />
+    </SideArtifactProvider>,
+  );
+}

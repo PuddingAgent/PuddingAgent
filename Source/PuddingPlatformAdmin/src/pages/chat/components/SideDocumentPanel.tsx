@@ -15,6 +15,10 @@ export const SideDocumentPanel: React.FC = () => {
   const side = useSideArtifact();
   if (!side || !side.document) return null;
 
+  // 只有真实文件才有可复制的路径。长消息（对话正文）没有 sourcePath，
+  // 因此不渲染「复制路径」—— 避免复制出一个磁盘上不存在的地址。
+  const sourcePath = side.document.sourcePath;
+
   return (
     <SideArtifactPanel
       open={side.open}
@@ -27,11 +31,18 @@ export const SideDocumentPanel: React.FC = () => {
             <DocumentPreview
               name={side.document.name}
               markdown={side.document.markdown}
-              meta={`约 ${side.document.markdown.length} 字`}
-              onCopyPath={() => {
-                // 复制路径只对"来自文件"的文档有意义；长消息没有路径。
-                void navigator.clipboard?.writeText(side.document?.sourceId ?? side.document?.name ?? '');
-              }}
+              meta={
+                sourcePath
+                  ? `约 ${side.document.markdown.length} 字`
+                  : `约 ${side.document.markdown.length} 字 · 来自对话消息`
+              }
+              onCopyPath={
+                sourcePath
+                  ? () => {
+                      void navigator.clipboard?.writeText(sourcePath);
+                    }
+                  : undefined
+              }
             />
           ),
         },
