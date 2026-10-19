@@ -12,6 +12,22 @@ namespace DesktopSurfaceBrowserTests;
 /// </summary>
 public sealed class InteractMappingTests
 {
+    [Fact]
+    public async Task AmbiguousLocatorReturnsActionableFailureWithoutLeakingPageText()
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        var page = runtime.Pages["ctx-1/p-1"];
+        page.ClickError = new BrowserOperationException("browser_locator_ambiguous", "sensitive page content");
+        var result = await Surface(runtime).InteractAsync(Call,
+            new BrowserInteractRequest(Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(7), locator: Button),
+            CancellationToken.None);
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InvalidRequest, result.Error.Code);
+        Assert.Contains("browser_locator_ambiguous", result.Error.Message);
+        Assert.Contains("locator.nth", result.Error.Message);
+        Assert.DoesNotContain("sensitive", result.Error.Message);
+        Assert.Null(page.LastAction);
+    }
     private static readonly DesktopCallContext Call = new(
         new DesktopInstanceId("desktop-1"),
         new OperationId("op-1"),
@@ -379,6 +395,7 @@ public sealed class InteractMappingTests
         public bool Queried { get; private set; }
 
         public string? LastAction { get; private set; }
+        public BrowserOperationException? ClickError { get; set; }
 
         /// <summary>最近一次坐标输入（§8.2）：kind/x/y/toX/toY 如实记录。</summary>
         public PointerInput? LastPointer { get; private set; }
@@ -421,7 +438,7 @@ public sealed class InteractMappingTests
             Info = Info with { PageVersion = AdvanceTo };
         }
 
-        public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct) { Advance(options.InputMode == InputMode.Native ? "click:native" : "click"); return Task.CompletedTask; }
+        public Task ClickAsync(Locator locator, ClickOptions options, CancellationToken ct) { if (ClickError is { } error) throw error; Advance(options.InputMode == InputMode.Native ? "click:native" : "click"); return Task.CompletedTask; }
 
         public Task FillAsync(Locator locator, string value, FillOptions options, CancellationToken ct) { Advance($"fill:{value}"); return Task.CompletedTask; }
 

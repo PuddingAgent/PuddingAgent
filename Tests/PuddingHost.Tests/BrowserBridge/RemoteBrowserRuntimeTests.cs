@@ -20,6 +20,31 @@ public sealed class RemoteBrowserRuntimeTests : IDisposable
     private readonly PuddingBrowser.AgentTools.BrowserCallerIdentityAccessor _callerAccessor = new();
 
     public void Dispose() => _callerScope.Dispose();
+
+    [Fact]
+    public async Task RemoteRefQuery_SerializesVersionAcceptedByRealDesktopAdapter()
+    {
+        var broker = new RecordingBrowserBroker(command =>
+        {
+            if (command.Name == BrowserBridgeCommandNames.ContextCreate)
+                return Success(command, Context("ctx-1", 1));
+            if (command.Name == BrowserBridgeCommandNames.PageCreate)
+                return Success(command, Page("ctx-1", "page-1", "about:blank") with { PageVersion = 7 });
+            Assert.Equal(BrowserBridgeCommandNames.PageLocate, command.Name);
+            Assert.True(PuddingDesktop.Browser.BrowserBridgeCommandAdapter.TryMapReadCommand(
+                command, out _, out var mapped, out var reason), reason);
+            Assert.Equal(7, mapped!.Locate!.ExpectedPageVersion.Value);
+            Assert.Equal("p1-v7-n3", mapped.Locate.Locator.Value);
+            return Success(command, new BrowserLocateResultDescriptor
+            {
+                Elements = [new BrowserElementDescriptor { Ref = "p1-v7-n3", Tag = "button", PageVersion = 7 }]
+            });
+        });
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
+        var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        Assert.NotNull(await page.QueryAsync(new Locator { Kind = LocatorKind.Ref, Value = "p1-v7-n3" }, CancellationToken.None));
+    }
     [Fact]
     public async Task CreateContextAsync_MapsDescriptorToRemoteContext()
     {
@@ -207,6 +232,8 @@ public sealed class RemoteBrowserRuntimeTests : IDisposable
 
         Assert.Equal(1, snapshot.NodeCount);
         Assert.Equal("v3-n1", Assert.Single(handles).Info.Ref);
+        var locateCommand = Assert.Single(broker.Commands.Where(c => c.Name == BrowserBridgeCommandNames.PageLocate));
+        Assert.Equal(3, locateCommand.Arguments.GetProperty("expectedPageVersion").GetInt64());
         Assert.False(wait.TimedOut);
         Assert.Equal(
             [BrowserBridgeCommandNames.ContextCreate, BrowserBridgeCommandNames.PageCreate,

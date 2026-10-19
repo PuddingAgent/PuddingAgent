@@ -67,7 +67,7 @@
 | `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client，HelloAck 双层版本校验、heartbeat、重连；收包与每代有界串行命令队列分离，长命令不堵心跳/取消；连接终止原因保留到握手结果 |
 | `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate` 见下「关键语义」 |
 | `Browser/BrowserBridgeCommandAdapter.cs` | I2-c 映射层（未接管执行）：Bridge 命令 → `(DesktopCapabilityDescriptor, DesktopCapabilityRequest)`；已映射 context.list/page.getInfo/导航/snapshot/locate/waitFor/screenshot，失败 fail-closed 且原因可行动 |
-| `Browser/BrowserBridgeResultAdapter.cs` | I2-c 结果反投影（Contracts → Bridge 描述符）：pageState/contexts/pageList/locate/interact/wait/snapshot；已知字段缺口如实置空 |
+| `Browser/BrowserBridgeResultAdapter.cs` | 结果反投影（Contracts → Bridge 描述符）：pageState/contexts/pageList/locate/interact/wait/snapshot；元素实测 BoundingBox 逐字段透传 |
 | `Browser/BrowserBridgeExecutorRoute.cs` | I2-c 真实执行器路由：仅路由已有可靠反投影的命令，携带 `SessionPermitMarker` 与可信 caller，经 `BrowserCapabilityInvoker` 调用执行器并把能力错误映射为稳定 Bridge 码；未覆盖命令返回 null 回退 handler |
 | `Browser/BrowserCommandExecutorRoute.cs` | 派发器执行器路由委托（非 null=执行器处理；null=回退 handler；异常不回退） |
 | `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target UI 状态源；实现 `IBrowserWorkspaceLifecycle`，统一工具/UI 管理操作、上下文事件与失败回收；接管/暂停见下「关键语义」 |

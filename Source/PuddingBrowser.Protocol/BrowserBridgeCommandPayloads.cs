@@ -88,6 +88,8 @@ public sealed record PageSnapshotArguments
 public sealed record PageLocateArguments
 {
     public required BrowserLocatorDescriptor Locator { get; init; }
+    /// <summary>Required for ref resolution, including the pre-action query. Never infer it at the receiver.</summary>
+    public long? ExpectedPageVersion { get; init; }
 }
 
 public sealed record PageInteractArguments

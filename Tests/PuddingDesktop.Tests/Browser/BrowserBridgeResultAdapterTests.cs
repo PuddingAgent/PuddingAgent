@@ -13,6 +13,19 @@ public sealed class BrowserBridgeResultAdapterTests
     private static readonly DesktopPageTarget Target = new("ctx", "page");
 
     [Fact]
+    public void LocatePreservesMeasuredBoundingBox()
+    {
+        var wire = BrowserBridgeResultAdapter.FromElement(new DesktopElementRef(
+            "p1-v7-n3", "button", DesktopPageVersion.Require(7))
+            { BoundingBox = new DesktopElementBox(12.5, 300.25, 90, 24) });
+        Assert.NotNull(wire.BoundingBox);
+        Assert.Equal(12.5, wire.BoundingBox.X);
+        Assert.Equal(300.25, wire.BoundingBox.Y);
+        Assert.Equal(90, wire.BoundingBox.Width);
+        Assert.Equal(24, wire.BoundingBox.Height);
+    }
+
+    [Fact]
     public void PageState_MapsToThePageDescriptor()
     {
         var descriptor = BrowserBridgeResultAdapter.FromPageState(new DesktopPageState(

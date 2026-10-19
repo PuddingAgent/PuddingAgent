@@ -12,6 +12,58 @@ public sealed class BrowserAgentToolsTests
 {
     private readonly BrowserOperationOriginAccessor _originAccessor = new();
 
+    [Theory]
+    [InlineData("outline")]
+    [InlineData("interactive")]
+    public async Task Snapshot_ContinuationConsumesEachLineExactlyOnce(string mode)
+    {
+        var runtime = new FakeBrowserRuntime();
+        var browser = await runtime.CreateContextAsync(new BrowserContextOptions { Id = new("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await browser.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var lines = Enumerable.Range(1, 7).Select(i => $"button ref=v1-n{i} name=Item{i}").ToArray();
+        page.SnapshotText = string.Join('\n', lines);
+        var tool = new BrowserSnapshotTool(new FakeCapabilitySurface(runtime), new FakeCallContextFactory(), _originAccessor);
+        var seen = new List<string>();
+        string? cursor = null;
+        for (var i = 0; i < 4; i++)
+        {
+            var result = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value, context_id = "ctx-1", mode, limit = 2, cursor
+            }));
+            Assert.True(result.Success, result.Output);
+            var value = GetJson(result.Output, "value");
+            seen.AddRange(value.GetProperty("accessibilityTree").GetString()!.Split('\n'));
+            var next = value.GetProperty("nextCursor").GetString();
+            if (next is not null) Assert.NotEqual(cursor, next);
+            cursor = next;
+        }
+        Assert.Null(cursor);
+        Assert.Equal(lines, seen);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(0L, false)]
+    [InlineData(2L, false)]
+    [InlineData(1L, true)]
+    public async Task Interact_RefRequiresObservedVersion_AndNeverRebinds(long? expected, bool succeeds)
+    {
+        var runtime = new FakeBrowserRuntime();
+        var browser = await runtime.CreateContextAsync(new BrowserContextOptions { Id = new("ctx-1") }, CancellationToken.None);
+        var page = await browser.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+        var tool = new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor);
+        var result = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+        {
+            action = "click", page_id = page.Id.Value, context_id = "ctx-1",
+            expected_page_version = expected, locator = new { kind = "ref", value = "v1-n1" }
+        }));
+        Assert.Equal(succeeds, result.Success);
+        if (succeeds) Assert.Equal(1, surface.LastInteractRequest!.ExpectedPageVersion.Value);
+        else Assert.Null(surface.LastInteractRequest);
+    }
+
     [Fact]
     public void ToolDescriptors_UseStableNamesAndStructuredSchemas()
     {
@@ -1428,6 +1480,7 @@ public sealed class BrowserAgentToolsTests
                 action = "click",
                 page_id = page.Id.Value,
                 context_id = "ctx-1",
+                expected_page_version = page.PageVersion,
                 locator = new { kind = "ref", value = "v0-n1" }
             }));
 
@@ -2292,6 +2345,7 @@ public sealed class BrowserAgentToolsTests
             {
                 page_id = page.Id.Value,
                 context_id = "ctx-1",
+                expected_page_version = page.PageVersion,
                 locator = new { kind = "ref", value = "v0-n1" }
             }));
 

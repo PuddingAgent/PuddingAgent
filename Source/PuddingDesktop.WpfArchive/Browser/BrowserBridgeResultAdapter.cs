@@ -140,8 +140,10 @@ public static class BrowserBridgeResultAdapter
             Visible = element.Visible,
             Enabled = element.Enabled,
             Checked = element.IsChecked,
-            // 契约没有 bbox：线缆值 null（不伪造坐标）；需要时由契约/表面补来源。
-            BoundingBox = null,
+            BoundingBox = element.BoundingBox is { } box ? new BrowserBoundingBoxDescriptor
+            {
+                X = box.X, Y = box.Y, Width = box.Width, Height = box.Height,
+            } : null,
             PageVersion = element.PageVersion.Value,
         };
     }

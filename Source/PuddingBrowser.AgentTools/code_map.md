@@ -27,8 +27,8 @@ draft: false
 | `BrowserSnapshotTool.cs` | `browser_snapshot` | 页面快照：模式/预算/游标/字段白名单/局部读取/版本比较（见下「关键语义」） |
 | `BrowserScreenshotTool.cs` | `browser_screenshot` | 截图 + 分块完整性校验后经可选发布端口落成工件（见下「关键语义」） |
 | `IBrowserScreenshotPublisher.cs` | — | 截图工件发布窄端口（内容寻址 + 幂等，带 workspace 归属）（见下「关键语义」） |
-| `BrowserLocateTool.cs` | `browser_locate` | 元素定位：收敛输出/失败提示/游标/字段白名单（见下「关键语义」） |
-| `BrowserInteractTool.cs` | `browser_interact` | 元素交互（点击/输入）：回执/输入模式/滚动/失败仍带回执（见下「关键语义」） |
+| `BrowserLocateTool.cs` | `browser_locate` | 元素定位：ref 必须带观察来源版本；收敛输出/失败提示/游标/字段白名单（见下「关键语义」） |
+| `BrowserInteractTool.cs` | `browser_interact` | 元素交互（点击/输入）：ref 必须带顶层 expected_page_version；回执/输入模式/滚动/失败仍带回执（见下「关键语义」） |
 | `BrowserWaitForTool.cs` | `browser_wait_for` | 等待条件满足（超时是正常结果）（见下「关键语义」） |
 | `BrowserDelegationTasks.cs` | — | 子代理委派信封工厂（无工具面）（见下「关键语义」） |
 

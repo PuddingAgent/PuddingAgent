@@ -893,6 +893,19 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
     public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         DesktopCallContext context, BrowserInteractRequest request, CancellationToken cancellationToken)
     {
+        try { return await InteractCoreAsync(context, request, cancellationToken).ConfigureAwait(false); }
+        catch (BrowserOperationException ex) when (ex.Code == "browser_locator_ambiguous")
+        {
+            // The driver refuses ambiguity before dispatch. Keep the actionable reason without
+            // exposing arbitrary exception text (which may contain page content).
+            return CapabilityResult<DesktopInteractionResult>.Failure(DesktopCapabilityError.InvalidRequest(
+                "browser_locator_ambiguous: locator matched multiple elements; use locator.nth (zero-based) or a more specific locator; no action was dispatched"));
+        }
+    }
+
+    private async Task<CapabilityResult<DesktopInteractionResult>> InteractCoreAsync(
+        DesktopCallContext context, BrowserInteractRequest request, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(request);
 

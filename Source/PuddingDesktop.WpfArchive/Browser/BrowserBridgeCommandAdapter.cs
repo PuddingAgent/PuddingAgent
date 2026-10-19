@@ -283,10 +283,18 @@ public static class BrowserBridgeCommandAdapter
                 return false;
             }
 
+            if (locateArgs.ExpectedPageVersion is <= 0
+                || (locator!.IsReference && locateArgs.ExpectedPageVersion is null))
+            {
+                reason = "page.locate requires a positive expectedPageVersion for a ref locator";
+                return false;
+            }
+
             request = DesktopCapabilityRequest.ForLocate(new BrowserLocateRequest(
                 target,
                 locator!,
-                DesktopPageVersion.Unknown));
+                locateArgs.ExpectedPageVersion is { } version
+                    ? DesktopPageVersion.Require(version) : DesktopPageVersion.Unknown));
             return true;
         }
 

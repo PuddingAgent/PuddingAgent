@@ -549,7 +549,7 @@ public sealed class BrowserSnapshotTool(
             // 扫描预算与输出预算分开：扫描被截断时报 incomplete_scan（可能缺整片区域），
             // 只是输出收敛时报 output_budget（可用 nextCursor 续读）。
             var composed = BrowserReadingFormat.Compose(
-                snapshot.Value.AccessibilityTree, reading!, snapshot.Value.Truncated);
+                snapshot.Value.AccessibilityTree, reading! with { Cursor = cursor }, snapshot.Value.Truncated);
 
             return BrowserToolResponse.Success(
                 new BrowserSnapshotToolValue

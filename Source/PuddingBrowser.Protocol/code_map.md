@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 |------|------|
 | `BrowserBridgeCommandNames.cs` | 桥接命令名称常量 |
-| `BrowserBridgeCommandPayloads.cs` | 命令载荷定义：ScopeRef / ScrollTarget / 滚动结果描述符（见下「关键语义」） |
+| `BrowserBridgeCommandPayloads.cs` | 命令载荷定义：PageLocateArguments.ExpectedPageVersion（ref 必须）/ ScopeRef / ScrollTarget / 滚动结果描述符（见下「关键语义」） |
 | `BrowserBridgeEnvelope.cs` | 消息信封 |
 | `BrowserBridgeErrorCodes.cs` | 错误码 |
 | `BrowserBridgeMessages.cs` | 消息类型定义 |

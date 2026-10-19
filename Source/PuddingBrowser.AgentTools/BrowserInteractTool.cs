@@ -28,6 +28,9 @@ public sealed record BrowserInteractArgs
 
     public string? ContextId { get; init; }
 
+    [ToolParam("Page version from the snapshot/locate that produced the ref. Required for ref locators; stale versions are rejected without dispatch. For other locators, optional.")]
+    public long? ExpectedPageVersion { get; init; }
+
     public BrowserLocatorInput? Locator { get; init; }
 
     /// <summary>拖拽终点（仅 action=drag 使用）。</summary>
@@ -194,6 +197,11 @@ public sealed class BrowserInteractTool(
 
             var locator = args.Locator is null ? null : BrowserLocatorInputMapper.ToDesktopLocator(args.Locator);
 
+            if (args.ExpectedPageVersion is <= 0
+                || ((locator?.IsReference == true || args.ToLocator?.Kind == "ref") && args.ExpectedPageVersion is null))
+                return BrowserToolResponse.Failure("browser_invalid_arguments",
+                    "expected_page_version must be the positive pageVersion from the snapshot/locate that produced this ref; re-observe before retrying");
+
             if (action != "scroll" && locator is null)
 
                 return BrowserToolResponse.Failure("browser_invalid_arguments", "locator is required for this action");
@@ -314,6 +322,11 @@ public sealed class BrowserInteractTool(
                 return BrowserToolResponse.Failure("browser_page_not_found", "Page has no live version to act on");
 
             }
+
+            if (args.ExpectedPageVersion is { } expected && state.Value.Version.Value != expected)
+                return Failure(new DesktopCapabilityError(DesktopCapabilityErrorCode.PageVersionMismatch,
+                    "the page changed since this observation; obtain a fresh snapshot/locate and use its pageVersion"),
+                    action, args, contextId, call.OperationId);
 
 
 

@@ -290,6 +290,8 @@ WebApi 模板单程序集测试、`dotnet build PuddingRuntime --no-restore`。�
 
 ## 截图 surface 异常、图片 detail 与坐标错位
 
+若 ref 交互报 `A reference locator must carry the page version`，同时检查工具顶层 `expected_page_version` 与 Bridge 的 `page.locate.expectedPageVersion`：动作前查询丢版本也会在点击前失败。使用 `locator={kind:ref,value:...}` 配生成它的 snapshot/locate 的 `pageVersion`，不能另取当前版本冒充来源。快照 `nextCursor` 重复时检查解析后的索引是否进入 `BrowserReadingFormat.Compose`；它与扫描截断是两件事。`fields:["boundingBox"]` 为 null 时逐层检查 DOM → DesktopElementRef → BrowserElementDescriptor，不能据此认定 DOM 不提供几何。多匹配用已存在的 `locator.nth` 或收窄条件；同页切换用 `browser_tabs(action=activate)`，工具区折叠仍需用户展开。已分类的多匹配拒绝应报告原因，未知异常继续脱敏。
+
 `ui surface failed (InvalidOperationException)` 只给出异常类型，不能据此断言 WebView2 不支持截图。先测无参数 `Page.getLayoutMetrics`：nullable `JsonElement?` 的 C# null 不匹配 `{ ValueKind: Null }` 属性模式，随后 `.Value` 会在真正调用 CDP 前抛异常；驱动必须将三种空值统一成 `{}`。
 
 采集成功后核对实际 PNG/JPEG 字节的格式/宽高、请求 detail、回执宽高和 `LlmImagePart.Detail`。后者只能是 low/high/original/auto，出现 image/png 或 image/jpeg 表示把 MIME 误传为 detail。浏览器低清预览按最长边 512 等比例缩小，DeepSeek 服务端 detail 另有处理规则，参见[官方文档](https://api-docs.deepseek.com/zh-cn/guides/vision/)；JPEG quality 只改变编码质量，不替代 detail。须检查模型请求中真实图片部件及最终 detail，不能只读工具摘要。

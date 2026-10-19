@@ -61,7 +61,7 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 | `BrowserBridge/DesktopBrowserBridgeWebSocketEndpoint.cs` | 认证 Bridge 入口；Hello 信封与载荷严格校验，版本拒绝记录 expected/received 并限时关闭，不回显原始帧 |
 | `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge）：严格消费命令 DTO；单值、列表与无值合同见修复规格 |
 | `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 代理 |
-| `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理（如实回传宿主事实）（见下「关键语义」） |
+| `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理；page.locate 携带页面版本，包括交互前 ref 查询；如实回传宿主事实（见下「关键语义」） |
 | `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（DesktopChild + BrowserAutomationEnabled）（见下「关键语义」） |；并注册**委派生命周期端口**（与门共用会话解析器与能力描述符来源） |
 | `BrowserBridge/BrowserScreenshotArtifactPublisher.cs` | 截图工件发布端（内容寻址 + 幂等）（见下「关键语义」） |
 | `BrowserBridge/HostBrowserDelegationLifecycle.cs` | 委派生命周期端口的 Host 实现（fail-closed）（见下「关键语义」） |

@@ -12,6 +12,18 @@ namespace PuddingDesktop.Tests.Browser;
 /// </summary>
 public sealed class BrowserBridgeCommandAdapterTests
 {
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(0L, false)]
+    [InlineData(7L, true)]
+    public void RefLocate_RequiresWireVersion_WithoutThrowing(long? version, bool accepted)
+    {
+        var command = Command(BrowserBridgeCommandNames.PageLocate, "ctx", "page",
+            new { locator = new { kind = "ref", value = "p1-v7-n3" }, expectedPageVersion = version });
+        Assert.Equal(accepted, BrowserBridgeCommandAdapter.TryMapReadCommand(command, out _, out var request, out var reason));
+        if (accepted) Assert.Equal(7, request!.Locate!.ExpectedPageVersion.Value);
+        else Assert.Contains("expectedPageVersion", reason);
+    }
     [Fact]
     public void PageGetInfo_MapsToThePageStateCapability()
     {

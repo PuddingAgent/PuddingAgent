@@ -157,7 +157,11 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
         ArgumentNullException.ThrowIfNull(locator);
         var result = await _runtime.ExecuteAsync<BrowserLocateResultDescriptor>(
             BrowserBridgeCommandNames.PageLocate,
-            new PageLocateArguments { Locator = ToDescriptor(locator) },
+            new PageLocateArguments
+            {
+                Locator = ToDescriptor(locator),
+                ExpectedPageVersion = PageVersion > 0 ? PageVersion : null,
+            },
             ContextId, Id, TimeSpan.FromSeconds(15), ct);
         return result.Elements.Select(element => (IElementHandle)new RemoteBrowserElementHandle(
             Id, element.PageVersion, ToInfo(element), $"{locator.Kind}:{locator.Value}" )).ToArray();

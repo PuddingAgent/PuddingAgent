@@ -19,7 +19,7 @@
 
 | 文件 | 用途 / 不变量 |
 |------|---------------|
-| `BrowserRuntimeDesktopSurface.cs` | （见下「关键语义」） |
+| `BrowserRuntimeDesktopSurface.cs` | 浏览器能力映射；多匹配交互返回脱敏歧义原因与 nth 提示（见下「关键语义」） |
 | `DesktopSurfaceComposition.cs` | 把协作方组装成 `DesktopService` 需要的**单一** `IDesktopUiSurface`：浏览器 9 项 → `BrowserRuntimeDesktopSurface`，Shell 5 项 → `DesktopShellSurface`。组装层无逻辑，唯一可能的缺陷是**接错协作者**（编译期查不出、表现是"能调用但做错事"），故由测试逐个钉住 |
 | `BrowserWorkspaceTargetBridge.cs` | 页面生命周期翻译；`ObserveAgentTarget` 同步 UI 快照，`OnAgentTargetChanged` 表达显式选页/撤权，空快照不作撤权 |
 | （同上）切换目标即撤销 | （见下「关键语义」） | （见下「关键语义」） |

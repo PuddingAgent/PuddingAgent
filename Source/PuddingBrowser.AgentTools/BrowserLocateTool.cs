@@ -14,6 +14,8 @@ public sealed record BrowserLocateArgs
     [ToolParam("Browser page id to search.")]
     public required string PageId { get; init; }
     public string? ContextId { get; init; }
+    [ToolParam("Page version from the observation that produced a ref locator. Required for kind=ref; never substitute the current version for an old observation.")]
+    public long? ExpectedPageVersion { get; init; }
     public required BrowserLocatorInput Locator { get; init; }
 
     /// <summary>返回条数上限（默认 10，最多 100）。低于设计默认值是有意的：定位结果通常只需前几条。</summary>
@@ -67,6 +69,9 @@ public sealed class BrowserLocateTool(
         try
         {
             var locator = BrowserLocatorInputMapper.ToDesktopLocator(args.Locator);
+            if (args.ExpectedPageVersion is <= 0 || (locator.IsReference && args.ExpectedPageVersion is null))
+                return BrowserToolResponse.Failure("browser_invalid_arguments",
+                    "expected_page_version must be the positive pageVersion from the snapshot/locate that produced this ref");
 
             // 越界不是运行时异常，而是调用方参数错（fail closed，且错误码可读）。
             if (args.Limit is { } limit and (< 1 or > BrowserLocateRequest.MaxMaxResults))
@@ -112,19 +117,8 @@ public sealed class BrowserLocateTool(
 
             var target = new DesktopPageTarget(contextId, args.PageId.Trim());
 
-            // Ref 定位必须带上引用来源的版本（引用随版本失效）。工具入参里没有版本，
-            // 因此读一次当前状态作为基准——读到的是当前版本，不会自相矛盾，但引用因此有了可比较的版本。
-            var expectedPageVersion = DesktopPageVersion.Unknown;
-            if (locator.Kind == DesktopLocatorKind.Ref)
-            {
-                var state = await surface.GetPageStateAsync(target, call, ct);
-                if (state.IsFailure)
-                {
-                    return Failure(state.Error!);
-                }
-
-                expectedPageVersion = state.Value.Version;
-            }
+            var expectedPageVersion = args.ExpectedPageVersion is { } expected
+                ? DesktopPageVersion.Require(expected) : DesktopPageVersion.Unknown;
 
             var located = await surface.LocateAsync(
                 new BrowserLocateRequest(
