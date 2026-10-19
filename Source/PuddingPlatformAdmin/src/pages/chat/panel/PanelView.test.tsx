@@ -69,15 +69,9 @@ describe('PanelView', () => {
     });
   });
 
-  it('draft 未实现时显式降级（variants 已接入，不再降级）', () => {
-    const draft: PanelSpec = {
-      v: 1,
-      id: 'p3',
-      kind: 'draft',
-      format: 'html',
-      source: '<div>草稿</div>',
-    };
-    const { getByTestId } = render(<PanelView spec={draft} onSubmit={jest.fn()} />);
-    expect(getByTestId('panel-unsupported').textContent).toContain('沙箱宿主');
+  it('未知面板类型显式降级', () => {
+    const unknown = { v: 1, id: 'p9', kind: 'iframe' } as unknown as PanelSpec;
+    const { getByTestId } = render(<PanelView spec={unknown} onSubmit={jest.fn()} />);
+    expect(getByTestId('panel-unsupported').textContent).toContain('未知面板类型');
   });
 });

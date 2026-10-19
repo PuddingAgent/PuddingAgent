@@ -3,6 +3,7 @@ import type { PanelSpec } from './spec';
 import type { UiSubmissionPayload } from './submission';
 import { SurveyPanel } from './SurveyPanel';
 import { VariantsPanel } from './VariantsPanel';
+import { DraftPanel } from './DraftPanel';
 
 /**
  * 面板总入口：按 `spec.kind` 分派渲染器。
@@ -23,11 +24,7 @@ export const PanelView: React.FC<PanelViewProps> = ({ spec, onSubmit, disabled }
     case 'variants':
       return <VariantsPanel spec={spec} onSubmit={onSubmit} disabled={disabled} />;
     case 'draft':
-      return (
-        <div data-testid="panel-unsupported" role="note">
-          草稿面板尚未实现（draft / {spec.format}）：需要先接入沙箱宿主。
-        </div>
-      );
+      return <DraftPanel spec={spec} onSubmit={onSubmit} disabled={disabled} />;
     default:
       return (
         <div data-testid="panel-unsupported" role="note">
