@@ -29,6 +29,8 @@ import type { AgentStatusProjection } from './client/types';
 import ChatLayout from './components/ChatLayout';
 import SideDocumentPanel from './components/SideDocumentPanel';
 import { SideArtifactProvider } from './sideArtifact/SideArtifactContext';
+import { UiSubmissionProvider } from './uiSubmission/UiSubmissionContext';
+import { buildUiSubmission } from './panel/submission';
 import type { ContextMenuState } from './components/ContextMenu';
 import { useAgentChatClient } from './hooks/useAgentChatClient';
 import { useChatState } from './hooks/useChatState';
@@ -722,7 +724,15 @@ const ChatPageContent: React.FC = () => {
   }, [chat.setError]);
 
   return (
-    <>
+    <UiSubmissionProvider
+      onSubmit={(payload) => {
+        // 回填到输入框而不是直接发送：提交内容可能需要补一句说明，
+        // 也避免误触发送。用函数式 setter —— 闭包里的 chat.inputValue 是旧的。
+        const text = buildUiSubmission(payload);
+        chat.setInputValue((prev) => (prev ? `${prev}\n${text}` : text));
+      }}
+    >
+      <>
       <ChatLayout
         sidebarOpen={chat.sidebarOpen}
         onToggleSidebar={handleToggleSidebar}
@@ -890,7 +900,8 @@ const ChatPageContent: React.FC = () => {
           />
         </React.Suspense>
       )}
-    </>
+      </>
+    </UiSubmissionProvider>
   );
 };
 

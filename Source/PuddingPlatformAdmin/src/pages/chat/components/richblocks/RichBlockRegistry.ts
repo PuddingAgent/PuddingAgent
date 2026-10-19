@@ -32,6 +32,9 @@ export type RichBlockComponent = LazyExoticComponent<ComponentType<RichBlockProp
 const RICH_BLOCKS: Record<string, RichBlockComponent> = {
   mermaid: lazy(() => import('./MermaidBlock')),
   chart: lazy(() => import('./ChartBlock')),
+  // 交互面板：survey / variants / draft 的 spec JSON。
+  // 渲染器自己从 UiSubmissionContext 取回传通道，因此不需要经 props 透传。
+  panel: lazy(() => import('./PanelBlock')),
 };
 
 /** 已注册的围栏语言（用于文档、测试与排障）。 */
