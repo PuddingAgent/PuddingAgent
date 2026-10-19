@@ -13,6 +13,7 @@ import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import { ZoomableImage } from './ImagePreviewOverlay';
 import { resolveRichBlock } from './richblocks/RichBlockRegistry';
 import { RichBlockBoundary } from './richblocks/RichBlockBoundary';
+import { useArtifactData } from './richblocks/ArtifactDataContext';
 
 interface MarkdownBlockProps {
   markdownText: string;
@@ -31,6 +32,8 @@ const MarkdownBlock = React.memo(
     workspaceId,
   }: MarkdownBlockProps) {
     const renderStart = performance.now();
+    // 图表数据解析器（宿主注入）。未挂 Provider 时为 null，图表会显式提示。
+    const artifactData = useArtifactData();
     const preprocessMsRef = React.useRef(0);
     const processedMarkdown = React.useMemo(() => {
       const start = performance.now();
@@ -39,8 +42,8 @@ const MarkdownBlock = React.memo(
       return processed;
     }, [markdownText]);
     const components = React.useMemo(
-      () => sharedComponents(styles, isStreaming, workspaceId),
-      [styles, isStreaming, workspaceId],
+      () => sharedComponents(styles, isStreaming, workspaceId, artifactData),
+      [styles, isStreaming, workspaceId, artifactData],
     );
     React.useEffect(() => {
       recordPerfEvent(
@@ -250,6 +253,7 @@ function sharedComponents(
   styles: Record<string, string>,
   isStreaming?: boolean,
   workspaceId?: string,
+  artifactData?: { resolveArtifactRows: (artifactId: string) => Array<Record<string, unknown>> | null } | null,
 ) {
   return {
     table: ({
@@ -324,7 +328,7 @@ function sharedComponents(
                   <div style={{ fontSize: 12, opacity: 0.6 }}>正在加载可视化组件…</div>
                 }
               >
-                <RichBlock code={code} />
+                <RichBlock code={code} resolveArtifactRows={artifactData?.resolveArtifactRows} />
               </Suspense>
             </RichBlockBoundary>
           );
