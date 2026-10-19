@@ -692,3 +692,69 @@ public sealed class AgentDiagnosticsToolTests
         }
     }
 }
+
+/// <summary>
+/// 部署新鲜度：把「重启过 ≠ 重编过」这个反复出现的误判变成可机器判定的字段。
+/// 判定规则：产物写入时间严格早于 HEAD 提交时间 1 秒以上 ⇒ <c>deployed-before-head</c>；
+/// 同一秒内视为新鲜（文件系统精度不可靠）；读不到时间/解析失败 ⇒ <c>unknown</c>，绝不默认「一致」。
+/// </summary>
+[TestClass]
+public sealed class AgentDiagnosticsFreshnessTests
+{
+    private static readonly DateTimeOffset Head = new(2026, 10, 19, 6, 24, 0, TimeSpan.Zero);
+
+    [TestMethod]
+    public void AssemblyWrittenBeforeHeadIsReportedAsDeployedBeforeHead()
+    {
+        Assert.AreEqual(
+            "deployed-before-head",
+            AgentDiagnosticsTool.EvaluateFreshness("2026-10-19T06:04:55.0000000Z", Head));
+    }
+
+    [TestMethod]
+    public void AssemblyWrittenAfterHeadIsReportedAsFresh()
+    {
+        Assert.AreEqual(
+            "at-or-after-head",
+            AgentDiagnosticsTool.EvaluateFreshness("2026-10-19T06:30:00.0000000Z", Head));
+    }
+
+    [TestMethod]
+    public void SameSecondAsHeadCountsAsFreshBecauseTimestampsAreCoarse()
+    {
+        Assert.AreEqual(
+            "at-or-after-head",
+            AgentDiagnosticsTool.EvaluateFreshness(Head.AddMilliseconds(-200).ToString("O"), Head));
+    }
+
+    [TestMethod]
+    public void UnparsableOrMissingTimestampIsUnknownRatherThanSilentlyFresh()
+    {
+        Assert.AreEqual("unknown", AgentDiagnosticsTool.EvaluateFreshness(null, Head));
+        Assert.AreEqual("unknown", AgentDiagnosticsTool.EvaluateFreshness("   ", Head));
+        Assert.AreEqual("unknown", AgentDiagnosticsTool.EvaluateFreshness("not-a-time", Head));
+    }
+
+    [TestMethod]
+    public void RepositoryRootIsFoundByWalkingUpAndNeverInvented()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-freshness-" + Guid.NewGuid().ToString("N"));
+        var nested = Path.Combine(root, "a", "b");
+        Directory.CreateDirectory(Path.Combine(root, ".git"));
+        Directory.CreateDirectory(nested);
+
+        var bare = Path.Combine(Path.GetTempPath(), "pudding-norepo-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(bare);
+        try
+        {
+            Assert.AreEqual(root, AgentDiagnosticsTool.TryFindRepositoryRoot(nested));
+            Assert.IsNull(AgentDiagnosticsTool.TryFindRepositoryRoot(bare));
+            Assert.IsNull(AgentDiagnosticsTool.TryFindRepositoryRoot(null));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(bare, recursive: true);
+        }
+    }
+}

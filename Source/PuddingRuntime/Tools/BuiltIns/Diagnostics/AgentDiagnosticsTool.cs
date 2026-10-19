@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -991,9 +992,160 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 RuntimeInformation.ProcessArchitecture.ToString(),
                 Environment.Version.ToString()),
             assemblies,
-            DescribeTargetIdentity(args.AssemblyPath));
+            DescribeTargetIdentity(args.AssemblyPath),
+            DescribeRepositoryFreshness(assemblies));
 
         return JsonSerializer.Serialize(report, RuntimeIdentityJsonOptions);
+    }
+
+    /// <summary>
+    /// 「部署新鲜度」：把每个已加载程序集的写入时间与仓库 HEAD 的提交时间比对。
+    ///
+    /// 为什么必须由工具自己算：2026-10-19 我连续多次把「部署滞后」误判成「源码缺陷」——
+    /// 进程重启过 ≠ 重新编译过；文件 mtime ≠ 提交先后；DLL 里出现类型名字符串还可能只是 TypeRef。
+    /// 唯一可靠的判据是「产物写入时间 vs 产出它的提交时间」。把它做成机器可读字段，
+    /// 就不用每次靠人肉推导，也不会再把「没部署」当成「代码坏了」。
+    /// </summary>
+    private static RepositoryFreshness DescribeRepositoryFreshness(IReadOnlyList<AssemblyIdentity> assemblies)
+    {
+        var root = TryFindRepositoryRoot(AppContext.BaseDirectory);
+        if (root is null)
+        {
+            return new RepositoryFreshness(null, null, null, null, "unknown", "repository-not-found", []);
+        }
+
+        if (!TryReadRepositoryHead(root, out var head, out var reason))
+        {
+            return new RepositoryFreshness(root, null, null, null, "unknown", reason, []);
+        }
+
+        var evaluated = assemblies
+            .Select(assembly => new AssemblyFreshness(
+                assembly.Role,
+                assembly.Name,
+                assembly.File?.LastWriteTimeUtc,
+                EvaluateFreshness(assembly.File?.LastWriteTimeUtc, head.CommittedAtUtc)))
+            .ToArray();
+
+        var overall = evaluated.Any(item => item.Verdict == "deployed-before-head")
+            ? "deployed-before-head"
+            : evaluated.All(item => item.Verdict == "at-or-after-head")
+                ? "at-or-after-head"
+                : "unknown";
+
+        return new RepositoryFreshness(root, head.Sha, head.CommittedAtUtc, head.Subject, overall, null, evaluated);
+    }
+
+    /// <summary>
+    /// 单个产物相对 HEAD 的判定。1 秒容差：文件系统时间戳精度与签出顺序会让「同一秒」不可靠，
+    /// 因此只有**严格早于 HEAD 提交时间 1 秒以上**才算「部署在 HEAD 之前」。
+    /// 写入时间用 ISO-8601 字符串（与 <see cref="FileIdentity"/> 一致）；解析不了 ⇒ <c>unknown</c>，不猜。
+    /// </summary>
+    internal static string EvaluateFreshness(string? lastWriteTimeUtc, DateTimeOffset headCommittedAtUtc)
+    {
+        if (string.IsNullOrWhiteSpace(lastWriteTimeUtc)
+            || !DateTimeOffset.TryParse(lastWriteTimeUtc, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var written))
+        {
+            return "unknown";
+        }
+
+        return written < headCommittedAtUtc.AddSeconds(-1) ? "deployed-before-head" : "at-or-after-head";
+    }
+
+    /// <summary>从启动目录向上找 <c>.git</c>；找不到就返回 null（不猜仓库根）。</summary>
+    internal static string? TryFindRepositoryRoot(string? startDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(startDirectory))
+        {
+            return null;
+        }
+
+        try
+        {
+            var directory = new DirectoryInfo(Path.GetFullPath(startDirectory));
+            for (var depth = 0; directory is not null && depth < 16; depth++)
+            {
+                if (Directory.Exists(Path.Combine(directory.FullName, ".git")))
+                {
+                    return directory.FullName;
+                }
+
+                directory = directory.Parent;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 读 HEAD（sha / 提交时间 / 标题）。git 不可用、非仓库、超时都**如实**返回失败原因，
+    /// 不把「读不到」当成「一致」——否则新鲜度判定会变成假绿。
+    /// </summary>
+    internal static bool TryReadRepositoryHead(string repositoryRoot, out RepositoryHead head, out string? reason)
+    {
+        head = null!;
+        reason = null;
+
+        try
+        {
+            using var git = new Process
+            {
+                StartInfo = new ProcessStartInfo("git")
+                {
+                    WorkingDirectory = repositoryRoot,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                },
+            };
+            git.StartInfo.ArgumentList.Add("-C");
+            git.StartInfo.ArgumentList.Add(repositoryRoot);
+            git.StartInfo.ArgumentList.Add("log");
+            git.StartInfo.ArgumentList.Add("-1");
+            git.StartInfo.ArgumentList.Add("--format=%H%n%cI%n%s");
+
+            if (!git.Start())
+            {
+                reason = "git-unavailable";
+                return false;
+            }
+
+            var stdout = git.StandardOutput.ReadToEnd();
+            if (!git.WaitForExit(3000))
+            {
+                try { git.Kill(entireProcessTree: true); } catch { /* 尽力而为 */ }
+                reason = "git-timeout";
+                return false;
+            }
+
+            if (git.ExitCode != 0)
+            {
+                reason = $"git-exit-{git.ExitCode}";
+                return false;
+            }
+
+            var lines = stdout.Replace("\r\n", "\n").Split('\n', 3);
+            if (lines.Length < 2
+                || string.IsNullOrWhiteSpace(lines[0])
+                || !DateTimeOffset.TryParse(lines[1].Trim(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var committedAt))
+            {
+                reason = "git-output-unparsable";
+                return false;
+            }
+
+            head = new RepositoryHead(lines[0].Trim(), committedAt, lines.Length > 2 ? lines[2].Trim() : string.Empty);
+            return true;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            reason = "git-unavailable";
+            return false;
+        }
     }
 
     // 待核实的对象文件（通常是部署目录里的目标产物）：路径缺失或不可读时如实报 error，
@@ -1117,7 +1269,31 @@ internal sealed record RuntimeIdentityReport(
     ProcessIdentity Process,
     RuntimeHostIdentity Runtime,
     IReadOnlyList<AssemblyIdentity> Assemblies,
-    AssemblyTargetIdentity? Target);
+    AssemblyTargetIdentity? Target,
+    RepositoryFreshness Freshness);
+
+/// <summary>
+/// 「这份部署是不是在 HEAD 之后产出的」——机器可读的判定，避免把「没部署」误判成「代码坏了」。
+/// <c>Verdict</c> 取值：<c>at-or-after-head</c> / <c>deployed-before-head</c> / <c>unknown</c>。
+/// 判定不可用时给 <c>Reason</c>（<c>repository-not-found</c> / <c>git-unavailable</c> / <c>git-timeout</c> / <c>git-exit-N</c> / <c>git-output-unparsable</c>），
+/// 而不是默认「一致」。
+/// </summary>
+internal sealed record RepositoryFreshness(
+    string? RepositoryRoot,
+    string? HeadSha,
+    DateTimeOffset? HeadCommittedAtUtc,
+    string? HeadSubject,
+    string Verdict,
+    string? Reason,
+    IReadOnlyList<AssemblyFreshness> Assemblies);
+
+internal sealed record AssemblyFreshness(
+    string Role,
+    string Name,
+    string? LastWriteTimeUtc,
+    string Verdict);
+
+internal sealed record RepositoryHead(string Sha, DateTimeOffset CommittedAtUtc, string Subject);
 
 public sealed record AgentDiagnosticsArgs
 {
