@@ -105,6 +105,7 @@ const messageBlockEquals = (
     previous.turnId === next.turnId &&
     previous.role === next.role &&
     previous.content === next.content &&
+    previous.expandMessageId === next.expandMessageId &&
     previous.executionError === next.executionError &&
     previous.status === next.status &&
     previous.createdAt === next.createdAt &&

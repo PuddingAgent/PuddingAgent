@@ -768,6 +768,39 @@ describe('agent chat client store', () => {
     expect(store.getSnapshot().conversation?.mainSessionId).toBe('session-b');
   });
 
+  it('keeps live content received while an older newest-first page is loading', async () => {
+    let resolvePage!: (page: any) => void;
+    const store = createAgentChatClientStore({
+      cache: createMemoryAgentChatCache(),
+      api: {
+        listStatuses: async () => [], getConversation: jest.fn(),
+        getConversationFromSnapshot: async () => ({
+          workspaceId: 'default', ownerUserId: 'single-user', agentId: 'agent-a',
+          mainSessionId: 'session-a', messages: [], eventCursor: 10,
+          updatedAt: new Date(3000).toISOString(), hasMoreHistory: true,
+          historyNextBeforeCreatedAt: 3000, historyNextBeforeMessageId: 'boundary',
+        }),
+        getHistoryPage: () => new Promise((resolve) => { resolvePage = resolve; }),
+      },
+    });
+    await store.selectAgent('default', 'agent-a');
+    const pending = store.loadOlder();
+    store.applyLiveEvent('default', 'agent-a', {
+      type: 'message.content.appended', eventId: 'live', sequence: 11,
+      turnId: 'current-turn', runId: 'current-run', delta: '刚收到的回复',
+    } as unknown as AdminChatStreamEvent);
+    resolvePage({
+      items: [2, 1].map((number) => ({ messageId: `old-${number}`, role: 'agent',
+        createdAt: number * 1000, preview: '历史', hasMoreContent: false,
+        contentLength: 6, hasContentParts: false })), hasMore: false,
+      nextBeforeCreatedAt: null, nextBeforeMessageId: null,
+    });
+    await pending;
+    expect(store.getSnapshot().conversation?.messages.map((message) => message.messageId)).toEqual(['old-1', 'old-2']);
+    expect(store.getSnapshot().conversation?.eventCursor).toBe(11);
+    expect(store.getSnapshot().conversation?.activeRun?.outputSnapshot.markdown).toBe('刚收到的回复');
+  });
+
   it('expands a truncated message on demand through bounded content segments', async () => {
     const cache = createMemoryAgentChatCache();
     let contentCalls = 0;

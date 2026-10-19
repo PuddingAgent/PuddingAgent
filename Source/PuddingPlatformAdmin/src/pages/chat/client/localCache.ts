@@ -71,16 +71,20 @@ export function createIndexedDbAgentChatCache(): AgentChatLocalCache {
   const getDb = (): Promise<IDBDatabase> => {
     if (dbPromise) return dbPromise;
     dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('pudding-agent-chat', 1);
+      const request = indexedDB.open('pudding-agent-chat', 2);
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains('conversations'))
           db.createObjectStore('conversations');
         if (!db.objectStoreNames.contains('statuses'))
           db.createObjectStore('statuses');
+        // v1 persisted reversed history and raw/truncated Fabric envelopes.
+        // Only discard the derived display cache; canonical messages stay on Core.
+        request.transaction?.objectStore('conversations').clear();
       };
       request.onsuccess = () => {
         const db = request.result;
+        db.onversionchange = () => { db.close(); dbPromise = null; };
         // 连接意外关闭时重建
         db.onclose = () => { dbPromise = null; };
         resolve(db);

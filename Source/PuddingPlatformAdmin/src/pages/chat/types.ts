@@ -84,6 +84,7 @@ export interface ChatTurn {
     dbMessageId?: number;
     /** ADR-077：typed 内容部件（图片回放/乐观渲染的 authoritative 来源）。 */
     contentParts?: { type: string; artifactId?: string | null; detail?: string | null }[];
+    expandMessageId?: string;
   };
   assistant: {
     id: string;
@@ -95,6 +96,7 @@ export interface ChatTurn {
     /** 用于按需加载历史过程事件的持久化消息 ID。 */
     processMessageId?: string;
     answerMarkdown: string;
+    expandMessageId?: string;
     executionError?: string;
     isStreaming: boolean;
     usage?: TokenUsageDto;
@@ -126,6 +128,7 @@ export interface ChatQuotedMessage {
  * 每个块对应一条独立的消息气泡。
  */
 export interface ChatMessageBlock {
+  expandMessageId?: string;
   executionError?: string;
   id: string;
   turnId: string;
@@ -249,7 +252,7 @@ export function buildMessageBlocks(
     const turn = turns[i];
 
     // ── 用户消息 ──
-    if (turn.userMessage.text.trim()) {
+    if (turn.userMessage.text.trim() || extractVisionArtifactIds(turn).length > 0) {
       const projected = formatGoalContinuationMessage(
         turn.userMessage.text,
         turn.userMessage.metadata,
@@ -261,6 +264,7 @@ export function buildMessageBlocks(
         turnId: turn.turnId,
         role: 'user',
         content: userContent,
+        expandMessageId: turn.userMessage.expandMessageId,
         skillBadges: skillIds.length > 0 ? skillIds : undefined,
         status: turn.userMessage.status === 'sending' ? 'sending' : 'success',
         createdAt: turn.userMessage.timestamp,
@@ -270,7 +274,7 @@ export function buildMessageBlocks(
             ? 'voice'
             : turn.userMessage.metadata?.inputMode === 'camera'
               ? 'camera'
-              : turn.userMessage.metadata?.inputMode === 'image'
+              : turn.userMessage.metadata?.inputMode === 'image' || extractVisionArtifactIds(turn).length > 0
                 ? 'image'
                 : 'text',
         visionArtifactId: extractVisionArtifactIds(turn)[0],
@@ -286,6 +290,7 @@ export function buildMessageBlocks(
         id: `${turn.assistant.id}:heartbeat`,
         turnId: turn.turnId,
         role: 'heartbeat',
+        expandMessageId: turn.assistant.expandMessageId,
         content: turn.assistant.answerMarkdown,
         status: toChatMessageStatus(turn.assistant.status),
         executionError: turn.assistant.executionError,
@@ -315,6 +320,7 @@ export function buildMessageBlocks(
         id: `${turn.assistant.id}:assistant:0`,
         turnId: turn.turnId,
         role: 'agent',
+        expandMessageId: turn.assistant.expandMessageId,
         content: turn.assistant.answerMarkdown,
         status: toChatMessageStatus(turn.assistant.status),
         createdAt: turn.userMessage.timestamp,

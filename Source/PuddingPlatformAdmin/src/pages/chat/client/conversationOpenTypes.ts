@@ -101,6 +101,12 @@ export interface ConversationHistoryItem {
   hasMoreContent: boolean;
   contentLength: number;
   hasContentParts: boolean;
+  sourceKind?: 'user' | 'agent' | 'system' | null;
+  sourceId?: string | null;
+  sourceName?: string | null;
+  messageType?: string | null;
+  llmRole?: string | null;
+  contentParts?: { type: string; artifactId?: string | null; detail?: string | null }[] | null;
 }
 
 export interface ConversationHistoryPage {

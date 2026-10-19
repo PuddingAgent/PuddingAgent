@@ -133,6 +133,7 @@ export interface TurnCancelledEvent extends ExecutionEventDto {
  * 被统计但不会投影为节点（保持纯函数对任意 canonical 输入的宽容）。
  */
 export type ExecutionFlowEvent =
+  | (ExecutionEventDto & { type: 'turn.accepted' | 'turn.started' })
   | ReasoningDeltaEvent
   | ContentDeltaEvent
   | MessageCompletedEvent

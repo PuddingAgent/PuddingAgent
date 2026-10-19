@@ -1,4 +1,4 @@
-import { getAgentConversationFromSnapshot } from './conversationSnapshotAdapter';
+import { chronologicalHistory, getAgentConversationFromSnapshot, mapSnapshotHistoryItem } from './conversationSnapshotAdapter';
 import type {
   ConversationOpenSnapshot,
   ConversationTurnSummaryView,
@@ -60,7 +60,7 @@ const snapshot = (overrides: Partial<ConversationOpenSnapshot> = {}): Conversati
         contentLength: 6,
         hasContentParts: false,
       },
-    ],
+    ].reverse(),
     nextBeforeCreatedAt: null,
     nextBeforeMessageId: null,
     hasMore: false,
@@ -147,7 +147,7 @@ describe('getAgentConversationFromSnapshot', () => {
     });
   });
 
-  it('keeps long content as preview plus explicit expand link without eager fetch', async () => {
+  it('keeps expansion as metadata without injecting markup into the message body', async () => {
     const longItem = {
       messageId: 'msg-long',
       role: 'agent' as const,
@@ -181,11 +181,30 @@ describe('getAgentConversationFromSnapshot', () => {
     );
 
     expect(getContent).not.toHaveBeenCalled();
-    expect(view!.messages[0].content).toContain(
-      '[展开全文](#pudding-expand-msg-long)',
-    );
+    expect(view!.messages[0].content).toBe(longItem.preview);
     expect(view!.messages[0].hasMoreContent).toBe(true);
     expect(view!.messages[0].contentLength).toBe(100);
+  });
+
+  it('reverses server tie order without sorting or mutating the wire page', () => {
+    const items = ['last-id', 'first-id'].map((messageId) => ({
+      ...snapshot().history.items[0], messageId, createdAt: 1000,
+    }));
+    expect(chronologicalHistory(items).map((item) => item.messageId)).toEqual(['first-id', 'last-id']);
+    expect(items[0].messageId).toBe('last-id');
+  });
+
+  it('preserves normalized system identity and canonical image parts', () => {
+    const item = { ...snapshot().history.items[0], role: 'system',
+      sourceKind: 'system' as const, sourceId: 'heartbeat', sourceName: '系统心跳',
+      messageType: 'heartbeat', llmRole: 'user', preview: '检查任务',
+      contentParts: [{ type: 'image', artifactId: 'image-1', detail: 'original' }],
+    };
+    expect(mapSnapshotHistoryItem(item, undefined)).toMatchObject({
+      role: 'system', sourceKind: 'system', sourceId: 'heartbeat',
+      sourceName: '系统心跳', messageType: 'heartbeat', llmRole: 'user',
+      content: '检查任务', contentParts: item.contentParts,
+    });
   });
 
   it('falls back to the legacy projection while an active turn is not terminal', async () => {

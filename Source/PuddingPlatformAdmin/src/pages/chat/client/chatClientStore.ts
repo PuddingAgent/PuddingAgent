@@ -8,7 +8,7 @@ import {
 import { DEFAULT_AGENT_CHAT_OWNER_ID } from './clientIdentity';
 import type { AgentChatLocalCache } from './localCache';
 import type { ConversationHistoryPage, ConversationMessageContentPage } from './conversationOpenTypes';
-import { mapSnapshotHistoryItem, readFullMessageContent } from './conversationSnapshotAdapter';
+import { chronologicalHistory, mapSnapshotHistoryItem, readFullMessageContent } from './conversationSnapshotAdapter';
 import type { AgentConversationView, AgentStatusProjection } from './types';
 
 export interface AgentChatApiPort {
@@ -843,15 +843,19 @@ export function createAgentChatClientStore(input: {
           return;
         }
 
+        // A send/SSE update can arrive while history is loading. Merge into the
+        // current view, never replace it with the pre-request conversation.
+        const current = snapshot.conversation;
+        if (!current || current.mainSessionId !== conversation.mainSessionId) return;
         const existing = new Set(
-          conversation.messages.map((message) => message.messageId),
+          current.messages.map((message) => message.messageId),
         );
-        const older = page.items
+        const older = chronologicalHistory(page.items)
           .filter((item) => !existing.has(item.messageId))
           .map((item) => mapSnapshotHistoryItem(item, undefined));
         const nextConversation: AgentConversationView = {
-          ...conversation,
-          messages: [...older, ...conversation.messages],
+          ...current,
+          messages: [...older, ...current.messages],
           hasMoreHistory: page.hasMore,
           historyNextBeforeCreatedAt: page.nextBeforeCreatedAt ?? null,
           historyNextBeforeMessageId: page.nextBeforeMessageId ?? null,

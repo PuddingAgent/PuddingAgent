@@ -1,4 +1,5 @@
 using PuddingConversationReadModel;
+using PuddingCode.Platform;
 
 namespace PuddingPlatform.Services.AgentChat;
 
@@ -24,7 +25,15 @@ public sealed record ConversationHistoryItem(
     string Preview,
     bool HasMoreContent,
     int ContentLength,
-    bool HasContentParts);
+    bool HasContentParts)
+{
+    public string? SourceKind { get; init; }
+    public string? SourceId { get; init; }
+    public string? SourceName { get; init; }
+    public string? MessageType { get; init; }
+    public string? LlmRole { get; init; }
+    public IReadOnlyList<ConversationContentPartView>? ContentParts { get; init; }
+}
 
 /// <summary>历史消息页结果；键集游标由最后一条返回项确定。</summary>
 public sealed record ConversationHistoryPage(

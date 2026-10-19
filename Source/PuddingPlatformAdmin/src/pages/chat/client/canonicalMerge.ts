@@ -80,6 +80,12 @@ const structureSignature = (message: ConversationMessageView): string => {
     asText(message.turnId),
     asText(message.runId),
     asText(message.sourceId),
+    asText(message.sourceKind),
+    asText(message.sourceName),
+    asText(message.messageType),
+    asText(message.llmRole),
+    String(message.hasMoreContent ?? false),
+    String(message.contentLength ?? ''),
     asText(outcome?.status),
     approval
       ? `${asText(approval.approvalId)}:${asText(approval.status)}`

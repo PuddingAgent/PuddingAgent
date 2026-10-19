@@ -25,10 +25,9 @@ import type {
 
 const MAX_EXPAND_CONTENT_BYTES = 512 * 1024;
 const CONTENT_SEGMENT_BYTES = 32 * 1024;
-const EXPAND_HASH_PREFIX = 'pudding-expand-';
-
-const expandLinkFor = (messageId: string): string =>
-  `[展开全文](#${EXPAND_HASH_PREFIX}${encodeURIComponent(messageId)})`;
+/** API pages are newest first, including their tie order. UI is oldest first. */
+export const chronologicalHistory = (items: ConversationHistoryItem[]): ConversationHistoryItem[] =>
+  [...items].reverse();
 
 export interface SnapshotConversationDeps {
   getSnapshot?: typeof getConversationOpen;
@@ -95,15 +94,14 @@ export function mapSnapshotHistoryItem(
     turnId: item.turnId ?? null,
     runId: turn?.rootRunId ?? null,
     role,
-    sourceKind: role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent',
-    sourceId: role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent',
-    sourceName: role === 'user' ? '用户' : role === 'system' ? '系统' : 'Agent',
-    messageType: role === 'user' ? 'user_message' : 'agent_message',
-    llmRole: role === 'user' ? 'user' : role === 'system' ? 'system' : 'assistant',
+    sourceKind: item.sourceKind ?? (role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent'),
+    sourceId: item.sourceId ?? (role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent'),
+    sourceName: item.sourceName ?? (role === 'user' ? '用户' : role === 'system' ? '系统' : 'Agent'),
+    messageType: item.messageType ?? (role === 'user' ? 'user_message' : 'agent_output'),
+    llmRole: item.llmRole ?? (role === 'user' ? 'user' : role === 'system' ? 'system' : 'assistant'),
+    contentParts: item.contentParts,
     createdAt: toIso(item.createdAt),
-    content: needsExpand
-      ? `${item.preview}\n\n${expandLinkFor(item.messageId)}`
-      : (content ?? item.preview),
+    content: content ?? item.preview,
     status: 'succeeded',
     processItems: [],
     processSummary: processSummaryOf(turn),
@@ -179,7 +177,7 @@ export async function getAgentConversationFromSnapshot(
   for (const turn of snapshot.visibleTurns) turns.set(turn.turnId, turn);
   if (snapshot.activeTurn) turns.set(snapshot.activeTurn.turnId, snapshot.activeTurn);
 
-  const messages: ConversationMessageView[] = snapshot.history.items.map(
+  const messages: ConversationMessageView[] = chronologicalHistory(snapshot.history.items).map(
     (item) => {
       const turn = item.turnId ? turns.get(item.turnId) : undefined;
       return mapSnapshotHistoryItem(item, turn);

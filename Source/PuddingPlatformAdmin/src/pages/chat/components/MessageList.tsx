@@ -271,6 +271,18 @@ const parseAgentQuotedMessage = (
 
   const parsed = readPuddingMessage(message.content);
   if (!parsed) {
+    // Snapshot/legacy APIs already unwrap the envelope. Use its typed identity;
+    // assistant output (llmRole=assistant/agent) is never an inbound quote.
+    if (message.llmRole === 'user') {
+      return {
+        sourceId: message.sourceId || 'agent',
+        sourceName: message.sourceName || 'Agent',
+        sourceKind: 'agent',
+        messageType: message.messageType,
+        content: message.content,
+        createdAt: timestamp,
+      };
+    }
     inboundDebug.warn(
       'parse',
       'NOT pudding-message JSON, content[0:80]=',
@@ -361,6 +373,7 @@ const createProjectedTurn = (
       // 否则消费侧（extractVisionArtifactIds）取不到 artifactId，用户图片
       // 只能降级为「图片」占位符。
       contentParts: isUser ? (message.contentParts ?? undefined) : undefined,
+      expandMessageId: isUser && message.hasMoreContent ? message.messageId : undefined,
     },
     assistant: {
       id: isUser ? `${turnId}:placeholder-assistant` : message.messageId,
@@ -398,6 +411,7 @@ const createProjectedTurn = (
           ? ('inbound' as const)
           : 'structured',
       quotedMessage,
+      expandMessageId: !isUser && message.hasMoreContent ? message.messageId : undefined,
       approvalCard: message.approvalCard ?? undefined,
       planCard: message.planCard ?? undefined,
     },
@@ -1283,11 +1297,19 @@ const MessageList: React.FC<MessageListProps> = ({
       />
     );
 
-    if (!approvalCardData && !planCardData) return messageRow;
+    if (!approvalCardData && !planCardData && !item.block.expandMessageId) return messageRow;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
         {messageRow}
+        {item.block.expandMessageId && (
+          <a
+            href={`#pudding-expand-${encodeURIComponent(item.block.expandMessageId)}`}
+            style={{ alignSelf: item.block.role === 'user' ? 'flex-end' : 'flex-start', padding: '4px 12px' }}
+          >
+            展开全文
+          </a>
+        )}
         {approvalCardData && (
           <ApprovalCard
             approvalId={approvalCardData.approvalId}

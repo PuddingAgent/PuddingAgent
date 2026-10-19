@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Platform;
 using PuddingConversationReadModel;
@@ -29,6 +30,17 @@ public sealed class ConversationOpenQueryService(
     private const int ContentSegmentDefaultBytes = 32 * 1024;
     private const int ContentSegmentMaxBytes = 128 * 1024;
     private const int ProcessStructuredFieldMaxBytes = 16 * 1024;
+
+    // Normalize the wire envelope inside SQLite before applying preview/byte
+    // budgets. Fetching/truncating raw JSON first loses both body and identity.
+    private const string EnvelopeSql = """
+        CASE WHEN json_valid(Content) THEN
+            CASE WHEN json_extract(Content, '$.schema') = 'pudding-message'
+                 AND json_type(Content, '$.context.text') = 'text'
+            THEN Content END END
+        """;
+    private static readonly string DisplayContentSql =
+        $"COALESCE(json_extract(({EnvelopeSql}), '$.context.text'), Content)";
 
     private static readonly string[] DisplayableProcessTypes =
     [
@@ -289,8 +301,8 @@ public sealed class ConversationOpenQueryService(
         var segmentLength = (int)Math.Min(limit, total - offset);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            """
-            SELECT substr(CAST(Content AS BLOB), $startByte, $length)
+            $"""
+            SELECT substr(CAST(({DisplayContentSql}) AS BLOB), $startByte, $length)
             FROM ChatMessages
             WHERE SessionId = $sessionId AND message_id = $messageId
             LIMIT 1;
@@ -355,19 +367,13 @@ public sealed class ConversationOpenQueryService(
                 || (message.CreatedAt == boundaryCreatedAt && message.Id < boundaryId));
         }
 
-        var rows = await query
+        var ids = await query
             .OrderByDescending(message => message.CreatedAt)
             .ThenByDescending(message => message.Id)
             .Take(limit + 1)
-            .Select(message => new HistoryRow(
-                message.MessageId,
-                message.Role,
-                message.TurnId,
-                message.CreatedAt,
-                message.Content.Length,
-                message.Content.Substring(0, PreviewChars),
-                message.ContentPartsJson != null))
+            .Select(message => message.Id)
             .ToListAsync(ct);
+        var rows = await ReadHistoryRowsAsync(db, ids, ct);
 
         var candidates = rows
             .Select(row => new HistoryPageCandidate
@@ -387,7 +393,7 @@ public sealed class ConversationOpenQueryService(
         foreach (var item in bounded.Items)
         {
             var row = rowsById[item.MessageId];
-            var hasMoreContent = row.ContentLength > PreviewChars || item.PreviewTruncated;
+            var hasMoreContent = row.ContentLength > Encoding.UTF8.GetByteCount(item.Preview);
             items.Add(new ConversationHistoryItem(
                 item.MessageId,
                 item.Role,
@@ -396,7 +402,15 @@ public sealed class ConversationOpenQueryService(
                 item.Preview,
                 hasMoreContent,
                 row.ContentLength,
-                row.HasContentParts));
+                row.HasContentParts)
+            {
+                SourceKind = row.SourceKind,
+                SourceId = row.SourceId,
+                SourceName = row.SourceName,
+                MessageType = row.MessageType,
+                LlmRole = row.LlmRole,
+                ContentParts = row.ContentParts,
+            });
         }
 
         long? nextCreatedAt = null;
@@ -409,6 +423,52 @@ public sealed class ConversationOpenQueryService(
 
         var hasMore = bounded.HasMore || rows.Count > items.Count;
         return new ConversationHistoryPage(items, nextCreatedAt, nextMessageId, hasMore);
+    }
+
+    private static async Task<List<HistoryRow>> ReadHistoryRowsAsync(
+        PlatformDbContext db, IReadOnlyList<long> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open) await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+        var parameters = ids.Select((_, i) => $"$id{i}").ToArray();
+        for (var i = 0; i < ids.Count; i++) AddParameter(command, parameters[i], ids[i]);
+        AddParameter(command, "$previewChars", PreviewChars);
+        command.CommandText = $"""
+            SELECT message_id, Role, turn_id, CreatedAt,
+                   length(CAST(({DisplayContentSql}) AS BLOB)),
+                   substr(({DisplayContentSql}), 1, $previewChars),
+                   content_parts_json IS NOT NULL,
+                   substr(json_extract(({EnvelopeSql}), '$.from.kind'), 1, 32),
+                   substr(json_extract(({EnvelopeSql}), '$.from.id'), 1, 256),
+                   substr(json_extract(({EnvelopeSql}), '$.from.display_name'), 1, 256),
+                   substr(json_extract(({EnvelopeSql}), '$.message_type'), 1, 64),
+                   (SELECT json_group_array(json_object('type', 'image',
+                       'artifactId', substr(json_extract(value, '$.artifactId'), 1, 512),
+                       'detail', substr(json_extract(value, '$.detail'), 1, 32)))
+                    FROM (SELECT value FROM json_each(
+                        CASE WHEN json_valid(content_parts_json) THEN content_parts_json ELSE 'null' END,
+                        '$.parts') WHERE json_extract(value, '$.type') = 'image' LIMIT 32))
+            FROM ChatMessages WHERE Id IN ({string.Join(",", parameters)})
+            ORDER BY CreatedAt DESC, Id DESC;
+            """;
+        var rows = new List<HistoryRow>(ids.Count);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            string? Optional(int index) => reader.IsDBNull(index) ? null : reader.GetString(index);
+            var llmRole = reader.GetString(1);
+            var sourceKind = Optional(7);
+            var role = sourceKind is "system" or "agent" or "user" ? sourceKind : llmRole;
+            rows.Add(new HistoryRow(reader.GetString(0), role, Optional(2), reader.GetInt64(3),
+                reader.GetInt32(4), reader.GetString(5), reader.GetBoolean(6), sourceKind,
+                Optional(8), Optional(9), Optional(10), llmRole,
+                JsonSerializer.Deserialize<ConversationContentPartView[]>(reader.GetString(11),
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web))));
+        }
+        return rows;
     }
 
     // ── 过程明细页 ──────────────────────────────────────────────────────
@@ -585,8 +645,8 @@ public sealed class ConversationOpenQueryService(
     {
         await using var command = connection.CreateCommand();
         command.CommandText =
-            """
-            SELECT length(CAST(Content AS BLOB))
+            $"""
+            SELECT length(CAST(({DisplayContentSql}) AS BLOB))
             FROM ChatMessages
             WHERE SessionId = $sessionId AND message_id = $messageId
             LIMIT 1;
@@ -834,7 +894,13 @@ public sealed class ConversationOpenQueryService(
         long CreatedAt,
         int ContentLength,
         string Preview,
-        bool HasContentParts);
+        bool HasContentParts,
+        string? SourceKind,
+        string? SourceId,
+        string? SourceName,
+        string? MessageType,
+        string LlmRole,
+        IReadOnlyList<ConversationContentPartView>? ContentParts);
 
     private sealed class ProcessStructuredFields
     {

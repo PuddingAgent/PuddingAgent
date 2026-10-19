@@ -72,7 +72,79 @@ public sealed class ConversationOpenQueryServiceTests
         var item = snapshot.History.Items[0];
         Assert.IsTrue(Encoding.UTF8.GetByteCount(item.Preview) <= 8 * 1024);
         Assert.IsTrue(item.HasMoreContent);
-        Assert.AreEqual(10_000, item.ContentLength);
+        Assert.AreEqual(30_000, item.ContentLength, "content expansion length is UTF-8 bytes");
+    }
+
+    [TestMethod]
+    public async Task HistoryAndExpansion_ProjectFabricBodyIdentityAndUtf8Length()
+    {
+        await using var temp = TempQueryDb.Create();
+        var body = string.Concat(Enumerable.Repeat("正文🙂", 1_500));
+        await using (var db = new PlatformDbContext(temp.Options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.ChatMessages.Add(Message("heartbeat", "user", JsonSerializer.Serialize(new
+            {
+                schema = "pudding-message", message_type = "heartbeat",
+                from = new { kind = "system", id = "heartbeat", display_name = "系统心跳" },
+                context = new { text = body },
+            }), 1_000, null));
+            db.ChatMessages.Add(Message("quote", "user", JsonSerializer.Serialize(new
+            {
+                schema = "pudding-message", message_type = "agent_message",
+                from = new { kind = "agent", id = "sender", display_name = "审阅助手" },
+                context = new { text = "确认结果" },
+            }), 1_001, null));
+            await db.SaveChangesAsync();
+        }
+        var service = NewService(temp);
+        var history = (await service.OpenAsync("conv-1")).History.Items;
+        var heartbeat = history.Single(item => item.MessageId == "heartbeat");
+        Assert.AreEqual("system", heartbeat.Role);
+        Assert.AreEqual("system", heartbeat.SourceKind);
+        Assert.AreEqual("heartbeat", heartbeat.SourceId);
+        Assert.AreEqual("heartbeat", heartbeat.MessageType);
+        Assert.AreEqual("user", heartbeat.LlmRole);
+        Assert.IsTrue(heartbeat.HasMoreContent);
+        Assert.IsTrue(body.StartsWith(heartbeat.Preview, StringComparison.Ordinal));
+        Assert.AreEqual(Encoding.UTF8.GetByteCount(body), heartbeat.ContentLength);
+        var quote = history.Single(item => item.MessageId == "quote");
+        Assert.AreEqual("agent", quote.Role);
+        Assert.AreEqual("sender", quote.SourceId);
+        Assert.AreEqual("确认结果", quote.Preview);
+        var expanded = new StringBuilder();
+        long offset = 0;
+        do
+        {
+            var segment = await service.GetMessageContentAsync("conv-1", "heartbeat", offset, 997);
+            Assert.AreEqual(heartbeat.ContentLength, segment.TotalBytes);
+            expanded.Append(segment.Content);
+            if (!segment.HasMore) break;
+            offset = segment.NextOffsetBytes!.Value;
+        } while (true);
+        Assert.AreEqual(body, expanded.ToString());
+    }
+
+    [TestMethod]
+    public async Task History_PreservesOrdinaryJsonAndImageReferencesWithoutImageTextPayload()
+    {
+        await using var temp = TempQueryDb.Create();
+        await using (var db = new PlatformDbContext(temp.Options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            var image = Message("image", "user", "看图", 1_000, null);
+            image.ContentPartsJson = """{"v":1,"parts":[{"type":"text","text":"看图"},{"type":"image","artifactId":"image-1","detail":"original"}]}""";
+            db.ChatMessages.Add(image);
+            db.ChatMessages.Add(Message("json", "user", "{\"schema\":\"ordinary\",\"context\":{\"text\":\"keep envelope\"}}", 1_001, null));
+            db.ChatMessages.Add(Message("broken", "user", "{invalid JSON", 1_002, null));
+            await db.SaveChangesAsync();
+        }
+        var history = (await NewService(temp).OpenAsync("conv-1")).History.Items;
+        Assert.AreEqual("{invalid JSON", history[0].Preview);
+        Assert.IsTrue(history[1].Preview.StartsWith("{\"schema\":\"ordinary\"", StringComparison.Ordinal));
+        var parts = history[2].ContentParts!;
+        Assert.HasCount(1, parts);
+        Assert.AreEqual("image-1", parts[0].ArtifactId);
     }
 
     [TestMethod]

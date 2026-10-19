@@ -882,7 +882,6 @@ const ChatPageContent: React.FC = () => {
             onDelete={ctxCallbacks.onDelete}
             onSpeak={ctxCallbacks.onSpeak}
             onRerun={ctxCallbacks.onRerun}
-            onEditAndRerun={ctxCallbacks.onEditAndRerun}
             onAddToMemory={ctxCallbacks.onAddToMemory}
             onPin={ctxCallbacks.onPin}
             onBranch={ctxCallbacks.onBranch}

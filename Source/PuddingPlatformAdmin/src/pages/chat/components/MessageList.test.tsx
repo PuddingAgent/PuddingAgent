@@ -99,6 +99,35 @@ it('sends a growing Turn projection only to its latest message row', () => {
   expect(screen.getAllByTestId('message-row').map((row) => row.getAttribute('data-projection'))).toEqual(['no', 'yes']);
 });
 
+it('renders a normalized heartbeat and a real expansion link for a plain user message', () => {
+  render(<MessageList {...baseProps} conversationView={{
+    workspaceId: 'default', ownerUserId: 'single-user', agentId: 'agent-1',
+    mainSessionId: 'session-1', activeRun: null, eventCursor: 2, updatedAt: new Date(2000).toISOString(),
+    messages: [
+      { messageId: 'heartbeat', role: 'system', sourceKind: 'system', sourceId: 'heartbeat',
+        sourceName: '系统心跳', messageType: 'heartbeat', llmRole: 'user',
+        content: '检查任务', createdAt: new Date(1000).toISOString(), status: 'succeeded', processItems: [] },
+      { messageId: 'long-user', role: 'user', sourceKind: 'user', sourceId: 'user', sourceName: '用户',
+        content: '这是预览', hasMoreContent: true, contentLength: 10000,
+        createdAt: new Date(2000).toISOString(), status: 'succeeded', processItems: [] },
+    ],
+  }} />);
+  expect(screen.getAllByTestId('message-row').map((row) => row.getAttribute('data-role'))).toEqual(['heartbeat', 'user']);
+  expect(screen.getByRole('link', { name: '展开全文' }).getAttribute('href')).toBe('#pudding-expand-long-user');
+  expect(screen.queryByText(/\[展开全文\]/)).toBeNull();
+});
+
+it('renders normalized agent ingress as a quote without requiring its wire envelope', () => {
+  render(<MessageList {...baseProps} conversationView={{
+    workspaceId: 'default', ownerUserId: 'single-user', agentId: 'agent-1',
+    mainSessionId: 'session-1', eventCursor: 1, updatedAt: new Date(1000).toISOString(),
+    messages: [{ messageId: 'inbound', role: 'agent', sourceKind: 'agent', sourceId: 'reviewer',
+      sourceName: '审阅助手', llmRole: 'user', messageType: 'agent_message', content: '请核对结果',
+      createdAt: new Date(1000).toISOString(), status: 'succeeded', processItems: [] }],
+  }} />);
+  expect(screen.getByTestId('quoted-message').textContent).toContain('审阅助手: 请核对结果');
+});
+
 describe('MessageList scroll performance', () => {
   let rafCallbacks: FrameRequestCallback[];
   let originalRaf: typeof window.requestAnimationFrame;
