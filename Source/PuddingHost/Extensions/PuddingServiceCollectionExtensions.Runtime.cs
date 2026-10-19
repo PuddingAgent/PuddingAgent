@@ -13,6 +13,8 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Services;
 using PuddingCode.Tools;
+using PuddingAgent.HomeAssistant;
+using PuddingAgent.Tools;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.Conversation;
@@ -232,6 +234,16 @@ public static partial class PuddingServiceCollectionExtensions
 
         builder.Services.AddPuddingAgentTool<LlmResourcePoolTool>();
         builder.Services.AddPuddingAgentTool<ReadOfficeDocumentTool>();
+
+        // ── Home Assistant 工具（2026-10-19，叶子组件 PuddingHomeAssistant）──
+        // 配置来自 Agent 私有目录 secrets/home-assistant.json；域策略在组件内执行，
+        // 永久黑名单（shell_command/hassio/homeassistant/script/lock/alarm_control_panel/camera）不可配置放开。
+        builder.Services.AddSingleton<HaClientFactory>();
+        builder.Services.AddSingleton<HaInstanceStore>();
+        builder.Services.AddPuddingAgentTool<HaInstancesTool>();
+        builder.Services.AddPuddingAgentTool<HaStatesTool>();
+        builder.Services.AddPuddingAgentTool<HaHistoryTool>();
+        builder.Services.AddPuddingAgentTool<HaCallServiceTool>();
 
         // ── TB-06：工作区任务四工具（task_list/task_get/task_claim/task_update）──
         builder.Services.AddPuddingAgentTool<TaskListTool>();

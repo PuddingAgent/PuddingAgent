@@ -46,6 +46,9 @@
     <!-- 切片 C-3：桌面能力通道（Desktop 主动 gRPC 双向流）。默认关闭，见 DesktopCapabilityChannelWiring。 -->
     <ProjectReference Include="..\Pudding.CapabilityBroker\Pudding.CapabilityBroker.csproj" />
     <ProjectReference Include="..\Pudding.CapabilityBroker.AspNetCore\Pudding.CapabilityBroker.AspNetCore.csproj" />
+    <!-- S5 接入（2026-10-19）：Home Assistant 叶子组件。域策略与输出预算在组件内强制，
+         Host 只负责配置解析、工具适配与审批口径。 -->
+    <ProjectReference Include="..\PuddingHomeAssistant\PuddingHomeAssistant.csproj" />
   </ItemGroup>
 
 </Project>
