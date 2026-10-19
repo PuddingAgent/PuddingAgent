@@ -296,6 +296,9 @@ public static partial class PuddingServiceCollectionExtensions
         // ── 潜意识管道触发工具：手动触发 Auto-Dream / 经验提取 / 技能改进 ──────────
         builder.Services.AddPuddingTool<SubconsciousTriggerTool>();
 
+        // ── 屏幕采集后端（screen_capture 工具的自用能力：多屏 / 区域 / 窗口截图）──────
+        builder.Services.AddSingleton<PuddingHost.ScreenCapture.IScreenCaptureBackend, PuddingHost.ScreenCapture.WindowsScreenCaptureBackend>();
+
         // ── 统一 Tool 注册表：Agent 工具统一通过 IPuddingTool/native registry 暴露 ──────────
         builder.Services.AddPuddingToolsFromAssembly(typeof(PuddingHost.PuddingHostAssemblyMarker).Assembly);
         builder.Services.AddPuddingToolsFromAssembly(typeof(PuddingRuntime.RuntimeServiceExtensions).Assembly);
