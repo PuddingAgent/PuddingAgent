@@ -303,7 +303,12 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
         Apply(result.Page);
     }
 
-    private static BrowserLocatorDescriptor ToDescriptor(Locator locator) => new()
+    /// <summary>
+    /// 运行时定位器 → 线缆描述符。**测试可见**（<c>InternalsVisibleTo("PuddingHost.Tests")</c>）：
+    /// 线缆契约的回归必须打在**这条真实发送路径**上；只测 <see cref="LocatorWireName"/> 本身
+    /// 捕不到“把它改回 <c>locator.Kind.ToString()</c>”这类真实回归（实测变异不会取红）。
+    /// </summary>
+    internal static BrowserLocatorDescriptor ToDescriptor(Locator locator) => new()
     {
         // 线缆上的 kind 是**线名**（kebab-case，真源 DesktopLocatorKindWire），不是枚举名：
         // 接收端 BrowserBridgeCommandAdapter.TryMapLocator 按线名严格解析、不猜测不回退，
