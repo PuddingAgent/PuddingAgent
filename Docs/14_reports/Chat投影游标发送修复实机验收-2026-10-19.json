@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-19",
+  "kind": "frontend-only-development-overlay",
+  "frontendVersion": "6.9.10",
+  "frontendRevision": "0ce1d69",
+  "badge": "v6.9.10+dirty · 0ce1d69 · 2026-10-19 12:26",
+  "baseCompanionRevision": "7664eb2",
+  "diagnosis": {
+    "previousColdCacheProbeMissedPath": true,
+    "cause": "Projection cursor shortcut returned ok without publishing session-scoped ready state and numeric mirror",
+    "ensureResultBeforeFix": "cursor-not-ready",
+    "nativeClickEnteredSendHandler": true,
+    "draftReadCorrectly": true
+  },
+  "validation": {
+    "jestPassed": 53,
+    "existingBrokenDocTargets": 24,
+    "bundleBudgetPassed": true,
+    "frontMatterInvalid": 0,
+    "typecheckPassed": true,
+    "frontMatterFiles": 4,
+    "existingBrokenDocAnchors": 0,
+    "jestSuites": 4
+  },
+  "deployment": {
+    "success": true,
+    "targetAdminDirectory": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\core\\wwwroot\\admin",
+    "copiedFileCount": 159,
+    "ranInstall": false,
+    "builtFromSource": false,
+    "indexSha256": "783709d1d57df2a5b6c82b27a88ec2a59d1fe84465634f5e324d68aaab882da2"
+  },
+  "verifiedFiles": 159,
+  "httpIndexMatchesBuild": true,
+  "coreRestarted": false,
+  "desktopRestarted": false,
+  "corePid": 96700,
+  "desktopPid": 65832,
+  "backup": "temp/build/chat-send-cursor-previous-6.9.9",
+  "source": "temp/build/chat-send-cursor-0ce1d69",
+  "nativeAcceptance": {
+    "committedCommands": 1,
+    "userMessageVisible": true,
+    "agent": "default.global_general-assistant.6a8",
+    "testMessage": "发送按钮验收：仅回复“发送正常”，不要调用工具，不要修改文件。",
+    "turnId": "4ef9a28139154120b94d2808e9d9be24",
+    "assistantReply": "发送正常",
+    "temporaryPageProbesClearedByReload": true,
+    "temporaryBreakpointRemoved": true,
+    "messageId": "msg-1792384095207-m9efpspi",
+    "inputCleared": true,
+    "method": "Windows native mouse click in existing Desktop WebView2",
+    "conversationId": "206a9b48ec904ebb93e7541131fbb835",
+    "turnCompleteMs": 1569,
+    "submitLogMatches": 1,
+    "acceptedSequence": 1839479,
+    "assistantReplyVisible": true,
+    "toolCalls": 0,
+    "devToolsClosed": true,
+    "clickedAt": "2026-10-19T12:28:15.085+08:00",
+    "originalDraftRestoredWithoutSending": true
+  },
+  "limitations": [
+    "Development build has +dirty because unrelated workspace changes remain; this is not a reproducible release package.",
+    "Existing browser-companion manifest describes the original package; its frontend hashes do not describe this overlay.",
+    "This acceptance verifies chat send/receive only; it does not rerun browser tools or lifecycle tests.",
+    "Existing Jest open handles warning remains."
+  ],
+  "acceptanceLog": [
+    "2026-10-19 12:28:15.291 +08:00 [INF] [tag:SubmitTurnHandler] [trace:496cf2b4d246686eb5b187e60e00b861] [session:] [SubmitTurn] conv=206a9b48ec904ebb93e7541131fbb835 msg=msg-1792384095207-m9efpspi agents=default.global_general-assistant.6a8"
+  ]
+}
