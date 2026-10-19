@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+  </PropertyGroup>
+
+  <!-- PuddingHomeAssistant: Home Assistant REST 能力的**叶子组件**
+       （设计见 Docs/12_features/HomeAssistant工具设计与实施方案-2026-10-19.md §5）。
+
+       边界硬规则（组件化交付规程 §2.2，判据是编译期失败）：
+         · 本项目 **ProjectReference 数量必须为 0**；
+         · 不得引用 PuddingCore / PuddingRuntime / PuddingPlatform / PuddingHost /
+           PuddingDesktop / PuddingAgent，也不得引用 EF Core / ASP.NET Core；
+         · 只允许 BCL + System.Text.Json；
+         · 公开合同不出现第三方类型；
+         · 不做 DI、DataRoot 解析、凭据读取、审批与持久化 —— 那些由引用方（Host/Runtime）承担。
+
+       因此本组件可以在宿主运行中独立 build（规程 R1），S5 才登记进解决方案。 -->
+  <ItemGroup>
+    <!-- 只对本组件的测试工程开放内部可见性（白盒断言：输出预算、域策略内部表）。 -->
+    <InternalsVisibleTo Include="PuddingHomeAssistantTests" />
+  </ItemGroup>
+
+</Project>
