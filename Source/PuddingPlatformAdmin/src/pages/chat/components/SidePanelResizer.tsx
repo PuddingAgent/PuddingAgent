@@ -44,34 +44,62 @@ export const SidePanelResizer: React.FC<SidePanelResizerProps> = ({
 }) => {
   const dragging = React.useRef<{ startX: number; startWidth: number } | null>(null);
 
-  const handlePointerMove = React.useCallback(
-    (e: PointerEvent) => {
-      const state = dragging.current;
-      if (!state) return;
-      onWidthChange(widthAfterDrag(state.startWidth, e.clientX - state.startX));
-    },
-    [onWidthChange],
-  );
+  // 最新宽度：拖动过程中父组件的 state 在变，但 window 上注册的监听是
+  // **按下那一刻**的闭包。不读 ref 的话，松手时会提交拖动**开始**的宽度，
+  // 拖动结果被丢掉，下次打开又变回原宽度。
+  const widthRef = React.useRef(width);
+  widthRef.current = width;
+
+  // 回调也锁在 ref 里。调用方传内联箭头函数（很常见）时，`onCommit` 每次渲染
+  // 都是新引用 → `stopDragging` 跟着变 → 下面那个 cleanup effect 每帧跑一次，
+  // 把刚注册的 pointermove/pointerup 监听摘掉 —— 实测表现是"拖一下就停"。
+  const onWidthChangeRef = React.useRef(onWidthChange);
+  onWidthChangeRef.current = onWidthChange;
+  const onCommitRef = React.useRef(onCommit);
+  onCommitRef.current = onCommit;
+
+  const handlePointerMove = React.useCallback((e: PointerEvent) => {
+    const state = dragging.current;
+    if (!state) return;
+    onWidthChangeRef.current(widthAfterDrag(state.startWidth, e.clientX - state.startX));
+  }, []);
+
+  /** 拖拽期间禁止选中文本 / 保持列宽光标；结束后必须恢复，否则整页都选不中字。 */
+  const setDragChrome = (on: boolean) => {
+    if (typeof document === 'undefined') return;
+    document.body.style.userSelect = on ? 'none' : '';
+    document.body.style.cursor = on ? 'col-resize' : '';
+  };
 
   const stopDragging = React.useCallback(() => {
     const state = dragging.current;
     dragging.current = null;
-    if (state) onCommit?.(width);
     window.removeEventListener('pointermove', handlePointerMove);
     window.removeEventListener('pointerup', stopDragging);
-  }, [handlePointerMove, onCommit, width]);
+    setDragChrome(false);
+    if (state) onCommitRef.current?.(widthRef.current);
+  }, [handlePointerMove]);
 
   // 组件卸载时摘掉监听，避免拖拽中途被卸载后仍然改 state。
   React.useEffect(
     () => () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', stopDragging);
+      setDragChrome(false);
     },
     [handlePointerMove, stopDragging],
   );
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     dragging.current = { startX: e.clientX, startWidth: width };
+    // 指针捕获：文档面板里可能有 iframe（沙箱 HTML 草稿），拖到它上面时
+    // 事件会被嵌套文档吞掉，表现为"拖到一半就不动了"。捕捉后事件仍回到本元素。
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* jsdom / 旧浏览器无此 API，忽略 */
+    }
+    setDragChrome(true);
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', stopDragging);
   };
