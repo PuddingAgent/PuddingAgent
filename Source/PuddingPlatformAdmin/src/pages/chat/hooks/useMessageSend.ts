@@ -741,6 +741,7 @@ export function useMessageSend({
         } else {
           const errorMessage = e instanceof Error ? e.message : '请求失败';
           setError(errorMessage);
+          messageApi.error(errorMessage);
           setTurns((p) =>
             p.map((t) =>
               t.turnId === turnId

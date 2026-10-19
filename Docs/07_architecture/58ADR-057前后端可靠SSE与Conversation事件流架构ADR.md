@@ -2,7 +2,7 @@
 title: ADR-057 前后端可靠 SSE 与 Conversation 事件流架构
 author: hyfree
 date: 2026-07-15
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-19
 status: active
 description: Proposed
 categories: [docs, architecture]
@@ -753,6 +753,10 @@ React 组件只调用 selectors。
 5. 使用 snapshotCursor 建立 SSE。
 6. SSE 从 Event Store 重放 Snapshot 之后的事件。
 7. 旧 generation 的异步结果全部丢弃。
+
+游标准备的成功合同包含状态发布：无论来源是新取 Bootstrap，还是已应用的 Agent 投影快照 C，返回成功前必须写入 `{sessionId, phase:ready, sequence:C}` 并同步连接使用的数值镜像。单独返回数值不能视为已就绪。C 必须有限且非负，权威 C=0 合法；未知状态不得用 0 兜底。已取消或过期请求不得发布状态，`snapshot_required` 必须重取快照。
+
+发送入口可以等待上述准备完成，但不能通过放宽开流守卫绕过准备失败。提交前失败时保留用户草稿并在当前视口即时提示；历史列表中的错误记录只作为持久展示的补充。回归同时覆盖空缓存 Bootstrap 和已有投影快照两条路径，并验证 SSE 从对应会话的 C 开始、准备成功后才提交。
 
 ### 12.6 Command Outbox
 

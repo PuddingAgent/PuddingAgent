@@ -259,6 +259,10 @@ describe('useMessageSend feedback semantics', () => {
     expect(result.current.setError).toHaveBeenCalledWith(
       '会话事件游标准备失败，消息未发送，请重试。',
     );
+    // 历史列表可能停在旧消息上：发送失败必须给出视口内可见的反馈。
+    expect(messageApi.error).toHaveBeenCalledWith(
+      '会话事件游标准备失败，消息未发送，请重试。',
+    );
     // 失败轮保留在时间线作为记录（与 POST 失败同一语义），终态为 error。
     expect(result.current.turnsRef.current.at(-1)?.assistant?.status).toBe(
       'error',

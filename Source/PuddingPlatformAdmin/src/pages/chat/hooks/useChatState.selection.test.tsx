@@ -162,6 +162,7 @@ describe('useChatState session selection races', () => {
   beforeEach(() => {
     localStorage.clear();
     jest.clearAllMocks();
+    (submitConversationTurn as jest.Mock).mockReset();
     (getConversationBootstrap as jest.Mock).mockResolvedValue({
     turns: [],
     snapshotCursor: 0,
@@ -220,6 +221,77 @@ describe('useChatState session selection races', () => {
       expect.objectContaining({ afterSequence: expect.any(Number) }),
     );
   });
+
+  it.each([0, 1800000])(
+    'subscribes and sends from an already applied agent projection cursor %s',
+    async (cursor) => {
+      (submitConversationTurn as jest.Mock).mockResolvedValueOnce({
+        success: true,
+        status: 'accepted',
+        messageId: 'projected-message',
+        conversationId: 'session-a',
+        turnIds: ['projected-turn'],
+        eventCursor: cursor,
+      });
+      const { result } = renderHook(
+        () =>
+          useChatState('?workspaceId=default&agentId=agent-a', {
+            agentProjectionOwnsMainSession: true,
+            resolveProjectionCursor: (sessionId) =>
+              sessionId === 'session-a' ? cursor : null,
+          }),
+        { wrapper },
+      );
+
+      await waitFor(() =>
+        expect(result.current.selectedSessionId).toBe('session-a'),
+      );
+      await act(async () => {
+        await result.current.sendMessage('已有投影时仍可发送');
+      });
+
+      expect(subscribeSessionEvents).toHaveBeenCalledWith(
+        'session-a',
+        expect.any(Function),
+        expect.any(AbortSignal),
+        expect.objectContaining({ afterSequence: cursor }),
+      );
+      expect(submitConversationTurn).toHaveBeenCalledTimes(1);
+      expect(
+        (subscribeSessionEvents as jest.Mock).mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        (submitConversationTurn as jest.Mock).mock.invocationCallOrder[0],
+      );
+      expect(getConversationBootstrap).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'fetches an authoritative bootstrap instead of opening from invalid projection cursor %s',
+    async (cursor) => {
+      (getConversationBootstrap as jest.Mock).mockResolvedValue({
+        turns: [],
+        snapshotCursor: 77,
+      });
+      renderHook(
+        () =>
+          useChatState('?workspaceId=default&agentId=agent-a', {
+            agentProjectionOwnsMainSession: true,
+            resolveProjectionCursor: () => cursor,
+          }),
+        { wrapper },
+      );
+      await waitFor(() =>
+        expect(subscribeSessionEvents).toHaveBeenCalledWith(
+          'session-a',
+          expect.any(Function),
+          expect.any(AbortSignal),
+          expect.objectContaining({ afterSequence: 77 }),
+        ),
+      );
+      expect(getConversationBootstrap).toHaveBeenCalled();
+    },
+  );
 
   it('keeps the latest agent session when an older history request resolves later', async () => {
     const slowA = deferred<ReturnType<typeof messagePage>>();

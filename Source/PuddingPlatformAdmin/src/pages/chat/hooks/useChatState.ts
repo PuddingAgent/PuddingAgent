@@ -124,6 +124,7 @@ import {
   createSessionEventCursorState,
   invalidateSessionEventCursor,
   markSessionEventCursorReady,
+  syncLastSequenceMirror,
 } from './sessionEventCursor';
 import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import { isExecutionFlowProjectionEnabled } from '../client/featureFlag';
@@ -859,7 +860,29 @@ export function useChatState(
       // 410 snapshot_required（resetCursor）仍走真实快照重取，不能用旧 C 死循环。
       if (agentProjectionOwnsMainSession && !cursorOptions?.resetCursor) {
         const projected = resolveProjectionCursor?.(sessionId);
-        if (projected !== null && projected !== undefined && projected >= 0) {
+        if (
+          projected !== null &&
+          projected !== undefined &&
+          Number.isFinite(projected) &&
+          projected >= 0
+        ) {
+          if (signal?.aborted) {
+            return { ok: false as const, reason: 'aborted' as const };
+          }
+          if (cursorOptions?.isCurrent && !cursorOptions.isCurrent()) {
+            return { ok: false as const, reason: 'stale-session' as const };
+          }
+          // 与 bootstrap 路径遵守同一契约：成功必须发布带会话身份的 ready
+          // 状态及数值镜像，否则 ensure 会以 cursor-not-ready 拒绝发送。
+          markSessionEventCursorReady(
+            sessionEventCursorRef.current,
+            sessionId,
+            projected,
+          );
+          syncLastSequenceMirror(
+            lastSequenceNumRef,
+            sessionEventCursorRef.current,
+          );
           return { ok: true as const, cursor: projected, turns: [] };
         }
       }

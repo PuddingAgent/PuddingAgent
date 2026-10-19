@@ -140,7 +140,7 @@ fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | `findStableMarkdownBoundary`（已导出）表格感知：前导 `\|` 识别（不要求尾管道）、分隔行到达才允许整表提交、半截表头滞留 live 段、表格 run 中间不提交 |
 | `src/pages/chat/components/MessageItem.tsx` | 流式尾段含块级/强调语法（`\|`、反引号、`#`、列表、`>*_~`、链接）时走 ReactMarkdown 渲染（不再以纯文本 span 显示原始管道/星号）；纯文本尾段保留打字机 span + 墨迹光标（零解析路径） |
 | `src/pages/chat/components/AgentMessageBubble.tsx` | 行序渲染与 retry/正文去重；优先展示 MessageRow 传入的 executionError（见下「关键语义」） |
-| `src/pages/chat/hooks/useMessageSend.ts` | 发送事务；提交失败保留草稿、更新用户消息为 error，并写入助手 executionError |
+| `src/pages/chat/hooks/useMessageSend.ts` | 发送事务；提交失败保留草稿、即时提示、更新用户消息为 error，并写入助手 executionError |
 | `src/pages/chat/hooks/useSessionEventConnection.ts` | 权威游标准备与 SSE 重连；仅合并未完成的准备请求，成功/失败/异常后释放 promise，允许同会话重试 |
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | `message.content.appended` 到达即翻转 status=streaming（首个回答增量 = 已知事实「正在生成回答」，状态条与正文不再各说各话）；`enqueueDelta` 携带入队基准长度 |
 | `src/pages/chat/hooks/useSessionEventBuffers.ts` | 回答增量缓冲 `{delta, baseLength}`；flush 经 `applyBufferedDeltaToTurn` 按基准位置幂等应用——基准漂移（activeRun 快照竞态）丢弃缓冲，杜绝直播期间正文整段重复 |
@@ -331,7 +331,7 @@ loading/文案、destroy toast。叠加**路径无关陈旧门控**（2026-09-19
 `useSessionEventProjection.mapEventToTurn` 的 `context.compaction.started` 分支同步生效，防止陈旧 started 把普通 turn 翻成运行态
 
 **`src/pages/chat/hooks/sessionEventCursor.ts`**：**游标身份与开流决策的唯一真源**（2026-10-02，高磁盘读取修复 B1）：游标状态 = `{sessionId, phase: unknown\|hydrating\|ready, sequence}`，`sequence=0` 只有在**服务端快照已应用**（ready）时才是合法游标；`decideSessionEventStreamStart` 是唯一的开流起点决策（显式游标含 0 / 该会话 ready / 需先准备 / **拒绝**，不再用 0 兜底），
-`SessionEventCursorPreparation` 是 bootstrap 的判别联合合同（`ok=false` 不得当成「成功但没有 turns」）
+`SessionEventCursorPreparation` 是 bootstrap 的判别联合合同（`ok=false` 不得当成「成功但没有 turns」）。`useChatState.ts` 的 Agent 投影快照适配器遵守同一合同：返回成功前发布匹配会话的 ready 状态并同步数值镜像；有限非负 C（含 0）才可复用，失效请求不写入状态，resetCursor 必须重取快照。
 
 **`src/pages/chat/hooks/useSessionEventReplay.ts`**：bootstrap 重放带 `{replay:true, runningCompactionId}`；缺口/历史尾部重放一律 `applySessionEvent(event,{replay:true})`，历史 started 不再冒充运行中。**游标准备合同**（2026-10-02）：`syncCompletedHistoryEventCursor` 返回判别联合（成功才 `markSessionEventCursorReady`，失败/取消/过期绝不 ready）
 ，`options.isCurrent` 使迟到的 A 快照不能改写 B 的游标
