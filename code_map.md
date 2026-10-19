@@ -53,6 +53,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的**纯策略**组件（BCL-only）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定（见下「关键语义」） | [code_map](Source/PuddingContextPolicy/code_map.md) |
 | `Source/PuddingConversationReadModel/` | 会话首屏读模型纯规则组件（BCL-only；C2 已接入 Platform/slnx）：事件归约、预算与三游标合同 | [code_map](Source/PuddingConversationReadModel/code_map.md) |
 | `Source/PuddingSsh/` | SSH 远程执行叶子组件（`ProjectReference=0`，包 `SSH.NET`）：合同/端口与错误分类、协调器与独占连接（见下「关键语义」） | [code_map](Source/PuddingSsh/code_map.md) |
+| `Source/PuddingHomeAssistant/` | Home Assistant 叶子组件（`ProjectReference=0`）：REST 客户端、域策略（永久拒绝/默认允许/需 Admin 放开）、输出预算与历史裁剪；四个 Agent 工具由 `PuddingHost` 装配（见下「关键语义」） | — |
 | `Source/PuddingDeepSeekWeb/` | 🔑 DeepSeek Search/Fetch 协议叶子组件（零引用；传输是端口，不直连 HTTP/不持凭据） | [code_map](Source/PuddingDeepSeekWeb/code_map.md) |
 | `Source/PuddingCodeIntelligence/` | 语言智能与查询：Roslyn 与 TypeScript 抽取及 outliner 与符号查询 | [code_map](Source/PuddingCodeIntelligence/code_map.md) |
 | `Source/PuddingIndexChunking/` | 分块组件：源文件 → 可独立索引的块（叶子，outline 由 `IOutlineSource` 注入） | [code_map](Source/PuddingIndexChunking/code_map.md) |
@@ -164,6 +165,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingPathFilteringTests/` · `Source/PuddingVectorIndexTests/` · `Source/PuddingFullTextIndexTests/` · `Source/PuddingMemoryEngineBenchmarks/` · `Tests/PuddingBrowser.WebView2.Smoke/` | 路径忽略、向量与全文索引叶子组件 · BenchmarkDotNet 基准 · 浏览器 smoke |
 | `Source/PuddingRetrievalEvalTests/` · `Source/PuddingRetrievalEvalProbe/` · `Source/PuddingFullTextIndex.Cli.Tests/` | 检索评测（`ISearchProbe` 端口）与全文索引 CLI |
 | `Source/PuddingSshTests/` | SSH 组件独立测试（只引用组件，**289 例**）：known_hosts 明文/逗号/哈希/撤销与 pin 验证（**真实 OpenSSH fixture**）、POSIX 封装与请求校验、错误分类矩阵、有界采集白盒、**假传输故障矩阵（准入/排队/deadline/清理/停止）**、S1–S4 边界断言（变异取红两次均 3/5 红） |
+| `Source/PuddingHomeAssistantTests/` | HA 组件独立测试（只引用组件，**95 例**）：域策略三档与永久黑名单矩阵、状态投影/字节预算、历史裁剪（合法 JSON/保序/丢弃计数）、REST 传输与错误码映射、引用闭包边界断言（变异取红多次） |
 | `Source/PuddingSsh.Probe/`（+ `TestScripts/ssh-probe/`） | SSH 组件的**真实协议探针**（24 场景）：逐场景核对认证次数与客户端密钥指纹、取消远端证据、双流输出预算与驻留内存（见下「关键语义」） |
 | `Source/PuddingCodeIntelligenceTests/` · `Source/PuddingCodexServiceTests/` · `Source/PuddingBrowser.WinUITests/` · `Source/PuddingDesktop.FoundationTests/` | 语言智能层 · Codex MCP Service · WinUI 浏览器表面 · Foundation 纯逻辑 |
 | `Source/Pudding.ContractsTests/` · `Source/Pudding.Rpc.ProtocolTests/` · `Source/Pudding.DesktopSurface.BrowserTests/` | 契约与 wire 协议形状断言 · 浏览器表面 |
