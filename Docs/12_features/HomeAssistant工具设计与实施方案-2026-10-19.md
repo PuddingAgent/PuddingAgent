@@ -263,3 +263,25 @@ C | WebSocket 订阅 | 仅当出现「必须实时」的需求再立项 |
 - 不申请/轮换令牌，不修改 HA 配置
 - 不引入 WebSocket、不提供 `shell_command` / `hassio` / `homeassistant.*` 任何通路
 - 不把令牌写入仓库（已实测 `git grep` 0 命中）
+
+## 9. 实施进展（2026-10-19）
+
+| 切片 | 状态 | 证据 |
+|---|---|---|
+| S1 叶子组件 | ✅ 完成 | `Source/PuddingHomeAssistant`：Contracts / HaDomainPolicy / HaOutputBudget / HaErrorCodes / HaRestClient |
+| S2 独立测试 | ✅ 完成 | **88 通过 / 0 失败**，行覆盖 81.74%、方法 88.88% |
+| 变异取红 | ✅ 通过 | 禁用永久黑名单判定 → **14 个用例失败**；复原 → 88/0 |
+| S3 真实探针 | ✅ 通过 | `STATUS=API running.` / `VERSION=2026.2.1` / `STATES_TOTAL=2217` / `LIGHTS_TOTAL=31` / `ALL_RETURNED=500 BYTES=102488` / `POLICY=OK lock domain_blocked` |
+| S5 工具接入 | ✅ 编译通过 | `ha_instances`(Low) / `ha_states`(Low) / `ha_history`(Low) / `ha_call_service`(Medium)；`dotnet build PuddingHost` 0 error |
+| Admin 界面 | ⏳ 待做 | 后端配置 CRUD + 前端页面 |
+| WebSocket 订阅 | ⏸ 未立项 | |
+
+**实施中修复的真实缺陷**：未知域即使用户显式放开也返回 `OptInRequired`，导致 HA 新增集成永久不可授权。修复后未知域在 `OptInDomains` 中时放行。
+
+**配置文件**（不入仓）：`<DataRoot>/agents/<agentInstanceId>/secrets/home-assistant.json`
+
+```json
+{ "instances": [ { "alias": "asus", "baseUrl": "http://192.168.100.10:8123/", "token": "…", "optInDomains": [] } ] }
+```
+
+**生效条件**：工具在 Core 启动时注册，新增工具需重启 Core 才出现在工具目录。
