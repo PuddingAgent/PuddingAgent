@@ -57,6 +57,22 @@ public sealed class DesktopRuntimeOrchestratorTests
     }
 
     [Fact]
+    public async Task StartAsync_WhenDuplicateStartRacesButCoreIsReady_AdoptsReadyInsteadOfFailing()
+    {
+        // 复现历史卡死：第二个 Start 与第一个重叠 → supervisor 抛「already running」，
+        // 但 Core 其实已就绪且存活。此时不得把状态标成 Failed（UI 会停在失败面板、重试还会再拉 Core）。
+        var supervisor = new FakeCoreProcessSupervisor { FailStartAfterBecomingReady = true };
+        await using var orchestrator = new DesktopRuntimeOrchestrator(supervisor);
+        orchestrator.Configure(CreateOptions(), CreatePolicy());
+
+        await orchestrator.StartAsync(CancellationToken.None);
+
+        Assert.Equal(DesktopRuntimeState.Ready, orchestrator.Snapshot.State);
+        Assert.Null(orchestrator.Snapshot.LastError);
+        Assert.NotNull(orchestrator.Snapshot.Session);
+    }
+
+    [Fact]
     public async Task Stop_CancelsScheduledRecovery()
     {
         var supervisor = new FakeCoreProcessSupervisor();
@@ -109,6 +125,7 @@ public sealed class DesktopRuntimeOrchestratorTests
         public int StartCalls { get; private set; }
         public int StopCalls { get; private set; }
         public int FailuresRemaining { get; set; }
+        public bool FailStartAfterBecomingReady { get; set; }
         public CoreProcessState State { get; private set; } = CoreProcessState.Idle;
         public CoreProcessSession? CurrentSession { get; private set; }
         public CoreProcessLogBuffer LogBuffer { get; } = new();
@@ -127,6 +144,20 @@ public sealed class DesktopRuntimeOrchestratorTests
                 FailuresRemaining--;
                 State = CoreProcessState.Failed;
                 throw new InvalidOperationException("simulated startup failure");
+            }
+
+            if (FailStartAfterBecomingReady)
+            {
+                // 模拟「Core 已就绪，但本次 Start 因并发竞争抛 already running」。
+                State = CoreProcessState.Ready;
+                CurrentSession = new CoreProcessSession
+                {
+                    ProcessId = ++_nextPid,
+                    BaseAddress = new Uri($"http://127.0.0.1:{_nextPid}"),
+                    StartedAt = DateTimeOffset.UtcNow,
+                    ReadyAt = DateTimeOffset.UtcNow,
+                };
+                throw new InvalidOperationException("Core is already running or changing state.");
             }
 
             var previous = State;

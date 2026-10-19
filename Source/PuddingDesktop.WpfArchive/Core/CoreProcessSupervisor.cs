@@ -67,10 +67,35 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
         try
         {
             ThrowIfDisposed();
-            if (_state is CoreProcessState.Starting or CoreProcessState.Ready or CoreProcessState.Stopping)
-                throw new InvalidOperationException("Core is already running or changing state.");
 
-            await CleanupProcessResourcesAsync(_process);
+            var runningSession = _currentSession;
+            var runningProcessAlive = _process is { } tracked && !HasExited(tracked);
+            if (runningSession is not null
+                && ShouldReuseRunningCore(_state, runningSession, runningProcessAlive))
+            {
+                // 并发/重复 Start 不是错误：已有就绪且存活的 Core 时复用会话。
+                // 旧行为抛「already running」，上层会把「其实健康」的 Core 标成 Failed，
+                // UI 停在失败面板而 Core 仍在运行；再点重试还会拉起第二个 Core 抢锁。
+                _logBuffer.Append(
+                    $"[Desktop] Core already ready (PID {runningSession.ProcessId}); reusing the existing session.");
+                return runningSession;
+            }
+
+            if (_state is CoreProcessState.Starting or CoreProcessState.Stopping)
+                throw new InvalidOperationException("Core is already starting or stopping.");
+
+            if (_process is { } stale && !HasExited(stale))
+            {
+                // 状态机与真实进程失配时不得留下旧 Core：它会继续占用 .pudding-host.lock，
+                // 新 Core 将因租约冲突无法启动（历史上「重启→新 Core 崩溃→熔断」的直接原因）。
+                _logBuffer.Append(
+                    $"[Desktop] Terminating stale Core process {TryGetProcessId(stale)} before starting a new one.");
+                await TerminateAndCleanupAsync(stale);
+            }
+            else
+            {
+                await CleanupProcessResourcesAsync(_process);
+            }
 
             _lastOptions = options;
             _currentSession = null;
@@ -516,6 +541,16 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
             await delayTask;
         }
     }
+
+    /// <summary>
+    /// 重复 Start 的幂等判定：已有「就绪且进程存活」的 Core 时复用会话，而不是抛错或再拉一个进程。
+    /// 第二个 Core 会抢 <c>.pudding-host.lock</c>，把「重启/重试」变成启动失败（历史熔断路径）。
+    /// </summary>
+    internal static bool ShouldReuseRunningCore(
+        CoreProcessState state,
+        CoreProcessSession? session,
+        bool processAlive) =>
+        state == CoreProcessState.Ready && session is not null && !session.HasExited && processAlive;
 
     internal static TimeSpan ResolveHardStartupTimeout(TimeSpan inactivityTimeout)
     {

@@ -185,6 +185,23 @@ public sealed class DesktopRuntimeOrchestrator : IDesktopRuntimeOrchestrator
         }
         catch (Exception ex)
         {
+            // 并发/重复启动的竞争不应把「其实已就绪」的 Core 标成 Failed：
+            // 否则 UI 停在失败面板、Core 仍在运行，用户点重试还会继续拉起第二个 Core 抢锁。
+            var session = _supervisor.CurrentSession;
+            if (_supervisor.State == CoreProcessState.Ready && session is not null && !session.HasExited)
+            {
+                Publish(_snapshot with
+                {
+                    State = DesktopRuntimeState.Ready,
+                    Session = session,
+                    LastProcessId = session.ProcessId,
+                    UserStopRequested = false,
+                    NextRestartAt = null,
+                    LastError = null,
+                });
+                return;
+            }
+
             Publish(_snapshot with
             {
                 State = DesktopRuntimeState.Failed,

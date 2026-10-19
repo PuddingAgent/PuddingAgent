@@ -1,4 +1,4 @@
-﻿using PuddingDesktop.Core;
+using PuddingDesktop.Core;
 
 namespace PuddingDesktop.Tests.Core;
 
@@ -128,6 +128,32 @@ public class CoreProcessSupervisorTests
         };
 
         Assert.Equal("secret-token-abc", options.ControlToken);
+    }
+
+    [Theory]
+    [InlineData(CoreProcessState.Ready, true, true)]
+    [InlineData(CoreProcessState.Ready, false, true)]
+    [InlineData(CoreProcessState.Ready, true, false)]
+    [InlineData(CoreProcessState.Starting, true, true)]
+    [InlineData(CoreProcessState.Failed, true, true)]
+    [InlineData(CoreProcessState.Stopped, true, true)]
+    public void ShouldReuseRunningCore_OnlyWhenReadySessionAndProcessAreAlive(
+        CoreProcessState state,
+        bool hasSession,
+        bool processAlive)
+    {
+        var session = hasSession
+            ? new CoreProcessSession
+            {
+                ProcessId = 4242,
+                BaseAddress = new Uri("http://127.0.0.1:8080"),
+                StartedAt = DateTimeOffset.UtcNow,
+                ReadyAt = DateTimeOffset.UtcNow,
+            }
+            : null;
+
+        var expected = state == CoreProcessState.Ready && hasSession && processAlive;
+        Assert.Equal(expected, CoreProcessSupervisor.ShouldReuseRunningCore(state, session, processAlive));
     }
 
     [Theory]
