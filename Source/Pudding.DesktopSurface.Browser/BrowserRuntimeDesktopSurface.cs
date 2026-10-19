@@ -696,6 +696,16 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
     public async Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
         DesktopCallContext context, BrowserScreenshotRequest request, CancellationToken cancellationToken)
     {
+        try { return await CaptureScreenshotAsync(context, request, cancellationToken).ConfigureAwait(false); }
+        catch (BrowserOperationException ex) when (ex.Code == "browser_not_available")
+        {
+            return CapabilityResult<BrowserScreenshotResult>.Failure(DesktopCapabilityError.UiUnavailable(ex.Message));
+        }
+    }
+
+    private async Task<CapabilityResult<BrowserScreenshotResult>> CaptureScreenshotAsync(
+        DesktopCallContext context, BrowserScreenshotRequest request, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(request);
 

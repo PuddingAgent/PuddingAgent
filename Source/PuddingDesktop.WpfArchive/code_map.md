@@ -64,7 +64,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client，HelloAck 双层版本校验、heartbeat、重连；连接终止原因保留到握手结果，协议拒绝不误报超时 |
+| `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client，HelloAck 双层版本校验、heartbeat、重连；收包与每代有界串行命令队列分离，长命令不堵心跳/取消；连接终止原因保留到握手结果 |
 | `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate` 见下「关键语义」 |
 | `Browser/BrowserBridgeCommandAdapter.cs` | I2-c 映射层（未接管执行）：Bridge 命令 → `(DesktopCapabilityDescriptor, DesktopCapabilityRequest)`；已映射 context.list/page.getInfo/导航/snapshot/locate/waitFor/screenshot，失败 fail-closed 且原因可行动 |
 | `Browser/BrowserBridgeResultAdapter.cs` | I2-c 结果反投影（Contracts → Bridge 描述符）：pageState/contexts/pageList/locate/interact/wait/snapshot；已知字段缺口如实置空 |

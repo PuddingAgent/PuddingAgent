@@ -54,6 +54,7 @@ public interface IBrowserSurface : IAsyncDisposable
 {
     PageId PageId { get; }
     CoreWebView2 CoreWebView { get; }
+    bool CanCaptureScreenshot { get; }
 }
 
 public sealed class WinUiBrowserSurfaceHost(IWebView2UiDispatcher dispatcher, Panel container) : IBrowserSurfaceHost
@@ -126,6 +127,20 @@ public sealed class WinUiBrowserSurfaceHost(IWebView2UiDispatcher dispatcher, Pa
         public PageId PageId => id;
         public Microsoft.UI.Xaml.Controls.WebView2 Control => control;
         public CoreWebView2 CoreWebView => control.CoreWebView2;
+        public bool CanCaptureScreenshot
+        {
+            get
+            {
+                if (!control.IsLoaded || control.ActualWidth <= 0 || control.ActualHeight <= 0) return false;
+                // Visibility on the WebView alone misses a collapsed tool panel or workbench.
+                for (DependencyObject? node = control; node is not null;
+                     node = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(node))
+                {
+                    if (node is UIElement { Visibility: Visibility.Collapsed }) return false;
+                }
+                return true;
+            }
+        }
         public ValueTask DisposeAsync() { control.Close(); return ValueTask.CompletedTask; }
     }
 }

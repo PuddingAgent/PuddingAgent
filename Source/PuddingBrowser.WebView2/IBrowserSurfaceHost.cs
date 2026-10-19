@@ -28,4 +28,6 @@ public interface IBrowserSurface : IAsyncDisposable
     PageId PageId { get; }
     WebView2CompositionControl Control { get; }
     CoreWebView2 CoreWebView { get; }
+    /// <summary>UI-thread check: a hidden or unlaid-out surface cannot produce a compositor screenshot.</summary>
+    bool CanCaptureScreenshot { get; }
 }

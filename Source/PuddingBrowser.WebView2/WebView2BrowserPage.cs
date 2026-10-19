@@ -417,7 +417,18 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
         var payload = SerializeCdpParameters(parameters);
 
         var result = await _dispatcher.InvokeAsync(
-            async () => await webView.CallDevToolsProtocolMethodAsync(method, payload), ct)
+            async () =>
+            {
+                ct.ThrowIfCancellationRequested();
+                if (method == "Page.captureScreenshot" && Surface?.CanCaptureScreenshot != true)
+                    throw new BrowserOperationException("browser_not_available",
+                        "Screenshot requires a visible browser surface; open the tool panel and select this browser tab.");
+                // WebView2's COM task has no CancellationToken overload. Bound the wait so
+                // a minimized/hidden renderer cannot hold the command or connection forever.
+                // WinUI exposes IAsyncOperation<string>, WPF exposes Task<string>.
+                async Task<string> CallAsync() => await webView.CallDevToolsProtocolMethodAsync(method, payload);
+                return await CallAsync().WaitAsync(ct);
+            }, ct).WaitAsync(ct)
             .ConfigureAwait(false);
 
         return System.Text.Json.JsonDocument.Parse(result);

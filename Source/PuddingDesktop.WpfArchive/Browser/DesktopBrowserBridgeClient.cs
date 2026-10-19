@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
 using Pudding.Contracts.Desktop;
@@ -23,6 +24,10 @@ internal sealed class DesktopBrowserClientConnection : IAsyncDisposable
     public Task ReceiveTask { get; set; } = Task.CompletedTask;
     public Task HeartbeatTask { get; set; } = Task.CompletedTask;
     public Task WatchdogTask { get; set; } = Task.CompletedTask;
+    public Task CommandTask { get; set; } = Task.CompletedTask;
+    public Channel<PendingBrowserCommand> Commands { get; } = Channel.CreateBounded<PendingBrowserCommand>(
+        new BoundedChannelOptions(128) { SingleReader = true, SingleWriter = true });
+    public ConcurrentDictionary<Guid, PendingBrowserCommand> PendingCommands { get; } = new();
     public string? CompletionReason { get; private set; }
 
     private int _completed;
@@ -58,6 +63,7 @@ internal sealed class DesktopBrowserClientConnection : IAsyncDisposable
         if (Interlocked.Exchange(ref _completed, 1) != 0) return false;
         CompletionReason = reason;
         Outbound.Writer.TryComplete();
+        Commands.Writer.TryComplete();
         Lifetime.Cancel();
         return true;
     }
@@ -72,6 +78,9 @@ internal sealed class DesktopBrowserClientConnection : IAsyncDisposable
         Lifetime.Dispose();
     }
 }
+
+internal sealed record PendingBrowserCommand(
+    BrowserBridgeEnvelope Envelope, BrowserBridgeCommand Command, CancellationTokenSource Cancellation);
 
 /// <summary>
 /// WebSocket client that connects to Core's /desktop/browser-bridge endpoint.
@@ -238,6 +247,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
 
         // Step 3: Start Receive Loop BEFORE Hello (fixes HelloAck deadlock)
         session.ReceiveTask = Task.Run(() => ReceiveLoopAsync(session, connCt), CancellationToken.None);
+        session.CommandTask = Task.Run(() => CommandLoopAsync(session, connCt), CancellationToken.None);
 
         // Do not merely schedule the receive loop: wait until it has actually
         // entered its receive phase before making Hello observable on the wire.
@@ -474,10 +484,6 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
 
             case BrowserBridgeMessageKind.Command:
                 var command = BrowserBridgeSerializer.DeserializePayload<BrowserBridgeCommand>(envelope);
-
-                // §3.2（Desktop 侧）：Bridge 的每一条命令都是浏览器操作 ⇒ **必须**有可信调用者身份。
-                // Core 侧预检不能替代这里；缺身份/冒充 User/无运行身份/取值非法一律**不执行**，
-                // 也不给默认身份（返回可诊断的错误结果，而不是静默放过）。
                 if (!TryAcceptCaller(command.Caller, out var callerError))
                 {
                     await EnqueueResultAsync(
@@ -494,12 +500,37 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
                     break;
                 }
 
-                var result = await _dispatcher.DispatchAsync(command, ct);
-                await EnqueueResultAsync(session, result, envelope.MessageId, ct);
+                // Keep execution ordered, but never await it in the socket receive pump:
+                // a screenshot/wait must not prevent heartbeat ACKs or cancellation.
+                var pending = new PendingBrowserCommand(envelope, command,
+                    CancellationTokenSource.CreateLinkedTokenSource(ct));
+                if (!session.PendingCommands.TryAdd(envelope.MessageId, pending))
+                {
+                    pending.Cancellation.Dispose();
+                    CompleteConnectionOnce(session, "Duplicate pending command message id");
+                    break;
+                }
+                if (!session.Commands.Writer.TryWrite(pending))
+                {
+                    session.PendingCommands.TryRemove(envelope.MessageId, out _);
+                    pending.Cancellation.Dispose();
+                    await EnqueueResultAsync(session, new BrowserBridgeCommandResult
+                    {
+                        OperationId = command.OperationId, Success = false,
+                        ErrorCode = BrowserBridgeErrorCodes.BrowserNotAvailable,
+                        ErrorMessage = "Browser command queue is full; command was not dispatched",
+                    }, envelope.MessageId, ct);
+                }
                 break;
 
             case BrowserBridgeMessageKind.Cancel:
                 var cancel = BrowserBridgeSerializer.DeserializePayload<BrowserBridgeCancel>(envelope);
+                foreach (var queued in session.PendingCommands.Values)
+                {
+                    if (queued.Command.OperationId != cancel.OperationId) continue;
+                    try { queued.Cancellation.Cancel(); }
+                    catch (ObjectDisposedException) { /* completed concurrently */ }
+                }
                 _dispatcher.Cancel(cancel.OperationId);
                 break;
 
@@ -510,6 +541,45 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
             case BrowserBridgeMessageKind.HeartbeatAck:
                 // Core acknowledged our heartbeat — LastReceivedAt already updated
                 break;
+        }
+    }
+
+    private async Task CommandLoopAsync(DesktopBrowserClientConnection session, CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var pending in session.Commands.Reader.ReadAllAsync(ct))
+            {
+                try
+                {
+                    BrowserBridgeCommandResult result;
+                    if (pending.Cancellation.IsCancellationRequested)
+                        result = new BrowserBridgeCommandResult
+                        {
+                            OperationId = pending.Command.OperationId, Success = false,
+                            ErrorCode = BrowserBridgeErrorCodes.BrowserCancelled,
+                            ErrorMessage = "Command cancelled before dispatch",
+                        };
+                    else
+                        result = await _dispatcher.DispatchAsync(pending.Command, pending.Cancellation.Token);
+                    await EnqueueResultAsync(session, result, pending.Envelope.MessageId, ct);
+                }
+                finally
+                {
+                    session.PendingCommands.TryRemove(pending.Envelope.MessageId, out _);
+                    pending.Cancellation.Dispose();
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception) { CompleteConnectionOnce(session, "Command worker failed"); }
+        finally
+        {
+            while (session.Commands.Reader.TryRead(out var pending))
+            {
+                session.PendingCommands.TryRemove(pending.Envelope.MessageId, out _);
+                pending.Cancellation.Dispose();
+            }
         }
     }
 
@@ -625,6 +695,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
     private static async Task AwaitConnectionTasksAsync(DesktopBrowserClientConnection session)
     {
         await session.ReceiveTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        await session.CommandTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         await session.SendTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         await session.HeartbeatTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         await session.WatchdogTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);

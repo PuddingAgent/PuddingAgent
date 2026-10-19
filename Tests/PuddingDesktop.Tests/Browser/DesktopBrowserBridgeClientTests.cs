@@ -11,6 +11,81 @@ namespace PuddingDesktop.Tests.Browser;
 public sealed class DesktopBrowserBridgeClientTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LongCommand_DoesNotBlockHeartbeatOrCancel_AndQueuedCancellationDoesNotExecute(bool cancelQueued)
+    {
+        var socket = new FakeDesktopBrowserWebSocket(HelloAckMode.Accept);
+        var dispatcher = BrowserTestState.CreateDispatcher();
+        var handler = new BlockingCommandHandler();
+        dispatcher.SetHandler(handler);
+        await using var client = CreateClient(new QueueWebSocketFactory(socket), dispatcher);
+        await client.ConnectAsync(new Uri("http://127.0.0.1:12345"), "secret-token", CancellationToken.None);
+        var first = QueueCommand(socket);
+        try
+        {
+            await handler.Entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            var cancelled = cancelQueued ? QueueCommand(socket) : first;
+            socket.QueueEnvelope(new BrowserBridgeEnvelope
+            {
+                MessageId = Guid.NewGuid(), Kind = BrowserBridgeMessageKind.Cancel,
+                CreatedAt = DateTimeOffset.UtcNow,
+                Payload = JsonSerializer.SerializeToElement(new BrowserBridgeCancel { OperationId = cancelled },
+                    BrowserBridgeSerializerOptionsForTests.Default),
+            });
+            var heartbeat = Guid.NewGuid();
+            socket.QueueEnvelope(new BrowserBridgeEnvelope
+            {
+                MessageId = heartbeat, Kind = BrowserBridgeMessageKind.Heartbeat,
+                CreatedAt = DateTimeOffset.UtcNow, Payload = JsonSerializer.SerializeToElement(new { }),
+            });
+            await WaitUntilAsync(() => socket.Sent.Any(e => e.Kind == BrowserBridgeMessageKind.HeartbeatAck
+                && e.CorrelationId == heartbeat), 3000);
+            Assert.Equal(BrowserBridgeConnectionState.Connected, client.State);
+            if (cancelQueued) handler.Release.TrySetResult();
+            await WaitUntilAsync(() => socket.Sent.Any(e => e.Kind == BrowserBridgeMessageKind.CommandResult
+                && BrowserBridgeSerializer.DeserializePayload<BrowserBridgeCommandResult>(e).OperationId == cancelled), 3000);
+            var result = socket.Sent.Where(e => e.Kind == BrowserBridgeMessageKind.CommandResult)
+                .Select(BrowserBridgeSerializer.DeserializePayload<BrowserBridgeCommandResult>)
+                .Single(r => r.OperationId == cancelled);
+            Assert.False(result.Success);
+            Assert.Equal(BrowserBridgeErrorCodes.BrowserCancelled, result.ErrorCode);
+            Assert.Equal(1, handler.Calls);
+        }
+        finally { handler.Release.TrySetResult(); }
+    }
+
+    private static Guid QueueCommand(FakeDesktopBrowserWebSocket socket)
+    {
+        var id = Guid.NewGuid();
+        socket.QueueEnvelope(new BrowserBridgeEnvelope
+        {
+            MessageId = Guid.NewGuid(), Kind = BrowserBridgeMessageKind.Command, CreatedAt = DateTimeOffset.UtcNow,
+            Payload = JsonSerializer.SerializeToElement(new BrowserBridgeCommand
+            {
+                OperationId = id, Name = BrowserBridgeCommandNames.ContextCreate,
+                DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1), Arguments = JsonSerializer.SerializeToElement(new { }),
+                Caller = new BrowserBridgeCallerIdentity { Kind = "agent", CallerId = "agent-1", TaskId = "run-1" },
+            }, BrowserBridgeSerializerOptionsForTests.Default),
+        });
+        return id;
+    }
+
+    private sealed class BlockingCommandHandler : IBrowserCommandHandler
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Calls;
+        public async Task<BrowserBridgeCommandResult> ExecuteAsync(BrowserBridgeCommand command, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Calls);
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(ct);
+            return new BrowserBridgeCommandResult { OperationId = command.OperationId, Success = true };
+        }
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task Connect_ProtocolMismatch_PreservesFailureInsteadOfReportingTimeout(bool envelopeMismatch)

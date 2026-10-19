@@ -1085,8 +1085,9 @@ internal sealed class FakeBrowserPage : IBrowserPage
     {
         "Page.getLayoutMetrics" => Count(ref _layoutMetricsCount,
             """{ "cssVisualViewport": { "clientWidth": 1280, "clientHeight": 720, "scale": 1, "pageX": 0, "pageY": 0 }, "cssContentSize": { "x": 0, "y": 0, "width": 1280, "height": 720 } }"""),
+        "Runtime.evaluate" when parameters?.GetProperty("expression").GetString() == "window.devicePixelRatio" => Count(ref _runtimeEvaluateCount, """{"result":{"type":"number","value":1}}"""),
         "Runtime.evaluate" => Count(ref _runtimeEvaluateCount, """{ "result": { "type": "number", "value": 3 } }"""),
-        "Page.captureScreenshot" => Count(ref _captureScreenshotCount, """{ "data": "AQIDBA==" }"""),
+        "Page.captureScreenshot" => Count(ref _captureScreenshotCount, """{"data":"iVBORw0KGgoAAAANSUhEUgAAAgAAAAEgAQAAAADqR/b8AAAAoUlEQVR4nO3QoQEDQBDDMDf779yCH+EKZZ4Afb7d2nGfgxjEgMFrHZuDGMQgBgxe69gcxCAGMWDwWsfmIAYxiAGD1zo2BzGIQQwYvNaxOYhBDGLA4LWOzUEMYhADBq91bA5iEIMYMHitY3MQgxjEgMFrHZuDGMQgBgxe69gcxCAGMWDwWsfmIAYxiAGD1zo2BzGIQQwYvNaxOYhBDGLwF4MfbBYDP4P3UdIAAAAASUVORK5CYII="}"""),
         _ => throw new NotSupportedException(method),
     };
 
@@ -1195,6 +1196,7 @@ internal sealed class FakeBrowserSurface : PuddingBrowser.WebView2.IBrowserSurfa
     public PageId PageId { get; }
     public Microsoft.Web.WebView2.Wpf.WebView2CompositionControl Control => throw new NotSupportedException();
     public Microsoft.Web.WebView2.Core.CoreWebView2 CoreWebView => throw new NotSupportedException();
+    public bool CanCaptureScreenshot => false;
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 

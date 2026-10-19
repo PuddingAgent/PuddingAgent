@@ -13,6 +13,7 @@ public sealed class WebView2BrowserSurface : IBrowserSurface
     public PageId PageId { get; }
     public WebView2CompositionControl Control { get; }
     public CoreWebView2 CoreWebView => Control.CoreWebView2;
+    public bool CanCaptureScreenshot => Control.IsVisible && Control.ActualWidth > 0 && Control.ActualHeight > 0;
 
     public WebView2BrowserSurface(PageId pageId, WebView2CompositionControl control)
     {

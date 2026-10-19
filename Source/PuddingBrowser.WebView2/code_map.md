@@ -9,7 +9,7 @@
 | `WebView2BrowserRuntime.cs` | 浏览器运行时实现 |
 | `WebView2BrowserContext.cs` | 浏览器上下文管理 |
 | `WebView2BrowserPage.cs` | 页面实现（核心，16KB）。CDP 传输/截图已实现，PDF/事件订阅 unsupported。（见下「关键语义」） |
-| `WebView2BrowserSurface.cs` | 浏览器表面 |
+| `WebView2BrowserSurface.cs` | 浏览器表面与截图有效可见性；共享页面驱动在 UI 线程检查后采集，CDP 等待支持取消 |
 
 ## DOM 操作
 

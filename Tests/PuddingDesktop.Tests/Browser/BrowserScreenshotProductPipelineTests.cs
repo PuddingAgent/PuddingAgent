@@ -33,7 +33,7 @@ public sealed class BrowserScreenshotProductPipelineTests
             // 驱动真的被调用了一次（分发链走的是执行器 → 表面 → 页面，而不是 controller 直接截）。
             Assert.Equal(1, harness.Page.CaptureScreenshotCount);
             Assert.Equal(1, harness.Page.LayoutMetricsCount);
-            Assert.Equal(1, harness.Page.RuntimeEvaluateCount);
+            Assert.Equal(2, harness.Page.RuntimeEvaluateCount);
 
             var value = result.Value!.Value;
             Assert.False(string.IsNullOrEmpty(value.GetProperty("observationId").GetString()));

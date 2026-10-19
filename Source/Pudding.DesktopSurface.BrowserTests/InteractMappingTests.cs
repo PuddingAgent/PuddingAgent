@@ -725,6 +725,23 @@ public sealed class InteractMappingTests
         }
     }
 
+    [Fact]
+    public async Task HiddenScreenshotPreservesTheActionableDriverError()
+    {
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        runtime.Pages["ctx-1/p-1"].OnCdp = method => method switch
+        {
+            "Page.getLayoutMetrics" => System.Text.Json.JsonDocument.Parse(LayoutMetricsJson),
+            "Runtime.evaluate" => System.Text.Json.JsonDocument.Parse("""{"result":{"type":"number","value":1}}"""),
+            _ => throw new BrowserOperationException("browser_not_available", "Open the tool panel and select this browser tab."),
+        };
+        var result = await Surface(runtime).ScreenshotAsync(Call,
+            new BrowserScreenshotRequest(Target, DesktopPageVersion.Require(7)), CancellationToken.None);
+        Assert.True(result.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.UiUnavailable, result.Error!.Code);
+        Assert.Contains("Open the tool panel", result.Error.Message);
+    }
+
     [Theory]
     [InlineData("jpeg", false, false)] // A PNG cannot be labelled JPEG.
     [InlineData("png", true, false)] // Four bytes are not a valid image header.

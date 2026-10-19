@@ -75,6 +75,10 @@ Bridge 在线只证明传输活性，不授予任意页面的控制权。取消�
 
 真实采集参数由纯组件生成：PNG/JPEG 格式、JPEG quality、区域和低清缩放必须实际传入 CDP。`window.devicePixelRatio` 与 visual viewport scale 分别采集，不能互相代用；CDP clip 按 [Page 协议](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot) 使用文档坐标及页面 zoom。回执尺寸从编码后的图片头读取并与计划核对，格式、尺寸不符或捕获期间页面版本改变即失败，不登记 observation。观察元数据的裁剪原点为文档 CSS 坐标；图片坐标还原为视口 CSS 坐标后，点击、移动和拖拽两端均须把转换结果真正交给驱动。无参数 CDP 命令将 nullable null、JSON null、Undefined 统一序列化为 `{}`。
 
+截图需要已布局且可见的浏览器表面。WinUI 必须检查祖先工具区/工作台是否折叠，WPF 检查有效可见性；不可采集时明确提示打开工具区并选择页签，不等待一个不会到来的合成帧，也不为了后台操作强抢用户焦点。CDP 等待受命令取消令牌约束，即使 COM 调用未返回，调用者也能结束等待；底层只读截图迟到结果不得发布为新 observation。
+
+Bridge 收包与命令执行分离：每代连接一个有界串行命令队列，保持命令顺序；接收循环继续处理心跳、取消和断连。取消同时覆盖排队和已执行中的命令，满队列明确报告未派发，连接结束回收队列。不能以长截图/等待为理由暂停连接存活检测。
+
 ### D6：保留现有技术栈，借鉴开源的职责边界
 
 不为一期引入 Node REPL、Playwright sidecar 或新的浏览器进程。借鉴的是资源归属、工具就绪、动作观察与结果回流，而非复制框架。
