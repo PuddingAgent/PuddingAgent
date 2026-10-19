@@ -297,3 +297,5 @@ WebApi 模板单程序集测试、`dotnet build PuddingRuntime --no-restore`。�
 页面滚动或显示缩放时，检查独立读取的 devicePixelRatio、页面 zoom、文档 CSS 裁剪原点和实际输出尺寸。点击与拖拽应将经过 observation 变换后的坐标交给驱动；只运行变换校验、随后仍提交原始图片坐标，会得到成功回执但点错位置。页面版本改变或图片格式/尺寸不符应拒绝签发观察。
 
 定位器线名失败另查 `RemoteBrowserPageLocatorWireTests` 与运行中 Core 构建身份。源码修复后须成套重建 Desktop/Core 并退出旧托盘实例；进程重启时间和 DLL mtime 不能证明加载的是新代码。具体约束见 [ADR-097 D5/D9](../07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md)。
+
+若截图报 deadline 随后 Bridge 断连，先检查浏览器页签和祖先工具区是否折叠。CDP 的合成截图可能等待可见帧，不能将此误判成网络断开；驱动应在不可见时快速返回可执行提示，并让取消令牌终止等待。Desktop 收包循环必须独立于串行命令 worker，否则长截图/等待连心跳和 Cancel 都收不到。最低复验是：折叠 → 截图明确失败 → context/list 和 tabs/list 仍可用 → 展开并选择页签 → 截图恢复。视觉测试使用本地随机图片编号，编号不能出现在 DOM 或模型提示中；模型必须从真实图片回答。

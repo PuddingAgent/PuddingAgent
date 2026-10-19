@@ -1,0 +1,496 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-19",
+  "scope": "authorized default assistant local browser test",
+  "deployment": {
+    "revision": "48a9c375e827d93b42ebec8bd05969d2b8ed0221",
+    "dirty": true,
+    "fileCount": 1624,
+    "desktop": {
+      "informationalVersion": "1.0.0+48a9c375e827d93b42ebec8bd05969d2b8ed0221",
+      "mvid": "d8d56035-7264-49d9-8cbe-635d05a3e43b"
+    },
+    "core": {
+      "informationalVersion": "1.0.0",
+      "mvid": "09b58f97-2449-42ab-81b2-65978ee28a04"
+    },
+    "desktopProtocol": {
+      "informationalVersion": "1.0.0+48a9c375e827d93b42ebec8bd05969d2b8ed0221",
+      "mvid": "86a5a1ca-02a0-4f63-8954-5691799b7cd8",
+      "protocolVersion": 3
+    },
+    "coreProtocol": {
+      "informationalVersion": "1.0.0+48a9c375e827d93b42ebec8bd05969d2b8ed0221",
+      "mvid": "4398ed3a-b119-4f08-934b-0e5aa4d0ac36",
+      "protocolVersion": 3
+    },
+    "processes": [
+      {
+        "ProcessId": 113508,
+        "ParentProcessId": 82456,
+        "ExecutablePath": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingDesktop.exe"
+      },
+      {
+        "ProcessId": 31124,
+        "ParentProcessId": 113508,
+        "ExecutablePath": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\core\\PuddingAgent.exe"
+      }
+    ],
+    "frontendVersion": "6.9.10",
+    "frontendRevision": "48a9c37",
+    "manifestSha256": "A6EEC47C470EFF102BCD229B22F9921822F9F78EBA743E470F6BDBE9C3AF1E1F",
+    "startupPhases": [
+      "2026-10-19 12:53:24.150 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] logging-ready total=99ms delta=54ms",
+      "2026-10-19 12:53:52.481 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] services-registered total=28431ms delta=28332ms",
+      "2026-10-19 12:53:52.629 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] host-built total=28578ms delta=147ms",
+      "2026-10-19 12:53:56.677 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] middleware-mapped total=32626ms delta=4048ms",
+      "2026-10-19 12:53:56.804 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-EnsureCreated total=32754ms delta=128ms",
+      "2026-10-19 12:53:57.325 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-AppUserSchemaBootstrapper total=33275ms delta=521ms",
+      "2026-10-19 12:53:57.328 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TokenUsageSchemaBootstrapper total=33278ms delta=3ms",
+      "2026-10-19 12:53:57.338 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ConversationCommandSchemaBootstrapper total=33288ms delta=10ms",
+      "2026-10-19 12:53:57.340 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ChatMessageSchemaBootstrapper total=33289ms delta=1ms",
+      "2026-10-19 12:53:57.340 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ConversationReadModelSchemaBootstrapper total=33290ms delta=1ms",
+      "2026-10-19 12:53:57.342 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-SessionSteeringSchemaBootstrapper total=33292ms delta=2ms",
+      "2026-10-19 12:53:57.343 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ExecutionRunSchemaBootstrapper total=33293ms delta=1ms",
+      "2026-10-19 12:53:57.344 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-SubAgentRunSchemaBootstrapper total=33294ms delta=1ms",
+      "2026-10-19 12:53:57.345 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-MessageFabricSchemaBootstrapper total=33295ms delta=1ms",
+      "2026-10-19 12:53:57.979 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ConnectorStreamProjectionSchemaBootstrapper total=33929ms delta=634ms",
+      "2026-10-19 12:53:57.982 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-AgentOrchestrationSchemaBootstrapper total=33932ms delta=3ms",
+      "2026-10-19 12:53:57.983 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskDispatchSchemaBootstrapper total=33932ms delta=0ms",
+      "2026-10-19 12:53:57.983 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-WorkspaceTaskSchemaBootstrapper total=33933ms delta=1ms",
+      "2026-10-19 12:53:58.100 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskPlanningSchemaBootstrapper total=34050ms delta=117ms",
+      "2026-10-19 12:53:58.101 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-GoalSchemaBootstrapper total=34051ms delta=1ms",
+      "2026-10-19 12:53:58.102 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TodoSchemaBootstrapper total=34052ms delta=1ms",
+      "2026-10-19 12:53:58.103 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulingSchemaBootstrapper total=34053ms delta=1ms",
+      "2026-10-19 12:53:58.104 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulerIntentSchemaBootstrapper total=34053ms delta=0ms",
+      "2026-10-19 12:53:58.104 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulerIntentOutcomeSchemaBootstrapper total=34054ms delta=1ms",
+      "2026-10-19 12:53:58.105 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulerDecisionSchemaBootstrapper total=34054ms delta=0ms",
+      "2026-10-19 12:53:58.105 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulerScanRunSchemaBootstrapper total=34055ms delta=1ms",
+      "2026-10-19 12:53:58.106 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ExternalAccessTokenSchemaBootstrapper total=34055ms delta=0ms",
+      "2026-10-19 12:53:58.106 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ExternalTaskApiSchemaBootstrapper total=34056ms delta=1ms",
+      "2026-10-19 12:53:58.107 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ProviderFileRefSchemaBootstrapper total=34056ms delta=0ms",
+      "2026-10-19 12:53:58.107 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-SkillHubSchemaBootstrapper total=34057ms delta=1ms",
+      "2026-10-19 12:53:58.200 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] platform-db-ensure total=34150ms delta=93ms",
+      "2026-10-19 12:53:58.213 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] event-store-ensure total=34162ms delta=12ms",
+      "2026-10-19 12:53:58.310 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] memory-db-ensure total=34260ms delta=98ms",
+      "2026-10-19 12:53:58.407 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] workspace-catalog total=34357ms delta=97ms",
+      "2026-10-19 12:53:58.883 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] jieba-backfill total=34833ms delta=476ms",
+      "2026-10-19 12:53:58.883 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] initialized total=34833ms delta=0ms",
+      "2026-10-19 12:54:05.256 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] server-started total=41206ms delta=6373ms",
+      "2026-10-19 12:54:05.258 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] ready total=41207ms delta=1ms"
+    ]
+  },
+  "turns": [
+    {
+      "results": [
+        {
+          "at": "2026-10-19T12:54:38.4872526+08:00",
+          "tool": "browser_context",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":[{\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"persistent\":true,\"pageCount\":0}],\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:54:39.6109909+08:00",
+          "tool": "browser_tabs",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":[],\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:54:41.3748495+08:00",
+          "tool": "browser_tabs",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"pageVersion\":1,\"value\":{\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"title\":\"\",\"url\":\"about:blank\",\"pageVersion\":1},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:54:42.882336+08:00",
+          "tool": "browser_navigate",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"pageVersion\":2,\"value\":{\"action\":\"goto\",\"page\":{\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"title\":\"Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536\",\"url\":\"http://127.0.0.1:4717/ef2f253e/\",\"pageVersion\":2},\"navigationOk\":true,\"statusCode\":200,\"errorText\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:54:46.8662196+08:00",
+          "tool": "browser_locate",
+          "exitCode": 1,
+          "output": "",
+          "error": "Tool arguments must be valid JSON object. String values must be wrapped in double quotes; for example: {\"rollback_plan\": \"No rollback is required.\"}. Near field 'page_id'. JSON parser error: JSON deserialization for type 'PuddingBrowser.AgentTools.BrowserLocatorInput' was missing required properties including: 'value'."
+        },
+        {
+          "at": "2026-10-19T12:54:49.5590598+08:00",
+          "tool": "browser_locate",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"pageVersion\":2,\"value\":{\"count\":1,\"elements\":[{\"ref\":\"pc077af67d06246afb106d929583cd53e-v2-n1\",\"tag\":\"input\",\"role\":\"textbox\",\"name\":\"\\u6D4B\\u8BD5\\u6807\\u8BB0\",\"text\":\"\",\"visible\":true,\"inViewport\":null,\"enabled\":true,\"checked\":null,\"value\":null,\"selectedValues\":null,\"boundingBox\":null}],\"nextCursor\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:54:51.0054229+08:00",
+          "tool": "browser_locate",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"pageVersion\":2,\"value\":{\"count\":1,\"elements\":[{\"ref\":\"pc077af67d06246afb106d929583cd53e-v2-n2\",\"tag\":\"button\",\"role\":\"button\",\"name\":\"\\u9A8C\\u8BC1\\u63D0\\u4EA4\",\"text\":null,\"visible\":true,\"inViewport\":null,\"enabled\":true,\"checked\":null,\"value\":null,\"selectedValues\":null,\"boundingBox\":null}],\"nextCursor\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:54:52.5299252+08:00",
+          "tool": "browser_interact",
+          "exitCode": 1,
+          "output": "",
+          "error": "{\"ok\":false,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":{\"operation\":\"Interact\",\"completion\":\"dispatched\",\"execution\":\"dispatched\",\"verification\":\"unverified\",\"mayHaveSideEffects\":true,\"safeToRetry\":false,\"requiresFollowUp\":true,\"retryDisposition\":\"dispatched_observe_only\",\"retryDetail\":\"the action was dispatched but its effect is unverified; observe before retrying\",\"inputBackend\":null,\"operationId\":\"923472cd64eb4fc68c0e6ed1598e26d7\",\"scroll\":null,\"assertions\":[]},\"error\":{\"code\":\"browser_operation_failed\",\"message\":\"A reference locator must carry the page version the reference came from. (Parameter \\u0027expectedPageVersion\\u0027)\"},\"warnings\":[]}"
+        },
+        {
+          "at": "2026-10-19T12:54:57.7150851+08:00",
+          "tool": "browser_interact",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"pageVersion\":2,\"value\":{\"action\":\"fill\",\"page\":{\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"title\":\"Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536\",\"url\":\"http://127.0.0.1:4717/ef2f253e/\",\"pageVersion\":2},\"element\":null,\"operationId\":\"af6b3a32f28c4fbc9dd621ee5a7c6e3d\",\"toolCallId\":\"call_00_qnIVczED0mz3lcBlYtG75970\",\"ok\":true,\"completion\":\"dispatched\",\"execution\":\"completed\",\"verification\":\"unverified\",\"assertions\":[],\"mayHaveSideEffects\":true,\"safeToRetry\":false,\"requiresFollowUp\":true,\"retryDisposition\":\"dispatched_observe_only\",\"retryDetail\":\"the action was dispatched but its effect is unverified; observe before retrying\",\"inputBackend\":\"dom\",\"scroll\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:54:59.2445386+08:00",
+          "tool": "browser_locate",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"pageVersion\":2,\"value\":{\"count\":1,\"elements\":[{\"ref\":\"pc077af67d06246afb106d929583cd53e-v2-n1\",\"tag\":\"input\",\"role\":\"textbox\",\"name\":\"\\u6D4B\\u8BD5\\u6807\\u8BB0\",\"text\":\"\",\"visible\":true,\"inViewport\":null,\"enabled\":true,\"checked\":null,\"value\":null,\"selectedValues\":null,\"boundingBox\":null}],\"nextCursor\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:55:05.2637706+08:00",
+          "tool": "browser_interact",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"pageVersion\":2,\"value\":{\"action\":\"click\",\"page\":{\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"title\":\"Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536\",\"url\":\"http://127.0.0.1:4717/ef2f253e/\",\"pageVersion\":2},\"element\":null,\"operationId\":\"f79d319440934568927ce45821860777\",\"toolCallId\":\"call_00_WG9ypLBlihnQDfvxbKCD4044\",\"ok\":true,\"completion\":\"dispatched\",\"execution\":\"completed\",\"verification\":\"not_requested\",\"assertions\":[],\"mayHaveSideEffects\":true,\"safeToRetry\":false,\"requiresFollowUp\":true,\"retryDisposition\":\"dispatched_observe_only\",\"retryDetail\":\"the action was dispatched but its effect is unverified; observe before retrying\",\"inputBackend\":\"dom\",\"scroll\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:55:07.187718+08:00",
+          "tool": "browser_locate",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"pageVersion\":2,\"value\":{\"count\":1,\"elements\":[{\"ref\":\"pc077af67d06246afb106d929583cd53e-v2-n3\",\"tag\":\"p\",\"role\":\"status\",\"name\":\"\\u9A8C\\u8BC1\\u6210\\u529F\",\"text\":null,\"visible\":true,\"inViewport\":null,\"enabled\":true,\"checked\":null,\"value\":null,\"selectedValues\":null,\"boundingBox\":null}],\"nextCursor\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T12:55:40.5446646+08:00",
+          "tool": "browser_screenshot",
+          "exitCode": 1,
+          "output": "",
+          "error": "{\"ok\":false,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":null,\"error\":{\"code\":\"browser_capability_failed\",\"message\":\"Command deadline exceeded\"},\"warnings\":[]}"
+        },
+        {
+          "at": "2026-10-19T12:55:52.6263043+08:00",
+          "tool": "browser_screenshot",
+          "exitCode": 1,
+          "output": "",
+          "error": "Command deadline exceeded"
+        },
+        {
+          "at": "2026-10-19T12:55:57.307296+08:00",
+          "tool": "browser_interact",
+          "exitCode": 1,
+          "output": "",
+          "error": "{\"ok\":false,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":{\"operation\":\"Interact\",\"completion\":\"dispatched\",\"execution\":\"dispatched\",\"verification\":\"not_requested\",\"mayHaveSideEffects\":true,\"safeToRetry\":false,\"requiresFollowUp\":true,\"retryDisposition\":\"dispatched_observe_only\",\"retryDetail\":\"the action was dispatched but its effect is unverified; observe before retrying\",\"inputBackend\":null,\"operationId\":\"4330726e49c545118f66ab144c67d55e\",\"scroll\":null,\"assertions\":[]},\"error\":{\"code\":\"browser_bridge_disconnected\",\"message\":\"Desktop disconnected\"},\"warnings\":[]}"
+        },
+        {
+          "at": "2026-10-19T12:55:59.7084987+08:00",
+          "tool": "browser_context",
+          "exitCode": 1,
+          "output": "",
+          "error": "{\"ok\":false,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":null,\"error\":{\"code\":\"browser_not_connected\",\"message\":\"No Desktop is connected for browser capabilities\"},\"warnings\":[]}"
+        }
+      ],
+      "turnId": "37cb90392a104dbca0c6ed2bfb7d3a33",
+      "name": "agent"
+    },
+    {
+      "results": [
+        {
+          "at": "2026-10-19T13:00:54.5101684+08:00",
+          "tool": "browser_context",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":[{\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"persistent\":true,\"pageCount\":1}],\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:00:55.8626683+08:00",
+          "tool": "browser_tabs",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":[{\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"title\":\"Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536\",\"url\":\"http://127.0.0.1:4717/ef2f253e/\",\"pageVersion\":2}],\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:00:58.9697313+08:00",
+          "tool": "browser_screenshot",
+          "exitCode": 0,
+          "output": "{\"observationId\":\"obs-66ab1f80a89d4bdba120fcefea73e710\",\"mimeType\":\"image/png\",\"byteCount\":33312,\"outputWidth\":1314,\"outputHeight\":1392,\"pageVersion\":2,\"detail\":\"original\",\"chunks\":1}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:01:01.6070207+08:00",
+          "tool": "browser_screenshot",
+          "exitCode": 0,
+          "output": "{\"observationId\":\"obs-e8d32994e93545b1ad188e3ccc30bf2b\",\"mimeType\":\"image/jpeg\",\"byteCount\":10231,\"outputWidth\":483,\"outputHeight\":512,\"pageVersion\":2,\"detail\":\"low\",\"chunks\":1}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:01:04.0217928+08:00",
+          "tool": "browser_interact",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"pageVersion\":3,\"value\":{\"action\":\"scroll\",\"page\":{\"contextId\":\"a94260a810a245f2bbc2449e4267f66e\",\"pageId\":\"27f86487f96641e3880630d4a47f87d0\",\"title\":\"Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536\",\"url\":\"http://127.0.0.1:4717/ef2f253e/\",\"pageVersion\":3},\"element\":null,\"operationId\":\"e9d1f533e7da4c8f8ded49122f359ce0\",\"toolCallId\":\"call_00_wSG7Ioji3ROceE0oCiCH0903\",\"ok\":true,\"completion\":\"dispatched\",\"execution\":\"completed\",\"verification\":\"not_requested\",\"assertions\":[],\"mayHaveSideEffects\":true,\"safeToRetry\":false,\"requiresFollowUp\":true,\"retryDisposition\":\"dispatched_observe_only\",\"retryDetail\":\"the action was dispatched but its effect is unverified; observe before retrying\",\"inputBackend\":\"dom\",\"scroll\":{\"container\":\"document\",\"beforeX\":0,\"beforeY\":0,\"afterX\":0,\"afterY\":200,\"consumedDeltaX\":0,\"consumedDeltaY\":200,\"atBoundary\":false,\"contentChanged\":false,\"notScrolled\":false}},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:01:08.343105+08:00",
+          "tool": "browser_screenshot",
+          "exitCode": 0,
+          "output": "{\"observationId\":\"obs-632af43c36674f93a223093bb019d140\",\"mimeType\":\"image/png\",\"byteCount\":8559,\"outputWidth\":483,\"outputHeight\":512,\"pageVersion\":3,\"detail\":\"low\",\"chunks\":1}",
+          "error": null
+        }
+      ],
+      "turnId": "b471b87970fb4e3f82b7d00f97948423",
+      "name": "visible"
+    },
+    {
+      "name": "hidden",
+      "turnId": "f70ec59729404a08b48cf9eb5e064460",
+      "results": [
+        {
+          "at": "2026-10-19T13:12:53.6815106+08:00",
+          "tool": "browser_context",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":[{\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"persistent\":true,\"pageCount\":0}],\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:12:55.324701+08:00",
+          "tool": "browser_tabs",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"pageVersion\":1,\"value\":{\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"title\":\"\",\"url\":\"about:blank\",\"pageVersion\":1},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:12:56.9120833+08:00",
+          "tool": "browser_navigate",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"pageVersion\":2,\"value\":{\"action\":\"goto\",\"page\":{\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"title\":\"Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536\",\"url\":\"http://127.0.0.1:4717/ef2f253e/\",\"pageVersion\":2},\"navigationOk\":true,\"statusCode\":200,\"errorText\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:12:58.0628207+08:00",
+          "tool": "browser_snapshot",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"pageVersion\":2,\"value\":{\"mode\":\"outline\",\"domText\":null,\"accessibilityTree\":\"    main name=\\u0022Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536 \\u53EA\\u5728\\u672C\\u5730\\u9A8C\\u8BC1\\uFF1A\\u53D1\\u73B0\\u3001\\u5B9A\\u4F4D\\u3001\\u586B\\u5199\\u3001\\u63D0\\u4EA4\\u548C\\u56FE\\u7247\\u89C2\\u5BDF\\u3002 \\u6D4B\\u8BD5\\u6807\\u8BB0 \\u9A8C\\u8BC1\\u63D0\\u4EA4 \\u5C1A\\u672A\\u63D0\\u4EA4\\u0022\\n      textbox ref=pbd09dce1893a46a0beed3a53274ed96a-v2-n1 name=\\u0022\\u6D4B\\u8BD5\\u6807\\u8BB0\\u0022\\n      button ref=pbd09dce1893a46a0beed3a53274ed96a-v2-n2 name=\\u0022\\u9A8C\\u8BC1\\u63D0\\u4EA4\\u0022\\n      status ref=pbd09dce1893a46a0beed3a53274ed96a-v2-n3 name=\\u0022\\u5C1A\\u672A\\u63D0\\u4EA4\\u0022\",\"html\":null,\"truncated\":false,\"truncationReason\":\"none\",\"nextCursor\":null,\"returnedLines\":4,\"bytes\":388,\"nodeCount\":20,\"revision\":null,\"changed\":null,\"diff\":null,\"representation\":\"outline\",\"content\":null,\"pageEvents\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:12:59.5449105+08:00",
+          "tool": "browser_screenshot",
+          "exitCode": 1,
+          "output": "",
+          "error": "{\"ok\":false,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":null,\"error\":{\"code\":\"browser_capability_failed\",\"message\":\"Screenshot requires a visible browser surface; open the tool panel and select this browser tab.\"},\"warnings\":[]}"
+        },
+        {
+          "at": "2026-10-19T13:13:00.3624593+08:00",
+          "tool": "browser_context",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":[{\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"persistent\":true,\"pageCount\":1}],\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:13:01.4502625+08:00",
+          "tool": "browser_tabs",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":[{\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"title\":\"Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536\",\"url\":\"http://127.0.0.1:4717/ef2f253e/\",\"pageVersion\":2}],\"error\":null,\"warnings\":[]}",
+          "error": null
+        }
+      ]
+    },
+    {
+      "name": "final-visible",
+      "turnId": "ff262953362f4e14857b3ff0a5877d06",
+      "results": [
+        {
+          "at": "2026-10-19T13:13:37.6211628+08:00",
+          "tool": "browser_context",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":[{\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"persistent\":true,\"pageCount\":1}],\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:13:38.454613+08:00",
+          "tool": "browser_tabs",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":null,\"pageId\":null,\"pageVersion\":null,\"value\":[{\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"title\":\"Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536\",\"url\":\"http://127.0.0.1:4717/ef2f253e/\",\"pageVersion\":2}],\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:13:40.3790892+08:00",
+          "tool": "browser_snapshot",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"pageVersion\":2,\"value\":{\"mode\":\"outline\",\"domText\":null,\"accessibilityTree\":\"    main name=\\u0022Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536 \\u53EA\\u5728\\u672C\\u5730\\u9A8C\\u8BC1\\uFF1A\\u53D1\\u73B0\\u3001\\u5B9A\\u4F4D\\u3001\\u586B\\u5199\\u3001\\u63D0\\u4EA4\\u548C\\u56FE\\u7247\\u89C2\\u5BDF\\u3002 \\u6D4B\\u8BD5\\u6807\\u8BB0 \\u9A8C\\u8BC1\\u63D0\\u4EA4 \\u5C1A\\u672A\\u63D0\\u4EA4\\u0022\\n      textbox ref=pbd09dce1893a46a0beed3a53274ed96a-v2-n1 name=\\u0022\\u6D4B\\u8BD5\\u6807\\u8BB0\\u0022\\n      button ref=pbd09dce1893a46a0beed3a53274ed96a-v2-n2 name=\\u0022\\u9A8C\\u8BC1\\u63D0\\u4EA4\\u0022\\n      status ref=pbd09dce1893a46a0beed3a53274ed96a-v2-n3 name=\\u0022\\u5C1A\\u672A\\u63D0\\u4EA4\\u0022\",\"html\":null,\"truncated\":false,\"truncationReason\":\"none\",\"nextCursor\":null,\"returnedLines\":4,\"bytes\":388,\"nodeCount\":20,\"revision\":null,\"changed\":null,\"diff\":null,\"representation\":\"outline\",\"content\":null,\"pageEvents\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:13:42.5053193+08:00",
+          "tool": "browser_screenshot",
+          "exitCode": 0,
+          "output": "{\"observationId\":\"obs-91472c7a851445409983f84a9b0cdc5c\",\"mimeType\":\"image/png\",\"byteCount\":28472,\"outputWidth\":631,\"outputHeight\":713,\"pageVersion\":2,\"detail\":\"original\",\"chunks\":1}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:13:44.6319989+08:00",
+          "tool": "browser_screenshot",
+          "exitCode": 0,
+          "output": "{\"observationId\":\"obs-0eba2235ff924d30bce8f33e6b6a45ce\",\"mimeType\":\"image/jpeg\",\"byteCount\":18634,\"outputWidth\":453,\"outputHeight\":512,\"pageVersion\":2,\"detail\":\"low\",\"chunks\":1}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:13:46.3364147+08:00",
+          "tool": "browser_interact",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"pageVersion\":3,\"value\":{\"action\":\"scroll\",\"page\":{\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"title\":\"Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536\",\"url\":\"http://127.0.0.1:4717/ef2f253e/\",\"pageVersion\":3},\"element\":null,\"operationId\":\"021842e97f5a4cedad908e20b88f5a0f\",\"toolCallId\":\"call_00_G0k9mGix1bM2YaGi3wxm4506\",\"ok\":true,\"completion\":\"dispatched\",\"execution\":\"completed\",\"verification\":\"not_requested\",\"assertions\":[],\"mayHaveSideEffects\":true,\"safeToRetry\":false,\"requiresFollowUp\":true,\"retryDisposition\":\"dispatched_observe_only\",\"retryDetail\":\"the action was dispatched but its effect is unverified; observe before retrying\",\"inputBackend\":\"dom\",\"scroll\":{\"container\":\"document\",\"beforeX\":0,\"beforeY\":0,\"afterX\":0,\"afterY\":200,\"consumedDeltaX\":0,\"consumedDeltaY\":200,\"atBoundary\":false,\"contentChanged\":false,\"notScrolled\":false}},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:13:47.7880074+08:00",
+          "tool": "browser_snapshot",
+          "exitCode": 0,
+          "output": "{\"ok\":true,\"contextId\":\"4458e7adedee4fa78358b1e5744570d7\",\"pageId\":\"90a005e6e470421791cd4878a5eddce6\",\"pageVersion\":3,\"value\":{\"mode\":\"outline\",\"domText\":null,\"accessibilityTree\":\"    main name=\\u0022Pudding \\u622A\\u56FE Detail \\u9A8C\\u6536 \\u53EA\\u5728\\u672C\\u5730\\u9A8C\\u8BC1\\uFF1A\\u53D1\\u73B0\\u3001\\u5B9A\\u4F4D\\u3001\\u586B\\u5199\\u3001\\u63D0\\u4EA4\\u548C\\u56FE\\u7247\\u89C2\\u5BDF\\u3002 \\u6D4B\\u8BD5\\u6807\\u8BB0 \\u9A8C\\u8BC1\\u63D0\\u4EA4 \\u5C1A\\u672A\\u63D0\\u4EA4\\u0022\\n      textbox ref=pbd09dce1893a46a0beed3a53274ed96a-v3-n1 name=\\u0022\\u6D4B\\u8BD5\\u6807\\u8BB0\\u0022\\n      button ref=pbd09dce1893a46a0beed3a53274ed96a-v3-n2 name=\\u0022\\u9A8C\\u8BC1\\u63D0\\u4EA4\\u0022\\n      status ref=pbd09dce1893a46a0beed3a53274ed96a-v3-n3 name=\\u0022\\u5C1A\\u672A\\u63D0\\u4EA4\\u0022\",\"html\":null,\"truncated\":false,\"truncationReason\":\"none\",\"nextCursor\":null,\"returnedLines\":4,\"bytes\":388,\"nodeCount\":20,\"revision\":null,\"changed\":null,\"diff\":null,\"representation\":\"outline\",\"content\":null,\"pageEvents\":null},\"error\":null,\"warnings\":[]}",
+          "error": null
+        },
+        {
+          "at": "2026-10-19T13:13:49.3485546+08:00",
+          "tool": "browser_screenshot",
+          "exitCode": 0,
+          "output": "{\"observationId\":\"obs-87d3537648114e1d91b9670cf236c9b1\",\"mimeType\":\"image/png\",\"byteCount\":11355,\"outputWidth\":453,\"outputHeight\":512,\"pageVersion\":3,\"detail\":\"low\",\"chunks\":1}",
+          "error": null
+        }
+      ]
+    }
+  ],
+  "serverEvents": [
+    {
+      "event": "page_get",
+      "time": "2026-10-19T12:54:42.853341+08:00"
+    },
+    {
+      "event": "submit",
+      "marker": "CAPTURE-ef2f253e",
+      "time": "2026-10-19T12:55:05.262+08:00"
+    }
+  ],
+  "images": [
+    {
+      "sha256": "ECB152632D4BBFB1D45C0FC22B33F5725C04F82ECC6BA7E45B89D01B6F780E81",
+      "bytes": 33312,
+      "name": "vision-ecb152632d4bbfb1d45c0fc22b33f572.png",
+      "width": 1314,
+      "height": 1392,
+      "format": "PNG"
+    },
+    {
+      "sha256": "06AEC9222B484CBBC8EC1E139FC195098E90B9EE0A993D61A4D918A7AFC9F90F",
+      "bytes": 10231,
+      "name": "vision-06aec9222b484cbbc8ec1e139fc19509.jpg",
+      "width": 483,
+      "height": 512,
+      "format": "JPEG"
+    },
+    {
+      "sha256": "398AA43485F56267E1D65019D530975267C8C052FEAD9780D77C7106E8B65A9C",
+      "bytes": 8559,
+      "name": "vision-398aa43485f56267e1d65019d5309752.png",
+      "width": 483,
+      "height": 512,
+      "format": "PNG"
+    },
+    {
+      "name": "vision-4de98094e85dc2dc7380b925a778027b.jpg",
+      "bytes": 18634,
+      "sha256": "4DE98094E85DC2DC7380B925A778027B4081AB75F4F220D117E34F9D9AE5680B",
+      "width": 453,
+      "height": 512,
+      "format": "JPEG"
+    },
+    {
+      "name": "vision-7b897acb500d5d8509d09a454da1d4f3.png",
+      "bytes": 11355,
+      "sha256": "7B897ACB500D5D8509D09A454DA1D4F3C50DBC9B7B11E1FC6DF0B7581753D592",
+      "width": 453,
+      "height": 512,
+      "format": "PNG"
+    },
+    {
+      "name": "vision-9e2c609dba484731de64dc283a48f797.png",
+      "bytes": 28472,
+      "sha256": "9E2C609DBA484731DE64DC283A48F797284FDDF51CF368889F658616B88CF945",
+      "width": 631,
+      "height": 713,
+      "format": "PNG"
+    }
+  ],
+  "finalDeployment": {
+    "revision": "80d6910833021f7b5b49c07943e28f5dcff346d8",
+    "dirty": true,
+    "desktop": {
+      "informationalVersion": "1.0.0+80d6910833021f7b5b49c07943e28f5dcff346d8",
+      "mvid": "9a56e4df-cc93-425c-8fa2-04242812570e"
+    },
+    "core": {
+      "informationalVersion": "1.0.0",
+      "mvid": "2a42ff76-c99a-4c33-abb9-cbebcfea1b3d"
+    },
+    "desktopProtocol": {
+      "informationalVersion": "1.0.0+80d6910833021f7b5b49c07943e28f5dcff346d8",
+      "mvid": "302860f2-8b0c-40e7-950d-da399fb4489e",
+      "protocolVersion": 3
+    },
+    "coreProtocol": {
+      "informationalVersion": "1.0.0+80d6910833021f7b5b49c07943e28f5dcff346d8",
+      "mvid": "2d46edcc-7c24-47d7-b1dd-1f6ee3ca0dc3",
+      "protocolVersion": 3
+    },
+    "fileCount": 1624,
+    "startupPhases": [
+      "2026-10-19 13:11:25.022 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] logging-ready total=101ms delta=55ms",
+      "2026-10-19 13:12:18.131 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] services-registered total=53211ms delta=53110ms",
+      "2026-10-19 13:12:18.275 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] host-built total=53354ms delta=143ms",
+      "2026-10-19 13:12:22.251 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] middleware-mapped total=57331ms delta=3977ms",
+      "2026-10-19 13:12:22.379 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-EnsureCreated total=57459ms delta=128ms",
+      "2026-10-19 13:12:22.878 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-AppUserSchemaBootstrapper total=57958ms delta=499ms",
+      "2026-10-19 13:12:22.881 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TokenUsageSchemaBootstrapper total=57960ms delta=2ms",
+      "2026-10-19 13:12:22.891 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ConversationCommandSchemaBootstrapper total=57970ms delta=10ms",
+      "2026-10-19 13:12:22.892 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ChatMessageSchemaBootstrapper total=57972ms delta=2ms",
+      "2026-10-19 13:12:22.893 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ConversationReadModelSchemaBootstrapper total=57973ms delta=1ms",
+      "2026-10-19 13:12:22.895 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-SessionSteeringSchemaBootstrapper total=57974ms delta=1ms",
+      "2026-10-19 13:12:22.896 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ExecutionRunSchemaBootstrapper total=57975ms delta=1ms",
+      "2026-10-19 13:12:22.897 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-SubAgentRunSchemaBootstrapper total=57976ms delta=1ms",
+      "2026-10-19 13:12:22.898 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-MessageFabricSchemaBootstrapper total=57977ms delta=1ms",
+      "2026-10-19 13:12:22.952 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ConnectorStreamProjectionSchemaBootstrapper total=58031ms delta=54ms",
+      "2026-10-19 13:12:22.954 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-AgentOrchestrationSchemaBootstrapper total=58034ms delta=3ms",
+      "2026-10-19 13:12:22.955 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskDispatchSchemaBootstrapper total=58034ms delta=0ms",
+      "2026-10-19 13:12:22.955 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-WorkspaceTaskSchemaBootstrapper total=58035ms delta=1ms",
+      "2026-10-19 13:12:23.068 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskPlanningSchemaBootstrapper total=58148ms delta=113ms",
+      "2026-10-19 13:12:23.070 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-GoalSchemaBootstrapper total=58149ms delta=1ms",
+      "2026-10-19 13:12:23.070 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TodoSchemaBootstrapper total=58150ms delta=1ms",
+      "2026-10-19 13:12:23.071 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulingSchemaBootstrapper total=58151ms delta=1ms",
+      "2026-10-19 13:12:23.072 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulerIntentSchemaBootstrapper total=58151ms delta=0ms",
+      "2026-10-19 13:12:23.072 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulerIntentOutcomeSchemaBootstrapper total=58152ms delta=1ms",
+      "2026-10-19 13:12:23.073 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulerDecisionSchemaBootstrapper total=58152ms delta=0ms",
+      "2026-10-19 13:12:23.073 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-TaskSchedulerScanRunSchemaBootstrapper total=58153ms delta=1ms",
+      "2026-10-19 13:12:23.074 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ExternalAccessTokenSchemaBootstrapper total=58153ms delta=0ms",
+      "2026-10-19 13:12:23.074 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ExternalTaskApiSchemaBootstrapper total=58154ms delta=1ms",
+      "2026-10-19 13:12:23.075 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-ProviderFileRefSchemaBootstrapper total=58154ms delta=0ms",
+      "2026-10-19 13:12:23.075 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] schema-SkillHubSchemaBootstrapper total=58155ms delta=1ms",
+      "2026-10-19 13:12:23.163 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] platform-db-ensure total=58242ms delta=87ms",
+      "2026-10-19 13:12:23.175 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] event-store-ensure total=58255ms delta=13ms",
+      "2026-10-19 13:12:23.258 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] memory-db-ensure total=58337ms delta=82ms",
+      "2026-10-19 13:12:23.351 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] workspace-catalog total=58431ms delta=94ms",
+      "2026-10-19 13:12:23.719 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] jieba-backfill total=58799ms delta=368ms",
+      "2026-10-19 13:12:23.720 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] initialized total=58799ms delta=0ms",
+      "2026-10-19 13:12:30.000 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] server-started total=65079ms delta=6280ms",
+      "2026-10-19 13:12:30.001 +08:00 [INF] [tag:core] [trace:] [session:] [StartupPhase] ready total=65080ms delta=1ms"
+    ],
+    "bridgeHello": [
+      "2026-10-19 13:12:30.593 +08:00 [INF] [tag:BrowserBridge] [trace:078364c22231fd054aee6cc33dff01da] [session:] Browser Bridge Hello: desktop=14338937f5ff4ee68eabf89c253e5d19 protocol=3 build=build=1.0.0+80d6910833021f7b5b49c07943e28f5dcff346d8 rev=80d6910833021f7b5b49c07943e28f5dcff346d8 dirty=unknown mvid=9a56e4df-cc93-425c-8fa2-04242812570e path=D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingDesktop.dll"
+    ]
+  },
+  "finalServerSubmitCount": 1
+}
