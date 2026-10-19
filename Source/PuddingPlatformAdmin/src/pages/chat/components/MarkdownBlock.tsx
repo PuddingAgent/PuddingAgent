@@ -1,7 +1,7 @@
 import { CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import { Button } from 'antd';
 import Prism from 'prismjs';
-import React, { useEffect, useRef } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
@@ -11,6 +11,8 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import { ZoomableImage } from './ImagePreviewOverlay';
+import { resolveRichBlock } from './richblocks/RichBlockRegistry';
+import { RichBlockBoundary } from './richblocks/RichBlockBoundary';
 
 interface MarkdownBlockProps {
   markdownText: string;
@@ -308,6 +310,26 @@ function sharedComponents(
         }
       }
       const hasLanguageClass = /\blanguage-/.test(className ?? '');
+      // 富媒体围栏（```mermaid 等）：识别是同步查表，加载是 React.lazy。
+      // 放在行内判断之前，否则 ```mermaid 会被当成普通多行代码块。
+      if (hasLanguageClass) {
+        const RichBlock = resolveRichBlock(extractCodeLanguage(className));
+        if (RichBlock) {
+          return (
+            // 双层保护：Suspense 管“加载中”，Boundary 管“加载失败”。
+            // 少了 Boundary，一次 chunk 404 会把整条消息打白。
+            <RichBlockBoundary code={code}>
+              <Suspense
+                fallback={
+                  <div style={{ fontSize: 12, opacity: 0.6 }}>正在加载可视化组件…</div>
+                }
+              >
+                <RichBlock code={code} />
+              </Suspense>
+            </RichBlockBoundary>
+          );
+        }
+      }
       const isInlineCode =
         inline === true || (!hasLanguageClass && !code.includes('\n'));
       if (isInlineCode) {

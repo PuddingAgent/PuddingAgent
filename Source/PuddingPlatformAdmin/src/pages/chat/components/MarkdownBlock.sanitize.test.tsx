@@ -83,11 +83,19 @@ describe('MarkdownBlock 消毒：合法能力不被误伤', () => {
     expect(document.querySelector('[data-md-emoji]')).not.toBeNull();
   });
 
-  it('保留围栏代码块的 language-* class（富媒体分派的入口）', () => {
-    renderMarkdown(['```mermaid', 'graph TD; A-->B', '```'].join('\n'));
+  it('未注册语言的围栏仍保留 language-* class（回退为普通代码块）', () => {
+    renderMarkdown(['```ts', 'const a = 1;', '```'].join('\n'));
 
     const code = document.querySelector('code');
-    expect(code?.className ?? '').toContain('language-mermaid');
+    expect(code?.className ?? '').toContain('language-ts');
+  });
+
+  it('mermaid 围栏不再渲染为普通代码块（已走富媒体分支）', () => {
+    renderMarkdown(['```mermaid', 'graph TD; A-->B', '```'].join('\n'));
+
+    // 富媒体分支不产出 code.language-mermaid：要么是加载中占位，
+    // 要么是 lazy 失败后的 fallback（jest 无法执行 import()，通常走后者）。
+    expect(document.querySelector('[class*="language-mermaid"]')).toBeNull();
   });
 
   it('保留 mark / u 行内标签', () => {
