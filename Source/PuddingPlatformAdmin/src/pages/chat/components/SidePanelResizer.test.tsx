@@ -25,7 +25,10 @@ describe('SidePanelResizer', () => {
 
   it('暴露 separator 语义与取值区间（无障碍）', () => {
     const { handle } = setup(420);
-    expect(handle.getAttribute('role')).toBe('separator');
+    // 用 `<hr>` 而不是 `div role="separator"`：`<hr>` 的隐式角色就是 separator，
+    // 避免 `role="separator"` 被 a11y/useSemanticElements 判为可替换元素。
+    expect(handle.tagName).toBe('HR');
+    expect(screen.getByRole('separator')).toBe(handle);
     expect(handle.getAttribute('aria-valuenow')).toBe('420');
     expect(handle.getAttribute('aria-valuemin')).toBe('320');
     expect(handle.getAttribute('aria-valuemax')).toBe('900');

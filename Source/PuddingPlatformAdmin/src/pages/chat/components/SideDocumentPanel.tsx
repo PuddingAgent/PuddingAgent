@@ -13,7 +13,7 @@ import { useSideArtifact } from '../sideArtifact/SideArtifactContext';
  */
 export const SideDocumentPanel: React.FC = () => {
   const side = useSideArtifact();
-  if (!side || !side.document) return null;
+  if (!side?.document) return null;
 
   // 只有真实文件才有可复制的路径。长消息（对话正文）没有 sourcePath，
   // 因此不渲染「复制路径」—— 避免复制出一个磁盘上不存在的地址。

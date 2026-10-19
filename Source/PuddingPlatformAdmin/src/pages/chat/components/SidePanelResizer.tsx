@@ -119,8 +119,10 @@ export const SidePanelResizer: React.FC<SidePanelResizerProps> = ({
   };
 
   return (
-    <div
-      role="separator"
+    // biome 建议把 role="separator" 换成 <hr>：这里确实是 <hr>。
+    // 分隔条是**可拖拽、可聚焦**的窗口分隔控件（带 aria-valuenow），
+    // 用 <hr> 能同时满足语义与 lint，不用加 suppression。
+    <hr
       aria-orientation="vertical"
       aria-label="调整文档面板宽度"
       aria-valuemin={SIDE_PANEL_MIN_WIDTH_PX}
@@ -134,9 +136,13 @@ export const SidePanelResizer: React.FC<SidePanelResizerProps> = ({
       style={{
         flex: '0 0 auto',
         width: 6,
-        cursor: 'col-resize',
-        background: 'transparent',
+        // <hr> 自带 margin/border，必须显式归零，否则分隔条会有 8px 上下留白。
+        margin: 0,
+        padding: 0,
+        border: 'none',
         borderLeft: '1px solid #e5e7eb',
+        background: 'transparent',
+        cursor: 'col-resize',
         // 键盘聚焦时给一条可见的焦点线，否则纯鼠标用户看不出这里能拖。
         outlineOffset: -1,
         touchAction: 'none',
