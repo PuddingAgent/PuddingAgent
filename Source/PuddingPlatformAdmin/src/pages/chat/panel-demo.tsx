@@ -1,6 +1,7 @@
 import { Button, Segmented } from 'antd';
 import React, { useMemo, useState } from 'react';
 import { DocumentRefCard } from './components/DocumentRefCard';
+import { DocumentPreview } from './components/DocumentPreview';
 import { FoldableMessage } from './components/FoldableMessage';
 import { PanelView } from './panel/PanelView';
 import type { PanelSpec } from './panel/spec';
@@ -131,6 +132,7 @@ const SPECS: Array<{ label: string; spec: PanelSpec }> = [
 
 export default function PanelDemoPage() {
   const [tab, setTab] = useState<string>('问卷');
+  const [rightTab, setRightTab] = useState<string>('面板');
   const [lastSubmission, setLastSubmission] = useState<string>('（还没有提交）');
 
   const active = useMemo(
@@ -256,16 +258,33 @@ export default function PanelDemoPage() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-          <span style={{ fontSize: 12, color: '#8a9099' }}>交互面板（真实组件）</span>
+          <span style={{ fontSize: 12, color: '#8a9099' }}>右侧区域</span>
           <Segmented
             size="small"
-            value={tab}
-            options={SPECS.map((item) => item.label)}
-            onChange={(value) => setTab(String(value))}
+            value={rightTab}
+            options={['面板', '文档']}
+            onChange={(value) => setRightTab(String(value))}
           />
+          {rightTab === '面板' ? (
+            <Segmented
+              size="small"
+              value={tab}
+              options={SPECS.map((item) => item.label)}
+              onChange={(value) => setTab(String(value))}
+            />
+          ) : null}
         </div>
 
-        <PanelView spec={active} onSubmit={handleSubmit} />
+        {rightTab === '文档' ? (
+          <DocumentPreview
+            name="温度巡检报告-2026-10-19.md"
+            markdown={longReport}
+            meta={`约 ${longReport.length} 字`}
+            onCopyPath={() => setOpenedRef('已复制路径（演示）')}
+          />
+        ) : (
+          <PanelView spec={active} onSubmit={handleSubmit} />
+        )}
 
         <div style={{ marginTop: 24, borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
           <div style={{ fontSize: 12, color: '#8a9099', marginBottom: 6 }}>
