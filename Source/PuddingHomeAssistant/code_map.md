@@ -20,7 +20,7 @@ Home Assistant 的 **REST 叶子组件**：把「读状态 / 查历史 / 调动�
 |---|---|---|---|
 | `Contracts/HaContracts.cs` | 实例、状态、动作请求/结果、分页视图的不可变合同 | `HaInstance`、`HaState`、`HaStateView`、`HaStatePage`、`HaServiceCall` | `Token` 标 `[JsonIgnore]` 且 `ToString()` 掩码；`HaStateView.Name` 恒填 `friendly_name` |
 | `Policy/HaDomainPolicy.cs` | 三档域策略：永久拒绝 / 默认允许 / 需 Admin 显式放开 | `HaDomainPolicy.Decide`、`HaDomainDecision` | 永久黑名单**不可**被 opt-in 解除；未知域仅在已 opt-in 时放行 |
-| `Policy/HaOutputBudget.cs` | 状态投影与字节预算 | `HaOutputBudget.Project/NormalizeLimit/ResolveName/Measure` | 先过滤→再投影→再按条回退；截断必须回报 `total/returned/truncated` |
+| `Policy/HaOutputBudget.cs` | 状态筛选、投影与字节预算 | `HaOutputBudget.Project/NormalizeLimit/ResolveName/ResolveDeviceClass/Measure` | 先按 domain/实体/device_class/名称过滤→按 entity_id 排序→游标→投影→按条回退；截断必须回报 `total/returned/truncated/nextAfter` |
 | `Policy/HaHistoryBudget.cs` | 历史响应的结构化裁剪 | `HaHistoryBudget.Trim`、`HaHistoryTrim` | 裁剪结果**始终是合法 JSON**；按 entity→state 保序；回报丢弃计数 |
 | `Diagnostics/HaErrorCodes.cs` | 稳定错误码与 HTTP 映射 | `HaErrorCodes.*`、`HaClientException` | 错误码是调用方契约，不得随手改名；消息不得含令牌 |
 | `Rest/HaRestClient.cs` | REST 传输与解析（状态/历史/动作/健康检查） | `GetStatesAsync`、`GetHistoryAsync`、`CallServiceAsync`、`GetStatusAsync` | 不重试、不跨实例复用、诊断载荷有界；只读接口不产生副作用 |
