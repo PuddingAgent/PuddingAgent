@@ -2,6 +2,19 @@ using System.Text.Json;
 
 namespace PuddingBrowser.Abstractions;
 
+/// <summary>
+/// Product workspace ownership of contexts/pages. Successful creation includes
+/// UI projection and lifecycle registration; tools must not bypass this owner.
+/// </summary>
+public interface IBrowserWorkspaceLifecycle
+{
+    Task<IBrowserContext> CreateContextAsync(BrowserContextOptions options, CancellationToken ct);
+    Task CloseContextAsync(BrowserContextId contextId, CancellationToken ct);
+    Task<IBrowserPage> CreatePageAsync(BrowserContextId contextId, PageCreateOptions options, CancellationToken ct);
+    Task ActivatePageAsync(BrowserContextId contextId, PageId pageId, CancellationToken ct);
+    Task ClosePageAsync(BrowserContextId contextId, PageId pageId, CancellationToken ct);
+}
+
 // ── Browser Runtime ─────────────────────────────────────
 
 public interface IBrowserRuntime : IAsyncDisposable

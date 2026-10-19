@@ -70,7 +70,8 @@
 | `Browser/BrowserBridgeResultAdapter.cs` | I2-c 结果反投影（Contracts → Bridge 描述符）：pageState/contexts/pageList/locate/interact/wait/snapshot；已知字段缺口如实置空 |
 | `Browser/BrowserBridgeExecutorRoute.cs` | I2-c 真实执行器路由：仅路由已有可靠反投影的命令，携带 `SessionPermitMarker` 与可信 caller，经 `BrowserCapabilityInvoker` 调用执行器并把能力错误映射为稳定 Bridge 码；未覆盖命令返回 null 回退 handler |
 | `Browser/BrowserCommandExecutorRoute.cs` | 派发器执行器路由委托（非 null=执行器处理；null=回退 handler；异常不回退） |
-| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target 唯一 UI 状态源；接管/暂停唯一写入点见下「关键语义」 |
+| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target UI 状态源；实现 `IBrowserWorkspaceLifecycle`，统一工具/UI 管理操作、上下文事件与失败回收；接管/暂停见下「关键语义」 |
+| `Browser/BrowserTabViewModel.cs` | 页签展示与所属 ContextId；页面登记/关闭不借用当前活动上下文 |
 | `Browser/BrowserAutomationGateSync.cs` | `IBrowserAutomationGate` 端口/闸门集合/`DelegateAutomationGate` 见下「关键语义」 |
 | `Views/BrowserWorkspaceView.xaml(.cs)` | 双标签、地址栏、Surface、Agent Activity Pane |
 

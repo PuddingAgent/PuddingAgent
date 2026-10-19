@@ -22,6 +22,6 @@
 
 The WPF archive is a reference/test host, not loaded into the WinUI product. Browser driver behavior is shared with `PuddingBrowser.WinUI` through source links.
 
-`Hosting/DesktopApplicationCoordinator.Capability.cs` connects workspace target snapshots through `BrowserWorkspaceTargetBridge.ObserveAgentTarget`; empty or repeated UI state is not a user revocation command. Explicit control actions use the lifecycle command ports.
+`Hosting/DesktopApplicationCoordinator.Capability.cs` connects workspace target snapshots through `BrowserWorkspaceTargetBridge.ObserveAgentTarget`; empty or repeated UI state is not a user revocation command. Product surface management requires the workspace's `IBrowserWorkspaceLifecycle`; context events and each tab's owning ContextId drive registration and cleanup. Explicit control actions use the lifecycle command ports.
 
 - `../../TestScripts/build-browser-companion.ps1`: serial Desktop + bundled Core build in a dedicated output directory; records per-file hashes, process identities and protocol revisions in `browser-companion.json`; `-VerifyOnly` validates copied packages, `-AllowDirty` marks development repairs explicitly.

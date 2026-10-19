@@ -233,7 +233,8 @@ public sealed partial class DesktopApplicationCoordinator
                 browserRuntime,
                 lifecycle.BrowserTargets,
                 lifecycle.Readings,
-                new DesktopShellSurface(facilities, hostFacilities));
+                new DesktopShellSurface(facilities, hostFacilities),
+                workspace);
 
             _browserExecutor = DesktopBrowserExecutorComposition.Create(
                 _browserUiDispatcher,
@@ -318,9 +319,10 @@ public sealed partial class DesktopApplicationCoordinator
         var registeredContexts = new HashSet<string>(StringComparer.Ordinal);
         void EnsureContext(string contextId)
         {
-            if (registeredContexts.Add(contextId))
+            if (!registeredContexts.Contains(contextId))
             {
                 bridge.OnContextCreated(contextId);
+                registeredContexts.Add(contextId);
             }
         }
 
@@ -344,24 +346,26 @@ public sealed partial class DesktopApplicationCoordinator
             EnsureContext(initialContext);
             foreach (var tab in workspace.Tabs)
             {
-                Register(initialContext, tab.PageId);
+                Register(tab.ContextId?.Value ?? initialContext, tab.PageId);
             }
 
             bridge.ObserveAgentTarget(initialContext, workspace.AgentTargetPageId?.Value);
         }
 
+        workspace.ContextCreated += id => EnsureContext(id.Value);
+        workspace.ContextClosed += id =>
+        {
+            bridge.OnContextClosed(id.Value);
+            registeredContexts.Remove(id.Value);
+        };
+
         workspace.Tabs.CollectionChanged += (_, e) =>
         {
-            if (ContextId() is not { } contextId)
-            {
-                return;
-            }
-
             if (e.NewItems is not null)
             {
                 foreach (var item in e.NewItems.OfType<BrowserTabViewModel>())
                 {
-                    Register(contextId, item.PageId);
+                    Register(item.ContextId?.Value ?? throw new InvalidOperationException("Tab has no owning context"), item.PageId);
                 }
             }
 
@@ -369,19 +373,14 @@ public sealed partial class DesktopApplicationCoordinator
             {
                 foreach (var item in e.OldItems.OfType<BrowserTabViewModel>())
                 {
-                    bridge.OnPageClosed(contextId, item.PageId.Value);
+                    bridge.OnPageClosed(item.ContextId?.Value ?? throw new InvalidOperationException("Tab has no owning context"), item.PageId.Value);
                 }
             }
         };
 
         workspace.PropertyChanged += (_, _) =>
         {
-            if (ContextId() is not { } contextId)
-            {
-                return;
-            }
-
-            EnsureContext(contextId);
+            if (ContextId() is { } contextId) EnsureContext(contextId);
 
             // 版本只前进：导航/交互结束后 controller 会触发这些属性变化；逐个页面补推当前版本，
             // 迟到的旧版本事件不会把注册表拉回去。
@@ -390,19 +389,22 @@ public sealed partial class DesktopApplicationCoordinator
                 var version = VersionOf(tab.PageId);
                 if (version.IsKnown)
                 {
-                    bridge.OnPageVersionAdvanced(contextId, tab.PageId.Value, version);
+                    bridge.OnPageVersionAdvanced(tab.ContextId!.Value.Value, tab.PageId.Value, version);
                 }
             }
 
             if (workspace.ActivePageId is { } active)
             {
-                bridge.OnPageActivated(contextId, active.Value, VersionOf(active));
+                var activeTab = workspace.Tabs.FirstOrDefault(tab => tab.PageId == active);
+                if (activeTab?.ContextId is { } owner)
+                    bridge.OnPageActivated(owner.Value, active.Value, VersionOf(active));
             }
 
             // This is a state observation, not a user revoke command. In particular,
             // startup/ordinary property changes with no selected page must not
             // suspend implicit control of the agent-owned browser.
-            bridge.ObserveAgentTarget(contextId, workspace.AgentTargetPageId?.Value);
+            var selected = workspace.Tabs.FirstOrDefault(tab => tab.PageId == workspace.AgentTargetPageId);
+            bridge.ObserveAgentTarget(selected?.ContextId?.Value, workspace.AgentTargetPageId?.Value);
         };
     }
 

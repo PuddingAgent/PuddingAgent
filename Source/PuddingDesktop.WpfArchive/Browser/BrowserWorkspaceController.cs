@@ -108,10 +108,14 @@ public sealed class AgentBrowserActivityItem : INotifyPropertyChanged
 /// </summary>
 public sealed class BrowserWorkspaceController :
     IBrowserWorkspaceController,
+    IBrowserWorkspaceLifecycle,
     IBrowserCommandHandler,
     INotifyPropertyChanged
 {
     private const int MaxActivityItems = 100;
+
+    public event Action<BrowserContextId>? ContextCreated;
+    public event Action<BrowserContextId>? ContextClosed;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<PageId, IBrowserPage> _pages = new();
@@ -361,15 +365,19 @@ public sealed class BrowserWorkspaceController :
         await _gate.WaitAsync(ct);
         try
         {
-            if (_context?.Id == contextId)
+            if (await _runtime.GetContextAsync(contextId, ct) is not null)
             {
-                foreach (var pageId in _pages.Keys.ToList())
+                foreach (var pageId in _pages.Values.Where(p => p.ContextId == contextId).Select(p => p.Id).ToList())
                     await ClosePageInternalAsync(pageId, ct);
 
                 await _runtime.CloseContextAsync(contextId, ct);
-                _context = null;
-                _activeContextId = null;
-                OnPropertyChanged(nameof(ActiveContextId));
+                ContextClosed?.Invoke(contextId);
+                if (_context?.Id == contextId)
+                {
+                    _context = null;
+                    _activeContextId = null;
+                    OnPropertyChanged(nameof(ActiveContextId));
+                }
             }
         }
         finally
@@ -379,43 +387,93 @@ public sealed class BrowserWorkspaceController :
     }
 
     public async Task<PageId> CreatePageAsync(string? initialUrl = null, bool activate = true, CancellationToken ct = default)
+        => (await CreatePageAsync(_activeContextId ?? throw new InvalidOperationException("No browser context"),
+            new PageCreateOptions { InitialUrl = initialUrl is null ? null : new Uri(initialUrl), Activate = activate }, ct)).Id;
+
+    public async Task<IBrowserContext> CreateContextAsync(BrowserContextOptions options, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
         {
-            if (_context is null)
-                throw new InvalidOperationException("No browser context");
-
-            var page = await _context.NewPageAsync(new PageCreateOptions
+            var created = await _runtime.CreateContextAsync(options with { DriverPolicy = AutomationDriverPolicy.Instance }, ct);
+            try { ContextCreated?.Invoke(created.Id); }
+            catch
             {
-                InitialUrl = initialUrl is not null ? new Uri(initialUrl) : null
-            }, ct);
+                await _runtime.CloseContextAsync(created.Id, CancellationToken.None);
+                throw;
+            }
+            if (_context is null)
+            {
+                _context = created;
+                _activeContextId = created.Id;
+                OnPropertyChanged(nameof(ActiveContextId));
+            }
+            return created;
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<IBrowserPage> CreatePageAsync(BrowserContextId contextId, PageCreateOptions options, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            var context = await _runtime.GetContextAsync(contextId, ct)
+                ?? throw new InvalidOperationException("No browser context");
+            var page = await context.NewPageAsync(options, ct);
 
             _pages[page.Id] = page;
-
-            var tab = new BrowserTabViewModel
+            try
             {
-                PageId = page.Id,
-                Title = string.IsNullOrEmpty(initialUrl) ? "New Tab" : initialUrl,
-                Url = initialUrl ?? "about:blank",
-                IsLoading = !string.IsNullOrEmpty(initialUrl)
-            };
+                var tab = new BrowserTabViewModel
+                {
+                    PageId = page.Id,
+                    ContextId = page.ContextId,
+                    Title = string.IsNullOrEmpty(page.Info.Title) ? "New Tab" : page.Info.Title,
+                    Url = page.Info.Url,
+                    IsLoading = page.IsLoading
+                };
 
-            // ObservableCollection mutation on UI thread
-            await _uiDispatcher.InvokeAsync(() => { Tabs.Add(tab); return Task.CompletedTask; }, ct);
+                // ObservableCollection mutation and registration complete before success.
+                await _uiDispatcher.InvokeAsync(() => { Tabs.Add(tab); return Task.CompletedTask; }, ct);
 
-            if (activate || Tabs.Count == 1)
-            {
-                await ActivateInternalAsync(page.Id, ct);
+                if (options.Activate || Tabs.Count == 1)
+                    await ActivateInternalAsync(page.Id, ct);
+
+                OnPropertyChanged(nameof(Tabs));
+                return page;
             }
-
-            OnPropertyChanged(nameof(Tabs));
-            return page.Id;
+            catch
+            {
+                // Never return a live page whose UI/lifecycle projection failed.
+                await ClosePageInternalAsync(page.Id, CancellationToken.None);
+                throw;
+            }
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    public async Task ActivatePageAsync(BrowserContextId contextId, PageId pageId, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try { RequireOwnedPage(contextId, pageId); await ActivateInternalAsync(pageId, ct); }
+        finally { _gate.Release(); }
+    }
+
+    public async Task ClosePageAsync(BrowserContextId contextId, PageId pageId, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try { RequireOwnedPage(contextId, pageId); await ClosePageInternalAsync(pageId, ct); }
+        finally { _gate.Release(); }
+    }
+
+    private void RequireOwnedPage(BrowserContextId contextId, PageId pageId)
+    {
+        if (!_pages.TryGetValue(pageId, out var page) || page.ContextId != contextId)
+            throw new InvalidOperationException("Page is not owned by the requested workspace context");
     }
 
     public async Task ActivateAsync(PageId pageId, CancellationToken ct)
@@ -438,6 +496,11 @@ public sealed class BrowserWorkspaceController :
     private async Task ActivateInternalAsync(PageId pageId, CancellationToken ct)
     {
         if (!_pages.TryGetValue(pageId, out var page)) return;
+
+        _context = await _runtime.GetContextAsync(page.ContextId, ct)
+            ?? throw new InvalidOperationException("Page context is no longer available");
+        _activeContextId = page.ContextId;
+        OnPropertyChanged(nameof(ActiveContextId));
 
         // Actually activate the Surface (shows it, hides others)
         await _surfaceHost.ActivateAsync(pageId, ct);
@@ -570,7 +633,7 @@ public sealed class BrowserWorkspaceController :
 
             AgentTargetPageId = pageId;
             // 唯一授权动作必须下发到准入侧：否则闸门读不到「用户已选页」，按钮就只是 UI 装饰。
-            _automationGates?.ApplyAgentTarget(_activeContextId?.Value, pageId.Value);
+            _automationGates?.ApplyAgentTarget(_pages[pageId].ContextId.Value, pageId.Value);
             await _uiDispatcher.InvokeAsync(() =>
             {
                 foreach (var tab in Tabs)
@@ -1402,8 +1465,8 @@ public sealed class BrowserWorkspaceController :
     {
         if (_pages.Remove(pageId, out var page))
         {
-            if (_context is not null)
-                await _context.ClosePageAsync(pageId, ct);
+            if (await _runtime.GetContextAsync(page.ContextId, ct) is { } ownerContext)
+                await ownerContext.ClosePageAsync(pageId, ct);
             else
                 await page.DisposeAsync();
 

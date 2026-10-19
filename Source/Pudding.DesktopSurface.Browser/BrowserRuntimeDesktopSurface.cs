@@ -29,13 +29,14 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 DesktopCapabilityError.UiUnavailable($"browser runtime is {_runtime.State}"));
         }
 
-        var created = await _runtime.CreateContextAsync(
-            new BrowserContextOptions
+        var options = new BrowserContextOptions
             {
                 Id = request.ContextId is { } requestedId ? new BrowserContextId(requestedId) : null,
                 Persistent = request.Persistent,
-            },
-            cancellationToken).ConfigureAwait(false);
+            };
+        var created = _workspace is not null
+            ? await _workspace.CreateContextAsync(options, cancellationToken).ConfigureAwait(false)
+            : await _runtime.CreateContextAsync(options, cancellationToken).ConfigureAwait(false);
 
         // 新建上下文里的页面列表必然为空；可信级别取自目标注册表（不是猜）。
         return CapabilityResult<DesktopContextInfo>.Success(
@@ -58,10 +59,14 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 DesktopCapabilityError.InvalidTarget($"context '{request.ContextId}' is not known"));
         }
 
-        await _runtime.CloseContextAsync(contextId, cancellationToken).ConfigureAwait(false);
+        if (_workspace is not null)
+            await _workspace.CloseContextAsync(contextId, cancellationToken).ConfigureAwait(false);
+        else
+            await _runtime.CloseContextAsync(contextId, cancellationToken).ConfigureAwait(false);
         return CapabilityResult<DesktopContextClosed>.Success(new DesktopContextClosed(request.ContextId));
     }
     private readonly IBrowserRuntime _runtime;
+    private readonly IBrowserWorkspaceLifecycle? _workspace;
     private readonly IDesktopBrowserTargetRegistry _targets;
     private readonly BrowserReadingBaselineStore _readings;
     private readonly IScreenshotObservationRegistry _screenshotObservations;
@@ -70,9 +75,11 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         IBrowserRuntime runtime,
         IDesktopBrowserTargetRegistry targets,
         BrowserReadingBaselineStore? readings = null,
-        IScreenshotObservationRegistry? screenshotObservations = null)
+        IScreenshotObservationRegistry? screenshotObservations = null,
+        IBrowserWorkspaceLifecycle? workspace = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        _workspace = workspace;
         _targets = targets ?? throw new ArgumentNullException(nameof(targets));
         // 生产侧传入生命周期端口持有的那一份（页面关闭时会清）；省略则自建一份（测试/独立使用）。
         _readings = readings ?? new BrowserReadingBaselineStore();
@@ -215,11 +222,10 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             }
 
             // 初始地址与是否激活交给运行时一次性完成（与迁移前工具行为一致，且少两次往返）。
-            var created = await newTabContext
-                .NewPageAsync(
-                    new PageCreateOptions { InitialUrl = request.Url, Activate = request.Activate },
-                    cancellationToken)
-                .ConfigureAwait(false);
+            var options = new PageCreateOptions { InitialUrl = request.Url, Activate = request.Activate };
+            var created = _workspace is not null
+                ? await _workspace.CreatePageAsync(newTabContext.Id, options, cancellationToken).ConfigureAwait(false)
+                : await newTabContext.NewPageAsync(options, cancellationToken).ConfigureAwait(false);
 
             var afterNew = await GetContextsAsync(context, cancellationToken).ConfigureAwait(false);
             if (afterNew.IsFailure)
@@ -270,11 +276,17 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
 
         if (request.Action == DesktopTabAction.Close)
         {
-            await browserContext.ClosePageAsync(pageId, cancellationToken).ConfigureAwait(false);
+            if (_workspace is not null)
+                await _workspace.ClosePageAsync(browserContext.Id, pageId, cancellationToken).ConfigureAwait(false);
+            else
+                await browserContext.ClosePageAsync(pageId, cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            await page.BringToFrontAsync(cancellationToken).ConfigureAwait(false);
+            if (_workspace is not null)
+                await _workspace.ActivatePageAsync(browserContext.Id, pageId, cancellationToken).ConfigureAwait(false);
+            else
+                await page.BringToFrontAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var remaining = await GetContextsAsync(context, cancellationToken).ConfigureAwait(false);

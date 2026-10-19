@@ -29,8 +29,10 @@ public sealed class DesktopSurfaceComposition : IDesktopUiSurface
         IBrowserRuntime runtime,
         IDesktopBrowserTargetRegistry targets,
         BrowserReadingBaselineStore? readings,
-        DesktopShellSurface shell)
-        : this(new BrowserRuntimeDesktopSurface(runtime, targets, readings), shell)
+        DesktopShellSurface shell,
+        IBrowserWorkspaceLifecycle workspace)
+        : this(new BrowserRuntimeDesktopSurface(runtime, targets, readings, workspace: workspace
+            ?? throw new ArgumentNullException(nameof(workspace))), shell)
     {
     }
     public DesktopSurfaceComposition(

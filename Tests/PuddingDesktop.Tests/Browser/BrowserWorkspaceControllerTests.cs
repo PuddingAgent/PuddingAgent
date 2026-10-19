@@ -13,6 +13,57 @@ namespace PuddingDesktop.Tests.Browser;
 /// </summary>
 public class BrowserWorkspaceControllerTests
 {
+    [Fact]
+    public async Task WorkspaceLifecycleKeepsRuntimeTabsAndContextOwnershipTogether()
+    {
+        var runtime = new FakeBrowserRuntime();
+        await using var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        IBrowserWorkspaceLifecycle owner = controller;
+        var createdContexts = new List<BrowserContextId>();
+        var closedContexts = new List<BrowserContextId>();
+        controller.ContextCreated += createdContexts.Add;
+        controller.ContextClosed += closedContexts.Add;
+        var first = await owner.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
+        var firstPage = await owner.CreatePageAsync(first.Id, new PageCreateOptions(), CancellationToken.None);
+        Assert.Equal(firstPage.Id, controller.ActivePageId);
+        Assert.Equal(first.Id, Assert.Single(controller.Tabs).ContextId);
+        var second = await owner.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
+        var secondPage = await owner.CreatePageAsync(second.Id, new PageCreateOptions(), CancellationToken.None);
+        Assert.Equal(2, controller.Tabs.Count);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => owner.ClosePageAsync(first.Id, secondPage.Id, CancellationToken.None));
+        await owner.ActivatePageAsync(first.Id, firstPage.Id, CancellationToken.None);
+        Assert.Equal(first.Id, controller.ActiveContextId);
+        await owner.CloseContextAsync(first.Id, CancellationToken.None);
+        Assert.Equal(secondPage.Id, Assert.Single(controller.Tabs).PageId);
+        Assert.Equal(second.Id, controller.ActiveContextId);
+        Assert.Null(await runtime.GetContextAsync(first.Id, CancellationToken.None));
+        Assert.NotNull(await second.GetPageAsync(secondPage.Id, CancellationToken.None));
+        Assert.Equal(new[] { first.Id, second.Id }, createdContexts);
+        Assert.Equal(new[] { first.Id }, closedContexts);
+        await owner.ClosePageAsync(second.Id, secondPage.Id, CancellationToken.None);
+        Assert.Empty(controller.Tabs);
+        Assert.Empty(await second.ListPagesAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task FailedTabProjectionClosesTheCreatedRuntimePage()
+    {
+        var runtime = new FakeBrowserRuntime();
+        await using var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        IBrowserWorkspaceLifecycle owner = controller;
+        var context = await owner.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
+        controller.Tabs.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add)
+                throw new InvalidOperationException("registration failed");
+        };
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            owner.CreatePageAsync(context.Id, new PageCreateOptions(), CancellationToken.None));
+        Assert.Equal("registration failed", error.Message);
+        Assert.Empty(controller.Tabs);
+        Assert.Empty(await context.ListPagesAsync(CancellationToken.None));
+    }
+
     private static BrowserBridgeCommand MakeCommand(
         string name,
         string? pageId = null,

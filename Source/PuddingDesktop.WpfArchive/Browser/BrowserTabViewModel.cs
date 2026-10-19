@@ -15,6 +15,7 @@ public sealed class BrowserTabViewModel : INotifyPropertyChanged
     private bool _isActive;
 
     public required PageId PageId { get; init; }
+    public BrowserContextId? ContextId { get; init; }
 
     public string Title
     {

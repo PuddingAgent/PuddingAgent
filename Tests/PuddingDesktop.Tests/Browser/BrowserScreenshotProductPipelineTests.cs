@@ -129,9 +129,7 @@ public sealed class BrowserScreenshotProductPipelineTests
             var surfaceHost = new FakeBrowserSurfaceHost();
             var uiDispatcher = new FakeUiDispatcher();
             var surface = new DesktopSurfaceComposition(
-                runtime,
-                lifecycle.BrowserTargets,
-                lifecycle.Readings,
+                new BrowserRuntimeDesktopSurface(runtime, lifecycle.BrowserTargets, lifecycle.Readings),
                 new DesktopShellSurface(new FakeShellFacilities(), new FakeShellHostFacilities()));
             var executor = DesktopBrowserExecutorComposition.Create(
                 new InlineDesktopUiDispatcher(),

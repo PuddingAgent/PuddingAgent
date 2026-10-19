@@ -20,6 +20,61 @@ public sealed class WebViewMappingTests
     private static readonly DesktopPageTarget Target = new("ctx-1", "p-1");
 
     [Fact]
+    public async Task ProductManagementUsesWorkspaceOwnerInsteadOfRawDriver()
+    {
+        var runtime = Runtime(1, 1);
+        var owner = new WorkspaceOwner(runtime);
+        var surface = new BrowserRuntimeDesktopSurface(runtime, new WebViewFakeTargets(), workspace: owner);
+        var createdContext = await surface.CreateContextAsync(new BrowserContextCreateRequest(), Call, CancellationToken.None);
+        Assert.False(createdContext.IsFailure);
+        var created = await surface.TabsAsync(Call, BrowserTabsRequest.New("ctx-1", activate: false), CancellationToken.None);
+        Assert.False(created.IsFailure);
+        Assert.False(owner.Options!.Activate);
+        foreach (var action in new[] { DesktopTabAction.Activate, DesktopTabAction.Close })
+        {
+            var result = await surface.TabsAsync(Call, new BrowserTabsRequest(Target, action, DesktopPageVersion.Require(1)), CancellationToken.None);
+            Assert.False(result.IsFailure);
+        }
+        Assert.False((await surface.CloseContextAsync(new BrowserContextCloseRequest("ctx-1"), Call, CancellationToken.None)).IsFailure);
+        Assert.Equal(new[] { "context.new", "page.new", "page.activate", "page.close", "context.close" }, owner.Calls);
+        // The raw fake runtime/context throws for management and BringToFront;
+        // reaching here proves none of those bypasses was used.
+    }
+
+    [Fact]
+    public async Task FailedWorkspaceCreationIsNotRetriedThroughTheRawDriver()
+    {
+        var runtime = Runtime(1, 1);
+        var owner = new WorkspaceOwner(runtime) { RejectCreate = true };
+        var surface = new BrowserRuntimeDesktopSurface(runtime, new WebViewFakeTargets(), workspace: owner);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            surface.TabsAsync(Call, BrowserTabsRequest.New("ctx-1"), CancellationToken.None));
+        Assert.Equal("workspace projection failed", error.Message);
+        Assert.Equal(new[] { "page.new" }, owner.Calls);
+    }
+
+    private sealed class WorkspaceOwner(WebViewFakeRuntime runtime) : IBrowserWorkspaceLifecycle
+    {
+        public List<string> Calls { get; } = [];
+        public PageCreateOptions? Options { get; private set; }
+        public bool RejectCreate { get; init; }
+        public Task<IBrowserContext> CreateContextAsync(BrowserContextOptions options, CancellationToken ct)
+        { Calls.Add("context.new"); return Task.FromResult<IBrowserContext>(runtime.Contexts.Single()); }
+        public Task CloseContextAsync(BrowserContextId contextId, CancellationToken ct)
+        { Calls.Add("context.close"); return Task.CompletedTask; }
+        public Task<IBrowserPage> CreatePageAsync(BrowserContextId contextId, PageCreateOptions options, CancellationToken ct)
+        {
+            Calls.Add("page.new"); Options = options;
+            if (RejectCreate) throw new InvalidOperationException("workspace projection failed");
+            return Task.FromResult<IBrowserPage>(runtime.Pages[$"{contextId.Value}/p-1"]);
+        }
+        public Task ActivatePageAsync(BrowserContextId contextId, PageId pageId, CancellationToken ct)
+        { Calls.Add("page.activate"); return Task.CompletedTask; }
+        public Task ClosePageAsync(BrowserContextId contextId, PageId pageId, CancellationToken ct)
+        { Calls.Add("page.close"); return Task.CompletedTask; }
+    }
+
+    [Fact]
     public async Task SuccessfulNavigationReportsCompletedAndTheNewVersion()
     {
         var runtime = Runtime(pageVersion: 6, advanceTo: 7, navigation: new NavigationResult

@@ -37,6 +37,8 @@ draft: false
 
 将 `DesktopService` 的浏览器执行部分从 `DesktopCapabilityChannelComposition` 的生命周期中解耦：浏览器工作区就绪即构造，Bridge 的导航、快照、交互、管理及截图全部调用它。`BrowserWorkspaceController` 保留用户 UI 的薄协调职责，Agent 命令不得绕过执行器直接操作页面。
 
+执行器表面的管理操作必须经 Abstractions 中的 `IBrowserWorkspaceLifecycle` 调用工作区所有者；不能直接在底层 runtime 创建、激活或关闭页面后就返回成功。工作区负责真实资源、页签、可见表面及生命周期登记同步；登记/展示失败须回收刚创建的资源并报告失败。每个页签保存自己的 contextId，关闭上下文只回收其所属页面。内容操作仍由统一执行器调用驱动，此端口不增加第二套导航/交互 handler。产品组合构造必须传入所有者，缺失在构造期拒绝。
+
 连接选择在发起前固定；已派发或结果未知的操作不得跨传输重试。明确放弃本期“双后端同时实现同一浏览器语义”的目标。
 
 ### D3：一个授权会话、一个执行入口、一个页面所有者
