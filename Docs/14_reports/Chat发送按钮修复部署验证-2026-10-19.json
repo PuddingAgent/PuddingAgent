@@ -1,0 +1,74 @@
+{
+  "recordedAt": "2026-10-19T11:08:02.8350431+08:00",
+  "frontendVersion": "6.9.9",
+  "sourceRevision": "73b55ba",
+  "purpose": "frontend-only-development-overlay",
+  "baseCompanionRevision": "7664eb2",
+  "tests": {
+    "bundleBudget": "passed",
+    "suites": 5,
+    "passed": 71,
+    "note": "4 suites / 51 tests plus final IntentConsole suite / 20 tests; existing Jest open handles warning remains",
+    "typeScript": "passed"
+  },
+  "before": {
+    "badge": "v6.9.8+dirty · 7664eb2 · 2026-10-19 09:49",
+    "samples": [
+      {
+        "composing": false,
+        "enabled": true,
+        "posted": 1,
+        "draftAfter": ""
+      },
+      {
+        "composing": true,
+        "enabled": true,
+        "posted": 0,
+        "draftAfter": "输入法发送回归测试"
+      }
+    ],
+    "postCount": 2,
+    "postPaths": [
+      "http://127.0.0.1/api/sessions/main",
+      "http://127.0.0.1/api/sessions/main"
+    ]
+  },
+  "after": {
+    "badge": "v6.9.9+dirty · 73b55ba · 2026-10-19 11:04",
+    "samples": [
+      {
+        "composing": false,
+        "turnRequests": 1,
+        "sentText": "普通发送回归测试",
+        "draftRestored": true,
+        "unexpectedWrites": [],
+        "errors": []
+      },
+      {
+        "composing": true,
+        "turnRequests": 1,
+        "sentText": "输入法发送回归测试",
+        "draftRestored": true,
+        "unexpectedWrites": [],
+        "errors": []
+      }
+    ],
+    "allWritesIntercepted": true
+  },
+  "deployedFiles": 159,
+  "httpIndexSha256": "C6F6EAEF805DFE542C1A6C2C5741484F3C558B72D406C01D84513F6E417406B5",
+  "desktop": {
+    "browserBridgeProtocol": 3,
+    "corePid": 29300,
+    "coreStartupMs": 4326,
+    "chatPageObserved": true,
+    "pid": 35812,
+    "uiBadge": "v6.9.9+dirty · 73b55ba · 2026-10-19 11:04"
+  },
+  "limitations": [
+    "IME failure mechanism reproduced with synthetic composition events; original native IME event sequence was not recorded.",
+    "All diagnostic browser writes were intercepted. No real model round or JD task was submitted.",
+    "Only frontend assets changed; base companion manifest describes the original 7664eb2 package, not this static overlay.",
+    "Other unrelated worktree edits remain; build badge honestly includes +dirty. Core startup value is one warm-start observation, not a startup-performance fix."
+  ]
+}
