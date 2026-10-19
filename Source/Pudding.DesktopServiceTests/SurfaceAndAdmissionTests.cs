@@ -1,5 +1,6 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
+using PuddingBrowser.Abstractions;
 
 namespace DesktopServiceTests;
 
@@ -34,6 +35,42 @@ public sealed class SurfaceAndAdmissionTests
         Assert.DoesNotContain("boom", response.Error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("机密", response.Error.Message, StringComparison.Ordinal);
         Assert.Contains("InvalidOperationException", response.Error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SurfaceBrowserOperationException_KeepsItsStableCodeAndMessage()
+    {
+        // 领域异常（BrowserOperationException）自带稳定 code，契约就是「让上层按码处理」。
+        // 若被压成 internal，调用方只能看到 "ui surface failed (...)"，"多匹配"这类可自救语义全部丢失。
+        var harness = ServiceHarness.Create(hasThreadAccess: true);
+        harness.Surface.NavigateHandler = (_, _, _) =>
+            throw new BrowserOperationException(
+                "browser_locator_ambiguous",
+                "the locator matched 5 elements: disambiguate with a more specific locator");
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.WebViewNavigate, harness.NavigateRequest(ServiceHarness.AgentPage));
+
+        Assert.Equal(DesktopCapabilityErrorCode.InvalidRequest, response.Error!.Code);
+        Assert.Equal("invalid_request", response.Error.WireCode);
+        // 原码原文必须可读：工具侧那张按 browser_* 码写的修复提示表靠它命中。
+        Assert.Contains("browser_locator_ambiguous", response.Error.Message, StringComparison.Ordinal);
+        Assert.Contains("matched 5 elements", response.Error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SurfaceUnknownBrowserOperationCode_ReportsCodeButNotPageText()
+    {
+        var harness = ServiceHarness.Create(hasThreadAccess: true);
+        harness.Surface.NavigateHandler = (_, _, _) =>
+            throw new BrowserOperationException("browser_weird_code", "boom: page title was 机密标题");
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.WebViewNavigate, harness.NavigateRequest(ServiceHarness.AgentPage));
+
+        Assert.Equal(DesktopCapabilityErrorCode.InternalError, response.Error!.Code);
+        Assert.Contains("browser_weird_code", response.Error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("机密", response.Error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

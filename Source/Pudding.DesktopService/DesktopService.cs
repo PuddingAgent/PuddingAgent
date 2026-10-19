@@ -1,6 +1,7 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using Pudding.DesktopConnection;
+using PuddingBrowser.Abstractions;
 using PuddingBrowser.Automation;
 
 namespace Pudding.DesktopService;
@@ -907,12 +908,52 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             // 已经进入 surface：可能已产生副作用（由能力的 Traits 决定）。
             return CapabilityResult<TResult>.Failure(MapCancellation(capability, context, started: true));
         }
+        catch (BrowserOperationException ex)
+        {
+            // 领域异常自带**稳定 code**（BrowserOperationException.Code 的契约就是「让上层按码处理，
+            // 不要解析异常文本」）。若像普通异常一样压成 internal，调用方只会看到
+            // "ui surface failed (BrowserOperationException)"，「多匹配 / 未命中 / 被遮挡 / 不支持」
+            // 这些本可自救的语义会全部丢失（缺陷登记：浏览器工具缺口清单 G6/G31）。
+            return CapabilityResult<TResult>.Failure(MapBrowserOperationFailure(ex));
+        }
         catch (Exception ex)
         {
             // 不把 surface 的异常消息透出去（可能含页面数据）；只保留异常类型。
             return CapabilityResult<TResult>.Failure(
                 DesktopCapabilityError.Internal($"ui surface failed ({ex.GetType().Name})"));
         }
+    }
+
+    /// <summary>
+    /// <see cref="BrowserOperationException"/> → 能力错误码：把**稳定 code** 翻成语义枚举，消息沿用异常自身的文本
+    /// （<see cref="DesktopCapabilityError"/> 构造时会再截断长度并剔除控制字符）。
+    /// 未登记的码**不外泄消息**、只回码本身——既保住可诊断性，也不把页面数据带出去。
+    /// </summary>
+    private static DesktopCapabilityError MapBrowserOperationFailure(BrowserOperationException ex)
+    {
+        // 把**稳定 code 原文**带进消息：能力层的错误码是枚举，若只给 invalid_request / invalid_target，
+        // 工具侧那张按「browser_* 码」写的修复提示表就永远命中不了（缺口 G6）。
+        var detail = $"{ex.Code}: {ex.Message}";
+
+        return ex.Code switch
+        {
+        // 歧义：绝不静默选第一个，也绝不重试（同样的定位一定再次歧义）。
+            "browser_locator_ambiguous" => new(DesktopCapabilityErrorCode.InvalidRequest, detail, retryable: false),
+        "browser_invalid_arguments" => new(DesktopCapabilityErrorCode.InvalidRequest, detail, retryable: false),
+        // 零命中可能只是页面还没渲染完：允许等一等再试。
+        "browser_element_not_found" => new(DesktopCapabilityErrorCode.InvalidTarget, detail, retryable: true),
+        // 可见性/视口/遮挡/禁用：同一次请求再发一次不会变好 ⇒ 不可自动重试。
+        "browser_element_not_visible"
+            or "browser_element_not_in_viewport"
+            or "browser_element_obstructed"
+            or "browser_element_disabled"
+            => new(DesktopCapabilityErrorCode.InvalidTarget, detail, retryable: false),
+        "browser_operation_not_supported"
+            => new(DesktopCapabilityErrorCode.UnsupportedCapability, detail, retryable: false),
+        "stale_element_reference" or "page_version_mismatch"
+            => new(DesktopCapabilityErrorCode.PageVersionMismatch, detail, retryable: false),
+        _ => DesktopCapabilityError.Internal($"browser operation failed ({ex.Code})"),
+        };
     }
 
     /// <summary>
