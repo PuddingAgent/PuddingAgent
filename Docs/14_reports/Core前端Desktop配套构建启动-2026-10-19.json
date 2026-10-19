@@ -1,0 +1,125 @@
+{
+  "deployment": {
+    "backup": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\browser-before-20158a0-full",
+    "time": "2026-10-19T09:25:22.27465+08:00",
+    "source": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\browser-live-20158a0-full",
+    "installed": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64"
+  },
+  "frontend": {
+    "sha256": "656794CF68AA2011DBDC8FE263E83A51DECA037134FDF0BD636F50DE5802335A",
+    "stamp": "version:\"6.9.6\",builtAt:\"2026-10-19T01:24:16.014Z\"",
+    "servedAsset": "umi.1ba8d706.js",
+    "buildErrors": 0,
+    "packageFiles": 1624,
+    "frontendFiles": 159,
+    "version": "6.9.6",
+    "healthStatus": 200,
+    "buildWarnings": 31
+  },
+  "runtime": {
+    "desktopProtocol": {
+      "informationalVersion": "1.0.0+20158a0cb8da1f92ae44636fb4697e6100c91bbf",
+      "mvid": "9a25dc7c-c036-45ad-8bc8-f9cc566aea6f",
+      "protocolVersion": 3
+    },
+    "coreProtocol": {
+      "informationalVersion": "1.0.0+20158a0cb8da1f92ae44636fb4697e6100c91bbf",
+      "mvid": "6fd105e9-8b01-48bd-82c6-fb71c00b2006",
+      "protocolVersion": 3
+    },
+    "desktop": {
+      "informationalVersion": "1.0.0+20158a0cb8da1f92ae44636fb4697e6100c91bbf",
+      "mvid": "518014dc-fdf2-45c4-9e6b-ead60c91ae49"
+    },
+    "sourceRevision": "20158a0cb8da1f92ae44636fb4697e6100c91bbf",
+    "modules": [
+      {
+        "process": "PuddingDesktop.exe",
+        "pid": 92516,
+        "module": "PuddingDesktop.dll",
+        "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingDesktop.dll",
+        "sha256": "CCB910F051686BB2A64BC5D3899D0C34A01C561B0CB0A232417AF44A9BB58330",
+        "manifestMatch": true
+      },
+      {
+        "process": "PuddingDesktop.exe",
+        "pid": 92516,
+        "module": "Pudding.DesktopService.dll",
+        "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\Pudding.DesktopService.dll",
+        "sha256": "16C8FE5783A959031754EBF1E4F3784D3FA7CEC56F6E13532FEADC166DF94EA6",
+        "manifestMatch": true
+      },
+      {
+        "process": "PuddingDesktop.exe",
+        "pid": 92516,
+        "module": "PuddingBrowser.Authorization.dll",
+        "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingBrowser.Authorization.dll",
+        "sha256": "8710033DFE86B4D73B4D056FF64E07619E186271174C67AEAF3434EBBC65EF5E",
+        "manifestMatch": true
+      },
+      {
+        "process": "PuddingDesktop.exe",
+        "pid": 92516,
+        "module": "PuddingBrowser.WinUI.dll",
+        "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingBrowser.WinUI.dll",
+        "sha256": "308F1A21C3DE5512B187F6B523FECE1C058A3FCD2A1EDFFAE2042FCBEBD88208",
+        "manifestMatch": true
+      },
+      {
+        "process": "PuddingDesktop.exe",
+        "pid": 92516,
+        "module": "Pudding.DesktopSurface.Browser.dll",
+        "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\Pudding.DesktopSurface.Browser.dll",
+        "sha256": "C284BC6AB2981F701CD8E6E591F9C3CFB57893403A8F9730397993F941B577DC",
+        "manifestMatch": true
+      },
+      {
+        "process": "PuddingDesktop.exe",
+        "pid": 92516,
+        "module": "PuddingBrowser.Protocol.dll",
+        "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingBrowser.Protocol.dll",
+        "sha256": "D5462651BBE0841681B7D12627FEB4BB338A42B15BA180FD2BC33D7D4118428B",
+        "manifestMatch": true
+      },
+      {
+        "process": "PuddingAgent.exe",
+        "pid": 107276,
+        "module": "PuddingAgent.dll",
+        "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\core\\PuddingAgent.dll",
+        "sha256": "3E7C89A88447E55BDEFEAD78020DD8F9A240436FAF682FD1D774E989B390731B",
+        "manifestMatch": true
+      },
+      {
+        "process": "PuddingAgent.exe",
+        "pid": 107276,
+        "module": "PuddingBrowser.Protocol.dll",
+        "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\core\\PuddingBrowser.Protocol.dll",
+        "sha256": "3E881196B7D4025318EE130B417D4706BB35E216FD5BBCF12578138BD78F84F2",
+        "manifestMatch": true
+      }
+    ],
+    "processes": [
+      {
+        "Name": "PuddingDesktop.exe",
+        "ProcessId": 92516,
+        "ParentProcessId": 70876,
+        "ExecutablePath": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingDesktop.exe"
+      },
+      {
+        "Name": "PuddingAgent.exe",
+        "ProcessId": 107276,
+        "ParentProcessId": 92516,
+        "ExecutablePath": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\core\\PuddingAgent.exe"
+      }
+    ],
+    "capturedAt": "2026-10-19T09:26:15.9764411+08:00",
+    "dirty": true,
+    "hello": [
+      "2026-10-19 09:26:02.454 +08:00 [INF] [tag:BrowserBridge] [trace:6d0564f14df3a1f1b66858a1b0aa4bb5] [session:] Browser Bridge Hello: desktop=2a75181012094b8784ea17bd3f1b4d27 protocol=3 build=build=1.0.0+20158a0cb8da1f92ae44636fb4697e6100c91bbf rev=20158a0cb8da1f92ae44636fb4697e6100c91bbf dirty=unknown mvid=518014dc-fdf2-45c4-9e6b-ead60c91ae49 path=D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingDesktop.dll"
+    ],
+    "core": {
+      "informationalVersion": "1.0.0",
+      "mvid": "bd47f021-7da5-4b7b-9453-6ca9182482a2"
+    }
+  }
+}
