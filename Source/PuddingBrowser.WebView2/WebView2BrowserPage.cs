@@ -84,6 +84,10 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
         if (surface is not null)
         {
             _coreWebView = surface.CoreWebView;
+            // EnsureCoreWebView2Async has already created the initial about:blank
+            // document. Its creation predates these navigation subscriptions.
+            // Version 0 remains reserved for a page without a live surface.
+            _pageVersion = 1;
             SubscribeCoreWebViewEvents(surface.CoreWebView);
         }
 
@@ -93,7 +97,7 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
             ContextId = contextId,
             Title = string.Empty,
             Url = "about:blank",
-            PageVersion = 0
+            PageVersion = PageVersion
         };
     }
 

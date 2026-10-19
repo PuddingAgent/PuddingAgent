@@ -57,10 +57,22 @@ internal sealed class SmokeApplication(SmokeOptions options) : Application
             }, CancellationToken.None);
             var page = await context.NewPageAsync(new PageCreateOptions
             {
-                InitialUrl = options.Url,
                 Activate = true
             }, CancellationToken.None);
             await surfaceHost.ActivateAsync(page.Id, CancellationToken.None);
+
+            // A real initialized WebView2 already owns an about:blank document.
+            // Check before navigating: supplying InitialUrl used to hide version 0.
+            var blankVersion = page.PageVersion;
+            var listedBlank = (await context.ListPagesAsync(CancellationToken.None)).Single();
+            _ = await page.SnapshotAsync(new SnapshotOptions(), CancellationToken.None);
+            if (blankVersion <= 0 || page.PageVersion != blankVersion || listedBlank.PageVersion != blankVersion
+                || page.Info.PageVersion != blankVersion || listedBlank.Url != "about:blank")
+                throw new InvalidOperationException($"Blank document has no consistent live version: page={blankVersion}, list={listedBlank.PageVersion}, info={page.Info.PageVersion}");
+
+            await page.GotoAsync(options.Url, new NavigationOptions(), CancellationToken.None);
+            if (page.PageVersion <= blankVersion)
+                throw new InvalidOperationException("First navigation did not advance the blank document version");
 
             var initial = await page.SnapshotAsync(new SnapshotOptions
             {
@@ -68,15 +80,6 @@ internal sealed class SmokeApplication(SmokeOptions options) : Application
                 MaxTextLength = 30_000,
                 MaxDepth = 20
             }, CancellationToken.None);
-            var save = AssertSingle(await page.QueryAllAsync(new Locator
-            {
-                Kind = LocatorKind.Role,
-                Value = "button",
-                Name = "Save profile",
-                Exact = true
-            }, CancellationToken.None), "save button");
-            var staleRef = save.Info.Ref;
-
             var nameLocator = new Locator { Kind = LocatorKind.Label, Value = "Name", Exact = true };
             var saveLocator = new Locator
             {
@@ -99,6 +102,8 @@ internal sealed class SmokeApplication(SmokeOptions options) : Application
                 ["designer"], CancellationToken.None);
             await page.CheckAsync(new Locator { Kind = LocatorKind.Css, Value = "#terms" },
                 true, CancellationToken.None);
+            // Scroll/input may invalidate observations: locate after those actions.
+            var save = AssertSingle(await page.QueryAllAsync(saveLocator, CancellationToken.None), "save button");
             await page.ClickAsync(new Locator { Kind = LocatorKind.Ref, Value = save.Info.Ref },
                 new ClickOptions(), CancellationToken.None);
             var wait = await page.WaitForAsync(new WaitCondition
@@ -118,6 +123,10 @@ internal sealed class SmokeApplication(SmokeOptions options) : Application
             if (!string.Equals(final.AccessibilityTree?.Contains("Saved", StringComparison.Ordinal), true))
                 throw new InvalidOperationException("Final snapshot does not contain Saved status");
 
+            // Prove this ref is valid immediately before navigation; otherwise an
+            // already-stale ref would make the navigation invalidation test vacuous.
+            var staleRef = AssertSingle(await page.QueryAllAsync(saveLocator, CancellationToken.None), "save button").Info.Ref;
+            _ = await page.QueryAsync(new Locator { Kind = LocatorKind.Ref, Value = staleRef }, CancellationToken.None);
             await page.GotoAsync(new Uri(options.Url, "frame"), new NavigationOptions(), CancellationToken.None);
             string? staleCode = null;
             try
@@ -136,6 +145,7 @@ internal sealed class SmokeApplication(SmokeOptions options) : Application
                 @event = "phase2a3-webview2-smoke-passed",
                 pageId = page.Id.Value,
                 pageVersion = page.PageVersion,
+                blankVersion,
                 initial.NodeCount,
                 initial.Truncated,
                 saveRef = staleRef,
@@ -154,6 +164,7 @@ internal sealed class SmokeApplication(SmokeOptions options) : Application
                 @event = "phase2a3-webview2-smoke-failed",
                 error = ex.GetType().Name,
                 message = ex.Message,
+                stackTrace = ex.StackTrace,
                 dataRoot = options.DataRoot
             }));
             ExitCode = 1;

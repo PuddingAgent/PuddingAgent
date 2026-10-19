@@ -2,7 +2,7 @@
 title: ADR-097 Agent 浏览器控制一期闭环与单一执行链
 author: hyfree
 date: 2026-10-18
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-19
 status: active
 description: "以真实 Agent 在 PuddingDesktop 中完成可见浏览器任务作为一期交付目标；选择 Bridge 单一路由、独立于传输的 Desktop 执行器、单一会话控制权及分层验收。"
 categories: [docs, architecture]
@@ -60,6 +60,8 @@ Bridge 在线只证明传输活性，不授予任意页面的控制权。取消�
 ### D5：观察驱动动作，结果报告实际执行事实
 
 默认循环是“发现目标 → 导航/等待 → 快照 → 从快照定位 → 一个动作 → 新观察验证”。复用有版本的 ref；动作提交后不重查旧 Locator。读取不推进文档版本，导航后旧 ref 必须失效。
+
+页面版本由持有真实文档的驱动签发。WebView2 初始化完成后已存在初始 `about:blank` 文档，即使没有传入 URL、尚未收到导航完成事件，也必须有正数版本；0 只表示没有已知的活文档。页面与发现描述须一致，首次导航继续递增。不能在工具或适配器中把 0 强行转换成 1，也不能删除新建页的后置版本校验。组件门禁必须覆盖“不传 URL 新建 → 空白页读取 → 首次导航 → 新观察 → 交互”，不能只测试带 InitialUrl 的新建。
 
 工具回执使用原 operationId，区分未执行、已派发、已观察结果和结果未知。`inputBackend`、滚动结果、表单断言来自执行器的实际结果，不能从请求参数反推成功。`input_mode=native` 未支持时明确拒绝，不降为 DOM 后回报 native。
 
