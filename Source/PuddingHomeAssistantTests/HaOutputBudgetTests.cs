@@ -161,4 +161,87 @@ public sealed class HaOutputBudgetTests
     {
         Assert.IsNull(HaOutputBudget.ResolveName(null));
     }
+
+    private static HaState Classed(string entityId, string deviceClass, string friendlyName)
+    {
+        var attrs = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["device_class"] = JsonSerializer.SerializeToElement(deviceClass),
+            ["friendly_name"] = JsonSerializer.SerializeToElement(friendlyName),
+        };
+
+        return new HaState(entityId, "1", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, attrs);
+    }
+
+    [TestMethod]
+    public void Project_FiltersByDeviceClass()
+    {
+        var states = new[]
+        {
+            Classed("sensor.a_temp", "temperature", "主卧温度"),
+            Classed("sensor.b_hum", "humidity", "主卧湿度"),
+            Classed("sensor.c_batt", "battery", "主卧电量"),
+            new HaState("sensor.d_plain", "1", null, null, null),
+        };
+
+        var page = HaOutputBudget.Project(states, 10, deviceClasses: ["temperature", "humidity"]);
+
+        Assert.AreEqual(2, page.Total);
+        CollectionAssert.AreEqual(
+            new[] { "sensor.a_temp", "sensor.b_hum" },
+            page.Items.Select(x => x.EntityId).ToArray());
+    }
+
+    [TestMethod]
+    public void Project_FiltersByNameContainsCaseInsensitively()
+    {
+        var states = new[]
+        {
+            Classed("sensor.a", "temperature", "客厅空气净化器  温度"),
+            Classed("sensor.b", "temperature", "北卧室温湿度计  温度"),
+            Classed("sensor.c", "humidity", "客厅湿度"),
+        };
+
+        var page = HaOutputBudget.Project(states, 10, nameContains: "客厅");
+
+        Assert.AreEqual(2, page.Total);
+        CollectionAssert.AreEqual(
+            new[] { "sensor.a", "sensor.c" },
+            page.Items.Select(x => x.EntityId).ToArray());
+    }
+
+    [TestMethod]
+    public void Project_AfterCursorPaginatesWithoutGapsOrDuplicates()
+    {
+        var states = Enumerable.Range(0, 5).Select(i => State($"sensor.s{i}")).ToArray();
+
+        var first = HaOutputBudget.Project(states, 2);
+        Assert.AreEqual(2, first.Returned);
+        Assert.IsTrue(first.Truncated);
+        CollectionAssert.AreEqual(new[] { "sensor.s0", "sensor.s1" }, first.Items.Select(x => x.EntityId).ToArray());
+        Assert.AreEqual("sensor.s1", first.NextAfter);
+
+        var second = HaOutputBudget.Project(states, 2, after: first.NextAfter);
+        CollectionAssert.AreEqual(new[] { "sensor.s2", "sensor.s3" }, second.Items.Select(x => x.EntityId).ToArray());
+        Assert.AreEqual("sensor.s3", second.NextAfter);
+        Assert.AreEqual(3, second.Total, "total 是过滤后的全集，不随分页变化");
+
+        var third = HaOutputBudget.Project(states, 2, after: second.NextAfter);
+        Assert.AreEqual(1, third.Returned);
+        Assert.IsFalse(third.Truncated);
+        Assert.IsNull(third.NextAfter, "最后一页不得给游标，否则调用方会无限循环");
+    }
+
+    [TestMethod]
+    public void Project_OrdersByEntityIdSoCursorIsStable()
+    {
+        // 输入乱序：HA 不保证返回顺序稳定，游标必须基于排序后的全序。
+        var states = new[] { State("sensor.c"), State("sensor.a"), State("sensor.b") };
+
+        var page = HaOutputBudget.Project(states, 10);
+
+        CollectionAssert.AreEqual(
+            new[] { "sensor.a", "sensor.b", "sensor.c" },
+            page.Items.Select(x => x.EntityId).ToArray());
+    }
 }

@@ -135,6 +135,15 @@ public sealed class HaStatesArgs
 
     [ToolParam("Include full attributes. Default false because attributes can be large or sensitive.")]
     public bool IncludeAttributes { get; set; }
+
+    [ToolParam("Filter by HA device_class, comma separated, e.g. 'temperature,humidity'. Entities without a device_class are excluded.")]
+    public string? DeviceClass { get; set; }
+
+    [ToolParam("Case-insensitive substring match on the friendly name, e.g. '\u5BA2\u5385'.")]
+    public string? NameContains { get; set; }
+
+    [ToolParam("Paging cursor: pass the previous page's nextAfter to continue. Required to enumerate a domain larger than the limit (e.g. 560 sensors).")]
+    public string? After { get; set; }
 }
 
 [Tool(
@@ -177,7 +186,10 @@ public sealed class HaStatesTool(
                 HaOutputBudget.NormalizeLimit(args.Limit),
                 fields: args.IncludeAttributes ? ["attributes"] : null,
                 domains: string.IsNullOrWhiteSpace(args.Domain) ? null : [args.Domain!],
-                entityId: args.EntityId);
+                entityId: args.EntityId,
+                after: args.After,
+                deviceClasses: SplitFilter(args.DeviceClass),
+                nameContains: args.NameContains);
 
             var payload = new
             {
@@ -185,10 +197,12 @@ public sealed class HaStatesTool(
                 total = page.Total,
                 returned = page.Returned,
                 truncated = page.Truncated,
+                nextAfter = page.NextAfter,
                 estimatedBytes = page.EstimatedBytes,
                 items = page.Items.Select(i => new
                 {
                     entityId = i.EntityId,
+                    name = i.Name,
                     state = i.State,
                     lastChanged = i.LastChanged,
                     lastUpdated = i.LastUpdated,
@@ -203,6 +217,20 @@ public sealed class HaStatesTool(
             logger.LogWarning("ha_states 失败: alias={Alias} code={Code}", instance.Alias, ex.Code);
             return HaToolSupport.Fail(ex);
         }
+    }
+
+    private static IReadOnlyCollection<string>? SplitFilter(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(p => p.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return parts.Length == 0 ? null : parts;
     }
 }
 

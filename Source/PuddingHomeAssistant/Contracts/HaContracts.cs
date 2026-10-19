@@ -73,12 +73,19 @@ public sealed record HaStateView(
     string? Name = null);
 
 /// <summary>一页状态结果。必须携带 total/returned/truncated，禁止静默截断。</summary>
+/// <param name="NextAfter">
+/// 下一页游标：当本页因 <c>limit</c> 或字节预算被截断时为最后一条的 entity_id，
+/// 调用方把它作为下一次的 <c>after</c> 即可继续往后读。没有下一页时为 null。
+/// <remarks>游标只在按 entity_id 序排序后才有意义，因此 <see cref="Policy.HaOutputBudget.Project"/>
+/// 先排序再游标。</remarks>
+/// </param>
 public sealed record HaStatePage(
     IReadOnlyList<HaStateView> Items,
     int Total,
     int Returned,
     bool Truncated,
-    int EstimatedBytes);
+    int EstimatedBytes,
+    string? NextAfter = null);
 
 /// <summary>一次动作调用请求。domain/service 会被规范化与策略校验。</summary>
 public sealed record HaServiceCall(

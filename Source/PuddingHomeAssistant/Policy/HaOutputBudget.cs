@@ -42,7 +42,10 @@ public static class HaOutputBudget
         int limit,
         IReadOnlyCollection<string>? fields = null,
         IReadOnlyCollection<string>? domains = null,
-        string? entityId = null)
+        string? entityId = null,
+        string? after = null,
+        IReadOnlyCollection<string>? deviceClasses = null,
+        string? nameContains = null)
     {
         ArgumentNullException.ThrowIfNull(states);
 
@@ -60,7 +63,32 @@ public static class HaOutputBudget
             filtered = filtered.Where(s => set.Contains(s.Domain));
         }
 
-        var matched = filtered.ToList();
+        // 排序必须在游标之前：HA 返回顺序不保证稳定，而 `after` 是「比它大的下一个」，
+        // 只有按 entity_id 全序排过才能保证不漏、不重。
+        var matched = filtered.OrderBy(s => s.EntityId, StringComparer.Ordinal).ToList();
+
+        if (!string.IsNullOrWhiteSpace(after))
+        {
+            matched = matched
+                .Where(s => string.CompareOrdinal(s.EntityId, after) > 0)
+                .ToList();
+        }
+
+        if (deviceClasses is { Count: > 0 })
+        {
+            var wanted = new HashSet<string>(deviceClasses, StringComparer.OrdinalIgnoreCase);
+            matched = matched
+                .Where(s => ResolveDeviceClass(s.Attributes) is { } dc && wanted.Contains(dc))
+                .ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(nameContains))
+        {
+            matched = matched
+                .Where(s => ResolveName(s.Attributes) is { } n &&
+                            n.Contains(nameContains, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
         var take = Math.Min(effectiveLimit, matched.Count);
 
         var includeAttributes = fields is { Count: > 0 } &&
@@ -84,7 +112,10 @@ public static class HaOutputBudget
             var bytes = Measure(views);
             if (bytes <= MaxBytes)
             {
-                return new HaStatePage(views, matched.Count, views.Count, views.Count < matched.Count, bytes);
+                var truncated = views.Count < matched.Count;
+                return new HaStatePage(
+                    views, matched.Count, views.Count, truncated, bytes,
+                    truncated ? views[^1].EntityId : null);
             }
 
             var keep = Math.Max(1, views.Count / 2);
@@ -96,7 +127,8 @@ public static class HaOutputBudget
                     views[0] with { Attributes = null },
                 };
                 var singleBytes = Measure(views);
-                return new HaStatePage(views, matched.Count, views.Count, true, singleBytes);
+                return new HaStatePage(
+                    views, matched.Count, views.Count, true, singleBytes, views[^1].EntityId);
             }
 
             views = views.Take(keep).ToList();
@@ -120,6 +152,23 @@ public static class HaOutputBudget
 
         var value = name.GetString();
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    /// <summary>
+    /// 从 attributes 中取出 <c>device_class</c>（HA 的语义分类，如 temperature / humidity）。
+    /// 它让调用方不必靠实体名猜类型。
+    /// </summary>
+    public static string? ResolveDeviceClass(IReadOnlyDictionary<string, JsonElement>? attributes)
+    {
+        if (attributes is null ||
+            !attributes.TryGetValue("device_class", out var value) ||
+            value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var text = value.GetString();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
     /// <summary>序列化后的 UTF-8 字节数（用于预算判定）。</summary>
