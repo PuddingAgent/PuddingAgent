@@ -19,12 +19,19 @@ import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 export interface RichBlockProps {
   /** 围栏内的原始文本（Mermaid DSL / JSON spec 等）。 */
   code: string;
+  /**
+   * artifact → rows 的解析器，由宿主注入。
+   * 本层不读任何存储：读取受工作区边界约束，应该发生在宿主侧。
+   * 未注入时，引用 artifact 的图表会显式提示，而不是画空图。
+   */
+  resolveArtifactRows?: (artifactId: string) => Array<Record<string, unknown>> | null;
 }
 
 export type RichBlockComponent = LazyExoticComponent<ComponentType<RichBlockProps>>;
 
 const RICH_BLOCKS: Record<string, RichBlockComponent> = {
   mermaid: lazy(() => import('./MermaidBlock')),
+  chart: lazy(() => import('./ChartBlock')),
 };
 
 /** 已注册的围栏语言（用于文档、测试与排障）。 */

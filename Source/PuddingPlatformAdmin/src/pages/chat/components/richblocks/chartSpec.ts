@@ -111,3 +111,85 @@ export function validateChartData(
     droppedRows: rows.length - sampled.length,
   };
 }
+
+// ── 围栏解析 ───────────────────────────────────────────────────
+// ```chart 围栏的内容是 **JSON spec**，不是可执行代码。
+// 模型只产出数据描述，渲染器由我们控制——这条约定让 XSS 面不会因为
+// 新增图表而扩大。
+// ─────────────────────────────────────────────────────────────
+
+export interface ChartSpecParseResult {
+  ok: boolean;
+  spec?: ChartSpec;
+  error?: string;
+}
+
+const CHART_KINDS: ChartKind[] = ['line', 'bar', 'area', 'pie', 'scatter'];
+
+const fail = (error: string): ChartSpecParseResult => ({ ok: false, error });
+
+/** 从 ```chart 围栏内容解析 spec；任何字段不合法都显式失败并说明原因。 */
+export function parseChartSpecJson(code: string): ChartSpecParseResult {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(code);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return fail(`JSON 解析失败：${message}`);
+  }
+
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return fail('spec 必须是 JSON 对象');
+  }
+  const spec = raw as Record<string, unknown>;
+
+  if (!CHART_KINDS.includes(spec.type as ChartKind)) {
+    return fail(`不支持的图表类型：${String(spec.type)}（可用：${CHART_KINDS.join(' / ')}）`);
+  }
+
+  if (typeof spec.x !== 'string' || spec.x.trim() === '') {
+    return fail('缺少分类字段 x');
+  }
+
+  if (!Array.isArray(spec.y) || spec.y.length === 0) {
+    return fail('y 必须是非空数组');
+  }
+  if (!spec.y.every((key) => typeof key === 'string' && key.trim() !== '')) {
+    return fail('y 里的每一项都必须是非空字符串');
+  }
+
+  const source = spec.source as Record<string, unknown> | undefined;
+  if (!source || typeof source !== 'object') {
+    return fail('缺少 source');
+  }
+
+  let parsedSource: ChartSource;
+  if (source.kind === 'inline') {
+    if (!Array.isArray(source.rows)) {
+      return fail('inline 来源必须提供 rows 数组');
+    }
+    parsedSource = { kind: 'inline', rows: source.rows as Array<Record<string, unknown>> };
+  } else if (source.kind === 'artifact') {
+    if (typeof source.artifactId !== 'string' || source.artifactId.trim() === '') {
+      return fail('artifact 来源必须提供 artifactId');
+    }
+    parsedSource = { kind: 'artifact', artifactId: source.artifactId };
+  } else {
+    return fail(`不支持的 source.kind：${String(source.kind)}（可用：inline / artifact）`);
+  }
+
+  return {
+    ok: true,
+    spec: {
+      type: spec.type as ChartKind,
+      x: spec.x,
+      y: spec.y as string[],
+      source: parsedSource,
+      title: typeof spec.title === 'string' ? spec.title : undefined,
+      maxPoints:
+        typeof spec.maxPoints === 'number' && Number.isFinite(spec.maxPoints)
+          ? spec.maxPoints
+          : undefined,
+    },
+  };
+}
