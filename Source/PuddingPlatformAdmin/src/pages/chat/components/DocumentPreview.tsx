@@ -31,6 +31,8 @@ export interface DocumentPreviewProps {
   onSaveArtifact?: () => void;
   /** 复制路径；不提供则不渲染按钮。 */
   onCopyPath?: () => void;
+  /** 下载为 .md 文件；不提供则不渲染按钮。 */
+  onDownload?: () => void;
 }
 
 export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
@@ -39,6 +41,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   meta,
   onSaveArtifact,
   onCopyPath,
+  onDownload,
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const outline = useMemo(() => extractOutline(markdown), [markdown]);
@@ -79,6 +82,11 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           ) : null}
         </span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          {onDownload ? (
+            <Button size="small" data-testid="document-download" onClick={onDownload}>
+              下载
+            </Button>
+          ) : null}
           {onCopyPath ? (
             <Button size="small" data-testid="document-copy-path" onClick={onCopyPath}>
               复制路径

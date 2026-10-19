@@ -50,6 +50,7 @@ describe('DocumentPreview', () => {
   it('提供回调时按钮可点并触发', () => {
     const onSave = jest.fn();
     const onCopy = jest.fn();
+    const onDownload = jest.fn();
 
     render(
       <DocumentPreview
@@ -57,14 +58,17 @@ describe('DocumentPreview', () => {
         markdown={doc}
         onSaveArtifact={onSave}
         onCopyPath={onCopy}
+        onDownload={onDownload}
       />,
     );
 
     fireEvent.click(screen.getByTestId('document-save-artifact'));
     fireEvent.click(screen.getByTestId('document-copy-path'));
+    fireEvent.click(screen.getByTestId('document-download'));
 
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onCopy).toHaveBeenCalledTimes(1);
+    expect(onDownload).toHaveBeenCalledTimes(1);
   });
 
   it('markdown 里的脚本不会执行（MarkdownPreview 不启用 rehype-raw）', () => {

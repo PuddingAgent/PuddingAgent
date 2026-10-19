@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { DocumentRefCard } from './components/DocumentRefCard';
 import { DocumentPreview } from './components/DocumentPreview';
 import { MiniChart } from './components/richblocks/MiniChart';
+import { createMarkdownDownload, triggerDownload } from './markdown/download';
 import { FoldableMessage } from './components/FoldableMessage';
 import { PanelView } from './panel/PanelView';
 import type { PanelSpec } from './panel/spec';
@@ -303,6 +304,11 @@ export default function PanelDemoPage() {
             markdown={longReport}
             meta={`约 ${longReport.length} 字`}
             onCopyPath={() => setOpenedRef('已复制路径（演示）')}
+            onDownload={() =>
+              triggerDownload(
+                createMarkdownDownload('温度巡检报告-2026-10-19.md', longReport),
+              )
+            }
           />
         ) : (
           <PanelView spec={active} onSubmit={handleSubmit} />
