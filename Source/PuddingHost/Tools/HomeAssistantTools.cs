@@ -274,23 +274,27 @@ public sealed class HaHistoryTool(
                 DateTimeOffset.UtcNow,
                 deadline.Token);
 
-            var json = history.GetRawText();
-            var truncated = json.Length > MaxHistoryBytes;
-            if (truncated)
-            {
-                json = json[..MaxHistoryBytes];
-            }
+            // 历史响应可达数十万字节。按 entity / state 粒度裁剪，而不是逐字符截断字符串：
+            // 后者会把 JSON 切成半个对象，调用方拿到无法解析的文本；并且 `data` 直接放字符串
+            // 会导致 JSON 被二次转义（`\u0022` 膨胀约 6 倍）。
+            var trimmed = HaHistoryBudget.Trim(history, MaxHistoryBytes);
 
             var payload = new
             {
                 instance = instance.Alias,
                 hours,
                 entityIds,
-                truncated,
-                data = json,
+                truncated = trimmed.Truncated,
+                entityCount = trimmed.EntityCount,
+                keptEntities = trimmed.KeptEntities,
+                droppedEntities = trimmed.DroppedEntities,
+                estimatedBytes = trimmed.EstimatedBytes,
+                data = trimmed.Data,
             };
 
-            return ToolExecutionResult.Ok(HaToolSupport.Serialize(payload), truncated ? HaErrorCodes.OutputTruncated : null);
+            return ToolExecutionResult.Ok(
+                HaToolSupport.Serialize(payload),
+                trimmed.Truncated ? HaErrorCodes.OutputTruncated : null);
         }
         catch (HaClientException ex)
         {
