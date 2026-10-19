@@ -96,7 +96,9 @@ export function mapSnapshotHistoryItem(
     role,
     sourceKind: item.sourceKind ?? (role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent'),
     sourceId: item.sourceId ?? (role === 'user' ? 'user' : role === 'system' ? 'system' : 'agent'),
-    sourceName: item.sourceName ?? (role === 'user' ? '用户' : role === 'system' ? '系统' : 'Agent'),
+    // Ordinary assistant rows have no envelope identity. Leave their name unset
+    // so MessageList uses the selected Agent, as the live projection does.
+    sourceName: item.sourceName ?? (role === 'user' ? '用户' : role === 'system' ? '系统' : ''),
     messageType: item.messageType ?? (role === 'user' ? 'user_message' : 'agent_output'),
     llmRole: item.llmRole ?? (role === 'user' ? 'user' : role === 'system' ? 'system' : 'assistant'),
     contentParts: item.contentParts,

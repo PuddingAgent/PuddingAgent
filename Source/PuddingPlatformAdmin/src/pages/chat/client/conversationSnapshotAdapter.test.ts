@@ -207,6 +207,12 @@ describe('getAgentConversationFromSnapshot', () => {
     });
   });
 
+  it('leaves ordinary assistant names to the selected Agent while preserving explicit identities', () => {
+    const item = { ...snapshot().history.items[0], role: 'assistant' };
+    expect(mapSnapshotHistoryItem(item, undefined).sourceName).toBe('');
+    expect(mapSnapshotHistoryItem({ ...item, sourceName: '审阅助手' }, undefined).sourceName).toBe('审阅助手');
+  });
+
   it('falls back to the legacy projection while an active turn is not terminal', async () => {
     const active = summary('turn-active');
     active.terminalState = 0;
