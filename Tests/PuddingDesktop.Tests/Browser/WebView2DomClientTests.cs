@@ -297,6 +297,15 @@ public sealed class WebView2DomClientTests
         // 元素滚动会先看元素自身、必要时上溯最近可滚动祖先（不盲目滚另一个区域）。
         Assert.Contains("nearestScrollable", script);
 
+        // page 目标在「文档本身不可滚」的 SPA 上必须降级：实测 B 站 body 只占一屏，
+        // 真正的滚动容器是内部 div，旧版 window.scrollBy 一个像素都动不了却报成功。
+        // 降级后回执用 container='largest-scrollable' 如实标注，调用方能看到滚的是谁。
+        // ⚠️ 断言必须指向**生效语句**：脚本里那些 // 注释也属于字符串内容，
+        // 只断言关键字会被注释“喂饱”而变成空转断言（首次就是这么被骗的）。
+        Assert.Contains("docScrollable", script);
+        Assert.Contains("box = best", script);
+        Assert.Contains("container = 'largest-scrollable'", script);
+
         // 结果事实：容器/前后位置/消耗位移/边界/内容变化。
         Assert.Contains("consumedDeltaX", script);
         Assert.Contains("consumedDeltaY", script);

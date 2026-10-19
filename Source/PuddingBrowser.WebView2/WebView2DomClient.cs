@@ -660,7 +660,28 @@ internal static partial class WebView2DomClient
       box = nearestScrollable(element);
       container = 'scrollable-ancestor';
     }
-  } else if (input.target !== 'page') {
+  } else if (input.target === 'page') {
+    // 文档本身不可滚时（SPA 常把内容放在 overflow:auto 的内部容器里，body 只占一屏），
+    // 退到「视口内可见面积最大的可滚动容器」。这不是“猜一个区域”：起点仍是 page，
+    // 且回执用 container='largest-scrollable' 如实标注，调用方能看到滚的是谁。
+    const docScrollable = doc.scrollHeight > doc.clientHeight + 1 || doc.scrollWidth > doc.clientWidth + 1;
+    if (!docScrollable) {
+      const vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+      let best = null, bestArea = 0, scanned = 0;
+      for (const el of all()) {
+        if (++scanned > 4000) break; // 超大 DOM 的保护：不求最优，只求可用
+        if (!isScrollable(el)) continue;
+        if (el.clientHeight < 100 && el.clientWidth < 100) continue;
+        if (el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth) continue;
+        const r = el.getBoundingClientRect();
+        const w = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
+        const h = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+        const area = w * h;
+        if (area > bestArea) { bestArea = area; best = el; }
+      }
+      if (best) { box = best; container = 'largest-scrollable'; }
+    }
+  } else {
     // 未登记的目标 fail closed（不在驱动里"猜一个"）。
     return {ok:false,code:'browser_invalid_arguments',message:`unsupported scroll target '${input.target}'`};
   }
