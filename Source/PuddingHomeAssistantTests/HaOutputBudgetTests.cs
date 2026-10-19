@@ -220,16 +220,18 @@ public sealed class HaOutputBudgetTests
         Assert.IsTrue(first.Truncated);
         CollectionAssert.AreEqual(new[] { "sensor.s0", "sensor.s1" }, first.Items.Select(x => x.EntityId).ToArray());
         Assert.AreEqual("sensor.s1", first.NextAfter);
+        Assert.AreEqual(5, first.Total, "第一页的 total 是过滤后的全集");
 
         var second = HaOutputBudget.Project(states, 2, after: first.NextAfter);
         CollectionAssert.AreEqual(new[] { "sensor.s2", "sensor.s3" }, second.Items.Select(x => x.EntityId).ToArray());
         Assert.AreEqual("sensor.s3", second.NextAfter);
-        Assert.AreEqual(3, second.Total, "total 是过滤后的全集，不随分页变化");
+        Assert.AreEqual(5, second.Total, "total 是过滤后的全集，不随分页变化（回归：曾随游标递减为剩余数）");
 
         var third = HaOutputBudget.Project(states, 2, after: second.NextAfter);
         Assert.AreEqual(1, third.Returned);
         Assert.IsFalse(third.Truncated);
         Assert.IsNull(third.NextAfter, "最后一页不得给游标，否则调用方会无限循环");
+        Assert.AreEqual(5, third.Total, "最后一页的 total 仍是全集");
     }
 
     [TestMethod]

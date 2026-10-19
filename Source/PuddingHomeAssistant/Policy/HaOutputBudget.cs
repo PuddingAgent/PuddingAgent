@@ -63,9 +63,29 @@ public static class HaOutputBudget
             filtered = filtered.Where(s => set.Contains(s.Domain));
         }
 
+        // 所有过滤必须在排序与游标之前完成：total 是「过滤后的全集」，
+        // 若把过滤放到 after 之后，total 就会被游标切掉一截（实测 560 → 460），
+        // 调用方会误以为数据在变少。
+        if (deviceClasses is { Count: > 0 })
+        {
+            var wanted = new HashSet<string>(deviceClasses, StringComparer.OrdinalIgnoreCase);
+            filtered = filtered
+                .Where(s => ResolveDeviceClass(s.Attributes) is { } dc && wanted.Contains(dc));
+        }
+
+        if (!string.IsNullOrWhiteSpace(nameContains))
+        {
+            filtered = filtered
+                .Where(s => ResolveName(s.Attributes) is { } n &&
+                            n.Contains(nameContains, StringComparison.OrdinalIgnoreCase));
+        }
+
         // 排序必须在游标之前：HA 返回顺序不保证稳定，而 `after` 是「比它大的下一个」，
         // 只有按 entity_id 全序排过才能保证不漏、不重。
         var matched = filtered.OrderBy(s => s.EntityId, StringComparer.Ordinal).ToList();
+
+        // total 在游标**之前**定格：这是过滤后的全集，不随分页变化。
+        var totalMatched = matched.Count;
 
         if (!string.IsNullOrWhiteSpace(after))
         {
@@ -74,21 +94,6 @@ public static class HaOutputBudget
                 .ToList();
         }
 
-        if (deviceClasses is { Count: > 0 })
-        {
-            var wanted = new HashSet<string>(deviceClasses, StringComparer.OrdinalIgnoreCase);
-            matched = matched
-                .Where(s => ResolveDeviceClass(s.Attributes) is { } dc && wanted.Contains(dc))
-                .ToList();
-        }
-
-        if (!string.IsNullOrWhiteSpace(nameContains))
-        {
-            matched = matched
-                .Where(s => ResolveName(s.Attributes) is { } n &&
-                            n.Contains(nameContains, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
         var take = Math.Min(effectiveLimit, matched.Count);
 
         var includeAttributes = fields is { Count: > 0 } &&
@@ -114,7 +119,7 @@ public static class HaOutputBudget
             {
                 var truncated = views.Count < matched.Count;
                 return new HaStatePage(
-                    views, matched.Count, views.Count, truncated, bytes,
+                    views, totalMatched, views.Count, truncated, bytes,
                     truncated ? views[^1].EntityId : null);
             }
 
@@ -128,13 +133,13 @@ public static class HaOutputBudget
                 };
                 var singleBytes = Measure(views);
                 return new HaStatePage(
-                    views, matched.Count, views.Count, true, singleBytes, views[^1].EntityId);
+                    views, totalMatched, views.Count, true, singleBytes, views[^1].EntityId);
             }
 
             views = views.Take(keep).ToList();
         }
 
-        return new HaStatePage([], matched.Count, 0, matched.Count > 0, 0);
+        return new HaStatePage([], totalMatched, 0, matched.Count > 0, 0);
     }
 
     /// <summary>
