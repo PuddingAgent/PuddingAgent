@@ -2,6 +2,7 @@ import { Button, Segmented } from 'antd';
 import React, { useMemo, useState } from 'react';
 import { DocumentRefCard } from './components/DocumentRefCard';
 import { DocumentPreview } from './components/DocumentPreview';
+import { MiniChart } from './components/richblocks/MiniChart';
 import { FoldableMessage } from './components/FoldableMessage';
 import { PanelView } from './panel/PanelView';
 import type { PanelSpec } from './panel/spec';
@@ -37,6 +38,16 @@ const longReport = [
   '1. 客厅开窗或降温 30 分钟；',
   '2. 主卧确认窗户状态。',
 ].join('\n');
+
+/** 24 小时温度：用正弦波生成确定性演示数据，不用随机数（页面每次打开应该一样）。 */
+const TEMP_ROWS = Array.from({ length: 24 }, (_, hour) => {
+  const base = 24 + Math.sin((hour / 24) * Math.PI * 2 - 1.5) * 2.2;
+  return {
+    time: `${String(hour).padStart(2, '0')}:00`,
+    living: Number((base + 1.1).toFixed(1)),
+    kitchen: Number((base - 0.4).toFixed(1)),
+  };
+});
 
 const surveySpec: PanelSpec = {
   v: 1,
@@ -262,7 +273,7 @@ export default function PanelDemoPage() {
           <Segmented
             size="small"
             value={rightTab}
-            options={['面板', '文档']}
+            options={['面板', '文档', '图表']}
             onChange={(value) => setRightTab(String(value))}
           />
           {rightTab === '面板' ? (
@@ -275,7 +286,18 @@ export default function PanelDemoPage() {
           ) : null}
         </div>
 
-        {rightTab === '文档' ? (
+        {rightTab === '图表' ? (
+          <MiniChart
+            spec={{
+              type: 'line',
+              title: '客厅温度（24 小时）',
+              source: { kind: 'inline', rows: TEMP_ROWS },
+              x: 'time',
+              y: ['living', 'kitchen'],
+            }}
+            rows={TEMP_ROWS}
+          />
+        ) : rightTab === '文档' ? (
           <DocumentPreview
             name="温度巡检报告-2026-10-19.md"
             markdown={longReport}
