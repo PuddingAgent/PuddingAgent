@@ -88,6 +88,39 @@ fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使
 
 后端查询适配器注册表（`ILlmBalanceProvider`/`DeepSeekLlmBalanceProvider`）见 `PuddingPlatform/code_map.md` 提供商配置节；完整设计与扩展步骤见 `Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md`。
 
+## 聊天富媒体与右侧产物区（2026-10-19／20）
+
+| 文件 | 职责与不变量 |
+|------|------------|
+| `src/pages/chat/markdown/messageFold.ts` | 长消息折叠判据：字数>3000 或标题≥3 或围栏代码块≥3；纯函数 |
+| `src/pages/chat/markdown/documentRefs.ts` | 只认行内 code 的 `.md/.pdf/.html` 或 `artifact://`；围栏内是示例不算引用 |
+| `src/pages/chat/markdown/outline.ts` | 文档大纲提取（H1-H3），跳过围栏代码块避免把 `# 注释` 当标题 |
+| `src/pages/chat/markdown/download.ts` | Blob 下载：文件名清洗（Windows 非法字符/路径剥离）、MIME 带 charset、释放 objectURL |
+| `src/pages/chat/components/FoldableMessage.tsx` | 折叠卡外壳：不 import 渲染器；单主按钮「展开阅读」，次操作为文字链 |
+| `src/pages/chat/components/DocumentRefCard.tsx` | 文档引用卡；不碰文件系统（读文件是宿主职责），无 `onOpen` 时禁用按钮 |
+| `src/pages/chat/components/DocumentPreview.tsx` | 文档预览：文件头 + 大纲 + 正文；复用 `MarkdownPreview`（不启用 rehype-raw） |
+| `src/pages/chat/components/SideArtifactPanel.tsx` | 右侧 tab 外壳：只认 key/label/content；无 `onClose` 不渲染关闭键 |
+| `src/pages/chat/components/SideDocumentPanel.tsx` | 文档 tab 接线；**仅当 `sourcePath` 存在**才给「复制路径」，长消息不伪造 .md |
+| `src/pages/chat/sideArtifact/SideArtifactContext.tsx` | actions/state 双 context：只要动作的组件不因文档变化重渲染 |
+| `src/pages/chat/sideArtifact/sidePanelSizing.ts` | 面板宽度：320-900px、默认 420、localStorage 记忆、窗口窄时 max-width 55% |
+| `src/pages/chat/components/SidePanelResizer.tsx` | 分隔条：拖拽（左拖变宽）/←→ 16px/双击复位；宽度读 ref，回调锁 ref |
+| `src/pages/chat/panel/spec.ts` | 交互面板 spec v1：survey/variants/draft；拒外链，坐标强制 0..1 归一化 |
+| `src/pages/chat/panel/submission.ts` | `[UI_SUBMISSION v=1 id=…]` 解析与幂等签名（键序无关、selected 顺序无关） |
+| `src/pages/chat/panel/PanelView.tsx` | 按 kind 分派；未实现的 kind 显式降级并写明原因，不赊账 |
+| `src/pages/chat/panel/SurveyPanel.tsx` + `surveyValues.ts` | 问卷渲染；取值必须来自 options，未声明 key 一律丢弃 |
+| `src/pages/chat/panel/VariantsPanel.tsx` | 多方案对比（1/2/3/4 档）；html 走沙箱，svg 走 DOMPurify |
+| `src/pages/chat/panel/SandboxedHtml.tsx` | `iframe sandbox=""` + CSP `default-src 'none'`；只禁脚本不够，还要禁网络 |
+| `src/pages/chat/panel/AnnotationLayer.tsx` + `AnnotationEditor.tsx` | 结构化标注：rect/arrow/note；坐标归一化纯函数可单测 |
+
+**关键语义**
+
+**右侧产物区**：宽度由用户拖拽决定（`sidePanelSizing.ts` 管约束与持久化），拖动只改内存、松手才写 localStorage；`SidePanelResizer` 的 window 监听必须读 `widthRef` 并把回调锁进 ref，否则提交旧宽度 / 拖一下就停。
+
+**面板与文档的归属**：对话正文只承载结论；长文档挤在对话里翻找痛苦，所以超阈值折叠成卡，可「展开阅读」进右侧；右侧只显示内容，不读文件（读文件受工作区边界约束，属宿主职责）。
+
+**安全边界**：HTML 草稿永不内联，走 `sandbox=""` + CSP；SVG 单独走 DOMPurify（不能与 HTML 同路，否则沙箱强度降到 SVG 那一档）。
+
+
 ## 路由与壳层加载边界
 
 | 文件 | 职责与加载边界 |
