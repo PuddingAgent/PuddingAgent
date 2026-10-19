@@ -109,4 +109,56 @@ public sealed class HaOutputBudgetTests
         Assert.AreEqual(0, page.Returned);
         Assert.IsFalse(page.Truncated);
     }
+
+    private static HaState NamedState(string entityId, string friendlyName)
+    {
+        var attrs = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["friendly_name"] = JsonSerializer.SerializeToElement(friendlyName),
+        };
+
+        return new HaState(entityId, "on", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, attrs);
+    }
+
+    [TestMethod]
+    public void Project_AlwaysCarriesFriendlyNameEvenWithoutAttributes()
+    {
+        // 实体 ID 不可读（light.linp_cn_889128040_...），不带 friendly_name 时
+        // 调用方无法判断它是“主卧室灯光”还是“阳台灯”，而挑错实体就等同于挑错设备。
+        var states = new[] { NamedState("light.linp_cn_889128040_t2dbw1_s_8_indicator_light", "主卧室灯光  指示灯") };
+
+        var page = HaOutputBudget.Project(states, 10);
+
+        Assert.IsNull(page.Items[0].Attributes, "默认不得回传 attributes");
+        Assert.AreEqual("主卧室灯光  指示灯", page.Items[0].Name);
+    }
+
+    [TestMethod]
+    public void Project_OmitsNameWhenFriendlyNameIsAbsentOrNotAString()
+    {
+        var noName = new HaState("light.a", "on", null, null,
+            new Dictionary<string, JsonElement>(StringComparer.Ordinal));
+        var numericName = new HaState("light.b", "on", null, null,
+            new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["friendly_name"] = JsonSerializer.SerializeToElement(42),
+            });
+        var blankName = new HaState("light.c", "on", null, null,
+            new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["friendly_name"] = JsonSerializer.SerializeToElement("   "),
+            });
+
+        var page = HaOutputBudget.Project([noName, numericName, blankName], 10);
+
+        Assert.IsNull(page.Items[0].Name);
+        Assert.IsNull(page.Items[1].Name, "非字符串的 friendly_name 不得被当成名称");
+        Assert.IsNull(page.Items[2].Name, "纯空白不得被当成名称");
+    }
+
+    [TestMethod]
+    public void ResolveName_ReturnsNullForNullAttributes()
+    {
+        Assert.IsNull(HaOutputBudget.ResolveName(null));
+    }
 }

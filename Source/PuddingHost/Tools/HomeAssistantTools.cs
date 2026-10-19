@@ -142,7 +142,8 @@ public sealed class HaStatesArgs
     name: "Home Assistant states",
     description:
         "Read entity states from Home Assistant. Filter by domain or exact entity id, project fields, " +
-        "and get an explicit total/returned/truncated envelope. Attributes are omitted unless requested.",
+        "and get an explicit total/returned/truncated envelope. Every item carries the HA friendly name " +
+        "(`name`) so opaque entity ids stay identifiable; attributes are omitted unless requested.",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.RequiresNetwork | ToolSafetyFlags.ConcurrencySafe,

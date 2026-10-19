@@ -74,7 +74,8 @@ public static class HaOutputBudget
                 s.State,
                 s.LastChanged,
                 s.LastUpdated,
-                includeAttributes ? s.Attributes : null));
+                includeAttributes ? s.Attributes : null,
+                ResolveName(s.Attributes)));
         }
 
         // 字节预算：超限时按条回退（保留顺序），直到落入预算。
@@ -102,6 +103,23 @@ public static class HaOutputBudget
         }
 
         return new HaStatePage([], matched.Count, 0, matched.Count > 0, 0);
+    }
+
+    /// <summary>
+    /// 从 attributes 中取出 <c>friendly_name</c>。它**总是**随投影返回，
+    /// 与 <c>include_attributes</c> 无关：没有它，调用方看到的只是一个不可读的实体 ID。
+    /// </summary>
+    public static string? ResolveName(IReadOnlyDictionary<string, JsonElement>? attributes)
+    {
+        if (attributes is null ||
+            !attributes.TryGetValue("friendly_name", out var name) ||
+            name.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var value = name.GetString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     /// <summary>序列化后的 UTF-8 字节数（用于预算判定）。</summary>

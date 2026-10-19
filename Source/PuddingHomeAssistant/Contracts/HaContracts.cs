@@ -57,13 +57,20 @@ public sealed record HaState(
     }
 }
 
-/// <summary>投影后的实体视图（只保留调用方要看的字段，避免把 attributes 全量回传）。</summary>
+/// <summary>
+/// 投影后的实体视图（只保留调用方要看的字段，避免把 attributes 全量回传）。
+/// <para><c>Name</c>（HA 的 <c>friendly_name</c>）**始终**带上：实体 ID 如
+/// <c>light.linp_cn_889128040_t2dbw1_s_8_indicator_light</c> 无法让人（或模型）
+/// 判断它是“主卧室灯光”还是“阳台灯”，而挑错实体就等同于挑错设备。
+/// 它是不含凭据/坐标的短字符串，与“禁止回传 attributes”不冲突。</para>
+/// </summary>
 public sealed record HaStateView(
     string EntityId,
     string State,
     DateTimeOffset? LastChanged,
     DateTimeOffset? LastUpdated,
-    IReadOnlyDictionary<string, JsonElement>? Attributes);
+    IReadOnlyDictionary<string, JsonElement>? Attributes,
+    string? Name = null);
 
 /// <summary>一页状态结果。必须携带 total/returned/truncated，禁止静默截断。</summary>
 public sealed record HaStatePage(
