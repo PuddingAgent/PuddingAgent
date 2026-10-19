@@ -55,7 +55,7 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
         var book = root.GetOptionalString("book");
         var key = root.GetOptionalString("key");
         var value = root.GetOptionalString("value");
-        var title = root.GetString("title", type);
+        var title = root.GetString("title", CanonicalBookTitle(type));
         var workspaceId = context.WorkspaceId;
         var sourceRef = root.GetOptionalString("source_reference");
         var refType = root.GetOptionalString("reference_type");
@@ -174,13 +174,13 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
             if (_qualityFilter is not null && !string.IsNullOrWhiteSpace(content))
             {
                 var dupWarnings = await _qualityFilter.CheckDuplicateAsync(
-                    content, book ?? title ?? type, workspaceId, _memLib, ct);
+                    content, book ?? title ?? CanonicalBookTitle(type), workspaceId, _memLib, ct);
                 qualityWarnings.AddRange(dupWarnings);
             }
 
             var package = new ExperiencePackage
             {
-                Title = book ?? title ?? type,
+                Title = book ?? title ?? CanonicalBookTitle(type),
                 Content = type switch
                 {
                     "preference" => $"{key}: {value}",
@@ -370,6 +370,19 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
 
         return false;
     }
+
+    /// <summary>
+    /// 记忆书标题：偏好必须写进**运行时真正读取**的那本书。
+    ///
+    /// 早先这里直接用 type 字符串（"preference"），于是偏好落在 "preference" 书里；
+    /// 而 <see cref="IUserPreferenceService"/> 只读 <c>PreferenceBookTitle</c>（"用户偏好"）——
+    /// 结果是「记了却不会出现在上下文里」（2026-10-19 实测：grep_memory 能搜到，
+    /// L9-USER-PREFERENCES 仍报 no stored preferences）。
+    /// </summary>
+    private static string CanonicalBookTitle(string type) =>
+        string.Equals(type, "preference", StringComparison.OrdinalIgnoreCase)
+            ? IUserPreferenceService.PreferenceBookTitle
+            : type;
 
     private static string SerializeDeleteResult(
         string type,

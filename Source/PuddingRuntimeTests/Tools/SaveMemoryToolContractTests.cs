@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingRuntime.Services;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
@@ -177,6 +178,27 @@ public sealed class SaveMemoryToolContractTests
         Assert.IsTrue(result.Output.Contains("persisted", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public async Task PreferenceWithoutBook_LandsInTheCanonicalUserPreferenceBook()
+    {
+        var library = new RecordingMemoryLibraryConvenience();
+        var tool = CreateTool(library);
+
+        _ = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "upsert",
+            ["type"] = "preference",
+            ["key"] = "tone",
+            ["value"] = "concise",
+        });
+
+        Assert.AreEqual(1, library.UpsertCalls);
+        Assert.AreEqual(
+            IUserPreferenceService.PreferenceBookTitle,
+            library.LastPackage!.Title,
+            "偏好必须写进运行时读取的「用户偏好」书；写成 'preference' 会导致记了也不进上下文");
+    }
+
     private static SaveMemoryTool CreateTool(
         RecordingMemoryLibraryConvenience library,
         IImportantMemoryService? importantMemory = null)
@@ -206,12 +228,16 @@ public sealed class SaveMemoryToolContractTests
     {
         public int UpsertCalls { get; private set; }
 
+        /// <summary>最后一次尝试写入的包（写入失败也要留下，供断言书名/内容）。</summary>
+        public ExperiencePackage? LastPackage { get; private set; }
+
         public bool ThrowCancellation { get; init; }
 
         public Task<ExperienceWriteResult> UpsertExperienceAsync(
             string workspaceId, ExperiencePackage experience, CancellationToken ct = default)
         {
             UpsertCalls++;
+            LastPackage = experience;
             if (ThrowCancellation)
                 throw new OperationCanceledException(ct);
             throw new NotSupportedException("UpsertExperienceAsync must not succeed in contract tests.");
