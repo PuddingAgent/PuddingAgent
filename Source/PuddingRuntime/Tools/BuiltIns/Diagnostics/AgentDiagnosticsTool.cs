@@ -103,13 +103,21 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             return JsonSerializer.Serialize(new { error = "Runtime activity sink is not available in this environment." });
 
         var requestedSampleLimit = Math.Max(limit * 10, 500);
-        var query = new RuntimeActivityQuery
-        {
-            Component = null, // query all components — Smart* tools use SmartToolWrapper, traditional tools use ToolRunner
-            Limit = requestedSampleLimit
-        };
 
-        var activities = await _activitySink.QueryAsync(query, ct);
+        // 只查工具执行组件：早先这里 Component = null，于是「最近 500 条活动」被 LLM 调用、消息投递等
+        // 组件占满，一条 tool_name 都采不到，tool_stats 直接退化成「无法统计」（2026-10-19 实测：
+        // activities_without_tool_name = 500/500）。先按组件过滤，采不到才回退到全组件并如实标注，
+        // 避免「样本被别的组件挤掉」被误读成「工具没被调用」。
+        var activities = await _activitySink.QueryAsync(
+            new RuntimeActivityQuery { Component = RuntimeActivityComponents.ToolRunner, Limit = requestedSampleLimit },
+            ct);
+        string? queriedComponent = RuntimeActivityComponents.ToolRunner;
+        if (activities.Count == 0)
+        {
+            activities = await _activitySink.QueryAsync(
+                new RuntimeActivityQuery { Component = null, Limit = requestedSampleLimit }, ct);
+            queriedComponent = null;
+        }
 
         // 采样上限：IRuntimeActivitySink 的实现（RuntimeActivitySink.QueryAsync）在查询层把 Limit 夹到 [1,500]，
         // 所以无论 limit 传多大，样本都不会超过 500 条。这个边界必须如实上报，否则“统计”看起来是全量、
@@ -122,7 +130,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             || string.Equals(toolName, "all", StringComparison.OrdinalIgnoreCase)
             || toolName == "*")
         {
-            return BuildToolStatsOverview(activities, limit, requestedSampleLimit, effectiveSampleLimit);
+            return BuildToolStatsOverview(activities, limit, requestedSampleLimit, effectiveSampleLimit, queriedComponent);
         }
 
         if (activities.Count == 0)
@@ -220,7 +228,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         IReadOnlyList<RuntimeActivity> activities,
         int limit,
         int requestedSampleLimit,
-        int effectiveSampleLimit)
+        int effectiveSampleLimit,
+        string? queriedComponent)
     {
         var named = activities
             .Where(a => a.Metadata is not null
@@ -271,7 +280,9 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 .Count(),
             activities_without_tool_name = activities.Count - named.Count,
             hint = tools.Count == 0
-                ? "No activity in the sample carries a 'tool_name' metadata entry, so no per-tool ranking can be produced."
+                ? queriedComponent is null
+                    ? "No activity in the sample carries a 'tool_name' metadata entry, so no per-tool ranking can be produced."
+                    : $"No tool-runner activity in the sample carries a 'tool_name' metadata entry; component '{queriedComponent}' was queried."
                 : null,
             sample = new
             {
@@ -279,6 +290,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 sample_limit_requested = requestedSampleLimit,
                 sample_limit_effective = effectiveSampleLimit,
                 sample_truncated_by_sink_limit = activities.Count >= effectiveSampleLimit,
+                query_component = queriedComponent,
             }
         });
     }

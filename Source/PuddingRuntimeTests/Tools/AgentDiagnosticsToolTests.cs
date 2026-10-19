@@ -620,6 +620,28 @@ public sealed class AgentDiagnosticsToolTests
     }
 
     [TestMethod]
+    public async Task ToolStats_AsksTheSinkForTheToolRunnerComponentFirst()
+    {
+        var sink = new FakeActivitySink([
+            Activity("browser_locate", RuntimeActivityStatuses.Failed, 12, "boom"),
+        ]);
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: sink,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        _ = await ExecuteAsync(tool, """{"action":"tool_stats"}""");
+
+        // 回归：Component=null 时样本被 LLM/消息活动挤满，tool_name 一条也采不到（2026-10-19 实测 500/500）。
+        Assert.AreEqual(
+            RuntimeActivityComponents.ToolRunner,
+            sink.LastQuery!.Component,
+            "tool_stats 必须先按工具执行组件采样");
+    }
+
+    [TestMethod]
     public async Task ToolStats_OverviewAcceptsAllAliasAndHonoursLimit()
     {
         var sink = new FakeActivitySink(
