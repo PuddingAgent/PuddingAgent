@@ -73,6 +73,14 @@ public sealed record HaStateView(
     string? Name = null);
 
 /// <summary>一页状态结果。必须携带 total/returned/truncated，禁止静默截断。</summary>
+/// <param name="Total">
+/// 过滤后的**全集**条数：domain/实体/device_class/名称过滤之后、<c>after</c> 游标之前的数量。
+/// 它**不随分页变化**：同一个查询无论读到第几页，total 都一样。
+/// <para>不要把游标之后的剩余数当成 total（实测曾把 560 递减成 460），
+/// 那会让调用方误读为“数据在变少”。</para>
+/// </param>
+/// <param name="Returned">本页返回条数，受 <c>limit</c> 与字节预算共同约束。</param>
+/// <param name="Truncated">是否还有下一页；与 <see cref="NextAfter"/> 同时为真/非空。</param>
 /// <param name="NextAfter">
 /// 下一页游标：当本页因 <c>limit</c> 或字节预算被截断时为最后一条的 entity_id，
 /// 调用方把它作为下一次的 <c>after</c> 即可继续往后读。没有下一页时为 null。
