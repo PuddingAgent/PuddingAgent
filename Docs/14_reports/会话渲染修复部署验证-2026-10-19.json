@@ -1,0 +1,195 @@
+{
+  "capturedAtUtc": "2026-10-19T01:52:20.274259+00:00",
+  "sourceRevision": "7664eb2c46457518ce323a63e50132a1e5c8764e",
+  "dirty": true,
+  "frontendVersion": "6.9.8",
+  "packageFiles": 1624,
+  "frontendFiles": 159,
+  "processes": [
+    {
+      "Name": "PuddingDesktop.exe",
+      "ProcessId": 104616,
+      "ParentProcessId": 85700,
+      "ExecutablePath": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingDesktop.exe"
+    },
+    {
+      "Name": "PuddingAgent.exe",
+      "ProcessId": 54204,
+      "ParentProcessId": 104616,
+      "ExecutablePath": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\core\\PuddingAgent.exe"
+    }
+  ],
+  "modules": [
+    {
+      "process": "PuddingDesktop.exe",
+      "pid": 104616,
+      "module": "PuddingDesktop.dll",
+      "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingDesktop.dll",
+      "sha256": "7D23EA140A0D10F74E505E6BCA7F44B0D00E466835331FCD5A69C766D83DB4CC",
+      "manifestMatch": true
+    },
+    {
+      "process": "PuddingDesktop.exe",
+      "pid": 104616,
+      "module": "Pudding.DesktopService.dll",
+      "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\Pudding.DesktopService.dll",
+      "sha256": "A3DDB0B8CC06CFB6F12BDEAE708DC1373E083557C6722FA5190BF919597A4956",
+      "manifestMatch": true
+    },
+    {
+      "process": "PuddingDesktop.exe",
+      "pid": 104616,
+      "module": "PuddingBrowser.Authorization.dll",
+      "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingBrowser.Authorization.dll",
+      "sha256": "D02DF2C833EB032B2E15F66CE7E40ACCBA957817065BF8EC90558F85E8175307",
+      "manifestMatch": true
+    },
+    {
+      "process": "PuddingDesktop.exe",
+      "pid": 104616,
+      "module": "PuddingBrowser.WinUI.dll",
+      "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingBrowser.WinUI.dll",
+      "sha256": "460D443095E0E8C501E83E4B6C4DA05616D3118DA7D62DA7E9B5E16DDC5FC2F5",
+      "manifestMatch": true
+    },
+    {
+      "process": "PuddingDesktop.exe",
+      "pid": 104616,
+      "module": "Pudding.DesktopSurface.Browser.dll",
+      "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\Pudding.DesktopSurface.Browser.dll",
+      "sha256": "86A708F776EABDD8EFF6593106FA426CBDA461A12802D05583CAE0FF0383BCD3",
+      "manifestMatch": true
+    },
+    {
+      "process": "PuddingDesktop.exe",
+      "pid": 104616,
+      "module": "PuddingBrowser.Protocol.dll",
+      "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingBrowser.Protocol.dll",
+      "sha256": "730624D4DC0A31B70870849B35C10D72E42DE1481B3CE19F0FA19C32B308D551",
+      "manifestMatch": true
+    },
+    {
+      "process": "PuddingAgent.exe",
+      "pid": 54204,
+      "module": "PuddingAgent.dll",
+      "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\core\\PuddingAgent.dll",
+      "sha256": "37970BD2A1CE34F148A6F4688BD1F9AE9CFABF56B80EAC5F92A6AE035BA103B6",
+      "manifestMatch": true
+    },
+    {
+      "process": "PuddingAgent.exe",
+      "pid": 54204,
+      "module": "PuddingBrowser.Protocol.dll",
+      "path": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\core\\PuddingBrowser.Protocol.dll",
+      "sha256": "90057E66C2874EE745E42C0DEC25D17DC98F461C8019489A415CACFE6C997882",
+      "manifestMatch": true
+    }
+  ],
+  "desktopProtocol": {
+    "informationalVersion": "1.0.0+7664eb2c46457518ce323a63e50132a1e5c8764e",
+    "mvid": "ad2065ef-0da0-4ade-91c2-75500964ab78",
+    "protocolVersion": 3
+  },
+  "coreProtocol": {
+    "informationalVersion": "1.0.0+7664eb2c46457518ce323a63e50132a1e5c8764e",
+    "mvid": "1bcfb717-59bd-42b2-8d92-e86b78ad670f",
+    "protocolVersion": 3
+  },
+  "hello": [
+    "2026-10-19 09:51:37.351 +08:00 [INF] [tag:BrowserBridge] [trace:22df13c56ee9d2278bfa8de955b74ab8] [session:] Browser Bridge Hello: desktop=0da1a81e9e63403e9b54ba7e3bad93ee protocol=3 build=build=1.0.0+7664eb2c46457518ce323a63e50132a1e5c8764e rev=7664eb2c46457518ce323a63e50132a1e5c8764e dirty=unknown mvid=7f665f33-40ce-4603-a52e-4a3277cf8cec path=D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\build\\winui3\\bin\\PuddingDesktop\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PuddingDesktop.dll"
+  ],
+  "staticAsset": {
+    "file": "umi.45702e68.js",
+    "sha256": "CC7F3D07EB846AF972D26B98F5EE710C58CB7AF459D870FD26000445978062B9",
+    "match": true
+  },
+  "ui": {
+    "capturedAt": "2026-10-19T01:52:05.289Z",
+    "apiMs": 85,
+    "before": {
+      "badge": "v6.9.8+dirty · 7664eb2 · 2026-10-19 09:49",
+      "rawEnvelope": false,
+      "links": 3,
+      "scroll": {
+        "top": 14517,
+        "height": 15317,
+        "client": 800
+      }
+    },
+    "acceptedInputVisible": 1,
+    "acceptedReplyVisible": 1,
+    "lastAgentName": "默认助手",
+    "expand": {
+      "href": "#pudding-expand-1dae5919c8394e6292c1747649ffe1bb",
+      "contentRequests": 1
+    },
+    "errors": []
+  },
+  "failedResourceSummary": {
+    "count": 3,
+    "allMissingExistingUserAvatar": true
+  },
+  "snapshot": {
+    "cursor": 1835942,
+    "head": 1835942,
+    "historyCount": 20,
+    "heartbeatCount": 5,
+    "allHeartbeatsSystem": true,
+    "rawEnvelopeCount": 0
+  },
+  "messageAcceptance": [
+    {
+      "sequence": 1835936,
+      "type": "turn.accepted",
+      "turnId": "19248d8afe5e4d12aaed20b4a0b804c4",
+      "messageId": "msg-1792374436489-fm49eikq",
+      "occurredAt": "2026-10-19T09:47:16.5914623+08:00"
+    },
+    {
+      "sequence": 1835937,
+      "type": "turn.started",
+      "turnId": "19248d8afe5e4d12aaed20b4a0b804c4",
+      "messageId": "4ce7e8d507d04f12a6f21e08fc5a3821",
+      "occurredAt": "2026-10-19T09:47:18.3906149+08:00"
+    },
+    {
+      "sequence": 1835938,
+      "type": "context",
+      "turnId": "19248d8afe5e4d12aaed20b4a0b804c4",
+      "messageId": "4ce7e8d507d04f12a6f21e08fc5a3821",
+      "occurredAt": "2026-10-19T09:47:20.2760671+08:00"
+    },
+    {
+      "sequence": 1835939,
+      "type": "message.content.appended",
+      "turnId": "19248d8afe5e4d12aaed20b4a0b804c4",
+      "messageId": "4ce7e8d507d04f12a6f21e08fc5a3821",
+      "occurredAt": "2026-10-19T09:47:24.3168649+08:00"
+    },
+    {
+      "sequence": 1835940,
+      "type": "message.content.appended",
+      "turnId": "19248d8afe5e4d12aaed20b4a0b804c4",
+      "messageId": "4ce7e8d507d04f12a6f21e08fc5a3821",
+      "occurredAt": "2026-10-19T09:47:24.5658912+08:00"
+    },
+    {
+      "sequence": 1835941,
+      "type": "usage.recorded",
+      "turnId": "19248d8afe5e4d12aaed20b4a0b804c4",
+      "messageId": "4ce7e8d507d04f12a6f21e08fc5a3821",
+      "occurredAt": "2026-10-19T09:47:24.5658912+08:00"
+    },
+    {
+      "sequence": 1835942,
+      "type": "turn.completed",
+      "turnId": "19248d8afe5e4d12aaed20b4a0b804c4",
+      "messageId": "4ce7e8d507d04f12a6f21e08fc5a3821",
+      "occurredAt": "2026-10-19T09:47:24.5976494+08:00"
+    }
+  ],
+  "limits": [
+    "The real message was accepted on 8ba1ba7 / 6.9.7; persisted display was verified again on 7664eb2 / 6.9.8.",
+    "Startup performance was diagnosed, not optimized; no browser-control functional completion claimed."
+  ]
+}
