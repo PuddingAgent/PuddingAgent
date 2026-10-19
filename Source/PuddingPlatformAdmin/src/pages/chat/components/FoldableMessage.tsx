@@ -28,6 +28,11 @@ export interface FoldableMessageProps {
   onOpenInSide?: () => void;
   /** 默认是否展开（默认 false）。 */
   defaultExpanded?: boolean;
+  /**
+   * 禁用折叠（流式期间必须为 true）。
+   * 流式时内容还在增长，此时折叠会导致正文突然缩水、跳动。
+   */
+  disabled?: boolean;
   /** 摘要行数上限。 */
   excerptLineLimit?: number;
 }
@@ -37,13 +42,14 @@ export const FoldableMessage: React.FC<FoldableMessageProps> = ({
   children,
   onOpenInSide,
   defaultExpanded = false,
+  disabled = false,
   excerptLineLimit = 15,
 }) => {
   const decision = useMemo(() => analyzeLongMessage(markdown), [markdown]);
   const [expanded, setExpanded] = useState(defaultExpanded);
 
-  // 短消息：零额外 DOM，保持原来的阅读体验。
-  if (!decision.fold) return <>{children}</>;
+  // 流式期间禁用折叠；短消息：零额外 DOM，保持原来的阅读体验。
+  if (disabled || !decision.fold) return <>{children}</>;
 
   if (expanded) {
     return (

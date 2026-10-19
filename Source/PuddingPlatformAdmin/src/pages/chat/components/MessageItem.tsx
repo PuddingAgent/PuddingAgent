@@ -6,6 +6,7 @@ import {
 } from '@/utils/perfEventRuntime';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import IncrementalMarkdown from './IncrementalMarkdown';
+import FoldableMessage from './FoldableMessage';
 
 const MarkdownBlock =
   process.env.NODE_ENV === 'test'
@@ -26,6 +27,11 @@ interface MessageItemProps {
   visibleLiveText?: string;
   /** ADR-InkBloom: visible 在 liveText 中的起始偏移 */
   visibleStartOffset?: number;
+  /**
+   * 长消息「在右侧打开全文」回调。
+   * 未提供时不渲染该按钮——宁可少一个入口，也不给死按钮。
+   */
+  onOpenMessageInSide?: (markdown: string) => void;
 }
 
 const DeferredMarkdownFallback: React.FC<{
@@ -47,6 +53,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
   liveText,
   visibleLiveText,
   visibleStartOffset: _visibleStartOffset,
+  onOpenMessageInSide,
 }) => {
   const { styles: rawStyles } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
@@ -200,12 +207,22 @@ const MessageItem: React.FC<MessageItemProps> = ({
   return (
     <div ref={outputRef} className={styles.markdownBody}>
       {renderedMarkdown.trim() ? (
-        <IncrementalMarkdown
-          text={renderedMarkdown}
-          styles={styles}
-          workspaceId={workspaceId}
-          isStreaming={isStreaming}
-        />
+        <FoldableMessage
+          markdown={renderedMarkdown}
+          disabled={isStreaming}
+          onOpenInSide={
+            onOpenMessageInSide
+              ? () => onOpenMessageInSide(renderedMarkdown)
+              : undefined
+          }
+        >
+          <IncrementalMarkdown
+            text={renderedMarkdown}
+            styles={styles}
+            workspaceId={workspaceId}
+            isStreaming={isStreaming}
+          />
+        </FoldableMessage>
       ) : null}
       {isStreaming && <span className={styles.streamingCursor}>▌</span>}
     </div>
