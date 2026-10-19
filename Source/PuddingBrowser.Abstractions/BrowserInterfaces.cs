@@ -15,6 +15,23 @@ public interface IBrowserWorkspaceLifecycle
     Task ClosePageAsync(BrowserContextId contextId, PageId pageId, CancellationToken ct);
 }
 
+/// <summary>
+/// 「把这一页真正呈现出来」的端口：展开被折叠的工作区、选中该页的标签，并让它的表面可见。
+///
+/// 为什么与 <see cref="IBrowserWorkspaceLifecycle"/> 分开：生命周期讲的是「创建/关闭」，
+/// 呈现讲的是「让人看得见」。需要**真实渲染**的操作（截图、原生输入）在表面不可见时必然失败，
+/// 这时工具调用应当先把页面呈现出来，而不是把失败丢给调用方；
+/// 但呈现只对具备 UI 的宿主有意义 —— 独立实现的测试替身不必被迫实现它（接口隔离）。
+/// </summary>
+public interface IBrowserPagePresenter
+{
+    /// <summary>
+    /// 确保页面成为可见的前台标签。返回后调用方可以假定「再试一次就会成功」；
+    /// 无法呈现时抛 <see cref="InvalidOperationException"/>（不静默返回，避免调用方误以为已经可见）。
+    /// </summary>
+    Task PresentPageAsync(BrowserContextId contextId, PageId pageId, CancellationToken ct);
+}
+
 // ── Browser Runtime ─────────────────────────────────────
 
 public interface IBrowserRuntime : IAsyncDisposable

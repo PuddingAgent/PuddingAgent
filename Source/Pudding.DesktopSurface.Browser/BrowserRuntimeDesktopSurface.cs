@@ -699,7 +699,45 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         try { return await CaptureScreenshotAsync(context, request, cancellationToken).ConfigureAwait(false); }
         catch (BrowserOperationException ex) when (ex.Code == "browser_not_available")
         {
-            return CapabilityResult<BrowserScreenshotResult>.Failure(DesktopCapabilityError.UiUnavailable(ex.Message));
+            // 工作区被折叠时表面不可见，截图必然失败。用户折叠面板只应抑制「后台活动自动弹面板」，
+            // 不能让需要真实渲染的工具调用必然失败 —— 所以先请宿主把该页呈现出来，再重试**一次**。
+            // 呈现失败（或呈现后仍不可见）就把原始失败如实上报，不无限重试。
+            if (!await TryPresentPageAsync(request.Target, cancellationToken).ConfigureAwait(false))
+            {
+                return CapabilityResult<BrowserScreenshotResult>.Failure(DesktopCapabilityError.UiUnavailable(ex.Message));
+            }
+            try { return await CaptureScreenshotAsync(context, request, cancellationToken).ConfigureAwait(false); }
+            catch (BrowserOperationException retry) when (retry.Code == "browser_not_available")
+            {
+                return CapabilityResult<BrowserScreenshotResult>.Failure(DesktopCapabilityError.UiUnavailable(retry.Message));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 请宿主把目标页真正呈现出来（展开工作区、选中标签、让表面可见）。
+    /// 没有呈现端口（独立/无 UI 宿主）或呈现抛错时返回 <c>false</c> ——
+    /// 调用方据此保留原始错误，不编造「已呈现」。
+    /// </summary>
+    private async Task<bool> TryPresentPageAsync(DesktopPageTarget target, CancellationToken ct)
+    {
+        if (_workspace is not IBrowserPagePresenter presenter)
+        {
+            return false;
+        }
+        try
+        {
+            await presenter.PresentPageAsync(
+                new BrowserContextId(target.ContextId), new PageId(target.PageId), ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 

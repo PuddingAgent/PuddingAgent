@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Web.WebView2.Core;
+using PuddingBrowser.Abstractions;
 using PuddingBrowser.WebView2;
 using PuddingDesktop.Browser;
 using PuddingDesktop.Configuration;
@@ -1370,7 +1371,9 @@ public sealed partial class MainWindow : Window
                 runtime, surfaces, dispatcher, _automationGates,
                 _coordinator.BridgeDispatcher.Lifecycle.Readings,
             // 桥侧截图复用能力通道**同一条执行路径**（延迟求值：通道可能尚未启动）。
-            () => _coordinator.CapabilityExecutor);
+            () => _coordinator.CapabilityExecutor,
+            // 截图/原生输入需要真实渲染：面板折叠时由 Agent 调用触发自动展开（见 PresentBrowserPageAsync）。
+            PresentBrowserPageAsync);
             try { await browser.InitializeAsync(dataRoot, ct); }
             catch { await browser.DisposeAsync(); throw; }
             _browser = browser;
@@ -1400,6 +1403,29 @@ public sealed partial class MainWindow : Window
             return true;
         }
         finally { _browserGate.Release(); }
+    }
+
+    /// <summary>
+    /// Agent 请求「把这一页真正显示出来」—— 截图与原生输入的前提。
+    ///
+    /// 折叠的工作区会让 WebView2 表面 <c>IsVisible=false</c>，截图必然拿不到合成结果。
+    /// 用户手动折叠只应抑制「后台活动自动弹面板」，不能让需要真实渲染的工具调用必然失败
+    /// （否则浏览器工具就变成「面板打开才可用」）。展开后必须强制一次布局：
+    /// 表面要有非零尺寸才能出图。
+    /// </summary>
+    private async Task PresentBrowserPageAsync(PageId pageId, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        await UiThread.InvokeAsync(() =>
+        {
+            SetToolExpanded(true);
+            _toolTabs.Activate(ToolTabIdentity.Browser(pageId.Value));
+            SyncToolTabItems();
+            UpdateToolContentVisibility();
+            ApplyBrowserSurfaceAppearance();
+            ToolPanel.UpdateLayout();
+            return Task.CompletedTask;
+        });
     }
 
     private void SyncBrowserTabs()

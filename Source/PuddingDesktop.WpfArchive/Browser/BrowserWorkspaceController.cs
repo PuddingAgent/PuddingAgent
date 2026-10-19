@@ -109,6 +109,7 @@ public sealed class AgentBrowserActivityItem : INotifyPropertyChanged
 public sealed class BrowserWorkspaceController :
     IBrowserWorkspaceController,
     IBrowserWorkspaceLifecycle,
+    IBrowserPagePresenter,
     IBrowserCommandHandler,
     INotifyPropertyChanged
 {
@@ -125,6 +126,11 @@ public sealed class BrowserWorkspaceController :
     private readonly BrowserAutomationGateSync? _automationGates;
     private readonly BrowserReadingBaselineStore _readings;
     private readonly Func<IDesktopCapabilityExecutor?>? _capabilityExecutor;
+    /// <summary>
+    /// Shell 侧「把承载区显示出来」的动作（展开工具工作区、选中该页标签、强制布局）。
+    /// 省略时 <see cref="PresentPageAsync"/> 只能激活表面而无法展开折叠的工作区。
+    /// </summary>
+    private readonly Func<PageId, CancellationToken, Task>? _presentRequested;
 
     private IBrowserContext? _context;
     private PageId? _activePageId;
@@ -243,7 +249,8 @@ public sealed class BrowserWorkspaceController :
         IWebView2UiDispatcher uiDispatcher,
         BrowserAutomationGateSync? automationGates = null,
         BrowserReadingBaselineStore? readings = null,
-        Func<IDesktopCapabilityExecutor?>? capabilityExecutor = null)
+        Func<IDesktopCapabilityExecutor?>? capabilityExecutor = null,
+        Func<PageId, CancellationToken, Task>? presentRequested = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _surfaceHost = surfaceHost ?? throw new ArgumentNullException(nameof(surfaceHost));
@@ -253,6 +260,7 @@ public sealed class BrowserWorkspaceController :
         _readings = readings ?? new BrowserReadingBaselineStore();
         // 桥侧截图复用能力通道的**同一个执行器**（准入/闸门/预算一致）；省略 ⇒ 该能力在 Bridge 路径上明确不支持。
         _capabilityExecutor = capabilityExecutor;
+        _presentRequested = presentRequested;
     }
 
     /// <summary>
@@ -481,6 +489,32 @@ public sealed class BrowserWorkspaceController :
         await _gate.WaitAsync(ct);
         try
         {
+            await ActivateInternalAsync(pageId, ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 让这一页**真正可见**（截图与原生输入的前提）。
+    ///
+    /// 顺序不能反：先请 Shell 展开承载区，再激活表面。承载区折叠时
+    /// <c>Control.IsVisible</c> 为 false，任何截图都拿不到合成结果；
+    /// 反过来先激活再展开，会在「面板仍折叠」的瞬间激活，表面依旧不可见。
+    /// 用户手动折叠只应抑制「后台活动自动弹面板」，不能让需要渲染的调用必然失败。
+    /// </summary>
+    public async Task PresentPageAsync(BrowserContextId contextId, PageId pageId, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            RequireOwnedPage(contextId, pageId);
+            if (_presentRequested is { } present)
+            {
+                await present(pageId, ct);
+            }
             await ActivateInternalAsync(pageId, ct);
         }
         finally
