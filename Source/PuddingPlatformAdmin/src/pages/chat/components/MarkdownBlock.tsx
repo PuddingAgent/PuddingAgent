@@ -5,6 +5,8 @@ import React, { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
+import { markdownSanitizeSchema } from '@/utils/markdownSanitizeSchema';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { recordPerfEvent } from '@/utils/perfEventRuntime';
@@ -53,7 +55,13 @@ const MarkdownBlock = React.memo(
     return (
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex, rehypeRaw]}
+        // 顺序有意为之：先解析原始 HTML（emoji span 需要它），立刻消毒，
+        // 再交给 KaTeX——KaTeX 输出由库生成，排在消毒后会因白名单剥掉内联样式而错版。
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeSanitize, markdownSanitizeSchema],
+          [rehypeKatex, { trust: false }],
+        ]}
         components={components}
       >
         {processedMarkdown}
