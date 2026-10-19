@@ -37,7 +37,7 @@ public sealed class ScreenCaptureTool(
 {
     private const int MaxWindowsForListing = 40;
 
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = ScreenCaptureWire.JsonOptions;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         ScreenCaptureArgs args,
@@ -63,7 +63,8 @@ public sealed class ScreenCaptureTool(
                         coordinateSpace = "physical pixels, origin at the virtual desktop's top-left corner",
                         virtualDesktop = ScreenCaptureGeometry.GetVirtualDesktop(displays),
                         displays,
-                        windows = backend.GetWindows(Math.Clamp(args.MaxWindows ?? 15, 1, MaxWindowsForListing)),
+                        windows = ScreenCaptureWire.ProjectWindows(
+                            backend.GetWindows(Math.Clamp(args.MaxWindows ?? 15, 1, MaxWindowsForListing))),
                     },
                     JsonOptions));
             }

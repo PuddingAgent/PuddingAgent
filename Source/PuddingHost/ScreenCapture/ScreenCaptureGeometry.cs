@@ -206,7 +206,11 @@ public static class ScreenCaptureGeometry
         return true;
     }
 
-    private static bool TryParseHandle(string value, out nint handle)
+    /// <summary>
+    /// 解析 <c>windowHandle</c>：接受十进制或 <c>0x</c> 前缀十六进制。
+    /// <para>与 <see cref="ScreenCaptureWire.FormatHandle"/> 构成一对：那个负责输出、这个负责还原。</para>
+    /// </summary>
+    public static bool TryParseHandle(string value, out nint handle)
     {
         handle = 0;
         var text = value.Trim();

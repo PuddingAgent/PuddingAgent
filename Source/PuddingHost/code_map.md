@@ -26,7 +26,7 @@ draft: false
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册（见下「关键语义」） |
 | `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册（见下「关键语义」） |
 | `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生图片阅读与预处理工具（见下「关键语义」） |
-| `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三种口径、物理像素坐标、GDI 采集 + SkiaSharp 编码、结果落 Vision Artifact |
+| `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三种口径、物理像素坐标、GDI 采集 + SkiaSharp 编码、结果落 Vision Artifact。**线格式边界在 `ScreenCapture/ScreenCaptureWire.cs`**（句柄 `nint`→`0x` 十六进制，因 System.Text.Json 不支持 IntPtr） |
 | `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库 schema 初始化（见下「关键语义」） |
 | `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM |
 | `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
