@@ -7,7 +7,7 @@ import {
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import IncrementalMarkdown from './IncrementalMarkdown';
 import FoldableMessage from './FoldableMessage';
-import { useSideArtifact } from '../sideArtifact/SideArtifactContext';
+import { useSideArtifactActions } from '../sideArtifact/SideArtifactContext';
 import { extractOutline } from '../markdown/outline';
 
 const MarkdownBlock =
@@ -209,7 +209,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
   // 「在右侧打开」的优先级：显式 prop > 页面级 context > 不渲染按钮。
   // 没有 context 时（单测、独立使用）保持原来的行为，不造死按钮。
-  const side = useSideArtifact();
+  // 只用 actions（引用稳定）：长消息不需要知道当前打开了哪个文档，
+  // 因此不会因文档内容变化而重渲染。
+  const side = useSideArtifactActions();
   const openInSide = onOpenMessageInSide
     ? () => onOpenMessageInSide(renderedMarkdown)
     : side

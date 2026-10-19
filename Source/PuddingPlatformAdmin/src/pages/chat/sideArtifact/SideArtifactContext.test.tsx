@@ -1,11 +1,17 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
-import { SideArtifactProvider, useSideArtifact } from './SideArtifactContext';
+import {
+  SideArtifactProvider,
+  useSideArtifact,
+  useSideArtifactActions,
+} from './SideArtifactContext';
 import { SideDocumentPanel } from '../components/SideDocumentPanel';
 
 /**
- * 右侧产物状态：这是跨 4 层组件的 UI 动作，用 context 而不是 prop drilling。
+ * 右侧产物状态。
+ *
  * 重点验证三件事：openDocument 生效、close 只收起不清内容、无 Provider 时安全降级。
+ * 外加一条性能约束：**只消费 actions 的组件不能因文档变化而重渲染**。
  */
 const Probe: React.FC = () => {
   const side = useSideArtifact();
@@ -59,6 +65,38 @@ describe('SideArtifactContext', () => {
 
     expect(screen.getByTestId('open').textContent).toBe('false');
     expect(screen.getByTestId('name').textContent).toBe('a.md');
+  });
+});
+
+describe('actions / state 拆分（避免跨层重渲染）', () => {
+  it('只消费 actions 的组件在文档变化时不重渲染', () => {
+    let renders = 0;
+
+    const ActionOnly: React.FC = () => {
+      const actions = useSideArtifactActions();
+      renders += 1;
+      return (
+        <button
+          data-testid="action-open"
+          onClick={() => actions?.openDocument({ name: 'z.md', markdown: '# z' })}
+        >
+          open
+        </button>
+      );
+    };
+
+    render(
+      <SideArtifactProvider>
+        <ActionOnly />
+      </SideArtifactProvider>,
+    );
+
+    const before = renders;
+    fireEvent.click(screen.getByTestId('action-open'));
+
+    // state 变了，但只用 actions 的组件不应该重渲染——
+    // 这正是"长对话里每条长消息都白跑一遍"的根源。
+    expect(renders).toBe(before);
   });
 });
 
