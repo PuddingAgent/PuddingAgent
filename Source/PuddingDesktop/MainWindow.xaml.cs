@@ -865,8 +865,69 @@ public sealed partial class MainWindow : Window
         // Home is markup-declared: the visual design stays in XAML.
         ToolTabKind.Home => ToolHomePanel,
         ToolTabKind.Output => CreateOutputContent(tab),
+        ToolTabKind.Document => CreateDocumentContent(tab),
         _ => CreateDeferredContent(tab),
     };
+
+    /// <summary>
+    /// 文档预览标签页：Shell **只负责把 WebView2 指到 /admin/doc-preview**。
+    ///
+    /// 内容不由 Shell 读：路径校验、根目录、大小上限与 Markdown 渲染全在 Core 侧
+    /// （DocumentPreviewPathPolicy + doc-preview.tsx）。这样 Shell 不需要知道工作区在哪，
+    /// 也不必为每种文档格式各写一个渲染器。
+    /// </summary>
+    private FrameworkElement CreateDocumentContent(ToolTab tab)
+    {
+        var web = new Microsoft.UI.Xaml.Controls.WebView2
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+
+        var host = new Grid();
+        host.Children.Add(web);
+
+        // 初始化是异步的，而 CreateToolContent 必须同步返回 ⇒ 先返回控件，再后台接线。
+        _ = LoadDocumentTabAsync(web, tab);
+        return host;
+    }
+
+    private async Task LoadDocumentTabAsync(Microsoft.UI.Xaml.Controls.WebView2 web, ToolTab tab)
+    {
+        try
+        {
+            _webEnvironment ??= await CoreWebView2Environment.CreateWithOptionsAsync(null,
+                Path.Combine(_coordinator.DataRoot!, "browser", "workbench", "user-data"), null);
+            await web.EnsureCoreWebView2Async(_webEnvironment);
+
+            if (_coordinator.WorkbenchAddress is not { } address)
+            {
+                ShowDocumentTabMessage(web, "工作台尚未就绪，文档预览暂不可用。");
+                return;
+            }
+
+            var path = tab.ResourceKey ?? string.Empty;
+            // Shell 目前只跑在默认工作区；多工作区落地时由 tab.Subtitle 承载。
+            var workspace = "default";
+            var url = new Uri(
+                address,
+                $"/admin/doc-preview?path={Uri.EscapeDataString(path)}&ws={Uri.EscapeDataString(workspace)}");
+            web.CoreWebView2.Navigate(url.ToString());
+        }
+        catch (Exception ex)
+        {
+            // 失败要给可读原因：空白页会被误读成“文件是空的”。
+            ShowDocumentTabMessage(web, $"无法打开文档预览：{ex.Message}");
+        }
+    }
+
+    private static void ShowDocumentTabMessage(Microsoft.UI.Xaml.Controls.WebView2 web, string message)
+    {
+        var html = "<html><body style=\"font-family:'Segoe UI',sans-serif;padding:24px;opacity:.8;\">"
+            + System.Net.WebUtility.HtmlEncode(message)
+            + "</body></html>";
+        web.CoreWebView2?.NavigateToString(html);
+    }
 
     private FrameworkElement CreateDeferredContent(ToolTab tab)
     {
@@ -1021,6 +1082,21 @@ public sealed partial class MainWindow : Window
     }
 
     private void OnOpenTerminalTab(object sender, RoutedEventArgs e) => OpenTerminalTool();
+
+    private void OnOpenDocumentTab(object sender, RoutedEventArgs e) => OpenDocumentTool(string.Empty);
+
+    /// <summary>
+    /// 打开（或激活）文档预览标签。同路径幂等：<see cref="ToolTabIdentity.Document"/> 已把
+    /// 大小写与分隔符归一，重复打开同一文件只会切到已有标签而不是又开一个。
+    /// </summary>
+    private void OpenDocumentTool(string path) => OpenTool(new ToolTabDescriptor
+    {
+        Id = ToolTabIdentity.Document(path),
+        Kind = ToolTabKind.Document,
+        Title = string.IsNullOrWhiteSpace(path) ? "文档预览" : Path.GetFileName(path),
+        ResourceKey = path,
+        Availability = ToolAvailabilityCatalog.For(ToolTabKind.Document),
+    });
 
     private void OpenTerminalTool() => OpenTool(new ToolTabDescriptor
     {

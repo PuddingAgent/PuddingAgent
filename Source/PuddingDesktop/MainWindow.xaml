@@ -511,6 +511,7 @@
           <MenuFlyoutItem Text="Agent 浏览器" Click="OnOpenBrowserTab"/>
           <MenuFlyoutItem Text="制成品预览" Click="OnOpenArtifactTab"/>
           <MenuFlyoutItem Text="输出文件" Click="OnOpenOutputTab"/>
+          <MenuFlyoutItem Text="文档预览" Click="OnOpenDocumentTab"/>
           <MenuFlyoutItem Text="交互面板" Click="OnOpenPanelTab"/>
           <MenuFlyoutSeparator/>
           <ToggleMenuFlyoutItem x:Name="AutoExpandMenuItem" Text="任务开始时自动展开" Click="OnToggleAutoExpand"/>
