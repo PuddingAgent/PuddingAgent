@@ -181,6 +181,40 @@ public sealed class BrowserAgentToolBridgeIntegrationTests
             }, BrowserBridgeTestJson.Options)
         });
 
+    [Fact]
+    public async Task PreviewDocumentTool_IsDiscoveredAndFailsHonestlyWithoutCapabilityChannel()
+    {
+        await using var host = await BrowserBridgeTestHost.StartAsync();
+
+        // 先建立**旧 Bridge** 连接：这样调用上下文工厂能返回 call context，
+        // 请求会真正走到文档表面（否则工具会在“没有 Desktop”处提前失败，
+        // 根本测不到“有 Desktop、但没有能力通道”这个分支）。
+        using var socket = await host.ConnectWebSocketAsync();
+        Assert.True((await BrowserBridgeTestHost.CompleteHelloAsync(socket)).Accepted);
+
+        // 能拿到工具就同时证明两件事：① [Tool] 扫描发现了它；② 它的两个依赖
+        // （IDesktopDocumentCapabilitySurface / 调用上下文工厂）在宿主里可解析。
+        var tool = host.Services.GetRequiredService<IPuddingToolRegistry>().GetTool("preview_document");
+        Assert.NotNull(tool);
+
+        // Bridge 已连、能力通道未启用 ⇒ 文档预览它没能力做（旧 Bridge 从未有 document.preview 命令）。
+        // 必须如实报不可用，**不得**回退到 Bridge 假装成功。
+        var result = await tool!.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "preview-document-without-channel",
+            ArgumentsJson = """{"path":"Docs/a.md"}""",
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "default",
+                SessionId = "session-preview",
+                AgentInstanceId = "agent-preview",
+            },
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("capability channel", result.Error!, StringComparison.Ordinal);
+    }
+
     private static BrowserPageDescriptor Page() => new()
     {
         ContextId = "ctx-visible",

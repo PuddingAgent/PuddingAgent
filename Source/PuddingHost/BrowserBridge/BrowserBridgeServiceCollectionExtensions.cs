@@ -105,6 +105,12 @@ public static class BrowserBridgeServiceCollectionExtensions
         services.AddSingleton<IDesktopContextCapabilitySurface>(sp =>
             sp.GetRequiredService<TransportRoutedBrowserCapabilitySurface>());
 
+        // 文档预览：**不做运输路由** —— 旧 Bridge 从未有该命令（1cae733 已被 7717b0f 撤销），
+        // “回退 Bridge”不是降级而是假成功。无活动会话时返回 NotConnected，由工具如实报错。
+        services.AddSingleton<IDesktopDocumentCapabilitySurface>(sp =>
+            new ChannelDocumentCapabilitySurface(
+                () => sp.GetService<Pudding.CapabilityBroker.CapabilityBroker>()?.Sessions.FirstOrDefault()));
+
         // Desktop 实例 ID 有**两个真实来源**，都来自各自的握手，绝不猜：
         //   ① 能力通道已启用 ⇒ 活动会话的 DesktopId；
         //   ② 通道未启用 ⇒ 既有 Bridge 连接的 DesktopInstanceId。
