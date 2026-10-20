@@ -1576,9 +1576,9 @@ public sealed partial class MainWindow : Window
             await File.WriteAllBytesAsync(path, bytes);
 
             // 每插一次就多一张图，不清就会无限增长。
-            // 失败不影响本次结果：Prune 内部吞掉 IO/权限异常，绝不因为收拾垃圾而
-            // 把已经成功落盘的图报成失败。
-            PanelMarkRetention.Prune(PanelMarkDirectory);
+            // 传入 path 作 protect：排序靠 mtime，而时钟回拨时刚写的图可能被排成“最旧”，
+            // 那样就会把用户刚画的那一版删掉。
+            PanelMarkRetention.Prune(PanelMarkDirectory, protect: path);
             return path;
         }
         catch (Exception)

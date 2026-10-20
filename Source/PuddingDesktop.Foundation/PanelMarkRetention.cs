@@ -29,7 +29,12 @@ public static class PanelMarkRetention
     private const string Pattern = "panel-marked-*.jpg";
 
     /// <summary>按修改时间保留最新 <paramref name="keep"/> 张，删除其余的；返回删除数。</summary>
-    public static int Prune(string? directory, int keep = DefaultKeep)
+    /// <param name="protect">
+    /// 受保护的文件（通常就是刚写入的那一张），永远不参与淘汰。
+    /// 必要原因：排序依据是文件系统 mtime，而时钟回拨、或某些文件系统/拷贝操作
+    /// 会保留旧 mtime ⇒ 新写的文件可能被排成“最旧”，被当成垃圾删掉。
+    /// </param>
+    public static int Prune(string? directory, int keep = DefaultKeep, string? protect = null)
     {
         if (string.IsNullOrWhiteSpace(directory) || keep < 0)
         {
@@ -47,6 +52,7 @@ public static class PanelMarkRetention
             doomed = Directory
                 .EnumerateFiles(directory, Pattern, SearchOption.TopDirectoryOnly)
                 .Select(path => new FileInfo(path))
+                .Where(info => !IsSameFile(info.FullName, protect))
                 // 用最后写入时间排序：文件名带时间戳，但用户可能拷来旧图，
                 // 按文件系统时间更贴近"最近用过的那几张"。
                 .OrderByDescending(info => info.LastWriteTimeUtc)
@@ -81,5 +87,25 @@ public static class PanelMarkRetention
         }
 
         return removed;
+    }
+
+    /// <summary>比较两个路径是否指向同一个文件（不追软链接，够用且不会因链环报错）。</summary>
+    private static bool IsSameFile(string path, string? protect)
+    {
+        if (string.IsNullOrWhiteSpace(protect))
+        {
+            return false;
+        }
+
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(path), Path.GetFullPath(protect), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            // 非法路径（保留字符等）：当作不匹配，宁可少删也不误删。
+            return false;
+        }
     }
 }

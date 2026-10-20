@@ -90,4 +90,19 @@ public sealed class PanelMarkRetentionTests : IDisposable
         Assert.Equal(0, PanelMarkRetention.Prune(_root, keep: -1));
         Assert.True(File.Exists(path));
     }
+
+    [Fact]
+    public void TheFileJustWrittenSurvivesAClockSkew()
+    {
+        // 排序依据是 mtime：时钟回拨（或某些文件系统不更新 mtime）时，
+        // 刚写的图会被排成"最旧"，当成垃圾删掉。protect 必须兜住它。
+        var older = Write("panel-marked-old.jpg", new DateTime(2026, 10, 20, 12, 0, 0, DateTimeKind.Utc));
+        var justWritten = Write("panel-marked-fresh.jpg", new DateTime(2026, 10, 19, 12, 0, 0, DateTimeKind.Utc));
+
+        var removed = PanelMarkRetention.Prune(_root, keep: 0, protect: justWritten);
+
+        Assert.Equal(1, removed);
+        Assert.True(File.Exists(justWritten));
+        Assert.False(File.Exists(older));
+    }
 }
