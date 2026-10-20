@@ -94,8 +94,20 @@ public static class PanelCanvasFeed
     /// than defaulted. A defaulted revision would make the canvas silently stop refreshing,
     /// which is harder to notice than an explicit failure.
     /// </para>
+    ///
+    /// <para>
+    /// When <paramref name="expectedPanelId"/> is supplied, a body describing a **different**
+    /// canvas is rejected. This response crosses a process boundary: a mis-routed request,
+    /// a proxy cache collision or a store keyed wrongly would otherwise be rendered into
+    /// whichever canvas asked — and a canvas silently showing another canvas's content has
+    /// no visible symptom at all.
+    /// </para>
     /// </summary>
-    public static bool TryParse(string? json, out PanelCanvasFeedItem item, out string? error)
+    public static bool TryParse(
+        string? json,
+        out PanelCanvasFeedItem item,
+        out string? error,
+        string? expectedPanelId = null)
     {
         item = null!;
         error = null;
@@ -133,6 +145,14 @@ public static class PanelCanvasFeed
                 return false;
             }
 
+            var resolvedPanelId = panelId.Trim();
+            if (expectedPanelId is not null
+                && !string.Equals(resolvedPanelId, expectedPanelId, StringComparison.Ordinal))
+            {
+                error = $"response is for panel '{resolvedPanelId}', expected '{expectedPanelId}'.";
+                return false;
+            }
+
             if (!root.TryGetProperty("revision", out var revisionElement)
                 || revisionElement.ValueKind != JsonValueKind.Number
                 || !revisionElement.TryGetInt64(out var revision))
@@ -150,7 +170,7 @@ public static class PanelCanvasFeed
 
             var title = ReadString(root, "title");
             item = new PanelCanvasFeedItem(
-                panelId.Trim(),
+                resolvedPanelId,
                 string.IsNullOrWhiteSpace(title) ? null : title.Trim(),
                 revision,
                 contentElement.GetString()!);

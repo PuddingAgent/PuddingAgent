@@ -1141,7 +1141,8 @@ public sealed partial class MainWindow : Window
             }
 
             var body = await response.Content.ReadAsStringAsync();
-            return PanelCanvasFeed.TryParse(body, out var item, out var parseError)
+            // 传入请求的 panelId：响应必须自证是这块画布的，否则宁可不渲染。
+            return PanelCanvasFeed.TryParse(body, out var item, out var parseError, panelId)
                 ? PanelCanvasFeedResult.Fetched(item)
                 : PanelCanvasFeedResult.Unreachable(parseError);
         }
