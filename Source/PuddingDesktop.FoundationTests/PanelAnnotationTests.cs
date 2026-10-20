@@ -388,4 +388,95 @@ public sealed class PanelAnnotationTests
         Assert.Equal("图一 <point>1 2</point>",
             PanelAnnotation.DescribeForComposer(items, null, new[] { @"D:\Data" }));
     }
+
+    // ── 新图元：箭头 / 文字 / 涂鸦 ───────────────────────────────
+
+    [Fact]
+    public void Arrow_becomes_two_points_because_the_protocol_has_no_line_marker()
+    {
+        // 官方交互编辑指南只定义 <point> 和 <bbox> 两种标记，没有「线」。
+        var arrow = PanelAnnotation.Arrow(100, 200, 800, 600);
+
+        Assert.Equal(
+            "箭头 <point>100 200</point> → <point>800 600</point>",
+            arrow.ToPromptFragment());
+    }
+
+    [Fact]
+    public void Arrow_preserves_the_draw_direction()
+    {
+        // 反向画的箭头不能被「整理」成正向：方向就是用户想说的那件事。
+        var arrow = PanelAnnotation.Arrow(800, 600, 100, 200);
+
+        Assert.Equal(
+            "箭头 <point>800 600</point> → <point>100 200</point>",
+            arrow.ToPromptFragment());
+    }
+
+    [Fact]
+    public void Text_carries_the_typed_words_next_to_an_anchor()
+    {
+        var text = PanelAnnotation.Text("把这里换成蓝色", 400, 300);
+
+        Assert.Equal("文字「把这里换成蓝色」 <point>400 300</point>", text.ToPromptFragment());
+    }
+
+    [Fact]
+    public void Blank_text_is_rejected_rather_than_silently_downgraded()
+    {
+        // 没有字的文字标注没有任何信息量；静默当成点选会让用户以为写进去了。
+        Assert.Throws<ArgumentException>(() => PanelAnnotation.Text("   ", 1, 2));
+    }
+
+    [Fact]
+    public void Scribble_is_a_labelled_box_not_a_new_marker()
+    {
+        // 涂鸦的语义是「这一片」，与框选同构；轨迹本身对模型没有意义。
+        var scribble = PanelAnnotation.Scribble(10, 20, 300, 400);
+
+        Assert.Equal(PanelAnnotationKind.Box, scribble.Kind);
+        Assert.Equal("涂鸦 <bbox>10 20 300 400</bbox>", scribble.ToPromptFragment());
+    }
+
+    [Fact]
+    public void Text_label_drops_control_characters_and_is_capped()
+    {
+        // 标签会被拼进 prompt：控制字符能伪装出换行/覆盖效果，必须去掉。
+        var withControl = PanelAnnotation.Text("上\n下\t左", 1, 2);
+        Assert.Equal("文字「上下左」 <point>1 2</point>", withControl.ToPromptFragment());
+
+        var longLabel = new string('长', PanelAnnotation.MaxLabelLength + 50);
+        var capped = PanelAnnotation.Text(longLabel, 1, 2);
+        Assert.Equal(PanelAnnotation.MaxLabelLength, capped.Label!.Length);
+    }
+
+    [Fact]
+    public void Canvas_payload_parses_arrow_and_text_kinds()
+    {
+        const string json = """
+            {"width":800,"height":800,"items":[
+              {"kind":"arrow","x1":0,"y1":0,"x2":400,"y2":400},
+              {"kind":"text","label":"换成蓝色","x":400,"y":400}]}
+            """;
+
+        Assert.True(PanelAnnotation.TryParseCanvas(json, out var payload, out var error), error);
+
+        Assert.Equal(2, payload.Items.Count);
+        Assert.Equal(PanelAnnotationKind.Arrow, payload.Items[0].Kind);
+        // 起点 (0,0) 归一化仍是 0；终点 (400,400) 在 800px 图上是 500。
+        Assert.Equal(500, payload.Items[0].X2);
+        Assert.Equal(PanelAnnotationKind.Text, payload.Items[1].Kind);
+        Assert.Equal("换成蓝色", payload.Items[1].Label);
+    }
+
+    [Fact]
+    public void Canvas_payload_rejects_a_text_annotation_without_words()
+    {
+        const string json = """
+            {"width":800,"height":800,"items":[{"kind":"text","x":1,"y":2}]}
+            """;
+
+        Assert.False(PanelAnnotation.TryParseCanvas(json, out _, out var error));
+        Assert.Contains("label", error!, StringComparison.OrdinalIgnoreCase);
+    }
 }

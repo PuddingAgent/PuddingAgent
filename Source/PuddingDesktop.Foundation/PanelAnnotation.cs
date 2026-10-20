@@ -8,6 +8,23 @@ public enum PanelAnnotationKind
 
     /// <summary>点选：<c>&lt;point&gt;x y&lt;/point&gt;</c>，由模型判断影响范围。</summary>
     Point,
+
+    /// <summary>
+    /// 箭头 / 线段：由起点指向终点。
+    ///
+    /// <para>
+    /// Seedream 协议**没有**「线」这种标记，只有 point 与 bbox。所以这里把两个端点
+    /// 各用一个 <c>&lt;point&gt;</c> 表达，方向交给自然语言（“箭头 … → …”）。
+    /// 用包围盒表达会丢掉方向，而方向往往正是用户想说的那句话。
+    /// </para>
+    /// </summary>
+    Arrow,
+
+    /// <summary>
+    /// 文字标注：文字本身就是 prompt 的一部分，位置用 <c>&lt;point&gt;</c> 锚定。
+    /// 对模型来说这是信息量最大的一种输入 —— 自然语言能表达坐标表达不了的东西。
+    /// </summary>
+    Text,
 }
 
 /// <summary>
@@ -49,16 +66,31 @@ public sealed record PanelAnnotation
     /// <summary>一次最多接受的标注数量。超过通常是误用或恶意构造。</summary>
     public const int MaxItems = 10;
 
-    private PanelAnnotation(PanelAnnotationKind kind, int x1, int y1, int x2, int y2)
+    /// <summary>文字标签的长度上限（字符）。超长截断而不是拒绝。</summary>
+    public const int MaxLabelLength = 200;
+
+    private PanelAnnotation(
+        PanelAnnotationKind kind, int x1, int y1, int x2, int y2, string? label = null)
     {
         Kind = kind;
         X1 = x1;
         Y1 = y1;
         X2 = x2;
         Y2 = y2;
+        Label = label;
     }
 
     public PanelAnnotationKind Kind { get; }
+
+    /// <summary>
+    /// 语义标签：涂鸦写「涂鸦」，文字标注写用户输入的原文。
+    ///
+    /// <para>
+    /// 它**不是**模型协议的一部分，而是把「这是什么图元」说给模型听的那一小段
+    /// 自然语言。坐标告诉模型「改哪里」，标签告诉它「改什么」。
+    /// </para>
+    /// </summary>
+    public string? Label { get; }
 
     public int X1 { get; }
 
@@ -135,13 +167,117 @@ public sealed record PanelAnnotation
         return new PanelAnnotation(PanelAnnotationKind.Point, x, y, 0, 0);
     }
 
+    /// <summary>由像素两点建立箭头/线段（起点 → 终点，**不排序**）。</summary>
+    public static PanelAnnotation ArrowFromPixels(
+        double x1, double y1, double x2, double y2, double width, double height) =>
+        new(PanelAnnotationKind.Arrow,
+            Normalize(x1, width), Normalize(y1, height),
+            Normalize(x2, width), Normalize(y2, height));
+
+    /// <summary>直接以归一化坐标建立箭头/线段。</summary>
+    public static PanelAnnotation Arrow(int x1, int y1, int x2, int y2)
+    {
+        RequireInRange(x1, nameof(x1));
+        RequireInRange(y1, nameof(y1));
+        RequireInRange(x2, nameof(x2));
+        RequireInRange(y2, nameof(y2));
+        return new PanelAnnotation(PanelAnnotationKind.Arrow, x1, y1, x2, y2);
+    }
+
     /// <summary>
-    /// 转成 Seedream 能读的 prompt 片段。只含整数，因此可以直接拼进 prompt，
-    /// 不存在注入面。
+    /// 涂鸦：语义上就是「这一片」，所以仍是 bbox，只多一个标签。
+    /// 轨迹本身不传给模型 —— 它不需要知道用户画了几笔，只需要知道落在哪片区域。
     /// </summary>
-    public string ToPromptFragment() => Kind == PanelAnnotationKind.Box
-        ? $"<bbox>{X1} {Y1} {X2} {Y2}</bbox>"
-        : $"<point>{X1} {Y1}</point>";
+    public static PanelAnnotation Scribble(int x1, int y1, int x2, int y2)
+    {
+        var box = Box(x1, y1, x2, y2);
+        return new PanelAnnotation(
+            PanelAnnotationKind.Box, box.X1, box.Y1, box.X2, box.Y2, ScribbleLabel);
+    }
+
+    /// <summary>由像素范围建立涂鸦标注。</summary>
+    public static PanelAnnotation ScribbleFromPixels(
+        double x1, double y1, double x2, double y2, double width, double height)
+    {
+        var box = FromPixels(x1, y1, x2, y2, width, height);
+        return new PanelAnnotation(
+            PanelAnnotationKind.Box, box.X1, box.Y1, box.X2, box.Y2, ScribbleLabel);
+    }
+
+    /// <summary>涂鸦在图元列表里的标签。它是模型能读到的唯一线索。</summary>
+    public const string ScribbleLabel = "涂鸦";
+
+    /// <summary>由像素点建立文字标注。</summary>
+    public static PanelAnnotation TextFromPixels(
+        string label, double x, double y, double width, double height) =>
+        new(PanelAnnotationKind.Text,
+            Normalize(x, width), Normalize(y, height), 0, 0, SanitizeLabel(label));
+
+    /// <summary>直接以归一化坐标建立文字标注；空白标签会被拒绝。</summary>
+    public static PanelAnnotation Text(string label, int x, int y)
+    {
+        RequireInRange(x, nameof(x));
+        RequireInRange(y, nameof(y));
+        var cleaned = SanitizeLabel(label)
+            ?? throw new ArgumentException("Text label must not be blank.", nameof(label));
+        return new PanelAnnotation(PanelAnnotationKind.Text, x, y, 0, 0, cleaned);
+    }
+
+    /// <summary>
+    /// 清洗文字标签：去控制字符、Trim、超长截断。
+    ///
+    /// <para>
+    /// 与坐标「越界即拒绝」不同，这里选择截断：坐标夹取会让标注落在错误位置
+    /// （用户看不出来，代价很大）；而文字截断只是少了几个字，主体信息仍在。
+    /// 控制字符必须去掉 —— 它们能让一段看起来很短的文字在终端/日志里变成别的样子。
+    /// </para>
+    /// </summary>
+    private static string? SanitizeLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return null;
+        }
+
+        var builder = new System.Text.StringBuilder(label.Length);
+        foreach (var ch in label)
+        {
+            if (!char.IsControl(ch))
+            {
+                builder.Append(ch);
+            }
+        }
+
+        var cleaned = builder.ToString().Trim();
+        if (cleaned.Length == 0)
+        {
+            return null;
+        }
+
+        return cleaned.Length <= MaxLabelLength ? cleaned : cleaned[..MaxLabelLength];
+    }
+
+    /// <summary>
+    /// 转成 Seedream 能读的 prompt 片段。
+    ///
+    /// <para>
+    /// 坐标部分只含整数，因此不存在注入面；但 <see cref="Label"/> 是用户输入的字符串，
+    /// 拼接前已去控制字符。协议只有 point / bbox 两种标记，所以：
+    /// 箭头用两个 point 表达方向，文字用 point 锚定位置后再供自然语言。
+    /// </para>
+    /// </summary>
+    public string ToPromptFragment() => Kind switch
+    {
+        PanelAnnotationKind.Box => Label is null
+            ? $"<bbox>{X1} {Y1} {X2} {Y2}</bbox>"
+            : $"{Label} <bbox>{X1} {Y1} {X2} {Y2}</bbox>",
+        PanelAnnotationKind.Point => $"<point>{X1} {Y1}</point>",
+        PanelAnnotationKind.Arrow => $"箭头 <point>{X1} {Y1}</point> → <point>{X2} {Y2}</point>",
+        PanelAnnotationKind.Text => Label is null
+            ? $"<point>{X1} {Y1}</point>"
+            : $"文字「{Label}」 <point>{X1} {Y1}</point>",
+        _ => $"<point>{X1} {Y1}</point>",
+    };
 
     /// <summary>
     /// 把多个标注格式化成一段可直接放进输入框的文字。
@@ -423,6 +559,43 @@ public sealed record PanelAnnotation
             }
 
             annotation = PointFromPixels(x, y, width, height);
+            return true;
+        }
+
+        if (string.Equals(kind, "arrow", StringComparison.OrdinalIgnoreCase))
+        {
+            // 起止两点都按像素给出；方向由 (x1,y1) → (x2,y2) 决定，**不排序**。
+            // 排序会把箭头变成一根无方向的包围盒，丢掉用户想说的那件事。
+            if (!TryReadFinite(element, "x1", out var ax1)
+                || !TryReadFinite(element, "y1", out var ay1)
+                || !TryReadFinite(element, "x2", out var ax2)
+                || !TryReadFinite(element, "y2", out var ay2))
+            {
+                error = "arrow annotation needs finite x1,y1,x2,y2.";
+                return false;
+            }
+
+            annotation = ArrowFromPixels(ax1, ay1, ax2, ay2, width, height);
+            return true;
+        }
+
+        if (string.Equals(kind, "text", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryReadFinite(element, "x", out var tx) || !TryReadFinite(element, "y", out var ty))
+            {
+                error = "text annotation needs finite x,y.";
+                return false;
+            }
+
+            var text = SanitizeLabel(ReadString(element, "label"));
+            if (text is null)
+            {
+                // 没字的文字标注没有任何信息量，没必要静默当成点选。
+                error = "text annotation needs a non-empty 'label'.";
+                return false;
+            }
+
+            annotation = TextFromPixels(text, tx, ty, width, height);
             return true;
         }
 

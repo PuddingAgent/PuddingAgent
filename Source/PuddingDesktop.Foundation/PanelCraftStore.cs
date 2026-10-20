@@ -116,10 +116,10 @@ public static class PanelCraftJson
                 foreach (var annotation in craft.Source.Annotations)
                 {
                     writer.WriteStartObject();
-                    writer.WriteString(
-                        "kind",
-                        annotation.Kind == PanelAnnotationKind.Box ? "box" : "point");
-                    if (annotation.Kind == PanelAnnotationKind.Box)
+                    writer.WriteString("kind", KindToWire(annotation.Kind));
+
+                    // box 与 arrow 都用 x1/y1/x2/y2；arrow 不排序，方向靠顺序。
+                    if (annotation.Kind is PanelAnnotationKind.Box or PanelAnnotationKind.Arrow)
                     {
                         writer.WriteNumber("x1", annotation.X1);
                         writer.WriteNumber("y1", annotation.Y1);
@@ -130,6 +130,12 @@ public static class PanelCraftJson
                     {
                         writer.WriteNumber("x", annotation.X1);
                         writer.WriteNumber("y", annotation.Y1);
+                    }
+
+                    // label 只对涂鸦（box 的语义标签）和文字标注有意义。
+                    if (annotation.Label is not null)
+                    {
+                        writer.WriteString("label", annotation.Label);
                     }
 
                     writer.WriteEndObject();
@@ -221,6 +227,16 @@ public static class PanelCraftJson
                 ReadString(root, "note"));
         }
     }
+
+    /// <summary>标注种类 ↔ 线缆字符串。解析侧（<c>PanelAnnotation.TryParseCanvas</c>）认同一套名字。</summary>
+    private static string KindToWire(PanelAnnotationKind kind) => kind switch
+    {
+        PanelAnnotationKind.Box => "box",
+        PanelAnnotationKind.Point => "point",
+        PanelAnnotationKind.Arrow => "arrow",
+        PanelAnnotationKind.Text => "text",
+        _ => "point",
+    };
 
     private static void WriteNullableString(Utf8JsonWriter writer, string name, string? value)
     {
