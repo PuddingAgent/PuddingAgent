@@ -93,6 +93,8 @@ public static class ErrorPresentationCatalog
         };
 
         var descriptor = DiagnosticCauseCatalog.Describe(causeCode);
+        if (!retryable && descriptor.RetryableByDefault && action.Contains("重试", StringComparison.Ordinal))
+            action = "检查现场后重新发起一轮";
 
         return new ErrorPresentation
         {

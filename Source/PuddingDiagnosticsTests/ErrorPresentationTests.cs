@@ -147,6 +147,20 @@ public sealed class ErrorPresentationTests
         Assert.IsLessThan(DiagnosticReportDocument.MaxRenderedChars + 256, text.Length);
     }
 
+    [TestMethod]
+    public void Report_RetryabilityUsesEvidence_AndDoesNotConfuseFailureWithRetryExhaustion()
+    {
+        var report = BuildReport();
+        Assert.IsTrue(report.Presentation.Retryable);
+        StringAssert.Contains(report.RenderText(), "可重试: 是");
+        StringAssert.Contains(report.RenderText(), $"捕获时间(本地): {report.CapturedAt.ToLocalTime():O}");
+        StringAssert.Contains(report.RenderText(), $"捕获时间(UTC): {report.CapturedAt.ToUniversalTime():O}");
+
+        var stopped = ErrorPresentationCatalog.Describe(DiagnosticCauseCode.ResponseReadReset, retryable: false);
+        Assert.IsFalse(stopped.Retryable);
+        Assert.IsFalse(stopped.PrimaryAction.Contains("重试", StringComparison.Ordinal));
+    }
+
     private static DiagnosticReportDocument BuildReport()
     {
         var evidence = new DiagnosticEvidenceBuilder()

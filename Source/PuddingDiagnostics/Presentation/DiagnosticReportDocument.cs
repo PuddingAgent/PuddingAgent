@@ -70,12 +70,18 @@ public sealed record DiagnosticReportDocument
         string? agentTemplateId = null,
         string? agentInstanceId = null,
         string? executionId = null,
-        string? platformVersion = null)
+        string? platformVersion = null,
+        bool? retryable = null)
     {
         ArgumentNullException.ThrowIfNull(incident);
 
         var code = incident.RootCauseCode ?? DiagnosticCauseCode.UnclassifiedLocal;
-        var presentation = ErrorPresentationCatalog.Describe(code, retryable: false);
+        // 终态 failed 只表示本次调用结束，不等于该故障不可重试。
+        var canRetry = retryable ?? (evidence is not null
+            && bool.TryParse(evidence.GetValueOrDefault(DiagnosticEvidenceKeys.Retryable), out var recorded)
+                ? recorded
+                : DiagnosticCauseCatalog.Describe(code).RetryableByDefault);
+        var presentation = ErrorPresentationCatalog.Describe(code, canRetry);
 
         return new DiagnosticReportDocument
         {
@@ -139,7 +145,7 @@ public sealed record DiagnosticReportDocument
     {
         var builder = new StringBuilder();
         builder.AppendLine($"== Pudding 错误报告（{Schema}） ==");
-        builder.AppendLine($"捕获时间(本地): {CapturedAt:O}");
+        builder.AppendLine($"捕获时间(本地): {CapturedAt.ToLocalTime():O}");
         builder.AppendLine($"捕获时间(UTC): {CapturedAt.ToUniversalTime():O}");
         builder.AppendLine($"标题: {Presentation.Title}");
         builder.AppendLine($"大概原因: {Presentation.ShortCause}");
@@ -162,7 +168,7 @@ public sealed record DiagnosticReportDocument
         builder.AppendLine($"platform: {Value(PlatformVersion)}");
         builder.AppendLine();
 
-        builder.AppendLine($"-- 尝试明细（{Attempts.Count} 次）--");
+        builder.AppendLine($"-- 尝试明细（已记录 {Attempts.Count} 次）--");
         if (Attempts.Count == 0)
         {
             builder.AppendLine("（未记录到尝试明细）");
