@@ -22,19 +22,36 @@ namespace PuddingDesktop.Foundation;
 /// </summary>
 public static class PanelMarkRetention
 {
-    /// <summary>默认保留张数。够回看最近几轮，又不至于把目录撑大。</summary>
-    public const int DefaultKeep = 50;
+    /// <summary>
+    /// 默认保留张数。
+    ///
+    /// <para>
+    /// 定得很大是**故意的**：现在还没有引用关系落盘（哪张图进了消息、哪张进了草稿），
+    /// 所以任何擦除都是盲擦。在这个前提下，宁可多留 —— 一个跑很久的助手也就几十 MB，
+    /// 而误删一张被消息引用的图的代价是链接永久断掉。等引用表落地后再往下调。
+    /// </para>
+    /// </summary>
+    public const int DefaultKeep = 500;
 
     /// <summary>本功能的文件名模式。前缀定死，避免误删同目录里别人的文件。</summary>
     private const string Pattern = "panel-marked-*.jpg";
 
     /// <summary>按修改时间保留最新 <paramref name="keep"/> 张，删除其余的；返回删除数。</summary>
+    /// <param name="minAge">
+    /// 只删「比这个还旧」的文件；不传则不限年龄。
+    /// 为什么要它：昨天刚插入的图很可能还在对话里被引用，删它就是断链。
+    /// 数量与年龄**同时**满足才删。
+    /// </param>
     /// <param name="protect">
     /// 受保护的文件（通常就是刚写入的那一张），永远不参与淘汰。
     /// 必要原因：排序依据是文件系统 mtime，而时钟回拨、或某些文件系统/拷贝操作
     /// 会保留旧 mtime ⇒ 新写的文件可能被排成“最旧”，被当成垃圾删掉。
     /// </param>
-    public static int Prune(string? directory, int keep = DefaultKeep, string? protect = null)
+    public static int Prune(
+        string? directory,
+        int keep = DefaultKeep,
+        TimeSpan? minAge = null,
+        string? protect = null)
     {
         if (string.IsNullOrWhiteSpace(directory) || keep < 0)
         {
@@ -45,6 +62,10 @@ public static class PanelMarkRetention
         {
             return 0;
         }
+
+        var cutoff = minAge is { } age && age > TimeSpan.Zero
+            ? DateTime.UtcNow - age
+            : (DateTime?)null;
 
         List<FileInfo> doomed;
         try
@@ -57,6 +78,8 @@ public static class PanelMarkRetention
                 // 按文件系统时间更贴近"最近用过的那几张"。
                 .OrderByDescending(info => info.LastWriteTimeUtc)
                 .Skip(keep)
+                // 先按数量选出候选，再剔除“还很新”的：两个条件同时满足才删。
+                .Where(info => cutoff is null || info.LastWriteTimeUtc < cutoff)
                 .ToList();
         }
         catch (IOException)

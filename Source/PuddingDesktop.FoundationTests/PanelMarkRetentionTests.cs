@@ -92,6 +92,22 @@ public sealed class PanelMarkRetentionTests : IDisposable
     }
 
     [Fact]
+    public void FilesNewerThanMinAgeAreKeptEvenBeyondTheCountLimit()
+    {
+        // 数量与年龄**同时**满足才删：昨天刚插入的图很可能还在对话里被引用。
+        var fresh1 = Write("panel-marked-1.jpg", DateTime.UtcNow.AddHours(-2));
+        var fresh2 = Write("panel-marked-2.jpg", DateTime.UtcNow.AddDays(-1));
+        var stale = Write("panel-marked-3.jpg", DateTime.UtcNow.AddDays(-30));
+
+        var removed = PanelMarkRetention.Prune(_root, keep: 0, minAge: TimeSpan.FromDays(7));
+
+        Assert.Equal(1, removed);
+        Assert.True(File.Exists(fresh1));
+        Assert.True(File.Exists(fresh2));
+        Assert.False(File.Exists(stale));
+    }
+
+    [Fact]
     public void TheFileJustWrittenSurvivesAClockSkew()
     {
         // 排序依据是 mtime：时钟回拨（或某些文件系统不更新 mtime）时，

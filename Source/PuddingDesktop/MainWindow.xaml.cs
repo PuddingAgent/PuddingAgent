@@ -1575,10 +1575,14 @@ public sealed partial class MainWindow : Window
                 PanelMarkDirectory, $"panel-marked-{DateTime.Now:yyyyMMdd-HHmmss-fff}.jpg");
             await File.WriteAllBytesAsync(path, bytes);
 
-            // 每插一次就多一张图，不清就会无限增长。
-            // 传入 path 作 protect：排序靠 mtime，而时钟回拨时刚写的图可能被排成“最旧”，
-            // 那样就会把用户刚画的那一版删掉。
-            PanelMarkRetention.Prune(PanelMarkDirectory, protect: path);
+            // 每插一次就多一张图，不清会无限增长。
+            // 但**不能盲删**：现在没有引用关系落盘，被消息引用的图一旦删掉链接就永久断。
+            // 所以两道门：超过上限 **且** 早于保留期。传入 path 作 protect ——
+            // 排序靠 mtime，时钟回拨时刚写的图可能被排成“最旧”。
+            PanelMarkRetention.Prune(
+                PanelMarkDirectory,
+                minAge: TimeSpan.FromDays(7),
+                protect: path);
             return path;
         }
         catch (Exception)
