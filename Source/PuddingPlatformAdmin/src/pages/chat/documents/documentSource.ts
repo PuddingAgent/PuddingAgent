@@ -17,6 +17,7 @@ import {
   normalizeDocumentPath,
   type DocumentPathResult,
 } from './documentPath';
+import { splitFrontMatter } from './frontMatter';
 
 export interface LoadedDocument {
   /** 文件名（取路径最后一段）。 */
@@ -192,6 +193,9 @@ export async function loadDocumentContent(
   }
 
   const body = parseBody(text);
+  // 文件开头的 YAML front matter 不是给人读的正文：直接渲染会得到一张元数据表格，
+  // 把真正的标题压到下面（2026-10-20 实测「部署操作手册」首屏就是这个问题）。
+  const { body: readableMarkdown } = splitFrontMatter(body.markdown);
   const metaParts: string[] = [];
   if (typeof body.size === 'number') {
     const formatted = formatBytes(body.size);
@@ -203,7 +207,7 @@ export async function loadDocumentContent(
     ok: true,
     document: {
       name: documentNameFromPath(normalized.path),
-      markdown: body.markdown,
+      markdown: readableMarkdown,
       meta: metaParts.length > 0 ? metaParts.join(' · ') : normalized.path,
     },
   };

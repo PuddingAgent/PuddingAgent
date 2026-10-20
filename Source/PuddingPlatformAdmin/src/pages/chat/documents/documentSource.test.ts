@@ -250,3 +250,38 @@ describe('认证头', () => {
     expect(headers[0].Authorization).toBeUndefined();
   });
 });
+
+describe('front matter 剥离', () => {
+  it('响应体开头的 YAML 块不会渲染成元数据表格（接线断言）', async () => {
+    // 前面的 frontMatter.test 只验证纯函数；忘了在 loadDocumentContent 里调用它，
+    // 那些用例仍然全绿，而真实页面依旧把 YAML 表格顶在最上面。
+    const raw = ['---', 'title: 部署操作手册', 'status: draft', '---', '# 部署操作手册'].join('\n');
+    const { impl } = fakeFetch({ body: JSON.stringify({ content: raw }) });
+
+    const result = await loadDocumentContent({
+      workspaceId: 'default',
+      path: 'Docs/手册.md',
+      fetchImpl: impl,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.markdown).toBe('# 部署操作手册');
+    expect(result.document.markdown).not.toContain('status: draft');
+  });
+
+  it('没有 front matter 的文档正文不被改写（对照组）', async () => {
+    const raw = '# 纯粹的正文\n\n段落';
+    const { impl } = fakeFetch({ body: JSON.stringify({ content: raw }) });
+
+    const result = await loadDocumentContent({
+      workspaceId: 'default',
+      path: 'a.md',
+      fetchImpl: impl,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.markdown).toBe(raw);
+  });
+});
