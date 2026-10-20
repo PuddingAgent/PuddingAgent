@@ -479,4 +479,33 @@ public sealed class PanelAnnotationTests
         Assert.False(PanelAnnotation.TryParseCanvas(json, out _, out var error));
         Assert.Contains("label", error!, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Scribble_uses_the_bounding_box_of_its_stroke()
+    {
+        // 轨迹点只用来算外接框；模型不需要知道画了几笔。
+        const string json = """
+            {"width":800,"height":800,"items":[
+              {"kind":"scribble","points":[{"x":100,"y":200},{"x":300,"y":100},{"x":200,"y":400}]}]}
+            """;
+
+        Assert.True(PanelAnnotation.TryParseCanvas(json, out var payload, out var error), error);
+        var item = payload.Items[0];
+
+        Assert.Equal(PanelAnnotationKind.Box, item.Kind);
+        Assert.Equal(PanelAnnotation.ScribbleLabel, item.Label);
+        // 包围盒 x 100..300 在 800px 上为 125..375；y 100..400 为 125..500。
+        Assert.Equal("涂鸦 <bbox>125 125 375 500</bbox>", item.ToPromptFragment());
+    }
+
+    [Fact]
+    public void Scribble_without_points_is_rejected()
+    {
+        const string json = """
+            {"width":800,"height":800,"items":[{"kind":"scribble","points":[]}]}
+            """;
+
+        Assert.False(PanelAnnotation.TryParseCanvas(json, out _, out var error));
+        Assert.Contains("at least one point", error!, StringComparison.OrdinalIgnoreCase);
+    }
 }

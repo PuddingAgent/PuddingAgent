@@ -599,6 +599,46 @@ public sealed record PanelAnnotation
             return true;
         }
 
+        if (string.Equals(kind, "scribble", StringComparison.OrdinalIgnoreCase))
+        {
+            // 涂鸦传的是**轨迹点**：模型只需要知道落在哪片，所以这里取外接框；
+            // 轨迹本身留给页面做烧录与回放 —— 丢掉它就再也画不出用户原本的笔迹。
+            if (!element.TryGetProperty("points", out var points)
+                || points.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                error = "scribble annotation needs a 'points' array.";
+                return false;
+            }
+
+            if (points.GetArrayLength() == 0)
+            {
+                error = "scribble annotation needs at least one point.";
+                return false;
+            }
+
+            var minX = double.MaxValue;
+            var minY = double.MaxValue;
+            var maxX = double.MinValue;
+            var maxY = double.MinValue;
+
+            foreach (var point in points.EnumerateArray())
+            {
+                if (!TryReadFinite(point, "x", out var px) || !TryReadFinite(point, "y", out var py))
+                {
+                    error = "scribble points need finite x,y.";
+                    return false;
+                }
+
+                minX = Math.Min(minX, px);
+                maxX = Math.Max(maxX, px);
+                minY = Math.Min(minY, py);
+                maxY = Math.Max(maxY, py);
+            }
+
+            annotation = ScribbleFromPixels(minX, minY, maxX, maxY, width, height);
+            return true;
+        }
+
         error = $"unknown annotation kind '{kind}'.";
         return false;
     }
