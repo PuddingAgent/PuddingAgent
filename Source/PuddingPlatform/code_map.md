@@ -244,6 +244,7 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 | `Controllers/Api/AgentOrchestrationRevisionApiController.cs` | Draft validate 与 Revision PUT CAS | `AgentOrchestrationRevisionApiController` | `Services/Orchestration/AgentOrchestrationAuthoringService.cs` | 编排专用 Web/string-enum JSON 契约；冲突返回当前 Revision 事实；诊断含 elementType/elementId/portId |
 | `Controllers/Api/AgentOrchestrationRunCommandApiController.cs` | 运行命令端点 | `AgentOrchestrationRunCommandApiController` | `Services/Orchestration/AgentOrchestrationManualRunService.cs` | POST /api/orchestrations/runs；Admin-only、1 MiB 上限、201/200 幂等回执与稳定 400/404/409 |
 | `Controllers/Api/AgentOrchestrationHttpHookApiController.cs` | HTTP Hook 端点 | `AgentOrchestrationHttpHookApiController` | `Services/Orchestration/AgentOrchestrationHttpHookService.cs` | POST /api/orchestrations/hooks/{graphId}/{triggerId}?revisionId=...；Admin-only、1 MiB、201/200 幂等 |
+| `Controllers/Api/WorkspaceFileApiController.cs` | 文档正文读取（Shell 预览页） | `WorkspaceFileApiController` | `Services/DocumentPreviewPathPolicy.cs` | GET /files/content?path=；只读；根外与不存在同为 404；根不可用返 503 |
 
 ## 多媒体
 
@@ -251,6 +252,7 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 |---|---|---|---|---|
 | `Services/ImageGenerationService.cs` | 图片生成 | `ImageGenerationService` | `Services/VisionArtifactStorageService.cs` | — |
 | `Services/VisionArtifactStorageService.cs` | Workspace 原图与派生缓存 | `VisionArtifactStorageService`、`.Preprocessing.cs`、`ImagePreprocessing.cs` | `Services/VisualArtifactObservationService.cs` | 64MiB 与实际格式/尺寸/EXIF；模型边界低分辨率副本与超尺寸概览；原图不覆盖，变换按源与版本化参数复用；解码串行限并发 |
+| `Services/DocumentPreviewPathPolicy.cs` | 文档预览路径策略（纯函数） | `DocumentPreviewPathPolicy`、`DocumentPreviewErrorCodes` | `Controllers/Api/WorkspaceFileApiController.cs` | 拒绝绝对路径/`..`/盘符/冒号；扩展名白名单；前缀复核必带分隔符 |
 | `Services/VisualArtifactObservationService.cs` | 视觉观察 | `VisualArtifactObservationService` | `Services/VisionArtifactStorageService.cs` | — |
 | `Services/AudioArtifactStorageService.cs` | 音频存储 | `AudioArtifactStorageService` | `Services/AudioTranscriptionService.cs` | — |
 | `Services/AudioTranscriptionService.cs` | 音频转录 | `AudioTranscriptionService` | `Services/AudioArtifactStorageService.cs` | — |
