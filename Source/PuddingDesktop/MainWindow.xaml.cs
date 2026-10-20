@@ -1677,6 +1677,7 @@ public sealed partial class MainWindow : Window
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         actions.Children.Add(PanelAction("继续编辑", async (_, _) => await OpenCraftForEditingAsync(craft)));
         actions.Children.Add(PanelAction("打开文件", (_, _) => OpenCraftInExplorer(craft)));
+        actions.Children.Add(PanelAction("删除", (_, _) => DeleteCraft(craft)));
         body.Children.Add(actions);
 
         return new Border
@@ -1756,6 +1757,58 @@ public sealed partial class MainWindow : Window
         {
             ToolStatusText.Text = $"无法打开资源管理器：{ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// 删除制成品：只移进 <c>_trash</c>，不真删。
+    ///
+    /// <para>
+    /// 误删一张改了很久的图，代价远大于占一点磁盘；而「先移再删」让恢复只需要一次拖拽。
+    /// 状态栏报出移到了哪里 —— 不说的话用户只能去翻目录碰运气。
+    /// </para>
+    /// </summary>
+    private void DeleteCraft(PanelCraft craft)
+    {
+        try
+        {
+            if (!CraftStore.Delete(craft.Id, DateTimeOffset.Now))
+            {
+                ToolStatusText.Text = $"删除失败：制品库里找不到 {craft.Id}";
+                return;
+            }
+
+            ToolStatusText.Text = $"已删除：{craft.Title}（移入 _trash，可手动恢复）";
+            RefreshCraftLibraryTab();
+        }
+        catch (Exception ex)
+        {
+            ToolStatusText.Text = $"删除失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 重建制成品标签页。
+    ///
+    /// <para>
+    /// 不能就地改列表：<see cref="CreateCraftLibrary"/> 每次重建整页，局部更新会让
+    /// 「已删除但仍显示」和「已新增但不显示」两种不同步同时存在。
+    /// 丢弃缓存并让 <see cref="UpdateToolContentVisibility"/> 重新构建，只有一条路径。
+    /// </para>
+    /// </summary>
+    private void RefreshCraftLibraryTab()
+    {
+        var tab = _toolTabs.ActiveTab;
+        if (tab is null || tab.Kind != ToolTabKind.Artifact)
+        {
+            return;
+        }
+
+        if (_toolTabContent.Remove(tab.Id, out var stale))
+        {
+            ToolTabContentHost.Children.Remove(stale);
+        }
+
+        UpdateToolContentVisibility();
     }
 
     private static Button PanelAction(string text, RoutedEventHandler onClick)
