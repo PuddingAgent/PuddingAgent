@@ -64,6 +64,7 @@
     <Project Path="Source/Pudding.DesktopServiceTests/Pudding.DesktopServiceTests.csproj" />
     <Project Path="Tests/PuddingHost.Tests/PuddingHost.Tests.csproj" />
     <Project Path="Source/PuddingBrowser.AuthorizationTests/PuddingBrowser.AuthorizationTests.csproj" />
+    <Project Path="Source/PuddingBrowser.AgentToolsTests/PuddingBrowser.AgentToolsTests.csproj" />
   <Project Path="Source/PuddingBrowser.AutomationTests/PuddingBrowser.AutomationTests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
     <Project Path="Source/PuddingCodeIndexTests/PuddingCodeIndexTests.csproj" />

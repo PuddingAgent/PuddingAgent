@@ -1,6 +1,5 @@
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
-using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingCore.Documents;
@@ -23,8 +22,14 @@ public sealed record PreviewDocumentArgs
 /// 只把相对路径交给 Desktop，由它自己读盘与渲染 ⇒ 不产生文件 I/O，
 /// 也不会把用户文档内容带进对话上下文与审计。
 ///
+/// **为什么继承 <see cref="PuddingToolBase{TArgs}"/> 而不是 BrowserAgentToolBase**：
+/// 后者在 `ExecuteCoreAsync` 里强制要求浏览器调用者身份（`BrowserCallerIdentityScope.Current`），
+/// 没有就 fail-closed。文档预览不是浏览器操作 —— 能力层（DesktopService.ValidateAdmission）
+/// 也只在能力映射到浏览器操作时才要求 caller ⇒ 继承它会让本工具**永远失败**，
+/// 且编译期与既有测试都看不出来。
+///
 /// 为什么留在这个组件：它依赖 <see cref="IDesktopDocumentCapabilitySurface"/> 与
-/// Desktop 能力调用上下文工厂，而这两个接缝连同工具基类都在本组件；
+/// Desktop 能力调用上下文工厂，而这两个接缝与工具基类都在本组件；
 /// 另起工程只会多一份 DI 注册，隔离度并不会提高（边界已由 Contracts 承担）。
 /// </summary>
 [Tool(
@@ -36,10 +41,9 @@ public sealed record PreviewDocumentArgs
     safety: ToolSafetyFlags.ConcurrencySafe)]
 public sealed class PreviewDocumentTool(
     IDesktopDocumentCapabilitySurface surface,
-    IDesktopCapabilityCallContextFactory callContexts,
-    IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<PreviewDocumentArgs>(originAccessor)
+    IDesktopCapabilityCallContextFactory callContexts) : PuddingToolBase<PreviewDocumentArgs>
 {
-    protected override async Task<ToolExecutionResult> ExecuteBrowserCoreAsync(
+    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         PreviewDocumentArgs args,
         ToolExecutionContext context,
         CancellationToken ct)
@@ -51,7 +55,7 @@ public sealed class PreviewDocumentTool(
             return BrowserToolResponse.Failure(errorCode!, errorMessage!);
         }
 
-        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } call)
+        if (callContexts.TryCreate() is not { } call)
         {
             return BrowserToolResponse.Failure(
                 "desktop_not_connected", "No Desktop is connected for document preview");
@@ -65,7 +69,7 @@ public sealed class PreviewDocumentTool(
             return BrowserToolResponse.Failure(result.Error!.WireCode, result.Error.Message);
         }
 
-        // 只回身份与阶段：正文永不出现在结果里（也不算「已渲染」，只说明 Desktop 的报告）。
+        // 只回身份与阶段：正文永不出现在结果里；accepted 只表示 Desktop 已受理，不代表已渲染。
         return BrowserToolResponse.Success(new DocumentPreviewToolValue
         {
             TabId = result.Value.TabId,
