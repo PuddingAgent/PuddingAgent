@@ -156,9 +156,11 @@ public static partial class PuddingServiceCollectionExtensions
         // ── 交互面板内容的**单一真源**：Agent 生成的 HTML 归 Core，不归 Desktop ──
         // 放在这里而不是 Desktop：内容要可寻址、可重放，且不能被传输方式绑死
         // （能力通道就绪时才能推；它一断，面板就等于不可控）。
-        builder.Services.AddSingleton<
-            PuddingCore.Panels.IPanelCanvasStore,
-            PuddingCore.Panels.InMemoryPanelCanvasStore>();
+        // 落盘而非纯内存：画布应活过进程重启 —— 否则「昨晚推的图，今天没了」，
+        // 而且没有任何迹象说明它曾经存在过。目录与其他运行时数据同源，便于备份与清理。
+        builder.Services.AddSingleton<PuddingCore.Panels.IPanelCanvasStore>(
+            _ => new PuddingCore.Panels.FilePanelCanvasStore(
+                Path.Combine(dataPaths.DataRoot, "panels")));
 
             // ── Conversation 命令受理（ADR-059）─────────────
             builder.Services.AddScoped<ISubmitTurnHandler, SubmitTurnHandler>();

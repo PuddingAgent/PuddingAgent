@@ -98,23 +98,9 @@ public sealed class InMemoryPanelCanvasStore : IPanelCanvasStore
         string? title = null,
         DateTimeOffset? now = null)
     {
-        var id = RequirePanelId(panelId);
-        ArgumentNullException.ThrowIfNull(content);
-
-        if (content.Length > PanelCanvasLimits.MaxContentChars)
-        {
-            throw new ArgumentException(
-                $"content exceeds {PanelCanvasLimits.MaxContentChars} characters.",
-                nameof(content));
-        }
-
-        var normalizedTitle = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
-        if (normalizedTitle is { Length: > PanelCanvasLimits.MaxTitleLength })
-        {
-            throw new ArgumentException(
-                $"title exceeds {PanelCanvasLimits.MaxTitleLength} characters.",
-                nameof(title));
-        }
+        var id = PanelCanvasGuard.RequirePanelId(panelId);
+        PanelCanvasGuard.RequireContent(content);
+        var normalizedTitle = PanelCanvasGuard.NormalizeTitle(title);
 
         lock (_gate)
         {
@@ -169,12 +155,24 @@ public sealed class InMemoryPanelCanvasStore : IPanelCanvasStore
         }
     }
 
+}
+
+/// <summary>
+/// 画布 id / 内容 / 标题的**共享校验**。
+///
+/// <para>
+/// 进程内与落盘两个实现必须用同一套规则：否则「内存里能发布的 id，落盘时失败」会变成
+/// 只在重启后才暴露的缺陷；反之「落盘能写、内存拒绝」更糟——内容会进到运行中的画布。
+/// </para>
+/// </summary>
+internal static class PanelCanvasGuard
+{
     /// <summary>
     /// 防污染守卫：只接受字母、数字与 <c>. _ -</c>。
     /// 这条规则与线缆契约同一个来源（画布 id 最终也是 Desktop 的 tab 身份），
     /// 在这里再挡一次是因为坏 id 会永久占住字典键。
     /// </summary>
-    private static string RequirePanelId(string panelId)
+    public static string RequirePanelId(string panelId)
     {
         // 不用 ArgumentException.ThrowIfNullOrWhiteSpace：它对 null/空串抛 ArgumentNullException、
         // 对纯空白抛 ArgumentException —— 同一个「调用方给错了 id」裂成两种类型，
@@ -205,5 +203,34 @@ public sealed class InMemoryPanelCanvasStore : IPanelCanvasStore
         }
 
         return trimmed;
+    }
+
+    /// <summary>内容非 null 且不超上限；返回原值便于链式调用。</summary>
+    public static string RequireContent(string content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        if (content.Length > PanelCanvasLimits.MaxContentChars)
+        {
+            throw new ArgumentException(
+                $"content exceeds {PanelCanvasLimits.MaxContentChars} characters.",
+                nameof(content));
+        }
+
+        return content;
+    }
+
+    /// <summary>标题空白归一为 <c>null</c>（而不是空串），超长拒绝。</summary>
+    public static string? NormalizeTitle(string? title)
+    {
+        var normalized = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+        if (normalized is { Length: > PanelCanvasLimits.MaxTitleLength })
+        {
+            throw new ArgumentException(
+                $"title exceeds {PanelCanvasLimits.MaxTitleLength} characters.",
+                nameof(title));
+        }
+
+        return normalized;
     }
 }
