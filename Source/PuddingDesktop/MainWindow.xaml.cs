@@ -972,6 +972,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 0, 8, 6),
         };
         toolbar.Children.Add(PanelAction("标注", async (_, _) => await TogglePanelAnnotationAsync(tab)));
+        toolbar.Children.Add(PanelAction("保存到制品库", async (_, _) => await SavePanelToCraftsAsync(tab)));
         toolbar.Children.Add(PanelAction("添加到对话", async (_, _) => await AddPanelToChatAsync(tab)));
         toolbar.Children.Add(PanelAction("下载到本地", async (_, _) => await ExportPanelAsync(tab)));
         Grid.SetRow(toolbar, 0);
@@ -1504,6 +1505,62 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             ToolStatusText.Text = $"插入对话失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 制成品库。本地目录是唯一真源（<c>{DataRoot}/crafts</c>），不新增 Core API：
+    /// 制成品是用户资产而不是会话状态，应当能直接备份、用资源管理器打开、
+    /// 不依赖 Core 存活。
+    /// </summary>
+    private PanelCraftStore? _craftStore;
+
+    private PanelCraftStore CraftStore => _craftStore ??= new PanelCraftStore(_coordinator.DataRoot!);
+
+    /// <summary>
+    /// 「保存到制品库」：把当前画布上那张图存成一件制成品。
+    ///
+    /// <para>
+    /// 只接受能还原成白名单内真实路径的图：<c>data:</c> 内嵌图、外部链接都没有
+    /// 「一件可回溯的资产」可言，存下来只会是一个无法再加工的副本。
+    /// </para>
+    ///
+    /// <para>
+    /// 不强制起名：默认用画布标题。中断编辑去弹窗改名，比事后重命名更贵。
+    /// </para>
+    /// </summary>
+    private async Task SavePanelToCraftsAsync(ToolTab tab)
+    {
+        var payload = await TryReadCanvasPayloadAsync(tab);
+
+        if (payload is null
+            || string.IsNullOrWhiteSpace(payload.SourceUri)
+            || !PanelImageSource.TryResolve(payload.SourceUri, PanelImageRoots(), out var imagePath, out _))
+        {
+            ToolStatusText.Text = "这块画布没有可保存的本地图片。";
+            return;
+        }
+
+        var title = string.IsNullOrWhiteSpace(tab.Title) ? "未命名" : tab.Title;
+
+        try
+        {
+            var craft = CraftStore.Save(
+                imagePath,
+                title,
+                (int)Math.Round(payload.Width),
+                (int)Math.Round(payload.Height),
+                new PanelCraftSource(PanelIdOf(tab), null, null, payload.Items),
+                parent: null,
+                note: null,
+                DateTimeOffset.Now);
+
+            ToolStatusText.Text = $"已保存到制品库：{craft.Title}（{craft.Id}）";
+        }
+        catch (Exception ex)
+        {
+            // 保存失败必须说出来：默默失败会让用户以为存上了，几天后才发现没了。
+            ToolStatusText.Text = $"保存到制品库失败：{ex.Message}";
         }
     }
 
