@@ -24,6 +24,22 @@ describe('RichBlockRegistry', () => {
     expect(resolveRichBlock('MERMAID')).toBe(resolveRichBlock('mermaid'));
   });
 
+  /**
+   * 每个已注册围栏都要在这里占一行。
+   *
+   * 这条断言的真正作用是**锁住接线**：渲染器自己的单测（如 PanelBlock.test）
+   * 是直接 import 组件的，即使注册表里漏了 `panel` 也照样全绿，
+   * 但生产里围栏会静默退化成普通代码块 —— 只有这里能抓到。
+   */
+  it('chart 与 panel 已注册（防注册表漏项）', () => {
+    expect(RICH_BLOCK_LANGUAGES).toContain('chart');
+    expect(RICH_BLOCK_LANGUAGES).toContain('panel');
+    expect(resolveRichBlock('chart')).toBeDefined();
+    expect(resolveRichBlock('panel')).toBeDefined();
+    // 模型常把语言名写成首字母大写
+    expect(isRichBlockLanguage('Panel')).toBe(true);
+  });
+
   it('未注册的语言返回 undefined（调用方据此回退为普通代码块）', () => {
     expect(isRichBlockLanguage('ts')).toBe(false);
     expect(resolveRichBlock('python')).toBeUndefined();
