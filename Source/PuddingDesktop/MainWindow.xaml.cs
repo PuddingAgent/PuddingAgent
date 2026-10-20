@@ -1258,10 +1258,12 @@ public sealed partial class MainWindow : Window
 
     private void OnOpenPanelTab(object sender, RoutedEventArgs e) => OpenTool(new ToolTabDescriptor
     {
-        Id = ToolTabIdentity.Panel(Guid.NewGuid().ToString("N")),
+        // 画布是**单例**：Agent 推送内容时需要一个固定目标，重复点击只应激活已有标签。
+        // 用 Guid 会让每点一次多一个画布（各自一份 WebView2），也说不清内容该送到哪个。
+        Id = ToolTabIdentity.Panel("main"),
         Kind = ToolTabKind.Panel,
-        Title = "面板 · 交互",
-        Subtitle = "等待 Agent 交互通道",
+        Title = "交互面板",
+        Subtitle = "内置示例画布",
         Availability = ToolAvailabilityCatalog.For(ToolTabKind.Panel),
     });
 
