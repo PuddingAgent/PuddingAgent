@@ -12,7 +12,7 @@ namespace Pudding.CapabilityBroker;
 ///
 /// 与 Desktop 侧对称但方向相反：Core 写命令、读结果/事件；两侧各自持有自己的状态机与待完成表。
 /// </summary>
-public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapabilitySurface, IDesktopContextCapabilitySurface
+public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapabilitySurface, IDesktopContextCapabilitySurface, IDesktopDocumentCapabilitySurface
 {
     private readonly ICoreDesktopChannel _channel;
     private readonly DesktopCapabilityPolicy _policy;
@@ -120,6 +120,25 @@ public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapability
     public event Action<Proto.DesktopEvent>? EventReceived;
 
     // ── 能力调用 ──────────────────────────────────────────────────────────
+
+    // ── 文档预览（Shell 类：无页面目标、无需 caller 投影）─────────────────────
+
+    /// <summary>
+    /// 请求 Desktop 在工具区打开一份文档。只传路径；本方法不得把正文/HTML 带回来。
+    /// 超时或取消后标签**可能已经开了**，因此错误里的 <c>MayHaveSideEffects</c> 由能力 trait
+    /// （HasSideEffects）决定，不由调用方猜。
+    /// </summary>
+    public Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+        DesktopDocumentPreviewRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.ShellDocumentPreview,
+            DesktopCapabilityRequest.ForDocumentPreview(request),
+            call,
+            static response => response.DocumentPreview is { } value
+                ? CapabilityResult<DesktopDocumentPreviewResult>.Success(value)
+                : CapabilityResult<DesktopDocumentPreviewResult>.Failure(
+                    DesktopCapabilityError.Internal("document preview response payload is missing")),
+            cancellationToken);
 
     public Task<CapabilityResult<NavigateResult>> NavigateAsync(
         NavigateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>

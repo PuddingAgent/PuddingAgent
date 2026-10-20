@@ -334,6 +334,69 @@ public sealed class InvokeAndCorrelationTests
         Assert.Equal("complete", @event.PageState.State);
     }
 
+    [Fact]
+    public async Task DocumentPreview_SendsPathOnlyAndCompletesFromResult()
+    {
+        // 默认 harness 不声明 shell.document_preview（它是新增能力）⇒ 显式打开。
+        var options = new HarnessOptions();
+        options.Declared |= DesktopCapability.ShellDocumentPreview;
+        options.Grantable |= DesktopCapability.ShellDocumentPreview;
+
+        await using var harness = await BrokerHarness.StartAsync(options);
+
+        var pending = harness.Session.OpenDocumentAsync(
+            new DesktopDocumentPreviewRequest("Docs/设计.md", "设计稿"), harness.Call("op-doc"));
+
+        var command = await harness.WaitForCommandAsync("op-doc");
+        Assert.NotNull(command);
+        Assert.Equal("shell.document_preview", command!.Capability);
+        Assert.Equal(Proto.CapabilityCommand.PayloadOneofCase.DocumentPreview, command.PayloadCase);
+        Assert.Equal("Docs/设计.md", command.DocumentPreview.Path);
+        Assert.Equal("设计稿", command.DocumentPreview.Title);
+        // 非浏览器能力：不携带 caller 身份投影（带了反而说明投影写错了地方）。
+        Assert.Null(command.Caller);
+
+        harness.Channel.Push(new Proto.DesktopFrame
+        {
+            Result = new Proto.OperationResult
+            {
+                OperationId = "op-doc",
+                Generation = 1,
+                DocumentPreview = new Proto.DocumentPreviewOutcome
+                {
+                    TabId = "document:Docs/设计.md",
+                    Path = "Docs/设计.md",
+                    Status = "already_open",
+                },
+            },
+        });
+
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("document:Docs/设计.md", result.Value.TabId);
+        Assert.Equal("Docs/设计.md", result.Value.Path);
+        Assert.Equal(DesktopDocumentPreviewStatus.AlreadyOpen, result.Value.Status);
+        Assert.Equal(0, harness.Session.PendingOperationCount);
+
+        var audit = Assert.Single(harness.Audit.ForOperation(new OperationId("op-doc")));
+        Assert.Equal(DesktopCapabilityOutcome.Succeeded, audit.Outcome);
+        Assert.Equal("shell.document_preview", audit.Capability);
+    }
+
+    [Fact]
+    public async Task DocumentPreview_WhenNotNegotiated_IsUnsupportedWithoutSending()
+    {
+        // 未声明就不得下发：fail closed 在**发命令之前**，不能先发再拒。
+        await using var harness = await BrokerHarness.StartAsync();
+
+        var result = await harness.Session.OpenDocumentAsync(
+            new DesktopDocumentPreviewRequest("Docs/a.md"), harness.Call("op-doc"));
+
+        Assert.Equal(DesktopCapabilityErrorCode.UnsupportedCapability, result.Error!.Code);
+        Assert.Empty(harness.Channel.Commands);
+    }
+
     private sealed class FixedAuthorizer : IDesktopCapabilityAuthorizer
     {
         private readonly DesktopCapabilityError _error;
