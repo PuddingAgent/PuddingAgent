@@ -42,6 +42,14 @@ const routeCatalog = [
     component: './chat',
   },
   {
+    // Shell 工具区新开 tab 时加载的文档预览页（WebView2 指向这个 URL）。
+    // layout:false —— 不要在嵌入视图里套后台外壳（菜单/顶栏）。
+    path: '/doc-preview',
+    layout: false,
+    hideInMenu: true,
+    component: './doc-preview',
+  },
+  {
     path: '/workspace',
     name: 'workspace',
     icon: 'appstore',
