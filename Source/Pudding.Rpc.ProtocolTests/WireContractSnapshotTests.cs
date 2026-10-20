@@ -112,7 +112,10 @@ public sealed class WireContractSnapshotTests
             ("show_file_picker", 23),
             ("binding_apply", 26),
             ("binding_revoke", 27),
-            ("screenshot", 28));
+            ("screenshot", 28),
+            // 2026-10-20 新增两个能力的字段号（已随能力通道发布，不得再变）。
+            ("document_preview", 29),
+            ("panel_render", 30));
 
         AssertFieldNumbers(
             OperationResult.Descriptor,
@@ -134,18 +137,23 @@ public sealed class WireContractSnapshotTests
             ("dialog", 23),
             ("file_picker", 24),
             ("binding_ack", 27),
-            ("screenshot", 28));
+            ("screenshot", 28),
+            // 与 CapabilityCommand 一一对应（同上）。
+            ("document_preview", 29),
+            ("panel_render", 30));
 
         Assert.Equal(
             ["Navigate", "ExecuteJavascript", "ShowNotification", "GetPageState", "GetShellStatus", "Snapshot", "Locate",
             "Interact", "WaitFor", "Contexts", "Tabs", "ReadClipboard", "ShowDialog", "ShowFilePicker",
-            "ContextCreate", "ContextClose", "BindingApply", "BindingRevoke", "Screenshot"],
+            "ContextCreate", "ContextClose", "BindingApply", "BindingRevoke", "Screenshot",
+            "DocumentPreview", "PanelRender"],
             Enum.GetNames<CapabilityCommand.PayloadOneofCase>().Where(name => name != "None").ToArray());
 
         Assert.Equal(
             ["Navigate", "ExecuteJavascript", "ShowNotification", "Error", "PageState", "ShellStatus", "Snapshot",
             "Locate", "Interact", "WaitFor", "Contexts", "Tabs", "Clipboard", "Dialog", "FilePicker",
-            "ContextCreated", "ContextClosed", "BindingAck", "Screenshot"],
+            "ContextCreated", "ContextClosed", "BindingAck", "Screenshot",
+            "DocumentPreview", "PanelRender"],
             Enum.GetNames<OperationResult.OutcomeOneofCase>().Where(name => name != "None").ToArray());
 
         AssertFieldNumbers(OperationCancel.Descriptor, ("operation_id", 1), ("generation", 2), ("reason", 3));
@@ -208,8 +216,8 @@ public sealed class WireContractSnapshotTests
     public void PayloadOneof_IsClosedWhitelist()
     {
         // 计划 §4：禁止「字符串命令名 + 任意 JSON」演化成万能调用。
-        Assert.Equal(19, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
-        Assert.Equal(19, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
+        Assert.Equal(21, CapabilityCommand.Descriptor.Oneofs.Single(o => o.Name == "payload").Fields.Count);
+        Assert.Equal(21, OperationResult.Descriptor.Oneofs.Single(o => o.Name == "outcome").Fields.Count);
     }
 
     [Fact]
