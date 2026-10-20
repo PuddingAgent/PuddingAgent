@@ -61,6 +61,18 @@ public sealed class PanelCanvasDocumentTests
     }
 
     [Fact]
+    public void Annotation_layer_follows_scroll_and_resize()
+    {
+        // 遮罩是 position:fixed：滚动后不重定位，用户会按旧矩形算坐标，
+        // 标注静默落到错误位置。这条只守「监听还在」，行为仍需人工点验。
+        var html = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("addEventListener('scroll'", html, StringComparison.Ordinal);
+        Assert.Contains("addEventListener('resize'", html, StringComparison.Ordinal);
+        Assert.Contains("e.button !== 0", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Exported_document_has_no_csp_so_it_opens_standalone()
     {
         // 导出文件是给用户自己打开/分享的：CSP 是容器约束，带进导出文件会拦住

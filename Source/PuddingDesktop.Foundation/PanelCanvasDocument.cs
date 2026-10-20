@@ -161,6 +161,8 @@ public static class PanelCanvasDocument
 
           function onDown(e) {
             if (!active || !box) return;
+            // 右键/中键不当拖拽起点：右键会弹上下文菜单，中键会触发自动滚动。
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
             start = local(e);
             layer.setPointerCapture(e.pointerId);
             e.preventDefault();
@@ -180,6 +182,11 @@ public static class PanelCanvasDocument
             paint();
           }
 
+          // 遮罩是 position:fixed 的：滚动/改窗口尺寸后图片位置变了，遮罩必须重定位。
+          // 不重定位的话遮罩还停在旧位置，而 local() 按旧矩形算坐标 ——
+          // 标注会静默落到错误位置，用户只会在生成图错位时才发现。
+          function resync() { if (active) sync(); }
+
           function bind(l) {
             if (bound) return;
             bound = true;
@@ -187,6 +194,9 @@ public static class PanelCanvasDocument
             l.addEventListener('pointerup', onUp);
             // 拖到图片外面松手也要落一个框，否则越界的拖拽会默默消失。
             document.addEventListener('pointerup', onUp);
+            // capture=true 才能收到内部滚动容器的 scroll（scroll 不冒泡）。
+            window.addEventListener('scroll', resync, true);
+            window.addEventListener('resize', resync);
           }
 
           window.puddingAnnotation = {
