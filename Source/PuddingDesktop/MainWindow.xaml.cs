@@ -1620,10 +1620,11 @@ public sealed partial class MainWindow : Window
                 ? $"【画布：{title} rev {revision}】"
                 : $"【画布：{title}】";
 
+        string? markedPath = null;
         if (annotations.Count > 0)
         {
             // 坐标之外再给一张**带笔迹的图**：形式 1 靠它，形式 2 靠坐标，两者并存。
-            var markedPath = await TryComposePanelAsync(tab);
+            markedPath = await TryComposePanelAsync(tab);
             if (markedPath is not null)
             {
                 text = $"【已画标记的图】{markedPath}\n{text}";
@@ -1640,6 +1641,13 @@ public sealed partial class MainWindow : Window
             ToolStatusText.Text = annotations.Count > 0
                 ? $"已插入 {annotations.Count} 个标注坐标"
                 : $"已插入对话输入框：{title}";
+
+            // 插进过对话的烧录图要打「已引用」标记：它的路径现在存进了消息历史，
+            // 清理再按时间/数量删它就是永久断链。打标记失败不影响插入。
+            if (markedPath is not null)
+            {
+                PanelMarkRetention.MarkUsed(markedPath);
+            }
         }
         catch (Exception ex)
         {

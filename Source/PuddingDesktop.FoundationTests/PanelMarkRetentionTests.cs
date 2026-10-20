@@ -59,6 +59,47 @@ public sealed class PanelMarkRetentionTests : IDisposable
     }
 
     [Fact]
+    public void NeverDeletes_a_mark_that_was_inserted_into_the_conversation()
+    {
+        // 插入过的图已经写进消息历史，删掉就是永久断链 —— 时间再旧也不动。
+        var baseTime = DateTime.UtcNow.AddDays(-30);
+        var used = Write("panel-marked-used.jpg", baseTime);
+        var junk = Write("panel-marked-junk.jpg", baseTime.AddMinutes(1));
+
+        PanelMarkRetention.MarkUsed(used);
+        Assert.True(File.Exists(used + PanelMarkRetention.UsedSuffix));
+
+        var removed = PanelMarkRetention.Prune(_root, keep: 0, minAge: TimeSpan.FromDays(7));
+
+        Assert.Equal(1, removed);
+        Assert.True(File.Exists(used));
+        Assert.False(File.Exists(junk));
+    }
+
+    [Fact]
+    public void UsedMarks_do_not_consume_the_keep_budget()
+    {
+        // keep 是「未引用图」的上限：引用过的图本来就不该占名额，
+        // 否则用户改得越多，能留的垃圾越少，行为会随历史随机变化。
+        var baseTime = DateTime.UtcNow.AddDays(-30);
+        var usedA = Write("panel-marked-u1.jpg", baseTime);
+        var usedB = Write("panel-marked-u2.jpg", baseTime.AddMinutes(1));
+        PanelMarkRetention.MarkUsed(usedA);
+        PanelMarkRetention.MarkUsed(usedB);
+
+        var unusedOld = Write("panel-marked-n1.jpg", baseTime.AddMinutes(2));
+        var unusedNew = Write("panel-marked-n2.jpg", baseTime.AddMinutes(3));
+
+        var removed = PanelMarkRetention.Prune(_root, keep: 1);
+
+        Assert.Equal(1, removed);
+        Assert.True(File.Exists(usedA));
+        Assert.True(File.Exists(usedB));
+        Assert.True(File.Exists(unusedNew));
+        Assert.False(File.Exists(unusedOld));
+    }
+
+    [Fact]
     public void NeverTouchesFilesThatAreNotOurs()
     {
         // 用户可能把这个目录当普通文件夹用。前缀不匹配的一律不动。

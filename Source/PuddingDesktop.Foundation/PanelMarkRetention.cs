@@ -19,6 +19,12 @@ namespace PuddingDesktop.Foundation;
 /// （<c>panel-marked-*.jpg</c>）：用户往这个目录里自己放的东西一律不动。
 /// 清理失败（文件被占用等）时静默跳过 —— 保存动作不该因为收拾垃圾而失败。
 /// </para>
+///
+/// <para>
+/// 淘汰对象**只有从未被引用过的图**：每张图插入对话时会写一个 <c>.used</c> sidecar，
+/// 带这个标记就不在候选池里（见 <see cref="MarkUsed"/>）。这比“按时间猜”可靠 ——
+/// 一张上周插入的图，时间上很旧，但消息里还引用着它。
+/// </para>
 /// </summary>
 public static class PanelMarkRetention
 {
@@ -35,6 +41,51 @@ public static class PanelMarkRetention
 
     /// <summary>本功能的文件名模式。前缀定死，避免误删同目录里别人的文件。</summary>
     private const string Pattern = "panel-marked-*.jpg";
+
+    /// <summary>
+    /// 「已引用」标记的后缀。
+    ///
+    /// <para>
+    /// 一个空文件就够了 —— 它回答的只是「这张图有没有被插进过对话」。
+    /// 用 sidecar 而不是集中索引：少一个文件损坏就少丢一整批的保护信息，
+    /// 而且删除图片时不会把索引弄成半完成状态。
+    /// </para>
+    /// </summary>
+    public const string UsedSuffix = ".used";
+
+    /// <summary>
+    /// 给一张烧录图打「已引用」标记：它被插进过对话（消息里存的就是这个路径）。
+    ///
+    /// <para>
+    /// 失败静默：打标记是尽力而为的事，不该让插入动作报错。
+    /// </para>
+    /// </summary>
+    public static void MarkUsed(string? markPath)
+    {
+        if (string.IsNullOrWhiteSpace(markPath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllBytes(markPath + UsedSuffix, Array.Empty<byte>());
+        }
+        catch (IOException)
+        {
+            // 目录只读、文件被占用：下次插入再说。
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // 同上。
+        }
+    }
+
+    /// <summary>
+    /// 是不是已经被引用过。**引用过的图永远不删**：
+    /// 它已经在消息历史里，删掉就是永久断链。
+    /// </summary>
+    private static bool IsUsed(string path) => File.Exists(path + UsedSuffix);
 
     /// <summary>按修改时间保留最新 <paramref name="keep"/> 张，删除其余的；返回删除数。</summary>
     /// <param name="minAge">
@@ -74,6 +125,8 @@ public static class PanelMarkRetention
                 .EnumerateFiles(directory, Pattern, SearchOption.TopDirectoryOnly)
                 .Select(path => new FileInfo(path))
                 .Where(info => !IsSameFile(info.FullName, protect))
+                // 引用过的图不进候选池：它在消息历史里，删掉就是永久断链。
+                .Where(info => !IsUsed(info.FullName))
                 // 用最后写入时间排序：文件名带时间戳，但用户可能拷来旧图，
                 // 按文件系统时间更贴近"最近用过的那几张"。
                 .OrderByDescending(info => info.LastWriteTimeUtc)
