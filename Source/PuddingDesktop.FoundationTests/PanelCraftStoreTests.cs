@@ -553,6 +553,26 @@ public sealed class PanelCraftStoreTests : IDisposable
         Assert.Equal(PanelCraftStore.MaxTitleLength, Assert.Single(_store.List()).Title.Length);
     }
 
+    // ── 内容去重（设计有、代码没做） ──────────────────
+
+    [Fact]
+    public void Save_does_not_share_one_file_between_identical_crafts_yet()
+    {
+        // 设计文档 §二 硬规则 1 写的是「同一张图被保存两次不占两份空间」，
+        // 但这里钉住的是**当前行为：两份文件**。
+        //
+        // 为什么不能直接加上去：Delete 是「把文件移进 _trash」。一旦两个记录共用一个
+        // 文件，删掉其中一件就会把另一件的图一起拖走 —— 而那时 JSON 还在、图已经没了，
+        // 用户看到的是「制成品损坏」。要先去重引用计数（或改成内容寻址 + 引用计数），
+        // 再开文件级去重；顺序反过来就是拿正确性换磁盘。
+        var first = SaveBasic();
+        var second = SaveBasic();
+
+        Assert.NotEqual(first.FileName, second.FileName);
+        Assert.True(File.Exists(Path.Combine(_store.CraftsDirectory, first.FileName)));
+        Assert.True(File.Exists(Path.Combine(_store.CraftsDirectory, second.FileName)));
+    }
+
     // ── 血缘深度 ────────────────────────────────────────────
 
     [Fact]
