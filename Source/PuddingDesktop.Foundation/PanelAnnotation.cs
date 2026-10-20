@@ -19,7 +19,10 @@ public enum PanelAnnotationKind
 /// </para>
 /// </summary>
 public sealed record PanelCanvasPayload(
-    string? SourceUri, double Width, double Height, IReadOnlyList<PanelAnnotation> Items);
+    string? SourceUri, double Width, double Height, IReadOnlyList<PanelAnnotation> Items,
+    // 图片原始像素。缺失或非法时为 0，调用方需自行回退到 Width/Height。
+    // 不设为必填：旧画布与手工构造的载荷没有这两个字段，但它们仍应可用。
+    double NaturalWidth = 0, double NaturalHeight = 0);
 
 /// <summary>
 /// 画布上的一个用户标注，坐标一律是**归一化 0–999 整数**。
@@ -362,10 +365,25 @@ public sealed record PanelAnnotation
                 string.IsNullOrWhiteSpace(source) ? null : source.Trim(),
                 width,
                 height,
-                parsed);
+                parsed,
+                ReadOptionalPositiveFinite(root, "naturalWidth"),
+                ReadOptionalPositiveFinite(root, "naturalHeight"));
             return true;
         }
     }
+
+    /// <summary>
+    /// 读一个**可选**的正有限数；缺失或非法一律返回 0。
+    ///
+    /// <para>
+    /// 与 <c>width</c>/<c>height</c> 的严格校验相反：后者是坐标换算的分母，错了一定要报错；
+    /// 而自然尺寸只用于「记录这张图多大」，缺失时回退到显示尺寸即可，
+    /// 为一个辅助字段拒绝整份载荷会让标注白白丢掉。
+    /// </para>
+    /// </summary>
+    private static double ReadOptionalPositiveFinite(
+        System.Text.Json.JsonElement root, string name)
+        => TryReadPositiveFinite(root, name, out var value) ? value : 0;
 
     private static bool TryParsePixelsOne(
         System.Text.Json.JsonElement element, double width, double height,

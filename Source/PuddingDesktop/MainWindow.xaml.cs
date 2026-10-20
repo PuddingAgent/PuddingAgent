@@ -1551,11 +1551,17 @@ public sealed partial class MainWindow : Window
 
         try
         {
+            // 记录图片的**原始像素**，不是页面显示尺寸：制成品列表写着 1123×1123
+            // 而文件实际是 2048×2048，会让用户以为存错了图。
+            // 载荷没有自然尺寸时（旧画布）回退到显示尺寸，总比记 0 好。
+            var pixelWidth = payload.NaturalWidth > 0 ? payload.NaturalWidth : payload.Width;
+            var pixelHeight = payload.NaturalHeight > 0 ? payload.NaturalHeight : payload.Height;
+
             var craft = CraftStore.Save(
                 imagePath,
                 title,
-                (int)Math.Round(payload.Width),
-                (int)Math.Round(payload.Height),
+                (int)Math.Round(pixelWidth),
+                (int)Math.Round(pixelHeight),
                 new PanelCraftSource(PanelIdOf(tab), null, null, payload.Items),
                 parent: null,
                 note: null,

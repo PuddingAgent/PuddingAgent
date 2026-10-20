@@ -311,6 +311,53 @@ public sealed class PanelAnnotationTests
         Assert.Null(payload.SourceUri);
     }
 
+    [Fact]
+    public void Canvas_payload_keeps_display_and_natural_size_apart()
+    {
+        // 显示尺寸是坐标换算的分母，自然尺寸只用于记录文件多大。
+        // 混用会让标注整体偏移（拿原始像素去除以显示坐标）。
+        const string json = """
+            {"width":1123,"height":1123,"naturalWidth":2048,"naturalHeight":2048,
+             "items":[{"kind":"point","x":10,"y":20}]}
+            """;
+
+        Assert.True(PanelAnnotation.TryParseCanvas(json, out var payload, out var error), error);
+
+        Assert.Equal(1123, payload.Width);
+        Assert.Equal(2048, payload.NaturalWidth);
+        Assert.Equal(2048, payload.NaturalHeight);
+    }
+
+    [Fact]
+    public void Canvas_payload_treats_natural_size_as_optional()
+    {
+        // 旧画布或手工构造的载荷没有这两个字段，不能因此整份被拒。
+        const string json = """
+            {"width":800,"height":800,"items":[]}
+            """;
+
+        Assert.True(PanelAnnotation.TryParseCanvas(json, out var payload, out var error), error);
+
+        Assert.Equal(0, payload.NaturalWidth);
+        Assert.Equal(0, payload.NaturalHeight);
+    }
+
+    [Theory]
+    [InlineData("\"naturalWidth\":-5")]
+    [InlineData("\"naturalWidth\":0")]
+    [InlineData("\"naturalWidth\":\"2048\"")]
+    [InlineData("\"naturalWidth\":null")]
+    public void Canvas_payload_degrades_a_bad_natural_size_to_zero(string fragment)
+    {
+        // 辅助字段非法就退化成 0，让调用方回退到显示尺寸；
+        // 为一个「记录用」字段拒绝整份载荷，等于让用户白画一遍标注。
+        var json = $$"""{"width":800,"height":800,{{fragment}},"items":[]}""";
+
+        Assert.True(PanelAnnotation.TryParseCanvas(json, out var payload, out var error), error);
+
+        Assert.Equal(0, payload.NaturalWidth);
+    }
+
     // ── DescribeForComposer 带来源 ───────────────────────────────
 
     [Fact]

@@ -212,7 +212,12 @@ public static class PanelCanvasDocument
               if (!sync()) return '';
               return JSON.stringify({
                 src: (imageEl && imageEl.src) || '',
+                // width/height 是**页面显示尺寸**，归一化坐标必须按它换算；
+                // naturalWidth/naturalHeight 是图片原始像素，只用于记录「这张图到底多大」。
+                // 两者不能混用：用原始像素换算归一化坐标，标注会整体偏移。
                 width: box.width, height: box.height,
+                naturalWidth: (imageEl && imageEl.naturalWidth) || 0,
+                naturalHeight: (imageEl && imageEl.naturalHeight) || 0,
                 items: items.map(function (it) {
                   return it.kind === 'box'
                     ? { kind: 'box', x1: it.x1, y1: it.y1, x2: it.x2, y2: it.y2 }
