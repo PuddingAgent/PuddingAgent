@@ -54,6 +54,29 @@ public sealed class PanelCraftStoreTests : IDisposable
         note: null,
         now: new DateTimeOffset(2026, 10, 20, 18, 50, 0, TimeSpan.FromHours(8)));
 
+    private PanelCraft SaveVersion(PanelCraft? parent, string title, string imageName) =>
+        _store.Save(
+            CreateImage(imageName),
+            title,
+            width: 10,
+            height: 10,
+            source: null,
+            parent: parent?.Id,
+            note: null,
+            now: DateTimeOffset.UtcNow);
+
+    /// <summary>直接写一份记录：用来构造真实操作做不出来的形状（环、祖先已删）。</summary>
+    private void WriteCraftJson(string id, string? parent)
+    {
+        Directory.CreateDirectory(_store.CraftsDirectory);
+        var craft = new PanelCraft(
+            id, id, id + ".png", "image/png", 10, 10, new string('a', 64), 1,
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), parent, null, null);
+
+        File.WriteAllText(
+            Path.Combine(_store.CraftsDirectory, id + ".json"), PanelCraftJson.Write(craft));
+    }
+
     // ── Save ───────────────────────────────────────────────────
 
     [Fact]
@@ -454,6 +477,47 @@ public sealed class PanelCraftStoreTests : IDisposable
 
         var second = _store.List().First(craft => craft.Title == "第二版");
         Assert.Equal(first.Id, second.Parent);
+    }
+
+    // ── 血缘深度 ────────────────────────────────────────────
+
+    [Fact]
+    public void Lineage_depths_count_the_chain()
+    {
+        var v1 = SaveVersion(null, "第一版", "v1.jpg");
+        var v2 = SaveVersion(v1, "第二版", "v2.jpg");
+        var v3 = SaveVersion(v2, "第三版", "v3.jpg");
+
+        var depths = PanelCraftLineage.Depths(_store.List());
+
+        Assert.Equal(1, depths[v1.Id]);
+        Assert.Equal(2, depths[v2.Id]);
+        Assert.Equal(3, depths[v3.Id]);
+    }
+
+    [Fact]
+    public void Lineage_counts_a_deleted_ancestor_as_one_level()
+    {
+        // 删除制成品不会去改子件的 parent：祖先不在了，但「它确实是从某一版改来的」是事实。
+        WriteCraftJson("craft-11112222", "craft-99998888");
+
+        var depths = PanelCraftLineage.Depths(_store.List());
+
+        Assert.Equal(2, depths["craft-11112222"]);
+    }
+
+    [Fact]
+    public void Lineage_does_not_hang_on_a_cycle()
+    {
+        // 手改过的 JSON 完全可能写出 a→b→a。这里同时验证两件事：
+        // 不挂死（无 visited 守卫时会跑到 MaxDepth）、且结果是确定的。
+        WriteCraftJson("craft-aaaabbbb", "craft-ccccdddd");
+        WriteCraftJson("craft-ccccdddd", "craft-aaaabbbb");
+
+        var depths = PanelCraftLineage.Depths(_store.List());
+
+        Assert.Equal(2, depths["craft-aaaabbbb"]);
+        Assert.Equal(2, depths["craft-ccccdddd"]);
     }
 
     // ── id 形状 ────────────────────────────────────────────────

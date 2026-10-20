@@ -108,6 +108,68 @@ public static class PanelCraftEditPanel
 }
 
 /// <summary>
+/// 制成品血缘的读取：算一件制成品是「第几版」。
+///
+/// <para>
+/// 纯函数，不发 IO：制品库列表已经有全量记录，算深度只需要它们。
+/// 必须处理**成环**与**祖先已删**两种真实现场 —— 手写/手改过的
+/// JSON 完全可能写出 <c>a→b→a</c>，而删除制成品不会去改子件的 parent。
+/// </para>
+/// </summary>
+public static class PanelCraftLineage
+{
+    /// <summary>追溯深度上限。环与超长链都靠它兜底——界面文案“第 N 版”不需要更深。</summary>
+    public const int MaxDepth = 32;
+
+    /// <summary>算每件制品的版本号（无父 = 1）。不在集合内的 id 不返回。</summary>
+    public static IReadOnlyDictionary<string, int> Depths(IEnumerable<PanelCraft> crafts)
+    {
+        ArgumentNullException.ThrowIfNull(crafts);
+
+        var byId = crafts.ToDictionary(craft => craft.Id, StringComparer.Ordinal);
+        var depths = new Dictionary<string, int>(byId.Count, StringComparer.Ordinal);
+        foreach (var craft in byId.Values)
+        {
+            depths[craft.Id] = Depth(byId, craft);
+        }
+
+        return depths;
+    }
+
+    private static int Depth(IReadOnlyDictionary<string, PanelCraft> byId, PanelCraft craft)
+    {
+        var depth = 1;
+        var seen = new HashSet<string>(StringComparer.Ordinal) { craft.Id };
+        var current = craft;
+
+        while (current.Parent is { } parent)
+        {
+            if (!byId.TryGetValue(parent, out var next))
+            {
+                // 祖先已被删：链断了，但「它确实是从某一版改来的」是事实，算一层。
+                return depth + 1;
+            }
+
+            if (!seen.Add(parent))
+            {
+                // 成环：停止，不自作聪明“修复”用户的数据。
+                return depth;
+            }
+
+            depth++;
+            if (depth >= MaxDepth)
+            {
+                return depth;
+            }
+
+            current = next;
+        }
+
+        return depth;
+    }
+}
+
+/// <summary>
 /// 制成品 JSON 的读写。**手写而非反射序列化**：Desktop 侧将来可能开 AOT，
 /// 而 <c>JsonSerializer</c> 对记录类型的元数据依赖在裁剪下容易失效 ——
 /// 那种失效的表现是运行期才抛，且在打包后的进程里很难复现。

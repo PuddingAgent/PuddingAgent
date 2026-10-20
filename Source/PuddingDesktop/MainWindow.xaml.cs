@@ -1822,9 +1822,12 @@ public sealed partial class MainWindow : Window
             return WrapInScroll(panel);
         }
 
+        // 每张卡片要显示「第 N 版」：深度靠整份列表算，所以在这里算一次给每张卡分用。
+        var depths = PanelCraftLineage.Depths(crafts);
+
         foreach (var craft in crafts)
         {
-            panel.Children.Add(CreateCraftCard(craft));
+            panel.Children.Add(CreateCraftCard(craft, depths));
         }
 
         return WrapInScroll(panel);
@@ -1837,7 +1840,8 @@ public sealed partial class MainWindow : Window
         Content = content,
     };
 
-    private FrameworkElement CreateCraftCard(PanelCraft craft)
+    private FrameworkElement CreateCraftCard(
+        PanelCraft craft, IReadOnlyDictionary<string, int> depths)
     {
         var body = new StackPanel { Spacing = 6 };
 
@@ -1853,7 +1857,9 @@ public sealed partial class MainWindow : Window
         var meta = $"{craft.Width}×{craft.Height} · {created:MM-dd HH:mm} · {craft.Id}";
         if (craft.Parent is not null)
         {
-            meta += $" · 来自 {craft.Parent}";
+            // 「来自 craft-xxxx」对用户没意义；版本号才是他关心的「改到第几轮」。
+            var version = depths.TryGetValue(craft.Id, out var depth) ? depth : 1;
+            meta += $" · 第 {version} 版";
         }
 
         body.Children.Add(new TextBlock
