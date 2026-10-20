@@ -949,9 +949,9 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// 交互面板：**可交互的媒体画布**（用户 2026-10-20 的定位：展示 Markdown、设计图纸等资源）。
     ///
-    /// 本轮只做载体与交互骨架：WebView2 渲染内置示例，「下载到本地」真实可用；
-    /// 「添加到对话」需要 Core 侧的对话写入通道，暂未接入（按钮存在但如实提示，不假装成功）。
-    /// Agent 推送内容的通道（panel.render）是下一步。
+    /// 内容真源在 Core（<c>/api/panels/{id}</c>），Shell 定时拉取并按 revision 重绘；
+    /// 能力通道推送是快路径。「下载到本地」导出的是画布**当前内容**。
+    /// 「添加到对话」需要 Core 侧的对话写入通道，仍未接入（按钮存在但如实提示，不假装成功）。
     /// </summary>
     private FrameworkElement CreatePanelContent(ToolTab tab)
     {
@@ -973,7 +973,7 @@ public sealed partial class MainWindow : Window
         };
         toolbar.Children.Add(PanelAction("添加到对话", (_, _) =>
             ToolStatusText.Text = "「添加到对话」需要 Core 的对话写入通道，尚未接入。"));
-        toolbar.Children.Add(PanelAction("下载到本地", async (_, _) => await ExportPanelAsync()));
+        toolbar.Children.Add(PanelAction("下载到本地", async (_, _) => await ExportPanelAsync(tab)));
         Grid.SetRow(toolbar, 0);
         host.Children.Add(toolbar);
 
@@ -1223,13 +1223,7 @@ public sealed partial class MainWindow : Window
     /// `var(--pudding-page)` 取值即可，不需要自己猜主题。
     /// </summary>
     private string WrapPanelHtml(string content) =>
-        "<!doctype html><html><head><meta charset=\"utf-8\">"
-        + "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; "
-        + "style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:;\">"
-        + "<style>" + PanelCanvasTheme.Declare(CurrentWorkbenchScheme())
-        + "html,body{margin:0;background:var(--pudding-page);"
-        + "font-family:'Segoe UI','Microsoft YaHei',sans-serif;}</style>"
-        + "</head><body>" + content + "</body></html>";
+        PanelCanvasDocument.WrapForEmbedding(content, CurrentWorkbenchScheme());
 
     /// <summary>
     /// 能力通道：把 Agent 内容推到工具区画布（由 <c>WinUiShellFacilities</c> 调用，已在 UI 线程）。
@@ -1300,16 +1294,31 @@ public sealed partial class MainWindow : Window
                 existed ? DesktopDocumentPreviewStatus.AlreadyOpen : DesktopDocumentPreviewStatus.Opened)));
     }
 
-    /// <summary>导出当前画布。写固定目录而不是弹选择器：本轮先把链路做通，选择器留待与其它导出入口统一。</summary>
-    private async Task ExportPanelAsync()
+    /// <summary>
+    /// 导出画布**当前显示的内容**。内容真源在 Core，所以先拉一次；拉不到才退回
+    /// 最近一次推送的副本。<b>绝不导出内置示例</b>——否则「下载到本地」拿到的和
+    /// 屏幕上看到的不是同一个东西。
+    ///
+    /// 导出文件是给用户独立打开/分享的：不写沙箱 CSP（那是宿主容器的事），但保留
+    /// <see cref="PanelCanvasTheme"/> 变量，保证在浏览器里打开时配色仍然正确。
+    /// </summary>
+    private async Task ExportPanelAsync(ToolTab tab)
     {
         try
         {
+            var content = await ResolvePanelContentForExportAsync(tab);
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                ToolStatusText.Text = "画布还没有内容，未导出。";
+                return;
+            }
+
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Pudding");
             Directory.CreateDirectory(dir);
-            var file = Path.Combine(dir, $"panel-{DateTime.Now:yyyyMMdd-HHmmss}.html");
-            await File.WriteAllTextAsync(file, PanelSampleHtml);
+            var file = Path.Combine(
+                dir, $"panel-{PanelIdOf(tab)}-{DateTime.Now:yyyyMMdd-HHmmss}.html");
+            await File.WriteAllTextAsync(file, BuildStandalonePanelHtml(content));
             ToolStatusText.Text = $"已导出：{file}";
         }
         catch (Exception ex)
@@ -1317,6 +1326,32 @@ public sealed partial class MainWindow : Window
             ToolStatusText.Text = $"导出失败：{ex.Message}";
         }
     }
+
+    /// <summary>
+    /// 取画布当前内容的导出副本：Core 是唯一真源，拉成功就用它；Core 不可达时退回
+    /// 能力通道最近推送的副本（至少是用户屏幕上那份）；两者都没有则返回 null。
+    /// </summary>
+    private async Task<string?> ResolvePanelContentForExportAsync(ToolTab tab)
+    {
+        if (_coordinator.WorkbenchAddress is { } address)
+        {
+            var result = await ReadPanelFromCoreAsync(address, PanelIdOf(tab));
+            if (result.Status == PanelCanvasFeedStatus.Fetched && result.Item is { } item
+                && !string.IsNullOrWhiteSpace(item.Content))
+            {
+                return item.Content;
+            }
+        }
+
+        return _panelContent.TryGetValue(tab.Id, out var pushed) ? pushed : null;
+    }
+
+    /// <summary>
+    /// 导出用的独立文档（无沙箱 CSP、带标题）。拼装在
+    /// <see cref="PanelCanvasDocument.WrapForExport"/>（可测），这里只提供当前配色。
+    /// </summary>
+    private string BuildStandalonePanelHtml(string content) =>
+        PanelCanvasDocument.WrapForExport(content, CurrentWorkbenchScheme());
 
     private static Button PanelAction(string text, RoutedEventHandler onClick)
     {
