@@ -127,10 +127,6 @@ export const useUserStyles = createStyles(() => ({
   userAvatarShell: {
     flex: '0 0 auto',
   },
-  userAvatarImg: {
-    border: '2px solid',
-    borderColor: 'color-mix(in srgb, var(--accent-purple) 20%, transparent)',
-  },
   userAvatarFallback: {
     background:
       'color-mix(in srgb, var(--accent-purple) 15%, var(--soft-white))',

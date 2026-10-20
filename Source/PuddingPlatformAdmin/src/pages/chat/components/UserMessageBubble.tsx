@@ -17,6 +17,8 @@ import {
   type PreviewImageItem,
 } from './ImagePreviewOverlay';
 
+const DEFAULT_USER_AVATAR_URL = '/admin/assets/images/me.png';
+
 interface UserMessageBubbleProps {
   content: string;
   createdAt: number;
@@ -260,6 +262,16 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
   onContextMenu,
 }) => {
   const { styles, cx } = useChatMessageStyles();
+  const [failedAvatarUrl, setFailedAvatarUrl] = React.useState<string>();
+  const avatarUrl = userAvatarUrl?.trim();
+  const avatarSrc =
+    avatarUrl && avatarUrl !== failedAvatarUrl
+      ? avatarUrl
+      : DEFAULT_USER_AVATAR_URL;
+  React.useEffect(() => {
+    setFailedAvatarUrl(undefined);
+  }, [avatarUrl]);
+
   // P1-4: hover 展示操作按钮（首次 hover 后保持挂载，同 AgentMessageBubble）
   const [showActions, setShowActions] = React.useState(false);
   const [actionsMounted, setActionsMounted] = React.useState(false);
@@ -368,19 +380,21 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
             气泡右边界」落在同一条右轴上（与 agent 侧的左轴对齐对称），
             气泡本身也不再被头像挤走 40px 宽度。 */}
         <div className={styles.userAvatarShell}>
-          {userAvatarUrl ? (
-            <Avatar
-              size={32}
-              src={userAvatarUrl}
-              className={styles.userAvatarImg}
-            />
-          ) : (
-            <Avatar
-              size={32}
-              icon={<UserOutlined />}
-              className={styles.userAvatarFallback}
-            />
-          )}
+          <Avatar
+            size={32}
+            src={avatarSrc}
+            alt={`${displayName}的头像`}
+            icon={<UserOutlined />}
+            className={styles.userAvatarFallback}
+            onError={() => {
+              if (avatarSrc !== DEFAULT_USER_AVATAR_URL) {
+                setFailedAvatarUrl(avatarSrc);
+                // 换用本地默认头像；只有默认图也失败时才交给 Avatar 显示图标。
+                return false;
+              }
+              return true;
+            }}
+          />
         </div>
       </div>
       <div className={styles.userBubbleRow}>

@@ -39,6 +39,66 @@ const renderBubble = (props: RenderBubbleProps = {}) =>
     />,
   );
 
+describe('UserMessageBubble avatar', () => {
+  const defaultAvatar = '/admin/assets/images/me.png';
+
+  it('renders the configured user avatar', () => {
+    renderBubble({ userAvatarUrl: '/user-avatars/admin.png' });
+
+    expect(screen.getByAltText('我的头像').getAttribute('src')).toBe(
+      '/user-avatars/admin.png',
+    );
+  });
+
+  it.each([undefined, '', '  '])('uses the default avatar for %p', (url) => {
+    renderBubble({ userAvatarUrl: url });
+
+    expect(screen.getByAltText('我的头像').getAttribute('src')).toBe(
+      defaultAvatar,
+    );
+  });
+
+  it('recovers from a missing upload and from a missing default image', () => {
+    const { container } = renderBubble({
+      userAvatarUrl: '/user-avatars/missing.png',
+    });
+
+    fireEvent.error(screen.getByAltText('我的头像'));
+    expect(screen.getByAltText('我的头像').getAttribute('src')).toBe(
+      defaultAvatar,
+    );
+
+    fireEvent.error(screen.getByAltText('我的头像'));
+    expect(screen.queryByAltText('我的头像')).toBeNull();
+    expect(
+      container.querySelector('.userAvatarFallback .anticon-user'),
+    ).toBeTruthy();
+  });
+
+  it('loads a newly uploaded avatar after both previous images failed', () => {
+    const { rerender } = renderBubble({
+      userAvatarUrl: '/user-avatars/old.png',
+    });
+    fireEvent.error(screen.getByAltText('我的头像'));
+    fireEvent.error(screen.getByAltText('我的头像'));
+
+    rerender(
+      <UserMessageBubble
+        content="你好"
+        createdAt={1000}
+        status="success"
+        userName="我"
+        userAvatarUrl="/user-avatars/new.png"
+        formatTime={() => '10:24'}
+      />,
+    );
+
+    expect(screen.getByAltText('我的头像').getAttribute('src')).toBe(
+      '/user-avatars/new.png',
+    );
+  });
+});
+
 describe('UserMessageBubble voice metadata', () => {
   it('marks user messages sent from voice input', () => {
     renderBubble({ modality: 'voice', content: '请总结今天的工作' });

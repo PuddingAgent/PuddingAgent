@@ -308,6 +308,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 
 | 文件 | 职责与边界 |
 |------|------------|
+| `src/pages/chat/components/UserMessageBubble.tsx` | 聊天用户头像优先加载配置 URL；空地址或加载失败时使用本地默认头像，默认图片也失败时显示用户图标；URL 更新后重新加载 |
 | `src/components/UserAvatarUpload.tsx` | 受控头像上传组件（Upload + 正方形裁剪 Canvas 512px）；props 为 `userId`/`avatarUrl`/`onUploaded`，不读写 `@@initialState`；上传走 `updateUserAvatar`（`POST /api/users/{userId}/avatar`，字段 `file`，仅 PNG/JPG/WebP ≤5MiB），成功只回调，是否同步顶栏由页面决定 |
 | `src/pages/user-management/index.tsx` | 编辑抽屉顶部头像区域（仅编辑态显示）；头像为“独立即时保存项”（确认即上传，不随保存/取消回滚）；`onUploaded` 更新 `editingUser.avatar` 并刷新列表，仅当被编辑用户是当前登录用户时同步全局 `currentUser.avatar` |
 | `src/pages/workspace/[id]/index.tsx` | 工作空间概览已移除“我的头像”区块；头像入口只在用户管理编辑抽屉；飞书特权用户名单兼作主动收件人，单人默认/多人选择 |
