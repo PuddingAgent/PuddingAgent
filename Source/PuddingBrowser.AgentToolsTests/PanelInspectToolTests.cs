@@ -244,18 +244,38 @@ public sealed class PanelInspectToolTests
     }
 
     [Fact]
-    public async Task Render_RequiresAWorkingDirectoryForHtmlPath()
+    public async Task Render_WithoutAWorkingDirectory_StillAcceptsAnAbsolutePath()
     {
         using var dir = new TempDirectory();
         var file = dir.Write("a.html", "<p>x</p>");
+        var store = new InMemoryPanelCanvasStore();
+        var surface = new FakeSurface();
 
-        var result = await new RenderPanelTool(
-                new InMemoryPanelCanvasStore(), new FakeSurface(), new FakeCallContexts())
+        var result = await new RenderPanelTool(store, surface, new FakeCallContexts())
             .ExecuteAsync(Request($$"""{"htmlPath":"{{Escape(file)}}"}"""));
 
-        // 没有根就无法判断边界 ⇒ fail closed，而不是按进程当前目录去猜。
+        // 语义已修正：没有执行根时无法解析**相对**路径，但绝对路径不该被拒 ——
+        // 内联 html 本来就能发布任意内容，放开绝对路径没有扩大能力边界，
+        // 只是省掉「先读出来再整段贴进参数」。旧实现在这里直接 fail closed，
+        // 使 htmlPath 在普通对话轮完全不可用（实测踩到过一次）。
+        Assert.True(result.Success, result.Error);
+        Assert.Equal("<p>x</p>", store.Get("main")!.Content);
+    }
+
+    [Fact]
+    public async Task Render_WithoutAWorkingDirectory_RejectsARelativePath()
+    {
+        var store = new InMemoryPanelCanvasStore();
+        var surface = new FakeSurface();
+
+        var result = await new RenderPanelTool(store, surface, new FakeCallContexts())
+            .ExecuteAsync(Request("""{"htmlPath":"car.html"}"""));
+
+        // 没有根就没有可解析的基准，也不能拿进程当前目录去猜（那可能是 bin/）。
         Assert.False(result.Success);
-        Assert.Contains("working directory", result.Error!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("absolute", result.Error!, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(store.Get("main"));
+        Assert.Null(surface.LastRequest);
     }
 
     [Fact]

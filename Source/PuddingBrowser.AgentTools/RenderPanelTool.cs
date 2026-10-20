@@ -81,6 +81,11 @@ public sealed class RenderPanelTool(
     /// <para>
     /// 两个都给 ⇒ 拒绝，而不是静默选一个：那会让「我以为发布的是文件」变成真事故。
     /// </para>
+    /// <para>
+    /// 没有本次执行根（<see cref="ToolExecutionContext.WorkingDirectory"/> 为空）时，
+    /// **绝对路径仍然接受**：内联 <c>html</c> 本来就能发布任意内容，放开绝对路径没有扩大
+    /// 能力边界，只是省掉一次复制粘贴。相对路径则无法解析，只能拒绝并说明原因。
+    /// </para>
     /// </summary>
     private static async Task<HtmlResolution> ResolveHtmlAsync(
         RenderPanelArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -103,27 +108,37 @@ public sealed class RenderPanelTool(
             return HtmlResolution.Fail("invalid_request", "either 'html' or 'htmlPath' is required.");
         }
 
+        // rootFull 为 null 表示「本次执行没有工作目录」——此时不做根内校验，只接受绝对路径。
+        // 旧实现在这里直接拒绝，导致 htmlPath 在普通对话轮完全不可用（实测踩到）。
         var root = context.WorkingDirectory;
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            return HtmlResolution.Fail(
-                "invalid_request",
-                "htmlPath requires a working directory, but this execution has none; use 'html' instead.");
-        }
-
-        string rootFull;
+        string? rootFull = null;
         string fullPath;
         try
         {
-            rootFull = Path.GetFullPath(root);
-            fullPath = Path.GetFullPath(Path.Combine(rootFull, args.HtmlPath!), rootFull);
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                if (!Path.IsPathFullyQualified(args.HtmlPath!))
+                {
+                    return HtmlResolution.Fail(
+                        "invalid_request",
+                        "htmlPath needs an absolute path when this execution has no working directory; "
+                        + "or pass the markup through 'html'.");
+                }
+
+                fullPath = Path.GetFullPath(args.HtmlPath!);
+            }
+            else
+            {
+                rootFull = Path.GetFullPath(root);
+                fullPath = Path.GetFullPath(Path.Combine(rootFull, args.HtmlPath!), rootFull);
+            }
         }
         catch (Exception ex)
         {
             return HtmlResolution.Fail("invalid_request", $"htmlPath is not a usable path: {ex.Message}");
         }
 
-        if (!IsInside(rootFull, fullPath))
+        if (rootFull is not null && !IsInside(rootFull, fullPath))
         {
             return HtmlResolution.Fail(
                 "invalid_request", $"htmlPath must stay inside the working directory ({rootFull}).");
