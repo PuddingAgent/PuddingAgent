@@ -99,7 +99,7 @@ fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使
 | `src/pages/chat/components/FoldableMessage.tsx` | 折叠卡外壳：不 import 渲染器；单主按钮「展开阅读」，次操作为文字链 |
 | `src/pages/chat/components/DocumentRefCard.tsx` | 文档引用卡；不碰文件系统（读文件是宿主职责），无 `onOpen` 时禁用按钮 |
 | `src/pages/chat/components/DocumentPreview.tsx` | 文档预览：文件头 + 大纲 + 正文；复用 `MarkdownPreview`（不启用 rehype-raw） |
-| `src/pages/chat/components/SideArtifactPanel.tsx` | 右侧 tab 外壳：只认 key/label/content；无 `onClose` 不渲染关闭键 |
+| `src/pages/chat/components/SideArtifactPanel.tsx` | 右侧 tab 外壳：只认 key/label/content；无 `onClose` 不渲染关闭键；**切 tab 不卸载（访问过的保持挂载 + `hidden`）**，否则表单被清空、阅读位置回顶 |
 | `src/pages/chat/components/SideDocumentPanel.tsx` | 文档 tab 接线；**仅当 `sourcePath` 存在**才给「复制路径」，长消息不伪造 .md |
 | `src/pages/chat/sideArtifact/SideArtifactContext.tsx` | actions/state 双 context：只要动作的组件不因文档变化重渲染 |
 | `src/pages/chat/sideArtifact/sidePanelSizing.ts` | 面板宽度：320-900px、默认 420、localStorage 记忆、窗口窄时 max-width 55% |
