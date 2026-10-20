@@ -145,6 +145,16 @@ public sealed class DesktopSurfaceCompositionTests
         public Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
             DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken) =>
             Task.FromResult(Failure<DesktopClipboardContent>());
+
+        // 这两个成员是后加的（document_preview / panel_render）：canary 替身必须跟进，
+        // 否则整个测试工程编译不过 —— 夹不会自动提醒你，只能靠跑一次。
+        public Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+            DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(Failure<DesktopDocumentPreviewResult>());
+
+        public Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+            DesktopCallContext context, DesktopPanelRenderRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(Failure<DesktopPanelRenderResult>());
     }
 
     private sealed class CanaryHostFacilities : IDesktopShellHostFacilities
