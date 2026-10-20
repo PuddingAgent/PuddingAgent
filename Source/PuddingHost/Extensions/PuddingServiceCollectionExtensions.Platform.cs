@@ -153,6 +153,13 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IFeishuRecipientDirectory, FeishuRecipientDirectory>();
         builder.Services.AddSingleton<PlatformReadinessProbe>();
 
+        // ── 交互面板内容的**单一真源**：Agent 生成的 HTML 归 Core，不归 Desktop ──
+        // 放在这里而不是 Desktop：内容要可寻址、可重放，且不能被传输方式绑死
+        // （能力通道就绪时才能推；它一断，面板就等于不可控）。
+        builder.Services.AddSingleton<
+            PuddingCore.Panels.IPanelCanvasStore,
+            PuddingCore.Panels.InMemoryPanelCanvasStore>();
+
             // ── Conversation 命令受理（ADR-059）─────────────
             builder.Services.AddScoped<ISubmitTurnHandler, SubmitTurnHandler>();
             builder.Services.AddScoped<IConversationNotificationStore, ConversationNotificationStore>();
