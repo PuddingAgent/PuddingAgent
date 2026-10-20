@@ -83,8 +83,10 @@ public sealed class PanelCanvasDocumentTests
         // 拖拽中的实时预览必须跟随指针。
         Assert.Contains(
             "addEventListener('pointermove', onMove)", html, StringComparison.Ordinal);
-        // 烧录导出。
-        Assert.Contains("toDataURL('image/png')", html, StringComparison.Ordinal);
+        // 烧录导出（JPEG：PNG 的 base64 过不了脚本通道的大小上限）。
+        Assert.Contains("toDataURL('image/jpeg'", html, StringComparison.Ordinal);
+        // 缩边保护：不限制的话 2K 原图会超出通道上限，静默拿不回来。
+        Assert.Contains("var maxEdge = 1536", html, StringComparison.Ordinal);
     }
 
     [Fact]

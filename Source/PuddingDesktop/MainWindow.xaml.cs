@@ -1557,18 +1557,22 @@ public sealed partial class MainWindow : Window
 
             // ExecuteScriptAsync 把字符串结果再编码一层 JSON，这里必须反序列化。
             var dataUrl = JsonSerializer.Deserialize<string>(raw);
-            const string prefix = "data:image/png;base64,";
+            // compose 默认输出 JPEG（体积小，能过脚本通道）；仍接受 png，
+            // 以冠页面版本回退时整条链路直接断掉。
+            const string marker = ";base64,";
+            var markerIndex = dataUrl?.IndexOf(marker, StringComparison.Ordinal) ?? -1;
             if (string.IsNullOrWhiteSpace(dataUrl)
-                || !dataUrl.StartsWith(prefix, StringComparison.Ordinal))
+                || !dataUrl.StartsWith("data:image/", StringComparison.Ordinal)
+                || markerIndex < 0)
             {
                 return null;
             }
 
-            var bytes = Convert.FromBase64String(dataUrl[prefix.Length..]);
+            var bytes = Convert.FromBase64String(dataUrl[(markerIndex + marker.Length)..]);
             Directory.CreateDirectory(PanelMarkDirectory);
 
             var path = Path.Combine(
-                PanelMarkDirectory, $"panel-marked-{DateTime.Now:yyyyMMdd-HHmmss-fff}.png");
+                PanelMarkDirectory, $"panel-marked-{DateTime.Now:yyyyMMdd-HHmmss-fff}.jpg");
             await File.WriteAllBytesAsync(path, bytes);
             return path;
         }

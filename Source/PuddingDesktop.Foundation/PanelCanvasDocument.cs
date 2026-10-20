@@ -204,15 +204,24 @@ public static class PanelCanvasDocument
             if (!w || !h) return '';
             var rect = imageEl.getBoundingClientRect();
             if (!rect.width || !rect.height) return '';
-            var sx = w / rect.width, sy = h / rect.height;
+
+            // 结果要经 ExecuteScriptAsync 回传宿主，而那条通道对返回值有大小上限；
+            // 2K PNG 的 base64 常有 3~8MB，会静默拿不回来。
+            // 所以限制最长边并改用 JPEG：体积降到几百 KB，
+            // 而等比缩放不影响标记的相对位置（坐标仍按原图比例换算）。
+            var maxEdge = 1536;
+            var shrink = Math.min(1, maxEdge / Math.max(w, h));
+            var outW = Math.max(1, Math.round(w * shrink));
+            var outH = Math.max(1, Math.round(h * shrink));
+            var sx = outW / rect.width, sy = outH / rect.height;
 
             var canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
+            canvas.width = outW;
+            canvas.height = outH;
             var ctx = canvas.getContext('2d');
             if (!ctx) return '';
-            ctx.drawImage(imageEl, 0, 0, w, h);
-            ctx.lineWidth = Math.max(3, Math.round(w / 300));
+            ctx.drawImage(imageEl, 0, 0, outW, outH);
+            ctx.lineWidth = Math.max(3, Math.round(outW / 300));
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.strokeStyle = '#E4572E';
@@ -237,7 +246,7 @@ public static class PanelCanvasDocument
                 ctx.moveTo(x1, y1);
                 ctx.lineTo(x2, y2);
                 ctx.stroke();
-                var angle = Math.atan2(y2 - y1, x2 - x1), len = Math.max(12, w / 60);
+                var angle = Math.atan2(y2 - y1, x2 - x1), len = Math.max(12, outW / 60);
                 ctx.beginPath();
                 ctx.moveTo(x2, y2);
                 ctx.lineTo(x2 - len * Math.cos(angle - 0.45), y2 - len * Math.sin(angle - 0.45));
@@ -245,13 +254,13 @@ public static class PanelCanvasDocument
                 ctx.closePath();
                 ctx.fill();
               } else if (it.kind === 'text' && it.label) {
-                ctx.font = Math.max(16, Math.round(w / 40)) + 'px sans-serif';
+                ctx.font = Math.max(16, Math.round(outW / 40)) + 'px sans-serif';
                 ctx.fillText(it.label, it.x * sx, it.y * sy);
               }
             });
 
-            // 图片被 CORS 污染时 toDataURL 会抛；本地图源不会，但仍要兜住。
-            try { return canvas.toDataURL('image/png'); } catch (err) { return ''; }
+            // JPEG 而非 PNG：同样内容体积约小一个数量级，更适合过脚本通道。
+            try { return canvas.toDataURL('image/jpeg', 0.9); } catch (err) { return ''; }
           }
 
           function biggestImage() {
