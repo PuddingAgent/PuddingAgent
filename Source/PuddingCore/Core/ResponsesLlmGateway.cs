@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using PuddingCode.Abstractions;
@@ -16,6 +17,15 @@ namespace PuddingCode.Core;
 public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions options) : ILlmGateway
 {
     private const string ProtocolName = "responses";
+    // This JSON is sent as application/json, never embedded in HTML. Keep Unicode
+    // and nested tool JSON compact instead of expanding them into \uXXXX escapes.
+    private static readonly JsonSerializerOptions RequestJsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    private bool IsDeepSeek => string.Equals(ProviderId, "deepseek", StringComparison.OrdinalIgnoreCase)
+        || new Uri(_responsesEndpoint).Host.Equals("api.deepseek.com", StringComparison.OrdinalIgnoreCase);
 
     public IVisualArtifactResolver? VisualArtifactResolver { get; set; }
     public IAudioArtifactResolver? AudioArtifactResolver { get; set; }
@@ -190,7 +200,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             var readMs = ElapsedMilliseconds(readStartedAt);
 
             if (line is null)
-                yield break;
+                throw new HttpIOException(HttpRequestError.ResponseEnded,
+                    "Responses stream ended before response.completed, response.incomplete or response.failed.");
             if (!line.StartsWith("data:", StringComparison.Ordinal))
                 continue;
 
@@ -228,15 +239,18 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                     ProviderHeadersMs = firstForResponse ? headersMs : null,
                 };
             }
+
+            // DeepSeek terminates with a response event, without [DONE]. Do not
+            // wait for socket EOF after the terminal usage/continuation arrived.
+            if (parser.IsTerminal)
+                yield break;
         }
     }
 
     private HttpRequestMessage CreateRequest(string requestBody)
     {
         var requestBytes = Encoding.UTF8.GetByteCount(requestBody);
-        if ((string.Equals(ProviderId, "deepseek", StringComparison.OrdinalIgnoreCase)
-                || new Uri(_responsesEndpoint).Host.Equals("api.deepseek.com", StringComparison.OrdinalIgnoreCase))
-            && requestBytes > 48L * 1024 * 1024)
+        if (IsDeepSeek && requestBytes > 48L * 1024 * 1024)
         {
             // 本地体积闸门：把稳定因果码交给诊断作用域，使终态诊断能说清「是体积超限而不是网络问题」。
             if (LlmCallDiagnosticsScope.Current is { } limited)
@@ -398,10 +412,14 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         {
             ["model"] = options.Model,
             ["stream"] = stream,
-            // Pudding replays output items itself. Do not retain provider-side application state.
-            ["store"] = false,
-            ["include"] = new JsonArray("reasoning.encrypted_content"),
         };
+        // DeepSeek is stateless and returns plaintext reasoning in content.
+        // Other Responses providers need encrypted reasoning for local replay.
+        if (!IsDeepSeek)
+        {
+            root["store"] = false;
+            root["include"] = new JsonArray("reasoning.encrypted_content");
+        }
 
         if (messages.Any(message =>
                 message.Role == ChatRole.Tool
@@ -449,7 +467,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             };
         }
 
-        return new(root.ToJsonString(), visionBudget, fileImages);
+        return new(root.ToJsonString(RequestJsonOptions), visionBudget, fileImages);
     }
 
     private async Task AddInputItemsAsync(
@@ -897,6 +915,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
 
     private sealed class ResponsesStreamParser
     {
+        public bool IsTerminal { get; private set; }
         private readonly Dictionary<string, ToolStreamState> _toolsByItemId = new(StringComparer.Ordinal);
         private readonly Dictionary<int, ToolStreamState> _toolsByOutputIndex = [];
         private readonly List<ToolStreamState> _tools = [];
@@ -1054,6 +1073,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         {
             var response = root["response"] as JsonObject ?? root;
             ThrowIfTerminalFailure(response);
+            IsTerminal = true;
             var continuation = CreateContinuation(response["output"] as JsonArray);
             var hasToolCalls = (response["output"] as JsonArray)?
                 .OfType<JsonObject>()

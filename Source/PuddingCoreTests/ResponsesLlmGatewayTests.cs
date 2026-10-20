@@ -10,6 +10,83 @@ namespace PuddingCoreTests;
 public sealed class ResponsesLlmGatewayTests
 {
     [TestMethod]
+    public async Task DeepSeekRequest_UsesCompactUnicodeAndPlaintextReasoningReplay()
+    {
+        string? requestBody = null;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requestBody = ReadBody(request);
+            return OkResponsesResponse();
+        });
+        var gateway = new ResponsesLlmGateway(new HttpClient(handler),
+            new LlmOptions("https://api.deepseek.com", "test-key", "deepseek-flash",
+                ReasoningEffort: "none"));
+        const string text = "中文上下文与工具结果 <tag> \"quoted\" \n下一行";
+        const string reasoning = "需要保留原始思考以继续工具调用。";
+        await gateway.ChatAsync(
+            [new ChatMessage(ChatRole.User, text),
+             new ChatMessage(ChatRole.Assistant, "检查完成", ContinuationState: new LlmContinuationState(
+                 "responses", [new JsonObject
+                 {
+                     ["type"] = "reasoning",
+                     ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = reasoning }),
+                 }.ToJsonString()]))], []);
+
+        var body = JsonNode.Parse(requestBody!)!;
+        Assert.IsNull(body["store"]);
+        Assert.IsNull(body["include"]);
+        Assert.AreEqual("none", body["reasoning"]!["effort"]!.GetValue<string>());
+        StringAssert.Contains(requestBody!, "中文上下文");
+        Assert.IsFalse(requestBody!.Contains("\\u4E2D", StringComparison.OrdinalIgnoreCase));
+        Assert.AreEqual(text, body["input"]![0]!["content"]!.GetValue<string>());
+        Assert.AreEqual(reasoning, body["input"]![1]!["content"]![0]!["text"]!.GetValue<string>());
+    }
+
+    [DataTestMethod]
+    [DataRow("completed", "stop")]
+    [DataRow("incomplete", "length")]
+    public async Task ChatStreamAsync_TerminalEventCompletesWithoutWaitingForEof(string status, string finishReason)
+    {
+        var payload = $"data: {{\"type\":\"response.{status}\",\"response\":{{\"status\":\"{status}\",\"output\":[],\"incomplete_details\":{{\"reason\":\"max_output_tokens\"}},\"usage\":{{\"input_tokens\":12,\"input_tokens_details\":{{\"cached_tokens\":8}},\"output_tokens\":3,\"total_tokens\":15}}}}}}\n\n";
+        var gateway = CreateGateway(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new FailOnEofReadStream(Encoding.UTF8.GetBytes(payload))),
+        });
+        var deltas = new List<StreamDelta>();
+        await foreach (var delta in gateway.ChatStreamAsync([new ChatMessage(ChatRole.User, "hello")], []))
+            deltas.Add(delta);
+
+        Assert.AreEqual(finishReason, deltas.Last().FinishReason);
+        Assert.AreEqual(12, deltas.Last().Usage!.PromptTokens);
+    }
+
+    [TestMethod]
+    public async Task ChatStreamAsync_EofBeforeTerminalDoesNotReportPartialReplyAsSuccess()
+    {
+        var gateway = CreateGateway(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n"),
+        });
+        var deltas = new List<StreamDelta>();
+        var error = await Assert.ThrowsExactlyAsync<HttpIOException>(async () =>
+        {
+            await foreach (var delta in gateway.ChatStreamAsync([new ChatMessage(ChatRole.User, "hello")], []))
+                deltas.Add(delta);
+        });
+        Assert.AreEqual(HttpRequestError.ResponseEnded, error.HttpRequestError);
+        Assert.AreEqual("partial", deltas.Single().ContentDelta);
+        Assert.IsNull(deltas.Single().FinishReason);
+    }
+
+    private sealed class FailOnEofReadStream(byte[] data) : MemoryStream(data)
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => Position == Length
+                ? ValueTask.FromException<int>(new IOException("Read after terminal event"))
+                : base.ReadAsync(buffer, cancellationToken);
+    }
+
+    [TestMethod]
     public async Task ChatAsync_BasicRequest_UsesResponsesStatePolicy()
     {
         string? requestBody = null;
