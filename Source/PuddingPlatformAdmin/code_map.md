@@ -113,12 +113,15 @@ fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使
 | `src/pages/chat/panel/AnnotationLayer.tsx` + `AnnotationEditor.tsx` | 结构化标注：rect/arrow/note；坐标归一化纯函数可单测 |
 | `src/pages/chat/components/richblocks/PanelBlock.tsx` | panel 围栏：JSON → validatePanelSpec → PanelView；坏 spec 列前 3 条问题不渲染半成品 |
 | `src/pages/chat/uiSubmission/UiSubmissionContext.tsx` | 面板提交通道（宿主注入）；无 Provider 时禁用提交并说明原因 |
+| `src/pages/chat/documents/documentPath.ts` | 文档路径校验：拒 `..`／绝对路径／盘符／UNC／控制字符，统一分隔符；白名单 md/markdown/txt |
+| `src/pages/chat/documents/documentSource.ts` | 内容加载：兼容 JSON 信封与纯文本；404／403／501／网络异常分别措辞，不把「接口未提供」渲染成空文档 |
+| `src/pages/doc-preview.tsx` | `/doc-preview?path=…&ws=…`：Shell 工具区 tab 的 WebView2 目标页，只做 解析→加载→渲染 |
 
 **关键语义**
 
 **右侧产物区**：宽度由用户拖拽决定（`sidePanelSizing.ts` 管约束与持久化），拖动只改内存、松手才写 localStorage；`SidePanelResizer` 的 window 监听必须读 `widthRef` 并把回调锁进 ref，否则提交旧宽度 / 拖一下就停。
 
-**面板与文档的归属**：对话正文只承载结论；长文档挤在对话里翻找痛苦，所以超阈值折叠成卡，可「展开阅读」进右侧；右侧只显示内容，不读文件（读文件受工作区边界约束，属宿主职责）。
+**面板与文档的归属**：对话正文只承载结论。长消息折叠与内嵌右侧文档侧栏**已移除**（`d7956eb`）——它们把 Chat 挤窄、文档区宽度不足；文档预览改由 Shell 工具区新开 tab（WebView2 指向 `/doc-preview?path=…&ws=…`）。该页不自己拼路径：path 必须先过 `normalizeDocumentPath`。内容接口 `GET /api/workspaces/{ws}/files/content?path=` **尚未实现**，此时页面显式报「接口未提供」，不渲染空文档。
 
 **安全边界**：HTML 草稿永不内联，走 `sandbox=""` + CSP；SVG 单独走 DOMPurify（不能与 HTML 同路，否则沙箱强度降到 SVG 那一档）。
 
@@ -129,7 +132,7 @@ fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使
 |------|----------------|
 | `tests/root-redirect.test.ts` | 深链入口归一的**行为矩阵**测试（读源码文本 + 注入假 `window` 在 `new Function` 沙箱执行；I1~I7 可失败） |
 | `config/config.ts` | Umi 基础配置；不得重新启用全局 `layout` 插件，否则 Chat 会重新承担管理壳运行时 |
-| `config/routes.ts` | 将 `/chat`、登录、Bootstrap 和工作空间列表等独立体验与 `adminRoutes` 分组；管理路由统一挂到异步 `AdminLayout` 父路由；已移除 Workspace Studio 深链与旧入口 |
+| `config/routes.ts` | 将 `/chat`、登录、Bootstrap 和工作空间列表等独立体验与 `adminRoutes` 分组；管理路由统一挂到异步 `AdminLayout` 父路由；已移除 Workspace Studio 深链与旧入口；**路由是手写表，新增页面必须在此登记**（`pages/` 下新文件不会自动生效，`chat/panel-demo.tsx` 至今未登记即不可达）；`/doc-preview` 为 Shell 文档预览入口（layout:false，不套后台外壳） |
 | `src/app.tsx` | 全应用认证、初始状态、主题和 request；不得静态导入管理壳的 ProLayout、头像区或 SettingDrawer |
 | `src/layouts/AdminLayout/index.tsx` | 仅管理路由加载的过渡壳；当前保留 ProLayout 菜单能力，后续可在不影响 Chat 首载的前提下替换为 PuddingAdminShell |
 | `src/layouts/AdminLayout/menuIcons.ts` | 将 `routes.ts` 的语义图标名转换为真实 Ant Design React 图标；只在异步管理壳执行，避免菜单显示 `home/appstore` 文字或把图标依赖带回 Chat 主包 |
