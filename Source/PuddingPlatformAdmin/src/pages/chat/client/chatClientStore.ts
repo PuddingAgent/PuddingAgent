@@ -9,7 +9,11 @@ import { DEFAULT_AGENT_CHAT_OWNER_ID } from './clientIdentity';
 import type { AgentChatLocalCache } from './localCache';
 import type { ConversationHistoryPage, ConversationMessageContentPage } from './conversationOpenTypes';
 import { chronologicalHistory, mapSnapshotHistoryItem, readFullMessageContent } from './conversationSnapshotAdapter';
-import type { AgentConversationView, AgentStatusProjection } from './types';
+import type {
+  AgentConversationView,
+  AgentStatusProjection,
+  ConversationMessageView,
+} from './types';
 
 export interface AgentChatApiPort {
   listStatuses(workspaceId: string): Promise<AgentStatusProjection[]>;
@@ -676,6 +680,19 @@ export function createAgentChatClientStore(input: {
           return;
         }
 
+        if (
+          version !== backgroundSyncVersion ||
+          snapshot.workspaceId !== workspaceId ||
+          snapshot.agentId !== agentId ||
+          snapshot.ownerUserId !== ownerUserId
+        ) return;
+        // Publish before IndexedDB yields. A live event received during the
+        // cache write must not be overwritten by this older merged snapshot.
+        set({
+          conversation: mergedConversation,
+          hasMoreHistory: fresh.hasMoreHistory ?? snapshot.hasMoreHistory,
+          error: null,
+        });
         const saveStartedAt = performance.now();
         await input.cache.saveConversation(mergedConversation);
         recordPerfStep(
@@ -698,11 +715,6 @@ export function createAgentChatClientStore(input: {
           snapshot.agentId === agentId &&
           snapshot.ownerUserId === ownerUserId
         ) {
-          set({
-            conversation: mergedConversation,
-            hasMoreHistory: fresh.hasMoreHistory ?? snapshot.hasMoreHistory,
-            error: null,
-          });
           recordPerfStep('agent.selectedSync', 'sync.finish', syncStartedAt, {
             traceId,
             workspaceId,
@@ -876,8 +888,8 @@ export function createAgentChatClientStore(input: {
     },
     /**
      * 阶段 D：把 projection-owned 主会话的 canonical SSE 事件缝合进唯一 Store。
-     * 只维护活动 Turn 的有界正文/过程与 eventCursor；终态消息由快照/轮询合并器负责，
-     * 避免 SSE 与正文快照重复叠加（Plan §7.2）。
+     * 维护活动 Turn 的有界正文/过程与 eventCursor；完成事件按 canonical messageId
+     * 物化回复，避免下一轮替换 activeRun 时丢失尚未被历史快照收录的正文。
      */
     applyLiveEvent(
       workspaceId: string,
@@ -900,18 +912,39 @@ export function createAgentChatClientStore(input: {
       const sequence =
         liveNumber(event, 'sequence', 'sequenceNum') ??
         conversation.eventCursor + 1;
-      // 快照已覆盖的事件不再重复投影；turn.started 允许作为新 Turn 起点。
-      if (sequence <= conversation.eventCursor && eventType !== 'turn.started')
-        return false;
+      // 快照已覆盖的 started 也不能重开旧 Turn。
+      if (sequence <= conversation.eventCursor) return false;
 
-      const now = new Date().toISOString();
+      const now =
+        liveString(event, 'occurredAt', 'recordedAt') ?? new Date().toISOString();
       const turnId = liveString(event, 'turnId', 'turn_id');
       const runId = liveString(event, 'runId', 'run_id');
       let nextConversation: AgentConversationView | null = null;
+      const belongsToEvent = (run: LiveActiveRun): boolean => {
+        const currentTurnId = run.outputSnapshot.window?.turnId;
+        if (turnId && currentTurnId) return turnId === currentTurnId;
+        if (runId) return runId === run.runId;
+        return !turnId;
+      };
 
       const ensureActiveRun = (): LiveActiveRun => {
         const existing = conversation.activeRun;
-        if (existing && existing.status === 'running') return existing;
+        if (
+          existing &&
+          ['queued', 'running', 'waiting'].includes(existing.status) &&
+          belongsToEvent(existing)
+        ) {
+          const window = existing.outputSnapshot.window;
+          return {
+            ...existing,
+            outputSnapshot: {
+              ...existing.outputSnapshot,
+              window: window
+                ? { ...window, throughSequence: sequence, maxSequence: sequence }
+                : window,
+            },
+          };
+        }
         return {
           runId: runId ?? `live-${turnId ?? sequence}`,
           workspaceId: conversation.workspaceId,
@@ -922,7 +955,19 @@ export function createAgentChatClientStore(input: {
           statusText: '运行中',
           summary: '',
           eventCursor: sequence,
-          outputSnapshot: { markdown: '', processItems: [] },
+          outputSnapshot: {
+            markdown: '',
+            processItems: [],
+            ...(turnId
+              ? { window: {
+                  turnId,
+                  throughSequence: sequence,
+                  minSequence: sequence,
+                  maxSequence: sequence,
+                  hasMoreBefore: false,
+                } }
+              : {}),
+          },
           startedAt: now,
           updatedAt: now,
           completedAt: null,
@@ -1041,9 +1086,66 @@ export function createAgentChatClientStore(input: {
               : eventType === 'turn.failed'
                 ? 'failed'
                 : 'cancelled';
-          const activeRun = conversation.activeRun;
+          const activeRun =
+            conversation.activeRun && belongsToEvent(conversation.activeRun)
+              ? conversation.activeRun
+              : null;
+          const reply =
+            liveString(event, 'reply') ?? activeRun?.outputSnapshot.markdown ?? '';
+          const messageId = liveString(event, 'messageId');
+          let messages = conversation.messages;
+          // The terminal envelope supplies the same identity/body/time as the
+          // persisted history row. Upsert it now, so a subsequent Turn cannot
+          // erase the reply while the snapshot request is still in flight.
+          if (messageId && turnId && reply) {
+            const existingIndex = messages.findIndex(
+              (item) => item.messageId === messageId,
+            );
+            const existingMessage = messages[existingIndex];
+            const completedMessage: ConversationMessageView = {
+              messageId,
+              turnId,
+              runId: runId ?? activeRun?.runId,
+              role: 'agent',
+              sourceKind: 'agent',
+              sourceId: conversation.agentId,
+              sourceName: '',
+              messageType: 'agent_output',
+              llmRole: 'assistant',
+              content: reply,
+              status,
+              createdAt: now,
+              processItems: activeRun?.outputSnapshot.processItems ??
+                existingMessage?.processItems ?? [],
+              processSummary: activeRun?.outputSnapshot.processSummary ??
+                existingMessage?.processSummary,
+              turnOutcome: {
+                status,
+                errorCode: liveString(event, 'errorCode'),
+                errorMessage: liveString(event, 'errorMessage'),
+              },
+            };
+            if (existingIndex >= 0) {
+              messages = messages.map((item, index) =>
+                index === existingIndex ? { ...item, ...completedMessage } : item,
+              );
+            } else {
+              // Use completion time, never the run's start time: long-running
+              // replies must not jump above more recent user messages.
+              const nextIndex = messages.findIndex(
+                (item) => Date.parse(item.createdAt) > Date.parse(now),
+              );
+              const insertAt = nextIndex < 0 ? messages.length : nextIndex;
+              messages = [
+                ...messages.slice(0, insertAt),
+                completedMessage,
+                ...messages.slice(insertAt),
+              ];
+            }
+          }
           nextConversation = {
             ...conversation,
+            messages,
             activeRun: activeRun
               ? {
                   ...activeRun,
@@ -1059,6 +1161,7 @@ export function createAgentChatClientStore(input: {
                   completedAt: now,
                   outputSnapshot: {
                     ...activeRun.outputSnapshot,
+                    markdown: reply,
                     processSummary: {
                       ...(activeRun.outputSnapshot.processSummary ?? {
                         totalItems: 0,
@@ -1074,7 +1177,7 @@ export function createAgentChatClientStore(input: {
                     },
                   },
                 }
-              : null,
+              : conversation.activeRun,
             eventCursor: Math.max(conversation.eventCursor, sequence),
             updatedAt: now,
           };

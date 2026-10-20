@@ -377,6 +377,7 @@ const createProjectedTurn = (
     },
     assistant: {
       id: isUser ? `${turnId}:placeholder-assistant` : message.messageId,
+      isPlaceholder: isUser && !outcome,
       status:
         executionError
           ? outcome?.status === 'cancelled' ? 'cancelled' : 'error'
@@ -861,13 +862,17 @@ export const mergeActiveRunAssistant = (
 ): ChatTurn['assistant'] => {
   // 本地 SSE 已终态时，轮询快照不得把 status/isStreaming 拉回运行态：
   // 快照滞后会让状态条与正文在两个状态间来回翻转（BUG2 双状态来源之一）。
-  const localTerminal = isTerminalAssistantStatus(local.status);
+  // A persisted user row has a hidden success placeholder, not a completed
+  // assistant. Its delivery status must not suppress the running snapshot.
+  const localTerminal =
+    !local.isPlaceholder && isTerminalAssistantStatus(local.status);
   return {
     ...local,
     ...active,
     // Keep the local identity stable so a projection refresh cannot remount the
     // visible bubble while the same Turn is still streaming.
     id: local.id,
+    isPlaceholder: active.isPlaceholder === true,
     status: localTerminal ? local.status : active.status,
     timelineItems: selectRicherTimelineItems(
       local.timelineItems,
@@ -877,7 +882,7 @@ export const mergeActiveRunAssistant = (
       local.answerMarkdown,
       active.answerMarkdown,
     ),
-    isStreaming: localTerminal
+    isStreaming: localTerminal || isTerminalAssistantStatus(active.status)
       ? false
       : local.isStreaming || active.isStreaming,
   };

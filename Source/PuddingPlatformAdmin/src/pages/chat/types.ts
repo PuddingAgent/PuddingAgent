@@ -89,6 +89,8 @@ export interface ChatTurn {
   assistant: {
     id: string;
     status: AssistantStatus;
+    /** 用户消息已物化，但还没有助手消息或 Turn 终态；success 仅用于隐藏空占位。 */
+    isPlaceholder?: boolean;
     /** 统一时间线：按 Agent 实际执行顺序排列 */
     timelineItems: TimelineItem[];
     /** 历史过程的轻量统计；完整事件仅在用户展开时加载。 */

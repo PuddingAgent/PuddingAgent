@@ -4,6 +4,8 @@ import {
   setPerfDiagnosticsEnabled,
 } from '@/utils/debug';
 import type { AdminChatStreamEvent } from '@/services/platform/api';
+import { mergeActiveRunIntoTurns, mergeProjectedMessageIntoTurns } from '../components/MessageList';
+import { buildMessageBlocks, type ChatTurn } from '../types';
 import { createAgentChatClientStore } from './chatClientStore';
 import { createMemoryAgentChatCache } from './localCache';
 import type { AgentConversationView } from './types';
@@ -1115,5 +1117,100 @@ describe('agent chat client store', () => {
         live({ type: 'message.content.appended', sequence: 17, delta: 'X' }),
       ),
     ).toBe(false);
+  });
+
+  it('keeps the completed reply between user messages when the next Turn starts before a snapshot refresh', async () => {
+    const store = createAgentChatClientStore({
+      cache: createMemoryAgentChatCache(),
+      api: {
+        listStatuses: async () => [],
+        getConversation: async () => ({
+          workspaceId: 'default', ownerUserId: 'single-user', agentId: 'agent-a',
+          mainSessionId: 'session-a', eventCursor: 10, updatedAt: '2026-10-20T00:00:00Z',
+          messages: ['t1', 't2'].map((turnId, index) => ({
+            messageId: `user-${turnId}`, turnId, role: 'user' as const,
+            sourceId: 'user', sourceName: '我', content: `问题${index + 1}`,
+            createdAt: `2026-10-20T00:00:0${index * 3}Z`,
+            status: 'succeeded' as const, processItems: [],
+          })),
+        }),
+      },
+    });
+    await store.selectAgent('default', 'agent-a');
+    const apply = (event: Record<string, unknown>) => store.applyLiveEvent(
+      'default', 'agent-a', {
+        eventId: `event-${event.sequence}`, occurredAt: '2026-10-20T00:00:02Z', ...event,
+      } as unknown as AdminChatStreamEvent,
+    );
+    apply({ type: 'turn.started', turnId: 't1', runId: 'r1', messageId: 'a1', sequence: 11 });
+    apply({ type: 'message.content.appended', turnId: 't1', runId: 'r1', messageId: 'a1', sequence: 12, delta: '部分' });
+    apply({ type: 'turn.completed', turnId: 't1', runId: 'r1', messageId: 'a1', sequence: 13, reply: '第一轮完整回复' });
+    apply({ type: 'turn.started', turnId: 't2', runId: 'r2', messageId: 'a2', sequence: 14 });
+    apply({ type: 'message.content.appended', turnId: 't2', runId: 'r2', messageId: 'a2', sequence: 15, delta: '第二轮' });
+
+    const conversation = store.getSnapshot().conversation!;
+    expect(conversation.messages.map((item) => item.content)).toEqual([
+      '问题1', '第一轮完整回复', '问题2',
+    ]);
+    expect(conversation.messages[1]).toMatchObject({
+      messageId: 'a1', turnId: 't1', runId: 'r1', status: 'succeeded',
+      createdAt: '2026-10-20T00:00:02Z',
+    });
+    expect(conversation.activeRun).toMatchObject({
+      runId: 'r2',
+      outputSnapshot: { markdown: '第二轮', window: { turnId: 't2' } },
+    });
+    const turns: ChatTurn[] = [];
+    for (const message of conversation.messages) {
+      mergeProjectedMessageIntoTurns(turns, message, 'Pudding');
+    }
+    expect(buildMessageBlocks(
+      mergeActiveRunIntoTurns(turns, conversation.activeRun, 'Pudding'),
+    ).map((block) => block.content)).toEqual([
+      '问题1', '第一轮完整回复', '问题2', '第二轮',
+    ]);
+    // A delayed terminal event for t1 must not complete t2 or duplicate its reply.
+    apply({ type: 'turn.completed', turnId: 't1', runId: 'r1', messageId: 'a1', sequence: 16, reply: '第一轮完整回复' });
+    expect(store.getSnapshot().conversation?.activeRun?.status).toBe('running');
+    expect(store.getSnapshot().conversation?.messages.filter((item) => item.messageId === 'a1')).toHaveLength(1);
+    expect(apply({
+      type: 'turn.started', turnId: 't1', runId: 'r1', messageId: 'a1', sequence: 11,
+      eventId: 'replayed-start',
+    })).toBe(false);
+    expect(store.getSnapshot().conversation?.activeRun?.runId).toBe('r2');
+  });
+
+  it('does not roll back a completed reply received while saving a background snapshot', async () => {
+    const cache = createMemoryAgentChatCache();
+    let releaseSave!: () => void;
+    let notifySaving!: () => void;
+    const saving = new Promise<void>((resolve) => { notifySaving = resolve; });
+    const saved = new Promise<void>((resolve) => { releaseSave = resolve; });
+    const view: AgentConversationView = {
+      workspaceId: 'default', ownerUserId: 'single-user', agentId: 'agent-a',
+      mainSessionId: 'session-a', messages: [], eventCursor: 10,
+      updatedAt: '2026-10-20T00:00:00Z',
+    };
+    const store = createAgentChatClientStore({
+      cache,
+      api: { listStatuses: async () => [], getConversation: async () => ({ ...view }) },
+    });
+    await store.selectAgent('default', 'agent-a');
+    view.eventCursor = 11;
+    jest.spyOn(cache, 'saveConversation').mockImplementation(async () => {
+      notifySaving();
+      await saved;
+    });
+    const refresh = store.syncSelectedAgent();
+    await saving;
+    store.applyLiveEvent('default', 'agent-a', {
+      type: 'turn.completed', sequence: 12, eventId: 'done-12',
+      turnId: 't1', runId: 'r1', messageId: 'a1', reply: '完整回复',
+      occurredAt: '2026-10-20T00:00:02Z',
+    } as unknown as AdminChatStreamEvent);
+    releaseSave();
+    await refresh;
+    expect(store.getSnapshot().conversation?.eventCursor).toBe(12);
+    expect(store.getSnapshot().conversation?.messages[0]?.content).toBe('完整回复');
   });
 });

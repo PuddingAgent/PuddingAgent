@@ -8,6 +8,7 @@
 //     一张卡片。守卫逐条锁死在下方 describe('BUG3 …') 中。
 import type { AgentRunView, ConversationMessageView } from '../client/types';
 import { buildMessageBlocks, extractVisionArtifactIds, type ChatTurn } from '../types';
+import { buildVirtualMessageItems } from '../viewport/messageProjection';
 import {
   hasProjectedUserTurn,
   mergeActiveRunAssistant,
@@ -278,6 +279,91 @@ const createActiveRun = (
 });
 
 describe('live output ownership', () => {
+  it.each(['', '正在生成的回复'])(
+    'renders a running reply after reloading a persisted user-only Turn (body=%j)',
+    (markdown) => {
+      const turns: ChatTurn[] = [];
+      mergeProjectedMessageIntoTurns(turns, createUserMessage({
+        messageId: 'client-1',
+        turnId: 'turn-1',
+        turnOutcome: null,
+      }), 'Pudding');
+      const run = createActiveRun({
+        commandClientId: 'client-1',
+        outputSnapshot: {
+          markdown,
+          processItems: [{
+            id: 'tool-1', kind: 'tool_call', status: 'running',
+            text: '查询中', name: 'lookup', toolCallId: 'call-1',
+            timestamp: '2026-08-23T00:00:01.000Z', sequence: 10,
+          }],
+          window: { turnId: 'turn-1', throughSequence: 10, minSequence: 10, maxSequence: 10, hasMoreBefore: false },
+        },
+      });
+
+      const merged = mergeActiveRunIntoTurns(turns, run, 'Pudding');
+      const viewport = buildVirtualMessageItems({ turns: merged, agentName: 'Pudding' });
+      const rows = viewport.items.filter((item) => item.kind === 'message');
+      expect(rows.map((item) => item.block.role)).toEqual(['user', 'agent']);
+      expect(rows[1].block).toMatchObject({
+        content: markdown, status: 'streaming', isStreaming: true,
+        processItems: [expect.objectContaining({ name: 'lookup', status: 'running' })],
+      });
+      expect(viewport.activeItemId).toBe(rows[1].id);
+      expect(merged).toHaveLength(1);
+      expect(merged[0].assistant.id).toBe(turns[0].assistant.id);
+      expect(turns[0].assistant.isStreaming).toBe(false);
+    },
+  );
+
+  it.each(['success', 'error', 'cancelled'] as const)(
+    'preserves a real empty %s assistant against a delayed running snapshot',
+    (status) => {
+      const local = createAssistant({ status, isStreaming: false });
+      const merged = mergeActiveRunAssistant(local, createAssistant({}));
+      expect(merged.status).toBe(status);
+      expect(merged.isStreaming).toBe(false);
+    },
+  );
+
+  it.each(['failed', 'cancelled', 'succeeded'] as const)(
+    'preserves a canonical %s outcome on a user-only Turn',
+    (status) => {
+      const turns: ChatTurn[] = [];
+      mergeProjectedMessageIntoTurns(turns, createUserMessage({
+        turnId: 'turn-1', turnOutcome: { status },
+      }), 'Pudding');
+      const merged = mergeActiveRunIntoTurns(turns, createActiveRun({
+        outputSnapshot: {
+          markdown: '', processItems: [],
+          window: { turnId: 'turn-1', throughSequence: 10, minSequence: 10, maxSequence: 10, hasMoreBefore: false },
+        },
+      }), 'Pudding');
+      expect(merged[0].assistant.status).toBe(
+        status === 'failed' ? 'error' : status === 'cancelled' ? 'cancelled' : 'success',
+      );
+      expect(merged[0].assistant.isStreaming).toBe(false);
+    },
+  );
+
+  it('does not resurrect an empty reply after its placeholder has completed', () => {
+    const turns: ChatTurn[] = [];
+    mergeProjectedMessageIntoTurns(turns, createUserMessage({ turnId: 'turn-1' }), 'Pudding');
+    const run = createActiveRun({
+      outputSnapshot: {
+        markdown: '', processItems: [],
+        window: { turnId: 'turn-1', throughSequence: 10, minSequence: 10, maxSequence: 10, hasMoreBefore: false },
+      },
+    });
+    const running = mergeActiveRunIntoTurns(turns, run, 'Pudding');
+    expect(running[0].assistant.isStreaming).toBe(true);
+    const completed = mergeActiveRunIntoTurns(running, { ...run, status: 'succeeded' }, 'Pudding');
+    expect(completed[0].assistant.isStreaming).toBe(false);
+    const delayed = mergeActiveRunIntoTurns(completed, run, 'Pudding');
+    expect(delayed[0].assistant.status).toBe('success');
+    expect(delayed[0].assistant.isStreaming).toBe(false);
+  });
+
   it('updates the last message of a Turn and leaves earlier messages untouched', () => {
     const earlier = createLocalTurn({ answerMarkdown: 'earlier', status: 'success', isStreaming: false });
     const latest = { ...createLocalTurn({ id: 'latest', answerMarkdown: 'live' }), userMessage: { ...earlier.userMessage, text: '' } };

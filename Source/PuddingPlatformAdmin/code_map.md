@@ -238,7 +238,7 @@ bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧�
 
 | 文件 | 职责与性能边界 |
 |------|----------------|
-| `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；同 scope+窗口并发打开单飞、同 key 复用；`isOpening`/`isRefreshing` 分离；会话切换/后台校正用 AbortController；projection-owned 主会话 SSE 事件缝入活动 Turn；缓存键统一 ownerUserId，权威响应先解除加载再写 IndexedDB；`expandMessage` 按需展开长正文；历史页合并返回时当前状态，保留期间收到的实时消息与游标 |
+| `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；同 scope+窗口并发打开单飞、同 key 复用；`isOpening`/`isRefreshing` 分离；会话切换/后台校正用 AbortController；SSE 按 canonical Turn 隔离活动输出，终态按 messageId 物化回复；缓存键统一 ownerUserId，首屏与后台快照均先发布再写 IndexedDB，防异步写缓存回退实时状态；`expandMessage` 按需展开长正文；历史页合并返回时当前状态，保留期间收到的实时消息与游标 |
 | `src/pages/chat/client/conversationOpenApi.ts` / `conversationOpenTypes.ts` | 阶段D 统一打开/历史/过程分页/消息正文分段契约与客户端：数字枚举取值冻结、`If-None-Match` 304→null、AbortSignal 取消、失败不吞空会话；过程条目含结构化工具/子代理字段，正文按 UTF-8 字节偏移分段续读 |
 | `src/pages/chat/client/conversationSnapshotAdapter.ts` | 统一打开快照 → `AgentConversationView`：降序传输页反转为正序显示；保留 typed 发送者、模型角色和图片引用；长消息预览携带展开元信息，由消息行渲染控件；Turn 摘要→过程摘要/终态、`eventCursor=C` 供 SSE 追平 |
 | `src/pages/chat/client/localCache.ts` | IndexedDB 派生缓存版本管理；展示合同改变时只失效 conversations 缓存；版本变化关闭旧连接，服务端消息不受影响 |
@@ -276,6 +276,8 @@ bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧�
 **`src/pages/chat/components/MessageList.tsx`**：将历史消息与 active run 快照投影为稳定消息行；实时快照优先使用 window.turnId，同回合只有最后一条助手消息承载 canonical 投影；历史 messages 引用不变时不重建投影；把已水合 turn 的 execution-flow render weight 附到 viewport item；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；保留终态守卫、同 
 messageId 原地更新与三源去重。**同一条回复只允许一张卡片**（`visibleTurns`）：`hasProjectedUserTurn` 以 `userMessage.id` / `turnId` 身份优先匹配（没有用户正文的 agent 主动回合、SSE 恢复 turn、activeRun 快照 turn 不得被当成新 turn），文本+时间戳（≤1s）只是兜底；`normalizeReplyMarkdown` 做空白无关的正文等价比较并配 `REPLY_DEDUP_MAX_SKEW_MS`(10min) 同轮时间窗（防止把两轮相同的短回复误并）；
 `mergeLocalTurnsAwaitingProjection` 丢弃「已物化回复的直播影子」，`mergeActiveRunIntoTurns` 按正文或 `commandClientId` 身份归并（用户行/助手行被服务端拆成两条 turn 时命中后者），只有真正的下一轮才追加
+
+`src/pages/chat/types.ts` 的 `ChatTurn.assistant.isPlaceholder` 标识尚无回复或 Turn 终态的用户行占位；占位的 `success` 不属于助手终态，必须接受活动快照。真实终态仍保持单调，结束事件清除流式标记。`src/pages/chat/components/messageTurnMerge.test.ts` 与 `src/pages/chat/client/chatClientStore.test.ts` 覆盖刷新后的无正文工具过程、连续 Turn 的回复顺序和 IndexedDB 等待期间的实时消息。
 
 ## 工作空间与静态资源边界
 
