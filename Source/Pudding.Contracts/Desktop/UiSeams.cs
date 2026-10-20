@@ -71,6 +71,13 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
         DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// 向工具区画布推送一段自包含 HTML：同 panelId 幂等定位画布，内容整幅替换。
+    /// 内容必须按不可信处理（无桥接、无外部网络）；实现方不得把内容回传或写日志。
+    /// </summary>
+    Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+        DesktopCallContext context, DesktopPanelRenderRequest request, CancellationToken cancellationToken);
+
     /// <summary>标签页切换/关闭；实现方必须在操作后返回<b>新的</b>活动页状态与剩余清单。</summary>
     Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
         DesktopCallContext context, BrowserTabsRequest request, CancellationToken cancellationToken);

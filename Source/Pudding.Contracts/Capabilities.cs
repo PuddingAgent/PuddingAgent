@@ -39,6 +39,12 @@ public enum DesktopCapability
     /// </summary>
     ShellDocumentPreview = 1 << 19,
 
+    /// <summary>
+    /// 向工具区画布推送一段自包含 HTML。与文档预览同样是 Shell 动作：没有页面目标，
+    /// 不需要 caller 身份投影。区别在于内容来自调用方而不是磁盘文件。
+    /// </summary>
+    ShellPanelRender = 1 << 20,
+
     /// <summary>读取页面快照（DOM/可访问性树，带 PageVersion）；Ref 只在同一 PageVersion 内有效。</summary>
     BrowserSnapshot = 1 << 8,
 
@@ -143,6 +149,12 @@ public static class DesktopCapabilities
         // 因此标 HasSideEffects（终态必须如实标注），不标 Mutating（同路径幂等激活同一标签，
         // 不需要串行化，也不应被「用户接管」暂停而失效）。
         new(DesktopCapability.ShellDocumentPreview, "shell.document_preview", InitialVersion,
+            DesktopCapabilityKind.Shell,
+            DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
+        // 面板渲染：内容会立刻变可见，超时/取消后画布可能已经变了 ⇒ HasSideEffects。
+        // 不标 Mutating：每次渲染是整幅替换，没有读-改-写，不需要串行化；
+        // 也不应因「用户接管」暂停而失效（那会让 Agent 的画布更新悄悄消失）。
+        new(DesktopCapability.ShellPanelRender, "shell.panel_render", InitialVersion,
             DesktopCapabilityKind.Shell,
             DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
         new(DesktopCapability.BrowserSnapshot, "browser.snapshot", InitialVersion,

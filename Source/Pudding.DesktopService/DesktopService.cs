@@ -279,6 +279,28 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.ShellPanelRender:
+            {
+                if (request.PanelRender is not { } panel)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("panel_render request payload is missing"));
+                }
+
+                // 同样是 Shell 作用域：没有页面目标，信任级由服务侧调用方策略判定。
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    target: null,
+                    DesktopPageVersion.Unknown,
+                    context,
+                    token => _surface.RenderPanelAsync(context, panel, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromPanelRender(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             case DesktopCapability.ShellFilePicker:
             {
                 if (request.FilePicker is not { } picker)

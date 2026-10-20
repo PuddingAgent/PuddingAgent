@@ -40,6 +40,7 @@ public sealed class BrowserContextScopeAdmissionTests
     [InlineData(DesktopCapability.ShellClipboard, false)]
     [InlineData(DesktopCapability.ShellFilePicker, false)]
     [InlineData(DesktopCapability.ShellNotification, false)]
+    [InlineData(DesktopCapability.ShellPanelRender, false)]
     [InlineData(DesktopCapability.ShellStatus, false)]
     public void BrowserContextScope_HasASingleDefinition(DesktopCapability capability, bool expected)
     {

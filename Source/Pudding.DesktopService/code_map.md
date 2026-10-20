@@ -83,6 +83,10 @@
   `BrowserPageLifecycle`**（它持有唯一权威实例与准入读的页面注册表）：分开传"注册表 + 权威"就允许配错对，那等于又出现两份控制权状态（设计方案 §3.1）
 - **`BrowserAdmissionAdapter.cs`**：**两传输共用准入适配器**（方案 §4.2）：入队前 `Admit`、执行前 `Revalidate`、`finally` `Release`（幂等）；两条传输收敛到同一 `BrowserPageLifecycle` 与同一请求形状，判据不在此处而唯一 authority 内；只读观察不产生租约，**写操作必须有租约**
 - **两个 `browser.binding.*` 能力（准入与声明）**：两个 `browser.binding.*` 能力的**准入规则**（`AllowedTrust` 仅 `AgentAuthorized`；纳入 `IsBrowserContextScoped`）与**声明**（实现即声明，与 `DesktopCapabilities.AllCapabilities` 相等）；策略表冻结快照随有意变更同步
+- **`shell.panel_render` 能力（准入与声明）**：向工具区画布推送 Agent 生成的自包含 HTML（右侧工具栏「交互面板」的内容通道）。
+  Traits = `HasSideEffects | RequiresTrustedContext`（不标 `Mutating`：每次是整幅替换、无读-改-写；不标 `RequiresPageTarget`：与页面无关）。
+  准入 `[Workbench]`（与文档预览、剪贴板同级）。契约侧只做形状校验（panelId 字符集/长度、内容 256 KB 上限、contentType 白名单 `html`）；
+  “内容是否安全”不在契约或适配层判定，由 WinUI 实现用无桥接 + CSP 的沙箱文档兜底。
 - **`BrowserTaskBindingComposition.cs`**：控制面**装配工厂**：在 DesktopService 层构造签发器 + 受理/撤销服务（Shell 不引用 Automation，只调用它）；世代取 `lifecycle.Authority.ConnectionGeneration`（未握手 ⇒ 签发被拒）
 - **`BrowserTaskBindingService.cs`**：**任务绑定的受理与撤销**（§4.1）：只有目标**当下**正是用户选定给 Agent 的那一页才签发（**绑定不能替代用户选择**）；重复受理先撤旧授权（避免同 (任务,目标) 
   并存两份）；**确定性撤销入口**：`Revoke`（该绑定）／`RevokeForTarget`（切目标：撤该页全部绑定，返回条数、幂等）／`RevokeAllForCaller`（任务结束/父撤销：按行动者+可选运行撤）。策略不在此重写，交 `BrowserGrantIssuer`／唯一 authority

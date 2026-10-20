@@ -132,6 +132,26 @@ public sealed class WinUiShellFacilities : IDesktopShellFacilities
             DesktopCapabilityError.UiUnavailable("document preview is not wired into the tool area yet")));
     }
 
+    /// <summary>
+    /// 向工具区画布推送内容。
+    ///
+    /// 目前返回 UiUnavailable：画布载体（ToolTabKind.Panel + 内置示例）已在 Shell 侧完成，
+    /// 但「能力通道 → 画布」这一跳还没接。接入时要做三件事（不要在旧路径上打补丁）：
+    /// ① 由 Shell 暴露一个「按 panelId 定位/新建画布并写入 HTML」的端口，而不是让本类持窗口；
+    /// ② 渲染必须沙箱化：NavigateToString 的文档里带 CSP（default-src 'none'；
+    ///    样式内联；图片仅 data:），且**不得注入 shellBridge**；
+    /// ③ 同 panelId 幂等覆盖，不得开第二个画布。
+    /// </summary>
+    public Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+        DesktopCallContext context, DesktopPanelRenderRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        return Task.FromResult(CapabilityResult<DesktopPanelRenderResult>.Failure(
+            DesktopCapabilityError.UiUnavailable("panel render is not wired into the tool area yet")));
+    }
+
     public async Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
         DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken)
     {

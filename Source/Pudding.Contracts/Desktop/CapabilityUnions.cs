@@ -28,7 +28,8 @@ public sealed record DesktopCapabilityRequest
         BrowserBindingApplyRequest? bindingApply = null,
         BrowserBindingRevokeRequest? bindingRevoke = null,
         BrowserScreenshotRequest? screenshot = null,
-        DesktopDocumentPreviewRequest? documentPreview = null)
+        DesktopDocumentPreviewRequest? documentPreview = null,
+        DesktopPanelRenderRequest? panelRender = null)
     {
         Navigate = navigate;
         Javascript = javascript;
@@ -50,6 +51,7 @@ public sealed record DesktopCapabilityRequest
         BindingRevoke = bindingRevoke;
         Screenshot = screenshot;
         DocumentPreview = documentPreview;
+        PanelRender = panelRender;
     }
 
     public NavigateRequest? Navigate { get; }
@@ -103,6 +105,9 @@ public sealed record DesktopCapabilityRequest
     /// <summary>文档预览请求（Shell 类：只带路径，无页面目标）。</summary>
     public DesktopDocumentPreviewRequest? DocumentPreview { get; }
 
+    /// <summary>面板渲染请求（Shell 类：内容走线缆，无页面目标）。</summary>
+    public DesktopPanelRenderRequest? PanelRender { get; }
+
     /// <summary>控制面：绑定申请载荷（§4.1）。</summary>
     public BrowserBindingApplyRequest? BindingApply { get; }
 
@@ -131,6 +136,10 @@ public sealed record DesktopCapabilityRequest
 
     public static DesktopCapabilityRequest ForDocumentPreview(DesktopDocumentPreviewRequest request) =>
         new(documentPreview: request ?? throw new ArgumentNullException(nameof(request)));
+
+    /// <summary>面板渲染：内容由调用方给出，不经磁盘。</summary>
+    public static DesktopCapabilityRequest ForPanelRender(DesktopPanelRenderRequest request) =>
+        new(panelRender: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForSnapshot(BrowserSnapshotRequest request) =>
         new(snapshot: request ?? throw new ArgumentNullException(nameof(request)));
@@ -233,6 +242,7 @@ public sealed record DesktopCapabilityResponse
         BrowserBindingAck? bindingAck = null,
         BrowserScreenshotResult? screenshot = null,
         DesktopDocumentPreviewResult? documentPreview = null,
+        DesktopPanelRenderResult? panelRender = null,
         DesktopCapabilityError? error = null)
     {
         var payloadCount = (navigate is null ? 0 : 1)
@@ -253,7 +263,8 @@ public sealed record DesktopCapabilityResponse
             + (contextClosed is null ? 0 : 1)
             + (bindingAck is null ? 0 : 1)
             + (screenshot is null ? 0 : 1)
-            + (documentPreview is null ? 0 : 1);
+            + (documentPreview is null ? 0 : 1)
+            + (panelRender is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -268,6 +279,7 @@ public sealed record DesktopCapabilityResponse
         BindingAck = bindingAck;
         Screenshot = screenshot;
         DocumentPreview = documentPreview;
+        PanelRender = panelRender;
         Snapshot = snapshot;
         Locate = locate;
         Interact = interact;
@@ -306,6 +318,9 @@ public sealed record DesktopCapabilityResponse
 
     /// <summary>文档预览结果（只回标签身份与阶段，不含正文）。</summary>
     public DesktopDocumentPreviewResult? DocumentPreview { get; }
+
+    /// <summary>面板渲染结果（只回画布身份与阶段，不含内容）。</summary>
+    public DesktopPanelRenderResult? PanelRender { get; }
 
     /// <summary>元素交互结果（含交互后的页面状态；旧 Ref 自此作废）。</summary>
     public DesktopInteractionResult? Interact { get; }
@@ -396,6 +411,9 @@ public sealed record DesktopCapabilityResponse
     public static DesktopCapabilityResponse FromDocumentPreview(DesktopDocumentPreviewResult result) =>
         new(documentPreview: result ?? throw new ArgumentNullException(nameof(result)));
 
+    public static DesktopCapabilityResponse FromPanelRender(DesktopPanelRenderResult result) =>
+        new(panelRender: result ?? throw new ArgumentNullException(nameof(result)));
+
     public static DesktopCapabilityResponse Failure(DesktopCapabilityError error) =>
         new(error: error ?? throw new ArgumentNullException(nameof(error)));
     public override string ToString() =>
@@ -415,5 +433,6 @@ public sealed record DesktopCapabilityResponse
         : Dialog is not null ? $"dialog({Dialog})"
         : FilePicker is not null ? $"file_picker({FilePicker})"
         : DocumentPreview is not null ? $"document_preview({DocumentPreview})"
+        : PanelRender is not null ? $"panel_render({PanelRender})"
         : "empty";
 }

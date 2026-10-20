@@ -120,7 +120,7 @@ public sealed class TargetAndPolicyTests
     {
         // not.registered.capability 在目录里已登记但本切片没有 payload；即使被启用/授权也不能假装执行。
         var harness = ServiceHarness.Create(
-            allowed: (DesktopCapability)(1 << 20),
+            allowed: ServiceHarness.UnregisteredCapability,
             shellCallerTrust: DesktopContextTrust.Workbench,
             hasThreadAccess: true);
 
@@ -155,6 +155,7 @@ public sealed class TargetAndPolicyTests
             $"ShellDocumentPreview=[{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellFilePicker=[{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellNotification=[{nameof(DesktopContextTrust.Untrusted)},{nameof(DesktopContextTrust.AgentAuthorized)},{nameof(DesktopContextTrust.Workbench)}]",
+            $"ShellPanelRender=[{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellStatus=[{nameof(DesktopContextTrust.Untrusted)},{nameof(DesktopContextTrust.AgentAuthorized)},{nameof(DesktopContextTrust.Workbench)}]",
             $"WebViewExecuteJavascript=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"WebViewNavigate=[{nameof(DesktopContextTrust.Untrusted)},{nameof(DesktopContextTrust.AgentAuthorized)},{nameof(DesktopContextTrust.Workbench)}]",

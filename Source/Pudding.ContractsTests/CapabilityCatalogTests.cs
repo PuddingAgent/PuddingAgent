@@ -26,6 +26,7 @@ public sealed class CapabilityCatalogTests
             "shell.file_picker|v1|Shell|HasSideEffects, RequiresTrustedContext, RequiresUserInteraction",
             "shell.clipboard|v1|Shell|RequiresTrustedContext",
             "shell.document_preview|v1|Shell|HasSideEffects, RequiresTrustedContext",
+            "shell.panel_render|v1|Shell|HasSideEffects, RequiresTrustedContext",
             "browser.snapshot|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
             "browser.screenshot|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
             "browser.locate|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
@@ -59,7 +60,11 @@ public sealed class CapabilityCatalogTests
 
         Assert.Equal([DesktopCapability.WebViewNavigate, DesktopCapability.ShellNotification], enumerated);
         Assert.Empty(DesktopCapabilities.Enumerate(DesktopCapability.None));
-        Assert.Empty(DesktopCapabilities.Enumerate((DesktopCapability)(1 << 20)));
+
+        // “未知位”必须是真的未知：写死的位一旦被登记（历史教训：1 << 20 变成了 shell.panel_render），
+        // 这条断言就会变成「列举一个已登记能力居然为空」——仍然会红，但红到了错的方向。
+        var unused = FindUnregisteredCapabilityBit();
+        Assert.Empty(DesktopCapabilities.Enumerate(unused));
     }
 
     [Fact]
@@ -142,7 +147,23 @@ public sealed class CapabilityCatalogTests
             .ToArray();
 
         Assert.Equal(
-            ["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard", "shell.document_preview", "browser.snapshot", "browser.screenshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.context.create", "browser.context.close", "browser.tabs", "browser.binding.apply", "browser.binding.revoke"],
+            ["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard", "shell.document_preview", "shell.panel_render", "browser.snapshot", "browser.screenshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.context.create", "browser.context.close", "browser.tabs", "browser.binding.apply", "browser.binding.revoke"],
             trustedOnly);
+    }
+
+    /// <summary>找到一个目录里确实没用到的位（从高位往下，避开 1&lt;&lt;31 的符号位）。</summary>
+    private static DesktopCapability FindUnregisteredCapabilityBit()
+    {
+        var used = DesktopCapabilities.AllCapabilities;
+        for (var shift = 30; shift >= 1; shift--)
+        {
+            var candidate = (DesktopCapability)(1 << shift);
+            if ((used & candidate) == 0)
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException("No unused capability bit is left for the unknown-bit assertion.");
     }
 }

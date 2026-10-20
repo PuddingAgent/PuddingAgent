@@ -139,11 +139,49 @@ public sealed class SurfaceAndAdmissionTests
     }
 
     [Fact]
+    public async Task PanelRender_ForwardsContentToTheSurfaceAndReturnsPanelIdentity()
+    {
+        var harness = ServiceHarness.Create(
+            allowed: DesktopCapability.ShellPanelRender,
+            shellCallerTrust: DesktopContextTrust.Workbench,
+            hasThreadAccess: true);
+
+        var request = DesktopCapabilityRequest.ForPanelRender(
+            new DesktopPanelRenderRequest("main", "<p>hello</p>", title: "示例"));
+
+        var response = await harness.ExecuteAsync(DesktopCapability.ShellPanelRender, request);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.PanelRender);
+        Assert.Equal("main", response.PanelRender!.PanelId);
+        Assert.Equal(DesktopPanelRenderStatus.Rendered, response.PanelRender.Status);
+        Assert.Equal(1, harness.Surface.PanelRenderCount);
+    }
+
+    [Fact]
+    public async Task PanelRender_IsRejectedForUntrustedCallerWithoutReachingTheSurface()
+    {
+        // 面板会把内容直接呈现给用户 ⇒ 与文档预览同级，只给 Workbench。
+        var harness = ServiceHarness.Create(
+            allowed: DesktopCapability.ShellPanelRender,
+            shellCallerTrust: DesktopContextTrust.Untrusted,
+            hasThreadAccess: true);
+
+        var request = DesktopCapabilityRequest.ForPanelRender(
+            new DesktopPanelRenderRequest("main", "<p>x</p>"));
+
+        var response = await harness.ExecuteAsync(DesktopCapability.ShellPanelRender, request);
+
+        Assert.Equal(DesktopCapabilityErrorCode.Unauthorized, response.Error!.Code);
+        Assert.Equal(0, harness.Surface.PanelRenderCount);
+    }
+
+    [Fact]
     public async Task UnregisteredCapability_IsRejectedForInteractiveKinds()
     {
         // 默认 ShellCallerTrust = Untrusted ⇒ 对话框/Picker/剪贴板不可用（切片 E 逐能力开放）。
         var harness = ServiceHarness.Create(
-            allowed: (DesktopCapability)(1 << 20) | DesktopCapability.ShellNotification,
+            allowed: ServiceHarness.UnregisteredCapability | DesktopCapability.ShellNotification,
             hasThreadAccess: true);
 
         var response = await harness.Service.ExecuteAsync(ServiceHarness.UnregisteredCapabilityDescriptor(), harness.NotificationRequest(), harness.Context(), CancellationToken.None);

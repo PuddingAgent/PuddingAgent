@@ -292,6 +292,24 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await DocumentPreviewHandler(request, context, cancellationToken);
     }
 
+    public int PanelRenderCount =>
+        _calls.Count(call => call.StartsWith("panel_render", StringComparison.Ordinal));
+
+    public Func<DesktopPanelRenderRequest, DesktopCallContext, CancellationToken, Task<CapabilityResult<DesktopPanelRenderResult>>>? PanelRenderHandler { get; set; }
+
+    public async Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+        DesktopCallContext context, DesktopPanelRenderRequest request, CancellationToken cancellationToken)
+    {
+        // 只记画布 id 与内容长度：**内容本身不进调用记录**（它会进日志与断言输出）。
+        _calls.Enqueue($"panel_render:{request.PanelId}:{request.Content.Length}");
+        await AwaitGateAsync(cancellationToken);
+
+        return PanelRenderHandler is null
+            ? CapabilityResult<DesktopPanelRenderResult>.Success(new DesktopPanelRenderResult(
+                request.PanelId, DesktopPanelRenderStatus.Rendered))
+            : await PanelRenderHandler(request, context, cancellationToken);
+    }
+
     public int TabsCount => _calls.Count(call => call.StartsWith("tabs", StringComparison.Ordinal));
 
     public Func<BrowserTabsRequest, CancellationToken, Task<CapabilityResult<DesktopTabsResult>>>? TabsHandler { get; set; }
@@ -484,7 +502,38 @@ internal sealed class ServiceHarness
 
     /// <summary>未登记能力的描述符：用于断言"未登记能力一律拒绝"（目录之外不得被实现）。</summary>
     public static DesktopCapabilityDescriptor UnregisteredCapabilityDescriptor() => new(
-        (DesktopCapability)(1 << 20), "not.registered.capability", 1, DesktopCapabilityKind.Shell, DesktopCapabilityTraits.None);
+        UnregisteredCapability, "not.registered.capability", 1, DesktopCapabilityKind.Shell, DesktopCapabilityTraits.None);
+
+    /// <summary>
+    /// 一个目录里<b>当前确实未使用</b>的能力位，运行时算出来而不是写死。
+    ///
+    /// 历史教训：这里曾经写死 <c>1 &lt;&lt; 20</c>，后来 shell.panel_render 占用了那一位 ⇒
+    /// 两条「未登记能力必须被拒」的测试仍然会变红，但红的原因变成「该能力忽然没有 payload」，
+    /// 指向完全错误的方向，很容易被当成fixture 漂移而随手改算。动态取值让这两条测试
+    /// 永远不会因为「目录长大了」而失去意义。
+    /// </summary>
+    public static DesktopCapability UnregisteredCapability { get; } = ComputeUnregisteredCapability();
+
+    private static DesktopCapability ComputeUnregisteredCapability()
+    {
+        var used = DesktopCapability.None;
+        foreach (var descriptor in DesktopCapabilities.All)
+        {
+            used |= descriptor.Capability;
+        }
+
+        // 从高位往下找：符号位（1<<31）在 int 包里会变成负数，因此从 30 开始。
+        for (var shift = 30; shift >= 1; shift--)
+        {
+            var candidate = (DesktopCapability)(1 << shift);
+            if ((used & candidate) == 0)
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException("No unused capability bit is available for the unregistered-capability fixture.");
+    }
 
     public static DesktopCapabilityDescriptor Descriptor(DesktopCapability capability) =>
         DesktopCapabilities.All.Single(descriptor => descriptor.Capability == capability);

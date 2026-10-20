@@ -249,10 +249,18 @@ public sealed class DesktopShellSurfaceTests
 
         public Func<DesktopDocumentPreviewRequest, CancellationToken, Task<CapabilityResult<DesktopDocumentPreviewResult>>>? DocumentPreviewHandler { get; set; }
 
+        public Func<DesktopPanelRenderRequest, CancellationToken, Task<CapabilityResult<DesktopPanelRenderResult>>>? PanelRenderHandler { get; set; }
+
         public Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
             DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken) =>
             DocumentPreviewHandler?.Invoke(request, cancellationToken)
             ?? Task.FromResult(CapabilityResult<DesktopDocumentPreviewResult>.Success(new DesktopDocumentPreviewResult(
                 $"document:{request.Path}", request.Path, DesktopDocumentPreviewStatus.Opened)));
+
+        public Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+            DesktopCallContext context, DesktopPanelRenderRequest request, CancellationToken cancellationToken) =>
+            PanelRenderHandler?.Invoke(request, cancellationToken)
+            ?? Task.FromResult(CapabilityResult<DesktopPanelRenderResult>.Success(new DesktopPanelRenderResult(
+                request.PanelId, DesktopPanelRenderStatus.Rendered)));
     }
 }

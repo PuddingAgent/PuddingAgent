@@ -61,6 +61,7 @@ public sealed record DesktopCapabilityChannelSettings
         // 真实预览尚未接入工具区，OpenDocumentAsync 会返回 UiUnavailable。
         // 两者同时改才能去掉这一行 —— 不能在声明里提前拆。
         | DesktopCapability.ShellDocumentPreview
+        | DesktopCapability.ShellPanelRender
         | DesktopCapability.BrowserBindingApply
         | DesktopCapability.BrowserBindingRevoke;
 

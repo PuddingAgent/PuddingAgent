@@ -83,6 +83,22 @@ public sealed class DesktopShellSurface
             "document_preview");
     }
 
+    /// <summary>
+    /// 向工具区画布推送内容：适配层只负责转发与异常归一，
+    /// 「内容是否安全」不在这一层判定——那需要具体的渲染实现（CSP、禁用桥接），
+    /// 本层没有也不应该假装拥有这个判断能力。
+    /// </summary>
+    public Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+        DesktopCallContext context, DesktopPanelRenderRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        return ForwardAsync(
+            () => _facilities.RenderPanelAsync(context, request, cancellationToken),
+            "panel_render");
+    }
+
     /// <summary>显示系统通知；未弹出（<c>Shown=false</c>）是结果而不是失败。</summary>
     public Task<CapabilityResult<DesktopNotificationResult>> ShowNotificationAsync(
         DesktopCallContext context, DesktopNotificationRequest request, CancellationToken cancellationToken)

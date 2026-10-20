@@ -36,4 +36,12 @@ public interface IDesktopShellFacilities
     /// </summary>
     Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
         DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 向工具区画布推送内容（WinUI 实现）：按 panelId 幂等定位画布，新内容整幅替换。
+    /// 实现方必须把内容当作<b>不可信</b>：禁用脚本桥接与外部网络，只允许内联样式与 data: 资源。
+    /// 内容一律不得回传、不得写日志。
+    /// </summary>
+    Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+        DesktopCallContext context, DesktopPanelRenderRequest request, CancellationToken cancellationToken);
 }
