@@ -84,10 +84,11 @@ public sealed class SystemPromptBuilder
         }
 
         // 实例级 persona（Admin 写入 AgentInstanceRoot/{agentId}/）优先级最高。
-        var instancePersona = LoadInstancePersonaFiles(agentInstanceId);
+        var snapshot = await AgentPromptSnapshot.LoadAsync(_dataPaths, agentInstanceId, ct);
+        var instancePersona = snapshot.Persona;
 
         // 实例 manifest.json 的 systemPrompt 字段（Admin「系统提示词」框）— 实例级最高优先级指令。
-        var manifestSystemPrompt = LoadInstanceManifestSystemPrompt(agentInstanceId);
+        var manifestSystemPrompt = snapshot.Manifest is null ? template.SystemPrompt : snapshot.Manifest.SystemPrompt;
 
         // Step 2: 从 DB 读取 Persona 字段（作为文件缺失时的 fallback）
         string? dbPersonaPrompt = null;
@@ -96,7 +97,7 @@ public sealed class SystemPromptBuilder
         string? dbBootstrapTemplate = null;
         string? dbDisplayNameOverride = null;
 
-        if (!string.IsNullOrWhiteSpace(agentTemplateId) && _templateProvider is not null)
+        if (snapshot.Manifest is null && !string.IsNullOrWhiteSpace(agentTemplateId) && _templateProvider is not null)
         {
             try
             {
@@ -127,11 +128,12 @@ public sealed class SystemPromptBuilder
 
         // ── 1. IDENTITY 层 ──
         sb.AppendLine("--- LAYER: IDENTITY ---");
-        var displayName = string.IsNullOrWhiteSpace(displayNameOverride)
+        var displayName = snapshot.Manifest?.DisplayName ?? (string.IsNullOrWhiteSpace(displayNameOverride)
             ? (string.IsNullOrWhiteSpace(template.DisplayName)
             ? template.Name
             : template.DisplayName)
-            : displayNameOverride;
+            : displayNameOverride);
+        var role = snapshot.Manifest?.Role ?? template.Role;
         if (!string.IsNullOrWhiteSpace(displayName))
             sb.AppendLine($"Name: {displayName}");
         // 实例身份锚定：告诉 Agent 它是谁、ID 是什么、负责什么
@@ -139,8 +141,8 @@ public sealed class SystemPromptBuilder
             sb.AppendLine($"AgentId: {agentInstanceId}");
         if (!string.IsNullOrWhiteSpace(agentTemplateId))
             sb.AppendLine($"Template: {agentTemplateId}");
-        if (!string.IsNullOrWhiteSpace(template.Role))
-            sb.AppendLine($"Role: {template.Role}");
+        if (!string.IsNullOrWhiteSpace(role))
+            sb.AppendLine($"Role: {role}");
         if (template.Responsibilities is { Count: > 0 })
             sb.AppendLine($"Responsibilities: {string.Join("、", template.Responsibilities)}");
         var effectiveAvatar = string.IsNullOrWhiteSpace(avatarEmoji) ? template.AvatarEmoji : avatarEmoji;
@@ -154,8 +156,8 @@ public sealed class SystemPromptBuilder
 
         // ADR-042: 明确的身份自述 —— 帮助 Agent 在冷启动时确定自己的身份
         sb.AppendLine();
-        if (!string.IsNullOrWhiteSpace(template.Role))
-            sb.Append($"你是 {displayName}，一名 {template.Role}");
+        if (!string.IsNullOrWhiteSpace(role))
+            sb.Append($"你是 {displayName}，一名 {role}");
         else
             sb.Append($"你是 {displayName}");
         if (template.Responsibilities is { Count: > 0 })
@@ -165,7 +167,7 @@ public sealed class SystemPromptBuilder
 
         // ── 2. SOUL 层 ──
         sb.AppendLine("--- LAYER: SOUL ---");
-        var effectivePersona = string.IsNullOrWhiteSpace(personaPrompt) ? template.PersonaPrompt : personaPrompt;
+        var effectivePersona = personaPrompt ?? template.PersonaPrompt;
         if (!string.IsNullOrWhiteSpace(effectivePersona))
             sb.AppendLine(effectivePersona);
 
@@ -177,13 +179,9 @@ public sealed class SystemPromptBuilder
             sb.AppendLine(manifestSystemPrompt);
             sb.AppendLine();
         }
-        // AGENTS.md 如果存在，覆盖 SystemPrompt
-        if (!string.IsNullOrWhiteSpace(instancePersona?.Agents))
-            sb.AppendLine(instancePersona.Agents);
-        else if (!string.IsNullOrWhiteSpace(personaFiles?.Agents))
-            sb.AppendLine(personaFiles.Agents);
-        else
-            sb.AppendLine(template.SystemPrompt ?? "You are a helpful assistant.");
+        // 系统提示词与协作规范各注入一次；显式空文档不回退到模板。
+        var agentsPrompt = instancePersona?.Agents ?? personaFiles?.Agents;
+        if (!string.IsNullOrWhiteSpace(agentsPrompt)) sb.AppendLine(agentsPrompt);
         if (!string.IsNullOrWhiteSpace(bootstrapTemplate))
         {
             sb.AppendLine("Bootstrap:");
@@ -199,15 +197,15 @@ public sealed class SystemPromptBuilder
 
         // ── 4. TOOLS 层 ──
         sb.AppendLine("--- LAYER: TOOLS ---");
-        // TOOLS.md 如果存在，覆盖 DB ToolsDescription
-        if (!string.IsNullOrWhiteSpace(instancePersona?.Tools))
-            sb.AppendLine(instancePersona.Tools);
-        else if (!string.IsNullOrWhiteSpace(personaFiles?.Tools))
-            sb.AppendLine(personaFiles.Tools);
-        else if (!string.IsNullOrWhiteSpace(toolsDescription))
-            sb.AppendLine(toolsDescription);
-        else if (!string.IsNullOrWhiteSpace(template.ToolsDescription))
-            sb.AppendLine(template.ToolsDescription);
+        if (!string.IsNullOrWhiteSpace(toolsDescription ?? template.ToolsDescription))
+            sb.AppendLine(toolsDescription ?? template.ToolsDescription);
+
+        var memoryPolicy = instancePersona?.Memory ?? personaFiles?.Memory;
+        if (!string.IsNullOrWhiteSpace(memoryPolicy))
+        {
+            sb.AppendLine("--- LAYER: MEMORY POLICY ---");
+            sb.AppendLine(memoryPolicy);
+        }
 
         var pkgs = _skillPackageRegistry.Get(agentInstanceId);
         if (pkgs.Count > 0)
@@ -470,88 +468,6 @@ public sealed class SystemPromptBuilder
                 agentInstanceId,
                 forStreaming: true,
                 CancellationToken.None)).GetAwaiter().GetResult();
-    }
-
-    /// <summary>
-    /// 旧同步版本（结构化 Loop 模式）系统提示词构建。
-    /// </summary>
-    public string BuildSystemPrompt(
-        AgentTemplateDefinition template,
-        string? workspaceId,
-        string sessionId,
-        string? agentTemplateId,
-        string userMessage,
-        CapabilityPolicy? capability,
-        string agentInstanceId)
-    {
-        return Task.Run(async () =>
-            await BuildLayeredSystemPromptAsync(
-                template,
-                workspaceId,
-                sessionId,
-                agentTemplateId,
-                userMessage,
-                capability,
-                agentInstanceId,
-                forStreaming: false,
-                CancellationToken.None)).GetAwaiter().GetResult();
-    }
-
-    private AgentPersonaFiles? LoadInstancePersonaFiles(string? agentInstanceId)
-    {
-        if (string.IsNullOrWhiteSpace(agentInstanceId) || _dataPaths is null)
-            return null;
-
-        var dir = _dataPaths.AgentInstanceRoot(agentInstanceId);
-        if (!Directory.Exists(dir))
-            return null;
-
-        return new AgentPersonaFiles
-        {
-            Soul = ReadPersonaFile(dir, "SOUL.md"),
-            Agents = ReadPersonaFile(dir, "AGENTS.md"),
-            Tools = ReadPersonaFile(dir, "TOOLS.md"),
-            Bootstrap = ReadPersonaFile(dir, "BOOTSTRAP.md"),
-            Identity = ReadPersonaFile(dir, "IDENTITY.md"),
-            User = ReadPersonaFile(dir, "USER.md"),
-            Memory = ReadPersonaFile(dir, "MEMORY.md"),
-        };
-    }
-
-    /// <summary>
-    /// 读取实例 manifest.json 的 systemPrompt 字段（Admin「系统提示词」文本框写入）。
-    /// 用 JsonDocument 直接解析，避免 PuddingRuntime 引用 PuddingHost 的 AgentInstanceManifest 类型。
-    /// </summary>
-    private string? LoadInstanceManifestSystemPrompt(string? agentInstanceId)
-    {
-        if (string.IsNullOrWhiteSpace(agentInstanceId) || _dataPaths is null)
-            return null;
-
-        var manifestPath = Path.Combine(_dataPaths.AgentInstanceRoot(agentInstanceId), "manifest.json");
-        if (!File.Exists(manifestPath))
-            return null;
-
-        try
-        {
-            using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
-            if (doc.RootElement.TryGetProperty("systemPrompt", out var el)
-                && el.ValueKind == JsonValueKind.String)
-            {
-                return el.GetString();
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "[SystemPromptBuilder] Load manifest systemPrompt failed agent={Agent}", agentInstanceId);
-        }
-        return null;
-    }
-
-    private static string? ReadPersonaFile(string dir, string fileName)
-    {
-        var path = Path.Combine(dir, fileName);
-        return File.Exists(path) ? File.ReadAllText(path) : null;
     }
 
     public async Task<string?> LoadWorkspaceUserProfileAsync(string? workspaceId, CancellationToken ct)

@@ -832,19 +832,17 @@ public sealed class WorkspaceAgentFileService :
                 JsonOptions,
                 ct);
 
-            // 写入 Markdown 文件（如果提供了新内容）
-            if (req.SoulMdContent is not null)
-                await WriteAgentMdFileAsync(instanceRoot, "SOUL.md", req.SoulMdContent, ct);
-            if (req.AgentsMdContent is not null)
-                await WriteAgentMdFileAsync(instanceRoot, "AGENTS.md", req.AgentsMdContent, ct);
-            if (req.ToolsMdContent is not null)
-                await WriteAgentMdFileAsync(instanceRoot, "TOOLS.md", req.ToolsMdContent, ct);
-            if (req.BootstrapMdContent is not null)
-                await WriteAgentMdFileAsync(instanceRoot, "BOOTSTRAP.md", req.BootstrapMdContent, ct);
-            if (req.MemoryMdContent is not null)
-                await WriteAgentMdFileAsync(instanceRoot, "MEMORY.md", req.MemoryMdContent, ct);
-            if (!string.IsNullOrWhiteSpace(req.HeartbeatPrompt))
-                await WriteAgentMdFileAsync(instanceRoot, "heartbeatPrompt.md", req.HeartbeatPrompt, ct);
+            // null 表示未提交；空串表示清空。首次添加文档时必须同时登记 manifest 引用，
+            // 否则编辑页和运行时都无法再次加载已写入的文件。
+            updated = updated with
+            {
+                SoulMdFile = await WriteAgentMdFileAsync(instanceRoot, "SOUL.md", req.SoulMdContent, ct) ?? updated.SoulMdFile,
+                AgentsMdFile = await WriteAgentMdFileAsync(instanceRoot, "AGENTS.md", req.AgentsMdContent, ct) ?? updated.AgentsMdFile,
+                ToolsMdFile = await WriteAgentMdFileAsync(instanceRoot, "TOOLS.md", req.ToolsMdContent, ct) ?? updated.ToolsMdFile,
+                BootstrapMdFile = await WriteAgentMdFileAsync(instanceRoot, "BOOTSTRAP.md", req.BootstrapMdContent, ct) ?? updated.BootstrapMdFile,
+                MemoryMdFile = await WriteAgentMdFileAsync(instanceRoot, "MEMORY.md", req.MemoryMdContent, ct) ?? updated.MemoryMdFile,
+                HeartbeatMdFile = await WriteAgentMdFileAsync(instanceRoot, "heartbeatPrompt.md", req.HeartbeatPrompt, ct) ?? updated.HeartbeatMdFile,
+            };
 
             await AtomicFileWriter.WriteJsonAsync(
                 Path.Combine(instanceRoot, "manifest.json"),
@@ -897,6 +895,11 @@ public sealed class WorkspaceAgentFileService :
                 DeveloperModel: updated.DeveloperModel,
                 DeployerModel: updated.DeployerModel,
                 TesterModel: updated.TesterModel,
+                SoulMdContent: await ReadAgentMdContentAsync(instanceRoot, updated.SoulMdFile, ct),
+                AgentsMdContent: await ReadAgentMdContentAsync(instanceRoot, updated.AgentsMdFile, ct),
+                ToolsMdContent: await ReadAgentMdContentAsync(instanceRoot, updated.ToolsMdFile, ct),
+                BootstrapMdContent: await ReadAgentMdContentAsync(instanceRoot, updated.BootstrapMdFile, ct),
+                MemoryMdContent: await ReadAgentMdContentAsync(instanceRoot, updated.MemoryMdFile, ct),
                 ChannelIds: updated.ChannelIds
             );
         }
@@ -1268,8 +1271,10 @@ public sealed class WorkspaceAgentFileService :
 
             var instanceRoot = _paths.AgentInstanceRoot(agentId);
             var existing = await ReadAgentMdContentAsync(instanceRoot, instanceManifest.HeartbeatMdFile, ct);
-            if (!string.IsNullOrWhiteSpace(existing))
-                return existing;
+            if (existing is not null)
+                return string.IsNullOrWhiteSpace(existing)
+                    ? ResolveDefaultHeartbeatPrompt($"empty:{agentId}")
+                    : existing;
 
             var updated = instanceManifest with { HeartbeatMdFile = "heartbeatPrompt.md" };
             await AtomicFileWriter.WriteJsonAsync(
@@ -1359,15 +1364,15 @@ public sealed class WorkspaceAgentFileService :
 
     // ── Markdown 文件读写辅助方法 ──
 
-    /// <summary>将内容写入 Agent 实例目录下的 .md 文件，返回文件名。内容为空时返回 null。</summary>
+    /// <summary>原样写入 UTF-8 Markdown 并返回文件名。null 不写入；空串清空文档。</summary>
     private static async Task<string?> WriteAgentMdFileAsync(
         string instanceRoot, string fileName, string? content, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(content))
+        if (content is null)
             return null;
 
         var path = Path.Combine(instanceRoot, fileName);
-        await File.WriteAllTextAsync(path, content.Trim(), ct);
+        await AtomicFileWriter.WriteAsync(path, content, ct);
         return fileName;
     }
 

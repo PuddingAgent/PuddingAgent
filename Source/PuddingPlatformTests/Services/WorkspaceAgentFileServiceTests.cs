@@ -14,6 +14,71 @@ namespace PuddingPlatformTests.Services;
 public sealed class WorkspaceAgentFileServiceTests
 {
     [TestMethod]
+    [DataRow("")]
+    [DataRow("  \r\n# 中文提示词 🥧\n保留 {{变量}} 与 \\u4e2d  \r\n")]
+    public async Task PromptDocuments_ShouldRegisterReferences_AndRoundTripExactContent(string content)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-prompt-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var paths = PuddingDataPaths.FromRoot(root);
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var templates = new AgentTemplateFileService(paths, avatarFixture.Catalog, NullLogger<AgentTemplateFileService>.Instance);
+            var service = new WorkspaceAgentFileService(paths, templates, avatarFixture.Catalog,
+                CreateMemoryScopeFactory(), NullLogger<WorkspaceAgentFileService>.Instance);
+            var created = await service.CreateAgentAsync("default", new CreateWorkspaceAgentRequest(
+                Name: "旧名称", Description: null, DisplayName: null, AvatarId: null, AvatarUrl: null,
+                SourceTemplateId: null, SystemPromptOverride: null, PreferredProviderId: null, PreferredModelId: null));
+            var request = new UpdateWorkspaceAgentRequest(
+                Name: "新名称", Description: "中文配置", DisplayName: "新名称", AvatarId: null, AvatarUrl: null,
+                SourceTemplateId: null, SystemPromptOverride: null, PreferredProviderId: null, PreferredModelId: null,
+                IsEnabled: true, SystemPrompt: content, UserPromptTemplate: content, HeartbeatPrompt: content,
+                SoulMdContent: content, AgentsMdContent: content, ToolsMdContent: content,
+                BootstrapMdContent: content, MemoryMdContent: content);
+
+            // 先在缺失引用的实例中新增，再覆盖为空/含空白的正文。
+            await service.UpdateAgentAsync("default", created.AgentId, request with
+            {
+                SoulMdContent = "旧人设", AgentsMdContent = "旧协作", ToolsMdContent = "旧工具",
+                BootstrapMdContent = "旧引导", MemoryMdContent = "旧记忆", HeartbeatPrompt = "旧心跳",
+            });
+            var saved = await service.UpdateAgentAsync("default", created.AgentId, request);
+            var loaded = await service.GetAgentAsync("default", created.AgentId);
+            Assert.IsNotNull(loaded);
+            Assert.AreEqual("新名称", loaded.Name);
+            Assert.AreEqual("新名称", (await service.ListAgentsAsync("default")).Single().Name);
+            foreach (var dto in new[] { saved, loaded })
+            {
+                foreach (var actual in new[] { dto.SystemPrompt, dto.UserPromptTemplate, dto.HeartbeatPrompt,
+                    dto.SoulMdContent, dto.AgentsMdContent, dto.ToolsMdContent, dto.BootstrapMdContent, dto.MemoryMdContent })
+                    Assert.AreEqual(content, actual);
+            }
+
+            var profile = await new PuddingCode.Agents.AgentProfileProvider(paths).LoadAsync(created.AgentId);
+            Assert.AreEqual(content, profile.Template.SystemPrompt);
+            foreach (var actual in new[] { profile.Markdown.Soul, profile.Markdown.Agents, profile.Markdown.Tools,
+                profile.Markdown.Bootstrap, profile.Markdown.Memory }) Assert.AreEqual(content, actual);
+            foreach (var name in new[] { "SOUL.md", "AGENTS.md", "TOOLS.md", "BOOTSTRAP.md", "MEMORY.md", "heartbeatPrompt.md" })
+                CollectionAssert.AreEqual(new System.Text.UTF8Encoding(false, true).GetBytes(content),
+                    await File.ReadAllBytesAsync(Path.Combine(paths.AgentInstanceRoot(created.AgentId), name)));
+            StringAssert.Contains(await File.ReadAllTextAsync(Path.Combine(paths.AgentInstanceRoot(created.AgentId), "manifest.json")), "新名称");
+
+            // 未提交文档时保留已有内容和引用。
+            await service.UpdateAgentAsync("default", created.AgentId, request with
+            {
+                SoulMdContent = null, AgentsMdContent = null, ToolsMdContent = null,
+                BootstrapMdContent = null, MemoryMdContent = null, HeartbeatPrompt = null,
+            });
+            Assert.AreEqual(content, (await service.GetAgentAsync("default", created.AgentId))!.SoulMdContent);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task CreateAgentAsync_ShouldBeVisibleInListAgentsAsync()
     {
         var root = Path.Combine(Path.GetTempPath(), "pudding-workspace-agent-tests", Guid.NewGuid().ToString("N"));

@@ -1,3 +1,7 @@
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+
 namespace PuddingCode.Configuration;
 
 /// <summary>
@@ -6,6 +10,8 @@ namespace PuddingCode.Configuration;
 /// </summary>
 public static class AtomicFileWriter
 {
+    private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
     /// <summary>
     /// 原子写入：先将内容写入临时文件，再替换目标文件。
     /// 写入失败时不会破坏原文件。
@@ -24,12 +30,8 @@ public static class AtomicFileWriter
 
         try
         {
-            // 写入临时文件
-#if NET9_0_OR_GREATER
-            await File.WriteAllTextAsync(tempPath, content, ct);
-#else
-            await File.WriteAllTextAsync(tempPath, content, ct);
-#endif
+            // 配置统一使用无 BOM UTF-8；拒绝无效字符，避免静默替换后损坏原文。
+            await File.WriteAllTextAsync(tempPath, content, Utf8, ct);
 
             // fsync 确保数据落盘
             await using (var fs = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.None, 4096, FileOptions.Asynchronous))
@@ -72,11 +74,15 @@ public static class AtomicFileWriter
     /// </summary>
     public static async Task WriteJsonAsync<T>(string filePath, T value, System.Text.Json.JsonSerializerOptions? options = null, CancellationToken ct = default)
     {
-        var json = System.Text.Json.JsonSerializer.Serialize(value, options ?? new System.Text.Json.JsonSerializerOptions
+        // 这里只生成磁盘配置，不用于内联 HTML。保留中文原文和调用方的命名/转换器约定，
+        // 不修改可能已被冻结或同时用于 HTTP 响应的 options。
+        var fileOptions = options is null ? new JsonSerializerOptions
         {
             WriteIndented = true,
-            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
-        });
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        } : new JsonSerializerOptions(options);
+        fileOptions.Encoder ??= JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+        var json = JsonSerializer.Serialize(value, fileOptions);
         await WriteAsync(filePath, json, ct);
     }
 

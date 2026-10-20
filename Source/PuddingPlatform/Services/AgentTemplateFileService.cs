@@ -242,15 +242,15 @@ public sealed class AgentTemplateFileService
 
             // 写入 Markdown 文件（如果有值）
             if (!string.IsNullOrWhiteSpace(req.PersonaPrompt))
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "SOUL.md"), req.PersonaPrompt, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "SOUL.md"), req.PersonaPrompt, ct);
             if (!string.IsNullOrWhiteSpace(req.ToolsDescription))
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "TOOLS.md"), req.ToolsDescription, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "TOOLS.md"), req.ToolsDescription, ct);
             if (!string.IsNullOrWhiteSpace(req.BootstrapTemplate))
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "BOOTSTRAP.md"), req.BootstrapTemplate, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "BOOTSTRAP.md"), req.BootstrapTemplate, ct);
             if (!string.IsNullOrWhiteSpace(req.AgentsPrompt))
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "AGENTS.md"), req.AgentsPrompt, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "AGENTS.md"), req.AgentsPrompt, ct);
             if (!string.IsNullOrWhiteSpace(req.MemoryPrompt))
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "MEMORY.md"), req.MemoryPrompt, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "MEMORY.md"), req.MemoryPrompt, ct);
 
             _logger.LogInformation("Agent template created: {TemplateId}", req.TemplateId);
 
@@ -318,15 +318,15 @@ public sealed class AgentTemplateFileService
 
             // 更新 Markdown（如果提供了新值）
             if (req.PersonaPrompt is not null)
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "SOUL.md"), req.PersonaPrompt, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "SOUL.md"), req.PersonaPrompt, ct);
             if (req.ToolsDescription is not null)
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "TOOLS.md"), req.ToolsDescription, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "TOOLS.md"), req.ToolsDescription, ct);
             if (req.BootstrapTemplate is not null)
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "BOOTSTRAP.md"), req.BootstrapTemplate, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "BOOTSTRAP.md"), req.BootstrapTemplate, ct);
             if (req.AgentsPrompt is not null)
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "AGENTS.md"), req.AgentsPrompt, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "AGENTS.md"), req.AgentsPrompt, ct);
             if (req.MemoryPrompt is not null)
-                await File.WriteAllTextAsync(Path.Combine(templateDir, "MEMORY.md"), req.MemoryPrompt, ct);
+                await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "MEMORY.md"), req.MemoryPrompt, ct);
 
             _logger.LogInformation("Agent template updated: {TemplateId}", templateId);
 
@@ -466,15 +466,15 @@ public sealed class AgentTemplateFileService
     private static async Task WritePresetMarkdownFilesAsync(string templateDir, AgentTemplatePreset preset, CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(preset.PersonaPrompt))
-            await File.WriteAllTextAsync(Path.Combine(templateDir, "SOUL.md"), preset.PersonaPrompt, ct);
+            await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "SOUL.md"), preset.PersonaPrompt, ct);
         if (!string.IsNullOrWhiteSpace(preset.ToolsDescription))
-            await File.WriteAllTextAsync(Path.Combine(templateDir, "TOOLS.md"), preset.ToolsDescription, ct);
+            await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "TOOLS.md"), preset.ToolsDescription, ct);
         if (!string.IsNullOrWhiteSpace(preset.BootstrapTemplate))
-            await File.WriteAllTextAsync(Path.Combine(templateDir, "BOOTSTRAP.md"), preset.BootstrapTemplate, ct);
+            await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "BOOTSTRAP.md"), preset.BootstrapTemplate, ct);
         if (!string.IsNullOrWhiteSpace(preset.AgentsPrompt))
-            await File.WriteAllTextAsync(Path.Combine(templateDir, "AGENTS.md"), preset.AgentsPrompt, ct);
+            await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "AGENTS.md"), preset.AgentsPrompt, ct);
         if (!string.IsNullOrWhiteSpace(preset.MemoryPrompt))
-            await File.WriteAllTextAsync(Path.Combine(templateDir, "MEMORY.md"), preset.MemoryPrompt, ct);
+            await AtomicFileWriter.WriteAsync(Path.Combine(templateDir, "MEMORY.md"), preset.MemoryPrompt, ct);
     }
 
     private async Task<GlobalAgentTemplateDto> MapToDtoAsync(int id, AgentTemplateManifest m, string templateDir, CancellationToken ct)

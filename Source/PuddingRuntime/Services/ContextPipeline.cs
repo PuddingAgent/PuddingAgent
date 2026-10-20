@@ -377,6 +377,7 @@ public enum ContextPipelineCompactionLevel
 internal sealed class StaticContextCache
 {
     public string TemplateId { get; init; } = string.Empty;
+    public string SourceFingerprint { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;
 }
 

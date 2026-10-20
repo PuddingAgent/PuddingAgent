@@ -79,7 +79,7 @@
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
-| `Services/WorkspaceAgentFileService.cs` | Agent 文件服务（65KB） | `WorkspaceAgentFileService` | `Services/AgentTemplateFileService.cs` | 单文件承载 Agent 增删改查与校验 |
+| `Services/WorkspaceAgentFileService.cs` | Agent 文件服务（65KB） | `WorkspaceAgentFileService` | `Services/AgentTemplateFileService.cs` | Agent 增删改查与校验；Markdown 原样保存、空串清空、null 保留；新增文档同步 manifest 引用，保存响应返回完整提示词 |
 | `Services/AgentTemplateFileService.cs` | 模板文件服务（27KB） | `AgentTemplateFileService` | `Services/AgentTemplateProvider.cs` | 单文件承载模板读写 |
 | `Services/AgentTemplateProvider.cs` | 模板提供 | `AgentTemplateProvider` | `Services/AgentTemplateFileService.cs` | — |
 | `Services/AgentLLMConfigResolver.cs` | LLM 配置解析 | `AgentLLMConfigResolver` | `Services/AgentRuntimeProfileResolver.cs` | 把选中模型的协议写入 LlmConfig |

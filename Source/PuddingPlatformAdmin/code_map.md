@@ -302,7 +302,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 
 **关键语义**
 
-**`WorkspaceAgentSettingsDrawer.tsx`**：Prompt 编辑器不注册 `Form.Item`，切入 Prompt 分区还会卸载其他表单项。`Form.useWatch([], { preserve: true })` 观察完整草稿；保存先 `validateFields()`，再以 `getFieldsValue(true)` 取完整 store 交给父组件提交，保留名称、启用状态、Prompt、模型与护栏配置。
+**`WorkspaceAgentSettingsDrawer.tsx`**：Prompt 编辑器不注册 `Form.Item`，切入 Prompt 分区还会卸载其他表单项。`Form.useWatch([], { preserve: true })` 观察完整草稿；保存先 `validateFields()`，再以 `getFieldsValue(true)` 取完整 store 交给父组件提交，保留名称、启用状态、Prompt、模型与护栏配置。 提交时将 `displayName` 同步为已编辑的 `name`，避免详情 DTO 的旧显示名覆盖改名。
 
 ## 用户头像
 

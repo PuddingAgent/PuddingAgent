@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
+using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -24,6 +25,86 @@ namespace PuddingRuntimeTests.Services;
 [TestClass]
 public sealed class AgentExecutionWakeupActiveTaskPreservationTests
 {
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task EditedInstancePrompts_ReachNextLlmRequest_InExistingSession(bool streaming)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-prompt-wire-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var paths = PuddingDataPaths.FromRoot(root);
+            var agentRoot = paths.AgentInstanceRoot("prompt-owner");
+            var manifestPath = Path.Combine(agentRoot, "manifest.json");
+            var manifest = new AgentInstanceManifest
+            {
+                AgentInstanceId = "prompt-owner", WorkspaceId = "ws-1", DisplayName = "编辑后的助手",
+                Role = "Custom", SystemPrompt = "中文系统指令_A", SoulMdFile = "SOUL.md",
+                AgentsMdFile = "AGENTS.md", ToolsMdFile = "TOOLS.md", MemoryMdFile = "MEMORY.md",
+                BootstrapMdFile = "BOOTSTRAP.md",
+            };
+            await AtomicFileWriter.WriteJsonAsync(manifestPath, manifest);
+            var documents = new Dictionary<string, string>
+            {
+                ["SOUL.md"] = "人设_A", ["AGENTS.md"] = "协作_A", ["TOOLS.md"] = "工具_A",
+                ["MEMORY.md"] = "记忆_A", ["BOOTSTRAP.md"] = "引导_A",
+            };
+            foreach (var (file, content) in documents)
+                await AtomicFileWriter.WriteAsync(Path.Combine(agentRoot, file), content);
+
+            var llm = new ScriptedLlmClient(DoneJson, DoneJson, DoneJson, DoneJson);
+            var service = CreateService(llm, new RecordingToolInvocationService(), new ExecutionJournal(), paths);
+            // 临时执行身份必须读取明确指定的持久实例，不能串到子会话目录。
+            var request = CreateDispatchRequest("session-prompt-edit", null) with
+            {
+                AgentInstanceId = "transient-execution", ConfigurationAgentInstanceId = "prompt-owner",
+            };
+            async Task<string> InvokeAsync()
+            {
+                if (streaming) await DrainAsync(service.ExecuteStreamAsync(request));
+                else await service.ExecuteAsync(request);
+                var outbound = (streaming ? llm.StreamRequests : llm.Requests).Last();
+                return outbound.First(message => message.Role == ChatRole.System).Content!;
+            }
+
+            var first = await InvokeAsync();
+            StringAssert.Contains(first, "Name: 编辑后的助手");
+            StringAssert.Contains(first, "Role: Custom");
+            foreach (var content in documents.Values.Append(manifest.SystemPrompt!))
+                Assert.AreEqual(1, first.Split(content, StringSplitOptions.None).Length - 1, content);
+            // 配置未变时，下一轮应保留相同前缀字节。
+            Assert.AreEqual(first, await InvokeAsync());
+
+            var timestamp = File.GetLastWriteTimeUtc(manifestPath);
+            await AtomicFileWriter.WriteJsonAsync(manifestPath, manifest with { SystemPrompt = "中文系统指令_B", DisplayName = "修改后的助手" });
+            File.SetLastWriteTimeUtc(manifestPath, timestamp);
+            foreach (var (file, content) in documents)
+            {
+                var path = Path.Combine(agentRoot, file);
+                var modified = File.GetLastWriteTimeUtc(path);
+                await AtomicFileWriter.WriteAsync(path, content.Replace("_A", "_B"));
+                File.SetLastWriteTimeUtc(path, modified);
+            }
+            var second = await InvokeAsync();
+            StringAssert.Contains(second, "Name: 修改后的助手");
+            foreach (var content in documents.Values.Append(manifest.SystemPrompt!))
+            {
+                Assert.DoesNotContain(content, second);
+                StringAssert.Contains(second, content.Replace("_A", "_B"));
+            }
+
+            await AtomicFileWriter.WriteJsonAsync(manifestPath, manifest with { SystemPrompt = "" });
+            foreach (var file in documents.Keys) await AtomicFileWriter.WriteAsync(Path.Combine(agentRoot, file), "");
+            var cleared = await InvokeAsync();
+            foreach (var content in documents.Values.Append(manifest.SystemPrompt!))
+                Assert.DoesNotContain(content.Replace("_A", "_B"), cleared);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     // 脚本化 LLM 响应（按轮次依次出队）。
     private const string WaitJson =
         "{\"status\":\"WAIT\",\"message\":\"awaiting external event\",\"meta\":{\"reason\":\"file.ready\"}}";
@@ -290,7 +371,8 @@ public sealed class AgentExecutionWakeupActiveTaskPreservationTests
     private static AgentExecutionService CreateService(
         ScriptedLlmClient llm,
         RecordingToolInvocationService tools,
-        ExecutionJournal journal)
+        ExecutionJournal journal,
+        PuddingDataPaths? paths = null)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -305,7 +387,7 @@ public sealed class AgentExecutionWakeupActiveTaskPreservationTests
         var promptBuilder = new SystemPromptBuilder(
             memory, skillRuntime, skillPackageRegistry,
             NullLogger<SystemPromptBuilder>.Instance,
-            new StartupEnvironmentInfo());
+            new StartupEnvironmentInfo(), dataPaths: paths);
         var contextPipeline = new ContextPipeline(
             memory,
             skillRuntime,
@@ -314,7 +396,7 @@ public sealed class AgentExecutionWakeupActiveTaskPreservationTests
             new MemoryCache(new MemoryCacheOptions()),
             new ContextAssemblyStore(),
             NullLogger<ContextPipeline>.Instance,
-            new FakeExecutionEnvironmentProvider());
+            new FakeExecutionEnvironmentProvider(), dataPaths: paths);
         var contextManager = new ContextWindowManager(
             sessionManager,
             runtimeSessionStore,

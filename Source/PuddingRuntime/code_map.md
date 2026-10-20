@@ -106,7 +106,8 @@
 | `Services/ContextHealthEvaluator.cs` | 上下文健康度的评估 | `ContextHealthEvaluator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 占用率分母 = 模型窗口、门禁分母 = 有效输入窗口，两者不可混用；容量分量与来源须如实输出，回退输出预算单列而不得冒充用户预算（见下「关键语义」） |
 | `Services/ContextLayerContracts.cs` | 上下文分层的契约模型 | `ContextLayerContracts` | `Services/ContextPipelineLayers.cs` | — |
 | `Services/ContextPipeline.cs` | 分层上下文组装的对外实现 | `ContextPipeline` | `Services/ContextPipelineLayers.cs` | 稳定 system prefix 与本轮 User tail 必须分离 |
-| `Services/ContextPipelineLayers.cs` | 上下文各层的装配 | `ContextPipelineLayers` | `Services/ContextPipelineOrchestrator.cs` | — |
+| `Services/ContextPipelineLayers.cs` | 上下文各层的装配 | `ContextPipelineLayers` | `Services/ContextPipelineOrchestrator.cs` | 实例配置正文指纹刷新静态层；系统指令、协作、人设、工具约定与记忆策略完整注入，显式空文档不回退模板 |
+| `Services/AgentPromptSnapshot.cs` | 推理使用的实例提示词快照 | `AgentPromptSnapshot` | `Services/SystemPromptBuilder.cs` | 按 manifest 文档引用读取 UTF-8；分层与直接构建共用实例名称、角色和提示词来源 |
 | `Services/ContextPipelineOrchestrator.cs` | 上下文组装编排与分层占比快照 | `ContextPipelineOrchestrator` | `Services/ContextPipelineLayers.cs` | — |
 | `Services/ContextWindowConstants.cs` | 上下文窗口的命名常量 | `ContextWindowConstants` | `Services/ContextWindowManager.cs` | — |
 | `Services/ContextWindowManager.cs` | 上下文窗口与会话历史的裁剪 | `ContextWindowManager` | `Services/ContextCompactionService.cs` | 压缩三态事件必须携带同一 compactionId |

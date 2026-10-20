@@ -65,7 +65,7 @@ export const PROMPT_DOCUMENTS: PromptDocumentMeta[] = [
     tag: '可选 · 占位符模板',
     group: 'common',
     kind: 'text',
-    description: '可选。仅作文本辅助展示，变量不会被替换成猜测值，也不代表运行时一定能解析。',
+    description: '可选配置。目前仅保存文本，运行时使用原始用户消息，不执行模板变量替换。',
     placeholder: '可选，支持 {{variable}} 占位符',
     emptyHint: '未填写：直接使用用户的原始消息。',
     optional: true,
@@ -78,7 +78,7 @@ export const PROMPT_DOCUMENTS: PromptDocumentMeta[] = [
     kind: 'markdown',
     description: 'Agent 的语气、立场与行为边界，写入实例目录的 SOUL.md。',
     placeholder: '描述这个 Agent 的表达风格与不可越过的边界',
-    emptyHint: '未填写：不生成 SOUL.md，Agent 只使用其他已配置内容。',
+    emptyHint: '留空保存后清空 SOUL.md，Agent 只使用其他已配置内容。',
   },
   {
     field: 'agentsMdContent',
@@ -88,7 +88,7 @@ export const PROMPT_DOCUMENTS: PromptDocumentMeta[] = [
     kind: 'markdown',
     description: '多 Agent 协作、交付与验收约定，写入实例目录的 AGENTS.md。',
     placeholder: '约定协作分工、交付标准与验收方式',
-    emptyHint: '未填写：不生成 AGENTS.md，协作只依赖平台默认约定。',
+    emptyHint: '留空保存后清空 AGENTS.md，协作只依赖平台默认约定。',
   },
   {
     field: 'toolsMdContent',
@@ -98,7 +98,7 @@ export const PROMPT_DOCUMENTS: PromptDocumentMeta[] = [
     kind: 'markdown',
     description: '何时调用工具、如何解释结果与失败降级，写入实例目录的 TOOLS.md。',
     placeholder: '约定工具调用的时机、参数习惯与失败处理',
-    emptyHint: '未填写：不生成 TOOLS.md，工具使用只依赖工具自身的说明。',
+    emptyHint: '留空保存后清空 TOOLS.md，工具使用只依赖工具自身的说明。',
   },
   {
     field: 'memoryMdContent',
@@ -108,7 +108,7 @@ export const PROMPT_DOCUMENTS: PromptDocumentMeta[] = [
     kind: 'markdown',
     description: '记忆写入、检索与优先级策略，写入实例目录的 MEMORY.md。',
     placeholder: '约定哪些信息值得记住、如何检索与取舍',
-    emptyHint: '未填写：不生成 MEMORY.md，记忆行为使用平台默认策略。',
+    emptyHint: '留空保存后清空 MEMORY.md，记忆行为使用平台默认策略。',
   },
   {
     field: 'heartbeatPrompt',
@@ -128,7 +128,7 @@ export const PROMPT_DOCUMENTS: PromptDocumentMeta[] = [
     kind: 'markdown',
     description: '首次会话的开场与引导，写入实例目录的 BOOTSTRAP.md。',
     placeholder: '定义首次对话的开场与引导步骤',
-    emptyHint: '未填写：不生成 BOOTSTRAP.md，首次会话直接开始任务。',
+    emptyHint: '留空保存后清空 BOOTSTRAP.md，首次会话直接开始任务。',
   },
 ];
 

@@ -26,16 +26,26 @@ public sealed partial class ContextPipeline
 
     private async Task<string> GetOrBuildStaticLayerAsync(ContextRequest request, CancellationToken ct)
     {
+        var snapshot = await AgentPromptSnapshot.LoadAsync(_dataPaths, request.PersistentAgentInstanceId, ct);
+        // 每轮读取小型配置快照；用正文而非 mtime 判定修改，避免同长度/同时间戳编辑漏失。
+        // 内容未改时仍复用完全相同的 system 前缀，不破坏 LLM 前缀缓存。
+        var sourceFingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+            {
+                request.WorkspaceId, request.AgentInstanceId, request.PersistentAgentInstanceId,
+                request.Template, snapshot,
+            }))));
         if (_staticCache.TryGetValue(request.SessionId, out var cached)
-            && cached.TemplateId == request.AgentTemplateId)
+            && cached.TemplateId == request.AgentTemplateId && cached.SourceFingerprint == sourceFingerprint)
         {
             return cached.Content;
         }
 
-        var content = await BuildStaticLayerAsync(request, ct);
+        var content = await BuildStaticLayerAsync(request, snapshot, ct);
         _staticCache[request.SessionId] = new StaticContextCache
         {
             TemplateId = request.AgentTemplateId,
+            SourceFingerprint = sourceFingerprint,
             Content = content,
         };
         return content;
@@ -59,7 +69,7 @@ public sealed partial class ContextPipeline
         return content;
     }
 
-    private async Task<string> BuildStaticLayerAsync(ContextRequest request, CancellationToken ct)
+    private async Task<string> BuildStaticLayerAsync(ContextRequest request, AgentPromptSnapshot snapshot, CancellationToken ct)
     {
         var sb = new StringBuilder();
         var template = request.Template;
@@ -70,10 +80,10 @@ public sealed partial class ContextPipeline
             personaFiles = _personaFileProvider.Load(request.AgentTemplateId, request.PersistentAgentInstanceId);
 
         // 实例级 persona（Admin 写入 AgentInstanceRoot/{agentId}/）优先级最高。
-        var instancePersona = LoadInstancePersonaFiles(request.PersistentAgentInstanceId);
+        var instancePersona = snapshot.Persona;
 
         // 实例 manifest.json 的 systemPrompt 字段（Admin「系统提示词」框）— 实例级最高优先级指令。
-        var manifestSystemPrompt = LoadInstanceManifestSystemPrompt(request.PersistentAgentInstanceId);
+        var manifestSystemPrompt = snapshot.Manifest is null ? template.SystemPrompt : snapshot.Manifest.SystemPrompt;
 
         string? dbPersonaPrompt = null;
         string? dbToolsDescription = null;
@@ -81,7 +91,7 @@ public sealed partial class ContextPipeline
         string? dbBootstrapTemplate = null;
         string? dbDisplayNameOverride = null;
 
-        if (!string.IsNullOrWhiteSpace(request.AgentTemplateId) && _templateProvider is not null)
+        if (snapshot.Manifest is null && !string.IsNullOrWhiteSpace(request.AgentTemplateId) && _templateProvider is not null)
         {
             try
             {
@@ -109,22 +119,23 @@ public sealed partial class ContextPipeline
 
         // L0: IDENTITY
         sb.AppendLine("--- LAYER: IDENTITY ---");
-        var displayName = string.IsNullOrWhiteSpace(dbDisplayNameOverride)
+        var displayName = snapshot.Manifest?.DisplayName ?? (string.IsNullOrWhiteSpace(dbDisplayNameOverride)
             ? (string.IsNullOrWhiteSpace(template.DisplayName) ? template.Name : template.DisplayName)
-            : dbDisplayNameOverride;
+            : dbDisplayNameOverride);
+        var role = snapshot.Manifest?.Role ?? template.Role;
         if (!string.IsNullOrWhiteSpace(displayName))
             sb.AppendLine($"Name: {displayName}");
         if (!string.IsNullOrWhiteSpace(request.AgentInstanceId))
             sb.AppendLine($"AgentId: {request.AgentInstanceId}");
         if (!string.IsNullOrWhiteSpace(request.AgentTemplateId))
             sb.AppendLine($"Template: {request.AgentTemplateId}");
-        if (!string.IsNullOrWhiteSpace(template.Role))
-            sb.AppendLine($"Role: {template.Role}");
+        if (!string.IsNullOrWhiteSpace(role))
+            sb.AppendLine($"Role: {role}");
         if (template.Responsibilities is { Count: > 0 })
             sb.AppendLine($"Responsibilities: {string.Join("、", template.Responsibilities)}");
         sb.AppendLine();
-        if (!string.IsNullOrWhiteSpace(template.Role))
-            sb.Append($"你是 {displayName}，一名 {template.Role}");
+        if (!string.IsNullOrWhiteSpace(role))
+            sb.Append($"你是 {displayName}，一名 {role}");
         else
             sb.Append($"你是 {displayName}");
         if (template.Responsibilities is { Count: > 0 })
@@ -142,7 +153,7 @@ public sealed partial class ContextPipeline
 
         // L0: SOUL
         sb.AppendLine("--- LAYER: SOUL ---");
-        var effectivePersona = string.IsNullOrWhiteSpace(personaPrompt) ? template.PersonaPrompt : personaPrompt;
+        var effectivePersona = personaPrompt ?? template.PersonaPrompt;
         if (!string.IsNullOrWhiteSpace(effectivePersona))
             sb.AppendLine(effectivePersona);
 
@@ -154,16 +165,24 @@ public sealed partial class ContextPipeline
             sb.AppendLine(manifestSystemPrompt);
             sb.AppendLine();
         }
-        if (!string.IsNullOrWhiteSpace(instancePersona?.Agents))
-            sb.AppendLine(instancePersona.Agents);
-        else if (!string.IsNullOrWhiteSpace(personaFiles?.Agents))
-            sb.AppendLine(personaFiles.Agents);
-        else
-            sb.AppendLine(template.SystemPrompt ?? "You are a helpful assistant.");
+        var agentsPrompt = instancePersona?.Agents ?? personaFiles?.Agents;
+        if (!string.IsNullOrWhiteSpace(agentsPrompt)) sb.AppendLine(agentsPrompt);
         if (!string.IsNullOrWhiteSpace(bootstrapTemplate))
         {
             sb.AppendLine("Bootstrap:");
             sb.AppendLine(bootstrapTemplate);
+        }
+
+        if (!string.IsNullOrWhiteSpace(toolsDescription ?? template.ToolsDescription))
+        {
+            sb.AppendLine("--- LAYER: TOOL GUIDANCE ---");
+            sb.AppendLine(toolsDescription ?? template.ToolsDescription);
+        }
+        var memoryPolicy = instancePersona?.Memory ?? personaFiles?.Memory;
+        if (!string.IsNullOrWhiteSpace(memoryPolicy))
+        {
+            sb.AppendLine("--- LAYER: MEMORY POLICY ---");
+            sb.AppendLine(memoryPolicy);
         }
 
         // L0: SECURITY-GUIDE — 权限申请与熔断恢复指引
@@ -177,66 +196,6 @@ public sealed partial class ContextPipeline
         sb.AppendLine("5. If fuse triggers, the user can send /resume to recover the session.");
 
         return sb.ToString();
-    }
-
-    /// <summary>
-    /// 读取实例级 persona 文件（Admin 写入 AgentInstanceRoot/{agentId}/ 的 SOUL/AGENTS/TOOLS/BOOTSTRAP/IDENTITY/MEMORY.md）。
-    /// 实例级自定义的权威来源，优先级高于模板级 persona 与 DB 字段。
-    /// </summary>
-    private AgentPersonaFiles? LoadInstancePersonaFiles(string? agentInstanceId)
-    {
-        if (string.IsNullOrWhiteSpace(agentInstanceId))
-            return null;
-
-        var dir = _dataPaths.AgentInstanceRoot(agentInstanceId);
-        if (!Directory.Exists(dir))
-            return null;
-
-        return new AgentPersonaFiles
-        {
-            Soul = ReadPersonaFile(dir, "SOUL.md"),
-            Agents = ReadPersonaFile(dir, "AGENTS.md"),
-            Tools = ReadPersonaFile(dir, "TOOLS.md"),
-            Bootstrap = ReadPersonaFile(dir, "BOOTSTRAP.md"),
-            Identity = ReadPersonaFile(dir, "IDENTITY.md"),
-            Memory = ReadPersonaFile(dir, "MEMORY.md"),
-        };
-    }
-
-    /// <summary>
-    /// 读取实例 manifest.json 的 systemPrompt 字段（Admin「系统提示词」文本框写入）。
-    /// 用 JsonDocument 直接解析，避免 PuddingRuntime 引用 PuddingHost 的 AgentInstanceManifest 类型。
-    /// </summary>
-    private string? LoadInstanceManifestSystemPrompt(string? agentInstanceId)
-    {
-        if (string.IsNullOrWhiteSpace(agentInstanceId))
-            return null;
-
-        var manifestPath = Path.Combine(_dataPaths.AgentInstanceRoot(agentInstanceId), "manifest.json");
-        if (!File.Exists(manifestPath))
-            return null;
-
-        try
-        {
-            using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
-            if (doc.RootElement.TryGetProperty("systemPrompt", out var el)
-                && el.ValueKind == JsonValueKind.String)
-            {
-                return el.GetString();
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "[ContextPipeline] Load manifest systemPrompt failed agent={Agent}", agentInstanceId);
-        }
-        return null;
-    }
-
-    private static string? ReadPersonaFile(string dir, string fileName)
-    {
-        var path = Path.Combine(dir, fileName);
-        return File.Exists(path) ? File.ReadAllText(path) : null;
     }
 
     // ═══════════════════════════════════════════════════════════════

@@ -105,6 +105,35 @@ const openPromptSection = async () => {
 };
 
 describe('WorkspaceAgentSettingsDrawer 编辑工作台', () => {
+  it('修改名称后保存新显示名，保留全部八份提示词原文', async () => {
+    const onSave = jest.fn().mockResolvedValue(true);
+    const prompts: Record<string, string> = {
+      systemPrompt: '  系统中文\n', userPromptTemplate: '{{消息}}',
+      soulMdContent: '# 人设\r\n', agentsMdContent: '协作规范', toolsMdContent: '工具约定',
+      memoryMdContent: '记忆策略', heartbeatPrompt: '心跳恢复', bootstrapMdContent: '首次引导',
+    };
+    render(<Harness initialValues={{ name: '旧名称', displayName: '旧名称', role: 'Service', ...prompts }} onSave={onSave} />);
+    const nameInput = await screen.findByLabelText('Agent 名称');
+    fireEvent.change(nameInput, { target: { value: '新名称' } });
+    expect(await screen.findByText('未保存 · 1 项')).toBeTruthy();
+    await openPromptSection();
+    for (const [label, field] of [
+      ['系统提示词', 'systemPrompt'], ['用户消息模板', 'userPromptTemplate'],
+      ['人设与边界', 'soulMdContent'], ['协作规范', 'agentsMdContent'],
+      ['工具约定', 'toolsMdContent'], ['记忆策略', 'memoryMdContent'],
+      ['心跳恢复', 'heartbeatPrompt'], ['首次引导', 'bootstrapMdContent'],
+    ]) {
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(label) }));
+      // textarea 的 DOM 会将 CRLF 标准化为 LF；提交 store 保留未编辑的原文。
+      expect(textareaByLabel(label).value).toBe(prompts[field].replace(/\r\n/g, '\n'));
+    }
+    fireEvent.click(screen.getByRole('button', { name: '保存所有更改' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      name: '新名称', displayName: '新名称', ...prompts,
+    })));
+    await waitFor(() => expect(screen.getByText('无未保存更改')).toBeTruthy());
+  });
+
   it('默认打开基础信息，身份栏与保存状态可见', async () => {
     render(
       <Harness
