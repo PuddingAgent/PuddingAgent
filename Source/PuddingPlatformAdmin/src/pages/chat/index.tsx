@@ -30,6 +30,7 @@ import ChatLayout from './components/ChatLayout';
 import SideDocumentPanel from './components/SideDocumentPanel';
 import { SideArtifactProvider } from './sideArtifact/SideArtifactContext';
 import { UiSubmissionProvider } from './uiSubmission/UiSubmissionContext';
+import { ShellBridgeHost } from './integration/ShellBridgeHost';
 import { buildUiSubmission } from './panel/submission';
 import type { ContextMenuState } from './components/ContextMenu';
 import { useAgentChatClient } from './hooks/useAgentChatClient';
@@ -733,6 +734,9 @@ const ChatPageContent: React.FC = () => {
       }}
     >
       <>
+      {/* 外壳桥：文档面板打开时通知原生收起工具面板；反之亦然。
+          没挂 WebView2（浏览器开发）时它整体是 no-op。 */}
+      <ShellBridgeHost />
       <ChatLayout
         sidebarOpen={chat.sidebarOpen}
         onToggleSidebar={handleToggleSidebar}
