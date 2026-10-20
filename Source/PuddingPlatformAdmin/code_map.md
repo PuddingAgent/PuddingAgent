@@ -111,6 +111,8 @@ fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使
 | `src/pages/chat/panel/VariantsPanel.tsx` | 多方案对比（1/2/3/4 档）；html 走沙箱，svg 走 DOMPurify |
 | `src/pages/chat/panel/SandboxedHtml.tsx` | `iframe sandbox=""` + CSP `default-src 'none'`；只禁脚本不够，还要禁网络 |
 | `src/pages/chat/panel/AnnotationLayer.tsx` + `AnnotationEditor.tsx` | 结构化标注：rect/arrow/note；坐标归一化纯函数可单测 |
+| `src/pages/chat/components/richblocks/PanelBlock.tsx` | panel 围栏：JSON → validatePanelSpec → PanelView；坏 spec 列前 3 条问题不渲染半成品 |
+| `src/pages/chat/uiSubmission/UiSubmissionContext.tsx` | 面板提交通道（宿主注入）；无 Provider 时禁用提交并说明原因 |
 
 **关键语义**
 
