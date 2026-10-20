@@ -92,6 +92,168 @@ public static class PanelCanvasDocument
           // 否则「开→关→再开」会重复绑事件，一次拖拽落两个标注。
           var bound = false;
 
+          // 当前工具。模型协议只有 point/bbox，其余都是「降维」：
+          // 涂鸦 → bbox + 轨迹（轨迹留给烧录）、箭头 → 两个 point、文字 → point + 原文。
+          var tool = 'box';
+          var draft = null;      // 拖拽中的轨迹（涂鸦笔 / 箭头）
+          var undoStack = [];    // 每步操作前的快照；容量 50
+
+          function pushUndo() {
+            undoStack.push(JSON.stringify(items));
+            if (undoStack.length > 50) undoStack.shift();
+          }
+
+          function undo() {
+            if (!undoStack.length) return false;
+            items = JSON.parse(undoStack.pop());
+            if (sync()) paint();
+            return true;
+          }
+
+          // 涂鸦与箭头用 SVG 画：div 只能画轴对齐矩形，画不出斜线与任意轨迹。
+          // SVG 层与 div 层同为 layer 的子元素，坐标系一致，坐标可以直接复用。
+          function drawVector(svg, it) {
+            var ns = 'http://www.w3.org/2000/svg';
+            var stroke = '#E4572E';
+
+            if (it.kind === 'scribble') {
+              var pts = it.points || [];
+              if (!pts.length) return;
+              var poly = document.createElementNS(ns, 'polyline');
+              poly.setAttribute(
+                'points', pts.map(function (p) { return p.x + ',' + p.y; }).join(' '));
+              poly.setAttribute('fill', 'none');
+              poly.setAttribute('stroke', stroke);
+              poly.setAttribute('stroke-width', '3');
+              poly.setAttribute('stroke-linecap', 'round');
+              poly.setAttribute('stroke-linejoin', 'round');
+              svg.appendChild(poly);
+              return;
+            }
+
+            var line = document.createElementNS(ns, 'line');
+            line.setAttribute('x1', it.x1);
+            line.setAttribute('y1', it.y1);
+            line.setAttribute('x2', it.x2);
+            line.setAttribute('y2', it.y2);
+            line.setAttribute('stroke', stroke);
+            line.setAttribute('stroke-width', '3');
+            line.setAttribute('stroke-linecap', 'round');
+            svg.appendChild(line);
+
+            // 箭头头部按方向旋转，不用 <marker>：marker 需要 defs + id，
+            // 而这里每次重绘都重建整层，带 id 的引用很容易悬空。
+            var angle = Math.atan2(it.y2 - it.y1, it.x2 - it.x1);
+            var len = 14;
+            var head = document.createElementNS(ns, 'polygon');
+            head.setAttribute('points', [
+              [it.x2, it.y2],
+              [it.x2 - len * Math.cos(angle - 0.45), it.y2 - len * Math.sin(angle - 0.45)],
+              [it.x2 - len * Math.cos(angle + 0.45), it.y2 - len * Math.sin(angle + 0.45)]
+            ].map(function (p) { return p[0] + ',' + p[1]; }).join(' '));
+            head.setAttribute('fill', stroke);
+            svg.appendChild(head);
+          }
+
+          // 文字工具：点击位置后弹输入框。不能用 window.prompt ——
+          // WebView2 默认把原生对话框拦下（ScriptDialogOpening），点了没反应。
+          function askText(x, y) {
+            var wrap = document.createElement('div');
+            wrap.setAttribute('data-pudding-text-input', '');
+            wrap.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;'
+              + 'z-index:2147483647;pointer-events:auto';
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.placeholder = '要改什么？（Enter 确认，Esc 取消）';
+            input.style.cssText = 'width:240px;padding:5px 8px;border:1px solid #3B6FA8;'
+              + 'border-radius:6px;font-size:12px;background:#fff;color:#222;'
+              + 'box-shadow:0 2px 8px rgba(0,0,0,.15)';
+            wrap.appendChild(input);
+            document.body.appendChild(wrap);
+            input.focus();
+
+            function discard() {
+              if (!wrap.isConnected) return;
+              wrap.remove();
+              undoStack.pop();
+            }
+
+            function commit() {
+              if (!wrap.isConnected) return;
+              var value = (input.value || '').trim();
+              if (!value) { discard(); return; }
+              wrap.remove();
+              items.push({ kind: 'text', label: value, x: x, y: y });
+              paint();
+            }
+
+            input.addEventListener('keydown', function (ev) {
+              ev.stopPropagation();
+              if (ev.key === 'Enter') { commit(); }
+              else if (ev.key === 'Escape') { discard(); }
+            });
+            input.addEventListener('blur', commit);
+          }
+
+          // 合成导出：把原图与所有标记画进 canvas。
+          // **形式 1（任意标记）的前提就是这个**：笔迹必须落在像素里，
+          // 否则发给模型的仍是干净原图，用户画了等于没画。
+          function compose() {
+            if (!imageEl || !imageEl.complete) return '';
+            var w = imageEl.naturalWidth, h = imageEl.naturalHeight;
+            if (!w || !h) return '';
+            var rect = imageEl.getBoundingClientRect();
+            if (!rect.width || !rect.height) return '';
+            var sx = w / rect.width, sy = h / rect.height;
+
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            var ctx = canvas.getContext('2d');
+            if (!ctx) return '';
+            ctx.drawImage(imageEl, 0, 0, w, h);
+            ctx.lineWidth = Math.max(3, Math.round(w / 300));
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#E4572E';
+            ctx.fillStyle = '#E4572E';
+
+            items.forEach(function (it) {
+              if (it.kind === 'box') {
+                ctx.strokeRect(
+                  it.x1 * sx, it.y1 * sy, (it.x2 - it.x1) * sx, (it.y2 - it.y1) * sy);
+              } else if (it.kind === 'scribble') {
+                var pts = it.points || [];
+                if (!pts.length) return;
+                ctx.beginPath();
+                pts.forEach(function (p, i) {
+                  var px = p.x * sx, py = p.y * sy;
+                  if (i === 0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }
+                });
+                ctx.stroke();
+              } else if (it.kind === 'arrow') {
+                var x1 = it.x1 * sx, y1 = it.y1 * sy, x2 = it.x2 * sx, y2 = it.y2 * sy;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+                var angle = Math.atan2(y2 - y1, x2 - x1), len = Math.max(12, w / 60);
+                ctx.beginPath();
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - len * Math.cos(angle - 0.45), y2 - len * Math.sin(angle - 0.45));
+                ctx.lineTo(x2 - len * Math.cos(angle + 0.45), y2 - len * Math.sin(angle + 0.45));
+                ctx.closePath();
+                ctx.fill();
+              } else if (it.kind === 'text' && it.label) {
+                ctx.font = Math.max(16, Math.round(w / 40)) + 'px sans-serif';
+                ctx.fillText(it.label, it.x * sx, it.y * sy);
+              }
+            });
+
+            // 图片被 CORS 污染时 toDataURL 会抛；本地图源不会，但仍要兜住。
+            try { return canvas.toDataURL('image/png'); } catch (err) { return ''; }
+          }
+
           function biggestImage() {
             var best = null, area = 0, list = document.images;
             for (var i = 0; i < list.length; i++) {
@@ -135,7 +297,22 @@ public static class PanelCanvasDocument
           function paint() {
             if (!layer) return;
             layer.innerHTML = '';
+            var svg = null;
+
             items.forEach(function (it, index) {
+              // 向量图元（涂鸦/箭头）画进同一个 SVG 层：div 只能画轴对齐矩形。
+              if (it.kind === 'arrow' || it.kind === 'scribble') {
+                if (!svg) {
+                  svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                  svg.setAttribute('data-pudding-vector', '');
+                  svg.style.cssText = 'position:absolute;left:0;top:0;width:100%;'
+                    + 'height:100%;overflow:visible;pointer-events:none';
+                  layer.appendChild(svg);
+                }
+                drawVector(svg, it);
+                return;
+              }
+
               var d = document.createElement('div');
               var s = ['position:absolute','pointer-events:none',
                 'border:1.5px solid #3B6FA8','background:rgba(59,111,168,.14)'];
@@ -183,21 +360,70 @@ public static class PanelCanvasDocument
             // 右键/中键不当拖拽起点：右键会弹上下文菜单，中键会触发自动滚动。
             if (e.pointerType === 'mouse' && e.button !== 0) return;
             start = local(e);
+            pushUndo();
+            draft = (tool === 'pen' || tool === 'arrow') ? [start] : null;
             layer.setPointerCapture(e.pointerId);
             e.preventDefault();
           }
 
+          // 拖拽中的实时预览：先重绘已落定的图元，再把草稿叠上去。
+          function onMove(e) {
+            if (!active || !draft) return;
+            draft.push(local(e));
+            paint();
+            var svg = layer.querySelector('[data-pudding-vector]');
+            if (!svg) {
+              svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+              svg.setAttribute('data-pudding-vector', '');
+              svg.style.cssText = 'position:absolute;left:0;top:0;width:100%;'
+                + 'height:100%;overflow:visible;pointer-events:none';
+              layer.appendChild(svg);
+            }
+            if (tool === 'pen') {
+              drawVector(svg, { kind: 'scribble', points: draft });
+            } else {
+              var tail = draft[draft.length - 1];
+              drawVector(svg, {
+                kind: 'arrow', x1: draft[0].x, y1: draft[0].y, x2: tail.x, y2: tail.y
+              });
+            }
+          }
+
           function onUp(e) {
             if (!active || !start) return;
+            var origin = start;
             var end = local(e);
-            var dx = Math.abs(end.x - start.x), dy = Math.abs(end.y - start.y);
+            start = null;
+
+            if (tool === 'pen') {
+              var pts = draft || [origin];
+              draft = null;
+              // 至少两个点才算一笔；没有落笔就把这次压的 undo 快照退掉，
+              // 否则「点一下什么也没画」也会占掉一次撤销。
+              if (pts.length >= 2) { items.push({ kind: 'scribble', points: pts }); }
+              else { undoStack.pop(); }
+              paint();
+              return;
+            }
+
+            if (tool === 'arrow') {
+              draft = null;
+              var aw = Math.abs(end.x - origin.x), ah = Math.abs(end.y - origin.y);
+              if (aw >= 4 || ah >= 4) {
+                items.push({ kind: 'arrow', x1: origin.x, y1: origin.y, x2: end.x, y2: end.y });
+              } else { undoStack.pop(); }
+              paint();
+              return;
+            }
+
+            var dx = Math.abs(end.x - origin.x), dy = Math.abs(end.y - origin.y);
             // 小于 4px 当成点选：手拖框很容易变成一个 2px 的碎框，那种框交给模型没意义。
             if (dx < 4 && dy < 4) {
+              if (tool === 'text') { askText(origin.x, origin.y); return; }
               items.push({ kind: 'point', x: end.x, y: end.y });
             } else {
-              items.push({ kind: 'box', x1: start.x, y1: start.y, x2: end.x, y2: end.y });
+              items.push({ kind: 'box', x1: origin.x, y1: origin.y, x2: end.x, y2: end.y });
             }
-            start = null;
             paint();
           }
 
@@ -210,7 +436,10 @@ public static class PanelCanvasDocument
             if (bound) return;
             bound = true;
             l.addEventListener('pointerdown', onDown);
+            l.addEventListener('pointermove', onMove);
             l.addEventListener('pointerup', onUp);
+            // 指针被系统夺走（切窗口、触控被摄）时也要落笔，否则草稿会卡在屏幕上。
+            l.addEventListener('pointercancel', onUp);
             // 拖到图片外面松手也要落一个框，否则越界的拖拽会默默消失。
             document.addEventListener('pointerup', onUp);
             // capture=true 才能收到内部滚动容器的 scroll（scroll 不冒泡）。
@@ -225,8 +454,20 @@ public static class PanelCanvasDocument
               if (active) { this.disable(); return false; }
               return this.enable();
             },
-            clear: function () { items = []; if (sync()) paint(); },
+            clear: function () { pushUndo(); items = []; if (sync()) paint(); },
             count: function () { return items.length; },
+            // 工具栏切换工具：box / point / pen / arrow / text。
+            setTool: function (name) {
+              tool = String(name || 'box');
+              draft = null;
+              start = null;
+              return tool;
+            },
+            getTool: function () { return tool; },
+            undo: undo,
+            canUndo: function () { return undoStack.length > 0; },
+            // 返回带笔迹的 PNG dataURL；形式 1（任意标记）靠它。
+            compose: compose,
             take: function () {
               if (!sync()) return '';
               return JSON.stringify({
@@ -237,11 +478,9 @@ public static class PanelCanvasDocument
                 width: box.width, height: box.height,
                 naturalWidth: (imageEl && imageEl.naturalWidth) || 0,
                 naturalHeight: (imageEl && imageEl.naturalHeight) || 0,
-                items: items.map(function (it) {
-                  return it.kind === 'box'
-                    ? { kind: 'box', x1: it.x1, y1: it.y1, x2: it.x2, y2: it.y2 }
-                    : { kind: 'point', x: it.x, y: it.y };
-                })
+                // 原样输出：涂鸦要带 points、文字要带 label。
+                // 早期按 kind 二选一的写法会把它们静默降级成 point，笔迹和原文全丢。
+                items: items
               });
             }
           };

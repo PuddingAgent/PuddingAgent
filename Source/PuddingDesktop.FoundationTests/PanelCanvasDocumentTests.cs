@@ -64,6 +64,41 @@ public sealed class PanelCanvasDocumentTests
     }
 
     [Fact]
+    public void Annotation_layer_exposes_drawing_tools_and_compositing()
+    {
+        // 这些标记一旦丢失不会编译失败，但工具或烧录会静默消失：
+        // 少了 compose，用户画的笔迹永远进不了像素，形式 1（任意标记）直接失效。
+        var html = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("setTool:", html, StringComparison.Ordinal);
+        Assert.Contains("compose: compose", html, StringComparison.Ordinal);
+        Assert.Contains("function drawVector", html, StringComparison.Ordinal);
+        Assert.Contains("kind: 'scribble'", html, StringComparison.Ordinal);
+        // 涂鸦/箭头走 SVG；div 只能画轴对齐矩形，画不出斜线和任意轨迹。
+        Assert.Contains("data-pudding-vector", html, StringComparison.Ordinal);
+        // 橡皮擦本质上是「撤销上一次」，所以撤销栈是工具的前提。
+        Assert.Contains("function pushUndo", html, StringComparison.Ordinal);
+        // 文字输入不能依赖 window.prompt：WebView2 默认拦下原生对话框。
+        Assert.Contains("data-pudding-text-input", html, StringComparison.Ordinal);
+        // 拖拽中的实时预览必须跟随指针。
+        Assert.Contains(
+            "addEventListener('pointermove', onMove)", html, StringComparison.Ordinal);
+        // 烧录导出。
+        Assert.Contains("toDataURL('image/png')", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Canvas_take_returns_items_verbatim_so_scribbles_keep_their_points()
+    {
+        // 早期实现按 kind 二选一输出，会把 scribble/text/arrow 静默降级成 point，
+        // 笔迹与文字一起丢失，而且不会报任何错。
+        var html = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("items: items", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("? { kind: 'box', x1: it.x1", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Base_css_defaults_to_border_box_so_a_border_cannot_overflow_the_canvas()
     {
         // 实测缺陷：img 用 width:100% + border:1px，content-box 下比容器宽 2px，
