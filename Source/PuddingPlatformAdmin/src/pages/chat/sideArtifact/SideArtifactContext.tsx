@@ -24,7 +24,7 @@
 // 长消息卡因此不会出现"点了没反应"的死按钮。
 // ─────────────────────────────────────────────────────────────
 
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 export interface SideDocument {
   name: string;
@@ -62,15 +62,46 @@ export const SideArtifactProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [state, setState] = useState<SideArtifactState>({ open: false, document: null });
 
-  // 空依赖：引用永久稳定。setState 本身稳定，所以这里不需要读 state。
+  // 触发入口：关闭时把焦点还回去。不记录的话，键盘用户一关面板
+  // 焦点就掉到 body，再想打开得从页面开头 Tab 一遍。
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  // ActionsCtx 的 value 必须引用稳定，所以这两个函数不能读 state，
+  // 也不能依赖 triggerRef 之外的东西。
   const actions = useMemo<SideArtifactActions>(
     () => ({
-      openDocument: (doc) => setState({ open: true, document: doc }),
+      openDocument: (nextDoc) => {
+        const active = typeof window === 'undefined' ? null : window.document.activeElement;
+        triggerRef.current = active instanceof HTMLElement ? active : null;
+        setState({ open: true, document: nextDoc });
+      },
       // 关闭只收起面板，保留 document：再次打开时还在，符合"旁路预览"的预期。
-      close: () => setState((prev) => ({ ...prev, open: false })),
+      close: () => {
+        setState((prev) => ({ ...prev, open: false }));
+        const trigger = triggerRef.current;
+        triggerRef.current = null;
+        // isConnected：触发元素可能已经滚出列表被回收，那就别硬 focus 了。
+        if (trigger?.isConnected) trigger.focus();
+      },
     }),
     [],
   );
+
+  // Esc 关闭。
+  // 但**在输入框里不拦**：用户可能在面板内的文本框按 Esc 取消一次输入，
+  // 那时把整个面板关掉是意外行为。
+  useEffect(() => {
+    if (!state.open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      actions.close();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [state.open, actions]);
 
   return (
     <ActionsContext.Provider value={actions}>

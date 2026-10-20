@@ -69,6 +69,81 @@ describe('SideArtifactContext', () => {
   });
 });
 
+describe('键盘与焦点（外部评审建议）', () => {
+  /** 带一个真实触发按钮的探针：验证"关闭后焦点回到触发入口"。 */
+  const FocusProbe: React.FC = () => {
+    const side = useSideArtifact();
+    return (
+      <div>
+        <button
+          data-testid="trigger"
+          onClick={() => side?.openDocument({ name: 'a.md', markdown: '# a' })}
+        >
+          展开阅读
+        </button>
+        <span data-testid="open">{String(side?.open ?? 'no-provider')}</span>
+        <button data-testid="close" onClick={() => side?.close()}>
+          关闭
+        </button>
+        <textarea data-testid="note" />
+      </div>
+    );
+  };
+
+  it('关闭面板后焦点回到触发入口', () => {
+    render(
+      <SideArtifactProvider>
+        <FocusProbe />
+      </SideArtifactProvider>,
+    );
+
+    const trigger = screen.getByTestId('trigger');
+    // 真实交互里用户是用鼠标/键盘"点"这个按钮的，先给它焦点
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(document.activeElement).toBe(trigger);
+
+    // 关键：先让焦点落在**面板内的关闭键**上。
+    // 不这么做的话，jsdom 里点击不会移动焦点，断言会在"焦点从未离开触发键"的
+    // 前提下轻松通过 —— 那就成了一个永远绿的假用例（实测确认过）。
+    const closeButton = screen.getByTestId('close');
+    closeButton.focus();
+    expect(document.activeElement).toBe(closeButton);
+
+    fireEvent.click(closeButton);
+
+    // 不还回焦点的话，键盘用户一关面板就掉到 body，要重新 Tab 一遍才能再打开
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('Esc 关闭面板', () => {
+    render(
+      <SideArtifactProvider>
+        <FocusProbe />
+      </SideArtifactProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+    expect(screen.getByTestId('open').textContent).toBe('true');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.getByTestId('open').textContent).toBe('false');
+  });
+
+  it('在输入框里按 Esc 不关面板（那是取消输入，不是关闭）', () => {
+    render(
+      <SideArtifactProvider>
+        <FocusProbe />
+      </SideArtifactProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+
+    fireEvent.keyDown(screen.getByTestId('note'), { key: 'Escape' });
+
+    expect(screen.getByTestId('open').textContent).toBe('true');
+  });
+});
+
 describe('actions / state 拆分（避免跨层重渲染）', () => {
   it('只消费 actions 的组件在文档变化时不重渲染', () => {
     let renders = 0;
