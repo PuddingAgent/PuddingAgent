@@ -34,6 +34,22 @@ public sealed record PageGotoArguments
     public int TimeoutMs { get; init; } = 30_000;
 }
 
+/// <summary>
+/// `document.preview` 的参数：**只有路径**。
+/// <para>
+/// 读文件、渲染、显示全在宿主（Desktop）里完成，Core 不参与。留一个可选 Title
+/// 只是为了标签页标题在文件尚未加载完时也能立刻可读；缺省时宿主用文件名。
+/// </para>
+/// </summary>
+public sealed record DocumentPreviewArguments
+{
+    /// <summary>工作区内的相对路径（如 <c>Docs/14_reports/x.md</c>），不接受绝对路径。</summary>
+    public required string Path { get; init; }
+
+    /// <summary>可选标签页标题；不传则由宿主从文件名推导。</summary>
+    public string? Title { get; init; }
+}
+
 public sealed record PageActivateArguments
 {
     public required string PageId { get; init; }
