@@ -109,6 +109,29 @@ public sealed class WinUiShellFacilities : IDesktopShellFacilities
                 new DesktopFilePickerResult(canceled: false, [single.Path]));
     }
 
+    /// <summary>
+    /// 文档预览：**尚未接入工具区**。
+    ///
+    /// 诚实取舍：与其在这里塞一个临时对话框冒充「预览」，不如明确报告不可用。
+    /// 能力是否声明由 <c>DesktopCapabilityChannelSettings.DeclaredCapabilities</c> 决定
+    /// （实现即声明）—— 本方法返回 Unavailable 期间，该能力**也不会**出现在握手里，
+    /// Core 不会以为它可用，工具调用拿到的是 UnsupportedCapability 而不是假成功。
+    ///
+    /// 接入真实预览时要做的三件事（供后续实现参考，不要在旧路径上打补丁）：
+    /// ① 工作区根 + 相对路径解析（DocumentPathPolicy.TryResolveFullPath）；
+    /// ② 读盘与渲染在工具区标签里完成（Markdown 用 Markdig），正文不回传 Core；
+    /// ③ 同路径幂等：用稳定 TabId 激活已有标签，不重复开。
+    /// </summary>
+    public Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+        DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        return Task.FromResult(CapabilityResult<DesktopDocumentPreviewResult>.Failure(
+            DesktopCapabilityError.UiUnavailable("document preview is not wired into the tool area yet")));
+    }
+
     public async Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
         DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken)
     {

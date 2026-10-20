@@ -57,6 +57,9 @@ public sealed record DesktopCapabilityChannelSettings
         | DesktopCapability.ShellDialog
         | DesktopCapability.ShellFilePicker
         | DesktopCapability.ShellClipboard
+        // 声明保留：目录与声明必须一一对应（测试钉住的不变量）；
+        // 真实预览尚未接入工具区，OpenDocumentAsync 会返回 UiUnavailable。
+        // 两者同时改才能去掉这一行 —— 不能在声明里提前拆。
         | DesktopCapability.ShellDocumentPreview
         | DesktopCapability.BrowserBindingApply
         | DesktopCapability.BrowserBindingRevoke;
