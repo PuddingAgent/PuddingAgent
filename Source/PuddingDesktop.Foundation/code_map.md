@@ -4,12 +4,24 @@ BCL-only layout and appearance preferences, with compiler-enforced absence of pa
 
 - `ShellLayout.cs`: bounded layout dimensions and responsive allocation.
 - `SkeletonSettingsStore.cs`: atomic appearance settings, corrupt-file preservation.
-- `PanelCanvasDocument.cs`: embedded/exported panel HTML wrappers and the injected annotation/compose script.
-- `PanelAnnotation.cs`: canvas payload validation and normalized model-coordinate projection.
-- `PanelCraftStore.cs`: current Desktop craft records, local image copies and trash maintenance.
+- `PanelCanvasDocument.cs`: embedded/exported panel HTML wrappers plus the injected annotation script:
+  five primitive tools (box/point/pen/arrow/text), per-item delete, undo, `compose()` (burn ink into pixels),
+  `take()` (always emits normalized 0-1000 via C# `PanelAnnotation`) and `load()` (redraw saved marks on reopen).
+- `PanelAnnotation.cs`: canvas payload validation, normalized model-coordinate projection, and the five
+  primitive kinds including scribble ink trails (arrow keeps start/end order — sorting would flip its head).
+- `PanelCanvasRestore.cs`: serializes saved annotations into a `puddingAnnotation.load([...])` payload wrapped
+  in a self-retrying inline `<script>` (injection order is not guaranteed, so it waits for the layer itself).
+- `PanelCraftStore.cs`: craft records (save/list/rename/continue-editing/delete to `_trash`), strict id and
+  file-name validation before any move, title normalization shared by save and rename; also `PanelCraftEditPanel`
+  (edit-canvas id <-> craft id, so lineage needs no extra tab state) and `PanelCraftLineage` (version depth,
+  cycle-guarded, tolerates a deleted ancestor).
+- `PanelMarkRetention.cs`: burn-in JPEG retention — `.used` sidecar marks a mark that was inserted into a
+  conversation (never pruned), used marks do not consume the keep budget, orphan markers cleaned up.
 - `PanelImageSource.cs` / `PanelCanvasFeed.cs`: local-image URI policy and Core panel snapshot parsing.
 - `StartupPanelPresenter.cs`: single mapping source for the Shell startup state panel (title/phase/3-step strip/elapsed + slow-start hint/actions/error summary/status-bar text and tone) across all 13 launch phases; `StartupErrorText.Describe` turns supervisor errors into user-facing Chinese while keeping raw text for the collapsible detail.
 - `StartupPhaseActivity.cs`: parses `[StartupPhase] <phase> total=… delta=…` lines from the Core log tail into an aggregated human phase plus "latest output"; keeps the log format out of XAML and UI code.
-- `Source/PuddingDesktop.FoundationTests`: independent layout, persistence, startup-panel mapping/phase-parsing and dependency boundary tests.
+- `Source/PuddingDesktop.FoundationTests`: independent layout, persistence, startup-panel mapping/phase-parsing,
+  and dependency boundary tests; plus annotation normalization, craft store (save/rename/lineage/trash),
+  burn-in retention and canvas-restore payload tests (429 cases as of 2026-10-21).
 
 Role selection, native drafts, document business ownership and in-process kernel contracts were removed during master recovery. Business UI stays in Web.
