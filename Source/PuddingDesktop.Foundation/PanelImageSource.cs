@@ -44,6 +44,18 @@ public static class PanelImageSource
         ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg",
     };
 
+    /// <summary>扩展名（带不带点都可以）是否在允许列表内。</summary>
+    public static bool IsSupportedExtension(string? extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            return false;
+        }
+
+        var normalized = extension.StartsWith('.') ? extension : "." + extension;
+        return AllowedExtensions.Contains(normalized);
+    }
+
     /// <summary>面板里可直接使用的 src 前缀。</summary>
     public const string UriPrefix = Scheme + ":///";
 
