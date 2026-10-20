@@ -357,6 +357,14 @@ message FilePickerOutcome {
   repeated string paths = 2;
 }
 
+// 文档预览结果：只回身份与阶段，**不回正文**（正文永不上线缆，也不进审计）。
+// status 用线名（accepted / opened / already_open），accepted 只表示已受理，不表示已渲染。
+message DocumentPreviewOutcome {
+  string tab_id = 1;
+  string path = 2;
+  string status = 3;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -399,6 +407,16 @@ message BrowserBindingRevokeCommand {
   CommandTarget target = 2;
 }
 
+// 文档预览（Shell 类，非浏览器动作）：**只传路径**，读盘与渲染全部归 Desktop。
+// 为什么不是浏览器命令：文档预览不需要页面目标、不需要 caller 身份投影、
+// 也不改页面状态；把它塞进浏览器通道会让「所有 Bridge 命令都是浏览器操作」这条前提失真。
+message DocumentPreviewCommand {
+  // 工作区相对路径；绝对路径/UNC/盘符/traversal 由双方各自 fail-closed。
+  string path = 1;
+  // 可选显示标题；空 = Desktop 用文件名。
+  string title = 2;
+}
+
 message CapabilityCommand {
   string operation_id = 1;
   // 命令所属连接世代；与当前世代不符必须拒绝。
@@ -432,6 +450,7 @@ message CapabilityCommand {
     BrowserBindingApplyCommand binding_apply = 26;
     BrowserBindingRevokeCommand binding_revoke = 27;
   ScreenshotCommand screenshot = 28;
+    DocumentPreviewCommand document_preview = 29;
   }
 }
 
@@ -567,6 +586,7 @@ message OperationResult {
   ContextClosedOutcome context_closed = 26;
     BindingAckOutcome binding_ack = 27;
   ScreenshotOutcome screenshot = 28;
+    DocumentPreviewOutcome document_preview = 29;
   }
 }
 
