@@ -26,8 +26,15 @@ public static class PanelCanvasDocument
     /// CSS 兜底：内容只写 <c>var(--pudding-*)</c> 即可，不需要自己猜主题。
     /// 变量缺失时（例如样式表没注入）仍有 <c>--pudding-page</c> 的 fallback。
     /// </summary>
+    /// <remarks>
+    /// 全局 <c>border-box</c> 不是风格偏好，是**实测过的缺陷修复**：画布上的
+    /// <c>img</c> 只要写成 <c>width:100%</c> 再配一条 1px 边框，content-box 下
+    /// 就比容器宽 2px，画布底部立刻出现横向滚动条——而内容看起来完全正常，
+    /// 没人会想到是盒模型。与其要求每份 Agent 内容自己记得加，不如在壳里统一。
+    /// </remarks>
     private const string BaseCss =
-        "html,body{margin:0;background:var(--pudding-page);"
+        "*,*::before,*::after{box-sizing:border-box;}"
+        + "html,body{margin:0;background:var(--pudding-page);"
         + "font-family:'Segoe UI','Microsoft YaHei',sans-serif;}";
 
     /// <summary>

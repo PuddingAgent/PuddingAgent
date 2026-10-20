@@ -49,6 +49,18 @@ public sealed class PanelCanvasDocumentTests
     }
 
     [Fact]
+    public void Base_css_defaults_to_border_box_so_a_border_cannot_overflow_the_canvas()
+    {
+        // 实测缺陷：img 用 width:100% + border:1px，content-box 下比容器宽 2px，
+        // 画布底部立刻出现横向滚动条，而内容看上去毫无异常。
+        var embedded = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+        var exported = PanelCanvasDocument.WrapForExport(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("*,*::before,*::after{box-sizing:border-box;}", embedded, StringComparison.Ordinal);
+        Assert.Contains("*,*::before,*::after{box-sizing:border-box;}", exported, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Exported_document_has_no_csp_so_it_opens_standalone()
     {
         // 导出文件是给用户自己打开/分享的：CSP 是容器约束，带进导出文件会拦住
