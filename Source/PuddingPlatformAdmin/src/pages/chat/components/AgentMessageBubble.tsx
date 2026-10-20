@@ -17,6 +17,8 @@ import type {
   TimelineItem,
 } from '../types';
 import { summarizeError } from '../utils/summarizeError';
+import { normalizeChatErrorDiagnostic } from '../utils/chatDiagnostics';
+import ErrorDiagnosticPanel from './ErrorDiagnosticPanel';
 import AgentAvatar from './AgentAvatar';
 import CompactionCard from './CompactionCard';
 import {
@@ -58,6 +60,7 @@ interface AgentMessageBubbleProps {
   id: string;
   content: string;
   executionError?: string;
+  errorDiagnostic?: Record<string, unknown>;
   status: string;
   createdAt: number;
   agentName: string;
@@ -303,6 +306,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   id: _id,
   content,
   executionError,
+  errorDiagnostic,
   status,
   createdAt,
   agentName,
@@ -798,7 +802,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                       styles.agentErrorSummaryTitleWarning,
                   )}
                 >
-                  {status === 'cancelled' ? '已取消' : '本轮运行失败'}
+                  {status === 'cancelled' ? '已取消' : String(errorDiagnostic?.causeTitle || '本轮运行失败')}
                 </span>
                 {errorSummary.summary && (
                   <span
@@ -806,7 +810,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                     title={errorSummary.full}
                     data-testid="agent-error-summary-text"
                   >
-                    {errorSummary.summary}
+                    {String(errorDiagnostic?.causeShortCause || errorSummary.summary)}
                   </span>
                 )}
                 {!processItems?.length && onRerun && (
@@ -819,6 +823,16 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                   </button>
                 )}
               </div>
+            )}
+
+            {isError && status !== 'cancelled' && (
+              <ErrorDiagnosticPanel
+                key={`${sessionId}:${turnId}`}
+                event={errorDiagnostic ? normalizeChatErrorDiagnostic(errorDiagnostic) : undefined}
+                sessionId={sessionId}
+                turnId={turnId}
+                errorMessage={errorText}
+              />
             )}
 
             {/* 操作按钮 */}

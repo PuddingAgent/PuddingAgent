@@ -87,6 +87,9 @@ const structureSignature = (message: ConversationMessageView): string => {
     String(message.hasMoreContent ?? false),
     String(message.contentLength ?? ''),
     asText(outcome?.status),
+    asText(outcome?.errorCode),
+    asText(outcome?.errorMessage),
+    outcome?.diagnostic ? hashCanonicalText(JSON.stringify(outcome.diagnostic)) : '',
     approval
       ? `${asText(approval.approvalId)}:${asText(approval.status)}`
       : '',
@@ -499,6 +502,15 @@ const mergeMessageRecords = (
   }
 
   let merged: ConversationMessageView = { ...incoming };
+  if (merged.turnOutcome?.status === 'failed' && existing.turnOutcome?.status === 'failed') {
+    merged.turnOutcome = {
+      ...existing.turnOutcome,
+      ...merged.turnOutcome,
+      errorCode: merged.turnOutcome.errorCode ?? existing.turnOutcome.errorCode,
+      errorMessage: merged.turnOutcome.errorMessage ?? existing.turnOutcome.errorMessage,
+      diagnostic: merged.turnOutcome.diagnostic ?? existing.turnOutcome.diagnostic,
+    };
+  }
   const keepExistingContent =
     existingFingerprint.contentLength > 0 &&
     incomingFingerprint.contentLength === 0;

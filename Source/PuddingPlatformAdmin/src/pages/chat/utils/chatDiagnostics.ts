@@ -5,11 +5,19 @@ import {
   type ChatDiagWindow,
 } from '../types/chatStateTypes';
 
-type ChatErrorDiagnosticEvent = Record<string, unknown> & {
+export type ChatErrorDiagnosticEvent = Record<string, unknown> & {
   type?: unknown;
   message?: unknown;
   reply?: unknown;
 };
+
+/** Canonical terminal payloads carry the redacted runtime report under diagnostic. */
+export function normalizeChatErrorDiagnostic(event: ChatErrorDiagnosticEvent): ChatErrorDiagnosticEvent {
+  const nested = event.diagnostic ?? event.error;
+  return nested && typeof nested === 'object' && !Array.isArray(nested)
+    ? { ...event, ...nested as Record<string, unknown> }
+    : event;
+}
 
 type ChatErrorDiagnosticFallback = {
   sessionId?: string | null;
@@ -22,6 +30,7 @@ function readDiagnosticText(
 ): string | undefined {
   for (const key of keys) {
     const value = event[key];
+    if (typeof value === 'boolean') return String(value);
     if (typeof value === 'string' && value.trim()) return value.trim();
     if (typeof value === 'number' && Number.isFinite(value))
       return String(value);
@@ -75,12 +84,13 @@ export function formatChatErrorDiagnostic(
   event: ChatErrorDiagnosticEvent,
   fallback: ChatErrorDiagnosticFallback = {},
 ): string {
+  event = normalizeChatErrorDiagnostic(event);
   const persistedReply = readDiagnosticText(event, 'reply');
   if (persistedReply && looksLikePersistedErrorDiagnostic(persistedReply))
     return persistedReply;
 
   const message =
-    readDiagnosticText(event, 'message', 'error', 'reply') ?? '请求处理失败。';
+    readDiagnosticText(event, 'message', 'errorMessage', 'error', 'reply') ?? '请求处理失败。';
   // 后端契约（可诊断基础设施设计 §12）：标题 + 大概原因 + 稳定因果码 + 阶段 + 处置建议。
   const causeTitle = readDiagnosticText(event, 'causeTitle', 'cause_title');
   const causeShortCause = readDiagnosticText(
@@ -121,6 +131,8 @@ export function formatChatErrorDiagnostic(
       round ? (maxRounds ? `${round}/${maxRounds}` : round) : undefined,
     ],
     ['Model', readDiagnosticText(event, 'modelId', 'model_id', 'model')],
+    ['Provider', readDiagnosticText(event, 'providerId')],
+    ['HTTP Status', readDiagnosticText(event, 'httpStatusCode')],
     [
       'Endpoint Host',
       readDiagnosticText(event, 'endpointHost', 'endpoint_host'),
@@ -163,7 +175,7 @@ export function buildChatDiagnosticCopyPayload(input: {
   url?: string | null;
   recentPerfEvents?: unknown[];
 }): { text: string; json: string } {
-  const event = input.event ?? {};
+  const event = normalizeChatErrorDiagnostic(input.event ?? {});
   const reply = readDiagnosticText(event, 'reply');
   const backendReport =
     readDiagnosticText(event, 'reportText', 'report_text') ??
@@ -192,6 +204,7 @@ export function buildChatDiagnosticCopyPayload(input: {
       readDiagnosticText(event, 'causeShortCause', 'cause_short_cause') ?? null,
     causePhase:
       readDiagnosticText(event, 'causePhase', 'cause_phase') ?? null,
+    retryable: readDiagnosticText(event, 'retryable') ?? null,
     remediationHint:
       readDiagnosticText(event, 'remediationHint', 'remediation_hint') ?? null,
     errorId: readDiagnosticText(event, 'errorId', 'error_id') ?? null,
@@ -218,6 +231,7 @@ export function buildChatDiagnosticCopyPayload(input: {
       `大概原因: ${structured.causeShortCause ?? '(未提供)'}`,
       `因果码: ${structured.causeCode ?? '(未提供)'}`,
       `失败阶段: ${structured.causePhase ?? '(未提供)'}`,
+      `可重试: ${structured.retryable === null ? '(未提供)' : structured.retryable === 'true' ? '是' : '否'}`,
       `errorId: ${structured.errorId ?? '(未提供)'}`,
       `traceId: ${structured.traceId ?? '(未提供)'}`,
       `会话 / 回合: ${structured.sessionId ?? '(未提供)'} / ${structured.turnId ?? '(未提供)'}`,

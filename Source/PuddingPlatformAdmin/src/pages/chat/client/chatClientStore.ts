@@ -1097,7 +1097,7 @@ export function createAgentChatClientStore(input: {
           // The terminal envelope supplies the same identity/body/time as the
           // persisted history row. Upsert it now, so a subsequent Turn cannot
           // erase the reply while the snapshot request is still in flight.
-          if (messageId && turnId && reply) {
+          if (messageId && turnId && (reply || status === 'failed')) {
             const existingIndex = messages.findIndex(
               (item) => item.messageId === messageId,
             );
@@ -1123,6 +1123,8 @@ export function createAgentChatClientStore(input: {
                 status,
                 errorCode: liveString(event, 'errorCode'),
                 errorMessage: liveString(event, 'errorMessage'),
+                diagnostic: status === 'failed' && event.diagnostic && typeof event.diagnostic === 'object'
+                  ? event.diagnostic as Record<string, unknown> : undefined,
               },
             };
             if (existingIndex >= 0) {

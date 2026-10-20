@@ -58,6 +58,9 @@ public sealed record TurnTerminal(
     string? Reply,
     JsonElement? Usage)
 {
+    /// <summary>Redacted runtime error report; persisted separately from reply text.</summary>
+    public JsonElement? Diagnostic { get; init; }
+
     /// <summary>
     /// A1（G92-1 S1-c 片6）：从 Runtime terminal 透传的结构化合同提议
     /// （仅 canonical Goal Turn 的 Completed 终态携带；其余为 null）。

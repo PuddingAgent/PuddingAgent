@@ -107,6 +107,7 @@ const messageBlockEquals = (
     previous.content === next.content &&
     previous.expandMessageId === next.expandMessageId &&
     previous.executionError === next.executionError &&
+    previous.errorDiagnostic === next.errorDiagnostic &&
     previous.status === next.status &&
     previous.createdAt === next.createdAt &&
     previous.modality === next.modality &&
@@ -329,6 +330,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
       createdAt={block.createdAt}
       agentName={block.agentName || 'Pudding'}
       executionError={block.executionError}
+      errorDiagnostic={block.errorDiagnostic}
       agentAvatarEmoji={block.agentAvatarEmoji}
       agentAvatarColor={block.agentAvatarColor}
       agentAvatarUrl={block.agentAvatarUrl || defaultAvatarUrl}

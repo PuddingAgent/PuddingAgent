@@ -685,7 +685,7 @@ public sealed class ExecutionRunCoordinator(
                 info.Reply, info.Usage, info.GoalContractProposal),
             TurnTerminalKind.Failed => TurnTerminal.Failure(
                 info.ErrorCode ?? TerminalErrorCodes.RuntimeExecutionFailed,
-                info.ErrorMessage ?? "Unknown failure."),
+                info.ErrorMessage ?? "Unknown failure.") with { Diagnostic = info.Diagnostic?.Clone() },
             TurnTerminalKind.Cancelled => TurnTerminal.Cancelled,
             _ => TurnTerminal.ProtocolError("Unknown terminal kind."),
         };

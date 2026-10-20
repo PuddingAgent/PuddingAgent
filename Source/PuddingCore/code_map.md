@@ -327,7 +327,7 @@ L3-a 已落地（纯类型 + 守卫测试，**零行为**：不写技能、不�
 ## 运行时抽象
 
 
-- `Runtime/ITurnExecutor.cs`：`TurnExecutionContext` 除 Agent 预算外携带 canonical TaskPlan/TaskNode/ParentNode identity，供 Platform→Runtime 交接。
+- `Runtime/ITurnExecutor.cs`：`TurnExecutionContext` 除 Agent 预算外携带 canonical TaskPlan/TaskNode/ParentNode identity，供 Platform→Runtime 交接；`TurnTerminalInfo.Diagnostic` 经 `Platform/ExecutionRunContracts.cs` 的 `TurnTerminal.Diagnostic` 保留脱敏错误报告。
 
 | 目录/文件 | 用途 |
 |------|------|

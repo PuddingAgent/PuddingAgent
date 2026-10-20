@@ -968,7 +968,7 @@ public sealed class SqliteExecutionJournal(
                 terminal.GoalContractProposal,
                 GoalContractProposalPayloadOptions);
         using var doc = System.Text.Json.JsonDocument.Parse(
-            $$"""{"kind":"{{terminal.Kind}}","errorCode":{{JsonOrNull(terminal.ErrorCode)}},"errorMessage":{{JsonOrNull(terminal.ErrorMessage)}},"reply":{{JsonOrNull(terminal.Reply)}},"goal_contract_proposal":{{proposalJson}}}""");
+            $$"""{"kind":"{{terminal.Kind}}","errorCode":{{JsonOrNull(terminal.ErrorCode)}},"errorMessage":{{JsonOrNull(terminal.ErrorMessage)}},"reply":{{JsonOrNull(terminal.Reply)}},"goal_contract_proposal":{{proposalJson}},"diagnostic":{{terminal.Diagnostic?.GetRawText() ?? "null"}}}""");
         return doc.RootElement.Clone();
     }
 

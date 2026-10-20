@@ -7,6 +7,18 @@ import {
 } from './chatDiagnostics';
 
 describe('chatDiagnostics', () => {
+  it.each([true, false])('formats nested canonical diagnostics and boolean retryable=%s', (retryable) => {
+    const markdown = formatChatErrorDiagnostic({
+      errorMessage: 'Error while copying content to a stream.',
+      diagnostic: { causeTitle: '模型服务连接中断', causePhase: 'request_upload', retryable, providerId: 'deepseek' },
+    });
+    expect(markdown).toContain('模型服务连接中断');
+    expect(markdown).toContain('request_upload');
+    expect(markdown).toContain(`可重试: \`${retryable ? '是' : '否'}\``);
+    expect(markdown).toContain('deepseek');
+    expect(markdown).toContain('Error while copying');
+  });
+
   it('bounds long strings and nested values', () => {
     const value = toChatDiagValue({
       message: 'x'.repeat(320),

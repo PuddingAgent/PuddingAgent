@@ -59,6 +59,31 @@ public sealed class ConversationOpenQueryService(
         ConversationEventTypes.SubAgentRunBudgetExhausted,
     ];
 
+    /// <summary>Explicit error-details expansion: one terminal row by conversation + turn.</summary>
+    public async Task<JsonElement?> GetTurnDiagnosticAsync(
+        string conversationId, string turnId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(conversationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(turnId);
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var payload = await db.ConversationEvents.AsNoTracking()
+            .Where(e => e.ConversationId == conversationId && e.TurnId == turnId
+                && e.Type == ConversationEventTypes.TurnFailed)
+            .OrderByDescending(e => e.Sequence)
+            .Select(e => e.Payload.Substring(0, 256 * 1024))
+            .FirstOrDefaultAsync(ct);
+        if (payload is null) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            throw new ConversationQueryException("diagnostic_unavailable", "保存的错误诊断不完整，无法读取。");
+        }
+    }
+
     public async Task<ConversationOpenSnapshot> OpenAsync(
         string conversationId,
         int? messageLimit = null,

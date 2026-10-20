@@ -100,6 +100,7 @@ export interface ChatTurn {
     answerMarkdown: string;
     expandMessageId?: string;
     executionError?: string;
+    errorDiagnostic?: Record<string, unknown>;
     isStreaming: boolean;
     usage?: TokenUsageDto;
     renderMode: 'legacy' | 'structured' | 'inbound' | 'heartbeat';
@@ -132,6 +133,7 @@ export interface ChatQuotedMessage {
 export interface ChatMessageBlock {
   expandMessageId?: string;
   executionError?: string;
+  errorDiagnostic?: Record<string, unknown>;
   id: string;
   turnId: string;
   role: 'user' | 'agent' | 'system' | 'heartbeat';
@@ -296,6 +298,7 @@ export function buildMessageBlocks(
         content: turn.assistant.answerMarkdown,
         status: toChatMessageStatus(turn.assistant.status),
         executionError: turn.assistant.executionError,
+        errorDiagnostic: turn.assistant.errorDiagnostic,
         createdAt: turn.userMessage.timestamp,
       });
       continue;
@@ -323,6 +326,8 @@ export function buildMessageBlocks(
         turnId: turn.turnId,
         role: 'agent',
         expandMessageId: turn.assistant.expandMessageId,
+        executionError: turn.assistant.executionError,
+        errorDiagnostic: turn.assistant.errorDiagnostic,
         content: turn.assistant.answerMarkdown,
         status: toChatMessageStatus(turn.assistant.status),
         createdAt: turn.userMessage.timestamp,

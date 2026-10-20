@@ -111,7 +111,7 @@ export interface AgentRunView {
 }
 
 export interface ConversationMessageView {
-  turnOutcome?: { status: 'succeeded' | 'failed' | 'cancelled'; errorCode?: string | null; errorMessage?: string | null } | null;
+  turnOutcome?: { status: 'succeeded' | 'failed' | 'cancelled'; errorCode?: string | null; errorMessage?: string | null; diagnostic?: Record<string, unknown> } | null;
   messageId: string;
   turnId?: string | null;
   runId?: string | null;

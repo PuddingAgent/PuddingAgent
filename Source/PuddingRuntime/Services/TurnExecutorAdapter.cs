@@ -172,13 +172,33 @@ public sealed class TurnExecutorAdapter(
                     TryGetString(payload, "errorCode")
                         ?? TryGetString(payload, "code")
                         ?? TerminalErrorCodes.RuntimeExecutionFailed,
-                    TryGetString(payload, "message") ?? "Execution failed.")),
+                    TryGetString(payload, "message") ?? "Execution failed.") with
+                {
+                    Diagnostic = ExtractDiagnostic(payload),
+                }),
             "cancelled" => (
                 ConversationEventTypes.TurnCancelled,
                 true,
                 TurnTerminalInfo.Cancelled()),
             _ => (eventType, false, null),
         };
+    }
+
+    private static JsonElement ExtractDiagnostic(JsonElement payload)
+    {
+        // Copy only the public diagnostic contract, never arbitrary runtime payloads.
+        string[] fields = [
+            "message", "errorCode", "errorId", "traceId", "timestampUtc", "location",
+            "sessionId", "messageId", "turnId", "providerId", "modelId", "endpointHost",
+            "round", "maxRounds", "httpStatusCode", "exceptionType",
+            "causeCode", "causeTitle", "causeShortCause", "causePhase", "retryable",
+            "remediationHint", "reportVersion", "evidenceJson", "reportText", "reportJson",
+        ];
+        var values = new Dictionary<string, JsonElement>();
+        foreach (var field in fields)
+            if (payload.TryGetProperty(field, out var value) && value.ValueKind != JsonValueKind.Null)
+                values[field] = value;
+        return JsonSerializer.SerializeToElement(values);
     }
 
     /// <summary>

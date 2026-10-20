@@ -69,6 +69,20 @@ const diagnosticCodes = (
 ): string[] => result.diagnostics.map((diagnostic) => diagnostic.code);
 
 describe('canonical merge（切片 1 纯函数）', () => {
+  it('keeps live failure diagnostics when a newer bounded snapshot only carries failed status', () => {
+    const diagnostic = { errorId: 'llm-1', causeCode: 'transport.request_upload_reset' };
+    const current = conversation({ messages: [agentMessage({
+      status: 'failed', turnOutcome: { status: 'failed', errorMessage: 'upload failed', diagnostic },
+    })] });
+    const candidate = conversation({ eventCursor: 13, messages: [agentMessage({
+      status: 'failed', turnOutcome: { status: 'failed' },
+    })] });
+    const merged = mergeCanonicalConversation(current, candidate);
+    expect(merged.conversation.messages[0].turnOutcome).toEqual({
+      status: 'failed', errorMessage: 'upload failed', diagnostic,
+    });
+  });
+
   it('inserts late materialized history in server order and repairs cached order', () => {
     const first = userMessage();
     const reply = agentMessage();

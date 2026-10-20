@@ -1646,6 +1646,8 @@ public sealed partial class AgentExecutionService
             ? $"HTTP_{httpStatusCode.Value}"
             : exception is VisionPipelineException vision ? vision.Code : exception.GetType().Name;
 
+        var errorId = $"llm-{Guid.NewGuid():N}";
+        var providerId = request.CallerLlmSnapshot?.ProviderId ?? request.LlmProfile?.ProviderId;
         // 投影与导出：给界面「标题 + 大概原因 + 建议动作」，给用户「一键复制完整现场」的载荷。
         var export = TerminalDiagnosticExport.Build(
             exception,
@@ -1657,12 +1659,11 @@ public sealed partial class AgentExecutionService
                 TurnId = request.MessageId,
                 MessageId = request.MessageId,
                 TraceId = traceId,
-                ErrorId = null,
+                ErrorId = errorId,
                 WorkspaceId = request.WorkspaceId,
                 AgentTemplateId = request.AgentTemplateId,
                 AgentInstanceId = agentInstanceId,
-                // 已知缺口：providerId 需要从 LLM 路由快照一路传到这里，本层拿不到（不猜，留空并登记）。
-                ProviderId = null,
+                ProviderId = providerId,
                 ModelId = llmConfig?.ModelId,
                 EndpointHost = SafeHost(llmConfig?.Endpoint),
                 Round = round,
@@ -1673,7 +1674,7 @@ public sealed partial class AgentExecutionService
         return new StreamErrorDiagnostic
         {
             IsError = true,
-            ErrorId = $"llm-{Guid.NewGuid():N}",
+            ErrorId = errorId,
             Message = message,
             SessionId = request.SessionId,
             MessageId = request.MessageId,
@@ -1690,7 +1691,7 @@ public sealed partial class AgentExecutionService
             WorkspaceId = request.WorkspaceId,
             AgentTemplateId = request.AgentTemplateId,
             AgentInstanceId = agentInstanceId,
-            ProviderId = null,
+            ProviderId = providerId,
             ModelId = llmConfig?.ModelId,
             EndpointHost = SafeHost(llmConfig?.Endpoint),
             CauseCode = export.CauseCode,

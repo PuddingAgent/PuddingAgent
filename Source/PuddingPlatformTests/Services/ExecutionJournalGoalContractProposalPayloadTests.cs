@@ -134,6 +134,30 @@ public sealed class ExecutionJournalGoalContractProposalPayloadTests
         Assert.AreEqual("Completed", root.GetProperty("kind").GetString());
     }
 
+    [TestMethod]
+    public async Task CommitFailedTerminal_PreservesDiagnosticForExplicitHistoryExpansion()
+    {
+        var lease = await SeedRunningTurnAsync();
+        using var report = JsonDocument.Parse("""
+            {"errorId":"llm-test","causeCode":"transport.request_upload_reset","retryable":true,"reportText":"redacted report"}
+            """);
+        await _journal.CommitTerminalAsync(lease,
+            TurnTerminal.Failure("HttpRequestException", "upload failed") with { Diagnostic = report.RootElement.Clone() },
+            [], CancellationToken.None);
+        var query = new PuddingPlatform.Services.AgentChat.ConversationOpenQueryService(
+            _provider.GetRequiredService<IDbContextFactory<PlatformDbContext>>(),
+            NullLogger<PuddingPlatform.Services.AgentChat.ConversationOpenQueryService>.Instance);
+        var result = await query.GetTurnDiagnosticAsync("conversation-1", "turn-1");
+        Assert.IsNotNull(result);
+        Assert.AreEqual("upload failed", result.Value.GetProperty("errorMessage").GetString());
+        var diagnostic = result.Value.GetProperty("diagnostic");
+        Assert.AreEqual("llm-test", diagnostic.GetProperty("errorId").GetString());
+        Assert.IsTrue(diagnostic.GetProperty("retryable").GetBoolean());
+        Assert.AreEqual("redacted report", diagnostic.GetProperty("reportText").GetString());
+        Assert.IsNull(await query.GetTurnDiagnosticAsync("other-conversation", "turn-1"));
+        Assert.IsNull(await query.GetTurnDiagnosticAsync("conversation-1", "other-turn"));
+    }
+
     private async Task<ExecutionLease> SeedRunningTurnAsync()
     {
         const string commandId = "command-1";

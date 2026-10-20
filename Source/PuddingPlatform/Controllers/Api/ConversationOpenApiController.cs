@@ -48,6 +48,22 @@ public sealed class ConversationOpenApiController(
         return Ok(snapshot);
     }
 
+    /// <summary>按需读取失败回合的持久诊断，不增加首屏快照体积。</summary>
+    [HttpGet("conversations/{conversationId}/turns/{turnId}/diagnostic")]
+    public async Task<IActionResult> GetTurnDiagnostic(
+        string conversationId, string turnId, CancellationToken ct)
+    {
+        try
+        {
+            var diagnostic = await queryService.GetTurnDiagnosticAsync(conversationId, turnId, ct);
+            return diagnostic is null ? NotFound() : Ok(diagnostic.Value);
+        }
+        catch (ConversationQueryException ex)
+        {
+            return BadRequest(new { code = ex.Code, message = ex.Message });
+        }
+    }
+
     /// <summary>历史消息键集分页；游标绑定 conversation 与稳定排序。</summary>
     [HttpGet("conversations/{conversationId}/history")]
     public async Task<ActionResult<ConversationHistoryPage>> GetHistory(

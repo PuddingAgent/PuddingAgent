@@ -12,6 +12,25 @@ namespace PuddingRuntimeTests.Services;
 public sealed class TurnExecutorAdapterTests
 {
     [TestMethod]
+    public async Task ExecuteAsync_CarriesOnlyPublicErrorDiagnosticIntoTerminalInfo()
+    {
+        var adapter = new TurnExecutorAdapter(new ErrorRuntimeDispatcher("""
+            {"message":"upload failed","errorId":"llm-test","causeCode":"transport.request_upload_reset",
+             "causeTitle":"模型服务连接中断","retryable":true,"reportText":"redacted report",
+             "apiKey":"must-not-cross-boundary","unrelated":{"secret":"hidden"}}
+            """), Microsoft.Extensions.Logging.Abstractions.NullLogger<TurnExecutorAdapter>.Instance);
+        var events = new List<TurnExecutionEvent>();
+        await foreach (var evt in adapter.ExecuteAsync(CreateContext(), CancellationToken.None))
+            events.Add(evt);
+        var diagnostic = events.Single().TerminalInfo!.Diagnostic!.Value;
+        Assert.AreEqual("llm-test", diagnostic.GetProperty("errorId").GetString());
+        Assert.IsTrue(diagnostic.GetProperty("retryable").GetBoolean());
+        Assert.AreEqual("redacted report", diagnostic.GetProperty("reportText").GetString());
+        Assert.IsFalse(diagnostic.TryGetProperty("apiKey", out _));
+        Assert.IsFalse(diagnostic.TryGetProperty("unrelated", out _));
+    }
+
+    [TestMethod]
     [DataRow("{\"errorCode\":\"vision.route_missing\",\"message\":\"route missing\"}", "vision.route_missing")]
     [DataRow("{\"code\":\"budget_exhausted\",\"message\":\"route missing\"}", "budget_exhausted")]
     [DataRow("{\"message\":\"route missing\"}", "runtime_execution_failed")]

@@ -2156,6 +2156,13 @@ export async function getSessionEvents(
   });
 }
 
+/** Explicit expansion of persisted failure details; never load full events on chat open. */
+export async function getTurnErrorDiagnostic(sessionId: string, turnId: string): Promise<Record<string, unknown>> {
+  return request(`/api/conversations/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/diagnostic`, {
+    method: 'GET',
+  });
+}
+
 // ── TR-01 / CU-02: canonical 轨迹合同（消息 UI 方案 §7.1 冻结）──
 // 服务端 SessionEventsController 对 SSE/replay/bootstrap 三路径下发同一
 // canonical 信封：eventId/sequence/type/occurredAt/runId/turnId/…/payload。
@@ -2200,6 +2207,8 @@ export interface ToolExecutionEventDto extends ExecutionEventDto {
 
 /** SSE 信封身份字段（canonical；voice/camera 等非信封帧可能不携带）。 */
 interface ConversationEventEnvelopeBase {
+  /** Redacted runtime failure report, persisted with turn.failed. */
+  diagnostic?: Record<string, unknown>;
   eventId?: string;
   sequence?: number;
   /** 前端游标锚点：SSE id（committed sequence）。 */

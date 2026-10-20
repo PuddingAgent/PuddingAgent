@@ -401,6 +401,7 @@ const createProjectedTurn = (
           ? executionError || ''
           : message.content,
       executionError,
+      errorDiagnostic: outcome?.diagnostic,
       isStreaming:
         !isUser &&
         !isInboundAgentMessage &&

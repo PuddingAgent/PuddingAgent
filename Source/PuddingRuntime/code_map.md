@@ -246,7 +246,7 @@
 | `Services/TodoTools/TodoToolModels.cs` | 待办三工具的共享参数模型 | `TodoToolJson` | `Services/TodoTools/TodoWriteTool.cs` | — |
 | `Services/TodoTools/TodoWriteTool.cs` | `todo_write`：全量替换待办表 | `TodoWriteTool` | `Services/TodoTools/TodoReadTool.cs` | — |
 | `Services/Tools/ToolExposurePlanner.cs` | 与 Provider 无关的工具暴露规划 | `ToolExposurePlanner` | `Tools/Platform/PuddingToolRegistry.cs` | 当前请求的目录冻结，新定义只在下一次 LLM round 生效 |
-| `Services/TurnExecutorAdapter.cs` | Turn 执行的门控与请求适配 | `TurnExecutorAdapter` | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | 后台忙碌时采用有界退避与节流日志 |
+| `Services/TurnExecutorAdapter.cs` | Turn 执行的门控与请求适配 | `TurnExecutorAdapter` | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | 后台忙碌时采用有界退避与节流日志；失败诊断按公开字段白名单写入 TerminalInfo，交由 canonical Journal 持久化 |
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
 | `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |
 | `Services/VolcengineArkImageGenerationProvider.cs` | 火山方舟的图片生成适配 | `VolcengineArkImageGenerationProvider` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | — |

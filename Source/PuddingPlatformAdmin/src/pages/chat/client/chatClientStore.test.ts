@@ -11,6 +11,34 @@ import { createMemoryAgentChatCache } from './localCache';
 import type { AgentConversationView } from './types';
 
 describe('agent chat client store', () => {
+  it('shows a failed turn with no model text and preserves its diagnostic through message projection', async () => {
+    const store = createAgentChatClientStore({
+      cache: createMemoryAgentChatCache(),
+      api: {
+        listStatuses: async () => [],
+        getConversation: async () => ({
+          workspaceId: 'default', ownerUserId: 'single-user', agentId: 'agent-a',
+          mainSessionId: 'session-a', eventCursor: 10, updatedAt: '2026-10-20T00:00:00Z',
+          messages: [],
+        }),
+      },
+    });
+    await store.selectAgent('default', 'agent-a');
+    const diagnostic = { causeTitle: '模型服务连接中断', reportText: 'redacted upload report', retryable: true };
+    store.applyLiveEvent('default', 'agent-a', {
+      type: 'turn.failed', eventId: 'error-11', sequence: 11, occurredAt: '2026-10-20T00:00:01Z',
+      turnId: 'turn-1', runId: 'run-1', messageId: 'assistant-1',
+      errorMessage: 'upload failed', diagnostic,
+    } as unknown as AdminChatStreamEvent);
+    const failed = store.getSnapshot().conversation!.messages[0];
+    expect(failed.turnOutcome?.diagnostic).toEqual(diagnostic);
+    const turns: ChatTurn[] = [];
+    mergeProjectedMessageIntoTurns(turns, failed, 'Pudding');
+    expect(buildMessageBlocks(turns).find(block => block.role === 'agent')).toMatchObject({
+      status: 'error', executionError: 'upload failed', errorDiagnostic: diagnostic,
+    });
+  });
+
   beforeEach(() => {
     clearPerfEvents();
     setPerfDiagnosticsEnabled(true);
