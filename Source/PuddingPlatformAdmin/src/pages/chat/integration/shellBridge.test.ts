@@ -1,5 +1,6 @@
 import {
   attachShellBridge,
+  COMPOSER_INSERT,
   detectShellTransport,
   DOC_PANEL_OPENED,
   readShellMessage,
@@ -85,11 +86,33 @@ describe('shellBridge', () => {
     expect(detectShellTransport()).toBeNull();
   });
 
-  it('只接受契约内的两种 type', () => {
+  it('只接受契约内的 type', () => {
     expect(readShellMessage({ type: DOC_PANEL_OPENED })).toEqual({ type: DOC_PANEL_OPENED });
     expect(readShellMessage({ type: TOOL_PANEL_OPENED })).toEqual({ type: TOOL_PANEL_OPENED });
     expect(readShellMessage({ type: 'other' })).toBeNull();
     expect(readShellMessage(undefined)).toBeNull();
     expect(readShellMessage([])).toBeNull();
+  });
+
+  it('收到「插入对话」时把文本交给宿主，空文本不算数', () => {
+    const fake = makeTransport();
+    const onComposerInsert = jest.fn();
+    attachShellBridge({ onToolPanelOpened: jest.fn(), onComposerInsert }, fake.transport);
+
+    fake.emit({ type: COMPOSER_INSERT, text: '【画布：部署验证 rev 2】' });
+    expect(onComposerInsert).toHaveBeenCalledWith('【画布：部署验证 rev 2】');
+
+    // 空/缺失/非字符串都不要：插一个空串只会让用户莫名多出空行。
+    fake.emit({ type: COMPOSER_INSERT, text: '' });
+    fake.emit({ type: COMPOSER_INSERT });
+    fake.emit({ type: COMPOSER_INSERT, text: 42 });
+    expect(onComposerInsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('没注册插入处理器时不会抛（旧宿主只实现了工具面板那一条）', () => {
+    const fake = makeTransport();
+    attachShellBridge({ onToolPanelOpened: jest.fn() }, fake.transport);
+
+    expect(() => fake.emit({ type: COMPOSER_INSERT, text: 'x' })).not.toThrow();
   });
 });

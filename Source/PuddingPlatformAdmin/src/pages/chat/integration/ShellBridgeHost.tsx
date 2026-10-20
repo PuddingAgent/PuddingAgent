@@ -14,6 +14,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { useSideArtifactActions, useSideArtifactState } from '../sideArtifact/SideArtifactContext';
+import { publishComposerInsert } from './composerInsert';
 import { attachShellBridge, type ShellBridge, type ShellTransport } from './shellBridge';
 
 export interface ShellBridgeHostProps {
@@ -28,7 +29,10 @@ export const ShellBridgeHost: React.FC<ShellBridgeHostProps> = ({ transport }) =
 
   useEffect(() => {
     const bridge = attachShellBridge(
-      { onToolPanelOpened: () => actions?.close() },
+      {
+        onToolPanelOpened: () => actions?.close(),
+        onComposerInsert: (text) => publishComposerInsert(text),
+      },
       transport === undefined ? undefined : transport,
     );
     bridgeRef.current = bridge;

@@ -39,6 +39,7 @@ import { createDashScopeVoiceInputAdapter } from '../hooks/dashScopeVoiceInput';
 import type { ChatInteractionQueueItem } from '../hooks/useChatState';
 
 import { useChatStyles } from '../styles';
+import { subscribeComposerInsert } from '../integration/composerInsert';
 import type { PermissionMode } from '../types/chatStateTypes';
 
 import ComposerTextInput, {
@@ -333,6 +334,22 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   /** 输入叶子组件句柄（草稿态/IME 守卫/命令面板已下沉，外部改写走 setValue） */
   const textInputRef = useRef<ComposerTextInputHandle | null>(null);
+
+  /**
+   * 原生外壳要求把文本插进输入框（工具区画布的「添加到对话」）。
+   *
+   * 追加而不是覆盖：用户可能已经在写，直接清掉会丢掉他的草稿。
+   * 空文本已在信道层被过滤（见 composerInsert.ts），这里不再重复判空。
+   * 插完给焦点，否则用户还得自己点一下才能继续打。
+   */
+  useEffect(() => {
+    return subscribeComposerInsert((text) => {
+      const current = textInputRef.current?.getValue() ?? '';
+      const next = current.trim().length > 0 ? `${current}\n\n${text}` : text;
+      textInputRef.current?.setValue(next);
+      textInputRef.current?.focus();
+    });
+  }, []);
 
   /**
    * 技能选择 → 挂为 chip（用户定调 2026-09-23：展示为 chip，发送时才转文本）。

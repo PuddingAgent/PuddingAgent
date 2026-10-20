@@ -971,8 +971,7 @@ public sealed partial class MainWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(0, 0, 8, 6),
         };
-        toolbar.Children.Add(PanelAction("添加到对话", (_, _) =>
-            ToolStatusText.Text = "「添加到对话」需要 Core 的对话写入通道，尚未接入。"));
+        toolbar.Children.Add(PanelAction("添加到对话", (_, _) => AddPanelToChat(tab)));
         toolbar.Children.Add(PanelAction("下载到本地", async (_, _) => await ExportPanelAsync(tab)));
         Grid.SetRow(toolbar, 0);
         host.Children.Add(toolbar);
@@ -1352,6 +1351,45 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private string BuildStandalonePanelHtml(string content) =>
         PanelCanvasDocument.WrapForExport(content, CurrentWorkbenchScheme());
+
+    /// <summary>
+    /// 「添加到对话」：把画布内容的**引用**插进对话输入框。
+    ///
+    /// 画布在独立 WebView2 里拿不到输入框，按钮又由原生 XAML 画 —— 两边各缺一半，
+    /// 所以由这里转发一条消息给主工作台（消息契约见前端
+    /// <c>integration/shellBridge.ts</c>，消费方在 <c>IntentConsole</c>）。
+    ///
+    /// 只发引用不发展开内容：整张 SVG 塞进输入框既难读，也会白白占上下文。
+    /// </summary>
+    private void AddPanelToChat(ToolTab tab)
+    {
+        var core = _web?.CoreWebView2;
+        if (core is null)
+        {
+            // 宁可如实报不可用，也不要弹一个看起来成功、实际什么都没发生的提示。
+            ToolStatusText.Text = "工作台尚未就绪，无法插入对话。";
+            return;
+        }
+
+        var title = string.IsNullOrWhiteSpace(tab.Title) ? "交互面板" : tab.Title;
+        var text = _panelRenderedRevision.TryGetValue(tab.Id, out var revision)
+            ? $"【画布：{title} rev {revision}】"
+            : $"【画布：{title}】";
+
+        try
+        {
+            // 手写外层结构、只用 JsonSerializer 序列化字符串值：避开匿名类型在
+            // trimming/AOT 下的元数据依赖。
+            var payload = "{\"type\":\"pudding.composer.insert\",\"text\":"
+                + JsonSerializer.Serialize(text) + "}";
+            core.PostWebMessageAsJson(payload);
+            ToolStatusText.Text = $"已插入对话输入框：{title}";
+        }
+        catch (Exception ex)
+        {
+            ToolStatusText.Text = $"插入对话失败：{ex.Message}";
+        }
+    }
 
     private static Button PanelAction(string text, RoutedEventHandler onClick)
     {

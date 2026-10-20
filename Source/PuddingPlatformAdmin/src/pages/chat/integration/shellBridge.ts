@@ -26,6 +26,13 @@
 
 export const DOC_PANEL_OPENED = 'pudding.docPanel.opened';
 export const TOOL_PANEL_OPENED = 'pudding.toolPanel.opened';
+//
+//   ｜原生 → Web：{ type: 'pudding.composer.insert', text }
+//   意义：把一段文本插进对话输入框（工具区画布的「添加到对话」）。
+//   为什么需要它：画布在另一个 WebView2 里，它自己拿不到输入框；而按钮由原生
+//   XAML 画，原生拿得到主 WebView2，却不知道输入框在哪一层 React 组件里。
+//   两边各缺一半，所以必须由原生转发一条消息，由最靠近输入框的组件消费。
+export const COMPOSER_INSERT = 'pudding.composer.insert';
 
 export interface WebViewMessageEventLike {
   data: unknown;
@@ -64,10 +71,15 @@ export function detectShellTransport(win?: Window | null): ShellTransport | null
 }
 
 /** 只认我们自己的消息：外来 message（别的脚本/扩展）一律忽略。 */
-export function readShellMessage(data: unknown): { type: string } | null {
+export function readShellMessage(data: unknown): { type: string; text?: string } | null {
   if (typeof data !== 'object' || data === null) return null;
   const type = (data as { type?: unknown }).type;
   if (typeof type !== 'string') return null;
+  if (type === COMPOSER_INSERT) {
+    // 空文本没有任何意义，当作噪声丢掉，不要给输入框插一个空串。
+    const text = (data as { text?: unknown }).text;
+    return typeof text === 'string' && text.length > 0 ? { type, text } : null;
+  }
   if (type !== DOC_PANEL_OPENED && type !== TOOL_PANEL_OPENED) return null;
   return { type };
 }
@@ -75,6 +87,8 @@ export function readShellMessage(data: unknown): { type: string } | null {
 export interface ShellBridgeHandlers {
   /** 原生工具面板即将展开 ⇒ Web 收起文档面板。 */
   onToolPanelOpened: () => void;
+  /** 原生要求把一段文本插进对话输入框（工具区画布的「添加到对话」）。 */
+  onComposerInsert?: (text: string) => void;
 }
 
 export interface ShellBridge {
@@ -99,6 +113,9 @@ export function attachShellBridge(
     const message = readShellMessage(event.data);
     if (!message) return;
     if (message.type === TOOL_PANEL_OPENED) handlers.onToolPanelOpened();
+    else if (message.type === COMPOSER_INSERT && message.text) {
+      handlers.onComposerInsert?.(message.text);
+    }
   });
 
   return {
