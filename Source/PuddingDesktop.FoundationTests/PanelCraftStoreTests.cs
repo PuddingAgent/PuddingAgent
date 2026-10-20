@@ -479,6 +479,69 @@ public sealed class PanelCraftStoreTests : IDisposable
         Assert.Equal(first.Id, second.Parent);
     }
 
+    // ── 改名 ──────────────────────────────────
+
+    [Fact]
+    public void Rename_changes_only_the_title()
+    {
+        var saved = SaveBasic(parent: "craft-01234567");
+
+        var updated = _store.Rename(saved.Id, "  新版名字  ");
+
+        Assert.NotNull(updated);
+        Assert.Equal("新版名字", updated!.Title);
+
+        var loaded = Assert.Single(_store.List());
+        Assert.Equal("新版名字", loaded.Title);
+
+        // 改名不是重新保存：文件、哈希、血缘、时间都不该动。
+        Assert.Equal(saved.FileName, loaded.FileName);
+        Assert.Equal(saved.Sha256, loaded.Sha256);
+        Assert.Equal(saved.Parent, loaded.Parent);
+        Assert.Equal(saved.CreatedAt, loaded.CreatedAt);
+        Assert.Equal(saved.Source!.Annotations.Count, loaded.Source!.Annotations.Count);
+    }
+
+    [Fact]
+    public void Rename_refuses_a_blank_title_and_leaves_the_record_untouched()
+    {
+        var saved = SaveBasic();
+
+        Assert.Null(_store.Rename(saved.Id, "   "));
+        Assert.Null(_store.Rename(saved.Id, null));
+
+        Assert.Equal("金毛幼犬", Assert.Single(_store.List()).Title);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("craft-../../x")]
+    [InlineData("craft-0123ABCD")]
+    public void Rename_refuses_a_malformed_id(string? id)
+    {
+        SaveBasic();
+
+        Assert.Null(_store.Rename(id, "新名字"));
+    }
+
+    [Fact]
+    public void Rename_returns_null_when_the_record_is_missing()
+    {
+        Assert.Null(_store.Rename("craft-0123abcd", "新名字"));
+    }
+
+    [Fact]
+    public void Rename_truncates_an_overlong_title()
+    {
+        var saved = SaveBasic();
+
+        var updated = _store.Rename(saved.Id, new string('长', 200));
+
+        Assert.NotNull(updated);
+        Assert.Equal(PanelCraftStore.MaxTitleLength, updated!.Title.Length);
+    }
+
     // ── 血缘深度 ────────────────────────────────────────────
 
     [Fact]

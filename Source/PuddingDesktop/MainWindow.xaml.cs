@@ -1874,6 +1874,7 @@ public sealed partial class MainWindow : Window
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         actions.Children.Add(PanelAction("继续编辑", async (_, _) => await OpenCraftForEditingAsync(craft)));
         actions.Children.Add(PanelAction("打开文件", (_, _) => OpenCraftInExplorer(craft)));
+        actions.Children.Add(PanelAction("改名", async (_, _) => await RenameCraftAsync(craft)));
         actions.Children.Add(PanelAction("删除", (_, _) => DeleteCraft(craft)));
         body.Children.Add(actions);
 
@@ -1981,6 +1982,56 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             ToolStatusText.Text = $"删除失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 改名：弹一个输入框，只改 title。
+    ///
+    /// <para>
+    /// 用对话框而不是就地可编辑文本框：卡片每次刷新都会重建，
+    /// 就地编辑一旦碰上列表重建，用户正在输入的内容会被抹掉。
+    /// </para>
+    /// </summary>
+    private async Task RenameCraftAsync(PanelCraft craft)
+    {
+        var input = new TextBox
+        {
+            Text = craft.Title,
+            SelectionStart = craft.Title.Length,
+        };
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "重命名制成品",
+            Content = input,
+            PrimaryButtonText = "保存",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        try
+        {
+            var updated = CraftStore.Rename(craft.Id, input.Text);
+            if (updated is null)
+            {
+                // 空名字一概拒绝：不把「无名」写进制品库，也不假装成功了。
+                ToolStatusText.Text = "重命名失败：名称不能为空。";
+                return;
+            }
+
+            ToolStatusText.Text = $"已重命名为「{updated.Title}」";
+            RefreshCraftLibraryTab();
+        }
+        catch (Exception ex)
+        {
+            ToolStatusText.Text = $"重命名失败：{ex.Message}";
         }
     }
 

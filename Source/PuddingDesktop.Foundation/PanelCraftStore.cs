@@ -470,6 +470,57 @@ public sealed class PanelCraftStore
         return craft;
     }
 
+    /// <summary>制成品标题的字符上限。超长就截断：名字是人看的，长过一行就没意义了。</summary>
+    public const int MaxTitleLength = 120;
+
+    /// <summary>
+    /// 改名。**只改 title**，不碰图片、哈希与创建时间 —— 改名不是重新保存。
+    ///
+    /// <para>
+    /// 空白名字一律拒绝（返回 <c>null</c>）而不是静默回落成旧值/占位值：
+    /// 用户可能只是把输入框清空了，此时什么都不做比写进一个“无名”更接近他的意图。
+    /// </para>
+    /// </summary>
+    /// <returns>更新后的记录；id 非法、记录不存在、标题为空或写盘失败时返回 <c>null</c>。</returns>
+    public PanelCraft? Rename(string? id, string? title)
+    {
+        if (!PanelCraft.IsValidId(id))
+        {
+            return null;
+        }
+
+        var cleaned = title?.Trim();
+        if (string.IsNullOrEmpty(cleaned))
+        {
+            return null;
+        }
+
+        if (cleaned.Length > MaxTitleLength)
+        {
+            cleaned = cleaned[..MaxTitleLength];
+        }
+
+        var path = Path.Combine(CraftsDirectory, id + ".json");
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        var current = PanelCraftJson.Read(File.ReadAllText(path, Encoding.UTF8));
+        if (current is null)
+        {
+            return null;
+        }
+
+        var updated = current with { Title = cleaned };
+        File.WriteAllText(
+            path,
+            PanelCraftJson.Write(updated),
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        return updated;
+    }
+
     /// <summary>
     /// 列出全部制成品，按创建时间倒序。
     ///
