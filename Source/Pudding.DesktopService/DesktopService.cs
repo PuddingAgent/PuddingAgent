@@ -1091,8 +1091,9 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             }
         }
 
-        // 无页面目标的能力有两种来源，可信级别**来源不同**：
+        // 无页面目标的能力有三种来源，可信级别**来源不同**：
         // · 浏览器上下文作用域（Agent 工具层发起、无页面目标）⇒ BrowserContextCallerTrust；
+        // · 展示类（文档预览 / 面板渲染：Agent 让 Shell 呈现内容）⇒ PresentationCallerTrust；
         // · Shell 自身能力（对话框 / Picker / 剪贴板）⇒ ShellCallerTrust（默认 Untrusted，fail closed）。
         // 有页面目标的能力稍后会被 pageState.Trust 覆盖。
         // §5.3 request-aware：能力级 trait 取的是该能力**最严动作**的并集，不能当作每个动作的要求。
@@ -1109,7 +1110,9 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
 
         var trust = contextScoped
             ? _options.BrowserContextCallerTrust
-            : _options.ShellCallerTrust;
+            : DesktopCapabilityPolicy.IsPresentationScoped(capability)
+                ? _options.PresentationCallerTrust
+                : _options.ShellCallerTrust;
         if (requiresPageTarget)
         {
             if (target is null)

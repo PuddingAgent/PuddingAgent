@@ -159,12 +159,14 @@ public sealed class SurfaceAndAdmissionTests
     }
 
     [Fact]
-    public async Task PanelRender_IsRejectedForUntrustedCallerWithoutReachingTheSurface()
+    public async Task PanelRender_IsRejectedWhenPresentationTrustIsUntrusted()
     {
-        // 面板会把内容直接呈现给用户 ⇒ 与文档预览同级，只给 Workbench。
+        // 面板会把内容直接呈现给用户。信任来源是**展示类**那一份，不是 ShellCallerTrust：
+        // 它只可能来自 Agent 工具层（render_panel），不是用户在本机点的按钮。
+        // 此处把展示信任收成 Untrusted，验证「收回后仍然 fail closed 且不触及面」。
         var harness = ServiceHarness.Create(
             allowed: DesktopCapability.ShellPanelRender,
-            shellCallerTrust: DesktopContextTrust.Untrusted,
+            presentationCallerTrust: DesktopContextTrust.Untrusted,
             hasThreadAccess: true);
 
         var request = DesktopCapabilityRequest.ForPanelRender(

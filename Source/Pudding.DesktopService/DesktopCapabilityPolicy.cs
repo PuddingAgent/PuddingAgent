@@ -40,11 +40,14 @@ public static class DesktopCapabilityPolicy
         [DesktopCapability.ShellDialog] = [DesktopContextTrust.Workbench],
         [DesktopCapability.ShellFilePicker] = [DesktopContextTrust.Workbench],
         [DesktopCapability.ShellClipboard] = [DesktopContextTrust.Workbench],
-        // 文档预览与剪贴板同级：它会把工作区文件内容呈现给用户，属于 Shell 交互类，
-        // 普通网页与未授权调用方一律不得触发。
-        [DesktopCapability.ShellDocumentPreview] = [DesktopContextTrust.Workbench],
+        // 文档预览：会把工作区文件内容呈现给用户，普通网页不得触发。
+        // 两个可信来源都是**可信上下文**：工作台页面（用户自己点开）与获授权的 Agent
+        // （preview_document 工具）。它不是 Shell 自己的 UI 动作，所以不走 ShellCallerTrust。
+        [DesktopCapability.ShellDocumentPreview] =
+            [DesktopContextTrust.AgentAuthorized, DesktopContextTrust.Workbench],
         // 面板渲染与文档预览同级：会把内容直接呈现给用户，普通网页不得触发。
-        [DesktopCapability.ShellPanelRender] = [DesktopContextTrust.Workbench],
+        [DesktopCapability.ShellPanelRender] =
+            [DesktopContextTrust.AgentAuthorized, DesktopContextTrust.Workbench],
         // 快照读取会遍历 DOM（同样是脚本注入）：只对获授权的 Agent 浏览器开放，工作台与普通网页都不允许。
         [DesktopCapability.BrowserSnapshot] = [DesktopContextTrust.AgentAuthorized],
         // §8.1 截图：只读能力，与 snapshot 同级信任。
@@ -78,6 +81,24 @@ public static class DesktopCapabilityPolicy
         or DesktopCapability.BrowserContextClose
         or DesktopCapability.BrowserBindingApply
         or DesktopCapability.BrowserBindingRevoke;
+
+    /// <summary>
+    /// 该能力是否属于**展示类**（告诉 Shell 把现有内容呈现给用户：文档预览 / 面板渲染）。
+    ///
+    /// <para>
+    /// 为什么要与 Shell 自身 UI 动作分开：这两类能力只可能来自 Core 的 Agent 工具层
+    /// （<c>preview_document</c> / <c>render_panel</c>），它们不是用户在本机点按钮引发的动作，
+    /// 也没有页面目标（拿不到 <c>pageState.Trust</c>）。若沿用 <c>ShellCallerTrust</c>
+    /// （默认 Untrusted），启用能力通道后这两条链路会**握手成功但一律 Unauthorized**
+    /// —— 与外部审查 P1-1 是同一类缺陷。
+    /// </para>
+    /// <para>
+    /// 对话框 / Picker / 剪贴板**不在**此列，仍走 <c>ShellCallerTrust</c>（fail closed，逐能力开放）。
+    /// </para>
+    /// </summary>
+    public static bool IsPresentationScoped(DesktopCapability capability) => capability
+        is DesktopCapability.ShellDocumentPreview
+        or DesktopCapability.ShellPanelRender;
 
     public static bool IsAllowedForTrust(DesktopCapability capability, DesktopContextTrust trust) =>
         AllowedTrust.TryGetValue(capability, out var allowed) && Array.IndexOf(allowed, trust) >= 0;

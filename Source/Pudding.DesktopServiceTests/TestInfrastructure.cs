@@ -541,6 +541,7 @@ internal sealed class ServiceHarness
     public static ServiceHarness Create(
         DesktopCapability? allowed = null,
         DesktopContextTrust shellCallerTrust = DesktopContextTrust.Untrusted,
+        DesktopContextTrust presentationCallerTrust = DesktopContextTrust.AgentAuthorized,
         bool hasThreadAccess = false,
         Action<ManualUiDispatcher>? configureDispatcher = null,
         TimeProvider? clock = null,
@@ -572,6 +573,9 @@ internal sealed class ServiceHarness
                     | DesktopCapability.WebViewPageState
                     | DesktopCapability.ShellNotification),
             ShellCallerTrust = shellCallerTrust,
+            // 展示类（文档预览 / 面板渲染）走自己那一份来源，与产品缺省装配一致。
+            // 显式传 options 时本项不生效（options 完全采用传入值）。
+            PresentationCallerTrust = presentationCallerTrust,
         };
 
         var testClock = clock as TestTimeProvider ?? new TestTimeProvider();

@@ -54,13 +54,17 @@ public sealed class DesktopCapabilityChannelComposition : IAsyncDisposable
     /// </summary>
     public static DesktopServiceOptions CreateDefaultServiceOptions(
         DesktopContextTrust shellCallerTrust = DesktopContextTrust.Untrusted,
-        DesktopContextTrust browserContextCallerTrust = DesktopContextTrust.AgentAuthorized) => new()
+        DesktopContextTrust browserContextCallerTrust = DesktopContextTrust.AgentAuthorized,
+        DesktopContextTrust presentationCallerTrust = DesktopContextTrust.AgentAuthorized) => new()
         {
             AllowedCapabilities = DesktopCapabilityChannelSettings.DeclaredCapabilities,
             ShellCallerTrust = shellCallerTrust,
             // 浏览器上下文作用域单独给一份来源：它们是 Agent 工具层的调用，不是 Shell UI 动作
             // （外部审查 P1-1：沿用 Shell 信任会让 browser_context list/create/close 全被默认拒绝）。
             BrowserContextCallerTrust = browserContextCallerTrust,
+            // 展示类（文档预览 / 面板渲染）同理：Agent 让 Shell 呈现内容，不是 Shell 自己点的按钮。
+            // 沿用 Shell 信任会让这两条链路握手成功却一律 Unauthorized（P1-1 同类缺陷）。
+            PresentationCallerTrust = presentationCallerTrust,
         };
 
     /// <summary>

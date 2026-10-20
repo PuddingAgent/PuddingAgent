@@ -32,6 +32,22 @@ public sealed record DesktopServiceOptions
     /// </summary>
     public DesktopContextTrust BrowserContextCallerTrust { get; init; } = DesktopContextTrust.AgentAuthorized;
 
+    /// <summary>
+    /// **展示类**能力（<c>shell.document_preview</c> / <c>shell.panel_render</c>：把现有内容呈现给用户）
+    /// 采用的可信级别。
+    /// <para>
+    /// 默认 <see cref="DesktopContextTrust.AgentAuthorized"/>，与 <see cref="ShellCallerTrust"/> **分开**，
+    /// 理由与 <see cref="BrowserContextCallerTrust"/> 完全一致：这两类能力只可能来自 Core 的 Agent
+    /// 工具层（<c>preview_document</c> / <c>render_panel</c>），不是 Shell 自己的 UI 动作，
+    /// 也没有页面目标 ⇒ 拿不到 <c>pageState.Trust</c>。沿用 Shell 信任（默认 Untrusted）的后果是
+    /// **通道握手成功却一律 Unauthorized**（外部审查 P1-1 的同类缺陷）。
+    /// </para>
+    /// <para>
+    /// 对话框 / Picker / 剪贴板**不受此影响**，仍走 <see cref="ShellCallerTrust"/>。
+    /// </para>
+    /// </summary>
+    public DesktopContextTrust PresentationCallerTrust { get; init; } = DesktopContextTrust.AgentAuthorized;
+
     internal void Validate()
     {
         if (AllowedCapabilities == DesktopCapability.None)
