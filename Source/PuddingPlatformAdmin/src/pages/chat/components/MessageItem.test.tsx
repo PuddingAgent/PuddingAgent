@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import * as React from 'react';
 import MessageItem from './MessageItem';
 
@@ -70,9 +70,7 @@ describe('MessageItem markdown code rendering', () => {
 
     const { container } = render(<MessageItem markdownText={text} />);
 
-    // 该夹具含 3 个标题，会触发长消息折叠（2026-10-19 新默认行为）；
-    // 本用例验证的是 markdown 渲染本身，先展开再断言。
-    fireEvent.click(screen.getByTestId('fold-expand'));
+    // 长消息折叠已于 2026-10-20 取消：对话默认全展开，直接断言渲染结果。
 
     expect(container.querySelector('pre')).toBeTruthy();
     expect(

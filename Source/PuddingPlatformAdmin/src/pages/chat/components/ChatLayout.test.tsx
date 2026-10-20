@@ -166,27 +166,7 @@ describe('ChatLayout 右侧产物区宽度约束', () => {
     expect(screen.queryByTestId('side-panel-host')).toBeNull();
   });
 
-  // 回归：右侧面板曾无宽度上限，内容一宽就把聊天列压到 ~430px。
-  it('有 sidePanel 时外壳带可拖拽宽度与窗口窄时的硬顶', () => {
-    render(
-      <ChatLayout
-        {...(baseProps as any)}
-        sidePanel={<div data-testid="side-panel-content" />}
-      />,
-    );
-
-    const host = screen.getByTestId('side-panel-host');
-    // 字面量断言：引用实现常量会让“改常量时断言也跟着改”而永远绿。
-    expect(host.style.width).toBe('420px');
-    expect(host.style.maxWidth).toBe('55%');
-    // 分隔条必须存在，否则用户永远无法调宽度。
-    expect(screen.getByTestId('side-panel-resizer')).toBeTruthy();
-    // 内容确实渲染在外壳里（不是被丢掉的占位）
-    expect(screen.getByTestId('side-panel-content')).toBeTruthy();
-  });
-
-  it('没有 sidePanel 时不渲染分隔条', () => {
-    render(<ChatLayout {...(baseProps as any)} />);
-    expect(screen.queryByTestId('side-panel-resizer')).toBeNull();
-  });
+  // 2026-10-20 用户裁定：文档预览改由 Shell 的原生 tab + WebView2 承载，
+  // ChatLayout 不再有内嵌侧栏槽位。原“侧栏可拖宽 / 无 sidePanel 不渲染分隔条”
+  // 两条用例随功能一并移除（保留会让 tsc 报未知 prop）。
 });

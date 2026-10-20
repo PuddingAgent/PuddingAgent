@@ -6,9 +6,6 @@ import {
 } from '@/utils/perfEventRuntime';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import IncrementalMarkdown from './IncrementalMarkdown';
-import FoldableMessage from './FoldableMessage';
-import { useSideArtifactActions } from '../sideArtifact/SideArtifactContext';
-import { extractOutline } from '../markdown/outline';
 
 const MarkdownBlock =
   process.env.NODE_ENV === 'test'
@@ -29,11 +26,6 @@ interface MessageItemProps {
   visibleLiveText?: string;
   /** ADR-InkBloom: visible 在 liveText 中的起始偏移 */
   visibleStartOffset?: number;
-  /**
-   * 长消息「在右侧打开全文」回调。
-   * 未提供时不渲染该按钮——宁可少一个入口，也不给死按钮。
-   */
-  onOpenMessageInSide?: (markdown: string) => void;
 }
 
 const DeferredMarkdownFallback: React.FC<{
@@ -55,7 +47,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
   liveText,
   visibleLiveText,
   visibleStartOffset: _visibleStartOffset,
-  onOpenMessageInSide,
 }) => {
   const { styles: rawStyles } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
@@ -207,40 +198,20 @@ const MessageItem: React.FC<MessageItemProps> = ({
   // settle 时不重挂载已冻结块、不全文重解析，只提交最后的尾块。
   const renderedMarkdown = markdownText || (isStreaming ? ' ' : '');
 
-  // 「在右侧打开」的优先级：显式 prop > 页面级 context > 不渲染按钮。
-  // 没有 context 时（单测、独立使用）保持原来的行为，不造死按钮。
-  // 只用 actions（引用稳定）：长消息不需要知道当前打开了哪个文档，
-  // 因此不会因文档内容变化而重渲染。
-  const side = useSideArtifactActions();
-  const openInSide = onOpenMessageInSide
-    ? () => onOpenMessageInSide(renderedMarkdown)
-    : side
-      ? () =>
-          side.openDocument({
-            // 长消息**不是文件**：不加 `.md` 后缀，也不给 sourcePath。
-            // 旧实现用「标题 + .md」当文件名并允许「复制路径」，复制出来的是
-            // 磁盘上不存在的路径 —— 比不给按钮更有害。
-            // 用第一个标题当展示名；extractOutline 已跳过围栏代码块。
-            name: extractOutline(renderedMarkdown)[0]?.text ?? '对话消息',
-            markdown: renderedMarkdown,
-          })
-      : undefined;
+  // 对话默认全展开（2026-10-20 用户裁定）：取消「展开阅读 / 在对话中展开」。
+  // 需要通读的长文档不再塞进气泡折成卡片，而是写成外部文件、由 Shell 开一个
+  // 文档预览 tab（原生 WebView2）承载——聊天区只负责对话本身。
+  // 因此这里也不再需要折叠传参与「在右侧打开」回调。
 
   return (
     <div ref={outputRef} className={styles.markdownBody}>
       {renderedMarkdown.trim() ? (
-        <FoldableMessage
-          markdown={renderedMarkdown}
-          disabled={isStreaming}
-          onOpenInSide={openInSide}
-        >
-          <IncrementalMarkdown
-            text={renderedMarkdown}
-            styles={styles}
-            workspaceId={workspaceId}
-            isStreaming={isStreaming}
-          />
-        </FoldableMessage>
+        <IncrementalMarkdown
+          text={renderedMarkdown}
+          styles={styles}
+          workspaceId={workspaceId}
+          isStreaming={isStreaming}
+        />
       ) : null}
       {isStreaming && <span className={styles.streamingCursor}>▌</span>}
     </div>
