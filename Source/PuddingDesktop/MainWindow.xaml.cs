@@ -974,6 +974,12 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 0, 8, 6),
         };
         toolbar.Children.Add(PanelAction("标注", async (_, _) => await TogglePanelAnnotationAsync(tab)));
+        // 工具组常驻显示：先选工具再开标注，比先进标注再切更顺手。
+        foreach (var (id, label) in PanelTools)
+        {
+            toolbar.Children.Add(PanelAction(label, async (_, _) => await SetPanelToolAsync(tab, id)));
+        }
+        toolbar.Children.Add(PanelAction("撤销", async (_, _) => await UndoPanelAsync(tab)));
         toolbar.Children.Add(PanelAction("保存到制品库", async (_, _) => await SavePanelToCraftsAsync(tab)));
         toolbar.Children.Add(PanelAction("添加到对话", async (_, _) => await AddPanelToChatAsync(tab)));
         toolbar.Children.Add(PanelAction("下载到本地", async (_, _) => await ExportPanelAsync(tab)));
@@ -1433,6 +1439,65 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 切换画布工具（框 / 点 / 涂鸦 / 箭头 / 文字）。
+    ///
+    /// <para>
+    /// <paramref name="toolId"/> 只来自 <see cref="PanelTools"/> 常量表，
+    /// 不进用户输入，所以拼进脚本没有注入面。
+    /// </para>
+    /// </summary>
+    private async Task SetPanelToolAsync(ToolTab tab, string toolId)
+    {
+        if (!_panelCanvases.TryGetValue(tab.Id, out var web) || web.CoreWebView2 is null)
+        {
+            ToolStatusText.Text = "画布尚未就绪。";
+            return;
+        }
+
+        try
+        {
+            await web.CoreWebView2.ExecuteScriptAsync(
+                $"window.puddingAnnotation ? puddingAnnotation.setTool('{toolId}') : null");
+
+            ToolStatusText.Text = toolId switch
+            {
+                "pen" => "工具：涂鸦 —— 按住拖动写下笔迹（训练模式，记得先开「标注」）",
+                "arrow" => "工具：箭头 —— 从起点拖到终点",
+                "text" => "工具：文字 —— 图上点一下，再输入要改什么",
+                "point" => "工具：点选 —— 在目标上点一下",
+                _ => "工具：框选 —— 拖出矩形",
+            };
+        }
+        catch (Exception ex)
+        {
+            ToolStatusText.Text = $"切换工具失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>撤销画布上一步。橡皮擦就是这个 —— 单独做一个「擦」会跟撤销抢职责。</summary>
+    private async Task UndoPanelAsync(ToolTab tab)
+    {
+        if (!_panelCanvases.TryGetValue(tab.Id, out var web) || web.CoreWebView2 is null)
+        {
+            ToolStatusText.Text = "画布尚未就绪。";
+            return;
+        }
+
+        try
+        {
+            var raw = await web.CoreWebView2.ExecuteScriptAsync(
+                "window.puddingAnnotation ? String(puddingAnnotation.undo()) : 'false'");
+
+            // ExecuteScriptAsync 返回的是 JSON 字面量：字符串带引号，布尔不带。
+            ToolStatusText.Text = raw.Trim('"') == "true" ? "已撤销上一步" : "没有可撤销的操作";
+        }
+        catch (Exception ex)
+        {
+            ToolStatusText.Text = $"撤销失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
     /// 取回画布上的**完整载荷**（标注 + 来源图）。取不到时返回 null（不建失败），
     /// 由调用方决定退化成什么。解析失败会写状态栏：静默丢掉标注等于用户白画一遍。
     /// </summary>
@@ -1470,6 +1535,51 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 把画布烧录成一张带笔迹的 PNG（原图 + 所有标记）。
+    ///
+    /// <para>
+    /// 形式 1（官方「任意标记 + 自然语言」）要求笔迹存在于图片像素里，而标注层是
+    /// DOM 覆盖 —— 不烧录，模型收到的永远是干净原图，用户画了等于没画。
+    /// </para>
+    /// </summary>
+    /// <returns>落盘路径；画布未就绪、无标记或失败时返回 null。</returns>
+    private async Task<string?> TryComposePanelAsync(ToolTab tab)
+    {
+        if (!_panelCanvases.TryGetValue(tab.Id, out var web) || web.CoreWebView2 is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var raw = await web.CoreWebView2.ExecuteScriptAsync(
+                "window.puddingAnnotation ? puddingAnnotation.compose() : ''");
+
+            // ExecuteScriptAsync 把字符串结果再编码一层 JSON，这里必须反序列化。
+            var dataUrl = JsonSerializer.Deserialize<string>(raw);
+            const string prefix = "data:image/png;base64,";
+            if (string.IsNullOrWhiteSpace(dataUrl)
+                || !dataUrl.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            var bytes = Convert.FromBase64String(dataUrl[prefix.Length..]);
+            Directory.CreateDirectory(PanelMarkDirectory);
+
+            var path = Path.Combine(
+                PanelMarkDirectory, $"panel-marked-{DateTime.Now:yyyyMMdd-HHmmss-fff}.png");
+            await File.WriteAllBytesAsync(path, bytes);
+            return path;
+        }
+        catch (Exception)
+        {
+            // 烧录失败不该阻断整个插入：坐标路径仍然可用（形式 2 不依赖烧录图）。
+            return null;
+        }
+    }
+
+    /// <summary>
     /// 「添加到对话」：优先把**标注**变成坐标文本插进输入框（Seedream 交互编辑协议），
     /// 没有标注时退回插入画布引用。
     ///
@@ -1497,6 +1607,16 @@ public sealed partial class MainWindow : Window
                 ? $"【画布：{title} rev {revision}】"
                 : $"【画布：{title}】";
 
+        if (annotations.Count > 0)
+        {
+            // 坐标之外再给一张**带笔迹的图**：形式 1 靠它，形式 2 靠坐标，两者并存。
+            var markedPath = await TryComposePanelAsync(tab);
+            if (markedPath is not null)
+            {
+                text = $"【已画标记的图】{markedPath}\n{text}";
+            }
+        }
+
         try
         {
             // 手写外层结构、只用 JsonSerializer 序列化字符串值：避开匿名类型在
@@ -1520,6 +1640,26 @@ public sealed partial class MainWindow : Window
     /// 不依赖 Core 存活。
     /// </summary>
     private PanelCraftStore? _craftStore;
+
+    /// <summary>
+    /// 画布工具：id 必须与页面 <c>puddingAnnotation.setTool</c> 认的名字一致，
+    /// 否则按钮点了没反应（而页面不会报错）。
+    /// </summary>
+    private static readonly (string Id, string Label)[] PanelTools =
+    [
+        ("box", "框"),
+        ("point", "点"),
+        ("pen", "涂鸦"),
+        ("arrow", "箭头"),
+        ("text", "文字"),
+    ];
+
+    /// <summary>
+    /// 烧录图（原图 + 笔迹）的落盘目录。与制成品分开：
+    /// 制成品是用户资产，这些是中间产物，可随时重生。
+    /// </summary>
+    private string PanelMarkDirectory =>
+        Path.Combine(_coordinator.DataRoot!, "panel-marks");
 
     /// <summary>
     /// <c>_trash</c> 里的条目保留多久。7 天足够覆盖「误删后过几天才想起来」；
