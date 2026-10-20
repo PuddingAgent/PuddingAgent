@@ -193,7 +193,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 | 文档 | 主题 |
 |------|------|
-| [交互面板 ADR-099](Docs/07_architecture/113ADR-099交互面板编辑状态与制成品归属ADR.md) | 提案：编辑快照与会话归属、可信 Web 上传、Core 制成品服务和引用感知回收；设计与审阅由 ADR 链接 |
+| [交互面板 ADR-099](Docs/07_architecture/113ADR-099交互面板编辑状态与制成品归属ADR.md) | 提案：Agent 生成交互界面、SDK 双向事件、可恢复状态与 Core 资产归属；图片编辑为应用场景 |
 | [浏览器一期 ADR](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) · [实施方案](Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md) · [现有架构](Docs/07_architecture/浏览器工具与浏览器控制能力-架构与施工进度-2026-10-18.md) | 真实 Agent 浏览器闭环、单一执行链与分层验收；[命令合同与配套部署](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)，审阅证据由架构入口链接 |
 | [`Docs/README.md`](Docs/README.md) · [`Agents.md`](Agents.md) · [`Agents-Hygiene.md`](Docs/10_conventions/Agents-Hygiene.md) | 文档总索引与阅读顺序 · 开发与提交纪律 · 仓库卫生 |
 | [`组件化交付规程`](Docs/10_conventions/组件化交付规程.md) · [`调试入口`](Docs/08_how_debuge/README.md) · [`架构`](Docs/07_architecture/架构.md) · [`ADR 全表`](Docs/07_architecture/README.md) | 组件化交付 S1–S5 门禁（强制）· 调试与日志诊断 · 架构总览与模块分册 |
