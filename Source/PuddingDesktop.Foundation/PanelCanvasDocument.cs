@@ -135,7 +135,7 @@ public static class PanelCanvasDocument
           function paint() {
             if (!layer) return;
             layer.innerHTML = '';
-            items.forEach(function (it) {
+            items.forEach(function (it, index) {
               var d = document.createElement('div');
               var s = ['position:absolute','pointer-events:none',
                 'border:1.5px solid #3B6FA8','background:rgba(59,111,168,.14)'];
@@ -150,6 +150,25 @@ public static class PanelCanvasDocument
                 s.push('width:12px'); s.push('height:12px'); s.push('border-radius:50%');
               }
               d.style.cssText = s.join(';');
+
+              // 单个删除：画错了不必清空重画。
+              // 父子都是 pointer-events:none，这里必须显式恢复 auto，否则按钮点不到；
+              // pointerdown 要 stopPropagation，否则会顺带开始画一个新框。
+              var rm = document.createElement('button');
+              rm.type = 'button';
+              rm.textContent = '\u00D7';
+              rm.setAttribute('data-pudding-remove', String(index));
+              rm.style.cssText = 'position:absolute;top:-8px;right:-8px;width:16px;height:16px;'
+                + 'border-radius:50%;border:none;background:#3B6FA8;color:#fff;'
+                + 'font-size:11px;line-height:1;padding:0;cursor:pointer;pointer-events:auto';
+              rm.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+              rm.addEventListener('click', function (ev) {
+                ev.stopPropagation();
+                items.splice(index, 1);
+                paint();
+              });
+              d.appendChild(rm);
+
               layer.appendChild(d);
             });
           }

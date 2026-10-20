@@ -49,6 +49,21 @@ public sealed class PanelCanvasDocumentTests
     }
 
     [Fact]
+    public void Annotation_layer_offers_a_per_item_remove_button()
+    {
+        // 画错一个框不必清空重画。这里只钉住几个**一旦丢失就不会报错**的关键标记：
+        // 少了它们标注依然能画、测试依然全绿，但删除功能静默消失。
+        var html = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("data-pudding-remove", html, StringComparison.Ordinal);
+        Assert.Contains("items.splice(index, 1)", html, StringComparison.Ordinal);
+        // 父层是 pointer-events:none，不显式恢复 auto 的话按钮根本点不到。
+        Assert.Contains("pointer-events:auto", html, StringComparison.Ordinal);
+        // 不 stopPropagation 的话，点删除会顺带开始画一个新框。
+        Assert.Contains("ev.stopPropagation()", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Base_css_defaults_to_border_box_so_a_border_cannot_overflow_the_canvas()
     {
         // 实测缺陷：img 用 width:100% + border:1px，content-box 下比容器宽 2px，
