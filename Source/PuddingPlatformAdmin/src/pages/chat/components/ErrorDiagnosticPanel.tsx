@@ -7,6 +7,11 @@ import {
   type ChatErrorDiagnosticEvent,
 } from '../utils/chatDiagnostics';
 
+const actionStyle: React.CSSProperties = {
+  border: 0, background: 'transparent', color: 'var(--pudding-chat-text-secondary, #52617a)',
+  padding: '2px 0', font: 'inherit', cursor: 'pointer',
+};
+
 /** Failure details are fetched only when expanded, including after a page reload. */
 export default function ErrorDiagnosticPanel({
   event, sessionId, turnId, errorMessage,
@@ -51,21 +56,32 @@ export default function ErrorDiagnosticPanel({
     : formatChatErrorDiagnostic(diagnostic, { sessionId, turnId });
   return (
     <div data-testid="error-diagnostic-panel" style={{ marginTop: 8, fontSize: 12 }}>
-      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {open ? '收起诊断信息' : '查看诊断信息'}
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <button type="button" style={actionStyle} aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? '收起诊断信息' : '查看诊断信息'}
+        </button>
+        {open && (
+          <button type="button" style={{ ...actionStyle, opacity: loading ? 0.5 : 1 }}
+            disabled={loading} onClick={() => void copy()}>复制诊断信息</button>
+        )}
+        {open && copyStatus && <span role="status">{copyStatus}</span>}
+      </div>
       {open && (
         <div>
           {loading && <p role="status">正在读取诊断信息…</p>}
           {loadError && (
             <p role="status">
               未能读取完整报告，以下是当前可用信息。
-              <button type="button" onClick={() => setAttempt(attempt + 1)}>重新读取</button>
+              <button type="button" style={{ ...actionStyle, marginLeft: 8 }}
+                onClick={() => setAttempt(attempt + 1)}>重新读取</button>
             </p>
           )}
-          <button type="button" onClick={() => void copy()}>复制诊断信息</button>
-          {copyStatus && <p role="status">{copyStatus}</p>}
-          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 360, overflow: 'auto', marginTop: 8 }}>
+          <pre style={{
+            whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 360, overflow: 'auto',
+            margin: '8px 0 0', padding: '12px 14px', lineHeight: 1.65, borderRadius: 8,
+            border: '1px solid var(--pudding-chat-border, #dce1eb)',
+            background: 'var(--pudding-chat-surface, #fff)', color: 'inherit',
+          }}>
             {text}
           </pre>
         </div>
