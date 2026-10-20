@@ -66,7 +66,7 @@ public sealed class ImageGenerateOrchestrationNodeExecutor(
             ModelId = GetOptionalString(context.Node.Configuration, "modelId"),
             Mode = GetString(context.Node.Configuration, "mode", "default"),
             Size = GetString(context.Node.Configuration, "size", "2K"),
-            Watermark = GetBoolean(context.Node.Configuration, "watermark", true),
+            Watermark = GetBoolean(context.Node.Configuration, "watermark", false),
             OutputFormat = GetString(context.Node.Configuration, "outputFormat", "png"),
             OptimizePromptMode = GetString(context.Node.Configuration, "optimizePromptMode", "standard"),
             EnableWebSearch = GetBoolean(context.Node.Configuration, "enableWebSearch", false),

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -49,7 +49,7 @@ public sealed class GenerateImageTool(
                     Size = string.IsNullOrWhiteSpace(args.Size)
                         ? "2K"
                         : args.Size.Trim(),
-                    Watermark = args.Watermark ?? true,
+                    Watermark = args.Watermark ?? false,
                     OutputFormat = string.IsNullOrWhiteSpace(args.OutputFormat)
                         ? "png"
                         : args.OutputFormat.Trim(),
@@ -111,7 +111,7 @@ public sealed record GenerateImageArgs
     [ToolParam("Image size tier or exact dimensions, for example 2K or 2048x2048. Defaults to 2K; supported values depend on the selected model.")]
     public string? Size { get; init; }
 
-    [ToolParam("Whether the generated image includes the provider watermark. Defaults to true.")]
+    [ToolParam("Whether the generated image includes the provider watermark. Defaults to false.")]
     public bool? Watermark { get; init; }
 
     [ToolParam("Output format: png or jpeg. Defaults to png.")]
