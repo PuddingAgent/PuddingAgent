@@ -162,7 +162,51 @@ public static class PanelMarkRetention
             }
         }
 
+        // 顺手收拾自己留下的垃圾：图被用户（或别的工具）手动删掉后，
+        // 它的 .used 标记会一直留在目录里。只清“图已经不在了”的标记，
+        // 不动任何匹配不上的文件。
+        removed += PruneOrphanMarkers(directory);
+
         return removed;
+    }
+
+    /// <summary>清掉图已经不存在的 <c>.used</c> 标记；返回清掉的数量。</summary>
+    private static int PruneOrphanMarkers(string directory)
+    {
+        var cleaned = 0;
+        try
+        {
+            foreach (var marker in Directory.EnumerateFiles(
+                directory, Pattern + UsedSuffix, SearchOption.TopDirectoryOnly))
+            {
+                var image = marker[..^UsedSuffix.Length];
+                if (File.Exists(image))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    File.Delete(marker);
+                    cleaned++;
+                }
+                catch (IOException)
+                {
+                    // 占着就先留着，下次再说。
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+
+        return cleaned;
     }
 
     /// <summary>比较两个路径是否指向同一个文件（不追软链接，够用且不会因链环报错）。</summary>

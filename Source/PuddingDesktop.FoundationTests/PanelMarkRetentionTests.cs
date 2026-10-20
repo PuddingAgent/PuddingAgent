@@ -100,6 +100,20 @@ public sealed class PanelMarkRetentionTests : IDisposable
     }
 
     [Fact]
+    public void Prune_removes_a_used_marker_whose_image_is_gone()
+    {
+        // 用户可能直接在资源管理器里删图：图没了，.used 会一直留着。
+        var path = Write("panel-marked-orphan.jpg", DateTime.UtcNow);
+        PanelMarkRetention.MarkUsed(path);
+        File.Delete(path);
+
+        var removed = PanelMarkRetention.Prune(_root, keep: 0);
+
+        Assert.Equal(1, removed);
+        Assert.False(File.Exists(path + PanelMarkRetention.UsedSuffix));
+    }
+
+    [Fact]
     public void NeverTouchesFilesThatAreNotOurs()
     {
         // 用户可能把这个目录当普通文件夹用。前缀不匹配的一律不动。

@@ -542,6 +542,17 @@ public sealed class PanelCraftStoreTests : IDisposable
         Assert.Equal(PanelCraftStore.MaxTitleLength, updated!.Title.Length);
     }
 
+    [Fact]
+    public void Save_truncates_an_overlong_title_like_rename_does()
+    {
+        // 保存与改名必须同一套上限：否则同一件制品“改个名长度就变了”。
+        var saved = _store.Save(
+            CreateImage(), new string('长', 200), 10, 10, null, null, null, DateTimeOffset.UtcNow);
+
+        Assert.Equal(PanelCraftStore.MaxTitleLength, saved.Title.Length);
+        Assert.Equal(PanelCraftStore.MaxTitleLength, Assert.Single(_store.List()).Title.Length);
+    }
+
     // ── 血缘深度 ────────────────────────────────────────────
 
     [Fact]

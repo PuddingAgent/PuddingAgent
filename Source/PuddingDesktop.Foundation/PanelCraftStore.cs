@@ -450,7 +450,7 @@ public sealed class PanelCraftStore
 
         var craft = new PanelCraft(
             id,
-            string.IsNullOrWhiteSpace(title) ? id : title.Trim(),
+            string.IsNullOrWhiteSpace(title) ? id : (NormalizeTitle(title) ?? id),
             fileName,
             MimeFor(extension),
             width,
@@ -474,6 +474,25 @@ public sealed class PanelCraftStore
     public const int MaxTitleLength = 120;
 
     /// <summary>
+    /// 标题规范化：去空白、超长截断；空白返回 <c>null</c>。
+    ///
+    /// <para>
+    /// **保存与改名必须用同一套** —— 否则同一件制品会因为你从哪条路径进来，
+    /// 而有不同的长度上限，用户看到的就是“改个名长度就变了”。
+    /// </para>
+    /// </summary>
+    private static string? NormalizeTitle(string? title)
+    {
+        var cleaned = title?.Trim();
+        if (string.IsNullOrEmpty(cleaned))
+        {
+            return null;
+        }
+
+        return cleaned.Length > MaxTitleLength ? cleaned[..MaxTitleLength] : cleaned;
+    }
+
+    /// <summary>
     /// 改名。**只改 title**，不碰图片、哈希与创建时间 —— 改名不是重新保存。
     ///
     /// <para>
@@ -489,15 +508,10 @@ public sealed class PanelCraftStore
             return null;
         }
 
-        var cleaned = title?.Trim();
-        if (string.IsNullOrEmpty(cleaned))
+        var cleaned = NormalizeTitle(title);
+        if (cleaned is null)
         {
             return null;
-        }
-
-        if (cleaned.Length > MaxTitleLength)
-        {
-            cleaned = cleaned[..MaxTitleLength];
         }
 
         var path = Path.Combine(CraftsDirectory, id + ".json");
