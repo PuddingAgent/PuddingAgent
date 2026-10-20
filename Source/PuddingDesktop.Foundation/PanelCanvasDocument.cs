@@ -81,6 +81,9 @@ public static class PanelCanvasDocument
         (function () {
           if (window.puddingAnnotation) return;
           var items = [], layer = null, active = false, box = null, start = null, imageEl = null;
+          // layer 是复用的（ensureLayer 只建一次），bind 必须幂等：
+          // 否则「开→关→再开」会重复绑事件，一次拖拽落两个标注。
+          var bound = false;
 
           function biggestImage() {
             var best = null, area = 0, list = document.images;
@@ -171,6 +174,8 @@ public static class PanelCanvasDocument
           }
 
           function bind(l) {
+            if (bound) return;
+            bound = true;
             l.addEventListener('pointerdown', onDown);
             l.addEventListener('pointerup', onUp);
             // 拖到图片外面松手也要落一个框，否则越界的拖拽会默默消失。
