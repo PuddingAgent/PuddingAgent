@@ -94,6 +94,32 @@ public sealed class PanelAnnotationTests
     }
 
     [Fact]
+    public void Scribble_trail_is_decimated_but_keeps_both_ends()
+    {
+        // 抽稀必须发生在归一化之后：先抽稀再换算，抽稀时丢掉的极值点会把外接框变小，
+        // 而外接框是模型唯一看到的坐标。
+        var pixels = Enumerable.Range(0, 501).Select(i => ((double)i, (double)i)).ToArray();
+
+        var scribble = PanelAnnotation.ScribbleFromPixelTrail(pixels, 500, 500);
+
+        Assert.Equal(PanelAnnotation.MaxInkPoints, scribble.Points!.Count);
+        Assert.Equal(new PanelInkPoint(0, 0), scribble.Points[0]);
+        Assert.Equal(new PanelInkPoint(999, 999), scribble.Points[^1]);
+    }
+
+    [Fact]
+    public void Scribble_without_a_trail_still_produces_the_same_bbox()
+    {
+        // 老调用方（只知道外接框）与轨迹版本的 prompt 必须一致，
+        // 否则同一笔涂鸦会因为走了哪条路径而给模型不同的坐标。
+        var fromBox = PanelAnnotation.ScribbleFromPixels(80, 40, 400, 200, 800, 400);
+        var fromTrail = PanelAnnotation.ScribbleFromPixelTrail(
+            new[] { (80d, 40d), (240d, 120d), (400d, 200d) }, 800, 400);
+
+        Assert.Equal(fromBox.ToPromptFragment(), fromTrail.ToPromptFragment());
+    }
+
+    [Fact]
     public void Factory_rejects_out_of_range_and_inverted_boxes()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => PanelAnnotation.Box(-1, 0, 10, 10));

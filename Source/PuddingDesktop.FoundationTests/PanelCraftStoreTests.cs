@@ -345,6 +345,66 @@ public sealed class PanelCraftStoreTests : IDisposable
         Assert.False(Directory.Exists(path));
     }
 
+    // ── 标注往返（保存恢复闭环） ─────────────────────────────
+
+    [Fact]
+    public void List_round_trips_a_scribble_trail()
+    {
+        // 只存外接框的话，「继续编辑」重开画布时原图上再也画不出用户原本那笔，
+        // 而形式 1（任意标记 + 自然语言）正是靠笔迹让模型看懂意图的。
+        var trail = new[]
+        {
+            new PanelInkPoint(100, 120),
+            new PanelInkPoint(300, 200),
+            new PanelInkPoint(700, 880),
+        };
+
+        _store.Save(
+            CreateImage(), "涂鸦版", 800, 600,
+            new PanelCraftSource(
+                "edit-7ced1b33", null, null, new[] { PanelAnnotation.Scribble(trail) }),
+            parent: null,
+            note: null,
+            now: DateTimeOffset.UtcNow);
+
+        var loaded = Assert.Single(_store.List());
+        var annotation = Assert.Single(loaded.Source!.Annotations);
+
+        Assert.True(annotation.IsScribble);
+        Assert.Equal(trail, annotation.Points!);
+
+        // 外接框必须原样回来：从已抽稀的轨迹重算，会让重新打开后的坐标
+        // 与当初发给模型的不一致。
+        Assert.Equal("涂鸦 <bbox>100 120 700 880</bbox>", annotation.ToPromptFragment());
+    }
+
+    [Fact]
+    public void List_round_trips_arrows_and_text_instead_of_dropping_them()
+    {
+        // 归一化解析曾经只认 box/point：带箭头或文字的制成品读回时整份标注被拒，
+        // 表现是「保存成功了，继续编辑却什么都没有」。
+        var arrow = PanelAnnotation.Arrow(880, 900, 120, 100);
+        var text = PanelAnnotation.Text("左边的人", 300, 400);
+
+        _store.Save(
+            CreateImage(), "带箭头", 800, 600,
+            new PanelCraftSource("edit-x", null, null, new[] { arrow, text }),
+            parent: null,
+            note: null,
+            now: DateTimeOffset.UtcNow);
+
+        var loaded = Assert.Single(_store.List());
+        var annotations = loaded.Source!.Annotations;
+
+        Assert.Equal(2, annotations.Count);
+
+        // 方向靠顺序：排序会把箭头变成没方向的包围盒。
+        Assert.Equal(
+            "箭头 <point>880 900</point> → <point>120 100</point>",
+            annotations[0].ToPromptFragment());
+        Assert.Equal("文字「左边的人」 <point>300 400</point>", annotations[1].ToPromptFragment());
+    }
+
     // ── id 形状 ────────────────────────────────────────────────
 
     [Theory]

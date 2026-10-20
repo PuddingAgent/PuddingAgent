@@ -116,7 +116,14 @@ public static class PanelCraftJson
                 foreach (var annotation in craft.Source.Annotations)
                 {
                     writer.WriteStartObject();
-                    writer.WriteString("kind", KindToWire(annotation.Kind));
+                    // 涂鸦必须写成 "scribble"：写成 "box" 读回时轨迹就没了，
+                    // 而「保存 → 继续编辑 → 轨迹还在」正是制成品要闭环的那件事。
+                    // 无轨迹的旧版涂鸦仍写 "box"：读侧对 scribble 要求 points，写了反而会被整份拒掉。
+                    writer.WriteString(
+                        "kind",
+                        annotation.IsScribble && annotation.HasInkTrail
+                            ? "scribble"
+                            : KindToWire(annotation.Kind));
 
                     // box 与 arrow 都用 x1/y1/x2/y2；arrow 不排序，方向靠顺序。
                     if (annotation.Kind is PanelAnnotationKind.Box or PanelAnnotationKind.Arrow)
@@ -136,6 +143,20 @@ public static class PanelCraftJson
                     if (annotation.Label is not null)
                     {
                         writer.WriteString("label", annotation.Label);
+                    }
+
+                    if (annotation.IsScribble && annotation.HasInkTrail)
+                    {
+                        writer.WriteStartArray("points");
+                        foreach (var point in annotation.Points!)
+                        {
+                            writer.WriteStartObject();
+                            writer.WriteNumber("x", point.X);
+                            writer.WriteNumber("y", point.Y);
+                            writer.WriteEndObject();
+                        }
+
+                        writer.WriteEndArray();
                     }
 
                     writer.WriteEndObject();

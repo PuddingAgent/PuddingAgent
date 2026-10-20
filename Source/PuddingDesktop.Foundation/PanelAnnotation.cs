@@ -27,6 +27,9 @@ public enum PanelAnnotationKind
     Text,
 }
 
+/// <summary>涂鸦轨迹上的一个点，归一化 0–999。</summary>
+public readonly record struct PanelInkPoint(int X, int Y);
+
 /// <summary>
 /// 一次画布交互的完整载荷：**标注对象**（哪张图）+ 标注本身。
 ///
@@ -66,11 +69,22 @@ public sealed record PanelAnnotation
     /// <summary>一次最多接受的标注数量。超过通常是误用或恶意构造。</summary>
     public const int MaxItems = 10;
 
+    /// <summary>
+    /// 一条涂鸦轨迹最多保留的采样点。超长轨迹按等距抽稀。
+    ///
+    /// <para>
+    /// 上限的目的不是省算力，而是让 craft.json 不因为一笔涂鸦变成几十 KB；
+    /// 64 个点对「这笔落在哪、长什么样」已经足够，再多也看不出差别。
+    /// </para>
+    /// </summary>
+    public const int MaxInkPoints = 64;
+
     /// <summary>文字标签的长度上限（字符）。超长截断而不是拒绝。</summary>
     public const int MaxLabelLength = 200;
 
     private PanelAnnotation(
-        PanelAnnotationKind kind, int x1, int y1, int x2, int y2, string? label = null)
+        PanelAnnotationKind kind, int x1, int y1, int x2, int y2, string? label = null,
+        IReadOnlyList<PanelInkPoint>? points = null)
     {
         Kind = kind;
         X1 = x1;
@@ -78,9 +92,32 @@ public sealed record PanelAnnotation
         X2 = x2;
         Y2 = y2;
         Label = label;
+        Points = points;
     }
 
     public PanelAnnotationKind Kind { get; }
+
+    /// <summary>
+    /// 涂鸦的原始轨迹（归一化）。非涂鸦一律为 <c>null</c>。
+    ///
+    /// <para>
+    /// <b>不传给模型</b> —— 模型只要外接框。它存在只为两件事：把制成品重新打开时
+    /// 能画出用户原本那笔，以及烧录时能重新描一遍。丢掉它，「任意标记 + 自然语言」
+    /// 这种交互形式就永久失效，因为原图上再也没有笔迹。
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<PanelInkPoint>? Points { get; }
+
+    /// <summary>
+    /// 是不是涂鸦。涂鸦在模型协议里仍是一个 bbox，所以 <see cref="Kind"/> 是
+    /// <see cref="PanelAnnotationKind.Box"/>，只有标签把这些坐标标回「涂鸦」。
+    /// </summary>
+    public bool IsScribble =>
+        Kind == PanelAnnotationKind.Box
+        && string.Equals(Label, ScribbleLabel, StringComparison.Ordinal);
+
+    /// <summary>是否带得动轨迹。写成 craft.json 时用它挡掉「旧版无轨迹的涂鸦」。</summary>
+    public bool HasInkTrail => Points is { Count: > 0 };
 
     /// <summary>
     /// 语义标签：涂鸦写「涂鸦」，文字标注写用户输入的原文。
@@ -195,13 +232,106 @@ public sealed record PanelAnnotation
             PanelAnnotationKind.Box, box.X1, box.Y1, box.X2, box.Y2, ScribbleLabel);
     }
 
-    /// <summary>由像素范围建立涂鸦标注。</summary>
+    /// <summary>由像素范围建立涂鸦标注（无轨迹，供只知道外接框的调用方）。</summary>
     public static PanelAnnotation ScribbleFromPixels(
         double x1, double y1, double x2, double y2, double width, double height)
     {
         var box = FromPixels(x1, y1, x2, y2, width, height);
         return new PanelAnnotation(
             PanelAnnotationKind.Box, box.X1, box.Y1, box.X2, box.Y2, ScribbleLabel);
+    }
+
+    /// <summary>
+    /// 由**归一化轨迹**建立涂鸦：外接框给模型，轨迹留给保存与回放。
+    ///
+    /// <para>
+    /// 轨迹必须随制成品一起存下去：只留外接框，重新打开时就再也画不出用户原本那笔。
+    /// </para>
+    /// </summary>
+    public static PanelAnnotation Scribble(IReadOnlyList<PanelInkPoint> points)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+        if (points.Count == 0)
+        {
+            throw new ArgumentException("Scribble needs at least one point.", nameof(points));
+        }
+
+        var (minX, minY, maxX, maxY) = BoundsOf(points);
+        return new PanelAnnotation(
+            PanelAnnotationKind.Box, minX, minY, maxX, maxY, ScribbleLabel, Decimate(points));
+    }
+
+    /// <summary>
+    /// 由**像素轨迹**建立涂鸦：逐点归一化，再抽稀到 <see cref="MaxInkPoints"/>。
+    ///
+    /// <para>
+    /// 抽稀必须在归一化之后：先抽稀再换算，抽稀时丟掉的极值点会把外接框变小，
+    /// 而外接框是模型唯一看到的坐标 —— 看起来只是“框小了一点”，实际上控错了区域。
+    /// </para>
+    /// </summary>
+    public static PanelAnnotation ScribbleFromPixelTrail(
+        IReadOnlyList<(double X, double Y)> pixels, double width, double height)
+    {
+        ArgumentNullException.ThrowIfNull(pixels);
+        if (pixels.Count == 0)
+        {
+            throw new ArgumentException("Scribble needs at least one point.", nameof(pixels));
+        }
+
+        var normalized = new List<PanelInkPoint>(pixels.Count);
+        foreach (var (x, y) in pixels)
+        {
+            normalized.Add(new PanelInkPoint(Normalize(x, width), Normalize(y, height)));
+        }
+
+        return Scribble(normalized);
+    }
+
+    /// <summary>轨迹外接框。要求点已在 0–999 范围内。</summary>
+    private static (int MinX, int MinY, int MaxX, int MaxY) BoundsOf(
+        IReadOnlyList<PanelInkPoint> points)
+    {
+        var minX = MaxCoordinate;
+        var minY = MaxCoordinate;
+        var maxX = 0;
+        var maxY = 0;
+
+        foreach (var point in points)
+        {
+            RequireInRange(point.X, nameof(points));
+            RequireInRange(point.Y, nameof(points));
+            minX = Math.Min(minX, point.X);
+            minY = Math.Min(minY, point.Y);
+            maxX = Math.Max(maxX, point.X);
+            maxY = Math.Max(maxY, point.Y);
+        }
+
+        return (minX, minY, maxX, maxY);
+    }
+
+    /// <summary>
+    /// 等距抽稀，**保留首末两点**。
+    ///
+    /// <para>
+    /// 首末被抽掉的话，笔画会短一截：用户画的是一根从头到尾的箭头，回来变中间一段。
+    /// </para>
+    /// </summary>
+    private static IReadOnlyList<PanelInkPoint> Decimate(IReadOnlyList<PanelInkPoint> points)
+    {
+        if (points.Count <= MaxInkPoints)
+        {
+            return points;
+        }
+
+        var result = new List<PanelInkPoint>(MaxInkPoints);
+        var step = (points.Count - 1) / (double)(MaxInkPoints - 1);
+        for (var i = 0; i < MaxInkPoints; i++)
+        {
+            var index = (int)Math.Min(points.Count - 1, Math.Round(i * step));
+            result.Add(points[index]);
+        }
+
+        return result;
     }
 
     /// <summary>涂鸦在图元列表里的标签。它是模型能读到的唯一线索。</summary>
@@ -616,10 +746,7 @@ public sealed record PanelAnnotation
                 return false;
             }
 
-            var minX = double.MaxValue;
-            var minY = double.MaxValue;
-            var maxX = double.MinValue;
-            var maxY = double.MinValue;
+            var trail = new List<(double X, double Y)>(points.GetArrayLength());
 
             foreach (var point in points.EnumerateArray())
             {
@@ -629,13 +756,10 @@ public sealed record PanelAnnotation
                     return false;
                 }
 
-                minX = Math.Min(minX, px);
-                maxX = Math.Max(maxX, px);
-                minY = Math.Min(minY, py);
-                maxY = Math.Max(maxY, py);
+                trail.Add((px, py));
             }
 
-            annotation = ScribbleFromPixels(minX, minY, maxX, maxY, width, height);
+            annotation = ScribbleFromPixelTrail(trail, width, height);
             return true;
         }
 
@@ -724,6 +848,86 @@ public sealed record PanelAnnotation
             }
 
             annotation = new PanelAnnotation(PanelAnnotationKind.Point, x, y, 0, 0);
+            return true;
+        }
+
+        if (string.Equals(kindText, "arrow", StringComparison.OrdinalIgnoreCase))
+        {
+            // 方向由 (x1,y1) → (x2,y2) 决定，**不排序**：排序会把箭头变成没方向的包围盒。
+            if (!TryReadCoordinate(element, "x1", out var ax1)
+                || !TryReadCoordinate(element, "y1", out var ay1)
+                || !TryReadCoordinate(element, "x2", out var ax2)
+                || !TryReadCoordinate(element, "y2", out var ay2))
+            {
+                error = "arrow annotation needs integer x1,y1,x2,y2 within 0..999.";
+                return false;
+            }
+
+            annotation = new PanelAnnotation(PanelAnnotationKind.Arrow, ax1, ay1, ax2, ay2);
+            return true;
+        }
+
+        if (string.Equals(kindText, "text", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryReadCoordinate(element, "x", out var tx) || !TryReadCoordinate(element, "y", out var ty))
+            {
+                error = "text annotation needs integer x,y within 0..999.";
+                return false;
+            }
+
+            var text = SanitizeLabel(ReadString(element, "label"));
+            if (text is null)
+            {
+                error = "text annotation needs a non-empty 'label'.";
+                return false;
+            }
+
+            annotation = new PanelAnnotation(PanelAnnotationKind.Text, tx, ty, 0, 0, text);
+            return true;
+        }
+
+        if (string.Equals(kindText, "scribble", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!element.TryGetProperty("points", out var ink)
+                || ink.ValueKind != System.Text.Json.JsonValueKind.Array
+                || ink.GetArrayLength() == 0)
+            {
+                error = "scribble annotation needs a non-empty 'points' array.";
+                return false;
+            }
+
+            var trail = new List<PanelInkPoint>(ink.GetArrayLength());
+            foreach (var point in ink.EnumerateArray())
+            {
+                if (!TryReadCoordinate(point, "x", out var px)
+                    || !TryReadCoordinate(point, "y", out var py))
+                {
+                    error = "scribble points need integer x,y within 0..999.";
+                    return false;
+                }
+
+                trail.Add(new PanelInkPoint(px, py));
+            }
+
+            // 文件里同时存了外接框与轨迹：能用就用存的框，而不是从（可能已抽稀的）
+            // 轨迹重算 —— 重算会让重新打开后的 bbox 与当初发给模型的不一致。
+            if (TryReadCoordinate(element, "x1", out var bx1)
+                && TryReadCoordinate(element, "y1", out var by1)
+                && TryReadCoordinate(element, "x2", out var bx2)
+                && TryReadCoordinate(element, "y2", out var by2))
+            {
+                if (bx1 > bx2 || by1 > by2)
+                {
+                    error = "scribble box must be ordered: x1<=x2 and y1<=y2.";
+                    return false;
+                }
+
+                annotation = new PanelAnnotation(
+                    PanelAnnotationKind.Box, bx1, by1, bx2, by2, ScribbleLabel, trail);
+                return true;
+            }
+
+            annotation = Scribble(trail);
             return true;
         }
 
