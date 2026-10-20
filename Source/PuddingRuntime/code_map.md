@@ -238,7 +238,7 @@
 | `Services/TaskTools/TaskListTool.cs` | `task_list`：按范围列出任务 | `TaskListTool` | `Services/TaskTools/TaskToolModels.cs` | — |
 | `Services/TaskTools/TaskToolModels.cs` | 任务工具的共享参数模型与守卫 | `TaskToolGuard` | `Services/TaskTools/TaskUpdateTool.cs` | 上下文重建失败只附加非泄露诊断 |
 | `Services/TaskTools/TaskUpdateTool.cs` | `task_update`：提交状态迁移与处置 | `TaskUpdateTool` | `Services/TaskTools/TaskToolModels.cs` | 状态与处置合法性一律由服务端状态机裁决 |
-| `Services/TerminalProcessManager.cs` | OS 级进程的完整生命周期管理 | `ITerminalProcessManager` | `Tools/BuiltIns/Terminal/TerminalTools.cs` | — |
+| `Services/TerminalProcessManager.cs` | OS 级进程的完整生命周期管理 | `ITerminalProcessManager` | `Tools/BuiltIns/Terminal/TerminalTools.cs` | 正常完成在输出排空后公布；状态与输出同锁取快照 |
 | `Services/TerminalSecurity.cs` | 终端命令的白名单与危险模式拦截 | `ITerminalCommandPolicy` | `Tools/BuiltIns/Shell/HostShellTool.cs` | — |
 | `Services/TimeClusterAnalyzer.cs` | 会话间隔的时间聚类分析 | `TimeClusterAnalyzer` | `Services/ContextPipeline.cs` | — |
 | `Services/TodoTools/TodoCheckTool.cs` | `todo_check`：勾选单项待办状态 | `TodoCheckTool` | `Services/TodoTools/TodoToolModels.cs` | — |
@@ -345,7 +345,7 @@
 | `Tools/BuiltIns/Git/GitRemoteTool.cs` | `git_remote`：远端配置的查看与设置 | `GitRemoteTool` | `Tools/BuiltIns/Git/GitCloneTool.cs` | — |
 | `Tools/BuiltIns/Git/GitResetTool.cs` | `git_reset`：重置暂存区或提交 | `GitResetTool` | `Tools/BuiltIns/Git/GitCheckoutTool.cs` | — |
 | `Tools/BuiltIns/Git/GitStashTool.cs` | `git_stash`：工作区暂存与恢复 | `GitStashTool` | `Tools/BuiltIns/Git/GitStatusTool.cs` | — |
-| `Tools/BuiltIns/Git/GitStatusTool.cs` | `git_status`：工作区状态查询 | `GitStatusTool` | `Tools/BuiltIns/Git/GitDiffTool.cs` | — |
+| `Tools/BuiltIns/Git/GitStatusTool.cs` | `git_status`：工作区状态查询 | `GitStatusTool` | `Tools/BuiltIns/Git/GitDiffTool.cs` | 默认不枚举忽略文件；显式 include_ignored 可诊断忽略规则 |
 | `Tools/BuiltIns/Git/GitTagTool.cs` | `git_tag`：标签管理 | `GitTagTool` | `Tools/BuiltIns/Git/GitLogTool.cs` | — |
 | `Tools/BuiltIns/Http/FlurlWebClient.cs` | 基于 Flurl 的 HTTP 传输实现 | `IWebClient` | `Tools/BuiltIns/Http/HttpFetchContracts.cs` | — |
 | `Tools/BuiltIns/Http/HtmlContentExtractor.cs` | HTML 正文的抽取 | `HtmlContentExtractor` | `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | — |
@@ -388,7 +388,7 @@
 | `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | `zhihu_search`：知乎站内检索 | `ZhihuSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
 | `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | `query_session_logs`：原始会话日志检索 | `QuerySessionLogsTool` | `Services/SessionArchiver.cs` | — |
 | `Tools/BuiltIns/Sessions/QuerySessionsTool.cs` | `query_sessions`：会话消息转录查询 | `QuerySessionsTool` | `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | — |
-| `Tools/BuiltIns/Shell/HostShellExecutor.cs` | 宿主命令的直执行与输出收集 | `HostShellExecutor` | `Services/TerminalSecurity.cs` | — |
+| `Tools/BuiltIns/Shell/HostShellExecutor.cs` | 宿主命令的直执行与输出收集 | `HostShellExecutor` | `Services/TerminalSecurity.cs` | CMD 保留原始引号；PowerShell 拒绝 cd /d 前缀并指明修正参数 |
 | `Tools/BuiltIns/Shell/HostShellTool.cs` | `shell`：短命令的宿主执行 | `HostShellTool` | `Tools/BuiltIns/Shell/HostShellExecutor.cs` | — |
 | `Tools/BuiltIns/Skills/AgentSkillTool.cs` | `agent_skill`：技能文件的读取与增改 | `AgentSkillTool` | `Services/Skills/AgentSkillFileService.cs` | — |
 | `Tools/BuiltIns/Skills/SkillHubTool.cs` | `skill_hub`：技能市场清单与安装 | `SkillHubTool` | `Services/Skills/AgentSkillFileService.cs` | — |
@@ -401,7 +401,7 @@
 | `Tools/BuiltIns/SmartWorkflow/SmartTestTool.cs` | `smart_test`：测试角色入口 | `SmartTestTool` | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | — |
 | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | 角色化工作流工具的公共基类 | `SmartWorkflowToolBase<TArgs>` | `Tools/BuiltIns/Agents/SubAgentTool.cs` | 校验失败时原样返回子代理产出并附说明 |
 | `Tools/BuiltIns/Terminal/TerminalSkill.cs` | 终端命令执行的技能封装 | `TerminalSkill` | `Tools/BuiltIns/Terminal/TerminalTools.cs` | — |
-| `Tools/BuiltIns/Terminal/TerminalTools.cs` | `terminal_*`：终端任务的完整工具集 | `TerminalToolJson` | `Services/TerminalProcessManager.cs` | 长任务用阻塞式等待，禁止秒级轮询 |
+| `Tools/BuiltIns/Terminal/TerminalTools.cs` | `terminal_*`：终端任务的完整工具集 | `TerminalToolJson` | `Services/TerminalProcessManager.cs` | start 默认收集 1000ms；完成无需 wait；运行中按游标阻塞等待 |
 
 ### 「约束」列·关键语义（逐字原文）
 
@@ -426,6 +426,11 @@
 | `Tools/Presentation/ToolPresentationCatalog.cs` | 工具展示声明的登记表 | `ToolPresentationCatalog` | `Tools/Presentation/ToolPresentationProjector.cs` | — |
 | `Tools/Presentation/ToolPresentationJson.cs` | 展示投影用的 JSON 读取助手 | `ToolPresentationJson` | `Tools/Presentation/ToolPresentationCatalog.cs` | 只读事实，不猜值 |
 | `Tools/Presentation/ToolPresentationProjector.cs` | 工具调用的展示投影器 | `IToolPresentationProjector` | `Tools/Presentation/ToolPresentationCatalog.cs` | — |
+
+## 工具效率测试入口
+
+- [TerminalStartEfficiencyTests](../PuddingRuntimeTests/Tools/TerminalStartEfficiencyTests.cs)：短任务同次返回、零等待、截断、超时与非法参数不启动。
+- [GitStatusEfficiencyTests](../PuddingRuntimeTests/Tools/GitStatusEfficiencyTests.cs)：忽略文件默认排除、真实改动保留与显式查询。
 
 ## 本项目约束与坑
 

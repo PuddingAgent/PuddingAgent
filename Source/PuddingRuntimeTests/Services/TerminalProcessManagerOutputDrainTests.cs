@@ -50,7 +50,7 @@ public sealed class TerminalProcessManagerOutputDrainTests
 
             var info = await manager.StartAsync("session-drain", command, root);
 
-            // Poll until the process has finished AND its buffer stopped growing.
+            // Consumers stop at the first completed snapshot; completion must include the tail.
             var deadline = DateTime.UtcNow.AddSeconds(60);
             var totalLines = 0;
             var tail = string.Empty;
@@ -70,7 +70,7 @@ public sealed class TerminalProcessManagerOutputDrainTests
                     CancellationToken.None);
                 tail = tailSnapshot is null ? string.Empty : string.Join("\n", tailSnapshot.Lines);
 
-                if (totalLines >= ExpectedLines && tail.Contains(Marker, StringComparison.Ordinal))
+                if (probe.Process.Status != PuddingCode.Abstractions.TerminalProcessStatus.Running)
                     break;
                 await Task.Delay(200);
             }

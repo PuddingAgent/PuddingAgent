@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PuddingCode.Abstractions;
@@ -129,11 +130,11 @@ internal static class TerminalToolJson
     }
 }
 
-/// <summary>Starts a terminal command as a background job and returns immediately.</summary>
+/// <summary>Starts a job and briefly collects its result before yielding long-running work.</summary>
 [Tool(
     id: "terminal_start",
     name: "Terminal start",
-    description: "以后台终端任务方式启动 shell 命令并立即返回。适用于构建、测试、搜索、服务器等可能耗时数秒以上的命令；随后用一次 terminal_wait 阻塞等待（wait_seconds 按预期耗时设置，构建/测试类 180-600 秒），不要用短 wait_seconds 反复轮询。",
+    description: "启动终端任务，默认最多等待 1000ms，让短命令在同一次调用返回结果；yield_time_ms=0 立即返回。Windows 使用 CMD，其他系统使用 Bash；目录放 cwd，PowerShell 脚本显式用 pwsh -NoProfile -Command。只有返回 job.status=Running 时才用 terminal_wait，from_offset 传 output.next_offset；构建/测试 wait_seconds 180-600，避免短等待反复轮询。",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -162,6 +163,10 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
         if (string.IsNullOrWhiteSpace(args.Command))
             throw new InvalidOperationException("command is required.");
 
+        var yieldTimeMs = args.YieldTimeMs ?? 1_000;
+        if (yieldTimeMs is < 0 or > 10_000)
+            throw new InvalidOperationException("yield_time_ms must be between 0 and 10000.");
+
         try
         {
             _commandPolicy.EnsureAllowed(args.Command, context.IsYoloMode);
@@ -177,7 +182,7 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
             throw;
         }
 
-                var cwd = string.IsNullOrWhiteSpace(args.Cwd)
+        var cwd = string.IsNullOrWhiteSpace(args.Cwd)
             ? (context.WorkingDirectory ?? Directory.GetCurrentDirectory())
             : args.Cwd.Trim();
 
@@ -200,22 +205,34 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
             throw new InvalidOperationException($"failed to start terminal job: {ex.Message}");
         }
 
-        var snapshot = await _processManager.ReadOutputAsync(
-            info.ProcessId,
-            offset: 0,
-            maxLines: args.MaxOutputLines ?? TerminalToolJson.DefaultPreviewLines,
-            maxChars: args.MaxOutputChars ?? TerminalToolJson.DefaultPreviewChars,
-            ct);
+        var elapsed = Stopwatch.StartNew();
+        TerminalOutputSnapshot? snapshot;
+        do
+        {
+            snapshot = await _processManager.ReadOutputAsync(
+                info.ProcessId,
+                offset: 0,
+                maxLines: args.MaxOutputLines ?? TerminalToolJson.DefaultPreviewLines,
+                maxChars: args.MaxOutputChars ?? TerminalToolJson.DefaultPreviewChars,
+                ct);
+            if (snapshot is null || snapshot.Process.Status != TerminalProcessStatus.Running
+                || snapshot.Truncated || elapsed.ElapsedMilliseconds >= yieldTimeMs)
+                break;
+
+            await Task.Delay(TimeSpan.FromMilliseconds(Math.Clamp(yieldTimeMs - elapsed.ElapsedMilliseconds, 0, 50)), ct);
+        } while (true);
+
+        var output = snapshot is null ? null : TerminalToolJson.ToOutputDto(snapshot);
 
         return new TerminalStartResult
         {
-            Job = TerminalToolJson.ToJobDto(info),
-            Output = snapshot is null ? null : TerminalToolJson.ToOutputDto(snapshot),
+            Job = output?.Job ?? TerminalToolJson.ToJobDto(info),
+            Output = output,
             NextAction = snapshot is null
                 ? "Call terminal_wait once with job_id and wait_seconds sized to the expected runtime (builds/tests: 180-600); it blocks until the job exits. Do not poll with short waits."
                 : TerminalToolJson.NextAction(
                     snapshot,
-                    "Call terminal_wait once with job_id and wait_seconds sized to the expected runtime (builds/tests: 180-600); it blocks until the job exits. Do not poll with short waits.",
+                    "Call terminal_wait once with job_id, from_offset=output.next_offset, and wait_seconds sized to the expected runtime (builds/tests: 180-600). Do not poll with short waits.",
                     "Job already completed. Use the exit_code and output to continue."),
         };
     }
@@ -467,16 +484,19 @@ public sealed class TerminalInputTool : PuddingToolBase<TerminalInputArgs>
 
 public sealed record TerminalStartArgs
 {
-    [ToolParam("Command line to start as a background terminal job.")]
+    [ToolParam("Command line: CMD on Windows, Bash elsewhere. Put the directory in cwd. For PowerShell use pwsh -NoProfile -Command explicitly.")]
     public required string Command { get; init; }
 
     [ToolParam("Working directory. Default: current runtime directory.")]
     public string? Cwd { get; init; }
 
-    [ToolParam("Maximum output lines to include from the immediate start snapshot. Default: 200.")]
+    [ToolParam("Milliseconds to collect the initial result before yielding a running job. Range: 0-10000. Default: 1000. Use 0 for servers/interactive jobs. A completed job needs no terminal_wait.")]
+    public int? YieldTimeMs { get; init; }
+
+    [ToolParam("Maximum output lines to include from the start snapshot. Default: 120.")]
     public int? MaxOutputLines { get; init; }
 
-    [ToolParam("Maximum output characters to include from the immediate start snapshot. Default: 20000.")]
+    [ToolParam("Maximum output characters to include from the start snapshot. Default: 4000.")]
     public int? MaxOutputChars { get; init; }
 }
 
@@ -491,10 +511,10 @@ public sealed record TerminalWaitArgs
     [ToolParam("Maximum seconds to block waiting for the job to exit or output to exceed the preview cap. Range: 0-600. Default: 60. Size it to the expected command runtime (builds/tests: 180-600); short waits waste full model rounds.")]
     public int? WaitSeconds { get; init; }
 
-    [ToolParam("Maximum output lines to return. Default: 200.")]
+    [ToolParam("Maximum output lines to return. Default: 120.")]
     public int? MaxLines { get; init; }
 
-    [ToolParam("Maximum output characters to return. Default: 20000.")]
+    [ToolParam("Maximum output characters to return. Default: 4000.")]
     public int? MaxChars { get; init; }
 }
 

@@ -57,6 +57,12 @@ public static partial class HostShellExecutor
             return Fail($"working_directory does not exist: {workingDirectory}");
 
         var shell = ResolveShell(requestedShell);
+        if (shell == "powershell" && CmdDirectoryPrefixRegex().IsMatch(command))
+            return Fail(
+                "shell_syntax_mismatch: cd /d is CMD syntax, but this call selected PowerShell. " +
+                "Set shell=cmd explicitly for CMD commands, or remove the cd prefix and set working_directory. " +
+                "The command was not executed; do not retry the same prefix with different trailing commands.",
+                shell: shell, workingDirectory: workingDirectory);
         var startInfoResult = BuildStartInfo(shell, command, workingDirectory);
         if (!startInfoResult.Success)
             return Fail(startInfoResult.Error!);
@@ -155,10 +161,9 @@ public static partial class HostShellExecutor
                 if (!OperatingSystem.IsWindows())
                     return HostShellStartInfoResult.Fail("cmd shell is only available on Windows hosts.");
                 psi.FileName = "cmd.exe";
-                psi.ArgumentList.Add("/d");
-                psi.ArgumentList.Add("/s");
-                psi.ArgumentList.Add("/c");
-                psi.ArgumentList.Add(command);
+                // CMD does not understand the CRT backslash quoting used by ArgumentList.
+                // Match TerminalProcessManager: /s removes only this outer quote pair.
+                psi.Arguments = "/d /s /c \"" + command + "\"";
                 return HostShellStartInfoResult.Ok(psi);
             case "wsl":
                 if (!OperatingSystem.IsWindows())
@@ -241,6 +246,10 @@ public static partial class HostShellExecutor
 
     [System.Text.RegularExpressions.GeneratedRegex("\x1b\\[[0-9;?]*[ -/]*[@-~]|\x1b\\][^\\x07]*(?:\x07|\x1b\\\\)")]
     private static partial System.Text.RegularExpressions.Regex AnsiEscapeRegex();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\s*(?:cd|chdir)\s+/d(?:\s|$)",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex CmdDirectoryPrefixRegex();
 
     private static bool CommandExists(string command)
     {

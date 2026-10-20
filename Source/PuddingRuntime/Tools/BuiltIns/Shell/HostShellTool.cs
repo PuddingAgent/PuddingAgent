@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "shell",
     name: "Shell 命令执行",
-    description: "在宿主机上执行命令，支持 auto、WSL/Bash、CMD 或 PowerShell 模式。在 Windows 上需要真实 Unix/Linux 语义时显式使用 shell=wsl；working_directory 会通过 wsl.exe --cd 映射到发行版路径，但不要假设 WSL 已安装 rg，内容检索优先 search_grep。在 Agent 私有目录运行时需提供 reason。Execute a command on the host using auto, WSL/Bash, CMD, or PowerShell mode.",
+    description: "执行短命令并直接返回输出。auto 在 Windows 上是 PowerShell，在其他系统上是 Bash。CMD 语法（cd /d、set VAR=value）必须显式 shell=cmd；目录放 working_directory。需要真实 Unix/Linux 语义时显式 shell=wsl（不保证安装 rg），内容检索优先 search_grep。在 Agent 私有目录运行时需提供 reason。Execute a short command on the host with an explicit shell dialect.",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell)]
@@ -135,7 +135,7 @@ public sealed record HostShellToolArgs
     [ToolParam("Command to execute on the host. Relative paths inside the command are resolved against working_directory when it is provided; avoid repeating the same directory prefix in both fields. Use absolute paths when unsure.")]
     public required string Command { get; init; }
 
-    [ToolParam("Shell mode: auto, wsl, bash, cmd, powershell, or pwsh (alias of powershell). Default: auto.")]
+    [ToolParam("Shell mode: auto, wsl, bash, cmd, powershell, or pwsh. Default auto = PowerShell on Windows, Bash elsewhere. CMD syntax requires shell=cmd; auto does not detect the command dialect.")]
     public string? Shell { get; init; }
 
     [ToolParam("Host working directory. Default: current runtime directory. If this points at the workspace directory, command paths should be relative to that directory or absolute, not prefixed again with the workspace path.")]

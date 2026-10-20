@@ -21,7 +21,8 @@ public sealed class TerminalToolsTests
 
         var startResult = await ExecuteAsync(start, """
         {
-          "command": "echo terminal-start-ok"
+          "command": "echo terminal-start-ok",
+          "yield_time_ms": 0
         }
         """);
 
@@ -51,6 +52,18 @@ public sealed class TerminalToolsTests
 
         Assert.IsTrue(statusResult.Success, statusResult.Error);
         StringAssert.Contains(statusResult.Output, jobId);
+    }
+
+    [TestMethod]
+    public async Task TerminalStart_Short_Real_Command_Returns_Complete_Result_In_One_Call()
+    {
+        using var scope = CreateScope();
+        var start = new TerminalStartTool(scope.Manager, NullLogger<TerminalStartTool>.Instance);
+        var result = await ExecuteAsync(start, """{"command":"echo short-job-last-line"}""");
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("Exited", ReadString(result.Output, "job", "status"));
+        Assert.AreEqual(0, ReadInt(result.Output, "job", "exit_code"));
+        StringAssert.Contains(ReadString(result.Output, "output", "output"), "short-job-last-line");
     }
 
     [TestMethod]

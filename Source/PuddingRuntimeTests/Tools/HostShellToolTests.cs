@@ -10,6 +10,35 @@ namespace PuddingRuntimeTests.Tools;
 public sealed class HostShellToolTests
 {
     [TestMethod]
+    public async Task Cmd_Quoted_Pipeline_Preserves_Arguments_And_Output()
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Inconclusive("CMD requires Windows.");
+        var result = await HostShellExecutor.ExecuteAsync(new HostShellRequest
+        {
+            Command = "echo \"alpha beta\" | findstr \"alpha\"", Shell = "cmd", TimeoutSeconds = 10,
+        }, NullLogger.Instance);
+        Assert.IsTrue(result.Success, result.Error + " " + result.Output);
+        StringAssert.Contains(result.Output, "alpha beta");
+    }
+
+    [TestMethod]
+    [DataRow("auto")]
+    [DataRow("powershell")]
+    public async Task PowerShell_Cmd_Prefix_Returns_Actionable_Error_Before_Execution(string shell)
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Inconclusive("Windows shell defaults.");
+        var result = await HostShellExecutor.ExecuteAsync(new HostShellRequest
+        {
+            Command = "cd /d . && echo should-not-run", Shell = shell, TimeoutSeconds = 10,
+        }, NullLogger.Instance);
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error!, "shell_syntax_mismatch");
+        StringAssert.Contains(result.Error!, "shell=cmd");
+        StringAssert.Contains(result.Error!, "working_directory");
+        Assert.IsFalse(result.Output.Contains("should-not-run", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public async Task HostShellExecutor_AutoMode_Executes_On_Host()
     {
         var result = await HostShellExecutor.ExecuteAsync(new HostShellRequest

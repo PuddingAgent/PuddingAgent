@@ -39,8 +39,8 @@ internal static class ToolLoopInstructionBuilder
         sb.AppendLine("## Pudding Harness Compatibility");
         sb.AppendLine("- `search_grep` is the rg-like content-search tool: use `query` for the regex/text, `directory` for the root, and `pattern` for the file glob. It is deliberately simple and stable, but enumerates at most 2000 files, scans at most 2000 files / 64MB, and declares every limit it hits (it never silently reports \"(no matches)\"). When coverage is partial it also reports `searched_scope`, `complete=false` and `limit_reason` — a partial empty result is NOT proof that something does not exist; narrow the scope or switch backend.");
         sb.AppendLine("- Prefer the indexed tools — `code_symbol_search` / `code_explore` return in milliseconds — only while the index is current. Their hits are validated (file must exist and live under its registered project root); rejected hits are reported as `stale_skipped`, and an unregistered project fails closed with `not_registered`. Whenever you see stale-path or unregistered-index signals, stop trusting the index and run a live `search_grep` in the current repository instead of retrying the index with new keywords.");
-        sb.AppendLine("- `shell` is the short-command equivalent of exec_command; use `command` + `working_directory`. Use `shell=\"powershell\"` for Windows semantics (`pwsh` alias), or `shell=\"wsl\"` for a real Unix/Linux environment when WSL is available. Prefer `search_grep` for content search because WSL does not guarantee that `rg` is installed.");
-        sb.AppendLine("- `terminal_start` + one bounded `terminal_wait` is the long-command equivalent. Put the directory in `cwd`; do not prefix commands with `cd` or `Set-Location`.");
+        sb.AppendLine("- `shell` returns short-command output directly; use `command` + `working_directory`. On Windows auto means PowerShell, not CMD: CMD syntax requires `shell=\"cmd\"`; use `shell=\"wsl\"` for Unix/Linux. Do not retry a shell syntax mismatch by changing only the trailing command. Prefer `search_grep` for content search because WSL does not guarantee that `rg` is installed.");
+        sb.AppendLine("- `terminal_start` briefly waits for short jobs (default `yield_time_ms=1000`, 0 returns immediately). Windows terminal jobs use CMD; PowerShell needs explicit `pwsh -NoProfile -Command`. Put the directory in `cwd`; do not prefix commands with `cd` or `Set-Location`.");
         sb.AppendLine("- `file_patch` and `apply_patch` accept unified diff and Codex `*** Begin Patch` text. Prefer their canonical schemas even though common Harness aliases are normalized at execution.");
 
         if (available.Count > 0)
@@ -58,7 +58,7 @@ internal static class ToolLoopInstructionBuilder
             {
                 sb.AppendLine();
                 sb.AppendLine("Terminal command guidance:");
-                sb.AppendLine("- Start long commands with `terminal_start`, then call `terminal_wait` ONCE with `wait_seconds` sized to the expected runtime (builds/tests: 180-600). It blocks until the job exits — do NOT poll repeatedly with short waits; every tool call costs a full model round.");
+                sb.AppendLine("- After `terminal_start`, inspect job.status: completed jobs already include exit_code/output and need NO wait call. Only Running jobs need `terminal_wait`, with `from_offset=output.next_offset` and `wait_seconds` sized to the expected runtime (builds/tests: 180-600). Do NOT poll repeatedly with short waits; every tool call costs a full model round.");
                 sb.AppendLine("- Continue truncated output with `terminal_read` and the returned offset. Use `terminal_cancel` to stop the job. Reserve `shell` for short bounded commands.");
             }
             else if (HasTool(available, "shell"))

@@ -2,7 +2,7 @@
 title: 案例：浏览器 Bridge 与 Chat
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-20
 status: active
 description: 2026-08-23 新增。Desktop 设置页新增「调试模式（开发者）」卡片，启用并重启 Core 后：
 categories: [docs, how-debug]
@@ -175,6 +175,19 @@ ContextBudget/历史投影；围栏与 hash 均正确而模型仍答旧任务 �
 10. Streaming 的 direct Token 行应早于对应 `usage.recorded` 投影出现；`ConversationProjector` 只在 direct
     行缺失时补记。若同一调用仍出现两行，比较 direct `sourceId=session:trace:round` 与 eventId 行的时间，
     再检查新构建是否确实先写 TokenUsage、后发布 usage SSE。fallback 的未知 `ToolCallCount` 应为 NULL。
+11. 评估最近代码任务优先按已完成 `turn_id` 读取 `conversation_events` 的
+    `tool.call.requested/completed`，按 `toolCallId` 配对；不能只依赖 `runtime_activity` 抽样。
+    `terminal_wait` 外层成功仅表示读取成功，命令是否失败要看内层 `result.job.exit_code`、
+    `command_failed`；检索无匹配须另行区分。用 `usage.recorded` 计数模型请求时，先核对同轮
+    `invocationIndex` 唯一性；与 Token 账本不一致时分别报告，不能直接当成账单费用。
+12. 区分两种终端开销：同一 job 多次短等待才是轮询循环；每个短命令一对 start/wait 是额外往返。
+    `terminal_start` 默认最多收集 1000ms，`yield_time_ms=0` 可立即返回；先读 `job.status`，
+    完成则直接消费退出码与输出，运行中才用 `terminal_wait(from_offset=output.next_offset)`。
+    正常完成状态必须在输出排空后出现，避免只读到半份测试报告。排空超时仍以终端 Warning 为证据。
+13. `shell(auto)` 在 Windows 上使用 PowerShell，`terminal_start` 使用 CMD；`cd /d` 前缀在
+    PowerShell 会返回 `shell_syntax_mismatch`，应选择 `shell=cmd` 或把目录移到 `working_directory`。
+    不要只更换后面的命令。CMD 的嵌套引号回归用 `echo "alpha beta" | findstr "alpha"` 检查。
+    `git_status` 默认不返回忽略文件，诊断忽略规则时才显式设置 `include_ignored=true`。
 
 代码和单测通过只说明新构建可用；必须由进程外控制器重启 Core，再用新会话检查上述日志/指标和主、子代理
 真实 smoke，才能证明当前产品进程已加载修复。

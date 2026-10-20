@@ -39,6 +39,7 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
     public Task<TerminalProcessInfo> StartAsync(
         string sessionId, string command, string workingDir, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var processId = Guid.NewGuid().ToString("N")[..12];
         var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
         {
@@ -113,56 +114,45 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
                 LogWriter = logWriter,
                 LogFilePath = logFilePath,
             };
+            var outputReadersStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            // 注册 stdout/stderr 事件处理。
-            // ★ 两个处理器必须是 async void（事件签名如此）⇒ **任何逃逸异常都是进程级崩溃**。
-            //   实测 2026-09-29 上报 System.Threading.Channels.ChannelClosedException（第 129 行 stderr 写入）。
-            //   成因：Exited 处理器原先**立刻** TryComplete，而 .NET 明确「输出重定向时 Exited 可能在
-            //   stdout/stderr 投递完成之前触发」⇒ 迟到行写进已关闭的通道。危害有三：
-            //   ① async void 里抛异常 = 未处理异常；② 异常发生在 WriteLogAsync **之前** ⇒ 尾部行连日志都丢
-            //   （正是下方排空注释要保住的东西）；③ 快照靠 AppendOutput 恰好还在，所以只丢日志、不易察觉。
-            //   三道护栏：① 关通道推迟到排空之后（根因，见 Exited 处理器）；② 写通道失败不吞日志；
-            //   ③ 处理器整体兜异常 —— 以后同类竞态只留日志，不再让进程崩。
-            async Task PublishAsync(string tag, string text)
+            // 事件处理器同步完成缓冲/入队；日志异步串行写，退出时显式等待。
+            // async void 不会被 WaitForExit 等待，且并发写 StreamWriter 会丢日志。
+            void Publish(string tag, string text)
             {
                 tp.AppendOutput(text);
-                try
-                {
-                    await channel.Writer.WriteAsync(text, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (ChannelClosedException)
+                if (!channel.Writer.TryWrite(text))
                 {
                     // 通道已关闭（排空超时或上游取消读取）：这行仍必须进日志与快照。
                     _logger.LogDebug(
                         "[Terminal] pid={Pid} channel already closed; {Tag} line kept in log and snapshot only",
                         processId, tag);
                 }
-                await WriteLogAsync(logWriter, $"[{tag}] {text}").ConfigureAwait(false);
+                _ = tp.QueueLogAsync($"[{tag}] {text}");
             }
 
-            process.OutputDataReceived += async (_, e) =>
+            process.OutputDataReceived += (_, e) =>
             {
                 if (e.Data is null) return;
-                try { await PublishAsync("stdout", e.Data).ConfigureAwait(false); }
+                try { Publish("stdout", e.Data); }
                 catch (Exception ex) { _logger.LogError(ex, "[Terminal] pid={Pid} stdout handler failed", processId); }
             };
-            process.ErrorDataReceived += async (_, e) =>
+            process.ErrorDataReceived += (_, e) =>
             {
                 if (e.Data is null) return;
-                try { await PublishAsync("stderr", e.Data).ConfigureAwait(false); }
+                try { Publish("stderr", e.Data); }
                 catch (Exception ex) { _logger.LogError(ex, "[Terminal] pid={Pid} stderr handler failed", processId); }
             };
 
-            // 进程退出时更新状态。**通道的关闭不在这里**：必须等输出排空（见下），
-            // 否则迟到的 stdout/stderr 行会写进已关闭的通道（ChannelClosedException）。
+            // 完成状态与关闭通道都必须晚于输出排空，读者才可一次消费完整终态。
             process.Exited += async (_, _) =>
             {
                 try
                 {
-                    tp.ExitCode = process.ExitCode;
-                    tp.Status = process.ExitCode == 0
-                        ? TerminalProcessStatus.Exited
-                        : TerminalProcessStatus.Failed;
+                    // 极短命令可能在 BeginOutputReadLine 之前退出；先等读端启动，
+                    // 避免 WaitForExit/Dispose 抢在重定向输出订阅之前完成。
+                    await outputReadersStarted.Task;
+                    var exitCode = process.ExitCode;
 
                     // ★ 必须等异步输出排空后，才能关闭日志/释放进程。
                     // .NET 明确：启用输出重定向时，Exited 可能在全部 stdout/stderr 处理完成**之前**触发；
@@ -190,6 +180,9 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
                             "[Terminal] pid={Pid} output drain did not finish within {Ms}ms; trailing output may be incomplete.",
                             processId, OutputDrainTimeoutMs);
                     }
+
+                    await tp.DrainLogAsync().ConfigureAwait(false);
+                    tp.CompleteExit(exitCode);
 
                     // ★ 排空之后才关通道：WaitForExit() 返回意味着 stdout/stderr 异步投递已全部完成，
                     //   不会再有写入者 ⇒ 既不可能 ChannelClosedException，也不会因为关通道丢掉尾部行。
@@ -220,8 +213,15 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
             tp.OsProcessId = process.Id;
             _processes[processId] = tp;
 
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+            try
+            {
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+            }
+            finally
+            {
+                outputReadersStarted.TrySetResult();
+            }
 
             _logger.LogInformation(
                 "[Terminal] pid={Pid} session={Session} cmd={Cmd} started",
@@ -265,7 +265,7 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
         {
             await process.StandardInput.WriteLineAsync(input.AsMemory(), ct);
             await process.StandardInput.FlushAsync(ct);
-            await WriteLogAsync(tp.LogWriter, $"[stdin] {input}");
+            await tp.QueueLogAsync($"[stdin] {input}");
             return true;
         }
         catch (Exception ex)
@@ -398,24 +398,61 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
         public string LogFilePath { get; init; } = string.Empty;
         private readonly object _outputLock = new();
         private readonly List<string> _outputLines = [];
+        private readonly object _logLock = new();
+        private Task _pendingLogWrite = Task.CompletedTask;
 
-        public TerminalProcessInfo ToInfo() => new()
+        public Task QueueLogAsync(string line)
         {
-            ProcessId = ProcessId,
-            OsProcessId = OsProcessId,
-            SessionId = SessionId,
-            Command = Command,
-            WorkingDir = WorkingDir,
-            StartedAt = StartedAt,
-            ExitCode = ExitCode,
-            Status = Status,
-        };
+            lock (_logLock)
+            {
+                return _pendingLogWrite = WriteAfterAsync(_pendingLogWrite, LogWriter, line);
+            }
+        }
+
+        public Task DrainLogAsync()
+        {
+            lock (_logLock) return _pendingLogWrite;
+        }
+
+        private static async Task WriteAfterAsync(Task previous, StreamWriter writer, string line)
+        {
+            await previous.ConfigureAwait(false);
+            await WriteLogAsync(writer, line).ConfigureAwait(false);
+        }
+
+        public TerminalProcessInfo ToInfo()
+        {
+            lock (_outputLock)
+            {
+                return new TerminalProcessInfo
+                {
+                    ProcessId = ProcessId,
+                    OsProcessId = OsProcessId,
+                    SessionId = SessionId,
+                    Command = Command,
+                    WorkingDir = WorkingDir,
+                    StartedAt = StartedAt,
+                    ExitCode = ExitCode,
+                    Status = Status,
+                };
+            }
+        }
 
         public void AppendOutput(string line)
         {
             lock (_outputLock)
             {
                 _outputLines.Add(line);
+            }
+        }
+
+        public void CompleteExit(int exitCode)
+        {
+            lock (_outputLock)
+            {
+                if (Status == TerminalProcessStatus.Killed) return;
+                ExitCode = exitCode;
+                Status = exitCode == 0 ? TerminalProcessStatus.Exited : TerminalProcessStatus.Failed;
             }
         }
 
@@ -427,8 +464,10 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
 
             List<string> lines;
             int totalLines;
+            TerminalProcessInfo processInfo;
             lock (_outputLock)
             {
+                processInfo = ToInfo();
                 totalLines = _outputLines.Count;
                 lines = _outputLines
                     .Skip(Math.Min(offset, totalLines))
@@ -458,7 +497,7 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
 
             return new TerminalOutputSnapshot
             {
-                Process = ToInfo(),
+                Process = processInfo,
                 Offset = offset,
                 NextOffset = nextOffset,
                 TotalLines = totalLines,

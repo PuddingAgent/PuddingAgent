@@ -9,6 +9,9 @@ namespace PuddingRuntime.Services.Tools
     {
         [ToolParam("Git repository path (defaults to current working directory)")]
         public string? Path { get; init; }
+
+        [ToolParam("Include ignored files (build outputs, caches). Default: false; enable only when diagnosing ignore rules.")]
+        public bool IncludeIgnored { get; init; }
     }
 
     [Tool(
@@ -29,7 +32,7 @@ namespace PuddingRuntime.Services.Tools
                 ?? HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
 
             using var repo = new Repository(repoPath);
-            var status = repo.RetrieveStatus();
+            var status = repo.RetrieveStatus(new StatusOptions { IncludeIgnored = args.IncludeIgnored });
 
             var entries = status.Select(e => new
             {
