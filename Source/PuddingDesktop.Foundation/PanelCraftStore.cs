@@ -651,7 +651,12 @@ public sealed class PanelCraftStore
     /// 删除：JSON 与图片一起移到 <c>_trash/{id}-{时间戳}/</c>。
     /// 不真删是刻意的 —— 误删一张改了很久的图，代价远大于占一点磁盘。
     /// </summary>
-    public bool Delete(string id, DateTimeOffset now)
+    /// <param name="retention">
+    /// 传入时顺便清理超期回收站。为什么放在这里：<see cref="PruneTrash"/> 原本只在
+    /// “制成品标签页重建”时被调 —— 一个从不打开那个 tab 的用户，删除的东西会永远堆着。
+    /// 而 Delete 是 <c>_trash</c> **唯一**的增长入口，在这里清是对着源头做。
+    /// </param>
+    public bool Delete(string id, DateTimeOffset now, TimeSpan? retention = null)
     {
         if (!PanelCraft.IsValidId(id))
         {
@@ -686,6 +691,11 @@ public sealed class PanelCraftStore
         if (File.Exists(imagePath))
         {
             File.Move(imagePath, Path.Combine(trashDirectory, craft.FileName));
+        }
+
+        if (retention is { } keep)
+        {
+            PruneTrash(now, keep);
         }
 
         return true;

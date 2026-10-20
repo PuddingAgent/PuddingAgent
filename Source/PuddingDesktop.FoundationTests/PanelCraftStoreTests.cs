@@ -573,6 +573,30 @@ public sealed class PanelCraftStoreTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_store.CraftsDirectory, second.FileName)));
     }
 
+    [Fact]
+    public void Delete_prunes_expired_trash_entries()
+    {
+        // _trash 只在「制成品标签页重建」时被清；一个从不打开那个 tab 的用户，
+        // 删除的东西会永远堆着。Delete 是 _trash 唯一增长入口，所以在这里也要清。
+        var now = new DateTimeOffset(2026, 10, 21, 4, 0, 0, TimeSpan.FromHours(8));
+        var expired = Path.Combine(
+            _store.CraftsDirectory,
+            PanelCraftStore.TrashDirectoryName,
+            $"craft-aaaaaaaa-{now.AddDays(-30).ToUnixTimeMilliseconds()}");
+        Directory.CreateDirectory(expired);
+
+        var craft = SaveBasic();
+
+        Assert.True(_store.Delete(craft.Id, now, TimeSpan.FromDays(7)));
+
+        // 超期的没了；刚移进去的（时间戳 = now）留着，误删仍可恢复。
+        Assert.False(Directory.Exists(expired));
+        Assert.Equal(
+            1,
+            Directory.GetDirectories(
+                Path.Combine(_store.CraftsDirectory, PanelCraftStore.TrashDirectoryName)).Length);
+    }
+
     // ── 血缘深度 ────────────────────────────────────────────
 
     [Fact]

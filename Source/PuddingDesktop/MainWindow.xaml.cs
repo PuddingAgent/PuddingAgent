@@ -1976,7 +1976,9 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            if (!CraftStore.Delete(craft.Id, DateTimeOffset.Now))
+            // 传 retention：制成品标签页只在用户打开时才清回收站，
+            // 而这里是 _trash 唯一增长的地方 —— 不在这里清就永远不会被清。
+            if (!CraftStore.Delete(craft.Id, DateTimeOffset.Now, TrashRetention))
             {
                 ToolStatusText.Text = $"删除失败：制品库里找不到 {craft.Id}";
                 return;
