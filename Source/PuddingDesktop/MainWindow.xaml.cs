@@ -982,6 +982,29 @@ public sealed partial class MainWindow : Window
     /// <summary>待渲染的内容（按 tab id）：标签新建时先存这里，WebView2 初始化完成后取用。</summary>
     private readonly Dictionary<string, string> _panelContent = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 面板内容的真源在 Core：Shell 定时拉 <c>/api/panels/{id}</c>，按 revision 决定是否重绘。
+    /// 超时压到 3 秒 —— 拉不到就是「Core 正在重启」，下个 tick 再试，不该拖住 UI。
+    /// </summary>
+    private static readonly HttpClient PanelHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
+
+    /// <summary>每块画布一个轮询器（按 tab id）。关标签时必须停，否则定时器会一直跑。</summary>
+    private readonly Dictionary<string, DispatcherTimer> _panelPollers = new(StringComparer.Ordinal);
+
+    /// <summary>画布上当前内容的 revision；缺省表示「还没渲染过任何内容」。</summary>
+    private readonly Dictionary<string, long> _panelRenderedRevision = new(StringComparer.Ordinal);
+
+    /// <summary>防重入：一次拉取还没回来就不发第二次。</summary>
+    private readonly HashSet<string> _panelPollInFlight = new(StringComparer.Ordinal);
+
+    /// <summary>已经提示过的读取失败（按 tab id）：失败原因不该每 2 秒刷一次状态栏。</summary>
+    private readonly HashSet<string> _panelFailureNotified = new(StringComparer.Ordinal);
+
+    private const double PanelPollSeconds = 2;
+
+    private static string PanelIdOf(ToolTab tab)
+        => string.IsNullOrWhiteSpace(tab.ResourceKey) ? "main" : tab.ResourceKey;
+
     private async Task LoadPanelAsync(Microsoft.UI.Xaml.Controls.WebView2 web, ToolTab tab)
     {
         try
@@ -992,16 +1015,181 @@ public sealed partial class MainWindow : Window
 
             _panelCanvases[tab.Id] = web;
 
-            // 有 Agent 推送的内容就用它，否则显示内置示例（示例只用于验证画布能跑）。
-            var html = _panelContent.TryGetValue(tab.Id, out var pushed)
-                ? WrapPanelHtml(pushed)
-                : PanelSampleHtml;
-            web.CoreWebView2.NavigateToString(html);
+            // 快路径：能力通道刚推过内容，先渲染它 —— 用户立刻看到，不必等一个轮询周期。
+            if (_panelContent.TryGetValue(tab.Id, out var pushed))
+            {
+                web.CoreWebView2.NavigateToString(WrapPanelHtml(pushed));
+            }
+
+            // 慢路径：内容真源在 Core。拉一次，之后按 revision 跟随。
+            StartPanelPolling(tab, web);
         }
         catch (Exception ex)
         {
             // 画布起不来时不能留空白：空白会被当成“内容就是这个样子”。
             ToolStatusText.Text = $"面板画布不可用：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 开始跟随 Core 上的画布内容。
+    ///
+    /// 为什么由 Shell 拉、而不是只等能力通道推送：通道断了的时候画布会永远停在旧内容，
+    /// 而且没有任何迹象。内容归 Core 之后，这条路与通道是否连通无关。
+    /// </summary>
+    private void StartPanelPolling(ToolTab tab, Microsoft.UI.Xaml.Controls.WebView2 web)
+    {
+        if (_panelPollers.ContainsKey(tab.Id))
+        {
+            return;
+        }
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(PanelPollSeconds) };
+        timer.Tick += async (_, _) => await PollPanelAsync(tab.Id);
+        _panelPollers[tab.Id] = timer;
+        timer.Start();
+
+        // 立刻拉一次，不等第一个 tick 周期。
+        _ = PollPanelAsync(tab.Id);
+    }
+
+    /// <summary>停掉一块画布的轮询（关标签、或标签已不存在）。</summary>
+    private void StopPanelPolling(string tabId)
+    {
+        if (_panelPollers.Remove(tabId, out var timer))
+        {
+            timer.Stop();
+        }
+
+        _panelRenderedRevision.Remove(tabId);
+        _panelPollInFlight.Remove(tabId);
+        _panelFailureNotified.Remove(tabId);
+    }
+
+    private async Task PollPanelAsync(string tabId)
+    {
+        if (!_panelPollInFlight.Add(tabId))
+        {
+            return;
+        }
+
+        try
+        {
+            var tab = _toolTabs.Find(tabId);
+            if (tab is null)
+            {
+                // 标签已经关了：停掉定时器，否则它会一直跑下去。
+                StopPanelPolling(tabId);
+                return;
+            }
+
+            if (!_panelCanvases.TryGetValue(tabId, out var web) || web.CoreWebView2 is null)
+            {
+                return;
+            }
+
+            if (_coordinator.WorkbenchAddress is not { } address)
+            {
+                return;
+            }
+
+            var result = await ReadPanelFromCoreAsync(address, PanelIdOf(tab));
+            ApplyPanelFeed(tabId, web, result);
+        }
+        catch (Exception ex)
+        {
+            // 轮询不能把异常扔到 UI 线程的定时器上：一次失败只提示一次，下个 tick 继续试。
+            if (_panelFailureNotified.Add(tabId))
+            {
+                ToolStatusText.Text = $"面板内容读取失败：{ex.Message}";
+            }
+        }
+        finally
+        {
+            _panelPollInFlight.Remove(tabId);
+        }
+    }
+
+    private static async Task<PanelCanvasFeedResult> ReadPanelFromCoreAsync(Uri address, string panelId)
+    {
+        try
+        {
+            using var response = await PanelHttp.GetAsync(PanelCanvasFeed.BuildUri(address, panelId));
+            var status = PanelCanvasFeed.StatusForHttpCode(response.StatusCode);
+
+            if (status == PanelCanvasFeedStatus.NotPublished)
+            {
+                return PanelCanvasFeedResult.NotPublished();
+            }
+
+            if (status != PanelCanvasFeedStatus.Fetched)
+            {
+                return PanelCanvasFeedResult.Unreachable($"HTTP {(int)response.StatusCode}");
+            }
+
+            var body = await response.Content.ReadAsStringAsync();
+            return PanelCanvasFeed.TryParse(body, out var item, out var parseError)
+                ? PanelCanvasFeedResult.Fetched(item)
+                : PanelCanvasFeedResult.Unreachable(parseError);
+        }
+        catch (Exception ex)
+        {
+            // 连不上不是异常状态：Core 可能正在重启。当作一次失败的拉取，下个 tick 再试。
+            return PanelCanvasFeedResult.Unreachable(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 把一次拉取结果落到画布上。三条分支的取舍：
+    /// ① 有内容且 revision 变过 → 重绘；没变就不重绘（重绘会打断用户在画布上的操作）；
+    /// ② 还没有内容 → 先放内置示例，并记为「已渲染 -1」，这样第一次推送来了必定重绘；
+    /// ③ 读不到 → 只在第一次提示，避免每 2 秒刷一次状态栏。
+    /// </summary>
+    private void ApplyPanelFeed(
+        string tabId, Microsoft.UI.Xaml.Controls.WebView2 web, PanelCanvasFeedResult result)
+    {
+        var core = web.CoreWebView2;
+        if (core is null)
+        {
+            return;
+        }
+
+        switch (result.Status)
+        {
+            case PanelCanvasFeedStatus.Fetched when result.Item is { } item:
+                var rendered = _panelRenderedRevision.TryGetValue(tabId, out var known) ? known : long.MinValue;
+                if (!PanelCanvasFeed.RequiresRerender(rendered, item.Revision))
+                {
+                    return;
+                }
+
+                _panelRenderedRevision[tabId] = item.Revision;
+                _panelFailureNotified.Remove(tabId);
+                core.NavigateToString(WrapPanelHtml(item.Content));
+                ToolStatusText.Text = string.IsNullOrWhiteSpace(item.Title)
+                    ? $"画布已更新（rev {item.Revision}）"
+                    : $"{item.Title}（rev {item.Revision}）";
+                break;
+
+            case PanelCanvasFeedStatus.NotPublished:
+                if (_panelRenderedRevision.ContainsKey(tabId))
+                {
+                    return;
+                }
+
+                _panelRenderedRevision[tabId] = -1; // 有内容后必定重绘
+                core.NavigateToString(PanelSampleHtml);
+                ToolStatusText.Text = PanelCanvasFeed.DescribeFailure(result.Status, null);
+                break;
+
+            case PanelCanvasFeedStatus.Unreachable:
+                if (!_panelFailureNotified.Add(tabId))
+                {
+                    return;
+                }
+
+                ToolStatusText.Text = PanelCanvasFeed.DescribeFailure(result.Status, result.ErrorMessage);
+                break;
         }
     }
 
@@ -1166,7 +1354,7 @@ public sealed partial class MainWindow : Window
             <text x="478" y="98" font-size="14" fill="#333">车把</text>
             <text x="286" y="330" font-size="14" fill="#d98324">链轮与曲柄</text>
           </svg>
-          <div class="hint">Panel 画布示例：Agent 推送内容的能力通道（panel.render）尚未接入，当前展示内置示例。</div>
+          <div class="hint">Agent 还没有向这块画布推送内容，当前展示内置示例。</div>
         </div>
         </body></html>
         """;
@@ -1308,6 +1496,7 @@ public sealed partial class MainWindow : Window
             return;
         }
         _toolTabs.Close(tabId);
+        StopPanelPolling(tabId);
         if (_toolTabContent.Remove(tabId, out var content)) ToolTabContentHost.Children.Remove(content);
         _outputPaths.Remove(tabId);
         _outputPreviews.Remove(tabId);
