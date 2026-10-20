@@ -275,6 +275,44 @@ public static class PanelCanvasDocument
             return best;
           }
 
+          // 外部把「已存的标记」灌回来（制成品「继续编辑」走这条路）。
+          // 传的是 **归一化 0–1000**（与 C# PanelAnnotation.Normalize 同一套除数），
+          // 这里按当前显示尺寸换算成像素 —— 图元自身仍存像素，与其它路径一致。
+          // 图还没布局好时返回 0，由调用方重试；不抛异常。
+          function loadFromPayload(list) {
+            if (!list || !list.length) return 0;
+            if (!sync()) return 0;
+            var w = box.width, h = box.height;
+            function nx(n) { return (n || 0) / 1000 * w; }
+            function ny(n) { return (n || 0) / 1000 * h; }
+
+            var next = [];
+            list.forEach(function (it) {
+              if (!it) return;
+              if (it.kind === 'box' || it.kind === 'arrow') {
+                next.push({
+                  kind: it.kind, x1: nx(it.x1), y1: ny(it.y1), x2: nx(it.x2), y2: ny(it.y2)
+                });
+              } else if (it.kind === 'point') {
+                next.push({ kind: 'point', x: nx(it.x), y: ny(it.y) });
+              } else if (it.kind === 'text') {
+                next.push({ kind: 'text', label: it.label, x: nx(it.x), y: ny(it.y) });
+              } else if (it.kind === 'scribble') {
+                var pts = (it.points || []).map(function (p) {
+                  return { x: nx(p.x), y: ny(p.y) };
+                });
+                if (!pts.length) return;
+                next.push({ kind: 'scribble', points: pts });
+              }
+            });
+
+            if (!next.length) return 0;
+            pushUndo();
+            items = next;
+            paint();
+            return next.length;
+          }
+
           function ensureLayer() {
             if (!layer) {
               layer = document.createElement('div');
@@ -477,6 +515,9 @@ public static class PanelCanvasDocument
             canUndo: function () { return undoStack.length > 0; },
             // 返回带笔迹的 PNG dataURL；形式 1（任意标记）靠它。
             compose: compose,
+            // 把已存的标记画回来（制成品「继续编辑」）：传归一化 0–1000 数组。
+            // 返回成功灌入的数量，0 表示图未就绪 —— 调用方应重试。
+            load: loadFromPayload,
             take: function () {
               if (!sync()) return '';
               return JSON.stringify({

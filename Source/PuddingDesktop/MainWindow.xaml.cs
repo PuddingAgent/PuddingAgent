@@ -1924,12 +1924,18 @@ public sealed partial class MainWindow : Window
         var title = System.Net.WebUtility.HtmlEncode(craft.Title);
         var created = DateTimeOffset.FromUnixTimeMilliseconds(craft.CreatedAt).LocalDateTime;
 
+        // 把当初的标注一起画回去：没有它，「继续编辑」看到的是一张干净的图，
+        // 用户上一次画的东西静默消失。无标注时是空串，不会多出 script 块。
+        var restore = PanelCanvasRestore.BuildInlineScript(
+            craft.Source?.Annotations ?? Array.Empty<PanelAnnotation>());
+
         return $"""
             <div style="padding:16px">
               <h1 style="font-size:15px;font-weight:500;margin:0 0 4px">{title}</h1>
               <p style="font-size:12px;opacity:.65;margin:0 0 12px">{craft.Width}×{craft.Height} · {created:yyyy-MM-dd HH:mm}</p>
               <img src="{src}" alt="{title}" style="max-width:100%;height:auto;border-radius:10px;display:block">
             </div>
+            {restore}
             """;
     }
 
