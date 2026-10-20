@@ -307,4 +307,63 @@ public sealed class MappingRoundTripTests
         Assert.True(decoded.IsSuccess);
         Assert.Null(decoded.Value.Context.CorrelationId);
     }
+
+    [Fact]
+    public void DocumentPreview_DecodesPathAndKeepsTitleOptional()
+    {
+        var command = DocumentPreviewCommand("Docs/设计.md", "设计稿");
+
+        var decoded = CoreFrameMapping.Decode(command, DesktopId);
+
+        Assert.True(decoded.IsSuccess);
+        Assert.Equal(DesktopCapability.ShellDocumentPreview, decoded.Value.Capability.Capability);
+        Assert.Equal("Docs/设计.md", decoded.Value.Request.DocumentPreview!.Path);
+        Assert.Equal("设计稿", decoded.Value.Request.DocumentPreview.Title);
+        Assert.StartsWith("shell.document_preview:", decoded.Value.Fingerprint, StringComparison.Ordinal);
+
+        // 空白标题归一为 null（由 Desktop 用文件名），而不是空串。
+        var blank = DocumentPreviewCommand("Docs/设计.md", "   ");
+        Assert.Null(CoreFrameMapping.Decode(blank, DesktopId).Value.Request.DocumentPreview!.Title);
+    }
+
+    [Fact]
+    public void DocumentPreview_FailsClosedOnEmptyPathAndPayloadMismatch()
+    {
+        Assert.Equal(
+            DesktopCapabilityErrorCode.InvalidRequest,
+            CoreFrameMapping.Decode(DocumentPreviewCommand("   "), DesktopId).Error.Code);
+
+        // 能力名对但载荷是 navigate ⇒ Mismatch，不能被当成文档预览执行。
+        var mismatch = Frames.Command(
+            "op-doc", "shell.document_preview", payload: Proto.CapabilityCommand.PayloadOneofCase.Navigate);
+        Assert.Equal(
+            DesktopCapabilityErrorCode.InvalidRequest,
+            CoreFrameMapping.Decode(mismatch, DesktopId).Error.Code);
+    }
+
+    [Fact]
+    public void DocumentPreview_ResultCarriesIdentityAndStatusButNoBody()
+    {
+        var frame = DesktopFrameMapping.Result(
+            new OperationId("op-doc"),
+            ConnectionGeneration.Require(1),
+            FakeExecutor.Descriptor(DesktopCapability.ShellDocumentPreview),
+            DesktopCapabilityResponse.FromDocumentPreview(new DesktopDocumentPreviewResult(
+                "document:Docs/设计.md", "Docs/设计.md", DesktopDocumentPreviewStatus.AlreadyOpen)));
+
+        Assert.Equal(Proto.OperationResult.OutcomeOneofCase.DocumentPreview, frame.Result.OutcomeCase);
+        Assert.Equal("document:Docs/设计.md", frame.Result.DocumentPreview.TabId);
+        Assert.Equal("Docs/设计.md", frame.Result.DocumentPreview.Path);
+        Assert.Equal("already_open", frame.Result.DocumentPreview.Status);
+    }
+
+    private static Proto.CapabilityCommand DocumentPreviewCommand(string path, string title = "") => new()
+    {
+        OperationId = "op-doc",
+        Generation = 1,
+        Capability = "shell.document_preview",
+        Deadline = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(
+            DateTimeOffset.UtcNow.AddSeconds(30)),
+        DocumentPreview = new Proto.DocumentPreviewCommand { Path = path, Title = title },
+    };
 }

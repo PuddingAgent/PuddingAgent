@@ -361,6 +361,10 @@ internal static class CoreCommandEncoder
             _ when request.Tabs is { } requestTabs =>
                 $"tabs:{requestTabs.Action}:{requestTabs.Target?.Key ?? requestTabs.ContextId}:{requestTabs.ExpectedPageVersion.Value}:{requestTabs.Url?.AbsoluteUri}:{requestTabs.Activate}",
             _ when request.Clipboard is { } clipboard => $"clipboard:{clipboard.MaxCharacters}",
+            // 文档预览：path 与 title 都算载荷。漏掉这一支就会落到下面的 "empty"，
+            // 导致「同 operationId + 不同文件」被判为可复用（与 P0 同类）。
+            _ when request.DocumentPreview is { } documentPreview =>
+                $"document_preview:{documentPreview.Path}:{documentPreview.Title ?? string.Empty}",
             _ when request.Dialog is { } dialog =>
                 $"dialog:{dialog.Buttons}:{dialog.Title}:{dialog.Message}",
             _ when request.FilePicker is { } picker =>

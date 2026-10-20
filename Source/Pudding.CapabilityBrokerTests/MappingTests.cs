@@ -75,6 +75,8 @@ public sealed class MappingTests
         Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.notification")));
         Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.status")));
         Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.clipboard")));
+        // 文档预览会把文件内容呈现给用户，但它不是浏览器动作：无页面目标、不需要 caller 投影。
+        Assert.False(CoreCommandEncoder.IsBrowserCapability(Descriptor("shell.document_preview")));
 
         // 控制面（§4.1）**同样**必须有可信 caller —— 否则控制面可匿名申请/撤销授权。
         Assert.True(CoreCommandEncoder.IsBrowserCapability(Descriptor("browser.binding.apply")));
@@ -129,6 +131,20 @@ public sealed class MappingTests
             null);
         Assert.Equal(Proto.CapabilityCommand.PayloadOneofCase.GetPageState, pageState.PayloadCase);
         Assert.Equal("page-1", pageState.GetPageState.Target.PageId);
+
+        var documentPreview = CoreCommandEncoder.Encode(
+            Operation,
+            ConnectionGeneration.Require(1),
+            FakeDescriptor(DesktopCapability.ShellDocumentPreview),
+            DesktopCapabilityRequest.ForDocumentPreview(
+                new DesktopDocumentPreviewRequest("Docs/设计.md", "设计稿")),
+            Call,
+            null);
+        Assert.Equal(Proto.CapabilityCommand.PayloadOneofCase.DocumentPreview, documentPreview.PayloadCase);
+        Assert.Equal("Docs/设计.md", documentPreview.DocumentPreview.Path);
+        Assert.Equal("设计稿", documentPreview.DocumentPreview.Title);
+        // Shell 能力不需要 caller 身份投影：没给就不能凭空造一个。
+        Assert.Null(documentPreview.Caller);
     }
 
     [Fact]
@@ -161,6 +177,105 @@ public sealed class MappingTests
         static string Fingerprint(string url) => CoreCommandEncoder.Fingerprint(
             FakeDescriptor(DesktopCapability.WebViewNavigate),
             DesktopCapabilityRequest.ForNavigate(BrokerHarness.Navigate(url)));
+    }
+
+    [Fact]
+    public void Decoder_MapsDocumentPreviewIdentityAndStatus()
+    {
+        var opened = DesktopResultDecoder.Decode(
+            new Proto.OperationResult
+            {
+                OperationId = "op-doc",
+                Generation = 1,
+                DocumentPreview = new Proto.DocumentPreviewOutcome
+                {
+                    TabId = "document:Docs/a.md",
+                    Path = "Docs/a.md",
+                    Status = "opened",
+                },
+            },
+            DesktopCapability.ShellDocumentPreview,
+            requestedTarget: null);
+
+        Assert.True(opened.IsSuccess);
+        Assert.Equal("document:Docs/a.md", opened.Value.DocumentPreview!.TabId);
+        Assert.Equal("Docs/a.md", opened.Value.DocumentPreview.Path);
+        Assert.Equal(DesktopDocumentPreviewStatus.Opened, opened.Value.DocumentPreview.Status);
+
+        // 未知 status 折叠为 Accepted：宁可让调用方继续观察标签，也不谎称已经渲染。
+        var unknown = DesktopResultDecoder.Decode(
+            new Proto.OperationResult
+            {
+                OperationId = "op-doc",
+                Generation = 1,
+                DocumentPreview = new Proto.DocumentPreviewOutcome
+                {
+                    TabId = "t-1",
+                    Path = "Docs/a.md",
+                    Status = "future_state",
+                },
+            },
+            DesktopCapability.ShellDocumentPreview,
+            requestedTarget: null);
+        Assert.Equal(DesktopDocumentPreviewStatus.Accepted, unknown.Value.DocumentPreview!.Status);
+
+        // 身份缺失（空 tabId）不得伪装成功：契约构造器会拒，解码器必须折叠成 Internal。
+        var missingIdentity = DesktopResultDecoder.Decode(
+            new Proto.OperationResult
+            {
+                OperationId = "op-doc",
+                Generation = 1,
+                DocumentPreview = new Proto.DocumentPreviewOutcome
+                {
+                    TabId = string.Empty,
+                    Path = "Docs/a.md",
+                    Status = "opened",
+                },
+            },
+            DesktopCapability.ShellDocumentPreview,
+            requestedTarget: null);
+        Assert.True(missingIdentity.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InternalError, missingIdentity.Error.Code);
+    }
+
+    [Fact]
+    public void Decoder_RejectsDocumentPreviewOutcomeForAnotherCapability()
+    {
+        // 载荷与能力不符必须拒：让错配的结果通过，比报错难查得多。
+        var decoded = DesktopResultDecoder.Decode(
+            new Proto.OperationResult
+            {
+                OperationId = "op-doc",
+                Generation = 1,
+                DocumentPreview = new Proto.DocumentPreviewOutcome
+                {
+                    TabId = "t-1",
+                    Path = "a.md",
+                    Status = "opened",
+                },
+            },
+            DesktopCapability.ShellClipboard,
+            requestedTarget: null);
+
+        Assert.True(decoded.IsFailure);
+        Assert.Equal(DesktopCapabilityErrorCode.InternalError, decoded.Error.Code);
+    }
+
+    [Fact]
+    public void Fingerprint_ForDocumentPreviewTracksThePathAndTitle()
+    {
+        var descriptor = FakeDescriptor(DesktopCapability.ShellDocumentPreview);
+
+        static string Print(DesktopCapabilityDescriptor descriptor, string path, string? title = null) =>
+            CoreCommandEncoder.Fingerprint(
+                descriptor,
+                DesktopCapabilityRequest.ForDocumentPreview(new DesktopDocumentPreviewRequest(path, title)));
+
+        var baseline = Print(descriptor, "Docs/a.md");
+        Assert.Equal(baseline, Print(descriptor, "Docs/a.md"));
+        Assert.NotEqual(baseline, Print(descriptor, "Docs/b.md"));
+        // 标题只影响显示，但它仍是载荷的一部分：改了就必须算另一次操作。
+        Assert.NotEqual(baseline, Print(descriptor, "Docs/a.md", "新标题"));
     }
 
     [Fact]
