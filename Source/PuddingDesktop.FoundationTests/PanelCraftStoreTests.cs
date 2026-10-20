@@ -243,6 +243,78 @@ public sealed class PanelCraftStoreTests : IDisposable
     }
 
     [Fact]
+    public void PruneTrash_keeps_a_user_directory_that_only_looks_like_a_trash_entry()
+    {
+        // P1（审阅发现）：旧实现只校验「最后一个连字符右边是数字」，
+        // 所以 my-backup-1699999999 会被当成回收站条目，连内容一起删掉。
+        // 现在要求连字符左边是**完整的制品 id**。
+        var now = DateTimeOffset.FromUnixTimeMilliseconds(1_800_000_000_000);
+        var userDirectory = Path.Combine(
+            _store.CraftsDirectory, PanelCraftStore.TrashDirectoryName, "my-backup-1699999999");
+        Directory.CreateDirectory(userDirectory);
+        var keepMe = Path.Combine(userDirectory, "keep.txt");
+        File.WriteAllText(keepMe, "important");
+
+        Assert.Equal(0, _store.PruneTrash(now, TimeSpan.FromDays(7)));
+        Assert.True(Directory.Exists(userDirectory));
+        Assert.True(File.Exists(keepMe));
+    }
+
+    [Fact]
+    public void TryResolveImagePath_refuses_a_file_name_that_escapes_the_store()
+    {
+        // P1（审阅发现）：fileName 来自可被编辑的 craft.json，
+        // 直接拼进路径会让 Delete 把库外文件搬进回收站。
+        Assert.False(_store.TryResolveImagePath(SampleCraft("..\\outside.txt"), out _));
+        Assert.False(_store.TryResolveImagePath(SampleCraft("../outside.txt"), out _));
+        Assert.False(_store.TryResolveImagePath(SampleCraft("C:\\Windows\\win.ini"), out _));
+        Assert.False(_store.TryResolveImagePath(SampleCraft(".."), out _));
+        Assert.False(_store.TryResolveImagePath(SampleCraft(""), out _));
+    }
+
+    [Fact]
+    public void TryResolveImagePath_accepts_a_plain_file_name()
+    {
+        Assert.True(_store.TryResolveImagePath(SampleCraft("craft-80c9955d.jpg"), out var path));
+        Assert.StartsWith(
+            Path.GetFullPath(_store.CraftsDirectory), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Delete_refuses_an_escaping_fileName_and_leaves_everything_in_place()
+    {
+        // 比只测 TryResolve 更贴近真实事故：即使走到了 Delete，
+        // 库外文件不能动、craft.json 也不能被搬走（否则是半完成状态）。
+        var parent = Directory.GetParent(_store.CraftsDirectory)!.FullName;
+        Directory.CreateDirectory(parent);
+        var outside = Path.Combine(parent, "outside.txt");
+        File.WriteAllText(outside, "keep me");
+
+        var craft = SampleCraft("..\\outside.txt");
+        Directory.CreateDirectory(_store.CraftsDirectory);
+        var jsonPath = Path.Combine(_store.CraftsDirectory, craft.Id + ".json");
+        File.WriteAllText(jsonPath, PanelCraftJson.Write(craft));
+
+        Assert.False(_store.Delete(craft.Id, DateTimeOffset.UtcNow));
+        Assert.True(File.Exists(outside));
+        Assert.True(File.Exists(jsonPath));
+    }
+
+    private static PanelCraft SampleCraft(string fileName) => new(
+        "craft-80c9955d",
+        "t",
+        fileName,
+        "image/jpeg",
+        1,
+        1,
+        "sha",
+        1,
+        1,
+        null,
+        null,
+        null);
+
+    [Fact]
     public void PruneTrash_deletes_only_the_expired_entries_in_a_mixed_trash()
     {
         var now = DateTimeOffset.UnixEpoch.AddDays(30);

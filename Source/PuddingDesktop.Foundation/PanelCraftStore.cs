@@ -385,11 +385,77 @@ public sealed class PanelCraftStore
         return crafts;
     }
 
+    /// <summary>
+    /// 尝试解析图片路径。**不安全就不解析**：<c>fileName</c> 来自可被编辑的 craft.json，
+    /// <c>..\..\secrets.txt</c> 这种值会让 <see cref="Delete"/> 把库外文件搬进回收站。
+    /// </summary>
+    public bool TryResolveImagePath(PanelCraft craft, out string path)
+    {
+        path = string.Empty;
+        ArgumentNullException.ThrowIfNull(craft);
+
+        if (!IsSafeFileName(craft.FileName))
+        {
+            return false;
+        }
+
+        try
+        {
+            var root = Path.GetFullPath(CraftsDirectory);
+            var combined = Path.GetFullPath(Path.Combine(root, craft.FileName));
+
+            // 纵深防御：即使文件名检查漏了，也不允许解析结果落到库目录之外。
+            if (!combined.StartsWith(WithSeparator(root), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            path = combined;
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            // 非法路径字符：当作不可解析，不用一个差一点的路径继续。
+            return false;
+        }
+    }
+
     /// <summary>制成品图片的绝对路径。文件缺失时仍然返回路径，由调用方判断存在性。</summary>
+    /// <exception cref="InvalidOperationException">craft.json 里的 fileName 不安全。</exception>
     public string ResolveImagePath(PanelCraft craft)
     {
         ArgumentNullException.ThrowIfNull(craft);
-        return Path.Combine(CraftsDirectory, craft.FileName);
+        if (!TryResolveImagePath(craft, out var path))
+        {
+            throw new InvalidOperationException(
+                $"craft '{craft.Id}' has an unsafe fileName: '{craft.FileName}'");
+        }
+
+        return path;
+    }
+
+    private static string WithSeparator(string directory) =>
+        directory.EndsWith(Path.DirectorySeparatorChar)
+            ? directory
+            : directory + Path.DirectorySeparatorChar;
+
+    /// <summary>
+    /// fileName 必须是一个**纯文件名**：无目录分隔符、无盘符/备用数据流冒号、
+    /// 不是 <c>.</c> / <c>..</c>。
+    /// </summary>
+    private static bool IsSafeFileName(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) || fileName is "." or "..")
+        {
+            return false;
+        }
+
+        if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains(':'))
+        {
+            return false;
+        }
+
+        return string.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -415,13 +481,19 @@ public sealed class PanelCraftStore
             return false;
         }
 
+        // fileName 来自可被编辑的 craft.json：**在所有移动之前**校验。
+        // 否则 JSON 已经搬走、图片却指向库外，就是一个半完成状态。
+        if (!TryResolveImagePath(craft, out var imagePath))
+        {
+            return false;
+        }
+
         var trashDirectory = Path.Combine(
             CraftsDirectory, TrashDirectoryName, $"{id}-{now.ToUnixTimeMilliseconds()}");
         Directory.CreateDirectory(trashDirectory);
 
         File.Move(jsonPath, Path.Combine(trashDirectory, Path.GetFileName(jsonPath)));
 
-        var imagePath = ResolveImagePath(craft);
         if (File.Exists(imagePath))
         {
             File.Move(imagePath, Path.Combine(trashDirectory, craft.FileName));
@@ -491,6 +563,13 @@ public sealed class PanelCraftStore
 
         var separator = directoryName.LastIndexOf('-');
         if (separator <= 0 || separator == directoryName.Length - 1)
+        {
+            return false;
+        }
+
+        // 左边必须是**完整的制品 id**。只校验「尾缀是数字」的话，
+        // 用户自己建的 my-folder-1699999999 会被当成回收站条目连内容一起删掉。
+        if (!PanelCraft.IsValidId(directoryName[..separator]))
         {
             return false;
         }
