@@ -862,7 +862,8 @@ public sealed partial class MainWindow : Window
     private static string DeferredNotice(ToolTabKind kind) => kind switch
     {
         ToolTabKind.Terminal => "终端会话组件尚未接入：该标签页只保留实例与状态位，不执行命令，也不伪装运行状态。",
-        ToolTabKind.Artifact => "制成品预览尚未接入 Core 成果接口：暂不能列出或渲染 Agent 生成的文档、图表与网页。",
+        // ToolTabKind.Artifact 已不再走这里：制成品有自己的列表（CreateCraftLibrary）。
+        // 留着一条「尚未接入」的文案会是假话——它会让人以为制品库还是空的。
         ToolTabKind.Panel => "交互面板尚未接入：这里用来展示 Agent 生成的 Markdown、设计图纸等媒体资源；渲染通道还没建立，因此暂时不提供内容区。",
         _ => "该能力尚未接入。",
     };
@@ -883,6 +884,7 @@ public sealed partial class MainWindow : Window
         ToolTabKind.Output => CreateOutputContent(tab),
         ToolTabKind.Document => CreateDocumentContent(tab),
         ToolTabKind.Panel => CreatePanelContent(tab),
+        ToolTabKind.Artifact => CreateCraftLibrary(),
         _ => CreateDeferredContent(tab),
     };
 
@@ -1561,6 +1563,188 @@ public sealed partial class MainWindow : Window
         {
             // 保存失败必须说出来：默默失败会让用户以为存上了，几天后才发现没了。
             ToolStatusText.Text = $"保存到制品库失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 制成品列表：直接扫本地目录，不经过 Core。
+    ///
+    /// <para>
+    /// 每次进入标签页都重扫一次（而不是缓存）：这是低频、低频次的操作，
+    /// 而缓存与磁盘不一致时，用户看到的是“我存的图凭空消失”。
+    /// </para>
+    /// </summary>
+    private FrameworkElement CreateCraftLibrary()
+    {
+        var panel = new StackPanel { Spacing = 12, Padding = new Thickness(16) };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "制成品",
+            FontSize = 18,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        });
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = CraftStore.CraftsDirectory,
+            FontSize = 11,
+            Opacity = 0.6,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+        });
+
+        IReadOnlyList<PanelCraft> crafts;
+        try
+        {
+            crafts = CraftStore.List();
+        }
+        catch (Exception ex)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = $"无法读取制品库：{ex.Message}",
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.8,
+            });
+            return WrapInScroll(panel);
+        }
+
+        if (crafts.Count == 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "还没有制成品。在交互面板里点「保存到制品库」就会出现在这里。",
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.7,
+            });
+            return WrapInScroll(panel);
+        }
+
+        foreach (var craft in crafts)
+        {
+            panel.Children.Add(CreateCraftCard(craft));
+        }
+
+        return WrapInScroll(panel);
+    }
+
+    private static ScrollViewer WrapInScroll(FrameworkElement content) => new()
+    {
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        Content = content,
+    };
+
+    private FrameworkElement CreateCraftCard(PanelCraft craft)
+    {
+        var body = new StackPanel { Spacing = 6 };
+
+        body.Children.Add(new TextBlock
+        {
+            Text = craft.Title,
+            FontSize = 14,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var created = DateTimeOffset.FromUnixTimeMilliseconds(craft.CreatedAt).LocalDateTime;
+        var meta = $"{craft.Width}×{craft.Height} · {created:MM-dd HH:mm} · {craft.Id}";
+        if (craft.Parent is not null)
+        {
+            meta += $" · 来自 {craft.Parent}";
+        }
+
+        body.Children.Add(new TextBlock
+        {
+            Text = meta,
+            FontSize = 11,
+            Opacity = 0.6,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+        });
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        actions.Children.Add(PanelAction("继续编辑", async (_, _) => await OpenCraftForEditingAsync(craft)));
+        actions.Children.Add(PanelAction("打开文件", (_, _) => OpenCraftInExplorer(craft)));
+        body.Children.Add(actions);
+
+        return new Border
+        {
+            Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12),
+            Child = body,
+        };
+    }
+
+    /// <summary>
+    /// 「继续编辑」：把制成品重新打开成一块可标注的画布。
+    ///
+    /// 复用 <see cref="CapabilityRenderPanelAsync"/> 而不是另开一条渲染路径：
+    /// 那条路已经处理了「同 panelId 幂等覆盖」「折叠时自动展开」等细节，
+    /// 复制一份只会让两处慢慢跑偏。
+    /// </summary>
+    private async Task OpenCraftForEditingAsync(PanelCraft craft)
+    {
+        var imagePath = CraftStore.ResolveImagePath(craft);
+        if (!File.Exists(imagePath))
+        {
+            ToolStatusText.Text = $"制成品的图片文件已丢失：{craft.FileName}";
+            return;
+        }
+
+        var panelId = "edit-" + craft.Id[PanelCraft.IdPrefix.Length..];
+        var html = BuildCraftEditHtml(craft, imagePath);
+
+        await CapabilityRenderPanelAsync(
+            new DesktopPanelRenderRequest(panelId, html, title: craft.Title + " · 编辑"),
+            CancellationToken.None);
+    }
+
+    /// <summary>
+    /// 画布内容：一张图 + 出处。壳会注入主题、标注层与本地图片通道，
+    /// 所以这里只需要给 <c>&lt;img&gt;</c> —— 以及一个足够大的面积（标注层按最大图定位）。
+    /// </summary>
+    private static string BuildCraftEditHtml(PanelCraft craft, string imagePath)
+    {
+        var src = PanelImageSource.BuildUri(imagePath);
+        var title = System.Net.WebUtility.HtmlEncode(craft.Title);
+        var created = DateTimeOffset.FromUnixTimeMilliseconds(craft.CreatedAt).LocalDateTime;
+
+        return $"""
+            <div style="padding:16px">
+              <h1 style="font-size:15px;font-weight:500;margin:0 0 4px">{title}</h1>
+              <p style="font-size:12px;opacity:.65;margin:0 0 12px">{craft.Width}×{craft.Height} · {created:yyyy-MM-dd HH:mm}</p>
+              <img src="{src}" alt="{title}" style="max-width:100%;height:auto;border-radius:10px;display:block">
+            </div>
+            """;
+    }
+
+    private void OpenCraftInExplorer(PanelCraft craft)
+    {
+        var path = CraftStore.ResolveImagePath(craft);
+        if (!File.Exists(path))
+        {
+            ToolStatusText.Text = $"文件已丢失：{craft.FileName}";
+            return;
+        }
+
+        try
+        {
+            // 用 /select 让用户看到文件本身，而不是目录里另一个同名文件。
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{path}\"",
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            ToolStatusText.Text = $"无法打开资源管理器：{ex.Message}";
         }
     }
 
