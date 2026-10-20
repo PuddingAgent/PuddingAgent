@@ -414,6 +414,83 @@ public sealed class PanelCraftStore
         return true;
     }
 
+    /// <summary>
+    /// 清理 <c>_trash</c> 中超过保留期的条目。
+    ///
+    /// <para>
+    /// <see cref="Delete"/> 只把东西移进来，从不清理 —— 一个跑几个月的助手会让
+    /// <c>_trash</c> 无限增长。<b>时间取自目录名里的时间戳</b>，不取文件系统 mtime：
+    /// 后者会被复制、备份、解压工具改掉，而目录名是我们自己写的，语义明确。
+    /// </para>
+    ///
+    /// <para>
+    /// 名字不符合 <c>{id}-{unixMillis}</c> 的目录一律跳过 —— 用户可能自己往里放了东西，
+    /// 「不认识就删」比「不删」危险得多。单个条目删除失败也只跳过，不中断整批。
+    /// </para>
+    /// </summary>
+    /// <returns>实际删除的目录数；<c>_trash</c> 不存在时返回 0。</returns>
+    public int PruneTrash(DateTimeOffset now, TimeSpan retention)
+    {
+        var trashDirectory = Path.Combine(CraftsDirectory, TrashDirectoryName);
+        if (!Directory.Exists(trashDirectory))
+        {
+            return 0;
+        }
+
+        var cutoff = now.ToUnixTimeMilliseconds() - (long)retention.TotalMilliseconds;
+        var removed = 0;
+
+        foreach (var directory in Directory.EnumerateDirectories(trashDirectory))
+        {
+            var name = Path.GetFileName(directory);
+            if (!TryReadTrashTimestamp(name, out var deletedAt) || deletedAt > cutoff)
+            {
+                continue;
+            }
+
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+                removed++;
+            }
+            catch (IOException)
+            {
+                // 文件被占用（用户在资源管理器里开着）—— 下次再清，不阻断其余条目。
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        return removed;
+    }
+
+    /// <summary>
+    /// 从 <c>{id}-{unixMillis}</c> 形式的目录名里取出删除时刻。
+    /// <c>id</c> 本身就带连字符（<c>craft-xxxxxxxx</c>），所以从**最后一个**连字符往右解析。
+    /// </summary>
+    private static bool TryReadTrashTimestamp(string directoryName, out long unixMillis)
+    {
+        unixMillis = 0;
+
+        var separator = directoryName.LastIndexOf('-');
+        if (separator <= 0 || separator == directoryName.Length - 1)
+        {
+            return false;
+        }
+
+        var digits = directoryName.AsSpan(separator + 1);
+        foreach (var ch in digits)
+        {
+            if (ch is < '0' or > '9')
+            {
+                return false;
+            }
+        }
+
+        return long.TryParse(digits, out unixMillis);
+    }
+
     private static string MimeFor(string extension) => extension.ToLowerInvariant() switch
     {
         ".png" => "image/png",

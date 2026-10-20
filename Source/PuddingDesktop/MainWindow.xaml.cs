@@ -1521,6 +1521,12 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private PanelCraftStore? _craftStore;
 
+    /// <summary>
+    /// <c>_trash</c> 里的条目保留多久。7 天足够覆盖「误删后过几天才想起来」；
+    /// 再长就只是占磁盘了。
+    /// </summary>
+    private static readonly TimeSpan TrashRetention = TimeSpan.FromDays(7);
+
     private PanelCraftStore CraftStore => _craftStore ??= new PanelCraftStore(_coordinator.DataRoot!);
 
     /// <summary>
@@ -1618,6 +1624,28 @@ public sealed partial class MainWindow : Window
                 Opacity = 0.8,
             });
             return WrapInScroll(panel);
+        }
+
+        // 顺手清理过期的 _trash 条目。清理失败不影响列表：这是维护动作，
+        // 不该让用户因为「旧东西没删掉」而看不到自己的制成品。
+        var pruned = 0;
+        try
+        {
+            pruned = CraftStore.PruneTrash(DateTimeOffset.Now, TrashRetention);
+        }
+        catch (Exception)
+        {
+        }
+
+        if (pruned > 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = $"已清理 {pruned} 个超过 {TrashRetention.Days} 天的已删除条目",
+                FontSize = 11,
+                Opacity = 0.6,
+                TextWrapping = TextWrapping.Wrap,
+            });
         }
 
         if (crafts.Count == 0)

@@ -186,6 +186,93 @@ public sealed class PanelCraftStoreTests : IDisposable
         Assert.False(_store.Delete("craft-deadbeef", DateTimeOffset.UtcNow));
     }
 
+    // ── _trash 过期清理 ────────────────────────────────────────
+
+    /// <summary>造一个指定删除时刻的 _trash 条目（与 Delete 的命名规则一致）。</summary>
+    private string CreateTrashEntry(string id, DateTimeOffset deletedAt)
+    {
+        // 用 _store.CraftsDirectory 而不是 _root：制品目录多不多一层是 store 的实现细节，
+        // 在测试里猜路径层次会让「实现正确但测试写错」看起来像功能坏了。
+        var directory = Path.Combine(
+            _store.CraftsDirectory, PanelCraftStore.TrashDirectoryName,
+            $"{id}-{deletedAt.ToUnixTimeMilliseconds()}");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "probe.json"), "{}");
+        return directory;
+    }
+
+    [Fact]
+    public void PruneTrash_removes_entries_past_the_retention_window()
+    {
+        var now = DateTimeOffset.UnixEpoch.AddDays(30);
+        var path = CreateTrashEntry("craft-80c9955d", now.AddDays(-10));
+
+        Assert.Equal(1, _store.PruneTrash(now, TimeSpan.FromDays(7)));
+        Assert.False(Directory.Exists(path));
+    }
+
+    [Fact]
+    public void PruneTrash_keeps_entries_inside_the_retention_window()
+    {
+        // 用户刚删的东西必须还能捞回来 —— 清理只针对过期条目。
+        var now = DateTimeOffset.UnixEpoch.AddDays(30);
+        var path = CreateTrashEntry("craft-80c9955d", now.AddDays(-3));
+
+        Assert.Equal(0, _store.PruneTrash(now, TimeSpan.FromDays(7)));
+        Assert.True(Directory.Exists(path));
+    }
+
+    [Fact]
+    public void PruneTrash_skips_directories_it_did_not_create()
+    {
+        // 用户可能在 _trash 里自己放了东西。「不认识就删」比「不删」危险得多。
+        var now = DateTimeOffset.UnixEpoch.AddDays(30);
+        var userDirectory = Path.Combine(
+            _store.CraftsDirectory, PanelCraftStore.TrashDirectoryName, "my-own-backup");
+        Directory.CreateDirectory(userDirectory);
+
+        Assert.Equal(0, _store.PruneTrash(now, TimeSpan.FromDays(7)));
+        Assert.True(Directory.Exists(userDirectory));
+    }
+
+    [Fact]
+    public void PruneTrash_returns_zero_when_there_is_no_trash_directory()
+    {
+        // 从未删过任何东西时不应该抛（那时 _trash 根本不存在）。
+        Assert.Equal(0, _store.PruneTrash(DateTimeOffset.UtcNow, TimeSpan.FromDays(7)));
+    }
+
+    [Fact]
+    public void PruneTrash_deletes_only_the_expired_entries_in_a_mixed_trash()
+    {
+        var now = DateTimeOffset.UnixEpoch.AddDays(30);
+        var stale = CreateTrashEntry("craft-aaaaaaaa", now.AddDays(-30));
+        var fresh = CreateTrashEntry("craft-bbbbbbbb", now.AddDays(-1));
+        var foreign = Path.Combine(
+            _store.CraftsDirectory, PanelCraftStore.TrashDirectoryName, "keep-me");
+        Directory.CreateDirectory(foreign);
+
+        Assert.Equal(1, _store.PruneTrash(now, TimeSpan.FromDays(7)));
+        Assert.False(Directory.Exists(stale));
+        Assert.True(Directory.Exists(fresh));
+        Assert.True(Directory.Exists(foreign));
+    }
+
+    [Fact]
+    public void PruneTrash_reads_the_id_with_hyphens_correctly()
+    {
+        // id 自带连字符（craft-xxxxxxxx），所以时间戳必须从**最后一个**连字符往右取。
+        // 取错位置会让时间戳解析失败，过期条目永远清不掉。
+        //
+        // 用真实量级的时间戳（2026 年）而不是 UnixEpoch 附近：后者减 100 天就跌到纪元之前，
+        // 时间戳变负数、目录名带负号，测的就不再是「连字符解析」而是另一种边界。
+        var now = DateTimeOffset.FromUnixTimeMilliseconds(1_792_497_000_000);
+        var path = CreateTrashEntry("craft-0123abcd", now.AddDays(-100));
+
+        Assert.Equal(1, _store.PruneTrash(now, TimeSpan.FromDays(7)));
+        Assert.False(Directory.Exists(path));
+    }
+
     // ── id 形状 ────────────────────────────────────────────────
 
     [Theory]
