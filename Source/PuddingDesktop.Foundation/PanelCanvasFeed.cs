@@ -191,6 +191,24 @@ public static class PanelCanvasFeed
     public static bool RequiresRerender(long renderedRevision, long incomingRevision)
         => renderedRevision != incomingRevision;
 
+    /// <summary>
+    /// 404 时是否该把画布换成内置示例。
+    ///
+    /// <para>
+    /// 两种情况都**不该**换：
+    /// ① 轮询已经渲染过内容（<paramref name="hasRenderedRevision"/>）——只是暂时读不到；
+    /// ② 内容由 Shell 直接推来（<paramref name="hasPushedContent"/>），典型是「继续编辑」
+    ///    打开的制成品画布：它本来就不以 Core 存储为来源，Core 里查不到是**预期**。
+    /// </para>
+    ///
+    /// <para>
+    /// 第 ② 条是实测出来的：旧版没有这一判据，「继续编辑」打开的制成品画布在 2 秒后
+    /// 被示例覆盖，用户看到的是内置自行车而不是自己刚存的图，还以为东西丢了。
+    /// </para>
+    /// </summary>
+    public static bool ShouldShowSample(bool hasRenderedRevision, bool hasPushedContent)
+        => !hasRenderedRevision && !hasPushedContent;
+
     /// <summary>Human-readable label for a failed poll; keeps the caller from inventing wording.</summary>
     public static string DescribeFailure(PanelCanvasFeedStatus status, string? errorMessage) => status switch
     {

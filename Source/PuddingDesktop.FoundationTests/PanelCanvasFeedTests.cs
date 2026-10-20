@@ -115,6 +115,21 @@ public sealed class PanelCanvasFeedTests
     }
 
     [Theory]
+    [InlineData(false, false, true)]  // 全新画布：示例是对的（Agent 还没推内容）
+    [InlineData(true, false, false)]  // 轮询已渲染过：只是暂时读不到，不能退回示例
+    [InlineData(false, true, false)]  // Shell 直接推来的内容（「继续编辑」的制成品）
+    [InlineData(true, true, false)]
+    public void ShouldShowSample_only_when_the_canvas_has_never_had_content(
+        bool hasRenderedRevision, bool hasPushedContent, bool expected)
+    {
+        // 第三条是实测缺陷：旧版只看 hasRenderedRevision，「继续编辑」打开的制成品画布
+        // 在轮询返回 404 后被换成内置自行车示例，用户以为存的图丢了。
+        Assert.Equal(
+            expected,
+            PanelCanvasFeed.ShouldShowSample(hasRenderedRevision, hasPushedContent));
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.OK, PanelCanvasFeedStatus.Fetched)]
     [InlineData(HttpStatusCode.NotFound, PanelCanvasFeedStatus.NotPublished)]
     [InlineData(HttpStatusCode.InternalServerError, PanelCanvasFeedStatus.Unreachable)]

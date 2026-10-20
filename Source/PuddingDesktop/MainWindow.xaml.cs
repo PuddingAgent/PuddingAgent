@@ -1222,8 +1222,12 @@ public sealed partial class MainWindow : Window
                 break;
 
             case PanelCanvasFeedStatus.NotPublished:
-                if (_panelRenderedRevision.ContainsKey(tabId))
+                if (!PanelCanvasFeed.ShouldShowSample(
+                        _panelRenderedRevision.ContainsKey(tabId),
+                        _panelContent.ContainsKey(tabId)))
                 {
+                    // 本地已有内容（例如「继续编辑」打开的制成品画布），
+                    // Core 里查不到是预期：用示例覆盖会让用户以为存的图丢了。
                     return;
                 }
 
