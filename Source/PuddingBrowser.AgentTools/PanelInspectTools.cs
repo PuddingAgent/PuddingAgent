@@ -90,7 +90,15 @@ public sealed class ReadPanelTool(IPanelCanvasStore panelCanvases) : PuddingTool
 
         var requested = args.MaxChars ?? 0;
         var take = Math.Clamp(requested, 0, MaxPreviewChars);
-        var preview = take == 0 ? null : snapshot.Content[..Math.Min(take, snapshot.Content.Length)];
+        var cut = Math.Min(take, snapshot.Content.Length);
+
+        // 不要把代理对切一半：半个 surrogate 序列化后会变成替换字符，预览里就多出一个无名乱码。
+        if (cut > 0 && cut < snapshot.Content.Length && char.IsHighSurrogate(snapshot.Content[cut - 1]))
+        {
+            cut--;
+        }
+
+        var preview = cut == 0 ? null : snapshot.Content[..cut];
 
         return Task.FromResult(BrowserToolResponse.Success(new ReadPanelToolValue
         {

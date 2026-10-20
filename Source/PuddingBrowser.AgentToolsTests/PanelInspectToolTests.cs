@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Pudding.Contracts;
 using Pudding.Contracts.Desktop;
 using PuddingBrowser.AgentTools;
@@ -255,6 +256,24 @@ public sealed class PanelInspectToolTests
         // 没有根就无法判断边界 ⇒ fail closed，而不是按进程当前目录去猜。
         Assert.False(result.Success);
         Assert.Contains("working directory", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Read_RefusesToCutAnEmojiInHalf()
+    {
+        var store = new InMemoryPanelCanvasStore();
+        // emoji 占两个 UTF-16 代码单元。maxChars=1 只能容下一半 —— 宁可不给预览，也不给半个。
+        store.Publish("main", "\U0001F697车");
+
+        var result = await new ReadPanelTool(store).ExecuteAsync(Request("""{"maxChars":1}"""));
+
+        Assert.True(result.Success, result.Error);
+
+        // 必须解析 JSON 再断言：直接把输出当文本找 U+FFFD 会恒成立（序列化输出的是转义序列），
+        // 那就是一条“看起来在验、实际验不到”的假绿。
+        using var document = JsonDocument.Parse(result.Output);
+        var preview = document.RootElement.GetProperty("value").GetProperty("contentPreview");
+        Assert.Equal(JsonValueKind.Null, preview.ValueKind);
     }
 
     private static string Escape(string path) => path.Replace("\\", "\\\\", StringComparison.Ordinal);
