@@ -1015,6 +1015,34 @@ public sealed partial class MainWindow : Window
 
     private const double PanelPollSeconds = 2;
 
+    /// <summary>
+    /// 面板允许读取的图片根目录。
+    ///
+    /// <para>
+    /// 用户 2026-10-20 要求面板能加载本地绝对路径的图片。但整盘放行等于把磁盘读权限
+    /// 交给 Agent 生成的 HTML（只要扩展名对就能读），所以按目录授权：
+    /// 数据根（Agent 生成的图都在这里）+ 用户图片目录。
+    /// 需要更多目录时在这里加，不要在 CSP 或拦截器里放开。
+    /// </para>
+    /// </summary>
+    private IReadOnlyList<string> PanelImageRoots()
+    {
+        var roots = new List<string>(2);
+
+        if (_coordinator.DataRoot is { Length: > 0 } dataRoot)
+        {
+            roots.Add(dataRoot);
+        }
+
+        var pictures = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+        if (!string.IsNullOrWhiteSpace(pictures))
+        {
+            roots.Add(pictures);
+        }
+
+        return roots;
+    }
+
     private static string PanelIdOf(ToolTab tab)
         => string.IsNullOrWhiteSpace(tab.ResourceKey) ? "main" : tab.ResourceKey;
 
@@ -1027,6 +1055,10 @@ public sealed partial class MainWindow : Window
             await web.EnsureCoreWebView2Async(_webEnvironment);
 
             _panelCanvases[tab.Id] = web;
+
+            // 本地图片通道：CSP 已放行 pudding-image:，这里负责真正读盘。
+            // 每块画布各挂一次（一个 WebView2 一份），重复挂会产生重复过滤器。
+            PanelImageBridge.Attach(web.CoreWebView2, PanelImageRoots());
 
             // 快路径：能力通道刚推过内容，先渲染它 —— 用户立刻看到，不必等一个轮询周期。
             if (_panelContent.TryGetValue(tab.Id, out var pushed))

@@ -14,11 +14,13 @@ public static class PanelCanvasDocument
 {
     /// <summary>
     /// 嵌入宿主时的 CSP：断网、禁一切外部资源，只放开内联样式/脚本（画布交互靠内联 JS）
-    /// 与 <c>data:</c> 图片、字体。
+    /// 与两类图片：<c>data:</c>（内嵌小块内容）和自定义 <c>pudding-image:</c>
+    /// （Shell 拦截后读盘，见 <see cref="PanelImageSource"/>）。
+    /// 后者不可省：4K 图片走 base64 会让画布卡顿，且标注要反复回写整份内容。
     /// </summary>
     public const string EmbeddingContentSecurityPolicy =
         "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-        + "img-src data:; font-src data:;";
+        + "img-src data: " + PanelImageSource.ContentSecurityPolicySource + "; font-src data:;";
 
     /// <summary>
     /// CSS 兜底：内容只写 <c>var(--pudding-*)</c> 即可，不需要自己猜主题。

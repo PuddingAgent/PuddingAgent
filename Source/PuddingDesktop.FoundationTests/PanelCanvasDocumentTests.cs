@@ -22,6 +22,20 @@ public sealed class PanelCanvasDocumentTests
     }
 
     [Fact]
+    public void Embedding_policy_allows_local_images_but_still_blocks_everything_else()
+    {
+        var policy = PanelCanvasDocument.EmbeddingContentSecurityPolicy;
+
+        // 本地图片通道必须放行，否则 pudding-image:// 的 img 全会被 CSP 拦掉。
+        Assert.Contains("pudding-image:", policy, StringComparison.Ordinal);
+        Assert.Contains("img-src data:", policy, StringComparison.Ordinal);
+        // 但不能因此把 img-src 放宽到任意来源。
+        Assert.DoesNotContain("img-src *", policy, StringComparison.Ordinal);
+        Assert.DoesNotContain("img-src http", policy, StringComparison.Ordinal);
+        Assert.DoesNotContain("unsafe-eval", policy, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Exported_document_has_no_csp_so_it_opens_standalone()
     {
         // 导出文件是给用户自己打开/分享的：CSP 是容器约束，带进导出文件会拦住
