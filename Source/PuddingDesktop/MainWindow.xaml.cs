@@ -965,7 +965,7 @@ public sealed partial class MainWindow : Window
 
         var web = new Microsoft.UI.Xaml.Controls.WebView2
         {
-            DefaultBackgroundColor = Windows.UI.Color.FromArgb(255, 255, 255, 255),
+            DefaultBackgroundColor = ToColor(PanelCanvasTheme.PageArgb(CurrentWorkbenchScheme())),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
         };
@@ -1201,12 +1201,20 @@ public sealed partial class MainWindow : Window
     /// ② `script-src 'unsafe-inline'` —— 允许画布自己的交互脚本，但它运行在无网络、
     ///    **无 shellBridge** 的文档里，拿不到任何特权能力；
     /// ③ 不注入任何 native 桥：这个文档与工作台页面完全隔离。
+    ///
+    /// 主题由宿主注入而不是交给 `prefers-color-scheme`：那个媒体查询取自 WebView2 的
+    /// Profile，和宿主外观选择不是同一件事（宿主可以在浅色系统上显式选深色）。
+    /// 之前这里写死 `background:#fff`，结果所有画布在深色工具区里都是一张白纸。
+    /// 现在把 <see cref="PanelCanvasTheme"/> 的变量注入 `:root`，内容用
+    /// `var(--pudding-page)` 取值即可，不需要自己猜主题。
     /// </summary>
-    private static string WrapPanelHtml(string content) =>
+    private string WrapPanelHtml(string content) =>
         "<!doctype html><html><head><meta charset=\"utf-8\">"
         + "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; "
         + "style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:;\">"
-        + "<style>html,body{margin:0;background:#fff;font-family:'Segoe UI','Microsoft YaHei',sans-serif;}</style>"
+        + "<style>" + PanelCanvasTheme.Declare(CurrentWorkbenchScheme())
+        + "html,body{margin:0;background:var(--pudding-page);"
+        + "font-family:'Segoe UI','Microsoft YaHei',sans-serif;}</style>"
         + "</head><body>" + content + "</body></html>";
 
     /// <summary>
@@ -2158,12 +2166,13 @@ public sealed partial class MainWindow : Window
     {
         var preference = WorkbenchAppearance.PreferenceFromComboIndex(ThemeBox.SelectedIndex);
         // 生效配色取 ActualTheme：RequestedTheme 为 Default 时即系统实际主题
-        var scheme = WorkbenchAppearance.Resolve(preference, Root.ActualTheme == ElementTheme.Dark);
+        var scheme = CurrentWorkbenchScheme();
 
         // 三处宿主表面共用同一份判断：标题栏按钮、工具区里的浏览器表面、主工作台。
         // 前两处不依赖 _web，所以放在它的 null 早退之前。
         ApplyCaptionButtonColors(scheme);
         ApplyBrowserSurfaceAppearance();
+        RefreshPanelCanvasAppearance();
 
         var web = _web;
         if (web is null) return;
@@ -2172,6 +2181,37 @@ public sealed partial class MainWindow : Window
         if (web.CoreWebView2 is null) return;
         web.CoreWebView2.Profile.PreferredColorScheme = ToWebView2Scheme(
             WorkbenchAppearance.PreferredColorSchemeFor(preference));
+    }
+
+    /// <summary>
+    /// 当前生效配色。宿主外观选择的**唯一**解析入口：标题栏、浏览器表面、面板画布
+    /// 都从这里取，避免三处各写一份 <c>Resolve(...)</c> 而漂移。
+    /// </summary>
+    private WorkbenchColorScheme CurrentWorkbenchScheme() =>
+        WorkbenchAppearance.Resolve(
+            WorkbenchAppearance.PreferenceFromComboIndex(ThemeBox.SelectedIndex),
+            Root.ActualTheme == ElementTheme.Dark);
+
+    /// <summary>
+    /// 宿主主题切换后，已经渲染过的画布必须按新主题重绘。
+    ///
+    /// 只改 <c>DefaultBackgroundColor</c> 不够：那只影响首帧，已加载的文档仍是旧底色。
+    /// 这里清掉 revision 台账，让轮询在下一个 tick 重新拉取并重新包装
+    /// （<see cref="PanelCanvasFeed.RequiresRerender"/> 只用"是否相同"判断，
+    /// 台账缺失即视为需要重绘）。清 <c>_panelFailureNotified</c> 是为了让新主题下的
+    /// 读取失败能再提示一次，而不是被上一轮的抑制记录永久吞掉。
+    /// </summary>
+    private void RefreshPanelCanvasAppearance()
+    {
+        var argb = PanelCanvasTheme.PageArgb(CurrentWorkbenchScheme());
+        foreach (var web in _panelCanvases.Values)
+        {
+            web.DefaultBackgroundColor = ToColor(argb);
+        }
+
+        if (_panelCanvases.Count == 0) return;
+        _panelRenderedRevision.Clear();
+        _panelFailureNotified.Clear();
     }
 
     /// <summary>
