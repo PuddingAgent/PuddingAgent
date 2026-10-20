@@ -191,7 +191,9 @@ public sealed class CapabilityChannelConfigurationTests
 
         Assert.Equal(CapabilityChannelConfiguration.DefaultGrantable, granted);
 
-        // 目录里已登记但尚无 payload 的能力（dialog/picker/clipboard）不得被缺省授予。
+        // 这张 implemented 清单就是「缺口授予」的**决策点**：新增能力不会自动进入默认集合，
+        // 必须在这里显式表态；漏改的后果不是测试变红，而是线上调用拿到 UnsupportedCapability。
+        // 因此每加一个能力，都要同时改 DefaultGrantable 与这里——两处必须一致。
         foreach (var descriptor in DesktopCapabilities.All)
         {
             var implemented = descriptor.Capability is
@@ -209,7 +211,9 @@ public sealed class CapabilityChannelConfigurationTests
                 DesktopCapability.BrowserTabs or
                 DesktopCapability.ShellDialog or
                 DesktopCapability.ShellFilePicker or
-                DesktopCapability.ShellClipboard;
+                DesktopCapability.ShellClipboard or
+                DesktopCapability.ShellDocumentPreview or
+                DesktopCapability.ShellPanelRender;
 
             Assert.Equal(implemented, granted.HasFlag(descriptor.Capability));
         }
