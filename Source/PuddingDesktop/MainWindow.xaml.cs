@@ -971,7 +971,8 @@ public sealed partial class MainWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(0, 0, 8, 6),
         };
-        toolbar.Children.Add(PanelAction("添加到对话", (_, _) => AddPanelToChat(tab)));
+        toolbar.Children.Add(PanelAction("标注", async (_, _) => await TogglePanelAnnotationAsync(tab)));
+        toolbar.Children.Add(PanelAction("添加到对话", async (_, _) => await AddPanelToChatAsync(tab)));
         toolbar.Children.Add(PanelAction("下载到本地", async (_, _) => await ExportPanelAsync(tab)));
         Grid.SetRow(toolbar, 0);
         host.Children.Add(toolbar);
@@ -1386,15 +1387,90 @@ public sealed partial class MainWindow : Window
         PanelCanvasDocument.WrapForExport(content, CurrentWorkbenchScheme());
 
     /// <summary>
-    /// 「添加到对话」：把画布内容的**引用**插进对话输入框。
+    /// 切换画布标注模式。
+    ///
+    /// <para>
+    /// 标注层由壳注入（见 <see cref="PanelCanvasDocument"/>），默认隐藏。
+    /// 这里只用 <c>ExecuteScriptAsync</c> 读取一个布尔值，不开任何消息通道：
+    /// 面板内容由 Agent 生成，能主动向宿主推消息的能力越少越好。
+    /// </para>
+    /// </summary>
+    private async Task TogglePanelAnnotationAsync(ToolTab tab)
+    {
+        if (!_panelCanvases.TryGetValue(tab.Id, out var web) || web.CoreWebView2 is null)
+        {
+            ToolStatusText.Text = "画布尚未就绪，无法标注。";
+            return;
+        }
+
+        try
+        {
+            var raw = await web.CoreWebView2.ExecuteScriptAsync(
+                "window.puddingAnnotation ? puddingAnnotation.toggle() : null");
+
+            if (string.Equals(raw, "null", StringComparison.OrdinalIgnoreCase))
+            {
+                // 旧壳 / 页面未注入标注层。如实报，不要让按钮看起来按了。
+                ToolStatusText.Text = "这块画布没有标注层（内容未带壳或版本较旧）。";
+                return;
+            }
+
+            ToolStatusText.Text = string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase)
+                ? "标注模式：在图片上拖框或点选，完成后点「添加到对话」"
+                : "已退出标注模式";
+        }
+        catch (Exception ex)
+        {
+            ToolStatusText.Text = $"标注不可用：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 取回画布上的标注。取不到时返回空表（不建失败），由调用方决定退化成什么。
+    /// 解析失败会写状态栏：静默丢掉标注等于用户白画一遍。
+    /// </summary>
+    private async Task<IReadOnlyList<PanelAnnotation>> TryReadAnnotationsAsync(ToolTab tab)
+    {
+        if (!_panelCanvases.TryGetValue(tab.Id, out var web) || web.CoreWebView2 is null)
+        {
+            return Array.Empty<PanelAnnotation>();
+        }
+
+        try
+        {
+            var raw = await web.CoreWebView2.ExecuteScriptAsync(
+                "window.puddingAnnotation ? puddingAnnotation.take() : ''");
+
+            // ExecuteScriptAsync 返回的是 JSON，字符串结果会被再编码一层。
+            var payload = JsonSerializer.Deserialize<string>(raw);
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                return Array.Empty<PanelAnnotation>();
+            }
+
+            if (!PanelAnnotation.TryParsePixels(payload, out var items, out var error))
+            {
+                ToolStatusText.Text = $"标注无法解析：{error}";
+                return Array.Empty<PanelAnnotation>();
+            }
+
+            return items;
+        }
+        catch (Exception)
+        {
+            return Array.Empty<PanelAnnotation>();
+        }
+    }
+
+    /// <summary>
+    /// 「添加到对话」：优先把**标注**变成坐标文本插进输入框（Seedream 交互编辑协议），
+    /// 没有标注时退回插入画布引用。
     ///
     /// 画布在独立 WebView2 里拿不到输入框，按钮又由原生 XAML 画 —— 两边各缺一半，
-    /// 所以由这里转发一条消息给主工作台（消息契约见前端
-    /// <c>integration/shellBridge.ts</c>，消费方在 <c>IntentConsole</c>）。
-    ///
-    /// 只发引用不发展开内容：整张 SVG 塞进输入框既难读，也会白白占上下文。
+    /// 所以由这里转发一条消息给主工作台（契约见前端 <c>integration/shellBridge.ts</c>，
+    /// 消费方在 <c>IntentConsole</c>）。
     /// </summary>
-    private void AddPanelToChat(ToolTab tab)
+    private async Task AddPanelToChatAsync(ToolTab tab)
     {
         var core = _web?.CoreWebView2;
         if (core is null)
@@ -1404,10 +1480,13 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        var annotations = await TryReadAnnotationsAsync(tab);
         var title = string.IsNullOrWhiteSpace(tab.Title) ? "交互面板" : tab.Title;
-        var text = _panelRenderedRevision.TryGetValue(tab.Id, out var revision)
-            ? $"【画布：{title} rev {revision}】"
-            : $"【画布：{title}】";
+        var text = annotations.Count > 0
+            ? PanelAnnotation.DescribeForComposer(annotations)
+            : _panelRenderedRevision.TryGetValue(tab.Id, out var revision)
+                ? $"【画布：{title} rev {revision}】"
+                : $"【画布：{title}】";
 
         try
         {
@@ -1416,7 +1495,9 @@ public sealed partial class MainWindow : Window
             var payload = "{\"type\":\"pudding.composer.insert\",\"text\":"
                 + JsonSerializer.Serialize(text) + "}";
             core.PostWebMessageAsJson(payload);
-            ToolStatusText.Text = $"已插入对话输入框：{title}";
+            ToolStatusText.Text = annotations.Count > 0
+                ? $"已插入 {annotations.Count} 个标注坐标"
+                : $"已插入对话输入框：{title}";
         }
         catch (Exception ex)
         {

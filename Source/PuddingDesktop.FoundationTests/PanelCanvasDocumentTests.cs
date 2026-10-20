@@ -36,6 +36,19 @@ public sealed class PanelCanvasDocumentTests
     }
 
     [Fact]
+    public void Embedding_document_injects_the_annotation_layer_but_export_does_not()
+    {
+        // 导出文件是给用户拿走的静态快照；把一层交互壳塞进去只会让它在浏览器里
+        // 莫名多出一层透明遮罩。
+        var embedded = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+        var exported = PanelCanvasDocument.WrapForExport(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("puddingAnnotation", embedded, StringComparison.Ordinal);
+        Assert.Contains("data-pudding-annotation", embedded, StringComparison.Ordinal);
+        Assert.DoesNotContain("puddingAnnotation", exported, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Exported_document_has_no_csp_so_it_opens_standalone()
     {
         // 导出文件是给用户自己打开/分享的：CSP 是容器约束，带进导出文件会拦住

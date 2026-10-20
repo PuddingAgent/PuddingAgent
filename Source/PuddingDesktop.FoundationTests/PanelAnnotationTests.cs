@@ -226,4 +226,58 @@ public sealed class PanelAnnotationTests
 
         Assert.Contains("JSON", error!, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ── TryParsePixels（页面只报像素，归一化在这边做）───────────
+
+    [Fact]
+    public void Normalizes_pixel_annotations_reported_by_the_page()
+    {
+        // 页面只报“鼠标在图片中的哪里”，换算唯一一份实现就在 C#：
+        // 两份实现（JS + C#）必然漂移，而漂移后的坐标只会生成一张“改错地方”的图。
+        const string json = """
+            {"width":800,"height":400,
+             "items":[{"kind":"box","x1":80,"y1":40,"x2":400,"y2":200},
+                      {"kind":"point","x":400,"y":100}]}
+            """;
+
+        Assert.True(PanelAnnotation.TryParsePixels(json, out var items, out var error), error);
+
+        Assert.Equal(2, items.Count);
+        Assert.Equal("<bbox>100 100 500 500</bbox>", items[0].ToPromptFragment());
+        Assert.Equal("<point>500 250</point>", items[1].ToPromptFragment());
+    }
+
+    [Fact]
+    public void Clamps_pixels_dragged_outside_the_image()
+    {
+        // 拖到图片外面一点点是常态，夹到边上仍然是有意义的框。
+        const string json = """
+            {"width":800,"height":400,"items":[{"kind":"box","x1":-30,"y1":-10,"x2":900,"y2":500}]}
+            """;
+
+        Assert.True(PanelAnnotation.TryParsePixels(json, out var items, out _));
+
+        Assert.Equal("<bbox>0 0 999 999</bbox>", items[0].ToPromptFragment());
+    }
+
+    [Fact]
+    public void Rejects_a_zero_sized_image_because_the_canvas_may_not_have_loaded()
+    {
+        const string json = """
+            {"width":0,"height":400,"items":[{"kind":"point","x":1,"y":1}]}
+            """;
+
+        Assert.False(PanelAnnotation.TryParsePixels(json, out _, out var error));
+
+        Assert.Contains("width", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Rejects_a_pixel_payload_without_items()
+    {
+        Assert.False(PanelAnnotation.TryParsePixels(
+            """{"width":800,"height":400}""", out _, out var error));
+
+        Assert.Contains("items", error!, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -208,6 +208,164 @@ public sealed record PanelAnnotation
         }
     }
 
+    /// <summary>
+    /// 解析画布页返回的**像素**标注，并在这里完成归一化。
+    ///
+    /// <para>
+    /// 期望形状：<c>{"width":800,"height":600,"items":[{"kind":"box","x1":..,"y1":..,"x2":..,"y2":..}]}</c>。
+    /// 让页面只报“鼠标在图片中的哪里”，换算全部交给 C#：归一化是唯一会“算错却看起来正常”
+    /// 的环节，把两份实现（JS + C#）减成一份，漂移就不可能发生。
+    /// </para>
+    ///
+    /// <para>
+    /// 像素越界（用户拖到图片外面一点点）是常态，由 <see cref="FromPixels"/> 夹到边上；
+    /// 但图片尺寸必须为正有限数，否则换算会变成 NaN。
+    /// </para>
+    /// </summary>
+    public static bool TryParsePixels(
+        string? json, out IReadOnlyList<PanelAnnotation> items, out string? error)
+    {
+        items = Array.Empty<PanelAnnotation>();
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            error = "annotation payload was empty.";
+            return false;
+        }
+
+        System.Text.Json.JsonDocument document;
+        try
+        {
+            document = System.Text.Json.JsonDocument.Parse(json);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            error = $"annotation payload was not valid JSON: {ex.Message}";
+            return false;
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                error = $"expected a JSON object, got {root.ValueKind}.";
+                return false;
+            }
+
+            if (!TryReadPositiveFinite(root, "width", out var width)
+                || !TryReadPositiveFinite(root, "height", out var height))
+            {
+                error = "payload needs positive finite 'width' and 'height'.";
+                return false;
+            }
+
+            if (!root.TryGetProperty("items", out var itemsElement)
+                || itemsElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                error = "payload needs an 'items' array.";
+                return false;
+            }
+
+            if (itemsElement.GetArrayLength() > MaxItems)
+            {
+                error = $"at most {MaxItems} annotations are accepted, got {itemsElement.GetArrayLength()}.";
+                return false;
+            }
+
+            var parsed = new List<PanelAnnotation>(itemsElement.GetArrayLength());
+            foreach (var element in itemsElement.EnumerateArray())
+            {
+                if (!TryParsePixelsOne(element, width, height, out var annotation, out error))
+                {
+                    items = Array.Empty<PanelAnnotation>();
+                    return false;
+                }
+
+                parsed.Add(annotation);
+            }
+
+            items = parsed;
+            return true;
+        }
+    }
+
+    private static bool TryParsePixelsOne(
+        System.Text.Json.JsonElement element, double width, double height,
+        out PanelAnnotation annotation, out string? error)
+    {
+        annotation = null!;
+        error = null;
+
+        if (element.ValueKind != System.Text.Json.JsonValueKind.Object)
+        {
+            error = $"annotation must be an object, got {element.ValueKind}.";
+            return false;
+        }
+
+        var kind = ReadString(element, "kind");
+        if (string.Equals(kind, "box", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryReadFinite(element, "x1", out var x1)
+                || !TryReadFinite(element, "y1", out var y1)
+                || !TryReadFinite(element, "x2", out var x2)
+                || !TryReadFinite(element, "y2", out var y2))
+            {
+                error = "box annotation needs finite x1,y1,x2,y2.";
+                return false;
+            }
+
+            annotation = FromPixels(x1, y1, x2, y2, width, height);
+            return true;
+        }
+
+        if (string.Equals(kind, "point", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryReadFinite(element, "x", out var x) || !TryReadFinite(element, "y", out var y))
+            {
+                error = "point annotation needs finite x,y.";
+                return false;
+            }
+
+            annotation = PointFromPixels(x, y, width, height);
+            return true;
+        }
+
+        error = $"unknown annotation kind '{kind}'.";
+        return false;
+    }
+
+    private static bool TryReadPositiveFinite(
+        System.Text.Json.JsonElement element, string name, out double value)
+    {
+        value = 0;
+        if (!TryReadFinite(element, name, out var raw) || raw <= 0)
+        {
+            return false;
+        }
+
+        value = raw;
+        return true;
+    }
+
+    private static bool TryReadFinite(
+        System.Text.Json.JsonElement element, string name, out double value)
+    {
+        value = 0;
+        if (!element.TryGetProperty(name, out var property)
+            || property.ValueKind != System.Text.Json.JsonValueKind.Number
+            || !property.TryGetDouble(out var raw)
+            || double.IsNaN(raw)
+            || double.IsInfinity(raw))
+        {
+            return false;
+        }
+
+        value = raw;
+        return true;
+    }
+
     private static bool TryParseOne(
         System.Text.Json.JsonElement element,
         out PanelAnnotation annotation,
