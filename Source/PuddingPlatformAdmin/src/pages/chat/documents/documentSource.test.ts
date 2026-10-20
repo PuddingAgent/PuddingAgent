@@ -83,7 +83,7 @@ describe('loadDocumentContent', () => {
     expect(result.document.meta).toContain('内容已截断');
   });
 
-  it('404 给出「接口未提供或文件不存在」并附提示', async () => {
+  it('404 说是找不到文件或超出工作区，而不是断言接口未提供', async () => {
     const { impl } = fakeFetch({ ok: false, status: 404 });
 
     const result = await loadDocumentContent({
@@ -94,8 +94,26 @@ describe('loadDocumentContent', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toContain('接口未提供');
-    expect(result.hint).toContain('files/content');
+    expect(result.reason).toContain('找不到该文件');
+    // 后端对「根外」与「不存在」同为 404，所以不能把 404 解读成「接口缺失」。
+    expect(result.reason).not.toContain('接口未提供');
+    expect(result.hint).toContain('相对路径');
+  });
+
+  it('401 明确说是未登录，与 403 的越权区分开', async () => {
+    const { impl } = fakeFetch({ ok: false, status: 401 });
+
+    const result = await loadDocumentContent({
+      workspaceId: 'default',
+      path: 'a.md',
+      fetchImpl: impl,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain('需要登录');
+    expect(result.reason).not.toContain('无权');
+    expect(result.hint).toContain('登录');
   });
 
   it('501 明确说是宿主能力缺失，而不是渲染空文档', async () => {

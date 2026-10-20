@@ -115,11 +115,22 @@ export async function loadDocumentContent(
   }
 
   if (!response.ok) {
-    if (response.status === 404) {
+    // 401 与 403 必须分开：前者是「没登录」（用户可自助解决），后者是「登录了但没权限」
+    // （要找管理员）。混成一句会让排查方向整体跑偏。
+    if (response.status === 401) {
       return {
         ok: false,
-        reason: '无法读取：文件读取接口未提供，或该文件不存在',
-        hint: '需要宿主提供 GET /api/workspaces/{ws}/files/content?path=…',
+        reason: '需要登录后才能预览工作区文件',
+        hint: '在宿主里登录工作台后重试；Shell 内嵌视图若与主窗口不共享登录态就会停在这里',
+      };
+    }
+    if (response.status === 404) {
+      // 后端对「工作区根之外」与「文件不存在」返回同一个 404（刻意不提供存在性探测），
+      // 所以这里不能断言「接口未提供」——那会让排查方向整体跑偏。
+      return {
+        ok: false,
+        reason: '找不到该文件，或它超出了工作区范围',
+        hint: '检查 path 是否为工作区内的相对路径，例如 Docs/14_reports/xxx.md',
       };
     }
     if (response.status === 501 || response.status === 503) {
