@@ -156,4 +156,69 @@ public sealed class BrowserGrantIssuerTests
         Assert.False(issuer.TryIssue(Request(target, user), out _, out _, out var reason));
         Assert.Contains("User caller", reason, StringComparison.Ordinal);
     }
+
+    // ── management grant：策略表要求它，但生产代码此前从未签发过 ─────────────
+
+    [Fact]
+    public void ATrustedAgentGetsAManagementGrantWithoutAPageTarget()
+    {
+        // 管理面操作（建 context / 新建标签）**还没有页面可以授权**，
+        // 所以授权只绑实例/世代与可信身份，不绑 DesktopPageTarget。
+        var (issuer, _, _) = Arrange();
+
+        Assert.True(
+            issuer.TryIssueManagement(
+                Agent(), TimeSpan.FromMinutes(5), parentHoldsManagement: false,
+                out var grant, out var epoch, out var reason),
+            reason);
+
+        Assert.NotNull(grant);
+        Assert.Equal("run-1", grant!.Grantee.TaskId);
+        Assert.True(grant.Binding.Matches(
+            new BrowserPageGrantBinding(DesktopId, ProcessId, ConnectionGeneration.Require(1))));
+        Assert.True(grant.ExpiresAtUtc is null || grant.ExpiresAtUtc > Now);
+        Assert.NotEqual(default, epoch);
+    }
+
+    [Fact]
+    public void ManagementValidityIsCappedLikeAPageGrant()
+    {
+        var (issuer, _, _) = Arrange(limits: new BrowserGrantIssuanceLimits(TimeSpan.FromMinutes(5)));
+
+        Assert.False(issuer.TryIssueManagement(
+            Agent(), TimeSpan.FromHours(1), false, out _, out _, out var reason));
+        Assert.Contains("exceeds the desktop limit", reason, StringComparison.Ordinal);
+
+        Assert.False(issuer.TryIssueManagement(
+            Agent(), TimeSpan.Zero, false, out _, out _, out var zeroReason));
+        Assert.Contains("must be positive", zeroReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ASubAgentCannotGrantItselfManagement()
+    {
+        // 子代理不得自己给自己开管理面：必须父任务先持有。
+        var (issuer, _, _) = Arrange();
+        var subAgent = new BrowserCallerIdentity(BrowserCallerKind.SubAgent, "agent-1", "run-sub", "run-1");
+
+        Assert.False(issuer.TryIssueManagement(
+            subAgent, TimeSpan.FromMinutes(5), parentHoldsManagement: false,
+            out _, out _, out var reason));
+        Assert.Contains("parent", reason, StringComparison.Ordinal);
+
+        // 父任务已持有时可以签发。
+        Assert.True(issuer.TryIssueManagement(
+            subAgent, TimeSpan.FromMinutes(5), parentHoldsManagement: true,
+            out _, out _, out var okReason), okReason);
+    }
+
+    [Fact]
+    public void ManagementGrantIsRefusedOnADeadConnection()
+    {
+        var (issuer, _, _) = Arrange(generation: ConnectionGeneration.None);
+
+        Assert.False(issuer.TryIssueManagement(
+            Agent(), TimeSpan.FromMinutes(5), false, out _, out _, out var reason));
+        Assert.Contains("not live", reason, StringComparison.Ordinal);
+    }
 }

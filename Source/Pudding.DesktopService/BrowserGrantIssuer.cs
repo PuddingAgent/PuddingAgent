@@ -136,4 +136,82 @@ public sealed class BrowserGrantIssuer(
         reason = string.Empty;
         return true;
     }
+
+    /// <summary>
+    /// 签发**管理面**授权（建/关 context、新建标签）。
+    ///
+    /// <para>
+    /// 与 page grant 的差别：管理面操作**还没有页面可以授权**，所以不绑定
+    /// <see cref="DesktopPageTarget"/>，只绑定实例/世代与可信身份。
+    /// </para>
+    ///
+    /// <para>
+    /// 为什么需要它：策略表把 <c>TabNew</c> / <c>ContextCreate</c> 归入
+    /// <see cref="BrowserGrantKind.Management"/>，但生产代码从未签发过这类授权
+    /// （<c>IssueManagementGrant</c> 只在测试里被调用）——等于一道永远打不开的死门。
+    /// 本方法把那条路补上，且**不改变**任何已有判据。
+    /// </para>
+    ///
+    /// <para>
+    /// 拒绝面与 page grant 同构，只少一条「目标必须已登记」（管理面本来就没有目标）：
+    /// 行动者不可信；有效期 &lt;= 0 或超过 Desktop 上限；
+    /// 子代理在父任务尚未持有管理授权时不得自取。
+    /// </para>
+    /// </summary>
+    public bool TryIssueManagement(
+        BrowserCallerIdentity caller,
+        TimeSpan validity,
+        bool parentHoldsManagement,
+        out BrowserManagementGrant? grant,
+        out BrowserPageGrantEpoch epoch,
+        out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(caller);
+        grant = null;
+        epoch = default;
+
+        if (!BrowserCallerRequirement.TryRequireCaller(caller, out var verified, out reason))
+        {
+            return false;
+        }
+
+        if (validity <= TimeSpan.Zero)
+        {
+            reason = "management grant validity must be positive";
+            return false;
+        }
+
+        if (validity > _limits.MaxValidity)
+        {
+            // 与 page grant 同一道上限：调用方不能靠「我要一小时」把管理面拉长。
+            reason = $"management grant validity {validity} exceeds the desktop limit {_limits.MaxValidity}";
+            return false;
+        }
+
+        if (verified.Kind == BrowserCallerKind.SubAgent && !parentHoldsManagement)
+        {
+            // 子代理不得自己给自己开管理面：必须父任务先持有。
+            reason = "a sub-agent needs its parent to hold the management grant first";
+            return false;
+        }
+
+        var generation = _currentConnectionGeneration();
+        if (!generation.IsLive)
+        {
+            reason = "the desktop connection is not live; a grant issued now could not be validated";
+            return false;
+        }
+
+        var issuedAt = _clock.GetUtcNow();
+        grant = new BrowserManagementGrant(
+            BrowserManagementGrantId.NewId(),
+            new BrowserPageGrantBinding(_desktopId, _processInstanceId, generation),
+            verified,
+            issuedAt,
+            expiresAtUtc: issuedAt + validity);
+
+        epoch = _lifecycle.Authority.IssueManagementGrant(grant);
+        reason = string.Empty;
+        return true;
+    }
 }
