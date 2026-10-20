@@ -847,7 +847,7 @@ public sealed partial class MainWindow : Window
     {
         ToolTabKind.Terminal => "终端会话组件尚未接入：该标签页只保留实例与状态位，不执行命令，也不伪装运行状态。",
         ToolTabKind.Artifact => "制成品预览尚未接入 Core 成果接口：暂不能列出或渲染 Agent 生成的文档、图表与网页。",
-        ToolTabKind.Panel => "交互面板尚未接入：Agent 生成表单与筛选器的提交通道未建立，因此不提供输入控件。",
+        ToolTabKind.Panel => "交互面板尚未接入：这里用来展示 Agent 生成的 Markdown、设计图纸等媒体资源；渲染通道还没建立，因此暂时不提供内容区。",
         _ => "该能力尚未接入。",
     };
 
