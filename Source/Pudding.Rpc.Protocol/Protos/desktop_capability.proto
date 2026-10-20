@@ -365,6 +365,13 @@ message DocumentPreviewOutcome {
   string status = 3;
 }
 
+// 面板渲染结果：只回画布身份与阶段，**不回内容**（内容既不上回调，也不进审计）。
+// status 用线名（rendered / replaced），rendered 只表示已交给画布，不表示用户已看到。
+message PanelRenderOutcome {
+  string panel_id = 1;
+  string status = 2;
+}
+
 // 快照预算：Desktop 必须截断而不是无界返回；truncated 必须如实标注。
 message SnapshotBudget {
   bool include_dom = 1;
@@ -417,6 +424,21 @@ message DocumentPreviewCommand {
   string title = 2;
 }
 
+// 交互面板渲染（Shell 类，非浏览器动作）：把 Agent 生成的一段**自包含 HTML** 推进工具区画布。
+// 为什么内容走线缆而不是落盘再传路径：面板展示的是「现算现给」的媒体资源（结构图、
+// 表格、可交互小部件），没有天然的文件生命周期；为它造一个临时文件只会多出清理与命名问题。
+// 安全性不靠「不传内容」，而靠 Desktop 侧把它装进**无桥接、无网络**的沙箱文档渲染。
+message PanelRenderCommand {
+  // 稳定画布标识（[A-Za-z0-9._-]，≤64）：同 id 覆盖同一画布，不同 id 各自独立。
+  string panel_id = 1;
+  // 自包含 HTML 片段或完整文档。Desktop 不执行其中的脚本以外的任何特权能力。
+  string content = 2;
+  // 内容类型。v1 只接受 "html"；未知类型必须拒绝，不得「猜着渲染」。
+  string content_type = 3;
+  // 可选画布标题；空 = Desktop 用默认标题。
+  string title = 4;
+}
+
 message CapabilityCommand {
   string operation_id = 1;
   // 命令所属连接世代；与当前世代不符必须拒绝。
@@ -451,6 +473,7 @@ message CapabilityCommand {
     BrowserBindingRevokeCommand binding_revoke = 27;
   ScreenshotCommand screenshot = 28;
     DocumentPreviewCommand document_preview = 29;
+    PanelRenderCommand panel_render = 30;
   }
 }
 
@@ -587,6 +610,7 @@ message OperationResult {
     BindingAckOutcome binding_ack = 27;
   ScreenshotOutcome screenshot = 28;
     DocumentPreviewOutcome document_preview = 29;
+    PanelRenderOutcome panel_render = 30;
   }
 }
 
