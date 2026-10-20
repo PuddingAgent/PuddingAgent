@@ -109,6 +109,18 @@ internal static class CoreCommandEncoder
                 };
                 break;
 
+            case DesktopCapability.ShellPanelRender when request.PanelRender is { } panel:
+                // 内容直接上线缆（面板展示的是「现算现给」的媒体资源，没有文件生命周期）。
+                // 安全性不靠「不传内容」，而靠 Desktop 侧把它装进无桥接、无网络的沙箱文档。
+                command.PanelRender = new Proto.PanelRenderCommand
+                {
+                    PanelId = panel.PanelId,
+                    Content = panel.Content,
+                    ContentType = panel.ContentType,
+                    Title = panel.Title ?? string.Empty,
+                };
+                break;
+
             case DesktopCapability.BrowserLocate when request.Locate is { } locate:
                 command.Locate = new Proto.LocateCommand
                 {
@@ -365,6 +377,10 @@ internal static class CoreCommandEncoder
             // 导致「同 operationId + 不同文件」被判为可复用（与 P0 同类）。
             _ when request.DocumentPreview is { } documentPreview =>
                 $"document_preview:{documentPreview.Path}:{documentPreview.Title ?? string.Empty}",
+            // 面板渲染：内容可能很大，不能把全文拼进指纹；用长度 + SHA-256 既保精度又有界。
+            // 漏掉这一支就会落到下面的 "empty" ⇒ 「同 operationId + 不同内容」被判为可复用。
+            _ when request.PanelRender is { } panel =>
+                $"panel_render:{panel.PanelId}:{panel.ContentType}:{panel.Title ?? string.Empty}:{panel.Content.Length}:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(panel.Content)))}",
             _ when request.Dialog is { } dialog =>
                 $"dialog:{dialog.Buttons}:{dialog.Title}:{dialog.Message}",
             _ when request.FilePicker is { } picker =>
@@ -435,6 +451,7 @@ internal static class DesktopResultDecoder
                 Proto.OperationResult.OutcomeOneofCase.BindingAck => expectedCapability is DesktopCapability.BrowserBindingApply or DesktopCapability.BrowserBindingRevoke,
             Proto.OperationResult.OutcomeOneofCase.Screenshot => expectedCapability == DesktopCapability.BrowserScreenshot,
             Proto.OperationResult.OutcomeOneofCase.DocumentPreview => expectedCapability == DesktopCapability.ShellDocumentPreview,
+            Proto.OperationResult.OutcomeOneofCase.PanelRender => expectedCapability == DesktopCapability.ShellPanelRender,
             _ => false,
         };
 
@@ -518,6 +535,30 @@ internal static class DesktopResultDecoder
                 {
                     return CapabilityResult<DesktopCapabilityResponse>.Failure(
                         DesktopCapabilityError.Internal("document preview identity is missing in the outcome"));
+                }
+            }
+
+            case Proto.OperationResult.OutcomeOneofCase.PanelRender:
+            {
+                var panelOutcome = result.PanelRender;
+                if (panelOutcome is null)
+                {
+                    return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                        DesktopCapabilityError.Internal("panel render outcome is empty"));
+                }
+
+                // 未知 status 折叠为 Rendered：比「当作已替换」保守。
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromPanelRender(new DesktopPanelRenderResult(
+                            panelOutcome.PanelId,
+                            DesktopPanelRenderStatusWire.Parse(panelOutcome.Status))));
+                }
+                catch (ArgumentException)
+                {
+                    return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                        DesktopCapabilityError.Internal("panel render identity is missing in the outcome"));
                 }
             }
 

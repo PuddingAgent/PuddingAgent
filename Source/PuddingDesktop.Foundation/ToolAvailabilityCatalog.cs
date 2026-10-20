@@ -16,7 +16,9 @@ public static class ToolAvailabilityCatalog
     /// </summary>
     public static ToolTabAvailability For(ToolTabKind kind) => kind switch
     {
-        ToolTabKind.Terminal or ToolTabKind.Artifact or ToolTabKind.Panel =>
+        // 面板已接入（Agent 可通过 shell.panel_render 推送内容）⇒ Ready；
+        // 终端与制成品仍未接入，保持 Deferred。
+        ToolTabKind.Terminal or ToolTabKind.Artifact =>
             ToolTabAvailability.Deferred,
         _ => ToolTabAvailability.Ready,
     };

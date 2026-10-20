@@ -111,6 +111,10 @@ public sealed class DesktopSurfaceComposition : IDesktopUiSurface
         DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken) =>
         _shell.OpenDocumentAsync(context, request, cancellationToken);
 
+    public Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+        DesktopCallContext context, DesktopPanelRenderRequest request, CancellationToken cancellationToken) =>
+        _shell.RenderPanelAsync(context, request, cancellationToken);
+
     public Task<CapabilityResult<DesktopNotificationResult>> ShowNotificationAsync(
         DesktopCallContext context, DesktopNotificationRequest request, CancellationToken cancellationToken) =>
         _shell.ShowNotificationAsync(context, request, cancellationToken);

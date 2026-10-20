@@ -15,7 +15,7 @@ public sealed class ToolAvailabilityCatalogTests
     [InlineData(ToolTabKind.Output, ToolTabAvailability.Ready)]
     [InlineData(ToolTabKind.Terminal, ToolTabAvailability.Deferred)]
     [InlineData(ToolTabKind.Artifact, ToolTabAvailability.Deferred)]
-    [InlineData(ToolTabKind.Panel, ToolTabAvailability.Deferred)]
+    [InlineData(ToolTabKind.Panel, ToolTabAvailability.Ready)]
     public void For_matches_the_real_capability(ToolTabKind kind, ToolTabAvailability expected) =>
         Assert.Equal(expected, ToolAvailabilityCatalog.For(kind));
 
@@ -25,7 +25,7 @@ public sealed class ToolAvailabilityCatalogTests
     [InlineData(ToolTabKind.Output, "可用")]
     [InlineData(ToolTabKind.Terminal, "待接入")]
     [InlineData(ToolTabKind.Artifact, "待接入")]
-    [InlineData(ToolTabKind.Panel, "待接入")]
+    [InlineData(ToolTabKind.Panel, "可用")]
     public void CardLabel_is_derived_from_availability(ToolTabKind kind, string expected) =>
         Assert.Equal(expected, ToolAvailabilityCatalog.CardLabel(kind));
 

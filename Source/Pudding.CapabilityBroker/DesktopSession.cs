@@ -140,6 +140,24 @@ public sealed class DesktopSession : IAsyncDisposable, IDesktopBrowserCapability
                     DesktopCapabilityError.Internal("document preview response payload is missing")),
             cancellationToken);
 
+    // ── 面板渲染（Shell 类：无页面目标、无需 caller 投影）───────────────
+
+    /// <summary>
+    /// 把一段自包含 HTML 推到工具区画布。同 <c>panelId</c> 幂等覆盖。
+    /// 内容会真的上线缆（面板是「现算现给」的显式约定），但不得回传、不得进审计。
+    /// </summary>
+    public Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+        DesktopPanelRenderRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
+        InvokeAsync(
+            DesktopCapability.ShellPanelRender,
+            DesktopCapabilityRequest.ForPanelRender(request),
+            call,
+            static response => response.PanelRender is { } value
+                ? CapabilityResult<DesktopPanelRenderResult>.Success(value)
+                : CapabilityResult<DesktopPanelRenderResult>.Failure(
+                    DesktopCapabilityError.Internal("panel render response payload is missing")),
+            cancellationToken);
+
     public Task<CapabilityResult<NavigateResult>> NavigateAsync(
         NavigateRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
         InvokeAsync(

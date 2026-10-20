@@ -111,6 +111,11 @@ public static class BrowserBridgeServiceCollectionExtensions
             new ChannelDocumentCapabilitySurface(
                 () => sp.GetService<Pudding.CapabilityBroker.CapabilityBroker>()?.Sessions.FirstOrDefault()));
 
+        // 面板渲染：同样不走运输路由（旧 Bridge 从未有 panel.render 命令）。
+        services.AddSingleton<IDesktopPanelCapabilitySurface>(sp =>
+            new ChannelPanelCapabilitySurface(
+                () => sp.GetService<Pudding.CapabilityBroker.CapabilityBroker>()?.Sessions.FirstOrDefault()));
+
         // Desktop 实例 ID 有**两个真实来源**，都来自各自的握手，绝不猜：
         //   ① 能力通道已启用 ⇒ 活动会话的 DesktopId；
         //   ② 通道未启用 ⇒ 既有 Bridge 连接的 DesktopInstanceId。

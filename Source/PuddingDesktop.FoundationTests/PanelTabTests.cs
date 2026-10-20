@@ -6,8 +6,8 @@ using PuddingDesktop.Foundation;
 /// 「交互面板」标签页（ToolTabKind.Panel）的纯逻辑契约。
 ///
 /// 用户 2026-10-20 的定位：Panel 是**可交互的媒体画布**（Markdown / 设计图纸等），
-/// 不是表单提交通道。Shell 侧的 WebView2 载体已经在 MainWindow 里实现，
-/// 但 Agent 推送内容的 panel.render 通道还没建立 —— 所以它现在必须仍是「待接入」。
+/// 不是表单提交通道。Shell 侧的 WebView2 载体与 Agent 推送通道（shell.panel_render）
+/// 都已落地，所以它现在是「可用」。
 ///
 /// UI 那半边无法在无窗口环境验证，但「可用性标签」与「画布单例」两条判据在 Foundation 里，
 /// 必须在这里钉住：少了第二条，表现就是「点两次交互面板出现两个画布」，
@@ -16,12 +16,13 @@ using PuddingDesktop.Foundation;
 public sealed class PanelTabTests
 {
     [Fact]
-    public void Panel_stays_deferred_until_agent_can_push_content()
+    public void Panel_is_ready_because_agent_can_push_content()
     {
-        // 这条断言是边界的锚：等 panel.render 落地、Agent 真能推内容时，
-        // 它会失败，提醒把标签改成「可用」——而不是靠人记得去改。
-        Assert.Equal(ToolTabAvailability.Deferred, ToolAvailabilityCatalog.For(ToolTabKind.Panel));
-        Assert.Equal("待接入", ToolAvailabilityCatalog.CardLabel(ToolTabKind.Panel));
+        // 取红历史（这正是这条断言的价值）：panel.render 落地前它是 Deferred，
+        // 本测试当时断言 Deferred 并注明「落地后这条会红」。它确实红了，于是把标签改成可用。
+        // 若将来通道被移除，这里必须再改回去 —— 不允许「实现没了但标签还写着可用」。
+        Assert.Equal(ToolTabAvailability.Ready, ToolAvailabilityCatalog.For(ToolTabKind.Panel));
+        Assert.Equal("可用", ToolAvailabilityCatalog.CardLabel(ToolTabKind.Panel));
     }
 
     [Fact]

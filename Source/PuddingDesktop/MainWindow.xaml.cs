@@ -5,6 +5,8 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.WebView2;
+using Pudding.Contracts;
+using Pudding.Contracts.Desktop;
 using PuddingDesktop.Browser;
 using PuddingDesktop.Configuration;
 using PuddingDesktop.Foundation;
@@ -970,24 +972,125 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(web, 1);
         host.Children.Add(web);
 
-        _ = LoadPanelAsync(web);
+        _ = LoadPanelAsync(web, tab);
         return host;
     }
 
-    private async Task LoadPanelAsync(Microsoft.UI.Xaml.Controls.WebView2 web)
+    /// <summary>每个画布 tab 的 WebView2（按 tab id）；Agent 重复推送时用它直接覆盖内容。</summary>
+    private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.WebView2> _panelCanvases = new(StringComparer.Ordinal);
+
+    /// <summary>待渲染的内容（按 tab id）：标签新建时先存这里，WebView2 初始化完成后取用。</summary>
+    private readonly Dictionary<string, string> _panelContent = new(StringComparer.Ordinal);
+
+    private async Task LoadPanelAsync(Microsoft.UI.Xaml.Controls.WebView2 web, ToolTab tab)
     {
         try
         {
             _webEnvironment ??= await CoreWebView2Environment.CreateWithOptionsAsync(null,
                 Path.Combine(_coordinator.DataRoot!, "browser", "workbench", "user-data"), null);
             await web.EnsureCoreWebView2Async(_webEnvironment);
-            web.CoreWebView2.NavigateToString(PanelSampleHtml);
+
+            _panelCanvases[tab.Id] = web;
+
+            // 有 Agent 推送的内容就用它，否则显示内置示例（示例只用于验证画布能跑）。
+            var html = _panelContent.TryGetValue(tab.Id, out var pushed)
+                ? WrapPanelHtml(pushed)
+                : PanelSampleHtml;
+            web.CoreWebView2.NavigateToString(html);
         }
         catch (Exception ex)
         {
             // 画布起不来时不能留空白：空白会被当成“内容就是这个样子”。
             ToolStatusText.Text = $"面板画布不可用：{ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// 把 Agent 内容包进**沙箱化**的文档壳。
+    ///
+    /// 三条约束（对应 capability 层的安全承诺）：
+    /// ① `default-src 'none'` —— 无外部网络（连字体、图片、fetch 全断）；
+    /// ② `script-src 'unsafe-inline'` —— 允许画布自己的交互脚本，但它运行在无网络、
+    ///    **无 shellBridge** 的文档里，拿不到任何特权能力；
+    /// ③ 不注入任何 native 桥：这个文档与工作台页面完全隔离。
+    /// </summary>
+    private static string WrapPanelHtml(string content) =>
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        + "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; "
+        + "style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:;\">"
+        + "<style>html,body{margin:0;background:#fff;font-family:'Segoe UI','Microsoft YaHei',sans-serif;}</style>"
+        + "</head><body>" + content + "</body></html>";
+
+    /// <summary>
+    /// 能力通道：把 Agent 内容推到工具区画布（由 <c>WinUiShellFacilities</c> 调用，已在 UI 线程）。
+    /// 同 panelId 幂等：已有画布则覆盖内容，没有则开一个。
+    /// </summary>
+    public Task<CapabilityResult<DesktopPanelRenderResult>> CapabilityRenderPanelAsync(
+        DesktopPanelRenderRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var tabId = ToolTabIdentity.Panel(request.PanelId);
+        var existed = _toolTabs.Find(tabId) is not null;
+
+        _panelContent[tabId] = request.Content;
+
+        if (existed)
+        {
+            // 已有画布：直接覆盖内容（WebView2 未就绪的情况交给 LoadPanelAsync 的待渲染路径）。
+            if (_panelCanvases.TryGetValue(tabId, out var web) && web.CoreWebView2 is not null)
+            {
+                web.CoreWebView2.NavigateToString(WrapPanelHtml(request.Content));
+            }
+        }
+        else
+        {
+            OpenTool(new ToolTabDescriptor
+            {
+                Id = tabId,
+                Kind = ToolTabKind.Panel,
+                Title = string.IsNullOrWhiteSpace(request.Title) ? "交互面板" : request.Title,
+                Subtitle = "Agent 推送内容",
+                ResourceKey = request.PanelId,
+                Availability = ToolAvailabilityCatalog.For(ToolTabKind.Panel),
+                StatusText = "已接收 Agent 推送内容",
+            });
+        }
+
+        return Task.FromResult(CapabilityResult<DesktopPanelRenderResult>.Success(
+            new DesktopPanelRenderResult(request.PanelId,
+                existed ? DesktopPanelRenderStatus.Replaced : DesktopPanelRenderStatus.Rendered)));
+    }
+
+    /// <summary>
+    /// 能力通道：在工具区打开一份文档（由 <c>WinUiShellFacilities</c> 调用，已在 UI 线程）。
+    /// 只传相对路径；内容由 Core 的 /admin/doc-preview 渲染，Shell 不读盘。
+    /// </summary>
+    public Task<CapabilityResult<DesktopDocumentPreviewResult>> CapabilityOpenDocumentAsync(
+        DesktopDocumentPreviewRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var tabId = ToolTabIdentity.Document(request.Path);
+        var existed = _toolTabs.Find(tabId) is not null;
+
+        if (!existed)
+        {
+            OpenTool(new ToolTabDescriptor
+            {
+                Id = tabId,
+                Kind = ToolTabKind.Document,
+                Title = string.IsNullOrWhiteSpace(request.Title) ? "文档预览" : request.Title,
+                Subtitle = request.Path,
+                ResourceKey = request.Path,
+                Availability = ToolAvailabilityCatalog.For(ToolTabKind.Document),
+                StatusText = request.Path,
+            });
+        }
+
+        return Task.FromResult(CapabilityResult<DesktopDocumentPreviewResult>.Success(
+            new DesktopDocumentPreviewResult(tabId, request.Path,
+                existed ? DesktopDocumentPreviewStatus.AlreadyOpen : DesktopDocumentPreviewStatus.Opened)));
     }
 
     /// <summary>导出当前画布。写固定目录而不是弹选择器：本轮先把链路做通，选择器留待与其它导出入口统一。</summary>

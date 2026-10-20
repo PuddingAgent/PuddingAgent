@@ -224,7 +224,10 @@ public sealed partial class DesktopApplicationCoordinator
 
             _browserUiDispatcher = new WinUiDesktopUiDispatcher(UiThread.Queue);
             var facilities = new WinUiShellFacilities(
-                () => window.CapabilityWindowHandle, () => window.CapabilityXamlRoot);
+                () => window.CapabilityWindowHandle,
+                () => window.CapabilityXamlRoot,
+                window.CapabilityOpenDocumentAsync,
+                window.CapabilityRenderPanelAsync);
             var hostFacilities = new WinUiShellHostFacilities(
                 () => window.CapabilityWindowState,
                 () => window.CapabilityTrayVisible,

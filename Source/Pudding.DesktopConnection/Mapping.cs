@@ -764,6 +764,31 @@ internal static class CoreFrameMapping
                 return CapabilityResult<DesktopCapabilityRequest>.Success(DesktopCapabilityRequest.ForShellStatus());
             }
 
+            case DesktopCapability.ShellPanelRender:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.PanelRender)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForPanelRender(new DesktopPanelRenderRequest(
+                            command.PanelRender.PanelId,
+                            command.PanelRender.Content,
+                            command.PanelRender.ContentType,
+                            string.IsNullOrWhiteSpace(command.PanelRender.Title)
+                                ? null
+                                : command.PanelRender.Title)));
+                }
+                catch (ArgumentException ex)
+                {
+                    // 只带参数名：异常消息可能包含内容片段（面板内容属用户数据）。
+                    return FailRequest($"panel render request is not usable ({ex.ParamName})");
+                }
+            }
+
             case DesktopCapability.ShellDocumentPreview:
             {
                 if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.DocumentPreview)
@@ -839,6 +864,7 @@ internal static class CoreFrameMapping
             Proto.CapabilityCommand.PayloadOneofCase.BindingRevoke => command.BindingRevoke.ToByteArray(),
             Proto.CapabilityCommand.PayloadOneofCase.Screenshot => command.Screenshot.ToByteArray(),
             Proto.CapabilityCommand.PayloadOneofCase.DocumentPreview => command.DocumentPreview.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.PanelRender => command.PanelRender.ToByteArray(),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(command),
                 command.PayloadCase,
@@ -1321,6 +1347,15 @@ internal static class DesktopFrameMapping
                         TabId = WireText.Truncate(documentPreview.TabId, 256),
                         Path = WireText.Truncate(documentPreview.Path, DesktopDocumentPreviewRequest.MaxPathLength),
                         Status = DesktopDocumentPreviewStatusWire.NameOf(documentPreview.Status),
+                    };
+                    break;
+
+                case DesktopCapability.ShellPanelRender when response.PanelRender is { } panelRender:
+                    result.PanelRender = new Proto.PanelRenderOutcome
+                    {
+                        // 只回画布身份与阶段：内容永不上回调，也不进审计。
+                        PanelId = WireText.Truncate(panelRender.PanelId, DesktopPanelRenderRequest.MaxPanelIdLength),
+                        Status = DesktopPanelRenderStatusWire.NameOf(panelRender.Status),
                     };
                     break;
 

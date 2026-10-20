@@ -23,13 +23,26 @@ public sealed class WinUiShellFacilities : IDesktopShellFacilities
 {
     private readonly Func<nint> _windowHandle;
     private readonly Func<XamlRoot?> _xamlRoot;
+    private readonly Func<DesktopDocumentPreviewRequest, CancellationToken, Task<CapabilityResult<DesktopDocumentPreviewResult>>>? _openDocument;
+    private readonly Func<DesktopPanelRenderRequest, CancellationToken, Task<CapabilityResult<DesktopPanelRenderResult>>>? _renderPanel;
 
     /// <param name="windowHandle">主窗口句柄（文件选择器需要）。</param>
     /// <param name="xamlRoot">主窗口内容根（对话框需要）；窗口未就绪时返回 <c>null</c>。</param>
-    public WinUiShellFacilities(Func<nint> windowHandle, Func<XamlRoot?> xamlRoot)
+    /// <param name="openDocument">
+    /// 工具区文档入口（由 Shell 提供）。为 <c>null</c> 时如实返 UiUnavailable，
+    /// 而不是假成功——「没接上」与「打开了」必须可区分。
+    /// </param>
+    /// <param name="renderPanel">工具区面板入口（同上）。</param>
+    public WinUiShellFacilities(
+        Func<nint> windowHandle,
+        Func<XamlRoot?> xamlRoot,
+        Func<DesktopDocumentPreviewRequest, CancellationToken, Task<CapabilityResult<DesktopDocumentPreviewResult>>>? openDocument = null,
+        Func<DesktopPanelRenderRequest, CancellationToken, Task<CapabilityResult<DesktopPanelRenderResult>>>? renderPanel = null)
     {
         _windowHandle = windowHandle ?? throw new ArgumentNullException(nameof(windowHandle));
         _xamlRoot = xamlRoot ?? throw new ArgumentNullException(nameof(xamlRoot));
+        _openDocument = openDocument;
+        _renderPanel = renderPanel;
     }
 
     public async Task<CapabilityResult<DesktopDialogResult>> RequestDialogAsync(
@@ -128,8 +141,10 @@ public sealed class WinUiShellFacilities : IDesktopShellFacilities
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(request);
 
-        return Task.FromResult(CapabilityResult<DesktopDocumentPreviewResult>.Failure(
-            DesktopCapabilityError.UiUnavailable("document preview is not wired into the tool area yet")));
+        return _openDocument is null
+            ? Task.FromResult(CapabilityResult<DesktopDocumentPreviewResult>.Failure(
+                DesktopCapabilityError.UiUnavailable("document preview is not wired into the tool area yet")))
+            : _openDocument(request, cancellationToken);
     }
 
     /// <summary>
@@ -148,8 +163,10 @@ public sealed class WinUiShellFacilities : IDesktopShellFacilities
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(request);
 
-        return Task.FromResult(CapabilityResult<DesktopPanelRenderResult>.Failure(
-            DesktopCapabilityError.UiUnavailable("panel render is not wired into the tool area yet")));
+        return _renderPanel is null
+            ? Task.FromResult(CapabilityResult<DesktopPanelRenderResult>.Failure(
+                DesktopCapabilityError.UiUnavailable("panel render is not wired into the tool area yet")))
+            : _renderPanel(request, cancellationToken);
     }
 
     public async Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
