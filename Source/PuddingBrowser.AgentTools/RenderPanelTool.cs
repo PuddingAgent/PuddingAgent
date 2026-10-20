@@ -11,8 +11,11 @@ public sealed record RenderPanelArgs
     [ToolParam("Panel id, e.g. 'main' or 'design'. Re-rendering the same id replaces that canvas instead of opening another. Letters, digits, '.', '_' and '-' only, max 64.")]
     public string? PanelId { get; init; }
 
-    [ToolParam("Self-contained HTML fragment or full document (max 256 KB). Inline CSS is allowed; scripts run sandboxed with no network and no shell bridge.")]
-    public required string Html { get; init; }
+    [ToolParam("Self-contained HTML fragment or full document (max 256 KB). Inline CSS is allowed; scripts run sandboxed with no network and no shell bridge. Give either Html or HtmlPath.")]
+    public string? Html { get; init; }
+
+    [ToolParam("Path to a UTF-8 file holding the HTML, resolved against the current working directory. Prefer this for anything large so the markup never has to travel through the tool arguments. Must stay inside the working directory and fit the 256 KB canvas limit.")]
+    public string? HtmlPath { get; init; }
 
     [ToolParam("Optional canvas title.")]
     public string? Title { get; init; }
@@ -59,6 +62,121 @@ public sealed class RenderPanelTool(
     /// <summary>默认画布：与 Shell 侧「交互面板」单例 tab 对齐（ToolTabIdentity.Panel("main")）。</summary>
     private const string DefaultPanelId = "main";
 
+    /// <summary>内容来源的解析结果。用结果对象而不是抛异常：这类失败是调用方给错了参数，不是意外。</summary>
+    private readonly record struct HtmlResolution(bool Success, string? Content, string? ErrorCode, string? ErrorMessage)
+    {
+        public static HtmlResolution Ok(string content) => new(true, content, null, null);
+
+        public static HtmlResolution Fail(string code, string message) => new(false, null, code, message);
+    }
+
+    /// <summary>
+    /// 把 <c>Html</c> 或 <c>HtmlPath</c> 解析成待发布的内容。
+    ///
+    /// <para>
+    /// 边界（<b>不是</b>安全边界的全部，但是它该负责的那一段）：路径必须落在本次执行的
+    /// <see cref="ToolExecutionContext.WorkingDirectory"/> 之内，且不超过画布上限。
+    /// 内容上限的真正真源仍是 <c>PanelCanvasLimits</c> —— 这里只提前挡，不重新定义。
+    /// </para>
+    /// <para>
+    /// 两个都给 ⇒ 拒绝，而不是静默选一个：那会让「我以为发布的是文件」变成真事故。
+    /// </para>
+    /// </summary>
+    private static async Task<HtmlResolution> ResolveHtmlAsync(
+        RenderPanelArgs args, ToolExecutionContext context, CancellationToken ct)
+    {
+        var hasInline = !string.IsNullOrWhiteSpace(args.Html);
+        var hasPath = !string.IsNullOrWhiteSpace(args.HtmlPath);
+
+        if (hasInline && hasPath)
+        {
+            return HtmlResolution.Fail("invalid_request", "give either 'html' or 'htmlPath', not both.");
+        }
+
+        if (hasInline)
+        {
+            return HtmlResolution.Ok(args.Html!);
+        }
+
+        if (!hasPath)
+        {
+            return HtmlResolution.Fail("invalid_request", "either 'html' or 'htmlPath' is required.");
+        }
+
+        var root = context.WorkingDirectory;
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return HtmlResolution.Fail(
+                "invalid_request",
+                "htmlPath requires a working directory, but this execution has none; use 'html' instead.");
+        }
+
+        string rootFull;
+        string fullPath;
+        try
+        {
+            rootFull = Path.GetFullPath(root);
+            fullPath = Path.GetFullPath(Path.Combine(rootFull, args.HtmlPath!), rootFull);
+        }
+        catch (Exception ex)
+        {
+            return HtmlResolution.Fail("invalid_request", $"htmlPath is not a usable path: {ex.Message}");
+        }
+
+        if (!IsInside(rootFull, fullPath))
+        {
+            return HtmlResolution.Fail(
+                "invalid_request", $"htmlPath must stay inside the working directory ({rootFull}).");
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            return HtmlResolution.Fail("file_not_found", $"htmlPath does not exist: {args.HtmlPath}");
+        }
+
+        // 先按字节粗挡（UTF-8 最坏 4 字节/字符），避免为一个必然越界的文件先把内存吃掉。
+        var length = new FileInfo(fullPath).Length;
+        if (length > (long)PanelCanvasLimits.MaxContentChars * 4)
+        {
+            return HtmlResolution.Fail(
+                "invalid_request",
+                $"htmlPath is far beyond the {PanelCanvasLimits.MaxContentChars}-character canvas limit.");
+        }
+
+        var text = await File.ReadAllTextAsync(fullPath, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return HtmlResolution.Fail("invalid_request", $"htmlPath is empty: {args.HtmlPath}");
+        }
+
+        if (text.Length > PanelCanvasLimits.MaxContentChars)
+        {
+            return HtmlResolution.Fail(
+                "invalid_request",
+                $"htmlPath exceeds the {PanelCanvasLimits.MaxContentChars}-character canvas limit.");
+        }
+
+        return HtmlResolution.Ok(text);
+    }
+
+    /// <summary>路径是否落在根内。Windows 大小写不敏感，其它平台逐字符比较。</summary>
+    private static bool IsInside(string rootFull, string path)
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        if (string.Equals(path, rootFull, comparison))
+        {
+            return true;
+        }
+
+        var prefix = rootFull.EndsWith(Path.DirectorySeparatorChar)
+            ? rootFull
+            : rootFull + Path.DirectorySeparatorChar;
+        return path.StartsWith(prefix, comparison);
+    }
+
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         RenderPanelArgs args,
         ToolExecutionContext context,
@@ -66,12 +184,20 @@ public sealed class RenderPanelTool(
     {
         var panelId = string.IsNullOrWhiteSpace(args.PanelId) ? DefaultPanelId : args.PanelId;
 
+        // 内容来源先定下来：内联字符串，或工作区里的一个 UTF-8 文件。
+        // 后者是为「大段标记不该穿过工具参数」准备的 —— 生成的文件直接发布，正文不进上下文。
+        var html = await ResolveHtmlAsync(args, context, ct).ConfigureAwait(false);
+        if (!html.Success)
+        {
+            return BrowserToolResponse.Failure(html.ErrorCode!, html.ErrorMessage!);
+        }
+
         // 形状校验交给契约（字符集/长度/内容上限/contentType 白名单）。
         // 这里不重复实现一份，否则两处上限会漂移；异常转成工具错误而不是冒泡。
         DesktopPanelRenderRequest request;
         try
         {
-            request = new DesktopPanelRenderRequest(panelId, args.Html, title: args.Title);
+            request = new DesktopPanelRenderRequest(panelId, html.Content!, title: args.Title);
         }
         catch (ArgumentException ex)
         {
@@ -151,7 +277,7 @@ public static class RenderPanelToolStatus
     public const string StoredAndShown = "stored_and_shown";
 }
 
-public static class DesktopPanelToolIds
+public static partial class DesktopPanelToolIds
 {
     public const string Render = "render_panel";
 }

@@ -54,7 +54,8 @@ public sealed class RenderPanelToolTests
         Assert.Equal(1L, stored.Revision);
 
         // 结果只带身份与阶段：内容不回显（可能很长，也可能含用户数据）。
-        Assert.DoesNotContain("<p>hi</p>", result.Output, StringComparison.Ordinal);
+        // 注意不要写成 DoesNotContain("<p>hi</p>")：序列化会把 < > 转义，那条断言永远成立 —— 是假绿。
+        Assert.DoesNotContain("hi", result.Output, StringComparison.Ordinal);
         Assert.Contains("main", result.Output, StringComparison.Ordinal);
         Assert.Contains("stored_and_shown", result.Output, StringComparison.Ordinal);
     }
