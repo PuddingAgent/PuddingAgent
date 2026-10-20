@@ -40,6 +40,9 @@ public static class DesktopCapabilityPolicy
         [DesktopCapability.ShellDialog] = [DesktopContextTrust.Workbench],
         [DesktopCapability.ShellFilePicker] = [DesktopContextTrust.Workbench],
         [DesktopCapability.ShellClipboard] = [DesktopContextTrust.Workbench],
+        // 文档预览与剪贴板同级：它会把工作区文件内容呈现给用户，属于 Shell 交互类，
+        // 普通网页与未授权调用方一律不得触发。
+        [DesktopCapability.ShellDocumentPreview] = [DesktopContextTrust.Workbench],
         // 快照读取会遍历 DOM（同样是脚本注入）：只对获授权的 Agent 浏览器开放，工作台与普通网页都不允许。
         [DesktopCapability.BrowserSnapshot] = [DesktopContextTrust.AgentAuthorized],
         // §8.1 截图：只读能力，与 snapshot 同级信任。

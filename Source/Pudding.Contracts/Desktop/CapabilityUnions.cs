@@ -27,7 +27,8 @@ public sealed record DesktopCapabilityRequest
         bool shellStatus = false,
         BrowserBindingApplyRequest? bindingApply = null,
         BrowserBindingRevokeRequest? bindingRevoke = null,
-        BrowserScreenshotRequest? screenshot = null)
+        BrowserScreenshotRequest? screenshot = null,
+        DesktopDocumentPreviewRequest? documentPreview = null)
     {
         Navigate = navigate;
         Javascript = javascript;
@@ -48,6 +49,7 @@ public sealed record DesktopCapabilityRequest
         BindingApply = bindingApply;
         BindingRevoke = bindingRevoke;
         Screenshot = screenshot;
+        DocumentPreview = documentPreview;
     }
 
     public NavigateRequest? Navigate { get; }
@@ -98,6 +100,9 @@ public sealed record DesktopCapabilityRequest
     /// <summary>只读 Shell 状态查询：无参数（Shell 是窗口作用域）。</summary>
     public bool ShellStatus { get; }
 
+    /// <summary>文档预览请求（Shell 类：只带路径，无页面目标）。</summary>
+    public DesktopDocumentPreviewRequest? DocumentPreview { get; }
+
     /// <summary>控制面：绑定申请载荷（§4.1）。</summary>
     public BrowserBindingApplyRequest? BindingApply { get; }
 
@@ -123,6 +128,9 @@ public sealed record DesktopCapabilityRequest
 
     public static DesktopCapabilityRequest ForPageState(DesktopPageTarget target) =>
         new(pageState: target ?? throw new ArgumentNullException(nameof(target)));
+
+    public static DesktopCapabilityRequest ForDocumentPreview(DesktopDocumentPreviewRequest request) =>
+        new(documentPreview: request ?? throw new ArgumentNullException(nameof(request)));
 
     public static DesktopCapabilityRequest ForSnapshot(BrowserSnapshotRequest request) =>
         new(snapshot: request ?? throw new ArgumentNullException(nameof(request)));
@@ -224,6 +232,7 @@ public sealed record DesktopCapabilityResponse
         DesktopContextClosed? contextClosed = null,
         BrowserBindingAck? bindingAck = null,
         BrowserScreenshotResult? screenshot = null,
+        DesktopDocumentPreviewResult? documentPreview = null,
         DesktopCapabilityError? error = null)
     {
         var payloadCount = (navigate is null ? 0 : 1)
@@ -243,7 +252,8 @@ public sealed record DesktopCapabilityResponse
             + (contextCreated is null ? 0 : 1)
             + (contextClosed is null ? 0 : 1)
             + (bindingAck is null ? 0 : 1)
-            + (screenshot is null ? 0 : 1);
+            + (screenshot is null ? 0 : 1)
+            + (documentPreview is null ? 0 : 1);
         if (error is null ? payloadCount != 1 : payloadCount != 0)
         {
             throw new ArgumentException(
@@ -257,6 +267,7 @@ public sealed record DesktopCapabilityResponse
         ShellStatus = shellStatus;
         BindingAck = bindingAck;
         Screenshot = screenshot;
+        DocumentPreview = documentPreview;
         Snapshot = snapshot;
         Locate = locate;
         Interact = interact;
@@ -292,6 +303,9 @@ public sealed record DesktopCapabilityResponse
 
     /// <summary>截图结果（§8.1：元数据 + 分块；观察 id 随元数据回传）。</summary>
     public BrowserScreenshotResult? Screenshot { get; }
+
+    /// <summary>文档预览结果（只回标签身份与阶段，不含正文）。</summary>
+    public DesktopDocumentPreviewResult? DocumentPreview { get; }
 
     /// <summary>元素交互结果（含交互后的页面状态；旧 Ref 自此作废）。</summary>
     public DesktopInteractionResult? Interact { get; }
@@ -379,6 +393,9 @@ public sealed record DesktopCapabilityResponse
     public static DesktopCapabilityResponse FromFilePicker(DesktopFilePickerResult result) =>
         new(filePicker: result ?? throw new ArgumentNullException(nameof(result)));
 
+    public static DesktopCapabilityResponse FromDocumentPreview(DesktopDocumentPreviewResult result) =>
+        new(documentPreview: result ?? throw new ArgumentNullException(nameof(result)));
+
     public static DesktopCapabilityResponse Failure(DesktopCapabilityError error) =>
         new(error: error ?? throw new ArgumentNullException(nameof(error)));
     public override string ToString() =>
@@ -397,5 +414,6 @@ public sealed record DesktopCapabilityResponse
         : Clipboard is not null ? $"clipboard({Clipboard})"
         : Dialog is not null ? $"dialog({Dialog})"
         : FilePicker is not null ? $"file_picker({FilePicker})"
+        : DocumentPreview is not null ? $"document_preview({DocumentPreview})"
         : "empty";
 }

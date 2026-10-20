@@ -67,6 +67,22 @@ public sealed class DesktopShellSurface
             DesktopCapabilityBudgets.Apply(result.Value, request.MaxCharacters));
     }
 
+    /// <summary>
+    /// 打开文档预览：Core 只说路径，读盘与渲染归设施实现。
+    /// 适配层不做路径语义判断——那是各层自己的边界（Core 发送前、Desktop 读盘前各拦一次），
+    /// 契约/适配层替任一方下语义判断，都会让那一方的 fail-closed 变成空话。
+    /// </summary>
+    public Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+        DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        return ForwardAsync(
+            () => _facilities.OpenDocumentAsync(context, request, cancellationToken),
+            "document_preview");
+    }
+
     /// <summary>显示系统通知；未弹出（<c>Shown=false</c>）是结果而不是失败。</summary>
     public Task<CapabilityResult<DesktopNotificationResult>> ShowNotificationAsync(
         DesktopCallContext context, DesktopNotificationRequest request, CancellationToken cancellationToken)

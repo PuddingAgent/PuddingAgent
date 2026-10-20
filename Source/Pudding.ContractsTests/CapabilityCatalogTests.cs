@@ -25,6 +25,7 @@ public sealed class CapabilityCatalogTests
             "shell.dialog|v1|Shell|HasSideEffects, RequiresTrustedContext, RequiresUserInteraction",
             "shell.file_picker|v1|Shell|HasSideEffects, RequiresTrustedContext, RequiresUserInteraction",
             "shell.clipboard|v1|Shell|RequiresTrustedContext",
+            "shell.document_preview|v1|Shell|HasSideEffects, RequiresTrustedContext",
             "browser.snapshot|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
             "browser.screenshot|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
             "browser.locate|v1|WebView|RequiresTrustedContext, RequiresPageTarget",
@@ -141,7 +142,7 @@ public sealed class CapabilityCatalogTests
             .ToArray();
 
         Assert.Equal(
-            ["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard", "browser.snapshot", "browser.screenshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.context.create", "browser.context.close", "browser.tabs", "browser.binding.apply", "browser.binding.revoke"],
+            ["webview.execute_javascript", "shell.dialog", "shell.file_picker", "shell.clipboard", "shell.document_preview", "browser.snapshot", "browser.screenshot", "browser.locate", "browser.interact", "browser.wait_for", "browser.contexts", "browser.context.create", "browser.context.close", "browser.tabs", "browser.binding.apply", "browser.binding.revoke"],
             trustedOnly);
     }
 }

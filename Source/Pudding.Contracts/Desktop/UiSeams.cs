@@ -63,6 +63,14 @@ public interface IDesktopUiSurface
     Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
         DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// 打开文档预览：只拿到相对路径，读盘与渲染都由实现方自己做。
+    /// 同路径重复请求必须幂等激活同一视图（返回 <c>AlreadyOpen</c>），不得开第二个标签。
+    /// 实现方不得把正文、HTML 或绝对路径回传——它们既不上线缆，也不进审计。
+    /// </summary>
+    Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+        DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken);
+
     /// <summary>标签页切换/关闭；实现方必须在操作后返回<b>新的</b>活动页状态与剩余清单。</summary>
     Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
         DesktopCallContext context, BrowserTabsRequest request, CancellationToken cancellationToken);

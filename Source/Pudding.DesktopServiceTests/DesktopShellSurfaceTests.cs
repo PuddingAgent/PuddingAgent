@@ -246,5 +246,13 @@ public sealed class DesktopShellSurfaceTests
             DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken) =>
             ClipboardHandler?.Invoke(request, cancellationToken)
             ?? Task.FromResult(CapabilityResult<DesktopClipboardContent>.Success(new DesktopClipboardContent("short", false)));
+
+        public Func<DesktopDocumentPreviewRequest, CancellationToken, Task<CapabilityResult<DesktopDocumentPreviewResult>>>? DocumentPreviewHandler { get; set; }
+
+        public Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+            DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken) =>
+            DocumentPreviewHandler?.Invoke(request, cancellationToken)
+            ?? Task.FromResult(CapabilityResult<DesktopDocumentPreviewResult>.Success(new DesktopDocumentPreviewResult(
+                $"document:{request.Path}", request.Path, DesktopDocumentPreviewStatus.Opened)));
     }
 }

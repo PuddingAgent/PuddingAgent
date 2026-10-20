@@ -274,6 +274,24 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             : await ClipboardHandler(request, cancellationToken);
     }
 
+    public int DocumentPreviewCount =>
+        _calls.Count(call => call.StartsWith("document_preview", StringComparison.Ordinal));
+
+    public Func<DesktopDocumentPreviewRequest, DesktopCallContext, CancellationToken, Task<CapabilityResult<DesktopDocumentPreviewResult>>>? DocumentPreviewHandler { get; set; }
+
+    public async Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+        DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken)
+    {
+        _calls.Enqueue($"document_preview:{request.Path}");
+        await AwaitGateAsync(cancellationToken);
+
+        // 夹具：默认报告已打开；调用方可覆盖成 AlreadyOpen / 失败。
+        return DocumentPreviewHandler is null
+            ? CapabilityResult<DesktopDocumentPreviewResult>.Success(new DesktopDocumentPreviewResult(
+                $"document:{request.Path}", request.Path, DesktopDocumentPreviewStatus.Opened))
+            : await DocumentPreviewHandler(request, context, cancellationToken);
+    }
+
     public int TabsCount => _calls.Count(call => call.StartsWith("tabs", StringComparison.Ordinal));
 
     public Func<BrowserTabsRequest, CancellationToken, Task<CapabilityResult<DesktopTabsResult>>>? TabsHandler { get; set; }

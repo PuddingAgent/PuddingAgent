@@ -57,6 +57,7 @@ public sealed record DesktopCapabilityChannelSettings
         | DesktopCapability.ShellDialog
         | DesktopCapability.ShellFilePicker
         | DesktopCapability.ShellClipboard
+        | DesktopCapability.ShellDocumentPreview
         | DesktopCapability.BrowserBindingApply
         | DesktopCapability.BrowserBindingRevoke;
 

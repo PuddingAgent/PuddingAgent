@@ -107,6 +107,10 @@ public sealed class DesktopSurfaceComposition : IDesktopUiSurface
         DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken) =>
         _shell.ReadClipboardAsync(context, request, cancellationToken);
 
+    public Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+        DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken) =>
+        _shell.OpenDocumentAsync(context, request, cancellationToken);
+
     public Task<CapabilityResult<DesktopNotificationResult>> ShowNotificationAsync(
         DesktopCallContext context, DesktopNotificationRequest request, CancellationToken cancellationToken) =>
         _shell.ShowNotificationAsync(context, request, cancellationToken);

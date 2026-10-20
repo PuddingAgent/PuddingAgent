@@ -33,6 +33,12 @@ public enum DesktopCapability
     /// <summary>剪贴板读写（受可信上下文限制）。</summary>
     ShellClipboard = 1 << 7,
 
+    /// <summary>
+    /// 在工具区打开一条文档预览：只传路径，读盘与渲染归 Desktop。
+    /// 不是浏览器动作 —— 它没有页面目标、不需要 caller 身份投影、也不改页面状态。
+    /// </summary>
+    ShellDocumentPreview = 1 << 19,
+
     /// <summary>读取页面快照（DOM/可访问性树，带 PageVersion）；Ref 只在同一 PageVersion 内有效。</summary>
     BrowserSnapshot = 1 << 8,
 
@@ -133,6 +139,12 @@ public static class DesktopCapabilities
         // 因此没有兼容性负担；将来加入写入时必须用新能力名或升版本，不得悄悄改变同名能力语义。
         new(DesktopCapability.ShellClipboard, "shell.clipboard", InitialVersion,
             DesktopCapabilityKind.Shell, DesktopCapabilityTraits.RequiresTrustedContext),
+        // 文档预览：不动任何数据，但**确实产生可见副作用**——超时或取消后标签可能已经开了，
+        // 因此标 HasSideEffects（终态必须如实标注），不标 Mutating（同路径幂等激活同一标签，
+        // 不需要串行化，也不应被「用户接管」暂停而失效）。
+        new(DesktopCapability.ShellDocumentPreview, "shell.document_preview", InitialVersion,
+            DesktopCapabilityKind.Shell,
+            DesktopCapabilityTraits.HasSideEffects | DesktopCapabilityTraits.RequiresTrustedContext),
         new(DesktopCapability.BrowserSnapshot, "browser.snapshot", InitialVersion,
             DesktopCapabilityKind.WebView, DesktopCapabilityTraits.RequiresTrustedContext | DesktopCapabilityTraits.RequiresPageTarget),
         // §8.1 截图：**只读**（无 Mutating/HasSideEffects），需要可信上下文与页面目标。

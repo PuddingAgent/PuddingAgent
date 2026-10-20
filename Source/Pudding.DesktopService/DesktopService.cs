@@ -257,6 +257,28 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                     : DesktopCapabilityResponse.Failure(result.Error);
             }
 
+            case DesktopCapability.ShellDocumentPreview:
+            {
+                if (request.DocumentPreview is not { } preview)
+                {
+                    return DesktopCapabilityResponse.Failure(
+                        DesktopCapabilityError.InvalidRequest("document_preview request payload is missing"));
+                }
+
+                // Shell 作用域：没有页面目标，信任级由服务侧调用方策略判定，不从目标推断。
+                var result = await RunOnUiAsync(
+                    descriptor,
+                    target: null,
+                    DesktopPageVersion.Unknown,
+                    context,
+                    token => _surface.OpenDocumentAsync(context, preview, token),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess
+                    ? DesktopCapabilityResponse.FromDocumentPreview(result.Value)
+                    : DesktopCapabilityResponse.Failure(result.Error);
+            }
+
             case DesktopCapability.ShellFilePicker:
             {
                 if (request.FilePicker is not { } picker)

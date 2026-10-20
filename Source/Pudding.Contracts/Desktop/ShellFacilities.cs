@@ -29,4 +29,11 @@ public interface IDesktopShellFacilities
     /// </summary>
     Task<CapabilityResult<DesktopClipboardContent>> ReadClipboardAsync(
         DesktopCallContext context, ClipboardReadRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 在工具区打开文档预览（WinUI 实现）：按相对路径自行读盘、渲染并建标签。
+    /// 同路径必须幂等激活同一标签；正文、HTML 与绝对路径一律不得回传。
+    /// </summary>
+    Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+        DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken);
 }

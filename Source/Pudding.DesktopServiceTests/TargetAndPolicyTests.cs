@@ -152,6 +152,7 @@ public sealed class TargetAndPolicyTests
             $"BrowserWaitFor=[{nameof(DesktopContextTrust.AgentAuthorized)}]",
             $"ShellClipboard=[{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellDialog=[{nameof(DesktopContextTrust.Workbench)}]",
+            $"ShellDocumentPreview=[{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellFilePicker=[{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellNotification=[{nameof(DesktopContextTrust.Untrusted)},{nameof(DesktopContextTrust.AgentAuthorized)},{nameof(DesktopContextTrust.Workbench)}]",
             $"ShellStatus=[{nameof(DesktopContextTrust.Untrusted)},{nameof(DesktopContextTrust.AgentAuthorized)},{nameof(DesktopContextTrust.Workbench)}]",
