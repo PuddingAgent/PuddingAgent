@@ -688,6 +688,10 @@ public sealed partial class MainWindow : Window
         ToolPanel.Width = spans ? allocation.ToolRegionWidth : double.NaN;
         ToolPanel.HorizontalAlignment = spans ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
         ToolSplitterColumn.Width = split ? new GridLength(ToolWorkspaceLayout.SplitterWidth) : new GridLength(0);
+        // 折叠态必须在聊天区右侧留出与入口把手等宽的空槽：外壳控件不得浮在工作台网页上，
+        // 否则会盖住前端 header 最右端的「字号 / 头像」（旧版就是这样重叠的）。
+        // 展开态不留槽位，工具面板自己占列。
+        WorkbenchHost.Margin = new Thickness(0, 0, allocation.IsVisible ? 0 : ToolEntryGutterWidth, 0);
         ToolSplitter.Visibility = split ? Visibility.Visible : Visibility.Collapsed;
         ToolColumn.Width = split ? new GridLength(allocation.PanelWidth) : new GridLength(0);
         // The scrim belongs to the narrow-window overlay; zoom has no "outside" to click.
@@ -701,26 +705,36 @@ public sealed partial class MainWindow : Window
         UpdateToolContentVisibility();
     }
 
+    /// <summary>
+    /// 折叠态入口把手占用的右侧槽宽。与 XAML 里 ToolEntryButton 的 Width + Margin 对齐：
+    /// 30 + 5（右外边距）+ 1（容差）= 36。改其一时必须同步改另一个。
+    /// </summary>
+    private const double ToolEntryGutterWidth = 36;
+
     private void UpdateToolEntryButton()
     {
         var summary = _toolTabs.DescribeActivity();
-        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        content.Children.Add(new FontIcon { Glyph = "\uE71D", FontSize = 12 });
-        content.Children.Add(new TextBlock
+        // 竖排把手只放图标 + 活动点；摘要文字移到 tooltip —— 横向 pill 放回右上角就会
+        // 重新压到前端 header，而它正是这次要修的东西。
+        var content = new StackPanel
         {
-            Text = summary.Length == 0 ? "工具区" : $"工具区 · {summary}",
-            FontSize = 12,
+            Orientation = Orientation.Vertical,
+            Spacing = 5,
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-        });
+        };
+        content.Children.Add(new FontIcon { Glyph = "\uE76B", FontSize = 11 });
         if (summary.Length > 0)
             content.Children.Add(new Shapes.Ellipse
             {
-                Width = 7,
-                Height = 7,
+                Width = 6,
+                Height = 6,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 213, 159, 97)),
-                VerticalAlignment = VerticalAlignment.Center,
             });
         ToolEntryButton.Content = content;
+        ToolTipService.SetToolTip(ToolEntryButton,
+            summary.Length == 0 ? "打开工具区" : $"打开工具区 · {summary}");
     }
 
     private void SyncToolTabItems()
@@ -1231,27 +1245,25 @@ public sealed partial class MainWindow : Window
 
         _panelContent[tabId] = request.Content;
 
-        if (existed)
+        if (_panelCanvases.TryGetValue(tabId, out var web) && web.CoreWebView2 is not null)
         {
             // 已有画布：直接覆盖内容（WebView2 未就绪的情况交给 LoadPanelAsync 的待渲染路径）。
-            if (_panelCanvases.TryGetValue(tabId, out var web) && web.CoreWebView2 is not null)
-            {
-                web.CoreWebView2.NavigateToString(WrapPanelHtml(request.Content));
-            }
+            web.CoreWebView2.NavigateToString(WrapPanelHtml(request.Content));
         }
-        else
+
+        // 新建与复用都必须展开并激活：能力调用是「让用户看见」的显式动作。
+        // 旧版只在新建标签时展开 ⇒ 画布已存在但工具区被折叠时，推送等于什么都没发生，
+        // 而返回值仍然报已渲染，把「没显示」说成了「已渲染」。
+        OpenTool(new ToolTabDescriptor
         {
-            OpenTool(new ToolTabDescriptor
-            {
-                Id = tabId,
-                Kind = ToolTabKind.Panel,
-                Title = string.IsNullOrWhiteSpace(request.Title) ? "交互面板" : request.Title,
-                Subtitle = "Agent 推送内容",
-                ResourceKey = request.PanelId,
-                Availability = ToolAvailabilityCatalog.For(ToolTabKind.Panel),
-                StatusText = "已接收 Agent 推送内容",
-            });
-        }
+            Id = tabId,
+            Kind = ToolTabKind.Panel,
+            Title = string.IsNullOrWhiteSpace(request.Title) ? "交互面板" : request.Title,
+            Subtitle = "Agent 推送内容",
+            ResourceKey = request.PanelId,
+            Availability = ToolAvailabilityCatalog.For(ToolTabKind.Panel),
+            StatusText = "已接收 Agent 推送内容",
+        });
 
         return Task.FromResult(CapabilityResult<DesktopPanelRenderResult>.Success(
             new DesktopPanelRenderResult(request.PanelId,
@@ -1270,19 +1282,18 @@ public sealed partial class MainWindow : Window
         var tabId = ToolTabIdentity.Document(request.Path);
         var existed = _toolTabs.Find(tabId) is not null;
 
-        if (!existed)
+        // 已有标签也要走这一遭：OpenTool 会幂等激活它并展开工具区。
+        // 旧版只在新建时打开 ⇒ 文档已在侧边但工具区被折叠时，调用完全没反应。
+        OpenTool(new ToolTabDescriptor
         {
-            OpenTool(new ToolTabDescriptor
-            {
-                Id = tabId,
-                Kind = ToolTabKind.Document,
-                Title = string.IsNullOrWhiteSpace(request.Title) ? "文档预览" : request.Title,
-                Subtitle = request.Path,
-                ResourceKey = request.Path,
-                Availability = ToolAvailabilityCatalog.For(ToolTabKind.Document),
-                StatusText = request.Path,
-            });
-        }
+            Id = tabId,
+            Kind = ToolTabKind.Document,
+            Title = string.IsNullOrWhiteSpace(request.Title) ? "文档预览" : request.Title,
+            Subtitle = request.Path,
+            ResourceKey = request.Path,
+            Availability = ToolAvailabilityCatalog.For(ToolTabKind.Document),
+            StatusText = request.Path,
+        });
 
         return Task.FromResult(CapabilityResult<DesktopDocumentPreviewResult>.Success(
             new DesktopDocumentPreviewResult(tabId, request.Path,
