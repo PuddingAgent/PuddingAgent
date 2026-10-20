@@ -17,6 +17,13 @@ public enum ToolTabKind
     Artifact,
     Output,
     Panel,
+
+    /// <summary>
+    /// 工作区文档预览。Shell 在自己的工具区开一个 WebView2 指到 /doc-preview，
+    /// 因此「读文档」不再占用对话区的横向空间（用户 2026-10-20 的定位：
+    /// 文档预览是 Agent 输出文档时给用户的阅读面，不应该把对话挤窄）。
+    /// </summary>
+    Document,
 }
 
 /// <summary>
@@ -107,6 +114,13 @@ public static class ToolTabIdentity
     public static string Output(string resourceKey) => "output:" + NormalizeResourceKey(resourceKey);
 
     public static string Panel(string resourceKey) => "panel:" + NormalizeResourceKey(resourceKey);
+
+    /// <summary>
+    /// 同一份文档重新打开时激活已有标签页，而不是又开一个。走
+    /// <see cref="NormalizeResourceKey"/> 是因为 Windows 路径大小写不敏感、
+    /// 且 <c>Docs/a.md</c> 与 <c>Docs\a.md</c> 是同一个文件。
+    /// </summary>
+    public static string Document(string path) => "document:" + NormalizeResourceKey(path);
 
     /// <summary>
     /// File-system resources are case-insensitive on Windows and use one separator, so a
