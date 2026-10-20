@@ -58,7 +58,7 @@
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `ChatMessage.cs` + `LlmContentPart.cs` + `ChatMessageMultimodalNormalizer.cs` | 消息模型与多模态归一 | `ChatMessage`、`LlmContentPart` | `AgentReplyImageDirective.cs` | ADR-077 有序 typed 内容部件（text/image→Artifact 引用+detail）与 v1 信封 ContentPartsEnvelope；Gateway 渲染统一经 normalizer，旧 VisualArtifactIds 派生 original |
-| `LlmResponse.cs` | LLM 响应 | `LlmResponse` | `LlmOptions.cs` | — |
+| `LlmResponse.cs` | LLM 响应与终止原因 | `LlmResponse` | `LlmOptions.cs` | `FinishReason` 透传截断状态，部分摘要不得覆盖持久历史 |
 | `LlmContinuationState.cs` | Provider opaque output items 回放契约 | `LlmContinuationState` | `LlmResponse.cs` | 跨工具轮次回放 |
 | `LlmOptions.cs` | LLM 选项与请求归因（F1） | `LlmOptions`、`MeasureLlmRequest`、`CaptureLlmRequest` | `LlmResponse.cs` | 含最近请求的 ContextUsageSnapshot、Tokenizer 校准与工具 schema 的 UTF-8/GZIP 归因（不保存正文）；请求归因分离见本表后注 |
 | `StreamDelta.cs` | 流式增量 | `StreamDelta` | `LlmResponse.cs` | — |

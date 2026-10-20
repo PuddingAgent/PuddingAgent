@@ -62,6 +62,7 @@ public sealed record LlmInvocationResult
     public string? ReasoningContent { get; init; }
     public TokenUsageDto? Usage { get; init; }
     public LlmContinuationState? ContinuationState { get; init; }
+    public string? FinishReason { get; init; }
     public string? ProviderId { get; init; }
     public string? ModelId { get; init; }
     public PromptPrefixSnapshot? PrefixSnapshot { get; init; }

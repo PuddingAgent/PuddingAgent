@@ -8,6 +8,7 @@ using PuddingCode.Diagnostics;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingRuntime.Services;
 
 namespace PuddingRuntimeTests.Services;
@@ -15,6 +16,47 @@ namespace PuddingRuntimeTests.Services;
 [TestClass]
 public sealed class LlmStreamObservabilityTests
 {
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task CompactionAfterSseYield_RebindsFrozenVisionRouteAtBufferedInvocation(bool useFacade)
+    {
+        var context = new FrozenVisionContextAccessor();
+        var route = new LlmRouteSnapshot("provider-a", "test-model", "responses", ["vision"]);
+        var handler = new CapturingResponsesHandler();
+        var resolver = new FixedVisualArtifactResolver();
+        var client = new DirectLlmClient(new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(protocol: "responses"), NullLogger<DirectLlmClient>.Instance,
+            visualArtifactResolver: resolver, frozenVisionContext: context);
+        var invoker = new AgentExecutionLlmInvoker(client,
+            useFacade ? new LlmInvocationService(client, NullLogger<LlmInvocationService>.Instance) : null,
+            NoOpKeyVaultService.Instance, NullLogger.Instance, frozenVisionContext: context);
+        var config = new LlmConfig { Endpoint = "https://provider.test/v1", ApiKey = "test-key", ModelId = "test-model" };
+        var request = new RuntimeDispatchRequest
+        {
+            WorkspaceId = "default", SessionId = "session-compact", AgentTemplateId = "template",
+            MessageText = "continue", CallerLlmSnapshot = route,
+            LlmProfile = new LlmInvocationProfile { ProfileId = "test-profile", ProviderId = "provider-a", ModelId = "test-model" },
+        };
+
+        async IAsyncEnumerable<int> Agent()
+        {
+            using var entry = context.Push(route);
+            yield return 0;
+            var result = await invoker.InvokeAsync(request, "agent",
+                [new ChatMessage(ChatRole.User, "historical screenshot", VisualArtifactIds: ["artifact-user"]),
+                 new ChatMessage(ChatRole.User, WarmPrefixCompaction.SummaryInstruction)],
+                [], config, null, true, 0, CancellationToken.None, purpose: LlmCallPurposes.Compaction);
+            Assert.IsTrue(result.Success, result.ExecutionError);
+            yield return 1;
+        }
+
+        await foreach (var _ in Agent())
+            Assert.IsNull(context.Current, "The frozen route must not leak into the SSE consumer.");
+        Assert.AreEqual(1, resolver.ResolveCount);
+        StringAssert.Contains(handler.RequestBody!, "input_image");
+    }
+
     [TestMethod]
     public async Task ResponsesStream_AfterAgentYield_PreservesUserAndToolImagesAcrossRounds()
     {

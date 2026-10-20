@@ -6,4 +6,8 @@ public sealed record LlmResponse(
     IReadOnlyList<ToolCall>? ToolCalls,
     string? ReasoningContent = null,
     TokenUsageDto? Usage = null,
-    LlmContinuationState? ContinuationState = null);
+    LlmContinuationState? ContinuationState = null)
+{
+    /// <summary>Provider terminal reason; partial output must not replace durable context.</summary>
+    public string? FinishReason { get; init; }
+}

@@ -115,6 +115,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         TokenUsageDto? usage = null;
         LlmContinuationState? continuationState = null;
         var toolCallsExecutable = true;
+        string? finishReason = null;
 
         await foreach (var delta in ChatStreamAsync(messages, tools, ct))
         {
@@ -130,6 +131,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                 continuationState = delta.ContinuationState;
             if (delta.FinishReason is "length" or "incomplete")
                 toolCallsExecutable = false;
+            if (delta.FinishReason is not null)
+                finishReason = delta.FinishReason;
         }
 
         IReadOnlyList<ToolCall>? toolCalls = toolCallsExecutable && accumulatedToolCalls.Count > 0
@@ -143,7 +146,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             toolCalls,
             reasoning.Length > 0 ? reasoning.ToString() : null,
             usage,
-            continuationState);
+            continuationState) { FinishReason = finishReason };
     }
 
     /// <summary>
@@ -787,7 +790,12 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             toolCalls.Count > 0 ? toolCalls : null,
             reasoning.Length > 0 ? reasoning.ToString() : null,
             ParseResponsesUsage(root["usage"]),
-            new LlmContinuationState(ProtocolName, continuationItems));
+            new LlmContinuationState(ProtocolName, continuationItems))
+        {
+            FinishReason = isIncomplete
+                ? ReadString(root["incomplete_details"] as JsonObject, "reason") == "max_output_tokens" ? "length" : "incomplete"
+                : toolCalls.Count > 0 ? "tool_calls" : "stop",
+        };
     }
 
     private static void AppendMessageContent(JsonArray? parts, StringBuilder content)

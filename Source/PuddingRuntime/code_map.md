@@ -57,7 +57,7 @@
 |---|---|---|---|---|
 | `Services/AgentCompactionNotifier.cs` | 压缩生命周期通知的对外发布 | `AgentCompactionNotifier` | `Services/ContextCompactionService.cs` | — |
 | `Services/AgentContextCompactionSummaryGenerator.cs` | 由当前运行时 Agent 生成压缩摘要 | `IContextCompactionSummaryGenerator` | `Services/FlashContextCompactionSummaryGenerator.cs` | — |
-| `Services/AgentExecution/AgentExecutionLlmInvoker.cs` | LLM 调用的统一封装（facade 与 legacy 两条路径） | `AgentExecutionLlmInvoker` | `Services/LlmInvocationService.cs` | — |
+| `Services/AgentExecution/AgentExecutionLlmInvoker.cs` | LLM 调用的统一封装（facade 与 legacy 两条路径） | `AgentExecutionLlmInvoker` | `Services/LlmInvocationService.cs` | 每次调用绑定冻结视觉路由，包含 SSE yield 后的摘要调用；透传 FinishReason，截断摘要不提交 |
 | `Services/AgentExecution/AgentExecutionResponseHandler.cs` | LLM 输出解析为 Loop 响应并评估终态 | `AgentExecutionResponseHandler` | `Services/AgentLoop/CompletionPolicy.cs` | — |
 | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | 工具目录在 dispatch 时冻结，新发现定义只在下一次 LLM round 生效 |
 | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 与 Buffered 共用冻结前缀与止损语义 |

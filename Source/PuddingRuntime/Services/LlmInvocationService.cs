@@ -78,6 +78,7 @@ public sealed class LlmInvocationService : ILlmInvocationService
                 ReasoningContent = response.ReasoningContent,
                 Usage = response.Usage,
                 ContinuationState = response.ContinuationState,
+                FinishReason = response.FinishReason,
                 ProviderId = resolved.ProviderId,
                 ModelId = resolved.ModelId,
                 PrefixSnapshot = request.PrefixSnapshot,

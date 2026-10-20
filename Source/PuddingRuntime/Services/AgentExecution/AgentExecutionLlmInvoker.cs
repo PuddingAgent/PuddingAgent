@@ -17,19 +17,22 @@ internal sealed class AgentExecutionLlmInvoker
     private readonly IKeyVaultService _keyVaultService;
     private readonly ILogger _logger;
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
+    private readonly FrozenVisionContextAccessor? _frozenVisionContext;
 
     public AgentExecutionLlmInvoker(
         IRuntimeLlmClient llmClient,
         ILlmInvocationService? llmInvocationService,
         IKeyVaultService keyVaultService,
         ILogger logger,
-        ContextUsageSnapshotStore? contextUsageSnapshotStore = null)
+        ContextUsageSnapshotStore? contextUsageSnapshotStore = null,
+        FrozenVisionContextAccessor? frozenVisionContext = null)
     {
         _llmClient = llmClient;
         _llmInvocationService = llmInvocationService;
         _keyVaultService = keyVaultService;
         _logger = logger;
         _contextUsageSnapshotStore = contextUsageSnapshotStore;
+        _frozenVisionContext = frozenVisionContext;
     }
 
     /// <summary>
@@ -52,6 +55,10 @@ internal sealed class AgentExecutionLlmInvoker
         string? invocationId = null,
         string? attemptId = null)
     {
+        // The caller may be an async iterator resumed after an SSE yield. Bind
+        // at the actual buffered call boundary, including compaction calls.
+        // A missing snapshot remains fail-closed; never infer capabilities here.
+        using var visionScope = _frozenVisionContext?.Push(request.CallerLlmSnapshot);
         LlmResponse llmResp;
 
         try
@@ -102,7 +109,7 @@ internal sealed class AgentExecutionLlmInvoker
                     facadeResult.ToolCalls,
                     facadeResult.ReasoningContent,
                     facadeResult.Usage,
-                    facadeResult.ContinuationState);
+                    facadeResult.ContinuationState) { FinishReason = facadeResult.FinishReason };
             }
             else
             {

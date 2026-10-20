@@ -790,6 +790,7 @@ data:[DONE]
         var response = await gateway.ChatAsync([new ChatMessage(ChatRole.User, "inspect")], []);
 
         Assert.AreEqual("partial answer", response.Content);
+        Assert.AreEqual("length", response.FinishReason);
         Assert.AreEqual("working", response.ReasoningContent);
         Assert.IsNull(response.ToolCalls, "A truncated function call must not be executed.");
         Assert.AreEqual(4196, response.Usage!.TotalTokens);

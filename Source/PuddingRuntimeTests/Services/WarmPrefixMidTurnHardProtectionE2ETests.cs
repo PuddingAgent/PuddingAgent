@@ -244,6 +244,45 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     /// ② 保持既有 fail-closed：历史原样保留、不落 checkpoint、不写 coverage。
     /// </summary>
     [TestMethod]
+    public async Task TruncatedSummary_PreservesDurableHistoryEvenWhenFallbackIsEnabled()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 48, charsPerMessage: 3_000);
+        }
+
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(DoneJson)
+        {
+            SummaryResponseOverride = new LlmResponse("Partial summary before output limit", null) { FinishReason = "length" },
+        };
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var service = CreateService(llm, new RecordingToolInvocationService(), manager,
+            new ContextUsageSnapshotStore(), factory, log, enableExtractiveFallback: true);
+        var history = manager.GetOrCreateHistory(SessionId);
+        Assert.IsTrue((await manager.TryHydrateStreamHistoryFromDbAsync(
+            SessionId, history, 200_000, CancellationToken.None)).Succeeded);
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+
+        var result = await service.ExecuteAsync(CreateDispatchRequest());
+
+        Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState);
+        Assert.AreEqual(1, llm.Requests.Count(messages => messages.Any(m =>
+            m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true)));
+        Assert.IsTrue(log.Lines.Any(l => l.Contains("summary was truncated", StringComparison.Ordinal)));
+        Assert.IsFalse(log.Lines.Any(l => l.Contains("using local extractive fallback", StringComparison.Ordinal)));
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"));
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.CompactedBy != null));
+        Assert.AreEqual(0, await verify.CompactionCoverageManifests.CountAsync(m => m.SessionId == SessionId));
+    }
+
+    [TestMethod]
     public async Task OverLimitAtRoundZero_ProviderInputLimitRejected_WithoutFallback_AttemptsOnceAndPreservesHistory()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -982,6 +1021,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         /// **不消耗**脚本队列（摘要响应不进入主循环序列）。
         /// </summary>
         public Exception? SummaryException { get; set; }
+        public LlmResponse? SummaryResponseOverride { get; set; }
 
         public ScriptedLlmClient(params string[] contents)
         {
@@ -1011,6 +1051,8 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
 
             if (isSummaryRequest && SummaryException is not null)
                 throw SummaryException;
+            if (isSummaryRequest && SummaryResponseOverride is not null)
+                return SummaryResponseOverride;
 
             return _responses.Dequeue();
         }

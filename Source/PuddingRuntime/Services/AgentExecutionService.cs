@@ -121,7 +121,8 @@ public sealed partial class AgentExecutionService
     // LLM 调用提取（审计 P0 #1）
     private AgentExecutionLlmInvoker? _llmInvoker;
     private AgentExecutionLlmInvoker LlmInvoker => _llmInvoker ??= new AgentExecutionLlmInvoker(
-        _llmClient, _llmInvocationService, _keyVaultService, _logger, _contextUsageSnapshotStore);
+        _llmClient, _llmInvocationService, _keyVaultService, _logger, _contextUsageSnapshotStore,
+        _frozenVisionContext);
 
     // 响应处理提取（审计 P0 #1）
     private AgentExecutionResponseHandler? _responseHandler;
@@ -2346,8 +2347,12 @@ public sealed partial class AgentExecutionService
             }
         }
 
-        var summaryFailureError = summaryResult.ExecutionError;
+        var summaryTruncated = AgentOutputTruncationPolicy.IsTruncated(summaryResult.Response?.FinishReason);
+        var summaryFailureError = summaryTruncated
+            ? "Compaction summary was truncated by the provider; original history is preserved."
+            : summaryResult.ExecutionError;
         var summarySucceeded = summaryResult.Success
+            && !summaryTruncated
             && summaryResult.Response is not null
             && summaryResult.Response.ToolCalls is not { Count: > 0 }
             && !string.IsNullOrWhiteSpace(summaryResult.Response.Content);
@@ -2373,7 +2378,7 @@ public sealed partial class AgentExecutionService
             // 只对**确定性失败**降级：provider 明确拒绝输入长度（摘要重放本身超过模型窗口），
             // 或 provider 成功但输出不可用（空内容/工具调用）。auth/限流/5xx/超时等可恢复错误
             // 必须保持 fail-closed —— 不能让一次瞬时故障用低质量摘要永久覆盖历史。
-            var fallbackEligible = providerInputLimitRejected || summaryResult.Success;
+            var fallbackEligible = !summaryTruncated && (providerInputLimitRejected || summaryResult.Success);
             var fallbackSummary = fallbackEligible
                 ? await TryGenerateExtractiveFallbackSummaryAsync(request, plan, exactOutboundHistory, ct)
                 : null;
