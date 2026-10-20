@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using HarnessAgent.Core.Connectors.Feishu;
@@ -8,6 +8,22 @@ namespace HarnessAgent.Core.Tests.Feishu;
 [TestClass]
 public sealed class FeishuClientReplyTests
 {
+    [TestMethod]
+    public async Task SendText_ToOpenId_DoesNotRequireChatOrReplyMessage()
+    {
+        var handler = new RecordingHandler();
+        using var http = new HttpClient(handler);
+        using var client = new FeishuClient(new FeishuConfig { AppId = "cli_test", AppSecret = "secret_test" }, http);
+        var response = await client.SendMessageAsync("ou_selected", "text", "{\"text\":\"hello\"}", "stable-send-uuid");
+        Assert.AreEqual(0, response.Code);
+        var request = handler.Requests.Single(item => item.Uri.Contains("/im/v1/messages", StringComparison.Ordinal));
+        Assert.AreEqual("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id", request.Uri);
+        using var body = JsonDocument.Parse(request.Body);
+        Assert.AreEqual("ou_selected", body.RootElement.GetProperty("receive_id").GetString());
+        Assert.AreEqual("stable-send-uuid", body.RootElement.GetProperty("uuid").GetString());
+        Assert.IsFalse(body.RootElement.TryGetProperty("message_id", out _));
+    }
+
     [TestMethod]
     public async Task ReplyTextAsync_UsesMessageReplyApiAndStableUuid()
     {

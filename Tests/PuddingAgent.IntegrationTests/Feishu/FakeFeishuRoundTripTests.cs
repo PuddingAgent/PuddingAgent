@@ -18,12 +18,96 @@ using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.MessageGateway;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Messaging;
+using PuddingRuntime.Services.Tools;
+using PuddingCode.Tools;
 
 namespace PuddingAgent.IntegrationTests.Feishu;
 
 [TestClass]
 public sealed class FakeFeishuRoundTripTests
 {
+    [TestMethod]
+    public async Task ConfiguredRecipient_SendsThroughDurableQueue_WithoutAnyIngressHistory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-proactive-feishu-tests", Guid.NewGuid().ToString("N"));
+        const string agentId = "configured-agent";
+        const string connectorId = "feishu:configured-agent";
+        try
+        {
+            var paths = PuddingDataPaths.FromRoot(root);
+            var channelPath = paths.ChannelManifestFile(agentId);
+            Directory.CreateDirectory(Path.GetDirectoryName(channelPath)!);
+            await File.WriteAllTextAsync(channelPath, JsonSerializer.Serialize(new ChannelInstanceManifest
+            {
+                ChannelId = agentId, WorkspaceId = "default", ProviderId = "feishu", Name = "Configured",
+                Feishu = new() { AppId = "cli_configured", AppSecret = "test-secret", PrivilegedUserOpenIds = ["ou_selected"] },
+            }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            await using var connection = new SqliteConnection("Data Source=:memory:");
+            await connection.OpenAsync();
+            var eventBus = new SynchronousInternalEventBus();
+            var catalog = new FakeWorkspaceAgentCatalog(agentId, "web-session");
+            var channels = new ChannelConfigurationFileService(paths, catalog,
+                new UnexpectedAgentChannelBinder(), NullLogger<ChannelConfigurationFileService>.Instance);
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connection));
+            services.AddSingleton<IInternalEventBus>(eventBus);
+            services.AddSingleton<IWorkspaceAgentCatalog>(catalog);
+            services.AddSingleton<IFeishuRecipientDirectory>(new FeishuRecipientDirectory(catalog, channels));
+            services.AddScoped<IMessageRouter, MessageRouter>();
+            services.AddScoped<MessageFabricStore>();
+            services.AddScoped<IMessageInbox>(sp => sp.GetRequiredService<MessageFabricStore>());
+            services.AddScoped<WorkspaceRoomParticipantProvider>();
+            services.AddScoped<IMessageSystem, MessageSystem>();
+            await using var provider = services.BuildServiceProvider();
+            using (var scope = provider.CreateScope())
+                await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().Database.EnsureCreatedAsync();
+            var connectorHost = new ConnectorHost((_, _) => throw new AssertFailedException("No inbound messages expected"),
+                NullLogger<ConnectorHost>.Instance);
+            var fake = new FakeFeishuConnector(connectorId, "default", agentId);
+            connectorHost.Register(fake);
+            await connectorHost.StartAsync(connectorId);
+            var factory = provider.GetRequiredService<IServiceScopeFactory>();
+            var dispatcher = new ConnectorDeliveryDispatcher(eventBus, factory, connectorHost,
+                NullLogger<ConnectorDeliveryDispatcher>.Instance);
+            using var subscription = await eventBus.SubscribeAsync("message.deliver", evt => dispatcher.HandleAsync(evt));
+            var tool = new SendMessageTool(factory);
+            for (var i = 0; i < 2; i++)
+            {
+                var result = await tool.ExecuteAsync(new ToolExecutionRequest
+                {
+                    ToolCallId = $"send-{i}", ArgumentsJson = "{\"to\":\"user:ou_selected\",\"content\":\"direct message\"}",
+                    Context = new ToolExecutionContext
+                    {
+                        WorkspaceId = "default", AgentInstanceId = agentId, SessionId = "web-session",
+                    },
+                });
+                Assert.IsTrue(result.Success, result.Error);
+            }
+            Assert.AreEqual(2, fake.SentMessages.Count);
+            foreach (var message in fake.SentMessages)
+            {
+                Assert.AreEqual("ou_selected", message.Target);
+                Assert.AreEqual("ou_selected", message.Metadata["open_id"]);
+                Assert.IsFalse(message.Metadata.ContainsKey("message_id"));
+                Assert.IsFalse(message.Metadata.ContainsKey("chat_id"));
+            }
+            Assert.AreNotEqual(fake.SentMessages[0].Metadata["uuid"], fake.SentMessages[1].Metadata["uuid"]);
+            using (var scope = provider.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+                var inbox = scope.ServiceProvider.GetRequiredService<IMessageInbox>();
+                Assert.AreEqual(0, (await inbox.ListPendingTargetsAsync(MessageEndpointKinds.Connector)).Count);
+            }
+            await connectorHost.StopAsync(connectorId);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
     [TestMethod]
     public async Task FakeFeishuMessage_RunsDurableIngressAndReplyDeliveryChain()
     {

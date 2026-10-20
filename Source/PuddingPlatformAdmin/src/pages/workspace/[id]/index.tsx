@@ -1248,7 +1248,7 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
               tokenSeparators: [',', ' ', '\n'],
               options: [],
             }}
-            extra="只控制 /yolo 等高权限系统指令，不限制普通聊天。"
+            extra="允许 /yolo 等高权限指令，也作为 Agent 主动发送的收件人名单；仅一人时默认发送给此人，多人时需指定 Open ID。无需先给机器人发消息，不限制普通聊天。"
           />
           <ProFormSwitch name="streamingRepliesEnabled" label="CardKit 流式回复" />
           <ProFormSwitch

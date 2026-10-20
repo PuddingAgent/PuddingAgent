@@ -51,5 +51,6 @@ public sealed record FeishuChannelSettings
     /// </summary>
     public bool TtsRepliesEnabled { get; init; }
     public string TtsVoice { get; init; } = "Cherry";
+    /// <summary>高权限指令白名单，同时作为 Agent 主动发送的可选收件人；单人时为默认收件人。</summary>
     public IReadOnlyList<string> PrivilegedUserOpenIds { get; init; } = [];
 }

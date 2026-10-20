@@ -110,7 +110,7 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 | `Connectors/` | 连接器实现 |
 | `Services/ConnectorHost.cs` | 连接器宿主 |
 | `Hosting/ConnectorHostLifecycleService.cs` | 连接器生命周期 hosted service（见下「关键语义」） |
-| `Services/ConnectorDeliveryDispatcher.cs` | 投递分发 |
+| `Services/ConnectorDeliveryDispatcher.cs` | 持久出站投递；显式 open_id 与会话回复分流，复用稳定 uuid 重试 |
 | `Services/MessageGatewayIngress.cs` | 消息网关入口（19KB） |
 | `Extensions/` | 扩展注册 |
 

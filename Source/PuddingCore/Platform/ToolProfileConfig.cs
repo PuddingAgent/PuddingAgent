@@ -15,7 +15,7 @@ public static class ToolProfileConfig
     public static readonly HashSet<string> Heartbeat = new(StringComparer.OrdinalIgnoreCase)
     {
         "search_tools",
-        "goal_read", "goal_update", "sleep", "receive_messages", "send_message",
+        "goal_read", "goal_update", "sleep", "receive_messages", "send_message", "list_feishu_recipients",
         "agent_diagnostics", "agent_status", "search_memory", "save_memory",
         "save_preference", "query_sessions", "query_session_logs",
         "event_subscribe", "list_agents", "query_sub_agents", "spawn_sub_agent",
@@ -35,7 +35,7 @@ public static class ToolProfileConfig
         "file_read", "file_write", "file_patch", "list_dir", "file_search",
         "search_grep", "code_outline", "code_symbol_search", "code_summary",
         "terminal_start", "terminal_wait", "terminal_read", "terminal_status",
-        "shell", "spawn_sub_agent", "send_message"
+        "shell", "spawn_sub_agent", "send_message", "list_feishu_recipients"
     };
 
     /// <summary>判断给定工具集是否应该包含指定工具</summary>

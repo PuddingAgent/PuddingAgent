@@ -102,6 +102,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | 概念 | 权威位置 | 要点 / 不变量 |
 |------|----------|----------------|
 | **Turn 执行与上下文管线** | `Source/PuddingRuntime/Services/` | 一次请求 = 一个 canonical Turn；`ContextPipeline`/`ContextWindowManager`/`ContextCompactionService` 分层组装 + 绝对窗口压缩；`AgentExecutionService` 用 `[CURRENT USER TURN input_sha256=…]` 围栏本轮输入，缺失即 fail-closed |
+| **飞书主动收件人** | `Source/PuddingCore/Platform/FeishuRecipientContracts.cs` | `list_feishu_recipients` 查询绑定渠道白名单；`send_message` 按 Open ID 发送，无历史消息依赖；单人默认，多人显式选择 |
 | **Message Fabric / send_message** | `Source/PuddingPlatform/Services/` | `MessageDeliveryPolicy` + `MessageDeliveryDispatcher`：inform/report_result 只通知，仅 ask/request_review/delegate 执行；`agent_reply` 永远被动 |
 | **Task 自动派发 / Goal / WorkUnit** | `Source/PuddingPlatform/Services/Scheduling/` | availability → backlog 精炼 → Plan/WorkUnit 编译 → 五态跟踪；promotion/start/repair 只有一个 CAS 写入者 |
 | **工具系统与审批** | `Source/PuddingRuntime/Tools/` + [自动审批设计](Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md) | 复杂任务前三次内进入 `smart_*` 或 `spawn_sub_agent`；只读/构建秒放、危险秒拒、未知形态交 LLM 审批 |

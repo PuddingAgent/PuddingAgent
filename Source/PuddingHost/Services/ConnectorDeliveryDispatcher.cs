@@ -126,22 +126,34 @@ public sealed class ConnectorDeliveryDispatcher(
 
         try
         {
-            var target = Get(
-                    claimed.Metadata,
-                    MessageGatewayMetadata.ExternalConversationId)
-                ?? throw new InvalidOperationException(
-                    "Connector delivery is missing external conversation target.");
             var connectorMetadata = new Dictionary<string, string>(
                 claimed.Metadata,
                 StringComparer.Ordinal);
-            CopyAs(
-                connectorMetadata,
-                MessageGatewayMetadata.ExternalMessageId,
-                "message_id");
-            CopyAs(
-                connectorMetadata,
-                MessageGatewayMetadata.ExternalConversationId,
-                "chat_id");
+            string target;
+            var receiveId = Get(claimed.Metadata, MessageGatewayMetadata.ReceiveId);
+            var receiveIdType = Get(claimed.Metadata, MessageGatewayMetadata.ReceiveIdType);
+            if (receiveId is not null || receiveIdType is not null)
+            {
+                if (receiveId is null || receiveIdType != "open_id"
+                    || Get(claimed.Metadata, MessageGatewayMetadata.ChannelType) != "feishu"
+                    || !connectorId.StartsWith("feishu:", StringComparison.Ordinal))
+                    throw new InvalidOperationException("Unsupported explicit connector recipient.");
+                target = receiveId;
+                connectorMetadata["open_id"] = receiveId;
+                // 明确收件人优先，不能被旧回复锚点或 chat_id 改写。
+                connectorMetadata.Remove("message_id");
+                connectorMetadata.Remove("chat_id");
+                connectorMetadata.Remove(MessageGatewayMetadata.ExternalMessageId);
+                connectorMetadata.Remove(MessageGatewayMetadata.ExternalConversationId);
+            }
+            else
+            {
+                target = Get(claimed.Metadata, MessageGatewayMetadata.ExternalConversationId)
+                    ?? throw new InvalidOperationException(
+                        "Connector delivery is missing external conversation target.");
+                CopyAs(connectorMetadata, MessageGatewayMetadata.ExternalMessageId, "message_id");
+                CopyAs(connectorMetadata, MessageGatewayMetadata.ExternalConversationId, "chat_id");
+            }
             CopyAs(
                 connectorMetadata,
                 MessageGatewayMetadata.IdempotencyKey,

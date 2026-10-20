@@ -150,6 +150,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IExecutionControlService, ExecutionControlService>();
         builder.Services.AddSingleton<IExecutionCommandReader, ExecutionCommandReader>();
         builder.Services.AddSingleton<IGatewayCommandRouteReader, GatewayCommandRouteReader>();
+        builder.Services.AddSingleton<IFeishuRecipientDirectory, FeishuRecipientDirectory>();
         builder.Services.AddSingleton<PlatformReadinessProbe>();
 
             // ── Conversation 命令受理（ADR-059）─────────────

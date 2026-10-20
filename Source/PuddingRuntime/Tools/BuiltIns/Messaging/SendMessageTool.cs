@@ -12,13 +12,12 @@ namespace PuddingRuntime.Services.Tools;
 
 /// <summary>
 /// Agent-facing message sender backed by the message fabric.
-/// agent:* 目标走原有织物投递；user:* / connector:* 目标（以及 @all / room:*
-/// 广播请求）在当前飞书回合中解析为受信任连接器的文字回信。
+/// agent:* 目标走消息织物；飞书显式收件人来自配置目录，当前回合回复来自可信命令。
 /// </summary>
 [Tool(
     id: "send_message",
     name: "发送消息",
-    description: "通过消息系统发送消息。Agent 目标默认 intent=inform（只通知、不唤醒模型、不自动回复）；需要对方执行时使用 ask/request_review/delegate，平台最多投影一次被动回复。支持 user:id、agent:id、room:id、connector:id 或 @all/all。",
+    description: "通过消息系统发送消息。Agent 目标默认 intent=inform（只通知、不唤醒模型、不自动回复）；需要对方执行时使用 ask/request_review/delegate，平台最多投影一次被动回复。飞书主动发送先用 list_feishu_recipients 查询，再用 to=user:ou_xxx 和可选 channel_id；不依赖历史消息。user:owner 在飞书回合回复当前用户，否则选唯一白名单收件人；多位候选必须明确选择。飞书每次仅一个目标，不支持广播。",
     category: ToolCategory.Messaging,
     permission: ToolPermissionLevel.Low)]
 public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
@@ -55,10 +54,7 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
                 or MessageIntents.RequestReview
                 or MessageIntents.Delegate);
 
-        // 分支 B：任何非 agent 目标（user / room / connector / @all）都通过
-        // 当前飞书命令路由投递，避免 user/room/connector 投递落入无人认领的
-        // MessageDeliveryDispatcher（只认领 agent）或缺少 ExternalConversationId
-        // 而死信的 ConnectorDeliveryDispatcher。
+        // 飞书单点发送与 Agent 消息织物使用各自的目标解析边界。
         if (targets.Any(t => !string.Equals(
                 t.Kind,
                 MessageEndpointKinds.Agent,
@@ -104,190 +100,157 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
         }
     }
 
-    /// <summary>
-    /// 飞书回信路由：从当前执行 CommandId 解析受信任连接器路由，构造
-    /// Kind=Connector 的 MessageEnvelope（ContentType=Text）交给
-    /// ConnectorDeliveryDispatcher 认领。失败一律写入 tool_result，不抛死循环。
-    /// </summary>
     private async Task<ToolExecutionResult> SendViaFeishuRouteAsync(
         SendMessageArgs args,
         IReadOnlyList<MessageAddress> targets,
         ToolExecutionContext context,
         CancellationToken ct)
     {
-        // 广播目标没有单点 ExternalConversationId：当前仅支持 1:1 私聊回信。
-        if (targets.Any(t => string.Equals(
-                t.Kind,
-                MessageEndpointKinds.Room,
-                StringComparison.OrdinalIgnoreCase)))
-        {
-            return ToolExecutionResult.Fail(
-                "广播目标暂不支持：@all / room:* 没有单点 ExternalConversationId，当前仅支持 1:1 私聊回信。");
-        }
+        if (targets.Any(t => t.Kind.Equals(MessageEndpointKinds.Room, StringComparison.OrdinalIgnoreCase)))
+            return ToolExecutionResult.Fail("广播目标暂不支持：飞书发送请逐个指定收件人。");
+        if (targets.Count != 1)
+            return ToolExecutionResult.Fail("飞书发送每次只支持一个目标；不能混合 Agent 与用户或多个收件人。");
 
+        var target = targets[0];
+        var isUser = target.Kind.Equals(MessageEndpointKinds.User, StringComparison.OrdinalIgnoreCase);
+        var isConnector = target.Kind.Equals(MessageEndpointKinds.Connector, StringComparison.OrdinalIgnoreCase);
+        if ((!isUser && !isConnector) || string.IsNullOrWhiteSpace(target.Id))
+            return ToolExecutionResult.Fail("不支持的飞书目标。请用 list_feishu_recipients 查询，再指定 user:ou_xxx。");
         if (_scopeFactory is null)
             return ToolExecutionResult.Fail("Message system is not configured.");
 
         using var scope = _scopeFactory.CreateScope();
-        var routeReader = scope.ServiceProvider.GetService<IGatewayCommandRouteReader>();
-        if (routeReader is null)
-        {
-            return ToolExecutionResult.Fail(
-                "无飞书会话上下文，无法投递：当前运行时未配置飞书路由解析器。");
-        }
-
         var identity = context.ExecutionIdentity;
-        var commandId = identity?.CommandId;
-
-        // 优先解析当前回合的飞书回信路由：仅当 CommandId 指向飞书 ingress 命令
-        //（用户在飞书发消息）时才作为「被动回信」路由；网页端/心跳等非飞书回合
-        // 的 CommandId（如 Web 网关入口命令）不满足该条件，会落入下方主动发送分支。
+        var channelId = string.IsNullOrWhiteSpace(args.ChannelId) ? null : args.ChannelId.Trim();
+        // 只有别名/当前连接器允许回复当前回合；显式用户 ID 永不被入站路由覆盖。
+        var isDefaultUser = isUser && target.Id.Equals("owner", StringComparison.OrdinalIgnoreCase);
         GatewayCommandRoute? route = null;
-        if (!string.IsNullOrWhiteSpace(commandId))
+        if ((isDefaultUser || isConnector) && identity?.CommandId is { Length: > 0 } commandId)
         {
-            var isMainTurn = identity!.Kind == RuntimeExecutionKind.ConversationTurn;
-            var isDelegatedSubAgent = identity.Kind == RuntimeExecutionKind.SubAgent
+            var isMainTurn = identity.Kind == RuntimeExecutionKind.ConversationTurn;
+            var isDelegated = identity.Kind == RuntimeExecutionKind.SubAgent
                 && identity.ParentRunId is { Length: > 0 };
-
-            if (isMainTurn || isDelegatedSubAgent)
+            var reader = scope.ServiceProvider.GetService<IGatewayCommandRouteReader>();
+            if (reader is not null && (isMainTurn || isDelegated))
             {
-                var resolved = await routeReader.GetAsync(commandId, ct);
+                var resolved = await reader.GetAsync(commandId, ct);
                 if (resolved is not null
-                    && string.Equals(resolved.WorkspaceId, context.WorkspaceId, StringComparison.Ordinal)
-                    && string.Equals(resolved.ConversationId, identity.ConversationId, StringComparison.Ordinal)
+                    && resolved.WorkspaceId == context.WorkspaceId
+                    && resolved.ConversationId == identity.ConversationId
                     && MatchesExecutionAgent(resolved, context, isMainTurn)
                     && resolved.IsGatewayIngress
-                    && string.Equals(resolved.ChannelType, "feishu", StringComparison.OrdinalIgnoreCase))
-                {
-                    route = resolved; // 飞书 ingress 回合 → 被动回信。
-                }
+                    && string.Equals(resolved.ChannelType, "feishu", StringComparison.OrdinalIgnoreCase)
+                    && (channelId is null || resolved.ConnectorId == FeishuConnectorIds.ForChannel(channelId)))
+                    route = resolved;
             }
         }
 
-        // 回信标志：当前回合解析出飞书 ingress 路由 → 被动回信（StableId 幂等）；
-        // 否则为主动投递（每次新 id、非回复）。
-        var isReply = route is not null;
-
-        // 非飞书 ingress 回合（网页端 / 心跳 / commandId 为空）：主动投递到该 Agent
-        // 最近一次飞书单聊会话，打通「主动推送」链路。
-        if (route is null)
+        string connectorId;
+        string agentId;
+        string conversationId;
+        string? turnId;
+        string? recipientAddress = null;
+        Dictionary<string, string> metadata;
+        if (route is not null)
         {
-            route = await routeReader.FindRecentFeishuRouteAsync(
-                context.AgentInstanceId,
-                context.WorkspaceId,
-                ct);
-            if (route is null)
+            if (string.IsNullOrWhiteSpace(route.ConnectorId)
+                || string.IsNullOrWhiteSpace(route.ExternalConversationId))
+                return ToolExecutionResult.Fail("飞书回信路由不完整：缺少 ConnectorId 或 ExternalConversationId。");
+            if (isConnector && target.Id != route.ConnectorId)
+                return ToolExecutionResult.Fail("目标与当前回合的受信任飞书连接器不一致。");
+            connectorId = route.ConnectorId;
+            agentId = route.AgentInstanceId;
+            conversationId = route.ConversationId;
+            turnId = route.TurnId;
+            metadata = new Dictionary<string, string>(route.Metadata, StringComparer.Ordinal)
             {
-                return ToolExecutionResult.Fail(
-                    "无最近飞书会话，无法主动投递：请先在飞书向该 Agent 发过消息，之后才能从心跳/网页端主动推送。");
-            }
-        }
-
-        var connectorId = route.ConnectorId;
-        var externalConversationId = route.ExternalConversationId;
-        if (string.IsNullOrWhiteSpace(connectorId)
-            || string.IsNullOrWhiteSpace(externalConversationId))
-        {
-            return ToolExecutionResult.Fail(
-                "飞书回信路由不完整：缺少 ConnectorId 或 ExternalConversationId，无法投递。");
-        }
-
-        // connector 目标显式点名时，必须与当前回合的受信任连接器一致。
-        var explicitConnectorId = targets
-            .FirstOrDefault(t => string.Equals(
-                t.Kind,
-                MessageEndpointKinds.Connector,
-                StringComparison.OrdinalIgnoreCase))
-            ?.Id;
-        if (!string.IsNullOrWhiteSpace(explicitConnectorId)
-            && !string.Equals(explicitConnectorId, connectorId, StringComparison.Ordinal))
-        {
-            return ToolExecutionResult.Fail(
-                $"无法投递到 connector:{explicitConnectorId}：当前回合的受信任飞书连接器是 connector:{connectorId}。");
-        }
-
-        // ExternalMessageId：回信时为入站消息回复锚点；主动投递时无锚点（新消息）。
-        var externalMessageId = route.ExternalMessageId;
-
-        // messageId：回信保持 StableId 幂等（防止同一 commandId 重复回信）；
-        // 主动投递每次生成新 id，避免 MessageFabric 按 MessageId 去重
-        // （PersistRouteAsync 命中重复 → DeliveryIds=[]）导致第二次及以后
-        // 的主动投递被跳过。
-        var messageId = isReply
-            ? StableId(
-                "send-message",
-                commandId,
-                connectorId,
-                externalMessageId ?? externalConversationId)
-            : Guid.NewGuid().ToString("N");
-
-        // ReplyToMessageId：仅回信时以入站 id 作为回复锚点；主动投递为新消息，非回复。
-        var replyToMessageId = isReply ? externalMessageId : null;
-
-        var metadata = new Dictionary<string, string>(
-            route.Metadata,
-            StringComparer.Ordinal)
-        {
-            [MessageGatewayMetadata.ConnectorId] = connectorId,
-            [MessageGatewayMetadata.IdempotencyKey] = messageId,
-            [MessageGatewayMetadata.IsProjection] = "true",
-        };
-
-        // 主动投递必须移除入站消息 id 元数据：ConnectorDeliveryDispatcher 会将其
-        // 复制为连接器消息的 message_id，FeishuConnector 据此走 ReplyTextAsync
-        // 回复旧消息而不是新发 —— 与新消息语义冲突。
-        if (!isReply)
-        {
+                [MessageGatewayMetadata.ExternalConversationId] = route.ExternalConversationId,
+            };
+            // 回复只消费回合路由，不接受混入的主动收件人或底层协议别名。
+            metadata.Remove(MessageGatewayMetadata.ReceiveId);
+            metadata.Remove(MessageGatewayMetadata.ReceiveIdType);
+            metadata.Remove("open_id");
+            metadata.Remove("message_id");
             metadata.Remove(MessageGatewayMetadata.ExternalMessageId);
+            if (!string.IsNullOrWhiteSpace(route.ExternalMessageId))
+                metadata[MessageGatewayMetadata.ExternalMessageId] = route.ExternalMessageId;
         }
+        else
+        {
+            if (isConnector)
+                return ToolExecutionResult.Fail("无当前飞书回信上下文。主动发送请查询 list_feishu_recipients 并指定 user:ou_xxx。");
+            var directory = scope.ServiceProvider.GetService<IFeishuRecipientDirectory>();
+            if (directory is null)
+                return ToolExecutionResult.Fail("飞书收件人目录未配置，无法主动发送。");
+            agentId = context.ConfigurationAgentInstanceId ?? context.AgentInstanceId;
+            var candidates = (await directory.ListAsync(context.WorkspaceId, agentId, ct))
+                .Where(item => (channelId is null || item.ChannelId == channelId)
+                    && (isDefaultUser || item.OpenId == target.Id)).ToList();
+            if (candidates.Count == 0)
+                return ToolExecutionResult.Fail("未找到已绑定且启用的飞书白名单收件人。请检查渠道绑定及特权用户 Open ID，或用 list_feishu_recipients 查询。");
+            if (candidates.Count != 1)
+                return ToolExecutionResult.Fail("存在多个飞书收件人或渠道，请用 list_feishu_recipients 查询并明确指定 user:OpenID 与 channel_id。");
+            var recipient = candidates[0];
+            connectorId = recipient.ConnectorId;
+            recipientAddress = recipient.Address;
+            conversationId = context.SessionId;
+            turnId = identity?.TurnId;
+            // 主动发送只使用新配置，不继承任何历史会话、回复锚点或发件人元数据。
+            metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [MessageGatewayMetadata.ChannelId] = recipient.ChannelId,
+                [MessageGatewayMetadata.ChannelType] = "feishu",
+                [MessageGatewayMetadata.ReceiveId] = recipient.OpenId,
+                [MessageGatewayMetadata.ReceiveIdType] = "open_id",
+            };
+        }
+
+        var isReply = route is not null;
+        var messageId = isReply
+            ? StableId("send-message", identity!.CommandId!, connectorId,
+                route!.ExternalMessageId ?? route.ExternalConversationId!)
+            : Guid.NewGuid().ToString("N");
+        metadata[MessageGatewayMetadata.ConnectorId] = connectorId;
+        metadata[MessageGatewayMetadata.IdempotencyKey] = messageId;
+        metadata[MessageGatewayMetadata.IsProjection] = "true";
 
         try
         {
             var messageSystem = scope.ServiceProvider.GetRequiredService<IMessageSystem>();
-            var result = await messageSystem.SendAsync(
-                new MessageEnvelope
+            var result = await messageSystem.SendAsync(new MessageEnvelope
+            {
+                MessageId = messageId,
+                From = new MessageAddress
                 {
-                    MessageId = messageId,
-                    From = new MessageAddress
-                    {
-                        Kind = MessageEndpointKinds.Agent,
-                        Id = route.AgentInstanceId,
-                        WorkspaceId = route.WorkspaceId,
-                    },
-                    To =
-                    [
-                        new MessageAddress
-                        {
-                            Kind = MessageEndpointKinds.Connector,
-                            Id = connectorId,
-                            WorkspaceId = route.WorkspaceId,
-                        },
-                    ],
-                    RoomId = route.ConversationId,
-                    ConversationId = route.ConversationId,
-                    ReplyToMessageId = replyToMessageId,
-                    CorrelationId = route.ConversationId,
-                    CausationId = route.TurnId,
-                    Audience = MessageAudiences.Direct,
-                    Visibility = MessageVisibilities.Private,
-                    ContentType = MessageContentTypes.Text,
-                    Content = args.Content ?? string.Empty,
-                    Metadata = metadata,
+                    Kind = MessageEndpointKinds.Agent, Id = agentId, WorkspaceId = context.WorkspaceId,
                 },
-                ct);
+                To = [new MessageAddress
+                {
+                    Kind = MessageEndpointKinds.Connector, Id = connectorId, WorkspaceId = context.WorkspaceId,
+                }],
+                RoomId = conversationId,
+                ConversationId = conversationId,
+                ReplyToMessageId = route?.ExternalMessageId,
+                CorrelationId = conversationId,
+                CausationId = turnId,
+                Audience = MessageAudiences.Direct,
+                Visibility = MessageVisibilities.Private,
+                ContentType = MessageContentTypes.Text,
+                Content = args.Content ?? string.Empty,
+                Metadata = metadata,
+            }, ct);
             return ToolExecutionResult.Ok(JsonSerializer.Serialize(new
             {
                 status = "ok",
+                deliveryStatus = "queued",
                 route = "feishu",
                 target = $"connector:{connectorId}",
+                recipient = recipientAddress,
                 isReply,
                 result.MessageId,
                 result.RoomId,
                 result.DeliveryIds,
-                // 回信返回回复锚点；主动投递无回传（新消息 external id 由飞书侧
-                // 生成，MessageSendResult 无 ExternalMessageId 字段），返回 null
-                // 避免把入站 id 误当作新消息 id 误导调用方。
-                externalMessageId = isReply ? externalMessageId : null,
+                externalMessageId = route?.ExternalMessageId,
             }, JsonOptions));
         }
         catch (Exception ex)
@@ -369,8 +332,10 @@ public sealed record SendMessageArgs
 {
     [ToolParam("Message content to send.")]
     public string? Content { get; init; }
-    [ToolParam("Message target address list. Examples: user:owner, agent:assistant, room:default, @all.")]
+    [ToolParam("Agent address list, or one Feishu recipient from list_feishu_recipients (user:ou_xxx). user:owner replies to the current Feishu turn, otherwise selects the sole configured recipient. Feishu broadcasts/mixed targets are unsupported.")]
     public string? To { get; init; }
+    [ToolParam("Optional Feishu channel id from list_feishu_recipients. Required when the same Open ID occurs in multiple channels.")]
+    public string? ChannelId { get; init; }
     [ToolParam("Optional audience: direct / broadcast / room.")]
     public string? Audience { get; init; }
     [ToolParam("Optional visibility: private / public / system.")]

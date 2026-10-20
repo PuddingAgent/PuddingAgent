@@ -31,6 +31,9 @@ public static class MessageGatewayMetadata
     public const string ExternalConversationId = "gateway_external_conversation_id";
     public const string ExternalMessageId = "gateway_external_message_id";
     public const string ExternalUserId = "gateway_external_user_id";
+    /// <summary>显式主动投递目标，与入站会话/发件人分离；当前仅支持飞书 open_id。</summary>
+    public const string ReceiveId = "gateway_receive_id";
+    public const string ReceiveIdType = "gateway_receive_id_type";
     public const string MessageType = "gateway_message_type";
     public const string ClientRequestId = "gateway_client_request_id";
     public const string IsGatewayCommand = "gateway_command";

@@ -172,12 +172,12 @@ public sealed class MessageToolsTests
     }
 
     [TestMethod]
-    public async Task SendMessageTool_Proactively_Delivers_To_Recent_Feishu_Route_When_Command_Context_Missing()
+    public async Task SendMessageTool_Default_Uses_Only_Configured_Recipient_Without_Command_History()
     {
         var fabric = new RecordingMessageSystem();
-        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, recipients: DefaultRecipients()));
 
-        // 无 ExecutionIdentity / CommandId（如心跳/网页端）→ 主动投递到最近飞书单聊会话。
+        // 无 ExecutionIdentity / CommandId（如心跳/网页端）→ 主动投递到唯一配置收件人。
         var result = await ExecuteAsync(tool, new Dictionary<string, string>
         {
             ["to"] = "user:owner",
@@ -187,14 +187,14 @@ public sealed class MessageToolsTests
         Assert.IsTrue(result.Success, result.Error);
         Assert.AreEqual(1, fabric.Sent.Count);
         Assert.AreEqual(MessageEndpointKinds.Connector, fabric.Sent[0].To[0].Kind);
-        Assert.AreEqual("feishu-main", fabric.Sent[0].To[0].Id);
+        Assert.AreEqual("feishu:channel-a", fabric.Sent[0].To[0].Id);
     }
 
     [TestMethod]
     public async Task SendMessageTool_Proactive_Delivery_Uses_Fresh_MessageId_And_No_ReplyAnchor()
     {
         var fabric = new RecordingMessageSystem();
-        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, recipients: DefaultRecipients()));
 
         // 无 ExecutionIdentity（心跳/网页端）→ 主动投递；连续两次调用必须各自成新消息。
         var first = await ExecuteAsync(tool, new Dictionary<string, string>
@@ -276,10 +276,10 @@ public sealed class MessageToolsTests
     }
 
     [TestMethod]
-    public async Task SendMessageTool_Returns_Error_When_No_Recent_Feishu_Route()
+    public async Task SendMessageTool_Returns_Error_When_No_Configured_Recipients()
     {
         var fabric = new RecordingMessageSystem();
-        var tool = new SendMessageTool(CreateScopeFactory(fabric, new RecordingGatewayRouteReader(null)));
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, recipients: new RecordingRecipientDirectory([])));
 
         var result = await ExecuteAsync(tool, new Dictionary<string, string>
         {
@@ -288,7 +288,7 @@ public sealed class MessageToolsTests
         });
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "无最近飞书会话");
+        StringAssert.Contains(result.Error, "白名单收件人");
         Assert.AreEqual(0, fabric.Sent.Count);
     }
 
@@ -329,7 +329,7 @@ public sealed class MessageToolsTests
             withIdentity: true);
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "无飞书会话上下文");
+        StringAssert.Contains(result.Error, "收件人目录未配置");
         Assert.AreEqual(0, fabric.Sent.Count);
     }
 
@@ -427,6 +427,116 @@ public sealed class MessageToolsTests
         CollectionAssert.AreEqual(new[] { "d1" }, inbox.Acked.ToArray());
     }
 
+    [TestMethod]
+    public async Task Explicit_Recipient_Overrides_Current_Inbound_Route()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader(), DefaultRecipients()));
+        var result = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["to"] = "user:ou_recipient", ["content"] = "指定用户",
+        }, withIdentity: true);
+        Assert.IsTrue(result.Success, result.Error);
+        var sent = fabric.Sent.Single();
+        Assert.AreEqual("ou_recipient", sent.Metadata[MessageGatewayMetadata.ReceiveId]);
+        Assert.AreEqual("open_id", sent.Metadata[MessageGatewayMetadata.ReceiveIdType]);
+        Assert.AreEqual("feishu:channel-a", sent.To.Single().Id);
+        Assert.IsFalse(sent.Metadata.ContainsKey(MessageGatewayMetadata.ExternalMessageId));
+        Assert.IsFalse(sent.Metadata.ContainsKey(MessageGatewayMetadata.ExternalConversationId));
+        Assert.IsNull(sent.ReplyToMessageId);
+    }
+
+    [TestMethod]
+    [DataRow("user:ou_unlisted")]
+    [DataRow("user:")]
+    [DataRow("unknown:ou_recipient")]
+    [DataRow("user:ou_recipient,agent:agent-b")]
+    [DataRow("user:ou_recipient,user:ou_other")]
+    public async Task Invalid_Or_Unlisted_Target_Never_Falls_Back_To_Inbound_User(string to)
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader(), DefaultRecipients()));
+        var result = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["to"] = to, ["content"] = "hello",
+        }, withIdentity: true);
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(0, fabric.Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task Multiple_Recipients_Require_Selection_And_Channel_Disambiguation()
+    {
+        var fabric = new RecordingMessageSystem();
+        var recipients = new RecordingRecipientDirectory([
+            new("channel-a", "A", "ou_first"), new("channel-a", "A", "ou_second"),
+            new("channel-b", "B", "ou_second"),
+        ]);
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, recipients: recipients));
+        foreach (var address in new[] { "user:owner", "user:ou_second" })
+        {
+            var ambiguous = await ExecuteAsync(tool, new Dictionary<string, string>
+            {
+                ["to"] = address, ["content"] = "hello",
+            });
+            Assert.IsFalse(ambiguous.Success);
+            StringAssert.Contains(ambiguous.Error, "多个");
+        }
+        Assert.AreEqual(0, fabric.Sent.Count);
+        var selected = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["to"] = "user:ou_second", ["content"] = "hello", ["channel_id"] = "channel-b",
+        });
+        Assert.IsTrue(selected.Success, selected.Error);
+        Assert.AreEqual("feishu:channel-b", fabric.Sent.Single().To.Single().Id);
+        Assert.AreEqual("ou_second", fabric.Sent.Single().Metadata[MessageGatewayMetadata.ReceiveId]);
+    }
+
+    [TestMethod]
+    public async Task List_Recipients_And_Delegated_Send_Use_Configuration_Agent()
+    {
+        var fabric = new RecordingMessageSystem();
+        var recipients = DefaultRecipients();
+        var factory = CreateScopeFactory(fabric, recipients: recipients);
+        var context = new ToolExecutionContext
+        {
+            AgentInstanceId = "sub-session", ConfigurationAgentInstanceId = "agent-a",
+            WorkspaceId = "default", SessionId = "sub-session",
+        };
+        var listed = await new ListFeishuRecipientsTool(factory).ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "list-1", ArgumentsJson = "{}", Context = context,
+        });
+        Assert.IsTrue(listed.Success, listed.Error);
+        using var json = JsonDocument.Parse(listed.Output);
+        Assert.AreEqual("user:ou_recipient", json.RootElement.GetProperty("defaultRecipient").GetProperty("address").GetString());
+        Assert.AreEqual("agent-a", recipients.LastAgentId);
+        var sent = await new SendMessageTool(factory).ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "send-1", ArgumentsJson = "{\"to\":\"user:owner\",\"content\":\"hello\"}", Context = context,
+        });
+        Assert.IsTrue(sent.Success, sent.Error);
+        Assert.AreEqual("agent-a", recipients.LastAgentId);
+        Assert.AreEqual("default", recipients.LastWorkspaceId);
+        Assert.AreEqual("agent-a", fabric.Sent.Single().From.Id);
+    }
+
+    private static RecordingRecipientDirectory DefaultRecipients() =>
+        new([new("channel-a", "Configured channel", "ou_recipient")]);
+
+    private sealed class RecordingRecipientDirectory(IReadOnlyList<FeishuRecipient> recipients)
+        : IFeishuRecipientDirectory
+    {
+        public string? LastAgentId { get; private set; }
+        public string? LastWorkspaceId { get; private set; }
+        public Task<IReadOnlyList<FeishuRecipient>> ListAsync(string workspaceId, string agentInstanceId, CancellationToken ct = default)
+        {
+            LastAgentId = agentInstanceId;
+            LastWorkspaceId = workspaceId;
+            return Task.FromResult(recipients);
+        }
+    }
+
     private sealed class RecordingMessageSystem : IMessageSystem
     {
         public List<MessageEnvelope> Sent { get; } = [];
@@ -445,12 +555,15 @@ public sealed class MessageToolsTests
 
     private static IServiceScopeFactory CreateScopeFactory(
         IMessageSystem messageSystem,
-        IGatewayCommandRouteReader? routeReader = null)
+        IGatewayCommandRouteReader? routeReader = null,
+        IFeishuRecipientDirectory? recipients = null)
     {
         var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
         services.AddSingleton(messageSystem);
         if (routeReader is not null)
             services.AddSingleton(routeReader);
+        if (recipients is not null)
+            services.AddSingleton(recipients);
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
@@ -580,15 +693,6 @@ public sealed class MessageToolsTests
             return Task.FromResult(route);
         }
 
-        public Task<GatewayCommandRoute?> FindRecentFeishuRouteAsync(
-            string agentInstanceId,
-            string workspaceId,
-            CancellationToken ct = default)
-        {
-            LastAgentInstanceId = agentInstanceId;
-            LastWorkspaceId = workspaceId;
-            return Task.FromResult(route);
-        }
     }
 
     private sealed class RecordingAgentRosterProvider(IReadOnlyList<AgentRosterItem> items) : IAgentRosterProvider

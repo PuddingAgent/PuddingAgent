@@ -288,6 +288,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ListAgentsTool>(sp =>
             new ListAgentsTool(sp.GetRequiredService<IServiceScopeFactory>()));
         builder.Services.AddPuddingAgentTool<ListAgentsTool>();
+        builder.Services.AddPuddingAgentTool<ListFeishuRecipientsTool>();
 
         // ── 子代理管理工具（ADR-016 扩展）──────────────────────
         builder.Services.AddPuddingAgentTool<QuerySubAgentsTool>();

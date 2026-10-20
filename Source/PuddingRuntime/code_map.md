@@ -371,9 +371,10 @@
 | `Tools/BuiltIns/Memory/MemoryToolsHelpers.cs` | 记忆工具辅助类型的归集 | `MemoryToolsHelpers` | `Tools/BuiltIns/Memory/MemoryTools.cs` | — |
 | `Tools/BuiltIns/Memory/SaveMemoryTool.cs` | `save_memory`：主动写入事实与摘要 | `SaveMemoryTool` | `Services/MemoryQualityFilter.cs` | — |
 | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | `save_preference`：用户偏好的写入 | `SavePreferenceTool` | `Services/UserPreferenceService.cs` | — |
+| `Tools/BuiltIns/Messaging/ListFeishuRecipientsTool.cs` | `list_feishu_recipients`：绑定渠道白名单收件人 | `ListFeishuRecipientsTool` | `../PuddingCore/Platform/FeishuRecipientContracts.cs` | 不暴露凭据；子代理使用配置 Agent 身份 |
 | `Tools/BuiltIns/Messaging/ListAgentsTool.cs` | `list_agents`：消息可达 Agent 名册 | `ListAgentsTool` | `Services/Messaging/MessageDeliveryDispatcher.cs` | — |
 | `Tools/BuiltIns/Messaging/ReceiveMessagesTool.cs` | `receive_messages`：拉取收件箱 | `ReceiveMessagesTool` | `Services/Messaging/MessageDeliveryDispatcher.cs` | — |
-| `Tools/BuiltIns/Messaging/SendMessageTool.cs` | `send_message`：向其他 Agent 或用户发消息 | `SendMessageTool` | `Services/Messaging/MessageDeliveryDispatcher.cs` | 默认只通知；未知 intent fail-closed |
+| `Tools/BuiltIns/Messaging/SendMessageTool.cs` | `send_message`：向其他 Agent 或用户发消息 | `SendMessageTool` | `Services/Messaging/MessageDeliveryDispatcher.cs` | Agent 默认只通知；飞书显式 ID 优先；唯一白名单默认，多候选拒绝猜测 |
 | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | `anysearch_search`：通用网页搜索 | `AnySearchSearchTool` | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/DoubaoSearchTool.cs` | `doubao_search`：豆包搜索 | `DoubaoSearchTool` | `Tools/BuiltIns/Search/AnySearchSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/DeepSeekFetchTool.cs` | `deepseek_fetch`：DeepSeek 官方单页抓取（Markdown 正文） | `DeepSeekFetchTool` | `../PuddingDeepSeekWeb/IDeepSeekWebService.cs` | 低风险只读网络工具（AutoAllowed 免授权）；url ≤8192/绝对 http(s)/无 userinfo；输出 ≤60k 有界截断 |

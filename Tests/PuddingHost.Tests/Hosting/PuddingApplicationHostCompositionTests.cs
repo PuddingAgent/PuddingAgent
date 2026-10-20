@@ -36,6 +36,10 @@ public sealed class PuddingApplicationHostCompositionTests
             var builder = PuddingApplicationHost.CreateBuilder([], options);
             await using var app = PuddingApplicationHost.Build(builder);
 
+            Assert.IsType<FeishuRecipientDirectory>(
+                app.Services.GetRequiredService<PuddingCode.Platform.IFeishuRecipientDirectory>());
+            Assert.NotNull(app.Services.GetRequiredService<ListFeishuRecipientsTool>());
+
             var terminalPolicy = app.Services.GetRequiredService<ITerminalCommandPolicy>();
             var terminalAdmission = app.Services.GetRequiredService<PuddingCode.Abstractions.ITerminalCommandAdmission>();
             Assert.Same(terminalPolicy, terminalAdmission);

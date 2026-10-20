@@ -314,6 +314,14 @@ L3-a 已落地（纯类型 + 守卫测试，**零行为**：不写技能、不�
 
 **契约测试**：`../PuddingCoreTests/Improvement/ImprovementContractTests.cs` —— **29/29 ✅**（2026-09-21）。
 
+## 飞书消息路由契约
+
+| 文件 | 用途 |
+|------|------|
+| `Platform/FeishuRecipientContracts.cs` | 收件人目录端口、无凭据 DTO 与稳定连接器身份 |
+| `Platform/GatewayCommandRouteContracts.cs` | 仅按当前 CommandId 解析可信回复路由 |
+| `Platform/MessageGatewayContracts.cs` | 区分入站会话与主动 ReceiveId/ReceiveIdType 的消息元数据 |
+
 ## 运行时抽象
 
 
