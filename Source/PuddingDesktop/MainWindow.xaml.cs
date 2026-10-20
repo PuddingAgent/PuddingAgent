@@ -866,6 +866,7 @@ public sealed partial class MainWindow : Window
         ToolTabKind.Home => ToolHomePanel,
         ToolTabKind.Output => CreateOutputContent(tab),
         ToolTabKind.Document => CreateDocumentContent(tab),
+        ToolTabKind.Panel => CreatePanelContent(tab),
         _ => CreateDeferredContent(tab),
     };
 
@@ -928,6 +929,144 @@ public sealed partial class MainWindow : Window
             + "</body></html>";
         web.CoreWebView2?.NavigateToString(html);
     }
+
+    /// <summary>
+    /// 交互面板：**可交互的媒体画布**（用户 2026-10-20 的定位：展示 Markdown、设计图纸等资源）。
+    ///
+    /// 本轮只做载体与交互骨架：WebView2 渲染内置示例，「下载到本地」真实可用；
+    /// 「添加到对话」需要 Core 侧的对话写入通道，暂未接入（按钮存在但如实提示，不假装成功）。
+    /// Agent 推送内容的通道（panel.render）是下一步。
+    /// </summary>
+    private FrameworkElement CreatePanelContent(ToolTab tab)
+    {
+        if (tab.Kind != ToolTabKind.Panel)
+        {
+            throw new ArgumentException("Panel content requested for a non-panel tab.", nameof(tab));
+        }
+
+        var host = new Grid();
+        host.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        var toolbar = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 0, 8, 6),
+        };
+        toolbar.Children.Add(PanelAction("添加到对话", (_, _) =>
+            ToolStatusText.Text = "「添加到对话」需要 Core 的对话写入通道，尚未接入。"));
+        toolbar.Children.Add(PanelAction("下载到本地", async (_, _) => await ExportPanelAsync()));
+        Grid.SetRow(toolbar, 0);
+        host.Children.Add(toolbar);
+
+        var web = new Microsoft.UI.Xaml.Controls.WebView2
+        {
+            DefaultBackgroundColor = Windows.UI.Color.FromArgb(255, 255, 255, 255),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        Grid.SetRow(web, 1);
+        host.Children.Add(web);
+
+        _ = LoadPanelAsync(web);
+        return host;
+    }
+
+    private async Task LoadPanelAsync(Microsoft.UI.Xaml.Controls.WebView2 web)
+    {
+        try
+        {
+            _webEnvironment ??= await CoreWebView2Environment.CreateWithOptionsAsync(null,
+                Path.Combine(_coordinator.DataRoot!, "browser", "workbench", "user-data"), null);
+            await web.EnsureCoreWebView2Async(_webEnvironment);
+            web.CoreWebView2.NavigateToString(PanelSampleHtml);
+        }
+        catch (Exception ex)
+        {
+            // 画布起不来时不能留空白：空白会被当成“内容就是这个样子”。
+            ToolStatusText.Text = $"面板画布不可用：{ex.Message}";
+        }
+    }
+
+    /// <summary>导出当前画布。写固定目录而不是弹选择器：本轮先把链路做通，选择器留待与其它导出入口统一。</summary>
+    private async Task ExportPanelAsync()
+    {
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Pudding");
+            Directory.CreateDirectory(dir);
+            var file = Path.Combine(dir, $"panel-{DateTime.Now:yyyyMMdd-HHmmss}.html");
+            await File.WriteAllTextAsync(file, PanelSampleHtml);
+            ToolStatusText.Text = $"已导出：{file}";
+        }
+        catch (Exception ex)
+        {
+            ToolStatusText.Text = $"导出失败：{ex.Message}";
+        }
+    }
+
+    private static Button PanelAction(string text, RoutedEventHandler onClick)
+    {
+        var button = new Button
+        {
+            Content = text,
+            FontSize = 12,
+            Padding = new Thickness(10, 4, 10, 4),
+            CornerRadius = new CornerRadius(6),
+            Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+        };
+        button.Click += onClick;
+        return button;
+    }
+
+    /// <summary>
+    /// 内置示例画布：验证 WebView2 在这个位置能正常渲染、工具栏能操作。
+    /// 真正的内容将由 Agent 通过 panel.render 推送，这里只是一张能看懂的占位示例。
+    /// </summary>
+    private const string PanelSampleHtml = """
+        <!doctype html>
+        <html><head><meta charset="utf-8">
+        <style>
+          html,body{margin:0;height:100%;font-family:'Segoe UI','Microsoft YaHei',sans-serif;background:#fff;}
+          .wrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;box-sizing:border-box;}
+          .legend{display:flex;gap:20px;font-size:12px;color:#555;}
+          .legend i{display:inline-block;width:14px;height:3px;margin-right:6px;vertical-align:middle;border-radius:2px;}
+          .canvas{width:100%;max-width:720px;}
+          .hint{font-size:12px;color:#888;text-align:center;}
+        </style></head>
+        <body>
+        <div class="wrap">
+          <div class="legend">
+            <span><i style="background:#2f6fd0"></i>车架系统</span>
+            <span><i style="background:#d98324"></i>传动系统</span>
+            <span><i style="background:#5a5a5a"></i>车轮与操控</span>
+          </div>
+          <svg class="canvas" viewBox="0 0 720 400" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="180" cy="270" r="88" fill="none" stroke="#5a5a5a" stroke-width="6"/>
+            <circle cx="540" cy="270" r="88" fill="none" stroke="#5a5a5a" stroke-width="6"/>
+            <path d="M180 270 L330 270 L400 130 L540 270" fill="none" stroke="#2f6fd0" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M330 270 L400 130" fill="none" stroke="#2f6fd0" stroke-width="7" stroke-linecap="round"/>
+            <path d="M318 126 L382 126" stroke="#5a5a5a" stroke-width="8" stroke-linecap="round"/>
+            <path d="M470 120 L532 120" stroke="#5a5a5a" stroke-width="8" stroke-linecap="round"/>
+            <circle cx="330" cy="270" r="26" fill="none" stroke="#d98324" stroke-width="5"/>
+            <circle cx="180" cy="270" r="12" fill="none" stroke="#d98324" stroke-width="5"/>
+            <path d="M180 258 L330 244 M180 282 L330 296" stroke="#d98324" stroke-width="4"/>
+            <text x="118" y="382" font-size="14" fill="#333">后轮</text>
+            <text x="534" y="382" font-size="14" fill="#333">前轮</text>
+            <text x="344" y="192" font-size="14" fill="#2f6fd0">车架</text>
+            <text x="300" y="104" font-size="14" fill="#333">座垫</text>
+            <text x="478" y="98" font-size="14" fill="#333">车把</text>
+            <text x="286" y="330" font-size="14" fill="#d98324">链轮与曲柄</text>
+          </svg>
+          <div class="hint">Panel 画布示例：Agent 推送内容的能力通道（panel.render）尚未接入，当前展示内置示例。</div>
+        </div>
+        </body></html>
+        """;
 
     private FrameworkElement CreateDeferredContent(ToolTab tab)
     {
