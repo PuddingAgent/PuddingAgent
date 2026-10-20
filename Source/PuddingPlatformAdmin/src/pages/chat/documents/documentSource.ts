@@ -36,6 +36,40 @@ export interface LoadDocumentOptions {
   signal?: AbortSignal;
   /** 注入点：测试用假 fetch，生产走全局 fetch。 */
   fetchImpl?: typeof fetch;
+  /** 注入点：测试用令牌读取；生产读 localStorage。 */
+  readToken?: () => string | null;
+}
+
+/**
+ * 认证令牌的存储键。必须与全局 request 拦截器保持一致
+ * （`requestErrorConfig.ts` 读的就是这一个 key）。
+ */
+const TOKEN_STORAGE_KEY = 'pudding_token';
+
+/**
+ * 构造认证头。
+ *
+ * **为什么需要这个函数**：本模块用的是原生 `fetch`，绕过了 umi 的 request 拦截器
+ * （拦截器会从 localStorage 读 `pudding_token` 并注入 `Authorization`）。少了这一步，
+ * 请求虽然能发出去，但一定 401 —— 而页面会把原因报成「需要登录」，把排查方向
+ * 引到登录态上，实际只是漏了一个 header。（2026-10-20 实测：登录后用浏览器打开
+ * doc-preview 仍然 401，根因就是这里。）
+ *
+ * 无令牌时不加头：让后端自己返 401，前端文案才有依据。不要在客户端伪造成
+ * 「未登录」以外的结论。
+ */
+export function buildAuthHeaders(readToken?: () => string | null): Record<string, string> {
+  const read =
+    readToken ??
+    (() => (typeof localStorage === 'undefined' ? null : localStorage.getItem(TOKEN_STORAGE_KEY)));
+  let token: string | null;
+  try {
+    token = read();
+  } catch {
+    // 隐私模式或存储被禁时 getItem 会抛；读不到就是没令牌，不该让整个预览失败。
+    token = null;
+  }
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function formatBytes(size: number): string {
@@ -105,7 +139,10 @@ export async function loadDocumentContent(
     response = await doFetch(buildDocumentContentUrl(options.workspaceId, normalized.path), {
       method: 'GET',
       credentials: 'include',
-      headers: { Accept: 'application/json, text/markdown;q=0.9, text/plain;q=0.8' },
+      headers: {
+        Accept: 'application/json, text/markdown;q=0.9, text/plain;q=0.8',
+        ...buildAuthHeaders(options.readToken),
+      },
       signal: options.signal,
     });
   } catch (error) {

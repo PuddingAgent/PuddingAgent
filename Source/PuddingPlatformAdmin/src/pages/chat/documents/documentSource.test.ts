@@ -1,4 +1,4 @@
-import { documentNameFromPath, loadDocumentContent } from './documentSource';
+import { buildAuthHeaders, documentNameFromPath, loadDocumentContent } from './documentSource';
 
 /**
  * fetch 的最小替身。故意不依赖 jsdom 是否提供 Response：
@@ -6,10 +6,16 @@ import { documentNameFromPath, loadDocumentContent } from './documentSource';
  */
 function fakeFetch(
   init: { ok?: boolean; status?: number; body?: string; throwError?: Error },
-): { impl: typeof fetch; calls: string[] } {
+): {
+  impl: typeof fetch;
+  calls: string[];
+  headers: Array<Record<string, string>>;
+} {
   const calls: string[] = [];
-  const impl = (async (url: string) => {
+  const headers: Array<Record<string, string>> = [];
+  const impl = (async (url: string, requestInit?: RequestInit) => {
     calls.push(url);
+    headers.push((requestInit?.headers as Record<string, string>) ?? {});
     if (init.throwError) throw init.throwError;
     return {
       ok: init.ok ?? true,
@@ -17,7 +23,7 @@ function fakeFetch(
       text: async () => init.body ?? '',
     };
   }) as unknown as typeof fetch;
-  return { impl, calls };
+  return { impl, calls, headers };
 }
 
 describe('loadDocumentContent', () => {
@@ -192,5 +198,55 @@ describe('documentNameFromPath', () => {
 
   it('无分隔符时原样返回', () => {
     expect(documentNameFromPath('a.md')).toBe('a.md');
+  });
+});
+
+describe('认证头', () => {
+  it('有令牌时加 Bearer 头', () => {
+    expect(buildAuthHeaders(() => 'abc')).toEqual({ Authorization: 'Bearer abc' });
+  });
+
+  it('没有令牌时不加头，让后端自己返 401', () => {
+    // 客户端不能自己编造「未登录」以外的结论：没令牌就是没头，
+    // 状态码由服务端决定。
+    expect(buildAuthHeaders(() => null)).toEqual({});
+    expect(buildAuthHeaders(() => '')).toEqual({});
+  });
+
+  it('读取令牌抛异常时降级为无令牌，而不是让预览整体失败', () => {
+    // 隐私模式 / 存储被禁时 localStorage.getItem 会抛。
+    expect(
+      buildAuthHeaders(() => {
+        throw new Error('storage blocked');
+      }),
+    ).toEqual({});
+  });
+
+  it('请求真的带上了 Authorization（防「只写函数不接线」）', async () => {
+    // 前三条只测纯函数：若忘了在 fetch 里展开 buildAuthHeaders()，
+    // 它们仍然全绿，而真实环境永远 401。这条断言才是接线本身。
+    const { impl, headers } = fakeFetch({ body: '# x' });
+
+    await loadDocumentContent({
+      workspaceId: 'default',
+      path: 'a.md',
+      fetchImpl: impl,
+      readToken: () => 'abc',
+    });
+
+    expect(headers[0].Authorization).toBe('Bearer abc');
+  });
+
+  it('没有令牌时请求不带 Authorization（上一条的对照组）', async () => {
+    const { impl, headers } = fakeFetch({ body: '# x' });
+
+    await loadDocumentContent({
+      workspaceId: 'default',
+      path: 'a.md',
+      fetchImpl: impl,
+      readToken: () => null,
+    });
+
+    expect(headers[0].Authorization).toBeUndefined();
   });
 });
