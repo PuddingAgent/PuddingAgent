@@ -1574,6 +1574,11 @@ public sealed partial class MainWindow : Window
             var path = Path.Combine(
                 PanelMarkDirectory, $"panel-marked-{DateTime.Now:yyyyMMdd-HHmmss-fff}.jpg");
             await File.WriteAllBytesAsync(path, bytes);
+
+            // 每插一次就多一张图，不清就会无限增长。
+            // 失败不影响本次结果：Prune 内部吞掉 IO/权限异常，绝不因为收拾垃圾而
+            // 把已经成功落盘的图报成失败。
+            PanelMarkRetention.Prune(PanelMarkDirectory);
             return path;
         }
         catch (Exception)
