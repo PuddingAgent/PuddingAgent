@@ -280,4 +280,65 @@ public sealed class PanelAnnotationTests
 
         Assert.Contains("items", error!, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ── 整份载荷：除了标注，还要知道改的是哪张图 ───────────────
+
+    [Fact]
+    public void Canvas_payload_carries_the_source_image_uri()
+    {
+        const string json = """
+            {"src":"pudding-image:///D:/Data/a.jpg","width":800,"height":800,
+             "items":[{"kind":"point","x":10,"y":20}]}
+            """;
+
+        Assert.True(PanelAnnotation.TryParseCanvas(json, out var payload, out var error), error);
+
+        Assert.Equal("pudding-image:///D:/Data/a.jpg", payload.SourceUri);
+        Assert.Single(payload.Items);
+        Assert.Equal(800, payload.Width);
+    }
+
+    [Fact]
+    public void Canvas_payload_allows_a_missing_source()
+    {
+        // 页面里没有图（纯 HTML 面板）时 src 不存在，不属于错误。
+        const string json = """
+            {"width":800,"height":800,"items":[{"kind":"point","x":10,"y":20}]}
+            """;
+
+        Assert.True(PanelAnnotation.TryParseCanvas(json, out var payload, out _));
+
+        Assert.Null(payload.SourceUri);
+    }
+
+    // ── DescribeForComposer 带来源 ───────────────────────────────
+
+    [Fact]
+    public void Describe_prefixes_the_verified_source_path()
+    {
+        var text = PanelAnnotation.DescribeForComposer(
+            new[] { PanelAnnotation.Box(100, 100, 400, 400) },
+            "pudding-image:///D:/Data/shots/dog.jpg",
+            new[] { @"D:\Data" });
+
+        // 带上路径后，“改哪张图”不再依赖对话上下文。
+        Assert.Equal("【编辑 D:\\Data\\shots\\dog.jpg】\n图一 <bbox>100 100 400 400</bbox>", text);
+    }
+
+    [Fact]
+    public void Describe_omits_an_unverifiable_source_instead_of_trusting_the_page()
+    {
+        // 页面由 Agent 生成；把 src 原样塞进输入框，等于让页面能往用户
+        // 即将发送的消息里写任意内容。白名单外的、data: 的、乱写的都不进文本。
+        var items = new[] { PanelAnnotation.Point(1, 2) };
+
+        Assert.Equal("图一 <point>1 2</point>",
+            PanelAnnotation.DescribeForComposer(items, "pudding-image:///C:/Windows/x.jpg", new[] { @"D:\Data" }));
+
+        Assert.Equal("图一 <point>1 2</point>",
+            PanelAnnotation.DescribeForComposer(items, "data:image/png;base64,AAAA", new[] { @"D:\Data" }));
+
+        Assert.Equal("图一 <point>1 2</point>",
+            PanelAnnotation.DescribeForComposer(items, null, new[] { @"D:\Data" }));
+    }
 }

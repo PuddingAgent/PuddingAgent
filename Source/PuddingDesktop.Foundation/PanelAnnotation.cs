@@ -11,6 +11,17 @@ public enum PanelAnnotationKind
 }
 
 /// <summary>
+/// 一次画布交互的完整载荷：**标注对象**（哪张图）+ 标注本身。
+///
+/// <para>
+/// 保留 <see cref="SourceUri"/> 原始字符串而不在这里转成路径：形状解析与
+/// “这个路径能不能读”是两件事，后者需要白名单（属于 Shell 策略）。
+/// </para>
+/// </summary>
+public sealed record PanelCanvasPayload(
+    string? SourceUri, double Width, double Height, IReadOnlyList<PanelAnnotation> Items);
+
+/// <summary>
 /// 画布上的一个用户标注，坐标一律是**归一化 0–999 整数**。
 ///
 /// <para>
@@ -145,6 +156,40 @@ public sealed record PanelAnnotation
     }
 
     /// <summary>
+    /// 带**来源图**的版本：开头一行写明改的是哪个文件，后面每行一个标注。
+    ///
+    /// <para>
+    /// <paramref name="sourceUri"/> 来自页面，不可信。只有能经
+    /// <see cref="PanelImageSource.TryResolve"/> 还原成白名单内真实路径时才写进文本；
+    /// 否则静默省略 —— 把页面给的任意字符串塞进输入框，等于让 Agent 生成的 HTML
+    /// 有机会往用户即将发送的消息里写任意内容。
+    /// </para>
+    /// </summary>
+    public static string DescribeForComposer(
+        IReadOnlyList<PanelAnnotation> items,
+        string? sourceUri,
+        IReadOnlyList<string> allowedImageRoots)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(allowedImageRoots);
+
+        if (items.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var body = string.Join('\n', items.Select(item => "图一 " + item.ToPromptFragment()));
+
+        if (string.IsNullOrWhiteSpace(sourceUri)
+            || !PanelImageSource.TryResolve(sourceUri, allowedImageRoots, out var path, out _))
+        {
+            return body;
+        }
+
+        return $"【编辑 {path}】\n" + body;
+    }
+
+    /// <summary>
     /// 解析画布页返回的标注数组。
     ///
     /// <para>
@@ -225,7 +270,34 @@ public sealed record PanelAnnotation
     public static bool TryParsePixels(
         string? json, out IReadOnlyList<PanelAnnotation> items, out string? error)
     {
-        items = Array.Empty<PanelAnnotation>();
+        if (!TryParseCanvas(json, out var payload, out error))
+        {
+            items = Array.Empty<PanelAnnotation>();
+            return false;
+        }
+
+        items = payload.Items;
+        return true;
+    }
+
+    /// <summary>
+    /// 解析**整份画布载荷**：除了标注，还包括标注对象是哪张图。
+    ///
+    /// <para>
+    /// 为什么要带 <c>src</c>：如果只插「图一 &lt;bbox&gt;…」，模型和你都得靠对话上下文
+    /// 猜「图一」是哪张图 —— 会话一长就丢。带上来源后，改动作可以脱离上下文独立成立。
+    /// </para>
+    ///
+    /// <para>
+    /// <c>src</c> 可以是 <c>pudding-image://…</c>、<c>data:</c> 或任意字符串（都来自页面，
+    /// 不可信），这里只做**形状**解析；能不能变成真实磁盘路径由调用方用
+    /// <see cref="PanelImageSource.TryResolve"/> 判定。
+    /// </para>
+    /// </summary>
+    public static bool TryParseCanvas(
+        string? json, out PanelCanvasPayload payload, out string? error)
+    {
+        payload = null!;
         error = null;
 
         if (string.IsNullOrWhiteSpace(json))
@@ -279,14 +351,18 @@ public sealed record PanelAnnotation
             {
                 if (!TryParsePixelsOne(element, width, height, out var annotation, out error))
                 {
-                    items = Array.Empty<PanelAnnotation>();
                     return false;
                 }
 
                 parsed.Add(annotation);
             }
 
-            items = parsed;
+            var source = ReadString(root, "src");
+            payload = new PanelCanvasPayload(
+                string.IsNullOrWhiteSpace(source) ? null : source.Trim(),
+                width,
+                height,
+                parsed);
             return true;
         }
     }

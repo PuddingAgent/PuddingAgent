@@ -1426,14 +1426,14 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 取回画布上的标注。取不到时返回空表（不建失败），由调用方决定退化成什么。
-    /// 解析失败会写状态栏：静默丢掉标注等于用户白画一遍。
+    /// 取回画布上的**完整载荷**（标注 + 来源图）。取不到时返回 null（不建失败），
+    /// 由调用方决定退化成什么。解析失败会写状态栏：静默丢掉标注等于用户白画一遍。
     /// </summary>
-    private async Task<IReadOnlyList<PanelAnnotation>> TryReadAnnotationsAsync(ToolTab tab)
+    private async Task<PanelCanvasPayload?> TryReadCanvasPayloadAsync(ToolTab tab)
     {
         if (!_panelCanvases.TryGetValue(tab.Id, out var web) || web.CoreWebView2 is null)
         {
-            return Array.Empty<PanelAnnotation>();
+            return null;
         }
 
         try
@@ -1445,20 +1445,20 @@ public sealed partial class MainWindow : Window
             var payload = JsonSerializer.Deserialize<string>(raw);
             if (string.IsNullOrWhiteSpace(payload))
             {
-                return Array.Empty<PanelAnnotation>();
+                return null;
             }
 
-            if (!PanelAnnotation.TryParsePixels(payload, out var items, out var error))
+            if (!PanelAnnotation.TryParseCanvas(payload, out var parsed, out var error))
             {
                 ToolStatusText.Text = $"标注无法解析：{error}";
-                return Array.Empty<PanelAnnotation>();
+                return null;
             }
 
-            return items;
+            return parsed;
         }
         catch (Exception)
         {
-            return Array.Empty<PanelAnnotation>();
+            return null;
         }
     }
 
@@ -1480,10 +1480,12 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var annotations = await TryReadAnnotationsAsync(tab);
+        var payload = await TryReadCanvasPayloadAsync(tab);
+        var annotations = payload?.Items ?? Array.Empty<PanelAnnotation>();
         var title = string.IsNullOrWhiteSpace(tab.Title) ? "交互面板" : tab.Title;
         var text = annotations.Count > 0
-            ? PanelAnnotation.DescribeForComposer(annotations)
+            ? PanelAnnotation.DescribeForComposer(
+                annotations, payload!.SourceUri, PanelImageRoots())
             : _panelRenderedRevision.TryGetValue(tab.Id, out var revision)
                 ? $"【画布：{title} rev {revision}】"
                 : $"【画布：{title}】";
@@ -1492,9 +1494,9 @@ public sealed partial class MainWindow : Window
         {
             // 手写外层结构、只用 JsonSerializer 序列化字符串值：避开匿名类型在
             // trimming/AOT 下的元数据依赖。
-            var payload = "{\"type\":\"pudding.composer.insert\",\"text\":"
+            var message = "{\"type\":\"pudding.composer.insert\",\"text\":"
                 + JsonSerializer.Serialize(text) + "}";
-            core.PostWebMessageAsJson(payload);
+            core.PostWebMessageAsJson(message);
             ToolStatusText.Text = annotations.Count > 0
                 ? $"已插入 {annotations.Count} 个标注坐标"
                 : $"已插入对话输入框：{title}";

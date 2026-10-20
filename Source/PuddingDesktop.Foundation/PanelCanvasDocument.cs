@@ -80,7 +80,7 @@ public static class PanelCanvasDocument
     private const string AnnotationScriptSource = """
         (function () {
           if (window.puddingAnnotation) return;
-          var items = [], layer = null, active = false, box = null, start = null;
+          var items = [], layer = null, active = false, box = null, start = null, imageEl = null;
 
           function biggestImage() {
             var best = null, area = 0, list = document.images;
@@ -109,6 +109,7 @@ public static class PanelCanvasDocument
             if (!im) return false;
             var r = im.getBoundingClientRect();
             if (r.width <= 0 || r.height <= 0) return false;
+            imageEl = im;
             box = r;
             var l = ensureLayer();
             l.style.cssText = ['position:fixed','z-index:2147483647','cursor:crosshair',
@@ -188,6 +189,7 @@ public static class PanelCanvasDocument
             take: function () {
               if (!sync()) return '';
               return JSON.stringify({
+                src: (imageEl && imageEl.src) || '',
                 width: box.width, height: box.height,
                 items: items.map(function (it) {
                   return it.kind === 'box'
