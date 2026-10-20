@@ -764,6 +764,28 @@ internal static class CoreFrameMapping
                 return CapabilityResult<DesktopCapabilityRequest>.Success(DesktopCapabilityRequest.ForShellStatus());
             }
 
+            case DesktopCapability.ShellDocumentPreview:
+            {
+                if (command.PayloadCase != Proto.CapabilityCommand.PayloadOneofCase.DocumentPreview)
+                {
+                    return Mismatch(descriptor);
+                }
+
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityRequest>.Success(
+                        DesktopCapabilityRequest.ForDocumentPreview(new DesktopDocumentPreviewRequest(
+                            command.DocumentPreview.Path,
+                            string.IsNullOrWhiteSpace(command.DocumentPreview.Title)
+                                ? null
+                                : command.DocumentPreview.Title)));
+                }
+                catch (ArgumentException ex)
+                {
+                    return FailRequest($"document preview request is not usable ({ex.ParamName})");
+                }
+            }
+
             default:
                 // 目录里存在但本切片尚无 payload 的能力（dialog/picker/clipboard 属切片 E）。
                 return CapabilityResult<DesktopCapabilityRequest>.Failure(
@@ -816,6 +838,7 @@ internal static class CoreFrameMapping
             Proto.CapabilityCommand.PayloadOneofCase.BindingApply => command.BindingApply.ToByteArray(),
             Proto.CapabilityCommand.PayloadOneofCase.BindingRevoke => command.BindingRevoke.ToByteArray(),
             Proto.CapabilityCommand.PayloadOneofCase.Screenshot => command.Screenshot.ToByteArray(),
+            Proto.CapabilityCommand.PayloadOneofCase.DocumentPreview => command.DocumentPreview.ToByteArray(),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(command),
                 command.PayloadCase,
@@ -1288,6 +1311,16 @@ internal static class DesktopFrameMapping
                         TrayVisible = shellStatus.TrayVisible,
                         AutomationState = DesktopShellStatusWire.NameOf(shellStatus.Automation),
                         OpenPageCount = (uint)shellStatus.OpenPageCount,
+                    };
+                    break;
+
+                case DesktopCapability.ShellDocumentPreview when response.DocumentPreview is { } documentPreview:
+                    result.DocumentPreview = new Proto.DocumentPreviewOutcome
+                    {
+                        // 只回身份与阶段：正文、HTML 与绝对路径永不上线缆，也不进审计。
+                        TabId = WireText.Truncate(documentPreview.TabId, 256),
+                        Path = WireText.Truncate(documentPreview.Path, DesktopDocumentPreviewRequest.MaxPathLength),
+                        Status = DesktopDocumentPreviewStatusWire.NameOf(documentPreview.Status),
                     };
                     break;
 

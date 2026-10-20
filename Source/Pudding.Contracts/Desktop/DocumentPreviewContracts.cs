@@ -98,3 +98,25 @@ public sealed record DesktopDocumentPreviewResult
 
     public override string ToString() => $"document_preview({Status}, tabChars={TabId.Length})";
 }
+
+/// <summary>
+/// 文档预览状态的线名真源（accepted / opened / already_open）。
+/// 未知线名折叠为 <see cref="DesktopDocumentPreviewStatus.Accepted"/>：
+/// 这比「当作已打开」诚实 —— 已受理但未确认渲染时，调用方仍应去观察标签。
+/// </summary>
+public static class DesktopDocumentPreviewStatusWire
+{
+    public static string NameOf(DesktopDocumentPreviewStatus status) => status switch
+    {
+        DesktopDocumentPreviewStatus.Opened => "opened",
+        DesktopDocumentPreviewStatus.AlreadyOpen => "already_open",
+        _ => "accepted",
+    };
+
+    public static DesktopDocumentPreviewStatus Parse(string? name) => name switch
+    {
+        "opened" => DesktopDocumentPreviewStatus.Opened,
+        "already_open" => DesktopDocumentPreviewStatus.AlreadyOpen,
+        _ => DesktopDocumentPreviewStatus.Accepted,
+    };
+}

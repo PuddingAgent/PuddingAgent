@@ -98,6 +98,17 @@ internal static class CoreCommandEncoder
                 command.GetShellStatus = new Proto.GetShellStatusCommand();
                 break;
 
+            case DesktopCapability.ShellDocumentPreview when request.DocumentPreview is { } documentPreview:
+                // 只传路径与可选标题：正文、HTML 与绝对路径永不上线缆。
+                // 不在这里再截一次：契约构造器已把 path/title 限在 MaxPathLength/MaxTitleLength 内；
+                // 再写一份上限只会多一个漂移点（两端都截断时看不出到底是谁改的值）。
+                command.DocumentPreview = new Proto.DocumentPreviewCommand
+                {
+                    Path = documentPreview.Path,
+                    Title = documentPreview.Title ?? string.Empty,
+                };
+                break;
+
             case DesktopCapability.BrowserLocate when request.Locate is { } locate:
                 command.Locate = new Proto.LocateCommand
                 {
@@ -419,6 +430,7 @@ internal static class DesktopResultDecoder
             Proto.OperationResult.OutcomeOneofCase.FilePicker => expectedCapability == DesktopCapability.ShellFilePicker,
                 Proto.OperationResult.OutcomeOneofCase.BindingAck => expectedCapability is DesktopCapability.BrowserBindingApply or DesktopCapability.BrowserBindingRevoke,
             Proto.OperationResult.OutcomeOneofCase.Screenshot => expectedCapability == DesktopCapability.BrowserScreenshot,
+            Proto.OperationResult.OutcomeOneofCase.DocumentPreview => expectedCapability == DesktopCapability.ShellDocumentPreview,
             _ => false,
         };
 
@@ -478,6 +490,32 @@ internal static class DesktopResultDecoder
                     return CapabilityResult<DesktopCapabilityResponse>.Success(
                         DesktopCapabilityResponse.FromScreenshot(shotResult));
                 }
+
+            case Proto.OperationResult.OutcomeOneofCase.DocumentPreview:
+            {
+                var preview = result.DocumentPreview;
+                if (preview is null)
+                {
+                    return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                        DesktopCapabilityError.Internal("document preview outcome is empty"));
+                }
+
+                // 未知 status 折叠为 Accepted（DesktopDocumentPreviewStatusWire 的保守口径）：
+                // 宁可让调用方继续观察标签，也不谎称已经渲染。
+                try
+                {
+                    return CapabilityResult<DesktopCapabilityResponse>.Success(
+                        DesktopCapabilityResponse.FromDocumentPreview(new DesktopDocumentPreviewResult(
+                            preview.TabId,
+                            preview.Path,
+                            DesktopDocumentPreviewStatusWire.Parse(preview.Status))));
+                }
+                catch (ArgumentException)
+                {
+                    return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                        DesktopCapabilityError.Internal("document preview identity is missing in the outcome"));
+                }
+            }
 
                 case Proto.OperationResult.OutcomeOneofCase.BindingAck:
                 {
