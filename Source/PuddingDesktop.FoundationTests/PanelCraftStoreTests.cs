@@ -405,6 +405,57 @@ public sealed class PanelCraftStoreTests : IDisposable
         Assert.Equal("文字「左边的人」 <point>300 400</point>", annotations[1].ToPromptFragment());
     }
 
+    // ── 编辑画布 id ↔ 制成品（血缘） ─────────────────────────
+
+    [Fact]
+    public void Edit_panel_id_round_trips_to_the_craft_id()
+    {
+        // 来源就写在 panelId 上，不再另存「这个 tab 从哪件打开」——
+        // 多一份内存状态就多一个「重启后就丢了」的失败面。
+        const string craftId = "craft-0123abcd";
+
+        var panelId = PanelCraftEditPanel.Prefix + "0123abcd";
+        Assert.Equal(panelId, "edit-0123abcd");
+        Assert.Equal(craftId, PanelCraftEditPanel.CraftIdOf(panelId));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("edit-")]                    // 没有后缀
+    [InlineData("edit-0123abc")]             // 短一位
+    [InlineData("edit-0123ABCD")]            // 大写十六进制
+    [InlineData("edit-0123abcd ")]           // 尾随空格
+    [InlineData("panel-0123abcd")]           // 前缀不对（Agent 自己发的面板）
+    public void Anything_that_is_not_a_craft_edit_panel_has_no_lineage(string? panelId)
+    {
+        // 这个值会被当成 parent 写进记录：任意字符串都能混进来的话，
+        // 制品库里就会出现指向不存在东西的血缘。
+        Assert.Null(PanelCraftEditPanel.CraftIdOf(panelId));
+    }
+
+    [Fact]
+    public void Save_records_the_parent_derived_from_the_edit_panel()
+    {
+        var first = SaveBasic();
+        var editPanel = PanelCraftEditPanel.Prefix + first.Id[PanelCraft.IdPrefix.Length..];
+
+        _store.Save(
+            CreateImage("second.jpg", "second-bytes"),
+            "第二版",
+            2048,
+            2048,
+            new PanelCraftSource(editPanel, null, null,
+                new[] { PanelAnnotation.Box(10, 10, 20, 20) }),
+            parent: PanelCraftEditPanel.CraftIdOf(editPanel),
+            note: null,
+            now: new DateTimeOffset(2026, 10, 21, 0, 0, 0, TimeSpan.FromHours(8)));
+
+        var second = _store.List().First(craft => craft.Title == "第二版");
+        Assert.Equal(first.Id, second.Parent);
+    }
+
     // ── id 形状 ────────────────────────────────────────────────
 
     [Theory]

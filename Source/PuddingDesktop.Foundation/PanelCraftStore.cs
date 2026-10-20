@@ -67,6 +67,47 @@ public sealed record PanelCraft(
 }
 
 /// <summary>
+/// 制成品「继续编辑」画布的 panelId 约定。
+///
+/// <para>
+/// 约定存在这里而不是散在两处字面量里：**来源就写在 panelId 上**，
+/// 所以再保存时不需要额外记「这个 tab 是从哪件制成品打开的」——
+/// 多一份内存状态就多一个「重启后就丢了」的失败面。
+/// </para>
+/// </summary>
+public static class PanelCraftEditPanel
+{
+    /// <summary>编辑画布 panelId 的前缀。</summary>
+    public const string Prefix = "edit-";
+
+    /// <summary>由制成品得编辑画布 id。</summary>
+    public static string IdOf(PanelCraft craft)
+    {
+        ArgumentNullException.ThrowIfNull(craft);
+        return Prefix + craft.Id[PanelCraft.IdPrefix.Length..];
+    }
+
+    /// <summary>
+    /// 由 panelId 反推制成品 id；不是编辑画布或形状不对时返回 <c>null</c>。
+    ///
+    /// <para>
+    /// 必须走 <see cref="PanelCraft.IsValidId"/>：这个值会当 <c>parent</c> 写进记录，
+    /// 任意字符串（比如 Agent 自己发的 <c>edit-xxx</c> 面板）不能被当成本地制成品。
+    /// </para>
+    /// </summary>
+    public static string? CraftIdOf(string? panelId)
+    {
+        if (string.IsNullOrWhiteSpace(panelId) || !panelId.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var candidate = PanelCraft.IdPrefix + panelId[Prefix.Length..];
+        return PanelCraft.IsValidId(candidate) ? candidate : null;
+    }
+}
+
+/// <summary>
 /// 制成品 JSON 的读写。**手写而非反射序列化**：Desktop 侧将来可能开 AOT，
 /// 而 <c>JsonSerializer</c> 对记录类型的元数据依赖在裁剪下容易失效 ——
 /// 那种失效的表现是运行期才抛，且在打包后的进程里很难复现。

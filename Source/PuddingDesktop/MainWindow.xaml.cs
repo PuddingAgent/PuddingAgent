@@ -1730,7 +1730,9 @@ public sealed partial class MainWindow : Window
                 (int)Math.Round(pixelWidth),
                 (int)Math.Round(pixelHeight),
                 new PanelCraftSource(PanelIdOf(tab), null, null, payload.Items),
-                parent: null,
+                // 从「继续编辑」打开的画布，panelId 里就带着来源制成品；
+                // 不是编辑画布（Agent 自己发的面板）时为 null —— 那确实没有本地血缘。
+                parent: PanelCraftEditPanel.CraftIdOf(PanelIdOf(tab)),
                 note: null,
                 DateTimeOffset.Now);
 
@@ -1896,7 +1898,8 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var panelId = "edit-" + craft.Id[PanelCraft.IdPrefix.Length..];
+        // 来源写在 panelId 上：再保存时用它当 parent，不必另存「这个 tab 从哪件打开」。
+        var panelId = PanelCraftEditPanel.IdOf(craft);
         var html = BuildCraftEditHtml(craft, imagePath);
 
         await CapabilityRenderPanelAsync(
