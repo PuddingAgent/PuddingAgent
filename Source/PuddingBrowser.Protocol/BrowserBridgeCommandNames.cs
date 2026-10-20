@@ -22,22 +22,11 @@ public static class BrowserBridgeCommandNames
     public const string PageWaitFor = "page.waitFor";
     public const string PageScreenshot = "page.screenshot";
 
-    /// <summary>
-    /// 请宿主（Desktop）用**自己的渲染组件**打开一份工作区文档。
-    /// <para>
-    /// 只传路径：读文件、渲染、显示都归宿主，Core 不做 HTTP 自取、也不做 HTML 渲染 ——
-    /// 那样就不用为一个文档去启动整个 Admin SPA，亦不依赖登录态
-    /// （用户 2026-10-20 明确的职责边界）。
-    /// </para>
-    /// </summary>
-    public const string DocumentPreview = "document.preview";
-
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         ContextCreate, ContextList, ContextGetInfo, ContextClose,
         PageCreate, PageList, PageGetInfo, PageActivate, PageClose,
         PageGoto, PageGoBack, PageGoForward, PageReload, PageStop,
-        PageSnapshot, PageLocate, PageInteract, PageWaitFor, PageScreenshot,
-        DocumentPreview
+        PageSnapshot, PageLocate, PageInteract, PageWaitFor, PageScreenshot
     };
 }

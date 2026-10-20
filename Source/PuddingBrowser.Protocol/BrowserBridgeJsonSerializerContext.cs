@@ -23,8 +23,6 @@ namespace PuddingBrowser.Protocol;
 [JsonSerializable(typeof(PageLocateArguments))]
 [JsonSerializable(typeof(PageInteractArguments))]
 [JsonSerializable(typeof(PageWaitForArguments))]
-// 宿主侧文档预览：只传路径，渲染由 Desktop 自有组件负责
-[JsonSerializable(typeof(DocumentPreviewArguments))]
 // Result descriptor DTOs
 [JsonSerializable(typeof(BrowserContextDescriptor))]
 [JsonSerializable(typeof(BrowserPageDescriptor))]
