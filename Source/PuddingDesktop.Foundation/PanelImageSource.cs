@@ -79,6 +79,16 @@ public static class PanelImageSource
                 "Only local file paths can be exposed to the canvas.", nameof(absolutePath));
         }
 
+        if (fileUri.Host.Length > 0)
+        {
+            // UNC（\\nas\share\a.jpg）的 file URI 是 file://nas/share/a.jpg——没有第三根斜杠。
+            // 直接往下拼会得到 pudding-image:///file://nas/share/a.jpg：既无法被 TryResolve
+            // 还原，也不会在构造时报错，面板上只会出现一张坏图。
+            // 面板图片走网络共享不常见，宁可在构造时 fail closed。
+            throw new ArgumentException(
+                "UNC paths are not supported by the canvas image channel.", nameof(absolutePath));
+        }
+
         const string filePrefix = "file:///";
         var absolute = fileUri.AbsoluteUri;
         var rest = absolute.StartsWith(filePrefix, StringComparison.OrdinalIgnoreCase)

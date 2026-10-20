@@ -160,4 +160,14 @@ public sealed class PanelImageSourceTests
 
         Assert.Equal(@"D:\Shots\a.webp", path);
     }
+
+    [Fact]
+    public void Rejects_a_UNC_path_instead_of_building_an_unusable_uri()
+    {
+        // \\nas\photos\dog.jpg 的 file URI 是 file://nas/photos/dog.jpg，
+        // 不以 file:/// 开头。直接拼出来会得到
+        // pudding-image:///file://nas/photos/dog.jpg —— 既还不了原，也不报错，
+        // 面板上只会出现一张坏图。宁可在构造时 fail closed。
+        Assert.Throws<ArgumentException>(() => PanelImageSource.BuildUri(@"\\nas\photos\dog.jpg"));
+    }
 }
