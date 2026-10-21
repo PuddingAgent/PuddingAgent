@@ -73,7 +73,7 @@ internal static class TerminalDiagnosticExport
             : LlmFailureDiagnostics.Classify(error, scope);
 
         var presentation = ErrorPresentationCatalog.Present(cause);
-        var incident = ProjectIncident(cause, input);
+        var incident = ProjectIncident(cause, input, LlmFailureDiagnostics.GetAttempts(error));
         var report = DiagnosticReportDocument.FromIncident(
             incident,
             capturedAt: input.TimestampUtc,
@@ -86,7 +86,8 @@ internal static class TerminalDiagnosticExport
             agentTemplateId: input.AgentTemplateId,
             agentInstanceId: input.AgentInstanceId,
             executionId: input.ExecutionId,
-            platformVersion: PlatformVersion);
+            platformVersion: PlatformVersion,
+            retryable: cause.Retryable);
 
         return new Result
         {
@@ -99,7 +100,7 @@ internal static class TerminalDiagnosticExport
         };
     }
 
-    private static IncidentView ProjectIncident(DiagnosticCause cause, Input input)
+    private static IncidentView ProjectIncident(DiagnosticCause cause, Input input, IReadOnlyList<DiagnosticFact> attempts)
     {
         var attempt = int.TryParse(
             cause.Evidence.GetValueOrDefault(DiagnosticEvidenceKeys.Attempt), out var parsedAttempt)
@@ -115,7 +116,7 @@ internal static class TerminalDiagnosticExport
             new()
             {
                 Kind = DiagnosticFactKinds.Attempt,
-                Status = cause.Retryable ? "retried" : "failed",
+                Status = input.TerminalStatus,
                 OccurredAtUtc = input.TimestampUtc,
                 TurnId = input.TurnId,
                 TraceId = input.TraceId,
@@ -149,6 +150,16 @@ internal static class TerminalDiagnosticExport
             },
         };
 
+        if (attempts.Count > 0)
+        {
+            facts.RemoveAt(0);
+            facts.InsertRange(0, attempts.Select(fact => fact with
+            {
+                TurnId = input.TurnId,
+                TraceId = input.TraceId,
+                ErrorId = input.ErrorId,
+            }));
+        }
         return IncidentProjector.Project(input.TurnId, facts);
     }
 

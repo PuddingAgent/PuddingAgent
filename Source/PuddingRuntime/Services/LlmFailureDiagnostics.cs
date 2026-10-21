@@ -37,6 +37,33 @@ internal static class LlmFailureDiagnostics
     /// 包装异常会打断这些既有语义；`Data` 逐实例携带且 `throw;` 不丢。
     /// </summary>
     private const string CauseDataKey = "pudding.diagnostic.cause";
+    private const string AttemptsDataKey = "pudding.diagnostic.attempts";
+
+    public static IReadOnlyList<DiagnosticFact> GetAttempts(Exception error)
+        => error.Data[AttemptsDataKey] as IReadOnlyList<DiagnosticFact> ?? [];
+
+    public static void RecordAttempt(Exception error, DiagnosticCause cause,
+        LlmCallDiagnosticsScope scope, string status, DateTimeOffset occurredAtUtc)
+    {
+        // 有界且逐次快照，不持有异常、请求正文或密钥，也不通过 AsyncLocal 跨调用共享。
+        if (scope.Attempts.Count == 32)
+            scope.Attempts.RemoveAt(0);
+        scope.Attempts.Add(new DiagnosticFact
+        {
+            Kind = DiagnosticFactKinds.Attempt,
+            Status = status,
+            OccurredAtUtc = occurredAtUtc,
+            Attempt = scope.Attempt,
+            MaxRetries = scope.MaxRetries,
+            DurationMs = scope.ElapsedMs,
+            RequestBytes = scope.RequestBytes,
+            CauseCode = cause.Code,
+            Phase = DiagnosticPhases.ToWire(cause.Phase),
+            UserMessage = cause.UserMessage,
+            RemediationHint = cause.RemediationHint,
+        });
+        error.Data[AttemptsDataKey] = scope.Attempts.ToArray();
+    }
 
     /// <summary>把因果结论挂到异常上，供上层投影/导出使用。</summary>
     public static TException Attach<TException>(TException error, DiagnosticCause cause)
@@ -46,6 +73,9 @@ internal static class LlmFailureDiagnostics
         ArgumentNullException.ThrowIfNull(cause);
 
         error.Data[CauseDataKey] = cause;
+        if (error.Data[AttemptsDataKey] is null && error.InnerException is { } inner
+            && inner.Data[AttemptsDataKey] is IReadOnlyList<DiagnosticFact> attempts)
+            error.Data[AttemptsDataKey] = attempts;
         return error;
     }
 

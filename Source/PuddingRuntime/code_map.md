@@ -135,6 +135,8 @@
 | `Services/DesignCouncilRuntimeService.cs` | MOA 设计委员会的运行时适配与状态持久化 | `IDesignCouncilRuntimeService` | `Services/InMemorySubAgentOrchestrationRunStore.cs` | 派发为只读，结果由调用方回填 |
 | `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 四维运行时指标的确定性诊断 | `RuntimeDiagnosisEngine` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 无证据判 unknown，绝不判 healthy |
 | `Services/DirectLlmClient.cs` | 按选中模型协议直连 LLM 的客户端 | `DirectLlmClient` | `Services/FrozenVisionContextAccessor.cs` | 视觉能力只读冻结快照，无快照即 fail-closed |
+| `Services/LlmFailureDiagnostics.cs` | 分类证据与有界尝试快照随异常跨层传递 | `LlmFailureDiagnostics` | `Services/DirectLlmClient.cs` | 重试状态取真实控制流；每次耗时独立计量 |
+| `Services/Diagnostics/TerminalDiagnosticExport.cs` | 终态事故投影与可复制报告 | `TerminalDiagnosticExport` | `Services/AgentExecutionService.cs` | 保留全部已采集尝试；TurnId/RunId 来自执行身份，不用 MessageId 替代 |
 | `Services/DirectMemoryLlmClient.cs` | 面向记忆的独立配置 LLM 客户端 | `IMemoryLlmClient` | `Services/LlmInvocationService.cs` | — |
 | `Services/EmbeddingGenerationHook.cs` | 在 Loop 节点为章节生成嵌入向量 | `EmbeddingGenerationHook` | `Services/OpenAiEmbeddingService.cs` | — |
 | `Services/Events/EventDispatcher.cs` | 持久事件队列的出队与分发 | `EventDispatcher` | `Services/Events/InternalEventBus.cs` | — |

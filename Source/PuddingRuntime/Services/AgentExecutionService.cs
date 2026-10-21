@@ -1656,7 +1656,8 @@ public sealed partial class AgentExecutionService
             {
                 TimestampUtc = timestampUtc,
                 SessionId = request.SessionId,
-                TurnId = request.MessageId,
+                TurnId = request.ExecutionIdentity?.TurnId,
+                ExecutionId = request.ExecutionIdentity?.RunId,
                 MessageId = request.MessageId,
                 TraceId = traceId,
                 ErrorId = errorId,
@@ -1678,7 +1679,7 @@ public sealed partial class AgentExecutionService
             Message = message,
             SessionId = request.SessionId,
             MessageId = request.MessageId,
-            TurnId = request.MessageId,
+            TurnId = request.ExecutionIdentity?.TurnId,
             TraceId = traceId,
             TimestampUtc = timestampUtc,
             Location = exception is VisionPipelineException ? "agent.stream.vision_preflight" : "agent.stream.llm_provider",

@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Sockets;
@@ -175,6 +175,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var timeoutSeconds = (_executionConfig?.GetOptions().Turns ?? new TurnExecutionOptions())
             .LlmFirstChunkTimeoutSeconds;
 
+        var attempts = new List<DiagnosticFact>();
         for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
@@ -182,7 +183,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             CancellationToken effectiveCt = linkedCts.Token;
 
             // 非流式路径（子代理走的就是它）同样需要现场：没有作用域就只会有「异常字符串」。
-            using var diagnosticScope = LlmCallDiagnosticsScope.Begin();
+            using var diagnosticScope = LlmCallDiagnosticsScope.Begin(attempts);
             diagnosticScope.ProviderId = config.ProviderId;
             diagnosticScope.ModelId = config.Model;
             diagnosticScope.EndpointHost = LlmCallDiagnosticsScope.HostOf(config.Endpoint);
@@ -253,7 +254,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     summary: "Direct LLM chat request cancelled.",
                     metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                     error: ex,
-                    CancellationToken.None);
+                    CancellationToken.None, diagnosticScope: diagnosticScope);
                 throw;
             }
             catch (Exception ex) when (IsTransientError(ex, timeoutCts.IsCancellationRequested))
@@ -284,7 +285,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                         summary: $"LLM call retry {attempt + 1}/{maxRetries}.",
                         metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                         error: ex,
-                        CancellationToken.None);
+                        CancellationToken.None, diagnosticScope: diagnosticScope);
 
                     await Task.Delay(retryDelay, ct);
                     continue;
@@ -306,7 +307,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     summary: $"LLM call failed after {maxRetries} retries.",
                     metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                     error: ex,
-                    CancellationToken.None);
+                    CancellationToken.None, diagnosticScope: diagnosticScope);
                 throw;
             }
             catch (Exception ex)
@@ -328,7 +329,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     summary: "Direct LLM chat request failed (non-retryable).",
                     metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                     error: ex,
-                    CancellationToken.None);
+                    CancellationToken.None, diagnosticScope: diagnosticScope);
                 throw;
             }
         }
@@ -411,6 +412,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var maxRetries = strategy.EffectiveMaxRetries;
         var retryDelay = TimeSpan.FromSeconds(strategy.EffectiveRetryDelaySeconds);
         var retryAttempt = 0;
+        var attempts = new List<DiagnosticFact>();
         var hasYieldedDelta = false;
 
         // ── 并发限流（流式请求在整个流生命周期内持有槽位）──
@@ -505,7 +507,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
                 // 每次尝试一个独立的诊断作用域：网关在其中写入「请求体字节数/派发次数/阶段」，
                 // 失败时分类器据此给出稳定因果码与阶段（见可诊断基础设施设计 §7 Stage 3）。
-                using var diagnosticScope = LlmCallDiagnosticsScope.Begin();
+                using var diagnosticScope = LlmCallDiagnosticsScope.Begin(attempts);
                 diagnosticScope.ProviderId = config.ProviderId;
                 diagnosticScope.ModelId = config.Model;
                 diagnosticScope.EndpointHost = LlmCallDiagnosticsScope.HostOf(config.Endpoint);
@@ -549,7 +551,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             summary: "Direct LLM streaming request cancelled.",
                             metadata,
                             error: ex,
-                            CancellationToken.None);
+                            CancellationToken.None, diagnosticScope: diagnosticScope);
                         await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Cancelled, CancellationToken.None);
                         throw;
                     }
@@ -574,7 +576,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             summary: "Direct LLM stream produced no first chunk before its deadline.",
                             metadata,
                             error: ex,
-                            CancellationToken.None);
+                            CancellationToken.None, diagnosticScope: diagnosticScope);
                         await RecordLlmStreamDiagnosticsMetricsAsync(
                             trace,
                             streamDiagnostics,
@@ -613,7 +615,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             summary: "Direct LLM stream idle watchdog timed out.",
                             metadata,
                             error: ex,
-                            CancellationToken.None);
+                            CancellationToken.None, diagnosticScope: diagnosticScope);
                         await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
                         // 抛出的新异常也要带上因果结论，否则上层看不到「看门狗空闲超时」这个阶段事实。
                         var idleCause = LlmFailureDiagnostics.TryGet(ex, out var attachedIdleCause)
@@ -656,7 +658,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             summary: "Direct LLM streaming transport was cancelled.",
                             metadata,
                             error: ex,
-                            CancellationToken.None);
+                            CancellationToken.None, diagnosticScope: diagnosticScope);
                         await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
                         throw;
                     }
@@ -676,7 +678,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
                         var terminalCause = LlmFailureDiagnostics.Classify(ex, diagnosticScope);
                         _logger.LogError(ex,
-                            "[DirectLlm] STREAM ERROR provider={Provider} model={Model} elapsed={Elapsed}ms cause={Cause} phase={Phase} retryable={Retryable} requestBytes={RequestBytes} attempt={Attempt}/{MaxRetries}",
+                            "[DirectLlm] STREAM ERROR provider={Provider} model={Model} elapsed={Elapsed}ms cause={Cause} phase={Phase} retryable={Retryable} requestBytes={RequestBytes} attempt={Attempt}/{MaxAttempts}",
                             config.ProviderId,
                             config.Model,
                             sw.ElapsedMilliseconds,
@@ -685,7 +687,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             terminalCause.Retryable,
                             terminalCause.Evidence.GetValueOrDefault("request_bytes", ""),
                             diagnosticScope.Attempt,
-                            maxRetries);
+                            maxRetries + 1);
                         var metadata = MergeMetadata(
                             BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                             streamDiagnostics.ToMetadata());
@@ -699,7 +701,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             summary: "Direct LLM streaming request failed.",
                             metadata,
                             error: ex,
-                            CancellationToken.None);
+                            CancellationToken.None, diagnosticScope: diagnosticScope);
                         await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
                         throw;
                     }
@@ -747,7 +749,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     summary: $"LLM stream retry before first delta {retryAttempt}/{maxRetries}.",
                     retryMetadata,
                     error: retryException,
-                    CancellationToken.None);
+                    CancellationToken.None, diagnosticScope: diagnosticScope);
                 await Task.Delay(retryDelay, ct);
             }
 
@@ -1048,15 +1050,23 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         IReadOnlyDictionary<string, string> metadata,
         Exception? error,
         CancellationToken ct,
-        string? activityId = null)
+        string? activityId = null,
+        LlmCallDiagnosticsScope? diagnosticScope = null)
     {
         // 因果分类在**唯一出口**做：任何失败路径都得到稳定因果码，而不是各调用点各写一套日志字符串。
-        var cause = error is null ? null : LlmFailureDiagnostics.Classify(error, LlmCallDiagnosticsScope.Current);
+        var scope = diagnosticScope ?? LlmCallDiagnosticsScope.Current;
+        var cause = error is null ? null : LlmFailureDiagnostics.Classify(error, scope,
+            messageCount: int.TryParse(metadata.GetValueOrDefault("message_count"), out var messages) ? messages : null,
+            toolCount: int.TryParse(metadata.GetValueOrDefault("tool_count"), out var tools) ? tools : null);
         var effectiveMetadata = cause is null ? metadata : LlmFailureDiagnostics.MergeInto(metadata, cause);
 
         // 结论随异常向上传递（Agent 执行循环要据此生成界面呈现与「复制现场」载荷）。
         if (cause is not null && error is not null)
+        {
             LlmFailureDiagnostics.Attach(error, cause);
+            if (scope is not null)
+                LlmFailureDiagnostics.RecordAttempt(error, cause, scope, status, endedAt ?? DateTimeOffset.UtcNow);
+        }
 
         if (_activitySink is null)
         {

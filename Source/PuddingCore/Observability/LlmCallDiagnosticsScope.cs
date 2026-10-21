@@ -22,9 +22,11 @@ public sealed class LlmCallDiagnosticsScope : IDisposable
     private static readonly AsyncLocal<LlmCallDiagnosticsScope?> Ambient = new();
     private readonly LlmCallDiagnosticsScope? _parent;
     private long? _dispatchStartedTimestamp;
+    private readonly long _startedTimestamp = Stopwatch.GetTimestamp();
 
-    private LlmCallDiagnosticsScope()
+    private LlmCallDiagnosticsScope(List<DiagnosticFact>? attempts)
     {
+        Attempts = attempts ?? [];
         _parent = Ambient.Value;
         Ambient.Value = this;
     }
@@ -32,7 +34,11 @@ public sealed class LlmCallDiagnosticsScope : IDisposable
     /// <summary>当前作用域；未开启时为 null（网关侧的写入一律走空合并，不强制要求）。</summary>
     public static LlmCallDiagnosticsScope? Current => Ambient.Value;
 
-    public static LlmCallDiagnosticsScope Begin() => new();
+    public static LlmCallDiagnosticsScope Begin(List<DiagnosticFact>? attempts = null) => new(attempts);
+
+    /// <summary>同一次逻辑调用的重试事实，由调用方共享；不同调用不得共用。</summary>
+    public List<DiagnosticFact> Attempts { get; }
+    public long ElapsedMs => (long)Stopwatch.GetElapsedTime(_startedTimestamp).TotalMilliseconds;
 
     public string? ProviderId { get; set; }
     public string? ModelId { get; set; }

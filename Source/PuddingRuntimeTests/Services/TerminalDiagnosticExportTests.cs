@@ -56,6 +56,8 @@ public sealed class TerminalDiagnosticExportTests
         Assert.AreEqual(DiagnosticReportDocument.SchemaVersion, json.RootElement.GetProperty("Schema").GetString());
         Assert.AreEqual(DiagnosticCauseCode.RequestUploadReset, json.RootElement.GetProperty("CauseCode").GetString());
         Assert.AreEqual("request_upload", json.RootElement.GetProperty("Evidence").GetProperty("phase").GetString());
+        Assert.IsTrue(json.RootElement.GetProperty("Presentation").GetProperty("Retryable").GetBoolean());
+        Assert.AreEqual("failed", json.RootElement.GetProperty("Attempts")[0].GetProperty("Status").GetString());
         Assert.IsGreaterThan(0, json.RootElement.GetProperty("Attempts").GetArrayLength());
 
         using var evidence = JsonDocument.Parse(export.EvidenceJson);
@@ -103,6 +105,31 @@ public sealed class TerminalDiagnosticExportTests
             Assert.AreEqual(DiagnosticCauseCode.RequestUploadReset, roundTripped.Code);
             Assert.AreEqual("request_upload", DiagnosticPhases.ToWire(roundTripped.Phase));
         }
+    }
+
+    [TestMethod]
+    public void StreamError_UsesCanonicalTurnAndRun_NotInboundMessageId()
+    {
+        var request = new PuddingCode.Platform.RuntimeDispatchRequest
+        {
+            SessionId = "session", WorkspaceId = "default", AgentTemplateId = "template",
+            MessageText = "hello", MessageId = "inbound-message",
+            ExecutionIdentity = new PuddingCode.Runtime.RuntimeExecutionIdentity
+            {
+                Kind = PuddingCode.Runtime.RuntimeExecutionKind.ConversationTurn,
+                ConversationId = "session", TurnId = "canonical-turn", RunId = "run", TraceId = "trace",
+            },
+        };
+        var method = typeof(AgentExecutionService).GetMethod("BuildStreamErrorDiagnostic",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var result = method.Invoke(null, [request, "trace", "agent", null, 1, 10, 1,
+            new IOException("test"), "failed", Captured])!;
+        using var payload = JsonDocument.Parse(JsonSerializer.Serialize(result));
+        Assert.AreEqual("canonical-turn", payload.RootElement.GetProperty("TurnId").GetString());
+        Assert.AreEqual("inbound-message", payload.RootElement.GetProperty("MessageId").GetString());
+        using var report = JsonDocument.Parse(payload.RootElement.GetProperty("ReportJson").GetString()!);
+        Assert.AreEqual("canonical-turn", report.RootElement.GetProperty("TurnId").GetString());
+        Assert.AreEqual("run", report.RootElement.GetProperty("ExecutionId").GetString());
     }
 
     private static (Exception Error, LlmCallDiagnosticsScope Scope) BuildUploadResetError()

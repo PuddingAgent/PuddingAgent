@@ -189,7 +189,7 @@ public sealed class LlmStreamObservabilityTests
             NullLogger<DirectLlmClient>.Instance);
         var deltas = new List<StreamDelta>();
 
-        await Assert.ThrowsExactlyAsync<HttpIOException>(async () =>
+        var error = await Assert.ThrowsExactlyAsync<HttpIOException>(async () =>
         {
             await foreach (var delta in client.ChatStreamAsync(
                                "default",
@@ -210,6 +210,10 @@ public sealed class LlmStreamObservabilityTests
         Assert.AreEqual(1, handler.RequestCount);
         Assert.HasCount(1, deltas);
         Assert.AreEqual("partial", deltas[0].ContentDelta);
+        Assert.IsTrue(LlmFailureDiagnostics.TryGet(error, out var cause));
+        Assert.IsFalse(cause.Retryable, "已有增量时，终态报告不得建议自动重试");
+        Assert.AreEqual("true", cause.Evidence["has_yielded_delta"]);
+        Assert.AreEqual(1, LlmFailureDiagnostics.GetAttempts(error).Count);
     }
 
     [TestMethod]
@@ -1006,7 +1010,7 @@ public sealed class LlmStreamObservabilityTests
             NullLogger<DirectLlmClient>.Instance,
             activitySink: activities);
 
-        await Assert.ThrowsExactlyAsync<HttpRequestException>(async () =>
+        var error = await Assert.ThrowsExactlyAsync<HttpRequestException>(async () =>
         {
             await foreach (var _ in client.ChatStreamAsync(
                                "default",
@@ -1024,6 +1028,7 @@ public sealed class LlmStreamObservabilityTests
         });
 
         Assert.AreEqual(2, handler.RequestCount, "无增量前的传输失败必须重试一次");
+        AssertAttemptHistory(error, 2);
 
         var retried = activities.Activities.Last(activity => activity.Status == RuntimeActivityStatuses.Retried);
         var failed = activities.Activities.Last(activity =>
@@ -1057,11 +1062,11 @@ public sealed class LlmStreamObservabilityTests
         var handler = new UploadResetHandler();
         var client = new DirectLlmClient(
             new FixedHttpClientFactory(new HttpClient(handler)),
-            new TestLlmConfigService(maxRetries: 0, retryDelaySeconds: 0, protocol: "responses"),
+            new TestLlmConfigService(maxRetries: 2, retryDelaySeconds: 0, protocol: "responses"),
             NullLogger<DirectLlmClient>.Instance,
             activitySink: activities);
 
-        await Assert.ThrowsExactlyAsync<HttpRequestException>(async () =>
+        var error = await Assert.ThrowsExactlyAsync<HttpRequestException>(async () =>
             await client.ChatAsync(
                 "default",
                 "session-chat-upload-reset",
@@ -1080,9 +1085,34 @@ public sealed class LlmStreamObservabilityTests
         Assert.AreEqual(DiagnosticCauseCode.RequestUploadReset, failed.ErrorCode);
         Assert.AreEqual("request_upload", failed.Metadata!["cause_phase"]);
         Assert.AreEqual("10054", failed.Metadata["socket_error_code"]);
-        Assert.AreEqual("1", failed.Metadata["attempt"]);
+        Assert.AreEqual("3", failed.Metadata["attempt"]);
+        AssertAttemptHistory(error, 3);
         Assert.IsGreaterThan(0L, long.Parse(failed.Metadata["request_bytes"], CultureInfo.InvariantCulture),
             "非流式路径同样必须记录请求体字节数");
+    }
+
+    private static void AssertAttemptHistory(Exception error, int expectedCount)
+    {
+        var export = PuddingRuntime.Services.Diagnostics.TerminalDiagnosticExport.Build(error, null, new()
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            TurnId = "canonical-turn",
+            MessageId = "inbound-message",
+            ExecutionId = "canonical-run",
+        });
+        Assert.AreEqual(expectedCount, export.Incident.Attempts.Count);
+        for (var i = 0; i < expectedCount; i++)
+        {
+            var attempt = export.Incident.Attempts[i];
+            Assert.AreEqual(i + 1, attempt.Attempt);
+            Assert.AreEqual(i == expectedCount - 1 ? "failed" : "retried", attempt.Status);
+            Assert.IsTrue(attempt.DurationMs >= 0);
+            Assert.IsTrue(attempt.RequestBytes > 0);
+        }
+        using var report = JsonDocument.Parse(export.ReportJson);
+        Assert.AreEqual("canonical-turn", report.RootElement.GetProperty("TurnId").GetString());
+        Assert.AreEqual("canonical-run", report.RootElement.GetProperty("ExecutionId").GetString());
+        Assert.IsTrue(report.RootElement.GetProperty("Presentation").GetProperty("Retryable").GetBoolean());
     }
 
     private sealed class RecordingActivitySink : IRuntimeActivitySink

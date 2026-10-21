@@ -246,6 +246,7 @@ V5-T2：模型条目可选 `vision` 合同节（`PuddingVisionCapabilityConfig`�
 | `Models/InternalEvent.cs` | 跨 Runtime/Platform 的事件信封与队列 DTO | `InternalEvent` | `Abstractions/IInternalEventBus.cs` | 目标补齐 aggregate/version/partition、producer、actor、classification 及 run/turn/call 身份 |
 | `Abstractions/IInternalEventBus.cs` | 进程内 pub/sub 抽象 | `IInternalEventBus` | `Models/InternalEvent.cs` | 不作为长期 durable replay 或同步 Hook 合同 |
 | `Observability/` | 观测抽象目录 | — | — | — |
+| `Observability/LlmCallDiagnosticsScope.cs` | 单次 LLM 尝试的阶段、体积与独立计时；同一逻辑调用共享有界重试事实 | `LlmCallDiagnosticsScope` | `../PuddingRuntime/Services/DirectLlmClient.cs` | 不同调用不得共用尝试列表 |
 | `Diagnostics/` | 诊断抽象目录 | — | — | — |
 
 ## 判定算子与分类契约（Operators/ · Classification/，2026-09-21）
