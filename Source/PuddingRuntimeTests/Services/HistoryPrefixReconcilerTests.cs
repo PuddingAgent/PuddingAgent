@@ -18,9 +18,11 @@ public sealed class HistoryPrefixReconcilerTests
         var history = new List<ChatMessage> { new(ChatRole.System, "stable"), user, call, tool, answer };
         var before = JsonSerializer.Serialize(history);
         var next = User("new correction", "new correction");
+        var verified = new List<(ChatMessage Live, ChatMessage Persisted)>();
 
         Assert.IsTrue(HistoryPrefixReconciler.TryAppendCanonicalTail(history,
-            [User("original input", "original input"), new(ChatRole.Assistant, "confirmed result"), next], out var appended));
+            [User("original input", "original input"), new(ChatRole.Assistant, "confirmed result"), next], out var appended,
+            (live, persisted) => verified.Add((live, persisted))));
 
         Assert.AreEqual(1, appended);
         Assert.AreEqual(before, JsonSerializer.Serialize(history.Take(5).ToList()));
@@ -29,6 +31,9 @@ public sealed class HistoryPrefixReconcilerTests
         Assert.AreSame(tool, history[3]);
         Assert.AreSame(answer, history[4]);
         Assert.AreSame(next, history[5]);
+        Assert.AreEqual(2, verified.Count);
+        Assert.AreSame(user, verified[0].Live);
+        Assert.AreSame(answer, verified[1].Live);
     }
 
     [TestMethod]
@@ -67,7 +72,9 @@ public sealed class HistoryPrefixReconcilerTests
         };
         if (change == "reorder") canonical.Reverse();
         var before = JsonSerializer.Serialize(history);
-        Assert.IsFalse(HistoryPrefixReconciler.TryAppendCanonicalTail(history, canonical, out var appended));
+        var rebound = 0;
+        Assert.IsFalse(HistoryPrefixReconciler.TryAppendCanonicalTail(history, canonical, out var appended, (_, _) => rebound++));
+        Assert.AreEqual(0, rebound, "A partially matching prefix must not transfer durable identities.");
         Assert.AreEqual(0, appended);
         Assert.AreEqual(before, JsonSerializer.Serialize(history));
     }

@@ -60,7 +60,7 @@
 
 | 文件 | 用途 | 关键符号 | 关联 | 约束 |
 |------|------|------|------|------|
-| `Services/MessageGateway/` | Connector 回信与飞书输出的投影目录 | `FeishuImageArtifactProjection` / `FeishuTtsProjection` / `ConversationTerminalMessageFormatter` | `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | — |
+| `Services/MessageGateway/` | Connector 回信与飞书输出的投影目录 | `FeishuImageArtifactProjection` / `FeishuTtsProjection` / `ConversationTerminalMessageFormatter` | `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 失败回信优先展示诊断因果码、体积、压缩原因与 errorId/traceId；仅投影白名单证据 |
 | `Services/MessageFabric/MessageQueueProjectionService.cs` | 未认领消息队列的只读投影 | `MessageQueueProjectionService` / `MessageQueueKinds` | `Services/MessageFabric/MessageFabricStore.cs` | 默认只投影 `queued`/`retrying` 投递与 `pending` 命令；`includeTerminal=true` 才返回完整诊断；`queueKind` 区分事实源 |
 | `Services/MessageFabric/MessageRouter.cs` / `Services/MessageFabric/MessageFabricStore.cs` | 投递路由与固化 | `MessageRouter` / `MessageFabricStore` | `MessageQueueProjectionService` | 按 intent/requires_response 固化为 `execute`/`notify`；per-target delivery ID 稳定；按 handling mode 原子批量领取，单批上限 20 条 |
 | `Services/MessageFabric/MessageFabricSchemaBootstrapper.cs` | 存量库的 handling_mode 迁移 | `MessageFabricSchemaBootstrapper` | `Services/MessageFabric/MessageFabricStore.cs` | 在旧 SQLite 上幂等补列与索引；把普通 `inform`/`report_result`/`agent_reply` 的历史投递回填为被动通知 |

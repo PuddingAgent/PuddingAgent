@@ -1,4 +1,4 @@
-using PuddingCode.Core;
+﻿using PuddingCode.Core;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -506,6 +506,7 @@ public sealed partial class AgentExecutionService
 
             for (int round = 0; round < hardLoopRounds; round++)
             {
+                string? compactionFailureReason = null;
                 // ── 检查点 A：取消 / 冻结 ─────────────────────────────
                 if (ct.IsCancellationRequested || _controlRegistry.IsFrozen(request.SessionId))
                 {
@@ -684,6 +685,7 @@ public sealed partial class AgentExecutionService
                             effectiveLlmConfig,
                             round,
                             ct);
+                        compactionFailureReason = compaction.SkipReason;
                         // F3：软维护若已执行过同步硬保护（RequiresSynchronousProtection），必须同时
                         // 关闭本 dispatch 的硬保护准入，避免同一 round 再发一次字节级相同的摘要请求。
                         var attemptFlags = WarmPrefixMaintenanceAdmission.RecordAttempt(
@@ -796,6 +798,7 @@ public sealed partial class AgentExecutionService
                                 effectiveLlmConfig,
                                 round,
                                 ct);
+                            compactionFailureReason = hard.SkipReason;
                             hardProtectionAttempted = hard.Plan is not null;
                             if (hard.Compacted)
                             {
@@ -863,7 +866,7 @@ public sealed partial class AgentExecutionService
                     current_message_id = request.MessageId,
                     current_input_sha256 = ComputeCurrentTurnInputHash(request),
                 });
-                var textBudgetError = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools);
+                var textBudgetError = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools, compactionFailureReason);
                 if (textBudgetError is not null)
                     _logger.LogWarning("[AgentExec:ContextBudget] {Code} session={Session} evidence={Evidence}",
                         "local.context_compaction_required", request.SessionId,

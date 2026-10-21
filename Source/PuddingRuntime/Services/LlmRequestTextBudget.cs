@@ -49,7 +49,7 @@ internal static class LlmRequestTextBudget
         => ResolveLimit(request) is > 0 and var limit && Measure(messages, tools) > limit;
 
     internal static Exception? Validate(RuntimeDispatchRequest request, IReadOnlyList<ChatMessage> messages,
-        IReadOnlyList<LlmToolDefinition> tools)
+        IReadOnlyList<LlmToolDefinition> tools, string? compactionFailureReason = null)
     {
         var limit = ResolveLimit(request);
         if (limit <= 0) return null;
@@ -68,6 +68,8 @@ internal static class LlmRequestTextBudget
                 ["estimated_request_text_bytes"] = bytes.ToString(),
                 ["request_text_budget_bytes"] = limit.ToString(),
                 ["tool_definition_bytes"] = MeasureTools(tools).ToString(),
+                ["system_message_bytes"] = MeasureMessages(messages.Where(m => m.Role == ChatRole.System).ToArray()).ToString(),
+                ["compaction_reason"] = compactionFailureReason ?? "no_applicable_compaction_span",
                 ["message_count"] = messages.Count.ToString(),
                 ["tool_count"] = tools.Count.ToString(),
                 ["dispatch_count"] = "0",

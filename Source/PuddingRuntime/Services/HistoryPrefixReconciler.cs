@@ -18,7 +18,8 @@ internal static class HistoryPrefixReconciler
     internal static bool TryAppendCanonicalTail(
         List<ChatMessage> history,
         IReadOnlyList<ChatMessage> canonical,
-        out int appended)
+        out int appended,
+        Action<ChatMessage, ChatMessage>? onVerifiedMatch = null)
     {
         appended = 0;
         if (history.Count == 0 || canonical.Count == 0)
@@ -29,12 +30,14 @@ internal static class HistoryPrefixReconciler
             return false;
 
         var matched = 0;
+        var verifiedPairs = new List<(ChatMessage Live, ChatMessage Persisted)>();
         var pendingToolEvidence = false;
         while (index < history.Count)
         {
             var current = history[index++];
             if (matched < canonical.Count && Equivalent(current, canonical[matched]))
             {
+                verifiedPairs.Add((current, canonical[matched]));
                 matched++;
                 pendingToolEvidence = false;
                 continue;
@@ -56,6 +59,8 @@ internal static class HistoryPrefixReconciler
             return false;
 
         // Mutation is delayed until the entire warm prefix has been verified.
+        foreach (var (live, persisted) in verifiedPairs)
+            onVerifiedMatch?.Invoke(live, persisted);
         for (var i = matched; i < canonical.Count; i++)
             history.Add(canonical[i]);
         appended = canonical.Count - matched;

@@ -36,6 +36,26 @@ public static class ConversationTerminalMessageFormatter
 
             if (IsFailed(kind, errorCode, errorMessage))
             {
+                if (root.TryGetProperty("diagnostic", out var diagnostic)
+                    && diagnostic.ValueKind == JsonValueKind.Object
+                    && ReadString(diagnostic, "causeCode") is { Length: > 0 } causeCode)
+                {
+                    var lines = new List<string>
+                    {
+                        "## 请求失败",
+                        "",
+                        $"- 错误代码：`{SanitizeInline(causeCode)}`",
+                        $"- 原因：{ReadString(diagnostic, "causeShortCause") ?? errorMessage ?? "执行失败。"}",
+                    };
+                    AppendBudgetEvidence(lines, ReadString(diagnostic, "evidenceJson"));
+                    if (ReadString(diagnostic, "remediationHint") is { Length: > 0 } hint)
+                        lines.Add($"- 建议：{hint}");
+                    foreach (var key in new[] { "errorId", "traceId" })
+                        if (ReadString(diagnostic, key) is { Length: > 0 } id)
+                            lines.Add($"- {key}：`{SanitizeInline(id)}`");
+                    return new ConversationTerminalPresentation(string.Join("\n", lines),
+                        ReadString(diagnostic, "causeTitle") ?? "请求失败", IsError: true);
+                }
                 var code = string.IsNullOrWhiteSpace(errorCode)
                     ? "execution_failed"
                     : SanitizeInline(errorCode);
@@ -80,7 +100,25 @@ public static class ConversationTerminalMessageFormatter
             : null;
 
     private static string SanitizeInline(string value)
-        => value.Trim().Replace('`', '\'');
+        => value.Trim().Replace('`', '\'').Replace('\r', ' ').Replace('\n', ' ');
+
+    private static void AppendBudgetEvidence(List<string> lines, string? evidenceJson)
+    {
+        if (string.IsNullOrWhiteSpace(evidenceJson)) return;
+        try
+        {
+            using var document = JsonDocument.Parse(evidenceJson);
+            var evidence = document.RootElement;
+            if (long.TryParse(ReadString(evidence, "estimated_request_text_bytes"), out var bytes)
+                && long.TryParse(ReadString(evidence, "request_text_budget_bytes"), out var limit))
+                lines.Add($"- 请求文本体积：{bytes:N0} 字节；上传预算：{limit:N0} 字节");
+            if (long.TryParse(ReadString(evidence, "tool_definition_bytes"), out var toolBytes))
+                lines.Add($"- 工具定义体积：{toolBytes:N0} 字节");
+            if (ReadString(evidence, "compaction_reason") is { Length: > 0 and <= 128 } reason)
+                lines.Add($"- 压缩诊断：`{SanitizeInline(reason)}`");
+        }
+        catch (JsonException) { /* Other diagnostic fields remain usable. */ }
+    }
 }
 
 public sealed record ConversationTerminalPresentation(

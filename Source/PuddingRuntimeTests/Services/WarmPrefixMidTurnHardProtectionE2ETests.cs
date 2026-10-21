@@ -816,6 +816,97 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     }
 
     [TestMethod]
+    public async Task OversizedCurrentInput_ReportsProtectedFloorWithoutCallingSummaryProvider()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 20, charsPerMessage: 3_000);
+        }
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(DoneJson) { SummaryResponseOverride = new LlmResponse(SummaryResponse, null) };
+        var manager = CreateManager(factory);
+        var service = CreateService(llm, new RecordingToolInvocationService(), manager,
+            new ContextUsageSnapshotStore(), factory);
+        var history = manager.GetOrCreateHistory(SessionId);
+        await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None);
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+        var request = CreateDispatchRequest() with
+        {
+            MessageText = VariedText(600_000),
+            LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = 1_048_576, MaxOutputTokens = 1_000 },
+            CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
+        };
+        var frames = new List<ServerSentEventFrame>();
+        await foreach (var frame in service.ExecuteStreamAsync(request)) frames.Add(frame);
+        Assert.AreEqual(0, llm.Requests.Count, "Summarizing old history cannot shrink the current input.");
+        StringAssert.Contains(System.Text.Json.JsonSerializer.Serialize(frames), "protected_request_exceeds_text_budget");
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(0, (await verify.Sessions.SingleAsync()).CompactionGeneration);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task RepeatedTranscriptAndPriorSummary_KeepExactIds_AndCompactLargeRecentTurns(bool streaming)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 16, charsPerMessage: 70_000);
+            foreach (var row in await db.Messages.Where(m => m.Role != "system").ToListAsync())
+                row.Content = VariedText(70_000); // Repeated user messages have distinct durable identities.
+            var priorSummary = await db.Messages.SingleAsync(m => m.MessageId == "m2");
+            priorSummary.Role = "system";
+            priorSummary.ContentType = "compact_summary"; // Hydrates as Assistant, not System.
+            await db.SaveChangesAsync();
+        }
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(DoneJson)
+        {
+            SummaryResponseOverride = new LlmResponse(SummaryResponse, null) { FinishReason = "stop" },
+        };
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var service = CreateService(llm, new RecordingToolInvocationService(), manager,
+            new ContextUsageSnapshotStore(), factory, log);
+        var history = manager.GetOrCreateHistory(SessionId);
+        await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None);
+        Assert.IsTrue(manager.ResolveDurableSpan(SessionId, history).AllResolved);
+        var userIndex = history.FindIndex(m => m.Role == ChatRole.User);
+        history[userIndex] = history[userIndex] with { Content = "Runtime envelope: " + history[userIndex].Content };
+        var originalObjects = history.ToArray();
+        await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None);
+        Assert.IsTrue(manager.ResolveDurableSpan(SessionId, originalObjects).AllResolved,
+            "Keeping the warm prefix must retain its exact durable registrations.");
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+        var request = CreateDispatchRequest() with
+        {
+            LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = 1_048_576, MaxOutputTokens = 1_000 },
+            CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
+        };
+        if (streaming)
+            await foreach (var _ in service.ExecuteStreamAsync(request)) { }
+        else
+            await service.ExecuteAsync(request);
+        var mainCalls = llm.Requests.Where(r => !r.Any(m => m.Content?.Contains("compaction engine") == true)).ToArray();
+        Assert.AreEqual(1, mainCalls.Length, string.Join("\n", log.Lines));
+        Assert.IsTrue(LlmRequestTextBudget.Measure(mainCalls[0], []) < LlmRequestTextBudget.DeepSeekResponsesLimit);
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(1, (await verify.Sessions.SingleAsync()).CompactionGeneration, string.Join("\n", log.Lines));
+        Assert.IsNotNull((await verify.Messages.SingleAsync(m => m.MessageId == "m2")).CompactedBy);
+        var checkpoint = history.Single(m => m.Content?.Contains(WarmPrefixCompaction.CheckpointPreamble) == true);
+        Assert.IsTrue(manager.ResolveDurableSpan(SessionId, [checkpoint]).AllResolved,
+            "The new checkpoint must be eligible for later durable compaction.");
+    }
+
+    [TestMethod]
     [DataRow(false, false, false)]
     [DataRow(true, false, false)]
     [DataRow(false, false, true)]

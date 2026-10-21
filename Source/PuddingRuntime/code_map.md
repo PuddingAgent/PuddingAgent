@@ -110,7 +110,7 @@
 | `Services/AgentPromptSnapshot.cs` | 推理使用的实例提示词快照 | `AgentPromptSnapshot` | `Services/SystemPromptBuilder.cs` | 按 manifest 文档引用读取 UTF-8；分层与直接构建共用实例名称、角色和提示词来源 |
 | `Services/ContextPipelineOrchestrator.cs` | 上下文组装编排与分层占比快照 | `ContextPipelineOrchestrator` | `Services/ContextPipelineLayers.cs` | — |
 | `Services/ContextWindowConstants.cs` | 上下文窗口的命名常量 | `ContextWindowConstants` | `Services/ContextWindowManager.cs` | — |
-| `Services/ContextWindowManager.cs` | 上下文窗口与会话历史的裁剪 | `ContextWindowManager` | `Services/ContextCompactionService.cs` | 压缩三态事件必须携带同一 compactionId |
+| `Services/ContextWindowManager.cs` | 上下文窗口、水合及持久消息身份登记 | `ContextWindowManager` | `Services/ContextCompactionService.cs` | 水合保留精确引用身份与暖历史登记；新 checkpoint 登记持久 ID；压缩事件共用 compactionId |
 | `Services/ControllerRoutedLlmClient.cs` | 经 Controller 中转的 LLM 客户端 | `ControllerRoutedLlmClient` | `Services/LlmInvocationService.cs` | — |
 | `Services/CroppedLayersProvider.cs` | 用 Flash 模型裁剪记忆原始层 | `CroppedLayersProvider` | `Models/MemoryCropModels.cs` | — |
 | `Services/CurrentTurnCompactionGuard.cs` | 当前轮是否落入压缩候选的守卫 | `CurrentTurnCompactionGuard` | `Services/ContextCompactionService.cs` | — |
@@ -148,7 +148,7 @@
 | `Services/GoalMode/GoalModeService.cs` | 连续自主目标循环的实现 | `IGoalModeService` | `Services/TaskTools/GoalResumeTool.cs` | — |
 | `Services/GoalMode/IGoalModeService.cs` | Goal 模式的服务契约 | `IGoalModeService` | `Services/GoalMode/GoalModeService.cs` | — |
 | `Services/HeartbeatService.cs` | 超时会话的资源清理扫描 | `HeartbeatService` | `Services/AgentSessionManager.cs` | 只管会话超时清理，不是 Agent 自主心跳编排 |
-| `Services/HistoryPrefixReconciler.cs` | 规范化历史与 canonical 转录的对齐 | `HistoryPrefixReconciler` | `Services/AgentExecutionService.cs` | — |
+| `Services/HistoryPrefixReconciler.cs` | 规范化历史与 canonical 转录的对齐 | `HistoryPrefixReconciler` | `Services/ContextWindowManager.cs` | 完整前缀验证后才传递持久身份；用户信封按源内容 hash 对齐，不向未投影工具消息推断 ID |
 | `Services/Hooks/HookPublisher.cs` | 生命周期事件到内部事件总线的薄适配 | `IHookPublisher` | `Services/Events/InternalEventBus.cs` | — |
 | `Services/Hooks/SessionCompressedMemoryMaintenanceHook.cs` | 会话压缩事件到持久维护作业的桥接 | `SessionCompressedMemoryMaintenanceHook` | `Services/Background/SubconsciousWorkerService.cs` | — |
 | `Services/Improvement/Rsi/IRsiTrajectorySource.cs` | 轨迹取数的身份上下文契约 | `RsiScope` | `Services/Improvement/Rsi/RsiTrajectorySource.cs` | 身份由调用方给出，本层不推导 |
@@ -171,7 +171,7 @@
 | `Services/LlmInvocationService.cs` | LLM 调用的稳定对外门面 | `ILlmInvocationService` | `Services/IRuntimeLlmClient.cs` | — |
 | `Services/LlmProfileResolver.cs` | provider 与 profile 到完整配置的解析 | `ILlmProfileResolver` | `Services/PuddingJsonConfig.cs` | — |
 | `Services/LlmRequestBudgetGuard.cs` | 请求级预算守卫与软压缩触发；provider 输入上限文案解析 | `LlmRequestBudgetGuard` | `Services/ContextCompactionService.cs` | `TryGetProviderMaxInputTokens` 同时识别 `Range of input length should be [1,N]` 与 DeepSeek `maximum context length is N tokens`；摘要 raw 不得写回主请求校准（ADR-095 D6） |
-| `Services/LlmRequestTextBudget.cs` | DeepSeek Responses 独立文本上传预算与发送前复核 | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查正文、思考、续传状态和工具定义；512 KiB 为客户端预算，图片另走视觉预算；超限零发送 |
+| `Services/LlmRequestTextBudget.cs` | DeepSeek Responses 独立文本上传预算与发送前复核 | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查文本与工具定义；512 KiB 为客户端预算，图片另走视觉预算；超限零发送，携带压缩原因及体积分解 |
 | `Services/BoundedCompactionSummary.cs` | 选中历史的有界分段总结与递归归并 | `BoundedCompactionSummary` | `Services/AgentExecutionService.cs` | 128 KiB 文本分段、最多 64 次调用；全段成功后才允许提交，失败/截断不返回部分摘要；图片保持冻结路由 |
 | `Services/ManagedOggOpusTranscoder.cs` | 频道短音频的纯托管转码 | `IAudioTranscoder` | `Services/DashScopeTtsProvider.cs` | — |
 | `Services/MemoryLlmInvocationClient.cs` | 面向记忆的共享门面 LLM 客户端 | `IMemoryLlmClient` | `Services/LlmInvocationService.cs` | — |
@@ -267,6 +267,7 @@
 - `Services/WarmPrefixCompaction.cs`
   只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection` 包含 token 上限（含 WorkUnit 容量）及独立文本上传预算；软候选延期到 canonical 终态之后。体积保护每轮评估，不受软维护封顶限制；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`。
   大请求通过 `BoundedCompactionSummary` 总结被替换跨度；全部成功后走同一 VerifyApplication/持久提交边界（`summarySource=provider_segmented`）。仅 provider 输入拒绝或无用输出可使用已配置的 Extractive；传输失败、截断或不完整分段保持原历史。
+  文本超限时摘要候选可覆盖最近八条中的完整旧轮次，当前用户轮仍受保护；精确持久 ID 全部可用时不再按正文回退匹配。不可压缩部分已超预算则生成摘要前拒绝。
 
 - `Services/WarmPrefixMaintenanceAdmission.cs`
   软维护每 dispatch 一次；硬保护逐轮重新评估，不被软维护封顶屏蔽；软维护调用若已走 `RequiresSynchronousProtection` 分支（即已执行同步硬保护），`RecordAttempt` 同时置硬保护标记，禁止同一 round 再发一次字节级相同的摘要请求（2026-10-17 事故：同 round 两次 1.68M token 请求、两张失败卡片）

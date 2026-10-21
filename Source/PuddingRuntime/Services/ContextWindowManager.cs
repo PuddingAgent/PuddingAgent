@@ -148,16 +148,15 @@ public sealed class ContextWindowManager
     }
 
     /// <summary>
-    /// 发布某会话的「内存消息对象 → 持久 MessageId」登记（**整体替换**，不是追加）。
+    /// 发布水合产物的「内存消息对象 → 持久 MessageId」登记，并保留仍在暖历史中的精确身份。
     /// <para>
     /// 为什么要这张旁路表：F2 的覆盖标注必须精确到 `MessageEntity` 行，而内存历史
     /// <c>List&lt;ChatMessage&gt;</c> 不携带持久 id。给 <c>ChatMessage</c>（record）加字段会把身份并入
     /// **值相等**语义，改变既有比较/去重；因此改为按**引用相等**登记的旁路表。
     /// </para>
     /// <para>
-    /// 为什么整体替换：DB 水合是「整体重建内存历史」的语义（调用方随后 <c>history.Clear()</c> +
-    /// <c>AddRange</c>），因此登记表也应镜像新的持久基线 —— 既保证语义一致，也避免旧消息对象
-    /// 被永久引用导致泄漏。
+    /// DB 投影可能替换内存历史，也可能只向已验证的暖前缀追加；新登记包含两侧仍有用的对象，
+    /// 不继续持有已经离开历史的旧对象。
     /// </para>
     /// <para>
     /// <b>未登记 = 该消息没有持久行</b>（例如本 Turn 新追加、尚未落库的消息），因此**不可**被
@@ -167,6 +166,13 @@ public sealed class ContextWindowManager
     private void PublishDurableMessageIds(string sessionId, IReadOnlyList<(ChatMessage Message, string MessageId)> registrations)
     {
         var map = new ConcurrentDictionary<ChatMessage, string>(ReferenceEqualityComparer.Instance);
+        // Hydration may keep the verified warm history instead of replacing it. Its exact
+        // identities remain valid; a fresh DB projection must not erase those registrations.
+        if (_durableMessageIds.TryGetValue(sessionId, out var previous)
+            && _histories.TryGetValue(sessionId, out var retained))
+            foreach (var message in retained)
+                if (previous.TryGetValue(message, out var id))
+                    map[message] = id;
         foreach (var (message, messageId) in registrations)
         {
             if (string.IsNullOrWhiteSpace(messageId))
@@ -200,6 +206,13 @@ public sealed class ContextWindowManager
         }
 
         return new DurableSpanResolution(unresolved == 0, ids, unresolved);
+    }
+
+    internal void RegisterDurableCheckpoint(string sessionId, ChatMessage checkpoint, string messageId)
+    {
+        var map = _durableMessageIds.GetOrAdd(sessionId,
+            _ => new ConcurrentDictionary<ChatMessage, string>(ReferenceEqualityComparer.Instance));
+        map[checkpoint] = messageId;
     }
 
     /// <summary>
@@ -513,7 +526,7 @@ public sealed class ContextWindowManager
         // 于是上面按引用登记的实例就不再是真正进入历史的那批对象（流式水合实测就是这样退化成
         // `unresolved_durable_identities:29`，F2 落库被迫降级）。因此归一化之后还要**按内容把身份
         // 重新绑回**归一化产物：
-        //   - 只有 (role, content) 在源集合里**唯一**时才敢绑定（重复内容会绑错行，错标=静默隐藏真实消息）；
+        //   - 原对象优先保留精确 ID；只有复制后丢失引用身份时，才要求 (role, content) 唯一；
         //   - 绑不上就保持「没有持久行」，由 F2 的提交边界拒绝落库（安全默认）。
         var sanitized = SanitizeForLlmContext(messages);
         var uniqueByKey = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -526,8 +539,18 @@ public sealed class ContextWindowManager
         }
 
         var rebound = new List<(ChatMessage Message, string MessageId)>(sanitized.Count);
+        var byReference = new Dictionary<ChatMessage, string>(ReferenceEqualityComparer.Instance);
+        foreach (var (message, messageId) in registrations)
+            byReference[message] = messageId;
         foreach (var message in sanitized)
         {
+            // The normalizer normally preserves the object. Duplicate text is not an
+            // ambiguous identity when this exact hydrated object already has a DB id.
+            if (byReference.TryGetValue(message, out var exactId))
+            {
+                rebound.Add((message, exactId));
+                continue;
+            }
             var key = DurableIdentityKey(message);
             if (ambiguousKeys.Contains(key))
                 continue;
@@ -662,7 +685,15 @@ public sealed class ContextWindowManager
             // A transcript is a semantic projection, not an exact copy of provider messages.
             // Keep the verified warm prefix (envelopes, reasoning and complete tool rounds)
             // and append new canonical content instead of rewriting cached message bytes.
-            if (HistoryPrefixReconciler.TryAppendCanonicalTail(history, hydratedContext, out var appended))
+            if (HistoryPrefixReconciler.TryAppendCanonicalTail(history, hydratedContext, out var appended,
+                    (live, persisted) =>
+                    {
+                        // Rendered user envelopes differ from canonical text. The verified
+                        // ordered reconciliation is the authority for carrying their DB id.
+                        if (_durableMessageIds.TryGetValue(sessionId, out var ids)
+                            && ids.TryGetValue(persisted, out var id))
+                            ids[live] = id;
+                    }))
             {
                 _logger.LogInformation(
                     "[HistoryHydration:Prefix] session={Session} retained={Retained} appended={Appended} source={Source}",

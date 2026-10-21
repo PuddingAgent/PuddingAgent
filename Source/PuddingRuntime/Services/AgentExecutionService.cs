@@ -1682,8 +1682,9 @@ public sealed partial class AgentExecutionService
             TurnId = request.ExecutionIdentity?.TurnId,
             TraceId = traceId,
             TimestampUtc = timestampUtc,
-            Location = exception is VisionPipelineException ? "agent.stream.vision_preflight" : "agent.stream.llm_provider",
-            ErrorCode = errorCode,
+            Location = exception is VisionPipelineException ? "agent.stream.vision_preflight"
+                : export.Phase == "build" ? "agent.stream.request_preflight" : "agent.stream.llm_provider",
+            ErrorCode = LlmFailureDiagnostics.TryGet(exception, out var attachedCause) ? attachedCause.Code : errorCode,
             ExceptionType = exception.GetType().FullName ?? exception.GetType().Name,
             HttpStatusCode = httpStatusCode,
             Round = round,
@@ -2283,6 +2284,22 @@ public sealed partial class AgentExecutionService
             request.ExecutionIdentity?.TraceId,
             CancellationToken.None);
 
+        var retainedTextBytes = LlmRequestTextBudget.Measure(plan.RetainedMessages, llmTools);
+        if (plan.RequiresTextProtection && retainedTextBytes >= plan.MaxRequestTextBytes)
+        {
+            const string reason = "protected_request_exceeds_text_budget";
+            await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(request.SessionId, request.WorkspaceId,
+                SseEventTypes.ContextCompactionFailed, new
+                {
+                    compactionId = warmPrefixCompactionId, sessionId = request.SessionId,
+                    mode = "WarmPrefix", stage = "preflight", reason, applied = false,
+                    retainedRequestTextBytes = retainedTextBytes, requestTextBudgetBytes = plan.MaxRequestTextBytes,
+                    historyPreserved = true, durableCheckpoint = false,
+                }, request.ExecutionIdentity?.TraceId, CancellationToken.None);
+            return new(false, plan, trigger, target, summaryStartedAt,
+                WarmPrefixCompactionDisposition.Failed, 0, reason);
+        }
+
         var segmentedSummary = plan.RequiresTextProtection || BoundedCompactionSummary.ShouldUse(plan.SummaryRequestMessages, llmTools);
         var summaryProviderSource = segmentedSummary ? "provider_segmented" : "provider";
         var summaryOutputTokens = effectiveLlmConfig?.MaxOutputTokens is > 0
@@ -2459,6 +2476,7 @@ public sealed partial class AgentExecutionService
         string? appliedRejectionReason = null;
         // F2：本次 checkpoint 是否真的落库（权威事实），以及未落库时的原因码。
         var durableCheckpoint = false;
+        string? durableSummaryMessageId = null;
         string? durableSkipReason = null;
         await using (var compactionCommitLease =
             await _contextManager.AcquireCompactionCommitLeaseAsync(request.SessionId, ct))
@@ -2489,7 +2507,7 @@ public sealed partial class AgentExecutionService
                     verification.RemovedMessages ?? []);
                 // 内容键回退（权威在库侧：唯一匹配才认）：内存对象在归一化/渲染后会被复制，
                 // 按引用解析可能整体失效（流式路径实测 29 条全 unresolved）。
-                var spanKeys = (verification.RemovedMessages ?? [])
+                var spanKeys = (spanResolution.AllResolved ? [] : verification.RemovedMessages ?? [])
                     .Select(m => new WarmPrefixSpanKey(m.Role.ToString(), m.Content ?? string.Empty))
                     .ToArray();
 
@@ -2516,6 +2534,7 @@ public sealed partial class AgentExecutionService
                             ct);
                         (durableCheckpoint, durableSkipReason) =
                             WarmPrefixDurableCommitDecision.Interpret(commit);
+                        durableSummaryMessageId = commit.SummaryMessageId;
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -2548,6 +2567,9 @@ public sealed partial class AgentExecutionService
                     // 持久提交已经成功（事务内 CAS + 摘要/清单/标注都落库）⇒ 现在才替换内存。
                     durableHistory.Clear();
                     durableHistory.AddRange(verification.AppliedMessages!);
+                    if (!string.IsNullOrWhiteSpace(durableSummaryMessageId))
+                        _contextManager.RegisterDurableCheckpoint(request.SessionId,
+                            durableHistory[plan.LeadingSystemMessageCount], durableSummaryMessageId);
                     durableApplied = true;
                     // 只有真的改写了历史才登记完成（冷却 + 清除无收益抑制）。
                     _contextManager.RecordCompactionCommitCompleted(request.SessionId);

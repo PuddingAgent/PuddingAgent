@@ -277,7 +277,9 @@ public static partial class LlmRequestBudgetGuard
         var target = effectiveInputLimit * Math.Clamp(targetRatio, 0.05, Math.Clamp(triggerRatio, 0.05, 1.0));
         while ((snapshot.UsedTokens > target
                 || (textBudgetExceeded && LlmRequestTextBudget.Measure(working, tools) > maxRequestTextBytes / 2))
-               && RemoveOldestConversationUnit(working))
+               && (RemoveOldestConversationUnit(working)
+                   || (textBudgetExceeded && LlmRequestTextBudget.Measure(working, tools) > maxRequestTextBytes / 2
+                       && RemoveOldestConversationUnit(working, protectedTailMessages: 0))))
         {
             working = LlmMessageSequenceNormalizer.Normalize(working).Messages.ToList();
             snapshot = usageStore.MeasureLlmRequest(
@@ -326,13 +328,13 @@ public static partial class LlmRequestBudgetGuard
         return int.TryParse(normalized, out maxInputTokens) && maxInputTokens > 0;
     }
 
-    private static bool RemoveOldestConversationUnit(List<ChatMessage> messages)
+    private static bool RemoveOldestConversationUnit(List<ChatMessage> messages, int protectedTailMessages = ProtectedTailMessages)
     {
         var firstRemovable = messages.FindIndex(message => message.Role != ChatRole.System);
         if (firstRemovable < 0)
             return false;
 
-        var protectedTailStart = ComputeProtectedTailStart(messages, firstRemovable);
+        var protectedTailStart = ComputeProtectedTailStart(messages, firstRemovable, protectedTailMessages);
         if (firstRemovable >= protectedTailStart)
             return false;
 
@@ -355,9 +357,13 @@ public static partial class LlmRequestBudgetGuard
     /// 及其之后的内容，都不得被裁剪。与 <see cref="RemoveOldestConversationUnit"/> 的边界判定同源，
     /// 也用于超限异常的「不可裁剪地板」分解。
     /// </summary>
-    private static int ComputeProtectedTailStart(List<ChatMessage> messages, int firstRemovable)
+    private static int ComputeProtectedTailStart(List<ChatMessage> messages, int firstRemovable,
+        int protectedTailMessages = ProtectedTailMessages)
     {
-        var protectedTailStart = Math.Max(firstRemovable, messages.Count - ProtectedTailMessages);
+        // Direct trimming keeps eight messages. Semantic summarization can cover older
+        // complete turns when that fixed tail itself exceeds the upload budget.
+        // The current user turn and all its tool exchanges always remain protected.
+        var protectedTailStart = Math.Max(firstRemovable, messages.Count - protectedTailMessages);
         var currentUser = messages.FindLastIndex(message => message.Role == ChatRole.User);
         if (currentUser >= 0)
             protectedTailStart = Math.Min(protectedTailStart, currentUser);

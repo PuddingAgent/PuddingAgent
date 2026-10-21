@@ -34,15 +34,35 @@ public sealed class LlmRequestTextBudgetTests
     }
 
     [TestMethod]
+    public void LargeRecentToolExchange_CanBeSummarizedWithoutRemovingCurrentUser()
+    {
+        var body = string.Concat(Enumerable.Repeat("Record of pending work and exact user constraints. ", 12_000));
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, "system"), new(ChatRole.User, "previous task"),
+            new(ChatRole.Assistant, "tool request", ToolCalls: [new ToolCall("call-1", "read", "{}")]),
+            new(ChatRole.Tool, body, ToolCallId: "call-1", ToolName: "read"),
+            new(ChatRole.Assistant, "previous answer"), new(ChatRole.User, "current task"),
+        };
+        var config = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192 };
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(new(), "size-test", history, history, [], config,
+            0.8, 0.5, out var plan, maxRequestTextBytes: LlmRequestTextBudget.DeepSeekResponsesLimit));
+        Assert.IsNotNull(plan);
+        CollectionAssert.AreEqual(new[] { history[0], history[^1] }, plan.RetainedMessages.ToArray());
+        Assert.AreEqual(6, history.Count, "Planning never deletes source messages.");
+    }
+
+    [TestMethod]
     public void OversizedProtectedMessage_BlocksBeforeDispatchWithDiagnosticEvidence()
     {
-        var error = LlmRequestTextBudget.Validate(Request(), [new(ChatRole.User, new string('x', 600_000))], []);
+        var error = LlmRequestTextBudget.Validate(Request(), [new(ChatRole.User, new string('x', 600_000))], [], "summary_rejected");
         Assert.IsNotNull(error);
         Assert.IsTrue(LlmFailureDiagnostics.TryGet(error, out var cause));
         Assert.AreEqual("local.context_compaction_required", cause.Code);
         Assert.AreEqual("0", cause.Evidence["dispatch_count"]);
         Assert.AreEqual("true", cause.Evidence["history_preserved"]);
         Assert.IsFalse(cause.Retryable);
+        Assert.AreEqual("summary_rejected", cause.Evidence["compaction_reason"]);
     }
 
     [TestMethod]
