@@ -456,13 +456,16 @@ public sealed class WarmPrefixCheckpointCommitTests
         }
         var result = await CreateService(options).CommitWarmPrefixCheckpointAsync(CreateRequest(0, []) with
         {
-            SourceMessages = [new(new(ChatRole.User, "[runtime envelope] continue") { SourceMessageId = "input-m3" })],
+            SourceMessages = [new(new(ChatRole.User, "[runtime envelope] continue",
+                ContentParts: [new LlmImagePart("image-evidence", "high")]) { SourceMessageId = "input-m3" })],
         });
         Assert.IsTrue(result.Committed);
         await using var verify = new MemoryDbContext(options);
         Assert.IsNotNull((await verify.Messages.SingleAsync(m => m.MessageId == "m3")).CompactedBy);
         Assert.IsNull((await verify.Messages.SingleAsync(m => m.MessageId == "m1")).CompactedBy);
         Assert.AreEqual(1, result.ArchivedMessageCount, "Rendered source is retained as evidence too.");
+        var archived = await verify.Messages.SingleAsync(m => m.ContentType == "warm_prefix_source");
+        Assert.AreEqual(new LlmImagePart("image-evidence", "high"), ContentPartsEnvelope.Decode(archived.AttachmentsJson)![0]);
     }
 
     [TestMethod]

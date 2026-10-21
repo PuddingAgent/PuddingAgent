@@ -1694,7 +1694,7 @@ public sealed class ContextWindowManagerTests
     }
 
     [TestMethod]
-    public async Task TryHydrateStreamHistoryFromDbAsync_TruncatesLongMessages_WhenPruningEnabled()
+    public async Task TryHydrateStreamHistoryFromDbAsync_PreservesFullTextAndIdentity_WithDefaultPruning()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -1715,7 +1715,7 @@ public sealed class ContextWindowManagerTests
         db.Messages.Add(new MessageEntity { MessageId = "msg-1", SessionId = "session-prune-long", Sequence = 1, Role = "user", ContentType = "text", Content = longContent, CreatedAt = 1 });
         await db.SaveChangesAsync();
 
-        var compactionOpts = new ContextCompactionOptions { EnableHistoryPruning = true, HistoryPruningMaxMessages = 50 };
+        var compactionOpts = new ContextCompactionOptions();
         var manager = CreateManager(null, new TestMemoryDbContextFactory(options), compactionOptions: compactionOpts);
         var history = manager.GetOrCreateHistory("session-prune-long");
 
@@ -1723,8 +1723,59 @@ public sealed class ContextWindowManagerTests
 
         Assert.AreEqual(1, history.Count);
         var content = history[0].Content!;
-        Assert.IsTrue(content.EndsWith("..."), "Long messages should be truncated with trailing ellipsis");
-        Assert.IsTrue(content.Length <= 2003, $"Truncated length {content.Length} should be <= 2003 (2000 + '...')");
+        Assert.AreEqual(longContent, content, "Only a committed semantic summary may replace the original text.");
+        Assert.IsTrue(manager.ResolveDurableSpan("session-prune-long", history).AllResolved);
+        Assert.AreEqual("msg-1", manager.CaptureCompactionSources("session-prune-long", history)[0].DurableMessageId);
+        Assert.IsNotNull(history[0].SourceContentHash);
+    }
+
+    [TestMethod]
+    public void PruneHydratedHistory_PreservesCompleteToolBatchAndImageOnlyMessage()
+    {
+        var call = new ChatMessage(ChatRole.Assistant, null,
+            ToolCalls: [new("call-a", "read", "{}"), new("call-b", "read", "{}")], ReasoningContent: "reason");
+        var resultA = new ChatMessage(ChatRole.Tool, "a", ToolCallId: "call-a");
+        var resultB = new ChatMessage(ChatRole.Tool, "b", ToolCallId: "call-b");
+        var image = new ChatMessage(ChatRole.User, null, ContentParts: [new LlmImagePart("image-1")])
+        { SourceContentHash = "image-source", SourceMessageId = "canonical-image" };
+        var pruned = ContextWindowManager.PruneHydratedHistory(
+            [new(ChatRole.User, "older text"), call, resultA, resultB, image], 2);
+        CollectionAssert.AreEqual(new[] { call, resultA, resultB, image }, pruned.ToArray());
+        Assert.AreSame(call, pruned[0]);
+        Assert.AreSame(image, pruned[^1]);
+        Assert.IsFalse(LlmMessageSequenceNormalizer.Normalize(pruned).Changed);
+    }
+
+    [TestMethod]
+    public async Task DefaultPruning_PreservesDistinctIdsForDuplicateTextAndAttachments_AcrossWarmHydration()
+    {
+        const string session = "pruning-identities";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedMessagesAsync(db, session, 10, 0);
+            foreach (var row in await db.Messages.ToListAsync())
+                row.Content = "identical content";
+            var image = await db.Messages.OrderBy(m => m.Sequence).FirstAsync();
+            image.Content = "";
+            image.AttachmentsJson = ContentPartsEnvelope.Encode([new LlmImagePart("image-1")]);
+            await db.SaveChangesAsync();
+        }
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options), compactionOptions: new());
+        var history = manager.GetOrCreateHistory(session);
+        await manager.TryHydrateStreamHistoryFromDbAsync(session, history, 100_000, CancellationToken.None);
+        var before = history.ToArray();
+        Assert.AreEqual(10, history.Count);
+        Assert.IsInstanceOfType<LlmImagePart>(history[0].ContentParts![0]);
+        var identities = manager.ResolveDurableSpan(session, history);
+        Assert.IsTrue(identities.AllResolved);
+        Assert.AreEqual(10, identities.MessageIds.Distinct().Count());
+        await manager.TryHydrateStreamHistoryFromDbAsync(session, history, 100_000, CancellationToken.None);
+        Assert.IsTrue(manager.ResolveDurableSpan(session, history).AllResolved);
+        for (var i = 0; i < history.Count; i++) Assert.AreSame(before[i], history[i]);
     }
 
     [TestMethod]

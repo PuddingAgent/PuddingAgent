@@ -503,6 +503,10 @@ public sealed class ContextCompactionService : IContextCompactionService
                         MessageId = Guid.NewGuid().ToString("N"), SessionId = request.SessionId,
                         Sequence = ++sequence, Role = message.Role.ToString().ToLowerInvariant(),
                         ContentType = "warm_prefix_source", Content = snapshot,
+                        // LlmContentPart is polymorphic; its canonical envelope preserves
+                        // image artifact IDs/details that plain base-type JSON omits.
+                        AttachmentsJson = message.ContentParts is { Count: > 0 }
+                            ? ContentPartsEnvelope.Encode(message.ContentParts) : null,
                         Source = "warm_prefix_checkpoint", CanonicalContentHash = CompositionSnapshot.Sha256Hex(snapshot),
                         Metadata = JsonSerializer.Serialize(new { request.CompactionId, sourceIndex = index,
                             sourceMessageId = message.SourceMessageId, canonicalMessageId = matched?.MessageId }, JsonOptions),

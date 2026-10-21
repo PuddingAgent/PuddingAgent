@@ -680,14 +680,14 @@ public sealed class ContextWindowManager
                     ? _compactionOptions.HistoryPruningMaxMessages
                     : ContextWindowConstants.DefaultHistoryPruningMaxMessages;
                 var originalCount = hydratedContext.Count;
-                var prunedMessages = ContextPipeline.PruneSessionMessages(hydratedContext, maxPruned);
-                hydratedContext = prunedMessages.Select(pm => new ChatMessage(
-                    Role: pm.Role == "user" ? ChatRole.User : ChatRole.Assistant,
-                    Content: pm.Content
-                )).ToList();
+                // A UI preview is not model history: reconstructing from role/text loses
+                // durable identity, source hashes, attachments and the full summary input.
+                hydratedContext = PruneHydratedHistory(hydratedContext, maxPruned);
                 _logger.LogInformation(
-                    "[AgentExec] History pruning applied session={Session} original={OriginalCount} pruned={PrunedCount} maxMessages={MaxMessages}",
-                    sessionId, originalCount, hydratedContext.Count, maxPruned);
+                    "[AgentExec] History pruning applied session={Session} original={OriginalCount} pruned={PrunedCount} maxMessages={MaxMessages} source={Source} unresolvedIdentities={Unresolved}",
+                    sessionId, originalCount, hydratedContext.Count, maxPruned,
+                    hydratedFromJsonl ? "jsonl" : "memory_db",
+                    ResolveDurableSpan(sessionId, hydratedContext).UnresolvedCount);
             }
 
             // A transcript is a semantic projection, not an exact copy of provider messages.
@@ -1761,6 +1761,28 @@ public sealed class ContextWindowManager
         }
 
         return true;
+    }
+
+    /// <summary>Select messages without changing their payload or identity; tool batches are indivisible.</summary>
+    internal static List<ChatMessage> PruneHydratedHistory(IReadOnlyList<ChatMessage> history, int maxMessages)
+    {
+        var candidates = history.Where(message =>
+        {
+            if (message.Role == ChatRole.System) return false;
+            if (message.Role == ChatRole.Tool || message.ToolCalls is { Count: > 0 }) return true;
+            // Visual/audio-only messages and provider continuation are real history too.
+            if (message.ContentParts is { Count: > 0 } || message.VisualArtifactIds is { Count: > 0 }
+                || message.AudioArtifactIds is { Count: > 0 } || message.ContinuationState is not null
+                || !string.IsNullOrWhiteSpace(message.ReasoningContent)) return true;
+            var content = message.Content?.TrimStart();
+            return !string.IsNullOrWhiteSpace(content)
+                && !content.StartsWith("[HEARTBEAT]", StringComparison.OrdinalIgnoreCase)
+                && !content.StartsWith("[SYSTEM]", StringComparison.OrdinalIgnoreCase);
+        }).ToList();
+        var start = Math.Max(0, candidates.Count - Math.Max(1, maxMessages));
+        while (start > 0 && candidates[start].Role == ChatRole.Tool)
+            start--; // Include the assistant call and every result in a boundary batch.
+        return candidates.Skip(start).ToList();
     }
 
     private static List<ChatMessage> SanitizeForLlmContext(IEnumerable<ChatMessage> source)

@@ -378,7 +378,7 @@ public sealed partial class ContextPipeline
         // P2 KV-cache 指纹校验：拼接所有静态层 FullContent 计算 SHA-256 hex
         var staticLayersFingerprint = ComputeStaticLayersFingerprint(layerInfos);
 
-        var recentMessages = PruneSessionMessages(request.SessionHistory, maxMessages: 20);
+        var recentMessages = BuildSessionMessagePreviews(request.SessionHistory, maxMessages: 20);
         _contextAssemblyStore.Set(new ContextAssemblySnapshot
         {
             SessionId = request.SessionId,
@@ -554,8 +554,8 @@ public sealed partial class ContextPipeline
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
-    /// <summary>剪枝会话消息：仅保留最近 N 条 user/assistant 正文。</summary>
-    internal static List<PrunedMessage> PruneSessionMessages(IReadOnlyList<ChatMessage> history, int maxMessages)
+    /// <summary>Build bounded display previews only. Never use these DTOs as model or compaction history.</summary>
+    internal static List<PrunedMessage> BuildSessionMessagePreviews(IReadOnlyList<ChatMessage> history, int maxMessages)
     {
         var candidates = new List<PrunedMessage>();
         foreach (var msg in history)

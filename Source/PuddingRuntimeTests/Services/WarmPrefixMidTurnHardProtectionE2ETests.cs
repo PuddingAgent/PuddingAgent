@@ -849,19 +849,23 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task RepeatedTranscriptAndPriorSummary_KeepExactIds_AndCompactLargeRecentTurns(bool streaming)
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
+    public async Task RepeatedTranscriptAndPriorSummary_KeepExactIds_AndCompactLargeRecentTurns(bool streaming, bool productionDefaults)
     {
+        var charsPerMessage = productionDefaults ? 140_000 : 70_000;
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = CreateOptions(connection);
         await using (var db = new MemoryDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
-            await SeedAsync(db, messageCount: 16, charsPerMessage: 70_000);
+            // Still exceeds the upload budget after the default hydration token cap.
+            await SeedAsync(db, messageCount: 16, charsPerMessage: charsPerMessage);
             foreach (var row in await db.Messages.Where(m => m.Role != "system").ToListAsync())
-                row.Content = VariedText(70_000); // Repeated user messages have distinct durable identities.
+                row.Content = VariedText(charsPerMessage); // Repeated user messages have distinct durable identities.
             var priorSummary = await db.Messages.SingleAsync(m => m.MessageId == "m2");
             priorSummary.Role = "system";
             priorSummary.ContentType = "compact_summary"; // Hydrates as Assistant, not System.
@@ -872,7 +876,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         {
             SummaryResponseOverride = new LlmResponse(SummaryResponse, null) { FinishReason = "stop" },
         };
-        var manager = CreateManager(factory);
+        var manager = CreateManager(factory, productionDefaults ? new ContextCompactionOptions() : null);
         var log = new CapturingLogger();
         var service = CreateService(llm, new RecordingToolInvocationService(), manager,
             new ContextUsageSnapshotStore(), factory, log);
@@ -885,6 +889,8 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None);
         Assert.IsTrue(manager.ResolveDurableSpan(SessionId, originalObjects).AllResolved,
             "Keeping the warm prefix must retain its exact durable registrations.");
+        Assert.IsTrue(LlmRequestTextBudget.Measure(history, []) > LlmRequestTextBudget.DeepSeekResponsesLimit,
+            "The fixture must trigger compaction even with the production hydration cap.");
         history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
         var request = CreateDispatchRequest() with
         {
@@ -1020,9 +1026,11 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task PreviousTurnNativeTools_AreDurableWhenNextTurnCompacts(bool streaming)
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
+    public async Task PreviousTurnNativeTools_AreDurableWhenNextTurnCompacts(bool streaming, bool productionDefaults)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -1036,12 +1044,12 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var llm = new ScriptedLlmClient(
             new LlmResponse(VariedText(100_000), [new ToolCall("previous-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
             new LlmResponse(DoneJson, null),
-            new LlmResponse(VariedText(240_000), [new ToolCall("current-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
+            new LlmResponse(VariedText(280_000), [new ToolCall("current-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
             new LlmResponse(DoneJson, null))
         {
             SummaryResponseOverride = new LlmResponse(SummaryResponse, null) { FinishReason = "stop" },
         };
-        var manager = CreateManager(factory);
+        var manager = CreateManager(factory, productionDefaults ? new ContextCompactionOptions() : null);
         var log = new CapturingLogger();
         var service = CreateService(llm, new RecordingToolInvocationService(), manager,
             new ContextUsageSnapshotStore(), factory, log);
@@ -1076,8 +1084,10 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var archives = await verify.Messages.Where(m => m.ContentType == "warm_prefix_source").ToListAsync();
         Assert.IsTrue(archives.Any(m => m.Content!.Contains("previous-call")), "Native tool evidence must survive in the checkpoint transaction.");
         Assert.IsTrue(archives.All(m => m.CompactedBy != null));
-        var restarted = CreateManager(factory);
-        var restored = await restarted.BuildContextFromDbAsync(SessionId, 1_000_000);
+        var restarted = CreateManager(factory, productionDefaults ? new ContextCompactionOptions() : null);
+        var restored = restarted.GetOrCreateHistory(SessionId);
+        await restarted.TryHydrateStreamHistoryFromDbAsync(SessionId, restored, 1_000_000, CancellationToken.None);
+        Assert.IsTrue(restarted.ResolveDurableSpan(SessionId, restored).AllResolved);
         Assert.IsTrue(restored.Any(m => m.Content == SummaryResponse));
         Assert.IsFalse(restored.Any(m => m.Content?.Contains("previous-call") == true), "Archived evidence is not replayed after restart.");
     }
@@ -1147,7 +1157,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         MaxRounds = 5,
     };
 
-    private static ContextWindowManager CreateManager(IDbContextFactory<MemoryDbContext> factory)
+    private static ContextWindowManager CreateManager(IDbContextFactory<MemoryDbContext> factory, ContextCompactionOptions? options = null)
         => new(
             new AgentSessionManager(NullLogger<AgentSessionManager>.Instance),
             new InMemoryRuntimeSessionStore(),
@@ -1155,6 +1165,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             new ExecutionJournal(),
             NullLogger<ContextWindowManager>.Instance,
             memoryDbFactory: factory,
+            compactionOptions: options,
             canonicalMessageStore: new EmptyCanonicalStore());
 
     private static AgentExecutionService CreateService(

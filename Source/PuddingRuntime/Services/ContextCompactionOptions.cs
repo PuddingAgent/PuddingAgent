@@ -41,10 +41,10 @@ public sealed class ContextCompactionOptions
     /// </summary>
     public int MaxWaitForWorkSummarySeconds { get; init; } = 180;
 
-    /// <summary>是否在水合会话历史时启用心跳/系统/非对话角色剪枝。默认 true。</summary>
+    /// <summary>是否在水合时筛除心跳/系统噪声并限制条数。保留消息对象、完整正文及附件，默认 true。</summary>
     public bool EnableHistoryPruning { get; init; } = true;
 
-    /// <summary>剪枝后保留的最大消息条数。必须 > 0，非法值回退默认 100。</summary>
+    /// <summary>剪枝条数目标；边界工具批次整体保留，可略超出。必须 > 0，非法值回退默认 100。</summary>
     public int HistoryPruningMaxMessages { get; init; } = 100;
 
     /// <summary>
