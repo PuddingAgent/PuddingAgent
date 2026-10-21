@@ -39,3 +39,12 @@ draft: false
 ## 未完成与边界
 
 此记录对应代码验证；部署结果另行追加。未对用户原始会话发送测试消息，未改写生产数据库；原会话恢复需在新构建上实际重试验证。512 KiB 是文本估算预算，不包括视觉上传后的实际图片字节，也不保证消除所有瞬态传输故障。
+
+## 部署验证（2026-10-21）
+
+- 代码提交 `b125778`；一并加载本次已验证的诊断修复 `76f8e93`、`83bfb44`。Core Debug 发布成功，使用现有部署目录的前端静态产物，未改前端版本。
+- 部署前 Desktop/Core 均已退出；通过既有 Desktop 的 `--background` 入口启动，再由 Desktop 控制 API 执行预构建产物部署。部署前运行命令、执行、预留及活动任务分配均为 0。
+- 09:06:38–09:08:43（+08:00）部署成功；Desktop 返回 `assembliesReloaded=true`、`coreRestarted=true`、无错误。Core PID 从 92348 变为 90924，状态 Ready，`/health/ready` 返回 ready。
+- prepared/loaded 制品清单 SHA-256 同为 `c72c3289891b6c1667bb83e6822d723f30715ef2f6cc0212a34e2e898b547152`；另核对 PuddingRuntime/PuddingDiagnostics/PuddingCore 三个 DLL 与发布目录一致。
+- 此次完成外部部署及就绪检查；真实原会话功能仍待用户重试，不将独立合成 Responses 测试或健康检查记作生产会话验收。
+- 临时构建目录清理曾被自动审批策略拒绝（blocked by policy），未绕过拒绝，产物保留于忽略的 `temp/`。
