@@ -2141,17 +2141,16 @@ public sealed partial class AgentExecutionService
     }
 
     /// <summary>
-    /// Harness-aligned warm-prefix compaction. The summary request is the exact outbound
-    /// conversation plus one fixed trailing instruction, so the provider can reuse the
-    /// already-warm prefix. History is replaced only after a non-empty shrinking summary
-    /// returns; failure preserves the original surface.
+    /// Small requests reuse the warm prefix; large requests summarize the selected span
+    /// in bounded parts and then merge. Token and text upload budgets independently require
+    /// synchronous protection. Only a complete, shrinking, CAS-validated summary replaces history.
     /// <para>
     /// ADR-095 D2 准入：候选只来自**软阈值**且本次请求仍能安全容纳时
     /// （<see cref="WarmPrefixCompactionPlan.RequiresSynchronousProtection"/> == false），
     /// 摘要生成**不进入发送关键路径**——本轮只为可选维护留下明确事实（
     /// <c>context.compaction.skipped</c> 生命周期事件 + 日志），真正的整理交给 canonical 终态提交后的
     /// 会话维护（<c>ContextWindowManager.TrimHistoryAsync</c> 的持久压缩路径）。
-    /// 只有真的越过硬输入边界时才同步生成摘要，避免出站退化为仅靠请求副本硬裁剪。
+    /// 超过 token 或文本上传预算时同步生成摘要，避免出站退化为仅靠请求副本硬裁剪。
     /// </para>
     /// </summary>
     private async Task<WarmPrefixCompactionOutcome> TryWarmPrefixCompactionAsync(
@@ -2182,7 +2181,8 @@ public sealed partial class AgentExecutionService
                 out var plan,
                 workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
                 sourceGeneration: sourceGeneration,
-                providerId: request.LlmProfile?.ProviderId)
+                providerId: request.LlmProfile?.ProviderId,
+                maxRequestTextBytes: LlmRequestTextBudget.ResolveLimit(request))
             || plan is null)
         {
             return WarmPrefixCompactionOutcome.NotNeeded;
@@ -2247,7 +2247,12 @@ public sealed partial class AgentExecutionService
                 SkipReason: WarmPrefixCompactionReasons.SoftDeferred);
         }
 
-        // ── 硬保护：真的越过有效输入上限，必须同步压缩 ──
+        // Token 或文本上传预算越界均同步保护；大窗口不代表大请求能安全上传。
+        if (plan.RequiresTextProtection)
+            _logger.LogInformation(
+                "[AgentExec:Compaction] Text upload budget triggered session={Session} round={Round} textBytes={TextBytes} limitBytes={LimitBytes} usedTokens={UsedTokens} inputLimit={InputLimit}",
+                request.SessionId, round + 1, plan.InitialTextBytes, plan.MaxRequestTextBytes,
+                plan.InitialUsedTokens, plan.EffectiveInputLimit);
         var summaryStartedAt = warmPrefixStartedAt;
         await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
             request.SessionId,
@@ -2259,7 +2264,9 @@ public sealed partial class AgentExecutionService
                 sessionId = request.SessionId,
                 mode = "WarmPrefix",
                 stage = "generating",
-                reason = WarmPrefixCompactionReasons.HardProtection,
+                reason = plan.RequiresTextProtection ? "request_text_budget" : WarmPrefixCompactionReasons.HardProtection,
+                estimatedRequestTextBytes = plan.InitialTextBytes,
+                requestTextBudgetBytes = plan.MaxRequestTextBytes,
                 applied = false,
                 requiresSynchronousProtection = true,
                 beforeTokens = plan.InitialUsedTokens,
@@ -2276,78 +2283,63 @@ public sealed partial class AgentExecutionService
             request.ExecutionIdentity?.TraceId,
             CancellationToken.None);
 
-        var replayPrefix = PrefixCacheSnapshotBuilder.Build(
-            plan.SummaryRequestMessages,
-            llmTools,
-            PrefixChangeReasons.CompactionReplay);
+        var segmentedSummary = plan.RequiresTextProtection || BoundedCompactionSummary.ShouldUse(plan.SummaryRequestMessages, llmTools);
+        var summaryProviderSource = segmentedSummary ? "provider_segmented" : "provider";
         var summaryOutputTokens = effectiveLlmConfig?.MaxOutputTokens is > 0
             ? Math.Min(effectiveLlmConfig.MaxOutputTokens.Value, 8192)
             : 8192;
-        var summaryConfig = (effectiveLlmConfig ?? new LlmConfig()) with
-        {
-            MaxOutputTokens = summaryOutputTokens,
-        };
-        // F1 归因：本次要发出的是**压缩前**的 outbound 形状（候选测量只计量、不发布）。
-        // 明确发布它，随后冻结的请求级归因才会与摘要请求的 Provider 报数配对到同一个 raw；
-        // 否则摘要 usage 会去比「移除后」的 raw 并污染安全校准（诊断 2026-10-07 §5.1）。
-        _contextUsageSnapshotStore.Set(plan.InitialSnapshot);
-        // S01-B：请求准备边界——冻结本次 compaction 请求的上下文归因。
-        var summaryRequestContext = FreezeRequestContext(request.SessionId);
-        var summaryInvocationId = BuildLlmInvocationId(request, round, "compaction");
-        var summaryAttemptId = summaryInvocationId + ":a0";
-        // R1：压缩请求也是一次「准备」，必须登记它自己的身份，否则它的 usage 配不到记录、
-        // 只能进未配对账本（不校准、不投影）。
-        _contextUsageSnapshotStore.FreezePreparedRequest(
-            plan.InitialSnapshot,
-            LlmCallPurposes.Compaction,
-            summaryInvocationId,
-            summaryAttemptId);
-        var summaryResult = await LlmInvoker.InvokeAsync(
-            request,
-            agentInstanceId,
-            plan.SummaryRequestMessages,
-            llmTools,
-            summaryConfig,
-            replayPrefix,
-            providerInputRecoveryAlreadyAttempted: true,
-            round,
-            ct,
-            purpose: LlmCallPurposes.Compaction,
-            invocationId: summaryInvocationId,
-            attemptId: summaryAttemptId);
+        var summaryConfig = (effectiveLlmConfig ?? new LlmConfig()) with { MaxOutputTokens = summaryOutputTokens };
 
-        // The provider call is billable even if its result is rejected. Keep it in the
-        // canonical attribution ledger under an explicit compaction source type.
-        if (summaryResult.Usage is not null && _tokenUsageRecorder is not null)
+        async Task<AgentExecutionLlmInvocationResult> InvokeSummaryPartAsync(
+            IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmToolDefinition> tools, int part)
         {
-            try
+            var prefix = PrefixCacheSnapshotBuilder.Build(messages, tools, PrefixChangeReasons.CompactionReplay);
+            var snapshot = part == 0 ? plan.InitialSnapshot
+                : _contextUsageSnapshotStore.MeasureLlmRequest(request.SessionId, messages, tools, summaryConfig.ModelId);
+            // 每段单独冻结归因，摘要的报数不得参与主请求输入校准。
+            _contextUsageSnapshotStore.Set(snapshot);
+            var context = FreezeRequestContext(request.SessionId);
+            var invocationId = BuildLlmInvocationId(request, round, "compaction") + (part == 0 ? "" : $":part-{part}");
+            var attemptId = invocationId + ":a0";
+            _contextUsageSnapshotStore.FreezePreparedRequest(snapshot, LlmCallPurposes.Compaction, invocationId, attemptId);
+            var result = await LlmInvoker.InvokeAsync(request, agentInstanceId, messages, tools, summaryConfig,
+                prefix, providerInputRecoveryAlreadyAttempted: true, round, ct,
+                purpose: LlmCallPurposes.Compaction, invocationId: invocationId, attemptId: attemptId);
+            // 失败或最终未采用的分段仍然可能已计费，必须逐次落账。
+            if (result.Usage is not null && _tokenUsageRecorder is not null)
             {
-                await _tokenUsageRecorder.RecordAttributedRequiredAsync(
-                    summaryResult.Usage,
-                    sourceType: "agent_compaction_llm",
-                    sourceId: $"{request.SessionId}:{request.ExecutionIdentity?.RunId ?? "no-run"}:{round + 1}:warm-prefix",
-                    workspaceId: request.WorkspaceId,
-                    sessionId: request.SessionId,
-                    providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
-                    modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
-                    attribution: BuildTokenUsageAttribution(
-                        request,
-                        round,
-                        [],
-                        summaryRequestContext,
-                        summaryInvocationId,
-                        summaryInvocationId + ":a0"),
-                    prefixSnapshot: replayPrefix,
-                    occurredAtUtc: DateTimeOffset.UtcNow);
+                try
+                {
+                    await _tokenUsageRecorder.RecordAttributedRequiredAsync(result.Usage,
+                        sourceType: "agent_compaction_llm",
+                        sourceId: $"{request.SessionId}:{request.ExecutionIdentity?.RunId ?? "no-run"}:{round + 1}:warm-prefix"
+                            + (part == 0 ? "" : $":part-{part}"),
+                        workspaceId: request.WorkspaceId, sessionId: request.SessionId,
+                        providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
+                        modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
+                        attribution: BuildTokenUsageAttribution(request, round, [], context, invocationId, attemptId),
+                        prefixSnapshot: prefix, occurredAtUtc: DateTimeOffset.UtcNow);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "[AgentExec:Compaction] Summary usage recording deferred session={Session} round={Round} part={Part}",
+                        request.SessionId, round + 1, part);
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "[AgentExec:Compaction] Warm-prefix usage recording deferred session={Session} round={Round}",
-                    request.SessionId,
-                    round + 1);
-            }
+            return result;
         }
+
+        if (segmentedSummary)
+            _logger.LogInformation(
+                "[AgentExec:Compaction] Large summary replay uses bounded segments session={Session} removedMessages={Removed} partTextBytes={PartBytes}",
+                request.SessionId, plan.RemovedMessageCount, BoundedCompactionSummary.PartTextBytes);
+        var summaryResult = segmentedSummary
+            ? await BoundedCompactionSummary.GenerateAsync(
+                WarmPrefixCompaction.SelectRemovedMessages(exactOutboundHistory, plan),
+                (messages, part) => InvokeSummaryPartAsync(messages, [], part), ct,
+                partTextBytes: Math.Min(BoundedCompactionSummary.PartTextBytes, Math.Max(8192, plan.EffectiveInputLimit - 4096)))
+            : await InvokeSummaryPartAsync(plan.SummaryRequestMessages, llmTools, 0);
 
         var summaryTruncated = AgentOutputTruncationPolicy.IsTruncated(summaryResult.Response?.FinishReason);
         var summaryFailureError = summaryTruncated
@@ -2602,7 +2594,7 @@ public sealed partial class AgentExecutionService
                 verification.ReclaimTokens,
                 plan.EffectiveInputLimit,
                 verifyDurationMs,
-                summaryFallbackUsed ? "extractive_fallback" : "provider");
+                summaryFallbackUsed ? "extractive_fallback" : summaryProviderSource);
             await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
                 request.SessionId,
                 request.WorkspaceId,
@@ -2665,7 +2657,7 @@ public sealed partial class AgentExecutionService
             appliedDurationMs,
             durableCheckpoint,
             durableSkipReason,
-            summaryFallbackUsed ? "extractive_fallback" : "provider");
+            summaryFallbackUsed ? "extractive_fallback" : summaryProviderSource);
         await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
             request.SessionId,
             request.WorkspaceId,
@@ -2676,7 +2668,10 @@ public sealed partial class AgentExecutionService
                 sessionId = request.SessionId,
                 mode = "WarmPrefix",
                 stage = "applied",
-                reason = WarmPrefixCompactionReasons.HardProtection,
+                reason = plan.RequiresTextProtection ? "request_text_budget" : WarmPrefixCompactionReasons.HardProtection,
+                estimatedRequestTextBytesBefore = plan.InitialTextBytes,
+                estimatedRequestTextBytesAfter = LlmRequestTextBudget.Measure(durableHistory, llmTools),
+                requestTextBudgetBytes = plan.MaxRequestTextBytes,
                 // 只有 applied=true 才允许前端显示"已压缩"（ADR-095 D7）。
                 applied = true,
                 outcome = WarmPrefixCompactionDisposition.Applied.ToString(),
@@ -2699,7 +2694,7 @@ public sealed partial class AgentExecutionService
                 durableSkipReason,
                 // provider 摘要失败后改用本地抽取式摘要时如实标注（不是失败，但也不是原样重放摘要）；
                 // `degraded=true` 供 UI/诊断在不改变卡片语义前先能读到事实。
-                summarySource = summaryFallbackUsed ? "extractive_fallback" : "provider",
+                summarySource = summaryFallbackUsed ? "extractive_fallback" : summaryProviderSource,
                 degraded = summaryFallbackUsed,
             },
             request.ExecutionIdentity?.TraceId,

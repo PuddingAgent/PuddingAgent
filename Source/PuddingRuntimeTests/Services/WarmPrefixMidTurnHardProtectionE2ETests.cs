@@ -815,6 +815,119 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             "不得记录已提交");
     }
 
+    [TestMethod]
+    [DataRow(false, false, false)]
+    [DataRow(true, false, false)]
+    [DataRow(false, false, true)]
+    [DataRow(true, false, true)]
+    [DataRow(false, true, true)]
+    [DataRow(true, true, true)]
+    public async Task MegabyteHistory_UsesBoundedSemanticSummary_AndCommitsOnlyCompleteResult(bool truncate, bool streaming, bool largeWindow)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 48, charsPerMessage: 30_000);
+        }
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(DoneJson)
+        {
+            SummaryResponseOverride = new LlmResponse(SummaryResponse, null) { FinishReason = truncate ? "length" : "stop" },
+        };
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var service = CreateService(llm, new RecordingToolInvocationService(), manager,
+            new ContextUsageSnapshotStore(), factory, log, enableExtractiveFallback: true);
+        var history = manager.GetOrCreateHistory(SessionId);
+        Assert.IsTrue((await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None)).Succeeded);
+        history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
+        Assert.IsTrue(history.Sum(m => m.Content?.Length ?? 0) >= 1_400_000);
+        var request = CreateDispatchRequest() with
+        {
+            LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = largeWindow ? 1_048_576 : 200_000, MaxOutputTokens = 1_000 },
+            CallerLlmSnapshot = largeWindow ? new("deepseek", "deepseek-flash", "responses", []) : null,
+        };
+        var frames = new List<ServerSentEventFrame>();
+        if (streaming)
+            await foreach (var frame in service.ExecuteStreamAsync(request)) frames.Add(frame);
+        else
+            await service.ExecuteAsync(request);
+        var summaryCalls = llm.Requests.Where(messages => messages.Any(m =>
+            m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true)).ToArray();
+        Assert.IsTrue(summaryCalls.Length >= (truncate ? 1 : 2), string.Join("\n", log.Lines));
+        foreach (var messages in summaryCalls)
+            Assert.IsTrue(messages.Sum(m => System.Text.Encoding.UTF8.GetByteCount(m.Content ?? "")) < BoundedCompactionSummary.PartTextBytes);
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(truncate ? 0 : 1,
+            await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"), string.Join("\n", log.Lines));
+        Assert.AreEqual(truncate ? 0 : 1, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration);
+        Assert.IsFalse(log.Lines.Any(l => l.Contains("using local extractive fallback", StringComparison.Ordinal)));
+        if (!truncate)
+            Assert.IsTrue(log.Lines.Any(l => l.Contains("provider_segmented", StringComparison.Ordinal)));
+        if (largeWindow)
+        {
+            Assert.IsTrue(log.Lines.Any(l => l.Contains("Text upload budget triggered", StringComparison.Ordinal)));
+            var mainCalls = llm.Requests.Except(summaryCalls).ToArray();
+            Assert.AreEqual(truncate ? 0 : 1, mainCalls.Length, "Failed compaction must not send the original oversized request.");
+            foreach (var messages in mainCalls)
+                Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.DeepSeekResponsesLimit);
+            if (truncate && streaming)
+            {
+                var wire = System.Text.Json.JsonSerializer.Serialize(frames);
+                StringAssert.Contains(wire, "local.context_compaction_required");
+                StringAssert.Contains(wire, "estimated_request_text_bytes");
+            }
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task TextGrowthWithinLargeTokenWindow_CompactsBeforeNextMainRequest(bool streaming)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 36, charsPerMessage: 10_000);
+        }
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(
+            new LlmResponse(VariedText(220_000), [new ToolCall("call-grow", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
+            new LlmResponse(DoneJson, null))
+        {
+            SummaryResponseOverride = new LlmResponse(SummaryResponse, null) { FinishReason = "stop" },
+        };
+        var manager = CreateManager(factory);
+        var service = CreateService(llm, new RecordingToolInvocationService(), manager, new ContextUsageSnapshotStore(), factory);
+        var history = manager.GetOrCreateHistory(SessionId);
+        Assert.IsTrue((await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None)).Succeeded);
+        history.Insert(0, new ChatMessage(ChatRole.System, "system"));
+        var request = CreateDispatchRequest() with
+        {
+            LlmConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192 },
+            CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
+        };
+        if (streaming)
+            await foreach (var _ in service.ExecuteStreamAsync(request)) { }
+        else
+            await service.ExecuteAsync(request);
+        bool IsSummary(IReadOnlyList<ChatMessage> messages) => messages.Any(m => m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true);
+        var main = llm.Requests.Where(m => !IsSummary(m)).ToArray();
+        Assert.AreEqual(2, main.Length);
+        Assert.IsFalse(IsSummary(llm.Requests[0]), "First request fits the text budget.");
+        Assert.IsTrue(llm.Requests.Skip(1).Any(IsSummary), "Growth must trigger compaction within the same turn.");
+        foreach (var messages in main)
+            Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.DeepSeekResponsesLimit);
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(1, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration);
+    }
+
     // ── 装配 ────────────────────────────────────────────────────────────────
 
     private static RuntimeDispatchRequest CreateDispatchRequest(bool suppressAutoCompaction = true) => new()

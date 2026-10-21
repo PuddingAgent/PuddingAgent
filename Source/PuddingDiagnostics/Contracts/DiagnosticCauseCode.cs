@@ -62,6 +62,7 @@ public static class DiagnosticCauseCode
 
     /// <summary>外部取消（用户停止 / 父 Run 取消）。</summary>
     public const string Cancelled = "local.cancelled";
+    public const string ContextCompactionRequired = "local.context_compaction_required";
 
     /// <summary>熔断器打开，请求未发出。</summary>
     public const string CircuitOpen = "local.circuit_open";

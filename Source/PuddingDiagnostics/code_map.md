@@ -18,7 +18,7 @@
 
 | 概念 | 权威位置 | 要点 / 不变量 |
 |---|---|---|
-| 稳定因果码 | `Contracts/DiagnosticCauseCode.cs` | 取值是跨层契约（日志/元数据/终态 DTO/前端本地化共用）；新增码必须同时补目录条目与「场景 → 期望码」用例 |
+| 稳定因果码 | `Contracts/DiagnosticCauseCode.cs` | 跨层契约；`local.context_compaction_required` 表示文本预算未满足且尚未发送；新增码必须同时补目录条目与「场景 → 期望码」用例 |
 | 码表目录 | `Contracts/DiagnosticCause.cs`（`DiagnosticCauseCatalog`） | 码 → 可重试性 + 中文用户消息 + 处置建议；未登记码（如 `vision.*` 透传）走诚实兜底，不猜语义 |
 | 失败阶段 | `Contracts/DiagnosticPhaseKind.cs` | Build/Serialize/RequestUpload/AwaitResponseHeaders/ReadResponseStream/Persist/Queued；线路字符串由用例锁死 |
 | 因果分类 | `Classification/LlmFailureClassifier.cs` | 纯函数；判定顺序 透传码 → 取消 → 看门狗超时 → HTTP/传输/协议 → 诚实兜底；`Retryable` 已结合「是否产出增量」（Docs/08 §7.9） |

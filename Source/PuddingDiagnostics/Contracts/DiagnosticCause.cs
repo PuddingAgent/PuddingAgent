@@ -53,9 +53,12 @@ public static class DiagnosticCauseCatalog
 {
     private static readonly DiagnosticCauseDescriptor[] All =
     [
+        new(DiagnosticCauseCode.ContextCompactionRequired, false,
+            "上下文整理未能将请求缩小到上传预算，已停止发送；原始会话仍完整保留。",
+            "检查压缩失败原因及工具定义、系统提示词或受保护消息体积后重新发起一轮。"),
         new(DiagnosticCauseCode.RequestUploadReset, true,
-            "请求体上传阶段连接被对端重置（网络或代理不稳定）。",
-            "先确认网络/代理路径（可做一次开/关代理的对比），再重试；反复出现时同时减小上下文与工具集体积。"),
+            "请求体上传阶段连接被对端重置，尚未收到响应头。",
+            "先核对请求体积与压缩结果；若小请求也失败，再检查服务端、网络或代理路径。连接重置本身不能确定是哪一方导致。"),
         new(DiagnosticCauseCode.ResponseReadReset, true,
             "响应读取阶段连接中断，模型输出不完整。",
             "直接重试；若与特定长会话强相关，检查链路 MTU/代理与上下文体积。"),

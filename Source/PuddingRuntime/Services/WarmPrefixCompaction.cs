@@ -9,9 +9,9 @@ namespace PuddingRuntime.Services;
 
 /// <summary>
 /// Warm-prefix checkpoint planning for long Agent loops.
-/// The auxiliary summary request replays the exact outbound conversation and tool header,
-/// then appends one fixed user instruction. Only after a valid, shrinking summary returns
-/// may the caller atomically replace the selected old head with one checkpoint message.
+/// The plan contains an exact replay template; the caller uses bounded selected-span summaries
+/// when replay would be too large. Only a valid, shrinking summary within token and text budgets
+/// may atomically replace the selected old head with one checkpoint message.
 /// </summary>
 internal static class WarmPrefixCompaction
 {
@@ -56,7 +56,8 @@ internal static class WarmPrefixCompaction
         /// </summary>
         int sourceGeneration = 0,
         /// <summary>Provider 身份（Runtime 的 LlmConfig 不携带，由调用方给出）：参与路由 CAS。</summary>
-        string? providerId = null)
+        string? providerId = null,
+        int maxRequestTextBytes = 0)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
         ArgumentNullException.ThrowIfNull(durableHistory);
@@ -74,7 +75,8 @@ internal static class WarmPrefixCompaction
             config,
             triggerRatio,
             targetRatio,
-            workUnitInputCapacity: workUnitInputCapacity);
+            workUnitInputCapacity: workUnitInputCapacity,
+            maxRequestTextBytes: maxRequestTextBytes);
         if (!selection.Compacted || selection.RemovedMessageCount <= 0)
             return false;
 
@@ -121,9 +123,10 @@ internal static class WarmPrefixCompaction
             ResolveRouteVersion(config, providerId),
             ResolveToolSpecVersion(exactOutboundHistory, tools),
             targetRatio,
-            // 持久代次要等 checkpoint/generation 落库后才能提供；当前恒为 0，
-            // 因此「仅代次变化」这一路今天抓不到（见 changelog「未完成」）。
-            SourceGeneration: sourceGeneration);
+            // 提交时同时校验持久代次，不能让旧候选覆盖新 checkpoint。
+            SourceGeneration: sourceGeneration,
+            InitialTextBytes: maxRequestTextBytes > 0 ? LlmRequestTextBudget.Measure(exactOutboundHistory, tools) : 0,
+            MaxRequestTextBytes: maxRequestTextBytes);
         return true;
     }
 
@@ -277,6 +280,9 @@ internal static class WarmPrefixCompaction
                 meetsTarget: false,
                 afterSnapshot);
         }
+
+        if (plan.MaxRequestTextBytes > 0 && LlmRequestTextBudget.Measure(checkpoint, tools) > plan.MaxRequestTextBytes)
+            return WarmPrefixApplyVerification.Rejected("after_summary_exceeds_text_budget", reclaim, false, afterSnapshot);
 
         var target = (int)Math.Floor(plan.EffectiveInputLimit * Math.Clamp(plan.TargetRatio, 0.05, 1.0));
         // F2 持久化：把「被替换跨度」的**对象**带出去，供调用方解析持久 MessageId。
@@ -435,21 +441,23 @@ internal sealed record WarmPrefixCompactionPlan(
     /// <summary>压实目标比例（收益准入用）。</summary>
     double TargetRatio,
     /// <summary>
-    /// 源上下文代次。**当前恒为 0**：持久 checkpoint/generation 尚未落地，
-    /// 因此「仅代次变化」这一路 CAS 今天抓不到（见 changelog「未完成」）。
+    /// 源上下文持久代次，提交前参与 CAS 校验。
     /// </summary>
-    long SourceGeneration = 0)
+    long SourceGeneration = 0,
+    long InitialTextBytes = 0,
+    int MaxRequestTextBytes = 0)
 {
     /// <summary>
     /// 本次请求是否**真的**越过硬输入边界（估算输入 &gt; 有效输入上限，两侧同源：模型窗口 − 实际输出预算 − 安全余量，
-    /// 并取 Provider 输入上限与 WorkUnit 容量的较小值）。
+    /// 并取 Provider 输入上限与 WorkUnit 容量的较小值），或越过独立的文本上传预算。
     /// <para>
     /// false ⇒ 候选只来自**软阈值**（输入仍能安全容纳）：允许把摘要生成推迟到轮次安全点/终态之后，
     /// 不得为了软维护阻塞主请求首块（ADR-095 D2）。
     /// true ⇒ 必须同步保护：不做同步压缩，出站只能靠请求副本硬裁剪，会丢失会话级记忆连续性。
     /// </para>
     /// </summary>
-    internal bool RequiresSynchronousProtection => InitialUsedTokens > EffectiveInputLimit;
+    internal bool RequiresSynchronousProtection => InitialUsedTokens > EffectiveInputLimit || RequiresTextProtection;
+    internal bool RequiresTextProtection => MaxRequestTextBytes > 0 && InitialTextBytes > MaxRequestTextBytes;
 
     /// <summary>相对硬边界的余量（负数 = 已越界）。用于日志/生命周期事件归因，不参与准入判断。</summary>
     internal int HardHeadroomTokens => EffectiveInputLimit - InitialUsedTokens;

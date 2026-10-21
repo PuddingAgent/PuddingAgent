@@ -672,7 +672,8 @@ public sealed partial class AgentExecutionService
                     // Warm-prefix checkpoint：原样重放当前 provider 请求并只在尾部追加固定摘要
                     // 指令；摘要成功且确实缩小时才一次性替换旧历史。失败保留原 surface，
                     // 禁止旧实现直接逐轮删除历史头部造成语义丢失和全前缀 miss。
-                    if (WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(history.Count, warmPrefixCompactionAttempted))
+                    if (WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(history.Count, warmPrefixCompactionAttempted)
+                        || LlmRequestTextBudget.Exceeds(request, injectedHistory, llmTools))
                     {
                         var compaction = await TryWarmPrefixCompactionAsync(
                             request,
@@ -862,7 +863,14 @@ public sealed partial class AgentExecutionService
                     current_message_id = request.MessageId,
                     current_input_sha256 = ComputeCurrentTurnInputHash(request),
                 });
-                                var llmResult = await LlmInvoker.InvokeAsync(
+                var textBudgetError = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools);
+                if (textBudgetError is not null)
+                    _logger.LogWarning("[AgentExec:ContextBudget] {Code} session={Session} evidence={Evidence}",
+                        "local.context_compaction_required", request.SessionId,
+                        LlmFailureDiagnostics.TryGet(textBudgetError, out var cause) ? JsonSerializer.Serialize(cause.Evidence) : "{}");
+                var llmResult = textBudgetError is not null
+                    ? AgentExecutionLlmInvocationResult.CreateFatal(textBudgetError.Message)
+                    : await LlmInvoker.InvokeAsync(
                     request,
                     instance.AgentInstanceId,
                     injectedHistory,

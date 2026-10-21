@@ -798,7 +798,8 @@ public sealed partial class AgentExecutionService
                     // 与 Buffered 共用 warm-prefix checkpoint；失败保留原历史，不再静默驱逐。
                     // ADR-095 D2：候选只来自软阈值且请求仍安全时，摘要生成不进入发送关键路径
                     // （outcome.Disposition = DeferredSoft），此处只做归因，不产生等待。
-                    if (WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(history.Count, warmPrefixCompactionAttempted))
+                    if (WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(history.Count, warmPrefixCompactionAttempted)
+                        || LlmRequestTextBudget.Exceeds(request, injectedHistory, llmTools))
                     {
                         var compaction = await TryWarmPrefixCompactionAsync(
                             request,
@@ -1049,10 +1050,12 @@ public sealed partial class AgentExecutionService
                     },
                     error: null,
                     ct: CancellationToken.None);
-                Exception? llmException = null;
+                // Final preflight also covers protected/current input and post-compaction injection.
+                // Failed compaction must never fall through to another oversized upload.
+                Exception? llmException = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools);
                 try
                 {
-                    while (true)
+                    while (llmException is null)
                     {
                         StreamDelta delta;
                         try

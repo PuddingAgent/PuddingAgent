@@ -49,6 +49,8 @@ public static class ErrorPresentationCatalog
         var category = DiagnosticCauseCode.CategoryOf(causeCode);
         var (title, action, severity) = causeCode switch
         {
+            DiagnosticCauseCode.ContextCompactionRequired =>
+                ("上下文整理未完成", "检查压缩诊断", ErrorSeverities.Error),
             DiagnosticCauseCode.RequestUploadReset or DiagnosticCauseCode.ResponseReadReset =>
                 ("模型服务连接中断", "重试", ErrorSeverities.Error),
             DiagnosticCauseCode.ConnectFailed or DiagnosticCauseCode.DnsFailed =>

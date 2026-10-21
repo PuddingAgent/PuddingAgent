@@ -238,7 +238,8 @@ public static partial class LlmRequestBudgetGuard
         double triggerRatio = ContextCompactionDefaults.TriggerRatio,
         double targetRatio = 0.5,
         int safetyBufferTokens = DefaultSafetyBufferTokens,
-        long? workUnitInputCapacity = null)
+        long? workUnitInputCapacity = null,
+        int maxRequestTextBytes = 0)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
 
@@ -258,7 +259,9 @@ public static partial class LlmRequestBudgetGuard
         var initialUsedTokens = snapshot.UsedTokens;
 
         var trigger = effectiveInputLimit * Math.Clamp(triggerRatio, 0.1, 1.0);
-        if (snapshot.UsedTokens < trigger)
+        var textBudgetExceeded = maxRequestTextBytes > 0
+            && LlmRequestTextBudget.Measure(working, tools) > maxRequestTextBytes;
+        if (snapshot.UsedTokens < trigger && !textBudgetExceeded)
         {
             return new LlmSoftCompactionResult(
                 working,
@@ -272,7 +275,9 @@ public static partial class LlmRequestBudgetGuard
         }
 
         var target = effectiveInputLimit * Math.Clamp(targetRatio, 0.05, Math.Clamp(triggerRatio, 0.05, 1.0));
-        while (snapshot.UsedTokens > target && RemoveOldestConversationUnit(working))
+        while ((snapshot.UsedTokens > target
+                || (textBudgetExceeded && LlmRequestTextBudget.Measure(working, tools) > maxRequestTextBytes / 2))
+               && RemoveOldestConversationUnit(working))
         {
             working = LlmMessageSequenceNormalizer.Normalize(working).Messages.ToList();
             snapshot = usageStore.MeasureLlmRequest(

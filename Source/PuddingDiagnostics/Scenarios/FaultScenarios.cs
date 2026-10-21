@@ -40,6 +40,11 @@ public static class FaultScenarios
     /// <summary>除帧指纹场景外的全部场景（分类器按默认指纹工作）。</summary>
     public static IReadOnlyList<FaultScenario> All { get; } =
     [
+        new("compaction_cannot_meet_text_budget", DiagnosticCauseCode.ContextCompactionRequired,
+            DiagnosticPhaseKind.Build, false, null,
+            Baseline with { CauseCodeOverride = DiagnosticCauseCode.ContextCompactionRequired, PhaseHint = DiagnosticPhaseKind.Build, DispatchCount = 0 },
+            () => new InvalidOperationException("Text budget remains exceeded after compaction; history preserved."),
+            "Docs/08_how_debuge/05-常见症状.md"),
         new("reset_during_response_read", DiagnosticCauseCode.ResponseReadReset,
             DiagnosticPhaseKind.ReadResponseStream, true, null, Baseline,
             () => new HttpRequestException("transport", new HttpIOException(HttpRequestError.ResponseEnded, "response ended")),

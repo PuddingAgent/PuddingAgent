@@ -171,6 +171,8 @@
 | `Services/LlmInvocationService.cs` | LLM 调用的稳定对外门面 | `ILlmInvocationService` | `Services/IRuntimeLlmClient.cs` | — |
 | `Services/LlmProfileResolver.cs` | provider 与 profile 到完整配置的解析 | `ILlmProfileResolver` | `Services/PuddingJsonConfig.cs` | — |
 | `Services/LlmRequestBudgetGuard.cs` | 请求级预算守卫与软压缩触发；provider 输入上限文案解析 | `LlmRequestBudgetGuard` | `Services/ContextCompactionService.cs` | `TryGetProviderMaxInputTokens` 同时识别 `Range of input length should be [1,N]` 与 DeepSeek `maximum context length is N tokens`；摘要 raw 不得写回主请求校准（ADR-095 D6） |
+| `Services/LlmRequestTextBudget.cs` | DeepSeek Responses 独立文本上传预算与发送前复核 | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查正文、思考、续传状态和工具定义；512 KiB 为客户端预算，图片另走视觉预算；超限零发送 |
+| `Services/BoundedCompactionSummary.cs` | 选中历史的有界分段总结与递归归并 | `BoundedCompactionSummary` | `Services/AgentExecutionService.cs` | 128 KiB 文本分段、最多 64 次调用；全段成功后才允许提交，失败/截断不返回部分摘要；图片保持冻结路由 |
 | `Services/ManagedOggOpusTranscoder.cs` | 频道短音频的纯托管转码 | `IAudioTranscoder` | `Services/DashScopeTtsProvider.cs` | — |
 | `Services/MemoryLlmInvocationClient.cs` | 面向记忆的共享门面 LLM 客户端 | `IMemoryLlmClient` | `Services/LlmInvocationService.cs` | — |
 | `Services/MemoryMaintenancePlanWriteCommandMapper.cs` | 记忆维护方案到写命令的映射 | `MemoryMaintenancePlanWriteCommandMapper` | `Services/SubconsciousPlanGenerationService.cs` | — |
@@ -252,7 +254,7 @@
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
 | `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |
 | `Services/VolcengineArkImageGenerationProvider.cs` | 火山方舟的图片生成适配 | `VolcengineArkImageGenerationProvider` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | — |
-| `Services/WarmPrefixCompaction.cs` | 长循环的暖前缀压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | 只接受真实缩小的结果；仅 `RequiresSynchronousProtection` 成立才同步生成摘要，软阈值候选一律延期到 canonical 终态之后；provider 摘要失败时由调用方降级本地 Extractive（仍走同一校验/提交边界，见下「关键语义」） |
+| `Services/WarmPrefixCompaction.cs` | 暖前缀/分段摘要共用的压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | token 或文本上传预算越界同步保护；真实摘要须满足收益、预算及持久代次 CAS；软候选仍延期（见下「关键语义」） |
 | `Services/WarmPrefixMaintenanceAdmission.cs` | 软维护/硬保护准入封顶与同 round 去重 | `WarmPrefixMaintenanceAdmission` | `Services/AgentExecution/AgentExecutionService.Streaming.cs`、`…Buffered.cs` | 软维护每 dispatch 一次、硬保护逐轮重新评估；软尝试已执行同步硬保护时不得同 round 重复（见下「关键语义」） |
 | `Services/WikiPageWriteEntry.cs` | 记忆 Wiki 页面的确定性写入入口 | `WikiPageWriteRequest` | `Services/MemoryWikiPageUpdateService.cs` | — |
 | `Services/WorkspaceAgentsContextBuilder.cs` | 工作区 Agent 名册上下文层的构造 | `WorkspaceAgentsContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
@@ -263,8 +265,8 @@
 > 下列为上方表「约束」列的**逐字原文**（行序与表一致）；表内已缩为语义摘要，并以 `（见下「关键语义」）` 指回本段。
 
 - `Services/WarmPrefixCompaction.cs`
-  只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection`（估算输入 > 有效输入上限，两侧同源含 WorkUnit 容量）才允许同步生成摘要，软阈值候选一律延期到 canonical 终态之后（ADR-095 D2）；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`；
-  provider 摘要失败（含摘要请求本身超过模型窗口）时由 `AgentExecutionService` 改用本地 `ExtractiveContextCompactionSummaryGenerator` 对**被替换跨度**生成摘要，仍走同一 VerifyApplication/持久提交边界（completed 事件 `summarySource=extractive_fallback`）
+  只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection` 包含 token 上限（含 WorkUnit 容量）及独立文本上传预算；软候选延期到 canonical 终态之后。体积保护每轮评估，不受软维护封顶限制；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`。
+  大请求通过 `BoundedCompactionSummary` 总结被替换跨度；全部成功后走同一 VerifyApplication/持久提交边界（`summarySource=provider_segmented`）。仅 provider 输入拒绝或无用输出可使用已配置的 Extractive；传输失败、截断或不完整分段保持原历史。
 
 - `Services/WarmPrefixMaintenanceAdmission.cs`
   软维护每 dispatch 一次；硬保护逐轮重新评估，不被软维护封顶屏蔽；软维护调用若已走 `RequiresSynchronousProtection` 分支（即已执行同步硬保护），`RecordAttempt` 同时置硬保护标记，禁止同一 round 再发一次字节级相同的摘要请求（2026-10-17 事故：同 round 两次 1.68M token 请求、两张失败卡片）
