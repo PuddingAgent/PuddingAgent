@@ -300,11 +300,11 @@ public sealed class WarmPrefixCheckpointCommitTests
         // 完全不传 id，只传内容键（模拟「内存身份全部失效」的流式路径）。
         var request = CreateRequest(expectedGeneration: 0, coveredMessageIds: []) with
         {
-            SpanKeys =
+            SourceMessages =
             [
-                new WarmPrefixSpanKey("User", "message m1"),
-                new WarmPrefixSpanKey("Assistant", "message m2"),
-                new WarmPrefixSpanKey("User", "message m3"),
+                new WarmPrefixSourceMessage(new ChatMessage(ChatRole.User, "message m1")),
+                new WarmPrefixSourceMessage(new ChatMessage(ChatRole.Assistant, "message m2")),
+                new WarmPrefixSourceMessage(new ChatMessage(ChatRole.User, "message m3")),
             ],
         };
 
@@ -352,7 +352,7 @@ public sealed class WarmPrefixCheckpointCommitTests
         var service = CreateService(options);
         var request = CreateRequest(expectedGeneration: 0, coveredMessageIds: []) with
         {
-            SpanKeys = [new WarmPrefixSpanKey("User", "message m1")],
+            SourceMessages = [new WarmPrefixSourceMessage(new ChatMessage(ChatRole.User, "message m1"))],
         };
 
         var result = await service.CommitWarmPrefixCheckpointAsync(request);
@@ -368,7 +368,7 @@ public sealed class WarmPrefixCheckpointCommitTests
 
     /// <summary>内容键在库里找不到 ⇒ 拒绝（不得只写「找得到的那部分」）。</summary>
     [TestMethod]
-    public async Task Commit_WithUnknownSpanKey_WritesNothing()
+    public async Task Commit_WithUnknownSource_ArchivesItBeforeReplacingHistory()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -382,19 +382,115 @@ public sealed class WarmPrefixCheckpointCommitTests
         var service = CreateService(options);
         var request = CreateRequest(expectedGeneration: 0, coveredMessageIds: []) with
         {
-            SpanKeys =
+            SourceMessages =
             [
-                new WarmPrefixSpanKey("User", "message m1"),
-                new WarmPrefixSpanKey("User", "message that never existed"),
+                new WarmPrefixSourceMessage(new ChatMessage(ChatRole.User, "message m1")),
+                new WarmPrefixSourceMessage(new ChatMessage(ChatRole.User, "message that never existed")),
             ],
         };
 
         var result = await service.CommitWarmPrefixCheckpointAsync(request);
 
-        Assert.AreEqual(WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound, result.Status);
+        Assert.AreEqual(WarmPrefixCheckpointCommitStatus.Committed, result.Status);
+        Assert.AreEqual(1, result.ArchivedMessageCount);
         await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(2, await verify.Messages.CountAsync(m => m.CompactedBy != null));
+        Assert.AreEqual(1, await verify.Messages.CountAsync(m => m.ContentType == "compact_summary"));
+    }
+
+    [TestMethod]
+    public async Task Commit_MixedExactIdsAndEmptyNativeToolCalls_PreservesEverySourceAndManifestOrder()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var seed = new MemoryDbContext(options))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            await SeedAsync(seed, 4);
+            (await seed.Messages.SingleAsync(m => m.MessageId == "m3")).Content = "message m1";
+            await seed.SaveChangesAsync();
+        }
+        var toolCall = new ChatMessage(ChatRole.Assistant, null,
+            ToolCalls: [new ToolCall("call-1", "search", "{\"query\":\"evidence\"}")], ReasoningContent: "why search");
+        var toolResult = new ChatMessage(ChatRole.Tool, "result evidence", ToolCallId: "call-1", ToolName: "search");
+        var result = await CreateService(options).CommitWarmPrefixCheckpointAsync(CreateRequest(0, []) with
+        {
+            SourceMessages = [new(new(ChatRole.User, "message m1"), "m3"), new(toolCall), new(toolResult),
+                new(new(ChatRole.User, "message m1"), "m1")],
+        });
+        Assert.AreEqual(WarmPrefixCheckpointCommitStatus.Committed, result.Status);
+        Assert.AreEqual(2, result.ArchivedMessageCount);
+        await using var verify = new MemoryDbContext(options);
+        var archives = await verify.Messages.Where(m => m.ContentType == "warm_prefix_source").OrderBy(m => m.Sequence).ToListAsync();
+        var json = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        var restored = System.Text.Json.JsonSerializer.Deserialize<ChatMessage>(archives[0].Content!, json)!;
+        Assert.AreEqual("call-1", restored.ToolCalls![0].Id);
+        Assert.AreEqual("why search", restored.ReasoningContent);
+        Assert.IsNull(restored.Content);
+        Assert.AreEqual(toolResult, System.Text.Json.JsonSerializer.Deserialize<ChatMessage>(archives[1].Content!, json));
+        Assert.IsNull((await verify.Messages.SingleAsync(m => m.MessageId == "m2")).CompactedBy);
+        var manifest = await verify.CompactionCoverageManifests.SingleAsync();
+        var ids = System.Text.Json.JsonSerializer.Deserialize<string[]>(manifest.SourceMessageIds)!;
+        var hashes = System.Text.Json.JsonSerializer.Deserialize<string[]>(manifest.SourceHashes)!;
+        for (var i = 0; i < ids.Length; i++)
+            Assert.AreEqual((await verify.Messages.SingleAsync(m => m.MessageId == ids[i])).CanonicalContentHash, hashes[i]);
+    }
+
+    [TestMethod]
+    public async Task Commit_RenderedDuplicateUser_UsesIngressIdWithoutMatchingOtherTurn()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var seed = new MemoryDbContext(options))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            await SeedAsync(seed, 4);
+            foreach (var row in await seed.Messages.Where(m => m.Role == "user").ToListAsync())
+            {
+                row.Content = "continue"; row.Source = "chat_transcript";
+                row.Metadata = "turn-" + row.MessageId + "\ninput-" + row.MessageId;
+            }
+            await seed.SaveChangesAsync();
+        }
+        var result = await CreateService(options).CommitWarmPrefixCheckpointAsync(CreateRequest(0, []) with
+        {
+            SourceMessages = [new(new(ChatRole.User, "[runtime envelope] continue") { SourceMessageId = "input-m3" })],
+        });
+        Assert.IsTrue(result.Committed);
+        await using var verify = new MemoryDbContext(options);
+        Assert.IsNotNull((await verify.Messages.SingleAsync(m => m.MessageId == "m3")).CompactedBy);
+        Assert.IsNull((await verify.Messages.SingleAsync(m => m.MessageId == "m1")).CompactedBy);
+        Assert.AreEqual(1, result.ArchivedMessageCount, "Rendered source is retained as evidence too.");
+    }
+
+    [TestMethod]
+    public async Task Commit_ArchiveInsertedThenCoverageWriteFails_RollsBackEverything()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var seed = new MemoryDbContext(options))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            await SeedAsync(seed, 4);
+            await seed.Database.ExecuteSqlRawAsync("""
+                CREATE TRIGGER fail_native_coverage BEFORE UPDATE OF CompactedBy ON Messages
+                WHEN OLD.ContentType = 'warm_prefix_source'
+                BEGIN SELECT RAISE(ABORT, 'simulated archive coverage failure'); END;
+                """);
+        }
+        await Assert.ThrowsExactlyAsync<SqliteException>(() => CreateService(options).CommitWarmPrefixCheckpointAsync(CreateRequest(0, []) with
+        {
+            SourceMessages = [new(new(ChatRole.User, "message m1"), "m1"),
+                new(new(ChatRole.Tool, "evidence", ToolCallId: "call-1"))],
+        }));
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(4, await verify.Messages.CountAsync());
         Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.CompactedBy != null));
-        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.ContentType == "compact_summary"));
+        Assert.AreEqual(0, await verify.CompactionCoverageManifests.CountAsync());
+        Assert.AreEqual(0, (await verify.Sessions.SingleAsync()).CompactionGeneration);
     }
 
     private static WarmPrefixCheckpointCommitRequest CreateRequest(

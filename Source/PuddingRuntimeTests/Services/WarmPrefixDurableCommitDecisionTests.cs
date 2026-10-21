@@ -5,7 +5,7 @@ namespace PuddingRuntimeTests.Services;
 
 /// <summary>
 /// F2 落库决策的**纯判定**单测（脱离执行宿主）：什么时候允许尝试持久化、不能时如何如实降级。
-/// 硬约束：跨度里有任何「没有持久行」的消息就不许写覆盖标注（错标 = 静默隐藏真实消息）。
+/// 硬约束：没有完整原文时，部分持久 ID 不得冒充完整覆盖；有原文时由事务归档补齐。
 /// </summary>
 [TestClass]
 public sealed class WarmPrefixDurableCommitDecisionTests
@@ -19,10 +19,11 @@ public sealed class WarmPrefixDurableCommitDecisionTests
     public void ShouldAttempt_OnlyWhenServiceAvailableAndSpanFullyResolved()
     {
         Assert.IsTrue(WarmPrefixDurableCommitDecision.ShouldAttempt(true, Resolved("m1", "m2")));
+        Assert.IsTrue(WarmPrefixDurableCommitDecision.ShouldAttempt(true, PartiallyResolved(2, "m1"), sourceMessageCount: 3));
 
         Assert.IsFalse(
             WarmPrefixDurableCommitDecision.ShouldAttempt(false, Resolved("m1")),
-            "没有可用的压缩服务时只能内存-only");
+            "没有可用的压缩服务时保留原历史");
         Assert.IsFalse(
             WarmPrefixDurableCommitDecision.ShouldAttempt(true, PartiallyResolved(1, "m1")),
             "跨度未全部解析时绝不允许写覆盖标注（不得部分标注）");

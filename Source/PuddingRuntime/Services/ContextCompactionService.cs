@@ -387,7 +387,7 @@ public sealed class ContextCompactionService : IContextCompactionService
     /// </para>
     /// </summary>
     private static string ActiveRowKey(MessageEntity row)
-        => $"{CanonicalRoleToken(row.Role)}\u001f{row.Content ?? string.Empty}";
+        => $"{(row.ContentType == ContextWindowConstants.CompactSummaryContentType ? nameof(ChatRole.Assistant) : CanonicalRoleToken(row.Role))}\u001f{row.Content ?? string.Empty}";
 
     private static string CanonicalRoleToken(string? dbRole)
         => (dbRole ?? string.Empty).Trim().ToLowerInvariant() switch
@@ -415,14 +415,8 @@ public sealed class ContextCompactionService : IContextCompactionService
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        // 内容键回退解析：内存历史对象会被归一化/渲染复制，按引用解析可能全失效（流式路径实测
-        // unresolved_durable_identities:29）。库里的行才是权威 —— 但**只在唯一匹配时**才认，
-        // 重复内容宁可判为不可解析（绑错行 = 静默隐藏真实消息）。
-        var spanKeys = (request.SpanKeys ?? [])
-            .Where(k => !string.IsNullOrWhiteSpace(k.Content))
-            .ToArray();
-
-        if (coveredIds.Length == 0 && spanKeys.Length == 0)
+        var sources = request.SourceMessages ?? [];
+        if (coveredIds.Length == 0 && sources.Count == 0)
             return new WarmPrefixCheckpointCommitResult(
                 WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound,
                 ProblemMessageIds: []);
@@ -439,39 +433,90 @@ public sealed class ContextCompactionService : IContextCompactionService
                 WarmPrefixCheckpointCommitStatus.GenerationMismatch,
                 TargetGeneration: session.CompactionGeneration);
 
-        if (spanKeys.Length > 0)
+        var archives = new List<MessageEntity>();
+        if (sources.Count > 0)
         {
-            var activeRows = await db.Messages
-                .Where(m => m.SessionId == request.SessionId && m.CompactedBy == null)
+            var sourceIds = sources.Select(s => s.DurableMessageId).Where(id => id != null).ToArray();
+            var sessionRows = await db.Messages.AsNoTracking()
+                .Where(m => m.SessionId == request.SessionId && (m.CompactedBy == null || sourceIds.Contains(m.MessageId)))
                 .ToListAsync(ct);
+            var activeRows = sessionRows.Where(m => m.CompactedBy == null).ToArray();
+            var byId = sessionRows.ToDictionary(m => m.MessageId, StringComparer.Ordinal);
             var byKey = activeRows
                 .GroupBy(ActiveRowKey, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
-
-            var resolved = new List<string>(spanKeys.Length);
-            var unresolvedKeys = new List<string>(spanKeys.Length);
-            foreach (var key in spanKeys)
+            var resolved = new List<string>(sources.Count);
+            var problems = new List<string>();
+            var sequence = await db.Messages.Where(m => m.SessionId == request.SessionId)
+                .MaxAsync(m => (long?)m.Sequence, ct) ?? 0;
+            for (var index = 0; index < sources.Count; index++)
             {
-                var lookup = $"{key.Role}\u001f{key.Content}";
-                if (!byKey.TryGetValue(lookup, out var matches) || matches.Count != 1)
+                var source = sources[index];
+                var message = source.Message;
+                MessageEntity? matched = null;
+                var native = message.Role == ChatRole.Tool || message.ToolCalls is { Count: > 0 };
+                if (!string.IsNullOrWhiteSpace(source.DurableMessageId))
                 {
-                    // 0 个匹配或重复内容（>1）都不可解析 —— 后者会绑错行。
-                    unresolvedKeys.Add($"{key.Role}:{(key.Content.Length > 40 ? key.Content[..40] + "…" : key.Content)}");
-                    continue;
+                    if (!byId.TryGetValue(source.DurableMessageId, out matched))
+                    {
+                        problems.Add($"source[{index}]:{message.Role}:missing_id");
+                        continue;
+                    }
                 }
-
-                resolved.Add(matches[0].MessageId);
+                else if (!native)
+                {
+                    // A tool's text is not an identity. Ingress IDs survive envelope rendering.
+                    var matches = !string.IsNullOrWhiteSpace(message.SourceMessageId)
+                        ? activeRows.Where(m => m.Source == "chat_transcript"
+                            && m.Metadata?.EndsWith("\n" + message.SourceMessageId, StringComparison.Ordinal) == true).ToList()
+                        : message.Role == ChatRole.User && !string.IsNullOrWhiteSpace(message.SourceContentHash)
+                            ? activeRows.Where(m => CanonicalRoleToken(m.Role) == nameof(ChatRole.User)
+                                && HistoryPrefixReconciler.ComputeSourceHash(m.Content, ContentPartsEnvelope.Decode(m.AttachmentsJson))
+                                    == message.SourceContentHash).ToList()
+                            : byKey.GetValueOrDefault($"{message.Role}\u001f{message.Content ?? string.Empty}") ?? [];
+                    if (matches.Count > 1)
+                    {
+                        // Only position/role/reason, never user content in diagnostics.
+                        problems.Add($"source[{index}]:{message.Role}:ambiguous:{matches.Count}");
+                        continue;
+                    }
+                    matched = matches.SingleOrDefault();
+                }
+                if (matched is not null)
+                {
+                    if (resolved.Contains(matched.MessageId, StringComparer.Ordinal))
+                    {
+                        problems.Add($"source[{index}]:{message.Role}:duplicate_id");
+                        continue;
+                    }
+                    resolved.Add(matched.MessageId);
+                }
+                // Preserve exact runtime evidence missing from the canonical projection,
+                // including empty tool calls, reasoning, continuation and typed parts.
+                // Archive rows become covered in the SAME transaction as the checkpoint.
+                if (matched is null || native || message.ReasoningContent is not null
+                    || message.ContinuationState is not null || message.Content != matched.Content)
+                {
+                    var snapshot = JsonSerializer.Serialize(message, JsonOptions);
+                    archives.Add(new MessageEntity
+                    {
+                        MessageId = Guid.NewGuid().ToString("N"), SessionId = request.SessionId,
+                        Sequence = ++sequence, Role = message.Role.ToString().ToLowerInvariant(),
+                        ContentType = "warm_prefix_source", Content = snapshot,
+                        Source = "warm_prefix_checkpoint", CanonicalContentHash = CompositionSnapshot.Sha256Hex(snapshot),
+                        Metadata = JsonSerializer.Serialize(new { request.CompactionId, sourceIndex = index,
+                            sourceMessageId = message.SourceMessageId, canonicalMessageId = matched?.MessageId }, JsonOptions),
+                    });
+                }
             }
-
-            if (unresolvedKeys.Count > 0)
+            if (problems.Count > 0)
                 return new WarmPrefixCheckpointCommitResult(
                     WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound,
-                    ProblemMessageIds: unresolvedKeys);
-
-            coveredIds = resolved.Distinct(StringComparer.Ordinal).ToArray();
+                    ProblemMessageIds: problems);
+            coveredIds = resolved.ToArray();
         }
 
-        if (coveredIds.Length == 0)
+        if (coveredIds.Length == 0 && archives.Count == 0)
             return new WarmPrefixCheckpointCommitResult(
                 WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound,
                 ProblemMessageIds: []);
@@ -497,13 +542,16 @@ public sealed class ContextCompactionService : IContextCompactionService
                 WarmPrefixCheckpointCommitStatus.AlreadyCovered,
                 ProblemMessageIds: alreadyCovered);
 
+        // Manifest IDs and hashes must share ordering, independent of DB query order.
+        rows = coveredIds.Select(id => rows.Single(row => row.MessageId == id)).Concat(archives).ToList();
+        coveredIds = rows.Select(row => row.MessageId).ToArray();
         var sourceGeneration = session.CompactionGeneration;
         var targetGeneration = sourceGeneration + 1;
         var summaryMessageId = Guid.NewGuid().ToString("N");
         var summaryHash = CompositionSnapshot.Sha256Hex(request.Summary);
         var summarySequence = (await db.Messages
             .Where(m => m.SessionId == request.SessionId)
-            .MaxAsync(m => (long?)m.Sequence, ct) ?? 0L) + 1;
+            .MaxAsync(m => (long?)m.Sequence, ct) ?? 0L) + archives.Count + 1;
 
         var summaryMessage = new MessageEntity
         {
@@ -570,7 +618,8 @@ public sealed class ContextCompactionService : IContextCompactionService
             summaryMessage,
             manifestEntity,
             rows,
-            ct);
+            ct,
+            archiveRows: archives);
         if (commitResult.Status != WarmPrefixCheckpointCommitStatus.Committed)
             return commitResult;
 
@@ -585,7 +634,7 @@ public sealed class ContextCompactionService : IContextCompactionService
             sourceGeneration,
             targetGeneration);
 
-        return commitResult;
+        return commitResult with { ArchivedMessageCount = archives.Count };
     }
 
     /// <summary>
@@ -615,9 +664,13 @@ public sealed class ContextCompactionService : IContextCompactionService
         /// 条件更新会额外要求 **顺序 + 角色 + 正文 hash** 未变 —— 把版本条件纳入事务内 CAS，
         /// 而不只是「未覆盖」。为 null 时保持原语义（warm-prefix 的身份 CAS 在应用边界完成）。
         /// </summary>
-        IReadOnlyList<FrozenCoverageRow>? expectedRows = null)
+        IReadOnlyList<FrozenCoverageRow>? expectedRows = null,
+        IReadOnlyList<MessageEntity>? archiveRows = null)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        if (archiveRows is { Count: > 0 })
+            db.Messages.AddRange(archiveRows);
 
         db.Messages.Add(summaryMessage);
         db.CompactionCoverageManifests.Add(manifestEntity);

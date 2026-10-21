@@ -27,4 +27,8 @@ public sealed record ChatMessage(
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public string? SourceContentHash { get; init; }
+
+    /// <summary>Canonical ingress ID before envelope rendering; local provenance, never a provider field.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? SourceMessageId { get; init; }
 }

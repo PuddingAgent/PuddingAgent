@@ -403,7 +403,7 @@ public enum WarmPrefixCheckpointCommitStatus
     /// <summary>已提交：摘要行、覆盖标注、覆盖清单与代际在同一事务里写入成功。</summary>
     Committed,
 
-    /// <summary>该实现不支持持久化（默认实现）：调用方降级为内存-only。</summary>
+    /// <summary>该实现不支持持久化（默认实现）：调用方保留原始历史。</summary>
     Unsupported,
 
     /// <summary>会话行不存在（尚未落库的会话）：无可提交的持久基线。</summary>
@@ -434,15 +434,14 @@ public sealed record WarmPrefixCheckpointCommitRequest(
     int MeasuredTokensAfter,
     string Reason,
     /// <summary>
-    /// 被替换跨度的**内容键**（角色 + 正文）。与 <see cref="CoveredMessageIds"/> 并存，作为
-    /// **权威回退**：内存历史对象在归一化/渲染等环节会被复制，按引用或按内存表解析都可能失效，
-    /// 而库里的行是唯一权威。服务端只在「键 → 行」**唯一匹配**时才认，重复内容一律视为不可解析。
-    /// 全为 null/空则只按 id 解析（保持既有语义）。
+    /// 完整、有序的被替换消息。每条单独携带已解析的持久 ID；未知消息的完整原文必须与
+    /// 摘要原子归档，不能因一条原生工具消息未投影入转录表而丢掉整段的精确身份。
+    /// 提供时以此为覆盖来源；省略时只覆盖 CoveredMessageIds 指定的持久行。
     /// </summary>
-    IReadOnlyList<WarmPrefixSpanKey>? SpanKeys = null);
+    IReadOnlyList<WarmPrefixSourceMessage>? SourceMessages = null);
 
-/// <summary>跨度实体的内容键（用于在库里回退解析持久 MessageId）。</summary>
-public sealed record WarmPrefixSpanKey(string Role, string Content);
+/// <summary>未注入密钥的运行期消息及其精确持久身份。无 ID 不代表可丢弃：提交时需解析或归档。</summary>
+public sealed record WarmPrefixSourceMessage(ChatMessage Message, string? DurableMessageId = null);
 
 /// <summary>warm-prefix checkpoint 落库结果。</summary>
 public sealed record WarmPrefixCheckpointCommitResult(
@@ -450,7 +449,8 @@ public sealed record WarmPrefixCheckpointCommitResult(
     string? SummaryMessageId = null,
     int TargetGeneration = 0,
     int CoveredCount = 0,
-    IReadOnlyList<string>? ProblemMessageIds = null)
+    IReadOnlyList<string>? ProblemMessageIds = null,
+    int ArchivedMessageCount = 0)
 {
     public bool Committed => Status == WarmPrefixCheckpointCommitStatus.Committed;
 }

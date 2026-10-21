@@ -1019,6 +1019,118 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         Assert.AreEqual(1, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration);
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PreviousTurnNativeTools_AreDurableWhenNextTurnCompacts(bool streaming)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, messageCount: 24, charsPerMessage: 8_000);
+        }
+        var factory = new Factory(options);
+        var llm = new ScriptedLlmClient(
+            new LlmResponse(VariedText(100_000), [new ToolCall("previous-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
+            new LlmResponse(DoneJson, null),
+            new LlmResponse(VariedText(240_000), [new ToolCall("current-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
+            new LlmResponse(DoneJson, null))
+        {
+            SummaryResponseOverride = new LlmResponse(SummaryResponse, null) { FinishReason = "stop" },
+        };
+        var manager = CreateManager(factory);
+        var log = new CapturingLogger();
+        var service = CreateService(llm, new RecordingToolInvocationService(), manager,
+            new ContextUsageSnapshotStore(), factory, log);
+        var history = manager.GetOrCreateHistory(SessionId);
+        await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None);
+        history.Insert(0, new ChatMessage(ChatRole.System, "system"));
+        var request = CreateDispatchRequest() with
+        {
+            LlmConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192 },
+            CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
+            MessageId = "first-user",
+        };
+        async Task RunAsync(RuntimeDispatchRequest input)
+        {
+            if (streaming)
+                await foreach (var _ in service.ExecuteStreamAsync(input)) { }
+            else
+                await service.ExecuteAsync(input);
+        }
+        await RunAsync(request);
+        Assert.IsTrue(history.Any(m => m.ToolCallId == "previous-call"));
+        Assert.IsFalse(llm.Requests.Any(r => r.Any(m => m.Content?.Contains("compaction engine") == true)));
+        await RunAsync(request with { MessageId = "second-user", MessageText = "continue with the next step" });
+
+        var main = llm.Requests.Where(r => !r.Any(m => m.Content?.Contains("compaction engine") == true)).ToArray();
+        Assert.AreEqual(4, main.Length, string.Join("\n", log.Lines));
+        Assert.IsTrue(main.All(r => LlmRequestTextBudget.Measure(r, []) <= LlmRequestTextBudget.DeepSeekResponsesLimit));
+        Assert.IsTrue(history.Any(m => m.ToolCallId == "current-call"), "Current tool round stays verbatim.");
+        Assert.IsFalse(history.Any(m => m.ToolCallId == "previous-call"), "Previous tool round was summarized.");
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(1, (await verify.Sessions.SingleAsync()).CompactionGeneration);
+        var archives = await verify.Messages.Where(m => m.ContentType == "warm_prefix_source").ToListAsync();
+        Assert.IsTrue(archives.Any(m => m.Content!.Contains("previous-call")), "Native tool evidence must survive in the checkpoint transaction.");
+        Assert.IsTrue(archives.All(m => m.CompactedBy != null));
+        var restarted = CreateManager(factory);
+        var restored = await restarted.BuildContextFromDbAsync(SessionId, 1_000_000);
+        Assert.IsTrue(restored.Any(m => m.Content == SummaryResponse));
+        Assert.IsFalse(restored.Any(m => m.Content?.Contains("previous-call") == true), "Archived evidence is not replayed after restart.");
+    }
+
+    [TestMethod]
+    public async Task MissingExactSource_ReportsPositionAndCompactionId_WithoutSendingOversizedRequest()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, 16, 40_000);
+        }
+        var factory = new Factory(options);
+        var manager = CreateManager(factory);
+        var history = manager.GetOrCreateHistory(SessionId);
+        await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None);
+        history.Insert(0, new(ChatRole.System, "system"));
+        var llm = new ScriptedLlmClient(DoneJson)
+        {
+            SummaryResponseOverride = new(SummaryResponse, null),
+            OnSummaryRequestAsync = async () =>
+            {
+                // Execution may rehydrate a smaller tier window before planning. Remove
+                // its actual first selected source, not a row already outside that window.
+                var first = history.First(m => m.Role != ChatRole.System);
+                var sourceId = manager.ResolveDurableSpan(SessionId, [first]).MessageIds.Single();
+                await using var db = new MemoryDbContext(options);
+                await db.Messages.Where(m => m.MessageId == sourceId).ExecuteDeleteAsync();
+            },
+        };
+        var service = CreateService(llm, new RecordingToolInvocationService(), manager,
+            new ContextUsageSnapshotStore(), factory);
+        var request = CreateDispatchRequest() with
+        {
+            LlmConfig = new() { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192 },
+            CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
+        };
+        var frames = new List<ServerSentEventFrame>();
+        await foreach (var frame in service.ExecuteStreamAsync(request)) frames.Add(frame);
+        Assert.IsTrue(llm.Requests.All(r => r.Any(m => m.Content?.Contains("compaction engine") == true)));
+        var wire = System.Text.Json.JsonSerializer.Serialize(frames);
+        StringAssert.Contains(wire, "compaction_id");
+        StringAssert.Contains(wire, "compaction_selected_messages");
+        StringAssert.Contains(wire, "source[0]:");
+        StringAssert.Contains(wire, "missing_id");
+        await using var verify = new MemoryDbContext(options);
+        Assert.AreEqual(0, await verify.CompactionCoverageManifests.CountAsync());
+        Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.CompactedBy != null));
+    }
+
     // ── 装配 ────────────────────────────────────────────────────────────────
 
     private static RuntimeDispatchRequest CreateDispatchRequest(bool suppressAutoCompaction = true) => new()

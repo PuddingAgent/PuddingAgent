@@ -57,7 +57,7 @@
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
-| `ChatMessage.cs` + `LlmContentPart.cs` + `ChatMessageMultimodalNormalizer.cs` | 消息模型与多模态归一 | `ChatMessage`、`LlmContentPart` | `AgentReplyImageDirective.cs` | ADR-077 有序 typed 内容部件（text/image→Artifact 引用+detail）与 v1 信封 ContentPartsEnvelope；Gateway 渲染统一经 normalizer，旧 VisualArtifactIds 派生 original |
+| `ChatMessage.cs` + `LlmContentPart.cs` + `ChatMessageMultimodalNormalizer.cs` | 消息模型与多模态归一 | `ChatMessage`、`LlmContentPart` | `AgentReplyImageDirective.cs` | ADR-077 有序 typed 内容部件（text/image→Artifact 引用+detail）与 v1 信封 ContentPartsEnvelope；Gateway 渲染统一经 normalizer，旧 VisualArtifactIds 派生 original；SourceMessageId 是不发送给 provider 的入站来源身份 |
 | `LlmResponse.cs` | LLM 响应与终止原因 | `LlmResponse` | `LlmOptions.cs` | `FinishReason` 透传截断状态，部分摘要不得覆盖持久历史 |
 | `LlmContinuationState.cs` | Provider opaque output items 回放契约 | `LlmContinuationState` | `LlmResponse.cs` | 跨工具轮次回放 |
 | `LlmOptions.cs` | LLM 选项与请求归因（F1） | `LlmOptions`、`MeasureLlmRequest`、`CaptureLlmRequest` | `LlmResponse.cs` | 含最近请求的 ContextUsageSnapshot、Tokenizer 校准与工具 schema 的 UTF-8/GZIP 归因（不保存正文）；请求归因分离见本表后注 |
@@ -125,7 +125,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Runtime/PrefixCacheContracts.cs` | `prefix-v2` 请求前缀快照 |
 | `Runtime/LlmInvocationContracts.cs` | 统一 LLM invocation 合同；`Purpose` 以非模型可见方式区分 agent/approval/compaction 计费与诊断 |
 | `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同 |
-| `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约 |
+| `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约；WarmPrefixSourceMessage 携带完整运行期原文与精确持久 ID |
 
 **关键语义**
 

@@ -640,6 +640,7 @@ public sealed partial class AgentExecutionService
             AudioArtifactIds: request.AudioArtifactIds,
             ContentParts: BuildCurrentTurnContentParts(request, userContextPrefix))
         {
+            SourceMessageId = request.MessageId,
             // Legacy artifact-only input has no canonical typed-parts identity here.
             SourceContentHash = request.VisualArtifactIds is { Count: > 0 }
                 || request.AudioArtifactIds is { Count: > 0 }
@@ -2478,6 +2479,9 @@ public sealed partial class AgentExecutionService
         var durableCheckpoint = false;
         string? durableSummaryMessageId = null;
         string? durableSkipReason = null;
+        var unresolvedSourceCount = 0;
+        var archivedSourceCount = 0;
+        IReadOnlyList<string>? sourceProblems = null;
         await using (var compactionCommitLease =
             await _contextManager.AcquireCompactionCommitLeaseAsync(request.SessionId, ct))
         {
@@ -2505,14 +2509,12 @@ public sealed partial class AgentExecutionService
                 var spanResolution = _contextManager.ResolveDurableSpan(
                     request.SessionId,
                     verification.RemovedMessages ?? []);
-                // 内容键回退（权威在库侧：唯一匹配才认）：内存对象在归一化/渲染后会被复制，
-                // 按引用解析可能整体失效（流式路径实测 29 条全 unresolved）。
-                var spanKeys = (spanResolution.AllResolved ? [] : verification.RemovedMessages ?? [])
-                    .Select(m => new WarmPrefixSpanKey(m.Role.ToString(), m.Content ?? string.Empty))
-                    .ToArray();
+                var sources = _contextManager.CaptureCompactionSources(
+                    request.SessionId, verification.RemovedMessages ?? []);
+                unresolvedSourceCount = spanResolution.UnresolvedCount;
 
                 if (WarmPrefixDurableCommitDecision.ShouldAttempt(
-                        _contextCompactionService is not null, spanResolution, spanKeys.Length))
+                        _contextCompactionService is not null, spanResolution, sources.Count))
                 {
                     try
                     {
@@ -2530,11 +2532,17 @@ public sealed partial class AgentExecutionService
                                 TokensBefore: plan.InitialUsedTokens,
                                 MeasuredTokensAfter: verification.AfterSnapshot!.UsedTokens,
                                 Reason: plan.RequiresSynchronousProtection ? "hard_protection" : "soft_maintenance",
-                                SpanKeys: spanKeys),
+                                SourceMessages: sources),
                             ct);
                         (durableCheckpoint, durableSkipReason) =
                             WarmPrefixDurableCommitDecision.Interpret(commit);
                         durableSummaryMessageId = commit.SummaryMessageId;
+                        archivedSourceCount = commit.ArchivedMessageCount;
+                        sourceProblems = commit.ProblemMessageIds;
+                        _logger.LogInformation(
+                            "[AgentExec:Compaction] Source coverage session={Session} compactionId={CompactionId} selected={Selected} unresolved={Unresolved} archived={Archived} status={Status} problems={Problems}",
+                            request.SessionId, warmPrefixCompactionId, sources.Count, unresolvedSourceCount,
+                            archivedSourceCount, commit.Status, string.Join(",", sourceProblems ?? []));
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -2627,6 +2635,9 @@ public sealed partial class AgentExecutionService
                     sessionId = request.SessionId,
                     mode = "WarmPrefix",
                     stage = "rejected",
+                    unresolvedSourceCount,
+                    archivedSourceCount,
+                    sourceProblems,
                     reason = appliedRejectionReason,
                     applied = false,
                     outcome = rejectedDisposition.ToString(),
@@ -2657,7 +2668,16 @@ public sealed partial class AgentExecutionService
                 summaryStartedAt,
                 rejectedDisposition,
                 verifyDurationMs,
-                appliedRejectionReason);
+                appliedRejectionReason,
+                DiagnosticEvidence: new Dictionary<string, string>
+                {
+                    ["compaction_id"] = warmPrefixCompactionId,
+                    ["compaction_selected_messages"] = plan.RemovedMessageCount.ToString(),
+                    ["compaction_unresolved_sources"] = unresolvedSourceCount.ToString(),
+                    ["compaction_source_problems"] = string.Join(",", (sourceProblems ?? []).Take(8)),
+                    ["compaction_measured_after_bytes"] = verification.AppliedMessages is { } applied
+                        ? LlmRequestTextBudget.Measure(applied, llmTools).ToString() : "unavailable",
+                });
         }
 
         // 校验通过：内存历史已在临界区内替换完毕，这里只做日志与生命周期事件。

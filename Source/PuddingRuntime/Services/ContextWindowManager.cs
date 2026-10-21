@@ -20,8 +20,8 @@ public sealed record HistoryHydrationOutcome(
 
 /// <summary>
 /// 一串内存消息 → 持久 `MessageEntity.MessageId` 的解析结果（F2 覆盖标注的唯一依据）。
-/// <see cref="AllResolved"/> 为 false 表示存在**没有持久行**的消息：调用方必须放弃写
-/// `CompactedBy`/覆盖清单，绝不能只标注其中一部分去"凑齐"。
+/// <see cref="AllResolved"/> 为 false 表示存在尚未绑定持久行的消息：必须提供完整来源交给提交服务解析或原子归档，
+/// 绝不能只标注其中一部分去"凑齐"。
 /// </summary>
 internal sealed record DurableSpanResolution(
     bool AllResolved,
@@ -159,8 +159,8 @@ public sealed class ContextWindowManager
     /// 不继续持有已经离开历史的旧对象。
     /// </para>
     /// <para>
-    /// <b>未登记 = 该消息没有持久行</b>（例如本 Turn 新追加、尚未落库的消息），因此**不可**被
-    /// 覆盖标注吞掉。
+    /// 未登记可能是未投影的原生工具消息，也可能是复制后丢失引用身份。提交时必须带上完整原文，
+    /// 由服务端精确解析或与摘要一起原子归档，不能只覆盖已登记部分。
     /// </para>
     /// </summary>
     private void PublishDurableMessageIds(string sessionId, IReadOnlyList<(ChatMessage Message, string MessageId)> registrations)
@@ -187,8 +187,8 @@ public sealed class ContextWindowManager
     }
 
     /// <summary>
-    /// 解析一串内存消息对应的持久身份。`AllResolved == false` 表示其中有消息**没有持久行**，
-    /// 调用方**必须**据此放弃写 `CompactedBy`（错标等于静默隐藏真实消息）。
+    /// 解析一串内存消息已经登记的持久身份。未解析的消息由 CaptureCompactionSources 携带原文，
+    /// 交由提交服务解析或原子归档；不得把部分 ID 当作完整覆盖集合。
     /// </summary>
     internal DurableSpanResolution ResolveDurableSpan(string sessionId, IReadOnlyList<ChatMessage> span)
     {
@@ -213,6 +213,14 @@ public sealed class ContextWindowManager
         var map = _durableMessageIds.GetOrAdd(sessionId,
             _ => new ConcurrentDictionary<ChatMessage, string>(ReferenceEqualityComparer.Instance));
         map[checkpoint] = messageId;
+    }
+
+    internal IReadOnlyList<WarmPrefixSourceMessage> CaptureCompactionSources(
+        string sessionId, IReadOnlyList<ChatMessage> messages)
+    {
+        _durableMessageIds.TryGetValue(sessionId, out var ids);
+        return messages.Select(message => new WarmPrefixSourceMessage(message,
+            ids is not null && ids.TryGetValue(message, out var id) ? id : null)).ToArray();
     }
 
     /// <summary>

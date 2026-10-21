@@ -49,32 +49,36 @@ internal static class LlmRequestTextBudget
         => ResolveLimit(request) is > 0 and var limit && Measure(messages, tools) > limit;
 
     internal static Exception? Validate(RuntimeDispatchRequest request, IReadOnlyList<ChatMessage> messages,
-        IReadOnlyList<LlmToolDefinition> tools, string? compactionFailureReason = null)
+        IReadOnlyList<LlmToolDefinition> tools, string? compactionFailureReason = null,
+        IReadOnlyDictionary<string, string>? compactionEvidence = null)
     {
         var limit = ResolveLimit(request);
         if (limit <= 0) return null;
         var bytes = Measure(messages, tools);
         if (bytes <= limit) return null;
         const string message = "上下文整理未能将请求缩小到上传预算，已停止发送；原始会话仍完整保留。";
+        var evidence = new Dictionary<string, string>
+        {
+            ["estimated_request_text_bytes"] = bytes.ToString(),
+            ["request_text_budget_bytes"] = limit.ToString(),
+            ["tool_definition_bytes"] = MeasureTools(tools).ToString(),
+            ["system_message_bytes"] = MeasureMessages(messages.Where(m => m.Role == ChatRole.System).ToArray()).ToString(),
+            ["compaction_reason"] = compactionFailureReason ?? "no_applicable_compaction_span",
+            ["message_count"] = messages.Count.ToString(),
+            ["tool_count"] = tools.Count.ToString(),
+            ["dispatch_count"] = "0",
+            ["history_preserved"] = "true",
+        };
+        if (compactionEvidence is not null)
+            foreach (var pair in compactionEvidence)
+                evidence.TryAdd(pair.Key, pair.Value);
         return LlmFailureDiagnostics.Attach(new InvalidOperationException(message), new DiagnosticCause
         {
             Code = DiagnosticCauseCode.ContextCompactionRequired,
             Category = "local", Phase = DiagnosticPhaseKind.Build, Retryable = false,
             UserMessage = message,
             RemediationHint = "重试会重新尝试压缩；若仍失败，请检查本轮压缩日志及工具定义、系统提示词或受保护消息的体积。",
-            Rule = "request_text_budget",
-            Evidence = new Dictionary<string, string>
-            {
-                ["estimated_request_text_bytes"] = bytes.ToString(),
-                ["request_text_budget_bytes"] = limit.ToString(),
-                ["tool_definition_bytes"] = MeasureTools(tools).ToString(),
-                ["system_message_bytes"] = MeasureMessages(messages.Where(m => m.Role == ChatRole.System).ToArray()).ToString(),
-                ["compaction_reason"] = compactionFailureReason ?? "no_applicable_compaction_span",
-                ["message_count"] = messages.Count.ToString(),
-                ["tool_count"] = tools.Count.ToString(),
-                ["dispatch_count"] = "0",
-                ["history_preserved"] = "true",
-            },
+            Rule = "request_text_budget", Evidence = evidence,
         });
     }
 }

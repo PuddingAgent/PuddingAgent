@@ -100,7 +100,7 @@
 | `Services/ContextAssemblyService.cs` | 上下文合成的稳定对外契约 | `IContextAssemblyService` | `Services/ContextPipeline.cs` | — |
 | `Services/ContextBudgetAllocator.cs` | 上下文预算的算术与压缩档位 | `ContextBudgetAllocator` | `Services/ContextWindowManager.cs` | — |
 | `Services/ContextCompactionOptions.cs` | 上下文压缩的配置选项 | `ContextCompactionOptions` | `Services/ContextCompactionService.cs` | — |
-| `Services/ContextCompactionService.cs` | 上下文压缩执行与覆盖清单写入 | `IContextCompactionService` | `Services/CurrentTurnCompactionGuard.cs` | 围栏 Turn 落入候选时须在任何写入前 fail-closed |
+| `Services/ContextCompactionService.cs` | 上下文压缩执行与覆盖清单写入 | `IContextCompactionService` | `Services/CurrentTurnCompactionGuard.cs` | 围栏 Turn 落入候选时须在任何写入前 fail-closed；warm-prefix 按逐条 ID 覆盖，未投影运行期原文与摘要、清单、代次原子归档 |
 | `Services/ContextCompactionService.TokenEstimation.cs` | 压缩服务的 Token 估算（partial） | `ContextCompactionService` | `Services/ContextCompactionService.cs` | — |
 | `Services/ContextCompactionStrategy.cs` | 压缩策略的选择与分级填充 | `ContextCompactionStrategy` | `Services/ContextWindowManager.cs` | — |
 | `Services/ContextHealthEvaluator.cs` | 上下文健康度的评估 | `ContextHealthEvaluator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 占用率分母 = 模型窗口、门禁分母 = 有效输入窗口，两者不可混用；容量分量与来源须如实输出，回退输出预算单列而不得冒充用户预算（见下「关键语义」） |
@@ -110,7 +110,7 @@
 | `Services/AgentPromptSnapshot.cs` | 推理使用的实例提示词快照 | `AgentPromptSnapshot` | `Services/SystemPromptBuilder.cs` | 按 manifest 文档引用读取 UTF-8；分层与直接构建共用实例名称、角色和提示词来源 |
 | `Services/ContextPipelineOrchestrator.cs` | 上下文组装编排与分层占比快照 | `ContextPipelineOrchestrator` | `Services/ContextPipelineLayers.cs` | — |
 | `Services/ContextWindowConstants.cs` | 上下文窗口的命名常量 | `ContextWindowConstants` | `Services/ContextWindowManager.cs` | — |
-| `Services/ContextWindowManager.cs` | 上下文窗口、水合及持久消息身份登记 | `ContextWindowManager` | `Services/ContextCompactionService.cs` | 水合保留精确引用身份与暖历史登记；新 checkpoint 登记持久 ID；压缩事件共用 compactionId |
+| `Services/ContextWindowManager.cs` | 上下文窗口、水合及持久消息身份登记 | `ContextWindowManager` | `Services/ContextCompactionService.cs` | 水合保留精确引用身份与暖历史登记；新 checkpoint 登记持久 ID；CaptureCompactionSources 保留完整有序消息与逐条身份；压缩事件共用 compactionId |
 | `Services/ControllerRoutedLlmClient.cs` | 经 Controller 中转的 LLM 客户端 | `ControllerRoutedLlmClient` | `Services/LlmInvocationService.cs` | — |
 | `Services/CroppedLayersProvider.cs` | 用 Flash 模型裁剪记忆原始层 | `CroppedLayersProvider` | `Models/MemoryCropModels.cs` | — |
 | `Services/CurrentTurnCompactionGuard.cs` | 当前轮是否落入压缩候选的守卫 | `CurrentTurnCompactionGuard` | `Services/ContextCompactionService.cs` | — |

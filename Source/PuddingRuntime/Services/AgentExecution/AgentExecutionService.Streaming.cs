@@ -1,4 +1,4 @@
-﻿using PuddingCode.Core;
+using PuddingCode.Core;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
@@ -632,6 +632,7 @@ public sealed partial class AgentExecutionService
             for (int round = 0; round < maxRounds; round++)
             {
                 string? compactionFailureReason = null;
+                IReadOnlyDictionary<string, string>? compactionEvidence = null;
                 // Usage is per provider invocation. Never carry a previous round's usage
                 // into a round whose provider omitted usage.
                 usage = null;
@@ -812,6 +813,7 @@ public sealed partial class AgentExecutionService
                             round,
                             ct);
                         compactionFailureReason = compaction.SkipReason;
+                        compactionEvidence = compaction.DiagnosticEvidence;
                         turnTimings.RegisterCompactionAttempt(
                             compaction.DurationMs,
                             compaction.Compacted,
@@ -922,6 +924,7 @@ public sealed partial class AgentExecutionService
                                 round,
                                 ct);
                             compactionFailureReason = hard.SkipReason;
+                            compactionEvidence = hard.DiagnosticEvidence;
                             turnTimings.RegisterCompactionAttempt(hard.DurationMs, hard.Compacted, hard.DeferredSoft);
                             hardProtectionAttempted = hard.Plan is not null;
                             if (hard.Compacted)
@@ -1055,7 +1058,7 @@ public sealed partial class AgentExecutionService
                     ct: CancellationToken.None);
                 // Final preflight also covers protected/current input and post-compaction injection.
                 // Failed compaction must never fall through to another oversized upload.
-                Exception? llmException = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools, compactionFailureReason);
+                Exception? llmException = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools, compactionFailureReason, compactionEvidence);
                 try
                 {
                     while (llmException is null)
