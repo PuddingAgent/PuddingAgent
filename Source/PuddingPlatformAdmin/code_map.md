@@ -338,13 +338,13 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 
 | 文件 | 职责与边界 |
 |------|------------|
-| `src/pages/chat/components/CompactionCard.tsx` | 压缩事实卡：由服务端确认准备、就绪、等待、保存阶段及后台标志；新消息仍可提交，只有确认活跃时显示耗时动画，不编造进度百分比；完成/失败/待确认保持静态 |
+| `src/pages/chat/components/CompactionCard.tsx` | 压缩事实卡：后台准备/请求暂缓有独立文案与层级；确认活跃才显示归拢动效，就绪即静止；完成收为可展开记录，诊断与计时不进入状态播报区 |
 | `src/pages/chat/components/processPreview.ts` | `CurrentRunActivity.variant='compaction'` 标记压缩事实（来源：`subconscious_step.status==='compacting'`）；`AgentMessageBubble` 按该标记分流到 `CompactionCard`，通用活动卡只承载其余 system 阶段事实 |
 | `src/pages/chat/components/AgentMessageBubble.tsx` | 压缩态下不再叠加 turn 级 `TurnStatus` 行：否则同一张卡同时出现「正在压缩上下文」与「正在生成回答 · 已运行 Nm」两条互斥叙述，被读成“压缩完了又在生成” |
 | `src/pages/chat/components/IntentConsole.tsx` / `ComposerStatusDetails.tsx` | `status=thinking` 文案统一为「正在思考…」；**不得再用「整理上下文」**，该词与压缩共用同一批词，用户会读成正在压缩。⚠️ 例外（2026-10-07）：容量压力行按修复方案 §1 用「建议整理上下文」，它是**容量信号**而非运行态文案；若复核认为仍会与压缩混淆，只改 `SERVICE_LABEL.capacity` 一处 |
 | `src/pages/chat/components/ContextUsageRing.tsx` | 上下文面板「压缩」行只有文案等于 `COMPACTION_RUNNING_LABEL` 时才带呼吸点；「上次压缩 / 压缩失败」是终态事实，不加动效。两个分母必须各自标注：`used/contextWindowTokens` = 模型窗口占用（圆环弧长与色阶口径），`used/effectiveWindowTokens` = 有效输入压力（独立成行，分母缺失时整行不渲染，不得拿总窗口顶替） |
 | `src/pages/chat/components/inputUnavailable.ts` | 输入不可用来源→文案映射与叶子模块约束（见下「关键语义」） |
-| `src/pages/chat/styles/panel.styles.ts` | 压缩卡形态与 `compactionSweep / compactionGlyph / compactionBreathe / compactionSettle` 关键帧；复用 `--accent-purple` / `--earth-brown` 暖色 token，不引入新色板 |
+| `src/pages/chat/styles/panel.styles.ts` | 压缩卡、阶段序列和折叠详情；`compactionFoldTop/Bottom` 只移动图标层，`compactionBreathe` 用于容量面板；复用浅深色语义 token，支持窄屏、键盘焦点与减少动画偏好 |
 
 **关键语义**
 
