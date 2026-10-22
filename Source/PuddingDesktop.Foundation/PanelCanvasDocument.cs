@@ -98,6 +98,28 @@ public static class PanelCanvasDocument
           var draft = null;      // 拖拽中的轨迹（涂鸦笔 / 箭头）
           var undoStack = [];    // 每步操作前的快照；容量 50
 
+          // 每个工具一个光标。不区分的话整层都是十字星，用户看不出「现在拿的是笔还是框」。
+          // 涂鸦用自定义 SVG 画笔：内置光标里没有笔，而 encodeURIComponent 保证
+          // data: 里只出现合法字符（引号、尖括号、# 全部转义）。浏览器不认时退回十字星。
+          var PEN_CURSOR = 'url("data:image/svg+xml;charset=utf-8,'
+            + encodeURIComponent(
+              '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
+              + '<path d="M2 22l1-4L16.4 4.6a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L6 21z" '
+              + 'fill="#E4572E" stroke="#FFFFFF" stroke-width="1.3" stroke-linejoin="round"/></svg>')
+            + '") 2 22, crosshair';
+
+          var CURSORS = {
+            box: 'crosshair',
+            point: 'crosshair',
+            arrow: 'crosshair',
+            text: 'text',
+            pen: PEN_CURSOR
+          };
+
+          function applyCursor() {
+            if (layer) layer.style.cursor = CURSORS[tool] || 'crosshair';
+          }
+
           function pushUndo() {
             undoStack.push(JSON.stringify(items));
             if (undoStack.length > 50) undoStack.shift();
@@ -158,18 +180,28 @@ public static class PanelCanvasDocument
           // 文字工具：点击位置后弹输入框。不能用 window.prompt ——
           // WebView2 默认把原生对话框拦下（ScriptDialogOpening），点了没反应。
           function askText(x, y) {
+            // 输入框挂在**图层**上并沿用图层坐标。早前挂在 body 上却传图层坐标
+            // （已减去图片左上角），输入框会跑到页面左上角 —— 用户看到的是
+            // 「点在这儿、框在别处」，输入的字也落在错的位置。
+            var inputWidth = 250;
+            var limitX = box ? Math.max(0, box.width - inputWidth - 6) : 0;
+            var left = Math.min(Math.max(0, x), limitX);
+            var top = y + 8;
+            // 靠近下边缘时翻到点击点上方，别让输入框掉出图片。
+            if (box && top + 32 > box.height) top = Math.max(0, y - 36);
+
             var wrap = document.createElement('div');
             wrap.setAttribute('data-pudding-text-input', '');
-            wrap.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;'
+            wrap.style.cssText = 'position:absolute;left:' + left + 'px;top:' + top + 'px;'
               + 'z-index:2147483647;pointer-events:auto';
             var input = document.createElement('input');
             input.type = 'text';
             input.placeholder = '要改什么？（Enter 确认，Esc 取消）';
-            input.style.cssText = 'width:240px;padding:5px 8px;border:1px solid #3B6FA8;'
-              + 'border-radius:6px;font-size:12px;background:#fff;color:#222;'
-              + 'box-shadow:0 2px 8px rgba(0,0,0,.15)';
+            input.style.cssText = 'width:' + inputWidth + 'px;padding:5px 8px;'
+              + 'border:1px solid #E4572E;border-radius:6px;font-size:12px;'
+              + 'background:#fff;color:#222;box-shadow:0 2px 8px rgba(0,0,0,.18)';
             wrap.appendChild(input);
-            document.body.appendChild(wrap);
+            ensureLayer().appendChild(wrap);
             input.focus();
 
             function discard() {
@@ -183,7 +215,9 @@ public static class PanelCanvasDocument
               var value = (input.value || '').trim();
               if (!value) { discard(); return; }
               wrap.remove();
-              items.push({ kind: 'text', label: value, x: x, y: y });
+              // 落点用输入框左上角：**在哪儿输入，字就出现在哪儿**。
+              // 屏幕位置与 take() 报给模型的位置必须是同一个。
+              items.push({ kind: 'text', label: value, x: left, y: top });
               paint();
             }
 
@@ -254,8 +288,20 @@ public static class PanelCanvasDocument
                 ctx.closePath();
                 ctx.fill();
               } else if (it.kind === 'text' && it.label) {
-                ctx.font = Math.max(16, Math.round(outW / 40)) + 'px sans-serif';
-                ctx.fillText(it.label, it.x * sx, it.y * sy);
+                // 与屏幕对齐：左上角锚点 + textBaseline:'top'。字号按缩放比例走 ——
+                // 屏幕上 12px 的字，烧到 2048px 的图上必须跟着放大，否则模型看不清。
+                var fontPx = Math.max(12, Math.round(12 * sx));
+                ctx.font = fontPx + 'px sans-serif';
+                ctx.textBaseline = 'top';
+                var tx = it.x * sx, ty = it.y * sy;
+                var textW = ctx.measureText(it.label).width;
+                // 白底：直接往照片上写字，字色与画面同色时会看不见。
+                ctx.fillStyle = 'rgba(255,255,255,.86)';
+                ctx.fillRect(tx - 3, ty - 2, textW + 6, Math.round(fontPx * 1.4) + 4);
+                ctx.fillStyle = '#B23A16';
+                ctx.fillText(it.label, tx, ty);
+                ctx.textBaseline = 'alphabetic';
+                ctx.fillStyle = '#E4572E';
               }
             });
 
@@ -331,12 +377,14 @@ public static class PanelCanvasDocument
             imageEl = im;
             box = r;
             var l = ensureLayer();
-            l.style.cssText = ['position:fixed','z-index:2147483647','cursor:crosshair',
+            l.style.cssText = ['position:fixed','z-index:2147483647',
               'box-sizing:border-box','background:rgba(59,111,168,.06)',
               'border:1px dashed rgba(59,111,168,.85)',
               'left:' + r.left + 'px','top:' + r.top + 'px',
               'width:' + r.width + 'px','height:' + r.height + 'px',
               'display:' + (active ? 'block' : 'none')].join(';');
+            // cssText 整段赋值会清掉内联 cursor，必须在这之后按当前工具重设。
+            applyCursor();
             paint();
             return true;
           }
@@ -363,7 +411,21 @@ public static class PanelCanvasDocument
               var d = document.createElement('div');
               var s = ['position:absolute','pointer-events:none',
                 'border:1.5px solid #3B6FA8','background:rgba(59,111,168,.14)'];
-              if (it.kind === 'box') {
+              if (it.kind === 'text') {
+                // 文字必须**画出来**。早期实现让它落进下面的点分支：屏幕上只剩一个
+                // 12px 半透明圆点，而烧录里却有字 —— 用户以为没生效又写一遍，
+                // 导出图于是出现两份文字。
+                // 左上角就是锚点，与 compose() 的 textBaseline:'top' 对齐。
+                d.setAttribute('data-pudding-text', '');
+                d.textContent = it.label;
+                s = ['position:absolute','pointer-events:none',
+                  'left:' + it.x + 'px','top:' + it.y + 'px',
+                  'max-width:220px','padding:2px 6px','box-sizing:border-box',
+                  'font:12px/1.35 "Segoe UI","Microsoft YaHei",sans-serif',
+                  'color:#B23A16','background:rgba(255,255,255,.88)',
+                  'border:1px solid #E4572E','border-radius:4px',
+                  'white-space:pre-wrap','word-break:break-word'];
+              } else if (it.kind === 'box') {
                 s.push('left:' + Math.min(it.x1, it.x2) + 'px');
                 s.push('top:' + Math.min(it.y1, it.y2) + 'px');
                 s.push('width:' + Math.abs(it.x2 - it.x1) + 'px');
@@ -479,6 +541,42 @@ public static class PanelCanvasDocument
           // 标注会静默落到错误位置，用户只会在生成图错位时才发现。
           function resync() { if (active) sync(); }
 
+          // 快捷键只能在页面里做：XAML 的键盘加速键收不到 WebView2 内部的按键，
+          // 而这里的键位只对「正在标注」有意义，本来就该用 active 收窄。
+          // 页面改了工具/开关后由宿主读 state() 纠正选中态，页面不向宿主推任何消息。
+          var TOOL_KEYS = { v: 'box', p: 'point', b: 'pen', a: 'arrow', t: 'text' };
+
+          function onKey(e) {
+            if (!active) return;
+            var t = e.target;
+            // 正在输入（文字标注框、或页面自带的搜索框）时不抢键。
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+              return;
+            }
+            var key = (e.key || '').toLowerCase();
+            if (e.ctrlKey || e.metaKey) {
+              if (key === 'z') { e.preventDefault(); undo(); }
+              return;
+            }
+            if (key === 'escape') {
+              e.preventDefault();
+              window.puddingAnnotation.disable();
+              return;
+            }
+            if (key === 'delete' || key === 'backspace') {
+              if (!items.length) return;
+              e.preventDefault();
+              pushUndo();
+              items.pop();
+              paint();
+              return;
+            }
+            if (TOOL_KEYS[key]) {
+              e.preventDefault();
+              window.puddingAnnotation.setTool(TOOL_KEYS[key]);
+            }
+          }
+
           function bind(l) {
             if (bound) return;
             bound = true;
@@ -489,6 +587,8 @@ public static class PanelCanvasDocument
             l.addEventListener('pointercancel', onUp);
             // 拖到图片外面松手也要落一个框，否则越界的拖拽会默默消失。
             document.addEventListener('pointerup', onUp);
+            // capture：文字输入框自己也会 stopPropagation，靠冒泡阶段就收不到 Ctrl+Z。
+            document.addEventListener('keydown', onKey, true);
             // capture=true 才能收到内部滚动容器的 scroll（scroll 不冒泡）。
             window.addEventListener('scroll', resync, true);
             window.addEventListener('resize', resync);
@@ -508,9 +608,20 @@ public static class PanelCanvasDocument
               tool = String(name || 'box');
               draft = null;
               start = null;
+              applyCursor();
               return tool;
             },
             getTool: function () { return tool; },
+            // 现状快照。快捷键在页面里改工具、按 Esc 退出标注，宿主都不知道；
+            // 宿主读它来纠正工具栏的选中态（页面不主动推消息）。
+            state: function () {
+              return {
+                tool: tool,
+                active: active,
+                count: items.length,
+                canUndo: undoStack.length > 0
+              };
+            },
             undo: undo,
             canUndo: function () { return undoStack.length > 0; },
             // 返回带笔迹的 PNG dataURL；形式 1（任意标记）靠它。

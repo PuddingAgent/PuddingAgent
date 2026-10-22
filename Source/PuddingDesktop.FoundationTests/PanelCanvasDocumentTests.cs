@@ -177,4 +177,58 @@ public sealed class PanelCanvasDocumentTests
         Assert.Throws<ArgumentNullException>(
             () => PanelCanvasDocument.WrapForExport(null!, WorkbenchColorScheme.Light));
     }
-}
+
+    [Fact]
+    public void Annotation_layer_renders_text_marks_instead_of_a_bare_dot()
+    {
+        // 实测缺陷：text 项掉进 point 分支，屏幕上只剩一个 12px 半透明圆点，
+        // 而 compose() 里有字 —— 导出图有字、屏幕没字。用户以为没生效又写一遍，
+        // 导出图于是出现两份重复文字。这两个标记是「看得见」的唯一保证。
+        var html = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("data-pudding-text", html, StringComparison.Ordinal);
+        Assert.Contains("d.textContent = it.label", html, StringComparison.Ordinal);
+        // 锚点必须与 compose() 的 textBaseline:'top' 一致，否则屏幕与烧录错位。
+        Assert.Contains("textBaseline = 'top'", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Annotation_layer_switches_the_cursor_per_tool()
+    {
+        // 不区分时整层都是十字星，用户看不出「现在拿的是笔还是框」。
+        var html = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("var CURSORS", html, StringComparison.Ordinal);
+        Assert.Contains("function applyCursor", html, StringComparison.Ordinal);
+        // 涂鸦用自定义 SVG 画笔：内置光标里没有笔。data: URL 必须转义，
+        // 否则引号/尖括号会截断 CSS 值。
+        Assert.Contains("encodeURIComponent", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Keyboard_shortcuts_reach_the_layer_and_do_not_hijack_typing()
+    {
+        // XAML 的键盘加速键收不到 WebView2 内部的按键，快捷键只能做在页面里。
+        // 但正在输入文字标注时必须让键过去，否则用户打不出 b。
+        var html = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("var TOOL_KEYS", html, StringComparison.Ordinal);
+        Assert.Contains("addEventListener('keydown', onKey, true)", html, StringComparison.Ordinal);
+        // 页面自己改工具后要经过同一入口，才会顺带刷新光标。
+        Assert.Contains("puddingAnnotation.setTool(TOOL_KEYS[key])", html, StringComparison.Ordinal);
+        Assert.Contains("t.isContentEditable", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Annotation_layer_exposes_a_state_snapshot_for_the_host()
+    {
+        // 快捷键在页面里改了工具、按 Esc 退出标注，宿主都不知道；宿主隔一会儿读一次
+        // 快照来纠正按钮选中态 —— 不需要消息桥，页面也不向宿主推任何东西。
+        var html = PanelCanvasDocument.WrapForEmbedding(Content, WorkbenchColorScheme.Light);
+
+        Assert.Contains("state: function ()", html, StringComparison.Ordinal);
+        Assert.Contains("canUndo: undoStack.length > 0", html, StringComparison.Ordinal);
+        // 文字输入框挂在图层上：早前挂 body 却传图层坐标，框会跑到页面左上角。
+        Assert.Contains("ensureLayer().appendChild(wrap)", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("document.body.appendChild(wrap)", html, StringComparison.Ordinal);
+    }}
