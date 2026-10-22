@@ -37,7 +37,8 @@ public sealed record CandidateSelectionResult(
     IReadOnlyList<string> RetainedSuffixIdentities,
     string SourceGeneration,
     string SourceRevision,
-    string? Fingerprint)
+    string? Fingerprint,
+    ContextSummaryAllowance? SummaryAllowance = null)
 {
     internal static CandidateSelectionResult NotCreated(string reason, int initialUsedTokens) =>
         new(false, reason, -1, 0, 0, initialUsedTokens, initialUsedTokens,
@@ -50,8 +51,8 @@ public sealed record CandidateSelectionResult(
 /// 硬不变量：
 /// ① 前导 System 消息不可移除；
 /// ② 最后 <see cref="CandidateSelectionOptions.ProtectedTailMessages"/> 条不可移除；
-/// ③ 当前用户轮（最后一条 User 及其之后）不可移除；
-/// ④ 只按**完整会话单元**移除（不会把 tool call 与它的 tool result 拆开，也不会跨 User 边界拼接）。
+/// ③ 当前用户输入不可移除；已完成执行单元可压缩；
+/// ④ 只按**完整历史轮/执行单元**移除（不会把 tool call 与它的 tool result 拆开，也不会跨 User 边界拼接）。
 /// </para>
 /// </summary>
 public static class ContextCandidateSelector
@@ -73,72 +74,120 @@ public static class ContextCandidateSelector
         string routeVersion,
         string toolSpecVersion,
         long sourceGeneration,
-        string sourceRevision)
+        string sourceRevision,
+        ContextRequestBudget? budget = null)
     {
         ArgumentNullException.ThrowIfNull(messages);
         ArgumentNullException.ThrowIfNull(capacity);
         ArgumentNullException.ThrowIfNull(options);
 
-        var working = messages.ToList();
-        var initialUsed = SumUsed(working, nonMessageTokens);
-        var originalLeadingSystemCount = working.TakeWhile(m => m.Role == ContextMessageRole.System).Count();
+        budget ??= new ContextRequestBudget();
+        var initialUsed = SumUsed(messages, nonMessageTokens);
+        var initialBytes = messages.Sum(m => m.TextBytes) + budget.NonMessageTextBytes;
         var limit = capacity.EffectiveInputTokens;
-        var ratio = options.TriggerRatio is > 0 and <= 1 ? options.TriggerRatio : 1.0;
-        var softTrigger = (int)Math.Ceiling(limit * ratio);
-        if (initialUsed < softTrigger)
+        var textExceeded = budget.MaxTextBytes > 0 && initialBytes > budget.MaxTextBytes;
+        if (initialUsed < limit * Math.Clamp(options.TriggerRatio, 0.05, 1) && !textExceeded)
             return CandidateSelectionResult.NotCreated("below_soft_threshold", initialUsed);
 
-        var targetRatio = Math.Clamp(
-            options.TargetRatio,
-            0.05,
-            Math.Clamp(options.TriggerRatio, 0.05, 1.0));
-        var target = (int)Math.Floor(limit * targetRatio);
-        var protectedTailCount = Math.Max(0, options.ProtectedTailMessages);
+        var target = limit * Math.Clamp(options.TargetRatio, 0.05, 1);
+        var textTarget = budget.MaxTextBytes * Math.Clamp(options.TargetRatio, 0.05, 1);
+        var tailStart = Math.Max(0, messages.Count - Math.Max(1, options.ProtectedTailMessages));
+        var currentUser = -1;
+        for (var i = 0; i < messages.Count; i++)
+            if (messages[i].Role == ContextMessageRole.User) currentUser = i;
 
-        var removed = new List<ContextMessageShape>();
-        while (SumUsed(working, nonMessageTokens) > target && TryRemoveOldestUnit(working, protectedTailCount, out var unit))
+        // System/current input/pending batches are barriers. A candidate is one exact contiguous
+        // span, including completed execution units within the active turn. Never bridge a barrier.
+        var runs = new List<List<(int Start, int End)>>();
+        List<(int Start, int End)>? run = null;
+        for (var i = 0; i < messages.Count;)
         {
-            removed.AddRange(unit);
+            var end = i + 1;
+            if (messages[i].Role == ContextMessageRole.User && i != currentUser)
+            {
+                while (end < messages.Count && messages[end].Role is not
+                    (ContextMessageRole.User or ContextMessageRole.System)) end++;
+            }
+            else if (messages[i].Role == ContextMessageRole.Assistant)
+            {
+                while (end < messages.Count && messages[end].Role == ContextMessageRole.Tool) end++;
+            }
+            var eligible = i != currentUser && end <= tailStart
+                && messages[i].Role is not (ContextMessageRole.System or ContextMessageRole.Tool)
+                && HasCompleteToolBatches(messages, i, end);
+            if (eligible)
+            {
+                if (run is null) { run = []; runs.Add(run); }
+                run.Add((i, end));
+            }
+            else run = null;
+            i = end;
         }
 
-        if (removed.Count == 0)
-            return CandidateSelectionResult.NotCreated("nothing_removable", initialUsed);
+        CandidateSelectionResult? best = null;
+        double bestScore = double.NegativeInfinity;
+        foreach (var units in runs)
+        {
+            var from = units[0].Start;
+            foreach (var unit in units)
+            {
+                var removed = messages.Skip(from).Take(unit.End - from).ToArray();
+                var removedTokens = removed.Sum(m => Math.Max(0, m.TokenEstimate));
+                var removedBytes = removed.Sum(m => m.TextBytes);
+                var projected = initialUsed - removedTokens;
+                var retainedBytes = initialBytes - removedBytes;
+                var tokenAllowance = Math.Max(0, Math.Min(Math.Min(budget.MaxSummaryTokens, removedTokens / 4),
+                    limit - projected - budget.CheckpointWrapperTokens));
+                var byteAllowance = budget.MaxTextBytes > 0
+                    ? Math.Max(0, Math.Min(removedBytes / 4,
+                        budget.MaxTextBytes - retainedBytes - budget.CheckpointWrapperBytes))
+                    : long.MaxValue;
+                // UTF-8 / JSON expansion is estimated conservatively here; final serialized
+                // measurement is authoritative, never assume tokens and bytes are interchangeable.
+                if (budget.MaxTextBytes > 0)
+                    tokenAllowance = (int)Math.Min(tokenAllowance, byteAllowance / 8);
+                var allowance = new ContextSummaryAllowance(tokenAllowance, byteAllowance, retainedBytes);
+                var fits = tokenAllowance >= 16;
+                var meetsTarget = projected + tokenAllowance + budget.CheckpointWrapperTokens <= target
+                    && (!textExceeded || retainedBytes + Math.Min(byteAllowance, tokenAllowance * 8L)
+                        + budget.CheckpointWrapperBytes <= textTarget);
+                var score = (fits ? 10 : 0) + (meetsTarget ? 10 : 0)
+                    + (textExceeded ? (double)removedBytes / initialBytes : (double)removedTokens / Math.Max(1, initialUsed));
+                if (score > bestScore)
+                {
+                    var suffix = messages.Skip(unit.End).ToArray();
+                    best = new CandidateSelectionResult(true, "candidate_created", from, removed.Length,
+                        removedTokens, initialUsed, projected, removed,
+                        messages.Take(from).Concat(suffix).ToArray(), suffix.Select(m => m.Identity).ToArray(),
+                        sourceGeneration.ToString(), sourceRevision,
+                        ComputeFingerprint(sourceGeneration, sourceRevision, routeVersion, toolSpecVersion, removed, suffix),
+                        allowance);
+                    bestScore = score;
+                }
+                if (fits && meetsTarget) break;
+            }
+        }
+        return best ?? CandidateSelectionResult.NotCreated("nothing_removable", initialUsed);
+    }
 
-        var leadingSystemCount = working.TakeWhile(m => m.Role == ContextMessageRole.System).Count();
-        if (leadingSystemCount == 0 || working.Count <= leadingSystemCount)
-            return CandidateSelectionResult.NotCreated("protected_only", initialUsed);
-
-        var retained = working.ToArray();
-        // CAS/指纹都用「跨度之后的后缀」：保留前缀（前导 system）不在跨度之后，不参与后缀比对，
-        // 否则用全量 retained 构造的描述符会与 Validate 的 afterSpan 永远不等。
-        var retainedSuffix = working.Skip(leadingSystemCount).ToArray();
-        var protectedTail = ComputeProtectedTail(working, leadingSystemCount, protectedTailCount);
-        var projected = SumUsed(working, nonMessageTokens);
-        var fingerprint = ComputeFingerprint(
-            sourceGeneration,
-            sourceRevision,
-            routeVersion,
-            toolSpecVersion,
-            removed,
-            retainedSuffix);
-
-        return new CandidateSelectionResult(
-            true,
-            "candidate_created",
-            // 移除总是发生在 system 前缀之后，因此被替换跨度在原列表里的起点就是前导 system 条数。
-            originalLeadingSystemCount,
-            removed.Count,
-            removed.Sum(m => Math.Max(0, m.TokenEstimate)),
-            initialUsed,
-            projected,
-            removed,
-            // 保留侧记录**完整后缀**（中间保留段 + 受保护尾部）：提交前要求它逐位不变，
-            // 这样「尾部之前插入/删除消息」也会让旧候选失效，而不只是「尾部被追加」。
-            retained,
-            retainedSuffix.Select(m => m.Identity).ToArray(),
-            sourceGeneration.ToString(),
-            sourceRevision,
-            fingerprint);
+    private static bool HasCompleteToolBatches(IReadOnlyList<ContextMessageShape> messages, int start, int end)
+    {
+        var pending = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = start; i < end; i++)
+        {
+            var message = messages[i];
+            if (message.Role == ContextMessageRole.Tool)
+            {
+                if (message.ToolResultId is null || !pending.Remove(message.ToolResultId)) return false;
+            }
+            else
+            {
+                if (pending.Count != 0) return false;
+                foreach (var id in message.ToolCallIds ?? [])
+                    if (string.IsNullOrEmpty(id) || !pending.Add(id)) return false;
+            }
+        }
+        return pending.Count == 0;
     }
 
     /// <summary>
@@ -186,67 +235,4 @@ public static class ContextCandidateSelector
         return total;
     }
 
-    /// <summary>
-    /// 移除最旧的一个完整会话单元。保护规则与硬预算守卫同源：
-    /// 不跨 User/System 边界拼接，不越过受保护尾部，不把 tool call 与其 result 拆开。
-    /// </summary>
-    private static bool TryRemoveOldestUnit(
-        List<ContextMessageShape> messages,
-        int protectedTailCount,
-        out List<ContextMessageShape> removedUnit)
-    {
-        removedUnit = [];
-        var firstRemovable = messages.FindIndex(m => m.Role != ContextMessageRole.System);
-        if (firstRemovable < 0)
-            return false;
-
-        var protectedTailStart = ComputeProtectedTailStart(messages, firstRemovable, protectedTailCount);
-        if (firstRemovable >= protectedTailStart)
-            return false;
-
-        var removeEnd = firstRemovable + 1;
-        while (removeEnd < messages.Count
-            && messages[removeEnd].Role is not (ContextMessageRole.User or ContextMessageRole.System))
-        {
-            removeEnd++;
-        }
-
-        if (removeEnd > protectedTailStart)
-            return false;
-
-        removedUnit = messages.GetRange(firstRemovable, Math.Max(1, removeEnd - firstRemovable));
-        messages.RemoveRange(firstRemovable, Math.Max(1, removeEnd - firstRemovable));
-        return true;
-    }
-
-    private static int ComputeProtectedTailStart(
-        IReadOnlyList<ContextMessageShape> messages,
-        int firstRemovable,
-        int protectedTailCount)
-    {
-        var protectedTailStart = Math.Max(firstRemovable, messages.Count - protectedTailCount);
-        var currentUser = -1;
-        for (var i = messages.Count - 1; i >= 0; i--)
-        {
-            if (messages[i].Role != ContextMessageRole.User)
-                continue;
-            currentUser = i;
-            break;
-        }
-
-        if (currentUser >= 0)
-            protectedTailStart = Math.Min(protectedTailStart, currentUser);
-        return protectedTailStart;
-    }
-
-    private static IReadOnlyList<ContextMessageShape> ComputeProtectedTail(
-        IReadOnlyList<ContextMessageShape> messages,
-        int leadingSystemCount,
-        int protectedTailCount)
-    {
-        var start = ComputeProtectedTailStart(messages, leadingSystemCount, protectedTailCount);
-        if (start >= messages.Count)
-            return [];
-        return messages.Skip(start).ToArray();
-    }
 }

@@ -21,7 +21,7 @@
 |---|---|---|---|
 | `ContextPolicyContracts.cs` | 输入/输出合同：消息策略视图、容量输入/结果、压力分类、来源常量、策略版本 | `ContextMessageShape` 等 6 型合同（消息/容量输入输出/压力/来源/版本）（见下「关键语义」） | 只带整数与**稳定身份**，不带正文；来源取值与 Runtime 的 `ContextEffectiveWindowSources` 逐字对齐 |
 | `ContextCapacityArithmetic.cs` | 容量算术与压力分类 | `ContextCapacityArithmetic.Resolve/Classify` | `effectiveInput = min(providerInputLimit, modelWindow − reservedOutput − safetyBuffer)`；回退预留必须记为 `fallback_output_reserve`，不得冒充用户预算；**先判硬边界再判软阈值** |
-| `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint` + 选项/结果两型（见下「关键语义」） | 前导 System 不可移除；最后 N 条与当前用户轮不可移除；只按完整会话单元移除（不拆 tool call 与 result）；`ProjectedUsedTokensExcludingSummary` **不是**提交后的值 |
+| `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint` + 选项/结果两型（见下「关键语义」） | 前导 System 不可移除；当前 User、System、最后 N 条及未完成工具批次不可移除；完整历史轮与轮内已完成执行单元可选；token/字节预算包含摘要与包装预留；`ProjectedUsedTokensExcludingSummary` **不是**提交后的值 |
 | `ContextCandidateApplicability.cs` | 严格适用校验（旧候选能否提交） | `ContextCandidateApplicability.Validate` + 冻结/当前描述符与判定（见下「关键语义」） | 代次/revision/路由/工具/策略版本任一变化 ⇒ `stale_candidate`；保留后缀必须与当前历史**逐位一致**（新消息追加/中间插入/删改一律失效）；不做尾部拼接或自动 rebase |
 | `ContextNetGainAdmission.cs` | 净收益准入 | `ContextNetGainAdmission.Evaluate`、`NetGainInputs`、`NetGainDecision` | 必须用**真实摘要长度**重算 after；摘要为空/不缩小 ⇒ `no_gain`；加摘要后仍越界 ⇒ 不得提交；未达目标允许提交但必须如实记录 |
 | `ContextBackoffPolicy.cs` | 退避/去重判定 | `ContextBackoffPolicy.Decide`、`CandidateMaintenanceRecord`、`CandidateMaintenanceOutcomes` | **硬保护优先于任何退避**；同候选同代次上的 `applied` 记录不可信（成功应用应推进代次） |
@@ -51,7 +51,8 @@
 | 位置 | 覆盖 |
 |---|---|
 | `Source/PuddingContextPolicyTests/ContextCapacityArithmeticTests.cs` | 容量算式与来源；**2026-10-07 事故两条样本的记录值回放**（583,691 判软 / 625,824 判硬，上限 605,760，软阈值 484,608） |
-| `…/ContextCandidateSelectorTests.cs` | 触发门槛、完整单元移除、当前用户轮保护、tool 调用与结果不拆分、指纹确定性与版本敏感性 |
+| `…/ContextCandidateSelectorTests.cs` | 触发门槛、完整单元移除、当前用户输入保护、tool 调用与结果不拆分、指纹确定性与版本敏感性 |
+| `…/CompletedExecutionCompactionTests.cs` | 长轮内执行跨度、双预算、并行/未完成工具批次、冻结位置消除重复正文歧义 |
 | `…/ContextCandidateApplicabilityTests.cs` | 未变化可提交；**新消息追加即失效**；中间插入/删改失效；五类版本变化各自 `stale_candidate` |
 | `…/ContextNetGainAdmissionTests.cs` | 真实摘要重算 after（事故口径 583,691−257,299+4,343=330,735）、空/不缩小 ⇒ no_gain、仍越界 ⇒ 拒绝、未达目标如实记录 |
 | `…/ContextBackoffPolicyTests.cs` | 硬保护覆盖退避、同候选退避、间隔到期、新候选/新代次可再评估、`applied` 无代次推进不抑制 |

@@ -31,7 +31,8 @@ public sealed record FrozenCandidateDescriptor(
     string ToolSpecVersion,
     string PolicyVersion,
     IReadOnlyList<string> RemovedIdentities,
-    IReadOnlyList<string> RetainedIdentities);
+    IReadOnlyList<string> RetainedIdentities,
+    int? RemovedFromIndex = null);
 
 /// <summary>提交时刻的当前状态描述。</summary>
 public sealed record CurrentContextDescriptor(
@@ -55,7 +56,7 @@ public sealed record CandidateApplicabilityResult(
 /// 严格适用校验（纯函数）。ADR-095 D3：初版采用**严格校验** —— 生成后任何相关历史/配置变化
 /// 都丢弃候选并记录 <c>stale_candidate</c>，不做复杂尾部拼接或自动 rebase。
 /// <para>
-/// 判定顺序：代次/revision/路由/工具/策略版本 → 受保护尾部完整性 → 被替换跨度仍是**当前历史的前缀**。
+/// 判定顺序：代次/revision/路由/工具/策略版本 → 受保护尾部完整性 → 被替换跨度仍位于**冻结位置**。
 /// 这样旧摘要永远不可能覆盖新消息。
 /// </para>
 /// </summary>
@@ -80,7 +81,10 @@ public static class ContextCandidateApplicability
             return Stale("policy_changed");
 
         // 被替换跨度必须仍作为当前历史里**连续、按序**的一段存在（未插入、未删除、未重排）。
-        var spanStart = FindRun(frozen.RemovedIdentities, current.MessageIdentities);
+        var spanStart = frozen.RemovedFromIndex ?? FindRun(frozen.RemovedIdentities, current.MessageIdentities);
+        if (spanStart >= 0 && (spanStart + frozen.RemovedIdentities.Count > current.MessageIdentities.Count
+            || !SequenceEquals(current.MessageIdentities.Skip(spanStart).Take(frozen.RemovedIdentities.Count).ToArray(), frozen.RemovedIdentities)))
+            spanStart = -1;
         if (spanStart < 0)
             return new CandidateApplicabilityResult(
                 CandidateApplicabilityVerdict.SpanNotIntact,

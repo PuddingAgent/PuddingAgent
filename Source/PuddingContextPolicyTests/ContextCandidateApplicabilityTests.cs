@@ -72,7 +72,7 @@ public sealed class ContextCandidateApplicabilityTests
             revision: what == "revision" ? "rev-2" : "rev-1",
             route: what == "route" ? "deepseek/pro" : "deepseek/flash",
             tools: what == "tools" ? "tools-100" : "tools-99",
-            policy: what == "policy" ? "context-policy/2" : ContextPolicyVersion.Current);
+            policy: what == "policy" ? "different-policy" : ContextPolicyVersion.Current);
 
         var result = ContextCandidateApplicability.Validate(frozen, current);
 

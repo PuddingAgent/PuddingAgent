@@ -28,7 +28,21 @@ public enum ContextMessageRole
 public sealed record ContextMessageShape(
     string Identity,
     ContextMessageRole Role,
-    int TokenEstimate);
+    int TokenEstimate,
+    long TextBytes = 0,
+    IReadOnlyList<string>? ToolCallIds = null,
+    string? ToolResultId = null);
+
+/// <summary>同一最终请求的二维预算。摘要额度包含正文，包装开销单独预留；0 字节上限表示不启用。</summary>
+public sealed record ContextRequestBudget(
+    long NonMessageTextBytes = 0,
+    long MaxTextBytes = 0,
+    int CheckpointWrapperTokens = 0,
+    long CheckpointWrapperBytes = 0,
+    int MaxSummaryTokens = 4096);
+
+/// <summary>规划额度而非提交事实；真实摘要仍必须重新完整计量。额度不足时为 0，禁止调用模型。</summary>
+public sealed record ContextSummaryAllowance(int Tokens, long TextBytes, long RetainedTextBytes);
 
 /// <summary>
 /// 有效输入上限（<see cref="ContextCapacityResult.EffectiveInputTokens"/>）比模型窗口小的原因。
@@ -113,5 +127,5 @@ public sealed record ContextPressureDecision(
 /// <summary>策略版本。任一策略语义变化都必须递增，用于让旧候选失效并进入指纹。</summary>
 public static class ContextPolicyVersion
 {
-    public const string Current = "context-policy/1";
+    public const string Current = "context-policy/2";
 }
