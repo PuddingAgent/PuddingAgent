@@ -531,7 +531,8 @@ def stage_list_items_parallel_phrases(mod):
       * `浏览器类型定义（标签、Cookie、视口等）` 一个短语被切成 3 项；
       * `` `GetOutlineAsync(filePath, sourceText, language, ct)` `` 参数列表被切成 4 项。
     前两行必须 0 命中；第三行真并列（3 个顶层短语）必须仍命中（反过度抑制对照组）；
-    第四行验证括号内子短语不计入（顶层仍是 3 项）。
+    第四行验证括号内子短语不计入（顶层仍是 3 项）；第五行 2 项必须 0 命中，
+    与第三行一起夹住 `LIMITS["LIST_MIN_ITEMS"]`（把它改成 4 会让第三行断言失败 = 变异取红）。
     """
     d = tempfile.mkdtemp(prefix="code_map_list_items_")
     write_lines(os.path.join(d, "code_map.md"), [
@@ -543,6 +544,7 @@ def stage_list_items_parallel_phrases(mod):
         "| `b.cs` | 唯一端口：`GetOutlineAsync(filePath, sourceText, language, ct)` | `S2` | `c.cs` | — |",
         "| `c.cs` | 解析、写入、审计 | `S3` | `d.cs` | — |",
         "| `d.cs` | 解析（x、y）、写入、审计 | `S4` | `e.cs` | — |",
+        "| `e.cs` | 解析、写入 | `S5` | `f.cs` | — |",
         "",
     ])
     rep = mod.run_check(d)
@@ -554,6 +556,10 @@ def stage_list_items_parallel_phrases(mod):
           "hits=%s" % items)
     check("list-items: bracketed sub-phrases are not counted (3 remain)",
           items.get(8) == "items=3", "hit=%s" % items.get(8))
+    check("list-items: two phrases stay below the threshold (no hit)", 9 not in items,
+          "hits=%s" % items)
+    check("list-items: threshold lives in LIMITS (single source of truth)",
+          mod.LIMITS.get("LIST_MIN_ITEMS") == 3, "LIMITS=%s" % mod.LIMITS.get("LIST_MIN_ITEMS"))
 
 
 def main():

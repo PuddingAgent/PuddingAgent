@@ -65,6 +65,8 @@ LIMITS = {
     "JACCARD_THRESHOLD": 0.5,
     # --- §6 清单型 F 判据（只认规范写明的「、」与「,」）---
     "LIST_ITEM_SEPARATORS": "、,",
+    # --- §6 清单型 F 阈值：并列短语达到该数量即命中（§6「用途不是清单」的可判定化）---
+    "LIST_MIN_ITEMS": 3,
     # --- §2「关键符号 / 关联 ≤5 项」的项分隔符（比 F 列宽：含全角逗号与分号）---
     "ITEM_SEPARATORS": "、,，；;",
     # --- §6 空值写法：允许的写法；其余「占位」见 PLACEHOLDER_RE ---
@@ -712,7 +714,7 @@ def analyze_file(root: str, path: str, col_samples, global_unmapped):
                                               "jaccard=%.2f" % j))
             if purpose:
                 items = _split_items(purpose, LIMITS["LIST_ITEM_SEPARATORS"])
-                if len(items) >= 3:
+                if len(items) >= LIMITS["LIST_MIN_ITEMS"]:
                     violations.append(_ap_vio(rel, line_no, "清单型 F",
                                               "items=%d" % len(items)))
 
