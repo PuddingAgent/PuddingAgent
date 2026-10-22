@@ -14,6 +14,13 @@ BCL-only layout and appearance preferences, with compiler-enforced absence of pa
   (`FontSize="13"`) and inside a style (`<Setter Property="FontSize" Value="13"/>`, any attribute order).
   `{StaticResource ...}` passes and a brush DEFINITION site (`<SolidColorBrush Color="#...">`) stays legal,
   otherwise the token file could not pass itself.
+- `Design/ThemeResourceAudit.cs`: structural gate for `{ThemeResource ...}`. WinUI resolves theme keys at
+  RUNTIME, so a misspelt key compiles and only fails on launch; this audit cross-checks every reference against
+  the keys declared in the same file, the keys declared by `App.xaml`, and an explicit `PlatformResources`
+  allowlist of WinUI built-ins (11 keys, ordinal) — an unknown key is reported with its 1-based line.
+  `FindBrushKeySetDrift` compares the `Default` vs `Light` brush key SETS only: the same token legitimately has
+  different values per theme, so comparing values is wrong (the first draft did and was red on 8 real keys).
+  `HighContrast` is intentionally excluded — a missing key falls back to `Default` by WinUI rule.
 - `SkeletonSettingsStore.cs`: atomic appearance settings, corrupt-file preservation.
 - `PanelCanvasDocument.cs`: embedded/exported panel HTML wrappers plus the injected annotation script:
   five primitive tools (box/point/pen/arrow/text), per-item delete, undo, `compose()` (burn ink into pixels),
@@ -53,6 +60,8 @@ BCL-only layout and appearance preferences, with compiler-enforced absence of pa
   burn-in retention, canvas-restore payload and annotation-handoff writer tests, plus the design-token contract
   (tier coverage of every literal seen in MainWindow.xaml, lint red cases, a frozen baseline of raw literals in
   the real desktop XAML, XAML-token/model value parity, the documented residual delta, and the resolve check that
-  every `{StaticResource FontSize*|Radius*}` names a declared key) (504 cases as of 2026-10-22).
+  every `{StaticResource FontSize*|Radius*}` names a declared key), plus the theme-resource gate
+  (`{ThemeResource}` resolvability against file ∪ App.xaml ∪ platform allowlist, and Default/Light brush
+  key-set parity for both shell XAML files) (513 cases as of 2026-10-22).
 
 Role selection, native drafts, document business ownership and in-process kernel contracts were removed during master recovery. Business UI stays in Web.
