@@ -1976,7 +1976,7 @@ public sealed partial class MainWindow : Window
 
         panel.Children.Add(new TextBlock
         {
-            Text = "制成品",
+            Text = "制品库",
             FontSize = 18,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
         });
@@ -2032,7 +2032,7 @@ public sealed partial class MainWindow : Window
         {
             panel.Children.Add(new TextBlock
             {
-                Text = "还没有制成品。在交互面板里点「保存到制品库」就会出现在这里。",
+                Text = "制品库里还没有内容。在交互面板里点「保存到制品库」就会出现在这里。",
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.7,
             });
@@ -2118,7 +2118,7 @@ public sealed partial class MainWindow : Window
         var imagePath = CraftStore.ResolveImagePath(craft);
         if (!File.Exists(imagePath))
         {
-            ToolStatusText.Text = $"制成品的图片文件已丢失：{craft.FileName}";
+            ToolStatusText.Text = $"这件制品的图片文件已丢失：{craft.FileName}";
             return;
         }
 
@@ -2229,7 +2229,7 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "重命名制成品",
+            Title = "重命名制品",
             Content = input,
             PrimaryButtonText = "保存",
             CloseButtonText = "取消",
@@ -2449,7 +2449,7 @@ public sealed partial class MainWindow : Window
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         actions.Children.Add(OutputAction("用默认程序打开", (_, _) => OpenWithShell(path)));
         actions.Children.Add(OutputAction("复制路径", (_, _) => CopyToClipboard(path)));
-        actions.Children.Add(OutputAction("打开其他输出文件…", OnOpenOutputTab));
+        actions.Children.Add(OutputAction("打开其他本地文件…", OnOpenOutputTab));
         panel.Children.Add(actions);
 
         if (_outputPreviews.TryGetValue(tab.Id, out var preview))
@@ -2594,8 +2594,8 @@ public sealed partial class MainWindow : Window
     {
         Id = ToolTabIdentity.Artifact(Guid.NewGuid().ToString("N")),
         Kind = ToolTabKind.Artifact,
-        Title = "预览 · 制成品",
-        Subtitle = "等待 Core 成果接口",
+        Title = "预览 · 制品",
+        Subtitle = "本机保存的面板快照",
         Availability = ToolAvailabilityCatalog.For(ToolTabKind.Artifact),
     });
 

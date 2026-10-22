@@ -509,8 +509,8 @@
           <MenuFlyoutSeparator/>
           <MenuFlyoutItem x:Name="TerminalMenuItem" Text="终端 · 新会话" Click="OnOpenTerminalTab"/>
           <MenuFlyoutItem Text="Agent 浏览器" Click="OnOpenBrowserTab"/>
-          <MenuFlyoutItem Text="制成品预览" Click="OnOpenArtifactTab"/>
-          <MenuFlyoutItem Text="输出文件" Click="OnOpenOutputTab"/>
+          <MenuFlyoutItem Text="制品库" Click="OnOpenArtifactTab"/>
+          <MenuFlyoutItem Text="本地文件" Click="OnOpenOutputTab"/>
           <MenuFlyoutItem Text="文档预览" Click="OnOpenDocumentTab"/>
           <MenuFlyoutItem Text="交互面板" Click="OnOpenPanelTab"/>
           <MenuFlyoutSeparator/>
@@ -594,7 +594,7 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <FontIcon Glyph="&#xE8B7;" FontSize="18" Foreground="#E2A33C" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
-             <TextBlock Text="输出文件" FontSize="15" FontWeight="SemiBold"/>
+             <TextBlock Text="本地文件" FontSize="15" FontWeight="SemiBold"/>
              <TextBlock x:Name="OutputCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Right">
@@ -642,7 +642,7 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <FontIcon Glyph="&#xE8A5;" FontSize="18" Foreground="#B07CD6" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
-             <TextBlock Text="制成品" FontSize="15" FontWeight="SemiBold"/>
+             <TextBlock Text="制品库" FontSize="15" FontWeight="SemiBold"/>
              <TextBlock x:Name="ArtifactCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
@@ -670,7 +670,7 @@
        <!-- One persistent browser surface host: tabs never reparent a live WebView2. -->
        <Grid x:Name="BrowserSurfaceHostPanel" Visibility="Collapsed"/>
        <TextBlock x:Name="ToolEmptyState" Margin="24" TextWrapping="Wrap" Opacity="0.6" VerticalAlignment="Top"
-         Text="工具区已打开。用右上角 + 打开终端、Agent 浏览器、制成品、输出文件或交互面板。"/>
+          Text="工具区已打开。用右上角 + 打开终端、Agent 浏览器、制品库、本地文件或交互面板。"/>
       </Grid>
       <TextBlock x:Name="ToolStatusText" Grid.Row="3" Margin="8,4" FontSize="11" Opacity="0.7" TextWrapping="Wrap"/>
      </Grid>
