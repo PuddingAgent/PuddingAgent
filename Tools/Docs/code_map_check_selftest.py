@@ -466,7 +466,7 @@ def stage_api_contract(mod, rep):
 
 
 def stage_anti_pattern_prose_scope(mod, dirs):
-    """§6 词表只针对 prose：行内代码跨度与链接目标里的词不算命中。
+    r"""§6 词表只针对 prose：行内代码跨度与链接目标里的词不算命中。
 
     真因（Card B/C 误报）：`anti-pattern` 是逐行裸子串匹配，于是
       * `\`TodoCheckTool\`` 这类**标识符**里的 TODO 被算成「演进叙事」；
@@ -563,6 +563,46 @@ def stage_list_items_parallel_phrases(mod):
           mod.LIMITS.get("LIST_MIN_ITEMS") == 3, "LIMITS=%s" % mod.LIMITS.get("LIST_MIN_ITEMS"))
 
 
+def stage_anti_pattern_placeholder_and_restated(mod):
+    """§6「复述型 S」（warn）与「空值写法」（info）必须各自能取红，阈值仍取自 LIMITS。
+
+    真因（2026-10-23 规范条款覆盖核对）：§6 七个类别里只有四类有夹具断言
+    （演进叙事 / 路线图 / 清单型 F / 过度宣称），`复述型 S` 与 `空值写法` 只有实现没有断言 ——
+    把这两段判定从检查器里删掉，selftest 依旧全绿。本 stage 补两侧边界：
+      * 复述型 S：Jaccard 0.75 命中并带 `jaccard=` 明细，不相似的对照行 0 命中；
+      * 空值写法：`待定` 命中且等级为 info，规范允许的 `—` 不命中（反过度抑制对照）。
+    阈值必须来自 `LIMITS["JACCARD_THRESHOLD"]`，而不是调用点字面量（§8.1 单一真源）。
+    """
+    d = tempfile.mkdtemp(prefix="code_map_ap_placeholder_")
+    write_lines(os.path.join(d, "code_map.md"), [
+        "# Fixture AP Placeholder Restated",
+        "",
+        "| 文件 | 用途 | 关键符号 | 关联 | 约束 |",
+        "|------|------|----------|------|------|",
+        "| `a.cs` | 解析写入审计导出 | `S1` | `b.cs` | 解析写入审计 |",
+        "| `b.cs` | 查询投影 | `S2` | `c.cs` | 禁止跨进程共享 |",
+        "| `c.cs` | 事件转发 | `S3` | `d.cs` | 待定 |",
+        "| `d.cs` | 令牌校验 | `S4` | `e.cs` | — |",
+        "",
+    ])
+    rep = mod.run_check(d)
+    ap = [v for v in rep["violations"] if v["rule"] == "anti-pattern"]
+    restated = {v["line"]: v["detail"] for v in ap if v.get("category") == "复述型 S"}
+    placeholder = {v["line"]: v for v in ap if v.get("category") == "空值写法"}
+    check("restated-S: Jaccard 0.75 on 用途/约束 hits 复述型 S",
+          restated.get(5, "").startswith("jaccard=0.7"), "hit=%s" % restated.get(5))
+    check("restated-S: dissimilar 约束 does not hit (control)", 6 not in restated,
+          "hits=%s" % restated)
+    check("restated-S: threshold lives in LIMITS (single source of truth)",
+          mod.LIMITS.get("JACCARD_THRESHOLD") == 0.5,
+          "LIMITS=%s" % mod.LIMITS.get("JACCARD_THRESHOLD"))
+    check("placeholder: 待定 hits 空值写法 at info level",
+          placeholder.get(7, {}).get("severity") == "info",
+          "hit=%s" % placeholder.get(7, {}).get("detail"))
+    check("placeholder: spec-allowed em dash is not a hit (control)",
+          8 not in placeholder, "hits=%s" % sorted(placeholder))
+
+
 DETAIL_ROW_RE = re.compile(r"^\| `([a-z][a-z-]+)` \| (?:error|warn|info) \| \d+ \|")
 
 
@@ -632,6 +672,7 @@ def main():
         stage_anti_pattern_prose_scope(mod, dirs)
         stage_anti_pattern_identifier_boundary(mod)
         stage_list_items_parallel_phrases(mod)
+        stage_anti_pattern_placeholder_and_restated(mod)
 
         repo_files = mod.find_code_maps(REPO_ROOT)
         mirror_root = dirs["mirror"]
