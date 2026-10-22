@@ -1,5 +1,5 @@
 # Desktop visual Foundation
-> 源指纹: *.cs=18-ffc6f552c437, *.csproj=1-92f91f3fbd34 · 条目数: 0 · 最近整理: 2026-10-22
+> 源指纹: *.cs=18-9c0cce4d2202, *.csproj=1-92f91f3fbd34 · 条目数: 0 · 最近整理: 2026-10-22
 
 BCL-only layout and appearance preferences, with compiler-enforced absence of package/project dependencies.
 
