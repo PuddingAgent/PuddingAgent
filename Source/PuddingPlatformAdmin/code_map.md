@@ -1,5 +1,5 @@
 # PuddingPlatformAdmin CodeMAP
-> 源指纹: Source/PuddingPlatformAdmin/*=8-18c965f3f490, src/**=930-6e3cae6506f4, public/**=14-f3aa09cf5f00, mock/**=7-15a79f8b3988, config/**=5-502280cdfaa6, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 195 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingPlatformAdmin/*=8-70cad5d48878, src/**=930-09b3a8dc622d, public/**=14-f3aa09cf5f00, mock/**=7-15a79f8b3988, config/**=5-502280cdfaa6, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 195 · 最近整理: 2026-10-22
 > 指纹覆盖: *、src/**、public/**、mock/**、config/**、e2e/**、scripts/**、.husky/**、.github/**；未纳入 10 项: .commitlintrc.js、.editorconfig、.gitignore、.lintstagedrc、.npmrc、.tmp-b6-build.log、.tmp-b6-tsc-orch.log、.tmp-b6-tsc.log、tests/**、types/**
 
 > React 管理前端 | Ant Design Pro v6 · React 19 · UmiJS
@@ -249,7 +249,7 @@ bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧�
 | `src/pages/chat/client/localCache.ts` | IndexedDB 派生缓存版本管理；展示合同改变时只失效 conversations 缓存；版本变化关闭旧连接，服务端消息不受影响 |
 | `scripts/chat-browser-smoke.mjs` | 阶段F桌面浏览器冒烟（Playwright Chromium）：登录 token 注入、`/admin/chat` 首内容/FCP/请求路径/失败响应采集；输出 temp/test-out/chat-smoke.json + 截图 |
 | `src/pages/chat/client/canonicalMerge.ts` | 消息内容与显示顺序分别合并：新快照顺序为准，分页缺失历史按共享身份锚点保留；同 ID 的 activeRun 比较完整状态与输出，旧游标不回退；未变化 messages 保持引用稳定 |
-| `src/pages/chat/components/MessageList.tsx` | 消息行投影与单卡去重；心跳输入与运行中助手回复分离；独立压缩卡保留空正文终态（见下「关键语义」） |
+| `src/pages/chat/components/MessageList.tsx` | 消息行投影与单卡去重；心跳输入与运行中助手回复分离；独立压缩卡保留空正文终态并按发生时间插入，排队输入的活动回复留在消息流末端（见下「关键语义」） |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；Agent 行通过根滚动容器 IntersectionObserver 在 600px 预取区注册可见 turn；直接接收本 Turn 的 Projection 对象，任一其他 Turn/全局 selector revision 不得击穿历史行 memo |
 | `src/pages/chat/components/execution-flow/TurnContentStream.tsx` / `ActivityGroup.tsx` | 超长单 Turn 的二级 DOM 预算：默认最新 40 个内容块、每组最新 24 个行为节点；旧内容每次 40/24 项渐进揭示，折叠组成员完全卸载 |

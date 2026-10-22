@@ -604,8 +604,17 @@ export const mergeLocalTurnsAwaitingProjection = (
     // Lifecycle records often have no answer body, including completed ones.
     // They are independent of an Agent reply and must survive snapshot merges.
     if (localTurn.turnId.startsWith(COMPACTION_TURN_PREFIX)) {
-      merged = projectedUserIndex < 0 ? [...merged, localTurn]
-        : merged.map((turn, index) => index === projectedUserIndex ? localTurn : turn);
+      if (projectedUserIndex >= 0) {
+        merged = merged.map((turn, index) => index === projectedUserIndex ? localTurn : turn);
+      } else {
+        // Replayed maintenance belongs at its event time, not after the latest
+        // answer. Preserve the supplied message order while inserting it.
+        const nextIndex = merged.findIndex(
+          (turn) => turn.userMessage.timestamp > localTurn.userMessage.timestamp,
+        );
+        const insertAt = nextIndex < 0 ? merged.length : nextIndex;
+        merged = [...merged.slice(0, insertAt), localTurn, ...merged.slice(insertAt)];
+      }
       continue;
     }
 
@@ -946,7 +955,8 @@ export const mergeActiveRunIntoTurns = (
     // A heartbeat is the input envelope, not a successful assistant reply.
     // Merging into its terminal state hides the actual run and leaks its prompt
     // into the answer. Keep the live reply separate at the conversation edge.
-    if (turns[existingIndex].assistant.renderMode === 'heartbeat') {
+    if (turns[existingIndex].assistant.renderMode === 'heartbeat' ||
+        (turns[existingIndex].assistant.isPlaceholder && existingIndex < turns.length - 1)) {
       return [...turns, activeTurn];
     }
     return mergeActiveRunIntoIndex(turns, existingIndex, activeTurn);

@@ -105,8 +105,34 @@ it.each(['completed', 'skipped', 'failed', 'unknown'] as const)(
     const merged = mergeLocalTurnsAwaitingProjection([user], [card]);
     expect(merged).toEqual([user, card]);
     expect(buildMessageBlocks(merged, 'Pudding').map(block => block.id)).toContain('compact-card:assistant:0');
+    const laterReply = { ...user, turnId: 'later', userMessage: { ...user.userMessage, id: 'later-user', timestamp: 5000 },
+      assistant: { ...user.assistant, id: 'latest-answer', answerMarkdown: 'latest reply' } };
+    expect(mergeLocalTurnsAwaitingProjection([user, laterReply], [card]))
+      .toEqual([user, card, laterReply]);
   },
 );
+
+it('keeps the live reply after maintenance when its queued input is older', () => {
+  const input = {
+    turnId: 'turn-active',
+    userMessage: { id: 'queued-input', text: 'next task', timestamp: 1000, status: 'success' as const },
+    assistant: { id: 'placeholder', isPlaceholder: true, status: 'success' as const, isStreaming: false,
+      renderMode: 'structured' as const, answerMarkdown: '', timelineItems: [] },
+  };
+  const maintenance = { ...input, turnId: 'compaction:later', userMessage: { ...input.userMessage, id: 'maintenance', text: '', timestamp: 2000 } };
+  const run = {
+    runId: 'active-run', workspaceId: 'ws', ownerUserId: 'owner', agentId: 'agent', mainSessionId: 'session',
+    commandClientId: 'queued-input', status: 'running' as const, statusText: '正在执行', summary: '', eventCursor: 10,
+    startedAt: new Date(1500).toISOString(), updatedAt: new Date(2500).toISOString(),
+    outputSnapshot: { markdown: 'live response', processItems: [], window: {
+      turnId: 'turn-active', throughSequence: 10, minSequence: 1, maxSequence: 10, hasMoreBefore: false,
+    } },
+  };
+  const merged = mergeActiveRunIntoTurns([input, maintenance], run, 'Pudding');
+  expect(merged.slice(0, 2)).toEqual([input, maintenance]);
+  expect(merged[2].assistant).toMatchObject({ answerMarkdown: 'live response', isStreaming: true });
+  expect(buildMessageBlocks(merged, 'Pudding').filter(block => block.role === 'agent')).toHaveLength(1);
+});
 
 const createTurn = (
   turnId: string,
