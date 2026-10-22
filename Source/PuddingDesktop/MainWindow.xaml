@@ -53,6 +53,16 @@
       <SolidColorBrush x:Key="StartupPendingBrush" Color="#5A5A5E"/>
       <SolidColorBrush x:Key="StartupLinkBrush" Color="#E7B877"/>
       <SolidColorBrush x:Key="StartupSuccessBrush" Color="#6CCB9C"/>
+      <!-- 使用点令牌（2026-10-22）：值与迁移前的裸值逐字节相同，Default/Light 两侧一致 ⇒ 视觉零变化。
+           HighContrast 暂不声明，按 ThemeDictionaries 规则回落 Default（= 迁移前行为）；
+           要高对比自适配，见 Docs/11_design/桌面颜色令牌层提案-2026-10-22.md 的 A2。 -->
+      <SolidColorBrush x:Key="BrandAccentBrush" Color="#D59F61"/>
+      <SolidColorBrush x:Key="OnBrandAccentTextBrush" Color="#202020"/>
+      <SolidColorBrush x:Key="ScrimBrush" Color="#40000000"/>
+      <SolidColorBrush x:Key="StatusWarningBrush" Color="#E2A33C"/>
+      <SolidColorBrush x:Key="StatusInfoBrush" Color="#4C8DF6"/>
+      <SolidColorBrush x:Key="StatusAccentAltBrush" Color="#B07CD6"/>
+      <SolidColorBrush x:Key="StatusSuccessBrush" Color="#4CB782"/>
      </ResourceDictionary>
      <ResourceDictionary x:Key="Light">
       <SolidColorBrush x:Key="ToolTabSelectedBrush" Color="#1F000000"/>
@@ -78,6 +88,16 @@
       <SolidColorBrush x:Key="StartupPendingBrush" Color="#C6C6C8"/>
       <SolidColorBrush x:Key="StartupLinkBrush" Color="#8A5A1E"/>
       <SolidColorBrush x:Key="StartupSuccessBrush" Color="#1D8B55"/>
+      <!-- 使用点令牌（2026-10-22）：值与迁移前的裸值逐字节相同，Default/Light 两侧一致 ⇒ 视觉零变化。
+           HighContrast 暂不声明，按 ThemeDictionaries 规则回落 Default（= 迁移前行为）；
+           要高对比自适配，见 Docs/11_design/桌面颜色令牌层提案-2026-10-22.md 的 A2。 -->
+      <SolidColorBrush x:Key="BrandAccentBrush" Color="#D59F61"/>
+      <SolidColorBrush x:Key="OnBrandAccentTextBrush" Color="#202020"/>
+      <SolidColorBrush x:Key="ScrimBrush" Color="#40000000"/>
+      <SolidColorBrush x:Key="StatusWarningBrush" Color="#E2A33C"/>
+      <SolidColorBrush x:Key="StatusInfoBrush" Color="#4C8DF6"/>
+      <SolidColorBrush x:Key="StatusAccentAltBrush" Color="#B07CD6"/>
+      <SolidColorBrush x:Key="StatusSuccessBrush" Color="#4CB782"/>
      </ResourceDictionary>
      <ResourceDictionary x:Key="HighContrast">
       <SolidColorBrush x:Key="ToolTabSelectedBrush" Color="Transparent"/>
@@ -309,7 +329,7 @@
   <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
   <Grid x:Name="TitleBar" Padding="20,0,150,0">
    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-    <Border Width="26" Height="26" CornerRadius="{StaticResource RadiusControl}" Background="#D59F61"><TextBlock Text="P" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#202020"/></Border>
+    <Border Width="26" Height="26" CornerRadius="{StaticResource RadiusControl}" Background="{ThemeResource BrandAccentBrush}"><TextBlock Text="P" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{ThemeResource OnBrandAccentTextBrush}"/></Border>
     <TextBlock Text="Pudding" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
     <TextBlock Text="你的智能工作台" FontSize="{StaticResource FontSizeCaption}" Opacity="0.55" VerticalAlignment="Center"/>
    </StackPanel>
@@ -486,7 +506,7 @@
        DoubleTapped="OnSplitterDoubleTapped" KeyDown="OnSplitterKeyDown">
       <Rectangle x:Name="ToolSplitterLine" Width="1" HorizontalAlignment="Center" Fill="{ThemeResource CardStrokeColorDefaultBrush}"/>
      </local:SplitterHandle>
-     <Border x:Name="ToolOverlayScrim" Grid.ColumnSpan="3" Background="#40000000" Visibility="Collapsed" Tapped="OnToolScrimTapped"/>
+     <Border x:Name="ToolOverlayScrim" Grid.ColumnSpan="3" Background="{ThemeResource ScrimBrush}" Visibility="Collapsed" Tapped="OnToolScrimTapped"/>
      <!-- Right tool workspace: instance tabs, per-tool toolbar, content, status. -->
      <Grid x:Name="ToolPanel" Grid.Column="2" Visibility="Collapsed" Background="{ThemeResource ShellBackground}">
       <Grid.RowDefinitions>
@@ -509,7 +529,7 @@
            <FontIcon Glyph="{Binding Glyph}" FontSize="13" Opacity="0.85" VerticalAlignment="Center"/>
            <TextBlock Text="{Binding Title}" MaxWidth="140" TextTrimming="CharacterEllipsis" FontSize="{StaticResource FontSizeCaption}" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding Tooltip}"/>
            <ProgressRing Width="12" Height="12" IsActive="{Binding IsRunning}" Visibility="{Binding RunningVisibility}" VerticalAlignment="Center"/>
-           <Ellipse Width="7" Height="7" Fill="#D59F61" Visibility="{Binding UnreadVisibility}" VerticalAlignment="Center"/>
+           <Ellipse Width="7" Height="7" Fill="{ThemeResource BrandAccentBrush}" Visibility="{Binding UnreadVisibility}" VerticalAlignment="Center"/>
            <Button Style="{StaticResource ToolTabCloseButtonStyle}" Click="OnCloseToolTab" Visibility="{Binding CloseVisibility}" VerticalAlignment="Center" ToolTipService.ToolTip="关闭标签页">
             <FontIcon Glyph="&#xE711;" FontSize="8"/>
            </Button>
@@ -607,7 +627,7 @@
           <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenOutputTab" ToolTipService.ToolTip="Ctrl + O">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE8B7;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#E2A33C" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE8B7;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="{ThemeResource StatusWarningBrush}" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="本地文件" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
              <TextBlock x:Name="OutputCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>
@@ -624,7 +644,7 @@
           <Button x:Name="TerminalCardEntry" Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenTerminalTab">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE756;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#4C8DF6" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE756;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="{ThemeResource StatusInfoBrush}" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="新建终端" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
              <TextBlock x:Name="TerminalCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>
@@ -638,7 +658,7 @@
           <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenBrowserTab" ToolTipService.ToolTip="Ctrl + T">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE774;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#4C8DF6" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE774;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="{ThemeResource StatusInfoBrush}" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="浏览器" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
              <TextBlock x:Name="BrowserCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>
@@ -655,7 +675,7 @@
           <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenArtifactTab">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE8A5;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#B07CD6" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE8A5;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="{ThemeResource StatusAccentAltBrush}" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="制品库" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
              <TextBlock x:Name="ArtifactCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>
@@ -669,7 +689,7 @@
           <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenPanelTab">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE71D;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#4CB782" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE71D;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="{ThemeResource StatusSuccessBrush}" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="交互面板" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
              <TextBlock x:Name="PanelCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>

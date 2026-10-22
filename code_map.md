@@ -46,7 +46,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.DeliveryManifest.Cli/` | 交付清单**采集入口**（B7 内部一侧）：目录 → 自检清单 → JSON；不合格以退出码 2 拒绝产出（见下「关键语义」） | — |
 | `Source/PuddingDesktop.CapabilityHost/` | WinUI 侧平台适配：`DispatcherQueue` 调度实现（只引用 Contracts） | [code_map](Source/PuddingDesktop.CapabilityHost/code_map.md) |
 | `Source/Pudding.DesktopSurface.Browser/` | 浏览器侧 Desktop 表面与目标注册表桥；不含 UI 代码，可脱 UI 测试 | [code_map](Source/Pudding.DesktopSurface.Browser/code_map.md) |
-| `Source/PuddingDesktop.Foundation/` | BCL-only 布局/外观偏好、启动面板文案（`StartupPanelPresenter`）与设计令牌（6 档字号 / 2 档圆角 + XAML 字面量 lint；壳层 XAML 已接入 57/17 处引用） | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
+| `Source/PuddingDesktop.Foundation/` | BCL-only 布局/外观偏好、启动面板文案（`StartupPanelPresenter`）与设计令牌（6 档字号 / 2 档圆角 + XAML 字面量 lint；壳层 XAML 已接入 字号 57 / 圆角 17 / 颜色 9 处引用、裸色基线 0） | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
 | `Source/PuddingDesktop.WpfArchive/` | 旧 WPF 入口/验证基线；无 UI 的启动器与协议源文件由 WinUI 项目链接编译 | [code_map](Source/PuddingDesktop.WpfArchive/code_map.md) |
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |

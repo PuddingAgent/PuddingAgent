@@ -226,7 +226,9 @@ public sealed class DesktopXamlBaselineTests
 
         Assert.Equal(21, findings.Count(finding => finding.Rule == XamlLiteralLint.RawFontSizeRule));
         Assert.Equal(16, findings.Count(finding => finding.Rule == XamlLiteralLint.RawCornerRadiusRule));
-        Assert.Equal(9, findings.Count(finding => finding.Rule == XamlLiteralLint.RawColorRule));
+        // 颜色已全部走主题字典（2026-10-22 A1）：9 处使用点裸值 → 0，新增 7 个使用点令牌。
+        // 裸色基线从此为 0：任何新写的 <TextBlock Foreground="#FF00AA"/> 立刻红。
+        Assert.Equal(0, findings.Count(finding => finding.Rule == XamlLiteralLint.RawColorRule));
     }
 
     [Fact]
