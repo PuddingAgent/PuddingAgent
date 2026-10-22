@@ -56,6 +56,7 @@ interface Harness {
   sseSessionIdRef: MutableRefObject<string | null>;
   sessionEventCursorRef: MutableRefObject<SessionEventCursorState>;
   lastSequenceNumRef: MutableRefObject<number>;
+  handleCompactionLifecycleEvent: jest.Mock;
 }
 
 function setup(
@@ -103,6 +104,7 @@ function setup(
         ? (updater as (prev: ChatTurn[]) => ChatTurn[])(turnsRef.current)
         : (updater as ChatTurn[]);
   });
+  const handleCompactionLifecycleEvent = jest.fn();
 
   const { result } = renderHook(() =>
     useSessionEventProjection({
@@ -139,7 +141,7 @@ function setup(
         setLoading: jest.fn(),
         appendRuntimeEvent: jest.fn(),
         markSteeringInjected: jest.fn(),
-        handleCompactionLifecycleEvent: jest.fn(),
+        handleCompactionLifecycleEvent,
         onProjectionOwnedMainEvent,
       },
     }),
@@ -151,6 +153,7 @@ function setup(
     sseSessionIdRef,
     sessionEventCursorRef,
     lastSequenceNumRef,
+    handleCompactionLifecycleEvent,
   };
 }
 
@@ -169,6 +172,25 @@ const callFacts = (items: TimelineItem[]) =>
     }));
 
 describe('useSessionEventProjection — CU-03 unified input', () => {
+  it.each(['started', 'completed', 'failed', 'skipped'])(
+    'delivers compaction %s exactly once to the lifecycle owner in projection mode', (stage) => {
+      const forward = jest.fn();
+      const { result, handleCompactionLifecycleEvent, turnsRef, lastSequenceNumRef } = setup(
+        [makeRunningTurn()], () => true, forward,
+      );
+      const original = turnsRef.current;
+      const ev = event({ type: `context.compaction.${stage}`, compactionId: 'compact-1', eventId: 'evt-1', sequenceNum: 20 });
+      act(() => {
+        result.current.applySessionEvent(ev, { replay: true });
+        result.current.applySessionEvent(ev);
+      });
+      expect(handleCompactionLifecycleEvent).toHaveBeenCalledTimes(1);
+      expect(handleCompactionLifecycleEvent).toHaveBeenCalledWith(ev, { replay: true });
+      expect(forward).not.toHaveBeenCalled();
+      expect(turnsRef.current).toBe(original);
+      expect(lastSequenceNumRef.current).toBe(20);
+    },
+  );
   it('routes projection-owned main events to the single merge owner without projecting', () => {
     const onProjectionOwnedMainEvent = jest.fn();
     const { result, turnsRef } = setup(

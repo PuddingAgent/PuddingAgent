@@ -114,6 +114,7 @@ const ChatPageContent: React.FC = () => {
   });
   const chat = useChatState(location.search, {
     agentProjectionOwnsMainSession: useAgentClientArchitecture,
+    projectedConversation: agentClient.snapshot.conversation,
     onProjectionOwnedMainEvent: (event) => {
       const { workspaceId, agentId } = agentClient.snapshot;
       if (workspaceId && agentId) {

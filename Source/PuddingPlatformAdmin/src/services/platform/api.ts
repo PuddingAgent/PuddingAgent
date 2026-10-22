@@ -2864,6 +2864,7 @@ export type AdminChatStreamEvent = ConversationEventEnvelopeBase &
   | { type: 'context.compaction.started'; compactionId?: string; sessionId?: string; mode?: ContextCompactionMode; level?: ContextCompactionLevel; reason?: string; [key: string]: unknown }
   | { type: 'context.compaction.completed'; compactionId?: string; sessionId?: string; sourceSessionId?: string; newSessionId?: string; newSessionTitle?: string; compaction?: ContextCompactionResult; [key: string]: unknown }
   | { type: 'context.compaction.failed'; compactionId?: string; sessionId?: string; error?: string; errorType?: string; [key: string]: unknown }
+  | { type: 'context.compaction.skipped'; compactionId?: string; sessionId?: string; reason?: string; [key: string]: unknown }
   | { type: 'turn.accepted'; turnId?: string; userMessageId?: string; assistantMessageId?: string; [key: string]: unknown }
   | { type: 'turn.started'; [key: string]: unknown }
   | { type: 'turn.waiting_for_tool'; [key: string]: unknown }

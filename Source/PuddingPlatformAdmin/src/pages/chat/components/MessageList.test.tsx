@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
-import MessageList from './MessageList';
+import MessageList, { mergeActiveRunIntoTurns, mergeLocalTurnsAwaitingProjection } from './MessageList';
+import { buildMessageBlocks } from '../types';
 
 jest.mock('../styles', () => {
   const styles = new Proxy(
@@ -62,6 +63,50 @@ const baseProps = {
   messageListRef: React.createRef<HTMLDivElement>(),
   listEndRef: React.createRef<HTMLDivElement>(),
 };
+
+it('keeps a heartbeat input separate from its still-running reply', () => {
+  const heartbeat = {
+    turnId: 'turn-active',
+    userMessage: { id: 'heartbeat-input', text: '', timestamp: 1000, status: 'success' as const },
+    assistant: { id: 'heartbeat', status: 'success' as const, isStreaming: false,
+      renderMode: 'heartbeat' as const, answerMarkdown: 'INTERNAL HEARTBEAT INPUT', timelineItems: [] },
+  };
+  const run = {
+    runId: 'run-active', workspaceId: 'ws', ownerUserId: 'owner', agentId: 'agent', mainSessionId: 'session',
+    status: 'running' as const, statusText: '正在执行', summary: '', eventCursor: 10,
+    startedAt: new Date(1000).toISOString(), updatedAt: new Date(2000).toISOString(),
+    outputSnapshot: { markdown: '', processItems: [], window: {
+      turnId: 'turn-active', throughSequence: 10, minSequence: 1, maxSequence: 10, hasMoreBefore: false,
+    } },
+  };
+  const merged = mergeActiveRunIntoTurns([heartbeat], run, 'Pudding');
+  expect(merged).toHaveLength(2);
+  expect(merged[0]).toBe(heartbeat);
+  expect(merged[1].assistant).toMatchObject({ status: 'streaming', isStreaming: true, answerMarkdown: '', renderMode: 'structured' });
+  const blocks = buildMessageBlocks(merged, 'Pudding');
+  expect(blocks.map(block => block.role)).toEqual(['heartbeat', 'agent']);
+  expect(blocks[1].isStreaming).toBe(true);
+  expect(blocks[1].content).not.toContain('INTERNAL');
+});
+
+it.each(['completed', 'skipped', 'failed', 'unknown'] as const)(
+  'preserves an empty-body %s compaction record through snapshot merge and rendering', (state) => {
+    const card = {
+      turnId: 'compaction:one',
+      userMessage: { id: 'compact-input', text: '', timestamp: 3000, status: 'success' as const },
+      assistant: { id: 'compact-card', status: 'success' as const, isStreaming: false,
+        renderMode: 'structured' as const, answerMarkdown: '', timelineItems: [{
+          id: 'compact-item', type: 'subconscious_step' as const, timestamp: 3000, collapsed: false,
+          compaction: { id: 'one', state },
+        }] },
+    };
+    const user = { ...card, turnId: 'turn-user', userMessage: { ...card.userMessage, id: 'user', text: 'hello' },
+      assistant: { ...card.assistant, id: 'placeholder', timelineItems: [] } };
+    const merged = mergeLocalTurnsAwaitingProjection([user], [card]);
+    expect(merged).toEqual([user, card]);
+    expect(buildMessageBlocks(merged, 'Pudding').map(block => block.id)).toContain('compact-card:assistant:0');
+  },
+);
 
 const createTurn = (
   turnId: string,

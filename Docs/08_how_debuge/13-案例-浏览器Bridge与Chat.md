@@ -2,7 +2,7 @@
 title: 案例：浏览器 Bridge 与 Chat
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-20
+last_reviewed: 2026-10-22
 status: active
 description: 2026-08-23 新增。Desktop 设置页新增「调试模式（开发者）」卡片，启用并重启 Core 后：
 categories: [docs, how-debug]
@@ -216,6 +216,22 @@ ContextBudget/历史投影；围栏与 hash 均正确而模型仍答旧任务 �
    不能证明 Runtime 已消费。源码构建通过后仍需由进程外控制器重启 Core，再用新 Turn 做产品内 smoke。
 
 ## 11.40 本地待发消息在 Turn 结束后长时间仍显示“排队中”
+
+先区分服务端排队与前端显示失真：只读比较 `conversation-open.activeTurn`、旧 `conversation.activeRun`
+和 `message-queue` 的身份、状态、事件游标；同时按 executionId 查询 `agent_execution` 是否仍产生新工具调用。
+压缩卡显示「等待切换」不能证明压缩死锁；以 `compaction-status`、同一 compactionId 的终态事件和提交日志为准。
+
+若 `activeRun.status=running`、过程条目持续增长，页面却没有运行卡或停止按钮，检查三个边界：
+
+- 心跳输入消息的 `status=succeeded` 只表示输入已落库，不能当作该 Turn 的助手完成态；其系统提示正文不得合并进助手答案。
+- 消息列表与 Composer 必须消费同一个作用域快照；刷新后本地 messageId→turnId 表可能为空，停止/插嘴应使用快照的 `outputSnapshot.window.turnId`，不得替换为 runId 或 `compaction:*`。
+- 压缩四类生命周期事件必须在主消息投影过滤前消费；空正文的终态卡也要经过列表合并与消息块生成。`skipped` 表示未替换上下文，不得呈现为已压缩成功。
+
+现场保留接口响应和必要日志片段时不要输出认证 Token。先保存证据再部署；仅前端修复可用 Desktop
+的受认证 `frontend/load` 接口热更新静态资源，避免终止用户正在执行的任务。部署后核对前端版本及资源哈希，
+用只读浏览器检查运行卡与停止按钮；实际取消或插嘴会改变执行，不作为无副作用 smoke。
+
+以下是旧本地队列实现的排查方法：
 
 先用同一 `sessionId/turnId` 对齐 Runtime、Journal、Coordinator 和 Worker 的终态时间，再查下一次
 `SubmitTurn`/首个 `llm_gateway started`。若后端已四层 `Completed`、期间没有第二次 Submit，但随后又在无

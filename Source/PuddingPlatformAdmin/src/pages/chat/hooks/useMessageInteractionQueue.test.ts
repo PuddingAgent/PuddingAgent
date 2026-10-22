@@ -25,6 +25,7 @@ const messageApi = {
 
 interface QueueHarnessOptions {
   loading?: boolean;
+  projectedActiveTurnId?: string | null;
   busyTurns?: boolean;
   turns?: any[];
   /** 已受理且仍在运行的 canonical Turn（messageId → server turnId），用于停止测试。 */
@@ -76,6 +77,7 @@ function useQueueHarness(
     },
     execution: {
       loading: options.loading ?? false,
+      projectedActiveTurnId: options.projectedActiveTurnId,
       turns: projectedTurns,
       turnsRef: turnsRef as never,
       activeMessageIdsRef,
@@ -94,6 +96,39 @@ function useQueueHarness(
 }
 
 describe('useMessageInteractionQueue', () => {
+  it('restores stop and steering from a snapshot without local message tracking', async () => {
+    const { result } = renderHook(() => useQueueHarness('ws-1', {
+      projectedActiveTurnId: 'canonical-active',
+      turns: [{ turnId: 'compaction:background', assistant: { status: 'executing', isStreaming: true } }],
+    }));
+    await act(async () => {
+      expect(await result.current.requestActiveTurnCancel()).toBe(1);
+      expect(await result.current.submitSteeringInteraction('continue here')).toBe(true);
+    });
+    expect(cancelConversationTurn).toHaveBeenCalledWith('ws-1', 'session-1', 'canonical-active');
+    expect(createChatSteeringMessage).toHaveBeenCalledWith('ws-1', 'session-1', 'canonical-active', expect.objectContaining({ messageText: 'continue here' }));
+  });
+
+  it('does not revive stale local controls after the canonical run completes', async () => {
+    const { result } = renderHook(() => useQueueHarness('ws-1', {
+      projectedActiveTurnId: null, busyTurns: true,
+      activeTurns: [{ messageId: 'old-message', turnId: 'old-turn' }],
+    }));
+    await act(async () => {
+      expect(await result.current.requestActiveTurnCancel()).toBe(0);
+      expect(await result.current.submitSteeringInteraction('hello')).toBe(false);
+    });
+    expect(cancelConversationTurn).not.toHaveBeenCalled();
+    expect(createChatSteeringMessage).not.toHaveBeenCalled();
+  });
+
+  it('never steers into an independent compaction card', async () => {
+    const { result } = renderHook(() => useQueueHarness('ws-1', {
+      turns: [{ turnId: 'compaction:background', assistant: { status: 'executing', isStreaming: true } }],
+    }));
+    await act(async () => { expect(await result.current.submitSteeringInteraction('hello')).toBe(false); });
+    expect(createChatSteeringMessage).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     (getAgentMessageQueue as jest.Mock).mockResolvedValue({ items: [] });

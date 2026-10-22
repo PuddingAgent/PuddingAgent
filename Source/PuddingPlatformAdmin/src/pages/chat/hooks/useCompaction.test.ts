@@ -51,6 +51,16 @@ function useCompactionHarness() {
 }
 
 describe('useCompaction', () => {
+  it('records a skipped candidate as unchanged and rejects a late start', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.started')));
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.skipped', { reason: 'boundary_cancelled' })));
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.started')));
+    const item = (result.current.turns[0] as any).assistant.timelineItems[0];
+    expect(item.compaction.state).toBe('skipped');
+    expect(item.message).toBe('boundary_cancelled');
+    expect(result.current.loading).toBe(false);
+  });
   it('does not merge a different compaction into the active identity', () => {
     const { result } = renderHook(() => useCompactionHarness());
     act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.started')));

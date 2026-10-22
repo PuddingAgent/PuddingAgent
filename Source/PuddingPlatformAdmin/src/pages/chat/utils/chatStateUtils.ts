@@ -103,11 +103,12 @@ export function compactionTurnId(compactionId: string): string {
   return `${COMPACTION_TURN_PREFIX}${compactionId}`;
 }
 
-/** 压缩生命周期三类 canonical 事件（started/completed/failed）。 */
+/** 压缩生命周期 canonical 事件（含未提交的 skipped 终态）。 */
 const COMPACTION_LIFECYCLE_EVENT_TYPES = new Set([
   'context.compaction.started',
   'context.compaction.completed',
   'context.compaction.failed',
+  'context.compaction.skipped',
 ]);
 
 /**
@@ -714,6 +715,7 @@ export function shouldReplayEventsAfterHistory(turns: ChatTurn[]): boolean {
 }
 
 export function isActiveAssistantTurn(turn: ChatTurn): boolean {
+  if (turn.turnId.startsWith(COMPACTION_TURN_PREFIX)) return false;
   return (
     turn.assistant.isStreaming ||
     turn.assistant.status === 'thinking' ||
@@ -825,6 +827,7 @@ export const HISTORICAL_REPLAY_TERMINAL_EVENTS = new Set([
   'session.closed',
   'context.compaction.completed',
   'context.compaction.failed',
+  'context.compaction.skipped',
 ]);
 
 export function shouldHydrateSessionEventReplay(

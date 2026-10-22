@@ -1111,8 +1111,12 @@ export function useSessionEventProjection({
       const eventType = String(ev.type);
       const anyEv = ev as Record<string, unknown>;
       const isSubAgentEvent = isSubAgentConversationEvent(eventType);
-      // 会话域：projection-owned（主消息由 Agent 投影承担）的会话在这里只消费
-      // `subagent.*` 事实。主消息正文/轮次/压缩由 Agent 投影负责，重复投影会把正文
+      const isCompactionEvent = eventType === 'context.compaction.started' ||
+        eventType === 'context.compaction.completed' ||
+        eventType === 'context.compaction.failed' ||
+        eventType === 'context.compaction.skipped';
+      // 会话域：projection-owned 会话在这里消费子代理与压缩生命周期。
+      // 主消息正文/轮次由 Agent 投影负责，重复投影会把正文
       // 叠加两次；而子代理事实**没有**第二条通道（ADR-060 禁止活动期轮询运行归档，
       // 否则 sharing violation 会杀死运行中的子代理），必须继续由 canonical 事件送达。
       const projectionOwnedSessionId =
@@ -1124,7 +1128,7 @@ export function useSessionEventProjection({
         isProjectionOwnedSession?.(projectionOwnedSessionId) === true;
       // 被域过滤掉的事件没有任何副作用（只有幂等的游标推进），因此不占用
       // eventId 去重集合：否则一个投影会话的整条正文增量流会把集合撑到无界。
-      const dedupeApplies = !subagentOnly || isSubAgentEvent;
+      const dedupeApplies = !subagentOnly || isSubAgentEvent || isCompactionEvent;
 
       // CU-03：bootstrap/gap/live 三路输入统一进入同一投影。同一 eventId
       // 重复到达（断线重连 replay 兜底与 SSE 重放重叠）只消费一次（幂等）。
@@ -1146,8 +1150,16 @@ export function useSessionEventProjection({
         seenEventIdsRef.current.add(dedupeKey);
       }
 
+      // Conversation lifecycle has one owner regardless of the message
+      // projection mode. Route it before the main-Turn ownership filter.
+      if (isCompactionEvent) {
+        handleCompactionLifecycleEvent(ev, { replay: options?.replay });
+        updateLastSequence(ev);
+        return;
+      }
+
       if (subagentOnly && !isSubAgentEvent) {
-        // 阶段 D：主消息/Turn/压缩事件不再静默丢弃，交给唯一 ChatClientStore 合并入口；
+        // 主消息/Turn 交给唯一 ChatClientStore 合并入口；
         // 本 hook 仍不投影正文，避免与快照重复叠加。
         onProjectionOwnedMainEvent?.(ev);
         const skippedCount = (eventCountsRef.current.get(eventType) ?? 0) + 1;
@@ -1212,21 +1224,6 @@ export function useSessionEventProjection({
       const runtimeEvent = toChatInteractionRuntimeEvent(ev, agentId);
       if (runtimeEvent) {
         appendChatInteractionRuntimeEvent(runtimeEvent);
-      }
-
-      // Compaction is a conversation lifecycle fact, not an Agent Turn event.
-      // It has no turnId/messageId and must never fall through to the normal
-      // message resolver, otherwise it mutates whichever Agent Turn happened
-      // to be latest when the event arrived.
-      if (
-        eventType === 'context.compaction.started' ||
-        eventType === 'context.compaction.completed' ||
-        eventType === 'context.compaction.failed'
-      ) {
-        // 透传 replay 语义：历史/缺口重放中的孤儿 started 不得点亮运行态。
-        handleCompactionLifecycleEvent(ev, { replay: options?.replay });
-        updateLastSequence(ev);
-        return;
       }
 
       // turn.accepted 是服务端 Turn 身份的首个持久事实。必须在这里完成

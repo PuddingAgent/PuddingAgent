@@ -38,6 +38,8 @@ interface MessageQueueIdentityPort {
 
 interface MessageQueueExecutionPort {
   loading: boolean;
+  /** undefined: legacy owner; null: authoritative snapshot has no controllable Turn. */
+  projectedActiveTurnId?: string | null;
   turns: ChatTurn[];
   turnsRef: MutableRefObject<ChatTurn[]>;
   activeMessageIdsRef: MutableRefObject<Set<string>>;
@@ -83,6 +85,7 @@ export function useMessageInteractionQueue({
   const { workspaceId, agentId, selectedSessionId, sessionIdRef } = identity;
   const {
     loading,
+    projectedActiveTurnId,
     turns,
     turnsRef,
     activeMessageIdsRef,
@@ -424,14 +427,16 @@ export function useMessageInteractionQueue({
           .map((messageId) => messageIdToTurnIdRef.current.get(messageId))
           .filter((turnId): turnId is string => Boolean(turnId)),
       );
-      const activeTurn = [...turnsRef.current]
+      const localActiveTurn = [...turnsRef.current]
         .reverse()
         .find(
           (turn) =>
             isActiveAssistantTurn(turn) || trackedTurnIds.has(turn.turnId),
         );
+      const activeTurnId = projectedActiveTurnId === undefined
+        ? localActiveTurn?.turnId : projectedActiveTurnId;
 
-      if (!workspaceId || !sessionId || !activeTurn) {
+      if (!workspaceId || !sessionId || !activeTurnId) {
         messageApi.error('当前没有可插嘴的运行中 Agent，消息仍保留在队列中');
         return false;
       }
@@ -457,7 +462,7 @@ export function useMessageInteractionQueue({
       recordPerfEvent('chat.steering.submit', {
         queueItemId: sourceQueueItemId,
         sessionId,
-        turnId: activeTurn.turnId,
+        turnId: activeTurnId,
         agentId,
         messageChars: trimmed.length,
       });
@@ -466,7 +471,7 @@ export function useMessageInteractionQueue({
         const response = await createChatSteeringMessage(
           workspaceId,
           sessionId,
-          activeTurn.turnId,
+          activeTurnId,
           {
             messageText: trimmed,
             agentId,
@@ -493,7 +498,7 @@ export function useMessageInteractionQueue({
           sessionId,
           workspaceId,
           agentId,
-          turnId: activeTurn.turnId,
+          turnId: activeTurnId,
           createdAt: acceptedAt,
           requestLatencyMs: Math.max(0, acceptedAt - submittedStartAt),
         });
@@ -518,7 +523,7 @@ export function useMessageInteractionQueue({
         recordPerfEvent('chat.steering.submitFailed', {
           queueItemId: sourceQueueItemId,
           sessionId,
-          turnId: activeTurn.turnId,
+          turnId: activeTurnId,
           agentId,
           requestLatencyMs: Math.max(0, Date.now() - submittedStartAt),
           error: errorMessage,
@@ -536,6 +541,7 @@ export function useMessageInteractionQueue({
       agentId,
       messageApi,
       messageIdToTurnIdRef,
+      projectedActiveTurnId,
       selectedSessionId,
       sessionIdRef,
       turnsRef,
@@ -578,9 +584,13 @@ export function useMessageInteractionQueue({
     const conversationId = sessionIdRef.current ?? selectedSessionId;
     if (!workspaceId || !conversationId) return 0;
     const activeTurnIds = new Set<string>();
-    for (const messageId of activeMessageIdsRef.current) {
-      const turnId = messageIdToTurnIdRef.current.get(messageId);
-      if (turnId) activeTurnIds.add(turnId);
+    if (projectedActiveTurnId !== undefined) {
+      if (projectedActiveTurnId) activeTurnIds.add(projectedActiveTurnId);
+    } else {
+      for (const messageId of activeMessageIdsRef.current) {
+        const turnId = messageIdToTurnIdRef.current.get(messageId);
+        if (turnId) activeTurnIds.add(turnId);
+      }
     }
     if (activeTurnIds.size === 0) return 0;
 
@@ -609,6 +619,7 @@ export function useMessageInteractionQueue({
     activeMessageIdsRef,
     messageApi,
     messageIdToTurnIdRef,
+    projectedActiveTurnId,
     selectedSessionId,
     sessionIdRef,
     workspaceId,
@@ -640,12 +651,12 @@ export function useMessageInteractionQueue({
           void handleCompactCommand();
         } else if (
           (event.ctrlKey || event.metaKey) &&
-          (loading ||
+          (projectedActiveTurnId !== undefined ? Boolean(projectedActiveTurnId) : (loading ||
             hasBlockingActiveTurn(
               turnsRef.current,
               activeMessageIdsRef.current,
               messageIdToTurnIdRef.current,
-            ))
+            )))
         ) {
           void submitSteeringInteraction(trimmed).then((accepted) => {
             if (!accepted) {
@@ -672,6 +683,7 @@ export function useMessageInteractionQueue({
       loading,
       messageIdToTurnIdRef,
       outgoingDecoration,
+      projectedActiveTurnId,
       submitInteraction,
       submitSteeringInteraction,
       turns,

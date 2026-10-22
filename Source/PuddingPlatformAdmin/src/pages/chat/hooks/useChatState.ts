@@ -37,6 +37,8 @@ import {
 import { useCheckpointTimeline } from './useCheckpointTimeline';
 import { createSessionTerminalEvent } from '../runtime/sessionLifecycleStore';
 import type { ChatTurn } from '../types';
+import type { AgentConversationView } from '../client/types';
+import { resolveConversationExecution } from '../client/conversationExecution';
 import { assistantStatusLabel } from '../types';
 import type {
   ChatInteractionQueueItem,
@@ -200,6 +202,7 @@ export function useChatState(
   routeSearch?: string,
   options?: {
     agentProjectionOwnsMainSession?: boolean;
+    projectedConversation?: AgentConversationView | null;
     /** 阶段 D：projection-owned 主会话事件交给 ChatClientStore 唯一合并。 */
     onProjectionOwnedMainEvent?: (event: AdminChatStreamEvent) => void;
     /**
@@ -287,7 +290,16 @@ export function useChatState(
     appendChatInteractionRuntimeEvent,
     clearChatInteractionRuntimeEvents,
   } = useChatRuntimeEvents();
-    const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const projectedExecution = agentProjectionOwnsMainSession
+    ? resolveConversationExecution(
+        options?.projectedConversation,
+        workspaceId,
+        agentId,
+        selectedSessionId ?? sessionIdRef.current,
+      )
+    : undefined;
+  const executionLoading = projectedExecution?.running ?? loading;
   /**
    * 权限模式（用户 2026-09-19）：配置属于 **Agent**，不是工作区、也不是全局。
    * 因此不再读 localStorage / workspace 用户偏好 —— 唯一可信源是后端 Agent 级访问级别：
@@ -483,7 +495,7 @@ export function useChatState(
       setTurns,
     },
     status: {
-      loading,
+      loading: executionLoading,
       setLoading,
       setError,
     },
@@ -515,7 +527,8 @@ export function useChatState(
       sessionIdRef,
     },
     execution: {
-      loading,
+      loading: executionLoading,
+      projectedActiveTurnId: projectedExecution?.turnId,
       turns,
       turnsRef,
       activeMessageIdsRef,
@@ -1654,7 +1667,7 @@ export function useChatState(
     setInputValue,
     pendingSkills,
     setPendingSkills,
-    loading,
+    loading: executionLoading,
     workingAgentIds,
     interactionQueue,
     error,

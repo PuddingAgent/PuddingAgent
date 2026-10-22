@@ -470,14 +470,17 @@ export function useCompaction({
         return;
       }
 
-      const compacted =
-        raw.compaction && typeof raw.compaction === 'object'
+      const skipped = event.type === 'context.compaction.skipped';
+      const compacted = skipped
+        ? ({ outcome: 'Skipped' } as ContextCompactionResult)
+        : raw.compaction && typeof raw.compaction === 'object'
           ? (raw.compaction as ContextCompactionResult)
           : typeof raw.outcome === 'string' ? ({ outcome: raw.outcome } as ContextCompactionResult) : undefined;
       updateCompactTurn(
         compactTurnId,
         'success',
-        compacted?.compactedMessageCount ? `已整理 ${compacted.compactedMessageCount} 条历史消息` : '上下文整理完成',
+        skipped ? String(raw.reason || '本次未替换上下文')
+          : compacted?.compactedMessageCount ? `已整理 ${compacted.compactedMessageCount} 条历史消息` : '上下文整理完成',
         compacted,
         eventFacts,
       );

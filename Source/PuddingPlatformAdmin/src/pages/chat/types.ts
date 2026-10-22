@@ -310,6 +310,7 @@ export function buildMessageBlocks(
     const hasInboundQuoted = Boolean(turn.assistant.quotedMessage);
     const hasContent =
       hasInboundQuoted ||
+      turn.assistant.timelineItems.some((item) => Boolean(item.compaction)) ||
       Boolean(turn.assistant.answerMarkdown) ||
       turn.assistant.isStreaming ||
       isAssistantInProgress(turn.assistant.status) ||

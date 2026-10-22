@@ -38,6 +38,7 @@ import type {
   TimelineItem,
 } from '../types';
 import { inboundDebug } from '../utils/inboundDebug';
+import { COMPACTION_TURN_PREFIX } from '../utils/chatStateUtils';
 import { buildChatDiagnosticCopyPayload } from '../utils/chatDiagnostics';
 import { getExecutionFlowRenderWeight } from '../viewport/executionFlowRenderWeight';
 import { buildVirtualMessageItems } from '../viewport/messageProjection';
@@ -600,6 +601,14 @@ export const mergeLocalTurnsAwaitingProjection = (
       hasProjectedUserTurn([projectedTurn], localTurn),
     );
 
+    // Lifecycle records often have no answer body, including completed ones.
+    // They are independent of an Agent reply and must survive snapshot merges.
+    if (localTurn.turnId.startsWith(COMPACTION_TURN_PREFIX)) {
+      merged = projectedUserIndex < 0 ? [...merged, localTurn]
+        : merged.map((turn, index) => index === projectedUserIndex ? localTurn : turn);
+      continue;
+    }
+
     if (isPendingLocalTurn(localTurn)) {
       if (projectedUserIndex < 0) {
         // 投影里没有同身份的 turn，但这可能只是身份锚点缺失（agent 主动回合、
@@ -934,6 +943,12 @@ export const mergeActiveRunIntoTurns = (
     }
   }
   if (existingIndex >= 0) {
+    // A heartbeat is the input envelope, not a successful assistant reply.
+    // Merging into its terminal state hides the actual run and leaks its prompt
+    // into the answer. Keep the live reply separate at the conversation edge.
+    if (turns[existingIndex].assistant.renderMode === 'heartbeat') {
+      return [...turns, activeTurn];
+    }
     return mergeActiveRunIntoIndex(turns, existingIndex, activeTurn);
   }
 

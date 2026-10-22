@@ -1,5 +1,5 @@
 # PuddingPlatformAdmin CodeMAP
-> 源指纹: Source/PuddingPlatformAdmin/*=8-987d66c8f197, src/**=928-a8e40569ce38, public/**=14-f3aa09cf5f00, mock/**=7-15a79f8b3988, config/**=5-502280cdfaa6, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 194 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingPlatformAdmin/*=8-18c965f3f490, src/**=930-6e3cae6506f4, public/**=14-f3aa09cf5f00, mock/**=7-15a79f8b3988, config/**=5-502280cdfaa6, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 195 · 最近整理: 2026-10-22
 > 指纹覆盖: *、src/**、public/**、mock/**、config/**、e2e/**、scripts/**、.husky/**、.github/**；未纳入 10 项: .commitlintrc.js、.editorconfig、.gitignore、.lintstagedrc、.npmrc、.tmp-b6-build.log、.tmp-b6-tsc-orch.log、.tmp-b6-tsc.log、tests/**、types/**
 
 > React 管理前端 | Ant Design Pro v6 · React 19 · UmiJS
@@ -245,10 +245,11 @@ bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧�
 | `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；同 scope+窗口并发打开单飞、同 key 复用；`isOpening`/`isRefreshing` 分离；会话切换/后台校正用 AbortController；SSE 按 canonical Turn 隔离活动输出，终态按 messageId 物化回复；缓存键统一 ownerUserId，首屏与后台快照均先发布再写 IndexedDB，防异步写缓存回退实时状态；`expandMessage` 按需展开长正文；历史页合并返回时当前状态，保留期间收到的实时消息与游标 |
 | `src/pages/chat/client/conversationOpenApi.ts` / `conversationOpenTypes.ts` | 阶段D 统一打开/历史/过程分页/消息正文分段契约与客户端：数字枚举取值冻结、`If-None-Match` 304→null、AbortSignal 取消、失败不吞空会话；过程条目含结构化工具/子代理字段，正文按 UTF-8 字节偏移分段续读 |
 | `src/pages/chat/client/conversationSnapshotAdapter.ts` | 统一打开快照 → `AgentConversationView`：降序传输页反转为正序显示；保留 typed 发送者、模型角色和图片引用；长消息预览携带展开元信息，由消息行渲染控件；Turn 摘要→过程摘要/终态、`eventCursor=C` 供 SSE 追平 |
+| `src/pages/chat/client/conversationExecution.ts` | 校验 workspace/agent/session 后从同一快照派生运行态和 canonical Turn 控制目标；停止与插嘴不使用 runId 或压缩卡身份；空闲快照清除旧本地运行状态 |
 | `src/pages/chat/client/localCache.ts` | IndexedDB 派生缓存版本管理；展示合同改变时只失效 conversations 缓存；版本变化关闭旧连接，服务端消息不受影响 |
 | `scripts/chat-browser-smoke.mjs` | 阶段F桌面浏览器冒烟（Playwright Chromium）：登录 token 注入、`/admin/chat` 首内容/FCP/请求路径/失败响应采集；输出 temp/test-out/chat-smoke.json + 截图 |
 | `src/pages/chat/client/canonicalMerge.ts` | 消息内容与显示顺序分别合并：新快照顺序为准，分页缺失历史按共享身份锚点保留；同 ID 的 activeRun 比较完整状态与输出，旧游标不回退；未变化 messages 保持引用稳定 |
-| `src/pages/chat/components/MessageList.tsx` | 消息行投影与单卡去重（见下「关键语义」） |
+| `src/pages/chat/components/MessageList.tsx` | 消息行投影与单卡去重；心跳输入与运行中助手回复分离；独立压缩卡保留空正文终态（见下「关键语义」） |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；Agent 行通过根滚动容器 IntersectionObserver 在 600px 预取区注册可见 turn；直接接收本 Turn 的 Projection 对象，任一其他 Turn/全局 selector revision 不得击穿历史行 memo |
 | `src/pages/chat/components/execution-flow/TurnContentStream.tsx` / `ActivityGroup.tsx` | 超长单 Turn 的二级 DOM 预算：默认最新 40 个内容块、每组最新 24 个行为节点；旧内容每次 40/24 项渐进揭示，折叠组成员完全卸载 |
@@ -361,7 +362,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 | `src/pages/chat/hooks/useCompaction.ts` | 重放判活门控与活性 TTL 收敛（见下「关键语义」） |
 | `src/pages/chat/hooks/sessionEventCursor.ts` | 会话事件游标身份与开流决策唯一真源（见下「关键语义」） |
 | `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放与游标准备合同（见下「关键语义」） |
-| `src/pages/chat/hooks/useSessionEventProjection.ts` | replay 透传与会话域过滤（见下「关键语义」） |
+| `src/pages/chat/hooks/useSessionEventProjection.ts` | replay 透传与会话域过滤；压缩 started/completed/failed/skipped 在主消息所有权过滤前路由到独立生命周期，按事件 ID 去重 |
 | `src/pages/chat/hooks/useSessionEventConnection.ts` | 显式游标、统一开流入口与 410 分流；`connectionState`（idle/connecting/connected/reconnecting）由 SSE onOpen/onClose 驱动，供健康期停轮询（见下「关键语义」） |
 | `src/services/platform/api.ts` | `subscribeSessionEvents` **任何** `afterSequence`（含 0）都下发 `Last-Event-ID`（S3，2026-09-19）——此前只在 `>0` 时发送，使「显式 0（有意全量回放）」与「无游标（客户端没有权威位置）」在协议上不可区分，而无游标已被服务端改为只推实时帧（fail-safe） |
 | `PuddingRuntime/Services/ContextWindowManager.cs` | Auto 压缩三态携带同一 compactionId（failed 此前漏发）；见 `PuddingRuntime/code_map.md` 同主题章节 |
