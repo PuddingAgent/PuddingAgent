@@ -6,7 +6,11 @@
 - `MainWindow.xaml.cs` panel methods: current canvas polling, annotation commands, composer forwarding and native craft-library wiring.
 - `PanelImageBridge.cs`: serves allowed local image resources to panel WebView2 instances.
 - [Agent-driven panel ADR-099](../../Docs/07_architecture/113ADR-099交互面板编辑状态与制成品归属ADR.md): proposed interactive HTML/JS runtime, bidirectional SDK events, recoverable state and Core asset ownership.
-- Startup state panel (`LoadingPanel` in `MainWindow.xaml`): replaces the old static "等待 Core 就绪" copy with a state-driven panel for starting / slow start (≥15 s, latest `[StartupPhase]` output) / loading the Web workbench / failure. All copy, visibility and status-bar text come from `PuddingDesktop.Foundation.StartupPanelPresenter`; steps/colors are pre-declared XAML visuals switched by visibility so Light/Dark/HighContrast re-resolve. The Shell only maps `DesktopStartupState` → presenter input, drives a 200 ms stopwatch timer, and routes primary actions (`StartCore` / `CancelStartup` via `StopCoreAsync`→`_startCts` / `Retry` / `OpenSettings`). `StartupPhaseActivity` is the only place that understands the `[StartupPhase]` log format. A 20 s WebView2 watchdog downgrades a hung workbench load to `WorkbenchFailed`; retries reload the WebView through `_webGate` instead of closing it directly. The Debug smoke captures `smoke.startup.png` before `WorkbenchReady` and asserts the panel/ring state.
+- Startup state panel (`LoadingPanel` in `MainWindow.xaml`): replaces the old static "等待 Core 就绪" copy with a state-driven panel for starting / slow start (≥15 s, latest `[StartupPhase]` output) / loading the Web workbench / failure. All
+  copy, visibility and status-bar text come from `PuddingDesktop.Foundation.StartupPanelPresenter`; steps/colors are pre-declared XAML visuals switched by visibility so Light/Dark/HighContrast re-resolve. The Shell only maps
+  `DesktopStartupState` → presenter input, drives a 200 ms stopwatch timer, and routes primary actions (`StartCore` / `CancelStartup` via `StopCoreAsync`→`_startCts` / `Retry` / `OpenSettings`). `StartupPhaseActivity` is the only place
+  that understands the `[StartupPhase]` log format. A 20 s WebView2 watchdog downgrades a hung workbench load to `WorkbenchFailed`; retries reload the WebView through `_webGate` instead of closing it directly. The Debug smoke captures
+  `smoke.startup.png` before `WorkbenchReady` and asserts the panel/ring state.
 - Runtime Center navigation lives beside Workbench and Browser. Colored status, startup duration/time, uptime, Core CPU and memory cards sit above a stretchable log viewport with optional follow mode. Metrics sample only while this page and window are visible; unchanged logs are not reassigned.
 - Memory card reports the **private working set** (Task Manager's 内存 column), not `Process.WorkingSet64` (total working set, which also counts shared image/mapped/JIT pages and reads 30%–120% higher). The subtitle always discloses the counter used and the concurrent total working set; see
  `Docs/14_reports/Core内存口径与占用归因-2026-10-02.md`.
@@ -25,6 +29,8 @@
 
 The WPF archive is a reference/test host, not loaded into the WinUI product. Browser driver behavior is shared with `PuddingBrowser.WinUI` through source links.
 
-`Hosting/DesktopApplicationCoordinator.Capability.cs` connects workspace target snapshots through `BrowserWorkspaceTargetBridge.ObserveAgentTarget`; empty or repeated UI state is not a user revocation command. Product surface management requires the workspace's `IBrowserWorkspaceLifecycle`; context events and each tab's owning ContextId drive registration and cleanup. Explicit control actions use the lifecycle command ports.
+`Hosting/DesktopApplicationCoordinator.Capability.cs` connects workspace target snapshots through `BrowserWorkspaceTargetBridge.ObserveAgentTarget`; empty or repeated UI state is not a user revocation command. Product surface management
+requires the workspace's `IBrowserWorkspaceLifecycle`; context events and each tab's owning ContextId drive registration and cleanup. Explicit control actions use the lifecycle command ports.
 
-- `../../TestScripts/build-browser-companion.ps1`: serial Desktop + bundled Core build in a dedicated output directory; records per-file hashes, process identities and protocol revisions in `browser-companion.json`; `-VerifyOnly` validates copied packages, `-AllowDirty` marks development repairs explicitly.
+- `../../TestScripts/build-browser-companion.ps1`: serial Desktop + bundled Core build in a dedicated output directory; records per-file hashes, process identities and protocol revisions in `browser-companion.json`; `-VerifyOnly` validates
+  copied packages, `-AllowDirty` marks development repairs explicitly.

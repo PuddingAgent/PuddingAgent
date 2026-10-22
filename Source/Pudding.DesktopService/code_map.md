@@ -41,10 +41,10 @@
 | `DesktopCapabilityChannelSettings.cs` | desktop.json 值对象：Enabled 缺省 false；实现即声明（见下「关键语义」） |
 | `DesktopCapabilityChannelPreflight.cs` | 「要不要启动能力通道」的**单一判定入口**：未启用 ⇒ 不启动；启用但端点描述缺失/不可解析 ⇒ **不启动且不回退**；否则可启动 |
 | `DesktopCapabilityHostFactory.cs` | 用配置构造宿主：关闭 ⇒ 明确失败**且不构造**；启用 ⇒ 只构造**不启动**（启动名额留给组合根，见规格 §7.2 的陷阱） |
-| `DesktopCapabilityChannelComposition.cs` | 组合根：判定→构造→StartAsync→Dispose；只接受 BrowserPageLifecycle；通道执行器**借用**共享权威、停止不关闭它（见下「关键语义」） |
-| `DesktopBrowserExecutorComposition.cs` | 浏览器执行器组合根（ADR-097 D2）：Shell 可见的 `IDesktopBrowserExecutor`，与能力通道开关无关；`closesAuthorityOnDispose` 决定共享权威关闭权归属 |
+| `DesktopCapabilityChannelComposition.cs` | 组合根：判定→构造→StartAsync→Dispose；只接受 BrowserPageLifecycle；执行器借用共享权威（见下「关键语义」） |
+| `DesktopBrowserExecutorComposition.cs` | 浏览器执行器组合根（ADR-097 D2）：Shell 可见的 `IDesktopBrowserExecutor`，与通道开关无关 |
 | `BrowserAdmissionAdapter.cs` | 两传输共用准入适配器：Admit/Revalidate/Release；写操作必须有租约（见下「关键语义」） |
-| `BrowserSessionAdmission.cs` | **桥路径会话准入的标量门面/DTO**（ADR-097 D3）：`BrowserSessionControlHandle`（宿主注入 owner）、不透明 `BrowserSessionPermit`、`BrowserSessionDecision`、`BrowserSessionStatus`、稳定拒绝码；Shell/桥侧只依赖这些类型，不引用 Authorization 组件 |
+| `BrowserSessionAdmission.cs` | 桥路径会话准入的标量门面/DTO（ADR-097 D3）：许可/决策/状态与稳定拒绝码；Shell 只依赖这些类型 |
 | 控制面准入与声明（`DesktopCapabilityPolicy.cs` / `DesktopCapabilityChannelSettings.cs`） | 两个 browser.binding.* 能力的准入规则与声明（实现即声明）（见下「关键语义」） |
 | `BrowserTaskBindingComposition.cs` | 控制面装配工厂：构造签发器 + 受理/撤销服务；未握手签发被拒（见下「关键语义」） |
 | `BrowserTaskBindingService.cs` | 任务绑定的受理与撤销：目标当下为用户选定页才签发；确定性撤销入口（见下「关键语义」） |
@@ -94,7 +94,9 @@
 - **`BrowserPageLifecycle.cs`**：页面/上下文生命周期的**唯一所有者**（设计方案 §3.3）：**创建侧** `RegisterContext`/`RegisterPage`/`SetAgentTarget`，**关闭侧** `ClosePage`/`CloseContext`（两个注册表 + 该页**全部**授权 + 写租约）。**登记原子性**：任一侧失败都回收另一侧并抛出 ⇒ 
   调用方永远拿不到"半登记"页面（视图侧有、准入侧没有，或反之）。`SetAgentTarget` 切换时撤销**旧目标**的执行权并推进授权世代，但**保留只读**（§3.2）。`Create(...)` 为进程构造唯一端口（含唯一权威与两个注册表，调用方不必引用 Automation 组件）；另提供控制面门面 `IsPaused`/`IsUserTakeover`/`SetP
   aused`/`SetUserTakeover`。**失败安全**：注册表里已经没有它也照样撤授权。结果按项如实报告（`WasRegistered`/`PagesCleared`/`GrantsRevoked`/`LeaseReleased`/`ExecutionScopeRevoked`）。还持有**读取基线存储** `Readings`（§145）并在 
-  `ClosePage`/`CloseContext` 里清除——"页面没了、内容还留着"与"授权没撤"同类。**页面级准入判据** `HasSufficientPageGrant` 只有两个来源：① 用户显式选中的 Agent 目标页；③ 页级 grant。**桥在线不再放行任意页面**（ADR-097 D4 / F3）。**会话权威已接入（2026-10-18）**：内部持有 `PuddingBrowser.Authorization.AgentTargetSessionAuthority`；桥握手/断连、用户交页（登记为**待交页**）、暂停/接管、关页/关上下文都转发给它；桥命令经 `TryClaimControlOwner`/`AuthorizePageCommand`/`RevalidatePageCommand`/`CompletePageCommand` 单一门面准入与释放，拒绝码与组件契约逐字一致
+  `ClosePage`/`CloseContext` 里清除——"页面没了、内容还留着"与"授权没撤"同类。**页面级准入判据** `HasSufficientPageGrant` 只有两个来源：① 用户显式选中的 Agent 目标页；
+  ③ 页级 grant。**桥在线不再放行任意页面**（ADR-097 D4 / F3）。**会话权威已接入（2026-10-18）**：内部持有 `PuddingBrowser.Authorization.AgentTargetSessionAuthority`；桥握手/断连、用户交页（登记为**待交页**）、暂停/接管、关页/关上下文都转发给它；
+  桥命令经 `TryClaimControlOwner`/`AuthorizePageCommand`/`RevalidatePageCommand`/`CompletePageCommand` 单一门面准入与释放，拒绝码与组件契约逐字一致
 - **`BrowserReadingBaselineStore.cs`**：读取基线存储（§145）：保存"某修订标识对应的那份文本"，让 `since_revision` 能给出真正的行级差异。三条约束：**按页隔离**（跨页比较无意义）、**有界**（每页只留最近若干份；单份超过 `MaxLinesPerBaseline` 就**不存**——保存被截断的基线会算出错误差异）、**随生命周期清除**（由 `BrowserPageLifecycle` 
   持有并清理）
 - **`DesktopShellSurface.cs`**：把两个 Shell 端口（交互设施 + 宿主告知）适配成表面：预算纵深防御（剪贴板二次截断）、异常折叠为 `internal_error`、取消原样传播；**不补齐**自动化状态与页面数（那是 `DesktopService` 的权威状态）
@@ -142,3 +144,6 @@
   ⚠️ **这是产品行为变更**：未选定 Agent 目标页时，上述能力一律 `unauthorized`
   （设计 §3.2「默认只授权用户选定的目标页」）。Shell 侧由
   `DesktopApplicationCoordinator.Capability` 把 `workspace.AgentTargetPageId` 同步进注册表。
+
+**`DesktopBrowserExecutorComposition.cs`**：`closesAuthorityOnDispose` 决定共享权威的关闭权归属——通道与执行器同一进程时只能有一方关闭它。
+**`BrowserSessionAdmission.cs`**：`BrowserSessionControlHandle`（宿主注入 owner）、不透明 `BrowserSessionPermit`、`BrowserSessionDecision`、`BrowserSessionStatus` + 稳定拒绝码；Shell/桥侧只依赖这些类型，不引用 Authorization 组件。

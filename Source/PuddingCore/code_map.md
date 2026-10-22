@@ -59,7 +59,7 @@
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
-| `ChatMessage.cs` + `LlmContentPart.cs` + `ChatMessageMultimodalNormalizer.cs` | 消息模型与多模态归一 | `ChatMessage`、`LlmContentPart` | `AgentReplyImageDirective.cs` | ADR-077 有序 typed 内容部件（text/image→Artifact 引用+detail）与 v1 信封 ContentPartsEnvelope；Gateway 渲染统一经 normalizer，旧 VisualArtifactIds 派生 original；SourceMessageId 是不发送给 provider 的入站来源身份 |
+| `ChatMessage.cs` + `LlmContentPart.cs` + `ChatMessageMultimodalNormalizer.cs` | 消息模型与多模态归一 | `ChatMessage`、`LlmContentPart` | `AgentReplyImageDirective.cs` | ADR-077 typed 内容部件与 v1 ContentPartsEnvelope；渲染经 normalizer；旧 VisualArtifactIds 派生 original；细节见「关键语义」 |
 | `LlmResponse.cs` | LLM 响应与终止原因 | `LlmResponse` | `LlmOptions.cs` | `FinishReason` 透传截断状态，部分摘要不得覆盖持久历史 |
 | `LlmContinuationState.cs` | Provider opaque output items 回放契约 | `LlmContinuationState` | `LlmResponse.cs` | 跨工具轮次回放 |
 | `LlmOptions.cs` | LLM 选项与请求归因（F1） | `LlmOptions`、`MeasureLlmRequest`、`CaptureLlmRequest` | `LlmResponse.cs` | 含最近请求的 ContextUsageSnapshot、Tokenizer 校准与工具 schema 的 UTF-8/GZIP 归因（不保存正文）；请求归因分离见本表后注 |
@@ -82,7 +82,8 @@
 | `AudioTranscodingModels.cs` | 音频转码模型 | `AudioTranscodingModels` | `VoiceSynthesisModels.cs` | — |
 | `LlmMessageSequenceNormalizer.cs` | 消息序列规范化 | `LlmMessageSequenceNormalizer` | `ChatMessage.cs` | `NormalizeForProvider` 将显式 `IsContextSummary` 背景投影为 user；运行时保留 Assistant 身份，原生 reasoning/tool items 原样回传，不从正文猜测摘要 |
 
-LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布（候选测量不得改写准备快照）；`CaptureLlmRequest` = 计量 + 发布 `currentPreparedRequest`；`RecordProviderUsage` 带 `LlmCallPurposes`，只有主请求用途才允许改写准备快照/参与安全校准/写 `MeasuredRequestUsage`（`lastMeasuredRequest`），辅助与摘要调用单独落 `TryGetLastAuxiliaryMeasurement`；`Total` 与 `Prompt` 分开保存。
+LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布（候选测量不得改写准备快照）；`CaptureLlmRequest` = 计量 + 发布 `currentPreparedRequest`；
+`RecordProviderUsage` 带 `LlmCallPurposes`，只有主请求用途才允许改写准备快照/参与安全校准/写 `MeasuredRequestUsage`（`lastMeasuredRequest`），辅助与摘要调用单独落 `TryGetLastAuxiliaryMeasurement`；`Total` 与 `Prompt` 分开保存。
 
 ## LLM 网关（Core/）
 
@@ -128,9 +129,11 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Runtime/LlmInvocationContracts.cs` | 统一 LLM invocation 合同；`Purpose` 以非模型可见方式区分 agent/approval/compaction 计费与诊断 |
 | `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同 |
 | `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约；WarmPrefixSourceMessage 携带完整运行期原文与精确持久 ID |
-| `Runtime/SubAgentInvocationContracts.cs` | `RuntimeExecutionOptions.ContextCompaction` 独立压缩策略配置；主/子执行共用注册模型容量上的比例，和 SubAgents 并发配置分开 |
+| `Runtime/SubAgentInvocationContracts.cs` | `RuntimeExecutionOptions.ContextCompaction` 独立压缩策略；主/子共用注册模型容量比例，与并发配置分开 |
 
 **关键语义**
+
+**`ChatMessage.cs` / `LlmContentPart.cs` / `ChatMessageMultimodalNormalizer.cs`**：ADR-077 是有序 typed 内容部件（`text`/`image` → Artifact 引用 + detail），与 v1 信封 `ContentPartsEnvelope` 并存；Gateway 渲染统一经 normalizer，旧 `VisualArtifactIds` 派生 `original` 部件。`SourceMessageId` 是**入站来源身份**，不发送给 provider。
 
 **`Runtime/SubAgentInvocationContracts.cs`**：子代理调用与系统执行预算契约；单一预算域（N00，commit f096bc5）：未显式请求时统一使用系统 profile 默认 600 轮/2400 工具调用/24h，请求可显式携带 `int? MaxRounds/MaxToolCallsTotal/TimeoutSeconds`，无 managed WorkUnit 独立预算域，不存在 32/40/120 隐式截断；显式超过配置护栏（options 上限）显式拒绝；
 收尾宽限 20 轮/30 分钟为加法（不预扣）；父 Agent 可指定 `resume_sub_agent_id` 与可选预算请求字段

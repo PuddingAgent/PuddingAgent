@@ -24,9 +24,9 @@ draft: false
 |------|------|
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册（见下「关键语义」） |
-| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；显式装配 `CompactionDiagnosticJournal` 到实际 `AgentExecutionService`（见下「关键语义」） |
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；显式装配 `CompactionDiagnosticJournal`（见下「关键语义」） |
 | `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生图片阅读与预处理工具（见下「关键语义」） |
-| `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三种口径、物理像素坐标、GDI 采集 + SkiaSharp 编码、结果落 Vision Artifact。**线格式边界在 `ScreenCapture/ScreenCaptureWire.cs`**（句柄 `nint`→`0x` 十六进制，因 System.Text.Json 不支持 IntPtr）。**窗口可见性三字段各说各的事**：`isVisible`=`WS_VISIBLE` 样式位（≠此刻屏幕可见）、`isMinimized`=真时 `bounds` 是 `-32000` 屏外占位矩形（采集 fail-closed）、`isCloaked`=DWM 隐藏（典型另一虚拟桌面，bounds 仍有效、允许采集并在 notes 说明） |
+| `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三口径、物理像素坐标、GDI + SkiaSharp 编码、结果落 Vision Artifact |
 | `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库 schema 初始化（见下「关键语义」） |
 | `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM |
 | `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
@@ -37,6 +37,10 @@ draft: false
 | `Controllers/TransportStatusController.cs` | 传输用量只读 API（退役判据证据面）（见下「关键语义」） |
 
 **关键语义**
+
+**`ScreenCapture/ScreenCaptureWire.cs`**：**线格式边界**——句柄 `nint` → `0x` 十六进制字符串（System.Text.Json 不支持 IntPtr），解析侧必须按十六进制还原，不许当十进制。
+
+**窗口可见性三字段各说各的事**：`isVisible` = `WS_VISIBLE` 样式位（≠ 此刻屏幕可见）；`isMinimized` = 真时 `bounds` 是 `-32000` 屏外占位矩形（采集 fail-closed）；`isCloaked` = DWM 隐藏（典型为另一虚拟桌面，bounds 仍有效，允许采集并在 notes 说明）。
 
 **`Extensions/PuddingServiceCollectionExtensions.Platform.cs`**：成品 Host 的 Platform/Runtime 组合注册；内置 Agent 模板直接使用 PuddingCore 唯一权威源；包含 MOA、V2 component registry/compiler、SQLite store/signal、Admin 手动 Run/HTTP Hook command service、SubAgent/图片生成/展示 executor、临时子代理目录两阶段 GC、hosted worker 与 
 replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工具同生命周期，服务内部每次调用通过 DbContextFactory 创建独立 DbContext；不能只在未被产品入口调用的 Runtime 扩展里注册 worker
@@ -84,7 +88,8 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 
 **`BrowserBridge/HostBrowserDelegationLifecycle.cs`**：**委派生命周期端口的 Host 实现**（R4·§6.2）：把 Runtime/Platform 的**标量委派请求**翻译成既有控制面的绑定签发/撤销；**无会话 ⇒ 拒绝**（与"门"的未启用即放行不同：委派是**显式请求**，必须 **fail-closed**）；范围线名**白名单**（`read`/`write`，未知即拒）；签发时登记 `childRunId → binding` 供**精确且幂等**的撤销
 
-**`BrowserBridge/BridgeBrowserCapabilitySurface.cs`**：窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败）。`locate` 的分页游标与能力通道**共用 `BrowserLocateCursor.TryResolve`**：过期（版本/查询变了）与参数错分类一致，取完即 `NextCursor=null`；`interact` 的滚动动作完整传 `Target/Locator/Delta/InputMode=Dom` 并把 `ScrollOutcome` 映射进回执；`inputMode=native` 在触碰页面前**明确拒绝**（协议不承载该字段，不静默降级成 DOM）；交互结果里的元素是**动作前**解析的快照，必须带 `IsPreActionObservation` 标记（不得当动作后验证证据）
+**`BrowserBridge/BridgeBrowserCapabilitySurface.cs`**：窄端口的 **Bridge 实现**：把能力形状的请求翻译到 `IBrowserRuntime`，与能力通道实现**同形**（版本门禁 7/7、交互前解析元素、结果事实不升级为失败）。`locate` 的分页游标与能力通道**共用 `BrowserLocateCursor.TryResolve`**：过期（版本/查询变了）与参数错分类一致，
+取完即 `NextCursor=null`；`interact` 的滚动动作完整传 `Target/Locator/Delta/InputMode=Dom` 并把 `ScrollOutcome` 映射进回执；`inputMode=native` 在触碰页面前**明确拒绝**（协议不承载该字段，不静默降级成 DOM）；交互结果里的元素是**动作前**解析的快照，必须带 `IsPreActionObservation` 标记（不得当动作后验证证据）
 
 **`BrowserBridge/TransportRoutedBrowserCapabilitySurface.cs`**：组合根按 `DesktopTransportRouting` **二选一**（通道就绪走通道，否则 Bridge，两者都不可用则如实失败）；同文件含 `DesktopTransportUsageTracker`（退役判据计数 + `MissingEvidenceCalls` 观测）。硬要求：**同一次操作绝不执行两次**；**副作用类能力要求权限证据**（缺失或 `denied` ⇒ `Unauthorized`，只读能力不受影响；见 
 `Docs/12_features/桌面能力链路权限证据设计-2026-10-02.md`）

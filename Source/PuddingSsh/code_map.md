@@ -158,7 +158,8 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 **关键语义**
 
 **`Source/PuddingSsh.Probe/` + `TestScripts/ssh-probe/run-ssh-probe.ps1`**：
-真实协议探针 **24 个场景**（`fingerprint`/`hostkey`/`encrypted`/`deadline`/`cancel`/`throughput`/`coordinator`/**`knownhosts`(accept/revoked/rotated/hashed)**/**`dirs`**/**`ignoreterm`**/**`disconnect`**/**`auth`**/**`cwd`**/**`precancel`**/**`lateconnect`**/**`noeof`**/**`submitfail`**/**`rounds`**/**`signal`**/**`transfer`**），核对服务端认证次数、客户端密钥指纹（拒绝场景为 0）、取消远端证据、服务端零残留 socket/临时文件与出带 sha256（`transfer`）
+真实协议探针 **24 个场景**（`fingerprint`/`hostkey`/`encrypted`/`deadline`/`cancel`/`throughput`/`coordinator`/**`knownhosts`(accept/revoked/rotated/hashed)**/**`dirs`**/**`ignoreterm`**/**`disconnect`**/**`auth`**/**`cwd`**/**`precancel`**/**
+`lateconnect`**/**`noeof`**/**`submitfail`**/**`rounds`**/**`signal`**/**`transfer`**），核对服务端认证次数、客户端密钥指纹（拒绝场景为 0）、取消远端证据、服务端零残留 socket/临时文件与出带 sha256（`transfer`）
 
 命令（输出只进 `temp/`）：
 

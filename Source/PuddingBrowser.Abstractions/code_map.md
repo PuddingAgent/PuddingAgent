@@ -6,7 +6,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `BrowserInterfaces.cs` | `IBrowserRuntime`、`IBrowserPage` 等核心接口；`IBrowserWorkspaceLifecycle` 是产品管理操作的工作区所有者端口（成功包含页签/生命周期登记）；`IBrowserPagePresenter` 是「把这一页真正呈现出来」端口（截图/原生输入在表面不可见时先展开工作区再重试） |
+| `BrowserInterfaces.cs` | 核心接口：`IBrowserRuntime`、`IBrowserPage`；另有工作区生命周期与页面呈现端口 |
 
 ## 模型与类型
 
@@ -28,3 +28,5 @@
 ## 测试
 
 —（由 AgentTools / Desktop.Tests 间接覆盖）
+
+**`IBrowserWorkspaceLifecycle`**：产品管理操作的工作区所有者端口，成功即包含页签/生命周期登记（不是"已排入队列"）。**`IBrowserPagePresenter`**：把这一页**真正呈现出来**的端口——截图/原生输入遇到表面不可见时先展开工作区再重试，不许静默返回空。

@@ -46,7 +46,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.DeliveryManifest.Cli/` | 交付清单**采集入口**（B7 内部一侧）：目录 → 自检清单 → JSON；不合格以退出码 2 拒绝产出（见下「关键语义」） | — |
 | `Source/PuddingDesktop.CapabilityHost/` | WinUI 侧平台适配：`DispatcherQueue` 调度实现（只引用 Contracts） | [code_map](Source/PuddingDesktop.CapabilityHost/code_map.md) |
 | `Source/Pudding.DesktopSurface.Browser/` | 浏览器侧 Desktop 表面与目标注册表桥；不含 UI 代码，可脱 UI 测试 | [code_map](Source/Pudding.DesktopSurface.Browser/code_map.md) |
-| `Source/PuddingDesktop.Foundation/` | BCL-only 布局与外观偏好，以及启动状态面板的文案/阶段映射（`ShellLayout`、`WorkbenchAppearance`、`StartupPanelPresenter`、`StartupPhaseActivity`） | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
+| `Source/PuddingDesktop.Foundation/` | BCL-only 布局/外观偏好与启动面板文案（`StartupPanelPresenter`） | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
 | `Source/PuddingDesktop.WpfArchive/` | 旧 WPF 入口/验证基线；无 UI 的启动器与协议源文件由 WinUI 项目链接编译 | [code_map](Source/PuddingDesktop.WpfArchive/code_map.md) |
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
@@ -101,7 +101,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 | 概念 | 权威位置 | 要点 / 不变量 |
 |------|----------|----------------|
-| **Turn 执行与上下文管线** | `Source/PuddingRuntime/Services/` | 一次请求 = 一个 canonical Turn；`ContextPipeline`/`ContextWindowManager`/`ContextCompactionService` 分层组装 + 绝对窗口压缩；`AgentExecutionService` 用 `[CURRENT USER TURN input_sha256=…]` 围栏本轮输入，缺失即 fail-closed；实例提示词经 `AgentPromptSnapshot` 按 manifest 读取，正文指纹驱动同会话下一轮刷新 |
+| **Turn 执行与上下文** | `Source/PuddingRuntime/Services/` | 一次请求 = 一个 canonical Turn；`ContextPipeline`/`ContextWindowManager`/`ContextCompactionService` 分层组装+绝对窗口压缩；`AgentExecutionService` 用 `[CURRENT USER TURN input_sha256=…]` 围栏输入，缺失即拒绝；实例提示词经 `AgentPromptSnapshot` 按 manifest 读取，正文指纹驱动下一轮刷新 |
 | **飞书主动收件人** | `Source/PuddingCore/Platform/FeishuRecipientContracts.cs` | `list_feishu_recipients` 查询绑定渠道白名单；`send_message` 按 Open ID 发送，无历史消息依赖；单人默认，多人显式选择 |
 | **Message Fabric / send_message** | `Source/PuddingPlatform/Services/` | `MessageDeliveryPolicy` + `MessageDeliveryDispatcher`：inform/report_result 只通知，仅 ask/request_review/delegate 执行；`agent_reply` 永远被动 |
 | **Task 自动派发 / Goal / WorkUnit** | `Source/PuddingPlatform/Services/Scheduling/` | availability → backlog 精炼 → Plan/WorkUnit 编译 → 五态跟踪；promotion/start/repair 只有一个 CAS 写入者 |
@@ -128,7 +128,9 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 **浏览器控制权与页面授权**
 
-`BrowserPageLifecycle` 持有会话权威与页面登记；Bridge dispatcher 管准入、复检、释放和账本，ExecutorRoute 映射到工作区执行器，ResultAdapter 负责命令级响应。产品的上下文/页签管理经 `IBrowserWorkspaceLifecycle` 进入 `BrowserWorkspaceController`，创建成功须完成页签投影、生命周期登记与所需激活；每页保留所属 ContextId。Host 代理严格消费 Protocol DTO，单项/列表/无值不可混用；发现元数据与页面控制分离。channel 旧权威路径及 handler 回退尚保留；目标边界见 [ADR-097](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[契约修复方案](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文档由驱动签发正数版本；`BrowserWorkspaceTargetBridge.ObserveAgentTarget` 观察 UI 目标快照，空/重复快照不等于用户撤权。显式选页/撤权与页面关闭分别走命令及生命周期端口。
+`BrowserPageLifecycle` 持有会话权威与页面登记；Bridge dispatcher 管准入、复检、释放和账本，ExecutorRoute 映射到工作区执行器，ResultAdapter 负责命令级响应。产品的上下文/页签管理经 `IBrowserWorkspaceLifecycle` 进入 `BrowserWorkspaceController`，创建成功须完成页签投影、生命周期登记与所需激活；
+每页保留所属 ContextId。Host 代理严格消费 Protocol DTO，单项/列表/无值不可混用；发现元数据与页面控制分离。channel 旧权威路径及 handler 回退尚保留；目标边界见 [ADR-097](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[契约修复方案](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。
+Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文档由驱动签发正数版本；`BrowserWorkspaceTargetBridge.ObserveAgentTarget` 观察 UI 目标快照，空/重复快照不等于用户撤权。显式选页/撤权与页面关闭分别走命令及生命周期端口。
 
 压缩现场链路：`AgentExecutionService` → `BoundedCompactionSummary`（逐段决策）→ `CompactionDiagnosticJournal`（本地有界脱敏记录）；`compactionId` 连接计划、分段请求/返回、最终提交与错误报告，参见 [Runtime 地图](Source/PuddingRuntime/code_map.md)。
 
@@ -143,7 +145,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Runtime` | `ContextPipeline` → `AgentExecutionService` | 组装 stable system prefix + volatile User tail，再用 `[CURRENT USER TURN input_sha256=…]` 围栏本轮输入（缺失 fail-closed） |
 | `Runtime → Gateway` | `LlmInvocationService` → `DirectLlmClient` | 按 `model.protocol` 路由 openai / responses / anthropic 三协议网关 |
 | `Gateway → Platform` | `ILlmGatewayUsageRecorder` → `llm_gateway_usage_events` | usage 落库后供 StatsApi 与日聚合取本地计费口径 |
-| `Runtime` | `PrefixCompactionPolicy` → `AgentExecutionService.Compaction` → `BackgroundCompactionCandidate` → `WarmPrefixCompaction` / `BoundedCompactionSummary` → 持久 CAS | 按注册模型窗口和配置比例提前准备，前缀保持稳定；达到同步阈值等待，完整批次边界重验冻结前缀、保留追加消息并按当前出站信封重新计量。新工具结果首次入场限幅并保存原文；协议层区分应用摘要与原生 reasoning。设计见 [前缀缓存友好的会话压缩](Docs/07_architecture/前缀缓存友好的会话压缩.md) |
+| `Runtime` | `PrefixCompactionPolicy` → `WarmPrefixCompaction` / `BoundedCompactionSummary` → 持久 CAS | 按注册模型窗口和配置比例提前准备，前缀保持稳定；达到同步阈值等待，完整批次边界重验冻结前缀、保留追加消息并按当前出站信封重新计量。新工具结果首次入场限幅并保存原文；协议层区分应用摘要与原生 reasoning。设计见 [前缀缓存友好的会话压缩](Docs/07_architecture/前缀缓存友好的会话压缩.md) |
 | `Platform` | `MessageDeliveryPolicy` → `MessageDeliveryDispatcher` | inform/report_result 只通知；ask/request_review/delegate 才进执行 |
 | `Runtime` | `SubAgentInvocationService` → `SubAgentManager` | 子代理委派：model 须为 providerId/modelId；run archive 固化实际预算 |
 | `Platform` | `TaskAutoDispatchWorker` → `TaskExecutionTracker` | 5 min 有界派发：availability → backlog 精炼 → Plan/Node 编译 → 五态跟踪 |
@@ -197,7 +199,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | 文档 | 主题 |
 |------|------|
 | [交互面板 ADR-099](Docs/07_architecture/113ADR-099交互面板编辑状态与制成品归属ADR.md) | 提案：Agent 生成交互界面、SDK 双向事件、可恢复状态与 Core 资产归属；图片编辑为应用场景 |
-| [浏览器一期 ADR](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) · [实施方案](Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md) · [现有架构](Docs/07_architecture/浏览器工具与浏览器控制能力-架构与施工进度-2026-10-18.md) | 真实 Agent 浏览器闭环、单一执行链与分层验收；[命令合同与配套部署](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)，审阅证据由架构入口链接 |
+| [浏览器一期 ADR](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) · [实施方案](Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md) · [现有架构](Docs/07_architecture/浏览器工具与浏览器控制能力-架构与施工进度-2026-10-18.md) | 真实浏览器闭环、单一执行链与分层验收；[命令合同与配套部署](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)，审阅证据见架构入口 |
 | [`Docs/README.md`](Docs/README.md) · [`Agents.md`](Agents.md) · [`Agents-Hygiene.md`](Docs/10_conventions/Agents-Hygiene.md) | 文档总索引与阅读顺序 · 开发与提交纪律 · 仓库卫生 |
 | [`组件化交付规程`](Docs/10_conventions/组件化交付规程.md) · [`调试入口`](Docs/08_how_debuge/README.md) · [`架构`](Docs/07_architecture/架构.md) · [`ADR 全表`](Docs/07_architecture/README.md) | 组件化交付 S1–S5 门禁（强制）· 调试与日志诊断 · 架构总览与模块分册 |
 | [可诊断基础设施设计](Docs/12_features/可诊断基础设施设计-2026-10-07.md) | 诊断事实/类型化因果/事故查询面/故障场景资产：叶子组件边界、S1–S5 施工与门禁、查询与脱敏的强制项 |

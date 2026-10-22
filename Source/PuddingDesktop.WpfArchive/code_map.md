@@ -27,6 +27,10 @@
 
 **关键语义**
 
+**`Browser/BrowserBridgeCommandAdapter.cs`**：命令映射为 `(DesktopCapabilityDescriptor, DesktopCapabilityRequest)` 对；已映射 `context.list` / `page.getInfo` / 导航 / `snapshot` / `locate` / `waitFor` / `screenshot`，未映射命令不回退不猜测（fail-closed 且原因可行动）。
+**`Browser/BrowserBridgeExecutorRoute.cs`**：命中后经 `BrowserCapabilityInvoker` 调用执行器，并把能力错误映射为稳定 Bridge 码；未覆盖命令返回 null 交回 handler（异常不回退）。
+**`Browser/BrowserWorkspaceController.cs`**：统一工具/UI 管理操作、上下文事件与失败回收；页面登记/关闭不借用当前活动上下文。
+
 **`Hosting/DesktopApplicationCoordinator.cs`**：🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench、调试组件；独立前端锁支持源码构建部署与仓库内预构建 `dist` 加载，并投影受控诊断快照
 
 **`Core/CoreProcessSupervisor.cs`**：Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收；启动超时采用有效进度租约（静默超时 + 有界绝对上限）；`EnvironmentName` 可覆盖 Production
@@ -64,13 +68,13 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client，HelloAck 双层版本校验、heartbeat、重连；收包与每代有界串行命令队列分离，长命令不堵心跳/取消；连接终止原因保留到握手结果 |
+| `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client：HelloAck 双层版本校验、heartbeat、重连；收包与有界命令队列分离；终止原因保留到握手结果 |
 | `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate` 见下「关键语义」 |
-| `Browser/BrowserBridgeCommandAdapter.cs` | I2-c 映射层（未接管执行）：Bridge 命令 → `(DesktopCapabilityDescriptor, DesktopCapabilityRequest)`；已映射 context.list/page.getInfo/导航/snapshot/locate/waitFor/screenshot，失败 fail-closed 且原因可行动 |
-| `Browser/BrowserBridgeResultAdapter.cs` | 结果反投影（Contracts → Bridge 描述符）：pageState/contexts/pageList/locate/interact/wait/snapshot；元素实测 BoundingBox 逐字段透传 |
-| `Browser/BrowserBridgeExecutorRoute.cs` | I2-c 真实执行器路由：仅路由已有可靠反投影的命令，携带 `SessionPermitMarker` 与可信 caller，经 `BrowserCapabilityInvoker` 调用执行器并把能力错误映射为稳定 Bridge 码；未覆盖命令返回 null 回退 handler |
+| `Browser/BrowserBridgeCommandAdapter.cs` | I2-c 映射层（未接管执行）：Bridge 命令 → 能力描述符/请求对，失败 fail-closed 且原因可行动 |
+| `Browser/BrowserBridgeResultAdapter.cs` | 结果反投影：pageState/contexts/list/locate/interact/wait/snapshot；BoundingBox 逐字段透传 |
+| `Browser/BrowserBridgeExecutorRoute.cs` | I2-c 真实执行器路由：只路由有可靠反投影的命令，带 `SessionPermitMarker` 与可信 caller；其余回退 handler |
 | `Browser/BrowserCommandExecutorRoute.cs` | 派发器执行器路由委托（非 null=执行器处理；null=回退 handler；异常不回退） |
-| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target UI 状态源；实现 `IBrowserWorkspaceLifecycle`，统一工具/UI 管理操作、上下文事件与失败回收；接管/暂停见下「关键语义」 |
+| `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target UI 状态源；实现 `IBrowserWorkspaceLifecycle`；接管/暂停见下「关键语义」 |
 | `Browser/BrowserTabViewModel.cs` | 页签展示与所属 ContextId；页面登记/关闭不借用当前活动上下文 |
 | `Browser/BrowserAutomationGateSync.cs` | `IBrowserAutomationGate` 端口/闸门集合/`DelegateAutomationGate` 见下「关键语义」 |
 | `Views/BrowserWorkspaceView.xaml(.cs)` | 双标签、地址栏、Surface、Agent Activity Pane |
@@ -81,11 +85,13 @@
 生命周期清理点同一个对象）—— 只读快照、只写同一事实源，Bridge 是默认路径，因此这里读错就等于人工接管无效。**会话准入（ADR-097 D3，2026-10-18 替换旧的 grant 闸门）**：owner 来自**宿主注入的 Origin**
 （`ConversationId ?? SessionId`，不由模型参数决定）；第一条可信命令经 `TryClaimControlOwner` 确认交页归属，随后 `AuthorizePageCommand` → 触碰 handler 前 `RevalidatePageCommand` → `finally` `CompletePageCommand`
 （唯一票据、写世代、取消信号都在权威内；释放后不可复用）。无 PageId 的引导/发现命令（context.list/getInfo、page.list、context.create）不要求先交页，其余管理命令必须绑定已交出上下文。
-（本文件被链接编译进 WinUI Shell，Shell 不引用 `PuddingBrowser.Automation`/`Authorization` ⇒ 门面签名只出现 Contracts/标量类型，否则 `CS0012` 打断 Shell 构建）。**会话状态推送**：`SessionChanged`（`BrowserSessionStatus` 标量快照）在交页与每条命令准入后按内容去重发出，UI 据此区分"等待会话确认 / 已交出 / 失效"。**幂等**：以 `BrowserOperationLedger` 为**唯一**来源（`TryBegin` 四态驱动；指纹 = 调用者身份 + 能力名 + 目标 + 完整载荷，deadline 等非语义元数据不入）⇒ 同指纹在途等同一完成源、已完成复用终态、
+（本文件被链接编译进 WinUI Shell，Shell 不引用 `PuddingBrowser.Automation`/`Authorization` ⇒ 门面签名只出现 Contracts/标量类型，否则 `CS0012` 打断 Shell 构建）。**会话状态推送**：`SessionChanged`（`BrowserSessionStatus` 标量快照）在交页与每条命令准入后按内容去重发出，UI 据此区分"等待会话确认 / 已交出 / 失效"。
+**幂等**：以 `BrowserOperationLedger` 为**唯一**来源（`TryBegin` 四态驱动；指纹 = 调用者身份 + 能力名 + 目标 + 完整载荷，deadline 等非语义元数据不入）⇒ 同指纹在途等同一完成源、已完成复用终态、
 **换调用者/换载荷即冲突**，不再另造按 Guid 的 in-flight/调用者缓存。**暂停/接管只阻断副作用**：先按命令名判定只读类别（`ReadOnlyPageCommands`），只读命令继续走授权闸门并执行，写命令返回 `browser_paused`/`browser_user_takeover`（ADR-097 D4；修复前在识别命令前就拒绝全部命令，导致"接管后可读"只在文档里成立）
 
 **`Browser/BrowserWorkspaceController.cs`**：Tab/Activity/active/target 唯一 UI 状态源；**接管/暂停的唯一写入点**：`SetUserTakeoverAsync`/`SetPausedAsync` 把状态推给所有已注册的执行闸门（不推 ⇒ 「人工接管」按钮对 Agent 无效）。桥接命令的宿主侧执行者：
-`page.interact` 的 `scroll` 会解析 `ScrollTarget`（显式线名优先，否则按 locator/位移推导；**未登记线名拒绝而不猜测**）并把驱动的滚动事实回传到响应。另暴露 `TryGetPageVersion(PageId)`（页面真实版本，未知返回 false）供 Shell 目标登记/版本喂入使用——**不伪造版本 0**。`ControlSession`/`ApplySessionStatusAsync` 接收派发器推送的会话状态，`AgentTargetSummary` 按"待确认/已确认/未确认"输出，**点按钮不等于已交出**（ADR-097 D3）
+`page.interact` 的 `scroll` 会解析 `ScrollTarget`（显式线名优先，否则按 locator/位移推导；**未登记线名拒绝而不猜测**）并把驱动的滚动事实回传到响应。另暴露 `TryGetPageVersion(PageId)`（页面真实版本，未知返回 false）供 Shell 目标登记/版本喂入使用——**不伪造版本 0**。`ControlSession`/`ApplySessionStatusAsync` 接收派发器推送的会话状态，
+`AgentTargetSummary` 按"待确认/已确认/未确认"输出，**点按钮不等于已交出**（ADR-097 D3）
 
 **`Browser/BrowserAutomationGateSync.cs`**：`IBrowserAutomationGate` 端口 + 闸门集合 + `DelegateAutomationGate`：注册/撤销、逐一推送、单个闸门抛异常不影响其余（接管是安全动作，不得半途失效）
 
