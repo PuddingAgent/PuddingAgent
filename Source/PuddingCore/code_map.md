@@ -174,9 +174,15 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
-| `Panels/PanelCanvasStore.cs` | 工具区画布的内容真相与持久边界 | `IPanelCanvasStore`、`PanelCanvasSnapshot`、`PanelCanvasLimits`、`InMemoryPanelCanvasStore`、`PanelCanvasGuard` | `Panels/FilePanelCanvasStore.cs`、`../PuddingPlatform/Controllers/Api/PanelCanvasApiController.cs` | 内容真相只在 Core，Desktop 只是视图；HTML 上限 `MaxContentChars`；panelId 规整只有 `PanelCanvasGuard` 一处实现，调用方不得自行清洗 |
-| `Panels/FilePanelCanvasStore.cs` | 落盘实现，画布活过进程重启 | `FilePanelCanvasStore` | `Panels/PanelCanvasStore.cs` | 根目录 `{DataRoot}/panels`，文件名 `panel-{id}.json`；**先写盘后改内存**（写盘失败不改内存）；删除失败同样不改内存；坏文件跳过并计入 `SkippedFileCount`，且保留在盘上便于排查 |
-| `Panels/PanelAnnotationFile.cs` | 用户画布标注的**只读**回传快照 | `PanelAnnotationFile`、`IPanelAnnotationFileReader`、`PanelAnnotationFileName`、`FilePanelAnnotationFileReader` | `Panels/FilePanelCanvasStore.cs`、`../PuddingBrowser.AgentTools/PanelInspectTools.cs`、`../PuddingDesktop.Foundation/PanelAnnotationSnapshotWriter.cs` | **Desktop 写 / Core 只读**：Core 的 HTTP 面不接收标注写入，避免给 0.0.0.0 上的匿名接口再开一个写口；文件名 `panel-{id}.annotations.json` 由 `PanelAnnotationFileName.For` 单点定义（`SchemaVersion=1`，Core 与 Desktop 各有字面量锁测试）；panelId 按 `OrdinalIgnoreCase` 比对，不匹配/损坏/缺失一律返回 null 而不抛 |
+| `Panels/PanelCanvasStore.cs` | 画布内容真相与持久边界 | `IPanelCanvasStore`、`PanelCanvasSnapshot`、`PanelCanvasLimits`、`PanelCanvasGuard` | `Panels/FilePanelCanvasStore.cs` | 内容真相只在 Core，Desktop 只是视图；HTML 上限 `MaxContentChars`；panelId 规整只有 `PanelCanvasGuard` 一处 |
+| `Panels/FilePanelCanvasStore.cs` | 落盘实现，画布活过进程重启 | `FilePanelCanvasStore` | `Panels/PanelCanvasStore.cs` | 目录 `{DataRoot}/panels`、文件 `panel-{id}.json`；先写盘后改内存；坏文件跳过并计入 `SkippedFileCount` |
+| `Panels/PanelAnnotationFile.cs` | 用户标注的只读回传快照 | `PanelAnnotationFile`、`IPanelAnnotationFileReader`、`PanelAnnotationFileName` | `../PuddingBrowser.AgentTools/PanelInspectTools.cs` | Desktop 写 / Core 只读；文件名公式单点定义；panelId 大小写不敏感；损坏即 null 不抛 |
+
+**Panels 域约束细节**
+
+- `PanelCanvasStore.cs`：`InMemoryPanelCanvasStore` 只服务测试与无盘场景；panelId 规整的唯一实现是 `PanelCanvasGuard`，调用方不得自行清洗后再传入。
+- `FilePanelCanvasStore.cs`：**先写盘、后改内存**——反过来会出现「用户已经看到新内容、磁盘还是旧的」，重启后画布莫名回退；删除同理，文件删不掉就不改内存。单个坏文件只跳过并计入 `SkippedFileCount`，文件留在盘上便于事后排查。
+- `PanelAnnotationFile.cs`：Desktop 写 `{DataRoot}/panels/panel-{id}.annotations.json`（`PanelAnnotationFileName.For` 单点定义，`SchemaVersion=1`，Core 与 Desktop 两侧各有字面量锁测试），Core 只读；**Core 的 HTTP 面不接收标注写入**，避免给 0.0.0.0 匿名接口再开写口。解析 fail-closed：JSON 坏、schema 不认、panelId 与文件名不符一律 null，读不到标注不让 `read_panel` 失败。
 ## 检索合同（Tools/Retrieval/，ADR-089 U0）
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |

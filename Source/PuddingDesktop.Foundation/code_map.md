@@ -23,7 +23,10 @@ BCL-only layout and appearance preferences, with compiler-enforced absence of pa
 - `PanelMarkRetention.cs`: burn-in JPEG retention — `.used` sidecar marks a mark that was inserted into a
   conversation (never pruned), used marks do not consume the keep budget, orphan markers cleaned up.
 - `PanelImageSource.cs` / `PanelCanvasFeed.cs`: local-image URI policy and Core panel snapshot parsing.
-- `PanelAnnotationSnapshotWriter.cs`: Desktop→Core annotation handoff — writes one envelope per panel to `{DataRoot}/panels/panel-{id}.annotations.json` (`schemaVersion=1`, camelCase `payload`, atomic `.tmp` + move). `TryPublish` returns `false` + reason instead of throwing (it runs on the 2s UI poll timer); an empty payload is refused so a transient blank read can never erase the previous drawing, and callers dedupe on the payload text so only real edits touch the disk.
+- `PanelAnnotationSnapshotWriter.cs`: Desktop→Core annotation handoff; one envelope per panel at
+  `{DataRoot}/panels/panel-{id}.annotations.json` (`schemaVersion=1`, camelCase `payload`, atomic `.tmp` + move).
+  `TryPublish` returns `false` + reason instead of throwing (it runs on the 2s UI poll timer), and refuses an empty payload
+  so a transient blank read can never erase the previous drawing; callers dedupe on payload text so only real edits hit disk.
 - `StartupPanelPresenter.cs`: single mapping source for the Shell startup state panel (title/phase/3-step strip/elapsed + slow-start hint/actions/error summary/status-bar text and tone) across all 13 launch phases; `StartupErrorText.Describe` turns supervisor errors into user-facing Chinese while keeping raw text for the collapsible detail.
 - `StartupPhaseActivity.cs`: parses `[StartupPhase] <phase> total=… delta=…` lines from the Core log tail into an aggregated human phase plus "latest output"; keeps the log format out of XAML and UI code.
 - `Source/PuddingDesktop.FoundationTests`: independent layout, persistence, startup-panel mapping/phase-parsing,
