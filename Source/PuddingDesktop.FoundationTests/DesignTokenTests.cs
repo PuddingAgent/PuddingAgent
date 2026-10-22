@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Xml.Linq;
 using PuddingDesktop.Foundation.Design;
 
@@ -197,28 +198,11 @@ public sealed class DesignTokenTests
     }
 
     [Fact]
-    public void GeneratedDictionary_IsWellFormedAndCoversEveryToken()
+    public void Lint_IgnoresValuesThatAreNotVisualTokens()
     {
-        var document = XDocument.Parse(DesignTokenXaml.Write());
-        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-        var keys = document.Root!.Elements()
-            .Select(element => element.Attribute(x + "Key")?.Value)
-            .Where(key => key is not null)
-            .ToArray();
-
-        Assert.Equal(
-            DesignTokens.FontSizes.Select(token => token.Name)
-                .Concat(DesignTokens.CornerRadii.Select(token => token.Name))
-                .OrderBy(name => name, StringComparer.Ordinal),
-            keys.OrderBy(key => key, StringComparer.Ordinal));
-    }
-
-    [Fact]
-    public void GeneratedDictionary_IsDeterministicAndPassesLint()
-    {
-        var first = DesignTokenXaml.Write();
-        Assert.Equal(first, DesignTokenXaml.Write());
-        Assert.Empty(XamlLiteralLint.Scan(first));
+        Assert.Empty(XamlLiteralLint.Scan("""
+            <Border Width="11" MinWidth="12" Height="8" Margin="12" Padding="8" Opacity="0.8"/>
+            """));
     }
 }
 
@@ -240,8 +224,8 @@ public sealed class DesktopXamlBaselineTests
         var findings = XamlLiteralLint.ScanFile(
             Path.Combine(root, "Source", "PuddingDesktop", "MainWindow.xaml"));
 
-        Assert.Equal(78, findings.Count(finding => finding.Rule == XamlLiteralLint.RawFontSizeRule));
-        Assert.Equal(33, findings.Count(finding => finding.Rule == XamlLiteralLint.RawCornerRadiusRule));
+        Assert.Equal(21, findings.Count(finding => finding.Rule == XamlLiteralLint.RawFontSizeRule));
+        Assert.Equal(16, findings.Count(finding => finding.Rule == XamlLiteralLint.RawCornerRadiusRule));
         Assert.Equal(9, findings.Count(finding => finding.Rule == XamlLiteralLint.RawColorRule));
     }
 
@@ -261,7 +245,114 @@ public sealed class DesktopXamlBaselineTests
         Assert.Equal(0, findings.Count(finding => finding.Rule == XamlLiteralLint.RawColorRule));
     }
 
-    /// <summary>从测试输出目录向上找含主壳层 XAML 的仓库根；找不到要显式失败，不静默跳过。</summary>
+    /// <summary>
+    /// 令牌数值的真源在 Foundation（<see cref="DesignTokens"/>），XAML 里的那份是拷贝。
+    /// 这个测试就是拷贝的对齐线：侧改了数值而另一侧没跟上，立刻红。
+    /// </summary>
+    [Fact]
+    public void MainWindowXaml_DeclaresEveryDesignTokenWithMatchingValue()
+    {
+        var text = ReadMainWindow();
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var declared = XDocument.Parse(text).Descendants()
+            .Select(element => (Key: element.Attribute(x + "Key")?.Value, element.Value))
+            .Where(entry => entry.Key is not null
+                && (entry.Key.StartsWith("FontSize", StringComparison.Ordinal)
+                    || entry.Key.StartsWith("Radius", StringComparison.Ordinal)))
+            .ToDictionary(entry => entry.Key!, entry => entry.Value, StringComparer.Ordinal);
+
+        var expectedNames = DesignTokens.FontSizes.Select(token => token.Name)
+            .Concat(DesignTokens.CornerRadii.Select(token => token.Name))
+            .OrderBy(name => name, StringComparer.Ordinal);
+        Assert.Equal(expectedNames, declared.Keys.OrderBy(key => key, StringComparer.Ordinal));
+
+        foreach (var token in DesignTokens.FontSizes)
+        {
+            Assert.True(declared.ContainsKey(token.Name), $"MainWindow.xaml 没有声明字号令牌 {token.Name}");
+            Assert.Equal(token.Size, ParseInvariant(declared[token.Name]), 3);
+        }
+
+        foreach (var token in DesignTokens.CornerRadii)
+        {
+            Assert.True(declared.ContainsKey(token.Name), $"MainWindow.xaml 没有声明圆角令牌 {token.Name}");
+            Assert.Equal(token.Radius, ParseInvariant(declared[token.Name]), 3);
+        }
+    }
+
+    /// <summary>
+    /// 剩余裸值是 Stage 3（重定值）的待办清单：机械替换只消化了正好等于令牌值的那批，
+    /// 剩下的必须逐个决定「向上/向下收口」而不是继续漂。这里把清单钉死，
+    /// 多一个裸值、少一处残留、或有人把某一档静默改小，都会红。
+    /// </summary>
+    [Fact]
+    public void MainWindowXaml_ResidualLiterals_MatchDocumentedDelta()
+    {
+        var findings = XamlLiteralLint.Scan(ReadMainWindow());
+
+        var residualFontSizes = findings
+            .Where(finding => finding.Rule == XamlLiteralLint.RawFontSizeRule)
+            .Select(finding => ParseInvariant(finding.Value))
+            .OrderBy(value => value)
+            .ToArray();
+        Assert.Equal(
+            new[]
+            {
+                8d, 8d, 9d, 9d, 9d, 10d, 10d, 10d, 13d, 13d, 13d, 13d, 13d, 13d, 13d, 13d, 14d, 14d, 16d, 19d, 21d
+            },
+            residualFontSizes);
+
+        var residualRadii = findings
+            .Where(finding => finding.Rule == XamlLiteralLint.RawCornerRadiusRule)
+            .Select(finding => ParseInvariant(finding.Value))
+            .OrderBy(value => value)
+            .ToArray();
+        Assert.Equal(
+            new[] { 4.5, 4.5, 6, 9, 9, 9, 10, 10, 10, 10, 15, 16, 17, 17, 17, 17 },
+            residualRadii);
+    }
+
+    /// <summary>
+    /// lint 是纯文本扫描，它看不见 XML 是否还被结构地解析得动：令牌引用写错名字
+    /// （<c>{StaticResource FontSizeBodyy}</c>）或少了右花括号，lint 依然全绿，但应用会在启动时崩。
+    /// 这里补上两道：文件必须能被 XML 解析，且每个令牌引用都指向已声明的 key。
+    /// </summary>
+    [Fact]
+    public void MainWindowXaml_ParsesAndEveryTokenReferenceResolves()
+    {
+        var text = ReadMainWindow();
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var document = XDocument.Parse(text);
+        var declaredKeys = document.Descendants()
+            .Select(element => element.Attribute(x + "Key")?.Value)
+            .Where(key => key is not null)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var references = document.Descendants()
+            .SelectMany(element => element.Attributes())
+            .Where(attribute => attribute.Name.LocalName is "FontSize" or "CornerRadius")
+            .Select(attribute => attribute.Value)
+            .Where(value => value.StartsWith("{StaticResource ", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.NotEmpty(references);
+        foreach (var reference in references)
+        {
+            var key = reference["{StaticResource ".Length..].TrimEnd('}').Trim();
+            Assert.True(declaredKeys.Contains(key), $"未声明的令牌引用：{reference}");
+        }
+    }
+
+    private static string ReadMainWindow()
+    {
+        var root = FindRepositoryRoot();
+        Assert.NotNull(root);
+        return File.ReadAllText(Path.Combine(root, "Source", "PuddingDesktop", "MainWindow.xaml"));
+    }
+
+    private static double ParseInvariant(string value) =>
+        double.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture);
+
+
     private static string? FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

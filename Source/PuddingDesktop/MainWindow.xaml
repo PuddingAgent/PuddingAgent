@@ -10,6 +10,21 @@
     in light, dark and high contrast without hardcoding a single theme's colours.
    -->
    <ResourceDictionary>
+    <!--
+     Design tokens: the ONLY font sizes and corner radii this window may use.
+     Named by ROLE, not by value, so a later revalue touches this block only.
+     Declared before every style because StaticResource resolves top-down.
+     Kept in sync with Foundation's Design/DesignTokens.cs by the test
+     MainWindowXaml_DeclaresEveryDesignTokenWithMatchingValue.
+    -->
+    <x:Double x:Key="FontSizeMicro">11</x:Double>
+    <x:Double x:Key="FontSizeCaption">12</x:Double>
+    <x:Double x:Key="FontSizeBody">15</x:Double>
+    <x:Double x:Key="FontSizeSubtitle">18</x:Double>
+    <x:Double x:Key="FontSizeTitle">24</x:Double>
+    <x:Double x:Key="FontSizeDisplay">28</x:Double>
+    <CornerRadius x:Key="RadiusControl">8</CornerRadius>
+    <CornerRadius x:Key="RadiusCard">12</CornerRadius>
     <ResourceDictionary.ThemeDictionaries>
      <ResourceDictionary x:Key="Default">
       <SolidColorBrush x:Key="ToolTabSelectedBrush" Color="#2EFFFFFF"/>
@@ -102,7 +117,7 @@
      <Setter Property="Padding" Value="0"/>
      <Setter Property="Background" Value="Transparent"/>
      <Setter Property="BorderThickness" Value="0"/>
-     <Setter Property="CornerRadius" Value="8"/>
+     <Setter Property="CornerRadius" Value="{StaticResource RadiusControl}"/>
      <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}"/>
      <Setter Property="FontSize" Value="14"/>
      <Setter Property="HorizontalContentAlignment" Value="Center"/>
@@ -123,7 +138,7 @@
      <Setter Property="Width" Value="Auto"/>
      <Setter Property="Padding" Value="12,0"/>
      <Setter Property="FontFamily" Value="{ThemeResource ContentControlThemeFontFamily}"/>
-     <Setter Property="FontSize" Value="12"/>
+     <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
     </Style>
 
     <Style x:Key="ToolRoundToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
@@ -133,7 +148,7 @@
      <Setter Property="Padding" Value="12,0"/>
      <Setter Property="BorderThickness" Value="0"/>
      <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}"/>
-     <Setter Property="FontSize" Value="12"/>
+     <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
 
@@ -146,7 +161,7 @@
      <Setter Property="Padding" Value="0"/>
      <Setter Property="Background" Value="Transparent"/>
      <Setter Property="BorderThickness" Value="0"/>
-     <Setter Property="CornerRadius" Value="8"/>
+     <Setter Property="CornerRadius" Value="{StaticResource RadiusControl}"/>
      <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}"/>
      <Setter Property="FontSize" Value="14"/>
      <Setter Property="HorizontalContentAlignment" Value="Center"/>
@@ -176,7 +191,7 @@
      <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}"/>
      <Setter Property="TextAlignment" Value="Center"/>
      <Setter Property="VerticalContentAlignment" Value="Center"/>
-     <Setter Property="FontSize" Value="12"/>
+     <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
     </Style>
 
     <!-- Tab chip: one rounded instance per open tool. -->
@@ -211,7 +226,7 @@
      <Setter Property="MinHeight" Value="0"/>
      <Setter Property="Padding" Value="16,12"/>
      <Setter Property="Margin" Value="0,0,0,10"/>
-     <Setter Property="CornerRadius" Value="12"/>
+     <Setter Property="CornerRadius" Value="{StaticResource RadiusCard}"/>
      <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
      <Setter Property="BorderThickness" Value="1"/>
      <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
@@ -229,7 +244,7 @@
      <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
     <Style x:Key="ToolAvailabilityChipTextStyle" TargetType="TextBlock">
-     <Setter Property="FontSize" Value="11"/>
+     <Setter Property="FontSize" Value="{StaticResource FontSizeMicro}"/>
      <Setter Property="Opacity" Value="0.75"/>
     </Style>
 
@@ -277,7 +292,7 @@
 
     <Style x:Key="StartupRawErrorTextStyle" TargetType="TextBlock">
      <Setter Property="FontFamily" Value="Consolas"/>
-     <Setter Property="FontSize" Value="11"/>
+     <Setter Property="FontSize" Value="{StaticResource FontSizeMicro}"/>
      <Setter Property="TextWrapping" Value="Wrap"/>
      <Setter Property="IsTextSelectionEnabled" Value="True"/>
      <Setter Property="Foreground" Value="{ThemeResource StartupMutedBrush}"/>
@@ -294,9 +309,9 @@
   <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
   <Grid x:Name="TitleBar" Padding="20,0,150,0">
    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-    <Border Width="26" Height="26" CornerRadius="8" Background="#D59F61"><TextBlock Text="P" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#202020"/></Border>
+    <Border Width="26" Height="26" CornerRadius="{StaticResource RadiusControl}" Background="#D59F61"><TextBlock Text="P" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#202020"/></Border>
     <TextBlock Text="Pudding" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
-    <TextBlock Text="你的智能工作台" FontSize="12" Opacity="0.55" VerticalAlignment="Center"/>
+    <TextBlock Text="你的智能工作台" FontSize="{StaticResource FontSizeCaption}" Opacity="0.55" VerticalAlignment="Center"/>
    </StackPanel>
   </Grid>
   <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed" IsSettingsVisible="False" SelectionChanged="OnNavigate">
@@ -332,7 +347,7 @@
          <TextBlock Text="!" FontSize="19" FontWeight="Bold" Foreground="{ThemeResource StartupErrorBrush}"
            HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
-        <TextBlock x:Name="StartupTitle" FontSize="28" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        <TextBlock x:Name="StartupTitle" FontSize="{StaticResource FontSizeDisplay}" FontWeight="SemiBold" VerticalAlignment="Center"/>
        </StackPanel>
 
        <TextBlock x:Name="StartupPhase" Margin="0,12,0,0" MaxWidth="560" HorizontalAlignment="Center"
@@ -342,19 +357,19 @@
          Margin="0,26,0,0" Visibility="Collapsed">
         <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
          <Grid Width="16" Height="16" VerticalAlignment="Center">
-          <Border x:Name="StartupStep1Pending" Width="16" Height="16" CornerRadius="8" BorderThickness="1.5"
+          <Border x:Name="StartupStep1Pending" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}" BorderThickness="1.5"
             BorderBrush="{ThemeResource StartupPendingBrush}"/>
-          <Border x:Name="StartupStep1Active" Width="16" Height="16" CornerRadius="8" BorderThickness="2"
+          <Border x:Name="StartupStep1Active" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}" BorderThickness="2"
             BorderBrush="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
            <Ellipse Width="6" Height="6" Fill="{ThemeResource StartupAccentBrush}"
              HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
-          <Border x:Name="StartupStep1Done" Width="16" Height="16" CornerRadius="8"
+          <Border x:Name="StartupStep1Done" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}"
             Background="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
            <TextBlock Text="✓" FontSize="10" FontWeight="Bold" Foreground="{ThemeResource StartupAccentTextBrush}"
              HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
-          <Border x:Name="StartupStep1Failed" Width="16" Height="16" CornerRadius="8"
+          <Border x:Name="StartupStep1Failed" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}"
             Background="{ThemeResource StartupErrorBackgroundBrush}" BorderThickness="1"
             BorderBrush="{ThemeResource StartupErrorStrokeBrush}" Visibility="Collapsed">
            <TextBlock Text="✕" FontSize="9" FontWeight="Bold" Foreground="{ThemeResource StartupErrorBrush}"
@@ -362,30 +377,30 @@
           </Border>
          </Grid>
          <Grid VerticalAlignment="Center">
-          <TextBlock x:Name="StartupStep1LabelMuted" FontSize="12" Foreground="{ThemeResource StartupMutedBrush}"/>
-          <TextBlock x:Name="StartupStep1LabelActive" FontSize="12" FontWeight="SemiBold"
+          <TextBlock x:Name="StartupStep1LabelMuted" FontSize="{StaticResource FontSizeCaption}" Foreground="{ThemeResource StartupMutedBrush}"/>
+          <TextBlock x:Name="StartupStep1LabelActive" FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
             Foreground="{ThemeResource StartupLinkBrush}" Visibility="Collapsed"/>
-          <TextBlock x:Name="StartupStep1LabelFailed" FontSize="12" FontWeight="SemiBold"
+          <TextBlock x:Name="StartupStep1LabelFailed" FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
             Foreground="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
          </Grid>
         </StackPanel>
-        <TextBlock Text="›" FontSize="11" Margin="12,0" VerticalAlignment="Center"
+        <TextBlock Text="›" FontSize="{StaticResource FontSizeMicro}" Margin="12,0" VerticalAlignment="Center"
           Foreground="{ThemeResource StartupMutedBrush}"/>
         <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
          <Grid Width="16" Height="16" VerticalAlignment="Center">
-          <Border x:Name="StartupStep2Pending" Width="16" Height="16" CornerRadius="8" BorderThickness="1.5"
+          <Border x:Name="StartupStep2Pending" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}" BorderThickness="1.5"
             BorderBrush="{ThemeResource StartupPendingBrush}"/>
-          <Border x:Name="StartupStep2Active" Width="16" Height="16" CornerRadius="8" BorderThickness="2"
+          <Border x:Name="StartupStep2Active" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}" BorderThickness="2"
             BorderBrush="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
            <Ellipse Width="6" Height="6" Fill="{ThemeResource StartupAccentBrush}"
              HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
-          <Border x:Name="StartupStep2Done" Width="16" Height="16" CornerRadius="8"
+          <Border x:Name="StartupStep2Done" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}"
             Background="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
            <TextBlock Text="✓" FontSize="10" FontWeight="Bold" Foreground="{ThemeResource StartupAccentTextBrush}"
              HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
-          <Border x:Name="StartupStep2Failed" Width="16" Height="16" CornerRadius="8"
+          <Border x:Name="StartupStep2Failed" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}"
             Background="{ThemeResource StartupErrorBackgroundBrush}" BorderThickness="1"
             BorderBrush="{ThemeResource StartupErrorStrokeBrush}" Visibility="Collapsed">
            <TextBlock Text="✕" FontSize="9" FontWeight="Bold" Foreground="{ThemeResource StartupErrorBrush}"
@@ -393,30 +408,30 @@
           </Border>
          </Grid>
          <Grid VerticalAlignment="Center">
-          <TextBlock x:Name="StartupStep2LabelMuted" FontSize="12" Foreground="{ThemeResource StartupMutedBrush}"/>
-          <TextBlock x:Name="StartupStep2LabelActive" FontSize="12" FontWeight="SemiBold"
+          <TextBlock x:Name="StartupStep2LabelMuted" FontSize="{StaticResource FontSizeCaption}" Foreground="{ThemeResource StartupMutedBrush}"/>
+          <TextBlock x:Name="StartupStep2LabelActive" FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
             Foreground="{ThemeResource StartupLinkBrush}" Visibility="Collapsed"/>
-          <TextBlock x:Name="StartupStep2LabelFailed" FontSize="12" FontWeight="SemiBold"
+          <TextBlock x:Name="StartupStep2LabelFailed" FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
             Foreground="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
          </Grid>
         </StackPanel>
-        <TextBlock Text="›" FontSize="11" Margin="12,0" VerticalAlignment="Center"
+        <TextBlock Text="›" FontSize="{StaticResource FontSizeMicro}" Margin="12,0" VerticalAlignment="Center"
           Foreground="{ThemeResource StartupMutedBrush}"/>
         <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
          <Grid Width="16" Height="16" VerticalAlignment="Center">
-          <Border x:Name="StartupStep3Pending" Width="16" Height="16" CornerRadius="8" BorderThickness="1.5"
+          <Border x:Name="StartupStep3Pending" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}" BorderThickness="1.5"
             BorderBrush="{ThemeResource StartupPendingBrush}"/>
-          <Border x:Name="StartupStep3Active" Width="16" Height="16" CornerRadius="8" BorderThickness="2"
+          <Border x:Name="StartupStep3Active" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}" BorderThickness="2"
             BorderBrush="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
            <Ellipse Width="6" Height="6" Fill="{ThemeResource StartupAccentBrush}"
              HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
-          <Border x:Name="StartupStep3Done" Width="16" Height="16" CornerRadius="8"
+          <Border x:Name="StartupStep3Done" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}"
             Background="{ThemeResource StartupAccentBrush}" Visibility="Collapsed">
            <TextBlock Text="✓" FontSize="10" FontWeight="Bold" Foreground="{ThemeResource StartupAccentTextBrush}"
              HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
-          <Border x:Name="StartupStep3Failed" Width="16" Height="16" CornerRadius="8"
+          <Border x:Name="StartupStep3Failed" Width="16" Height="16" CornerRadius="{StaticResource RadiusControl}"
             Background="{ThemeResource StartupErrorBackgroundBrush}" BorderThickness="1"
             BorderBrush="{ThemeResource StartupErrorStrokeBrush}" Visibility="Collapsed">
            <TextBlock Text="✕" FontSize="9" FontWeight="Bold" Foreground="{ThemeResource StartupErrorBrush}"
@@ -424,27 +439,27 @@
           </Border>
          </Grid>
          <Grid VerticalAlignment="Center">
-          <TextBlock x:Name="StartupStep3LabelMuted" FontSize="12" Foreground="{ThemeResource StartupMutedBrush}"/>
-          <TextBlock x:Name="StartupStep3LabelActive" FontSize="12" FontWeight="SemiBold"
+          <TextBlock x:Name="StartupStep3LabelMuted" FontSize="{StaticResource FontSizeCaption}" Foreground="{ThemeResource StartupMutedBrush}"/>
+          <TextBlock x:Name="StartupStep3LabelActive" FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
             Foreground="{ThemeResource StartupLinkBrush}" Visibility="Collapsed"/>
-          <TextBlock x:Name="StartupStep3LabelFailed" FontSize="12" FontWeight="SemiBold"
+          <TextBlock x:Name="StartupStep3LabelFailed" FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
             Foreground="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
          </Grid>
         </StackPanel>
        </StackPanel>
 
-       <TextBlock x:Name="StartupMeta" Margin="0,15,0,0" HorizontalAlignment="Center" FontSize="12"
+       <TextBlock x:Name="StartupMeta" Margin="0,15,0,0" HorizontalAlignment="Center" FontSize="{StaticResource FontSizeCaption}"
          TextAlignment="Center" Foreground="{ThemeResource StartupMutedBrush}" Visibility="Collapsed"/>
-       <TextBlock x:Name="StartupMetaWarning" Margin="0,15,0,0" HorizontalAlignment="Center" FontSize="12"
+       <TextBlock x:Name="StartupMetaWarning" Margin="0,15,0,0" HorizontalAlignment="Center" FontSize="{StaticResource FontSizeCaption}"
          TextAlignment="Center" Foreground="{ThemeResource StartupWarningBrush}" Visibility="Collapsed"/>
        <TextBlock x:Name="StartupDetail" Margin="0,9,0,0" MaxWidth="560" HorizontalAlignment="Center"
-         FontFamily="Consolas" FontSize="11" TextAlignment="Center" TextTrimming="CharacterEllipsis"
+         FontFamily="Consolas" FontSize="{StaticResource FontSizeMicro}" TextAlignment="Center" TextTrimming="CharacterEllipsis"
          Foreground="{ThemeResource StartupMutedBrush}" Visibility="Collapsed"/>
        <TextBlock x:Name="StartupError" Margin="0,12,0,0" MaxWidth="560" HorizontalAlignment="Center"
          FontSize="13" TextWrapping="Wrap" TextAlignment="Center"
          Foreground="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
        <TextBlock x:Name="StartupHint" Margin="0,8,0,0" MaxWidth="560" HorizontalAlignment="Center"
-         FontSize="12" TextWrapping="Wrap" TextAlignment="Center"
+         FontSize="{StaticResource FontSizeCaption}" TextWrapping="Wrap" TextAlignment="Center"
          Foreground="{ThemeResource StartupMutedBrush}" Visibility="Collapsed"/>
 
        <StackPanel Orientation="Horizontal" Spacing="18" HorizontalAlignment="Center" Margin="0,26,0,0">
@@ -492,7 +507,7 @@
          <DataTemplate>
           <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="10,5">
            <FontIcon Glyph="{Binding Glyph}" FontSize="13" Opacity="0.85" VerticalAlignment="Center"/>
-           <TextBlock Text="{Binding Title}" MaxWidth="140" TextTrimming="CharacterEllipsis" FontSize="12" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding Tooltip}"/>
+           <TextBlock Text="{Binding Title}" MaxWidth="140" TextTrimming="CharacterEllipsis" FontSize="{StaticResource FontSizeCaption}" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding Tooltip}"/>
            <ProgressRing Width="12" Height="12" IsActive="{Binding IsRunning}" Visibility="{Binding RunningVisibility}" VerticalAlignment="Center"/>
            <Ellipse Width="7" Height="7" Fill="#D59F61" Visibility="{Binding UnreadVisibility}" VerticalAlignment="Center"/>
            <Button Style="{StaticResource ToolTabCloseButtonStyle}" Click="OnCloseToolTab" Visibility="{Binding CloseVisibility}" VerticalAlignment="Center" ToolTipService.ToolTip="关闭标签页">
@@ -542,13 +557,13 @@
        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="4,0">
         <Button Style="{StaticResource ToolRoundTextButtonStyle}" Click="OnTarget" ToolTipService.ToolTip="把当前页面设为 Agent 目标">
          <StackPanel Orientation="Horizontal" Spacing="6">
-          <FontIcon Glyph="&#xE7B3;" FontSize="12"/>
+          <FontIcon Glyph="&#xE7B3;" FontSize="{StaticResource FontSizeCaption}"/>
           <TextBlock Text="设为 Agent 目标" VerticalAlignment="Center"/>
          </StackPanel>
         </Button>
         <ToggleButton x:Name="Takeover" Style="{StaticResource ToolRoundToggleStyle}" Click="OnTakeover" ToolTipService.ToolTip="人工接管：暂停 Agent 操作">
          <StackPanel Orientation="Horizontal" Spacing="6">
-          <FontIcon Glyph="&#xE7FC;" FontSize="12"/>
+          <FontIcon Glyph="&#xE7FC;" FontSize="{StaticResource FontSizeCaption}"/>
           <TextBlock Text="人工接管" VerticalAlignment="Center"/>
          </StackPanel>
         </ToggleButton>
@@ -592,16 +607,16 @@
           <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenOutputTab" ToolTipService.ToolTip="Ctrl + O">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE8B7;" FontSize="18" Foreground="#E2A33C" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE8B7;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#E2A33C" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
-             <TextBlock Text="本地文件" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock x:Name="OutputCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock Text="本地文件" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
+             <TextBlock x:Name="OutputCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Right">
              <Border Style="{StaticResource ToolAvailabilityChipStyle}">
               <TextBlock x:Name="OutputCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
              </Border>
-             <TextBlock Text="Ctrl + O" FontSize="12" Opacity="0.55" HorizontalAlignment="Right"/>
+             <TextBlock Text="Ctrl + O" FontSize="{StaticResource FontSizeCaption}" Opacity="0.55" HorizontalAlignment="Right"/>
             </StackPanel>
            </Grid>
           </Button>
@@ -609,10 +624,10 @@
           <Button x:Name="TerminalCardEntry" Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenTerminalTab">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE756;" FontSize="18" Foreground="#4C8DF6" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE756;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#4C8DF6" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
-             <TextBlock Text="新建终端" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock x:Name="TerminalCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock Text="新建终端" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
+             <TextBlock x:Name="TerminalCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
              <TextBlock x:Name="TerminalCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
@@ -623,16 +638,16 @@
           <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenBrowserTab" ToolTipService.ToolTip="Ctrl + T">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE774;" FontSize="18" Foreground="#4C8DF6" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE774;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#4C8DF6" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
-             <TextBlock Text="浏览器" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock x:Name="BrowserCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock Text="浏览器" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
+             <TextBlock x:Name="BrowserCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Right">
              <Border Style="{StaticResource ToolAvailabilityChipStyle}">
               <TextBlock x:Name="BrowserCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
              </Border>
-             <TextBlock Text="Ctrl + T" FontSize="12" Opacity="0.55" HorizontalAlignment="Right"/>
+             <TextBlock Text="Ctrl + T" FontSize="{StaticResource FontSizeCaption}" Opacity="0.55" HorizontalAlignment="Right"/>
             </StackPanel>
            </Grid>
           </Button>
@@ -640,10 +655,10 @@
           <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenArtifactTab">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE8A5;" FontSize="18" Foreground="#B07CD6" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE8A5;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#B07CD6" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
-             <TextBlock Text="制品库" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock x:Name="ArtifactCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock Text="制品库" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
+             <TextBlock x:Name="ArtifactCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
              <TextBlock x:Name="ArtifactCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
@@ -654,10 +669,10 @@
           <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenPanelTab">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE71D;" FontSize="18" Foreground="#4CB782" VerticalAlignment="Center"/>
+            <FontIcon Glyph="&#xE71D;" FontSize="{StaticResource FontSizeSubtitle}" Foreground="#4CB782" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
-             <TextBlock Text="交互面板" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock x:Name="PanelCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock Text="交互面板" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"/>
+             <TextBlock x:Name="PanelCardSubtitle" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
              <TextBlock x:Name="PanelCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
@@ -672,7 +687,7 @@
        <TextBlock x:Name="ToolEmptyState" Margin="24" TextWrapping="Wrap" Opacity="0.6" VerticalAlignment="Top"
           Text="工具区已打开。用右上角 + 打开终端、Agent 浏览器、制品库、本地文件或交互面板。"/>
       </Grid>
-      <TextBlock x:Name="ToolStatusText" Grid.Row="3" Margin="8,4" FontSize="11" Opacity="0.7" TextWrapping="Wrap"/>
+      <TextBlock x:Name="ToolStatusText" Grid.Row="3" Margin="8,4" FontSize="{StaticResource FontSizeMicro}" Opacity="0.7" TextWrapping="Wrap"/>
      </Grid>
      <!-- 折叠态入口：竖排把手，落在聊天区右侧预留的空槽里。
           旧版浮在右上角（Margin 0,10,10,0），正好压在工作台网页 header 最右端的
@@ -687,38 +702,38 @@
     <Grid x:Name="RuntimePane" Visibility="Collapsed" Padding="24" RowSpacing="16">
      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
      <StackPanel Spacing="12">
-      <TextBlock Text="运行中心" FontSize="28" FontWeight="SemiBold"/>
+      <TextBlock Text="运行中心" FontSize="{StaticResource FontSizeDisplay}" FontWeight="SemiBold"/>
      </StackPanel>
      <Grid Grid.Row="1" ColumnSpacing="12">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
-       <StackPanel Spacing="8"><TextBlock Text="Core 状态" Opacity="0.65"/><StackPanel Orientation="Horizontal" Spacing="8"><SymbolIcon x:Name="RuntimeStateIcon" Symbol="Pause"/><TextBlock x:Name="RuntimeStateText" FontSize="21" FontWeight="SemiBold"/></StackPanel><TextBlock x:Name="RuntimePidText" FontSize="12" Opacity="0.7"/></StackPanel>
+       <StackPanel Spacing="8"><TextBlock Text="Core 状态" Opacity="0.65"/><StackPanel Orientation="Horizontal" Spacing="8"><SymbolIcon x:Name="RuntimeStateIcon" Symbol="Pause"/><TextBlock x:Name="RuntimeStateText" FontSize="21" FontWeight="SemiBold"/></StackPanel><TextBlock x:Name="RuntimePidText" FontSize="{StaticResource FontSizeCaption}" Opacity="0.7"/></StackPanel>
       </Border>
       <Border Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
-       <StackPanel Spacing="8"><TextBlock Text="CPU · 整机占比" Opacity="0.65"/><TextBlock x:Name="RuntimeCpuText" Text="—" FontSize="24" FontWeight="SemiBold"/><ProgressBar x:Name="RuntimeCpuBar" Minimum="0" Maximum="100" Value="0"/><TextBlock Text="每秒采样 · 仅 Core" FontSize="12" Opacity="0.6"/></StackPanel>
+       <StackPanel Spacing="8"><TextBlock Text="CPU · 整机占比" Opacity="0.65"/><TextBlock x:Name="RuntimeCpuText" Text="—" FontSize="{StaticResource FontSizeTitle}" FontWeight="SemiBold"/><ProgressBar x:Name="RuntimeCpuBar" Minimum="0" Maximum="100" Value="0"/><TextBlock Text="每秒采样 · 仅 Core" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6"/></StackPanel>
       </Border>
       <Border Grid.Column="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
-       <StackPanel Spacing="8"><TextBlock Text="内存 · 专用工作集" Opacity="0.65"/><TextBlock x:Name="RuntimeMemoryText" Text="—" FontSize="24" FontWeight="SemiBold"/><TextBlock x:Name="RuntimeMemoryDetailText" Text="任务管理器口径 · 仅 Core" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/></StackPanel>
+       <StackPanel Spacing="8"><TextBlock Text="内存 · 专用工作集" Opacity="0.65"/><TextBlock x:Name="RuntimeMemoryText" Text="—" FontSize="{StaticResource FontSizeTitle}" FontWeight="SemiBold"/><TextBlock x:Name="RuntimeMemoryDetailText" Text="任务管理器口径 · 仅 Core" FontSize="{StaticResource FontSizeCaption}" Opacity="0.6" TextWrapping="Wrap"/></StackPanel>
       </Border>
       <Border Grid.Column="3" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
-       <StackPanel Spacing="8"><TextBlock Text="运行时长" Opacity="0.65"/><TextBlock x:Name="RuntimeUptimeText" Text="—" FontSize="24" FontWeight="SemiBold"/><TextBlock x:Name="RuntimeStartedText" FontSize="12" TextWrapping="Wrap" Opacity="0.7"/></StackPanel>
+       <StackPanel Spacing="8"><TextBlock Text="运行时长" Opacity="0.65"/><TextBlock x:Name="RuntimeUptimeText" Text="—" FontSize="{StaticResource FontSizeTitle}" FontWeight="SemiBold"/><TextBlock x:Name="RuntimeStartedText" FontSize="{StaticResource FontSizeCaption}" TextWrapping="Wrap" Opacity="0.7"/></StackPanel>
       </Border>
      </Grid>
      <StackPanel Grid.Row="2" Spacing="10">
-      <TextBlock x:Name="RuntimeText" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontSize="12" Opacity="0.75"/>
+      <TextBlock x:Name="RuntimeText" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontSize="{StaticResource FontSizeCaption}" Opacity="0.75"/>
       <StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="StartButton" Content="启动" Click="OnStart"/><Button Content="停止" Click="OnStop"/><Button Content="重启" Click="OnRestart"/><Button Content="退出 Pudding" Click="OnExit"/></StackPanel>
      </StackPanel>
      <Grid Grid.Row="3" RowSpacing="10">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-      <Grid><TextBlock Text="Core 日志" FontSize="18" FontWeight="SemiBold"/><CheckBox x:Name="FollowLogsBox" Content="跟随最新日志" IsChecked="True" HorizontalAlignment="Right"/></Grid>
-      <Border Grid.Row="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
-       <ScrollViewer x:Name="RuntimeLogScroll" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="LogText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></ScrollViewer>
+      <Grid><TextBlock Text="Core 日志" FontSize="{StaticResource FontSizeSubtitle}" FontWeight="SemiBold"/><CheckBox x:Name="FollowLogsBox" Content="跟随最新日志" IsChecked="True" HorizontalAlignment="Right"/></Grid>
+      <Border Grid.Row="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="{StaticResource RadiusControl}" Padding="12">
+       <ScrollViewer x:Name="RuntimeLogScroll" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="LogText" FontFamily="Consolas" FontSize="{StaticResource FontSizeCaption}" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></ScrollViewer>
       </Border>
      </Grid>
     </Grid>
     <ScrollViewer x:Name="SettingsPane" Visibility="Collapsed" Padding="28">
      <StackPanel Spacing="18" MaxWidth="660" HorizontalAlignment="Left">
-      <TextBlock Text="启动设置" FontSize="28" FontWeight="SemiBold"/>
+      <TextBlock Text="启动设置" FontSize="{StaticResource FontSizeDisplay}" FontWeight="SemiBold"/>
       <TextBlock Text="业务配置在 Web 工作台中管理。这里设置本机启动参数。" TextWrapping="Wrap" Opacity="0.65"/>
       <Grid ColumnSpacing="8">
        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -736,7 +751,7 @@
       <ComboBox x:Name="ThemeBox" Header="外观" SelectedIndex="0" SelectionChanged="OnTheme"><ComboBoxItem Content="跟随系统"/><ComboBoxItem Content="浅色"/><ComboBoxItem Content="深色"/></ComboBox>
       <!-- §13.x：两个外观开关并存时，范围必须能一眼分清。这里说明 Shell 侧管什么、
            Web 侧另有开关；对应 Web 顶栏那个按钮已标明"仅 Web 工作台"。 -->
-      <TextBlock Text="影响窗口、工具区与底部状态条。Web 工作台（聊天页）顶部另有独立的外观开关，只改 Web。" TextWrapping="Wrap" FontSize="11" Opacity="0.6"/>
+      <TextBlock Text="影响窗口、工具区与底部状态条。Web 工作台（聊天页）顶部另有独立的外观开关，只改 Web。" TextWrapping="Wrap" FontSize="{StaticResource FontSizeMicro}" Opacity="0.6"/>
       <Button Content="保存启动设置" Click="OnSave"/>
       <TextBlock x:Name="SettingsStatus" TextWrapping="Wrap"/>
      </StackPanel>
@@ -753,7 +768,7 @@
     <Ellipse x:Name="StatusDotError" Width="6" Height="6" Fill="{ThemeResource StartupErrorBrush}" Visibility="Collapsed"/>
     <Ellipse x:Name="StatusDotSuccess" Width="6" Height="6" Fill="{ThemeResource StartupSuccessBrush}" Visibility="Collapsed"/>
    </Grid>
-   <TextBlock x:Name="StatusText" FontSize="11" VerticalAlignment="Center" Opacity="0.65"/>
+   <TextBlock x:Name="StatusText" FontSize="{StaticResource FontSizeMicro}" VerticalAlignment="Center" Opacity="0.65"/>
   </StackPanel>
  </Grid>
 </Window>
