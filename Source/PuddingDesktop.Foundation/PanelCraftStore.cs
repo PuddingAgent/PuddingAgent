@@ -215,57 +215,10 @@ public static class PanelCraftJson
                 WriteNullableString(writer, "panelId", craft.Source.PanelId);
                 WriteNullableString(writer, "generator", craft.Source.Generator);
                 WriteNullableString(writer, "prompt", craft.Source.Prompt);
-                writer.WriteStartArray("annotations");
-                foreach (var annotation in craft.Source.Annotations)
-                {
-                    writer.WriteStartObject();
-                    // 涂鸦必须写成 "scribble"：写成 "box" 读回时轨迹就没了，
-                    // 而「保存 → 继续编辑 → 轨迹还在」正是制成品要闭环的那件事。
-                    // 无轨迹的旧版涂鸦仍写 "box"：读侧对 scribble 要求 points，写了反而会被整份拒掉。
-                    writer.WriteString(
-                        "kind",
-                        annotation.IsScribble && annotation.HasInkTrail
-                            ? "scribble"
-                            : KindToWire(annotation.Kind));
-
-                    // box 与 arrow 都用 x1/y1/x2/y2；arrow 不排序，方向靠顺序。
-                    if (annotation.Kind is PanelAnnotationKind.Box or PanelAnnotationKind.Arrow)
-                    {
-                        writer.WriteNumber("x1", annotation.X1);
-                        writer.WriteNumber("y1", annotation.Y1);
-                        writer.WriteNumber("x2", annotation.X2);
-                        writer.WriteNumber("y2", annotation.Y2);
-                    }
-                    else
-                    {
-                        writer.WriteNumber("x", annotation.X1);
-                        writer.WriteNumber("y", annotation.Y1);
-                    }
-
-                    // label 只对涂鸦（box 的语义标签）和文字标注有意义。
-                    if (annotation.Label is not null)
-                    {
-                        writer.WriteString("label", annotation.Label);
-                    }
-
-                    if (annotation.IsScribble && annotation.HasInkTrail)
-                    {
-                        writer.WriteStartArray("points");
-                        foreach (var point in annotation.Points!)
-                        {
-                            writer.WriteStartObject();
-                            writer.WriteNumber("x", point.X);
-                            writer.WriteNumber("y", point.Y);
-                            writer.WriteEndObject();
-                        }
-
-                        writer.WriteEndArray();
-                    }
-
-                    writer.WriteEndObject();
-                }
-
-                writer.WriteEndArray();
+                // 标注形状只有一份实现：PanelCanvasRestore.BuildPayload（页面 load 与制成品共用）。
+                // 自己再写一遍 kind 与字段名，就是给「保存成功、继续编辑却没有标注」留后门。
+                writer.WritePropertyName("annotations");
+                writer.WriteRawValue(PanelCanvasRestore.BuildPayload(craft.Source.Annotations));
                 writer.WriteEndObject();
             }
 
@@ -351,16 +304,6 @@ public static class PanelCraftJson
                 ReadString(root, "note"));
         }
     }
-
-    /// <summary>标注种类 ↔ 线缆字符串。解析侧（<c>PanelAnnotation.TryParseCanvas</c>）认同一套名字。</summary>
-    private static string KindToWire(PanelAnnotationKind kind) => kind switch
-    {
-        PanelAnnotationKind.Box => "box",
-        PanelAnnotationKind.Point => "point",
-        PanelAnnotationKind.Arrow => "arrow",
-        PanelAnnotationKind.Text => "text",
-        _ => "point",
-    };
 
     private static void WriteNullableString(Utf8JsonWriter writer, string name, string? value)
     {

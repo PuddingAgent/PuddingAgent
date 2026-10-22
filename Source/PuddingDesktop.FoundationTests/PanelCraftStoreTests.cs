@@ -1,5 +1,6 @@
 namespace PuddingDesktop.FoundationTests;
 
+using System.Text.Json;
 using PuddingDesktop.Foundation;
 
 /// <summary>
@@ -426,6 +427,39 @@ public sealed class PanelCraftStoreTests : IDisposable
             "箭头 <point>880 900</point> → <point>120 100</point>",
             annotations[0].ToPromptFragment());
         Assert.Equal("文字「左边的人」 <point>300 400</point>", annotations[1].ToPromptFragment());
+    }
+
+    [Fact]
+    public void Saved_annotations_reuse_the_canvas_restore_payload_verbatim()
+    {
+        // 「标注 → JSON」只允许有一份实现：页面 load() 用的 PanelCanvasRestore.BuildPayload。
+        // 制成品若自己再拼一次 kind 与字段名，两份形状迟早分叉，
+        // 而分叉的表现是「保存成功了、继续编辑却什么都没有」——不会报错。
+        var annotations = new[]
+        {
+            PanelAnnotation.Scribble(new[] { new PanelInkPoint(100, 120), new PanelInkPoint(700, 880) }),
+            PanelAnnotation.Arrow(880, 900, 120, 100),
+            PanelAnnotation.Text("左边的人", 300, 400),
+        };
+
+        var saved = _store.Save(
+            CreateImage(), "形状一致", 800, 600,
+            new PanelCraftSource("edit-shape", null, null, annotations),
+            parent: null,
+            note: null,
+            now: DateTimeOffset.UtcNow);
+
+        // JSON 落在 crafts/{id}.json；saved.FileName 是图像文件名。
+        var record = File.ReadAllText(Path.Combine(_store.CraftsDirectory, saved.Id + ".json"));
+
+        using var document = JsonDocument.Parse(record);
+        var written = document.RootElement
+            .GetProperty("source")
+            .GetProperty("annotations")
+            .GetRawText();
+
+        // 逐字相同：多一个 "label":null、少一段 points，或换回手写序列化，都会在这里取红。
+        Assert.Equal(PanelCanvasRestore.BuildPayload(annotations), written);
     }
 
     // ── 编辑画布 id ↔ 制成品（血缘） ─────────────────────────

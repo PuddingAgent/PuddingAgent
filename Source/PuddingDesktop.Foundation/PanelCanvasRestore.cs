@@ -50,6 +50,12 @@ public static class PanelCanvasRestore
 
     /// <summary>
     /// 标注数组 → JSON。手写而非反射序列化：与制成品 JSON 一致，避免裁剪/AOT 下的元数据依赖。
+    ///
+    /// <para>
+    /// 这是「标注 → JSON」的**唯一实现**：页面 <c>load()</c> 用它，制成品文件的
+    /// <c>annotations</c> 也直接嵌入它的输出（<see cref="PanelCraftStore"/>）。
+    /// 两边各自手写一份字段名，就会出现「存得下、读不回」的静默分叉。
+    /// </para>
     /// </summary>
     public static string BuildPayload(IReadOnlyList<PanelAnnotation> items)
     {
