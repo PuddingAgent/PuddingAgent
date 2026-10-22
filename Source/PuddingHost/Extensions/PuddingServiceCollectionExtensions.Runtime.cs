@@ -539,6 +539,7 @@ public static partial class PuddingServiceCollectionExtensions
         // 前端改进 #1：工具展示投影（presentation）——发射侧读工具自己声明的 Present（失败/未命中 ⇒ generic）。
         // 用工厂注册 Default，避免容器尝试注入未注册的 presenter 解析器 Func 而导致 Build 校验失败。
         builder.Services.TryAddSingleton<IToolPresentationProjector>(_ => ToolPresentationProjector.Default);
+        builder.Services.TryAddSingleton<PuddingRuntime.Services.Diagnostics.CompactionDiagnosticJournal>();
         builder.Services.AddSingleton<AgentExecutionService>();
         builder.Services.AddSingleton<ITurnExecutor, TurnExecutorAdapter>();
         builder.Services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();

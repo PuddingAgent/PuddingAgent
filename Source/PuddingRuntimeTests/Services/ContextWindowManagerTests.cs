@@ -1393,6 +1393,7 @@ public sealed class ContextWindowManagerTests
             Assert.IsTrue(history.Any(m => m.Content == "fresh compact summary"),
                 "A newer DB compact summary must keep precedence over older raw JSONL history (summary CreatedAt drives DB snapshot freshness).");
             Assert.IsFalse(history.Any(m => m.Content == "older raw jsonl message"));
+            Assert.IsTrue(history.Single(m => m.Content == "fresh compact summary").IsContextSummary);
         }
         finally
         {
@@ -1577,6 +1578,8 @@ public sealed class ContextWindowManagerTests
             Assert.IsFalse(history.Any(m => m.Content == "generation one summary"),
                 "Summaries already covered by a newer generation must not be appended.");
             var summaryIndex = history.FindIndex(m => m.Content == "generation two summary");
+            Assert.IsTrue(history[summaryIndex].IsContextSummary);
+            Assert.AreEqual(ChatRole.Assistant, history[summaryIndex].Role);
             var rawIndex = history.FindIndex(m => m.Content == "newest raw message");
             Assert.IsTrue(summaryIndex > rawIndex,
                 "Summary chain appends after raw messages (Sequence-order compatible).");

@@ -2333,6 +2333,7 @@ public sealed partial class AgentExecutionService
                 plan.InitialTextBytes, plan.MaxRequestTextBytes, plan.InitialUsedTokens, plan.EffectiveInputLimit,
                 plan.ReplacementStart, plan.RemovedMessageCount, plan.SummaryAllowance, retainedTextBytes,
                 sourceRevision = WarmPrefixCompaction.ComputeRevisionHash(exactOutboundHistory),
+                requestShape = CompactionDiagnosticJournal.DescribeRequest(exactOutboundHistory),
             }, selectedSource, ct);
         var diagnosticCaptureComplete = diagnosticFile is not null;
         async Task CaptureAsync(string kind, object detail)
@@ -2784,7 +2785,8 @@ public sealed partial class AgentExecutionService
 
         await CaptureAsync("outcome", new { applied = true, durableCheckpoint, durableSummaryMessageId,
             measuredAfterTextBytes = verification.AfterTextBytes, afterTokens = verification.AfterSnapshot?.UsedTokens,
-            summaryContent = safeSummary, attempts = summaryResult.Attempts.Count });
+            summaryContent = safeSummary, attempts = summaryResult.Attempts.Count,
+            requestShape = CompactionDiagnosticJournal.DescribeRequest(durableHistory) });
         // 校验通过：内存历史已在临界区内替换完毕，这里只做日志与生命周期事件。
         var afterUsedTokens = verification.AfterSnapshot!.UsedTokens;
         var appliedDurationMs = verifyDurationMs;

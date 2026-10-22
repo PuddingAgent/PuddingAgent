@@ -7,6 +7,24 @@ namespace PuddingCode.Models;
 /// </summary>
 public static class LlmMessageSequenceNormalizer
 {
+    /// <summary>
+    /// A checkpoint supplies background input; it must not impersonate an assistant response
+    /// inside a thinking/tool sequence. Project only at the provider boundary so Runtime's
+    /// current-user/compaction fences keep their original meaning.
+    /// </summary>
+    public static LlmMessageNormalizationResult NormalizeForProvider(IEnumerable<ChatMessage> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return Normalize(source.Select(message =>
+        {
+            if (!message.IsContextSummary) return message;
+            if (message.ToolCalls is { Count: > 0 } || message.ToolCallId is not null
+                || message.ContinuationState is not null || message.ReasoningContent is not null)
+                throw new InvalidOperationException("Context summaries cannot carry provider response state.");
+            return message with { Role = ChatRole.User };
+        }));
+    }
+
     public static LlmMessageNormalizationResult Normalize(IEnumerable<ChatMessage> source)
     {
         ArgumentNullException.ThrowIfNull(source);

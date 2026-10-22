@@ -12,6 +12,23 @@ namespace PuddingRuntimeTests.Services;
 public sealed class CompactionDiagnosticJournalTests
 {
     [TestMethod]
+    public void RequestShape_RecordsRoleTransitionWithoutExposingBodies()
+    {
+        ChatMessage[] messages = [new(ChatRole.User, "PRIVATE USER BODY"),
+            ChatMessage.ContextSummary("PRIVATE SUMMARY BODY"),
+            new(ChatRole.Assistant, null, ReasoningContent: "PRIVATE REASONING BODY",
+                ContinuationState: new("responses", ["{\"type\":\"reasoning\"}"]))];
+        var json = JsonSerializer.Serialize(CompactionDiagnosticJournal.DescribeRequest(messages));
+        Assert.IsFalse(json.Contains("PRIVATE"));
+        using var document = JsonDocument.Parse(json);
+        var checkpoint = document.RootElement[1];
+        Assert.AreEqual("Assistant", checkpoint.GetProperty("role").GetString());
+        Assert.AreEqual("User", checkpoint.GetProperty("providerRole").GetString());
+        Assert.AreEqual(1, document.RootElement[2].GetProperty("continuationItems").GetInt32());
+        Assert.AreEqual(64, checkpoint.GetProperty("identity").GetString()!.Length);
+    }
+
+    [TestMethod]
     public async Task SourceAndAttemptSurviveRestart_WithSecretsRemovedAndStableHashes()
     {
         var root = TestRoot();

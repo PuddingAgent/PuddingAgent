@@ -520,6 +520,8 @@ public sealed class ContextWindowManager
                 // ADR-077 §7.1：DB 水合必须恢复图片 part，不能只构造纯文本消息。
                 ContentParts: ContentPartsEnvelope.Decode(entity.AttachmentsJson))
             {
+                IsContextSummary = string.Equals(entity.ContentType,
+                    ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase),
                 SourceContentHash = ParseChatRole(entity.Role) == ChatRole.User
                     ? HistoryPrefixReconciler.ComputeSourceHash(
                         entity.Content, ContentPartsEnvelope.Decode(entity.AttachmentsJson))
@@ -849,7 +851,7 @@ public sealed class ContextWindowManager
 
             return summaries
                 .OrderBy(m => m.Sequence)
-                .Select(m => new ChatMessage(ChatRole.Assistant, m.Content ?? string.Empty))
+                .Select(m => ChatMessage.ContextSummary(m.Content ?? string.Empty))
                 .ToList();
         }
         catch (Exception ex)

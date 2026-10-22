@@ -6,6 +6,28 @@ namespace PuddingCoreTests;
 public sealed class LlmMessageSequenceNormalizerTests
 {
     [TestMethod]
+    public void ProviderProjection_UsesTypedSummaryOnly_AndKeepsRuntimeBoundary()
+    {
+        var summary = ChatMessage.ContextSummary("<compacted-summary>background</compacted-summary>");
+        var ordinary = new ChatMessage(ChatRole.Assistant, summary.Content);
+        ChatMessage[] source = [new(ChatRole.User, "task"), summary, ordinary];
+        Assert.AreSame(summary, LlmMessageSequenceNormalizer.Normalize(source).Messages[1]);
+        var projected = LlmMessageSequenceNormalizer.NormalizeForProvider(source).Messages;
+        Assert.AreEqual(ChatRole.User, projected[1].Role);
+        Assert.AreEqual(ChatRole.Assistant, projected[2].Role);
+        Assert.AreEqual(ChatRole.Assistant, source[1].Role);
+    }
+
+    [TestMethod]
+    public void ProviderProjection_RejectsSummaryWithNativeResponseState()
+    {
+        var invalid = ChatMessage.ContextSummary("background") with
+        { ContinuationState = new LlmContinuationState("responses", ["{}"] ) };
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            LlmMessageSequenceNormalizer.NormalizeForProvider([invalid]));
+    }
+
+    [TestMethod]
     public void Normalize_PreservesCompleteToolRound()
     {
         var source = new List<ChatMessage>

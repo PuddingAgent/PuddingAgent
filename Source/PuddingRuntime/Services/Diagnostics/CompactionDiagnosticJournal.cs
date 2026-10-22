@@ -26,6 +26,17 @@ public sealed class CompactionDiagnosticJournal(PuddingDataPaths paths, IKeyVaul
     private static readonly Regex UrlWithQuery = new(@"https?://[^\s""'<>]+\?[^\s""'<>]+",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
+    // Full request shape (including retained messages), without user or reasoning bodies.
+    internal static object DescribeRequest(IReadOnlyList<ChatMessage> messages) => messages.Select((m, index) => new
+    {
+        index, role = m.Role.ToString(), providerRole = (m.IsContextSummary ? ChatRole.User : m.Role).ToString(),
+        m.IsContextSummary, identity = WarmPrefixCompaction.ComputeMessageIdentity(m),
+        contentChars = m.Content?.Length ?? 0, reasoningChars = m.ReasoningContent?.Length ?? 0,
+        toolCallIds = m.ToolCalls?.Select(call => call.Id).ToArray(), m.ToolCallId,
+        continuationProtocol = m.ContinuationState?.Protocol,
+        continuationItems = m.ContinuationState?.OutputItemsJson.Count ?? 0,
+    }).ToArray();
+
     internal async Task<string?> BeginAsync(string compactionId, object plan,
         IReadOnlyList<ChatMessage> source, CancellationToken ct)
     {
@@ -35,7 +46,7 @@ public sealed class CompactionDiagnosticJournal(PuddingDataPaths paths, IKeyVaul
             compactionId, plan,
             source = source.Select((m, index) => new
             {
-                index, identity = WarmPrefixCompaction.ComputeMessageIdentity(m), role = m.Role.ToString(),
+                index, identity = WarmPrefixCompaction.ComputeMessageIdentity(m), role = m.Role.ToString(), m.IsContextSummary,
                 m.Content, m.ToolCallId, m.ToolName, m.ToolCalls,
                 images = ChatMessageMultimodalNormalizer.GetImageParts(m).Select(image => image.ArtifactId),
                 // Keep fingerprints/counts for reasoning/continuation; do not duplicate their bodies.

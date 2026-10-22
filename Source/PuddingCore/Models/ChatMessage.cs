@@ -21,6 +21,16 @@ public sealed record ChatMessage(
     IReadOnlyList<LlmContentPart>? ContentParts = null)
 {
     /// <summary>
+    /// Application-generated background, not a model response. Keep the logical Assistant
+    /// role for Runtime turn boundaries; provider adapters project this as user input.
+    /// Persist this discriminator across proxy serialization; never infer it from text markers.
+    /// </summary>
+    public bool IsContextSummary { get; init; }
+
+    public static ChatMessage ContextSummary(string content) =>
+        new(ChatRole.Assistant, content) { IsContextSummary = true };
+
+    /// <summary>
     /// Local identity of the original user content before Runtime envelope/fence rendering.
     /// Used only to reconcile a warm model history with its canonical transcript. This is
     /// not a provider field or an authority marker supplied by message text.

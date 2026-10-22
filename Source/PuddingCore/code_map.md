@@ -80,7 +80,7 @@
 | `VoiceRecognitionModels.cs` | 语音识别模型 | `VoiceRecognitionModels` | `ChatMessage.cs` | — |
 | `VoiceSynthesisModels.cs` | 语音合成模型 | `VoiceSynthesisModels` | `VoiceRecognitionModels.cs` | — |
 | `AudioTranscodingModels.cs` | 音频转码模型 | `AudioTranscodingModels` | `VoiceSynthesisModels.cs` | — |
-| `LlmMessageSequenceNormalizer.cs` | 消息序列规范化 | `LlmMessageSequenceNormalizer` | `ChatMessage.cs` | — |
+| `LlmMessageSequenceNormalizer.cs` | 消息序列规范化 | `LlmMessageSequenceNormalizer` | `ChatMessage.cs` | `NormalizeForProvider` 将显式 `IsContextSummary` 背景投影为 user；运行时保留 Assistant 身份，原生 reasoning/tool items 原样回传，不从正文猜测摘要 |
 
 LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布（候选测量不得改写准备快照）；`CaptureLlmRequest` = 计量 + 发布 `currentPreparedRequest`；`RecordProviderUsage` 带 `LlmCallPurposes`，只有主请求用途才允许改写准备快照/参与安全校准/写 `MeasuredRequestUsage`（`lastMeasuredRequest`），辅助与摘要调用单独落 `TryGetLastAuxiliaryMeasurement`；`Total` 与 `Prompt` 分开保存。
 

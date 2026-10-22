@@ -318,7 +318,7 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         var messagesArray = new JsonArray();
         // V5 切片二：一次 payload 构造一个请求级预算账本（Chat Completions 无图片型工具结果，
         // 仅用户 input_image 路径计费；显式参数传递）。
-        var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
+        var protocolSafeMessages = LlmMessageSequenceNormalizer.NormalizeForProvider(messages).Messages;
         var visionBudget = VisualInputRequestBudget.ForMessages(VisionPolicy, protocolSafeMessages, preparationMaxBytes);
         // K3 compat: read compat config once before message loop
         var compat = Compat;

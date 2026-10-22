@@ -88,6 +88,12 @@ public sealed class PuddingApplicationHostCompositionTests
                 ToolPresentationProjector.Default,
                 presentationField.GetValue(app.Services.GetRequiredService<AgentExecutionService>()));
 
+            var compactionJournal = app.Services.GetRequiredService<PuddingRuntime.Services.Diagnostics.CompactionDiagnosticJournal>();
+            var compactionField = typeof(AgentExecutionService).GetField("_compactionDiagnostics",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(compactionField);
+            Assert.Same(compactionJournal, compactionField.GetValue(app.Services.GetRequiredService<AgentExecutionService>()));
+
             Assert.IsType<UserPreferenceService>(
                 app.Services.GetRequiredService<IUserPreferenceService>());
 

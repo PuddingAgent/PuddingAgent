@@ -133,7 +133,7 @@ internal static class WarmPrefixCompaction
         $"the hard content budget is {allowance.Tokens} tokens and {allowance.TextBytes} serialized UTF-8 bytes. " +
         "Prioritize unresolved intent, corrections, decisions, evidence locations and next actions. Do not pad sections.";
 
-    private static ChatMessage CreateCheckpointMessage(string summary) => new(ChatRole.Assistant,
+    private static ChatMessage CreateCheckpointMessage(string summary) => ChatMessage.ContextSummary(
         $"{CheckpointPreamble}\n\n{ContextSummaryMarkers.WarmPrefixCheckpoint}\n{summary}\n</compacted-summary>");
 
     internal static IReadOnlyList<ChatMessage>? TryCreateCheckpoint(
@@ -326,6 +326,7 @@ internal static class WarmPrefixCompaction
 
         var builder = new StringBuilder();
         builder.Append(message.Role).Append('\u001f')
+            .Append(message.IsContextSummary).Append('\u001f')
             .Append(message.Content ?? string.Empty).Append('\u001f')
             .Append(message.ReasoningContent ?? string.Empty).Append('\u001f')
             .Append(message.ToolCallId ?? string.Empty).Append('\u001f')

@@ -168,7 +168,7 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
         bool stream,
         CancellationToken ct, long? preparationMaxBytes)
     {
-        var normalized = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
+        var normalized = LlmMessageSequenceNormalizer.NormalizeForProvider(messages).Messages;
         var root = new JsonObject
         {
             ["model"] = options.Model,

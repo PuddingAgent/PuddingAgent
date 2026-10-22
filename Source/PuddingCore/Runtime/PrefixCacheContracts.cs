@@ -122,6 +122,7 @@ public static class PrefixCacheSnapshotBuilder
             : HashCanonical(new
             {
                 Role = historyAnchor.Role.ToString(),
+                historyAnchor.IsContextSummary,
                 historyAnchor.Content,
                 historyAnchor.ToolCallId,
                 historyAnchor.ToolName,

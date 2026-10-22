@@ -436,7 +436,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         var fileImages = new List<PlannedVisualInput>();
         // V5 切片二：一次 payload 构造一个请求级预算账本，贯穿本请求全部图片规划——
         // 工具 function_call_output 与用户 input_image 共用同一实例（显式参数传递，无 AsyncLocal）。
-        var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
+        var protocolSafeMessages = LlmMessageSequenceNormalizer.NormalizeForProvider(messages).Messages;
         var visionBudget = VisualInputRequestBudget.ForMessages(VisionPolicy, protocolSafeMessages, preparationMaxBytes);
         for (var messageOrdinal = 0; messageOrdinal < protocolSafeMessages.Count; messageOrdinal++)
             await AddInputItemsAsync(input, protocolSafeMessages[messageOrdinal], fileImages, visionBudget, messageOrdinal + 1, ct);

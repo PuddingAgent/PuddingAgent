@@ -2,7 +2,7 @@
 title: 案例：调度与 Token 内核
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-22
 status: active
 description: 调度、Goal、Runtime 测试共同引用 Platform/Runtime 产物并会创建 SQLite 夹具。不要并行运行 PuddingRuntimeTests 与 PuddingPlatformTests：并行构建会争用 PuddingPlatform.dll，并可能把临时 SQLite I/O 或外键错误伪装成功能回归。应先完成一次构建，再串行运行聚焦集和全量集；测试夹具必须创建真实 S
 categories: [docs, how-debug]
@@ -19,6 +19,12 @@ draft: false
 > 新增本主题的经验请直接追加到本文件；跨主题内容请回到主索引选择分册。
 
 ## 11.43 调度/Token 执行内核的串行验证与产品态边界
+
+DeepSeek Responses 在压缩后报缺少 `reasoning_text` 时，先检查请求形状，不能只看请求大小。
+`<DataRoot>/logs/diagnostics/compaction/` 的 `requestShape` 记录摘要标志、运行时角色、出站角色、续传类型及工具配对 ID。
+应用生成的 checkpoint 必须由 `IsContextSummary` 显式标记，并在网关投影为 user 背景；不得伪装成模型 assistant 推理输出。
+验证应覆盖“两组原生工具批次之间插入摘要”，仅测摘要位于首批工具之前会漏检。原生 reasoning / function_call 项保持原样，不能编造推理内容。
+若目录始终没有现场文件，检查成品 `PuddingHost` 的 Runtime 组合注册；仅在 Runtime 扩展注册可选依赖不会让产品自动消费它。
 
 调度、Goal、Runtime 测试共同引用 Platform/Runtime 产物并会创建 SQLite 夹具。不要并行运行
 `PuddingRuntimeTests` 与 `PuddingPlatformTests`：并行构建会争用 `PuddingPlatform.dll`，并可能把临时 SQLite I/O

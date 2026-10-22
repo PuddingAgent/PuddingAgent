@@ -88,6 +88,11 @@ public sealed class WarmPrefixCompactionApplyTests
         Assert.IsNotNull(verification.AfterSnapshot);
         Assert.IsNotNull(verification.AppliedMessages);
         Assert.AreEqual(plan.RetainedMessages.Count + 1, verification.AppliedMessages!.Count);
+        var checkpoint = verification.AppliedMessages[plan.ReplacementStart];
+        Assert.IsTrue(checkpoint.IsContextSummary);
+        Assert.AreEqual(ChatRole.Assistant, checkpoint.Role);
+        Assert.AreNotEqual(WarmPrefixCompaction.ComputeMessageIdentity(checkpoint),
+            WarmPrefixCompaction.ComputeMessageIdentity(checkpoint with { IsContextSummary = false }));
 
         // after 是重算值，且**大于**未含摘要的计划估算（摘要本身要占 token）。
         Assert.IsGreaterThan(

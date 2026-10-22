@@ -9,6 +9,52 @@ namespace PuddingCoreTests;
 [TestClass]
 public sealed class ResponsesLlmGatewayTests
 {
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task CompactedToolLoop_ProjectsCheckpointAsInputAndPreservesNativeReplay(bool stream)
+    {
+        const string reasoning = """{"type":"reasoning","id":"rs_2","content":[{"type":"reasoning_text","text":"Inspect the second result."}]}""";
+        var before = new LlmContinuationState("responses",
+            ["""{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{}"}"""]);
+        var after = new LlmContinuationState("responses", [reasoning,
+            """{"type":"function_call","id":"fc_2","call_id":"call_2","name":"lookup","arguments":"{}"}"""]);
+        var checkpoint = ChatMessage.ContextSummary("Background checkpoint: previous work completed.");
+        // Controller proxy / saved snapshot roundtrip must retain the discriminator.
+        checkpoint = JsonSerializer.Deserialize<ChatMessage>(JsonSerializer.Serialize(checkpoint))!;
+        ChatMessage[] messages = [
+            new(ChatRole.User, "Continue the task"),
+            new(ChatRole.Assistant, null, ToolCalls: [new("call_1", "lookup", "{}")], ContinuationState: before),
+            new(ChatRole.Tool, "7", ToolCallId: "call_1"), checkpoint,
+            new(ChatRole.Assistant, null, ToolCalls: [new("call_2", "lookup", "{}")], ContinuationState: after),
+            new(ChatRole.Tool, "8", ToolCallId: "call_2"),
+        ];
+        var sent = 0;
+        var gateway = new ResponsesLlmGateway(new HttpClient(new StubHttpMessageHandler(request =>
+        {
+            sent++;
+            var body = JsonNode.Parse(ReadBody(request))!;
+            var input = body["input"]!.AsArray();
+            Assert.AreEqual(7, input.Count);
+            Assert.AreEqual("high", body["reasoning"]!["effort"]!.GetValue<string>());
+            Assert.AreEqual("user", input[3]!["role"]!.GetValue<string>());
+            Assert.AreEqual(checkpoint.Content, input[3]!["content"]!.GetValue<string>());
+            Assert.IsTrue(JsonNode.DeepEquals(JsonNode.Parse(reasoning), input[4]));
+            Assert.AreEqual("call_1", input[1]!["call_id"]!.GetValue<string>());
+            Assert.AreEqual("call_2", input[5]!["call_id"]!.GetValue<string>());
+            return stream ? new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"),
+            } : OkResponsesResponse();
+        })), new LlmOptions("https://api.deepseek.com", "test-key", "deepseek-flash", ReasoningEffort: "high"));
+        if (stream) { await foreach (var _ in gateway.ChatStreamAsync(messages, [])) { } }
+        else await gateway.ChatAsync(messages, []);
+        Assert.AreEqual(1, sent);
+        Assert.AreEqual(ChatRole.Assistant, checkpoint.Role);
+        Assert.IsTrue(checkpoint.IsContextSummary);
+        Assert.AreEqual(1, messages.Count(m => m.Role == ChatRole.User));
+    }
+
     [TestMethod]
     public async Task DeepSeekRequest_UsesCompactUnicodeAndPlaintextReasoningReplay()
     {

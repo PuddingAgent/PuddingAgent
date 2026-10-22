@@ -24,7 +24,7 @@ draft: false
 |------|------|
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册（见下「关键语义」） |
-| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册（见下「关键语义」） |
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；显式装配 `CompactionDiagnosticJournal` 到实际 `AgentExecutionService`（见下「关键语义」） |
 | `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生图片阅读与预处理工具（见下「关键语义」） |
 | `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三种口径、物理像素坐标、GDI 采集 + SkiaSharp 编码、结果落 Vision Artifact。**线格式边界在 `ScreenCapture/ScreenCaptureWire.cs`**（句柄 `nint`→`0x` 十六进制，因 System.Text.Json 不支持 IntPtr）。**窗口可见性三字段各说各的事**：`isVisible`=`WS_VISIBLE` 样式位（≠此刻屏幕可见）、`isMinimized`=真时 `bounds` 是 `-32000` 屏外占位矩形（采集 fail-closed）、`isCloaked`=DWM 隐藏（典型另一虚拟桌面，bounds 仍有效、允许采集并在 notes 说明） |
 | `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库 schema 初始化（见下「关键语义」） |
