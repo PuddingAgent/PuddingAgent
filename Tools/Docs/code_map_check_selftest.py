@@ -603,6 +603,48 @@ def stage_anti_pattern_placeholder_and_restated(mod):
           8 not in placeholder, "hits=%s" % sorted(placeholder))
 
 
+def stage_anti_pattern_skip_bypass(mod):
+    """§6「逐文件免检旁路」必须能取红，且每个旁路词都要触发。
+
+    真因（2026-10-23 规范条款覆盖核对）：§6 七个类别里六类有夹具断言，
+    只有「逐文件免检旁路」（`SKIP_BYPASS_WORDS`）没有任何断言 —— 把这三个词
+    从检查器里删掉，selftest 依旧全绿（B 级）。规范自己也写明：
+    从 code_map 看不出脚本是否真加了旁路，故这条归入 `anti-pattern` 的 warn 级、
+    只作 review 检查项；但**词级启发式仍是机器判定**，必须夹住。
+    本 stage：三行各命中一个旁路词（词集合全覆盖），无旁路词的对照行 0 命中。
+    """
+    d = tempfile.mkdtemp(prefix="code_map_ap_bypass_")
+    write_lines(os.path.join(d, "code_map.md"), [
+        "# Fixture AP Skip Bypass",
+        "",
+        "| 文件 | 用途 | 关键符号 | 关联 | 约束 |",
+        "|------|------|----------|------|------|",
+        "| `a.cs` | 指纹生成器 | `S1` | `b.cs` | — |",
+        "| `b.cs` | 对该文件加免检旁路 | `S2` | `c.cs` | — |",
+        "| `c.cs` | 每次构建都变字节，特例跳过 | `S3` | `d.cs` | — |",
+        "| `d.cs` | 跳过检查以保证门禁为绿 | `S4` | `e.cs` | — |",
+        "",
+    ])
+    rep = mod.run_check(d)
+    bypass = {v["line"]: v for v in rep["violations"]
+              if v.get("category") == "逐文件免检旁路"}
+    # 期望值写死在用例里，不跟 `SKIP_BYPASS_WORDS` 自比 ——
+    # 否则「从常量里删一个词」会同时改变实现与期望，断言恒真（已变异实测验过这个陷阱）。
+    expect = {6: "免检", 7: "特例跳过", 8: "跳过检查"}
+    got = {ln: v["detail"].split("=", 1)[-1] for ln, v in bypass.items()}
+    check("skip-bypass: each spec word hits its own row", got == expect,
+          "got=%s expect=%s" % (got, expect))
+    check("skip-bypass: hits stay at warn (spec §7 severity)",
+          all(v["severity"] == "warn" for v in bypass.values()),
+          "severities=%s" % sorted({v["severity"] for v in bypass.values()}))
+    check("skip-bypass: row without a bypass word does not hit (control)",
+          5 not in bypass, "lines=%s" % sorted(bypass))
+    overlap = sorted(set(mod.SKIP_BYPASS_WORDS)
+                     & {w for ws in mod.ANTI_PATTERN_WORDS.values() for w in ws})
+    check("skip-bypass: word list disjoint from §6 词表 classes (no double tagging)",
+          not overlap, "overlap=%s" % overlap)
+
+
 DETAIL_ROW_RE = re.compile(r"^\| `([a-z][a-z-]+)` \| (?:error|warn|info) \| \d+ \|")
 
 
@@ -673,6 +715,7 @@ def main():
         stage_anti_pattern_identifier_boundary(mod)
         stage_list_items_parallel_phrases(mod)
         stage_anti_pattern_placeholder_and_restated(mod)
+        stage_anti_pattern_skip_bypass(mod)
 
         repo_files = mod.find_code_maps(REPO_ROOT)
         mirror_root = dirs["mirror"]
