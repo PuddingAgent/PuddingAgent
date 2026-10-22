@@ -45,6 +45,22 @@ public sealed record ReadPanelToolValue
 
     /// <summary>预览是否被截断（<see cref="ContentPreview"/> 短于全文）。</summary>
     public bool PreviewTruncated { get; init; }
+
+    /// <summary>
+    /// 用户在画布上画的标注原文（<c>puddingAnnotation.take()</c> 的 JSON），没有则为 null。
+    /// 内含 <c>{src,width,height,naturalWidth,naturalHeight,items[]}</c>：
+    /// items 的坐标是**页面显示像素**，换算见 <see cref="AnnotationsNote"/>。
+    /// </summary>
+    public string? Annotations { get; init; }
+
+    /// <summary>标注快照的写入时间（Desktop 侧给出），用来判断它有多旧。</summary>
+    public DateTimeOffset? AnnotationsUpdatedAt { get; init; }
+
+    /// <summary>标注原文是否被截断（只截展示，不影响快照本身）。</summary>
+    public bool AnnotationsTruncated { get; init; }
+
+    /// <summary>换算说明：有标注时才给，避免把没用到的约定塞进每次读数。</summary>
+    public string? AnnotationsNote { get; init; }
 }
 
 /// <summary>
@@ -63,12 +79,28 @@ public sealed record ReadPanelToolValue
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]
-public sealed class ReadPanelTool(IPanelCanvasStore panelCanvases) : PuddingToolBase<ReadPanelArgs>
+public sealed class ReadPanelTool(
+    IPanelCanvasStore panelCanvases,
+    IPanelAnnotationFileReader? annotationFiles = null) : PuddingToolBase<ReadPanelArgs>
 {
     private const string DefaultPanelId = "main";
 
     /// <summary>预览上限：够看清结构，又不会把 256 KB 画布灌进上下文。</summary>
     private const int MaxPreviewChars = 8000;
+
+    /// <summary>标注原文的展示上限：几个箭头加一段文字远低于它，而涂鸦轨迹可能很长。</summary>
+    private const int MaxAnnotationChars = 4000;
+
+    /// <summary>
+    /// 坐标换算说明。**不在这里做归一化**：一套 0–999 的换算只应该有一个实现
+    /// （<c>Desktop.Foundation.PanelAnnotation.Normalize</c>），在 Agent 工具里再写一遍
+    /// 就变成两套约定，迟早会不一致。所以只把像素与显示尺寸原样交出，由读的人按这条式子算。
+    /// </summary>
+    private const string AnnotationCoordinateNote =
+        "items[].x/x1/x2/y/y1/y2/points[] are DISPLAY pixels. Normalize with "
+        + "round(px / width * 1000) and round(py / height * 1000), clamped to 0..999, "
+        + "before using them as <point x y> / <bbox x1 y1 x2 y2> for image editing. "
+        + "kinds: box(x1,y1,x2,y2), arrow(x1,y1,x2,y2), point(x,y), text(label,x,y), scribble(points[]).";
 
     protected override Task<ToolExecutionResult> ExecuteCoreAsync(
         ReadPanelArgs args,
@@ -77,14 +109,20 @@ public sealed class ReadPanelTool(IPanelCanvasStore panelCanvases) : PuddingTool
     {
         var panelId = string.IsNullOrWhiteSpace(args.PanelId) ? DefaultPanelId : args.PanelId.Trim();
         var snapshot = panelCanvases.Get(panelId);
+        var annotations = ReadAnnotations(panelId);
 
         if (snapshot is null)
         {
             // 不存在的画布不是错误：它只是还没有内容。
+            // 标注仍然照报：画布内容可能已被清掉，而用户画在上面的标记还在。
             return Task.FromResult(BrowserToolResponse.Success(new ReadPanelToolValue
             {
                 PanelId = panelId,
                 Exists = false,
+                Annotations = annotations.Json,
+                AnnotationsUpdatedAt = annotations.UpdatedAt,
+                AnnotationsTruncated = annotations.Truncated,
+                AnnotationsNote = annotations.Json is null ? null : AnnotationCoordinateNote,
             }));
         }
 
@@ -110,8 +148,47 @@ public sealed class ReadPanelTool(IPanelCanvasStore panelCanvases) : PuddingTool
             ContentLength = snapshot.Content.Length,
             ContentPreview = preview,
             PreviewTruncated = preview is not null && preview.Length < snapshot.Content.Length,
+            Annotations = annotations.Json,
+            AnnotationsUpdatedAt = annotations.UpdatedAt,
+            AnnotationsTruncated = annotations.Truncated,
+            AnnotationsNote = annotations.Json is null ? null : AnnotationCoordinateNote,
         }));
     }
+
+    /// <summary>
+    /// 读出交接文件里的标注。没接读取器（旧接线 / 单测里的单参构造）、文件不存在、
+    /// 文件坏了，一律当「没有标注」返回 <c>null</c> —— 读不到标注不该让读画布失败。
+    /// </summary>
+    private AnnotationView ReadAnnotations(string panelId)
+    {
+        if (annotationFiles is null)
+        {
+            return default;
+        }
+
+        var file = annotationFiles.Read(panelId);
+        if (file is null)
+        {
+            return default;
+        }
+
+        var payload = file.PayloadJson;
+        if (payload.Length <= MaxAnnotationChars)
+        {
+            return new AnnotationView(payload, file.UpdatedAt, Truncated: false);
+        }
+
+        // 同预览：只截展示，且不把代理对切成半个。
+        var cut = MaxAnnotationChars;
+        if (char.IsHighSurrogate(payload[cut - 1]))
+        {
+            cut--;
+        }
+
+        return new AnnotationView(payload[..cut], file.UpdatedAt, Truncated: true);
+    }
+
+    private readonly record struct AnnotationView(string? Json, DateTimeOffset? UpdatedAt, bool Truncated);
 }
 
 /// <summary>列出画布（元数据，不含内容）。</summary>

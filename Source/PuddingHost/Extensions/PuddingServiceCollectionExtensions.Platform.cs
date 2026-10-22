@@ -162,6 +162,15 @@ public static partial class PuddingServiceCollectionExtensions
             _ => new PuddingCore.Panels.FilePanelCanvasStore(
                 Path.Combine(dataPaths.DataRoot, "panels")));
 
+        // ── 用户标注的**交接面**：Desktop 写，Core 读 ──────────────────────
+        // 标注只存在于画布页（WebView2）里，而 Core 的 HTTP 面刻意只读（匿名写入口在
+        // 0.0.0.0 绑定下等于把画布交给局域网）。两边本来就共享 {DataRoot}，所以这里
+        // 只加一个“读”端口：Agent 的 read_panel 能看画布，也能看用户在画布上画了什么。
+        // 单例即可：它不缓存，每次读磁盘，写的及时性由 Desktop 的轮询节拍决定。
+        builder.Services.AddSingleton<PuddingCore.Panels.IPanelAnnotationFileReader>(
+            _ => new PuddingCore.Panels.FilePanelAnnotationFileReader(
+                Path.Combine(dataPaths.DataRoot, "panels")));
+
             // ── Conversation 命令受理（ADR-059）─────────────
             builder.Services.AddScoped<ISubmitTurnHandler, SubmitTurnHandler>();
             builder.Services.AddScoped<IConversationNotificationStore, ConversationNotificationStore>();

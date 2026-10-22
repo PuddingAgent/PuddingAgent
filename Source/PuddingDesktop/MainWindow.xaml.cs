@@ -1037,6 +1037,20 @@ public sealed partial class MainWindow : Window
     /// <summary>已经提示过的读取失败（按 tab id）：失败原因不该每 2 秒刷一次状态栏。</summary>
     private readonly HashSet<string> _panelFailureNotified = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 上一次写出去的标注原文（按 tab id）。
+    ///
+    /// <para>
+    /// 轮询每 2 秒一轮，而标注只有用户动手时才变 —— 每次比对原文，没变就不落盘：
+    /// 否则每隔两秒都要重写同一个文件，既白耗磁盘，又会让文件时间戳一直在跳，
+    /// 看不出“用户到底是刚才画的，还是三小时前画的”。只记写成功过的，失败下轮重试。
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, string> _panelAnnotationPayloads = new(StringComparer.Ordinal);
+
+    /// <summary>已提示过的标注写入失败（按 tab id）。与读取失败分开记，两者互不掩盖。</summary>
+    private readonly HashSet<string> _panelAnnotationWriteFailed = new(StringComparer.Ordinal);
+
     private const double PanelPollSeconds = 2;
 
     /// <summary>每块画布的工具栏句柄（按 tab id）。关标签时必须一起丢掉，否则字典随标签无限增长。</summary>
@@ -1176,6 +1190,8 @@ public sealed partial class MainWindow : Window
         _panelPollInFlight.Remove(tabId);
         _panelToolbars.Remove(tabId);
         _panelFailureNotified.Remove(tabId);
+        _panelAnnotationPayloads.Remove(tabId);
+        _panelAnnotationWriteFailed.Remove(tabId);
     }
 
     private async Task PollPanelAsync(string tabId)
@@ -1206,6 +1222,12 @@ public sealed partial class MainWindow : Window
             }
 
             var result = await ReadPanelFromCoreAsync(address, PanelIdOf(tab));
+
+            // 先交标注、再应用内容：一旦内容 revision 变了，ApplyPanelFeed 会 NavigateToString，
+            // 页面重载后画布是空的 —— 那时再 take() 只会拿到一份空标注，把用户的笔迹洗干净。
+            // 顺序反过来才是对的：趁页面还带着用户的笔迹，先把它们存下去。
+            await PublishPanelAnnotationsAsync(tab, web, PanelIdOf(tab));
+
             ApplyPanelFeed(tabId, web, result);
         }
         catch (Exception ex)
@@ -1220,6 +1242,78 @@ public sealed partial class MainWindow : Window
         {
             _panelPollInFlight.Remove(tabId);
         }
+    }
+
+    /// <summary>
+    /// 把画布上的用户标注交给 Core（落盘成 <c>panel-{id}.annotations.json</c>）。
+    ///
+    /// <para>
+    /// 为什么走文件而不走 HTTP：Core 的接口面绑在 0.0.0.0 上，一个匿名的写入口
+    /// 等于把画布交给整个局域网；而 Agent 读标注只需要「能读到磁盘上的文件」。
+    /// 两个进程本来就共享数据根，文件是这里最窄的连接面：Desktop 只写自己那块画布的快照，Core 只读。
+    /// </para>
+    /// <para>
+    /// 只在原文变化时写，且**从不抛异常** —— 它挂在 UI 定时器上，
+    /// 一次脚本或序列化问题不该把整条轮询链带断。
+    /// </para>
+    /// </summary>
+    private async Task PublishPanelAnnotationsAsync(
+        ToolTab tab, Microsoft.UI.Xaml.Controls.WebView2 web, string panelId)
+    {
+        if (_coordinator.DataRoot is not { Length: > 0 } dataRoot)
+        {
+            return;
+        }
+
+        var core = web.CoreWebView2;
+        if (core is null)
+        {
+            return;
+        }
+
+        string payload;
+        try
+        {
+            var raw = await core.ExecuteScriptAsync(
+                "window.puddingAnnotation ? puddingAnnotation.take() : ''");
+            payload = JsonSerializer.Deserialize<string>(raw) ?? string.Empty;
+        }
+        catch (Exception)
+        {
+            // 页面正在换、或脚本被拒绝执行：这一轮不写，下个 tick 再试。
+            return;
+        }
+
+        // 页面还没装标注层（模版页、导出页、刚 NavigateToString 完）时脚本返回空串 ——
+        // 那时绝不能写，否则会用一份空标注盖掉用户上一轮真正画过的东西。
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return;
+        }
+
+        if (_panelAnnotationPayloads.TryGetValue(tab.Id, out var previous)
+            && string.Equals(previous, payload, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!PanelAnnotationSnapshotWriter.TryPublish(
+                Path.Combine(dataRoot, "panels"),
+                panelId,
+                payload,
+                DateTimeOffset.Now,
+                out var error))
+        {
+            if (_panelAnnotationWriteFailed.Add(tab.Id))
+            {
+                ToolStatusText.Text = $"标注没能存下来：{error}";
+            }
+
+            return;
+        }
+
+        _panelAnnotationPayloads[tab.Id] = payload;
+        _panelAnnotationWriteFailed.Remove(tab.Id);
     }
 
     private static async Task<PanelCanvasFeedResult> ReadPanelFromCoreAsync(Uri address, string panelId)

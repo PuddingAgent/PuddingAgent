@@ -170,6 +170,13 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Tools/` | 工具接口与基类目录 | — | — | — |
 | `Tools/PuddingToolContracts.cs` | 原生 Tool 描述、反序列化与执行基类 | `PuddingToolContracts` | `Tools/` | 当前结果仍为 Output/Error string；deepseek-harness 对齐将演进 input/output schema、canonical value、结构化错误与不可变调用身份 |
 
+## 交互面板域（Panels/）
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Panels/PanelCanvasStore.cs` | 工具区画布的内容真相与持久边界 | `IPanelCanvasStore`、`PanelCanvasSnapshot`、`PanelCanvasLimits`、`InMemoryPanelCanvasStore`、`PanelCanvasGuard` | `Panels/FilePanelCanvasStore.cs`、`../PuddingPlatform/Controllers/Api/PanelCanvasApiController.cs` | 内容真相只在 Core，Desktop 只是视图；HTML 上限 `MaxContentChars`；panelId 规整只有 `PanelCanvasGuard` 一处实现，调用方不得自行清洗 |
+| `Panels/FilePanelCanvasStore.cs` | 落盘实现，画布活过进程重启 | `FilePanelCanvasStore` | `Panels/PanelCanvasStore.cs` | 根目录 `{DataRoot}/panels`，文件名 `panel-{id}.json`；**先写盘后改内存**（写盘失败不改内存）；删除失败同样不改内存；坏文件跳过并计入 `SkippedFileCount`，且保留在盘上便于排查 |
+| `Panels/PanelAnnotationFile.cs` | 用户画布标注的**只读**回传快照 | `PanelAnnotationFile`、`IPanelAnnotationFileReader`、`PanelAnnotationFileName`、`FilePanelAnnotationFileReader` | `Panels/FilePanelCanvasStore.cs`、`../PuddingBrowser.AgentTools/PanelInspectTools.cs`、`../PuddingDesktop.Foundation/PanelAnnotationSnapshotWriter.cs` | **Desktop 写 / Core 只读**：Core 的 HTTP 面不接收标注写入，避免给 0.0.0.0 上的匿名接口再开一个写口；文件名 `panel-{id}.annotations.json` 由 `PanelAnnotationFileName.For` 单点定义（`SchemaVersion=1`，Core 与 Desktop 各有字面量锁测试）；panelId 按 `OrdinalIgnoreCase` 比对，不匹配/损坏/缺失一律返回 null 而不抛 |
 ## 检索合同（Tools/Retrieval/，ADR-089 U0）
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |

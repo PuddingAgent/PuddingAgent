@@ -52,6 +52,22 @@ draft: false
 **`BrowserDelegationTasks.cs`**：子代理委派信封**工厂**（§9/G10，无工具面）：Core 的 `spawn_sub_agent` 需要浏览器工具清单，而"有哪些工具、哪些必需"是**本程序集的代码事实**（`BrowserAgentToolIds`）——让 Core 自己拼字符串就会出现编译期发现不了的漏配。只读任务要求 `browser_snapshot`；可写任务额外要求 `browser_navigate`+`browser_interact`；注入列表 = 必需 ∪ 真实工具全集；`TryCreate` 立即用
 `BrowserDelegation.TryValidate` 自检并给出原因（工厂不重写规则）
 
+## 工具区画布工具（4 个工具类，DesktopPanelToolIds）
+
+> 与上面 8 项 browser 工具不同：这 4 项不碰浏览器，读写的是 Core 的画布存储（`IPanelCanvasStore`），Desktop 只是渲染视图。
+
+| 文件 | 工具 | 用途 |
+|---|---|---|
+| `RenderPanelTool.cs` | `render_panel` | 把自包含 HTML 存成工具区画布并尝试立即显示（沙箱内无网络/无 shell 桥，上限 256 KB） |
+| `PanelInspectTools.cs`（`ReadPanelTool`） | `read_panel` | 报告某块画布现状：存在性、标题、单调 revision、内容长度与可选前 N 字符，**外加用户标注快照** |
+| `PanelInspectTools.cs`（`ListPanelsTool`） | `list_panels` | 列出所有有内容的画布（id/标题/revision/更新时间/长度），不返回内容 |
+| `PanelInspectTools.cs`（`ClearPanelTool`） | `clear_panel` | 删除画布（幂等：不存在报 `removed=false`，不是错误） |
+
+**关键语义**
+
+**`read_panel` 的标注回传**：除了画布内容，还读 `IPanelAnnotationFileReader`（可空注入）拿用户标注快照，输出 `annotations`/`annotationsUpdatedAt`/`annotationsTruncated`（按 4000 字符截断，按字符边界不切代理对）与 `annotationsNote`。
+坐标口径固定为 **0–999 归一化**且**本工具不做归一化**（唯一实现在 `PuddingDesktop.Foundation.PanelAnnotation.Normalize`），只在 `annotationsNote` 里说明口径，避免第二份实现漂移。
+画布不存在时仍然报告标注（`exists=false` 与标注分开），因为"画布被清掉但用户画过"和"从没有人画过"是两件事。读取端任何失败都退化成"无标注"，不让 `read_panel` 因为标注文件坏掉而整体失败。
 ## 基础与契约
 
 | 文件 | 用途 |
