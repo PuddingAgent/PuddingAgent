@@ -10,7 +10,8 @@ namespace PuddingContextPolicy;
 public sealed record CandidateSelectionOptions(
     int ProtectedTailMessages = 8,
     double TriggerRatio = 0.80,
-    double TargetRatio = 0.50);
+    double TargetRatio = 0.50,
+    double TextTriggerRatio = 1.0);
 
 /// <summary>
 /// 冻结候选的选择结果。候选一旦产出即视为**不可变**：任何相关变化都走
@@ -86,7 +87,8 @@ public static class ContextCandidateSelector
         var initialBytes = messages.Sum(m => m.TextBytes) + budget.NonMessageTextBytes;
         var limit = capacity.EffectiveInputTokens;
         var textExceeded = budget.MaxTextBytes > 0 && initialBytes > budget.MaxTextBytes;
-        if (initialUsed < limit * Math.Clamp(options.TriggerRatio, 0.05, 1) && !textExceeded)
+        var textTriggered = budget.MaxTextBytes > 0 && initialBytes >= budget.MaxTextBytes * Math.Clamp(options.TextTriggerRatio, 0.05, 1);
+        if (initialUsed < limit * Math.Clamp(options.TriggerRatio, 0.05, 1) && !textTriggered)
             return CandidateSelectionResult.NotCreated("below_soft_threshold", initialUsed);
 
         var target = limit * Math.Clamp(options.TargetRatio, 0.05, 1);

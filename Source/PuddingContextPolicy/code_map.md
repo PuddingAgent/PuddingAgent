@@ -19,6 +19,7 @@
 
 | 文件 | 职责 | 关键符号 | 约束 |
 |---|---|---|---|
+| `PrefixCompactionPolicy.cs` | 前缀缓存友好的分阶段调度与追加式候选校验 | `Decide/ValidateAppendOnly` | token/字节双压力；60% 准备、75% 提交就绪候选、90% 等待；预测下一轮越界同样保护；冷却不屏蔽硬保护；冻结历史逐位不变才允许追加 |
 | `ContextPolicyContracts.cs` | 输入/输出合同：消息策略视图、容量输入/结果、压力分类、来源常量、策略版本 | `ContextMessageShape` 等 6 型合同（消息/容量输入输出/压力/来源/版本）（见下「关键语义」） | 只带整数与**稳定身份**，不带正文；来源取值与 Runtime 的 `ContextEffectiveWindowSources` 逐字对齐 |
 | `ContextCapacityArithmetic.cs` | 容量算术与压力分类 | `ContextCapacityArithmetic.Resolve/Classify` | `effectiveInput = min(providerInputLimit, modelWindow − reservedOutput − safetyBuffer)`；回退预留必须记为 `fallback_output_reserve`，不得冒充用户预算；**先判硬边界再判软阈值** |
 | `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint` + 选项/结果两型（见下「关键语义」） | 前导 System 不可移除；当前 User、System、最新完整执行单元及未完成工具批次不可移除；近期 N 条偏好在硬压力下受预算约束；完整历史轮与轮内已完成执行单元可选；token/字节预算包含摘要与包装预留；`ProjectedUsedTokensExcludingSummary` **不是**提交后的值 |
@@ -42,7 +43,7 @@
 1. **软/硬分离**：软维护可延期，硬保护不可被任何准入/退避/冷却跳过（ADR-095 D1/D2）。
 2. **身份而非正文**：指纹、适用性校验都只吃稳定身份与版本号 —— 组件不应看到 Prompt 正文。
 3. **after 必须是真实值**：计划阶段「移除后、未加摘要」的估算不得进入日志/事件充当 after。
-4. **旧候选绝不覆盖新消息**：保留后缀逐位不变才允许提交。
+4. **旧候选绝不覆盖新消息**：严格校验要求后缀不变；显式追加模式要求整个冻结历史逐位不变，并由调用方保留追加尾部、重新计量和执行持久 CAS。
 5. **回退值不冒充用户预算**：`fallback_output_reserve` 与 `output_reserve` 是两个来源。
 6. **只依赖 BCL**：任何 `ProjectReference` / `PackageReference` 都是边界破裂（S4 会取红）。
 

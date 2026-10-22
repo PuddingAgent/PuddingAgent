@@ -27,6 +27,17 @@ public sealed class CompletedExecutionCompactionTests
     }
 
     [TestMethod]
+    public void BytePreparationThresholdCreatesCandidateBeforeHardUploadLimit()
+    {
+        var source = LongTurn().Take(43).ToArray();
+        var result = ContextCandidateSelector.Select(source, 20_000,
+            ContextCapacityArithmetic.Resolve(new(605_760)), new(TextTriggerRatio: .60),
+            "deepseek", "tools", 2, "revision", new ContextRequestBudget(90_000, 524_288, 100, 700));
+        Assert.IsTrue(source.Sum(m => m.TextBytes) + 90_000 < 524_288);
+        Assert.IsTrue(result.Created);
+    }
+
+    [TestMethod]
     public void LongCurrentTurn_SelectsCompletedExecutionInsteadOfResummarizingTinyOldCheckpoint()
     {
         var source = LongTurn();
