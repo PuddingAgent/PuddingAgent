@@ -4,7 +4,7 @@ using System.Text;
 namespace PuddingContextPolicy;
 
 /// <summary>候选选择的策略选项（默认值来自既有配置口径，组件不另设常量）。</summary>
-/// <param name="ProtectedTailMessages">受保护尾部条数（最后 N 条永不被裁剪）。</param>
+/// <param name="ProtectedTailMessages">近期保留条数偏好；硬压力下受预算约束，始终保留最新完整单元。</param>
 /// <param name="TriggerRatio">软触发比例。</param>
 /// <param name="TargetRatio">压实目标比例。</param>
 public sealed record CandidateSelectionOptions(
@@ -50,7 +50,7 @@ public sealed record CandidateSelectionResult(
 /// <para>
 /// 硬不变量：
 /// ① 前导 System 消息不可移除；
-/// ② 最后 <see cref="CandidateSelectionOptions.ProtectedTailMessages"/> 条不可移除；
+/// ② 最近区按条数及预算分配，边界扩展到完整执行单元；
 /// ③ 当前用户输入不可移除；已完成执行单元可压缩；
 /// ④ 只按**完整历史轮/执行单元**移除（不会把 tool call 与它的 tool result 拆开，也不会跨 User 边界拼接）。
 /// </para>
@@ -92,6 +92,14 @@ public static class ContextCandidateSelector
         var target = limit * Math.Clamp(options.TargetRatio, 0.05, 1);
         var textTarget = budget.MaxTextBytes * Math.Clamp(options.TargetRatio, 0.05, 1);
         var tailStart = Math.Max(0, messages.Count - Math.Max(1, options.ProtectedTailMessages));
+        // Count is a preference, not an unbounded byte reservation. On hard pressure, allocate
+        // at most a quarter of each request budget to recent records; whole-unit parsing below
+        // expands the boundary backwards, so even an oversized newest batch stays intact.
+        if (textExceeded || initialUsed > limit)
+            while (tailStart < messages.Count - 1 &&
+                ((textExceeded && messages.Skip(tailStart).Sum(m => m.TextBytes) > budget.MaxTextBytes / 4)
+                 || (initialUsed > limit && messages.Skip(tailStart).Sum(m => m.TokenEstimate) > limit / 4)))
+                tailStart++;
         var currentUser = -1;
         for (var i = 0; i < messages.Count; i++)
             if (messages[i].Role == ContextMessageRole.User) currentUser = i;

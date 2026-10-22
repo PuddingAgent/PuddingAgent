@@ -243,62 +243,22 @@ public static partial class LlmRequestBudgetGuard
     {
         ArgumentNullException.ThrowIfNull(usageStore);
 
-        // 有效输入上限必须与出站硬门禁（<see cref="Prepare"/>）同源：除模型窗口/输出预算/安全余量外，
-        // 还要包含 WorkUnit 输入容量，否则软阈值会在比真实硬边界更宽的分母上判断。
-        var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens, workUnitInputCapacity);
-        var working = messages.ToList();
-        // 候选测量一律**只计量、不发布**：软压缩会在挑选过程中对「移除后的保留列表」反复计量，
-        // 若顺带发布，session 的 currentPreparedRequest 就会被留在压缩后的形状上，压缩请求的
-        // 请求级归因与摘要 usage 校准都会取错 raw（诊断 2026-10-07 §5.1）。
-        var initialSnapshot = usageStore.MeasureLlmRequest(
-            sessionId,
-            working,
-            tools,
-            config?.ModelId);
-        var snapshot = initialSnapshot;
-        var initialUsedTokens = snapshot.UsedTokens;
-
-        var trigger = effectiveInputLimit * Math.Clamp(triggerRatio, 0.1, 1.0);
-        var textBudgetExceeded = maxRequestTextBytes > 0
-            && LlmRequestTextBudget.Measure(working, tools) > maxRequestTextBytes;
-        if (snapshot.UsedTokens < trigger && !textBudgetExceeded)
-        {
-            return new LlmSoftCompactionResult(
-                working,
-                snapshot,
-                effectiveInputLimit,
-                Compacted: false,
-                RemovedMessageCount: 0,
-                InitialUsedTokens: initialUsedTokens,
-                InitialMessageCount: messages.Count,
-                InitialSnapshot: initialSnapshot);
-        }
-
-        var target = effectiveInputLimit * Math.Clamp(targetRatio, 0.05, Math.Clamp(triggerRatio, 0.05, 1.0));
-        while ((snapshot.UsedTokens > target
-                || (textBudgetExceeded && LlmRequestTextBudget.Measure(working, tools) > maxRequestTextBytes / 2))
-               && (RemoveOldestConversationUnit(working)
-                   || (textBudgetExceeded && LlmRequestTextBudget.Measure(working, tools) > maxRequestTextBytes / 2
-                       && RemoveOldestConversationUnit(working, protectedTailMessages: 0))))
-        {
-            working = LlmMessageSequenceNormalizer.Normalize(working).Messages.ToList();
-            snapshot = usageStore.MeasureLlmRequest(
-                sessionId,
-                working,
-                tools,
-                config?.ModelId);
-        }
-
-        var removed = Math.Max(0, messages.Count - working.Count);
-        return new LlmSoftCompactionResult(
-            working,
-            snapshot,
-            effectiveInputLimit,
-            Compacted: removed > 0,
-            RemovedMessageCount: removed,
-            InitialUsedTokens: initialUsedTokens,
-            InitialMessageCount: messages.Count,
-            InitialSnapshot: initialSnapshot);
+        // Historical API returns a candidate without a summary, not a committed context.
+        // Selection belongs exclusively to ContextCandidateSelector through the Runtime adapter.
+        var effectiveConfig = config;
+        if (safetyBufferTokens != DefaultSafetyBufferTokens)
+            effectiveConfig = (config ?? new LlmConfig()) with
+            {
+                MaxInputTokens = ResolveEffectiveInputLimit(config, safetyBufferTokens, workUnitInputCapacity),
+            };
+        if (WarmPrefixCompaction.TryCreatePlan(usageStore, sessionId, messages, messages, tools,
+            effectiveConfig, triggerRatio, targetRatio, out var plan, workUnitInputCapacity,
+            maxRequestTextBytes: maxRequestTextBytes) && plan is not null)
+            return new(plan.RetainedMessages, plan.EstimatedRetainedSnapshot, plan.EffectiveInputLimit,
+                true, plan.RemovedMessageCount, plan.InitialUsedTokens, messages.Count, plan.InitialSnapshot);
+        var snapshot = usageStore.MeasureLlmRequest(sessionId, messages, tools, config?.ModelId);
+        return new(messages, snapshot, ResolveEffectiveInputLimit(effectiveConfig, safetyBufferTokens, workUnitInputCapacity),
+            false, 0, snapshot.UsedTokens, messages.Count, snapshot);
     }
 
     public static bool TryGetProviderMaxInputTokens(Exception exception, out int maxInputTokens)

@@ -21,7 +21,7 @@
 |---|---|---|---|
 | `ContextPolicyContracts.cs` | 输入/输出合同：消息策略视图、容量输入/结果、压力分类、来源常量、策略版本 | `ContextMessageShape` 等 6 型合同（消息/容量输入输出/压力/来源/版本）（见下「关键语义」） | 只带整数与**稳定身份**，不带正文；来源取值与 Runtime 的 `ContextEffectiveWindowSources` 逐字对齐 |
 | `ContextCapacityArithmetic.cs` | 容量算术与压力分类 | `ContextCapacityArithmetic.Resolve/Classify` | `effectiveInput = min(providerInputLimit, modelWindow − reservedOutput − safetyBuffer)`；回退预留必须记为 `fallback_output_reserve`，不得冒充用户预算；**先判硬边界再判软阈值** |
-| `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint` + 选项/结果两型（见下「关键语义」） | 前导 System 不可移除；当前 User、System、最后 N 条及未完成工具批次不可移除；完整历史轮与轮内已完成执行单元可选；token/字节预算包含摘要与包装预留；`ProjectedUsedTokensExcludingSummary` **不是**提交后的值 |
+| `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint` + 选项/结果两型（见下「关键语义」） | 前导 System 不可移除；当前 User、System、最新完整执行单元及未完成工具批次不可移除；近期 N 条偏好在硬压力下受预算约束；完整历史轮与轮内已完成执行单元可选；token/字节预算包含摘要与包装预留；`ProjectedUsedTokensExcludingSummary` **不是**提交后的值 |
 | `ContextCandidateApplicability.cs` | 严格适用校验（旧候选能否提交） | `ContextCandidateApplicability.Validate` + 冻结/当前描述符与判定（见下「关键语义」） | 代次/revision/路由/工具/策略版本任一变化 ⇒ `stale_candidate`；保留后缀必须与当前历史**逐位一致**（新消息追加/中间插入/删改一律失效）；不做尾部拼接或自动 rebase |
 | `ContextNetGainAdmission.cs` | 净收益准入 | `ContextNetGainAdmission.Evaluate`、`NetGainInputs`、`NetGainDecision` | 必须用**真实摘要长度**重算 after；摘要为空/不缩小 ⇒ `no_gain`；加摘要后仍越界 ⇒ 不得提交；未达目标允许提交但必须如实记录 |
 | `ContextBackoffPolicy.cs` | 退避/去重判定 | `ContextBackoffPolicy.Decide`、`CandidateMaintenanceRecord`、`CandidateMaintenanceOutcomes` | **硬保护优先于任何退避**；同候选同代次上的 `applied` 记录不可信（成功应用应推进代次） |
@@ -72,7 +72,7 @@ Core/Desktop 运行中执行，不碰宿主文件锁。
 - **已登记解决方案**：`PuddingAgentNetwork.slnx` 含 `Source/PuddingContextPolicy/PuddingContextPolicy.csproj`
   与 `Source/PuddingContextPolicyTests/PuddingContextPolicyTests.csproj`。
 - **已被消费**：`Source/PuddingRuntime/PuddingRuntime.csproj` 通过 `ProjectReference` 引用本组件；
-  Runtime 在 warm-prefix 的提交边界消费 `ContextCandidateApplicability`（版本/身份适用性）与
+  Runtime 在 warm-prefix 规划边界消费 `ContextCandidateSelector`（完整跨度及双预算），提交边界消费 `ContextCandidateApplicability`（版本/身份适用性）与
   `ContextNetGainAdmission`（收益与硬上限准入）。
 - **无需 DI 登记**：本组件只有静态纯策略（无状态、无 I/O），因此没有服务注册项；
   这不等于「未接入」。

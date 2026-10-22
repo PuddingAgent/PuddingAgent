@@ -87,7 +87,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 **`Source/PuddingContextPolicy/`**
 
-  上下文容量与压缩候选的**纯策略**组件（BCL-only，`ProjectReference`/`PackageReference` 均为 0）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定；不负责计时器/数据库/网络/锁/后台任务。**S1–S4 已交付，尚未 S5 接入**（未登记 slnx、未进 DI）
+  上下文容量与压缩候选的**纯策略**组件（BCL-only，`ProjectReference`/`PackageReference` 均为 0）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定；不负责计时器/数据库/网络/锁/后台任务。**已被 Runtime 消费**：候选选择、双预算、严格 CAS 与净收益准入；静态纯策略不需要 DI
 
 **`Source/PuddingSsh/`**
 
@@ -141,7 +141,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Runtime` | `ContextPipeline` → `AgentExecutionService` | 组装 stable system prefix + volatile User tail，再用 `[CURRENT USER TURN input_sha256=…]` 围栏本轮输入（缺失 fail-closed） |
 | `Runtime → Gateway` | `LlmInvocationService` → `DirectLlmClient` | 按 `model.protocol` 路由 openai / responses / anthropic 三协议网关 |
 | `Gateway → Platform` | `ILlmGatewayUsageRecorder` → `llm_gateway_usage_events` | usage 落库后供 StatsApi 与日聚合取本地计费口径 |
-| `Runtime` | `ContextWindowManager` → `ContextCompactionService`；`AgentExecutionService` → `WarmPrefixCompaction` / `BoundedCompactionSummary` | 水合剪枝只筛选完整消息对象，显示预览不回填历史；压缩前增量镜像并保留精确持久身份；token 或 DeepSeek Responses 文本上传预算越界同步保护，完整旧轮次分段归并后经 CAS 提交，未投影工具原文随摘要原子归档。发送前再次复核，超限保留历史并附压缩原因；安全软候选延期到 canonical 终态之后 |
+| `Runtime` | `ContextWindowManager` → `ContextCompactionService`；`AgentExecutionService` → `WarmPrefixCompaction` / `BoundedCompactionSummary` | 水合剪枝只筛选完整消息对象，显示预览不回填历史；压缩前增量镜像并保留精确持久身份；token 或 DeepSeek Responses 文本上传预算越界同步保护，完整历史轮与当前轮已完成执行跨度按统一摘要预算分段归并，经 CAS 提交，未投影工具原文随摘要原子归档。发送前再次复核，超限保留历史并附压缩原因；安全软候选延期到 canonical 终态之后 |
 | `Platform` | `MessageDeliveryPolicy` → `MessageDeliveryDispatcher` | inform/report_result 只通知；ask/request_review/delegate 才进执行 |
 | `Runtime` | `SubAgentInvocationService` → `SubAgentManager` | 子代理委派：model 须为 providerId/modelId；run archive 固化实际预算 |
 | `Platform` | `TaskAutoDispatchWorker` → `TaskExecutionTracker` | 5 min 有界派发：availability → backlog 精炼 → Plan/Node 编译 → 五态跟踪 |

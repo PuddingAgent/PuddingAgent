@@ -9,8 +9,7 @@ namespace PuddingRuntime.Services;
 
 /// <summary>
 /// Warm-prefix checkpoint planning for long Agent loops.
-/// The plan contains an exact replay template; the caller uses bounded selected-span summaries
-/// when replay would be too large. Only a valid, shrinking summary within token and text budgets
+/// The plan freezes one exact replacement span; the caller summarizes only that span in bounded parts. Only a valid, shrinking summary within token and text budgets
 /// may atomically replace the selected old head with one checkpoint message.
 /// </summary>
 internal static class WarmPrefixCompaction
@@ -67,68 +66,75 @@ internal static class WarmPrefixCompaction
         if (durableHistory.Count != exactOutboundHistory.Count)
             return false;
 
-        var selection = LlmRequestBudgetGuard.PrepareSoftCompaction(
-            usageStore,
-            sessionId,
-            exactOutboundHistory,
-            tools,
-            config,
-            triggerRatio,
-            targetRatio,
-            workUnitInputCapacity: workUnitInputCapacity,
-            maxRequestTextBytes: maxRequestTextBytes);
-        if (!selection.Compacted || selection.RemovedMessageCount <= 0)
-            return false;
+        var initial = usageStore.MeasureLlmRequest(sessionId, exactOutboundHistory, tools, config?.ModelId);
+        var limit = LlmRequestBudgetGuard.ResolveEffectiveInputLimit(config, workUnitInputCapacity: workUnitInputCapacity);
+        var initialBytes = LlmRequestTextBudget.Measure(exactOutboundHistory, tools);
+        if (initial.UsedTokens < limit * Math.Clamp(triggerRatio, 0.05, 1)
+            && (maxRequestTextBytes <= 0 || initialBytes <= maxRequestTextBytes)) return false;
+        var shapes = exactOutboundHistory.Select(message => new ContextMessageShape(
+            ComputeMessageIdentity(message), Enum.Parse<ContextMessageRole>(message.Role.ToString()),
+            usageStore.MeasureLlmRequest(sessionId, [message], null, config?.ModelId).UsedTokens,
+            LlmRequestTextBudget.MeasureMessage(message), message.ToolCalls?.Select(call => call.Id).ToArray(),
+            message.ToolCallId)).ToArray();
+        var wrapper = CreateCheckpointMessage("");
+        var selection = ContextCandidateSelector.Select(shapes,
+            Math.Max(0, initial.UsedTokens - shapes.Sum(m => m.TokenEstimate)),
+            ContextCapacityArithmetic.Resolve(new ContextCapacityInputs(limit)),
+            new CandidateSelectionOptions(TriggerRatio: triggerRatio, TargetRatio: targetRatio),
+            ResolveRouteVersion(config, providerId), ResolveToolSpecVersion(exactOutboundHistory, tools),
+            sourceGeneration, ComputeRevisionHash(durableHistory),
+            new ContextRequestBudget(LlmRequestTextBudget.Measure([], tools), maxRequestTextBytes,
+                usageStore.MeasureLlmRequest(sessionId, [wrapper], null, config?.ModelId).UsedTokens,
+                LlmRequestTextBudget.MeasureMessage(wrapper)));
+        if (!selection.Created) return false;
 
-        var leadingSystemCount = durableHistory.TakeWhile(message => message.Role == ChatRole.System).Count();
-        if (leadingSystemCount == 0
-            || leadingSystemCount + selection.RemovedMessageCount >= durableHistory.Count)
+        var replacementStart = selection.RemovedFromIndex;
+        var removed = durableHistory.Skip(replacementStart).Take(selection.RemovedCount).ToArray();
+        var retained = durableHistory.Take(replacementStart)
+            .Concat(durableHistory.Skip(replacementStart + selection.RemovedCount)).ToArray();
+        var retainedOutbound = exactOutboundHistory.Take(replacementStart)
+            .Concat(exactOutboundHistory.Skip(replacementStart + selection.RemovedCount)).ToArray();
+        var retainedSnapshot = usageStore.MeasureLlmRequest(sessionId, retainedOutbound, tools, config?.ModelId);
+        var allowance = selection.SummaryAllowance! with
         {
-            return false;
-        }
-
-        var removed = durableHistory
-            .Skip(leadingSystemCount)
-            .Take(selection.RemovedMessageCount)
-            .ToArray();
-        var retained = durableHistory
-            .Take(leadingSystemCount)
-            .Concat(durableHistory.Skip(leadingSystemCount + selection.RemovedMessageCount))
-            .ToArray();
-        if (removed.Length == 0 || retained.Count(message => message.Role != ChatRole.System) == 0)
-            return false;
-
-        var summaryRequest = exactOutboundHistory
-            .Append(new ChatMessage(ChatRole.User, SummaryInstruction))
-            .ToArray();
-        var removedTokens = removed.Sum(message =>
-            ContextUsageSnapshotStore.CountTokens(message.Content ?? string.Empty));
+            Tokens = (int)(selection.SummaryAllowance!.Tokens / Math.Max(1.0, initial.PromptCalibrationRatio)),
+        };
+        var removedTokens = usageStore.MeasureLlmRequest(sessionId,
+            exactOutboundHistory.Skip(replacementStart).Take(selection.RemovedCount).ToArray(), null, config?.ModelId).RawEstimatedTokens;
 
         plan = new WarmPrefixCompactionPlan(
-            summaryRequest,
             retained,
-            selection.Snapshot,
-            selection.InitialSnapshot,
-            selection.EffectiveInputLimit,
-            selection.InitialUsedTokens,
-            selection.InitialMessageCount,
-            selection.RemovedMessageCount,
+            retainedSnapshot,
+            initial,
+            limit,
+            initial.UsedTokens,
+            durableHistory.Count,
+            selection.RemovedCount,
             removedTokens,
-            leadingSystemCount,
+            replacementStart,
             // F2：冻结候选的版本与身份，提交前做严格校验（旧候选不得覆盖新消息）。
             removed.Select(ComputeMessageIdentity).ToArray(),
             // CAS 的保留身份是「被替换跨度**之后**的后缀」，不含跨度之前的保留前缀（前导 system）。
-            retained.Skip(leadingSystemCount).Select(ComputeMessageIdentity).ToArray(),
+            retained.Skip(replacementStart).Select(ComputeMessageIdentity).ToArray(),
             ComputeRevisionHash(durableHistory),
             ResolveRouteVersion(config, providerId),
             ResolveToolSpecVersion(exactOutboundHistory, tools),
             targetRatio,
             // 提交时同时校验持久代次，不能让旧候选覆盖新 checkpoint。
             SourceGeneration: sourceGeneration,
-            InitialTextBytes: maxRequestTextBytes > 0 ? LlmRequestTextBudget.Measure(exactOutboundHistory, tools) : 0,
-            MaxRequestTextBytes: maxRequestTextBytes);
+            InitialTextBytes: initialBytes,
+            MaxRequestTextBytes: maxRequestTextBytes,
+            SummaryAllowance: allowance);
         return true;
     }
+
+    internal static string SummaryBudgetInstruction(ContextSummaryAllowance allowance) =>
+        $"\nWrite a complete concise checkpoint. Aim for at most {Math.Max(1, allowance.Tokens / 2)} tokens; " +
+        $"the hard content budget is {allowance.Tokens} tokens and {allowance.TextBytes} serialized UTF-8 bytes. " +
+        "Prioritize unresolved intent, corrections, decisions, evidence locations and next actions. Do not pad sections.";
+
+    private static ChatMessage CreateCheckpointMessage(string summary) => new(ChatRole.Assistant,
+        $"{CheckpointPreamble}\n\n{ContextSummaryMarkers.WarmPrefixCheckpoint}\n{summary}\n</compacted-summary>");
 
     internal static IReadOnlyList<ChatMessage>? TryCreateCheckpoint(
         WarmPrefixCompactionPlan plan,
@@ -142,11 +148,9 @@ internal static class WarmPrefixCompaction
         if (summaryTokens <= 0 || summaryTokens >= plan.RemovedTokenEstimate)
             return null;
 
-        var checkpoint = new ChatMessage(
-            ChatRole.User,
-            $"{CheckpointPreamble}\n\n{ContextSummaryMarkers.WarmPrefixCheckpoint}\n{summary}\n</compacted-summary>");
+        var checkpoint = CreateCheckpointMessage(summary);
         var result = plan.RetainedMessages.ToList();
-        result.Insert(plan.LeadingSystemMessageCount, checkpoint);
+        result.Insert(plan.ReplacementStart, checkpoint);
         return result;
     }
 
@@ -161,7 +165,7 @@ internal static class WarmPrefixCompaction
         ArgumentNullException.ThrowIfNull(durableHistory);
         ArgumentNullException.ThrowIfNull(plan);
         return durableHistory
-            .Skip(plan.LeadingSystemMessageCount)
+            .Skip(plan.ReplacementStart)
             .Take(plan.RemovedMessageCount)
             .ToArray();
     }
@@ -223,7 +227,8 @@ internal static class WarmPrefixCompaction
             ToolSpecVersion: plan.ToolSpecVersion,
             PolicyVersion: ContextPolicyVersion.Current,
             RemovedIdentities: plan.RemovedIdentities,
-            RetainedIdentities: plan.RetainedIdentities);
+            RetainedIdentities: plan.RetainedIdentities,
+            RemovedFromIndex: plan.ReplacementStart);
         var current = new CurrentContextDescriptor(
             Generation: currentValues.Generation,
             Revision: currentRevision,
@@ -247,6 +252,9 @@ internal static class WarmPrefixCompaction
             tools,
             config?.ModelId);
 
+        var afterTextBytes = LlmRequestTextBudget.Measure(checkpoint, tools);
+        var summaryTextBytes = LlmRequestTextBudget.MeasureSummary(rawSummary?.Trim() ?? "");
+
         // ④ 收益与硬上限准入：跨度与摘要都用**校准后**口径，避免与 InitialUsedTokens 混量纲。
         var calibratedRemovedSpan = Math.Max(
             0,
@@ -268,7 +276,7 @@ internal static class WarmPrefixCompaction
                 admission.Reason,
                 reclaim,
                 meetsTarget: false,
-                afterSnapshot);
+                afterSnapshot, afterTextBytes);
         }
 
         // 真实计量优先于算式：算出来能过、实测仍越界 ⇒ 一律拒绝提交。
@@ -278,18 +286,21 @@ internal static class WarmPrefixCompaction
                 "after_summary_exceeds_hard_limit",
                 reclaim,
                 meetsTarget: false,
-                afterSnapshot);
+                afterSnapshot, afterTextBytes);
         }
 
-        if (plan.MaxRequestTextBytes > 0 && LlmRequestTextBudget.Measure(checkpoint, tools) > plan.MaxRequestTextBytes)
-            return WarmPrefixApplyVerification.Rejected("after_summary_exceeds_text_budget", reclaim, false, afterSnapshot);
+        if (plan.MaxRequestTextBytes > 0 && afterTextBytes > plan.MaxRequestTextBytes)
+            return WarmPrefixApplyVerification.Rejected("after_summary_exceeds_text_budget", reclaim, false, afterSnapshot, afterTextBytes);
+        if (plan.SummaryAllowance is { } allowance &&
+            (summaryTokens > allowance.Tokens || summaryTextBytes > allowance.TextBytes))
+            return WarmPrefixApplyVerification.Rejected("summary_exceeds_planned_allowance", reclaim, false, afterSnapshot, afterTextBytes);
 
         var target = (int)Math.Floor(plan.EffectiveInputLimit * Math.Clamp(plan.TargetRatio, 0.05, 1.0));
         // F2 持久化：把「被替换跨度」的**对象**带出去，供调用方解析持久 MessageId。
         // CAS 已保证跨度与保留后缀原样存在，因此按冻结时的布局切分是安全的
-        // （leading system 前缀 → removed span → retained suffix，见 TryCreatePlan）。
+        // （retained prefix → removed span → retained suffix，见 TryCreatePlan）。
         var removedMessages = currentDurableHistory
-            .Skip(plan.LeadingSystemMessageCount)
+            .Skip(plan.ReplacementStart)
             .Take(plan.RemovedMessageCount)
             .ToArray();
         return new WarmPrefixApplyVerification(
@@ -299,7 +310,8 @@ internal static class WarmPrefixCompaction
             AfterSnapshot: afterSnapshot,
             ReclaimTokens: reclaim,
             MeetsTarget: afterSnapshot.UsedTokens <= target,
-            RemovedMessages: removedMessages);
+            RemovedMessages: removedMessages,
+            AfterTextBytes: afterTextBytes);
     }
 
     /// <summary>稳定的消息身份（内容 + 角色 + 工具配对元数据），用于严格 CAS 与指纹；不展开密钥。</summary>
@@ -343,6 +355,9 @@ internal static class WarmPrefixCompaction
                 builder.Append('\u001e');
             }
         }
+
+        if (message.ContinuationState is not null)
+            builder.Append('\u001f').Append(System.Text.Json.JsonSerializer.Serialize(message.ContinuationState));
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexStringLower(hash);
@@ -413,7 +428,6 @@ internal static class WarmPrefixCompaction
 }
 
 internal sealed record WarmPrefixCompactionPlan(
-    IReadOnlyList<ChatMessage> SummaryRequestMessages,
     IReadOnlyList<ChatMessage> RetainedMessages,
     ContextUsageSnapshot EstimatedRetainedSnapshot,
     /// <summary>
@@ -427,7 +441,7 @@ internal sealed record WarmPrefixCompactionPlan(
     int InitialMessageCount,
     int RemovedMessageCount,
     int RemovedTokenEstimate,
-    int LeadingSystemMessageCount,
+    int ReplacementStart,
     /// <summary>被替换跨度的消息身份（冻结时固化，提交前 CAS 比对）。</summary>
     IReadOnlyList<string> RemovedIdentities,
     /// <summary>保留后缀的消息身份（含受保护尾部；冻结时固化，提交前逐位比对）。</summary>
@@ -445,7 +459,8 @@ internal sealed record WarmPrefixCompactionPlan(
     /// </summary>
     long SourceGeneration = 0,
     long InitialTextBytes = 0,
-    int MaxRequestTextBytes = 0)
+    int MaxRequestTextBytes = 0,
+    ContextSummaryAllowance? SummaryAllowance = null)
 {
     /// <summary>
     /// 本次请求是否**真的**越过硬输入边界（估算输入 &gt; 有效输入上限，两侧同源：模型窗口 − 实际输出预算 − 安全余量，
@@ -476,17 +491,19 @@ internal sealed record WarmPrefixApplyVerification(
     bool MeetsTarget,
     /// <summary>
     /// 被替换跨度的**消息对象**（仅 <see cref="CanApply"/> 为 true 时有值）。
-    /// 调用方据此解析持久 `MessageId` 去做覆盖标注；解析不全即必须放弃落库、降级为内存-only。
+    /// 调用方据此解析持久 `MessageId` 去做覆盖标注；解析不全即必须拒绝提交，保留原始历史。
     /// </summary>
-    IReadOnlyList<ChatMessage>? RemovedMessages = null)
+    IReadOnlyList<ChatMessage>? RemovedMessages = null,
+    long? AfterTextBytes = null)
 {
     /// <summary>拒绝提交：历史保持原样，原因码进入日志与生命周期事件。</summary>
     internal static WarmPrefixApplyVerification Rejected(
         string reason,
         int reclaimTokens,
         bool meetsTarget,
-        ContextUsageSnapshot? afterSnapshot = null)
-        => new(false, reason, null, afterSnapshot, reclaimTokens, meetsTarget);
+        ContextUsageSnapshot? afterSnapshot = null,
+        long? afterTextBytes = null)
+        => new(false, reason, null, afterSnapshot, reclaimTokens, meetsTarget, AfterTextBytes: afterTextBytes);
 }
 
 /// <summary>

@@ -254,7 +254,7 @@
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
 | `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |
 | `Services/VolcengineArkImageGenerationProvider.cs` | 火山方舟的图片生成适配 | `VolcengineArkImageGenerationProvider` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | — |
-| `Services/WarmPrefixCompaction.cs` | 暖前缀/分段摘要共用的压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | token 或文本上传预算越界同步保护；真实摘要须满足收益、预算及持久代次 CAS；软候选仍延期（见下「关键语义」） |
+| `Services/WarmPrefixCompaction.cs` | 完整历史/已完成执行跨度的压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | token 或文本上传预算越界同步保护；真实摘要须满足收益、预算及持久代次 CAS；软候选仍延期（见下「关键语义」） |
 | `Services/WarmPrefixMaintenanceAdmission.cs` | 软维护/硬保护准入封顶与同 round 去重 | `WarmPrefixMaintenanceAdmission` | `Services/AgentExecution/AgentExecutionService.Streaming.cs`、`…Buffered.cs` | 软维护每 dispatch 一次、硬保护逐轮重新评估；软尝试已执行同步硬保护时不得同 round 重复（见下「关键语义」） |
 | `Services/WikiPageWriteEntry.cs` | 记忆 Wiki 页面的确定性写入入口 | `WikiPageWriteRequest` | `Services/MemoryWikiPageUpdateService.cs` | — |
 | `Services/WorkspaceAgentsContextBuilder.cs` | 工作区 Agent 名册上下文层的构造 | `WorkspaceAgentsContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
@@ -265,8 +265,8 @@
 > 下列为上方表「约束」列的**逐字原文**（行序与表一致）；表内已缩为语义摘要，并以 `（见下「关键语义」）` 指回本段。
 
 - `Services/WarmPrefixCompaction.cs`
-  只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection` 包含 token 上限（含 WorkUnit 容量）及独立文本上传预算；软候选延期到 canonical 终态之后。体积保护每轮评估，不受软维护封顶限制；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`。
-  大请求通过 `BoundedCompactionSummary` 总结被替换跨度；全部成功后走同一 VerifyApplication/持久提交边界（`summarySource=provider_segmented`）。仅 provider 输入拒绝或无用输出可使用已配置的 Extractive；传输失败、截断或不完整分段保持原历史。
+  只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection` 包含 token 上限（含 WorkUnit 容量）及独立文本上传预算；软候选延期到 canonical 终态之后。策略组件决定确切替换起点与 token/字节/包装/摘要额度；当前 User 不动，checkpoint 为 Assistant 背景。拒绝时仍保留真实 AfterTextBytes；Responses 续传载荷参与 CAS 与摘要源。体积保护每轮评估，不受软维护封顶限制；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`。
+  所有摘要通过 `BoundedCompactionSummary` 仅总结被替换跨度，按规划额度约束输出；超额仅从同一完整源重生成一次；全部成功后走同一 VerifyApplication/持久提交边界（`summarySource=provider_segmented`）。仅 provider 输入拒绝或无用输出可使用已配置的 Extractive；传输失败、截断或不完整分段保持原历史。
   文本超限时摘要候选可覆盖最近八条中的完整旧轮次，当前用户轮仍受保护；精确持久 ID 全部可用时不再按正文回退匹配。不可压缩部分已超预算则生成摘要前拒绝。
 
 - `Services/WarmPrefixMaintenanceAdmission.cs`

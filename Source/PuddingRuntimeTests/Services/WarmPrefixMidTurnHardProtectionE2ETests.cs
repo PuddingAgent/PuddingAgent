@@ -74,7 +74,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         }
 
         var factory = new Factory(options);
-        var llm = new ScriptedLlmClient(ContinueWithToolJson, SummaryResponse, DoneJson);
+        var llm = new ScriptedLlmClient(ContinueWithToolJson, DoneJson) { SummaryResponseOverride = new(SummaryResponse, null) };
         var tools = new RecordingToolInvocationService();
         var snapshotStore = new ContextUsageSnapshotStore();
         var manager = CreateManager(factory);
@@ -113,7 +113,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var summaryCalls = llm.Requests.Count(messages => messages.Any(m =>
             m.Content?.Contains("## Primary Request and Intent", StringComparison.Ordinal) == true
             && m.Content.Contains("compaction engine", StringComparison.Ordinal)));
-        if (summaryCalls != 1)
+        if (summaryCalls < 1)
         {
             var sizes = string.Join(
                 " | ",
@@ -131,8 +131,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
                 $"{LlmRequestBudgetGuard.ResolveEffectiveInputLimit(CreateDispatchRequest().LlmConfig)} " +
                 $"requests=[{sizes}]\n  相关日志:\n  {logLines}");
         }
-        Assert.AreEqual(1, summaryCalls,
-            $"第 0 轮软维护应延期（不调摘要）；第 1 轮越界后必须恰好压缩一次，实际摘要调用={summaryCalls}");
+        Assert.IsGreaterThan(0, summaryCalls, "Hard protection must summarize; segment calls commit one checkpoint below.");
 
         // ② 压缩结果必须**落库**（F2 端到端）：摘要行 + 被覆盖行打标 + 代际推进。
         await using var verify = new MemoryDbContext(options);
@@ -274,7 +273,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState);
         Assert.AreEqual(1, llm.Requests.Count(messages => messages.Any(m =>
             m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true)));
-        Assert.IsTrue(log.Lines.Any(l => l.Contains("summary was truncated", StringComparison.Ordinal)));
+        Assert.IsTrue(log.Lines.Any(l => l.Contains("was truncated", StringComparison.Ordinal)));
         Assert.IsFalse(log.Lines.Any(l => l.Contains("using local extractive fallback", StringComparison.Ordinal)));
         await using var verify = new MemoryDbContext(options);
         Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"));
@@ -591,8 +590,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             new LlmResponse(
                 LongAssistantBody,
                 [new ToolCall("call-1", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
-            new LlmResponse(SummaryResponse, null),
-            new LlmResponse(DoneJson, null));
+            new LlmResponse(DoneJson, null)) { SummaryResponseOverride = new(SummaryResponse, null) };
         var tools = new RecordingToolInvocationService();
         var manager = CreateManager(factory);
         var log = new CapturingLogger();
@@ -617,7 +615,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var summaryCalls = llm.Requests.Count(messages => messages.Any(m =>
             m.Content?.Contains("## Primary Request and Intent", StringComparison.Ordinal) == true
             && m.Content.Contains("compaction engine", StringComparison.Ordinal)));
-        if (summaryCalls != 1)
+        if (summaryCalls < 1)
         {
             var sizes = string.Join(
                 " | ",
@@ -633,7 +631,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
                 $"诊断：frames={frames.Count} llmCalls={llm.Requests.Count} toolCalls={tools.Requests.Count} " +
                 $"historyCount={history.Count} requests=[{sizes}]\n  相关日志:\n  {logLines}");
         }
-        Assert.AreEqual(1, summaryCalls, $"流式路径的逐轮硬保护必须恰好压缩一次，实际 {summaryCalls}");
+        Assert.IsGreaterThan(0, summaryCalls, "Streaming hard protection must summarize before its one durable commit.");
         // ② 流式路径也必须**完整落库**：内容键回退（库里唯一匹配）让「归一化复制掉身份」不再阻止落库。
         await using (var verify = new MemoryDbContext(options))
         {
@@ -701,7 +699,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         }
 
         var factory = new Factory(options);
-        var llm = new ScriptedLlmClient(ContinueWithToolJson, SummaryResponse, DoneJson);
+        var llm = new ScriptedLlmClient(ContinueWithToolJson, DoneJson) { SummaryResponseOverride = new(SummaryResponse, null) };
         var tools = new RecordingToolInvocationService();
         var manager = CreateManager(factory);
         var log = new CapturingLogger();
@@ -762,7 +760,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         }
 
         var factory = new Factory(options);
-        var llm = new ScriptedLlmClient(ContinueWithToolJson, SummaryResponse, DoneJson);
+        var llm = new ScriptedLlmClient(ContinueWithToolJson, DoneJson) { SummaryResponseOverride = new(SummaryResponse, null) };
         var tools = new RecordingToolInvocationService();
         var manager = CreateManager(factory);
         var log = new CapturingLogger();
@@ -1143,6 +1141,74 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
 
     // ── 装配 ────────────────────────────────────────────────────────────────
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task LongSingleUserTurn_RepeatedlyCompactsCompletedBatches_AndRehydratesDurableCheckpoints(bool streaming)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            await SeedAsync(db, 24, 8000);
+        }
+        var factory = new Factory(options);
+        var responses = Enumerable.Range(0, 48).Select(i => new LlmResponse($"Execution step {i}: " + VariedText(18_000),
+            [new ToolCall($"batch-{i}-a", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}"),
+             new ToolCall($"batch-{i}-b", "task_update", "{\"task_id\":\"task-2\",\"status\":\"in_progress\"}")]))
+            .Append(new LlmResponse(DoneJson, null)).ToArray();
+        var llm = new ScriptedLlmClient(responses) { SummaryResponseOverride = new(SummaryResponse, null) };
+        var manager = CreateManager(factory, new ContextCompactionOptions());
+        var log = new CapturingLogger();
+        var tools = new RecordingToolInvocationService { Output = VariedText(6000) };
+        var service = CreateService(llm, tools, manager, new ContextUsageSnapshotStore(), factory, log);
+        var history = manager.GetOrCreateHistory(SessionId);
+        Assert.IsTrue((await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None)).Succeeded);
+        history.Insert(0, new(ChatRole.System, "system instructions"));
+        var request = CreateDispatchRequest() with
+        {
+            MaxRounds = 55, MessageId = "one-pinned-user-input", MessageText = "Finish the long investigation; preserve constraints.",
+            LlmConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192, ReasoningEffort = "high" },
+            CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
+        };
+        if (streaming) await foreach (var _ in service.ExecuteStreamAsync(request)) { }
+        else Assert.AreEqual(AgentExecutionState.Completed, (await service.ExecuteAsync(request)).ExecutionState, string.Join("\n", log.Lines));
+        var main = llm.Requests.Where(r => !r.Any(m => m.Content?.Contains("compaction engine") == true)).ToArray();
+        Assert.AreEqual(49, main.Length, string.Join("\n", log.Lines));
+        for (var i = 0; i < llm.Requests.Count; i++)
+        {
+            var summaryCall = llm.Requests[i].Any(m => m.Content?.Contains("compaction engine") == true);
+            Assert.AreEqual(summaryCall ? "none" : "high", llm.Configs[i]?.ReasoningEffort);
+            if (summaryCall) Assert.IsTrue(llm.Configs[i]!.MaxOutputTokens <= 4096);
+        }
+        var currentInput = main[0].Last(m => m.Role == ChatRole.User).Content;
+        foreach (var messages in main)
+        {
+            Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.DeepSeekResponsesLimit);
+            Assert.AreEqual(currentInput, messages.Last(m => m.Role == ChatRole.User).Content);
+            foreach (var call in messages.SelectMany(m => m.ToolCalls ?? []))
+                Assert.AreEqual(1, messages.Count(m => m.ToolCallId == call.Id), "Every retained call has its result.");
+        }
+        Assert.IsTrue(history.Where(m => m.Content?.Contains(WarmPrefixCompaction.CheckpointPreamble) == true)
+            .All(m => m.Role == ChatRole.Assistant));
+        await using var verify = new MemoryDbContext(options);
+        var generation = (await verify.Sessions.SingleAsync()).CompactionGeneration;
+        Assert.IsTrue(generation >= 2, string.Join("\n", log.Lines));
+        Assert.AreEqual(generation, await verify.CompactionCoverageManifests.CountAsync());
+        var archives = await verify.Messages.Where(m => m.ContentType == "warm_prefix_source").ToListAsync();
+        Assert.IsTrue(archives.Any(m => m.Content!.Contains("batch-0-a")));
+        Assert.IsTrue(archives.All(m => m.CompactedBy != null));
+        Assert.IsFalse(archives.Any(m => m.Content!.Contains("one-pinned-user-input")));
+        var restarted = CreateManager(factory, new ContextCompactionOptions());
+        var restored = restarted.GetOrCreateHistory(SessionId);
+        Assert.IsTrue((await restarted.TryHydrateStreamHistoryFromDbAsync(SessionId, restored, 1_000_000, CancellationToken.None)).Succeeded);
+        Assert.IsTrue(restarted.ResolveDurableSpan(SessionId, restored).AllResolved);
+        Assert.IsTrue(restored.Any(m => m.Content == SummaryResponse));
+        Assert.IsFalse(restored.Any(m => m.Content?.Contains("batch-0-a") == true));
+    }
+
     private static RuntimeDispatchRequest CreateDispatchRequest(bool suppressAutoCompaction = true) => new()
     {
         SessionId = SessionId,
@@ -1336,6 +1402,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         private readonly Queue<LlmResponse> _responses = new();
 
         public List<IReadOnlyList<ChatMessage>> Requests { get; } = [];
+        public List<LlmConfig?> Configs { get; } = [];
 
         /// <summary>
         /// R3/R4 用例钩子：**摘要调用期间**注入并发变化（例如别的持久压缩推进代次）。
@@ -1392,7 +1459,10 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             IReadOnlyList<LlmToolDefinition>? tools = null,
             LlmConfig? llmConfig = null,
             CancellationToken ct = default)
-            => await NextAsync(messages);
+        {
+            Configs.Add(llmConfig);
+            return await NextAsync(messages);
+        }
 
         public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(
             string workspaceId,
@@ -1431,6 +1501,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     private sealed class RecordingToolInvocationService : IToolInvocationService
     {
         public List<ToolInvocationRequest> Requests { get; } = [];
+        public string? Output { get; init; }
 
         public Task<ToolInvocationResult> InvokeAsync(ToolInvocationRequest request, CancellationToken ct = default)
         {
@@ -1440,6 +1511,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
                 Success = true,
                 ToolCallId = request.ToolCallId,
                 ToolName = request.ToolName,
+                Output = Output,
             });
         }
     }

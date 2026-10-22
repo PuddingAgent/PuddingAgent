@@ -80,6 +80,23 @@ public sealed class CompletedExecutionCompactionTests
     }
 
     [TestMethod]
+    public void RecentCountPreference_YieldsToByteBudget_WithoutSplittingNewestUnit()
+    {
+        var source = new List<ContextMessageShape> { new("system", ContextMessageRole.System, 100, 400) };
+        for (var i = 0; i < 6; i++)
+        {
+            source.Add(new($"user-{i}", ContextMessageRole.User, 1000, 70_000));
+            source.Add(new($"assistant-{i}", ContextMessageRole.Assistant, 1000, 70_000));
+        }
+        source.Add(new("current", ContextMessageRole.User, 20, 100));
+        var result = Select(source);
+        Assert.IsTrue(result.Created);
+        Assert.IsGreaterThan(0, result.SummaryAllowance!.Tokens);
+        Assert.IsTrue(result.RetainedMessages.Contains(source[^1]));
+        Assert.IsTrue(result.SummaryAllowance.RetainedTextBytes + result.SummaryAllowance.TextBytes + 700 <= 524_288);
+    }
+
+    [TestMethod]
     public void RepeatedIdentities_ValidateAtFrozenPosition()
     {
         var frozen = new FrozenCandidateDescriptor("f", 1, "r", "m", "t", ContextPolicyVersion.Current,

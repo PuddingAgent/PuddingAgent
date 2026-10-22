@@ -35,14 +35,19 @@ internal static class LlmRequestTextBudget
         => JsonSerializer.SerializeToUtf8Bytes(tools ?? [], Json).LongLength;
 
     private static long MeasureMessages(IReadOnlyList<ChatMessage> messages)
-        => messages.Sum(message => (long)JsonSerializer.SerializeToUtf8Bytes(new
+        => messages.Sum(MeasureMessage);
+
+    internal static long MeasureSummary(string text) => JsonSerializer.SerializeToUtf8Bytes(text, Json).LongLength;
+
+    internal static long MeasureMessage(ChatMessage message)
+        => JsonSerializer.SerializeToUtf8Bytes(new
         {
             message.Role,
             content = ChatMessageMultimodalNormalizer.GetEffectiveContentParts(message) is { Count: > 0 } parts
                 ? string.Join("\n", parts.OfType<LlmTextPart>().Select(part => part.Text)) : message.Content,
             message.ToolCallId, message.ToolName, message.ToolCalls, message.ReasoningContent,
             message.ContinuationState,
-        }, Json).Length);
+        }, Json).LongLength;
 
     internal static bool Exceeds(RuntimeDispatchRequest request, IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<LlmToolDefinition> tools)

@@ -204,7 +204,7 @@ public sealed class WarmPrefixCompactionApplyTests
 
         // 冻结布局：leading system 前缀 → removed span → retained suffix（见 TryCreatePlan）。
         var expected = history
-            .Skip(plan.LeadingSystemMessageCount)
+            .Skip(plan.ReplacementStart)
             .Take(plan.RemovedMessageCount)
             .ToList();
         CollectionAssert.AreEqual(expected, verification.RemovedMessages!.ToList());
@@ -376,5 +376,36 @@ public sealed class WarmPrefixCompactionApplyTests
 
         Assert.IsTrue(verification.CanApply, verification.Reason);
         Assert.AreEqual("applied", verification.Reason);
+    }
+
+    [TestMethod]
+    public void ContinuationOnlyMutation_InvalidatesFrozenRevision()
+    {
+        var before = new ChatMessage(ChatRole.Assistant, null,
+            ContinuationState: new("responses", ["{\"type\":\"reasoning\",\"text\":\"before\"}"]));
+        var after = before with { ContinuationState = new("responses", ["{\"type\":\"reasoning\",\"text\":\"after\"}"]) };
+        Assert.AreNotEqual(WarmPrefixCompaction.ComputeMessageIdentity(before), WarmPrefixCompaction.ComputeMessageIdentity(after));
+        var parts = BoundedCompactionSummary.CreateParts([before]);
+        StringAssert.Contains(string.Join("\n", parts.SelectMany(p => p).Select(m => m.Content)), "before");
+    }
+
+    [TestMethod]
+    public void RejectedActualTextMeasurement_RemainsAvailableWithoutPublishingOrMutatingHistory()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(40);
+        var original = history.ToArray();
+        var plan = CreatePlan(store, history);
+        const string summary = "## Next Step\n- continue the task";
+        var expected = LlmRequestTextBudget.Measure(WarmPrefixCompaction.TryCreateCheckpoint(plan, summary)!, null);
+        var rejected = WarmPrefixCompaction.VerifyApplication(store, SessionId, history, null, BuildConfig(),
+            plan with { MaxRequestTextBytes = (int)expected - 1 }, summary, CurrentValuesFor(plan, history));
+        Assert.IsFalse(rejected.CanApply);
+        Assert.AreEqual("after_summary_exceeds_text_budget", rejected.Reason);
+        Assert.AreEqual(expected, rejected.AfterTextBytes);
+        Assert.IsNotNull(rejected.AfterSnapshot);
+        Assert.IsNull(rejected.AppliedMessages);
+        CollectionAssert.AreEqual(original, history);
+        Assert.IsFalse(store.TryGet(SessionId, out _));
     }
 }

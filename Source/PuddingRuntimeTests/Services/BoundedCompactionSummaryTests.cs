@@ -12,7 +12,6 @@ public sealed class BoundedCompactionSummaryTests
     public async Task LargeSource_IsBounded_AndAllSegmentsAreMergedBeforeSuccess()
     {
         var source = new[] { new ChatMessage(ChatRole.User, new string('x', 1_450_000)) };
-        Assert.IsTrue(BoundedCompactionSummary.ShouldUse(source, Array.Empty<object>()));
         var calls = new List<IReadOnlyList<ChatMessage>>();
         var result = await BoundedCompactionSummary.GenerateAsync(source, (messages, index) =>
         {
@@ -76,6 +75,25 @@ public sealed class BoundedCompactionSummaryTests
         cancellation.Cancel();
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => BoundedCompactionSummary.GenerateAsync(
             [new ChatMessage(ChatRole.User, "source")], (_, _) => throw new AssertFailedException("must not invoke"), cancellation.Token));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task OversizedSummary_RegeneratesFromSameSourceOnce_WithoutTruncation(bool alwaysOversized)
+    {
+        var source = new[] { new ChatMessage(ChatRole.Assistant, "original complete source; preserve this constraint") };
+        var calls = 0;
+        var result = await BoundedCompactionSummary.GenerateAsync(source, (messages, _) =>
+        {
+            calls++;
+            StringAssert.Contains(string.Join("\n", messages.Select(m => m.Content)), "original complete source");
+            return Task.FromResult(Success(calls == 1 || alwaysOversized ? new string('中', 200) : "concise complete checkpoint"));
+        }, CancellationToken.None, allowance: new PuddingContextPolicy.ContextSummaryAllowance(100, 120, 0));
+        Assert.AreEqual(2, calls);
+        Assert.AreEqual(!alwaysOversized, result.Success);
+        if (alwaysOversized) Assert.IsNull(result.Response);
+        else Assert.AreEqual("concise complete checkpoint", result.Response!.Content);
     }
 
     private static AgentExecutionLlmInvocationResult Success(string text)

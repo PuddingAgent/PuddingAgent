@@ -75,8 +75,9 @@ public sealed class LlmRequestBudgetGuardTests
             messages.Add(new ChatMessage(ChatRole.Assistant, Big));
         var result = LlmRequestBudgetGuard.PrepareSoftCompaction(new ContextUsageSnapshotStore(),
             "protected-current-turn", messages, null, BuildConfig(), triggerRatio: 0.01, targetRatio: 0.005);
-        Assert.IsFalse(result.Compacted);
-        Assert.AreEqual(messages.Count, result.Messages.Count);
+        Assert.IsTrue(result.Compacted);
+        Assert.IsTrue(result.Messages.Count < messages.Count);
+        Assert.AreSame(messages[1], result.Messages[1], "Current input is pinned; completed execution can be summarized.");
         Assert.AreEqual(ChatRole.User, result.Messages[1].Role);
     }
 
@@ -158,7 +159,7 @@ public sealed class LlmRequestBudgetGuardTests
     }
 
     [TestMethod]
-    public void WarmPrefixPlan_ReplaysExactOutbound_AndAppendsOnlyInstruction()
+    public void WarmPrefixPlan_FreezesExactSelectedSourceAndSummaryAllowance()
     {
         var store = new ContextUsageSnapshotStore();
         var history = BuildHistory(pairs: 40);
@@ -176,14 +177,12 @@ public sealed class LlmRequestBudgetGuardTests
 
         Assert.IsTrue(created);
         Assert.IsNotNull(plan);
-        Assert.AreEqual(history.Count + 1, plan.SummaryRequestMessages.Count);
-        for (var index = 0; index < history.Count; index++)
-        {
-            Assert.AreEqual(history[index], plan.SummaryRequestMessages[index],
-                $"message {index} must be replayed byte-for-byte");
-        }
-        Assert.AreEqual(ChatRole.User, plan.SummaryRequestMessages[^1].Role);
-        Assert.AreEqual(WarmPrefixCompaction.SummaryInstruction, plan.SummaryRequestMessages[^1].Content);
+        var selected = WarmPrefixCompaction.SelectRemovedMessages(history, plan);
+        CollectionAssert.AreEqual(history.Skip(plan.ReplacementStart).Take(plan.RemovedMessageCount).ToArray(), selected.ToArray());
+        Assert.IsFalse(selected.Contains(history[0]));
+        Assert.IsGreaterThan(0, plan.SummaryAllowance!.Tokens);
+        Assert.IsTrue(selected.All(m => !plan.RetainedMessages.Contains(m)));
+
     }
 
     [TestMethod]
@@ -209,7 +208,7 @@ public sealed class LlmRequestBudgetGuardTests
 
         Assert.IsNotNull(checkpoint);
         Assert.AreEqual(history[0], checkpoint[0], "system prompt bytes must remain unchanged");
-        Assert.AreEqual(ChatRole.User, checkpoint[1].Role);
+        Assert.AreEqual(ChatRole.Assistant, checkpoint[1].Role);
         StringAssert.Contains(checkpoint[1].Content, "<compacted-summary>");
         CollectionAssert.AreEqual(
             expectedTail,

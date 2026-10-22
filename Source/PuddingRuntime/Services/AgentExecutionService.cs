@@ -2143,8 +2143,8 @@ public sealed partial class AgentExecutionService
     }
 
     /// <summary>
-    /// Small requests reuse the warm prefix; large requests summarize the selected span
-    /// in bounded parts and then merge. Token and text upload budgets independently require
+    /// Summarize only the frozen selected span in bounded parts and then merge.
+    /// Token and text upload budgets independently require
     /// synchronous protection. Only a complete, shrinking, CAS-validated summary replaces history.
     /// <para>
     /// ADR-095 D2 准入：候选只来自**软阈值**且本次请求仍能安全容纳时
@@ -2286,9 +2286,9 @@ public sealed partial class AgentExecutionService
             CancellationToken.None);
 
         var retainedTextBytes = LlmRequestTextBudget.Measure(plan.RetainedMessages, llmTools);
-        if (plan.RequiresTextProtection && retainedTextBytes >= plan.MaxRequestTextBytes)
+        if (plan.SummaryAllowance is not { Tokens: >= 16 })
         {
-            const string reason = "protected_request_exceeds_text_budget";
+            var reason = plan.RequiresTextProtection ? "protected_request_exceeds_text_budget" : "protected_request_exceeds_token_budget";
             await _contextManager.EmitWarmPrefixCompactionLifecycleAsync(request.SessionId, request.WorkspaceId,
                 SseEventTypes.ContextCompactionFailed, new
                 {
@@ -2298,15 +2298,26 @@ public sealed partial class AgentExecutionService
                     historyPreserved = true, durableCheckpoint = false,
                 }, request.ExecutionIdentity?.TraceId, CancellationToken.None);
             return new(false, plan, trigger, target, summaryStartedAt,
-                WarmPrefixCompactionDisposition.Failed, 0, reason);
+                WarmPrefixCompactionDisposition.Failed, 0, reason,
+                DiagnosticEvidence: new Dictionary<string, string>
+                {
+                    ["compaction_retained_text_bytes"] = retainedTextBytes.ToString(),
+                    ["compaction_summary_budget_tokens"] = "0",
+                    ["compaction_selected_messages"] = plan.RemovedMessageCount.ToString(),
+                    ["compaction_replacement_start"] = plan.ReplacementStart.ToString(),
+                });
         }
 
-        var segmentedSummary = plan.RequiresTextProtection || BoundedCompactionSummary.ShouldUse(plan.SummaryRequestMessages, llmTools);
-        var summaryProviderSource = segmentedSummary ? "provider_segmented" : "provider";
-        var summaryOutputTokens = effectiveLlmConfig?.MaxOutputTokens is > 0
-            ? Math.Min(effectiveLlmConfig.MaxOutputTokens.Value, 8192)
-            : 8192;
-        var summaryConfig = (effectiveLlmConfig ?? new LlmConfig()) with { MaxOutputTokens = summaryOutputTokens };
+        const string summaryProviderSource = "provider_segmented";
+        var summaryOutputTokens = Math.Min(plan.SummaryAllowance!.Tokens, effectiveLlmConfig?.MaxOutputTokens is > 0
+            ? effectiveLlmConfig.MaxOutputTokens.Value : 4096);
+        var summaryConfig = (effectiveLlmConfig ?? new LlmConfig()) with
+        {
+            MaxOutputTokens = summaryOutputTokens,
+            // DeepSeek counts reasoning in max_output_tokens. Its auxiliary summarizer uses
+            // the planned content allowance directly, so disable reasoning for this call only.
+            ReasoningEffort = plan.MaxRequestTextBytes > 0 ? "none" : effectiveLlmConfig?.ReasoningEffort,
+        };
 
         async Task<AgentExecutionLlmInvocationResult> InvokeSummaryPartAsync(
             IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmToolDefinition> tools, int part)
@@ -2348,16 +2359,14 @@ public sealed partial class AgentExecutionService
             return result;
         }
 
-        if (segmentedSummary)
-            _logger.LogInformation(
+        _logger.LogInformation(
                 "[AgentExec:Compaction] Large summary replay uses bounded segments session={Session} removedMessages={Removed} partTextBytes={PartBytes}",
                 request.SessionId, plan.RemovedMessageCount, BoundedCompactionSummary.PartTextBytes);
-        var summaryResult = segmentedSummary
-            ? await BoundedCompactionSummary.GenerateAsync(
+        var summaryResult = await BoundedCompactionSummary.GenerateAsync(
                 WarmPrefixCompaction.SelectRemovedMessages(exactOutboundHistory, plan),
                 (messages, part) => InvokeSummaryPartAsync(messages, [], part), ct,
-                partTextBytes: Math.Min(BoundedCompactionSummary.PartTextBytes, Math.Max(8192, plan.EffectiveInputLimit - 4096)))
-            : await InvokeSummaryPartAsync(plan.SummaryRequestMessages, llmTools, 0);
+                partTextBytes: Math.Min(BoundedCompactionSummary.PartTextBytes, Math.Max(8192, plan.EffectiveInputLimit - 4096)),
+                allowance: plan.SummaryAllowance);
 
         var summaryTruncated = AgentOutputTruncationPolicy.IsTruncated(summaryResult.Response?.FinishReason);
         var summaryFailureError = summaryTruncated
@@ -2457,7 +2466,16 @@ public sealed partial class AgentExecutionService
                 summaryStartedAt,
                 WarmPrefixCompactionDisposition.Failed,
                 failureDurationMs,
-                WarmPrefixCompactionReasons.SummaryRejected);
+                WarmPrefixCompactionReasons.SummaryRejected,
+                DiagnosticEvidence: new Dictionary<string, string>
+                {
+                    ["compaction_id"] = warmPrefixCompactionId,
+                    ["compaction_selected_messages"] = plan.RemovedMessageCount.ToString(),
+                    ["compaction_replacement_start"] = plan.ReplacementStart.ToString(),
+                    ["compaction_retained_text_bytes"] = retainedTextBytes.ToString(),
+                    ["compaction_summary_budget_tokens"] = plan.SummaryAllowance!.Tokens.ToString(),
+                    ["compaction_summary_budget_bytes"] = plan.SummaryAllowance.TextBytes.ToString(),
+                });
         }
 
         var safeSummary = await _keyVaultService.StripAsync(
@@ -2577,7 +2595,7 @@ public sealed partial class AgentExecutionService
                     durableHistory.AddRange(verification.AppliedMessages!);
                     if (!string.IsNullOrWhiteSpace(durableSummaryMessageId))
                         _contextManager.RegisterDurableCheckpoint(request.SessionId,
-                            durableHistory[plan.LeadingSystemMessageCount], durableSummaryMessageId);
+                            durableHistory[plan.ReplacementStart], durableSummaryMessageId);
                     durableApplied = true;
                     // 只有真的改写了历史才登记完成（冷却 + 清除无收益抑制）。
                     _contextManager.RecordCompactionCommitCompleted(request.SessionId);
@@ -2644,6 +2662,10 @@ public sealed partial class AgentExecutionService
                     beforeTokens = plan.InitialUsedTokens,
                     // 只有真实计量过的值才可作为 after；未计量时为 null，绝不用计划估算顶替。
                     afterTokens = verification.AfterSnapshot?.UsedTokens,
+                    measuredAfterTextBytes = verification.AfterTextBytes,
+                    summaryBudgetTokens = plan.SummaryAllowance?.Tokens,
+                    summaryBudgetTextBytes = plan.SummaryAllowance?.TextBytes,
+                    replacementStart = plan.ReplacementStart,
                     planEstimateExcludingSummaryTokens = plan.EstimatedRetainedSnapshot.UsedTokens,
                     reclaimTokens = verification.ReclaimTokens,
                     effectiveInputLimit = plan.EffectiveInputLimit,
@@ -2675,8 +2697,12 @@ public sealed partial class AgentExecutionService
                     ["compaction_selected_messages"] = plan.RemovedMessageCount.ToString(),
                     ["compaction_unresolved_sources"] = unresolvedSourceCount.ToString(),
                     ["compaction_source_problems"] = string.Join(",", (sourceProblems ?? []).Take(8)),
-                    ["compaction_measured_after_bytes"] = verification.AppliedMessages is { } applied
-                        ? LlmRequestTextBudget.Measure(applied, llmTools).ToString() : "unavailable",
+                    ["compaction_measured_after_bytes"] = verification.AfterTextBytes?.ToString() ?? "unavailable",
+                    ["compaction_summary_budget_tokens"] = plan.SummaryAllowance?.Tokens.ToString() ?? "unavailable",
+                    ["compaction_summary_budget_bytes"] = plan.SummaryAllowance?.TextBytes.ToString() ?? "unavailable",
+                    ["compaction_summary_actual_bytes"] = LlmRequestTextBudget.MeasureSummary(safeSummary).ToString(),
+                    ["compaction_retained_text_bytes"] = retainedTextBytes.ToString(),
+                    ["compaction_replacement_start"] = plan.ReplacementStart.ToString(),
                 });
         }
 
