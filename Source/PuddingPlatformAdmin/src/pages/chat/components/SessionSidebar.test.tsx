@@ -116,5 +116,44 @@ describe('SessionSidebar agent contacts', () => {
       screen.getByRole('button', { name: '规划 Agent 当前 工作中' }),
     ).toBeTruthy();
     expect(screen.getByText('工作中')).toBeTruthy();
+    // 角色视角：第二行优先展示最近进展，而不是对每个角色重复「主线会话」
+    expect(screen.getByText('正在整理日志')).toBeTruthy();
+  });
+
+  it('falls back to the agent description when no recent progress exists', () => {
+    render(
+      <SessionSidebar
+        {...baseProps}
+        agents={[
+          {
+            agentId: 'auditor',
+            name: '审批审计员',
+            description: '审查高风险操作',
+            isEnabled: true,
+            isFrozen: false,
+          },
+        ] as any[]}
+        agentId="auditor"
+        workingAgentIds={[]}
+      />,
+    );
+
+    expect(screen.getByText('审查高风险操作')).toBeTruthy();
+    expect(screen.queryByText('主线会话')).toBeNull();
+  });
+
+  it('keeps the generic subtitle when neither summary nor description exists', () => {
+    render(
+      <SessionSidebar
+        {...baseProps}
+        agents={[
+          { agentId: 'bare', name: '空白 Agent', isEnabled: true, isFrozen: false },
+        ] as any[]}
+        agentId="bare"
+        workingAgentIds={[]}
+      />,
+    );
+
+    expect(screen.getByText('主线会话')).toBeTruthy();
   });
 });

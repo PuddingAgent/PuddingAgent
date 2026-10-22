@@ -48,6 +48,23 @@ export function getAgentContactStatus(
   return { label: '在线', tone: 'idle' };
 }
 
+/**
+ * 智能体列表第二行的说明文案（角色视角：让用户知道「为什么找它、它最近在做什么」）。
+ *
+ * 取值优先级：最近进展（仅当状态投影带来非空摘要）→ 角色描述 → 兜底「主线会话」。
+ * 只影响展示，不参与 agent 路由与选择逻辑；空摘要/空描述一律不渲染空洞占位。
+ */
+export function getAgentContactSubtitle(
+  agent: WorkspaceAgentDto,
+  projected: AgentStatusChipProjection | undefined,
+): string {
+  const summary = (projected?.summary ?? '').trim();
+  if (summary) return summary;
+  const description = (agent.description ?? '').trim();
+  if (description) return description;
+  return '主线会话';
+}
+
 interface SessionSidebarProps {
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
@@ -224,6 +241,7 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
               isWorking,
             );
             const isDisabled = !agent.isEnabled || agent.isFrozen;
+            const subtitle = getAgentContactSubtitle(agent, projected);
             return (
               <button
                 key={agent.agentId}
@@ -246,7 +264,12 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
                 </Avatar>
                 <span className={styles.agentContactBody}>
                   <span className={styles.agentContactName}>{name}</span>
-                  <span className={styles.agentContactMeta}>主线会话</span>
+                  <span
+                    className={styles.agentContactMeta}
+                    title={subtitle}
+                  >
+                    {subtitle}
+                  </span>
                 </span>
                 <span
                   className={cx(
