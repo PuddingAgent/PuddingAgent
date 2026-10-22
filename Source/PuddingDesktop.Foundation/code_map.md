@@ -4,6 +4,14 @@
 BCL-only layout and appearance preferences, with compiler-enforced absence of package/project dependencies.
 
 - `ShellLayout.cs`: bounded layout dimensions and responsive allocation.
+- `Design/DesignTokens.cs`: the Shell's only font-size / corner-radius vocabulary - 6 tiers (11/13/15/18/24/28)
+  and 2 radii (8/12), plus `MapFontSize` / `MapCornerRadius` for migrating a literal to its tier.
+  Tiers are named by ROLE (`FontSizeBody`), never by value, so a later revalue touches one file.
+- `Design/XamlLiteralLint.cs`: text-level gate (`PDT-TOKEN-001/002/003`) flagging raw `FontSize`,
+  `CornerRadius` and `#rrggbb` on background/foreground/brush attributes; `{StaticResource ...}` passes and a brush
+  DEFINITION site (`<SolidColorBrush Color="#...">`) stays legal, otherwise the token file could not pass itself.
+- `Design/DesignTokenXaml.cs`: emits `Source/PuddingDesktop/Themes/DesignTokens.xaml` from those tables
+  (byte-deterministic), so the XAML dictionary can never drift from the constants and needs no hand edits.
 - `SkeletonSettingsStore.cs`: atomic appearance settings, corrupt-file preservation.
 - `PanelCanvasDocument.cs`: embedded/exported panel HTML wrappers plus the injected annotation script:
   five primitive tools (box/point/pen/arrow/text), per-item delete, undo, `compose()` (burn ink into pixels),
@@ -40,6 +48,8 @@ BCL-only layout and appearance preferences, with compiler-enforced absence of pa
 - `StartupPhaseActivity.cs`: parses `[StartupPhase] <phase> total=… delta=…` lines from the Core log tail into an aggregated human phase plus "latest output"; keeps the log format out of XAML and UI code.
 - `Source/PuddingDesktop.FoundationTests`: independent layout, persistence, startup-panel mapping/phase-parsing,
   and dependency boundary tests; plus annotation normalization, craft store (save/rename/lineage/trash),
-  burn-in retention, canvas-restore payload and annotation-handoff writer tests (471 cases as of 2026-10-22).
+  burn-in retention, canvas-restore payload and annotation-handoff writer tests, plus the design-token contract
+  (tier coverage of every literal seen in MainWindow.xaml, deterministic dictionary emission, lint red cases,
+  and a frozen baseline of raw literals in the real desktop XAML) (499 cases as of 2026-10-22).
 
 Role selection, native drafts, document business ownership and in-process kernel contracts were removed during master recovery. Business UI stays in Web.
