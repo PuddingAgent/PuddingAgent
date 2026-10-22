@@ -1,4 +1,5 @@
 # PuddingBrowser.Abstractions CodeMAP
+> 源指纹: *.cs=10-a12dcc118c67, *.csproj=1-eb0b706aca65 · 条目数: 9 · 最近整理: 2026-10-22
 
 > Browser 抽象契约 | 接口 · 类型 · 策略
 

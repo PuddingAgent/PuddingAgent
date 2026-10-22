@@ -1,4 +1,5 @@
 # PuddingDesktop.CapabilityHost CodeMAP
+> 源指纹: *.cs=3-cd9ca05d0d64, *.csproj=1-75699c511d41 · 条目数: 3 · 最近整理: 2026-10-14
 
 > **WinUI 侧平台适配**：只承载「必须依赖 Windows App SDK」的包装。
 > 边界（编译期 Target `EnforceCapabilityHostBoundary`）：只允许引用 `Pudding.Contracts`；

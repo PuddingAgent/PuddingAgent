@@ -1,4 +1,5 @@
 # PuddingDesktop CodeMAP
+> 源指纹: Source/PuddingDesktop.WpfArchive/**=132-6116ba81c2cb · 条目数: 48 · 最近整理: 2026-10-22
 
 > Windows WPF 产品入口 | 单实例 · Core 子进程管理 · Browser 工作区 · 运行中心
 

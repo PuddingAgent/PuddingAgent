@@ -1,4 +1,5 @@
 # PuddingController CodeMAP
+> 源指纹: Controllers/**=14-d4c4d80c8939, Source/PuddingController/Data/**=4-3d9d3e1c906b, Migrations/**=3-5ddee6a128b7, Properties/**=1-e246a65cda5a, Services/**=15-3233c47bb08a, *.cs=1-3d27dd3d915c, *.csproj=1-c08f1de323d1 · 条目数: 31 · 最近整理: 2026-10-14
 
 > 代理控制层 | REST API · 会话路由 · 审批 · 审计 · 工作区
 

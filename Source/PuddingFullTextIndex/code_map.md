@@ -1,4 +1,5 @@
 # PuddingFullTextIndex CodeMAP
+> 源指纹: Contracts/**=23-0fabd211d9f0, Infrastructure/**=35-5e2f9d389be1, *.cs=2-10a2edf8390f, *.csproj=1-1a49edce6aec · 条目数: 12 · 最近整理: 2026-10-14
 
 > 通用全文索引引擎 | 文件内容提取 · 搜索
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingFullTextIndex-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingFullTextIndex-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。

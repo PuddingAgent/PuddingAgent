@@ -13,7 +13,9 @@ slug: code-map
 draft: false
 ---
 
+
 # PuddingHost CodeMAP
+> 源指纹: Source/PuddingHost/**=168-4db6ff59c02a · 条目数: 44 · 最近整理: 2026-10-22
 
 > 唯一 Host 组合根 | Console 与 Desktop 共用 DI · Browser Bridge · 飞书连接器
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。

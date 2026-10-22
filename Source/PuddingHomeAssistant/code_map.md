@@ -1,4 +1,5 @@
 # PuddingHomeAssistant · code_map
+> 源指纹: Contracts/**=1-370e82bc5a79, Diagnostics/**=1-8964bc4e0288, Policy/**=3-e0c378d9b604, Rest/**=1-6136cbf89a6a, *.csproj=1-1f28d767be1d · 条目数: 13 · 最近整理: 2026-10-19
 
 > 组件化交付规程（`Docs/10_conventions/组件化交付规程.md`）状态：**S1–S5 已交付**
 > （已登记解决方案，并已被 `PuddingHost` 消费；见 §5）。

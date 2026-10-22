@@ -1,4 +1,5 @@
 ﻿# PuddingCodeIndexer.Cli CodeMAP
+> 源指纹: Scripts/**=3-f299e109abf1, TestFixtures/**=7-862ee3d8a0f8, *.cs=1-90d608973272, *.csproj=1-8ca4a6b435a7 · 条目数: 3 · 最近整理: 2026-08-07
 
 > 代码索引 CLI 工具 | index / search / status / definition / references / hover
 

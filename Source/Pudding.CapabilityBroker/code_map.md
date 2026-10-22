@@ -1,4 +1,5 @@
 # Pudding.CapabilityBroker CodeMAP
+> 源指纹: *.cs=10-d83f9ed4cd6e, *.csproj=1-30e51398fa90 · 条目数: 16 · 最近整理: 2026-10-14
 
 > **Core 侧能力 Broker**（计划 §3/§5）：接受 Desktop 主动拨入的双向流、完成握手协商，
 > 并作为「已连接 Desktop 的注册表 + 能力调用入口」。

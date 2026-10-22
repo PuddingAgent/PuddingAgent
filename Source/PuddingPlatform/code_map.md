@@ -1,4 +1,5 @@
 # PuddingPlatform CodeMAP
+> 源指纹: Source/PuddingPlatform/**=527-64b3486d4721 · 条目数: 205 · 最近整理: 2026-10-22
 
 > 平台层 | Session 管理 · API · EF Core 持久化 · 消息网关
 

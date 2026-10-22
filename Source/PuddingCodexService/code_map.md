@@ -1,4 +1,5 @@
 ﻿# PuddingCodexService CodeMAP
+> 源指纹: Models/**=1-e30d32f33008, Properties/**=1-b4996a952451, Services/**=5-109433640d51, Source/PuddingCodexService/Tools/**=1-1dc1c01de7aa, *.cs=2-5da2a034464f, *.csproj=1-42084dcfb568 · 条目数: 9 · 最近整理: 2026-08-07
 
 > Codex MCP Sidecar | 宿主外持久任务执行器
 

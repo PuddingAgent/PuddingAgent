@@ -13,7 +13,9 @@ slug: code-map
 draft: false
 ---
 
+
 # Pudding.Contracts CodeMAP
+> 源指纹: Audit/**=1-c2dac80a0924, Desktop/**=46-971e27f8fe72, *.cs=6-8f5d1d92fec3, *.csproj=1-023d72a7bede · 条目数: 38 · 最近整理: 2026-10-14
 
 > 平台与传输无关的**契约叶程序集**：接口 · 不可变 DTO · 能力标识 · 错误语义 · 审计形状
 > 边界（[技术方案](../../Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) §3）：**仅 BCL**。

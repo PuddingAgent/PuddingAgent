@@ -1,4 +1,5 @@
 # Pudding.CapabilityBroker.AspNetCore CodeMAP
+> 源指纹: *.cs=7-6e392ac2f623, *.csproj=1-71800a7546f6 · 条目数: 6 · 最近整理: 2026-10-14
 
 > **Core 侧宿主适配层**（计划 §3）：把 gRPC 服务端流接到 `Pudding.CapabilityBroker`，
 > 并提供 Kestrel 端点、DI 与路由注册的装配助手。

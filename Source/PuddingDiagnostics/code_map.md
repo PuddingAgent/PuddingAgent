@@ -1,4 +1,5 @@
 # PuddingDiagnostics 代码地图（可诊断基础设施叶子组件）
+> 源指纹: Classification/**=2-5bf77c5c78fc, Contracts/**=6-1a7de8a04c83, Presentation/**=2-0a92867d992f, Projection/**=2-de6c6c18c00a, Query/**=1-8e7b124d7cd9, Redaction/**=1-5cc0303e707d, Scenarios/**=2-3f2015383654, *.csproj=1-30a46260201b · 条目数: 30 · 最近整理: 2026-10-21
 
 > 定位：把「为什么这次调用失败」变成**可计算、可断言、可复现**的事实。设计见
 > [`Docs/12_features/可诊断基础设施设计-2026-10-07.md`](../../Docs/12_features/可诊断基础设施设计-2026-10-07.md)；

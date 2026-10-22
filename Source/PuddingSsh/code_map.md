@@ -1,4 +1,5 @@
 # PuddingSsh · code_map
+> 源指纹: Contracts/**=8-040e29a7d514, Diagnostics/**=4-08fd87e90cd6, Execution/**=11-58e75ca50412, Transport/**=4-ed25678bec80, Validation/**=9-d62588adf29e, *.csproj=1-f6f79120d18a · 条目数: 40 · 最近整理: 2026-10-22
 
 > 设计依据：[SSH 工具组件化设计与实施方案](../../Docs/12_features/SSH工具组件化设计与实施方案-2026-10-08.md)
 > （§4 组件与依赖边界、§6 凭据与主机验证、§7 工具合同、§9 并发/输出/超时、§10 诊断合同、§12 实施顺序）。

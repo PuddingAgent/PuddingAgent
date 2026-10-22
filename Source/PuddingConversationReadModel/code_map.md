@@ -1,4 +1,5 @@
 # PuddingConversationReadModel — code map
+> 源指纹: Contracts/**=5-7d3cff961b09, Internal/**=6-959d9303fada, *.cs=1-824885207e36, *.csproj=1-3d338e32a192 · 条目数: 22 · 最近整理: 2026-10-18
 
 > 阶段 B 交付的**叶子组件**（组件化交付规程 S1–S4；Plan《会话首屏与渐进加载架构优化方案》§3.1 / §11.1）。
 > `ProjectReference = 0`、`PackageReference = 0`，只依赖 BCL；边界由

@@ -1,4 +1,5 @@
 # PuddingTaskRecall.Cli CodeMAP
+> 源指纹: *.cs=2-03abc8c90916, *.csproj=1-c8e6a72a856e · 条目数: 13 · 最近整理: 2026-10-14
 
 > 历史脏数据一次性诊断/修复 CLI（看板卡 4ed930e7 原子任务③） | .NET 10 · Microsoft.Data.Sqlite · 只读优先的直连库审计
 

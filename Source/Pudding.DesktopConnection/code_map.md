@@ -1,4 +1,5 @@
 # Pudding.DesktopConnection CodeMAP
+> 源指纹: *.cs=11-479814098356, *.csproj=1-b3be0416f488 · 条目数: 21 · 最近整理: 2026-10-14
 
 > Desktop 侧**传输适配器**：Desktop 主动发起 gRPC 双向流，Core 经响应流下发能力命令。
 > 依赖：`Pudding.Contracts`（领域真源）+ `Pudding.Rpc.Protocol`（wire 真源）+ `Grpc.Net.Client`。

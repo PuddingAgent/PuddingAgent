@@ -1,4 +1,5 @@
 # PuddingRetrievalEval — 检索评测组件（叶子）
+> 源指纹: Contracts/**=2-4fddf292757b, Services/**=8-fe3c2ff56e2b, eval/**=77-6c64db1c48ed, *.csproj=1-9c02f7c0210d · 条目数: 0 · 最近整理: 2026-10-07
 
 > 上游：`Docs/12_features/ADR-089-检索增强需求落地方案-2026-09-24.md` §4（U4-0）。
 > 组件化交付规程：S1 独立工程 → S2 独立测试 → S3 无宿主验证 → S4 边界断言 → S5 接入（本刀未接入）。

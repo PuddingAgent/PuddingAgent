@@ -1,4 +1,5 @@
 # PuddingBrowser.Authorization — code_map
+> 源指纹: *.cs=3-831c5d4b695d, *.csproj=1-21db8ad18fb5 · 条目数: 6 · 最近整理: 2026-10-19
 
 > 单目标会话授权纯逻辑组件；由 DesktopService.BrowserPageLifecycle 持有，负责默认 Bridge 页面命令准入。
 > 目标规则见 [ADR-097](../../Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[一期方案](../../Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md)。

@@ -1,4 +1,5 @@
 # PuddingAgent CodeMAP
+> 源指纹: Properties/**=1-b43f52a33e0b, *.cs=1-6061bc6337c4, *.csproj=1-7387ae909ad1, Source/PuddingAgent/*.json=1-00401ad2257e · 条目数: 5 · 最近整理: 2026-10-14
 
 > 入口项目（薄壳） | Console / DesktopChild 双模式宿主入口 · DI 组合扩展 · 全部业务实现在 PuddingHost/Runtime/Platform
 

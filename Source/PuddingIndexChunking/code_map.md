@@ -1,4 +1,5 @@
 # PuddingIndexChunking CodeMAP（U4-1a）
+> 源指纹: *.cs=6-36c1e33fb83f, *.csproj=1-c6a466a93f62 · 条目数: 12 · 最近整理: 2026-10-14
 
 > 分块 + 过滤组件：把“一个源文件 → 若干可独立索引的块”做成**可独立测试的纯逻辑**，而不是塞进探针脚本。
 > 边界（ADR-089 §2.1）：**叶子** —— `ProjectReference = 0`、`PackageReference = 0`（未新增 NuGet）。

@@ -1,4 +1,5 @@
 ﻿# PuddingGit.Tools CodeMAP
+> 源指纹: *.csproj=1-c2215f576a73 · 条目数: 0 · 最近整理: 2026-08-07
 
 > Git 20 工具项目壳 | 实现在 Runtime
 

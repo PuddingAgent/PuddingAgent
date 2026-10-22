@@ -1,4 +1,5 @@
 # Pudding.DesktopService CodeMAP
+> 源指纹: Browser/**=1-4a7c1e2a68c8, *.cs=35-c34da2281b18, *.csproj=1-ad69d2b101f5 · 条目数: 51 · 最近整理: 2026-10-22
 
 > Desktop 侧能力服务（计划 §6）：**目标校验 · 准入 · 生命周期 · 取消与关闭竞态 · UI 线程边界**
 > 依赖：`Pudding.Contracts`（平台无关契约）+ `Pudding.DesktopConnection`（执行器接缝）。

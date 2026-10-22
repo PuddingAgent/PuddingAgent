@@ -1,4 +1,5 @@
 # PuddingBrowser.Protocol CodeMAP
+> 源指纹: *.cs=9-c2e56fef689f, *.csproj=1-43a316c52af7 · 条目数: 9 · 最近整理: 2026-10-22
 
 > WebSocket Bridge 线协议 | 命令 · 载荷 · 序列化 · 错误码
 

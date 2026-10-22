@@ -1,4 +1,5 @@
 # Pudding.DesktopSurface.Browser — 代码地图
+> 源指纹: *.cs=3-e9b6a328398f, *.csproj=1-8b5cbb1deffe · 条目数: 4 · 最近整理: 2026-10-19
 
 > 项目定位与边界见根 [`code_map.md`](../../code_map.md) §2.2；施工规格见
 > [`Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md`](../../Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md)。

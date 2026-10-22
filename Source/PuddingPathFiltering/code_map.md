@@ -1,4 +1,5 @@
 # PuddingPathFiltering — code map
+> 源指纹: *.cs=8-d3d6f5c41b92, *.csproj=1-caa3bfbb7fba · 条目数: 12 · 最近整理: 2026-10-14
 
 > ADR-089 U4-4 交付的**叶子组件**：路径忽略合同的唯一真源。
 > `ProjectReference = 0`、`PackageReference = 0`（由 `PuddingPathFilteringTests/ComponentBoundaryTests` 读盘断言）。

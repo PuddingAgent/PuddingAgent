@@ -1,4 +1,5 @@
 # PuddingRetrievalEvalTests — 评测组件独立测试工程（S2/S3）
+> 源指纹: *.cs=9-6d0220e8fff6, *.csproj=1-dbfc4ae42722 · 条目数: 0 · 最近整理: 2026-10-07
 
 > 被侧：`Source/PuddingRetrievalEval`（组件化交付规程 S2）。
 > **`ProjectReference` 恰好 1 条**，且只指向 `PuddingRetrievalEval`。

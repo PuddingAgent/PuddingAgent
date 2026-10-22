@@ -1,4 +1,5 @@
 # PuddingVectorIndex CodeMAP（U4-1b → U4-3c）
+> 源指纹: *.cs=10-f3a1aea7c791, *.csproj=1-9de660563d25 · 条目数: 16 · 最近整理: 2026-10-14
 
 > 向量索引组件：把「文本 → 向量 → 内存暴力余弦检索」做成**可独立测试的纯逻辑**，而不是塞进探针脚本。
 > 边界（ADR-089 索引服务与库管理 §1）：**叶子** —— `ProjectReference = 0`、`PackageReference = 0`（不引入向量数据库、不新增 NuGet）。

@@ -1,4 +1,5 @@
 # PuddingCodeIntelligence CodeMAP
+> 源指纹: Source/PuddingCodeIntelligence/**=26-f3550bc7905b · 条目数: 20 · 最近整理: 2026-10-14
 
 > 代码语言智能：**生产与消费**（语言索引器 · outliner · LSP · 查询 facade）
 > 边界（ADR-089 §2.1）：本工程 → `PuddingCodeIndex`（单向 `ProjectReference`）；索引产物维护（契约/存储/变更捕获/调度/范围解析）已迁至 `Source/PuddingCodeIndex`。本工程**不得被** `PuddingCodeIndex` 引用。

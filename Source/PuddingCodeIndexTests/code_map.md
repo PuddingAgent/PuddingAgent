@@ -1,4 +1,5 @@
 # PuddingCodeIndexTests CodeMAP
+> 源指纹: Contracts/**=10-a642ff1f2fee, Services/**=34-5b4f18d07f9d, Storage/**=7-20a3813503f8, *.cs=1-9344cc31e8a2, *.csproj=1-4a926b5cd656 · 条目数: 14 · 最近整理: 2026-10-14
 
 > **索引组件的独立测试工程**（组件化交付规程 S2/S3 的第一次真实兑现，2026-09-23）
 > 目的：让 `PuddingCodeIndex` 的测试运行在**只引用它自己**的工程里

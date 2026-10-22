@@ -1,4 +1,5 @@
 # PuddingMemoryEngine CodeMAP
+> 源指纹: Source/PuddingMemoryEngine/Data/**=8-3f12acced232, Entities/**=11-184bcd2b1fe9, Infrastructure/**=2-6d6387f91402, Schema/**=2-386eae6cc9c7, Services/**=15-d89707832ce2, *.cs=6-e7b1ec15e436, *.csproj=1-d7b0fe3923ee · 条目数: 23 · 最近整理: 2026-10-14
 
 > 记忆引擎 | Library/Book/Chapter · FTS5 全文搜索 · 潜意识处理
 

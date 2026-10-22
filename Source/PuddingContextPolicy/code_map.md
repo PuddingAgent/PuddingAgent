@@ -1,4 +1,5 @@
 # PuddingContextPolicy · code_map
+> 源指纹: *.cs=7-1cbc26f4d6d4, *.csproj=1-7fb8dee896bb · 条目数: 14 · 最近整理: 2026-10-22
 
 > 组件化交付规程（`Docs/10_conventions/组件化交付规程.md`）状态：**S1–S5 已交付**（已登记解决方案，
 > 并已在主机侧被消费；见 §5）。

@@ -1,4 +1,6 @@
 # PuddingPlatformAdmin CodeMAP
+> 源指纹: Source/PuddingPlatformAdmin/*=8-987d66c8f197, src/**=928-a8e40569ce38, public/**=14-f3aa09cf5f00, mock/**=7-15a79f8b3988, config/**=5-502280cdfaa6, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 194 · 最近整理: 2026-10-22
+> 指纹覆盖: *、src/**、public/**、mock/**、config/**、e2e/**、scripts/**、.husky/**、.github/**；未纳入 10 项: .commitlintrc.js、.editorconfig、.gitignore、.lintstagedrc、.npmrc、.tmp-b6-build.log、.tmp-b6-tsc-orch.log、.tmp-b6-tsc.log、tests/**、types/**
 
 > React 管理前端 | Ant Design Pro v6 · React 19 · UmiJS
 

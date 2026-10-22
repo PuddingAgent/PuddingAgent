@@ -1,4 +1,5 @@
 # Pudding.Rpc.Protocol CodeMAP
+> 源指纹: Protos/**=1-32cbf9311e3a, *.csproj=1-e60c7b88cec9 · 条目数: 20 · 最近整理: 2026-10-14
 
 > **wire-only 叶程序集**：`Protos/desktop_capability.proto` + 其生成类型（消息 / 客户端桩 / 服务基类）
 > 依赖：`Google.Protobuf` + `Grpc.Core.Api` + 构建期 `Grpc.Tools`（`PrivateAssets=all`）。
