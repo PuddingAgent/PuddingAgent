@@ -35,13 +35,15 @@ public static class DesignTokens
     public const string RadiusCardName = "RadiusCard";
 
     /// <summary>
-    /// 字号阶梯。11 是中文在 100% 缩放下仍不糊的最小档，也是现状 8/9/10/11 的收口点；
-    /// 12/13 合并为 13（中文小字读不动的主因）；15/16 合并为 15；18/19/21 合并为 18。
+    /// 字号阶梯。档位取自 MainWindow.xaml 的实测分布（65 处 / 13 档），取「用得最多的值」而不是「更好看的理论值」，
+    /// 这样机械替换的第一步就能零视觉变化：
+    /// 12 是出现最多的正文小字（29 处），所以 Caption 就取 12，13 向它收口；
+    /// 11 是中文在 100% 缩放下仍不糊的最小档，也是 8/9/10/11 的收口点；15/16 合并为 15；18/19/21 合并为 18。
     /// </summary>
     public static readonly IReadOnlyList<FontSizeToken> FontSizes =
     [
         new(FontSizeMicroName, 11, "状态栏、角标、版本号、极次要元信息"),
-        new(FontSizeCaptionName, 13, "chip、列表第二行、辅助标签、步骤计数"),
+        new(FontSizeCaptionName, 12, "chip、列表第二行、辅助标签、步骤计数"),
         new(FontSizeBodyName, 15, "正文、输入框、按钮文字"),
         new(FontSizeSubtitleName, 18, "段落小标题、面板分区标题"),
         new(FontSizeTitleName, 24, "面板标题、页面标题"),

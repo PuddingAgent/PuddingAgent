@@ -4,12 +4,14 @@
 BCL-only layout and appearance preferences, with compiler-enforced absence of package/project dependencies.
 
 - `ShellLayout.cs`: bounded layout dimensions and responsive allocation.
-- `Design/DesignTokens.cs`: the Shell's only font-size / corner-radius vocabulary - 6 tiers (11/13/15/18/24/28)
+- `Design/DesignTokens.cs`: the Shell's only font-size / corner-radius vocabulary - 6 tiers (11/12/15/18/24/28)
   and 2 radii (8/12), plus `MapFontSize` / `MapCornerRadius` for migrating a literal to its tier.
   Tiers are named by ROLE (`FontSizeBody`), never by value, so a later revalue touches one file.
 - `Design/XamlLiteralLint.cs`: text-level gate (`PDT-TOKEN-001/002/003`) flagging raw `FontSize`,
-  `CornerRadius` and `#rrggbb` on background/foreground/brush attributes; `{StaticResource ...}` passes and a brush
-  DEFINITION site (`<SolidColorBrush Color="#...">`) stays legal, otherwise the token file could not pass itself.
+  `CornerRadius` and `#rrggbb` on background/foreground/brush attributes - in BOTH shapes: on the element
+  (`FontSize="13"`) and inside a style (`<Setter Property="FontSize" Value="13"/>`, any attribute order).
+  `{StaticResource ...}` passes and a brush DEFINITION site (`<SolidColorBrush Color="#...">`) stays legal,
+  otherwise the token file could not pass itself.
 - `Design/DesignTokenXaml.cs`: emits `Source/PuddingDesktop/Themes/DesignTokens.xaml` from those tables
   (byte-deterministic), so the XAML dictionary can never drift from the constants and needs no hand edits.
 - `SkeletonSettingsStore.cs`: atomic appearance settings, corrupt-file preservation.
@@ -50,6 +52,6 @@ BCL-only layout and appearance preferences, with compiler-enforced absence of pa
   and dependency boundary tests; plus annotation normalization, craft store (save/rename/lineage/trash),
   burn-in retention, canvas-restore payload and annotation-handoff writer tests, plus the design-token contract
   (tier coverage of every literal seen in MainWindow.xaml, deterministic dictionary emission, lint red cases,
-  and a frozen baseline of raw literals in the real desktop XAML) (499 cases as of 2026-10-22).
+  and a frozen baseline of raw literals in the real desktop XAML) (502 cases as of 2026-10-22).
 
 Role selection, native drafts, document business ownership and in-process kernel contracts were removed during master recovery. Business UI stays in Web.

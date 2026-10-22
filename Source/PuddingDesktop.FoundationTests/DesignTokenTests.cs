@@ -148,6 +148,54 @@ public sealed class DesignTokenTests
         Assert.Equal(3, finding.Line);
     }
 
+    /// <summary>
+    /// WinUI 里绝大多数视觉值住在样式 Setter 里：<c>&lt;Setter Property="FontSize" Value="13"/&gt;</c>。
+    /// 只扫元素属性会漏掉它们——实测 MainWindow.xaml 就漏了 13 处字号、13 处圆角，门禁等于有一半是洞。
+    /// </summary>
+    [Fact]
+    public void Lint_FlagsRawFontSizeInsideAStyleSetter()
+    {
+        var findings = XamlLiteralLint.Scan("""
+            <Style x:Key="ToolRoundButtonStyle" TargetType="Button">
+             <Setter Property="Width" Value="34"/>
+             <Setter Property="FontSize" Value="13"/>
+            </Style>
+            """);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(XamlLiteralLint.RawFontSizeRule, finding.Rule);
+        Assert.Equal("FontSize", finding.Attribute);
+        Assert.Equal("13", finding.Value);
+        Assert.Equal(3, finding.Line);
+        Assert.Contains(DesignTokens.FontSizeCaptionName, finding.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Lint_FlagsRawCornerRadiusInsideAStyleSetter_RegardlessOfAttributeOrder()
+    {
+        var findings = XamlLiteralLint.Scan("""
+            <Style x:Key="Card" TargetType="Border">
+             <Setter Value="12" Property="CornerRadius"/>
+            </Style>
+            """);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(XamlLiteralLint.RawCornerRadiusRule, finding.Rule);
+        Assert.Equal("CornerRadius", finding.Attribute);
+        Assert.Equal("12", finding.Value);
+    }
+
+    [Fact]
+    public void Lint_AcceptsTokenReferenceInsideAStyleSetter()
+    {
+        Assert.Empty(XamlLiteralLint.Scan("""
+            <Style x:Key="Card" TargetType="Border">
+             <Setter Property="CornerRadius" Value="{StaticResource RadiusCard}"/>
+             <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
+            </Style>
+            """));
+    }
+
     [Fact]
     public void GeneratedDictionary_IsWellFormedAndCoversEveryToken()
     {
@@ -192,13 +240,13 @@ public sealed class DesktopXamlBaselineTests
         var findings = XamlLiteralLint.ScanFile(
             Path.Combine(root, "Source", "PuddingDesktop", "MainWindow.xaml"));
 
-        Assert.Equal(65, findings.Count(finding => finding.Rule == XamlLiteralLint.RawFontSizeRule));
-        Assert.Equal(20, findings.Count(finding => finding.Rule == XamlLiteralLint.RawCornerRadiusRule));
+        Assert.Equal(78, findings.Count(finding => finding.Rule == XamlLiteralLint.RawFontSizeRule));
+        Assert.Equal(33, findings.Count(finding => finding.Rule == XamlLiteralLint.RawCornerRadiusRule));
         Assert.Equal(9, findings.Count(finding => finding.Rule == XamlLiteralLint.RawColorRule));
     }
 
     [Fact]
-    public void AppXaml_HasNoRawUsageLiterals()
+    public void AppXaml_RawVisualLiterals_MatchRecordedBaseline()
     {
         var root = FindRepositoryRoot();
         Assert.NotNull(root);
@@ -206,7 +254,11 @@ public sealed class DesktopXamlBaselineTests
         var findings = XamlLiteralLint.ScanFile(
             Path.Combine(root, "Source", "PuddingDesktop", "App.xaml"));
 
-        Assert.Empty(findings);
+        // App.xaml 只允许有这一个裸值（ContentDialog 的 CornerRadius 样式 Setter）。
+        // 它是 Stage 3 把令牌提升到 App 级资源字典时要迁掉的最后一处；在此之前不许再新增。
+        Assert.Equal(0, findings.Count(finding => finding.Rule == XamlLiteralLint.RawFontSizeRule));
+        Assert.Equal(1, findings.Count(finding => finding.Rule == XamlLiteralLint.RawCornerRadiusRule));
+        Assert.Equal(0, findings.Count(finding => finding.Rule == XamlLiteralLint.RawColorRule));
     }
 
     /// <summary>从测试输出目录向上找含主壳层 XAML 的仓库根；找不到要显式失败，不静默跳过。</summary>
