@@ -524,6 +524,38 @@ def stage_anti_pattern_identifier_boundary(mod):
     check("anti-pattern: lowercase todo field name is not a hit (case-sensitive)",
           not field, "hits=%s" % [(v["line"], v["detail"]) for v in field])
 
+def stage_list_items_parallel_phrases(mod):
+    """§6/§7「清单型 F」只数**并列短语**：括号与行内代码里的分隔符不构成并列。
+
+    真因（工作树归因 8/41 误报）：`_split_items` 曾裸 `re.split`，于是
+      * `浏览器类型定义（标签、Cookie、视口等）` 一个短语被切成 3 项；
+      * `` `GetOutlineAsync(filePath, sourceText, language, ct)` `` 参数列表被切成 4 项。
+    前两行必须 0 命中；第三行真并列（3 个顶层短语）必须仍命中（反过度抑制对照组）；
+    第四行验证括号内子短语不计入（顶层仍是 3 项）。
+    """
+    d = tempfile.mkdtemp(prefix="code_map_list_items_")
+    write_lines(os.path.join(d, "code_map.md"), [
+        "# Fixture List Items",
+        "",
+        "| 文件 | 用途 | 关键符号 | 关联 | 约束 |",
+        "|------|------|----------|------|------|",
+        "| `a.cs` | 浏览器类型定义（标签、Cookie、视口等） | `S1` | `b.cs` | — |",
+        "| `b.cs` | 唯一端口：`GetOutlineAsync(filePath, sourceText, language, ct)` | `S2` | `c.cs` | — |",
+        "| `c.cs` | 解析、写入、审计 | `S3` | `d.cs` | — |",
+        "| `d.cs` | 解析（x、y）、写入、审计 | `S4` | `e.cs` | — |",
+        "",
+    ])
+    rep = mod.run_check(d)
+    items = {v["line"]: v["detail"] for v in rep["violations"]
+             if v["rule"] == "anti-pattern" and v.get("category") == "清单型 F"}
+    check("list-items: separators inside （）/inline code are not parallel phrases",
+          not any(ln in items for ln in (5, 6)), "hits=%s" % items)
+    check("list-items: three top-level phrases still hit (control)", 7 in items,
+          "hits=%s" % items)
+    check("list-items: bracketed sub-phrases are not counted (3 remain)",
+          items.get(8) == "items=3", "hit=%s" % items.get(8))
+
+
 def main():
     if not os.path.isfile(CHECKER):
         print("[FAIL] checker not found: %s" % CHECKER)
@@ -548,6 +580,7 @@ def main():
         stage_fingerprint_algorithm(mod, dirs)
         stage_anti_pattern_prose_scope(mod, dirs)
         stage_anti_pattern_identifier_boundary(mod)
+        stage_list_items_parallel_phrases(mod)
 
         repo_files = mod.find_code_maps(REPO_ROOT)
         mirror_root = dirs["mirror"]

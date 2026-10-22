@@ -596,8 +596,34 @@ def _ap_vio(rel: str, line_no: int, category: str, detail: str):
             "file": rel, "line": line_no, "detail": detail}
 
 
+# 括号/引号类配对：其内部的分隔符属于同一个短语，不构成「并列短语」
+_BRACKET_PAIRS = {"（": "）", "(": ")", "【": "】", "[": "]", "「": "」", "《": "》"}
+_CLOSERS = set(_BRACKET_PAIRS.values())
+
+
 def _split_items(text: str, separators: str):
-    return [x for x in re.split("[%s]" % re.escape(separators), text) if x.strip()]
+    """按分隔符切分并列短语（规格 §6/§7：`用途` 单元格内并列短语 ≥3 个即「清单型 F」）。
+
+    规格写的是**并列短语**，而 ``浏览器类型定义（标签、Cookie、视口等）`` 只是一个短语 ——
+    括号内的分隔符和被反引号包裹的行内代码里的分隔符都不产生并列关系，因此不计入切分。
+    嵌套深度按配对栈推进；未闭合的括号容错为「直到结尾都属于该短语」。
+    """
+    items, buf, depth, in_code = [], [], 0, False
+    for ch in text:
+        if ch == "`":
+            in_code = not in_code
+        elif not in_code:
+            if ch in _BRACKET_PAIRS:
+                depth += 1
+            elif ch in _CLOSERS and depth > 0:
+                depth -= 1
+            elif depth == 0 and ch in separators:
+                items.append("".join(buf))
+                buf = []
+                continue
+        buf.append(ch)
+    items.append("".join(buf))
+    return [x for x in items if x.strip()]
 
 
 def analyze_file(root: str, path: str, col_samples, global_unmapped):
