@@ -172,7 +172,8 @@
 | `Services/LlmProfileResolver.cs` | provider 与 profile 到完整配置的解析 | `ILlmProfileResolver` | `Services/PuddingJsonConfig.cs` | — |
 | `Services/LlmRequestBudgetGuard.cs` | 请求级预算守卫与软压缩触发；provider 输入上限文案解析 | `LlmRequestBudgetGuard` | `Services/ContextCompactionService.cs` | `TryGetProviderMaxInputTokens` 同时识别 `Range of input length should be [1,N]` 与 DeepSeek `maximum context length is N tokens`；摘要 raw 不得写回主请求校准（ADR-095 D6） |
 | `Services/LlmRequestTextBudget.cs` | DeepSeek Responses 独立文本上传预算与发送前复核 | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查文本与工具定义；512 KiB 为客户端预算，图片另走视觉预算；超限零发送，携带压缩原因及体积分解 |
-| `Services/BoundedCompactionSummary.cs` | 选中历史的有界分段总结与递归归并 | `BoundedCompactionSummary` | `Services/AgentExecutionService.cs` | 128 KiB 文本分段、最多 64 次调用；全段成功后才允许提交，失败/截断不返回部分摘要；图片保持冻结路由 |
+| `Services/BoundedCompactionSummary.cs` | 选中历史的有界分段总结与递归归并 | `BoundedCompactionSummary` | `Services/AgentExecutionService.cs` | 128 KiB 分段、64 次调用与 4 层恢复上限；截断/超额从完整源精简重生成，再拆段归并；返回逐次诊断，部分摘要不提交 |
+| `Services/Diagnostics/CompactionDiagnosticJournal.cs` | 压缩计划、分段请求/返回及提交结果的本地脱敏现场 | `CompactionDiagnosticJournal` | `Services/AgentExecutionService.cs` | 每案 8 MiB、最多 32 案/7 天；凭据脱敏，截断/写入失败显式可见；不改变执行结果 |
 | `Services/ManagedOggOpusTranscoder.cs` | 频道短音频的纯托管转码 | `IAudioTranscoder` | `Services/DashScopeTtsProvider.cs` | — |
 | `Services/MemoryLlmInvocationClient.cs` | 面向记忆的共享门面 LLM 客户端 | `IMemoryLlmClient` | `Services/LlmInvocationService.cs` | — |
 | `Services/MemoryMaintenancePlanWriteCommandMapper.cs` | 记忆维护方案到写命令的映射 | `MemoryMaintenancePlanWriteCommandMapper` | `Services/SubconsciousPlanGenerationService.cs` | — |
@@ -266,8 +267,8 @@
 
 - `Services/WarmPrefixCompaction.cs`
   只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection` 包含 token 上限（含 WorkUnit 容量）及独立文本上传预算；软候选延期到 canonical 终态之后。策略组件决定确切替换起点与 token/字节/包装/摘要额度；当前 User 不动，checkpoint 为 Assistant 背景。拒绝时仍保留真实 AfterTextBytes；Responses 续传载荷参与 CAS 与摘要源。体积保护每轮评估，不受软维护封顶限制；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`。
-  所有摘要通过 `BoundedCompactionSummary` 仅总结被替换跨度，按规划额度约束输出；超额仅从同一完整源重生成一次；全部成功后走同一 VerifyApplication/持久提交边界（`summarySource=provider_segmented`）。仅 provider 输入拒绝或无用输出可使用已配置的 Extractive；传输失败、截断或不完整分段保持原历史。
-  文本超限时摘要候选可覆盖最近八条中的完整旧轮次，当前用户轮仍受保护；精确持久 ID 全部可用时不再按正文回退匹配。不可压缩部分已超预算则生成摘要前拒绝。
+  所有摘要通过 `BoundedCompactionSummary` 仅总结被替换跨度，按规划额度约束输出；生成上限与最终容量分离；截断/超额先从同一完整源重生成，仍失败则有界拆段归并；全部成功后走同一 VerifyApplication/持久提交边界（`summarySource=provider_segmented`）。仅 provider 输入拒绝或无用输出可使用已配置的 Extractive；传输失败、截断或不完整分段保持原历史。
+  文本超限时摘要候选可覆盖最近八条中的完整旧轮次，当前 User、未完成批次和最新完整执行单元仍受保护；精确持久 ID 全部可用时不再按正文回退匹配。不可压缩部分已超预算则生成摘要前拒绝。
 
 - `Services/WarmPrefixMaintenanceAdmission.cs`
   软维护每 dispatch 一次；硬保护逐轮重新评估，不被软维护封顶屏蔽；软维护调用若已走 `RequiresSynchronousProtection` 分支（即已执行同步硬保护），`RecordAttempt` 同时置硬保护标记，禁止同一 round 再发一次字节级相同的摘要请求（2026-10-17 事故：同 round 两次 1.68M token 请求、两张失败卡片）

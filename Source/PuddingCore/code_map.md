@@ -46,6 +46,8 @@
 **`Platform/RsiEventTimestamp.cs`**：RSI-S3 时间戳契约：`DateTimeOffset.TryParse(raw, **InvariantCulture**, **AssumeUniversal**, out v) → v.ToUniversalTime()`。⛔ 禁用 `DateTimeStyles.None`（无偏移串会按本机时区解释 —— 本机 UTC+8 恰好错 8 小时，且**不会有断言失败**）；
 ⛔ 禁用裸 `DateTimeOffset.Parse`（走 CurrentCulture，非公历文化下解析成不同年份；平台内另有 7+ 处该写法，属既有技术债）；⛔ 不得省 `ToUniversalTime()`（字段名 `OccurredAtUtc` / `RsiEventTimestamp`，**类型名不得撒谎**）。不可解析 ⇒ **fail-closed 抛出**（不返回 null / MinValue、**不丢行**）—— 纯函数层（Rsi 装配器）绝不抛异常，边界层（IO）必须抛
 
+- `Models/TokenUsageDto.cs`：provider usage；`ReasoningTokens` 保留 Responses `output_tokens_details.reasoning_tokens`，属于完成量而非额外计费，缺失时为 null。
+
 ## 外部 API 安全合同（ADR-075 / ADR-082）
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |

@@ -271,9 +271,9 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var result = await service.ExecuteAsync(CreateDispatchRequest());
 
         Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState);
-        Assert.AreEqual(1, llm.Requests.Count(messages => messages.Any(m =>
-            m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true)));
-        Assert.IsTrue(log.Lines.Any(l => l.Contains("was truncated", StringComparison.Ordinal)));
+        Assert.IsTrue(llm.Requests.Count(messages => messages.Any(m =>
+            m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true)) > 1);
+        Assert.IsTrue(log.Lines.Any(l => l.Contains("output_truncated", StringComparison.Ordinal)));
         Assert.IsFalse(log.Lines.Any(l => l.Contains("using local extractive fallback", StringComparison.Ordinal)));
         await using var verify = new MemoryDbContext(options);
         Assert.AreEqual(0, await verify.Messages.CountAsync(m => m.SessionId == SessionId && m.ContentType == "compact_summary"));
@@ -934,8 +934,12 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         };
         var manager = CreateManager(factory);
         var log = new CapturingLogger();
+        var diagnosticRoot = Path.Combine(Path.GetTempPath(), "pudding-compaction-e2e", Guid.NewGuid().ToString("N"));
+        var diagnostics = new PuddingRuntime.Services.Diagnostics.CompactionDiagnosticJournal(
+            new PuddingCode.Configuration.PuddingDataPaths { DataRoot = diagnosticRoot }, NoOpKeyVaultService.Instance,
+            NullLogger<PuddingRuntime.Services.Diagnostics.CompactionDiagnosticJournal>.Instance);
         var service = CreateService(llm, new RecordingToolInvocationService(), manager,
-            new ContextUsageSnapshotStore(), factory, log, enableExtractiveFallback: true);
+            new ContextUsageSnapshotStore(), factory, log, enableExtractiveFallback: true, diagnostics: diagnostics);
         var history = manager.GetOrCreateHistory(SessionId);
         Assert.IsTrue((await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None)).Succeeded);
         history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
@@ -950,6 +954,14 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             await foreach (var frame in service.ExecuteStreamAsync(request)) frames.Add(frame);
         else
             await service.ExecuteAsync(request);
+        var captureFiles = Directory.GetFiles(Path.Combine(diagnosticRoot, "logs", "diagnostics", "compaction"));
+        Assert.AreEqual(1, captureFiles.Length);
+        var evidence = File.ReadAllLines(captureFiles[0]).Select(line => System.Text.Json.JsonDocument.Parse(line)).ToArray();
+        Assert.AreEqual("plan", evidence[0].RootElement.GetProperty("kind").GetString());
+        Assert.IsTrue(evidence.Any(e => e.RootElement.GetProperty("kind").GetString() == "attempt"));
+        Assert.AreEqual("outcome", evidence[^1].RootElement.GetProperty("kind").GetString());
+        Assert.AreEqual(!truncate, evidence[^1].RootElement.GetProperty("detail").GetProperty("applied").GetBoolean());
+        foreach (var item in evidence) item.Dispose();
         var summaryCalls = llm.Requests.Where(messages => messages.Any(m =>
             m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true)).ToArray();
         Assert.IsTrue(summaryCalls.Length >= (truncate ? 1 : 2), string.Join("\n", log.Lines));
@@ -974,6 +986,9 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
                 var wire = System.Text.Json.JsonSerializer.Serialize(frames);
                 StringAssert.Contains(wire, "local.context_compaction_required");
                 StringAssert.Contains(wire, "estimated_request_text_bytes");
+                StringAssert.Contains(wire, "summary_output_truncated_recovery_exhausted");
+                StringAssert.Contains(wire, "compaction_summary_finish_reason");
+                StringAssert.Contains(wire, "compaction_diagnostic_file");
             }
         }
     }
@@ -1181,7 +1196,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         {
             var summaryCall = llm.Requests[i].Any(m => m.Content?.Contains("compaction engine") == true);
             Assert.AreEqual(summaryCall ? "none" : "high", llm.Configs[i]?.ReasoningEffort);
-            if (summaryCall) Assert.IsTrue(llm.Configs[i]!.MaxOutputTokens <= 4096);
+            if (summaryCall) Assert.IsTrue(llm.Configs[i]!.MaxOutputTokens <= 8192);
         }
         var currentInput = main[0].Last(m => m.Role == ChatRole.User).Content;
         foreach (var messages in main)
@@ -1245,7 +1260,8 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         // R3：允许「持久服务不可用」（omit=true ⇒ null）以验证内存与 DB 都保持原值。
         bool omitCompactionService = false,
         // provider 摘要失败时的本地兜底（生产 DI 已注册；旧用例省略以保持原语义）。
-        bool enableExtractiveFallback = false)
+        bool enableExtractiveFallback = false,
+        PuddingRuntime.Services.Diagnostics.CompactionDiagnosticJournal? diagnostics = null)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -1294,6 +1310,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             toolInvocationService: tools,
             contextUsageSnapshotStore: snapshotStore,
             contextCompactionService: omitCompactionService ? null : compactionService,
+            compactionDiagnostics: diagnostics,
             extractiveSummaryGenerator: enableExtractiveFallback
                 ? new ExtractiveContextCompactionSummaryGenerator()
                 : null);

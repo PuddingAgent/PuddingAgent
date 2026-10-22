@@ -58,6 +58,70 @@ public sealed class LlmStreamObservabilityTests
     }
 
     [TestMethod]
+    public async Task CompactionRecovery_ThroughFacadeAndResponsesWire_PreservesBudgetsFinishReasonAndUsage()
+    {
+        var handler = new TruncatedSummaryThenCompleteHandler();
+        var activities = new RecordingActivitySink();
+        var client = new DirectLlmClient(new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(protocol: "responses"), NullLogger<DirectLlmClient>.Instance,
+            activitySink: activities);
+        var invoker = new AgentExecutionLlmInvoker(client,
+            new LlmInvocationService(client, NullLogger<LlmInvocationService>.Instance),
+            NoOpKeyVaultService.Instance, NullLogger.Instance);
+        var mainConfig = new LlmConfig { Endpoint = "https://provider.test/v1", ApiKey = "test-key",
+            ModelId = "test-model", MaxOutputTokens = 8192, ReasoningEffort = "high" };
+        var summaryConfig = mainConfig with { MaxOutputTokens = 8010, ReasoningEffort = "none" };
+        var request = new RuntimeDispatchRequest
+        {
+            WorkspaceId = "default", SessionId = "session", AgentTemplateId = "template", MessageText = "continue",
+            LlmProfile = new LlmInvocationProfile { ProviderId = "provider-a", ProfileId = "profile", ModelId = "test-model" },
+        };
+        var result = await BoundedCompactionSummary.GenerateAsync(
+            [new ChatMessage(ChatRole.User, "complete original source")],
+            (messages, index) => invoker.InvokeAsync(request, "agent", messages, [], summaryConfig, null, true, 0,
+                CancellationToken.None, purpose: LlmCallPurposes.Compaction),
+            CancellationToken.None, allowance: new(4005, 108734, 90533));
+        Assert.IsTrue(result.Success, result.ExecutionError);
+        Assert.AreEqual(2, handler.Requests.Count);
+        Assert.AreEqual("length", result.Attempts[0].FinishReason);
+        Assert.AreEqual(0, result.Attempts[0].ReasoningTokens);
+        Assert.AreEqual(8010, result.Attempts[0].CompletionTokens);
+        Assert.AreEqual("complete checkpoint", result.Response!.Content);
+        foreach (var body in handler.Requests)
+        {
+            using var json = JsonDocument.Parse(body);
+            Assert.AreEqual("none", json.RootElement.GetProperty("reasoning").GetProperty("effort").GetString());
+            Assert.AreEqual(8010, json.RootElement.GetProperty("max_output_tokens").GetInt32());
+            StringAssert.Contains(body, "complete original source");
+            Assert.IsFalse(body.Contains("DISCARDED PARTIAL"));
+        }
+        Assert.AreEqual("high", mainConfig.ReasoningEffort);
+        Assert.IsTrue(activities.Activities.Any(a => a.Metadata.GetValueOrDefault("finish_reason") == "length"));
+    }
+
+    private sealed class TruncatedSummaryThenCompleteHandler : HttpMessageHandler
+    {
+        public List<string> Requests { get; } = [];
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Requests.Add(await request.Content!.ReadAsStringAsync(ct));
+            var truncated = Requests.Count == 1;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new
+                {
+                    status = truncated ? "incomplete" : "completed",
+                    incomplete_details = new { reason = "max_output_tokens" },
+                    output = new[] { new { type = "message", content = new[] { new
+                    { type = "output_text", text = truncated ? "DISCARDED PARTIAL" : "complete checkpoint" } } } },
+                    usage = new { input_tokens = 30292, output_tokens = truncated ? 8010 : 4,
+                        output_tokens_details = new { reasoning_tokens = 0 } },
+                }), Encoding.UTF8, "application/json"),
+            };
+        }
+    }
+
+    [TestMethod]
     public async Task ResponsesStream_AfterAgentYield_PreservesUserAndToolImagesAcrossRounds()
     {
         var context = new FrozenVisionContextAccessor();

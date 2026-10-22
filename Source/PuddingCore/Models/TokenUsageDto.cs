@@ -9,6 +9,8 @@ public sealed record TokenUsageDto
 {
     public int? PromptTokens { get; init; }
     public int? CompletionTokens { get; init; }
+    /// <summary>Provider-reported reasoning tokens within completion tokens; null means unavailable.</summary>
+    public int? ReasoningTokens { get; init; }
     public int? TotalTokens { get; init; }
     public int? ContextWindowTokens { get; init; }
 

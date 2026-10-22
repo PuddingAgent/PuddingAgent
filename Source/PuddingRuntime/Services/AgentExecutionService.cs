@@ -111,6 +111,7 @@ public sealed partial class AgentExecutionService
     /// 在每个 turn 稳定失败并让内存历史只增不减。为 null 时保持既有 fail-closed 语义。
     /// </summary>
     private readonly ExtractiveContextCompactionSummaryGenerator? _extractiveSummaryGenerator;
+    private readonly CompactionDiagnosticJournal? _compactionDiagnostics;
 
     /// <summary>
     /// T5：终态之后的**可选**上下文维护调度（复用既有 gate + logger，无需新增 DI）。
@@ -186,8 +187,10 @@ public sealed partial class AgentExecutionService
         // 新消息受理时的 ReserveSessionForeground 会立刻取消它。
         PuddingRuntime.Services.Messaging.AgentExecutionAdmissionCoordinator? admissionCoordinator = null,
         // provider 摘要失败的本地兜底（生产 DI 已注册；测试替身可省略以保持旧语义）。
-        ExtractiveContextCompactionSummaryGenerator? extractiveSummaryGenerator = null)
+        ExtractiveContextCompactionSummaryGenerator? extractiveSummaryGenerator = null,
+        CompactionDiagnosticJournal? compactionDiagnostics = null)
     {
+        _compactionDiagnostics = compactionDiagnostics;
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
         _memory              = memory;
@@ -2309,15 +2312,34 @@ public sealed partial class AgentExecutionService
         }
 
         const string summaryProviderSource = "provider_segmented";
-        var summaryOutputTokens = Math.Min(plan.SummaryAllowance!.Tokens, effectiveLlmConfig?.MaxOutputTokens is > 0
-            ? effectiveLlmConfig.MaxOutputTokens.Value : 4096);
+        var summaryOutputTokens = Math.Min(checked(plan.SummaryAllowance!.Tokens * 2), effectiveLlmConfig?.MaxOutputTokens is > 0
+            ? effectiveLlmConfig.MaxOutputTokens.Value : 8192);
         var summaryConfig = (effectiveLlmConfig ?? new LlmConfig()) with
         {
             MaxOutputTokens = summaryOutputTokens,
             // DeepSeek counts reasoning in max_output_tokens. Its auxiliary summarizer uses
-            // the planned content allowance directly, so disable reasoning for this call only.
+            // content budget separately from generation headroom; disable reasoning for this call only.
             ReasoningEffort = plan.MaxRequestTextBytes > 0 ? "none" : effectiveLlmConfig?.ReasoningEffort,
         };
+
+        var selectedSource = WarmPrefixCompaction.SelectRemovedMessages(exactOutboundHistory, plan);
+        var diagnosticFile = _compactionDiagnostics is null ? null : await _compactionDiagnostics.BeginAsync(
+            warmPrefixCompactionId, new
+            {
+                request.SessionId, request.WorkspaceId, request.ExecutionIdentity?.TraceId,
+                request.ExecutionIdentity?.RunId, request.MessageId, round = round + 1, sourceGeneration,
+                provider = request.LlmProfile?.ProviderId, model = summaryConfig.ModelId,
+                reasoningEffort = summaryConfig.ReasoningEffort, generationMaxOutputTokens = summaryOutputTokens,
+                plan.InitialTextBytes, plan.MaxRequestTextBytes, plan.InitialUsedTokens, plan.EffectiveInputLimit,
+                plan.ReplacementStart, plan.RemovedMessageCount, plan.SummaryAllowance, retainedTextBytes,
+                sourceRevision = WarmPrefixCompaction.ComputeRevisionHash(exactOutboundHistory),
+            }, selectedSource, ct);
+        var diagnosticCaptureComplete = diagnosticFile is not null;
+        async Task CaptureAsync(string kind, object detail)
+        {
+            if (_compactionDiagnostics is not null)
+                diagnosticCaptureComplete &= await _compactionDiagnostics.AppendAsync(diagnosticFile, kind, detail, CancellationToken.None);
+        }
 
         async Task<AgentExecutionLlmInvocationResult> InvokeSummaryPartAsync(
             IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmToolDefinition> tools, int part)
@@ -2331,6 +2353,14 @@ public sealed partial class AgentExecutionService
             var invocationId = BuildLlmInvocationId(request, round, "compaction") + (part == 0 ? "" : $":part-{part}");
             var attemptId = invocationId + ":a0";
             _contextUsageSnapshotStore.FreezePreparedRequest(snapshot, LlmCallPurposes.Compaction, invocationId, attemptId);
+            await CaptureAsync("request", new
+            {
+                compactionId = warmPrefixCompactionId, invocationId, attemptId, call = part,
+                summaryOutputTokens, summaryConfig.ReasoningEffort,
+                inputHash = WarmPrefixCompaction.ComputeRevisionHash(messages),
+                input = messages.Select(m => new { role = m.Role.ToString(), m.Content,
+                    images = ChatMessageMultimodalNormalizer.GetImageParts(m).Select(image => image.ArtifactId) }),
+            });
             var result = await LlmInvoker.InvokeAsync(request, agentInstanceId, messages, tools, summaryConfig,
                 prefix, providerInputRecoveryAlreadyAttempted: true, round, ct,
                 purpose: LlmCallPurposes.Compaction, invocationId: invocationId, attemptId: attemptId);
@@ -2362,11 +2392,39 @@ public sealed partial class AgentExecutionService
         _logger.LogInformation(
                 "[AgentExec:Compaction] Large summary replay uses bounded segments session={Session} removedMessages={Removed} partTextBytes={PartBytes}",
                 request.SessionId, plan.RemovedMessageCount, BoundedCompactionSummary.PartTextBytes);
-        var summaryResult = await BoundedCompactionSummary.GenerateAsync(
-                WarmPrefixCompaction.SelectRemovedMessages(exactOutboundHistory, plan),
+        CompactionSummaryResult summaryResult;
+        try
+        {
+            summaryResult = await BoundedCompactionSummary.GenerateAsync(selectedSource,
                 (messages, part) => InvokeSummaryPartAsync(messages, [], part), ct,
                 partTextBytes: Math.Min(BoundedCompactionSummary.PartTextBytes, Math.Max(8192, plan.EffectiveInputLimit - 4096)),
-                allowance: plan.SummaryAllowance);
+                allowance: plan.SummaryAllowance,
+                observe: async (attempt, input, response) =>
+                {
+                    _logger.LogInformation(
+                        "[AgentExec:CompactionAttempt] compactionId={CompactionId} traceId={TraceId} call={Call} stage={Stage} part={Part}/{Parts} depth={Depth} regeneration={Regeneration} inputBytes={InputBytes} maxOutputTokens={MaxOutputTokens} reasoningEffort={ReasoningEffort} finishReason={FinishReason} completionTokens={CompletionTokens} reasoningTokens={ReasoningTokens} summaryTokens={SummaryTokens} summaryBytes={SummaryBytes} decision={Decision} durationMs={DurationMs}",
+                        warmPrefixCompactionId, request.ExecutionIdentity?.TraceId, attempt.Call, attempt.Stage,
+                        attempt.Part, attempt.PartCount, attempt.Depth, attempt.Regeneration, attempt.InputTextBytes,
+                        summaryOutputTokens, summaryConfig.ReasoningEffort, attempt.FinishReason,
+                        attempt.CompletionTokens, attempt.ReasoningTokens, attempt.SummaryTokens, attempt.SummaryBytes,
+                        attempt.Decision, attempt.DurationMs);
+                    await CaptureAsync("attempt", new
+                    {
+                        compactionId = warmPrefixCompactionId, attempt,
+                        invocationId = BuildLlmInvocationId(request, round, "compaction") + $":part-{attempt.Call}",
+                        summaryOutputTokens, summaryConfig.ReasoningEffort,
+                        responseContent = response?.Content,
+                    });
+                });
+        }
+        catch (Exception ex)
+        {
+            await CaptureAsync("interrupted", new { errorType = ex.GetType().Name, cancelled = ct.IsCancellationRequested, historyPreserved = true });
+            throw;
+        }
+        var summaryRejectionReason = summaryResult.FailureCode is null
+            ? WarmPrefixCompactionReasons.SummaryRejected : "summary_" + summaryResult.FailureCode;
+        var lastSummaryAttempt = summaryResult.Attempts.LastOrDefault();
 
         var summaryTruncated = AgentOutputTruncationPolicy.IsTruncated(summaryResult.Response?.FinishReason);
         var summaryFailureError = summaryTruncated
@@ -2407,9 +2465,9 @@ public sealed partial class AgentExecutionService
             {
                 summaryFallbackUsed = true;
                 summarySucceeded = true;
-                summaryResult = AgentExecutionLlmInvocationResult.CreateSuccess(
+                summaryResult = new CompactionSummaryResult(AgentExecutionLlmInvocationResult.CreateSuccess(
                     new LlmResponse(fallbackSummary, ToolCalls: null),
-                    usage: null);
+                    usage: null), summaryResult.Attempts, summaryResult.FailureCode);
                 _logger.LogWarning(
                     "[AgentExec:Compaction] Warm-prefix provider summary failed; using local extractive fallback session={Session} round={Round} compactionId={CompactionId} fallbackTrigger={FallbackTrigger} error={Error}",
                     request.SessionId,
@@ -2422,6 +2480,8 @@ public sealed partial class AgentExecutionService
 
         if (!summarySucceeded)
         {
+            await CaptureAsync("outcome", new { reason = summaryRejectionReason, attempts = summaryResult.Attempts.Count,
+                historyPreserved = true, applied = false, error = summaryFailureError });
             var failureDurationMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds);
             _logger.LogWarning(
                 "[AgentExec:Compaction] Warm-prefix summary rejected; history preserved session={Session} round={Round} compactionId={CompactionId} success={Success} toolCalls={ToolCalls} fallbackAvailable={FallbackAvailable} durationMs={DurationMs} error={Error}",
@@ -2443,7 +2503,7 @@ public sealed partial class AgentExecutionService
                     sessionId = request.SessionId,
                     mode = "WarmPrefix",
                     stage = "failed",
-                    reason = WarmPrefixCompactionReasons.SummaryRejected,
+                    reason = summaryRejectionReason,
                     applied = false,
                     outcome = WarmPrefixCompactionDisposition.Failed.ToString(),
                     beforeTokens = plan.InitialUsedTokens,
@@ -2455,6 +2515,8 @@ public sealed partial class AgentExecutionService
                     durableCheckpoint = false,
                     historyPreserved = true,
                     error = summaryFailureError,
+                    summaryAttempts = summaryResult.Attempts, generationMaxOutputTokens = summaryOutputTokens,
+                    diagnosticFile, diagnosticCaptureComplete,
                 },
                 request.ExecutionIdentity?.TraceId,
                 CancellationToken.None);
@@ -2466,9 +2528,17 @@ public sealed partial class AgentExecutionService
                 summaryStartedAt,
                 WarmPrefixCompactionDisposition.Failed,
                 failureDurationMs,
-                WarmPrefixCompactionReasons.SummaryRejected,
+                summaryRejectionReason,
                 DiagnosticEvidence: new Dictionary<string, string>
                 {
+                    ["compaction_diagnostic_file"] = diagnosticFile is null ? "unavailable" : "compaction/" + diagnosticFile,
+                    ["compaction_capture_complete"] = diagnosticCaptureComplete.ToString().ToLowerInvariant(),
+                    ["compaction_summary_calls"] = summaryResult.Attempts.Count.ToString(),
+                    ["compaction_summary_last_decision"] = lastSummaryAttempt?.Decision ?? "unavailable",
+                    ["compaction_summary_finish_reason"] = lastSummaryAttempt?.FinishReason ?? "unavailable",
+                    ["compaction_summary_completion_tokens"] = lastSummaryAttempt?.CompletionTokens?.ToString() ?? "unavailable",
+                    ["compaction_summary_reasoning_tokens"] = lastSummaryAttempt?.ReasoningTokens?.ToString() ?? "unavailable",
+                    ["compaction_generation_max_output_tokens"] = summaryOutputTokens.ToString(),
                     ["compaction_id"] = warmPrefixCompactionId,
                     ["compaction_selected_messages"] = plan.RemovedMessageCount.ToString(),
                     ["compaction_replacement_start"] = plan.ReplacementStart.ToString(),
@@ -2630,6 +2700,10 @@ public sealed partial class AgentExecutionService
         appliedRejectionReason ??= verification.Reason;
         if (!durableApplied)
         {
+            await CaptureAsync("outcome", new { applied = false, reason = appliedRejectionReason, durableSkipReason,
+                measuredAfterTextBytes = verification.AfterTextBytes, afterTokens = verification.AfterSnapshot?.UsedTokens,
+                unresolvedSourceCount, sourceProblems, historyPreserved = true });
+
             _logger.LogWarning(
                 "[AgentExec:Compaction] Warm-prefix apply rejected; history preserved session={Session} round={Round} compactionId={CompactionId} reason={Reason} beforeTokens={BeforeTokens} measuredAfterTokens={MeasuredAfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} limit={Limit} durationMs={DurationMs} summarySource={SummarySource}",
                 request.SessionId,
@@ -2695,6 +2769,8 @@ public sealed partial class AgentExecutionService
                 {
                     ["compaction_id"] = warmPrefixCompactionId,
                     ["compaction_selected_messages"] = plan.RemovedMessageCount.ToString(),
+                    ["compaction_diagnostic_file"] = diagnosticFile is null ? "unavailable" : "compaction/" + diagnosticFile,
+                    ["compaction_capture_complete"] = diagnosticCaptureComplete.ToString().ToLowerInvariant(),
                     ["compaction_unresolved_sources"] = unresolvedSourceCount.ToString(),
                     ["compaction_source_problems"] = string.Join(",", (sourceProblems ?? []).Take(8)),
                     ["compaction_measured_after_bytes"] = verification.AfterTextBytes?.ToString() ?? "unavailable",
@@ -2706,6 +2782,9 @@ public sealed partial class AgentExecutionService
                 });
         }
 
+        await CaptureAsync("outcome", new { applied = true, durableCheckpoint, durableSummaryMessageId,
+            measuredAfterTextBytes = verification.AfterTextBytes, afterTokens = verification.AfterSnapshot?.UsedTokens,
+            summaryContent = safeSummary, attempts = summaryResult.Attempts.Count });
         // 校验通过：内存历史已在临界区内替换完毕，这里只做日志与生命周期事件。
         var afterUsedTokens = verification.AfterSnapshot!.UsedTokens;
         var appliedDurationMs = verifyDurationMs;
@@ -2764,6 +2843,7 @@ public sealed partial class AgentExecutionService
                 // `degraded=true` 供 UI/诊断在不改变卡片语义前先能读到事实。
                 summarySource = summaryFallbackUsed ? "extractive_fallback" : summaryProviderSource,
                 degraded = summaryFallbackUsed,
+                summaryAttempts = summaryResult.Attempts, diagnosticFile, diagnosticCaptureComplete,
             },
             request.ExecutionIdentity?.TraceId,
             CancellationToken.None);

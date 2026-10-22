@@ -203,11 +203,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 lock (circuit) { circuit.RecordSuccess(); }
 
                 _logger.LogInformation(
-                    "[DirectLlm] OK contentLen={Len} elapsed={Elapsed}ms promptTokens={PromptTokens} completionTokens={CompletionTokens}",
+                    "[DirectLlm] OK contentLen={Len} elapsed={Elapsed}ms promptTokens={PromptTokens} completionTokens={CompletionTokens} reasoningTokens={ReasoningTokens} finishReason={FinishReason} maxOutputTokens={MaxOutputTokens} reasoningEffort={ReasoningEffort}",
                     result.Content?.Length ?? 0,
                     sw.ElapsedMilliseconds,
                     result.Usage?.PromptTokens,
-                    result.Usage?.CompletionTokens);
+                    result.Usage?.CompletionTokens, result.Usage?.ReasoningTokens, result.FinishReason,
+                    config.MaxOutputTokens, config.ReasoningEffort);
 
                 await RecordActivityAsync(
                     trace,
@@ -217,7 +218,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     endedAt: DateTimeOffset.UtcNow,
                     durationMs: sw.ElapsedMilliseconds,
                     summary: "Direct LLM chat request completed.",
-                    metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count, result.Usage),
+                    metadata: MergeMetadata(BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count, result.Usage),
+                        new Dictionary<string, string> { ["finish_reason"] = result.FinishReason ?? "unavailable" }),
                     error: null,
                     CancellationToken.None,
                     activityId: usageActivityId);
@@ -1322,6 +1324,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             AddIfPresent(metadata, "prompt_tokens", usage.PromptTokens);
             AddIfPresent(metadata, "completion_tokens", usage.CompletionTokens);
             AddIfPresent(metadata, "total_tokens", usage.TotalTokens);
+            AddIfPresent(metadata, "reasoning_tokens", usage.ReasoningTokens);
             AddIfPresent(metadata, "prompt_cache_hit_tokens", usage.PromptCacheHitTokens);
             AddIfPresent(metadata, "prompt_cache_miss_tokens", usage.PromptCacheMissTokens);
         }

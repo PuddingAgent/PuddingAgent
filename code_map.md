@@ -130,6 +130,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 `BrowserPageLifecycle` 持有会话权威与页面登记；Bridge dispatcher 管准入、复检、释放和账本，ExecutorRoute 映射到工作区执行器，ResultAdapter 负责命令级响应。产品的上下文/页签管理经 `IBrowserWorkspaceLifecycle` 进入 `BrowserWorkspaceController`，创建成功须完成页签投影、生命周期登记与所需激活；每页保留所属 ContextId。Host 代理严格消费 Protocol DTO，单项/列表/无值不可混用；发现元数据与页面控制分离。channel 旧权威路径及 handler 回退尚保留；目标边界见 [ADR-097](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) 与[契约修复方案](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)。Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文档由驱动签发正数版本；`BrowserWorkspaceTargetBridge.ObserveAgentTarget` 观察 UI 目标快照，空/重复快照不等于用户撤权。显式选页/撤权与页面关闭分别走命令及生命周期端口。
 
+压缩现场链路：`AgentExecutionService` → `BoundedCompactionSummary`（逐段决策）→ `CompactionDiagnosticJournal`（本地有界脱敏记录）；`compactionId` 连接计划、分段请求/返回、最终提交与错误报告，参见 [Runtime 地图](Source/PuddingRuntime/code_map.md)。
+
 ## 4. 关键调用链路
 
 | 层 / 项目 | 符号 | 一句话作用 |

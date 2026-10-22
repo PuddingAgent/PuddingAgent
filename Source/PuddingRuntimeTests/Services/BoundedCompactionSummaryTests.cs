@@ -65,7 +65,13 @@ public sealed class BoundedCompactionSummaryTests
             }, CancellationToken.None);
         Assert.IsFalse(result.Success);
         Assert.IsNull(result.Response);
-        Assert.AreEqual(2, calls);
+        if (failure == "truncated")
+        {
+            Assert.IsTrue(calls > 2 && calls <= BoundedCompactionSummary.MaxCalls);
+            Assert.AreEqual("length", result.Attempts.Last().FinishReason);
+            StringAssert.Contains(result.FailureCode!, "exhausted");
+        }
+        else Assert.AreEqual(2, calls);
     }
 
     [TestMethod]
@@ -94,6 +100,56 @@ public sealed class BoundedCompactionSummaryTests
         Assert.AreEqual(!alwaysOversized, result.Success);
         if (alwaysOversized) Assert.IsNull(result.Response);
         else Assert.AreEqual("concise complete checkpoint", result.Response!.Content);
+    }
+
+    [TestMethod]
+    public async Task TruncatedThenComplete_RegeneratesOriginalSource_AndKeepsAttemptEvidence()
+    {
+        var calls = 0;
+        var result = await BoundedCompactionSummary.GenerateAsync(
+            [new ChatMessage(ChatRole.User, "COMPLETE ORIGINAL SOURCE")], (messages, _) =>
+            {
+                calls++;
+                var input = string.Join("\n", messages.Select(m => m.Content));
+                StringAssert.Contains(input, "COMPLETE ORIGINAL SOURCE");
+                Assert.IsFalse(input.Contains("DISCARDED PARTIAL"));
+                return Task.FromResult(calls == 1 ? AgentExecutionLlmInvocationResult.CreateSuccess(
+                    new LlmResponse("DISCARDED PARTIAL", null, Usage: new TokenUsageDto
+                    { PromptTokens = 30292, CompletionTokens = 4005, ReasoningTokens = 0 }) { FinishReason = "length" }, null)
+                    : Success("complete checkpoint"));
+            }, CancellationToken.None, allowance: new(4005, 108734, 90533));
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(2, calls);
+        Assert.AreEqual("output_truncated", result.Attempts[0].Decision);
+        Assert.AreEqual(4005, result.Attempts[0].CompletionTokens);
+        Assert.AreEqual(0, result.Attempts[0].ReasoningTokens);
+        Assert.AreEqual("accepted", result.Attempts[1].Decision);
+    }
+
+    [TestMethod]
+    public async Task DenseSource_SplitsAfterTwoRejections_AndMergesEveryCompleteChild()
+    {
+        var calls = 0;
+        var result = await BoundedCompactionSummary.GenerateAsync(
+            [new ChatMessage(ChatRole.User, new string('a', 9000)), new ChatMessage(ChatRole.Tool, new string('b', 9000))], (messages, _) =>
+            {
+                calls++;
+                var input = string.Join("\n", messages.Select(m => m.Content));
+                Assert.IsFalse(input.Contains("DISCARDED"));
+                if (calls <= 2) return Task.FromResult(AgentExecutionLlmInvocationResult.CreateSuccess(
+                    new LlmResponse("DISCARDED", null) { FinishReason = "length" }, null));
+                if (input.Contains("child-a") || input.Contains("child-b"))
+                {
+                    StringAssert.Contains(input, "child-a");
+                    StringAssert.Contains(input, "child-b");
+                    return Task.FromResult(Success("merged checkpoint"));
+                }
+                return Task.FromResult(Success(input.Contains("aaaa") ? "child-a" : "child-b"));
+            }, CancellationToken.None, allowance: new(100, 2000, 0));
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual("merged checkpoint", result.Response!.Content);
+        Assert.AreEqual(5, calls);
+        CollectionAssert.AreEqual(new[] { "map", "map", "split", "split", "merge" }, result.Attempts.Select(a => a.Stage).ToArray());
     }
 
     private static AgentExecutionLlmInvocationResult Success(string text)

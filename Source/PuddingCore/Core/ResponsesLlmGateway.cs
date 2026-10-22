@@ -851,6 +851,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         {
             PromptTokens = inputTokens,
             CompletionTokens = ReadInt(usage, "output_tokens"),
+            ReasoningTokens = ReadInt(usage["output_tokens_details"] as JsonObject, "reasoning_tokens"),
             TotalTokens = ReadInt(usage, "total_tokens"),
             PromptCacheHitTokens = cachedTokens,
             PromptCacheMissTokens = inputTokens.HasValue && cachedTokens.HasValue

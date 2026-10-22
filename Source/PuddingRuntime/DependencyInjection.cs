@@ -228,6 +228,7 @@ public static class RuntimeServiceExtensions
         // 用工厂注册 Default（presenter 解析器由 ToolPresentationCatalog 静态提供），
         // 否则容器会尝试注入未注册的 Func<string, Func<ToolPresentationInput, ToolPresentationIntent?>?> 导致 Build 校验失败。
         services.TryAddSingleton<IToolPresentationProjector>(_ => ToolPresentationProjector.Default);
+        services.TryAddSingleton<PuddingRuntime.Services.Diagnostics.CompactionDiagnosticJournal>();
         services.AddSingleton<AgentExecutionService>();
         services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();
         services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();
