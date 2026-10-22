@@ -133,6 +133,26 @@ def prose_only(line: str) -> str:
     """剔除链接目标与行内代码跨度，剩下的才算 §6 要判的 prose。"""
     return AP_INLINE_CODE_RE.sub("``", AP_LINK_TARGET_RE.sub("]()", line))
 
+_ASCII_WORD_RE_CACHE = {}
+
+
+def word_occurs(word: str, prose: str) -> bool:
+    """§6 词命中判定。
+
+    ASCII 词（如 `TODO`）按**标识符边界**匹配：`GetTodoAsync` / `TodoItemView` 这类裸标识符
+    是符号名、不是自然语言断言，与 `prose_only` 剔除行内代码跨度同一个理由；否则标识符里的
+    字母组合会把「演进叙事」误报出来（实测：`GetTodoAsync` 命中 `TODO`）。
+    ASCII 词还**区分大小写**：§6 列的字面 token 是 `TODO`，而本仓读模型字段名写作 `steps/todo`。
+    中文词保持子串口径（规范 §6 的字面语义，未放宽）。
+    """
+    if word.isascii() and word.replace("_", "").isalnum():
+        rx = _ASCII_WORD_RE_CACHE.get(word)
+        if rx is None:
+            rx = re.compile(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(word))
+            _ASCII_WORD_RE_CACHE[word] = rx
+        return bool(rx.search(prose))
+    return word.lower() in prose.lower()
+
 SPEC_REL = "Docs/10_conventions/code-map-规范-v2.md"
 CODE_MAP_NAME = "code_map.md"
 SCHEMA_ID = "pudding.code_map_check/1"
@@ -691,16 +711,15 @@ def analyze_file(root: str, path: str, col_samples, global_unmapped):
                                    "header=%s count=%d limit=%d"
                                    % (key, cnt, LIMITS["MAX_TABLE_HEADER_REPEAT"])))
 
-    # §6 词表（逐行，只扫 prose：链接目标与行内代码跨度已剔除）
+    # §6 词表（逐行，只扫 prose：链接目标与行内代码跨度已剔除；ASCII 词另按标识符边界匹配）
     for idx, line in enumerate(lines, start=1):
         scan = prose_only(line)
-        low = scan.lower()
         for category in ANTI_PATTERN_WORDS:
             for w in ANTI_PATTERN_WORDS[category]:
-                if w.lower() in low:
+                if word_occurs(w, scan):
                     violations.append(_ap_vio(rel, idx, category, "word=%s" % w))
         for w in SKIP_BYPASS_WORDS:
-            if w in scan:
+            if word_occurs(w, scan):
                 violations.append(_ap_vio(rel, idx, "逐文件免检旁路", "word=%s" % w))
 
     # §5 头部元数据
@@ -1003,6 +1022,12 @@ def boundary_notes(report):
         "根索引 `code_map.md` 也从 300 行 / 25,566 字符被重写为 156 行 / 17,499 字符并新增了 §5 源指纹行。"
         "因此本报告是**某一时刻的快照**：`per_file[].sha256` 与 `mtime_utc` 逐文件钉住了该时刻；"
         "若它们已变，对应数字即已失效，需重跑本工具。")
+    notes.append(
+        "`anti-pattern` 的词表匹配是**本工具的解释性细化**（规范 §6 只给词表，未给匹配口径）："
+        "先剔除行内代码跨度与 Markdown 链接目标，ASCII 词再按标识符边界、区分大小写匹配。"
+        "理由：`GetTodoAsync`/`TodoItemView` 是符号名、`steps/todo` 是读模型字段名，都不是自然语言断言"
+        "（实测曾把这类标识符算成「演进叙事」）。中文词仍是子串匹配，故「执行计划」「本次运行」"
+        "这类领域用法照旧命中 —— **是否改按意图判定属未裁定事项**，本工具不单方面放宽。")
     notes.append(
         "`info` 级命中（§6 空值写法）在本次全仓扫描中为 %d 条；该口径是本工具自选的窄口径，"
         "**不代表**仓库里没有其他占位写法。" % report["summary"]["info"])

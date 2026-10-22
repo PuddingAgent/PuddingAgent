@@ -495,6 +495,35 @@ def stage_anti_pattern_prose_scope(mod, dirs):
           len(prose) >= 2, "hits=%s" % [(v["line"], v["detail"]) for v in prose])
 
 
+def stage_anti_pattern_identifier_boundary(mod):
+    """§6 ASCII 词按标识符边界匹配：裸标识符里的字母组合不算自然语言断言。
+
+    `GetTodoAsync` / `TodoItemView` 是符号名 —— 与 `prose_only` 剔除行内代码跨度同一个理由。
+    对照组：真正的裸 `TODO` 断言必须仍然命中（反过度抑制）。
+    """
+    d = tempfile.mkdtemp(prefix="code_map_ap_ident_")
+    write_lines(os.path.join(d, "code_map.md"), [
+        "# Fixture AP Identifier Boundary",
+        "",
+        "| 文件 | 用途 | 关键符号 | 关联 | 约束 |",
+        "|------|------|----------|------|------|",
+        "| `Goals/IGoalQueryService.cs` | 查询含 GetTodoAsync 拆解投影 | `IGoalQueryService` | `Goals/GoalCommandService.cs` | — |",
+        "| `b.cs` | TODO 补齐 | `S1` | `c.cs` | — |",
+        "| `c.cs` | 读模型字段（active/iterations/steps/todo） | `S2` | `d.cs` | — |",
+        "",
+    ])
+    rep = mod.run_check(d)
+    viols = [v for v in rep["violations"] if v["rule"] == "anti-pattern"]
+    ident = [v for v in viols if v["line"] == 5]
+    bare = [v for v in viols if v["line"] == 6]
+    field = [v for v in viols if v["line"] == 7]
+    check("anti-pattern: TODO inside a bare identifier is not a hit", not ident,
+          "hits=%s" % [(v["line"], v["detail"]) for v in ident])
+    check("anti-pattern: bare TODO prose still hits (control)", len(bare) >= 1,
+          "hits=%s" % [(v["line"], v["detail"]) for v in bare])
+    check("anti-pattern: lowercase todo field name is not a hit (case-sensitive)",
+          not field, "hits=%s" % [(v["line"], v["detail"]) for v in field])
+
 def main():
     if not os.path.isfile(CHECKER):
         print("[FAIL] checker not found: %s" % CHECKER)
@@ -518,6 +547,7 @@ def main():
         stage_rule_coverage(mod, rep_a, rep_c)
         stage_fingerprint_algorithm(mod, dirs)
         stage_anti_pattern_prose_scope(mod, dirs)
+        stage_anti_pattern_identifier_boundary(mod)
 
         repo_files = mod.find_code_maps(REPO_ROOT)
         mirror_root = dirs["mirror"]
