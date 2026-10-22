@@ -25,6 +25,7 @@ import hashlib
 import importlib.util
 import io
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -562,6 +563,50 @@ def stage_list_items_parallel_phrases(mod):
           mod.LIMITS.get("LIST_MIN_ITEMS") == 3, "LIMITS=%s" % mod.LIMITS.get("LIST_MIN_ITEMS"))
 
 
+DETAIL_ROW_RE = re.compile(r"^\| `([a-z][a-z-]+)` \| (?:error|warn|info) \| \d+ \|")
+
+
+def detail_rows(md):
+    """只数 §5「每文件违规清单」里的明细行 —— §2 的规则命中表首列同样是规则 ID，必须排除。"""
+    start = md.find("## 5.")
+    end = md.find("## 6.", start) if start >= 0 else -1
+    if start < 0:
+        return []
+    body = md[start:end if end > start else len(md)]
+    return [ln for ln in body.split("\n") if DETAIL_ROW_RE.match(ln)]
+
+
+def stage_markdown_report(mod, rep):
+    """`--report-md` 必须生成"本次运行"的报告，而不是复述工具诞生那次运行的手写叙事。
+
+    真因：旧实现的 §0 是手写叙事（`## 0. 本次做了什么` / `交付 3 件新增物` /
+    `未修改任何 code_map.md`），却在此后每一次运行都原样复述 —— 它描述的是**造工具那次**运行，
+    不是当次运行，属陈旧投影生成器；§7 复现命令还写死了 `temp/code_map_selfcheck.*`，
+    与实际调用（不同 `--paths` / `--report` 路径）不符。
+    """
+    cmdline = "python Tools/Docs/code_map_check.py --check --report x.json --report-md x.md"
+    md = mod.build_markdown(rep, cmdline)
+    check("report-md: §0 is generated from the current run, not from memory",
+          "## 0. 本次运行" in md
+          and ("| 违规条目 | %d 条" % len(rep["violations"])) in md,
+          "violations=%d" % len(rep["violations"]))
+    stale = [s for s in ("本次做了什么", "交付 3 件新增物", "未修改任何") if s in md]
+    check("report-md: no stale hand-written narrative from the authoring run",
+          not stale, "found=%s" % stale)
+    check("report-md: every violation is listed individually (spec §7 no folding)",
+          len(detail_rows(md)) == len(rep["violations"]),
+          "rows=%d violations=%d" % (len(detail_rows(md)), len(rep["violations"])))
+    check("report-md: 复现命令 echoes the actual invocation",
+          ("\n%s\n" % cmdline) in md and "temp/code_map_selfcheck.md" not in md,
+          "cmdline=%s" % cmdline)
+    empty = dict(rep)
+    empty["violations"] = []
+    md0 = mod.build_markdown(empty, cmdline)
+    check("report-md: zero violations renders （无） and no detail rows",
+          "（无）" in md0 and not detail_rows(md0),
+          "rows=%d" % len(detail_rows(md0)))
+
+
 def main():
     if not os.path.isfile(CHECKER):
         print("[FAIL] checker not found: %s" % CHECKER)
@@ -636,6 +681,7 @@ def main():
                 "is the authoritative evidence")
         stage_stdout_ascii(mod, live1)
         stage_api_contract(mod, live1)
+        stage_markdown_report(mod, live1)
         stage_static_readonly_guard()
     finally:
         shutil.rmtree(base, ignore_errors=True)
