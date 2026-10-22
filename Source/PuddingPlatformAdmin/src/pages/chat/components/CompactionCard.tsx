@@ -23,7 +23,13 @@ const CompactionCard: React.FC<{ activity: CurrentRunActivity }> = ({ activity }
   }, [running]);
   const labels = { running: '正在整理上下文', checking: '压缩请求已提交',
     completed: '上下文已整理', skipped: '本次未执行压缩', failed: '上下文整理失败', unknown: '压缩状态待确认' };
-  const hint = running ? '正在保留关键信息并整理历史内容，请稍候。'
+  const phaseLabels = { preparing: '后台准备上下文摘要', prepared: '摘要已就绪，等待安全边界',
+    waiting: '正在压缩，模型请求暂缓', applying: '正在保存上下文检查点' };
+  const phaseHint = compact?.stage === 'preparing' || compact?.stage === 'prepared'
+    ? '当前任务继续运行，已发送的前缀保持不变。新消息仍可提交。'
+    : compact?.stage === 'waiting' || compact?.stage === 'applying'
+      ? '新消息仍可提交；原始记录保留，整理完成后继续模型请求。' : undefined;
+  const hint = running ? phaseHint ?? '正在保留关键信息并整理历史内容，请稍候。'
     : state === 'checking' ? '正在检查是否需要整理上下文。'
     : state === 'unknown' ? '目前无法确认执行状态，连接恢复后会自动更新，无需重复提交。'
     : state === 'failed' ? activity.outputPreview
@@ -35,9 +41,9 @@ const CompactionCard: React.FC<{ activity: CurrentRunActivity }> = ({ activity }
     <section className={styles.compactionCard} data-testid="compaction-card" data-state={state} role="status" aria-live="polite" aria-busy={running}>
       <div className={styles.compactionHeader}>
         <span className={running ? styles.compactionActivityIcon : styles.compactionStaticIcon} aria-hidden="true">{state === 'completed' ? '✓' : '▤'}</span>
-        <span className={styles.compactionTitle}>{labels[state]}</span>
+        <span className={styles.compactionTitle}>{running && compact?.stage ? phaseLabels[compact.stage] : labels[state]}</span>
         {duration !== undefined && <span className={styles.compactionElapsed} data-testid="compaction-elapsed">{running ? '已用时' : '耗时'} {elapsed(duration)}</span>}
-        <span className={styles.compactionBadge}>{running ? '执行中' : state === 'checking' ? '等待确认' : '记录'}</span>
+        <span className={styles.compactionBadge}>{running ? compact?.background ? '后台' : '执行中' : state === 'checking' ? '等待确认' : '记录'}</span>
       </div>
       {hint && <div className={styles.compactionHint}>{hint}</div>}
       {running && <div className={styles.compactionTrack} data-testid="compaction-animation"><span /></div>}

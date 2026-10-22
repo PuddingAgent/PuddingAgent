@@ -128,6 +128,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Runtime/LlmInvocationContracts.cs` | 统一 LLM invocation 合同；`Purpose` 以非模型可见方式区分 agent/approval/compaction 计费与诊断 |
 | `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同 |
 | `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约；WarmPrefixSourceMessage 携带完整运行期原文与精确持久 ID |
+| `Runtime/SubAgentInvocationContracts.cs` | `RuntimeExecutionOptions.ContextCompaction` 独立压缩策略配置；主/子执行共用注册模型容量上的比例，和 SubAgents 并发配置分开 |
 
 **关键语义**
 

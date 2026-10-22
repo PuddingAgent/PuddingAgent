@@ -621,6 +621,7 @@ public sealed partial class AgentExecutionService
             var visionContinuation = new VisionTextContinuation(
                 BuildCurrentUserChatMessage(request, null).SourceContentHash,
                 request.CallerLlmSnapshot?.VisionPolicy?.MaxImagesPerRequest ?? VisionRequestPolicy.Default.MaxImagesPerRequest);
+            await using var warmPrefixMaintenance = new WarmPrefixMaintenance();
             var warmPrefixCompactionAttempted = false;
             // F3：硬保护与软维护分开封顶 —— 软维护每 dispatch 一次；硬保护逐轮重新评估。
             var hardProtectionAttempted = false;
@@ -800,8 +801,7 @@ public sealed partial class AgentExecutionService
                     // 与 Buffered 共用 warm-prefix checkpoint；失败保留原历史，不再静默驱逐。
                     // ADR-095 D2：候选只来自软阈值且请求仍安全时，摘要生成不进入发送关键路径
                     // （outcome.Disposition = DeferredSoft），此处只做归因，不产生等待。
-                    if (WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(history.Count, warmPrefixCompactionAttempted)
-                        || LlmRequestTextBudget.Exceeds(request, injectedHistory, llmTools))
+                    // Evaluate every request boundary; even a few large records can exceed capacity.
                     {
                         var compaction = await TryWarmPrefixCompactionAsync(
                             request,
@@ -811,7 +811,7 @@ public sealed partial class AgentExecutionService
                             llmTools,
                             effectiveLlmConfig,
                             round,
-                            ct);
+                            ct, warmPrefixMaintenance);
                         compactionFailureReason = compaction.SkipReason;
                         compactionEvidence = compaction.DiagnosticEvidence;
                         turnTimings.RegisterCompactionAttempt(
@@ -922,7 +922,7 @@ public sealed partial class AgentExecutionService
                                 llmTools,
                                 effectiveLlmConfig,
                                 round,
-                                ct);
+                                ct, warmPrefixMaintenance);
                             compactionFailureReason = hard.SkipReason;
                             compactionEvidence = hard.DiagnosticEvidence;
                             turnTimings.RegisterCompactionAttempt(hard.DurationMs, hard.Compacted, hard.DeferredSoft);
@@ -1058,7 +1058,7 @@ public sealed partial class AgentExecutionService
                     ct: CancellationToken.None);
                 // Final preflight also covers protected/current input and post-compaction injection.
                 // Failed compaction must never fall through to another oversized upload.
-                Exception? llmException = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools, compactionFailureReason, compactionEvidence);
+                Exception? llmException = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools, compactionFailureReason, compactionEvidence, warmPrefixMaintenance.ProtectionRequired);
                 try
                 {
                     while (llmException is null)
@@ -1939,7 +1939,7 @@ public sealed partial class AgentExecutionService
                         currentMessageId: request.MessageId,
                         currentTurnId: request.ExecutionIdentity?.TurnId,
                         // R2：终态后维护 = 后台可选工作 ⇒ 提交前重验前台需求。
-                        isBackground: true),
+                        isBackground: true, autoTriggerRatio: (_runtimeExecutionConfig?.GetOptions().ContextCompaction ?? new ContextMaintenanceOptions()).CommitRatio),
                     // R2：候选身份 = 本轮终态时的历史形状 ⇒ 同一形状的重复调度直接合并。
                     candidateKey: "stream:" + WarmPrefixCompaction.ComputeRevisionHash(maintenanceSnapshot));
             }

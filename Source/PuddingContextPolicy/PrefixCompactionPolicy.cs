@@ -2,8 +2,8 @@ namespace PuddingContextPolicy;
 
 /// <summary>Thresholds are harness defaults, not provider limits. Pressure uses effective input and upload budgets.</summary>
 public sealed record PrefixCompactionThresholds(
-    double Prepare = .60, double Commit = .75, double Wait = .90,
-    double Target = .45, int MinimumEpochRounds = 4);
+    double Prepare = .60, double Commit = .65, double Wait = .70,
+    double Target = .45, int MinimumEpochRounds = 4, double UploadWait = .95);
 
 public sealed record PrefixCompactionDecision(
     bool Prepare, bool CommitReady, bool WaitForCandidate, double Pressure, string Reason);
@@ -14,17 +14,20 @@ public static class PrefixCompactionPolicy
     public static PrefixCompactionDecision Decide(
         long tokens, long tokenLimit, long bytes, long byteLimit,
         long growthTokens = 0, long growthBytes = 0, int roundsSinceMaintenance = int.MaxValue,
-        PrefixCompactionThresholds? thresholds = null)
+        PrefixCompactionThresholds? thresholds = null, long effectiveInputLimit = 0)
     {
         var t = thresholds ?? new();
         if (!(0 < t.Prepare && t.Prepare < t.Commit && t.Commit < t.Wait && t.Wait <= 1
-            && 0 < t.Target && t.Target < t.Prepare && t.MinimumEpochRounds >= 0))
+            && 0 < t.Target && t.Target < t.Prepare && t.MinimumEpochRounds >= 0
+            && t.Commit < t.UploadWait && t.UploadWait <= 1))
             throw new ArgumentOutOfRangeException(nameof(thresholds));
         static double Ratio(long used, long limit) => limit > 0 ? Math.Max(0, (double)used) / limit : 0;
         var pressure = Math.Max(Ratio(tokens, tokenLimit), Ratio(bytes, byteLimit));
         var forecast = Math.Max(Ratio(tokens + Math.Max(0, growthTokens), tokenLimit),
             Ratio(bytes + Math.Max(0, growthBytes), byteLimit));
-        var wait = pressure >= t.Wait || forecast >= 1;
+        var inputLimitReached = effectiveInputLimit > 0 && tokens + Math.Max(0, growthTokens) >= effectiveInputLimit;
+        var wait = Ratio(tokens, tokenLimit) >= t.Wait || Ratio(bytes, byteLimit) >= t.UploadWait
+            || forecast >= 1 || inputLimitReached;
         var cooldown = roundsSinceMaintenance < t.MinimumEpochRounds;
         return new(wait || (!cooldown && pressure >= t.Prepare),
             wait || (!cooldown && pressure >= t.Commit), wait, pressure,

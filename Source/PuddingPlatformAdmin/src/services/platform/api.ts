@@ -4500,6 +4500,8 @@ export async function revokeAccessToken(
 export interface ActiveCompactionSnapshot {
   compactionId: string;
   startedAt: string;
+  stage?: 'preparing' | 'prepared' | 'waiting' | 'applying';
+  background?: boolean;
 }
 export async function getCompactionStatus(sessionId: string): Promise<{ activeCompaction: ActiveCompactionSnapshot | null }> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/compaction-status`, { method: 'GET' });

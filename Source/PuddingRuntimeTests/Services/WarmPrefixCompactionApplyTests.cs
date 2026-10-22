@@ -74,6 +74,30 @@ public sealed class WarmPrefixCompactionApplyTests
 
     /// <summary>通过校验时必须给出**重新计量**的 after，而不是「未含摘要」的计划估算。</summary>
     [TestMethod]
+    public void AppendOnlyRefresh_PreservesNewMessagesAndMeasuresOutboundEnvelope()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var frozen = BuildHistory(40);
+        var plan = CreatePlan(store, frozen);
+        var appended = new ChatMessage(ChatRole.User, "NEW USER CORRECTION");
+        var current = frozen.Append(appended).ToArray();
+        var outbound = current.ToArray();
+        outbound[0] = new ChatMessage(ChatRole.System, new string('x', 12_000));
+        var refreshed = WarmPrefixCompaction.RefreshAppendOnlyPlan(store, SessionId, frozen, current, outbound,
+            null, BuildConfig(), plan, CurrentValuesFor(plan, current), out var reason);
+        Assert.IsNotNull(refreshed, reason);
+        var result = WarmPrefixCompaction.VerifyApplication(store, SessionId, current, null, BuildConfig(),
+            refreshed, "Preserve current task and continue.", CurrentValuesFor(plan, current), outbound);
+        Assert.IsTrue(result.CanApply, result.Reason);
+        Assert.AreSame(appended, result.AppliedMessages![^1]);
+        Assert.IsGreaterThan(LlmRequestTextBudget.Measure(result.AppliedMessages!, null), result.AfterTextBytes!.Value);
+        var mutated = current.ToArray();
+        mutated[0] = new ChatMessage(ChatRole.System, "CHANGED SYSTEM");
+        Assert.IsNull(WarmPrefixCompaction.RefreshAppendOnlyPlan(store, SessionId, frozen, mutated, mutated,
+            null, BuildConfig(), plan, CurrentValuesFor(plan, mutated), out _));
+    }
+
+    [TestMethod]
     public void VerifyApplication_AppliesAndReportsReMeasuredAfter()    {
         var store = new ContextUsageSnapshotStore();
         var history = BuildHistory(pairs: 40);

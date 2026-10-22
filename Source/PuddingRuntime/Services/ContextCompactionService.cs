@@ -94,10 +94,22 @@ public sealed class ContextCompactionService : IContextCompactionService
 
     /// <summary>压缩运行态：直接来自协调器的单飞锁持有状态（见 IContextCompactionService）。</summary>
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ActiveCompactionSnapshot> _activeCompactions = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ActiveCompactionSnapshot> _preparedCompactions = new();
 
-    public bool IsCompactionRunning(string sessionId) => _activeCompactions.ContainsKey(sessionId);
+    public bool IsCompactionRunning(string sessionId) => GetActiveCompaction(sessionId) is not null;
     public ActiveCompactionSnapshot? GetActiveCompaction(string sessionId)
-        => _activeCompactions.TryGetValue(sessionId, out var active) ? active : null;
+        => _activeCompactions.TryGetValue(sessionId, out var active) ? active
+            : _preparedCompactions.TryGetValue(sessionId, out active) ? active : null;
+
+    public void UpdatePreparedCompaction(string sessionId, string compactionId, string stage, bool background)
+        => _preparedCompactions.AddOrUpdate(sessionId, new ActiveCompactionSnapshot(compactionId, DateTimeOffset.UtcNow, stage, background),
+            (_, previous) => new(compactionId, previous.CompactionId == compactionId ? previous.StartedAt : DateTimeOffset.UtcNow, stage, background));
+
+    public void EndPreparedCompaction(string sessionId, string compactionId)
+    {
+        if (_preparedCompactions.TryGetValue(sessionId, out var current) && current.CompactionId == compactionId)
+            _preparedCompactions.TryRemove(new KeyValuePair<string, ActiveCompactionSnapshot>(sessionId, current));
+    }
 
     public async Task<ContextHealthSnapshot> GetHealthAsync(
         string sessionId,

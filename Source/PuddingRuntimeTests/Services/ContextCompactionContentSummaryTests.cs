@@ -19,6 +19,25 @@ namespace PuddingRuntimeTests.Services;
 public sealed class ContextCompactionContentSummaryTests
 {
     [TestMethod]
+    public void PreparedCandidateStatusKeepsStartTimeAndCannotBeClearedByOlderWorker()
+    {
+        var factory = new Moq.Mock<IDbContextFactory<MemoryDbContext>>();
+        var generator = new Moq.Mock<IContextCompactionSummaryGenerator>();
+        var service = new ContextCompactionService(factory.Object, generator.Object, NullLogger<ContextCompactionService>.Instance);
+        service.UpdatePreparedCompaction("s", "one", "preparing", true);
+        var started = service.GetActiveCompaction("s")!.StartedAt;
+        service.UpdatePreparedCompaction("s", "one", "waiting", false);
+        Assert.AreEqual(started, service.GetActiveCompaction("s")!.StartedAt);
+        Assert.AreEqual("waiting", service.GetActiveCompaction("s")!.Stage);
+        Assert.IsFalse(service.GetActiveCompaction("s")!.Background);
+        service.UpdatePreparedCompaction("s", "two", "prepared", true);
+        service.EndPreparedCompaction("s", "one");
+        Assert.AreEqual("two", service.GetActiveCompaction("s")!.CompactionId);
+        service.EndPreparedCompaction("s", "two");
+        Assert.IsNull(service.GetActiveCompaction("s"));
+    }
+
+    [TestMethod]
     public async Task RunningSnapshot_OnlyAdmittedWork_AndCancellationClearsIdentity()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

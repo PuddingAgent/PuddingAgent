@@ -11,7 +11,8 @@ public sealed record CandidateSelectionOptions(
     int ProtectedTailMessages = 8,
     double TriggerRatio = 0.80,
     double TargetRatio = 0.50,
-    double TextTriggerRatio = 1.0);
+    double TextTriggerRatio = 1.0,
+    bool EnforceTarget = false);
 
 /// <summary>
 /// 冻结候选的选择结果。候选一旦产出即视为**不可变**：任何相关变化都走
@@ -97,10 +98,11 @@ public static class ContextCandidateSelector
         // Count is a preference, not an unbounded byte reservation. On hard pressure, allocate
         // at most a quarter of each request budget to recent records; whole-unit parsing below
         // expands the boundary backwards, so even an oversized newest batch stays intact.
-        if (textExceeded || initialUsed > limit)
+        var protectCapacity = textExceeded || initialUsed > limit || options.EnforceTarget;
+        if (protectCapacity)
             while (tailStart < messages.Count - 1 &&
-                ((textExceeded && messages.Skip(tailStart).Sum(m => m.TextBytes) > budget.MaxTextBytes / 4)
-                 || (initialUsed > limit && messages.Skip(tailStart).Sum(m => m.TokenEstimate) > limit / 4)))
+                ((budget.MaxTextBytes > 0 && messages.Skip(tailStart).Sum(m => m.TextBytes) > budget.MaxTextBytes / 4)
+                 || messages.Skip(tailStart).Sum(m => m.TokenEstimate) > limit / 4))
                 tailStart++;
         var currentUser = -1;
         for (var i = 0; i < messages.Count; i++)
@@ -122,7 +124,11 @@ public static class ContextCandidateSelector
             {
                 while (end < messages.Count && messages[end].Role == ContextMessageRole.Tool) end++;
             }
-            var eligible = i != currentUser && end <= tailStart
+            var historicalTurnUnderPressure = protectCapacity && messages[i].Role == ContextMessageRole.User
+                && i != currentUser && end <= currentUser
+                && (messages.Skip(i).Take(end - i).Sum(m => m.TokenEstimate) > limit / 4
+                    || (budget.MaxTextBytes > 0 && messages.Skip(i).Take(end - i).Sum(m => m.TextBytes) > budget.MaxTextBytes / 4));
+            var eligible = i != currentUser && (end <= tailStart || historicalTurnUnderPressure)
                 && messages[i].Role is not (ContextMessageRole.System or ContextMessageRole.Tool)
                 && HasCompleteToolBatches(messages, i, end);
             if (eligible)
@@ -159,10 +165,10 @@ public static class ContextCandidateSelector
                 var allowance = new ContextSummaryAllowance(tokenAllowance, byteAllowance, retainedBytes);
                 var fits = tokenAllowance >= 16;
                 var meetsTarget = projected + tokenAllowance + budget.CheckpointWrapperTokens <= target
-                    && (!textExceeded || retainedBytes + Math.Min(byteAllowance, tokenAllowance * 8L)
+                    && (!textTriggered || retainedBytes + Math.Min(byteAllowance, tokenAllowance * 8L)
                         + budget.CheckpointWrapperBytes <= textTarget);
                 var score = (fits ? 10 : 0) + (meetsTarget ? 10 : 0)
-                    + (textExceeded ? (double)removedBytes / initialBytes : (double)removedTokens / Math.Max(1, initialUsed));
+                    + (textTriggered ? (double)removedBytes / initialBytes : (double)removedTokens / Math.Max(1, initialUsed));
                 if (score > bestScore)
                 {
                     var suffix = messages.Skip(unit.End).ToArray();

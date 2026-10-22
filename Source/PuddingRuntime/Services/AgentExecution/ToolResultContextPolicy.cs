@@ -23,6 +23,7 @@ namespace PuddingRuntime.Services;
 internal static class ToolResultContextPolicy
 {
     internal const int MaxInlineChars = 8 * 1024;
+    internal const int MaxInlineUtf8Bytes = 8 * 1024;
 
     /// <summary>
     /// Stable, searchable code emitted when no durable copy could be produced. Present in
@@ -44,7 +45,7 @@ internal static class ToolResultContextPolicy
         ILogger logger,
         CancellationToken ct)
     {
-        if (content.Length <= MaxInlineChars)
+        if (content.Length <= MaxInlineChars && Encoding.UTF8.GetByteCount(content) <= MaxInlineUtf8Bytes)
             return content;
 
         Exception? lastFailure = null;
@@ -185,17 +186,15 @@ internal static class ToolResultContextPolicy
     /// </summary>
     internal static string BuildBoundedPreview(string content, string notice)
     {
-        if (content.Length <= MaxInlineChars)
+        if (content.Length <= MaxInlineChars && Encoding.UTF8.GetByteCount(content) <= MaxInlineUtf8Bytes)
             return content;
 
         var separatorChars = 4; // two surrounding blank-line separators
         var noticeBudget = Math.Max(0, MaxInlineChars - separatorChars);
-        var boundedNotice = notice.Length > noticeBudget
-            ? TruncateWithoutSplittingSurrogates(notice, noticeBudget)
-            : notice;
-        var previewBudget = Math.Max(0, MaxInlineChars - boundedNotice.Length - separatorChars);
-        var headChars = previewBudget * 3 / 4;
-        var tailChars = previewBudget - headChars;
+        var boundedNotice = TakeUtf8(notice, Math.Min(noticeBudget, MaxInlineUtf8Bytes - separatorChars));
+        var previewBudget = Math.Max(0, MaxInlineUtf8Bytes - Encoding.UTF8.GetByteCount(boundedNotice) - separatorChars);
+        var headChars = TakeUtf8(content, previewBudget * 3 / 4).Length;
+        var tailChars = TakeUtf8(content, previewBudget - previewBudget * 3 / 4, fromEnd: true).Length;
         if (headChars > 0 && char.IsHighSurrogate(content[headChars - 1]))
             headChars--;
         var tailStart = content.Length - tailChars;
@@ -212,6 +211,26 @@ internal static class ToolResultContextPolicy
         sb.Append("\n\n");
         sb.Append(content.AsSpan(tailStart, tailChars));
         return sb.ToString();
+    }
+
+    private static string TakeUtf8(string content, int budget, bool fromEnd = false)
+    {
+        var used = 0;
+        var count = 0;
+        // UTF-16 boundaries are advanced by whole code points, never split a surrogate pair.
+        while (count < content.Length)
+        {
+            var index = fromEnd ? content.Length - count - 1 : count;
+            var width = fromEnd
+                ? (char.IsLowSurrogate(content[index]) && index > 0 && char.IsHighSurrogate(content[index - 1]) ? 2 : 1)
+                : (char.IsHighSurrogate(content[index]) && index + 1 < content.Length && char.IsLowSurrogate(content[index + 1]) ? 2 : 1);
+            var start = fromEnd ? index - width + 1 : index;
+            var bytes = Encoding.UTF8.GetByteCount(content.AsSpan(start, width));
+            if (used + bytes > budget) break;
+            used += bytes;
+            count += width;
+        }
+        return fromEnd ? content[^count..] : content[..count];
     }
 
     private static string DescribeFailure(Exception? failure)

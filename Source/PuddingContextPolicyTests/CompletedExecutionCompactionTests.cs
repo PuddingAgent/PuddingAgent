@@ -27,6 +27,21 @@ public sealed class CompletedExecutionCompactionTests
     }
 
     [TestMethod]
+    public void LargeCompletedTurnCanCrossTailPreferenceButNeverCurrentUser()
+    {
+        ContextMessageShape[] source = [new("s", ContextMessageRole.System, 10, 20),
+            new("old", ContextMessageRole.User, 10, 20),
+            new("call", ContextMessageRole.Assistant, 100, 200, ["id"]),
+            new("result", ContextMessageRole.Tool, 100_000, 600_000, ToolResultId: "id"),
+            new("answer", ContextMessageRole.Assistant, 10, 20),
+            new("current", ContextMessageRole.User, 10, 20)];
+        var result = ContextCandidateSelector.Select(source, 0, ContextCapacityArithmetic.Resolve(new(1_000_000)),
+            new(), "r", "t", 1, "rev", new ContextRequestBudget(0, 524_288, 100, 700));
+        Assert.IsTrue(result.Created);
+        CollectionAssert.AreEqual(new[] { "s", "current" }, result.RetainedMessages.Select(m => m.Identity).ToArray());
+    }
+
+    [TestMethod]
     public void BytePreparationThresholdCreatesCandidateBeforeHardUploadLimit()
     {
         var source = LongTurn().Take(43).ToArray();

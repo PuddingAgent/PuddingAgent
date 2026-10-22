@@ -361,6 +361,18 @@ public sealed record RuntimeExecutionOptions
 {
     public TurnExecutionOptions Turns { get; init; } = new();
     public SubAgentExecutionOptions SubAgents { get; init; } = new();
+    public ContextMaintenanceOptions ContextCompaction { get; init; } = new();
+}
+
+/// <summary>Ratios are applied to the registered model window; absolute input/upload limits remain independent.</summary>
+public sealed record ContextMaintenanceOptions
+{
+    public double PrepareRatio { get; init; } = .60;
+    public double CommitRatio { get; init; } = .65;
+    public double BlockingRatio { get; init; } = .70;
+    public double TargetRatio { get; init; } = .45;
+    public int MinimumEpochRounds { get; init; } = 4;
+    public double UploadBlockingRatio { get; init; } = .95;
 }
 
 /// <summary>读取并补齐运行时执行配置。</summary>

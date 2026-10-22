@@ -270,7 +270,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
 
         var result = await service.ExecuteAsync(CreateDispatchRequest());
 
-        Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState);
+        Assert.AreEqual(AgentExecutionState.Failed, result.ExecutionState);
         Assert.IsTrue(llm.Requests.Count(messages => messages.Any(m =>
             m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true)) > 1);
         Assert.IsTrue(log.Lines.Any(l => l.Contains("output_truncated", StringComparison.Ordinal)));
@@ -323,7 +323,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             $"前提失败：第 0 轮必须已越过有效上限（{initial.UsedTokens} > {limit}）");
 
         var result = await service.ExecuteAsync(CreateDispatchRequest());
-        Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState, "Turn 必须跑到终态");
+        Assert.AreEqual(AgentExecutionState.Failed, result.ExecutionState, "Turn 必须跑到终态");
 
         // ① 证伪点：旧实现同 round 会发 2 次相同摘要请求；新实现必须恰好 1 次。
         var summaryAttempts = llm.Requests.Count(messages => messages.Any(m =>
@@ -510,7 +510,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         }
 
         var factory = new Factory(options);
-        var llm = new ScriptedLlmClient(DoneJson, DoneJson);
+        var llm = new ScriptedLlmClient(DoneJson, DoneJson) { SummaryResponseOverride = new(SummaryResponse, null) };
         var tools = new RecordingToolInvocationService();
         var manager = CreateManager(factory);
         var log = new CapturingLogger();
@@ -716,7 +716,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var result = await service.ExecuteAsync(CreateDispatchRequest());
 
         // 维护失败不得中断安全消息。
-        Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState, "Turn 必须跑到终态");
+        Assert.AreEqual(AgentExecutionState.Failed, result.ExecutionState, "Turn 必须跑到终态");
 
         // ① 内存历史**没有**被替换：不得出现 checkpoint 前导语。
         Assert.IsFalse(
@@ -784,7 +784,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
 
         var result = await service.ExecuteAsync(CreateDispatchRequest());
-        Assert.AreEqual(AgentExecutionState.Completed, result.ExecutionState, "Turn 必须跑到终态");
+        Assert.AreEqual(AgentExecutionState.Failed, result.ExecutionState, "Turn 必须跑到终态");
         Assert.IsTrue(bumped, "前提：摘要调用期间必须真的发生了代次推进（否则本用例不成立）");
 
         // 内存：没有被替换。
@@ -1030,8 +1030,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         bool IsSummary(IReadOnlyList<ChatMessage> messages) => messages.Any(m => m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true);
         var main = llm.Requests.Where(m => !IsSummary(m)).ToArray();
         Assert.AreEqual(2, main.Length);
-        Assert.IsFalse(IsSummary(llm.Requests[0]), "First request fits the text budget.");
-        Assert.IsTrue(llm.Requests.Skip(1).Any(IsSummary), "Growth must trigger compaction within the same turn.");
+        Assert.IsTrue(llm.Requests.Any(IsSummary), "A candidate may be prepared alongside the first request before growth requires it.");
         foreach (var messages in main)
             Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.DeepSeekResponsesLimit);
         await using var verify = new MemoryDbContext(options);
@@ -1449,10 +1448,6 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
 
         private async Task<LlmResponse> NextAsync(IReadOnlyList<ChatMessage> messages)
         {
-            if (_responses.Count == 0)
-                throw new InvalidOperationException("ScriptedLlmClient exhausted: more LLM rounds than scripted responses.");
-
-            Requests.Add(messages.ToList());
             var isSummaryRequest = messages.Any(
                 m => m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true);
             if (OnSummaryRequestAsync is not null && isSummaryRequest)
@@ -1465,6 +1460,8 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             if (isSummaryRequest && SummaryResponseOverride is not null)
                 return SummaryResponseOverride;
 
+            if (_responses.Count == 0)
+                throw new InvalidOperationException("ScriptedLlmClient exhausted: more LLM rounds than scripted responses.");
             return _responses.Dequeue();
         }
 
@@ -1477,7 +1474,11 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             LlmConfig? llmConfig = null,
             CancellationToken ct = default)
         {
-            Configs.Add(llmConfig);
+            lock (Requests)
+            {
+                Configs.Add(llmConfig);
+                Requests.Add(messages.ToList());
+            }
             return await NextAsync(messages);
         }
 

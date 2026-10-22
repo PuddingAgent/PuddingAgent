@@ -143,7 +143,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Runtime` | `ContextPipeline` → `AgentExecutionService` | 组装 stable system prefix + volatile User tail，再用 `[CURRENT USER TURN input_sha256=…]` 围栏本轮输入（缺失 fail-closed） |
 | `Runtime → Gateway` | `LlmInvocationService` → `DirectLlmClient` | 按 `model.protocol` 路由 openai / responses / anthropic 三协议网关 |
 | `Gateway → Platform` | `ILlmGatewayUsageRecorder` → `llm_gateway_usage_events` | usage 落库后供 StatsApi 与日聚合取本地计费口径 |
-| `Runtime` | `ContextWindowManager` → `ContextCompactionService`；`AgentExecutionService` → `WarmPrefixCompaction` / `BoundedCompactionSummary` | 水合剪枝只筛选完整消息对象，显示预览不回填历史；压缩前增量镜像并保留精确持久身份；token 或 DeepSeek Responses 文本上传预算越界同步保护，完整历史轮与当前轮已完成执行跨度按统一摘要预算分段归并，经 CAS 提交，未投影工具原文随摘要原子归档。发送前再次复核，超限保留历史并附压缩原因；安全软候选延期到 canonical 终态之后 |
+| `Runtime` | `PrefixCompactionPolicy` → `AgentExecutionService.Compaction` → `BackgroundCompactionCandidate` → `WarmPrefixCompaction` / `BoundedCompactionSummary` → 持久 CAS | 按注册模型窗口和配置比例提前准备，前缀保持稳定；达到同步阈值等待，完整批次边界重验冻结前缀、保留追加消息并按当前出站信封重新计量。新工具结果首次入场限幅并保存原文；协议层区分应用摘要与原生 reasoning。设计见 [前缀缓存友好的会话压缩](Docs/07_architecture/前缀缓存友好的会话压缩.md) |
 | `Platform` | `MessageDeliveryPolicy` → `MessageDeliveryDispatcher` | inform/report_result 只通知；ask/request_review/delegate 才进执行 |
 | `Runtime` | `SubAgentInvocationService` → `SubAgentManager` | 子代理委派：model 须为 providerId/modelId；run archive 固化实际预算 |
 | `Platform` | `TaskAutoDispatchWorker` → `TaskExecutionTracker` | 5 min 有界派发：availability → backlog 精炼 → Plan/Node 编译 → 五态跟踪 |
@@ -161,7 +161,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 |------|------|
 | `Source/PuddingCoreTests/` · `Source/PuddingRuntimeTests/` · `Source/PuddingPlatformTests/` · `Source/PuddingMemoryEngineTests/` · `Source/PuddingWebApiTests/` | 工具契约、LLM 网关、MessageFabric · Agent Loop、上下文管线、语音/图片 · 渠道配置与 Artifact · 记忆库与 FTS5 · Web API |
 | `Source/PuddingCodeIndexTests/` · `Source/PuddingIndexChunkingTests/` | 索引组件独立测试：变更管线/调度/维护/存储 + 分块（含边界断言） |
-| `Source/PuddingContextPolicyTests/` | 上下文策略组件独立测试：容量算术与压力分类（含事故两条样本的记录值回放）、候选边界与指纹、严格适用校验（新消息追加必须让旧候选失效）、净收益准入（真实摘要重算 after）、退避判定（硬保护不被退避屏蔽）+ S1–S4 边界断言（含探测器自检与取红） |
+| `Source/PuddingContextPolicyTests/` | 上下文策略独立测试：容量算术、配置比例与预测、完整候选边界、严格及显式追加校验、真实摘要收益、冷却不能屏蔽硬保护，以及程序集依赖边界 |
 | `Source/PuddingConversationReadModelTests/` | 会话读模型纯组件独立测试（**191 例**）：事件归约/重放幂等/跳号/终态迟到/父子 run 隔离、子代理摘要限长与完整性截断、历史/过程页条数与字节预算、三种游标合同、SSE 追赶预算、UTF-8 截断 + S1–S4 边界断言（含变异取红） |
 | `Source/PuddingDiagnosticsTests/` | 可诊断基础设施独立测试：故障场景→期望因果码全量、事故复刻与证据、脱敏与证据预算、事故投影、S1–S4 边界断言（含探测器自检与取红） |
 | `Source/PuddingDeepSeekWebTests/` | DeepSeek Search/Fetch 协议叶子组件独立测试：请求形状/参数校验矩阵/响应解析/HTTP 错误映射/有界重试与 `Retry-After`/传输异常与取消/端点归一 + S1–S4 边界断言（含探测器取红）+ 真实 API Live（Search→Fetch，无凭据时 Inconclusive） |

@@ -8,6 +8,18 @@ namespace PuddingRuntimeTests.Services;
 public sealed class ToolResultContextPolicyTests
 {
     [TestMethod]
+    public void MultibytePreviewHasByteBoundAndStablePrefixWithoutSplittingUnicode()
+    {
+        var content = string.Concat(Enumerable.Repeat("中文😀", 1500));
+        Assert.IsTrue(content.Length < ToolResultContextPolicy.MaxInlineChars);
+        var preview = ToolResultContextPolicy.BuildBoundedPreview(content, "full output saved");
+        Assert.IsTrue(System.Text.Encoding.UTF8.GetByteCount(preview) <= ToolResultContextPolicy.MaxInlineUtf8Bytes);
+        Assert.IsFalse(preview.Contains('\uFFFD'));
+        Assert.AreEqual(preview, ToolResultContextPolicy.BuildBoundedPreview(content, "full output saved"));
+        Assert.AreEqual(preview, ToolResultContextPolicy.BuildBoundedPreview(preview, "unused"));
+    }
+
+    [TestMethod]
     public async Task MaterializeAsync_Spills_Oversized_Result_And_Returns_Bounded_Preview()
     {
         var workspace = Path.Combine(Path.GetTempPath(), $"pudding-tool-result-policy-{Guid.NewGuid():N}");

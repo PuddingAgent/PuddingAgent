@@ -33,6 +33,8 @@ export interface CompactionPresentation {
   startedAt?: number;
   verifiedAt?: number;
   endedAt?: number;
+  stage?: 'preparing' | 'prepared' | 'waiting' | 'applying';
+  background?: boolean;
 }
 
 export interface TimelineItem {

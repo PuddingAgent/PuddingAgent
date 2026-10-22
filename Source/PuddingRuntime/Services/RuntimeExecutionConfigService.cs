@@ -78,6 +78,12 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
 
     private static RuntimeExecutionOptions Normalize(RuntimeExecutionOptions options)
     {
+        var compaction = options.ContextCompaction ?? new ContextMaintenanceOptions();
+        if (!(0 < compaction.TargetRatio && compaction.TargetRatio < compaction.PrepareRatio
+            && compaction.PrepareRatio < compaction.CommitRatio && compaction.CommitRatio < compaction.BlockingRatio
+            && compaction.BlockingRatio <= 1 && compaction.MinimumEpochRounds >= 0
+            && compaction.CommitRatio < compaction.UploadBlockingRatio && compaction.UploadBlockingRatio <= 1))
+            compaction = new ContextMaintenanceOptions();
         var turns = options.Turns ?? new TurnExecutionOptions();
         var maxHardTimeout = Math.Max(1, turns.MaxHardTimeoutSeconds);
         var defaultHardTimeout = turns.DefaultHardTimeoutSeconds <= 0
@@ -153,6 +159,7 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
 
         return options with
         {
+            ContextCompaction = compaction,
             Turns = turns with
             {
                 DefaultHardTimeoutSeconds = defaultHardTimeout,

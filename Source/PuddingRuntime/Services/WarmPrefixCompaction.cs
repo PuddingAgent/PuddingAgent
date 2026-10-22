@@ -56,7 +56,9 @@ internal static class WarmPrefixCompaction
         int sourceGeneration = 0,
         /// <summary>Provider 身份（Runtime 的 LlmConfig 不携带，由调用方给出）：参与路由 CAS。</summary>
         string? providerId = null,
-        int maxRequestTextBytes = 0)
+        int maxRequestTextBytes = 0,
+        double textTriggerRatio = 1.0,
+        bool enforceTarget = false)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
         ArgumentNullException.ThrowIfNull(durableHistory);
@@ -70,7 +72,7 @@ internal static class WarmPrefixCompaction
         var limit = LlmRequestBudgetGuard.ResolveEffectiveInputLimit(config, workUnitInputCapacity: workUnitInputCapacity);
         var initialBytes = LlmRequestTextBudget.Measure(exactOutboundHistory, tools);
         if (initial.UsedTokens < limit * Math.Clamp(triggerRatio, 0.05, 1)
-            && (maxRequestTextBytes <= 0 || initialBytes <= maxRequestTextBytes)) return false;
+            && (maxRequestTextBytes <= 0 || initialBytes < maxRequestTextBytes * textTriggerRatio)) return false;
         var shapes = exactOutboundHistory.Select(message => new ContextMessageShape(
             ComputeMessageIdentity(message), Enum.Parse<ContextMessageRole>(message.Role.ToString()),
             usageStore.MeasureLlmRequest(sessionId, [message], null, config?.ModelId).UsedTokens,
@@ -80,7 +82,8 @@ internal static class WarmPrefixCompaction
         var selection = ContextCandidateSelector.Select(shapes,
             Math.Max(0, initial.UsedTokens - shapes.Sum(m => m.TokenEstimate)),
             ContextCapacityArithmetic.Resolve(new ContextCapacityInputs(limit)),
-            new CandidateSelectionOptions(TriggerRatio: triggerRatio, TargetRatio: targetRatio),
+            new CandidateSelectionOptions(TriggerRatio: triggerRatio, TargetRatio: targetRatio,
+                TextTriggerRatio: textTriggerRatio, EnforceTarget: enforceTarget),
             ResolveRouteVersion(config, providerId), ResolveToolSpecVersion(exactOutboundHistory, tools),
             sourceGeneration, ComputeRevisionHash(durableHistory),
             new ContextRequestBudget(LlmRequestTextBudget.Measure([], tools), maxRequestTextBytes,
@@ -191,7 +194,8 @@ internal static class WarmPrefixCompaction
         /// **提交时**从真实状态取得的当前上下文描述符（generation/route/tool 版本、revision 基准）。
         /// 为 null ⇒ 一律拒绝（不能拿 plan 里的冻结值自比较，那会让 CAS 变成同义反复：R4 §5.1）。
         /// </summary>
-        CurrentContextValues? currentValues = null)
+        CurrentContextValues? currentValues = null,
+        IReadOnlyList<ChatMessage>? exactOutboundHistory = null)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
         ArgumentNullException.ThrowIfNull(currentDurableHistory);
@@ -246,13 +250,16 @@ internal static class WarmPrefixCompaction
         }
 
         // ③ 加入摘要后**重新完整计量**（只计量、不发布）：这才是提交后的真实值。
+        var measuredCheckpoint = exactOutboundHistory is null ? checkpoint :
+            exactOutboundHistory.Take(plan.ReplacementStart).Append(checkpoint[plan.ReplacementStart])
+                .Concat(exactOutboundHistory.Skip(plan.ReplacementStart + plan.RemovedMessageCount)).ToArray();
         var afterSnapshot = usageStore.MeasureLlmRequest(
             sessionId,
-            checkpoint,
+            measuredCheckpoint,
             tools,
             config?.ModelId);
 
-        var afterTextBytes = LlmRequestTextBudget.Measure(checkpoint, tools);
+        var afterTextBytes = LlmRequestTextBudget.Measure(measuredCheckpoint, tools);
         var summaryTextBytes = LlmRequestTextBudget.MeasureSummary(rawSummary?.Trim() ?? "");
 
         // ④ 收益与硬上限准入：跨度与摘要都用**校准后**口径，避免与 InitialUsedTokens 混量纲。
@@ -314,7 +321,38 @@ internal static class WarmPrefixCompaction
             AfterTextBytes: afterTextBytes);
     }
 
-    /// <summary>稳定的消息身份（内容 + 角色 + 工具配对元数据），用于严格 CAS 与指纹；不展开密钥。</summary>
+    /// <summary>Only an intact frozen prefix can adopt appended messages. Final verification still runs under the commit lease.</summary>
+    internal static WarmPrefixCompactionPlan? RefreshAppendOnlyPlan(
+        ContextUsageSnapshotStore store, string sessionId, IReadOnlyList<ChatMessage> frozenHistory,
+        IReadOnlyList<ChatMessage> currentHistory, IReadOnlyList<ChatMessage> currentOutbound,
+        IReadOnlyList<LlmToolDefinition>? tools, LlmConfig? config, WarmPrefixCompactionPlan plan,
+        CurrentContextValues current, out string reason)
+    {
+        var revision = ComputeRevisionHash(currentHistory);
+        var verdict = PrefixCompactionPolicy.ValidateAppendOnly(
+            new("", plan.SourceGeneration, plan.SourceRevisionHash, plan.RouteVersion, plan.ToolSpecVersion,
+                ContextPolicyVersion.Current, plan.RemovedIdentities, plan.RetainedIdentities, plan.ReplacementStart),
+            frozenHistory.Select(ComputeMessageIdentity).ToArray(),
+            new(current.Generation, revision, current.RouteVersion, current.ToolSpecVersion,
+                ContextPolicyVersion.Current, currentHistory.Select(ComputeMessageIdentity).ToArray()));
+        reason = verdict.Reason;
+        if (!verdict.IsApplicable || currentHistory.Count != currentOutbound.Count) return null;
+        var retained = currentHistory.Take(plan.ReplacementStart)
+            .Concat(currentHistory.Skip(plan.ReplacementStart + plan.RemovedMessageCount)).ToArray();
+        var retainedOutbound = currentOutbound.Take(plan.ReplacementStart)
+            .Concat(currentOutbound.Skip(plan.ReplacementStart + plan.RemovedMessageCount)).ToArray();
+        var initial = store.MeasureLlmRequest(sessionId, currentOutbound, tools, config?.ModelId);
+        return plan with
+        {
+            RetainedMessages = retained,
+            RetainedIdentities = retained.Skip(plan.ReplacementStart).Select(ComputeMessageIdentity).ToArray(),
+            SourceRevisionHash = revision, InitialMessageCount = currentHistory.Count,
+            InitialSnapshot = initial, InitialUsedTokens = initial.UsedTokens,
+            InitialTextBytes = LlmRequestTextBudget.Measure(currentOutbound, tools),
+            EstimatedRetainedSnapshot = store.MeasureLlmRequest(sessionId, retainedOutbound, tools, config?.ModelId),
+        };
+    }
+
     /// <summary>
     /// 消息身份（CAS 与 revision 的原子）：必须覆盖**全部语义载荷**，否则「内容变了但身份没变」
     /// 会让陈旧候选仍然通过校验（R4 §5.3）。当前覆盖：角色、正文、思维链、工具回执身份、

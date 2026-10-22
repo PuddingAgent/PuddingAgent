@@ -255,8 +255,10 @@
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
 | `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |
 | `Services/VolcengineArkImageGenerationProvider.cs` | 火山方舟的图片生成适配 | `VolcengineArkImageGenerationProvider` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | — |
-| `Services/WarmPrefixCompaction.cs` | 完整历史/已完成执行跨度的压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecutionService.cs` | token 或文本上传预算越界同步保护；真实摘要须满足收益、预算及持久代次 CAS；软候选仍延期（见下「关键语义」） |
-| `Services/WarmPrefixMaintenanceAdmission.cs` | 软维护/硬保护准入封顶与同 round 去重 | `WarmPrefixMaintenanceAdmission` | `Services/AgentExecution/AgentExecutionService.Streaming.cs`、`…Buffered.cs` | 软维护每 dispatch 一次、硬保护逐轮重新评估；软尝试已执行同步硬保护时不得同 round 重复（见下「关键语义」） |
+| `Services/WarmPrefixCompaction.cs` | 完整历史/已完成执行跨度的压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecution/AgentExecutionService.Compaction.cs` | 显式追加适配保留新尾部；按当前完整出站信封计量摘要；来源、收益、预算及持久代次 CAS |
+| `Services/AgentExecution/AgentExecutionService.Compaction.cs` | Streaming/Buffered 共用的准备与提交边界 | `TryWarmPrefixCompactionAsync` | `PuddingContextPolicy/PrefixCompactionPolicy.cs` | 每次请求评估注册窗口和独立上传预算；后台冻结准备不改前缀，70% 配置阈值等待；失败阻止模型请求 |
+| `Services/BackgroundCompactionCandidate.cs` | 执行内单候选及提交闸门 | `BackgroundCompactionCandidate` | `AgentExecutionService.Compaction.cs` | 前台在安全边界释放闸门并等待提交；结束取消并回收，五分钟准备超时 |
+| `Services/WarmPrefixMaintenanceAdmission.cs` | 预算裁剪后的补充保护准入 | `WarmPrefixMaintenanceAdmission` | `Services/AgentExecution/AgentExecutionService.Streaming.cs`、`…Buffered.cs` | 主调度每请求评估并按 round 去重；该辅助器只控制后续预算保护分支的重复调用 |
 | `Services/WikiPageWriteEntry.cs` | 记忆 Wiki 页面的确定性写入入口 | `WikiPageWriteRequest` | `Services/MemoryWikiPageUpdateService.cs` | — |
 | `Services/WorkspaceAgentsContextBuilder.cs` | 工作区 Agent 名册上下文层的构造 | `WorkspaceAgentsContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
 | `Services/YoloSignalService.cs` | 监听工作区 yolo.signal 的后台服务 | `YoloSignalService` | `Services/AgentFirewall.cs` | 只读文件信号，不放宽任何资源边界 |
@@ -266,7 +268,7 @@
 > 下列为上方表「约束」列的**逐字原文**（行序与表一致）；表内已缩为语义摘要，并以 `（见下「关键语义」）` 指回本段。
 
 - `Services/WarmPrefixCompaction.cs`
-  只接受真实缩小的结果；`WarmPrefixCompactionPlan.RequiresSynchronousProtection` 包含 token 上限（含 WorkUnit 容量）及独立文本上传预算；软候选延期到 canonical 终态之后。策略组件决定确切替换起点与 token/字节/包装/摘要额度；当前 User 不动，checkpoint 为 Assistant 背景。拒绝时仍保留真实 AfterTextBytes；Responses 续传载荷参与 CAS 与摘要源。体积保护每轮评估，不受软维护封顶限制；checkpoint 标记取自 `PuddingCode.Runtime.ContextSummaryMarkers`。
+  只接受真实缩小的结果；策略决定完整替换片段与 token/字节/包装/摘要额度。`RefreshAppendOnlyPlan` 要求整个冻结前缀不变，追加消息原样保留；`VerifyApplication` 在提交锁内重算包含真实摘要、当前信封和工具定义的出站体积。当前 User 不动，checkpoint 带 IsContextSummary，逻辑 Assistant 在网关映射为 user 背景；原生 Responses 续传载荷参与身份及回放。
   所有摘要通过 `BoundedCompactionSummary` 仅总结被替换跨度，按规划额度约束输出；生成上限与最终容量分离；截断/超额先从同一完整源重生成，仍失败则有界拆段归并；全部成功后走同一 VerifyApplication/持久提交边界（`summarySource=provider_segmented`）。仅 provider 输入拒绝或无用输出可使用已配置的 Extractive；传输失败、截断或不完整分段保持原历史。
   文本超限时摘要候选可覆盖最近八条中的完整旧轮次，当前 User、未完成批次和最新完整执行单元仍受保护；精确持久 ID 全部可用时不再按正文回退匹配。不可压缩部分已超预算则生成摘要前拒绝。
 

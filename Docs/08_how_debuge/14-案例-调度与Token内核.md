@@ -26,6 +26,10 @@ DeepSeek Responses 在压缩后报缺少 `reasoning_text` 时，先检查请求�
 验证应覆盖“两组原生工具批次之间插入摘要”，仅测摘要位于首批工具之前会漏检。原生 reasoning / function_call 项保持原样，不能编造推理内容。
 若目录始终没有现场文件，检查成品 `PuddingHost` 的 Runtime 组合注册；仅在 Runtime 扩展注册可选依赖不会让产品自动消费它。
 
+自动压缩调度使用 `runtime.execution.json` 的 `contextCompaction`；模型注册窗口乘 `prepareRatio/commitRatio/blockingRatio` 得到实际阈值，不能拿 SubAgents 的旧软阈值解释主执行。
+遇到 `configured_compaction_threshold`，查看诊断中的注册窗口、触发 token、当前 token 与压缩原因。上传字节保护独立，512 KiB 是客户端预算，不是模型上下文大小。
+`prepared` 表示摘要已生成但前缀还没改；`applied` 且持久提交成功才表示完成。终态前取消候选不代表丢失原历史。设计与配置见[前缀缓存友好的会话压缩](../07_architecture/前缀缓存友好的会话压缩.md)。
+
 调度、Goal、Runtime 测试共同引用 Platform/Runtime 产物并会创建 SQLite 夹具。不要并行运行
 `PuddingRuntimeTests` 与 `PuddingPlatformTests`：并行构建会争用 `PuddingPlatform.dll`，并可能把临时 SQLite I/O
 或外键错误伪装成功能回归。应先完成一次构建，再串行运行聚焦集和全量集；测试夹具必须创建真实

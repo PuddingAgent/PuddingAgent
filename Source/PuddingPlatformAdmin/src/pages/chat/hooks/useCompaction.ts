@@ -7,7 +7,7 @@ import {
   compactSession,
   getCompactionStatus,
 } from '@/services/platform/api';
-import type { AssistantStatus, ChatTurn } from '../types';
+import type { AssistantStatus, ChatTurn, CompactionPresentation } from '../types';
 import {
   COMPACTION_TURN_PREFIX,
   compactionTurnId,
@@ -44,6 +44,14 @@ interface UseCompactionOptions {
   turns: CompactionTurnsPort;
   status: CompactionStatusPort;
   messageApi: MessageInstance;
+}
+
+interface CompactionEventFacts {
+  eventId?: string;
+  occurredAtMs?: number;
+  verifiedAt?: number;
+  stage?: CompactionPresentation['stage'];
+  background?: boolean;
 }
 
 type CompactedSessionSwitch = (
@@ -123,7 +131,7 @@ export function useCompaction({
       result?: ContextCompactionResult,
       stableTurnId?: string,
       placeAtStart = false,
-      facts?: { eventId?: string; occurredAtMs?: number; verifiedAt?: number },
+      facts?: CompactionEventFacts,
     ) => {
       // 事件驱动路径使用 canonical 事实；手动压缩命令为客户端乐观身份（无服务端事实）。
       const now = facts?.occurredAtMs ?? Date.now();
@@ -196,7 +204,7 @@ export function useCompaction({
       assistantStatus: AssistantStatus,
       message: string,
       result?: ContextCompactionResult,
-      facts?: { eventId?: string; occurredAtMs?: number; verifiedAt?: number },
+      facts?: CompactionEventFacts,
     ) => {
       const nextTurns = turnsRef.current.map((turn) => {
         if (turn.turnId !== turnId) return turn;
@@ -228,6 +236,8 @@ export function useCompaction({
             startedAt: assistantStatus === 'executing' ? (items[compactItemIndex]?.compaction?.startedAt ?? facts?.occurredAtMs) : items[compactItemIndex]?.compaction?.startedAt,
             verifiedAt: facts?.verifiedAt,
             endedAt: assistantStatus === 'success' || assistantStatus === 'error' ? facts?.occurredAtMs : undefined,
+            stage: facts?.stage ?? items[compactItemIndex]?.compaction?.stage,
+            background: facts?.background ?? items[compactItemIndex]?.compaction?.background,
           },
           type: 'subconscious_step' as const,
           status: itemStatus,
@@ -398,13 +408,16 @@ export function useCompaction({
         sourceSessionId !== null &&
         eventConversationId !== sourceSessionId;
 
-      const eventFacts = {
+      const eventFacts: CompactionEventFacts = {
         eventId:
           typeof raw.eventId === 'string' && raw.eventId
             ? raw.eventId
             : undefined,
         occurredAtMs: resolveEventOccurredAtMs(raw),
         verifiedAt: options?.verifiedAt,
+        stage: typeof raw.stage === 'string' && ['preparing', 'prepared', 'waiting', 'applying'].includes(raw.stage)
+          ? raw.stage as CompactionPresentation['stage'] : undefined,
+        background: typeof raw.background === 'boolean' ? raw.background : undefined,
       };
 
       if (!turnsRef.current.some((turn) => turn.turnId === compactTurnId)) {
@@ -533,6 +546,7 @@ export function useCompaction({
           handleCompactionLifecycleEvent({
             type: 'context.compaction.started', compactionId: active.compactionId,
             occurredAt: active.startedAt,
+            stage: active.stage, background: active.background,
           }, { notify: false, verifiedAt: Date.now() });
         } else if (activeAtRequest === activeCompactionTurnIdRef.current) {
           convergeStaleCompactions('server-not-running');

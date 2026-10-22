@@ -338,7 +338,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 
 | 文件 | 职责与边界 |
 |------|------------|
-| `src/pages/chat/components/CompactionCard.tsx` | 压缩事实的专用卡（运行/完成/未完成三态）。只表达有事实支撑的内容：运行中用不定量扫描条 + 「已运行 Xs/Xm」+ 收敛字形，**不伪造百分比进度、不编造前端无从证实的阶段名**；未完成态必须原样露出原因；动画在 `prefers-reduced-motion` 下全部降级 |
+| `src/pages/chat/components/CompactionCard.tsx` | 压缩事实卡：由服务端确认准备、就绪、等待、保存阶段及后台标志；新消息仍可提交，只有确认活跃时显示耗时动画，不编造进度百分比；完成/失败/待确认保持静态 |
 | `src/pages/chat/components/processPreview.ts` | `CurrentRunActivity.variant='compaction'` 标记压缩事实（来源：`subconscious_step.status==='compacting'`）；`AgentMessageBubble` 按该标记分流到 `CompactionCard`，通用活动卡只承载其余 system 阶段事实 |
 | `src/pages/chat/components/AgentMessageBubble.tsx` | 压缩态下不再叠加 turn 级 `TurnStatus` 行：否则同一张卡同时出现「正在压缩上下文」与「正在生成回答 · 已运行 Nm」两条互斥叙述，被读成“压缩完了又在生成” |
 | `src/pages/chat/components/IntentConsole.tsx` / `ComposerStatusDetails.tsx` | `status=thinking` 文案统一为「正在思考…」；**不得再用「整理上下文」**，该词与压缩共用同一批词，用户会读成正在压缩。⚠️ 例外（2026-10-07）：容量压力行按修复方案 §1 用「建议整理上下文」，它是**容量信号**而非运行态文案；若复核认为仍会与压缩混淆，只改 `SERVICE_LABEL.capacity` 一处 |

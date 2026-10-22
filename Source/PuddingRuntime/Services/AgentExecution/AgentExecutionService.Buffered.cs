@@ -492,6 +492,7 @@ public sealed partial class AgentExecutionService
         var visionContinuation = new VisionTextContinuation(
             BuildCurrentUserChatMessage(request, null).SourceContentHash,
             request.CallerLlmSnapshot?.VisionPolicy?.MaxImagesPerRequest ?? VisionRequestPolicy.Default.MaxImagesPerRequest);
+        await using var warmPrefixMaintenance = new WarmPrefixMaintenance();
         var warmPrefixCompactionAttempted = false;
         // F3：硬保护与软维护分开封顶 —— 软维护每 dispatch 一次；硬保护逐轮重新评估。
         var hardProtectionAttempted = false;
@@ -674,8 +675,7 @@ public sealed partial class AgentExecutionService
                     // Warm-prefix checkpoint：原样重放当前 provider 请求并只在尾部追加固定摘要
                     // 指令；摘要成功且确实缩小时才一次性替换旧历史。失败保留原 surface，
                     // 禁止旧实现直接逐轮删除历史头部造成语义丢失和全前缀 miss。
-                    if (WarmPrefixMaintenanceAdmission.ShouldAttemptSoft(history.Count, warmPrefixCompactionAttempted)
-                        || LlmRequestTextBudget.Exceeds(request, injectedHistory, llmTools))
+                    // Evaluate every request boundary; even a few large records can exceed capacity.
                     {
                         var compaction = await TryWarmPrefixCompactionAsync(
                             request,
@@ -685,7 +685,7 @@ public sealed partial class AgentExecutionService
                             llmTools,
                             effectiveLlmConfig,
                             round,
-                            ct);
+                            ct, warmPrefixMaintenance);
                         compactionFailureReason = compaction.SkipReason;
                         compactionEvidence = compaction.DiagnosticEvidence;
                         // F3：软维护若已执行过同步硬保护（RequiresSynchronousProtection），必须同时
@@ -799,7 +799,7 @@ public sealed partial class AgentExecutionService
                                 llmTools,
                                 effectiveLlmConfig,
                                 round,
-                                ct);
+                                ct, warmPrefixMaintenance);
                             compactionFailureReason = hard.SkipReason;
                             compactionEvidence = hard.DiagnosticEvidence;
                             hardProtectionAttempted = hard.Plan is not null;
@@ -869,7 +869,7 @@ public sealed partial class AgentExecutionService
                     current_message_id = request.MessageId,
                     current_input_sha256 = ComputeCurrentTurnInputHash(request),
                 });
-                var textBudgetError = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools, compactionFailureReason, compactionEvidence);
+                var textBudgetError = LlmRequestTextBudget.Validate(request, injectedHistory, llmTools, compactionFailureReason, compactionEvidence, warmPrefixMaintenance.ProtectionRequired);
                 if (textBudgetError is not null)
                     _logger.LogWarning("[AgentExec:ContextBudget] {Code} session={Session} evidence={Evidence}",
                         "local.context_compaction_required", request.SessionId,
@@ -2337,7 +2337,7 @@ public sealed partial class AgentExecutionService
                     currentMessageId: request.MessageId,
                     currentTurnId: request.ExecutionIdentity?.TurnId,
                     // R2：终态后维护 = 后台可选工作 ⇒ 提交前重验前台需求。
-                    isBackground: true),
+                    isBackground: true, autoTriggerRatio: (_runtimeExecutionConfig?.GetOptions().ContextCompaction ?? new ContextMaintenanceOptions()).CommitRatio),
                 // R2：候选身份 = 本轮终态时的历史形状 ⇒ 同一形状的重复调度直接合并。
                 candidateKey: "buffered:" + WarmPrefixCompaction.ComputeRevisionHash(bufferedMaintenanceSnapshot));
         }

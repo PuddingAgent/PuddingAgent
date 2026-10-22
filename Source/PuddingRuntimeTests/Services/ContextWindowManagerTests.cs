@@ -336,6 +336,20 @@ public sealed class ContextWindowManagerTests
         Assert.AreEqual(128_000, compaction.LastContextWindowTokens);
     }
 
+    [TestMethod]
+    public async Task PostTurnThresholdUsesRegisteredWindowAndConfiguredRatio()
+    {
+        var compaction = new FakeContextCompactionService(usedTokens: 65_000, defaultContextWindowTokens: 100_000);
+        var manager = CreateManager(compaction);
+        await manager.TrimHistoryAsync("s", [new(ChatRole.User, "task")], 100_000, false, "ws", "agent",
+            CancellationToken.None, isBackground: true, autoTriggerRatio: .65);
+        Assert.AreEqual(1, compaction.CompactCalls.Count);
+        Assert.IsTrue(compaction.CompactCalls[0].IsBackground);
+        await manager.TrimHistoryAsync("s2", [new(ChatRole.User, "task")], 200_000, false, "ws", "agent",
+            CancellationToken.None, isBackground: true, autoTriggerRatio: .65);
+        Assert.AreEqual(1, compaction.CompactCalls.Count, "Larger registered window must raise the absolute trigger.");
+    }
+
         [TestMethod]
     public async Task TrimHistoryAsync_ReturnsFalse_After_InjectingWorkSummaryPrompt()
     {

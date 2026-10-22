@@ -927,7 +927,8 @@ public sealed class ContextWindowManager
         string? currentTurnId = null,
         // R2：本次裁剪是否为**后台可选维护**（终态后维护走这里 ⇒ true）。
         // 后台压缩在提交前会重验前台需求，有需求即零写入让位。
-        bool isBackground = false)
+        bool isBackground = false,
+        double? autoTriggerRatio = null)
     {
         var autoCompacted = await TryAutoCompactAsync(
             sessionId,
@@ -939,7 +940,7 @@ public sealed class ContextWindowManager
             agentTemplateId,
             traceId,
             ct,
-            isBackground);
+            isBackground, autoTriggerRatio);
 
         var hasLiveContext = history.Any(message => message.Role != ChatRole.System);
         if (preferDbContextWindow && hasLiveContext && !autoCompacted)
@@ -1116,7 +1117,8 @@ public sealed class ContextWindowManager
         string? agentTemplateId,
         string? traceId,
         CancellationToken ct,
-        bool isBackground = false)
+        bool isBackground = false,
+        double? autoTriggerRatio = null)
     {
         if (_compactionService is null || string.IsNullOrWhiteSpace(workspaceId))
         {
@@ -1142,6 +1144,9 @@ public sealed class ContextWindowManager
                 maxOutputTokens: maxOutputTokens,
                 maxInputTokens: maxInputTokens,
                 toolCount: _defaultToolCount);
+            if (autoTriggerRatio is > 0 and <= 1)
+                health = health with { ShouldAutoCompact = health.UsedTokens >= maxTokenBudget * autoTriggerRatio.Value
+                    || health.UsedTokens >= health.EffectiveWindowTokens };
             var healthMs = (System.Diagnostics.Stopwatch.GetTimestamp() - healthStart) * 1000 / System.Diagnostics.Stopwatch.Frequency;
 
             _logger.LogInformation(
@@ -1171,7 +1176,7 @@ public sealed class ContextWindowManager
 
             // 检查历史中是否有 Agent 的工作总结，由策略决定下一步动作
             var agentWorkSummary = ExtractAgentWorkSummaryFromHistory(sessionId);
-            var decision = _strategy.Decide(
+            var decision = isBackground ? CompactionDecision.Proceed : _strategy.Decide(
                 sessionId, health, agentWorkSummary, _compactionOptions,
                 hasCompactionNotifier: _compactionNotifier is not null);
 

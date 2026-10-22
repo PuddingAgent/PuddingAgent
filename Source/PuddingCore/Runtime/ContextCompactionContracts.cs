@@ -343,7 +343,8 @@ public sealed record ContextCompactionMessage(
     string Role,
     string Content);
 
-public sealed record ActiveCompactionSnapshot(string CompactionId, DateTimeOffset StartedAt);
+public sealed record ActiveCompactionSnapshot(string CompactionId, DateTimeOffset StartedAt,
+    string? Stage = null, bool Background = false);
 
 public interface IContextCompactionService
 {
@@ -360,6 +361,9 @@ public interface IContextCompactionService
     bool IsCompactionRunning(string sessionId) => false;
 
     ActiveCompactionSnapshot? GetActiveCompaction(string sessionId) => null;
+
+    void UpdatePreparedCompaction(string sessionId, string compactionId, string stage, bool background) { }
+    void EndPreparedCompaction(string sessionId, string compactionId) { }
 
         Task<ContextHealthSnapshot> GetHealthAsync(
         string sessionId,

@@ -495,6 +495,10 @@ public sealed class LlmRequestBudgetGuardTests
             var seeded = service.GetOptions().SubAgents;
             Assert.AreEqual(0.80, seeded.ContextSoftCompactionTriggerRatio, 0.0001);
             Assert.AreEqual(0.5, seeded.ContextSoftCompactionTargetRatio, 0.0001);
+            var maintenance = service.GetOptions().ContextCompaction;
+            Assert.AreEqual(.60, maintenance.PrepareRatio);
+            Assert.AreEqual(.65, maintenance.CommitRatio);
+            Assert.AreEqual(.70, maintenance.BlockingRatio);
 
             // 非法配置：trigger > 1、target > trigger —— 必须被夹取回有效区间。
             var configPath = Path.Combine(root, "config", "runtime.execution.json");
@@ -512,6 +516,12 @@ public sealed class LlmRequestBudgetGuardTests
             Assert.AreEqual(1.0, repaired.ContextSoftCompactionTriggerRatio, 0.0001);
             Assert.AreEqual(1.0, repaired.ContextSoftCompactionTargetRatio, 0.0001);
             Assert.IsTrue(repaired.ContextSoftCompactionTargetRatio <= repaired.ContextSoftCompactionTriggerRatio);
+            File.WriteAllText(configPath, """{"contextCompaction":{"prepareRatio":0.50,"commitRatio":0.60,"blockingRatio":0.80,"targetRatio":0.40,"minimumEpochRounds":6}}""");
+            var configured = new RuntimeExecutionConfigService(PuddingDataPaths.FromRoot(root),
+                NullLogger<RuntimeExecutionConfigService>.Instance).GetOptions().ContextCompaction;
+            Assert.AreEqual(.50, configured.PrepareRatio);
+            Assert.AreEqual(.80, configured.BlockingRatio);
+            Assert.AreEqual(6, configured.MinimumEpochRounds);
         }
         finally
         {

@@ -55,13 +55,15 @@ internal static class LlmRequestTextBudget
 
     internal static Exception? Validate(RuntimeDispatchRequest request, IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<LlmToolDefinition> tools, string? compactionFailureReason = null,
-        IReadOnlyDictionary<string, string>? compactionEvidence = null)
+        IReadOnlyDictionary<string, string>? compactionEvidence = null, bool contextProtectionRequired = false)
     {
         var limit = ResolveLimit(request);
-        if (limit <= 0) return null;
+        if (limit <= 0 && !contextProtectionRequired) return null;
         var bytes = Measure(messages, tools);
-        if (bytes <= limit) return null;
-        const string message = "上下文整理未能将请求缩小到上传预算，已停止发送；原始会话仍完整保留。";
+        if (bytes <= limit && !contextProtectionRequired) return null;
+        var message = contextProtectionRequired
+            ? "上下文已达到配置的压缩阈值，但整理尚未完成；已暂停模型请求，原始会话仍完整保留。"
+            : "上下文整理未能将请求缩小到上传预算，已停止发送；原始会话仍完整保留。";
         var evidence = new Dictionary<string, string>
         {
             ["estimated_request_text_bytes"] = bytes.ToString(),
@@ -83,7 +85,7 @@ internal static class LlmRequestTextBudget
             Category = "local", Phase = DiagnosticPhaseKind.Build, Retryable = false,
             UserMessage = message,
             RemediationHint = "重试会重新尝试压缩；若仍失败，请检查本轮压缩日志及工具定义、系统提示词或受保护消息的体积。",
-            Rule = "request_text_budget", Evidence = evidence,
+            Rule = contextProtectionRequired ? "configured_compaction_threshold" : "request_text_budget", Evidence = evidence,
         });
     }
 }
