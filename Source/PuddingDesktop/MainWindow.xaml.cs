@@ -966,23 +966,37 @@ public sealed partial class MainWindow : Window
         host.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
+        // 工具与标注是**开关量**，用 ToggleButton：选中态是 WinUI 自带的强调色，
+        // 不需要自己画一套。用普通 Button 时用户只能靠状态栏那行字猜当前是哪个工具。
+        var annotationButton = PanelToggle("标注", async (_, _) => await TogglePanelAnnotationAsync(tab));
+        var toolButtons = new Dictionary<string, Microsoft.UI.Xaml.Controls.Primitives.ToggleButton>(
+            StringComparer.Ordinal);
+        var undoButton = PanelAction("撤销", async (_, _) => await UndoPanelAsync(tab));
+
         var toolbar = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 6,
+            Spacing = 4,
             HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 6),
         };
-        toolbar.Children.Add(PanelAction("标注", async (_, _) => await TogglePanelAnnotationAsync(tab)));
+        toolbar.Children.Add(annotationButton);
+        toolbar.Children.Add(PanelDivider());
         // 工具组常驻显示：先选工具再开标注，比先进标注再切更顺手。
         foreach (var (id, label) in PanelTools)
         {
-            toolbar.Children.Add(PanelAction(label, async (_, _) => await SetPanelToolAsync(tab, id)));
+            var button = PanelToggle(label, async (_, _) => await SetPanelToolAsync(tab, id));
+            toolButtons[id] = button;
+            toolbar.Children.Add(button);
         }
-        toolbar.Children.Add(PanelAction("撤销", async (_, _) => await UndoPanelAsync(tab)));
-        toolbar.Children.Add(PanelAction("保存到制品库", async (_, _) => await SavePanelToCraftsAsync(tab)));
+        toolbar.Children.Add(PanelDivider());
+        toolbar.Children.Add(undoButton);
+        toolbar.Children.Add(PanelDivider());
+        toolbar.Children.Add(PanelAction("保存到制品库", async (_, _) => await SavePanelToCraftsAsync(tab), accent: true));
         toolbar.Children.Add(PanelAction("添加到对话", async (_, _) => await AddPanelToChatAsync(tab)));
         toolbar.Children.Add(PanelAction("下载到本地", async (_, _) => await ExportPanelAsync(tab)));
+        _panelToolbars[tab.Id] = new PanelToolbar(annotationButton, toolButtons, undoButton);
         Grid.SetRow(toolbar, 0);
         host.Children.Add(toolbar);
 
@@ -1024,6 +1038,48 @@ public sealed partial class MainWindow : Window
     private readonly HashSet<string> _panelFailureNotified = new(StringComparer.Ordinal);
 
     private const double PanelPollSeconds = 2;
+
+    /// <summary>每块画布的工具栏句柄（按 tab id）。关标签时必须一起丢掉，否则字典随标签无限增长。</summary>
+    private readonly Dictionary<string, PanelToolbar> _panelToolbars = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 一块画布工具栏的选中态回显。
+    ///
+    /// <para>
+    /// **页内是唯一真源**：Esc、字母快捷键、撤销都会在不经过宿主的情况下改变状态，
+    /// 所以这里只做「页面怎么说就怎么画」，本地不自己记账 —— 记账版本在 Esc 之后会显示错。
+    /// </para>
+    /// </summary>
+    private sealed class PanelToolbar
+    {
+        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton _annotation;
+        private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.Primitives.ToggleButton> _tools;
+        private readonly Button _undo;
+
+        public PanelToolbar(
+            Microsoft.UI.Xaml.Controls.Primitives.ToggleButton annotation,
+            Dictionary<string, Microsoft.UI.Xaml.Controls.Primitives.ToggleButton> tools,
+            Button undo)
+        {
+            _annotation = annotation;
+            _tools = tools;
+            _undo = undo;
+        }
+
+        public void Apply(PanelCanvasState state)
+        {
+            _annotation.IsChecked = state.IsActive;
+
+            foreach (var (id, button) in _tools)
+            {
+                button.IsChecked = state.IsActive
+                    && string.Equals(id, state.Tool, StringComparison.Ordinal);
+            }
+
+            // 没有可撤销的动作时灰掉：现在点它只会刷一句状态栏，看起来和按坏了没区别。
+            _undo.IsEnabled = state.CanUndo;
+        }
+    }
 
     /// <summary>
     /// 面板允许读取的图片根目录。
@@ -1118,6 +1174,7 @@ public sealed partial class MainWindow : Window
 
         _panelRenderedRevision.Remove(tabId);
         _panelPollInFlight.Remove(tabId);
+        _panelToolbars.Remove(tabId);
         _panelFailureNotified.Remove(tabId);
     }
 
@@ -1222,6 +1279,7 @@ public sealed partial class MainWindow : Window
                 _panelRenderedRevision[tabId] = item.Revision;
                 _panelFailureNotified.Remove(tabId);
                 core.NavigateToString(WrapPanelHtml(item.Content));
+                _ = SyncPanelToolbarAsync(tabId);
                 ToolStatusText.Text = string.IsNullOrWhiteSpace(item.Title)
                     ? $"画布已更新（rev {item.Revision}）"
                     : $"{item.Title}（rev {item.Revision}）";
@@ -1239,6 +1297,7 @@ public sealed partial class MainWindow : Window
 
                 _panelRenderedRevision[tabId] = -1; // 有内容后必定重绘
                 core.NavigateToString(PanelSampleHtml);
+                _ = SyncPanelToolbarAsync(tabId);
                 ToolStatusText.Text = PanelCanvasFeed.DescribeFailure(result.Status, null);
                 break;
 
@@ -1421,6 +1480,8 @@ public sealed partial class MainWindow : Window
             var raw = await web.CoreWebView2.ExecuteScriptAsync(
                 "window.puddingAnnotation ? puddingAnnotation.toggle() : null");
 
+            await SyncPanelToolbarAsync(tab.Id);
+
             if (string.Equals(raw, "null", StringComparison.OrdinalIgnoreCase))
             {
                 // 旧壳 / 页面未注入标注层。如实报，不要让按钮看起来按了。
@@ -1459,6 +1520,8 @@ public sealed partial class MainWindow : Window
             await web.CoreWebView2.ExecuteScriptAsync(
                 $"window.puddingAnnotation ? puddingAnnotation.setTool('{toolId}') : null");
 
+            await SyncPanelToolbarAsync(tab.Id);
+
             ToolStatusText.Text = toolId switch
             {
                 "pen" => "工具：涂鸦 —— 按住拖动写下笔迹（训练模式，记得先开「标注」）",
@@ -1471,6 +1534,42 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             ToolStatusText.Text = $"切换工具失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 把页内的工具状态回显到工具栏按钮。
+    ///
+    /// <para>
+    /// 取不到就什么都不动（不猜）。这条路径失败只意味着按钮颜色不更新，
+    /// 不该往状态栏写东西盖掉真正有用的提示。
+    /// </para>
+    /// </summary>
+    private async Task SyncPanelToolbarAsync(string tabId)
+    {
+        if (!_panelToolbars.TryGetValue(tabId, out var bar))
+        {
+            return;
+        }
+
+        if (!_panelCanvases.TryGetValue(tabId, out var web) || web.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var raw = await web.CoreWebView2.ExecuteScriptAsync(
+                "window.puddingAnnotation ? puddingAnnotation.state() : ''");
+
+            if (PanelCanvasState.TryParse(raw, out var state))
+            {
+                bar.Apply(state);
+            }
+        }
+        catch (Exception)
+        {
+            // 回显失败不该打断用户正在做的操作。
         }
     }
 
@@ -1487,6 +1586,8 @@ public sealed partial class MainWindow : Window
         {
             var raw = await web.CoreWebView2.ExecuteScriptAsync(
                 "window.puddingAnnotation ? String(puddingAnnotation.undo()) : 'false'");
+
+            await SyncPanelToolbarAsync(tab.Id);
 
             // ExecuteScriptAsync 返回的是 JSON 字面量：字符串带引号，布尔不带。
             ToolStatusText.Text = raw.Trim('"') == "true" ? "已撤销上一步" : "没有可撤销的操作";
@@ -2068,7 +2169,15 @@ public sealed partial class MainWindow : Window
         UpdateToolContentVisibility();
     }
 
-    private static Button PanelAction(string text, RoutedEventHandler onClick)
+    /// <summary>
+    /// 工具栏上的普通按钮。
+    ///
+    /// <para>
+    /// <paramref name="accent"/> 只给唯一的主操作（保存到制品库）：
+    /// 十个按钮一样重的时候，「下一步该点哪个」在界面上没有答案。
+    /// </para>
+    /// </summary>
+    private static Button PanelAction(string text, RoutedEventHandler onClick, bool accent = false)
     {
         var button = new Button
         {
@@ -2076,12 +2185,69 @@ public sealed partial class MainWindow : Window
             FontSize = 12,
             Padding = new Thickness(10, 4, 10, 4),
             CornerRadius = new CornerRadius(6),
+            BorderThickness = accent ? new Thickness(0) : new Thickness(1),
+        };
+
+        // 强调样式来自主题；取不到就退回普通按钮，绝不因为找不到资源让整个工具栏起不来。
+        if (accent
+            && Application.Current.Resources.TryGetValue("AccentButtonStyle", out var found)
+            && found is Style accentStyle)
+        {
+            button.Style = accentStyle;
+        }
+        else
+        {
+            button.Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"];
+            button.BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"];
+        }
+
+        button.Click += onClick;
+        return button;
+    }
+
+    /// <summary>
+    /// 工具栏上的开关按钮（标注 / 各个工具）。
+    ///
+    /// <para>
+    /// 点它只把意图发给页面，本地不抢先改 <c>IsChecked</c>：
+    /// 否则页面拒绝时会出现「按钮显示已选中、画布上其实没生效」。
+    /// 真实选中态一律由 <see cref="SyncPanelToolbarAsync"/> 从页内回显。
+    /// </para>
+    /// </summary>
+    private static Microsoft.UI.Xaml.Controls.Primitives.ToggleButton PanelToggle(
+        string text, RoutedEventHandler onClick)
+    {
+        var button = new Microsoft.UI.Xaml.Controls.Primitives.ToggleButton
+        {
+            Content = text,
+            FontSize = 12,
+            Padding = new Thickness(10, 4, 10, 4),
+            CornerRadius = new CornerRadius(6),
+            MinWidth = 0,
             Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
             BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
             BorderThickness = new Thickness(1),
         };
         button.Click += onClick;
         return button;
+    }
+
+    /// <summary>工具组之间的竖线。工具栏只有一行高，用 1px Border 比分隔符控件更稳。</summary>
+    private static Border PanelDivider()
+    {
+        var brush = Application.Current.Resources.TryGetValue("DividerStrokeColorDefaultBrush", out var found)
+            && found is Brush divider
+            ? divider
+            : (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"];
+
+        return new Border
+        {
+            Width = 1,
+            Height = 16,
+            Background = brush,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 4, 0),
+        };
     }
 
     /// <summary>
