@@ -472,7 +472,7 @@ public sealed class PanelCraftStoreTests : IDisposable
         const string craftId = "craft-0123abcd";
 
         var panelId = PanelCraftEditPanel.Prefix + "0123abcd";
-        Assert.Equal(panelId, "edit-0123abcd");
+        Assert.Equal("edit-0123abcd", panelId);
         Assert.Equal(craftId, PanelCraftEditPanel.CraftIdOf(panelId));
     }
 
@@ -625,10 +625,9 @@ public sealed class PanelCraftStoreTests : IDisposable
 
         // 超期的没了；刚移进去的（时间戳 = now）留着，误删仍可恢复。
         Assert.False(Directory.Exists(expired));
-        Assert.Equal(
-            1,
+        Assert.Single(
             Directory.GetDirectories(
-                Path.Combine(_store.CraftsDirectory, PanelCraftStore.TrashDirectoryName)).Length);
+                Path.Combine(_store.CraftsDirectory, PanelCraftStore.TrashDirectoryName)));
     }
 
     // ── 血缘深度 ────────────────────────────────────────────

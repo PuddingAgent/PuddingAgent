@@ -51,7 +51,7 @@ public sealed class DocumentTabTests
         var first = tabs.Open(Descriptor("Docs/a.md"));
         var second = tabs.Open(Descriptor("docs\\A.MD"));
 
-        Assert.Equal(1, tabs.Tabs.Count);
+        Assert.Single(tabs.Tabs);
         Assert.Equal(first.Id, second.Id);
         Assert.Same(second, tabs.ActiveTab);
         Assert.True(second.CanClose);

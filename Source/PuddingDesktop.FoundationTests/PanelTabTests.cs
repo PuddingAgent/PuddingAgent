@@ -33,7 +33,7 @@ public sealed class PanelTabTests
         var first = tabs.Open(Descriptor());
         var second = tabs.Open(Descriptor());
 
-        Assert.Equal(1, tabs.Tabs.Count);
+        Assert.Single(tabs.Tabs);
         Assert.Equal(first.Id, second.Id);
         Assert.Same(second, tabs.ActiveTab);
     }
