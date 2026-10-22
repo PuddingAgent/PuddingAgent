@@ -507,7 +507,7 @@
          <MenuFlyout Placement="BottomEdgeAlignedLeft">
           <MenuFlyoutItem Text="新标签页（工具首页）" Click="OnOpenHomeTab"/>
           <MenuFlyoutSeparator/>
-          <MenuFlyoutItem Text="终端 · 新会话" Click="OnOpenTerminalTab"/>
+          <MenuFlyoutItem x:Name="TerminalMenuItem" Text="终端 · 新会话" Click="OnOpenTerminalTab"/>
           <MenuFlyoutItem Text="Agent 浏览器" Click="OnOpenBrowserTab"/>
           <MenuFlyoutItem Text="制成品预览" Click="OnOpenArtifactTab"/>
           <MenuFlyoutItem Text="输出文件" Click="OnOpenOutputTab"/>
@@ -595,7 +595,7 @@
             <FontIcon Glyph="&#xE8B7;" FontSize="18" Foreground="#E2A33C" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="输出文件" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock Text="打开并预览本机的文档、数据或日志" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock x:Name="OutputCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Right">
              <Border Style="{StaticResource ToolAvailabilityChipStyle}">
@@ -606,13 +606,13 @@
            </Grid>
           </Button>
 
-          <Button Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenTerminalTab">
+          <Button x:Name="TerminalCardEntry" Style="{StaticResource ToolHomeCardStyle}" Click="OnOpenTerminalTab">
            <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <FontIcon Glyph="&#xE756;" FontSize="18" Foreground="#4C8DF6" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="新建终端" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock Text="在会话工作区运行命令（会话组件尚未接入）" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock x:Name="TerminalCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
              <TextBlock x:Name="TerminalCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
@@ -626,7 +626,7 @@
             <FontIcon Glyph="&#xE774;" FontSize="18" Foreground="#4C8DF6" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="浏览器" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock Text="浏览网页，并指定 Agent 目标页面" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock x:Name="BrowserCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Right">
              <Border Style="{StaticResource ToolAvailabilityChipStyle}">
@@ -643,7 +643,7 @@
             <FontIcon Glyph="&#xE8A5;" FontSize="18" Foreground="#B07CD6" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="制成品" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock Text="预览 Agent 生成的文档、图表与网页（等待 Core 成果接口）" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock x:Name="ArtifactCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
              <TextBlock x:Name="ArtifactCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>
@@ -657,7 +657,7 @@
             <FontIcon Glyph="&#xE71D;" FontSize="18" Foreground="#4CB782" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Spacing="2">
              <TextBlock Text="交互面板" FontSize="15" FontWeight="SemiBold"/>
-             <TextBlock Text="Agent 生成的表单、筛选器与参数设置（等待接入）" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+             <TextBlock x:Name="PanelCardSubtitle" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
             <Border Grid.Column="2" Style="{StaticResource ToolAvailabilityChipStyle}">
              <TextBlock x:Name="PanelCardAvailabilityText" Style="{StaticResource ToolAvailabilityChipTextStyle}"/>

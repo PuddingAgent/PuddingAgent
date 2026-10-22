@@ -30,11 +30,16 @@ BCL-only layout and appearance preferences, with compiler-enforced absence of pa
   `{DataRoot}/panels/panel-{id}.annotations.json` (`schemaVersion=1`, camelCase `payload`, atomic `.tmp` + move).
   `TryPublish` returns `false` + reason instead of throwing (it runs on the 2s UI poll timer), and refuses an empty payload
   so a transient blank read can never erase the previous drawing; callers dedupe on payload text so only real edits hit disk.
+- `ToolAvailabilityCatalog.cs`: the single truth for tool-home cards. `For(kind)` decides availability and
+  `CardLabel` / `CardSubtitle` / `IsEntryEnabled` all derive from it, so a card can never claim 「可用」 while its
+  copy still says 等待接入, and an unwired entry is disabled instead of opening an empty tab. 制成品 stays Ready
+  because `PanelCraftStore` really backs it; only Terminal remains Deferred. Unit-tested across every enum member
+  (invariant + enabled derivation), see `ToolAvailabilityCatalogTests`.
 - `StartupPanelPresenter.cs`: single mapping source for the Shell startup state panel (title/phase/3-step strip/elapsed + slow-start hint/actions/error summary/status-bar text and tone) across all 13 launch phases;
   `StartupErrorText.Describe` turns supervisor errors into user-facing Chinese while keeping raw text for the collapsible detail.
 - `StartupPhaseActivity.cs`: parses `[StartupPhase] <phase> total=… delta=…` lines from the Core log tail into an aggregated human phase plus "latest output"; keeps the log format out of XAML and UI code.
 - `Source/PuddingDesktop.FoundationTests`: independent layout, persistence, startup-panel mapping/phase-parsing,
   and dependency boundary tests; plus annotation normalization, craft store (save/rename/lineage/trash),
-  burn-in retention, canvas-restore payload and annotation-handoff writer tests (461 cases as of 2026-10-22).
+  burn-in retention, canvas-restore payload and annotation-handoff writer tests (471 cases as of 2026-10-22).
 
 Role selection, native drafts, document business ownership and in-process kernel contracts were removed during master recovery. Business UI stays in Web.

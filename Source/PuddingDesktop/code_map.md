@@ -4,6 +4,11 @@
 - `App.xaml` retains native theme brushes, rounded controls and Mica styling from desktop development B.
 - `App.xaml.cs`: single-instance activation; creates the launcher coordinator. No in-process business Host.
 - `MainWindow.xaml[.cs]`: trusted Web workbench, separate Agent browser, runtime controls and launcher-only settings. Business configuration remains Web.
+- Tool home cards (`*CardSubtitle` blocks + `ApplyToolAvailabilityLabels`): chip label, subtitle and
+  clickability are all pasted from `PuddingDesktop.Foundation.ToolAvailabilityCatalog`, and the 「+」menu's
+  terminal item shares the same decision — a Deferred capability is disabled in both places instead of opening a
+  placeholder tab. The stale `DeferredNotice(Panel)` branch (said 「交互面板尚未接入」 while the card said 可用)
+  was removed; `DeferredNotice` now covers only genuinely unwired kinds.
 - `MainWindow.xaml.cs` panel methods: current canvas polling, annotation commands, composer forwarding and native craft-library wiring.
 - `PanelImageBridge.cs`: serves allowed local image resources to panel WebView2 instances.
 - [Agent-driven panel ADR-099](../../Docs/07_architecture/113ADR-099交互面板编辑状态与制成品归属ADR.md): proposed interactive HTML/JS runtime, bidirectional SDK events, recoverable state and Core asset ownership.

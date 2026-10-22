@@ -810,17 +810,36 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// IMG11：把「可用 / 待接入」写到工具首页卡片上。文案来自
-    /// <see cref="ToolAvailabilityCatalog"/>，与标签页的 Availability 同一判断，
-    /// 所以不会出现「卡片说可用、点开说未接入」（或反过来）的自我矛盾。
+    /// IMG11：把「可用 / 待接入」标签、卡片说明与可点状态写到工具首页卡片上。
+    /// 三项全部来自 <see cref="ToolAvailabilityCatalog"/>，与标签页的 Availability
+    /// 同一判断，所以不会出现「卡片说可用、说明写着等待接入」（或反过来）。
     /// </summary>
     private void ApplyToolAvailabilityLabels()
     {
-        OutputCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Output);
-        TerminalCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Terminal);
-        BrowserCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Browser);
-        ArtifactCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Artifact);
-        PanelCardAvailabilityText.Text = ToolAvailabilityCatalog.CardLabel(ToolTabKind.Panel);
+        ApplyCard(ToolTabKind.Output, OutputCardAvailabilityText, OutputCardSubtitle);
+        ApplyCard(ToolTabKind.Terminal, TerminalCardAvailabilityText, TerminalCardSubtitle, TerminalCardEntry);
+        ApplyCard(ToolTabKind.Browser, BrowserCardAvailabilityText, BrowserCardSubtitle);
+        ApplyCard(ToolTabKind.Artifact, ArtifactCardAvailabilityText, ArtifactCardSubtitle);
+        ApplyCard(ToolTabKind.Panel, PanelCardAvailabilityText, PanelCardSubtitle);
+
+        // 「+」菜单里的终端入口与卡片同一判断：不能卡片禁用、菜单里还能点进一个空标签页。
+        TerminalMenuItem.IsEnabled = ToolAvailabilityCatalog.IsEntryEnabled(ToolTabKind.Terminal);
+    }
+
+    /// <summary>
+    /// 一张工具卡片的可变部分：芯片标签、说明文字、是否可点。
+    /// Shell 只负责贴，不在这一层写任何能力判断 —— 否则文案会与真实能力漂移。
+    /// </summary>
+    private static void ApplyCard(
+        ToolTabKind kind,
+        TextBlock availabilityLabel,
+        TextBlock subtitle,
+        Control? entry = null)
+    {
+        availabilityLabel.Text = ToolAvailabilityCatalog.CardLabel(kind);
+        subtitle.Text = ToolAvailabilityCatalog.CardSubtitle(kind);
+        if (entry is not null)
+            entry.IsEnabled = ToolAvailabilityCatalog.IsEntryEnabled(kind);
     }
 
     private void UpdateToolStatus()
@@ -864,7 +883,10 @@ public sealed partial class MainWindow : Window
         ToolTabKind.Terminal => "终端会话组件尚未接入：该标签页只保留实例与状态位，不执行命令，也不伪装运行状态。",
         // ToolTabKind.Artifact 已不再走这里：制成品有自己的列表（CreateCraftLibrary）。
         // 留着一条「尚未接入」的文案会是假话——它会让人以为制品库还是空的。
-        ToolTabKind.Panel => "交互面板尚未接入：这里用来展示 Agent 生成的 Markdown、设计图纸等媒体资源；渲染通道还没建立，因此暂时不提供内容区。",
+        // ToolTabKind.Panel 也不再走这里：渲染通道已接通（Agent 通过 panel 能力推送内容，
+        // 画布能渲染、能导出、能保存到制品库），For(Panel) 恒为 Ready，这条分支永远不可达。
+        // 2026-10-22（UX 清单 ⑩）删掉了那条残留的「交互面板尚未接入」，它和卡片上的
+        // 「可用」互相矛盾，正是用户看到的「同一个入口两种说法」。
         _ => "该能力尚未接入。",
     };
 
