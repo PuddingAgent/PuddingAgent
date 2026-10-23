@@ -81,7 +81,7 @@
 
 | 文件 | 用途 | 关键符号 | 关联 | 约束 |
 |------|------|------|------|------|
-| `SqliteCodeIndexStore.cs` | SQLite 索引存储 | `SqliteCodeIndexStore` / `RemoveFilesAsync` | `Contracts/ICodeIndexStore.cs` | 一个批次只开一个事务，部分失败即一字不删；逐符号图删除走四条精确删除而非每表一条 `Source OR Target`（后者退化为全分区重扫） |
+| `SqliteCodeIndexStore.cs` | SQLite 索引存储 | `SqliteCodeIndexStore` / `RemoveFilesAsync` | `Contracts/ICodeIndexStore.cs` | 一个批次只开一个事务，部分失败即一字不删；逐符号图删除走四条精确删除而非每表一条 `Source OR Target`（后者退化为全分区重扫）；`SearchSymbolsAsync` 在「无 kind/无扩展名过滤/skip=0/query 非空」时走覆盖索引两阶段（实测 950ms→19ms），其余回退宽表 SQL 且语义逐字不变 |
 | `SqliteCodeIndexStore.SourceMaintenance.cs` | 源维护状态的持久化（部分类） | `SqliteCodeIndexStore` | `SqliteCodeIndexStore.cs` | manifest 单事务 upsert 加删除，删除同时清消费者水位（同名新文件不继承旧状态）；账本写入整体替换并拒绝回退写入；无记录时返回空 manifest 与默认账本 |
 | `SqliteCodeIndexStore.FileReplacement.cs` | 原子文件替换（部分类） | `SqliteCodeIndexStore` | `SqliteCodeIndexStore.cs` | 一个批次一个事务，任一步失败整批回滚（旧产物与旧指纹保持完整）；只删除指向消失符号的入边并先报告其来源文件；`IN (…)` 用 JSON 数组参数加 `json_each` 分块（128），既不拼 SQL 也不撞参数上限 |
 

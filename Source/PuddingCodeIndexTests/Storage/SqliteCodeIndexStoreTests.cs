@@ -232,6 +232,82 @@ public sealed class SqliteCodeIndexStoreTests
             Signature: $"{kind} {name}",
             Container: "Demo");
 
+    // ── 符号检索快路径（covering index 两阶段）：语义必须与宽表 SQL 一致 ──────────
+
+    [TestMethod]
+    public async Task SearchSymbols_Exact_Match_Is_Not_Starved_By_Limit()
+    {
+        using var fixture = StoreFixture.Create();
+        var project = Project(fixture.ProjectPath);
+        await fixture.Store.UpsertProjectAsync(project);
+
+        var symbols = new List<CodeSymbolRecord>();
+        for (var i = 0; i < 60; i++)
+            symbols.Add(Symbol(project, "src/Foo.cs", $"symbol-foo{i:00}", $"Foo{i:00}", CodeSymbolKind.Class, i + 1, i + 2));
+        // 字典序上 foo00..foo59 都排在 "Foo" 之后；若不单独先取精确匹配，它会被 LIMIT 挤掉。
+        symbols.Add(Symbol(project, "src/Foo.cs", "symbol-exact", "Foo", CodeSymbolKind.Class, 99, 100));
+        await fixture.Store.UpsertSymbolsAsync(project.WorkspaceId, project.ProjectId, symbols);
+
+        var results = await fixture.Store.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(project.WorkspaceId, "Foo", project.ProjectId, Limit: 5));
+
+        Assert.HasCount(5, results);
+        Assert.AreEqual("symbol-exact", results[0].SymbolId, "精确匹配必须排第一，且不得被 LIMIT 截掉");
+    }
+
+    [TestMethod]
+    public async Task SearchSymbols_MatchTarget_Scopes_To_The_Requested_Field()
+    {
+        using var fixture = StoreFixture.Create();
+        var project = Project(fixture.ProjectPath);
+        await fixture.Store.UpsertProjectAsync(project);
+        var file = new CodeFileRecord(project.WorkspaceId, project.ProjectId, "src/Foo.cs", "CSharp");
+        await fixture.Store.UpsertFilesAsync(project.WorkspaceId, project.ProjectId, [file]);
+        // Name 不含 Keyword，只有 Signature 含。
+        await fixture.Store.UpsertSymbolsAsync(project.WorkspaceId, project.ProjectId, [
+            new CodeSymbolRecord(
+                project.WorkspaceId,
+                project.ProjectId,
+                file.FilePath,
+                "symbol-sig",
+                "Alpha",
+                CodeSymbolKind.Method,
+                1,
+                2,
+                Signature: "void Alpha(Keyword k)",
+                Container: "Demo")
+        ]);
+
+        var byName = await fixture.Store.SearchSymbolsAsync(new CodeSymbolSearchRequest(
+            project.WorkspaceId, "Keyword", project.ProjectId, MatchTarget: CodeSymbolMatchTarget.Name));
+        var bySignature = await fixture.Store.SearchSymbolsAsync(new CodeSymbolSearchRequest(
+            project.WorkspaceId, "Keyword", project.ProjectId, MatchTarget: CodeSymbolMatchTarget.Signature));
+
+        Assert.IsEmpty(byName, "只匹配 Name 时不得命中只出现在 Signature 里的词");
+        Assert.HasCount(1, bySignature);
+        Assert.AreEqual("symbol-sig", bySignature[0].SymbolId);
+    }
+
+    [TestMethod]
+    public async Task SearchSymbols_Empty_Query_And_Skip_Keep_Wide_Path_Semantics()
+    {
+        using var fixture = StoreFixture.Create();
+        var project = Project(fixture.ProjectPath);
+        await fixture.Store.UpsertProjectAsync(project);
+        await fixture.Store.UpsertSymbolsAsync(project.WorkspaceId, project.ProjectId, [
+            Symbol(project, "src/Foo.cs", "s1", "One", CodeSymbolKind.Class, 1, 2),
+            Symbol(project, "src/Foo.cs", "s2", "Two", CodeSymbolKind.Class, 3, 4),
+        ]);
+
+        var all = await fixture.Store.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(project.WorkspaceId, string.Empty, project.ProjectId));
+        var skipped = await fixture.Store.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(project.WorkspaceId, "One", project.ProjectId, Skip: 1));
+
+        Assert.HasCount(2, all, "空 query 的既有语义（返回全部）必须保持");
+        Assert.IsEmpty(skipped, "skip>0 走宽表分页路径，语义不变");
+    }
+
     private sealed class StoreFixture : IDisposable
     {
         private StoreFixture(string root, string databasePath)
