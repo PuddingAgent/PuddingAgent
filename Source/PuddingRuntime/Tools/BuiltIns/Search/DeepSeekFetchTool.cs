@@ -3,6 +3,7 @@ using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingDeepSeekWeb;
 using PuddingRuntime.Services.DeepSeekWeb;
+using PuddingRuntime.Services.Skills;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -89,13 +90,39 @@ public sealed class DeepSeekFetchTool : PuddingToolBase<DeepSeekFetchArgs>
         {
             _logger.LogWarning(
                 ex, "[DeepSeekFetchTool] fetch request failed agent={Agent}", context.AgentInstanceId);
-            return ToolExecutionResult.Fail($"DeepSeek Fetch request failed: {ex.Message}");
+            return ToolExecutionResult.Fail(DescribeTransportFailure(ex));
         }
 
         if (!result.IsSuccess || result.Value is null)
             return DeepSeekWebToolErrors.ToToolFailure(result.Error, "DeepSeek Fetch");
 
         return ToolExecutionResult.Ok(RenderFetchResponse(url, result.Value));
+    }
+
+    /// <summary>
+    /// Transport failures used to surface as a bare exception message (for example
+    /// "Call failed. The SSL connection could not be established, see inner exception."), which
+    /// leaves the agent unable to decide whether a retry can plausibly work - and that guess costs a
+    /// full model round trip. Reuse the shared classifier for the diagnosis, but point the suggested
+    /// next step away from this tool rather than back at it.
+    /// </summary>
+    private static string DescribeTransportFailure(Exception ex)
+    {
+        var failure = HttpFetchFailureClassifier.ClassifyException(ex);
+        var hint = failure.Kind switch
+        {
+            HttpFetchFailureKind.TlsHandshake =>
+                "Usually a local proxy or network block for this host, so retrying it keeps failing. "
+                + "Try http_fetch, or a reachable mirror of the same content.",
+            HttpFetchFailureKind.Timeout =>
+                "The request timed out. Retry once later, or try http_fetch.",
+            HttpFetchFailureKind.DnsFailure =>
+                "The host cannot be resolved. Do not retry.",
+            _ =>
+                "Do not retry unchanged; try http_fetch or another source.",
+        };
+
+        return $"DeepSeek Fetch: {failure.Summary} | {hint}";
     }
 
     private static string RenderFetchResponse(string url, DeepSeekFetchResponse response)

@@ -1,3 +1,4 @@
+using System.Security.Authentication;
 using System.Text.Json;
 using PuddingCode.Models;
 using PuddingCode.Platform;
@@ -197,6 +198,35 @@ public sealed class DeepSeekFetchToolTests
             $"输出应被有界截断到 60000 字符以内，实际 {result.Output.Length}。");
         StringAssert.Contains(result.Output, "truncated at 60000 chars");
         StringAssert.Contains(result.Output, "DeepSeek Fetch: Huge page");
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_Transport_Failure_Explains_The_Next_Move()
+    {
+        using var temp = new DeepSeekTempDirectory();
+        temp.WriteSearchProviders(DeepSeekWebTestTools.SearchConfig());
+        var service = new StubDeepSeekWebService
+        {
+            FetchHandler = _ => throw new HttpRequestException(
+                "The SSL connection could not be established, see inner exception.",
+                new AuthenticationException("The remote certificate is invalid.")),
+        };
+        var tool = DeepSeekWebTestTools.CreateFetchTool(temp, service);
+
+        var result = await DeepSeekWebTestTools.ExecuteAsync(tool, $"{{\"url\":\"{ExampleUrl}\"}}");
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "TLS handshake failed");
+        StringAssert.Contains(result.Error, "http_fetch");
+        // The suggestion must not send the agent back to the tool that just failed.
+        Assert.IsFalse(
+            result.Error.Contains("use deepseek_fetch", StringComparison.OrdinalIgnoreCase),
+            result.Error);
+        // The Flurl placeholder is useless once the chain is walked; the real cause must reach the agent.
+        Assert.IsFalse(
+            result.Error.Contains("see inner exception", StringComparison.OrdinalIgnoreCase),
+            result.Error);
+        StringAssert.Contains(result.Error, "remote certificate");
     }
 
     [TestMethod]
