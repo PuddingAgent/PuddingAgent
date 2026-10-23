@@ -66,6 +66,52 @@ public sealed class RuntimeExecutionConfigBudgetTests
         }
     }
 
+    [TestMethod]
+    public void ToolExposure_DefaultsToBoundedWorkingSet_AndSeedsSection()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var toolExposure = CreateService(root).GetOptions().ToolExposure;
+
+            Assert.IsTrue(toolExposure.Enabled, "工具曝光预算默认启用（长会话固定前缀治理）");
+            Assert.AreEqual(48, toolExposure.MaxVisibleTools);
+            Assert.AreEqual(40 * 1024, toolExposure.MaxVisibleToolBytes);
+            var json = File.ReadAllText(Path.Combine(root, "config", "runtime.execution.json"));
+            StringAssert.Contains(json, "\"toolExposure\"", "默认节应随首次读取种入配置文件");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void ToolExposure_NegativeLimits_AreClampedToZero()
+    {
+        var root = CreateRoot();
+        try
+        {
+            WriteConfig(root, """
+            {
+              "toolExposure": {
+                "maxVisibleTools": -5,
+                "maxVisibleToolBytes": -1
+              }
+            }
+            """);
+
+            var toolExposure = CreateService(root).GetOptions().ToolExposure;
+
+            Assert.AreEqual(0, toolExposure.MaxVisibleTools);
+            Assert.AreEqual(0, toolExposure.MaxVisibleToolBytes);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateRoot()
     {
         var root = Path.Combine(

@@ -121,7 +121,7 @@ public sealed record SearchToolsArgs
     [ToolParam("Keywords describing the required capability or action. Prefer concise English domain/action terms when possible.")]
     public required string Query { get; init; }
 
-    [ToolParam("Maximum number of candidate tools to load. Range 1-8; default 3. Loaded tools stay exposed for the whole session — query narrowly so only what you need loads.")]
+    [ToolParam("Maximum number of candidate tools to load. Range 1-8; default 3. Loaded tools appear on the next model round; the runtime keeps a bounded working set, so least-recently-used schemas may be evicted — re-load with search_tools when a needed tool is no longer exposed.")]
     public int? MaxResults { get; init; }
 }
 

@@ -105,7 +105,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **飞书主动收件人** | `Source/PuddingCore/Platform/FeishuRecipientContracts.cs` | `list_feishu_recipients` 查询绑定渠道白名单；`send_message` 按 Open ID 发送，无历史消息依赖；单人默认，多人显式选择 |
 | **Message Fabric / send_message** | `Source/PuddingPlatform/Services/` | `MessageDeliveryPolicy` + `MessageDeliveryDispatcher`：inform/report_result 只通知，仅 ask/request_review/delegate 执行；`agent_reply` 永远被动 |
 | **Task 自动派发 / Goal / WorkUnit** | `Source/PuddingPlatform/Services/Scheduling/` | availability → backlog 精炼 → Plan/WorkUnit 编译 → 五态跟踪；promotion/start/repair 只有一个 CAS 写入者 |
-| **工具系统与审批** | `Source/PuddingRuntime/Tools/` + [自动审批设计](Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md) | 复杂任务前三次内进入 `smart_*` 或 `spawn_sub_agent`；只读/构建秒放、危险秒拒、未知形态交 LLM 审批 |
+| **工具系统与审批** | `Source/PuddingRuntime/Tools/` + [自动审批设计](Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md) | 复杂任务前三次内进入 `smart_*` 或 `spawn_sub_agent`；只读/构建秒放、危险秒拒、未知形态交 LLM 审批；工具 schema 投递受 `toolExposure` 预算约束（默认 48 个/40 KiB，turn 边界按最近使用淘汰非核心，`search_tools` 可重载） |
 | **代码索引组件族** | §2 + [ADR-089](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [目标边界](Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md) | CodeIndex 不得反向引用 CodeIntelligence；依赖由编译期与边界测试强制；现有组件见 §2，拟新增组件以设计为准 |
 | **Desktop ↔ Core 能力通道** | §2 + [能力通道](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | 两端只经 `Pudding.Contracts`（DTO）与 `Pudding.Rpc.Protocol`（wire）；启用前必须过 `DesktopCapabilityChannelPreflight` |
 | **Core 启动与就绪契约** | `Source/PuddingHost/Hosting/`、`Source/PuddingDesktop/Hosting/` | 每 5s 发 `PUDDING_DESKTOP_STARTING`，全部 hosted service `StartAsync` 返回后才发 `PUDDING_DESKTOP_READY`；`/health/ready` 不可省 |
@@ -146,6 +146,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | `Runtime → Gateway` | `LlmInvocationService` → `DirectLlmClient` | 按 `model.protocol` 路由 openai / responses / anthropic 三协议网关 |
 | `Gateway → Platform` | `ILlmGatewayUsageRecorder` → `llm_gateway_usage_events` | usage 落库后供 StatsApi 与日聚合取本地计费口径 |
 | `Runtime` | `PrefixCompactionPolicy` → `WarmPrefixCompaction` / `BoundedCompactionSummary` → 持久 CAS | 按注册模型窗口和配置比例提前准备，前缀保持稳定；达到同步阈值等待，完整批次边界重验冻结前缀、保留追加消息并按当前出站信封重新计量。新工具结果首次入场限幅并保存原文；协议层区分应用摘要与原生 reasoning。设计见 [前缀缓存友好的会话压缩](Docs/07_architecture/前缀缓存友好的会话压缩.md) |
+| `Runtime` | `ToolExposurePlanner` → `BuildFrozenToolManifest` → L1-TOOLS / provider tools | 每个 turn 冻结有界可见集（核心 ∪ 最近使用的非核心，默认 48 个/40 KiB，`toolExposure` 配置）；L1 Available/Deferred 名单与 schema 投递面同口径；turn 内只追加，淘汰仅发生在 turn 边界 |
 | `Platform` | `MessageDeliveryPolicy` → `MessageDeliveryDispatcher` | inform/report_result 只通知；ask/request_review/delegate 才进执行 |
 | `Runtime` | `SubAgentInvocationService` → `SubAgentManager` | 子代理委派：model 须为 providerId/modelId；run archive 固化实际预算 |
 | `Platform` | `TaskAutoDispatchWorker` → `TaskExecutionTracker` | 5 min 有界派发：availability → backlog 精炼 → Plan/Node 编译 → 五态跟踪 |

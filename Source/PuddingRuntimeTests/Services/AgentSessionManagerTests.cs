@@ -108,4 +108,27 @@ public sealed class AgentSessionManagerTests
             new[] { "file_read", "search_grep" },
             manager.GetLoadedToolIds("session-1").ToArray());
     }
+
+    [TestMethod]
+    public void ToolUsageRecency_IsMonotonic_And_PerSession()
+    {
+        var manager = new AgentSessionManager();
+
+        Assert.IsEmpty(manager.GetToolUsageRecency("session-1"));
+
+        manager.TouchToolUsage("session-1", "file_read");
+        manager.TouchToolUsage("session-1", "search_grep");
+        manager.TouchToolUsage("session-2", "shell");
+
+        var session1 = manager.GetToolUsageRecency("session-1");
+        Assert.AreEqual(2, session1.Count);
+        Assert.IsGreaterThan(0, session1["file_read"]);
+        Assert.IsGreaterThan(session1["file_read"], session1["search_grep"], "后使用的工具序号更大");
+
+        manager.TouchToolUsage("session-1", "file_read");
+        var afterRetouch = manager.GetToolUsageRecency("session-1");
+        Assert.IsGreaterThan(afterRetouch["search_grep"], afterRetouch["file_read"]);
+
+        Assert.IsFalse(manager.GetToolUsageRecency("session-2").ContainsKey("file_read"), "使用序不跨会话泄漏");
+    }
 }

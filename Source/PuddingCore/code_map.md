@@ -120,7 +120,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Agents/` | Agent 抽象定义 |
 | `SubAgents/` | 子代理抽象 |
 | `Platform/BuiltInAgentTemplates.cs` | 内置 Agent 模板的唯一权威源；V2 Default/Grant 直接决定 Low/High 子代理工具投影，Host 不得复制同全名类 |
-| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约（单一预算域） |
+| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约（单一预算域；含 `RuntimeExecutionOptions.ToolExposure` 工具曝光预算） |
 | `Runtime/ContextAssemblyContracts.cs` | 上下文装配契约 |
 | `Runtime/ContextSegmentContracts.cs` | ContextSegmentLedger 数据契约（§6.1）+ ContextSegmentTier（T0–T4 分级枚举）|
 | `Runtime/ContextTierPlannerContracts.cs` | T0–T4 分级规划器契约：段输入/分配结果/阈值选项 + IContextTierPlanner |
@@ -130,7 +130,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Runtime/LlmInvocationContracts.cs` | 统一 LLM invocation 合同；`Purpose` 以非模型可见方式区分 agent/approval/compaction 计费与诊断 |
 | `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同 |
 | `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约；WarmPrefixSourceMessage 携带完整运行期原文与精确持久 ID |
-| `Runtime/SubAgentInvocationContracts.cs` | `RuntimeExecutionOptions.ContextCompaction` 独立压缩策略；主/子共用注册模型容量比例，与并发配置分开 |
+| `Runtime/SubAgentInvocationContracts.cs` | `ContextCompaction` 独立压缩策略；`ToolExposure` 工具 schema 投递预算（默认 48 个/40 KiB） |
 
 **关键语义**
 

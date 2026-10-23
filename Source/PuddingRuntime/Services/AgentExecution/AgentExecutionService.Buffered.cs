@@ -151,6 +151,34 @@ public sealed partial class AgentExecutionService
                 StopReason = RuntimeDispatchMarkers.DuplicateMessageStopReason,
             };
         }
+
+        // ── 工具清单与有界可见集：在 dispatch 边界冻结，供上下文装配与整个 loop 复用 ──
+        // 预算只在 turn 边界重算；同一 dispatch 内的 round 边界仍保持 append-only（见 PromoteLoadedToolsForNextRound）。
+        var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
+        var frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
+        var allLlmTools = frozenTools.AllLlmTools;
+        var llmTools = frozenTools.VisibleTools.ToList();
+        var exposedToolIds = llmTools.Select(tool => tool.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _logger.LogDebug(
+            "[AgentExec:Tools] Prepared LLM tools (frozen at dispatch) session={Session} agent={Agent} template={Template} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} availableToolCount={AvailableToolCount} finalToolCount={FinalToolCount} visibleSchemaBytes={VisibleSchemaBytes} evictedToolCount={EvictedToolCount} deferredLoading={DeferredLoading} deferredToolCount={DeferredToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
+            request.SessionId,
+            instance.AgentInstanceId,
+            request.AgentTemplateId,
+            request.ToolDefinitions?.Count ?? 0,
+            frozenTools.RuntimeTools.Count,
+            request.ToolDefinitions is { Count: > 0 } ? frozenTools.AllLlmTools.Count - frozenTools.RuntimeMergedToolNames.Count : 0,
+            frozenTools.RuntimeMergedToolNames.Count,
+            frozenTools.ExposurePlan.AvailableToolCount,
+            llmTools.Count,
+            frozenTools.ExposurePlan.VisibleToolBytes,
+            frozenTools.ExposurePlan.EvictedToolCount,
+            frozenTools.ExposurePlan.DeferredLoadingEnabled,
+            frozenTools.ExposurePlan.DeferredToolCount,
+            SummarizeToolDefinitions(request.ToolDefinitions),
+            SummarizeToolDefinitions(frozenTools.RuntimeTools),
+            SummarizeToolNames(frozenTools.RuntimeMergedToolNames),
+            SummarizeToolDefinitions(llmTools));
+
         if (history.Count == 0)
         {
             var ctxAssembleStartedAt = DateTimeOffset.UtcNow;
@@ -181,7 +209,7 @@ public sealed partial class AgentExecutionService
                         AssignedObjective = request.AssignedObjective,
                         ExpectedOutputContract = request.ExpectedOutputContract,
                         TraceId = request.ExecutionIdentity?.TraceId,
-                        LoadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId),
+                        LoadedToolIds = exposedToolIds,
                         Capability = effectiveCapability,
                     }, ct);
                     systemPromptText = facadeResult.Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? string.Empty;
@@ -194,7 +222,7 @@ public sealed partial class AgentExecutionService
                         Template = template,
                         WorkspaceId = request.WorkspaceId ?? string.Empty,
                         SessionId = request.SessionId,
-                        LoadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId),
+                        LoadedToolIds = exposedToolIds,
                         AgentTemplateId = request.AgentTemplateId,
                         UserMessage = request.MessageText,
                         Capability = effectiveCapability,
@@ -310,7 +338,7 @@ public sealed partial class AgentExecutionService
                         Template = template,
                         WorkspaceId = request.WorkspaceId ?? string.Empty,
                         SessionId = request.SessionId,
-                        LoadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId),
+                        LoadedToolIds = exposedToolIds,
                         AgentTemplateId = request.AgentTemplateId,
                         UserMessage = request.MessageText,
                         Capability = effectiveCapability,
@@ -466,28 +494,6 @@ public sealed partial class AgentExecutionService
         int  toolOutputTruncatedCount = 0;
         long toolOutputChars = 0;
         string? firstToolFailureSummary = null;
-                var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
-        // Dispatch 冻结 catalog/capability/schema；可见集只允许在 LLM round 边界单调追加。
-        var frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
-        var allLlmTools = frozenTools.AllLlmTools;
-        var llmTools = frozenTools.VisibleTools.ToList();
-        _logger.LogDebug(
-            "[AgentExec:Tools] Prepared LLM tools (frozen at dispatch) session={Session} agent={Agent} template={Template} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} availableToolCount={AvailableToolCount} finalToolCount={FinalToolCount} deferredLoading={DeferredLoading} deferredToolCount={DeferredToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
-            request.SessionId,
-            instance.AgentInstanceId,
-            request.AgentTemplateId,
-            request.ToolDefinitions?.Count ?? 0,
-            frozenTools.RuntimeTools.Count,
-            request.ToolDefinitions is { Count: > 0 } ? frozenTools.AllLlmTools.Count - frozenTools.RuntimeMergedToolNames.Count : 0,
-            frozenTools.RuntimeMergedToolNames.Count,
-            frozenTools.ExposurePlan.AvailableToolCount,
-            llmTools.Count,
-            frozenTools.ExposurePlan.DeferredLoadingEnabled,
-            frozenTools.ExposurePlan.DeferredToolCount,
-            SummarizeToolDefinitions(request.ToolDefinitions),
-            SummarizeToolDefinitions(frozenTools.RuntimeTools),
-            SummarizeToolNames(frozenTools.RuntimeMergedToolNames),
-            SummarizeToolDefinitions(llmTools));
         var providerInputRecoveryAttempted = false;
         var visionContinuation = new VisionTextContinuation(
             BuildCurrentUserChatMessage(request, null).SourceContentHash,
@@ -1420,6 +1426,8 @@ public sealed partial class AgentExecutionService
                             ref toolOutputTruncatedCount,
                             ref toolOutputChars,
                             ref firstToolFailureSummary);
+                        // 工具曝光预算的 LRU 依据：实际执行过的工具优先保留在下一轮可见集。
+                        _sessionManager.TouchToolUsage(request.SessionId, canonicalCall.Name);
                         subAgentToolSw.Stop();
                         var safeSubAgentToolOutput = string.IsNullOrEmpty(skillResult.Output)
                             ? skillResult.Output ?? ""
@@ -1480,10 +1488,13 @@ public sealed partial class AgentExecutionService
                             skillResult.Success,
                             skillResult.Output,
                             loadedToolIds,
-                            allLlmTools);
+                            allLlmTools,
+                            out var newlyLoadedToolIds);
                         if (newlyLoadedToolCount > 0)
                         {
                             _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
+                            // 刚加载的工具必须排到 LRU 最前，避免同一轮内被预算立刻挤掉。
+                            _sessionManager.TouchToolUsage(request.SessionId, newlyLoadedToolIds);
                             var promotion = PromoteLoadedToolsForNextRound(
                                 frozenTools,
                                 loadedToolIds,
@@ -2067,6 +2078,8 @@ public sealed partial class AgentExecutionService
                         ref toolOutputTruncatedCount,
                         ref toolOutputChars,
                         ref firstToolFailureSummary);
+                    // 工具曝光预算的 LRU 依据：实际执行过的工具优先保留在下一轮可见集。
+                    _sessionManager.TouchToolUsage(request.SessionId, toolName);
 
                     toolSuccess = skillResult.Success;
                     toolError = skillResult.Error;
@@ -2078,10 +2091,13 @@ public sealed partial class AgentExecutionService
                         skillResult.Success,
                         skillResult.Output,
                         loadedToolIds,
-                        allLlmTools);
+                        allLlmTools,
+                        out var newlyLoadedToolIds);
                     if (newlyLoadedToolCount > 0)
                     {
                         _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
+                        // 刚加载的工具必须排到 LRU 最前，避免同一轮内被预算立刻挤掉。
+                        _sessionManager.TouchToolUsage(request.SessionId, newlyLoadedToolIds);
                         var promotion = PromoteLoadedToolsForNextRound(
                             frozenTools,
                             loadedToolIds,

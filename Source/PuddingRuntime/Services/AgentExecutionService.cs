@@ -1394,14 +1394,35 @@ public sealed partial class AgentExecutionService
         RuntimeDispatchRequest request,
         IReadOnlySet<string> committedToolIds)
     {
+        // 工具曝光预算：长会话不能把全部已发现工具 schema 当固定前缀每轮发送。
+        // 预算只在 dispatch（turn）冻结边界生效；同一 dispatch 内仍保持 append-only 只增。
+        var exposureOptions = _runtimeExecutionConfig?.GetOptions().ToolExposure;
+        var exposureBudget = ToolExposurePlanner.ResolveBudget(exposureOptions);
         var manifest = BuildFrozenToolManifestCore(
             BuildRuntimeToolDefinitions(capability, template, request),
             request.ToolDefinitions,
             committedToolIds,
-            _sessionManager.GetVisibleToolOrder(request.SessionId));
+            _sessionManager.GetVisibleToolOrder(request.SessionId),
+            exposureBudget,
+            _sessionManager.GetToolUsageRecency(request.SessionId));
         _sessionManager.RememberVisibleToolOrder(request.SessionId, manifest.VisibleTools.Select(tool => tool.Name));
         foreach (var merged in manifest.RuntimeMergedToolNames)
             _logger.LogDebug("[AgentExec] Merged runtime tool: {Tool}", merged);
+        if (exposureBudget is { IsEffective: true })
+        {
+            _logger.LogInformation(
+                "[AgentExec:ToolExposure] Budgeted tool surface session={Session} available={Available} visible={Visible} evicted={Evicted} visibleSchemaBytes={VisibleBytes} maxVisibleTools={MaxTools} maxVisibleToolBytes={MaxBytes} budgetApplied={BudgetApplied} evictedTools={EvictedTools}",
+                request.SessionId,
+                manifest.ExposurePlan.AvailableToolCount,
+                manifest.VisibleTools.Count,
+                manifest.ExposurePlan.EvictedToolCount,
+                manifest.ExposurePlan.VisibleToolBytes,
+                exposureBudget.Value.MaxVisibleTools,
+                exposureBudget.Value.MaxVisibleToolBytes,
+                manifest.ExposurePlan.BudgetApplied,
+                SummarizeToolNames(manifest.ExposurePlan.EvictedToolIds ?? []));
+        }
+
         return manifest;
     }
 
@@ -1415,7 +1436,9 @@ public sealed partial class AgentExecutionService
         IReadOnlyList<LlmToolDefinition> runtimeTools,
         IReadOnlyList<LlmToolDefinition>? requestToolDefinitions,
         IReadOnlySet<string>? committedToolIds,
-        IReadOnlyList<string>? previousVisibleToolIds = null)
+        IReadOnlyList<string>? previousVisibleToolIds = null,
+        ToolExposurePlanner.ToolExposureBudget? exposureBudget = null,
+        IReadOnlyDictionary<string, long>? toolUsageRecency = null)
     {
         var availableToolNames = runtimeTools
             .Select(t => t.Name)
@@ -1444,7 +1467,9 @@ public sealed partial class AgentExecutionService
         var committed = committedToolIds?.ToHashSet(StringComparer.OrdinalIgnoreCase)
             ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var exposurePlan = ToolExposurePlanner.CreatePlan(allLlmTools, committed, committed,
-            previousVisibleToolIds: previousVisibleToolIds);
+            previousVisibleToolIds: previousVisibleToolIds,
+            budget: exposureBudget,
+            toolUsageRecency: toolUsageRecency);
         return new FrozenToolManifest(
             runtimeTools,
             allLlmTools,

@@ -362,6 +362,33 @@ public sealed record RuntimeExecutionOptions
     public TurnExecutionOptions Turns { get; init; } = new();
     public SubAgentExecutionOptions SubAgents { get; init; } = new();
     public ContextMaintenanceOptions ContextCompaction { get; init; } = new();
+    public ToolExposureOptions ToolExposure { get; init; } = new();
+}
+
+/// <summary>
+/// 工具曝光预算：限制每次 LLM 请求随附的 function schema 数量/字节。
+/// <para>
+/// 动机：长会话的"已发现工具面"会随 search_tools 单调增长；若全量随每次请求发送，
+/// 工具定义 JSON 会长期占据上传预算的固定前缀（实测 121 个工具 ≈ 25,165 tokens / 72,600 B）。
+/// 本预算把可见集收敛为「核心工具 + 最近使用/加载的非核心工具」；被淘汰的工具仍可被
+/// <c>search_tools</c> 重新加载，因此不改变授权语义，只改变本轮的 schema 投递面。
+/// </para>
+/// <para>
+/// 0 表示该轴不限制；两个轴都配置时取先到者。核心工具（<c>ToolExposurePlanner.CoreToolIds</c>）
+/// 永不淘汰；无 <c>search_tools</c> 恢复路径时不启用淘汰（避免工具永久不可达）。
+/// </para>
+/// </summary>
+public sealed record ToolExposureOptions
+{
+    /// <summary>默认可见工具上限（含核心工具）。121 → 48 约可减少 60% 工具定义字节。</summary>
+    public const int DefaultMaxVisibleTools = 48;
+
+    /// <summary>默认可见工具 schema 字节上限（按 <c>LlmRequestTextBudget.MeasureTools</c> 同口径）。</summary>
+    public const long DefaultMaxVisibleToolBytes = 40 * 1024;
+
+    public bool Enabled { get; init; } = true;
+    public int MaxVisibleTools { get; init; } = DefaultMaxVisibleTools;
+    public long MaxVisibleToolBytes { get; init; } = DefaultMaxVisibleToolBytes;
 }
 
 /// <summary>Ratios are applied to the registered model window; absolute input/upload limits remain independent.</summary>

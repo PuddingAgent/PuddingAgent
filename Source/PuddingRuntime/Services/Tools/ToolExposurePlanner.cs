@@ -26,6 +26,28 @@ internal static class ToolExposurePlanner
     internal const string SearchToolId = "search_tools";
     internal const int DeferredLoadingThreshold = 24;
 
+    /// <summary>
+    /// 单次请求可见工具预算（含核心工具）。0 = 该轴不限制。
+    /// 核心工具永不淘汰；被淘汰的非核心工具仍留在 catalog，可被 <c>search_tools</c> 重新加载。
+    /// </summary>
+    internal readonly record struct ToolExposureBudget(int MaxVisibleTools = 0, long MaxVisibleToolBytes = 0)
+    {
+        internal bool IsEffective => MaxVisibleTools > 0 || MaxVisibleToolBytes > 0;
+    }
+
+    /// <summary>
+    /// 把运行时配置投影成曝光预算。关闭/两轴都为 0 时返回 null（保持既有全量行为）。
+    /// </summary>
+    internal static ToolExposureBudget? ResolveBudget(ToolExposureOptions? options)
+    {
+        if (options is not { Enabled: true })
+            return null;
+
+        var maxTools = Math.Max(0, options.MaxVisibleTools);
+        var maxBytes = Math.Max(0, options.MaxVisibleToolBytes);
+        return maxTools == 0 && maxBytes == 0 ? null : new ToolExposureBudget(maxTools, maxBytes);
+    }
+
     /// <summary>曝光排序策略标识：稳定追加序（既有项相对顺序不变，新增项只追加到末尾）。</summary>
     internal const string OrderingStrategyStableAppend = "stable_append";
 
@@ -58,13 +80,20 @@ internal static class ToolExposurePlanner
     /// 按 canonical（字母序）确定顺序，且不构成任何顺序变更事件。
     /// </param>
     /// <param name="epoch">调用方持有的已提交曝光纪元基线。</param>
+    /// <param name="budget">可见集预算（null/无效 = 不限制，保持既有只增行为）。</param>
+    /// <param name="toolUsageRecency">
+    /// 工具最近使用序号（越大越新）。预算淘汰时按「最近使用 → 上一轮可见顺序 → canonical」排序；
+    /// null 表示没有使用信号（重启后首轮），此时按既有顺序保序。
+    /// </param>
     internal static ToolExposurePlan CreatePlan(
         IReadOnlyList<LlmToolDefinition> availableTools,
         IReadOnlySet<string>? loadedToolIds = null,
         IReadOnlySet<string>? committedToolIds = null,
         int activationThreshold = DeferredLoadingThreshold,
         IReadOnlyList<string>? previousVisibleToolIds = null,
-        ToolExposureEpoch epoch = default)
+        ToolExposureEpoch epoch = default,
+        ToolExposureBudget? budget = null,
+        IReadOnlyDictionary<string, long>? toolUsageRecency = null)
     {
         ArgumentNullException.ThrowIfNull(availableTools);
 
@@ -124,13 +153,145 @@ internal static class ToolExposurePlanner
             }
         }
 
+        IReadOnlyList<LlmToolDefinition> evictedTools = Array.Empty<LlmToolDefinition>();
+        var budgetApplied = false;
+        // 预算是「投递面」上限而不是权限收缩：只在有 search_tools 恢复路径时启用淘汰，
+        // 否则被淘汰的工具将永久不可达。
+        if (deferredLoadingEnabled && budget is { IsEffective: true })
+        {
+            visible = ApplyBudget(visible, previousVisibleToolIds, toolUsageRecency, budget.Value, out var evicted);
+            evictedTools = evicted;
+            budgetApplied = true;
+        }
+
         return BuildPlan(
             canonicalTools.Count,
             visible,
             deferredLoadingEnabled,
             previousVisibleToolIds,
             epoch,
-            availableIds);
+            availableIds,
+            evictedTools,
+            budgetApplied);
+    }
+
+    /// <summary>
+    /// 预算内选择：核心工具永不淘汰；非核心候选按「最近使用 → 上一轮可见顺序 → canonical」排序，
+    /// 依次填入直到工具数或 schema 字节数触顶。返回保序后的可见列表，并输出被淘汰定义（canonical 顺序）。
+    /// </summary>
+    private static List<LlmToolDefinition> ApplyBudget(
+        IReadOnlyList<LlmToolDefinition> canonicalVisible,
+        IReadOnlyList<string>? previousVisibleToolIds,
+        IReadOnlyDictionary<string, long>? toolUsageRecency,
+        ToolExposureBudget budget,
+        out IReadOnlyList<LlmToolDefinition> evicted)
+    {
+        var maxCount = budget.MaxVisibleTools > 0 ? budget.MaxVisibleTools : int.MaxValue;
+        var maxBytes = budget.MaxVisibleToolBytes > 0 ? budget.MaxVisibleToolBytes : long.MaxValue;
+
+        var previousIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (previousVisibleToolIds is not null)
+        {
+            for (var i = 0; i < previousVisibleToolIds.Count; i++)
+            {
+                var id = previousVisibleToolIds[i];
+                if (!string.IsNullOrWhiteSpace(id))
+                    previousIndex.TryAdd(id.Trim(), i);
+            }
+        }
+
+        long RecencyOf(LlmToolDefinition tool) =>
+            toolUsageRecency is not null && toolUsageRecency.TryGetValue(tool.Name, out var value)
+                ? value
+                : long.MinValue;
+
+        int VisibleIndexOf(LlmToolDefinition tool) =>
+            previousIndex.TryGetValue(tool.Name, out var index) ? index : int.MaxValue;
+
+        var core = canonicalVisible.Where(tool => CoreToolIds.Contains(tool.Name)).ToList();
+        var ranked = canonicalVisible
+            .Where(tool => !CoreToolIds.Contains(tool.Name))
+            .OrderByDescending(RecencyOf)
+            .ThenBy(VisibleIndexOf)
+            .ThenBy(tool => tool.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var selected = new List<LlmToolDefinition>(Math.Min(canonicalVisible.Count, Math.Max(core.Count, 1)));
+        var selectedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long usedBytes = 0;
+        foreach (var tool in core)
+        {
+            selected.Add(tool);
+            selectedNames.Add(tool.Name);
+            usedBytes += LlmRequestTextBudget.MeasureTool(tool);
+        }
+
+        // 核心工具自身超出预算时仍保留（search_tools/送信等不可移除），由调用方日志暴露超限。
+        // 非核心按「能力包」整体取舍：禁止把 terminal_* / git_* / 读写族切成半包
+        //（与 ExpandCapabilityBundles 的整包激活性一致，避免只暴露一半语义）。
+        var groups = new List<List<LlmToolDefinition>>();
+        var groupIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tool in ranked)
+        {
+            var key = BundleKeyOf(tool.Name);
+            if (!groupIndex.TryGetValue(key, out var index))
+            {
+                index = groups.Count;
+                groupIndex[key] = index;
+                groups.Add([]);
+            }
+
+            groups[index].Add(tool);
+        }
+
+        foreach (var group in groups)
+        {
+            if (selected.Count + group.Count > maxCount)
+                continue;
+
+            long groupBytes = 0;
+            foreach (var tool in group)
+                groupBytes += LlmRequestTextBudget.MeasureTool(tool);
+            if (usedBytes + groupBytes > maxBytes)
+                continue;
+
+            foreach (var tool in group)
+            {
+                selected.Add(tool);
+                selectedNames.Add(tool.Name);
+            }
+
+            usedBytes += groupBytes;
+        }
+
+        evicted = canonicalVisible
+            .Where(tool => !selectedNames.Contains(tool.Name))
+            .ToList();
+        return selected;
+    }
+
+    /// <summary>
+    /// 能力包成员表：加载任一成员即整包激活（见 <see cref="ExpandCapabilityBundles"/>），
+    /// 预算淘汰时也整包保留/整包淘汰。未列入表的工具各自成组（单例包）。
+    /// </summary>
+    private static readonly string[][] CapabilityBundleMembers =
+    [
+        ["file_read", "file_search", "search_grep"],
+        ["file_write", "file_patch"],
+        ["code_explore", "code_symbol_search"],
+        ["shell", "terminal_start", "terminal_read", "terminal_wait", "terminal_input", "terminal_cancel"],
+        ["git_status", "git_diff", "git_log"],
+    ];
+
+    private static string BundleKeyOf(string toolName)
+    {
+        foreach (var members in CapabilityBundleMembers)
+        {
+            if (members.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+                return "bundle:" + members[0];
+        }
+
+        return "tool:" + toolName.ToLowerInvariant();
     }
 
     private static void ExpandCapabilityBundles(HashSet<string> activated, IReadOnlySet<string> available)
@@ -172,7 +333,9 @@ internal static class ToolExposurePlanner
         bool deferredLoadingEnabled,
         IReadOnlyList<string>? previousVisibleToolIds,
         ToolExposureEpoch epoch,
-        IReadOnlySet<string> availableIds)
+        IReadOnlySet<string> availableIds,
+        IReadOnlyList<LlmToolDefinition>? evictedTools = null,
+        bool budgetApplied = false)
     {
         var ordered = OrderStableAppend(canonicalVisible, previousVisibleToolIds);
         var orderedNames = ordered.Select(tool => tool.Name).ToArray();
@@ -200,6 +363,11 @@ internal static class ToolExposurePlanner
 
         var changeReason = BuildChangeReason(orderingEpoch, setChanged, missingToolIds.Length > 0);
 
+        // 与出站请求同一口径（LlmRequestTextBudget.MeasureTools）的可见 schema 字节数；
+        // 预算淘汰后它应显著低于淘汰前，供 dispatch 日志与回归断言使用。
+        var visibleToolBytes = canonicalVisible.Sum(LlmRequestTextBudget.MeasureTool);
+        var evictedNames = evictedTools?.Select(tool => tool.Name).ToArray() ?? Array.Empty<string>();
+
         return new ToolExposurePlan(
             ordered,
             availableToolCount,
@@ -211,7 +379,10 @@ internal static class ToolExposurePlanner
             ExposureSetChanged: setChanged,
             ChangeReason: changeReason,
             ExactRestore: missingToolIds.Length == 0,
-            MissingToolIds: missingToolIds);
+            MissingToolIds: missingToolIds,
+            VisibleToolBytes: visibleToolBytes,
+            BudgetApplied: budgetApplied,
+            EvictedToolIds: evictedNames);
     }
 
     /// <summary>
@@ -280,9 +451,23 @@ internal static class ToolExposurePlanner
         string? output,
         ISet<string> loadedToolIds,
         IReadOnlyList<LlmToolDefinition> availableTools)
+        => RegisterSearchResult(toolName, success, output, loadedToolIds, availableTools, out _);
+
+    /// <summary>
+    /// 解析 search_tools 输出并登记新加载工具；<paramref name="addedToolIds"/> 返回本次**新**加载的 ID，
+    /// 供调用方推进最近使用序（预算淘汰时新加载工具必须优先保留）。
+    /// </summary>
+    internal static int RegisterSearchResult(
+        string toolName,
+        bool success,
+        string? output,
+        ISet<string> loadedToolIds,
+        IReadOnlyList<LlmToolDefinition> availableTools,
+        out IReadOnlyList<string> addedToolIds)
     {
         ArgumentNullException.ThrowIfNull(loadedToolIds);
         ArgumentNullException.ThrowIfNull(availableTools);
+        addedToolIds = Array.Empty<string>();
 
         if (!success
             || !toolName.Equals(SearchToolId, StringComparison.OrdinalIgnoreCase)
@@ -303,7 +488,7 @@ internal static class ToolExposurePlanner
             var availableIds = availableTools
                 .Select(tool => tool.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var added = 0;
+            var added = new List<string>();
             foreach (var item in ids.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.String)
@@ -315,11 +500,12 @@ internal static class ToolExposurePlanner
                     && !toolId.Equals(SearchToolId, StringComparison.OrdinalIgnoreCase)
                     && loadedToolIds.Add(toolId))
                 {
-                    added++;
+                    added.Add(toolId);
                 }
             }
 
-            return added;
+            addedToolIds = added;
+            return added.Count;
         }
         catch (JsonException)
         {
@@ -352,6 +538,9 @@ internal readonly record struct ToolExposureEpoch(
 /// <param name="ChangeReason">本次曝光变化原因（none / tool_exposure_changed / ordering_strategy_changed / tool_definition_missing 的组合）。</param>
 /// <param name="ExactRestore">既有曝光是否可被精确重建（false = 存在已缺失的工具定义）。</param>
 /// <param name="MissingToolIds">已缺失的工具定义 ID（不谎称精确恢复，但不阻塞执行）。</param>
+/// <param name="VisibleToolBytes">可见工具 schema 的序列化字节数（与 <c>LlmRequestTextBudget.MeasureTools</c> 同口径）。</param>
+/// <param name="BudgetApplied">本次是否应用了可见集预算（预算内淘汰）。</param>
+/// <param name="EvictedToolIds">因预算未进入本轮可见集的非核心工具 ID（仍可被 search_tools 重新加载）。</param>
 internal sealed record ToolExposurePlan(
     IReadOnlyList<LlmToolDefinition> VisibleTools,
     int AvailableToolCount,
@@ -363,7 +552,13 @@ internal sealed record ToolExposurePlan(
     bool ExposureSetChanged = false,
     string ChangeReason = CompositionChangeReasons.None,
     bool ExactRestore = true,
-    IReadOnlyList<string>? MissingToolIds = null)
+    IReadOnlyList<string>? MissingToolIds = null,
+    long VisibleToolBytes = 0,
+    bool BudgetApplied = false,
+    IReadOnlyList<string>? EvictedToolIds = null)
 {
     internal int DeferredToolCount => Math.Max(0, AvailableToolCount - VisibleTools.Count);
+
+    /// <summary>因预算被淘汰的非核心工具数量（仍可由 search_tools 重新加载）。</summary>
+    internal int EvictedToolCount => EvictedToolIds?.Count ?? 0;
 }

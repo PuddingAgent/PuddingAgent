@@ -204,6 +204,114 @@ public sealed partial class AgentExecutionService
             request.SessionId, perfHistorySw.ElapsedMilliseconds, history.Count);
         turnTimings.HistoryLoadMs = perfHistorySw.ElapsedMilliseconds;
 
+        // 构建工具定义：优先用上游下发的 ToolDefinitions，否则从 SkillRuntime 构建。
+        // P0-6：在 dispatch 边界一次性冻结 catalog/capability/schema 与**有界可见集**（工具曝光预算）；
+        // 同一 dispatch 内后续 round 只允许 append-only 追加（见 PromoteLoadedToolsForNextRound），
+        // 不在轮内做预算收缩——预算只在 turn 边界重算，避免前缀每轮抖动。
+        var toolBuildStartedAt = DateTimeOffset.UtcNow;
+        var toolBuildSw = System.Diagnostics.Stopwatch.StartNew();
+        var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
+        HashSet<string> availableToolNames;
+        IReadOnlyList<LlmToolDefinition> allLlmTools;
+        List<LlmToolDefinition> llmTools;
+        FrozenToolManifest frozenTools;
+        int runtimeMergedToolCount;
+        HashSet<string> exposedToolIds;
+        try
+        {
+            frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
+            availableToolNames = frozenTools.RuntimeTools
+                .Select(t => t.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            allLlmTools = frozenTools.AllLlmTools;
+            llmTools = frozenTools.VisibleTools.ToList();
+            runtimeMergedToolCount = frozenTools.RuntimeMergedToolNames.Count;
+            // 上下文装配的「Available Tools / Deferred tools」必须与本次 schema 投递面同口径
+            //（ADR-081）：用有界可见集而不是全量 loaded 集，否则会出现「提示有、schema 无」。
+            exposedToolIds = llmTools.Select(tool => tool.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var terminalToolNames = llmTools
+                .Where(t => t.Name.StartsWith("terminal_", StringComparison.OrdinalIgnoreCase))
+                .Select(t => t.Name)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var terminalToolSummary = SummarizeToolNames(terminalToolNames);
+            var exposesTerminalExecute = terminalToolNames.Any(
+                name => name.Equals("terminal_execute", StringComparison.OrdinalIgnoreCase));
+            _logger.LogInformation(
+                "[AgentExec:Tools] Terminal tool visibility session={Session} agent={Agent} template={Template} terminalToolCount={TerminalToolCount} exposesTerminalExecute={ExposesTerminalExecute} terminalTools={TerminalTools}",
+                request.SessionId,
+                instance.AgentInstanceId,
+                request.AgentTemplateId,
+                terminalToolNames.Length,
+                exposesTerminalExecute,
+                terminalToolSummary);
+
+            _logger.LogDebug(
+                "[AgentExec:Tools] Prepared streaming LLM tools (frozen at dispatch) session={Session} agent={Agent} template={Template} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} availableToolCount={AvailableToolCount} finalToolCount={FinalToolCount} deferredLoading={DeferredLoading} deferredToolCount={DeferredToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
+                request.SessionId,
+                instance.AgentInstanceId,
+                request.AgentTemplateId,
+                request.ToolDefinitions?.Count ?? 0,
+                frozenTools.RuntimeTools.Count,
+                request.ToolDefinitions is { Count: > 0 } ? allLlmTools.Count - runtimeMergedToolCount : 0,
+                runtimeMergedToolCount,
+                frozenTools.ExposurePlan.AvailableToolCount,
+                llmTools.Count,
+                frozenTools.ExposurePlan.DeferredLoadingEnabled,
+                frozenTools.ExposurePlan.DeferredToolCount,
+                SummarizeToolDefinitions(request.ToolDefinitions),
+                SummarizeToolDefinitions(frozenTools.RuntimeTools),
+                SummarizeToolNames(frozenTools.RuntimeMergedToolNames),
+                SummarizeToolDefinitions(llmTools));
+
+            toolBuildSw.Stop();
+            await RecordActivityAsync(
+                streamTrace,
+                component: RuntimeActivityComponents.AgentExecution,
+                operation: "agent.tools.build",
+                status: RuntimeActivityStatuses.Succeeded,
+                toolBuildStartedAt,
+                endedAt: DateTimeOffset.UtcNow,
+                durationMs: toolBuildSw.ElapsedMilliseconds,
+                summary: "Built LLM tool definitions for streaming request.",
+                metadata: new Dictionary<string, string>
+                {
+                    ["available_tool_count"] = availableToolNames.Count.ToString(),
+                    ["request_tool_count"] = (request.ToolDefinitions?.Count ?? 0).ToString(),
+                    ["runtime_merged_tool_count"] = runtimeMergedToolCount.ToString(),
+                    ["llm_tool_count"] = llmTools.Count.ToString(),
+                    ["visible_schema_bytes"] = frozenTools.ExposurePlan.VisibleToolBytes.ToString(),
+                    ["evicted_tool_count"] = frozenTools.ExposurePlan.EvictedToolCount.ToString(),
+                    ["terminal_tool_count"] = terminalToolNames.Length.ToString(),
+                    ["terminal_tools"] = terminalToolSummary,
+                    ["exposes_terminal_execute"] = exposesTerminalExecute.ToString(),
+                },
+                error: null,
+                ct: CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            toolBuildSw.Stop();
+            await RecordActivityAsync(
+                streamTrace,
+                component: RuntimeActivityComponents.AgentExecution,
+                operation: "agent.tools.build",
+                status: RuntimeActivityStatuses.Failed,
+                toolBuildStartedAt,
+                endedAt: DateTimeOffset.UtcNow,
+                durationMs: toolBuildSw.ElapsedMilliseconds,
+                summary: "Failed to build LLM tool definitions for streaming request.",
+                metadata: new Dictionary<string, string>
+                {
+                    ["request_tool_count"] = (request.ToolDefinitions?.Count ?? 0).ToString(),
+                    ["capability_type"] = effectiveCapability?.GetType().Name ?? "",
+                },
+                error: ex,
+                ct: CancellationToken.None);
+            throw;
+        }
+
         var perfContextSw = System.Diagnostics.Stopwatch.StartNew();
         var perfContextStartedAt = DateTimeOffset.UtcNow;
         ContextAssemblyResult streamingSystemPrompt;
@@ -214,7 +322,8 @@ public sealed partial class AgentExecutionService
                 Template = template,
                 WorkspaceId = request.WorkspaceId ?? string.Empty,
                 SessionId = request.SessionId,
-                LoadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId),
+                // 有界可见集与本次 schema 投递面同口径：Deferred 名单 = catalog − visible。
+                LoadedToolIds = exposedToolIds,
                 AgentTemplateId = request.AgentTemplateId,
                 UserMessage = request.MessageText,
                 Capability = effectiveCapability,
@@ -370,106 +479,7 @@ public sealed partial class AgentExecutionService
             throw;
         }
 
-        // 构建工具定义：优先用上游下发的 ToolDefinitions，否则从 SkillRuntime 构建
         turnTimings.LlmConfigResolveMs = llmConfigSw.ElapsedMilliseconds;
-        var toolBuildStartedAt = DateTimeOffset.UtcNow;
-        var toolBuildSw = System.Diagnostics.Stopwatch.StartNew();
-                var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
-        HashSet<string> availableToolNames;
-        IReadOnlyList<LlmToolDefinition> allLlmTools;
-        List<LlmToolDefinition> llmTools;
-        FrozenToolManifest frozenTools;
-        int runtimeMergedToolCount;
-        try
-        {
-            // Dispatch 冻结 catalog/capability/schema；可见集只允许在 LLM round 边界单调追加。
-            frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
-            availableToolNames = frozenTools.RuntimeTools
-                .Select(t => t.Name)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            allLlmTools = frozenTools.AllLlmTools;
-            llmTools = frozenTools.VisibleTools.ToList();
-            runtimeMergedToolCount = frozenTools.RuntimeMergedToolNames.Count;
-
-            var terminalToolNames = llmTools
-                .Where(t => t.Name.StartsWith("terminal_", StringComparison.OrdinalIgnoreCase))
-                .Select(t => t.Name)
-                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            var terminalToolSummary = SummarizeToolNames(terminalToolNames);
-            var exposesTerminalExecute = terminalToolNames.Any(
-                name => name.Equals("terminal_execute", StringComparison.OrdinalIgnoreCase));
-            _logger.LogInformation(
-                "[AgentExec:Tools] Terminal tool visibility session={Session} agent={Agent} template={Template} terminalToolCount={TerminalToolCount} exposesTerminalExecute={ExposesTerminalExecute} terminalTools={TerminalTools}",
-                request.SessionId,
-                instance.AgentInstanceId,
-                request.AgentTemplateId,
-                terminalToolNames.Length,
-                exposesTerminalExecute,
-                terminalToolSummary);
-
-                        _logger.LogDebug(
-                "[AgentExec:Tools] Prepared streaming LLM tools (frozen at dispatch) session={Session} agent={Agent} template={Template} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} availableToolCount={AvailableToolCount} finalToolCount={FinalToolCount} deferredLoading={DeferredLoading} deferredToolCount={DeferredToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
-                request.SessionId,
-                instance.AgentInstanceId,
-                request.AgentTemplateId,
-                request.ToolDefinitions?.Count ?? 0,
-                frozenTools.RuntimeTools.Count,
-                request.ToolDefinitions is { Count: > 0 } ? allLlmTools.Count - runtimeMergedToolCount : 0,
-                runtimeMergedToolCount,
-                frozenTools.ExposurePlan.AvailableToolCount,
-                llmTools.Count,
-                frozenTools.ExposurePlan.DeferredLoadingEnabled,
-                frozenTools.ExposurePlan.DeferredToolCount,
-                SummarizeToolDefinitions(request.ToolDefinitions),
-                SummarizeToolDefinitions(frozenTools.RuntimeTools),
-                SummarizeToolNames(frozenTools.RuntimeMergedToolNames),
-                SummarizeToolDefinitions(llmTools));
-
-            toolBuildSw.Stop();
-            await RecordActivityAsync(
-                streamTrace,
-                component: RuntimeActivityComponents.AgentExecution,
-                operation: "agent.tools.build",
-                status: RuntimeActivityStatuses.Succeeded,
-                toolBuildStartedAt,
-                endedAt: DateTimeOffset.UtcNow,
-                durationMs: toolBuildSw.ElapsedMilliseconds,
-                summary: "Built LLM tool definitions for streaming request.",
-                metadata: new Dictionary<string, string>
-                {
-                    ["available_tool_count"] = availableToolNames.Count.ToString(),
-                    ["request_tool_count"] = (request.ToolDefinitions?.Count ?? 0).ToString(),
-                    ["runtime_merged_tool_count"] = runtimeMergedToolCount.ToString(),
-                    ["llm_tool_count"] = llmTools.Count.ToString(),
-                    ["terminal_tool_count"] = terminalToolNames.Length.ToString(),
-                    ["terminal_tools"] = terminalToolSummary,
-                    ["exposes_terminal_execute"] = exposesTerminalExecute.ToString(),
-                },
-                error: null,
-                ct: CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            toolBuildSw.Stop();
-            await RecordActivityAsync(
-                streamTrace,
-                component: RuntimeActivityComponents.AgentExecution,
-                operation: "agent.tools.build",
-                status: RuntimeActivityStatuses.Failed,
-                toolBuildStartedAt,
-                endedAt: DateTimeOffset.UtcNow,
-                durationMs: toolBuildSw.ElapsedMilliseconds,
-                summary: "Failed to build LLM tool definitions for streaming request.",
-                metadata: new Dictionary<string, string>
-                {
-                    ["request_tool_count"] = (request.ToolDefinitions?.Count ?? 0).ToString(),
-                    ["capability_type"] = effectiveCapability?.GetType().Name ?? "",
-                },
-                error: ex,
-                ct: CancellationToken.None);
-            throw;
-        }
 
         var streamCompletedSuccessfully = false;
         var pipelineDiagnostics = new StreamPipelineDiagnosticsAccumulator();
@@ -1670,6 +1680,8 @@ public sealed partial class AgentExecutionService
 
                     hasExecutedAnyTool = true;
                     totalToolCalls++;
+                    // 工具曝光预算的 LRU 依据：实际执行过的工具优先保留在下一轮可见集。
+                    _sessionManager.TouchToolUsage(request.SessionId, tc.Name);
                     ObserveToolExecutionFacts(
                         tc.Name,
                         result.Success,
@@ -1711,10 +1723,13 @@ public sealed partial class AgentExecutionService
                         result.Success,
                         result.Output,
                         loadedToolIds,
-                        allLlmTools);
+                        allLlmTools,
+                        out var newlyLoadedToolIds);
                     if (newlyLoadedToolCount > 0)
                     {
                         _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
+                        // 刚加载的工具必须排到 LRU 最前，避免同一轮内被预算立刻挤掉。
+                        _sessionManager.TouchToolUsage(request.SessionId, newlyLoadedToolIds);
                         var promotion = PromoteLoadedToolsForNextRound(
                             frozenTools,
                             loadedToolIds,

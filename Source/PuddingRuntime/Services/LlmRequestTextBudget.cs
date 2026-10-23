@@ -34,6 +34,10 @@ internal static class LlmRequestTextBudget
     internal static long MeasureTools(IReadOnlyList<LlmToolDefinition>? tools)
         => JsonSerializer.SerializeToUtf8Bytes(tools ?? [], Json).LongLength;
 
+    /// <summary>单个工具定义的序列化字节数（与 <see cref="MeasureTools"/> 同序列化口径）。</summary>
+    internal static long MeasureTool(LlmToolDefinition tool)
+        => JsonSerializer.SerializeToUtf8Bytes(tool, Json).LongLength;
+
     private static long MeasureMessages(IReadOnlyList<ChatMessage> messages)
         => messages.Sum(MeasureMessage);
 

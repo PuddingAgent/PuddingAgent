@@ -84,6 +84,13 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
             && compaction.BlockingRatio <= 1 && compaction.MinimumEpochRounds >= 0
             && compaction.CommitRatio < compaction.UploadBlockingRatio && compaction.UploadBlockingRatio <= 1))
             compaction = new ContextMaintenanceOptions();
+        // 工具曝光预算：0 表示该轴不限制；负值夹回 0（不因笔误放大投递面）。
+        var toolExposure = options.ToolExposure ?? new ToolExposureOptions();
+        toolExposure = toolExposure with
+        {
+            MaxVisibleTools = Math.Max(0, toolExposure.MaxVisibleTools),
+            MaxVisibleToolBytes = Math.Max(0, toolExposure.MaxVisibleToolBytes),
+        };
         var turns = options.Turns ?? new TurnExecutionOptions();
         var maxHardTimeout = Math.Max(1, turns.MaxHardTimeoutSeconds);
         var defaultHardTimeout = turns.DefaultHardTimeoutSeconds <= 0
@@ -160,6 +167,7 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
         return options with
         {
             ContextCompaction = compaction,
+            ToolExposure = toolExposure,
             Turns = turns with
             {
                 DefaultHardTimeoutSeconds = defaultHardTimeout,

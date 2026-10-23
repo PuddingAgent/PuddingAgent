@@ -23,7 +23,7 @@
 | `Controllers/RuntimeSessionController.cs` | Runtime 会话 API 的入口 | `RuntimeSessionController` | `Services/AgentSessionManager.cs` | — |
 | `Services/PuddingConfigLoader.cs` | JSON 配置文件的加载器 | `PuddingConfigLoader` | `Services/PuddingJsonConfig.cs` | — |
 | `Services/PuddingJsonConfig.cs` | 服务商与工作区等的配置模型定义 | `PuddingJsonConfig` | `Services/PuddingConfigLoader.cs` | — |
-| `Services/RuntimeExecutionConfigService.cs` | 运行时执行配置的加载与规范化 | `IRuntimeExecutionConfigService` | `Services/AgentLoop/AgentExecutionGuardrails.cs` | 请求级轮次与预算覆盖以调用参数为准，配置文件只给默认 |
+| `Services/RuntimeExecutionConfigService.cs` | 运行时执行配置的加载与规范化 | `IRuntimeExecutionConfigService` | `Services/AgentLoop/AgentExecutionGuardrails.cs` | 请求级轮次与预算覆盖以调用参数为准，配置文件只给默认；`toolExposure` 节给出工具 schema 投递预算（默认 48 个/40 KiB），负值夹回 0 |
 | `Services/DefaultExecutionEnvironmentProvider.cs` | 执行环境信息的默认提供者 | `IExecutionEnvironmentProvider` | `Services/SandboxExecutor.cs` | — |
 | `Services/StartupEnvironmentInfo.cs` | 启动环境信息的一次性采集与注入 | `StartupEnvironmentInfo` | `Services/SystemPromptBuilder.cs` | — |
 
@@ -84,7 +84,7 @@
 | `Services/AgentLoop/LoggingAgentLoopHook.cs` | Loop 各阶段事件写入结构化日志 | `LoggingAgentLoopHook` | `Services/AgentLoop/IAgentLoopHook.cs` | — |
 | `Services/AgentLoop/SubAgentBudgetLifecycle.cs` | 子代理预算窗口的状态机 | `SubAgentBudgetLifecycle` | `Services/SubAgentInvocationService.cs` | 通知档位与收尾宽限不可跳过 |
 | `Services/AgentMemorySummaryContextBuilder.cs` | 由会话摘要文件构造历史上下文层 | `AgentMemorySummaryContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
-| `Services/AgentSessionManager.cs` | 活跃 Agent 实例的会话管理 | `AgentSessionManager` | `Services/AgentExecutionService.cs` | — |
+| `Services/AgentSessionManager.cs` | 活跃 Agent 实例的会话管理 | `AgentSessionManager` | `Services/AgentExecutionService.cs` | 另存工具最近使用序（会话隔离、单调递增），供工具曝光预算按 LRU 淘汰 |
 | `Services/AgentWakeQueue.cs` | 心跳唤醒队列的到期判定与出队 | `AgentWakeQueue` | `Tools/BuiltIns/Agents/AgentSleepTool.cs` | 出队须扫描全部已到期项，不得只看队首 |
 | `Services/Background/SubconsciousConsolidationHook.cs` | 主对话完成后投递后台整合任务 | `SubconsciousConsolidationHook` | `Services/Background/SubconsciousWorkerService.cs` | — |
 | `Services/Background/SubconsciousDiagnosticLog.cs` | 潜意识管道诊断日志的选项与写入 | `SubconsciousDiagnosticLogOptions` | `Tools/BuiltIns/Management/SubconsciousTriggerTool.cs` | — |
@@ -171,7 +171,7 @@
 | `Services/LlmInvocationService.cs` | LLM 调用的稳定对外门面 | `ILlmInvocationService` | `Services/IRuntimeLlmClient.cs` | — |
 | `Services/LlmProfileResolver.cs` | provider 与 profile 到完整配置的解析 | `ILlmProfileResolver` | `Services/PuddingJsonConfig.cs` | — |
 | `Services/LlmRequestBudgetGuard.cs` | 请求级预算守卫与软压缩触发；provider 输入上限文案解析 | `LlmRequestBudgetGuard` | `Services/ContextCompactionService.cs` | `TryGetProviderMaxInputTokens` 同时识别 `Range of input length should be [1,N]` 与 DeepSeek `maximum context length is N tokens`；摘要 raw 不得写回主请求校准（ADR-095 D6） |
-| `Services/LlmRequestTextBudget.cs` | DeepSeek Responses 独立文本上传预算与发送前复核 | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查文本与工具定义；512 KiB 为客户端预算，图片另走视觉预算；超限零发送，携带压缩原因及体积分解 |
+| `Services/LlmRequestTextBudget.cs` | DeepSeek Responses 独立文本上传预算与发送前复核 | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查文本与工具定义；512 KiB 为客户端预算，图片另走视觉预算；超限零发送，携带压缩原因及体积分解；`MeasureTool` 与工具曝光预算同序列化口径 |
 | `Services/BoundedCompactionSummary.cs` | 选中历史的有界分段总结与递归归并 | `BoundedCompactionSummary` | `Services/AgentExecutionService.cs` | 128 KiB 分段、64 次调用与 4 层恢复上限；截断/超额从完整源精简重生成，再拆段归并；返回逐次诊断，部分摘要不提交 |
 | `Services/Diagnostics/CompactionDiagnosticJournal.cs` | 压缩计划、分段请求/返回及提交结果的本地脱敏现场 | `CompactionDiagnosticJournal` | `Services/AgentExecutionService.cs` | 每案 8 MiB、最多 32 案/7 天；记录前后请求角色、摘要类型、续传类型与工具配对形状；成品 Host 显式注册；凭据脱敏，截断/写入失败显式可见 |
 | `Services/ManagedOggOpusTranscoder.cs` | 频道短音频的纯托管转码 | `IAudioTranscoder` | `Services/DashScopeTtsProvider.cs` | — |
@@ -250,7 +250,7 @@
 | `Services/TodoTools/TodoReadTool.cs` | `todo_read`：读取某作用域的待办表 | `TodoReadTool` | `Services/TodoTools/TodoToolModels.cs` | — |
 | `Services/TodoTools/TodoToolModels.cs` | 待办三工具的共享参数模型 | `TodoToolJson` | `Services/TodoTools/TodoWriteTool.cs` | — |
 | `Services/TodoTools/TodoWriteTool.cs` | `todo_write`：全量替换待办表 | `TodoWriteTool` | `Services/TodoTools/TodoReadTool.cs` | — |
-| `Services/Tools/ToolExposurePlanner.cs` | 与 Provider 无关的工具暴露规划 | `ToolExposurePlanner` | `Tools/Platform/PuddingToolRegistry.cs` | 当前请求的目录冻结，新定义只在下一次 LLM round 生效 |
+| `Services/Tools/ToolExposurePlanner.cs` | 与 Provider 无关的工具暴露规划（延迟加载 + 有界可见集预算） | `ToolExposurePlanner` | `Tools/Platform/PuddingToolRegistry.cs` | 每个 turn 冻结可见集（core ∪ 最近使用的非核心，默认 48 个/40 KiB）；能力包原子取舍、无 search_tools 不淘汰、同一 turn 内只追加；被淘汰定义可由 `search_tools` 重新加载 |
 | `Services/TurnExecutorAdapter.cs` | Turn 执行的门控与请求适配 | `TurnExecutorAdapter` | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | 后台忙碌时采用有界退避与节流日志；失败诊断按公开字段白名单写入 TerminalInfo，交由 canonical Journal 持久化 |
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
 | `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |

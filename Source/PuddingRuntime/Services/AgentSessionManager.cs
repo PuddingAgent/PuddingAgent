@@ -18,6 +18,9 @@ public sealed class AgentSessionManager
     private readonly ConcurrentDictionary<string, byte> _waitingEventSessions = new();
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _loadedToolIds = new();
     private readonly ConcurrentDictionary<string, string[]> _visibleToolOrder = new();
+    // 工具最近使用序号（进程内单调时钟）：工具曝光预算的 LRU 依据。
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, long>> _toolUsage = new();
+    private long _toolUsageClock;
     private readonly ILogger<AgentSessionManager>? _logger;
 
     public AgentSessionManager(ILogger<AgentSessionManager>? logger = null)
@@ -211,6 +214,37 @@ public sealed class AgentSessionManager
 
     public void RememberVisibleToolOrder(string sessionId, IEnumerable<string> toolIds) =>
         _visibleToolOrder[sessionId] = toolIds.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    /// <summary>
+    /// 记录一次工具使用（越大越新）。工具曝光预算按此排序：最近执行/加载的工具优先保留，
+    /// 长期未使用的非核心工具在 dispatch 边界退出可见集（仍可被 search_tools 重新加载）。
+    /// 进程内状态；重启后的首轮没有使用信号，按上一轮可见顺序/canonical 顺序确定性回退。
+    /// </summary>
+    public void TouchToolUsage(string sessionId, string toolName)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(toolName))
+            return;
+
+        var usage = _toolUsage.GetOrAdd(
+            sessionId,
+            _ => new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase));
+        usage[toolName.Trim()] = Interlocked.Increment(ref _toolUsageClock);
+    }
+
+    public void TouchToolUsage(string sessionId, IEnumerable<string> toolNames)
+    {
+        foreach (var toolName in toolNames)
+            TouchToolUsage(sessionId, toolName);
+    }
+
+    /// <summary>工具最近使用序号快照（工具名 → 单调递增序号）；无记录时返回空字典。</summary>
+    public IReadOnlyDictionary<string, long> GetToolUsageRecency(string sessionId)
+    {
+        if (!_toolUsage.TryGetValue(sessionId, out var usage))
+            return new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        return usage.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Returns an immutable snapshot of the session's progressively discovered tool
