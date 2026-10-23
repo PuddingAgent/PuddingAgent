@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "http_fetch",
     name: "HTTP Fetch",
-    description: "发起 HTTP/HTTPS 请求并返回原始、Markdown、纯文本或 JSON 格式的响应内容。【何时用】搜索工具只给了摘要/链接时，用它抓取原文页面、API 返回或文档做深度核实；需要读取指定 URL 的实际内容时使用。【怎么用】传 url（仅支持 http/https）即可；method 默认 GET，可改为 POST 并配 headers/body/content_type；output_format 选 markdown/text/raw/json（默认 markdown）；max_response_chars 控制返回长度上限（默认 8192），include_headers 决定是否带响应头。【坑】仅允许 http/https 协议，SSRF 防护会拒绝内网/元数据地址；响应超长会被截断（返回 truncated 标记）；对 JS 渲染页面返回的是原始 HTML，正文提取效果取决于页面结构。",
+    description: "发起 HTTP/HTTPS 请求并返回原始、Markdown、纯文本、大纲或 JSON 格式的响应内容。【何时用】搜索工具只给了摘要/链接时，用它抓取原文页面、API 返回或文档做深度核实；需要读取指定 URL 的实际内容时使用。【怎么用】传 url（仅支持 http/https）即可；method 默认 GET，可改为 POST 并配 headers/body/content_type；output_format 选 outline/markdown/text/raw/json（默认 markdown）；outline 只给标题结构（开销最小，适合先看目录再决定读哪节）；长内容按页返回，结果末尾带 cursor，要后续内容就把 cursor 原样回传；max_response_chars 控制每页上限（默认 8192），include_headers 决定是否带响应头。【坑】仅允许 http/https 协议，SSRF 防护会拒绝内网/元数据地址；cursor 绑定产出它的 output_format，换格式会被明确拒绝；页面内容变了旧 cursor 会失效（需从头重读）；json 格式不分页；对 JS 渲染页面返回的是原始 HTML，正文提取效果取决于页面结构。",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Medium,
     safety: ToolSafetyFlags.RequiresNetwork)]
@@ -98,7 +98,13 @@ public sealed class HttpFetchSkill : PuddingToolBase<HttpFetchArgs>
                 OutputFormat = args.OutputFormat ?? "markdown",
                 MaxResponseChars = args.MaxResponseChars ?? DefaultMaxResponseChars,
                 IncludeHeaders = args.IncludeHeaders ?? false,
+                Cursor = args.Cursor,
             });
+
+            // A rejected cursor is a request error, not an HTTP outcome: surface it as such instead
+            // of returning a page that looks fine but starts in the wrong place.
+            if (formatted.Failure is { } failure)
+                return Fail(failure.ToErrorMessage());
 
             var success = response.StatusCode is >= 200 and <= 299;
             return new SkillResult
@@ -220,8 +226,11 @@ public sealed record HttpFetchArgs
     [ToolParam("Request timeout in seconds. Default is configured by the web client.")]
     public int? TimeoutSeconds { get; init; }
 
-    [ToolParam("Output format: markdown, text, raw, or json. Default: markdown.")]
+    [ToolParam("Output format: outline, markdown, text, raw, or json. Default: markdown.")]
     public string? OutputFormat { get; init; }
+
+    [ToolParam("Opaque cursor from a previous result's next_cursor, to read the next page. Pass it back unchanged.")]
+    public string? Cursor { get; init; }
 
     [ToolParam("Maximum response characters to return. Default: 8192.")]
     public int? MaxResponseChars { get; init; }

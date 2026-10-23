@@ -205,6 +205,92 @@ public sealed class HttpFetchSkillTests
         Assert.IsFalse(result.Error.Contains("see inner exception", StringComparison.OrdinalIgnoreCase));
     }
 
+    [TestMethod]
+    public async Task Long_Page_Returns_A_Cursor_And_Resumes_From_It()
+    {
+        var paragraphs = string.Concat(Enumerable.Range(0, 40)
+            .Select(i => $"<p>paragraph {i} with enough filler text to page over</p>"));
+        var webClient = new RecordingWebClient(new WebClientResponse
+        {
+            StatusCode = 200,
+            ReasonPhrase = "OK",
+            ContentType = "text/html",
+            Body = $"<html><body><main>{paragraphs}</main></body></html>",
+            Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            FinalUrl = "https://example.com/long",
+        });
+        var tool = CreateHttpFetchSkill(webClient);
+
+        var first = await ExecuteHttpFetchAsync(tool, """
+            {"url":"https://example.com/long","output_format":"text","max_response_chars":200}
+            """);
+
+        Assert.IsTrue(first.Success);
+        StringAssert.Contains(first.Output, "pass cursor=");
+        var cursor = ExtractCursor(first.Output!);
+        Assert.IsFalse(string.IsNullOrEmpty(cursor), "first page must offer a continuation cursor");
+
+        var second = await ExecuteHttpFetchAsync(tool, $$"""
+            {"url":"https://example.com/long","output_format":"text","max_response_chars":200,"cursor":"{{cursor}}"}
+            """);
+
+        Assert.IsTrue(second.Success);
+        StringAssert.Contains(second.Output, "[resumed at char");
+    }
+
+    [TestMethod]
+    public async Task Malformed_Cursor_Is_Rejected()
+    {
+        var tool = CreateHttpFetchSkill(new RecordingWebClient(OkHtml("<p>x</p>")));
+
+        var result = await ExecuteHttpFetchAsync(tool, """
+            {"url":"https://example.com/p","output_format":"text","cursor":"!!!not-a-cursor!!!"}
+            """);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "Invalid cursor");
+    }
+
+    [TestMethod]
+    public async Task Cursor_From_Another_Representation_Is_Rejected()
+    {
+        var foreignCursor = new HttpFetchContentCursor(
+            "markdown",
+            10,
+            HttpFetchContentCursor.FingerprintOf("some other page")).Encode();
+        var tool = CreateHttpFetchSkill(new RecordingWebClient(OkHtml("<p>x</p>")));
+
+        var result = await ExecuteHttpFetchAsync(tool, $$"""
+            {"url":"https://example.com/p","output_format":"text","cursor":"{{foreignCursor}}"}
+            """);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "Cursor does not belong to this representation");
+    }
+
+    private static WebClientResponse OkHtml(string inner) => new()
+    {
+        StatusCode = 200,
+        ReasonPhrase = "OK",
+        ContentType = "text/html",
+        Body = $"<html><body><main>{inner}</main></body></html>",
+        Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+        FinalUrl = "https://example.com/p",
+    };
+
+    /// <summary>Pulls the opaque <c>cursor=...</c> token out of the trailing partial marker.</summary>
+    private static string? ExtractCursor(string output)
+    {
+        const string marker = "pass cursor=";
+        var at = output.LastIndexOf(marker, StringComparison.Ordinal);
+        if (at < 0)
+            return null;
+
+        var rest = output[(at + marker.Length)..];
+        var end = rest.IndexOfAny([' ', ']', '\r', '\n']);
+        return end < 0 ? rest : rest[..end];
+    }
+
     private static HttpFetchSkill CreateHttpFetchSkill(RecordingWebClient webClient) =>
         new(
             webClient,

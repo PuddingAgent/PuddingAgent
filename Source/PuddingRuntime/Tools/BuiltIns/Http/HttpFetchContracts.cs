@@ -56,13 +56,30 @@ public sealed record HttpFetchFormatOptions
     public string OutputFormat { get; init; } = "markdown";
     public int MaxResponseChars { get; init; } = 8192;
     public bool IncludeHeaders { get; init; }
+
+    /// <summary>
+    /// Continuation cursor copied verbatim from a previous result's <c>next_cursor</c>.
+    /// Omit it to read from the start.
+    /// </summary>
+    public string? Cursor { get; init; }
 }
 
-/// <summary>Formatted response body plus truncation metadata.</summary>
+/// <summary>Formatted response body plus truncation and pagination metadata.</summary>
 public sealed record HttpFetchFormattedResponse
 {
     public required string Output { get; init; }
     public bool Truncated { get; init; }
+
+    /// <summary>
+    /// Cursor for the unread remainder, or <c>null</c> when the page was the last one.
+    /// </summary>
+    public string? NextCursor { get; init; }
+
+    /// <summary>
+    /// Non-null when the requested read could not be served at all (malformed, mismatched or stale
+    /// cursor). Callers must surface this instead of returning partial content.
+    /// </summary>
+    public HttpFetchFailure? Failure { get; init; }
 }
 
 internal sealed record HttpFetchJsonOutput

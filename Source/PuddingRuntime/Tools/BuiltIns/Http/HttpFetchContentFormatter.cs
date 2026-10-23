@@ -4,6 +4,11 @@ using System.Text.Json;
 namespace PuddingRuntime.Services.Skills;
 
 /// <summary>Default formatter for `http_fetch` responses.</summary>
+/// <remarks>
+/// Textual output is paged rather than hard-cut at the character limit: the agent gets a whole
+/// page plus a cursor, and asks for the remainder only if it actually needs it. A hard cut both
+/// loses structure and forces a full re-fetch to see what came next.
+/// </remarks>
 public sealed class HttpFetchContentFormatter : IHttpFetchContentFormatter
 {
     private readonly IHtmlToMarkdownConverter _htmlToMarkdownConverter;
@@ -20,13 +25,44 @@ public sealed class HttpFetchContentFormatter : IHttpFetchContentFormatter
             : options.OutputFormat.Trim().ToLowerInvariant();
         var maxChars = Math.Clamp(options.MaxResponseChars, 1, 200_000);
 
-        return outputFormat switch
+        switch (outputFormat)
         {
-            "json" => FormatJson(response, options with { MaxResponseChars = maxChars }),
-            "raw" => FormatTextual(response, response.Body, options.IncludeHeaders, maxChars),
-            "text" => FormatTextual(response, FormatText(response), options.IncludeHeaders, maxChars),
-            "markdown" => FormatTextual(response, FormatMarkdown(response), options.IncludeHeaders, maxChars),
-            _ => FormatTextual(response, FormatMarkdown(response), options.IncludeHeaders, maxChars),
+            case "outline":
+                return FormatOutline(response, options, maxChars);
+            case "json":
+                // A paged JSON document is not valid JSON, so this representation stays whole and
+                // truncation is reported explicitly instead.
+                return FormatJson(response, options with { MaxResponseChars = maxChars });
+        }
+
+        var (body, representation) = outputFormat switch
+        {
+            "raw" => (response.Body, "raw"),
+            "text" => (FormatText(response), "text"),
+            _ => (FormatMarkdown(response), "markdown"),
+        };
+
+        return Page(response, body, representation, options, maxChars);
+    }
+
+    private HttpFetchFormattedResponse FormatOutline(
+        WebClientResponse response,
+        HttpFetchFormatOptions options,
+        int maxChars)
+    {
+        var outline = HttpFetchContentSegmenter.BuildOutline(FormatMarkdown(response));
+        var bounded = Truncate(outline, maxChars, out var truncated);
+
+        var sb = new StringBuilder();
+        AppendStatusLine(sb, response, options.IncludeHeaders);
+        sb.Append(bounded);
+        if (truncated)
+            sb.AppendLine().Append("... [truncated]");
+
+        return new HttpFetchFormattedResponse
+        {
+            Output = sb.ToString(),
+            Truncated = truncated,
         };
     }
 
@@ -55,34 +91,91 @@ public sealed class HttpFetchContentFormatter : IHttpFetchContentFormatter
         };
     }
 
-    private HttpFetchFormattedResponse FormatTextual(
+    private static HttpFetchFormattedResponse Page(
         WebClientResponse response,
         string body,
-        bool includeHeaders,
+        string representation,
+        HttpFetchFormatOptions options,
         int maxChars)
     {
-        var truncatedBody = Truncate(body, maxChars, out var truncated);
-        var sb = new StringBuilder();
-        sb.Append("HTTP ").Append(response.StatusCode).Append(' ').AppendLine(response.ReasonPhrase);
+        var fingerprint = HttpFetchContentCursor.FingerprintOf(body);
+        var offset = 0;
 
-        if (includeHeaders && response.Headers.Count > 0)
+        if (!string.IsNullOrWhiteSpace(options.Cursor))
         {
-            foreach (var (name, value) in response.Headers.OrderBy(h => h.Key, StringComparer.OrdinalIgnoreCase))
+            if (!HttpFetchContentCursor.TryDecode(options.Cursor, out var cursor))
             {
-                sb.Append(name).Append(": ").AppendLine(value);
+                return Reject(
+                    "Invalid cursor",
+                    "The cursor is malformed. Omit cursor to read from the start.");
             }
+
+            if (!string.Equals(cursor.Representation, representation, StringComparison.Ordinal))
+            {
+                return Reject(
+                    "Cursor does not belong to this representation",
+                    $"That cursor was produced by output_format={cursor.Representation}. "
+                    + "Re-request with that format, or omit cursor to read from the start.");
+            }
+
+            if (!string.Equals(cursor.Fingerprint, fingerprint, StringComparison.Ordinal))
+            {
+                return Reject(
+                    "Content changed since the cursor was issued",
+                    "The page is not the one that cursor was produced from, so resuming could splice "
+                    + "unrelated text. Omit cursor to read from the start.");
+            }
+
+            offset = cursor.Offset;
         }
 
-        sb.AppendLine();
-        sb.Append(truncatedBody);
-        if (truncated)
-            sb.AppendLine().Append("... [truncated]");
+        var page = HttpFetchContentSegmenter.Slice(body, offset, maxChars);
+        var sb = new StringBuilder();
+        AppendStatusLine(sb, response, options.IncludeHeaders);
+
+        if (offset > 0)
+        {
+            sb.Append("[resumed at char ").Append(offset)
+              .Append(" of ").Append(body.Length).AppendLine("]");
+        }
+
+        sb.Append(page.Text);
+
+        string? nextCursor = null;
+        if (page.HasMore)
+        {
+            nextCursor = new HttpFetchContentCursor(representation, page.NextOffset, fingerprint).Encode();
+            sb.AppendLine()
+              .Append("[partial: ").Append(page.NextOffset).Append(" / ").Append(body.Length)
+              .Append(" chars read; pass cursor=").Append(nextCursor).Append(" for the rest]");
+        }
 
         return new HttpFetchFormattedResponse
         {
             Output = sb.ToString(),
-            Truncated = truncated,
+            Truncated = page.HasMore,
+            NextCursor = nextCursor,
         };
+    }
+
+    private static HttpFetchFormattedResponse Reject(string summary, string hint) => new()
+    {
+        Output = string.Empty,
+        Truncated = false,
+        Failure = new HttpFetchFailure(HttpFetchFailureKind.ClientError, summary, hint, Retryable: false),
+    };
+
+    private static void AppendStatusLine(StringBuilder sb, WebClientResponse response, bool includeHeaders)
+    {
+        sb.Append("HTTP ").Append(response.StatusCode).Append(' ').AppendLine(response.ReasonPhrase);
+
+        if (!includeHeaders || response.Headers.Count == 0)
+            return;
+
+        foreach (var (name, value) in response.Headers.OrderBy(h => h.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.Append(name).Append(": ").AppendLine(value);
+        }
     }
 
     private string FormatMarkdown(WebClientResponse response)
