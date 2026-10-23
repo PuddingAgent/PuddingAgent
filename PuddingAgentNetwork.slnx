@@ -13,6 +13,7 @@
     <Project Path="Source/PuddingBrowser.WinUITests/PuddingBrowser.WinUITests.csproj" />
     <Project Path="Source/PuddingCodeIndex/PuddingCodeIndex.csproj" />
     <Project Path="Source/PuddingContextPolicy/PuddingContextPolicy.csproj" />
+    <Project Path="Source/PuddingContextPruning/PuddingContextPruning.csproj" />
     <Project Path="Source/PuddingConversationReadModel/PuddingConversationReadModel.csproj" />
     <Project Path="Source/Pudding.CapabilityBroker/Pudding.CapabilityBroker.csproj" />
     <Project Path="Source/Pudding.CapabilityBroker.AspNetCore/Pudding.CapabilityBroker.AspNetCore.csproj" />
@@ -69,6 +70,7 @@
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
     <Project Path="Source/PuddingCodeIndexTests/PuddingCodeIndexTests.csproj" />
     <Project Path="Source/PuddingContextPolicyTests/PuddingContextPolicyTests.csproj" />
+    <Project Path="Source/PuddingContextPruningTests/PuddingContextPruningTests.csproj" />
     <Project Path="Source/PuddingConversationReadModelTests/PuddingConversationReadModelTests.csproj" />
     <Project Path="Source/PuddingCodexServiceTests/PuddingCodexServiceTests.csproj" />
     <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
 using PuddingCode.Runtime;
 using PuddingCode.Platform;
+using PuddingContextPruning;
 
 namespace PuddingRuntime.Services;
 
@@ -133,6 +134,11 @@ public static partial class LlmRequestBudgetGuard
     /// 不动 System / User 消息、也不删除任何消息。关闭时行为回到旧的硬悬崖（直接抛错）。
     /// </param>
     /// <param name="logger">可选：驱逐真正发生时写一条 Warning 日志（条数 + 回收 token 估算）。</param>
+    /// <param name="deterministicPruneEnabled">
+    /// 发请求前是否先跑一次零 LLM 的确定性载荷剪枝（默认开启）：只动受保护尾部之外的
+    /// Tool 结果与工具参数，回收量低于组件地板（2000 tokens / 5%）时整份回退，
+    /// 因此不会为了几百 token 重写整个前缀。传 <c>false</c> 即逐字回到接入前的行为。
+    /// </param>
     public static LlmRequestBudgetResult Prepare(
         ContextUsageSnapshotStore usageStore,
         string sessionId,
@@ -147,13 +153,36 @@ public static partial class LlmRequestBudgetGuard
         // 否则它的 Provider usage 配不到自己那条冻结记录，只能进未配对账本。
         string purpose = LlmCallPurposes.Agent,
         string? invocationId = null,
-        string? attemptId = null)
+        string? attemptId = null,
+        bool deterministicPruneEnabled = true)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
 
         var working = messages.ToList();
         var initialCount = working.Count;
         var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens, workUnitInputCapacity);
+
+        // S5：零 LLM 确定性剪枝 —— 在「花钱摘要」与「硬上限驱逐」之前，先把明显冗余的字节拿掉。
+        // 必须发生在 CaptureLlmRequest 之前：那一步会发布本次请求的冻结测量，
+        // 剪枝后再测量，账户上的数字才对得上真正发出去的内容。
+        if (deterministicPruneEnabled)
+        {
+            var pruned = DeterministicPayloadCompaction.TryApply(working);
+            if (pruned.Changed)
+            {
+                working = pruned.Messages as List<ChatMessage> ?? pruned.Messages.ToList();
+                logger?.LogInformation(
+                    "[LlmRequestBudgetGuard:DeterministicPrune] session={SessionId} deduplicated={Deduplicated} summarized={Summarized} truncatedArguments={TruncatedArguments} reclaimedTokens={Reclaimed} before={Before} after={After}",
+                    sessionId,
+                    pruned.Stats.DeduplicatedToolResults,
+                    pruned.Stats.SummarizedToolResults,
+                    pruned.Stats.TruncatedToolArguments,
+                    pruned.Stats.ReclaimedTokens,
+                    pruned.Stats.BeforeTokens,
+                    pruned.Stats.AfterTokens);
+            }
+        }
+
         var snapshot = usageStore.CaptureLlmRequest(
             sessionId,
             working,

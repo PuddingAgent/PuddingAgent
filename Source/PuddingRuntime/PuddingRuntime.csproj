@@ -36,6 +36,8 @@
     <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
     <!-- S5：上下文容量/候选/收益/退避纯策略组件（BCL-only 叶子，无反向依赖）；Runtime 在提交边界消费。 -->
     <ProjectReference Include="..\PuddingContextPolicy\PuddingContextPolicy.csproj" />
+    <!-- S5：零 LLM 确定性载荷剪枝（只依赖 PuddingCore 的叶子）；Runtime 在发请求边界消费。 -->
+    <ProjectReference Include="..\PuddingContextPruning\PuddingContextPruning.csproj" />
   </ItemGroup>
 
   <ItemGroup>

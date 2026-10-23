@@ -51,6 +51,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
 | `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的**纯策略**组件（BCL-only）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定（见下「关键语义」） | [code_map](Source/PuddingContextPolicy/code_map.md) |
+| `Source/PuddingContextPruning/` | 零 LLM **确定性载荷剪枝**（叶子，只引用 `PuddingCore`）：相同工具结果去重、超大工具结果首尾摘要、超大工具参数截断，按序执行 + 受保护尾部 + 准入地板；Runtime 在 `LlmRequestBudgetGuard.Prepare` 冻结测量前消费 | [code_map](Source/PuddingContextPruning/code_map.md) |
 | `Source/PuddingConversationReadModel/` | 会话首屏读模型纯规则组件（BCL-only；C2 已接入 Platform/slnx）：事件归约、预算与三游标合同 | [code_map](Source/PuddingConversationReadModel/code_map.md) |
 | `Source/PuddingSsh/` | SSH 远程执行叶子组件（`ProjectReference=0`，包 `SSH.NET`）：合同/端口与错误分类、协调器与独占连接（见下「关键语义」） | [code_map](Source/PuddingSsh/code_map.md) |
 | `Source/PuddingHomeAssistant/` | Home Assistant 叶子组件：REST 客户端、域策略三档、输出预算与历史裁剪；四个工具见 code_map | [code_map](Source/PuddingHomeAssistant/code_map.md) |

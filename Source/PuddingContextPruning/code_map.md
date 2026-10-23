@@ -2,7 +2,7 @@
 
 > 职责：**在花钱的 LLM 摘要之前，用零 LLM 的确定性手段先把载荷压下来**——去重、首尾摘要、参数截断，压不动就整份回退。
 > 边界：只引用 `PuddingCore`（`ChatMessage` / `ToolCall` / `ChatRole` / `LlmTextPart`）；**不引用** `PuddingRuntime` / `PuddingHost` / `PuddingPlatform` / `PuddingCodeIntelligence` / `PuddingCodeIndex`（`ProjectReference` 只有一条，编译期强制）。
-> 命名空间：`PuddingContextPruning` · 状态：S1 独立工程（S5 接线未做，宿主仍按原路径摘要）
+> 命名空间：`PuddingContextPruning` · 状态：S1–S5 已完成（S5：`PuddingRuntime.LlmRequestBudgetGuard.Prepare` 在 `CaptureLlmRequest` 之前消费，默认开启，`deterministicPruneEnabled=false` 逐字回退旧行为）
 
 ## 定位
 
@@ -39,8 +39,6 @@
 `Source/PuddingContextPruningTests/`（独立测试工程，只引用本工程）：29 例 = 行为 17 + 配置校验 9 + 边界 3。
 边界断言（S4）：探测器自检 + 进程实际加载程序集 + `*.deps.json` 依赖闭包三重校验，临时加一条反向引用即取红。
 
-## 变更日志
+## 变更记录
 
-| 日期 | 变更 |
-|---|---|
-| 2026-10-23 | 初版（S1/S2/S3/S4）：`TryApply` 三段确定性策略 + 尾部保护区 + 准入地板；独立测试工程 29 例全绿，含变异取红 |
+见 `Docs/00_changelog/2026Year/10/2026-10-23-零LLM确定性载荷剪枝接入宿主.md`（修改日志不进 code_map）。
