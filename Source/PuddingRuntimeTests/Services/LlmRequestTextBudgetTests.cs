@@ -27,7 +27,7 @@ public sealed class LlmRequestTextBudgetTests
         // 2026-10-23：固定 512 KiB 预算在 1M 窗口下被固定前缀占满 98.6%（历史只剩约 6 KB），
         // 每轮都触发压缩 ⇒ 预算必须随窗口伸缩，小窗口仍以 512 KiB 为下限。
         var smallLimit = LlmRequestTextBudget.ResolveLimit(Request(config: Config(100_000)));
-        var largeLimit = LlmRequestTextBudget.ResolveLimit(Request(config: Config(1_048_576)));
+        var largeLimit = LlmRequestTextBudget.ResolveLimit(Request(config: Config(1_000_000)));
         Assert.AreEqual(LlmRequestTextBudget.MinimumTextBudgetBytes, smallLimit, "小窗口必须保持旧下限");
         Assert.IsTrue(largeLimit > LlmRequestTextBudget.MinimumTextBudgetBytes,
             $"1M 窗口的文本预算应高于旧下限，实际 {largeLimit}");
@@ -39,7 +39,7 @@ public sealed class LlmRequestTextBudgetTests
     {
         // 固定前缀（系统提示 + 工具定义 + 技能目录）实测约 506 KB：大窗口下它必须能安全上传，
         // 否则压缩永远无法把请求压到预算内（压缩只动历史尾部，动不了固定前缀）。
-        var request = Request(config: Config(1_048_576));
+        var request = Request(config: Config(1_000_000));
         var limit = LlmRequestTextBudget.ResolveLimit(request);
         var fixedPrefixSized = new string('x', 600_000);
         Assert.IsNull(LlmRequestTextBudget.Validate(request, [new(ChatRole.User, fixedPrefixSized)], []),
@@ -84,7 +84,7 @@ public sealed class LlmRequestTextBudgetTests
             new(ChatRole.Tool, body, ToolCallId: "call-1", ToolName: "read"),
             new(ChatRole.Assistant, "previous answer"), new(ChatRole.User, "current task"),
         };
-        var config = Config(1_048_576);
+        var config = Config(1_000_000);
         Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(new(), "size-test", history, history, [], config,
             0.8, 0.5, out var plan, maxRequestTextBytes: LlmRequestTextBudget.MinimumTextBudgetBytes));
         Assert.IsNotNull(plan);
@@ -110,8 +110,8 @@ public sealed class LlmRequestTextBudgetTests
     public void SmallRequestAndOtherRoutes_AreUnaffected()
     {
         Assert.IsNull(LlmRequestTextBudget.Validate(Request(), [new(ChatRole.User, "small")], []));
-        Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request("openai", config: Config(1_048_576))));
-        Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request(protocol: "anthropic", config: Config(1_048_576))));
+        Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request("openai", config: Config(1_000_000))));
+        Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request(protocol: "anthropic", config: Config(1_000_000))));
     }
 
     [TestMethod]

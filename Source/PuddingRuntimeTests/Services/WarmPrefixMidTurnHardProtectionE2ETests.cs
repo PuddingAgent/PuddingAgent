@@ -935,7 +935,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         {
             await db.Database.EnsureCreatedAsync();
             var seedChars = largeWindow
-                ? (int)(TextBudget(new LlmConfig { ModelId = "test-model", MaxContextTokens = 1_048_576, MaxOutputTokens = 1_000 }) * 1.15 / 48)
+                ? (int)(TextBudget(new LlmConfig { ModelId = "test-model", MaxContextTokens = 1_000_000, MaxOutputTokens = 1_000 }) * 1.15 / 48)
                 : 30_000;
             await SeedAsync(db, messageCount: 48, charsPerMessage: seedChars);
         }
@@ -958,7 +958,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         Assert.IsTrue(history.Sum(m => m.Content?.Length ?? 0) >= 1_400_000);
         var request = CreateDispatchRequest() with
         {
-            LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = largeWindow ? 1_048_576 : 200_000, MaxOutputTokens = 1_000 },
+            LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = largeWindow ? 1_000_000 : 200_000, MaxOutputTokens = 1_000 },
             CallerLlmSnapshot = largeWindow ? new("deepseek", "deepseek-flash", "responses", []) : null,
         };
         var paddedMeasure = 0;
@@ -1210,7 +1210,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     [DataRow(true)]
     public async Task LongSingleUserTurn_RepeatedlyCompactsCompletedBatches_AndRehydratesDurableCheckpoints(bool streaming)
     {
-        var longTurnConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192, ReasoningEffort = "high" };
+        var longTurnConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_000_000, MaxOutputTokens = 8192, ReasoningEffort = "high" };
         // 2026-10-23：预算随窗口伸缩 ⇒ 每轮增量按预算推导（48 轮累计约 1.25 倍预算），保持"长轮次反复压缩"的原意。
         var roundChars = (int)(TextBudget(longTurnConfig) * 0.75 / 48);
         await using var connection = new SqliteConnection("Data Source=:memory:");
