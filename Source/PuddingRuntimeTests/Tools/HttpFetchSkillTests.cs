@@ -1,3 +1,4 @@
+using System.Security.Authentication;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Tools;
@@ -161,6 +162,49 @@ public sealed class HttpFetchSkillTests
         Assert.IsNull(webClient.LastRequest);
     }
 
+    [TestMethod]
+    public async Task Forbidden_Response_Returns_An_Actionable_Hint()
+    {
+        var webClient = new RecordingWebClient(new WebClientResponse
+        {
+            StatusCode = 403,
+            ReasonPhrase = "Forbidden",
+            ContentType = "text/html",
+            Body = "<html><body>blocked</body></html>",
+            Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            FinalUrl = "https://example.com/blocked",
+        });
+        var tool = CreateHttpFetchSkill(webClient);
+
+        var result = await ExecuteHttpFetchAsync(tool, """
+            {"url":"https://example.com/blocked"}
+            """);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "HTTP 403 Forbidden");
+        StringAssert.Contains(result.Error, "deepseek_fetch");
+    }
+
+    [TestMethod]
+    public async Task Transport_Failure_Explains_The_Next_Move()
+    {
+        var tool = new HttpFetchSkill(
+            new ThrowingWebClient(new HttpRequestException(
+                "The SSL connection could not be established, see inner exception.",
+                new AuthenticationException("The remote certificate is invalid."))),
+            new HttpFetchContentFormatter(new RecordingHtmlToMarkdownConverter(string.Empty)),
+            NullLogger<HttpFetchSkill>.Instance);
+
+        var result = await ExecuteHttpFetchAsync(tool, """
+            {"url":"https://github.com/openai/codex"}
+            """);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "TLS handshake failed");
+        StringAssert.Contains(result.Error, "raw.githubusercontent.com");
+        Assert.IsFalse(result.Error.Contains("see inner exception", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static HttpFetchSkill CreateHttpFetchSkill(RecordingWebClient webClient) =>
         new(
             webClient,
@@ -191,6 +235,12 @@ public sealed class HttpFetchSkillTests
             LastRequest = request;
             return Task.FromResult(response);
         }
+    }
+
+    private sealed class ThrowingWebClient(Exception exception) : IWebClient
+    {
+        public Task<WebClientResponse> SendAsync(WebClientRequest request, CancellationToken ct) =>
+            Task.FromException<WebClientResponse>(exception);
     }
 
     private sealed class RecordingHtmlToMarkdownConverter(string markdown) : IHtmlToMarkdownConverter

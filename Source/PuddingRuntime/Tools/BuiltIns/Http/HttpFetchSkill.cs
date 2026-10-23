@@ -100,25 +100,29 @@ public sealed class HttpFetchSkill : PuddingToolBase<HttpFetchArgs>
                 IncludeHeaders = args.IncludeHeaders ?? false,
             });
 
-            var statusLine = $"HTTP {response.StatusCode} {response.ReasonPhrase}";
             var success = response.StatusCode is >= 200 and <= 299;
             return new SkillResult
             {
                 Success = success,
                 Output = formatted.Output,
                 ExitCode = response.StatusCode,
-                Error = success ? null : statusLine,
+                Error = success
+                    ? null
+                    : HttpFetchFailureClassifier
+                        .ClassifyStatus(response.StatusCode, response.ReasonPhrase)
+                        .ToErrorMessage(),
             };
         }
-        catch (TaskCanceledException)
+        // Caller-driven cancellation must propagate; only a transport failure is a tool failure.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return Fail("Request timed out.");
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[HttpFetchSkill] Request failed for agent={Agent} url={Url}",
                 agentInstanceId, url);
-            return Fail(ex.Message);
+            return Fail(HttpFetchFailureClassifier.ClassifyException(ex).ToErrorMessage());
         }
     }
 
