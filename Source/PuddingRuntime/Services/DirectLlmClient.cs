@@ -920,7 +920,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             matchedModel.Protocol,
             reasoningEffort,
             thinkingMode,
-            effectiveRequestConfig?.MaxOutputTokens,
+            // 单轮输出上限：登记的是模型最大输出能力，这里收敛为本轮真实申请的 max_tokens，
+            // 使「发出的 max_tokens」与「窗口里预留的输出额度」始终是同一个数。
+            LlmReplyBudget.ResolveRequestTokens(effectiveRequestConfig?.MaxOutputTokens),
             matched.ProviderId,
                         strategy,
             supportsVision,

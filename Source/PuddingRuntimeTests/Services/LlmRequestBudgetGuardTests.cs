@@ -81,6 +81,32 @@ public sealed class LlmRequestBudgetGuardTests
         Assert.AreEqual(ChatRole.User, result.Messages[1].Role);
     }
 
+    [TestMethod]
+    public void ReplyReserve_UsesPerTurnReplyCap_InsteadOfRegisteredModelMaximum()
+    {
+        // 2026-10-23：资源池把「模型最大输出」（deepseek-flash = 393,216）登记进 MaxOutputTokens，
+        // 而预留按登记值全额扣减 ⇒ 1M 窗口只剩 605,760 可用输入，浪费 39%。
+        // 预留必须等于「本轮实际请求的输出上限」：min(登记值, 单轮回复上限)。
+        var config = new LlmConfig
+        {
+            ModelId = "deepseek-flash", MaxContextTokens = 1_000_000, MaxOutputTokens = 393_216,
+        };
+        // 单轮回复上限取 64,000（≈ 十万级字符，远超任何真实答复；同时把浪费从 39% 压到 6.4%）。
+        var expected = 1_000_000 - 64_000 - LlmRequestBudgetGuard.DefaultSafetyBufferTokens;
+
+        Assert.AreEqual(expected, LlmRequestBudgetGuard.ResolveEffectiveInputLimit(config));
+        Assert.IsGreaterThan(605_760, expected, "修复后可用输入必须明显高于旧口径（1,000,000-393,216-1,024）");
+    }
+
+    [TestMethod]
+    public void ReplyReserve_KeepsRegisteredMaximumWhenItIsSmallerThanTheCap()
+    {
+        // 登记值小于单轮上限时不得抬升预留：小输出模型仍按自己的真实上限预留。
+        var config = new LlmConfig { ModelId = "test-model", MaxContextTokens = 100_000, MaxOutputTokens = 8_192 };
+        Assert.AreEqual(100_000 - 8_192 - LlmRequestBudgetGuard.DefaultSafetyBufferTokens,
+            LlmRequestBudgetGuard.ResolveEffectiveInputLimit(config));
+    }
+
     private static readonly string Big = new('a', 4_000);
 
     private static LlmConfig BuildConfig() => new()

@@ -120,7 +120,9 @@ public static partial class LlmRequestBudgetGuard
             return providerLimit;
 
         var contextWindow = config.MaxContextTokens.Value;
-        var requestedOutput = Math.Max(0, config.MaxOutputTokens ?? 0);
+        // 预留 = 本轮真实申请的输出上限（min(登记值, 单轮上限)），不是模型登记的最大输出能力：
+        // 资源池登记的是能力上限（deepseek-flash 393,216），拿它当预留会白锁 39% 窗口。
+        var requestedOutput = LlmReplyBudget.ResolveReservedTokens(config.MaxOutputTokens);
         var safetyBuffer = Math.Max(0, safetyBufferTokens);
         var contextDerivedLimit = Math.Max(1, contextWindow - requestedOutput - safetyBuffer);
         return Math.Max(1, Math.Min(contextDerivedLimit, providerLimit));

@@ -465,6 +465,15 @@ public sealed partial class AgentExecutionService
         if (effectiveLlmConfig?.ReasoningEffort is null && template.ReasoningEffort is not null)
             effectiveLlmConfig = (effectiveLlmConfig ?? new LlmConfig()) with { ReasoningEffort = template.ReasoningEffort };
 
+// 单轮输出口径收敛：MaxOutputTokens 登记的是模型最大输出**能力**（deepseek-flash 393,216），
+// 而本轮真实申请的 max_tokens 与窗口预留必须共用同一个数；否则前台预留（64,000）与
+// 终态后维护/压缩判据（393,216）会各算一套有效窗口，同一次请求出现两套水位。
+if (effectiveLlmConfig is not null)
+    effectiveLlmConfig = effectiveLlmConfig with
+    {
+        MaxOutputTokens = LlmReplyBudget.ResolveRequestTokens(effectiveLlmConfig.MaxOutputTokens),
+    };
+
         string             finalMessage   = "(no response)";
         var                stopReason     = AgentLoopStopReason.MaxRoundsReached;
         var                execState      = AgentExecutionState.Running;
