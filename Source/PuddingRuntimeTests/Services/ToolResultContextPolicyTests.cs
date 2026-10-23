@@ -187,4 +187,92 @@ public sealed class ToolResultContextPolicyTests
 
         Assert.IsLessThanOrEqualTo(ToolResultContextPolicy.MaxInlineChars, result.Length);
     }
+
+    // ── 按工具类型的 inline 预算（终端档 2 KiB / 其余 8 KiB）────────────────────────
+
+    [TestMethod]
+    public void ResolveInlineBudget_Uses_Terminal_Tier_Only_For_Terminal_Tools()
+    {
+        var shell = ToolResultContextPolicy.ResolveInlineBudget("Shell");
+        Assert.AreEqual(ToolResultContextPolicy.TerminalInlineChars, shell.MaxChars);
+        Assert.AreEqual(ToolResultContextPolicy.TerminalInlineUtf8Bytes, shell.MaxBytes);
+        Assert.AreEqual(ToolResultContextPolicy.TerminalHeadRatio, shell.HeadRatio);
+
+        foreach (var name in new[] { "shell", "terminal_start", "terminal_wait", "terminal_read", "terminal_execute" })
+            Assert.AreEqual(ToolResultContextPolicy.TerminalInlineChars, ToolResultContextPolicy.ResolveInlineBudget(name).MaxChars, name);
+
+        var fileRead = ToolResultContextPolicy.ResolveInlineBudget("file_read");
+        Assert.AreEqual(ToolResultContextPolicy.MaxInlineChars, fileRead.MaxChars);
+        Assert.AreEqual(ToolResultContextPolicy.DefaultHeadRatio, fileRead.HeadRatio);
+        Assert.AreEqual(ToolResultContextPolicy.MaxInlineChars, ToolResultContextPolicy.ResolveInlineBudget(null).MaxChars);
+    }
+
+    /// <summary>
+    /// 终端档的核心价值不是「更小」，而是「尾优先」：报错几乎总在末尾，
+    /// 默认 3:1 会先把它截掉。本用例同时锁住 2 KiB 上限与尾部保留。
+    /// </summary>
+    [TestMethod]
+    public async Task MaterializeAsync_Terminal_Result_Uses_Terminal_Budget_And_Keeps_The_Error_Tail()
+    {
+        var workspace = Path.Combine(Path.GetTempPath(), $"pudding-tool-result-policy-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(workspace);
+        try
+        {
+            // 报错不在最后一行、后面还有 780 字符普通日志：
+            // 尾 75%（≈1300 字符）能覆盖它，尾 25%（≈430 字符）覆盖不到 ——
+            // 这正是「终端档尾优先」要解决的场景，也是本用例的区分力所在。
+            var content = new string('h', 9_000) + "\nERROR: boom-at-tail\n" + new string('t', 780);
+
+            var result = await ToolResultContextPolicy.MaterializeAsync(
+                content,
+                workspace,
+                "session-t",
+                "shell",
+                "call-t",
+                NullLogger.Instance,
+                CancellationToken.None);
+
+            Assert.IsLessThanOrEqualTo(ToolResultContextPolicy.TerminalInlineChars, result.Length);
+            StringAssert.Contains(result, "ERROR: boom-at-tail");
+            StringAssert.Contains(result, "TOOL RESULT BOUNDED");
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task MaterializeAsync_NonTerminal_Result_Between_Budgets_Is_Untouched()
+    {
+        var content = new string('h', 6_000); // 大于 2 KiB、小于 8 KiB
+
+        var result = await ToolResultContextPolicy.MaterializeAsync(
+            content,
+            Path.GetTempPath(),
+            "session-n",
+            "file_read",
+            "call-n",
+            NullLogger.Instance,
+            CancellationToken.None);
+
+        Assert.AreEqual(content, result, "非终端工具必须沿用 8 KiB 档，不得被新预算误伤");
+    }
+
+    [TestMethod]
+    public async Task MaterializeAsync_Terminal_Result_Under_Terminal_Budget_Is_Untouched()
+    {
+        var content = new string('s', 1_000);
+
+        var result = await ToolResultContextPolicy.MaterializeAsync(
+            content,
+            Path.GetTempPath(),
+            "session-s",
+            "shell",
+            "call-s",
+            NullLogger.Instance,
+            CancellationToken.None);
+
+        Assert.AreEqual(content, result);
+    }
 }

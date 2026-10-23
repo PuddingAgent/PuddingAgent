@@ -68,7 +68,7 @@
 | `Services/AgentExecution/NoOpKeyVaultService.cs` | 无密钥库宿主的降级实现 | `NoOpKeyVaultService` | `Services/JevDecisionOptionsProvider.cs` | — |
 | `Services/AgentExecution/StreamPipelineDiagnosticsAccumulator.cs` | 流式热路径诊断量的线程安全聚合 | `StreamPipelineDiagnosticsAccumulator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | — |
 | `Services/AgentExecution/ToolDiscoveryLoopTracker.cs` | 只发现不执行的循环检测 | `ToolDiscoveryLoopTracker` | `Tools/BuiltIns/Search/SearchToolsTool.cs` | 不同查询文本归入同一进展族 |
-| `Services/AgentExecution/ToolResultContextPolicy.cs` | 工具结果进入模型历史前的体积边界 | `ToolResultContextPolicy` | `Tools/Platform/ToolInvocationService.cs` | 边界不可协商；存储失败也必须返回有界预览 |
+| `Services/AgentExecution/ToolResultContextPolicy.cs` | 工具结果进入模型历史前的体积边界 | `ToolResultContextPolicy` | `Tools/Platform/ToolInvocationService.cs` | 边界不可协商；存储失败也必须返回有界预览；inline 预算按 toolName 分档——终端类（shell/terminal_*）2 KiB 且头尾 1:4（尾优先，报错几乎总在末尾），其余 8 KiB 且 3:1；全文仍 spill 可指针索取（见 2026-10-23 changelog） |
 | `Services/AgentExecutionService.cs` | 执行编排入口与 session 单写者 | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 本轮输入须以 `CURRENT USER TURN/input_sha256` 围栏，缺失即 fail-closed |
 | `Services/AgentFirewall.cs` | 八道闸门的顺序准入 | `AgentFirewall` | `Classification/AgentFullAccessGrantService.cs` | 完全访问授予只放宽授权与审批闸门 |
 | `Services/AgentInvocationDispatchFactory.cs` | 由消息元数据构造执行请求 | `IAgentInvocationDispatchFactory` | `Services/RuntimeAgentDispatcher.cs` | 父身份解析失败即报错，不伪造会话 id |
