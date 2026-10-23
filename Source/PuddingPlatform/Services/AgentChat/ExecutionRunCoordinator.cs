@@ -264,6 +264,11 @@ public sealed class ExecutionRunCoordinator(
             await SafeCancelAsync(ctsMonitor);
             var monitorOutcome = await GetMonitorOutcomeAsync(monitorTask);
 
+            // Runtime may translate token cancellation into a terminal frame (or
+            // simply end the stream). Host shutdown must still use the recovery
+            // path instead of committing that frame as a user cancellation.
+            hostStoppingToken.ThrowIfCancellationRequested();
+
             var terminal = ApplyMonitorOutcome(
                 ConvertTerminalInfo(terminalInfo),
                 monitorOutcome,
@@ -301,9 +306,26 @@ public sealed class ExecutionRunCoordinator(
         catch (OperationCanceledException) when (hostStoppingToken.IsCancellationRequested)
         {
             await SafeCancelAsync(ctsMonitor);
+            await GetMonitorOutcomeAsync(monitorTask);
+            var pending = CollectPendingOutput(
+                lease, command?.AssistantMessageId, chunker, uncommittedOutput, terminalPending);
+            try
+            {
+                if (runStarted && pending.Count > 0)
+                    await journal.AppendOutputAsync(lease, pending, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "[Coordinator] Shutdown output flush failed run={RunId} turn={TurnId} pending={PendingCount}",
+                    lease.RunId, lease.TurnId, pending.Count);
+            }
             // 宿主关停打断了执行且未提交任何 Turn 终态：按“中止回退”释放（run→lease_lost，
             // command→pending），使重启后同一命令可被重新领取。不得声明终态。
             await leaseStore.ReleaseAsync(lease, RunStatus.LeaseLost, CancellationToken.None);
+            logger.LogInformation(
+                "[Coordinator] Deferred run={RunId} turn={TurnId} command={CommandId} reason=host_shutdown terminal_committed=false pending_output={PendingCount}",
+                lease.RunId, lease.TurnId, lease.CommandId, pending.Count);
             return Outcome(lease, TurnTerminal.LeaseLost, 0);
         }
         catch (OperationCanceledException) when (ctsRun.IsCancellationRequested)

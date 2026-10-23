@@ -1,5 +1,5 @@
 # PuddingPlatform CodeMAP
-> 源指纹: Source/PuddingPlatform/**=527-64b3486d4721 · 条目数: 205 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingPlatform/**=527-da6b5bbc6269 · 条目数: 205 · 最近整理: 2026-10-23
 
 > 平台层 | Session 管理 · API · EF Core 持久化 · 消息网关
 
@@ -25,7 +25,7 @@
 | `Services/RawSessionLogService.Fts.cs` | Agent Markdown 日志的 Lucene 搜索 | `RawSessionLogService` | `Services/RawSessionLogService.cs` | 要求 agent 与有界日期范围；查询中按日刷新文件索引；区别于消息弹窗检索 |
 | `Services/ChatMessageRepository.cs` | 消息仓储与 after-Id 增量扫描 | `ChatMessageRepository` | `Services/ChatMessageSchemaBootstrapper.cs` | ChatMessageRow 透传 WorkspaceId/MessageId/TurnId 与 ContentPartsJson canonical 信封；不因空正文越过纯 typed-parts 消息 |
 | `Services/ChatMessageSchemaBootstrapper.cs` | 存量 SQLite 幂等补列 | `ChatMessageSchemaBootstrapper` | `Services/ChatMessageRepository.cs` | 补 ChatMessages.content_parts_json 列 |
-| `Services/AgentChat/ExecutionRunCoordinator.cs` | 执行前预算与身份冻结 | `ExecutionRunCoordinator`、`CallerLlmSnapshot`、`snapshot.VisionPolicy` | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 应用 canonical WorkUnit context；取最严 rounds/tools/duration 冻结 deadline；按实际 provider/model 冻结价格与预算 |
+| `Services/AgentChat/ExecutionRunCoordinator.cs` | 执行前预算与身份冻结 | `ExecutionRunCoordinator`、`CallerLlmSnapshot`、`snapshot.VisionPolicy` | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 冻结 WorkUnit 最严预算、deadline 与模型价格；宿主停机先保存输出、释放可恢复租约，不提交取消终态 |
 | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 执行快照组装与视觉策略解析 | `AgentExecutionSnapshotFactory` | `Services/AgentChat/ExecutionRunCoordinator.cs` | 视觉策略按配置合同∩模型类别解析（不再硬编码 VisionRequestPolicy.Default）；无 vision 标签一律 null 不误标；日志键 visionPolicy=／visionPolicySource= |
 | `Services/AgentChat/TurnOutputChunker.cs` | Delta 聚合分块与轮次边界 | `TurnOutputChunker` | `PuddingPlatformTests/Services/TurnOutputChunkerPayloadOwnershipTests.cs` | 非 delta 事件先 flush 已缓冲正文/思考再透传；轮次边界进入 canonical sequence |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 首屏/活动 run/消息明细投影 | `AgentConversationProjectionService` | `Services/AgentChat/TurnOutputChunker.cs` | 活动根 run 以最新根 turn.started 锚定，避免子代理 runId 抢占；身份/每消息/每 Turn/游标查询按收敛索引点查，不再会话级 IN 扫描；TurnEventWindow 标记 64 条窗口边界 |
@@ -61,7 +61,7 @@
 
 | 文件 | 用途 | 关键符号 | 关联 | 约束 |
 |------|------|------|------|------|
-| `Services/MessageGateway/` | Connector 回信与飞书输出的投影目录 | `FeishuImageArtifactProjection` / `FeishuTtsProjection` / `ConversationTerminalMessageFormatter` | `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 失败回信优先展示诊断因果码、体积、压缩原因与 errorId/traceId；仅投影白名单证据 |
+| `Services/MessageGateway/` | Connector 回信与飞书输出的投影目录 | `FeishuImageArtifactProjection` / `FeishuTtsProjection` / `ConversationTerminalMessageFormatter` | `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 取消按 kind 投影为非错误状态并保留部分回复；失败回信优先展示诊断因果码、体积、压缩原因与 errorId/traceId；仅投影白名单证据 |
 | `Services/MessageFabric/MessageQueueProjectionService.cs` | 未认领消息队列的只读投影 | `MessageQueueProjectionService` / `MessageQueueKinds` | `Services/MessageFabric/MessageFabricStore.cs` | 默认只投影 `queued`/`retrying` 投递与 `pending` 命令；`includeTerminal=true` 才返回完整诊断；`queueKind` 区分事实源 |
 | `Services/MessageFabric/MessageRouter.cs` / `Services/MessageFabric/MessageFabricStore.cs` | 投递路由与固化 | `MessageRouter` / `MessageFabricStore` | `MessageQueueProjectionService` | 按 intent/requires_response 固化为 `execute`/`notify`；per-target delivery ID 稳定；按 handling mode 原子批量领取，单批上限 20 条 |
 | `Services/MessageFabric/MessageFabricSchemaBootstrapper.cs` | 存量库的 handling_mode 迁移 | `MessageFabricSchemaBootstrapper` | `Services/MessageFabric/MessageFabricStore.cs` | 在旧 SQLite 上幂等补列与索引；把普通 `inform`/`report_result`/`agent_reply` 的历史投递回填为被动通知 |

@@ -6,6 +6,29 @@ namespace PuddingPlatformTests.Services.MessageGateway;
 public sealed class ConversationTerminalMessageFormatterTests
 {
     [TestMethod]
+    [DataRow("Cancelled", null)]
+    [DataRow("cancelled", "")]
+    [DataRow("Cancelled", ConversationTerminalMessageFormatter.SyntheticEmptyReply)]
+    [DataRow("Cancelled", "已经完成的部分")]
+    public void Parse_CancelledWithDiagnosticCode_PreservesLifecycleAndPartialReply(string kind, string? reply)
+    {
+        var presentation = ConversationTerminalMessageFormatter.Parse(
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                kind, errorCode = "execution_cancelled", errorMessage = "Turn was cancelled.", reply,
+            }));
+        Assert.IsNotNull(presentation);
+        Assert.IsFalse(presentation.IsError);
+        Assert.AreEqual("请求已取消", presentation.Summary);
+        StringAssert.Contains(presentation.Content, "请求已取消");
+        Assert.IsFalse(presentation.Content.Contains("请求失败"));
+        Assert.IsFalse(presentation.Content.Contains("检查 Agent 配置"));
+        Assert.IsFalse(presentation.Content.Contains("未生成回复"));
+        if (reply == "已经完成的部分")
+            StringAssert.Contains(presentation.Content, reply);
+    }
+
+    [TestMethod]
     public void Parse_FailedTerminalWithoutReply_ReturnsActionableDiagnostic()
     {
         var presentation = ConversationTerminalMessageFormatter.Parse(

@@ -22,6 +22,22 @@ public static class ConversationTerminalMessageFormatter
             var errorCode = ReadString(root, "errorCode");
             var errorMessage = ReadString(root, "errorMessage");
 
+            // Kind is the lifecycle authority. Cancellation carries an error code
+            // for diagnostics, but is not a failed request or a completed reply.
+            if (string.Equals(kind, "Cancelled", StringComparison.OrdinalIgnoreCase))
+            {
+                var partialReply = !string.IsNullOrWhiteSpace(reply)
+                    && !string.Equals(reply.Trim(), SyntheticEmptyReply, StringComparison.Ordinal)
+                        ? reply.Trim()
+                        : null;
+                return new ConversationTerminalPresentation(
+                    partialReply is null
+                        ? "请求已取消。"
+                        : $"{partialReply}\n\n请求已取消，以上为停止前已生成的内容。",
+                    "请求已取消",
+                    IsError: false);
+            }
+
             if (!string.IsNullOrWhiteSpace(reply)
                 && !string.Equals(
                     reply.Trim(),
@@ -66,14 +82,6 @@ public static class ConversationTerminalMessageFormatter
                     $"## 请求失败\n\n- 错误代码：`{code}`\n- 原因：{reason}\n\n请检查 Agent 配置和运行诊断后重试。",
                     "请求失败",
                     IsError: true);
-            }
-
-            if (string.Equals(kind, "Cancelled", StringComparison.OrdinalIgnoreCase))
-            {
-                return new ConversationTerminalPresentation(
-                    "请求已取消，Agent 未生成回复。",
-                    "请求已取消",
-                    IsError: false);
             }
 
             return null;

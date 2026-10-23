@@ -2,7 +2,7 @@
 title: 案例：调度与 Token 内核
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-22
+last_reviewed: 2026-10-23
 status: active
 description: 调度、Goal、Runtime 测试共同引用 Platform/Runtime 产物并会创建 SQLite 夹具。不要并行运行 PuddingRuntimeTests 与 PuddingPlatformTests：并行构建会争用 PuddingPlatform.dll，并可能把临时 SQLite I/O 或外键错误伪装成功能回归。应先完成一次构建，再串行运行聚焦集和全量集；测试夹具必须创建真实 S
 categories: [docs, how-debug]
@@ -290,4 +290,14 @@ Admin “访问令牌”页若把 Active/Revoked 显示成数字 `0/1`，同时 
 `GET /api/admin/access-tokens` 列表是否直接序列化了持久化 enum。列表与详情必须统一投影为稳定字符串 wire 名称；只修
 详情 DTO 或添加 enum converter 不足以修复列表。创建的 smoke Token 在测试结束后必须通过管理 API/UI 撤销，不能因为
 页面按钮消失而直接留在 Active 状态。
+
+收到 `execution_cancelled / Turn was cancelled` 时，先读 canonical 终态的 `kind`，不要因 `errorCode` 非空就当成失败。
+`kind=Cancelled` 是取消状态；渠道回信应保留已有部分回复并标明取消，不应提示检查模型配置。按同一 Turn 查询
+`execution_control_messages`，有 `CancelRequested` 才能归为显式停止；没有控制指令时应联查末尾工具事件、宿主停机和 watchdog。
+若最后执行了 `bootstrap_reboot`，对照 `<DataRoot>/config/rebuild.signal.result.json` 的起止时间、success、coreRestarted，
+区分“Core 正常重启打断当前执行”与“Desktop 后来退出”。Runtime 可能把取消转换成终态帧或直接结束流，Coordinator 必须先检查
+宿主令牌，保存已生成输出后将 run 释放为 `lease_lost`、command 回到 `pending`，不能写用户取消终态。日志定位键是
+`[Coordinator] Deferred`、`reason=host_shutdown`、`run`、`turn`、`command`；真正的取消仍是不可自动重放的终态。
+Desktop 本身退出还需查 DesktopHome `logs/desktop.log`、Windows Application 崩溃记录及同期 AppX 更新事件；时间相近仅说明相关性，
+没有直接退出证据时不要宣称是 bootstrap 关闭了 Shell。已完成的历史终态与已发送渠道回信保留为现场证据，不手改数据库重跑部署命令。
 

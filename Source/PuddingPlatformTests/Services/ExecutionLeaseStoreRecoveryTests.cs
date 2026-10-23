@@ -2,6 +2,11 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using PuddingCode.Abstractions;
+using PuddingCode.Runtime;
+using PuddingCode.Core;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -232,6 +237,112 @@ public sealed class ExecutionLeaseStoreRecoveryTests
     {
         public void Signal(string conversationId, long committedThroughSequence) { }
         public ValueTask WaitForChangeAsync(string conversationId, long knownHead, CancellationToken ct) => ValueTask.CompletedTask;
+    }
+
+    [TestMethod]
+    [DataRow("cancelled", true)]
+    [DataRow("throw", true)]
+    [DataRow("end", true)]
+    [DataRow("completed", true)]
+    [DataRow("cancelled", false)]
+    public async Task RuntimeShutdown_RetainsOutputAndRecoversWithoutCancellationTerminal(string streamEnd, bool stopHost)
+    {
+        await SeedRunningExecutionAsync(expired: true);
+        var lease = await _store.TryAcquireAsync("worker-2", TimeSpan.FromMinutes(2), CancellationToken.None);
+        Assert.IsNotNull(lease);
+        using var stopping = new CancellationTokenSource();
+        var scopes = _provider.GetRequiredService<IServiceScopeFactory>();
+        var journal = new SqliteExecutionJournal(scopes, new NoopSignal(), NullLogger<SqliteExecutionJournal>.Instance);
+        var inbox = new SqliteControlInbox(scopes, NullLogger<SqliteControlInbox>.Instance);
+        var fixture = new ExecutionInputs(lease);
+        var coordinator = new ExecutionRunCoordinator(_store, journal,
+            new EndingExecutor(streamEnd, stopHost ? stopping.Cancel : () => { }),
+            fixture, fixture, fixture, fixture, inbox, null!, fixture, NullLogger<ExecutionRunCoordinator>.Instance);
+
+        var outcome = await coordinator.ExecuteAsync(lease, stopping.Token);
+
+        await using (var scope = _provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var command = await db.ChatExecutionCommands.AsNoTracking().SingleAsync();
+            var turn = await db.ConversationTurns.AsNoTracking().SingleAsync();
+            var run = await db.ExecutionRuns.AsNoTracking().SingleAsync(r => r.RunId == lease.RunId);
+            var events = await db.ConversationEvents.AsNoTracking().OrderBy(e => e.Sequence).ToListAsync();
+            Assert.IsTrue(events.Any(e => e.Type == ConversationEventTypes.MessageContentAppended
+                && e.Payload.Contains("partial reply")), "Already produced output must survive shutdown.");
+            Assert.AreEqual(stopHost ? "pending" : "cancelled", command.Status);
+            Assert.AreEqual(stopHost ? "accepted" : "cancelled", turn.Status);
+            Assert.AreEqual(stopHost ? "lease_lost" : "cancelled", run.Status);
+            if (stopHost)
+            {
+                Assert.AreEqual(0L, outcome.TerminalSequence);
+                Assert.IsNull(turn.TerminalSequence);
+                Assert.IsFalse(events.Any(e => e.Type is ConversationEventTypes.TurnCancelled
+                    or ConversationEventTypes.TurnFailed or ConversationEventTypes.TurnCompleted));
+            }
+            else
+            {
+                Assert.AreEqual(TurnTerminalKind.Cancelled, outcome.Terminal.Kind);
+                Assert.AreEqual(1, events.Count(e => e.Type == ConversationEventTypes.TurnCancelled));
+            }
+        }
+        var recovered = await _store.TryAcquireAsync("worker-3", TimeSpan.FromMinutes(2), CancellationToken.None);
+        if (stopHost)
+        {
+            Assert.IsNotNull(recovered);
+            Assert.AreEqual(lease.CommandId, recovered.CommandId);
+            Assert.AreEqual(lease.TurnId, recovered.TurnId);
+        }
+        else Assert.IsNull(recovered);
+    }
+
+    private sealed class EndingExecutor(string ending, Action stop) : ITurnExecutor
+    {
+        public async IAsyncEnumerable<TurnExecutionEvent> ExecuteAsync(
+            TurnExecutionContext context, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            yield return new("partial", ConversationEventTypes.MessageContentAppended, 1,
+                JsonSerializer.SerializeToElement(new { delta = "partial reply" }), IsTerminal: false, TerminalInfo: null);
+            stop();
+            if (ending == "throw") ct.ThrowIfCancellationRequested();
+            if (ending == "end") yield break;
+            var terminal = ending == "completed" ? TurnTerminalInfo.Success("partial reply", null) : TurnTerminalInfo.Cancelled();
+            yield return new("terminal", ending == "completed" ? ConversationEventTypes.TurnCompleted : ConversationEventTypes.TurnCancelled,
+                1, JsonSerializer.SerializeToElement(new { }), IsTerminal: true, TerminalInfo: terminal);
+        }
+    }
+
+    private sealed class ExecutionInputs(ExecutionLease lease) : IAgentRuntimeProfileResolver,
+        IAgentExecutionSnapshotFactory, IChatMessageRepository, IExecutionCommandReader, ILlmConfigService
+    {
+        public Task<AgentRuntimeProfile> ResolveAsync(string workspaceId, string agentId, CancellationToken ct = default)
+            => Task.FromResult(new AgentRuntimeProfile { WorkspaceId = workspaceId, AgentId = agentId, DisplayName = "Test" });
+        public Task<AgentExecutionSnapshot> CreateAsync(AgentRuntimeProfile profile, AgentExecutionSnapshot? previousSnapshot, CancellationToken ct)
+            => Task.FromResult(new AgentExecutionSnapshot("snapshot", lease.WorkspaceId, "agent-1", 1, "hash",
+                null, null, null, null, "provider", "profile", "model", null, null, null, null, null,
+                10, 10, TimeSpan.FromMinutes(5), DateTimeOffset.UtcNow));
+        public Task<AgentExecutionSnapshot?> FindByIdAsync(string snapshotId, CancellationToken ct) => throw new NotSupportedException();
+        public Task<ChatMessageRow?> GetByMessageIdAsync(string messageId, CancellationToken ct = default) => Task.FromResult<ChatMessageRow?>(null);
+        public Task<IReadOnlyList<ChatMessageRow>> GetMessagesCursorAsync(string sessionId, long? beforeId = null, int limit = 50, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool> AnyBySessionIdAsync(string sessionId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ExecutionCommandRecord?> GetAsync(string commandId, CancellationToken ct = default)
+            => Task.FromResult<ExecutionCommandRecord?>(new ExecutionCommandRecord
+            {
+                CommandId = commandId, TraceId = lease.TraceId, WorkspaceId = lease.WorkspaceId,
+                ConversationId = lease.ConversationId, TurnId = lease.TurnId, AgentInstanceId = "agent-1",
+                AssistantMessageId = "assistant-message-1", UserMessageId = "user-message-1", Status = CommandStatus.Leased,
+            });
+        public Task<ExecutionCommandRecord?> FindByTurnIdAsync(string conversationId, string turnId, CancellationToken ct = default) => throw new NotSupportedException();
+        public IReadOnlyList<LlmProviderInfo> GetEnabledProviders() => [];
+        public IReadOnlyList<LlmModelInfo> GetAllModels() => [];
+        public LlmConfig? Resolve(string providerId, string modelId) => null;
+        public LlmProfileInfo? ResolveProfile(string profileId) => null;
+        public LlmConfig? GetMemoryConfig() => null;
+        public LlmConfig? GetEmbeddingConfig() => null;
+        public LlmProviderStrategy? GetProviderStrategy(string providerId) => null;
+        public LlmProviderStrategy? GetModelStrategy(string providerId, string modelId) => null;
+        public void Reload(object config) => throw new NotSupportedException();
     }
 
     [TestMethod]
