@@ -222,6 +222,11 @@ namespace PuddingCode.Platform
         private static readonly ConcurrentDictionary<string, Tokenizer> Tokenizers = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, ContextUsageSnapshot> _snapshots = new();
         private readonly ConcurrentDictionary<string, double> _promptCalibrationRatios = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>
+        /// 校准系数向实测值回落的比例。取值 0.7 ⇒ 被抬到 1.6 的系数约 3 轮回到 1.0；
+        /// 回落而非直接取观测值，是为了避免单次抖动把系数一把拉到底。
+        /// </summary>
+        private const double CalibrationRelaxFactor = 0.7;
 
         /// <summary>最近一次**主请求**的 Provider 实测（与 prepared 快照分离的槽位）。</summary>
         private readonly ConcurrentDictionary<string, MeasuredRequestUsage> _lastMeasuredRequests = new(StringComparer.Ordinal);
@@ -693,10 +698,18 @@ namespace PuddingCode.Platform
                 // 用**该请求自己的** raw 与 model 校准 ⇒ 校准天然按路由隔离。
                 var observedRatio = Math.Max(1.0, providerPromptTokens / (double)frozen.RawEstimatedTokens);
                 var calibrationKey = BuildCalibrationKey(sessionId, frozen.ModelId);
+                // 允许校准系数向实测值**收敛**，而不是只保留历史最大值。
+                // 只增不减会带来一个隐蔽后果：一次 provider「输入超限」失败把系数抬到 1.6 之后，
+                // 即便之后每轮实测都只有原始估算的 0.62 倍（observedRatio=1.0），系数也永远停在 1.6，
+                // 于是 usedTokens 被永久放大 1.6 倍、有效窗口却没变 ⇒ 压缩被提前触发。
+                // 规则：实测更高就立即抬高（防超窗）；实测更低则逐轮按系数回落，但永不低于 1.0
+                // （低于 1.0 意味着估算低于原始估算，会让请求超出 provider 输入上限）。
                 _promptCalibrationRatios.AddOrUpdate(
                     calibrationKey,
                     observedRatio,
-                    (_, current) => Math.Max(current, observedRatio));
+                    (_, current) => observedRatio >= current
+                        ? observedRatio
+                        : Math.Max(1.0, current * CalibrationRelaxFactor));
             }
 
             // Provider 完全没报数（Prompt/Completion/Total 全空）⇒ 不产生实测、不推进投影。
