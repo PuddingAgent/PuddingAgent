@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- PuddingContextPruning: 上下文载荷的**确定性**剪枝组件。
+       它只做「不需要模型参与」的结构性瘦身（重复工具结果去重、超长工具结果首尾保留摘要、
+       超长工具参数截断），在**付费摘要之前**先跑一遍，把无信息量的体积免费丢掉。
+
+       与 PuddingContextPolicy 的分工（不是重复）：
+         · PuddingContextPolicy = 容量算术 + 「该压哪一段」的候选/准入/退避判定，
+           只看稳定身份与整数，**不碰 Prompt 正文**，因此只依赖 BCL、零 ProjectReference。
+         · PuddingContextPruning = 真正改写消息正文的确定性变换，必须看见 ChatMessage，
+           所以引用 PuddingCore（共享模型工程，仓库中 13 个工程同样引用它）。
+       把剪枝塞进 PuddingContextPolicy 会破坏后者「零引用、只依赖 BCL」的硬边界，
+       其 S4 边界断言会变红 —— 因此这里是独立组件，而不是塞进既有组件。
+
+       边界硬规则（组件化交付规程 §2.2，编译期强制）：
+         · 唯一允许的 ProjectReference 是 PuddingCore；不得引用 PuddingRuntime /
+           PuddingHost / PuddingAgent / PuddingPlatform / PuddingCodeIntelligence /
+           PuddingCodeIndex / PuddingContextPolicy；
+         · 不得引用任何 LLM SDK（本组件从不调用模型）；
+         · 不做 I/O、不读时钟、不碰数据库/Session 锁 —— 纯函数式变换。
+       因此本组件可以在宿主运行中独立 build + test（规程 R1），S5 接入之前即可交付。 -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingContextPruningTests" />
+  </ItemGroup>
+
+</Project>
