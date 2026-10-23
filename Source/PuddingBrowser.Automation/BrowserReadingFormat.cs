@@ -12,7 +12,10 @@ public enum BrowserReadingMode
     /// <summary>只保留可交互节点（带 ref 的行）。</summary>
     Interactive,
 
-    /// <summary>正文 markdown。<b>尚未实现</b>：需要驱动侧正文提取，工具层不做伪造。</summary>
+    /// <summary>
+    /// 正文 markdown。驱动侧以 <c>ContentBlocks</c> 交付语义块，组装（结构/预算/分页）由
+    /// <see cref="ArticleMarkdown"/> / <see cref="ArticleCompactJson"/> 完成。
+    /// </summary>
     Text,
 
     /// <summary>完整 DOM + 无障碍树（排障用，必须显式开启）。</summary>

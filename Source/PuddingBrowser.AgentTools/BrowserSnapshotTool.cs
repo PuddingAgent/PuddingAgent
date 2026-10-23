@@ -16,10 +16,15 @@ public sealed record BrowserSnapshotArgs
 
     /// <summary>
     /// 阅读模式（设计方案 §6.1）：<c>outline</c>（默认，可交互节点 + 标题/地标）、
-    /// <c>interactive</c>（只列可交互节点）、<c>full</c>（完整 DOM + 无障碍树，排障用，需显式开启）。
-    /// <c>text</c>（正文 markdown）尚未实现 —— 传它会得到明确的 unsupported，**不**静默降级成 full。
+    /// <c>interactive</c>（只列可交互节点）、<c>full</c>（完整 DOM + 无障碍树，排障用，需显式开启）、
+    /// <c>text</c>（正文）。
+    /// <para>
+    /// <c>text</c> 取的是**驱动交的 <c>ContentBlocks</c> 语义块**，组装（结构/预算/分页/游标）
+    /// 在 <c>ArticleMarkdown</c> / <c>ArticleCompactJson</c> 里做——不是在工具层重新解析 HTML。
+    /// 因此本工具不依赖 <c>PuddingHtml</c>。
+    /// </para>
     /// </summary>
-    [ToolParam("Reading mode: outline (default: interactive nodes + headings/landmarks), interactive (only interactive nodes), or full (complete DOM + accessibility tree, for troubleshooting). text is not implemented yet.")]
+    [ToolParam("Reading mode: outline (default: interactive nodes + headings/landmarks), interactive (only interactive nodes), text (article markdown or compact_json, assembled from the driver's semantic content blocks), or full (complete DOM + accessibility tree, for troubleshooting).")]
     public string? Mode { get; init; }
 
     /// <summary>
