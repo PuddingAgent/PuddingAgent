@@ -1955,7 +1955,11 @@ public sealed partial class AgentExecutionService
                         request.WorkspaceId,
                         instance.AgentInstanceId,
                         maintenanceCt,
-                        maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
+                        // 窗口预留必须等于「本轮真实申请的输出上限」，而不是资源池登记的模型最大输出能力
+                    // （deepseek-flash 登记 393,216 ⇒ 1M 窗口只剩 605,760 可用输入，39% 被锁在输出侧）。
+                    // LlmReplyBudget.ResolveRequestTokens 与请求侧同口径（共用 PerTurnOutputCapTokens），
+                    // 且未登记时原样透传 null，交给下游的 2048 回落 —— 不能返回 0，否则会绕过回落。
+                    maxOutputTokens: LlmReplyBudget.ResolveRequestTokens(effectiveLlmConfig?.MaxOutputTokens),
                         maxInputTokens: effectiveLlmConfig?.MaxInputTokens,
                         agentTemplateId: request.AgentTemplateId,
                         traceId: request.ExecutionIdentity?.TraceId,
