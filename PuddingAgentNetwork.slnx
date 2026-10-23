@@ -33,12 +33,14 @@
     <Project Path="Source/PuddingDiagnostics/PuddingDiagnostics.csproj" />
     <Project Path="Source/PuddingDeepSeekWeb/PuddingDeepSeekWeb.csproj" />
     <Project Path="Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj" />
+    <Project Path="Source/PuddingHtml/PuddingHtml.csproj" />
     <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
     <Project Path="Source/PuddingHost/PuddingHost.csproj" />
     <Project Path="Source/PuddingIndexChunking/PuddingIndexChunking.csproj" />
     <Project Path="Source/PuddingMemoryEngine/PuddingMemoryEngine.csproj" Id="184bffb0-b17d-495a-971c-faee05af8d8c" />
     <Project Path="Source/PuddingMemoryEngineBenchmarks/PuddingMemoryEngineBenchmarks.csproj" />
     <Project Path="Source/PuddingPathFiltering/PuddingPathFiltering.csproj" />
+    <Project Path="Source/PuddingHtmlTests/PuddingHtmlTests.csproj" />
     <Project Path="Source/PuddingPlatform/PuddingPlatform.csproj" />
     <Project Path="Source/PuddingRetrievalEval/PuddingRetrievalEval.csproj" />
     <Project Path="Source/PuddingRetrievalEvalProbe/PuddingRetrievalEvalProbe.csproj" />

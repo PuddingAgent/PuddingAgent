@@ -1,0 +1,20 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- Component tests for PuddingHtml (组件化交付规程 S2/S3).
+       Boundary rule: this test project MUST reference PuddingHtml ONLY.
+       It must never reference PuddingRuntime / PuddingBrowser.* / PuddingHost,
+       so the extractor can be built and tested without the running host (规程 R1).
+       The boundary is asserted at runtime by ComponentBoundaryTests. -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingHtml\PuddingHtml.csproj" />
+  </ItemGroup>
+
+</Project>

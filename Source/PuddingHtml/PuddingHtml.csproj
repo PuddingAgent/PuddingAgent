@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Leaf component: HTML readability extraction + HTML-to-Markdown conversion.
+    (组件化交付规程 S1；对应「浏览器 mode=text / http_fetch 正文」两条通道共用同一套抽取)
+
+    Boundary rules, asserted by ComponentBoundaryTests (S4):
+      * ZERO <ProjectReference> — nothing may be depended upon.
+        Two independent consumers point at this project and it points at neither:
+          - PuddingRuntime        (http_fetch: HTML → Markdown body)
+          - PuddingBrowser.AgentTools (browser_snapshot mode=text)
+        Neither currently references the other, so reusing one from the other would
+        create a reverse dependency; a shared leaf is the only direction that compiles
+        cleanly.
+      * <PackageReference> is limited to the parsing libraries themselves. No logging,
+        no DI, no host abstractions — otherwise the leaf drags the host in again.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
+    <PackageReference Include="ReverseMarkdown" Version="5.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingHtmlTests" />
+  </ItemGroup>
+
+</Project>
