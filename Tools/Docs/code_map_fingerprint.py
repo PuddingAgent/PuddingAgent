@@ -22,7 +22,11 @@ dry-run 与 --apply 两趟不重复哈希（`--fresh` 可强制重算）。
 
 用法（仓库根）：
   python Tools/Docs/code_map_fingerprint.py            # dry-run：只打印将要插入的内容
+  python Tools/Docs/code_map_fingerprint.py --help     # 只打印本说明：不哈希、不写盘、不留缓存
   python Tools/Docs/code_map_fingerprint.py --apply    # 真正写盘（保留原 EOL 与 BOM）
+
+只接受 --apply / --fresh / -h(--help)；其余参数一律 exit 2 —— 本工具 dry-run 也会做
+全量哈希并写缓存，把拼错的参数当合法参数执行，会让一次「看一眼用法」跑满约 9 分钟。
 
 前置输入：先跑 `python Tools/Docs/code_map_check.py --check --report temp/cm_rep.json`
 生成报告（含 entry_rows 与 declared_fingerprint），本工具只补 declared_fingerprint 为空的文件。
@@ -48,6 +52,34 @@ MAX = C.LIMITS['MAX_LINE_LEN']
 EXDIRS = set(C.LIMITS['EXCLUDE_DIR_NAMES'])
 JUNK_EXT = {'.lscache', '.user', '.dotSettings'}
 _CACHE = {}
+
+KNOWN_FLAGS = ('--apply', '--fresh')
+HELP_FLAGS = ('-h', '--help')
+
+
+def usage(stream=None):
+    """打印模块说明与合法参数表（只读，不触碰仓库）。"""
+    stream = stream or sys.stdout
+    stream.write((__doc__ or '').rstrip() + '\n')
+    stream.write('\n合法参数：--apply（真写盘）、--fresh（忽略缓存重算）、-h/--help（本说明）\n')
+
+
+def parse_argv(argv):
+    """校验命令行：未知参数 fail-closed，-h/--help 立刻退出。
+
+    为什么不用 argparse：本工具的 --apply 是破坏性写盘开关，而 dry-run 本身也要做
+    全量 glob 哈希（约 9 分钟）并写 temp 缓存。argparse 会把未知参数报成 "unrecognized
+    arguments" 也算友好，但历史脚本一直靠 `'--apply' in sys.argv` 取标志位；这里保留
+    该形态、只补一道显式的参数白名单，让 `--help` 与拼错的参数都不会顺手触发哈希。
+    """
+    unknown = [a for a in argv if a not in KNOWN_FLAGS + HELP_FLAGS]
+    if unknown:
+        sys.stderr.write('未知参数：%s\n' % ' '.join(unknown))
+        usage(sys.stderr)
+        raise SystemExit(2)
+    if any(a in HELP_FLAGS for a in argv):
+        usage()
+        raise SystemExit(0)
 
 
 def rel(p):
@@ -271,6 +303,7 @@ def save_cache():
 
 
 def main():
+    parse_argv(sys.argv[1:])
     load_cache()
     rep = json.load(io.open(REPORT, encoding='utf-8'))
     print('MAX_LINE_LEN =', MAX, '| cache entries =', len(_CACHE))
