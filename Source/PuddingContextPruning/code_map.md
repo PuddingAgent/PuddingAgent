@@ -28,15 +28,16 @@
 5. **入参不可变 + 实例身份**：入参列表与其元素永不被修改；任何 no-op 路径（含地板回退）都返回**入参列表的同一个实例**，改动时元素一律复用旧引用。`PruneOutcome.Changed => NoOpReason == None`。
 6. **跳过不可逆内容**：`System` 消息、`IsContextSummary` 的摘要消息、带 `ContentParts` 的多模态工具结果一律不碰。
 7. **无副作用**：不写盘、不读配置、不打日志、不发网络请求——纯内存变换，可任意重放。
+8. **去重键不得用逐字比较**：宿主 `ToolResultContextPolicy` 的 bounded 预览内嵌**每次调用都不同**的 `toolCallId`/spill 路径，逐字分组会恒为零命中。必须优先用 notice 里的 `content_sha256` + 去 notice 正文作键；解析失败**退回逐字比较**（宁可不合并，不可误合并）。
 
 ## 策略顺序（不可交换）
 
-去重（相同 tool+content 只留最新一份，旧份替换为带 `toolCallId` 指针的说明）→ 首尾摘要（超 `MinToolResultChars` 保留头 `ToolResultHeadChars` + 尾 `ToolResultTailChars`）→ 参数截断（超 `MinToolArgumentChars` 保留头 `ToolArgumentHeadChars`）→ 准入地板。
+去重（相同 tool + **相同内容指纹**只留最新一份；指纹 = 可解析出 `content_sha256` 时「哈希 + 去 notice 正文」，否则退回逐字比较；旧份替换为带 `toolCallId` 指针的说明）→ 首尾摘要（超 `MinToolResultChars` 保留头 `ToolResultHeadChars` + 尾 `ToolResultTailChars`）→ 参数截断（超 `MinToolArgumentChars` 保留头 `ToolArgumentHeadChars`）→ 准入地板。
 所有改写文本都以 `[deterministic-prune] ` 开头，便于在会话里反查与统计。
 
 ## 测试
 
-`Source/PuddingContextPruningTests/`（独立测试工程，只引用本工程）：29 例 = 行为 17 + 配置校验 9 + 边界 3。
+`Source/PuddingContextPruningTests/`（独立测试工程，只引用本工程）：32 例 = 行为 20 + 配置校验 9 + 边界 3。
 边界断言（S4）：探测器自检 + 进程实际加载程序集 + `*.deps.json` 依赖闭包三重校验，临时加一条反向引用即取红。
 
 ## 变更记录

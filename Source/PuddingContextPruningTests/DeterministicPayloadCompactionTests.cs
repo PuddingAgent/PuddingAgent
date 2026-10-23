@@ -161,6 +161,69 @@ public sealed class DeterministicPayloadCompactionTests
         Assert.AreEqual(0, outcome.Stats.DeduplicatedToolResults);
     }
 
+    [TestMethod]
+    public void Bounded_Previews_With_Different_Call_Ids_But_Same_Sha256_Are_Deduplicated()
+    {
+        // 宿主 ToolResultContextPolicy 的 bounded 预览：head + notice + tail。
+        // notice 里的 toolCallId / spill 路径每次都不同，只有 content_sha256 指向同一份原文。
+        var body = Payload('q', 3_000);
+        var hash = new string('a', 64);
+        var first = BoundedPreview(body, hash, "call-A");
+        var second = BoundedPreview(body, hash, "call-B");
+
+        Assert.AreNotEqual(first, second, "前提：两条预览逐字不同（notice 含不同 callId），旧实现因此永不去重");
+
+        var input = new List<ChatMessage> { ToolMessage(first, "call-A"), ToolMessage(second, "call-B") };
+
+        var outcome = DeterministicPayloadCompaction.TryApply(input, Lenient());
+
+        Assert.IsTrue(outcome.Changed);
+        Assert.AreEqual(1, outcome.Stats.DeduplicatedToolResults);
+        Assert.AreEqual(second, outcome.Messages[1].Content, "最新一条必须保留全文");
+        StringAssert.Contains(outcome.Messages[0].Content, "toolCallId=call-B");
+        Assert.AreEqual("call-A", outcome.Messages[0].ToolCallId, "配对字段不得改写");
+    }
+
+    [TestMethod]
+    public void Bounded_Previews_With_Different_Sha256_Are_Never_Deduplicated()
+    {
+        var body = Payload('q', 3_000);
+        var first = BoundedPreview(body, new string('a', 64), "call-A");
+        var second = BoundedPreview(body, new string('b', 64), "call-B");
+        var input = new List<ChatMessage> { ToolMessage(first, "call-A"), ToolMessage(second, "call-B") };
+
+        var outcome = DeterministicPayloadCompaction.TryApply(input, Lenient());
+
+        Assert.AreEqual(PruneNoOpReason.NothingEligible, outcome.NoOpReason);
+        Assert.AreEqual(0, outcome.Stats.DeduplicatedToolResults);
+    }
+
+    [TestMethod]
+    public void Bounded_Notice_Without_A_Valid_Sha256_Falls_Back_To_Verbatim_Comparison()
+    {
+        var body = Payload('q', 3_000);
+        var first = BoundedPreview(body, "not-a-hash-value", "call-A");
+        var second = BoundedPreview(body, "not-a-hash-value", "call-B");
+        var input = new List<ChatMessage> { ToolMessage(first, "call-A"), ToolMessage(second, "call-B") };
+
+        var outcome = DeterministicPayloadCompaction.TryApply(input, Lenient());
+
+        Assert.AreEqual(PruneNoOpReason.NothingEligible, outcome.NoOpReason);
+        Assert.AreEqual(0, outcome.Stats.DeduplicatedToolResults, "notice 不可解析时必须保守：绝不按正文猜测相同");
+    }
+
+    /// <summary>复刻宿主 bounded 预览的结构：head + "\n\n" + notice + "\n\n" + tail。</summary>
+    private static string BoundedPreview(string body, string sha256, string toolCallId)
+        => body[..1_000]
+           + "\n\n"
+           + $"[TOOL RESULT BOUNDED: original_chars={body.Length}; original_utf8_bytes={body.Length}; "
+           + $"original_lines=1; content_sha256=sha256:{sha256}; "
+           + $"full_output_file=.pudding/context-tool-results/s/{toolCallId}-read_file.txt; "
+           + $"artifact_manifest=.pudding/context-tool-results/s/{toolCallId}-read_file.txt.artifact.json; "
+           + "use file_read with offset_lines/limit_lines to continue; do not use full_file=true.]"
+           + "\n\n"
+           + body[^500..];
+
     // ── 4.4 头尾摘要 ─────────────────────────────────────────────────────────────
 
     [TestMethod]

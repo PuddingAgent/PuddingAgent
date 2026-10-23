@@ -127,7 +127,7 @@ public static class DeterministicPayloadCompaction
         int tailStart,
         DeterministicPruneOptions opts)
     {
-        var groups = new Dictionary<(string ToolName, string Content), List<int>>();
+        var groups = new Dictionary<(string ToolName, string Fingerprint), List<int>>();
         for (var index = 0; index < tailStart; index++)
         {
             var message = working[index];
@@ -142,7 +142,7 @@ public static class DeterministicPayloadCompaction
                 continue;
             }
 
-            var key = (message.ToolName ?? string.Empty, content);
+            var key = (message.ToolName ?? string.Empty, ResolveDuplicateFingerprint(content));
             if (!groups.TryGetValue(key, out var bucket))
             {
                 bucket = new List<int>();
@@ -264,6 +264,77 @@ public static class DeterministicPayloadCompaction
         }
 
         return replaced;
+    }
+
+    /// <summary>
+    /// 宿主 <c>ToolResultContextPolicy</c> 为超大工具结果生成的 bounded 预览标记前缀。
+    /// 预览形如 <c>head + "\n\n" + notice + "\n\n" + tail</c>，notice 携带原文的
+    /// <c>content_sha256</c>，以及**本次调用独有**的 toolCallId 与 spill 路径。
+    /// </summary>
+    private const string BoundedNoticePrefix = "[TOOL RESULT BOUNDED: ";
+
+    private const string BoundedContentHashToken = "content_sha256=sha256:";
+
+    private const int Sha256HexLength = 64;
+
+    /// <summary>
+    /// 去重分组键的「内容」部分。
+    ///
+    /// 逐字比较在这里是错的：bounded 预览内嵌的 notice 含每次调用都不同的 toolCallId 与
+    /// spill 路径，于是「原文完全相同」的两条结果逐字必然不同，去重策略在真实流量上恒为零命中。
+    ///
+    /// 因此当且仅当能解析出宿主写入的 <c>content_sha256</c> 时，用
+    /// <c>sha256 + 去掉 notice 后的正文</c> 作键：哈希相同 ⇒ 原文逐字相同，正文再相同才归组；
+    /// 任一条件不满足就退回逐字比较（保守，绝不误合并）。
+    /// </summary>
+    private static string ResolveDuplicateFingerprint(string content)
+    {
+        var parsed = TryParseBoundedNotice(content);
+        return parsed is null
+            ? content
+            : $"{parsed.Value.Hash}\u0001{parsed.Value.Body}";
+    }
+
+    /// <summary>解析 bounded 预览里的完整性与正文；notice 缺失或哈希不合法时返回 <c>null</c>。</summary>
+    private static (string Hash, string Body)? TryParseBoundedNotice(string content)
+    {
+        var noticeStart = content.IndexOf(BoundedNoticePrefix, StringComparison.Ordinal);
+        if (noticeStart < 0)
+        {
+            return null;
+        }
+
+        var noticeEnd = content.IndexOf(']', noticeStart);
+        if (noticeEnd < 0)
+        {
+            return null;
+        }
+
+        var notice = content.AsSpan(noticeStart, noticeEnd - noticeStart + 1);
+        var hashTokenIndex = notice.IndexOf(BoundedContentHashToken, StringComparison.Ordinal);
+        if (hashTokenIndex < 0)
+        {
+            return null;
+        }
+
+        var hashStart = hashTokenIndex + BoundedContentHashToken.Length;
+        if (notice.Length - hashStart < Sha256HexLength)
+        {
+            return null;
+        }
+
+        var hash = notice.Slice(hashStart, Sha256HexLength);
+        for (var index = 0; index < hash.Length; index++)
+        {
+            if (!char.IsAsciiHexDigit(hash[index]))
+            {
+                return null;
+            }
+        }
+
+        // 正文 = 预览去掉 notice 段；两侧分隔符保留，比较仍然稳定。
+        var body = string.Concat(content.AsSpan(0, noticeStart), content.AsSpan(noticeEnd + 1));
+        return (BoundedContentHashToken + hash.ToString().ToLowerInvariant(), body);
     }
 
     private static bool IsOverLimitArguments(ToolCall call, DeterministicPruneOptions opts)
