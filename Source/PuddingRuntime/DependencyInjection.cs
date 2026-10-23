@@ -238,7 +238,9 @@ public static class RuntimeServiceExtensions
 
         // ICodeIndexStore must be registered before AddPuddingCodeIntelligence，
         // so that the Runtime composition root owns the DB path decision.
-        services.TryAddSingleton<ICodeIndexStore>(sp =>
+        // Registered by concrete type as well: the background reclamation loop needs the
+        // maintenance surface, which is intentionally not part of ICodeIndexStore.
+        services.TryAddSingleton<SqliteCodeIndexStore>(sp =>
         {
             var paths = sp.GetRequiredService<PuddingCode.Configuration.PuddingDataPaths>();
             var dbPath = Path.Combine(paths.DatabasesRoot, "code-index", "code_index.db");
@@ -247,6 +249,11 @@ public static class RuntimeServiceExtensions
                 Directory.CreateDirectory(dir);
             return new SqliteCodeIndexStore(dbPath);
         });
+        services.TryAddSingleton<ICodeIndexStore>(sp => sp.GetRequiredService<SqliteCodeIndexStore>());
+
+        // Batched free-page reclamation. Never runs a full VACUUM; that stays an explicit
+        // operator action through SqliteCodeIndexStore.RunFullMaintenanceAsync.
+        services.AddHostedService<Services.CodeIndexStorageMaintenanceService>();
 
         services.AddPuddingCodeIntelligence();
 

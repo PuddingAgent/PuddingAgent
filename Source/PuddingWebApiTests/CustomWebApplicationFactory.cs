@@ -76,6 +76,10 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             RemoveHostedService<EventDispatcher>(services);
             RemoveHostedService<MessageDeliveryDispatcher>(services);
             RemoveHostedService<SubconsciousWorkerService>(services);
+        // 这个后台服务会对"共享数据根下的真实索引库"做分批回收；测试必须把它摘掉，
+        // 否则一旦测试进程活过启动延迟，就会对 D:\Data 下的生产索引库执行写操作。
+        // 不能依赖"生产库当前 auto_vacuum=0 所以是空操作"这种临时状态来兜底。
+        RemoveHostedService<PuddingRuntime.Services.CodeIndexStorageMaintenanceService>(services);
             RemoveHostedService<ChatExecutionWorker>(services);
 
             services.RemoveAll<IP2pDiscoveryService>();
