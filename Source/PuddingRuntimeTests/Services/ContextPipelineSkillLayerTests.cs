@@ -44,10 +44,14 @@ public sealed class ContextPipelineSkillLayerTests
         StringAssert.Contains(result.SystemPrompt, "--- LAYER: SKILLS ---");
         StringAssert.Contains(result.UserContextPrefix, "Runtime-private SKILL index:");
         StringAssert.Contains(result.UserContextPrefix, "`daily_notes`");
-        // 2026-08-22 冗余治理：索引行压缩为 skillId + 首句摘要 + 有限 tags/keywords；
+        // 2026-08-22 冗余治理：索引行压缩为 skillId + 首句摘要；
         // Name/版本/path 不再进入索引（完整内容由 agent_skill 渐进加载）。
         StringAssert.Contains(result.UserContextPrefix, "Use this when writing daily notes.");
-        StringAssert.Contains(result.UserContextPrefix, "tags=notes, workflow");
+        // 2026-10-23 渐进性披露（对齐 Hermes L0 = name + 一句话 description）：
+        // tags/keywords 只用于 Hub 检索与平台激活，模型不消费，且实测占目录体积 58%
+        // ⇒ 一律不进入常驻上下文。此断言在收敛前必须失败（变异取红）。
+        Assert.IsFalse(result.UserContextPrefix.Contains("tags=", StringComparison.Ordinal));
+        Assert.IsFalse(result.UserContextPrefix.Contains("keywords=", StringComparison.Ordinal));
         Assert.IsFalse((result.SystemPrompt + result.UserContextPrefix).Contains("v1.2.3", StringComparison.Ordinal));
         Assert.IsFalse((result.SystemPrompt + result.UserContextPrefix).Contains("path=skills/daily_notes", StringComparison.Ordinal));
         Assert.IsFalse((result.SystemPrompt + result.UserContextPrefix).Contains("FULL_SECRET_BODY_SHOULD_NOT_ENTER_CONTEXT", StringComparison.Ordinal));

@@ -494,18 +494,15 @@ public sealed partial class ContextPipeline
             sb.AppendLine("Use `agent_skill` with action=read_file when a listed SKILL is relevant and you need its full instructions.");
             foreach (var skill in skills)
             {
-                // 2026-08-22 冗余治理：索引行只保留定位所需的最小信息（skillId + 首句摘要 +
-                // 有限 tags/keywords）。完整说明由 agent_skill 渐进加载；此前每条 ~1.2K 字符的
-                // 索引把该层推到 29K 字符，占每次调用上下文的 25%。
+                // 2026-10-23 渐进性披露（L0 常驻 = skillId + 一句话摘要）：
+                // tags/keywords 只服务 Hub 检索与平台激活，模型不消费；本机 287 条索引实测中
+                // 它占目录体积 58%（≈55 KB / 每轮请求）。完整说明与 references 由
+                // agent_skill read_file 按需加载（L1/L2），常驻层不再重复。
                 var parts = new List<string>
                 {
                     $"`{skill.SkillId}`",
                     CompactSummary(skill.Summary),
                 };
-                if (skill.Tags.Count > 0)
-                    parts.Add($"tags={string.Join(", ", skill.Tags.Take(4))}");
-                if (skill.Keywords.Count > 0)
-                    parts.Add($"keywords={string.Join(", ", skill.Keywords.Take(6))}");
 
                 sb.Append("- ");
                 sb.AppendLine(string.Join(" | ", parts));
