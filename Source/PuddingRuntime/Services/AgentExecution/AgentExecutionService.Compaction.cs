@@ -212,6 +212,19 @@ public sealed partial class AgentExecutionService
             return WarmPrefixCompactionOutcome.NotNeeded;
         }
 
+        // 2026-10-23 微小回收守卫：软维护（历史仍能安全容纳）若只能回收极少量 token，压缩调用本身
+        // 缓存命中≈0，且改写历史尾部会作废整段前缀缓存 ⇒ 代价远大于收益，直接跳过并保留原历史。
+        if (WarmPrefixSoftReclaimAdmission.ShouldSkip(
+                plan.RemovedTokenEstimate, plan.InitialUsedTokens, plan.RequiresSynchronousProtection, forcePreparation))
+        {
+            _logger.LogInformation(
+                "[AgentExec:Compaction] Skip trivial soft reclaim session={Session} round={Round} plannedReclaim={PlannedReclaim} floor={Floor} usedTokens={UsedTokens}",
+                request.SessionId, round + 1, plan.RemovedTokenEstimate,
+                WarmPrefixSoftReclaimAdmission.ResolveFloor(plan.InitialUsedTokens), plan.InitialUsedTokens);
+            _contextCompactionService?.EndPreparedCompaction(request.SessionId, warmPrefixCompactionId);
+            return WarmPrefixCompactionOutcome.NotNeeded;
+        }
+
         var warmPrefixStartedAt = DateTimeOffset.UtcNow;
         var frozenHistory = durableHistory.ToArray();
 
