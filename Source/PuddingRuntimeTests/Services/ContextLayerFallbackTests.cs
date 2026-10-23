@@ -130,6 +130,51 @@ public sealed class ContextLayerFallbackTests
         Assert.AreEqual(0, health.ReasoningTokens);
     }
 
+    /// <summary>
+    /// 健康口径的「预留输出」必须等于本轮真实申请的输出上限（LlmReplyBudget.PerTurnOutputCapTokens
+    /// 收敛为 64,000），而不是资源池登记的模型最大输出能力（deepseek-flash 登记 393,216）。
+    /// 否则面板报 605,760 有效输入，执行路径却按 934,976 判定压缩 —— 同一次请求两套水位（诊断 §4.4）。
+    /// </summary>
+    [TestMethod]
+    public async Task GetHealthAsync_CapsOutputReserve_AtPerTurnBudget()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<MemoryDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("summary"),
+            NullLogger<ContextCompactionService>.Instance,
+            contentSummaryService: null,
+            tokenUsageRepo: new FakeTokenUsageRepository(Stats(), null),
+            messageStore: null,
+            sessionSummaryStore: null,
+            contextUsageSnapshotStore: null);
+
+        // 入参模拟 SessionEventsController：直接传资源池登记的「模型最大输出能力」。
+        var health = await service.GetHealthAsync(
+            SessionId,
+            CancellationToken.None,
+            contextWindowTokens: 1_000_000,
+            maxOutputTokens: 393_216);
+
+        // 1,000,000 − 64,000（单轮上限）− 1,024（安全余量）= 934,976
+        Assert.AreEqual(
+            934_976,
+            health.EffectiveWindowTokens,
+            "预留输出须收敛到单轮上限；若退回登记值 393,216，此处会变成 605,760。");
+        Assert.AreNotEqual(
+            605_760,
+            health.EffectiveWindowTokens,
+            "605,760 是「把模型最大输出能力当预留」的旧口径，不得回归。");
+    }
     private static SessionTokenStats Stats() => new()
     {
         PromptTokens = 12_345,

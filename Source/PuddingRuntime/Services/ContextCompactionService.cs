@@ -133,11 +133,16 @@ public sealed class ContextCompactionService : IContextCompactionService
         var threshold = _options?.AutoCompactionThreshold is > 0 and <= 1
             ? _options.AutoCompactionThreshold
             : ContextCompactionDefaults.TriggerRatio;
+                // 预留输出必须等于「本轮真实申请的输出上限」（LlmReplyBudget.PerTurnOutputCapTokens 收敛），
+        // 而不是资源池登记的模型最大输出能力：执行路径（Buffered/Streaming）已按此口径预留，
+        // 健康口径若仍用登记值（deepseek-flash 393,216）就会同一次请求出现两套水位 ——
+        // 面板会报 605.8K 有效输入，而实际按 935.0K 判定压缩。
+        var reservedOutputTokens = LlmReplyBudget.ResolveRequestTokens(maxOutputTokens);
         var snapshot = new ContextHealthEvaluator().Evaluate(
             sessionId,
             usage.UsedTokens,
             contextWindowTokens: contextWindowTokens.Value,
-            maxOutputTokens: maxOutputTokens ?? DefaultOutputReserveTokens,
+            maxOutputTokens: reservedOutputTokens ?? DefaultOutputReserveTokens,
             // 方案 §2.5：健康口径与出站硬门禁共享同一冻结参数。此前健康口径不含安全余量，
             // 而 LlmRequestBudgetGuard 含 DefaultSafetyBufferTokens(1,024)，于是同一次请求会
             // 出现「有效输入约 606,784 / 日志硬上限 605,760」两个数（诊断 §4.4）。这里统一。
@@ -146,8 +151,8 @@ public sealed class ContextCompactionService : IContextCompactionService
             compactionThreshold: threshold,
             // 回退值只为保持既有门禁行为，它不是容量给出的预算 ⇒ 如实报告为 null，
             // 让 EffectiveWindowSource 落到 fallback_output_reserve 而不是谎称「预留输出」。
-            requestedOutputBudgetTokens: maxOutputTokens,
-            outputBudgetIsFallback: maxOutputTokens is not > 0);
+            requestedOutputBudgetTokens: reservedOutputTokens,
+            outputBudgetIsFallback: reservedOutputTokens is not > 0);
 
         return snapshot with
         {
