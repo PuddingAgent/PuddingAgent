@@ -41,6 +41,11 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             await ExecuteNonQueryAsync(connection, """
+                -- 新建库启用 INCREMENTAL：释放的整页可在后续按批归还文件（auto_vacuum 只能在
+                -- 建库时设定；对已有库本语句不改变既有模式，需一次 VACUUM 才切换）。
+                -- ⚠️ 必须排在 journal_mode 之前：journal_mode=WAL 会写入库文件头，
+                -- 之后 auto_vacuum 便不再生效（实测放到后面只会得到 0 而不是 2）。
+                PRAGMA auto_vacuum = INCREMENTAL;
                 PRAGMA journal_mode = WAL;
                 PRAGMA foreign_keys = ON;
 
