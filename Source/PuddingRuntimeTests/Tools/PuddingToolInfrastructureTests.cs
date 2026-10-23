@@ -16,6 +16,7 @@ using PuddingMemoryEngine.Data;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using PuddingHtml;
 using PuddingRuntime;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Skills;

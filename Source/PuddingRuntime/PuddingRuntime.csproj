@@ -45,6 +45,10 @@
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
     <!-- 可诊断基础设施叶子组件：失败因果分类 / 有界证据 / 事故投影 / 呈现与复制载荷。 -->
     <ProjectReference Include="..\PuddingDiagnostics\PuddingDiagnostics.csproj" />
+    <!-- S5：HTML 正文抽取 + Markdown 转换叶子组件（ProjectReference=0）。
+         PuddingRuntime（http_fetch）与 PuddingBrowser.AgentTools（snapshot text 模式）
+         都指向它，而它不指向任何一方 —— 这是唯一不会造成反向依赖的方向。 -->
+    <ProjectReference Include="..\PuddingHtml\PuddingHtml.csproj" />
   </ItemGroup>
 
   <ItemGroup>

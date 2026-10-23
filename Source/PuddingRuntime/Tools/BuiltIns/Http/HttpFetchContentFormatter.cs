@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using PuddingHtml;
 
 namespace PuddingRuntime.Services.Skills;
 

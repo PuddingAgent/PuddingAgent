@@ -2,6 +2,7 @@ using System.Security.Authentication;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Tools;
+using PuddingHtml;
 using PuddingRuntime.Services.Skills;
 
 namespace PuddingRuntimeTests.Tools;

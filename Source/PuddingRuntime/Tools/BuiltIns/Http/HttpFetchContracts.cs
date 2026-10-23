@@ -38,12 +38,6 @@ public sealed record WebClientResponse
     public string? FinalUrl { get; init; }
 }
 
-/// <summary>Converts HTML fragments into Markdown.</summary>
-public interface IHtmlToMarkdownConverter
-{
-    string Convert(string html);
-}
-
 /// <summary>Formats HTTP responses for agent context consumption.</summary>
 public interface IHttpFetchContentFormatter
 {

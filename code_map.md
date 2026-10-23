@@ -58,6 +58,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingDeepSeekWeb/` | 🔑 DeepSeek Search/Fetch 协议叶子组件（零引用；传输是端口，不直连 HTTP/不持凭据） | [code_map](Source/PuddingDeepSeekWeb/code_map.md) |
 | `Source/PuddingCodeIntelligence/` | 语言智能与查询：Roslyn 与 TypeScript 抽取及 outliner 与符号查询 | [code_map](Source/PuddingCodeIntelligence/code_map.md) |
 | `Source/PuddingIndexChunking/` | 分块组件：源文件 → 可独立索引的块（叶子，outline 由 `IOutlineSource` 注入） | [code_map](Source/PuddingIndexChunking/code_map.md) |
+| `Source/PuddingHtml/` | HTML 正文抽取 + Markdown 转换叶子组件（零引用；`http_fetch` 与 `browser_snapshot` 的 text 模式共用） | [code_map](Source/PuddingHtml/code_map.md) |
 | `Source/PuddingPathFiltering/` | 路径忽略合同的权威实现（噪声目录名 + `.gitignore` 语义） | [code_map](Source/PuddingPathFiltering/code_map.md) |
 | `Source/PuddingVectorIndex/` | 向量索引组件：文本 → 向量 → 内存有界 top-k（叶子，`IEmbeddingProvider` 端口） | [code_map](Source/PuddingVectorIndex/code_map.md) |
 | `Source/PuddingFullTextIndex/` | 全文索引引擎（Lucene）与供给协调 | [code_map](Source/PuddingFullTextIndex/code_map.md) |

@@ -361,11 +361,9 @@
 | `Tools/BuiltIns/Git/GitStatusTool.cs` | `git_status`：工作区状态查询 | `GitStatusTool` | `Tools/BuiltIns/Git/GitDiffTool.cs` | 默认不枚举忽略文件；显式 include_ignored 可诊断忽略规则 |
 | `Tools/BuiltIns/Git/GitTagTool.cs` | `git_tag`：标签管理 | `GitTagTool` | `Tools/BuiltIns/Git/GitLogTool.cs` | — |
 | `Tools/BuiltIns/Http/FlurlWebClient.cs` | 基于 Flurl 的 HTTP 传输实现 | `IWebClient` | `Tools/BuiltIns/Http/HttpFetchContracts.cs` | — |
-| `Tools/BuiltIns/Http/HtmlContentExtractor.cs` | HTML 正文的抽取 | `HtmlContentExtractor` | `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | — |
-| `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | 抓取结果到可读文本的格式化 | `IHttpFetchContentFormatter` | `Tools/BuiltIns/Http/HtmlContentExtractor.cs` | — |
+| `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | 抓取结果到可读文本的格式化 | `IHttpFetchContentFormatter` | `PuddingHtml`（叶子组件：正文抽取 + Markdown 转换） | — |
 | `Tools/BuiltIns/Http/HttpFetchContracts.cs` | HTTP 抓取的端口与数据契约 | `IWebClient` | `Tools/BuiltIns/Http/HttpFetchSkill.cs` | — |
 | `Tools/BuiltIns/Http/HttpFetchSkill.cs` | `http_fetch`：发起 HTTP 请求并返回正文 | `HttpFetchSkill` | `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | — |
-| `Tools/BuiltIns/Http/ReverseMarkdownHtmlToMarkdownConverter.cs` | HTML 到 Markdown 的转换适配 | `IHtmlToMarkdownConverter` | `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | — |
 | `Tools/BuiltIns/Llm/ListLlmProvidersTool.cs` | `list_llm_providers`：资源池路由表查询 | `ListLlmProvidersTool` | `Services/LlmProfileResolver.cs` | 严禁输出 apiKey 与 baseUrl |
 | `Tools/BuiltIns/Management/AgentStateTool.cs` | `agent_state`：Agent 私有状态的读写 | `AgentStateTool` | `Services/AgentSessionManager.cs` | — |
 | `Tools/BuiltIns/Management/BootstrapRebootTool.cs` | `bootstrap_reboot`：点火式重建重启 | `BootstrapRebootTool` | `Services/RuntimeSelfRegistrationService.cs` | 默认走构建与事务部署并校验哈希 |
