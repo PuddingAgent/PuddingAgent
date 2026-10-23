@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=5124d4250619 · 条目数: 353 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingRuntime/**=71f6854e2be5 · 条目数: 353 · 最近整理: 2026-10-22
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -259,6 +259,7 @@
 | `Services/AgentExecution/AgentExecutionService.Compaction.cs` | Streaming/Buffered 共用的准备与提交边界 | `TryWarmPrefixCompactionAsync` | `PuddingContextPolicy/PrefixCompactionPolicy.cs` | 每次请求评估注册窗口和独立上传预算；后台冻结准备不改前缀，70% 配置阈值等待；失败阻止模型请求 |
 | `Services/BackgroundCompactionCandidate.cs` | 执行内单候选及提交闸门 | `BackgroundCompactionCandidate` | `AgentExecutionService.Compaction.cs` | 前台在安全边界释放闸门并等待提交；结束取消并回收，五分钟准备超时 |
 | `Services/WarmPrefixMaintenanceAdmission.cs` | 预算裁剪后的补充保护准入 | `WarmPrefixMaintenanceAdmission` | `Services/AgentExecution/AgentExecutionService.Streaming.cs`、`…Buffered.cs` | 主调度每请求评估并按 round 去重；该辅助器只控制后续预算保护分支的重复调用 |
+| `Services/WarmPrefixSoftReclaimAdmission.cs` | 软维护压缩的「微小回收」准入判定 | `WarmPrefixSoftReclaimAdmission` | `Services/AgentExecution/AgentExecutionService.Compaction.cs` | 见下「关键语义」 |
 | `Services/WikiPageWriteEntry.cs` | 记忆 Wiki 页面的确定性写入入口 | `WikiPageWriteRequest` | `Services/MemoryWikiPageUpdateService.cs` | — |
 | `Services/WorkspaceAgentsContextBuilder.cs` | 工作区 Agent 名册上下文层的构造 | `WorkspaceAgentsContextBuilder` | `Services/ContextPipelineOrchestrator.cs` | — |
 | `Services/YoloSignalService.cs` | 监听工作区 yolo.signal 的后台服务 | `YoloSignalService` | `Services/AgentFirewall.cs` | 只读文件信号，不放宽任何资源边界 |
@@ -274,6 +275,9 @@
 
 - `Services/WarmPrefixMaintenanceAdmission.cs`
   软维护每 dispatch 一次；硬保护逐轮重新评估，不被软维护封顶屏蔽；软维护调用若已走 `RequiresSynchronousProtection` 分支（即已执行同步硬保护），`RecordAttempt` 同时置硬保护标记，禁止同一 round 再发一次字节级相同的摘要请求（2026-10-17 事故：同 round 两次 1.68M token 请求、两张失败卡片）
+
+- `Services/WarmPrefixSoftReclaimAdmission.cs`
+  回收下限 = max(2000 tokens, 起始用量 5%)；仅在软维护（`RequiresSynchronousProtection=false`）且非强制准备时生效，硬保护路径与手动压缩不受影响。命中跳过时不生成摘要、不改历史，只记 `Skip trivial soft reclaim` 日志并清掉预置状态（2026-10-23 实测：181 次自动压缩中 22% 回收 ≤5k token，而压缩调用缓存命中≈1.2%，且改写历史尾部会作废整段前缀缓存）。
 
 ## 工具审批与准入实现
 
