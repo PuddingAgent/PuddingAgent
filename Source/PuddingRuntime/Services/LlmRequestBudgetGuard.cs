@@ -135,9 +135,10 @@ public static partial class LlmRequestBudgetGuard
     /// </param>
     /// <param name="logger">可选：驱逐真正发生时写一条 Warning 日志（条数 + 回收 token 估算）。</param>
     /// <param name="deterministicPruneEnabled">
-    /// 发请求前是否先跑一次零 LLM 的确定性载荷剪枝（默认开启）：只动受保护尾部之外的
-    /// Tool 结果与工具参数，回收量低于组件地板（2000 tokens / 5%）时整份回退，
-    /// 因此不会为了几百 token 重写整个前缀。传 <c>false</c> 即逐字回到接入前的行为。
+    /// 输入**已超限**时是否先跑一次零 LLM 的确定性载荷剪枝（默认开启）：只动受保护尾部之外的
+    /// Tool 结果与工具参数，回收量低于组件地板（2000 tokens / 5%）时整份回退。
+    /// 未超限时一律不跑 —— 改写历史会让 warm prefix 失效，而省下的量远不足以回本
+    /// （经济账见方法体内注释）。传 <c>false</c> 即逐字回到接入前的行为。
     /// </param>
     public static LlmRequestBudgetResult Prepare(
         ContextUsageSnapshotStore usageStore,
@@ -162,27 +163,6 @@ public static partial class LlmRequestBudgetGuard
         var initialCount = working.Count;
         var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens, workUnitInputCapacity);
 
-        // S5：零 LLM 确定性剪枝 —— 在「花钱摘要」与「硬上限驱逐」之前，先把明显冗余的字节拿掉。
-        // 必须发生在 CaptureLlmRequest 之前：那一步会发布本次请求的冻结测量，
-        // 剪枝后再测量，账户上的数字才对得上真正发出去的内容。
-        if (deterministicPruneEnabled)
-        {
-            var pruned = DeterministicPayloadCompaction.TryApply(working);
-            if (pruned.Changed)
-            {
-                working = pruned.Messages as List<ChatMessage> ?? pruned.Messages.ToList();
-                logger?.LogInformation(
-                    "[LlmRequestBudgetGuard:DeterministicPrune] session={SessionId} deduplicated={Deduplicated} summarized={Summarized} truncatedArguments={TruncatedArguments} reclaimedTokens={Reclaimed} before={Before} after={After}",
-                    sessionId,
-                    pruned.Stats.DeduplicatedToolResults,
-                    pruned.Stats.SummarizedToolResults,
-                    pruned.Stats.TruncatedToolArguments,
-                    pruned.Stats.ReclaimedTokens,
-                    pruned.Stats.BeforeTokens,
-                    pruned.Stats.AfterTokens);
-            }
-        }
-
         var snapshot = usageStore.CaptureLlmRequest(
             sessionId,
             working,
@@ -191,6 +171,42 @@ public static partial class LlmRequestBudgetGuard
             purpose,
             invocationId,
             attemptId);
+
+        // S5：零 LLM 确定性剪枝 —— 只在「已经超限」时做，且必须在删消息 / 驱逐载荷之前。
+        //
+        // 经济账（真实计量 2026-10-23，本会话近 200 条请求）：
+        //   prompt ≈ 87,159 tokens，cacheHit ≈ 86%，反推 miss/hit 单价 ≈ 0.1076 / 0.0400 元/M。
+        //   改写历史会让整段 warm prefix 失效一次，成本 = prompt × (miss − hit)；
+        //   而每省 1 token 只赚 hit 价 ⇒ 需省 R* = prompt × (miss − hit)/hit ≈ 147,000 tokens 才回本，
+        //   而剪枝单条 bounded 预览最多省 ~1,515 tokens。⇒ 未超限时剪枝是净亏。
+        // 超限轮次本来就要删历史 / 驱逐载荷（前缀必然作废），此时剪枝成本为零、收益为正，
+        // 因此放在「首次测量之后、删消息之前」：先用无损手段救，再动有损手段。
+        if (deterministicPruneEnabled && snapshot.UsedTokens > effectiveInputLimit)
+        {
+            var pruned = DeterministicPayloadCompaction.TryApply(working);
+            if (pruned.Changed)
+            {
+                working = pruned.Messages as List<ChatMessage> ?? pruned.Messages.ToList();
+                snapshot = usageStore.CaptureLlmRequest(
+                    sessionId,
+                    working,
+                    tools,
+                    config?.ModelId,
+                    purpose,
+                    invocationId,
+                    attemptId);
+                logger?.LogInformation(
+                    "[LlmRequestBudgetGuard:DeterministicPrune] session={SessionId} deduplicated={Deduplicated} summarized={Summarized} truncatedArguments={TruncatedArguments} reclaimedTokens={Reclaimed} before={Before} after={After} limit={Limit}",
+                    sessionId,
+                    pruned.Stats.DeduplicatedToolResults,
+                    pruned.Stats.SummarizedToolResults,
+                    pruned.Stats.TruncatedToolArguments,
+                    pruned.Stats.ReclaimedTokens,
+                    pruned.Stats.BeforeTokens,
+                    pruned.Stats.AfterTokens,
+                    effectiveInputLimit);
+            }
+        }
 
         while (snapshot.UsedTokens > effectiveInputLimit && RemoveOldestConversationUnit(working))
         {

@@ -2,7 +2,7 @@
 
 > 职责：**在花钱的 LLM 摘要之前，用零 LLM 的确定性手段先把载荷压下来**——去重、首尾摘要、参数截断，压不动就整份回退。
 > 边界：只引用 `PuddingCore`（`ChatMessage` / `ToolCall` / `ChatRole` / `LlmTextPart`）；**不引用** `PuddingRuntime` / `PuddingHost` / `PuddingPlatform` / `PuddingCodeIntelligence` / `PuddingCodeIndex`（`ProjectReference` 只有一条，编译期强制）。
-> 命名空间：`PuddingContextPruning` · 状态：S1–S5 已完成（S5：`PuddingRuntime.LlmRequestBudgetGuard.Prepare` 在 `CaptureLlmRequest` 之前消费，默认开启，`deterministicPruneEnabled=false` 逐字回退旧行为）
+> 命名空间：`PuddingContextPruning` · 状态：S1–S5 已完成（S5：`PuddingRuntime.LlmRequestBudgetGuard.Prepare` 在**输入已超限时**、首次 `CaptureLlmRequest` 之后、删消息之前消费；未超限一律不跑 —— 改写历史会让 warm prefix 失效，省下的量远不够回本。默认开启，`deterministicPruneEnabled=false` 逐字回退旧行为）
 
 ## 定位
 
@@ -35,6 +35,14 @@
 去重（相同 tool + **相同内容指纹**只留最新一份；指纹 = 可解析出 `content_sha256` 时「哈希 + 去 notice 正文」，否则退回逐字比较；旧份替换为带 `toolCallId` 指针的说明）→ 首尾摘要（超 `MinToolResultChars` 保留头 `ToolResultHeadChars` + 尾 `ToolResultTailChars`）→ 参数截断（超 `MinToolArgumentChars` 保留头 `ToolArgumentHeadChars`）→ 准入地板。
 所有改写文本都以 `[deterministic-prune] ` 开头，便于在会话里反查与统计。
 
+## 触发时机（经济性约束，改接入点前必读）
+
+本组件**不是**每轮都该跑：改写历史会让整段 warm prefix 缓存失效一次，成本是 `prompt × (miss − hit)`，
+而每省 1 token 只赚 hit 价。按真实计量（2026-10-23，prompt≈87k、hit 86%、单价 0.1076/0.0400 元/M）
+盈亏平衡点是 `R* ≈ 147,000 tokens`，而单条 bounded 预览最多省 ~1,515 tokens（差 97 倍）。
+⇒ 只在**本轮已超限**（本来就要删消息/驱逐载荷、前缀必然作废）时调用，且必须在删消息之前。
+详见 `Docs/00_changelog/2026Year/10/2026-10-23-剪枝触发位置后移到超限分支.md`。
+
 ## 测试
 
 `Source/PuddingContextPruningTests/`（独立测试工程，只引用本工程）：32 例 = 行为 20 + 配置校验 9 + 边界 3。
@@ -42,4 +50,7 @@
 
 ## 变更记录
 
-见 `Docs/00_changelog/2026Year/10/2026-10-23-零LLM确定性载荷剪枝接入宿主.md`（修改日志不进 code_map）。
+见以下 changelog（修改日志不进 code_map）：
+- `Docs/00_changelog/2026Year/10/2026-10-23-零LLM确定性载荷剪枝接入宿主.md`（S5 接入）
+- `Docs/00_changelog/2026Year/10/2026-10-23-剪枝去重键改为内容哈希归组.md`（去重恒零命中修复）
+- `Docs/00_changelog/2026Year/10/2026-10-23-剪枝触发位置后移到超限分支.md`（经济性：只在本轮超限时跑）

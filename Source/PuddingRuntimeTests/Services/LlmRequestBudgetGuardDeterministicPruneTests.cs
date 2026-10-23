@@ -3,6 +3,7 @@ using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingContextPruning;
 using PuddingRuntime.Services;
 
 namespace PuddingRuntimeTests.Services;
@@ -58,13 +59,15 @@ public sealed class LlmRequestBudgetGuardDeterministicPruneTests
     };
 
     [TestMethod]
-    public void Prepare_PrunesDuplicatedToolPayloads_AndKeepsProtectedTailVerbatim()
+    public void Prepare_LeavesHistoryByteIdentical_WhenUnderLimit()
     {
+        // 未超限时不得改写历史：改写会让 warm prefix 失效，省下的量远不够付这笔账
+        // （完整经济账见 LlmRequestBudgetGuard.Prepare 方法体内注释）。
         var big = BigToolPayload();
-        var messages = BuildHistory(big, out var tailBig);
+        var messages = BuildHistory(big, out _);
         var logger = new CapturingLogger();
 
-        var pruned = LlmRequestBudgetGuard.Prepare(
+        var result = LlmRequestBudgetGuard.Prepare(
             new ContextUsageSnapshotStore(),
             SessionId,
             messages,
@@ -72,39 +75,54 @@ public sealed class LlmRequestBudgetGuardDeterministicPruneTests
             BuildConfig(),
             logger: logger);
 
-        // 剪枝不增删消息：条数与工具调用配对都保持原样。
-        Assert.AreEqual(messages.Count, pruned.Messages.Count);
-        Assert.AreEqual(0, pruned.RemovedMessageCount);
-        Assert.AreEqual("call-1", pruned.Messages[3].ToolCallId);
-        Assert.AreEqual("call-2", pruned.Messages[5].ToolCallId);
+        Assert.AreEqual(messages.Count, result.Messages.Count);
+        Assert.AreEqual(0, result.RemovedMessageCount);
+        for (var index = 0; index < messages.Count; index++)
+            Assert.AreSame(messages[index], result.Messages[index], $"未超限时第 {index} 条必须按引用原样返回");
+        Assert.AreEqual(0, logger.Information.Count, string.Join(" | ", logger.Information));
+    }
 
-        // 可剪枝区内的重复载荷被改写，且带统一标记（便于在事件流里反查剪枝产物）。
-        var olderDuplicate = pruned.Messages[3].Content;
-        Assert.IsNotNull(olderDuplicate);
-        Assert.IsTrue(olderDuplicate!.Length < big.Length, $"prunedLength={olderDuplicate.Length}");
-        StringAssert.Contains(olderDuplicate, "[deterministic-prune]");
+    [TestMethod]
+    public void Prepare_PrunesOnlyWhenOverLimit_AndBeforeDroppingMessages()
+    {
+        var big = BigToolPayload();
+        var messages = BuildHistory(big, out var tailBig);
+        var logger = new CapturingLogger();
+        var config = BuildConfig();
+        var prunedMessages = DeterministicPayloadCompaction.TryApply(messages).Messages;
 
-        // 受保护尾部逐字不变：System / 尾部 Tool / 当前轮 User 一个字节都不许动。
-        Assert.AreEqual("system prompt", pruned.Messages[0].Content);
-        Assert.AreEqual(tailBig, pruned.Messages[12].Content);
-        Assert.AreEqual("current turn user payload", pruned.Messages[13].Content);
+        // 用两个独立 store 量出「剪枝前 / 剪枝后」的真实用量，再把上限卡在两者之间：
+        // 一定超限，但原地剪枝就够 —— 于是可以断言「一条消息都不用删」。
+        var before = new ContextUsageSnapshotStore().MeasureLlmRequest(SessionId, messages, null, config.ModelId);
+        var after = new ContextUsageSnapshotStore().MeasureLlmRequest(SessionId, prunedMessages, null, config.ModelId);
+        Assert.IsLessThan(before.UsedTokens, after.UsedTokens, "前提：剪枝结果必须更小，否则本用例没有区分力");
 
-        // 剪枝必须发生在冻结测量之前 ⇒ 开启后的测量严格小于关闭时的测量。
-        var unpruned = LlmRequestBudgetGuard.Prepare(
+        var limit = (before.UsedTokens + after.UsedTokens) / 2;
+
+        var result = LlmRequestBudgetGuard.Prepare(
             new ContextUsageSnapshotStore(),
             SessionId,
             messages,
             tools: null,
-            BuildConfig(),
-            deterministicPruneEnabled: false);
-        Assert.IsLessThan(unpruned.Snapshot.UsedTokens, pruned.Snapshot.UsedTokens);
-        Assert.AreEqual(big, unpruned.Messages[3].Content);
+            config,
+            workUnitInputCapacity: limit,
+            logger: logger);
 
-        // 真正发生剪枝时必须留下 Information 级证据（回收量与前后估算）。
+        Assert.AreEqual(0, result.RemovedMessageCount, "剪枝已足够降到上限内 ⇒ 不得删除任何消息");
+        Assert.AreEqual(messages.Count, result.Messages.Count);
+        Assert.AreEqual("call-1", result.Messages[3].ToolCallId);
+        Assert.AreEqual("call-2", result.Messages[5].ToolCallId);
+        StringAssert.Contains(result.Messages[3].Content, "[deterministic-prune]");
+
+        // 受保护尾部逐字不变。
+        Assert.AreEqual("system prompt", result.Messages[0].Content);
+        Assert.AreEqual(tailBig, result.Messages[12].Content);
+        Assert.AreEqual("current turn user payload", result.Messages[13].Content);
+
         Assert.AreEqual(1, logger.Information.Count, string.Join(" | ", logger.Information));
         StringAssert.Contains(logger.Information[0], "[LlmRequestBudgetGuard:DeterministicPrune]");
         StringAssert.Contains(logger.Information[0], "reclaimedTokens=");
-        StringAssert.Contains(logger.Information[0], "before=");
+        StringAssert.Contains(logger.Information[0], "limit=");
     }
 
     [TestMethod]
