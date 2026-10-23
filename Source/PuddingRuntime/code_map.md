@@ -171,7 +171,7 @@
 | `Services/LlmInvocationService.cs` | LLM 调用的稳定对外门面 | `ILlmInvocationService` | `Services/IRuntimeLlmClient.cs` | — |
 | `Services/LlmProfileResolver.cs` | provider 与 profile 到完整配置的解析 | `ILlmProfileResolver` | `Services/PuddingJsonConfig.cs` | — |
 | `Services/LlmRequestBudgetGuard.cs` | 请求级预算守卫与软压缩触发；provider 输入上限文案解析 | `LlmRequestBudgetGuard` | `Services/ContextCompactionService.cs` | `TryGetProviderMaxInputTokens` 同时识别 `Range of input length should be [1,N]` 与 DeepSeek `maximum context length is N tokens`；摘要 raw 不得写回主请求校准（ADR-095 D6） |
-| `Services/LlmRequestTextBudget.cs` | DeepSeek Responses 独立文本上传预算与发送前复核 | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查文本与工具定义；512 KiB 为客户端预算，图片另走视觉预算；超限零发送，携带压缩原因及体积分解；`MeasureTool` 与工具曝光预算同序列化口径 |
+| `Services/LlmRequestTextBudget.cs` | DeepSeek Responses 独立文本上传预算与发送前复核 | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查文本与工具定义；预算=3 B/token × 有效输入窗口（下限 512 KiB），图片另走视觉预算；超限零发送，携带压缩原因及体积分解；`MeasureTool` 与工具曝光预算同序列化口径 |
 | `Services/BoundedCompactionSummary.cs` | 选中历史的有界分段总结与递归归并 | `BoundedCompactionSummary` | `Services/AgentExecutionService.cs` | 128 KiB 分段、64 次调用与 4 层恢复上限；截断/超额从完整源精简重生成，再拆段归并；返回逐次诊断，部分摘要不提交 |
 | `Services/Diagnostics/CompactionDiagnosticJournal.cs` | 压缩计划、分段请求/返回及提交结果的本地脱敏现场 | `CompactionDiagnosticJournal` | `Services/AgentExecutionService.cs` | 每案 8 MiB、最多 32 案/7 天；记录前后请求角色、摘要类型、续传类型与工具配对形状；成品 Host 显式注册；凭据脱敏，截断/写入失败显式可见 |
 | `Services/ManagedOggOpusTranscoder.cs` | 频道短音频的纯托管转码 | `IAudioTranscoder` | `Services/DashScopeTtsProvider.cs` | — |

@@ -71,6 +71,13 @@ public sealed partial class AgentExecutionService
         maintenance.ProtectionRequired = decision.WaitForCandidate;
         maintenance.PreviousTokens = measured.UsedTokens;
         maintenance.PreviousBytes = bytes;
+        _logger.LogDebug(
+            "[AgentExec:Compaction] Boundary decision session={Session} round={Round} prepare={Prepare} commit={Commit} wait={Wait} pressure={Pressure} tokens={Tokens} window={Window} bytes={Bytes} limit={Limit} growthTokens={GrowthTokens} growthBytes={GrowthBytes} hasCandidate={HasCandidate} ready={Ready}",
+            request.SessionId, round + 1, decision.Prepare, decision.CommitReady, decision.WaitForCandidate,
+            decision.Pressure.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
+            measured.UsedTokens, registeredWindow, bytes, LlmRequestTextBudget.ResolveLimit(request),
+            maintenance.PreviousTokens, maintenance.PreviousBytes, maintenance.Candidate is not null,
+            maintenance.Candidate?.IsReady);
         // At most one fresh recovery after an obsolete prepared candidate, never duplicate a summary per round.
         for (var recovery = 0; recovery < 2; recovery++)
         {

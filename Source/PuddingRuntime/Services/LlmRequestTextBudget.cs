@@ -7,12 +7,24 @@ using PuddingCode.Platform;
 namespace PuddingRuntime.Services;
 
 /// <summary>
-/// 独立于 token 窗口的文本上传预算。512 KiB 是客户端的保守运行预算，不是服务商 API 上限。
+/// 独立于 token 窗口的文本上传预算（客户端的保守运行预算，不是服务商 API 上限）。
 /// 统计正文、思考、续传状态及工具定义；图片二进制仍由视觉预检与 Files 上传预算管理。
+/// 2026-10-23：预算随真实输入窗口伸缩 —— 固定 512 KiB 在 1M 窗口下会被固定前缀（系统提示 + 工具定义 +
+/// 技能目录 ≈ 506 KB）占满 98.6%，历史只剩约 6 KB 余量，于是每轮都触发压缩；而压缩调用缓存命中≈0
+/// 且会作废整段前缀缓存 ⇒ 既白花钱又把可用上下文越压越小。
 /// </summary>
 internal static class LlmRequestTextBudget
 {
-    internal const int DeepSeekResponsesLimit = 512 * 1024;
+    /// <summary>预算下限（旧版唯一固定值）：窗口未知或被压到很小时仍以它为基线。</summary>
+    internal const int MinimumTextBudgetBytes = 512 * 1024;
+
+    /// <summary>
+    /// 保守的字节/Token 折算系数：CJK 约 3 B/token，英文/代码约 4~4.5 B/token。
+    /// 取 3 可让字节预算在 CJK 最坏情形下也与输入窗口对齐（不会反推出超窗的请求），
+    /// 同时给英文密集请求留下富余；真正的窗口上限仍由 <see cref="LlmRequestBudgetGuard"/> 的 token 口径守护
+    /// （本预算只是补充网，用于 token 估算失灵时的兜底）。
+    /// </summary>
+    private const int ConservativeBytesPerToken = 3;
     private static readonly JsonSerializerOptions Json = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     internal static int ResolveLimit(RuntimeDispatchRequest request)
@@ -25,7 +37,15 @@ internal static class LlmRequestTextBudget
         var isDeepSeek = string.Equals(provider, "deepseek", StringComparison.OrdinalIgnoreCase)
             || (Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
                 && uri.Host.Equals("api.deepseek.com", StringComparison.OrdinalIgnoreCase));
-        return isDeepSeek ? DeepSeekResponsesLimit : 0;
+        if (!isDeepSeek) return 0;
+
+        // 与压缩判定同源取窗口（同一个 ResolveEffectiveInputLimit，含 reply 预留与 safety buffer），
+        // 避免字节预算和 token 触发线各自走一套口径。窗口未知时回落到下限。
+        var inputTokens = LlmRequestBudgetGuard.ResolveEffectiveInputLimit(
+            request.LlmConfig, workUnitInputCapacity: request.UsageBudget?.MaxInputTokens);
+        if (inputTokens <= 0 || inputTokens == int.MaxValue) return MinimumTextBudgetBytes;
+        var scaled = (long)inputTokens * ConservativeBytesPerToken;
+        return (int)Math.Clamp(scaled, MinimumTextBudgetBytes, int.MaxValue);
     }
 
     internal static long Measure(IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmToolDefinition>? tools)

@@ -835,7 +835,8 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var request = CreateDispatchRequest() with
         {
             MessageText = VariedText(600_000),
-            LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = 1_048_576, MaxOutputTokens = 1_000 },
+            // 2026-10-23：预算 = 3 B/token × 有效输入窗口；200K 窗口下预算约 563 KB，600 KB 输入仍越界。
+            LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = 200_000, MaxOutputTokens = 8_192 },
             CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
         };
         var frames = new List<ServerSentEventFrame>();
@@ -853,7 +854,15 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     [DataRow(true, true)]
     public async Task RepeatedTranscriptAndPriorSummary_KeepExactIds_AndCompactLargeRecentTurns(bool streaming, bool productionDefaults)
     {
-        var charsPerMessage = productionDefaults ? 140_000 : 70_000;
+        // 2026-10-23：请求文本预算随输入窗口伸缩（3 B/token）⇒ 本用例必须选一个
+        // **预算低于生产 hydrate 上限**的窗口，否则 hydrate 会先把历史截断到预算以下，
+        // 「历史上限触发压缩」这个前提永远不成立（1M 窗口的预算是 3.1 MB，hydrate 上限约 0.9 MB）。
+        var config = new LlmConfig { ModelId = "test-model", MaxContextTokens = 200_000, MaxOutputTokens = 1_000 };
+        var budget = TextBudget(config);
+        // 按预算推导夹具体积，保持"超出预算"的原意。
+        // 生产默认的 hydrate 只保留最近少数消息（实测 4 条）⇒ 把单条撑到 1.15×预算/4，
+        // 让「即使被截断也仍然越过预算」成立。
+        var charsPerMessage = (int)(budget * 1.15 / 4);
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = CreateOptions(connection);
@@ -887,12 +896,12 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None);
         Assert.IsTrue(manager.ResolveDurableSpan(SessionId, originalObjects).AllResolved,
             "Keeping the warm prefix must retain its exact durable registrations.");
-        Assert.IsTrue(LlmRequestTextBudget.Measure(history, []) > LlmRequestTextBudget.DeepSeekResponsesLimit,
-            "The fixture must trigger compaction even with the production hydration cap.");
+        Assert.IsTrue(LlmRequestTextBudget.Measure(history, []) > budget,
+            $"The fixture must trigger compaction even with the production hydration cap. measured={LlmRequestTextBudget.Measure(history, [])} budget={budget} messages={history.Count} chars={history.Sum(m => m.Content?.Length ?? 0)}");
         history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
         var request = CreateDispatchRequest() with
         {
-            LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = 1_048_576, MaxOutputTokens = 1_000 },
+            LlmConfig = config,
             CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
         };
         if (streaming)
@@ -901,7 +910,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             await service.ExecuteAsync(request);
         var mainCalls = llm.Requests.Where(r => !r.Any(m => m.Content?.Contains("compaction engine") == true)).ToArray();
         Assert.AreEqual(1, mainCalls.Length, string.Join("\n", log.Lines));
-        Assert.IsTrue(LlmRequestTextBudget.Measure(mainCalls[0], []) < LlmRequestTextBudget.DeepSeekResponsesLimit);
+        Assert.IsTrue(LlmRequestTextBudget.Measure(mainCalls[0], []) < budget);
         await using var verify = new MemoryDbContext(options);
         Assert.AreEqual(1, (await verify.Sessions.SingleAsync()).CompactionGeneration, string.Join("\n", log.Lines));
         Assert.IsNotNull((await verify.Messages.SingleAsync(m => m.MessageId == "m2")).CompactedBy);
@@ -925,7 +934,10 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         await using (var db = new MemoryDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
-            await SeedAsync(db, messageCount: 48, charsPerMessage: 30_000);
+            var seedChars = largeWindow
+                ? (int)(TextBudget(new LlmConfig { ModelId = "test-model", MaxContextTokens = 1_048_576, MaxOutputTokens = 1_000 }) * 1.15 / 48)
+                : 30_000;
+            await SeedAsync(db, messageCount: 48, charsPerMessage: seedChars);
         }
         var factory = new Factory(options);
         var llm = new ScriptedLlmClient(DoneJson)
@@ -949,6 +961,23 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = largeWindow ? 1_048_576 : 200_000, MaxOutputTokens = 1_000 },
             CallerLlmSnapshot = largeWindow ? new("deepseek", "deepseek-flash", "responses", []) : null,
         };
+        var paddedMeasure = 0;
+        if (largeWindow)
+        {
+            // 2026-10-23：请求文本预算随输入窗口伸缩（3 B/token）⇒ 夹具必须真的越过该预算。
+            // hydrate 会截断历史，固定种子体积「碰运气」不成立；这里在派发前按实测值补足
+            // 最后一条消息，让「文本体积越界」成为确定前提。
+            var shortfall = (int)(LlmRequestTextBudget.ResolveLimit(request) * 1.05
+                - LlmRequestTextBudget.Measure(history, []));
+            if (shortfall > 0)
+                history[^1] = history[^1] with
+                {
+                    Content = (history[^1].Content ?? string.Empty) + VariedText(shortfall),
+                };
+            paddedMeasure = (int)LlmRequestTextBudget.Measure(history, []);
+            Assert.IsTrue(paddedMeasure > LlmRequestTextBudget.ResolveLimit(request),
+                $"fixture must exceed the text budget: padded={paddedMeasure} limit={LlmRequestTextBudget.ResolveLimit(request)}");
+        }
         var frames = new List<ServerSentEventFrame>();
         if (streaming)
             await foreach (var frame in service.ExecuteStreamAsync(request)) frames.Add(frame);
@@ -976,11 +1005,11 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             Assert.IsTrue(log.Lines.Any(l => l.Contains("provider_segmented", StringComparison.Ordinal)));
         if (largeWindow)
         {
-            Assert.IsTrue(log.Lines.Any(l => l.Contains("Text upload budget triggered", StringComparison.Ordinal)));
+            Assert.IsTrue(TextBudgetPressureEvidence(log, 0.95), string.Join("\n", log.Lines));
             var mainCalls = llm.Requests.Except(summaryCalls).ToArray();
             Assert.AreEqual(truncate ? 0 : 1, mainCalls.Length, "Failed compaction must not send the original oversized request.");
             foreach (var messages in mainCalls)
-                Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.DeepSeekResponsesLimit);
+                Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.ResolveLimit(request));
             if (truncate && streaming)
             {
                 var wire = System.Text.Json.JsonSerializer.Serialize(frames);
@@ -998,29 +1027,37 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     [DataRow(true)]
     public async Task TextGrowthWithinLargeTokenWindow_CompactsBeforeNextMainRequest(bool streaming)
     {
+        // 2026-10-23：本用例验证「token 用量仍在窗口内、但文本体积越界」时的压缩时机。
+        // 文本预算随输入窗口伸缩（3 B/token）⇒ 夹具必须按预算推导，不能用常量：
+        // 首轮约 70%（只达软维护线，后台准备候选），次轮增长到约 100%（跨过 95% 文本阻塞线），
+        // 阻塞线才会在下一个请求边界同步提交压缩，从而「在下一个主请求之前压缩」。
+        var growthConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 200_000, MaxOutputTokens = 8192 };
+        var growthBudget = TextBudget(growthConfig);
+        var growth = (int)(growthBudget * 0.30);
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = CreateOptions(connection);
         await using (var db = new MemoryDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
-            await SeedAsync(db, messageCount: 36, charsPerMessage: 10_000);
+            await SeedAsync(db, messageCount: 36, charsPerMessage: (int)(growthBudget * 0.70 / 36));
         }
         var factory = new Factory(options);
         var llm = new ScriptedLlmClient(
-            new LlmResponse(VariedText(220_000), [new ToolCall("call-grow", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
+            new LlmResponse(VariedText(growth), [new ToolCall("call-grow", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
             new LlmResponse(DoneJson, null))
         {
             SummaryResponseOverride = new LlmResponse(SummaryResponse, null) { FinishReason = "stop" },
         };
         var manager = CreateManager(factory);
-        var service = CreateService(llm, new RecordingToolInvocationService(), manager, new ContextUsageSnapshotStore(), factory);
+        var growthLog = new CapturingLogger();
+        var service = CreateService(llm, new RecordingToolInvocationService(), manager, new ContextUsageSnapshotStore(), factory, growthLog);
         var history = manager.GetOrCreateHistory(SessionId);
         Assert.IsTrue((await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None)).Succeeded);
         history.Insert(0, new ChatMessage(ChatRole.System, "system"));
         var request = CreateDispatchRequest() with
         {
-            LlmConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192 },
+            LlmConfig = growthConfig,
             CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
         };
         if (streaming)
@@ -1032,9 +1069,10 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         Assert.AreEqual(2, main.Length);
         Assert.IsTrue(llm.Requests.Any(IsSummary), "A candidate may be prepared alongside the first request before growth requires it.");
         foreach (var messages in main)
-            Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.DeepSeekResponsesLimit);
+            Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.ResolveLimit(request));
         await using var verify = new MemoryDbContext(options);
-        Assert.AreEqual(1, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration);
+        Assert.AreEqual(1, (await verify.Sessions.SingleAsync(s => s.SessionId == SessionId)).CompactionGeneration,
+            string.Join("\n", growthLog.Lines));
     }
 
     [TestMethod]
@@ -1044,19 +1082,30 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     [DataRow(true, true)]
     public async Task PreviousTurnNativeTools_AreDurableWhenNextTurnCompacts(bool streaming, bool productionDefaults)
     {
+        LlmConfig durableConfig;
+        int durableBudgetEarly;
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = CreateOptions(connection);
         await using (var db = new MemoryDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
-            await SeedAsync(db, messageCount: 24, charsPerMessage: 8_000);
+            // 2026-10-23：请求文本预算随窗口伸缩（3 B/token）⇒ 与 RepeatedTranscript 同理，
+            // 必须选预算低于生产 hydrate 上限的窗口；1M 窗口的 3.1 MB 预算在 hydrate 截断后不可达。
+            durableConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 200_000, MaxOutputTokens = 8192 };
+            var durableBudget = TextBudget(durableConfig);
+            durableBudgetEarly = durableBudget;
+            // 首轮必须停在软维护准备线（0.60）以下 ⇒ 种 0.50 预算，首轮回复再长 0.05 预算。
+            await SeedAsync(db, messageCount: 24, charsPerMessage: (int)(durableBudget * 0.50 / 24));
         }
         var factory = new Factory(options);
+        // 首轮增长远低于触发线（0.05 预算），次轮增长把它推过 0.70 ⇒ 只有次轮才压缩。
+        var previousGrowth = (int)(durableBudgetEarly * 0.05);
+        var currentGrowth = (int)(durableBudgetEarly * 0.49);
         var llm = new ScriptedLlmClient(
-            new LlmResponse(VariedText(100_000), [new ToolCall("previous-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
+            new LlmResponse(VariedText(previousGrowth), [new ToolCall("previous-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
             new LlmResponse(DoneJson, null),
-            new LlmResponse(VariedText(280_000), [new ToolCall("current-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
+            new LlmResponse(VariedText(currentGrowth), [new ToolCall("current-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
             new LlmResponse(DoneJson, null))
         {
             SummaryResponseOverride = new LlmResponse(SummaryResponse, null) { FinishReason = "stop" },
@@ -1070,7 +1119,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         history.Insert(0, new ChatMessage(ChatRole.System, "system"));
         var request = CreateDispatchRequest() with
         {
-            LlmConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192 },
+            LlmConfig = durableConfig,
             CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
             MessageId = "first-user",
         };
@@ -1088,7 +1137,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
 
         var main = llm.Requests.Where(r => !r.Any(m => m.Content?.Contains("compaction engine") == true)).ToArray();
         Assert.AreEqual(4, main.Length, string.Join("\n", log.Lines));
-        Assert.IsTrue(main.All(r => LlmRequestTextBudget.Measure(r, []) <= LlmRequestTextBudget.DeepSeekResponsesLimit));
+        Assert.IsTrue(main.All(r => LlmRequestTextBudget.Measure(r, []) <= LlmRequestTextBudget.ResolveLimit(request)));
         Assert.IsTrue(history.Any(m => m.ToolCallId == "current-call"), "Current tool round stays verbatim.");
         Assert.IsFalse(history.Any(m => m.ToolCallId == "previous-call"), "Previous tool round was summarized.");
         await using var verify = new MemoryDbContext(options);
@@ -1137,7 +1186,8 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             new ContextUsageSnapshotStore(), factory);
         var request = CreateDispatchRequest() with
         {
-            LlmConfig = new() { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192 },
+            // 2026-10-23：200K 窗口 ⇒ 预算约 563 KB，640 KB 夹具才需要文本压缩。
+            LlmConfig = new() { ModelId = "deepseek-flash", MaxContextTokens = 200_000, MaxOutputTokens = 8192 },
             CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
         };
         var frames = new List<ServerSentEventFrame>();
@@ -1160,6 +1210,9 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     [DataRow(true)]
     public async Task LongSingleUserTurn_RepeatedlyCompactsCompletedBatches_AndRehydratesDurableCheckpoints(bool streaming)
     {
+        var longTurnConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192, ReasoningEffort = "high" };
+        // 2026-10-23：预算随窗口伸缩 ⇒ 每轮增量按预算推导（48 轮累计约 1.25 倍预算），保持"长轮次反复压缩"的原意。
+        var roundChars = (int)(TextBudget(longTurnConfig) * 0.75 / 48);
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = CreateOptions(connection);
@@ -1169,14 +1222,14 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             await SeedAsync(db, 24, 8000);
         }
         var factory = new Factory(options);
-        var responses = Enumerable.Range(0, 48).Select(i => new LlmResponse($"Execution step {i}: " + VariedText(18_000),
+        var responses = Enumerable.Range(0, 48).Select(i => new LlmResponse($"Execution step {i}: " + VariedText(roundChars),
             [new ToolCall($"batch-{i}-a", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}"),
              new ToolCall($"batch-{i}-b", "task_update", "{\"task_id\":\"task-2\",\"status\":\"in_progress\"}")]))
             .Append(new LlmResponse(DoneJson, null)).ToArray();
         var llm = new ScriptedLlmClient(responses) { SummaryResponseOverride = new(SummaryResponse, null) };
         var manager = CreateManager(factory, new ContextCompactionOptions());
         var log = new CapturingLogger();
-        var tools = new RecordingToolInvocationService { Output = VariedText(6000) };
+        var tools = new RecordingToolInvocationService { Output = VariedText(roundChars / 3) };
         var service = CreateService(llm, tools, manager, new ContextUsageSnapshotStore(), factory, log);
         var history = manager.GetOrCreateHistory(SessionId);
         Assert.IsTrue((await manager.TryHydrateStreamHistoryFromDbAsync(SessionId, history, 1_000_000, CancellationToken.None)).Succeeded);
@@ -1184,7 +1237,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var request = CreateDispatchRequest() with
         {
             MaxRounds = 55, MessageId = "one-pinned-user-input", MessageText = "Finish the long investigation; preserve constraints.",
-            LlmConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 1_048_576, MaxOutputTokens = 8192, ReasoningEffort = "high" },
+            LlmConfig = longTurnConfig,
             CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
         };
         if (streaming) await foreach (var _ in service.ExecuteStreamAsync(request)) { }
@@ -1200,7 +1253,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var currentInput = main[0].Last(m => m.Role == ChatRole.User).Content;
         foreach (var messages in main)
         {
-            Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.DeepSeekResponsesLimit);
+            Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.ResolveLimit(request));
             Assert.AreEqual(currentInput, messages.Last(m => m.Role == ChatRole.User).Content);
             foreach (var call in messages.SelectMany(m => m.ToolCalls ?? []))
                 Assert.AreEqual(1, messages.Count(m => m.ToolCallId == call.Id), "Every retained call has its result.");
@@ -1221,6 +1274,41 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         Assert.IsTrue(restarted.ResolveDurableSpan(SessionId, restored).AllResolved);
         Assert.IsTrue(restored.Any(m => m.Content == SummaryResponse));
         Assert.IsFalse(restored.Any(m => m.Content?.Contains("batch-0-a") == true));
+    }
+
+    /// <summary>
+    /// 2026-10-23：文本上传预算随输入窗口伸缩（3 B/token，下限 512 KiB）。
+    /// 夹具体积必须由解析出的预算推导，不能写死，否则窗口变大后夹具不再越界。
+    /// </summary>
+    private static int TextBudget(LlmConfig config) => LlmRequestTextBudget.ResolveLimit(
+        CreateDispatchRequest() with { LlmConfig = config, CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []) });
+
+    /// <summary>
+    /// 判断日志里是否有「文本体积压力越线」的证据。
+    /// 非流式路径在派发前的体积校验中打 "Text upload budget triggered"；
+    /// 流式路径把同一事实写进维护边界决策行（bytes/limit）。两种都算证据。
+    /// </summary>
+    private static bool TextBudgetPressureEvidence(CapturingLogger log, double required)
+        => log.Lines.Any(line => line.Contains("Text upload budget triggered", StringComparison.Ordinal)
+            || BytePressureAtLeast(line, required));
+
+    private static bool BytePressureAtLeast(string line, double required)
+    {
+        if (!line.Contains("Boundary decision", StringComparison.Ordinal)) return false;
+        var bytes = NumericField(line, "bytes=");
+        var limit = NumericField(line, "limit=");
+        return bytes.HasValue && limit is > 0 && bytes.Value / limit.Value >= required;
+    }
+
+    private static double? NumericField(string line, string prefix)
+    {
+        var index = line.IndexOf(prefix, StringComparison.Ordinal);
+        if (index < 0) return null;
+        var start = index + prefix.Length;
+        var end = start;
+        while (end < line.Length && (char.IsDigit(line[end]) || line[end] == '.')) end++;
+        return double.TryParse(line[start..end], System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : null;
     }
 
     private static RuntimeDispatchRequest CreateDispatchRequest(bool suppressAutoCompaction = true) => new()
