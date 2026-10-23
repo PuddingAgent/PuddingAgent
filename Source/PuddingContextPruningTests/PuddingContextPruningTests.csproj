@@ -1,0 +1,21 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- 组件测试 for PuddingContextPruning（组件化交付规程 S2/S3）。
+       边界规则：本测试工程只允许引用 PuddingContextPruning（其传递依赖 PuddingCore 除外）。
+       不得引用 PuddingRuntime / PuddingHost / PuddingAgent / PuddingPlatform /
+       PuddingCodeIntelligence / PuddingCodeIndex / PuddingContextPolicy，
+       这样剪枝组件可以在宿主运行中独立 build + test，不碰 Core 的 DLL 文件锁（规程 R1）。
+       该边界由 ComponentBoundaryTests 在运行期断言（S4）。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingContextPruning\PuddingContextPruning.csproj" />
+  </ItemGroup>
+
+</Project>
