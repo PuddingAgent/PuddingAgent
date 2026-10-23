@@ -107,11 +107,40 @@ public sealed class LlmRequestTextBudgetTests
     }
 
     [TestMethod]
-    public void SmallRequestAndOtherRoutes_AreUnaffected()
+    public void SmallRequest_IsUnaffected()
+        => Assert.IsNull(LlmRequestTextBudget.Validate(Request(config: Config(1_000_000)), [new(ChatRole.User, "small")], []));
+
+    [TestMethod]
+    public void TextBudget_UsesSameWindowOnEveryProtocol()
     {
-        Assert.IsNull(LlmRequestTextBudget.Validate(Request(), [new(ChatRole.User, "small")], []));
-        Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request("openai", config: Config(1_000_000))));
-        Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request(protocol: "anthropic", config: Config(1_000_000))));
+        // 2026-10-23：字节预算原先只服务 responses 协议，openai 兼容路由一律返回 0（等于没有字节网）。
+        // 同一段历史于是被两套口径判定：主模型能上传的请求，切到别的路由就完全不受字节预算约束。
+        var responses = LlmRequestTextBudget.ResolveLimit(Request(config: Config(1_000_000)));
+        var openAi = LlmRequestTextBudget.ResolveLimit(Request("openai", "openai", Config(1_000_000)));
+        var anthropic = LlmRequestTextBudget.ResolveLimit(Request("anthropic", "anthropic", Config(1_000_000)));
+        Assert.AreEqual(responses, openAi, "openai 兼容路由必须与 responses 同口径");
+        Assert.AreEqual(responses, anthropic, "anthropic 路由必须与 responses 同口径");
+        Assert.IsTrue(openAi > LlmRequestTextBudget.MinimumTextBudgetBytes, "1M 窗口下必须真的缩放，而不是退回下限");
+    }
+
+    [TestMethod]
+    public void UnknownWindow_KeepsLegacyFloor_InsteadOfInventingAScaledBudget()
+    {
+        // 窗口未登记（MaxContextTokens/MaxInputTokens 都缺）时不虚构缩放值，保留旧 512 KiB 下限。
+        var noWindow = new LlmConfig { ModelId = "unknown-route" };
+        Assert.AreEqual(LlmRequestTextBudget.MinimumTextBudgetBytes,
+            LlmRequestTextBudget.ResolveLimit(Request("openai", "openai", noWindow)));
+    }
+
+    [TestMethod]
+    public void RequestWithoutRouteIdentity_GetsNoByteBudget()
+    {
+        // 既无 provider 身份也无显式 endpoint（本地/未编排请求）时无从判断服务商上限：
+        // 不虚构预算，交回 token 口径守护。这条边界不许被「统一口径」顺手放宽。
+        Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request("", "", Config(1_000_000))));
+        Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request("", "", config: null)));
+        // 有窗口但没路由身份同样为 0：判定依据是「真实路由」，不是「窗口字段凑巧存在」。
+        Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request("", "", Config(30_000, 1_000))));
     }
 
     [TestMethod]

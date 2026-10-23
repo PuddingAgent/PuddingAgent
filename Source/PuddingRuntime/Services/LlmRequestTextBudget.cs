@@ -29,20 +29,21 @@ internal static class LlmRequestTextBudget
 
     internal static int ResolveLimit(RuntimeDispatchRequest request)
     {
-        var protocol = request.CallerLlmSnapshot?.Protocol;
-        if (!string.IsNullOrEmpty(protocol) && !protocol.Equals("responses", StringComparison.OrdinalIgnoreCase))
-            return 0;
+        // 2026-10-23：口径统一。此前只有 responses 协议的 DeepSeek 路由拿字节预算，其余一律返回 0
+        // （等于没有字节网）⇒ 同一段历史因路由不同被两套口径判定：主模型能上传的请求，
+        // 切到 openai 兼容 / anthropic 路由就可能直接撞服务商硬拒。现在一律按窗口折算，
+        // 唯一前提是「路由身份已知」（provider 或显式 endpoint）——否则无从判断服务商上限，
+        // 不虚构预算，交回 token 口径守护（与历史行为一致）。
         var provider = request.CallerLlmSnapshot?.ProviderId ?? request.LlmProfile?.ProviderId;
-        var endpoint = request.LlmConfig?.Endpoint;
-        var isDeepSeek = string.Equals(provider, "deepseek", StringComparison.OrdinalIgnoreCase)
-            || (Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
-                && uri.Host.Equals("api.deepseek.com", StringComparison.OrdinalIgnoreCase));
-        if (!isDeepSeek) return 0;
+        var hasKnownRoute = !string.IsNullOrWhiteSpace(provider)
+            || !string.IsNullOrWhiteSpace(request.LlmConfig?.Endpoint);
+        if (!hasKnownRoute) return 0;
 
-        // 与压缩判定同源取窗口（同一个 ResolveEffectiveInputLimit，含 reply 预留与 safety buffer），
-        // 避免字节预算和 token 触发线各自走一套口径。窗口未知时回落到下限。
+        // 窗口与压缩判定同源（同一个 ResolveEffectiveInputLimit，含 reply 预留与 safety buffer），
+        // 避免字节预算和 token 触发线各自走一套口径。
         var inputTokens = LlmRequestBudgetGuard.ResolveEffectiveInputLimit(
             request.LlmConfig, workUnitInputCapacity: request.UsageBudget?.MaxInputTokens);
+        // 窗口未知（int.MaxValue）或不可用 ⇒ 不虚构缩放值，退回 512 KiB 下限（与历史行为一致）。
         if (inputTokens <= 0 || inputTokens == int.MaxValue) return MinimumTextBudgetBytes;
         var scaled = (long)inputTokens * ConservativeBytesPerToken;
         return (int)Math.Clamp(scaled, MinimumTextBudgetBytes, int.MaxValue);
