@@ -120,3 +120,7 @@ restored sha256=3d98802d… (equal=True)
 - **教训（写进流程）**：
   1. **`git add` 与 `git commit` 之间有窗口**。多 Agent 共用工作区时，commit 前必须重新核对「父提交还是不是 add 时的那个」，或干脆用 `git commit -- <paths>`，让 git 直接从工作区内容重建这几个路径。
   2. 但 `git commit -- code_map.md` 在这里**不能**用：工作区那份还含并发作者未提交的行，取工作区内容就会把别人的 WIP 一起带进来。含他人 WIP 的共享文件只能走「ref 原文 + 单行替换 + `update-index`」这条窄路。
+
+## 后续（同日）
+
+本文记录的 **10 条**自测已在同日扩到 **13 条**（新增 `--refresh` 相关 3 条），因此「删掉 `main()` 首行 `parse_argv` ⇒ 8 条 FAIL」这一取红口径现在是 **11 条 FAIL / 13 PASS**。`--refresh`（把过期源指纹改写为实测值）见同目录 `2026-10-23-代码地图源指纹刷新工具refresh.md`。

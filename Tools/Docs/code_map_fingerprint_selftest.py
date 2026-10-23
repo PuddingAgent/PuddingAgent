@@ -7,15 +7,19 @@
 只要有人顺手带上 `--apply`，一次「看一眼用法」就会变成写盘。**工具本身要对参数 fail-closed。**
 
 自测覆盖的契约（每条都能取红）：
-  1. `--help` / `-h` → exit 0，并打印合法参数表；
+  1. `--help` / `-h` → exit 0，并打印合法参数表（含 `--apply` / `--refresh`）；
   2. 未知参数（`--bogus`）→ exit 2，且 **stderr 指出是哪个参数**；
-  3. `--apply --bogus` → exit 2（破坏性开关不得因「顺带一个拼错的参数」而生效）；
-  4. `--help` **不执行计划**（stdout 无 `[stage=`/`待写入`），且**不写缓存**。
+  3. `--apply --bogus` / `--refresh --bogus` → exit 2（破坏性 / 会写盘的开头不得因「顺带一个
+     拼错的参数」而生效，且 stdout 无任何计划输出）；
+  4. `--help` **不执行计划**（stdout 无 `[stage=`/`待写入`），且**不写缓存**；
+  5. `--refresh --help` 走帮助分支 exit 0（帮助优先于任何执行意图）。
 
 用法（仓库根）：
   python Tools/Docs/code_map_fingerprint_selftest.py
 取红验证（改坏实现后必须变红）：
-  临时删掉 `main()` 首行 `parse_argv(sys.argv[1:])`，重跑本自测 → 应出现 3 条 FAIL。
+  临时删掉 `main()` 首行 `parse_argv(sys.argv[1:])`，重跑本自测 → 应出现 11 条 FAIL
+  （`--help/-h` 的 exit 0 仍绿：缺陷现象就是「静默跑完并退出 0」；抓住它的是「不执行计划」
+  与「缓存未被覆写」两条断言）。
 """
 import io
 import os
@@ -61,7 +65,7 @@ def main():
     r = run('--help')
     check('contract: --help exits 0', r.returncode == 0, 'rc=%s' % r.returncode)
     check('contract: --help prints accepted flags',
-          '--apply' in r.stdout and '合法参数' in r.stdout)
+          '--apply' in r.stdout and '--refresh' in r.stdout and '合法参数' in r.stdout)
     check('contract: --help runs no plan (no stage line)',
           '[stage=' not in r.stdout and '待写入' not in r.stdout)
 
@@ -78,6 +82,16 @@ def main():
     check('contract: --apply + unknown flag still exits 2', r.returncode == 2,
           'rc=%s' % r.returncode)
     check('contract: --apply + unknown flag writes nothing', r.stdout.strip() == '')
+
+    r = run('--refresh', '--bogus')
+    check('contract: --refresh + unknown flag still exits 2', r.returncode == 2,
+          'rc=%s' % r.returncode)
+    check('contract: --refresh + unknown flag runs no plan',
+          '[refresh]' not in r.stdout and '待刷新' not in r.stdout)
+
+    r = run('--refresh', '--help')
+    check('contract: --refresh + --help exits 0 (help wins)', r.returncode == 0,
+          'rc=%s' % r.returncode)
 
     check('contract: help/invalid paths leave the hash cache untouched',
           cache_stamp() == before, 'before=%r after=%r' % (before, cache_stamp()))

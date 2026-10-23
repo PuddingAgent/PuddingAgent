@@ -24,16 +24,22 @@ dry-run 与 --apply 两趟不重复哈希（`--fresh` 可强制重算）。
   python Tools/Docs/code_map_fingerprint.py            # dry-run：只打印将要插入的内容
   python Tools/Docs/code_map_fingerprint.py --help     # 只打印本说明：不哈希、不写盘、不留缓存
   python Tools/Docs/code_map_fingerprint.py --apply    # 真正写盘（保留原 EOL 与 BOM）
+  python Tools/Docs/code_map_fingerprint.py --refresh  # dry-run：只打印「已过期」的源指纹改写计划
+  python Tools/Docs/code_map_fingerprint.py --refresh --apply   # 把过期源指纹改写为实测值
 
-只接受 --apply / --fresh / -h(--help)；其余参数一律 exit 2 —— 本工具 dry-run 也会做
+只接受 --apply / --fresh / --refresh / -h(--help)；其余参数一律 exit 2 —— 本工具 dry-run 也会做
 全量哈希并写缓存，把拼错的参数当合法参数执行，会让一次「看一眼用法」跑满约 9 分钟。
 
 前置输入：先跑 `python Tools/Docs/code_map_check.py --check --report temp/cm_rep.json`
-生成报告（含 entry_rows 与 declared_fingerprint），本工具只补 declared_fingerprint 为空的文件。
+生成报告（含 entry_rows 与 declared_fingerprint）。两条互补路径：
+  · 默认：只补 declared_fingerprint 为空的文件（不碰已有声明）；
+  · `--refresh`：把**已声明但与实测不符**的指纹改写为实测值（源文件改动后唯一的机器化
+    刷新手段，见 refresh_declared 的判定口径与写回规则）。
 """
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -47,13 +53,14 @@ BOM = b'\xef\xbb\xbf'
 REPORT = os.path.join(ROOT, 'temp', 'cm_rep.json')
 CACHE_PATH = os.path.join(ROOT, 'temp', 'cm_fp_cache.json')
 APPLY = '--apply' in sys.argv
+REFRESH = '--refresh' in sys.argv
 TODAY = time.strftime('%Y-%m-%d')
 MAX = C.LIMITS['MAX_LINE_LEN']
 EXDIRS = set(C.LIMITS['EXCLUDE_DIR_NAMES'])
 JUNK_EXT = {'.lscache', '.user', '.dotSettings'}
 _CACHE = {}
 
-KNOWN_FLAGS = ('--apply', '--fresh')
+KNOWN_FLAGS = ('--apply', '--fresh', '--refresh')
 HELP_FLAGS = ('-h', '--help')
 
 
@@ -61,7 +68,8 @@ def usage(stream=None):
     """打印模块说明与合法参数表（只读，不触碰仓库）。"""
     stream = stream or sys.stdout
     stream.write((__doc__ or '').rstrip() + '\n')
-    stream.write('\n合法参数：--apply（真写盘）、--fresh（忽略缓存重算）、-h/--help（本说明）\n')
+    stream.write('\n合法参数：--apply（真写盘）、--fresh（忽略缓存重算）、'
+                 '--refresh（把过期源指纹改写为实测值，默认 dry-run）、-h/--help（本说明）\n')
 
 
 def parse_argv(argv):
@@ -302,10 +310,81 @@ def save_cache():
     io.open(CACHE_PATH, 'w', encoding='utf-8').write(json.dumps(tmp, indent=0, sort_keys=True))
 
 
+def declared_on_disk(full_path, glob):
+    """从磁盘读 `glob` 当前声明的指纹值（报告是快照，不能代表磁盘现状）。
+
+    只认 `<glob>=<值>` 这一种紧邻写法，值形如 `<摘要>` 或 `<文件数>-<摘要>`；
+    `Tests/**` 与 `TestScripts/**` 这类前缀包含关系因 `=` 紧邻而不会互相误命中。
+    """
+    text = io.open(full_path, encoding='utf-8', errors='replace').read()
+    m = re.search(re.escape(glob) + r'=((?:[0-9]+-)?[0-9a-f]{6,64})', text)
+    return m.group(1) if m else None
+
+
+def refresh_declared(rep, write):
+    """把「已声明但与实测不符」的 §5 源指纹改写为实测值（`--refresh`）。
+
+    判定口径**完全复用** code_map_check 的同一套逻辑（`glob_fingerprint` + digest /
+    value / digest_full 前缀三种匹配），否则「刷新」与「核验」会各说各话，刷完仍然 stale。
+
+    **声明值一律从磁盘现读**（报告里的 `declared_fingerprint` 只是快照）：第一版把报告里的
+    旧值当作替换目标，导致「刚 --apply 完再跑一次」时报 `命中 0 次` 而拒绝写入——那是对的
+    fail-closed，但说明判据错了。现在用报告枚举「哪些文件/哪些 glob」，用磁盘取「当前写的是什么」，
+    于是本命令幂等：磁盘已相等就不动，报告过期也不会写错。
+
+    写回规则：保持声明原有写法 —— 声明带 `<文件数>-` 前缀的仍写 `<文件数>-<摘要>`，
+    只写摘要的继续只写摘要。字节级替换（保留 BOM 与 EOL），每处断言目标串在文件里
+    **恰好命中 1 次**：命中 0 次说明声明文本与解析结果不一致，命中多次说明该 glob 在
+    同一文件里出现多次，两种都拒绝写入而不猜。
+
+    成本：逐 glob 全量哈希（不在 temp 缓存里），`Source/**` 这种量级约几十秒。
+    """
+    planned, failed = [], []
+    for pf in rep['per_file']:
+        if not pf.get('declared_fingerprint'):
+            continue
+        scope = os.path.dirname(os.path.join(ROOT, pf['path']))
+        full = os.path.join(ROOT, pf['path'])
+        for d in pf['declared_fingerprint']:
+            glob = d['glob']
+            fp = C.glob_fingerprint(ROOT, glob, base_dir=scope)
+            if fp is None or fp['truncated']:
+                failed.append((pf['path'], glob, 'unverifiable'))
+                continue
+            cur = declared_on_disk(full, glob)
+            if cur is None:
+                failed.append((pf['path'], glob, 'declaration not found on disk'))
+                continue
+            if cur == fp['digest'] or cur == fp['value'] or fp['digest_full'].startswith(cur):
+                continue
+            new = fp['value'] if '-' in cur else fp['digest']
+            planned.append((pf['path'], glob, cur, new, fp['file_count']))
+
+    print('--- %s %d 处源指纹' % ('将刷新' if write else '待刷新（dry-run，未写盘）', len(planned)))
+    for p, glob, old, new, n in planned:
+        print('[refresh] %s :: %s  %s -> %s  (files=%d)' % (p, glob, old, new, n))
+    for p, glob, why in failed:
+        print('FAILED: %s :: %s (%s)' % (p, glob, why))
+    if not write:
+        return
+
+    for p, glob, old, new, _n in planned:
+        full = os.path.join(ROOT, p)
+        raw = io.open(full, 'rb').read()
+        needle = ('%s=%s' % (glob, old)).encode('utf-8')
+        hits = raw.count(needle)
+        assert hits == 1, '%s 里 %r 命中 %d 次（期望 1），拒绝写入' % (p, needle, hits)
+        io.open(full, 'wb').write(raw.replace(needle, ('%s=%s' % (glob, new)).encode('utf-8')))
+        print('WROTE %s :: %s -> %s' % (p, glob, new))
+
+
 def main():
     parse_argv(sys.argv[1:])
-    load_cache()
     rep = json.load(io.open(REPORT, encoding='utf-8'))
+    if REFRESH:
+        refresh_declared(rep, APPLY)
+        return
+    load_cache()
     print('MAX_LINE_LEN =', MAX, '| cache entries =', len(_CACHE))
     todo, failed = [], []
     for pf in rep['per_file']:
