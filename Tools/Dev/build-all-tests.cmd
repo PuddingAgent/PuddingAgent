@@ -1,6 +1,6 @@
 @echo off
 rem Compile gate for every test project (build only, does not run tests).
-rem Each Source\*Tests is built in turn; only "error CS" counts as a failure.
+rem Each Source\*Tests and Tests\*Tests is built in turn; only "error CS" counts as a failure.
 rem MSB3021 / MSB1009 mean a file lock or a wrong path, not broken code.
 rem Why: adding an interface member breaks every implementer, including test
 rem doubles, which no single project's test run will reveal.
@@ -12,7 +12,7 @@ rem Truncate instead of "del": if a previous run left the file open, del silentl
 rem fails and this run appends to the old content (observed 2026-10-21).
 echo RUN > temp\alltests.txt
 
-for /d %%d in (Source\*Tests) do (
+for /d %%d in (Source\*Tests Tests\*Tests) do (
   set "proj="
   for %%f in ("%%d\*.csproj") do set "proj=%%f"
   if "!proj!"=="" (
