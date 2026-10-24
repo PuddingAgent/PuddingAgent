@@ -11,7 +11,7 @@ public sealed class LlmRequestCapture : IDisposable
         Environment.GetEnvironmentVariable("PUDDING_CAPTURE_REQUEST"));
 
     private const string MessageTemplate =
-        "[LlmRequestCapture] invocationId={invocationId} modelId={modelId} bodyBytes={bodyBytes} bodySha256={bodySha256} localEstimatedTokens={localEstimatedTokens} bodyTokens={bodyTokens} inlineImageCount={inlineImageCount} inlineImageWireBytes={inlineImageWireBytes}";
+        "[LlmRequestCapture] invocationId={invocationId} modelId={modelId} bodyBytes={bodyBytes} bodySha256={bodySha256} localEstimatedTokens={localEstimatedTokens} bodyTokens={bodyTokens} inlineImageCount={inlineImageCount} inlineImageWireBytes={inlineImageWireBytes} reasoningEffort={reasoningEffort}";
     private static readonly AsyncLocal<LlmRequestCapture?> Ambient = new();
     private readonly LlmRequestCapture? _previous;
     private readonly string _invocationId;
@@ -54,6 +54,9 @@ public sealed class LlmRequestCapture : IDisposable
         // 那样两个数之差反映的是「base64 有多长」，不是「估算有多准」。
         var sanitized = LlmBodyTextSanitizer.RedactInlineImages(System.Text.Encoding.UTF8.GetString(bytes));
         var bodyTokens = ContextUsageSnapshotStore.CountTokens(sanitized.Text, modelId);
+        // 报文里的 reasoning.effort 是验收“思考强度真的发出去了”的唯一直接证据；
+        // 没有该段时记哨字符 "-"，避免日志键缺失而被误读成“没执行”。
+        var reasoningEffort = LlmBodyReasoningProbe.TryReadReasoningEffort(sanitized.Text) ?? "-";
 
         var capture = Current;
         var invocationId = capture?._invocationId ?? Guid.NewGuid().ToString("N");
@@ -61,11 +64,11 @@ public sealed class LlmRequestCapture : IDisposable
         if (capture?._logger is { } logger)
             logger.LogInformation(MessageTemplate, invocationId, modelId,
                 fingerprint.BodyBytes, fingerprint.BodySha256, capture._localEstimatedTokens, bodyTokens,
-                sanitized.InlineImageCount, sanitized.InlineImageWireBytes);
+                sanitized.InlineImageCount, sanitized.InlineImageWireBytes, reasoningEffort);
         else
             Serilog.Log.Information(MessageTemplate, invocationId, modelId,
                 fingerprint.BodyBytes, fingerprint.BodySha256, capture?._localEstimatedTokens, bodyTokens,
-                sanitized.InlineImageCount, sanitized.InlineImageWireBytes);
+                sanitized.InlineImageCount, sanitized.InlineImageWireBytes, reasoningEffort);
     }
 
     public void Dispose() => Ambient.Value = _previous;

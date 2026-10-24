@@ -30,7 +30,8 @@
 | `Core/` | 核心实现目录 | — | — | — |
 | `Observability/` | 出站请求诊断目录 | — | — | — |
 | `Observability/LlmRequestBodyFingerprint.cs` | 出站报文指纹：UTF-8 字节数 + 小写 SHA-256 | `LlmRequestBodyFingerprint.Compute` | 无 | 纯函数；**不做换行归一化**（归一化会让不同报文同指纹） |
-| `Observability/LlmRequestCapture.cs` | 发送前捕获实际报文指纹，并按开关记录 invocationId/modelId/本地估算值/净化后 bodyTokens/内联图片张数与 base64 字节 | `LlmRequestCapture`、`LlmRequestCapture.Enabled` | `Core/` 三个网关、`Runtime/Services/` | `PUDDING_CAPTURE_REQUEST` 未设时只有一次 bool 判断；只读字节重发，不改报文/头部/顺序 |
+| `Observability/LlmRequestCapture.cs` | 发送前捕获实际报文指纹，并按开关记录 invocationId/modelId/本地估算值/净化后 bodyTokens/内联图片张数与 base64 字节/**报文里的 reasoning.effort** | `LlmRequestCapture`、`LlmRequestCapture.Enabled` | `Core/` 三个网关、`Runtime/Services/` | `PUDDING_CAPTURE_REQUEST` 未设时只有一次 bool 判断；只读字节重发，不改报文/头部/顺序；无 reasoning 段时记哨字符 `-` |
+| `Observability/LlmBodyReasoningProbe.cs` | 从出站报文读 `reasoning.effort`，使「思考强度真的发出去了」可直接从日志验证 | `LlmBodyReasoningProbe.TryReadReasoningEffort` | `Observability/LlmRequestCapture.cs` | 纯函数；只在捕获开关打开时调用；解析失败一律返 null，不得抛异常 |
 | `Observability/LlmBodyTextSanitizer.cs` | 把 `data:image/...;base64,...` 载荷替换为占位符并如实计数，使 bodyTokens 只覆盖 provider 按文本计费的部分 | `LlmBodyTextSanitizer.RedactInlineImages` | `Observability/LlmRequestCapture.cs` | 纯函数；只认 `data:image` 前缀，audio 等其它载荷故意不动 |
 | `Platform/` | 平台抽象目录 | — | — | — |
 | `Platform/ReasoningEffortPolicy.cs` | 思考强度唯一决策点：手动档位（快速=low / 深入=high / 极致=max）> Agent/模型配置 > 模型默认 > **产品默认 high**；合法集合 `none/low/high/max` | `ReasoningEffortPolicy.Resolve`、`IsValid`、`Label`、`Default` | 待接入（S5） | 纯函数；偏好值直接等于档位名，不做语义转译；`medium` 是虚构档位，已拒绝 |
