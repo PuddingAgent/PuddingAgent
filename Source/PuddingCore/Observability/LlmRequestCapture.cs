@@ -33,7 +33,9 @@ public sealed class LlmRequestCapture : IDisposable
     /// <summary>从即将发送的内容取字节并复用；保留原内容头和已知/未知长度的传输语义。</summary>
     public static async Task WriteAsync(HttpRequestMessage request, string modelId, CancellationToken ct)
     {
-        var original = request.Content!;
+        var original = request.Content;
+        if (original is null)
+            return;
         var length = original.Headers.ContentLength;
         var headers = original.Headers.Select(header =>
             new KeyValuePair<string, string[]>(header.Key, header.Value.ToArray())).ToArray();
