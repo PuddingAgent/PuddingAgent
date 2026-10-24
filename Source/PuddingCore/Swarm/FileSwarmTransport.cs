@@ -90,7 +90,15 @@ public sealed class FileSwarmTransport : ISwarmTransport, IAsyncDisposable
         // 确保收件箱文件存在
         if (!File.Exists(inboxPath))
         {
-            File.WriteAllText(inboxPath, "[]");
+            // 另一个读者可能刚创建同名文件，这种竞争不是错误。
+            try
+            {
+                File.WriteAllText(inboxPath, "[]");
+            }
+            catch (IOException)
+            {
+                // 已存在即视为已初始化
+            }
         }
 
         // 设置 FileSystemWatcher 监听文件变化
@@ -133,10 +141,26 @@ public sealed class FileSwarmTransport : ISwarmTransport, IAsyncDisposable
             return [];
         }
 
-        var json = await File.ReadAllTextAsync(filePath, ct);
-        var messages = JsonSerializer.Deserialize<List<SwarmMessage>>(json, s_jsonOptions);
+        // 并发读写同一收件箱时，File.ReadAllText 只允许 Read 共享，会直接抛 IOException；
+        // 而写入不是原子操作，读端也可能读到半个 JSON。这里用共享读 + 短暂重试兜住这个窗口。
+        const int maxAttempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(stream);
+                var json = await reader.ReadToEndAsync(ct);
+                var messages = JsonSerializer.Deserialize<List<SwarmMessage>>(json, s_jsonOptions);
 
-        return messages ?? [];
+                return messages ?? [];
+            }
+            catch (Exception ex) when (attempt < maxAttempts && ex is IOException or JsonException)
+            {
+                await Task.Delay(20, ct);
+            }
+        }
     }
 
     /// <summary>
@@ -145,7 +169,10 @@ public sealed class FileSwarmTransport : ISwarmTransport, IAsyncDisposable
     private static async Task SaveInboxMessagesAsync(string filePath, List<SwarmMessage> messages, CancellationToken ct)
     {
         var json = JsonSerializer.Serialize(messages, s_jsonOptions);
-        await File.WriteAllTextAsync(filePath, json, ct);
+        // 先写临时文件再换名：读端要么看到旧内容、要么看到完整新内容，不会读到写一半的 JSON。
+        var tempPath = filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        await File.WriteAllTextAsync(tempPath, json, ct);
+        File.Move(tempPath, filePath, overwrite: true);
     }
 
     /// <summary>
