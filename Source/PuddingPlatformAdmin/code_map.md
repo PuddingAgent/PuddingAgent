@@ -1,5 +1,5 @@
 # PuddingPlatformAdmin CodeMAP
-> 源指纹: Source/PuddingPlatformAdmin/*=8-70cad5d48878, src/**=930-09b3a8dc622d, public/**=14-f3aa09cf5f00, mock/**=7-15a79f8b3988, config/**=5-502280cdfaa6, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 195 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingPlatformAdmin/*=8-70cad5d48878, src/**=930-2c3efde954d9, public/**=14-f3aa09cf5f00, mock/**=7-15a79f8b3988, config/**=5-502280cdfaa6, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 195 · 最近整理: 2026-10-22
 > 指纹覆盖: *、src/**、public/**、mock/**、config/**、e2e/**、scripts/**、.husky/**、.github/**；未纳入 10 项: .commitlintrc.js、.editorconfig、.gitignore、.lintstagedrc、.npmrc、.tmp-b6-build.log、.tmp-b6-tsc-orch.log、.tmp-b6-tsc.log、tests/**、types/**
 
 > React 管理前端 | Ant Design Pro v6 · React 19 · UmiJS
@@ -345,7 +345,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 | `src/pages/chat/components/processPreview.ts` | `CurrentRunActivity.variant='compaction'` 标记压缩事实（来源：`subconscious_step.status==='compacting'`）；`AgentMessageBubble` 按该标记分流到 `CompactionCard`，通用活动卡只承载其余 system 阶段事实 |
 | `src/pages/chat/components/AgentMessageBubble.tsx` | 压缩态下不再叠加 turn 级 `TurnStatus` 行：否则同一张卡同时出现「正在压缩上下文」与「正在生成回答 · 已运行 Nm」两条互斥叙述，被读成“压缩完了又在生成” |
 | `src/pages/chat/components/IntentConsole.tsx` / `ComposerStatusDetails.tsx` | `status=thinking` 文案统一为「正在思考…」；**不得再用「整理上下文」**，该词与压缩共用同一批词，用户会读成正在压缩。⚠️ 例外（2026-10-07）：容量压力行按修复方案 §1 用「建议整理上下文」，它是**容量信号**而非运行态文案；若复核认为仍会与压缩混淆，只改 `SERVICE_LABEL.capacity` 一处 |
-| `src/pages/chat/components/ContextUsageRing.tsx` | 上下文面板「压缩」行只有文案等于 `COMPACTION_RUNNING_LABEL` 时才带呼吸点；「上次压缩 / 压缩失败」是终态事实，不加动效。两个分母必须各自标注：`used/contextWindowTokens` = 模型窗口占用（圆环弧长与色阶口径），`used/effectiveWindowTokens` = 有效输入压力（独立成行，分母缺失时整行不渲染，不得拿总窗口顶替） |
+| `src/pages/chat/components/ContextUsageRing.tsx` | 面板唯一口径来自后端 `ContextHealthSnapshot.Display`（`display.percent` = 估算 ÷ 有效输入窗口，**与压缩门禁同一分子分母**）；组件只格式化、不做除法，旧算式仅在 `display` 缺失（老后端）时回退。「压缩」行只有文案等于 `COMPACTION_RUNNING_LABEL` 时才带呼吸点；「上次压缩 / 压缩失败」是终态事实，不加动效。不可用于输入的分母是**模型窗口**，与主指标不同标度，不得与环上分项相加 |
 | `src/pages/chat/components/inputUnavailable.ts` | 输入不可用来源→文案映射与叶子模块约束（见下「关键语义」） |
 | `src/pages/chat/styles/panel.styles.ts` | 压缩卡、阶段序列和折叠详情；`compactionFoldTop/Bottom` 只移动图标层，`compactionBreathe` 用于容量面板；复用浅深色语义 token，支持窄屏、键盘焦点与减少动画偏好 |
 

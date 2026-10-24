@@ -217,6 +217,29 @@ public sealed record ContextHealthSnapshot(
     public int? ProviderPromptTokens { get; init; }
     public int? ProviderCompletionTokens { get; init; }
     public int? ProviderTotalTokens { get; init; }
+
+    /// <summary>
+    /// 面板与压缩判定**共用**的唯一显示口径（用户裁定 2026-10-24）。
+    /// </summary>
+    /// <remarks>
+    /// 由快照自身字段派生，因此不可能与 <see cref="UsedTokens"/> /
+    /// <see cref="EffectiveWindowTokens"/> 漂移：任何调用方读到的百分比，
+    /// 与压缩门禁看的 <see cref="GateRatio"/> 是同一个分子与同一个分母。
+    /// 前端不得再用这些字段自行做除法（那正是「面板 20% 而已在压缩」的来源）。
+    /// </remarks>
+    public ContextUsageDisplay Display => ContextUsageDisplayProjection.Project(this);
+
+    /// <summary>
+    /// 判定「已使用是否达到某个自动压缩比率」。
+    /// </summary>
+    /// <remarks>
+    /// <b>分母固定为有效输入窗口</b>（用户裁定 2026-10-24）：面板显示与压缩判定必须同分母，
+    /// 否则同一次请求会出现两套水位 —— 「面板显示 20% 而系统已在压缩」正是模型窗口分母
+    /// （1,000,000）与有效窗口分母（约 935,000～606,784）混用的结果。
+    /// 调用方<b>不得</b>再用 <see cref="ContextWindowTokens"/> 自行相乘。
+    /// </remarks>
+    public bool ExceedsAutoCompactRatio(double ratio)
+        => UsedTokens >= Math.Max(1, EffectiveWindowTokens) * ratio;
 }
 
 /// <summary>

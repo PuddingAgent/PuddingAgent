@@ -332,3 +332,61 @@ describe('one scale per ring (effective window != total window)', () => {
     expect(ringSegments.length).toBe(3);
   });
 });
+
+describe('backend canonical display wins over local math', () => {
+  /**
+   * 用户裁定 2026-10-24：前端指示器与后端估算必须同一套参数/函数。
+   * 这里构造一个「本地估算 99.9% vs 后端口径 20%」的极端分歧 ——
+   * 只要面板还显示本地数，就说明两套除法又回来了。
+   */
+  const canonical = {
+    numeratorTokens: 187_000,
+    denominatorTokens: 935_000,
+    percent: 20,
+    remainingPercent: 80,
+    inputUnavailableTokens: 65_000,
+    inputUnavailablePercent: 6.5,
+    measuredNumeratorTokens: 257_600,
+    measuredPercent: 27.550802139037433,
+    segments: [],
+  };
+
+  it('renders the backend percent and ignores the local estimate', () => {
+    render(
+      <ContextUsageRing
+        tLimit={1_000_000}
+        tEffective={935_000}
+        tUsed={999_000}
+        tPct={99}
+        usageConfidence="estimated"
+        display={canonical}
+      />,
+    );
+
+    const label = screen.getByTestId('context-usage-ring').getAttribute('aria-label') ?? '';
+    expect(label).toContain('20.0%');
+    expect(label).not.toContain('99.9%');
+
+    // 面板标题行（mock 的 Popover 始终渲染 content）也要走后端口径。
+    const panelText = screen.getByTestId('context-usage-panel').textContent ?? '';
+    expect(panelText).toContain('20.0%');
+    expect(panelText).toContain('压缩判定同源');
+    expect(panelText).not.toContain('99.9%');
+  });
+
+  it('names the gate denominator (effective window), not the model window', () => {
+    render(
+      <ContextUsageRing
+        tLimit={1_000_000}
+        tEffective={935_000}
+        tUsed={999_000}
+        tPct={99}
+        display={canonical}
+      />,
+    );
+
+    const label = screen.getByTestId('context-usage-ring').getAttribute('aria-label') ?? '';
+    expect(label).toContain('935.0K');
+    expect(label).toContain('与压缩判定同源');
+  });
+});

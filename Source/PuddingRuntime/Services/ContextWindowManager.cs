@@ -1144,9 +1144,19 @@ public sealed class ContextWindowManager
                 maxOutputTokens: maxOutputTokens,
                 maxInputTokens: maxInputTokens,
                 toolCount: _defaultToolCount);
+            // 分母必须是**有效输入窗口**，与评估器的 gateRatio 同源（用户裁定 2026-10-24）。
+            // 此前这里用 maxTokenBudget（模型窗口）作分母，而评估器/面板按有效窗口判定：
+            // 模型窗口 1,000,000 + 有效窗口 935,000 时，0.65 的触发点因此从「有效窗口 65%」
+            // 偏到「有效窗口 69.5%」，同一次请求出现两套水位 —— 面板显示 20% 而已在压缩，
+            // 就是这两套水位叠加本地估算偏高后的必然结果。
             if (autoTriggerRatio is > 0 and <= 1)
-                health = health with { ShouldAutoCompact = health.UsedTokens >= maxTokenBudget * autoTriggerRatio.Value
-                    || health.UsedTokens >= health.EffectiveWindowTokens };
+                health = health with
+                {
+                    // 判定收敛到快照自身（ExceedsAutoCompactRatio），分母固定为有效输入窗口：
+                    // 面板显示与压缩门禁因此不可能再各用一套分母。
+                    ShouldAutoCompact = health.ExceedsAutoCompactRatio(autoTriggerRatio.Value)
+                        || health.UsedTokens >= health.EffectiveWindowTokens,
+                };
             var healthMs = (System.Diagnostics.Stopwatch.GetTimestamp() - healthStart) * 1000 / System.Diagnostics.Stopwatch.Frequency;
 
             _logger.LogInformation(

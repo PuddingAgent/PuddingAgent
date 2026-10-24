@@ -9,6 +9,7 @@
 import { Popover, Tooltip } from 'antd';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useChatStyles } from '../styles';
+import type { ContextUsageDisplay as ContextHealthDisplay } from '@/services/platform/api';
 import {
   describeInputUnavailableReason,
   type InputUnavailableReason,
@@ -76,6 +77,11 @@ export interface ContextUsageRingProps {
   runtimeDetails?: React.ReactNode;
   /** 面板开合回调：打开时应由父组件拉一次最新数据（否则展示的是上次快照）。 */
   onOpenChange?: (open: boolean) => void;
+  /**
+   * 后端给出的**唯一**显示口径（`ContextHealthSnapshot.Display`）。
+   * 有它时本组件不做任何除法，只负责格式化与上色；缺失才走下面的旧算式。
+   */
+  display?: ContextHealthDisplay | null;
 }
 
 /** 上下文来源分层（与后端 ContextUsageSnapshot 同一口径，各桶互斥且穷尽）。 */
@@ -164,6 +170,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   measuredPromptTokens,
   measuredRawTokens,
   tMessageCount,
+  display,
   compactionStatus,
   error,
   subAgentsRunning,
@@ -174,6 +181,12 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   const { styles } = useChatStyles();
   const [open, setOpen] = useState(false);
   const configured = tLimit > 0;
+  /**
+   * 服务端口径（唯一真值，用户裁定 2026-10-24）。
+   * 主指标 = 后端 `usedTokens ÷ effectiveWindowTokens`，与压缩门禁逐位相同；
+   * 有它时下面的本地算式一律不参与显示。缺失（老后端）才回退。
+   */
+  const canonical = display ?? null;
   // **总窗口占用率**（分母 = 模型上下文窗口）：仅作回退口径（无实测时才对）。
   const pct = clampPct(tLimit > 0 ? (tUsed / tLimit) * 100 : tPct);
   /**
@@ -181,8 +194,9 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
    * 它是面板主指标的首选分子/分母组合；`tUsed` 是本地字典估算（曾高估 61%），只作回退。
    * 任一输入缺失 / 非有限 / 分母非正 ⇒ undefined（不伪造数值，也不拿总窗口顶替）。
    */
-  const measuredPct =
-    typeof measuredPromptTokens === 'number' &&
+  const measuredPct = canonical
+    ? (canonical.measuredPercent ?? undefined)
+    : typeof measuredPromptTokens === 'number' &&
     Number.isFinite(measuredPromptTokens) &&
     typeof tEffective === 'number' &&
     Number.isFinite(tEffective) &&
@@ -193,7 +207,11 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
    * 圆环弧长与色阶必须与标题**同源**：面板里一个数字只能有一个分母（诊断 §4.1）。
    * 有实测 ⇒ 跟实测口径；否则回退总窗口估算。
    */
-  const displayPct = measuredPct !== undefined ? measuredPct : pct;
+  const displayPct = canonical
+    ? canonical.percent
+    : measuredPct !== undefined
+      ? measuredPct
+      : pct;
   // 方案 2（用户 2026-09-19）：无有效数据时不给错的信息。
   //  - 会话还没任何消息 → 视为「未开始」，不展示用量；
   //  - confidence 不是 provider_reported（本地估算 / DB 回退）→ 只能标为估算值，
@@ -224,7 +242,7 @@ const arcUsedTokens =
   measuredPct !== undefined ? (measuredPromptTokens as number) : tUsed;
 const scale =
   breakdownTotal > 0 && arcUsedTokens > 0 ? arcUsedTokens / breakdownTotal : 0;
-  const segments =
+  let segments =
     scale > 0 && arcDenominator > 0
       ? CONTEXT_SEGMENT_DEFS.map((def) => {
           const tokens = Math.max(0, (tBreakdown?.[def.key] ?? 0) * scale);
@@ -235,6 +253,14 @@ const scale =
           };
         }).filter((segment) => segment.tokens > 0)
       : [];
+  // 服务端口径存在时直接用后端段宽：后端已按「各桶之和 = 已使用」缩放，
+  // 前端再算一遍就是第二套除法。
+  if (canonical) {
+    segments = canonical.segments.flatMap((segment) => {
+      const def = CONTEXT_SEGMENT_DEFS.find((item) => item.key === segment.key);
+      return def ? [{ ...def, tokens: segment.tokens, percent: segment.percent }] : [];
+    });
+  }
   // 不可用于输入的部分：只按「窗口 − 有效输入」计价，**不参与环的宽度**
   // （环的 100% 是有效窗口）。名称来自显式来源，由调用方通过 `tUnavailableReason` 给出；
   // 没给 ⇒ 明确写「来源未知」。
@@ -249,12 +275,17 @@ const scale =
   // **之外**，把它按 tLimit 标度相减，会让「已用 + 可用 + 不可用」在不同分母上相加
   // ——这正是 2026-10-24 面板两个百分比打架的残余一半（标题已换分母，这里没跟上）。
   // 因此它只在图例与说明行出现，不参与环的几何。
-  const availablePercent =
-    arcDenominator > 0 ? Math.max(0, 100 - displayPct) : 0;
+  const availablePercent = canonical
+    ? canonical.remainingPercent
+    : arcDenominator > 0
+      ? Math.max(0, 100 - displayPct)
+      : 0;
 
   const hoverSummary =
     configured && !notStarted
-      ? `${authoritative ? '' : '≈'}${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 模型窗口已使用（非压缩进度）${authoritative ? '' : '（估算）'}`
+      ? canonical
+        ? `${canonical.percent.toFixed(1)}% · ${formatTokens(canonical.numeratorTokens)} / ${formatTokens(canonical.denominatorTokens)} 有效输入窗口（与压缩判定同源）`
+        : `${authoritative ? '' : '≈'}${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 模型窗口已使用（非压缩进度）${authoritative ? '' : '（估算）'}`
       : error
         ? `上下文用量获取失败：${error}`
         : notStarted
@@ -296,14 +327,14 @@ const scale =
               data-testid="context-usage-window-occupancy"
             >
               <span className={styles.contextUsagePanelPct}>
-                {measuredPct !== undefined
-                  ? `${measuredPct.toFixed(1)}%`
-                  : `${authoritative ? '' : '≈'}${pct.toFixed(1)}%`}
+                {displayPct.toFixed(1)}%
               </span>
               <span className={styles.contextUsagePanelUsed}>
-                {measuredPct !== undefined
-                  ? `已用 ${formatTokens(measuredPromptTokens as number)} / 有效窗口 ${formatTokens(tEffective as number)}（实测）`
-                  : `模型窗口占用 ${formatTokens(tUsed)}/${formatTokens(tLimit)}${authoritative ? '' : '（估算）'}`}
+                {canonical
+                  ? `已用 ${formatTokens(canonical.numeratorTokens)} / 有效窗口 ${formatTokens(canonical.denominatorTokens)}（压缩判定同源）`
+                  : measuredPct !== undefined
+                    ? `已用 ${formatTokens(measuredPromptTokens as number)} / 有效窗口 ${formatTokens(tEffective as number)}（实测）`
+                    : `模型窗口占用 ${formatTokens(tUsed)}/${formatTokens(tLimit)}${authoritative ? '' : '（估算）'}`}
               </span>
             </div>
             {segments.length > 0 ? (

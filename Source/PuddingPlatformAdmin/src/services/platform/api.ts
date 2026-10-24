@@ -2716,6 +2716,45 @@ export interface ContextHealthSnapshot {
    * UI 据此为「不可用于输入」的那段命名，**不得**用窗口差值反推「预留输出」。
    */
   effectiveWindowSource?: string;
+  /**
+   * 面板显示的**唯一**口径（后端 `ContextHealthSnapshot.Display` 投影，用户裁定 2026-10-24）。
+   *
+   * 主指标 = `usedTokens ÷ effectiveWindowTokens`，与压缩门禁**同一分子、同一分母**；
+   * `measuredPercent` 只是次级参考（评估真实节省），不参与门禁。
+   * 前端**不得**再用其它字段自行做除法——两套除法正是「面板显示 20% 而已在压缩」的来源。
+   * 缺失 = 后端尚未提供（老版本），此时前端才回退到本地算式。
+   */
+  display?: ContextUsageDisplay | null;
+}
+
+/** 上下文用量的一层构成（键与图例一一对应，段宽 = percent）。 */
+export interface ContextUsageSegment {
+  key:
+    | 'systemPrompt'
+    | 'toolDefinitions'
+    | 'compactionSummary'
+    | 'conversation'
+    | 'reasoning'
+    | 'toolResults';
+  tokens: number;
+  percent: number;
+}
+
+export interface ContextUsageDisplay {
+  /** 主指标分子（= usedTokens，与压缩判定同一分子）。 */
+  numeratorTokens: number;
+  /** 主指标分母（= effectiveWindowTokens，与压缩判定同一分母）。 */
+  denominatorTokens: number;
+  /** 主指标百分比（0–100，已截断）。 */
+  percent: number;
+  /** 与主指标同分母的可用余量（100 − percent）。 */
+  remainingPercent: number;
+  inputUnavailableTokens: number;
+  /** 不可用于输入的部分占**模型窗口**的百分比（与主指标不同分母，不可相加）。 */
+  inputUnavailablePercent: number;
+  measuredNumeratorTokens?: number | null;
+  measuredPercent?: number | null;
+  segments: ContextUsageSegment[];
 }
 
 export interface CompactSessionRequest {

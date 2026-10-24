@@ -1221,6 +1221,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               tUsed={contextHealth?.usedTokens ?? tUsed}
               tPct={effectiveContextUsagePercentage ?? 0}
               tEffective={contextHealth?.effectiveWindowTokens}
+              display={contextHealth?.display}
               tUnavailableReason={toInputUnavailableReason(
                 contextHealth?.effectiveWindowSource,
               )}
