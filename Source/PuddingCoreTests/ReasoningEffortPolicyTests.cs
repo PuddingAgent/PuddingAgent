@@ -3,20 +3,23 @@ using PuddingCode.Platform;
 namespace PuddingCoreTests;
 
 /// <summary>
-/// 思考强度决策的五条不变量：
-/// ① 每轮偏好优先于配置；② auto 不表态时让配置生效；
-/// ③ 非法值不得进入请求，但必须被报告；④ 全空时返回 null（不发该字段）；
+/// 思考强度决策的不变量（用户裁定 2026-10-24）：
+/// ① high 是产品默认——没有任何来源表态时必须是 high，而不是留空让服务端决定；
+/// ② 每轮偏好优先于配置；
+/// ③ 「深入」只能映射 max（high 已是默认，映射到 high 等于没有深入）；
+/// ④ 非法值不得进入请求，但必须被报告；
 /// ⑤ 大小写与空白不影响判定。
 /// </summary>
 [TestClass]
 public sealed class ReasoningEffortPolicyTests
 {
     [TestMethod]
-    public void DeepPreferenceWinsOverConfigured()
+    public void DeepPreferenceMapsToMax()
     {
-        var decision = ReasoningEffortPolicy.Resolve("deep", "low", "medium");
+        var decision = ReasoningEffortPolicy.Resolve("deep", "low", "high");
 
-        Assert.AreEqual(ReasoningEffortPolicy.High, decision.Effort);
+        Assert.AreEqual(ReasoningEffortPolicy.Max, decision.Effort,
+            "high 已是默认，深入若也映射 high 就等于没有深入。");
         Assert.AreEqual(ReasoningEffortPolicy.Origin.Preference, decision.Source);
     }
 
@@ -30,31 +33,32 @@ public sealed class ReasoningEffortPolicyTests
     }
 
     [TestMethod]
-    public void AutoFallsBackToConfigured()
+    public void AutoPrefersConfiguredOverModelDefault()
     {
-        var decision = ReasoningEffortPolicy.Resolve("auto", "medium", "high");
+        var decision = ReasoningEffortPolicy.Resolve("auto", "high", "low");
 
-        Assert.AreEqual(ReasoningEffortPolicy.Medium, decision.Effort);
+        Assert.AreEqual(ReasoningEffortPolicy.High, decision.Effort);
         Assert.AreEqual(ReasoningEffortPolicy.Origin.Configured, decision.Source);
     }
 
     [TestMethod]
     public void AutoWithoutConfiguredUsesModelDefault()
     {
-        var decision = ReasoningEffortPolicy.Resolve(null, null, "minimal");
+        var decision = ReasoningEffortPolicy.Resolve(null, null, "max");
 
-        Assert.AreEqual(ReasoningEffortPolicy.Minimal, decision.Effort);
+        Assert.AreEqual(ReasoningEffortPolicy.Max, decision.Effort);
         Assert.AreEqual(ReasoningEffortPolicy.Origin.ModelDefault, decision.Source);
     }
 
     [TestMethod]
-    public void NothingSpecifiedLeavesFieldAbsent()
+    public void AutoWithNothingSpecifiedDefaultsToHigh()
     {
         var decision = ReasoningEffortPolicy.Resolve("auto", null, null);
 
-        Assert.IsNull(decision.Effort, "没有来源表态时不得伪造强度，必须让请求里不出现该字段。");
-        Assert.AreEqual(ReasoningEffortPolicy.Origin.Unset, decision.Source);
-        Assert.IsFalse(decision.IsSet);
+        Assert.AreEqual(ReasoningEffortPolicy.High, decision.Effort,
+            "产品默认是 high；留空等于把选择权交给服务端，那是不可观测的。");
+        Assert.AreEqual(ReasoningEffortPolicy.Origin.ProductDefault, decision.Source);
+        Assert.IsTrue(decision.IsSet);
     }
 
     [TestMethod]
@@ -68,12 +72,12 @@ public sealed class ReasoningEffortPolicyTests
     }
 
     [TestMethod]
-    public void InvalidOnlyValueReportsRejection()
+    public void InvalidOnlyValueStillFallsBackToDefault()
     {
         var decision = ReasoningEffortPolicy.Resolve("auto", "HIGHEST", null);
 
-        Assert.IsNull(decision.Effort);
-        Assert.AreEqual(ReasoningEffortPolicy.Origin.Unset, decision.Source);
+        Assert.AreEqual(ReasoningEffortPolicy.High, decision.Effort);
+        Assert.AreEqual(ReasoningEffortPolicy.Origin.ProductDefault, decision.Source);
         Assert.AreEqual("highest", decision.RejectedValue);
     }
 
@@ -82,7 +86,7 @@ public sealed class ReasoningEffortPolicyTests
     {
         var decision = ReasoningEffortPolicy.Resolve("  DEEP ", "  HIGH  ", null);
 
-        Assert.AreEqual(ReasoningEffortPolicy.High, decision.Effort);
+        Assert.AreEqual(ReasoningEffortPolicy.Max, decision.Effort);
         Assert.AreEqual(ReasoningEffortPolicy.Origin.Preference, decision.Source);
     }
 
@@ -96,16 +100,23 @@ public sealed class ReasoningEffortPolicyTests
     }
 
     [TestMethod]
-    public void ValidSetCoversProviderVocabularyOnly()
+    public void ValidSetMatchesProviderVocabulary()
     {
         Assert.IsTrue(ReasoningEffortPolicy.IsValid(null));
         Assert.IsTrue(ReasoningEffortPolicy.IsValid(""));
         Assert.IsTrue(ReasoningEffortPolicy.IsValid("none"));
-        Assert.IsTrue(ReasoningEffortPolicy.IsValid("minimal"));
         Assert.IsTrue(ReasoningEffortPolicy.IsValid("low"));
-        Assert.IsTrue(ReasoningEffortPolicy.IsValid("medium"));
         Assert.IsTrue(ReasoningEffortPolicy.IsValid("high"));
+        Assert.IsTrue(ReasoningEffortPolicy.IsValid("max"), "provider 提供的 max 必须被接受。");
+        Assert.IsFalse(ReasoningEffortPolicy.IsValid("medium"),
+            "provider 不提供 medium；旧代码的 medium 属虚构档位，必须被拒绝。");
         Assert.IsFalse(ReasoningEffortPolicy.IsValid("xhigh"));
         Assert.IsFalse(ReasoningEffortPolicy.IsValid("true"));
+    }
+
+    [TestMethod]
+    public void ProductDefaultIsHigh()
+    {
+        Assert.AreEqual("high", ReasoningEffortPolicy.Default);
     }
 }
