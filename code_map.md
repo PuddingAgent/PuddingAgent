@@ -261,5 +261,5 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 - `D:\data\workspaces\default` · `DesktopHome/desktop.json` · `.pudding-host.lock` — 默认工作空间 · Shell 侧 DataRoot/Core 路径/关闭行为 · Console 与 DesktopChild 共用的单实例文件句柄租约（不删锁文件绕互斥）。
 - `.pudding/context-tool-results/` · `temp/build/` · `temp/test-out/` — 工具结果完整原文（模型只收 8 KiB 有界摘要）· 唯一允许的临时产物目录。
 - `dotnet build PuddingRuntime --no-restore` · `dotnet build Source\PuddingDesktop\PuddingDesktop.csproj --no-restore --nologo` · `dotnet test Tests\PuddingDesktop.Tests\PuddingDesktop.Tests.csproj --no-restore --nologo` — 编译入口 · Desktop 定向构建与测试（build/test/publish 必须串行）。
-- `cmd /c Tools\Dev\build-all-tests.cmd` — **全仓测试工程编译门禁**（只 build 不跑；只把 `error CS` 算失败，MSB3021 锁/路径笔误不算），结果写 `temp\alltests.txt`；给接口加成员后必跑（实现方的测试替身不会自动提醒）。
+- `cmd /c Tools\Dev\build-all-tests.cmd` — **全仓测试工程编译门禁**（只 build 不跑；只把 `error CS` 算失败，MSB3021 锁/路径笔误不算），结果写 `temp\alltests.txt`；覆盖 **`Source\*Tests` 与 `Tests\*Tests` 两处**（后者 2026-10-24 才补上，此前 6 个工程从未被构建）；给接口加成员后必跑（实现方的测试替身不会自动提醒）。
 - `python dev-up.py --frontend-only / --restart / --rebuild / --status / --down` — 源码开发态前后端与工具进程。
