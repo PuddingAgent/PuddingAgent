@@ -401,7 +401,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     'keyboard',
   );
   /** Agent 执行偏好：仅影响前端显示，后续可接入后端策略。 */
-  const [executionMode, setExecutionMode] = useState<'low' | 'high' | 'max'>(
+  const [executionMode, setExecutionMode] = useState<'high' | 'max'>(
     'high',
   );
   /** 已完成状态短暂显示后自动消失 */
@@ -537,11 +537,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     workspaceId && onSendWithMetadata && !disabled && !loading,
   );
   const executionModeLabel =
-    executionMode === 'low'
-      ? '快速'
-      : executionMode === 'max'
-        ? '极致'
-        : '深入';
+    executionMode === 'max' ? '极致' : '深入';
   const uiTestMode =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('uiTest') === '1';
@@ -1185,7 +1181,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               placement="topRight"
               content={
                 <div className={styles.composerPreferenceMenu}>
-                  {(['low', 'high', 'max'] as const).map((mode) => (
+                  {(['high', 'max'] as const).map((mode) => (
                     <button
                       key={mode}
                       type="button"
@@ -1193,11 +1189,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                       data-active={executionMode === mode ? 'true' : undefined}
                       onClick={() => setExecutionMode(mode)}
                     >
-                      {mode === 'low'
-                        ? '快速'
-                        : mode === 'max'
-                          ? '极致'
-                          : '深入'}
+                      {mode === 'max' ? '极致' : '深入'}
                     </button>
                   ))}
                 </div>
