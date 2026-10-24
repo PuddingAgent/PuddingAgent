@@ -10,21 +10,6 @@
     in light, dark and high contrast without hardcoding a single theme's colours.
    -->
    <ResourceDictionary>
-    <!--
-     Design tokens: the ONLY font sizes and corner radii this window may use.
-     Named by ROLE, not by value, so a later revalue touches this block only.
-     Declared before every style because StaticResource resolves top-down.
-     Kept in sync with Foundation's Design/DesignTokens.cs by the test
-     MainWindowXaml_DeclaresEveryDesignTokenWithMatchingValue.
-    -->
-    <x:Double x:Key="FontSizeMicro">11</x:Double>
-    <x:Double x:Key="FontSizeCaption">12</x:Double>
-    <x:Double x:Key="FontSizeBody">15</x:Double>
-    <x:Double x:Key="FontSizeSubtitle">18</x:Double>
-    <x:Double x:Key="FontSizeTitle">24</x:Double>
-    <x:Double x:Key="FontSizeDisplay">28</x:Double>
-    <CornerRadius x:Key="RadiusControl">8</CornerRadius>
-    <CornerRadius x:Key="RadiusCard">12</CornerRadius>
     <ResourceDictionary.ThemeDictionaries>
      <ResourceDictionary x:Key="Default">
       <SolidColorBrush x:Key="ToolTabSelectedBrush" Color="#2EFFFFFF"/>
@@ -126,6 +111,18 @@
       <SolidColorBrush x:Key="StartupSuccessBrush" Color="{ThemeResource SystemColorHighlightColor}"/>
      </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
+
+    <!-- Keep all dictionary items after property elements (WinUI WMC0035).
+         Tokens precede styles because StaticResource resolves top-down.
+         Values are checked against Foundation DesignTokens by the token test. -->
+    <x:Double x:Key="FontSizeMicro">11</x:Double>
+    <x:Double x:Key="FontSizeCaption">12</x:Double>
+    <x:Double x:Key="FontSizeBody">15</x:Double>
+    <x:Double x:Key="FontSizeSubtitle">18</x:Double>
+    <x:Double x:Key="FontSizeTitle">24</x:Double>
+    <x:Double x:Key="FontSizeDisplay">28</x:Double>
+    <CornerRadius x:Key="RadiusControl">8</CornerRadius>
+    <CornerRadius x:Key="RadiusCard">12</CornerRadius>
 
     <!-- Ghost icon action: tab bar "+", overflow, zoom, collapse.
          Every keyed style must be based on the WinUI default style, otherwise the

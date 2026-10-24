@@ -27,6 +27,7 @@
   <ItemGroup>
     <Content Include="Assets\Pudding.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
+    <ProjectReference Include="../PuddingDesktop.Diagnostics/PuddingDesktop.Diagnostics.csproj" />
     <ProjectReference Include="../PuddingCore/PuddingCore.csproj" />
     <ProjectReference Include="../PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
     <ProjectReference Include="../PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj" />
@@ -50,9 +51,20 @@
        PuddingPlatform / PuddingAgent —— 也就是「进程内组合根」本身。 -->
   <Target Name="EnforceShellBoundary" BeforeTargets="ResolveReferences">
     <ItemGroup>
-      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation' And '%(Filename)' != 'PuddingDesktop.CapabilityHost' And '%(Filename)' != 'PuddingCore' And '%(Filename)' != 'PuddingBrowser.Abstractions' And '%(Filename)' != 'PuddingBrowser.Protocol' And '%(Filename)' != 'PuddingBrowser.WinUI' And '%(Filename)' != 'Pudding.Contracts' And '%(Filename)' != 'Pudding.DesktopConnection' And '%(Filename)' != 'Pudding.DesktopService' And '%(Filename)' != 'Pudding.DesktopSurface.Browser'" />
+      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Diagnostics' And '%(Filename)' != 'PuddingDesktop.Foundation' And '%(Filename)' != 'PuddingDesktop.CapabilityHost' And '%(Filename)' != 'PuddingCore' And '%(Filename)' != 'PuddingBrowser.Abstractions' And '%(Filename)' != 'PuddingBrowser.Protocol' And '%(Filename)' != 'PuddingBrowser.WinUI' And '%(Filename)' != 'Pudding.Contracts' And '%(Filename)' != 'Pudding.DesktopConnection' And '%(Filename)' != 'Pudding.DesktopService' And '%(Filename)' != 'Pudding.DesktopSurface.Browser'" />
     </ItemGroup>
     <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="Shell may reference launcher configuration contracts, browser adapters and the Desktop-side capability channel, never PuddingHost, Runtime, Platform or an in-process composition root." />
+  </Target>
+  <Target Name="BuildExitObserver" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' And '$(IsCrossTargetingBuild)' != 'true'">
+    <MSBuild Projects="../PuddingDesktop.ExitObserver/PuddingDesktop.ExitObserver.csproj" Targets="Restore;Publish" BuildInParallel="false"
+      RemoveProperties="TargetFramework;TargetFrameworks;OutputPath;OutDir;BaseOutputPath;BaseIntermediateOutputPath;NoBuild"
+      Properties="Configuration=$(Configuration);ArtifactsPath=$(MSBuildThisFileDirectory)..\..\temp\build\recovery;PublishDir=$(TargetDir)observer/;RuntimeIdentifier=win-x64;SelfContained=false" />
+    <Error Condition="!Exists('$(TargetDir)observer/PuddingDesktop.ExitObserver.exe')" Text="Desktop exit observer is missing." />
+  </Target>
+  <Target Name="PublishExitObserver" AfterTargets="Publish">
+    <MSBuild Projects="../PuddingDesktop.ExitObserver/PuddingDesktop.ExitObserver.csproj" Targets="Restore;Publish" BuildInParallel="false"
+      RemoveProperties="TargetFramework;TargetFrameworks;OutputPath;OutDir;BaseOutputPath;BaseIntermediateOutputPath;NoBuild"
+      Properties="Configuration=$(Configuration);ArtifactsPath=$(MSBuildThisFileDirectory)..\..\temp\build\recovery;PublishDir=$(PublishDir)observer/;RuntimeIdentifier=win-x64;SelfContained=false" />
   </Target>
   <Target Name="BuildCoreBundle" AfterTargets="Build"
           Condition="'$(DesignTimeBuild)' != 'true' And '$(IsCrossTargetingBuild)' != 'true'">

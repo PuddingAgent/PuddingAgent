@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
+  <Target Name="EnforceDiagnosticsBoundary" BeforeTargets="ResolveReferences">
+    <Error Condition="'@(ProjectReference)' != '' Or '@(PackageReference)' != ''" Text="Desktop diagnostics is a BCL-only leaf; host, UI and package dependencies are forbidden." />
+  </Target>
+</Project>

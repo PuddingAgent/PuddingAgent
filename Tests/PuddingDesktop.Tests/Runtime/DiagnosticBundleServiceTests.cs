@@ -7,6 +7,30 @@ namespace PuddingDesktop.Tests.Runtime;
 public sealed class DiagnosticBundleServiceTests
 {
     [Fact]
+    public async Task CreateAsync_IncludesBoundedDesktopEvidenceWithoutUnrelatedFiles()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "desktop-bundle-test-" + Guid.NewGuid().ToString("N"));
+        var runs = Path.Combine(root, "runs");
+        var run = Path.Combine(runs, "one");
+        Directory.CreateDirectory(run);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(run, "state.json"), "{\"phase\":\"running\",\"controlToken\":\"SECRET_VALUE\"}");
+            await File.WriteAllTextAsync(Path.Combine(run, "incident.json"), "{\"cause\":\"unobserved_termination\"}");
+            await File.WriteAllTextAsync(Path.Combine(run, "unrelated.txt"), "PRIVATE_DATA");
+            await File.WriteAllTextAsync(Path.Combine(run, "lifecycle.jsonl"), new string('x', 400 * 1024));
+            var service = new DiagnosticBundleService(() => new DesktopRuntimeSnapshot(), new CoreProcessLogBuffer(), runs);
+            using var archive = ZipFile.OpenRead(await service.CreateAsync(root, CancellationToken.None));
+            var entry = Assert.Single(archive.Entries, e => e.FullName == "desktop-runs/one/state.json");
+            using var reader = new StreamReader(entry.Open());
+            Assert.DoesNotContain("SECRET_VALUE", await reader.ReadToEndAsync());
+            Assert.Contains(archive.Entries, e => e.FullName == "desktop-runs/one/incident.json");
+            Assert.DoesNotContain(archive.Entries, e => e.Name is "unrelated.txt" or "lifecycle.jsonl");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task CreateAsync_IncludesConfigKeysButNotSecretValues()
     {
         var dataRoot = Path.Combine(

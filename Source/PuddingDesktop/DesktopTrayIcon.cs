@@ -6,14 +6,14 @@ namespace PuddingDesktop;
 internal sealed class DesktopTrayIcon : IDisposable
 {
     private readonly MainWindow _window;
-    private readonly Action _exit;
+    private readonly Action<string> _exit;
     private readonly IntPtr _handle;
     private readonly SubclassProc _callback;
     private readonly uint _taskbarCreated;
     private readonly IntPtr _icon;
     private bool _disposed;
     internal bool Available { get; private set; }
-    internal DesktopTrayIcon(MainWindow window, Action exit)
+    internal DesktopTrayIcon(MainWindow window, Action<string> exit)
     {
         _window = window; _exit = exit;
         _handle = WinRT.Interop.WindowNative.GetWindowHandle(window);
@@ -83,13 +83,19 @@ internal sealed class DesktopTrayIcon : IDisposable
                     GetCursorPos(out var point); SetForegroundWindow(hwnd);
                     var selected = TrackPopupMenu(menu, 0x100 | 0x2, point.X, point.Y, 0, hwnd, IntPtr.Zero);
                     if (selected == 1) { _window.AppWindow.Show(); _window.Activate(); }
-                    if (selected == 2) _exit();
+                    if (selected == 2) _exit("tray_exit");
                 }
                 finally { DestroyMenu(menu); }
             }
         }
         // Windows session ending uses the same coordinated stop path.
-        if (message == 0x0011) { _exit(); return new IntPtr(1); }
+        if (message == 0x0011)
+        {
+            Diagnostics.DesktopDiagnosticLog.Journal?.Record("windows_query_end_session", $"flags=0x{(long)l:X}");
+            _exit("windows_session_query"); return new IntPtr(1);
+        }
+        if (message == 0x0016)
+            Diagnostics.DesktopDiagnosticLog.Journal?.Record("windows_end_session", $"ending={w != 0};flags=0x{(long)l:X}");
         return DefSubclassProc(hwnd, message, w, l);
     }
     public void Dispose()

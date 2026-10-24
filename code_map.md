@@ -1,6 +1,6 @@
 # PuddingAgent 代码地图（根索引）
 
-> 源指纹: Source/**=dd1089a75568, Tests/**=15c2b888a399, Tools/**=41d07b8cf5c8, TestScripts/**=369fe7849835 · 条目数: 124 · 最近整理: 2026-10-23
+> 源指纹: Source/**=acc3dd219aaa, Tests/**=cf5521cd88f4, Tools/**=41d07b8cf5c8, TestScripts/**=844369deafb7 · 条目数: 124 · 最近整理: 2026-10-23
 > 本文件是**索引**不是日志：只放 概念 · 组件 · 关键文件（相对路径）· 用途；维护规则见 [`Agents.md`](Agents.md)，过程记录写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)；子项目内部的文件级索引在其自己的 `code_map.md` 中，本文件只做跨项目路由。
 
 ## 0. 怎么用（30 秒）
@@ -23,6 +23,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | 项目 | 用途 | 文件级索引 |
 |------|------|-----------|
 | `Source/PuddingDesktop/` | WinUI 3 Shell：承载 WebView2 工作台并监督 Core 子进程生命周期 | [code_map](Source/PuddingDesktop/code_map.md) |
+| `Source/PuddingDesktop.Diagnostics/` | BCL 现场记录：原子快照、脱敏、退出分类与补录 | [code_map](Source/PuddingDesktop.Diagnostics/code_map.md) |
+| `Source/PuddingDesktop.ExitObserver/` | 独立观察 Shell 退出码并保存现场，不管理产品生命周期 | [code_map](Source/PuddingDesktop.ExitObserver/code_map.md) |
 | `Source/PuddingAgent/` | 入口 `Program.cs`：Console / DesktopChild 两种薄壳 | [code_map](Source/PuddingAgent/code_map.md) |
 | `Source/PuddingHost/` | Core 组合根：装配 HTTP 宿主、本机控制地址与各连接器 | [code_map](Source/PuddingHost/code_map.md) |
 | `Source/PuddingRuntime/` | Agent Loop · LLM 网关调用 · 工具系统 · 上下文管线 · 子代理 · 后台学习 | [code_map](Source/PuddingRuntime/code_map.md) |
@@ -51,7 +53,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
 | `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的**纯策略**组件（BCL-only）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定（见下「关键语义」） | [code_map](Source/PuddingContextPolicy/code_map.md) |
-| `Source/PuddingContextPruning/` | 零 LLM **确定性载荷剪枝**（叶子，只引用 `PuddingCore`）：相同工具结果去重、超大工具结果首尾摘要、超大工具参数截断，按序执行 + 受保护尾部 + 准入地板；Runtime 在 `LlmRequestBudgetGuard.Prepare` 冻结测量前消费 | [code_map](Source/PuddingContextPruning/code_map.md) |
+| `Source/PuddingContextPruning/` | 零 LLM 确定性载荷剪枝：工具结果去重与超大载荷裁剪，保护尾部（见下「关键语义」） | [code_map](Source/PuddingContextPruning/code_map.md) |
 | `Source/PuddingConversationReadModel/` | 会话首屏读模型纯规则组件（BCL-only；C2 已接入 Platform/slnx）：事件归约、预算与三游标合同 | [code_map](Source/PuddingConversationReadModel/code_map.md) |
 | `Source/PuddingSsh/` | SSH 远程执行叶子组件（`ProjectReference=0`，包 `SSH.NET`）：合同/端口与错误分类、协调器与独占连接（见下「关键语义」） | [code_map](Source/PuddingSsh/code_map.md) |
 | `Source/PuddingHomeAssistant/` | Home Assistant 叶子组件：REST 客户端、域策略三档、输出预算与历史裁剪；四个工具见 code_map | [code_map](Source/PuddingHomeAssistant/code_map.md) |
@@ -91,6 +93,10 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
   上下文容量与压缩候选的**纯策略**组件（BCL-only，`ProjectReference`/`PackageReference` 均为 0）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定；不负责计时器/数据库/网络/锁/后台任务。**已被 Runtime 消费**：候选选择、双预算、严格 CAS 与净收益准入；静态纯策略不需要 DI
 
+**`Source/PuddingContextPruning/`**
+
+零 LLM 确定性载荷剪枝（叶子，只引用 `PuddingCore`）：相同工具结果去重、超大工具结果首尾摘要、超大工具参数截断，按序执行，保护尾部并校验准入地板；Runtime 在 `LlmRequestBudgetGuard.Prepare` 冻结测量前消费。
+
 **`Source/PuddingSsh/`**
 
   SSH 远程执行叶子组件（`ProjectReference=0`，包 `SSH.NET` 2026.0.0）：合同/端口、known_hosts/pin、POSIX 封装、错误分类、协调器与独占连接；不解析 DataRoot/Agent 主体、不做审批与持久化。宿主接入前置约束见 [ADR-096](Docs/07_architecture/110ADR-096SSH执行前置围栏与有界终止ADR.md)
@@ -111,6 +117,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **代码索引组件族** | §2 + [ADR-089](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [目标边界](Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md) | CodeIndex 不得反向引用 CodeIntelligence；依赖由编译期与边界测试强制；现有组件见 §2，拟新增组件以设计为准 |
 | **Desktop ↔ Core 能力通道** | §2 + [能力通道](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | 两端只经 `Pudding.Contracts`（DTO）与 `Pudding.Rpc.Protocol`（wire）；启用前必须过 `DesktopCapabilityChannelPreflight` |
 | **Core 启动与就绪契约** | `Source/PuddingHost/Hosting/`、`Source/PuddingDesktop/Hosting/` | 每 5s 发 `PUDDING_DESKTOP_STARTING`，全部 hosted service `StartAsync` 返回后才发 `PUDDING_DESKTOP_READY`；`/health/ready` 不可省 |
+| **Desktop 意外退出现场** | `Source/PuddingDesktop.Diagnostics/`、`Source/PuddingDesktop.ExitObserver/` | Shell 每 5 秒保存状态；独立观察器记录退出码；同时终止时下次启动补录。关闭请求不等于关闭完成，来源未知时不猜测 |
 | **Desktop 启动状态面板** | `Source/PuddingDesktop/MainWindow.xaml[.cs]` + `Source/PuddingDesktop.Foundation/StartupPanelPresenter.cs` | 启动/取消/自动恢复/加载工作台/失败共用一张文案映射表（Foundation 纯逻辑）；真实阶段只从 `CoreLogBuffer` 的 `[StartupPhase]` 行聚合（`StartupPhaseActivity`）；取消复用 `_startCts`，WebView2 加载有 20 s watchdog |
 | **浏览器自动化链路** | `Source/PuddingHost/BrowserBridge/`、`Source/PuddingBrowser.WebView2/` | ref 调用携带观察来源 expected_page_version，含 Bridge 动作前 locate；快照游标进入分页器、包围盒穿过结果适配器；动作后新观察，收包与串行执行分离，详见 ADR-097 |
 | **DeepSeek 网页搜索/抓取工具** | `Source/PuddingRuntime/Tools/BuiltIns/Search/DeepSeek*Tool.cs`、`Source/PuddingDeepSeekWeb/` | `deepseek_search`/`deepseek_fetch` 低风险只读（AutoAllowed 免授权）；凭据 `search.providers.json` 的 `deepseek_search` 优先、回退 `llm.providers.json` 的 `providerId=deepseek`；协议在叶子组件，传输经端口适配 |
@@ -181,6 +188,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | `Source/Pudding.DesktopConnectionTests/` · `Source/Pudding.DesktopServiceTests/` · `Source/Pudding.CapabilityBrokerTests/` · `Source/Pudding.CapabilityBroker.AspNetCoreTests/` | 能力通道四个组件的独立测试（假服务端 / 假 UI 调度器 / 自托管 Kestrel） |
 | `TestScripts/BrowserDeliveryReview/` | 浏览器任务授权、原租约复检、完整请求去重及子代理身份的行为回归；[README](TestScripts/BrowserDeliveryReview/README.md) 说明显式注入与迁入常规套件的方式 |
 | `Tests/PuddingDesktop.Tests/` · `Tests/PuddingHost.Tests/` · `Tests/PuddingBrowser.AgentTools.Tests/` | Desktop 进程与配置、调试模式（路由/反向代理/SSE/WS）· Bridge Endpoint · 七项 Agent Tools |
+| `Tests/PuddingDesktop.Diagnostics.Tests/` | 独立现场组件：退出分类、脱敏、文件容量、保留策略、写入失败与补录 |
 | `Tests/PuddingAgent.IntegrationTests/` · `Tests/PuddingNativeChat.IntegrationTests/` · `Tests/e2e/` · `TestScripts/` · `Tests/PuddingBrowser.TestSite/` | 集成测试 · 端到端脚本 · 生命周期/部署/smoke/性能探针 · 测试站点与门禁脚本（见下「关键语义」） |
 
 **关键语义（§5「测试工程索引」表·覆盖列逐字原文）**

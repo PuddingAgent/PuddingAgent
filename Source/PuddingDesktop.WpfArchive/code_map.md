@@ -1,5 +1,5 @@
 # PuddingDesktop CodeMAP
-> 源指纹: Source/PuddingDesktop.WpfArchive/**=132-6116ba81c2cb · 条目数: 48 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingDesktop.WpfArchive/**=132-2230a21a812c · 条目数: 48 · 最近整理: 2026-10-22
 
 > Windows WPF 产品入口 | 单实例 · Core 子进程管理 · Browser 工作区 · 运行中心
 
@@ -103,7 +103,8 @@
 |------|------|
 | `ViewModels/RuntimeCenterViewModel.cs` | Core 状态、PID、健康、启停重启；`DeployFrontendAsync` 防重入门控 |
 | `Views/RuntimeCenterView.xaml(.cs)` | 运行中心 UI，500 行日志视口；「构建并部署前端」按钮（成功反馈目标目录与文件数） |
-| `Runtime/DiagnosticBundleService.cs` | 诊断 ZIP，过滤敏感信息 |
+| `Runtime/DiagnosticBundleService.cs` | 诊断 ZIP，过滤敏感信息；包含最近三次 Desktop 运行的有界现场文件 |
+| `Diagnostics/DesktopDiagnosticLog.cs` | 早期异常兜底日志与当前运行事件入口；脱敏、PID、容量轮转 |
 
 ## 系统集成
 

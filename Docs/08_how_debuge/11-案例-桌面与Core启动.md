@@ -2,7 +2,7 @@
 title: 案例：桌面与 Core 启动
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-24
 status: active
 description: 先 dry-run 检查服务端当前识别出的 deterministic cases；该操作不会调用付费模型：
 categories: [docs, how-debug]
@@ -14,6 +14,28 @@ draft: false
 ---
 
 # 案例：桌面与 Core 启动
+
+## Desktop 意外退出与现场保留
+
+日志位于 `<DesktopHome>/logs/`，默认 `%LOCALAPPDATA%/Pudding/logs/`；隔离验证使用 `PUDDING_DESKTOP_HOME`。
+与 Core 的 DataRoot 日志分离，因此 Core 未启动、配置损坏或数据目录失效时仍能留证。
+
+- `desktop.log`：启动早期和普通异常的兜底文本，带 PID；单文件约 1 MiB 轮转并保留 previous。
+- `desktop-runs/<runId>/state.json`：每 5 秒及状态变化时原子写入；包含启动时间、PID、构建版本、退出阶段、Shell/Core 状态、Core PID/退出码、内存、近期 Core 日志和致命异常栈。
+- `lifecycle.jsonl`：启动、退出请求、托盘隐藏、Windows 会话结束标志、关闭步骤及异常；约 256 KiB 轮转，保留 previous。状态和事件写入执行磁盘 flush。
+- `observer.json`：独立观察进程的附着确认；只有 observer_started 事件不足以证明已附着。
+- `exit.json`：观察器持有原进程句柄，记录真实退出码及十六进制形式；`incident.json` 仅在非正常退出时保存最后现场。
+- `recovered-exit.json`：Shell 与观察器均未留下退出回执时，下次主实例启动通过 PID + 启动时间识别失去的运行并补录。无法访问进程时不推断已死亡。
+
+分类区分 `unhandled_exception`、`abnormal_exit_code`、`uncoordinated_process_exit`、`unobserved_termination` 与 `clean_shutdown`。
+`exit_requested` 只表示开始清理；`shutdown_completed` 才表示协调清理成功。`windows_query_end_session` / `windows_end_session` 保留原始 flags，便于与 Windows 更新、注销和关机事件对照。
+`bootstrap_reboot` 只重启 Core：正常情况下同一 Desktop runId 内应看到 Core PID 改变，而不应产生 Shell 退出回执。
+
+硬终止、断电或同一作业中的进程一起被结束时，不能承诺异常回调或观察器运行；此时保留最近已落盘现场，补录时间不冒充真实退出时间。
+退出码不能确定终止发起者，`terminationInitiator` 保持 unknown。现场是有界文本与状态，**不是完整内存转储**；不读取环境变量列表、配置内容或会话数据库，敏感字段在写盘前脱敏。
+
+启动时保留最近 20 次已结束运行，不清理仍活跃或状态不可确认的进程。运行中心导出的诊断 ZIP 追加最近三次运行的指定现场文件。
+独立验证入口为 `TestScripts/test-desktop-exit-observer.ps1 -ObserverExe <观察器路径>`；集成生命周期验证使用隔离 DesktopHome/DataRoot 的 `TestScripts/test-pudding-desktop-launcher.ps1`。
 
 ## 自举重建报 MSB1009，但 Core 又启动成功
 

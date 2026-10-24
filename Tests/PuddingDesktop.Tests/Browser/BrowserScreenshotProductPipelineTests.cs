@@ -238,6 +238,14 @@ public sealed class BrowserScreenshotProductPipelineTests
         private static CapabilityResult<T> NotScripted<T>() =>
             CapabilityResult<T>.Failure(DesktopCapabilityError.UnsupportedCapability("not scripted in this test"));
 
+        public Task<CapabilityResult<DesktopDocumentPreviewResult>> OpenDocumentAsync(
+            DesktopCallContext context, DesktopDocumentPreviewRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(NotScripted<DesktopDocumentPreviewResult>());
+
+        public Task<CapabilityResult<DesktopPanelRenderResult>> RenderPanelAsync(
+            DesktopCallContext context, DesktopPanelRenderRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(NotScripted<DesktopPanelRenderResult>());
+
         public Task<CapabilityResult<DesktopDialogResult>> RequestDialogAsync(
             DesktopCallContext context, DesktopDialogRequest request, CancellationToken cancellationToken)
             => Task.FromResult(NotScripted<DesktopDialogResult>());

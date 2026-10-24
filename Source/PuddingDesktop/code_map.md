@@ -1,8 +1,10 @@
 # WinUI Shell / independent Core launcher
-> 源指纹: Assets/**=1-03d89cb968fa, Hosting/**=2-875ce62093f7, *.cs=7-bdf2f97fdc0d, *.csproj=1-991719cd5e97, *.manifest=1-c50e9539699b, *.xaml=2-5285063b0fa9 · 条目数: 0 · 最近整理: 2026-10-22
+> 源指纹: Assets/**=1-03d89cb968fa, Hosting/**=2-875ce62093f7, *.cs=7-4ae9cc102ef8, *.csproj=1-b7bc4cc878eb, *.manifest=1-c50e9539699b, *.xaml=2-ab5498f2451a · 条目数: 0 · 最近整理: 2026-10-22
 
 - `App.xaml` retains native theme brushes, rounded controls and Mica styling from desktop development B.
-- `App.xaml.cs`: single-instance activation; creates the launcher coordinator. No in-process business Host.
+- `App.xaml.cs`: single-instance activation and launcher composition; wires UI/AppDomain/task exceptions, process-exit callback, five-second durable scene capture and the independent exit observer.
+- `../PuddingDesktop.Diagnostics/code_map.md`: bounded, redacted per-run evidence and next-start recovery; no UI or Core dependencies.
+- `../PuddingDesktop.ExitObserver/code_map.md`: separate observer in `observer/`; preserves actual exit code even when managed callbacks do not run.
 - `MainWindow.xaml[.cs]`: trusted Web workbench, separate Agent browser, runtime controls and launcher-only settings. Business configuration remains Web.
 - Tool home cards (`*CardSubtitle` blocks + `ApplyToolAvailabilityLabels`): chip label, subtitle and
   clickability are all pasted from `PuddingDesktop.Foundation.ToolAvailabilityCatalog`, and the 「+」menu's
@@ -26,7 +28,7 @@
 - `Hosting/DesktopApplicationCoordinator.cs`: former launcher coordinator with WinUI dispatcher/window adaptation. Process supervisor, restart policy, token/config handling and Bridge logic compile from shared sources in `PuddingDesktop.WpfArchive`.
 - `Assets/Pudding.ico`: multi-size Web brand avatar, embedded in EXE and copied to build/publish output; regenerate with `TestScripts/update-pudding-desktop-icon.ps1`.
 - `DesktopIcon.cs`: shared icon path and private Win32 tray HICON loading; `MainWindow` sets the AppWindow icon for the taskbar/title bar.
-- `DesktopTrayIcon.cs`: native tray open/exit and close-policy adapter; owns and releases its Pudding icon handle.
+- `DesktopTrayIcon.cs`: native tray open/exit and close-policy adapter; records Windows session-ending message flags separately from user exit, and owns its icon handle.
 - Tool DropDownButton styles use the control's default template without the nonexistent `DefaultDropDownButtonStyle` resource key.
 - `PuddingDesktop.csproj`: rejects Host/Runtime/Platform compiler references; both Build and Publish bundle an independently executable Core in `core/`. VS fast up-to-date skipping is disabled so Core-only edits also reach the current build. PuddingCore reference is for existing
  configuration contracts, not Host composition.

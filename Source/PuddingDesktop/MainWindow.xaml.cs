@@ -127,7 +127,7 @@ public sealed partial class MainWindow : Window
         Root.ActualThemeChanged += (_, _) => ApplyWorkbenchAppearance();
         Root.Loaded += async (_, _) =>
         {
-            try { _tray = new DesktopTrayIcon(this, () => _ = RequestCloseAsync(true)); }
+            try { _tray = new DesktopTrayIcon(this, reason => _ = RequestCloseAsync(true, reason)); }
             catch (Exception ex) { App.WriteDiagnostic(ex); }
             await LoadSettingsAsync();
             _loadingAppearance = true;
@@ -3310,10 +3310,15 @@ public sealed partial class MainWindow : Window
             WorkbenchPreferredColorScheme.Dark => CoreWebView2PreferredColorScheme.Dark,
             _ => CoreWebView2PreferredColorScheme.Auto,
         };
-    internal async Task RequestCloseAsync(bool explicitExit)
+    internal async Task RequestCloseAsync(bool explicitExit, string? reason = null)
     {
         if (_closing) return;
-        if (!explicitExit && _tray?.Available == true && _coordinator.BackgroundMode.ShouldMinimizeToTray()) { AppWindow.Hide(); return; }
+        if (!explicitExit && _tray?.Available == true && _coordinator.BackgroundMode.ShouldMinimizeToTray())
+        {
+            Diagnostics.DesktopDiagnosticLog.Journal?.Record("window_hidden_to_tray");
+            AppWindow.Hide(); return;
+        }
+        Diagnostics.DesktopDiagnosticLog.Journal?.RequestExit(reason ?? (explicitExit ? "user_exit" : "window_close_policy"));
         _closing = true;
         _coordinator.RequestExplicitExit();
         _timer.Stop();
@@ -3322,17 +3327,24 @@ public sealed partial class MainWindow : Window
         try
         {
             await _coordinator.StopAsync(CancellationToken.None);
+            Diagnostics.DesktopDiagnosticLog.Journal?.Record("core_stop_completed");
             await _lifetime.CancelAsync();
             await _webGate.WaitAsync();
             try { _web?.Close(); _web = null; } finally { _webGate.Release(); }
             if (_browser is not null) await _browser.DisposeAsync();
             await _coordinator.DisposeAsync();
+            Diagnostics.DesktopDiagnosticLog.Journal?.Record("coordinator_disposed");
             _tray?.Dispose();
             _closed = true;
             Close();
             await ((App)Application.Current).FinishAsync();
         }
-        catch (Exception ex) { App.WriteDiagnostic(ex); _closing = false; RefreshStatus(ex.Message); }
+        catch (Exception ex)
+        {
+            App.WriteDiagnostic(ex);
+            Diagnostics.DesktopDiagnosticLog.Journal?.CancelExit();
+            _closing = false; RefreshStatus(ex.Message);
+        }
     }
 
 #if DEBUG

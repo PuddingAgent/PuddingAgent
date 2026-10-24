@@ -4,12 +4,15 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using PuddingDesktop.Core;
+using PuddingDesktop.Configuration;
+using PuddingDesktop.Diagnostics;
 
 namespace PuddingDesktop.Runtime;
 
 public sealed class DiagnosticBundleService(
     Func<DesktopRuntimeSnapshot> snapshotProvider,
-    CoreProcessLogBuffer logBuffer) : IDiagnosticBundleService
+    CoreProcessLogBuffer logBuffer,
+    string? desktopRunsRoot = null) : IDiagnosticBundleService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -68,6 +71,27 @@ public sealed class DiagnosticBundleService(
                 cancellationToken);
         }
 
+        var runsRoot = desktopRunsRoot ?? Path.Combine(DesktopBootstrapPathProvider.GetDirectoryPath(), "logs", "desktop-runs");
+        if (Directory.Exists(runsRoot))
+        {
+            foreach (var run in Directory.GetDirectories(runsRoot).OrderDescending(StringComparer.Ordinal).Take(3))
+            {
+                if ((File.GetAttributes(run) & FileAttributes.ReparsePoint) != 0) continue;
+                foreach (var name in new[] { "state.json", "lifecycle.jsonl", "lifecycle.jsonl.previous", "exit.json", "incident.json", "recovered-exit.json", "observer.json" })
+                {
+                    var path = Path.Combine(run, name);
+                    try
+                    {
+                        var info = new FileInfo(path);
+                        if (!info.Exists || info.Length > 300 * 1024 || (info.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+                        var content = await File.ReadAllTextAsync(path, cancellationToken);
+                        await WriteTextAsync(archive, $"desktop-runs/{Path.GetFileName(run)}/{name}",
+                            DesktopRunJournal.SafeText(content, 300 * 1024), cancellationToken);
+                    }
+                    catch (IOException) { /* A concurrently rotated file is optional evidence. */ }
+                }
+            }
+        }
         return filePath;
     }
 

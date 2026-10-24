@@ -23,6 +23,8 @@
     <Project Path="Source/PuddingCore/PuddingCore.csproj" />
     <Project Path="Source/PuddingDesktop/PuddingDesktop.csproj" />
     <Project Path="Source/PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
+    <Project Path="Source/PuddingDesktop.Diagnostics/PuddingDesktop.Diagnostics.csproj" />
+    <Project Path="Source/PuddingDesktop.ExitObserver/PuddingDesktop.ExitObserver.csproj" />
     <Project Path="Source/Pudding.DesktopConnection/Pudding.DesktopConnection.csproj" />
     <Project Path="Source/Pudding.DesktopService/Pudding.DesktopService.csproj" />
   <Project Path="Source/Pudding.DeliveryManifest.Cli/Pudding.DeliveryManifest.Cli.csproj" />
@@ -58,6 +60,7 @@
     <Project Path="Tests/PuddingBrowser.TestSite/PuddingBrowser.TestSite.csproj" />
     <Project Path="Tests/PuddingBrowser.WebView2.Smoke/PuddingBrowser.WebView2.Smoke.csproj" />
     <Project Path="Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj" />
+    <Project Path="Tests/PuddingDesktop.Diagnostics.Tests/PuddingDesktop.Diagnostics.Tests.csproj" />
     <Project Path="Source/PuddingDesktop.FoundationTests/PuddingDesktop.FoundationTests.csproj" />
     <Project Path="Source/Pudding.CapabilityBroker.AspNetCoreTests/Pudding.CapabilityBroker.AspNetCoreTests.csproj" />
     <Project Path="Source/Pudding.CapabilityBrokerTests/Pudding.CapabilityBrokerTests.csproj" />

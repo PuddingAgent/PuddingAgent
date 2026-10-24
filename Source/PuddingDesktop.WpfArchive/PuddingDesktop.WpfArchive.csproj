@@ -18,6 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PuddingDesktop.Diagnostics\PuddingDesktop.Diagnostics.csproj" />
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
     <ProjectReference Include="..\PuddingBrowser.Protocol\PuddingBrowser.Protocol.csproj" />
