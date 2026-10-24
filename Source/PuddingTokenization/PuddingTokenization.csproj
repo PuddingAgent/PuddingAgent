@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Leaf component for model-accurate token counting. Boundary rules enforced by
+    the test "PuddingTokenization_HasNoProjectReferences":
+
+      * ZERO <ProjectReference> — this component must not know ChatMessage,
+        LlmToolDefinition, ContextUsageSnapshot or any Core/Runtime/Host type.
+        It counts text, nothing else. Consumers point at it; it points at nothing.
+      * PackageReference is allowed here and ONLY here: Microsoft.ML.Tokenizers is
+        the BPE engine. Keeping it out of PuddingCore is the point of extracting
+        this component — the tokenizer choice must not live inside the LLM client.
+
+    Vocabulary data is NOT embedded in this assembly. It is loaded from a directory
+    supplied by the caller, so a missing asset degrades to the caller's fallback
+    instead of failing the build or bloating the binary.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingTokenizationTests" />
+  </ItemGroup>
+
+</Project>

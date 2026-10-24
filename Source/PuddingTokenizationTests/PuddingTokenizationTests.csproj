@@ -1,0 +1,20 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- Component tests for PuddingTokenization (组件化交付规程 S2/S3).
+       Boundary rule: this project MUST reference PuddingTokenization ONLY.
+       It must never reference PuddingCore / PuddingRuntime / PuddingHost, so the
+       tokenizer can be built and verified without the running host (规程 R1).
+       Asserted at runtime by ComponentBoundaryTests. -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingTokenization\PuddingTokenization.csproj" />
+  </ItemGroup>
+
+</Project>
