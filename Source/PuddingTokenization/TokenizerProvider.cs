@@ -130,6 +130,29 @@ public sealed class TokenizerProvider
                 null);
         }
 
+        return ResolveByIdentity(identity);
+    }
+
+    /// <summary>
+    /// 按**词表身份**直接解析，跳过 modelId 别名映射。
+    /// </summary>
+    /// <remarks>
+    /// 供诊断路径使用。诊断若反过来借 <see cref="Resolve"/> 拿身份，只有在「身份字符串恰好也是
+    /// 一个已登记别名」时才成立——把诊断正确性挂在巧合上，改一次别名表就会静默失效。
+    /// </remarks>
+    public TokenizerHandle ResolveByIdentity(string identity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity);
+
+        if (_assetDirectory is null)
+        {
+            return new TokenizerHandle(
+                identity,
+                null,
+                TokenizerFallbackReason.NotConfigured,
+                null);
+        }
+
         return _cache.GetOrAdd(
             identity,
             key => new Lazy<TokenizerHandle>(() => Load(key), LazyThreadSafetyMode.ExecutionAndPublication))

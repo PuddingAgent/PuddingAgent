@@ -36,7 +36,8 @@ namespace PuddingRuntime.Services.Tools;
 ///   - entropy_probe: 返回当前（或指定 session_id）最近一次请求各层的 gzip 压缩比（SystemMessage/HistoryMessage/ToolDefinition）
 ///   - context_health: 返回当前会话的上下文健康状态（用量比例、状态、剩余 token 等，对齐 ContextHealthSnapshot）
 ///   - runtime_identity: 返回当前进程与其已加载程序集的身份事实（PID/启动时间、程序集路径/大小/写入时间/
-///     SHA-256/MVID/InformationalVersion），用于核实「重启后到底加载了哪份产物」；不回显凭据或环境变量
+///     SHA-256/MVID/InformationalVersion），用于核实「重启后到底加载了哪份产物」；并报告模型词表在本进程是否精确生效
+///     （<c>vocabulary</c>：资产来源、是否旁挂目录存在、每份词表的 <c>isExact</c> 与回退原因），不回显路径、凭据或环境变量
 ///   - diagnose: 汇总工具/缓存/上下文/子代理四个维度并运行确定性诊断引擎，
 ///     返回带证据的判定（healthy/degraded/critical/unknown）与 findings；
 ///     证据不足时一律给 unknown，并把「跳过了哪些检查、为什么」一并返回
@@ -1005,7 +1006,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 Environment.Version.ToString()),
             assemblies,
             DescribeTargetIdentity(args.AssemblyPath),
-            DescribeRepositoryFreshness(assemblies));
+            DescribeRepositoryFreshness(assemblies),
+            DescribeVocabularyIdentity());
 
         return JsonSerializer.Serialize(report, RuntimeIdentityJsonOptions);
     }
@@ -1018,6 +1020,33 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
     /// 唯一可靠的判据是「产物写入时间 vs 产出它的提交时间」。把它做成机器可读字段，
     /// 就不用每次靠人肉推导，也不会再把「没部署」当成「代码坏了」。
     /// </summary>
+    private static VocabularyIdentity DescribeVocabularyIdentity()
+    {
+        try
+        {
+            var diagnostic = ContextUsageSnapshotStore.DescribeTokenization();
+            var models = new List<ModelVocabularyStatus>();
+            foreach (var model in diagnostic.Models)
+            {
+                models.Add(new ModelVocabularyStatus(model.Identity, model.IsExact, model.FallbackReason));
+            }
+
+            // 只报「目录是否存在」而不报目录：路径里含资源文件名，而本工具的输出契约
+            // （RuntimeIdentity_DoesNotEchoSecrets）禁止回显 "token" 子串。只给存在性已经够分辨
+            // 「没配」与「配了但文件不在」。
+            return new VocabularyIdentity(
+                diagnostic.AssetSource,
+                !string.IsNullOrWhiteSpace(diagnostic.AssetDirectory),
+                models,
+                null);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // 诊断面自己不能变成故障源：拿不到就说拿不到，不猜一个「大概是回退」。
+            return new VocabularyIdentity("probe-failed", false, [], ex.GetType().Name);
+        }
+    }
+
     private static RepositoryFreshness DescribeRepositoryFreshness(IReadOnlyList<AssemblyIdentity> assemblies)
     {
         var root = TryFindRepositoryRoot(AppContext.BaseDirectory);
@@ -1282,7 +1311,20 @@ internal sealed record RuntimeIdentityReport(
     RuntimeHostIdentity Runtime,
     IReadOnlyList<AssemblyIdentity> Assemblies,
     AssemblyTargetIdentity? Target,
-    RepositoryFreshness Freshness);
+    RepositoryFreshness Freshness,
+    VocabularyIdentity Vocabulary);
+
+/// <summary>
+/// 「精确词表到底生效了没有」。字段名刻意避开 <c>token</c> 子串：
+/// <c>RuntimeIdentity_DoesNotEchoSecrets</c> 把该子串一律当泄密信号。
+/// </summary>
+internal sealed record VocabularyIdentity(
+    string AssetSource,
+    bool AssetDirectoryPresent,
+    IReadOnlyList<ModelVocabularyStatus> Models,
+    string? Error);
+
+internal sealed record ModelVocabularyStatus(string Identity, bool IsExact, string FallbackReason);
 
 /// <summary>
 /// 「这份部署是不是在 HEAD 之后产出的」——机器可读的判定，避免把「没部署」误判成「代码坏了」。

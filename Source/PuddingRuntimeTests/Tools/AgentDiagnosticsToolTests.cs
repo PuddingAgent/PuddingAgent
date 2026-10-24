@@ -382,6 +382,56 @@ public sealed class AgentDiagnosticsToolTests
     }
 
     [TestMethod]
+    public async Task RuntimeIdentity_ReportsVocabularyResolutionInsteadOfLeavingItUnobservable()
+    {
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: null,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(tool, """{"action":"runtime_identity"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+
+        using var doc = JsonDocument.Parse(result.Output);
+        var vocabulary = doc.RootElement.GetProperty("vocabulary");
+
+        var source = vocabulary.GetProperty("assetSource").GetString();
+        CollectionAssert.Contains(
+            new[] { "environment", "beside-application", "none", "probe-failed" },
+            source,
+            "assetSource 必须是已知来源；未知值等于把「没配」和「配错」混成一团。");
+
+        var models = vocabulary.GetProperty("models").EnumerateArray().ToArray();
+        Assert.IsTrue(models.Length > 0, "至少要报告一份已登记词表的状态。");
+
+        var directoryPresent = vocabulary.GetProperty("assetDirectoryPresent").GetBoolean();
+        foreach (var model in models)
+        {
+            Assert.IsFalse(string.IsNullOrWhiteSpace(model.GetProperty("identity").GetString()));
+
+            var isExact = model.GetProperty("isExact");
+            Assert.IsTrue(
+                isExact.ValueKind is JsonValueKind.True or JsonValueKind.False,
+                "isExact 必须是布尔值——调用方要靠它决定「这个数字能不能用」。");
+
+            var reason = model.GetProperty("fallbackReason").GetString();
+            Assert.IsFalse(string.IsNullOrWhiteSpace(reason));
+
+            // 不变式：没有词表目录时原因只能是 NotConfigured。
+            // 报成 AssetMissing 会让「没配置」看起来像「文件丢了」，而两者的修法完全不同。
+            if (!directoryPresent)
+            {
+                Assert.AreEqual("NotConfigured", reason, "没有词表目录时不得报成「资源缺失」。");
+            }
+        }
+
+        // 输出契约：不得回显资源路径（该路径含资源文件名，而本工具禁止回显 "token" 子串）。
+        Assert.IsFalse(result.Output.Contains(".tokenizer.json", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
     public async Task RuntimeIdentity_UnknownActionMessageListsRuntimeIdentity()
     {
         var resolver = new FakeContextCapacityResolver();

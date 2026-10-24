@@ -230,22 +230,90 @@ namespace PuddingCode.Platform
         /// 此时继续走原来的 TiktokenTokenizer 路径，**行为与改动前完全一致**。
         /// 之所以不把词表目录写死：它是环境数据（同代码索引库），换目录不应该要改代码。
         /// </remarks>
+        private static readonly TokenizerAssetResolution VocabularyAssets = ResolveTokenizerAssetDirectory();
+
         private static readonly TokenizerProvider ModelTokenizers =
-            TokenizerProvider.Create(ResolveTokenizerAssetDirectory());
+            TokenizerProvider.Create(VocabularyAssets.Directory);
 
         /// <summary>
         /// 定位词表目录：环境变量优先，其次找应用目录旁的 <c>tokenizers</c>。
-        /// 两者都不存在时返回 <c>null</c>，表示“放弃精确计数”而不是报错。
+        /// 两者都不存在时 <c>Directory</c> 为 <c>null</c>，表示“放弃精确计数”而不是报错。
         /// </summary>
-        private static string? ResolveTokenizerAssetDirectory()
+        private static TokenizerAssetResolution ResolveTokenizerAssetDirectory()
         {
             var fromEnvironment = Environment.GetEnvironmentVariable("PUDDING_TOKENIZER_ASSETS");
             if (!string.IsNullOrWhiteSpace(fromEnvironment))
-                return fromEnvironment;
+                return new TokenizerAssetResolution(fromEnvironment.Trim(), TokenizerAssetSources.Environment);
 
             var besideApplication = Path.Combine(AppContext.BaseDirectory, "tokenizers");
-            return Directory.Exists(besideApplication) ? besideApplication : null;
+            return Directory.Exists(besideApplication)
+                ? new TokenizerAssetResolution(besideApplication, TokenizerAssetSources.BesideApplication)
+                : new TokenizerAssetResolution(null, TokenizerAssetSources.None);
         }
+
+        /// <summary>词表资产的解析结果：目录 + 它从哪儿来。</summary>
+        /// <param name="Directory">词表目录；<c>null</c> 表示放弃精确计数。</param>
+        /// <param name="Source">来源，取值见 <see cref="TokenizerAssetSources"/>。</param>
+        private sealed record TokenizerAssetResolution(string? Directory, string Source);
+
+        /// <summary>词表目录的三种来源。区分它们，是为了让「配错了」和「被部署清掉了」不再长得一样。</summary>
+        private static class TokenizerAssetSources
+        {
+            /// <summary>来自环境变量。</summary>
+            public const string Environment = "environment";
+
+            /// <summary>来自应用目录旁的子目录。</summary>
+            public const string BesideApplication = "beside-application";
+
+            /// <summary>两处都没有 ⇒ 放弃精确计数。</summary>
+            public const string None = "none";
+        }
+
+        /// <summary>一份已登记词表在本进程内的解析状态。</summary>
+        public sealed record ModelTokenizerStatus(
+            string Identity,
+            bool IsExact,
+            string FallbackReason,
+            string? FallbackDetail);
+
+        /// <summary>本进程的词表资产解析结果。</summary>
+        public sealed record ModelTokenizationDiagnostic(
+            string? AssetDirectory,
+            string AssetSource,
+            IReadOnlyList<ModelTokenizerStatus> Models);
+
+        /// <summary>
+        /// 报告本进程对每份已登记词表的解析结果：精确 / 回退 + 原因。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 存在的理由很具体：精确词表是否生效**没有任何日志**，于是「估算偏差到底修好了没有」
+        /// 只能靠「估算 ÷ Provider 实测」的比值反推；而那个比值同时受内容构成影响
+        /// （英文本来就无偏差），反推不出结论，只能靠猜。
+        /// </para>
+        /// <para>
+        /// 只读缓存，不改变计数行为；未配置时如实返回 <c>NotConfigured</c> 而不是抛错。
+        /// </para>
+        /// </remarks>
+        public static ModelTokenizationDiagnostic DescribeTokenization()
+        {
+            var models = new List<ModelTokenizerStatus>();
+            foreach (var identity in ModelTokenizerCatalog.RegisteredIdentities)
+            {
+                var handle = ModelTokenizers.ResolveByIdentity(identity);
+                models.Add(new ModelTokenizerStatus(
+                    handle.Identity,
+                    handle.IsExact,
+                    handle.FallbackReason.ToString(),
+                    handle.FallbackDetail));
+            }
+
+            return new ModelTokenizationDiagnostic(
+                VocabularyAssets.Directory,
+                VocabularyAssets.Source,
+                models);
+        }
+
         private readonly ConcurrentDictionary<string, ContextUsageSnapshot> _snapshots = new();
         private readonly ConcurrentDictionary<string, double> _promptCalibrationRatios = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>
