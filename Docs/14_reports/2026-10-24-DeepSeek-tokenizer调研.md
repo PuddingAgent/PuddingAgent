@@ -564,3 +564,50 @@ CodeProjectStatus.Active      => CodeIndexStatus.Completed,
 `CodeQueryService.GetProjectIndexStatusAsync` 构造 `CodeIndexResult` 时**没有传 `Message`**，于是 `code_index_status` 输出的 `message` 恒为 `null`——而 `MarkInterruptedAsync` 明明把 `InterruptedStatusMessage`（"Indexing run interrupted: cancelled before a result could be recorded..."）写进了记录。
 
 不过 `CodeProjectRecord` 本身**没有 Message 字段**（`WorkspaceId/ProjectId/ProjectPath/Status/DisplayName/AddedAtUtc/UpdatedAtUtc/Source/ScopeState`），所以这条消息的落点需要先查实存储层，不能凭 `UpdateProjectStatusAsync` 的签名断定它被丢弃。**本轮不动，只登记。**
+
+
+## 15. `StatusMessage` 是只写不读的字段：诊断信息写入即蒸发（2026-10-24 13:16，已修 `723e340`）
+
+### 15.1 完整链路
+
+`CodeProjects` 表有 `StatusMessage TEXT NULL` 列（`SqliteCodeIndexStore.cs:60`），`UpdateProjectStatusAsync` 会写它（L313-331）。`CodeIndexScheduler.MarkInterruptedAsync` 正是靠它区分两种 scope：
+
+> `CodeIndexScheduler.cs:291` — distinguishable from a scope that never started (whose StatusMessage stays NULL)
+
+这个区分**值得有**。问题是它**读不回来**：
+
+| 环节 | 事实 |
+|---|---|
+| `CodeProjectRecord` | **没有 StatusMessage 成员** |
+| 两处 SELECT（`GetProjectAsync` / `ListProjectsAsync`） | 第 8 列写的是**字面量 `NULL`**，不是 `StatusMessage` |
+| `ReadProject` | 读列 0-6 后**跳过列 7**，直接读 8、9 |
+| `CodeQueryService.GetProjectIndexStatusAsync` | 构造 `CodeIndexResult` 时**不传 Message** |
+
+⇒ `code_index_status` 的 `message` **恒为 null**。自该列被加入以来写入的中断诊断，事实上是**只写**。
+
+那个 `NULL` 占位符是这个意图的化石：**列在 SELECT 里被预留了，然后没有人去读它**。
+
+### 15.2 修法与刻意的取舍
+
+- `CodeProjectRecord` 增加 `StatusMessage`，**追加在末尾**而不是紧邻 `Status`：位置参数一旦插到中间，5 个构造点全要改，而这里只需要一个读者。
+- 两处 SELECT 的 `NULL` → `StatusMessage`；`ReadProject` 读列 7。
+- `GetProjectIndexStatusAsync` 把 `project.StatusMessage` 传成结果的 `Message`。
+
+**没改状态机**：`Registering` 不是垃圾（§14），所以这里不推进它，只把原因**并列**呈现，而不是用它重新解释状态。
+
+### 15.3 为什么这个洞能活这么久
+
+原有的往返测试**已经写了 `"indexed"` 这个 message，却从没断言读回**——它只断言 `Status`，不断言 `Message`。
+
+也就是说：**测试覆盖了写入路径，恰好漏掉了读取路径**。补断言时同时覆盖 `GetProjectAsync` 与 `ListProjectsAsync` 两个读取路径（同一列，不能一个读一个漏）。
+
+### 15.4 变异验证
+
+| 阶段 | 结果 |
+|---|---|
+| 原始 | `PuddingCodeIndexTests` **373/373** 绿 |
+| 变异（两处 SELECT 的 `StatusMessage` 改回 `NULL`） | **1 红 / 9 绿**，且红的正是新断言：`应为: <indexed>，实际为: <>`，表达式 `stored.StatusMessage` |
+| 复原 | SHA-256 `1C6719C1…C7012` **逐位相同**，`-t:Rebuild` 后 **373/373** 绿 |
+| `code_index_status` 冻结契约门禁 | **6/6**（用 mock query service，注册项目的 wire 契约未受影响） |
+
+变异这一步是必须的：没有它，一片绿色无法区分「message 真被读了」和「测试压根没看它」。
