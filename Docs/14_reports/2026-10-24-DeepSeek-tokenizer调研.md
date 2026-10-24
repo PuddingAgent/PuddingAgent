@@ -353,3 +353,81 @@ var tok = BpeTokenizer.Create(new BpeOptions(vocab)
 2. 词表资源：`ds-vocab.json`（4.08 MB）+ `ds-merges.txt`（1.63 MB）随应用分发；或只发 `tokenizer.json`（6.37 MB）在启动时拆分 —— 后者省空间但多一次解析，需实测取舍。
 3. 测试工程固化 §10.3 的样本为**回归基线**（含 v1/v2 会失败的那几条），并加变异：把 `ByteLevel` 置 false 必须让中文用例取红，删掉任一级 `RegexPreTokenizer` 必须让数字/中文用例取红。
 4. 黄金样本仍待解决（§9.5）。
+
+
+## 11. S5 接入（2026-10-24 10:49，`26dee1b`）
+
+### 11.1 改动面：3 处插入、0 处删除
+
+| 文件 | 改动 |
+|---|---|
+| `Source/PuddingTokenization/TokenizerProvider.cs` | `TokenizerHandle` 增加 `UnderlyingTokenizer` |
+| `Source/PuddingCore/Platform/LlmOptions.cs` | `GetTokenizer` 开头增加精确分支 + 目录定位 |
+| `Source/PuddingCore/PuddingCore.csproj` | 增加对叶子组件的 `ProjectReference` |
+
+**为什么能这么小**：`BpeTokenizer` 本身就是 `Tokenizer` 的派生类，所以精确 tokenizer 可以直接嵌进现有 `GetTokenizer` 返回值，**整个计数链路（消息/工具调用/call id/+4/+8 开销）一行都不用动**，只换了「用哪套词表」。
+
+```csharp
+private static Tokenizer GetTokenizer(string? modelId)
+{
+    if (ModelTokenizers.Resolve(modelId).UnderlyingTokenizer is { } exactTokenizer)
+        return exactTokenizer;
+
+    var key = ResolveTokenizerKey(modelId);   // 原逻辑，未改动
+    return Tokenizers.GetOrAdd(key, ...);
+}
+```
+
+### 11.2 词表目录来源（fail-safe）
+
+```csharp
+static string? ResolveTokenizerAssetDirectory()
+{
+    var fromEnvironment = Environment.GetEnvironmentVariable("PUDDING_TOKENIZER_ASSETS");
+    if (!string.IsNullOrWhiteSpace(fromEnvironment)) return fromEnvironment;
+
+    var besideApplication = Path.Combine(AppContext.BaseDirectory, "tokenizers");
+    return Directory.Exists(besideApplication) ? besideApplication : null;
+}
+```
+
+三级：环境变量 → 应用目录旁 `tokenizers/` → **都没有则回退**。
+
+**不配置就不改变行为**是刻意设计：`TokenizerProvider` 在目录缺失时返回 `NotConfigured`，`GetTokenizer` 落到原路径，产出与改动前逐字节相同的结果。这样部署顺序可以先发代码、再接资源，中间不存在行为不确定窗口。
+
+⚠️ 这也意味着：**如果部署时不接词表目录，S5 等于没生效**。资源准备见 §11.4。
+
+### 11.3 两件故意没做的事
+
+1. **保留 `ResolveTokenizerKey` 里的 deepseek 分支**（映射到 `o200k_base`）。
+   它现在是「未登记 DeepSeek 模型」的正确回退。删掉会让这些模型继续往下匹配，最终落进 `gpt-4o` 分支——同一个结果但语义全错，未来改 gpt-4o 分支时会连带打歪。
+
+2. **不动 `Math.Max(1.0, …)`**。
+   codex 评审明确指出：它防的是 Provider 侧输入超限那类失败，而本次修的是**文本分词**，并没有证明请求封装、工具模板等口径也准确。保留上调保护、不新增向下学习。
+
+### 11.4 资源准备与部署
+
+```powershell
+# 首次部署（可联网）
+pwsh -NoProfile -File Tools\Tokenization\Prepare-TokenizerAssets.ps1
+
+# 本机 / 离线（PowerShell 的 TLS 到 HuggingFace 会失败，但 http_fetch 通道可用）
+pwsh -NoProfile -File Tools\Tokenization\Prepare-TokenizerAssets.ps1 -SourcePath <本地 tokenizer.json>
+```
+
+装到 `D:\Data\models\tokenizers\`（默认），校验长度 6,367,257 + SHA256 `C90DFA01…9476B`。幂等：已存在且校验通过时不动，实测二次运行输出 `[skip] asset already present and verified`。
+
+运行时还需要让 `PuddingCore` 找到它：把文件放到运行目录旁的 `tokenizers\`，或设环境变量 `PUDDING_TOKENIZER_ASSETS=D:\Data\models\tokenizers`。
+
+### 11.5 验证状态（严格区分）
+
+**已证实**：
+
+- `PuddingCore` 编译通过，仅剩既存警告（CS0618 / CS8603）；
+- `PuddingTokenizationTests` **18/18**，含官方向量逐 token 比对；
+- S3 无宿主验证（§10.2 + `PathToProvider` 探针）：`deepseek-flash` → `IsExact=True`，token 数与黄金向量一致；`deepseek-v4-pro` / `gpt-6.1-sol` → `ModelNotRegistered` 回退；同身份复用同一 handle 实例。
+
+**未证实（不得写成结论）**：
+
+- **运行时效果**。本次改的是 `PuddingCore.dll`，宿主进程仍加载旧程序集。在重启并对比 `lastMeasuredRawEstimatedTokens` 与 `providerPromptTokens` 之前，不能说估算偏差已从 1.83 倍收敛。
+- 请求级口径：即使文本分词完全正确，`usedTokens` 仍包含消息封装、工具模板等本地估算部分，真实误差只能在重启后由实测给出。

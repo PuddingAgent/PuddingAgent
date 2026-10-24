@@ -62,6 +62,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingIndexChunking/` | 分块组件：源文件 → 可独立索引的块（叶子，outline 由 `IOutlineSource` 注入） | [code_map](Source/PuddingIndexChunking/code_map.md) |
 | `Source/PuddingHtml/` | HTML 正文抽取 + Markdown 转换叶子组件（零引用；`http_fetch` 与 `browser_snapshot` 的 text 模式共用） | [code_map](Source/PuddingHtml/code_map.md) |
 | `Source/PuddingPathFiltering/` | 路径忽略合同的权威实现（噪声目录名 + `.gitignore` 语义） | [code_map](Source/PuddingPathFiltering/code_map.md) |
+| `Source/PuddingTokenization/` | 按模型自己的词表做 token 计数的叶子组件（`ProjectReference=0`，包 `Microsoft.ML.Tokenizers`）：DeepSeek 全链路预分词，回退带原因可观测 | [code_map](Source/PuddingTokenization/code_map.md) |
 | `Source/PuddingVectorIndex/` | 向量索引组件：文本 → 向量 → 内存有界 top-k（叶子，`IEmbeddingProvider` 端口） | [code_map](Source/PuddingVectorIndex/code_map.md) |
 | `Source/PuddingFullTextIndex/` | 全文索引引擎（Lucene）与供给协调 | [code_map](Source/PuddingFullTextIndex/code_map.md) |
 | `Source/PuddingFullTextIndex.Cli/` | 全文索引供给的离线驱动工具（`plan` / `status` / `build` / `cancel`） | [code_map](Source/PuddingFullTextIndex.Cli/code_map.md) |
@@ -181,6 +182,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | `Source/PuddingPathFilteringTests/` · `Source/PuddingVectorIndexTests/` · `Source/PuddingFullTextIndexTests/` · `Source/PuddingMemoryEngineBenchmarks/` · `Tests/PuddingBrowser.WebView2.Smoke/` | 路径忽略、向量与全文索引叶子组件 · BenchmarkDotNet 基准 · 浏览器 smoke |
 | `Source/PuddingRetrievalEvalTests/` · `Source/PuddingRetrievalEvalProbe/` · `Source/PuddingFullTextIndex.Cli.Tests/` | 检索评测（`ISearchProbe` 端口）与全文索引 CLI |
 | `Source/PuddingSshTests/` | SSH 组件独立测试（只引用组件，**289 例**）：known_hosts 明文/逗号/哈希/撤销与 pin 验证（**真实 OpenSSH fixture**）、POSIX 封装与请求校验、错误分类矩阵、有界采集白盒、**假传输故障矩阵（准入/排队/deadline/清理/停止）**、S1–S4 边界断言（变异取红两次均 3/5 红） |
+| `Source/PuddingTokenizationTests/` | token 计数叶子组件独立测试（**18 例**）：结构断言（128000 vocab / 127741 merges / 1283 special / 3 级 Split / ByteLevel）、**官方向量逐 token 比对**（`@huggingface/tokenizers` 生成，10/10 一致）、回退四类原因、变异取红（`ByteLevel=false` 使中文与混合往返 2 例失败）+ S1–S4 边界断言 |
 | `Source/PuddingHomeAssistantTests/` | HA 组件独立测试（只引用组件，**102 例**）：域策略三档与永久黑名单矩阵、状态投影/字节预算/`friendly_name` 恒带、`device_class` 与名称过滤、`after` 游标分页无重无漏、历史裁剪（合法 JSON/保序/丢弃计数）、REST 传输与错误码映射、引用闭包边界断言（变异取红 4 次） |
 | `Source/PuddingSsh.Probe/`（+ `TestScripts/ssh-probe/`） | SSH 组件的**真实协议探针**（24 场景）：逐场景核对认证次数与客户端密钥指纹、取消远端证据、双流输出预算与驻留内存（见下「关键语义」） |
 | `Source/PuddingCodeIntelligenceTests/` · `Source/PuddingCodexServiceTests/` · `Source/PuddingBrowser.WinUITests/` · `Source/PuddingDesktop.FoundationTests/` | 语言智能层 · Codex MCP Service · WinUI 浏览器表面 · Foundation 纯逻辑 |
