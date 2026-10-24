@@ -215,15 +215,23 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
         0,
       )
     : 0;
-  const scale = breakdownTotal > 0 && tUsed > 0 ? tUsed / breakdownTotal : 0;
+  // 分项必须与标题**同源**：有实测就按「实测输入 ÷ 有效窗口」，
+// 否则回退「本地估算 ÷ 总窗口」。此前分项恒按 tUsed/tLimit 换算，
+// 而标题用实测口径 ⇒ 分项之和 38.3% 对不上标题 27.5%。
+const arcDenominator =
+  measuredPct !== undefined ? (tEffective as number) : tLimit;
+const arcUsedTokens =
+  measuredPct !== undefined ? (measuredPromptTokens as number) : tUsed;
+const scale =
+  breakdownTotal > 0 && arcUsedTokens > 0 ? arcUsedTokens / breakdownTotal : 0;
   const segments =
-    scale > 0 && tLimit > 0
+    scale > 0 && arcDenominator > 0
       ? CONTEXT_SEGMENT_DEFS.map((def) => {
           const tokens = Math.max(0, (tBreakdown?.[def.key] ?? 0) * scale);
           return {
             ...def,
             tokens,
-            percent: (tokens / tLimit) * 100,
+            percent: (tokens / arcDenominator) * 100,
           };
         }).filter((segment) => segment.tokens > 0)
       : [];
@@ -238,7 +246,9 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   const inputUnavailableLabel = describeInputUnavailableReason(tUnavailableReason);
   // 可用余量 = 窗口里既未被使用、也不属于「不可用于输入」的部分（条上表现为底色）。
   const availablePercent =
-    tLimit > 0 ? Math.max(0, 100 - pct - inputUnavailablePercent) : 0;
+    arcDenominator > 0
+      ? Math.max(0, 100 - displayPct - inputUnavailablePercent)
+      : 0;
 
   const hoverSummary =
     configured && !notStarted

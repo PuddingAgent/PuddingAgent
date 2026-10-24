@@ -239,3 +239,46 @@ describe('ring arc shares the headline denominator', () => {
     expect(measuredArc / estimatedArc).toBeCloseTo(48.7 / 46.4, 3);
   });
 });
+
+describe('legend breakdown shares the headline denominator', () => {
+  it('sums to the provider-measured headline, not to the local estimate', () => {
+    // 线上实况：标题 27.5%（实测 257.6K ÷ 有效 935K），而分项之和曾是 38.3% ——
+    // 因为分项按本地估算 383.5K 换算、标题用实测。一个面板只能有一个口径。
+    render(
+      <ContextUsageRing
+        tLimit={935_000}
+        tEffective={935_000}
+        tUsed={383_500}
+        tPct={41}
+        tMessageCount={330}
+        usageConfidence="provider_reported"
+        measuredPromptTokens={257_600}
+        measuredRawTokens={383_500}
+        usageRecordedAt="2026-10-24T13:00:00Z"
+        tBreakdown={{
+          systemPrompt: 11_109,
+          toolDefinitions: 29_000,
+          compactionSummary: 2_800,
+          conversation: 276_271,
+          reasoning: 0,
+          toolResults: 87_504,
+        }}
+      />,
+    );
+
+    const legend = screen.getByTestId('context-usage-legend');
+    const valueCells = Array.from(
+      legend.querySelectorAll('.contextUsagePanelLegendValue'),
+    ) as HTMLElement[];
+    expect(valueCells.length).toBeGreaterThan(0);
+
+    const sum = valueCells.reduce(
+      (acc, cell) => acc + Number.parseFloat((cell.textContent ?? '0').replace('%', '')),
+      0,
+    );
+
+    // 与标题同源 ⇒ 分项之和 ≈ 27.55%；若仍按 383.5K 换算则会得到 ≈ 41.0%。
+    expect(sum).toBeCloseTo(27.55, 0);
+    expect(Math.abs(sum - 41)).toBeGreaterThan(5);
+  });
+});
