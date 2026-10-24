@@ -35,7 +35,7 @@ public sealed class PermissionGuard
     private static readonly HashSet<string> s_l1Commands = new(StringComparer.OrdinalIgnoreCase)
     {
         "dotnet", "msbuild", "nuget", "npm", "npx", "yarn", "pnpm",
-        "node", "python", "python3", "pip", "pip3", "cargo", "rustc",
+        "node", "py", "python", "python3", "pip", "pip3", "cargo", "rustc",
         "go", "java", "mvn", "gradle",
         "git", "gh",
         "mkdir", "cp", "copy", "mv", "move", "touch", "patch",

@@ -48,7 +48,7 @@ public sealed class DefaultTerminalCommandPolicy : ITerminalCommandPolicy, ITerm
     public static readonly string[] DefaultWhitelist =
     [
         // .NET / 主流运行时、包管理器与前端工具链
-        "dotnet", "git", "python", "python3", "node", "npm", "npx", "pnpm", "yarn", "bun", "docker",
+        "dotnet", "git", "py", "python", "python3", "node", "npm", "npx", "pnpm", "yarn", "bun", "docker",
         "cargo", "go", "java", "javac", "mvn", "gradle", "pip", "pip3", "conda",
         // 文件系统与文本查看（非破坏形态）
         "ls", "dir", "cat", "echo", "mkdir", "rmdir", "type",

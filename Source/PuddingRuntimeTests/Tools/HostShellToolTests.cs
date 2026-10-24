@@ -90,7 +90,7 @@ public sealed class HostShellToolTests
 
         var result = await HostShellExecutor.ExecuteAsync(new HostShellRequest
         {
-            Command = "python -c \"print('✅ shell utf8 ok')\"",
+            Command = "py -3 -c \"print('✅ shell utf8 ok')\"",
             Shell = "powershell",
             TimeoutSeconds = 10,
         }, NullLogger.Instance);

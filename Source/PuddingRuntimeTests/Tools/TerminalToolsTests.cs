@@ -11,6 +11,43 @@ namespace PuddingRuntimeTests.Tools;
 [TestClass]
 public sealed class TerminalToolsTests
 {
+    /// <summary>
+    /// 解析一个真正可用的 Python 解释器。
+    /// 本机的 `python` 命中 Microsoft Store 占位符（`python.exe` 存在，但调用只打印
+    /// "Python was not found" 并退出），于是所有依赖长跑 python 进程的用例都会秒失败——
+    /// 表现为 cancel 返回 cancelled:false、wait 拿不到预期文本。这里逐个探测，取第一个能跑通的。
+    /// </summary>
+    private static readonly Lazy<string> PythonExeLazy = new(ResolvePythonExe);
+
+    private static string PythonExe => PythonExeLazy.Value;
+
+    private static string ResolvePythonExe()
+    {
+        foreach (var candidate in new[] { "python", "py -3", "python3" })
+        {
+            try
+            {
+                using var probe = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "cmd",
+                    Arguments = $"/c {candidate} -c \"print(1)\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                });
+                if (probe is not null && probe.WaitForExit(5000) && probe.ExitCode == 0)
+                    return candidate;
+            }
+            catch
+            {
+                // 下一个候选
+            }
+        }
+
+        throw new InvalidOperationException("no working python interpreter found (python / py -3 / python3)");
+    }
+
     [TestMethod]
     public async Task TerminalStartAndWait_Returns_Background_Job_And_Incremental_Output()
     {
@@ -75,8 +112,8 @@ public sealed class TerminalToolsTests
         var status = new TerminalStatusTool(scope.Manager);
 
         var command = OperatingSystem.IsWindows()
-            ? "python -c \"import time; print('terminal-cancel-start'); time.sleep(30)\""
-            : "python3 -c \"import time; print('terminal-cancel-start'); time.sleep(30)\"";
+            ? $"{PythonExe} -c \"import time; print('terminal-cancel-start'); time.sleep(30)\""
+            : $"{PythonExe} -c \"import time; print('terminal-cancel-start'); time.sleep(30)\"";
 
         var startResult = await ExecuteAsync(start, $$"""
         {
@@ -113,8 +150,8 @@ public sealed class TerminalToolsTests
         var start = new TerminalStartTool(scope.Manager, NullLogger<TerminalStartTool>.Instance);
         var wait = new TerminalWaitTool(scope.Manager);
         var command = OperatingSystem.IsWindows()
-            ? "python -c \"print('terminal quoted ok')\""
-            : "python3 -c \"print('terminal quoted ok')\"";
+            ? $"{PythonExe} -c \"print('terminal quoted ok')\""
+            : $"{PythonExe} -c \"print('terminal quoted ok')\"";
 
         var startResult = await ExecuteAsync(start, $$"""
         {
@@ -286,8 +323,8 @@ public sealed class TerminalToolsTests
             print("terminal-line-" + str(i))
         """);
         var command = OperatingSystem.IsWindows()
-            ? $"python {scriptName}"
-            : $"python3 {scriptName}";
+            ? $"{PythonExe} {scriptName}"
+            : $"{PythonExe} {scriptName}";
 
         var startResult = await ExecuteAsync(start, $$"""
         {
@@ -333,8 +370,8 @@ public sealed class TerminalToolsTests
         var start = new TerminalStartTool(scope.Manager, NullLogger<TerminalStartTool>.Instance);
         var wait = new TerminalWaitTool(scope.Manager);
         var command = OperatingSystem.IsWindows()
-            ? "python -c \"import sys; print('terminal-failed-on-purpose'); sys.exit(7)\""
-            : "python3 -c \"import sys; print('terminal-failed-on-purpose'); sys.exit(7)\"";
+            ? $"{PythonExe} -c \"import sys; print('terminal-failed-on-purpose'); sys.exit(7)\""
+            : $"{PythonExe} -c \"import sys; print('terminal-failed-on-purpose'); sys.exit(7)\"";
 
         var startResult = await ExecuteAsync(start, $$"""
         {
@@ -412,8 +449,8 @@ public sealed class TerminalToolsTests
         print("wait-final-line", flush=True)
         """);
         var command = OperatingSystem.IsWindows()
-            ? $"python {scriptName}"
-            : $"python3 {scriptName}";
+            ? $"{PythonExe} {scriptName}"
+            : $"{PythonExe} {scriptName}";
 
         var startResult = await ExecuteAsync(start, $$"""
         {
@@ -453,8 +490,8 @@ public sealed class TerminalToolsTests
         time.sleep(30)
         """);
         var command = OperatingSystem.IsWindows()
-            ? $"python {scriptName}"
-            : $"python3 {scriptName}";
+            ? $"{PythonExe} {scriptName}"
+            : $"{PythonExe} {scriptName}";
 
         var startResult = await ExecuteAsync(start, $$"""
         {
