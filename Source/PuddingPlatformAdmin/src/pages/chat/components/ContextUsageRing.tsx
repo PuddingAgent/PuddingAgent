@@ -37,11 +37,20 @@ export interface ContextUsageRingProps {
    * 「窗口里不可用于输入的那部分」的**来源**。
    *
    * `tLimit − tEffective` **不普遍等于输出预留**：差值还可能来自 Provider 输入
-   * 上限或安全余量（诊断报告 §4.4）。当前 `ContextHealthSnapshot` 只有
-   * `contextWindowTokens` / `effectiveWindowTokens`，**缺少**输出预算
-   * （requestedOutputBudget）、Provider 输入上限（providerInputLimit）与
-   * 安全余量（safetyMargin）字段，所以调用方现在只能不传 ⇒ 渲染成「来源未知」。
-   * 后端补齐这些字段后由调用方传入，本组件只负责按来源命名，不自己猜。
+   * 上限或安全余量（诊断报告 §4.4），所以必须按来源命名，**不得**用窗口差值反推。
+   *
+   * 判断依据在后端：`ContextHealthSnapshot` 已带 `effectiveWindowSource`
+   * （output_reserve / provider_input_limit / safety_margin /
+   * output_reserve_and_safety_margin / fallback_output_reserve / model_window /
+   * unknown），调用方 `IntentConsole` 已用 `toInputUnavailableReason(...)` 将它映射成
+   * `tUnavailableReason` 传入。本组件只负责按来源命名，不自己猜。
+   * 未传（测试或旧调用方）⇒ 明确渲染「不可用于输入（来源未知）」。
+   *
+   * 历史更正（2026-10-24）：这段注释曾写「后端只有 contextWindowTokens /
+   * effectiveWindowTokens，缺少输出预算 / providerInputLimit / safetyMargin，
+   * 所以调用方只能不传」。该说法**已不成立**——核对 `api.ts` 的
+   * `ContextHealthSnapshot` 后确认四个字段均已在位，面板实际显示的是
+   * 「预留输出 + 安全余量」而非「来源未知」。保留这段历史以防后人再次误判。
    */
   tUnavailableReason?: InputUnavailableReason | null;
   /** 请求组装时的分层归因；缺失或全 0 时回落单色条。 */
