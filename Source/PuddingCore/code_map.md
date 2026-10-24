@@ -28,6 +28,9 @@
 | `Abstractions/` | 核心接口定义目录 | — | — | — |
 | `Abstractions/IBrowserDelegationLifecycle.cs` | 委派生命周期端口（R4·§6.2） | `IBrowserDelegationLifecycle` | `Contracts` | Runtime/Platform 与 Host 之间唯一接缝，只用标量（PuddingCore 不引用 Contracts）；拒绝必须可判且带理由（调用方据此 fail-closed） |
 | `Core/` | 核心实现目录 | — | — | — |
+| `Observability/` | 出站请求诊断目录 | — | — | — |
+| `Observability/LlmRequestBodyFingerprint.cs` | 出站报文指纹：UTF-8 字节数 + 小写 SHA-256 | `LlmRequestBodyFingerprint.Compute` | 无 | 纯函数；**不做换行归一化**（归一化会让不同报文同指纹） |
+| `Observability/LlmRequestCapture.cs` | 发送前捕获实际报文指纹，并按开关记录 invocationId/modelId/本地估算值 | `LlmRequestCapture`、`LlmRequestCapture.Enabled` | `Core/` 三个网关、`Runtime/Services/` | `PUDDING_CAPTURE_REQUEST` 未设时只有一次 bool 判断；只读字节重发，不改报文/头部/顺序 |
 | `Platform/` | 平台抽象目录 | — | — | — |
 | `Abstractions/ILlmGatewayUsageRecorder.cs` | 本地计费事实的必达写入契约 | `ILlmGatewayUsageRecorder` | `Services/` | 一次 Provider usage 对应一条本地计费事实 |
 | `Abstractions/ISubAgentPool.cs` | 子代理池最小契约 | `ISubAgentPool` | `Platform/` | 含池状态与池快照模型；实现留在 Platform |
