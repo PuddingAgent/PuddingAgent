@@ -318,7 +318,10 @@ public sealed class AgentSkillTool(
         },
         physicalPath = record.PhysicalPath,
         count = record.Index.Skills.Count,
-        index = record.Index,
+        // 不再回吐整个索引：实测一次 create 返回 313,549 字符，占该次结果 99%，
+        // 而调用方只需要知道「建好了、现在共几个」。需要全量索引用 action=get_index。
+        indexSkillIds = record.Index.Skills.Select(s => s.SkillId).ToArray(),
+        indexGeneratedAt = record.Index.GeneratedAt,
     };
 
     private static string RequireSkillId(AgentSkillArgs args)

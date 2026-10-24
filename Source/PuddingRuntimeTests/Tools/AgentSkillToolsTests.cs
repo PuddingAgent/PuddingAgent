@@ -1,4 +1,4 @@
-﻿using System.Net.Http;
+using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using PuddingCode.Configuration;
@@ -12,6 +12,43 @@ namespace PuddingRuntimeTests.Tools;
 [TestClass]
 public sealed class AgentSkillToolsTests
 {
+    /// <summary>
+    /// create 不得再回吐整份索引：实测旧实现单次返回 313,549 字符，其中索引占 99%，
+    /// 而调用方只需知道“建好了、现在几个”。这条锁住“不回吐”，防止以后为了“方便”又塞回来。
+    /// </summary>
+    [TestMethod]
+    public async Task AgentSkillTool_Create_Does_Not_Echo_Full_Index()
+    {
+        using var temp = new TempDataRoot();
+        var service = new AgentSkillFileService(temp.Paths);
+        var tool = CreateTool(service);
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "call-create-index",
+            ArgumentsJson = """
+            {
+              "action": "create",
+              "skill_id": "no_index_echo",
+              "name": "No Index Echo",
+              "summary": "Guard against echoing the whole index.",
+              "skill_markdown": "# No Index Echo"
+            }
+            """,
+            Context = TestContext("agent-a"),
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var doc = JsonDocument.Parse(result.Output);
+        var root = doc.RootElement;
+
+        Assert.AreEqual(1, root.GetProperty("count").GetInt32());
+        Assert.IsFalse(root.TryGetProperty("index", out _), "不得再回吐完整索引");
+        var ids = root.GetProperty("indexSkillIds").EnumerateArray()
+            .Select(e => e.GetString()).ToArray();
+        CollectionAssert.Contains(ids, "no_index_echo");
+    }
+
     [TestMethod]
     public async Task AgentSkillTool_Create_Initializes_Agent_Private_Skill_And_Returns_Physical_Path()
     {
