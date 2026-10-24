@@ -33,6 +33,7 @@
 | `Observability/LlmRequestCapture.cs` | 发送前捕获实际报文指纹，并按开关记录 invocationId/modelId/本地估算值/净化后 bodyTokens/内联图片张数与 base64 字节 | `LlmRequestCapture`、`LlmRequestCapture.Enabled` | `Core/` 三个网关、`Runtime/Services/` | `PUDDING_CAPTURE_REQUEST` 未设时只有一次 bool 判断；只读字节重发，不改报文/头部/顺序 |
 | `Observability/LlmBodyTextSanitizer.cs` | 把 `data:image/...;base64,...` 载荷替换为占位符并如实计数，使 bodyTokens 只覆盖 provider 按文本计费的部分 | `LlmBodyTextSanitizer.RedactInlineImages` | `Observability/LlmRequestCapture.cs` | 纯函数；只认 `data:image` 前缀，audio 等其它载荷故意不动 |
 | `Platform/` | 平台抽象目录 | — | — | — |
+| `Platform/ReasoningEffortPolicy.cs` | 思考强度唯一决策点：每轮偏好 > Agent/模型配置 > provider 默认，非法值跳过并回报被拒原值 | `ReasoningEffortPolicy.Resolve`、`ReasoningEffortPolicy.IsValid` | 待接入（S5） | 纯函数；`auto`/未知偏好不表态；全空返回 null 表示不发送该字段 |
 | `Abstractions/ILlmGatewayUsageRecorder.cs` | 本地计费事实的必达写入契约 | `ILlmGatewayUsageRecorder` | `Services/` | 一次 Provider usage 对应一条本地计费事实 |
 | `Abstractions/ISubAgentPool.cs` | 子代理池最小契约 | `ISubAgentPool` | `Platform/` | 含池状态与池快照模型；实现留在 Platform |
 | `Abstractions/ITokenUsageRecorder.cs` | Token 归因写入边界 | `ITokenUsageRecorder`、`TokenUsageAttribution` | `Services/` | 承载 canonical parent/sub-agent、零基 round 与本轮工具事实；默认接口实现保持旧 recorder 源码兼容 |
