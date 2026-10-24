@@ -1026,6 +1026,9 @@ public sealed partial class AgentExecutionService
                 {
                     llmEnumerator = _llmInvocationService.InvokeStreamAsync(new PuddingCode.Runtime.LlmInvocationRequest
                     {
+                        InvocationId = agentInvocationId,
+                        LocalEstimatedTokens = PuddingCode.Observability.LlmRequestCapture.Enabled
+                            ? contextUsageSnapshot?.RawEstimatedTokens : null,
                         WorkspaceId = request.WorkspaceId,
                         SessionId = request.SessionId,
                         AgentInstanceId = instance.AgentInstanceId,

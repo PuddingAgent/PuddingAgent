@@ -294,6 +294,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         var (requestBody, fileImages) = await BuildResponsesRequestBodyAsync(messages, tools, stream, ct);
         using var request = CreateRequest(requestBody);
         timing?.MarkDispatch();
+        if (LlmRequestCapture.Enabled)
+            await LlmRequestCapture.WriteAsync(request, options.Model, ct);
         var response = stream
             ? await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
             : await httpClient.SendAsync(request, ct);
@@ -332,6 +334,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         var (rebuiltBody, _) = await BuildResponsesRequestBodyAsync(messages, tools, stream, ct);
         using var rebuiltRequest = CreateRequest(rebuiltBody);
         timing?.MarkDispatch();
+        if (LlmRequestCapture.Enabled)
+            await LlmRequestCapture.WriteAsync(rebuiltRequest, options.Model, ct);
         var rebuiltResponse = stream
             ? await httpClient.SendAsync(rebuiltRequest, HttpCompletionOption.ResponseHeadersRead, ct)
             : await httpClient.SendAsync(rebuiltRequest, ct);

@@ -68,6 +68,8 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
 
+        if (LlmRequestCapture.Enabled)
+            await LlmRequestCapture.WriteAsync(request, options.Model, ct);
         var response = await httpClient.SendAsync(request, ct);
         var json = await response.Content.ReadAsStringAsync(ct);
 
@@ -98,6 +100,8 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
 
         var timing = new ProviderStreamTiming();
         timing.MarkDispatch();
+        if (LlmRequestCapture.Enabled)
+            await LlmRequestCapture.WriteAsync(request, options.Model, ct);
         using var response = await httpClient.SendAsync(request,
             HttpCompletionOption.ResponseHeadersRead, ct);
         timing.MarkHeaders();

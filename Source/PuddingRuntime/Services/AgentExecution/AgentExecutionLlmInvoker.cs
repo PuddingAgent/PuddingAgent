@@ -1,6 +1,7 @@
 using PuddingCode.Core;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 
@@ -67,6 +68,11 @@ internal sealed class AgentExecutionLlmInvoker
             {
                 var facadeResult = await _llmInvocationService.InvokeAsync(new LlmInvocationRequest
                 {
+                    InvocationId = invocationId ?? Guid.NewGuid().ToString("N"),
+                    LocalEstimatedTokens = LlmRequestCapture.Enabled
+                        && _contextUsageSnapshotStore is not null
+                        && _contextUsageSnapshotStore.TryGetPreparedRequest(request.SessionId, invocationId, attemptId, out var prepared)
+                            ? prepared!.RawEstimatedTokens : null,
                     WorkspaceId = request.WorkspaceId,
                     SessionId = request.SessionId,
                     AgentInstanceId = agentInstanceId,

@@ -92,6 +92,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
         var usageActivityId = Guid.NewGuid().ToString("N");
+        using var captureScope = LlmRequestCapture.Enabled
+            ? BeginRequestCapture(usageActivityId, sessionId, messages, tools, config.Model)
+            : null;
         var gatewayUsageOperation = BuildGatewayUsageOperation("chat");
         var sw = Stopwatch.StartNew();
         var strategy = config.Strategy;
@@ -355,6 +358,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
         var usageActivityId = Guid.NewGuid().ToString("N");
+        using var captureScope = LlmRequestCapture.Enabled
+            ? BeginRequestCapture(usageActivityId, sessionId, messages, tools, config.Model)
+            : null;
         var gatewayUsageOperation = BuildGatewayUsageOperation("chat_stream");
         var sw = Stopwatch.StartNew();
         var strategy = config.Strategy;
@@ -928,6 +934,17 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             supportsVision,
             supportsAudio,
             frozenRoute?.VisionPolicy);
+    }
+
+    /// <summary>优先复用本次调用的冻结估算；无预算准备阶段的调用只计量，不发布会话快照。</summary>
+    private LlmRequestCapture BeginRequestCapture(
+        string invocationId, string sessionId, IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<LlmToolDefinition>? tools, string modelId)
+    {
+        var current = LlmRequestCapture.Current;
+        var estimatedTokens = current?.LocalEstimatedTokens
+            ?? new ContextUsageSnapshotStore().MeasureLlmRequest(sessionId, messages, tools, modelId).RawEstimatedTokens;
+        return new LlmRequestCapture(current?.InvocationId ?? invocationId, estimatedTokens, _logger);
     }
 
     private ILlmGateway CreateGateway(ResolvedGatewayConfig config, string workspaceId)

@@ -28,6 +28,8 @@ public sealed record LlmInvocationRequest
     /// invocation service retain the same identity, allowing usage facts to be idempotent.
     /// </summary>
     public string InvocationId { get; init; } = Guid.NewGuid().ToString("N");
+    /// <summary>本次请求已冻结的原始 token 估算，仅用于诊断，不发送给 provider。</summary>
+    public int? LocalEstimatedTokens { get; init; }
     public required string WorkspaceId { get; init; }
     public required string SessionId { get; init; }
     public required string AgentInstanceId { get; init; }

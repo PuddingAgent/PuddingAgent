@@ -2,6 +2,7 @@ using PuddingCode.Core;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingRuntime.Services;
@@ -33,6 +34,9 @@ public sealed class LlmInvocationService : ILlmInvocationService
     public async Task<LlmInvocationResult> InvokeAsync(LlmInvocationRequest request, CancellationToken ct = default)
     {
         using var purposeScope = _purposeAccessor?.Push(request.Purpose);
+        using var captureScope = LlmRequestCapture.Enabled
+            ? new LlmRequestCapture(request.InvocationId, request.LocalEstimatedTokens, _logger)
+            : null;
         var messages = NormalizeMessages(request);
         _logger.LogDebug(
             "[LlmInvocation] Invoke session={SessionId} provider={ProviderId} profile={ProfileId} model={ModelId} msgCount={MsgCount} toolCount={ToolCount} prefix={PrefixHash}",
@@ -108,6 +112,9 @@ public sealed class LlmInvocationService : ILlmInvocationService
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         using var purposeScope = _purposeAccessor?.Push(request.Purpose);
+        using var captureScope = LlmRequestCapture.Enabled
+            ? new LlmRequestCapture(request.InvocationId, request.LocalEstimatedTokens, _logger)
+            : null;
         ResolvedLlmInvocationProfile resolved;
         var messages = NormalizeMessages(request);
         _logger.LogDebug(

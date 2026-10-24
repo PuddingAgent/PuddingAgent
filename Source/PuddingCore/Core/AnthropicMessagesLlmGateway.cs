@@ -45,6 +45,8 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
     {
         var requestBody = await BuildRequestBodyAsync(messages, tools, stream: false, ct);
         using var request = CreateRequest(requestBody);
+        if (LlmRequestCapture.Enabled)
+            await LlmRequestCapture.WriteAsync(request, options.Model, ct);
         using var response = await httpClient.SendAsync(request, ct);
         var json = await response.Content.ReadAsStringAsync(ct);
 
@@ -70,6 +72,8 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
         LlmCallDiagnosticsScope.Current?.MarkDispatch(Encoding.UTF8.GetByteCount(requestBody));
         var timing = new ProviderStreamTiming();
         timing.MarkDispatch();
+        if (LlmRequestCapture.Enabled)
+            await LlmRequestCapture.WriteAsync(request, options.Model, ct);
         using var response = await httpClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
