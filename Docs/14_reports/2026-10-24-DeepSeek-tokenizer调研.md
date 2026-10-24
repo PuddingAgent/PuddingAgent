@@ -185,3 +185,74 @@ codex 规划里 `DeepSeekPreTokenizer.cs` 一项写着“按实际 JSON 内容�
 1. `Microsoft.ML.Tokenizers` 的 `Normalizer` 基类签名是否允许改变长度（ByteLevel 会把 1 个中文字符变成 3 个字节字符），需读其公开成员确认。
 2. `BpeTokenizer` 内部是否在 BPE 前还会做额外的空白/大小写处理，可能与 ByteLevel 叠加。
 3. 黄金样本仍需官方 `transformers` 产出（本机 python 为 Store 存根，不可用）—— 需要另找途径（离线 wheel、或 Node 的 `@huggingface/tokenizers`、或官方 `encoding/` 目录里的参考实现）。
+
+
+## 9. 探针 v2：`ByteLevel=true` 解决了中文，special token 仍需 PreTokenizer（2026-10-24 09:58）
+
+### 9.1 `BpeOptions` 的完整能力（本地反射）
+
+```
+IEnumerable<KeyValuePair<string,int>> Vocabulary   (get)
+IEnumerable<string>                   Merges        (get/set)
+IReadOnlyDictionary<string,int>       SpecialTokens (get/set)
+Normalizer                            Normalizer    (get/set)
+PreTokenizer                          PreTokenizer  (get/set)
+string                                UnknownToken  (get/set)
+bool                                  FuseUnknownTokens (get/set)
+string                                ContinuingSubwordPrefix (get/set)
+string                                EndOfWordSuffix (get/set)
+bool                                  ByteLevel      (get/set)   ← 关键
+string                                BeginningOfSentenceToken (get/set)
+string                                EndOfSentenceToken (get/set)
+```
+
+`Normalizer.Normalize(string) → string` 且 `Normalizer` 为 **abstract**（可继承）；`RegexPreTokenizer(Regex, IReadOnlyDictionary<string,int>)` 与 `CompositePreTokenizer(IReadOnlyList<PreTokenizer>, IReadOnlyDictionary<string,int>)` 均接受 special token 字典 —— 说明 **special token 的切分发生在 PreTokenizer 层**。
+
+### 9.2 探针 v2 结果（`ByteLevel = true` + `SpecialTokens`，未传 PreTokenizer）
+
+```
+vocab=128000 merges=127741
+CREATED in 200 ms (ByteLevel=true)
+
+ascii      chars=11   tokens=2    roundtrip=False ids=[33310,29616]
+cjk        chars=4    tokens=1    roundtrip=True  ids=[33574]
+code       chars=22   tokens=9    roundtrip=False ids=[3465,40897,10,90,2605,3916,90,13,19]
+json       chars=17   tokens=11   roundtrip=True  ids=[24313,67,3362,19,3184,68,96893,20,14,21,48663]
+bos_token  chars=21   tokens=12   roundtrip=True  ids=[30,28217,8277,5487,226,2154,5487,226,85,51015,28217,32]
+eos_token  chars=19   tokens=12   roundtrip=True  ids=[30,28217,523,5487,226,2154,5487,226,85,51015,28217,32]
+pad_token  chars=9    tokens=9    roundtrip=True  ids=[30,28217,5487,226,24591,5487,226,28217,32]
+mixed      chars=29   tokens=11   roundtrip=False ids=[67612,22250,6900,5598,11093,15581,2295,4287,16,25,7]
+```
+
+**对照探针 v1（默认路径）**：
+
+| 样本 | v1 tokens | v2 tokens | 变化 |
+|---|---|---|---|
+| `人工智能` | **0** | **1**（roundtrip ✅） | 中文从「编码不出来」变成正确单 token |
+| `{"a":1,"b":[2,3]}` | 11 | 11（roundtrip ✅） | 一致 |
+| `<｜begin▁of▁sentence｜>` | 6 | **12** | 更碎，说明**仍未按 special token 处理** |
+
+⇒ **`ByteLevel = true` 是必需的，且是解决中文的决定性开关**；加载仍只要 **200 ms**。
+
+### 9.3 仍未解决的一项
+
+`SpecialTokens` 单独传给 `BpeOptions` **没有让 special token 被整体识别**（`bos_token` 反而从 6 碎成 12）。结合 9.1 的构造签名，正确做法应是把它**同时**传给 `CompositePreTokenizer` / `RegexPreTokenizer`，由 PreTokenizer 层整体匹配。
+
+**但影响面需冷静评估**：真实请求的 system prompt 与用户消息里通常不出现 `<｜begin▁of▁sentence｜>` 这类字面量（它们是模型内部标记），因此 special token 处理对「估算 prompt token 数」的权重可能很小。**不要为了这一项阻塞主线**，但也不能在实现时假装它不存在。
+
+### 9.4 下一步（S1 尚未完成的部分）
+
+1. 用 `CompositePreTokenizer([RegexPreTokenizer(数字正则), RegexPreTokenizer(CJK正则), RegexPreTokenizer(标点/空白正则)], specialTokens)` 复现官方的三条 Split，**顺序必须一致**。
+2. 此时才把 `PreTokenizer` 与 `SpecialTokens` 一起传入 `BpeOptions`。
+3. 用黄金样本验证**逐 token ID 一致** —— 这是唯一能判定「真的对齐了」的标准，`roundtrip=True` 和「能编码出非 0 个 token」都**不足以**作为完成判据。
+4. ⚠️ 顺序隐患：官方 `Sequence[Split×3, ByteLevel]` 是「先切分再字节映射」，而 `Create(preTokenizer, normalizer)` 的语义是「先 normalizer 后 preTokenizer」。当前靠 `ByteLevel=true` 这个开关规避了顺序问题；若改为自写 Normalizer 做字节映射，**顺序会反转并导致正则匹配失效**，不可取。
+
+### 9.5 黄金样本的现实障碍
+
+本机 `python` 为 Microsoft Store 存根（`python.exe` 不可执行），无法直接用官方 `transformers` 生成期望 token ID。可选替代：
+
+1. 复用 `deepseek-ai/DeepSeek-V4.1-Flash` 仓库自带的 `encoding/encoding_dsv4.py` 作为**参考实现**读其逻辑（需要能跑 Python，同样受阻）。
+2. 用 Node 侧 `@huggingface/tokenizers` 或已发现的 `@tlibnx/tokenizer-deepseek_v4_flash` 生成期望值（Node 是否可用未核实）。
+3. 用 Provider 实测值做**区间校验**：对若干条真实已发送请求，比较本地估算与 `providerPromptTokens` 的偏差，要求显著优于当前 1.83 倍 —— 这只能证明「更好」，不能证明「逐 token 一致」，但可作为回归门槛。
+
+在拿到逐 token 一致的证据前，**不得宣称方案 A 已可用**。
