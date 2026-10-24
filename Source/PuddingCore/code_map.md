@@ -34,7 +34,7 @@
 | `Observability/LlmBodyReasoningProbe.cs` | 从出站报文读 `reasoning.effort`，使「思考强度真的发出去了」可直接从日志验证 | `LlmBodyReasoningProbe.TryReadReasoningEffort` | `Observability/LlmRequestCapture.cs` | 纯函数；只在捕获开关打开时调用；解析失败一律返 null，不得抛异常 |
 | `Observability/LlmBodyTextSanitizer.cs` | 把 `data:image/...;base64,...` 载荷替换为占位符并如实计数，使 bodyTokens 只覆盖 provider 按文本计费的部分 | `LlmBodyTextSanitizer.RedactInlineImages` | `Observability/LlmRequestCapture.cs` | 纯函数；只认 `data:image` 前缀，audio 等其它载荷故意不动 |
 | `Platform/` | 平台抽象目录 | — | — | — |
-| `Platform/ReasoningEffortPolicy.cs` | 思考强度唯一决策点：手动档位（快速=low / 深入=high / 极致=max）> Agent/模型配置 > 模型默认 > **产品默认 high**；合法集合 `none/low/high/max` | `ReasoningEffortPolicy.Resolve`、`IsValid`、`Label`、`Default` | 待接入（S5） | 纯函数；偏好值直接等于档位名，不做语义转译；`medium` 是虚构档位，已拒绝 |
+| `Platform/ReasoningEffortPolicy.cs` | 思考强度唯一决策点：手动档位（快速=low / 深入=high / 极致=max）> Agent/模型配置 > 模型默认 > **产品默认 high**；合法集合 `none/low/high/max` | `ReasoningEffortPolicy.Resolve`、`IsValid`、`Label`、`Default` | `Platform/ExecutionRunContracts.cs` | 纯函数；产品默认仅在模型声明 `reasoning` 能力时生效（`useProductDefault`），否则返 null——openai 网关拿到非 null 就写 reasoning_effort，会给不支持该参数的模型造成 400 |
 | `Abstractions/ILlmGatewayUsageRecorder.cs` | 本地计费事实的必达写入契约 | `ILlmGatewayUsageRecorder` | `Services/` | 一次 Provider usage 对应一条本地计费事实 |
 | `Abstractions/ISubAgentPool.cs` | 子代理池最小契约 | `ISubAgentPool` | `Platform/` | 含池状态与池快照模型；实现留在 Platform |
 | `Abstractions/ITokenUsageRecorder.cs` | Token 归因写入边界 | `ITokenUsageRecorder`、`TokenUsageAttribution` | `Services/` | 承载 canonical parent/sub-agent、零基 round 与本轮工具事实；默认接口实现保持旧 recorder 源码兼容 |

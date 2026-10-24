@@ -43,6 +43,8 @@ public static class ReasoningEffortPolicy
     /// <summary>决策来源；日志必须记录它，否则"谁改的"永远说不清。</summary>
     public enum Origin
     {
+        /// <summary>不发送该字段：既无来源，且模型未声明推理能力。</summary>
+        Unset,
         /// <summary>本轮的手动档位（快速/深入/极致）决定了强度。</summary>
         Preference,
         /// <summary>Agent 模板或模型级配置决定了强度。</summary>
@@ -69,8 +71,15 @@ public static class ReasoningEffortPolicy
     /// 解析最终强度。<paramref name="preference"/> 取 <c>low</c>/<c>high</c>/<c>max</c>
     /// （即界面上的快速/深入/极致），大小写与首尾空白不敏感；
     /// 其它取值一律按"未表态"处理，不阻断对话。
+    ///
+    /// <paramref name="useProductDefault"/> 仅在模型声明了 reasoning 能力时置 true。
+    /// 理由：openai 协议的网关只要拿到非 null 就把 reasoning_effort 写进报文
+    /// （OpenAiLlmGateway.cs:443），对不支持该参数的模型会造成 400。
+    /// 显式来源（手动档位 / 模板 / 模型配置）不受此开关影响——它们代表使用者的明确意图，
+    /// 改它们属于行为变更，不在"引入产品默认"这件事的授权范围内。
     /// </summary>
-    public static Decision Resolve(string? preference, string? configured, string? modelDefault)
+    public static Decision Resolve(
+        string? preference, string? configured, string? modelDefault, bool useProductDefault = true)
     {
         var preferred = Normalize(preference);
         if (preferred is Low or High or Max)
@@ -83,6 +92,9 @@ public static class ReasoningEffortPolicy
         var modelValue = Normalize(modelDefault);
         if (modelValue is not null && IsValid(modelValue))
             return new Decision(modelValue, Origin.ModelDefault, FirstRejected(configured, null, null));
+
+        if (!useProductDefault)
+            return new Decision(null, Origin.Unset, FirstRejected(configured, modelDefault, null));
 
         return new Decision(Default, Origin.ProductDefault, FirstRejected(configured, modelDefault, null));
     }

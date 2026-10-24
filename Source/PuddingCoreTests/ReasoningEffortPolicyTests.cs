@@ -119,4 +119,25 @@ public sealed class ReasoningEffortPolicyTests
         Assert.AreEqual("极致", ReasoningEffortPolicy.Label("max"));
         Assert.AreEqual("high", ReasoningEffortPolicy.Default);
     }
+
+    [TestMethod]
+    public void ModelWithoutReasoningCapabilityGetsNoProductDefault()
+    {
+        // openai 网关只要拿到非 null 就写 reasoning_effort（OpenAiLlmGateway.cs:443），
+        // 对不支持该参数的模型会 400。所以未声明 reasoning 能力时不得补默认值。
+        var decision = ReasoningEffortPolicy.Resolve("auto", null, null, useProductDefault: false);
+
+        Assert.IsNull(decision.Effort);
+        Assert.AreEqual(ReasoningEffortPolicy.Origin.Unset, decision.Source);
+    }
+
+    [TestMethod]
+    public void UnsupportedModelStillHonoursExplicitLevel()
+    {
+        // 显式选择属于使用者意图，不在“补默认值”的授权范围内，保持原样。
+        var decision = ReasoningEffortPolicy.Resolve("max", null, null, useProductDefault: false);
+
+        Assert.AreEqual(ReasoningEffortPolicy.Max, decision.Effort);
+        Assert.AreEqual(ReasoningEffortPolicy.Origin.Preference, decision.Source);
+    }
 }
