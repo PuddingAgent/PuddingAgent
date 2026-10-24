@@ -104,8 +104,31 @@ public sealed class GitHubSearchTool : PuddingToolBase<GitHubSearchArgs>
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[GitHubSearchTool] request failed agent={Agent}", context.AgentInstanceId);
-            return ToolExecutionResult.Fail($"GitHub search request failed: {ex.Message}");
+
+            return ToolExecutionResult.Fail(DescribeRequestFailure(ex));
         }
+    }
+
+    /// <summary>
+    /// 把网络层异常翻译成「能不能重试 + 改做什么」。
+    /// </summary>
+    /// <remarks>
+    /// 只回 <c>Exception.Message</c> 不够：调用方看到裸的「SSL connection could not be
+    /// established」只能选择盲目重试。复用 <c>http_fetch</c> 已在用的分类器，让两个工具的
+    /// 同一类失败给出同一种可操作结论。
+    /// </remarks>
+    internal static string DescribeRequestFailure(Exception exception)
+    {
+        var failure = HttpFetchFailureClassifier.ClassifyException(exception);
+
+        // TLS/DNS 阻断是这类环境里的常见形态：GitHub API 不可达，但仓库文件仍能取
+        // （实测 raw.githubusercontent.com 正常）。分类器的提示默认指向「取内容」，
+        // 这里为检索场景补一句替代搜索源。
+        var hint = failure.Kind is HttpFetchFailureKind.TlsHandshake or HttpFetchFailureKind.DnsFailure
+            ? failure.Hint + " For search specifically, use anysearch_search or doubao_search."
+            : failure.Hint;
+
+        return $"GitHub search request failed: {failure.Summary} | {hint}";
     }
 
     private GitHubSearchConfig LoadConfig()
