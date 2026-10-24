@@ -36,6 +36,10 @@ public sealed class CodeQueryService : ICodeQueryService
         return new CodeIndexResult(
             project.Status != CodeProjectStatus.Failed && project.Status != CodeProjectStatus.Removed,
             ToIndexStatus(project.Status),
+            // 状态原因来自注册记录。MarkInterruptedAsync 会把「索引运行被中断」写进
+            // CodeProjects.StatusMessage，但 SELECT 里一直用 NULL 占位 ⇒ 写入即蒸发。
+            // 接上之后，code_index_status 的 message 才真的有内容可说。
+            project.StatusMessage,
             WorkspaceId: workspaceId,
             ProjectId: projectId,
             CompletedAtUtc: project.UpdatedAtUtc);

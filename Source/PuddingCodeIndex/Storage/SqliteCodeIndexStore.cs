@@ -267,7 +267,7 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT WorkspaceId, ProjectId, ProjectPath, Status, DisplayName, AddedAtUtc, UpdatedAtUtc, NULL, Source, ScopeState
+            SELECT WorkspaceId, ProjectId, ProjectPath, Status, DisplayName, AddedAtUtc, UpdatedAtUtc, StatusMessage, Source, ScopeState
             FROM CodeProjects
             WHERE WorkspaceId = $workspaceId AND Status <> $removed
             ORDER BY COALESCE(DisplayName, ProjectId), ProjectId;
@@ -293,7 +293,7 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT WorkspaceId, ProjectId, ProjectPath, Status, DisplayName, AddedAtUtc, UpdatedAtUtc, NULL, Source, ScopeState
+            SELECT WorkspaceId, ProjectId, ProjectPath, Status, DisplayName, AddedAtUtc, UpdatedAtUtc, StatusMessage, Source, ScopeState
             FROM CodeProjects
             WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId;
             """;
@@ -1192,7 +1192,8 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
             ReadDate(reader, 5),
             ReadDate(reader, 6),
             Source: ReadEnumOrNull<ScopeSource>(reader, 8),
-            ScopeState: ReadEnumOrNull<ScopeState>(reader, 9));
+            ScopeState: ReadEnumOrNull<ScopeState>(reader, 9),
+            StatusMessage: reader.IsDBNull(7) ? null : reader.GetString(7));
 
     private static CodeFileRecord ReadFile(SqliteDataReader reader) =>
         new(

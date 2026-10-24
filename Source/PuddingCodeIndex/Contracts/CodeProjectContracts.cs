@@ -19,7 +19,15 @@ public sealed record CodeProjectRecord(
     DateTimeOffset? AddedAtUtc = null,
     DateTimeOffset? UpdatedAtUtc = null,
     ScopeSource? Source = null,
-    ScopeState? ScopeState = null);
+    ScopeState? ScopeState = null,
+    /// <summary>
+    /// 最近一次状态变更附带的原因（例如索引运行被中断）。为 null 表示没有可说的。
+    /// <para>
+    /// 放在末尾而不是紧跟 <see cref="Status"/>：位置参数一旦插入中间，所有构造点都得改，
+    /// 而这里只需要一个读者。
+    /// </para>
+    /// </summary>
+    string? StatusMessage = null);
 
 public sealed record CodeProjectAddRequest(
     string WorkspaceId,

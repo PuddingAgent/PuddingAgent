@@ -23,6 +23,12 @@ public sealed class SqliteCodeIndexStoreTests
         Assert.HasCount(1, listed);
         Assert.IsNotNull(stored);
         Assert.AreEqual(CodeProjectStatus.Active, stored!.Status);
+        // 状态原因必须读得回来。MarkInterruptedAsync 会把「索引运行被中断」写进这一列，
+        // 而两个 SELECT 长期用 NULL 占位 ⇒ 写入即蒸发，诊断信息只能去查 DB。
+        Assert.AreEqual("indexed", stored.StatusMessage,
+            "GetProjectAsync 必须回读 StatusMessage，否则写入的诊断信息没有人能拿到");
+        Assert.AreEqual("indexed", listed[0].StatusMessage,
+            "ListProjectsAsync 是同一列，两个读取路径不能一个读一个漏");
         Assert.IsTrue(File.Exists(sourceFile));
 
         await fixture.Store.RemoveProjectAsync(project.WorkspaceId, project.ProjectId);
