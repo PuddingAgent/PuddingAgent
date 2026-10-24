@@ -96,3 +96,92 @@ BpeOptions ctors:
 - `github_search` 全程失败：`api.github.com` 的 TLS 被本机代理阻断（`The SSL connection could not be established`），与本仓库 2026-10-23 记录的同一环境缺陷一致。因此 GitHub 侧只能靠搜索结果中的快照，未做仓库级穷举。
 - `zhihu_search` 本次未调用（该主题知乎内容预期价值低）；如需中文社区实操经验可补。
 - HuggingFace `tree` API 的完整文件列表被 64 个 safetensors 条目挤占而未读完，故 tokenizer.json 的存在性改用 raw 直链 200 + Content-Disposition 确认，而非文件清单。
+
+
+## 8. 实测探针：默认加载路径不可用，方案 A 需要自建预分词链路（2026-10-24 09:53）
+
+### 8.1 做了什么
+
+1. 下载 `deepseek-ai/DeepSeek-V4.1-Flash` 的 `tokenizer.json`（**6,367,257 字节**，SHA256 `C90DFA01249DB1BE4245780A052EDE752E1361C612AC6D08E2BDADA7D599476B`）。
+2. 解析并拆出 `BpeTokenizer.Create(vocabFile, mergesFile)` 需要的两个文件：
+   - `ds-vocab.json`：**128,000 条**，4,082,558 字节
+   - `ds-merges.txt`：**127,741 行**，1,632,575 字节（格式为 `"Ġ t"` 空格分隔字符串，**不是**二元数组）
+3. 用 .NET 10 file-based app 直接调用 `BpeTokenizer.Create(vocab, merges)` 编码样本。
+
+### 8.2 结构化事实（`System.Text.Json` 精确读取）
+
+```
+MODEL_TYPE     = BPE
+VOCAB          = 128,000 entries          （首项 <｜begin▁of▁sentence｜>=0, <｜end▁of▁sentence｜>=1, <｜▁pad▁｜>=2）
+MERGES         = 127,741                  （元素类型 = String）
+ADDED_TOKENS   = 1,283
+PRE_TOKENIZER  = Sequence[
+                   Split(\p{N}{1,3}, Isolated),
+                   Split([一-龥぀-ゟ゠-ヿ]+, Isolated),
+                   Split([!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+, Isolated),
+                   ByteLevel(add_prefix_space=false, trim_offsets=true, use_regex=false)
+                 ]
+DECODER        = ByteLevel(...)
+NORMALIZER     = Sequence[]               （空）
+```
+
+⚠️ 顺带一条工具坑：`ConvertFrom-Json` 解析该文件会**直接失败** —— 词表里存在仅大小写不同的键（`A` / `a`）而 PowerShell 对象属性大小写不敏感。必须用 `-AsHashtable`；而 `-AsHashtable` 对这种深层结构给出的 `.Count` 也可能是**错的**（实测报 8,420，真实为 128,000）。**以 `System.Text.Json` 的 `JsonDocument` 枚举结果为准。**
+
+### 8.3 探针原始输出（`dotnet run`，代码如下）
+
+```csharp
+var tok = BpeTokenizer.Create(vocab, merges);
+// 样本 → EncodeToIds
+```
+
+```
+LOADED in 293 ms
+ascii      chars=11   tokens=2    roundtrip=False ids=[33310,29616]
+cjk        chars=4    tokens=0    roundtrip=False ids=[]
+code       chars=22   tokens=9    roundtrip=False ids=[3465,40897,10,90,2605,3916,90,13,19]
+json       chars=17   tokens=11   roundtrip=True  ids=[24313,67,3362,19,3184,68,96893,20,14,21,48663]
+bos_token  chars=21   tokens=6    roundtrip=False ids=[30,8277,2154,85,51015,32]
+eos_token  chars=19   tokens=6    roundtrip=False ids=[30,523,2154,85,51015,32]
+pad_token  chars=9    tokens=3    roundtrip=False ids=[30,24591,32]
+mixed      chars=29   tokens=8    roundtrip=False ids=[67612,6900,5598,11093,4287,16,25,7]
+```
+
+**三条结论：**
+
+1. **加载性能不是问题**：128K 词表 + 127K merges 构建仅 **293 ms**，不必预编译缓存。
+2. **中文完全编码不出来**：`"人工智能"` → **0 个 token**。原因是 DeepSeek 词表用 GPT-2 风格的 byte-level 表示（`Ġ`=空格），而 `BpeTokenizer.Create(vocab, merges)` 的默认路径**不做 bytes→unicode 映射**，UTF-8 中文在这样的词表里匹配不到任何条目。
+3. **special token 未被识别**：`<｜begin▁of▁sentence｜>` 应是 `[0]`，实际被拆成 **6 个**普通 token `[30,8277,2154,85,51015,32]`。默认路径没有注册 `specialTokens`。
+
+⇒ **这直接证实了「不能把词表成功加载当作完成判据」**。若只看“LOADED 成功”就收工，产出的计数会比现在的 `o200k_base` **更糟**（中文直接算 0）。
+
+### 8.4 库能力边界（本地反射）
+
+`Microsoft.ML.Tokenizers` 2.0.0 的公开 `PreTokenizer` 只有：
+
+```
+CompositePreTokenizer
+PreTokenizer              （抽象基类，PreTokenize(string) → IEnumerable<(int,int)>）
+RegexPreTokenizer
+RobertaPreTokenizer
+```
+
+**没有 `ByteLevelPreTokenizer`。** 公开 `Normalizer` 也只有 `LowerCaseNormalizer` / `UpperCaseNormalizer` / `SentencePieceNormalizer`。
+
+### 8.5 对实施方案的影响（修正 codex 规划的成本估计）
+
+codex 规划里 `DeepSeekPreTokenizer.cs` 一项写着“按实际 JSON 内容决定所需逻辑”。实测表明这是**必须实现、且不止一个类**：
+
+| 需要的能力 | 库是否现成 | 实现方式 |
+|---|---|---|
+| 三条正则 Split | `RegexPreTokenizer` + `CompositePreTokenizer` 可组合 | 组合即可 |
+| **ByteLevel（bytes→unicode + 字节级切分）** | **无** | 必须自定义。语义上属文本变换，落在 `Normalizer` 子类更合适（`PreTokenizer` 只返回区间，改不了字符） |
+| special token 单 id 识别 | 需传入 `specialTokens` 字典 | 从 `added_tokens`（1,283 条）构造 |
+| 空 Normalizer | — | DeepSeek 的 `normalizer` 为空序列，自定义 ByteLevel 需排在正确位置 |
+
+**因此方案 A 的真实成本 = 自建一条完整预分词链路 + 黄金样本逐 token 对齐**，而不是“加载一份词表”。可行性未变（`PreTokenizer`/`Normalizer` 均为可继承的抽象类），但工作量显著高于初判，且中间任何一步不一致都会让计数比现状更差。
+
+### 8.6 仍待确认
+
+1. `Microsoft.ML.Tokenizers` 的 `Normalizer` 基类签名是否允许改变长度（ByteLevel 会把 1 个中文字符变成 3 个字节字符），需读其公开成员确认。
+2. `BpeTokenizer` 内部是否在 BPE 前还会做额外的空白/大小写处理，可能与 ByteLevel 叠加。
+3. 黄金样本仍需官方 `transformers` 产出（本机 python 为 Store 存根，不可用）—— 需要另找途径（离线 wheel、或 Node 的 `@huggingface/tokenizers`、或官方 `encoding/` 目录里的参考实现）。
