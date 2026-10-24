@@ -432,9 +432,12 @@ public sealed partial class AgentExecutionService
         try
         {
             effectiveLlmConfig = await ResolveLlmConfigAsync(request.LlmConfig, ct);
-            // 若上游 LlmConfig 未设置 ReasoningEffort，从模板定义继承
-            if (effectiveLlmConfig?.ReasoningEffort is null && template.ReasoningEffort is not null)
-                effectiveLlmConfig = (effectiveLlmConfig ?? new LlmConfig()) with { ReasoningEffort = template.ReasoningEffort };
+            // 思考强度：本轮手动档位（CallerLlmSnapshot）> 模板配置 > 已解析配置 > 产品默认 high。
+            var effortDecision = ReasoningEffortPolicy.Resolve(
+                request.CallerLlmSnapshot?.ReasoningEffort,
+                template.ReasoningEffort,
+                effectiveLlmConfig?.ReasoningEffort);
+            effectiveLlmConfig = (effectiveLlmConfig ?? new LlmConfig()) with { ReasoningEffort = effortDecision.Effort };
 
     // 单轮输出口径收敛：MaxOutputTokens 登记的是模型最大输出**能力**（deepseek-flash 393,216），
     // 而本轮真实申请的 max_tokens 与窗口预留必须共用同一个数；否则前台预留（64,000）与

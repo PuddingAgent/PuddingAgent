@@ -224,7 +224,8 @@ public sealed class ExecutionRunCoordinator(
                     modelId,
                     snapshot.Protocol,
                     snapshot.CapabilityTags ?? [],
-                    snapshot.VisionPolicy))
+                    snapshot.VisionPolicy,
+                    ReadReasoningEffort(userMessage?.MetadataJson)))
             {
                 ExecutionDeadlineUtc = executionDeadlineUtc,
                 TaskPlanId = command.WorkUnit?.PlanId,
@@ -840,6 +841,17 @@ public sealed class ExecutionRunCoordinator(
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// 从入站消息 metadata 读取本轮手动思考强度（low/high/max）。
+    /// 只做透传，不做合法性判断——合法性由 ReasoningEffortPolicy 在合成处统一裁决，
+    /// 这样非法值会被跳过并回传原值，而不是在入口静默丢弃。
+    /// </summary>
+    private static string? ReadReasoningEffort(string? metadataJson)
+    {
+        var metadata = DeserializeMetadata(metadataJson);
+        return metadata is null ? null : GetMetadataValue(metadata, "reasoningEffort");
     }
 
     private static MessageOrigin? BuildMessageOrigin(string? metadataJson)

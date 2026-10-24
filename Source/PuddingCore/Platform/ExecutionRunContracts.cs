@@ -131,7 +131,8 @@ public sealed record LlmRouteSnapshot(
     string ModelId,
     string? Protocol,
     IReadOnlyList<string> CapabilityTags,
-    PuddingCode.Core.VisionRequestPolicy? VisionPolicy = null)
+    PuddingCode.Core.VisionRequestPolicy? VisionPolicy = null,
+    string? ReasoningEffort = null)
 {
     public bool SupportsVision => CapabilityTags.Contains("vision", StringComparer.OrdinalIgnoreCase);
 }
