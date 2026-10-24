@@ -53,6 +53,9 @@ $withEffort = $captures | Where-Object { $_ -match 'reasoningEffort=(high|max)' 
 Report 'body-carries-effort' ($withEffort.Count -gt 0) ("linesWithEffort=$($withEffort.Count)")
 
 # 4) Thinking must actually happen (reasoning tokens > 0).
+#    Gated on (3): the provider default is already high, so a positive reasoningTokens
+#    value on its own proves nothing — it was observed on the un-fixed process. Only
+#    count it when some request demonstrably carried the parameter.
 $okLines = $lines | Where-Object { $_ -match '\[DirectLlm\] OK' }
 $positive = @()
 foreach ($line in $okLines) {
@@ -60,7 +63,13 @@ foreach ($line in $okLines) {
         if ([int]$matches[1] -gt 0) { $positive += $line }
     }
 }
-Report 'reasoning-tokens-positive' ($positive.Count -gt 0) ("okLines=$($okLines.Count) positive=$($positive.Count)")
+$positiveIsMeaningful = ($withEffort.Count -gt 0) -and ($positive.Count -gt 0)
+$positiveDetail = if ($withEffort.Count -eq 0) {
+    "okLines=$($okLines.Count) positive=$($positive.Count) NOT-ATTRIBUTABLE (no request carried effort; provider default alone can produce thinking)"
+} else {
+    "okLines=$($okLines.Count) positive=$($positive.Count)"
+}
+Report 'reasoning-tokens-positive' $positiveIsMeaningful $positiveDetail
 
 Write-Output ("failures={0}" -f $failures)
 if ($failures -gt 0) { exit 1 }
