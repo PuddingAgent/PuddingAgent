@@ -322,6 +322,15 @@ namespace PuddingCode.Platform
         /// </summary>
         private const double CalibrationRelaxFactor = 0.7;
 
+        /// <summary>
+        /// 校准系数下限。允许低于 1.0，是因为 provider 实测可以稳定低于本地原始估算
+        /// （实测 284,325 vs 393,839 ⇒ 0.72）。夹在 1.0 会让系统性高估永远修不回来：
+        /// 系数越保守，usedTokens 越虚高，闸门就在真实占用远未到达阈值时提前触发。
+        /// 安全网由 <see cref="RecordProviderInputLimitFailure"/> 承担——provider 一旦报
+        /// 输入超限，系数会立即被抬到隐含下限之上，不依赖这里的下限。
+        /// </summary>
+        private const double MinPromptCalibrationRatio = 0.5;
+
         /// <summary>最近一次**主请求**的 Provider 实测（与 prepared 快照分离的槽位）。</summary>
         private readonly ConcurrentDictionary<string, MeasuredRequestUsage> _lastMeasuredRequests = new(StringComparer.Ordinal);
 
@@ -790,20 +799,22 @@ namespace PuddingCode.Platform
             if (frozen.RawEstimatedTokens > 0 && providerPromptTokens > 0)
             {
                 // 用**该请求自己的** raw 与 model 校准 ⇒ 校准天然按路由隔离。
-                var observedRatio = Math.Max(1.0, providerPromptTokens / (double)frozen.RawEstimatedTokens);
+                var observedRatio = providerPromptTokens / (double)frozen.RawEstimatedTokens;
                 var calibrationKey = BuildCalibrationKey(sessionId, frozen.ModelId);
                 // 允许校准系数向实测值**收敛**，而不是只保留历史最大值。
                 // 只增不减会带来一个隐蔽后果：一次 provider「输入超限」失败把系数抬到 1.6 之后，
-                // 即便之后每轮实测都只有原始估算的 0.62 倍（observedRatio=1.0），系数也永远停在 1.6，
+                // 即便之后每轮实测都只有原始估算的 0.62 倍（observedRatio=0.62），系数也永远停在 1.6，
                 // 于是 usedTokens 被永久放大 1.6 倍、有效窗口却没变 ⇒ 压缩被提前触发。
-                // 规则：实测更高就立即抬高（防超窗）；实测更低则逐轮按系数回落，但永不低于 1.0
-                // （低于 1.0 意味着估算低于原始估算，会让请求超出 provider 输入上限）。
+                // 规则：实测更高就立即抬高（防超窗）；实测更低则逐轮按系数回落，下限是
+                // MinPromptCalibrationRatio 而不是 1.0——夹在 1.0 会让「本地数一直偏高」这种
+                // 系统性偏差永远学不回来，闸门于是长期按虚高的分子判定提前压缩。
                 _promptCalibrationRatios.AddOrUpdate(
                     calibrationKey,
                     observedRatio,
                     (_, current) => observedRatio >= current
                         ? observedRatio
-                        : Math.Max(1.0, current * CalibrationRelaxFactor));
+                        : Math.Max(MinPromptCalibrationRatio,
+                            Math.Max(observedRatio, current * CalibrationRelaxFactor)));
             }
 
             // Provider 完全没报数（Prompt/Completion/Total 全空）⇒ 不产生实测、不推进投影。
@@ -904,7 +915,7 @@ namespace PuddingCode.Platform
         {
             var calibrationKey = BuildCalibrationKey(sessionId, modelId);
             return _promptCalibrationRatios.TryGetValue(calibrationKey, out var ratio)
-                ? Math.Max(1.0, ratio)
+                ? Math.Max(MinPromptCalibrationRatio, ratio)
                 : 1.0;
         }
 
