@@ -29,8 +29,9 @@ export interface ContextUsageRingProps {
   subAgentsRunning?: number;
   /** 打开子代理管理器（原轻反馈带的 onClick 入口，避免移除胶囊后丢失入口）。 */
   onOpenSubAgents?: () => void;
-  /** 有效输入窗口（服务端 `effectiveWindowTokens`）：有效输入压力的**分母**。
-   *  与 `tLimit` 是两个不同分母，绝不可混用（诊断报告 §4.1）。 */
+  /** 有效输入窗口（服务端 `effectiveWindowTokens`）：**实测主指标的分母**。
+   *  与 `tLimit` 是两个不同分母，绝不混用（诊断报告 §4.1）；缺失时主指标回退到 `tLimit` 口径。
+   *  也用于推导「不可用于输入」区域的宽度（`tLimit − tEffective`）。 */
   tEffective?: number;
   /**
    * 「窗口里不可用于输入的那部分」的**来源**。
@@ -50,8 +51,10 @@ export interface ContextUsageRingProps {
   usageSource?: string | null;
   usageConfidence?: string | null;
   /**
-   * F1：**上一次主请求的 Provider 实测输入**（prompt tokens）。它与主数值（可能只是「当前准备请求」
-   * 的预算估算）是**两个口径**，必须并排展示；未采集 ⇒ undefined（该行不渲染），不用 0 冒充。
+   * F1：**上一次主请求的 Provider 实测输入**（prompt tokens）。与 `tEffective` 同时存在时，
+   * 它是**主指标分子**（实测优先，用户裁定 2026-10-23）；缺失时主指标回退到 `tUsed / tLimit`
+   * 的本地估算口径。它同时在下文「上次请求实测输入」行展示（与准备请求的估算并排）。
+   * 未采集 ⇒ undefined（该行不渲染），不用 0 冒充。
    */
   measuredPromptTokens?: number | null;
   /** 上述实测所对应请求的原始（校准前）估算，用于解释校准系数。 */
@@ -162,17 +165,26 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   const { styles } = useChatStyles();
   const [open, setOpen] = useState(false);
   const configured = tLimit > 0;
-  // **总窗口占用率**（分母 = 模型上下文窗口）：圆环弧长与色阶都用它，颜色语义不变。
+  // **总窗口占用率**（分母 = 模型上下文窗口）：仅作回退口径（无实测时才对）。
   const pct = clampPct(tLimit > 0 ? (tUsed / tLimit) * 100 : tPct);
   /**
-   * **有效输入压力**（分母 = 服务端 effectiveWindowTokens）。它与总窗口占用率是两个
-   * 不同的事实（诊断 §4.1：46.4% vs 76.4%），必须各自标注分母，不能合成一个数字。
-   * 分母缺失/非正 ⇒ undefined（不伪造分母，也不拿总窗口顶替）。
+   * **实测优先口径**（用户裁定 2026-10-23）：Provider 实测输入 ÷ 有效输入窗口。
+   * 它是面板主指标的首选分子/分母组合；`tUsed` 是本地字典估算（曾高估 61%），只作回退。
+   * 任一输入缺失 / 非有限 / 分母非正 ⇒ undefined（不伪造数值，也不拿总窗口顶替）。
    */
-  const effectivePct =
-    typeof tEffective === 'number' && Number.isFinite(tEffective) && tEffective > 0
-      ? (tUsed / tEffective) * 100
+  const measuredPct =
+    typeof measuredPromptTokens === 'number' &&
+    Number.isFinite(measuredPromptTokens) &&
+    typeof tEffective === 'number' &&
+    Number.isFinite(tEffective) &&
+    tEffective > 0
+      ? (measuredPromptTokens / tEffective) * 100
       : undefined;
+  /**
+   * 圆环弧长与色阶必须与标题**同源**：面板里一个数字只能有一个分母（诊断 §4.1）。
+   * 有实测 ⇒ 跟实测口径；否则回退总窗口估算。
+   */
+  const displayPct = measuredPct !== undefined ? measuredPct : pct;
   // 方案 2（用户 2026-09-19）：无有效数据时不给错的信息。
   //  - 会话还没任何消息 → 视为「未开始」，不展示用量；
   //  - confidence 不是 provider_reported（本地估算 / DB 回退）→ 只能标为估算值，
@@ -182,8 +194,8 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   const notStarted = tMessageCount === 0 && tUsed === 0;
   const authoritative =
     usageConfidence === 'provider_reported';
-  const color = contextUsageColor(pct);
-  const dash = configured ? (pct / 100) * CIRCUMFERENCE : 0;
+  const color = contextUsageColor(displayPct);
+  const dash = configured ? (displayPct / 100) * CIRCUMFERENCE : 0;
 
   // 分层色段：本地字典估算与 Provider 报数不同源，直接按估算值画到窗口刻度上
   // 会与标题百分比打架。故按 usedTokens / Σ(各来源) 缩放后再算段宽 ——
@@ -221,11 +233,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
 
   const hoverSummary =
     configured && !notStarted
-      ? `${authoritative ? '' : '≈'}${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 模型窗口已使用（非压缩进度）${authoritative ? '' : '（估算）'}${
-          effectivePct !== undefined
-            ? `；有效输入压力 ${authoritative ? '' : '≈'}${effectivePct.toFixed(1)}%（分母 ${formatTokens(tEffective as number)}）`
-            : ''
-        }`
+      ? `${authoritative ? '' : '≈'}${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 模型窗口已使用（非压缩进度）${authoritative ? '' : '（估算）'}`
       : error
         ? `上下文用量获取失败：${error}`
         : notStarted
@@ -260,19 +268,21 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
           </div>
         ) : (
           <>
-            {/* 两个分母必须各自标注（诊断 §4.1）：这里是**总窗口占用**，
-                分母是模型上下文窗口，不是有效输入窗口。 */}
+            {/* 主指标**实测优先**（用户裁定 2026-10-23）：Provider 实测输入 ÷ 有效输入窗口。
+                任一输入缺失时回退到「模型窗口占用」（tUsed / tLimit，本地估算）。 */}
             <div
               className={styles.contextUsagePanelHeadline}
               data-testid="context-usage-window-occupancy"
             >
               <span className={styles.contextUsagePanelPct}>
-                {authoritative ? '' : '≈'}
-                {pct.toFixed(1)}%
+                {measuredPct !== undefined
+                  ? `${measuredPct.toFixed(1)}%`
+                  : `${authoritative ? '' : '≈'}${pct.toFixed(1)}%`}
               </span>
               <span className={styles.contextUsagePanelUsed}>
-                模型窗口占用 {formatTokens(tUsed)}/{formatTokens(tLimit)}
-                {authoritative ? '' : '（估算）'}
+                {measuredPct !== undefined
+                  ? `已用 ${formatTokens(measuredPromptTokens as number)} / 有效窗口 ${formatTokens(tEffective as number)}（实测）`
+                  : `模型窗口占用 ${formatTokens(tUsed)}/${formatTokens(tLimit)}${authoritative ? '' : '（估算）'}`}
               </span>
             </div>
             {segments.length > 0 ? (
@@ -374,22 +384,6 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                   剩余与缓存命中在同面板下方运行状态块里（且剩余是服务端口径：
                   已扣掉输出预算 reserve，与 tLimit-tUsed 并不相等 —— 这里不能
                   自己算一个与之打架的数字）。 */}
-              {/* 第二个分母：**有效输入压力** = usedTokens / effectiveWindowTokens。
-                  它与上面的总窗口占用率分母不同（诊断 §4.1 的 46.4% vs 76.4%），
-                  所以必须单独成行并写明分母；分母未知时整行不渲染，不拿总窗口顶替。 */}
-              {effectivePct !== undefined && (
-                <div
-                  className={styles.contextUsagePanelRow}
-                  data-testid="context-usage-effective-pressure"
-                >
-                  <span className={styles.contextUsagePanelLabel}>有效输入压力</span>
-                  <span className={styles.contextUsagePanelValue}>
-                    {authoritative ? '' : '≈'}
-                    {effectivePct.toFixed(1)}%（分母{' '}
-                    {formatTokens(tEffective as number)}）
-                  </span>
-                </div>
-              )}
               {/* 「不可用于输入」的来源：只有后端给出容量来源时才敢按来源命名，
                   现在只能照实写「来源未知」（诊断 §4.4）。 */}
               {inputUnavailablePercent > 0 && (
@@ -398,9 +392,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                     {inputUnavailableLabel}
                   </span>
                   <span className={styles.contextUsagePanelValue}>
-                    {formatTokens(inputUnavailableTokens)}（
-                    {formatTokens(tLimit)} −{' '}
-                    {formatTokens(tEffective as number)}）
+                    {formatTokens(inputUnavailableTokens)}
                   </span>
                 </div>
               )}
@@ -506,7 +498,9 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       color,
       compactionStatus,
       configured,
-      effectivePct,
+      displayPct,
+      measuredPct,
+      measuredPromptTokens,
       error,
       handleOpenSubAgents,
       inputUnavailableLabel,

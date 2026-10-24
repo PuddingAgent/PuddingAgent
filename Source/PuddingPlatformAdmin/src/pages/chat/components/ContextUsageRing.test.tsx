@@ -39,8 +39,8 @@ describe('context occupancy, not compaction progress', () => {
   });
 });
 
-describe('two explicit denominators', () => {
-  it('labels total-window occupancy and effective-input pressure with their own denominators', () => {
+describe('single denominator per view', () => {
+  it('falls back to the total-window denominator when no provider measurement exists', () => {
     render(
       <ContextUsageRing
         tLimit={SAMPLE_LIMIT}
@@ -51,23 +51,18 @@ describe('two explicit denominators', () => {
       />,
     );
 
-    // 分母一：模型窗口（308.0K / 1000.0K = 30.8%）。
+    // 没有实测输入 ⇒ 主指标仍是总窗口占用（308.0K / 1000.0K = 30.8%）。
     const windowRow = screen.getByTestId('context-usage-window-occupancy').textContent ?? '';
     expect(windowRow).toContain('模型窗口占用');
     expect(windowRow).toContain('30.8%');
     expect(windowRow).toContain('308.0K/1000.0K');
 
-    // 分母二：有效输入窗口（308.0K / 616.0K = 50.0%），独立成行、自带分母。
-    const pressureRow =
-      screen.getByTestId('context-usage-effective-pressure').textContent ?? '';
-    expect(pressureRow).toContain('有效输入压力');
-    expect(pressureRow).toContain('50.0%');
-    expect(pressureRow).toContain('616.0K');
-
-    // 两者不同分母，都出现在悬浮摘要里。
+    // 「有效输入压力」独立行已删除：同一面板不得再出现第二个百分比分母。
+    expect(screen.queryByTestId('context-usage-effective-pressure')).toBeNull();
     const hover = screen.getByTestId('context-usage-ring').getAttribute('aria-label') ?? '';
     expect(hover).toContain('1000.0K');
-    expect(hover).toContain('616.0K');
+    expect(hover).not.toContain('有效输入压力');
+    expect(hover).not.toContain('616.0K');
   });
 
   it('never fabricates an effective-input denominator when the server did not give one', () => {
@@ -153,5 +148,94 @@ describe('two usage sources side by side (F1)', () => {
     );
 
     expect(screen.queryByTestId('context-usage-last-measured')).toBeNull();
+  });
+});
+
+describe('measured-first headline (user ruling 2026-10-23)', () => {
+  it('uses provider-measured input over the effective window and drops the approximation mark', () => {
+    render(
+      <ContextUsageRing
+        tLimit={1_000_000}
+        tEffective={616_000}
+        tUsed={463_800}
+        tPct={46.4}
+        usageConfidence="estimated"
+        measuredPromptTokens={300_000}
+        measuredRawTokens={140_000}
+      />,
+    );
+
+    const headline = screen.getByTestId('context-usage-window-occupancy').textContent ?? '';
+    // 300.0K / 616.0K = 48.7012…% → 48.7%。
+    expect(headline).toContain('48.7%');
+    expect(headline).toContain('已用 300.0K');
+    expect(headline).toContain('有效窗口 616.0K（实测）');
+    // 实测值不得被本地估算口径抢回主槽位，也不得标「≈」。
+    expect(headline).not.toContain('46.4%');
+    expect(headline).not.toContain('≈');
+  });
+
+  it('drops both the effective-pressure row and the token subtraction from the panel', () => {
+    render(
+      <ContextUsageRing
+        tLimit={SAMPLE_LIMIT}
+        tEffective={SAMPLE_EFFECTIVE}
+        tUsed={SAMPLE_USED}
+        tPct={46.4}
+        tUnavailableReason="output_reserve"
+        usageConfidence="provider_reported"
+      />,
+    );
+
+    expect(screen.queryByTestId('context-usage-effective-pressure')).toBeNull();
+    expect(screen.queryByText('有效输入压力')).toBeNull();
+
+    const panel = screen.getByTestId('context-usage-panel').textContent ?? '';
+    expect(panel).not.toContain('有效输入压力');
+    // 推导式「（1000.0K − 616.0K）」是噪音，也会把第二个分母引回来。
+    expect(panel).not.toMatch(/（[^）]*−[^）]*）/);
+    // 但数值本身必须仍在：不可用于输入 = 1000.0K − 616.0K = 384.0K。
+    expect(panel).toContain('384.0K');
+  });
+});
+
+describe('ring arc shares the headline denominator', () => {
+  /** 弧线圆是第二个 circle；stroke-dasharray 的第一段就是可见弧长。 */
+  const arcLength = (container: HTMLElement): number => {
+    const circles = container.querySelectorAll('circle');
+    const raw = circles[1]?.getAttribute('stroke-dasharray') ?? '0';
+    return Number.parseFloat(raw.split(' ')[0] ?? '0');
+  };
+
+  it('draws the arc from the measured ratio, never from the total-window estimate', () => {
+    const measured = render(
+      <ContextUsageRing
+        tLimit={1_000_000}
+        tEffective={616_000}
+        tUsed={463_800}
+        tPct={46.4}
+        usageConfidence="estimated"
+        measuredPromptTokens={300_000}
+      />,
+    );
+    const measuredArc = arcLength(measured.container);
+    measured.unmount();
+
+    const estimated = render(
+      <ContextUsageRing
+        tLimit={1_000_000}
+        tEffective={616_000}
+        tUsed={463_800}
+        tPct={46.4}
+        usageConfidence="estimated"
+      />,
+    );
+    const estimatedArc = arcLength(estimated.container);
+
+    // 48.7%（实测 / 有效窗口）> 46.4%（估算 / 总窗口）⇒ 弧长必须跟着主数字放大。
+    expect(measuredArc).toBeGreaterThan(estimatedArc);
+    // 比值必须等于两个百分比之比：证明弧长与标题同源，而不是各算一套分母。
+    // 精度取 3 位，使「弧长仍按总窗口」的回归（比值 1.0）必然取红。
+    expect(measuredArc / estimatedArc).toBeCloseTo(48.7 / 46.4, 3);
   });
 });
