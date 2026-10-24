@@ -37,7 +37,14 @@ param(
     [string]$SourcePath,
 
     # Re-download and overwrite even when the existing file already matches.
-    [switch]$Force
+    [switch]$Force,
+
+    # Register $Destination as the user-level PUDDING_TOKENIZER_ASSETS variable.
+    # Without it the runtime cannot find the asset at all: LlmOptions looks for the
+    # variable first, then for a tokenizers/ directory beside the application, and
+    # the build output gets cleaned. Downloading into the data root and stopping
+    # there leaves the file present but unreachable.
+    [switch]$RegisterEnvironmentVariable
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,6 +65,23 @@ function Test-Asset([string]$Path) {
     return (Get-Sha256 $Path) -eq $expectedSha256
 }
 
+function Set-TokenizerAssetEnvironment {
+    $resolved = (Resolve-Path -LiteralPath $Destination).Path
+    [Environment]::SetEnvironmentVariable('PUDDING_TOKENIZER_ASSETS', $resolved, 'User')
+    Write-Host "[env] PUDDING_TOKENIZER_ASSETS (user) = $resolved"
+    Write-Host "      A running host keeps its old value; restart it to pick this up."
+}
+
+# A downloaded-but-unreachable asset is the worst outcome: everything looks fine
+# while the runtime silently falls back to the generic encoding. So say it on every
+# path, including the skip path where someone is most likely to assume it works.
+function Write-ReachabilityNote {
+    Write-Host ""
+    Write-Host "[note] The runtime will NOT use this file until it can find it:"
+    Write-Host "       set PUDDING_TOKENIZER_ASSETS=$((Resolve-Path -LiteralPath $Destination).Path)"
+    Write-Host "       or re-run with -RegisterEnvironmentVariable."
+}
+
 if (-not (Test-Path -LiteralPath $Destination)) {
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
 }
@@ -68,8 +92,11 @@ if (-not $Force -and (Test-Asset $target)) {
     Write-Host "[skip] asset already present and verified"
     Write-Host "       $target"
     Write-Host "       sha256=$expectedSha256"
+    if ($RegisterEnvironmentVariable) { Set-TokenizerAssetEnvironment }
+    else { Write-ReachabilityNote }
     return
 }
+
 
 # Staging path: the asset is moved into place only after both checks pass.
 $temp = Join-Path $Destination ($assetName + '.download')
@@ -112,3 +139,6 @@ Write-Host "[ok] installed and verified"
 Write-Host "     $target"
 Write-Host "     bytes=$actualBytes"
 Write-Host "     sha256=$actualSha"
+
+if ($RegisterEnvironmentVariable) { Set-TokenizerAssetEnvironment }
+else { Write-ReachabilityNote }
