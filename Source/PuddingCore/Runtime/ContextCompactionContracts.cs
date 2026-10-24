@@ -186,6 +186,18 @@ public sealed record ContextHealthSnapshot(
 
     /// <summary>上述实测的记录时刻（ISO-8601，UTC）。</summary>
     public string? LastMeasuredAtUtc { get; init; }
+
+    /// <summary>
+    /// 给上述实测那次请求**定价**的 modelId（原样记录，不做归一化）。
+    /// </summary>
+    /// <remarks>
+    /// 存在的理由很具体：「词表资产加载成功」和「这套词表给这一笔请求定过价」是两件事，
+    /// 而此前只有前者可观测（<c>runtime_identity.vocabulary</c> 走的是按身份枚举）。
+    /// 计数走的是精确别名匹配，modelId 一旦带了 provider 前缀就会**静默**回退通用编码，
+    /// 回退之后所有输出依旧「看起来正常」—— 于是「估算为什么偏高」只能靠猜。
+    /// null = 未配对到冻结请求，此时无从得知。
+    /// </remarks>
+    public string? ModelId { get; init; }
     public int? MessageTokens { get; init; }
     public int? ToolDefinitionTokens { get; init; }
     public int? SystemMessageTokens { get; init; }

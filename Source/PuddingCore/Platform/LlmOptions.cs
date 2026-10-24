@@ -181,7 +181,16 @@ namespace PuddingCode.Platform
         /// 否则一次迟到的旧请求会把「最近主实测」拉回去（R1 门禁：最近 measurement 不得倒退）。
         /// 未配对/无序号时为 0。
         /// </summary>
-        long RequestSequence = 0)
+        long RequestSequence = 0,
+        /// <summary>
+        /// 给这次请求**定价**的 modelId（原样转发给词表解析，不做归一化）。
+        /// </summary>
+        /// <remarks>
+        /// 只记录不解读：词表解析是精确别名匹配，带 provider 前缀的 id 会静默回退通用编码，
+        /// 而回退后所有输出仍然「看起来正常」。没有这个字段，「估算为何偏高」就无法归因。
+        /// null = 未配对到冻结请求。
+        /// </remarks>
+        string? ModelId = null)
     {
         /// <summary>Provider <c>Total</c> 含 completion，**不得**当作「实测输入」使用。</summary>
         public bool HasProviderUsage =>
@@ -748,7 +757,8 @@ namespace PuddingCode.Platform
                     usage.TotalTokens,
                     auxiliaryRaw,
                     DateTimeOffset.UtcNow,
-                    auxRecord?.RequestSequence ?? 0);
+                    auxRecord?.RequestSequence ?? 0,
+                    auxRecord?.ModelId);
 
                 return existing ?? new ContextUsageSnapshot
                 {
@@ -782,7 +792,8 @@ namespace PuddingCode.Platform
                     usage.TotalTokens,
                     RawEstimatedTokens: 0,
                     DateTimeOffset.UtcNow,
-                    RequestSequence: 0);
+                    RequestSequence: 0,
+                    ModelId: null);
 
                 return existing ?? new ContextUsageSnapshot
                 {
@@ -850,7 +861,8 @@ namespace PuddingCode.Platform
                 measuredTotal,
                 frozen.RawEstimatedTokens,
                 DateTimeOffset.UtcNow,
-                frozen.RequestSequence);
+                frozen.RequestSequence,
+                frozen.ModelId);
             _lastMeasuredRequests.AddOrUpdate(
                 sessionId,
                 measurement,

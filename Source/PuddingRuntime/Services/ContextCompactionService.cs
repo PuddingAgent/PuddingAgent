@@ -184,6 +184,9 @@ public sealed class ContextCompactionService : IContextCompactionService
             LastMeasuredRawEstimatedTokens = measuredMain?.RawEstimatedTokens,
             LastMeasuredInvocationId = measuredMain?.InvocationId,
             LastMeasuredAtUtc = measuredMain?.RecordedAtUtc.ToString("O"),
+            // 与 LastMeasured* 同源：只有「给那次实测定价的 modelId」才能和实测输入对齐着看。
+            // 拿当前会话的 ModelId 会掩盖「上一笔用的是别的模型」这种情况（辅助调用、路由切换）。
+            ModelId = measuredMain?.ModelId ?? usage.ModelId,
         };
     }
 
