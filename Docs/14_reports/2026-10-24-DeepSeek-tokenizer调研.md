@@ -48,8 +48,13 @@ BpeOptions ctors:
 |---|---|
 | `https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/raw/main/tokenizer.json` | **HTTP 200**，`Content-Disposition: filename="tokenizer.json"`，**5,530,562 字节** |
 | `https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/raw/main/tokenizer.json` | **HTTP 200**，**5,530,562 字节**，**ETag `W/"628e3364caad11bdf9e67cea06eae7878122811d"` 与 Pro 完全相同** |
+| `https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/raw/main/tokenizer.json` | **HTTP 200**，**5,530,707 字节**，**ETag `W/"6a15814dd25c934028034531da744c689f87ff21"`（与 V4 不同）** |
 
-两仓库 `X-Repo-Commit` 不同（`b5968e91…` vs `60d8d707…`），但**文件 ETag 与字节数完全相同** ⇒ 同一个词表文件。
+两仓库 `X-Repo-Commit` 不同（`b5968e91…` vs `60d8d707…`），但**文件 ETag 与字节数完全相同** ⇒ V4-Pro 与 V4-Flash 是同一个词表文件。
+
+**但 V4.1-Flash 不是同一份**：同为 HTTP 200，却 **5,530,707 字节、ETag `6a15814d…`**，与 V4 的 `628e3364…` 不同。
+差 **145 字节（≈0.0026%）**，量级上像是 `added_tokens` 里有少量调整（V4.1-Flash 的 pipeline 标为 `image-text-to-text`，可能新增了多模态相关特殊 token），词表主体应高度重叠但**不能字节级等同**。
+⇒ 实施时必须选**对应模型**的那一份，不能拿 V4 的 JSON 套到 V4.1 上。
 
 其他旁证：
 
@@ -67,7 +72,7 @@ BpeOptions ctors:
 ## 5. 剩余未确认项（不得当作结论）
 
 1. **`tokenizer.json` 的 `model.type` 是否恰为 `"BPE"`、`vocab`/`merges` 的字段形态**：只读到开头的 `added_tokens` 段，`model` 段在 5.5 MB 文件的后部，尚未读取。
-2. **我们实际路由的 `deepseek-flash`（DeepSeek-V4.1-Flash）是否与 V4-Flash 共用同一词表**：V4.1 是否有独立仓库尚未探测；同一词表的推断仅基于 V4-Pro/V4-Flash 的 ETag 相同 + V3/V4 同为 129,280。
+2. ~~我们实际路由的 `deepseek-flash`（V4.1-Flash）是否与 V4-Flash 共用同一词表~~ —— **已确认：不共用**（见 §3）。⇒ 实施时必须锁定 `deepseek-ai/DeepSeek-V4.1-Flash` 自己的 `tokenizer.json`，**不能**拿 V4 的 JSON 套上去。
 3. **5.5 MB 词表的加载耗时**：`BpeTokenizer` 构建 129K 词表 BPE 的冷启动成本未知；若每次进程启动都解析会明显拖慢。
 4. **分发方式**：嵌入资源（撑大 `PuddingCore.dll` 或独立资源程序集）vs 首次运行下载并缓存（引入网络依赖与校验需求）。
 
@@ -84,7 +89,7 @@ BpeOptions ctors:
 3. 按 modelId 选择 tokenizer，**默认回退到现有 `o200k_base`**，即词表缺失时行为不变；
 4. 上线前用真实请求做一次对照：同一 prompt 分别用新旧估算，与 Provider 回报的 `prompt_tokens` 比对，误差应显著小于当前的 1.83 倍。
 
-**在此之前**，第 5 节第 2 条（V4.1-Flash 是否共用词表）必须先确认 —— 若 V4.1 换了词表，方案 A 用 V4 的 JSON 仍然不准，那第一步的 B 反而是唯一可靠手段。
+**词表来源已确定**（§3）：用 `deepseek-ai/DeepSeek-V4.1-Flash` 的 `tokenizer.json`（5,530,707 B，MIT），**不要**用 V4 的（两者 ETag 不同）。代码里按 modelId 映射，**映射缺失时回退 `o200k_base`**，保证行为不劣于现状。
 
 ## 7. 调研受限说明
 
