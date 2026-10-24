@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -115,7 +115,7 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         sb.AppendLine($"   任务: {status.TaskSummary}");
         sb.AppendLine($"   创建: {status.SpawnedAt:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"   完成: {status.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"}");
-        if (status.ResultSummary is not null) sb.AppendLine($"   结果: {status.ResultSummary}");
+        if (status.ResultSummary is not null) sb.AppendLine($"   结果: {SubAgentResultPreview.Condense(status.ResultSummary)}");
         if (status.TokenSummary is { } ts)
         {
             var cacheEligible = ts.CacheHitTokens + ts.CacheMissTokens;
