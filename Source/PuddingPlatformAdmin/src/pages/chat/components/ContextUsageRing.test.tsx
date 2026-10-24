@@ -282,3 +282,53 @@ describe('legend breakdown shares the headline denominator', () => {
     expect(Math.abs(sum - 41)).toBeGreaterThan(5);
   });
 });
+
+describe('one scale per ring (effective window != total window)', () => {
+  it('keeps 分项 + 可用余量 == 100 and leaves the unavailable part off the ring', () => {
+    // 上一组用例的 tEffective 恰等于 tLimit，两个标度重合，测不出混标度。
+    // 这里把有效窗口与总窗口拉开（616K vs 1000K），并给出实测 300K：
+    //   标题 300/616 = 48.7%；不可用 384K 占模型窗口 38.4%。
+    // 旧代码把 38.4%（tLimit 标度）从 100 里减掉，得到可用 12.9%，
+    // 于是「分项 48.7 + 可用 12.9 = 61.6」——三段再也合不成 100%。
+    render(
+      <ContextUsageRing
+        tLimit={1_000_000}
+        tEffective={616_000}
+        tUsed={308_000}
+        tPct={30.8}
+        tMessageCount={120}
+        usageConfidence="provider_reported"
+        measuredPromptTokens={300_000}
+        measuredRawTokens={140_000}
+        tUnavailableReason="output_reserve"
+        tBreakdown={breakdown}
+      />,
+    );
+
+    const legend = screen.getByTestId('context-usage-legend');
+    const valueCells = Array.from(
+      legend.querySelectorAll('.contextUsagePanelLegendValue'),
+    ) as HTMLElement[];
+
+    // 只对「环上同标度」的两类行求和：分项 + 可用余量。不可用行单独标注不同分母。
+    const ringRows = valueCells.filter(
+      (cell) => !(cell.textContent ?? '').includes('占模型窗口'),
+    );
+    const sum = ringRows.reduce(
+      (acc, cell) => acc + Number.parseFloat((cell.textContent ?? '0').replace('%', '')),
+      0,
+    );
+    expect(sum).toBeCloseTo(100, 0);
+
+    // 不可用行必须自报分母，否则读者会把它和上面的百分比相加。
+    const unavailable =
+      screen.getByTestId('context-usage-unavailable-legend').textContent ?? '';
+    expect(unavailable).toContain('占模型窗口');
+    expect(unavailable).toContain('38.4%');
+
+    // 环上不得出现不可用色段：色段数应等于六桶里非零的个数（3）。
+    const panel = screen.getByTestId('context-usage-panel');
+    const ringSegments = panel.querySelectorAll('.contextUsagePanelSegment');
+    expect(ringSegments.length).toBe(3);
+  });
+});

@@ -235,8 +235,9 @@ const scale =
           };
         }).filter((segment) => segment.tokens > 0)
       : [];
-  // 不可用于输入的那段：只按「窗口 − 有效输入」算宽度，**名称来自显式来源**。
-  // 来源由调用方给出（`tUnavailableReason`）；没给 ⇒ 明确写「来源未知」。
+  // 不可用于输入的部分：只按「窗口 − 有效输入」计价，**不参与环的宽度**
+  // （环的 100% 是有效窗口）。名称来自显式来源，由调用方通过 `tUnavailableReason` 给出；
+  // 没给 ⇒ 明确写「来源未知」。
   const inputUnavailableTokens =
     tEffective && tEffective > 0 && tEffective < tLimit
       ? tLimit - tEffective
@@ -244,11 +245,12 @@ const scale =
   const inputUnavailablePercent =
     tLimit > 0 ? (inputUnavailableTokens / tLimit) * 100 : 0;
   const inputUnavailableLabel = describeInputUnavailableReason(tUnavailableReason);
-  // 可用余量 = 窗口里既未被使用、也不属于「不可用于输入」的部分（条上表现为底色）。
+  // 可用余量必须与分项**同标度**（arcDenominator）。「不可用于输入」位于有效窗口
+  // **之外**，把它按 tLimit 标度相减，会让「已用 + 可用 + 不可用」在不同分母上相加
+  // ——这正是 2026-10-24 面板两个百分比打架的残余一半（标题已换分母，这里没跟上）。
+  // 因此它只在图例与说明行出现，不参与环的几何。
   const availablePercent =
-    arcDenominator > 0
-      ? Math.max(0, 100 - displayPct - inputUnavailablePercent)
-      : 0;
+    arcDenominator > 0 ? Math.max(0, 100 - displayPct) : 0;
 
   const hoverSummary =
     configured && !notStarted
@@ -318,20 +320,10 @@ const scale =
                       title={`${segment.label} ${formatTokens(segment.tokens)}`}
                     />
                   ))}
-                  {/* 「不可用于输入」固定贴条最右端（marginLeft:auto 吃掉中间的可用余量），
-                      使「可用」与「不可用」在空间上一分为二。名称按**来源**给出：
-                      只有来源确实是输出预算时才叫「预留输出」。 */}
-                  {inputUnavailablePercent > 0 && (
-                    <span
-                      className={styles.contextUsagePanelSegment}
-                      style={{
-                        width: `${inputUnavailablePercent}%`,
-                        marginLeft: 'auto',
-                        backgroundImage: CONTEXT_RESERVED_HATCH,
-                      }}
-                      title={`${inputUnavailableLabel} ${formatTokens(inputUnavailableTokens)}`}
-                    />
-                  )}
+                  {/* 「不可用于输入」不画进环：环的 100% 是**有效窗口**（arcDenominator），
+                      而这块在有效窗口之外。按 tLimit 标度贴到环尾会让三段之和超过 100%，
+                      按有效窗口标度贴又会吃掉真实余量。它只作为图例与说明行存在，
+                      并在数值后标注「占模型窗口」，使读者知道这一行与上面几行不同分母。 */}
                 </div>
                 <div
                   className={styles.contextUsagePanelLegend}
@@ -384,6 +376,9 @@ const scale =
                         </span>
                         <span className={styles.contextUsagePanelLegendValue}>
                           {inputUnavailablePercent.toFixed(1)}%
+                          <span style={{ opacity: 0.65, marginLeft: 4, fontSize: '0.85em' }}>
+                            （占模型窗口）
+                          </span>
                         </span>
                       </div>
                     </>
