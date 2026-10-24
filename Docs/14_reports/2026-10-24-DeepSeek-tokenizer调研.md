@@ -256,3 +256,100 @@ mixed      chars=29   tokens=11   roundtrip=False ids=[67612,22250,6900,5598,110
 3. 用 Provider 实测值做**区间校验**：对若干条真实已发送请求，比较本地估算与 `providerPromptTokens` 的偏差，要求显著优于当前 1.83 倍 —— 这只能证明「更好」，不能证明「逐 token 一致」，但可作为回归门槛。
 
 在拿到逐 token 一致的证据前，**不得宣称方案 A 已可用**。
+
+
+## 10. 探针 v3：三条正则 + special tokens 全链路打通（2026-10-24 10:19）
+
+### 10.1 做法
+
+三处关键改进，均针对 v2 的遗留问题：
+
+1. **正则从 `tokenizer.json` 程序化读取**，不手抄 —— 第三条正则含 `"`、`[`、`\\`、`\p{L}` 等，手抄极易出错。
+2. **`CompositePreTokenizer` 的每一级都传入 `specialTokens`**（v2 只传给 `BpeOptions`，无效）。
+3. **`specialTokens` 从 `added_tokens` 全量构造**（1,283 条），不再只给 3 个。
+
+### 10.2 输出（`dotnet run`，exit=0）
+
+```
+model=BPE vocab=128000 merges=127741 special=1283 byteLevelFlag=True
+splitPatterns=3
+  [0] \p{N}{1,3}
+  [1] [一-龥぀-ゟ゠-ヿ]+
+  [2] [!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
+composite built with 3 split stages
+CREATED in 185 ms
+
+ascii      chars=11   tokens=2    rt=True  ids=[33310,2058]
+cjk        chars=4    tokens=1    rt=True  ids=[33574]
+cjk_long   chars=11   tokens=5    rt=True  ids=[112356,589,23229,1959,25556]
+digits     chars=10   tokens=4    rt=True  ids=[6895,18009,25744,18]
+code       chars=22   tokens=8    rt=True  ids=[3465,52735,4042,2605,1354,1527,13,19]
+json       chars=17   tokens=11   rt=True  ids=[24313,67,3362,19,3184,68,96893,20,14,21,48663]
+bos_token  chars=21   tokens=1    rt=True  ids=[0]
+eos_token  chars=19   tokens=1    rt=True  ids=[1]
+pad_token  chars=9    tokens=1    rt=True  ids=[2]
+mixed      chars=29   tokens=14   rt=True  ids=[67612,223,22250,7283,5598,11093,223,15581,2295,223,4287,16,25,7]
+```
+
+### 10.3 三个版本对比
+
+| 样本 | v1 默认 | v2 仅 ByteLevel | **v3 + Composite** |
+|---|---|---|---|
+| `人工智能` | **0** | 1 | **1** ✅ |
+| `1234567890` | — | — | **4** ✅（`\p{N}{1,3}` 生效的直接证据：10 位切成 3+3+3+1） |
+| `<｜begin▁of▁sentence｜>` | 6 | 12 | **1 → `[0]`** ✅ |
+| `hello world` | 2（rt=False） | 2（rt=False） | **2（rt=True）** ✅ |
+| `Agent 调用 http_fetch 失败率 51.7%` | 8（rt=False） | 11（rt=False） | **14（rt=True）** ✅ |
+| **全部样本 roundtrip** | 1/8 | 4/8 | **10/10** ✅ |
+
+**四个可独立验证的正确性信号**（不只是「能跑」）：
+
+1. `bos/eos/pad` → **精确** `[0]` / `[1]` / `[2]`，与 vocab 声明一致；
+2. `1234567890` → 4 token，**恰是 `\p{N}{1,3}` 的切分行为**，证明正则真的参与运算而非被忽略；
+3. `人工智能` → 单 token `[33574]`，中文不再丢失；
+4. **10/10 样本 `Decode(Encode(x)) == x`**，说明字节映射与词表一致（v2 有 4 个样本失败）。
+
+加载 **185 ms**（128K vocab + 127K merges + 3 级预分词 + 1,283 special tokens）。
+
+### 10.4 仍未证明的事（不得越界）
+
+**没有黄金样本，因此「与官方逐 token 一致」仍未证实。** roundtrip 可逆只说明映射自洽，不排除「两边都偏移但自洽」的可能。当前证据强度是「多个独立信号一致」，不是「逐 ID 比对通过」。
+
+结论的准确表述：**方案 A 的技术路径已打通并具备四个正确性信号，尚缺官方向量比对。**
+
+### 10.5 核心实现（可直接作为 S1 组件的骨架）
+
+```csharp
+// 1) 从 tokenizer.json 一次读取四样东西：vocab / merges / added_tokens / 三条 Split 正则
+foreach (var p in model.GetProperty("vocab").EnumerateObject())
+    vocab.Add(new(p.Name, p.Value.GetInt32()));
+
+foreach (var m in model.GetProperty("merges").EnumerateArray())
+    merges.Add(m.GetString()!);                      // 形如 "Ġ t"
+
+foreach (var t in root.GetProperty("added_tokens").EnumerateArray())
+    specialTokens[t.GetProperty("content").GetString()!] = t.GetProperty("id").GetInt32();
+
+// 递归遍历 pre_tokenizer，收集 Split.Regex，并记录是否存在 ByteLevel 节点
+Walk(root.GetProperty("pre_tokenizer"));
+
+// 2) 每一级 RegexPreTokenizer 都带 specialTokens —— 这是 v2 失败的原因
+var stages = splitPatterns.Select(p => (PreTokenizer)new RegexPreTokenizer(new Regex(p), specialTokens)).ToList();
+var composite = new CompositePreTokenizer(stages, specialTokens);
+
+// 3) ByteLevel 用 BpeOptions 开关，而不是自写 Normalizer（顺序会反，见 §9.4）
+var tok = BpeTokenizer.Create(new BpeOptions(vocab)
+{
+    Merges = merges,
+    ByteLevel = true,
+    SpecialTokens = specialTokens,
+    PreTokenizer = composite,
+});
+```
+
+### 10.6 下一步（S1 正式化）
+
+1. 新建 `Source/PuddingTokenization`（叶子组件，`ProjectReference=0`），把上述逻辑拆成 `ModelTokenizerCatalog` / `DeepSeekTokenizerJsonLoader` / `TokenizerHandle`。
+2. 词表资源：`ds-vocab.json`（4.08 MB）+ `ds-merges.txt`（1.63 MB）随应用分发；或只发 `tokenizer.json`（6.37 MB）在启动时拆分 —— 后者省空间但多一次解析，需实测取舍。
+3. 测试工程固化 §10.3 的样本为**回归基线**（含 v1/v2 会失败的那几条），并加变异：把 `ByteLevel` 置 false 必须让中文用例取红，删掉任一级 `RegexPreTokenizer` 必须让数字/中文用例取红。
+4. 黄金样本仍待解决（§9.5）。
