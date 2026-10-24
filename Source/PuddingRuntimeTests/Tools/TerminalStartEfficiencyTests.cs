@@ -80,6 +80,9 @@ public sealed class TerminalStartEfficiencyTests
         var result = await Execute(manager, $$"""{"command":"echo ok","yield_time_ms":{{milliseconds}}}""");
         Assert.IsFalse(result.Success);
         StringAssert.Contains(result.Error!, "yield_time_ms");
+        // 只报范围不够：调用方几乎总是想用它“等长任务”，必须被告知改用 terminal_wait。
+        // 这条断言让「删掉那句指引」的回归必然取红（变异已验证）。
+        StringAssert.Contains(result.Error!, "terminal_wait");
         manager.Verify(m => m.StartAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
