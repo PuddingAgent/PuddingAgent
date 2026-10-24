@@ -431,3 +431,70 @@ pwsh -NoProfile -File Tools\Tokenization\Prepare-TokenizerAssets.ps1 -SourcePath
 
 - **运行时效果**。本次改的是 `PuddingCore.dll`，宿主进程仍加载旧程序集。在重启并对比 `lastMeasuredRawEstimatedTokens` 与 `providerPromptTokens` 之前，不能说估算偏差已从 1.83 倍收敛。
 - 请求级口径：即使文本分词完全正确，`usedTokens` 仍包含消息封装、工具模板等本地估算部分，真实误差只能在重启后由实测给出。
+
+
+## 12. 检索路径的状态误报：`code_index_status` 说 Pending，索引其实可用（2026-10-24 12:15 诊断）
+
+### 12.1 现象与实证
+
+同一次 `Source` 范围检索，两个后端给出**不同完整度**：
+
+| 工具 | 命中 | 完整性 | 是否含真实实现 |
+|---|---|---|---|
+| `search_grep`（scan 默认） | 6 | **`complete=false`**，`scanned 983/2000` | ❌ 只有 5 个测试 mock + 1 个调用点 |
+| `code_symbol_search`（index） | **7** | `complete=true`，`stale_skipped=0` | ✅ 含 `ICodeQueryService` 接口与 `CodeQueryService` 实现 |
+
+而被漏掉的那个是 `PuddingCodeIntelligence/Services/CodeQueryService.cs` —— **正是解析状态的地方**。按 scan 的结果会得出「只有 mock 实现了它」的错误结论。
+
+### 12.2 为什么 scan 会漏
+
+`SearchGrepTool` 硬上限：`MaxEnumeratedFiles = 2000`、`MaxScannedFiles = 2000`（`SearchGrepTool.cs:68-69`）。
+实测本仓 `Source` 下：**13,480** 个文件、其中 `.cs` **3,282** 个 ⇒ 只搜 `.cs` 也超上限 64%。
+
+上限本身是**合理设计**（scan 面向窄范围，速度有 10s 兜底），截断时也确实给了提示并建议索引工具。所以问题不在 scan。
+
+### 12.3 真正的问题：状态误报把人从索引工具推回 scan
+
+```
+code_index_status  →  status: "Pending", started_at_utc: null,
+                       completed_at_utc: 2026-10-06T15:08:16  （18 天前）
+code_symbol_search →  index_freshness.state: "idle",
+                       watcher_attached: true,
+                       last_calibration_at_utc: 2026-10-24T03:50:09  （今天）
+```
+
+两个投影**互相矛盾**，且 `Pending` 稳定复现（连查两次一致）。
+
+根因链（已读源码确认）：
+
+```csharp
+// CodeQueryService.ToIndexStatus
+CodeProjectStatus.Registering => CodeIndexStatus.Pending,
+CodeProjectStatus.Active      => CodeIndexStatus.Completed,
+```
+
+而 `CodeProjectStatus` 枚举里**没有 `Pending` 值**（`Unknown/Registering/Active/Removing/Removed/Failed`）⇒ 输出的 `Pending` 只可能来自 `project.Status == Registering`。
+
+即：**项目注册后停在 `Registering`，从未推进到 `Active`**，但索引数据实际已建好并持续校准。
+
+雪上加霜的是工具描述写着：
+
+> status 为 Pending/Indexing 时**查询类工具结果不完整，等 Completed 再查**
+
+对当前这个项目而言**这条描述是错的** —— `Pending` 状态下 `code_symbol_search` 返回 `complete=true`、`stale_skipped=0`。
+
+### 12.4 后果（不是理论）
+
+按描述行事 ⇒ 认为索引不可用 ⇒ 退回 `search_grep` ⇒ 撞 2000 上限 ⇒ `partial` ⇒ **漏掉唯一的真实实现**（§12.1 已实证）。
+这正是「检索优化」里最贵的一类浪费：**不是搜得慢，是搜错地方还自信**。
+
+### 12.5 修复方案（待实施）
+
+1. **`code_index_status` 增加 `index_freshness`**，与 4 个查询工具保持一致 —— 让调用方同时看到「注册状态（可能脏）」与「运行时真实状态」，不再被单一字段误导。
+2. **抽共享 helper**：`index_freshness` 的计算逻辑目前在 `CodeQueryTools.cs` 里**重复 3 份**（L370 / L798 / L1052，每份约 56 行）。加第 4 处之前必须先抽，否则就是把重复从 3 份变成 4 份。
+3. **修描述**：把「Pending 时结果不完整」改成「以 `index_freshness.state` 为准；注册状态与运行时状态可能不一致」。
+4. 可选的根因修复：注册/索引完成后把 `Status` 推进到 `Active`，并对已脏数据做一次校准。涉及状态机 + 需要重启，单独评估。
+
+### 12.6 顺带观察
+
+`index_freshness.unresolved_source_path_count = 6580`（今天校准过）。这个数量级说明有大量源路径未解析，可能与索引覆盖不全有关，但本轮未展开，**不作为结论**。
