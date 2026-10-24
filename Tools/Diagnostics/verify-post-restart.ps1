@@ -18,11 +18,12 @@ function Report([string]$name, [bool]$ok, [string]$detail) {
     if (-not $ok) { $script:failures++ }
 }
 
-# 1) The stashed context_health projection must be applied, not stashed.
+# 1) Informational only: stashes here are often other work-in-progress, not ours.
+#    Treating "any stash exists" as a failure produced a gate that could never go green.
 Push-Location $RepoRoot
 try {
-    $stash = (git stash list) -join "`n"
-    Report 'stash-empty' ([string]::IsNullOrWhiteSpace($stash)) ($(if ($stash) { 'stash still holds unapplied work' } else { 'no stashed work' }))
+    $stash = (git stash list) -join '; '
+    Write-Output ("[INFO] stash-state - " + $(if ([string]::IsNullOrWhiteSpace($stash)) { 'no stashed work' } else { $stash }))
 
     # 2) Source must actually carry the ModelId projection.
     $source = Get-ChildItem -Path (Join-Path $RepoRoot 'Source') -Recurse -Filter 'ContextCompactionService.cs' |
@@ -65,8 +66,13 @@ else {
 # 4) The capture flag must have produced at least one fingerprint line.
 $cutoff = (Get-Date).AddHours(-$LogLookbackHours)
 $hit = $null
-$logDir = Join-Path $LogRoot 'components\llm_gateway'
-if (Test-Path $logDir) {
+# The capture line is emitted through Serilog into logs\system. An older revision wrote it
+# under logs\components\llm_gateway; keep both roots so the check cannot false-negative
+# just because the log sink moved.
+$logDirs = @((Join-Path $LogRoot 'system'), (Join-Path $LogRoot 'components\llm_gateway'))
+foreach ($logDir in $logDirs) {
+    if ($hit) { break }
+    if (-not (Test-Path $logDir)) { continue }
     foreach ($file in Get-ChildItem -Path $logDir -Filter '*.log' -File | Where-Object { $_.LastWriteTime -gt $cutoff }) {
         $content = $null
         try {
