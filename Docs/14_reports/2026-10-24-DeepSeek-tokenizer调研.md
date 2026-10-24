@@ -498,3 +498,69 @@ CodeProjectStatus.Active      => CodeIndexStatus.Completed,
 ### 12.6 顺带观察
 
 `index_freshness.unresolved_source_path_count = 6580`（今天校准过）。这个数量级说明有大量源路径未解析，可能与索引覆盖不全有关，但本轮未展开，**不作为结论**。
+
+
+## 13. `unresolved_source_path_count = 6580` 的定性（2026-10-24 13:15）
+
+### 13.1 这个数字是什么
+
+`ICodeIndexMaintenance.SourceMaintenanceUnresolvedPathCount` ← `CodeSourceMaintenanceCoordinator` 的 `RetryableFileCount`，其注释写明：
+
+> 未解决的路径数：本轮失败/待重试的路径 **加上** 仍在退避窗口内被跳过的路径。两者都让扫描水位停住，所以必须如实报告（不是「本轮尝试了几次」）。
+
+本仓 `Source` 下共 13,480 个文件 ⇒ 6580 约占一半，**单看这个比例足以让人怀疑索引只覆盖了一半**。上一轮我把它记为「未展开，不作结论」，这是对的。
+
+### 13.2 用「今天新写的代码」做探针（决定性）
+
+与其抽样统计，不如问一个索引必须能回答的问题：**今天下午刚写的符号，索引里有吗？**
+
+- 13:00 前后在 `CodeQueryTools.cs` 加入 `CodeQueryToolHelper.ReadIndexFreshness`
+- 13:15 调 `code_symbol_search("ReadIndexFreshness")`
+- 结果：**命中 1 条**，`complete=true`，`stale_skipped=0`，`file_path` 与 `start_line=141` 均正确
+
+⇒ **索引能纳入当天新增代码，扫描水位在前进，索引不是陈旧的。**
+
+### 13.3 结论与边界
+
+**已证实**：索引对新代码的响应是实时的；`code_symbol_search` 的覆盖在当前状态下可用。
+
+**未证实 / 不下结论**：6580 里「失败」与「退避窗口内被跳过」各占多少，以及它们具体是哪些路径。要回答需要源维护轮次日志，本轮未取。
+
+**为什么不再往下挖**：该计数对「索引能否被信任」的决定性问题已被 13.2 的实验回答（能）。继续追构成属于性能/噪声治理，不是当前阻塞项。
+
+### 13.4 顺带记录的环境事实
+
+- 索引库：`D:\Data\databases\code-index\code_index.db`，**1,787,154,432 字节（≈1.7 GB）**，`LastWriteTime = 2026-10-24 12:12:04`（活跃写入）
+- 本机 **没有 `sqlite3` CLI**（`Get-Command sqlite3` 为空）⇒ 想直接查表必须另找读法（EF Core / 项目内探针），不要假设命令行可用
+
+
+## 14. `Registering` 不是脏数据，是**有意保留**的语义（2026-10-24 13:20）
+
+§12 里我推断「项目停在 `Registering` 18 天、从未推进 `Active`」，并把「注册后推进 `Active`」列为可选的根因修复。**这个推断需要修正**：读代码后确认 `Registering` 是有意为之。
+
+`CodeIndexScheduler` 的状态机：
+
+| 位置 | 行为 |
+|---|---|
+| `CodeIndexScheduler.cs:204` | 作业开始 ⇒ 写 `Registering` |
+| `CodeIndexScheduler.cs:226` | 作业结束 ⇒ `Active`（成功）/ `Failed`（失败） |
+| `CodeIndexScheduler.cs:292-315` | `MarkInterruptedAsync`：**作业被取消时不把行移出 `Registering`** |
+
+关键注释原文：
+
+> U3-G1: records a cancelled run **without moving the row off** `CodeProjectStatus.Registering`（the scope still owes a full run - the status semantics are unchanged）
+
+所以 `Registering` 的语义是 **「欠一次完整索引运行」**，不是「正在索引」也不是「脏数据」。10-06 那次运行被中断后留下的就是这个合法标记。
+
+### 14.1 由此得出的两条结论
+
+1. **不要**把 `Registering` 自动推进到 `Active`。那会把「这个 scope 还欠一次完整运行」这个事实抹掉——而这正是该标记要传达的信息。
+2. **但「欠一次完整运行」≠「索引结果不可用」**：watcher 与校准仍在工作，今天的新代码照样进索引（§13.2 实证）。所以工具描述里那句「Pending/Indexing ⇒ 查询结果不完整，等 Completed 再查」**在语义上就是错的**，不只是对本项目不成立。
+
+⇒ §12 的修复方向（补 `index_freshness` + 改描述，**不动状态机**）事后看仍然正确，而且现在有了更硬的依据：`Pending` 是一个**本来就该如实在报告里存在的**状态，需要修正的是「它意味着什么」的说明，不是它本身。
+
+### 14.2 另一个观察（未修）
+
+`CodeQueryService.GetProjectIndexStatusAsync` 构造 `CodeIndexResult` 时**没有传 `Message`**，于是 `code_index_status` 输出的 `message` 恒为 `null`——而 `MarkInterruptedAsync` 明明把 `InterruptedStatusMessage`（"Indexing run interrupted: cancelled before a result could be recorded..."）写进了记录。
+
+不过 `CodeProjectRecord` 本身**没有 Message 字段**（`WorkspaceId/ProjectId/ProjectPath/Status/DisplayName/AddedAtUtc/UpdatedAtUtc/Source/ScopeState`），所以这条消息的落点需要先查实存储层，不能凭 `UpdateProjectStatusAsync` 的签名断定它被丢弃。**本轮不动，只登记。**
