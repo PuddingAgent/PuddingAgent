@@ -37,7 +37,7 @@ public sealed class DiagnosticContractGateTests
         "phase={Phase}",
         "retryable={Retryable}",
         "requestBytes={RequestBytes}",
-        "attempt={Attempt}/{MaxRetries}",
+        "attempt={Attempt}/{MaxAttempts}",
     ];
 
     private static readonly string[] StreamRetryLogTokens =
