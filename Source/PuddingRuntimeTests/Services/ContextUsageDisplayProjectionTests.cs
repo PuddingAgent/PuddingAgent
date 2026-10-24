@@ -245,4 +245,26 @@ public sealed class ContextUsageDisplayProjectionTests
         Assert.IsTrue(snapshot.ExceedsAutoCompactRatio(0.65));
         Assert.IsFalse((snapshot with { UsedTokens = 607_749 }).ExceedsAutoCompactRatio(0.65));
     }
+
+    /// <summary>
+    /// 接口契约层的最后一道关：`Display` 是**只有 getter 的派生属性**，
+    /// 若序列化器不输出它，前面所有断言都只在内存里成立，前端仍然拿不到。
+    /// 这里用 ASP.NET Core 的默认 Web 选项（camelCase）序列化一次快照，
+    /// 断言 `display.percent` / `display.denominatorTokens` 真的在 JSON 里。
+    /// </summary>
+    [TestMethod]
+    public void Display_IsSerializedInTheApiShape()
+    {
+        var health = new ContextHealthEvaluator().Evaluate(
+            "session-1", 300_000, 1_000_000, maxOutputTokens: 384_000);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            health,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+
+        StringAssert.Contains(json, "\"display\":");
+        StringAssert.Contains(json, "\"percent\":");
+        StringAssert.Contains(json, "\"denominatorTokens\":616000");
+        StringAssert.Contains(json, "\"remainingPercent\":");
+    }
 }
