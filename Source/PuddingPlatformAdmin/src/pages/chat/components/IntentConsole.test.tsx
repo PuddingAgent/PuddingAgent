@@ -757,3 +757,39 @@ describe('IntentConsole', () => {
     );
   });
 });
+
+  it('sends the selected thinking level with a plain text message', async () => {
+    const sendWithMetadata = jest.fn(async () => {});
+    render(
+      <IntentConsole
+        {...baseProps}
+        workspaceId="default"
+        onSendWithMetadata={sendWithMetadata}
+      />,
+    );
+
+    // 默认是「深入」= high：用户没动手也必须带上，否则服务端默认不可观测。
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: '重构这个模块' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+
+    await waitFor(() => expect(sendWithMetadata).toHaveBeenCalledTimes(1));
+    expect(sendWithMetadata).toHaveBeenCalledWith('重构这个模块', {
+      reasoningEffort: 'high',
+    });
+
+    // 切到「极致」= max：报文必须跟着变，否则界面只是装饰。
+    fireEvent.click(screen.getByLabelText('执行偏好：深入'));
+    fireEvent.click(await screen.findByText('极致'));
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: '再深入一点' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+
+    await waitFor(() => expect(sendWithMetadata).toHaveBeenCalledTimes(2));
+    expect(sendWithMetadata).toHaveBeenLastCalledWith('再深入一点', {
+      reasoningEffort: 'max',
+    });
+  });
