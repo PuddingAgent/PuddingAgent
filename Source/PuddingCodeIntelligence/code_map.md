@@ -1,5 +1,5 @@
 # PuddingCodeIntelligence CodeMAP
-> 源指纹: Source/PuddingCodeIntelligence/**=26-f3550bc7905b · 条目数: 20 · 最近整理: 2026-10-14
+> 源指纹: Source/PuddingCodeIntelligence/**=26-120040990b2f · 条目数: 20 · 最近整理: 2026-10-24
 
 > 代码语言智能：**生产与消费**（语言索引器 · outliner · LSP · 查询 facade）
 > 边界（ADR-089 §2.1）：本工程 → `PuddingCodeIndex`（单向 `ProjectReference`）；索引产物维护（契约/存储/变更捕获/调度/范围解析）已迁至 `Source/PuddingCodeIndex`。本工程**不得被** `PuddingCodeIndex` 引用。
@@ -38,7 +38,7 @@
 |------|------|
 | `CSharp/RoslynCSharpIndexer.cs` | C# 索引器：旧接缝自写库 + `UpdateFilesAsync` 批量只读接缝 （见下「关键语义」） |
 | `TypeScript/TypeScriptIndexer.cs` | TypeScript/JavaScript 索引器：批量只读投影 + 路由 / 退化 （见下「关键语义」） |
-| `Services/CodeQueryService.cs` | 代码查询服务（只读索引，`ICodeQueryService`） |
+| `Services/CodeQueryService.cs` | 代码查询服务（只读索引）；`Message` 取自注册记录 `StatusMessage` |
 | `Services/FileOutlinerRegistry.cs` | 文件大纲注册（按扩展名派发） |
 | `Lsp/IndexBasedLanguageServerService.cs` | 基于索引的 LSP 视图（hover / definition / references） |
 | `Lsp/NoOpLanguageServerService.cs` | 空实现 |
