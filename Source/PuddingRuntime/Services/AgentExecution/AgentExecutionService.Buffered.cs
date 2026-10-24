@@ -464,7 +464,7 @@ public sealed partial class AgentExecutionService
         // 思考强度：本轮手动档位（CallerLlmSnapshot）> 模板配置 > 已解析配置 > 产品默认 high。
         // 决策收口到 ReasoningEffortPolicy：非法值跳过而不抛错，避免一个拼错让整轮失败。
         var supportsReasoning = request.CallerLlmSnapshot?.CapabilityTags
-            .Contains("reasoning", StringComparer.OrdinalIgnoreCase) == true;
+            .Contains(ReasoningEffortPolicy.ReasoningCapabilityTag, StringComparer.OrdinalIgnoreCase) == true;
         var effortDecision = ReasoningEffortPolicy.Resolve(
             request.CallerLlmSnapshot?.ReasoningEffort,
             template.ReasoningEffort,

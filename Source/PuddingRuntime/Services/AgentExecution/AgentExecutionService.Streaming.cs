@@ -434,7 +434,7 @@ public sealed partial class AgentExecutionService
             effectiveLlmConfig = await ResolveLlmConfigAsync(request.LlmConfig, ct);
             // 思考强度：本轮手动档位（CallerLlmSnapshot）> 模板配置 > 已解析配置 > 产品默认 high。
             var supportsReasoning = request.CallerLlmSnapshot?.CapabilityTags
-                .Contains("reasoning", StringComparer.OrdinalIgnoreCase) == true;
+                .Contains(ReasoningEffortPolicy.ReasoningCapabilityTag, StringComparer.OrdinalIgnoreCase) == true;
             var effortDecision = ReasoningEffortPolicy.Resolve(
                 request.CallerLlmSnapshot?.ReasoningEffort,
                 template.ReasoningEffort,

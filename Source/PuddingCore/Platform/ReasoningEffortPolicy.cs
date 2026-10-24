@@ -32,6 +32,12 @@ public static class ReasoningEffortPolicy
     /// <summary>产品默认强度：不指定任何来源时使用。</summary>
     public const string Default = High;
 
+    /// <summary>
+    /// 能力标签：只有声明了该标签的模型才会被补上产品默认值。
+    /// 写成常量而不是裸字符串，因为它是跨层约定（注册表打标签、运行时读标签）。
+    /// </summary>
+    public const string ReasoningCapabilityTag = "reasoning";
+
     /// <summary>前端三档的展示名，与强度一一对应。</summary>
     public static string Label(string effort) => effort switch
     {
