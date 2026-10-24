@@ -897,6 +897,17 @@ namespace PuddingCode.Platform
                     : TiktokenTokenizer.CreateForModel(tokenizerKey));
         }
 
+        /// <summary>
+        /// 回退到通用 Tiktoken 编码时的选择规则。
+        /// </summary>
+        /// <remarks>
+        /// ⚠️ <c>deepseek</c> 归到 <c>o200k_base</c> **不是遗留错误，是有意保留的回退**。
+        /// 已登记词表的模型（当前仅 DeepSeek-V4.1-Flash）在 <see cref="GetTokenizer"/> 里
+        /// 已被精确分支拦下，根本走不到这里。剩下走到这里的 DeepSeek 模型（V4-Pro、
+        /// V4-Flash 等）与 <c>o200k_base</c> 至少是「近似」关系；删掉这个分支它们会继续
+        /// 往下匹配并落进 gpt-4o 分支——结果相同，但语义从「明确声明的近似」变成「碰巧」，
+        /// 将来改 gpt-4o 分支时会连带打歪。
+        /// </remarks>
         private static string ResolveTokenizerKey(string? modelId)
         {
             if (string.IsNullOrWhiteSpace(modelId))
