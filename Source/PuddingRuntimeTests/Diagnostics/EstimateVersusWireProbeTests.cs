@@ -16,8 +16,10 @@ namespace PuddingRuntimeTests.Diagnostics;
 [TestClass]
 public sealed class EstimateVersusWireProbeTests
 {
-    [TestMethod]
-    public async Task Estimate_And_WireBody_UseTheSameScale()
+    [DataTestMethod]
+    [DataRow("short")]
+    [DataRow("long")]
+    public async Task Estimate_And_WireBody_UseTheSameScale(string profile)
     {
         // 探针需要和生产同口径：指向真实的词表目录，否则走 Fallback（实测会少算 3.6 倍）。
         const string tokenizerRoot = @"D:\Data\models\tokenizers";
@@ -25,7 +27,7 @@ public sealed class EstimateVersusWireProbeTests
         if (Directory.Exists(tokenizerRoot))
             Environment.SetEnvironmentVariable("PUDDING_TOKENIZER_ASSETS", tokenizerRoot);
 
-        var messages = BuildMessages();
+        var messages = BuildMessages(profile);
         var handler = new CapturingHandler();
         var gateway = new OpenAiLlmGateway(
             new HttpClient(handler),
@@ -52,10 +54,11 @@ public sealed class EstimateVersusWireProbeTests
             $"wireTokens={wireTokens}\n" +
             $"estimate={estimate}\n" +
             $"estimateOverWire={ratio:F4}\n" +
+            $"profile={profile}\n" +
             $"tokenizer={tokenizer}\n";
 
         File.WriteAllText(
-            Path.Combine(AppContext.BaseDirectory, "estimate-vs-wire.txt"),
+            Path.Combine(AppContext.BaseDirectory, $"estimate-vs-wire-{profile}.txt"),
             report,
             new UTF8Encoding(false));
 
@@ -63,8 +66,13 @@ public sealed class EstimateVersusWireProbeTests
         Assert.IsTrue(wireTokens > 0);
     }
 
-    private static List<ChatMessage> BuildMessages()
+    private static List<ChatMessage> BuildMessages(string profile)
     {
+        // short = 每条消息都很短（心跳、确认、单行结论）⇒ JSON 信封占比最大；
+        // long  = 每条消息接近真实审阅段落 ⇒ 信封被摊薄。
+        // 两者的比值曲线才说明「估算只数字段、不数信封」到底影响多大。
+        var repeat = profile == "long" ? 6 : 1;
+
         var messages = new List<ChatMessage>
         {
             new(ChatRole.System, "你是鲸鲸，负责代码开发与审阅。回答必须给证据，禁止把假设写成结论。"),
@@ -72,12 +80,13 @@ public sealed class EstimateVersusWireProbeTests
 
         for (var i = 0; i < 8; i++)
         {
-            messages.Add(new ChatMessage(ChatRole.User,
-                $"第 {i} 轮：请核对这处改动的归属。我关心的是「谁在什么时候写了这段」，"
-                + "而不是它看起来是否合理。证据必须能取红，否则不算校验。"));
-            messages.Add(new ChatMessage(ChatRole.Assistant,
-                $"收到第 {i} 轮。已核磁盘：工作树干净，AHEAD 计数与上次一致；"
-                + "结论是这批改动属于上一个失败的子代理，不应并入本次提交。"));
+            var user = $"第 {i} 轮：请核对这处改动的归属。我关心的是「谁在什么时候写了这段」，"
+                + "而不是它看起来是否合理。证据必须能取红，否则不算校验。";
+            var assistant = $"收到第 {i} 轮。已核磁盘：工作树干净，AHEAD 计数与上次一致；"
+                + "结论是这批改动属于上一个失败的子代理，不应并入本次提交。";
+
+            messages.Add(new ChatMessage(ChatRole.User, string.Concat(Enumerable.Repeat(user, repeat))));
+            messages.Add(new ChatMessage(ChatRole.Assistant, string.Concat(Enumerable.Repeat(assistant, repeat))));
         }
 
         for (var i = 0; i < 3; i++)
