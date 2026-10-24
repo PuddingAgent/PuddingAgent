@@ -401,8 +401,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     'keyboard',
   );
   /** Agent 执行偏好：仅影响前端显示，后续可接入后端策略。 */
-  const [executionMode, setExecutionMode] = useState<'auto' | 'deep' | 'fast'>(
-    'auto',
+  const [executionMode, setExecutionMode] = useState<'low' | 'high' | 'max'>(
+    'high',
   );
   /** 已完成状态短暂显示后自动消失 */
   const [completedVisible, setCompletedVisible] = useState(false);
@@ -537,11 +537,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     workspaceId && onSendWithMetadata && !disabled && !loading,
   );
   const executionModeLabel =
-    executionMode === 'deep'
-      ? '深入'
-      : executionMode === 'fast'
-        ? '快速'
-        : '自动';
+    executionMode === 'low'
+      ? '快速'
+      : executionMode === 'max'
+        ? '极致'
+        : '深入';
   const uiTestMode =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('uiTest') === '1';
@@ -654,7 +654,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       // Clearing only the parent can be a no-op when its value is already empty.
       // Reset the leaf too, including its composition guard, before submission.
       textInputRef.current?.setValue('');
-      onSend(draft);
+      if (onSendWithMetadata) {
+        await onSendWithMetadata(draft, { reasoningEffort: executionMode });
+      } else {
+        onSend(draft);
+      }
       return;
     }
     if (!workspaceId || !onSendWithMetadata || disabled || imageUploading)
@@ -704,6 +708,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     }
   }, [
     disabled,
+    executionMode,
     imageUploading,
     inputValue,
     onSend,
@@ -1180,7 +1185,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               placement="topRight"
               content={
                 <div className={styles.composerPreferenceMenu}>
-                  {(['auto', 'deep', 'fast'] as const).map((mode) => (
+                  {(['low', 'high', 'max'] as const).map((mode) => (
                     <button
                       key={mode}
                       type="button"
@@ -1188,11 +1193,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                       data-active={executionMode === mode ? 'true' : undefined}
                       onClick={() => setExecutionMode(mode)}
                     >
-                      {mode === 'auto'
-                        ? '自动'
-                        : mode === 'deep'
-                          ? '深入'
-                          : '快速'}
+                      {mode === 'low'
+                        ? '快速'
+                        : mode === 'max'
+                          ? '极致'
+                          : '深入'}
                     </button>
                   ))}
                 </div>

@@ -4,18 +4,17 @@ namespace PuddingCode.Platform;
 /// 思考强度（reasoning effort）的唯一决策点。
 ///
 /// 产品口径（用户裁定 2026-10-24）：
-/// ① provider 提供 none / low / high / max，但 PuddingAgent 的实际场景只需 low / high / max；
-/// ② **high 是默认**——绝大多数对话、工具调用、代码修改都在这一档；
-/// ③ low 只用于闲聊解闷这类不需要推理的对话，属特例而非常态；
-/// ④ max 用于困难思考、研究、软件开发这类真的需要深推理的任务。
+/// ① provider 提供 none / low / high / max，PuddingAgent 只用 low / high / max；
+/// ② 前端三档与强度一一对应：快速 = low、深入 = high、极致 = max；
+/// ③ high 是默认；
+/// ④ none 不对用户暴露，只给压缩摘要这类非推理的内部调用使用。
 ///
-/// 由此推出的两个结论：
-/// - 「自动」的基线是 high，而不是 low；升 max 要靠证据，降 low 要靠明确的闲聊信号。
-/// - 「深入」不能映射到 high（high 已是默认），只能映射到 max。
-/// - none 不对用户暴露，只给压缩摘要这类非推理的内部调用使用。
+/// 因此「每轮偏好」直接就是档位名，不再做语义转译：
+/// 曾经把「深入」映射到 max 是错的——手动档位的语义高于自动基线，
+/// 既然界面把「深入」摆在用户面前，它就必须等于 high，而不是被系统再升一档。
 ///
 /// 契约（顺序即优先级）：
-/// ① 每轮偏好：fast → low，deep → max，auto/未知 → 不表态；
+/// ① 每轮偏好：low / high / max 直接采用；
 /// ② 已配置值：Agent 模板或模型级 reasoningEffort，必须合法才采用；
 /// ③ provider 模型默认值；
 /// ④ 都没有 ⇒ high（产品默认，而不是留空让服务端决定）。
@@ -33,10 +32,18 @@ public static class ReasoningEffortPolicy
     /// <summary>产品默认强度：不指定任何来源时使用。</summary>
     public const string Default = High;
 
+    /// <summary>前端三档的展示名，与强度一一对应。</summary>
+    public static string Label(string effort) => effort switch
+    {
+        Low => "快速",
+        Max => "极致",
+        _ => "深入",
+    };
+
     /// <summary>决策来源；日志必须记录它，否则"谁改的"永远说不清。</summary>
     public enum Origin
     {
-        /// <summary>本轮的执行偏好（自动/深入/快速）决定了强度。</summary>
+        /// <summary>本轮的手动档位（快速/深入/极致）决定了强度。</summary>
         Preference,
         /// <summary>Agent 模板或模型级配置决定了强度。</summary>
         Configured,
@@ -59,20 +66,15 @@ public static class ReasoningEffortPolicy
         || effort is None or Low or High or Max;
 
     /// <summary>
-    /// 解析最终强度。<paramref name="preference"/> 取 <c>auto</c>/<c>deep</c>/<c>fast</c>，
-    /// 大小写与首尾空白不敏感，未知取值按 <c>auto</c> 处理（不阻断对话）。
+    /// 解析最终强度。<paramref name="preference"/> 取 <c>low</c>/<c>high</c>/<c>max</c>
+    /// （即界面上的快速/深入/极致），大小写与首尾空白不敏感；
+    /// 其它取值一律按"未表态"处理，不阻断对话。
     /// </summary>
     public static Decision Resolve(string? preference, string? configured, string? modelDefault)
     {
-        var normalizedPreference = Normalize(preference);
-        var preferred = normalizedPreference switch
-        {
-            "deep" => Max,
-            "fast" => Low,
-            _ => null,
-        };
-        if (preferred is not null)
-            return new Decision(preferred, Origin.Preference, FirstRejected(null, configured, modelDefault));
+        var preferred = Normalize(preference);
+        if (preferred is Low or High or Max)
+            return new Decision(preferred, Origin.Preference, FirstRejected(configured, modelDefault, null));
 
         var configuredValue = Normalize(configured);
         if (configuredValue is not null && IsValid(configuredValue))
@@ -95,9 +97,5 @@ public static class ReasoningEffortPolicy
     }
 
     private static string? Normalize(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return null;
-        return value.Trim().ToLowerInvariant();
-    }
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
 }
