@@ -11,7 +11,15 @@ namespace PuddingCoreTests.Observability;
 /// 行内没有 tag（多个组件日志拼起来看时分不清来源）。测试钉住的是"解析与推导"这两个纯函数，
 /// 而不去断言 Serilog 内部行为。
 /// </summary>
+/// <remarks>
+/// ⚠️ 必须 <see cref="DoNotParallelizeAttribute"/>：本类的用例会读写**进程级**环境变量
+/// <c>PUDDING_LOG_LEVEL</c>，而 <c>MSTestSettings.cs</c> 开的是方法级并行
+/// （<c>Parallelize(Scope = ExecutionScope.MethodLevel)</c>）。两个用例并行时会互相把变量
+/// 设成 <c>Debug</c> / <c>null</c>，后跑的读到前一个刚清空的值，于是偶发失败。
+/// 这个竞争一直是存在的，只是被调度时序掩盖；新增测试类改变并行负载后它就现身了。
+/// </remarks>
 [TestClass]
+[DoNotParallelize]
 public sealed class LoggingFoundationTests
 {
     [DataTestMethod]
