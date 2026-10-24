@@ -29,6 +29,8 @@
 | `TokenizerFallbackReason.cs` | 回退原因枚举。存在的意义是让「回退」可观测，而不是静默给一个数字 |
 | `ModelTokenizerCatalog.cs` | `modelId → 词表身份` 的**精确别名**映射。刻意不用 `Contains("deepseek")` |
 | `DeepSeekTokenizerJsonLoader.cs` | 解析 HuggingFace `tokenizer.json` → `BpeTokenizer` |
+| `IsolatedSplitPreTokenizer.cs` | 顺序执行 Split(Isolated)，保留未匹配片段；特殊标记独立；返回前物化原文区间 |
+| `ScalarRegex.cs` | 将 Split 正则的 Unicode 大类扩展到补充平面，匹配结果仍为原文 UTF-16 坐标 |
 | `TokenizerProvider.cs` | `TokenizerHandle`（单次解析结果）+ 按 modelId 缓存与回退 |
 | `PuddingTokenization.csproj` | 唯一允许引 `Microsoft.ML.Tokenizers` 的地方 |
 
@@ -45,9 +47,10 @@
    第三条含引号、反斜杠与 `\p{L}` 等 Unicode 类别转义，手抄极难与上游一致；差一个字符
    产出的计数就是错的，而且看不出来。
 
-3. **`specialTokens` 必须逐级传给 `RegexPreTokenizer` / `CompositePreTokenizer`**
-   只传给 `BpeOptions` 无效 —— 实测 `<｜begin▁of▁sentence｜>` 会被拆成 12 个普通 token，
-   正确结果是单 token `[0]`。
+3. **特殊标记在 Split 之前隔离，普通片段逐级切分**
+   `IsolatedSplitPreTokenizer` 与 `BpeOptions` 共用特殊标记；普通片段中的匹配与未匹配区间均保留。
+   string / Span 入口返回连续、不重叠、不越界的原文区间，不能让延迟枚举持有已归还的缓冲区。
+   `ScalarRegex` 让 Unicode 类别按完整码点匹配，BPE 编码始终使用原始文本。
 
 ## 词表资产
 
@@ -69,8 +72,8 @@ SHA256  C90DFA01249DB1BE4245780A052EDE752E1361C612AC6D08E2BDADA7D599476B
 
 ## 正确性判据
 
-**唯一**判据是 `GoldenVectorTests.EncodeMatchesOfficialTokenizerPerTokenId`：期望值由官方
-`@huggingface/tokenizers`（Node 0.2.0）对同一份 `tokenizer.json` 生成，与本实现**逐 token ID**
-比对，10/10 相同。
+`GoldenVectorTests` 与 `UnicodeRegressionTests` 分别使用 HuggingFace Node / Rust 引擎生成的
+独立向量，核对 token ID、计数、区间覆盖及并发稳定性。`IsolatedSplitPreTokenizerTests` 不依赖外部词表。
+Core 的 `ExactTokenizerRequestMeasurementTests` 验证实际 `CountTokens` 和预压缩 `MeasureLlmRequest` 入口。
 
 round-trip 可逆只说明映射自洽，不排除「两边一起偏移但各自自洽」，**不足以**作为完成判据。

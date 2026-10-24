@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+    <None Include="..\PuddingTokenizationTests\Fixtures\unicode-regressions.json"
+          Link="Fixtures\unicode-regressions.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

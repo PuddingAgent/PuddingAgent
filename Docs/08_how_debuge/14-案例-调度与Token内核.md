@@ -2,7 +2,7 @@
 title: 案例：调度与 Token 内核
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-23
+last_reviewed: 2026-10-24
 status: active
 description: 调度、Goal、Runtime 测试共同引用 Platform/Runtime 产物并会创建 SQLite 夹具。不要并行运行 PuddingRuntimeTests 与 PuddingPlatformTests：并行构建会争用 PuddingPlatform.dll，并可能把临时 SQLite I/O 或外键错误伪装成功能回归。应先完成一次构建，再串行运行聚焦集和全量集；测试夹具必须创建真实 S
 categories: [docs, how-debug]
@@ -300,4 +300,20 @@ Admin “访问令牌”页若把 Active/Revoked 显示成数字 `0/1`，同时 
 `[Coordinator] Deferred`、`reason=host_shutdown`、`run`、`turn`、`command`；真正的取消仍是不可自动重放的终态。
 Desktop 本身退出还需查 DesktopHome `logs/desktop.log`、Windows Application 崩溃记录及同期 AppX 更新事件；时间相近仅说明相关性，
 没有直接退出证据时不要宣称是 bootstrap 关闭了 Shell。已完成的历史终态与已发送渠道回信保留为现场证据，不手改数据库重跑部署命令。
+
+## 本地 Token 测量抛出越界异常
+
+`execution_protocol_error` 是 Coordinator 的通用异常映射，不能单凭此码认定 Provider 协议有错。
+先按 run / turn 查 `<DataRoot>/logs/error/pudding-error-*.log` 的完整异常栈：
+若为 `BpeTokenizer.CountTokens → ContextUsageSnapshotStore.MeasureLlmRequest → TryWarmPrefixCompactionAsync`，
+失败发生在本地请求准备阶段。查询 `runtime_identity` 的 tokenization 字段，核对词表来源及 exact 状态；
+首次启用精确词表后才出错时，应直接测试已加载词表的计数入口。
+
+最小离线样本可用 `你好 world 😀\n`（末尾是真换行），无需复制用户会话或读取模型 Secret。
+检查预分词区间是否从零连续覆盖原文、是否存在 offset + length 超出 UTF-16 长度；
+只验证 EncodeToIds 的短 ASCII 样本不足以覆盖生产 CountTokens 路径。
+专项回归为 `PuddingTokenizationTests.UnicodeRegressionTests` 与
+`PuddingCoreTests.ExactTokenizerRequestMeasurementTests`，分别通过
+`PUDDING_DEEPSEEK_TOKENIZER_JSON`（文件）及 `PUDDING_TOKENIZER_ASSETS`（目录）指定词表。
+不配置资源时测试会标为跳过，不能据此宣布精确计数已验证。现场材料只保留异常栈、构建与词表哈希，勿记录会话正文。
 

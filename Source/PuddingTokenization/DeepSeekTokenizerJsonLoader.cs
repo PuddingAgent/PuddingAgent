@@ -132,25 +132,25 @@ public static class DeepSeekTokenizerJsonLoader
                 "pre_tokenizer 里没有 ByteLevel 节点，该词表无法正确编码非 ASCII 文本。");
         }
 
-        var stages = new List<PreTokenizer>(splitPatterns.Count);
+        var stages = new List<Regex>(splitPatterns.Count);
         foreach (var pattern in splitPatterns)
         {
             Regex regex;
             try
             {
-                regex = new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(2));
+                regex = ScalarRegex.Create(pattern);
             }
             catch (ArgumentException ex)
             {
                 throw new ArgumentException($"预分词正则无法编译: {pattern}", ex);
             }
 
-            // specialTokens 必须逐级传入：只给 BpeOptions 时 special token 不会被
-            // 整体识别（实测会被拆成 12 个普通 token）。
-            stages.Add(new RegexPreTokenizer(regex, specialTokens));
+            stages.Add(regex);
         }
 
-        var composite = new CompositePreTokenizer(stages, specialTokens);
+        // CompositePreTokenizer 2.0.0 返回的未匹配片段长度可能越界，Span 版本还会
+        // 提前归还缓冲区。这里明确执行 Isolated 语义并在返回前物化原文区间。
+        var composite = new IsolatedSplitPreTokenizer(stages, specialTokens.Keys);
 
         // ByteLevel 走 BpeOptions 开关，而不是自写 Normalizer：
         // 官方语义是 Sequence[Split..., ByteLevel]（先切分再字节映射），而
@@ -193,6 +193,10 @@ public static class DeepSeekTokenizerJsonLoader
                 pattern.ValueKind == JsonValueKind.Object &&
                 pattern.TryGetProperty("Regex", out var regexElement))
             {
+                if (!element.TryGetProperty("behavior", out var behavior) ||
+                    behavior.GetString() != "Isolated" ||
+                    (element.TryGetProperty("invert", out var invert) && invert.GetBoolean()))
+                    throw new InvalidDataException("Only non-inverted Split(Isolated) is supported.");
                 var regex = regexElement.GetString();
                 if (!string.IsNullOrEmpty(regex))
                     splitPatterns.Add(regex);

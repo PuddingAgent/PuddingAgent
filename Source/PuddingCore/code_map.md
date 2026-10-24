@@ -86,6 +86,8 @@
 LlmOptions 请求归因分离（F1）：`MeasureLlmRequest` 只计量不发布（候选测量不得改写准备快照）；`CaptureLlmRequest` = 计量 + 发布 `currentPreparedRequest`；
 `RecordProviderUsage` 带 `LlmCallPurposes`，只有主请求用途才允许改写准备快照/参与安全校准/写 `MeasuredRequestUsage`（`lastMeasuredRequest`），辅助与摘要调用单独落 `TryGetLastAuxiliaryMeasurement`；`Total` 与 `Prompt` 分开保存。
 
+精确词表计量回归：`../PuddingCoreTests/Platform/ExactTokenizerRequestMeasurementTests.cs` 用独立 Unicode 向量验证生产计数入口与长消息预压缩测量。
+
 ## LLM 网关（Core/）
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
