@@ -11,7 +11,7 @@ public sealed class LlmRequestCapture : IDisposable
         Environment.GetEnvironmentVariable("PUDDING_CAPTURE_REQUEST"));
 
     private const string MessageTemplate =
-        "[LlmRequestCapture] invocationId={invocationId} modelId={modelId} bodyBytes={bodyBytes} bodySha256={bodySha256} localEstimatedTokens={localEstimatedTokens} bodyTokens={bodyTokens}";
+        "[LlmRequestCapture] invocationId={invocationId} modelId={modelId} bodyBytes={bodyBytes} bodySha256={bodySha256} localEstimatedTokens={localEstimatedTokens} bodyTokens={bodyTokens} inlineImageCount={inlineImageCount} inlineImageWireBytes={inlineImageWireBytes}";
     private static readonly AsyncLocal<LlmRequestCapture?> Ambient = new();
     private readonly LlmRequestCapture? _previous;
     private readonly string _invocationId;
@@ -50,18 +50,22 @@ public sealed class LlmRequestCapture : IDisposable
 
         // 线上唯一能同时看到「我们估了多少」和「报文实际多少 token」的地方：
         // 后者按实际发送的字节数出来，前者是预算守卫的估算，两者之差就是词表外的全部偏差。
-        var bodyTokens = ContextUsageSnapshotStore.CountTokens(
-            System.Text.Encoding.UTF8.GetString(bytes), modelId);
+        // 但内联图片的 base64 载荷必须先剔除：provider 按图片计费，按字符分词会把它算成十几万 token，
+        // 那样两个数之差反映的是「base64 有多长」，不是「估算有多准」。
+        var sanitized = LlmBodyTextSanitizer.RedactInlineImages(System.Text.Encoding.UTF8.GetString(bytes));
+        var bodyTokens = ContextUsageSnapshotStore.CountTokens(sanitized.Text, modelId);
 
         var capture = Current;
         var invocationId = capture?._invocationId ?? Guid.NewGuid().ToString("N");
         // 未运行估算器的独立调用用 null 表示缺失，不能伪造 0 或借用其他请求的估算。
         if (capture?._logger is { } logger)
             logger.LogInformation(MessageTemplate, invocationId, modelId,
-                fingerprint.BodyBytes, fingerprint.BodySha256, capture._localEstimatedTokens, bodyTokens);
+                fingerprint.BodyBytes, fingerprint.BodySha256, capture._localEstimatedTokens, bodyTokens,
+                sanitized.InlineImageCount, sanitized.InlineImageWireBytes);
         else
             Serilog.Log.Information(MessageTemplate, invocationId, modelId,
-                fingerprint.BodyBytes, fingerprint.BodySha256, capture?._localEstimatedTokens, bodyTokens);
+                fingerprint.BodyBytes, fingerprint.BodySha256, capture?._localEstimatedTokens, bodyTokens,
+                sanitized.InlineImageCount, sanitized.InlineImageWireBytes);
     }
 
     public void Dispose() => Ambient.Value = _previous;
