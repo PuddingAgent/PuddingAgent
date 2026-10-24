@@ -33,6 +33,12 @@ public sealed class TokenizerHandle
     /// <summary>是否拿到了该模型的精确 tokenizer。</summary>
     public bool IsExact => _tokenizer is not null;
 
+    /// <summary>
+    /// 底层 tokenizer（<c>BpeTokenizer</c> 本身就是 <c>Tokenizer</c> 子类，
+    /// 所以调用方可以直接嵌入现有计数链路，不必为了适配再加一层包装）。
+    /// </summary>
+    public BpeTokenizer? UnderlyingTokenizer => _tokenizer;
+
     /// <summary>未能精确时的原因；精确时为 <see cref="TokenizerFallbackReason.None"/>。</summary>
     public TokenizerFallbackReason FallbackReason { get; }
 

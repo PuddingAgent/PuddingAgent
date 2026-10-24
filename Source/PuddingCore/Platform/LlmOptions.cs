@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.ML.Tokenizers;
 using PuddingCode.Models;
 using PuddingCode.Runtime;
+using PuddingTokenization;
 
 namespace PuddingCode.Platform.Options
 {
@@ -220,6 +221,31 @@ namespace PuddingCode.Platform
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
         private static readonly ConcurrentDictionary<string, Tokenizer> Tokenizers = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 按模型自己的词表计数（目前是 DeepSeek-V4.1-Flash）。
+        /// </summary>
+        /// <remarks>
+        /// 未配置词表目录、或模型未登记时，<see cref="TokenizerProvider"/> 会返回带原因的回退，
+        /// 此时继续走原来的 TiktokenTokenizer 路径，**行为与改动前完全一致**。
+        /// 之所以不把词表目录写死：它是环境数据（同代码索引库），换目录不应该要改代码。
+        /// </remarks>
+        private static readonly TokenizerProvider ModelTokenizers =
+            TokenizerProvider.Create(ResolveTokenizerAssetDirectory());
+
+        /// <summary>
+        /// 定位词表目录：环境变量优先，其次找应用目录旁的 <c>tokenizers</c>。
+        /// 两者都不存在时返回 <c>null</c>，表示“放弃精确计数”而不是报错。
+        /// </summary>
+        private static string? ResolveTokenizerAssetDirectory()
+        {
+            var fromEnvironment = Environment.GetEnvironmentVariable("PUDDING_TOKENIZER_ASSETS");
+            if (!string.IsNullOrWhiteSpace(fromEnvironment))
+                return fromEnvironment;
+
+            var besideApplication = Path.Combine(AppContext.BaseDirectory, "tokenizers");
+            return Directory.Exists(besideApplication) ? besideApplication : null;
+        }
         private readonly ConcurrentDictionary<string, ContextUsageSnapshot> _snapshots = new();
         private readonly ConcurrentDictionary<string, double> _promptCalibrationRatios = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>
@@ -858,6 +884,12 @@ namespace PuddingCode.Platform
 
         private static Tokenizer GetTokenizer(string? modelId)
         {
+            // 模型自带词表时优先用它。o200k_base 对 DeepSeek 只是近似：实测同一段
+            // 中文、同一份请求，两套词表算出的数量差异可达 1.8 倍，而门禁是按这个
+            // 数量判定的。拿不到精确词表就继续走原有逻辑，不抛错、不返回假数字。
+            if (ModelTokenizers.Resolve(modelId).UnderlyingTokenizer is { } exactTokenizer)
+                return exactTokenizer;
+
             var key = ResolveTokenizerKey(modelId);
             return Tokenizers.GetOrAdd(key, static tokenizerKey =>
                 tokenizerKey is "o200k_base" or "cl100k_base"
