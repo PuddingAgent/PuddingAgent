@@ -135,11 +135,10 @@ public static class BiyingShaper
         var take = Math.Min(options.MaxRows, projected.Count);
         while (take > 0)
         {
-            var candidate = BuildPayload(endpoint, ordered, projected, take, dateKey, rawChars, options);
+            var (candidate, unknown) = BuildPayload(endpoint, ordered, projected, take, dateKey, rawChars, options);
             var text = candidate.ToJsonString(SerializerOptions);
             if (text.Length <= options.MaxChars)
             {
-                var unknown = CollectUnknownFields(projected, take, endpoint);
                 return new BiyingShapeResult(endpoint.Id, endpoint.Name, text,
                     TotalRows: rows.Count,
                     ReturnedRows: take,
@@ -179,7 +178,7 @@ public static class BiyingShaper
             UnknownFields: []);
     }
 
-    private static JsonObject BuildPayload(
+    private static (JsonObject Payload, IReadOnlyList<string> UnknownFields) BuildPayload(
         BiyingEndpoint endpoint,
         List<JsonObject> ordered,
         List<JsonObject> projected,
@@ -203,13 +202,21 @@ public static class BiyingShaper
         payload["legend"] = BuildLegend(projected, take, endpoint);
         payload["rows"] = new JsonArray(projected.Take(take).Select(row => (JsonNode)row.DeepClone()).ToArray());
 
+        // 未收录字段只列一次：键名有指代价值（模型可指名投影或追问），占位符没有。
+        var unknown = CollectUnknownFields(projected, take, endpoint);
+        if (unknown.Count > 0)
+        {
+            payload["unknownFieldCount"] = unknown.Count;
+            payload["unknownFields"] = new JsonArray(unknown.Select(key => (JsonNode)key).ToArray());
+        }
+
         if (take < ordered.Count)
         {
             payload["note"] = $"仅返回最近 {take} 行（共 {ordered.Count} 行）；" +
                               $"需要更多请提高 maxRows（当前预算 {options.MaxChars} 字符）。";
         }
 
-        return payload;
+        return (payload, unknown);
     }
 
     private static JsonObject Project(JsonObject row, HashSet<string>? allowlist)
@@ -225,7 +232,11 @@ public static class BiyingShaper
         return result;
     }
 
-    /// <summary>只列出**本次实际出现**的键，避免把 112 项全量词典塞进上下文。</summary>
+    /// <summary>
+    /// 只列出**本次实际出现且词典有释义**的键。未收录键不进 legend：占位符「（词典未收录）」
+    /// 不携带信息却按字段数线性膨胀（flow.stockFlow 实测 1,988 → 8,787 字符）。
+    /// 这类键改由 payload 的 unknownFields 列一次，同一件事不说两遍。
+    /// </summary>
     private static JsonObject BuildLegend(List<JsonObject> projected, int take, BiyingEndpoint endpoint)
     {
         var dictionary = endpoint.Fields.ToDictionary(field => field.Key, field => field, StringComparer.Ordinal);
@@ -233,9 +244,10 @@ public static class BiyingShaper
 
         foreach (var key in projected.Take(take).SelectMany(row => row.Select(pair => pair.Key)).Distinct(StringComparer.Ordinal))
         {
-            legend[key] = dictionary.TryGetValue(key, out var field)
-                ? (field.Description.Length == 0 ? field.Type : $"{field.Description}")
-                : "（词典未收录）";
+            if (!dictionary.TryGetValue(key, out var field))
+                continue;
+
+            legend[key] = string.IsNullOrEmpty(field.Description) ? field.Type : field.Description;
         }
 
         return legend;

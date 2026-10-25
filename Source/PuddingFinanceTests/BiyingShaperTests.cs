@@ -70,6 +70,46 @@ public sealed class BiyingShaperTests
     }
 
     [TestMethod]
+    public void UnknownFieldsAppearInPayload_LegendOmitsPlaceholders()
+    {
+        // 断言的是**模型实际看到的 JSON**，不是 C# 属性。
+        // 上一版只断 result.UnknownFields，所以「unknownFields 从未写进 payload」
+        // 这个缺陷一直绿着：属性有值，JSON 里没有。
+        var raw = """[{"jzrq":"2026-06-30","weird_field":"x","another_unknown":1}]""";
+
+        var result = BiyingShaper.Shape(Catalog().Get("255"), raw);
+        var payload = JsonNode.Parse(result.Json)!.AsObject();
+
+        var legend = payload["legend"]!.AsObject();
+        Assert.IsTrue(legend.ContainsKey("jzrq"), "有词典的键仍要解释");
+        Assert.IsFalse(legend.ContainsKey("weird_field"), "未收录键不得进 legend");
+        Assert.IsFalse(result.Json.Contains("词典未收录", StringComparison.Ordinal),
+            "占位符不得出现在输出里");
+
+        Assert.AreEqual(2, payload["unknownFieldCount"]!.GetValue<int>());
+        var listed = payload["unknownFields"]!.AsArray().Select(node => node!.GetValue<string>()).ToList();
+        CollectionAssert.AreEquivalent(new[] { "another_unknown", "weird_field" }, listed);
+    }
+
+    [TestMethod]
+    public void ManyUnknownFields_DoNotInflateShapedOutput()
+    {
+        // 体积回归锁。占位符方案在真实 flow.stockFlow 上把 1,988 字符撑到 8,787（4.4 倍）；
+        // 改用「未收录键只列一次」后约 1.9 倍。上界取 2.5：新方案过、旧方案红。
+        var row = new JsonObject { ["jzrq"] = "2026-06-30" };
+        for (var i = 0; i < 140; i++)
+            row[$"u{i:D3}"] = i;
+        var raw = new JsonArray(row).ToJsonString();
+
+        var result = BiyingShaper.Shape(Catalog().Get("255"), raw,
+            new BiyingShapeOptions { MaxRows = 1, MaxChars = 100_000 });
+
+        Assert.AreEqual(140, result.UnknownFields.Count);
+        Assert.IsLessThan(2.5, (double)result.ShapedChars / result.RawChars,
+            $"整形后不应显著大于原始（实际 {result.ShapedChars}/{result.RawChars}）");
+    }
+
+    [TestMethod]
     public void FieldProjection_KeepsOnlyRequestedKeys()
     {
         var raw = BuildBalanceSheet(rows: 3, fieldCount: 20);
