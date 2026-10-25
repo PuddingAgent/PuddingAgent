@@ -120,11 +120,16 @@ const ModelMemorySection: React.FC<ModelMemorySectionProps> = ({
       <ProFormSelect
         name="reasoningEffort"
         label="默认推理深度"
+        // 与 DeepSeek 的推理强度取值对齐（2026-10-25 用户裁定）：
+        //   high（深度思考）/ max（极致思考）为用户实际需要的两档；
+        //   medium 是历史虚构值（服务商无此档，选了会被策略层判非法并静默回落 high）；
+        //   low 在产品口径下不适用。
+        // 保留“跟随模型默认”（空串）：那是“显式声明不表态”，与档位语义不同，
+        // 也是其他不支持该参数的 provider 的兼容落点。
         options={[
           { label: '跟随模型默认', value: '' },
-          { label: '低（快速响应）', value: 'low' },
-          { label: '中（平衡）', value: 'medium' },
           { label: '高（深度思考）', value: 'high' },
+          { label: '极致（最深度思考）', value: 'max' },
         ]}
         initialValue="high"
         fieldProps={getAgentTemplateSelectPopupProps(styles.selectPopup)}
