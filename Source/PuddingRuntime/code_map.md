@@ -251,7 +251,8 @@
 | `Services/TodoTools/TodoReadTool.cs` | `todo_read`：读取某作用域的待办表 | `TodoReadTool` | `Services/TodoTools/TodoToolModels.cs` | — |
 | `Services/TodoTools/TodoToolModels.cs` | 待办三工具的共享参数模型 | `TodoToolJson` | `Services/TodoTools/TodoWriteTool.cs` | — |
 | `Services/TodoTools/TodoWriteTool.cs` | `todo_write`：全量替换待办表 | `TodoWriteTool` | `Services/TodoTools/TodoReadTool.cs` | — |
-| `Services/Tools/ToolExposurePlanner.cs` | 与 Provider 无关的工具暴露规划（延迟加载 + 有界可见集预算） | `ToolExposurePlanner` | `Tools/Platform/PuddingToolRegistry.cs` | 每个 turn 冻结可见集（core ∪ 最近使用的非核心，默认 48 个/40 KiB）；能力包原子取舍、无 search_tools 不淘汰、同一 turn 内只追加；被淘汰定义可由 `search_tools` 重新加载 |
+| `Services/Tools/ToolExposurePlanner.cs` | 与 Provider 无关的工具暴露规划（延迟加载 + 有界可见集预算） | `ToolExposurePlanner` | `Tools/Platform/PuddingToolRegistry.cs` | 每个 turn 冻结可见集（core ∪ 最近使用的非核心，默认 48 个/40 KiB）；能力包原子取舍、无 search_tools 不淘汰；**顺序为 stable_append（不得改回 canonical 重排，否则每轮改写前缀）**；同一 turn 内只追加；被淘汰定义可由 `search_tools` 重新加载 |
+| `Services/Tools/ToolSummaryTier.cs` | L1 摘要级工具定义：冷门工具只发「首句 + 参数名 + 必填」 | `ToolSummaryTier.Apply`、`SummarizeDescription` | `Services/Tools/ToolExposurePlanner.cs` | 纯函数且**幂等**（重复压缩不得再变形，否则工具块字节每轮变）；必须丢掉 `RawJsonSchema`，否则等于没压缩；英文句点只在「后接空白且前词非单字母缩写」时算句末 |
 | `Services/TurnExecutorAdapter.cs` | Turn 执行的门控与请求适配 | `TurnExecutorAdapter` | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | 后台忙碌时采用有界退避与节流日志；失败诊断按公开字段白名单写入 TerminalInfo，交由 canonical Journal 持久化 |
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |
 | `Services/VoiceProviderFactory.cs` | 语音 Provider 的按需构造 | `IVoiceProviderFactory` | `Services/DashScopeAsrProvider.cs` | — |
