@@ -50,6 +50,9 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 **`Extensions/PuddingServiceCollectionExtensions.Runtime.cs`**：成品 Host 的 Runtime/Tool 组合注册；assembly scan 自动发现的新工具，其构造依赖也必须在这里注册（例如 `SavePreferenceTool` → `IUserPreferenceService`、`SkillEnforcerService` 的可选 `ISkillUsageTelemetrySink`：注册缺失时该可选参数**静默为 null**，不报错也不抛异常；同理 `SearchGrepTool` 的可选 
 `IFullTextIndexFreshnessProbe` 解析既有 `IFullTextSearchEngine` 实例再 fail-closed 转型，缺注册则索引新鲜度静默不上报）
 
+必盈四工具（`biying_market` / `biying_financial` / `biying_sector` / `biying_flow`）共享该入口显式注册的
+`BiyingFinanceRuntime` 单例以保留配额与缓存；配置在首次调用时读取，缺配置不阻止 Host 构建。
+
 **`Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs`**：原生阅读与预处理：metadata/read/prepare，四档 detail，缩略图、裁剪、90度旋转、灰度、Gaussian降噪、jpeg/png/webp编码；源支持本地/URL/聊天artifact；复用 Platform ImagePreprocessing 和派生缓存，不调用模型/Agent，无 helper 路由。低权限只读源文件，URL每跳SSRF校验；输出源/派生引用供多次区域读取
 
 **`Hosting/PuddingApplicationInitializer.cs`**：启动期数据库初始化；包含 AppUsers、WorkspaceTask、TaskPlanning/WorkUnit/AwaitHandle、Goal 及通用编排 SQLite schema bootstrap，已有数据库也必须幂等升级；GoalSchemaBootstrapper 后执行 GoalRestartReconciler 启动 reconcile（按 `goal_runs.resume_policy` 分流：默认 disarm 为 paused；
@@ -160,4 +163,6 @@ tasks/workspaces/agents/messages scope+workspace Policies
 
 ## 测试
 
-`../Tests/PuddingHost.Tests/` — Browser Bridge、Remote proxy、Storage 管理与 DesktopChild 产品组合根构建验证；组合根测试显式验证 Singleton `task_*` 工具及其命令服务生命周期；Storage 定向测试 4/4 ✅
+`../../Tests/PuddingHost.Tests/` — Browser Bridge、Remote proxy、Storage 管理与 DesktopChild 产品组合根构建验证；组合根测试显式验证 Singleton `task_*` 工具及其命令服务生命周期。
+
+- [BiyingFinanceToolsCompositionTests](../../Tests/PuddingHost.Tests/Tools/BiyingFinanceToolsCompositionTests.cs)：真实 DesktopChild 组合根、四工具发现与共享单例、缺配置的调用错误。

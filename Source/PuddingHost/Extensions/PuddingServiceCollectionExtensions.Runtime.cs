@@ -313,6 +313,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<PuddingHost.ScreenCapture.IScreenCaptureBackend, PuddingHost.ScreenCapture.WindowsScreenCaptureBackend>();
 
         // ── 统一 Tool 注册表：Agent 工具统一通过 IPuddingTool/native registry 暴露 ──────────
+        // 产品 Host 不调用 AddPuddingRuntime；扫描工具前显式注册其共享配额/缓存运行时。
+        builder.Services.AddSingleton<BiyingFinanceRuntime>();
         builder.Services.AddPuddingToolsFromAssembly(typeof(PuddingHost.PuddingHostAssemblyMarker).Assembly);
         builder.Services.AddPuddingToolsFromAssembly(typeof(PuddingRuntime.RuntimeServiceExtensions).Assembly);
         builder.Services.AddSingleton<McpConnectionManager>();
