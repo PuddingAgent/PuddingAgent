@@ -154,6 +154,39 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Screenshot_WithoutExplicitContext_IssuesOneOperationIdPerCommand()
+    {
+        // 上下文缺省时会先列上下文、再发截图命令：两条命令必须各带独立 operation id
+        // （broker 对「同 id 不同 payload」判重复请求）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+        surface.OnScreenshot = _ => CapabilityResult<BrowserScreenshotResult>.Success(
+            new BrowserScreenshotResult(
+                new DesktopScreenshotMetadata(
+                    "obs-1", "image/png", 4, 1280, 720, 512, 288,
+                    DeviceScaleFactor: 1, ViewportWidth: 1280, ViewportHeight: 720,
+                    ScrollX: 0, ScrollY: 0, CropX: 0, CropY: 0, CropWidth: 1280, CropHeight: 720,
+                    PageVersion: 7, DomRevision: 1, ViewportRevision: 1,
+                    DesktopScreenshotDetail.Low),
+                [new DesktopScreenshotChunk(0, true, [1, 2, 3, 4])]));
+
+        var result = await ExecuteAsync(
+            new BrowserScreenshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                expected_page_version = page.PageVersion
+            }));
+
+        Assert.True(result.Success, result.Output);
+        Assert.Equal(2, surface.SeenOperationIds.Count);
+        Assert.Equal(2, surface.SeenOperationIds.Distinct().Count());
+    }
+
+    [Fact]
     public void ToolDescriptors_UseStableNamesAndStructuredSchemas()
     {
         var runtime = new FakeBrowserRuntime();
@@ -2844,8 +2877,11 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     }
 
     public Task<CapabilityResult<BrowserScreenshotResult>> ScreenshotAsync(
-        BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default) =>
-        OnScreenshot is { } factory ? Task.FromResult(factory(request)) : throw new NotSupportedException();
+        BrowserScreenshotRequest request, DesktopCallContext call, CancellationToken cancellationToken = default)
+    {
+        SeenOperationIds.Add(call.OperationId);
+        return OnScreenshot is { } factory ? Task.FromResult(factory(request)) : throw new NotSupportedException();
+    }
 
     public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken ct = default)
