@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PuddingFinance</RootNamespace>
+  </PropertyGroup>
+
+  <!-- 金融数据源的**独立组件**（架构第一原则：组件独立、可测性优先）。
+       本工程刻意零 ProjectReference：它只做「注册表 + URL 拼装 + 缓存/配额 + 响应整形」，
+       不引用 PuddingRuntime / PuddingCore，因此可以被任何宿主引用而不引入反向依赖。
+       接入宿主是 S5 的事，S5 之前不改宿主。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingFinanceTests" />
+  </ItemGroup>
+
+  <!-- 端点注册表作为嵌入资源随程序集发布：它是"数据"，不是 schema，也不该被模型看到。
+       生成方式见 Tools/Biying/extract_endpoints.py（会直接写回本文件）。 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Data\biying.endpoints.json" LogicalName="PuddingFinance.biying.endpoints.json" />
+  </ItemGroup>
+
+</Project>

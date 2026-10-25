@@ -38,7 +38,7 @@ DOC_PAGES = [
 ]
 
 BASE = "https://biyingapi.com/"
-OUT_PATH = "Tools/Biying/endpoints.json"
+OUT_PATH = "Source/PuddingFinance/Data/biying.endpoints.json"
 UA = {"User-Agent": "PuddingAgent/1.0 (+endpoint-catalog-extractor)"}
 
 # 模板里的中文占位符（如「股票代码(如000001)」「您的licence」）不是真实路径段
