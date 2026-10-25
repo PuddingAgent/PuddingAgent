@@ -11,6 +11,10 @@ import { App } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  readReasoningEffort,
+  writeReasoningEffort,
+} from './reasoningEffortPreference';
+import {
   loadAgentAccessLevel,
   saveAgentAccessLevel,
   type AgentAccessLevelState,
@@ -485,12 +489,8 @@ export function useChatState(
     if (!key) return;
     if (reasoningEffortHydratedKeyRef.current === key) return;
     reasoningEffortHydratedKeyRef.current = key;
-    try {
-      const stored = window.localStorage.getItem(key);
-      if (stored === 'high' || stored === 'max') setReasoningEffort(stored);
-    } catch {
-      // 存储不可用（隐私模式 / 被禁用）时保持默认 high，不影响发送。
-    }
+    const stored = readReasoningEffort(agentId);
+    if (stored) setReasoningEffort(stored);
   }, [reasoningEffortStorageKey]);
 
   useEffect(() => {
@@ -498,11 +498,7 @@ export function useChatState(
     if (!key) return;
     // 先完成该 Agent 的读回，否则会把默认值写进去盖掉已保存的选择。
     if (reasoningEffortHydratedKeyRef.current !== key) return;
-    try {
-      window.localStorage.setItem(key, reasoningEffort);
-    } catch {
-      // 写失败不阻塞交互。
-    }
+    writeReasoningEffort(agentId, reasoningEffort);
   }, [reasoningEffort, reasoningEffortStorageKey]);
 
   /**
