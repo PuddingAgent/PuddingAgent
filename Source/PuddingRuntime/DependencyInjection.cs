@@ -236,6 +236,11 @@ public static class RuntimeServiceExtensions
 
         services.AddPuddingToolsFromAssembly(typeof(RuntimeServiceExtensions).Assembly);
 
+        // S5：必盈金融数据源运行时（单例—配额/缓存必须跨工具调用持续）。
+        // 工具类由 AddPuddingToolsFromAssembly 自动发现，但它们依赖的这个单例必须显式登记，
+        // 否则 DI 解析时会报“无法解析 BiyingFinanceRuntime”。
+        services.TryAddSingleton<PuddingRuntime.Services.Tools.BiyingFinanceRuntime>();
+
         // ICodeIndexStore must be registered before AddPuddingCodeIntelligence，
         // so that the Runtime composition root owns the DB path decision.
         // Registered by concrete type as well: the background reclamation loop needs the
