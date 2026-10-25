@@ -29,6 +29,7 @@ public enum SystemCommandKind
     Yolo,
     WhoAmI,
     Goal,
+    Effort,
 }
 
 /// <summary>Action parsed from a user-authored slash command before routing.</summary>
@@ -174,7 +175,9 @@ public static class ToolAuthorizationDefaults
                    "- `/memory` - Manage or write memories. Current feature is not implemented." + Environment.NewLine +
                    "- `/goal` - Show the persistent goal status for this conversation." + Environment.NewLine +
                    "- `/goal <objective> [--rounds N]` - Start a persistent goal (1-256 iterations)." + Environment.NewLine +
-                   "- `/goal pause|resume|cancel|edit|replace|clear` - Control the persistent goal.";
+                   "- `/goal pause|resume|cancel|edit|replace|clear` - Control the persistent goal." + Environment.NewLine +
+                   "- `/effort` - Show the reasoning effort stored for this Agent." + Environment.NewLine +
+                   "- `/effort high|max|auto` - Set this Agent's reasoning effort (auto = follow the model default).";
         }
 
         return normalized switch
@@ -209,6 +212,12 @@ public static class ToolAuthorizationDefaults
                       "- `/mode list` - List modes and examples.",
             "estop" => "Help for `/estop`:" + Environment.NewLine + Environment.NewLine +
                        "- `/estop` - Emergency stop the backend process after best-effort audit/log snapshot.",
+            "effort" => "Help for `/effort`:" + Environment.NewLine + Environment.NewLine +
+                        "- `/effort` - Show the reasoning effort currently stored for this Agent." + Environment.NewLine +
+                        "- `/effort high` - Deep thinking (same as the `深入` option in the chat panel)." + Environment.NewLine +
+                        "- `/effort max` - Maximum depth (same as the `极致` option)." + Environment.NewLine +
+                        "- `/effort auto` - Clear the stored value and follow the model default." + Environment.NewLine +
+                        "The value is per-Agent and shared by every channel, so a setting made in Feishu also applies in the desktop chat panel.",
             "goal" => "Help for `/goal`:" + Environment.NewLine + Environment.NewLine +
                       "- `/goal` - Show the persistent goal status (same as `/goal status`)." + Environment.NewLine +
                       "- `/goal <objective> [--rounds N]` - Start (set) a persistent goal; --rounds must be 1-256, default 256." + Environment.NewLine +
@@ -379,6 +388,7 @@ public static partial class SystemCommandParser
                     "resume" => SystemCommandKind.Resume,
                     "yolo" => SystemCommandKind.Yolo,
                     "whoami" => SystemCommandKind.WhoAmI,
+                    "effort" => SystemCommandKind.Effort,
                     _ => throw new InvalidOperationException($"Unsupported system command '{commandName}'."),
                 },
             };
@@ -490,10 +500,15 @@ public static partial class SystemCommandParser
                       || YoloDurationRegex().IsMatch(argument),
             "mode" => string.IsNullOrWhiteSpace(argument)
                       || argument is "safe" or "normal" or "list",
+            // 用户 2026-10-25：/effort 无参数只回显当前档位；带参数写入该 Agent 的
+            // 显式档位（high / max），auto 表示清除、回到模型默认。
+            // low / none / medium 刻意不接受：产品只暴露 high 与 max。
+            "effort" => string.IsNullOrWhiteSpace(argument)
+                        || argument is "high" or "max" or "auto" or "default",
             _ => false,
         };
 
-    [GeneratedRegex(@"^/(?<command>compact|memory|status|stop|mode|estop|resume|yolo|whoami)(?:\s+(?<argument>[a-zA-Z0-9_]+))?$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^/(?<command>compact|memory|status|stop|mode|estop|resume|yolo|whoami|effort)(?:\s+(?<argument>[a-zA-Z0-9_]+))?$", RegexOptions.IgnoreCase)]
     private static partial Regex SystemCommandRegex();
 
     /// <summary>

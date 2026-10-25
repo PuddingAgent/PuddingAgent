@@ -3,11 +3,14 @@ namespace PuddingCode.Platform;
 /// <summary>
 /// 思考强度（reasoning effort）的唯一决策点。
 ///
-/// 产品口径（用户裁定 2026-10-24）：
-/// ① provider 提供 none / low / high / max，PuddingAgent 只用 low / high / max；
-/// ② 前端三档与强度一一对应：快速 = low、深入 = high、极致 = max；
-/// ③ high 是默认；
-/// ④ none 不对用户暴露，只给压缩摘要这类非推理的内部调用使用。
+/// 产品口径（用户裁定 2026-10-24，2026-10-25 收敛）：
+/// ① provider 提供 none / low / high / max；
+/// ② **界面上只暴露两档**：深入 = high（默认）、极致 = max；
+///    2026-10-25 删掉了「快速 = low」（产品不需要）与「中 = medium」（服务商根本没有这一档，
+///    旧界面选它会静默回落到 high）；
+/// ③ low / none 仍是协议合法值，只是不对用户暴露：none 只给压缩摘要这类非推理调用；
+/// ④ high 是默认；
+/// ⑤ 档位可以持久到 Agent 配置（manifest.reasoningEffort），由 /effort 与聊天面板共同写入。
 ///
 /// 因此「每轮偏好」直接就是档位名，不再做语义转译：
 /// 曾经把「深入」映射到 max 是错的——手动档位的语义高于自动基线，
@@ -38,11 +41,12 @@ public static class ReasoningEffortPolicy
     /// </summary>
     public const string ReasoningCapabilityTag = "reasoning";
 
-    /// <summary>前端三档的展示名，与强度一一对应。</summary>
+    /// <summary>界面档位的展示名。low 已不对外暴露，保留映射只为日志可读。</summary>
     public static string Label(string effort) => effort switch
     {
         Low => "快速",
         Max => "极致",
+        None => "无",
         _ => "深入",
     };
 

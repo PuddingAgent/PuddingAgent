@@ -569,6 +569,9 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<BenchmarkEvaluationService>();
         // ── Workspace Agent 实例配置与运行目录写入权威 ──
         builder.Services.AddSingleton<WorkspaceAgentFileService>();
+        // /effort 命令的窄写入端口：与聊天面板下拉共用同一份 Agent 配置，
+        // 避免「命令一套、面板一套」两头并行。
+        builder.Services.AddSingleton<PuddingCode.Platform.IAgentReasoningEffortStore, WorkspaceAgentReasoningEffortStore>();
         builder.Services.AddSingleton<IWorkspaceAgentCatalog>(sp => sp.GetRequiredService<WorkspaceAgentFileService>());
         builder.Services.AddSingleton<IAgentMainSessionBinder>(sp =>
             sp.GetRequiredService<WorkspaceAgentFileService>());

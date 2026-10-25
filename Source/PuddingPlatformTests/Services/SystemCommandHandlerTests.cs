@@ -458,6 +458,151 @@ public sealed class SystemCommandHandlerTests
         Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
     }
 
+    /// <summary>
+    /// `/effort max` 必须写进该 Agent 的配置，而不是只回一句“已设置”。
+    /// 这是飞书渠道能继承思考强度的唯一路径：外部消息带不上 metadata，
+    /// 只能靠 Configured 层。
+    /// </summary>
+    [TestMethod]
+    public async Task Effort_Command_WritesAgentLevelSetting_AndReportsIt()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var effort = new StubAgentReasoningEffortStore();
+        var handler = CreateHandler(db, new RuntimeControlService(), reasoningEffortStore: effort);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-1",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "admin",
+                ClientRequestId: "request-effort",
+                ClientMessageId: "user-message-effort",
+                ResponseMessageId: "system-message-effort",
+                CommandText: "/effort max"));
+
+        Assert.AreEqual(1, effort.SetCalls.Count);
+        Assert.AreEqual("default", effort.SetCalls[0].WorkspaceId);
+        Assert.AreEqual("agent-1", effort.SetCalls[0].AgentId);
+        Assert.AreEqual("max", effort.SetCalls[0].Effort);
+        StringAssert.Contains(result.Message, "max");
+
+        // 系统命令不创建 Agent 执行：改的是持久配置，不是起一轮对话。
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
+        Assert.AreEqual(2, await db.ChatMessages.CountAsync());
+        Assert.IsFalse(result.ForwardToAgent);
+    }
+
+    /// <summary>无参数只回显，不得写盘——回显命令产生副作用会让用户不敢乱看。</summary>
+    [TestMethod]
+    public async Task Effort_WithoutArgument_EchoesStoredValue_WithoutWriting()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var effort = new StubAgentReasoningEffortStore { Current = "max" };
+        var handler = CreateHandler(db, new RuntimeControlService(), reasoningEffortStore: effort);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-1",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "admin",
+                ClientRequestId: "request-effort-read",
+                ClientMessageId: "user-message-effort-read",
+                ResponseMessageId: "system-message-effort-read",
+                CommandText: "/effort"));
+
+        Assert.AreEqual(1, effort.GetCalls.Count);
+        Assert.AreEqual(0, effort.SetCalls.Count);
+        StringAssert.Contains(result.Message, "max");
+    }
+
+    /// <summary>`/effort auto` 清除显式档位，回到模型默认。</summary>
+    [TestMethod]
+    public async Task Effort_Auto_ClearsStoredValue()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var effort = new StubAgentReasoningEffortStore { Current = "max" };
+        var handler = CreateHandler(db, new RuntimeControlService(), reasoningEffortStore: effort);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-1",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "admin",
+                ClientRequestId: "request-effort-auto",
+                ClientMessageId: "user-message-effort-auto",
+                ResponseMessageId: "system-message-effort-auto",
+                CommandText: "/effort auto"));
+
+        Assert.AreEqual(1, effort.SetCalls.Count);
+        Assert.AreEqual("auto", effort.SetCalls[0].Effort);
+        Assert.IsNull(effort.Current);
+        StringAssert.Contains(result.Message, "清除");
+    }
+
+    /// <summary>
+    /// 存储层拒绝非法值时，命令必须把原因回给用户，而不是让整轮对话失败；
+    /// 也不能静默报“已设置”。
+    /// </summary>
+    [TestMethod]
+    public async Task Effort_StoreRejection_IsReportedInsteadOfThrown()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var effort = new StubAgentReasoningEffortStore
+        {
+            SetError = new ArgumentException(
+                "unsupported reasoning effort 'medium'; expected one of: high, max, auto",
+                "effort"),
+        };
+        var handler = CreateHandler(db, new RuntimeControlService(), reasoningEffortStore: effort);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-1",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "admin",
+                ClientRequestId: "request-effort-bad",
+                ClientMessageId: "user-message-effort-bad",
+                ResponseMessageId: "system-message-effort-bad",
+                CommandText: "/effort max"));
+
+        StringAssert.Contains(result.Message, "unsupported reasoning effort");
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.IsFalse(result.ForwardToAgent);
+    }
+
     private static SystemCommandHandler CreateHandler(
         PlatformDbContext db,
         IRuntimeControlService runtime,
@@ -465,7 +610,8 @@ public sealed class SystemCommandHandlerTests
         ISystemStatusSnapshotProvider? statusSnapshotProvider = null,
         IGoalCommandService? goalCommandService = null,
         IToolAuthorizationService? toolAuthorizationService = null,
-        IAgentAccessLevelService? accessLevels = null) =>
+        IAgentAccessLevelService? accessLevels = null,
+        IAgentReasoningEffortStore? reasoningEffortStore = null) =>
         new(
             db,
             runtime,
@@ -474,7 +620,45 @@ public sealed class SystemCommandHandlerTests
             statusSnapshotProvider ?? new UnexpectedSystemStatusSnapshotProvider(),
             goalCommandService ?? new UnexpectedGoalCommandService(),
             toolAuthorizationService ?? new UnexpectedToolAuthorizationService(),
+            reasoningEffortStore ?? new StubAgentReasoningEffortStore(),
             NullLogger<SystemCommandHandler>.Instance);
+
+    /// <summary>
+    /// 记录型桩：/effort 用例需要断言「写了什么、跳过了哪些调用」，
+    /// 所以记录而不是一律抛错。
+    /// </summary>
+    private sealed class StubAgentReasoningEffortStore : IAgentReasoningEffortStore
+    {
+        public List<(string WorkspaceId, string AgentId, string? Effort)> SetCalls { get; } = [];
+
+        public List<(string WorkspaceId, string AgentId)> GetCalls { get; } = [];
+
+        public string? Current { get; set; }
+
+        public Exception? SetError { get; init; }
+
+        public Task<string?> GetReasoningEffortAsync(
+            string workspaceId, string agentId, CancellationToken ct = default)
+        {
+            GetCalls.Add((workspaceId, agentId));
+            return Task.FromResult(Current);
+        }
+
+        public Task<string?> SetReasoningEffortAsync(
+            string workspaceId, string agentId, string? effort, CancellationToken ct = default)
+        {
+            if (SetError is not null)
+                throw SetError;
+
+            SetCalls.Add((workspaceId, agentId, effort));
+            // 与真实实现同一口径：auto / 空 清除为 null，其余落小写。
+            Current = string.IsNullOrWhiteSpace(effort)
+                || string.Equals(effort, ReasoningEffortPolicy.AutoSelection, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : effort.Trim().ToLowerInvariant();
+            return Task.FromResult(Current);
+        }
+    }
 
     /// <summary>
     /// 记录型桩：/yolo 现在写的是 Agent 级访问级别（不再是进程态运行时模式），

@@ -282,7 +282,22 @@ public sealed class ToolAuthorizationCommandWiringTests
             new UnexpectedSystemStatusSnapshotProvider(),
             new UnexpectedGoalCommandService(),
             toolAuthorizationService,
+            new UnexpectedAgentReasoningEffortStore(),
             NullLogger<SystemCommandHandler>.Instance);
+
+    /// <summary>
+    /// 本文件只测工具授权接线，/effort 不应被触发；一旦被调用就说明接线错了。
+    /// </summary>
+    private sealed class UnexpectedAgentReasoningEffortStore : IAgentReasoningEffortStore
+    {
+        public Task<string?> GetReasoningEffortAsync(
+            string workspaceId, string agentId, CancellationToken ct = default) =>
+            throw new AssertFailedException("This test must not read the agent reasoning effort.");
+
+        public Task<string?> SetReasoningEffortAsync(
+            string workspaceId, string agentId, string? effort, CancellationToken ct = default) =>
+            throw new AssertFailedException("This test must not change the agent reasoning effort.");
+    }
 
     private sealed class UnexpectedAgentAccessLevelService : IAgentAccessLevelService
     {

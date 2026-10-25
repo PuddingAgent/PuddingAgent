@@ -24,6 +24,7 @@ public sealed class SystemCommandHandler(
     ISystemStatusSnapshotProvider statusSnapshotProvider,
     IGoalCommandService goalCommandService,
     IToolAuthorizationService toolAuthorizationService,
+    IAgentReasoningEffortStore reasoningEffortStore,
     ILogger<SystemCommandHandler> logger) : ISystemCommandHandler
 {
     private static readonly JsonSerializerOptions JsonOptions =
@@ -113,6 +114,14 @@ public sealed class SystemCommandHandler(
             // 用户 2026-09-19：/yolo 不再切进程态运行时模式，统一走权限控制体系
             // （Agent 级访问级别），避免「命令一套、下拉一套」两头并行。
             responseMessage = HandleYoloCommand(request, command, accessLevels);
+        }
+        else if (command.CommandKind == SystemCommandKind.Effort)
+        {
+            // 用户 2026-10-25：外部渠道（飞书）的入站消息不带「执行偏好」metadata，
+            // 因此思考强度必须有持久落点——写进该 Agent 的配置，而不是只活在浏览器本地。
+            // 与聊天面板下拉共用同一条写入路径（IWorkspaceAgentFileService.UpdateReasoningEffortAsync），
+            // 所以「命令里改完，面板刷新也是同一个值」。
+            responseMessage = await HandleEffortAsync(request, command, ct);
         }
         else
         {
@@ -241,8 +250,56 @@ public sealed class SystemCommandHandler(
         return $"Agent '{request.AgentId}' 的访问级别已设为「完全访问」（{scope}）。";
     }
 
+    /// <summary>
+    /// `/effort` —— 读写该 Agent 的显式思考强度：无参数只回显，`high` / `max` 写入，
+    /// `auto` 清除并回到模型默认。
+    ///
+    /// 为什么这个命令必须有持久落点：飞书等外部渠道的入站 metadata 会被过滤掉
+    /// gateway_* 前缀键，因此消息本身永远带不上「执行偏好」；只有写进 Agent 配置，
+    /// 下一轮才能由 ReasoningEffortPolicy 的 Configured 层接管。
+    ///
+    /// 合法性不在这一层重复判断：解析层只做粗筛，最终裁决在
+    /// <see cref="ReasoningEffortPolicy.TryNormalizeSelection"/>，避免两处规则漂移。
+    /// </summary>
+    private async Task<string> HandleEffortAsync(
+        SystemCommandRequest request,
+        SystemCommand command,
+        CancellationToken ct)
+    {
+        var argument = ExtractCommandArgument(command.RawText);
+        try
+        {
+            if (argument is null)
+            {
+                var current = await reasoningEffortStore.GetReasoningEffortAsync(
+                    request.WorkspaceId, request.AgentId, ct);
+                return current is null
+                    ? $"/effort：Agent '{request.AgentId}' 当前没有显式档位，跟随模型默认。用法：/effort high|max|auto。"
+                    : $"/effort：Agent '{request.AgentId}' 当前档位 {current}（{ReasoningEffortPolicy.Label(current)}）。用法：/effort high|max|auto。";
+            }
+
+            var applied = await reasoningEffortStore.SetReasoningEffortAsync(
+                request.WorkspaceId, request.AgentId, argument, ct);
+            return applied is null
+                ? $"/effort auto：已清除 Agent '{request.AgentId}' 的显式档位，回到模型默认。"
+                : $"/effort {applied}：Agent '{request.AgentId}' 的思考强度已写入配置（{ReasoningEffortPolicy.Label(applied)}），下一轮起对所有渠道生效。";
+        }
+        catch (ArgumentException ex)
+        {
+            return $"/effort：{ex.Message}";
+        }
+        catch (KeyNotFoundException)
+        {
+            return $"/effort：找不到 Agent '{request.AgentId}'（工作区与 Agent 不匹配）。";
+        }
+    }
+
     /// <summary>`/yolo` 后的第一个参数；无参数返回 null（= 持久完全访问）。</summary>
     private static string? ExtractYoloArgument(string rawText)
+        => ExtractCommandArgument(rawText);
+
+    /// <summary>斜杠命令后的第一个参数（小写）；无参数返回 null。</summary>
+    private static string? ExtractCommandArgument(string rawText)
     {
         var parts = rawText.Trim().Split(
             ' ',

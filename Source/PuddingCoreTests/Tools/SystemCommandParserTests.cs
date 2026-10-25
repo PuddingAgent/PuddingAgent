@@ -87,6 +87,39 @@ public sealed class SystemCommandParserTests
         Assert.IsFalse(SystemCommandParser.TryParse("/whoami all", out _));
     }
 
+    /// <summary>
+    /// `/effort` 只接受 high / max / auto（无参数 = 回显）。
+    /// low / none / medium 必须被解析层拒掉：产品只暴露 high 与 max，
+    /// 若这里放行，用户会在命令侧得到一个「看似改了、实际被策略层回落」的档位。
+    /// </summary>
+    [TestMethod]
+    public void TryParse_Effort_Accepts_Only_Selectable_Levels()
+    {
+        Assert.IsTrue(SystemCommandParser.TryParse("/effort", out var bare));
+        Assert.AreEqual(SystemCommandKind.Effort, bare.CommandKind);
+        Assert.AreEqual(SystemCommandAction.Run, bare.Action);
+        Assert.AreEqual("effort", bare.TargetId);
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/effort high", out var high));
+        Assert.AreEqual(SystemCommandKind.Effort, high.CommandKind);
+        Assert.AreEqual("high", high.TargetId);
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/effort MAX", out var max));
+        Assert.AreEqual("max", max.TargetId, "参数应归一化为小写。");
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/effort auto", out var auto));
+        Assert.AreEqual("auto", auto.TargetId);
+
+        Assert.IsFalse(SystemCommandParser.TryParse("/effort low", out _));
+        Assert.IsFalse(SystemCommandParser.TryParse("/effort none", out _));
+        Assert.IsFalse(SystemCommandParser.TryParse("/effort medium", out _));
+        Assert.IsFalse(SystemCommandParser.TryParse("/effort effort", out _));
+
+        // /effort 写的是 Agent 配置，属特权操作（与 /yolo 同级）。
+        Assert.IsTrue(SystemCommandParser.TryParse("/effort max", out var privileged));
+        Assert.IsTrue(SystemCommandParser.RequiresPrivilege(privileged));
+    }
+
     [TestMethod]
     public void BuildHelpMessage_Uses_Markdown_List_For_Chat_Rendering()
     {
