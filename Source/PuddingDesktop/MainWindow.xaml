@@ -600,6 +600,9 @@
            <MenuFlyoutSeparator/>
            <MenuFlyoutItem Text="将当前地址复制到剪贴板" Click="OnCopyAddress"/>
            <MenuFlyoutItem Text="在系统浏览器中打开" Click="OnOpenAddressExternally"/>
+           <MenuFlyoutSeparator/>
+           <MenuFlyoutItem Text="清除当前网站 Cookie" Click="OnClearSiteCookies"/>
+           <MenuFlyoutItem Text="清除全部 Cookie" Click="OnClearAllCookies"/>
           </MenuFlyout>
          </DropDownButton.Flyout>
         </DropDownButton>

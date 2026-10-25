@@ -40,6 +40,20 @@ public interface IBrowserSurfaceHost
     Task CloseAsync(PageId pageId, CancellationToken ct);
 
     /// <summary>
+    /// 清空 Cookie。所有浏览器表面共用同一个 <see cref="CoreWebView2Environment"/>（同一个
+    /// 用户数据目录），因此从任一表面清一次就等于整个 profile 清空；逐个表面循环只是重复劳动。
+    /// 返回是否真的执行（没有已初始化的表面时为 false）。
+    /// </summary>
+    Task<bool> ClearAllCookiesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// 只清给定站点的 Cookie，返回删除条数（无法执行时返回 -1）。
+    /// 作用域按 <c>scheme://host[:port]</c> 计算，因此只覆盖该源下路径 "/" 起始的 Cookie ——
+    /// 深层 path 单独设置的 Cookie 可能残留，这是 WebView2 只提供 DeleteCookies(name, uri) 的限制。
+    /// </summary>
+    Task<int> ClearSiteCookiesAsync(Uri siteUri, CancellationToken ct);
+
+    /// <summary>
     /// 同步宿主外观到**每一个**浏览器表面（含之后新建的）：预绘制背景 + UA 配色。
     /// <para>
     /// 浏览器页面是独立的 WebView2，与主工作台不是同一个实例；漏掉就会出现
@@ -121,6 +135,40 @@ public sealed class WinUiBrowserSurfaceHost(IWebView2UiDispatcher dispatcher, Pa
             await surface.DisposeAsync();
         }
     }, ct);
+
+    public Task<bool> ClearAllCookiesAsync(CancellationToken ct) => dispatcher.InvokeAsync<bool>(async () =>
+    {
+        var core = _surfaces.Values.Select(surface => surface.CoreWebView).FirstOrDefault(c => c is not null);
+        if (core is null)
+        {
+            return false;
+        }
+
+        core.Profile.CookieManager.DeleteAllCookies();
+        await Task.CompletedTask;
+        return true;
+    }, ct);
+
+    public Task<int> ClearSiteCookiesAsync(Uri siteUri, CancellationToken ct) =>
+        dispatcher.InvokeAsync<int>(async () =>
+        {
+            ArgumentNullException.ThrowIfNull(siteUri);
+            var core = _surfaces.Values.Select(surface => surface.CoreWebView).FirstOrDefault(c => c is not null);
+            if (core is null)
+            {
+                return -1;
+            }
+
+            var scope = siteUri.GetLeftPart(UriPartial.Authority);
+            var manager = core.Profile.CookieManager;
+            var cookies = await manager.GetCookiesAsync(scope);
+            foreach (var cookie in cookies)
+            {
+                manager.DeleteCookies(cookie.Name, scope);
+            }
+
+            return cookies.Count;
+        }, ct);
 
     private sealed class Surface(PageId id, Microsoft.UI.Xaml.Controls.WebView2 control) : IBrowserSurface
     {

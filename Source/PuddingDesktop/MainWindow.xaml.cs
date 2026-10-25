@@ -3061,6 +3061,55 @@ public sealed partial class MainWindow : Window
     private async void OnReload(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.ReloadAsync(page, ct)); }
     private async void OnTarget(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.AssignAgentTargetAsync(page, ct)); }
     private async void OnTakeover(object sender, RoutedEventArgs e) { if (_browser is not null) await RunAsync(ct => _browser.SetUserTakeoverAsync(Takeover.IsChecked == true, ct)); }
+
+    private async void OnClearSiteCookies(object sender, RoutedEventArgs e) => await ClearCookiesAsync(siteOnly: true);
+    private async void OnClearAllCookies(object sender, RoutedEventArgs e) => await ClearCookiesAsync(siteOnly: false);
+
+    /// <summary>
+    /// 清除 Cookie。这是**破坏性且不可撤销**的动作（全部站点退出登录），所以走确认对话框，
+    /// 默认按钮是「取消」；不放在工具条上的常驻按钮，避免误触。
+    /// </summary>
+    private async Task ClearCookiesAsync(bool siteOnly)
+    {
+        if (_browser is null)
+        {
+            ToolStatusText.Text = "Agent 浏览器运行时尚未就绪。";
+            return;
+        }
+
+        var confirm = new ContentDialog
+        {
+            Title = siteOnly ? "清除当前网站 Cookie？" : "清除全部 Cookie？",
+            Content = siteOnly
+                ? "只删除当前页面所属站点的 Cookie，其他站点不受影响。你会在这个站点退出登录。"
+                : "删除整个浏览器配置里的所有 Cookie，所有站点都会退出登录。该操作不可撤销。",
+            PrimaryButtonText = "清除",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = Content.XamlRoot,
+        };
+
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        await RunAsync(async ct =>
+        {
+            if (siteOnly)
+            {
+                var removed = await _browser.ClearCurrentSiteCookiesAsync(ct);
+                ToolStatusText.Text = removed < 0
+                    ? "当前页面没有可用的站点地址，未清除任何 Cookie。"
+                    : $"已清除当前站点 Cookie（{removed} 条）。";
+            }
+            else
+            {
+                var done = await _browser.ClearAllCookiesAsync(ct);
+                ToolStatusText.Text = done ? "已清除全部 Cookie。" : "浏览器尚未初始化，未清除任何 Cookie。";
+            }
+        });
+    }
     private async void OnGo(object sender, RoutedEventArgs e) => await NavigateBrowserAsync();
     private async void OnAddressKey(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e) { if (e.Key == Windows.System.VirtualKey.Enter) { e.Handled = true; await NavigateBrowserAsync(); } }
     private async Task NavigateBrowserAsync()

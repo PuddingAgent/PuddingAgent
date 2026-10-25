@@ -703,6 +703,44 @@ public sealed class BrowserWorkspaceController :
     /// Applies operation state snapshot from Dispatcher and recalculates control state.
     /// Priority: UserTakeover > Paused > AgentControlling > Idle (doc 6.2).
     /// </summary>
+    /// <summary>
+    /// 清空整个浏览器配置的 Cookie（所有站点）。用户明确要求的「去身份化」入口：
+    /// 它在**不需要**给 Agent 加权限闸的前提下，把「我登录过的站点」变成可控状态。
+    /// </summary>
+    public async Task<bool> ClearAllCookiesAsync(CancellationToken ct)
+    {
+        var cleared = await _surfaceHost.ClearAllCookiesAsync(ct);
+        if (cleared && ActivePageId is { } pageId)
+        {
+            await ReloadAsync(pageId, ct);
+        }
+
+        return cleared;
+    }
+
+    /// <summary>只清当前活动页所属站点的 Cookie；返回删除条数（无活动页或地址非法时 -1）。</summary>
+    public async Task<int> ClearCurrentSiteCookiesAsync(CancellationToken ct)
+    {
+        if (ActivePageId is not { } pageId)
+        {
+            return -1;
+        }
+
+        var url = Tabs.FirstOrDefault(tab => tab.PageId == pageId)?.Url;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+        {
+            return -1;
+        }
+
+        var cleared = await _surfaceHost.ClearSiteCookiesAsync(uri, ct);
+        if (cleared >= 0)
+        {
+            await ReloadAsync(pageId, ct);
+        }
+
+        return cleared;
+    }
+
     public async Task ApplyOperationStateAsync(AgentBrowserOperationStateSnapshot snapshot, CancellationToken ct)
     {
         await _uiDispatcher.InvokeAsync(() =>
