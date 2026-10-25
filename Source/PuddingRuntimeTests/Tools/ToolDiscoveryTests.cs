@@ -44,10 +44,15 @@ public sealed class ToolDiscoveryTests
             success: true,
             """{"loaded_tool_ids":["deferred_17","unknown_tool"]}""",
             loaded,
-            tools);
+            tools,
+            out _,
+            out var unavailable);
         var nextRound = ToolExposurePlanner.CreatePlan(tools, loaded);
 
         Assert.AreEqual(1, added);
+        // 目录里有、可曝光集里没有的 id 必须被交出来。过去它被静默丢弃：
+        // search_tools 承诺「下一轮可见」，而提升被整段跳过，模型只能反复重试。
+        CollectionAssert.Contains(unavailable.ToList(), "unknown_tool");
         CollectionAssert.Contains(nextRound.VisibleTools.Select(tool => tool.Name).ToArray(), "deferred_17");
         CollectionAssert.DoesNotContain(nextRound.VisibleTools.Select(tool => tool.Name).ToArray(), "unknown_tool");
     }
@@ -213,7 +218,7 @@ public sealed class ToolDiscoveryTests
             success: true,
             """{"loaded_tool_ids":["deferred_05"]}""",
             committed,
-            runtime);
+            runtime, out _, out _);
         Assert.AreEqual(1, added);
 
         // 当前 provider request 已冻结：执行 search_tools 时不能原地修改该 round 的 schema。

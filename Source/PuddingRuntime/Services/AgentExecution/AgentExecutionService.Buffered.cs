@@ -1506,7 +1506,17 @@ if (effectiveLlmConfig is not null)
                             skillResult.Output,
                             loadedToolIds,
                             allLlmTools,
-                            out var newlyLoadedToolIds);
+                            out var newlyLoadedToolIds,
+                        out var unavailableToolIds);
+                        if (newlyLoadedToolCount == 0 && unavailableToolIds.Count > 0)
+                        {
+                            // 目录里有、可曝光集里没有：不静默。这条日志是「加载了却看不见」的唯一线索。
+                            _logger.LogWarning(
+                                "[AgentExec:ToolDiscovery] Search matched but not exposable session={Session} unavailable={Unavailable} availableCount={AvailableCount}",
+                                request.SessionId,
+                                string.Join(",", unavailableToolIds),
+                                allLlmTools.Count);
+                        }
                         if (newlyLoadedToolCount > 0)
                         {
                             _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
@@ -2109,7 +2119,17 @@ if (effectiveLlmConfig is not null)
                         skillResult.Output,
                         loadedToolIds,
                         allLlmTools,
-                        out var newlyLoadedToolIds);
+                        out var newlyLoadedToolIds,
+                        out var unavailableToolIds);
+                    if (newlyLoadedToolCount == 0 && unavailableToolIds.Count > 0)
+                    {
+                        // 目录里有、可曝光集里没有：不静默。这条日志是「加载了却看不见」的唯一线索。
+                        _logger.LogWarning(
+                            "[AgentExec:ToolDiscovery] Search matched but not exposable session={Session} unavailable={Unavailable} availableCount={AvailableCount}",
+                            request.SessionId,
+                            string.Join(",", unavailableToolIds),
+                            allLlmTools.Count);
+                    }
                     if (newlyLoadedToolCount > 0)
                     {
                         _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);

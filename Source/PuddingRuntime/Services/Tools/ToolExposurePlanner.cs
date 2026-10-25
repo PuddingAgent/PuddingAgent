@@ -445,17 +445,15 @@ internal static class ToolExposurePlanner
         return reasons.Count == 0 ? CompositionChangeReasons.None : string.Join(',', reasons);
     }
 
-    internal static int RegisterSearchResult(
-        string toolName,
-        bool success,
-        string? output,
-        ISet<string> loadedToolIds,
-        IReadOnlyList<LlmToolDefinition> availableTools)
-        => RegisterSearchResult(toolName, success, output, loadedToolIds, availableTools, out _);
-
     /// <summary>
-    /// 解析 search_tools 输出并登记新加载工具；<paramref name="addedToolIds"/> 返回本次**新**加载的 ID，
-    /// 供调用方推进最近使用序（预算淘汰时新加载工具必须优先保留）。
+    /// 解析 search_tools 输出并登记新加载工具。
+    /// <paramref name="addedToolIds"/> 返回本次**新**加载的 ID，供调用方推进最近使用序
+    /// （预算淘汰时新加载工具必须优先保留）；
+    /// <paramref name="unavailableToolIds"/> 返回「search_tools 列出了、但不在本次可曝光定义集中」的 ID。
+    ///
+    /// 后者的存在理由：这类 ID 过去被**静默丢弃**——search_tools 回执承诺「下一轮可见」，
+    /// 而提升被整段跳过，模型于是反复调用同一搜索直到 tool_discovery_stalled 熔断。
+    /// 调用方必须把它记进日志，否则「加载了却看不见」这条故障链无从诊断。
     /// </summary>
     internal static int RegisterSearchResult(
         string toolName,
@@ -463,11 +461,13 @@ internal static class ToolExposurePlanner
         string? output,
         ISet<string> loadedToolIds,
         IReadOnlyList<LlmToolDefinition> availableTools,
-        out IReadOnlyList<string> addedToolIds)
+        out IReadOnlyList<string> addedToolIds,
+        out IReadOnlyList<string> unavailableToolIds)
     {
         ArgumentNullException.ThrowIfNull(loadedToolIds);
         ArgumentNullException.ThrowIfNull(availableTools);
         addedToolIds = Array.Empty<string>();
+        unavailableToolIds = Array.Empty<string>();
 
         if (!success
             || !toolName.Equals(SearchToolId, StringComparison.OrdinalIgnoreCase)
@@ -489,22 +489,32 @@ internal static class ToolExposurePlanner
                 .Select(tool => tool.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var added = new List<string>();
+            var unavailable = new List<string>();
             foreach (var item in ids.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.String)
                     continue;
 
                 var toolId = item.GetString()?.Trim();
-                if (!string.IsNullOrWhiteSpace(toolId)
-                    && availableIds.Contains(toolId)
-                    && !toolId.Equals(SearchToolId, StringComparison.OrdinalIgnoreCase)
-                    && loadedToolIds.Add(toolId))
+                if (string.IsNullOrWhiteSpace(toolId)
+                    || toolId.Equals(SearchToolId, StringComparison.OrdinalIgnoreCase))
                 {
-                    added.Add(toolId);
+                    continue;
                 }
+
+                if (!availableIds.Contains(toolId))
+                {
+                    // 目录里有、可曝光集里没有：不得静默丢弃，否则上层无法解释「为什么加载没生效」。
+                    unavailable.Add(toolId);
+                    continue;
+                }
+
+                if (loadedToolIds.Add(toolId))
+                    added.Add(toolId);
             }
 
             addedToolIds = added;
+            unavailableToolIds = unavailable;
             return added.Count;
         }
         catch (JsonException)
