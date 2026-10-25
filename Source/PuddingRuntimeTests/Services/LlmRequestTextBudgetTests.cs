@@ -26,9 +26,15 @@ public sealed class LlmRequestTextBudgetTests
     {
         // 2026-10-23：固定 512 KiB 预算在 1M 窗口下被固定前缀占满 98.6%（历史只剩约 6 KB），
         // 每轮都触发压缩 ⇒ 预算必须随窗口伸缩，小窗口仍以 512 KiB 为下限。
+        //
+        // 2026-10-25：系数由 3 提到 6 后，100k 窗口的缩放值（≈ 545 KB）已经高于旧下限，
+        // 所以“下限”的正确形态是不低于——而不是恒等于。另用 20k 窗口验证下限真的会被夹住。
         var smallLimit = LlmRequestTextBudget.ResolveLimit(Request(config: Config(100_000)));
+        var tinyLimit = LlmRequestTextBudget.ResolveLimit(Request(config: Config(20_000)));
         var largeLimit = LlmRequestTextBudget.ResolveLimit(Request(config: Config(1_000_000)));
-        Assert.AreEqual(LlmRequestTextBudget.MinimumTextBudgetBytes, smallLimit, "小窗口必须保持旧下限");
+        Assert.AreEqual(LlmRequestTextBudget.MinimumTextBudgetBytes, tinyLimit, "极小窗口必须夹在旧下限上");
+        Assert.IsTrue(smallLimit >= LlmRequestTextBudget.MinimumTextBudgetBytes,
+            $"小窗口不得低于旧下限，实际 {smallLimit}");
         Assert.IsTrue(largeLimit > LlmRequestTextBudget.MinimumTextBudgetBytes,
             $"1M 窗口的文本预算应高于旧下限，实际 {largeLimit}");
         Assert.IsTrue(largeLimit >= 2_000_000, $"1M 窗口的文本预算应随窗口成倍放大，实际 {largeLimit}");
@@ -141,6 +147,22 @@ public sealed class LlmRequestTextBudgetTests
         Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request("", "", config: null)));
         // 有窗口但没路由身份同样为 0：判定依据是「真实路由」，不是「窗口字段凑巧存在」。
         Assert.AreEqual(0, LlmRequestTextBudget.ResolveLimit(Request("", "", Config(30_000, 1_000))));
+    }
+
+    [TestMethod]
+    public void TextBudget_ReservesMeasuredBytesPerToken_NotAThirdOfTheWindow()
+    {
+        // 2026-10-25：12 次真实压缩的诊断记录（plan.initialTextBytes / initialUsedTokens）显示
+        // 本仓报文密度稳定在 5.8~6.6 B/token，而旧系数 3 会让字节网在 token 窗口 28% 处就触线。
+        // 这条用例锁的就是「字节预算必须至少按 6 B/token 预留」。
+        var config = Config(1_000_000);
+        var limit = LlmRequestTextBudget.ResolveLimit(Request(config: config));
+        var inputLimit = LlmRequestBudgetGuard.ResolveEffectiveInputLimit(config, workUnitInputCapacity: null);
+        var bytesPerToken = (double)limit / inputLimit;
+
+        Assert.IsTrue(bytesPerToken >= 6.0,
+            $"字节预算必须按实测密度预留（>=6 B/token），实际 {bytesPerToken:F2}" +
+            "——低于此值时压缩会在 token 窗口的三成处就触发");
     }
 
     [TestMethod]

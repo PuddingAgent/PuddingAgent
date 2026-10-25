@@ -19,12 +19,21 @@ internal static class LlmRequestTextBudget
     internal const int MinimumTextBudgetBytes = 512 * 1024;
 
     /// <summary>
-    /// 保守的字节/Token 折算系数：CJK 约 3 B/token，英文/代码约 4~4.5 B/token。
-    /// 取 3 可让字节预算在 CJK 最坏情形下也与输入窗口对齐（不会反推出超窗的请求），
-    /// 同时给英文密集请求留下富余；真正的窗口上限仍由 <see cref="LlmRequestBudgetGuard"/> 的 token 口径守护
-    /// （本预算只是补充网，用于 token 估算失灵时的兜底）。
+    /// 字节/Token 折算系数：CJK 约 3 B/token，英文/代码约 4~4.5 B/token。
+    ///
+    /// 2026-10-25：**由 3 提高到 6**，依据是 12 次真实压缩的诊断记录（
+    /// `D:\Data\logs\diagnostics\compaction\*.jsonl` 的 `plan.initialTextBytes / initialUsedTokens`）：
+    /// 实测密度稳定在 5.8~6.6 B/token（本仓系统提示 + 工具定义 + 中文对话 + 工具结果 JSON 的实际形态）。
+    ///
+    /// 原来的 3 让字节网提前到 token 窗口的 28% 就触发：同批样本里 token 比例只有 0.28~0.35，
+    /// 字节比例却已到 0.60~0.74——压缩完全是字节网在推，等于白丢 2/3 可用上下文，
+    /// 而压缩本身又占缓存缺失 token 的六成。换算：系数 3 → 约 2.8 MB；系数 6 → 约 5.6 MB，
+    /// 使字节网与 token 网在 ~56% 处大致对齐，而不是在 28% 处抢先。
+    ///
+    /// 取值仍偏保守（实测中位数 6.4，取 6）：字节网是“补充网”，宁可略早触线，
+    /// 不可因密度估低而把报文放大到服务商侧才被拒。
     /// </summary>
-    private const int ConservativeBytesPerToken = 3;
+    private const int ConservativeBytesPerToken = 6;
     private static readonly JsonSerializerOptions Json = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     internal static int ResolveLimit(RuntimeDispatchRequest request)
