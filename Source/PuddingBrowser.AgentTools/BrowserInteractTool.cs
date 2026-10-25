@@ -269,7 +269,13 @@ public sealed class BrowserInteractTool(
 
             {
 
-                var contexts = await surface.GetContextsAsync(call, ct);
+                if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } listCall)
+                {
+                    return BrowserToolResponse.Failure(
+                        "browser_not_connected", "No Desktop is connected for browser capabilities");
+                }
+
+                var contexts = await surface.GetContextsAsync(listCall, ct);
 
                 if (contexts.IsFailure)
 
@@ -303,7 +309,13 @@ public sealed class BrowserInteractTool(
 
             // （与迁移前"直接作用于当前页"语义等价，且让"等待期间的页面变化"可被检出）。
 
-            var state = await surface.GetPageStateAsync(target, call, ct);
+            if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } stateCall)
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_not_connected", "No Desktop is connected for browser capabilities");
+            }
+
+            var state = await surface.GetPageStateAsync(target, stateCall, ct);
 
             if (state.IsFailure)
 
@@ -329,6 +341,14 @@ public sealed class BrowserInteractTool(
                     action, args, contextId, call.OperationId);
 
 
+
+            // 交互命令本身也必须独立签发 operation id（与列上下文、读页状态分开）。
+            // 回执里的 operationId 必须对得上真正驱动动作的那条命令。
+            if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } interactCall)
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_not_connected", "No Desktop is connected for browser capabilities");
+            }
 
             var interaction = await surface.InteractAsync(
 
@@ -366,7 +386,7 @@ public sealed class BrowserInteractTool(
                     // 上传文件（仅 action=upload；契约层强制至少一个）。
                     args.Files, x: args.X, y: args.Y, observationId: args.ObservationId, toX: args.ToX, toY: args.ToY),
 
-                call,
+                interactCall,
 
                 ct);
 
@@ -374,7 +394,7 @@ public sealed class BrowserInteractTool(
             {
                 // 失败也必须给出回执：调用方需要知道「执行到哪一步、是否可能已产生副作用、能否重试」。
                 // 只给 code/message 会把"可能已经执行"误读成"没执行"（设计 §4.1）。
-                return Failure(interaction.Error!, action, args, contextId, call.OperationId);
+                return Failure(interaction.Error!, action, args, contextId, interactCall.OperationId);
             }
 
 
@@ -390,7 +410,7 @@ public sealed class BrowserInteractTool(
                 : null;
             var receipt = BrowserInteractionReceipt.Build(new BrowserInteractionEvidence(
                 // 回执使用**本次调用的原 operationId**（而非新 Guid），使 Core/Desktop 两侧能按同一 id 关联。
-                call.OperationId,
+                interactCall.OperationId,
                 MapAction(action, args.Checked),
                 RequestedText: args.Text,
                 RequestedValues: args.Values,
@@ -435,7 +455,7 @@ public sealed class BrowserInteractTool(
                     Element = element is { } observed ? ToValue(observed) : null,
 
                     // 关联 id：与本次工具调用同一个 operationId；ToolCallId 供 UI/Desktop 活动记录 join。
-                    OperationId = call.OperationId.Value,
+                    OperationId = interactCall.OperationId.Value,
                     ToolCallId = OriginAccessor.Current?.ToolCallId,
                     Ok = receipt.Ok,
                     Completion = BrowserActionCompletionWire.NameOf(receipt.Completion),

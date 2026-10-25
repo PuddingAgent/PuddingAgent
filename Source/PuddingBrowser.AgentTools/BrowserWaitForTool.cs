@@ -60,7 +60,15 @@ public sealed class BrowserWaitForTool(
             var contextId = string.IsNullOrWhiteSpace(args.ContextId) ? null : args.ContextId!.Trim();
             if (contextId is null)
             {
-                var contexts = await surface.GetContextsAsync(call, ct);
+                // 列出上下文是独立的一条能力命令：必须单独签发 operation id，
+                // 否则后续等待命令会被 broker 判「同 id 不同 payload」而拒绝。
+                if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } listCall)
+                {
+                    return BrowserToolResponse.Failure(
+                        "browser_not_connected", "No Desktop is connected for browser capabilities");
+                }
+
+                var contexts = await surface.GetContextsAsync(listCall, ct);
                 if (contexts.IsFailure)
                 {
                     return Failure(contexts.Error!);

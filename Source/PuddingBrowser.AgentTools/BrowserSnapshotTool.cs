@@ -351,7 +351,15 @@ public sealed class BrowserSnapshotTool(
             if (contextId is null)
             {
                 // 只有省略上下文时，才沿用「用第一个可用上下文」的既有语义。
-                var contexts = await surface.GetContextsAsync(call, ct);
+                // 列出上下文是独立的一条能力命令：必须单独签发 operation id，
+                // 否则后续快照命令会被 broker 判「同 id 不同 payload」而拒绝。
+                if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } listCall)
+                {
+                    return BrowserToolResponse.Failure(
+                        "browser_not_connected", "No Desktop is connected for browser capabilities");
+                }
+
+                var contexts = await surface.GetContextsAsync(listCall, ct);
                 if (contexts.IsFailure)
                 {
                     return Failure(contexts.Error!);
