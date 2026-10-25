@@ -49,27 +49,24 @@ $captures = $lines | Where-Object { $_ -match 'LlmRequestCapture' }
 Report 'capture-instrument' ($captures.Count -gt 0) ("captureLines=$($captures.Count) (PUDDING_CAPTURE_REQUEST must be on)")
 
 # 3) The body must actually carry reasoning.effort.
+#    This is the discriminating check: before the fix no request carried the key at
+#    all, so this line count moves 0 -> N and can take red.
 $withEffort = $captures | Where-Object { $_ -match 'reasoningEffort=(high|max)' }
 Report 'body-carries-effort' ($withEffort.Count -gt 0) ("linesWithEffort=$($withEffort.Count)")
 
-# 4) Thinking must actually happen (reasoning tokens > 0).
-#    Gated on (3): the provider default is already high, so a positive reasoningTokens
-#    value on its own proves nothing — it was observed on the un-fixed process. Only
-#    count it when some request demonstrably carried the parameter.
-$okLines = $lines | Where-Object { $_ -match '\[DirectLlm\] OK' }
-$positive = @()
-foreach ($line in $okLines) {
-    if ($line -match 'reasoningTokens=(\d+)') {
-        if ([int]$matches[1] -gt 0) { $positive += $line }
-    }
-}
-$positiveIsMeaningful = ($withEffort.Count -gt 0) -and ($positive.Count -gt 0)
-$positiveDetail = if ($withEffort.Count -eq 0) {
-    "okLines=$($okLines.Count) positive=$($positive.Count) NOT-ATTRIBUTABLE (no request carried effort; provider default alone can produce thinking)"
-} else {
-    "okLines=$($okLines.Count) positive=$($positive.Count)"
-}
-Report 'reasoning-tokens-positive' $positiveIsMeaningful $positiveDetail
+# 4) INFO ONLY - reasoning tokens are NOT an acceptance criterion here.
+#    Measured 2026-10-25 against the live DB (TokenUsageEvents): across 128,180 rows
+#    and 13 models, ReasoningTokens > 0 has never been recorded (max = 0 for every
+#    model). The pre-fix baseline is therefore also 0, so this indicator cannot tell
+#    a fixed build from a broken one - it can never take red. Treating it as a gate
+#    produced a guaranteed-FAIL that said nothing about the change.
+#    The discriminating evidence is check 3 (outbound body carries reasoningEffort)
+#    plus the offline provider probe (Tools/Diagnostics/probe-effort-live.ps1:
+#    none -> 0 reasoning tokens, high -> 40).
+#    Kept as INFO because it becomes meaningful if a model ever reports non-zero.
+$usageLines = @($lines | Where-Object { $_ -match 'reasoningTokens=(\d+)' })
+$positive   = @($usageLines | Where-Object { $_ -match 'reasoningTokens=([1-9]\d*)' })
+Write-Output ("[INFO] reasoning-tokens - usageLines={0} positive={1} (not an acceptance criterion; see comment)" -f $usageLines.Count, $positive.Count)
 
 Write-Output ("failures={0}" -f $failures)
 if ($failures -gt 0) { exit 1 }
