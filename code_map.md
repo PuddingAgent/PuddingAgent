@@ -1,6 +1,6 @@
 # PuddingAgent 代码地图（根索引）
 
-> 源指纹: Source/**=e14f5f25e696, Tests/**=5b0cb30b7cd6, Tools/**=04f6a202d2a2, TestScripts/**=844369deafb7 · 条目数: 124 · 最近整理: 2026-10-23
+> 源指纹: Source/**=e14f5f25e696, Tests/**=5b0cb30b7cd6, Tools/**=04f6a202d2a2, TestScripts/**=844369deafb7 · 条目数: 125 · 最近整理: 2026-10-25
 > 本文件是**索引**不是日志：只放 概念 · 组件 · 关键文件（相对路径）· 用途；维护规则见 [`Agents.md`](Agents.md)，过程记录写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)；子项目内部的文件级索引在其自己的 `code_map.md` 中，本文件只做跨项目路由。
 
 ## 0. 怎么用（30 秒）
@@ -38,6 +38,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingPlatformAdmin/` | React 管理前端（Chat 工作台与任务看板等页面）；`dist` 部署到 Core `wwwroot/admin` | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
 | `Source/PuddingTaskRecall.Cli/` | 历史脏数据诊断/修复 CLI（默认 dry-run，`--apply` 才写库） | [code_map](Source/PuddingTaskRecall.Cli/code_map.md) |
 | `Source/PuddingGit.Tools/` | Git 工具声明（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
+| `Source/PuddingFinance/` | 必盈 A 股数据源的零依赖叶子组件，负责端点注册与响应整形 | — |
 | `Source/HarnessAgent.Core/` | Harness Agent 核心库（与主线并列的 Harness 实现） | — |
 | `Source/Pudding.Contracts/` | 契约叶（仅 BCL）：能力目录、握手协商与错误语义的 DTO | [code_map](Source/Pudding.Contracts/code_map.md) |
 | `Source/Pudding.Rpc.Protocol/` | wire 协议叶：`Protos/desktop_capability.proto` 与生成类型 | [code_map](Source/Pudding.Rpc.Protocol/code_map.md) |
