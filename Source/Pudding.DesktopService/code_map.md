@@ -1,5 +1,5 @@
 # Pudding.DesktopService CodeMAP
-> 源指纹: Browser/**=1-4a7c1e2a68c8, *.cs=35-c34da2281b18, *.csproj=1-ad69d2b101f5 · 条目数: 51 · 最近整理: 2026-10-22
+> 源指纹: Browser/**=1-4a7c1e2a68c8, *.cs=35-c34da2281b18, *.csproj=1-ad69d2b101f5 · 条目数: 52 · 最近整理: 2026-10-22
 
 > Desktop 侧能力服务（计划 §6）：**目标校验 · 准入 · 生命周期 · 取消与关闭竞态 · UI 线程边界**
 > 依赖：`Pudding.Contracts`（平台无关契约）+ `Pudding.DesktopConnection`（执行器接缝）。
@@ -50,6 +50,7 @@
 | `BrowserTaskBindingComposition.cs` | 控制面装配工厂：构造签发器 + 受理/撤销服务；未握手签发被拒（见下「关键语义」） |
 | `BrowserTaskBindingService.cs` | 任务绑定的受理与撤销：目标当下为用户选定页才签发；确定性撤销入口（见下「关键语义」） |
 | `BrowserGrantIssuer.cs` | 授权签发的生产路径：多重校验后才调唯一 authority；不降级签发（见下「关键语义」） |
+| `BrowserDefaultManagementGrantPolicy.cs` | 默认管理面授权的去重判据：按 IsSameTaskScope（同消费端），方向与页级相反 |
 | `BrowserPageLifecycle.cs` | 页面/生命周期唯一所有者：创建/关闭侧 + 登记原子性 + 失败安全（见下「关键语义」） |
 | `BrowserReadingBaselineStore.cs` | 读取基线存储（§145）：按页隔离、有界、随生命周期清除（见下「关键语义」） |
 | `DesktopShellSurface.cs` | 把两个 Shell 端口适配成表面；不补齐自动化状态与页面数（见下「关键语义」） |
