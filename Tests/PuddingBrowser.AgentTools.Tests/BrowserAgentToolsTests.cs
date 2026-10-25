@@ -88,6 +88,31 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Interact_WithoutExplicitContext_IssuesOneOperationIdPerCommand()
+    {
+        // interact 在 context 缺省时发三条命令（列上下文 → 读页状态 → 交互），
+        // 每条必须携带不同的 operation id，否则第二条起会被 broker 判重复请求。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+        var tool = new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor);
+
+        var result = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+        {
+            action = "fill",
+            page_id = page.Id.Value,
+            locator = new { kind = "label", value = "Name" },
+            text = "Pudding"
+        }));
+
+        Assert.True(result.Success, result.Output);
+        Assert.Equal(3, surface.SeenOperationIds.Count);
+        Assert.Equal(3, surface.SeenOperationIds.Distinct().Count());
+    }
+
+    [Fact]
     public void ToolDescriptors_UseStableNamesAndStructuredSchemas()
     {
         var runtime = new FakeBrowserRuntime();
@@ -2688,6 +2713,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopPageState>> GetPageStateAsync(
         DesktopPageTarget target, DesktopCallContext call, CancellationToken ct = default)
     {
+        SeenOperationIds.Add(call.OperationId);
         if (await ResolvePageAsync(target, ct) is not { } page)
         {
             return CapabilityResult<DesktopPageState>.Failure(
@@ -2859,6 +2885,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopInteractionResult>> InteractAsync(
         BrowserInteractRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        SeenOperationIds.Add(call.OperationId);
         // 最近的交互请求：用来断言"说了 native 就真的把 native 传下去"。
         LastInteractRequest = request;
 
