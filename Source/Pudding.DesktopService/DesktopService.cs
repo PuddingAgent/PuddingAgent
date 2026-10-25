@@ -1103,6 +1103,47 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                 "desktop:agent-default-page"));
         }
 
+        // 局部函数（用户裁定 2026-10-25）：管理面（新建/关闭标签、建关 context）同样默认授权。
+        //
+        // 原因：这些操作发生时**还没有页面可以授权**（新建标签更是要创建页面），所以
+        // EnsureDefaultAgentPageGrant 的页级判据永远返回（page 为 null）；而消费端
+        // BrowserAutomationAuthority.Admit 对 Management 类操作只认「任务级管理授权」，
+        // 而生产代码从未签发过它 —— 于是形成一道永远打不开的死门：
+        // 面板里没有页面时（pageCount=0），Agent 既无页可驱动，也无法自己开页。
+        //
+        // 边界：仍然只给**主 Agent**，不给子代理；子代理必须由父任务先持有（判在签发器里），
+        // 避免子任务自行开页绕过级联释放。
+        void EnsureDefaultAgentManagementGrant(BrowserCallerIdentity caller, BrowserAutomationOperation operation)
+        {
+            if (_taskBindings is null)
+            {
+                return;
+            }
+
+            if (BrowserOperationPolicy.RequiredGrantKind(operation) != BrowserGrantKind.Management)
+            {
+                return;
+            }
+
+            if (caller.Kind != BrowserCallerKind.Agent)
+            {
+                return;
+            }
+
+            // 去重判据必须与消费端 HasManagementGrant 一致（任务作用域，不含 runId）。
+            if (!BrowserDefaultManagementGrantPolicy.ShouldIssue(
+                Authority.ActiveManagementGrants,
+                caller,
+                DateTimeOffset.UtcNow))
+            {
+                return; // 已有同一任务作用域的有效管理授权
+            }
+
+            // 短期（一分钟）：足够完成本次 tabs new / context create，又不留下长期管理能力。
+            // 签发失败不在这里抛：真正的裁决仍在 Authority.Admit。
+            _ = _taskBindings.AcceptManagement(caller, TimeSpan.FromMinutes(1));
+        }
+
         if (admitAuthority
             && _connectionGeneration is { } generation
             && authorizationOperation is { } automationOperation)
@@ -1115,6 +1156,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             if (!sessionAdmitted)
             {
                 EnsureDefaultAgentPageGrant(browserCaller, target);
+                EnsureDefaultAgentManagementGrant(browserCaller, automationOperation);
 
                 var decision = Authority.Admit(new BrowserAutomationRequest(
                     automationOperation,

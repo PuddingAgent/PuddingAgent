@@ -162,6 +162,56 @@ public sealed class BrowserTaskBindingService(
         return new BrowserBindingAcceptance(true, null, epoch, grant!.GrantId);
     }
 
+    /// <summary>
+    /// 受理**任务级管理授权**（新建/关闭标签、建关 context）。
+    ///
+    /// <para>
+    /// 与 <see cref="Accept"/> 的区别：管理面操作发生时**还没有页面可以授权**
+    /// （新建标签更是要创建页面），所以没有 <see cref="DesktopPageTarget"/> 可绑定，
+    /// 也不进 <c>_active</c>（那张表以「页 + 任务」为键）。
+    /// </para>
+    ///
+    /// <para>
+    /// 子代理判据不在本类重写：签发器要求子代理的父任务**已经**持有管理面授权，
+    /// 这里只负责把那个事实查出来，不替它放宽。
+    /// </para>
+    /// </summary>
+    public BrowserBindingAcceptance AcceptManagement(
+        BrowserCallerIdentity task,
+        TimeSpan validity)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        var parentHoldsManagement = false;
+
+        if (task.Kind == BrowserCallerKind.SubAgent)
+        {
+            if (task.ParentTaskId is not { Length: > 0 } parentTaskId)
+            {
+                return new BrowserBindingAcceptance(
+                    false, "a sub-agent management request must carry its parent task id", default);
+            }
+
+            parentHoldsManagement = _lifecycle.Authority.ActiveManagementGrants.Any(grant =>
+                string.Equals(grant.Grantee.TaskId, parentTaskId, StringComparison.Ordinal));
+        }
+
+        if (!_issuer.TryIssueManagement(
+                task,
+                validity,
+                parentHoldsManagement,
+                out var grant,
+                out var epoch,
+                out var reason))
+        {
+            return new BrowserBindingAcceptance(false, reason, default);
+        }
+
+        // 不回带 grant id：BrowserBindingAcceptance.GrantId 是**页级**授权 ID 的类型
+        // （撤销时按它精确撤），管理面目前没有撤销路径，硬塞一个不相干的 ID 只会误导调用方。
+        return new BrowserBindingAcceptance(true, null, epoch);
+    }
+
     /// <summary>撤销该绑定对应的授权（切目标/任务结束/父撤销时调用）；不存在则返回 <c>false</c>。</summary>
     public bool Revoke(BrowserTaskBinding binding)
     {
