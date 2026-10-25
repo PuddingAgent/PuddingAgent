@@ -59,6 +59,50 @@ public sealed class BrowserDefaultAgentGrantWiringTests
         Assert.Equal(0, surface.ScreenshotCount);
     }
 
+    [Fact]
+    public async Task TabsNew_WithoutAnyPriorGrant_GetsADefaultManagementGrant()
+    {
+        // 管理面（新建/关闭标签、建关 context）在操作发生时**还没有页面可授权**，
+        // 所以页级默认授权帮不上忙；必须走 EnsureDefaultAgentManagementGrant。
+        // 断言签发本身（不等 surface 计数）：真正的裁决仍在 Authority.Admit。
+        var (service, lifecycle) = ArrangeTabs();
+
+        await service.ExecuteAsync(
+            Descriptor(DesktopCapability.BrowserTabs),
+            DesktopCapabilityRequest.ForTabs(BrowserTabsRequest.New("ctx-agent", null, true)),
+            Context("op-default-mgmt", BrowserCallerKind.Agent, "run-mgmt-1"),
+            CancellationToken.None);
+
+        Assert.NotEmpty(lifecycle.Authority.ActiveManagementGrants);
+    }
+
+    private static (DesktopService Service, BrowserPageLifecycle Lifecycle) ArrangeTabs()
+    {
+        var clock = new TestTimeProvider();
+        var lifecycle = BrowserPageLifecycle.Create(DesktopId, ProcessId, clock);
+        lifecycle.RegisterContext(AgentPage.ContextId, DesktopContextTrust.AgentAuthorized);
+        lifecycle.Authority.NotifyConnectionGeneration(Generation);
+
+        var issuer = new BrowserGrantIssuer(lifecycle, DesktopId, ProcessId, () => Generation, clock);
+        var bindings = new BrowserTaskBindingService(lifecycle, issuer, clock);
+
+        var service = new DesktopService(
+            new ManualUiDispatcher { HasThreadAccess = true },
+            new RecordingUiSurface(),
+            lifecycle.PageTargets,
+            new DesktopServiceOptions
+            {
+                AllowedCapabilities = DesktopCapability.BrowserTabs,
+                BrowserContextCallerTrust = DesktopContextTrust.AgentAuthorized,
+            },
+            lifecycle.Authority,
+            clock,
+            () => Generation,
+            bindings);
+
+        return (service, lifecycle);
+    }
+
     private static (DesktopService Service, RecordingUiSurface Surface, TestTimeProvider Clock) Arrange(bool selectTarget)
     {
         var clock = new TestTimeProvider();
