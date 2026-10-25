@@ -64,6 +64,7 @@ public sealed class BiyingFinanceRuntime : IDisposable
                 new BiyingFinancialTool(client),
                 new BiyingSectorTool(client),
                 new BiyingFlowTool(client),
+                new BiyingRawTool(client),
                 client,
                 null);
         }
@@ -88,13 +89,14 @@ public sealed class BiyingFinanceRuntime : IDisposable
         BiyingFinancialTool? Financial,
         BiyingSectorTool? Sector,
         BiyingFlowTool? Flow,
+        BiyingRawTool? Raw,
         BiyingClient? Client,
         string? Error)
     {
         public bool IsAvailable => Error is null && Market is not null && Financial is not null
-                                   && Sector is not null && Flow is not null;
+                                   && Sector is not null && Flow is not null && Raw is not null;
 
-        public static RuntimeState Unavailable(string error) => new(null, null, null, null, null, error);
+        public static RuntimeState Unavailable(string error) => new(null, null, null, null, null, null, error);
     }
 }
 

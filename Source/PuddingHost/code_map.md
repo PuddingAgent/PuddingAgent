@@ -50,7 +50,7 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 **`Extensions/PuddingServiceCollectionExtensions.Runtime.cs`**：成品 Host 的 Runtime/Tool 组合注册；assembly scan 自动发现的新工具，其构造依赖也必须在这里注册（例如 `SavePreferenceTool` → `IUserPreferenceService`、`SkillEnforcerService` 的可选 `ISkillUsageTelemetrySink`：注册缺失时该可选参数**静默为 null**，不报错也不抛异常；同理 `SearchGrepTool` 的可选 
 `IFullTextIndexFreshnessProbe` 解析既有 `IFullTextSearchEngine` 实例再 fail-closed 转型，缺注册则索引新鲜度静默不上报）
 
-必盈四工具（`biying_market` / `biying_financial` / `biying_sector` / `biying_flow`）共享该入口显式注册的
+必盈五工具（`biying_market` / `biying_financial` / `biying_sector` / `biying_flow` / `biying_raw`）共享该入口显式注册的
 `BiyingFinanceRuntime` 单例以保留配额与缓存；配置在首次调用时读取，缺配置不阻止 Host 构建。
 
 **`Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs`**：原生阅读与预处理：metadata/read/prepare，四档 detail，缩略图、裁剪、90度旋转、灰度、Gaussian降噪、jpeg/png/webp编码；源支持本地/URL/聊天artifact；复用 Platform ImagePreprocessing 和派生缓存，不调用模型/Agent，无 helper 路由。低权限只读源文件，URL每跳SSRF校验；输出源/派生引用供多次区域读取

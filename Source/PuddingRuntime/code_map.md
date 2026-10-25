@@ -341,6 +341,7 @@
 | `Tools/BuiltIns/Files/FileSearchTool.cs` | `file_search`：按文件名检索 | `FileSearchTool` | `Tools/BuiltIns/Search/SearchGrepTool.cs` | 无命中只在覆盖完整时输出；参数合同失败上报 contract_error（宿主可用性与目标不存在保持 null） |
 | `Tools/BuiltIns/Files/FileTools.cs` | 文件读写与目录列举工具集 | `HostFileToolPaths` | `Tools/BuiltIns/Files/FilePatchTool.cs` | 相对路径解析到工作区根 |
 | `Tools/BuiltIns/Finance/BiyingFinanceTools.cs` | `biying_market` / `biying_financial`：行情与财报，含网关单例 | `BiyingFinanceRuntime` / `BiyingMarketQueryTool` | `../PuddingFinance/Biying/BiyingClient.cs` | 单例持有配额与缓存，调用时新建会静默重置；配置缺失只在调用时报错 |
+| `Tools/BuiltIns/Finance/BiyingRawHostTool.cs` | `biying_raw`：任意注册表端点直通，覆盖前四个工具之外的约 170 个 | `BiyingRawQueryTool` | `../PuddingFinance/Biying/BiyingRawTools.cs` | 端点白名单即 SSRF 边界；查询键校验统一在组件层实现，工具层不重复；默认只回 3 行 |
 | `Tools/BuiltIns/Finance/BiyingSectorFlowHostTools.cs` | `biying_sector` / `biying_flow`：板块概念与资金流向 | `BiyingSectorQueryTool` / `BiyingFlowQueryTool` | `Tools/BuiltIns/Finance/BiyingFinanceTools.cs` | 共用同一单例；`stockList` 缺 keyword 在发请求前拒绝 |
 | `Tools/BuiltIns/Git/GitAddTool.cs` | `git_add`：暂存指定文件 | `GitAddTool` | `Tools/BuiltIns/Git/GitConstants.cs` | — |
 | `Tools/BuiltIns/Git/GitBlameTool.cs` | `git_blame`：逐行归属查询 | `GitBlameTool` | `Tools/BuiltIns/Git/GitConstants.cs` | — |

@@ -42,6 +42,7 @@ public sealed class BiyingFinanceToolsCompositionTests
                 ("biying_financial", typeof(BiyingFinancialQueryTool)),
                 ("biying_sector", typeof(BiyingSectorQueryTool)),
                 ("biying_flow", typeof(BiyingFlowQueryTool)),
+                ("biying_raw", typeof(BiyingRawQueryTool)),
             })
             {
                 var tool = Assert.Single(tools, tool => tool.GetType() == type);
