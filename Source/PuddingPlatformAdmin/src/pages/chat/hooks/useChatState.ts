@@ -470,6 +470,42 @@ export function useChatState(
   );
 
   /**
+   * 执行偏好持久化（按 Agent 隔离）。
+   * 档位只存在于 React state 时，刷新 / 切页会静默回到默认 high：
+   * 界面显示“深入”、实际也发 high，用户无法从界面察觉。
+   * key 带 agentId，保证多 Agent 互不影响。
+   */
+  const reasoningEffortStorageKey = agentId
+    ? `pudding.chat.reasoningEffort:${agentId}`
+    : undefined;
+  const reasoningEffortHydratedKeyRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    const key = reasoningEffortStorageKey;
+    if (!key) return;
+    if (reasoningEffortHydratedKeyRef.current === key) return;
+    reasoningEffortHydratedKeyRef.current = key;
+    try {
+      const stored = window.localStorage.getItem(key);
+      if (stored === 'high' || stored === 'max') setReasoningEffort(stored);
+    } catch {
+      // 存储不可用（隐私模式 / 被禁用）时保持默认 high，不影响发送。
+    }
+  }, [reasoningEffortStorageKey]);
+
+  useEffect(() => {
+    const key = reasoningEffortStorageKey;
+    if (!key) return;
+    // 先完成该 Agent 的读回，否则会把默认值写进去盖掉已保存的选择。
+    if (reasoningEffortHydratedKeyRef.current !== key) return;
+    try {
+      window.localStorage.setItem(key, reasoningEffort);
+    } catch {
+      // 写失败不阻塞交互。
+    }
+  }, [reasoningEffort, reasoningEffortStorageKey]);
+
+  /**
    * 出站文本装饰：把技能提示并入真正发出的文本。
    * apply 必须是纯函数（submitInteraction 可能重复调用），故只读快照；
    * 消费清空由 onConsumed 负责。
