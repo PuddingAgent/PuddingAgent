@@ -126,6 +126,7 @@ const ModelMemorySection: React.FC<ModelMemorySectionProps> = ({
           { label: '中（平衡）', value: 'medium' },
           { label: '高（深度思考）', value: 'high' },
         ]}
+        initialValue="high"
         fieldProps={getAgentTemplateSelectPopupProps(styles.selectPopup)}
       />
 
