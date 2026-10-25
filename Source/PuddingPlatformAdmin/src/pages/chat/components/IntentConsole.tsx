@@ -211,7 +211,9 @@ interface IntentConsoleProps {
   onReorderQueuedInteraction?: (fromId: string, toId: string) => void;
   /** P1#6：取消全部（中止当前请求 + 清空待发队列） */
   onStopAll?: () => void;
-  onSend: (draft: string) => void;
+  // 兜底发送同样要能带 metadata：思考强度是产品级选择，
+  // 任何一条发送路径丢掉它都会让界面显示与实际强度不一致（静默回落 high）。
+  onSend: (draft: string, metadata?: Record<string, string>) => void;
   onSendWithMetadata?: (
     content: string,
     metadata: Record<string, string>,
@@ -653,7 +655,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       if (onSendWithMetadata) {
         await onSendWithMetadata(draft, { reasoningEffort: executionMode });
       } else {
-        onSend(draft);
+        onSend(draft, { reasoningEffort: executionMode });
       }
       return;
     }

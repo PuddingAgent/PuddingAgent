@@ -216,9 +216,13 @@ describe('IntentConsole', () => {
 
     fireEvent.click(screen.getByTestId('chat-send'));
 
-    await waitFor(() => {
-      expect(onSend).toHaveBeenCalledWith('请总结今天的工作');
-    });
+      await waitFor(() => {
+        // 契约为「文本 + metadata」：思考强度是产品级选择，
+        // 任何发送路径（含兜底与语音转录）都必须带上，不能只传文本。
+        expect(onSend).toHaveBeenCalledWith('请总结今天的工作', {
+          reasoningEffort: 'high',
+        });
+      });
   });
 
   it('renders backend queued interactions as read-only snapshots with steering control', async () => {
@@ -790,6 +794,28 @@ describe('IntentConsole', () => {
 
     await waitFor(() => expect(sendWithMetadata).toHaveBeenCalledTimes(2));
     expect(sendWithMetadata).toHaveBeenLastCalledWith('再深入一点', {
+      reasoningEffort: 'max',
+    });
+  });
+
+  // 回归：没有 onSendWithMetadata 的宿主（旧调用点 / 内嵌面板）走 onSend 兜底，
+  // 之前这个兜底只传文本，导致「界面显示极致、实际发 high」且无处可查。
+  it('keeps the selected thinking level on the onSend fallback path', async () => {
+    const send = jest.fn();
+    render(
+      <IntentConsole {...baseProps} workspaceId="default" onSend={send} />,
+    );
+
+    fireEvent.click(screen.getByLabelText('执行偏好：深入'));
+    fireEvent.click(await screen.findByText('极致'));
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: '兜底也要带档位' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send).toHaveBeenCalledWith('兜底也要带档位', {
       reasoningEffort: 'max',
     });
   });
