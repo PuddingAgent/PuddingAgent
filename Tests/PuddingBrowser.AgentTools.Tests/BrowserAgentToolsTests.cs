@@ -65,6 +65,29 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Tabs_NewWithImplicitContext_NeverReusesAnOperationId()
+    {
+        // 平台规则：同一 operation id 换 payload 会被 broker 判「duplicate operation id」并拒绝。
+        // 本工具有两条命令（列上下文 → 建标签），必须各自新签发调用上下文。
+        var runtime = new FakeBrowserRuntime();
+        await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+        var tool = new BrowserTabsTool(surface, new FakeCallContextFactory(), _originAccessor);
+
+        var result = await ExecuteAsync(tool, JsonSerializer.Serialize(new
+        {
+            action = "new", url = "https://example.com/"
+        }));
+
+        // 两条命令都到达了能力层，而且携带的 operation id 不同。（只数建了几个上下文是搜不住的：
+        // 变异成「新建上下文后仍把第一个 call 传给 TabsAsync」时，计数依旧为 2。）
+        Assert.True(result.Success, result.Output);
+        Assert.Equal(2, surface.SeenOperationIds.Count);
+        Assert.Equal(2, surface.SeenOperationIds.Distinct().Count());
+    }
+
+    [Fact]
     public void ToolDescriptors_UseStableNamesAndStructuredSchemas()
     {
         var runtime = new FakeBrowserRuntime();
@@ -2623,9 +2646,13 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     /// <summary>最近一次快照请求（断言"只抓要的表示"确实生效）。</summary>
     public BrowserSnapshotRequest? LastSnapshotRequest { get; private set; }
 
+    /// <summary>能力层实际收到的 operationId（按到达顺序）：断言「一次工具调用里的多条命令不复用同一 id」。</summary>
+    public List<OperationId> SeenOperationIds { get; } = [];
+
     public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext call, CancellationToken ct = default)
     {
+        SeenOperationIds.Add(call.OperationId);
         var contexts = new List<DesktopContextInfo>();
         var observed = 0L;
         foreach (var summary in await runtime.ListContextsAsync(ct))
@@ -2977,6 +3004,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopTabsResult>> TabsAsync(
         BrowserTabsRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        SeenOperationIds.Add(call.OperationId);
         if (request.Action == DesktopTabAction.New)
         {
             if (await runtime.GetContextAsync(new BrowserContextId(request.ContextId), ct) is not { } newContext)
@@ -3126,6 +3154,9 @@ internal sealed class FakeCallContextFactory : IDesktopCapabilityCallContextFact
     /// <summary>最近一次生成的调用 operationId（用于断言回执关联的是同一个 id）。</summary>
     public OperationId? LastOperationId { get; private set; }
 
+    /// <summary>历次生成的 operationId：用于断言「一次工具调用里的多条能力命令各自独立签发」。</summary>
+    public List<OperationId> CreatedOperationIds { get; } = [];
+
     public DesktopCallContext? TryCreate(string? permissionEvidenceSummary, TimeSpan? timeout = null)
     {
         LastPermissionEvidenceSummary = permissionEvidenceSummary;
@@ -3135,6 +3166,7 @@ internal sealed class FakeCallContextFactory : IDesktopCapabilityCallContextFact
     public DesktopCallContext? TryCreate(TimeSpan? timeout = null)
     {
         LastOperationId = OperationId.NewId();
+        CreatedOperationIds.Add(LastOperationId);
         return new(
             new DesktopInstanceId("desk-test"),
             LastOperationId,

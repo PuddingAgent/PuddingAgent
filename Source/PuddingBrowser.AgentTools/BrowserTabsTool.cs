@@ -101,8 +101,17 @@ public sealed class BrowserTabsTool(
             return BrowserToolResponse.Failure("browser_context_not_found", "Browser context not found");
         }
 
+        // 每个能力命令都必须各自新签发 operation id：broker 对「同 id 不同 payload」判重复请求
+        // （实测：duplicate operation id with a different payload）。本方法在 context 缺省时
+        // 已用 call 发过 GetContextsAsync，这里必须换一个调用上下文。
+        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } createCall)
+        {
+            return BrowserToolResponse.Failure(
+                "browser_not_connected", "No Desktop is connected for browser capabilities");
+        }
+
         var created = await surface.TabsAsync(
-            BrowserTabsRequest.New(contextId, initialUrl, args.Activate), call, ct);
+            BrowserTabsRequest.New(contextId, initialUrl, args.Activate), createCall, ct);
         return created.IsFailure ? Failure(created.Error!) : Success(created.Value);
     }
 
@@ -180,7 +189,14 @@ public sealed class BrowserTabsTool(
         }
 
         // 变更类必须固定版本 ⇒ 先读一次当前状态作为基准（与迁移前「直接作用于当前页」语义等价）。
-        var state = await surface.GetPageStateAsync(target, call, ct);
+        // 每次能力命令都要新签发 operation id（见 NewAsync 的说明）。
+        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } stateCall)
+        {
+            return BrowserToolResponse.Failure(
+                "browser_not_connected", "No Desktop is connected for browser capabilities");
+        }
+
+        var state = await surface.GetPageStateAsync(target, stateCall, ct);
         if (state.IsFailure)
         {
             return Failure(state.Error!);
@@ -191,8 +207,14 @@ public sealed class BrowserTabsTool(
             return BrowserToolResponse.Failure("browser_page_not_found", "Page has no live version to act on");
         }
 
+        if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } changeCall)
+        {
+            return BrowserToolResponse.Failure(
+                "browser_not_connected", "No Desktop is connected for browser capabilities");
+        }
+
         var changed = await surface.TabsAsync(
-            new BrowserTabsRequest(target, action, state.Value.Version), call, ct);
+            new BrowserTabsRequest(target, action, state.Value.Version), changeCall, ct);
         if (changed.IsFailure)
         {
             return Failure(changed.Error!);
