@@ -7,6 +7,10 @@ namespace DesktopServiceTests;
 /// <summary>
 /// 控制面**端到端**（方案 §4.1）：线缆载荷 → `DesktopService` 分支 → `BrowserTaskBindingService`
 /// → 签发/撤销 → ack。判据是"ack 里有没有 grant"与"拒绝原因是否可区分"，不是"看日志"。
+///
+/// 目标判据自 2026-10-25 起是三条分支（用户裁定）：已显式选定 / AgentAuthorized 上下文默认接管 /
+/// 其余拒绝。因此"未选页"不再等价于"拒绝"——拒绝只发生在**非 AgentAuthorized 上下文**
+/// 或**默认过又被显式撤销**之后。这两条各有一个用例，避免默认化悄悄外溢。
 /// </summary>
 public sealed class BrowserControlPlaneEndToEndTests
 {
@@ -23,13 +27,17 @@ public sealed class BrowserControlPlaneEndToEndTests
         DesktopTargetRegistry Targets,
         TestTimeProvider Clock);
 
-    private static Arrangement Arrange(bool selectAgentTarget)
+    private static Arrangement Arrange(
+        bool selectAgentTarget,
+        DesktopContextTrust contextTrust = DesktopContextTrust.AgentAuthorized)
     {
         var clock = new TestTimeProvider();
         var lifecycle = BrowserPageLifecycle.Create(DesktopId, ProcessId, clock);
         var targets = lifecycle.PageTargets;
-        targets.RegisterContext("ctx-agent", DesktopContextTrust.AgentAuthorized);
-        targets.RegisterPage(ServiceHarness.AgentPage, DesktopPageVersion.Require(1), DesktopPageReadiness.Interactive);
+        // 必须走 lifecycle 的组合登记：它同时写入页面注册表与浏览器目标注册表。
+        // 只写页面注册表时 TrustFor 看不到上下文，默认化分支永远不触发（本轮就是被这条测出来的）。
+        lifecycle.RegisterContext("ctx-agent", contextTrust);
+        lifecycle.RegisterPage(ServiceHarness.AgentPage, DesktopPageVersion.Require(1), DesktopPageReadiness.Interactive);
         if (selectAgentTarget)
         {
             targets.SetAgentTarget(ServiceHarness.AgentPage.ContextId, ServiceHarness.AgentPage.PageId);
@@ -76,6 +84,12 @@ public sealed class BrowserControlPlaneEndToEndTests
         return descriptor;
     }
 
+    private static Task<DesktopCapabilityResponse> ApplyAsync(Arrangement harness, string operationId) =>
+        harness.Service.ExecuteAsync(
+            Descriptor("browser.binding.apply"),
+            DesktopCapabilityRequest.ForBindingApply(Binding()),
+            Context(operationId));
+
     [Fact]
     public async Task ApplyingABindingForTheUserSelectedPageIsAcknowledgedWithAGrant()
     {
@@ -93,14 +107,29 @@ public sealed class BrowserControlPlaneEndToEndTests
     }
 
     [Fact]
-    public async Task ApplyingABindingForAPageTheUserDidNotSelectIsAcknowledgedAsRefusedWithAReason()
+    public async Task ApplyingABindingWithoutAnExplicitSelectionInAnAgentAuthorizedContextDefaultsToThePage()
     {
+        // 面板里有页面、但没人点过「设为 Agent 目标」——旧行为是这里失败，
+        // 工具侧只看到 "no page grant covers ..."，无法分辨是没授权还是页面不存在。
         var harness = Arrange(selectAgentTarget: false);
 
-        var response = await harness.Service.ExecuteAsync(
-            Descriptor("browser.binding.apply"),
-            DesktopCapabilityRequest.ForBindingApply(Binding()),
-            Context("op-apply-denied"));
+        var response = await ApplyAsync(harness, "op-apply-default");
+
+        Assert.True(response.BindingAck!.Accepted, response.BindingAck.Reason);
+        Assert.NotNull(response.BindingAck.GrantId);
+        Assert.Single(harness.Lifecycle.Authority.ActiveGrants);
+
+        // 注册表必须被对齐：否则 UI 说"没有目标页"、准入说"这就是目标页"，是最难查的漂移。
+        Assert.Equal(ServiceHarness.AgentPage, harness.Targets.AgentTarget);
+    }
+
+    [Fact]
+    public async Task ApplyingABindingInANonAgentAuthorizedContextIsRefusedEvenWithoutSelection()
+    {
+        // 默认化**不得外溢**：用户自己的工作台/第三方页面，没显式选给 Agent 就是不给。
+        var harness = Arrange(selectAgentTarget: false, contextTrust: DesktopContextTrust.Untrusted);
+
+        var response = await ApplyAsync(harness, "op-apply-denied");
 
         Assert.NotNull(response.BindingAck);
         Assert.False(response.BindingAck!.Accepted);
@@ -108,6 +137,21 @@ public sealed class BrowserControlPlaneEndToEndTests
         Assert.Contains("not the page the user currently selected", response.BindingAck.Reason!, StringComparison.Ordinal);
         Assert.Null(response.BindingAck.GrantId);
         Assert.Empty(harness.Lifecycle.Authority.ActiveGrants);
+    }
+
+    [Fact]
+    public async Task ReleasingADefaultedTargetIsNotUndoneByALaterBinding()
+    {
+        // 没有这条，"设为 Agent 目标"关掉之后下一次工具调用又会自动打开——开关就成了骗人的控件。
+        var harness = Arrange(selectAgentTarget: false);
+        Assert.True((await ApplyAsync(harness, "op-default")).BindingAck!.Accepted);
+
+        harness.Lifecycle.SetAgentTarget(null, null);
+
+        var second = await ApplyAsync(harness, "op-after-release");
+
+        Assert.False(second.BindingAck!.Accepted);
+        Assert.Contains("explicitly released", second.BindingAck.Reason!, StringComparison.Ordinal);
     }
 
     [Fact]

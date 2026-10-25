@@ -35,6 +35,13 @@ public sealed class BrowserTaskBindingService(
 
     private readonly Dictionary<string, ActiveBinding> _active = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 曾被「默认化」接管过的页面（键为 <c>contextId/pageId</c>）。
+    /// 默认化只做一次：用户随后显式撤销（把「设为 Agent 目标」关掉）后，同一页面不会被下一次
+    /// 工具调用自动恢复成目标页 —— 否则那个开关就成了骗人的控件。用户重新显式选定仍可再次授权。
+    /// </summary>
+    private readonly HashSet<string> _autoDefaulted = new(StringComparer.Ordinal);
+
     /// <summary>当前已受理的绑定数（用于撤销与测试断言）。</summary>
     public int ActiveCount => _active.Count;
 
@@ -42,8 +49,44 @@ public sealed class BrowserTaskBindingService(
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        // ① 绑定不能替代用户选择：目标必须**当下**就是用户选定给 Agent 的那一页。
-        if (_lifecycle.PageTargets.AgentTarget is not { } selected || selected != binding.Target)
+        // ① 目标判据。三条分支，只有前两条允许签发：
+        //
+        //    (a) 已显式选定 —— 目标必须**当下**就是用户选定给 Agent 的那一页（原判据，未放宽）；
+        //    (b) 从未选定，且该页所在上下文是 AgentAuthorized —— 把它**默认**当作 Agent 目标。
+        //        依据：Desktop 的工具面板浏览器本来就是给 Agent 用的（用户裁定 2026-10-25），
+        //        每页都要手点一次「设为 Agent 目标」是纯摩擦，不是安全增益。
+        //        这条同时修掉一个可复现的假故障：面板里有页面，工具却报
+        //        「no page grant covers ...」，因为没人点过那个按钮。
+        //    (c) 其余一律拒绝 —— 尤其**非 AgentAuthorized 上下文**（工作台、第三方页面）永远走拒绝，
+        //        默认化不得外溢到用户自己的浏览区。
+        //
+        //    默认化只生效一次（_autoDefaulted）：显式撤销之后不再自动恢复。
+        if (_lifecycle.PageTargets.AgentTarget is { } selected)
+        {
+            if (selected != binding.Target)
+            {
+                return new BrowserBindingAcceptance(
+                    false,
+                    "the binding target is not the page the user currently selected for the agent",
+                    default);
+            }
+        }
+        else if (_lifecycle.BrowserTargets.TrustFor(binding.Target.ContextId)
+                 == DesktopContextTrust.AgentAuthorized)
+        {
+            if (!_autoDefaulted.Add(binding.Target.Key))
+            {
+                // 这一页先前被默认过、随后被显式撤销：尊重撤销，不回填。
+                return new BrowserBindingAcceptance(
+                    false,
+                    "the page was explicitly released by the user after an automatic hand-over; select it again to re-authorize",
+                    default);
+            }
+
+            // 两个注册表都对齐，避免出现「准入说这是目标页、UI 说没有」的漂移。
+            _lifecycle.SetAgentTarget(binding.Target.ContextId, binding.Target.PageId);
+        }
+        else
         {
             return new BrowserBindingAcceptance(
                 false,
