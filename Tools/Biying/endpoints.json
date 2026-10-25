@@ -1,0 +1,6437 @@
+{
+ "schema": "pudding.biying.endpoints.v1",
+ "generatedAt": "2026-10-25T05:21:52+00:00",
+ "source": [
+  "https://biyingapi.com/doc_hs",
+  "https://biyingapi.com/doc_zs",
+  "https://biyingapi.com/doc_jg",
+  "https://biyingapi.com/doc_jj",
+  "https://biyingapi.com/doc_jjhq",
+  "https://biyingapi.com/doc_kc",
+  "https://biyingapi.com/doc_fx"
+ ],
+ "count": 200,
+ "endpoints": [
+  {
+   "id": "313",
+   "name": "最新分时交易（Pro版）",
+   "category": "沪深A股",
+   "subcategory": "Pro专属数据",
+   "host": "vip.biyingapi.com",
+   "path": "hsstock/pro/latest/1",
+   "template": "https://vip.biyingapi.com/hsstock/pro/latest/股票代码.市场（如000001.SZ）/1/除权方式(如n)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "pro"
+    },
+    {
+     "kind": "literal",
+     "value": "latest"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码.市场（如000001.SZ）"
+    },
+    {
+     "kind": "literal",
+     "value": "1"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权方式(如n)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://vip.biyingapi.com/hsstock/pro/latest/000001.SZ/1/n/您的licence?lt=5"
+  },
+  {
+   "id": "314",
+   "name": "历史分时交易（Pro版）",
+   "category": "沪深A股",
+   "subcategory": "Pro专属数据",
+   "host": "vip.biyingapi.com",
+   "path": "hsstock/pro/history/1",
+   "template": "https://vip.biyingapi.com/hsstock/pro/history/股票代码.市场（如000001.SZ）/1/除权方式(如n)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "pro"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码.市场（如000001.SZ）"
+    },
+    {
+     "kind": "literal",
+     "value": "1"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权方式(如n)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://vip.biyingapi.com/hsstock/pro/history/000001.SZ/1/n/您的licence?lt=100"
+  },
+  {
+   "id": "315",
+   "name": "完整历史分时交易（Pro版）",
+   "category": "沪深A股",
+   "subcategory": "Pro专属数据",
+   "host": "vip.biyingapi.com",
+   "path": "hsstock/history/full/{stock_code}/{period}/{dividend}",
+   "template": "https://vip.biyingapi.com/hsstock/history/full/{stock_code}/{period}/{dividend}/{licence}",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "full"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{stock_code}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{period}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{dividend}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{licence}"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://vip.biyingapi.com/hsstock/history/full/000001/5/n/您的licence?year=2024"
+  },
+  {
+   "id": "33",
+   "name": "公司简介",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/gsjj",
+   "template": "https://api.biyingapi.com/hscp/gsjj/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "gsjj"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/gsjj/000001/biyinglicence"
+  },
+  {
+   "id": "34",
+   "name": "所属指数",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/sszs",
+   "template": "https://api.biyingapi.com/hscp/sszs/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "sszs"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/sszs/000001/biyinglicence"
+  },
+  {
+   "id": "35",
+   "name": "历届高管成员",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/ljgg",
+   "template": "https://api.biyingapi.com/hscp/ljgg/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "ljgg"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/ljgg/000001/biyinglicence"
+  },
+  {
+   "id": "36",
+   "name": "历届董事会成员",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/ljds",
+   "template": "https://api.biyingapi.com/hscp/ljds/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "ljds"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/ljds/000001/biyinglicence"
+  },
+  {
+   "id": "37",
+   "name": "历届监事会成员",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/ljjj",
+   "template": "https://api.biyingapi.com/hscp/ljjj/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "ljjj"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/ljjj/000001/biyinglicence"
+  },
+  {
+   "id": "38",
+   "name": "近年分红",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/jnfh",
+   "template": "https://api.biyingapi.com/hscp/jnfh/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "jnfh"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/jnfh/000001/biyinglicence"
+  },
+  {
+   "id": "39",
+   "name": "近年增发",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/jnzf",
+   "template": "https://api.biyingapi.com/hscp/jnzf/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "jnzf"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/jnzf/000001/biyinglicence"
+  },
+  {
+   "id": "40",
+   "name": "解禁限售",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/jjxs",
+   "template": "https://api.biyingapi.com/hscp/jjxs/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "jjxs"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/jjxs/000001/biyinglicence"
+  },
+  {
+   "id": "41",
+   "name": "近一年各季度利润",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/jdlr",
+   "template": "https://api.biyingapi.com/hscp/jdlr/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "jdlr"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/jdlr/000001/biyinglicence"
+  },
+  {
+   "id": "42",
+   "name": "近一年各季度现金流",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/jdxj",
+   "template": "https://api.biyingapi.com/hscp/jdxj/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "jdxj"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/jdxj/000001/biyinglicence"
+  },
+  {
+   "id": "43",
+   "name": "近年业绩预告",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/yjyg",
+   "template": "https://api.biyingapi.com/hscp/yjyg/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "yjyg"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/yjyg/000001/biyinglicence"
+  },
+  {
+   "id": "44",
+   "name": "财务指标",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/cwzb",
+   "template": "https://api.biyingapi.com/hscp/cwzb/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "cwzb"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/cwzb/000001/biyinglicence"
+  },
+  {
+   "id": "45",
+   "name": "十大股东",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/sdgd",
+   "template": "https://api.biyingapi.com/hscp/sdgd/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "sdgd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/sdgd/000001/biyinglicence"
+  },
+  {
+   "id": "46",
+   "name": "十大流通股东",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/ltgd",
+   "template": "https://api.biyingapi.com/hscp/ltgd/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "ltgd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/ltgd/000001/biyinglicence"
+  },
+  {
+   "id": "47",
+   "name": "股东变化趋势",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/gdbh",
+   "template": "https://api.biyingapi.com/hscp/gdbh/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "gdbh"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/gdbh/000001/biyinglicence"
+  },
+  {
+   "id": "48",
+   "name": "基金持股",
+   "category": "沪深A股",
+   "subcategory": "上市公司详情",
+   "host": "api.biyingapi.com",
+   "path": "hscp/jjcg",
+   "template": "https://api.biyingapi.com/hscp/jjcg/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hscp"
+    },
+    {
+     "kind": "literal",
+     "value": "jjcg"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hscp/jjcg/000001/biyinglicence"
+  },
+  {
+   "id": "255",
+   "name": "资产负债表",
+   "category": "沪深A股",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/financial/balance",
+   "template": "https://api.biyingapi.com/hsstock/financial/balance/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "balance"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/financial/balance/600519.SH/biyinglicence?st=20230330&et=20230630"
+  },
+  {
+   "id": "256",
+   "name": "利润表",
+   "category": "沪深A股",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/financial/income",
+   "template": "https://api.biyingapi.com/hsstock/financial/income/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "income"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/financial/income/600519.SH/biyinglicence?st=20230330&et=20230630"
+  },
+  {
+   "id": "257",
+   "name": "现金流量表",
+   "category": "沪深A股",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/financial/cashflow",
+   "template": "https://api.biyingapi.com/hsstock/financial/cashflow/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "cashflow"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/financial/cashflow/600519.SH/biyinglicence?st=20230330&et=20230630"
+  },
+  {
+   "id": "258",
+   "name": "财务主要指标",
+   "category": "沪深A股",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/financial/pershareindex",
+   "template": "https://api.biyingapi.com/hsstock/financial/pershareindex/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "pershareindex"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/financial/pershareindex/600519.SH/biyinglicence?st=20230330&et=20230630"
+  },
+  {
+   "id": "259",
+   "name": "公司股本表",
+   "category": "沪深A股",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/financial/capital",
+   "template": "https://api.biyingapi.com/hsstock/financial/capital/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "capital"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/financial/capital/600519.SH/biyinglicence?st=20230330&et=20230630"
+  },
+  {
+   "id": "260",
+   "name": "公司十大股东",
+   "category": "沪深A股",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/financial/topholder",
+   "template": "https://api.biyingapi.com/hsstock/financial/topholder/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "topholder"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/financial/topholder/600519.SH/biyinglicence?st=20230330&et=20230630"
+  },
+  {
+   "id": "261",
+   "name": "公司十大流通股东",
+   "category": "沪深A股",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/financial/flowholder",
+   "template": "https://api.biyingapi.com/hsstock/financial/flowholder/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "flowholder"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/financial/flowholder/600519.SH/biyinglicence?st=20230330&et=20230630"
+  },
+  {
+   "id": "262",
+   "name": "公司股东数",
+   "category": "沪深A股",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/financial/hm",
+   "template": "https://api.biyingapi.com/hsstock/financial/hm/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "hm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/financial/hm/600519.SH/biyinglicence?st=20230330&et=20230630"
+  },
+  {
+   "id": "249",
+   "name": "股票基础信息",
+   "category": "沪深A股",
+   "subcategory": "基础信息",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/instrument",
+   "template": "https://api.biyingapi.com/hsstock/instrument/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "instrument"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/instrument/000001.SZ/biyinglicence"
+  },
+  {
+   "id": "54",
+   "name": "实时交易(公开数据)",
+   "category": "沪深A股",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "hsrl/ssjy",
+   "template": "https://api.biyingapi.com/hsrl/ssjy/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsrl"
+    },
+    {
+     "kind": "literal",
+     "value": "ssjy"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsrl/ssjy/000001/biyinglicence"
+  },
+  {
+   "id": "56",
+   "name": "当天逐笔交易",
+   "category": "沪深A股",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "hsrl/zbjy",
+   "template": "https://api.biyingapi.com/hsrl/zbjy/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsrl"
+    },
+    {
+     "kind": "literal",
+     "value": "zbjy"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsrl/zbjy/000001/您的licence"
+  },
+  {
+   "id": "243",
+   "name": "实时交易数据（券商）",
+   "category": "沪深A股",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/real/time",
+   "template": "https://api.biyingapi.com/hsstock/real/time/股票代码/证书您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "time"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "证书您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/real/time/000001/biyinglicence"
+  },
+  {
+   "id": "244",
+   "name": "买卖五档盘口",
+   "category": "沪深A股",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/real/five",
+   "template": "https://api.biyingapi.com/hsstock/real/five/股票代码/证书您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "five"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "证书您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/real/five/000001/biyinglicence"
+  },
+  {
+   "id": "245",
+   "name": "[券商]全部股票实时交易数据",
+   "category": "沪深A股",
+   "subcategory": "实时交易",
+   "host": "vip.biyingapi.com",
+   "path": "hsrl/ssjy/all",
+   "template": "https://vip.biyingapi.com/hsrl/ssjy/all/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsrl"
+    },
+    {
+     "kind": "literal",
+     "value": "ssjy"
+    },
+    {
+     "kind": "literal",
+     "value": "all"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://all.biyingapi.com/hsrl/ssjy/all/您的licence"
+  },
+  {
+   "id": "248",
+   "name": "实时交易数据（多股）",
+   "category": "沪深A股",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "hsrl/ssjy_more",
+   "template": "https://api.biyingapi.com/hsrl/ssjy_more/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsrl"
+    },
+    {
+     "kind": "literal",
+     "value": "ssjy_more"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "stock_codes"
+   ],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hsrl/ssjy_more/biyinglicence?stock_codes=000001,000002,000004"
+  },
+  {
+   "id": "292",
+   "name": "[公开]全部股票实时交易数据",
+   "category": "沪深A股",
+   "subcategory": "实时交易",
+   "host": "vip.biyingapi.com",
+   "path": "hsrl/real/all",
+   "template": "https://vip.biyingapi.com/hsrl/real/all/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsrl"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "all"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://all.biyingapi.com/hsrl/real/all/您的licence"
+  },
+  {
+   "id": "302",
+   "name": "历史逐笔交易",
+   "category": "沪深A股",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "hsrl/zbjy",
+   "template": "https://api.biyingapi.com/hsrl/zbjy/交易日期(如20260813)/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsrl"
+    },
+    {
+     "kind": "literal",
+     "value": "zbjy"
+    },
+    {
+     "kind": "placeholder",
+     "value": "交易日期(如20260813)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsrl/zbjy/20260813/000001/biyinglicence"
+  },
+  {
+   "id": "265",
+   "name": "历史分时MACD",
+   "category": "沪深A股",
+   "subcategory": "技术指标",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/history/macd",
+   "template": "https://api.biyingapi.com/hsstock/history/macd/股票代码(如000001.SZ)/分时级别(如d)/除权类型(如n)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "macd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001.SZ)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权类型(如n)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/history/macd/000001.SZ/d/n/biyinglicence"
+  },
+  {
+   "id": "266",
+   "name": "历史分时MA",
+   "category": "沪深A股",
+   "subcategory": "技术指标",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/history/ma",
+   "template": "https://api.biyingapi.com/hsstock/history/ma/股票代码(如000001.SZ)/分时级别(如d)/除权类型(如n)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "ma"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001.SZ)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权类型(如n)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/history/ma/000001.SZ/d/n/biyinglicence"
+  },
+  {
+   "id": "267",
+   "name": "历史分时BOLL",
+   "category": "沪深A股",
+   "subcategory": "技术指标",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/history/boll",
+   "template": "https://api.biyingapi.com/hsstock/history/boll/股票代码(如000001.SZ)/分时级别(如d)/除权类型(如n)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "boll"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001.SZ)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权类型(如n)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/history/boll/000001.SZ/d/n/biyinglicence"
+  },
+  {
+   "id": "268",
+   "name": "历史分时KDJ",
+   "category": "沪深A股",
+   "subcategory": "技术指标",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/history/kdj",
+   "template": "https://api.biyingapi.com/hsstock/history/kdj/股票代码(如000001.SZ)/分时级别(如d)/除权类型(如n)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "kdj"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001.SZ)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权类型(如n)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/history/kdj/000001.SZ/d/n/biyinglicence"
+  },
+  {
+   "id": "4",
+   "name": "指数、行业、概念树",
+   "category": "沪深A股",
+   "subcategory": "指数、行业、概念",
+   "host": "api.biyingapi.com",
+   "path": "hszg/list",
+   "template": "https://api.biyingapi.com/hszg/list/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hszg"
+    },
+    {
+     "kind": "literal",
+     "value": "list"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hszg/list/biyinglicence"
+  },
+  {
+   "id": "5",
+   "name": "根据指数、行业、概念找相关股票",
+   "category": "沪深A股",
+   "subcategory": "指数、行业、概念",
+   "host": "api.biyingapi.com",
+   "path": "hszg/gg",
+   "template": "https://api.biyingapi.com/hszg/gg/指数、行业、概念代码/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hszg"
+    },
+    {
+     "kind": "literal",
+     "value": "gg"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数、行业、概念代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hszg/gg/sw_sysh/biyinglicence"
+  },
+  {
+   "id": "6",
+   "name": "根据股票找相关指数、行业、概念",
+   "category": "沪深A股",
+   "subcategory": "指数、行业、概念",
+   "host": "api.biyingapi.com",
+   "path": "hszg/zg",
+   "template": "https://api.biyingapi.com/hszg/zg/股票代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hszg"
+    },
+    {
+     "kind": "literal",
+     "value": "zg"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hszg/zg/000001/biyinglicence"
+  },
+  {
+   "id": "14",
+   "name": "涨停股池",
+   "category": "沪深A股",
+   "subcategory": "涨跌股池",
+   "host": "api.biyingapi.com",
+   "path": "hslt/ztgc",
+   "template": "https://api.biyingapi.com/hslt/ztgc/日期(如2020-01-15)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "ztgc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "日期(如2020-01-15)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hslt/ztgc/2024-01-10/biyinglicence"
+  },
+  {
+   "id": "15",
+   "name": "跌停股池",
+   "category": "沪深A股",
+   "subcategory": "涨跌股池",
+   "host": "api.biyingapi.com",
+   "path": "hslt/dtgc",
+   "template": "https://api.biyingapi.com/hslt/dtgc/日期(如2020-01-15)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "dtgc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "日期(如2020-01-15)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hslt/dtgc/2024-01-10/biyinglicence"
+  },
+  {
+   "id": "16",
+   "name": "强势股池",
+   "category": "沪深A股",
+   "subcategory": "涨跌股池",
+   "host": "api.biyingapi.com",
+   "path": "hslt/qsgc",
+   "template": "https://api.biyingapi.com/hslt/qsgc/日期(如2020-01-15)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "qsgc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "日期(如2020-01-15)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hslt/qsgc/2024-01-10/biyinglicence"
+  },
+  {
+   "id": "17",
+   "name": "次新股池",
+   "category": "沪深A股",
+   "subcategory": "涨跌股池",
+   "host": "api.biyingapi.com",
+   "path": "hslt/cxgc",
+   "template": "https://api.biyingapi.com/hslt/cxgc/日期(如2020-01-15)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "cxgc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "日期(如2020-01-15)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hslt/cxgc/2024-01-10/biyinglicence"
+  },
+  {
+   "id": "18",
+   "name": "炸板股池",
+   "category": "沪深A股",
+   "subcategory": "涨跌股池",
+   "host": "api.biyingapi.com",
+   "path": "hslt/zbgc",
+   "template": "https://api.biyingapi.com/hslt/zbgc/日期(如2020-01-15)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "zbgc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "日期(如2020-01-15)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hslt/zbgc/2024-01-10/biyinglicence"
+  },
+  {
+   "id": "273",
+   "name": "资金流向数据",
+   "category": "沪深A股",
+   "subcategory": "特色行情",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/history/transaction/{stock_code}",
+   "template": "https://api.biyingapi.com/hsstock/history/transaction/{stock_code}/{licence}",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "transaction"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{stock_code}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{licence}"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hsstock/history/transaction/000001/biyinglicence"
+  },
+  {
+   "id": "303",
+   "name": "历史资金流向数据",
+   "category": "沪深A股",
+   "subcategory": "特色行情",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/history/transaction/{yyyyMMdd}/{stock_code}",
+   "template": "https://api.biyingapi.com/hsstock/history/transaction/{yyyyMMdd}/{stock_code}/{licence}",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "transaction"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{yyyyMMdd}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{stock_code}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{licence}"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hsstock/history/transaction/20260822/000001/biyinglicence"
+  },
+  {
+   "id": "1",
+   "name": "股票列表",
+   "category": "沪深A股",
+   "subcategory": "股票列表",
+   "host": "api.biyingapi.com",
+   "path": "hslt/list",
+   "template": "https://api.biyingapi.com/hslt/list/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "list"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hslt/list/biyinglicence"
+  },
+  {
+   "id": "2",
+   "name": "新股日历",
+   "category": "沪深A股",
+   "subcategory": "股票列表",
+   "host": "api.biyingapi.com",
+   "path": "hslt/new",
+   "template": "https://api.biyingapi.com/hslt/new/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "new"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hslt/new/biyinglicence"
+  },
+  {
+   "id": "288",
+   "name": "概念指数列表（券商数据）",
+   "category": "沪深A股",
+   "subcategory": "股票列表",
+   "host": "api.biyingapi.com",
+   "path": "hslt/sectorslist",
+   "template": "https://api.biyingapi.com/hslt/sectorslist/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "sectorslist"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hslt/sectorslist/biyinglicence"
+  },
+  {
+   "id": "289",
+   "name": "一级市场板块列表（券商数据）",
+   "category": "沪深A股",
+   "subcategory": "股票列表",
+   "host": "api.biyingapi.com",
+   "path": "hslt/primarylist",
+   "template": "https://api.biyingapi.com/hslt/primarylist/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "primarylist"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hslt/primarylist/biyinglicence"
+  },
+  {
+   "id": "290",
+   "name": "板块明细列表（券商数据）",
+   "category": "沪深A股",
+   "subcategory": "股票列表",
+   "host": "api.biyingapi.com",
+   "path": "hslt/sectors",
+   "template": "https://api.biyingapi.com/hslt/sectors/板块指数名称（例如：概念指数）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hslt"
+    },
+    {
+     "kind": "literal",
+     "value": "sectors"
+    },
+    {
+     "kind": "placeholder",
+     "value": "板块指数名称（例如：概念指数）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hslt/sectors/TFG板块趋势/biyinglicence"
+  },
+  {
+   "id": "246",
+   "name": "最新分时交易",
+   "category": "沪深A股",
+   "subcategory": "行情数据",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/latest",
+   "template": "https://api.biyingapi.com/hsstock/latest/股票代码.市场（如000001.SZ）/分时级别(如d)/除权方式/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "latest"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码.市场（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权方式"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/latest/000001.SZ/d/n/biyinglicence?lt=1"
+  },
+  {
+   "id": "247",
+   "name": "历史分时交易",
+   "category": "沪深A股",
+   "subcategory": "行情数据",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/history",
+   "template": "https://api.biyingapi.com/hsstock/history/股票代码.市场（如000001.SZ）/分时级别(如d)/除权方式/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码.市场（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权方式"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/history/000001.SZ/d/n/biyinglicence?st=20250101&et=20250430&lt=100"
+  },
+  {
+   "id": "250",
+   "name": "历史涨跌停价格",
+   "category": "沪深A股",
+   "subcategory": "行情数据",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/stopprice/history",
+   "template": "https://api.biyingapi.com/hsstock/stopprice/history/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "stopprice"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/stopprice/history/000001.SZ/biyinglicence?st=20240501&et=20240601"
+  },
+  {
+   "id": "263",
+   "name": "行情指标",
+   "category": "沪深A股",
+   "subcategory": "行情数据",
+   "host": "api.biyingapi.com",
+   "path": "hsstock/indicators",
+   "template": "https://api.biyingapi.com/hsstock/indicators/股票代码（如000001.SZ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "indicators"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsstock/indicators/600519.SH/biyinglicence"
+  },
+  {
+   "id": "291",
+   "name": "企业版历史数据【1m级别】",
+   "category": "沪深A股",
+   "subcategory": "行情数据",
+   "host": "专属子域名.biyingapi.com",
+   "path": "hsstock/vip",
+   "template": "https://专属子域名.biyingapi.com/hsstock/vip/股票代码.市场（如000001.SZ）/分时级别(如d)/除权方式/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsstock"
+    },
+    {
+     "kind": "literal",
+     "value": "vip"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码.市场（如000001.SZ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权方式"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://v6.mairuiapi.com/hsstock/vip/000001.SZ/1/n/biyinglicence?lt=100"
+  },
+  {
+   "id": "316",
+   "name": "最新分时交易（Pro版）",
+   "category": "沪深指数",
+   "subcategory": "Pro专属数据",
+   "host": "vip.biyingapi.com",
+   "path": "hsindex/pro/latest/1",
+   "template": "https://vip.biyingapi.com/hsindex/pro/latest/指数代码.市场（如000001.SH）/1/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "pro"
+    },
+    {
+     "kind": "literal",
+     "value": "latest"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码.市场（如000001.SH）"
+    },
+    {
+     "kind": "literal",
+     "value": "1"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://vip.biyingapi.com/hsindex/pro/latest/000001.SH/1/您的licence?lt=5"
+  },
+  {
+   "id": "317",
+   "name": "历史分时交易（Pro版）",
+   "category": "沪深指数",
+   "subcategory": "Pro专属数据",
+   "host": "vip.biyingapi.com",
+   "path": "hsindex/pro/history/1",
+   "template": "https://vip.biyingapi.com/hsindex/pro/history/指数代码.市场（如000001.SH）/1/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "pro"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码.市场（如000001.SH）"
+    },
+    {
+     "kind": "literal",
+     "value": "1"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://vip.biyingapi.com/hsindex/pro/history/000001.SH/1/您的licence?lt=100"
+  },
+  {
+   "id": "318",
+   "name": "完整历史分时交易（Pro版）",
+   "category": "沪深指数",
+   "subcategory": "Pro专属数据",
+   "host": "vip.biyingapi.com",
+   "path": "hsindex/history/full/{stock_code}/{period}",
+   "template": "https://vip.biyingapi.com/hsindex/history/full/{stock_code}/{period}/{licence}",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "full"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{stock_code}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{period}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{licence}"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://vip.biyingapi.com/hsindex/history/full/000001/5/您的licence?year=2024"
+  },
+  {
+   "id": "252",
+   "name": "实时交易数据",
+   "category": "沪深指数",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "hsindex/real/time",
+   "template": "https://api.biyingapi.com/hsindex/real/time/指数代码(如：000001.SH)/证书您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "time"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码(如：000001.SH)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "证书您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsindex/real/time/000001/biyinglicence"
+  },
+  {
+   "id": "269",
+   "name": "历史分时MACD",
+   "category": "沪深指数",
+   "subcategory": "技术指标",
+   "host": "api.biyingapi.com",
+   "path": "hsindex/history/macd",
+   "template": "https://api.biyingapi.com/hsindex/history/macd/指数代码(如000001.SH)/分时级别(如d)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "macd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码(如000001.SH)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsindex/history/macd/000001.SH/d/biyinglicence"
+  },
+  {
+   "id": "270",
+   "name": "历史分时MA",
+   "category": "沪深指数",
+   "subcategory": "技术指标",
+   "host": "api.biyingapi.com",
+   "path": "hsindex/history/ma",
+   "template": "https://api.biyingapi.com/hsindex/history/ma/指数代码(如000001.SH)/分时级别(如d)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "ma"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码(如000001.SH)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsindex/history/ma/000001.SH/d/biyinglicence"
+  },
+  {
+   "id": "271",
+   "name": "历史分时BOLL",
+   "category": "沪深指数",
+   "subcategory": "技术指标",
+   "host": "api.biyingapi.com",
+   "path": "hsindex/history/boll",
+   "template": "https://api.biyingapi.com/hsindex/history/boll/指数代码(如000001.SH)/分时级别(如d)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "boll"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码(如000001.SH)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsindex/history/boll/000001.SH/d/biyinglicence"
+  },
+  {
+   "id": "272",
+   "name": "历史分时KDJ",
+   "category": "沪深指数",
+   "subcategory": "技术指标",
+   "host": "api.biyingapi.com",
+   "path": "hsindex/history/kdj",
+   "template": "https://api.biyingapi.com/hsindex/history/kdj/指数代码(如000001.SH)/分时级别(如d)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "kdj"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码(如000001.SH)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsindex/history/kdj/000001.SH/d/biyinglicence"
+  },
+  {
+   "id": "251",
+   "name": "沪深主要指数列表接口",
+   "category": "沪深指数",
+   "subcategory": "指数列表",
+   "host": "api.biyingapi.com",
+   "path": "hsindex/list",
+   "template": "https://api.biyingapi.com/hsindex/list/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "list"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hsindex/list/biyinglicence"
+  },
+  {
+   "id": "253",
+   "name": "最新分时交易",
+   "category": "沪深指数",
+   "subcategory": "行情数据",
+   "host": "api.biyingapi.com",
+   "path": "hsindex/latest",
+   "template": "https://api.biyingapi.com/hsindex/latest/指数代码.市场（如000001.SH）/分时级别(如d)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "latest"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码.市场（如000001.SH）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsindex/latest/000001.SZ/d/biyinglicence?lt=3"
+  },
+  {
+   "id": "254",
+   "name": "历史分时交易",
+   "category": "沪深指数",
+   "subcategory": "行情数据",
+   "host": "api.biyingapi.com",
+   "path": "hsindex/history",
+   "template": "https://api.biyingapi.com/hsindex/history/指数代码.市场（如000001.SH）/分时级别(如d)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hsindex"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码.市场（如000001.SH）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hsindex/history/000001.SZ/d/biyinglicence?st=20250101&et=20250430"
+  },
+  {
+   "id": "115",
+   "name": "净流入额排名",
+   "category": "沪深数据中心",
+   "subcategory": "个股资金流向",
+   "host": "api.biyingapi.com",
+   "path": "higg/jlr",
+   "template": "https://api.biyingapi.com/higg/jlr/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "higg"
+    },
+    {
+     "kind": "literal",
+     "value": "jlr"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/higg/jlr/biyinglicence"
+  },
+  {
+   "id": "116",
+   "name": "净流入率排名",
+   "category": "沪深数据中心",
+   "subcategory": "个股资金流向",
+   "host": "api.biyingapi.com",
+   "path": "higg/jlrl",
+   "template": "https://api.biyingapi.com/higg/jlrl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "higg"
+    },
+    {
+     "kind": "literal",
+     "value": "jlrl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/higg/jlrl/biyinglicence"
+  },
+  {
+   "id": "117",
+   "name": "主力净流入额排名",
+   "category": "沪深数据中心",
+   "subcategory": "个股资金流向",
+   "host": "api.biyingapi.com",
+   "path": "higg/zljlr",
+   "template": "https://api.biyingapi.com/higg/zljlr/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "higg"
+    },
+    {
+     "kind": "literal",
+     "value": "zljlr"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/higg/zljlr/biyinglicence"
+  },
+  {
+   "id": "118",
+   "name": "主力净流入率排名",
+   "category": "沪深数据中心",
+   "subcategory": "个股资金流向",
+   "host": "api.biyingapi.com",
+   "path": "higg/zljlrl",
+   "template": "https://api.biyingapi.com/higg/zljlrl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "higg"
+    },
+    {
+     "kind": "literal",
+     "value": "zljlrl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/higg/zljlrl/biyinglicence"
+  },
+  {
+   "id": "119",
+   "name": "散户净流入额排名",
+   "category": "沪深数据中心",
+   "subcategory": "个股资金流向",
+   "host": "api.biyingapi.com",
+   "path": "higg/shzlr",
+   "template": "https://api.biyingapi.com/higg/shzlr/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "higg"
+    },
+    {
+     "kind": "literal",
+     "value": "shzlr"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/higg/shzlr/biyinglicence"
+  },
+  {
+   "id": "120",
+   "name": "散户净流入率排名",
+   "category": "沪深数据中心",
+   "subcategory": "个股资金流向",
+   "host": "api.biyingapi.com",
+   "path": "higg/shjlrl",
+   "template": "https://api.biyingapi.com/higg/shjlrl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "higg"
+    },
+    {
+     "kind": "literal",
+     "value": "shjlrl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/higg/shjlrl/biyinglicence"
+  },
+  {
+   "id": "126",
+   "name": "最新资金流向概览",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/lxgl",
+   "template": "https://api.biyingapi.com/ht/nbzj/lxgl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "lxgl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/lxgl/biyinglicence"
+  },
+  {
+   "id": "127",
+   "name": "北向资金历史走势",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/bxls",
+   "template": "https://api.biyingapi.com/ht/nbzj/bxls/阶段(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "bxls"
+    },
+    {
+     "kind": "placeholder",
+     "value": "阶段(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/bxls/1/biyinglicence"
+  },
+  {
+   "id": "128",
+   "name": "南向资金历史走势",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/nxls",
+   "template": "https://api.biyingapi.com/ht/nbzj/nxls/阶段(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "nxls"
+    },
+    {
+     "kind": "placeholder",
+     "value": "阶段(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/nxls/1/biyinglicence"
+  },
+  {
+   "id": "129",
+   "name": "北向资金历史总览",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/bxzl",
+   "template": "https://api.biyingapi.com/ht/nbzj/bxzl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "bxzl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/bxzl/biyinglicence"
+  },
+  {
+   "id": "130",
+   "name": "南向资金历史总览",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/nxzl",
+   "template": "https://api.biyingapi.com/ht/nbzj/nxzl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "nxzl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/nxzl/biyinglicence"
+  },
+  {
+   "id": "131",
+   "name": "沪股通成分股行情",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/hgtc",
+   "template": "https://api.biyingapi.com/ht/nbzj/hgtc/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "hgtc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/hgtc/biyinglicence"
+  },
+  {
+   "id": "132",
+   "name": "深股通成分股行情",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/sgtc",
+   "template": "https://api.biyingapi.com/ht/nbzj/sgtc/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "sgtc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/sgtc/biyinglicence"
+  },
+  {
+   "id": "133",
+   "name": "港股通（沪）成分股行情",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/ggth",
+   "template": "https://api.biyingapi.com/ht/nbzj/ggth/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "ggth"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/ggth/biyinglicence"
+  },
+  {
+   "id": "134",
+   "name": "港股通（深）成分股行情",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/ggts",
+   "template": "https://api.biyingapi.com/ht/nbzj/ggts/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "ggts"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/ggts/biyinglicence"
+  },
+  {
+   "id": "135",
+   "name": "AH股比价",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/ah",
+   "template": "https://api.biyingapi.com/ht/nbzj/ah/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "ah"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/ah/biyinglicence"
+  },
+  {
+   "id": "136",
+   "name": "沪股通十大成交股",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/hgts",
+   "template": "https://api.biyingapi.com/ht/nbzj/hgts/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "hgts"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/hgts/biyinglicence"
+  },
+  {
+   "id": "137",
+   "name": "深股通十大成交股",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/sgts",
+   "template": "https://api.biyingapi.com/ht/nbzj/sgts/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "sgts"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/sgts/biyinglicence"
+  },
+  {
+   "id": "138",
+   "name": "港股通（沪）十大成交股",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/hcjd",
+   "template": "https://api.biyingapi.com/ht/nbzj/hcjd/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "hcjd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/hcjd/biyinglicence"
+  },
+  {
+   "id": "139",
+   "name": "港股通（深）十大成交股",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/scjd",
+   "template": "https://api.biyingapi.com/ht/nbzj/scjd/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "scjd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/scjd/biyinglicence"
+  },
+  {
+   "id": "141",
+   "name": "北向个股周期排名",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/bxpm",
+   "template": "https://api.biyingapi.com/ht/nbzj/bxpm/周期(如d)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "bxpm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "周期(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/bxpm/d/biyinglicence"
+  },
+  {
+   "id": "142",
+   "name": "沪股通个股周期排名",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/hgpm",
+   "template": "https://api.biyingapi.com/ht/nbzj/hgpm/周期(如d)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "hgpm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "周期(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/hgpm/d/biyinglicence"
+  },
+  {
+   "id": "143",
+   "name": "深股通个股周期排名",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/sgpm",
+   "template": "https://api.biyingapi.com/ht/nbzj/sgpm/周期(如d)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "sgpm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "周期(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/sgpm/d/biyinglicence"
+  },
+  {
+   "id": "144",
+   "name": "沪股通历史数据",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/hgls",
+   "template": "https://api.biyingapi.com/ht/nbzj/hgls/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "hgls"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/hgls/biyinglicence"
+  },
+  {
+   "id": "145",
+   "name": "深股通历史数据",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/shls",
+   "template": "https://api.biyingapi.com/ht/nbzj/shls/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "shls"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/shls/biyinglicence"
+  },
+  {
+   "id": "146",
+   "name": "港股通（沪）历史数据",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/ghls",
+   "template": "https://api.biyingapi.com/ht/nbzj/ghls/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "ghls"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/ghls/biyinglicence"
+  },
+  {
+   "id": "147",
+   "name": "港股通（深）历史数据",
+   "category": "沪深数据中心",
+   "subcategory": "南向、北向资金",
+   "host": "api.biyingapi.com",
+   "path": "ht/nbzj/gsls",
+   "template": "https://api.biyingapi.com/ht/nbzj/gsls/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "ht"
+    },
+    {
+     "kind": "literal",
+     "value": "nbzj"
+    },
+    {
+     "kind": "literal",
+     "value": "gsls"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/ht/nbzj/gsls/biyinglicence"
+  },
+  {
+   "id": "83",
+   "name": "阶段最高最低",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/jdzgzd",
+   "template": "https://api.biyingapi.com/himk/jdzgzd/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "jdzgzd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/jdzgzd/biyinglicence"
+  },
+  {
+   "id": "84",
+   "name": "盘中创新高个股",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/pzxg",
+   "template": "https://api.biyingapi.com/himk/pzxg/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "pzxg"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/pzxg/biyinglicence"
+  },
+  {
+   "id": "85",
+   "name": "盘中创新低个股",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/pzxd",
+   "template": "https://api.biyingapi.com/himk/pzxd/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "pzxd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/pzxd/biyinglicence"
+  },
+  {
+   "id": "86",
+   "name": "成交骤增个股",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/cjzz",
+   "template": "https://api.biyingapi.com/himk/cjzz/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "cjzz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/cjzz/biyinglicence"
+  },
+  {
+   "id": "87",
+   "name": "成交骤减个股",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/cjzj",
+   "template": "https://api.biyingapi.com/himk/cjzj/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "cjzj"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/cjzj/biyinglicence"
+  },
+  {
+   "id": "88",
+   "name": "连续放量个股",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/lxfl",
+   "template": "https://api.biyingapi.com/himk/lxfl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "lxfl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/lxfl/biyinglicence"
+  },
+  {
+   "id": "89",
+   "name": "连续缩量个股",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/lxsl",
+   "template": "https://api.biyingapi.com/himk/lxsl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "lxsl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/lxsl/biyinglicence"
+  },
+  {
+   "id": "90",
+   "name": "连续上涨个股",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/lxsz",
+   "template": "https://api.biyingapi.com/himk/lxsz/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "lxsz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/lxsz/biyinglicence"
+  },
+  {
+   "id": "91",
+   "name": "连续下跌个股",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/lxxd",
+   "template": "https://api.biyingapi.com/himk/lxxd/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "lxxd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/lxxd/biyinglicence"
+  },
+  {
+   "id": "92",
+   "name": "周涨跌排名",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/zzd",
+   "template": "https://api.biyingapi.com/himk/zzd/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "zzd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/zzd/biyinglicence"
+  },
+  {
+   "id": "93",
+   "name": "月涨跌排名",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/yzd",
+   "template": "https://api.biyingapi.com/himk/yzd/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "yzd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/yzd/biyinglicence"
+  },
+  {
+   "id": "96",
+   "name": "流通市值排行",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/ltszph",
+   "template": "https://api.biyingapi.com/himk/ltszph/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "ltszph"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/ltszph/biyinglicence"
+  },
+  {
+   "id": "97",
+   "name": "市盈率排行",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/syl",
+   "template": "https://api.biyingapi.com/himk/syl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "syl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/syl/biyinglicence"
+  },
+  {
+   "id": "98",
+   "name": "市净率排行",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/sjl",
+   "template": "https://api.biyingapi.com/himk/sjl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "sjl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/sjl/biyinglicence"
+  },
+  {
+   "id": "99",
+   "name": "ROE排行",
+   "category": "沪深数据中心",
+   "subcategory": "市场表现",
+   "host": "api.biyingapi.com",
+   "path": "himk/roe",
+   "template": "https://api.biyingapi.com/himk/roe/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "himk"
+    },
+    {
+     "kind": "literal",
+     "value": "roe"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/himk/roe/biyinglicence"
+  },
+  {
+   "id": "71",
+   "name": "今日交易提示",
+   "category": "沪深数据中心",
+   "subcategory": "投资参考",
+   "host": "api.biyingapi.com",
+   "path": "hitc/jrts",
+   "template": "https://api.biyingapi.com/hitc/jrts/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hitc"
+    },
+    {
+     "kind": "literal",
+     "value": "jrts"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hitc/jrts/biyinglicence"
+  },
+  {
+   "id": "72",
+   "name": "融资融券交易总量",
+   "category": "沪深数据中心",
+   "subcategory": "投资参考",
+   "host": "api.biyingapi.com",
+   "path": "hitc/rzrqzl",
+   "template": "https://api.biyingapi.com/hitc/rzrqzl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hitc"
+    },
+    {
+     "kind": "literal",
+     "value": "rzrqzl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hitc/rzrqzl/biyinglicence"
+  },
+  {
+   "id": "73",
+   "name": "融资融券交易明细",
+   "category": "沪深数据中心",
+   "subcategory": "投资参考",
+   "host": "api.biyingapi.com",
+   "path": "hitc/rzrqmx",
+   "template": "https://api.biyingapi.com/hitc/rzrqmx/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hitc"
+    },
+    {
+     "kind": "literal",
+     "value": "rzrqmx"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hitc/rzrqmx/biyinglicence"
+  },
+  {
+   "id": "74",
+   "name": "大宗交易",
+   "category": "沪深数据中心",
+   "subcategory": "投资参考",
+   "host": "api.biyingapi.com",
+   "path": "hitc/dzjy",
+   "template": "https://api.biyingapi.com/hitc/dzjy/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hitc"
+    },
+    {
+     "kind": "literal",
+     "value": "dzjy"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hitc/dzjy/biyinglicence"
+  },
+  {
+   "id": "75",
+   "name": "解禁限售",
+   "category": "沪深数据中心",
+   "subcategory": "投资参考",
+   "host": "api.biyingapi.com",
+   "path": "hitc/jjxs",
+   "template": "https://api.biyingapi.com/hitc/jjxs/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hitc"
+    },
+    {
+     "kind": "literal",
+     "value": "jjxs"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hitc/jjxs/biyinglicence"
+  },
+  {
+   "id": "76",
+   "name": "打新收益",
+   "category": "沪深数据中心",
+   "subcategory": "投资参考",
+   "host": "api.biyingapi.com",
+   "path": "hitc/dxsy",
+   "template": "https://api.biyingapi.com/hitc/dxsy/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hitc"
+    },
+    {
+     "kind": "literal",
+     "value": "dxsy"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hitc/dxsy/biyinglicence"
+  },
+  {
+   "id": "77",
+   "name": "历史累计分红",
+   "category": "沪深数据中心",
+   "subcategory": "投资参考",
+   "host": "api.biyingapi.com",
+   "path": "hitc/lsfh",
+   "template": "https://api.biyingapi.com/hitc/lsfh/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hitc"
+    },
+    {
+     "kind": "literal",
+     "value": "lsfh"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hitc/lsfh/biyinglicence"
+  },
+  {
+   "id": "109",
+   "name": "机构持股汇总",
+   "category": "沪深数据中心",
+   "subcategory": "机构持股",
+   "host": "api.biyingapi.com",
+   "path": "hijg/jgcghz",
+   "template": "https://api.biyingapi.com/hijg/jgcghz/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hijg"
+    },
+    {
+     "kind": "literal",
+     "value": "jgcghz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hijg/jgcghz/2023/1/biyinglicence"
+  },
+  {
+   "id": "110",
+   "name": "基金重仓",
+   "category": "沪深数据中心",
+   "subcategory": "机构持股",
+   "host": "api.biyingapi.com",
+   "path": "hijg/jj",
+   "template": "https://api.biyingapi.com/hijg/jj/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hijg"
+    },
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hijg/jj/2023/1/biyinglicence"
+  },
+  {
+   "id": "111",
+   "name": "社保重仓",
+   "category": "沪深数据中心",
+   "subcategory": "机构持股",
+   "host": "api.biyingapi.com",
+   "path": "hijg/sb",
+   "template": "https://api.biyingapi.com/hijg/sb/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hijg"
+    },
+    {
+     "kind": "literal",
+     "value": "sb"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hijg/sb/2023/1/biyinglicence"
+  },
+  {
+   "id": "112",
+   "name": "QFII重仓股",
+   "category": "沪深数据中心",
+   "subcategory": "机构持股",
+   "host": "api.biyingapi.com",
+   "path": "hijg/qf",
+   "template": "https://api.biyingapi.com/hijg/qf/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hijg"
+    },
+    {
+     "kind": "literal",
+     "value": "qf"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hijg/qf/2023/1/biyinglicence"
+  },
+  {
+   "id": "113",
+   "name": "证监会行业",
+   "category": "沪深数据中心",
+   "subcategory": "板块资金流向",
+   "host": "api.biyingapi.com",
+   "path": "hibk/zjhhy",
+   "template": "https://api.biyingapi.com/hibk/zjhhy/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hibk"
+    },
+    {
+     "kind": "literal",
+     "value": "zjhhy"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hibk/zjhhy/biyinglicence"
+  },
+  {
+   "id": "114",
+   "name": "概念板块",
+   "category": "沪深数据中心",
+   "subcategory": "板块资金流向",
+   "host": "api.biyingapi.com",
+   "path": "hibk/gnbk",
+   "template": "https://api.biyingapi.com/hibk/gnbk/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hibk"
+    },
+    {
+     "kind": "literal",
+     "value": "gnbk"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hibk/gnbk/biyinglicence"
+  },
+  {
+   "id": "100",
+   "name": "盈利能力",
+   "category": "沪深数据中心",
+   "subcategory": "财务分析",
+   "host": "api.biyingapi.com",
+   "path": "hicw/yl",
+   "template": "https://api.biyingapi.com/hicw/yl/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hicw"
+    },
+    {
+     "kind": "literal",
+     "value": "yl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hicw/yl/2023/1/biyinglicence"
+  },
+  {
+   "id": "101",
+   "name": "运营能力",
+   "category": "沪深数据中心",
+   "subcategory": "财务分析",
+   "host": "api.biyingapi.com",
+   "path": "hicw/yy",
+   "template": "https://api.biyingapi.com/hicw/yy/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hicw"
+    },
+    {
+     "kind": "literal",
+     "value": "yy"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hicw/yy/2023/1/biyinglicence"
+  },
+  {
+   "id": "102",
+   "name": "成长能力",
+   "category": "沪深数据中心",
+   "subcategory": "财务分析",
+   "host": "api.biyingapi.com",
+   "path": "hicw/cz",
+   "template": "https://api.biyingapi.com/hicw/cz/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hicw"
+    },
+    {
+     "kind": "literal",
+     "value": "cz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hicw/cz/2023/1/biyinglicence"
+  },
+  {
+   "id": "103",
+   "name": "偿债能力",
+   "category": "沪深数据中心",
+   "subcategory": "财务分析",
+   "host": "api.biyingapi.com",
+   "path": "hicw/cznl",
+   "template": "https://api.biyingapi.com/hicw/cznl/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hicw"
+    },
+    {
+     "kind": "literal",
+     "value": "cznl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hicw/cznl/2023/1/biyinglicence"
+  },
+  {
+   "id": "104",
+   "name": "现金流量",
+   "category": "沪深数据中心",
+   "subcategory": "财务分析",
+   "host": "api.biyingapi.com",
+   "path": "hicw/xj",
+   "template": "https://api.biyingapi.com/hicw/xj/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hicw"
+    },
+    {
+     "kind": "literal",
+     "value": "xj"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hicw/xj/2023/1/biyinglicence"
+  },
+  {
+   "id": "105",
+   "name": "业绩报表",
+   "category": "沪深数据中心",
+   "subcategory": "财务分析",
+   "host": "api.biyingapi.com",
+   "path": "hicw/yjbb",
+   "template": "https://api.biyingapi.com/hicw/yjbb/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hicw"
+    },
+    {
+     "kind": "literal",
+     "value": "yjbb"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hicw/yjbb/2023/1/biyinglicence"
+  },
+  {
+   "id": "106",
+   "name": "业绩预告",
+   "category": "沪深数据中心",
+   "subcategory": "财务分析",
+   "host": "api.biyingapi.com",
+   "path": "hicw/yjyg",
+   "template": "https://api.biyingapi.com/hicw/yjyg/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hicw"
+    },
+    {
+     "kind": "literal",
+     "value": "yjyg"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hicw/yjyg/2023/1/biyinglicence"
+  },
+  {
+   "id": "107",
+   "name": "业绩快报",
+   "category": "沪深数据中心",
+   "subcategory": "财务分析",
+   "host": "api.biyingapi.com",
+   "path": "hicw/yjkb",
+   "template": "https://api.biyingapi.com/hicw/yjkb/年度(如2020)/季度(如1)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hicw"
+    },
+    {
+     "kind": "literal",
+     "value": "yjkb"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年度(如2020)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "季度(如1)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hicw/yjkb/2023/1/biyinglicence"
+  },
+  {
+   "id": "108",
+   "name": "利润细分",
+   "category": "沪深数据中心",
+   "subcategory": "财务分析",
+   "host": "api.biyingapi.com",
+   "path": "hicw/lr",
+   "template": "https://api.biyingapi.com/hicw/lr/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hicw"
+    },
+    {
+     "kind": "literal",
+     "value": "lr"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hicw/lr/biyinglicence"
+  },
+  {
+   "id": "121",
+   "name": "证监会行业资金路线图",
+   "category": "沪深数据中心",
+   "subcategory": "资金路线图",
+   "host": "api.biyingapi.com",
+   "path": "hizj/zjh",
+   "template": "https://api.biyingapi.com/hizj/zjh/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hizj"
+    },
+    {
+     "kind": "literal",
+     "value": "zjh"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hizj/zjh/biyinglicence"
+  },
+  {
+   "id": "122",
+   "name": "概念板块资金路线图",
+   "category": "沪深数据中心",
+   "subcategory": "资金路线图",
+   "host": "api.biyingapi.com",
+   "path": "hizj/bk",
+   "template": "https://api.biyingapi.com/hizj/bk/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hizj"
+    },
+    {
+     "kind": "literal",
+     "value": "bk"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hizj/bk/biyinglicence"
+  },
+  {
+   "id": "123",
+   "name": "个股阶段统计总览",
+   "category": "沪深数据中心",
+   "subcategory": "资金路线图",
+   "host": "api.biyingapi.com",
+   "path": "hizj/ggzl",
+   "template": "https://api.biyingapi.com/hizj/ggzl/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hizj"
+    },
+    {
+     "kind": "literal",
+     "value": "ggzl"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hizj/ggzl/biyinglicence"
+  },
+  {
+   "id": "124",
+   "name": "个股阶段统计",
+   "category": "沪深数据中心",
+   "subcategory": "资金路线图",
+   "host": "api.biyingapi.com",
+   "path": "hizj/ggjd",
+   "template": "https://api.biyingapi.com/hizj/ggjd/近几日(如5)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hizj"
+    },
+    {
+     "kind": "literal",
+     "value": "ggjd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "近几日(如5)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hizj/ggjd/3/biyinglicence"
+  },
+  {
+   "id": "125",
+   "name": "主力连续净流入/流出",
+   "category": "沪深数据中心",
+   "subcategory": "资金路线图",
+   "host": "api.biyingapi.com",
+   "path": "hizj/lxlr",
+   "template": "https://api.biyingapi.com/hizj/lxlr/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hizj"
+    },
+    {
+     "kind": "literal",
+     "value": "lxlr"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hizj/lxlr/biyinglicence"
+  },
+  {
+   "id": "78",
+   "name": "每日详情",
+   "category": "沪深数据中心",
+   "subcategory": "龙虎榜",
+   "host": "api.biyingapi.com",
+   "path": "hilh/mrxq",
+   "template": "https://api.biyingapi.com/hilh/mrxq/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hilh"
+    },
+    {
+     "kind": "literal",
+     "value": "mrxq"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hilh/mrxq/biyinglicence"
+  },
+  {
+   "id": "79",
+   "name": "个股上榜统计",
+   "category": "沪深数据中心",
+   "subcategory": "龙虎榜",
+   "host": "api.biyingapi.com",
+   "path": "hilh/ggsb",
+   "template": "https://api.biyingapi.com/hilh/ggsb/近几日(如5)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hilh"
+    },
+    {
+     "kind": "literal",
+     "value": "ggsb"
+    },
+    {
+     "kind": "placeholder",
+     "value": "近几日(如5)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hilh/ggsb/5/biyinglicence"
+  },
+  {
+   "id": "80",
+   "name": "营业部上榜统计",
+   "category": "沪深数据中心",
+   "subcategory": "龙虎榜",
+   "host": "api.biyingapi.com",
+   "path": "hilh/yybsb",
+   "template": "https://api.biyingapi.com/hilh/yybsb/近几日(如5)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hilh"
+    },
+    {
+     "kind": "literal",
+     "value": "yybsb"
+    },
+    {
+     "kind": "placeholder",
+     "value": "近几日(如5)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hilh/yybsb/5/biyinglicence"
+  },
+  {
+   "id": "81",
+   "name": "机构席位追踪",
+   "category": "沪深数据中心",
+   "subcategory": "龙虎榜",
+   "host": "api.biyingapi.com",
+   "path": "hilh/jgxw",
+   "template": "https://api.biyingapi.com/hilh/jgxw/近几日(如5)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hilh"
+    },
+    {
+     "kind": "literal",
+     "value": "jgxw"
+    },
+    {
+     "kind": "placeholder",
+     "value": "近几日(如5)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/hilh/jgxw/5/biyinglicence"
+  },
+  {
+   "id": "82",
+   "name": "机构席位成交明细",
+   "category": "沪深数据中心",
+   "subcategory": "龙虎榜",
+   "host": "api.biyingapi.com",
+   "path": "hilh/xwmx",
+   "template": "https://api.biyingapi.com/hilh/xwmx/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "hilh"
+    },
+    {
+     "kind": "literal",
+     "value": "xwmx"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/hilh/xwmx/biyinglicence"
+  },
+  {
+   "id": "282",
+   "name": "沪深基金列表",
+   "category": "基金数据",
+   "subcategory": "基金列表",
+   "host": "api.biyingapi.com",
+   "path": "fd/list/all",
+   "template": "https://api.biyingapi.com/fd/list/all/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "fd"
+    },
+    {
+     "kind": "literal",
+     "value": "list"
+    },
+    {
+     "kind": "literal",
+     "value": "all"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/fd/list/all/biyinglicence"
+  },
+  {
+   "id": "284",
+   "name": "ETF基金列表",
+   "category": "基金数据",
+   "subcategory": "基金列表",
+   "host": "api.biyingapi.com",
+   "path": "fd/list/etf",
+   "template": "https://api.biyingapi.com/fd/list/etf/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "fd"
+    },
+    {
+     "kind": "literal",
+     "value": "list"
+    },
+    {
+     "kind": "literal",
+     "value": "etf"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/fd/list/etf/biyinglicence"
+  },
+  {
+   "id": "283",
+   "name": "实时数据",
+   "category": "基金数据",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "fd/real/time",
+   "template": "https://api.biyingapi.com/fd/real/time/基金代码(如159001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "fd"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "time"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码(如159001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/fd/real/time/159001/biyinglicence"
+  },
+  {
+   "id": "188",
+   "name": "历史净值",
+   "category": "基金行情档案",
+   "subcategory": "净值回报",
+   "host": "api.biyingapi.com",
+   "path": "jj/lsjz",
+   "template": "https://api.biyingapi.com/jj/lsjz/基金代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "lsjz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/lsjz/000001/biyinglicence"
+  },
+  {
+   "id": "182",
+   "name": "基金概况",
+   "category": "基金行情档案",
+   "subcategory": "基本资料",
+   "host": "api.biyingapi.com",
+   "path": "jj/jjgk",
+   "template": "https://api.biyingapi.com/jj/jjgk/基金代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "jjgk"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/jjgk/000001/biyinglicence"
+  },
+  {
+   "id": "178",
+   "name": "最新K线",
+   "category": "基金行情档案",
+   "subcategory": "基金K线",
+   "host": "api.biyingapi.com",
+   "path": "jj/zxkx",
+   "template": "https://api.biyingapi.com/jj/zxkx/基金代码/分时级别/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "zxkx"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/zxkx/180801/d/biyinglicence"
+  },
+  {
+   "id": "179",
+   "name": "历史K线",
+   "category": "基金行情档案",
+   "subcategory": "基金K线",
+   "host": "api.biyingapi.com",
+   "path": "jj/lskx",
+   "template": "https://api.biyingapi.com/jj/lskx/基金代码/分时级别/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "lskx"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/lskx/180801/d/biyinglicence"
+  },
+  {
+   "id": "180",
+   "name": "最新MA",
+   "category": "基金行情档案",
+   "subcategory": "基金MA",
+   "host": "api.biyingapi.com",
+   "path": "jj/zxma",
+   "template": "https://api.biyingapi.com/jj/zxma/基金代码/分时级别/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "zxma"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/zxma/180801/d/biyinglicence"
+  },
+  {
+   "id": "181",
+   "name": "历史MA",
+   "category": "基金行情档案",
+   "subcategory": "基金MA",
+   "host": "api.biyingapi.com",
+   "path": "jj/lsma",
+   "template": "https://api.biyingapi.com/jj/lsma/基金代码/分时级别/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "lsma"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/lsma/180801/d/biyinglicence"
+  },
+  {
+   "id": "207",
+   "name": "开放式基金业绩排行（股、混合、债、QDII类）",
+   "category": "基金行情档案",
+   "subcategory": "基金业绩排行",
+   "host": "api.biyingapi.com",
+   "path": "js/pm/kfpm",
+   "template": "https://api.biyingapi.com/js/pm/kfpm/基金分类参数(如kfsjj_gpxjj_zsx)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "pm"
+    },
+    {
+     "kind": "literal",
+     "value": "kfpm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_gpxjj_zsx)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/pm/kfpm/kfsjj_gpxjj_zsx/biyinglicence"
+  },
+  {
+   "id": "208",
+   "name": "封闭式基金业绩排行",
+   "category": "基金行情档案",
+   "subcategory": "基金业绩排行",
+   "host": "api.biyingapi.com",
+   "path": "js/pm/fbpm",
+   "template": "https://api.biyingapi.com/js/pm/fbpm/基金分类参数(如kfsjj_fbqy_ctfj)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "pm"
+    },
+    {
+     "kind": "literal",
+     "value": "fbpm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_fbqy_ctfj)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/pm/fbpm/kfsjj_fbqy_ctfj/biyinglicence"
+  },
+  {
+   "id": "209",
+   "name": "分级子基金业绩排行",
+   "category": "基金行情档案",
+   "subcategory": "基金业绩排行",
+   "host": "api.biyingapi.com",
+   "path": "js/pm/fzyj",
+   "template": "https://api.biyingapi.com/js/pm/fzyj/基金分类参数(如kfsjj_fjgs_wjzqx)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "pm"
+    },
+    {
+     "kind": "literal",
+     "value": "fzyj"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_fjgs_wjzqx)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/pm/fzyj/kfsjj_fjgs_wjzqx/biyinglicence"
+  },
+  {
+   "id": "164",
+   "name": "估值基金列表",
+   "category": "基金行情档案",
+   "subcategory": "基金估值",
+   "host": "api.biyingapi.com",
+   "path": "jj/gzlb",
+   "template": "https://api.biyingapi.com/jj/gzlb/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "gzlb"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/jj/gzlb/biyinglicence"
+  },
+  {
+   "id": "165",
+   "name": "盘中最新估值",
+   "category": "基金行情档案",
+   "subcategory": "基金估值",
+   "host": "api.biyingapi.com",
+   "path": "jj/pzzzgz",
+   "template": "https://api.biyingapi.com/jj/pzzzgz/基金代码/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "pzzzgz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/pzzzgz/000001/biyinglicence"
+  },
+  {
+   "id": "222",
+   "name": "基金重仓股",
+   "category": "基金行情档案",
+   "subcategory": "基金其他",
+   "host": "api.biyingapi.com",
+   "path": "js/other/jjzc",
+   "template": "https://api.biyingapi.com/js/other/jjzc/年份_季度(如2026_2)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "other"
+    },
+    {
+     "kind": "literal",
+     "value": "jjzc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年份_季度(如2026_2)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/other/jjzc/2026_2/biyinglicence"
+  },
+  {
+   "id": "223",
+   "name": "基金重仓股变动",
+   "category": "基金行情档案",
+   "subcategory": "基金其他",
+   "host": "api.biyingapi.com",
+   "path": "js/other/zcbd",
+   "template": "https://api.biyingapi.com/js/other/zcbd/年份_季度(如2026_2)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "other"
+    },
+    {
+     "kind": "literal",
+     "value": "zcbd"
+    },
+    {
+     "kind": "placeholder",
+     "value": "年份_季度(如2026_2)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/other/zcbd/2026_2/biyinglicence"
+  },
+  {
+   "id": "224",
+   "name": "代销机构",
+   "category": "基金行情档案",
+   "subcategory": "基金其他",
+   "host": "api.biyingapi.com",
+   "path": "js/other/dxjg",
+   "template": "https://api.biyingapi.com/js/other/dxjg/参数(如yh)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "other"
+    },
+    {
+     "kind": "literal",
+     "value": "dxjg"
+    },
+    {
+     "kind": "placeholder",
+     "value": "参数(如yh)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/other/dxjg/yh/biyinglicence"
+  },
+  {
+   "id": "166",
+   "name": "开放式基金净值",
+   "category": "基金行情档案",
+   "subcategory": "基金净值",
+   "host": "api.biyingapi.com",
+   "path": "jj/hqzksjz",
+   "template": "https://api.biyingapi.com/jj/hqzksjz/基金代码/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "hqzksjz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/hqzksjz/000001/biyinglicence"
+  },
+  {
+   "id": "167",
+   "name": "封闭式基金净值",
+   "category": "基金行情档案",
+   "subcategory": "基金净值",
+   "host": "api.biyingapi.com",
+   "path": "jj/hqfbsjz",
+   "template": "https://api.biyingapi.com/jj/hqfbsjz/基金代码/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "hqfbsjz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/hqfbsjz/165705/biyinglicence"
+  },
+  {
+   "id": "168",
+   "name": "分级子基金净值",
+   "category": "基金行情档案",
+   "subcategory": "基金净值",
+   "host": "api.biyingapi.com",
+   "path": "jj/hqfjzjz",
+   "template": "https://api.biyingapi.com/jj/hqfjzjz/基金代码/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "hqfjzjz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/hqfjzjz/165706/biyinglicence"
+  },
+  {
+   "id": "203",
+   "name": "开放式基金净值排名（股、混合、债、QDII类）",
+   "category": "基金行情档案",
+   "subcategory": "基金净值排名",
+   "host": "api.biyingapi.com",
+   "path": "js/pm/kfjzg",
+   "template": "https://api.biyingapi.com/js/pm/kfjzg/基金分类参数(如kfsjj_gpxjj_zsx)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "pm"
+    },
+    {
+     "kind": "literal",
+     "value": "kfjzg"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_gpxjj_zsx)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/pm/kfjzg/kfsjj_gpxjj_zsx/biyinglicence"
+  },
+  {
+   "id": "204",
+   "name": "开放式基金净值排名（货币类）",
+   "category": "基金行情档案",
+   "subcategory": "基金净值排名",
+   "host": "api.biyingapi.com",
+   "path": "js/pm/kfjzq",
+   "template": "https://api.biyingapi.com/js/pm/kfjzq/基金分类参数(如kfsjj_hbxjj_hba)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "pm"
+    },
+    {
+     "kind": "literal",
+     "value": "kfjzq"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_hbxjj_hba)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/pm/kfjzq/kfsjj_hbxjj_hba/biyinglicence"
+  },
+  {
+   "id": "205",
+   "name": "封闭式基金净值排名",
+   "category": "基金行情档案",
+   "subcategory": "基金净值排名",
+   "host": "api.biyingapi.com",
+   "path": "js/pm/fbjz",
+   "template": "https://api.biyingapi.com/js/pm/fbjz/基金分类参数(如kfsjj_fbqy_ctfj)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "pm"
+    },
+    {
+     "kind": "literal",
+     "value": "fbjz"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_fbqy_ctfj)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/pm/fbjz/kfsjj_fbqy_ctfj/biyinglicence"
+  },
+  {
+   "id": "210",
+   "name": "开放式基金基金分红",
+   "category": "基金行情档案",
+   "subcategory": "基金分红",
+   "host": "api.biyingapi.com",
+   "path": "js/jf/kffh",
+   "template": "https://api.biyingapi.com/js/jf/kffh/基金分类参数(如kfsjj_gpxjj_zsx)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "jf"
+    },
+    {
+     "kind": "literal",
+     "value": "kffh"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_gpxjj_zsx)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/jf/kffh/kfsjj_gpxjj_zsx/biyinglicence"
+  },
+  {
+   "id": "211",
+   "name": "封闭式基金基金分红",
+   "category": "基金行情档案",
+   "subcategory": "基金分红",
+   "host": "api.biyingapi.com",
+   "path": "js/jf/fbfh",
+   "template": "https://api.biyingapi.com/js/jf/fbfh/基金分类参数(如kfsjj_fbqy_ctfj)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "jf"
+    },
+    {
+     "kind": "literal",
+     "value": "fbfh"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_fbqy_ctfj)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/jf/fbfh/kfsjj_fbqy_ctfj/biyinglicence"
+  },
+  {
+   "id": "212",
+   "name": "分级子基金基金分红",
+   "category": "基金行情档案",
+   "subcategory": "基金分红",
+   "host": "api.biyingapi.com",
+   "path": "js/jf/fzfh",
+   "template": "https://api.biyingapi.com/js/jf/fzfh/基金分类参数(如kfsjj_fjgs_wjzqx)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "jf"
+    },
+    {
+     "kind": "literal",
+     "value": "fzfh"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_fjgs_wjzqx)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/jf/fzfh/kfsjj_fjgs_wjzqx/biyinglicence"
+  },
+  {
+   "id": "163",
+   "name": "所有基金列表",
+   "category": "基金行情档案",
+   "subcategory": "基金列表",
+   "host": "api.biyingapi.com",
+   "path": "jj/all",
+   "template": "https://api.biyingapi.com/jj/all/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "all"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/jj/all/biyinglicence"
+  },
+  {
+   "id": "172",
+   "name": "封闭式基金列表",
+   "category": "基金行情档案",
+   "subcategory": "基金行情",
+   "host": "api.biyingapi.com",
+   "path": "jj/fbs",
+   "template": "https://api.biyingapi.com/jj/fbs/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "fbs"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/jj/fbs/biyinglicence"
+  },
+  {
+   "id": "174",
+   "name": "ETF基金列表",
+   "category": "基金行情档案",
+   "subcategory": "基金行情",
+   "host": "api.biyingapi.com",
+   "path": "jj/etf",
+   "template": "https://api.biyingapi.com/jj/etf/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "etf"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/jj/etf/biyinglicence"
+  },
+  {
+   "id": "176",
+   "name": "LOF基金列表",
+   "category": "基金行情档案",
+   "subcategory": "基金行情",
+   "host": "api.biyingapi.com",
+   "path": "jj/lof",
+   "template": "https://api.biyingapi.com/jj/lof/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "lof"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/jj/lof/biyinglicence"
+  },
+  {
+   "id": "213",
+   "name": "开放式基金基金规模",
+   "category": "基金行情档案",
+   "subcategory": "基金规模",
+   "host": "api.biyingapi.com",
+   "path": "js/gm/kfgm",
+   "template": "https://api.biyingapi.com/js/gm/kfgm/基金分类参数(如kfsjj_gpxjj_zsx)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "gm"
+    },
+    {
+     "kind": "literal",
+     "value": "kfgm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_gpxjj_zsx)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/gm/kfgm/kfsjj_gpxjj_zsx/biyinglicence"
+  },
+  {
+   "id": "214",
+   "name": "封闭式基金基金规模",
+   "category": "基金行情档案",
+   "subcategory": "基金规模",
+   "host": "api.biyingapi.com",
+   "path": "js/gm/fbgm",
+   "template": "https://api.biyingapi.com/js/gm/fbgm/基金分类参数(如kfsjj_fbqy_ctfj)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "gm"
+    },
+    {
+     "kind": "literal",
+     "value": "fbgm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_fbqy_ctfj)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/gm/fbgm/kfsjj_fbqy_ctfj/biyinglicence"
+  },
+  {
+   "id": "215",
+   "name": "分级子基金基金规模",
+   "category": "基金行情档案",
+   "subcategory": "基金规模",
+   "host": "api.biyingapi.com",
+   "path": "js/gm/fzgm",
+   "template": "https://api.biyingapi.com/js/gm/fzgm/基金分类参数(如kfsjj_fjgs_wjzqx)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "js"
+    },
+    {
+     "kind": "literal",
+     "value": "gm"
+    },
+    {
+     "kind": "literal",
+     "value": "fzgm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金分类参数(如kfsjj_fjgs_wjzqx)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/js/gm/fzgm/kfsjj_fjgs_wjzqx/biyinglicence"
+  },
+  {
+   "id": "192",
+   "name": "股票持仓",
+   "category": "基金行情档案",
+   "subcategory": "投资组合",
+   "host": "api.biyingapi.com",
+   "path": "jj/gpcc",
+   "template": "https://api.biyingapi.com/jj/gpcc/基金代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "gpcc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/gpcc/000001/biyinglicence"
+  },
+  {
+   "id": "193",
+   "name": "债券持仓",
+   "category": "基金行情档案",
+   "subcategory": "投资组合",
+   "host": "api.biyingapi.com",
+   "path": "jj/zqcc",
+   "template": "https://api.biyingapi.com/jj/zqcc/基金代码(如000001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "jj"
+    },
+    {
+     "kind": "literal",
+     "value": "zqcc"
+    },
+    {
+     "kind": "placeholder",
+     "value": "基金代码(如000001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/jj/zqcc/000001/biyinglicence"
+  },
+  {
+   "id": "286",
+   "name": "股票实时数据",
+   "category": "科创板",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "kc/real/time",
+   "template": "https://api.biyingapi.com/kc/real/time/股票代码(如688001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "kc"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "time"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如688001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/kc/real/time/688001/biyinglicence"
+  },
+  {
+   "id": "287",
+   "name": "买卖五档盘口",
+   "category": "科创板",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "kc/real/five",
+   "template": "https://api.biyingapi.com/kc/real/five/股票代码(如688001)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "kc"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "five"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如688001)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/kc/real/five/688001/biyinglicence"
+  },
+  {
+   "id": "285",
+   "name": "科创股票列表",
+   "category": "科创板",
+   "subcategory": "股票列表",
+   "host": "api.biyingapi.com",
+   "path": "kc/list/all",
+   "template": "https://api.biyingapi.com/kc/list/all/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "kc"
+    },
+    {
+     "kind": "literal",
+     "value": "list"
+    },
+    {
+     "kind": "literal",
+     "value": "all"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/kc/list/all/biyinglicence"
+  },
+  {
+   "id": "319",
+   "name": "最新分时交易（Pro版）",
+   "category": "北京交易所",
+   "subcategory": "Pro专属数据",
+   "host": "vip.biyingapi.com",
+   "path": "bj/pro/latest/1",
+   "template": "https://vip.biyingapi.com/bj/pro/latest/股票代码.市场（如920000.BJ）/1/除权方式(如n)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "pro"
+    },
+    {
+     "kind": "literal",
+     "value": "latest"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码.市场（如920000.BJ）"
+    },
+    {
+     "kind": "literal",
+     "value": "1"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权方式(如n)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://vip.biyingapi.com/bj/pro/latest/920000.BJ/1/n/您的licence?lt=5"
+  },
+  {
+   "id": "320",
+   "name": "历史分时交易（Pro版）",
+   "category": "北京交易所",
+   "subcategory": "Pro专属数据",
+   "host": "vip.biyingapi.com",
+   "path": "bj/pro/history/1",
+   "template": "https://vip.biyingapi.com/bj/pro/history/股票代码.市场（如920000.BJ）/1/除权方式(如n)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "pro"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码.市场（如920000.BJ）"
+    },
+    {
+     "kind": "literal",
+     "value": "1"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权方式(如n)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://vip.biyingapi.com/bj/pro/history/920000.BJ/1/n/您的licence?lt=100"
+  },
+  {
+   "id": "321",
+   "name": "完整历史分时交易（Pro版）",
+   "category": "北京交易所",
+   "subcategory": "Pro专属数据",
+   "host": "vip.biyingapi.com",
+   "path": "bj/history/full/{stock_code}/{period}/{dividend}",
+   "template": "https://vip.biyingapi.com/bj/history/full/{stock_code}/{period}/{dividend}/{licence}",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "literal",
+     "value": "full"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{stock_code}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{period}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{dividend}"
+    },
+    {
+     "kind": "placeholder",
+     "value": "{licence}"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://vip.biyingapi.com/bj/history/full/920000/5/n/您的licence?year=2024"
+  },
+  {
+   "id": "294",
+   "name": "【京市】资产负债表",
+   "category": "北京交易所",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "bj/financial/balance",
+   "template": "https://api.biyingapi.com/bj/financial/balance/股票代码（如920547.BJ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "balance"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如920547.BJ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/financial/balance/920547.BJ/biyinglicence?st=20240101&et=20260630"
+  },
+  {
+   "id": "295",
+   "name": "【京市】利润表",
+   "category": "北京交易所",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "bj/financial/income",
+   "template": "https://api.biyingapi.com/bj/financial/income/股票代码（如920547.BJ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "income"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如920547.BJ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/financial/income/920547.BJ/biyinglicence?st=20240101&et=20260630"
+  },
+  {
+   "id": "296",
+   "name": "【京市】现金流量表",
+   "category": "北京交易所",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "bj/financial/cashflow",
+   "template": "https://api.biyingapi.com/bj/financial/cashflow/股票代码（如920547.BJ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "cashflow"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如920547.BJ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/financial/cashflow/920547.BJ/biyinglicence?st=20240101&et=20260630"
+  },
+  {
+   "id": "297",
+   "name": "【京市】财务主要指标",
+   "category": "北京交易所",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "bj/financial/pershareindex",
+   "template": "https://api.biyingapi.com/bj/financial/pershareindex/股票代码（如920547.BJ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "pershareindex"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如920547.BJ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/financial/pershareindex/920547.BJ/biyinglicence?st=20240101&et=20260630"
+  },
+  {
+   "id": "298",
+   "name": "【京市】公司股本表",
+   "category": "北京交易所",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "bj/financial/capital",
+   "template": "https://api.biyingapi.com/bj/financial/capital/股票代码（如920547.BJ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "capital"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如920547.BJ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/financial/capital/920547.BJ/biyinglicence?st=20240101&et=20260630"
+  },
+  {
+   "id": "299",
+   "name": "【京市】公司十大股东",
+   "category": "北京交易所",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "bj/financial/topholder",
+   "template": "https://api.biyingapi.com/bj/financial/topholder/股票代码（如920547.BJ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "topholder"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如920547.BJ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/financial/topholder/920547.BJ/biyinglicence?st=20240101&et=20260630"
+  },
+  {
+   "id": "300",
+   "name": "【京市】公司十大流通股东",
+   "category": "北京交易所",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "bj/financial/flowholder",
+   "template": "https://api.biyingapi.com/bj/financial/flowholder/股票代码（如920547.BJ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "flowholder"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如920547.BJ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/financial/flowholder/920547.BJ/biyinglicence?st=20240101&et=20260630"
+  },
+  {
+   "id": "301",
+   "name": "【京市】公司股东数",
+   "category": "北京交易所",
+   "subcategory": "公司财务",
+   "host": "api.biyingapi.com",
+   "path": "bj/financial/hm",
+   "template": "https://api.biyingapi.com/bj/financial/hm/股票代码（如920547.BJ）/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "financial"
+    },
+    {
+     "kind": "literal",
+     "value": "hm"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码（如920547.BJ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/financial/hm/920547.BJ/biyinglicence?st=20240101&et=20260630"
+  },
+  {
+   "id": "275",
+   "name": "股票实时数据",
+   "category": "北京交易所",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "bj/stock/real/time",
+   "template": "https://api.biyingapi.com/bj/stock/real/time/股票代码(如920000)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "stock"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "time"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如920000)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/stock/real/time/920000/biyinglicence"
+  },
+  {
+   "id": "276",
+   "name": "买卖五档盘口",
+   "category": "北京交易所",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "bj/stock/real/five",
+   "template": "https://api.biyingapi.com/bj/stock/real/five/股票代码(如920000)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "stock"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "five"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码(如920000)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/stock/real/five/920000/biyinglicence"
+  },
+  {
+   "id": "278",
+   "name": "指数实时数据",
+   "category": "北京交易所",
+   "subcategory": "实时交易",
+   "host": "api.biyingapi.com",
+   "path": "bj/index/real/time",
+   "template": "https://api.biyingapi.com/bj/index/real/time/指数代码(如899050)/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "index"
+    },
+    {
+     "kind": "literal",
+     "value": "real"
+    },
+    {
+     "kind": "literal",
+     "value": "time"
+    },
+    {
+     "kind": "placeholder",
+     "value": "指数代码(如899050)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/index/real/time/899050/biyinglicence"
+  },
+  {
+   "id": "274",
+   "name": "京市股票列表",
+   "category": "北京交易所",
+   "subcategory": "股票列表",
+   "host": "api.biyingapi.com",
+   "path": "bj/list/all",
+   "template": "https://api.biyingapi.com/bj/list/all/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "list"
+    },
+    {
+     "kind": "literal",
+     "value": "all"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/bj/list/all/biyinglicence"
+  },
+  {
+   "id": "277",
+   "name": "京市指数列表",
+   "category": "北京交易所",
+   "subcategory": "股票列表",
+   "host": "api.biyingapi.com",
+   "path": "bj/list/index",
+   "template": "https://api.biyingapi.com/bj/list/index/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "list"
+    },
+    {
+     "kind": "literal",
+     "value": "index"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [],
+   "needsCode": false,
+   "testUrl": "https://api.biyingapi.com/bj/list/index/biyinglicence"
+  },
+  {
+   "id": "293",
+   "name": "历史分时交易【京市】",
+   "category": "北京交易所",
+   "subcategory": "行情数据",
+   "host": "api.biyingapi.com",
+   "path": "bj/history",
+   "template": "https://api.biyingapi.com/bj/history/股票代码.市场（如920547.BJ）/分时级别(如d)/除权方式/您的licence",
+   "segments": [
+    {
+     "kind": "literal",
+     "value": "bj"
+    },
+    {
+     "kind": "literal",
+     "value": "history"
+    },
+    {
+     "kind": "placeholder",
+     "value": "股票代码.市场（如920547.BJ）"
+    },
+    {
+     "kind": "placeholder",
+     "value": "分时级别(如d)"
+    },
+    {
+     "kind": "placeholder",
+     "value": "除权方式"
+    },
+    {
+     "kind": "placeholder",
+     "value": "您的licence"
+    }
+   ],
+   "query": [
+    "st",
+    "et",
+    "lt"
+   ],
+   "needsCode": true,
+   "testUrl": "https://api.biyingapi.com/bj/history/920547.BJ/d/n/biyinglicence?st=20250101&et=20250430&lt=100"
+  }
+ ]
+}
