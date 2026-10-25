@@ -30,7 +30,7 @@ public sealed class BiyingEndpointCatalogTests
         // 没有词典，模型面对 jzrq/plrq 这类拼音键只能猜，猜错比不给更糟。
         var missing = Catalog().All.Where(endpoint => endpoint.Fields.Count == 0).Select(endpoint => endpoint.Id).ToList();
 
-        Assert.AreEqual(0, missing.Count, $"以下端点缺少字段词典：{string.Join(",", missing)}");
+        Assert.IsEmpty(missing, $"以下端点缺少字段词典：{string.Join(",", missing)}");
     }
 
     [TestMethod]
@@ -39,7 +39,8 @@ public sealed class BiyingEndpointCatalogTests
         var endpoint = Catalog().Get("255");
 
         Assert.AreEqual("资产负债表", endpoint.Name);
-        Assert.IsTrue(endpoint.Fields.Count >= 100, $"资产负债表字段数应过百，实际 {endpoint.Fields.Count}");
+        // 签名是 (lowerBound, value)：先下界后实际值，写反了会把断言意义颠倒
+        Assert.IsGreaterThanOrEqualTo(100, endpoint.Fields.Count, $"资产负债表字段数应过百，实际 {endpoint.Fields.Count}");
         Assert.IsTrue(endpoint.Fields.Any(field => field.Key == "jzrq" && field.Description.Contains("截止日期")));
     }
 
@@ -137,7 +138,7 @@ public sealed class BiyingEndpointCatalogTests
     {
         var hits = Catalog().Search("资产负债表", 5);
 
-        Assert.IsTrue(hits.Count >= 1);
+        Assert.IsGreaterThanOrEqualTo(1, hits.Count);
         Assert.AreEqual("255", hits[0].Id);
     }
 
@@ -157,7 +158,7 @@ public sealed class BiyingEndpointCatalogTests
 
         var redacted = BiyingUrlBuilder.Redact(url, Licence);
 
-        Assert.IsFalse(redacted.Contains(Licence), "日志 URL 不得包含证书");
+        Assert.DoesNotContain(Licence, redacted, "日志 URL 不得包含证书");
         StringAssert.Contains(redacted, "<licence>");
     }
 
