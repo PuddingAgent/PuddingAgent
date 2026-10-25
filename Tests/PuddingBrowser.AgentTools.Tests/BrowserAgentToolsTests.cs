@@ -212,6 +212,31 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Snapshot_WithScopeLocator_IssuesOneOperationIdPerCommand()
+    {
+        // 带 scope 时 snapshot 发三条命令（列上下文 → 解析 scope → 快照）；
+        // 三条必须各带独立 operation id，否则第二条起被 broker 判重复请求。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var result = await ExecuteAsync(
+            new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                page_id = page.Id.Value,
+                mode = "outline",
+                scope = new { kind = "role", value = "main" }
+            }));
+
+        Assert.True(result.Success, result.Output);
+        Assert.Equal(3, surface.SeenOperationIds.Count);
+        Assert.Equal(3, surface.SeenOperationIds.Distinct().Count());
+    }
+
+    [Fact]
     public void ToolDescriptors_UseStableNamesAndStructuredSchemas()
     {
         var runtime = new FakeBrowserRuntime();

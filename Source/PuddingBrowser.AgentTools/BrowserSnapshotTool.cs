@@ -386,9 +386,17 @@ public sealed class BrowserSnapshotTool(
                 }
                 else
                 {
+                    // 解析 scope 是独立的一条能力命令：必须单独签发 operation id，
+                    // 否则随后的 SnapshotAsync 会被 broker 判「同 id 不同 payload」而拒绝。
+                    if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } scopeCall)
+                    {
+                        return BrowserToolResponse.Failure(
+                            "browser_not_connected", "No Desktop is connected for browser capabilities");
+                    }
+
                     var resolved = await surface.LocateAsync(
                         new BrowserLocateRequest(target, scopeLocator, DesktopPageVersion.Unknown, maxResults: 2),
-                        call,
+                        scopeCall,
                         ct);
                     if (resolved.IsFailure)
                     {
