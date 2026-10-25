@@ -112,6 +112,47 @@ public sealed class BrowserAgentToolsTests
         Assert.Equal(3, surface.SeenOperationIds.Distinct().Count());
     }
 
+    [Theory]
+    [InlineData("locate")]
+    [InlineData("snapshot")]
+    [InlineData("wait_for")]
+    public async Task SingleCommandTools_WithImplicitContext_IssueOneOperationIdPerCommand(string tool)
+    {
+        // 这些工具在 context 缺省时会先列上下文、再发主命令：两条命令必须各带独立 operation id
+        // （broker 对「同 id 不同 payload」判重复请求，实测 duplicate operation id）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var result = tool switch
+        {
+            "locate" => await ExecuteAsync(
+                new BrowserLocateTool(surface, new FakeCallContextFactory(), _originAccessor),
+                JsonSerializer.Serialize(new
+                {
+                    page_id = page.Id.Value,
+                    locator = new { kind = "css", value = ".item" }
+                })),
+
+            "snapshot" => await ExecuteAsync(
+                new BrowserSnapshotTool(surface, new FakeCallContextFactory(), _originAccessor),
+                JsonSerializer.Serialize(new { page_id = page.Id.Value, mode = "outline" })),
+
+            _ => await ExecuteAsync(
+                new BrowserWaitForTool(surface, new FakeCallContextFactory(), _originAccessor),
+                JsonSerializer.Serialize(new
+                {
+                    page_id = page.Id.Value, selector = "#saved", timeout_ms = 1000
+                }))
+        };
+
+        Assert.True(result.Success, result.Output);
+        Assert.Equal(2, surface.SeenOperationIds.Count);
+        Assert.Equal(2, surface.SeenOperationIds.Distinct().Count());
+    }
+
     [Fact]
     public void ToolDescriptors_UseStableNamesAndStructuredSchemas()
     {
@@ -2730,6 +2771,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopLocateResult>> LocateAsync(
         BrowserLocateRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        SeenOperationIds.Add(call.OperationId);
         LastLocateRequest = request;
 
         if (LocateFailure is not null)
@@ -2808,6 +2850,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopSnapshot>> SnapshotAsync(
         BrowserSnapshotRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        SeenOperationIds.Add(call.OperationId);
         LastSnapshotRequest = request;
 
         if (await ResolvePageAsync(request.Target, ct) is not { } page)
@@ -2853,6 +2896,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<DesktopWaitResult>> WaitForAsync(
         BrowserWaitForRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        SeenOperationIds.Add(call.OperationId);
         if (await ResolvePageAsync(request.Target, ct) is not { } page)
         {
             return CapabilityResult<DesktopWaitResult>.Failure(
