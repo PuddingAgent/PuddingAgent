@@ -64,6 +64,9 @@ public sealed class BiyingClient
 
     public BiyingQuota Quota => _quota;
 
+    /// <summary>端点注册表。工具层需要它来取字段词典与元信息。</summary>
+    public BiyingEndpointCatalog Catalog => _catalog;
+
     public async Task<BiyingCallResult> CallAsync(
         string endpointId,
         IReadOnlyList<string>? pathArgs = null,
