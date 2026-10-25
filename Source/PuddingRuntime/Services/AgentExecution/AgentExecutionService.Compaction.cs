@@ -77,10 +77,11 @@ public sealed partial class AgentExecutionService
         // 排查时只能反推。未触发时仍走 Debug，不污染常规日志。
         if (decision.Prepare)
             _logger.LogInformation(
-                "[AgentExec:Compaction] Boundary decision session={Session} round={Round} prepare={Prepare} commit={Commit} wait={Wait} pressure={Pressure} tokens={Tokens} window={Window} bytes={Bytes} limit={Limit} growthTokens={GrowthTokens} growthBytes={GrowthBytes} reason={Reason} hasCandidate={HasCandidate} ready={Ready}",
+                "[AgentExec:Compaction] Boundary decision session={Session} round={Round} prepare={Prepare} commit={Commit} wait={Wait} pressure={Pressure} tokens={Tokens} window={Window} bytes={Bytes} limit={Limit} inputLimit={InputLimit} workUnitCapacity={WorkUnit} growthTokens={GrowthTokens} growthBytes={GrowthBytes} reason={Reason} hasCandidate={HasCandidate} ready={Ready}",
                 request.SessionId, round + 1, decision.Prepare, decision.CommitReady, decision.WaitForCandidate,
                 decision.Pressure.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
                 measured.UsedTokens, registeredWindow, bytes, LlmRequestTextBudget.ResolveLimit(request),
+                inputLimit, request.UsageBudget?.MaxInputTokens,
                 maintenance.PreviousTokens, maintenance.PreviousBytes, decision.Reason,
                 maintenance.Candidate is not null, maintenance.Candidate?.IsReady);
         else
