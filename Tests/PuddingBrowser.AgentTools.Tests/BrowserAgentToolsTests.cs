@@ -187,6 +187,31 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Navigate_WithoutExplicitContext_IssuesOneOperationIdPerCommand()
+    {
+        // 上下文缺省时会先列上下文、再发导航命令：两条命令必须各带独立 operation id
+        // （broker 对「同 id 不同 payload」判重复请求，实测 duplicate operation id）。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var result = await ExecuteAsync(
+            new BrowserNavigateTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "goto",
+                page_id = page.Id.Value,
+                url = "https://example.com/"
+            }));
+
+        Assert.True(result.Success, result.Output);
+        Assert.Equal(2, surface.SeenOperationIds.Count);
+        Assert.Equal(2, surface.SeenOperationIds.Distinct().Count());
+    }
+
+    [Fact]
     public void ToolDescriptors_UseStableNamesAndStructuredSchemas()
     {
         var runtime = new FakeBrowserRuntime();
@@ -3196,6 +3221,7 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     public async Task<CapabilityResult<NavigateResult>> NavigateAsync(
         NavigateRequest request, DesktopCallContext call, CancellationToken ct = default)
     {
+        SeenOperationIds.Add(call.OperationId);
         if (await ResolvePageAsync(request.Target, ct) is not { } page)
         {
             return CapabilityResult<NavigateResult>.Failure(
