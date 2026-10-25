@@ -1064,6 +1064,15 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                 return;
             }
 
+            // 默认页级授权只适用于**主 Agent**，不适用于子代理：
+            // 子代理的权限必须从父任务派生（§3.2 子集校验）并受级联释放约束。
+            // 若在这里给子代理自动补发，子任务结束后它会「自己把自己授权回来」，
+            // 这正是 BrowserSubAgentCascadeReleaseTests.EndingTheSubTaskReleasesItsPermission 锁住的不变量。
+            if (caller.Kind != BrowserCallerKind.Agent)
+            {
+                return;
+            }
+
             // 信任级取自页面注册表本身（未登记 ⇒ 不签发）。这里不能用 TrustFor：
             // 那是 BrowserTargetRegistry 的方法，而本类持有的注册表类型不同。
             if (Targets.Resolve(page) is not { } agentPage
@@ -1072,13 +1081,17 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
                 return;
             }
 
-            var now = DateTimeOffset.UtcNow;
-            if (Authority.ActiveGrants.Any(grant =>
-                grant.Target == page
-                && grant.Grantee.IsSameTaskScope(caller)
-                && (grant.ExpiresAtUtc is null || grant.ExpiresAtUtc > now)))
+            // 去重判据必须与消费端（BrowserAutomationAuthority.Admit 的 IsSameActor）**逐字一致**：
+            // 主 Agent 的 TaskId 是本次 runId，每轮都会变；用 IsSameTaskScope（只看 CallerId）去重，
+            // 会把上一轮的授权误当成「已覆盖」，随后又被 Admit 判为「发给了别的行动者」而拒绝 ——
+            // 表现为写操作在授权到期前稳定被拒、读操作照常可用。详见 BrowserDefaultPageGrantPolicy。
+            if (!BrowserDefaultPageGrantPolicy.ShouldIssue(
+                Authority.ActiveGrants,
+                page,
+                caller,
+                DateTimeOffset.UtcNow))
             {
-                return; // 已有覆盖该页的有效授权，不重复签发
+                return; // 已有同一行动者、未过期的有效授权，不重复签发
             }
 
             // 签发失败不在这里抛：真正的裁决仍在 Authority.Admit，失败会把原因如实回给调用方。
