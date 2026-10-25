@@ -30,6 +30,12 @@ public sealed record BiyingShapeOptions
 
     /// <summary>只保留这些键（为 null 表示不投影、保留原始键）。</summary>
     public IReadOnlyCollection<string>? Fields { get; init; }
+
+    /// <summary>
+    /// 关键词过滤：只保留任意字段包含该词的执行。用于超大静态表（股票列表 250,566 字符）——
+    /// 那种表不能全量导出，只能按名字搜。为空则不过滤。
+    /// </summary>
+    public string? Keyword { get; init; }
 }
 
 /// <summary>
@@ -83,6 +89,31 @@ public static class BiyingShaper
         {
             return new BiyingShapeResult(endpoint.Id, endpoint.Name, rawBody, 0, 0, false, null,
                 rawChars, rawChars, []);
+        }
+
+        // 关键词过滤（股票列表这类超大静态表的唯一入口）：过滤后为空时**不能静默返回空表**，
+        // 否则模型会以为“这只股票不存在”，而实际是关键词写法不同。
+        var keyword = options.Keyword?.Trim();
+        if (!string.IsNullOrEmpty(keyword))
+        {
+            rows = rows.Where(row => row.Any(pair =>
+                    pair.Value?.ToString()?.Contains(keyword, StringComparison.OrdinalIgnoreCase) == true))
+                .ToList();
+
+            if (rows.Count == 0)
+            {
+                var empty = new JsonObject
+                {
+                    ["endpoint"] = $"{endpoint.Id} {endpoint.Name}",
+                    ["keyword"] = keyword,
+                    ["total"] = 0,
+                    ["returned"] = 0,
+                    ["note"] = $"没有匹配「{keyword}」的行。关键词必须出现在某个字段值里（名称/代码均可）。",
+                };
+                var emptyText = empty.ToJsonString(SerializerOptions);
+                return new BiyingShapeResult(endpoint.Id, endpoint.Name, emptyText, 0, 0, false, null,
+                    rawChars, emptyText.Length, []);
+            }
         }
 
         var dateKey = DateKeyCandidates.FirstOrDefault(candidate =>
