@@ -1410,8 +1410,16 @@ public sealed partial class AgentExecutionService
             _logger.LogDebug("[AgentExec] Merged runtime tool: {Tool}", merged);
         if (exposureBudget is { IsEffective: true })
         {
+            // 2026-10-25：工具定义占 prompt 的 13.2%（3 天 1.23 亿 token），但之前只打总量，
+            // 不知道是哪些工具在吃。补 top-8 逐工具字节数，才能定向瘦身而不是乱删。
+            // 每轮多 27 次小对象序列化，可忽略。
+            var topToolBytes = manifest.VisibleTools
+                .Select(tool => new KeyValuePair<string, long>(tool.Name, LlmRequestTextBudget.MeasureTool(tool)))
+                .OrderByDescending(pair => pair.Value)
+                .Take(8)
+                .Select(pair => $"{pair.Key}:{pair.Value}");
             _logger.LogInformation(
-                "[AgentExec:ToolExposure] Budgeted tool surface session={Session} available={Available} visible={Visible} evicted={Evicted} visibleSchemaBytes={VisibleBytes} maxVisibleTools={MaxTools} maxVisibleToolBytes={MaxBytes} budgetApplied={BudgetApplied} evictedTools={EvictedTools}",
+                "[AgentExec:ToolExposure] Budgeted tool surface session={Session} available={Available} visible={Visible} evicted={Evicted} visibleSchemaBytes={VisibleBytes} maxVisibleTools={MaxTools} maxVisibleToolBytes={MaxBytes} budgetApplied={BudgetApplied} evictedTools={EvictedTools} topTools={TopTools}",
                 request.SessionId,
                 manifest.ExposurePlan.AvailableToolCount,
                 manifest.VisibleTools.Count,
@@ -1420,7 +1428,8 @@ public sealed partial class AgentExecutionService
                 exposureBudget.Value.MaxVisibleTools,
                 exposureBudget.Value.MaxVisibleToolBytes,
                 manifest.ExposurePlan.BudgetApplied,
-                SummarizeToolNames(manifest.ExposurePlan.EvictedToolIds ?? []));
+                SummarizeToolNames(manifest.ExposurePlan.EvictedToolIds ?? []),
+                string.Join(",", topToolBytes));
         }
 
         return manifest;
