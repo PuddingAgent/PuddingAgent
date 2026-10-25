@@ -43,6 +43,11 @@ UA = {"User-Agent": "PuddingAgent/1.0 (+endpoint-catalog-extractor)"}
 
 # 模板里的中文占位符（如「股票代码(如000001)」「您的licence」）不是真实路径段
 _PLACEHOLDER = re.compile(r"[\u4e00-\u9fff]")
+# 返回字段表行：<td><code>jzrq</code></td><td>string</td><td>截止日期yyyy-MM-dd</td>
+_FIELD_ROW = re.compile(
+    r"<code>([A-Za-z0-9_]+)</code>\s*</td>\s*<td>([^<]*)</td>\s*<td>(.*?)</td>", re.S
+)
+_TAG = re.compile(r"<[^>]+>")
 
 
 @dataclass
@@ -58,6 +63,7 @@ class Endpoint:
     query: list[str]
     needsCode: bool
     testUrl: str
+    fields: list[dict]
 
 
 def fetch(page: str) -> str:
@@ -137,7 +143,36 @@ def build(attrs: dict, raw_url: str, category: str, subcategory: str) -> Endpoin
         query=query_keys,
         needsCode=needs_code,
         testUrl=html.unescape(attrs.get("test-url", "")),
+        # 字段词典由 parse_fields 另行填，不在导航属性里
+        fields=[],
     )
+
+
+def parse_fields(markup: str) -> dict[str, list[dict]]:
+    """抽取每个接口的「返回字段说明」表。
+
+    文档是服务端渲染的单页详情：每个接口一个 `div.doc-api-detail[data-api-id]`，
+    里面先有「请求参数」表、再有「返回字段说明」表。两表 markup 同构，所以必须先切到
+    「返回字段说明」之后才开始解析，否则会把请求参数当成返回字段（这是个真实陷阱）。
+    """
+    result: dict[str, list[dict]] = {}
+    starts = [(m.start(), m.group(1)) for m in re.finditer(r'class="doc-api-detail" data-api-id="(\d+)"', markup)]
+    for idx, (pos, api_id) in enumerate(starts):
+        end = starts[idx + 1][0] if idx + 1 < len(starts) else len(markup)
+        block = markup[pos:end]
+        marker = block.find("返回字段说明")
+        if marker < 0:
+            result[api_id] = []
+            continue
+        tail = block[marker:]
+        nxt = tail.find("<h2", 10)  # 下一节（如「请求示例」）不属于字段表
+        section = tail[:nxt] if nxt > 0 else tail
+        rows = []
+        for key, typ, desc in _FIELD_ROW.findall(section):
+            desc_clean = html.unescape(_TAG.sub("", desc)).strip()
+            rows.append({"key": key.strip(), "type": typ.strip(), "desc": desc_clean})
+        result[api_id] = rows
+    return result
 
 
 def main(argv: list[str]) -> int:
@@ -145,9 +180,14 @@ def main(argv: list[str]) -> int:
         return check()
 
     endpoints: list[Endpoint] = []
+    field_map: dict[str, list[dict]] = {}
     for page, category in DOC_PAGES:
         markup = fetch(page)
         got = parse_page(markup, category)
+        # 只有详情页带字段表；导航页（无 doc-api-detail）返回空字典，不影响上一个来源
+        for api_id, rows in parse_fields(markup).items():
+            if rows:
+                field_map.setdefault(api_id, rows)
         print(f"{page:<10} {category:<12} {len(got):>4} 条")
         if not got:
             print(f"ERROR: {page} 解析出 0 条——文档结构可能已改（JS 渲染？）", file=sys.stderr)
@@ -159,12 +199,18 @@ def main(argv: list[str]) -> int:
     for e in endpoints:
         seen.setdefault(e.id or e.testUrl, e)
     final = list(seen.values())
+    for e in final:
+        e.fields = field_map.get(e.id, [])
 
     payload = {
-        "schema": "pudding.biying.endpoints.v1",
+        "schema": "pudding.biying.endpoints.v2",
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": [BASE + page for page, _ in DOC_PAGES],
         "count": len(final),
+        "fieldCoverage": {
+            "withFields": sum(1 for e in final if e.fields),
+            "totalFields": sum(len(e.fields) for e in final),
+        },
         "endpoints": [asdict(e) for e in final],
     }
     io.open(OUT_PATH, "w", encoding="utf-8", newline="\n").write(
@@ -184,9 +230,17 @@ def check() -> int:
     if missing:
         print(f"FAIL: {len(missing)} 条缺 name/path", file=sys.stderr)
         return 2
+    # 字段词典是 v2 的核心产物：没有它，拼音短键对模型不可解释（猜错比不给更糟）。
+    # 所以把它当成硬门禁：任一端点抽不到字段就失败，而不是静默降级。
+    no_fields = [e for e in eps if not e.get("fields")]
+    if no_fields:
+        print(f"FAIL: {len(no_fields)} 条端点没有字段词典，示例 "
+              f"{[e.get('id') for e in no_fields[:5]]}", file=sys.stderr)
+        return 2
+    total_fields = sum(len(e["fields"]) for e in eps)
     hosts = sorted({e["host"] for e in eps})
     cats = sorted({e["category"] for e in eps})
-    print(f"OK count={len(eps)} hosts={hosts}")
+    print(f"OK count={len(eps)} fields={total_fields} hosts={hosts}")
     print(f"categories={cats}")
     return 0
 
