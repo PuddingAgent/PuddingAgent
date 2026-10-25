@@ -40,6 +40,8 @@ interface QueueHarnessOptions {
     canSendEmpty: () => boolean;
     onConsumed: () => void;
   };
+  /** 每条发送路径的隐式 metadata（如思考强度）。 */
+  sendMetadata?: () => Record<string, string> | undefined;
 }
 
 function useQueueHarness(
@@ -86,6 +88,7 @@ function useQueueHarness(
     },
     messageApi: messageApi as never,
     outgoingDecoration: options.outgoingDecoration,
+    sendMetadata: options.sendMetadata,
   });
   // Mirror useChatState's ordering: the queue hook registers its effects before
   // the outer owner synchronizes the canonical turns ref.
@@ -549,5 +552,74 @@ describe('useMessageInteractionQueue · 出站装饰', () => {
     await act(async () => result.current.submitInteraction('  hello  '));
 
     expect(sendMessage).toHaveBeenCalledWith('hello', undefined);
+  });
+});
+
+// ── 隐式 metadata（思考强度）──────────────────────────────────
+// 回归防线：2026-10-25 实测「界面选极致、报文却是 high」，根因是 Enter 发送
+// 走 handleKeyDown → submitInteraction(trimmed) 不带 options，只有点发送按钮才带。
+// 修复把 metadata 注入固定到 submitInteraction（所有路径的唯一汇聚点），以下用例锁住。
+describe('useMessageInteractionQueue · 隐式 metadata', () => {
+  const enterEvent = () => ({
+    key: 'Enter',
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    preventDefault: jest.fn(),
+  });
+
+  it('carries implicit metadata on the Enter path', async () => {
+    const sendMessage = jest.fn(async () => {});
+    const { result } = renderHook(() =>
+      useQueueHarness(undefined, {
+        sendMetadata: () => ({ reasoningEffort: 'max' }),
+      }),
+    );
+    act(() => result.current.bindSendMessage(sendMessage));
+    act(() => result.current.setInputValue('走一次极致'));
+
+    await act(async () => {
+      result.current.handleKeyDown(enterEvent() as never);
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith('走一次极致', {
+      metadata: { reasoningEffort: 'max' },
+    });
+  });
+
+  it('carries implicit metadata on the direct submit path', async () => {
+    const sendMessage = jest.fn(async () => {});
+    const { result } = renderHook(() =>
+      useQueueHarness(undefined, {
+        sendMetadata: () => ({ reasoningEffort: 'high' }),
+      }),
+    );
+    act(() => result.current.bindSendMessage(sendMessage));
+
+    await act(async () => result.current.submitInteraction('普通一轮'));
+
+    expect(sendMessage).toHaveBeenCalledWith('普通一轮', {
+      metadata: { reasoningEffort: 'high' },
+    });
+  });
+
+  it('lets explicit metadata override the implicit value', async () => {
+    const sendMessage = jest.fn(async () => {});
+    const { result } = renderHook(() =>
+      useQueueHarness(undefined, {
+        sendMetadata: () => ({ reasoningEffort: 'high' }),
+      }),
+    );
+    act(() => result.current.bindSendMessage(sendMessage));
+
+    await act(async () =>
+      result.current.submitInteraction('显式优先', {
+        metadata: { reasoningEffort: 'max' },
+      }),
+    );
+
+    expect(sendMessage).toHaveBeenCalledWith('显式优先', {
+      metadata: { reasoningEffort: 'max' },
+    });
   });
 });

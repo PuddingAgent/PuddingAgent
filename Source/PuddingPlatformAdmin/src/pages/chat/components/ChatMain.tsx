@@ -100,6 +100,8 @@ interface ChatMainProps {
   /** 本轮待附加技能（chip）；发送时由 ChatPage 转为文本附加。 */
   pendingSkills?: { skillId: string; name: string }[];
   onPendingSkillsChange?: (skills: { skillId: string; name: string }[]) => void;
+  reasoningEffort?: 'high' | 'max';
+  onReasoningEffortChange?: (effort: 'high' | 'max') => void;
   agentId: string | undefined;
   agentLoading: boolean;
   agOpts: { value: string; label: React.ReactNode; disabled: boolean }[];
@@ -261,6 +263,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
   agents,
   pendingSkills,
   onPendingSkillsChange,
+  reasoningEffort,
+  onReasoningEffortChange,
   currentUser,
   viewportScrollIntent,
   onViewportScrollIntentHandled,
@@ -790,6 +794,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     agents={agents}
                     pendingSkills={pendingSkills}
                     onPendingSkillsChange={onPendingSkillsChange}
+                    reasoningEffort={reasoningEffort}
+                    onReasoningEffortChange={onReasoningEffortChange}
                     onOpenDevDetails={() => setDevMode(true)}
                     disabled={disabled}
                     tLimit={tLimit}

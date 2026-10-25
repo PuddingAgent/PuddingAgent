@@ -43,6 +43,9 @@ interface ChatLayoutProps {
   /** 本轮待附加技能（chip 展示）；发送时由 ChatPage 转为文本附加到消息末尾。 */
   pendingSkills?: { skillId: string; name: string }[];
   onPendingSkillsChange?: (skills: { skillId: string; name: string }[]) => void;
+  /** 执行偏好（思考强度）；与 pendingSkills 同理托管在 chat 状态层。 */
+  reasoningEffort?: 'high' | 'max';
+  onReasoningEffortChange?: (effort: 'high' | 'max') => void;
   agentId: string | undefined;
   agentLoading: boolean;
   agOpts: { value: string; label: React.ReactNode; disabled: boolean }[];
@@ -175,7 +178,9 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         onWorkspaceChange={props.onWorkspaceChange}
         agents={props.agents}
         pendingSkills={props.pendingSkills}
-        onPendingSkillsChange={props.onPendingSkillsChange}
+                    onPendingSkillsChange={props.onPendingSkillsChange}
+                    reasoningEffort={props.reasoningEffort}
+                    onReasoningEffortChange={props.onReasoningEffortChange}
         agentId={props.agentId}
         agentLoading={props.agentLoading}
         agOpts={props.agOpts}

@@ -57,6 +57,12 @@ interface UseMessageInteractionQueueOptions {
    * 不经过 ChatPage 的 handleSend。若只在 handleSend 里拼接，按 Enter 就会丢掉装饰。
    */
   outgoingDecoration?: OutgoingDecoration;
+  /**
+   * 每条发送路径都应携带的隐式 metadata（如思考强度）。
+   * 注入点必须固定在这里：Enter / 发送按钮 / 图片 / window 事件四条路径中，
+   * Enter 与 window 事件不经过 ChatPage，只在调用点补必然漏。
+   */
+  sendMetadata?: () => Record<string, string> | undefined;
 }
 
 /**
@@ -81,6 +87,7 @@ export function useMessageInteractionQueue({
   execution,
   messageApi,
   outgoingDecoration,
+  sendMetadata,
 }: UseMessageInteractionQueueOptions) {
   const { workspaceId, agentId, selectedSessionId, sessionIdRef } = identity;
   const {
@@ -242,9 +249,16 @@ export function useMessageInteractionQueue({
         : raw;
       if (!outgoing) return;
       outgoingDecoration?.onConsumed();
-      dispatchInteraction(outgoing, options);
+      // 隐式 metadata 兜底：调用点显式传入的键优先（例如组件已带上的档位）。
+      const implicit = sendMetadata?.();
+      dispatchInteraction(
+        outgoing,
+        implicit
+          ? { ...options, metadata: { ...implicit, ...options?.metadata } }
+          : options,
+      );
     },
-    [dispatchInteraction, outgoingDecoration],
+    [dispatchInteraction, outgoingDecoration, sendMetadata],
   );
 
   const updateQueuedInteraction = useCallback(

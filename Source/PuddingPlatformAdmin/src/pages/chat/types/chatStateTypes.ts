@@ -255,6 +255,13 @@ export interface UseChatStateReturn {
   /** 本轮待附加技能（chip 展示；发送时由出站装饰并入文本末尾）。 */
   pendingSkills: { skillId: string; name: string }[];
   setPendingSkills: (skills: { skillId: string; name: string }[]) => void;
+  /**
+   * 思考强度（执行偏好）。与 pendingSkills 同理必须放在 chat 状态层：
+   * Enter 发送走 useMessageInteractionQueue 的 handleKeyDown → submitInteraction，
+   * 不经过 ChatPage 的 handleSend；放在组件内会导致「点按钮发 max、按 Enter 回落 high」。
+   */
+  reasoningEffort: 'high' | 'max';
+  setReasoningEffort: (effort: 'high' | 'max') => void;
   submitInteraction: (text: string, options?: ChatSendOptions) => Promise<void>;
   /**
    * 把文本注入当前正在运行的 canonical Turn（Steering）。

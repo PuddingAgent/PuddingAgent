@@ -453,6 +453,23 @@ export function useChatState(
   >([]);
 
   /**
+   * 执行偏好（思考强度）。放在本 hook 的同一条理由见 pendingSkills：
+   * Enter 发送不经过 ChatPage，状态留在组件内就会按 Enter 丢掉档位。
+   */
+  const [reasoningEffort, setReasoningEffort] = useState<'high' | 'max'>(
+    'high',
+  );
+
+  /**
+   * 每条发送路径的隐式 metadata。submitInteraction 是唯一汇聚点（含 Enter），
+   * 因此注入放在那一层，调用点显式传入的 metadata 优先级更高。
+   */
+  const sendMetadata = useMemo(
+    () => () => ({ reasoningEffort }),
+    [reasoningEffort],
+  );
+
+  /**
    * 出站文本装饰：把技能提示并入真正发出的文本。
    * apply 必须是纯函数（submitInteraction 可能重复调用），故只读快照；
    * 消费清空由 onConsumed 负责。
@@ -537,6 +554,7 @@ export function useChatState(
     },
     messageApi,
     outgoingDecoration,
+    sendMetadata,
   });
   const {
     historyLoading,
@@ -1667,6 +1685,8 @@ export function useChatState(
     setInputValue,
     pendingSkills,
     setPendingSkills,
+    reasoningEffort,
+    setReasoningEffort,
     loading: executionLoading,
     workingAgentIds,
     interactionQueue,

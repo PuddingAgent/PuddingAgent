@@ -755,6 +755,8 @@ const ChatPageContent: React.FC = () => {
         workspaceId={chat.workspaceId}
         pendingSkills={chat.pendingSkills}
         onPendingSkillsChange={chat.setPendingSkills}
+        reasoningEffort={chat.reasoningEffort}
+        onReasoningEffortChange={chat.setReasoningEffort}
         workspaceLoading={chat.workspaceLoading}
         wsOpts={chat.wsOpts}
         onWorkspaceChange={handleWorkspaceChange}

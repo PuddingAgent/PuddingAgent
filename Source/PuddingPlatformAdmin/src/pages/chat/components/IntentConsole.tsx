@@ -260,6 +260,9 @@ interface IntentConsoleProps {
   /** 本轮待附加技能（以 chip 展示在输入框上方；发送时转为文本）。 */
   pendingSkills?: { skillId: string; name: string }[];
   onPendingSkillsChange?: (skills: { skillId: string; name: string }[]) => void;
+  /** 思考强度（受控）；未提供时回落到本地状态。 */
+  reasoningEffort?: 'high' | 'max';
+  onReasoningEffortChange?: (effort: 'high' | 'max') => void;
   /** 打开 ChatMain 持有的固定子代理运行检查器。 */
   onOpenSubAgentInspector?: () => void;
   /** 浏览器语音输入适配器；测试与后续 ASR Provider 接入可替换该适配器 */
@@ -321,6 +324,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   agents,
   pendingSkills,
   onPendingSkillsChange,
+  reasoningEffort,
+  onReasoningEffortChange,
   onOpenSubAgentInspector,
   voiceInputAdapter = createDashScopeVoiceInputAdapter(),
   voiceOutputAdapter = defaultBrowserVoiceOutputAdapter,
@@ -402,10 +407,16 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const [interactionMode, setInteractionMode] = useState<'keyboard' | 'voice'>(
     'keyboard',
   );
-  /** Agent 执行偏好：仅影响前端显示，后续可接入后端策略。 */
-  const [executionMode, setExecutionMode] = useState<'high' | 'max'>(
+  /**
+   * Agent 执行偏好（思考强度）。必须由 chat 状态层托管：Enter 发送不经过本组件，
+   * 状态留在这里就会「点发送按钮发 max、按 Enter 回落 high」。
+   * 未接入状态层的宿主（内嵌面板 / 单测）仍回落到本地状态。
+   */
+  const [localExecutionMode, setLocalExecutionMode] = useState<'high' | 'max'>(
     'high',
   );
+  const executionMode = reasoningEffort ?? localExecutionMode;
+  const setExecutionMode = onReasoningEffortChange ?? setLocalExecutionMode;
   /** 已完成状态短暂显示后自动消失 */
   const [completedVisible, setCompletedVisible] = useState(false);
   /** Composer 输入容器焦点状态 */
