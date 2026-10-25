@@ -80,7 +80,8 @@
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
-| `Services/WorkspaceAgentFileService.cs` | Agent 文件服务（65KB） | `WorkspaceAgentFileService` | `Services/AgentTemplateFileService.cs` | Agent 增删改查与校验；Markdown 原样保存、空串清空、null 保留；新增文档同步 manifest 引用，保存响应返回完整提示词 |
+| `Services/WorkspaceAgentFileService.cs` | Agent 文件服务（65KB） | `WorkspaceAgentFileService` | `Services/AgentTemplateFileService.cs` | Agent 增删改查与校验；Markdown 原样保存、空串清空、null 保留；新增文档同步 manifest 引用，保存响应返回完整提示词；**2026-10-25**：新增 `UpdateReasoningEffortAsync`（只碰 manifest.reasoningEffort 一个字段，不复用整份替换的 UpdateAgentAsync；llm.json 存在时同步镜像，不存在则不创建，避免第二真源） |
+| `Services/WorkspaceAgentReasoningEffortStore.cs` | `IAgentReasoningEffortStore` 的落地适配器（/effort 命令） | `WorkspaceAgentReasoningEffortStore` | `Services/WorkspaceAgentFileService.cs`、`PuddingCore/Platform/IAgentReasoningEffortStore.cs` | 合法性不在这一层重复判断（写入口有两个：本适配器与 HTTP 窄端点），统一交给 `ReasoningEffortPolicy.TryNormalizeSelection` |
 | `Services/AgentTemplateFileService.cs` | 模板文件服务（27KB） | `AgentTemplateFileService` | `Services/AgentTemplateProvider.cs` | 单文件承载模板读写 |
 | `Services/AgentTemplateProvider.cs` | 模板提供 | `AgentTemplateProvider` | `Services/AgentTemplateFileService.cs` | — |
 | `Services/AgentLLMConfigResolver.cs` | LLM 配置解析 | `AgentLLMConfigResolver` | `Services/AgentRuntimeProfileResolver.cs` | 把选中模型的协议写入 LlmConfig |
