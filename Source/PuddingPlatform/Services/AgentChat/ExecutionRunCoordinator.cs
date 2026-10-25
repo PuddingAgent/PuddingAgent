@@ -848,7 +848,11 @@ public sealed class ExecutionRunCoordinator(
     /// 只做透传，不做合法性判断——合法性由 ReasoningEffortPolicy 在合成处统一裁决，
     /// 这样非法值会被跳过并回传原值，而不是在入口静默丢弃。
     /// </summary>
-    private static string? ReadReasoningEffort(string? metadataJson)
+    /// <remarks>
+    /// internal 而非 private：这一跳（metadata 键名 → 快照）改错键名仍能编译通过，
+    /// 只会静默失效。降为 internal 让测试能钉住键名与透传语义。
+    /// </remarks>
+    internal static string? ReadReasoningEffort(string? metadataJson)
     {
         var metadata = DeserializeMetadata(metadataJson);
         return metadata is null ? null : GetMetadataValue(metadata, "reasoningEffort");
