@@ -140,9 +140,14 @@ public sealed class BrowserControlPlaneEndToEndTests
     }
 
     [Fact]
-    public async Task ReleasingADefaultedTargetIsNotUndoneByALaterBinding()
+    public async Task ReleasingADefaultedTargetDoesNotBlockALaterBinding()
     {
-        // 没有这条，"设为 Agent 目标"关掉之后下一次工具调用又会自动打开——开关就成了骗人的控件。
+        // 语义变更（用户裁定 2026-10-25）：移除「设为 Agent 目标」开关后，默认化按需重入。
+        //
+        // 原用例断言的是「默认只做一次、撤销后不再恢复」。那条规则只在开关存在时才有意义
+        // （防止开关骗人）；开关移除后它反而制造新的假故障：短期授权到期后无法再次申请，
+        // 页面会在使用中突然不可驱动。因此本用例改断「释放不会永久堵死后续绑定」，
+        // 并且仍然断「判据是上下文可信级，不是任意页面」。
         var harness = Arrange(selectAgentTarget: false);
         Assert.True((await ApplyAsync(harness, "op-default")).BindingAck!.Accepted);
 
@@ -150,8 +155,8 @@ public sealed class BrowserControlPlaneEndToEndTests
 
         var second = await ApplyAsync(harness, "op-after-release");
 
-        Assert.False(second.BindingAck!.Accepted);
-        Assert.Contains("explicitly released", second.BindingAck.Reason!, StringComparison.Ordinal);
+        Assert.True(second.BindingAck!.Accepted, second.BindingAck.Reason);
+        Assert.NotNull(second.BindingAck.GrantId);
     }
 
     [Fact]

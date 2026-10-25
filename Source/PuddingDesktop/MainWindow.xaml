@@ -572,12 +572,6 @@
         <Button Content="&#xE72C;" Style="{StaticResource ToolRoundButtonStyle}" Click="OnReload" ToolTipService.ToolTip="刷新"/>
        </StackPanel>
        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="4,0">
-        <Button Style="{StaticResource ToolRoundTextButtonStyle}" Click="OnTarget" ToolTipService.ToolTip="把当前页面设为 Agent 目标">
-         <StackPanel Orientation="Horizontal" Spacing="6">
-          <FontIcon Glyph="&#xE7B3;" FontSize="{StaticResource FontSizeCaption}"/>
-          <TextBlock Text="设为 Agent 目标" VerticalAlignment="Center"/>
-         </StackPanel>
-        </Button>
         <ToggleButton x:Name="Takeover" Style="{StaticResource ToolRoundToggleStyle}" Click="OnTakeover" ToolTipService.ToolTip="人工接管：暂停 Agent 操作">
          <StackPanel Orientation="Horizontal" Spacing="6">
           <FontIcon Glyph="&#xE7FC;" FontSize="{StaticResource FontSizeCaption}"/>

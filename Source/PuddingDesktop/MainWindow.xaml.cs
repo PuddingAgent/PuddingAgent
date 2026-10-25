@@ -3059,7 +3059,7 @@ public sealed partial class MainWindow : Window
     private void OnCopyAddress(object sender, RoutedEventArgs e) => CopyToClipboard(AddressBox.Text.Trim());
     private void OnOpenAddressExternally(object sender, RoutedEventArgs e) => OpenExternal(AddressBox.Text.Trim());
     private async void OnReload(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.ReloadAsync(page, ct)); }
-    private async void OnTarget(object sender, RoutedEventArgs e) { if (_browser?.ActivePageId is { } page) await RunAsync(ct => _browser.AssignAgentTargetAsync(page, ct)); }
+   
     private async void OnTakeover(object sender, RoutedEventArgs e) { if (_browser is not null) await RunAsync(ct => _browser.SetUserTakeoverAsync(Takeover.IsChecked == true, ct)); }
 
     private async void OnClearSiteCookies(object sender, RoutedEventArgs e) => await ClearCookiesAsync(siteOnly: true);

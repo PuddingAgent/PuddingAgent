@@ -106,10 +106,19 @@ public sealed class BrowserNavigateTool(
                 _ => DesktopNavigationAction.Goto,
             };
 
+            // 每次能力调用必须各自新签发 operation id：broker 对「同 id 不同 payload」判重复请求。
+            // 本工具在 context 缺省时会先调 GetContextsAsync、再调 NavigateAsync；两条命令共用同一个
+            // 调用上下文时，第二条必然被拒（实测：duplicate operation id with a different payload）。
+            if (callContexts.TryCreate(CurrentPermissionEvidenceSummary()) is not { } navigateCall)
+            {
+                return BrowserToolResponse.Failure(
+                    "browser_not_connected", "No Desktop is connected for browser capabilities");
+            }
+
             // 导航不强钉版本（与迁移前一致）：契约用 Unknown 表达"当前版本即可"。
             var navigated = await surface.NavigateAsync(
                 new NavigateRequest(target, url, DesktopPageVersion.Unknown, navigationAction, args.TimeoutMs),
-                call,
+                navigateCall,
                 ct);
             if (navigated.IsFailure)
             {

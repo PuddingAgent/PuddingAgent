@@ -35,12 +35,8 @@ public sealed class BrowserTaskBindingService(
 
     private readonly Dictionary<string, ActiveBinding> _active = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// 曾被「默认化」接管过的页面（键为 <c>contextId/pageId</c>）。
-    /// 默认化只做一次：用户随后显式撤销（把「设为 Agent 目标」关掉）后，同一页面不会被下一次
-    /// 工具调用自动恢复成目标页 —— 否则那个开关就成了骗人的控件。用户重新显式选定仍可再次授权。
-    /// </summary>
-    private readonly HashSet<string> _autoDefaulted = new(StringComparer.Ordinal);
+    // 用户裁定 2026-10-25：AgentAuthorized 上下文里的页面默认就是 Agent 目标，
+    // 开关（以及它依赖的「只默认一次」标记）已移除，因此不再需要历史账。
 
     /// <summary>当前已受理的绑定数（用于撤销与测试断言）。</summary>
     public int ActiveCount => _active.Count;
@@ -74,16 +70,12 @@ public sealed class BrowserTaskBindingService(
         else if (_lifecycle.BrowserTargets.TrustFor(binding.Target.ContextId)
                  == DesktopContextTrust.AgentAuthorized)
         {
-            if (!_autoDefaulted.Add(binding.Target.Key))
-            {
-                // 这一页先前被默认过、随后被显式撤销：尊重撤销，不回填。
-                return new BrowserBindingAcceptance(
-                    false,
-                    "the page was explicitly released by the user after an automatic hand-over; select it again to re-authorize",
-                    default);
-            }
-
             // 两个注册表都对齐，避免出现「准入说这是目标页、UI 说没有」的漂移。
+            //
+            // 这里曾经有「只默认一次」的标记（`_autoDefaulted`）：默认化过一次后不再自动恢复，
+            // 以免「设为 Agent 目标」开关变成骗人的控件。用户裁定移除该开关后，这个标记就失去意义，
+            // 反而制造了新的假故障：短期授权到期后无法再次申请，页面在使用中突然不可驱动。
+            // 故去掉标记 —— 默认化按需重入，判据（上下文可信级）仍是唯一闸门。
             _lifecycle.SetAgentTarget(binding.Target.ContextId, binding.Target.PageId);
         }
         else

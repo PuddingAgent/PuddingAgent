@@ -1051,6 +1051,45 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
         // 隐式绑定只写会话，**不**写桌面注册表的 IsAgentTarget 标志。
         var sessionAdmitted = !string.IsNullOrWhiteSpace(context.SessionPermitMarker);
 
+        // 局部函数（用户裁定 2026-10-25）：**AgentAuthorized 上下文里的页面默认被授权**。
+        //
+        // 桌面工具面板里的浏览器本来就是给 Agent 用的，要求用户先点一次「设为 Agent 目标」
+        // 属于纯摩擦，不是安全增益：真正该守的边界是「哪些上下文可信」，而不是「哪一页被点过」。
+        // 因此改为按需签发一张短期页级授权；工作台 / 第三方页面（非 AgentAuthorized）仍走原判据，
+        // 默认化不得外溢到用户自己的浏览区。
+        void EnsureDefaultAgentPageGrant(BrowserCallerIdentity caller, DesktopPageTarget? page)
+        {
+            if (_taskBindings is null || page is null)
+            {
+                return;
+            }
+
+            // 信任级取自页面注册表本身（未登记 ⇒ 不签发）。这里不能用 TrustFor：
+            // 那是 BrowserTargetRegistry 的方法，而本类持有的注册表类型不同。
+            if (Targets.Resolve(page) is not { } agentPage
+                || agentPage.Trust != DesktopContextTrust.AgentAuthorized)
+            {
+                return;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (Authority.ActiveGrants.Any(grant =>
+                grant.Target == page
+                && grant.Grantee.IsSameTaskScope(caller)
+                && (grant.ExpiresAtUtc is null || grant.ExpiresAtUtc > now)))
+            {
+                return; // 已有覆盖该页的有效授权，不重复签发
+            }
+
+            // 签发失败不在这里抛：真正的裁决仍在 Authority.Admit，失败会把原因如实回给调用方。
+            _ = _taskBindings.Accept(new BrowserTaskBinding(
+                caller,
+                page,
+                BrowserPageGrantScope.Read | BrowserPageGrantScope.Write,
+                TimeSpan.FromMinutes(5),
+                "desktop:agent-default-page"));
+        }
+
         if (admitAuthority
             && _connectionGeneration is { } generation
             && authorizationOperation is { } automationOperation)
@@ -1062,6 +1101,8 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
 
             if (!sessionAdmitted)
             {
+                EnsureDefaultAgentPageGrant(browserCaller, target);
+
                 var decision = Authority.Admit(new BrowserAutomationRequest(
                     automationOperation,
                     browserCaller,
