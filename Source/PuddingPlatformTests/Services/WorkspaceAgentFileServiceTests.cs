@@ -1,7 +1,8 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using PuddingCode.Configuration;
 using PuddingCode.Abstractions;
 using PuddingPlatform.Data;
@@ -433,6 +434,159 @@ public sealed class WorkspaceAgentFileServiceTests
             Assert.AreEqual("main-session-123", updated.MainSessionId);
             Assert.AreEqual("main-session-123", loaded!.MainSessionId);
             Assert.AreEqual("main-session-123", listed.Single().MainSessionId);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task UpdateReasoningEffortAsync_ShouldPersistOnlyThatField()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-workspace-agent-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(root);
+            var paths = PuddingDataPaths.FromRoot(root);
+            var dbPath = Path.Combine(root, "platform.db");
+            var options = new DbContextOptionsBuilder<PlatformDbContext>()
+                .UseSqlite($"Data Source={dbPath}")
+                .Options;
+
+            await using (var db = new PlatformDbContext(options))
+            {
+                await db.Database.EnsureCreatedAsync();
+            }
+
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
+            var templateService = new AgentTemplateFileService(
+                paths,
+                avatarCatalog,
+                NullLogger<AgentTemplateFileService>.Instance);
+            var service = new WorkspaceAgentFileService(
+                paths,
+                templateService,
+                avatarCatalog,
+                CreateMemoryScopeFactory(),
+                NullLogger<WorkspaceAgentFileService>.Instance);
+
+            var created = await service.CreateAgentAsync(
+                "default",
+                new CreateWorkspaceAgentRequest(
+                    Name: "effort-agent",
+                    Description: "desc-keep-me",
+                    DisplayName: "Effort Agent",
+                    AvatarId: null,
+                    AvatarUrl: null,
+                    SourceTemplateId: null,
+                    SystemPromptOverride: "prompt-keep-me",
+                    PreferredProviderId: null,
+                    PreferredModelId: null));
+
+            var before = await service.GetAgentAsync("default", created.AgentId);
+            Assert.IsNull(before!.ReasoningEffort, "新建 Agent 不应自带显式档位");
+
+            var updated = await service.UpdateReasoningEffortAsync("default", created.AgentId, "MAX");
+            Assert.AreEqual("max", updated.ReasoningEffort);
+
+            // 落盘真源：直接读 manifest.json，不采信返回值。
+            var manifestPath = Path.Combine(paths.AgentInstanceRoot(created.AgentId), "manifest.json");
+            var persisted = JsonSerializer.Deserialize<AgentInstanceManifest>(
+                await File.ReadAllTextAsync(manifestPath),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            Assert.AreEqual("max", persisted!.ReasoningEffort);
+
+            // 读回与列表都必须反映新值，否则前端切 Agent 后仍显示旧档位。
+            var loaded = await service.GetAgentAsync("default", created.AgentId);
+            Assert.AreEqual("max", loaded!.ReasoningEffort);
+            Assert.AreEqual("max", (await service.ListAgentsAsync("default")).Single().ReasoningEffort);
+
+            // 只改一个字段：除思考强度外，其它字段必须与更新前逐项相同。
+            // （不断言具体字面量：创建路径对 SystemPromptOverride 的落盘规则不属于本用例范围）
+            Assert.AreEqual(before.DisplayName, updated.DisplayName);
+            Assert.AreEqual(before.SystemPrompt, updated.SystemPrompt);
+            Assert.AreEqual(before.Description, updated.Description);
+            Assert.AreEqual(before.PreferredProviderId, updated.PreferredProviderId);
+            Assert.AreEqual(before.PreferredModelId, updated.PreferredModelId);
+            Assert.AreEqual(before.IsEnabled, updated.IsEnabled);
+
+            // 管理端兼容镜像同步；不同步会让管理端显示旧值（第二真源）。
+            var mirrorPath = paths.AgentInstanceConfigFile(created.AgentId, "llm.json");
+            var mirror = JsonSerializer.Deserialize<AgentInstanceLlmConfig>(
+                await File.ReadAllTextAsync(mirrorPath),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            Assert.AreEqual("max", mirror!.Conscious!.ReasoningEffort);
+
+            // auto = 清除显式配置，回到模型默认。
+            var cleared = await service.UpdateReasoningEffortAsync("default", created.AgentId, "auto");
+            Assert.IsNull(cleared.ReasoningEffort);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task UpdateReasoningEffortAsync_ShouldRejectUnsupportedLevelWithoutWriting()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-workspace-agent-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(root);
+            var paths = PuddingDataPaths.FromRoot(root);
+            var dbPath = Path.Combine(root, "platform.db");
+            var options = new DbContextOptionsBuilder<PlatformDbContext>()
+                .UseSqlite($"Data Source={dbPath}")
+                .Options;
+
+            await using (var db = new PlatformDbContext(options))
+            {
+                await db.Database.EnsureCreatedAsync();
+            }
+
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
+            var templateService = new AgentTemplateFileService(
+                paths,
+                avatarCatalog,
+                NullLogger<AgentTemplateFileService>.Instance);
+            var service = new WorkspaceAgentFileService(
+                paths,
+                templateService,
+                avatarCatalog,
+                CreateMemoryScopeFactory(),
+                NullLogger<WorkspaceAgentFileService>.Instance);
+
+            var created = await service.CreateAgentAsync(
+                "default",
+                new CreateWorkspaceAgentRequest(
+                    Name: "effort-reject-agent",
+                    Description: null,
+                    DisplayName: null,
+                    AvatarId: null,
+                    AvatarUrl: null,
+                    SourceTemplateId: null,
+                    SystemPromptOverride: null,
+                    PreferredProviderId: null,
+                    PreferredModelId: null));
+
+            var manifestPath = Path.Combine(paths.AgentInstanceRoot(created.AgentId), "manifest.json");
+
+            await Assert.ThrowsAsync<ArgumentException>(
+                () => service.UpdateReasoningEffortAsync("default", created.AgentId, "medium"));
+
+            // 拒绝必须是「什么都没写」：静默回落或半写都会让用户误以为改了档位。
+            Assert.IsFalse((await File.ReadAllTextAsync(manifestPath)).Contains("medium", StringComparison.Ordinal));
+            Assert.IsNull((await service.GetAgentAsync("default", created.AgentId))!.ReasoningEffort);
         }
         finally
         {

@@ -101,6 +101,34 @@ public class WorkspaceAgentApiController(
         return Ok(agent);
     }
 
+    // PUT /api/workspaces/{workspaceId}/agents/{agentId}/reasoning-effort
+    // 只写思考强度一个字段：聊天面板下拉与 /effort 命令共用这条路径。
+    // 不用 PUT 整体更新，是因为 UpdateWorkspaceAgentRequest 是整份替换语义，
+    // 缺省字段会把无关配置一并覆盖。
+    [HttpPut("{agentId}/reasoning-effort")]
+    public async Task<ActionResult<WorkspaceAgentDto>> SetReasoningEffort(
+        string workspaceId,
+        string agentId,
+        [FromBody] SetAgentReasoningEffortRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var agent = await fileService.UpdateReasoningEffortAsync(
+                workspaceId, agentId, request.ReasoningEffort, ct);
+            return Ok(agent);
+        }
+        catch (ArgumentException ex)
+        {
+            // 非法档位显式拒绝，不静默回落：静默会让用户以为改了、实际按默认跑。
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
     // DELETE /api/workspaces/{workspaceId}/agents/{agentId}
     [HttpDelete("{agentId}")]
     public async Task<IActionResult> Delete(string workspaceId, string agentId, CancellationToken ct)
@@ -179,3 +207,9 @@ public sealed record AgentAccessLevelDto(
 
 /// <summary>Agent 访问级别写请求。DurationSeconds 留空 = 持久授权；非空 = 临时授权。</summary>
 public sealed record SetAgentAccessLevelRequest(string Level, int? DurationSeconds = null);
+
+/// <summary>
+/// Agent 思考强度写请求。<c>high</c> / <c>max</c> 为显式档位；
+/// <c>auto</c> 或留空表示清除该 Agent 的显式配置、回到模型默认。
+/// </summary>
+public sealed record SetAgentReasoningEffortRequest(string? ReasoningEffort);

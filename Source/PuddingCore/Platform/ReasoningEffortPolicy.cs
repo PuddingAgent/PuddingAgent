@@ -116,4 +116,47 @@ public static class ReasoningEffortPolicy
 
     private static string? Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// 「跟随模型默认」的写入别名：归一化为 null，表示清除该 Agent 的显式配置。
+    /// 之所以保留这个名字而不是让界面传空串：命令行的空参数无法与「漏写参数」区分。
+    /// </summary>
+    public const string AutoSelection = "auto";
+
+    /// <summary>用户在界面/命令入口可以写入的档位。</summary>
+    public static bool IsUserSelectable(string? effort)
+        => effort is High or Max;
+
+    /// <summary>
+    /// 归一化一次用户选择（聊天面板下拉或 <c>/effort</c> 命令）——写入前的唯一裁决点。
+    ///
+    /// 语义：
+    /// ① null / 空白 / <c>auto</c> / <c>default</c> ⇒ <paramref name="effort"/> = null，
+    ///    表示清除该 Agent 的显式配置、回到模型默认；
+    /// ② <c>high</c> / <c>max</c>（大小写与首尾空白不敏感）⇒ 归一化为小写原值；
+    /// ③ 其它一律拒绝并给出原因。low / none / medium 都在拒绝之列：
+    ///    provider 视角 low 合法、medium 根本不存在，但对本产品它们都不是可选项，
+    ///    静默接受会让用户以为改了档位、实际按默认跑。
+    /// </summary>
+    public static bool TryNormalizeSelection(string? raw, out string? effort, out string? error)
+    {
+        effort = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(raw))
+            return true;
+
+        var value = raw.Trim().ToLowerInvariant();
+        if (value is AutoSelection or "default")
+            return true;
+
+        if (IsUserSelectable(value))
+        {
+            effort = value;
+            return true;
+        }
+
+        error = $"unsupported reasoning effort '{raw.Trim()}'; expected one of: high, max, auto";
+        return false;
+    }
 }

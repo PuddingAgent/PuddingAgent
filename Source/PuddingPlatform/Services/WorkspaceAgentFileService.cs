@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
+using PuddingCode.Platform;
 using PuddingPlatform.Data.Dtos;
 
 namespace PuddingPlatform.Services;
@@ -1007,6 +1008,95 @@ public sealed class WorkspaceAgentFileService :
         {
             _writeLock.Release();
         }
+    }
+
+    /// <summary>
+    /// 只改 Agent 实例的思考强度（reasoning effort），不动其它任何字段。
+    ///
+    /// 为什么不复用 <see cref="UpdateAgentAsync"/>：它的请求对象是「整份替换」语义
+    /// （IsEnabled 是非空 bool、TemplateId / MemorySearchMode / Capabilities 缺省即覆盖），
+    /// 从聊天面板或 /effort 命令调用它会把无关配置一并改掉。这里只碰一个字段。
+    ///
+    /// 真源是实例 manifest：聊天执行的 AgentRuntimeProfileResolver 只读它
+    /// （llm.json 是早期绑定，已不参与主 Agent 路由）。llm.json 仅作管理端兼容镜像，
+    /// 存在时一并同步，避免两处显示不一致。
+    /// </summary>
+    public async Task<WorkspaceAgentDto> UpdateReasoningEffortAsync(
+        string workspaceId,
+        string agentId,
+        string? effort,
+        CancellationToken ct = default)
+    {
+        if (!ReasoningEffortPolicy.TryNormalizeSelection(effort, out var normalized, out var error))
+            throw new ArgumentException(error, nameof(effort));
+
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            var refData = await LoadWorkspaceRefAsync(workspaceId, agentId, ct);
+            if (refData is null)
+                throw new KeyNotFoundException($"Agent '{agentId}' in workspace '{workspaceId}' 不存在");
+
+            var manifest = await LoadInstanceManifestAsync(agentId, ct);
+            if (manifest is null)
+                throw new KeyNotFoundException($"Agent instance '{agentId}' 不存在");
+
+            var current = string.IsNullOrWhiteSpace(manifest.ReasoningEffort)
+                ? null
+                : manifest.ReasoningEffort.Trim().ToLowerInvariant();
+
+            if (!string.Equals(current, normalized, StringComparison.Ordinal))
+            {
+                var updated = manifest with { ReasoningEffort = normalized };
+                await AtomicFileWriter.WriteJsonAsync(
+                    Path.Combine(_paths.AgentInstanceRoot(agentId), "manifest.json"),
+                    updated,
+                    JsonOptions,
+                    ct);
+
+                _logger.LogInformation(
+                    "Agent reasoning effort updated: agent={AgentId} effort={Effort}",
+                    agentId,
+                    normalized ?? ReasoningEffortPolicy.AutoSelection);
+            }
+
+            await SyncMirrorReasoningEffortAsync(agentId, normalized, ct);
+
+            return (await GetAgentAsync(workspaceId, agentId, ct))!;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// 同步管理端兼容镜像 llm.json 的 Conscious.ReasoningEffort。
+    /// 该文件不存在时**不创建**：创建语义属于 CreateAgentAsync，
+    /// 这里凭空补一份会把「镜像」变成第二真源。
+    /// </summary>
+    private async Task SyncMirrorReasoningEffortAsync(
+        string agentId,
+        string? effort,
+        CancellationToken ct)
+    {
+        var path = _paths.AgentInstanceConfigFile(agentId, "llm.json");
+        if (!File.Exists(path))
+            return;
+
+        var existing = await AtomicFileWriter.ReadJsonAsync<AgentInstanceLlmConfig>(path, JsonOptions, ct);
+        if (existing?.Conscious is null)
+            return;
+
+        if (string.Equals(existing.Conscious.ReasoningEffort, effort, StringComparison.Ordinal))
+            return;
+
+        var mirrored = existing with
+        {
+            Conscious = existing.Conscious with { ReasoningEffort = effort },
+        };
+
+        await AtomicFileWriter.WriteJsonAsync(path, mirrored, JsonOptions, ct);
     }
 
     public async Task SetChannelBindingAsync(

@@ -140,4 +140,50 @@ public sealed class ReasoningEffortPolicyTests
         Assert.AreEqual(ReasoningEffortPolicy.Max, decision.Effort);
         Assert.AreEqual(ReasoningEffortPolicy.Origin.Preference, decision.Source);
     }
+
+    [DataTestMethod]
+    [DataRow(null, null)]
+    [DataRow("", null)]
+    [DataRow("   ", null)]
+    [DataRow("auto", null)]
+    [DataRow("AUTO", null)]
+    [DataRow("default", null)]
+    [DataRow("high", "high")]
+    [DataRow("HIGH", "high")]
+    [DataRow(" max ", "max")]
+    public void UserSelectionNormalizesToWritableLevel(string? raw, string? expected)
+    {
+        // 写入路径的唯一裁决点：auto/留空 ⇒ 清除（null），high/max ⇒ 小写原值。
+        var ok = ReasoningEffortPolicy.TryNormalizeSelection(raw, out var effort, out var error);
+
+        Assert.IsTrue(ok);
+        Assert.IsNull(error);
+        Assert.AreEqual(expected, effort);
+    }
+
+    [DataTestMethod]
+    [DataRow("low")]
+    [DataRow("none")]
+    [DataRow("medium")]
+    [DataRow("extreme")]
+    public void UserSelectionRejectsNonWritableLevel(string raw)
+    {
+        // low / none 在 provider 视角合法、medium 根本不存在，但对本产品都不是可选项。
+        // 必须显式拒绝：静默接受会让用户以为改了档位、实际按默认跑。
+        var ok = ReasoningEffortPolicy.TryNormalizeSelection(raw, out var effort, out var error);
+
+        Assert.IsFalse(ok);
+        Assert.IsNull(effort);
+        StringAssert.Contains(error, "high, max, auto");
+    }
+
+    [TestMethod]
+    public void UserSelectableExcludesLowAndNone()
+    {
+        Assert.IsTrue(ReasoningEffortPolicy.IsUserSelectable("high"));
+        Assert.IsTrue(ReasoningEffortPolicy.IsUserSelectable("max"));
+        Assert.IsFalse(ReasoningEffortPolicy.IsUserSelectable("low"));
+        Assert.IsFalse(ReasoningEffortPolicy.IsUserSelectable("none"));
+        Assert.IsFalse(ReasoningEffortPolicy.IsUserSelectable(null));
+    }
 }
