@@ -209,3 +209,61 @@ export async function setServerLogLevel(
     data: { level },
   });
 }
+
+// ── Agent 级思考强度 REST ─────────────────────────
+// 后端真源是 Agent 实例 manifest 的 reasoningEffort（聊天执行的 profile resolver 只读它），
+// 改完后飞书等不带 metadata 的渠道会自动继承：
+//   GET /api/workspaces/{ws}/agents/{id} → WorkspaceAgentDto.reasoningEffort: "high"|"max"|null
+//   PUT /api/workspaces/{ws}/agents/{id}/reasoning-effort  body { reasoningEffort }
+// 读失败返回 null（不伪造状态）；写失败返回 false 由调用方回读。
+
+export type AgentReasoningEffort = 'high' | 'max';
+
+/** 归一化后端返回值：只认 high/max，其余（null、旧值、未知）一律视为“无显式配置”。 */
+function toAgentReasoningEffort(data: unknown): AgentReasoningEffort | null {
+  if (!data || typeof data !== 'object') return null;
+  const raw = (data as { reasoningEffort?: unknown }).reasoningEffort;
+  if (typeof raw !== 'string') return null;
+  const value = raw.toLowerCase();
+  return value === 'high' || value === 'max' ? value : null;
+}
+
+/** 读取该 Agent 的持久化思考强度；null = 无显式配置或端点不可用。 */
+export async function loadAgentReasoningEffort(
+  workspaceId: string,
+  agentId: string,
+): Promise<AgentReasoningEffort | null> {
+  try {
+    const data = await request<unknown>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}`,
+      { method: 'GET', skipErrorHandler: true },
+    );
+    return toAgentReasoningEffort(data);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 写回该 Agent 的思考强度（幂等 PUT）；成功返回 true。
+ * 后端拒绝非法档位（400）——调用方不应静默忽略 false，否则界面会说谎。
+ */
+export async function saveAgentReasoningEffort(
+  workspaceId: string,
+  agentId: string,
+  effort: AgentReasoningEffort,
+): Promise<boolean> {
+  try {
+    await request(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/reasoning-effort`,
+      {
+        method: 'PUT',
+        data: { reasoningEffort: effort },
+        skipErrorHandler: true,
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}

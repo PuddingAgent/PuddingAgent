@@ -16,6 +16,8 @@ import {
 } from './reasoningEffortPreference';
 import {
   loadAgentAccessLevel,
+  loadAgentReasoningEffort,
+  saveAgentReasoningEffort,
   saveAgentAccessLevel,
   type AgentAccessLevelState,
 } from '../client/agentChatApi';
@@ -460,7 +462,7 @@ export function useChatState(
    * 执行偏好（思考强度）。放在本 hook 的同一条理由见 pendingSkills：
    * Enter 发送不经过 ChatPage，状态留在组件内就会按 Enter 丢掉档位。
    */
-  const [reasoningEffort, setReasoningEffort] = useState<'high' | 'max'>(
+  const [reasoningEffort, setReasoningEffortState] = useState<'high' | 'max'>(
     'high',
   );
 
@@ -474,10 +476,14 @@ export function useChatState(
   );
 
   /**
-   * 执行偏好持久化（按 Agent 隔离）。
-   * 档位只存在于 React state 时，刷新 / 切页会静默回到默认 high：
-   * 界面显示“深入”、实际也发 high，用户无法从界面察觉。
-   * key 带 agentId，保证多 Agent 互不影响。
+   * 执行偏好持久化：两层存储，各管一件事。
+   *
+   * ① localStorage（key 带 agentId）：刷新/切页/切 Agent 不闪回默认。
+   *    档位只活在 React state 时，刷新后界面显示“深入”、实际也发 high，用户无法从界面察觉。
+   * ② 后端 Agent manifest：唯一能被飞书等不带 metadata 的渠道继承的存储点。
+   *    没有它，桌面选「极致」、飞书仍是 high，两边不一致且不会报错。
+   *
+   * 读取顺序：localStorage 先给即时值，再以后端为准（后端有显式配置时覆盖本地缓存）。
    */
   const reasoningEffortStorageKey = agentId
     ? `pudding.chat.reasoningEffort:${agentId}`
@@ -489,9 +495,20 @@ export function useChatState(
     if (!key) return;
     if (reasoningEffortHydratedKeyRef.current === key) return;
     reasoningEffortHydratedKeyRef.current = key;
+
     const stored = readReasoningEffort(agentId);
-    if (stored) setReasoningEffort(stored);
-  }, [reasoningEffortStorageKey]);
+    if (stored) setReasoningEffortState(stored);
+
+    if (!workspaceId || !agentId) return;
+    let alive = true;
+    void loadAgentReasoningEffort(workspaceId, agentId).then((next) => {
+      if (!alive || !next) return;
+      setReasoningEffortState(next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [agentId, reasoningEffortStorageKey, workspaceId]);
 
   useEffect(() => {
     const key = reasoningEffortStorageKey;
@@ -499,7 +516,27 @@ export function useChatState(
     // 先完成该 Agent 的读回，否则会把默认值写进去盖掉已保存的选择。
     if (reasoningEffortHydratedKeyRef.current !== key) return;
     writeReasoningEffort(agentId, reasoningEffort);
-  }, [reasoningEffort, reasoningEffortStorageKey]);
+  }, [agentId, reasoningEffort, reasoningEffortStorageKey]);
+
+  /**
+   * 用户切换：本地立即生效，同时写回该 Agent 的 manifest（后端真源）。
+   * 写回失败只告警、不回滚 UI，但必须可见——静默失败就是“界面说变了、实际没变”。
+   */
+  const setReasoningEffort = useCallback(
+    (next: 'high' | 'max') => {
+      setReasoningEffortState(next);
+      if (!workspaceId || !agentId) return;
+      void saveAgentReasoningEffort(workspaceId, agentId, next).then((saved) => {
+        if (!saved) {
+          console.warn(
+            '[reasoningEffort] 后端未保存成功，本次仅本机生效：',
+            next,
+          );
+        }
+      });
+    },
+    [agentId, workspaceId],
+  );
 
   /**
    * 出站文本装饰：把技能提示并入真正发出的文本。
