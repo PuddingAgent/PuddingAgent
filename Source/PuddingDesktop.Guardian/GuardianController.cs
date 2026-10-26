@@ -17,11 +17,13 @@ public sealed class GuardianController
     private int _failures;
     private DateTimeOffset _startupDeadline;
     private readonly bool _hasPreviousState;
+    private readonly GuardianLog? _log;
 
-    public GuardianController(GuardianSettings settings, GuardianStore store, IGuardianRuntime runtime, TimeProvider? time = null)
+    public GuardianController(GuardianSettings settings, GuardianStore store, IGuardianRuntime runtime, TimeProvider? time = null, GuardianLog? log = null)
     {
         settings.Validate();
         _settings = settings; _store = store; _runtime = runtime; _time = time ?? TimeProvider.System;
+        _log = log;
         _hasPreviousState = File.Exists(store.StatePath);
         _state = store.Load();
         if (!File.Exists(store.StatePath) && !settings.AutoStartCore) _state = _state with { Phase = "stopped", Monitoring = false };
@@ -244,6 +246,7 @@ public sealed class GuardianController
     {
         state = state with { Desktop = _runtime.Desktop, Core = _runtime.Core, UpdatedAt = _time.GetUtcNow() };
         _store.Save(state);
+        _log?.Append($"phase={state.Phase} pending={(state.Pending is null ? "none" : "yes")} error={state.Error ?? "-"}");
         Volatile.Write(ref _state, state);
     }
 }

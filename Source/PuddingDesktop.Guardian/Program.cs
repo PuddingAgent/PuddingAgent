@@ -17,7 +17,7 @@ try
     Console.CancelKeyPress += (_, e) => { e.Cancel = true; lifetime.Cancel(); };
     var store = new GuardianStore(settings);
     using var runtime = new GuardianRuntime(settings, store.Load(), args.Length == 4 ? int.Parse(args[3]) : null);
-    var controller = new GuardianController(settings, store, runtime);
+    var controller = new GuardianController(settings, store, runtime, log: new GuardianLog(settings.StateDirectory));
     using var server = new GuardianHttpServer(settings, controller);
     server.Start();
     var listener = server.RunAsync(lifetime.Token);

@@ -271,6 +271,37 @@ public sealed class GuardianTests
         Assert.Throws<ArgumentException>(() => (f.Settings with { DataRoot = f.Settings.TargetDirectory("desktop") }).Validate());
     }
 
+    [Fact]
+    public void DurableLogAppendsAndRotatesAtCapacity()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "pudding-guardian-log", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var log = new GuardianLog(directory, maxBytes: 256);
+            log.Append("first deployment attempt");
+            Assert.Contains("first deployment attempt", File.ReadAllText(log.Path));
+            for (var i = 0; i < 20; i++) log.Append(new string('x', 64));
+            Assert.True(File.Exists(log.Path + ".1"));
+            Assert.True(new FileInfo(log.Path).Length < 512);
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task RollbackPhaseTraceSurvivesInDurableLog()
+    {
+        using var f = new Fixture();
+        var log = new GuardianLog(f.Settings.StateDirectory);
+        var backup = f.Store.Capture("core");
+        f.Store.Save(new() { Pending = new(backup, f.Store.Inspect(f.Candidate, "core")), Phase = "deploying" });
+        f.Store.Apply(f.Store.Inspect(f.Candidate, "core"));
+        var restarted = new GuardianController(f.Settings, f.Store, f.Runtime, f.Time, log);
+        await restarted.RecoverInterruptedAsync(default);
+        var text = File.ReadAllText(log.Path);
+        Assert.Contains("phase=rolling-back", text);
+        Assert.Contains("phase=rolled-back", text);
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "pudding-guardian-tests", Guid.NewGuid().ToString("N"));
