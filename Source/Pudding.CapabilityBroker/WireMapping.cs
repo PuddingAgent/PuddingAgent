@@ -774,12 +774,6 @@ internal static class DesktopResultDecoder
 
                 if (result.OutcomeCase == Proto.OperationResult.OutcomeOneofCase.Tabs)
                 {
-                    if (requestedTarget is null)
-                    {
-                        return CapabilityResult<DesktopCapabilityResponse>.Failure(
-                            DesktopCapabilityError.Internal("tabs result cannot be correlated without the requested target"));
-                    }
-
                     var remaining = DecodeContexts(result.Tabs.Remaining);
                     if (remaining.IsFailure)
                     {
@@ -789,6 +783,36 @@ internal static class DesktopResultDecoder
                     var tabAction = DesktopTabActionWire.TryParse(result.Tabs.Action, out var parsedAction)
                         ? parsedAction
                         : requestedTabAction ?? DesktopTabAction.Activate;
+
+                    // `new` 是唯一「请求里没有目标」的标签页动作：页面由该操作创建，
+                    // 因此目标只能来自结果本身（TabsOutcome.context_id/page_id）。
+                    // 其余动作缺请求目标 = 无法关联 ⇒ 仍失败关闭。
+                    var tabTarget = requestedTarget;
+                    if (tabTarget is null)
+                    {
+                        if (tabAction != DesktopTabAction.New)
+                        {
+                            return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                                DesktopCapabilityError.Internal("tabs result cannot be correlated without the requested target"));
+                        }
+
+                        if (string.IsNullOrWhiteSpace(result.Tabs.ContextId)
+                            || string.IsNullOrWhiteSpace(result.Tabs.PageId))
+                        {
+                            return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                                DesktopCapabilityError.Internal("tabs new result carries no created page target"));
+                        }
+
+                        try
+                        {
+                            tabTarget = new DesktopPageTarget(result.Tabs.ContextId, result.Tabs.PageId);
+                        }
+                        catch (ArgumentException)
+                        {
+                            return CapabilityResult<DesktopCapabilityResponse>.Failure(
+                                DesktopCapabilityError.Internal("tabs new result carries an unusable page target"));
+                        }
+                    }
 
                     Uri? tabUrl = null;
                     if (!string.IsNullOrEmpty(result.Tabs.Page?.Url)
@@ -800,10 +824,10 @@ internal static class DesktopResultDecoder
 
                     return CapabilityResult<DesktopCapabilityResponse>.Success(
                         DesktopCapabilityResponse.FromTabs(new DesktopTabsResult(
-                            requestedTarget,
+                            tabTarget,
                             tabAction,
                             new DesktopPageState(
-                                requestedTarget,
+                                tabTarget,
                                 tabUrl,
                                 ToPageVersion(result.Tabs.Page?.PageVersion ?? 0),
                                 DesktopPageReadinessWire.Parse(result.Tabs.Page?.Readiness),

@@ -322,6 +322,11 @@ message TabsOutcome {
   bool tab_closed = 2;
   PageStateOutcome page = 3;
   ContextsOutcome remaining = 4;
+  // 结果页的目标（加宽 2026-10-26）：`new` 是唯一「请求里没有目标」的标签页动作
+  // （页面由该操作创建），因此 Core 侧无法用请求目标来关联结果。这里把目标显式回传，
+  // 不靠 URL/版本去猜——与 ContextCreatedOutcome 回带 context 同一个道理。
+  string context_id = 5;
+  string page_id = 6;
 }
 
 // 剪贴板读取（v1 只读）：预算由调用方给出，截断必须如实标注。

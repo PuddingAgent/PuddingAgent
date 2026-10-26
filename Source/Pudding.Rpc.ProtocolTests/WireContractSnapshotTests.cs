@@ -186,7 +186,9 @@ public sealed class WireContractSnapshotTests
         AssertFieldNumbers(TabsCommand.Descriptor,
             ("target", 1), ("expected_page_version", 2), ("action", 3),
             ("context_id", 4), ("url", 5), ("activate", 6));
-        AssertFieldNumbers(TabsOutcome.Descriptor, ("action", 1), ("tab_closed", 2), ("page", 3), ("remaining", 4));
+        AssertFieldNumbers(TabsOutcome.Descriptor,
+            ("action", 1), ("tab_closed", 2), ("page", 3), ("remaining", 4),
+            ("context_id", 5), ("page_id", 6));
         AssertFieldNumbers(ClipboardReadCommand.Descriptor, ("max_characters", 1));
         AssertFieldNumbers(ShowDialogCommand.Descriptor, ("title", 1), ("message", 2), ("buttons", 3));
         AssertFieldNumbers(DialogOutcome.Descriptor, ("choice", 1));

@@ -1300,6 +1300,10 @@ internal static class DesktopFrameMapping
                     {
                         Action = DesktopTabActionWire.NameOf(tabs.Action),
                         TabClosed = tabs.TabClosed,
+                        // `new` 在请求里没有目标（页面由本次操作创建）⇒ 必须显式回传，
+                        // 否则 Core 侧无法把结果关联到任何页面。
+                        ContextId = tabs.Page.Target.ContextId,
+                        PageId = tabs.Page.Target.PageId,
                         Page = new Proto.PageStateOutcome
                         {
                             Url = tabs.Page.Url?.AbsoluteUri ?? string.Empty,
