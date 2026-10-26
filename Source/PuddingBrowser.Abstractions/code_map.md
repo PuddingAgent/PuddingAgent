@@ -1,5 +1,5 @@
 # PuddingBrowser.Abstractions CodeMAP
-> 源指纹: *.cs=10-a12dcc118c67, *.csproj=1-eb0b706aca65 · 条目数: 9 · 最近整理: 2026-10-22
+> 源指纹: *.cs=11-4a55c53d7fcb, *.csproj=1-eb0b706aca65 · 条目数: 10 · 最近整理: 2026-10-26
 
 > Browser 抽象契约 | 接口 · 类型 · 策略
 
@@ -21,13 +21,18 @@
 | `Models.cs` | 通用模型 |
 | `ScriptAndSnapshot.cs` | 脚本与快照模型 |
 | `DriverPolicy.cs` | `IBrowserDriverPolicy` 驱动策略**接缝**：计划/事件日志/停止原因由实现方决定（见下「关键语义」） |
+| `PageVersionPolicy.cs` | pageVersion 递增判据：同文档导航（SPA pushState）必须让版本递增，否则旧 ref 被判仍然有效 |
 
 ## 关键语义
 
 `IBrowserDriverPolicy` **接缝**：驱动把「计划/事件日志/停止原因」交给实现方决定（计划点击/悬停/滚动/填充/键入/按键/拖拽、到达步进、截图参数、文件上传三步、事件日志工厂）；`NullBrowserDriverPolicy` = **fail-closed**（一切返回 null/unsupported）
 
+`PageVersionPolicy.BumpsOnSourceChange`：**真实导航**（`NavigationStarting` 之后、`NavigationCompleted` 之前）由 `NavigationCompleted` 递增，这里返回 false 以免重复计；**同文档导航**（URL 变了但没有导航在飞）必须递增 —— SPA 的 `pushState/replaceState` 换掉整页内容却不触发 `NavigationCompleted`，漏掉它等于让旧元素引用在新路由上继续有效
+
 ## 测试
 
 —（由 AgentTools / Desktop.Tests 间接覆盖）
+
+`PageVersionPolicy` 有直接用例：`PuddingBrowser.AgentToolsTests/PageVersionPolicyTests.cs`（6 例，含「不该递增」的反例）
 
 **`IBrowserWorkspaceLifecycle`**：产品管理操作的工作区所有者端口，成功即包含页签/生命周期登记（不是"已排入队列"）。**`IBrowserPagePresenter`**：把这一页**真正呈现出来**的端口——截图/原生输入遇到表面不可见时先展开工作区再重试，不许静默返回空。

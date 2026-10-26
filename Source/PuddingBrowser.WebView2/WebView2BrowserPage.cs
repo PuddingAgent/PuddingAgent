@@ -216,7 +216,18 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
 
     private void OnSourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
     {
-        Info = Info with { Url = _coreWebView?.Source ?? "about:blank" };
+        var url = _coreWebView?.Source ?? "about:blank";
+        var previous = Info.Url;
+        Info = Info with { Url = url };
+
+        // 同文档导航（SPA 的 pushState/replaceState）把整页内容换掉了，却不触发 NavigationCompleted。
+        // pageVersion 是「旧 ref 是否还有效」的唯一判据 ⇒ 这里必须补上递增，
+        // 否则旧引用会在新路由上被判为仍然有效（实测：抖音推荐流→我的，URL/标题都变了，版本仍是 2）。
+        if (PageVersionPolicy.BumpsOnSourceChange(previous, url, _isLoading))
+        {
+            Interlocked.Increment(ref _pageVersion);
+            Info = Info with { PageVersion = PageVersion };
+        }
     }
 
     private void OnDocumentTitleChanged(object? sender, object e)
