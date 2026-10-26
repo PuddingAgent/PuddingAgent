@@ -2784,7 +2784,9 @@ public sealed partial class MainWindow : Window
                 WidthRatio = ToolWorkspaceLayout.ResolveLoadedRatio(
                     preference?.WidthRatio,
                     launcherOnly),
-                AutoExpandOnActivity = preference?.AutoExpandOnActivity ?? false,
+                // 默认展开：Agent 在右侧浏览器里干活时，用户必须能看见做了什么。
+                // 用户手动折叠仍在本轮内压制自动展开（ToolWorkspaceActivityPolicy）。
+                AutoExpandOnActivity = preference?.AutoExpandOnActivity ?? true,
             };
             _toolActivity.AutoExpandOnActivity = _toolLayout.AutoExpandOnActivity;
             AutoExpandMenuItem.IsChecked = _toolLayout.AutoExpandOnActivity;

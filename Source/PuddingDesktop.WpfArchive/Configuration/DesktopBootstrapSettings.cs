@@ -80,8 +80,13 @@ public sealed record DesktopToolWorkspaceSettings
     /// <summary>Share of the combined chat + tool width; re-clamped against each window.</summary>
     public double WidthRatio { get; init; } = 0.45;
 
-    /// <summary>Off by default: activity raises a marker instead of interrupting typing.</summary>
-    public bool AutoExpandOnActivity { get; init; }
+    /// <summary>
+    /// On by default: when the Agent opens or navigates a browser page the user must be
+    /// able to see what is being done on their behalf. A manual collapse still suppresses
+    /// it for the rest of the current activity round (ToolWorkspaceActivityPolicy), so the
+    /// user keeps the last word without having to opt in first.
+    /// </summary>
+    public bool AutoExpandOnActivity { get; init; } = true;
 
     /// <summary>
     /// The workspace starts collapsed on every launch, so no <c>IsExpanded</c> field is
