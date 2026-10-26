@@ -163,14 +163,19 @@ public static class NativeInputSequence
 
         foreach (var character in value)
         {
-            // 无法映射的字符跳过（计划里不出现，而不是塞一个错的键位）。
-            if (StrokeFor(character.ToString()) is not { } stroke)
+            if (StrokeFor(character.ToString()) is { } stroke)
             {
+                calls.Add(Key("keyDown", stroke, includeText: true));
+                calls.Add(Key("keyUp", stroke, includeText: false));
                 continue;
             }
 
-            calls.Add(Key("keyDown", stroke, includeText: true));
-            calls.Add(Key("keyUp", stroke, includeText: false));
+            // 非 ASCII（中文/emoji/全角标点）没有可派发的物理键位。旧版直接 continue ——
+            // 于是 type("同款蓝毛") 一个字也进不去（实测 2026-10-26）。
+            // 正确形态是 CDP 里“输入法提交”的样子：只带 text 的 keyDown。
+            // 页面会走正常的输入管线（beforeinput/input），自定义富文本编辑器
+            // （Slate/ProseMirror 那类）也才会认这是人打的字、才肯置脏。
+            calls.Add(Text(character.ToString()));
         }
 
         return calls;
@@ -331,6 +336,18 @@ public static class NativeInputSequence
             yield return new KeyStroke("Meta", "MetaLeft", 91, null, 0);
         }
     }
+
+    /// <summary>
+    /// 只带 text 的按键：CDP 里“输入法提交”的形态。没有物理键位可给（中文/emoji），
+    /// 但页面会走正常输入管线 —— 这是“模拟键盘输入”对非 ASCII 的唯一诚实表达。
+    /// </summary>
+    private static CdpCall Text(string text) =>
+        new("Input.dispatchKeyEvent", JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["type"] = "keyDown",
+            ["text"] = text,
+            ["unmodifiedText"] = text,
+        }));
 
     private static CdpCall Key(string type, KeyStroke stroke, bool includeText)
     {
