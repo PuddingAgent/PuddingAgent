@@ -65,10 +65,9 @@ public sealed class AnnouncementSelectorTests
         ], AnnouncementKind.AnnualReport);
 
         Assert.IsTrue(selection.Found);
-        // 「更正版」被 NonFullTextMarkers 排除，因此仍选正式版；
-        // 这条断言钉的是"排除规则优先于日期排序"。
+        // 标题以「（更正版）」结尾 → 不满足「以年度报告结尾」，直接归入 Other（不会被选也不会进排除名单）。
         Assert.AreEqual("工商银行2025年年度报告", selection.Selected!.Title);
-        Assert.HasCount(1, selection.ExcludedOthers);
+        Assert.IsEmpty(selection.ExcludedOthers);
     }
 
     [TestMethod]
@@ -78,8 +77,10 @@ public sealed class AnnouncementSelectorTests
             [Item("工商银行2025年年度报告摘要", "2026-03-28")],
             AnnouncementKind.AnnualReport);
 
+        // 摘要标题不以「年度报告」结尾 → 归 Other，既不入选也不进排除名单。
         Assert.IsFalse(selection.Found);
-        Assert.HasCount(1, selection.ExcludedOthers);
+        Assert.IsEmpty(selection.ExcludedOthers);
+        StringAssert.Contains(selection.Describe()!, "没有该类");
     }
 
     [TestMethod]
@@ -103,6 +104,28 @@ public sealed class AnnouncementSelectorTests
 
         Assert.IsFalse(selection.Found);
         StringAssert.Contains(selection.Describe()!, "没有该类");
+    }
+
+    [TestMethod]
+    public void Classify_NoticeMentioningAnnualReport_IsNotAnnualReport()
+    {
+        // 真实回执（思源电气 002028）：标题含「年度报告」四个字，但它是一份会议通知。
+        Assert.AreEqual(
+            AnnouncementKind.Other,
+            AnnouncementSelector.Classify("关于举行2025年年度报告网上说明会的通知"));
+    }
+
+    [TestMethod]
+    public void Select_IgnoresNoticeThatMentionsAnnualReport()
+    {
+        var selection = AnnouncementSelector.Select(
+        [
+            Item("关于举行2025年年度报告网上说明会的通知", "2026-04-20"),
+            Item("思源电气2025年年度报告", "2026-03-28"),
+        ], AnnouncementKind.AnnualReport);
+
+        Assert.IsTrue(selection.Found);
+        Assert.AreEqual("思源电气2025年年度报告", selection.Selected!.Title);
     }
 
     private static CninfoAnnouncement Item(string title, string date)

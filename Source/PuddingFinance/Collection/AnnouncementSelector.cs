@@ -84,17 +84,20 @@ public static class AnnouncementSelector
 
         var text = title.Trim();
 
-        if (Contains(text, "半年度报告") || Contains(text, "中期报告"))
+        // 顺序不可颠倒：「半年度报告」的结尾也是「年度报告」。
+        // 判据用**结尾**而不是包含：巨潮里存在《关于举行2025年年度报告网上说明会的通知》这种标题，
+        // 只看包含会把它当年报——实测踩过（思源电气 002028，2026-10-26）。
+        if (EndsWith(text, "半年度报告") || EndsWith(text, "中期报告"))
         {
             return AnnouncementKind.SemiAnnualReport;
         }
 
-        if (Contains(text, "年度报告"))
+        if (EndsWith(text, "年度报告"))
         {
             return AnnouncementKind.AnnualReport;
         }
 
-        if (Contains(text, "季度报告"))
+        if (EndsWith(text, "季度报告"))
         {
             return AnnouncementKind.QuarterlyReport;
         }
@@ -167,4 +170,7 @@ public static class AnnouncementSelector
 
     private static bool Contains(string text, string value) =>
         text.Contains(value, StringComparison.OrdinalIgnoreCase);
+
+    private static bool EndsWith(string text, string value) =>
+        text.TrimEnd().EndsWith(value, StringComparison.OrdinalIgnoreCase);
 }
