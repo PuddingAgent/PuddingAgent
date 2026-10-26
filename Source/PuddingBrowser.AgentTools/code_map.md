@@ -1,5 +1,5 @@
 ---
-title: 工具（8 个工具类）
+title: 工具（9 个工具类）
 author: hyfree
 date: 2026-08-07
 last_reviewed: 2026-08-07
@@ -12,13 +12,13 @@ related_files: []
 slug: code-map
 draft: false
 ---
-> 源指纹: *.cs=21-a4ae279f47c1, *.csproj=1-767c5a0c7838 · 条目数: 8 · 最近整理: 2026-08-07
+> 源指纹: *.cs=22-ddb10a4a9c02, *.csproj=1-767c5a0c7838 · 条目数: 9 · 最近整理: 2026-10-26
 
 ﻿# PuddingBrowser.AgentTools CodeMAP
 
-> 八项 Browser Agent Tools；`BrowserAgentToolIds.All` / `BrowserAgentCapabilityIds.All` 均为八项（含 `browser_screenshot` / `cap-browser-screenshot`），两目录同形、同序，作为注册/发现/提示词/测试共用的**事实目录**（ADR-097 D1）。
+> 九项 Browser Agent Tools；`BrowserAgentToolIds.All` 为九项，`BrowserAgentCapabilityIds.All` 仍为八项（含 `browser_screenshot` / `cap-browser-screenshot`）：能力目录是**委派投影**，可以更窄但不得更宽——`browser_evaluate` 能写页面，暂不向子代理开放（2026-10-26）。两目录同序，作为注册/发现/提示词/测试共用的**事实目录**（ADR-097 D1）。
 
-## 工具（8 个工具类）
+## 工具（9 个工具类）
 
 | 文件 | 工具 | 用途 |
 |------|------|------|
@@ -101,7 +101,7 @@ inViewportOnly 或滚动容器」（把"这次筛选没用对"与"这种定位�
 调用链：`Agent Loop → search_tools → Browser*Tool`（八个工具类）→ `IDesktopBrowserCapabilitySurface`（窄端口）+ `IDesktopCapabilityCallContextFactory`；
 上下文管理（`browser_context` 的 create/close）另走 `IDesktopContextCapabilitySurface`；组合根路由二选一（能力通道会话 / Bridge 实现），**不回退**。
 
-> **八项工具**（`browser_context`/`browser_tabs`/`browser_navigate`/`browser_snapshot`/`browser_locate`/`browser_interact`/`browser_wait_for`/`browser_screenshot`）均已脱离进程内 `IBrowserRuntime`；迁移完成后旧的静态解析器（`BrowserToolRuntimeResolver`）已删除。
+> **九项工具**（`browser_context`/`browser_tabs`/`browser_navigate`/`browser_snapshot`/`browser_locate`/`browser_interact`/`browser_wait_for`/`browser_screenshot`/`browser_evaluate`）均已脱离进程内 `IBrowserRuntime`；迁移完成后旧的静态解析器（`BrowserToolRuntimeResolver`）已删除。
 
 ## 测试
 
