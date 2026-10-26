@@ -38,11 +38,17 @@ public sealed record CninfoAnnouncement(
     string? AdjunctType);
 
 /// <summary>一页公告。<see cref="Total"/> 是服务端的全量命中数，与 <see cref="Items"/> 条数无关。</summary>
+/// <param name="Caveat">
+/// 回执的口径提醒。两种情形会带上：全文检索口径下 Total 含其他主体的公告；
+/// 按公司过滤却得到 0 条（orgId 错与“确实无公告”无法区分）。
+/// 不抛异常是因为“0 条”本身可能是真结果，但**不能让它静默**。
+/// </param>
 public sealed record CninfoAnnouncementPage(
     int Total,
     int PageNumber,
     int PageSize,
-    IReadOnlyList<CninfoAnnouncement> Items);
+    IReadOnlyList<CninfoAnnouncement> Items,
+    string? Caveat = null);
 
 /// <summary>
 /// 巨潮公告查询客户端。
@@ -101,6 +107,15 @@ public sealed class CninfoAnnouncementSource(OfficialSourceFetcher fetcher)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(query), query.PageSize, $"每页条数须在 1..{MaxPageSize}");
+        }
+
+        // orgId 只能从公告回执取（实测工行是 jjxt0000019，明显不合 “gssh+代码” 的直觉），
+        // 所以“格式不合规”要在发请求前就拦住，而不是让服务端回 0 条。
+        if (!string.IsNullOrWhiteSpace(query.Stock) && !query.Stock.Contains(','))
+        {
+            throw new ArgumentException(
+                "Stock 必须是「代码,orgId」形式；orgId 只能从公告回执取得，不能按代码规律推断。",
+                nameof(query));
         }
 
         (string Key, string? Value)[] pairs =
@@ -164,8 +179,35 @@ public sealed class CninfoAnnouncementSource(OfficialSourceFetcher fetcher)
                 }
             }
 
-            return new CninfoAnnouncementPage(total, query.PageNumber, query.PageSize, items);
+            return new CninfoAnnouncementPage(total, query.PageNumber, query.PageSize, items, BuildCaveat(query, total));
         }
+    }
+
+    /// <summary>
+    /// 口径提醒。这里拦住两类最容易被误读成“事实”的结果：
+    /// ① 全文检索的 Total 被当成公司公告总数；② orgId 错了却显示“没有公告”。
+    /// </summary>
+    internal static string? BuildCaveat(CninfoAnnouncementQuery query, int total)
+    {
+        var byStock = !string.IsNullOrWhiteSpace(query.Stock);
+        if (byStock && total == 0)
+        {
+            return "按公司过滤返回 0 条：可能确实无匹配公告，也可能 orgId 无效。"
+                 + "orgId 必须取自公告回执，不可按代码规律推断。";
+        }
+
+        if (byStock)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SearchKey))
+        {
+            return "全文检索口径：Total 统计的是命中关键词的全部公告，不等于该公司的公告数；"
+                 + "要按公司计数请传 Stock=代码,orgId。";
+        }
+
+        return null;
     }
 
     private static CninfoAnnouncement ReadAnnouncement(JsonElement item)

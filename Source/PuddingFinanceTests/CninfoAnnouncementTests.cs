@@ -127,6 +127,49 @@ public sealed class CninfoAnnouncementTests
         Assert.HasCount(1, page.Items);
     }
 
+    [TestMethod]
+    public void Parse_SearchKeyQuery_WarnsThatTotalIsFullTextScope()
+    {
+        var page = CninfoAnnouncementSource.Parse(
+            RealisticPayload,
+            new CninfoAnnouncementQuery(SearchKey: "601398"));
+
+        Assert.IsNotNull(page.Caveat, "全文检索口径的 Total 不能不带提醒地返回");
+        StringAssert.Contains(page.Caveat!, "不等于该公司的公告数");
+    }
+
+    [TestMethod]
+    public void Parse_StockQueryWithZeroTotal_WarnsAboutPossibleBadOrgId()
+    {
+        // 实测：传错 orgId 时服务端回 200 + total=0，不报错。
+        // 这种“静默空结果”必须带上口径提醒，否则会被误读成“该公司没有公告”。
+        var page = CninfoAnnouncementSource.Parse(
+            """{"totalRecordNum":0,"announcements":[]}""",
+            new CninfoAnnouncementQuery(Stock: "601398,not-a-real-orgid"));
+
+        Assert.IsNotNull(page.Caveat);
+        StringAssert.Contains(page.Caveat!, "orgId");
+    }
+
+    [TestMethod]
+    public void Parse_StockQueryWithResults_HasNoCaveat()
+    {
+        var page = CninfoAnnouncementSource.Parse(
+            RealisticPayload,
+            new CninfoAnnouncementQuery(Stock: "688585,gssh0600585"));
+
+        Assert.IsNull(page.Caveat, "口径正确的回执不该拖一条提醒");
+    }
+
+    [TestMethod]
+    public void BuildForm_StockWithoutOrgId_Throws()
+    {
+        var error = Assert.ThrowsExactly<ArgumentException>(
+            () => CninfoAnnouncementSource.BuildForm(new CninfoAnnouncementQuery(Stock: "601398")));
+
+        StringAssert.Contains(error.Message, "orgId");
+    }
+
     private sealed class RecordingHandler(string payload) : HttpMessageHandler
     {
         public int CallCount { get; private set; }
