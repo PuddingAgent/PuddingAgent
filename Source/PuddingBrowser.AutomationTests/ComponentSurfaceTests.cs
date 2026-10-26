@@ -218,7 +218,7 @@ public sealed class ComponentSurfaceTests
             ["PageEventPolicyTests"] = 7,
             ["ScriptDialogPolicyTests"] = 6,
             ["BrowserNodeIdentityTests"] = 10,
-            ["NativeInputSequenceTests"] = 14,
+            ["NativeInputSequenceTests"] = 15,
             ["PointerInputSequenceTests"] = 5,
             ["ScreenshotObservationRegistryTests"] = 4,
             ["ScreenshotLayoutFactsTests"] = 3,

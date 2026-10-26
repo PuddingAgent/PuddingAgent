@@ -1182,6 +1182,18 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
     }
 
     /// <summary>
+    /// 写系统剪贴板（粘戊路径的第一步）——必须落在 UI 线程，由驱动层的 dispatcher 保证。
+    /// </summary>
+    private Task WriteClipboardAsync(string text, CancellationToken ct) =>
+        _dispatcher.InvokeAsync(
+            () =>
+            {
+                BrowserClipboard.SetText(text);
+                return Task.CompletedTask;
+            },
+            ct);
+
+    /// <summary>
     /// **原生输入路径**（设计方案 §7）：按 <c>NativeInputSequence</c> 规划好的 CDP 调用逐条发出。
     ///
     /// 三条硬性约定：
@@ -1228,10 +1240,21 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
                 // （2026-10-26 实测：抖音搜索框表现为「文字追加到旧值后面」）。
                 // 指针类动作本身就是聚焦动作，不需要额外点击。
                 var focusPlan = Policy.PlanClick(centerX, centerY, 1);
+
+                // 非 ASCII（中文/emoji/全角）没有物理键位：真实的键盘路径只剩「剪贴板 + Ctrl+V」。
+                // 不能用「只带 text 的 keyDown」凑 —— 那会让 DOM 有字、而受控编辑器
+                // （Draft.js/React）的 EditorState 仍为空（2026-10-26 抖音评论框实测：
+                // 发送按钮不出现、回车也不提交）。先写系统剪贴板，再用真实 Ctrl+V 粘贴。
+                var paste = action is "fill" or "type" && BrowserTextInput.RequiresClipboard(value);
+                if (paste)
+                {
+                    await WriteClipboardAsync(value!, ct).ConfigureAwait(false);
+                }
+
                 IReadOnlyList<DriverCall>? body = action switch
                 {
-                    "fill" => Policy.PlanFill(value),
-                    "type" => Policy.PlanType(value),
+                    "fill" => paste ? Policy.PlanPress("Control+V") : Policy.PlanFill(value),
+                    "type" => paste ? Policy.PlanPress("Control+V") : Policy.PlanType(value),
                     _ => Policy.PlanPress(value),
                 };
                 if (focusPlan is null || body is null)

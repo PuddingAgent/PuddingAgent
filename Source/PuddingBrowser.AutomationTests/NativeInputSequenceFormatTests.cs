@@ -115,22 +115,36 @@ public sealed class NativeInputSequenceTests
     {
         var calls = NativeInputSequence.PlanPress("Control+A");
 
-        // Control 按下 → 键 rawKeyDown → char（编辑意图）→ 键抬起 → Control 抬起。
-        // 多了 char 这条：带 key/code/vkCode 的“物理键”事件不产生 beforeinput，
-        // React 控制的 contenteditable 因此收不到按键（2026-10-26 抖音评论框实测）。
-        Assert.AreEqual(5, calls.Count);
+        // Control 按下 → 键 rawKeyDown → 键抬起 → Control 抬起。
+        // **没有 char**：Ctrl+字母是命令（Ctrl+A 全选、Ctrl+V 粘贴），不是“输入这个字符”。
+        // 以前无条件补 char，结果 Ctrl+V 会把字面 'v' 也插进输入框
+        // （2026-10-26 剪贴板粘贴路径实装时发现）。
+        Assert.AreEqual(4, calls.Count);
         Assert.AreEqual("Control", Parse(calls[0]).GetProperty("key").GetString());
         Assert.AreEqual("keyDown", Parse(calls[0]).GetProperty("type").GetString());
         Assert.AreEqual("a", Parse(calls[1]).GetProperty("key").GetString());
         Assert.AreEqual("rawKeyDown", Parse(calls[1]).GetProperty("type").GetString());
-        Assert.AreEqual("char", Parse(calls[2]).GetProperty("type").GetString());
-        Assert.AreEqual("a", Parse(calls[2]).GetProperty("text").GetString());
+        Assert.AreEqual("keyUp", Parse(calls[2]).GetProperty("type").GetString());
+        Assert.AreEqual("Control", Parse(calls[3]).GetProperty("key").GetString());
         Assert.AreEqual("keyUp", Parse(calls[3]).GetProperty("type").GetString());
-        Assert.AreEqual("Control", Parse(calls[4]).GetProperty("key").GetString());
-        Assert.AreEqual("keyUp", Parse(calls[4]).GetProperty("type").GetString());
+        foreach (var call in calls)
+        {
+            Assert.AreNotEqual("char", Parse(call).GetProperty("type").GetString(), "Ctrl 组合不得产生编辑意图");
+        }
 
         // 修饰键按 CDP 位掩码表达（Control=2），不是自己编的字符串。
         Assert.AreEqual(NativeInputSequence.ControlModifier, Parse(calls[1]).GetProperty("modifiers").GetInt32());
+    }
+
+    /// <summary>
+    /// Shift 不是命令修饰键：Shift+字母仍然要插入字符，所以必须保留 char。
+    /// 这条与上一条是同一个判据的两面（只排除 Control/Alt/Meta）。
+    /// </summary>
+    [TestMethod]
+    public void ShiftWithLetter_StillCarriesACharEvent()
+    {
+        var calls = NativeInputSequence.PlanPress("Shift+a");
+        Assert.IsTrue(calls.Any(c => Parse(c).GetProperty("type").GetString() == "char"), "Shift 组合应当产生编辑意图");
     }
 
     [TestMethod]

@@ -203,7 +203,12 @@ public static class NativeInputSequence
         }
 
         calls.Add(Key("rawKeyDown", stroke, includeText: false));
-        if (stroke.Text is { Length: > 0 } text)
+
+        // Ctrl/Alt/Meta 组合是**命令**（Ctrl+A 全选、Ctrl+V 粘贴），不是“输入这个字符”：
+        // 这类组合再补 char 会把字面字符也插进编辑区（Ctrl+V 会额外插入一个 "v"）。
+        // Shift 不是命令修饰（Shift+a 仍然是输入 'a'），因此只排除这三个。
+        var isCommand = (stroke.Modifiers & (ControlModifier | AltModifier | MetaModifier)) != 0;
+        if (!isCommand && stroke.Text is { Length: > 0 } text)
         {
             // 显式 char：CDP 里唯一会产生 beforeinput/input 的按键形态。
             // 只发 keyDown(text=…) 时，带 key/code/vkCode 的“物理键”事件不会产生编辑意图，
