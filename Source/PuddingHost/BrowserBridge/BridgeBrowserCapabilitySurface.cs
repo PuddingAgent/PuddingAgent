@@ -457,7 +457,14 @@ internal sealed class BridgeBrowserCapabilitySurface(IBrowserRuntime runtime)
             handle.Info.Text,
             handle.Info.Visible,
             handle.Info.Enabled,
-            handle.Info.Checked)
+            handle.Info.Checked,
+            // DOM 脚本一直在回读这三项（WebView2DomClient 的 locate/interact 脚本都带
+            // value/selectedValues/inViewport），构造器也一直接受它们 —— 只是这里漏传。
+            // 后果：交互结果里的观测值恒为 null，expect_value 永远只能报 failed（而不是 verified），
+            // 上层于是只能自己另开通道（CDP）去验输入到底写没写进去。
+            handle.Info.Value,
+            handle.Info.SelectedValues,
+            handle.Info.InViewport)
         {
             BoundingBox = handle.Info.BoundingBox is { } b ? new DesktopElementBox(b.X, b.Y, b.Width, b.Height) : null,
         };

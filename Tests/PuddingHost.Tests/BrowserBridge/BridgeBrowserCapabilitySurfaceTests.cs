@@ -273,6 +273,43 @@ public sealed class BridgeBrowserCapabilitySurfaceTests
         Assert.False(result.Value.Truncated);
     }
 
+    /// <summary>
+    /// 观测字段必须**完整**穿过适配层：DOM 脚本一直在回读 value/inViewport，
+    /// 构造器也接受它们。漏传会让 expect_value 的观测恒为 null、永远只能报 failed，
+    /// 上层被迫另开通道（CDP）去验输入到底写没写进去。
+    /// </summary>
+    [Fact]
+    public async Task Interact_PropagatesObservedValueAndViewportFlag()
+    {
+        // 观测字段必须**完整**穿过适配层：DOM 脚本一直在回读 value/inViewport，
+        // 构造器也接受它们。漏传会让交互回执里的观测恒为 null、expect_value 永远只能报 failed，
+        // 上层被迫另开通道（CDP）去验输入到底写没写进去。
+        var page = new FakePage
+        {
+            Version = 3,
+            Query = _ => new FakeElementHandle
+            {
+                Version = 3,
+                Info = new BrowserElementInfo
+                {
+                    Ref = "e1", Tag = "div", Role = "combobox", Visible = true, Enabled = true,
+                    Value = "input-value", InViewport = true,
+                },
+            },
+        };
+        var surface = Create(page);
+
+        var result = await surface.InteractAsync(
+            new BrowserInteractRequest(
+                Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(3),
+                new DesktopLocator(DesktopLocatorKind.Css, "div")), Call);
+
+        Assert.False(result.IsFailure);
+        Assert.NotNull(result.Value.Element);
+        Assert.Equal("input-value", result.Value.Element!.Value);
+        Assert.True(result.Value.Element.InViewport);
+    }
+
     [Fact]
     public async Task Locate_WhenExpectedVersionDiffers_IsPageVersionMismatch()
     {
