@@ -293,7 +293,9 @@ internal static class CoreFrameMapping
                         includeHidden: budget?.IncludeHidden ?? false,
                         includeIframes: budget?.IncludeIframes ?? true,
                         includeShadowDom: budget?.IncludeShadowDom ?? true,
-                        maxDepth: budget is null || budget.MaxDepth == 0 ? 64 : budget.MaxDepth);
+                        maxDepth: budget is null || budget.MaxDepth == 0 ? 64 : budget.MaxDepth,
+                        // text 模式（dom/ax/html 全 false）靠它通过 HasContent 判据。
+                        includeContentBlocks: budget?.IncludeContentBlocks ?? false);
                 }
                 catch (ArgumentOutOfRangeException ex)
                 {

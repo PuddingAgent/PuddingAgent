@@ -283,6 +283,8 @@ internal static class CoreCommandEncoder
                         IncludeIframes = snapshot.Options.IncludeIframes,
                         IncludeShadowDom = snapshot.Options.IncludeShadowDom,
                         MaxDepth = snapshot.Options.MaxDepth,
+                        // text 模式唯一的表示来源；不发就等于没请求任何表示。
+                        IncludeContentBlocks = snapshot.Options.IncludeContentBlocks,
                     },
                 };
                 break;

@@ -390,6 +390,10 @@ message SnapshotBudget {
   bool include_iframes = 7;
   bool include_shadow_dom = 8;
   int32 max_depth = 9;
+  // 正文模式（browser_snapshot mode=text）只要语义块：dom/ax/html 三个开关全为 false，
+  // 只置这一位。缺了它，Desktop 侧解出的 options.HasContent 恒为 false ⇒
+  // 所有 text 快照都被判「没有请求任何表示」而拒绝（实测 2026-10-26）。
+  bool include_content_blocks = 10;
 }
 
 // Core → Desktop 的能力命令。payload 用 oneof 白名单化，禁止「字符串命令名 + 任意 JSON」。
