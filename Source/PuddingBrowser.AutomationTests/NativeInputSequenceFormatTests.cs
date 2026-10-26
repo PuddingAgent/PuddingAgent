@@ -117,17 +117,36 @@ public sealed class NativeInputSequenceTests
     {
         var calls = NativeInputSequence.PlanPress("Control+A");
 
-        Assert.AreEqual(4, calls.Count);
+        // Control 按下 → 键 rawKeyDown → char（编辑意图）→ 键抬起 → Control 抬起。
+        // 多了 char 这条：带 key/code/vkCode 的“物理键”事件不产生 beforeinput，
+        // React 控制的 contenteditable 因此收不到按键（2026-10-26 抖音评论框实测）。
+        Assert.AreEqual(5, calls.Count);
         Assert.AreEqual("Control", Parse(calls[0]).GetProperty("key").GetString());
         Assert.AreEqual("keyDown", Parse(calls[0]).GetProperty("type").GetString());
         Assert.AreEqual("a", Parse(calls[1]).GetProperty("key").GetString());
-        Assert.AreEqual("keyDown", Parse(calls[1]).GetProperty("type").GetString());
-        Assert.AreEqual("keyUp", Parse(calls[2]).GetProperty("type").GetString());
-        Assert.AreEqual("Control", Parse(calls[3]).GetProperty("key").GetString());
+        Assert.AreEqual("rawKeyDown", Parse(calls[1]).GetProperty("type").GetString());
+        Assert.AreEqual("char", Parse(calls[2]).GetProperty("type").GetString());
+        Assert.AreEqual("a", Parse(calls[2]).GetProperty("text").GetString());
         Assert.AreEqual("keyUp", Parse(calls[3]).GetProperty("type").GetString());
+        Assert.AreEqual("Control", Parse(calls[4]).GetProperty("key").GetString());
+        Assert.AreEqual("keyUp", Parse(calls[4]).GetProperty("type").GetString());
 
         // 修饰键按 CDP 位掩码表达（Control=2），不是自己编的字符串。
         Assert.AreEqual(NativeInputSequence.ControlModifier, Parse(calls[1]).GetProperty("modifiers").GetInt32());
+    }
+
+    [TestMethod]
+    public void Enter_CarriesACharEventSoEditorsSeeTheSubmit()
+    {
+        var calls = NativeInputSequence.PlanPress("Enter");
+
+        // 三条：物理键位 + char + 抬起。缺了 char 就是“按了回车、页面什么也没收到”。
+        Assert.AreEqual(3, calls.Count);
+        Assert.AreEqual("rawKeyDown", Parse(calls[0]).GetProperty("type").GetString());
+        Assert.AreEqual(13, Parse(calls[0]).GetProperty("windowsVirtualKeyCode").GetInt32());
+        Assert.AreEqual("char", Parse(calls[1]).GetProperty("type").GetString());
+        Assert.AreEqual("\r", Parse(calls[1]).GetProperty("text").GetString());
+        Assert.AreEqual("keyUp", Parse(calls[2]).GetProperty("type").GetString());
     }
 
     [TestMethod]

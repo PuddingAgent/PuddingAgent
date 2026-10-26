@@ -198,7 +198,16 @@ public static class NativeInputSequence
             calls.Add(Key("keyDown", modifier, includeText: false));
         }
 
-        calls.Add(Key("keyDown", stroke, includeText: stroke.Text is not null));
+        calls.Add(Key("rawKeyDown", stroke, includeText: false));
+        if (stroke.Text is { Length: > 0 } text)
+        {
+            // 显式 char：CDP 里唯一会产生 beforeinput/input 的按键形态。
+            // 只发 keyDown(text=…) 时，带 key/code/vkCode 的“物理键”事件不会产生编辑意图，
+            // React 控制的 contenteditable（Slate/ProseMirror 这类）因此**收不到回车**，
+            // 页面看起来按了、实际什么也没提交（2026-10-26 在抖音评论框实测）。
+            calls.Add(Char(text));
+        }
+
         calls.Add(Key("keyUp", stroke, includeText: false));
 
         foreach (var modifier in ModifierKeysOf(stroke.Modifiers))
@@ -345,6 +354,17 @@ public static class NativeInputSequence
         new("Input.dispatchKeyEvent", JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["type"] = "keyDown",
+            ["text"] = text,
+            ["unmodifiedText"] = text,
+        }));
+
+    /// <summary>
+    /// 显式 <c>char</c> 事件：CDP 里唯一会为命名键产生 <c>beforeinput</c>/<c>input</c> 的形态。
+    /// </summary>
+    private static CdpCall Char(string text) =>
+        new("Input.dispatchKeyEvent", JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["type"] = "char",
             ["text"] = text,
             ["unmodifiedText"] = text,
         }));

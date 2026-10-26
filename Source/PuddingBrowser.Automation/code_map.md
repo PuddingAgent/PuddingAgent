@@ -1,5 +1,5 @@
 # PuddingBrowser.Automation — code_map
-> 源指纹: *.cs=30-cd742a5d6c07, *.csproj=1-146de68ee772 · 条目数: 46 · 最近整理: 2026-10-19
+> 源指纹: *.cs=30-31a3386bd573, *.csproj=1-146de68ee772 · 条目数: 46 · 最近整理: 2026-10-19
 
 > 浏览器自动化**可靠性**组件（叶子）：统一控制权、页面授权、执行租约、证据化回执与重试裁定。
 > 设计依据：[浏览器自动化可靠性与渐进阅读设计方案](../../Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md)（§3/§4，切片 **B0**）。
@@ -83,7 +83,7 @@
 
 **`NativeInputSequence.cs`**：**原生输入（CDP 键鼠）的调用序列规划**（§7 `inputMode=native`）：把"点击/悬停/滚动/填入/逐键输入/按键"翻译成 CDP 调用清单。要点是**状态不留残**——点击必定
  移动→按下→抬起（成对）、组合键按 CDP 位掩码（Alt=1/Control=2/Meta=4/Shift=8）并在 keyDown 前按下、keyUp 后抬起、`ReleaseModifiers` 供**取消时清理**（一次被取消的 Ctrl+点击不能让页面以为 Ctrl
- 一直按着）；`fill` 用 `Input.insertText`（清空则 Ctrl+A→Delete），`type` 逐字符 keyDown/keyUp（页面才收得到 input），未知按键**拒绝而不是猜**。`PlanDrag` 必须**分步移动**（HTML5
+ 一直按着）；`fill` 用 `Input.insertText`（清空则 Ctrl+A→Delete），`type` 逐字符 keyDown/keyUp（页面才收得到 input），未知按键**拒绝而不是猜**；**命名键必须补一条 `char`**（`rawKeyDown` → `char` → `keyUp`）：带 key/code/vkCode 的“物理键”事件不产生 `beforeinput`，React 控制的 contenteditable 因此收不到回车（2026-10-26 抖音评论框实测：文字能写进去、回车提交不了）。`PlanDrag` 必须**分步移动**（HTML5
  拖放/画布依赖中间 mousemove）且**按下必然抬起**。本组件不引用 Abstractions，几何用自己的 `InputTarget`
 
 **`ScreenshotPlan.cs`**：`BuildForObservation` 按截图计划生成实际格式、低清缩放及文档 DIP 裁剪参数，PNG 不传 quality，JPEG 传 quality=80 起（超预算按 65/50/38 阶梯降档重拍）；旧驱动入口 `Build` 的格式由 quality 决定（有 quality ⇒ jpeg，否则 png——quality 只对有损格式有意义，给 PNG
