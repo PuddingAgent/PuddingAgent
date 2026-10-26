@@ -214,6 +214,12 @@ public sealed record ScreenshotResult
 {
     public byte[]? Bytes { get; init; }
     public string? FilePath { get; init; }
+
+    /// <summary>
+    /// 实际使用的 JPEG 画质（<c>null</c> = PNG 无损）。
+    /// 预算内降档重拍后，这里是**最后胜出**的档位——调用方可以据此判断这张图被压到多低。
+    /// </summary>
+    public int? Quality { get; init; }
 }
 
 public sealed record PdfOptions

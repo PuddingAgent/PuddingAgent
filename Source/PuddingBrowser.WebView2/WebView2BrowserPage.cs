@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
+using PuddingBrowser.Automation;
 
 namespace PuddingBrowser.WebView2;
 
@@ -1038,32 +1039,76 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
             contentHeight = height.GetDouble();
         }
 
-        var json = Policy.BuildScreenshotParameters(
-            o.Quality, o.FullPage, contentX, contentY, contentWidth, contentHeight)
-            ?? throw new BrowserOperationException(
-                "browser_operation_not_supported",
-                "screenshot is not available on this surface (no driver policy supports it)");
-
-        using var document = JsonDocument.Parse(json);
-        using var captured = await SendCdpAsync(
-            "Page.captureScreenshot", document.RootElement.Clone(), ct).ConfigureAwait(false);
-
-        byte[] bytes;
-        try
+        async Task<byte[]> CaptureAtAsync(int? quality, CancellationToken token)
         {
-            var base64 = captured.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.String
-                ? data.GetString()
-                : null;
-            if (string.IsNullOrEmpty(base64))
+            var parameters = Policy.BuildScreenshotParameters(
+                quality, o.FullPage, contentX, contentY, contentWidth, contentHeight)
+                ?? throw new BrowserOperationException(
+                    "browser_operation_not_supported",
+                    "screenshot is not available on this surface (no driver policy supports it)");
+
+            using var document = JsonDocument.Parse(parameters);
+            using var captured = await SendCdpAsync(
+                "Page.captureScreenshot", document.RootElement.Clone(), token).ConfigureAwait(false);
+
+            try
             {
-                throw new InvalidOperationException("the browser returned no screenshot payload");
-            }
+                var base64 = captured.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.String
+                    ? data.GetString()
+                    : null;
+                if (string.IsNullOrEmpty(base64))
+                {
+                    throw new InvalidOperationException("the browser returned no screenshot payload");
+                }
 
-            bytes = Convert.FromBase64String(base64);
+                return Convert.FromBase64String(base64);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or FormatException)
+            {
+                throw new BrowserOperationException("browser_operation_failed", exception.Message);
+            }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or FormatException)
+
+        // 画质阶梯（仅 JPEG）：detail=low 承诺 512px/**40 KiB**，而 512px 已是硬上限，
+        // 固定 q80 在密集页面上必然撞预算（抖音搜索结果实测 43502/56061 B）——
+        // “固定画质 + 硬预算”这对组合不可能总成立，所以按**结果**选画质：
+        // 第一个装进预算的档位胜出，降到底仍超就如实报错（仍不截断、不冒充可读）。
+        int? usedQuality = o.Quality;
+        byte[] bytes;
+        if (o.Quality is { } startQuality)
         {
-            throw new BrowserOperationException("browser_operation_failed", exception.Message);
+            var budgeted = await ScreenshotPlan.CaptureWithinBudgetAsync(
+                ScreenshotPlan.QualitySteps(startQuality),
+                o.MaxBytes,
+                (quality, token) => CaptureAtAsync(quality, token),
+                ct).ConfigureAwait(false);
+
+            bytes = budgeted.Bytes;
+            usedQuality = budgeted.Quality;
+
+            if (!budgeted.WithinBudget && o.MaxBytes.HasValue)
+            {
+                var jpegLimit = o.MaxBytes.Value;
+                throw new BrowserOperationException(
+                    "browser_resource_exhausted",
+                    $"screenshot is {bytes.Length} bytes even at q{budgeted.Quality} (the lowest deliberate quality),"
+                    + $" over the {jpegLimit}-byte budget; capture a smaller region or raise the budget"
+                    + $" (a screenshot is never truncated to fit, and quality is not pushed below"
+                    + $" q{ScreenshotPlan.MinimumQuality} because a mush is not evidence)");
+            }
+        }
+        else
+        {
+            // PNG 是无损的：没有 quality 可降，降“画质”对它无意义，只能如实报预算。
+            bytes = await CaptureAtAsync(null, ct).ConfigureAwait(false);
+            if (o.MaxBytes is { } losslessLimit && bytes.Length > losslessLimit)
+            {
+                throw new BrowserOperationException(
+                    "browser_resource_exhausted",
+                    $"screenshot is {bytes.Length} bytes, over the {losslessLimit}-byte budget;"
+                    + " capture a smaller region, use jpeg, or raise the budget"
+                    + " (a screenshot is never truncated to fit: half an image invites wrong conclusions)");
+            }
         }
 
         if (o.FilePath is { Length: > 0 } path)
@@ -1071,17 +1116,7 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
             await System.IO.File.WriteAllBytesAsync(path, bytes, ct).ConfigureAwait(false);
         }
 
-        // 字节预算：**绝不截断图片**（半张图会让读者得出错误结论），超了如实报资源耗尽。
-        if (o.MaxBytes is { } limit && bytes.Length > limit)
-        {
-            throw new BrowserOperationException(
-                "browser_resource_exhausted",
-                $"screenshot is {bytes.Length} bytes, over the {limit}-byte budget;"
-                + " lower the quality, capture the viewport instead of the full page, or raise the budget"
-                + " (a screenshot is never truncated to fit: half an image invites wrong conclusions)");
-        }
-
-        return new ScreenshotResult { Bytes = bytes, FilePath = o.FilePath };
+        return new ScreenshotResult { Bytes = bytes, FilePath = o.FilePath, Quality = usedQuality };
     }
     public Task<PdfResult> PrintToPdfAsync(PdfOptions o, CancellationToken ct)
         => throw new NotSupportedException("Not in Phase 2A-1");

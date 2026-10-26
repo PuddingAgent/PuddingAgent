@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingBrowser.Automation;
 
@@ -209,4 +209,96 @@ public static class ScreenshotPlan
         $"screenshot is {byteCount} bytes, over the {maxBytes}-byte budget;"
         + " lower the quality, capture the viewport instead of the full page, or raise the budget"
         + " (a screenshot is never truncated to fit: half an image invites wrong conclusions)";
+
+    // ── 低细节档的**质量阶梯**（detail=low 的 512px/40 KiB 承诺必须可满足） ──
+    //
+    // 存在的问题（2026-10-26 实测）：quality 此前固定 80，而 512px 已是硬上限 ⇒ 密集页面
+    // （抖音搜索结果 43502 B、区域截图 56061 B）**必然**撞 40 KiB 预算，detail=low 在真实页面上
+    // 有一半时间拿不到图。预算判据本身是对的，错在"固定画质 + 硬预算"这对组合不可能总成立。
+    //
+    // 做法：画质按**结果**选，而不是按常量选——从调用方给的质量开始，超了就降一档重拍，
+    // 第一个满足预算的胜出。到底仍超就交回最小的一次并由调用方如实报 budget_exceeded，
+    // 仍然不截断、不冒充可读。
+
+    /// <summary>阶梯下限：不再往下压（再低就只剩色块，宣称"可读"就是撒谎）。</summary>
+    public const int MinimumQuality = 38;
+
+    /// <summary>降压候选档（只取比起点小的那些，因此起点越高可选档越多）。</summary>
+    private static readonly int[] Ladder = [80, 65, 50, MinimumQuality];
+
+    /// <summary>
+    /// 从 <paramref name="start"/> 开始的质量阶梯（含起点）。
+    /// 只降不升：调用方要求 q50 时不会先偷偷用 q80 拍一张。
+    /// </summary>
+    public static IReadOnlyList<int> QualitySteps(int start)
+    {
+        if (start is < 1 or > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(start), start, "screenshot quality must be between 1 and 100");
+        }
+
+        List<int> steps = [start];
+        foreach (var candidate in Ladder)
+        {
+            if (candidate < start)
+            {
+                steps.Add(candidate);
+            }
+        }
+
+        return steps;
+    }
+
+    /// <summary>一次受预算约束的拍摄结果（用于把"试了几档、最后多小"如实带回去）。</summary>
+    public readonly record struct BudgetedCapture(
+        byte[] Bytes,
+        int Quality,
+        IReadOnlyList<int> AttemptByteCounts,
+        bool WithinBudget);
+
+    /// <summary>
+    /// 按阶梯拍摄直到满足预算。<paramref name="maxBytes"/> 为空 ⇒ 只拍第一档（不需要为预算做任何取舍）。
+    ///
+    /// 抽成接收 <paramref name="capture"/> 委托的形式，而不是直接调 CDP：这样"第几档能过""全过不了怎么交回"
+    /// 这些**真正的判断**可以脱离 WebView2 单测，执行层只剩"把 quality 发给浏览器"。
+    /// </summary>
+    public static async Task<BudgetedCapture> CaptureWithinBudgetAsync(
+        IReadOnlyList<int> steps,
+        int? maxBytes,
+        Func<int, CancellationToken, Task<byte[]>> capture,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(steps);
+        ArgumentNullException.ThrowIfNull(capture);
+        if (steps.Count == 0)
+        {
+            throw new ArgumentException("at least one quality step is required", nameof(steps));
+        }
+
+        List<int> attempts = [];
+        byte[]? smallest = null;
+        var smallestQuality = steps[0];
+
+        foreach (var quality in steps)
+        {
+            var bytes = await capture(quality, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("the screenshot capture returned no bytes");
+
+            attempts.Add(bytes.Length);
+            if (smallest is null || bytes.Length < smallest.Length)
+            {
+                smallest = bytes;
+                smallestQuality = quality;
+            }
+
+            if (maxBytes is not { } limit || bytes.Length <= limit)
+            {
+                return new BudgetedCapture(bytes, quality, attempts, WithinBudget: true);
+            }
+        }
+
+        // 全部超预算：交回**最小**的一次，由调用方如实报错。降到底仍超说明这个画面装不进预算，
+        // 调用方应改局部裁剪或提高预算——继续压只会得到一张看不清的图并误导读图的人。
+        return new BudgetedCapture(smallest!, smallestQuality, attempts, WithinBudget: false);
+    }
 }

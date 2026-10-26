@@ -1,5 +1,5 @@
 # PuddingBrowser.Automation — code_map
-> 源指纹: *.cs=30-0ca7040b4ea6, *.csproj=1-146de68ee772 · 条目数: 46 · 最近整理: 2026-10-19
+> 源指纹: *.cs=30-cd742a5d6c07, *.csproj=1-146de68ee772 · 条目数: 46 · 最近整理: 2026-10-19
 
 > 浏览器自动化**可靠性**组件（叶子）：统一控制权、页面授权、执行租约、证据化回执与重试裁定。
 > 设计依据：[浏览器自动化可靠性与渐进阅读设计方案](../../Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md)（§3/§4，切片 **B0**）。
@@ -86,9 +86,10 @@
  一直按着）；`fill` 用 `Input.insertText`（清空则 Ctrl+A→Delete），`type` 逐字符 keyDown/keyUp（页面才收得到 input），未知按键**拒绝而不是猜**。`PlanDrag` 必须**分步移动**（HTML5
  拖放/画布依赖中间 mousemove）且**按下必然抬起**。本组件不引用 Abstractions，几何用自己的 `InputTarget`
 
-**`ScreenshotPlan.cs`**：`BuildForObservation` 按截图计划生成实际格式、低清缩放及文档 DIP 裁剪参数，PNG 不传 quality，JPEG 传 quality=80；旧驱动入口 `Build` 的格式由 quality 决定（有 quality ⇒ jpeg，否则 png——quality 只对有损格式有意义，给 PNG
+**`ScreenshotPlan.cs`**：`BuildForObservation` 按截图计划生成实际格式、低清缩放及文档 DIP 裁剪参数，PNG 不传 quality，JPEG 传 quality=80 起（超预算按 65/50/38 阶梯降档重拍）；旧驱动入口 `Build` 的格式由 quality 决定（有 quality ⇒ jpeg，否则 png——quality 只对有损格式有意义，给 PNG
  传是被拒的无效输入）；**整页必须有内容尺寸**（来自 `Page.getLayoutMetrics`）才做 clip + `captureBeyondViewport`，拿不到就拒绝而不假装整页；返回体缺 `data`/非法 base64 明确失败（不能解出 0
- 字节还当成功）；**字节预算** `CheckBudget`：超了**绝不截断图片**（半张图会让读者得出错误结论），如实报资源耗尽并给出降画质/改视口/提预算三条出路
+ 字节还当成功）；**字节预算** `CheckBudget`：超了**绝不截断图片**（半张图会让读者得出错误结论），如实报资源耗尽并给出降画质/改视口/提预算三条出路；**质量阶梯**（`QualitySteps` / `CaptureWithinBudgetAsync`）：detail=low 的 **512px/40 KiB 是承诺**，而 512px 已是硬上限 ⇒ 固定 q80 在密集页面（实测 43502 / 56061 B）必然超预算、这个档位在真实页面上永远拿不到图；
+所以画质按**结果**选：从起点按 65/50/38 降档重拍，第一个装进预算的胜出，降到底仍超就保留**最小**的一次并标 `WithinBudget=false`（仍不截断、不冒充可读）
 
 **`BrowserScreenshotTransfer.cs`**：**截图载荷的传输与校验（桌面一侧）**（设计 §8.1）：职责边界是"Desktop 返回**有界**媒体载荷/分块 + 元数据"，Core 再校验并写入既有 Vision
  Artifact；**不落库、不调模型、不假定 Core 能读本地临时文件**。硬约束来自设计文档：单张 **8 MiB**（`MaxImageBytes`）超限明确给原因、默认 `detail=low` 时最长边
