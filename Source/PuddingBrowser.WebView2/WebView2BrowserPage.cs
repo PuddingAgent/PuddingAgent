@@ -84,6 +84,7 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
         if (surface is not null)
         {
             _coreWebView = surface.CoreWebView;
+            ApplyFingerprintAlignment(surface.CoreWebView);
             // EnsureCoreWebView2Async has already created the initial about:blank
             // document. Its creation predates these navigation subscriptions.
             // Version 0 remains reserved for a page without a live surface.
@@ -102,7 +103,32 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
     }
 
     /// <summary>
-    /// 订阅**会卡住自动化**的那些 CoreWebView2 事件（§8）。
+    /// 指纹对齐（见 <see cref="WebView2FingerprintScript"/>）：对**后续文档**注册启动脚本，
+    /// 同时对**当前已加载文档**补一次，否则本次会话里 <c>chrome.webview</c> 依旧可见。
+    /// 失败不抛：指纹对齐是“尽力而为”，不能因为它让页面开不了。
+    /// </summary>
+    private void ApplyFingerprintAlignment(CoreWebView2 coreWebView)
+    {
+        try
+        {
+            _ = coreWebView.AddScriptToExecuteOnDocumentCreatedAsync(WebView2FingerprintScript.Source);
+        }
+        catch
+        {
+            // 忽略：注册失败仍然可以在下次导航重试
+        }
+
+        try
+        {
+            _ = coreWebView.ExecuteScriptAsync(WebView2FingerprintScript.Source);
+        }
+        catch
+        {
+            // 忽略：当前文档可能还没就绪，导航后会由上面的启动脚本接手
+        }
+    }
+
+    /// <summary>
     ///
     /// 这张清单是**故意冻结**的（由 <c>DriverEventHandlingTests</c> 钉住）：新增/删除订阅都必须走一次有意识的改动，
     /// 因为它等于"我们接管了哪些会让流程停在那里的事件"。

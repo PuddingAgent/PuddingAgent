@@ -48,27 +48,32 @@ public static class NativeInputSequence
         string? Text,
         int Modifiers);
 
-    /// <summary>鼠标点击：移动 → 按下 → 抬起（**成对**，永远不留按住状态）。</summary>
+    /// <summary>鼠标点击：**分步移动**→按下→抬起（**成对**，永远不留按住状态）。
+    ///
+    /// 为什么不能瞬移：一次 <c>mouseMoved</c> 直接落在目标中心，在风控看来就是“没有轨迹”。
+    /// 真实人手的移动是一条连续的、带加减速的曲线，因此这里发多个中间点
+    /// （smoothstep 缓动：先慢后快再慢），且轨迹由目标坐标**确定性**推出 —— 同一个目标
+    /// 永远同一条轨迹，可断言、可重放。
+    /// </summary>
     public static IReadOnlyList<CdpCall> PlanClick(InputTarget target, int clickCount = 1)
     {
-        
         ArgumentOutOfRangeException.ThrowIfLessThan(clickCount, 1);
 
         var (x, y) = Center(target);
-        return
-        [
-            Mouse("mouseMoved", x, y, button: "none", buttons: 0, clickCount: 0),
-            Mouse("mousePressed", x, y, button: "left", buttons: 1, clickCount),
-            Mouse("mouseReleased", x, y, button: "left", buttons: 0, clickCount),
-        ];
+        return PlanPointerClick(x, y, clickCount);
     }
 
-    /// <summary>悬停：只移动，不按下。</summary>
+    /// <summary>悬停：同样带轨迹（真人把鼠标移到元素上也是一条曲线），但不按下。</summary>
     public static IReadOnlyList<CdpCall> PlanHover(InputTarget target)
     {
-        
         var (x, y) = Center(target);
-        return [Mouse("mouseMoved", x, y, button: "none", buttons: 0, clickCount: 0)];
+        var calls = new List<CdpCall>(DefaultPointerSteps);
+        foreach (var (sx, sy) in ApproachPath(x, y))
+        {
+            calls.Add(Mouse("mouseMoved", sx, sy, button: "none", buttons: 0, clickCount: 0));
+        }
+
+        return calls;
     }
 
     /// <summary>
@@ -403,17 +408,55 @@ public static class NativeInputSequence
     /// </summary>
     public static IReadOnlyList<CdpCall> PlanPointerClick(double x, double y, int clickCount = 1)
     {
-        return
-        [
-            Mouse("mousePressed", x, y, "left", 1, clickCount),
-            Mouse("mouseReleased", x, y, "left", 0, clickCount),
-        ];
+        ArgumentOutOfRangeException.ThrowIfLessThan(clickCount, 1);
+
+        var calls = new List<CdpCall>(DefaultPointerSteps + 2);
+        foreach (var (moveX, moveY) in ApproachPath(x, y))
+        {
+            calls.Add(Mouse("mouseMoved", moveX, moveY, "none", 0, 0));
+        }
+
+        calls.Add(Mouse("mousePressed", x, y, "left", 1, clickCount));
+        calls.Add(Mouse("mouseReleased", x, y, "left", 0, clickCount));
+        return calls;
     }
 
-    /// <summary>§8.2 **坐标移动**：只移动、不按下。</summary>
+    /// <summary>§8.2 **坐标移动**：带轨迹移动到目标，不按下。</summary>
     public static IReadOnlyList<CdpCall> PlanPointerMove(double x, double y)
     {
-        return [Mouse("mouseMoved", x, y, "none", 0, 0)];
+        var calls = new List<CdpCall>(DefaultPointerSteps);
+        foreach (var (moveX, moveY) in ApproachPath(x, y))
+        {
+            calls.Add(Mouse("mouseMoved", moveX, moveY, "none", 0, 0));
+        }
+
+        return calls;
+    }
+
+    /// <summary>
+    /// 移到目标所需的最少中间步数。它存在是因为行为特征：
+    /// 一次 <c>mouseMoved</c> 直接落在目标中心，对页面/风控而言等于“指针凭空出现”。
+    /// </summary>
+    public const int DefaultPointerSteps = 6;
+
+    /// <summary>
+    /// 从“虚想起点”到目标的分步轨迹：起点固定为目标偏移 (-48,-32)，按 smoothstep 缓动（先慢后快再慢）收敛。
+    /// 起点由目标坐标确定性推导、不引入随机数 —— 同一个目标永远同一条轨迹，可断言、可重放。
+    /// </summary>
+    private static IEnumerable<(double X, double Y)> ApproachPath(double x, double y)
+    {
+        const double StartOffsetX = -48;
+        const double StartOffsetY = -32;
+
+        for (var step = 1; step <= DefaultPointerSteps; step++)
+        {
+            var t = (double)step / DefaultPointerSteps;
+            var eased = t * t * (3 - (2 * t));
+            var remaining = 1 - eased;
+            yield return (
+                Math.Round(x + (StartOffsetX * remaining), 2),
+                Math.Round(y + (StartOffsetY * remaining), 2));
+        }
     }
 
     /// <summary>

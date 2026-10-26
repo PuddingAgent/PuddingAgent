@@ -18,10 +18,10 @@ public sealed class PointerInputSequenceTests
     public void PointerClickPressesAndReleasesAtTheSamePoint()
     {
         var calls = NativeInputSequence.PlanPointerClick(12.5, 44.25);
-        Assert.AreEqual(2, calls.Count, "a click is exactly pressed+released");
+        Assert.AreEqual(NativeInputSequence.DefaultPointerSteps + 2, calls.Count, "先走轨迹，再 pressed+released");
 
-        var pressed = Payload(calls[0]);
-        var released = Payload(calls[1]);
+        var pressed = Payload(calls[^2]);
+        var released = Payload(calls[^1]);
 
         Assert.AreEqual("Input.dispatchMouseEvent", calls[0].Method);
         Assert.AreEqual("mousePressed", pressed.GetProperty("type").GetString());
@@ -37,7 +37,7 @@ public sealed class PointerInputSequenceTests
     [TestMethod]
     public void PointerCoordinatesAtTheOriginAreCarriedAsZeroNotDropped()
     {
-        var pressed = Payload(NativeInputSequence.PlanPointerClick(0, 0)[0]);
+        var pressed = Payload(NativeInputSequence.PlanPointerClick(0, 0)[^2]);
         Assert.AreEqual(0, pressed.GetProperty("x").GetDouble());
         Assert.AreEqual(0, pressed.GetProperty("y").GetDouble());
     }
@@ -46,8 +46,8 @@ public sealed class PointerInputSequenceTests
     public void PointerMoveDoesNotPressAnything()
     {
         var calls = NativeInputSequence.PlanPointerMove(5, 6);
-        Assert.AreEqual(1, calls.Count);
-        var moved = Payload(calls[0]);
+        Assert.AreEqual(NativeInputSequence.DefaultPointerSteps, calls.Count);
+        var moved = Payload(calls[^1]);
         Assert.AreEqual("mouseMoved", moved.GetProperty("type").GetString());
         Assert.AreEqual(0, moved.GetProperty("buttons").GetInt32());
     }

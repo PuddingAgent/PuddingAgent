@@ -21,20 +21,36 @@ public sealed class NativeInputSequenceTests
     {
         var calls = NativeInputSequence.PlanClick(Target);
 
-        Assert.AreEqual(3, calls.Count);
-        Assert.AreEqual("Input.dispatchMouseEvent", calls[0].Method);
+        // 轨迹步数 + 按下+抬起。中间步数不能是 1：一次瞬移是最明显的自动化特征。
+        Assert.AreEqual(NativeInputSequence.DefaultPointerSteps + 2, calls.Count);
+        Assert.IsTrue(NativeInputSequence.DefaultPointerSteps > 1, "移动必须分步");
 
-        // 顺序固定：移动 → 按下 → 抬起（**成对**，不留按住状态）。
-        Assert.AreEqual("mouseMoved", Parse(calls[0]).GetProperty("type").GetString());
-        Assert.AreEqual("mousePressed", Parse(calls[1]).GetProperty("type").GetString());
-        Assert.AreEqual("mouseReleased", Parse(calls[2]).GetProperty("type").GetString());
+        // 顺序固定：先走轨迹→按下→抬起（**成对**，不留按住状态）。
+        for (var index = 0; index < NativeInputSequence.DefaultPointerSteps; index++)
+        {
+            Assert.AreEqual("Input.dispatchMouseEvent", calls[index].Method);
+            Assert.AreEqual("mouseMoved", Parse(calls[index]).GetProperty("type").GetString());
+        }
+
+        var press = Parse(calls[^2]);
+        var release = Parse(calls[^1]);
+        Assert.AreEqual("mousePressed", press.GetProperty("type").GetString());
+        Assert.AreEqual("mouseReleased", release.GetProperty("type").GetString());
 
         // 位置取元素中心，且按下时 buttons=1、抬起时 buttons=0。
-        Assert.AreEqual(60d, Parse(calls[1]).GetProperty("x").GetDouble());
-        Assert.AreEqual(40d, Parse(calls[1]).GetProperty("y").GetDouble());
-        Assert.AreEqual(1, Parse(calls[1]).GetProperty("buttons").GetInt32());
-        Assert.AreEqual(0, Parse(calls[2]).GetProperty("buttons").GetInt32());
-        Assert.AreEqual("left", Parse(calls[1]).GetProperty("button").GetString());
+        Assert.AreEqual(60d, press.GetProperty("x").GetDouble());
+        Assert.AreEqual(40d, press.GetProperty("y").GetDouble());
+        Assert.AreEqual(1, press.GetProperty("buttons").GetInt32());
+        Assert.AreEqual(0, release.GetProperty("buttons").GetInt32());
+        Assert.AreEqual("left", press.GetProperty("button").GetString());
+
+        // 轨迹必须**收敛到**中心（最后一步就是目标点），否则会点偏。
+        var lastMove = Parse(calls[^3]);
+        Assert.AreEqual(60d, lastMove.GetProperty("x").GetDouble());
+        Assert.AreEqual(40d, lastMove.GetProperty("y").GetDouble());
+
+        // 起点不等于终点：有真实位移才叫“移动”。
+        Assert.AreNotEqual(lastMove.GetProperty("x").GetDouble(), Parse(calls[0]).GetProperty("x").GetDouble());
     }
 
     [TestMethod]
@@ -42,9 +58,12 @@ public sealed class NativeInputSequenceTests
     {
         var calls = NativeInputSequence.PlanHover(Target);
 
-        Assert.AreEqual(1, calls.Count);
-        Assert.AreEqual("mouseMoved", Parse(calls[0]).GetProperty("type").GetString());
-        Assert.AreEqual(0, Parse(calls[0]).GetProperty("buttons").GetInt32());
+        Assert.AreEqual(NativeInputSequence.DefaultPointerSteps, calls.Count);
+        foreach (var call in calls)
+        {
+            Assert.AreEqual("mouseMoved", Parse(call).GetProperty("type").GetString());
+            Assert.AreEqual(0, Parse(call).GetProperty("buttons").GetInt32());
+        }
     }
 
     [TestMethod]
