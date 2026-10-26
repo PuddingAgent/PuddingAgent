@@ -45,6 +45,78 @@ public sealed class RemoteBrowserRuntimeTests : IDisposable
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
         Assert.NotNull(await page.QueryAsync(new Locator { Kind = LocatorKind.Ref, Value = "p1-v7-n3" }, CancellationToken.None));
     }
+
+    /// <summary>
+    /// 回归（2026-10-26）：表单值/视口事实必须**跨进程回传**。
+    /// 此前 <c>BrowserElementDescriptor</c> 没有这三个字段，值在 RPC 边界被丢掉，
+    /// 于是所有 <c>expect_value</c> 断言只能得 <c>failed</c>（观测恒为 null），
+    /// 调用方无法区分「没写进去」与「写了但看不到」。
+    /// </summary>
+    [Fact]
+    public async Task QueryAsync_CarriesFormValueAndViewportAcrossTheWire()
+    {
+        var broker = new RecordingBrowserBroker(command =>
+        {
+            if (command.Name == BrowserBridgeCommandNames.ContextCreate)
+                return Success(command, Context("ctx-1", 1));
+            if (command.Name == BrowserBridgeCommandNames.PageCreate)
+                return Success(command, Page("ctx-1", "page-1", "about:blank") with { PageVersion = 7 });
+            return Success(command, new BrowserLocateResultDescriptor
+            {
+                Elements =
+                [
+                    new BrowserElementDescriptor
+                    {
+                        Ref = "p1-v7-n3",
+                        Tag = "input",
+                        PageVersion = 7,
+                        Value = "大肥鱼",
+                        SelectedValues = ["a", "b"],
+                        InViewport = true,
+                    },
+                ],
+            });
+        });
+        await using var runtime = new RemoteBrowserRuntime(broker, callerIdentity: _callerAccessor);
+        var context = await runtime.CreateContextAsync(new BrowserContextOptions(), CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+
+        var handle = await page.QueryAsync(
+            new Locator { Kind = LocatorKind.Ref, Value = "p1-v7-n3" }, CancellationToken.None);
+
+        Assert.NotNull(handle);
+        Assert.Equal("大肥鱼", handle!.Info.Value);
+        Assert.Equal(["a", "b"], handle.Info.SelectedValues);
+        Assert.True(handle.Info.InViewport);
+    }
+
+    /// <summary>
+    /// 回归（2026-10-26）：宿主侧把 <c>DesktopElementRef</c> 编成线缆描述符时，同样不得丢值。
+    /// 这是同一条链的**上一跳**；只修上一跳或只修下一跳，值仍然到不了调用方。
+    /// </summary>
+    [Fact]
+    public void FromElement_CarriesFormValueAndViewportOntoTheWire()
+    {
+        var element = new Pudding.Contracts.Desktop.DesktopElementRef(
+            "n1",
+            "input",
+            new Pudding.Contracts.Desktop.DesktopPageVersion(7),
+            role: "textbox",
+            name: "搜索",
+            text: null,
+            visible: true,
+            enabled: true,
+            isChecked: null,
+            value: "大肥鱼",
+            selectedValues: ["a", "b"],
+            inViewport: true);
+
+        var descriptor = PuddingDesktop.Browser.BrowserBridgeResultAdapter.FromElement(element);
+
+        Assert.Equal("大肥鱼", descriptor.Value);
+        Assert.Equal(["a", "b"], descriptor.SelectedValues);
+        Assert.True(descriptor.InViewport);
+    }
     [Fact]
     public async Task CreateContextAsync_MapsDescriptorToRemoteContext()
     {

@@ -233,6 +233,21 @@ public sealed record BrowserElementDescriptor
     public bool Visible { get; init; }
     public bool Enabled { get; init; }
     public bool? Checked { get; init; }
+
+    /// <summary>
+    /// input/textarea/contenteditable 的当前值；非表单元素为 <c>null</c>。
+    /// **必须跨进程回传**：它是「输入是否真的写入」的唯一可靠证据，
+    /// 丢了它，调用方只能看到「动作已派发」而无从判定是否生效。
+    /// 敏感策略在上层（工具回执）执行脱敏，不在这里丢弃事实。
+    /// </summary>
+    public string? Value { get; init; }
+
+    /// <summary><c>select</c> 的当前选中值；非 select 为 <c>null</c>。</summary>
+    public IReadOnlyList<string>? SelectedValues { get; init; }
+
+    /// <summary>元素是否与视口相交（与 <see cref="Visible"/> 是两个独立事实）；未观测为 <c>null</c>。</summary>
+    public bool? InViewport { get; init; }
+
     public BrowserBoundingBoxDescriptor? BoundingBox { get; init; }
     public long PageVersion { get; init; }
 }

@@ -140,6 +140,9 @@ public static class BrowserBridgeResultAdapter
             Visible = element.Visible,
             Enabled = element.Enabled,
             Checked = element.IsChecked,
+            Value = element.Value,
+            SelectedValues = element.SelectedValues,
+            InViewport = element.InViewport,
             BoundingBox = element.BoundingBox is { } box ? new BrowserBoundingBoxDescriptor
             {
                 X = box.X, Y = box.Y, Width = box.Width, Height = box.Height,

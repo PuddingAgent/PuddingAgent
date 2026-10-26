@@ -352,6 +352,9 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
         Visible = descriptor.Visible,
         Enabled = descriptor.Enabled,
         Checked = descriptor.Checked,
+        Value = descriptor.Value,
+        SelectedValues = descriptor.SelectedValues,
+        InViewport = descriptor.InViewport,
         BoundingBox = descriptor.BoundingBox is null ? null : new BoundingBox
         {
             X = descriptor.BoundingBox.X,
